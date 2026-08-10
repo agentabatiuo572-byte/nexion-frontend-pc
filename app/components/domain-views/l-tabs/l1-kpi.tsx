@@ -5,7 +5,7 @@
  * 数值/目标/spark 全部 join 自 KPIS(B 域同口径单一源);口径与目标只读锁定,页面无修改入口。
  * 视图参数(时间窗/粒度/Phase 叠加/黄灯偏移)实时生效;聚合 CSV 无 PII,免确认并落审计。
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -18,6 +18,8 @@ import type { LCtx } from "./types";
 import { fetchL1Kpi, fetchL1KpiDrilldown, fetchL1KpiTrend, type L1KpiQuery } from "@/lib/admin/l-client";
 import { validateL1Dashboard, validateL1Drilldown, validateL1Trend } from "./l1-kpi-contract";
 import { resolveL1ExportMode, submitL1Export } from "./l1-export-contract";
+import { loadL1LocalView, saveL1LocalView } from "./l1-local-view";
+import { createL1ReadController } from "./l1-request-generation";
 
 type Kpi = KpiRow & {
   available?: boolean;
@@ -110,14 +112,51 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
   const [drillKpi, setDrillKpi] = useState<Kpi | null>(null);
   const [drillTrend, setDrillTrend] = useState<number[] | null>(null);
   const [drillError, setDrillError] = useState("");
+  const l1Requests = useRef(createL1ReadController());
 
   useEffect(() => {
+    l1Requests.current.invalidate();
     setLocalData(null);
     setDrillKpi(null);
     setDrillTrend(null);
     setDrillError("");
     setRefreshError("");
   }, [ctx.biData?.l1]);
+
+  useEffect(() => {
+    let saved: ReturnType<typeof loadL1LocalView>;
+    try {
+      saved = loadL1LocalView(window.localStorage);
+    } catch {
+      return;
+    }
+    if (!saved) return;
+    setWin(saved.window);
+    setCustomFrom(saved.customFrom);
+    setCustomTo(saved.customTo);
+    setGran(saved.gran);
+    setPhaseOn(saved.phaseOn);
+    setYlOffset(saved.ylOffset);
+    setOvlSel(saved.ovlSel);
+    setCohortFilter(saved.cohortFilter);
+    setPhaseFilter(saved.phaseFilter);
+    setLocaleFilter(saved.localeFilter);
+    setRefFilter(saved.refFilter);
+    l1Requests.current.run(
+      () => fetchL1Kpi({
+        ...(saved.window === "custom" ? { window: "custom", from: saved.customFrom, to: saved.customTo } : { window: saved.window }),
+        cohort: saved.cohortFilter || undefined, phase: saved.phaseFilter || undefined,
+        locale: saved.localeFilter || undefined, ref: saved.refFilter || undefined,
+      }),
+      (next) => {
+        validateL1Dashboard(next);
+        setLocalData(next);
+        setRefreshError("");
+      },
+      (error) => setRefreshError(displayAdminError(error)),
+    );
+    return () => l1Requests.current.invalidate();
+  }, []);
 
   const data = localData ?? ctx.biData?.l1;
   const rawKpis = rows<Kpi>(data?.kpis);
@@ -136,7 +175,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
     return (
       <section className="l-card">
         <div className="l-b">
-          <div className="ltint warn" style={{ fontSize: 12 }}>
+          <div className="ltint warn" data-module-health-state="error" style={{ fontSize: 12 }}>
             <b>L1 权威响应协议校验失败</b> · 已停止渲染可疑 KPI，未把缺项或畸形值当成经营事实。
             {ctx.reloadBi && <button className="l-btn sm" style={{ marginLeft: 10 }} onClick={() => void ctx.reloadBi?.()}>重新读取</button>}
             <span className="lcode" style={{ marginLeft: 8 }}>{protocolError}</span>
@@ -187,29 +226,31 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
     ...filters,
   });
 
-  const reloadKpi = async (
+  const reloadKpi = (
     nextWindow: L1KpiQuery["window"] = win,
     filters: Partial<L1KpiQuery> = {},
   ) => {
     setRefreshing(true);
-    try {
-      const next = await fetchL1Kpi(activeQuery(nextWindow, filters));
-      validateL1Dashboard(next);
-      setLocalData(next);
-      setDrillKpi(null);
-      setDrillTrend(null);
-      setDrillError("");
-      setRefreshError("");
-      setWin(nextWindow);
-      setCustomOpen(false);
-      ctx.toast(`KPI 已按${nextWindow === "custom" ? `${customFrom} 至 ${customTo}` : nextWindow === "30d" ? "滚动 30 天" : nextWindow === "1d" ? "当日" : "滚动 7 天"}重新读取`);
-    } catch (error) {
-      const message = displayAdminError(error);
-      setRefreshError(message);
-      ctx.toast(`KPI 刷新失败 · ${message}`);
-    } finally {
-      setRefreshing(false);
-    }
+    l1Requests.current.run(
+      () => fetchL1Kpi(activeQuery(nextWindow, filters)),
+      (next) => {
+        validateL1Dashboard(next);
+        setLocalData(next);
+        setDrillKpi(null);
+        setDrillTrend(null);
+        setDrillError("");
+        setRefreshError("");
+        setWin(nextWindow);
+        setCustomOpen(false);
+        ctx.toast(`KPI 已按${nextWindow === "custom" ? `${customFrom} 至 ${customTo}` : nextWindow === "30d" ? "滚动 30 天" : nextWindow === "1d" ? "当日" : "滚动 7 天"}重新读取`);
+      },
+      (error) => {
+        const message = displayAdminError(error);
+        setRefreshError(message);
+        ctx.toast(`KPI 刷新失败 · ${message}`);
+      },
+      () => setRefreshing(false),
+    );
   };
 
   const selectKpi = async (index: number) => {
@@ -320,7 +361,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
   return (
     <div>
       {refreshError && (
-        <div className="ltint warn" style={{ fontSize: 12, marginBottom: 10 }}>
+        <div className="ltint warn" data-module-health-state="error" style={{ fontSize: 12, marginBottom: 10 }}>
           <b>KPI 刷新未成功</b> · 当前仍显示上一次已校验快照，时间窗未切换。{refreshError}
         </div>
       )}
@@ -379,8 +420,16 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
           })}>调整</button>
         </div>
         <button className="l-btn sm" onClick={() => void reloadKpi()} disabled={refreshing}>{refreshing ? "刷新中…" : "刷新 KPI"}</button>
-        <button className="l-btn sm" style={{ marginLeft: "auto" }} onClick={() => ctx.toast("当前时间窗+粒度+叠加组合已保存为视图 · 不改算法,普通确认批")}>保存为视图</button>
-        <span className="lcode lock" title="口径与目标值只读;以上仅为视图参数,实时生效不落确认">视图参数 · 实时生效 · 普通确认批</span>
+        <button className="l-btn sm" style={{ marginLeft: "auto" }} onClick={() => {
+          let saved: ReturnType<typeof saveL1LocalView> = null;
+          try {
+            saved = saveL1LocalView(window.localStorage, { window: win, customFrom, customTo, gran, phaseOn, ylOffset, ovlSel, cohortFilter, phaseFilter, localeFilter, refFilter });
+          } catch {
+            saved = null;
+          }
+          ctx.toast(saved ? "视图已保存到本机浏览器；刷新后会按已保存参数重新读取权威数据" : "视图参数无效或本机存储不可用，未保存");
+        }}>保存为视图</button>
+        <span className="lcode lock" title="口径与目标值只读；仅保存本机浏览器视图参数，不保存数据、权限或业务状态">视图参数 · 本机浏览器保存 · 实时生效 · 不落确认</span>
       </div>
 
       {/* (a) 8-KPI matrix */}

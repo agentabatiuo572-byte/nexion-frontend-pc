@@ -330,6 +330,21 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
         </section>
       </div>
 
+      <section className="l-card" aria-labelledby="a3-pending-contract-title">
+        <div className="l-h">
+          <span className="ttl" id="a3-pending-contract-title">待接入运营参数 · 设计保留</span>
+          <span className="sub">· 服务端未建立权威读写契约前禁止本地保存</span>
+        </div>
+        <div className="l-b" style={{ display: "grid", gap: 10 }}>
+          <div data-restored-capability="a3-global-rate-limit" className="atint warn">
+            <b>全球限流上限</b> · 服务端权威契约未完成，当前不可读取、不可修改。能力入口保留，避免把未完成设计误判成不需要；接入后必须走版本校验、操作原因与 A2 审计。
+          </div>
+          <div data-restored-capability="a3-withdraw-strong-review-threshold" className="atint warn">
+            <b>提现强审阈值</b> · 服务端权威契约未完成，当前不可读取、不可修改。不得使用前端默认值代替真实阈值；接入时须与 D2 提现审核状态机和 B1 覆盖率护栏共同验收。
+          </div>
+        </div>
+      </section>
+
       <p className="f-foot">
         <b>执行门槛</b>:当前登记的平台维护开关仅超管可切换；其他角色只读。熔断闸与地区屏蔽的操作权限由 J1 / J2 独立控制。
         <b>事件去向</b>:A3 开关切换写入 A2 审计；J1 / J2 继续维护自己的状态与操作留痕。

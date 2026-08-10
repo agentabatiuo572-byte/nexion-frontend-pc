@@ -148,6 +148,8 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const isFinance = session?.role === "finance";
   const [overview, setOverview] = useState<UserAssetAdjustmentOverview | null>(null);
   const [requests, setRequests] = useState<UserPage<UserAssetAdjustment>>(() => emptyPage(5));
+  const [requestPage, setRequestPage] = useState(1);
+  const [requestPageSize, setRequestPageSize] = useState(5);
   const [history, setHistory] = useState<UserPage<UserAssetAdjustment>>(() => emptyPage(10));
   const [historyPage, setHistoryPage] = useState(1);
   const [historyPageSize, setHistoryPageSize] = useState(10);
@@ -182,22 +184,34 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       const [nextOverview, nextHistory, nextRequests] = await Promise.all([
         fetchUserAssetAdjustmentOverview(),
         fetchUserAssetAdjustments({ asset: historyAsset, historyOnly: true, pageNum: historyPage, pageSize: historyPageSize }),
-        fetchUserAssetAdjustments({ status: "PENDING_REVIEW", pageNum: 1, pageSize: 5 }),
+        fetchUserAssetAdjustments({ status: "PENDING_REVIEW", pageNum: requestPage, pageSize: requestPageSize }),
       ]);
       setOverview(nextOverview);
-      setHistory(nextHistory);
-      setRequests(nextRequests);
+      const historyPageCount = Math.max(1, Math.ceil(nextHistory.total / historyPageSize));
+      const requestPageCount = Math.max(1, Math.ceil(nextRequests.total / requestPageSize));
+      if (historyPage > historyPageCount) {
+        setHistory(emptyPage(historyPageSize));
+        setHistoryPage(historyPageCount);
+      } else {
+        setHistory(nextHistory);
+      }
+      if (requestPage > requestPageCount) {
+        setRequests(emptyPage(requestPageSize));
+        setRequestPage(requestPageCount);
+      } else {
+        setRequests(nextRequests);
+      }
       return true;
     } catch (err) {
       setOverview(null);
       setHistory(emptyPage(historyPageSize));
-      setRequests(emptyPage(5));
+      setRequests(emptyPage(requestPageSize));
       setError(errorMessage(err));
       return false;
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [historyFilter, historyPage, historyPageSize]);
+  }, [historyFilter, historyPage, historyPageSize, requestPage, requestPageSize]);
 
   useEffect(() => { void loadData(); }, [loadData]);
 
@@ -507,24 +521,41 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         </section>
       </div>
 
-      {requests.total > 0 && (
-        <section className="l-card">
-          <div className="l-h"><span className="ttl">待放行调整</span><span className="sub">· 提交阶段不改变余额</span></div>
+      <section className="l-card">
+          <div className="l-h"><span className="ttl">待放行调整</span><span className="sub">· 提交阶段不改变余额</span><div className="r"><button type="button" className="l-btn sm" aria-label="刷新待放行调整队列" disabled={loading || busy} onClick={() => void loadData(true)}>刷新队列</button></div></div>
+          <div
+            className="ctint"
+            data-restored-capability="c3-pending-request-withdrawal"
+            style={{ margin: "0 12px 12px" }}
+          >
+            <b>发起人撤回能力位已保留</b> · 当前权威服务尚未提供待放行请求的撤回状态转移；接通前不展示可点击的假撤回，确需关闭时由具备放行权限的运营人员驳回并留痕。
+          </div>
           <div style={{ overflowX: "auto" }}>
             <table className="l-tbl" style={{ minWidth: 920 }}>
               <thead><tr><th>请求编号</th><th>账户</th><th>金额</th><th>原因</th><th>证据</th><th>发起人</th><th style={{ textAlign: "right" }}>处理</th></tr></thead>
-              <tbody>{requests.records.map((row) => (
-                <tr key={text(row.adjustmentNo)}>
-                  <td className="mono">{text(row.adjustmentNo)}</td><td>{displayRowUser(row)}</td>
-                  <td className="mono">{text(row.direction) === "CREDIT" ? "+" : "−"}{formatNumber(row.amount)} {text(row.asset)}（${formatUsdEquivalent(row.amountUsd)}）</td>
-                  <td>{text(row.reason)}</td><td className="mono">{text(row.evidenceRef)}</td><td>{text(row.maker)}</td>
-                  <td style={{ textAlign: "right" }}>{canApprove ? <span style={{ display: "inline-flex", gap: 6 }}><button className="l-btn sm primary" disabled={busy} onClick={() => reviewLargeRequest(row, true)}>批准</button><button className="l-btn sm" disabled={busy} onClick={() => reviewLargeRequest(row, false)}>驳回</button></span> : <span style={{ color: "var(--ink-4)", fontSize: 12 }}>等待独立复核</span>}</td>
-                </tr>
-              ))}</tbody>
+              <tbody>
+                {requests.records.map((row) => (
+                  <tr key={text(row.adjustmentNo)}>
+                    <td className="mono">{text(row.adjustmentNo)}</td><td>{displayRowUser(row)}</td>
+                    <td className="mono">{text(row.direction) === "CREDIT" ? "+" : "−"}{formatNumber(row.amount)} {text(row.asset)}（${formatUsdEquivalent(row.amountUsd)}）</td>
+                    <td>{text(row.reason)}</td><td className="mono">{text(row.evidenceRef)}</td><td>{text(row.maker)}</td>
+                    <td style={{ textAlign: "right" }}>{canApprove ? <span style={{ display: "inline-flex", gap: 6 }}><button className="l-btn sm primary" disabled={busy} onClick={() => reviewLargeRequest(row, true)}>批准</button><button className="l-btn sm" disabled={busy} onClick={() => reviewLargeRequest(row, false)}>驳回</button></span> : <span style={{ color: "var(--ink-4)", fontSize: 12 }}>等待独立复核</span>}</td>
+                  </tr>
+                ))}
+                {!requests.records.length && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-4)", padding: "22px 12px" }}>当前没有待放行调整；队列入口与分页结构继续保留</td></tr>}
+              </tbody>
             </table>
           </div>
-        </section>
-      )}
+          <DataListPager
+            label="待放行调整队列"
+            page={requestPage}
+            pageSize={requestPageSize}
+            total={requests.total}
+            onPageChange={setRequestPage}
+            onPageSizeChange={(next) => { setRequestPageSize(next); setRequestPage(1); }}
+            pageSizeOptions={[5, 10, 20, 50]}
+          />
+      </section>
 
       <section className="l-card">
         <div className="l-h"><span className="ttl">调整历史</span><span className="sub">· 已执行与已拒绝记录</span><div className="r"><div className="chips">{HISTORY_FILTERS.map((item) => <button type="button" key={item} className={`chip${historyFilter === item ? " sel" : ""}`} onClick={() => { setHistoryFilter(item); setHistoryPage(1); }}>{item}</button>)}</div></div></div>

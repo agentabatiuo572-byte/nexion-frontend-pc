@@ -32,6 +32,9 @@ function backendPath(parts: string[]) {
   if (parts.length === 1 && parts[0] === "fx-quote") {
     return "/api/admin/finance/fx-quote";
   }
+  if (parts.length === 2 && parts[0] === "payout-vnd" && ["config", "channel"].includes(parts[1])) {
+    return `/api/admin/finance/payout-vnd/${parts[1]}`;
+  }
   if (parts.length === 2 && parts[0] === "topup" && ["overview", "flows"].includes(parts[1])) {
     return `/api/admin/finance/topup/${parts[1]}`;
   }

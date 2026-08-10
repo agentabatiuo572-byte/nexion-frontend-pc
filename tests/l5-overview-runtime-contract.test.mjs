@@ -15,7 +15,8 @@ test("L5 overview rejects malformed success payloads before normalization", asyn
   assert.match(contract, /data\.module !== "L5"/);
   assert.match(contract, /data\.domain !== "L5"/);
   assert.match(contract, /data\.serverCanonical !== true/);
-  assert.match(contract, /"ON_DEMAND"/);
+  assert.match(contract, /CURRENT_L5_REPORT_TYPES/);
+  assert.doesNotMatch(contract, /"ON_DEMAND"|"BILL_CSV"/);
   assert.match(contract, /validateSummary\(data\.summary\)/);
   assert.match(contract, /validateReports\(data\.reports\)/);
   assert.match(contract, /validateCapabilities\(data\.capabilities\)/);

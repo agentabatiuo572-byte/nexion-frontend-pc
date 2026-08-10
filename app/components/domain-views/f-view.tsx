@@ -23,9 +23,6 @@ import {
   fetchF3BinaryOverview,
   fetchF4LeadershipPoolOverview,
   fetchF5CommissionAuditOverview,
-  reissueF5Commissions,
-  reverseF5Commission,
-  suspendF5UserCommissions,
   updateF5AnomalyConfig,
   fetchF2RatesOverview,
   fetchF1PromotionLog,
@@ -299,7 +296,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   };
 
   // F 域 5 写函数统一改 A2 propose:按 key 分发到 4 polymorphic op(commit afe51f2)。
-  const proposeFConfig = async (sourceDomain: string, key: string, value: string, reason: string) => {
+  const proposeFConfig = async (sourceDomain: string, key: string, value: string, reason: string, expectedVersion?: number) => {
     const op = resolveFOp(key);
     const def = findHighOp(op);
     if (!def) throw new Error(`F_OP_NOT_FOUND:${op}`);
@@ -318,8 +315,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       reason,
       sourceDomain,
       commandKey: fProposalCommandKey(mc?.commandKey, sourceDomain, key),
-      command: def.buildCommand({ key, value }),
-      target: def.buildTarget({ key, value }),
+      command: def.buildCommand({ key, value, expectedVersion }),
+      target: def.buildTarget({ key, value, expectedVersion }),
     });
   };
 
@@ -477,20 +474,64 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f5Loading,
     f5Error,
     refreshF5,
-    updateF5Config: async (key, value, reason) => {
-      await proposeFConfig("F5", key, value, reason);
+    updateF5Config: async (key, value, reason, expectedVersion) => {
+      await proposeFConfig("F5", key, value, reason, expectedVersion);
     },
     reverseF5Commission: async (commissionId, refundRef, reason) => {
-      await reverseF5Commission(commissionId, refundRef, reason, ADMIN_OPERATOR());
-      await refreshF5();
+      const def = findHighOp("f5_commission_reverse");
+      if (!def) throw new Error("F_OP_NOT_FOUND:f5_commission_reverse");
+      await proposeStable(`f5-reverse:${commissionId}`, JSON.stringify([refundRef, reason]), {
+        action: `${def.action} · ${commissionId}`,
+        obj: commissionId,
+        before: "以服务器执行时状态为准",
+        after: "REVERSED",
+        type: def.type,
+        amplifies: def.amplifies,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "F5",
+        command: def.buildCommand({ commissionId, refundRef }),
+        target: def.buildTarget({ commissionId, refundRef }),
+      });
     },
     reissueF5Commissions: async (commissionIds, reason) => {
-      await reissueF5Commissions(commissionIds, reason, ADMIN_OPERATOR());
-      await refreshF5();
+      const def = findHighOp("f5_commission_reissue");
+      if (!def) throw new Error("F_OP_NOT_FOUND:f5_commission_reissue");
+      const sortedIds = [...commissionIds].sort();
+      await proposeStable("f5-reissue", JSON.stringify([sortedIds, reason]), {
+        action: `${def.action} · ${sortedIds.length} 笔`,
+        obj: sortedIds.join(","),
+        before: "以服务器执行时状态为准",
+        after: "重新进入冷却计提",
+        type: def.type,
+        amplifies: def.amplifies,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "F5",
+        command: def.buildCommand({ commissionIds: sortedIds }),
+        targets: def.buildTargets?.({ commissionIds: sortedIds }),
+      });
     },
     suspendF5UserCommissions: async (userId, kinds, suspended, reason) => {
-      await suspendF5UserCommissions(userId, kinds, suspended, reason, ADMIN_OPERATOR());
-      await refreshF5();
+      const def = findHighOp("f5_commission_suspension");
+      if (!def) throw new Error("F_OP_NOT_FOUND:f5_commission_suspension");
+      const sortedKinds = [...kinds].sort();
+      await proposeStable(`f5-suspension:${userId}`, JSON.stringify([sortedKinds, suspended, reason]), {
+        action: `${suspended ? "暂停" : "恢复"}用户佣金 · ${userId}`,
+        obj: `${userId}:${sortedKinds.join(",")}`,
+        before: "以服务器执行时状态为准",
+        after: suspended ? "SUSPENDED" : "ACTIVE",
+        type: def.type,
+        amplifies: def.amplifies,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "F5",
+        command: def.buildCommand({ userId, kinds: sortedKinds, suspended }),
+        target: def.buildTarget({ userId, kinds: sortedKinds, suspended }),
+      });
     },
     updateF5AnomalyConfig: async (sigma, layerRatio, reason) => {
       await updateF5AnomalyConfig(sigma, layerRatio, reason, ADMIN_OPERATOR());
@@ -582,7 +623,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             } else if (tab === "F4") {
               await ctx.updateF4Config(mc.paramKey, mc.fixedVal, reason);
             } else if (tab === "F5") {
-              await ctx.updateF5Config(mc.paramKey, mc.fixedVal, reason);
+              if (mc.expectedVersion === undefined) throw new Error("F5_EXPECTED_VERSION_REQUIRED");
+              await ctx.updateF5Config(mc.paramKey, mc.fixedVal, reason, mc.expectedVersion);
             } else {
               throw new Error(`F_BACKEND_ROUTE_MISSING:${mc.paramKey}`);
             }
@@ -598,6 +640,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             setToast(isA2OutcomeUncertainError(error)
               ? errorMessage(error)
               : "F 域数据提交失败 · " + errorMessage(error));
+            // Modal owns the retry/error state and must retain the original command key.
+            // Swallowing here clears its submitting state without rendering the recovery path.
+            throw error;
           }
         }} />}
       {toastNode}

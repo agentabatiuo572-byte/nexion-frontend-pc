@@ -28,8 +28,8 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 /** L2 映射:H3/H4 分别渲染高保真里的任务分段/活动分段;H5 承载签到与里程碑。 */
-// H6 折进 H5 同页(里程碑配置就在签到页里),但导航保留独立入口:折叠是布局决定,
-// 不该让功能从导航上消失 —— 运营找「里程碑」不该靠知道它藏在签到页下半屏。
+// H6 折进 H5 同页（里程碑配置就在签到页里）；侧栏只保留服务端登记的 H5，
+// H5 页面内用明确分区承载里程碑，旧 /growth/milestones 地址只做兼容迁移。
 const FOLD: Record<string, string> = { H1: "H1", H2: "H2", H3: "H3", H4: "H4", H5: "H5", H6: "H5", H7: "H7", H8: "H8", H9: "H9" };
 
 const RO_COPY: Record<string, [ro: string, live: string]> = {

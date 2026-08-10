@@ -137,17 +137,16 @@ function d5Payload(overrides = {}) {
     payoutSlaHours: 24,
     sourceByField: {
       dailyLimitCount: "d5", balanceMaxRatio: "d5", nexFeeOffsetRate: "d5",
+      networkConfirmFeeUsd: "d5", smallAmountThresholdUsd: "d5", payoutSlaHours: "d5",
       cooldownDays: "phase-h1", complianceHoldEnabled: "phase-h1",
     },
     ...overrides,
   };
 }
 
-test("WD02 行为:networkConfirmFeeUsd 整组缺失/null → 默认种子兜底(前端先行部署不打挂)", () => {
-  // 红测:把兜底改成必填解析 → 本条 FAIL(旧后端响应会 D5_RESPONSE_INVALID 冻结整页)
+test("WD02 行为:networkConfirmFeeUsd 整组缺失/null → fail-closed", () => {
   for (const absent of [d5Payload(), d5Payload({ networkConfirmFeeUsd: null })]) {
-    const out = extracted.normalizeD5Params(absent);
-    assert.deepEqual(out.networkConfirmFeeUsd, WD02_SEED_NETWORK_CONFIRM_FEE_USD);
+    assert.throws(() => extracted.normalizeD5Params(absent), /D5_RESPONSE_INVALID/);
   }
 });
 

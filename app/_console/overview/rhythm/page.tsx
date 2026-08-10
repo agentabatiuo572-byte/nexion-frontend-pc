@@ -14,6 +14,8 @@ import {
   type B4Filters,
 } from "@/lib/admin/b4-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { B4RestoredInsights } from "@/app/components/dashboard/restored-b-insights";
+import { canAccessCrossDomainPath } from "@/lib/admin/cross-domain-authority";
 
 const ALL = "ALL";
 const B4_REASON_MESSAGES: Record<string, string> = {
@@ -39,7 +41,8 @@ export default function RhythmPage() {
   const authorities = session?.authorities ?? [];
   const superAdmin = session?.role === "superadmin";
   const canExport = superAdmin || authorities.includes("overview_b4_export");
-  const canJump = superAdmin || authorities.includes("overview_b4_jump");
+  const canCross = (path: string) => canAccessCrossDomainPath(path, session?.role, authorities);
+  const canJump = (superAdmin || authorities.includes("overview_b4_jump")) && canCross("/growth/phase");
   const maxUsers = useMemo(
     () => Math.max(1, ...(data?.distribution.map((row) => row.userCount) ?? [1])),
     [data],
@@ -316,17 +319,23 @@ export default function RhythmPage() {
                       <b>{item.label}</b><span>记录 B4 → H1 跳转审计</span>
                     </a>
                   )
-                ) : (
+                ) : canCross(item.href) ? (
                   <Link key={item.key} href={item.href} className="b4-link-card">
                     <b>{item.label}</b>
                     <span>{item.key === "B3"
                       ? `按 ${filters.phase === ALL ? "全部 Phase" : filters.phase} 查看`
                       : "查看全局资金事实"}</span>
                   </Link>
+                ) : (
+                  <span key={item.key} className="b4-link-card" aria-disabled="true">
+                    <b>{item.label}</b><span>目标域无权限</span>
+                  </span>
                 )
               ))}
             </div>
           </section>
+
+          <B4RestoredInsights />
 
           <p className="b-foot">
             {data.sourceStatement} · 数据时间 {new Date(data.asOf).toLocaleString()} · 查看、跳 H1、导出均写 A2 审计。

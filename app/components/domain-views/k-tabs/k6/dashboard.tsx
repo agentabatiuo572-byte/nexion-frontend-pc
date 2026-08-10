@@ -61,7 +61,7 @@ export function K6Dashboard() {
 
   if (status === "idle" || status === "loading") return <div className="k6-empty">正在读取服务端看板快照…</div>;
   if (status === "error" || !snapshot) {
-    return <div className="k6-empty k6-error">看板读取失败，未显示旧数据且数据未更新。{error} <button className="k6-pgbtn" onClick={() => void retry()}>重试</button></div>;
+    return <div className="k6-empty k6-error" data-module-health-state="error">看板读取失败，未显示旧数据且数据未更新。{error} <button className="k6-pgbtn" onClick={() => void retry()}>重试</button></div>;
   }
   if (snapshot.summary.totalDevices === 0) {
     return <div className="k6-empty">暂无设备样本，暂不能判定健康度、漏斗或趋势。等待 App 真实上报后再重试。</div>;

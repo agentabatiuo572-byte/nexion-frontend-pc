@@ -1104,7 +1104,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             <KV k="用户" v={o.user} />
             <KV k="下单时间" v={o.age + " 前"} />
             {e4DetailLoading && <div className="tint tiny">正在读取支付、设备、资金与状态历史...</div>}
-            {e4DetailError && <div className="tint warn tiny">详情读取失败:{e4DetailError} <button className="fchip" onClick={() => void openOrder(o)}>重试</button></div>}
+            {e4DetailError && <div className="tint warn tiny" data-module-health-state="error">详情读取失败:{e4DetailError} <button className="fchip" onClick={() => void openOrder(o)}>重试</button></div>}
             {e4Detail && <>
               <KV k="数量 / 类型" v={`${e4Detail.quantity} · ${e4Detail.orderType}`} />
               <KV k="支付" v={`${e4Detail.paymentMethod} · ${e4Detail.paymentStatus}${e4Detail.paymentNo ? ` · ${e4Detail.paymentNo}` : ""}`} />

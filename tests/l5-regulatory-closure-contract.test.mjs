@@ -34,9 +34,8 @@ test("backend validates current disclosure truth, persists snapshot, audits, and
   assert.match(service, /saveSnapshotCsv/);
   assert.match(service, /admin\.report_exported/i);
   assert.match(service, /containsPii[\s\S]*false|Boolean\.FALSE/);
-  assert.match(service, /dashboard\("L2"\)/);
-  assert.match(service, /dashboard\.get\("stages"\)/);
-  assert.doesNotMatch(service, /dashboard\("L2"\)\.get\("funnel"\)/);
+  assert.doesNotMatch(service, /dashboard\("L2"\)/);
+  assert.doesNotMatch(service, /dashboard\.get\("stages"\)/);
   for (const source of ["L3", "L4", "D4", "A2", "J4"]) assert.match(service, new RegExp(`"${source}"`));
   assert.match(service, /admin\.emergency_playbook_executed/);
   assert.match(service, /currentFinanceSnapshot/);

@@ -20,6 +20,8 @@ import {
 import { formatB5RiskLight, formatB5WithdrawalState } from "@/lib/admin/b5-display-labels";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { B5RestoredInsights } from "@/app/components/dashboard/restored-b-insights";
+import { canAccessCrossDomainPath } from "@/lib/admin/cross-domain-authority";
 
 /** B5 阈值 / 订阅 / 分诊共用一张表,槽位分命名空间(分诊槽位带维度 = 目标对象)。
  *  阈值与订阅额外把提交值 + 版本当输入指纹:改了值必须换新命令号,否则后端按旧号去重,
@@ -46,8 +48,8 @@ const GATE_LABELS: Record<string, string> = {
   trial: "试用入口",
 };
 
-function pct(ratio: number) {
-  return `${(ratio * 100).toFixed(1)}%`;
+function pct(ratio: number | null) {
+  return ratio === null ? "不可计算" : `${(ratio * 100).toFixed(1)}%`;
 }
 
 function money(value: number) {
@@ -64,6 +66,7 @@ export default function RiskRadarPage() {
   const canThreshold = authorities.includes("overview_b5_threshold_write");
   const canSubscribe = authorities.includes("overview_b5_subscribe");
   const canTriage = authorities.includes("overview_b5_triage");
+  const canCross = (path: string) => canAccessCrossDomainPath(path, role, authorities);
   const [toastNode, setToast] = useToast();
   const [thresholdOpen, setThresholdOpen] = useState(false);
   const [yellowInput, setYellowInput] = useState("");
@@ -140,6 +143,7 @@ export default function RiskRadarPage() {
           desc="五维风险态势只读聚合；数据异常时停止展示旧值。"
           ctaLabel="Kill-Switch 矩阵"
           ctaHref="/emergency/kill-switch"
+          ctaAllowed={canCross("/emergency/kill-switch")}
         />
         <BDomainDataState title="B5 风险雷达" loading={radar.loading && !radar.error} error={radar.error} onRetry={radar.reload} />
       </div>
@@ -156,6 +160,7 @@ export default function RiskRadarPage() {
   const bankRunRedlinePct = riskRadar.bankRunRedlinePct;
   const canTriageDimension = (dimension: keyof typeof TRIAGE) => {
     if (!canTriage) return false;
+    if (!canCross(TRIAGE[dimension])) return false;
     if (role !== "finance") return true;
     return dimension === "bankrun" || dimension === "withdraw-backlog" || dimension === "coverage";
   };
@@ -236,6 +241,7 @@ export default function RiskRadarPage() {
         desc="挤兑、异常账户、提现积压、五个功能闸与兑付覆盖率同屏；这里只读研判，处置必须进入权威域。"
         ctaLabel="Kill-Switch 矩阵"
         ctaHref="/emergency/kill-switch"
+        ctaAllowed={canCross("/emergency/kill-switch")}
       />
 
       <div className="b5-summary">
@@ -256,11 +262,12 @@ export default function RiskRadarPage() {
               <span>24h 提现 ÷ 真实储备</span>
               <strong>{pct(data.bankrun.ratio24h)}</strong>
               <small>{money(data.bankrun.withdraw24hUsdt)} ÷ {money(data.bankrun.reserveUsdt)}</small>
+              {!data.bankrun.ratioCalculable && <small>{data.bankrun.withdraw24hUsdt > 0 ? "真实储备为 0，比例不可计算，按红色风险处置。" : "提现与储备均为 0，比例不可计算，不判健康。"}</small>}
             </div>
             <div>
               <span>出金压力比 e(t)</span>
               <strong>{pct(data.bankrun.pressureRatio)}</strong>
-              <small>固定红线 {pct(data.bankrun.pressureRedLine)} · 仅人工警戒</small>
+              <small>{data.bankrun.pressureCalculable ? `固定红线 ${pct(data.bankrun.pressureRedLine)} · 仅人工警戒` : "近 24h 入金分母为 0，不生成伪百分比"}</small>
             </div>
           </div>
           <p>黄线 {bankRunYellowPct}% · 红线 {bankRunRedlinePct}%（J1 R1 已同步引用）</p>
@@ -331,9 +338,10 @@ export default function RiskRadarPage() {
             <span className={`b5-light ${data.coverage.light}`}>{formatB5RiskLight(data.coverage.light)}</span>
           </div>
           <div className="b5-coverage">
-            <strong>{data.coverage.ratio}%</strong>
+            <strong>{data.coverage.ratio === null ? "—" : `${data.coverage.ratio}%`}</strong>
             <span>红线 {data.coverage.redlinePct}%</span>
             <small>储备 {money(data.coverage.reserveUsdt)} · 负债 {money(data.coverage.liabilitiesUsdt)}</small>
+            {data.coverage.ratio === null && <small>当前无应付负债，覆盖率不可计算，不判红黄绿灯。</small>}
           </div>
           <div className="b5-actions">
             {canTriageDimension("coverage") && <button onClick={() => void triage("coverage")}>核验 → B1 双账本</button>}
@@ -365,6 +373,8 @@ export default function RiskRadarPage() {
         </div>
       </section>}
 
+      <B5RestoredInsights data={data} canAccessPath={canCross} />
+
       <p className="b-foot">
         B5 不直接处置任何风险；五维数据分别引用 B1/D2/K/J1 单一权威源。P0 告警表示挤兑比率达到当前动态红线；
         R1 自动关停后须补录处置结论。接口失败、空值或结构异常时页面清空旧值并停止展示。
@@ -374,7 +384,7 @@ export default function RiskRadarPage() {
         <div className="b5-modal-mask" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setThresholdOpen(false)}>
           <div className="b5-modal" role="dialog" aria-modal="true" aria-labelledby="b5-threshold-title">
             <h2 id="b5-threshold-title">B5-MD1 · 挤兑阈值配置</h2>
-            <p>当前挤兑比率 {pct(data.bankrun.ratio24h)} · e(t) {pct(data.bankrun.pressureRatio)}（固定红线 70%，不可修改）</p>
+            <p>当前挤兑比率 {pct(data.bankrun.ratio24h)} · e(t) {pct(data.bankrun.pressureRatio)}（{data.bankrun.pressureCalculable ? "固定红线 70%，不可修改" : "入金分母为 0，不可计算"}）</p>
             <div className="b5-threshold-fields">
               <label>黄线（5%–50%）<input value={yellowInput} onChange={(event) => setYellowInput(event.target.value)} inputMode="decimal" /></label>
               <label>红线（10%–80%）<input value={redInput} onChange={(event) => setRedInput(event.target.value)} inputMode="decimal" /></label>

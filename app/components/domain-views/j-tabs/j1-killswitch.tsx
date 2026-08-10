@@ -57,7 +57,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     return <section className="matrix-card"><div className="matrix-h"><span className="ttl">J1 状态同步中</span><span className="sub">· 正在确认各业务闸的最新状态</span></div></section>;
   }
   if (!data) {
-    return <section className="matrix-card"><div className="matrix-h"><span className="ttl">当前无法确认业务闸状态</span><span className="sub">· 为避免误操作，控制项已隐藏，请刷新后重试</span></div></section>;
+    return <section className="matrix-card" data-module-health-state="error"><div className="matrix-h"><span className="ttl">当前无法确认业务闸状态</span><span className="sub">· 为避免误操作，控制项已隐藏，请刷新后重试</span></div></section>;
   }
 
   const runBackend = async (task: Promise<void>, ok: string) => {

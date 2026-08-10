@@ -85,7 +85,7 @@ export function K6AuditLog() {
   };
 
   if (status === "idle" || status === "loading") return <div className="k6-empty">正在读取审计记录…</div>;
-  if (status === "error") return <div className="k6-empty k6-error">审计记录读取失败，数据未更新。{loadError} <button className="k6-pgbtn" onClick={() => void retry()}>重试</button></div>;
+  if (status === "error") return <div className="k6-empty k6-error" data-module-health-state="error">审计记录读取失败，数据未更新。{loadError} <button className="k6-pgbtn" onClick={() => void retry()}>重试</button></div>;
 
   return (
     <div className="k6-panel">

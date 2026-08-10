@@ -20,6 +20,7 @@ import {
 } from "@/lib/admin/l-client";
 import { downloadD4BillsCsv } from "@/lib/admin/d-client";
 import type { LCtx } from "./types";
+import { clampL5Page, l5PageCount } from "./l5-pagination";
 
 type ExportParam = { k: string; v: string; fixed?: boolean; cur?: string; s: string };
 type MaskRule = { f: string; cat: string; catTone: string; rule: string; ruleNote: string; dec: string; appr: string };
@@ -115,7 +116,14 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
     setTaskError(null);
     fetchL5ExportTasks(filterStatus, taskPageNum, 8)
       .then((page) => {
-        if (alive) setTaskPage(page);
+        if (!alive) return;
+        const clampedPage = clampL5Page(taskPageNum, page.total, page.pageSize);
+        if (clampedPage !== taskPageNum) {
+          setTaskPage(null);
+          setTaskPageNum(clampedPage);
+          return;
+        }
+        setTaskPage(page);
       })
       .catch((error) => {
         if (alive) setTaskError(error instanceof Error ? displayAdminError(error) : "导出任务加载失败");
@@ -184,7 +192,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
   const visibleTasks = EXPORT_TASKS;
   const taskPageSize = taskPage?.pageSize ?? 8;
   const taskTotal = taskPage?.total ?? visibleTasks.length;
-  const taskPages = Math.max(1, Math.ceil(taskTotal / taskPageSize));
+  const taskPages = l5PageCount(taskTotal, taskPageSize);
   const retryTask = async (t: LExportTask) => {
     await ctx.biActions?.reportAction(t.id, "rerun", "重新生成当前报表任务", t.pii);
     await ctx.reloadBi?.();

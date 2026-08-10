@@ -15,12 +15,25 @@ const KIND_LABELS: Record<string, string> = {
   leadership: "领导奖池",
   genesis: "创世排放",
 };
+const STATUS_BY_LABEL: Record<string, string> = {
+  已解锁可提: "unlocked",
+  冷却计提中: "cooling",
+  已提现: "withdrawn",
+  已撤销: "reversed",
+  已冻结: "frozen",
+};
 const LINK_STYLE = {
   color: "var(--ink-4)",
   textDecoration: "none",
   fontSize: 11,
   marginRight: 8,
 } as const;
+
+function GatedLink({ allowed, href, label }: { allowed: boolean; href: string; label: string }) {
+  return allowed
+    ? <Link href={href} style={LINK_STYLE}>{label}</Link>
+    : <span title={`当前角色没有 ${label} 读取权限`} style={{ ...LINK_STYLE, cursor: "not-allowed" }}>{label} 无权限</span>;
+}
 
 function badge(status: string): { label: string; tone: "ok" | "warn" | "err" | "neutral" } {
   if (status === "unlocked") return { label: "已解锁可提", tone: "ok" };
@@ -34,6 +47,11 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const canWrite = ctx.can("network_f5_write");
   const canDispose = ctx.can("network_f5_commission_dispose");
   const canReject = ctx.can("network_f5_commission_reject");
+  const canReadD4 = ctx.can("finance_d4_read");
+  const canReadB1 = ctx.can("overview_b1_read");
+  const canReadL4 = ctx.can("bi_l4_read");
+  const canReadA2 = ctx.can("platform_a2_read");
+  const canReadA4 = ctx.can("platform_a4_read");
   const [kind, setKind] = useState("");
   const [currency, setCurrency] = useState("");
   const [userId, setUserId] = useState("");
@@ -57,6 +75,20 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     limit: "20",
   });
 
+  const applyKindFilter = (selectedKind: string) => {
+    const nextKind = kind === selectedKind ? "" : selectedKind;
+    setKind(nextKind);
+    setSelected([]);
+    void ctx.refreshF5({ ...query(), kind: nextKind || undefined, cursor: undefined });
+  };
+
+  const applyStatusFilter = (selectedStatus: string) => {
+    const nextStatus = status === selectedStatus ? "" : selectedStatus;
+    setStatus(nextStatus);
+    setSelected([]);
+    void ctx.refreshF5({ ...query(), status: nextStatus || undefined, cursor: undefined });
+  };
+
   // 单笔冻结/提前解锁/解冻(合并底账 §二#4 恢复):可逆的「先按住观察」,与不可逆冲正分层。
   // 走既有 dispose 管线:openActionConfirm(op:"dispose") → shell updateF5Config → proposeFConfig
   // → f_commission_status A2 票(幂等 + 服务端 CAS + 审计),paramKey 用行上现成的 auditKey。
@@ -65,9 +97,9 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     const map = {
       freeze: { name: `冻结佣金 ${row.id}`, amplify: false, fixedVal: "frozen", detail: `冻结 ${row.id} · ${amount} · 先按住观察:暂停该笔的解锁与提现,可随时解冻,与不可逆冲正分层。确认后进入 A2 执行链,服务端按状态 CAS 变更并落审计。` },
       unlock: { name: `佣金提前解锁 ${row.id}`, amplify: true, fixedVal: "unlocked", detail: `提前解锁 ${row.id} · ${amount} · 跳过剩余冷却直接进入可提余额,放大资金流出。确认后进入 A2 执行链,服务端按状态 CAS 变更并联动 D4 / B1 护栏。` },
-      unfreeze: { name: `解冻佣金 ${row.id}`, amplify: true, fixedVal: "unlocked", detail: `解冻 ${row.id} · ${amount} · 恢复该笔的可提链路(等效提前解锁,放大资金流出)。确认后进入 A2 执行链,服务端按状态 CAS 变更并落审计。` },
+      unfreeze: { name: `解冻佣金 ${row.id}`, amplify: false, fixedVal: "cooling", detail: `解冻 ${row.id} · ${amount} · 恢复冻结前的冷却计提状态,不会绕过剩余冷却期。确认后进入 A2 执行链,服务端按状态与版本 CAS 变更并落审计。` },
     }[kind];
-    ctx.openActionConfirm({ name: map.name, amplify: map.amplify, op: "dispose", paramKey: row.auditKey, fixedVal: map.fixedVal, detail: map.detail });
+    ctx.openActionConfirm({ name: map.name, amplify: map.amplify, op: "dispose", paramKey: row.auditKey, fixedVal: map.fixedVal, expectedVersion: row.version, detail: map.detail });
   };
 
   const reverse = (row: F5CommissionEvent) => {
@@ -86,7 +118,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         const refundRef = value?.refundRef?.trim();
         if (!refundRef) throw new Error("请填写可验证的证据编号");
         await ctx.reverseF5Commission(row.id, refundRef, reason);
-        ctx.toast(`${row.id} 已冲正 · D4/A2/A4 已联动`);
+        ctx.toast(`${row.id} 已提交 A2 待确认；批准后才会冲正并联动 D4/A4`);
       },
     });
   };
@@ -103,7 +135,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       run: async (reason) => {
         await ctx.reissueF5Commissions(selectedRows.map((row) => row.id), reason);
         setSelected([]);
-        ctx.toast("批量补发成功 · B1/D4/A2/A4 已联动");
+        ctx.toast("批量补发已提交 A2 待确认；批准后才会校验 B1 并联动 D4/A4");
       },
     });
   };
@@ -132,7 +164,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         const kinds = (value?.kinds ?? "").split(",").map((item) => item.trim()).filter(Boolean);
         if (!kinds.length) throw new Error("至少选择一个奖种");
         await ctx.suspendF5UserCommissions(row.userId, kinds, true, reason);
-        ctx.toast(`用户 ${row.userId} 的 ${kinds.join("、")} 已暂停`);
+        ctx.toast(`用户 ${row.userId} 的 ${kinds.join("、")} 已提交 A2 待确认`);
       },
     });
   };
@@ -195,11 +227,59 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       {data && (
         <>
           <div className="f-stats">
-            <div className="f-stat"><div className="k">佣金样本合计</div><div className="v">{data.summary.monthlyCommissionSpendLabel}</div><div className="sub">六类真实事件</div></div>
-            <div className="f-stat warn"><div className="k">冷却中余额</div><div className="v">{data.summary.coolingBalanceLabel}</div><div className="sub">仅 network / binary</div></div>
-            <div className="f-stat ok"><div className="k">可提佣金</div><div className="v">{data.summary.withdrawableThisMonthLabel}</div><div className="sub">其他四类即时入账</div></div>
-            <div className="f-stat danger"><div className="k">异常 / 已冻结</div><div className="v">{data.summary.abnormalOrFrozenCount}</div><div className="sub">K 簇证据可追溯</div></div>
+            <div className="f-stat"><div className="k">佣金全量合计</div><div className="v">{data.summary.monthlyCommissionSpendLabel}</div><div className="sub">六类 · USDT / NEX 分币种</div></div>
+            <div className="f-stat warn"><div className="k">冷却中全量余额</div><div className="v">{data.summary.coolingBalanceLabel}</div><div className="sub">仅 network / binary</div></div>
+            <div className="f-stat ok"><div className="k">可提佣金全量</div><div className="v">{data.summary.withdrawableThisMonthLabel}</div><div className="sub">其他四类即时入账</div></div>
+            <div className="f-stat danger"><div className="k">已冻结（全量）</div><div className="v">{data.summary.frozenCount}</div><div className="sub">来自全量状态聚合；异常样本另列</div></div>
           </div>
+
+          <section className="pane" aria-label="六类佣金支出与状态分布">
+            <div className="pane-h">
+              <span className="ph-ttl">佣金支出去向与全量状态</span>
+              <span className="ph-sub">点击任一卡片后由服务端过滤流水，再点一次取消</span>
+            </div>
+            <div style={{ padding: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+              {data.commissionKinds.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  data-testid="f5-commission-kind-card"
+                  data-kind={item.key}
+                  aria-pressed={kind === item.key}
+                  className="f-stat"
+                  onClick={() => applyKindFilter(item.key)}
+                  style={{ textAlign: "left", cursor: "pointer", borderColor: kind === item.key ? "var(--cyan)" : undefined }}
+                >
+                  <span className="k">{item.lbl}</span>
+                  <strong className="v" style={{ color: item.amtColor || undefined }}>{item.amt}</strong>
+                  <span className="sub">{item.ct}</span>
+                </button>
+              ))}
+            </div>
+            <div style={{ borderTop: "1px solid var(--border)", padding: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+              {data.statusDistribution.map((item) => {
+                const statusKey = STATUS_BY_LABEL[item.nm];
+                const active = !!statusKey && status === statusKey;
+                return (
+                  <button
+                    key={item.nm}
+                    type="button"
+                    data-testid="f5-status-distribution-item"
+                    data-status={statusKey ?? ""}
+                    aria-pressed={active}
+                    disabled={!statusKey}
+                    onClick={() => statusKey && applyStatusFilter(statusKey)}
+                    className="fbtn"
+                    style={{ display: "grid", gridTemplateColumns: "10px 1fr auto", alignItems: "center", gap: 8, padding: "12px 14px", borderColor: active ? "var(--cyan)" : undefined }}
+                  >
+                    <i aria-hidden style={{ width: 9, height: 9, borderRadius: 99, background: item.dot }} />
+                    <span style={{ textAlign: "left" }}>{item.nm}</span>
+                    <b>{item.ct} 笔</b>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
 
           <section className="pane">
             <div className="pane-h"><span className="ph-ttl">佣金流水</span><span className="ph-sub">总计 {data.total} 笔 · 当前 {events.length} 笔</span></div>
@@ -221,9 +301,15 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                       <td>{row.coolingDaysLeft > 0 ? `剩余 ${row.coolingDaysLeft} 天` : "无独立冷却"}</td>
                       <td><Badge tone={state.tone}>{state.label}</Badge></td>
                       <td>
-                        <Link href={`/finance/ledger?bizNo=${encodeURIComponent(row.id)}`} style={LINK_STYLE}>D4</Link>
-                        <Link href="/overview/dual-ledger" style={LINK_STYLE}>B1</Link>
-                        <Link href="/analytics/operations" style={LINK_STYLE}>L4</Link>
+                        {canReadD4 && row.ledgerBizNo ? (
+                          <Link href={`/finance/ledger?bizNo=${encodeURIComponent(row.ledgerBizNo)}`} style={LINK_STYLE}>D4</Link>
+                        ) : !canReadD4 ? (
+                          <span title="当前角色没有 D4 账本读取权限" style={{ ...LINK_STYLE, cursor: "not-allowed" }}>D4 无权限</span>
+                        ) : (
+                          <span title="该佣金事件尚无关联账本" style={{ ...LINK_STYLE, cursor: "not-allowed" }}>D4 暂无</span>
+                        )}
+                        <GatedLink allowed={canReadB1} href="/overview/dual-ledger" label="B1" />
+                        <GatedLink allowed={canReadL4} href="/analytics/operations" label="L4" />
                         {canDispose && row.status === "cooling" && <button className="fbtn" onClick={() => dispose("freeze", row)}>冻结</button>}
                         {canDispose && row.status === "cooling" && <button className="fbtn" onClick={() => dispose("unlock", row)}>提前解锁</button>}
                         {canDispose && row.status === "frozen" && <button className="fbtn" onClick={() => dispose("unfreeze", row)}>解冻</button>}
@@ -252,11 +338,13 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
             <aside className="rail">
               <div className="rail-card"><div className="rc-h">六类冷却口径</div>{data.coolingPolicy.map((item) => <div className="it" key={item.kind}>{KIND_LABELS[item.kind]} · {item.days ? `${item.days} 天` : "即时"} · {item.policy}</div>)}</div>
               <div className="rail-card"><div className="rc-h">跨域调用链</div>
-                <Link href="/finance/ledger" style={LINK_STYLE}>D4 账本</Link>
-                <Link href="/overview/dual-ledger" style={LINK_STYLE}>B1 覆盖率</Link>
-                <Link href="/analytics/operations" style={LINK_STYLE}>L4 运营分析</Link>
-                <Link href="/platform/audit" style={LINK_STYLE}>A2 审批审计</Link>
-                <Link href="/platform/events" style={LINK_STYLE}>A4 事件中心</Link>
+                {canReadD4
+                  ? <Link href="/finance/ledger" style={LINK_STYLE}>D4 账本</Link>
+                  : <span title="当前角色没有 D4 账本读取权限" style={{ ...LINK_STYLE, cursor: "not-allowed" }}>D4 账本无权限</span>}
+                <GatedLink allowed={canReadB1} href="/overview/dual-ledger" label="B1 覆盖率" />
+                <GatedLink allowed={canReadL4} href="/analytics/operations" label="L4 运营分析" />
+                <GatedLink allowed={canReadA2} href="/platform/audit" label="A2 审批审计" />
+                <GatedLink allowed={canReadA4} href="/platform/events" label="A4 事件中心" />
               </div>
             </aside>
           </div>

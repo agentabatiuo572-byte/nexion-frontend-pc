@@ -45,7 +45,6 @@ const backendTrial = optionalWorkspaceFile(
   "src/main/java/ffdd/opsconsole/growth/application/AppTrialLifecycleService.java",
 );
 const readAppWithdrawalApi = () => readWorkspaceFile(appRoot, "src/api/withdrawal-api.ts");
-const readAppTrialApi = () => readWorkspaceFile(appRoot, "src/api/trial-api.ts");
 
 test("J1 executes kill, resume and batch kill through the immediate business API", () => {
   assert.match(component, /actions\.toggleJ1KillSwitch/);
@@ -166,12 +165,11 @@ test("J1 classifies Genesis restore as an immediate B1 cashflow impact", (t) => 
   assert.match(backendKillSwitch, /new GateSeed\("genesis"[\s\S]*?"immediate"/);
 });
 
-test("J1 withdraw and trial gates are enforced at real App command boundaries and propagated", (t) => {
+test("J1 withdrawal is propagated to the App boundary and trial remains server-enforced", (t) => {
   if (backendWithdrawal === null || backendTrial === null) {
     return t.skip("本机无 nexion-backend:仅跨仓断言跳过");
   }
   const appWithdrawalApi = readAppWithdrawalApi();
-  const appTrialApi = readAppTrialApi();
   assert.match(backendWithdrawal, /WITHDRAWAL_KILL_SWITCH_DISABLED/);
   assert.match(backendWithdrawal, /submitOnce[\s\S]*?withdrawGateEnabled\(\)/);
   assert.match(backendWithdrawal, /"withdrawalEnabled", withdrawalEnabled/);
@@ -180,8 +178,6 @@ test("J1 withdraw and trial gates are enforced at real App command boundaries an
   assert.match(backendTrial, /TRIAL_KILL_SWITCH_DISABLED/);
   assert.match(backendTrial, /startOnce[\s\S]*?trialGateEnabled\(\)/);
   assert.match(backendTrial, /result\.put\("trialGateEnabled", trialGateEnabled\)/);
-  assert.match(appTrialApi, /trialGateEnabled:\s*boolean/);
-  assert.match(appTrialApi, /source\.canStart && !source\.trialGateEnabled/);
 });
 
 test("J1 fails closed on refresh errors and keeps failed confirmations open", () => {

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { operatorDatacenterLabel, operatorDeviceIdentifier, operatorDeviceName, operatorDeviceStatus, operatorOperationalNote, operatorProductLabel, operatorRate, operatorTaskLabel, operatorThermalLabel, operatorTimestamp, operatorUserIdentifier, operatorUserName } from "@/lib/admin/e-operator-display";
 import { Badge, DataListPager } from "../design-kit";
 import { fetchE5Devices, type E5Device, type E5DeviceState } from "@/lib/admin/e5-client";
 import type { EViewCtx } from "./types";
@@ -92,7 +93,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
   const dcRows = ctx.e5Datacenters.length ? ctx.e5Datacenters : overview?.datacenters ?? [];
   const filteredDevices = devices;
   const devAct = (d: E5Device, op: "device-activate" | "device-deactivate", action: NonNullable<import("./types").McSpec["deviceAction"]>, name: string, detail: string, amplify = false) =>
-    ctx.openActionConfirm({ name: `${name} · ${d.serial}`, op, deviceAction: action, deviceId: d.deviceId, deviceNo: d.serial, amplify, detail });
+    ctx.openActionConfirm({ name: `${name} · ${operatorDeviceIdentifier(d.serial)}`, op, deviceAction: action, deviceId: d.deviceId, deviceNo: d.serial, amplify, detail });
   const reasonReady = actionReason.trim().length >= 8 && actionReason.trim().length <= 200;
   const runDirect = async (work: () => Promise<void>) => {
     if (!reasonReady || actionBusy) return;
@@ -214,43 +215,50 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
               {!ctx.e5Loading && !ctx.e5Error && filteredDevices.map((d) => {
                 const skuMain = d.productCode || d.sku;
                 const skuSub = d.productTier && d.productTier !== skuMain ? d.productTier : "";
+                const displaySerial = operatorDeviceIdentifier(d.serial);
+                const displayName = operatorDeviceName(d.deviceName, d.serial);
+                const displaySku = operatorProductLabel(skuMain);
+                const displaySkuSub = skuSub ? operatorProductLabel(skuSub) : "";
+                const displayDc = operatorDatacenterLabel(d.dc);
+                const displayUserNo = operatorUserIdentifier(d.userNo);
+                const displayUserName = operatorUserName(d.nickname);
                 return (
                   <tr key={`${d.deviceId}-${d.serial}`} style={{ borderTop: "1px solid var(--border)" }}>
-                    <td style={{ padding: "9px 10px", fontFamily: "var(--mono)", color: "var(--ink)", fontWeight: 600 }}>{d.serial}</td>
+                    <td style={{ padding: "9px 10px", fontFamily: "var(--mono)", color: "var(--ink)", fontWeight: 600 }}>{displaySerial}</td>
                     <td style={{ padding: "9px 10px" }}>
-                      <div style={{ color: "var(--ink)", fontWeight: 600 }}>{d.deviceName}</div>
-                      <div className="mono" style={{ marginTop: 2, color: "var(--ink-4)", fontSize: 11.5 }}>{d.rawStatus}</div>
+                      <div style={{ color: "var(--ink)", fontWeight: 600 }}>{displayName}</div>
+                      <div style={{ marginTop: 2, color: "var(--ink-4)", fontSize: 11.5 }}>{operatorDeviceStatus(d.rawStatus)}</div>
                     </td>
                     <td style={{ padding: "9px 10px" }}>
-                      <div style={{ color: "var(--ink)", fontWeight: 600 }}>{d.nickname}</div>
-                      <div className="mono" style={{ marginTop: 2, color: "var(--ink-4)", fontSize: 11.5 }}>{d.userNo || (d.userId ? `uid:${d.userId}` : "—")}</div>
+                      <div style={{ color: "var(--ink)", fontWeight: 600 }}>{displayUserName}</div>
+                      <div className="mono" style={{ marginTop: 2, color: "var(--ink-4)", fontSize: 11.5 }}>{displayUserNo}</div>
                     </td>
                     <td style={{ padding: "9px 10px" }}>
-                      <div className="mono" style={{ color: "var(--ink)" }}>{skuMain}</div>
-                      {skuSub ? <div style={{ marginTop: 2, color: "var(--ink-4)", fontSize: 11.5 }}>{skuSub}</div> : null}
+                      <div className="mono" style={{ color: "var(--ink)" }}>{displaySku}</div>
+                      {displaySkuSub ? <div style={{ marginTop: 2, color: "var(--ink-4)", fontSize: 11.5 }}>{displaySkuSub}</div> : null}
                     </td>
-                    <td style={{ padding: "9px 10px", fontFamily: "var(--mono)", color: "var(--ink-3)" }}>{d.dc}</td>
+                    <td style={{ padding: "9px 10px", fontFamily: "var(--mono)", color: "var(--ink-3)" }}>{displayDc}</td>
                     <td style={{ padding: "9px 10px", fontFamily: "var(--mono)" }}>{slotLabel(d)}</td>
-                    <td style={{ padding: "9px 10px" }}><div className="mono">购 {d.purchasedAt}</div><div className="mono" style={{ marginTop: 2 }}>激 {d.activatedAt}</div></td>
-                    <td style={{ padding: "9px 10px" }}><div>{d.baseRate}</div><div style={{ marginTop: 2 }}>{(d.currentEfficiency * 100).toFixed(1)}%</div></td>
+                    <td style={{ padding: "9px 10px" }}><div className="mono">购 {operatorTimestamp(d.purchasedAt)}</div><div className="mono" style={{ marginTop: 2 }}>激 {operatorTimestamp(d.activatedAt)}</div></td>
+                    <td style={{ padding: "9px 10px" }}><div>{operatorRate(d.baseRate)}</div><div style={{ marginTop: 2 }}>{(d.currentEfficiency * 100).toFixed(1)}%</div></td>
                     <td style={{ padding: "9px 10px" }}>
-                      <div className="mono">{d.heartbeatAt}</div>
+                      <div className="mono">{operatorTimestamp(d.heartbeatAt)}</div>
                       <div className="muted tiny" style={{ marginTop: 2 }}>电量 {d.batteryLevel == null ? "未采集" : `${d.batteryLevel}%`} · {d.isCharging == null ? "充电未采集" : d.isCharging ? "充电中" : "未充电"} · {d.isWifiConnected == null ? "网络未采集" : d.isWifiConnected ? "网络可达" : "网络断开"}</div>
-                      <div className="muted tiny" style={{ marginTop: 2 }}>温控 {d.thermalState} · 任务 {d.activeTaskNo}{d.pausedReason ? ` · 暂停:${d.pausedReason}` : ""}</div>
+                      <div className="muted tiny" style={{ marginTop: 2 }}>温控 {operatorThermalLabel(d.thermalState)} · 任务 {operatorTaskLabel(d.activeTaskNo)}{d.pausedReason ? ` · 暂停:${operatorOperationalNote(d.pausedReason)}` : ""}</div>
                     </td>
                     <td style={{ padding: "9px 10px" }}><Badge tone={DEV_STATE_TONE[d.state]}>{DEV_STATE_LABEL[d.state]}</Badge></td>
                     <td style={{ padding: "9px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
                       {isActivatable(d.state) && (ctx.canWriteE5 || ctx.canForceActivateE5) && (
                         <>
                           {ctx.canWriteE5 && d.state === "inventory" && <><button className="l-btn sm mc" disabled={!reasonReady || actionBusy || d.activeDevicesForUser >= 6} title={d.activeDevicesForUser >= 6 ? "该用户已占满 6 个激活槽位" : undefined} onClick={() => void runDirect(() => ctx.runE5DeviceAction(d.deviceId, "activate", actionReason.trim()))}>激活</button>{" "}</>}
-                          {ctx.canForceActivateE5 && <button className="l-btn sm mc" disabled={d.activeDevicesForUser >= 6} title={d.activeDevicesForUser >= 6 ? "强制激活也不能绕过 6 台上限" : undefined} onClick={() => devAct(d, "device-activate", "force-activate", "强制激活设备", `设备 ${d.deviceId} / 用户 ${d.userNo} / 类型 ${d.productTier || d.deviceName} / 购入 ${d.purchasedAt} / 已激活 ${d.activeDevicesForUser}/${maxDevicesLabel} · 强制激活不绕过固定上限 · 非资金动作`, false)}>强制激活</button>}
+                          {ctx.canForceActivateE5 && <button className="l-btn sm mc" disabled={d.activeDevicesForUser >= 6} title={d.activeDevicesForUser >= 6 ? "强制激活也不能绕过 6 台上限" : undefined} onClick={() => devAct(d, "device-activate", "force-activate", "强制激活设备", `设备 ${displaySerial} / 用户 ${displayUserNo} / 类型 ${operatorProductLabel(d.productTier) || displayName} / 购入 ${operatorTimestamp(d.purchasedAt)} / 已激活 ${d.activeDevicesForUser}/${maxDevicesLabel} · 强制激活不绕过固定上限 · 非资金动作`, false)}>强制激活</button>}
                           {d.activeDevicesForUser >= 6 && <div className="tiny" style={{ color: "var(--danger)", marginTop: 4 }}>槽位已满 {d.activeDevicesForUser}/6</div>}
                         </>
                       )}
                       {isDeactivatable(d.state) && (ctx.canWriteE5 || ctx.canUnbindE5) && (
                         <>
                           {ctx.canWriteE5 && <button className="l-btn sm mc" disabled={!reasonReady || actionBusy} onClick={() => void runDirect(() => ctx.runE5DeviceAction(d.deviceId, "deactivate", actionReason.trim()))}>取消激活</button>}{" "}
-                          {ctx.canUnbindE5 && <button className="l-btn sm dgr" onClick={() => devAct(d, "device-deactivate", "unbind", "解绑设备", `解绑 ${d.serial} · 解除资产关系但不退款、不改写购入时间 · 理由 8–200 字`, false)}>解绑</button>}{" "}
+                          {ctx.canUnbindE5 && <button className="l-btn sm dgr" onClick={() => devAct(d, "device-deactivate", "unbind", "解绑设备", `解绑 ${displaySerial} · 解除资产关系但不退款、不改写购入时间 · 理由 8–200 字`, false)}>解绑</button>}{" "}
                           {ctx.canWriteE5 && <button className="l-btn sm" disabled={!reasonReady || actionBusy} onClick={() => batchUser(d)}>{d.pausedReason ? "恢复该用户" : "暂停该用户"}</button>}
                         </>
                       )}
@@ -355,9 +363,9 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
               <thead><tr style={{ textAlign: "left", color: "var(--ink-4)" }}><th style={{ padding: 7 }}>设备</th><th style={{ padding: 7 }}>用户</th><th style={{ padding: 7 }}>状态</th><th style={{ padding: 7 }}>当前任务</th><th style={{ padding: 7 }}>最新心跳</th><th style={{ padding: 7 }}>暂停原因</th></tr></thead>
               <tbody>
                 {healthLoading && <tr><td colSpan={6} style={{ padding: 10 }}>正在读取该数据中心绑定设备...</td></tr>}
-                {!healthLoading && healthError && <tr><td colSpan={6} style={{ padding: 10, color: "var(--danger)" }}>{healthError}</td></tr>}
+                {!healthLoading && healthError && <tr><td colSpan={6} data-module-health-state="error" style={{ padding: 10, color: "var(--danger)" }}>{healthError}</td></tr>}
                 {!healthLoading && !healthError && healthDevices.length === 0 && <tr><td colSpan={6} style={{ padding: 10 }}>该数据中心暂无绑定设备</td></tr>}
-                {!healthLoading && !healthError && healthDevices.map((device) => <tr key={device.deviceId} style={{ borderTop: "1px solid var(--border)" }}><td style={{ padding: 7 }} className="mono">{device.serial}</td><td style={{ padding: 7 }}>{device.userNo || device.userId || "—"}</td><td style={{ padding: 7 }}>{DEV_STATE_LABEL[device.state]}</td><td style={{ padding: 7 }}>{device.activeTaskNo}</td><td style={{ padding: 7 }} className="mono">{device.heartbeatAt}</td><td style={{ padding: 7 }}>{device.pausedReason || "—"}</td></tr>)}
+                {!healthLoading && !healthError && healthDevices.map((device) => <tr key={device.deviceId} style={{ borderTop: "1px solid var(--border)" }}><td style={{ padding: 7 }} className="mono">{operatorDeviceIdentifier(device.serial)}</td><td style={{ padding: 7 }}>{operatorUserIdentifier(device.userNo)}</td><td style={{ padding: 7 }}>{DEV_STATE_LABEL[device.state]}</td><td style={{ padding: 7 }}>{operatorTaskLabel(device.activeTaskNo)}</td><td style={{ padding: 7 }} className="mono">{operatorTimestamp(device.heartbeatAt)}</td><td style={{ padding: 7 }}>{operatorOperationalNote(device.pausedReason) || "—"}</td></tr>)}
               </tbody>
             </table>
             {!healthLoading && healthTotal > healthDevices.length && <div className="muted tiny" style={{ marginTop: 8 }}>当前显示前 {healthDevices.length} / {healthTotal} 台；完整吞吐与历史心跳曲线需 fleet 遥测接口继续提供。</div>}

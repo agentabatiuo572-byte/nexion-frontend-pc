@@ -21,7 +21,8 @@
  *      // 本条只治 P2-18 已确认裸奔的 param-grid 一族,不悄悄扩权。
  *
  * 判据(任一不成立即红):
- *   A. `PublicStatsConfig` 与 `H9PublicStatsValues` 键集合**双向**相等(少一个多一个都红)。
+ *   A. `PublicStatsConfig` 的运营字段与 `H9PublicStatsValues` 键集合**双向**相等；
+ *      `realUserCount` 是后端实时安全投影，只读且不属于8项运营配置。
  *   A2. **删除向**:规格 ③ 的每个字段都必须真实存在于后台键集合(A 是两侧互比,两端一起删
  *       它照样相等 —— 锚在规格文件的字段表上,不手抄清单,规格行还在、代码没了就红)。
  *   B. `H9_FIELDS` 的可写项 = 键集合 − 派生锚点 − 分位表(新增字段必须同时长出运营控制项)。
@@ -44,16 +45,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "./lib/strip-comments.mjs";
-import { resolveNexionAppRoot } from "./lib/nexion-workspace-paths.mjs";
+import { resolveNexionAppRoot, resolveNexionBackendRoot } from "./lib/nexion-workspace-paths.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const PLAN_ROOT = path.resolve(ROOT, "..");
-const SPEC = path.join(PLAN_ROOT, "PRD", "specs", "FEAT-HOME02-network-pulse-configurable.md");
+const SPEC = path.join(ROOT, "docs", "PRD", "specs-snapshot-20260807", "FEAT-HOME02-network-pulse-configurable.md");
 const APP_ROOT = resolveNexionAppRoot({ adminRoot: ROOT });
+const BACKEND_ROOT = resolveNexionBackendRoot({ adminRoot: ROOT });
 const UNI_TYPES = path.join(APP_ROOT, "src", "store", "config-types.ts");
-const UNI_SEED = path.join(APP_ROOT, "src", "mock", "platform-config.ts");
-const UNI_ANCHOR = path.join(APP_ROOT, "src", "lib", "platform-stats.ts");
 const UNI_RANK = path.join(APP_ROOT, "src", "lib", "network-rank.ts");
+const BACKEND_MIGRATION = path.join(BACKEND_ROOT, "scripts", "migrations", "20260807_nexion_hard_blockers.sql");
 const ADMIN_CLIENT = path.join(ROOT, "lib", "admin", "h9-client.ts");
 /** 分位表值域常量与逐行校验的后台单源(零 import 纯模块,契约测试直接加载它)。 */
 const ADMIN_RULES = path.join(ROOT, "lib", "admin", "h9-validation.ts");
@@ -112,6 +112,7 @@ const specSource = read(SPEC, "FEAT-HOME02 规格");
 
 const uniKeys = uniSource ? interfaceKeys(uniSource, "PublicStatsConfig", "前端") : new Set();
 const adminKeys = adminSource ? interfaceKeys(adminSource, "H9PublicStatsValues", "后台") : new Set();
+const SERVER_PROJECTION_ONLY = new Set(["realUserCount"]);
 // 🔴 常量 / 字段的比对一律用剥掉注释的正文:注释里写「曾经有过 H9_BAND_MAX = 8」不等于代码里还有它。
 //    (子串哨兵不剥注释 = 假阳性,同族坑见 feedback_cards_audit_round_lessons)
 const adminCode = stripComments(adminSource);
@@ -120,6 +121,7 @@ const rulesCode = stripComments(rulesSource);
 
 // ── A. 键集合双向相等 ────────────────────────────────────────────────────
 for (const key of uniKeys) {
+  if (SERVER_PROJECTION_ONLY.has(key)) continue;
   if (!adminKeys.has(key)) failures.push(`A 前端有、后台没有:${key} —— 运营改不到这个配置(死配置)`);
 }
 for (const key of adminKeys) {
@@ -325,54 +327,40 @@ for (const domain of [...paramGridDomains].sort()) {
   }
 }
 
-// ── F. 默认(种子)值:规格 ③「默认」列 ↔ 前端种子 ────────────────────────
-// 规格 ⑦ 要的是「字段名、取值域、默认值三处一致」;字段名有 A/B、取值域有 C —— 默认值此前无门,
-// 有人把种子改成别的数,门照绿。后台侧刻意不存本地默认(种子由服务端下发),故只比这两处。
-const seedSource = read(UNI_SEED, "前端种子 platform-config");
-const anchorSource = read(UNI_ANCHOR, "前端平台数字锚 platform-stats");
-const seedBlock = seedSource ? braceBody(stripComments(seedSource), /publicStats\s*:\s*\{/) : null;
-if (seedSource && seedBlock == null) failures.push("F 前端种子里找不到 publicStats 块(结构变了?同步更新本哨兵)");
+// ── F. 默认值:规格 ③「默认」列 ↔ 服务端增量迁移 ─────────────────────────
+// 用户端已按本轮真实接口要求删除 H9 种子与硬编码回退；默认值的唯一运行时来源是服务端。
+const migrationSource = read(BACKEND_MIGRATION, "后端 H9 增量迁移");
+const aggregateMatch = migrationSource.match(/growth\.public_stats\.values',\s*'([^']+)'/);
+let serverDefaults = null;
+try { serverDefaults = aggregateMatch ? JSON.parse(aggregateMatch[1]) : null; } catch { /* below reports invalid source */ }
+if (migrationSource && !serverDefaults) failures.push("F 后端迁移里解析不到 growth.public_stats.values 默认聚合");
 
-/** 种子取值:字面量直接读;锚常量(如 FLEET_DEVICES)去 platform-stats 里解引用。 */
-function seedValue(key) {
-  const matched = seedBlock.match(new RegExp(`\\b${key}\\s*:\\s*([^,\\n]+)`));
-  if (!matched) return { raw: null };
-  const raw = matched[1].trim();
-  const direct = number(raw);
-  if (Number.isFinite(direct) && /^[\d_.]+$/.test(raw)) return { raw, value: direct };
-  if (/^[A-Za-z_$][\w$]*$/.test(raw)) {
-    const defined = anchorSource.match(new RegExp(`\\b${raw}\\s*=\\s*([\\d_.]+)`));
-    if (defined) return { raw, value: number(defined[1]) };
-  }
-  return { raw };
-}
-
-if (seedBlock != null) {
+if (serverDefaults != null) {
   let compared = 0;
   for (const [key, row] of specRows) {
     if (key === "hashratePercentileTable") {
       // 「10 档种子」或「4–5 档种子」——默认列给档数(单值或区间),比种子表的档数落不落在里面。
       // 2026-08-05 扩档后规格写的是单值 10(算力口径组把种子从 4 档扩到 10 档,规格默认列同步)。
       const range = row.default.match(/(\d+)(?:\s*[–—~-]\s*(\d+))?\s*档/);
-      const seedBands = (seedBlock.match(/\{\s*tops\s*:/g) ?? []).length;
+      const seedBands = Array.isArray(serverDefaults.hashratePercentileTable) ? serverDefaults.hashratePercentileTable.length : 0;
       if (!range) { failures.push("F 规格 ③ 分位表默认列解析不到「N 档种子 / N–M 档种子」(判据失效)"); continue; }
       const lo = number(range[1]);
       const hi = range[2] === undefined ? lo : number(range[2]);
       compared += 1;
       if (seedBands < lo || seedBands > hi) {
-        failures.push(`F 分位表种子档数漂移:规格「${lo === hi ? lo : `${lo}–${hi}`} 档种子」≠ 前端种子 ${seedBands} 档`);
+        failures.push(`F 分位表种子档数漂移:规格「${lo === hi ? lo : `${lo}–${hi}`} 档种子」≠ 服务端默认 ${seedBands} 档`);
       }
       continue;
     }
     const specDefault = number((row.default.match(/-?[\d_]+(?:\.\d+)?/) ?? [])[0]);
     if (!Number.isFinite(specDefault)) { failures.push(`F 规格 ③ 的 ${key} 默认列解析不到数字(原文「${row.default}」,判据失效)`); continue; }
-    const seed = seedValue(key);
-    if (seed.value === undefined) {
-      failures.push(`F 前端种子里取不到 ${key} 的默认值(原文「${seed.raw ?? "缺失"}」—— 换了写法就同步更新本哨兵,别让它静默跳过)`);
+    const seed = Number(serverDefaults[key]);
+    if (!Number.isFinite(seed)) {
+      failures.push(`F 服务端默认聚合里取不到 ${key}`);
       continue;
     }
     compared += 1;
-    if (seed.value !== specDefault) failures.push(`F ${key} 默认值漂移:规格 ③ ${specDefault} ≠ 前端种子 ${seed.value}`);
+    if (seed !== specDefault) failures.push(`F ${key} 默认值漂移:规格 ③ ${specDefault} ≠ 服务端默认 ${seed}`);
   }
   if (compared === 0) failures.push("F 一个默认值都没比到(判据失效)");
 }

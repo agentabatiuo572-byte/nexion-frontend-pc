@@ -52,6 +52,19 @@ export interface B3TrendPoint {
   cvrFromPrev: number | null;
 }
 
+export interface B3DailyFirstPurchasePoint {
+  date: string;
+  registeredUsers: number;
+  firstPurchaseUsers: number;
+  conversionPct: number | null;
+}
+
+export interface B3PurchaseChannel {
+  channel: string;
+  firstPurchaseUsers: number;
+  sharePct: number;
+}
+
 export interface B3Dashboard {
   available: boolean;
   reason?: string;
@@ -62,6 +75,9 @@ export interface B3Dashboard {
   stages: B3Stage[];
   auxMetrics: B3AuxMetrics;
   trend: B3TrendPoint[];
+  dailyFirstPurchaseTargetPct: number;
+  dailyFirstPurchase: B3DailyFirstPurchasePoint[];
+  purchaseChannels: B3PurchaseChannel[];
   savedViews: Array<Record<string, unknown>>;
   crossDomainLinks: Array<{ label: string; href: string }>;
   sources: string[];

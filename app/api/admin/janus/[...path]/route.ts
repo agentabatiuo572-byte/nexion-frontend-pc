@@ -25,11 +25,14 @@ function target(parts: string[], method: string) {
   if (method === "GET") {
     if (readOnly.has(joined)) return joined;
     if (/^(devices|strategies)\/[A-Za-z0-9_.:-]{1,128}$/.test(joined)) return joined;
+    if (/^devices\/[A-Za-z0-9_.:-]{1,128}\/takeover\/applied$/.test(joined)) return joined;
     return null;
   }
   if (method === "POST") {
     if (joined === "strategies" || joined === "exports" || joined === "remote-targets") return joined;
     if (/^devices\/[A-Za-z0-9_.:-]{1,128}\/status$/.test(joined)) return joined;
+    if (/^devices\/[A-Za-z0-9_.:-]{1,128}\/takeover\/(revoke|revoke:resend|target|retry)$/.test(joined)) return joined;
+    if (/^devices\/[A-Za-z0-9_.:-]{1,128}\/takeover\/applied:refresh$/.test(joined)) return joined;
     if (/^strategies\/[A-Za-z0-9_.:-]{1,128}\/(dry-run|publish|pause|archive|rollback)$/.test(joined)) return joined;
     if (/^remote-targets\/[A-Za-z0-9_.:-]{1,128}\/\d+\/disable$/.test(joined)) return joined;
     return null;

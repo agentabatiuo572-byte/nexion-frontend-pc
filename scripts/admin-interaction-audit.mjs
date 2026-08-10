@@ -97,13 +97,20 @@ for (const f of walk(path.join(ROOT, "app"), /\.tsx$/)) {
   }
 }
 
-// ───────────── F 前端 PRD 文件唯一性 ─────────────
-// 2026-06-26 H5 工程退役后,prd-guard hook 一并删除;
-// 此处只保留 PRD 文件唯一性检查(防多版本并存)。
+// ───────────── F 当前运营后台 PRD 可定位性 ─────────────
+// 历史版本允许保留在 docs/PRD；只要求最高版本唯一，避免仍硬读已退役的 workspace/PRD。
 (() => {
-  const prdDir = path.join(PLAN, "PRD");
-  const prdFiles = fs.readdirSync(prdDir).filter((n) => /^Nexion_产品功能架构设计文档_v[\d.]+\.md$/.test(n));
-  if (prdFiles.length !== 1) add("F", "MEDIUM", prdDir, `前端 PRD 文件应唯一,实测 ${prdFiles.length} 个:${prdFiles.join(", ")}`);
+  const prdDir = path.join(ROOT, "docs", "PRD");
+  const prdFiles = walk(prdDir, /^Nexion_运营控制后台PRD_v[\d.]+\.md$/);
+  if (prdFiles.length === 0) {
+    add("F", "MEDIUM", prdDir, "未找到运营控制后台 PRD");
+    return;
+  }
+  const versions = prdFiles.map((file) => Number(/_v([\d.]+)\.md$/.exec(file)?.[1] ?? -1));
+  const latest = Math.max(...versions);
+  if (versions.filter((version) => version === latest).length !== 1) {
+    add("F", "MEDIUM", prdDir, `最高版本 PRD 应唯一,实测版本:${versions.join(", ")}`);
+  }
 })();
 
 // ───────────── G 凭据反模式:运营后台出现明文密码输入 ─────────────

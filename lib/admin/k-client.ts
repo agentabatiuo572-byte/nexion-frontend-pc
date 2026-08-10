@@ -214,6 +214,17 @@ export type K1Cluster = {
   version: number;
 };
 export type K1WhitelistRow = { cidr: string; note: string; operator: string; expireText: string; active: boolean };
+export type K1ProtectedEntry = {
+  entryNo: string;
+  userId: number;
+  clusterId: string;
+  sourceType: string;
+  sourceRef: string;
+  asset: "USDT" | "NEX";
+  amount: number;
+  bucket: "pending_review" | "bonus_locked";
+  createdAt: string;
+};
 export type MultiAccountOverview = {
   serverCanonical: true;
   domain: "K1";
@@ -457,7 +468,9 @@ export type KRiskData = {
 export type KRiskActions = {
   reloadKRisk: (query?: KRiskOverviewQuery) => Promise<MultiAccountOverview | void>;
   updateK1Param: (key: string, value: string, reason: string, commandKey?: string) => Promise<void>;
-  updateK1ReleaseParam: (key: string, value: string, reason: string, commandKey?: string) => Promise<void>;
+  updateK1ReleaseParam: (key: string, value: string, expectedVersion: number, reason: string, commandKey?: string) => Promise<void>;
+  fetchK1ProtectedEntries: () => Promise<K1ProtectedEntry[]>;
+  manualReleaseK1Entry: (entryNo: string, reason: string, commandKey?: string) => Promise<void>;
   updateK1ClusterStatus: (clusterId: string, status: ClusterStatus, expectedVersion: number, reason: string, commandKey?: string) => Promise<void>;
   updateK1ClusterReviewNote: (clusterId: string, expectedVersion: number, reason: string, commandKey?: string) => Promise<void>;
   upsertK1Whitelist: (cidr: string, note: string, reason: string, expireText: string, commandKey?: string) => Promise<void>;
@@ -1534,7 +1547,33 @@ const k2ActionMap: Record<string, string> = {
 
 export const kRiskActions: Omit<KRiskActions, "reloadKRisk"> = {
   updateK1Param: (key, value, reason, commandKey) => apiRequest(`/multi-account/params/${encodeURIComponent(key)}`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ value }, reason)) }).then(() => undefined),
-  updateK1ReleaseParam: (key, value, reason, commandKey) => apiRequest(`/multi-account/release-params/${encodeURIComponent(key)}`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ value }, reason)) }).then(() => undefined),
+  updateK1ReleaseParam: (key, value, expectedVersion, reason, commandKey) => apiRequest(`/multi-account/release-params/${encodeURIComponent(key)}`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ value, expectedVersion }, reason)) }).then(() => undefined),
+  fetchK1ProtectedEntries: async () => {
+    const data = requiredK1Record(await apiRequest("/multi-account/releases?limit=200"), "multiAccount.releases");
+    if (data.serverCanonical !== true) invalidK1Response("multiAccount.releases.serverCanonical");
+    return requiredK1Array(data.items, "multiAccount.releases.items").map((value, index) => {
+      const path = `multiAccount.releases.items[${index}]`;
+      const row = requiredK1Record(value, path);
+      const asset = requiredK1String(row.asset, `${path}.asset`);
+      const bucket = requiredK1String(row.bucket, `${path}.bucket`);
+      if (asset !== "USDT" && asset !== "NEX") invalidK1Response(`${path}.asset`);
+      if (bucket !== "pending_review" && bucket !== "bonus_locked") invalidK1Response(`${path}.bucket`);
+      return {
+        entryNo: requiredK1String(row.entryNo, `${path}.entryNo`),
+        userId: requiredK1Integer(row.userId, `${path}.userId`, 1),
+        clusterId: requiredK1String(row.clusterId, `${path}.clusterId`),
+        sourceType: requiredK1String(row.sourceType, `${path}.sourceType`),
+        sourceRef: requiredK1String(row.sourceRef, `${path}.sourceRef`),
+        asset,
+        amount: requiredK1Number(row.amount, `${path}.amount`, Number.MIN_VALUE),
+        bucket,
+        createdAt: requiredK1String(row.createdAt, `${path}.createdAt`),
+      } as K1ProtectedEntry;
+    });
+  },
+  manualReleaseK1Entry: (entryNo, reason, commandKey) => apiRequest(`/multi-account/releases/${encodeURIComponent(entryNo)}/manual`, {
+    method: "POST", commandKey, body: JSON.stringify(withReason({}, reason)),
+  }).then(() => undefined),
   updateK1ClusterStatus: (clusterId, status, expectedVersion, reason, commandKey) => apiRequest(`/multi-account/clusters/${encodeURIComponent(clusterId)}/status`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ status, expectedVersion }, reason)) }).then(() => undefined),
   updateK1ClusterReviewNote: (clusterId, expectedVersion, reason, commandKey) => apiRequest(`/multi-account/clusters/${encodeURIComponent(clusterId)}/review-note`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ expectedVersion }, reason)) }).then(() => undefined),
   upsertK1Whitelist: (cidr, note, reason, expireText, commandKey) => apiRequest("/multi-account/whitelist", { method: "POST", commandKey, body: JSON.stringify(withReason({ cidr, note, expireText }, reason)) }).then(() => undefined),

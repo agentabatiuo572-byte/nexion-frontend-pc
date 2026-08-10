@@ -45,6 +45,19 @@ test("M1 keeps usable sections visible when a sibling M endpoint fails", () => {
   assert.match(overview, /部分信息暂未同步/);
 });
 
+test("M1 renders an in-flight roster read as status, never as a false failure alert", () => {
+  const overview = read("app/components/domain-views/m-tabs/m1-overview.tsx");
+
+  assert.match(overview, /const supportAgentsPending = !supportAgentsAvailable && supportAgentsError === "none"/);
+  assert.match(overview, /supportAgentsPending && \([\s\S]*?role="status"[\s\S]*?坐席数据正在同步/);
+  assert.match(overview, /!supportAgentsAvailable && !supportAgentsPending && \([\s\S]*?role="alert"/);
+  assert.doesNotMatch(
+    overview,
+    /!supportAgentsAvailable && \([\s\S]*?role="alert"/,
+    "pending and failed roster states must not share the same alert branch",
+  );
+});
+
 test("M1 writes await the real result and reuse the same idempotency key after an unknown outcome", () => {
   const overview = read("app/components/domain-views/m-tabs/m1-overview.tsx");
   const view = read("app/components/domain-views/m-view.tsx");

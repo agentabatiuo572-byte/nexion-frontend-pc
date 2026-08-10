@@ -6,13 +6,14 @@ const search = readFileSync(new URL("../app/components/domain-views/c-tabs/c1-se
 const detail = readFileSync(new URL("../app/_console/users/search/[id]/page.tsx", import.meta.url), "utf8");
 const client = readFileSync(new URL("../lib/admin/user360-client.ts", import.meta.url), "utf8");
 const usersProxy = readFileSync(new URL("../app/api/admin/users/[...path]/route.ts", import.meta.url), "utf8");
+const errorMessages = readFileSync(new URL("../lib/admin/error-messages.ts", import.meta.url), "utf8");
 
 test("C1 preserves safe search context and disables stale rows while loading", () => {
   assert.match(search, /window\.history\.replaceState/);
   assert.match(search, /returnTo/);
   assert.match(search, /loading \? undefined : \(\) => openProfile/);
   assert.match(search, /C1_RAW_PHONE_SEARCH_FORBIDDEN/);
-  assert.match(search, /为保护用户隐私，不支持按原始手机号检索；请使用脱敏手机号或手机号哈希/);
+  assert.match(errorMessages, /为保护用户隐私，不支持按原始手机号检索；请使用脱敏手机号或手机号哈希/);
 });
 
 test("C1 exposes all PRD search dimensions and 20-200 page sizes", () => {
@@ -32,13 +33,16 @@ test("C1 is read-only outside the explicitly approved payment and nickname actio
   assert.match(detail, /刷新页面重试/);
 });
 
-test("C1 export is a direct masked CSV with a retry-stable idempotency key", () => {
+test("C1 masked export requires a reasoned confirmation and a retry-stable idempotency key", () => {
   assert.match(search, /exportUserProfilesCsv/);
   assert.match(search, /exportKeyRef/);
   assert.match(search, /exportingRef\.current/);
   assert.match(search, /exportCooldownUntilRef/);
   assert.match(search, /Date\.now\(\) \+ 1_000/);
-  assert.doesNotMatch(search, /openConfirm\(\{[\s\S]*导出用户名单/);
+  assert.match(search, /ctx\.openConfirm\(\{/);
+  assert.match(search, /reason: true/);
+  assert.match(search, /runExport\(reason\)/);
+  assert.match(client, /reason\.trim\(\)/);
   assert.match(client, /\.csv/);
   assert.match(client, /exportKey/);
 });

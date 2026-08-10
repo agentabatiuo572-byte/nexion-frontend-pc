@@ -459,9 +459,8 @@ export interface D5Params {
    *  与 uniapp withdrawRules.networkConfirmFeeUsd 同键同种子(1/1/5),跨仓 parity 哨兵盯值。 */
   networkConfirmFeeUsd: { trc20: number; bep20: number; erc20: number };
   nexFeeOffsetRate: number;
-  /** FEAT-WD01:小额免审线(USD)。金额 ≤ 此值的提现免掉「首提必审」与「新地址 hold」
-   *  两道闸;0 = 关闭快车道。**永不**免除风控路由裁决(冻结簇/共用地址/风险分)。
-   *  服务端未下发时按 D5_DEFAULT_SMALL_AMOUNT_THRESHOLD 兜底(向后兼容,见 normalizeD5Params)。 */
+  /** FEAT-WD01:小额免审线(USD)。金额 ≤ 此值时可跳过新地址冷却；0 = 关闭快车道。
+   *  **永不**免除服务端风控路由裁决(冻结簇/共用地址/风险分)。 */
   smallAmountThresholdUsd: number;
   /** FEAT-WD01:正常到账时效(小时)。到账时间 = 提交 + 本值;命中大额合规审查时
    *  改用 cooldownDays,取更晚者。 */
@@ -624,6 +623,13 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
   }
   if (mutationFingerprint) pendingMutations.forget(mutationFingerprint);
   return result.data as T;
+}
+
+export function financeAdminRequest<T>(
+  path: string,
+  init?: RequestInit & { idempotencyPrefix?: string; idempotencyKey?: string },
+) {
+  return apiRequest<T>("finance", path, init);
 }
 
 function normalizePage<T>(raw: Partial<PageResult<T>> | null | undefined, map: (row: T) => T): PageResult<T> {
@@ -1552,17 +1558,12 @@ function normalizeD4Page(value: unknown): PageResult<D4Bill> {
   };
 }
 
-/** FEAT-WD01 参数默认值(规格 §2)。服务端未下发时的兜底,亦是 D5 表单的初始值。 */
-export const D5_DEFAULT_SMALL_AMOUNT_THRESHOLD = 50;
-export const D5_DEFAULT_PAYOUT_SLA_HOURS = 24;
+/** FEAT-WD01 参数默认值，仅供“恢复默认”形成一次真实后端写入。 */
 /** 值域(规格 §2):小额线 0–500(0=关闭快车道);到账时效 1–168 小时(即 1 小时–7 天)。 */
 export const D5_SMALL_AMOUNT_THRESHOLD_MAX = 500;
 export const D5_PAYOUT_SLA_HOURS_MIN = 1;
 export const D5_PAYOUT_SLA_HOURS_MAX = 168;
-/** 🔴 FEAT-WD02 三网络确认费种子(USD)。跨仓单源锚点:uniapp mock/platform-config.ts
- *  networkConfirmFeeUsd 同键同值,uniapp verify.sh「WD02 network-confirm-fee parity」哨兵逐键比值。
- *  服务端未下发该组字段时按此兜底(前端先行部署不能把整页打挂,WD01 先例);
- *  「恢复默认」按钮也回填这组值(仍走确认链)。 */
+/** FEAT-WD02 三网络确认费默认值，仅用于恢复默认按钮；读取缺失时必须失败关闭。 */
 export const D5_NETWORK_CONFIRM_FEE_DEFAULT = { trc20: 1, bep20: 1, erc20: 5 } as const;
 /** FEAT-WD02 网络确认费值域上限(USD)。uniapp isNetworkFeeConfigUsable pin 同数字系(26→false / 30→invalid 两侧固定靶)。 */
 export const D5_NETWORK_CONFIRM_FEE_MAX = 25;
@@ -1573,10 +1574,11 @@ export function normalizeD5Params(value: unknown): D5Params {
   const source = d5Object(raw.sourceByField, "sourceByField");
   // FEAT-WD02:networkFeeRatio/Min/Max 与 penaltyFeeRate 已随旧费模型删除,不再要求其
   // sourceByField 条目(旧后端多发的条目被无害忽略);networkConfirmFeeUsd 的来源条目
-  // 在后端跟进下发前不强制(缺省视为 d5 自有,与兜底种子同席)。
+  // 现已由真实后端整组下发，缺失时禁止继续编辑。
   const sourceKeys = [
     "dailyLimitCount", "balanceMaxRatio",
-    "nexFeeOffsetRate", "cooldownDays", "complianceHoldEnabled",
+    "networkConfirmFeeUsd", "nexFeeOffsetRate", "smallAmountThresholdUsd", "payoutSlaHours",
+    "cooldownDays", "complianceHoldEnabled",
   ];
   const sourceByField: Record<string, "d5" | "phase-h1"> = {};
   sourceKeys.forEach((key) => {
@@ -1590,12 +1592,7 @@ export function normalizeD5Params(value: unknown): D5Params {
     version: d5Integer(raw.version, "version", 0),
     dailyLimitCount: d5Integer(raw.dailyLimitCount, "dailyLimitCount", 1),
     maxBalanceRatio: d5Number(raw.balanceMaxRatio, "balanceMaxRatio"),
-    // FEAT-WD02:三网络确认费。整组 absent/null → 默认种子兜底(前端先行部署,WD01 先例);
-    // 组一旦下发,三键必须齐且各为数值(缺键/null/非数 → D5_RESPONSE_INVALID fail-closed),
-    // 值域 [0,25] 在下方 business-range 统一验(对服务端值与兜底值一视同仁)。
-    networkConfirmFeeUsd: raw.networkConfirmFeeUsd === undefined || raw.networkConfirmFeeUsd === null
-      ? { ...D5_NETWORK_CONFIRM_FEE_DEFAULT }
-      : (() => {
+    networkConfirmFeeUsd: (() => {
           const group = d5Object(raw.networkConfirmFeeUsd, "networkConfirmFeeUsd");
           return {
             trc20: d5Number(group.trc20, "networkConfirmFeeUsd.trc20"),
@@ -1604,17 +1601,10 @@ export function normalizeD5Params(value: unknown): D5Params {
           };
         })(),
     nexFeeOffsetRate: d5Number(raw.nexFeeOffsetRate, "nexFeeOffsetRate"),
-    // FEAT-WD01 新增两项:服务端尚未下发时按默认兜底(向后兼容 —— 前端先行部署不能把
-    // 整页打挂)。一旦服务端开始下发,以服务端值为准;值域校验对两种来源一视同仁。
-    // 🔴 必须同时认 null:后端 DTO 加了字段但值未配置时,序列化出的是 null 而不是省略 key
-    //    (Spring 默认行为)。只认 undefined 的话 d5Number(null) → NaN → 抛 D5_RESPONSE_INVALID
-    //    → **整页六个参数全部冻结**,连每日提现次数都改不了。这正是这段兜底本来要防的事(审计实测)。
-    smallAmountThresholdUsd: raw.smallAmountThresholdUsd === undefined || raw.smallAmountThresholdUsd === null
-      ? D5_DEFAULT_SMALL_AMOUNT_THRESHOLD
-      : d5Number(raw.smallAmountThresholdUsd, "smallAmountThresholdUsd"),
-    payoutSlaHours: raw.payoutSlaHours === undefined || raw.payoutSlaHours === null
-      ? D5_DEFAULT_PAYOUT_SLA_HOURS
-      : d5Integer(raw.payoutSlaHours, "payoutSlaHours", 1),
+    // These are real D5 server fields. Missing/null freezes the page instead of showing
+    // a plausible local value that an operator could mistake for persisted truth.
+    smallAmountThresholdUsd: d5Number(raw.smallAmountThresholdUsd, "smallAmountThresholdUsd"),
+    payoutSlaHours: d5Integer(raw.payoutSlaHours, "payoutSlaHours", 1),
     cooldownDays: d5Integer(raw.cooldownDays, "cooldownDays", 0),
     complianceHoldEnabled: d5Boolean(raw.complianceHoldEnabled, "complianceHoldEnabled"),
     currentPhase: d5String(raw.currentPhase, "currentPhase"),
@@ -1635,7 +1625,7 @@ export function normalizeD5Params(value: unknown): D5Params {
       || result.maxBalanceRatio < 0.5 || result.maxBalanceRatio > 1
       // FEAT-WD02:三网络确认费值域 [0, 25](与 uniapp isNetworkFeeConfigUsable 同数字系)。
       || [confirmFees.trc20, confirmFees.bep20, confirmFees.erc20]
-        .some((fee) => fee < 0 || fee > D5_NETWORK_CONFIRM_FEE_MAX)
+        .some((fee) => fee < 0 || fee > D5_NETWORK_CONFIRM_FEE_MAX || Math.abs(fee * 2 - Math.round(fee * 2)) > 1e-9)
       || result.nexFeeOffsetRate <= 0
       // classification-ok:小额门槛是**业务金额**上限(美元),数值恰好落在 4xx/5xx 区间而已,
       //   与 HTTP 状态码、与「命令号要不要丢」都无关。归类门按数值区间收网,故在此显式豁免。
@@ -2111,8 +2101,7 @@ export async function fetchD5WithdrawalParams() {
 // FEAT-WD02:networkConfirmFeeUsd 以**整组对象**为变更单位(三值一次 PUT,任一失败全回滚 ——
 // 沿用旧三件套的原子提交先例);不提供单键补丁,防止三网络费半更新。
 export type D5OwnedChanges = Partial<Pick<D5Params,
-  "dailyLimitCount" | "maxBalanceRatio" | "networkConfirmFeeUsd" | "nexFeeOffsetRate"
-  | "smallAmountThresholdUsd" | "payoutSlaHours">>;
+  "dailyLimitCount" | "maxBalanceRatio" | "networkConfirmFeeUsd" | "nexFeeOffsetRate">>;
 
 export async function updateD5WithdrawalLimits(
   changes: D5OwnedChanges,

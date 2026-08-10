@@ -209,8 +209,9 @@ test("F5 commission event rows carry D4/B1/L4 cross-domain CTA links", () => {
   assert.match(ui, /\/finance\/ledger\?bizNo=/);
   assert.match(ui, /\/overview\/dual-ledger/);
   assert.match(ui, /\/analytics\/operations/);
-  // 用佣金事件 id 作 bizNo(对齐 c3-adjust.tsx 模式)
-  assert.match(ui, /encodeURIComponent\(row\.id\)/);
+  // D4 必须使用后端返回的真实账本业务号,不能把 CM-* 佣金号伪装成账本号。
+  assert.match(ui, /encodeURIComponent\(row\.ledgerBizNo\)/);
+  assert.doesNotMatch(ui, /finance\/ledger\?bizNo=\$\{encodeURIComponent\(row\.id\)\}/);
   // Link 导入
   assert.match(ui, /from "next\/link"/);
 });

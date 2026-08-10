@@ -554,6 +554,32 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
         </div>
       </section>
 
+      <section className="l-card" data-restored-capability="a4-event-lifecycle" aria-labelledby="a4-lifecycle-title">
+        <div className="l-h">
+          <span className="ttl" id="a4-lifecycle-title">事件发布生命周期 · 设计保留</span>
+          <span className="sub">· 服务端权威契约未完成，当前只展示不可操作的目标流程</span>
+        </div>
+        <div className="l-b">
+          <div className="a4-pipe" aria-label="事件发布目标生命周期">
+            {[
+              ["新建", "仅登记 schema"],
+              ["待发布", "等待发布条件齐备"],
+              ["灰度", "小流量验证"],
+              ["全量", "正式消费"],
+              ["停用", "停止新事件"],
+            ].map(([label, note], index, rows) => (
+              <span key={label} style={{ display: "contents" }}>
+                <span className="st" aria-disabled="true">{label}<small>{note}</small></span>
+                {index < rows.length - 1 && <span className="ar">→</span>}
+              </span>
+            ))}
+          </div>
+          <div className="atint warn" style={{ marginTop: 12 }}>
+            当前 Schema Registry 只支持登记与口径治理，尚无新建→待发布→灰度→全量→停用的服务端状态迁移接口。页面不伪造发布成功；后续接入必须补齐权限、版本冲突、失败回读、刷新/重登与 A2/A4 审计验收。
+          </div>
+        </div>
+      </section>
+
       {/* ───── domain 扩展批次看板 ───── */}
       <section className="l-card">
         <div className="l-h">

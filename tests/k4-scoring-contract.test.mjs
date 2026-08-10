@@ -6,6 +6,7 @@ const component = readFileSync(new URL("../app/components/domain-views/k-tabs/k4
 const client = readFileSync(new URL("../lib/admin/k-client.ts", import.meta.url), "utf8");
 const kView = readFileSync(new URL("../app/components/domain-views/k-view.tsx", import.meta.url), "utf8");
 const errors = readFileSync(new URL("../lib/admin/error-messages.ts", import.meta.url), "utf8");
+const registry = readFileSync(new URL("../lib/admin/registry/k.ts", import.meta.url), "utf8");
 const verify = readFileSync(new URL("../scripts/verify.mjs", import.meta.url), "utf8");
 
 test("K4 loads only its own overview and fails closed on loading errors", () => {
@@ -26,6 +27,13 @@ test("K4 rejects malformed authoritative payloads instead of inventing defaults"
   assert.match(client, /K4_RESPONSE_INVALID/);
   assert.doesNotMatch(client, /bandLowMax:\s*num\(config\.bandLowMax,\s*40\)/);
   assert.doesNotMatch(client, /effectiveScore:\s*num\(data\.effectiveScore,\s*num\(data\.modelScore\)\)/);
+});
+
+test("K4 current copy matches the five non-KYC scoring dimensions", () => {
+  assert.match(component, /五个维度权重合计必须为 100%/);
+  assert.match(registry, /五个维度按权重/);
+  assert.match(errors, /五个评分维度必须完整且权重合计为 100%/);
+  assert.doesNotMatch(`${component}\n${registry}\n${errors}`, /六个评分维度|六个维度按权重|六个维度权重|六维阈值|完整六维快照/);
 });
 
 test("K4 model changes honor A6 draft authority but keep publication superadmin-only", () => {

@@ -14,8 +14,10 @@ test("A2 classifies transport, upstream-unknown, 5xx and malformed success as un
   assert.match(a2Client, /response\.ok[\s\S]*result\.code === 0[\s\S]*result\.data == null[\s\S]*A2OutcomeUncertainError/);
   // 2026-08-06 补:platform proxy 只在**自己**超时时补 unknown 头,上游返 5xx 时原样透传不回抄。
   // 少这一路,消费方会把 502/504 当确定性失败弃号 → 重试铸新号 → 同一笔资金动作两张待确认票。
-  assert.match(a2Client, /if \(init\?\.commandKey && outcomeStaysUnknown\(response\.status\)\) \{\s*throw new A2OutcomeUncertainError\(/,
+  assert.match(a2Client, /if \(!response\.ok \|\| !result \|\| result\.code !== 0\) \{[\s\S]*?outcomeStaysUnknown\(response\.status, result\?\.code\)[\s\S]*?throw new A2OutcomeUncertainError\(/,
     "A2 缺 5xx 分类会让 E 全域与 H8 结算的「结果未知保号」承诺落空");
+  assert.doesNotMatch(a2Client, /if \(init\?\.commandKey && outcomeStaysUnknown\(response\.status\)\)/,
+    "已解析 code=0 后再只看 HTTP 状态会把真实成功误报为结果未知");
   // 命令号已持久化 24h 且 sessionStorage 是 per-tab 的,铸号必须带随机段且兜底 secure context。
   assert.match(a2Client, /typeof crypto\.randomUUID === "function"[\s\S]{0,120}Math\.random\(\)/);
 });

@@ -5,9 +5,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveNexionAppRoot } from "./lib/nexion-workspace-paths.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const PLAN = path.resolve(ROOT, "..");
+const UNI_ROOT = resolveNexionAppRoot({ adminRoot: ROOT });
 const failures = [];
 
 function read(relOrAbs) {
@@ -152,12 +153,12 @@ assertAbsent("app/components/domain-views/i-view.tsx", "I9Conversation", "客服
 assertContains("scripts/verify.mjs", ["admin-support-surface-audit.mjs"]);
 
 // UniApp 工单字段镜像(前端不变,迁移后仍须对齐)
-assertContains(path.join(PLAN, "Nexion-uniapp/src/mock/tickets.ts"), [
+assertContains(path.join(UNI_ROOT, "src/mock/tickets.ts"), [
   "lastReplyAt: number",
   "owner: string",
   'owner: "Marina K."',
 ]);
-assertContains(path.join(PLAN, "Nexion-uniapp/src/store/tickets.ts"), [
+assertContains(path.join(UNI_ROOT, "src/store/tickets.ts"), [
   "lastReplyAt: raw.lastReplyAt ?? ticket.updatedAt",
   'owner: raw.owner ?? "Unassigned"',
   "lastReplyAt: now",

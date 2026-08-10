@@ -42,6 +42,7 @@ export interface McSpec {
   run?: (reason: string, businessValue?: BusinessFormValue, newValue?: string) => void | Promise<void>; // 业务表单真写回调(传则优先于 param/dispose)
   detail?: string;
   completionCopy?: string;       // 明确保存后的生效时点，避免统一“立即生效”文案误导周期性配置
+  expectedVersion?: number;
 }
 export type Mc = McSpec | null;
 
@@ -128,7 +129,7 @@ export interface FViewCtx {
   f5Loading: boolean;
   f5Error: string | null;
   refreshF5: (query?: F5CommissionQuery) => Promise<void>;
-  updateF5Config: (key: string, value: string, reason: string) => Promise<void>;
+  updateF5Config: (key: string, value: string, reason: string, expectedVersion: number) => Promise<void>;
   reverseF5Commission: (commissionId: string, refundRef: string, reason: string) => Promise<void>;
   reissueF5Commissions: (commissionIds: string[], reason: string) => Promise<void>;
   suspendF5UserCommissions: (

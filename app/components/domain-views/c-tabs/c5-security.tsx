@@ -580,7 +580,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
             {credentialParams.length === 0 && <div className="ctint">暂无凭证参数</div>}
           </div>
           <div className="ctint" style={{ marginTop: 10 }}>
-            <b>异常自动防御</b> · 同一个长凭证被使用两次时,服务器立即回收整条会话链;挑战码过期与二验强制由后端执行。
+            <b>异常自动防御</b> · 同一个长凭证被使用两次时,服务器立即回收整条会话链;挑战码过期与高风险校验由后端执行。
           </div>
         </div>
       </section>

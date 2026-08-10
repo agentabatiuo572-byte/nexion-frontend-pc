@@ -56,9 +56,9 @@ interface BackendMarket {
   enabled?: boolean | string | null;
   configKey?: string | null;
   linkedDomain?: string | null;
-  /** 创世市场状态(FEAT-GEN10b)。字段名两端统一 `marketOpenState`(2026-08-05 主人拍板,
-   *  与熔断端点 market-status 不撞音);后端未实现时缺省,normalize 落 fail-open "open"。 */
+  /** 创世市场状态(FEAT-GEN10b); absent state fails closed. */
   marketOpenState?: string | null;
+  marketOpenStateVersion?: RawNumber;
   closedNoticeKey?: string | null;
   /** 最近一次市场状态变更摘要(来自服务端审计,如「08-05 14:02 ops-lin 开放→暂未开放:节奏调控」)。 */
   marketLastChange?: string | null;
@@ -193,6 +193,7 @@ export interface G4Market {
    *  🔴 字段名两端统一 `marketOpenState`(2026-08-05 主人拍板;此前前端叫 marketStatus、
    *  这里叫 openState,而 marketStatus 在本仓已被熔断端点占名 —— 同名异义必串档)。 */
   marketOpenState: "open" | "closed";
+  marketOpenStateVersion: number;
   /** 关闭态文案变体键;取值限于前端白名单,后台不接受自由文本(规格 ③)。 */
   closedNoticeKey: string;
   /** 最近一次市场状态变更摘要(规格 ②/⑤「当前状态 + 最近变更信息」;J1/J2/A3 同款成例)。
@@ -423,9 +424,9 @@ function normalizeOverview(data: BackendOverview | null | undefined): G4Overview
       enabled: toBool(market.enabled, false),
       configKey: asText(market.configKey, ""),
       linkedDomain: asText(market.linkedDomain, ""),
-      // 🔴 缺省 **open**:后端还没下发这个字段时不该把市场判成关闭 —— 那会让一个
-      //   「字段没接」的环境问题表现成「全平台停售」。真关闭必须是显式的 "closed"。
-      marketOpenState: asText(market.marketOpenState, "open") === "closed" ? "closed" : "open",
+      // Missing catalog state fails closed; a stale UI must never reopen sales.
+      marketOpenState: asText(market.marketOpenState, "closed") === "open" ? "open" : "closed",
+      marketOpenStateVersion: Math.max(0, Math.trunc(toNumber(market.marketOpenStateVersion, 0))),
       closedNoticeKey: asText(market.closedNoticeKey, "default"),
       lastChange: asText(market.marketLastChange, ""),
     },
@@ -458,7 +459,7 @@ function normalizeOverview(data: BackendOverview | null | undefined): G4Overview
   };
 }
 
-async function g4Request<T>(path: string, init?: RequestInit) {
+export async function g4Request<T>(path: string, init?: RequestInit) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -578,11 +579,12 @@ export async function updateG4GenesisMarketOpenState(
   reason: string,
   operator: string,
   noticeKey?: string,
+  expectedMarketOpenStateVersion?: number,
 ) {
   return g4OverviewMutation(
     "/nex/genesis/market-open-state",
     "PATCH",
-    { value: status, reason, operator, noticeKey },
+    { value: status, reason, operator, noticeKey, expectedMarketOpenStateVersion },
     "g4-market-open-state",
   );
 }

@@ -157,7 +157,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
       op: "param",
       paramKey: e6DownloadKey("url"),
       edit: { kind: "text", current, unit: "HTTPS 下载地址", disallowCurrent: true },
-      detail: "为后续 PC 载体 SPEC 预置真实下载地址。留空不会产生占位链接,当前用户端没有下载入口。",
+      detail: "仅接受受控 HTTPS 安装包地址。留空或校验失败都会保持未配置；当前用户端没有下载入口。",
     });
   };
   const clearDownloadUrl = () => {
@@ -227,7 +227,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
       <EStats items={[
         { k: "入口开关", v: flags.length, sub: e6Loading ? "加载中" : `${onCount} 个开启`, tone: "cyan" },
         { k: "显卡档位", v: gpuTiers.length, sub: `${keywordCount} 个识别词`, tone: "ok" },
-        { k: "下载地址", v: downloadUrl ? "已填写" : "未配置", sub: downloadUrl ? "服务端已保存真实地址" : "不会生成占位链接", tone: downloadUrl ? "ok" : "" },
+        { k: "下载地址", v: downloadUrl ? "待发布核验" : "未配置", sub: downloadUrl ? "已配置安装包地址；当前仍无用户下载入口" : "未配置 · 当前无用户下载入口", tone: downloadUrl ? "ok" : "" },
         { k: "在线系数", v: coefficients.length, sub: "H5 / App 稳定性", tone: "cyan" },
       ]} />
 
@@ -375,7 +375,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
         <div className="e6-download-box">
           <div className="e6-download-url">
             <span className="k">客户端下载地址</span>
-            <span className={downloadUrl ? "v" : "v muted"}>{downloadUrl || "暂未填写 · 当前用户端无下载入口"}</span>
+            <span className={downloadUrl ? "v" : "v muted"}>{downloadUrl || "未配置 · 当前无用户下载入口"}</span>
             {canWriteE6 && <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
               <button type="button" className="adj" onClick={editDownloadUrl}>{downloadUrl ? "修改地址" : "填写地址"}</button>
               <button type="button" className="adj" onClick={clearDownloadUrl} disabled={!downloadUrl}>清空地址</button>

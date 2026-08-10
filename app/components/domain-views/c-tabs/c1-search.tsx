@@ -389,10 +389,10 @@ export function C1Search({
                 );
               })}
               {!loading && rows.length === 0 && (
-                <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--ink-4)", padding: "22px 12px" }}>无匹配用户 · 换个检索词或分组试试</td></tr>
+                <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--ink-4)", padding: "22px 12px" }}>无匹配用户 · 换个检索词或分组试试</td></tr>
               )}
               {loading && (
-                <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--ink-4)", padding: "22px 12px" }}>正在加载用户列表...</td></tr>
+                <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--ink-4)", padding: "22px 12px" }}>正在加载用户列表...</td></tr>
               )}
             </tbody>
           </table>
@@ -427,7 +427,7 @@ export function C1HeaderActions({ ctx, query }: { ctx: CCtx; query: C1ExportQuer
   const session = useAdminAuth((state) => state.session);
   const canExport = session?.role === "superadmin" || session?.authorities.includes("user_c1_write") === true;
 
-  const runExport = useCallback(async () => {
+  const runExport = useCallback(async (reason: string) => {
     if (!query) {
       ctx.toast("当前筛选条件无效，已禁止导出；请修正检索条件后重试");
       return;
@@ -440,7 +440,7 @@ export function C1HeaderActions({ ctx, query }: { ctx: CCtx; query: C1ExportQuer
     setExporting(true);
     exportKeyRef.current ??= `c1-user-profile-export-${crypto.randomUUID()}`;
     try {
-      const file = await exportUserProfilesCsv(query, exportKeyRef.current);
+      const file = await exportUserProfilesCsv(query, exportKeyRef.current, reason);
       const fileName = downloadBlob(file.blob, file.fileName);
       exportKeyRef.current = null;
       ctx.toast(`已下载脱敏用户名单 · ${fileName}`);
@@ -460,8 +460,14 @@ export function C1HeaderActions({ ctx, query }: { ctx: CCtx; query: C1ExportQuer
       className="f-cta"
       disabled={exporting || !query}
       style={exporting || !query ? { opacity: 0.62, cursor: "not-allowed" } : undefined}
-      title="按当前安全筛选条件直接下载脱敏 CSV；服务端记录筛选哈希与导出审计"
-      onClick={() => { void runExport(); }}
+      title="按当前安全筛选条件下载脱敏 CSV；确认理由、筛选哈希与导出事实写入服务端审计"
+      onClick={() => ctx.openConfirm({
+        action: "导出脱敏用户名单",
+        detail: "按当前筛选生成脱敏 CSV。导出理由、筛选摘要、行数和操作者会写入服务端审计。",
+        reason: true,
+        okLabel: "确认并导出",
+        run: (reason) => runExport(reason),
+      })}
     >
       <Download size={14} />
       {exporting ? "生成中..." : "导出脱敏 CSV"}

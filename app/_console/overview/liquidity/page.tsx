@@ -14,6 +14,8 @@ import {
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { B2RestoredInsights } from "@/app/components/dashboard/restored-b-insights";
+import { canAccessCrossDomainPath } from "@/lib/admin/cross-domain-authority";
 
 /** B2 预测配置只有一个槽位:草稿 / 期望版本 / 理由没变就复用命令号,变了铸新号并丢弃旧号。
  *  落 sessionStorage,刷新后「结果未知」的重试仍是同一命令号,后端才能去重。 */
@@ -75,7 +77,9 @@ function activeConfig(config: B2ForecastConfig): B2ForecastValues {
 }
 
 export default function LiquidityPage() {
-  const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
+  const session = useAdminAuth((state) => state.session);
+  const authorities = session?.authorities ?? [];
+  const canCross = (path: string) => canAccessCrossDomainPath(path, session?.role, authorities);
   const canConfig = authorities.includes("overview_b2_write") || authorities.includes("finance_d3_write");
   const canExport = authorities.includes("overview_b2_export") || authorities.includes("finance_d3_export");
   const [data, setData] = useState<B2Dashboard | null>(null);
@@ -181,6 +185,7 @@ export default function LiquidityPage() {
           desc="正在从 D3 权威资金口径读取储备、8 类应付负债与到期预测。"
           ctaLabel="D3 资金池深页"
           ctaHref="/finance/pool"
+          ctaAllowed={canCross("/finance/pool")}
         />
         <section className="card b2-state" aria-live="polite">B2 资金水位加载中...</section>
       </div>
@@ -196,6 +201,7 @@ export default function LiquidityPage() {
           desc="D3 是 B2 负债与到期预测的唯一权威来源。"
           ctaLabel="D3 资金池深页"
           ctaHref="/finance/pool"
+          ctaAllowed={canCross("/finance/pool")}
         />
         <section className="card b2-state b2-state-error" aria-live="assertive">
           <b>服务端响应异常，已停止展示旧财务数据</b>
@@ -227,6 +233,7 @@ export default function LiquidityPage() {
         desc="以 D3 权威口径回答：当前可动用储备够不够、8 类负债来自哪里、未来 7/30 天何时到期。"
         ctaLabel="D3 资金池深页"
         ctaHref="/finance/pool"
+        ctaAllowed={canCross("/finance/pool")}
       />
 
       <div className="b2-toolbar" aria-label="B2 操作栏">
@@ -365,9 +372,9 @@ export default function LiquidityPage() {
             </div>
           )}
           <div className="b2-cross-links">
-            <Link href="/overview/dual-ledger">B1 双账本总览<ExternalLink size={13} /></Link>
-            <Link href="/finance/pool">D3 资金池深页<ExternalLink size={13} /></Link>
-            <Link href="/overview/risk-radar">B5 风险雷达<ExternalLink size={13} /></Link>
+            {canCross("/overview/dual-ledger") ? <Link href="/overview/dual-ledger">B1 双账本总览<ExternalLink size={13} /></Link> : <span aria-disabled="true">B1 双账本总览 · 无权限</span>}
+            {canCross("/finance/pool") ? <Link href="/finance/pool">D3 资金池深页<ExternalLink size={13} /></Link> : <span aria-disabled="true">D3 资金池深页 · 无权限</span>}
+            {canCross("/overview/risk-radar") ? <Link href="/overview/risk-radar">B5 风险雷达<ExternalLink size={13} /></Link> : <span aria-disabled="true">B5 风险雷达 · 无权限</span>}
           </div>
         </aside>
       </div>
@@ -397,6 +404,8 @@ export default function LiquidityPage() {
         </div>
         <footer>权威事实来源：{sourceText || "服务端未返回来源"}</footer>
       </section>
+
+      <B2RestoredInsights data={data} />
 
       {dialogStep !== "closed" && draft && (
         <div className="b2-dialog-backdrop" role="presentation">

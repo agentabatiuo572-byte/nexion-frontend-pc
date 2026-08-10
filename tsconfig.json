@@ -37,7 +37,19 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts",
     ".next-l3-final75-m-repair/types/**/*.ts",
-    ".next-l3-final75-m-repair/dev/types/**/*.ts"
+    ".next-l3-final75-m-repair/dev/types/**/*.ts",
+    ".next-restoration-20260808/types/**/*.ts",
+    ".next-restoration-20260808/dev/types/**/*.ts",
+    ".next-restoration-20260808-final7/types/**/*.ts",
+    ".next-restoration-20260808-final7/dev/types/**/*.ts",
+    ".next-d7-20260808-final1/types/**/*.ts",
+    ".next-d7-20260808-final1/dev/types/**/*.ts",
+    ".next-d7-20260808-final2/types/**/*.ts",
+    ".next-d7-20260808-final2/dev/types/**/*.ts",
+    ".next-d7-20260808-final3/types/**/*.ts",
+    ".next-d7-20260808-final3/dev/types/**/*.ts",
+    ".next-d7-20260808-final4/types/**/*.ts",
+    ".next-d7-20260808-final4/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

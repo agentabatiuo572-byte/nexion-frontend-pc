@@ -1,5 +1,6 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { operatorDeviceStatus, operatorE3OperationLabel, operatorE3OperationState, operatorE3Reason, operatorTimestamp } from "@/lib/admin/e-operator-display";
 
 export interface E3Stats {
   averageAgeMonths: number;
@@ -174,20 +175,20 @@ function timeText(value: string | null | undefined) {
   if (!Number.isNaN(date.getTime())) {
     return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
   }
-  return value;
+  return operatorTimestamp(value) === "未采集" ? "时间待核验" : operatorTimestamp(value);
 }
 
 function fromTx(row: BackendTradeinTx): E3OperationMetric {
   return {
-    nm: text(row.name || row.operation, "trade-in"),
+    nm: operatorE3OperationLabel(text(row.name || row.operation)),
     endpoint: text(row.endpoint, "POST /api/admin/devices/e3/tradein"),
     ok: toNumber(row.successCount),
     fail: toNumber(row.failureCount),
     roll: toNumber(row.rollbackCount),
-    k: text(row.latestKind, "最新状态"),
+    k: operatorE3OperationState(text(row.latestKind, "")),
     dot: text(row.latestStatus, "ok") === "fail" ? "fail" : "ok",
     ts: timeText(row.latestAt),
-    reason: text(row.latestReason, "暂无最新样本"),
+    reason: operatorE3Reason(`${operatorDeviceStatus(text(row.latestStatus, "UNKNOWN"))} · ${text(row.latestReason)}`),
   };
 }
 

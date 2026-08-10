@@ -404,12 +404,15 @@ test("I1 scheduled 和 concluded 可确认弃用实验并调用真实 discard �
 test("I1 转化仅统计服务端已支付或完成订单事件，PRD 使用独立实验权限口径", () => {
   const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
   const errors = read("lib/admin/error-messages.ts");
-  const prd = read("docs/PRD/Nexion_运营控制后台PRD_v4.md");
+  const retiredPrd = read("docs/PRD/Nexion_运营控制后台PRD_v4.md");
+  const prd = read("docs/changes/2026-08-07-prd-v4-merged-draft.md");
 
   assert.match(component, /仅统计服务端已支付\/已完成订单事件/);
   assert.match(component, /点击、加购、客户端自报不计入转化/);
   assert.match(errors, /COPY_EXPERIMENT_NOT_DISCARDABLE:/);
   assert.match(errors, /CONTENT_EXPERIMENT_CONVERSION_INVALID:/);
+  assert.match(retiredPrd, /本文件已退役/);
+  assert.match(retiredPrd, /NexGrid_运营控制后台PRD_v4\.md/);
   assert.match(prd, /content_i1_experiment_manage/);
   assert.match(prd, /仅统计服务端确认的已支付\/已完成订单事件/);
   assert.doesNotMatch(prd, /增长限增长相关文案位/);

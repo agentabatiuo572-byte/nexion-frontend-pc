@@ -1771,7 +1771,7 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "commission_event",
     buildCommand: (ctx) => ({ domain: "F", op: "f_commission_status",
-      params: { key: String(ctx.key), value: String(ctx.value) } }),
+      params: { key: String(ctx.key), value: String(ctx.value), expectedVersion: Number(ctx.expectedVersion) } }),
     // 后端查锁 countActiveByTarget("F","commission_event",eventId) → id 从 key 解析 eventId
     // F.commission.{eventId}.status → eventId(对齐后端 commissionStatusEventId(key))
     buildTarget: (ctx) => {
@@ -1784,6 +1784,50 @@ export const HIGH_OPS: HighOpDef[] = [
       }
       return { domain: "F", type: "commission_event", id };
     },
+  },
+  {
+    op: "f5_commission_reverse",
+    domain: "F",
+    action: "冲正佣金事件",
+    amplifies: false,
+    type: "fund",
+    gateLabel: "门槛者",
+    targetType: "commission_event",
+    buildCommand: (ctx) => ({ domain: "F", op: "f5_commission_reverse", params: {
+      commissionId: String(ctx.commissionId), refundRef: String(ctx.refundRef),
+    } }),
+    buildTarget: (ctx) => ({ domain: "F", type: "commission_event", id: String(ctx.commissionId) }),
+  },
+  {
+    op: "f5_commission_reissue",
+    domain: "F",
+    action: "批量补发佣金",
+    amplifies: true,
+    type: "fund",
+    gateLabel: "门槛者",
+    targetType: "commission_event",
+    buildCommand: (ctx) => ({ domain: "F", op: "f5_commission_reissue", params: {
+      commissionIds: ctx.commissionIds,
+    } }),
+    buildTargets: (ctx) => [...new Set((ctx.commissionIds as string[]).map(String))]
+      .sort().map((id) => ({ domain: "F", type: "commission_event", id })),
+    buildTarget: (ctx) => ({ domain: "F", type: "commission_event", id: String((ctx.commissionIds as string[])[0] ?? "") }),
+  },
+  {
+    op: "f5_commission_suspension",
+    domain: "F",
+    action: "暂停或恢复用户佣金",
+    amplifies: false,
+    type: "acct",
+    gateLabel: "门槛者",
+    targetType: "commission_user_kind",
+    buildCommand: (ctx) => ({ domain: "F", op: "f5_commission_suspension", params: {
+      userId: Number(ctx.userId), kinds: ctx.kinds, suspended: Boolean(ctx.suspended),
+    } }),
+    buildTarget: (ctx) => ({
+      domain: "F", type: "commission_user_kind",
+      id: `${String(ctx.userId)}:${[...(ctx.kinds as string[])].map(String).sort().join(",")}`,
+    }),
   },
   {
     op: "f_vrank_override",

@@ -29,6 +29,8 @@ function backendPath(parts: string[]) {
     "liabilities",
     "maturity-forecast",
     "net-exposure",
+    "liquidity-history",
+    "growth-flow-history",
     "forecast-config",
     "reserve-injection",
   ].includes(parts[0])) {

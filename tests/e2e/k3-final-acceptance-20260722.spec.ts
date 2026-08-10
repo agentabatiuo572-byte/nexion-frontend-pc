@@ -447,10 +447,9 @@ test("真实 D2 提现消费 K3 路由，并同步 A4、B1/B5", async ({ page })
      ORDER BY id DESC LIMIT 1;
   `).trim().split("\t");
   expect(submittedEventContract.slice(0, 3)).toEqual(["manual", fixtureRuleId, smallWithdrawalNo]);
-  expect(["", "null"]).toContain(submittedEventContract[3]);
-  expect(Number(submittedEventContract[4])).toBe(currentK4Score);
-  expect(submittedEventContract[5]).toBe(currentK4ModelVersion);
-  expect(submittedEventContract[6]).toBeTruthy();
+  expect(Number(submittedEventContract[3])).toBe(currentK4Score);
+  expect(submittedEventContract[4]).toBe(currentK4ModelVersion);
+  expect(submittedEventContract[5]).toBeTruthy();
 
   await openSidebarPath(page, "/finance/withdrawals");
   await expect(page.getByRole("heading", { name: "提现审核队列", exact: true })).toBeVisible();

@@ -4,11 +4,11 @@ import test from "node:test";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 
-test("L6 cross-domain carrier follows the current App service and lifecycle import", () => {
+test("L6 carrier records the current fail-closed cross-module decision", () => {
   const carrier = read("./l6-cross-domain-closure-contract.test.mjs");
-  assert.match(carrier, /appText\("src\/services\/behavior-analytics\.ts"\)/);
-  assert.match(carrier, /appText\("src\/App\.vue"\)/);
-  assert.doesNotMatch(carrier, /src\/api\/behavior-analytics-api\.ts/);
+  assert.match(carrier, /BLOCKED_CROSS_MODULE/);
+  assert.match(carrier, /等待跨模块接入/);
+  assert.doesNotMatch(carrier, /appText\(/);
 });
 
 test("L fixture setup uses visible MFA for a protected root without a bypass", () => {

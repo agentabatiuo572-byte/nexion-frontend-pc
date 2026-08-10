@@ -198,7 +198,10 @@ test("J3 retains idempotency keys when a write outcome is uncertain", () => {
   assert.match(component, /if \(isEmergencyOutcomeUncertain\(error\)\)[\s\S]{0,260}else \{\s*commandAttempt\.forget\(REPORT_EXPORT_SLOT\)/);
   assert.match(component, /if \(isEmergencyOutcomeUncertain\(error\)\)[\s\S]{0,300}else \{\s*commandAttempt\.forget\(ALERT_CONFIG_SLOT\)/);
   assert.match(emergencyProxy, /X-Nexion-Upstream-Outcome["']?:?\s*["']unknown/);
-  assert.match(client, /isWrite && res\.headers\.get\("X-Nexion-Upstream-Outcome"\) === "unknown"/);
+  assert.match(
+    client,
+    /if \(isWrite && \(res\.headers\.get\("X-Nexion-Upstream-Outcome"\) === "unknown"\s*\|\|\s*outcomeStaysUnknown\(res\.status, payload\.code\)\)\)/,
+  );
   assert.match(client, /throw new EmergencyOutcomeUncertainError/);
 });
 

@@ -245,7 +245,7 @@ await step("disable-2fa-modal-has-business-controls", () => {
     };
   `);
   expect(modal.titleOk, "2FA disable modal title missing");
-  expect(modal.hasRealNameStepText, "real-name step-up business text missing");
+  expect(modal.hasHighRiskStepText, "high-risk operation verification text missing");
   expect(modal.hasSecuritySummary, "2FA modal did not use account-security summary");
   expect(!modal.wrongEmergencySummary, "2FA modal used unrelated emergency/geo summary");
   expect(modal.hasReasonTextarea, "operation reason textarea missing");

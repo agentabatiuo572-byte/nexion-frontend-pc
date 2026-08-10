@@ -35,7 +35,7 @@ export function resolveNexionAppRoot({
     exists,
     envKey: "NEXION_APP_ROOT",
     label: "App",
-    candidates: ["../NX1.0", "../../NX1.0", "../Nexion-uniapp", "../../Nexion-uniapp"],
+    candidates: ["../NX1.0-UniApp", "../../NX1.0-UniApp", "../NX1.0", "../../NX1.0", "../Nexion-uniapp", "../../Nexion-uniapp"],
   });
 }
 

@@ -1,5 +1,6 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { parseE4OrderPage } from "@/lib/admin/e456-overview-contract";
+import { operatorSkuLabel } from "@/lib/admin/e-operator-display";
 
 export interface E4Order {
   id: string;
@@ -29,6 +30,7 @@ interface BackendOrder {
   userNo: string;
   skuId?: string | null;
   skuName?: string | null;
+  skuSource?: "ORDER_ITEM" | "PRODUCT_CATALOG" | "UNAVAILABLE" | string | null;
   amount?: number | string | null;
   state?: string | null;
   dcLocation?: string | null;
@@ -156,7 +158,7 @@ function fromOrder(order: BackendOrder): E4Order {
   return {
     id: order.orderNo,
     user: order.userNo,
-    sku: order.skuName || order.skuId || "未知 SKU",
+    sku: operatorSkuLabel(order),
     amt: toNumber(order.amount),
     state: normalizeState(order.state),
     dc: order.dcLocation?.trim() || "—",

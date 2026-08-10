@@ -230,12 +230,9 @@ test("I5 App requires exact 01-07 chapters, fail-closed scroll proof and same-ve
   assert.match(appApi, /recovered\.jurisdiction === disclosure\.jurisdiction/);
   assert.match(appApi, /recovered\.version === disclosure\.version/);
   assert.match(appApi, /recovered\.acknowledged/);
-  assert.match(appPage, /onReachBottom\(\(\) =>/);
-  assert.match(appPage, /scrolledToBottom\.value = true/);
-  assert.doesNotMatch(
-    appPage,
-    /if \(typeof IntersectionObserver === "undefined"\) \{\s*scrolledToBottom\.value = true/,
-  );
-  assert.doesNotMatch(appPage, /if \(!el\) \{\s*scrolledToBottom\.value = true/);
+  assert.match(appPage, /<scroll-view[\s\S]*@scrolltolower="onScrollToLower"/);
+  assert.match(appPage, /function onScrollToLower\(\)\s*\{\s*scrolledToBottom\.value\s*=\s*true/);
+  assert.doesNotMatch(appPage, /IntersectionObserver|sentinelRef/);
+  assert.doesNotMatch(appPage, /scrolledToBottom\.value\s*=\s*true;\s*return;/);
   assert.match(backendService, /DISCLOSURE_CHAPTER_NUMBERS_INVALID/);
 });

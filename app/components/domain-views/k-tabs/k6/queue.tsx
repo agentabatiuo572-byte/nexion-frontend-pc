@@ -123,7 +123,7 @@ export function K6Queue() {
   const reset = () => setPage(1);
 
   if (statusLoad === "idle" || statusLoad === "loading") return <div className="k6-empty">正在读取设备队列…</div>;
-  if (statusLoad === "error") return <div className="k6-empty k6-error">设备队列读取失败，数据未更新。{loadError} <button className="k6-pgbtn" onClick={() => void retry()}>重试</button></div>;
+  if (statusLoad === "error") return <div className="k6-empty k6-error" data-module-health-state="error">设备队列读取失败，数据未更新。{loadError} <button className="k6-pgbtn" onClick={() => void retry()}>重试</button></div>;
   if (devices.length === 0) return <div className="k6-empty">暂无设备上报。等待 App 真实上报后再重试。</div>;
 
   return (

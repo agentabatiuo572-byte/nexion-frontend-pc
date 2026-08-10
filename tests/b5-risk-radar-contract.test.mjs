@@ -8,25 +8,27 @@ import {
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const client = read("../lib/admin/b5-client.ts");
+const contract = read("../lib/admin/b5-radar-contract.ts");
 const page = read("../app/_console/overview/risk-radar/page.tsx");
 
 test("B5 uses its independent fail-closed API and fixed e(t) redline", () => {
   assert.match(client, /\/api\/admin\/risk\/radar/);
-  assert.match(client, /PRESSURE_RED_LINE\s*=\s*0\.7/);
+  assert.match(client, /normalizeB5Radar, PRESSURE_RED_LINE/);
+  assert.match(contract, /PRESSURE_RED_LINE\s*=\s*0\.7/);
   assert.match(client, /setData\(null\)/);
-  assert.match(client, /B5_RESPONSE_INVALID/);
+  assert.match(contract, /B5_RESPONSE_INVALID/);
   assert.doesNotMatch(page, /useBDomainDashboard/);
 });
 
 test("B5 validates all five canonical dimensions and excludes geo-block", () => {
   for (const state of ["submitted", "review-passed", "processing"]) {
-    assert.match(client, new RegExp(`"${state}"`));
+    assert.match(contract, new RegExp(`"${state}"`));
   }
   for (const gate of ["withdraw", "staking", "genesis", "exchange", "trial"]) {
-    assert.match(client, new RegExp(`"${gate}"`));
+    assert.match(contract, new RegExp(`"${gate}"`));
   }
-  assert.match(client, /geo-block/);
-  assert.match(client, /B5_RESPONSE_INVALID:killSwitches/);
+  assert.match(contract, /geo-block/);
+  assert.match(contract, /invalid\("killSwitches"\)/);
   for (const label of ["挤兑预警", "异常账户", "提现队列积压", "功能闸", "兑付覆盖率"]) {
     assert.match(page, new RegExp(label));
   }

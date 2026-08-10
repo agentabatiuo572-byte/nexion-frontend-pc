@@ -3,6 +3,11 @@ import path from "node:path";
 import { createHmac } from "node:crypto";
 import { expect, test, type Page, type Request } from "@playwright/test";
 import { CONSOLE_NAV } from "../../lib/nav/console-nav";
+import {
+  evaluateModuleHealthSnapshot,
+  isUnmarkedBusinessErrorText,
+  type ModuleHealthSnapshot,
+} from "./pc-module-health-contract";
 
 const USERNAME = requiredEnv("ADMIN_E2E_USERNAME");
 const PASSWORD = requiredEnv("ADMIN_E2E_PASSWORD");
@@ -18,26 +23,6 @@ const MODULES = CONSOLE_NAV.flatMap((domain) =>
   })),
 );
 
-const fatalTextPatterns = [
-  /数据加载失败/i,
-  /加载失败 ·/i,
-  /Handler dispatch failed/i,
-  /NoSuchMethodError/i,
-  /SQLSyntaxErrorException/i,
-  /BACKEND_UNAVAILABLE/i,
-  /Cannot read properties/i,
-  /ReferenceError/i,
-  /TypeError/i,
-  /接口读取失败/i,
-  /真实接口不可用/i,
-  /暂时不可用/i,
-  /同步失败/i,
-  /协议错误/i,
-  /一致性校验未通过/i,
-  /mock 用户详情/i,
-  /localStorage/i,
-];
-
 type RuntimeEvidence = {
   pageErrors: string[];
   consoleErrors: string[];
@@ -51,12 +36,14 @@ type RuntimeEvidence = {
   expectedAnonymous401: string[];
   firstPass: string[];
   refreshed: string[];
+  backPass: string[];
   reloginPass: string[];
 };
 
+test.use({ trace: "on", screenshot: "on" });
 test.describe.configure({ mode: "serial" });
 
-test("75 个模块统一锁定：侧栏首轮、逐页刷新、退出重登后复跑", async ({ page }) => {
+test("75 个模块统一锁定：侧栏首轮、逐页刷新、浏览器返回、退出重登后复跑", async ({ page }) => {
   test.setTimeout(3_600_000);
   expect(MODULES, "lib/nav/console-nav.ts 必须仍是 75 模块唯一真源").toHaveLength(75);
   expect(CONSOLE_NAV, "导航必须仍为 A–M 共 13 个域").toHaveLength(13);
@@ -80,6 +67,7 @@ test("75 个模块统一锁定：侧栏首轮、逐页刷新、退出重登后�
     expectedAnonymous401: [],
     firstPass: [],
     refreshed: [],
+    backPass: [],
     reloginPass: [],
   };
   let currentModule = "login";
@@ -158,7 +146,7 @@ test("75 个模块统一锁定：侧栏首轮、逐页刷新、退出重登后�
     await loginFromVisibleEntry(page);
     await waitForAdminQuiet(() => ({ pendingAdminRequests, lastAdminActivityAt }), "初次登录后的全局请求");
 
-    for (const module of MODULES) {
+    for (const [moduleIndex, module] of MODULES.entries()) {
       currentModule = `${module.id}-first`;
       await test.step(`${module.id} 首轮侧栏进入`, async () => {
         await openFromVisibleSidebar(page, module);
@@ -172,6 +160,20 @@ test("75 个模块统一锁定：侧栏首轮、逐页刷新、退出重登后�
         await expect(page).toHaveURL(new RegExp(`${escapeRegExp(module.path)}(?:\\?.*)?$`));
         await expectHealthyModule(page, module, () => ({ pendingAdminRequests, lastAdminActivityAt }));
         evidence.refreshed.push(module.id);
+      });
+
+      const nextModule = MODULES[(moduleIndex + 1) % MODULES.length];
+      currentModule = `${module.id}-back-setup`;
+      await test.step(`${module.id} 浏览器返回准备`, async () => {
+        await openFromVisibleSidebar(page, nextModule);
+        await expectHealthyModule(page, nextModule, () => ({ pendingAdminRequests, lastAdminActivityAt }));
+      });
+      currentModule = `${module.id}-back`;
+      await test.step(`${module.id} 浏览器返回保持`, async () => {
+        await page.goBack({ waitUntil: "domcontentloaded" });
+        await expect(page).toHaveURL(new RegExp(`${escapeRegExp(module.path)}(?:\\?.*)?$`));
+        await expectHealthyModule(page, module, () => ({ pendingAdminRequests, lastAdminActivityAt }));
+        evidence.backPass.push(module.id);
       });
     }
 
@@ -192,6 +194,7 @@ test("75 个模块统一锁定：侧栏首轮、逐页刷新、退出重登后�
 
     expect(evidence.firstPass).toEqual(MODULES.map((module) => module.id));
     expect(evidence.refreshed).toEqual(MODULES.map((module) => module.id));
+    expect(evidence.backPass).toEqual(MODULES.map((module) => module.id));
     expect(evidence.reloginPass).toEqual(MODULES.map((module) => module.id));
     expect(evidence.pageErrors, "全候选期间不允许 pageerror").toEqual([]);
     expect(evidence.consoleErrors, "全候选期间不允许控制台 error").toEqual([]);
@@ -323,9 +326,63 @@ async function expectHealthyModule(
     .toBeVisible({ timeout: 20_000 });
   await waitForAdminQuiet(requestState, `${module.id} 的后台请求`);
   await waitForModuleMediaQuiet(page, module);
-  for (const pattern of fatalTextPatterns) {
-    await expect(main.getByText(pattern), `${module.id} 主内容不应展示失败/mock/localStorage 兜底文案`).toHaveCount(0);
-  }
+  await expect.poll(async () => (await collectModuleHealthSnapshot(main)).visibleLoadingCount, {
+    message: `${module.id} 不允许持续 loading/skeleton/aria-busy 假装页面已完成`,
+    timeout: 20_000,
+    intervals: [100, 250, 500, 1_000],
+  }).toBe(0);
+  const healthSnapshot = await collectModuleHealthSnapshot(main);
+  expect(
+    evaluateModuleHealthSnapshot(module.id, healthSnapshot),
+    `${module.id} 必须有实质内容，且不能用已处理错误卡或未批准 role=alert 报绿`,
+  ).toEqual([]);
+}
+
+async function collectModuleHealthSnapshot(main: ReturnType<Page["locator"]>): Promise<ModuleHealthSnapshot> {
+  const loadingSelectors = main.locator(
+    '[aria-busy="true"], [data-loading="true"], [data-testid*="skeleton" i], [class*="skeleton" i], .animate-pulse',
+  );
+  const loadingText = main.getByText(/^(?:加载中|正在加载|Loading)(?:…|\.\.\.)?$/i);
+  const visibleCount = (locator: typeof loadingSelectors) => locator.evaluateAll((elements) =>
+    elements.filter((element) => {
+      const style = window.getComputedStyle(element);
+      return style.display !== "none" && style.visibility !== "hidden" && element.getClientRects().length > 0;
+    }).length);
+
+  const semanticErrorSnapshot = await main.evaluate((mainElement) => {
+    const markerSelector = '[data-module-health-state="error"], [data-module-health="error"], [data-state="error"]';
+    const excludedSelector = '[role="alert"], [data-module-health-state], [data-module-health], [data-module-health-exempt="guidance"]';
+    const candidateSelector = "p, div, span, li, td, th, pre";
+    const isVisible = (element: Element) => {
+      const style = window.getComputedStyle(element);
+      return style.display !== "none" && style.visibility !== "hidden" && element.getClientRects().length > 0;
+    };
+    const normalize = (value: string | null | undefined) => (value ?? "").replace(/\s+/g, " ").trim();
+    const markers = Array.from(mainElement.querySelectorAll(markerSelector)).filter(isVisible);
+    const candidates = Array.from(mainElement.querySelectorAll(candidateSelector))
+      .filter(isVisible)
+      .filter((element) => !element.closest(excludedSelector))
+      .filter((element) => !Array.from(element.children).some((child) => isVisible(child) && normalize(child.textContent).length > 0))
+      .map((element) => normalize(element.textContent))
+      .filter((value) => value.length > 0 && value.length <= 300);
+
+    return {
+      terminalErrorMarkerCount: markers.length,
+      candidateTexts: Array.from(new Set(candidates)),
+    };
+  });
+
+  return {
+    text: await main.innerText(),
+    headingCount: await main.locator("h1, h2").count(),
+    landmarkCount: await main.locator('section, table, form, [role="region"]').count(),
+    controlCount: await main.locator("button, input, select, textarea, a").count(),
+    visibleLoadingCount: await visibleCount(loadingSelectors) + await visibleCount(loadingText),
+    alertTexts: await main.locator('[role="alert"]').allTextContents(),
+    semanticErrorScanComplete: true,
+    terminalErrorMarkerCount: semanticErrorSnapshot.terminalErrorMarkerCount,
+    unmarkedBusinessErrorTexts: semanticErrorSnapshot.candidateTexts.filter(isUnmarkedBusinessErrorText),
+  };
 }
 
 async function waitForModuleMediaQuiet(

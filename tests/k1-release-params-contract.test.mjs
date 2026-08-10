@@ -81,7 +81,9 @@ test("③ 组件:卡片 + fail-closed + 运营可读标签 + 可枚举值下拉�
   assert.match(modal, /length >= 8/, "操作理由必须保持 8 字下限");
   assert.match(component, /release-param:\$\{/, "命令号必须走共享 pending store 且 scope 含参数键(刷新复用同号,不重复入账)");
   assert.match(component, /adjReleaseParam\(p\)/, "调整按钮没接到释放参数编辑动作");
-  assert.match(component, /\{canWrite && <button[^>]+onClick=\{\(\) => adjReleaseParam\(p\)\}/, "释放参数调整必须挂 risk_k1_write 权限门");
+  assert.match(component, /\{canRelease && p\.adjustable !== false && <button[^>]+onClick=\{\(\) => adjReleaseParam\(p\)\}/, "释放参数调整必须挂 risk_k1_cluster_release 高敏资金权限门");
+  assert.match(component, /data-proof="k1-protected-earnings"/, "人工放行缺少真实保护分录清单入口");
+  assert.match(client, /manualReleaseK1Entry:.*\/multi-account\/releases\//, "人工放行没有接真实服务端 mutation");
 });
 
 test("④ 簇详情收益影响:状态 → 收益桶结论 + 引用当前参数值", () => {
@@ -100,4 +102,11 @@ test("⑤ 动作台账 + 硬编码禁区", () => {
   // 建议冻结线等口径一律服务端下发,组件源码禁出现 0.7 / 70% 字面量(存量 K1 契约的同款禁区,
   // 该测试在缺仓机器不运行,这里补一道真跑的)。
   assert.doesNotMatch(component, /(?:0\.7|70%)[^0-9]/, "K1 组件出现阈值硬编码字面量");
+});
+
+test("⑥ 收益释放参数写入携带聚合版本,旧页面不得静默覆盖", () => {
+  assert.match(client, /updateK1ReleaseParam: \(key: string, value: string, expectedVersion: number, reason: string/);
+  assert.match(client, /withReason\(\{ value, expectedVersion \}, reason\)/);
+  assert.match(component, /releaseDraft\.param\.version/);
+  assert.match(component, /releaseFingerprint\(releaseDraft\.value, releaseDraft\.param\.version/);
 });

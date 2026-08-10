@@ -117,12 +117,20 @@ export interface TakeoverExecution {
   /** 🔴 期望 vs 实际目标:红队核心对账位。 */
   expectedTargetId?: string | null;
   actualTargetId?: string | null;
+  actualTargetVersion?: number | null;
+  actualTargetCatalogVersion?: number | null;
   requestedAt?: number | null;
   acknowledgedAt?: number | null;
   failureCode?: string | null;
   failureClass?: TakeoverFailureClass | null;
   failurePhase?: TakeoverPhase | null;
   failureMessage?: string | null;
+  deliveryAttempts?: number | null;
+  rowVersion?: number | null;
+  deviceAppVersion?: string | null;
+  handoffReceipt?: string | null;
+  reconciliationId?: string | null;
+  fresh?: boolean;
 }
 
 /**

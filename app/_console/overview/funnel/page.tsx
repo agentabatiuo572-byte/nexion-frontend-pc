@@ -17,6 +17,8 @@ import {
 } from "@/lib/admin/b3-client";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { B3RestoredInsights } from "@/app/components/dashboard/restored-b-insights";
+import { canAccessCrossDomainPath } from "@/lib/admin/cross-domain-authority";
 
 /** B3 保存视图只有一个槽位:视图名 / 筛选条件没变就复用命令号,变了铸新号并丢弃旧号。
  *  落 sessionStorage,刷新后「结果未知」的重试仍是同一命令号,后端才能去重。 */
@@ -43,6 +45,7 @@ export default function FunnelPage() {
   const superAdmin = auth?.role === "superadmin";
   const canSave = superAdmin || authorities.includes("overview_b3_view_write");
   const canExport = superAdmin || authorities.includes("overview_b3_export");
+  const canCross = (path: string) => canAccessCrossDomainPath(path, auth?.role, authorities);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -106,7 +109,7 @@ export default function FunnelPage() {
         title="转化漏斗"
         desc={
           <>
-            从注册到提现的五级转化只读取 <b>A4 已登记事件</b>，并要求同一用户按时间顺序逐级进入。
+            从注册到提现的四级转化只读取 <b>A4 已登记事件</b>，并要求同一用户按时间顺序逐级进入。
             空分母与未成熟 Day7 窗口显示“不可计算”，不会用 0 冒充经营事实。
           </>
         }
@@ -192,6 +195,8 @@ export default function FunnelPage() {
             </section>
           )}
 
+          <B3RestoredInsights data={data} />
+
           {data.available && (
             <>
           <section className="b3-aux-grid" aria-label="核心辅助指标">
@@ -229,8 +234,8 @@ export default function FunnelPage() {
 
           <section className="card b3-stage-card">
             <div className="ttl-row">
-              <span className="h">五级同用户漏斗</span>
-              <span className="sub">注册 → 绑卡 → 首购 → 复投 → 提现 · L2–L5 生命周期参照</span>
+              <span className="h">四级同用户漏斗</span>
+              <span className="sub">注册 → 首购 → 复投 → 提现</span>
             </div>
             <div className="b3-stage-grid">
               {data.stages.map((item, index) => (
@@ -310,9 +315,9 @@ export default function FunnelPage() {
               <span>{data.sourceStatement}</span>
             </div>
             <nav>
-              <Link href="/analytics/funnel-cohort" prefetch={false}>L2 完整下钻 →</Link>
-              <Link href="/growth/phase" prefetch={false}>H1 Phase 归因 →</Link>
-              <Link href="/platform/events" prefetch={false}>A4 事件治理 →</Link>
+              {canCross("/analytics/funnel-cohort") ? <Link href="/analytics/funnel-cohort" prefetch={false}>L2 完整下钻 →</Link> : <span aria-disabled="true">L2 完整下钻 · 无权限</span>}
+              {canCross("/growth/phase") ? <Link href="/growth/phase" prefetch={false}>H1 Phase 归因 →</Link> : <span aria-disabled="true">H1 Phase 归因 · 无权限</span>}
+              {canCross("/platform/events") ? <Link href="/platform/events" prefetch={false}>A4 事件治理 →</Link> : <span aria-disabled="true">A4 事件治理 · 无权限</span>}
             </nav>
           </section>
 

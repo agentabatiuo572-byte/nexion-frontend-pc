@@ -21,7 +21,7 @@ const a2Client = readFileSync(
 
 test("F modal intent owns one stable A2 command key until success or cancel", () => {
   assert.match(fTypes, /commandKey\?: string/);
-  assert.match(fView, /import \{ createA2CommandKey \} from "@\/lib\/admin\/a2-client"/);
+  assert.match(fView, /import \{[^}]*createA2CommandKey[^}]*\} from "@\/lib\/admin\/a2-client"/s);
   assert.match(
     fView,
     /const openActionConfirm = \(spec: McSpec\) =>\s*setActionConfirm\(\{\s*\.\.\.spec,\s*commandKey: spec\.commandKey \?\? createA2CommandKey\("f-domain-action"\),?\s*\}\)/,
@@ -47,7 +47,7 @@ test("F proposals pass the retained key and derive stable child keys for multi-f
 test("F submit failures reach OperationConfirmModal instead of being consumed by the domain shell", () => {
   assert.match(
     fView,
-    /catch \(error\) \{\s*setToast\("F 域数据提交失败 · " \+ errorMessage\(error\)\);\s*throw error;\s*\}/,
+    /catch \(error\) \{[\s\S]*?setToast\([\s\S]*?"F 域数据提交失败 · " \+ errorMessage\(error\)\)[\s\S]*?throw error;/,
   );
   assert.match(
     designKit,

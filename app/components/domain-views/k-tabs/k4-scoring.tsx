@@ -518,7 +518,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
       {canReadWithdrawalAlerts && <section className="l-card" aria-label="K4 提现升级告警">
         <div className="l-h"><span className="ttl">K4 提现升级告警</span><span className="sub">· A6 权限 risk_k4_user_override / 超管 · 持久化逐人送达</span><div className="r"><span className={`bdg ${withdrawalAlerts.some((alert) => !alert.read) ? "bad" : "done"}`}>{withdrawalAlerts.filter((alert) => !alert.read).length} 条未读</span></div></div>
         <div className="l-b">
-          {withdrawalAlertError && <div className="dtint warn">告警读取失败 · {withdrawalAlertError} · 未展示缓存值</div>}
+          {withdrawalAlertError && <div className="dtint warn" data-module-health-state="error">告警读取失败 · {withdrawalAlertError} · 未展示缓存值</div>}
           {!withdrawalAlertError && withdrawalAlerts.length === 0 && <div className="note">暂无提现升级告警。</div>}
           {!withdrawalAlertError && withdrawalAlerts.map((alert) => <div key={alert.id} className="dtint warn" style={{ marginBottom: 8 }}>
             <strong>{alert.title} · {alert.withdrawalNo}</strong> · {alert.hint} · 模型 {alert.modelVersion} · {alert.createdAt.replace("T", " ").slice(0, 19)}
@@ -547,7 +547,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
         <div className="l-b">
           <div className="two-col">
             <div>
-              <div className="note" style={{ marginBottom: 10 }}>六个维度权重合计必须为 100%；关闭输入源后该维度不参与新评分。</div>
+              <div className="note" style={{ marginBottom: 10 }}>五个维度权重合计必须为 100%；关闭输入源后该维度不参与新评分。</div>
               {overview.dimensions.map((dimension) => (
                 <div className="w-row" key={dimension.dimKey}>
                   <span className="nm">{dimension.name}<span className="src">{dimension.source}</span></span>
@@ -605,7 +605,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
             </div>
           </div>
           <details style={{ marginTop: 14 }}>
-            <summary className="note" style={{ cursor: "pointer" }}>子分映射版本快照 · 24h/7d 提现基线与六维阈值随模型版本保存</summary>
+            <summary className="note" style={{ cursor: "pointer" }}>子分映射版本快照 · 24h/7d 提现基线与五维阈值随模型版本保存</summary>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 10, marginTop: 12 }}>
               {K4_MAPPING_FIELDS.map((field) => (
                 <label className="ktint" key={field.key}>
@@ -798,7 +798,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
               <details style={{ marginTop: 14 }}>
                 <summary className="note" style={{ cursor: "pointer" }}>评分历史回放 · 最近 {lookupUser.history.length} 次</summary>
                 <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-                  {lookupUser.history.length === 0 && <div className="ktint">暂无历史评分；下一次覆盖或模型重算后会保留完整六维快照。</div>}
+                  {lookupUser.history.length === 0 && <div className="ktint">暂无历史评分；下一次覆盖或模型重算后会保留完整五维快照。</div>}
                   {lookupUser.history.map((row, index) => (
                     <details className="ktint" key={`${row.createdAt}-${row.modelVersion}-${index}`}>
                       <summary style={{ cursor: "pointer" }}>

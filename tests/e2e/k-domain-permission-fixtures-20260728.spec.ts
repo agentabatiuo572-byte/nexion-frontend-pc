@@ -81,7 +81,7 @@ const MODULES: ModuleProbe[] = [
 
 test.describe.serial("K 域 readonly/no-write/no-menu 五层权限", () => {
   for (const key of ["readonly", "nowrite"] as const) {
-    test(`${key}：K1-K6 菜单/路由/数据可读，按钮和接口写入拒绝`, async ({ page }) => {
+    test(`${key}：在用 K 域菜单/路由/数据可读，按钮和接口写入拒绝`, async ({ page }) => {
       const pageErrors = monitorPageErrors(page);
       await login(page, fixtureAccount(key), key);
       await assertSession(page, true);

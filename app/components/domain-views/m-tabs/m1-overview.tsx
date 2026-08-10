@@ -160,6 +160,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
   const supportAgents = useMemo(() => parseParamArray<MSupportAgent>(pget(AGENT_LIST_KEY), []), [ctx.params, pget]);
   const supportAgentsAvailable = pget("I.support.agentsAvailable") === "1";
   const supportAgentsError = pget("I.support.agentsError") ?? "unavailable";
+  const supportAgentsPending = !supportAgentsAvailable && supportAgentsError === "none";
   const advisorAssignments = useMemo(() => parseParamArray<MAdvisorAssignment>(pget(ASSIGNMENT_LIST_KEY), []), [ctx.params, pget]);
   const loadWarnings = useMemo(() => parseParamArray<string>(pget(LOAD_WARNINGS_KEY), []), [ctx.params, pget]);
   const currentSupportAgent = useMemo(
@@ -219,8 +220,10 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
             type="button"
             className="btn btn-sec btn-sm"
             disabled={!supportAgentsAvailable || !canManageSupportSeats}
-            title={!supportAgentsAvailable
-              ? "坐席数据暂不可用,请刷新后重试"
+            title={supportAgentsPending
+              ? "坐席数据正在同步,请稍候"
+              : !supportAgentsAvailable
+                ? "坐席数据暂不可用,请刷新后重试"
               : canManageSupportSeats
                 ? "从客服管理员里分配客服主管 / 专属客服 / 通用客服坐席"
                 : "只有总管理员或客服主管可以分配坐席"}
@@ -247,7 +250,14 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
         </div>
       )}
 
-      {!supportAgentsAvailable && (
+      {supportAgentsPending && (
+        <div className="itint" role="status" aria-live="polite">
+          <div style={{ fontSize: 13 }}>坐席数据正在同步,请稍候。</div>
+          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>读取完成后会自动展示坐席名册并开放已授权操作。</div>
+        </div>
+      )}
+
+      {!supportAgentsAvailable && !supportAgentsPending && (
         <div className="itint" role="alert">
           <div style={{ fontSize: 13 }}>
             {supportAgentsError === "permission" ? "当前账号没有读取 M1 坐席名册的权限。" : "坐席数据暂不可用,当前不会开放坐席与负载调整。"}
@@ -329,7 +339,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
                 className="btn btn-sec btn-sm"
                 onClick={() => (loadCfg && supportAgentsAvailable && canManageSupportSeats ? setShowLoad(true) : ctx.toast(!supportAgentsAvailable ? "坐席数据暂不可用,请刷新页面后重试" : loadCfg ? "当前账号无权调整坐席负载" : "负载策略暂不可用,请刷新页面后重试"))}
                 disabled={!loadCfg || !supportAgentsAvailable || !canManageSupportSeats}
-                title={!supportAgentsAvailable ? "坐席数据暂不可用,请刷新页面后重试" : !loadCfg ? "负载策略暂不可用,请刷新页面后重试" : canManageSupportSeats ? "调整坐席容量与自动平衡策略" : "只有总管理员或客服主管可以调整"}
+                title={supportAgentsPending ? "坐席数据正在同步,请稍候" : !supportAgentsAvailable ? "坐席数据暂不可用,请刷新页面后重试" : !loadCfg ? "负载策略暂不可用,请刷新页面后重试" : canManageSupportSeats ? "调整坐席容量与自动平衡策略" : "只有总管理员或客服主管可以调整"}
               >
                 <Icon name="gauge" size={16} />
                 调整负载

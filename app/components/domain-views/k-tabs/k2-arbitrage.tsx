@@ -372,7 +372,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
 
   if (ctx.contentError) {
     return (
-      <section className="l-card">
+      <section className="l-card" data-module-health-state="error">
         <div className="l-h">
           <span className="ttl">K2 数据加载失败</span>
           <span className="sub">· {errorText(ctx.contentError)} · 已隐藏旧数据与写操作，避免误处置</span>

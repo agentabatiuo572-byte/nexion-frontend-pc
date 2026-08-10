@@ -38,6 +38,16 @@ test("K6 reads and writes through the authenticated Janus proxy", () => {
   assert.match(proxy, /DELETE/);
 });
 
+test("K6 application-state reconciliation is an authorized write followed by read-only polling", () => {
+  const client = read("lib/admin/k6-client.ts");
+  const proxy = read("app/api/admin/janus/[...path]/route.ts");
+  const detail = read("app/components/domain-views/k-tabs/k6/device-detail.tsx");
+  assert.match(client, /requestK6TakeoverApplied[\s\S]*applied:refresh[\s\S]*method:\s*"POST"/);
+  assert.match(client, /reconcileK6Takeover[\s\S]*requestK6TakeoverApplied[\s\S]*fetchK6TakeoverApplied/);
+  assert.match(proxy, /applied:refresh/);
+  assert.match(detail, /operator\.role !== "viewer"[\s\S]*查询应用态/);
+});
+
 test("K6 maps writer, senior operator and administrator authorities exactly", () => {
   const operator = read("app/components/domain-views/k-tabs/k6/use-operator.ts");
   assert.match(operator, /role === "superadmin" \|\| authorities\.includes\("risk_k6_admin"\)[\s\S]*return "admin"/);
@@ -346,8 +356,8 @@ test("K6 current App consumes report, pending command and ACK through one exact 
   ]) assert.match(combined, new RegExp(field));
   assert.match(api, /REMOTE_STATUSES\.has\(desiredStatus\) \? bindingCount !== 4 : bindingCount !== 0/);
   assert.match(runtime, /parsed\.protocol !== "https:"/);
-  assert.match(coordinator, /nexion-janus-pending-report-v2/);
-  assert.match(coordinator, /nexion-janus-pending-ack-v2/);
+  assert.match(coordinator, /nexgrid-janus-pending-report-v2/);
+  assert.match(coordinator, /nexgrid-janus-pending-ack-v2/);
   assert.match(coordinator, /scope:\s*\(\) => String\(sessionVault\.read\(\)\?\.user\.userId/);
   assert.match(app, /startJanusC2Sync\(\)/);
   assert.match(app, /stopJanusC2Sync\(\)/);

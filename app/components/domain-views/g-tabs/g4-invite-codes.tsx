@@ -2,7 +2,7 @@
 
 /**
  * G4 创世邀请码 — 发码 / 追溯 / 作废(规格 FEAT-GEN11)。
- * 数据与动作走 lib/admin/g4-invite-client.ts(mock 数据源,结构按真后台写)。
+ * 数据与动作走真实 Genesis 邀请码接口；浏览器不再保存本地码表。
  * 视觉沿用 G 域既有身份(l-card / l-tbl / l-btn),不新造。
  */
 

@@ -36,6 +36,26 @@ test("F5 rejects an incomplete successful payload", () => {
   assert.throws(() => assertF5Overview({}), /F5_OVERVIEW_RESPONSE_INVALID/);
 });
 
+test("F5 rejects a partial 200 payload instead of normalizing missing totals to zero", () => {
+  assert.throws(() => assertF5Overview({
+    domain: "F5",
+    summary: {},
+    commissionKinds: ["network", "binary", "peer", "cultivation", "leadership", "genesis"]
+      .map((key) => ({ key })),
+    commissionFilters: [],
+    commissionEvents: [],
+    statusDistribution: [],
+    recentAuditFeed: [],
+    pagination: {},
+    anomalies: [],
+    coolingPolicy: [],
+    operationHistory: [],
+    activeSuspensions: [],
+    total: 0,
+    ...common,
+  }), /F5_OVERVIEW_RESPONSE_INVALID/);
+});
+
 test("F1 accepts the complete 13-rank contract", () => {
   const payload = {
     domain: "F1",
@@ -93,14 +113,54 @@ test("F2-F5 accept their minimum complete contracts", () => {
   }));
   assert.doesNotThrow(() => assertF5Overview({
     domain: "F5",
-    summary: {},
+    summary: {
+      monthlyCommissionSpendLabel: "USDT 0.00 · NEX 0.00",
+      monthlyCommissionSpend: { usdt: 0, nex: 0, count: 0 },
+      coolingBalanceLabel: "USDT 0.00 · NEX 0.00",
+      coolingBalance: { usdt: 0, nex: 0, count: 0 },
+      withdrawableThisMonthLabel: "USDT 0.00 · NEX 0.00",
+      withdrawableThisMonth: { usdt: 0, nex: 0, count: 0 },
+      frozenCount: 0,
+    },
     commissionKinds: ["network", "binary", "peer", "cultivation", "leadership", "genesis"]
-      .map((key) => ({ key })),
-    commissionFilters: [],
+      .map((key) => ({
+        key,
+        code: key.toUpperCase(),
+        label: key,
+        amountLabel: "USDT 0.00 · NEX 0.00",
+        amounts: { usdt: 0, nex: 0, count: 0 },
+        count: 0,
+        countLabel: "0 笔",
+        className: `k-${key}`,
+      })),
+    commissionFilters: [
+      ["all", "全部状态"],
+      ["cooling", "冷却计提"],
+      ["unlocked", "已解锁可提"],
+      ["withdrawn", "已提现"],
+      ["reversed", "已撤销"],
+      ["frozen", "已冻结"],
+    ].map(([key, label]) => ({ key, label })),
     commissionEvents: [],
-    statusDistribution: [],
+    statusDistribution: [
+      ["已解锁可提", "var(--success)"],
+      ["冷却计提中", "var(--warning)"],
+      ["已提现", "var(--cyan)"],
+      ["已撤销", "var(--danger)"],
+      ["已冻结", "var(--ink-4)"],
+    ].map(([name, color]) => ({ name, color, count: 0 })),
     recentAuditFeed: [],
-    pagination: {},
+    pagination: {
+      mode: "server-cursor",
+      defaultWindow: "全量游标",
+      defaultPageSize: 20,
+      pageSize: 20,
+      maxPageSize: 100,
+      requestCursor: "",
+      total: 0,
+      nextCursor: "",
+    },
+    nextCursor: "",
     anomalies: [],
     coolingPolicy: [],
     operationHistory: [],

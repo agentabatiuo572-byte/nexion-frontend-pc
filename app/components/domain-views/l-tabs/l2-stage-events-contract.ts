@@ -47,7 +47,7 @@ export function validateL2FunnelEventBindings(funnel: unknown, stageEvents: unkn
 export function validateL2LifecycleContract(raw: unknown): boolean {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
   const data = raw as Record<string, unknown>;
-  if (!Array.isArray(data.stages) || data.stages.length !== 6) return false;
+  if (!Array.isArray(data.stages) || data.stages.length !== 4) return false;
   const strictTypes = data.stages.every((item) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) return false;
     const stage = item as Record<string, unknown>;
@@ -58,6 +58,6 @@ export function validateL2LifecycleContract(raw: unknown): boolean {
       && stage.count >= 0;
   });
   return strictTypes
-    && readL2LiveStages(data).length === 6
+    && readL2LiveStages(data).length === 4
     && isCanonicalL2StageEvents(data.stageEvents);
 }

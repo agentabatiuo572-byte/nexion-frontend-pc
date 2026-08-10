@@ -731,7 +731,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   return (
     <>
       {loadError && (
-        <div className="atint danger" style={{ marginBottom: 12 }}>
+        <div className="atint danger" data-module-health-state="error" style={{ marginBottom: 12 }}>
           后端刷新失败:{loadError}
           <button className="l-btn sm mc" onClick={() => void refreshOverview()} style={{ marginLeft: 8 }}>重试</button>
         </div>

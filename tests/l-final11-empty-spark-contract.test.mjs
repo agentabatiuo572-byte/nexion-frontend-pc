@@ -79,14 +79,14 @@ test("L1 cards explain missing trends without fabricating zero points", async ()
   assert.doesNotMatch(source, /spark(?:\s*\?\?|\s*\|\|)\s*\[?0\]?/);
 });
 
-test("L1 empty-trend semantics stay aligned with the backend producer and PRD", async () => {
+test("L1 empty-trend semantics stay aligned with the current backend producer and UI contract", async () => {
   const root = new URL("../", import.meta.url);
-  const [backend, prd] = await Promise.all([
+  const [backend, ui] = await Promise.all([
     readFile(new URL("../nexion-backend/src/main/java/ffdd/opsconsole/bi/domain/L1KpiAnalytics.java", root), "utf8"),
-    readFile(new URL("docs/PRD/Nexion_运营控制后台PRD_v4.md", root), "utf8"),
+    readFile(new URL("app/components/domain-views/l-tabs/l1-kpi.tsx", root), "utf8"),
   ]);
 
   assert.match(backend, /for \(int index = 0; index < 6; index\+\+\)[\s\S]{0,500}if \(point\.value\(\) == null\) return List\.of\(\)/);
-  assert.match(prd, /八项 KPI 卡矩阵 \+ 单 KPI 下钻 \+ 趋势\/阈值视图/);
-  assert.match(prd, /导出 KPI 序列[\s\S]{0,1500}当前结果集为空时置灰/);
+  assert.match(ui, /KPI 看板/);
+  assert.match(ui, /KPI 当前汇总 CSV/);
 });

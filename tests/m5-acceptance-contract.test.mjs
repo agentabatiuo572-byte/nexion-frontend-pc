@@ -6,14 +6,15 @@ import { resolve } from "node:path";
 const root = process.cwd();
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 
-test("M5 fails closed when template data or lead-level write authority is unavailable", () => {
+test("M5 fails closed when template data or the precise content/operations authority is unavailable", () => {
   const client = read("lib/admin/m-client.ts");
   const page = read("app/components/domain-views/m-tabs/m5-scripts.tsx");
 
   assert.match(client, /sessionTemplatesAvailable: boolean/);
   assert.match(client, /"I\.session\.templatesAvailable": data\.sessionTemplatesAvailable \? "1" : "0"/);
   assert.match(page, /service_m5_write/);
-  assert.match(page, /canWriteM5/);
+  assert.match(page, /canManageM5Content/);
+  assert.match(page, /canManageM5Operations/);
   assert.match(page, /isSupportSupervisor/);
   assert.match(page, /话术与模板后端当前不可用/);
   assert.match(page, /当前账号只有查看权限/);
@@ -133,13 +134,14 @@ test("M5 publication is gated by published I6 locale mirrors and emits A4 govern
 test("M5 hides every mutation control without effective M5 management authority", () => {
   const page = read("app/components/domain-views/m-tabs/m5-scripts.tsx");
 
-  assert.match(page, /\{canWriteM5 && \(\s*<button[^>]+data-proof="session-script-new"/s);
-  assert.match(page, /\{canWriteM5 && \(\s*<button[^>]+data-proof="session-tpl-new"/s);
-  assert.match(page, /canWriteM5 \? \(\s*<span data-proof=\{`session-cat-toggle-/s);
-  assert.match(page, /canWriteM5 \? \(\s*<button[^>]+data-proof="session-policy-enabled"/s);
-  assert.match(page, /canWriteM5 \? \(\s*<button[^>]+data-proof="session-policy-delay"/s);
-  assert.match(page, /canWriteM5 \? \(\s*<span data-proof=\{`session-script-publish-/s);
-  assert.match(page, /canWriteM5 \? \(\s*<span data-proof=\{`session-tpl-publish-/s);
+  assert.match(page, /\{canManageM5Content && \(\s*<button[^>]+data-proof="session-script-new"/s);
+  assert.match(page, /\{canManageM5Content && \(\s*<button[^>]+data-proof="session-tpl-new"/s);
+  assert.match(page, /canManageM5Operations \? \(\s*<span data-proof=\{`session-cat-toggle-/s);
+  assert.match(page, /canManageM5Operations \? \(\s*<button[^>]+data-proof="session-policy-enabled"/s);
+  assert.match(page, /canManageM5Operations \? \(\s*<button[^>]+data-proof="session-policy-delay"/s);
+  assert.match(page, /canManageM5Content \? \(\s*<span data-proof=\{`session-script-publish-/s);
+  assert.match(page, /canManageM5Content \? \(\s*<span data-proof=\{`session-tpl-publish-/s);
   assert.match(page, /const hasM5WriteAuthority = isSuperAdmin \|\| Boolean\(authorities\?\.includes\("service_m5_write"\)\)/);
-  assert.match(page, /const canWriteM5 = hasM5WriteAuthority && \(isSuperAdmin \|\| isSupportSupervisor\(currentSupportAgent\)\)/);
+  assert.match(page, /const isContentOperator = currentRoleKey === "content"/);
+  assert.match(page, /const isSupportM5Supervisor = currentRoleKey === "support" && isSupportSupervisor\(currentSupportAgent\)/);
 });

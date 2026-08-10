@@ -266,11 +266,12 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
           inputKind: "select",
           required: true,
           current: overview.market.closedNoticeKey || "default",
-          options: ["default", "maintenance", "restock"],
+          options: ["default", "maintenance", "phase_control", "compliance"],
           optionLabels: {
             default: "当前市场暂未开放",
             maintenance: "系统维护中,暂停认购",
-            restock: "本轮名额已发放完毕",
+            phase_control: "当前阶段暂不开放认购",
+            compliance: "合规复核中,暂停认购",
           },
         },
       ] } : undefined,
@@ -278,7 +279,13 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
       run: async (reason, _value, businessValue) => {
         await mutate(
           "market:open-state",
-          () => updateG4GenesisMarketOpenState(next, reason, OPERATOR(), businessValue?.noticeKey),
+          () => updateG4GenesisMarketOpenState(
+            next,
+            reason,
+            OPERATOR(),
+            businessValue?.noticeKey,
+            overview.market.marketOpenStateVersion,
+          ),
           next === "closed" ? "创世市场已设为暂未开放;前端仍可浏览,购买已锁" : "创世市场已恢复开放",
         );
       },

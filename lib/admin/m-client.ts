@@ -1041,7 +1041,10 @@ function assertConversationRow(value: unknown): ContentConversationView {
     !Number.isSafeInteger(row.id)
     || typeof row.conversationNo !== "string"
     || !row.conversationNo.trim()
-    || !["ADVISOR", "SUPPORT"].includes(upper(row.conversationType, ""))
+    // The backend advertises AI conversation rows alongside advisor/support.
+    // M3 renders them through its existing non-advisor, read/write-safe lane;
+    // rejecting one valid AI row must not erase the real inbox.
+    || !["ADVISOR", "SUPPORT", "AI"].includes(upper(row.conversationType, ""))
     || !["OPEN", "TRANSFERRED", "RESOLVED", "CLOSED"].includes(upper(row.status, ""))
     || !Number.isSafeInteger(row.unreadCount)
     || Number(row.unreadCount) < 0

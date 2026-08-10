@@ -99,39 +99,39 @@ test("L1 legacy totals remain a separately identified export and missing carrier
   assert.equal(calls[0][0].exportType, "KPI 当前汇总");
 });
 
-test("L2 accepts the real six-stage lifecycle and the exact dual-source repurchase event", () => {
-  assert.equal(lifecycleStages.length, 6);
+test("L2 accepts the current four-stage lifecycle and the exact dual-source repurchase event", () => {
+  assert.equal(lifecycleStages.length, 4);
   assert.equal(isCanonicalL2StageEvents(legalStageEvents), true);
   assert.equal(validateL2LifecycleContract({ stages: lifecycleStages, stageEvents: legalStageEvents }), true);
   assert.equal(validateL2FunnelEventBindings(legalFunnelEvents, legalStageEvents), true);
 });
 
-test("L2 canonical mapping stays aligned with the PRD and the real backend producer", async () => {
+test("L2 canonical mapping stays aligned with the executable contract and real backend producer", async () => {
   const root = new URL("../", import.meta.url);
-  const [backend, prd] = await Promise.all([
+  const [backend, stageContract] = await Promise.all([
     readFile(new URL("../nexion-backend/src/main/java/ffdd/opsconsole/bi/domain/L2FunnelAnalytics.java", root), "utf8"),
-    readFile(new URL("docs/PRD/Nexion_运营控制后台PRD_v4.md", root), "utf8"),
+    readFile(new URL("app/components/domain-views/l-tabs/l2-stage-events-contract.ts", root), "utf8"),
   ]);
 
   assert.match(backend, /"wallet\.reinvest \/ 二次 checkout\.completed"/);
   assert.match(backend, /event\.name\(\)\.equals\("wallet\.reinvest"\)[\s\S]*event\.name\(\)\.equals\("checkout\.completed"\)/);
-  assert.match(prd, /wallet\.reinvest[\s\S]{0,80}二次 `checkout\.completed` 双口径/);
+  assert.match(stageContract, /primary: "wallet\.reinvest"[\s\S]*fallback: \{ event: "checkout\.completed", occurrence: 2 \}/);
 });
 
 test("L2 rejects arbitrary or malformed repurchase event strings", () => {
-  const wrongSecondOccurrence = legalStageEvents.with(3, "wallet.reinvest / checkout.completed");
-  const arbitraryEvent = legalStageEvents.with(3, "wallet.reinvest / admin.report_exported");
-  const missingFallback = legalStageEvents.with(3, "wallet.reinvest");
+  const wrongSecondOccurrence = legalStageEvents.with(2, "wallet.reinvest / checkout.completed");
+  const arbitraryEvent = legalStageEvents.with(2, "wallet.reinvest / admin.report_exported");
+  const missingFallback = legalStageEvents.with(2, "wallet.reinvest");
 
   assert.equal(isCanonicalL2StageEvents(wrongSecondOccurrence), false);
   assert.equal(isCanonicalL2StageEvents(arbitraryEvent), false);
   assert.equal(isCanonicalL2StageEvents(missingFallback), false);
   assert.equal(validateL2LifecycleContract({ stages: lifecycleStages, stageEvents: arbitraryEvent }), false);
   assert.equal(isCanonicalL2StageEvents(null), false);
-  assert.equal(isCanonicalL2StageEvents(legalStageEvents.slice(0, 4)), false);
+  assert.equal(isCanonicalL2StageEvents(legalStageEvents.slice(0, 3)), false);
   assert.equal(isCanonicalL2StageEvents(legalStageEvents.with(0, 42)), false);
   assert.equal(validateL2LifecycleContract(null), false);
-  assert.equal(validateL2LifecycleContract({ stages: lifecycleStages.slice(0, 5), stageEvents: legalStageEvents }), false);
+  assert.equal(validateL2LifecycleContract({ stages: lifecycleStages.slice(0, 3), stageEvents: legalStageEvents }), false);
   assert.equal(validateL2LifecycleContract({
     stages: lifecycleStages.with(0, { ...lifecycleStages[0], count: "10" }),
     stageEvents: legalStageEvents,

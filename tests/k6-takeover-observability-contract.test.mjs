@@ -11,6 +11,7 @@
  *      不可重试的失败不给「原地重试」;禁用时必须给出**原因**(不是隐藏按钮)
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -210,4 +211,10 @@ test("⑧ 🔴 撤销失败相位:仍可重发撤销 / 换目标,且摘要不得
   assert.equal(takeoverPhaseToCommandState("REVOKE_FAILED"), "FAILED");
   assert.notEqual(takeoverPhaseToCommandState("REVOKE_FAILED"), "ACKED");
   assert.match(TAKEOVER_PHASE_LABEL.REVOKE_FAILED, /撤销/, "标签必须点明是撤销失败,不是接管失败");
+});
+
+test("⑨ 无执行记录空态不得误报接口未建设", () => {
+  const detail = readFileSync(new URL("../app/components/domain-views/k-tabs/k6/device-detail.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(detail, /在后端补齐执行账本接口前/);
+  assert.match(detail, /本设备尚无接管命令或执行记录/);
 });

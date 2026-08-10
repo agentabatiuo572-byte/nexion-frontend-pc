@@ -189,7 +189,7 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <p className="dim" style={{ margin: 0, fontSize: 13 }}>维护帮助中心问答,设定每类工单多久要首次响应、多久要解决。</p>
 
-      {!knowledgeAvailable && <div className="callout warn">知识库后端当前不可用,页面已停止写入,避免显示未落库的成功状态。</div>}
+      {!knowledgeAvailable && <div className="callout warn" data-module-health-state="error">知识库后端当前不可用,页面已停止写入,避免显示未落库的成功状态。</div>}
       {knowledgeAvailable && !canWriteM4 && <div className="callout">当前账号只有查看权限;编辑 FAQ、发布状态与 SLA 需要 service_m4_write 权限。</div>}
 
       <div className="m4-cols">

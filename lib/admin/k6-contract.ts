@@ -244,7 +244,7 @@ function normalizeOverride(value: unknown, path: string): ManualOverride | undef
  *   而 `Device.takeover` 是可选字段,tsc 不会报、纯函数契约测试也测不到 ——
  *   于是「三道门全绿、失配告警一次都不会亮」。归一器必须与消费面同批落地。
  */
-function optionalTakeover(value: unknown, path: string): TakeoverExecution | undefined {
+export function optionalTakeover(value: unknown, path: string): TakeoverExecution | undefined {
   if (value === undefined || value === null) return undefined;
   const row = record(value, path);
   return {
@@ -258,12 +258,20 @@ function optionalTakeover(value: unknown, path: string): TakeoverExecution | und
     causeDecisionId: optionalText(row.causeDecisionId, `${path}.causeDecisionId`),
     expectedTargetId: optionalText(row.expectedTargetId, `${path}.expectedTargetId`),
     actualTargetId: optionalText(row.actualTargetId, `${path}.actualTargetId`),
+    actualTargetVersion: optionalInteger(row.actualTargetVersion, `${path}.actualTargetVersion`, 0),
+    actualTargetCatalogVersion: optionalInteger(row.actualTargetCatalogVersion, `${path}.actualTargetCatalogVersion`, 0),
     requestedAt: optionalInteger(row.requestedAt, `${path}.requestedAt`, 1),
     acknowledgedAt: optionalInteger(row.acknowledgedAt, `${path}.acknowledgedAt`, 1),
     failureCode: optionalText(row.failureCode, `${path}.failureCode`),
     failureClass: optionalOneOf(row.failureClass, TAKEOVER_FAILURE_CLASSES, `${path}.failureClass`),
     failurePhase: optionalOneOf(row.failurePhase, TAKEOVER_PHASES, `${path}.failurePhase`),
     failureMessage: optionalText(row.failureMessage, `${path}.failureMessage`),
+    deliveryAttempts: optionalInteger(row.deliveryAttempts, `${path}.deliveryAttempts`, 0),
+    rowVersion: optionalInteger(row.rowVersion, `${path}.rowVersion`, 0),
+    deviceAppVersion: optionalText(row.deviceAppVersion, `${path}.deviceAppVersion`),
+    handoffReceipt: optionalText(row.handoffReceipt, `${path}.handoffReceipt`),
+    reconciliationId: optionalText(row.reconciliationId, `${path}.reconciliationId`),
+    fresh: row.fresh === undefined ? undefined : flag(row.fresh, `${path}.fresh`),
   };
 }
 

@@ -1,15 +1,19 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { resolveNexionAppRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
+
+const adminRoot = fileURLToPath(new URL("..", import.meta.url));
+const appRoot = resolveNexionAppRoot({ adminRoot });
 
 const feature = readFileSync(
   new URL("../scripts/feature-mapping-walkthrough-proof.mjs", import.meta.url),
   "utf8",
 );
-const persona = readFileSync(
-  new URL("../scripts/uniapp-persona-walkthrough-proof.mjs", import.meta.url),
-  "utf8",
-);
+const withdrawPage = readFileSync(path.join(appRoot, "src/pages/me/wallet-withdraw.vue"), "utf8");
+const localeStore = readFileSync(path.join(appRoot, "src/store/locale.ts"), "utf8");
 const coverage = readFileSync(
   new URL("../scripts/fe-be-mapping-coverage.mjs", import.meta.url),
   "utf8",

@@ -65,7 +65,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     return <section className="deriv-card"><div className="deriv-h"><span className="ttl">J2 数据加载中</span><span className="sub">· 正在读取地区封锁状态</span></div></section>;
   }
   if (!data) {
-    return <section className="deriv-card"><div className="deriv-h"><span className="ttl">当前无法确认地区封锁状态</span><span className="sub">· 为避免误操作，控制项已隐藏</span></div></section>;
+    return <section className="deriv-card" data-module-health-state="error"><div className="deriv-h"><span className="ttl">当前无法确认地区封锁状态</span><span className="sub">· 为避免误操作，控制项已隐藏</span></div></section>;
   }
 
   const banned: Entry[] = data.blocked;

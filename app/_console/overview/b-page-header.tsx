@@ -14,12 +14,14 @@ export function BPageHeader({
   desc,
   ctaLabel,
   ctaHref,
+  ctaAllowed = true,
 }: {
   id: string;
   title: string;
   desc: ReactNode;
   ctaLabel?: string;
   ctaHref?: string;
+  ctaAllowed?: boolean;
 }) {
   return (
     <header>
@@ -34,11 +36,15 @@ export function BPageHeader({
           <h1 className="b-title">{title}</h1>
           <p className="b-desc">{desc}</p>
         </div>
-        {ctaLabel && ctaHref && (
+        {ctaLabel && ctaHref && (ctaAllowed ? (
           <Link href={ctaHref} prefetch={false} className="b-cta">
             {ctaLabel} <ArrowRight size={14} aria-hidden />
           </Link>
-        )}
+        ) : (
+          <span className="b-cta" aria-disabled="true" data-testid="b-cross-domain-disabled">
+            {ctaLabel} · 无目标域权限
+          </span>
+        ))}
       </div>
     </header>
   );

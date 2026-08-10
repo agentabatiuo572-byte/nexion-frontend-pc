@@ -14,7 +14,7 @@ const FIXTURE_PATH = process.env.K_PERMISSION_FIXTURE_PATH
 const SUFFIX = process.env.K_PERMISSION_SUFFIX ?? randomBytes(3).toString("hex");
 const READ_ROLE_CODE = `ACC_K_RO_R151023_${SUFFIX}`.toUpperCase();
 const MAKER_ROLE_CODE = `ACC_K_MAKER_R151023_${SUFFIX}`.toUpperCase();
-const READ_PERMISSIONS = Array.from({ length: 6 }, (_, index) => `risk_k${index + 1}_read`);
+const READ_PERMISSIONS = ["risk_k1_read", "risk_k2_read", "risk_k3_read", "risk_k4_read", "risk_k6_read"];
 const MAKER_PERMISSIONS = [
   ...READ_PERMISSIONS,
   "risk_k1_write", "risk_k1_cluster_freeze", "risk_k1_cluster_release",

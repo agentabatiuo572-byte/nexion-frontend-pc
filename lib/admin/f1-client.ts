@@ -293,25 +293,36 @@ interface BackendF4LeadershipPoolOverview {
 }
 
 interface BackendF5Summary {
-  monthlyCommissionSpendLabel?: string | null;
-  coolingBalanceLabel?: string | null;
-  withdrawableThisMonthLabel?: string | null;
-  abnormalOrFrozenCount?: number | string | null;
+  monthlyCommissionSpendLabel: string;
+  monthlyCommissionSpend: BackendF5MoneySnapshot;
+  coolingBalanceLabel: string;
+  coolingBalance: BackendF5MoneySnapshot;
+  withdrawableThisMonthLabel: string;
+  withdrawableThisMonth: BackendF5MoneySnapshot;
+  frozenCount: number | string;
+}
+
+interface BackendF5MoneySnapshot {
+  usdt: number | string;
+  nex: number | string;
+  count: number | string;
 }
 
 interface BackendF5CommissionKind {
-  key?: string | null;
-  code?: string | null;
-  label?: string | null;
-  amountLabel?: string | null;
-  countLabel?: string | null;
-  className?: string | null;
+  key: string;
+  code: string;
+  label: string;
+  amountLabel: string;
+  amounts: BackendF5MoneySnapshot;
+  count: number | string;
+  countLabel: string;
+  className: string;
   amountColor?: string | null;
 }
 
 interface BackendF5Filter {
-  key?: string | null;
-  label?: string | null;
+  key: string;
+  label: string;
 }
 
 interface BackendF5CommissionEvent {
@@ -332,12 +343,15 @@ interface BackendF5CommissionEvent {
   cooldownLabel?: string | null;
   state?: string | null;
   auditKey?: string | null;
+  version?: number | string | null;
+  frozenFromStatus?: string | null;
+  ledgerBizNo?: string | null;
 }
 
 interface BackendF5StatusItem {
-  color?: string | null;
-  name?: string | null;
-  count?: number | string | null;
+  color: string;
+  name: string;
+  count: number | string;
 }
 
 interface BackendF5AuditFeedItem {
@@ -347,20 +361,24 @@ interface BackendF5AuditFeedItem {
 }
 
 interface BackendF5Pagination {
-  mode?: string | null;
-  defaultWindow?: string | null;
-  defaultPageSize?: number | string | null;
-  maxPageSize?: number | string | null;
+  mode: string;
+  defaultWindow: string;
+  defaultPageSize: number | string;
+  maxPageSize: number | string;
+  pageSize: number | string;
+  requestCursor: string;
+  nextCursor: string;
+  total: number | string;
 }
 
 interface BackendF5CommissionAuditOverview {
-  summary?: BackendF5Summary | null;
-  commissionKinds?: BackendF5CommissionKind[] | null;
-  commissionFilters?: BackendF5Filter[] | null;
-  commissionEvents?: BackendF5CommissionEvent[] | null;
-  statusDistribution?: BackendF5StatusItem[] | null;
-  recentAuditFeed?: BackendF5AuditFeedItem[] | null;
-  pagination?: BackendF5Pagination | null;
+  summary: BackendF5Summary;
+  commissionKinds: BackendF5CommissionKind[];
+  commissionFilters: BackendF5Filter[];
+  commissionEvents: BackendF5CommissionEvent[];
+  statusDistribution: BackendF5StatusItem[];
+  recentAuditFeed: BackendF5AuditFeedItem[];
+  pagination: BackendF5Pagination;
   nextCursor?: string | number | null;
   total?: number | string | null;
   anomalies?: Record<string, unknown>[] | null;
@@ -707,7 +725,7 @@ export interface F5CommissionSummary {
   monthlyCommissionSpendLabel: string;
   coolingBalanceLabel: string;
   withdrawableThisMonthLabel: string;
-  abnormalOrFrozenCount: number;
+  frozenCount: number;
 }
 
 export interface F5CommissionKind {
@@ -742,6 +760,9 @@ export interface F5CommissionEvent {
   coolLb: string;
   state: string;
   auditKey: string;
+  version: number;
+  frozenFromStatus?: string;
+  ledgerBizNo?: string;
 }
 
 export interface F5CommissionQuery {
@@ -1247,21 +1268,22 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
 }
 
 function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | undefined): F5CommissionAuditOverview {
-  const summary = data?.summary ?? {};
-  const commissionKinds = (data?.commissionKinds ?? []).map((item) => ({
-    key: asText(item.key, "all"),
-    code: asText(item.code, "ALL"),
-    lbl: asText(item.label, "全部佣金类型"),
-    amt: asText(item.amountLabel, "$0"),
-    ct: asText(item.countLabel, "0 笔"),
-    cls: asText(item.className, ""),
+  if (!data) throw new Error("F5_OVERVIEW_RESPONSE_INVALID:data");
+  const summary = data.summary;
+  const commissionKinds = data.commissionKinds.map((item) => ({
+    key: item.key,
+    code: item.code,
+    lbl: item.label,
+    amt: item.amountLabel,
+    ct: item.countLabel,
+    cls: item.className,
     amtColor: optionalText(item.amountColor),
   }));
-  const commissionFilters = (data?.commissionFilters ?? []).map((item) => ({
-    key: asText(item.key, "all"),
-    lbl: asText(item.label, "全部状态"),
+  const commissionFilters = data.commissionFilters.map((item) => ({
+    key: item.key,
+    lbl: item.label,
   }));
-  const commissionEvents = (data?.commissionEvents ?? []).map((item) => {
+  const commissionEvents = data.commissionEvents.map((item) => {
     const id = asText(item.commissionId ?? item.id, "CM-UNKNOWN");
     const userId = toNumber(item.userId);
     return {
@@ -1281,22 +1303,25 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       coolLb: asText(item.cooldownLabel, "冷却中"),
       state: asText(item.state, "计提"),
       auditKey: asText(item.auditKey, `F.commission.${id}.status`),
+      version: toNumber(item.version),
+      frozenFromStatus: optionalText(item.frozenFromStatus),
+      ledgerBizNo: optionalText(item.ledgerBizNo),
     };
   });
-  const pagination = data?.pagination ?? {};
+  const pagination = data.pagination;
   return {
     summary: {
-      monthlyCommissionSpendLabel: asText(summary.monthlyCommissionSpendLabel, "$0"),
-      coolingBalanceLabel: asText(summary.coolingBalanceLabel, "$0"),
-      withdrawableThisMonthLabel: asText(summary.withdrawableThisMonthLabel, "$0"),
-      abnormalOrFrozenCount: toNumber(summary.abnormalOrFrozenCount),
+      monthlyCommissionSpendLabel: summary.monthlyCommissionSpendLabel,
+      coolingBalanceLabel: summary.coolingBalanceLabel,
+      withdrawableThisMonthLabel: summary.withdrawableThisMonthLabel,
+      frozenCount: toNumber(summary.frozenCount),
     },
     commissionKinds,
     commissionFilters,
     commissionEvents,
-    statusDistribution: (data?.statusDistribution ?? []).map((item) => ({
-      dot: asText(item.color, "var(--ink-4)"),
-      nm: asText(item.name, "-"),
+    statusDistribution: data.statusDistribution.map((item) => ({
+      dot: item.color,
+      nm: item.name,
       ct: String(toNumber(item.count)),
     })),
     recentAuditFeed: (data?.recentAuditFeed ?? []).map((item) => ({
@@ -1305,10 +1330,10 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       level: asText(item.level, "LOW"),
     })),
     pagination: {
-      mode: asText(pagination.mode, "server-pageable"),
-      defaultWindow: asText(pagination.defaultWindow, "24h"),
-      defaultPageSize: toNumber(pagination.defaultPageSize, 20),
-      maxPageSize: toNumber(pagination.maxPageSize, 100),
+      mode: pagination.mode,
+      defaultWindow: pagination.defaultWindow,
+      defaultPageSize: toNumber(pagination.defaultPageSize),
+      maxPageSize: toNumber(pagination.maxPageSize),
     },
     nextCursor: asText(data?.nextCursor, ""),
     total: toNumber(data?.total, commissionEvents.length),
@@ -1499,7 +1524,7 @@ export async function fetchF5CommissionAuditOverview(query: F5CommissionQuery = 
   const suffix = search.size ? `?${search.toString()}` : "";
   const data = await f1Request<unknown>(`/commissions${suffix}`);
   assertF5Overview(data);
-  return normalizeF5Overview(data as BackendF5CommissionAuditOverview);
+  return normalizeF5Overview(data as unknown as BackendF5CommissionAuditOverview);
 }
 
 export async function reverseF5Commission(

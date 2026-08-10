@@ -109,7 +109,7 @@ export default function G4AdminOperations({ ctx }: { ctx: GCtx }) {
   }
 
   return <>
-    {error && <div className="gtint" style={{ marginBottom: 12 }}>刷新失败，以下为上次成功快照 · {error} <button className="l-btn sm" onClick={() => void load()}>重试</button></div>}
+    {error && <div className="gtint" data-module-health-state="error" style={{ marginBottom: 12 }}>刷新失败，以下为上次成功快照 · {error} <button className="l-btn sm" onClick={() => void load()}>重试</button></div>}
     <section className="l-card" style={{ marginBottom: 16 }}>
       <div className="l-h"><span className="ttl">资格门与预售</span><span className="sub">· 统一配置 · 修改后即时生效</span></div>
       <div className="l-b"><div className="param-grid">{CONFIGS.map((definition) => <div className="p" key={definition.key}><div className="k">{definition.label}</div><div className="v">{data.config[definition.key] ?? "未配置"}{canWrite && <button className="l-btn sm mc" onClick={() => edit(definition)}>调整</button>}</div><div className="s">由平台权威配置统一管理</div></div>)}</div></div>

@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { DataListPager, Modal } from "../design-kit";
 import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1_RELEASE_MODE_VALUES, K1_RELEASE_PARAM_LIMITS, newK1CommandKey } from "@/lib/admin/k-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
-import type { AdminPage, ClusterStatus, K1Cluster, K1ClusterLayer, K1ClusterSort, K1ClusterStatusFilter, K1WhitelistRow, KRiskParam } from "@/lib/admin/k-client";
+import type { AdminPage, ClusterStatus, K1Cluster, K1ClusterLayer, K1ClusterSort, K1ClusterStatusFilter, K1ProtectedEntry, K1WhitelistRow, KRiskParam } from "@/lib/admin/k-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { createPendingMutationStore, createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
@@ -280,6 +280,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const [weightDraft, setWeightDraft] = useState<WeightDraft | null>(null);
   const [paramDraft, setParamDraft] = useState<ParamDraft | null>(null);
   const [releaseDraft, setReleaseDraft] = useState<ParamDraft | null>(null);
+  const [protectedEntries, setProtectedEntries] = useState<K1ProtectedEntry[]>([]);
+  const [protectedEntriesLoading, setProtectedEntriesLoading] = useState(true);
+  const [protectedEntriesError, setProtectedEntriesError] = useState<string | null>(null);
   const [whitelistDraft, setWhitelistDraft] = useState<WhitelistDraft | null>(null);
   const [draftSubmitting, setDraftSubmitting] = useState<"param" | "weight" | "whitelist" | "release" | null>(null);
   const draftSubmitLock = useRef(false);
@@ -290,6 +293,21 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const searchParams = useSearchParams();
   const focusClusterId = (searchParams?.get("focusClusterId") ?? "").trim();
   const overview = ctx.risk.multiAccount;
+
+  const refreshProtectedEntries = useCallback(async () => {
+    setProtectedEntriesLoading(true);
+    try {
+      setProtectedEntries(await ctx.actions.fetchK1ProtectedEntries());
+      setProtectedEntriesError(null);
+    } catch (error) {
+      setProtectedEntries([]);
+      setProtectedEntriesError(errorText(error));
+    } finally {
+      setProtectedEntriesLoading(false);
+    }
+  }, [ctx.actions]);
+
+  useEffect(() => { void refreshProtectedEntries(); }, [refreshProtectedEntries]);
   const stats = overview?.stats ?? {};
   const params = overview?.params ?? [];
   const freezeThresholdParam = params.find((param) => param.key === "clusterFreezeSuggestThreshold");
@@ -569,9 +587,35 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   // 收益释放参数编辑:命令号在**提交时**按「槽位 + 输入指纹」解析(见 releaseAttempts 注),
   // 不在开弹窗时铸号 —— 开弹窗时还不知道运营要填什么,提前铸号就没法区分「原样重试」和「改了值再提交」。
   const releaseScope = (key: string) => `release-param:${key}`;
-  const releaseFingerprint = (value: string, reason: string) => JSON.stringify([value, reason.trim()]);
+  const releaseFingerprint = (value: string, version: number, reason: string) =>
+    JSON.stringify([value, version, reason.trim()]);
   const adjReleaseParam = (p: KRiskParam) => {
     setReleaseDraft({ param: p, value: p.value, reason: "", commandKey: "" });
+  };
+
+  const releaseProtectedEntry = (entry: K1ProtectedEntry) => {
+    ctx.openActionConfirm({
+      action: `人工放行收益 · ${entry.entryNo}`,
+      detail: `${entry.userId} · ${entry.clusterId} · ${entry.amount} ${entry.asset} · ${entry.bucket}`,
+      amplifies: true,
+      reasonMin: 8,
+      reasonMax: 200,
+      completionCopy: "收益分录已人工放行并写入 A2 审计",
+      run: async (reason) => {
+        const scope = `earnings-release:${entry.entryNo}`;
+        const commandKey = commandAttempt.get(scope) ?? newK1CommandKey();
+        commandAttempt.remember(scope, commandKey);
+        try {
+          await ctx.actions.manualReleaseK1Entry(entry.entryNo, reason, commandKey);
+          commandAttempt.forget(scope);
+          await refreshProtectedEntries();
+          ctx.toast(`${entry.entryNo} 已进入可提桶`);
+        } catch (error) {
+          if (!(error instanceof K1OutcomeUncertainError)) commandAttempt.forget(scope);
+          throw error;
+        }
+      },
+    });
   };
 
   const saveReleaseDraft = async () => {
@@ -582,11 +626,12 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     // 同槽位 + 同输入 → 复用命令号(原样重试不重复下单);输入变了 → 自动铸新号(改值再提交不被幂等窗吞掉)。
     const commandKey = releaseAttempts.resolve(
       scope,
-      releaseFingerprint(releaseDraft.value, releaseDraft.reason),
+      releaseFingerprint(releaseDraft.value, releaseDraft.param.version, releaseDraft.reason),
       () => newK1CommandKey(),
     );
     try {
-      await ctx.actions.updateK1ReleaseParam(releaseDraft.param.key, releaseDraft.value, releaseDraft.reason.trim(), commandKey);
+      await ctx.actions.updateK1ReleaseParam(releaseDraft.param.key, releaseDraft.value,
+        releaseDraft.param.version, releaseDraft.reason.trim(), commandKey);
       releaseAttempts.forget(scope);
     } catch (error) {
       ctx.toast(error instanceof K1OutcomeUncertainError
@@ -717,7 +762,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
   if (ctx.contentError) {
     return (
-      <section className="l-card">
+      <section className="l-card" data-module-health-state="error">
         <div className="l-h">
           <span className="ttl">K1 数据加载失败</span>
           <span className="sub">· {errorText(ctx.contentError)} · 已隐藏旧数据与写操作，避免误处置</span>
@@ -789,7 +834,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                   <div className="p" key={p.key}>
                     <div className="txt"><div className="k">{p.name}</div><div className="s">{p.sub}</div></div>
                     <span className="v">{releaseParamDisplay(p)}{p.unit && K1_RELEASE_PARAM_LIMITS[p.key] ? ` ${p.unit}` : ""}</span>
-                    {canWrite && <button className="l-btn sm mc" onClick={() => adjReleaseParam(p)}>调整</button>}
+                    {canRelease && p.adjustable !== false && <button className="l-btn sm mc" onClick={() => adjReleaseParam(p)}>调整</button>}
                   </div>
                 ))}
               </div>
@@ -801,6 +846,36 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             <div className="ktint">服务端尚未下发收益释放参数(后端未升级)· 为避免在错误口径上调参,本卡不提供编辑入口。</div>
           )}
         </div>
+      </section>
+
+      <section className="l-card" data-proof="k1-protected-earnings">
+        <div className="l-h">
+          <span className="ttl">待审 / 锁定收益分录</span>
+          <span className="sub">· 只读服务端清单；人工放行要求 risk_k1_cluster_release、稳定命令号、理由与 A2 审计</span>
+          <div className="r"><button className="l-btn" disabled={protectedEntriesLoading} onClick={() => void refreshProtectedEntries()}>刷新分录</button></div>
+        </div>
+        {protectedEntriesError ? (
+          <div className="l-b"><div className="ktint bad">{protectedEntriesError} · 当前不提供人工放行入口。</div></div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table className="l-tbl" style={{ minWidth: 900 }}>
+              <thead><tr><th>分录号</th><th>用户 / 簇</th><th>来源</th><th>资金桶</th><th className="num">金额</th><th>生成时间</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
+              <tbody>
+                {protectedEntries.map((entry) => <tr key={entry.entryNo}>
+                  <td className="mono">{entry.entryNo}</td>
+                  <td><div className="mono">U{entry.userId}</div><div className="tiny">{entry.clusterId}</div></td>
+                  <td><div>{entry.sourceType}</div><div className="tiny mono">{entry.sourceRef}</div></td>
+                  <td><span className={`bdg ${entry.bucket === "bonus_locked" ? "bad" : "warn"}`}>{entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"}</span></td>
+                  <td className="num mono">{entry.amount.toLocaleString("en-US")} {entry.asset}</td>
+                  <td className="mono tiny">{entry.createdAt}</td>
+                  <td style={{ textAlign: "right" }}>{canRelease && <button className="l-btn sm mc" onClick={() => releaseProtectedEntry(entry)}>人工放行</button>}</td>
+                </tr>)}
+                {!protectedEntriesLoading && protectedEntries.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-4)", padding: 22 }}>当前没有待审或锁定收益分录。</td></tr>}
+                {protectedEntriesLoading && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-4)", padding: 22 }}>正在读取服务端分录…</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       <section className="l-card">

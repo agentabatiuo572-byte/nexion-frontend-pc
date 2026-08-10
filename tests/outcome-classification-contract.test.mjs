@@ -43,6 +43,20 @@ test("确定性拒绝 = 4xx ∨ (2xx 且业务码非 0);其余一律结果未知
   assert.equal(outcomeStaysUnknown(0), true, "status 0(传输层失败的常见取值)必须归未知");
 });
 
+test("A2 只能在失败分支归类结果,不能把 HTTP 200/code 0 成功送进失败谓词", () => {
+  const a2 = strip(read("lib/admin/a2-client.ts"));
+  assert.match(
+    a2,
+    /if \(!response\.ok \|\| !result \|\| result\.code !== 0\) \{[\s\S]*?outcomeStaysUnknown\(response\.status, result\?\.code\)/,
+    "A2 的结果未知判断必须位于失败分支并携带业务码",
+  );
+  assert.doesNotMatch(
+    a2,
+    /if \(init\?\.commandKey && outcomeStaysUnknown\(response\.status\)\)/,
+    "A2 不得在已解析响应体后丢弃业务码",
+  );
+});
+
 test("两个谓词恒为互补(避免将来有人只改一个)", () => {
   for (const status of [0, 200, 204, 301, 400, 404, 418, 500, 503, 599]) {
     for (const code of [undefined, 0, 7]) {
@@ -105,6 +119,7 @@ const CLASSIFICATION_EXEMPT = {
   "g2-client.ts": "同上",
   "g3-client.ts": "同上",
   "g4-client.ts": "同上",
+  "g4-invite-client.ts": "复用 g4Request 的统一 HTTP 归类并走 stable-mutation 执行器",
   "g7-client.ts": "同上",
   "h9-client.ts": "只在成功后弃号,没有失败期的去留决定;换输入即换号由槽位指纹保证",
   "a4-client.ts": "命令号每次现铸,没有可复用的号 → 谈不上保号/弃号(待迁,交接文档任务 A)",

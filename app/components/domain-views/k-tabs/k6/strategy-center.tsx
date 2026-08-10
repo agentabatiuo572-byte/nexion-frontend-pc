@@ -84,7 +84,7 @@ export function K6StrategyCenter() {
   };
 
   if (status === "idle" || status === "loading") return <div className="k6-empty">正在读取策略列表…</div>;
-  if (status === "error") return <div className="k6-empty k6-error">策略列表读取失败，数据未更新。{loadError} <button className="k6-pgbtn" onClick={() => void retry()}>重试</button></div>;
+  if (status === "error") return <div className="k6-empty k6-error" data-module-health-state="error">策略列表读取失败，数据未更新。{loadError} <button className="k6-pgbtn" onClick={() => void retry()}>重试</button></div>;
 
   return (
     <div className="k6-panel">

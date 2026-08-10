@@ -499,7 +499,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       </div>
 
       {(loading || loadError) && (
-        <div className={`atint${loadError ? " warn" : ""}`} style={{ margin: "12px 0" }}>
+        <div className={`atint${loadError ? " warn" : ""}`} data-module-health-state={loadError ? "error" : undefined} style={{ margin: "12px 0" }}>
           {loadError ? (
             <>
               审计中心读取失败，旧数据已清空，所有操作均已停用：{loadError}

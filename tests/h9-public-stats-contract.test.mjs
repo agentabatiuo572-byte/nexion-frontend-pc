@@ -7,8 +7,7 @@
  *      合法表两边都收 —— 后台自造更严限制(曾经的 tops > 0、最多 8 档)同样即红。
  *    前端权威 = Nexion-uniapp/src/lib/network-rank.ts 的 isValidPercentileTable,直接跨仓加载
  *    真模块跑,不手抄第二份判据。
- * 2. 前端**落盘种子表**(mock/platform-config.ts)必须被两侧同时判合法 —— 后台默认值域跟着
- *    落盘种子走,种子扩档后后台把它锁死就是把出厂默认变成非法配置。
+ * 2. 用户端不得再保留 H9 落盘种子/硬编码回退；真实 platform-config 响应缺失或非法即不可用。
  * 3. 错误文案两条:growth 代理层的闭集机器码(GROWTH_BACKEND_UNAVAILABLE / GROWTH_ROUTE_NOT_FOUND,
  *    本机后端不可达是这页最可能的读失败)必须翻成运营可读中文而非「请检查输入内容」兜底;
  *    占位卡拼接 h9PlaceholderCopy 恒出**恰好一个**句号(字典整句自带「。」,直拼就是双句号)。
@@ -42,22 +41,6 @@ const { isValidPercentileTable } = await import(
 function adminAccepts(table) {
   const drafts = table.map((band) => ({ tops: String(band.tops), cumPct: String(band.cumPct) }));
   return h9BandRowErrors(drafts).every((error) => !error) && drafts.length >= H9_BAND_MIN;
-}
-
-/** 前端落盘种子表(textually 解析,别把 .vue/uni 依赖链拖进 node)。 */
-function landedSeedTable() {
-  const source = fs
-    .readFileSync(path.join(APP_ROOT, "src", "mock", "platform-config.ts"), "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/(^|[^:])\/\/.*$/gm, "$1");
-  const start = source.indexOf("hashratePercentileTable");
-  const end = source.indexOf("]", start);
-  assert.ok(start >= 0 && end > start, "前端种子里找不到 hashratePercentileTable(结构变了?同步更新本测试)");
-  const slice = source.slice(start, end);
-  const rows = [...slice.matchAll(/\{\s*tops\s*:\s*([\d_.]+)\s*,\s*cumPct\s*:\s*([\d_.]+)\s*\}/g)]
-    .map((m) => ({ tops: Number(m[1].replace(/_/g, "")), cumPct: Number(m[2].replace(/_/g, "")) }));
-  assert.ok(rows.length >= 2, `种子表解析出 ${rows.length} 行(<2,判据失效)`);
-  return rows;
 }
 
 // ── 1. 行为等价 ──────────────────────────────────────────────────────────
@@ -104,10 +87,12 @@ test("分位表:逐格等价扫一遍(同一 fixture 集上两侧 verdict 全等
   }
 });
 
-test("前端落盘种子表被两侧同时判合法(后台值域跟落盘种子走,不用记忆里的旧表)", () => {
-  const seed = landedSeedTable();
-  assert.equal(isValidPercentileTable(seed), true, "前端自己的种子表被前端判非法 —— 种子坏了");
-  assert.equal(adminAccepts(seed), true, `后台把 ${seed.length} 档落盘种子判非法 —— 出厂默认在后台成了非法配置`);
+test("用户端不再保留 H9 落盘种子或硬编码回退", () => {
+  const mock = fs.readFileSync(path.join(APP_ROOT, "src", "mock", "platform-config.ts"), "utf8");
+  const parser = fs.readFileSync(path.join(APP_ROOT, "src", "api", "platform-config-api.ts"), "utf8");
+  assert.doesNotMatch(mock, /hashratePercentileTable\s*:/, "H9 分位表不得从 mock/落盘种子恢复");
+  assert.match(parser, /!Array\.isArray\(values\.hashratePercentileTable\)/);
+  assert.match(parser, /H9_PUBLIC_STATS_RESPONSE_INVALID/);
 });
 
 test("h9DraftNumber:空串与非数字给 NaN,不让 Number(\"\")===0 把空输入当 0", () => {

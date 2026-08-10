@@ -12,17 +12,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveNexionAppRoot, resolveNexionBackendRoot } from "./lib/nexion-workspace-paths.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const PLAN_ROOT = path.resolve(ROOT, "..");
-const UNI_ROOT_CANDIDATES = [
-  path.join(PLAN_ROOT, "Nexion-uniapp"),
-  path.join(PLAN_ROOT, "nexion-frontend-uniapp"),
-  path.resolve(ROOT, "..", "..", "nexion-frontend-uniapp"),
-  // 在 .claude/worktrees/<wt> 内跑时 PLAN_ROOT 落在 .claude/worktrees,向上四级回 PLAN 找兄弟仓。
-  path.resolve(ROOT, "..", "..", "..", "..", "Nexion-uniapp"),
-];
-const UNI_ROOT = UNI_ROOT_CANDIDATES.find((candidate) => fs.existsSync(candidate)) ?? UNI_ROOT_CANDIDATES[0];
+// 与 verify 的预检共用同一个解析器，避免预检认出 NX1.0-UniApp、齿轮却仍硬读旧目录名。
+const UNI_ROOT = resolveNexionAppRoot({ adminRoot: ROOT });
+const BACKEND_ROOT = resolveNexionBackendRoot({ adminRoot: ROOT });
 const CANON_PATH = path.join(ROOT, "docs", "remediation", "canon-numbers.json");
 
 function read(file) {
@@ -312,10 +307,11 @@ if (!uniProducts) {
 // 已随惩罚费模型删除(uniapp PHASES 不再有 withdrawPenaltyFeeRate 字段,canon 同步删键)。
 // 🔴 offset 匹配从 penalty 上解耦:老正则以 withdrawPenaltyFeeRate 为锚,字段删除后 uniByPhase
 // 变空集 → offset 检查静默消失(哨兵假绿的经典形态),现改为直接锚 nexFeeOffsetRate。
-// 单源:canon.withdrawal ↔ uniapp product-phase.PHASES(offset)/ platform-config(confirm fee)
-// ↔ admin d-client D5_NETWORK_CONFIRM_FEE_DEFAULT + D5 OWN_PARAMS(offset,存在才对账)。
+// 单源:canon.withdrawal ↔ uniapp product-phase.PHASES(offset)/真实 withdrawal policy 契约
+// ↔ backend 增量迁移(confirm fee) ↔ admin d-client D5_NETWORK_CONFIRM_FEE_DEFAULT。
 const uniPhase = readIfExists(path.join(UNI_ROOT, "src", "store", "product-phase.ts"));
-const uniPlatformCfg = readIfExists(path.join(UNI_ROOT, "src", "mock", "platform-config.ts"));
+const uniWithdrawalApi = readIfExists(path.join(UNI_ROOT, "src", "api", "withdrawal-api.ts"));
+const hardBlockerMigration = readIfExists(path.join(BACKEND_ROOT, "scripts", "migrations", "20260807_nexion_hard_blockers.sql"));
 const adminDClient = readIfExists(path.join(ROOT, "lib", "admin", "d-client.ts")) ?? "";
 const wd = canon.withdrawal || {};
 if (!uniPhase) {
@@ -335,14 +331,14 @@ if (!uniPhase) {
   for (const [phase, offset] of Object.entries(uniOffsetByPhase)) {
     expectNumber(`withdraw.uni.offset.${phase}`, offset, wd.nexFeeOffsetRateUSDPerNex, ["../Nexion-uniapp/src/store/product-phase.ts"]);
   }
-  // uniapp 网络确认费种子 ↔ canon 三键逐键(uniapp verify.sh 另有跨仓 parity 哨兵盯 admin 侧)
-  if (uniPlatformCfg) {
-    const seed = uniPlatformCfg.match(/networkConfirmFeeUsd:\s*\{\s*trc20:\s*([\d.]+),\s*bep20:\s*([\d.]+),\s*erc20:\s*([\d.]+)\s*\}/);
-    expectNumber("withdraw.uni.confirmFee.trc20", seed ? numberFrom(seed[1]) : null, wd.networkConfirmFeeUsd.trc20, ["../Nexion-uniapp/src/mock/platform-config.ts"]);
-    expectNumber("withdraw.uni.confirmFee.bep20", seed ? numberFrom(seed[2]) : null, wd.networkConfirmFeeUsd.bep20, ["../Nexion-uniapp/src/mock/platform-config.ts"]);
-    expectNumber("withdraw.uni.confirmFee.erc20", seed ? numberFrom(seed[3]) : null, wd.networkConfirmFeeUsd.erc20, ["../Nexion-uniapp/src/mock/platform-config.ts"]);
-  } else {
-    failures.push("uniapp platform-config.ts missing; cannot prove networkConfirmFeeUsd canon");
+  // UniApp 只消费真实 policy，不再保留本地确认费种子；数值默认由后端迁移与 canon 对账。
+  if (!uniWithdrawalApi || !uniWithdrawalApi.includes('path: "/api/withdrawals/policy"')) {
+    failures.push("uniapp withdrawal policy client missing; cannot prove networkConfirmFeeUsd is server-canonical");
+  }
+  for (const network of ["trc20", "bep20", "erc20"]) {
+    const row = hardBlockerMigration?.match(new RegExp(`withdrawal\\.network_confirm_fee_usd\\.${network}',\\s*'([\\d.]+)'`));
+    expectNumber(`withdraw.backend.confirmFee.${network}`, row ? numberFrom(row[1]) : null,
+      wd.networkConfirmFeeUsd[network], ["../nexion-backend/scripts/migrations/20260807_nexion_hard_blockers.sql"]);
   }
   // admin D5 兜底种子(d-client D5_NETWORK_CONFIRM_FEE_DEFAULT)↔ canon 三键
   const adminSeed = adminDClient.match(/D5_NETWORK_CONFIRM_FEE_DEFAULT = \{ trc20: ([\d.]+), bep20: ([\d.]+), erc20: ([\d.]+) \}/);

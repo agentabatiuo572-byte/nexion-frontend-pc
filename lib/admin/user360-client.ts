@@ -3,6 +3,9 @@ import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session"
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
+import { normalizeAuthoritativePage } from "@/lib/admin/authoritative-page-contract";
+import { normalizeC3Adjustment } from "@/lib/admin/c3-adjustment-contract";
+import { parseStrictFiniteNumber } from "@/lib/admin/strict-number";
 
 interface ApiResult<T> {
   code: number;
@@ -525,15 +528,7 @@ function queryString(query: Record<string, string | number | boolean | null | un
 }
 
 function normalizePage<T>(page: PageResult<T>, fallbackPageNum: number, fallbackPageSize: number): UserPage<T> {
-  if (!isJsonRecord(page) || !Array.isArray(page.records)) {
-    throw new Error("USER360_RESPONSE_INVALID:page.records");
-  }
-  return {
-    total: requireNumber(page.total as number | string | null | undefined, "page.total"),
-    pageNum: toNumber(page.pageNum as number | string | null | undefined, fallbackPageNum),
-    pageSize: toNumber(page.pageSize as number | string | null | undefined, fallbackPageSize),
-    records: page.records ?? [],
-  };
+  return normalizeAuthoritativePage<T>(page, fallbackPageNum, fallbackPageSize);
 }
 
 export class UsersRequestError extends Error {
@@ -552,21 +547,15 @@ function c3ResponseInvalid(): never {
 }
 
 function c3Numeric(value: unknown) {
-  return (typeof value === "number" && Number.isFinite(value))
-    || (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)));
+  return parseStrictFiniteNumber(value) !== null;
 }
 
-function requireC3Adjustment(value: unknown): UserAssetAdjustment {
-  if (!isJsonRecord(value)
-    || typeof value.adjustmentNo !== "string"
-    || (typeof value.userId !== "number" && typeof value.userId !== "string")
-    || typeof value.asset !== "string"
-    || typeof value.direction !== "string"
-    || !c3Numeric(value.amount)
-    || typeof value.status !== "string") {
+function requireC3Adjustment(value: unknown, expectedStatus?: string): UserAssetAdjustment {
+  try {
+    return normalizeC3Adjustment(value, expectedStatus) as UserAssetAdjustment;
+  } catch {
     return c3ResponseInvalid();
   }
-  return value as UserAssetAdjustment;
 }
 
 function requireC3Overview(value: unknown): UserAssetAdjustmentOverview {
@@ -865,6 +854,7 @@ function filenameFromDisposition(disposition: string | null, fallback: string) {
 export async function exportUserProfilesCsv(
   query: UserProfileQuery = {},
   exportKey: string,
+  reason: string,
   operator = currentAdminOperator(),
 ) {
   const { usdtMin, usdtMax, nexMin, nexMax, ...rest } = query;
@@ -880,6 +870,7 @@ export async function exportUserProfilesCsv(
       walletUsdtMax: usdtMax,
       walletNexMin: nexMin,
       walletNexMax: nexMax,
+      reason: reason.trim(),
       operator,
     }),
     cache: "no-store",
@@ -912,7 +903,7 @@ export async function fetchUserAssetAdjustments(query: UserAssetAdjustmentQuery 
   const pageSize = query.pageSize ?? 10;
   const page = await usersRequest<PageResult<UserAssetAdjustment>>(`/asset-adjustments${queryString({ ...query, pageNum, pageSize })}`);
   const normalized = normalizePage(page, pageNum, pageSize);
-  normalized.records.forEach(requireC3Adjustment);
+  normalized.records.forEach((record) => requireC3Adjustment(record, query.status));
   return normalized;
 }
 

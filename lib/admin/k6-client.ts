@@ -11,6 +11,7 @@ import {
   normalizeK6Health,
   normalizeK6Strategies,
   normalizeK6Strategy,
+  optionalTakeover,
 } from "@/lib/admin/k6-contract";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import type {
@@ -21,6 +22,7 @@ import type {
   K6ExportFile,
   Strategy,
 } from "@/lib/admin/janus-c2/types";
+import type { TakeoverExecution } from "@/lib/admin/janus-c2/takeover";
 import {
   normalizeK6RemoteTarget,
   normalizeK6RemoteTargetOrigins,
@@ -79,6 +81,7 @@ export type K6RemoteTargetDisable = {
   reason: string;
   impact: string;
 };
+export type K6TakeoverCommand = { expectedVersion: number; reason: string; operator: string; targetId?: string; targetVersion?: number; targetCatalogVersion?: number };
 type Normalizer<T> = (value: unknown) => T;
 
 const BASE = "/api/admin/janus";
@@ -281,6 +284,25 @@ export function updateK6DeviceStatus(sid: string, body: StatusChange): Promise<D
     method: "POST",
     body: JSON.stringify(body),
   }, normalizeK6Device);
+}
+
+const normalizeTakeover = (value: unknown): TakeoverExecution => {
+  const result = optionalTakeover(value, "janus.takeover");
+  if (!result) throw new Error("K6_RESPONSE_INVALID:janus.takeover");
+  return result;
+};
+export function revokeK6Takeover(sid:string,body:K6TakeoverCommand){return request(`/devices/${encodeURIComponent(sid)}/takeover/revoke`,{method:"POST",body:JSON.stringify(body)},normalizeTakeover);}
+export function resendK6TakeoverRevoke(sid:string,body:K6TakeoverCommand){return request(`/devices/${encodeURIComponent(sid)}/takeover/revoke:resend`,{method:"POST",body:JSON.stringify(body)},normalizeTakeover);}
+export function changeK6TakeoverTarget(sid:string,body:K6TakeoverCommand){return request(`/devices/${encodeURIComponent(sid)}/takeover/target`,{method:"POST",body:JSON.stringify(body)},normalizeTakeover);}
+export function retryK6Takeover(sid:string,body:K6TakeoverCommand){return request(`/devices/${encodeURIComponent(sid)}/takeover/retry`,{method:"POST",body:JSON.stringify(body)},normalizeTakeover);}
+export function fetchK6TakeoverApplied(sid:string,reconciliationId?:string){return request(`/devices/${encodeURIComponent(sid)}/takeover/applied${query({reconciliationId})}`,undefined,normalizeTakeover);}
+export function requestK6TakeoverApplied(sid:string,body:K6TakeoverCommand){return request(`/devices/${encodeURIComponent(sid)}/takeover/applied:refresh`,{method:"POST",body:JSON.stringify(body)},normalizeTakeover);}
+export async function reconcileK6Takeover(sid:string,body:K6TakeoverCommand,timeoutMs=15000){
+  let state=await requestK6TakeoverApplied(sid,body);const reconciliationId=state.reconciliationId;
+  if(!reconciliationId)throw new Error("K6_RECONCILIATION_ID_MISSING");
+  const deadline=Date.now()+timeoutMs;
+  while(!state.fresh&&Date.now()<deadline){await new Promise((resolve)=>setTimeout(resolve,1000));state=await fetchK6TakeoverApplied(sid,reconciliationId);}
+  return state;
 }
 
 function strategyPayload(value: Strategy, reason: string) {

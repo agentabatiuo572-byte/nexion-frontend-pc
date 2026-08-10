@@ -50,14 +50,14 @@ test("② dispose 规格:paramKey=auditKey · 目标值固定 · amplify 按资�
   assert.match(unlockSpec, /amplify:\s*true/, "提前解锁放大可提余额,弹窗必须标 amplify 触发 B1 护栏");
   assert.match(unlockSpec, /fixedVal:\s*"unlocked"/, "解锁目标值漂移");
   const unfreezeSpec = grabBetween(disposeBody, "unfreeze: {", "}[kind]");
-  assert.match(unfreezeSpec, /amplify:\s*true/, "解冻恢复可提链路(放行方向),弹窗必须标 amplify");
-  assert.match(unfreezeSpec, /fixedVal:\s*"unlocked"/, "解冻目标值漂移(原型口径 = unlocked,最终态由服务端裁决)");
+  assert.match(unfreezeSpec, /amplify:\s*false/, "解冻只恢复冻结前的 cooling,不得误报为放大可提余额");
+  assert.match(unfreezeSpec, /fixedVal:\s*"cooling"/, "解冻必须恢复 cooling,不得绕过剩余冷却期");
 });
 
 test("③ shell 管线:F5 dispose 路由到 updateF5Config → f_commission_status A2 票", () => {
   const disposeBranch = grabBetween(shell, 'mc.op === "dispose"', "F_CONFIRM_SHAPE_UNKNOWN");
   assert.match(disposeBranch, /tab === "F5"/, "shell dispose 分支丢了 F5 路由");
-  assert.match(disposeBranch, /ctx\.updateF5Config\(mc\.paramKey, mc\.fixedVal, reason\)/, "F5 dispose 必须经 updateF5Config(A2 propose),不许静默吞掉");
+  assert.match(disposeBranch, /ctx\.updateF5Config\(mc\.paramKey, mc\.fixedVal, reason, mc\.expectedVersion\)/, "F5 dispose 必须携带 expectedVersion 经 updateF5Config(A2 propose),不许静默吞掉");
   // 处置完成提示必须如实:此刻只是入了 A2 待执行队列,冻结这种抢时间的动作被「已生效」
   // 误报会让运营提前撤场(skeptic P2-4)。
   assert.match(disposeBranch, /已提交/, "dispose 完成 toast 必须说「已提交」而非宣称已生效");
@@ -70,6 +70,15 @@ test("③ shell 管线:F5 dispose 路由到 updateF5Config → f_commission_stat
 test("④ 数据契约:F5 事件行必须带 auditKey(F.commission.{id}.status)", () => {
   assert.match(f1Client, /auditKey/, "F5CommissionEvent 丢了 auditKey 字段,行内处置无键可用");
   assert.match(f1Client, /F\.commission\./, "auditKey 的键形态漂移(resolveFOp 与 buildTarget 都按 F.commission.*.status 解析)");
+});
+
+test("④b D4 下钻必须同时具备真实账本号与 D4 读取权限", () => {
+  assert.match(component, /const canReadD4 = ctx\.can\("finance_d4_read"\)/,
+    "F5 未按 D4 后端读取权限控制下钻,最小权限运营员会点击后被路由弹回");
+  assert.match(component, /canReadD4 && row\.ledgerBizNo/,
+    "D4 链接必须同时满足权限与服务端真实 ledgerBizNo");
+  assert.match(component, /D4 无权限/,
+    "无 D4 权限时必须明确说明,不能保留一个会静默跳回的死链接");
 });
 
 test("⑤ 动作台账:OPS-F-10 行内三动作口径落台账,不再虚标", () => {

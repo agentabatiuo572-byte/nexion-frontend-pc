@@ -1,7 +1,7 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { assertL3FinanceContract, assertL3TreasurySnapshot } from "@/lib/admin/l3-finance-contract";
-import { assertL5OverviewContract } from "@/lib/admin/l5-overview-contract";
+import { assertL5OverviewContract, CURRENT_L5_REPORT_TYPES } from "@/lib/admin/l5-overview-contract";
 
 type ApiResult<T> = {
   code?: number;
@@ -257,8 +257,7 @@ function reportToTask(report: LReportView): LExportTask {
   const status = report.status.toUpperCase();
   const mask = report.maskingPolicy.toUpperCase();
   const normalizedType = report.type.trim().toUpperCase();
-  const supported = ["KPI_SERIES", "FUNNEL_COHORT", "FINANCE_AGG", "OPERATIONS_AGG", "NETWORK_TREE", "REGULATORY"]
-    .includes(normalizedType);
+  const supported = CURRENT_L5_REPORT_TYPES.includes(normalizedType as typeof CURRENT_L5_REPORT_TYPES[number]);
   const acts: LExportTask["acts"] = !supported ? []
     : status === "PENDING_CONFIRM" || status === "PENDING_SPLIT_CONFIRM" ? ["approve"]
       : status === "READY" && report.snapshotAvailable ? ["download"]

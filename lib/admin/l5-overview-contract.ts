@@ -1,15 +1,14 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 
-const REPORT_TYPES = new Set([
+export const CURRENT_L5_REPORT_TYPES = [
   "KPI_SERIES",
   "FUNNEL_COHORT",
   "FINANCE_AGG",
   "OPERATIONS_AGG",
   "NETWORK_TREE",
-  "BILL_CSV",
   "REGULATORY",
-  "ON_DEMAND",
-]);
+] as const;
+const REPORT_TYPES = new Set<string>(CURRENT_L5_REPORT_TYPES);
 
 const REPORT_STATUSES = new Set([
   "PENDING",
@@ -68,7 +67,7 @@ function validateSummary(value: unknown) {
   const sensitive = count(summary.sensitiveReports, "summary.sensitiveReports");
   const pending = count(summary.pendingConfirm, "summary.pendingConfirm");
   const legacyReady = count(summary.legacyReadyWithoutSnapshot, "summary.legacyReadyWithoutSnapshot");
-  if (ready > total || sensitive > total || pending > total || legacyReady > ready) {
+  if (ready > total || sensitive > total || pending > total || legacyReady > total) {
     invalid("summary.counts");
   }
 }

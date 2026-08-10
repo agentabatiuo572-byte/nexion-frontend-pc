@@ -202,9 +202,7 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "H3", name: "任务引擎", path: "/growth/quest", prdAnchor: "H3", batch: "V3", status: "flagship" },
       { id: "H4", name: "活动中心", path: "/growth/events", prdAnchor: "H4", batch: "V3", status: "flagship" },
       { id: "H5", name: "签到 & NEX", path: "/growth/daily", prdAnchor: "H5", batch: "V3", status: "flagship" },
-      // H6 与 H5 同页(FOLD 表把 H6 折进 H5):独立入口是为了让运营找得到「里程碑」——
-      // 此前该功能藏在签到页下半屏、导航零提及,只有知道的人才找得到(2026-08-06 原型对比 H-1)。
-      { id: "H6", name: "里程碑庆祝", path: "/growth/milestones", prdAnchor: "H6", batch: "V3", status: "flagship" },
+      // H6 已折入 H5 同页，里程碑在 H5 页面内明确分区展示；不再声明一个后端未登记的独立菜单。
       { id: "H7", name: "代金券", path: "/growth/vouchers", prdAnchor: "H7", batch: "V3", status: "flagship" },
       { id: "H8", name: "新人礼与邀请奖励", path: "/growth/referral-rewards", prdAnchor: "H8", batch: "V3", status: "flagship" },
       { id: "H9", name: "对外公布数据", path: "/growth/public-stats", prdAnchor: "H9", batch: "V3", status: "flagship" },

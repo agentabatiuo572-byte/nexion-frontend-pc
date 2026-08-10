@@ -9,7 +9,7 @@
  */
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
-import { fetchK6Device } from "@/lib/admin/k6-client";
+import { changeK6TakeoverTarget, fetchK6Device, reconcileK6Takeover, resendK6TakeoverRevoke, retryK6Takeover, revokeK6Takeover } from "@/lib/admin/k6-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isFresh, timeAgo } from "@/lib/admin/janus-c2/scoring";
 import {
@@ -61,6 +61,8 @@ export function K6DeviceDetail({ device, onClose }: { device: Device; onClose: (
   const [detail, setDetail] = useState<Device | null>(null);
   const [detailStatus, setDetailStatus] = useState<"loading" | "ready" | "error">("loading");
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [takeoverBusy, setTakeoverBusy] = useState(false);
+  const [takeoverMessage, setTakeoverMessage] = useState<string | null>(null);
   const loadDetail = async () => {
     setDetailStatus("loading");
     setDetailError(null);
@@ -84,7 +86,7 @@ export function K6DeviceDetail({ device, onClose }: { device: Device; onClose: (
   if (!d) {
     return <div className="k6-modal-overlay" onClick={onClose}><div className="k6c2 k6-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label={`设备详情 ${device.sid}`}>
       <div className="k6-modal-head"><code className="sid">{device.sid}</code><button className="k6-modal-close" onClick={onClose} aria-label="关闭"><X size={18} /></button></div>
-      <div className={`k6-empty${detailStatus === "error" ? " k6-error" : ""}`}>{detailStatus === "loading" ? "正在读取服务端设备详情…" : <>详情加载失败，未展示队列摘要代替详情。{detailError} <button className="k6-pgbtn" onClick={() => void loadDetail()}>重试</button></>}</div>
+      <div className={`k6-empty${detailStatus === "error" ? " k6-error" : ""}`} data-module-health-state={detailStatus === "error" ? "error" : undefined}>{detailStatus === "loading" ? "正在读取服务端设备详情…" : <>详情加载失败，未展示队列摘要代替详情。{detailError} <button className="k6-pgbtn" onClick={() => void loadDetail()}>重试</button></>}</div>
     </div></div>;
   }
   const allowed = allowedTransitions(d.status, operator.role);
@@ -96,6 +98,37 @@ export function K6DeviceDetail({ device, onClose }: { device: Device; onClose: (
     if (navigator.clipboard) navigator.clipboard.writeText(d.sid).catch(() => undefined);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+  };
+
+  const runTakeover = async (action: "revoke" | "resend" | "retry" | "target" | "applied") => {
+    if (!d.takeover || typeof d.takeover.rowVersion !== "number") return;
+    setTakeoverBusy(true); setTakeoverMessage(null);
+    try {
+      if (action === "applied") {
+        const reason = window.prompt("请输入查询应用态理由（至少 8 个字）", "主动核验设备当前实际应用状态");
+        if (!reason || reason.trim().length < 8) throw new Error("操作理由至少 8 个字");
+        const result = await reconcileK6Takeover(d.sid, { expectedVersion: d.takeover.rowVersion, reason: reason.trim(), operator: operator.id });
+        setTakeoverMessage(result.fresh ? "设备已返回新的应用态对账结果。" : "设备在 15 秒内未响应；当前仍为 fresh=false，未使用旧值冒充实时结果。");
+      } else {
+        const reason = window.prompt("请输入操作理由（至少 8 个字）", "设备接管异常处置与应用态核验");
+        if (!reason || reason.trim().length < 8) throw new Error("操作理由至少 8 个字");
+        const body = { expectedVersion: d.takeover.rowVersion, reason: reason.trim(), operator: operator.id };
+        if (action === "revoke") await revokeK6Takeover(d.sid, body);
+        if (action === "resend") await resendK6TakeoverRevoke(d.sid, body);
+        if (action === "retry") await retryK6Takeover(d.sid, body);
+        if (action === "target") {
+          const targetId = window.prompt("批准目标 key", d.remoteUrlKey ?? "");
+          const targetVersion = Number(window.prompt("批准目标版本", String(d.remoteTargetVersion ?? "")));
+          const targetCatalogVersion = Number(window.prompt("批准目录版本", String(d.remoteTargetCatalogVersion ?? "")));
+          if (!targetId || !Number.isInteger(targetVersion) || targetVersion <= 0 || !Number.isInteger(targetCatalogVersion) || targetCatalogVersion <= 0) throw new Error("批准目标及版本不完整");
+          await changeK6TakeoverTarget(d.sid, { ...body, targetId, targetVersion, targetCatalogVersion });
+        }
+        setTakeoverMessage("命令已由真实后端受理；页面正在回读服务端状态。");
+      }
+      await loadDetail();
+    } catch (error) {
+      setTakeoverMessage(error instanceof Error ? displayAdminError(error) : "接管操作失败");
+    } finally { setTakeoverBusy(false); }
   };
 
   return (
@@ -138,7 +171,7 @@ export function K6DeviceDetail({ device, onClose }: { device: Device; onClose: (
           <div className="k6-dsec">
             <h4>接管执行</h4>
             {!d.takeover ? (
-              <div className="k6-hint">后端尚未下发本设备的执行明细。上方命令状态只反映下发结果,<b>不代表设备已执行</b>;在后端补齐执行账本接口前,该设备是否真的执行、执行的是不是批准目标,后台无法确证。</div>
+              <div className="k6-hint">本设备尚无接管命令或执行记录。上方设备状态只反映策略判定，<b>不代表设备已执行</b>；只有下发命令并收到设备相位上报后，这里才会显示批准目标、实际目标和应用版本。</div>
             ) : (
               <>
                 {/* 期望侧用后台自己的批准绑定(remoteUrlKey),不用响应里的 expectedTargetId ——
@@ -204,6 +237,16 @@ export function K6DeviceDetail({ device, onClose }: { device: Device; onClose: (
                       : "原地重试会再次失败,请按建议改换目标或先撤销接管。"}
                   </div>
                 )}
+                {operator.role !== "viewer" && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                  {d.takeover.phase === "REVOKE_PENDING_ACK"
+                    ? <button className="k6-pgbtn" disabled={takeoverBusy} onClick={() => void runTakeover("resend")}>重发撤销（同命令 ID）</button>
+                    : !["REVOKED", "CANCELLED", "NONE", "HIT_NOT_REQUESTED"].includes(d.takeover.phase)
+                      ? <button className="k6-pgbtn" disabled={takeoverBusy} onClick={() => void runTakeover("revoke")}>撤销接管</button> : null}
+                  {d.takeover.phase === "FAILED" && takeoverRetryable(d.takeover.failureClass) && <button className="k6-pgbtn" disabled={takeoverBusy} onClick={() => void runTakeover("retry")}>原地重试</button>}
+                  {!["REVOKED", "CANCELLED", "NONE", "HIT_NOT_REQUESTED", "REVOKE_PENDING_ACK"].includes(d.takeover.phase) && <button className="k6-pgbtn" disabled={takeoverBusy} onClick={() => void runTakeover("target")}>换批准目标</button>}
+                  <button className="k6-pgbtn" disabled={takeoverBusy} onClick={() => void runTakeover("applied")}>查询应用态</button>
+                </div>}
+                {takeoverMessage && <div className="k6-hint" style={{ marginTop: 10 }}>{takeoverMessage}</div>}
               </>
             )}
           </div>
