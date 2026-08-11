@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { resolveNexionAppRoot, resolveNexionBackendRoot } from "./lib/nexion-workspace-paths.mjs";
+import { resolveNexionAppRoot, resolveNexionBackendRoot, resolveNexionPrdRoot } from "./lib/nexion-workspace-paths.mjs";
 
 const REAL_ADMIN = path.resolve("D:/workspace/nexion-ops-console");
 const HIGH_ADMIN = path.resolve("D:/workspace/nexion-高保真/nexion-ops-console");
@@ -20,6 +20,17 @@ test("real and nested admin layouts resolve the backend checkout", () => {
   const exists = (candidate) => normalize(candidate) === normalize(expected);
   assert.equal(normalize(resolveNexionBackendRoot({ adminRoot: REAL_ADMIN, env: {}, exists })), normalize(expected));
   assert.equal(normalize(resolveNexionBackendRoot({ adminRoot: HIGH_ADMIN, env: {}, exists })), normalize(expected));
+});
+
+test("real and nested admin layouts resolve the workspace PRD directory", () => {
+  const expected = path.resolve("D:/workspace/PRD");
+  const exists = (candidate) => normalize(candidate) === normalize(expected);
+  assert.equal(normalize(resolveNexionPrdRoot({ adminRoot: REAL_ADMIN, env: {}, exists })), normalize(expected));
+  assert.equal(normalize(resolveNexionPrdRoot({ adminRoot: HIGH_ADMIN, env: {}, exists })), normalize(expected));
+  assert.throws(
+    () => resolveNexionPrdRoot({ adminRoot: REAL_ADMIN, env: { NEXION_PRD_ROOT: "Z:/missing/PRD" }, exists: () => false }),
+    /NEXION_PRD_ROOT.*不存在/,
+  );
 });
 
 test("explicit checkout paths are authoritative and fail closed", () => {

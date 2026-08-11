@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
-import { resolveNexionAppRoot, resolveNexionBackendRoot } from "./lib/nexion-workspace-paths.mjs";
+import { resolveNexionAppRoot, resolveNexionBackendRoot, resolveNexionPrdRoot } from "./lib/nexion-workspace-paths.mjs";
 
 const isWindows = process.platform === "win32";
 const npmCmd = isWindows ? "npm.cmd" : "npm";
@@ -66,6 +66,15 @@ const SIBLING_REPOS = [
     hint: "克隆该仓到 ../Nexion-uniapp",
     ok: present(resolveNexionAppRoot),
     signature: /未找到 Nexion App 项目|NEXION_APP_ROOT 配置的.*不存在|ENOENT[^\n]*(Nexion-uniapp|NX1\.0)/i,
+  },
+  {
+    // 工作区文档面(PRD/)不是 git 仓,但对本仓一样是「可能不在这台机器上」的外部依赖:
+    // 只 clone admin-ops 的机器没有它,而读它的齿若硬崩,其后所有本地齿一个都跑不到。
+    name: "PRD 工作区文档面",
+    envKey: "NEXION_PRD_ROOT",
+    hint: "把工作区 PRD/ 放到 ../PRD",
+    ok: present(resolveNexionPrdRoot),
+    signature: /未找到 Nexion PRD 文档面|NEXION_PRD_ROOT 配置的.*不存在/,
   },
 ];
 /** 所有兄弟仓都在时行为与从前**逐字节一致**(仍走 stdio:inherit 流式输出)。 */
@@ -173,6 +182,10 @@ const GEARS = [
   ["E domain pending-store contract", "node", ["--test", "tests/e-pending-store-contract.test.mjs"]],
   ["H8 pending-store contract", "node", ["--test", "tests/h8-pending-store-contract.test.mjs"]],
   ["endpoint citation ledger", "node", ["scripts/endpoint-citation-sentinel.mjs"]],
+  // 提现单主键线上真名(`withdrawalNo`)在 PRD 与 admin 实现之间的 parity:后台 PRD 一度写成
+  // `withdrawalId`,错了很久没人发现 —— 手工改完 18 处但没有任何机器判据锁住它。真名从
+  // d-client.ts 派生,整棵 PRD 树逐处核;判别力由 scripts/_redtest-withdrawal-key-parity.mjs 证明。
+  ["withdrawal key-name parity", "node", ["scripts/withdrawal-key-parity.mjs"]],
   ["error-copy throat sentinel", "node", ["--experimental-strip-types", "scripts/error-copy-throat-sentinel.mjs"]],
   ["error-copy throat contract", "node", ["--experimental-strip-types", "--test", "tests/error-messages-backend-unavailable.test.mjs", "tests/fetch-guard.test.mjs"]],
   // 生产构建必须排在依赖兄弟仓 nexion-backend 的齿**之前**:它是最贵也最有价值的本地齿,

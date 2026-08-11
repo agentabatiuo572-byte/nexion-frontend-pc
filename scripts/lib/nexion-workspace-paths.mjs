@@ -55,6 +55,25 @@ export function resolveNexionBackendRoot({
 }
 
 /**
+ * 工作区文档面(PRD/)。它不是 git 仓而是工作区根下的目录,但对 admin-ops 而言同样是
+ * 「可能不在这台机器上」的外部依赖 —— 走同一个解析器,免得探测方与齿轮各抄一份候选路径后分叉。
+ */
+export function resolveNexionPrdRoot({
+  adminRoot,
+  env = process.env,
+  exists = fs.existsSync,
+} = {}) {
+  return resolveCheckoutRoot({
+    adminRoot,
+    env,
+    exists,
+    envKey: "NEXION_PRD_ROOT",
+    label: "PRD 文档面",
+    candidates: ["../PRD", "../../PRD"],
+  });
+}
+
+/**
  * 缺仓时返回 null 而不是抛错。
  *
  * why(2026-08-07):契约测试在**模块顶层**解析后端仓并读文件,缺仓即整文件加载失败 ——

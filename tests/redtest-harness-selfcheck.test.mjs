@@ -39,6 +39,35 @@ test("红测的三道自我保护还在(空注入守卫 / 失败关键词 / 还�
 });
 
 /**
+ * 提现单主键 parity 门的红测同样需要守门人(2026-08-11)。
+ * 它证明 `scripts/withdrawal-key-parity.mjs` 有判别力,自己却不在任何 npm script 里 ——
+ * 没有这条,它坏掉 / 用例被删时 verify 一声不吭,而那道门看起来照样全绿。
+ */
+const WD_REDTEST = "scripts/_redtest-withdrawal-key-parity.mjs";
+
+test("提现主键红测语法可解析且规模不缩水(用例被删=门失去判别力证明)", () => {
+  execFileSync("node", ["--check", WD_REDTEST], { cwd: new URL("../", import.meta.url).pathname.replace(/^\//, "") });
+  const src = read(WD_REDTEST);
+  const cases = src.match(/^\s{2}\["/gm) ?? [];
+  assert.ok(cases.length >= 16, `红测用例只剩 ${cases.length} 条,少于基线 16`);
+  assert.ok((src.match(/"green"/g) ?? []).length >= 3,
+    "反误红用例不足 3 条:只验「能打红」不验「不误红」的门迟早把合法写作挡死");
+  // 六个方向缺一不可 —— 少一个方向就等于那一类漂移从来没被验证过。
+  for (const marker of ["T1 ", "T2a ", "T3a ", "T4a ", "T5a ", "T6a "]) {
+    assert.ok(src.includes(marker), `红测缺 ${marker.trim()} 方向的用例`);
+  }
+});
+
+test("提现主键红测的三道自我保护还在(空注入 / 失败关键词 / 还原指纹)", () => {
+  const src = read(WD_REDTEST);
+  assert.match(src, /空注入/, "空注入守卫被摘掉后,零判别力的用例会照样打 ✓");
+  assert.match(src, /expectText/, "失败关键词机制被摘掉后,「红对了但理由不对」会照样打 ✓");
+  assert.match(src, /createHash\("sha1"\)/, "还原指纹被摘掉后,内容没还原也查不出来");
+  // 钉调用形状而不是散文:头注释里就写着「禁 git checkout」这几个字,按词面找必然自己误红。
+  assert.ok(!src.includes('"checkout"'), "还原必须走备份文件覆盖,禁 git checkout");
+});
+
+/**
  * 🔴 归属标记的键名必须是**稳定字面量**(第四轮验收 P1-D)。
  *
  * 根因是验证工具的维度盲区:契约测试在同一个进程里跑,模块级常量只求值一次,
