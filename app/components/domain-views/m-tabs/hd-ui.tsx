@@ -6,8 +6,9 @@
  * M2/M3/M4/M5/dock 复用。
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Icon, photoUrl, type IconName } from "../design-kit";
+import { Icon, type IconName } from "../design-kit";
 import type { SupportTicketStatus, SupportTicketPriority } from "./data";
+export { MAvatar, avInitials } from "./m-avatar";
 
 /* ---- 相对时间(运营可读中文) ---- */
 export function relWhen(ts: number): string {
@@ -16,31 +17,6 @@ export function relWhen(ts: number): string {
   if (diff < 3_600_000) return `${Math.max(1, Math.floor(diff / 60_000))} 分钟前`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
   return `${Math.floor(diff / 86_400_000)} 天前`;
-}
-
-/* ---- 头像:首字母 + token 色(无外部图) ---- */
-const AV_POOL = ["--m-hd", "--m-wait", "--m-ok", "--m-high", "--m-urgent"];
-export function avInitials(name?: string): string {
-  if (!name) return "?";
-  const s = name.replace(/用户|客户|的/g, "").trim();
-  const parts = s.split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return s.slice(0, 2).toUpperCase() || "?";
-}
-function avVar(name?: string): string {
-  let h = 0;
-  const n = name ?? "";
-  for (let i = 0; i < n.length; i += 1) h = (h * 31 + n.charCodeAt(i)) >>> 0;
-  return AV_POOL[h % AV_POOL.length];
-}
-export function MAvatar({ name, size, live }: { name?: string; size?: "sm" | "lg"; live?: boolean }) {
-  const v = avVar(name);
-  return (
-    <span className={`av ${size ?? ""} ${live ? "av-live" : ""}`.trim()} style={{ background: `color-mix(in srgb, var(${v}) 22%, transparent)`, color: `var(${v})` }}>
-      <span className="av-fb">{avInitials(name)}</span>
-      <img className="av-img" src={photoUrl(name)} alt="" loading="lazy" onError={(e) => { e.currentTarget.style.display = "none"; }} />
-    </span>
-  );
 }
 
 /* ---- 工单状态 / 优先级(运营可读中文 + 分类色) ---- */

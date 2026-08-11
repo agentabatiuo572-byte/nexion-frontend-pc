@@ -100,18 +100,19 @@ async function captureStep(tab, item, step, evidenceDir, seenConsoleKeys) {
 
 async function openFromVisibleSidebar(tab, item) {
   const domainIndex = item.code.charCodeAt(0) - "A".charCodeAt(0);
-  const domainButton = tab.playwright.locator("aside button").nth(domainIndex);
+  const sidebar = tab.playwright.getByRole("complementary");
+  const domainButton = sidebar.getByRole("button").nth(domainIndex);
   await domainButton.waitFor({ state: "visible", timeoutMs: 10_000 });
   if (await domainButton.getAttribute("aria-expanded") !== "true") {
     await domainButton.click({ timeoutMs: 10_000 });
   }
-  const link = tab.playwright.locator(`aside a[href="${item.href}"]`).first();
+  const link = sidebar.locator(`a[href="${item.href}"]`).first();
   await link.waitFor({ state: "visible", timeoutMs: 10_000 });
   await tab.playwright.waitForTimeout(250);
   await link.click({ timeoutMs: 10_000 });
   await tab.playwright.waitForTimeout(350);
   if (await tab.url() !== `http://localhost:3002${item.href}`) {
-    const freshLink = tab.playwright.locator(`aside a[href="${item.href}"]`).first();
+    const freshLink = sidebar.locator(`a[href="${item.href}"]`).first();
     await freshLink.waitFor({ state: "visible", timeoutMs: 10_000 });
     await freshLink.click({ timeoutMs: 10_000 });
   }

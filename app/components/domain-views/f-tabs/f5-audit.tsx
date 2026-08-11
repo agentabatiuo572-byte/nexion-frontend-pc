@@ -192,6 +192,18 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     });
   };
 
+  const exportAllFiltered = () => {
+    const filters = query();
+    ctx.openActionConfirm({
+      name: "导出当前筛选的全部佣金",
+      detail: "服务端会按当前类型、币种、用户、用户群和状态条件遍历全部匹配记录，不受页面 20 行限制；下载文件仅含脱敏字段，并校验行数与 SHA-256 后保存。",
+      run: async (reason) => {
+        const receipt = await ctx.exportF5Commissions(filters, reason);
+        ctx.toast(`已下载 ${receipt.filename} · ${receipt.rowCount} 行 · 完整性校验通过`);
+      },
+    });
+  };
+
   if (ctx.f5Loading && !data) {
     return <section className="pane"><div style={{ padding: 18 }}>F5 佣金事件审计加载中...</div></section>;
   }
@@ -220,6 +232,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
             <option value="withdrawn">已提现</option><option value="reversed">已撤销</option><option value="frozen">已冻结</option>
           </select>
           <button className="fbtn primary" onClick={() => void ctx.refreshF5(query())}>服务端筛选</button>
+          <button className="fbtn" onClick={exportAllFiltered}>导出筛选全量 CSV</button>
           {reissueAvailable && <button className="fbtn" onClick={reissue}>批量补发 ({selected.length})</button>}
         </div>
       </section>
@@ -348,6 +361,30 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
               </div>
             </aside>
           </div>
+
+          <section className="pane">
+            <div className="pane-h"><span className="ph-ttl">当前暂停闸门</span><span className="ph-sub">恢复仅解除未来佣金生产闸门，不自动解冻历史事件</span></div>
+            <table className="ctbl">
+              <thead><tr><th>用户</th><th>奖种</th><th>原因 / 操作人</th><th>更新时间</th><th>动作</th></tr></thead>
+              <tbody>
+                {!data.activeSuspensions.length && <tr className="empty-row"><td colSpan={5}>当前没有暂停中的用户奖种</td></tr>}
+                {data.activeSuspensions.map((item) => <tr key={`${item.userId}:${item.kind}`}>
+                  <td>{item.userId}</td><td>{KIND_LABELS[item.kind] ?? item.kind}</td>
+                  <td>{item.reason} / {item.operator}</td><td>{item.updatedAt}</td>
+                  <td>{canReject && <button className="fbtn primary" onClick={() => ctx.openActionConfirm({
+                    name: `恢复奖种 · ${item.userId} / ${item.kind}`,
+                    detail: "提交 A2 审批；批准后服务端 suspended=false，后续该奖种可继续生产，历史冻结事件保持原状态。",
+                    run: async (reason) => {
+                      const numericUserId = Number(String(item.userId).replace(/\D/g, ""));
+                      if (!Number.isSafeInteger(numericUserId) || numericUserId <= 0) throw new Error("无效用户 ID");
+                      await ctx.suspendF5UserCommissions(numericUserId, [item.kind], false, reason);
+                      ctx.toast(`用户 ${item.userId} 的 ${item.kind} 恢复已提交 A2 待确认`);
+                    },
+                  })}>恢复奖种</button>}</td>
+                </tr>)}
+              </tbody>
+            </table>
+          </section>
 
           <section className="pane">
             <div className="pane-h"><span className="ph-ttl">处置批次与历史</span><span className="ph-sub">冲正、补发、暂停、恢复、阈值变更</span></div>

@@ -22,6 +22,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 
 type NovaForm = {
   name: string;
+  runtimeSource: string;
   tickValue: string;
   tickUnit: NovaTimeUnit;
   cooldownValue: string;
@@ -41,12 +42,12 @@ type TemplateForm = {
 };
 const EMPTY_FORM: NovaForm = {
   name: "",
+  runtimeSource: "",
   tickValue: "",
   tickUnit: "minutes",
   cooldownValue: "",
   cooldownUnit: "hours",
 };
-const DEFAULT_TRIGGER_DESCRIPTION = "周期扫描：满足该通道业务触发条件时推送";
 const EMPTY_TEMPLATE: TemplateForm = {
   channel: "", name: "", cta: "", version: "v1",
   titleZh: "", bodyZh: "", titleVi: "", bodyVi: "", titleEn: "", bodyEn: "",
@@ -86,6 +87,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     titleEn: t.titleEn, bodyEn: t.bodyEn,
   }));
   const CTA_OPTIONS = data?.templateCtaOptions ?? [];
+  const RUNTIME_SOURCE_OPTIONS = data?.runtimeSourceOptions ?? [];
   const SOCIAL_DIST = data?.socialDistribution ?? [];
   const INITIAL_SOCIAL_EVENTS = data?.socialEvents ?? [];
   const SOCIAL_EVENT_TYPE_OPTIONS = data?.socialEventTypes ?? [];
@@ -111,6 +113,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     setEditNovaKey(n.key);
     setForm({
       name: n.name,
+      runtimeSource: n.trigger.startsWith("a4:") ? n.trigger : "",
       tickValue: tick.value,
       tickUnit: tick.unit,
       cooldownValue: cooldown.value,
@@ -140,7 +143,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       const prev = novas.find((x) => x.key === editNovaKey);
       runBackend(actions.updateI2NovaChannel(editNovaKey, {
         name,
-        trigger: prev?.trigger || DEFAULT_TRIGGER_DESCRIPTION,
+        trigger: form.runtimeSource || prev?.trigger || "",
         tick,
         cooldown: cd,
         ctr: prev?.ctr ?? 0,
@@ -151,7 +154,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       runBackend(actions.createI2NovaChannel({
         key,
         name,
-        trigger: DEFAULT_TRIGGER_DESCRIPTION,
+        trigger: form.runtimeSource,
         tick,
         cooldown: cd,
         ctr: 0,
@@ -771,7 +774,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
               <button
                 className="l-btn primary"
                 style={{ flex: 1, justifyContent: "center" }}
-                disabled={!form.name.trim() || cadenceError !== null}
+                disabled={!form.name.trim() || cadenceError !== null || (!editNovaKey && !form.runtimeSource)}
                 onClick={submitDrawer}
               >
                 {editNovaKey ? "保存" : "提交"}
@@ -791,6 +794,19 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder="例如：每周回顾"
               />
+            </label>
+            <label className="col" style={{ gap: 5 }}>
+              <span className="muted tiny">服务端真实事实源</span>
+              <select
+                className="fld"
+                value={form.runtimeSource}
+                disabled={!!editNovaKey && !form.runtimeSource}
+                onChange={(e) => setForm({ ...form, runtimeSource: e.target.value })}
+              >
+                <option value="">请选择受控事实源</option>
+                {RUNTIME_SOURCE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+              <span className="muted tiny">仅可选择服务端 A4 事实；客户端不能输入或伪造事件名。</span>
             </label>
             <label className="col" style={{ gap: 5 }}>
               <span className="muted tiny">检查间隔（多久执行一次扫描）</span>

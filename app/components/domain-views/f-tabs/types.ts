@@ -94,6 +94,7 @@ export interface FViewCtx {
   f2Error: string | null;
   refreshF2: () => Promise<void>;
   updateF2Config: (key: string, value: string, reason: string) => Promise<void>;
+  updateFConfigBatch: (sourceDomain: "F2" | "F3" | "F4", changes: Array<{ key: string; value: string }>, reason: string) => Promise<void>;
   // -- 双轨结算引擎(F3)· 读 + 配置写入 --
   f3Metrics: F3Metric[];
   f3Formula: F3Formula | null;
@@ -122,13 +123,18 @@ export interface FViewCtx {
   f4Loading: boolean;
   f4Error: string | null;
   refreshF4: () => Promise<void>;
-  updateF4Config: (key: string, value: string, reason: string) => Promise<void>;
+  updateF4Config: (key: string, value: string, reason: string, expectedVersion?: number) => Promise<void>;
   proposeF4Settlement: (reason: string) => Promise<void>;
+  proposeF4LeaderboardPayout: (period: "today" | "week" | "month" | "allTime", reason: string) => Promise<void>;
   // -- 佣金事件审计(F5)· 读 + 处置状态写入 --
   f5Overview: F5CommissionAuditOverview | null;
   f5Loading: boolean;
   f5Error: string | null;
   refreshF5: (query?: F5CommissionQuery) => Promise<void>;
+  exportF5Commissions: (
+    query: F5CommissionQuery,
+    reason: string,
+  ) => Promise<{ rowCount: number; filename: string; sha256: string }>;
   updateF5Config: (key: string, value: string, reason: string, expectedVersion: number) => Promise<void>;
   reverseF5Commission: (commissionId: string, refundRef: string, reason: string) => Promise<void>;
   reissueF5Commissions: (commissionIds: string[], reason: string) => Promise<void>;

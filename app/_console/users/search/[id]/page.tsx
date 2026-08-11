@@ -10,6 +10,7 @@ import { ArrowLeft, Bell, CreditCard, RefreshCcw, ShieldAlert, Snowflake, UserCo
 import {
   fetchUser360,
   fetchUserPaymentMethods,
+  executeUserDeviceTradein,
   notifyUserPaymentMethodRebind,
   resetUserNickname,
   unbindUserPaymentMethod,
@@ -43,6 +44,8 @@ const c1UserCommands = createSlotAttemptStore({
 const nicknameSlot = (userId: string | number) => `nickname-reset|${userId}`;
 const paymentSlot = (action: "unbind" | "rebind", userId: string | number, methodId: number) =>
   `payment-${action}|${userId}|${methodId}`;
+const deviceSlot = (action: "replace" | "recycle", userId: string | number, deviceId: number) =>
+  `device-${action}|${userId}|${deviceId}`;
 
 type Column = {
   key: string;
@@ -309,6 +312,7 @@ function ActionButton({
 export default function UserDetailPage() {
   const session = useAdminAuth((state) => state.session);
   const canWriteC1 = session?.role === "superadmin" || !!session?.authorities.includes("user_c1hub_write");
+  const canWriteC2 = session?.role === "superadmin" || !!session?.authorities.includes("user_c2_write");
   const canReadC2 = session?.role === "superadmin" || !!session?.authorities.includes("user_c2_read");
   const canReadC3 = session?.role === "superadmin" || !!session?.authorities.includes("user_c3_read");
   const canReadC5 = session?.role === "superadmin" || !!session?.authorities.includes("user_c5_read");
@@ -645,7 +649,10 @@ export default function UserDetailPage() {
                     只在**未确认注销成功**时显眼提示;已成功(revoked/success/done)不占版面。 */}
                 {method.status !== "BOUND" && !!method.pspRevokeStatus && !/^(revoked|success|succeeded|done|completed)$/i.test(method.pspRevokeStatus) && (
                   <p className="mt-2 rounded-[6px] px-2 py-1 text-[11px]" style={{ color: "var(--v5-warning)", background: "color-mix(in srgb, var(--v5-warning) 12%, transparent)" }}>
-                    支付商侧尚未确认注销({method.pspRevokeStatus})：该支付方式在支付商仍可能有效，未完成前不可视为彻底解绑。
+                    Nexion 本地解绑已成功，但支付商撤销{method.pspRevokeStatus === "FAILED" ? "失败" : "处理中"}（{method.pspRevokeStatus}）：该支付方式在支付商仍可能有效，未完成前不可视为彻底解绑。
+                    {method.revokeCommandNo ? ` 命令 ${method.revokeCommandNo}` : ""}{method.revokeAttempts ? ` · 已重试 ${method.revokeAttempts} 次` : ""}
+                    {method.revokeDeadlineAt && new Date(method.revokeDeadlineAt).getTime() < Date.now() ? " · 已超过撤销 SLA，请立即升级处理" : ""}
+                    {method.revokeLastError ? ` · ${method.revokeLastError}` : ""}
                   </p>
                 )}
                 {canWriteC1 && method.status === "BOUND" && <div className="mt-3 flex gap-2">{method.trialGuard ? <ActionButton disabled={!!actionPending} onClick={() => openActionConfirmReq({ action: `发送换绑通知 · 尾号 ${method.last4}`, detail: "向该用户发送真实站内通知与推送，引导先换绑试用扣款支付方式。", amplifies: false, run: async (reason) => { if (!userId) return; const slot = paymentSlot("rebind", userId, method.id); const commandKey = c1UserCommands.resolve(slot, String(method.version), () => `c1-payment-rebind-${crypto.randomUUID()}`); setActionPending(`换绑通知 ${method.id}`); try { await notifyUserPaymentMethodRebind(userId, method.id, method.version, reason, undefined, commandKey); c1UserCommands.forget(slot); toast.success("换绑通知已进入推送队列"); await loadPaymentMethods(); } catch (err) { if (!(err instanceof UsersOutcomeUnknownError)) c1UserCommands.forget(slot); toast.error("换绑通知失败", errorMessage(err)); return false; } finally { setActionPending(null); } } })}><Bell size={13} /> 发送换绑通知</ActionButton> : <ActionButton disabled={!!actionPending} onClick={() => openActionConfirmReq({ action: `解绑支付方式 · 尾号 ${method.last4}`, detail: "解绑后立即停止作为默认支付方式；若它是默认卡，服务器会选取其他已绑定方式作为默认。", amplifies: false, run: async (reason) => { if (!userId) return; const slot = paymentSlot("unbind", userId, method.id); const commandKey = c1UserCommands.resolve(slot, String(method.version), () => `c1-payment-unbind-${crypto.randomUUID()}`); setActionPending(`解绑 ${method.id}`); try { await unbindUserPaymentMethod(userId, method.id, method.version, reason, undefined, commandKey); c1UserCommands.forget(slot); toast.success("支付方式已从 Nexion 账户解绑"); if (!includeUnbound) { setIncludeUnbound(true); setPaymentPage(1); } else { await loadPaymentMethods(); } } catch (err) { if (!(err instanceof UsersOutcomeUnknownError)) c1UserCommands.forget(slot); toast.error("支付方式解绑失败", errorMessage(err)); return false; } finally { setActionPending(null); } } })}>解绑</ActionButton>}</div>}
@@ -706,6 +713,36 @@ export default function UserDetailPage() {
         >
           <Row label="在线 / 活跃">{numberLabel(detail.devices?.onlineCount)} / {numberLabel(detail.devices?.activeCount)}</Row>
           <Row label="日产出">{money(detail.devices?.dailyUsdt)} · {fmtNum(asNumber(detail.devices?.dailyNex))} NEX</Row>
+          {canWriteC2 && asArray(detail.devices?.records).map((device) => {
+            const deviceId = asNumber(device.id);
+            const deviceStatus = asText(device.status).toUpperCase();
+            if (!deviceId || ["RECYCLED", "DEACTIVATED", "INACTIVE", "RETIRED"].includes(deviceStatus)) return null;
+            const execute = (operation: "replace" | "recycle") => openActionConfirmReq({
+              action: operation === "replace" ? `设备置换 · ${asText(device.instanceNo)}` : `设备回收 · ${asText(device.instanceNo)}`,
+              detail: "该动作会变更当前用户的设备生命周期，并写入设备域审计与业务单号。",
+              amplifies: false,
+              run: async (reason) => {
+                if (!userId) return false;
+                const slot = deviceSlot(operation, userId, deviceId);
+                const commandKey = c1UserCommands.resolve(slot, `${deviceStatus}|${asText(device.instanceNo)}`, () => `c2-device-${crypto.randomUUID()}`);
+                setActionPending(`${operation} ${deviceId}`);
+                try {
+                  await executeUserDeviceTradein(userId, deviceId, operation, reason, undefined, commandKey);
+                  c1UserCommands.forget(slot);
+                  toast.success(operation === "replace" ? "设备置换已执行" : "设备回收已执行");
+                  await load();
+                  return true;
+                } catch (err) {
+                  if (!(err instanceof UsersOutcomeUnknownError)) c1UserCommands.forget(slot);
+                  toast.error("设备生命周期操作失败", errorMessage(err));
+                  return false;
+                } finally {
+                  setActionPending(null);
+                }
+              },
+            });
+            return <div key={`device-actions-${deviceId}`} className="mt-2 flex items-center justify-between gap-3 rounded-[8px] px-3 py-2" style={{ background: "var(--v5-surface-2)" }}><span className="text-[12px]" style={{ color: "var(--v5-ink-3)" }}>{asText(device.instanceNo)} · {deviceStatus}</span><span className="flex gap-2"><ActionButton disabled={!!actionPending} onClick={() => execute("replace")}>设备置换</ActionButton><ActionButton disabled={!!actionPending} onClick={() => execute("recycle")}>设备回收</ActionButton></span></div>;
+          })}
         </HubSection>
 
         <HubSection

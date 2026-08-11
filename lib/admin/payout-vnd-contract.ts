@@ -21,6 +21,7 @@ export type PayoutVndConfig = PayoutVndValues & {
   channelEnabled: boolean;
   providerReady: boolean;
   providerStatusAvailable: boolean;
+  sandboxAvailable: boolean;
   defaults: PayoutVndValues;
   effectiveAt: string;
   lastUpdatedBy: string;
@@ -87,6 +88,7 @@ export function normalizePayoutVndConfig(value: unknown): PayoutVndConfig {
   const channelEnabled = boolean(source.channelEnabled, "channelEnabled");
   const providerReady = boolean(source.providerReady, "providerReady");
   const providerStatusAvailable = boolean(source.providerStatusAvailable, "providerStatusAvailable");
+  const sandboxAvailable = boolean(source.sandboxAvailable, "sandboxAvailable");
   if (providerReady && !providerStatusAvailable) invalid("providerStatusAvailable");
   const rawSources = record(source.sources, "sources");
   if (rawSources.baseRateVndPerUsdt !== "D6" || rawSources.buySpreadPct !== "D6"
@@ -99,6 +101,7 @@ export function normalizePayoutVndConfig(value: unknown): PayoutVndConfig {
     channelEnabled,
     providerReady,
     providerStatusAvailable,
+    sandboxAvailable,
     defaults,
     effectiveAt: isoInstant(source.effectiveAt, "effectiveAt"),
     lastUpdatedBy: text(source.lastUpdatedBy, "lastUpdatedBy"),

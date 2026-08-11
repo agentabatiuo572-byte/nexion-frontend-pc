@@ -10,6 +10,7 @@ const service = readFileSync(`${backendRoot}/application/OpsBiService.java`, "ut
 const repository = readFileSync(`${backendRoot}/infrastructure/MybatisBiReportRepository.java`, "utf8");
 const artifactStore = readFileSync(`${backendRoot}/infrastructure/BiReportArtifactStore.java`, "utf8");
 const page = readFileSync("app/components/domain-views/l-tabs/l2-funnel.tsx", "utf8");
+const stageContract = readFileSync("app/components/domain-views/l-tabs/l2-stage-events-contract.ts", "utf8");
 const client = readFileSync("lib/admin/l-client.ts", "utf8");
 const bff = readFileSync("app/api/admin/bi/[...path]/route.ts", "utf8");
 
@@ -57,6 +58,28 @@ test("L2 UI renders the selected real cohort curve and never prints null percent
   assert.match(page, /未成熟窗口不推算/);
   assert.match(page, /isStrictL2Dashboard/);
   assert.match(page, /L2 响应协议错误/);
+});
+
+test("L2 strict parser uses the canonical event-contract cardinality, not a retired fixed stage count", () => {
+  assert.match(stageContract, /export const L2_STAGE_EVENT_CONTRACT = \[/);
+  assert.match(page, /const canonicalStageCount(?:: number)? = L2_STAGE_EVENT_CONTRACT\.length/);
+  assert.match(page, /canonicalStageCount === 0/);
+  assert.match(page, /funnel\.length !== canonicalStageCount/);
+  assert.match(page, /extensions\.length !== canonicalStageCount/);
+  assert.doesNotMatch(page, /funnel\.length !== 5/);
+  assert.doesNotMatch(page, /extensions\.length !== 5/);
+});
+
+test("L2 keeps malformed detailed responses fail-closed after the cardinality repair", () => {
+  assert.match(page, /!finiteCount\(item\.users\)/);
+  assert.match(page, /!finitePercent\(item\.cvr\)/);
+  assert.match(page, /if \(detailedAttempt && !strictDetailed\) return/);
+  assert.match(page, /不展示部分数字，也不允许导出/);
+});
+
+test("L2 labels the visible canonical funnel with its four actual stages", () => {
+  assert.match(page, /完整漏斗下钻 · 四级/);
+  assert.doesNotMatch(page, /完整漏斗下钻 · 五级/);
 });
 
 test("L2 filters and exports are computed server-side from the registration actor set", () => {

@@ -31,14 +31,19 @@ import Link from "next/link";
 import { Drawer } from "../design-kit";
 import {
   createA4IdempotencyKey,
+  fetchA4RetentionLatest,
   fetchA4Overview,
   registerA4DomainExtension,
   registerA4Schema,
+  runA4RetentionNow,
+  transitionA4Lifecycle,
   updateA4DimensionParam,
   type A4DomainExtensionBatch,
   type A4EventFamily,
   type A4Overview,
+  type A4RetentionExecution,
 } from "@/lib/admin/a4-client";
+import { fetchA2ReasonPolicy } from "@/lib/admin/a2-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import type { ACtx } from "./types";
@@ -61,10 +66,15 @@ const eventNameValid = (value: string) => /^[a-z][a-z0-9_]*\.[a-z0-9]+(?:_[a-z0-
 export function A4Events({ ctx }: { ctx: ACtx }) {
   const { toast, openActionConfirm } = ctx;
   const canWrite = useAdminAuth((state) => state.session?.authorities.includes("platform_a4_write") ?? false);
+  const canA2Write = useAdminAuth((state) => state.session?.authorities.includes("platform_a2_write") ?? false);
+  const canRunRetention = canWrite && canA2Write;
   const [overview, setOverview] = useState<A4Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mutating, setMutating] = useState<string | null>(null);
+  const [retentionRun, setRetentionRun] = useState<A4RetentionExecution | null>(null);
+  const [retentionRunError, setRetentionRunError] = useState<string | null>(null);
+  const [a2ReasonMin, setA2ReasonMin] = useState(8);
 
   const refreshOverview = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
@@ -81,6 +91,24 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
   useEffect(() => {
     void refreshOverview();
   }, [refreshOverview]);
+
+  const refreshRetentionRun = useCallback(async () => {
+    try {
+      setRetentionRunError(null);
+      setRetentionRun(await fetchA4RetentionLatest());
+    } catch (error) {
+      setRetentionRun(null);
+      setRetentionRunError(displayAdminError(error));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshRetentionRun();
+  }, [refreshRetentionRun]);
+
+  useEffect(() => {
+    void fetchA2ReasonPolicy().then((policy) => setA2ReasonMin(policy.minChars)).catch(() => undefined);
+  }, []);
 
   /* drawers */
   const [famIdx, setFamIdx] = useState<number | null>(null);
@@ -208,7 +236,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
           toast("A4_PROTECTED_EVENT_SAMPLING_INVALID:资金、风控、转化必须保持 100%"); return;
         }
         const percent = Number.parseInt(val.match(/\d{1,3}/)?.[0] || "", 10);
-        if (!Number.isFinite(percent) || percent < 1 || percent > 100) { toast("A4_PROTECTED_EVENT_SAMPLING_INVALID:请输入浏览/会话 1–100%"); return; }
+        if (!Number.isFinite(percent) || percent < 0 || percent > 100) { toast("A4_SAMPLING_VALUE_INVALID:请输入浏览/会话 0–100%"); return; }
         return updateParam("sampling", String(percent), reason, `浏览/会话采样率已更新为 ${percent}%`, stableKey);
       },
     });
@@ -233,7 +261,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
         kind: "schema-authoring",
         ownerDomains: SCHEMA_OWNER_DOMAINS,
         propertyTypes: ["string", "number", "boolean", "enum", "timestamp", "id", "json"],
-        samplingPolicies: ["100%(资金/风控/转化)", "浏览 10%", "会话 25%"],
+        samplingPolicies: ["100%(资金/风控/转化)", "浏览 0%", "浏览 10%", "会话 25%"],
         versionHint: liveSchemaVer,
       },
       run: (reason, _v, bv) => {
@@ -275,6 +303,59 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
     if (!canWrite) { toast("当前账号只有 A4 读取权限，不能登记扩展工单"); return; }
     setBatchForm({ domain: "", event: "", producer: "", consumer: "" });
     setNaBatch(true);
+  };
+
+  const runRetention = () => {
+    if (!canRunRetention) { toast("立即清理需要 A4 写权限和 A2 审计执行权限"); return; }
+    const commandKey = createA4IdempotencyKey("a4-retention-run");
+    openActionConfirm({
+      action: <>立即执行终态事件保留清理</>,
+      detail: <>只删除已超过事件留存期的 analytics 终态 outbox（PUBLISHED / DEAD）与过期行为事实；PENDING / FAILED 投递、业务账本和非分析事件均不触及。执行结果会写 A2 required audit；同一命令号重试幂等。</>,
+      amplifies: false,
+      reasonMin: a2ReasonMin,
+      reasonMax: 200,
+      run: async (reason) => {
+        setMutating("retention-run");
+        try {
+          const result = await runA4RetentionNow(reason, commandKey);
+          setRetentionRun(result);
+          toast(result.lockAcquired
+            ? `事件保留清理完成：终态 outbox ${result.outboxRows}，行为事实 ${result.behaviorFactRows}`
+            : "已有事件保留清理在执行，本次未删除任何数据");
+        } catch (error) {
+          toast(`执行失败:${displayAdminError(error)}`);
+          throw error;
+        } finally {
+          setMutating(null);
+        }
+      },
+    });
+  };
+
+  const transitionLifecycle = (schema: A4Overview["schemaRegistrations"][number]) => {
+    const next = ({ new: "pending_publish", pending_publish: "gray", gray: "full", full: "disabled" } as const)[schema.lifecycleState as "new" | "pending_publish" | "gray" | "full"];
+    if (!next || !canWrite) return;
+    const stableKey = createA4IdempotencyKey(`a4-lifecycle-${schema.eventName}`);
+    openActionConfirm({
+      action: `推进事件生命周期 · ${schema.eventName}`,
+      detail: <>服务端 CAS 校验 <b>{schema.lifecycleState} / v{schema.lifecycleVersion}</b> 后推进到 <b>{next}</b>；冲突或审计失败均不生效。</>,
+      amplifies: false,
+      reasonMin: 8,
+      reasonMax: 200,
+      run: async (reason) => {
+        setMutating(`lifecycle-${schema.eventName}`);
+        try {
+          await transitionA4Lifecycle(schema.eventName, next, schema.lifecycleState, schema.lifecycleVersion, reason, stableKey);
+          await refreshOverview(true);
+          toast(`${schema.eventName} 已推进到 ${next} · 已回读服务端状态`);
+        } catch (error) {
+          toast(`生命周期推进失败:${displayAdminError(error)}`);
+          throw error;
+        } finally {
+          setMutating(null);
+        }
+      },
+    });
   };
 
   /* ────────────────── 渲染 ────────────────── */
@@ -441,9 +522,12 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
                 : adjSampling;
               return (
                 <div className="a-vrow" key={p.key}>
-                  <span className="nm">{p.name}<small>{p.sub}</small></span>
+                  <span className="nm">{p.name}<small>{p.sub}{p.key === "event_retention" && (retentionRun
+                    ? ` · 最近执行:${retentionRun.evaluatedAt} · 锁:${retentionRun.lockAcquired ? "已取得" : "占用"} · outbox:${retentionRun.outboxRows} · 事实:${retentionRun.behaviorFactRows}`
+                    : retentionRunError ? ` · 最近状态读取失败:${retentionRunError}` : " · 暂无人工执行记录")}</small></span>
                   <span className="v">{live}</span>
                   <button className="l-btn sm mc" title={canWrite ? undefined : "当前账号只有读取权限"} disabled={!canWrite || !overview || !!loadError || !!mutating} onClick={onAdj}>调整</button>
+                  {p.key === "event_retention" && <button className="l-btn sm mc" title={canRunRetention ? undefined : "需要 A4 写权限和 A2 审计执行权限"} disabled={!canRunRetention || !overview || !!loadError || !!mutating} onClick={runRetention}>立即清理</button>}
                 </div>
               );
             })}
@@ -556,27 +640,20 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
 
       <section className="l-card" data-restored-capability="a4-event-lifecycle" aria-labelledby="a4-lifecycle-title">
         <div className="l-h">
-          <span className="ttl" id="a4-lifecycle-title">事件发布生命周期 · 设计保留</span>
-          <span className="sub">· 服务端权威契约未完成，当前只展示不可操作的目标流程</span>
+          <span className="ttl" id="a4-lifecycle-title">事件发布生命周期</span>
+          <span className="sub">· 服务端权威状态 · 单向推进 · CAS + 幂等 + A4 审计</span>
         </div>
         <div className="l-b">
-          <div className="a4-pipe" aria-label="事件发布目标生命周期">
-            {[
-              ["新建", "仅登记 schema"],
-              ["待发布", "等待发布条件齐备"],
-              ["灰度", "小流量验证"],
-              ["全量", "正式消费"],
-              ["停用", "停止新事件"],
-            ].map(([label, note], index, rows) => (
-              <span key={label} style={{ display: "contents" }}>
-                <span className="st" aria-disabled="true">{label}<small>{note}</small></span>
-                {index < rows.length - 1 && <span className="ar">→</span>}
-              </span>
-            ))}
-          </div>
-          <div className="atint warn" style={{ marginTop: 12 }}>
-            当前 Schema Registry 只支持登记与口径治理，尚无新建→待发布→灰度→全量→停用的服务端状态迁移接口。页面不伪造发布成功；后续接入必须补齐权限、版本冲突、失败回读、刷新/重登与 A2/A4 审计验收。
-          </div>
+          <table className="l-tbl">
+            <thead><tr><th>事件</th><th>当前状态</th><th>版本</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
+            <tbody>{SCHEMA_REGISTRATIONS.map((schema) => {
+              const next = ({ new: "pending_publish", pending_publish: "gray", gray: "full", full: "disabled" } as const)[schema.lifecycleState as "new" | "pending_publish" | "gray" | "full"];
+              return <tr key={`lifecycle-${schema.eventName}`}>
+                <td className="mono">{schema.eventName}</td><td>{schema.lifecycleState}</td><td className="mono">v{schema.lifecycleVersion}</td>
+                <td style={{ textAlign: "right" }}>{next ? <button className="l-btn sm mc" disabled={!canWrite || !!mutating || !!loadError} onClick={() => transitionLifecycle(schema)}>推进到 {next}</button> : <span className="bdg dim">终态</span>}</td>
+              </tr>;
+            })}</tbody>
+          </table>
         </div>
       </section>
 

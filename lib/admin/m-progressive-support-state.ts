@@ -27,3 +27,16 @@ export function preserveVerifiedSupportAgentsDuringReload<T extends MSupportAgen
     transferTargets: previous.transferTargets,
   };
 }
+
+/** A current full-load rejection must never leave the M1 roster in pending. */
+export function failClosedSupportAgentsAfterReload<T extends MSupportAgentProgress>(previous: T | null): T | null {
+  if (!previous) return previous;
+  return {
+    ...previous,
+    supportAgents: [],
+    supportAgentsAvailable: false,
+    supportAgentsError: "unavailable",
+    advisorAssignments: [],
+    transferTargets: [],
+  };
+}

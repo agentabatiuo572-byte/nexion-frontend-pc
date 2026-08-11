@@ -1,0 +1,20 @@
+PC remaining-development completion verification receipt
+time: 2026-08-11 03:19:37 +09:00
+workdir: D:\workspace\nexion-ops-console
+command: npm.cmd run verify
+result: PASS
+summary: verify OK (61/61 gears)
+status-contract: PASS (240 rows; built=217; readonly=23; pending=0; missing=0)
+ops-actions: PASS (unique claims; reverse coverage=0 issues; runtime evidence=0 issues; service delegation=0 issues)
+active-leaf-coverage: PASS (75/75 flagship leaves)
+backend-full-test: PASS (single mvn test run; 3165 tests; 0 failures; 0 errors; 0 skipped; finished 2026-08-11 02:42:00 +09:00)
+pc-typecheck-production-build: PASS (Build ID y-mI9UTdxKTpEmuKRPGmr)
+uniapp-verify: PASS (type-check, contracts, H5 production build and 20 runtime scenarios + 5 direct probes)
+janus-verify: PASS (type-check and KYC removal contracts)
+real-browser-walkthrough: PASS (75/75 first pass + 75/75 refresh + 75/75 browser-back + 75/75 relogin; 34 affected pages x 5 screenshots; 6297 network events; 170 steps; Playwright trace)
+browser-runtime: PASS (0 page errors; 0 unexpected console errors; 0 admin HTTP errors; 0 request failures; 1 expected anonymous session 401 recorded separately)
+visible-action: PASS (D7 sandbox order create POST 200 + signed callback POST 200; source=mock; sandbox=true; COMPLETED after refresh and logout/login)
+adversarial: PASS (fixture-only Murphy runner; 6 independent lanes; candidate drift guard covers tracked staged/unstaged and untracked files)
+sha-ledger: PASS (selected evidence files and final-v8 evidence ledger; byte-for-byte SHA-256 validation)
+boundary: mock/sandbox receipts are isolated; production providers remain fail-closed where unavailable
+release: no commit, push or deployment performed

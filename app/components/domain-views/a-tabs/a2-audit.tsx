@@ -28,14 +28,18 @@ import {
   approveA2Operation,
   createA2CommandKey,
   exportA2Audit,
+  fetchA2RetentionLatest,
   fetchA2Overview,
   rejectA2Operation,
+  runA2RetentionNow,
   updateA2MechanismParam,
+  withdrawA2Operation,
   type A2AuditDomain,
   type A2AuditFilter,
   type A2OperationRow,
   type A2OperationType,
   type A2Overview,
+  type RetentionExecution,
 } from "@/lib/admin/a2-client";
 import {
   A2_AUDIT_DOMAINS,
@@ -161,6 +165,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const [filterDraft, setFilterDraft] = useState<A2AuditFilter>({ domain: "all" });
   const [appliedFilter, setAppliedFilter] = useState<A2AuditFilter>({});
   const [routeFilterReady, setRouteFilterReady] = useState(false);
+  const [retentionRun, setRetentionRun] = useState<RetentionExecution | null>(null);
+  const [retentionRunError, setRetentionRunError] = useState<string | null>(null);
+  const [retentionPending, setRetentionPending] = useState(false);
 
   const loadOverview = useCallback(async (filter: A2AuditFilter) => {
     setLoading(true);
@@ -196,6 +203,20 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     [appliedFilter, loadOverview],
   );
 
+  const refreshRetentionRun = useCallback(async () => {
+    try {
+      setRetentionRunError(null);
+      setRetentionRun(await fetchA2RetentionLatest());
+    } catch (error) {
+      setRetentionRun(null);
+      setRetentionRunError(displayAdminError(error));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshRetentionRun();
+  }, [refreshRetentionRun]);
+
   const stats = overview?.stats ?? {
     pendingTickets: 0,
     fundTickets: 0,
@@ -212,6 +233,33 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const mechanismParams = overview?.mechanismParams ?? [];
   const confirmCategories = overview?.confirmCategories ?? [];
   const reasonMin = parseA2ReasonMin(mechanismParams.find((p) => p.key === "ttl")?.value);
+
+  const runRetention = () => {
+    if (!canWrite) { toast("当前账号没有 A2 执行留存清理权限"); return; }
+    const commandKey = createA2CommandKey("a2-retention-run");
+    openActionConfirm({
+      action: <>立即执行审计冷归档保留清理</>,
+      detail: <>只处理已到 <b>expire_at</b> 的新审计行；每行先写入 append-only 冷归档并校验后才删除热表。历史无 expire_at 行、执行审计自身和未归档行都不会删除；同一命令号重试不会重复生效。</>,
+      amplifies: false,
+      reasonMin,
+      reasonMax: 200,
+      run: async (reason) => {
+        setRetentionPending(true);
+        try {
+          const result = await runA2RetentionNow(reason, commandKey);
+          setRetentionRun(result);
+          toast(result.lockAcquired
+            ? `保留清理完成：归档 ${result.archivedRows}，删除热表 ${result.deletedRows}`
+            : "已有保留清理在执行，本次未删除任何数据");
+        } catch (error) {
+          toast(`执行失败:${displayAdminError(error)}`);
+          throw error;
+        } finally {
+          setRetentionPending(false);
+        }
+      },
+    });
+  };
 
   /* 高敏动作过滤 + 分页 */
   const [qType, setQType] = useState<QType>("all");
@@ -283,6 +331,30 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           toast(`${w.id} 已取消 · 已重新读取服务端状态与审计记录`);
         } catch (error) {
           toast(`取消失败:${displayAdminError(error)}`);
+          throw error;
+        }
+      },
+    });
+  };
+
+  const withdrawWo = (w: A2OperationRow) => {
+    const commandKey = createA2CommandKey(`a2-withdraw-${w.id}`);
+    openActionConfirm({
+      action: <>撤回本人提案 · {w.id}</>,
+      detail: <>仅提案发起人可在 pending 状态撤回；服务端以 maker 身份与状态 CAS 双重校验，撤回后释放锁且不执行目标动作。</>,
+      amplifies: false,
+      reasonMin,
+      reasonMax: 200,
+      run: async (reason) => {
+        try {
+          await withdrawA2Operation(w.id, reason, operator, commandKey);
+          const next = await refreshOverview();
+          const confirmed = next.operationQueue.some((item) => item.id === w.id && item.status === "withdrawn")
+            || next.operationHistory.some((item) => item.id === w.id && item.st === "withdrawn");
+          if (!confirmed) throw new Error("A2_WITHDRAW_WRITE_NOT_CONFIRMED");
+          toast(`${w.id} 已撤回 · 已重新读取服务端状态与审计记录`);
+        } catch (error) {
+          toast(`撤回失败:${displayAdminError(error)}`);
           throw error;
         }
       },
@@ -395,7 +467,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       action: "审计/事件字段结构变更",
       detail: (
         <>
-          新增事件名或属性须先在事件中台(A4)注册:超管执行操作确认后落库生效。
+          新增事件名或属性须先在事件中台(A4)注册；当前仅支持已注册的 v3、v4，且只能单调升级。
           全后台共用一套字段结构,各域不许私加字段——口径分裂了取证就对不上。
         </>
       ),
@@ -404,7 +476,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       reasonMax: 200,
       edit: { kind: "text", current: cur, unit: "" },
       run: async (reason, v) => {
-        const validation = validateA2MechanismValue("schema", v ?? "");
+        const validation = validateA2MechanismValue("schema", v ?? "", cur);
         if (!validation.ok) {
           toast(`拒绝:${validation.message}`);
           throw new Error(validation.message);
@@ -579,7 +651,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {isFinal ? (
                         <span className={`bdg ${HIST_TONE[status] ?? "dim"}`}>{HIST_LABEL[status] ?? status}</span>
-                      ) : canApprove && !isCurrentOperator(w, principal) ? (
+                      ) : isCurrentOperator(w, principal) ? (
+                        <button className="l-btn sm" onClick={(e) => { e.stopPropagation(); withdrawWo(w); }}>撤回本人提案</button>
+                      ) : canApprove ? (
                         <>
                           <button
                             className="l-btn sm mc"
@@ -592,7 +666,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                         </>
                       ) : (
                         <span className="bdg dim">
-                          {isCurrentOperator(w, principal) ? "需其他具权人员执行" : "待门槛者执行"}
+                          待门槛者执行
                         </span>
                       )}
                     </td>
@@ -810,9 +884,12 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               if (p.key === "retention") {
                 return (
                   <div className="a-vrow" key={p.key}>
-                    <span className="nm">{p.name}<small>{p.sub}</small></span>
+                    <span className="nm">{p.name}<small>{p.sub} · {retentionRun
+                      ? `最近执行:${retentionRun.evaluatedAt} · 锁:${retentionRun.lockAcquired ? "已取得" : "占用"} · 归档:${retentionRun.archivedRows} · 删除:${retentionRun.deletedRows}`
+                      : retentionRunError ? `最近状态读取失败:${retentionRunError}` : "暂无人工执行记录"}</small></span>
                     <span className="v">{p.value}</span>
                     {canWrite && <button className="l-btn sm mc" onClick={adjRet}>调整</button>}
+                    {canWrite && <button className="l-btn sm mc" disabled={retentionPending || !overview || !!loadError} onClick={runRetention}>立即清理</button>}
                   </div>
                 );
               }

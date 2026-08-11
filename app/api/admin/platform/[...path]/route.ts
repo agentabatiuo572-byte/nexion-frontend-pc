@@ -37,11 +37,21 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "events" && parts[1] === "overview") {
     return "/api/admin/platform/events/overview";
   }
+  if (parts.length === 3 && parts[0] === "events" && parts[1] === "retention-runs" && parts[2] === "latest") {
+    return "/api/admin/platform/events/retention-runs/latest";
+  }
+  if (parts.length === 2 && parts[0] === "events" && parts[1] === "retention-runs") {
+    return "/api/admin/platform/events/retention-runs";
+  }
   if (parts.length === 3 && parts[0] === "events" && parts[1] === "params" && isNonEmpty(parts[2])) {
     return `/api/admin/platform/events/params/${encodeURIComponent(parts[2])}`;
   }
   if (parts.length === 2 && parts[0] === "events" && (parts[1] === "schema-registrations" || parts[1] === "domain-extension-batches")) {
     return `/api/admin/platform/events/${parts[1]}`;
+  }
+  if (parts.length === 4 && parts[0] === "events" && parts[1] === "schema-registrations"
+      && isNonEmpty(parts[2]) && parts[3] === "lifecycle") {
+    return `/api/admin/platform/events/schema-registrations/${encodeURIComponent(parts[2])}/lifecycle`;
   }
   if (parts.length === 2 && parts[0] === "accounts" && parts[1] === "overview") {
     return "/api/admin/platform/accounts/overview";
@@ -85,8 +95,11 @@ function backendPath(parts: string[]) {
     return "/api/admin/platform/rbac/actions";
   }
   if (parts.length >= 1 && parts[0] === "audit") {
-    if (parts.length === 2 && (parts[1] === "overview" || parts[1] === "logs" || parts[1] === "exports")) {
+    if (parts.length === 2 && (parts[1] === "overview" || parts[1] === "logs" || parts[1] === "exports" || parts[1] === "reason-policy" || parts[1] === "retention-runs")) {
       return `/api/admin/platform/audit/${parts[1]}`;
+    }
+    if (parts.length === 3 && parts[1] === "retention-runs" && parts[2] === "latest") {
+      return "/api/admin/platform/audit/retention-runs/latest";
     }
     if (parts.length === 2 && parts[1] === "operations") {
       return "/api/admin/platform/audit/operations";
@@ -94,7 +107,8 @@ function backendPath(parts: string[]) {
     if (parts.length === 4 && parts[1] === "logs" && parts[2] === "trace" && isNonEmpty(parts[3])) {
       return `/api/admin/platform/audit/logs/trace/${encodeURIComponent(parts[3])}`;
     }
-    if (parts.length === 4 && parts[1] === "operations" && isNonEmpty(parts[2]) && (parts[3] === "approve" || parts[3] === "reject")) {
+    if (parts.length === 4 && parts[1] === "operations" && isNonEmpty(parts[2])
+        && (parts[3] === "approve" || parts[3] === "reject" || parts[3] === "withdraw")) {
       return `/api/admin/platform/audit/operations/${encodeURIComponent(parts[2])}/${parts[3]}`;
     }
     if (parts.length === 3 && parts[1] === "mechanism-params" && isNonEmpty(parts[2])) {

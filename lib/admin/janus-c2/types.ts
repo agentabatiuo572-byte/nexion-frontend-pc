@@ -349,6 +349,7 @@ export interface FunnelRow {
 }
 
 export interface K6DashboardSnapshot {
+  executionEnvironment: "PRODUCTION" | "SANDBOX";
   summary: C2Summary;
   distribution: Record<DeviceStatus, number>;
   funnel: FunnelRow[];

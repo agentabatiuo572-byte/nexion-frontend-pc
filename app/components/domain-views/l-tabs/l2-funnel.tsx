@@ -6,6 +6,7 @@
  * 全页只读下钻;导出为聚合序列(仍需操作确认 落审计)。
  */
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import {
@@ -22,11 +23,13 @@ import { readL2LiveStages } from "./l1-l2-live-data";
 import { L2LiveStages } from "./l1-l2-live-fallback";
 import {
   isCanonicalL2StageEvents,
+  L2_STAGE_EVENT_CONTRACT,
   L2_STAGE_QUERY_EVENTS,
   validateL2FunnelEventBindings,
   validateL2LifecycleContract,
 } from "./l2-stage-events-contract";
 import type { LCtx } from "./types";
+import { L2_ATTRIBUTION_LINKS } from "./l-attribution-routes";
 
 type FunnelRow = { stage: string; ev?: string; users: number; cvr?: number | null; lc: string; color: string; target?: string | null };
 type FunnelExt = {
@@ -80,7 +83,8 @@ export function isStrictL2Dashboard(raw: unknown): boolean {
   const cohorts = rows<Record<string, unknown>>(data.cohorts);
   const monthly = rows<Record<string, unknown>>(data.monthlyCohorts);
   const lifecycleStagesPresent = Object.prototype.hasOwnProperty.call(data, "stages");
-  if (funnel.length !== 5 || extensions.length !== 5 || cohorts.length === 0
+  const canonicalStageCount: number = L2_STAGE_EVENT_CONTRACT.length;
+  if (canonicalStageCount === 0 || funnel.length !== canonicalStageCount || extensions.length !== canonicalStageCount || cohorts.length === 0
     || !isCanonicalL2StageEvents(data.stageEvents)
     || !validateL2FunnelEventBindings(data.funnel, data.stageEvents)
     || (lifecycleStagesPresent && !validateL2LifecycleContract(data))) return false;
@@ -505,7 +509,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
       {/* (a) 完整漏斗下钻 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">完整漏斗下钻 · 五级</span>
+          <span className="ttl">完整漏斗下钻 · 四级</span>
           <span className="sub">· <AutoGloss>点击任意一级展开「流入 / 转化 / 流失去向 / 停留时长」 · L1–L5 编号是内部生命周期标注,不对用户展示</AutoGloss></span>
           <div className="r"><span className="lcode lock" title="漏斗口径由服务端统一维护">🔒 漏斗定义锁定</span><span className="lcode electric">和驾驶舱漏斗是同一份数字</span></div>
         </div>
@@ -638,8 +642,8 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
           </div>
           <div className="xd-foot">
             <span className="ltint warn" style={{ flex: 1, minWidth: 260 }}><b>{xd.msg.pre.split("·")[0].trim()}</b> · <AutoGloss>{xd.msg.pre.split("·").slice(1).join("·")}</AutoGloss><b>{xd.msg.bold}</b><AutoGloss>{xd.msg.post}</AutoGloss></span>
-            {[["B4 节奏", "跳 B4 节奏状态(Phase 效果归因)"], ["H1 Phase", "跳 H1 Phase 调度(节奏参数在那里调)"], ["I 域文案", "跳 I 域转化文案(locale 文案 A/B)"], ["F 域渠道", "跳 F 域渠道(ref 质量)"]].map(([lb, msg]) => (
-              <button key={lb} className="l-btn sm" onClick={() => ctx.toast(`${msg} · 原型占位`)}>{lb}</button>
+            {L2_ATTRIBUTION_LINKS.map(({ label, href }) => (
+              <Link key={label} className="l-btn sm" href={href}>{label}</Link>
             ))}
           </div>
         </div>

@@ -2,6 +2,7 @@ import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session"
 import { formatAdminApiError, guardedFetch, rawFetch } from "@/lib/admin/error-messages";
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { F1OutcomeUncertainError, f1StableWrite } from "@/lib/admin/f1-stable-write";
+import { verifyF5CsvArtifact } from "@/lib/admin/f5-export-verifier";
 import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/admin/platform-types";
 import {
   assertF1Overview,
@@ -213,6 +214,8 @@ interface BackendF4Metric {
 }
 
 interface BackendF4QuotaRow {
+  id?: number | string | null;
+  quotaCode?: string | null;
   name?: string | null;
   current?: number | string | null;
   cap?: number | string | null;
@@ -230,7 +233,11 @@ interface BackendF4Podium {
   gmvLabel?: string | null;
   tip?: string | null;
   className?: string | null;
+  memberUserId?: number | string | null;
 }
+
+interface BackendF4QuotaUsage { id?: number | string | null; quotaCode?: string | null; productNo?: string | null; userId?: number | string | null; orderNo?: string | null; quantity?: number | string | null; status?: string | null; occurredAt?: string | null }
+interface BackendF4AmbassadorApplication { id?: number | string | null; userId?: number | string | null; applicantName?: string | null; region?: string | null; city?: string | null; currentRank?: string | null; requestedBudgetUsd?: number | string | null; kolBudgetPct?: number | string | null; status?: string | null; eventDate?: string | null; createdAt?: string | null }
 
 interface BackendF4VoteWeight {
   v?: string | null;
@@ -250,6 +257,10 @@ interface BackendF4Config {
 }
 
 interface BackendF4LeadershipPoolOverview {
+  configVersion?: string | number | null;
+  settlementConfigStatus?: string | null;
+  settlementConfigUnavailableKey?: string | null;
+  settlementConfigUnavailableReason?: string | null;
   metrics?: BackendF4Metric[] | null;
   weeklyInjectedUsd?: number | string | null;
   weeklyGmvUsd?: number | string | null;
@@ -264,6 +275,7 @@ interface BackendF4LeadershipPoolOverview {
   settlementWindow?: string | null;
   settlementDispatchWindow?: string | null;
   quotaRows?: BackendF4QuotaRow[] | null;
+  quotaUsages?: BackendF4QuotaUsage[] | null;
   quotaMonthlyStockLabel?: string | null;
   quotaMonthlyStockTotal?: number | string | null;
   quotaMonthlyStockUsed?: number | string | null;
@@ -271,6 +283,7 @@ interface BackendF4LeadershipPoolOverview {
   proUnlock?: string | null;
   rackUnlock?: string | null;
   ambassadorBands?: BackendF4AmbassadorBand[] | null;
+  ambassadorApplications?: BackendF4AmbassadorApplication[] | null;
   ambassadorStatus?: string | null;
   ambassadorPendingCount?: number | string | null;
   ambassadorBudgetApprovedLabel?: string | null;
@@ -642,6 +655,8 @@ export interface F4Metric {
 }
 
 export interface F4QuotaRow {
+  id: number;
+  quotaCode: string;
   name: string;
   current: number;
   cap: number;
@@ -659,7 +674,11 @@ export interface F4Podium {
   gmvLabel: string;
   tip: string;
   className: string;
+  memberUserId: number;
 }
+
+export interface F4QuotaUsage { id: number; quotaCode: string; productNo: string; userId: number; orderNo: string; quantity: number; status: string; occurredAt: string }
+export interface F4AmbassadorApplication { id: number; userId: number; applicantName: string; region: string; city: string; currentRank: string; requestedBudgetUsd: number; kolBudgetPct: number; status: string; eventDate: string; createdAt: string }
 
 export interface F4VoteWeight {
   v: string;
@@ -679,6 +698,10 @@ export interface F4Config {
 }
 
 export interface F4LeadershipPoolOverview {
+  configVersion: string;
+  settlementConfigStatus: "READY" | "HOLD";
+  settlementConfigUnavailableKey: string;
+  settlementConfigUnavailableReason: string;
   metrics: F4Metric[];
   weeklyInjectedUsd: number;
   weeklyGmvUsd: number;
@@ -693,6 +716,7 @@ export interface F4LeadershipPoolOverview {
   settlementWindow: string;
   settlementDispatchWindow: string;
   quotaRows: F4QuotaRow[];
+  quotaUsages: F4QuotaUsage[];
   quotaMonthlyStockLabel: string;
   quotaMonthlyStockTotal: number;
   quotaMonthlyStockUsed: number;
@@ -700,6 +724,7 @@ export interface F4LeadershipPoolOverview {
   proUnlock: string;
   rackUnlock: string;
   ambassadorBands: F4AmbassadorBand[];
+  ambassadorApplications: F4AmbassadorApplication[];
   ambassadorStatus: string;
   ambassadorPendingCount: number;
   ambassadorBudgetApprovedLabel: string;
@@ -1195,6 +1220,8 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     tone: asText(item.tone, ""),
   }));
   const quotaRows = (data?.quotaRows ?? []).map((row) => ({
+    id: toNumber(row.id),
+    quotaCode: asText(row.quotaCode),
     name: asText(row.name, "Quota"),
     current: toNumber(row.current),
     cap: toNumber(row.cap),
@@ -1204,12 +1231,24 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     name: asText(row.name, "BAND"),
     count: toNumber(row.count),
   }));
+  const quotaUsages = (data?.quotaUsages ?? []).map((row) => ({
+    id: toNumber(row.id), quotaCode: asText(row.quotaCode), productNo: asText(row.productNo),
+    userId: toNumber(row.userId), orderNo: asText(row.orderNo), quantity: toNumber(row.quantity),
+    status: asText(row.status), occurredAt: asText(row.occurredAt),
+  }));
+  const ambassadorApplications = (data?.ambassadorApplications ?? []).map((row) => ({
+    id: toNumber(row.id), userId: toNumber(row.userId), applicantName: asText(row.applicantName),
+    region: asText(row.region), city: asText(row.city), currentRank: asText(row.currentRank),
+    requestedBudgetUsd: toNumber(row.requestedBudgetUsd), kolBudgetPct: toNumber(row.kolBudgetPct),
+    status: asText(row.status), eventDate: asText(row.eventDate), createdAt: asText(row.createdAt),
+  }));
   const podium = (data?.podium ?? []).map((row) => ({
     rank: toNumber(row.rank),
     userId: asText(row.userId, "usr_unknown"),
     gmvLabel: asText(row.gmvLabel, "-"),
     tip: asText(row.tip, ""),
     className: asText(row.className, ""),
+    memberUserId: toNumber(row.memberUserId),
   }));
   const voteWeights = (data?.voteWeights ?? []).map((row) => ({
     v: asText(row.v, "V?"),
@@ -1218,6 +1257,10 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
   }));
   const config = data?.config ?? {};
   return {
+    configVersion: asText(data?.configVersion),
+    settlementConfigStatus: asText(data?.settlementConfigStatus) === "READY" ? "READY" : "HOLD",
+    settlementConfigUnavailableKey: asText(data?.settlementConfigUnavailableKey),
+    settlementConfigUnavailableReason: asText(data?.settlementConfigUnavailableReason),
     metrics,
     weeklyInjectedUsd: toNumber(data?.weeklyInjectedUsd),
     weeklyGmvUsd: toNumber(data?.weeklyGmvUsd),
@@ -1232,6 +1275,7 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     settlementWindow: asText(data?.settlementWindow),
     settlementDispatchWindow: asText(data?.settlementDispatchWindow),
     quotaRows,
+    quotaUsages,
     quotaMonthlyStockLabel: asText(data?.quotaMonthlyStockLabel, asText(config.monthlyStock)),
     quotaMonthlyStockTotal: toNumber(data?.quotaMonthlyStockTotal, quotaRows.reduce((sum, row) => sum + row.cap, 0)),
     quotaMonthlyStockUsed: toNumber(data?.quotaMonthlyStockUsed, quotaRows.reduce((sum, row) => sum + row.current, 0)),
@@ -1242,6 +1286,7 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     proUnlock: asText(data?.proUnlock, asText(config.proUnlock)),
     rackUnlock: asText(data?.rackUnlock, asText(config.rackUnlock)),
     ambassadorBands,
+    ambassadorApplications,
     ambassadorStatus: asText(data?.ambassadorStatus, asText(config.ambassadorStatus)),
     ambassadorPendingCount: toNumber(data?.ambassadorPendingCount),
     ambassadorBudgetApprovedLabel: asText(data?.ambassadorBudgetApprovedLabel),
@@ -1525,6 +1570,99 @@ export async function fetchF5CommissionAuditOverview(query: F5CommissionQuery = 
   const data = await f1Request<unknown>(`/commissions${suffix}`);
   assertF5Overview(data);
   return normalizeF5Overview(data as unknown as BackendF5CommissionAuditOverview);
+}
+
+export interface F5ExportReceipt {
+  exportId: string;
+  rowCount: number;
+  byteSize: number;
+  sha256: string;
+  redacted: true;
+  filename: string;
+}
+
+/**
+ * Downloads the server-canonical full result set for the active filters. The browser verifies
+ * size, checksum, BOM/header and row count before exposing the artifact to the operator.
+ */
+export async function downloadF5RedactedCsv(
+  query: F5CommissionQuery,
+  reason: string,
+): Promise<F5ExportReceipt> {
+  const filters = {
+    kind: query.kind?.trim() || undefined,
+    currency: query.currency?.trim() || undefined,
+    // Keep BIGINT identifiers as decimal text; converting through JS Number can silently target
+    // a different user above 2^53. Jackson validates/coerces the exact decimal into Long.
+    userId: query.userId?.trim() || undefined,
+    cohort: query.cohort?.trim() || undefined,
+    status: query.status?.trim() || undefined,
+  };
+  // Export filters define the operation intent. The reason is audit metadata; including it in
+  // the fingerprint would mint a new command after an unknown outcome when wording is edited.
+  const fingerprint = JSON.stringify([filters]);
+  return f1StableWrite("f5-export", fingerprint, async (commandKey) => {
+    let response: Response;
+    try {
+      response = await guardedFetch("/api/admin/teams/commissions/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": commandKey },
+        body: JSON.stringify({ ...filters, reason }),
+        cache: "no-store",
+      });
+    } catch {
+      throw new F1OutcomeUncertainError(
+        formatAdminApiError(undefined, "F1_REQUEST_OUTCOME_UNKNOWN"), commandKey,
+      );
+    }
+
+    if (isAdminAuthFailure(response.status)) resetAdminSession();
+    if (!response.ok) {
+      let message: string | undefined;
+      try {
+        message = ((await response.json()) as ApiResult<never>)?.message;
+      } catch {
+        // handled as a stable generic error below
+      }
+      if (outcomeStaysUnknown(response.status)) {
+        throw new F1OutcomeUncertainError(
+          formatAdminApiError(message, `F1_REQUEST_FAILED_${response.status}`), commandKey,
+        );
+      }
+      throw new Error(formatAdminApiError(message, `F1_REQUEST_FAILED_${response.status}`));
+    }
+
+    const exportId = response.headers.get("X-Export-Id")?.trim() ?? "";
+    const rowCount = Number(response.headers.get("X-Export-Row-Count"));
+    const byteSize = Number(response.headers.get("X-Export-Byte-Size"));
+    const expectedSha = response.headers.get("X-Export-Sha256")?.trim().toLowerCase() ?? "";
+    const redacted = response.headers.get("X-Export-Redacted") === "true";
+    const disposition = response.headers.get("Content-Disposition") ?? "";
+    const filenameMatch = disposition.match(/filename\*?=(?:UTF-8''|)(?:"([^"]+)"|([^;]+))/i);
+    const filename = (filenameMatch?.[1] ?? filenameMatch?.[2] ?? "").trim();
+    const content = await response.arrayBuffer();
+    let actualSha: string;
+    try {
+      ({ sha256: actualSha } = await verifyF5CsvArtifact(content, {
+        exportId, rowCount, byteSize, expectedSha, redacted, filename,
+      }));
+    } catch {
+      throw new F1OutcomeUncertainError(
+        formatAdminApiError(undefined, "F1_RESPONSE_UNREADABLE"), commandKey,
+      );
+    }
+
+    const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(href);
+    return { exportId, rowCount, byteSize, sha256: actualSha, redacted: true, filename };
+  });
 }
 
 export async function reverseF5Commission(

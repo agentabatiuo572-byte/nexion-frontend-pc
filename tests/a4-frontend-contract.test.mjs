@@ -53,6 +53,16 @@ test("A4 parameter editors block invalid values before opening a write request",
   assert.match(page, /disabled=\{!canWrite \|\| !overview \|\| !!loadError/);
 });
 
+test("A4 provides an A2-governed manual retention trigger with read-back status", () => {
+  const client = read("lib/admin/a4-client.ts");
+  const page = read("app/components/domain-views/a-tabs/a4-events.tsx");
+  assert.match(client, /\/events\/retention-runs\/latest/);
+  assert.match(client, /\/events\/retention-runs/);
+  assert.match(page, /runA4RetentionNow\(reason, commandKey\)/);
+  assert.match(page, /platform_a2_write/);
+  assert.match(page, /最近执行:.*锁/);
+});
+
 test("A4 accepts PRD canonical single-token actions and JSON schema properties", () => {
   const page = read("app/components/domain-views/a-tabs/a4-events.tsx");
 

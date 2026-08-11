@@ -113,6 +113,7 @@ const GEARS = [
   ["CGM field coverage", "node", ["scripts/cgm-coverage.mjs"]],
   ["no-double-sign residue", "node", ["scripts/no-double-sign-terms.mjs"]],
   ["ops-actions integrity", "node", ["scripts/ops-actions-audit.mjs"]],
+  ["PC remaining-development status contract", "node", ["--test", "tests/pc-remaining-development-status-contract.test.mjs"]],
   ["modal contract", "node", ["scripts/admin-modal-contract-audit.mjs"]],
   ["list capability", "node", ["scripts/admin-list-capability-audit.mjs"]],
   ["App storage-key parity", "node", ["scripts/uni-storage-key-sentinel.mjs"]],

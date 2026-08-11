@@ -20,6 +20,7 @@ function fixture() {
     channelEnabled: false,
     providerReady: false,
     providerStatusAvailable: true,
+    sandboxAvailable: false,
     defaults: {
       sellSpreadPct: 1.5,
       quoteTtlMinWithdraw: 10,

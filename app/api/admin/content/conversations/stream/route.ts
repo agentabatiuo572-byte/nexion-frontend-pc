@@ -30,6 +30,7 @@ export async function GET(request: Request) {
       method: "GET",
       headers: { Authorization: `Bearer ${token}`, Accept: "text/event-stream" },
       cache: "no-store",
+      signal: request.signal,
     });
   } catch {
     return jsonError(503, "CONTENT_BACKEND_UNAVAILABLE");
@@ -56,4 +57,34 @@ export async function GET(request: Request) {
       "X-Accel-Buffering": "no", // 防反向代理(nginx 等)缓冲 SSE
     },
   });
+}
+
+/**
+ * EventSource hides the upstream HTTP status from JavaScript. This preflight
+ * exposes only the status (never a token or body), allowing 401/403 to become a
+ * terminal client state while transient failures keep the bounded retry path.
+ */
+export async function HEAD() {
+  const passwordChangeBlocked = requirePasswordChangeCleared(await cookies());
+  if (passwordChangeBlocked) return new Response(null, { status: passwordChangeBlocked.status });
+  const token = (await cookies()).get(ADMIN_TOKEN_COOKIE)?.value;
+  if (!token) return new Response(null, { status: 401, headers: { "Cache-Control": "no-store" } });
+
+  try {
+    const upstream = await fetch(`${BACKEND_BASE_URL}/api/admin/content/conversations/stream/status`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      cache: "no-store",
+    });
+    await upstream.body?.cancel().catch(() => undefined);
+    return new Response(null, {
+      status: upstream.status,
+      headers: { "Cache-Control": "no-store" },
+    });
+  } catch {
+    return new Response(null, {
+      status: 503,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
 }

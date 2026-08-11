@@ -13,6 +13,7 @@ import {
   isA1OutcomeUncertainError,
   resetA1Account2fa,
   resetA1AccountPassword,
+  registerA1Permission,
   revokeA1AccountSessions,
   revokeA1AccountSession,
   updateA1AccountProfile,
@@ -124,6 +125,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
   const currentAdminId = useAdminAuth((s) => s.session?.adminId ?? null);
   const currentSessionRole = useAdminAuth((s) => s.session?.role ?? s.role);
+  const canRegisterPermission = useAdminAuth((s) => s.session?.authorities.includes("platform_a1_rbac_grants_update") ?? false);
   const [overview, setOverview] = useState<A1Overview | null>(null);
   const [permissionCodesByRole, setPermissionCodesByRole] = useState<Record<string, string[]>>({});
   const [permissionDiffReady, setPermissionDiffReady] = useState(false);
@@ -137,6 +139,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const [detailAccount, setDetailAccount] = useState<A1Operator | null>(null);
   const [editAccountTarget, setEditAccountTarget] = useState<A1Operator | null>(null);
   const [passwordReset, setPasswordReset] = useState<A1PasswordResetResult | null>(null);
+  const [permissionDraft, setPermissionDraft] = useState({ code: "", name: "", path: "", type: "WRITE" as "READ" | "WRITE", amplifies: false });
 
   const refreshOverview = useCallback(async (quiet = false) => {
     if (!quiet) {
@@ -699,6 +702,25 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     });
   };
 
+  const submitPermissionRegistration = () => {
+    if (!canRegisterPermission || !permissionDraft.code.trim() || !permissionDraft.name.trim() || !permissionDraft.path.trim()) return;
+    openActionConfirm({
+      action: `登记动作权限 · ${permissionDraft.code.trim()}`,
+      detail: <>只向 A8 权限字典登记新动作，<b>不会自动绑定任何角色</b>；服务端强制 expectedAbsent、admin 路径校验与零角色绑定校验。</>,
+      amplifies: permissionDraft.amplifies,
+      reasonMin: 8,
+      reasonMax: 200,
+      run: async (reason) => {
+        await runMutation(`登记权限 ${permissionDraft.code}`, async () => registerA1Permission({
+          permissionCode: permissionDraft.code.trim(), permissionName: permissionDraft.name.trim(),
+          resourcePath: permissionDraft.path.trim(), permType: permissionDraft.type,
+          amplifies: permissionDraft.amplifies, reason, operator,
+        }), `${permissionDraft.code.trim()} 已登记 · 默认零角色绑定`);
+        setPermissionDraft({ code: "", name: "", path: "", type: "WRITE", amplifies: false });
+      },
+    });
+  };
+
   if (loading && !overview) {
     return (
       <section className="l-card">
@@ -876,6 +898,18 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           <div className="atint" style={{ marginTop: 10 }}>
             后端会再次校验有效超管 ≥2、角色合法性和写权限;前端预判只用于减少误操作。
           </div>
+        </div>
+      </section>
+
+      <section className="l-card" data-capability="a1-permission-registration">
+        <div className="l-h"><span className="ttl">新增动作权限登记</span><span className="sub">· 只登记权限字典 · 默认不授予角色</span></div>
+        <div className="l-b" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input aria-label="权限编码" placeholder="domain_action_write" value={permissionDraft.code} onChange={(e) => setPermissionDraft((v) => ({ ...v, code: e.target.value }))} />
+          <input aria-label="权限名称" placeholder="权限名称" value={permissionDraft.name} onChange={(e) => setPermissionDraft((v) => ({ ...v, name: e.target.value }))} />
+          <input aria-label="资源路径" placeholder="/api/admin/..." value={permissionDraft.path} onChange={(e) => setPermissionDraft((v) => ({ ...v, path: e.target.value }))} />
+          <select aria-label="权限类型" value={permissionDraft.type} onChange={(e) => setPermissionDraft((v) => ({ ...v, type: e.target.value as "READ" | "WRITE" }))}><option>READ</option><option>WRITE</option></select>
+          <label><input type="checkbox" checked={permissionDraft.amplifies} onChange={(e) => setPermissionDraft((v) => ({ ...v, amplifies: e.target.checked }))} />放大资金流出</label>
+          <button className="l-btn sm mc" disabled={!canRegisterPermission || !!mutatingAction || !permissionDraft.code.trim() || !permissionDraft.name.trim() || !permissionDraft.path.trim()} onClick={submitPermissionRegistration}>登记权限</button>
         </div>
       </section>
 

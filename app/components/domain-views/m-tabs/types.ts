@@ -11,7 +11,7 @@ export type { ActionConfirmReq, ConfirmReq, ConfirmChip } from "../k-tabs/types"
 export type MCtx = {
   pget: (k: string) => string | undefined;
   params: Record<string, string>;
-  setParam: (k: string, v: string, meta: { action: string; reason: string; idempotencyKey?: string; commandKey?: string }) => Promise<boolean>;
+  setParam: (k: string, v: string, meta: { action: string; reason: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void }) => Promise<boolean>;
   addCustomerTag: (convoId: string, tag: string) => Promise<boolean>;
   removeCustomerTag: (convoId: string, tag: string) => Promise<boolean>;
   addCustomerNote: (convoId: string, text: string) => Promise<boolean>;

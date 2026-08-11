@@ -52,7 +52,10 @@ interface BackendA3Overview {
   killSwitches?: BackendA3KillSwitch[] | null;
   systemHealth?: BackendA3SystemHealth[] | null;
   stats?: BackendA3Stats | null;
+  platformParams?: BackendA3PlatformParam[] | null;
 }
+
+interface BackendA3PlatformParam { key?: string | null; name?: string | null; desc?: string | null; value?: string | null; unit?: string | null; min?: number | string | null; max?: number | string | null; consumer?: string | null; writable?: boolean | null; lastChange?: string | null }
 
 export interface A3FeatureFlag {
   key: string;
@@ -98,7 +101,10 @@ export interface A3Overview {
   killSwitches: A3KillSwitch[];
   systemHealth: A3SystemHealth[];
   stats: A3Stats;
+  platformParams: A3PlatformParam[];
 }
+
+export interface A3PlatformParam { key: string; name: string; desc: string; value: string; unit: string; min: number; max: number; consumer: string; writable: boolean; lastChange: string }
 
 export class A3OutcomeUncertainError extends Error {
   constructor(message: string, public readonly commandKey: string, options?: ErrorOptions) {
@@ -211,6 +217,7 @@ function normalizeOverview(data: BackendA3Overview | null | undefined): A3Overvi
     featureFlags,
     killSwitches,
     systemHealth,
+    platformParams: (data?.platformParams ?? []).map((item) => ({ key: asText(item.key), name: asText(item.name), desc: asText(item.desc), value: asText(item.value), unit: asText(item.unit), min: toNumber(item.min), max: toNumber(item.max), consumer: asText(item.consumer), writable: item.writable === true, lastChange: asText(item.lastChange, "未知") })),
     stats: {
       flagCount: toNumber(stats.flagCount, featureFlags.length),
       flagOnCount: toNumber(stats.flagOnCount, featureFlags.filter((flag) => flag.status === "on").length),
@@ -220,14 +227,14 @@ function normalizeOverview(data: BackendA3Overview | null | undefined): A3Overvi
   };
 }
 
-async function a3Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
+async function a3Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; idempotencyKey?: string }) {
   const headers = new Headers(init?.headers);
   let commandKey = "";
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   if (init?.idempotencyPrefix) {
-    commandKey = idempotencyKey(init.idempotencyPrefix);
+    commandKey = init.idempotencyKey || idempotencyKey(init.idempotencyPrefix);
     headers.set("Idempotency-Key", commandKey);
   }
 
@@ -293,6 +300,11 @@ export async function updateA3FeatureFlag(flagKey: string, value: string, expect
   } catch (error) {
     throw new A3ReadbackFailedError("A3_WRITE_COMMITTED_READBACK_FAILED", { cause: error });
   }
+}
+
+export async function updateA3Parameter(paramKey: string, value: string, expectedValue: string, reason: string, operator: string, commandKey?: string) {
+  await a3Request("/config", { method: "PUT", body: JSON.stringify({ kind: "param", flagKey: paramKey, value, expectedValue, reason, operator }), idempotencyPrefix: "a3-param", idempotencyKey: commandKey });
+  try { return await fetchA3Overview(); } catch (error) { throw new A3ReadbackFailedError("A3_WRITE_COMMITTED_READBACK_FAILED", { cause: error }); }
 }
 
 export async function fetchA3RuntimeFlags(): Promise<A3RuntimeFlags> {

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "运营动作完整性 — 机读清单(OPS-ACTIONS-MATRIX 的机读版)。status: built(真写持久store,门反查storeAction真落地) / pending(死控件待补,放行但计欠账) / missing(完全缺失待补) / readonly(合理只读,须带reason)。门 scripts/ops-actions-audit.mjs 驱动:防新增死控件(deadControlBaseline 只减不增)+ 防built退化(storeAction必须真在store且被view调用)。补一个动作:status→built + 填storeAction + 降baseline。REST 化动作(真写走后端 lib/admin/*-client.ts 而非 store,如 A1 账号治理 createA1Account / E2 任务 CRUD createE2Task):填 restAction(+restFile)替代 storeAction,门改校验 restAction 真在 lib/admin/* 且被 view 调用(同样反查真落地+接线,防 REST 动作被改回死控件)。",
+  "note": "运营能力机读台账。rows 按同一产品生命周期/风险边界分组，不要求每个 REST 函数单独一行；activeLeafCoverage 必须覆盖当前全部 flagship 导航叶。status: built=已形成真实写入与业务效果闭环，pending=仍缺入口/状态机/消费者/一致性/外部权威回执，missing=活跃叶完全未建账，readonly=合理只读且必须给 reason。built 行以 storeAction 或 restAction(s) 反查定义和 App 调用；Mock 完成只允许显式 fixture/隔离账本/沙箱范围，不能扩大为生产接入完成。",
   "deadControlBaseline": {
     "a-view.tsx": 0,
     "c-view.tsx": 0,
@@ -14,6 +14,83 @@
     "k-view.tsx": 0,
     "l-view.tsx": 0,
     "m-view.tsx": 0
+  },
+  "activeLeafCoverage": {
+    "A1": ["OPS-A-01", "OPS-A-22"],
+    "A2": ["OPS-A-14", "OPS-A-15", "OPS-A-27", "OPS-A-28", "OPS-A-29"],
+    "A3": ["OPS-A-07", "OPS-A-07a", "OPS-A-07b"],
+    "A4": ["OPS-A-08", "OPS-A-09", "OPS-A-20", "OPS-A-30", "OPS-A-31"],
+    "A5": ["OPS-A-23"],
+    "A6": ["OPS-A-06", "OPS-A-24"],
+    "A7": ["OPS-A-25"],
+    "A8": ["OPS-A-26"],
+    "B1": ["OPS-B-01", "OPS-B-02"],
+    "B2": ["OPS-B-05", "OPS-B-06", "OPS-B-15"],
+    "B3": ["OPS-B-07", "OPS-B-08"],
+    "B4": ["OPS-B-09", "OPS-B-10"],
+    "B5": ["OPS-B-11", "OPS-B-12", "OPS-B-13", "OPS-B-14", "OPS-B-16"],
+    "C1": ["OPS-C-22", "OPS-C-23", "OPS-C-34", "OPS-C-35"],
+    "C2": ["OPS-C-01", "OPS-C-02a"],
+    "C3": ["OPS-C-03", "OPS-C-21"],
+    "C5": ["OPS-C-18"],
+    "C6": ["OPS-C-20"],
+    "D1": ["OPS-D-04", "OPS-D-21", "OPS-D-23", "OPS-D-24", "OPS-D-26", "OPS-D-28"],
+    "D2": ["OPS-D-10", "OPS-D-27"],
+    "D3": ["OPS-D-09", "OPS-D-15", "OPS-D-25"],
+    "D4": ["OPS-D-06"],
+    "D5": ["OPS-D-07", "OPS-D-19"],
+    "D6": ["OPS-D-20"],
+    "D7": ["OPS-D-18", "OPS-D-22"],
+    "E1": ["OPS-E-04", "OPS-E-03", "OPS-E-21"],
+    "E2": ["OPS-E-10", "OPS-E-17", "OPS-E-18"],
+    "E3": ["OPS-E-11", "OPS-E-19", "OPS-E-20"],
+    "E4": ["OPS-E-12", "OPS-E-13"],
+    "E5": ["OPS-E-14", "OPS-E-16"],
+    "E6": ["OPS-E-15"],
+    "F1": ["OPS-F-01", "OPS-F-11", "OPS-F-22", "OPS-F-23"],
+    "F2": ["OPS-F-02", "OPS-F-04", "OPS-F-12", "OPS-F-13"],
+    "F3": ["OPS-F-05", "OPS-F-14", "OPS-F-20"],
+    "F4": ["OPS-F-07", "OPS-F-08", "OPS-F-09", "OPS-F-15", "OPS-F-16", "OPS-F-17", "OPS-F-24"],
+    "F5": ["OPS-F-10", "OPS-F-18", "OPS-F-19", "OPS-F-21", "OPS-F-25", "OPS-F-26"],
+    "G1": ["OPS-G-01", "OPS-G-02", "OPS-G-14"],
+    "G2": ["OPS-G-03", "OPS-G-04", "OPS-G-17", "OPS-G-18"],
+    "G3": ["OPS-G-05", "OPS-G-06"],
+    "G4": ["OPS-G-07", "OPS-G-08", "OPS-G-12", "OPS-G-13", "OPS-G-15", "OPS-G-16"],
+    "G7": ["OPS-G-10"],
+    "H1": ["OPS-H-01", "OPS-H-02"],
+    "H2": ["OPS-H-03", "OPS-H-04", "OPS-H-17", "OPS-H-19"],
+    "H3": ["OPS-H-05", "OPS-H-12", "OPS-H-14", "OPS-H-20"],
+    "H4": ["OPS-H-06", "OPS-H-07", "OPS-H-15"],
+    "H5": ["OPS-H-08"],
+    "H7": ["OPS-H-11", "OPS-H-16"],
+    "H8": ["OPS-H-13", "OPS-H-18", "OPS-H-21"],
+    "H9": ["OPS-H-09"],
+    "I1": ["OPS-I-01"],
+    "I2": ["OPS-I-02", "OPS-I-14", "OPS-I-15", "OPS-I-17", "OPS-I-18"],
+    "I3": ["OPS-I-03", "OPS-I-16"],
+    "I4": ["OPS-I-04", "OPS-I-08"],
+    "I5": ["OPS-I-05", "OPS-I-10", "OPS-I-19"],
+    "I6": ["OPS-I-06", "OPS-I-07"],
+    "J1": ["OPS-J-01"],
+    "J2": ["OPS-J-02", "OPS-J-07"],
+    "J3": ["OPS-J-03", "OPS-J-08"],
+    "J4": ["OPS-J-04", "OPS-J-05"],
+    "K1": ["OPS-K-01", "OPS-K-16", "OPS-K-18"],
+    "K2": ["OPS-K-02"],
+    "K3": ["OPS-K-03"],
+    "K4": ["OPS-K-04", "OPS-K-19", "OPS-K-20"],
+    "K6": ["OPS-K-15", "OPS-K-17"],
+    "L1": ["OPS-L-01", "OPS-L-08"],
+    "L2": ["OPS-L-01", "OPS-L-09"],
+    "L3": ["OPS-L-01", "OPS-L-05"],
+    "L4": ["OPS-L-01", "OPS-L-05"],
+    "L5": ["OPS-L-02", "OPS-L-04"],
+    "L6": ["OPS-L-10", "OPS-L-11"],
+    "M1": ["OPS-M-01", "OPS-M-17", "OPS-M-19"],
+    "M2": ["OPS-M-04", "OPS-M-21", "OPS-M-26"],
+    "M3": ["OPS-M-07", "OPS-M-16", "OPS-M-20", "OPS-M-22", "OPS-M-25", "OPS-M-27"],
+    "M4": ["OPS-M-11", "OPS-M-12", "OPS-M-23", "OPS-M-28"],
+    "M5": ["OPS-M-13", "OPS-M-14", "OPS-M-15", "OPS-M-17", "OPS-M-19"]
   },
   "rows": [
     {
@@ -65,27 +142,57 @@
       "action": "查看角色清单",
       "status": "readonly",
       "view": "a-tabs/a1-accounts.tsx:548",
-      "reason": "角色清单只读展示;授权变更经 A1 矩阵卡 + OPS-A-12 操作确认发布"
+      "reason": "角色清单只读展示；当前授权变更入口在 A6 角色页，旧 A1 动态动作登记仍由 OPS-A-12 保持 pending"
     },
     {
       "id": "OPS-A-06",
       "domain": "A",
-      "object": "RBAC权限矩阵",
-      "action": "编辑权限映射",
+      "object": "角色权限矩阵(A6)",
+      "action": "提交角色授权变更",
       "status": "built",
-      "view": "a-tabs/a1-accounts.tsx",
+      "view": "a-tabs/a6-roles.tsx",
       "batch": "P1",
       "restAction": "proposeA6RoleGrants"
     },
     {
       "id": "OPS-A-07",
       "domain": "A",
-      "object": "系统参数",
-      "action": "调整(维护模式/限流/超时)",
-      "status": "pending",
-      "view": "a-tabs/a1-accounts.tsx",
-      "batch": "P1",
-      "note": "系统参数(维护模式/限流/超时)在 a-tabs 无任何写入口(2026-08-04 语义抽验),待定位现役面或确认下线"
+      "object": "平台维护公告开关",
+      "action": "开启/关闭维护公告",
+      "status": "built",
+      "view": "a-tabs/a3-config.tsx",
+      "batch": "done",
+      "restAction": "updateA3FeatureFlag",
+      "note": "A3 当前只开放后端已登记且有真实运行时消费者的横切开关；维护公告通过版本校验、理由、幂等和 A2 审计生效"
+    },
+    {
+      "id": "OPS-A-07a",
+      "domain": "A",
+      "object": "平台横切参数",
+      "action": "调整全球限流上限",
+      "status": "built",
+      "view": "a-tabs/a3-config.tsx",
+      "batch": "done",
+      "restAction": "updateA3Parameter",
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-A-07b",
+      "domain": "A",
+      "object": "提现强审参数",
+      "action": "调整提现强审阈值",
+      "status": "built",
+      "view": "a-tabs/a3-config.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "pc-runtime",
+          "file": "app/components/domain-views/a-tabs/a3-config.tsx",
+          "positivePatterns": ["提现强审阈值", "updateA3Parameter"],
+          "negativePatterns": ["服务端权威契约未完成"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
     },
     {
       "id": "OPS-A-08",
@@ -101,11 +208,12 @@
       "id": "OPS-A-09",
       "domain": "A",
       "object": "埋点事件",
-      "action": "灰度/全量/停用",
-      "status": "pending",
-      "view": "a-tabs/a1-accounts.tsx",
-      "batch": "P1",
-      "note": "埋点事件灰度/全量/停用无写入口(仅 types 注释提及),待补面或确认由 A3 feature flag 承接"
+      "action": "新建→待发布→灰度→全量→停用生命周期迁移",
+      "status": "built",
+      "view": "a-tabs/a4-events.tsx",
+      "batch": "done",
+      "restAction": "transitionA4Lifecycle",
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
     },
     {
       "id": "OPS-A-10",
@@ -117,25 +225,15 @@
       "reason": "审计 append-only 只读"
     },
     {
-      "id": "OPS-A-11",
-      "domain": "A",
-      "object": "审计确认队列(A2)",
-      "action": "确认裁决(放行/驳回)",
-      "status": "built",
-      "view": "a-tabs/a1-accounts.tsx",
-      "batch": "done",
-      "note": "操作确认 确认理由对待确认项放行/驳回,写 A.audit.<id>.verdict=approved/rejected + A2 审计;本轮补登记(原 inventory 盲区,曾 onClick 直接 setToast 绕操作确认)",
-      "restAction": "approveA2Operation"
-    },
-    {
       "id": "OPS-A-12",
       "domain": "A",
-      "object": "RBAC 矩阵(A1)",
-      "action": "矩阵授权变更 / 登记新动作行(操作确认 + 最小权限 server 校验)",
+      "object": "A1 新动作权限登记",
+      "action": "在账号治理页登记新动作权限并完成最小权限校验",
       "status": "built",
       "view": "a-tabs/a1-accounts.tsx",
       "batch": "done",
-      "restAction": "proposeA6RoleGrants"
+      "restAction": "registerA1Permission",
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
     },
     {
       "id": "OPS-A-13",
@@ -151,21 +249,54 @@
       "id": "OPS-A-14",
       "domain": "A",
       "object": "操作动态(A2)",
-      "action": "放行(amplifies 资金类)/ 驳回(普通确认带原因)/ 撤回(仅本人)",
+      "action": "放行(amplifies 资金类)/驳回(普通确认带原因)",
       "status": "built",
       "view": "a-tabs/a2-audit.tsx",
       "batch": "done",
-      "restAction": "approveA2Operation"
+      "restActions": [
+        "approveA2Operation",
+        "rejectA2Operation"
+      ]
     },
     {
       "id": "OPS-A-15",
       "domain": "A",
       "object": "机制参数(A2)",
-      "action": "工单 理由最短长度 / 保留期 / schema 注册(操作确认,reason-required 锁不可调)",
+      "action": "让 reason_min 被全后台高敏操作真实消费，并受控触发审计保留执行器后回读终态",
       "status": "built",
       "view": "a-tabs/a2-audit.tsx",
       "batch": "done",
-      "restAction": "updateA2MechanismParam"
+      "restActions": ["updateA2MechanismParam", "runA2RetentionNow"],
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/platform/application/A2RuntimePolicy.java",
+          "positivePatterns": [
+            "REASON_MIN_KEY = \"admin\\.a2\\.reason_min_chars\"",
+            "requiredValue\\(REASON_MIN_KEY, \"A2_REASON_POLICY_UNAVAILABLE\"\\)",
+            "throw new BizException\\(503, \"A2_REASON_POLICY_INVALID\"\\)",
+            "REASON_TOO_SHORT_MIN_"
+          ],
+          "negativePatterns": [
+            "reasonMinChars\\(\\)\\s*\\{[\\s\\S]{0,160}return\\s+10\\s*;",
+            "A2_REASON_POLICY_UNAVAILABLE[\\s\\S]{0,120}orElse\\("
+          ]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/shared/audit/AdminReasonConstraintAdvice.java",
+          "positivePatterns": [
+            "validateReasons\\(reasons, policy\\.reasonMinChars\\(\\)\\)",
+            "policy\\.reasonPolicyMissing\\(\\)[\\s\\S]{0,120}A2_REASON_POLICY_UNAVAILABLE",
+            "private void validateReasons\\(List<String> reasons, int minimum\\)"
+          ],
+          "negativePatterns": [
+            "validateReasons\\(reasons,\\s*10\\)",
+            "REASON_REQUIRED[\\s\\S]{0,120}return\\s*;\\s*//\\s*allow"
+          ]
+        }
+      ],
+      "note": "Production：reason_min 由 A2RuntimePolicy 唯一解析并由服务端全局高敏写守卫消费；缺失、非法与过短原因均失败关闭。A2 参数写入和保留执行入口保留精确唯一 claim。"
     },
     {
       "id": "OPS-A-16",
@@ -178,34 +309,42 @@
       "restAction": "exportA2Audit"
     },
     {
-      "id": "OPS-A-18",
-      "domain": "A",
-      "object": "feature flag(A3)",
-      "action": "切换(操作确认 + 增长资格 / 超管确认)",
-      "status": "built",
-      "view": "a-tabs/a3-config.tsx",
-      "batch": "done",
-      "restAction": "updateA3FeatureFlag"
-    },
-    {
-      "id": "OPS-A-19",
-      "domain": "A",
-      "object": "事件 schema(A4)",
-      "action": "注册新事件 / 属性(操作确认 + reason-required)",
-      "status": "built",
-      "view": "a-tabs/a4-events.tsx",
-      "batch": "done",
-      "restAction": "registerA4Schema"
-    },
-    {
       "id": "OPS-A-20",
       "domain": "A",
       "object": "KPI 口径参数(A4)",
-      "action": "Day0 窗口 / 留存口径(锁) / 事件留存 / 采样(操作确认,广播消费方不回溯)",
+      "action": "让 Day0 窗口被 B3 漏斗与 L1 KPI 聚合共同消费，并受控触发事件保留执行器后回读终态",
       "status": "built",
       "view": "a-tabs/a4-events.tsx",
       "batch": "done",
-      "restAction": "updateA4DimensionParam"
+      "restActions": ["updateA4DimensionParam", "runA4RetentionNow"],
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/platform/application/A4RuntimePolicyService.java",
+          "positivePatterns": [
+            "DAY0_KEY = \"admin\\.a4\\.event\\.kpi\\.day0\"",
+            "bounded\\(DAY0_KEY,[\\s\\S]{0,160}\"A4_DAY0_POLICY_UNAVAILABLE\", \"A4_DAY0_POLICY_INVALID\"\\)",
+            "orElseThrow\\(\\(\\) -> new BizException\\(503, missing\\)\\)"
+          ],
+          "negativePatterns": [
+            "day0Seconds\\(\\)\\s*\\{[\\s\\S]{0,100}return\\s+60\\s*;",
+            "A4_DAY0_POLICY_UNAVAILABLE[\\s\\S]{0,120}orElse\\("
+          ]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/bi/application/OpsFunnelService.java",
+          "positivePatterns": ["a4RuntimePolicyService\\.day0Seconds\\(\\)"],
+          "negativePatterns": ["DAY0_SECONDS\\s*=", "day0Seconds\\s*=\\s*60"]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/bi/infrastructure/MybatisBiReportRepository.java",
+          "positivePatterns": ["a4RuntimePolicyService\\.day0Seconds\\(\\)"],
+          "negativePatterns": ["DAY0_SECONDS\\s*=", "day0Seconds\\s*=\\s*60"]
+        }
+      ],
+      "note": "Production：B3 漏斗与 L1 KPI/BI 聚合均在运行时调用同一 A4 day0Seconds 权威参数；缺失或非法配置由服务端失败关闭。A4 参数写入和保留执行入口保留精确唯一 claim。"
     },
     {
       "id": "OPS-A-21",
@@ -220,11 +359,11 @@
     {
       "id": "OPS-B-01",
       "domain": "B",
-      "object": "双账本/储备水位/漏斗/节奏/风险雷达",
-      "action": "看板展示",
+      "object": "双账本与储备水位(B1)",
+      "action": "查看服务端权威账本与覆盖率",
       "status": "readonly",
       "view": "overview/*",
-      "reason": "驾驶舱聚合口径,实际操作跨域委托 F/H/J"
+      "reason": "本行只覆盖 B1；B2-B5 的写动作与各自只读面单独登记"
     },
     {
       "id": "OPS-B-02",
@@ -234,7 +373,7 @@
       "status": "built",
       "view": "overview/dual-ledger",
       "batch": "P1",
-      "restAction": "updateB2ForecastConfig"
+      "restAction": "updateD3Thresholds"
     },
     {
       "id": "OPS-B-03",
@@ -265,56 +404,37 @@
       "view": "c-tabs/c2-actions.tsx",
       "storeFile": "user-ops-store",
       "batch": "done",
-      "restAction": "c2_account_freeze",
-      "note": "360HUB 快捷入口已退役,冻结/解冻能力在 C2 列表页(findHighOp c2_account_freeze)"
+      "restActions": [
+        "c2_account_freeze",
+        "c2_account_unfreeze",
+        "updateUserStatus"
+      ],
+      "note": "360HUB 快捷入口已退役；冻结和解冻是 C2 列表页两个独立高敏命令"
     },
     {
-      "id": "OPS-C-02",
+      "id": "OPS-C-02a",
       "domain": "C",
       "object": "per-user设备(360HUB)",
-      "action": "上线/下线/换机/回收",
+      "action": "发起换机/回收并跟踪状态迁移",
       "status": "built",
       "view": "e-view.tsx",
-      "storeFile": "user-ops-store",
       "batch": "done",
-      "restAction": "setE5UserDevicesPaused",
-      "note": "per-user 设备起停在 E5 面;换机/回收经 E3 trade-in 流程另行覆盖"
+      "restAction": "executeUserDeviceTradein",
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
     },
     {
       "id": "OPS-C-03",
       "domain": "C",
-      "object": "用户资产(360HUB)",
-      "action": "补发/调整收益台账",
+      "object": "大额资产调整与冲正(C3)",
+      "action": "发起大额复核申请/冲正已批准调整并反向记账",
       "status": "built",
       "view": "c-tabs/c3-adjust.tsx",
       "storeFile": "user-ops-store",
       "batch": "done",
-      "restAction": "createUserAssetAdjustment"
-    },
-    {
-      "id": "OPS-C-04",
-      "domain": "C",
-      "object": "会话/2FA(360HUB)",
-      "action": "吊销会话/重置2FA",
-      "status": "built",
-      "view": "c-tabs/c5-security.tsx",
-      "storeFile": "user-ops-store",
-      "batch": "done",
       "restActions": [
-        "revokeUserSession",
-        "disableUserTwoFactor"
+        "requestLargeUserAssetAdjustment",
+        "reverseUserAssetAdjustment"
       ]
-    },
-    {
-      "id": "OPS-C-05",
-      "domain": "C",
-      "object": "用户账户(列表页快捷)",
-      "action": "冻结/解冻(原子联动 D2 在途提现 + C5 会话)",
-      "status": "built",
-      "view": "c-tabs/c2-actions.tsx",
-      "batch": "P0",
-      "fixHint": "设计稿 port:旧「限制提现」无 PRD C2 依据,已被账户级名单(OPS-C-12)取代",
-      "restAction": "c2_account_freeze"
     },
     {
       "id": "OPS-C-06",
@@ -326,8 +446,7 @@
       "batch": "P1",
       "restActions": [
         "requestUserPasswordReset",
-        "startUserImpersonation",
-        "terminateUserImpersonation"
+        "startUserImpersonation"
       ]
     },
     {
@@ -372,28 +491,21 @@
       "status": "built",
       "view": "c-tabs/c2-actions.tsx",
       "batch": "done",
-      "restAction": "upsertUserAccountList"
+      "restActions": [
+        "upsertUserAccountList",
+        "removeUserAccountList"
+      ]
     },
     {
       "id": "OPS-C-13",
       "domain": "C",
       "object": "资产调整(C3 发起 · 双币)",
-      "action": "提交并真写台账(USDT/NEX 双币)",
+      "action": "提交 USDT/NEX 普通调整申请并进入 PENDING_REVIEW",
       "status": "built",
       "view": "c-tabs/c3-adjust.tsx",
       "storeFile": "user-ops-store",
       "batch": "done",
       "restAction": "createUserAssetAdjustment"
-    },
-    {
-      "id": "OPS-C-14",
-      "domain": "C",
-      "object": "挂起加钱申请(ADJ-1182)",
-      "action": "重新执行确认放行(amplifies)/ 操作员取消",
-      "status": "built",
-      "view": "c-tabs/c3-adjust.tsx",
-      "batch": "done",
-      "restAction": "approveUserAssetAdjustment"
     },
     {
       "id": "OPS-C-17",
@@ -415,7 +527,6 @@
       "batch": "done",
       "restActions": [
         "revokeUserSession",
-        "revokeUserSessions",
         "disableUserTwoFactor"
       ]
     },
@@ -440,24 +551,66 @@
       "restAction": "updateUserRegistrationRiskParam"
     },
     {
-      "id": "OPS-D-01",
-      "domain": "D",
-      "object": "提现申请",
-      "action": "放行(小额快速普通确认/大额操作确认+B1预检;K3冻结或人工路由结论禁放)",
+      "id": "OPS-C-21",
+      "domain": "C",
+      "object": "待放行资产调整",
+      "action": "由发起人撤回待放行申请",
       "status": "built",
-      "view": "d-tabs/d2-withdrawals.tsx",
-      "batch": "P0",
-      "restAction": "reviewD2Withdrawal"
+      "view": "c-tabs/c3-adjust.tsx",
+      "batch": "done",
+      "restAction": "withdrawUserAssetAdjustment",
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
     },
     {
-      "id": "OPS-D-02",
-      "domain": "D",
-      "object": "提现申请",
-      "action": "冻结/解冻(均操作确认;解冻amplifies)",
+      "id": "OPS-C-22",
+      "domain": "C",
+      "object": "脱敏用户名单(C1)",
+      "action": "按当前安全筛选导出脱敏 CSV",
       "status": "built",
-      "view": "d-tabs/d2-withdrawals.tsx",
-      "batch": "P0",
-      "restAction": "reviewD2Withdrawal"
+      "view": "c-tabs/c1-search.tsx",
+      "batch": "done",
+      "restAction": "exportUserProfilesCsv",
+      "note": "页面通过 user360-client 调用服务端导出；导出理由、当前筛选和文件回执均在真实调用链中"
+    },
+    {
+      "id": "OPS-C-23",
+      "domain": "C",
+      "object": "用户支付方式(C1)",
+      "action": "解绑后向 PSP 撤销 token 并确认供应商终态",
+      "status": "built",
+      "view": "_console/users/search/[id]/page.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/user/application/OpsUserPaymentMethodService.java",
+          "positivePatterns": ["insertRevokeCommand", "providerRevocation"],
+          "negativePatterns": ["providerRevocation\\\",\\s*\\\"NOT_REQUIRED"]
+        }
+      ],
+      "note": "本地解绑、撤销命令、lease/重试/终态审计已闭环；真实 PSP revoke adapter 未安装时失败关闭，显式 sandbox 仅操作 SANDBOX 卡"
+    },
+    {
+      "id": "OPS-C-24",
+      "domain": "C",
+      "object": "用户支付方式(C1)",
+      "action": "向受试用保护的支付方式发送换绑通知",
+      "status": "built",
+      "view": "_console/users/search/[id]/page.tsx",
+      "batch": "done",
+      "restAction": "notifyUserPaymentMethodRebind",
+      "note": "用户详情页调用真实后端命令；服务端具备幂等、版本校验、通知入队和审计"
+    },
+    {
+      "id": "OPS-C-25",
+      "domain": "C",
+      "object": "用户昵称(C1)",
+      "action": "重置为服务端生成的安全昵称",
+      "status": "built",
+      "view": "_console/users/search/[id]/page.tsx",
+      "batch": "done",
+      "restAction": "resetUserNickname",
+      "note": "用户详情页调用真实后端命令；服务端使用 expectedValue 冲突门、稳定幂等和审计后返回权威新昵称"
     },
     {
       "id": "OPS-D-03",
@@ -503,13 +656,15 @@
       "id": "OPS-D-08",
       "domain": "D",
       "object": "充值渠道/PSP",
-      "action": "渠道启停/调费率/主备PSP切换(均操作确认)",
+      "action": "渠道启停/调费率/调最小额与单笔上限/主备PSP切换(均操作确认)",
       "status": "built",
       "view": "d-tabs/d1-recon.tsx",
       "batch": "P1",
       "restActions": [
         "updateD1TopupChannelEnabled",
         "updateD1TopupChannelFee",
+        "updateD1TopupChannelMin",
+        "updateD1TopupChannelMax",
         "switchD1Psp"
       ]
     },
@@ -522,13 +677,16 @@
       "view": "d-tabs/d3-treasury.tsx",
       "batch": "P1",
       "note": "D.reserveInjection(全后台唯一 server 实现,B1 仅 UI 入口)/D.scope(日批生效不追溯);水位看板本身 server-canonical 只读",
-      "restAction": "createD3Injection"
+      "restActions": [
+        "createD3Injection",
+        "updateD3ForecastConfig"
+      ]
     },
     {
       "id": "OPS-D-10",
       "domain": "D",
       "object": "提现申请",
-      "action": "拒绝/延迟/批量操作(普通确认+强制原因;批量大额自动分拣转单笔)",
+      "action": "放行/拒绝并退款/延迟/冻结解冻/手动退款/批量操作(普通确认+强制原因;批量大额自动分拣转单笔)",
       "status": "built",
       "view": "d-tabs/d2-withdrawals.tsx",
       "batch": "P0",
@@ -546,7 +704,10 @@
       "view": "d-tabs/d1-recon.tsx",
       "batch": "P1",
       "note": "D.bin.<i>/D.bin.manual.<seg>;锁卡热力喂 K1 支付工具维度;解锁必须写原因(PRD D1④)",
-      "restAction": "setD1BinLock"
+      "restActions": [
+        "createD1BinLock",
+        "setD1BinLock"
+      ]
     },
     {
       "id": "OPS-D-12",
@@ -573,7 +734,7 @@
       "id": "OPS-D-14",
       "domain": "D",
       "object": "提现参数",
-      "action": "冷却/提现惩罚费率/增强合规审查(展示+跳H1)",
+      "action": "冷却/增强合规审查(展示+跳H1)",
       "status": "readonly",
       "view": "d-tabs/d5-params.tsx",
       "reason": "H1 Phase 派发参数(§3.14 权威归 H1),D5 仅生效面;PUT 携带返 422 PHASE_PARAM_READONLY,真 Link /growth/phase"
@@ -585,8 +746,16 @@
       "action": "对账导出/科目分解导出(普通确认+落A2)",
       "status": "built",
       "view": "d-tabs/d3-treasury.tsx",
-      "batch": "P2",
-      "restAction": "downloadD3Csv"
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/treasury/application/OpsTreasuryService.java",
+          "positivePatterns": ["D3_SENSITIVE_EXPORT_A2_AUDITED", "idempotencyService\\.execute\\(\\\"D3_SENSITIVE_EXPORT_"],
+          "negativePatterns": ["D3_SENSITIVE_EXPORT_STUB"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
     },
     {
       "id": "OPS-D-16",
@@ -596,17 +765,47 @@
       "status": "readonly",
       "view": "d-tabs/d7-payout-vnd.tsx",
       "batch": "P0",
-      "reason": "真实越南银行出款通道未接入；本轮删除本地假保存，通道固定关闭，验收 HOLD"
+      "reason": "真实银行账号和供应商属于外部投产数据；PC 开发验收允许使用显式 Mock/Test Fixture，真实出款能力不在本动作内"
     },
     {
       "id": "OPS-D-17",
       "domain": "D",
       "object": "法币提现通道",
-      "action": "查看关闭状态",
-      "status": "readonly",
+      "action": "关闭存量 VND 通道，或在 provider/覆盖率护栏通过后启用",
+      "status": "built",
       "view": "d-tabs/d7-payout-vnd.tsx",
-      "batch": "P0",
-      "reason": "未接真实出款接口前 fail-closed，不提供启停写入口"
+      "batch": "done",
+      "restAction": "togglePayoutVndChannel",
+      "note": "CAS、幂等与护栏链已接通；未接真实供应商时允许关闭止损、拒绝虚假开启。OPS-D-22 已完成显式 Sandbox 隔离夹具，生产仍在供应商未就绪时失败关闭"
+    },
+    {
+      "id": "OPS-D-18",
+      "domain": "D",
+      "object": "法币提现参数(D7)",
+      "action": "整组调整 8 项报价/费率/限额参数",
+      "status": "built",
+      "view": "d-tabs/d7-payout-vnd.tsx",
+      "batch": "done",
+      "restAction": "updatePayoutVndConfig",
+      "note": "服务端权威配置已具备整组 CAS、稳定幂等键、操作理由、B1 覆盖率护栏与 A2 审计；可用显式测试银行数据验收，不宣称真实出款供应商已接通"
+    },
+    {
+      "id": "OPS-D-19",
+      "domain": "D",
+      "object": "提现执行策略(D5)",
+      "action": "小额免审与到账时效执行",
+      "status": "built",
+      "view": "d-tabs/d5-params.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/finance/application/AppWithdrawalService.java",
+          "positivePatterns": ["smallAmountEligible", "payoutDueAt"],
+          "negativePatterns": ["D5_EXECUTOR_HOLD"]
+        }
+      ],
+      "note": "免审阈值与到账 SLA 已进入权威提现状态机；Cregis callback/inbox/query 边界已闭环，真实 BSC 终局 observer 未配置时保持 SENT/HOLD，不提前结算"
     },
     {
       "id": "OPS-E-01",
@@ -615,17 +814,7 @@
       "action": "查看列表/详情",
       "status": "readonly",
       "view": "e-view.tsx",
-      "reason": "展示读 static mock(SKUS),只读;改价/上下架/增删才是写动作欠账"
-    },
-    {
-      "id": "OPS-E-02",
-      "domain": "E",
-      "object": "商品SKU",
-      "action": "改价",
-      "status": "built",
-      "view": "e-view.tsx",
-      "batch": "P1",
-      "restAction": "e1_sku_update"
+      "reason": "SKU 列表/详情读取服务端权威 catalog；价格、状态和生命周期写动作另由 E 域 built 行登记"
     },
     {
       "id": "OPS-E-03",
@@ -635,7 +824,7 @@
       "status": "built",
       "view": "e-view.tsx",
       "batch": "P1",
-      "note": "registry e.ts 声明 rowActions 上架/下架但 e-view 自定义表格未渲染",
+      "note": "E1 SKU 表格已渲染上架/下架动作，并通过 e1_sku_status 服务端写入后权威回读",
       "restAction": "e1_sku_status"
     },
     {
@@ -649,16 +838,6 @@
       "restAction": "e1_sku_update"
     },
     {
-      "id": "OPS-E-05",
-      "domain": "E",
-      "object": "商品SKU",
-      "action": "库存调整",
-      "status": "built",
-      "view": "e-view.tsx",
-      "batch": "P1",
-      "restAction": "e1_sku_update"
-    },
-    {
       "id": "OPS-E-06",
       "domain": "E",
       "object": "商品SKU",
@@ -666,7 +845,7 @@
       "status": "built",
       "view": "e-view.tsx",
       "batch": "P1",
-      "note": "表单完整但 onConfirm 只 toast 不入库",
+      "note": "新增 SKU 表单已通过 e1_sku_create 提交服务端，并在成功后刷新权威列表",
       "restAction": "e1_sku_create"
     },
     {
@@ -683,28 +862,26 @@
       "id": "OPS-E-08",
       "domain": "E",
       "object": "代际发布门(E2)",
-      "action": "放行新代/灰度比例",
+      "action": "代际门、阶段与早鸟放行生命周期",
       "status": "built",
       "view": "e-view.tsx",
       "batch": "P1",
-      "restAction": "e1_gate_patch"
-    },
-    {
-      "id": "OPS-E-09",
-      "domain": "E",
-      "object": "收益引擎baseRate(E3)",
-      "action": "调日产出",
-      "status": "built",
-      "view": "e-view.tsx",
-      "batch": "P1",
-      "restAction": "e1_sku_update",
-      "note": "baseRate 为 SKU 字段,经 SKU 编辑器 e1_sku_update;E3 面无 baseRate 旋钮"
+      "restActions": [
+        "e1_gate_patch",
+        "e1_gate_field",
+        "e1_gate_archive",
+        "e1_gate_create",
+        "e1_phase_patch",
+        "e1_phase_create",
+        "e1_phase_archive",
+        "e1_early_access_update"
+      ]
     },
     {
       "id": "OPS-E-10",
       "domain": "E",
       "object": "任务(E3)",
-      "action": "新增/编辑/删除",
+      "action": "新增/编辑/删除、单任务定价及手机收益档位",
       "status": "built",
       "view": "e-view.tsx",
       "restFile": "lib/admin/e2-client.ts",
@@ -713,18 +890,24 @@
       "restActions": [
         "e2_task_create",
         "e2_task_update",
-        "e2_task_delete"
+        "e2_task_delete",
+        "e2_task_price",
+        "e2_phone_tier"
       ]
     },
     {
       "id": "OPS-E-11",
       "domain": "E",
-      "object": "Trade-in配置(E5)",
-      "action": "调折抵率/minHolding",
+      "object": "设备产能与 Trade-in 配置面(E3)",
+      "action": "保存产能分段、floor、SKU 递减、任务锁和置换规则",
       "status": "built",
       "view": "e-view.tsx",
       "batch": "P1",
-      "restAction": "e3_config"
+      "restActions": [
+        "e3_config",
+        "e3_config_batch"
+      ],
+      "note": "PC 配置持久化/回读已完成；UniApp 生产消费与置换订单链已由 OPS-E-19/20 完成可信证明、状态机与 Sandbox 隔离闭环"
     },
     {
       "id": "OPS-E-12",
@@ -747,34 +930,51 @@
       "status": "built",
       "view": "e-view.tsx",
       "batch": "P2",
-      "restAction": "e4_order_terminal"
+      "restActions": [
+        "e4_order_terminal",
+        "e4_order_cancel"
+      ]
     },
     {
       "id": "OPS-E-14",
       "domain": "E",
       "object": "设备运维(E5)",
-      "action": "批量pause/强制下线",
+      "action": "设备激活/强制激活/取消激活/解绑/用户暂停恢复及数据中心全生命周期",
       "status": "built",
       "view": "e-view.tsx",
       "batch": "P2",
       "restActions": [
-        "e5_device_batch_pause",
+        "activateE5Device",
+        "deactivateE5Device",
+        "setE5UserDevicesPaused",
+        "e5_device_activate",
+        "e5_device_force_activate",
+        "e5_device_deactivate",
         "e5_device_unbind",
-        "e5_device_deactivate"
+        "e5_device_batch_pause",
+        "e5_device_batch_resume",
+        "e5_datacenter_create",
+        "e5_datacenter_update",
+        "e5_datacenter_delete",
+        "e5_datacenter_pause",
+        "e5_datacenter_resume"
       ]
     },
     {
       "id": "OPS-F-01",
       "domain": "F",
       "object": "V-Rank等级",
-      "action": "改门槛/权益",
+      "action": "改晋升门槛/配置奖励模板",
       "status": "built",
-      "view": "f-view.tsx",
+      "view": "f-tabs/f1-vrank.tsx",
       "batch": "P1",
       "restActions": [
         "updateF1VRankThreshold",
-        "updateF1VRankReward"
-      ]
+        "updateF1VRankReward",
+        "addF1VRankReward",
+        "removeF1VRankReward"
+      ],
+      "note": "本行只签门槛与奖励模板配置写入，不宣称每一种奖励均已完成实际授予"
     },
     {
       "id": "OPS-F-02",
@@ -801,10 +1001,18 @@
       "domain": "F",
       "object": "网络版税",
       "action": "调佣金冷却期",
-      "status": "pending",
+      "status": "built",
       "view": "f-view.tsx",
-      "batch": "P1",
-      "note": "2026-08-04 定稿:F 域调参机制现成(mc param → updateF2Config),但 cooldown 后端参数键未确认(nexion-backend 不在本机),猜键=假旋钮;补建路径=后端确认键名 → F2 加一行调参(paramKey 入路由)→ 本行回 built"
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/team/application/OpsTeamService.java",
+          "positivePatterns": ["\\\"F\\.cooldown\\\"\\.equals\\(key\\)\\s*\\?\\s*COMMISSION_COOLING_DAYS_KEY"],
+          "negativePatterns": ["F\\.cooldown bridge FAILED", "bridge failed; keep ui value"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
     },
     {
       "id": "OPS-F-05",
@@ -814,30 +1022,48 @@
       "status": "built",
       "view": "f-view.tsx",
       "batch": "P1",
-      "restAction": "f_ui_config",
+      "restActions": [
+        "f_config",
+        "f_ui_config",
+        "f_config_batch"
+      ],
       "note": "F.binary.threshold 不在 F_ACTIVE_KEYS,resolveFOp 路由 f_ui_config"
-    },
-    {
-      "id": "OPS-F-06",
-      "domain": "F",
-      "object": "领导奖池",
-      "action": "调入池比例/权重",
-      "status": "built",
-      "view": "f-view.tsx",
-      "batch": "P1",
-      "restAction": "f_ui_config",
-      "note": "F.pool.ratio / F.pool.votes.* 路由 f_ui_config"
     },
     {
       "id": "OPS-F-07",
       "domain": "F",
       "object": "硬件配额",
-      "action": "调额度/回收",
+      "action": "调额度",
       "status": "built",
       "view": "f-view.tsx",
-      "batch": "P2",
-      "restAction": "f_ui_config",
-      "note": "F.quota.* 路由 f_ui_config;『回收』无入口待定"
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/team/mapper/TeamCommissionMapper.java",
+          "positivePatterns": ["updateHardwareQuotaTierCas", "monthly_quota\\s*=\\s*#\\{expectedMonthlyQuota\\}"],
+          "negativePatterns": ["updateHardwareQuotaTierLegacy"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-F-07a",
+      "domain": "F",
+      "object": "硬件配额回收",
+      "action": "回收已分配硬件配额",
+      "status": "built",
+      "view": "f-tabs/f4-ops.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/team/mapper/TeamCommissionMapper.java",
+          "positivePatterns": ["recycleHardwareQuotaUsage", "status\\s*=\\s*'RECYCLED'"],
+          "negativePatterns": ["DELETE FROM nx_team_hardware_quota_usage"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
     },
     {
       "id": "OPS-F-08",
@@ -846,9 +1072,16 @@
       "action": "批准/驳回申请",
       "status": "built",
       "view": "f-view.tsx",
-      "batch": "P1",
-      "restAction": "f_ui_config",
-      "note": "大使批准/驳回=dispose 写 F.ambassador.*.status,经 resolveFOp 路由 f_ui_config"
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "pc-runtime",
+          "file": "app/components/domain-views/f-tabs/f4-ops.tsx",
+          "positivePatterns": ["application\\.id", "fixedVal: \\\"approved\\\"", "fixedVal: \\\"rejected\\\""],
+          "negativePatterns": ["F\\.ambassador\\.q3-2025\\.status"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
     },
     {
       "id": "OPS-F-09",
@@ -857,9 +1090,16 @@
       "action": "取消资格(反欺诈)",
       "status": "built",
       "view": "f-view.tsx",
-      "batch": "P2",
-      "restAction": "f_ui_config",
-      "note": "榜单取消资格=dispose 写 F.leaderboard.*.status,路由 f_ui_config"
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "pc-runtime",
+          "file": "app/components/domain-views/f-tabs/f4-ops.tsx",
+          "positivePatterns": ["row\\.memberUserId", "fixedVal: \\\"disqualified\\\""],
+          "negativePatterns": ["F\\.leaderboard\\.period\\.status"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
     },
     {
       "id": "OPS-F-10",
@@ -871,6 +1111,24 @@
       "batch": "P1",
       "restAction": "f_commission_status",
       "note": "合并底账 ADMIN-MERGE-BASELINE-20260804 §二#4:行内入口曾被静默削减(锚在、按钮无 → 本行一度虚标),2026-08-06 主人拍板恢复 f5-audit.tsx 行内三动作(cooling→冻结/提前解锁,frozen→解冻)。可逆「先按住观察」与不可逆冲正分层;解锁/解冻放大流出方向弹窗 amplify,A2 票 amplifies 按注册表 op 级恒真。"
+    },
+    {
+      "id": "OPS-F-11",
+      "domain": "F",
+      "object": "V-Rank SKU 晋升奖励",
+      "action": "授予 SKU、失败补偿与重试",
+      "status": "built",
+      "view": "f-tabs/f1-vrank.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/team/application/VRankSkuFulfillmentService.java",
+          "positivePatterns": ["reserveSkuStock", "hasGrantedEntitlement", "grantSkuPayout"],
+          "negativePatterns": ["dispatchSkuStub"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
     },
     {
       "id": "OPS-G-01",
@@ -886,7 +1144,7 @@
       "id": "OPS-G-02",
       "domain": "G",
       "object": "Staking质押池",
-      "action": "停售/恢复开售 + 单档熔断(附处置方案)",
+      "action": "停售/恢复开售 + 单档熔断(附处置方案；单档恢复另列欠账)",
       "status": "built",
       "view": "g-tabs/g1-staking.tsx",
       "batch": "P1",
@@ -913,7 +1171,10 @@
       "status": "built",
       "view": "g-tabs/g2-exchange.tsx",
       "batch": "P1",
-      "restAction": "updateG2ExchangeParam"
+      "restActions": [
+        "cancelG2ExchangeQueueOrder",
+        "processG2ExchangeQueue"
+      ]
     },
     {
       "id": "OPS-G-05",
@@ -923,7 +1184,10 @@
       "status": "built",
       "view": "g-tabs/g3-market.tsx",
       "batch": "P1",
-      "restAction": "updateG3CurveFrame"
+      "restActions": [
+        "updateG3CurveFrame",
+        "updateG3Control"
+      ]
     },
     {
       "id": "OPS-G-06",
@@ -943,23 +1207,25 @@
       "status": "built",
       "view": "g-tabs/g4-genesis.tsx",
       "batch": "P1",
-      "restAction": "updateG4GenesisParam",
+      "restActions": [
+        "updateG4GenesisParam",
+        "rerunG4GenesisDividendBatch"
+      ],
       "note": "与 OPS-G-13 阶梯档位的仲裁语义(主人拍板 2026-08-06):tiers 契约在场时「一级单价」只读并标「按阶梯派生」(前端已锁入口+函数双保险),调价唯一入口=OPS-G-13 档位卡;tiers 缺席时本参数照常可调。后端同款仲裁:tiers 在场时拒绝 price 参数写入。"
     },
     {
       "id": "OPS-G-08",
       "domain": "G",
-      "object": "产品熔断(五闸生效面)",
-      "action": "Genesis市场/swap/staking/trial 熔断与恢复(恢复amplifies)",
+      "object": "产品熔断(G 域三闸生效面)",
+      "action": "Genesis市场/swap/staking 三闸熔断",
       "status": "built",
       "view": "g-tabs/(g1|g2|g4)",
       "batch": "P0",
       "restActions": [
         "updateG4GenesisMarketStatus",
-        "updateG2ExchangeSwapStatus",
-        "updateG1StakingPoolKillStatus"
+        "updateG2ExchangeSwapStatus"
       ],
-      "note": "trial 闸无 G 面写点;g5 已移除"
+      "note": "本行只签 G1/G2/G4 的止血方向写点；恢复与其余产品闸的跨域熔断统一归 J1，不在本行扩大声明"
     },
     {
       "id": "OPS-G-12",
@@ -1027,7 +1293,11 @@
       "status": "built",
       "view": "h-view.tsx",
       "batch": "P1",
-      "restAction": "h1_phase_dial"
+      "restActions": [
+        "h1_phase_dial",
+        "updateH1RhythmParam",
+        "updateH1MonthDial"
+      ]
     },
     {
       "id": "OPS-H-02",
@@ -1092,11 +1362,18 @@
       "id": "OPS-H-07",
       "domain": "H",
       "object": "活动中心",
-      "action": "改转盘奖池",
+      "action": "转盘档位、概率与护栏生命周期",
       "status": "built",
       "view": "h-view.tsx",
       "batch": "P2",
-      "restAction": "updateH4EventReward"
+      "restActions": [
+        "createH4WheelTier",
+        "updateH4WheelProbabilities",
+        "updateH4WheelTier",
+        "deleteH4WheelTier",
+        "createH4WheelGuard",
+        "updateH4WheelGuard"
+      ]
     },
     {
       "id": "OPS-H-08",
@@ -1106,7 +1383,13 @@
       "status": "built",
       "view": "h-view.tsx",
       "batch": "P2",
-      "restAction": "h5_checkin_rule"
+      "restActions": [
+        "h5_checkin_rule",
+        "updateH5StreakMilestone",
+        "updateH5PowerUp",
+        "updateH5EarnMilestone",
+        "updateH5EarnTickInterval"
+      ]
     },
     {
       "id": "OPS-H-09",
@@ -1121,6 +1404,24 @@
       "note": "7 个参数 + 算力分位表整组原子写(h9-public-stats.tsx 的「保存变更」→ 操作确认弹窗给前后值对照 + 理由必填 → updateH9PublicStats 带 expectedVersion CAS 与 Idempotency-Key,服务端落审计);改设备总数时页面先给出对公布日产与派生金额的影响预览"
     },
     {
+      "id": "OPS-C-34",
+      "domain": "C",
+      "object": "支付工具 PSP tokenization/远程绑卡边界",
+      "action": "仅接受供应商验证过的 token 并绑定服务端权威支付工具",
+      "status": "built",
+      "view": "c-tabs/c1-search.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/finance/application/AppPaymentMethodService.java",
+          "positivePatterns": ["requireVerifiedTokenBoundary", "PAYMENT_METHOD_PROVIDER_VERIFIER_UNAVAILABLE", "LOCAL_SANDBOX"],
+          "negativePatterns": ["providerClient", "verifyProviderToken"]
+        }
+      ],
+      "note": "开发完成(Mock)：test/acceptance LOCAL_SANDBOX 可验收 tokenization；生产默认 DISABLED，缺真实 PSP verifier 时失败关闭，卡片按 source_environment 隔离"
+    },
+    {
       "id": "OPS-I-01",
       "domain": "I",
       "object": "转化文案A/B(I1)",
@@ -1129,10 +1430,22 @@
       "view": "i-tabs/i1-copy-ab.tsx",
       "batch": "P2",
       "restActions": [
+        "createI1Copy",
+        "createI1CopyPosition",
+        "deleteI1CopyPosition",
+        "createI1CopyVersionOption",
+        "updateI1CopyVersionOption",
+        "deleteI1CopyVersionOption",
+        "saveI1CopyDraft",
+        "deleteI1CopyDraft",
         "publishI1CopyVersion",
+        "rollbackI1CopyVersion",
+        "archiveI1Copy",
+        "createI1Experiment",
         "startI1Experiment",
         "stopI1Experiment",
         "adoptI1Experiment",
+        "discardI1Experiment",
         "updateI1Framework"
       ]
     },
@@ -1153,7 +1466,7 @@
       "id": "OPS-I-02b",
       "domain": "I",
       "object": "Nova推送(I2)",
-      "action": "新增通道",
+      "action": "新增通道配置记录（不代表运行时接入）",
       "status": "built",
       "view": "i-tabs/i2-nova.tsx",
       "batch": "P2",
@@ -1179,6 +1492,9 @@
       "view": "i-tabs/i3-campaign.tsx",
       "batch": "P2",
       "restActions": [
+        "createI3Campaign",
+        "updateI3CampaignDraft",
+        "deleteI3Campaign",
         "i3_cap_adjust",
         "scheduleI3Campaign",
         "sendI3CampaignNow",
@@ -1194,7 +1510,11 @@
       "view": "i-tabs/i4-trust.tsx",
       "batch": "P1",
       "note": "财务数字/储备证明高敏合规内容",
-      "restAction": "i4_trust_section_manage"
+      "restActions": [
+        "createI4TrustSectionDraft",
+        "updateI4TrustSectionDraft",
+        "deleteI4TrustSectionDraft"
+      ]
     },
     {
       "id": "OPS-I-05",
@@ -1205,7 +1525,11 @@
       "view": "i-tabs/i4-trust.tsx",
       "batch": "P1",
       "note": "合规披露版本激活",
-      "restAction": "i5_disclosure_publish"
+      "restActions": [
+        "createI5DisclosureVersion",
+        "updateI5DisclosureVersion",
+        "deleteI5DisclosureVersion"
+      ]
     },
     {
       "id": "OPS-I-06",
@@ -1215,7 +1539,13 @@
       "status": "built",
       "view": "i-tabs/i6-i18n.tsx",
       "batch": "P2",
-      "restAction": "publishI6LocalizedMessage"
+      "restActions": [
+        "rescanI6",
+        "saveI6LocalizedDraft",
+        "archiveI6LocalizedMessage",
+        "rollbackI6LocalizedMessage",
+        "fixI6Integrity"
+      ]
     },
     {
       "id": "OPS-I-07",
@@ -1226,8 +1556,14 @@
       "view": "i-tabs/i6-i18n.tsx",
       "batch": "P2",
       "restActions": [
-        "publishI6Course",
-        "archiveI6Course"
+        "createI6Course",
+        "updateI7CourseDraft",
+        "deleteI7CourseDraft",
+        "createI7CourseVersion",
+        "updateI7CourseVersion",
+        "deleteI7CourseVersion",
+        "publishI7CourseVersion",
+        "rollbackI7CourseVersion"
       ]
     },
     {
@@ -1258,7 +1594,7 @@
       "status": "built",
       "view": "i-tabs/i4-trust.tsx",
       "batch": "done",
-      "restAction": "i5_matrix_configure"
+      "restAction": "i5_gate_adjust"
     },
     {
       "id": "OPS-I-11",
@@ -1295,6 +1631,24 @@
       ]
     },
     {
+      "id": "OPS-I-14",
+      "domain": "I",
+      "object": "Nova v3 业务事件频道(I2)",
+      "action": "team_event/staking_event/market_event 接入服务端 cadence 与启停",
+      "status": "built",
+      "view": "i-tabs/i2-nova.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/content/application/NovaRuntimeAdapterCatalog.java",
+          "positivePatterns": ["sources\\.put\\(\\\"team_event\\\"", "sources\\.put\\(\\\"staking_event\\\"", "sources\\.put\\(\\\"market_event\\\""],
+          "negativePatterns": ["TEAM_TICK_MS", "STAKING_TICK_MS", "MARKET_TICK_MS"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
       "id": "OPS-J-01",
       "domain": "J",
       "object": "Kill-Switch 5闸",
@@ -1303,7 +1657,11 @@
       "view": "j-view.tsx",
       "batch": "done",
       "note": "设计稿 port:5 闸矩阵(前端 4 + withdraw;Premium/NEXv2 已下线);单闸熔断恒走常规轨(对齐 PRD §15:单闸仅 J1-MD1 熔断/J1-MD2 恢复);恢复 amplifying 闸 操作确认弹窗 B1 红线护栏(覆盖率<redLine 禁放行);应急轨 emergency=true(A2 高亮+SLA 压缩+I3 升级)仅用于侧栏批量应急关停 J1-MD3,A2 标记 J.killswitch.<key>.emergency",
-      "restAction": "toggleJ1KillSwitch"
+      "restActions": [
+        "toggleJ1KillSwitch",
+        "emergencyDisableJ1",
+        "confirmJ1AutoTrigger"
+      ]
     },
     {
       "id": "OPS-J-02",
@@ -1337,7 +1695,15 @@
       "status": "built",
       "view": "j-view.tsx",
       "batch": "done",
-      "restAction": "updateJ4Playbook"
+      "restActions": [
+        "createJ4Playbook",
+        "updateJ4Playbook",
+        "drillJ4Playbook",
+        "j4_playbook_execute",
+        "rollbackJ4Playbook",
+        "cancelJ4Playbook",
+        "resumeJ4Playbook"
+      ]
     },
     {
       "id": "OPS-J-05",
@@ -1347,7 +1713,7 @@
       "status": "readonly",
       "view": "j-view.tsx",
       "batch": "done",
-      "reason": "EXECS 执行追溯为 append-only 合规取证展示;查看追溯详情 toast 占位(真后台 A2 工单链)"
+      "reason": "EXECS 执行追溯为 append-only 合规取证展示；当前详情已接真实追溯 Modal，包含确认依据、域动作、通知与回滚事实"
     },
     {
       "id": "OPS-J-06",
@@ -1380,10 +1746,11 @@
       "domain": "J",
       "object": "篡改防御监控",
       "action": "导出报表(脱敏·无操作确认)",
-      "status": "readonly",
+      "status": "built",
       "view": "j-view.tsx",
       "batch": "done",
-      "reason": "脱敏只读导出无需操作确认(写 admin 审计);原型 toast 占位,真后台 GET /api/admin/tamper/export?masked=true"
+      "restAction": "createJ3Report",
+      "note": "PC 调 POST /tamper/reports 创建服务端脱敏报表并落审计；下载失败只重试下载，不重复生成"
     },
     {
       "id": "OPS-K-01",
@@ -1397,7 +1764,8 @@
         "k1_cluster_flag",
         "k1_cluster_freeze",
         "k1_cluster_release",
-        "k1_cluster_cleared"
+        "k1_cluster_cleared",
+        "updateK1ClusterReviewNote"
       ]
     },
     {
@@ -1431,7 +1799,10 @@
       "view": "k-view.tsx",
       "batch": "done",
       "note": "K.wl.add.<cidr>/K.wl.del.<cidr> 派生列表;只影响 IP 维度,不解冻已冻结账户;账户级名单归 C2",
-      "restAction": "upsertK1Whitelist"
+      "restActions": [
+        "upsertK1Whitelist",
+        "disableK1Whitelist"
+      ]
     },
     {
       "id": "OPS-K-02",
@@ -1469,7 +1840,8 @@
         "createK3Rule",
         "updateK3Rule",
         "updateK3RuleState",
-        "archiveK3Rule"
+        "archiveK3Rule",
+        "dryRunK3"
       ]
     },
     {
@@ -1514,7 +1886,7 @@
       "view": "l-view.tsx",
       "batch": "done",
       "note": "设计稿 port:风控人工发起非 J4 剧本自动;L.regulatory.<模板> + logAudit 双留痕;关联 I5 披露版本 × 辖区",
-      "restAction": "createReport"
+      "restAction": "createRegulatoryReport"
     },
     {
       "id": "OPS-L-03",
@@ -1535,18 +1907,21 @@
       "view": "l-view.tsx",
       "batch": "done",
       "note": "状态机 pending→confirm(/split)→generating→ready(24h)→expired;放行 L.export.<id>=approved(操作确认 dispose)真写真生效(态派生);重试 retried;下载落 logAudit",
-      "restAction": "reportAction"
+      "restActions": [
+        "reportAction",
+        "downloadReport"
+      ]
     },
     {
       "id": "OPS-L-05",
       "domain": "L",
       "object": "敏感导出(L3/L4/L5)",
-      "action": "含资金明细/团队树/解密导出(操作确认)",
+      "action": "资金明细/团队树脱敏导出(操作确认)",
       "status": "built",
       "view": "l-view.tsx",
       "batch": "done",
-      "note": "L.export.{financeDetail,networkTree,decrypted}=requested;解密=强操作确认+强制事由(操作理由即事由);默认脱敏(L5 字段级规则表)",
-      "restAction": "createReport"
+      "note": "L3 资金明细走报告审批链；活跃 L4 页面通过 createNetworkTreeExport 调服务端快照导出。解密导出按设计禁止，不再冒充已实现能力",
+      "restAction": "createNetworkTreeExport"
     },
     {
       "id": "OPS-L-06",
@@ -1567,6 +1942,1817 @@
       "view": "l-view.tsx",
       "batch": "done",
       "restAction": "createReport"
+    },
+    {
+      "id": "OPS-L-08",
+      "domain": "L",
+      "object": "L1 KPI 跨域归因入口",
+      "action": "从无路由的 KPI 归因项跳转到目标业务页",
+      "status": "built",
+      "view": "l-tabs/l1-kpi.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "pc-navigation",
+          "file": "app/components/domain-views/l-tabs/l-attribution-routes.ts",
+          "positivePatterns": ["\\/analytics\\/financial", "\\/overview\\/rhythm", "\\/growth\\/phase"],
+          "negativePatterns": ["href:\\s*\\\"#\\\"", "原型占位"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-L-09",
+      "domain": "L",
+      "object": "L2 多维交叉分析跨域入口",
+      "action": "跳 B4/H1/I/F 对应归因页面",
+      "status": "built",
+      "view": "l-tabs/l2-funnel.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "pc-navigation",
+          "file": "app/components/domain-views/l-tabs/l-attribution-routes.ts",
+          "positivePatterns": ["\\/analytics\\/funnel-cohort", "\\/content\\/copy-ab", "\\/network\\/commissions"],
+          "negativePatterns": ["href:\\s*\\\"#\\\"", "原型占位"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-L-10",
+      "domain": "L",
+      "object": "L6 行为事件源/显式服务端夹具",
+      "action": "向行为热力聚合持续提供事件，并拒绝 production/sandbox mixed profile",
+      "status": "built",
+      "view": "l-tabs/l6-behavior-heatmap.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/bi/application/BehaviorAnalyticsFixtureSafetyGuard.java",
+          "positivePatterns": ["L6_FIXTURE_PROFILE_FORBIDDEN", "BehaviorAnalyticsFixtureProfileCondition[\\s\\S]{0,100}isStrictIsolatedProfile\\(environment\\.getActiveProfiles\\(\\)\\)"],
+          "negativePatterns": ["ALLOWED_PROFILES\\.contains\\(\"production\"\\)", "fixture\\.enabled:true"]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/bi/mapper/BehaviorAnalyticsMapper.java",
+          "positivePatterns": ["source_environment", "source_environment='PRODUCTION'"],
+          "negativePatterns": ["source_environment IN \\('PRODUCTION','SANDBOX'\\)", "COALESCE\\(source_environment,'PRODUCTION'\\)"]
+        },
+        {
+          "type": "uniapp-runtime",
+          "file": "src/api/behavior-analytics-api.ts",
+          "positivePatterns": ["path: \"/api/app/analytics/events\"", "client\\.request"],
+          "negativePatterns": ["sourceEnvironment:\\s*\"SANDBOX\"", "localStorage"]
+        }
+      ],
+      "note": "Production 采集经真实 App HTTP ingest，服务端持久化 source_environment 且 L6 聚合只读 PRODUCTION；Acceptance/test/local-sandbox 夹具需唯一隔离 profile，mixed profile 在启动前失败关闭。"
+    },
+    {
+      "id": "OPS-M-01",
+      "domain": "M",
+      "object": "客服总览(M1)",
+      "action": "查看工单/会话/SLA/坐席负载指标",
+      "status": "readonly",
+      "view": "m-tabs/m1-overview.tsx",
+      "batch": "done",
+      "reason": "总览指标由真实工单、会话、SLA 与坐席服务聚合，只读展示；处置动作在 M1–M5 对应命令执行"
+    },
+    {
+      "id": "OPS-M-02",
+      "domain": "M",
+      "object": "坐席负载策略(M1)",
+      "action": "调整容量/自动平衡并执行重平衡",
+      "status": "built",
+      "view": "m-tabs/m1-overview.tsx",
+      "batch": "done",
+      "restActions": [
+        "updateLoadConfig",
+        "rebalanceLoad"
+      ],
+      "note": "活跃 M1 经 expectedVersion、稳定幂等键和理由提交真实服务端，成功后重读权威快照"
+    },
+    {
+      "id": "OPS-M-03",
+      "domain": "M",
+      "object": "客服坐席与专属用户(M1/M5)",
+      "action": "分配岗位/维护接派单档案/单用户绑定或解绑专属用户",
+      "status": "built",
+      "view": "m-tabs/m1-overview.tsx + m-tabs/m5-scripts.tsx",
+      "batch": "done",
+      "restActions": [
+        "assignSupportSeat",
+        "updateSupportAgentProfile",
+        "assignAdvisorUsers",
+        "deactivateAdvisorAssignment"
+      ],
+      "note": "岗位、档案和每个用户的绑定/解绑都是真实服务端命令；多用户整体原子性、100人上限、失败权威回读已由 OPS-M-17 完成"
+    },
+    {
+      "id": "OPS-M-04",
+      "domain": "M",
+      "object": "客服工单(M2)",
+      "action": "新建工单并回复用户",
+      "status": "built",
+      "view": "m-tabs/m2-tickets.tsx",
+      "batch": "done",
+      "restActions": [
+        "createTicket",
+        "replyTicket"
+      ]
+    },
+    {
+      "id": "OPS-M-05",
+      "domain": "M",
+      "object": "客服工单(M2)",
+      "action": "改状态/优先级/负责人并归档或恢复",
+      "status": "built",
+      "view": "m-tabs/m2-tickets.tsx",
+      "batch": "done",
+      "restActions": [
+        "updateTicketStatus",
+        "updateTicketPriority",
+        "assignTicket",
+        "archiveTicket"
+      ]
+    },
+    {
+      "id": "OPS-M-06",
+      "domain": "M",
+      "object": "客服工单(M2)",
+      "action": "升级为会话并添加内部备注",
+      "status": "built",
+      "view": "m-tabs/m2-tickets.tsx",
+      "batch": "done",
+      "restActions": [
+        "escalateTicket",
+        "addInternalNote"
+      ]
+    },
+    {
+      "id": "OPS-M-07",
+      "domain": "M",
+      "object": "即时会话(M3)",
+      "action": "主动发起/回复/改状态/单个或批量归档",
+      "status": "built",
+      "view": "m-tabs/m3-sessions.tsx",
+      "batch": "done",
+      "restActions": [
+        "initiateConversation",
+        "replyConversation",
+        "updateConversationStatus",
+        "archiveConversation",
+        "archiveConversations"
+      ]
+    },
+    {
+      "id": "OPS-M-08",
+      "domain": "M",
+      "object": "会话转交(M3)",
+      "action": "发起/接收/退回/等待",
+      "status": "built",
+      "view": "m-tabs/m3-sessions.tsx",
+      "batch": "done",
+      "restActions": [
+        "transferConversation",
+        "acceptTransfer",
+        "returnTransfer",
+        "waitTransfer"
+      ]
+    },
+    {
+      "id": "OPS-M-09",
+      "domain": "M",
+      "object": "会话转工单(M3)",
+      "action": "将真实会话原子转换为客服工单",
+      "status": "built",
+      "view": "m-tabs/m3-sessions.tsx",
+      "batch": "done",
+      "restAction": "convertConversationToTicket"
+    },
+    {
+      "id": "OPS-M-10",
+      "domain": "M",
+      "object": "会话客户档案(M3)",
+      "action": "增删客服标签与内部备注",
+      "status": "built",
+      "view": "m-tabs/m3-sessions.tsx",
+      "batch": "done",
+      "restActions": [
+        "addCustomerTag",
+        "removeCustomerTag",
+        "addCustomerNote",
+        "removeCustomerNote"
+      ]
+    },
+    {
+      "id": "OPS-M-11",
+      "domain": "M",
+      "object": "帮助中心 FAQ(M4)",
+      "action": "新增/编辑/发布/下架/删除",
+      "status": "built",
+      "view": "m-tabs/m4-kb-sla.tsx",
+      "batch": "done",
+      "restActions": [
+        "createFaq",
+        "updateFaq",
+        "updateFaqStatus",
+        "deleteFaq"
+      ]
+    },
+    {
+      "id": "OPS-M-12",
+      "domain": "M",
+      "object": "客服 SLA(M4)",
+      "action": "调整首次响应/解决时限、队列和升级路径",
+      "status": "built",
+      "view": "m-tabs/m4-kb-sla.tsx",
+      "batch": "done",
+      "restAction": "updateSla"
+    },
+    {
+      "id": "OPS-M-13",
+      "domain": "M",
+      "object": "会话类别与顾问策略(M5)",
+      "action": "启停类别并调整顾问推送策略",
+      "status": "built",
+      "view": "m-tabs/m5-scripts.tsx",
+      "batch": "done",
+      "restActions": [
+        "updateCategory",
+        "updateAdvisorPolicy"
+      ]
+    },
+    {
+      "id": "OPS-M-14",
+      "domain": "M",
+      "object": "顾问话术(M5)",
+      "action": "新建/发布/归档并调整受众",
+      "status": "built",
+      "view": "m-tabs/m5-scripts.tsx",
+      "batch": "done",
+      "restActions": [
+        "createScript",
+        "updateScriptStatus",
+        "updateScriptAudience"
+      ]
+    },
+    {
+      "id": "OPS-M-15",
+      "domain": "M",
+      "object": "客服回复模板(M5)",
+      "action": "新建/发布/归档",
+      "status": "built",
+      "view": "m-tabs/m5-scripts.tsx",
+      "batch": "done",
+      "restActions": [
+        "createReplyTemplate",
+        "updateReplyTemplateStatus"
+      ]
+    },
+    {
+      "id": "OPS-M-16",
+      "domain": "M",
+      "object": "会话超时策略(M3)",
+      "action": "调整空闲提醒/自动关闭阈值并让调度器按新版本执行",
+      "status": "built",
+      "view": "m-tabs/m3-sessions.tsx",
+      "batch": "done",
+      "restAction": "updateMConversationTimeoutPolicy",
+      "note": "活跃 M3 有独立 RBAC、expectedVersion、幂等键和理由；后端以 CAS 持久化并由 ConversationIdleTimeoutScheduler 消费"
+    },
+    {
+      "id": "OPS-M-17",
+      "domain": "M",
+      "object": "专属客服多用户批量绑定(M1/M5)",
+      "action": "整批原子绑定并在失败或结果未知后回读权威快照",
+      "status": "built",
+      "view": "m-view.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "pc-runtime",
+          "file": "lib/admin/m-client.ts",
+          "positivePatterns": ["async assignAdvisorUsers", "\\/assignments\\/batch"],
+          "negativePatterns": ["async assignAdvisorUsers[\\s\\S]{0,900}for \\(const userId"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-A-22",
+      "domain": "A",
+      "object": "运营账号凭据与会话(A1)",
+      "action": "编辑资料、重置密码、全部强制登出、吊销单个会话",
+      "status": "built",
+      "view": "a-tabs/a1-accounts.tsx",
+      "batch": "done",
+      "restActions": [
+        "a1_account_update_profile",
+        "resetA1AccountPassword",
+        "a1_account_force_logout",
+        "revokeA1AccountSession"
+      ]
+    },
+    {
+      "id": "OPS-A-23",
+      "domain": "A",
+      "object": "平台参数寄存器(A5)",
+      "action": "查看服务端权威参数、来源与可变性",
+      "status": "readonly",
+      "view": "a-tabs/a5-params.tsx",
+      "reason": "A5 是平台参数目录和权威来源说明页；修改动作归参数拥有域，避免在 A5 复制第二写入口"
+    },
+    {
+      "id": "OPS-A-24",
+      "domain": "A",
+      "object": "平台角色生命周期(A6)",
+      "action": "新建、编辑、启停与删除角色",
+      "status": "built",
+      "view": "a-tabs/a6-roles.tsx",
+      "batch": "done",
+      "restActions": [
+        "createA6Role",
+        "updateA6Role",
+        "proposeA6RoleStatus",
+        "deleteA6Role"
+      ]
+    },
+    {
+      "id": "OPS-A-25",
+      "domain": "A",
+      "object": "平台菜单生命周期(A7)",
+      "action": "新建、编辑与删除菜单",
+      "status": "built",
+      "view": "a-tabs/a7-menus.tsx",
+      "batch": "done",
+      "restActions": [
+        "createA7Menu",
+        "updateA7Menu",
+        "deleteA7Menu"
+      ]
+    },
+    {
+      "id": "OPS-A-26",
+      "domain": "A",
+      "object": "权限字典(A8)",
+      "action": "查看权限码、菜单与角色联动",
+      "status": "readonly",
+      "view": "a-tabs/a8-permissions.tsx",
+      "reason": "权限字典是服务端权威只读目录；权限授予在 A6，菜单治理在 A7"
+    },
+    {
+      "id": "OPS-A-27",
+      "domain": "A",
+      "object": "A2 待确认操作",
+      "action": "由发起人撤回尚未裁决的操作",
+      "status": "built",
+      "view": "a-tabs/a2-audit.tsx",
+      "batch": "done",
+      "restAction": "withdrawA2Operation",
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-B-05",
+      "domain": "B",
+      "object": "流动性预测(B2)",
+      "action": "查看到期结构、缺口与预测窗口",
+      "status": "readonly",
+      "view": "_console/overview/liquidity/page.tsx",
+      "reason": "服务端权威预测结果只读；预测配置由 OPS-B-06 管理"
+    },
+    {
+      "id": "OPS-B-06",
+      "domain": "B",
+      "object": "流动性预测配置(B2)",
+      "action": "调整预测窗口和告警参数",
+      "status": "built",
+      "view": "_console/overview/liquidity/page.tsx",
+      "batch": "done",
+      "restAction": "updateB2ForecastConfig"
+    },
+    {
+      "id": "OPS-B-07",
+      "domain": "B",
+      "object": "转化漏斗(B3)",
+      "action": "查看 cohort 与阶段转化",
+      "status": "readonly",
+      "view": "_console/overview/funnel/page.tsx",
+      "reason": "漏斗事实由服务端聚合，只读展示"
+    },
+    {
+      "id": "OPS-B-08",
+      "domain": "B",
+      "object": "转化漏斗视图(B3)",
+      "action": "保存视图并导出 cohort",
+      "status": "built",
+      "view": "_console/overview/funnel/page.tsx",
+      "batch": "done",
+      "restActions": [
+        "saveB3View",
+        "exportB3Cohort"
+      ]
+    },
+    {
+      "id": "OPS-B-09",
+      "domain": "B",
+      "object": "增长节奏(B4)",
+      "action": "查看 Phase 分布与节奏历史",
+      "status": "readonly",
+      "view": "_console/overview/rhythm/page.tsx",
+      "reason": "节奏事实只读；Phase 参数权威归 H1"
+    },
+    {
+      "id": "OPS-B-10",
+      "domain": "B",
+      "object": "增长节奏操作(B4)",
+      "action": "导出分布并登记跳转 H1",
+      "status": "built",
+      "view": "_console/overview/rhythm/page.tsx",
+      "batch": "done",
+      "restActions": [
+        "exportB4Distribution",
+        "recordB4H1Jump"
+      ]
+    },
+    {
+      "id": "OPS-B-11",
+      "domain": "B",
+      "object": "风险雷达(B5)",
+      "action": "查看风险信号与阈值命中",
+      "status": "readonly",
+      "view": "_console/overview/risk-radar/page.tsx",
+      "reason": "风险事实由服务端聚合；阈值管理与人工分诊另列写动作"
+    },
+    {
+      "id": "OPS-B-12",
+      "domain": "B",
+      "object": "风险雷达治理(B5)",
+      "action": "预览/保存阈值并登记分诊",
+      "status": "built",
+      "view": "_console/overview/risk-radar/page.tsx",
+      "batch": "done",
+      "restActions": [
+        "previewB5Thresholds",
+        "updateB5Thresholds",
+        "recordB5Triage"
+      ]
+    },
+    {
+      "id": "OPS-B-13",
+      "domain": "B",
+      "object": "B5 告警订阅",
+      "action": "按订阅配置真实投递并记录送达结果",
+      "status": "built",
+      "view": "_console/overview/risk-radar/page.tsx",
+      "batch": "done",
+      "restAction": "acknowledgeB5Inbox",
+      "note": "站内信与受控 Webhook 已真实闭环；邮件使用 test/acceptance 专属 sandbox 回执，生产邮件 provider 未配置时失败关闭"
+    },
+    {
+      "id": "OPS-B-14",
+      "domain": "B",
+      "object": "B5 风险信号处置",
+      "action": "标记 handled/resolved 并保留处置闭环",
+      "status": "built",
+      "view": "_console/overview/risk-radar/page.tsx",
+      "batch": "done",
+      "restAction": "updateB5SignalStatus",
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-D-20",
+      "domain": "D",
+      "object": "法币汇率(D6)",
+      "action": "更新人工报价并回读权威版本",
+      "status": "built",
+      "view": "d-tabs/d6-fx.tsx",
+      "batch": "done",
+      "restAction": "updateD6FxQuote"
+    },
+    {
+      "id": "OPS-D-21",
+      "domain": "D",
+      "object": "VietQR 到账凭证(D1)",
+      "action": "从 PC 登记到账凭证并进入对账",
+      "status": "built",
+      "view": "d-tabs/d1-recon.tsx",
+      "batch": "done",
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭",
+      "restAction": "registerD1VietQrReceipt"
+    },
+    {
+      "id": "OPS-D-22",
+      "domain": "D",
+      "object": "越南法币真实出款(D7)",
+      "action": "接真实银行/供应商、出款订单、账本与回调状态机",
+      "status": "built",
+      "view": "d-tabs/d7-payout-vnd.tsx",
+      "batch": "done",
+      "restActions": [
+        "createPayoutVndSandboxOrder",
+        "completePayoutVndSandboxOrder"
+      ],
+      "note": "开发完成(Mock)：独立越南出款 sandbox 订单、账本、签名回调与重放闭环；生产 provider 未配置时失败关闭，不触真实资金"
+    },
+    {
+      "id": "OPS-E-15",
+      "domain": "E",
+      "object": "算力与设备配置(E6)",
+      "action": "调整入口开关、系数、产出、GPU 档位/关键词与下载文案",
+      "status": "built",
+      "view": "e-tabs/e6-compute-config.tsx",
+      "batch": "done",
+      "restActions": [
+        "e6_compute_config",
+        "e6_compute_config_batch"
+      ]
+    },
+    {
+      "id": "OPS-E-16",
+      "domain": "E",
+      "object": "设备舰队可观测性(E5)",
+      "action": "对 malformed telemetry/activity 响应失败关闭且不展示伪零值",
+      "status": "built",
+      "view": "e-tabs/e5-ops.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "pc-runtime",
+          "file": "lib/admin/e5-observability-contract.ts",
+          "positivePatterns": ["parseE5Observability", "if \\(!Array\\.isArray\\(root\\.activity\\)\\) return invalid\\(\"activity\"\\)", "telemetry\\.dispatchLatencyP95Ms"],
+          "negativePatterns": ["Number\\([^)]*\\) \\|\\| 0", "activity:\\s*\\[\\]"]
+        },
+        {
+          "type": "pc-runtime",
+          "file": "app/components/domain-views/e-tabs/e5-ops.tsx",
+          "positivePatterns": ["observabilityError[\\s\\S]{0,30}\\? \"不可用\"", "data-observability-state=", "observability\\?\\.activity\\.map"],
+          "negativePatterns": ["observabilityError \\? \"0\"", "setObservability\\([^)]*telemetry:[\\s\\S]{0,100}0"]
+        }
+      ],
+      "note": "Production：E5 telemetry/activity 先经严格协议解析；malformed HTTP 200 进入不可用态，页面不以 0 或空活动伪装健康。"
+    },
+    {
+      "id": "OPS-F-12",
+      "domain": "F",
+      "object": "F2 多层暂停",
+      "action": "多层费率暂停整批原子提交并回读",
+      "status": "built",
+      "view": "f-tabs/f2-rates.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "pc-runtime",
+          "file": "app/components/domain-views/f-tabs/f2-rates.tsx",
+          "positivePatterns": ["F\\.unilevel\\.\\$\\{u\\.l\\}\\.paused", "updateFConfigBatch\\(\\\"F2\\\", changes, reason\\)"],
+          "negativePatterns": ["void ctx\\.updateFConfigBatch"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-F-13",
+      "domain": "F",
+      "object": "F2 合并退出保护",
+      "action": "让可见 CTA 进入真实规则写入与消费闭环",
+      "status": "built",
+      "view": "f-tabs/f2-rates.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/team/application/UnilevelCommissionService.java",
+          "positivePatterns": ["CONFIG_KEY_MERGE_EXIT_MAX_PCT", "mergeExitCap"],
+          "negativePatterns": ["bridge failed; keep ui value"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-F-14",
+      "domain": "F",
+      "object": "F3 周期与残差参数",
+      "action": "复合修改整批原子提交并回读",
+      "status": "built",
+      "view": "f-tabs/f3-binary.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "pc-runtime",
+          "file": "app/components/domain-views/f-tabs/f3-binary.tsx",
+          "positivePatterns": ["F\\.binary\\.residualPolicy", "op: \\\"param-multi\\\""],
+          "negativePatterns": ["void ctx\\.updateFConfigBatch"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-F-15",
+      "domain": "F",
+      "object": "F4 奖池结算计划",
+      "action": "让 settleCron 配置驱动调度器，并在配置缺失/非法时禁止资金结算",
+      "status": "built",
+      "view": "f-tabs/f4-ops.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/team/application/LeadershipPoolSettleScheduler.java",
+          "positivePatterns": ["settlementConfigGuard\\.requireValid\\(\\)", "CronExpression\\.parse\\(config\\.springCron\\(\\)\\)", "recordBlocked\\(failure, \"scheduler\"\\)"],
+          "negativePatterns": ["CronExpression\\.parse\\([^)]*orElse", "injectAndSettleCurrentWeek\\(\\)[\\s\\S]{0,120}catch[\\s\\S]{0,80}injectAndSettleCurrentWeek"]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/team/application/LeadershipPoolService.java",
+          "positivePatterns": ["requireSettlementConfig\\(\"settlement\"\\)", "requireSettlementConfig\\(\"direct-settlement\"\\)", "throw new BizException\\(503, \"F4_SETTLEMENT_CONFIG_UNAVAILABLE\"\\)"],
+          "negativePatterns": ["settlementConfigGuard\\.requireValid\\(\\)[\\s\\S]{0,100}catch[\\s\\S]{0,100}return\\s+new SettlementConfig", "F4_SETTLEMENT_CONFIG_UNAVAILABLE[\\s\\S]{0,100}settleTrusted\\("]
+        }
+      ],
+      "note": "Production：settleCron 由严格配置守卫驱动 scheduler；调度与直接结算入口均先 requireValid，缺失/非法配置记录 blocked 并在资金写入前失败关闭。"
+    },
+    {
+      "id": "OPS-F-16",
+      "domain": "F",
+      "object": "F4 榜单奖金参数",
+      "action": "让 top1/top5/periodPrize 被排名结算消费",
+      "status": "built",
+      "view": "f-tabs/f4-ops.tsx",
+      "batch": "done",
+      "restAction": "f4_leaderboard_period_payout",
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-F-17",
+      "domain": "F",
+      "object": "F4 榜单池控制",
+      "action": "让 poolUsd/minUsd/paused 进入真实榜单与结算",
+      "status": "built",
+      "view": "f-tabs/f4-ops.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/team/application/LeadershipPoolService.java",
+          "positivePatterns": ["CONFIG_KEY_LEADERBOARD_POOL", "CONFIG_KEY_LEADERBOARD_MIN", "CONFIG_KEY_LEADERBOARD_PAUSED"],
+          "negativePatterns": ["DEFAULT_LEADERBOARD_POOL"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-F-18",
+      "domain": "F",
+      "object": "F5 佣金暂停处置",
+      "action": "在 PC 恢复已暂停事件",
+      "status": "built",
+      "view": "f-tabs/f5-audit.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "pc-runtime",
+          "file": "app/components/domain-views/f-tabs/f5-audit.tsx",
+          "positivePatterns": ["恢复奖种", "suspendF5UserCommissions\\(numericUserId, \\[item\\.kind\\], false, reason\\)"],
+          "negativePatterns": ["void ctx\\.suspendF5UserCommissions"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-F-19",
+      "domain": "F",
+      "object": "F5 审计导出",
+      "action": "由后端按全量筛选生成并下载真实脱敏 CSV",
+      "status": "built",
+      "view": "f-tabs/f5-audit.tsx",
+      "batch": "done",
+      "restAction": "downloadF5RedactedCsv",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/team/application/F5CommissionService.java",
+          "positivePatterns": ["public F5CommissionExportPayload export\\(", "mapper\\.queryExportEvents\\(", "while \\(written < expectedRows\\)", "redactUserId\\(", "F5_COMMISSION_CSV_EXPORTED"],
+          "negativePatterns": ["queryEvents\\([^;]+request\\.limit", "return new F5CommissionExportPayload[^;]+sample"]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/team/mapper/F5CommissionMapper.java",
+          "positivePatterns": ["Bounded server-side export page", "List<Map<String, Object>> queryExportEvents\\(", "LIMIT #\\{limit\\}"],
+          "negativePatterns": ["SELECT \\* FROM nx_team_commission_event", "queryExportEvents[\\s\\S]{0,500}ledger_ref AS ledgerRef"]
+        }
+      ],
+      "note": "Production：后端按完整筛选计数并分批 queryExportEvents 生成脱敏 CSV，校验行数/大小后才返回；PC 只下载服务端产物，不用当前页数组代签。"
+    },
+    {
+      "id": "OPS-G-14",
+      "domain": "G",
+      "object": "G1 单档质押熔断",
+      "action": "恢复被熔断的单一质押档位",
+      "status": "built",
+      "view": "g-tabs/g1-staking.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "pc-runtime",
+          "file": "lib/admin/g1-client.ts",
+          "positivePatterns": ["killed\\s*\\?", "\\/kill-status", "\\/restore"],
+          "negativePatterns": ["\\/restore[\\s\\S]{0,80}\\?[\\s\\S]{0,80}\\/kill-status"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-H-11",
+      "domain": "H",
+      "object": "代金券生命周期(H7)",
+      "action": "新建、编辑、启停及撤销可用发放",
+      "status": "built",
+      "view": "h-tabs/h7-voucher-config.tsx",
+      "batch": "done",
+      "restActions": [
+        "createH7Voucher",
+        "updateH7Voucher",
+        "updateH7VoucherStatus",
+        "revokeH7VoucherAvailableGrants"
+      ]
+    },
+    {
+      "id": "OPS-H-12",
+      "domain": "H",
+      "object": "任务生命周期(H3)",
+      "action": "编辑、启停、归档和删除既有任务",
+      "status": "built",
+      "view": "h-tabs/h3-quest.tsx",
+      "batch": "done",
+      "restActions": [
+        "editH3Mission",
+        "transitionH3Mission",
+        "archiveH3Mission",
+        "deleteH3Mission"
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-H-13",
+      "domain": "H",
+      "object": "邀请奖励参数(H8)",
+      "action": "调整奖励参数并通过 A2 结算",
+      "status": "built",
+      "view": "h-tabs/h8-referral-rewards.tsx",
+      "batch": "done",
+      "restAction": "updateH8ReferralRewardParam"
+    },
+    {
+      "id": "OPS-B-15",
+      "domain": "B",
+      "object": "流动性负债导出(B2)",
+      "action": "下载服务端生成的负债 CSV",
+      "status": "built",
+      "view": "_console/overview/liquidity/page.tsx",
+      "batch": "done",
+      "restAction": "downloadB2LiabilitiesCsv"
+    },
+    {
+      "id": "OPS-B-16",
+      "domain": "B",
+      "object": "B5 告警订阅配置",
+      "action": "以 CAS 和幂等方式保存订阅渠道与 Webhook 配置",
+      "status": "built",
+      "view": "_console/overview/risk-radar/page.tsx",
+      "batch": "done",
+      "restAction": "updateB5Subscription",
+      "note": "订阅配置持久化已完成；真实站内信/Webhook 投递、送达回执、封顶重试与隔离 Email Sandbox 已由 OPS-B-13 完成"
+    },
+    {
+      "id": "OPS-D-23",
+      "domain": "D",
+      "object": "VietQR 收款账户池与路由配置(D1)",
+      "action": "创建/更新收款账户、限额、启停、容差、过期与轮换参数",
+      "status": "built",
+      "view": "d-tabs/d1-recon.tsx",
+      "batch": "done",
+      "restActions": [
+        "updateD1VietQrConfig",
+        "createD1VietQrAccount",
+        "updateD1VietQrAccount"
+      ],
+      "note": "本行只签服务端账户池和配置生命周期；真实银行账号可用显式测试夹具验收，正式 Provider 动态二维码/签名回调不在本行冒充完成"
+    },
+    {
+      "id": "OPS-F-20",
+      "domain": "F",
+      "object": "双轨结算(F3)",
+      "action": "手工执行服务端结算并回读结算结果",
+      "status": "built",
+      "view": "f-tabs/f3-binary.tsx",
+      "batch": "done",
+      "restAction": "executeF3Settlement",
+      "note": "单次资金结算动作已接真实服务端；周期+残值复合配置原子性已由 OPS-F-14 完成"
+    },
+    {
+      "id": "OPS-F-21",
+      "domain": "F",
+      "object": "佣金异常检测(F5)",
+      "action": "更新异常检测阈值并回读权威配置",
+      "status": "built",
+      "view": "f-tabs/f5-audit.tsx",
+      "batch": "done",
+      "restAction": "updateF5AnomalyConfig"
+    },
+    {
+      "id": "OPS-G-15",
+      "domain": "G",
+      "object": "Genesis 管理沙箱(G4)",
+      "action": "更新管理参数、创建和归档 SIMULATED 记录",
+      "status": "built",
+      "view": "g-tabs/g4-admin-operations.tsx",
+      "batch": "done",
+      "restActions": [
+        "updateG4AdminOperationConfig",
+        "createG4AdminSimulation",
+        "archiveG4AdminSimulation"
+      ],
+      "note": "仅签显式 SIMULATED 沙箱记录；不写钱包、账本、真实成交或生产市场统计"
+    },
+    {
+      "id": "OPS-H-14",
+      "domain": "H",
+      "object": "Quest 任务创建(H3)",
+      "action": "新建普通任务和月度任务",
+      "status": "built",
+      "view": "h-tabs/h3-quest-events.tsx",
+      "batch": "done",
+      "restActions": [
+        "createH3Mission",
+        "createH3MonthlyMission"
+      ],
+      "note": "任务创建已接真实服务端；编辑、启停、归档、删除、持久幂等与认证审计主体已由 OPS-H-12 完成"
+    },
+    {
+      "id": "OPS-H-15",
+      "domain": "H",
+      "object": "活动创建与主推(H4)",
+      "action": "创建活动并切换主推状态",
+      "status": "built",
+      "view": "h-tabs/h3-quest-events.tsx",
+      "batch": "done",
+      "restActions": [
+        "createH4QuestEvent",
+        "updateH4EventFeatured"
+      ]
+    },
+    {
+      "id": "OPS-H-16",
+      "domain": "H",
+      "object": "代金券永久删除(H7)",
+      "action": "删除满足服务端状态门的代金券",
+      "status": "built",
+      "view": "h-tabs/h7-voucher-config.tsx",
+      "batch": "done",
+      "restAction": "deleteH7Voucher"
+    },
+    {
+      "id": "OPS-E-17",
+      "domain": "E",
+      "object": "AI 任务定价配置面(E2)",
+      "action": "保存并回读六类任务奖励区间、最低显存与 Kill/恢复配置",
+      "status": "built",
+      "view": "e-tabs/e2-tasks.tsx",
+      "batch": "done",
+      "restAction": "updateE2TaskPricing",
+      "note": "服务端配置持久化、回读、审计与 outbox 已完成；生产派发/路由消费、可信完成证明和隔离 Sandbox 已由 OPS-E-18 完成"
+    },
+    {
+      "id": "OPS-E-18",
+      "domain": "E",
+      "object": "AI 任务定价运行时(E2)",
+      "action": "让奖励、显存门槛和 Kill 状态被生产任务派发与路由实际消费",
+      "status": "built",
+      "view": "e-tabs/e2-tasks.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "uniapp-runtime",
+          "file": "src/store/app.ts",
+          "positivePatterns": ["taskAssignmentApi\\.state\\(\\)", "taskAssignmentApi\\.claim\\(", "taskAssignmentApi\\.complete\\("],
+          "negativePatterns": ["function tick\\(deltaMs: number\\) \\{\\s*if \\(remoteApiEnabled\\) return;"]
+        }
+      ],
+      "note": "权威 assignment/claim/complete、可信设备 proof、lease 与真实奖励链已闭环；sandbox 仅 test/acceptance 且使用隔离奖励账本"
+    },
+    {
+      "id": "OPS-E-19",
+      "domain": "E",
+      "object": "设备产能运行时(E3)",
+      "action": "让 App 设备生命周期消费服务端产能分段、floor、豁免 SKU 与任务锁配置",
+      "status": "built",
+      "view": "e-tabs/e3-lifecycle.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "uniapp-runtime",
+          "file": "src/store/app.ts",
+          "positivePatterns": ["refreshRemoteFleet", "deviceE3Api\\.fleet\\(\\)", "installCanonicalLifecycleConfig"],
+          "negativePatterns": ["refreshRemoteFleet[\\s\\S]{0,300}MOCK-ONLY"]
+        }
+      ],
+      "note": "E3 产能与设备锁已由服务端任务链消费；production/sandbox 的 task、receipt、lock 与聚合按 source_environment 隔离"
+    },
+    {
+      "id": "OPS-E-20",
+      "domain": "E",
+      "object": "Trade-in 生产订单链(E3)",
+      "action": "以服务端 quote/submit 覆盖 capped trade-in 三个远程分支",
+      "status": "built",
+      "view": "e-tabs/e3-lifecycle.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "uniapp-runtime",
+          "file": "src/api/device-e3-api.ts",
+          "positivePatterns": ["CapacityReplaceDecision = \"CAPACITY_AVAILABLE\" \\| \"NO_ACTIVE_DEVICE\" \\| \"REPLACE_REQUIRED\"", "decisionSource: source\\.decisionSource === \"server\"", "path: \"/api/app/trade-in/capacity-quote\"", "path: \"/api/app/trade-in/capacity-replace\""],
+          "negativePatterns": ["decisionSource:\\s*\"local\"", "CAPACITY_AVAILABLE[\\s\\S]{0,160}capacityReplace\\("]
+        },
+        {
+          "type": "uniapp-runtime",
+          "file": "src/pages/store/checkout.vue",
+          "positivePatterns": ["deviceE3Api\\.capacityQuote\\(kind\\)", "remoteTradeinRecoveryRequired\\.value = true", "deviceE3Api\\.submit\\("],
+          "negativePatterns": ["remoteTradeinRecoveryRequired\\.value = true[\\s\\S]{0,160}toast\\.success", "catch[\\s\\S]{0,120}completeOrder"]
+        }
+      ],
+      "note": "Production：UniApp 仅接受服务端 CAPACITY_AVAILABLE/NO_ACTIVE_DEVICE/REPLACE_REQUIRED 三分支，并以服务端 quote/sourceDevice 上下文提交；未知、拒绝或恢复态不会降级为本地成功。"
+    },
+    {
+      "id": "OPS-D-24",
+      "domain": "D",
+      "object": "VietQR 对账状态机(D1)",
+      "action": "匹配孤儿回单、确认入账、按实收核销和登记退回",
+      "status": "built",
+      "view": "d-tabs/d1-recon.tsx",
+      "batch": "done",
+      "restAction": "reconcileD1VietQr"
+    },
+    {
+      "id": "OPS-G-16",
+      "domain": "G",
+      "object": "Genesis 邀请码(G4)",
+      "action": "批量签发并作废邀请码",
+      "status": "built",
+      "view": "g-tabs/g4-invite-codes.tsx",
+      "batch": "done",
+      "restActions": [
+        "issueG4InviteCodes",
+        "voidG4InviteCode"
+      ]
+    },
+    {
+      "id": "OPS-I-15",
+      "domain": "I",
+      "object": "Nova 动态通道(I2)",
+      "action": "为运营新增通道接入 adapter、事实源和调度器",
+      "status": "built",
+      "view": "i-tabs/i2-nova.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/content/application/NovaRuntimeAdapterCatalog.java",
+          "positivePatterns": ["isControlledDynamicSource", "GENERIC\\.get\\(", "static List<NovaOptionView> options\\(\\)"],
+          "negativePatterns": ["DEFAULT_TRIGGER_DESCRIPTION"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-I-16",
+      "domain": "I",
+      "object": "通知左滑转化(I3)",
+      "action": "在 UniApp 接入 swipe_conversion 手势事件",
+      "status": "built",
+      "view": "i-tabs/i3-campaign.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "uniapp-runtime",
+          "file": "src/pages/me/notifications.vue",
+          "positivePatterns": ["@touchstart", "@touchend", "recordSwipeConversion"],
+          "negativePatterns": ["uni has no swipe primitive"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-K-15",
+      "domain": "K",
+      "object": "Janus C2 管理面(K6)",
+      "action": "管理策略/目标/设备状态和接管受理、执行预演并导出审计",
+      "status": "built",
+      "view": "k-tabs/k6-janus-c2.tsx",
+      "batch": "done",
+      "restActions": [
+        "createK6RemoteTargetVersion",
+        "disableK6RemoteTarget",
+        "updateK6DeviceStatus",
+        "reconcileK6Takeover",
+        "revokeK6Takeover",
+        "resendK6TakeoverRevoke",
+        "retryK6Takeover",
+        "changeK6TakeoverTarget",
+        "saveK6Strategy",
+        "runK6DryRun",
+        "changeK6StrategyStatus",
+        "deleteK6Strategy",
+        "rollbackK6Strategy",
+        "recordK6Export"
+      ],
+      "note": "管理面持久化、命令受理与沙箱预演已完成；实体 executor、ACK、不可重放 applied proof 与收益隔离已由 OPS-K-17 完成"
+    },
+    {
+      "id": "OPS-K-16",
+      "domain": "K",
+      "object": "K1 自动释放",
+      "action": "基于可信 Janus 在线证明自动释放收益",
+      "status": "built",
+      "view": "k-tabs/k1-multiaccount.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/finance/application/EarningsReleaseService.java",
+          "positivePatterns": ["\"JANUS_PRODUCTION_EXECUTOR\"\\.equals\\(proof\\.source\\(\\)\\)", "String\\s+sourceEnvironment\\s*=\\s*\"PRODUCTION\"", "mapper\\.attestedSeconds\\(userId,\\s*sourceEnvironment\\)", "mapper\\.protectedEntries\\(userId,\\s*sourceEnvironment\\)", "params\\.attestationHours\\(\\)", "params\\.manualOnly\\(\\)"],
+          "negativePatterns": ["JANUS_SANDBOX_EXECUTOR", "sourceEnvironment\\s*=\\s*\"SANDBOX\"", "USER_PROVIDED_ATTESTATION"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-K-17",
+      "domain": "K",
+      "object": "Janus C2 生产执行(K6)",
+      "action": "Janus 源码、UTS 桥与 Sandbox fail-closed 已完成；Production 原生真机 enrollment/handoff 验收 HOLD",
+      "status": "pending",
+      "view": "k-tabs/k6-janus-c2.tsx",
+      "batch": "P1",
+      "runtimeEvidence": [
+        {
+          "type": "janus-runtime",
+          "file": "src/lib/janus/executor-runtime.ts",
+          "positivePatterns": ["installNativeJanusExecutorBridge\\(\\)", "JANUS_NATIVE_EXECUTOR_REQUIRED", "createProductionJanusExecutor\\(\\{ bridge \\}\\)", "createJanusBackendCommandApi\\("],
+          "negativePatterns": ["createSandboxJanusExecutor", "bridge \\? createProductionJanusExecutor"]
+        },
+        {
+          "type": "janus-runtime",
+          "file": "src/uni_modules/nexion-janus-executor/utssdk/app-android/index.uts",
+          "positivePatterns": ["JANUS_NATIVE_ENROLLMENT_REQUIRED", "required\\(\"webview_handoff_attestor\"\\)", "JANUS_NATIVE_WEBVIEW_HANDOFF_NOT_ATTESTED", "JANUS_NATIVE_APPLIED_PROOF_STATE_MISSING"],
+          "negativePatterns": ["proofMode:\\s*\"SANDBOX\"", "return \\{[\\s\\S]{0,120}proofMode:\\s*\"PRODUCTION\""]
+        },
+        {
+          "type": "janus-runtime",
+          "file": "src/lib/janus/sandbox-executor.ts",
+          "positivePatterns": ["JANUS_SANDBOX_PROFILE_FORBIDDEN", "proofMode: \"SANDBOX\"", "JANUS_SANDBOX_TARGET_FORBIDDEN"],
+          "negativePatterns": ["proofMode:\\s*\"PRODUCTION\"", "JANUS_PRODUCTION_EXECUTOR"]
+        }
+      ],
+      "runtimeConsumerContract": {
+        "profiles": ["sandbox", "production"],
+        "producer": "K6 command lease and proof challenge",
+        "consumer": "actual NX1.0-Janus runtime executor",
+        "successOutcome": "Janus claims the command and returns non-replayable ACK and applied proof",
+        "failureOutcome": "missing executor, invalid proof or profile mismatch leaves the command unapplied"
+      },
+      "note": "源码 executor、Android UTS 桥与 Sandbox fail-closed 边界已有证据；Production 原生真机 enrollment/handoff 尚未验收，保持唯一 pending/HOLD，不以源码、UTS 或 Sandbox 完成假绿。"
+    },
+    {
+      "id": "OPS-M-18",
+      "domain": "M",
+      "object": "会话工作台策略(M3)",
+      "action": "调整会话工作台策略",
+      "status": "built",
+      "view": "m-tabs/m3-sessions.tsx",
+      "batch": "done",
+      "restAction": "updateWorkbenchPolicy"
+    },
+    {
+      "id": "OPS-M-19",
+      "domain": "M",
+      "object": "客服档案并发控制(M1/M5)",
+      "action": "以 CAS 和真实幂等键防止跨页旧快照覆盖",
+      "status": "built",
+      "view": "m-view.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "pc-runtime",
+          "file": "lib/admin/m-client.ts",
+          "positivePatterns": ["updateSupportAgentProfile[\\s\\S]{0,500}expectedVersion", "assignSupportSeat[\\s\\S]{0,500}expectedVersion"],
+          "negativePatterns": ["expectedVersion:\\s*0"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-M-20",
+      "domain": "M",
+      "object": "M3 会话转交权限",
+      "action": "让 M3-only 角色独立读取转交目标和用户上下文",
+      "status": "built",
+      "view": "m-tabs/m3-sessions.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "pc-runtime",
+          "file": "lib/admin/m-client.ts",
+          "positivePatterns": ["\\/conversations\\/transfer-targets", "\\/session-templates\\/runtime"],
+          "negativePatterns": ["transfer-targets[\\s\\S]{0,300}service_m1_read"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-M-21",
+      "domain": "M",
+      "object": "M2 工单升级确认",
+      "action": "等待服务端结果后再关闭确认弹窗",
+      "status": "built",
+      "view": "m-tabs/m2-tickets.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "pc-runtime",
+          "file": "app/components/domain-views/m-tabs/m2-tickets.tsx",
+          "positivePatterns": ["const escalateToConversation", "const succeeded = await commitTicketWrite", "return succeeded"],
+          "negativePatterns": ["void commitTicketWrite"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-M-22",
+      "domain": "M",
+      "object": "M3 会话身份",
+      "action": "用服务端真实 conversationId 替换临时 ID",
+      "status": "built",
+      "view": "m-tabs/m3-sessions.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "pc-runtime",
+          "file": "app/components/domain-views/m-tabs/m3-sessions.tsx",
+          "positivePatterns": ["onBackendResult", "conversationNo"],
+          "negativePatterns": ["if \\(succeeded\\) \\{\\s*setShowInitiate\\(false\\);\\s*selectConvo\\(cid\\)"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-M-23",
+      "domain": "M",
+      "object": "M4 FAQ 复合编辑",
+      "action": "同时修改正文和状态且不丢字段",
+      "status": "built",
+      "view": "m-tabs/m4-kb-sla.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "pc-runtime",
+          "file": "app/components/domain-views/m-view.tsx",
+          "positivePatterns": ["async function writeFaqRows", "contentChanged", "row\\.status !== before\\.status && !contentChanged"],
+          "negativePatterns": ["updateFaqStatusOnly"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-M-24",
+      "domain": "M",
+      "object": "M 域权限隔离读取",
+      "action": "按叶权限加载数据/SSE 并显式区分不可用与零值",
+      "status": "built",
+      "view": "m-view.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "pc-runtime",
+          "file": "lib/admin/use-conversation-stream.ts",
+          "positivePatterns": ["if \\(response\\.status === 401 \\|\\| response\\.status === 403\\)", "isTerminalConversationStreamStatus\\(streamStatusResponse\\.status\\)", "const generation = recoveryGate\\.begin\\(\\)", "snapshotController\\?\\.abort\\(\\)", "void onReconnectSnapshotRef\\.current\\(controller\\.signal\\)\\.then\\(async \\(\\) =>", "const reconciled = await recoveryGate\\.complete\\(", "if \\(!reconciled\\) return;\\s*setReady\\(true\\)", "connectionController\\.abort\\(\\)", "scheduleReconnect\\(connect\\)"],
+          "negativePatterns": ["es\\.onerror\\s*=\\s*\\(\\)\\s*=>\\s*\\{[\\s\\S]{0,500}setTimeout\\(connect, delay\\)"]
+        },
+        {
+          "type": "pc-runtime",
+          "file": "app/components/domain-views/m-view.tsx",
+          "positivePatterns": ["const generation = mLoadCoordinator\\.current\\.beginConversationSnapshot\\(\\)", "const conversations = await fetchMConversationSnapshot\\(signal\\)", "if \\(signal\\.aborted\\) return", "!mLoadCoordinator\\.current\\.isConversationSnapshotCurrent\\(generation\\) \\|\\| mDataAuthEpoch\\.current !== snapshotAuthEpoch", "const generation = mLoadCoordinator\\.current\\.beginFullLoad\\(\\)", "mLoadCoordinator\\.current\\.isFullLoadCurrent\\(generation\\)", "onReconnectSnapshot: reconcileConversationSnapshot"],
+          "negativePatterns": ["onReconnectSnapshot: reloadMContent", "fetchMConversationSnapshot\\(\\s*\\)"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-C-35",
+      "domain": "C",
+      "object": "用户支付方式本地状态(C1)",
+      "action": "从 Nexion 账户解绑并回读本地终态",
+      "status": "built",
+      "view": "_console/users/search/[id]/page.tsx",
+      "batch": "done",
+      "restAction": "unbindUserPaymentMethod",
+      "note": "Nexion 本地解绑已完成；PSP token 撤销命令、租约、重试与终态原子收口已由 OPS-C-23 完成，真实适配器缺席时失败关闭"
+    },
+    {
+      "id": "OPS-D-25",
+      "domain": "D",
+      "object": "双账本原始导出(D3)",
+      "action": "下载当前对账/负债 CSV",
+      "status": "built",
+      "view": "d-tabs/d3-treasury.tsx",
+      "batch": "done",
+      "restAction": "downloadD3Csv",
+      "note": "原始下载已完成；理由、脱敏、幂等、权限与必达审计包装已由 OPS-D-15 完成"
+    },
+    {
+      "id": "OPS-E-21",
+      "domain": "E",
+      "object": "商品媒体(E1)",
+      "action": "上传商品图片/媒体并回填服务端资源标识",
+      "status": "built",
+      "view": "e-view.tsx",
+      "batch": "done",
+      "restAction": "uploadAdminMedia"
+    },
+    {
+      "id": "OPS-H-17",
+      "domain": "H",
+      "object": "试用自动推送(H2)",
+      "action": "应急终止自动推送",
+      "status": "built",
+      "view": "h-tabs/h2-trial.tsx",
+      "batch": "done",
+      "restAction": "killH2AutoPush"
+    },
+    {
+      "id": "OPS-I-17",
+      "domain": "I",
+      "object": "Nova 模板(I2)",
+      "action": "创建、编辑、发布/归档和删除模板",
+      "status": "built",
+      "view": "i-tabs/i2-nova.tsx",
+      "batch": "done",
+      "restActions": [
+        "createI2Template",
+        "updateI2Template",
+        "updateI2TemplateStatus",
+        "deleteI2Template"
+      ]
+    },
+    {
+      "id": "OPS-I-18",
+      "domain": "I",
+      "object": "Nova 社交事件(I2)",
+      "action": "更新概率分布、同步事件并调整状态/软删除",
+      "status": "built",
+      "view": "i-tabs/i2-nova.tsx",
+      "batch": "done",
+      "restActions": [
+        "updateI2Distribution",
+        "syncI2SocialEvents",
+        "updateI2SocialEventStatus",
+        "deleteI2SocialEvent"
+      ]
+    },
+    {
+      "id": "OPS-I-19",
+      "domain": "I",
+      "object": "风险披露法域与矩阵(I5)",
+      "action": "法域创建/编辑/状态/删除及法域×版本矩阵配置/归档",
+      "status": "built",
+      "view": "i-tabs/i4-trust.tsx",
+      "batch": "done",
+      "restActions": [
+        "createI5Jurisdiction",
+        "updateI5Jurisdiction",
+        "i5_jurisdiction_status",
+        "i5_jurisdiction_delete",
+        "i5_matrix_configure",
+        "i5_matrix_archive"
+      ]
+    },
+    {
+      "id": "OPS-K-18",
+      "domain": "K",
+      "object": "K1 收益人工释放",
+      "action": "按释放条目执行人工放行并回读",
+      "status": "built",
+      "view": "k-tabs/k1-multiaccount.tsx",
+      "batch": "done",
+      "restAction": "manualReleaseK1Entry"
+    },
+    {
+      "id": "OPS-K-19",
+      "domain": "K",
+      "object": "K4 评分模型生命周期",
+      "action": "发布/恢复模型草稿并重算评分",
+      "status": "built",
+      "view": "k-tabs/k4-scoring.tsx",
+      "batch": "done",
+      "restActions": [
+        "publishK4ModelDraft",
+        "restoreK4ModelDraft",
+        "recomputeK4Scores"
+      ]
+    },
+    {
+      "id": "OPS-K-20",
+      "domain": "K",
+      "object": "K4 提现告警",
+      "action": "标记告警已读",
+      "status": "built",
+      "view": "k-tabs/k4-scoring.tsx",
+      "batch": "done",
+      "restAction": "markK4WithdrawalAlertRead"
+    },
+    {
+      "id": "OPS-L-11",
+      "domain": "L",
+      "object": "行为分析导出(L6)",
+      "action": "按当前筛选下载行为分析 CSV",
+      "status": "built",
+      "view": "l-tabs/l6-behavior-heatmap.tsx",
+      "batch": "done",
+      "restAction": "downloadL6Behavior"
+    },
+    {
+      "id": "OPS-M-25",
+      "domain": "M",
+      "object": "M3 scheduler 备勤自动回退（只读）",
+      "action": "仅由 scheduler 在开关开启后，对等待超过 30 分钟且仍为 TRANSFERRED 的会话按状态/CAS 守卫回退至备勤池；PC 只读观察结果",
+      "status": "readonly",
+      "view": "m-tabs/m3-sessions.tsx",
+      "batch": "P1",
+      "reason": "产品安全决策已移除 PC 与 REST 的人工 fallback 入口；人工会话转交仍由 OPS-M-08 的真实写入口登记，M25 不得虚构 REST action。",
+      "note": "后端由 OpsConversationTransferScheduler 调用 runTimeoutFallback：开关关闭即不处理，30 分钟阈值后锁定会话并以 TRANSFERRED 状态/版本守卫执行；PC 仅接收 SYSTEM/STATUS 事件后回读。"
+    },
+    {
+      "id": "OPS-F-22",
+      "domain": "F",
+      "object": "V-Rank 人工等级处置(F1)",
+      "action": "按服务端高敏命令执行人工晋级或降级并回读",
+      "status": "built",
+      "view": "f-view.tsx",
+      "batch": "done",
+      "restAction": "f_vrank_override"
+    },
+    {
+      "id": "OPS-F-23",
+      "domain": "F",
+      "object": "V-Rank 奖励派发处置(F1)",
+      "action": "对奖励派发执行重发或冲正并回读",
+      "status": "built",
+      "view": "f-view.tsx",
+      "batch": "done",
+      "restAction": "f_reward_payout_action",
+      "note": "派发单重发/冲正命令已完成；SKU 奖励库存预占、权益授予、失败回滚与重试已由 OPS-F-11 完成"
+    },
+    {
+      "id": "OPS-F-24",
+      "domain": "F",
+      "object": "排行榜奖池(F4)",
+      "action": "人工提前结算当前奖池并回读",
+      "status": "built",
+      "view": "f-view.tsx",
+      "batch": "done",
+      "restAction": "f4_pool_settle",
+      "note": "单次人工结算已完成；自动 settleCron、断档补结、四周期派奖与参数业务消费已由 OPS-F-15/16/17 完成"
+    },
+    {
+      "id": "OPS-F-25",
+      "domain": "F",
+      "object": "佣金人工处置(F5)",
+      "action": "冲正、批量补发及用户佣金暂停命令",
+      "status": "built",
+      "view": "f-view.tsx",
+      "batch": "done",
+      "restActions": [
+        "f5_commission_reverse",
+        "f5_commission_reissue",
+        "f5_commission_suspension",
+        "reverseF5Commission",
+        "reissueF5Commissions",
+        "suspendF5UserCommissions"
+      ],
+      "note": "单项命令已接服务端；批量补发整批原子性、唯一消费标记已由 OPS-F-26 完成，暂停后的 PC 恢复入口已由 OPS-F-18 完成"
+    },
+    {
+      "id": "OPS-F-26",
+      "domain": "F",
+      "object": "佣金批量补发一致性(F5)",
+      "action": "整批原子提交、失败回滚并防止重复补发",
+      "status": "built",
+      "view": "f-view.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/team/application/F5CommissionService.java",
+          "positivePatterns": ["for \\(Long eventId : eventIds\\)", "COMMISSION_REISSUE_SOURCE_NOT_FOUND", "insertReissueFromOriginal"],
+          "negativePatterns": ["return ApiResult\\.fail\\(409, \\\"COMMISSION_REISSUE_"]
+        }
+      ],
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+    },
+    {
+      "id": "OPS-H-18",
+      "domain": "H",
+      "object": "邀请奖励结算(H8)",
+      "action": "对邀请奖励执行服务端结算并回读",
+      "status": "built",
+      "view": "h-tabs/h8-referral-rewards.tsx",
+      "batch": "done",
+      "restAction": "h8_referral_settlement"
+    },
+    {
+      "id": "OPS-A-28",
+      "domain": "A",
+      "object": "A2 审计保留执行器",
+      "action": "按服务端保留期归档/清理审计数据并保全不可删边界",
+      "status": "built",
+      "view": "a-tabs/a2-audit.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/shared/audit/AuditRetentionService.java",
+          "positivePatterns": ["policy\\.retentionMonths\\(\\)", "mapper\\.tryAcquireRetentionLock\\(\\)", "mapper\\.insertArchiveFromHot\\(id\\)", "mapper\\.deleteHotAfterArchive\\(id\\)", "A2_AUDIT_RETENTION_EXECUTED"],
+          "negativePatterns": ["deleteHotAfterArchive\\(id\\)[\\s\\S]{0,120}insertArchiveFromHot\\(id\\)", "minusMonths\\(12\\)"]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/shared/audit/mapper/AuditLogMapper.java",
+          "positivePatterns": ["action NOT LIKE 'A2_AUDIT_RETENTION_%'", "expire_at IS NOT NULL", "INSERT IGNORE INTO nx_audit_log_archive"],
+          "negativePatterns": ["DELETE FROM nx_audit_log\\s*$", "WHERE is_deleted = 0\\s*LIMIT"]
+        }
+      ],
+      "note": "Production：保留期缺失/非法会在任何清理前失败；执行器持锁后先归档再删热表，并排除保留执行器审计与无 expire_at 的 legacy/protected 行。"
+    },
+    {
+      "id": "OPS-A-29",
+      "domain": "A",
+      "object": "A2 审计 schema 版本",
+      "action": "将 schema version 写入审计记录，并贯穿查询与导出",
+      "status": "built",
+      "view": "a-tabs/a2-audit.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/shared/audit/AuditLogService.java",
+          "positivePatterns": ["withRequiredSchemaVersion\\([\\s\\S]{0,120}a2RuntimePolicy\\.schemaVersion\\(\\)"],
+          "negativePatterns": ["schemaVersion\\(\"v3\"\\)", "withRequiredSchemaVersion\\([^,]+,\\s*null\\)"]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/shared/audit/mapper/AuditLogMapper.java",
+          "positivePatterns": ["JSON_UNQUOTE\\(JSON_EXTRACT\\(detail_json, '\\$\\.schemaVersion'\\)\\) AS schemaVersion"],
+          "negativePatterns": ["'v3' AS schemaVersion", "COALESCE\\([^)]*schemaVersion[^)]*'v3'"]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/platform/web/OpsAuditController.java",
+          "positivePatterns": ["Schema 版本", "row\\.getSchemaVersion\\(\\) == null \\? \"legacy\" : row\\.getSchemaVersion\\(\\)"],
+          "negativePatterns": ["getSchemaVersion\\(\\) == null \\? \"v3\"", "Schema 版本</th>[\\s\\S]{0,400}<td>v3</td>"]
+        }
+      ],
+      "note": "Production：受支持 schema version 写入 detail_json，经 mapper 查询字段回读并进入服务端导出；未知版本拒绝，历史空值只显式标 legacy，不静默强制为当前版本。"
+    },
+    {
+      "id": "OPS-A-30",
+      "domain": "A",
+      "object": "A4 事件保留执行器",
+      "action": "按 A4 event retention 配置执行服务端保留策略",
+      "status": "built",
+      "view": "a-tabs/a4-events.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/platform/application/A4EventRetentionService.java",
+          "positivePatterns": ["policy\\.eventRetentionMonths\\(\\)", "mapper\\.tryAcquireRetentionLock\\(\\)", "deleteTerminalAnalyticsEventsBefore\\(cutoff, BATCH_SIZE\\)", "behaviorMapper\\.deleteExpiredFacts\\(cutoff, BATCH_SIZE\\)", "A4_EVENT_RETENTION_EXECUTED"],
+          "negativePatterns": ["minusMonths\\(12\\)", "deleteTerminalAnalyticsEventsBefore\\([^,]+,\\s*Integer\\.MAX_VALUE\\)"]
+        }
+      ],
+      "note": "Production：A4 保留配置先严格解析，缺失/非法时不进入删除；持锁后仅分批清理终态 analytics outbox 与到期行为事实并记录审计。"
+    },
+    {
+      "id": "OPS-A-31",
+      "domain": "A",
+      "object": "A4 服务端采样入口",
+      "action": "在服务端 ingest 阶段消费采样配置并记录可审计决策",
+      "status": "built",
+      "view": "a-tabs/a4-events.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/shared/outbox/EventOutboxService.java",
+          "positivePatterns": ["a4RuntimePolicy\\.samplingPercent\\(schema\\.familyKey\\(\\), schema\\.serverAuthoritative\\(\\)\\)", "isSampledIn\\(trustedSamplingKey, metadata\\.eventName\\(\\), samplingPercent\\)", "ClientAnalyticsPublishResult\\(null, false\\)"],
+          "negativePatterns": ["Math\\.random\\(", "samplingPercent\\s*=\\s*100\\s*;"]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/bi/application/BehaviorAnalyticsService.java",
+          "positivePatterns": ["publishTrustedClientAnalyticsEvent\\(sessionHash, actorHash, request\\.eventName\\(\\), payload\\)", "if \\(!published\\.sampledIn\\(\\)\\)", "sampledIn\", false"],
+          "negativePatterns": ["Math\\.random\\(", "request\\.samplingPercent"]
+        }
+      ],
+      "note": "Production：可信服务端 ingest 在持久化前消费 A4 sampling 配置并返回 sampledIn 决策；资金/风控/转化保持服务端 100%，非法浏览采样配置失败关闭，不接受客户端采样猜测。"
+    },
+    {
+      "id": "OPS-G-17",
+      "domain": "G",
+      "object": "G2 批处理结果",
+      "action": "展示 Production 服务端逐项回执，并在 Acceptance Sandbox 可见验收 completed/skipped 与幂等处理",
+      "status": "built",
+      "view": "g-tabs/g2-exchange.tsx",
+      "batch": "done",
+      "restAction": "processG2AcceptanceSandboxBatch",
+      "runtimeEvidence": [
+        {
+          "type": "pc-runtime",
+          "file": "app/components/domain-views/g-tabs/g2-exchange.tsx",
+          "positivePatterns": ["acceptanceSandbox\\.batchResult\\.completed\\.map", "acceptanceSandbox\\.batchResult\\.skipped\\.map", "processG2AcceptanceSandboxBatch\\(acceptanceSandbox\\.batch!\\.batchNo\\)"],
+          "negativePatterns": ["Sandbox 结果计入下方真实 G2 指标", "生产钱包写入=true"]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/market/application/G2ExchangeQueueBatchService.java",
+          "positivePatterns": ["completed\\.add\\(item\\(row\\.exchangeNo\\(\\),\"COMPLETED\",\"COMPLETED\"", "skipped\\.add\\(item\\(row\\.exchangeNo\\(\\),\"SKIPPED\"", "\"completedCount\",completed\\.size\\(\\)", "\"skippedCount\",skipped\\.size\\(\\)"],
+          "negativePatterns": ["\"completedCount\",rows\\.size\\(\\)", "skipped\\.clear\\(\\)"]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/market/application/G2AcceptanceSandboxRepository.java",
+          "positivePatterns": ["private static final String SOURCE = \"mock\"", "private static final String ENVIRONMENT = \"SANDBOX\"", "INACTIVE_ATTRIBUTION", "\"productionWalletTouched\", false", "\"productionLedgerTouched\", false"],
+          "negativePatterns": ["nx_exchange_order", "nx_user_wallet|nx_user_fund_ledger"]
+        }
+      ],
+      "note": "Production 结果来自真实 G2 批处理器并按 completed/skipped/failed 展示；Acceptance Sandbox 仅在 acceptance/test profile 使用隔离表完成可见处理与幂等重放，明确不触碰 Production 队列、钱包或账本"
+    },
+    {
+      "id": "OPS-H-19",
+      "domain": "H",
+      "object": "H2 App 试用生命周期",
+      "action": "App 通过真实 API 读取、开始、取消并完成 trial 生命周期",
+      "status": "built",
+      "view": "h-tabs/h2-trial.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "uniapp-runtime",
+          "file": "src/api/trial-api.ts",
+          "positivePatterns": ["parseTrialAuthorityState\\(await client\\.request\\(request\\)\\)", "path: \"/api/trial/state\"", "path: \"/api/trial/start\"", "path: \"/api/trial/cancel\""],
+          "negativePatterns": ["localStorage", "status:\\s*\"active\""]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/growth/application/AppTrialLifecycleService.java",
+          "positivePatterns": ["public ApiResult<Map<String, Object>> state\\(", "public ApiResult<Map<String, Object>> start\\(", "public ApiResult<Map<String, Object>> cancel\\(", "TRIAL_STATE_UNKNOWN"],
+          "negativePatterns": ["return ApiResult\\.ok\\(Map\\.of\\(\"status\", \"ACTIVE\"\\)\\)", "catch \\(Exception[^)]*\\)[\\s\\S]{0,120}TRIAL_STARTED"]
+        }
+      ],
+      "note": "Production：UniApp 的 trial state/start/cancel/redeem 全部经真实 API 严格解析，服务端持久状态机与幂等/版本规则决定终态；拒绝或网络失败不生成本地成功。"
+    },
+    {
+      "id": "OPS-H-20",
+      "domain": "H",
+      "object": "H3 App Weekly Quest",
+      "action": "App 从服务端读取周任务并通过真实领奖 API 结算",
+      "status": "built",
+      "view": "h-tabs/h3-quest-events.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "uniapp-runtime",
+          "file": "src/store/weekly-quest.ts",
+          "positivePatterns": ["questApi\\.state\\(\\)", "questApi\\.claim\\(quest\\.questCode, key\\)", "const readBack = await questApi\\.state\\(\\)", "WEEKLY_QUEST_CLAIM_MISMATCH"],
+          "negativePatterns": ["quest\\.status = \"CLAIMED\"", "rewardNex[\\s\\S]{0,80}wallet.*\\+="]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/growth/application/AppGrowthEngagementService.java",
+          "positivePatterns": ["executeOnce\\(\"QUEST_CLAIM\"", "QUEST_NOT_CLAIMABLE", "mapper\\.claimQuest\\(userId, reward\\.missionId\\(\\)\\) != 1", "H3_QUEST_CLAIMED"],
+          "negativePatterns": ["QUEST_NOT_CLAIMABLE[\\s\\S]{0,120}ledgerPostingFacade", "claimQuest[\\s\\S]{0,100}catch[\\s\\S]{0,100}CLAIMED"]
+        }
+      ],
+      "note": "Production：UniApp 周任务列表/进度来自服务端 state，领奖后强制再次读回同一 questCode；服务端幂等且仅 claimable 可入账，重复、陈旧或拒绝不授予本地奖励。"
+    },
+    {
+      "id": "OPS-H-21",
+      "domain": "H",
+      "object": "H8 App 邀请奖励",
+      "action": "App 通过真实 API 展示邀请奖励、账单与结算终态",
+      "status": "built",
+      "view": "h-tabs/h8-referral-rewards.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "uniapp-runtime",
+          "file": "src/api/referral-reward-api.ts",
+          "positivePatterns": ["source === \"ledger\" && sourceEnvironment === \"PRODUCTION\"", "source === \"mock\" && sourceEnvironment === \"SANDBOX\"", "path: `/api/app/referral-rewards\\?limit=", "environment !== sourceEnvironment"],
+          "negativePatterns": ["estimatedReward", "sourceEnvironment \\|\\| \"PRODUCTION\""]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/growth/application/AppReferralRewardService.java",
+          "positivePatterns": ["String environment = sandbox \\? \"SANDBOX\" : \"PRODUCTION\"", "mapper\\.appVerifiedRewardSummary\\(userId, sourceType, environment\\)", "appRecentVerifiedRewards\\(userId, sourceType, environment, limit\\)"],
+          "negativePatterns": ["estimate", "environment = \"PRODUCTION\";"]
+        }
+      ],
+      "note": "Production live 与独立 H8 live 均已 PASS：App 奖励总额、账单和结算终态来自同一服务端账本；Sandbox 只接受 mock/SANDBOX 成对事实，响应混合或 malformed 即不可用。"
+    },
+    {
+      "id": "OPS-M-26",
+      "domain": "M",
+      "object": "M App 工单",
+      "action": "App 通过真实 API 创建、读取并跟踪 ticket 状态",
+      "status": "built",
+      "view": "m-tabs/m2-tickets.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "uniapp-runtime",
+          "file": "src/api/support-api.ts",
+          "positivePatterns": ["path: \"/api/app/support/tickets\"", "parseTicketDetail\\(await client\\.request", "SUPPORT_TICKET_RESPONSE_INVALID", "idempotencyKey: requiredKey\\(key\\)"],
+          "negativePatterns": ["localStorage", "status:\\s*\"open\"[\\s\\S]{0,80}Date\\.now"]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/content/application/AppSupportService.java",
+          "positivePatterns": ["idempotent\\(\"APP_SUPPORT_TICKET_CREATE:", "ticketRepository\\.createTicket\\(", "matches\\(ticket\\.status\\(\\), ticket\\.version\\(\\), request\\.expectedStatus\\(\\), request\\.expectedVersion\\(\\)\\)"],
+          "negativePatterns": ["createTicket[\\s\\S]{0,120}catch[\\s\\S]{0,120}ApiResult\\.ok", "APP_SUPPORT_TICKET_CREATE:[\\s\\S]{0,160}local"]
+        }
+      ],
+      "note": "Production：App 工单创建/读取/回复/关闭均经真实 API、幂等键与服务端 status/version 校验；失败或未知创建不会插入本地成功工单，刷新后仍以服务端为准。"
+    },
+    {
+      "id": "OPS-M-27",
+      "domain": "M",
+      "object": "M App 会话",
+      "action": "App 通过真实 API 建立会话、收发消息并跟踪转交状态",
+      "status": "built",
+      "view": "m-tabs/m3-sessions.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "uniapp-runtime",
+          "file": "src/api/support-api.ts",
+          "positivePatterns": ["path: \"/api/app/support/conversations\"", "path: `/api/app/support/conversations/\\$\\{pathId\\(conversation\\.id\\)\\}/replies`", "SUPPORT_CONVERSATION_RESPONSE_INVALID", "expectedVersion: conversation\\.version"],
+          "negativePatterns": ["messages\\.push\\(", "receiptStatus:\\s*\"delivered\""]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/content/application/AppSupportService.java",
+          "positivePatterns": ["idempotent\\(\"APP_CONVERSATION_REPLY:", "conversationRepository\\.replyAsUser\\(", "conversationConflict\\(\\)", "transferToType\\(\\)"],
+          "negativePatterns": ["replyConversation[\\s\\S]{0,120}catch[\\s\\S]{0,120}APP_CONVERSATION_REPLIED", "CONVERSATION_CONFLICT[\\s\\S]{0,100}return ApiResult\\.ok"]
+        }
+      ],
+      "note": "Production：App 会话、消息已读/回复与转工单全部围绕服务端 conversationNo、status/version 读写；断连、冲突或拒绝保持未发送，不伪造 delivered。"
+    },
+    {
+      "id": "OPS-M-28",
+      "domain": "M",
+      "object": "M App FAQ",
+      "action": "App 通过真实 API 查询已发布 FAQ 与版本",
+      "status": "built",
+      "view": "m-tabs/m4-kb-sla.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "uniapp-runtime",
+          "file": "src/api/support-api.ts",
+          "positivePatterns": ["faqs: async \\(language, category\\)", "path: `/api/app/support/faqs\\?", "SUPPORT_FAQ_RESPONSE_INVALID"],
+          "negativePatterns": ["mockFaq", "fallbackFaq"]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/content/application/AppSupportService.java",
+          "positivePatterns": ["public ApiResult<List<SupportFaqView>> faqs\\(", "filter\\(faq -> \"PUBLISHED\"\\.equals\\(normalizeUpper\\(faq\\.status\\(\\)\\)\\)\\)", "filter\\(faq -> \"Help Center\"\\.equals\\(faq\\.surface\\(\\)\\)\\)"],
+          "negativePatterns": ["status\\(\\).*DRAFT", "List\\.of\\(new SupportFaqView"]
+        }
+      ],
+      "note": "Production：App FAQ 只查询真实服务端接口并严格解析；服务端只投影 PUBLISHED 且 Help Center 可见版本，查询失败不回退到 bundled/mock FAQ 事实。"
+    },
+    {
+      "id": "OPS-D-26",
+      "domain": "D",
+      "object": "App Topup 服务端 Sandbox",
+      "action": "在严格服务端隔离 Sandbox 完成充值订单与回执状态机",
+      "status": "built",
+      "view": "d-tabs/d1-recon.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "uniapp-runtime",
+          "file": "src/api/funds-sandbox-api.ts",
+          "positivePatterns": ["row\\.source !== \"mock\" \\|\\| row\\.sourceEnvironment !== \"SANDBOX\"", "path: \"/api/app/wallet/sandbox/topups\"", "FUNDS_SANDBOX_ORDER_INVALID"],
+          "negativePatterns": ["localStorage", "status:\\s*\"SETTLED\"[\\s\\S]{0,80}Date\\.now"]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/finance/application/FundsSandboxService.java",
+          "positivePatterns": ["public OrderView createTopup\\(", "mapper\\.insertOrder\\(write\\)", "mapper\\.transitionOrder\\(orderNo, userId, \"PENDING\", \"SETTLED\", 0L\\)", "mapper\\.creditWallet\\("],
+          "negativePatterns": ["createTopup[\\s\\S]{0,120}nx_user_wallet", "createTopup[\\s\\S]{0,300}sourceEnvironment\\(\\)"]
+        }
+      ],
+      "note": "仅签严格服务端 LOCAL_SANDBOX：App 真实 HTTP topup 经 mock/SANDBOX 协议校验，服务端持久订单、回调、隔离钱包和 SETTLED 终态；Production 资金通道仍为独立 HOLD，不重复计数。"
+    },
+    {
+      "id": "OPS-D-27",
+      "domain": "D",
+      "object": "App Withdrawal 服务端 Sandbox",
+      "action": "在严格服务端隔离 Sandbox 完成提现请求与权威终态",
+      "status": "built",
+      "view": "d-tabs/d2-withdrawals.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "uniapp-runtime",
+          "file": "src/api/funds-sandbox-api.ts",
+          "positivePatterns": ["path: \"/api/app/wallet/sandbox/withdrawals\"", "path: `/api/app/wallet/sandbox/orders/\\$\\{encodeURIComponent\\(orderNo\\)\\}/callbacks`", "expectedVersion"],
+          "negativePatterns": ["setTimeout", "estimatedAt"]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/finance/application/FundsSandboxService.java",
+          "positivePatterns": ["No ETA, timer or client-owned completion", "Only applyCallback may enter a terminal state", "transitionOrder\\(normalizedOrderNo, userId, \"SUBMITTED\", normalizedStatus, expectedVersion\\)", "FUNDS_SANDBOX_CALLBACK_REPLAY_CONFLICT"],
+          "negativePatterns": ["@Scheduled", "Thread\\.sleep"]
+        }
+      ],
+      "note": "仅签严格服务端 LOCAL_SANDBOX：提现请求只形成 SUBMITTED，CONFIRMED/FAILED 必须由服务端 callback+expectedVersion 进入并刷新回读；禁止本地 ETA/定时器确认。Production provider/observer 仍独立 HOLD。"
+    },
+    {
+      "id": "OPS-D-28",
+      "domain": "D",
+      "object": "Cregis 用户资金 Sandbox",
+      "action": "在隔离服务端账本持久化用户充值、提现与回调终态",
+      "status": "built",
+      "view": "d-tabs/d1-recon.tsx",
+      "batch": "done",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/finance/application/FundsSandboxProfileGuard.java",
+          "positivePatterns": ["FUNDS_LOCAL_SANDBOX_PROFILE_FORBIDDEN", "Mode\\.LOCAL_SANDBOX", "return properties\\.getMode\\(\\) == FundsSandboxProperties\\.Mode\\.LOCAL_SANDBOX \\? \"SANDBOX\" : \"PRODUCTION\""],
+          "negativePatterns": ["local-sandbox.*production", "return \"SANDBOX\";"]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/finance/mapper/FundsSandboxMapper.java",
+          "positivePatterns": ["INSERT INTO nx_funds_sandbox_ledger", "'mock','SANDBOX'", "version=#\\{expectedVersion\\}", "INSERT IGNORE INTO nx_funds_sandbox_wallet"],
+          "negativePatterns": ["nx_user_wallet", "nx_user_fund_ledger"]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/finance/cregis/CregisSandboxProfileGuard.java",
+          "positivePatterns": ["CREGIS_LOCAL_SANDBOX_PROFILE_FORBIDDEN", "CregisProperties\\.Mode\\.LOCAL_SANDBOX"],
+          "negativePatterns": ["ALLOWED_PROFILES.*production", "return true"]
+        }
+      ],
+      "note": "只签持久化 Cregis/Funds LOCAL_SANDBOX：profile 守卫拒绝生产混用，回调以 event/version 幂等更新隔离用户钱包与 nx_funds_sandbox_ledger，重放/错配不改余额；Production Cregis 资金仍 HOLD。"
+    },
+    {
+      "id": "OPS-G-18",
+      "domain": "G",
+      "object": "G2 批次与单笔统一容量互斥",
+      "action": "Production 批次/单笔共享权威 MySQL cap mutex 并逐项复核 kill/cap；Acceptance Sandbox 验证无效归属逐项 skipped 并独立清理",
+      "status": "built",
+      "view": "g-tabs/g2-exchange.tsx",
+      "batch": "done",
+      "restAction": "cleanupG2AcceptanceSandboxBatch",
+      "runtimeEvidence": [
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/market/mapper/AppExchangeMapper.java",
+          "positivePatterns": ["SELECT\\s+lock_key\\s+FROM\\s+nx_admin_operation_mutex\\s+WHERE\\s+lock_key='G2_EXCHANGE_EXECUTION'\\s+FOR\\s+UPDATE", "String\\s+lockExchangeExecutionMutex\\(\\)"],
+          "negativePatterns": ["GET_LOCK\\(", "RELEASE_LOCK\\("]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/market/application/AppExchangeService.java",
+          "positivePatterns": ["EXCHANGE_EXECUTION_MUTEX\\.equals\\(mapper\\.lockExchangeExecutionMutex\\(\\)\\)", "String\\s+gate\\s*=\\s*gate\\(userId,\\s*wallet,\\s*grossUsdt\\)", "mapper\\.platformTodayUsdt\\(\\)"],
+          "negativePatterns": ["G2_ACCEPTANCE_SANDBOX", "mapper\\.platformTodayUsdt\\(\\)[\\s\\S]{0,200}mapper\\.lockExchangeExecutionMutex\\(\\)"]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/market/application/G2ExchangeQueueBatchService.java",
+          "positivePatterns": ["EXCHANGE_EXECUTION_MUTEX\\.equals\\(mapper\\.lockExchangeExecutionMutex\\(\\)\\)", "for \\(AppExchangeMapper\\.QueuedRow row : rows\\)", "if \\(!swapEnabled\\(\\)\\)[\\s\\S]{0,220}\"EXCHANGE_SWAP_PAUSED\"", "platformUsed\\.add\\(gross\\)\\.compareTo\\(number\\(\"wallet\\.exchange\\.platform_daily_cap_usdt\"", "\"USER_INACTIVE\""],
+          "negativePatterns": ["G2_ACCEPTANCE_SANDBOX", "\"completedCount\",\\s*rows\\.size\\(\\)"]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/market/application/G2AcceptanceSandboxRepository.java",
+          "positivePatterns": ["INACTIVE_ATTRIBUTION", "else mapper\\.skip\\(row\\.exchangeNo\\(\\), now\\)", "mapper\\.deleteLedger\\(batchNo\\)", "mapper\\.deleteOrders\\(batchNo\\)", "mapper\\.deleteBatch\\(batchNo\\)", "\"productionWalletTouched\", false", "\"productionLedgerTouched\", false"],
+          "negativePatterns": ["nx_exchange_order", "nx_user_wallet|nx_user_fund_ledger"]
+        }
+      ],
+      "note": "Production 事实由 nx_admin_operation_mutex 的 G2_EXCHANGE_EXECUTION 行锁、App/批次共同消费及真实 MySQL 并发测试证明；逐项 kill/cap 复核在 Production 批处理器，INACTIVE_ATTRIBUTION→skipped 与隔离表清理只签 Acceptance Sandbox，绝不扩大为 Production 归属处理声明"
     }
   ]
 }

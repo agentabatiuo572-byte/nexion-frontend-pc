@@ -301,6 +301,7 @@ export type NovaOverview = {
   socialEventStatuses: NovaOptionView[];
   templateStatuses: string[];
   templateCtaOptions: NovaOptionView[];
+  runtimeSourceOptions: NovaOptionView[];
   sources: string[];
 };
 

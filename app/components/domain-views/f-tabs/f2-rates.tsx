@@ -148,13 +148,11 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
               detail: "L1-L7 各层网络版税独立暂停开关 · on=暂停该层派发 / off=正常计提 · 写 A2 审计。",
               run: async (reason, bv) => {
                 if (!bv) return;
-                for (const u of ctx.f2Unilevel) {
-                  const val = bv[u.l];
-                  if (val === "on" || val === "off") {
-                    await ctx.updateF2Config(`F.unilevel.${u.l}.paused`, val, reason);
-                  }
-                }
-                ctx.toast("单层暂停已更新 · 改后对下一笔结算生效");
+                const changes = ctx.f2Unilevel.map((u) => ({
+                  key: `F.unilevel.${u.l}.paused`, value: bv[u.l],
+                })).filter((item) => item.value === "on" || item.value === "off");
+                await ctx.updateFConfigBatch("F2", changes, reason);
+                ctx.toast("单层暂停已整批提交 · 一张 A2 票，批准后原子生效");
               },
             })}>单层暂停管理</button>}
           </div>

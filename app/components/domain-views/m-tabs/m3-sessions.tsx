@@ -207,7 +207,14 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   // 登录者无坐席记录(如 superadmin 主管) → fallback 列全部启用坐席,支持代发。
   const currentAdminId = useAdminAuth((s) => s.session?.adminId);
   const initiateIdentities = useMemo<InitiateIdentity[]>(() => {
-    const enabled = supportAgents.filter((agent) => agent.enabled);
+    const enabled = transferTargets
+      .filter((target) => textOf(target.targetType).toLowerCase() === "agent")
+      .map((target) => ({
+        id: textOf(target.targetId),
+        adminId: Number(target.targetId),
+        name: textOf(target.targetName),
+        serviceTypes: (Array.isArray(target.serviceTypes) ? target.serviceTypes : ["support"]) as Array<"support" | "advisor">,
+      }));
     const mine = enabled.filter((agent) => agent.adminId === currentAdminId);
     const source = mine.length > 0 ? mine : enabled;
     return source.flatMap((agent) =>
@@ -218,10 +225,12 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
         label: type === "advisor" ? "专属客服" : "普通客服",
       })),
     );
-  }, [supportAgents, currentAdminId]);
+  }, [transferTargets, currentAdminId]);
   const transferAgents = useMemo(
-    () => supportAgents.filter((agent) => agent.enabled && agent.transferable && !agent.busy).map((agent) => ({ id: agent.id, name: agent.name, position: agent.position })),
-    [supportAgents],
+    () => transferTargets
+      .filter((target) => textOf(target.targetType).toLowerCase() === "agent")
+      .map((target) => ({ id: textOf(target.targetId), name: textOf(target.targetName), position: textOf(target.position) })),
+    [transferTargets],
   );
   const transferQueues = useMemo(() => {
     const rows = transferTargets
@@ -479,8 +488,8 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       setWritePending(false);
     }
   };
-  const writeConvos = (next: SessionConvo[], reason: string, action: string, commandKey: string) =>
-    setParam(CONVO_KEY, JSON.stringify(next), { action, reason, commandKey });
+  const writeConvos = (next: SessionConvo[], reason: string, action: string, commandKey: string, onBackendResult?: (result: unknown) => void) =>
+    setParam(CONVO_KEY, JSON.stringify(next), { action, reason, commandKey, onBackendResult });
   const updateConvo = (id: string, updater: (c: SessionConvo) => SessionConvo, reason: string, action: string, commandKey: string) =>
     writeConvos(convos.map((c) => (c.id === id ? updater(c) : c)), reason, action, commandKey);
 
@@ -607,7 +616,8 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const runInitiate = async (p: InitiatePayload) => {
     const now = Date.now();
     const existing = cloneConvos(parseParamArray<SessionConvo>(pget(CONVO_KEY), []));
-    const cid = `cv-out-${now}`;
+    const cid = `pending-conversation-${now}`;
+    let conversationNo = "";
     const opening: SessionMsg = { ts: now, sender: "agent", agentName: p.identity.name, status: "sent", text: p.text };
     if (p.identity.type === "advisor" && p.ctaHref && p.ctaHref !== "—" && p.ctaHref !== "") opening.ctaHref = p.ctaHref;
     const newConvo: SessionConvo = {
@@ -634,12 +644,20 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
         "主动发起会话(单用户 · 例行)",
         `主动发起会话 ${cid} · admin.conversation_initiated`,
         `m3:initiate:${p.identity.id}:${p.profile?.uid ?? p.targetLabel}:${p.text}:${p.ctaHref ?? ""}`,
+        (result) => {
+          const row = result && typeof result === "object" ? result as Record<string, unknown> : null;
+          conversationNo = textOf(row?.conversationNo);
+        },
       ),
       `已以「${p.identity.label}」向 ${p.targetLabel} 发起会话`,
     );
     if (succeeded) {
       setShowInitiate(false);
-      selectConvo(cid);
+      if (!conversationNo) {
+        toast("会话已提交但后端未返回会话编号,请刷新后从会话列表进入");
+        return;
+      }
+      selectConvo(conversationNo);
     }
   };
 

@@ -9,13 +9,18 @@ import { BPageHeader } from "../b-page-header";
 import { BDomainDataState } from "@/app/components/dashboard/b-domain-state";
 import { useToast } from "@/app/components/domain-views/design-kit";
 import {
+  acknowledgeB5Inbox,
+  fetchB5Inbox,
   fetchB5Subscription,
   previewB5Thresholds,
   recordB5Triage,
   updateB5Subscription,
   updateB5Thresholds,
+  updateB5SignalStatus,
   useB5Radar,
   B5OutcomeUnknownError,
+  type B5Radar,
+  type B5InboxItem,
 } from "@/lib/admin/b5-client";
 import { formatB5RiskLight, formatB5WithdrawalState } from "@/lib/admin/b5-display-labels";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
@@ -79,6 +84,19 @@ export default function RiskRadarPage() {
   const [savedSubscription, setSavedSubscription] = useState(subscription);
   const [savingSubscription, setSavingSubscription] = useState(false);
   const [subscriptionVersion, setSubscriptionVersion] = useState(0);
+  const [emailMode, setEmailMode] = useState("disabled");
+  const [webhookMode, setWebhookMode] = useState("disabled");
+  const [updatingSignal, setUpdatingSignal] = useState("");
+  const [inbox, setInbox] = useState<B5InboxItem[]>([]);
+  const [acknowledgingDelivery, setAcknowledgingDelivery] = useState<number | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    fetchB5Inbox()
+      .then((items) => { if (alive) setInbox(items); })
+      .catch((cause) => { if (alive) setToast(displayAdminError(cause)); });
+    return () => { alive = false; };
+  }, [setToast]);
 
   useEffect(() => {
     if (!canSubscribe) return;
@@ -90,6 +108,8 @@ export default function RiskRadarPage() {
         setSubscription(normalized);
         setSavedSubscription(normalized);
         setSubscriptionVersion(next.version);
+        setEmailMode(next.emailMode);
+        setWebhookMode(next.webhookMode);
       })
       .catch((cause) => {
         if (alive) setToast(displayAdminError(cause));
@@ -133,6 +153,41 @@ export default function RiskRadarPage() {
     [subscription, savedSubscription],
   );
   const subscriptionValid = subscription.inApp || subscription.email || subscription.webhook;
+
+  const changeSignalStatus = async (alert: B5Radar["recentAlerts"][number], targetStatus: "handled" | "resolved") => {
+    const reason = window.prompt(`请输入将 ${alert.signalNo} 标记为 ${targetStatus} 的理由（8–200 字）`)?.trim() || "";
+    if (reason.length < 8 || reason.length > 200) { setToast("理由必须为 8–200 字"); return; }
+    const slot = `signal-status:${alert.signalNo}`;
+    const fingerprint = JSON.stringify([alert.signalNo, alert.handlingStatus, alert.handlingVersion, targetStatus, reason]);
+    const commandKey = b5Commands.resolve(slot, fingerprint, () => `b5-signal-status-${crypto.randomUUID()}`);
+    setUpdatingSignal(alert.signalNo);
+    try {
+      await updateB5SignalStatus(alert.signalNo, targetStatus, alert.handlingStatus as "open" | "handled", alert.handlingVersion, reason, operator, commandKey);
+      b5Commands.forget(slot);
+      await radar.reload();
+      setToast(`${alert.signalNo} 已标记为 ${targetStatus} · 已回读服务端状态`);
+    } catch (cause) {
+      if (!(cause instanceof B5OutcomeUnknownError)) b5Commands.forget(slot);
+      setToast(displayAdminError(cause));
+    } finally { setUpdatingSignal(""); }
+  };
+
+  const acknowledgeInbox = async (delivery: B5InboxItem) => {
+    const slot = `inbox-ack:${delivery.id}`;
+    const commandKey = b5Commands.resolve(slot, String(delivery.id), () => `b5-inbox-ack-${crypto.randomUUID()}`);
+    setAcknowledgingDelivery(delivery.id);
+    try {
+      await acknowledgeB5Inbox(delivery.id, commandKey);
+      b5Commands.forget(slot);
+      setInbox(await fetchB5Inbox());
+      setToast(`${delivery.signalNo} 已确认并回读服务端收件箱`);
+    } catch (cause) {
+      if (!(cause instanceof B5OutcomeUnknownError)) b5Commands.forget(slot);
+      setToast(displayAdminError(cause));
+    } finally {
+      setAcknowledgingDelivery(null);
+    }
+  };
 
   if (radar.loading && !radar.data || radar.error || !radar.data) {
     return (
@@ -356,8 +411,8 @@ export default function RiskRadarPage() {
         </div>
         <div className="b5-channel-row">
           <label><input type="checkbox" name="inApp" checked={subscription.inApp} disabled={!canSubscribe} onChange={(event) => setSubscription((value) => ({ ...value, inApp: event.target.checked }))} />站内</label>
-          <label><input type="checkbox" name="email" checked={subscription.email} disabled={!canSubscribe} onChange={(event) => setSubscription((value) => ({ ...value, email: event.target.checked }))} />邮件</label>
-          <label><input type="checkbox" name="webhook" checked={subscription.webhook} disabled={!canSubscribe} onChange={(event) => setSubscription((value) => ({ ...value, webhook: event.target.checked }))} />Webhook</label>
+          <label title={emailMode === "sandbox" ? "本地隔离 sandbox 邮件回执" : "未配置邮件 provider，生产环境失败关闭"}><input type="checkbox" name="email" checked={subscription.email} disabled={!canSubscribe || emailMode !== "sandbox"} onChange={(event) => setSubscription((value) => ({ ...value, email: event.target.checked }))} />邮件（{emailMode}）</label>
+          <label title={webhookMode === "controlled-proxy" ? "经受控出口代理投递" : "未配置受控出口代理，失败关闭"}><input type="checkbox" name="webhook" checked={subscription.webhook} disabled={!canSubscribe || (webhookMode !== "controlled-proxy" && !subscription.webhook)} onChange={(event) => setSubscription((value) => ({ ...value, webhook: event.target.checked }))} />Webhook（{webhookMode}）</label>
           {subscription.webhook && (
             <input
               aria-label="Webhook URL"
@@ -372,6 +427,28 @@ export default function RiskRadarPage() {
           </button>
         </div>
       </section>}
+
+      <section className="b5-subscription" data-capability="b5-subscriber-inbox">
+        <div className="b5-card-head"><div><BellRing size={18} /><b>我的站内告警</b></div><span>仅显示当前登录管理员的持久化收件箱</span></div>
+        {inbox.map((delivery) => <div className="b5-channel-row" key={delivery.id}>
+          <b>{delivery.signalNo}</b><span>{delivery.deliveryStatus}</span>
+          <span>回执：{delivery.receiptSource} · 送达 {delivery.deliveredAt}</span>
+          <span>{delivery.readAt ? `已读 ${delivery.readAt}` : "未读"}</span>
+          <span>{delivery.acknowledgedAt ? `已确认 ${delivery.acknowledgedAt}` : "未确认"}</span>
+          {canTriage && !delivery.acknowledgedAt && <button disabled={acknowledgingDelivery === delivery.id} onClick={() => void acknowledgeInbox(delivery)}>确认已读</button>}
+        </div>)}
+        {!inbox.length && <p>当前没有站内告警。</p>}
+      </section>
+
+      <section className="b5-subscription" data-capability="b5-signal-disposition">
+        <div className="b5-card-head"><div><ShieldAlert size={18} /><b>近期风险信号</b></div><span>投递状态与处置状态均为服务端权威</span></div>
+        {data.recentAlerts.map((alert) => <div className="b5-channel-row" key={alert.signalNo}>
+          <b>{alert.signalNo}</b><span>{alert.message}</span><span>投递：{alert.deliveryStatus}</span><span>处置：{alert.handlingStatus} · v{alert.handlingVersion}</span>
+          {canTriage && alert.handlingStatus === "open" && <button disabled={updatingSignal === alert.signalNo} onClick={() => void changeSignalStatus(alert, "handled")}>标记已处理</button>}
+          {canTriage && alert.handlingStatus === "handled" && <button disabled={updatingSignal === alert.signalNo} onClick={() => void changeSignalStatus(alert, "resolved")}>标记已解决</button>}
+        </div>)}
+        {!data.recentAlerts.length && <p>当前没有近期风险信号。</p>}
+      </section>
 
       <B5RestoredInsights data={data} canAccessPath={canCross} />
 

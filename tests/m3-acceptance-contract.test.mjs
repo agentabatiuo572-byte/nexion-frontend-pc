@@ -92,8 +92,26 @@ test("M3 transfer decisions preserve the backend TRANSFERRED snapshot for CAS", 
   assert.match(view, /acceptTransfer\(row\.id, "transferred", before\.version/);
   assert.match(view, /returnTransfer\(row\.id, target, "transferred", before\.version/);
   assert.match(view, /waitTransfer\(row\.id, "transferred", before\.version/);
-  assert.match(view, /fallbackTransfer\(row\.id, "transferred", before\.version/);
-  assert.doesNotMatch(view, /(acceptTransfer|returnTransfer|waitTransfer|fallbackTransfer)\(row\.id,[^\n]*before\.status/);
+  assert.doesNotMatch(view, /fallbackTransfer\(/);
+  assert.doesNotMatch(client, /\/transfer\/fallback/);
+  assert.doesNotMatch(view, /(acceptTransfer|returnTransfer|waitTransfer)\(row\.id,[^\n]*before\.status/);
+});
+
+test("M25 ledger records the scheduler-only standby fallback without inventing a manual write", () => {
+  const manifest = JSON.parse(read("docs/ops-actions.manifest.json"));
+  const row = manifest.rows.find((candidate) => candidate.id === "OPS-M-25");
+
+  assert.ok(row, "M25 must remain explicitly covered by the operations ledger");
+  assert.equal(row.status, "readonly");
+  assert.match(row.object, /scheduler|调度器/i);
+  assert.match(row.action, /30\s*分钟/);
+  assert.match(row.action, /状态.*CAS|CAS.*状态/);
+  assert.match(row.reason, /移除[\s\S]*人工 fallback 入口/);
+  assert.equal("restAction" in row, false);
+  assert.equal("restActions" in row, false);
+  assert.equal("runtimeConsumerContract" in row, false);
+  assert.doesNotMatch(row.action, /人工.*fallback.*(?:POST|入口)/i);
+  assert.doesNotMatch(row.note ?? "", /manual M3 fallback POST/i);
 });
 
 test("M3 transfer targets retain the selected agent ID when display names collide", () => {
@@ -231,8 +249,16 @@ test("M3 treats scheduler SYSTEM and STATUS events as reload signals instead of 
     view,
     /event\.eventType === "RECEIPT"[\s\S]{0,120}event\.eventType === "STATUS"[\s\S]{0,120}event\.senderType === "SYSTEM"/,
   );
-  assert.match(view, /void reloadMContent\(\);\s*return;/);
+  assert.match(view, /await reconcileLiveConversationSnapshot\(connectionSignal\);\s*return;/);
+  assert.match(view, /event\.eventType === "INITIATE"/);
   assert.doesNotMatch(view, /const lower = \(event\.body \?\? ""\)\.toLowerCase\(\)/);
+});
+
+test("M3 preserves persistent message ids across snapshot reload and SSE dedup", () => {
+  const client = read("lib/admin/m-client.ts");
+  const view = read("app/components/domain-views/m-view.tsx");
+  assert.match(client, /id:\s*m\.id/);
+  assert.match(view, /containsConversationMessage\(convo\.messages/);
 });
 
 test("M3 rejects fractional timeout minutes instead of silently rounding them", () => {

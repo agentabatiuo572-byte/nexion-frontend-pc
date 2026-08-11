@@ -103,8 +103,8 @@ export function L6HeaderActions({ ctx }: { ctx: LCtx }) {
         只读报表域 · 不改任何业务规则
       </span>
       <button className="f-cta" onClick={() => void exportCsv()} disabled={!available || !ctx.canExport || exporting}
-        title={!ctx.canExport ? "当前角色只有查看权限" : !available ? "行为数据尚不可用" : undefined}>
-        {exporting ? "导出中…" : available ? "导出近 7 天全端" : "行为数据未接入"}
+        title={!ctx.canExport ? "当前角色只有查看权限" : !available ? "行为采集已接通，当前没有可导出的生产事件" : undefined}>
+        {exporting ? "导出中…" : available ? "导出近 7 天全端" : "当前暂无生产事件"}
       </button>
     </>
   );

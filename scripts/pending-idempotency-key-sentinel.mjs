@@ -55,6 +55,8 @@ const MIGRATED = [
   //(模块级 `let commandSeq` 计数器,连刷新都撑不过)。承诺与实现必须同真同假 —— 这一行焊住实现侧。
   "lib/admin/h9-client.ts",
   "app/components/domain-views/c-tabs/c3-adjust.tsx",
+  // A3：参数写入在结果未知时必须保留同一幂等键，刷新后仍可安全重试。
+  "app/components/domain-views/a-tabs/a3-config.tsx",
   "app/components/domain-views/c-tabs/c5-security.tsx",
   "app/components/domain-views/c-tabs/c6-regrisk.tsx",
   "app/components/domain-views/d-tabs/d2-withdrawals.tsx",

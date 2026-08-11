@@ -395,10 +395,13 @@ export async function updateG1StakingPoolKillStatus(
   triggerBasis: string,
   dispositionPlan: string,
 ) {
+  const path = killed
+    ? `/staking/pools/${encodeURIComponent(tierKey)}/kill-status`
+    : `/staking/pools/${encodeURIComponent(tierKey)}/restore`;
   return g1OverviewMutation(
-    `/staking/pools/${encodeURIComponent(tierKey)}/kill-status`,
+    path,
     "PATCH",
     { value: String(killed), reason, operator, triggerBasis, dispositionPlan },
-    "g1-kill",
+    killed ? "g1-kill" : "g1-restore",
   );
 }

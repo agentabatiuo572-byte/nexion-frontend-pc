@@ -20,6 +20,7 @@ import { validateL1Dashboard, validateL1Drilldown, validateL1Trend } from "./l1-
 import { resolveL1ExportMode, submitL1Export } from "./l1-export-contract";
 import { loadL1LocalView, saveL1LocalView } from "./l1-local-view";
 import { createL1ReadController } from "./l1-request-generation";
+import { assertL1AttributionLinks } from "./l-attribution-routes";
 
 type Kpi = KpiRow & {
   available?: boolean;
@@ -252,6 +253,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
       () => setRefreshing(false),
     );
   };
+  const attributionLinks = assertL1AttributionLinks(ext.jump);
 
   const selectKpi = async (index: number) => {
     setSelKpi(index);
@@ -501,9 +503,9 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
             </div>
             <div className="ltint" style={{ fontSize: 12 }}><b>解读</b> · <AutoGloss>{ext.note}</AutoGloss></div>
             <div className="jump">
-              {ext.jump.map((j) => j.href
-                ? <Link key={j.label} className="l-btn sm" href={j.href}>{j.label} →</Link>
-                : <button key={j.label} className="l-btn sm" onClick={() => ctx.toast(`跨域归因入口(原型占位):${j.label}`)}>{j.label} →</button>)}
+              {attributionLinks.map((j) => (
+                <Link key={j.label} className="l-btn sm" href={j.href}>{j.label} →</Link>
+              ))}
             </div>
           </div>
           <div className="chart-pane">

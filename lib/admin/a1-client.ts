@@ -102,6 +102,15 @@ export interface A1PasswordResetResult {
   temporaryPassword: string;
 }
 
+export interface A1PermissionRegistration {
+  permissionCode: string;
+  permissionName: string;
+  resourcePath: string;
+  permType: string;
+  amplifies: boolean;
+  boundRoleCount: number;
+}
+
 let requestSeq = 0;
 
 function idempotencyKey(prefix: string) {
@@ -286,5 +295,21 @@ export function createA1RbacAction(action: string, domainGroup: string, reason: 
     method: "POST",
     body: JSON.stringify({ action, domainGroup, reason, operator }),
     idempotencyPrefix: "a1-rbac-action",
+  });
+}
+
+export function registerA1Permission(input: {
+  permissionCode: string;
+  permissionName: string;
+  resourcePath: string;
+  permType: "READ" | "WRITE";
+  amplifies: boolean;
+  reason: string;
+  operator: string;
+}) {
+  return a1Request<A1PermissionRegistration>("/accounts/permissions", {
+    method: "POST",
+    body: JSON.stringify({ ...input, expectedAbsent: true }),
+    idempotencyPrefix: "a1-permission-register",
   });
 }

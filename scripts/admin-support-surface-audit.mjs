@@ -1,6 +1,6 @@
 // 客服中心后台面静态守卫 — 客服已由域 I(I8 工单 + I9 即时会话)迁出,
 // 重组为独立域 M 客服中心(/service/*)。守:IA 接线 / M 视图接线 / 数据模型 /
-// data-proof 控件存活 / 真写键 / 共享 MessageThread / UniApp 工单字段镜像 / verify needle。
+// data-proof 控件存活 / 真写键 / 共享 MessageThread / UniApp 服务端权威契约 / verify needle。
 // 真写键前缀沿用 I.support.* / I.session.*(persist 兼容,与 nav 域 code M 解耦)。
 import fs from "node:fs";
 import path from "node:path";
@@ -152,17 +152,31 @@ assertAbsent("app/components/domain-views/i-view.tsx", "I9Conversation", "客服
 // 自接线断言:本门须在现役管线 verify.mjs 中(2026-08-03 由退役的 verify.sh 迁入;live 探活归 verify:owner-review:live)
 assertContains("scripts/verify.mjs", ["admin-support-surface-audit.mjs"]);
 
-// UniApp 工单字段镜像(前端不变,迁移后仍须对齐)
-assertContains(path.join(UNI_ROOT, "src/mock/tickets.ts"), [
-  "lastReplyAt: number",
-  "owner: string",
-  'owner: "Marina K."',
+// UniApp 工单必须以 App support API 为权威：服务端字段严格解析、全量分页、刷新/详情回读。
+const uniTicketStore = path.join(UNI_ROOT, "src/store/tickets.ts");
+const uniSupportApi = path.join(UNI_ROOT, "src/api/support-api.ts");
+assertContains(uniTicketStore, [
+  'import { supportApi } from "@/api/runtime"',
+  "await supportApi.tickets()",
+  "await supportApi.ticket(id)",
+  "supportApi.createTicket(input, key)",
+  "supportApi.replyTicket(current, body, key)",
+  "supportApi.closeTicket(current, key)",
+  "tickets.value = []",
 ]);
-assertContains(path.join(UNI_ROOT, "src/store/tickets.ts"), [
-  "lastReplyAt: raw.lastReplyAt ?? ticket.updatedAt",
-  'owner: raw.owner ?? "Unassigned"',
-  "lastReplyAt: now",
+assertContains(uniSupportApi, [
+  "const lastReplyAt = time(v?.lastMessageAt)",
+  "const owner = text(v?.assignedAdminName, true)",
+  "lastReplyAt === null",
+  "owner === null",
+  "async function allTickets()",
+  "while (items.length < total)",
+  "SUPPORT_TICKET_PAGE_INCOMPLETE",
+  'path: "/api/app/support/tickets"',
 ]);
+assertAbsent(uniTicketStore, "@/mock/tickets", "生产工单不得回退本地 mock");
+assertAbsent(uniTicketStore, "lastReplyAt: raw.lastReplyAt ?? ticket.updatedAt", "不得用旧本地字段回退服务端时间");
+assertAbsent(uniTicketStore, "lastReplyAt: now", "不得用客户端当前时间伪造服务端回复时间");
 
 // 路由计数:本门只辖 M 面 —— /service 客服路由 = 5;全站 L2 总数随 IA 演进,不在本门硬编码(2026-08-03 去除 72 断言)
 const serviceRouteCount = (read("lib/nav/console-nav.ts").match(/path:\s*"\/service\//g) || []).length;

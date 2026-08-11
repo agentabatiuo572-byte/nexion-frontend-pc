@@ -33,7 +33,7 @@ export const DOMAIN_L: ModuleEntry[] = [
   },
   {
     path: "/analytics/behavior-heatmap",
-    summary: "用户行为热力图 —— 需要 APP 页面浏览与元素点击事件及埋点目录共同支撑。数据源未接入前只展示真实接入状态，不生成热力数值，也不开放导出。",
+    summary: "用户行为热力图 —— APP 页面浏览、元素点击事件与埋点目录均已接入服务端聚合；当前筛选没有生产事件时显示真实空态，不生成热力数值，也不开放空结果导出。Test/Acceptance 夹具与生产聚合严格隔离。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];

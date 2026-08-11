@@ -2,6 +2,7 @@
 
 /** F4 · 池/配额/大使/榜 —— 数据源为后端 /api/admin/teams/leadership-pool。 */
 import type { FViewCtx } from "./types";
+import { validateF4SettlementConfig } from "@/lib/admin/f4-settlement-config";
 
 function voteH(count: number, maxVote: number): number {
   const max = Math.max(1, Math.log2(maxVote + 1));
@@ -60,8 +61,6 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
     return <section className="sect"><div className="empty">F4 暂无数据</div></section>;
   }
 
-  const ratioEff = presentText(data.poolRatio);
-  const capEff = presentText(data.monthlyCapLabel);
   const proEff = presentText(data.proUnlock);
   const rackEff = presentText(data.rackUnlock);
   const stockEff = presentText(data.quotaMonthlyStockLabel);
@@ -71,7 +70,6 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
     : "结算窗口未配置";
   const topLabel = data.topN > 0 ? `顶部 ${data.topN} 名占比(派生)` : "顶部占比(派生)";
   const topShareLabel = data.topSharePct > 0 ? `≈ ${data.topSharePct}%` : "暂无样本";
-  const unlockLabel = data.unlockRank > 0 ? `V${data.unlockRank}+` : "未配置";
   const ambassadorBudgetLabel = data.ambassadorBudgetApprovedLabel || data.ambassadorBudgetCapLabel
     ? `${presentText(data.ambassadorBudgetApprovedLabel)} / ${presentText(data.ambassadorBudgetCapLabel)}`
     : "暂无预算数据";
@@ -82,9 +80,33 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
   const lbDq = data.leaderboardDisqualified;
   const maxVote = Math.max(1, ...data.voteWeights.map((row) => row.votes));
   const monthPoolUsd = Math.round(data.weeklyInjectedUsd * 4.33);
-  const ambLocked = statusResolved(data.ambassadorStatus);
-  const settleCron = data.configValues["F.pool.settleCron"] ?? "0 23 * * 0";
-  const unlockVRank = data.configValues["F.pool.unlockVRank"] ?? "V3";
+  const settleCron = data.configValues["F.pool.settleCron"] ?? "";
+  const unlockVRank = data.configValues["F.pool.unlockVRank"] ?? "";
+  const settlementConfig = validateF4SettlementConfig({
+    status: data.settlementConfigStatus,
+    unavailableKey: data.settlementConfigUnavailableKey,
+    configVersion: data.configVersion,
+    ratio: data.configValues["F.pool.ratio"],
+    monthlyCap: data.configValues["F.pool.monthlyCap"],
+    unlockVRank,
+    settleCron,
+  });
+  const invalidSettlementKeys = new Set(settlementConfig.issues.map((issue) => issue.key));
+  const invalidConfigLabel = "未配置或格式错误";
+  const ratioEff = invalidSettlementKeys.has("ratio") ? invalidConfigLabel : presentText(data.poolRatio);
+  const capEff = invalidSettlementKeys.has("monthlyCap") ? invalidConfigLabel : presentText(data.monthlyCapLabel);
+  const unlockLabel = invalidSettlementKeys.has("unlockVRank")
+    ? invalidConfigLabel
+    : data.unlockRank > 0 ? `V${data.unlockRank}+` : "未配置";
+  const settleCronEff = invalidSettlementKeys.has("settleCron") ? invalidConfigLabel : settleCron;
+  const unlockVRankEff = invalidSettlementKeys.has("unlockVRank") ? invalidConfigLabel : unlockVRank;
+  const configVersionEff = invalidSettlementKeys.has("configVersion") ? invalidConfigLabel : data.configVersion;
+  const settlementOperable = settlementConfig.ready && !ctx.f4Loading && !ctx.f4Error;
+  const settlementBlockedCopy = ctx.f4Loading
+    ? "正在重新读取权威配置，完成前不会开放提前结算。"
+    : ctx.f4Error
+      ? "权威配置刷新失败，为避免使用旧配置，提前结算保持禁用。请重新读取配置；恢复后会按最新配置自动开放。"
+      : `领导奖池结算配置不可用：${settlementConfig.issues.map((issue) => issue.label).join("、")} 缺失或格式错误。配置入口就在本卡片下方，请依次补齐后重新读取配置。`;
   const lbMinUsd = data.configValues["F.leaderboard.minUsd"] ?? "1";
   const lbPaused = (data.configValues["F.leaderboard.paused"] ?? "off") === "on";
   const top1MaxPct = data.configValues["F.pool.top1MaxPct"] ?? "25";
@@ -135,12 +157,17 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
             <div><div className="lbl">本周池{data.poolRatio ? `(周 GMV × ${ratioEff})` : ""}</div><div className="v">{usd(data.weeklyInjectedUsd)}</div></div>
             <div className="meta">{settlementEff}<br />参与 {unlockLabel} 领袖 <b>{data.participantCount}</b></div>
           </div>
+          {!settlementOperable && <div className="f4-warn" role="alert">
+            <b>提前结算已暂停</b> · {settlementBlockedCopy}
+            <button disabled={ctx.f4Loading} onClick={() => void ctx.refreshF4()}>重新读取配置</button>
+          </div>}
           <div className="kv-row"><span className="k">奖池比例(周 GMV)</span><span className="v brand">{ratioEff}</span></div>
           <div className="kv-row"><span className="k">月度预留上限(cap)</span><span className="v">{capEff}</span></div>
+          <div className="kv-row"><span className="k">结算配置版本</span><span className="v dim">{configVersionEff}</span></div>
           <div className="kv-row"><span className="k">{topLabel}</span><span className="v warn">{topShareLabel}</span></div>
           <div className="kv-row"><span className="k">分配口径</span><span className="v dim">按 V_VOTES 权重</span></div>
           <div className="sect-foot">
-            {canFund && <button className="primary amp" onClick={() => ctx.openActionConfirm({
+            {canFund && <button className="primary amp" disabled={!settlementOperable} title={!settlementOperable ? settlementBlockedCopy : undefined} onClick={() => ctx.openActionConfirm({
               name: "提前结算本周领导奖池",
               amplify: true,
               detail: "按服务端当前周已支付 GMV、F.pool.ratio、月度 cap、解锁等级与 V_VOTES 生成 F5 佣金事件和 D4 台账。资金动作先提交 A2 审批；同周 CAS 防止重复派发。",
@@ -150,8 +177,8 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
             })}>提前结算本周池</button>}
             {canFund && <button className="primary amp" onClick={() => ctx.openActionConfirm({ name: "领导池比例调整(周 GMV)", amplify: true, op: "param", paramKey: "F.pool.ratio", edit: { kind: "text", current: data.poolRatio, unit: "%" }, detail: `每周 GMV 注入领导池的比例 · 当前 ${ratioEff} · 放大池子流出,受 B1 约束。` })}>调整池比例</button>}
             {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "领导池月度 cap 调整", op: "param", paramKey: "F.pool.monthlyCap", edit: { kind: "text", current: data.monthlyCapLabel }, detail: `领导池月度预留护栏 · 当前 ${capEff} · 当前月池约 ${usdM(monthPoolUsd)}。` })}>调整月度 cap</button>}
-            {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "池结算周期调整", op: "param", paramKey: "F.pool.settleCron", edit: { kind: "text", current: settleCron, unit: "cron 表达式" }, detail: `领导奖池自动结算的 cron 周期 · 当前 ${settleCron} · 改后对下一周期派发生效。` })}>结算周期</button>}
-            {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "池解锁等级调整", op: "param", paramKey: "F.pool.unlockVRank", edit: { kind: "select", current: unlockVRank, options: POOL_UNLOCK_OPTIONS }, detail: `领导奖池参与门槛 · 当前 ${unlockVRank}+ · 调高收紧参与人数,调低放大分润人数。` })}>解锁等级</button>}
+            {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "池结算周期调整", op: "param", paramKey: "F.pool.settleCron", edit: { kind: "text", current: settleCron, unit: "cron 表达式" }, detail: `领导奖池自动结算的 cron 周期 · 当前 ${settleCronEff} · 改后对下一周期派发生效。` })}>结算周期</button>}
+            {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "池解锁等级调整", op: "param", paramKey: "F.pool.unlockVRank", edit: { kind: "select", current: unlockVRank, options: POOL_UNLOCK_OPTIONS }, detail: `领导奖池参与门槛 · 当前 ${unlockVRankEff} · 调高收紧参与人数,调低放大分润人数。` })}>解锁等级</button>}
             {canFund && <button onClick={() => ctx.openActionConfirm({ name: "头部集中度·Top1 上限调整", amplify: true, op: "param", paramKey: "F.pool.top1MaxPct", edit: { kind: "number", current: top1MaxPct, unit: "%" }, detail: `领导池 Top1 头部集中度上限 · 当前 ${top1MaxPct}% · 范围 0-100 · 调低抑制头部虹吸,受 B1 约束。` })}>Top1 集中度</button>}
             {canFund && <button onClick={() => ctx.openActionConfirm({ name: "头部集中度·Top5 上限调整", amplify: true, op: "param", paramKey: "F.pool.top5MaxPct", edit: { kind: "number", current: top5MaxPct, unit: "%" }, detail: `领导池 Top5 头部集中度上限 · 当前 ${top5MaxPct}% · 范围 0-100 · 调低抑制头部虹吸,受 B1 约束。` })}>Top5 集中度</button>}
           </div>
@@ -169,6 +196,13 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
                 <span className="nm">{quota.name}</span>
                 <span className={`bar${quota.tight ? " tight" : ""}`}><span className="f" style={{ width: `${Math.min(100, (quota.current / Math.max(1, quota.cap)) * 100)}%` }} /></span>
                 <span className="ct">{quota.current} / {quota.cap}</span>
+                {canWrite && <button onClick={() => ctx.openActionConfirm({
+                  name: `${quota.name} 月额度调整`, op: "param",
+                  paramKey: `F.quota.tier.${quota.quotaCode || quota.id}.monthlyQuota`,
+                  expectedVersion: quota.cap,
+                  edit: { kind: "number", current: String(quota.cap), unit: "台" },
+                  detail: `CAS 更新权威配额 tier ${quota.quotaCode || quota.id}，当前已用 ${quota.current} / ${quota.cap}；若其他管理员先改，返回 409 并回读最新值。`,
+                })}>调额度</button>}
               </div>
             )) : <div className="empty">暂无硬件配额样本</div>}
             <div className="stock-note">月库存上限 {stockEff} · 已出 {data.quotaMonthlyStockUsed} 台 · 剩余 {data.quotaMonthlyStockRemaining} 台</div>
@@ -176,10 +210,16 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
           <div className="kv-row"><span className="k">Pro 解锁门槛</span><span className="v dim">{proEff}</span></div>
           <div className="kv-row"><span className="k">Rack 解锁门槛</span><span className="v dim">{rackEff}</span></div>
           <div className="kv-row"><span className="k">月库存上限</span><span className="v">{stockEff}</span></div>
-          {canWrite && <div className="sect-foot">
-            <button onClick={() => ctx.openActionConfirm({ name: "Pro 解锁门槛调整", op: "param", paramKey: "F.quota.proUnlock", edit: { kind: "text", current: data.proUnlock }, detail: `Pro 销售前置门 · 当前 ${proEff}` })}>Pro 门槛</button>
-            <button onClick={() => ctx.openActionConfirm({ name: "Rack 解锁门槛调整", op: "param", paramKey: "F.quota.rackUnlock", edit: { kind: "text", current: data.rackUnlock }, detail: `Rack 销售前置门 · 当前 ${rackEff}` })}>Rack 门槛</button>
-            <button onClick={() => ctx.openActionConfirm({ name: "月库存上限调整", op: "param", paramKey: "F.quota.monthlyStock", edit: { kind: "number", current: data.quotaMonthlyStockLabel, unit: "台" }, detail: `月度硬件供给上限 · 当前 ${stockEff}` })}>月库存</button>
+          {data.quotaUsages.length > 0 && <div style={{ marginTop: 12 }}>
+            {data.quotaUsages.map((usage) => <div key={usage.id} className="kv-row">
+              <span className="k">#{usage.id} · U{usage.userId} · {usage.productNo}</span>
+              <span className="v">{usage.quantity} 台 · {usage.orderNo || "无订单号"}</span>
+              {canWrite && <button className="danger" onClick={() => ctx.openActionConfirm({
+                name: `回收配额 #${usage.id}`, op: "dispose",
+                paramKey: `F.quota.usage.${usage.id}.status`, fixedVal: "recycled",
+                detail: "服务端仅允许 ACTIVE→RECYCLED 的 CAS 状态迁移；并发重复回收返回冲突，成功后权威配额立即回读。",
+              })}>回收</button>}
+            </div>)}
           </div>}
         </section>
 
@@ -190,15 +230,20 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
             <span className="tag">F4c · F.ambassador.*</span>
           </div>
           <div className="amb-bands">
-            {data.ambassadorBands.length ? data.ambassadorBands.map((band) => (<div key={band.name} className="amb-band"><div className="nm">{band.name}</div><div className="ct">{band.count}<small>件</small></div></div>)) : <div className="empty">暂无大使申请样本</div>}
+            {data.ambassadorApplications.length ? data.ambassadorApplications.map((application) => (
+              <div key={application.id} className="amb-band">
+                <div className="nm">#{application.id} · {application.applicantName} · {application.region}{application.city ? `/${application.city}` : ""}</div>
+                <div className="ct">{application.currentRank} · ${application.requestedBudgetUsd.toLocaleString("en-US")} · {application.status}</div>
+                {canApproveAmbassador && application.status.toUpperCase() === "PENDING" && <>
+                  <button className="primary amp" onClick={() => ctx.openActionConfirm({ name: `批准大使申请 #${application.id}`, amplify: true, op: "dispose", paramKey: `F.ambassador.${application.id}.status`, fixedVal: "approved", detail: "按申请 ID 精确批准；同事务生成 KOL/EVENT/TRAVEL/PROMOTION 四类预算权益证明。" })}>批准</button>
+                  <button className="danger" onClick={() => ctx.openActionConfirm({ name: `驳回大使申请 #${application.id}`, op: "dispose", paramKey: `F.ambassador.${application.id}.status`, fixedVal: "rejected", detail: "按申请 ID 精确驳回，不再回退处置任意最新待审记录。" })}>驳回</button>
+                </>}
+              </div>
+            )) : <div className="empty">暂无大使申请样本</div>}
           </div>
           <div className="kv-row"><span className="k">本月已批准预算</span><span className="v ok">{ambassadorBudgetLabel}</span></div>
           <div className="kv-row"><span className="k">KOL 预算占比</span><span className="v">{data.ambassadorKolBudgetPct}%</span></div>
           <div className="kv-row"><span className="k">下季度配额评估</span><span className="v dim">{nextQuotaReviewDate}</span></div>
-          {canApproveAmbassador && <div className="sect-foot">
-            <button className="primary amp" disabled={ambLocked} onClick={() => ctx.openActionConfirm({ name: "区域大使申请确认通过", amplify: true, op: "dispose", paramKey: "F.ambassador.q3-2025.status", fixedVal: "approved", status: "approved", detail: "批准大使申请 · 开通 4 类预算额度与权益 · 写 A2 审计 · 资金流出受 B1 约束。" })}>确认通过</button>
-            <button className="danger" disabled={ambLocked} onClick={() => ctx.openActionConfirm({ name: "区域大使申请驳回", op: "dispose", paramKey: "F.ambassador.q3-2025.status", fixedVal: "rejected", status: "rejected", detail: "驳回大使申请 · 不开通预算 · 写 A2 审计。" })}>驳回</button>
-          </div>}
         </section>
 
         <section className="sect">
@@ -209,7 +254,13 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
           </div>
           <div className="podium">
             {data.podium.length ? data.podium.map((row) => (
-              <div key={row.userId} className={`pod ${row.className}`}><span className="rank">{row.rank}</span><div className="uid">{row.userId}</div><div className="gv">{row.gmvLabel}<small>{row.tip}</small></div></div>
+              <div key={row.userId} className={`pod ${row.className}`}><span className="rank">{row.rank}</span><div className="uid">{row.userId}</div><div className="gv">{row.gmvLabel}<small>{row.tip}</small></div>
+                {canControlLeaderboard && row.memberUserId > 0 && !row.className.includes("dq") && <button className="danger" onClick={() => ctx.openActionConfirm({
+                  name: `取消 ${row.userId} 本周榜单资格`, op: "dispose",
+                  paramKey: `F.leaderboard.week.user.${row.memberUserId}.status`, fixedVal: "disqualified",
+                  detail: `按 member_user_id=${row.memberUserId} 精确排除；写入榜单动作后排名查询与奖池结算共同过滤该用户。`,
+                })}>取消资格</button>}
+              </div>
             )) : <div className="empty">暂无榜单样本</div>}
           </div>
           <div className="kv-row"><span className="k">本期奖池</span><span className="v">{lbPool}</span></div>
@@ -219,6 +270,12 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
             {canFund && <button className="primary amp" onClick={() => ctx.openActionConfirm({ name: "本期榜单奖池调整", amplify: true, op: "param", paramKey: "F.leaderboard.poolUsd", edit: { kind: "text", current: data.leaderboardPoolLabel }, detail: `本期榜单奖池总额 · 当前 ${lbPool} · 放大奖池流出,受 B1 约束。` })}>调整奖池</button>}
             {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "榜单最小额调整", op: "param", paramKey: "F.leaderboard.minUsd", edit: { kind: "number", current: lbMinUsd, unit: "USD" }, detail: `上榜最低佣金门槛 · 当前 $${lbMinUsd} · 低于此额不计入榜单排名。` })}>榜单最小额</button>}
             {canControlLeaderboard && <button className={lbPaused ? "primary" : "danger"} onClick={() => ctx.openActionConfirm({ name: lbPaused ? "恢复排行榜派发" : "暂停排行榜派发", op: "dispose", paramKey: "F.leaderboard.paused", fixedVal: lbPaused ? "off" : "on", detail: lbPaused ? "恢复排行榜 · 下期起正常结算榜单奖池与名次,写 A2 审计。" : "暂停排行榜 · 本期榜单冻结,不派发奖池,已计名次保留,写 A2 审计。" })}>{lbPaused ? "恢复榜单" : "暂停榜单"}</button>}
+            {canFund && <button className="primary amp" onClick={() => ctx.openActionConfirm({
+              name: "派发总榜奖池",
+              amplify: true,
+              detail: `总榜无自动 reset；按真实累计佣金、Top100 与当前 $${ppAllTime} 配置发放，A2 审批且 lifetime 幂等。`,
+              run: (reason) => ctx.proposeF4LeaderboardPayout("allTime", reason),
+            })}>派发总榜</button>}
             {canFund && <button className="primary amp" onClick={() => ctx.openActionConfirm({
               name: "4 周期榜单奖池调整", amplify: true,
               businessForm: {
@@ -246,7 +303,6 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
                 ctx.toast(`4 周期榜单奖池已确认生效 · 日${today}/周${week}/月${month}/总${allTime}`);
               },
             })}>4 周期奖池</button>}
-            {canControlLeaderboard && <button className="danger" disabled={lbDq} onClick={() => ctx.openActionConfirm({ name: "排行榜取消资格(反欺诈)", op: "dispose", paramKey: "F.leaderboard.period.status", fixedVal: "disqualified", status: "disqualified", detail: "对刷榜账户取消本期资格 · 剔除其榜单名次与奖池分配 · 写 A2 审计。" })}>取消资格 · 反欺诈</button>}
           </div>
         </section>
       </div>

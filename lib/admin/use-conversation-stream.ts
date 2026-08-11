@@ -4,20 +4,20 @@
  * 即时会话 SSE 订阅 hook —— 给 M 客服中心（m-view.tsx）挂实时推送。
  *
  * ## 鉴权策略（浏览器原生 EventSource 不能自定义请求头）
- *   - 默认（同源 cookie）：连 /api/admin/content/conversations/stream —— 同源请求自动携带 httpOnly cookie
+ *   - 仅允许同源 cookie：连 /api/admin/content/conversations/stream —— 同源请求自动携带 httpOnly cookie
  *     nexion_admin_token，Next route（app/api/admin/content/[...path]/route.ts）已把该 cookie
  *     转成 Authorization: Bearer 透传给后端，JwtAuthenticationFilter 即可解析。
- *   - 兜底（token 模式）：若调用方提供了 JS 可达 token（例如未来登录态镜像），直连后端并附 ?token=<jwt>，
- *     后端 SecurityConfig.SseTokenShimFilter 会把 query token 头化为 Authorization，再走标准 JWT 校验链。
- *     跨域直连需 withCredentials 以满足 CORS 凭证策略。
+ *   JWT 不进入 URL，避免被代理日志、浏览器历史或监控系统记录。
  *
- * ## 自动重连
- *   onerror 后指数退避（5s → 10s → 20s → 30s 封顶），组件卸载时 EventSource.close() 并清定时器。
+ * ## 失败关闭与恢复
+ *   原生 EventSource 无法读取 401/403 状态；断线后先用同源 HEAD 状态端点重新鉴权。
+ *   401/403 立即终止，只有仍处于有效登录态时才进行次数和退避都受限的重连。
  *
  * ## 流式代理
  *   Next route 对 text/event-stream 直接透传 upstream.body，不缓冲响应；普通 JSON 路由仍沿用统一错误处理。
  */
 import { useEffect, useRef, useState } from "react";
+import { ConversationReconnectGate, isTerminalConversationStreamStatus } from "./conversation-stream-recovery";
 
 export type ConversationEventType = "MESSAGE" | "TRANSFER" | "STATUS" | "INITIATE" | "RECEIPT";
 
@@ -35,84 +35,191 @@ export interface ConversationStreamEvent {
 }
 
 export interface UseConversationStreamOptions {
-  /** JS 可达 token；若提供则直连后端 ?token=，否则走同源 cookie 代理路径。 */
-  token?: string | null;
-  /** 后端直连基址（仅 token 模式下使用）；缺省时仅用 STREAM_PATH 相对路径。 */
-  backendUrl?: string;
-  /** 收到事件时的回调（已 JSON.parse）。 */
-  onEvent: (event: ConversationStreamEvent) => void;
+  /** 收到事件时的回调（已 JSON.parse）；signal 在所属连接断开时立即取消。 */
+  onEvent: (event: ConversationStreamEvent, signal: AbortSignal) => void | Promise<void>;
+  /** 每次（含首次）连接建立后先补拉权威 list/detail；完成前 ready 始终为 false。 */
+  onReconnectSnapshot: (signal: AbortSignal) => Promise<void>;
   /** 是否启用（默认 true；可由调用方在未登录 / 非会话台时关掉）。 */
   enabled?: boolean;
+  /** 所属全量 M reload 开始时同步取消当前恢复快照与连接，不安排旧连接重试。 */
+  lifecycleSignal?: AbortSignal;
 }
 
 const STREAM_PATH = "/api/admin/content/conversations/stream";
-const MIN_BACKOFF_MS = 5_000;
-const MAX_BACKOFF_MS = 30_000;
+const MAX_RECONNECT_ATTEMPTS = 8;
+const MAX_RECONNECT_DELAY_MS = 30_000;
+const STABLE_CONNECTION_MS = 30_000;
 
-export function useConversationStream({ token, backendUrl, onEvent, enabled = true }: UseConversationStreamOptions) {
+export function useConversationStream({ onEvent, onReconnectSnapshot, enabled = true, lifecycleSignal }: UseConversationStreamOptions) {
   // 用 ref 持有最新回调，避免回调变动重启连接。
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
+  const onReconnectSnapshotRef = useRef(onReconnectSnapshot);
+  onReconnectSnapshotRef.current = onReconnectSnapshot;
   const [ready, setReady] = useState(false);
+  const [reconnectExhausted, setReconnectExhausted] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
+  const retry = () => setRetryNonce((value) => value + 1);
 
   useEffect(() => {
     if (!enabled) {
       setReady(false);
+      setReconnectExhausted(false);
       return;
     }
     if (typeof window === "undefined" || typeof EventSource === "undefined") return;
+    setReconnectExhausted(false);
 
     let es: EventSource | null = null;
-    let retry = 0;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let closed = false;
+    let reconnectTimer: number | null = null;
+    let sessionProbeTimer: number | null = null;
+    let stableConnectionTimer: number | null = null;
+    let reconnectAttempts = 0;
+    let sessionController: AbortController | null = null;
+    let snapshotController: AbortController | null = null;
+    let activeConnectionController: AbortController | null = null;
+    const recoveryGate = new ConversationReconnectGate<ConversationStreamEvent>();
 
-    const tokenMode = typeof token === "string" && token.length > 0;
-    const url = tokenMode
-      ? `${(backendUrl ?? "").replace(/\/$/, "")}${STREAM_PATH}?token=${encodeURIComponent(token as string)}`
-      : STREAM_PATH;
+    const suspend = () => {
+      if (closed) return;
+      closed = true;
+      setReady(false);
+      recoveryGate.cancel();
+      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
+      if (sessionProbeTimer !== null) window.clearTimeout(sessionProbeTimer);
+      if (stableConnectionTimer !== null) window.clearTimeout(stableConnectionTimer);
+      sessionController?.abort();
+      snapshotController?.abort();
+      activeConnectionController?.abort();
+      es?.close();
+      es = null;
+    };
+    lifecycleSignal?.addEventListener("abort", suspend, { once: true });
+    if (lifecycleSignal?.aborted) suspend();
+
+    const scheduleReconnect = (connect: () => void) => {
+      if (closed) return;
+      if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+        setReconnectExhausted(true);
+        return;
+      }
+      const delay = Math.min(1_000 * 2 ** reconnectAttempts, MAX_RECONNECT_DELAY_MS);
+      reconnectAttempts += 1;
+      reconnectTimer = window.setTimeout(connect, delay);
+    };
+
+    const reconnectAfterAuthorizationProbe = (connect: () => void) => {
+      if (closed || sessionProbeTimer !== null) return;
+      sessionProbeTimer = window.setTimeout(() => {
+        sessionProbeTimer = null;
+        if (closed) return;
+        sessionController?.abort();
+        const controller = new AbortController();
+        sessionController = controller;
+        const timeout = window.setTimeout(() => controller.abort(), 5_000);
+        void fetch("/api/admin/auth/session", {
+          cache: "no-store",
+          credentials: "same-origin",
+          signal: controller.signal,
+        }).then(async (response) => {
+          await response.body?.cancel().catch(() => undefined);
+          if (closed) return;
+          if (response.status === 401 || response.status === 403) {
+            setReconnectExhausted(true);
+            return;
+          }
+          const streamStatusResponse = await fetch(STREAM_PATH, {
+            method: "HEAD",
+            cache: "no-store",
+            credentials: "same-origin",
+            signal: controller.signal,
+          });
+          await streamStatusResponse.body?.cancel().catch(() => undefined);
+          if (closed) return;
+          if (isTerminalConversationStreamStatus(streamStatusResponse.status)) {
+            setReconnectExhausted(true);
+            return;
+          }
+          scheduleReconnect(connect);
+        }).catch(() => {
+          if (closed) return;
+          scheduleReconnect(connect);
+        }).finally(() => {
+          window.clearTimeout(timeout);
+          if (sessionController === controller) sessionController = null;
+        });
+      }, 100);
+    };
 
     const connect = () => {
-      // 同源 cookie 模式：默认不启用 withCredentials（同源无需）；token 跨域直连模式需要。
-      es = new EventSource(url, tokenMode ? { withCredentials: true } : undefined);
+      if (closed) return;
+      const connection = new EventSource(STREAM_PATH);
+      const connectionController = new AbortController();
+      activeConnectionController = connectionController;
+      es = connection;
 
-      es.onopen = () => {
-        retry = 0;
-        setReady(true);
+      const disconnect = () => {
+        if (closed || es !== connection) return;
+        setReady(false);
+        connectionController.abort();
+        snapshotController?.abort();
+        recoveryGate.cancel();
+        if (stableConnectionTimer !== null) window.clearTimeout(stableConnectionTimer);
+        stableConnectionTimer = null;
+        connection.close();
+        es = null;
+        reconnectAfterAuthorizationProbe(connect);
       };
-      es.onmessage = (ev) => {
+
+      connection.onopen = () => {
+        if (closed || es !== connection) return;
+        setReady(false);
+        const generation = recoveryGate.begin();
+        snapshotController?.abort();
+        const controller = new AbortController();
+        snapshotController = controller;
+        void onReconnectSnapshotRef.current(controller.signal).then(async () => {
+          if (closed || es !== connection) return;
+          const reconciled = await recoveryGate.complete(
+            generation,
+            (event) => onEventRef.current(event, connectionController.signal),
+          );
+          if (!reconciled) return;
+          setReady(true);
+          if (stableConnectionTimer !== null) window.clearTimeout(stableConnectionTimer);
+          stableConnectionTimer = window.setTimeout(() => {
+            stableConnectionTimer = null;
+            reconnectAttempts = 0;
+            setReconnectExhausted(false);
+          }, STABLE_CONNECTION_MS);
+        }).catch(disconnect);
+      };
+      connection.onmessage = (ev) => {
         // 后端 SseEmitter.event().name("message").data(event) → 默认 message 事件 → onmessage 触发。
         // 心跳是注释帧（:ping），不会进 onmessage。
         try {
           const parsed = JSON.parse(ev.data) as ConversationStreamEvent;
           if (parsed && typeof parsed.conversationNo === "string" && parsed.conversationNo) {
-            onEventRef.current(parsed);
+            void recoveryGate.accept(parsed, (event) => onEventRef.current(event, connectionController.signal))
+              .then((accepted) => { if (!accepted) disconnect(); })
+              .catch(disconnect);
           }
         } catch {
           // 非 JSON 帧：忽略（防御性，不重连）。
         }
       };
-      es.onerror = () => {
-        setReady(false);
-        es?.close();
-        es = null;
-        if (closed) return;
-        // 指数退避：5s → 10s → 20s → 30s（封顶）。
-        const delay = Math.min(MAX_BACKOFF_MS, MIN_BACKOFF_MS * Math.pow(2, retry));
-        retry += 1;
-        reconnectTimer = setTimeout(connect, delay);
-      };
+      connection.onerror = disconnect;
     };
 
     connect();
 
     return () => {
-      closed = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      es?.close();
+      lifecycleSignal?.removeEventListener("abort", suspend);
+      suspend();
       setReady(false);
     };
-  }, [enabled, token, backendUrl]);
+  }, [enabled, lifecycleSignal, retryNonce]);
 
-  return { ready };
+  return { ready, reconnectExhausted, retry };
 }

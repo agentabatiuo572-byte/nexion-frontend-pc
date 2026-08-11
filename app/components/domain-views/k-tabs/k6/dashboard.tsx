@@ -92,6 +92,9 @@ export function K6Dashboard() {
   };
 
   return <div>
+    <div className="k6-empty" role="status" style={{ marginBottom: 12 }}>
+      服务端权威快照 · 当前执行环境：{snapshot.executionEnvironment === "SANDBOX" ? "Sandbox（仅 Test/Acceptance，不释放生产收益）" : "Production（设备绑定 HMAC 证明）"}
+    </div>
     <div className="k6-command">
       <div className="k6-cmd-kicker">下一步 · 服务端决策建议</div>
       <div className="k6-cmd-title">{summary.recommended ? "处理建议下发队列" : "等待设备进入建议队列"}</div>

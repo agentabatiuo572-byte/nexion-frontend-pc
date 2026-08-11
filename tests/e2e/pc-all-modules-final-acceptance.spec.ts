@@ -23,6 +23,27 @@ const MODULES = CONSOLE_NAV.flatMap((domain) =>
   })),
 );
 
+const VISUAL_EVIDENCE_STAGES = [
+  "00-visible-sidebar-entry",
+  "01-settled-page",
+  "02-after-refresh",
+  "03-after-browser-back",
+  "04-after-relogin",
+] as const;
+const EXPECTED_VISUAL_EVIDENCE_COUNT = MODULES.length * VISUAL_EVIDENCE_STAGES.length;
+
+type VisualEvidenceStage = (typeof VISUAL_EVIDENCE_STAGES)[number];
+type VisualEvidenceRow = {
+  at: string;
+  module: string;
+  stage: VisualEvidenceStage;
+  visibleEntry: string;
+  url: string;
+  expected: string;
+  result: "captured";
+  evidence: string;
+};
+
 type RuntimeEvidence = {
   pageErrors: string[];
   consoleErrors: string[];
@@ -52,6 +73,7 @@ test("75 个模块统一锁定：侧栏首轮、逐页刷新、浏览器返回�
   expect(EXPECTED_BUILD_ID, "PC_FINAL_BUILD_ID 必须绑定锁定候选").toBeTruthy();
   expect(fs.readFileSync(path.join(process.cwd(), ".next", "BUILD_ID"), "utf8").trim(), "本地候选 Build ID 必须匹配锁定值")
     .toBe(EXPECTED_BUILD_ID);
+  assertFreshEvidenceDirectory(EVIDENCE_DIR);
   fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
 
   const evidence: RuntimeEvidence = {
@@ -70,15 +92,19 @@ test("75 个模块统一锁定：侧栏首轮、逐页刷新、浏览器返回�
     backPass: [],
     reloginPass: [],
   };
+  const networkLog: Record<string, unknown>[] = [];
+  const stepLog: VisualEvidenceRow[] = [];
+  const consoleLog: Record<string, unknown>[] = [];
   let currentModule = "login";
   const requestOrigins = new WeakMap<Request, string>();
-  let pendingAdminRequests = 0;
+  const pendingAdminRequests = new Set<Request>();
   let lastAdminActivityAt = Date.now();
 
   page.on("pageerror", (error) => {
     evidence.pageErrors.push(`${currentModule}: ${error.message}`);
   });
   page.on("console", (message) => {
+    consoleLog.push({ at: new Date().toISOString(), module: currentModule, type: message.type(), text: message.text() });
     if (message.type() === "error") {
       if (
         (currentModule === "login" || currentModule === "relogin")
@@ -92,17 +118,16 @@ test("75 个模块统一锁定：侧栏首轮、逐页刷新、浏览器返回�
   page.on("request", (request) => {
     requestOrigins.set(request, currentModule);
     if (isIdleTrackedAdminRequest(request.url())) {
-      pendingAdminRequests += 1;
+      pendingAdminRequests.add(request);
       lastAdminActivityAt = Date.now();
     }
   });
-  const finishRequest = (url: string) => {
-    if (isIdleTrackedAdminRequest(url)) {
-      pendingAdminRequests = Math.max(0, pendingAdminRequests - 1);
+  const finishRequest = (request: Request) => {
+    if (pendingAdminRequests.delete(request)) {
       lastAdminActivityAt = Date.now();
     }
   };
-  page.on("requestfinished", (request) => finishRequest(request.url()));
+  page.on("requestfinished", finishRequest);
   page.on("requestfailed", (request) => {
     const originModule = requestOrigins.get(request) ?? "unattributed";
     const detail =
@@ -113,12 +138,14 @@ test("75 个模块统一锁定：侧栏首轮、逐页刷新、浏览器返回�
       evidence.requestFailures.push(detail);
       if (isIdleTrackedAdminRequest(request.url())) evidence.adminRequestFailures.push(detail);
     }
-    finishRequest(request.url());
+    finishRequest(request);
+    networkLog.push({ at: new Date().toISOString(), module: originModule, method: request.method(), path: pathOf(request.url()), failed: request.failure()?.errorText ?? "REQUEST_FAILED" });
   });
   page.on("response", async (response) => {
     const originModule = requestOrigins.get(response.request()) ?? "unattributed";
     const responsePath = pathOf(response.url());
     const detail = `${originModule}: ${response.request().method()} ${response.status()} ${responsePath}`;
+    networkLog.push({ at: new Date().toISOString(), module: originModule, method: response.request().method(), path: responsePath, status: response.status() });
     if (response.status() < 400) {
       evidence.successfulResponses.push(
         `${originModule}: ${response.request().method()} ${responsePath} ${response.status()}`,
@@ -144,13 +171,15 @@ test("75 个模块统一锁定：侧栏首轮、逐页刷新、浏览器返回�
 
   try {
     await loginFromVisibleEntry(page);
-    await waitForAdminQuiet(() => ({ pendingAdminRequests, lastAdminActivityAt }), "初次登录后的全局请求");
+    await waitForAdminQuiet(() => ({ pendingAdminRequests: pendingAdminRequests.size, lastAdminActivityAt }), "初次登录后的全局请求");
 
     for (const [moduleIndex, module] of MODULES.entries()) {
       currentModule = `${module.id}-first`;
       await test.step(`${module.id} 首轮侧栏进入`, async () => {
         await openFromVisibleSidebar(page, module);
-        await expectHealthyModule(page, module, () => ({ pendingAdminRequests, lastAdminActivityAt }));
+        await captureFullModuleEvidence(page, module, VISUAL_EVIDENCE_STAGES[0], stepLog);
+        await expectHealthyModule(page, module, () => ({ pendingAdminRequests: pendingAdminRequests.size, lastAdminActivityAt }));
+        await captureFullModuleEvidence(page, module, VISUAL_EVIDENCE_STAGES[1], stepLog);
         evidence.firstPass.push(module.id);
       });
 
@@ -158,7 +187,8 @@ test("75 个模块统一锁定：侧栏首轮、逐页刷新、浏览器返回�
       await test.step(`${module.id} 刷新保持`, async () => {
         await page.reload({ waitUntil: "domcontentloaded" });
         await expect(page).toHaveURL(new RegExp(`${escapeRegExp(module.path)}(?:\\?.*)?$`));
-        await expectHealthyModule(page, module, () => ({ pendingAdminRequests, lastAdminActivityAt }));
+        await expectHealthyModule(page, module, () => ({ pendingAdminRequests: pendingAdminRequests.size, lastAdminActivityAt }));
+        await captureFullModuleEvidence(page, module, VISUAL_EVIDENCE_STAGES[2], stepLog);
         evidence.refreshed.push(module.id);
       });
 
@@ -166,13 +196,14 @@ test("75 个模块统一锁定：侧栏首轮、逐页刷新、浏览器返回�
       currentModule = `${module.id}-back-setup`;
       await test.step(`${module.id} 浏览器返回准备`, async () => {
         await openFromVisibleSidebar(page, nextModule);
-        await expectHealthyModule(page, nextModule, () => ({ pendingAdminRequests, lastAdminActivityAt }));
+        await expectHealthyModule(page, nextModule, () => ({ pendingAdminRequests: pendingAdminRequests.size, lastAdminActivityAt }));
       });
       currentModule = `${module.id}-back`;
       await test.step(`${module.id} 浏览器返回保持`, async () => {
         await page.goBack({ waitUntil: "domcontentloaded" });
         await expect(page).toHaveURL(new RegExp(`${escapeRegExp(module.path)}(?:\\?.*)?$`));
-        await expectHealthyModule(page, module, () => ({ pendingAdminRequests, lastAdminActivityAt }));
+        await expectHealthyModule(page, module, () => ({ pendingAdminRequests: pendingAdminRequests.size, lastAdminActivityAt }));
+        await captureFullModuleEvidence(page, module, VISUAL_EVIDENCE_STAGES[3], stepLog);
         evidence.backPass.push(module.id);
       });
     }
@@ -181,13 +212,14 @@ test("75 个模块统一锁定：侧栏首轮、逐页刷新、浏览器返回�
     await logoutFromVisibleControl(page);
     currentModule = "relogin";
     await loginFromVisibleEntry(page);
-    await waitForAdminQuiet(() => ({ pendingAdminRequests, lastAdminActivityAt }), "重登后的全局请求");
+    await waitForAdminQuiet(() => ({ pendingAdminRequests: pendingAdminRequests.size, lastAdminActivityAt }), "重登后的全局请求");
 
     for (const module of MODULES) {
       currentModule = `${module.id}-relogin`;
       await test.step(`${module.id} 重登后侧栏复跑`, async () => {
         await openFromVisibleSidebar(page, module);
-        await expectHealthyModule(page, module, () => ({ pendingAdminRequests, lastAdminActivityAt }));
+        await expectHealthyModule(page, module, () => ({ pendingAdminRequests: pendingAdminRequests.size, lastAdminActivityAt }));
+        await captureFullModuleEvidence(page, module, VISUAL_EVIDENCE_STAGES[4], stepLog);
         evidence.reloginPass.push(module.id);
       });
     }
@@ -196,6 +228,23 @@ test("75 个模块统一锁定：侧栏首轮、逐页刷新、浏览器返回�
     expect(evidence.refreshed).toEqual(MODULES.map((module) => module.id));
     expect(evidence.backPass).toEqual(MODULES.map((module) => module.id));
     expect(evidence.reloginPass).toEqual(MODULES.map((module) => module.id));
+    const healthSummary = summarizeHealth(evidence);
+    expect(healthSummary.counts, "四个正式健康阶段必须各覆盖全部 75 模块").toEqual({
+      firstSettled: 75,
+      refreshed: 75,
+      browserBack: 75,
+      relogin: 75,
+    });
+    expect(healthSummary.actualHealthyChecks, "最终健康统计必须是 75×4=300").toBe(300);
+    expect(stepLog, "全部 75 模块必须各保留 5 阶段 PNG 可视证据").toHaveLength(EXPECTED_VISUAL_EVIDENCE_COUNT);
+    expect(
+      new Set(stepLog.map((row) => `${row.module}:${row.stage}`)).size,
+      "375 个模块/阶段证据键必须唯一",
+    ).toBe(EXPECTED_VISUAL_EVIDENCE_COUNT);
+    expect(
+      stepLog.filter((row) => !fs.existsSync(path.join(EVIDENCE_DIR, row.evidence))),
+      "step-log 中登记的 375 张 PNG 必须全部落盘",
+    ).toEqual([]);
     expect(evidence.pageErrors, "全候选期间不允许 pageerror").toEqual([]);
     expect(evidence.consoleErrors, "全候选期间不允许控制台 error").toEqual([]);
     expect(evidence.admin5xx, "全候选期间 /api/admin/* 不允许 5xx").toEqual([]);
@@ -218,6 +267,13 @@ test("75 个模块统一锁定：侧栏首轮、逐页刷新、浏览器返回�
         {
           buildId: process.env.PC_FINAL_BUILD_ID ?? "unknown",
           completedAt: new Date().toISOString(),
+          healthSummary: summarizeHealth(evidence),
+          visualEvidenceSummary: {
+            expectedModules: MODULES.length,
+            stages: VISUAL_EVIDENCE_STAGES,
+            expectedScreenshotCount: EXPECTED_VISUAL_EVIDENCE_COUNT,
+            capturedScreenshotCount: stepLog.length,
+          },
           ...evidence,
         },
         null,
@@ -225,8 +281,59 @@ test("75 个模块统一锁定：侧栏首轮、逐页刷新、浏览器返回�
       ),
       "utf8",
     );
+    fs.writeFileSync(path.join(EVIDENCE_DIR, "network.ndjson"), networkLog.map((row) => JSON.stringify(row)).join("\n") + "\n", "utf8");
+    fs.writeFileSync(path.join(EVIDENCE_DIR, "step-log.jsonl"), stepLog.map((row) => JSON.stringify(row)).join("\n") + "\n", "utf8");
+    fs.writeFileSync(path.join(EVIDENCE_DIR, "console.jsonl"), consoleLog.map((row) => JSON.stringify(row)).join("\n") + "\n", "utf8");
   }
 });
+
+function assertFreshEvidenceDirectory(evidenceDir: string) {
+  if (!fs.existsSync(evidenceDir)) return;
+  expect(
+    fs.readdirSync(evidenceDir),
+    "PC_FINAL_ACCEPTANCE_EVIDENCE_DIR 必须指向不存在或为空的新目录，禁止覆盖旧验收证据",
+  ).toEqual([]);
+}
+
+function summarizeHealth(evidence: RuntimeEvidence) {
+  return {
+    expectedModules: MODULES.length,
+    healthStages: ["first-settled", "refresh", "browser-back", "relogin"],
+    expectedHealthyChecks: MODULES.length * 4,
+    actualHealthyChecks: evidence.firstPass.length
+      + evidence.refreshed.length
+      + evidence.backPass.length
+      + evidence.reloginPass.length,
+    counts: {
+      firstSettled: evidence.firstPass.length,
+      refreshed: evidence.refreshed.length,
+      browserBack: evidence.backPass.length,
+      relogin: evidence.reloginPass.length,
+    },
+  };
+}
+
+async function captureFullModuleEvidence(
+  page: Page,
+  module: (typeof MODULES)[number],
+  stage: VisualEvidenceStage,
+  stepLog: VisualEvidenceRow[],
+) {
+  const directory = path.join(EVIDENCE_DIR, module.id);
+  fs.mkdirSync(directory, { recursive: true });
+  const fileName = `${stage}.png`;
+  await page.screenshot({ path: path.join(directory, fileName), fullPage: true });
+  stepLog.push({
+    at: new Date().toISOString(),
+    module: module.id,
+    stage,
+    visibleEntry: `aside a[href="${module.path}"]`,
+    url: page.url(),
+    expected: "visible sidebar route, settled authoritative page, no terminal runtime error",
+    result: "captured",
+    evidence: `${module.id}/${fileName}`,
+  });
+}
 
 async function loginFromVisibleEntry(page: Page) {
   const username = page.locator('input[autocomplete="username"]');
@@ -390,11 +497,18 @@ async function waitForModuleMediaQuiet(
   module: (typeof MODULES)[number],
 ) {
   if (module.id !== "M1") return;
+  await expect.poll(() => page.evaluate(() =>
+    document.querySelector("main [data-m1-roster-state]")
+      ?.getAttribute("data-m1-roster-state") ?? "missing"), {
+    message: "M1 必须等权威坐席读取退出 pending，不能靠请求计数初始零值跳过",
+    timeout: 20_000,
+    intervals: [100, 250, 500, 1_000],
+  }).toMatch(/^(available|fail-closed)$/);
   await expect.poll(() => page.evaluate(() => {
     const images = Array.from(document.querySelectorAll<HTMLImageElement>("main img"));
-    return images.length > 0 && images.every((image) => image.complete);
+    return images.length === 0 || images.every((image) => image.complete);
   }), {
-    message: "M1 客服头像应完成加载后再按真实用户节奏离开页面",
+    message: "M1 若存在本地媒体，必须完成加载后再按真实用户节奏离开页面",
     timeout: 20_000,
     intervals: [100, 250, 500, 1_000],
   }).toBe(true);

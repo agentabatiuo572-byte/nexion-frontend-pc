@@ -569,6 +569,57 @@ export async function createH3MonthlyMission(mission: Record<string, any>, reaso
   );
 }
 
+export type H3MissionKind = "MISSION" | "MONTHLY";
+
+export async function editH3Mission(
+  taskCode: string,
+  taskKind: H3MissionKind,
+  name: string,
+  expectedName: string,
+  reason: string,
+) {
+  return growthRequest<Record<string, any>>(
+    `/quest-events/tasks/${encodeURIComponent(taskCode)}`,
+    { method: "PATCH", body: JSON.stringify({ taskKind, name, expectedName, reason, operator: currentAdminOperator() }) },
+    "h3-mission-edit",
+  );
+}
+
+export async function transitionH3Mission(
+  taskCode: string,
+  taskKind: H3MissionKind,
+  targetStatus: "active" | "paused",
+  expectedStatus: "active" | "paused",
+  reason: string,
+) {
+  return growthRequest<Record<string, any>>(
+    `/quest-events/tasks/${encodeURIComponent(taskCode)}/status`,
+    { method: "PATCH", body: JSON.stringify({ taskKind, targetStatus, expectedStatus, reason, operator: currentAdminOperator() }) },
+    "h3-mission-status",
+  );
+}
+
+export async function archiveH3Mission(
+  taskCode: string,
+  taskKind: H3MissionKind,
+  expectedStatus: "active" | "paused",
+  reason: string,
+) {
+  return growthRequest<Record<string, any>>(
+    `/quest-events/tasks/${encodeURIComponent(taskCode)}/archive`,
+    { method: "POST", body: JSON.stringify({ taskKind, targetStatus: "archived", expectedStatus, reason, operator: currentAdminOperator() }) },
+    "h3-mission-archive",
+  );
+}
+
+export async function deleteH3Mission(taskCode: string, taskKind: H3MissionKind, reason: string) {
+  return growthRequest<Record<string, any>>(
+    `/quest-events/tasks/${encodeURIComponent(taskCode)}`,
+    { method: "DELETE", body: JSON.stringify({ taskKind, targetStatus: "deleted", expectedStatus: "archived", reason, operator: currentAdminOperator() }) },
+    "h3-mission-delete",
+  );
+}
+
 export async function createH4QuestEvent(event: Record<string, any>, reason: string) {
   return growthRequest<Record<string, any>>(
     "/quest-events/events",

@@ -384,6 +384,7 @@ export type MSupportAgent = {
   transferable: boolean;
   busy: boolean;
   assignedUserCount: number;
+  version: number;
   updatedAt?: string;
 };
 
@@ -916,6 +917,7 @@ function adaptTicket(detail: SupportTicketDetail | SupportTicketView): SupportTi
   const messages = asArray<SupportTicketMessageView>("messages" in detail ? detail.messages : []).map((m) => {
     const senderType = upper(m.senderType, "USER");
     return {
+      id: typeof m.id === "number" && Number.isSafeInteger(m.id) ? m.id : undefined,
       ts: asTs(m.createdAt, updated),
       author: senderType === "USER"
         ? ("user" as const)
@@ -1121,14 +1123,14 @@ async function fetchAllSupportTickets(): Promise<AdminPage<SupportTicketView>> {
   return { total, pageNum: 1, pageSize: Math.max(records.length, pageSize), records };
 }
 
-async function fetchAllSupportConversations(): Promise<AdminPage<ContentConversationView>> {
+async function fetchAllSupportConversations(signal?: AbortSignal): Promise<AdminPage<ContentConversationView>> {
   const pageSize = 100;
-  const first = assertConversationPage(await apiRequest<unknown>(`/conversations?pageNum=1&pageSize=${pageSize}`));
+  const first = assertConversationPage(await apiRequest<unknown>(`/conversations?pageNum=1&pageSize=${pageSize}`, { signal }));
   const records = [...first.records];
   const total = first.total;
   let pageNum = 2;
   while (records.length < total) {
-    const page = assertConversationPage(await apiRequest<unknown>(`/conversations?pageNum=${pageNum}&pageSize=${pageSize}`));
+    const page = assertConversationPage(await apiRequest<unknown>(`/conversations?pageNum=${pageNum}&pageSize=${pageSize}`, { signal }));
     const next = page.records;
     if (next.length === 0) throw new Error("M3_CONVERSATION_PAGE_INCOMPLETE");
     records.push(...next);
@@ -1147,6 +1149,7 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
   const messages = asArray<ContentConversationMessageView>("messages" in detail ? detail.messages : []).map((m) => {
     const agent = upper(m.senderType, "USER") !== "USER";
     return {
+      id: m.id,
       ts: asTs(m.createdAt, updated),
       sender: agent ? ("agent" as const) : ("user" as const),
       agentName: agent ? str(m.senderName, base.ownerAgentName || "客服台") : undefined,
@@ -1288,6 +1291,7 @@ function adaptSupportAgent(row: Record<string, unknown>): MSupportAgent {
     transferable: bool(row.transferable, true),
     busy: bool(row.busy, false),
     assignedUserCount: num(row.assignedUserCount, 0),
+    version: num(row.version, 1),
     updatedAt: str(row.updatedAt, ""),
   };
 }
@@ -1448,6 +1452,10 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
   };
 
   const ticketsTask = (async () => {
+    if (!authorities.includes("service_m2_read")) {
+      publish({ tickets: [], ticketsAvailable: false });
+      return;
+    }
     let warning = "工单数据";
     try {
       const page = await fetchAllSupportTickets();
@@ -1468,6 +1476,10 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
   })();
 
   const conversationsTask = (async () => {
+    if (!authorities.includes("service_m3_read")) {
+      publish({ conversations: [], conversationsAvailable: false, transferTargets: [] });
+      return;
+    }
     let warning = "会话数据";
     try {
       const page = await fetchAllSupportConversations();
@@ -1570,6 +1582,10 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
   })();
 
   const knowledgeTask = (async () => {
+    if (!authorities.includes("service_m4_read")) {
+      publish({ faqs: [], sla: [], knowledgeAvailable: false });
+      return;
+    }
     try {
       const knowledge = assertSupportKnowledgeOverview(await apiRequest<unknown>("/knowledge/overview"));
       publish({
@@ -1583,6 +1599,10 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
   })();
 
   const templatesTask = (async () => {
+    if (!authorities.includes("service_m5_read")) {
+      publish({ sessionTemplatesAvailable: false });
+      return;
+    }
     try {
       const templates = requireSessionTemplateOverview(await apiRequest<unknown>("/session-templates/overview"));
       const scripts = templates.scripts!.map(adaptScript);
@@ -1618,7 +1638,27 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
     }
   })();
 
-  const tasks = [ticketsTask, conversationsTask, m1Task, m2CandidatesTask, knowledgeTask, templatesTask];
+  const m3RuntimeTask = (async () => {
+    if (!authorities.includes("service_m3_read")) return;
+    try {
+      const transferTargets = await apiRequest<Array<Record<string, unknown>>>("/conversations/transfer-targets");
+      if (authorities.includes("service_m5_read")) {
+        publish({ transferTargets: Array.isArray(transferTargets) ? transferTargets : [] });
+        return;
+      }
+      const runtime = await apiRequest<SessionTemplateOverview>("/session-templates/runtime");
+      publish({
+        transferTargets: Array.isArray(transferTargets) ? transferTargets : [],
+        workbenchPolicy: { timeoutFallback: bool(runtime.workbenchPolicy?.timeoutFallback, false) ? "on" : "off" },
+        scripts: asArray<SessionScriptView>(runtime.scripts).map(adaptScript),
+        replyTemplates: asArray<SessionReplyTemplateView>(runtime.replyTemplates).map(adaptReplyTemplate),
+      });
+    } catch {
+      publish({ transferTargets: [] }, "会话运行配置");
+    }
+  })();
+
+  const tasks = [ticketsTask, conversationsTask, m1Task, m2CandidatesTask, knowledgeTask, templatesTask, m3RuntimeTask];
   await Promise.all(tasks);
   if (!isMContentSessionCurrent(mContentSessionKey)) {
     throw new Error("M_CONTENT_AUTH_EPOCH_CHANGED");
@@ -1630,6 +1670,31 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
 export async function fetchMServicePendingConversations(): Promise<SessionConvo[]> {
   const page = await fetchAllSupportConversations();
   return page.records.map(adaptConversation);
+}
+
+/**
+ * Authoritative M3 reconnect snapshot. The list is fully paged and every row is
+ * replaced with its current detail (including persistent message ids) before
+ * the SSE hook may report ready.
+ */
+export async function fetchMConversationSnapshot(signal?: AbortSignal): Promise<SessionConvo[]> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const page = await fetchAllSupportConversations(signal);
+    const rows = page.records.map(adaptConversation);
+    const details = await detailOrUnavailable(
+      rows,
+      (id) => apiRequest<unknown>(`/conversations/${encodeURIComponent(id)}`, { signal }),
+      (value) => adaptConversation(assertConversationDetail(value)),
+    );
+    if (!details.complete) throw new Error("M3_CONVERSATION_DETAILS_UNAVAILABLE");
+    const verification = await fetchAllSupportConversations(signal);
+    const beforeIds = page.records.map((row) => row.conversationNo).sort();
+    const afterIds = verification.records.map((row) => row.conversationNo).sort();
+    if (page.total === verification.total && JSON.stringify(beforeIds) === JSON.stringify(afterIds)) {
+      return details.rows;
+    }
+  }
+  throw new Error("M3_CONVERSATION_SNAPSHOT_UNSTABLE");
 }
 
 export async function fetchMSessionScriptsPage(pageNum = 1, pageSize = 5): Promise<AdminPage<AdvisorScript>> {
@@ -1973,13 +2038,6 @@ export const mContentActions = {
       body: JSON.stringify(withReason({ expectedStatus: toBackendConversationStatus(expectedStatus), expectedVersion }, reason)),
     });
   },
-  fallbackTransfer(conversationNo: string, expectedStatus: ConversationExpectedStatus, expectedVersion: number, reason: string, idempotencyKey?: string) {
-    return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/transfer/fallback`, {
-      method: "POST",
-      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
-      body: JSON.stringify(withReason({ expectedStatus: toBackendConversationStatus(expectedStatus), expectedVersion }, reason)),
-    });
-  },
   initiateConversation(convo: {
     conversationType: SessionConvo["type"];
     userId?: number;
@@ -2015,6 +2073,7 @@ export const mContentActions = {
     enabled?: boolean;
     transferable?: boolean;
     busy?: boolean;
+    expectedVersion: number;
   }, reason: string, idempotencyKey?: string) {
     return apiRequest<MSupportAgent>(`/support-agents/${encodeURIComponent(String(adminId))}/profile`, {
       method: "PATCH",
@@ -2031,6 +2090,7 @@ export const mContentActions = {
     transferable?: boolean;
     busy?: boolean;
     userIds?: number[];
+    expectedVersion: number;
   }, reason: string, idempotencyKey?: string) {
     return apiRequest<MSupportAgent>(`/support-agents/${encodeURIComponent(String(adminId))}/seat-assignment`, {
       method: "PATCH",
@@ -2048,15 +2108,11 @@ export const mContentActions = {
     const normalizedUserIds = Array.from(new Set(userIds
       .map((userId) => Number(userId))
       .filter((userId) => Number.isFinite(userId) && userId > 0)));
-    const assignments: MAdvisorAssignment[] = [];
-    for (const userId of normalizedUserIds) {
-      assignments.push(await apiRequest<MAdvisorAssignment>(`/support-agents/${encodeURIComponent(String(adminId))}/assignments`, {
-        method: "POST",
-        headers: idempotencyKey ? { "Idempotency-Key": `${idempotencyKey}:${userId}` } : undefined,
-        body: JSON.stringify(withReason({ userId }, reason)),
-      }));
-    }
-    return assignments;
+    return apiRequest<MAdvisorAssignment[]>(`/support-agents/${encodeURIComponent(String(adminId))}/assignments/batch`, {
+      method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify(withReason({ userIds: normalizedUserIds }, reason)),
+    });
   },
   deactivateAdvisorAssignment(adminId: number, assignmentId: number, reason: string, idempotencyKey?: string) {
     return apiRequest<MAdvisorAssignment>(`/support-agents/${encodeURIComponent(String(adminId))}/assignments/${encodeURIComponent(String(assignmentId))}`, {

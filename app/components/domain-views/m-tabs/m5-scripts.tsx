@@ -184,6 +184,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
     [currentAdminId, supportAgents],
   );
   const isSuperAdmin = currentRoleKey === "superadmin" || currentRoleKey === "super";
+  const hasM1ReadAuthority = isSuperAdmin || Boolean(authorities?.includes("service_m1_read"));
   const hasM5WriteAuthority = isSuperAdmin || Boolean(authorities?.includes("service_m5_write"));
   const isContentOperator = currentRoleKey === "content";
   const isSupportM5Supervisor = currentRoleKey === "support" && isSupportSupervisor(currentSupportAgent);
@@ -219,6 +220,12 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
   };
 
   useEffect(() => {
+    if (!hasM1ReadAuthority) {
+      setAgentPageData(null);
+      setAgentPageError("");
+      setAgentPageLoading(false);
+      return;
+    }
     let alive = true;
     setAgentPageLoading(true);
     setAgentPageError("");
@@ -236,7 +243,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
     return () => {
       alive = false;
     };
-  }, [agentPage, agentSnapshot, assignmentSnapshot]);
+  }, [agentPage, agentSnapshot, assignmentSnapshot, hasM1ReadAuthority]);
 
   useEffect(() => {
     let alive = true;
@@ -482,8 +489,11 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
       {sessionTemplatesAvailable && !canManageM5Content && (
         <div className="itint">当前账号只有查看权限；仅超级管理员、内容运营或客服主管可维护 M5 内容。</div>
       )}
+      {!hasM1ReadAuthority && (
+        <div className="itint">当前账号未获 M1 坐席名册权限；M5 内容维护仍可正常使用。</div>
+      )}
 
-      <div className="card">
+      {hasM1ReadAuthority && <div className="card">
         <div className="card-pad" style={{ paddingBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
           <div className="sec-h" style={{ margin: 0 }}>
             <span className="t">客服岗位与专属客服</span>
@@ -494,7 +504,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
           <SensTag />
         </div>
         <div style={{ padding: "0 8px 8px" }}>
-          {agentPageLoading && <div className="itint" style={{ margin: "0 10px 8px" }}>正在加载客服分页...</div>}
+          {agentPageLoading && !agentPageData && <div className="itint" style={{ margin: "0 10px 8px" }}>正在加载客服分页...</div>}
           {!agentPageLoading && agentPageError && (
             <div className="itint" style={{ margin: "0 10px 8px" }}>客服分页加载失败 · {agentPageError}</div>
           )}
@@ -565,7 +575,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
           })}
           <Pager page={agentPage} total={agentTotal} pageSize={SUPPORT_AGENT_PAGE_SIZE} onPage={setAgentPage} />
         </div>
-      </div>
+      </div>}
 
       <div style={{ display: "grid", gridTemplateColumns: "1.15fr 1fr", gap: 16 }}>
         <div className="card card-pad">
@@ -815,6 +825,7 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
     try {
       const succeeded = await ctx.setParam("I.support.agentProfile.__update", JSON.stringify({
         adminId: agent.adminId,
+        expectedVersion: agent.version,
         serviceTypes,
         tags,
         maxConcurrent: Math.max(0, Math.min(40, Math.round(Number(maxConcurrent) || 0))),

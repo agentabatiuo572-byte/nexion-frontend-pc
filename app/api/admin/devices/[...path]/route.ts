@@ -15,6 +15,7 @@ function jsonError(status: number, message: string) {
 
 function backendPath(parts: string[]) {
   const isOverview = parts[0] === "overview" && parts.length === 1;
+  const isObservability = parts[0] === "observability" && parts.length === 1;
   const isSkuCollection = parts[0] === "skus" && parts.length === 1;
   const isSku = parts[0] === "skus" && parts.length === 2 && !!parts[1];
   const isSkuStatus = parts[0] === "skus" && parts.length === 3 && !!parts[1] && parts[2] === "status";
@@ -46,6 +47,7 @@ function backendPath(parts: string[]) {
   const isComputeConfigParam = parts[0] === "compute-config" && parts[1] === "params" && parts.length === 3 && !!parts[2];
   if (
     !isOverview
+    && !isObservability
     && !isSkuCollection
     && !isSku
     && !isSkuStatus

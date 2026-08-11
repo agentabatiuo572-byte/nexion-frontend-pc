@@ -49,6 +49,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
   const canAdjustMin = isSuperAdmin || authorities.includes("finprod_g1_min_write");
   const canToggleSale = isSuperAdmin || authorities.includes("finprod_g1_write");
   const canKill = isSuperAdmin || authorities.includes("finprod_g1_kill_toggle");
+  const canRestore = isSuperAdmin || authorities.includes("emergency_j1_gate_resume");
   const [overview, setOverview] = useState<G1Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -223,8 +224,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
     });
   };
 
-  // J1 只有 5 个粗粒度业务闸(withdraw/staking/genesis/exchange/trial),没有单档粒度,
-  // 所以单档熔断的解除只能在本页做;缺了它熔断就是一扇单向门。
+  // 单档状态在 G1 展示，但恢复权限和后端命令归 J1；页面只发起 J1 授权的恢复命令。
   const resumeTier = (pool: G1Pool) => {
     if (!pool.killed) return;
     openActionConfirm({
@@ -324,7 +324,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
                   </button>
                   {" "}
                   {pool.killed
-                    ? <button className="l-btn sm mc" disabled={busy || !canKill} title={canKill ? "解除该档熔断,需过备付金覆盖率红线" : "缺少 finprod_g1_kill_toggle 权限"} onClick={() => resumeTier(pool)}>解除熔断</button>
+                    ? <button className="l-btn sm mc" disabled={busy || !canRestore} title={canRestore ? "解除该档熔断,需过备付金覆盖率红线" : "缺少 emergency_j1_gate_resume 权限"} onClick={() => resumeTier(pool)}>解除熔断</button>
                     : <button className="l-btn sm mc" disabled={busy || !canKill} title={canKill ? "熔断该档" : "缺少 finprod_g1_kill_toggle 权限"} onClick={() => killTier(pool)}>熔断</button>}
                 </td>
               </tr>

@@ -148,6 +148,8 @@ export function assertB3Dashboard(value: unknown): asserts value is JsonRecord {
   ratio(metrics.day0Numerator, metrics.day0Denominator, metrics.day0AccessRate, "B3", "auxMetrics.day0AccessRate");
   ratio(metrics.day7Numerator, metrics.day7Denominator, metrics.day7Retention, "B3", "auxMetrics.day7Retention");
   if (nullablePercentage(metrics.day0Target, "B3", "auxMetrics.day0Target") !== 95) invalid("B3", "auxMetrics.day0Target");
+  const day0WindowSeconds = nonNegativeInteger(metrics.day0WindowSeconds, "B3", "auxMetrics.day0WindowSeconds");
+  if (day0WindowSeconds < 30 || day0WindowSeconds > 600) invalid("B3", "auxMetrics.day0WindowSeconds");
   if (nullablePercentage(metrics.day7Target, "B3", "auxMetrics.day7Target") !== 60) invalid("B3", "auxMetrics.day7Target");
   const day7Mature = boolean(metrics.day7Mature, "B3", "auxMetrics.day7Mature");
   const day7Denominator = nonNegativeInteger(metrics.day7Denominator, "B3", "auxMetrics.day7Denominator");

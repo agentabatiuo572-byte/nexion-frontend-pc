@@ -576,6 +576,7 @@ export function normalizeK6Dashboard(value: unknown, path = "janus.dashboard"): 
   if (Object.values(distribution).reduce((sum, count) => sum + count, 0) !== summary.totalDevices) invalid(`${path}.distribution.total`);
   const primaryStrategy = row.primaryStrategy == null || emptyRecord(row.primaryStrategy) ? undefined : normalizeK6Strategy(row.primaryStrategy, `${path}.primaryStrategy`);
   return {
+    executionEnvironment: oneOf(row.executionEnvironment, ["PRODUCTION", "SANDBOX"] as const, `${path}.executionEnvironment`),
     summary,
     distribution,
     funnel: normalizeK6Funnel(row.funnel, `${path}.funnel`),
