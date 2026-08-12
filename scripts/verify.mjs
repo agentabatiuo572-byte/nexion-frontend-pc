@@ -110,6 +110,7 @@ const GEARS = [
   ["interaction audit", "node", ["scripts/admin-interaction-audit.mjs"]],
   ["M support surface audit", "node", ["scripts/admin-support-surface-audit.mjs"]],
   ["M1 pending/failure state contract", "node", ["--test", "tests/m1-acceptance-contract.test.mjs"]],
+  ["M3 App support authority contract", "node", ["--test", "tests/m3-acceptance-contract.test.mjs"]],
   ["CGM field coverage", "node", ["scripts/cgm-coverage.mjs"]],
   ["no-double-sign residue", "node", ["scripts/no-double-sign-terms.mjs"]],
   ["ops-actions integrity", "node", ["scripts/ops-actions-audit.mjs"]],
@@ -134,6 +135,7 @@ const GEARS = [
   ["A2 coverage sentinel", "node", ["scripts/a2-audit-coverage-sentinel.mjs"]],
   ["A2 outcome-uncertain contract", "node", ["--test", "tests/a2-outcome-uncertain-contract.test.mjs"]],
   ["E1 acceptance contract", "node", ["--test", "tests/e1-acceptance-contract.test.mjs"]],
+  ["E4 commerce acceptance sandbox contract", "node", ["--test", "tests/commerce-acceptance-sandbox-contract.test.mjs"]],
   ["operation-confirm error copy", "node", ["--test", "tests/operation-confirm-error-message.test.mjs"]],
   ["G4 invite-code registry contract", "node", ["--test", "tests/g4-invite-registry-contract.test.mjs"]],
   // GEN10b 市场状态开关:此前后台侧一道专属门都没有,前一版的自由输入违规就是这么溜过去的。
@@ -173,6 +175,7 @@ const GEARS = [
   ["F1 direct-write pending-store contract", "node", ["--test", "tests/f1-direct-pending-store-contract.test.mjs"]],
   ["E domain pending-store contract", "node", ["--test", "tests/e-pending-store-contract.test.mjs"]],
   ["H8 pending-store contract", "node", ["--test", "tests/h8-pending-store-contract.test.mjs"]],
+  ["L6 acceptance sandbox observability contract", "node", ["--test", "tests/l6-acceptance-sandbox-observability-contract.test.mjs"]],
   ["endpoint citation ledger", "node", ["scripts/endpoint-citation-sentinel.mjs"]],
   ["error-copy throat sentinel", "node", ["--experimental-strip-types", "scripts/error-copy-throat-sentinel.mjs"]],
   ["error-copy throat contract", "node", ["--experimental-strip-types", "--test", "tests/error-messages-backend-unavailable.test.mjs", "tests/fetch-guard.test.mjs"]],

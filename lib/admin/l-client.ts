@@ -429,6 +429,79 @@ export async function fetchL6Behavior(input: L6BehaviorQuery = {}): Promise<Reco
   };
 }
 
+export type L6AcceptanceQuery = {
+  runId: string;
+  observationToken?: string;
+  actorHash?: string;
+  sessionHash?: string;
+  route?: string;
+  from: string;
+  to: string;
+};
+
+/** datetime-local has no zone. Treat its wall-clock value as the published
+ * business clock (Asia/Shanghai, UTC+08), never as the operator browser zone. */
+export function l6AcceptanceBusinessTime(value: string): string {
+  const local = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/.test(local)) {
+    throw new Error("L6_ACCEPTANCE_TIME_WINDOW_INVALID");
+  }
+  return `${local.length === 16 ? `${local}:00` : local}+08:00`;
+}
+
+/** Deliberately separate from production L6; source and response contract must both prove SANDBOX. */
+export async function fetchL6AcceptanceBehavior(input: L6AcceptanceQuery): Promise<Record<string, unknown>> {
+  const query = new URLSearchParams({ runId: input.runId, from: l6AcceptanceBusinessTime(input.from), to: l6AcceptanceBusinessTime(input.to) });
+  if (input.observationToken?.trim()) query.set("observationToken", input.observationToken.trim());
+  if (input.actorHash?.trim()) query.set("actorHash", input.actorHash.trim());
+  if (input.sessionHash?.trim()) query.set("sessionHash", input.sessionHash.trim());
+  if (input.route?.trim()) query.set("route", input.route.trim());
+  try {
+    const response = await guardedFetch(`/api/admin/bi/behavior/acceptance?${query.toString()}`, { cache: "no-store" });
+    const body = await response.text();
+    let payload: ApiResult<unknown>;
+    try {
+      payload = body ? JSON.parse(body) as ApiResult<unknown> : {};
+    } catch {
+      throw acceptanceFailure(response.status, "L6_ACCEPTANCE_RESPONSE_SCHEMA_INVALID");
+    }
+    if (!response.ok || (payload.code !== undefined && payload.code >= 400)) {
+      const effectiveStatus = !response.ok ? response.status : payload.code || response.status;
+      throw acceptanceFailure(effectiveStatus, payload.message || "L6_ACCEPTANCE_UNAVAILABLE");
+    }
+    const data = rec(payload.data);
+    const delta = rec(data.productionDelta);
+    if (data.source !== "mock" || data.sourceEnvironment !== "SANDBOX" || data.status !== "AVAILABLE"
+      || num(delta.factRows) !== 0 || num(delta.outboxRows) !== 0) {
+      throw acceptanceFailure(response.status, "L6_ACCEPTANCE_RESPONSE_SCHEMA_INVALID");
+    }
+    if (data.runId !== input.runId || typeof data.actorHash !== "string" || typeof data.sessionHash !== "string"
+      || (input.actorHash?.trim() && data.actorHash !== input.actorHash.trim())
+      || (input.sessionHash?.trim() && data.sessionHash !== input.sessionHash.trim())
+      || Number(data.matchedFacts || 0) <= 0) {
+      throw acceptanceFailure(response.status, "L6_ACCEPTANCE_RESPONSE_SCHEMA_INVALID");
+    }
+    return data;
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("L6_ACCEPTANCE_")) throw error;
+    const detail = error instanceof Error ? error.message : "unknown";
+    throw new Error(`L6_ACCEPTANCE_QUERY_FAILED/L6_ACCEPTANCE_NETWORK_FAILURE: 验收观察面网络不可达，未显示任何生产或 Sandbox 结论。${detail ? ` (${detail})` : ""}`);
+  }
+}
+
+function acceptanceFailure(status: number, detail: string): Error {
+  if (status === 401 || status === 403) {
+    return new Error("L6_ACCEPTANCE_AUTH_REQUIRED: 验收观察面无读取权限，请使用具有 bi_l6_read 权限的会话。");
+  }
+  if (status >= 500) {
+    return new Error("L6_ACCEPTANCE_SERVER_UNAVAILABLE: 验收观察面服务端异常，结果未确认，未把错误当作非验收环境。");
+  }
+  if (detail.includes("SCHEMA") || detail.includes("SOURCE_INVALID") || detail.includes("RESPONSE_SCHEMA")) {
+    return new Error("L6_ACCEPTANCE_RESPONSE_SCHEMA_INVALID: 验收观察面返回契约不完整，已拒绝展示。");
+  }
+  return new Error(`L6_ACCEPTANCE_UNAVAILABLE: 验收观察面不可用，已 fail-closed。${detail ? ` (${detail})` : ""}`);
+}
+
 export async function fetchL6ClickHeat(route: string, input: L6BehaviorQuery = {}): Promise<Record<string, unknown>> {
   const query = l6Query(input);
   query.set("route", route);

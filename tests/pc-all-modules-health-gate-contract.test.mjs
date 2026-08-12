@@ -148,7 +148,7 @@ test("actual terminal UI branches remain bound to the semantic gate", () => {
     ["../app/components/domain-views/g-tabs/g4-admin-operations.tsx", "刷新失败，以下为上次成功快照"],
     ["../app/components/domain-views/k-tabs/k4-scoring.tsx", "K4 读取失败"],
     ["../app/components/domain-views/k-tabs/k4-scoring.tsx", "告警读取失败"],
-    ["../app/components/domain-views/l-tabs/l6-behavior-heatmap.tsx", "用户行为热力图 · 加载失败"],
+    ["../app/components/domain-views/l-tabs/l6-behavior-heatmap.tsx", "验收观察面读取失败，已 fail-closed"],
     ["../app/components/domain-views/m-tabs/m2-tickets.tsx", "工单数据暂时无法同步,当前不展示空队列,也不会开放写操作。"],
     ["../app/components/domain-views/m-tabs/m3-sessions.tsx", "会话数据暂时无法同步,当前不会把空列表当作真实结果,写操作也已关闭。"],
     ["../app/components/domain-views/m-tabs/m4-kb-sla.tsx", "知识库后端当前不可用,页面已停止写入,避免显示未落库的成功状态。"],

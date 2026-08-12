@@ -13,9 +13,9 @@ import {
 } from "../scripts/lib/ops-actions-reverse-coverage.mjs";
 
 const ROOT = process.cwd();
-const BACKEND_ROOT = join(ROOT, "..", "nexion-backend");
-const UNIAPP_ROOT = join(ROOT, "..", "NX1.0-UniApp");
-const JANUS_ROOT = join(ROOT, "..", "NX1.0-Janus");
+const BACKEND_ROOT = process.env.NEXION_BACKEND_ROOT?.trim() || join(ROOT, "..", "nexion-backend");
+const UNIAPP_ROOT = process.env.NEXION_APP_ROOT?.trim() || join(ROOT, "..", "NX1.0-UniApp");
+const JANUS_ROOT = process.env.NEXION_JANUS_ROOT?.trim() || join(ROOT, "..", "NX1.0-Janus");
 const read = (relative) => readFileSync(join(ROOT, relative), "utf8");
 const readBackend = (relative) => readFileSync(join(BACKEND_ROOT, relative), "utf8");
 const manifest = JSON.parse(read("docs/ops-actions.manifest.json"));

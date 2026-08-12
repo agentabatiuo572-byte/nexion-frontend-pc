@@ -919,7 +919,8 @@
       "batch": "P1",
       "restActions": [
         "e4_order_refund",
-        "e4_order_state"
+        "e4_order_state",
+        "postCommerceAcceptanceCallback"
       ]
     },
     {
@@ -2004,10 +2005,10 @@
           "type": "uniapp-runtime",
           "file": "src/api/behavior-analytics-api.ts",
           "positivePatterns": ["path: \"/api/app/analytics/events\"", "client\\.request"],
-          "negativePatterns": ["sourceEnvironment:\\s*\"SANDBOX\"", "localStorage"]
+          "negativePatterns": ["localStorage"]
         }
       ],
-      "note": "Production 采集经真实 App HTTP ingest，服务端持久化 source_environment 且 L6 聚合只读 PRODUCTION；Acceptance/test/local-sandbox 夹具需唯一隔离 profile，mixed profile 在启动前失败关闭。"
+      "note": "Production 采集经真实 App HTTP ingest；App 请求不提交采样或环境字段，Acceptance 回执仅展示服务端签发的 mock/SANDBOX/RunID 证明。L6 正式聚合只读 PRODUCTION；Acceptance/test/local-sandbox 夹具需唯一隔离 profile，mixed profile 在启动前失败关闭。"
     },
     {
       "id": "OPS-M-01",
@@ -2059,7 +2060,8 @@
       "batch": "done",
       "restActions": [
         "createTicket",
-        "replyTicket"
+        "replyTicket",
+        "replyMSupportAcceptanceTicket"
       ]
     },
     {
@@ -2074,7 +2076,8 @@
         "updateTicketStatus",
         "updateTicketPriority",
         "assignTicket",
-        "archiveTicket"
+        "archiveTicket",
+        "closeMSupportAcceptanceTicket"
       ]
     },
     {
@@ -2101,6 +2104,7 @@
       "restActions": [
         "initiateConversation",
         "replyConversation",
+        "replyMSupportAcceptanceConversation",
         "updateConversationStatus",
         "archiveConversation",
         "archiveConversations"
@@ -2118,7 +2122,8 @@
         "transferConversation",
         "acceptTransfer",
         "returnTransfer",
-        "waitTransfer"
+        "waitTransfer",
+        "transferMSupportAcceptanceConversation"
       ]
     },
     {
@@ -3366,7 +3371,10 @@
       "status": "built",
       "view": "h-tabs/h8-referral-rewards.tsx",
       "batch": "done",
-      "restAction": "h8_referral_settlement"
+      "restActions": [
+        "h8_referral_settlement",
+        "runH8AcceptanceSandboxSettlement"
+      ]
     },
     {
       "id": "OPS-A-28",
@@ -3579,7 +3587,7 @@
         {
           "type": "uniapp-runtime",
           "file": "src/api/support-api.ts",
-          "positivePatterns": ["path: \"/api/app/support/tickets\"", "parseTicketDetail\\(await client\\.request", "SUPPORT_TICKET_RESPONSE_INVALID", "idempotencyKey: requiredKey\\(key\\)"],
+          "positivePatterns": ["supportPath\\(\"/tickets\"\\)", "parseTicketDetail\\(await client\\.request", "SUPPORT_TICKET_RESPONSE_INVALID", "idempotencyKey: requiredKey\\(key\\)"],
           "negativePatterns": ["localStorage", "status:\\s*\"open\"[\\s\\S]{0,80}Date\\.now"]
         },
         {
@@ -3603,7 +3611,7 @@
         {
           "type": "uniapp-runtime",
           "file": "src/api/support-api.ts",
-          "positivePatterns": ["path: \"/api/app/support/conversations\"", "path: `/api/app/support/conversations/\\$\\{pathId\\(conversation\\.id\\)\\}/replies`", "SUPPORT_CONVERSATION_RESPONSE_INVALID", "expectedVersion: conversation\\.version"],
+          "positivePatterns": ["supportPath\\(\"/conversations\"\\)", "supportPath\\(`/conversations/\\$\\{pathId\\(conversation\\.id\\)\\}/replies`\\)", "SUPPORT_CONVERSATION_RESPONSE_INVALID", "expectedVersion: conversation\\.version"],
           "negativePatterns": ["messages\\.push\\(", "receiptStatus:\\s*\"delivered\""]
         },
         {
@@ -3613,7 +3621,7 @@
           "negativePatterns": ["replyConversation[\\s\\S]{0,120}catch[\\s\\S]{0,120}APP_CONVERSATION_REPLIED", "CONVERSATION_CONFLICT[\\s\\S]{0,100}return ApiResult\\.ok"]
         }
       ],
-      "note": "Production：App 会话、消息已读/回复与转工单全部围绕服务端 conversationNo、status/version 读写；断连、冲突或拒绝保持未发送，不伪造 delivered。"
+      "note": "Production：App 会话、消息已读/回复与转工单全部围绕服务端 conversationNo、status/version 读写；Acceptance Sandbox 下 PC 回复只写独立客服沙箱事实并以稳定命令号回读，断连、冲突或拒绝保持未发送，不伪造 delivered。"
     },
     {
       "id": "OPS-M-28",
@@ -3657,7 +3665,7 @@
         {
           "type": "backend-runtime",
           "file": "src/main/java/ffdd/opsconsole/finance/application/FundsSandboxService.java",
-          "positivePatterns": ["public OrderView createTopup\\(", "mapper\\.insertOrder\\(write\\)", "mapper\\.transitionOrder\\(orderNo, userId, \"PENDING\", \"SETTLED\", 0L\\)", "mapper\\.creditWallet\\("],
+          "positivePatterns": ["public OrderView createTopup\\(", "mapper\\.insertOrder\\(write\\)", "mapper\\.transitionOrder\\(runId, orderNo, userId, \"PENDING\", \"SETTLED\", 0L\\)", "mapper\\.creditWallet\\("],
           "negativePatterns": ["createTopup[\\s\\S]{0,120}nx_user_wallet", "createTopup[\\s\\S]{0,300}sourceEnvironment\\(\\)"]
         }
       ],
@@ -3681,7 +3689,7 @@
         {
           "type": "backend-runtime",
           "file": "src/main/java/ffdd/opsconsole/finance/application/FundsSandboxService.java",
-          "positivePatterns": ["No ETA, timer or client-owned completion", "Only applyCallback may enter a terminal state", "transitionOrder\\(normalizedOrderNo, userId, \"SUBMITTED\", normalizedStatus, expectedVersion\\)", "FUNDS_SANDBOX_CALLBACK_REPLAY_CONFLICT"],
+          "positivePatterns": ["No ETA, timer or client-owned completion", "Only applyCallback may enter a terminal state", "transitionOrder\\(runId, normalizedOrderNo, userId, \"SUBMITTED\", normalizedStatus, expectedVersion\\)", "FUNDS_SANDBOX_CALLBACK_REPLAY_CONFLICT"],
           "negativePatterns": ["@Scheduled", "Thread\\.sleep"]
         }
       ],

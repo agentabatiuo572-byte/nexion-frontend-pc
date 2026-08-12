@@ -666,7 +666,7 @@ async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[],
 
   const newMessage = row.messages.length > before.messages.length ? row.messages[row.messages.length - 1] : null;
   if (newMessage?.sender === "agent") {
-    if (action?.includes("transfer_wait")) {
+    if (action?.includes("transfer_wait") || action?.includes("等待处理")) {
       await mContentActions.waitTransfer(row.id, "transferred", before.version, reason, idempotencyKey);
     } else {
       const body = newMessage.ctaHref ? `${newMessage.text} ${newMessage.ctaHref}` : newMessage.text;

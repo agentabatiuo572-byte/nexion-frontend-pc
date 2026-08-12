@@ -172,7 +172,8 @@ assertContains(uniSupportApi, [
   "async function allTickets()",
   "while (items.length < total)",
   "SUPPORT_TICKET_PAGE_INCOMPLETE",
-  'path: "/api/app/support/tickets"',
+  'supportPath("/tickets")',
+  'const page = parseTicketPage(await client.request',
 ]);
 assertAbsent(uniTicketStore, "@/mock/tickets", "生产工单不得回退本地 mock");
 assertAbsent(uniTicketStore, "lastReplyAt: raw.lastReplyAt ?? ticket.updatedAt", "不得用旧本地字段回退服务端时间");

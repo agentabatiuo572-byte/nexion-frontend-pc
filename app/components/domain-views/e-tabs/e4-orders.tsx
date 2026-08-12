@@ -1,4 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { fetchCommerceAcceptanceSandboxOrders, postCommerceAcceptanceCallback, type CommerceAcceptanceEvent, type CommerceAcceptanceSandboxOrder } from "@/lib/admin/commerce-acceptance-sandbox";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { CodeTag, Badge, DataListPager } from "../design-kit";
 import type { EViewCtx } from "./types";
 import { ostate, stateLabel } from "./data";
@@ -18,6 +20,17 @@ const IN_FLIGHT_STATES = new Set(["placed", "paid", "provisioning"]);
 const money = (value: number) => `$${Math.round(value).toLocaleString()}`;
 
 export function E4Orders({ ctx }: { ctx: EViewCtx }) {
+  const [sandboxOrders, setSandboxOrders] = useState<CommerceAcceptanceSandboxOrder[]>([]);
+  const [sandboxRunId, setSandboxRunId] = useState("");
+  const [sandboxReason, setSandboxReason] = useState("");
+  const [sandboxError, setSandboxError] = useState("");
+  const [sandboxLoading, setSandboxLoading] = useState(false);
+  const reloadSandbox = async () => { setSandboxLoading(true); try { const page = await fetchCommerceAcceptanceSandboxOrders(); setSandboxOrders(page.orders); setSandboxRunId(page.runId); setSandboxError(""); } catch (e) { setSandboxError(displayAdminError(e)); } finally { setSandboxLoading(false); } };
+  const callback = async (order: CommerceAcceptanceSandboxOrder, status: CommerceAcceptanceEvent) => {
+    if (!sandboxReason.trim()) { setSandboxError("需要操作原因"); return; }
+    const eventId = `pc-commerce:${order.orderNo}:${status}:${order.version}`;
+    try { await postCommerceAcceptanceCallback(order.orderNo, { eventId, status, expectedVersion: order.version, reason: sandboxReason.trim() }); await reloadSandbox(); } catch (e) { setSandboxError(displayAdminError(e)); }
+  };
   const { orders } = ctx;
   const curF = ctx.e4Filter;
   const stateCounts = useMemo(() => {
@@ -58,6 +71,13 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
         { k: "流转中订单", v: inFlight, sub: "当前页 已下单 / 已支付 / 开通中", tone: inFlight ? "cyan" : "" },
         { k: "失败终态", v: (stateCounts.get("payment_failed") ?? 0) + (stateCounts.get("provisioning_failed") ?? 0) + (stateCounts.get("chargeback") ?? 0), sub: "支付失败 / 开通失败 / 拒付", tone: "danger" },
       ]} />
+
+      <section className="q-card">
+        <div className="q-h"><span className="ttl">Acceptance Sandbox 商城回调</span><span className="sub">仅 source=mock · SANDBOX · run={sandboxRunId || "未读取"}；生产 E4 不接入此面板</span><button className="l-btn sm" onClick={() => void reloadSandbox()}>{sandboxLoading ? "读取中" : "读取 Sandbox 订单"}</button></div>
+        <div className="filter-bar"><input className="fld" value={sandboxReason} onChange={(e) => setSandboxReason(e.target.value)} placeholder="必填：本次回调原因" /></div>
+        {sandboxError && <div className="tint warn tiny">{sandboxError}</div>}
+        {sandboxOrders.map((o) => <div className="q-row" key={o.orderNo}><div className="oid">{o.orderNo}</div><div className="sku">{o.productNo} ×{o.quantity}</div><div className="amt">${o.amountUsdt}</div><div><Badge tone="warn">{o.state}</Badge></div><div>v{o.version}</div><div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{(["PAYMENT_SUCCEEDED", "PAYMENT_FAILED", "EXPIRED", "FULFILLMENT_SUCCEEDED", "FULFILLMENT_FAILED", "REFUNDED"] as CommerceAcceptanceEvent[]).map((event) => <button className="l-btn sm" key={event} onClick={() => void callback(o, event)}>{event}</button>)}</div></div>)}
+      </section>
 
       {/* 状态机流转图 */}
       <section className="sm-card">

@@ -10,7 +10,7 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { downloadL6Behavior, fetchL6Behavior, fetchL6ClickHeat } from "@/lib/admin/l-client";
+import { downloadL6Behavior, fetchL6AcceptanceBehavior, fetchL6Behavior, fetchL6ClickHeat } from "@/lib/admin/l-client";
 import {
   aggregateByDepth,
   activityForWindow,
@@ -124,6 +124,20 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
   const [liveError, setLiveError] = useState("");
   const [exporting, setExporting] = useState(false);
   const [reloadRevision, setReloadRevision] = useState(0);
+  const [acceptanceObservation, setAcceptanceObservation] = useState<Record<string, unknown> | null>(null);
+  const [acceptanceError, setAcceptanceError] = useState("输入 Run ID 后读取独立 Sandbox 事实。");
+  const [acceptanceRunId, setAcceptanceRunId] = useState("");
+  const [acceptanceObservationToken, setAcceptanceObservationToken] = useState("");
+  const [acceptanceActorHash, setAcceptanceActorHash] = useState("");
+  const [acceptanceSessionHash, setAcceptanceSessionHash] = useState("");
+  const [acceptanceRoute, setAcceptanceRoute] = useState("");
+  const [acceptanceFrom, setAcceptanceFrom] = useState("");
+  const [acceptanceTo, setAcceptanceTo] = useState("");
+  const useRecentAcceptanceWindow = () => {
+    const businessClock = (offsetMinutes: number) => new Date(Date.now() + (8 * 60 + offsetMinutes) * 60_000).toISOString().slice(0, 16);
+    setAcceptanceFrom(businessClock(-60));
+    setAcceptanceTo(businessClock(0));
+  };
   const gradId = "l6heat-" + useId().replace(/:/g, "");
 
   useEffect(() => {
@@ -146,6 +160,28 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
       .finally(() => { if (!cancelled) setRefreshing(false); });
     return () => { cancelled = true; };
   }, [depth, device, locale, reloadRevision, sort, win]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!acceptanceRunId || (!acceptanceObservationToken && (!acceptanceActorHash || !acceptanceSessionHash)) || !acceptanceFrom || !acceptanceTo) {
+      setAcceptanceObservation(null);
+      setAcceptanceError("请输入 H5 观察凭证（推荐）或 Run ID、Actor hash、Session hash 与时间窗，以生成本次运行的因果隔离证据。");
+      return () => { cancelled = true; };
+    }
+    setAcceptanceError("");
+    setAcceptanceObservation({ available: false, source: "mock", sourceEnvironment: "SANDBOX", status: "LOADING" });
+    void fetchL6AcceptanceBehavior({ runId: acceptanceRunId, observationToken: acceptanceObservationToken, actorHash: acceptanceActorHash,
+      sessionHash: acceptanceSessionHash, route: acceptanceRoute, from: acceptanceFrom, to: acceptanceTo })
+      .then((data) => { if (!cancelled) setAcceptanceObservation(data); })
+      .catch((error) => { if (!cancelled) {
+        const detail = displayAdminError(error);
+        // Keep a typed failed observation instead of erasing it to null: a
+        // failure is not evidence that this is a non-acceptance environment.
+        setAcceptanceObservation({ available: false, source: "mock", sourceEnvironment: "SANDBOX", status: "FAILED", failure: detail });
+        setAcceptanceError(detail);
+      } });
+    return () => { cancelled = true; };
+  }, [acceptanceActorHash, acceptanceFrom, acceptanceObservationToken, acceptanceRoute, acceptanceRunId, acceptanceSessionHash, acceptanceTo, reloadRevision]);
 
   const heatmapData = useMemo(() => normalizeL6BehaviorHeatmap(liveRaw), [liveRaw]);
 
@@ -212,22 +248,6 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
     }
   };
 
-  if (liveError && !liveRaw) {
-    return (
-      <section className="l-card">
-        <div className="l-h"><span className="ttl">用户行为热力图 · 加载失败</span></div>
-        <div className="l-b">
-          <div className="ltint warn" style={{ fontSize: 12.5 }}>
-            <b>本次响应未通过完整性校验，未展示旧数据或伪造 0 值。</b> · {liveError}
-          </div>
-          <button className="f-cta" style={{ marginTop: 12 }} onClick={() => setReloadRevision((value) => value + 1)}>
-            重新加载
-          </button>
-        </div>
-      </section>
-    );
-  }
-
   if (!heatmapData.available && heatmapData.status === "BLOCKED_CROSS_MODULE") {
     return (
       <div>
@@ -259,8 +279,44 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
     );
   }
 
+  const acceptancePanel = (
+    <section className="l-card" style={{ marginBottom: 12 }}>
+      <div className="l-h"><span className="ttl">验收 Sandbox 独立观察面 · source=mock · SANDBOX</span></div>
+      <div className="l-b">
+        <div className="chips" style={{ flexWrap: "wrap" }}>
+          <input aria-label="Run ID" placeholder="Run ID" value={acceptanceRunId} onChange={(e) => setAcceptanceRunId(e.target.value)} />
+          <input aria-label="观察凭证" placeholder="粘贴 H5 观察凭证 (RunID.token)" value={acceptanceObservationToken} onChange={(e) => {
+            const credential = e.target.value.trim();
+            // Run IDs themselves permit dots; the opaque token is fixed-width
+            // hex, so split at the final delimiter rather than the first.
+            const separator = credential.lastIndexOf(".");
+            if (separator > 0) {
+              setAcceptanceRunId(credential.slice(0, separator));
+              setAcceptanceObservationToken(credential.slice(separator + 1));
+            } else setAcceptanceObservationToken(credential);
+          }} />
+          <input aria-label="Actor hash" placeholder="Actor hash（无凭证时必填）" value={acceptanceActorHash} onChange={(e) => setAcceptanceActorHash(e.target.value)} />
+          <input aria-label="Session hash" placeholder="Session hash（无凭证时必填）" value={acceptanceSessionHash} onChange={(e) => setAcceptanceSessionHash(e.target.value)} />
+          <input aria-label="Route" placeholder="Route (可选)" value={acceptanceRoute} onChange={(e) => setAcceptanceRoute(e.target.value)} />
+          <input aria-label="开始时间（Asia/Shanghai UTC+08）" type="datetime-local" value={acceptanceFrom} onChange={(e) => setAcceptanceFrom(e.target.value)} />
+          <input aria-label="结束时间（Asia/Shanghai UTC+08）" type="datetime-local" value={acceptanceTo} onChange={(e) => setAcceptanceTo(e.target.value)} />
+          <button className="f-cta" onClick={useRecentAcceptanceWindow}>使用最近 1 小时</button>
+          <button className="f-cta" onClick={() => setReloadRevision((value) => value + 1)}>查询隔离事实</button>
+          <span className="ltint" style={{ fontSize: 12 }}>观察窗按业务时区 Asia/Shanghai（UTC+08）提交；不按当前浏览器（例如 JST）换算。</span>
+        </div>
+        {acceptanceObservation?.available === true ? (
+          <div className="ltint cyan" style={{ marginTop: 10, fontSize: 12 }}>
+            独立事实：PV {n(Number(acceptanceObservation.pageViews || 0))} / 点击 {n(Number(acceptanceObservation.clicks || 0))}；
+            生产 fact/outbox 增量：{n(Number((acceptanceObservation.productionDelta as Record<string, unknown>)?.factRows || 0))}/
+            {n(Number((acceptanceObservation.productionDelta as Record<string, unknown>)?.outboxRows || 0))}（期望 0/0）。
+          </div>
+        ) : <div className="ltint warn" style={{ marginTop: 10, fontSize: 12 }}><b>验收观察面读取失败，已 fail-closed：</b> {acceptanceError}</div>}
+      </div>
+    </section>
+  );
+
   if (!heatmapData.pageTree.length) {
-    return <LDataState ctx={ctx} label="L6" />;
+    return <div>{acceptancePanel}<LDataState ctx={ctx} label="L6" /></div>;
   }
 
   const selectRow = (key: string) => {
@@ -271,6 +327,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
 
   return (
     <div>
+      {acceptancePanel}
       {/* stat strip */}
       {(refreshing || liveError) && (
         <div className={`ltint ${liveError ? "warn" : "cyan"}`} style={{ marginBottom: 12, fontSize: 12 }}>
@@ -529,7 +586,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
         <b>不纳入统计的系统页({heatmapData.excludedPages.length})</b>:
         <AutoGloss>{heatmapData.excludedPages.map((p) => p.titleZh).join(" · ")}（纯会话/工具页,无行为分析价值）。</AutoGloss>{" "}
         <b>L6 没有任何「写数据」动作</b>:
-        <AutoGloss>粒度 / 时间窗 / 排序均为会话级视图参数,不改任何业务规则。业务时区 {heatmapData.businessTimeZone}；clientEventId 去重；迟到事件在下一次查询纳入。</AutoGloss>
+        <AutoGloss>粒度 / 时间窗 / 排序均为会话级视图参数,不改任何业务规则。业务时区 {heatmapData.businessTimeZone}；clientEventId 去重；乱序事件会被拒绝，客户端须按原事件 ID 顺序重试。</AutoGloss>
       </p>
     </div>
   );

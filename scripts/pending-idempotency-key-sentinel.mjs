@@ -44,6 +44,7 @@ const MIGRATED = [
   "lib/admin/i-client.ts",
   "lib/admin/g4-invite-client.ts",
   "lib/admin/k6-client.ts",
+  "lib/admin/m-support-acceptance-sandbox.ts",
   "lib/admin/stable-mutation.ts",
   "lib/admin/f1-stable-write.ts",
   "lib/admin/g1-client.ts",
