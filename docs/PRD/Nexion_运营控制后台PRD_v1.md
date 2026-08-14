@@ -2667,7 +2667,7 @@ D2 是后台**最高频操盘动作**,控制平台**资金流出节奏**与**兑
 **② 后台界面**
 (a) 队列列表 + (b) 完整状态机 + (c) 批量操作面 + (d) 单笔详情,四区。
 
-**(a) 队列列表**:`[withdrawalId / userId / 金额(USDT)/ 目标地址 + 链(TRC20/ERC20/BTC/ETH)/ 提交时间 / 风险评分(来自 K4)/ KYC 态(来自 C4)/ 手续费明细(惩罚费率 penaltyFeeRate / 毛手续费 grossFee / NEX 抵扣额 nexBurned / 实际手续费 actualFee / 实际到账 netReceive)/ 24h 第几笔 / 命中规则(来自 K3 提现风控规则引擎)/ 当前状态]`;支持按状态 / 风险评分 / 金额 / 命中规则筛选与排序。**提现不因 NEX 不足被拒**——NEX 仅可选抵扣手续费,无 NEX 则付全额惩罚费、NEX 凑齐则手续费全免(无门槛)。风险评分**引用 K4**(§3.14:风险评分权威归 K4),D2 不另设评分模型;KYC 态**引用 C4**(§3.14:KYC 状态权威归 C4)。
+**(a) 队列列表**:`[withdrawalNo / userId / 金额(USDT)/ 目标地址 + 链(TRC20/ERC20/BTC/ETH)/ 提交时间 / 风险评分(来自 K4)/ KYC 态(来自 C4)/ 手续费明细(惩罚费率 penaltyFeeRate / 毛手续费 grossFee / NEX 抵扣额 nexBurned / 实际手续费 actualFee / 实际到账 netReceive)/ 24h 第几笔 / 命中规则(来自 K3 提现风控规则引擎)/ 当前状态]`;支持按状态 / 风险评分 / 金额 / 命中规则筛选与排序。**提现不因 NEX 不足被拒**——NEX 仅可选抵扣手续费,无 NEX 则付全额惩罚费、NEX 凑齐则手续费全免(无门槛)。风险评分**引用 K4**(§3.14:风险评分权威归 K4),D2 不另设评分模型;KYC 态**引用 C4**(§3.14:KYC 状态权威归 C4)。
 
 **(b) 完整提现状态机**(server-canonical,client 仅订阅):
 
@@ -2752,7 +2752,7 @@ submitted ─风控评分─▶ review-pending ─approve─▶ review-passed �
 ##### [D2-MD1] 提现放行确认
 - **功能**:对单笔提现执行 approve(`review-pending → review-passed`),确认金额、风险与水位影响后即时生效;放行实时核减 D3 储备并影响 B1 覆盖率。
 - **布局结构**:
-  1. **信息区**:withdrawalId / userId(链 C1)/ 金额(USDT)/ 目标地址 + 链 / K4 风险评分(含分档)/ KYC 态(C4)/ 命中规则(K3)/ 24h 第几笔 / 当前状态。
+  1. **信息区**:withdrawalNo / userId(链 C1)/ 金额(USDT)/ 目标地址 + 链 / K4 风险评分(含分档)/ KYC 态(C4)/ 命中规则(K3)/ 24h 第几笔 / 当前状态。
   2. **影响预览区**:server 预检 `simulate=withdraw_approve` 返回「放行后兑付覆盖率」;低于黄线展示警示条(当前值 + 黄/红线);低于红线升级为**阻断**(确认钮置灰,文案含「覆盖率低于红线,server 将拒绝(422)」);大额(≥ $1,000)加「大额放行」提示行 + K5 复审状态。
   3. **输入区**:reason(多行文本,必填,8–200 字;server 空值 400 `REASON_REQUIRED`);大额加确认勾选「我已核对地址与风险信息」(未勾置灰)。
   4. **按钮区**:`[取消]` · `[确认放行]`(必填未过 / 覆盖率阻断 / 大额未勾选时置灰;loading 防双击;携 `Idempotency-Key`)。
@@ -2761,31 +2761,31 @@ submitted ─风控评分─▶ review-pending ─approve─▶ review-passed �
 
 ##### [D2-MD2] 提现拒绝确认
 - **功能**:对单笔提现执行 reject(`review-pending → review-rejected`),确认即生效并自动 refund 退回用户可提余额(server 记 refund bill)。
-- **布局结构**:1. **信息区**:withdrawalId / userId / 金额 / 命中规则(K3)/ K4 风险评分 / 当前状态。2. **影响预览区**:提示行「拒绝后提现额自动经 `refunded` 退回用户可提余额,不得资金悬空」。3. **输入区**:拒绝原因码(下拉单选:风控命中 / 地址风险 / 资料不符 / 用户申诉撤回 / 其他)+ reason(必填,8–200 字)。4. **按钮区**:`[取消]` · `[确认拒绝]`(警示色;置灰条件 / loading;携 `Idempotency-Key`)。
+- **布局结构**:1. **信息区**:withdrawalNo / userId / 金额 / 命中规则(K3)/ K4 风险评分 / 当前状态。2. **影响预览区**:提示行「拒绝后提现额自动经 `refunded` 退回用户可提余额,不得资金悬空」。3. **输入区**:拒绝原因码(下拉单选:风控命中 / 地址风险 / 资料不符 / 用户申诉撤回 / 其他)+ reason(必填,8–200 字)。4. **按钮区**:`[取消]` · `[确认拒绝]`(警示色;置灰条件 / loading;携 `Idempotency-Key`)。
 - **错误态**:409 状态机非法 / 400 `REASON_REQUIRED` / 403。
 - **成功反馈**:关窗;行内状态更新 `review-rejected → refunded`;toast;事件 `withdraw.rejected` + refund bill。
 
 ##### [D2-MD3] 提现延迟(extended-hold)确认
 - **功能**:对单笔提现执行 delay(延长持有,到期回 `review-pending`),确认即生效。
-- **布局结构**:1. **信息区**:withdrawalId / userId / 金额 / 当前状态 / 当期 Phase 合规审查窗口上限。2. **影响预览区**:提示行「延迟收紧流出,不触发 refund;到期进入『待复查』队列」。3. **输入区(生命周期字段)**:持有天数 / 期限(数字输入,1–45d,≤ ③ 表 delay 时长上限,默认对齐 Compliance hold 窗口)+ **责任人(owner,负责到期复查的运营/角色)** + **复查时间(reviewAt,日期)** + reason(必填,8–200 字)。4. **按钮区**:`[取消]` · `[确认延迟]`(置灰条件 / loading;携 `Idempotency-Key`)。
+- **布局结构**:1. **信息区**:withdrawalNo / userId / 金额 / 当前状态 / 当期 Phase 合规审查窗口上限。2. **影响预览区**:提示行「延迟收紧流出,不触发 refund;到期进入『待复查』队列」。3. **输入区(生命周期字段)**:持有天数 / 期限(数字输入,1–45d,≤ ③ 表 delay 时长上限,默认对齐 Compliance hold 窗口)+ **责任人(owner,负责到期复查的运营/角色)** + **复查时间(reviewAt,日期)** + reason(必填,8–200 字)。4. **按钮区**:`[取消]` · `[确认延迟]`(置灰条件 / loading;携 `Idempotency-Key`)。
 - **错误态**:409 / 400 `REASON_REQUIRED`(reason / owner / reviewAt 任一缺失)/ 422(天数超窗口上限)/ 403。
 - **成功反馈**:关窗;行内状态更新 extended-hold(含到期日);**到期进入「待复查」队列,列表展示冻结/延迟时长、剩余复查时间、当前责任人**;toast;事件 `withdraw.delayed`(holdDays / owner / reviewAt / reason)。
 
 ##### [D2-MD4] 提现资金冻结确认
 - **功能**:对在途提现执行 freeze(转 `frozen` 态,账户资金冻结),确认即生效。
-- **布局结构**:1. **信息区**:withdrawalId / userId(链 C1)/ 金额 / 当前状态 / K4 风险评分与命中证据 / 关联 C2 账户冻结态(如有)。2. **影响预览区**:提示行「冻结后该单停在 frozen 态,解冻回 review-pending;账户级冻结另走 C2(本动作仅冻结本单资金)」。3. **输入区(生命周期字段)**:**冻结期限(period,枚举:7d / 14d / 30d / 45d / 长期需复查)** + **责任人(owner)** + **复查时间(reviewAt,日期)** + reason(必填,8–200 字)。4. **按钮区**:`[取消]` · `[确认冻结]`(警示色;置灰条件 / loading;携 `Idempotency-Key`)。
+- **布局结构**:1. **信息区**:withdrawalNo / userId(链 C1)/ 金额 / 当前状态 / K4 风险评分与命中证据 / 关联 C2 账户冻结态(如有)。2. **影响预览区**:提示行「冻结后该单停在 frozen 态,解冻回 review-pending;账户级冻结另走 C2(本动作仅冻结本单资金)」。3. **输入区(生命周期字段)**:**冻结期限(period,枚举:7d / 14d / 30d / 45d / 长期需复查)** + **责任人(owner)** + **复查时间(reviewAt,日期)** + reason(必填,8–200 字)。4. **按钮区**:`[取消]` · `[确认冻结]`(警示色;置灰条件 / loading;携 `Idempotency-Key`)。
 - **错误态**:409(非在途态)/ 400 `REASON_REQUIRED`(reason / period / owner / reviewAt 任一缺失)/ 403。
 - **成功反馈**:关窗;行内状态更新 `frozen`;**到期进入「待复查」队列,列表展示冻结时长、剩余复查时间、当前责任人**;toast;事件 `withdraw.frozen`(period / owner / reviewAt / reason / operator);实时告警风控 lead;喂 B5。
 
 ##### [D2-MD5] 提现解冻确认
 - **功能**:对 `frozen` 态提现执行 unfreeze(回 `review-pending` 重新进审核),确认即生效。
-- **布局结构**:1. **信息区**:withdrawalId / userId / 金额 / 冻结时间与冻结 reason(引自审计)/ 关联风控处置结论(K 域)。2. **影响预览区**:提示行「解冻仅回审核队列,不直接放行;放行另经 D2-MD1(含 B1 红线预检)」。3. **输入区**:reason(必填,8–200 字)。4. **按钮区**:`[取消]` · `[确认解冻]`(置灰条件 / loading;携 `Idempotency-Key`)。
+- **布局结构**:1. **信息区**:withdrawalNo / userId / 金额 / 冻结时间与冻结 reason(引自审计)/ 关联风控处置结论(K 域)。2. **影响预览区**:提示行「解冻仅回审核队列,不直接放行;放行另经 D2-MD1(含 B1 红线预检)」。3. **输入区**:reason(必填,8–200 字)。4. **按钮区**:`[取消]` · `[确认解冻]`(置灰条件 / loading;携 `Idempotency-Key`)。
 - **错误态**:409(非 frozen 态)/ 400 `REASON_REQUIRED` / 403。
 - **成功反馈**:关窗;行内状态更新 `review-pending`;toast;admin 审计(reason / operator);实时告警风控 lead。
 
 ##### [D2-MD6] 手动退款覆盖确认
 - **功能**:对异常态(`review-rejected` / `address-invalid` / `tx-failed` / `tx-orphaned`)提现单手动执行 refund(转 `refunded`,退回用户可提余额并记 refund bill),确认即生效。
-- **布局结构**:1. **信息区**:withdrawalId / userId / 金额 / 当前异常态与异常原因 / 链上 txHash(如有)。2. **影响预览区**:提示行「退回额将计入用户可提余额并记 refund bill;链上态单 server 预检无在途重复出金后方可退回」。3. **输入区**:reason(必填,8–200 字)+ 确认勾选「我已核实链上未出金 / 资金未离开平台」(未勾置灰)。4. **按钮区**:`[取消]` · `[确认退款]`(警示色;置灰条件 / loading;携 `Idempotency-Key`)。
+- **布局结构**:1. **信息区**:withdrawalNo / userId / 金额 / 当前异常态与异常原因 / 链上 txHash(如有)。2. **影响预览区**:提示行「退回额将计入用户可提余额并记 refund bill;链上态单 server 预检无在途重复出金后方可退回」。3. **输入区**:reason(必填,8–200 字)+ 确认勾选「我已核实链上未出金 / 资金未离开平台」(未勾置灰)。4. **按钮区**:`[取消]` · `[确认退款]`(警示色;置灰条件 / loading;携 `Idempotency-Key`)。
 - **错误态**:409(已 refunded / 状态机非法)/ 422(server 预检发现链上在途出金,阻断)/ 400 `REASON_REQUIRED` / 403。
 - **成功反馈**:关窗;行内状态更新 `refunded`;toast「已退回 · 已记账 · 已记审计」;refund bill + admin 审计;实时告警财务 lead。
 
@@ -2803,9 +2803,9 @@ submitted ─风控评分─▶ review-pending ─approve─▶ review-passed �
 - `GET /api/admin/withdrawals?status=submitted|review-pending|review-passed|processing|sent|confirmed|review-rejected|address-invalid|tx-failed|tx-orphaned|refunded|frozen&cursor=` — 队列列表(按状态筛,游标分页),返回列表字段含 `riskScore`(K4)、`kycStatus`(C4)、手续费明细 `penaltyFeeRate / grossFee / nexBurned / feeWaived / actualFee`、`count24h`、`hitRules`(K3)。
 - `GET /api/admin/withdrawals/:id` — 单笔详情(用户画像快照 + 风险评分明细 + 提现历史 + 当前状态)。
 - `POST /api/admin/withdrawals/:id/{approve|reject|delay|freeze|unfreeze|refund}` — 单笔状态推进(server-canonical 状态机;每个动作 server 校验当前态合法转移,非法返回 409);**body 必携 `{reason}`**(空值 400 `REASON_REQUIRED`),各动作对应确认弹窗 D2-MD1~MD6。**approve 为单一 URL 不分路径**——server 按请求中金额字段校验执行角色资质(大额 ≥ $1,000 = 财务 lead / 超管,资质不足 403,§9.2 口径),并前置 B1 覆盖率红线核验(低于红线 422 `COVERAGE_BELOW_REDLINE`);弹窗影响预览经 `simulate=withdraw_approve` 预检参数取得「放行后兑付覆盖率」。
-- `POST /api/admin/withdrawals/batch` — 批量操作 `{ action, withdrawalIds:[], reason }`(确认弹窗 D2-MD7,reason 空值 400 `REASON_REQUIRED`);含大额单时 server 返回 `{ accepted:[smallIds], rejected:[largeIds], reason:'LARGE_AMOUNT_REQUIRES_SINGLE_MANUAL_REVIEW' }`,大额单转单笔人工队列(不整体失败);`action=approve` 时 server 按 accepted 合计金额前置 B1 红线核验(低于红线 422)。
+- `POST /api/admin/withdrawals/batch` — 批量操作 `{ action, withdrawalIds:[], reason }`(确认弹窗 D2-MD7,reason 空值 400 `REASON_REQUIRED`);**入参名 `withdrawalIds` 与冲突回传项 `conflicts[].withdrawalId` 是本端点的线上真名(实现即此名),不随单笔主键 `withdrawalNo` 改名**;含大额单时 server 返回 `{ accepted:[smallIds], rejected:[largeIds], reason:'LARGE_AMOUNT_REQUIRES_SINGLE_MANUAL_REVIEW' }`,大额单转单笔人工队列(不整体失败);`action=approve` 时 server 按 accepted 合计金额前置 B1 红线核验(低于红线 422)。
 
-**所有写操作带 `Idempotency-Key`**(§1.8 原则二.3 / §9.11e):网络抖动 retry 不得造成重复放行 / 重复退款。状态推进 server-canonical,client 通过 `GET /api/withdrawals/:id` 或 SSE 订阅当前态(§9.11f:client 绝不本地推进)。金额币种 USDT,时间戳 ms epoch 服务端权威。`withdrawalId` server mint(§9.11d.2)。
+**所有写操作带 `Idempotency-Key`**(§1.8 原则二.3 / §9.11e):网络抖动 retry 不得造成重复放行 / 重复退款。状态推进 server-canonical,client 通过 `GET /api/withdrawals/:id` 或 SSE 订阅当前态(§9.11f:client 绝不本地推进)。金额币种 USDT,时间戳 ms epoch 服务端权威。`withdrawalNo` server mint(§9.11d.2)。
 
 **⑥ 权限 & 审计**
 
@@ -2819,7 +2819,7 @@ submitted ─风控评分─▶ review-pending ─approve─▶ review-passed �
 | manual-refund-override | ✅ | ✅(lead) | — | — | — | — |
 | 批量操作 | ✅ | ✅ | ✅(仅 reject/delay/freeze 方向;approve 受上两行同资质约束,server 校验) | — | — | — |
 
-审计记录字段:`操作者 / 角色 / 动作(approve|reject|delay|freeze|unfreeze|refund|batch) / withdrawalId(或批次 ID) / 金额 / 前态 / 后态 / reason / 时间(ms) / Idempotency-Key`。只读审计可全量追溯每笔提现的完整状态流转与决策者。
+审计记录字段:`操作者 / 角色 / 动作(approve|reject|delay|freeze|unfreeze|refund|batch) / withdrawalNo(或批次 ID) / 金额 / 前态 / 后态 / reason / 时间(ms) / Idempotency-Key`。只读审计可全量追溯每笔提现的完整状态流转与决策者。
 
 **⑦ 风控 & 联动**
 - **全 server-canonical**(核心约束):提现状态机的每一次推进均由 server 在状态机内执行,**client 仅订阅状态,绝不本地推进**(§9.11d.2 / §9.11f);提现额 / 状态 / 风险判定均服务端权威,client localStorage 仅 UI cache。
@@ -2833,7 +2833,7 @@ submitted ─风控评分─▶ review-pending ─approve─▶ review-passed �
 **⑧ 埋点(事件)**
 对齐 A4(Ch2 §2.4),D2 是 §2.4.5 ③ money family 提现事件的**主产生方**:
 
-- **产生(§2.4.5 ③,全部 `is_server_authoritative=true`,§2.4.8 防篡改)**:`withdraw.submitted`(用户提交，D2 队列入口)、`withdraw.approved`(=review-passed 放行)、`withdraw.rejected`、`withdraw.delayed`、`withdraw.frozen`、`withdraw.sent`、`withdraw.confirmed`。属性:`amount / currency / withdrawalId / state / address(hash)/ riskScore`。这些事件由 server 在状态机推进时发出(§9.11d/f),client 仅订阅，**不作为资金 / KPI 权威口径**。
+- **产生(§2.4.5 ③,全部 `is_server_authoritative=true`,§2.4.8 防篡改)**:`withdraw.submitted`(用户提交，D2 队列入口)、`withdraw.approved`(=review-passed 放行)、`withdraw.rejected`、`withdraw.delayed`、`withdraw.frozen`、`withdraw.sent`、`withdraw.confirmed`。属性:`amount / currency / withdrawalNo / state / address(hash)/ riskScore`。这些事件由 server 在状态机推进时发出(§9.11d/f),client 仅订阅，**不作为资金 / KPI 权威口径**。
   - **`approved` 与 `review-passed` 命名对齐**:事件名 `withdraw.approved` 对应状态机 `review-passed` 态(§2.4.5 ③ 与 §9.3.6 命名映射)。
 - **消费**:`risk.*` 评分(`risk.multi_account_flagged` / `risk.arbitrage_suspected` / `risk.withdraw_held`，来自 K 域，作队列风险标注与路由依据，§2.4.5 ⑤)。
 - **喂给**:**B3 漏斗提现级**(`withdraw.submitted`，§2.4.7)、**B5 挤兑雷达**(`withdraw.submitted` 24h 聚合 ÷ D3 储备)、**B1/B2/D3 水位**(`withdraw.confirmed` 核减储备与负债)、L3 财务报表、K 风控(提现冻结闭环)。D2 是这些消费方的**核心资金事件源**。
@@ -3901,7 +3901,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 **② 后台界面**:
 1. **规则配置区**:四维规则卡(`金额` / `速度` / `新账户` / `地址信誉`),每维可配阈值 + 命中动作映射 `[规则 ID / 维度 / 条件表达式 / 命中动作(delay/freeze/manual)/ 启停 / 优先级]`。
-2. **命中日志**:提现请求命中规则的流水 `[withdrawalId / userId / 金额 / 命中规则 ID / 维度 / 路由动作 / 时间]`,支持按规则 / 维度 / 动作筛选。
+2. **命中日志**:提现请求命中规则的流水 `[withdrawalNo / userId / 金额 / 命中规则 ID / 维度 / 路由动作 / 时间]`,支持按规则 / 维度 / 动作筛选。
 3. **路由结果视图**:命中后的路由分布(自动放行 / delay / freeze / 转人工 各占比 + 趋势),供运营评估规则松紧;路由结论下发 D2 队列。
 4. **规则状态机**:`draft(草拟) → active(生效·确认弹窗 K3-MD2) ⇄ paused(停用·确认弹窗 K3-MD2) → archived(归档)`。状态转换:`draft → active`(确认弹窗 K3-MD2)、`active ⇄ paused` 双向(确认弹窗 K3-MD2)、`paused → archived`(允许);`archived → active/paused` **禁止(返回 409 Conflict)**。命中路由动作 `pass / delay / freeze / manual` 对齐 §9.11f withdrawal 异常态。`archived` 为软删除终态——已归档规则不可直接激活;如需恢复历史规则逻辑须新建 `draft` 规则并复制其条件配置(规则 CRUD 接口在校验逻辑中拒绝对 `archived` 规则的 `active`/`paused` 转换请求,返回 409)。
 
@@ -4032,7 +4032,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 - **跨模块联动**:消费提现 / 资金事件;命中 → 产 `risk.withdraw_held` 喂 D2(路由依据)+ B5(挤兑 / 异常账户维度);冻结闭环回写 D2 队列状态。**`pass`(自动放行)无对应事件产出**,D2 对 `pass` 以「无 `risk.withdraw_held` 命中」作隐式判定(此隐式约定见 ⑧)。
 
 **⑧ 埋点(事件)**:
-- **产生**:`risk.withdraw_held` — 触发点:提现请求命中风控规则被 delay/freeze/转人工(**仅 delay/freeze/manual 三种路由结论产出本事件;`pass` 自动放行无事件**);属性(§2.4.5 ⑤,server,已登记):`rule_id / action(delay|freeze|manual) / withdrawalId / userId / amountUsdt / dimension / ts`。
+- **产生**:`risk.withdraw_held` — 触发点:提现请求命中风控规则被 delay/freeze/转人工(**仅 delay/freeze/manual 三种路由结论产出本事件;`pass` 自动放行无事件**);属性(§2.4.5 ⑤,server,已登记):`rule_id / action(delay|freeze|manual) / withdrawalNo / userId / amountUsdt / dimension / ts`。
 - **消费**:提现侧 `withdraw.submitted`(§2.4.7,来自 D2 资金事件源)+ K4 评分(联合路由)。
 - **喂给**:**D2 提现审核队列**(`risk.withdraw_held` 作队列风险标注与路由依据,§Ch6 D2⑧ 消费 `risk.withdraw_held`)、**B5 风险雷达**(异常账户 / 提现冻结信号)。事件名 `risk.withdraw_held` 与 §2.4.5 ⑤ 目录一致。
 - **产生域标注 + pass 隐式约定**:`risk.withdraw_held` 的**产生域为 K3**;§Ch6 D2⑧ 消费列「来自 K 域」的三个 `risk.*` 事件分属不同子域——`risk.multi_account_flagged`(**K1**)/ `risk.arbitrage_suspected`(**K2**)/ `risk.withdraw_held`(**K3**)。**§Ch6 D2⑧ 当前仅标注「来自 K 域」,未细分 K1/K2/K3 子模块产生域**,须在 D2⑧ 与本段分别标注产生域。**`pass`(自动放行)无 `risk.withdraw_held` 命中**,D2 对此以「无命中」作隐式放行判定——**此隐式约定在本段单向声明,须在 D2 V4 收口时于 D2⑦/⑧ 对称补入**(经核查现有 §Ch6 D2⑦/⑧ 尚无此约定,D2 侧实际为空),避免 D2 误把「无事件」当作漏检。
@@ -4239,7 +4239,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 - **功能**:对 `in-review` 工单裁决通过(`in-review → passed`),确认即回写 C4 KYC 状态升级并解冻关联 D2 提现单。
 - **布局结构**:
   1. **信息区**:工单 ID / userId / 触发原因(`triggerReasons[]` 全列)/ 金额与累计值 / C4 当前 KYC 态 / 提交材料引用(Sumsub,§4.4)/ 复审历史 / SLA 剩余。
-  2. **影响预览区**:提示行「通过后:① C4 KYC 状态升级(状态权威在 C4,本动作回写);② 关联 D2 提现单解冻回正常流——解冻仅回审核队列,放行另经 D2-MD1(含 B1 红线预检),本裁决不直接放行资金」;关联在途提现单清单回显(withdrawalId / 金额)。
+  2. **影响预览区**:提示行「通过后:① C4 KYC 状态升级(状态权威在 C4,本动作回写);② 关联 D2 提现单解冻回正常流——解冻仅回审核队列,放行另经 D2-MD1(含 B1 红线预检),本裁决不直接放行资金」;关联在途提现单清单回显(withdrawalNo / 金额)。
   3. **输入区**:reason(多行文本,必填,8–200 字;server 空值 400 `REASON_REQUIRED`)。
   4. **按钮区**:`[取消]` · `[确认通过]`(主按钮;置灰条件 / loading;**必携 `Idempotency-Key`**,防重复回写 C4)。
 - **错误态**:409(工单已被他人裁决 / 非 `in-review` 态,提示刷新)/ 400 `REASON_REQUIRED` / 403(非风控 lead/超管)。
@@ -4316,7 +4316,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | **RiskModel**(评分模型配置) | `weights{multiAccount,arbitrage,kycStatus,withdrawVelocity,accountAge,anomalyBehavior}(六维和=1)/ scoreBand{low<40,mid 40–69,high≥70}/ inputSources{K1,K2,C4,...}(各 ON/OFF)/ autoEscalateScore(默认85)/ version` | Ch8 K4(§Ch8 K4) | 权重配置状态机 `draft→active→archived`;六维权重和强制 =1(接口侧校验,±0.001 容差)。**两类写操作确认分流**:① **模型权重 / 分档阈值 / 输入来源开关**改动**执行=仅超级管理员**(风控 lead 可起草草稿,发布经超管确认弹窗 + 理由必填;2026-06 操作确认决议执行门槛就高,与 A2③ 高敏动作清单一致);② **单用户评分人工覆盖**(`POST /api/admin/risk/score/:userId/override`)**不入高敏确认门**,直接生效 + 强制 reason + 审计(K4④ 明文「确认弹窗=否」)。开发不得对单用户覆盖误套高敏确认流程 |
 | **PhaseConfig**(Phase 逐月 dial 矩阵) | 逐月(月 1–12)× **8 dial**:`newUserBonusMultiplier / inviteRewardMultiplier / reinvestMultiplier / withdrawPenaltyFeeRate / withdrawCooldownDays / binaryDailyCap / questBonusMultiplier / complianceHoldEnabled`;每 dial 标 `生效范围(实时全量\|仅新用户)`;`cohortOverrides[]{cohortId(YYYY-Www),monthOffset,override 生效区间(字段名均为 §9.1 草稿自拟,待 V4 数据模型收口与 H1 正式对齐)}` | Ch7 H1(H1④) | 全平台 Phase 模型后台权威源。后台权威 = **8 dial**(12 月 §6.4 七项时变 dial,Premium/NEXv2 gate 两 dial 随产品下线移除 + 前端 §13.4.1 `complianceHoldEnabled`);**dial 默认值权威来源:12 月节奏表 §6.4 `ProductPhase`**。前端 §13.4.1 / §9.11c.1 / §9.11d.3 仍含已下线的 Premium/NEXv2 gate 为现状差异。`complianceHoldEnabled` 标注 **月 8+ = true(P5 带 ✅);月 8 为实际激活拐点(同时是 P4 带末月 `withdrawCooldownDays=35d` 拐点)**(与 H1④ 逐月矩阵和 D5③ 脚注一致)。`cohortOverrides` 子字段名 `cohortId` / `monthOffset` 为本表草稿自拟命名(H1④ 仅有语义描述、无字段名),不以「§13.4 / 12 月 §6.4」作字段名来源锚点,待 V4 与 H1 正式对齐。dial 值 server 单源下发,前端 `useProductPhase` 仅消费;B4 只读展示 |
 | **TrialConfig**(免费试用配置) | **18 参数**:`trialDays / graceDays / extensionDays / discountRate / discountCapUSD / autoChargeAtEnd / highQualityThresholdUSD / chargeFailRate(server-only,前端永不可知)/ trialProductId / trialPriceUSD / shadowDailyUSD / shadowDailyNEX / cooldownDays / phaseOpen / autoPushEnabled / autoPushDelayMs / autoPushCooldownHours / autoPushMaxPerSession` | Ch7 H2(H2④) | 试用全生命周期后台可调面;敏感项(`trialPriceUSD` / `chargeFailRate`)经确认弹窗(理由必填)。`chargeFailRate` server-only。`cooldownDays` 为 **H2 自有可写参数**(再次试用冷却天数,默认 30,实时;H2④ 明确归 H2),**与 D5 的 `withdrawCooldownDays`(提现冷却,Phase 派发)是不同业务域的同名概念,不混同**。`phaseOpen` 为 **Phase 派发只读字段(运行时由 H1 Phase 调度决定;source:phase-h1)**——其 `PUT /api/admin/trial/config` 接口层是否拒绝写入待 H2 正文确认(H2④ 将其列为 18 参数之一、实时性「实时」、默认 true,未明文声明 PUT 返回 422;V4 收口确认)。`autoChargeAtEnd` 实时性及敏感等级**待 PM 确认**(H2⑤:建议按敏感项处理经确认弹窗,暂不归入增长直接编辑路径;待确认前暂按敏感项处理)。`trialProductId` 为**只读 schema 治理项**(仅经 schema 变更确认弹窗(A2-MD1)更新,不在常规 TrialConfig PUT 路径内,对齐 H2④ 实时性分区)。配套 **TrialSession**(会话监控):`userId / status(7 态)/ shadowUSD / shadowNEX / 状态转换时间线 / 绑卡 token / cohort,phase`,7 态权威定义见 §9.11.1 |
-| **Withdrawal 扩展态**(提现状态机) | 状态枚举 = **正常 5 态**(`submitted / review-passed / processing / sent / confirmed`,§9.3.6)+ **异常 6 态**(`review-rejected / address-invalid / tx-failed / tx-orphaned / refunded / frozen`,§9.11f)+ **后台扩展中间态 `review-pending`**(D2② 状态机已实现,V1 落地);字段 `withdrawalId(server mint)/ userId / amountUsdt / address(hash)+chain / riskScore(K4)/ kycStatus(C4)/ 手续费明细(penaltyFeeRate / grossFee / nexBurned / feeWaived / actualFee)/ count24h / hitRules(K3)/ state` | Ch6 D2(§9.3 / §9.3.6 / §9.11f) | **`Withdrawal` 实体本体属用户侧(§12,本表不重列)**;本行仅登记 D2 在前端 §9.3.6 正常 5 态之上**新增的异常 6 态(§9.11f)**及**后台扩展中间态 `review-pending`**。`review-pending` 为 **V1 已实现的后台扩展中间态**(D2② 状态机图 `submitted ─风控评分─▶ review-pending`;`/api/admin/withdrawals` status 枚举 已列),承接 `delay` / `freeze` / `reject` / `approve` 四条转出边。V1 落地状态为 **后台扩展态 review-pending + 正常 5 态 + 异常 6 态共 12 态**;**§1.9 术语表当前仅定义 11 态(正常 5 + 异常 6),`review-pending` 补入 §1.9**(D2 已声明此偏差)。全 server-canonical,client 仅订阅;状态推进非法转移返回 409。**手续费明细**为每笔提现的费用记录(server 权威):`grossFee = amountUsdt × penaltyFeeRate`(惩罚费率 Phase 派发,D5 生效面)、`nexBurned`(本次抵扣燃烧的 NEX,可选)、`feeWaived = nexBurned × nexFeeOffsetRate`、`actualFee = grossFee − feeWaived`;NEX 抵扣为可选、不构成提现门槛 |
+| **Withdrawal 扩展态**(提现状态机) | 状态枚举 = **正常 5 态**(`submitted / review-passed / processing / sent / confirmed`,§9.3.6)+ **异常 6 态**(`review-rejected / address-invalid / tx-failed / tx-orphaned / refunded / frozen`,§9.11f)+ **后台扩展中间态 `review-pending`**(D2② 状态机已实现,V1 落地);字段 `withdrawalNo(server mint)/ userId / amountUsdt / address(hash)+chain / riskScore(K4)/ kycStatus(C4)/ 手续费明细(penaltyFeeRate / grossFee / nexBurned / feeWaived / actualFee)/ count24h / hitRules(K3)/ state` | Ch6 D2(§9.3 / §9.3.6 / §9.11f) | **`Withdrawal` 实体本体属用户侧(§12,本表不重列)**;本行仅登记 D2 在前端 §9.3.6 正常 5 态之上**新增的异常 6 态(§9.11f)**及**后台扩展中间态 `review-pending`**。`review-pending` 为 **V1 已实现的后台扩展中间态**(D2② 状态机图 `submitted ─风控评分─▶ review-pending`;`/api/admin/withdrawals` status 枚举 已列),承接 `delay` / `freeze` / `reject` / `approve` 四条转出边。V1 落地状态为 **后台扩展态 review-pending + 正常 5 态 + 异常 6 态共 12 态**;**§1.9 术语表当前仅定义 11 态(正常 5 + 异常 6),`review-pending` 补入 §1.9**(D2 已声明此偏差)。全 server-canonical,client 仅订阅;状态推进非法转移返回 409。**手续费明细**为每笔提现的费用记录(server 权威):`grossFee = amountUsdt × penaltyFeeRate`(惩罚费率 Phase 派发,D5 生效面)、`nexBurned`(本次抵扣燃烧的 NEX,可选)、`feeWaived = nexBurned × nexFeeOffsetRate`、`actualFee = grossFee − feeWaived`;NEX 抵扣为可选、不构成提现门槛。**单笔主键线上真名 = `withdrawalNo`,不是 `withdrawalId`**——与 App 侧权威契约 `PRD/specs/FEAT-WD01-trust-payout-rails.md` §4.2 响应表同名;批量端点入参 `withdrawalIds` 与冲突回传项 `conflicts[].withdrawalId` 是该端点自有真名,与主键不同名属实现现状、非笔误 |
 | **KycLedger**(KYC 合规台账) | `userId / kycStatus(verified\|unverified\|in-review)/ walletPaired(bool)/ pairedAddress(脱敏)/ network(TRC20\|ERC20\|BTC\|ETH)/ verifiedAt / 变更历史 / 关联 K5 工单` | Ch5 C4(§4.4 / §4.4.1) | **全平台 KYC 状态唯一权威台账**(§3.14);`GET /api/kyc/status/:userId` 单源,D2 提现门槛 / G2 兑换门槛 / K5 复审引用。K5 仅触发复审、裁决回写,不持状态 |
 | **TreasuryLedger·D3 储备账本** | `usdtReserveUsdt / otherLiquidUsdt / injectedCumulativeUsdt / reserveTotalUsdt` | Ch6 D3(储备权威) | **真实储备底层账本权威归 D3**(`GET /api/admin/treasury/reserve` 唯一储备源)。储备口径:**储备 = topup 累计 + 注入 − `withdraw.confirmed` − 未到期 USDT staking 本金**(权威来源 B1⑧ / D3⑦;扣减「未到期 USDT staking 本金」以防止储备高估,具体扣减项字段名待 D3 正文定义)。储备科目纳入口径日批(UTC 00:00)生效 |
 | **TreasuryLedger·B1 应付负债账本** | 负债 **8 类科目** `[可提余额 / USDT staking 本金 / staking 应付利息 / Genesis 日排放承诺 / NEX v2 未来兑付 / 待提现 queue / 佣金冷却未解锁 / 锁仓本息其他]`;派生 `coverageRatio / netExposureUsdt / redLine(默认100%) / yellowLine(默认110%)` | Ch4 B1(负债分母权威) | **兑付覆盖率权威归 B1**(B1 以 D3 储备为分子、自有 8 类负债账本为分母)。**接口强制约束:`yellowLine > redLine`(违反返回 400),与 §9.2 `PUT /api/admin/treasury/thresholds` 及 B1⑤ 一致**。用户侧 102.4% 为对外信任叙事数字,非已实现账本(§1.8 原则一);负债科目纳入口径日批(UTC 00:00)生效 |

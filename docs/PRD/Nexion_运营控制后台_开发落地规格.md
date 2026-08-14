@@ -70,7 +70,7 @@
 - 互锁校验:覆盖率 `yellow>red` / 挤兑 `bankrunRed>bankrunYellow` / K4 六维权重和=1 / staking APY 跨档保序 / E3 产能分段保序与换新阶梯严格保序 / V_RANKS 门槛保序 / Lucky 概率和≤100% / 转盘各档 weight 和=100 且档位∈[2,12] / 里程碑阈值保序 / UNILEVEL_USDT 各层和≤25%。
 
 ### 0.6 ID 全 server mint
-`withdrawalId / topupId / orderId / billId / commissionId / 通知 id / Genesis tokenId` 全部 server 单源生成,client 不可 mint / 枚举 / 撞 ID(§9.11d.2)。
+`withdrawalNo / topupId / orderId / billId / commissionId / 通知 id / Genesis tokenId` 全部 server 单源生成,client 不可 mint / 枚举 / 撞 ID(§9.11d.2)。
 
 ### 0.7 时间与币种
 所有时间戳为 server 权威 **ms-epoch**(对齐 §2.4.4);所有金额字段**明示币种**(USDT / NEX)。
@@ -212,7 +212,7 @@
 
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
-| **Withdrawal 扩展态**(本体属 §12) | state:enum{正常5态 submitted\|review-passed\|processing\|sent\|confirmed · 异常6态 review-rejected\|address-invalid\|tx-failed\|tx-orphaned\|refunded\|frozen · 后台扩展 review-pending} · withdrawalId(server mint) · userId · amountUsdt · address(hash)+chain · riskScore(K4) · pointsOk · count24h · hitRules(K3);**共12态;非法转移 409** | SC | §9.1 / Ch6 D2 / §9.3.6 / §9.11f |
+| **Withdrawal 扩展态**(本体属 §12) | state:enum{正常5态 submitted\|review-passed\|processing\|sent\|confirmed · 异常6态 review-rejected\|address-invalid\|tx-failed\|tx-orphaned\|refunded\|frozen · 后台扩展 review-pending} · withdrawalNo(server mint) · userId · amountUsdt · address(hash)+chain · riskScore(K4) · pointsOk · count24h · hitRules(K3);**共12态;非法转移 409**;**单笔主键线上真名 = `withdrawalNo`,不是 `withdrawalId`**(权威契约 `PRD/specs/FEAT-WD01-trust-payout-rails.md` §4.2 响应表) | SC | §9.1 / Ch6 D2 / §9.3.6 / §9.11f |
 | **WithdrawConfig**(Phase 派发) | withdrawCooldownDays(月8=35d/月9=45d) · withdrawPointsRatio(月9=20) · 日限/上限/fee(source:'d5' 可写) · complianceHold(只读 source:'phase-h1') | SC | §17.1 / Ch6 D5 |
 | **Bill / BillType**(§12/§9.7) | type:enum{swap\|topup\|withdraw\|earning\|commission\|refund\|bonus}(**7类**) · billId(server mint) · userId · amount · currency · ts:ms-epoch;**server 唯一账本;积分调整不落 bill** | SC | §9.1 / Ch6 D4 |
 | **VietQrBankAccount / VietQrReconciliation / VietQrConfig** | 银行账户仅持久化 AES-GCM 密文，读接口只回传尾号；对账动作 enum{match\|writeoff\|return} 携 expectedVersion、reason、evidence 与 Idempotency-Key。match/writeoff 原子更新钱包、`cumulativeDepositUsdt`、D4 与 D3；return 不入钱包 | SC | 2026-07-25 D1 高保真落地 |
