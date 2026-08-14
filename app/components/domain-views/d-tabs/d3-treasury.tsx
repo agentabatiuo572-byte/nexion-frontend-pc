@@ -61,6 +61,7 @@ const pendingKeys = createPendingMutationStore({
   storageKey: "nexion-admin-d3-treasury-commands-v1",
 });
 const injectionScope = (voucherNo: string, amount: string) => `injection|${voucherNo}|${amount}`;
+const exportScope = (kind: "reconciliation" | "liabilities") => `sensitive-export|${kind}`;
 
 function reasonValid(reason: string, toast: (message: string) => void) {
   const length = reason.trim().length;
@@ -210,9 +211,27 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
   };
 
   const exportCsv = (kind: "reconciliation" | "liabilities") => {
-    void downloadD3Csv(kind)
-      .then(() => toast(kind === "reconciliation" ? "储备负债对账 CSV 已导出" : "负债明细 CSV 已导出"))
-      .catch((err) => setError(err instanceof Error ? displayAdminError(err) : "CSV 导出失败"));
+    openConfirm({
+      action: "敏感导出",
+      detail: kind === "reconciliation" ? "导出储备与负债对账数据，并写入 A2 高敏审计。" : "导出负债科目明细，并写入 A2 高敏审计。",
+      reason: true,
+      okLabel: "确认导出",
+      run: async (reason) => {
+        if (!reasonValid(reason, toast)) return false;
+        const scope = exportScope(kind);
+        const commandKey = operationKey(scope);
+        try {
+          await downloadD3Csv(kind, reason.trim(), OPERATOR(), commandKey);
+          pendingKeys.forget(scope);
+          toast(kind === "reconciliation" ? "储备负债对账 CSV 已导出" : "负债明细 CSV 已导出");
+          return true;
+        } catch (err) {
+          if (!isDOutcomeUnknownError(err)) pendingKeys.forget(scope);
+          setError(err instanceof Error ? displayAdminError(err) : "CSV 导出失败");
+          return false;
+        }
+      },
+    });
   };
 
   if (loading && !data) {

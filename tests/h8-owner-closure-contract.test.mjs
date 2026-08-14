@@ -17,6 +17,9 @@ const publicController = read(backend, "src/main/java/ffdd/opsconsole/growth/web
 const security = read(backend, "src/main/java/ffdd/opsconsole/shared/security/SecurityConfig.java");
 const appApi = read(app, "src/api/platform-config-api.ts");
 const appStore = read(app, "src/store/config.ts");
+const appReferralApi = read(app, "src/api/referral-reward-api.ts");
+const appReferralStore = read(app, "src/store/referral-reward.ts");
+const appReferralCard = read(app, "src/components/team/invite-earn-card.vue");
 const registry = read(pc, "lib/admin/high-ops-registry.ts");
 const replay = read(backend, "src/main/java/ffdd/opsconsole/growth/application/OpsGrowthService.java");
 const a2BusinessGuard = read(backend, "src/main/java/ffdd/opsconsole/platform/application/AuditReplayBusinessPermissionGuard.java");
@@ -67,15 +70,23 @@ test("H8 blocked count excludes already settled and self-sponsor relationships",
   assert.match(blocked, /u\.sponsor_user_id <> u\.id/);
 });
 
-test("H8 App/H5 uses a public effective-reward projection and never remote mock values", () => {
+test("H8 App/H5 uses server reward projections and fails closed instead of remote mock values", () => {
   assert.match(publicController, /@GetMapping\("\/api\/config\/referral-rewards"\)/);
   assert.match(security, /HttpMethod\.GET, "\/api\/config\/referral-rewards"\)\.permitAll\(\)/);
   assert.match(service, /publicConfig\(\)[\s\S]*newcomerUsdt\(\)[\s\S]*newcomerNex\(\)[\s\S]*inviterNex\(\)/);
   assert.match(appApi, /path: "\/api\/config\/referral-rewards"/);
   assert.match(appApi, /parseReferralRewardConfig/);
   assert.match(appApi, /nx_user\.sponsor_user_id/);
-  assert.match(appStore, /EMPTY_REMOTE_REWARDS/);
-  assert.match(appStore, /rewards: \{[\s\S]*snapshot\.rewards\.welcomeGift[\s\S]*snapshot\.rewards\.inviterReward/);
+  assert.match(appStore, /const remote = await platformConfigApi\.platformConfig\(\)[\s\S]*rewards: remote\.rewards/);
+  assert.match(appApi, /const welcomeGift = record\(root\.welcomeGift\)[\s\S]*const inviterReward = record\(root\.inviterReward\)/);
+  assert.match(appReferralApi, /path: `\/api\/app\/referral-rewards\?limit=/);
+  assert.match(appReferralApi, /source === "ledger" && sourceEnvironment === "PRODUCTION"/);
+  assert.match(appReferralApi, /source === "mock" && sourceEnvironment === "SANDBOX"/);
+  assert.match(appReferralApi, /nx_referral_reward_settlement[\s\S]*nx_wallet_ledger[\s\S]*nx_earnings_release_entry[\s\S]*nx_user_wallet/);
+  assert.match(appReferralStore, /snapshot\.value = null;[\s\S]*REFERRAL_REWARD_LOAD_FAILED/);
+  assert.match(appReferralStore, /if \(!remoteApiEnabled\)[\s\S]*REFERRAL_REWARD_SERVER_REQUIRED/);
+  assert.match(appReferralCard, /No settled invitation rewards yet/);
+  assert.doesNotMatch(appReferralCard, /INVITER_REWARD_NEX|INVITER_REWARD_USDT_ESTIMATE|TICKER_ITEMS/);
 });
 
 test("H8 remote registration writes one immutable sponsor relation before issuing the server session", () => {
@@ -92,7 +103,9 @@ test("H8 remote registration writes one immutable sponsor relation before issuin
   assert.match(authApi, /path: "\/auth\/users\/register"/);
   assert.match(registrationPage, /if \(remoteApiEnabled\)[\s\S]*authApi\.register/);
   assert.match(registrationPage, /sponsorCode: currentSponsorCode\(\)/);
-  assert.match(registrationPage, /const recovered = await authApi\.login/);
+  assert.match(authApi, /async register\(request\)[\s\S]*consumeLoginResponse\(data, vault, revision\)[\s\S]*result\.kind !== "authenticated"/);
+  assert.match(registrationPage, /await authApi\.register\([\s\S]*launchRegistrationSuccess\(\)/);
+  assert.doesNotMatch(registrationPage, /authApi\.register\([\s\S]{0,800}authApi\.login/);
 });
 
 test("H8 PC fails closed on malformed overview and provides downstream verification entries", () => {

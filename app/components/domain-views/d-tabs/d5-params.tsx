@@ -9,6 +9,9 @@ import {
   updateD5WithdrawalLimits,
   D5_NETWORK_CONFIRM_FEE_DEFAULT,
   D5_NETWORK_CONFIRM_FEE_MAX,
+  D5_SMALL_AMOUNT_THRESHOLD_MAX,
+  D5_PAYOUT_SLA_HOURS_MIN,
+  D5_PAYOUT_SLA_HOURS_MAX,
   type D5OwnedChanges,
   type D5Params as D5ParamData,
 } from "@/lib/admin/d-client";
@@ -47,9 +50,13 @@ type Drafts = {
   feeBep: string;
   feeErc: string;
   nex: string;
+  smallAmount: string;
+  payoutSla: string;
 };
 
-const EMPTY_DRAFTS: Drafts = { daily: "", balancePct: "", feeTrc: "", feeBep: "", feeErc: "", nex: "" };
+const EMPTY_DRAFTS: Drafts = {
+  daily: "", balancePct: "", feeTrc: "", feeBep: "", feeErc: "", nex: "", smallAmount: "", payoutSla: "",
+};
 
 function draftsFrom(params: D5ParamData): Drafts {
   return {
@@ -59,6 +66,8 @@ function draftsFrom(params: D5ParamData): Drafts {
     feeBep: String(params.networkConfirmFeeUsd.bep20),
     feeErc: String(params.networkConfirmFeeUsd.erc20),
     nex: String(params.nexFeeOffsetRate),
+    smallAmount: String(params.smallAmountThresholdUsd),
+    payoutSla: String(params.payoutSlaHours),
   };
 }
 
@@ -149,6 +158,8 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const feeBep = asNumber(drafts.feeBep);
   const feeErc = asNumber(drafts.feeErc);
   const nex = asNumber(drafts.nex);
+  const smallAmount = asNumber(drafts.smallAmount);
+  const payoutSla = asNumber(drafts.payoutSla);
   const dailyValid = Number.isInteger(daily) && daily >= 1 && daily <= 10;
   const balanceValid = balancePct >= 50 && balancePct <= 100;
   // FEAT-WD02:三网络确认费逐字段校验(字段级越界红字),整组同过才可提交(原子)。
@@ -169,6 +180,10 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     && feeBep === D5_NETWORK_CONFIRM_FEE_DEFAULT.bep20
     && feeErc === D5_NETWORK_CONFIRM_FEE_DEFAULT.erc20;
   const nexValid = nex > 0;
+  const smallAmountValid = Number.isFinite(smallAmount)
+    && smallAmount >= 0 && smallAmount <= D5_SMALL_AMOUNT_THRESHOLD_MAX;
+  const payoutSlaValid = Number.isInteger(payoutSla)
+    && payoutSla >= D5_PAYOUT_SLA_HOURS_MIN && payoutSla <= D5_PAYOUT_SLA_HOURS_MAX;
 
   if (loading && !params) {
     return <section className="l-card"><div className="l-b">D5 权威配置加载中，写操作已冻结...</div></section>;
@@ -192,6 +207,8 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       <div className="f-stat cyan"><div className="k">余额可提上限</div><div className="v">{pctRatio(params.maxBalanceRatio)}</div><div className="sub">D5 权威</div></div>
       <div className="f-stat warn"><div className="k">网络确认费</div><div className="v">${params.networkConfirmFeeUsd.trc20} / ${params.networkConfirmFeeUsd.bep20} / ${params.networkConfirmFeeUsd.erc20}</div><div className="sub">TRC20 / BEP20 / ERC20 · 每笔固定</div></div>
       <div className="f-stat cyan"><div className="k">NEX 抵扣率</div><div className="v">${params.nexFeeOffsetRate.toFixed(2)}/NEX</div><div className="sub">D5 权威</div></div>
+      <div className="f-stat"><div className="k">小额免审线</div><div className="v">${params.smallAmountThresholdUsd}</div><div className="sub">提交时快车道判定</div></div>
+      <div className="f-stat"><div className="k">到账 SLA</div><div className="v">{params.payoutSlaHours}h</div><div className="sub">写入提现到期时间</div></div>
       <div className={`f-stat ${params.coverageReliable && params.coverageRatio >= params.redlinePct ? "ok" : "danger"}`}><div className="k">B1 覆盖率</div><div className="v">{pct(params.coverageRatio)}</div><div className="sub">红线 {pct(params.redlinePct)} · {params.coverageReliable ? "可信" : "不可用"}</div></div>
     </div>
 
@@ -208,8 +225,20 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
             <input aria-label="每日提现次数目标值" className="l-inp" type="number" min="1" max="10" step="1" value={drafts.daily} disabled={!canDailyWrite} onChange={(event) => updateDraft("daily", event.target.value)} />
             {canDailyWrite && <button className="l-btn sm mc" disabled={!dailyValid || daily === params.dailyLimitCount} onClick={() => submit("每日提现次数", { dailyLimitCount: daily }, daily > params.dailyLimitCount, `${params.dailyLimitCount} 次 → ${daily} 次`)}>预览并提交</button>}
           </div>
-          <div className="dtint warn" style={{ marginBottom: 12 }}>
-            小额免审与到账时效执行器尚未形成真实业务闭环，本页不提供修改，也不会显示“已生效”。
+          <div className="dtint ok" style={{ marginBottom: 12 }}>
+            小额免审与到账时效已进入真实提现状态机：新提现会保存快车道判定和到账截止时间；没有链上终局证明时保留资金，不会提前记为已到账。
+          </div>
+          <div className="p-row">
+            <div className="txt"><div className="k">小额免审线</div><div className="s">0–{D5_SMALL_AMOUNT_THRESHOLD_MAX} USD；上调会放大小额快车道范围</div></div>
+            <input aria-label="小额免审线目标值" className="l-inp" type="number" min="0" max={D5_SMALL_AMOUNT_THRESHOLD_MAX} step="0.01" value={drafts.smallAmount} disabled={!canDailyWrite} onChange={(event) => updateDraft("smallAmount", event.target.value)} />
+            <span>USD</span>
+            {canDailyWrite && <button className="l-btn sm mc" disabled={!smallAmountValid || smallAmount === params.smallAmountThresholdUsd} onClick={() => submit("小额免审线", { smallAmountThresholdUsd: smallAmount }, smallAmount > params.smallAmountThresholdUsd, `$${params.smallAmountThresholdUsd} → $${smallAmount}`)}>预览并提交</button>}
+          </div>
+          <div className="p-row">
+            <div className="txt"><div className="k">到账时效</div><div className="s">{D5_PAYOUT_SLA_HOURS_MIN}–{D5_PAYOUT_SLA_HOURS_MAX} 小时；缩短时效会放大资金执行压力</div></div>
+            <input aria-label="到账时效目标值" className="l-inp" type="number" min={D5_PAYOUT_SLA_HOURS_MIN} max={D5_PAYOUT_SLA_HOURS_MAX} step="1" value={drafts.payoutSla} disabled={!canDailyWrite} onChange={(event) => updateDraft("payoutSla", event.target.value)} />
+            <span>小时</span>
+            {canDailyWrite && <button className="l-btn sm mc" disabled={!payoutSlaValid || payoutSla === params.payoutSlaHours} onClick={() => submit("到账时效", { payoutSlaHours: payoutSla }, payoutSla < params.payoutSlaHours, `${params.payoutSlaHours} 小时 → ${payoutSla} 小时`)}>预览并提交</button>}
           </div>
           <div className="p-row">
             <div className="txt"><div className="k">余额可提上限</div><div className="s">50%–100%；上调放大、下调收紧</div></div>

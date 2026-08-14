@@ -1954,9 +1954,19 @@ export async function updateD3Thresholds(
   });
 }
 
-export async function downloadD3Csv(kind: "reconciliation" | "liabilities") {
+export async function downloadD3Csv(
+  kind: "reconciliation" | "liabilities",
+  reason: string,
+  operator: string,
+  idempotencyKey: string,
+) {
   const exportPath = kind === "reconciliation" ? "/reconciliation/export" : "/liabilities/export";
-  const response = await guardedFetch(`/api/admin/treasury${exportPath}`, { cache: "no-store" });
+  const response = await guardedFetch(`/api/admin/treasury${exportPath}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify({ reason: reason.trim(), operator }),
+    cache: "no-store",
+  }).catch(() => { throw new DOutcomeUnknownError(idempotencyKey); });
   if (!response.ok) {
     const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
@@ -2101,7 +2111,8 @@ export async function fetchD5WithdrawalParams() {
 // FEAT-WD02:networkConfirmFeeUsd 以**整组对象**为变更单位(三值一次 PUT,任一失败全回滚 ——
 // 沿用旧三件套的原子提交先例);不提供单键补丁,防止三网络费半更新。
 export type D5OwnedChanges = Partial<Pick<D5Params,
-  "dailyLimitCount" | "maxBalanceRatio" | "networkConfirmFeeUsd" | "nexFeeOffsetRate">>;
+  "dailyLimitCount" | "maxBalanceRatio" | "networkConfirmFeeUsd" | "nexFeeOffsetRate"
+  | "smallAmountThresholdUsd" | "payoutSlaHours">>;
 
 export async function updateD5WithdrawalLimits(
   changes: D5OwnedChanges,

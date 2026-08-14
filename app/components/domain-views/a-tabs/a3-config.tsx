@@ -24,16 +24,20 @@ import { useRouter } from "next/navigation";
 import { PaginationExemptionList } from "../design-kit";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import {
   fetchA3Overview,
   isA3OutcomeUncertainError,
   isA3ReadbackFailedError,
   updateA3FeatureFlag,
+  updateA3Parameter,
   type A3FeatureFlag,
   type A3Overview,
   type A3SystemHealth,
 } from "@/lib/admin/a3-client";
 import type { ACtx } from "./types";
+
+const a3ParamCommands = createSlotAttemptStore({ storageKey: "nexion-admin-a3-param-commands-v1" });
 
 /* ────────────────── 组件 ────────────────── */
 
@@ -80,6 +84,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
   const gates = overview?.killSwitches ?? [];
   const featureFlags = overview?.featureFlags ?? [];
   const systemHealth = overview?.systemHealth ?? [];
+  const platformParams = overview?.platformParams ?? [];
   const upGates = overview?.stats.killGatesUp ?? gates.filter((g) => g.up).length;
 
   /* ────────────────── 调参动作:feature flag 切换 ────────────────── */
@@ -130,6 +135,34 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
       },
     });
   };
+
+  const paramChg = (param: typeof platformParams[number]) => openActionConfirm({
+    action: `调整平台参数 · ${param.name}`,
+    detail: <>{param.desc} · 运行时消费者 <b>{param.consumer}</b> · 服务端以当前值 <b>{param.value}</b> 做 CAS。</>,
+    amplifies: false, reasonMin: 8, reasonMax: 200,
+    edit: { kind: "number", current: param.value, min: param.min, max: param.max, unit: param.unit },
+    run: async (reason, value) => {
+      const normalizedValue = (value || "").trim();
+      const slot = `param:${param.key}`;
+      const fingerprint = JSON.stringify([param.key, normalizedValue, param.value, reason, operator]);
+      const commandKey = a3ParamCommands.resolve(slot, fingerprint, () => `a3-param-${crypto.randomUUID()}`);
+      setMutating(param.key);
+      try {
+        setOverview(await updateA3Parameter(param.key, normalizedValue, param.value, reason, operator, commandKey));
+        a3ParamCommands.forget(slot);
+        toast(`${param.name} 已更新并回读`);
+      } catch (error) {
+        if (isA3OutcomeUncertainError(error)) {
+          toast(`提交结果未知（命令号 ${error.commandKey}）；保持输入不变再次确认会复用同一命令号。`);
+        } else {
+          a3ParamCommands.forget(slot);
+          toast(`提交失败:${displayAdminError(error)}`);
+        }
+        throw error;
+      }
+      finally { setMutating(null); }
+    },
+  });
 
   /* ────────────────── 渲染 ────────────────── */
 
@@ -330,20 +363,9 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
         </section>
       </div>
 
-      <section className="l-card" aria-labelledby="a3-pending-contract-title">
-        <div className="l-h">
-          <span className="ttl" id="a3-pending-contract-title">待接入运营参数 · 设计保留</span>
-          <span className="sub">· 服务端未建立权威读写契约前禁止本地保存</span>
-        </div>
-        <div className="l-b" style={{ display: "grid", gap: 10 }}>
-          <div data-restored-capability="a3-global-rate-limit" className="atint warn">
-            <b>全球限流上限</b> · 服务端权威契约未完成，当前不可读取、不可修改。能力入口保留，避免把未完成设计误判成不需要；接入后必须走版本校验、操作原因与 A2 审计。
-          </div>
-          <div data-restored-capability="a3-withdraw-strong-review-threshold" className="atint warn">
-            <b>提现强审阈值</b> · 服务端权威契约未完成，当前不可读取、不可修改。不得使用前端默认值代替真实阈值；接入时须与 D2 提现审核状态机和 B1 覆盖率护栏共同验收。
-          </div>
-        </div>
-      </section>
+      <section className="l-card" data-capability="a3-authoritative-params" data-restored-capability="a3-global-rate-limit"><div className="l-h"><span className="ttl">平台权威参数 · 全球限流上限 / 提现强审阈值</span><span className="sub">· CAS · 幂等 · 审计 · 运行时真实消费</span></div><div className="l-b" data-restored-capability="a3-withdraw-strong-review-threshold">
+        {platformParams.map((param) => <div className="a-vrow" key={param.key}><span className="nm">{param.name}<small>{param.desc}</small></span><span className="v">{param.value} {param.unit}</span>{param.writable && <button className="l-btn sm mc" disabled={!!mutating} onClick={() => paramChg(param)}>调整</button>}</div>)}
+      </div></section>
 
       <p className="f-foot">
         <b>执行门槛</b>:当前登记的平台维护开关仅超管可切换；其他角色只读。熔断闸与地区屏蔽的操作权限由 J1 / J2 独立控制。

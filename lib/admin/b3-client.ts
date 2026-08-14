@@ -39,6 +39,7 @@ export interface B3AuxMetrics {
   day0Numerator: number;
   day0Denominator: number;
   day0Target: number;
+  day0WindowSeconds: number;
   day7Retention: number | null;
   day7Numerator: number;
   day7Denominator: number;

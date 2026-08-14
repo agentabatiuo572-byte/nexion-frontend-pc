@@ -38,10 +38,10 @@ test("H8 调参与结算的命令号都在 run 回调内经 resolve,弹窗打开
   assert.doesNotMatch(code, /JSON\.stringify\(\[storedValue[^\]]*reason/);
   assert.doesNotMatch(code, /rewardSnapshotHash, reason\]/);
 
-  // 现铸只允许出现在 resolve 的 mint 回调里:恒 2 处(调参 + 结算)。
+  // 现铸只允许出现在 resolve 的 mint 回调里:恒 3 处(调参 + Production 结算 + Sandbox 结算)。
   const minted = code.match(/createH8CommandKey\(/g) ?? [];
-  assert.equal(minted.length, 2, `createH8CommandKey( 应恒为 2 处(两个 mint 回调),实际 ${minted.length}`);
-  assert.equal((code.match(/mintedFresh = true; return createH8CommandKey\(/g) ?? []).length, 2,
+  assert.equal(minted.length, 3, `createH8CommandKey( 应恒为 3 处(三个 mint 回调),实际 ${minted.length}`);
+  assert.equal((code.match(/mintedFresh = true; return createH8CommandKey\(/g) ?? []).length, 3,
     "现铸必须全部包在 resolve 的 mint 回调里 —— 出现裸调用即弹窗态半措施回潮");
 
   // resolve 出的号必须**原样**交给下游:`commandKey + Date.now()` 这类加工会让后端按另一个号去重,

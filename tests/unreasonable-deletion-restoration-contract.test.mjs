@@ -109,11 +109,12 @@ test("已恢复或等价迁移的能力保持可见，防止二次误删", () =>
   assert.match(user360, /detail\?\.devices &&/);
 });
 
-test("缺少现行后端契约的旧能力保留失败关闭结构", () => {
+test("已恢复能力保留显式服务端权威与运行时消费声明", () => {
   const a3 = read("app/components/domain-views/a-tabs/a3-config.tsx");
   const a4 = read("app/components/domain-views/a-tabs/a4-events.tsx");
   assert.match(a3, /data-restored-capability="a3-global-rate-limit"/);
   assert.match(a3, /data-restored-capability="a3-withdraw-strong-review-threshold"/);
   assert.match(a4, /data-restored-capability="a4-event-lifecycle"/);
-  assert.match(a3 + a4, /服务端权威契约未完成/);
+  assert.match(a3, /CAS · 幂等 · 审计 · 运行时真实消费/);
+  assert.match(a4, /服务端权威/);
 });

@@ -6,6 +6,10 @@ const source = readFileSync(
   new URL("./e2e/pc-all-modules-final-acceptance.spec.ts", import.meta.url),
   "utf8",
 );
+const m1Overview = readFileSync(
+  new URL("../app/components/domain-views/m-tabs/m1-overview.tsx", import.meta.url),
+  "utf8",
+);
 
 test("final75 records every real request failure, not only admin API failures", () => {
   assert.match(source, /requestFailures: string\[\]/);
@@ -29,9 +33,15 @@ test("response and requestfailed retain the module phase captured when the reque
   assert.match(source, /\$\{originModule\}: \$\{response\.request\(\)\.method\(\)\}/);
 });
 
-test("final75 waits for M1 portrait media to settle before the real-user navigation continues", () => {
+test("final75 waits for authoritative M1 roster state, then settles any locally rendered media", () => {
   assert.match(source, /await waitForModuleMediaQuiet\(page, module\);/);
   assert.match(source, /module\.id !== "M1"/);
+  assert.match(source, /getAttribute\("data-m1-roster-state"\)/);
+  assert.match(source, /available\|fail-closed/);
   assert.match(source, /document\.querySelectorAll<HTMLImageElement>\("main img"\)/);
   assert.match(source, /image\.complete/);
+  assert.match(source, /images\.length === 0 \|\| images\.every/);
+  assert.doesNotMatch(source, /images\.length > 0 && images\.every/);
+  assert.match(m1Overview, /data-m1-roster-state=\{supportAgentsPending/);
+  assert.match(m1Overview, /"pending"[\s\S]{0,120}"available"[\s\S]{0,120}"fail-closed"/);
 });

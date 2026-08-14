@@ -10,6 +10,11 @@ import {
   updateH4EventStatus,
   createH3Mission,
   createH3MonthlyMission,
+  editH3Mission,
+  transitionH3Mission,
+  archiveH3Mission,
+  deleteH3Mission,
+  type H3MissionKind,
   createH4QuestEvent,
   createH4WheelTier,
   updateH4WheelProbabilities,
@@ -300,6 +305,89 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         toast(`· 月度挑战「${payload.challengeName}」已新建`);
       },
     });
+  };
+
+  const taskIdentity = (task: QuestTask, monthly = false) => ({
+    taskCode: text(task.taskCode ?? task.completionEvent ?? task.id),
+    taskKind: (text(task.taskKind, monthly ? "MONTHLY" : "MISSION") === "MONTHLY" ? "MONTHLY" : "MISSION") as H3MissionKind,
+    status: text(task.status, "paused") as "active" | "paused" | "archived",
+  });
+
+  const openMissionEdit = (task: QuestTask, label: string, monthly = false) => {
+    const { taskCode, taskKind, status } = taskIdentity(task, monthly);
+    if (status === "archived") return;
+    openActionConfirm({
+      action: `编辑任务 · ${label}`,
+      detail: <>只修改任务名称;奖励仍由“改奖励”独立提交。后端会校验页面旧值并返回最新任务清单。</>,
+      edit: { kind: "text", current: label, disallowCurrent: true },
+      run: async (reason, value) => {
+        if (!value) return;
+        apply(await editH3Mission(taskCode, taskKind, value, label, reason));
+        toast(`任务「${label}」已编辑`);
+      },
+    });
+  };
+
+  const openMissionStatus = (task: QuestTask, label: string, monthly = false) => {
+    const { taskCode, taskKind, status } = taskIdentity(task, monthly);
+    if (status === "archived") return;
+    const targetStatus = status === "active" ? "paused" : "active";
+    openConfirm({
+      action: `${targetStatus === "active" ? "启用" : "停用"}任务 · ${label}`,
+      detail: <>仅允许 active 与 paused 双向切换;归档任务不可恢复。后端按当前状态做 CAS 校验。</>,
+      chips: [["状态机校验", "ready"], ["审计留痕", "done"]],
+      reason: true,
+      okLabel: targetStatus === "active" ? "确认启用" : "确认停用",
+      run: async (reason) => {
+        apply(await transitionH3Mission(taskCode, taskKind, targetStatus, status, reason));
+        toast(`任务「${label}」已${targetStatus === "active" ? "启用" : "停用"}`);
+      },
+    });
+  };
+
+  const openMissionArchive = (task: QuestTask, label: string, monthly = false) => {
+    const { taskCode, taskKind, status } = taskIdentity(task, monthly);
+    if (status === "archived") return;
+    openConfirm({
+      action: `归档任务 · ${label}`,
+      detail: <>归档后不可重新启用或编辑;如需删除,必须先完成本次归档并以服务端回读状态为准。</>,
+      chips: [["不可逆状态", "ready"], ["审计留痕", "done"]],
+      reason: true,
+      okLabel: "确认归档",
+      run: async (reason) => {
+        apply(await archiveH3Mission(taskCode, taskKind, status, reason));
+        toast(`任务「${label}」已归档`);
+      },
+    });
+  };
+
+  const openMissionDelete = (task: QuestTask, label: string, monthly = false) => {
+    const { taskCode, taskKind, status } = taskIdentity(task, monthly);
+    if (status !== "archived") return;
+    openConfirm({
+      action: `删除已归档任务 · ${label}`,
+      detail: <>后端只允许删除 archived 状态任务;操作采用软删除并保留审计记录。</>,
+      chips: [["仅已归档", "ready"], ["软删除", "done"]],
+      reason: true,
+      okLabel: "确认删除",
+      run: async (reason) => {
+        apply(await deleteH3Mission(taskCode, taskKind, reason));
+        toast(`任务「${label}」已删除`);
+      },
+    });
+  };
+
+  const missionLifecycleActions = (task: QuestTask, label: string, monthly = false) => {
+    const { status } = taskIdentity(task, monthly);
+    return <>
+      <button className="l-btn sm" onClick={() => openMissionEdit(task, label, monthly)} disabled={!canModuleWrite || status === "archived"}>编辑</button>{" "}
+      {status === "archived" ? (
+        <button className="l-btn sm" onClick={() => openMissionDelete(task, label, monthly)} disabled={!canModuleWrite}>删除</button>
+      ) : <>
+        <button className="l-btn sm" onClick={() => openMissionStatus(task, label, monthly)} disabled={!canModuleWrite}>{status === "active" ? "停用" : "启用"}</button>{" "}
+        <button className="l-btn sm" onClick={() => openMissionArchive(task, label, monthly)} disabled={!canModuleWrite}>归档</button>
+      </>}
+    </>;
   };
 
   const openCreateEvent = () => {
@@ -671,6 +759,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                         </td>
                         <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                           <button className="l-btn sm mc" onClick={() => openTaskReward(`mission.${text(task.completionEvent)}.reward`, text(task.task), text(task.reward))} disabled={!canModuleWrite}>改奖励</button>
+                          {" "}{missionLifecycleActions(task, text(task.task))}
                         </td>
                       </tr>
                     );
@@ -731,6 +820,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                         </td>
                         <td style={{ textAlign: "right" }}>
                           <button className="l-btn sm mc" onClick={() => openTaskReward(`mission.${text(task.completionEvent)}.reward`, text(task.cond), text(task.reward))} disabled={!canModuleWrite}>改奖励</button>
+                          {" "}{missionLifecycleActions(task, text(task.cond))}
                         </td>
                       </tr>
                     );
@@ -767,6 +857,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                         </td>
                         <td style={{ textAlign: "right" }}>
                           <button className="l-btn sm mc" onClick={() => openTaskReward(`mission.${text(task.completionEvent)}.reward`, text(task.cond), text(task.reward))} disabled={!canModuleWrite}>改奖励</button>
+                          {" "}{missionLifecycleActions(task, text(task.cond))}
                         </td>
                       </tr>
                     );
@@ -895,6 +986,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                     <td><span className={`bdg ${statusTone}`}>{statusLabel}</span></td>
                     <td style={{ textAlign: "right" }}>
                       <button className="l-btn sm mc" onClick={() => openTaskReward(`monthly.${text(mission.id)}.reward`, text(mission.theme), text(mission.reward))} disabled={!canModuleWrite}>改奖励</button>
+                      {" "}{missionLifecycleActions(mission, text(mission.theme), true)}
                     </td>
                   </tr>
                 );

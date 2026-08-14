@@ -27,14 +27,18 @@ test("F4 PC exposes A2 settlement without a direct money mutation", () => {
 
 test("F4 backend has one source of truth, CAS, D4, A4 and A2 replay", () => {
   const service = read(backendRoot, "src/main/java/ffdd/opsconsole/team/application/LeadershipPoolService.java");
+  const configGuard = read(backendRoot, "src/main/java/ffdd/opsconsole/team/application/LeadershipPoolConfigGuard.java");
   const mapper = read(backendRoot, "src/main/java/ffdd/opsconsole/team/mapper/TeamCommissionMapper.java");
   const team = read(backendRoot, "src/main/java/ffdd/opsconsole/team/application/OpsTeamService.java");
   const guard = read(backendRoot, "src/main/java/ffdd/opsconsole/platform/application/AuditReplayBusinessPermissionGuard.java");
 
-  assert.match(service, /team\.ui\.F\.pool\.ratio/);
+  assert.match(configGuard, /team\.ui\.F\.pool\.configVersion/);
+  assert.match(configGuard, /team\.ui\.F\.pool\.ratio/);
   assert.doesNotMatch(service, /team\.ui\.F\.pool\.injectRate/);
-  assert.match(service, /team\.ui\.F\.pool\.unlockVRank/);
-  assert.match(service, /team\.ui\.F\.pool\.monthlyCap/);
+  assert.match(configGuard, /team\.ui\.F\.pool\.unlockVRank/);
+  assert.match(configGuard, /team\.ui\.F\.pool\.monthlyCap/);
+  assert.match(configGuard, /team\.ui\.F\.pool\.settleCron/);
+  assert.match(service, /settlementConfigGuard/);
   assert.match(service, /lockLeadershipSettlementMutex/);
   assert.match(mapper, /FOR UPDATE/);
   assert.match(mapper, /uk_f4_settlement_week|nx_team_f4_settlement_mutex/);

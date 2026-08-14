@@ -44,7 +44,7 @@ const ALERT_ID = "coverage-redline"; // 当前唯一 P0:覆盖率跌破/逼近�
 const SCALE_MAX = 120; // 仪表标尺上限
 
 // 驾驶舱决策动作(高敏,均走操作确认)。
-type Mc = { kind: "threshold" | "injection" | "ack"; idempotencyKey: string };
+type Mc = { kind: "threshold" | "injection" | "ack" | "export"; idempotencyKey: string };
 
 type ExposurePoint = { date: string; netExposureUsdt: number };
 
@@ -274,6 +274,9 @@ export default function DualLedgerPage() {
         );
         await bDomain.reload();
         setToast("注入已登记 · D3 储备权威账本已更新 · 已记审计");
+      } else if (current.kind === "export") {
+        await downloadD3Csv("reconciliation", reason, operator, current.idempotencyKey);
+        setToast("对账 CSV 已生成并下载 · 导出动作已记审计");
       } else {
         await acknowledgeBDomainAlert(ALERT_ID, reason, operator, current.idempotencyKey);
         await bDomain.reload();
@@ -569,11 +572,7 @@ export default function DualLedgerPage() {
               <button
                 type="button"
                 className="btn"
-                onClick={() => {
-                  void downloadD3Csv("reconciliation")
-                    .then(() => setToast("对账 CSV 已生成并下载"))
-                    .catch((err) => setToast(displayAdminError(err)));
-                }}
+                onClick={() => setActionConfirm(command("export"))}
               >
                 导出对账 CSV
               </button>
@@ -671,14 +670,14 @@ export default function DualLedgerPage() {
               ? "配置兑付覆盖率红线与黄线"
               : mc.kind === "injection"
                 ? "登记储备注入"
-                : "标记兑付红线告警已处置"
+                : mc.kind === "export" ? "导出对账 CSV" : "标记兑付红线告警已处置"
           }
           detail={
             mc.kind === "threshold"
               ? "红线触发高风险告警，黄线定义恢复健康水位；黄线必须严格高于红线。B1 只做建议与告警，不自动执行资金处置。"
               : mc.kind === "injection"
                 ? "输入真实到账金额与链上交易哈希或银行流水号。提交后写入 D3 储备权威账本并刷新 B1 覆盖率。"
-                : "仅在覆盖率仍处于红线或黄线告警区间时确认已跟进；健康态服务端拒绝伪处置。"
+                : mc.kind === "export" ? "导出当前对账明细；理由、操作者与命令号由服务端审计留痕。" : "仅在覆盖率仍处于红线或黄线告警区间时确认已跟进；健康态服务端拒绝伪处置。"
           }
           amplifies={mc.kind === "threshold"}
           businessForm={

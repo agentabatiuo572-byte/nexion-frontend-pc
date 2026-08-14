@@ -25,6 +25,7 @@ type D7Snapshot = {
   version: number;
   providerReady: boolean;
   providerStatusAvailable: boolean;
+  sandboxAvailable: boolean;
   channelEnabled: boolean;
   quoteTtlMinWithdraw: number;
   sellSpreadPct: number;
@@ -51,6 +52,7 @@ async function enterD7(page: Page): Promise<D7Snapshot> {
   expect(body).toMatchObject({ code: 0, data: {
     providerReady: false,
     providerStatusAvailable: true,
+    sandboxAvailable: false,
     channelEnabled: false,
   } });
   await expect(page).toHaveURL(/\/finance\/payout-vnd$/);

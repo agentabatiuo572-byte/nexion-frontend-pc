@@ -159,6 +159,8 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
   const convos = useMemo(() => parseParamArray<SessionConvo>(pget(CONVO_KEY), []), [ctx.params, pget]);
   const supportAgents = useMemo(() => parseParamArray<MSupportAgent>(pget(AGENT_LIST_KEY), []), [ctx.params, pget]);
   const supportAgentsAvailable = pget("I.support.agentsAvailable") === "1";
+  const ticketsAvailable = pget("I.support.ticketsAvailable") === "1";
+  const conversationsAvailable = pget("I.session.conversationsAvailable") === "1";
   const supportAgentsError = pget("I.support.agentsError") ?? "unavailable";
   const supportAgentsPending = !supportAgentsAvailable && supportAgentsError === "none";
   const advisorAssignments = useMemo(() => parseParamArray<MAdvisorAssignment>(pget(ASSIGNMENT_LIST_KEY), []), [ctx.params, pget]);
@@ -203,15 +205,18 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
   const busyCount = loadRows.filter((r) => r.busy).length;
   const maxLoad = Math.max(1, ...loadRows.map((l) => Math.max(l.total, l.cap)));
 
-  const kpis: Array<{ label: string; val: number; sub: string; icon: IconName; tone: boolean; to: string }> = [
-    { label: "活跃工单", val: openTickets, sub: "待处理 + 处理中 + 待补充", icon: "doc", tone: true, to: "/service/tickets?scope=active" },
-    { label: "待用户补充", val: pendingUser, sub: "等待用户回传", icon: "clock", tone: false, to: "/service/tickets?scope=active&status=pending_user" },
-    { label: "进行中会话", val: liveSessions, sub: "实时接待中", icon: "users", tone: true, to: "/service/sessions?seg=active" },
-    { label: "待坐席回复", val: pendingReplies, sub: "用户已发待回", icon: "bell", tone: false, to: "/service/sessions?seg=unread" },
+  const kpis: Array<{ label: string; val: number | null; sub: string; icon: IconName; tone: boolean; to: string }> = [
+    { label: "活跃工单", val: ticketsAvailable ? openTickets : null, sub: "待处理 + 处理中 + 待补充", icon: "doc", tone: true, to: "/service/tickets?scope=active" },
+    { label: "待用户补充", val: ticketsAvailable ? pendingUser : null, sub: "等待用户回传", icon: "clock", tone: false, to: "/service/tickets?scope=active&status=pending_user" },
+    { label: "进行中会话", val: conversationsAvailable ? liveSessions : null, sub: "实时接待中", icon: "users", tone: true, to: "/service/sessions?seg=active" },
+    { label: "待坐席回复", val: conversationsAvailable ? pendingReplies : null, sub: "用户已发待回", icon: "bell", tone: false, to: "/service/sessions?seg=unread" },
   ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div
+      data-m1-roster-state={supportAgentsPending ? "pending" : supportAgentsAvailable ? "available" : "fail-closed"}
+      style={{ display: "flex", flexDirection: "column", gap: 16 }}
+    >
       <div className="m-toolbar">
         <span className="dim" style={{ fontSize: 13 }}>工单和会话的实时概况 · 已分配服务用户 {activeAdvisorAssignmentCount}</span>
         <span className="sp" />
@@ -278,7 +283,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
               </span>
             </div>
             <div>
-              <div className="tnum" style={{ fontSize: 30, fontWeight: 500, letterSpacing: "-0.02em", lineHeight: 1, color: "var(--ink)" }}>{k.val}</div>
+              <div className="tnum" style={{ fontSize: 30, fontWeight: 500, letterSpacing: "-0.02em", lineHeight: 1, color: "var(--ink)" }}>{k.val == null ? "不可用" : k.val}</div>
               <div style={{ fontSize: 12, color: "var(--ink-4)", marginTop: 6 }}>{k.sub}</div>
             </div>
           </Link>
@@ -762,12 +767,7 @@ function SupportSeatRoleModal({
       const ok = await ctx.setParam("I.support.seatAssignment.__update", JSON.stringify({
         adminId: selected.adminId,
         position: targetPosition,
-        serviceTypes: selected.serviceTypes,
-        tags: selected.tags,
-        maxConcurrent: selected.maxConcurrent,
-        enabled: selected.enabled,
-        transferable: selected.transferable,
-        busy: selected.busy,
+        expectedVersion: selected.version,
         userIds,
       }), {
         action: "M1 分配客服坐席",

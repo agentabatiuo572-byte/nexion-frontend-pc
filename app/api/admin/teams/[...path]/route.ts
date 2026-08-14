@@ -46,7 +46,7 @@ function backendPath(parts: string[]) {
   if (
     parts.length === 2
     && parts[0] === "commissions"
-    && (parts[1] === "anomalies" || parts[1] === "reissue" || parts[1] === "anomaly-config")
+    && (parts[1] === "anomalies" || parts[1] === "reissue" || parts[1] === "anomaly-config" || parts[1] === "export")
   ) {
     // canonical F5: /commissions/reissue and the read/config companion routes.
     return `/api/admin/commissions/${parts[1]}`;
@@ -162,6 +162,23 @@ async function proxy(request: Request, context: RouteContext) {
       body: hasBody ? await request.text() : undefined,
       cache: "no-store",
     });
+    if (path.length === 2 && path[0] === "commissions" && path[1] === "export" && upstream.ok) {
+      const responseHeaders = new Headers({
+        "Content-Type": upstream.headers.get("Content-Type") || "text/csv;charset=UTF-8",
+        "Cache-Control": "no-store",
+      });
+      for (const name of [
+        "Content-Disposition", "X-Export-Id", "X-Export-Row-Count", "X-Export-Byte-Size",
+        "X-Export-Sha256", "X-Export-Redacted",
+      ]) {
+        const value = upstream.headers.get(name);
+        if (value) responseHeaders.set(name, value);
+      }
+      return new Response(await upstream.arrayBuffer(), {
+        status: upstream.status,
+        headers: responseHeaders,
+      });
+    }
     return new Response(await upstream.text(), {
       status: upstream.status,
       headers: {

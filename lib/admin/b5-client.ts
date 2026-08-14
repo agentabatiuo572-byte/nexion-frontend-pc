@@ -13,6 +13,7 @@ const B5_THRESHOLD_PREVIEW_ENDPOINT = "/api/admin/risk/bankrun-thresholds/previe
 const B5_THRESHOLD_ENDPOINT = "/api/admin/risk/bankrun-thresholds";
 const B5_SUBSCRIPTION_ENDPOINT = "/api/admin/risk/alert-subscription";
 const B5_TRIAGE_ENDPOINT = "/api/admin/risk/radar/triage";
+const B5_INBOX_ENDPOINT = "/api/admin/risk/radar/inbox";
 
 type ApiResult<T> = { code: number; message?: string; data?: T };
 type Light = "green" | "yellow" | "red";
@@ -24,6 +25,18 @@ export type B5Subscription = {
   webhookUrl: string;
   version: number;
   sharedWith: string;
+  emailMode: string;
+  webhookMode: string;
+};
+
+export type B5InboxItem = {
+  id: number;
+  signalNo: string;
+  deliveryStatus: string;
+  receiptSource: string;
+  deliveredAt: string;
+  readAt: string | null;
+  acknowledgedAt: string | null;
 };
 
 export class B5OutcomeUnknownError extends Error {
@@ -83,7 +96,31 @@ function normalizeSubscription(value: unknown): B5Subscription {
     webhookUrl: typeof subscription.webhookUrl === "string" ? subscription.webhookUrl : invalid("subscription.webhookUrl"),
     version: num(subscription.version, "subscription.version"),
     sharedWith: text(subscription.sharedWith, "subscription.sharedWith"),
+    emailMode: text(subscription.emailMode, "subscription.emailMode"),
+    webhookMode: text(subscription.webhookMode, "subscription.webhookMode"),
   };
+}
+
+function optionalText(value: unknown, field: string): string | null {
+  if (value === null || value === undefined) return null;
+  return text(value, field);
+}
+
+function normalizeInbox(value: unknown): B5InboxItem[] {
+  return arr(value, "inbox").map((item, index) => {
+    const delivery = row(item, `inbox.${index}`);
+    const id = num(delivery.id, `inbox.${index}.id`);
+    if (!Number.isInteger(id) || id <= 0) invalid(`inbox.${index}.id`);
+    return {
+      id,
+      signalNo: text(delivery.signalNo, `inbox.${index}.signalNo`),
+      deliveryStatus: text(delivery.deliveryStatus, `inbox.${index}.deliveryStatus`),
+      receiptSource: text(delivery.receiptSource, `inbox.${index}.receiptSource`),
+      deliveredAt: text(delivery.deliveredAt, `inbox.${index}.deliveredAt`),
+      readAt: optionalText(delivery.readAt, `inbox.${index}.readAt`),
+      acknowledgedAt: optionalText(delivery.acknowledgedAt, `inbox.${index}.acknowledgedAt`),
+    };
+  });
 }
 
 function idempotencyKey(prefix: string) {
@@ -120,6 +157,18 @@ export async function fetchB5Radar() {
 
 export async function fetchB5Subscription() {
   return normalizeSubscription(await request<unknown>(B5_SUBSCRIPTION_ENDPOINT));
+}
+
+export async function fetchB5Inbox() {
+  return normalizeInbox(await request<unknown>(B5_INBOX_ENDPOINT));
+}
+
+export async function acknowledgeB5Inbox(deliveryId: number, commandKey = idempotencyKey("b5-inbox-ack")) {
+  return request<{ deliveryId: number; acknowledged: boolean }>(
+    `${B5_INBOX_ENDPOINT}/${deliveryId}/acknowledge`, {
+      method: "POST",
+      headers: { "Idempotency-Key": commandKey },
+    });
 }
 
 export async function previewB5Thresholds(yellowPct: number, redPct: number, expectedVersion: number) {
@@ -169,6 +218,23 @@ export async function recordB5Triage(
     headers: { "Content-Type": "application/json", "Idempotency-Key": commandKey },
     body: JSON.stringify({ dimension, target, operator }),
   });
+}
+
+export async function updateB5SignalStatus(
+  signalNo: string,
+  targetStatus: "handled" | "resolved",
+  expectedStatus: "open" | "handled",
+  expectedVersion: number,
+  reason: string,
+  operator: string,
+  commandKey = idempotencyKey("b5-signal-status"),
+) {
+  return request<{ signalNo: string; status: string; version: number }>(
+    `/api/admin/risk/radar/signals/${encodeURIComponent(signalNo)}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": commandKey },
+      body: JSON.stringify({ targetStatus, expectedStatus, expectedVersion, reason, operator }),
+    });
 }
 
 export function useB5Radar() {

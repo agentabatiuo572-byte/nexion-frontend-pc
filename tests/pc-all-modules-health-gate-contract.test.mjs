@@ -148,7 +148,7 @@ test("actual terminal UI branches remain bound to the semantic gate", () => {
     ["../app/components/domain-views/g-tabs/g4-admin-operations.tsx", "刷新失败，以下为上次成功快照"],
     ["../app/components/domain-views/k-tabs/k4-scoring.tsx", "K4 读取失败"],
     ["../app/components/domain-views/k-tabs/k4-scoring.tsx", "告警读取失败"],
-    ["../app/components/domain-views/l-tabs/l6-behavior-heatmap.tsx", "用户行为热力图 · 加载失败"],
+    ["../app/components/domain-views/l-tabs/l6-behavior-heatmap.tsx", "验收观察面读取失败，已 fail-closed"],
     ["../app/components/domain-views/m-tabs/m2-tickets.tsx", "工单数据暂时无法同步,当前不展示空队列,也不会开放写操作。"],
     ["../app/components/domain-views/m-tabs/m3-sessions.tsx", "会话数据暂时无法同步,当前不会把空列表当作真实结果,写操作也已关闭。"],
     ["../app/components/domain-views/m-tabs/m4-kb-sla.tsx", "知识库后端当前不可用,页面已停止写入,避免显示未落库的成功状态。"],
@@ -240,6 +240,38 @@ test("full-menu gate rejects prefix and suffix injection around approved alerts"
   }
 });
 
+test("full-menu gate allows only the exact structured F4 settlement HOLD alert", () => {
+  const exact = "提前结算已暂停 · 领导奖池结算配置不可用：奖池比例 缺失或格式错误。配置入口就在本卡片下方，请依次补齐后重新读取配置。重新读取配置";
+  const allConcreteItems = "提前结算已暂停 · 领导奖池结算配置不可用：配置版本、奖池比例、月度 cap、解锁等级、结算周期 缺失或格式错误。配置入口就在本卡片下方，请依次补齐后重新读取配置。重新读取配置";
+
+  assert.deepEqual(evaluateModuleHealthSnapshot("F4", healthySnapshot({ alertTexts: [exact] })), []);
+  assert.deepEqual(evaluateModuleHealthSnapshot("F4", healthySnapshot({ alertTexts: [allConcreteItems] })), []);
+
+  for (const alert of [
+    `未批准告警前缀；${exact}`,
+    `${exact}；任意错误后缀`,
+    "领导奖池结算配置不可用：奖池比例 缺失或格式错误。配置入口就在本卡片下方，请依次补齐后重新读取配置。重新读取配置",
+    "提前结算已暂停 · 领导奖池结算配置不可用：权威配置 缺失或格式错误。配置入口就在本卡片下方，请依次补齐后重新读取配置。重新读取配置",
+    "提前结算已暂停 · 领导奖池结算配置不可用：奖池比例、奖池比例 缺失或格式错误。配置入口就在本卡片下方，请依次补齐后重新读取配置。重新读取配置",
+    "提前结算已暂停 · 领导奖池结算配置不可用：结算周期、配置版本 缺失或格式错误。配置入口就在本卡片下方，请依次补齐后重新读取配置。重新读取配置",
+    "提前结算已暂停 · 领导奖池结算配置不可用：奖池比例 缺失或格式错误。请联系管理员。重新读取配置",
+  ]) {
+    assert.ok(evaluateModuleHealthSnapshot("F4", healthySnapshot({ alertTexts: [alert] }))
+      .some((failure) => failure.includes("role=alert")), `F4 alert must stay rejected: ${alert}`);
+  }
+
+  assert.ok(evaluateModuleHealthSnapshot("F3", healthySnapshot({ alertTexts: [exact] }))
+    .some((failure) => failure.includes("role=alert")), "F4 HOLD allowlist must not apply to other modules");
+  assert.ok(evaluateModuleHealthSnapshot("F4", healthySnapshot({
+    text: "平台参数服务返回异常，请稍后重试。".repeat(20),
+    alertTexts: [exact],
+  })).some((failure) => failure.includes("fatal text")), "F4 alert allowlist must not bypass fatal text");
+  assert.ok(evaluateModuleHealthSnapshot("F4", healthySnapshot({
+    alertTexts: [exact],
+    unmarkedBusinessErrorTexts: ["业务规则冲突，请联系管理员。"],
+  })).some((failure) => failure.includes("unmarked business error")), "F4 alert allowlist must not bypass unmarked errors");
+});
+
 test("full-menu gate does not confuse K6 fail-closed guidance with a live failure", () => {
   assert.deepEqual(evaluateModuleHealthSnapshot("K6", healthySnapshot({
     text: "策略健康度由服务端给出。读取失败时本页不会用零值或浏览器计算结果代替。".repeat(8),
@@ -263,4 +295,18 @@ test("checked-in 75-page producer binds build identity and records first, reload
   assert.match(inAppProducer, /if\s*\(await\s+tab\.url\(\)\s*!==/);
   assert.match(inAppProducer, /journal-live\.json/);
   assert.match(inAppProducer, /buildId/);
+});
+
+test("checked-in final producer captures all 75 modules across five visual stages and reports 75x4 health", () => {
+  const source = fs.readFileSync(new URL("./e2e/pc-all-modules-final-acceptance.spec.ts", import.meta.url), "utf8");
+
+  assert.doesNotMatch(source, /REMAINING_DEVELOPMENT_EVIDENCE_IDS/);
+  assert.match(source, /const VISUAL_EVIDENCE_STAGES = \[[\s\S]*"00-visible-sidebar-entry"[\s\S]*"01-settled-page"[\s\S]*"02-after-refresh"[\s\S]*"03-after-browser-back"[\s\S]*"04-after-relogin"[\s\S]*\] as const;/);
+  assert.match(source, /const EXPECTED_VISUAL_EVIDENCE_COUNT = MODULES\.length \* VISUAL_EVIDENCE_STAGES\.length;/);
+  assert.match(source, /expect\(stepLog[\s\S]*\)\.toHaveLength\(EXPECTED_VISUAL_EVIDENCE_COUNT\)/);
+  assert.match(source, /expectedScreenshotCount:\s*EXPECTED_VISUAL_EVIDENCE_COUNT/);
+  assert.match(source, /expectedHealthyChecks:\s*MODULES\.length \* 4/);
+  assert.match(source, /actualHealthyChecks:\s*evidence\.firstPass\.length[\s\S]*evidence\.refreshed\.length[\s\S]*evidence\.backPass\.length[\s\S]*evidence\.reloginPass\.length/);
+  assert.match(source, /assertFreshEvidenceDirectory\(EVIDENCE_DIR\)/);
+  assert.match(source, /fs\.readdirSync\(evidenceDir\)/);
 });

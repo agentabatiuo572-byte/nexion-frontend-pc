@@ -496,6 +496,11 @@ export interface UserPaymentMethod extends JsonRecord {
   version: number;
   unboundAt?: string | null;
   pspRevokeStatus?: string | null;
+  revokeCommandNo?: string | null;
+  revokeAttempts?: number | null;
+  revokeNextAttemptAt?: string | null;
+  revokeDeadlineAt?: string | null;
+  revokeLastError?: string | null;
 }
 
 export interface UserPaymentMethodPage {
@@ -913,9 +918,9 @@ export async function fetchUserAssetAdjustmentDetail(adjustmentNo: string) {
 
 export async function fetchUserAssetAdjustmentAccounts(keyword?: string) {
   const page = await usersRequest<PageResult<User360Profile>>(
-    `/asset-adjustments/accounts${queryString({ keyword, pageNum: 1, pageSize: 8 })}`,
+    `/asset-adjustments/accounts${queryString({ keyword, pageNum: 1, pageSize: 20 })}`,
   );
-  return normalizePage(page, 1, 8);
+  return normalizePage(page, 1, 20);
 }
 
 export async function fetchUserAssetAdjustmentContext(userId: number | string) {
@@ -1189,6 +1194,48 @@ export async function rejectUserAssetAdjustment(
     body: JSON.stringify({ reason, operator }),
     idempotencyKey: commandKey,
   });
+}
+
+export async function withdrawUserAssetAdjustment(
+  adjustmentNo: string,
+  reason: string,
+  operator: string,
+  commandKey = idempotencyKey("c3-asset-adjustment-withdraw"),
+) {
+  return usersRequest<UserAssetAdjustmentDetail>(`/asset-adjustments/${encodeURIComponent(adjustmentNo)}/withdraw`, {
+    method: "POST",
+    body: JSON.stringify({ reason, operator }),
+    idempotencyKey: commandKey,
+  });
+}
+
+export async function executeUserDeviceTradein(
+  userId: number | string,
+  deviceId: number,
+  operation: "replace" | "recycle",
+  reason: string,
+  operator = currentAdminOperator(),
+  commandKey = idempotencyKey("c2-user-device-tradein"),
+) {
+  const response = await guardedFetch(
+    `/api/admin/devices/users/${encodeURIComponent(String(userId))}/tradein/${operation}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": commandKey },
+      body: JSON.stringify({ deviceId, reason, operator }),
+      cache: "no-store",
+    },
+  ).catch(() => { throw new UsersOutcomeUnknownError(commandKey); });
+  const result = (await response.json().catch(() => null)) as ApiResult<JsonRecord> | null;
+  if (!response.ok || !result || result.code !== 0) {
+    if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
+    if (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
+      || outcomeStaysUnknown(response.status, result?.code)) {
+      throw new UsersOutcomeUnknownError(commandKey);
+    }
+    throw new Error(formatAdminApiError(result?.message, `C2_DEVICE_COMMAND_FAILED_${response.status}`));
+  }
+  return result.data as JsonRecord;
 }
 
 export async function updateUserStatus(userId: number | string, status: UserStatus, reasonCode: string | null, reason: string, operator: string) {

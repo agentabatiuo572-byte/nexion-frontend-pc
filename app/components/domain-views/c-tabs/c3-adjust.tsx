@@ -17,6 +17,7 @@ import {
   rejectUserAssetAdjustment,
   requestLargeUserAssetAdjustment,
   reverseUserAssetAdjustment,
+  withdrawUserAssetAdjustment,
   type User360Profile,
   type UserAssetAdjustment,
   type UserAssetAdjustmentContext,
@@ -104,6 +105,7 @@ function statusTone(row: UserAssetAdjustment) {
   const status = text(row.status).toUpperCase();
   if (status === "APPROVED") return "ok";
   if (status === "REJECTED") return "bad";
+  if (status === "WITHDRAWN") return "dim";
   return "warn";
 }
 
@@ -135,6 +137,7 @@ const submitFingerprint = (payload: unknown) => `submit|${JSON.stringify(payload
 const reviewFingerprint = (approved: boolean, adjustmentNo: string, reason: string) =>
   `review|${approved ? "approve" : "reject"}|${adjustmentNo}|${reason}`;
 const reverseFingerprint = (adjustmentNo: string, reason: string) => `reverse|${adjustmentNo}|${reason}`;
+const withdrawFingerprint = (adjustmentNo: string, reason: string) => `withdraw|${adjustmentNo}|${reason}`;
 
 export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
@@ -391,6 +394,36 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     });
   };
 
+  const withdrawRequest = (row: UserAssetAdjustment) => {
+    const adjustmentNo = text(row.adjustmentNo, "");
+    if (!adjustmentNo) return toast("请求编号缺失");
+    openActionConfirm({
+      action: `撤回待放行调整 · ${adjustmentNo}`,
+      detail: "仅发起人可撤回；撤回使用服务端状态 CAS，不改余额、不生成账单，并保留必达审计。",
+      amplifies: false,
+      reasonMin: 8,
+      reasonMax: 200,
+      completionCopy: "撤回成功后该请求进入终态，复核员不能再批准或驳回。",
+      run: async (withdrawReason) => {
+        setBusy(true);
+        const fingerprint = withdrawFingerprint(adjustmentNo, withdrawReason);
+        const commandKey = c3Commands.get(fingerprint) ?? newIdempotencyKey("c3-withdraw");
+        c3Commands.remember(fingerprint, commandKey);
+        try {
+          await withdrawUserAssetAdjustment(adjustmentNo, withdrawReason, OPERATOR(), commandKey);
+          if (!await loadData(true)) throw new Error("撤回可能已成功，但结果回读失败；请使用同一请求重试");
+          c3Commands.forget(fingerprint);
+          toast(`${adjustmentNo} 已由发起人撤回`);
+        } catch (err) {
+          toast(errorMessage(err));
+          return false;
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
+  };
+
   const reverseAdjustment = (row: UserAssetAdjustment) => {
     const adjustmentNo = text(row.adjustmentNo, "");
     if (!adjustmentNo) return toast("调整单号缺失");
@@ -521,15 +554,8 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         </section>
       </div>
 
-      <section className="l-card">
+      <section className="l-card" data-restored-capability="c3-pending-request-withdrawal">
           <div className="l-h"><span className="ttl">待放行调整</span><span className="sub">· 提交阶段不改变余额</span><div className="r"><button type="button" className="l-btn sm" aria-label="刷新待放行调整队列" disabled={loading || busy} onClick={() => void loadData(true)}>刷新队列</button></div></div>
-          <div
-            className="ctint"
-            data-restored-capability="c3-pending-request-withdrawal"
-            style={{ margin: "0 12px 12px" }}
-          >
-            <b>发起人撤回能力位已保留</b> · 当前权威服务尚未提供待放行请求的撤回状态转移；接通前不展示可点击的假撤回，确需关闭时由具备放行权限的运营人员驳回并留痕。
-          </div>
           <div style={{ overflowX: "auto" }}>
             <table className="l-tbl" style={{ minWidth: 920 }}>
               <thead><tr><th>请求编号</th><th>账户</th><th>金额</th><th>原因</th><th>证据</th><th>发起人</th><th style={{ textAlign: "right" }}>处理</th></tr></thead>
@@ -539,7 +565,11 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
                     <td className="mono">{text(row.adjustmentNo)}</td><td>{displayRowUser(row)}</td>
                     <td className="mono">{text(row.direction) === "CREDIT" ? "+" : "−"}{formatNumber(row.amount)} {text(row.asset)}（${formatUsdEquivalent(row.amountUsd)}）</td>
                     <td>{text(row.reason)}</td><td className="mono">{text(row.evidenceRef)}</td><td>{text(row.maker)}</td>
-                    <td style={{ textAlign: "right" }}>{canApprove ? <span style={{ display: "inline-flex", gap: 6 }}><button className="l-btn sm primary" disabled={busy} onClick={() => reviewLargeRequest(row, true)}>批准</button><button className="l-btn sm" disabled={busy} onClick={() => reviewLargeRequest(row, false)}>驳回</button></span> : <span style={{ color: "var(--ink-4)", fontSize: 12 }}>等待独立复核</span>}</td>
+                    <td style={{ textAlign: "right" }}><span style={{ display: "inline-flex", gap: 6 }}>
+                      {canCreate && text(row.maker).toLowerCase() === OPERATOR().toLowerCase() && <button className="l-btn sm" disabled={busy} onClick={() => withdrawRequest(row)}>撤回</button>}
+                      {canApprove && text(row.maker).toLowerCase() !== OPERATOR().toLowerCase() && <><button className="l-btn sm primary" disabled={busy} onClick={() => reviewLargeRequest(row, true)}>批准</button><button className="l-btn sm" disabled={busy} onClick={() => reviewLargeRequest(row, false)}>驳回</button></>}
+                      {(!canApprove && !(canCreate && text(row.maker).toLowerCase() === OPERATOR().toLowerCase())) && <span style={{ color: "var(--ink-4)", fontSize: 12 }}>等待独立复核</span>}
+                    </span></td>
                   </tr>
                 ))}
                 {!requests.records.length && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-4)", padding: "22px 12px" }}>当前没有待放行调整；队列入口与分页结构继续保留</td></tr>}

@@ -52,7 +52,7 @@ export type B5Radar = {
   pressureHistory: Array<{ label: string; ratio: number | null }>;
   alertSeverity: Array<{ level: "P0" | "P1" | "P2" | "P3"; count: number }>;
   alertVolume: Array<{ label: string; count: number }>;
-  recentAlerts: Array<{ signalNo: string; level: "P0" | "P1" | "P2" | "P3"; message: string; userId: number; createdAt: string; target: string; handlingStatusAvailable: false }>;
+  recentAlerts: Array<{ signalNo: string; level: "P0" | "P1" | "P2" | "P3"; message: string; userId: number; createdAt: string; target: string; handlingStatusAvailable: true; handlingStatus: "open" | "handled" | "resolved"; handlingVersion: number; deliveryStatus: string }>;
   sources: string[];
 };
 
@@ -218,7 +218,9 @@ export function normalizeB5Radar(value: unknown): B5Radar {
     const level = text(item.level, `recentAlerts.${index}.level`);
     const target = text(item.target, `recentAlerts.${index}.target`);
     const handlingStatusAvailable = bool(item.handlingStatusAvailable, `recentAlerts.${index}.handlingStatusAvailable`);
-    if (!["P0", "P1", "P2", "P3"].includes(level) || requiredReadAuthority(target) === null || handlingStatusAvailable) invalid(`recentAlerts.${index}`);
+    const handlingStatus = text(item.handlingStatus, `recentAlerts.${index}.handlingStatus`);
+    if (!["P0", "P1", "P2", "P3"].includes(level) || requiredReadAuthority(target) === null || !handlingStatusAvailable
+      || !["open", "handled", "resolved"].includes(handlingStatus)) invalid(`recentAlerts.${index}`);
     return {
       signalNo: text(item.signalNo, `recentAlerts.${index}.signalNo`),
       level: level as "P0" | "P1" | "P2" | "P3",
@@ -226,7 +228,10 @@ export function normalizeB5Radar(value: unknown): B5Radar {
       userId: whole(item.userId, `recentAlerts.${index}.userId`),
       createdAt: isoLocalDateTime(item.createdAt, `recentAlerts.${index}.createdAt`),
       target,
-      handlingStatusAvailable: false as const,
+      handlingStatusAvailable: true as const,
+      handlingStatus: handlingStatus as "open" | "handled" | "resolved",
+      handlingVersion: whole(item.handlingVersion, `recentAlerts.${index}.handlingVersion`),
+      deliveryStatus: text(item.deliveryStatus, `recentAlerts.${index}.deliveryStatus`),
     };
   });
   if (recentAlerts.some((item) => item.userId <= 0)) invalid("recentAlerts.userId");

@@ -144,7 +144,7 @@ export type SegCond = { field: string; op: string; value: string };
 export type SessionStatus = "open" | "resolved" | "closed";
 /** 坐席消息回执:sent=已送达用户未读,read=用户已读(仅 sender==="agent" 有意义;镜像前端 ConvMessageStatus) */
 export type SessionMsgStatus = "sent" | "read";
-export type SessionMsg = { ts: number; sender: "user" | "agent"; agentName?: string; status?: SessionMsgStatus; text: string; ctaHref?: string };
+export type SessionMsg = { id?: number; ts: number; sender: "user" | "agent"; agentName?: string; status?: SessionMsgStatus; text: string; ctaHref?: string };
 
 /* 完整客户档案(设计稿 CustomerProfile 合并）—— 坐席接待时一眼看清价值 / 风险。只读快照,
  * 客户侧真实账户操作回 C/D 域;systemTags 派生只读,customTags / notes 持久化于后端(nx_customer_tag / nx_customer_note)。 */

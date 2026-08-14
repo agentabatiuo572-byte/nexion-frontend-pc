@@ -8,7 +8,7 @@ const ARRAY_KEYS: Record<IModuleId, readonly string[]> = {
   I2: [
     "channels", "eventDriven", "templates", "socialDistribution", "socialEvents",
     "socialEventTypes", "socialEventStatuses", "templateStatuses",
-    "templateCtaOptions", "sources",
+    "templateCtaOptions", "runtimeSourceOptions", "sources",
   ],
   I3: [
     "campaigns", "capRules", "tiers", "audiences", "statuses", "swipeRoutes", "sources",
@@ -81,7 +81,7 @@ function validateI1(moduleId: IModuleId, value: Record<string, unknown>) {
 function validateI2(moduleId: IModuleId, value: Record<string, unknown>) {
   for (const key of [
     "channels", "eventDriven", "templates", "socialDistribution",
-    "socialEvents", "socialEventTypes", "socialEventStatuses", "templateCtaOptions",
+    "socialEvents", "socialEventTypes", "socialEventStatuses", "templateCtaOptions", "runtimeSourceOptions",
   ]) {
     records(moduleId, value[key]);
   }

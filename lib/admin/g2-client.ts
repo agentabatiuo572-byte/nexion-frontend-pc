@@ -1,7 +1,8 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { assertG2OverviewContract } from "@/lib/admin/g-overview-contract";
 import { createStableMutationExecutor, stableMutationFingerprint, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
+import { normalizeG2BatchResult, type G2BatchResult } from "@/lib/admin/g2-batch-result";
 
 interface ApiResult<T> {
   code: number;
@@ -96,6 +97,7 @@ interface BackendOverview {
   coverage?: BackendCoverage | null;
   serverCanonical?: boolean | null;
   sources?: string[] | null;
+  batch?: unknown;
 }
 
 export interface G2Stats {
@@ -403,7 +405,31 @@ export async function updateG2ExchangeSwapStatus(
 }
 
 export async function processG2ExchangeQueue(limit: number, reason: string, operator: string) {
-  return g2OverviewMutation("/exchange/queue/process", "POST", { limit, reason, operator }, "g2-queue-batch");
+  const path = "/exchange/queue/process";
+  const body = JSON.stringify({ limit, reason, operator });
+  return executeG2Mutation(
+    "g2-queue-batch",
+    stableMutationFingerprint("POST", path, body),
+    async (commandKey) => {
+      const response = await g2Request<BackendOverview>(path, {
+        method: "POST",
+        headers: { "Idempotency-Key": commandKey },
+        body,
+      });
+      const batch = normalizeG2BatchResult(response?.batch);
+      // POST 已被后端接受后仍显式 GET 权威投影。若 GET 失败，执行器保留同一命令号；
+      // 运营重试时后端回放原批次回执，再次 GET，不会把未知结果变成第二次批处理。
+      let authoritative: G2Overview;
+      try {
+        authoritative = await fetchG2ExchangeOverview();
+      } catch (error) {
+        const message = displayAdminError(error);
+        throw stableMutationHttpFailure(message, 0);
+      }
+      return { overview: authoritative, batch };
+    },
+    (result): { overview: G2Overview; batch: G2BatchResult } => result,
+  );
 }
 
 export async function cancelG2ExchangeQueueOrder(exchangeNo: string, reason: string, operator: string) {

@@ -10,6 +10,7 @@ import { Fragment, isValidElement, useEffect, useId, useMemo, useRef, useState, 
 import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
+import { fetchA2ReasonPolicy } from "@/lib/admin/a2-client";
 import { isOptionalTrustLinkField, validateTrustSectionBilingualFields } from "@/lib/admin/trust-section-validation";
 
 /* ---------------- 域 → 落地路由(ctx.navigate 跨域跳转) ---------------- */
@@ -3191,6 +3192,9 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   const [businessSelectionLoading, setBusinessSelectionLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [authoritativeReasonMin, setAuthoritativeReasonMin] = useState<number | null>(null);
+  const [authoritativeReasonMax, setAuthoritativeReasonMax] = useState<number | null>(null);
+  const [reasonPolicyError, setReasonPolicyError] = useState<string | null>(null);
   const reasonFieldId = useId();
   const selectionRequestRef = useRef(0);
   // 配置型调整:仅当调用方显式传 edit 才提供「目标新值」编辑控件并要求 newVal;纯动作 / 处置(放行 / 冻结 / 驳回 / pause)不传 edit → 仅确认。
@@ -3208,22 +3212,47 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   const effectiveAmplifies = directionalAmplifies ?? Boolean(amplifies);
   // B1 红线禁放行:只有调用方传入真实后端覆盖率时才做前端镜像拦截;后端仍是最终裁决。
   const covBlocked = Boolean(effectiveAmplifies && coverage && coverage.coverageRatio < coverage.redlinePct);
-  const reasonMin = Number.isFinite(requestedReasonMin)
+  const requestedMinimum = Number.isFinite(requestedReasonMin)
     ? Math.max(1, Math.min(200, Math.floor(requestedReasonMin!)))
     : 8;
-  const reasonMax = requestedReasonMax ?? (isJ4Command
+  const reasonPolicyReady = authoritativeReasonMin !== null;
+  const reasonMin = reasonPolicyReady ? Math.max(requestedMinimum, authoritativeReasonMin) : requestedMinimum;
+  const requestedMaximum = requestedReasonMax ?? (isJ4Command
     ? 200
     : activeBusinessForm?.kind === "multi-field"
       ? activeBusinessForm.reasonMax
       : activeBusinessForm?.kind === "copy-experiment-create" || activeBusinessForm?.kind === "copy-experiment-start" || activeBusinessForm?.kind === "copy-experiment-discard"
         ? 200
         : undefined);
-  const reasonLength = reason.trim().length;
+  const reasonMax = reasonPolicyReady && authoritativeReasonMax !== null
+    ? Math.min(requestedMaximum ?? authoritativeReasonMax, authoritativeReasonMax)
+    : requestedMaximum;
+  // Mirror the server's Unicode policy for immediate UX feedback. The backend remains
+  // authoritative; whitespace, controls, zero-width formatting and standalone marks
+  // cannot be used to pad an operation reason to the configured minimum.
+  const reasonLength = Array.from(reason.normalize("NFC")).filter((char) =>
+    !/[\s\p{Cc}\p{Cf}\p{Mn}\p{Mc}\p{Me}]/u.test(char),
+  ).length;
   const reasonOk = reasonLength >= reasonMin && (reasonMax === undefined || reasonLength <= reasonMax);
   const businessMissing = missingBusinessFields(activeBusinessForm, businessValue);
   const derivedNewVal = businessNewValue(activeBusinessForm, businessValue);
   const editValueOk = isEditValueValid(spec, newVal);
-  const canConfirm = !covBlocked && !businessSelectionLoading && !submitting && reasonOk && editValueOk && businessMissing.length === 0;
+  const canConfirm = reasonPolicyReady && !covBlocked && !businessSelectionLoading && !submitting && reasonOk && editValueOk && businessMissing.length === 0;
+  useEffect(() => {
+    let active = true;
+    setAuthoritativeReasonMin(null);
+    setAuthoritativeReasonMax(null);
+    setReasonPolicyError(null);
+    void fetchA2ReasonPolicy().then((policy) => {
+      if (active) {
+        setAuthoritativeReasonMin(policy.minChars);
+        setAuthoritativeReasonMax(policy.maxChars);
+      }
+    }).catch(() => {
+      if (active) setReasonPolicyError("操作理由策略加载失败，系统已停止提交。请恢复 A2 配置后重开弹窗。");
+    });
+    return () => { active = false; };
+  }, []);
   const handleConfirm = async () => {
     if (!canConfirm) return;
     setSubmitting(true);
@@ -3269,6 +3298,11 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
       </>}>
       <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} />
       {submitError && <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{submitError}</div>}
+      {!reasonPolicyReady && (
+        <div className="alertbar warn" role="alert" data-policy-state="fail-closed" style={{ marginBottom: 16 }}>
+          {reasonPolicyError ?? "正在加载 A2 操作理由策略，加载完成前不能提交。"}
+        </div>
+      )}
       {effectiveAmplifies && (
         <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>
           <span className="ico"><Icon name="alert" size={16} /></span>

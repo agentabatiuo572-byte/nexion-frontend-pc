@@ -87,6 +87,7 @@ export function parseM1SupportAgentOverview(value: unknown): M1SupportAgentOverv
       && typeof agentValue.transferable === "boolean"
       && typeof agentValue.busy === "boolean"
       && isNonNegativeSafeInteger(agentValue.assignedUserCount)
+      && isPositiveSafeInteger(agentValue.version)
       && isNonEmptyString(agentValue.updatedAt);
   })) return m1OverviewMalformed();
 

@@ -428,7 +428,7 @@ export async function updateB2ForecastConfig(
 }
 
 export async function downloadB2LiabilitiesCsv() {
-  const response = await guardedFetch("/api/admin/treasury/liabilities/export", { cache: "no-store" });
+  const response = await guardedFetch("/api/admin/treasury/b2/liabilities/export", { cache: "no-store" });
   if (!response.ok) {
     const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();

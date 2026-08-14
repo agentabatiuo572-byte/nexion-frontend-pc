@@ -6,6 +6,8 @@ const client = readFileSync(new URL("../lib/admin/m-client.ts", import.meta.url)
 const readContract = readFileSync(new URL("../lib/admin/m-support-read-contract.ts", import.meta.url), "utf8");
 const view = readFileSync(new URL("../app/components/domain-views/m-view.tsx", import.meta.url), "utf8");
 const progressiveSupportState = readFileSync(new URL("../lib/admin/m-progressive-support-state.ts", import.meta.url), "utf8");
+const loadCoordinator = readFileSync(new URL("../lib/admin/m-content-load-coordinator.ts", import.meta.url), "utf8");
+const stream = readFileSync(new URL("../lib/admin/use-conversation-stream.ts", import.meta.url), "utf8");
 
 test("M sections publish their own fail-closed result without waiting for unrelated M requests", () => {
   assert.match(client, /export async function fetchMContentData\(onProgress\?/);
@@ -54,6 +56,17 @@ test("M reload clears cross-session authority, but retains only a verified same-
   assert.match(progressiveSupportState, /supportAgentsAvailable: true/);
 });
 
+test("M3 snapshot generations cannot cancel a full M1 reload, while newer full loads invalidate old snapshots", () => {
+  assert.match(loadCoordinator, /beginFullLoad\(\)/);
+  assert.match(loadCoordinator, /beginConversationSnapshot\(\)/);
+  assert.match(loadCoordinator, /isFullLoadCurrent/);
+  assert.match(loadCoordinator, /isConversationSnapshotCurrent/);
+  assert.match(view, /mLoadCoordinator\.current\.beginFullLoad\(\)/);
+  assert.match(view, /mLoadCoordinator\.current\.beginConversationSnapshot\(\)/);
+  assert.match(view, /failClosedSupportAgentsAfterReload/);
+  assert.match(view, /Boolean\(mData\?\.conversationsAvailable\) && !mLoading/);
+});
+
 test("M1 permission, auth, malformed and unavailable results revoke cached transfer authority fail-closed", () => {
   assert.match(readContract, /export type MSupportAgentFailureKind = "none" \| "auth" \| "permission" \| "malformed" \| "unavailable"/);
   // The carry-over branch is deliberately limited to the sole non-failure
@@ -62,4 +75,12 @@ test("M1 permission, auth, malformed and unavailable results revoke cached trans
   assert.match(progressiveSupportState, /next\.supportAgentsError === "none"/);
   assert.match(progressiveSupportState, /if \(!m1ReadIsPending \|\| !previous\?\.supportAgentsAvailable\) return next/);
   assert.match(view, /mError \? "客服中心暂时无法同步数据,请稍后重试。"/);
+});
+
+test("a full M reload owns and synchronously cancels the hook reconnect snapshot", () => {
+  assert.match(loadCoordinator, /conversationStreamSignal/);
+  assert.match(loadCoordinator, /this\.conversationStreamController\.abort\(\)/);
+  assert.match(view, /lifecycleSignal:\s*mLoadCoordinator\.current\.conversationStreamSignal/);
+  assert.match(stream, /lifecycleSignal\?\.addEventListener\("abort",\s*suspend,\s*\{ once: true \}\)/);
+  assert.match(stream, /lifecycleSignal\?\.removeEventListener\("abort",\s*suspend\)/);
 });

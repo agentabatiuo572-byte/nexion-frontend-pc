@@ -14,13 +14,15 @@ import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import {
   agentIdForName,
   buildMLegacyParams,
+  fetchMConversationSnapshot,
   fetchMContentData,
   mContentActions,
   type MContentData,
   type MLoadConfigWrite,
 } from "@/lib/admin/m-client";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
-import { preserveVerifiedSupportAgentsDuringReload } from "@/lib/admin/m-progressive-support-state";
+import { MDomainLoadCoordinator } from "@/lib/admin/m-content-load-coordinator";
+import { failClosedSupportAgentsAfterReload, preserveVerifiedSupportAgentsDuringReload } from "@/lib/admin/m-progressive-support-state";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useConversationStream, type ConversationStreamEvent } from "@/lib/admin/use-conversation-stream";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
@@ -32,6 +34,7 @@ import { M5Scripts } from "./m-tabs/m5-scripts";
 import { STANDBY_POOL_LABEL, type AdvisorScript, type SessionConvo, type SessionMsg, type SessionReplyTpl, type SessionType, type SupportFaq, type SupportSla, type SupportTicket, type SupportTicketCategory, type SupportTicketPriority } from "./m-tabs/data";
 import { MAvatar, ownerLabel } from "./m-tabs/hd-ui";
 import type { ConfirmReq, MCtx, ActionConfirmReq } from "./m-tabs/types";
+import { containsConversationMessage } from "./m-sse-dedup";
 
 /**
  * M 域两类写入的命令号共用一张表,靠 fingerprint 前缀分命名空间:
@@ -90,11 +93,15 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const [mLoading, setMLoading] = useState(true);
   const [mError, setMError] = useState<string | null>(null);
   const [uiParams, setUiParams] = useState<Record<string, string>>({});
-  const mLoadGeneration = useRef(0);
+  const mLoadCoordinator = useRef(new MDomainLoadCoordinator());
   const mDataAuthEpoch = useRef<number | null>(null);
+  const mDataRef = useRef<MContentData | null>(null);
+  const liveSnapshotController = useRef<AbortController | null>(null);
+  mDataRef.current = mData;
 
   const reloadMContent = useCallback(async () => {
-    const generation = ++mLoadGeneration.current;
+    const generation = mLoadCoordinator.current.beginFullLoad();
+    liveSnapshotController.current?.abort();
     // A changed authenticated session must never inherit the previous
     // operator's seat authority.  Same-session refreshes retain only a
     // previously validated M1 roster while the next M1 read is still pending.
@@ -106,17 +113,18 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     setMLoading(true);
     try {
       const next = await fetchMContentData((partial) => {
-        if (mLoadGeneration.current !== generation) return;
+        if (!mLoadCoordinator.current.isFullLoadCurrent(generation)) return;
         setMData((previous) => preserveVerifiedSupportAgentsDuringReload(previous, partial));
       });
-      if (mLoadGeneration.current !== generation) return;
+      if (!mLoadCoordinator.current.isFullLoadCurrent(generation)) return;
       setMData((previous) => preserveVerifiedSupportAgentsDuringReload(previous, next));
       setMError(null);
     } catch (error) {
-      if (mLoadGeneration.current !== generation) return;
+      if (!mLoadCoordinator.current.isFullLoadCurrent(generation)) return;
+      setMData((previous) => failClosedSupportAgentsAfterReload(previous));
       setMError(displayAdminError(error));
     } finally {
-      if (mLoadGeneration.current === generation) setMLoading(false);
+      if (mLoadCoordinator.current.isFullLoadCurrent(generation)) setMLoading(false);
     }
   }, [authEpoch]);
 
@@ -124,25 +132,58 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     void reloadMContent();
   }, [authEpoch, reloadMContent]);
 
+  const reconcileConversationSnapshot = useCallback(async (signal: AbortSignal) => {
+    const generation = mLoadCoordinator.current.beginConversationSnapshot();
+    const snapshotAuthEpoch = authEpoch;
+    const conversations = await fetchMConversationSnapshot(signal);
+    if (signal.aborted) return;
+    if (!mLoadCoordinator.current.isConversationSnapshotCurrent(generation) || mDataAuthEpoch.current !== snapshotAuthEpoch) {
+      throw new Error("M3_CONVERSATION_SNAPSHOT_SUPERSEDED");
+    }
+    setMData((previous) => previous
+      ? { ...previous, conversations, conversationsAvailable: true }
+      : previous);
+  }, [authEpoch]);
+  const reconcileLiveConversationSnapshot = useCallback(async (connectionSignal: AbortSignal) => {
+    if (connectionSignal.aborted) return;
+    liveSnapshotController.current?.abort();
+    const controller = new AbortController();
+    liveSnapshotController.current = controller;
+    const abortSnapshot = () => controller.abort();
+    connectionSignal.addEventListener("abort", abortSnapshot, { once: true });
+    if (connectionSignal.aborted) controller.abort();
+    try {
+      await reconcileConversationSnapshot(controller.signal);
+    } finally {
+      connectionSignal.removeEventListener("abort", abortSnapshot);
+      if (liveSnapshotController.current === controller) liveSnapshotController.current = null;
+    }
+  }, [reconcileConversationSnapshot]);
+  useEffect(() => () => liveSnapshotController.current?.abort(), []);
+
   // M3 即时会话 SSE 订阅：后端 OpsConversationStreamController 推 ConversationMessageEvent。
   // 增量合并进 mData.conversations —— 直接 setMData，绕开 runMWrite 写链（避免被 writeConversationRows
   // 当成「坐席新回复」二次回写后端，形成回环）。收到事件后 mergedParams 自动重算 → M3 / Dock 重渲。
-  const handleStreamEvent = useCallback((event: ConversationStreamEvent) => {
+  const handleStreamEvent = useCallback(async (event: ConversationStreamEvent, connectionSignal: AbortSignal) => {
+    if (connectionSignal.aborted) return;
     if (
       event.eventType === "RECEIPT"
       || event.eventType === "STATUS"
+      || event.eventType === "INITIATE"
       || event.senderType === "SYSTEM"
     ) {
       // 回执、终态和系统定时任务统一回读权威快照：不靠正文猜状态，也不把
       // 系统提醒当作坐席消息推进前端 lastTs。
-      void reloadMContent();
+      await reconcileLiveConversationSnapshot(connectionSignal);
+      return;
+    }
+    if (!mDataRef.current?.conversations.some((conversation) => conversation.id === event.conversationNo)) {
+      await reconcileLiveConversationSnapshot(connectionSignal);
       return;
     }
     setMData((prev) => {
       if (!prev) return prev;
       const idx = prev.conversations.findIndex((c) => c.id === event.conversationNo);
-      // 未知会话（别的坐席的 / 新发起未在本坐席快照）—— 增量合并无法处理；
-      // 不触发整页 reload，等下一次 reloadMContent 快照兜底。
       if (idx === -1) return prev;
       const convo = prev.conversations[idx];
       const eventTs = event.ts ? new Date(event.ts).getTime() : Date.now();
@@ -152,9 +193,14 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         const sender: "user" | "agent" = event.senderType === "USER" ? "user" : "agent";
         const text = event.body ?? "";
         // 去重：同 ts + 同正文已存在则不重复 push（本坐席自己发的回复会经 SSE 回环）。
-        const dup = convo.messages.some((m) => m.ts === eventTs && m.text === text);
+        const dup = containsConversationMessage(convo.messages, {
+          messageId: event.messageId,
+          ts: eventTs,
+          body: text,
+        });
         if (!dup) {
           const msg: SessionMsg = {
+            id: event.messageId,
             ts: eventTs,
             sender,
             agentName: sender === "agent" ? (event.senderName ?? convo.agentName) : undefined,
@@ -178,10 +224,16 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       conversations[idx] = nextConvo;
       return { ...prev, conversations };
     });
-  }, [reloadMContent]);
+  }, [reconcileLiveConversationSnapshot]);
   // 鉴权：走同源 cookie（nexion_admin_token 由 Next route 转 Authorization 头）。
-  // 当前 token 仅存 httpOnly cookie，JS 不可达，故不传 token（直连 + ?token 模式留作未来基础设施扩展）。
-  useConversationStream({ onEvent: handleStreamEvent });
+  // 仅走同源 httpOnly cookie 代理；JWT 永不进入 SSE URL。
+  const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
+  const { ready: conversationStreamReady, reconnectExhausted, retry: retryConversationStream } = useConversationStream({
+    onEvent: handleStreamEvent,
+    onReconnectSnapshot: reconcileConversationSnapshot,
+    lifecycleSignal: mLoadCoordinator.current.conversationStreamSignal,
+    enabled: authorities.includes("service_m3_read") && Boolean(mData?.conversationsAvailable) && !mLoading,
+  });
 
   const legacyParams = useMemo(() => (mData ? buildMLegacyParams(mData) : {}), [mData]);
   const mergedParams = useMemo(
@@ -195,7 +247,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const pendingMCommandBaselines = useRef(new Map<string, { legacyParams: Record<string, string>; data: MContentData | null }>());
 
   const runMWrite = useCallback(
-    async (key: string, value: string, meta?: { action?: string; reason?: string; idempotencyKey?: string; commandKey?: string }): Promise<boolean> => {
+    async (key: string, value: string, meta?: { action?: string; reason?: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void }): Promise<boolean> => {
       if (isMUiKey(key)) {
         setUiParams((prev) => ({ ...prev, [key]: value }));
         return true;
@@ -217,13 +269,15 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       pendingMCommandMetadata.current.set(commandFingerprint, stableMetadata);
       pendingMCommandBaselines.current.set(commandFingerprint, stableBaseline);
       try {
-        await applyMBackendWrite(key, stableValue, stableBaseline.legacyParams, stableBaseline.data, { ...meta, ...stableMetadata, idempotencyKey });
+        const backendResult = await applyMBackendWrite(key, stableValue, stableBaseline.legacyParams, stableBaseline.data, { ...meta, ...stableMetadata, idempotencyKey });
         await reloadMContent();
+        meta?.onBackendResult?.(backendResult);
         mCommands.forget(commandSlot(commandFingerprint));
         pendingMCommandMetadata.current.delete(commandFingerprint);
         pendingMCommandBaselines.current.delete(commandFingerprint);
         return true;
       } catch (error) {
+        await reloadMContent();
         const message = displayAdminError(error);
         // client 已接咽喉,英文网络错误不再到达;按原压制意图改判「咽喉网络中文」,命中仍不附加 detail。
         const detail = message.includes("网络连接失败或后台服务不可达") ? "" : ` · ${message}`;
@@ -307,6 +361,13 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     const openConvos = convos.filter((c) => c.status === "open" && !c.archived).length;
     const unreadConvos = convos.filter((c) => c.unread > 0 && !c.archived).length;
     const openTickets = tickets.filter((t) => t.status !== "resolved" && t.status !== "closed").length;
+    const ticketsAvailable = mergedParams["I.support.ticketsAvailable"] === "1";
+    const conversationsAvailable = mergedParams["I.session.conversationsAvailable"] === "1";
+    if (tab === "M3" && !conversationsAvailable) return "会话数据不可用";
+    if (tab === "M2" && !ticketsAvailable) return "工单数据不可用";
+    if (tab === "M1" && (!ticketsAvailable || !conversationsAvailable)) {
+      return `工单 ${ticketsAvailable ? openTickets : "不可用"} · 会话 ${conversationsAvailable ? openConvos : "不可用"}`;
+    }
     if (tab === "M3") return `进行中 ${openConvos} · 待回复 ${unreadConvos}`;
     if (tab === "M2") return `处理中工单 ${openTickets}`;
     return `工单 ${openTickets} · 会话 ${openConvos}`; // M1
@@ -333,6 +394,18 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
             重试
           </button>
         </div>
+      )}
+
+      {tab === "M3" && reconnectExhausted && (
+        <div className="card card-pad" role="alert" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Icon name="bell" size={16} />
+          <span className="dim" style={{ fontSize: 13 }}>实时会话连接已停止自动重试；当前页面数据可能不是最新状态。</span>
+          <span className="sp" />
+          <button type="button" className="btn btn-sec btn-sm" onClick={retryConversationStream}>重新连接</button>
+        </div>
+      )}
+      {tab === "M3" && !reconnectExhausted && mData?.conversationsAvailable && (
+        <span className="sr-only" aria-live="polite">{conversationStreamReady ? "实时会话已连接" : "实时会话正在重连"}</span>
       )}
 
       {!mData ? (
@@ -557,7 +630,7 @@ async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[],
   const added = addedRow(prev, next);
   if (added) {
     const ownerAgentName = added.owner === "Unassigned" ? added.agentName : added.owner;
-    await mContentActions.initiateConversation(
+    return mContentActions.initiateConversation(
       {
         conversationType: added.type,
         userId: userIdFromProfile(added),
@@ -568,7 +641,6 @@ async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[],
       reason,
       idempotencyKey,
     );
-    return;
   }
 
   const row = changedRow(prev, next);
@@ -588,16 +660,13 @@ async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[],
     return;
   }
   if (before.transfer && row.transfer && JSON.stringify(before.transfer) !== JSON.stringify(row.transfer)) {
-    if (row.transfer.fellBack || row.transfer.to.kind === "standby") await mContentActions.fallbackTransfer(row.id, "transferred", before.version, reason, idempotencyKey);
-    else {
-      await mContentActions.transferConversation(row.id, row.transfer, before.status, before.version, row.transfer.reason || reason, idempotencyKey);
-    }
+    await mContentActions.transferConversation(row.id, row.transfer, before.status, before.version, row.transfer.reason || reason, idempotencyKey);
     return;
   }
 
   const newMessage = row.messages.length > before.messages.length ? row.messages[row.messages.length - 1] : null;
   if (newMessage?.sender === "agent") {
-    if (action?.includes("transfer_wait")) {
+    if (action?.includes("transfer_wait") || action?.includes("等待处理")) {
       await mContentActions.waitTransfer(row.id, "transferred", before.version, reason, idempotencyKey);
     } else {
       const body = newMessage.ctaHref ? `${newMessage.text} ${newMessage.ctaHref}` : newMessage.text;
@@ -639,7 +708,13 @@ async function writeFaqRows(prev: SupportFaq[], next: SupportFaq[], reason: stri
   if (!row) return;
   const before = prev.find((item) => item.id === row.id);
   if (!before) return;
-  if (row.status !== before.status) await mContentActions.updateFaqStatus(row.id, row.status, before.status, before.version, reason, idempotencyKey);
+  const contentChanged = row.category !== before.category
+    || row.question !== before.question
+    || row.answer !== before.answer
+    || row.surface !== before.surface
+    || row.language !== before.language
+    || row.sortOrder !== before.sortOrder;
+  if (row.status !== before.status && !contentChanged) await mContentActions.updateFaqStatus(row.id, row.status, before.status, before.version, reason, idempotencyKey);
   else await mContentActions.updateFaq(row, before, reason, idempotencyKey);
 }
 
@@ -669,7 +744,7 @@ async function applyMBackendWrite(
   value: string,
   legacyParams: Record<string, string>,
   data: MContentData | null,
-  meta?: { action?: string; reason?: string; idempotencyKey?: string; commandKey?: string },
+  meta?: { action?: string; reason?: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void },
 ) {
   const reason = reasonOf(meta);
   const idempotencyKey = meta?.idempotencyKey;
@@ -727,8 +802,11 @@ async function applyMBackendWrite(
       enabled?: boolean;
       transferable?: boolean;
       busy?: boolean;
+      expectedVersion?: number;
     }>(value);
-    if (payload?.adminId) await mContentActions.updateSupportAgentProfile(payload.adminId, payload, reason, idempotencyKey);
+    if (payload?.adminId && Number.isSafeInteger(payload.expectedVersion)) {
+      await mContentActions.updateSupportAgentProfile(payload.adminId, { ...payload, expectedVersion: payload.expectedVersion! }, reason, idempotencyKey);
+    }
     return;
   }
   if (key === "I.support.seatAssignment.__update") {
@@ -742,8 +820,11 @@ async function applyMBackendWrite(
       transferable?: boolean;
       busy?: boolean;
       userIds?: number[];
+      expectedVersion?: number;
     }>(value);
-    if (payload?.adminId && payload.position) await mContentActions.assignSupportSeat(payload.adminId, { ...payload, position: payload.position }, reason, idempotencyKey);
+    if (payload?.adminId && payload.position && Number.isSafeInteger(payload.expectedVersion)) {
+      await mContentActions.assignSupportSeat(payload.adminId, { ...payload, position: payload.position, expectedVersion: payload.expectedVersion! }, reason, idempotencyKey);
+    }
     return;
   }
   if (key === "I.support.advisorAssignment.__create") {
@@ -842,8 +923,7 @@ async function applyMBackendWrite(
     return;
   }
   if (key === "I.session.convos") {
-    await writeConversationRows(parseRows<SessionConvo>(legacyParams[key]), parseRows<SessionConvo>(value), reason, meta?.action, data, idempotencyKey);
-    return;
+    return writeConversationRows(parseRows<SessionConvo>(legacyParams[key]), parseRows<SessionConvo>(value), reason, meta?.action, data, idempotencyKey);
   }
   if (key === "I.support.faqs") {
     await writeFaqRows(parseRows<SupportFaq>(legacyParams[key]), parseRows<SupportFaq>(value), reason, idempotencyKey);

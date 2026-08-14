@@ -32,8 +32,10 @@ function backendPath(parts: string[]) {
     "campaigns",
     "trust-disclosure",
     "i18n-learning",
+    "learning-acceptance",
   ]);
-  if (!allowedHeads.has(parts[0])) return null;
+  const isAcceptanceSupport = parts[0] === "support" && parts[1] === "acceptance";
+  if (!allowedHeads.has(parts[0]) && !isAcceptanceSupport) return null;
   if (parts.some((part) => !isSafePart(part))) return null;
   return `/api/admin/content/${parts.map((part) => encodeURIComponent(part)).join("/")}`;
 }

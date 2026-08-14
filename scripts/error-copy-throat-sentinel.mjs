@@ -43,6 +43,10 @@ const BARE_FETCH_ALLOW = [
     why: "登出发完即忘:`.catch(() => undefined)` 吞掉 rejection 后无条件 reload,无任何展示路径",
   },
   {
+    file: "lib/admin/use-conversation-stream.ts",
+    why: "SSE 断线后的只读 session 探测仅按状态决定是否重连;网络异常被 catch 吞掉并转入有限重试,没有错误文案展示路径",
+  },
+  {
     // 2026-08-06 main 合流带入:M 内容请求自管 AbortController + 超时语义,
     // AbortError 必须保持原始形态供上游静默取消(guardedFetch 会把它翻成「网络失败」误报);
     // 展示出口经 MContentReadError → formatAdminApiError / displayAdminError,仍全量咽喉化。

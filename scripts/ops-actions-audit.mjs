@@ -11,6 +11,15 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import {
+  validateRuntimeConsumerContracts,
+  validateRuntimeEvidence,
+  validateServiceDelegations,
+} from "./lib/ops-actions-reverse-coverage.mjs";
+import {
+  resolveNexionAppRoot,
+  resolveNexionBackendRoot,
+} from "./lib/nexion-workspace-paths.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p) => { try { return fs.readFileSync(p, "utf8"); } catch { return ""; } };
@@ -38,6 +47,42 @@ const rows = m.rows || [];
 const baseline = m.deadControlBaseline || {};
 const problems = [];
 const warnings = [];
+const BACKEND_ROOT = resolveNexionBackendRoot({ adminRoot: ROOT });
+const UNIAPP_ROOT = resolveNexionAppRoot({ adminRoot: ROOT });
+const JANUS_ROOT = process.env.NEXION_JANUS_ROOT?.trim()
+  ? path.resolve(process.env.NEXION_JANUS_ROOT.trim())
+  : path.resolve(ROOT, "..", "NX1.0-Janus");
+const evidenceRoot = (type) => type.startsWith("backend-") ? BACKEND_ROOT
+  : type.startsWith("uniapp-") ? UNIAPP_ROOT
+    : type.startsWith("janus-") ? JANUS_ROOT : ROOT;
+problems.push(...validateRuntimeEvidence(m, (type, file) => {
+  const absolute = path.resolve(evidenceRoot(type), file);
+  return absolute.startsWith(`${evidenceRoot(type)}${path.sep}`) ? read(absolute) || undefined : undefined;
+}).map((problem) => `[运行时证据] ${problem}`));
+problems.push(...validateRuntimeConsumerContracts(m, (type, file) => {
+  const absolute = resolveConsumerEvidencePath(type, file);
+  return absolute ? read(absolute) || undefined : undefined;
+}, resolveConsumerEvidencePath).map((problem) => `[运行时消费者证据] ${problem}`));
+problems.push(...validateServiceDelegations(m, (file) => read(path.resolve(BACKEND_ROOT, file)) || undefined)
+  .map((problem) => `[服务委派证据] ${problem}`));
+
+function resolveConsumerEvidencePath(type, file) {
+  const root = type === "backend-runtime" || type === "backend-test" ? BACKEND_ROOT
+    : type === "uniapp-runtime" || type === "uniapp-test" ? UNIAPP_ROOT
+      : type === "janus-runtime" || type === "janus-test" ? JANUS_ROOT
+        : type === "pc-runtime" || type === "test-runtime" ? ROOT : undefined;
+  if (!root || typeof file !== "string" || !file.trim()) return undefined;
+  const absolute = path.resolve(root, file);
+  const relative = path.relative(root, absolute);
+  if (relative === "" || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return undefined;
+  try {
+    const physicalRoot = fs.realpathSync.native(root);
+    const physicalFile = fs.realpathSync.native(absolute);
+    const physicalRelative = path.relative(physicalRoot, physicalFile);
+    if (physicalRelative === "" || physicalRelative.startsWith(`..${path.sep}`) || path.isAbsolute(physicalRelative)) return undefined;
+    return physicalFile;
+  } catch { return undefined; }
+}
 
 // ── 规则 1:防新增死控件(per view 只减不增)──
 let baselineDrift = 0;
@@ -77,13 +122,16 @@ const definedInLib = (a) => {
     new RegExp(`\\b${x}\\s*\\(`).test(libBlob)
   );
 };
+// 活跃页面也会经 store 间接调用 REST client（例如 K6 策略/设备管理）。
+// 调用面同时覆盖 app/ 与 lib/store/admin；定义面仍只认 lib/admin。
+const activeCallBlob = `${appBlob}\n${storeBlob}`;
 const calledInApp = (a) => {
   const x = esc(a);
   return (
-    new RegExp(`findHighOp\\(\\s*"${x}"`).test(appBlob) ||
-    new RegExp(`\\.${x}\\(`).test(appBlob) ||
-    new RegExp(`\\b${x}\\s*\\(`).test(appBlob) ||
-    new RegExp(`"${x}"`).test(appBlob) // 动态 op 映射表里的精确引号字面量(引号定界,user_x 前缀串不匹配)
+    new RegExp(`findHighOp\\(\\s*"${x}"`).test(activeCallBlob) ||
+    new RegExp(`\\.${x}\\(`).test(activeCallBlob) ||
+    new RegExp(`\\b${x}\\s*\\(`).test(activeCallBlob) ||
+    new RegExp(`"${x}"`).test(activeCallBlob) // 动态 op 映射表里的精确引号字面量(引号定界,user_x 前缀串不匹配)
   );
 };
 for (const r of rows) {
@@ -96,6 +144,7 @@ for (const r of rows) {
     }
     continue;
   }
+  if (r.runtimeEvidence !== undefined || r.serviceDelegations !== undefined) continue;
   if (!r.storeAction) { problems.push(`[built 缺锚] ${r.id} ${r.object}·${r.action}`); continue; }
   if (!storeBlob.includes(r.storeAction)) problems.push(`[built 退化] ${r.id}: storeAction "${r.storeAction}" 不在 lib/store/admin/*(被删/虚标)`);
   else if (!appBlob.includes(r.storeAction)) problems.push(`[built 未接线] ${r.id}: "${r.storeAction}" 在 store 定义但 app/ 无 view 调用(UI 没接)`);
@@ -109,6 +158,9 @@ for (const r of rows) {
 
 // ── 批次收紧(可选)──
 if (curBatch) {
+  if (curBatch !== "ALL" && !BATCH_ORDER.includes(curBatch)) {
+    problems.push(`[未知 OPS_BATCH] ${curBatch}；只允许 ${[...BATCH_ORDER, "ALL"].join("|")}`);
+  }
   const idx = BATCH_ORDER.indexOf(curBatch);
   const inScope = curBatch === "ALL" ? BATCH_ORDER : BATCH_ORDER.slice(0, idx + 1);
   for (const r of rows) {

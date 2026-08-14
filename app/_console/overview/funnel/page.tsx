@@ -218,7 +218,7 @@ export default function FunnelPage() {
               <span className="b3-kicker">Day0 接入率</span>
               <strong>{pct(data.auxMetrics.day0AccessRate)}</strong>
               <small>
-                90 秒内首笔收益 {data.auxMetrics.day0Numerator} ÷ 注册 {data.auxMetrics.day0Denominator}
+                {data.auxMetrics.day0WindowSeconds} 秒内首笔收益 {data.auxMetrics.day0Numerator} ÷ 注册 {data.auxMetrics.day0Denominator}
                 · 目标 &gt; {data.auxMetrics.day0Target}%
               </small>
             </article>

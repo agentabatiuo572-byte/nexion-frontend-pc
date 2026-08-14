@@ -5,7 +5,7 @@ import test from "node:test";
 import { F1OutcomeUncertainError, f1StableWrite } from "../lib/admin/f1-stable-write.ts";
 
 /**
- * F 域直写通道稳定命令号契约(2026-08-06 任务 A:f1-client 九个高危写函数迁 SlotAttemptStore)。
+ * F 域直写通道稳定命令号契约(2026-08-06 任务 A:f1-client 高危写函数迁 SlotAttemptStore)。
  *
  * 两半合一才算「运行时证明对」:
  *   静态半 —— 钉 f1-client 每个写函数的**表达式级接线**(槽位带目标 id + 指纹构成),并封死
@@ -27,7 +27,7 @@ const read = (rel) => readFileSync(new URL(`../${rel}`, import.meta.url), "utf8"
 
 // ---------- 静态半:f1-client 写函数逐个钉接线 ----------
 
-test("f1-client 九个直写函数全部经 f1StableWrite,槽位带目标 id、指纹带输入值且不含 reason", () => {
+test("f1-client 直写函数集合精确受控,每函数槽位与指纹完整且不含 reason", () => {
   const code = stripComments(read("lib/admin/f1-client.ts"));
 
   assert.match(code, /from "@\/lib\/admin\/f1-stable-write"/);
@@ -38,7 +38,29 @@ test("f1-client 九个直写函数全部经 f1StableWrite,槽位带目标 id、�
   assert.equal((code.match(/TeamConfig/g) ?? []).length, 0,
     "updateF*TeamConfig 全仓零调用死代码已清,不得复活");
 
+  const expectedStableWriteFunctions = [
+    "addF1VRankReward",
+    "downloadF5RedactedCsv",
+    "executeF3Settlement",
+    "reissueF5Commissions",
+    "removeF1VRankReward",
+    "reverseF5Commission",
+    "suspendF5UserCommissions",
+    "updateF1VRankReward",
+    "updateF1VRankThreshold",
+    "updateF5AnomalyConfig",
+  ];
+  const stableWriteOwners = [...code.matchAll(/f1StableWrite\(/g)].map((call) => {
+    const preceding = code.slice(0, call.index);
+    const owners = [...preceding.matchAll(/export async function (\w+)/g)];
+    return owners.at(-1)?.[1] ?? "<module>";
+  }).sort();
+  assert.deepEqual(stableWriteOwners, expectedStableWriteFunctions,
+    "每个真实直写函数必须恰好占一个稳定槽位;新增/删除功能时须显式审计槽位与指纹,不能只改总数");
+
   // 逐函数钉「槽位 + 指纹」完整表达式(只查字面量会放过改槽/改指纹的回退)。
+  assert.match(code, /const fingerprint = JSON\.stringify\(\[filters\]\);\s*return f1StableWrite\("f5-export", fingerprint/,
+    "F5 导出是第十个真实直写:筛选条件决定意图,reason 仅是审计元数据");
   assert.match(code, /f1StableWrite\(`f5-reverse\|\$\{commissionId\}`, JSON\.stringify\(\[refundRef, operator\]\)/);
   assert.match(code, /f1StableWrite\("f5-reissue", JSON\.stringify\(\[sortedIds, operator\]\)/,
     "重发 = 打款:整批 id 必须在**指纹**里(放槽位会让改回原勾选复用可能已消费的旧号,且撑爆头长度)");
@@ -60,10 +82,17 @@ test("f1-client 九个直写函数全部经 f1StableWrite,槽位带目标 id、�
   // reason 不得进任何指纹:理由是审计元数据,进指纹会让「结果未知后补理由再点」换新号 → 重复打款。
   assert.doesNotMatch(code, /f1StableWrite\([^)]*reason[,\]]/,
     "指纹里出现 reason —— 改理由就会铸新号,同一笔动作被执行两次");
+  assert.doesNotMatch(code, /(?:const|let)\s+\w*fingerprint\w*\s*=\s*[^;\n]*reason/i,
+    "指纹变量里出现 reason —— 用变量绕过调用表达式检查同样会导致结果未知重试换号");
 
-  // 数量精确:九个写函数、九处接线。写 >= 会让「漏接一个」永远不红。
-  assert.equal((code.match(/f1StableWrite\(/g) ?? []).length, 9);
+  // f1Request 通道的九个写函数都把 key 放 stableIdempotencyKey;F5 导出直接写请求头,单独精确钉住。
   assert.equal((code.match(/stableIdempotencyKey: commandKey/g) ?? []).length, 9);
+  assert.match(code, /headers: \{ "Content-Type": "application\/json", "Idempotency-Key": commandKey \}/);
+  assert.match(
+    code,
+    /return f1StableWrite\("f5-export", fingerprint, async \(commandKey\) => \{[\s\S]*?response = await guardedFetch\("\/api\/admin\/teams\/commissions\/export", \{[\s\S]*?"Idempotency-Key": commandKey/,
+    "F5 二进制导出也必须经过 guardedFetch；网络异常仍由外层转为携带同一命令号的结果未知",
+  );
 });
 
 test("f1Request:写路径无稳定号直接拒绝,四类结果未知保号,4xx/401 仍弃号且照常登出", () => {

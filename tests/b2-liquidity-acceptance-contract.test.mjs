@@ -18,7 +18,7 @@ test("B2 owns a strict client for the D3 canonical reserve, liability, maturity 
     "/liabilities?breakdown=true",
     "/maturity-forecast?window=",
     "/forecast-config",
-    "/liabilities/export",
+    "/b2/liabilities/export",
   ]) {
     assert.ok(client.includes(endpoint), `missing ${endpoint}`);
   }
@@ -87,6 +87,6 @@ test("B2 read/write/export authorities are enforced server-side without weakenin
   );
   assert.match(
     controller,
-    /@GetMapping\(value = "\/liabilities\/export"[\s\S]*?@PreAuthorize\("hasAnyAuthority\('finance_d3_export',\s*'overview_b2_export'\)"\)/,
+    /@GetMapping\(value = "\/b2\/liabilities\/export"[\s\S]*?@PreAuthorize\("hasAuthority\('overview_b2_export'\)"\)/,
   );
 });

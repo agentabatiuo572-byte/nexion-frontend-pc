@@ -1729,6 +1729,21 @@ export const HIGH_OPS: HighOpDef[] = [
     // 后端查锁 countActiveByTarget("F","team_config",key) → id = key
     buildTarget: (ctx) => ({ domain: "F", type: "team_config", id: String(ctx.key) }),
   },
+  {
+    op: "f_config_batch",
+    domain: "F",
+    action: "网络参数整批原子调整",
+    amplifies: true,
+    type: "fund",
+    gateLabel: "门槛者",
+    targetType: "ui_config",
+    buildCommand: (ctx) => ({ domain: "F", op: "f_config_batch", params: { changes: ctx.changes } }),
+    buildTarget: (ctx) => ({ domain: "F", type: "ui_config", id: `batch:${String(ctx.sourceDomain ?? "F")}` }),
+    buildTargets: (ctx) => (Array.isArray(ctx.changes) ? ctx.changes : []).map((item) => {
+      const change = item as { key?: unknown };
+      return { domain: "F", type: "ui_config", id: String(change.key ?? "") };
+    }),
+  },
   // f_ui_config: UI keys toggle/文案(F.vrank.permanent/F.binary.paused/F.leaderboard.paused 等)。amplifies false。
   {
     op: "f_ui_config",
@@ -1739,7 +1754,8 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "ui_config",
     buildCommand: (ctx) => ({ domain: "F", op: "f_ui_config",
-      params: { key: String(ctx.key), value: String(ctx.value) } }),
+      params: { key: String(ctx.key), value: String(ctx.value),
+        ...(ctx.expectedVersion === undefined ? {} : { expectedMonthlyQuota: Number(ctx.expectedVersion) }) } }),
     // 后端查锁 countActiveByTarget("F","ui_config",key) → id = key
     buildTarget: (ctx) => ({ domain: "F", type: "ui_config", id: String(ctx.key) }),
   },
@@ -1871,6 +1887,24 @@ export const HIGH_OPS: HighOpDef[] = [
       domain: "F",
       type: "leadership_pool_settlement",
       id: String(ctx.weekKey || "current-week"),
+    }),
+  },
+  {
+    op: "f4_leaderboard_period_payout",
+    domain: "F",
+    action: "排行榜周期奖池派发",
+    amplifies: true,
+    type: "fund",
+    gateLabel: "门槛者",
+    targetType: "leaderboard_settlement",
+    buildCommand: (ctx) => ({ domain: "F", op: "f4_leaderboard_period_payout", params: {
+      period: String(ctx.period),
+      ...(ctx.periodKey === undefined ? {} : { periodKey: String(ctx.periodKey) }),
+    } }),
+    buildTarget: (ctx) => ({
+      domain: "F",
+      type: "leaderboard_settlement",
+      id: String(ctx.period),
     }),
   },
   // —— L 域 BI(批 9) ——

@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { operatorDatacenterLabel, operatorDeviceIdentifier, operatorDeviceName, operatorDeviceStatus, operatorOperationalNote, operatorProductLabel, operatorRate, operatorTaskLabel, operatorThermalLabel, operatorTimestamp, operatorUserIdentifier, operatorUserName } from "@/lib/admin/e-operator-display";
 import { Badge, DataListPager } from "../design-kit";
-import { fetchE5Devices, type E5Device, type E5DeviceState } from "@/lib/admin/e5-client";
+import { fetchE5Devices, fetchE5Observability, type E5Device, type E5DeviceState, type E5Observability } from "@/lib/admin/e5-client";
 import type { EViewCtx } from "./types";
 import { EStats } from "./stats";
 
@@ -78,6 +78,23 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
   const [healthTotal, setHealthTotal] = useState(0);
   const [healthLoading, setHealthLoading] = useState(false);
   const [healthError, setHealthError] = useState("");
+  const [observability, setObservability] = useState<E5Observability | null>(null);
+  const [observabilityError, setObservabilityError] = useState("");
+  useEffect(() => {
+    let live = true;
+    setObservabilityError("");
+    void fetchE5Observability().then((value) => {
+      if (live) setObservability(value);
+    }).catch((error) => {
+      if (live) {
+        setObservability(null);
+        setObservabilityError(error instanceof Error
+          ? `舰队可观测数据不可用：${displayAdminError(error)}`
+          : "舰队可观测数据不可用，请稍后重试");
+      }
+    });
+    return () => { live = false; };
+  }, []);
   const overview = ctx.e5Overview;
   const maxDevicesPerUser = overview?.maxDevicesPerUser ?? null;
   const maxDevicesLabel = maxDevicesPerUser ? String(maxDevicesPerUser) : "—";
@@ -91,6 +108,15 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
   const recycledDevices = overview?.recycledDevices ?? devices.filter((d) => d.state === "unbound").length;
   const dcStats = new Map((overview?.datacenters ?? []).map((dc) => [dc.dcLocation, dc]));
   const dcRows = ctx.e5Datacenters.length ? ctx.e5Datacenters : overview?.datacenters ?? [];
+  const telemetryCount = (value: number | undefined) => observabilityError
+    ? "不可用"
+    : observability == null ? "读取中" : fmtCount(value);
+  const telemetryLatency = observabilityError
+    ? "不可用"
+    : observability == null ? "读取中"
+      : observability.telemetry.dispatchLatencyP95Ms == null
+        ? "未采集"
+        : `${observability.telemetry.dispatchLatencyP95Ms.toFixed(0)}ms`;
   const filteredDevices = devices;
   const devAct = (d: E5Device, op: "device-activate" | "device-deactivate", action: NonNullable<import("./types").McSpec["deviceAction"]>, name: string, detail: string, amplify = false) =>
     ctx.openActionConfirm({ name: `${name} · ${operatorDeviceIdentifier(d.serial)}`, op, deviceAction: action, deviceId: d.deviceId, deviceNo: d.serial, amplify, detail });
@@ -146,10 +172,10 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
       ]} />
 
       {/* Global heartbeat banner */}
-      <section className="heartbeat">
+      <section className="heartbeat" data-observability-state={observabilityError ? "error" : observability ? "ready" : "loading"}>
         <div>
           <div className="hb-num">{fmtCount(totalDevices)}</div>
-          <div className="hb-lbl"><b>实时</b> 在网设备 · 最近状态同步</div>
+          <div className="hb-lbl">设备总数 · 最近状态同步</div>
         </div>
         <div className="ecg-wrap">
           <svg viewBox="0 0 800 60" preserveAspectRatio="none">
@@ -158,10 +184,11 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
           </svg>
         </div>
         <div className="hb-ctrl">
-          <div className="row"><span>过去 1h 心跳失联</span><span className="v">{fmtCount(abnormalDevices)}</span></div>
-          <div className="row"><span>过去 24h 自动重连</span><span className="v">—</span></div>
-          <div className="row"><span>持续异常 &gt; 1h</span><span className="v warn">{fmtCount(overview?.offlineDevices)}</span></div>
-          <div className="row"><span>调度延迟 P95</span><span className="v">—</span></div>
+          <div className="row"><span>过去 1h 心跳失联</span><span className="v">{telemetryCount(observability?.telemetry.heartbeatLost1h)}</span></div>
+          <div className="row"><span>过去 24h 重连 / 恢复</span><span className="v">{telemetryCount(observability?.telemetry.reconnectEvents24h)}</span></div>
+          <div className="row"><span>持续异常 &gt; 1h</span><span className="v warn">{telemetryCount(observability?.telemetry.persistentOffline1h)}</span></div>
+          <div className="row"><span>调度延迟 P95</span><span className="v">{telemetryLatency}</span></div>
+          {observabilityError && <div className="row"><span className="warn">{observabilityError}</span></div>}
         </div>
       </section>
 
@@ -378,10 +405,18 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
       <section className="feed-card">
         <div className="feed-h">
           <span className="ttl">运维活动 · 最近 24h</span>
-          <span className="sub">等待后端运维事件接口返回真实事件</span>
+          <span className="sub">服务端持久事件 · nx_event_outbox</span>
         </div>
         <div className="feed">
-          <div className="tint tiny">后端未返回运维活动数据</div>
+          {observabilityError && <div className="tint tiny" data-module-health-state="error">{observabilityError}</div>}
+          {!observabilityError && !observability && <div className="tint tiny">正在读取运维活动...</div>}
+          {!observabilityError && observability?.activity.length === 0 && <div className="tint tiny">最近 24 小时无持久化 E5 运维事件</div>}
+          {observability?.activity.map((event) => (
+            <div className="feed-row" key={`${event.eventType}-${event.aggregateType}-${event.aggregateId}-${event.occurredAt}`}>
+              <div><b>{operatorOperationalNote(event.eventType)}</b><div className="muted tiny">{operatorOperationalNote(event.aggregateType)} · {operatorDeviceIdentifier(event.aggregateId)}</div></div>
+              <div className="mono muted tiny">{operatorTimestamp(event.occurredAt)}</div>
+            </div>
+          ))}
         </div>
       </section>
       <p className="f-foot">批量 pause 是<b>仅限运维窗口</b>的处置 — 暂停 DC 全节点派单,但不影响已售设备结算(用户依然按 baseRate 计提收益)。处置范围限单 DC,跨 DC 联动须分次操作。<b>心跳失联 &gt; 24h</b> 的设备自动进入永久离线列表,资产回退由系统定时任务兜底。</p>

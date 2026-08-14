@@ -73,6 +73,19 @@ test("A2 mechanism boundaries and dynamic reason minimum reject malformed values
   assert.deepEqual(validateA2MechanismValue("retention", "12"), { ok: false, message: "日志保留期必须是 13–36 的整数月" });
   assert.equal(parseA2SchemaVersion("统一 schema · v4"), "v4");
   assert.equal(parseA2SchemaVersion("v5"), "v5");
+  assert.deepEqual(validateA2MechanismValue("schema", "v4", "v3"), { ok: true, value: "v4" });
+  assert.deepEqual(validateA2MechanismValue("schema", "v2", "v3"), {
+    ok: false,
+    message: "字段结构版本只能升级，不能降级或重复提交",
+  });
+  assert.deepEqual(validateA2MechanismValue("schema", "vx", "v3"), {
+    ok: false,
+    message: "字段结构版本仅支持已注册的 v3、v4",
+  });
+  assert.deepEqual(validateA2MechanismValue("schema", "v5", "v3"), {
+    ok: false,
+    message: "字段结构版本仅支持已注册的 v3、v4",
+  });
   assert.equal(matchesA2OperationRole("FINANCE", "财务"), true);
   assert.equal(matchesA2OperationRole("总管理员", "超管"), true);
   assert.equal(matchesA2OperationRole("risk-admin", "财务"), false);
@@ -93,6 +106,10 @@ test("A2 page is fail-closed, permission-aware and uses one applied filter for l
   assert.match(page, /validateA2AuditFilterRange/);
   assert.match(page, /A2_MECHANISM_WRITE_NOT_CONFIRMED/);
   assert.match(page, /A2_OPERATION_WRITE_NOT_CONFIRMED/);
+  assert.match(page, /runA2RetentionNow\(reason, commandKey\)/);
+  assert.match(page, /最近执行:.*锁/);
+  assert.match(client, /\/retention-runs\/latest/);
+  assert.match(client, /\/retention-runs/);
   assert.match(page, /reasonMax:\s*200/);
   assert.match(page, /parseA2SchemaVersion/);
   assert.match(page, /matchesA2OperationRole\(w\.operatorRole, qOperator\)/);

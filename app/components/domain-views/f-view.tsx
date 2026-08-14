@@ -23,6 +23,7 @@ import {
   fetchF3BinaryOverview,
   fetchF4LeadershipPoolOverview,
   fetchF5CommissionAuditOverview,
+  downloadF5RedactedCsv,
   updateF5AnomalyConfig,
   fetchF2RatesOverview,
   fetchF1PromotionLog,
@@ -320,6 +321,38 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     });
   };
 
+  const updateFConfigBatch = async (
+    sourceDomain: "F2" | "F3" | "F4",
+    changes: Array<{ key: string; value: string }>,
+    reason: string,
+  ) => {
+    const normalized = changes.map((item) => ({ key: item.key.trim(), value: item.value.trim() }))
+      .filter((item) => item.key && item.value);
+    if (!normalized.length) throw new Error("F_CONFIG_BATCH_EMPTY");
+    const def = findHighOp("f_config_batch");
+    if (!def) throw new Error("F_OP_NOT_FOUND:f_config_batch");
+    try {
+      await proposeStable(`f-config-batch:${sourceDomain}`, JSON.stringify([normalized, reason]), {
+        action: `${def.action} · ${normalized.length} 项`,
+        obj: normalized.map((item) => item.key).join(","),
+        before: "以服务端权威快照为准",
+        after: normalized.map((item) => `${item.key}=${item.value}`).join(" / "),
+        type: "fund",
+        amplifies: normalized.some((item) => isFFundAmplifyingKey(item.key)),
+        gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain,
+        command: def.buildCommand({ changes: normalized, sourceDomain }),
+        targets: def.buildTargets?.({ changes: normalized, sourceDomain }),
+      });
+    } catch (error) {
+      // A2 submission/validation failure must re-read the authoritative server snapshot so
+      // the operator never continues from optimistic partial values.
+      if (sourceDomain === "F2") await refreshF2();
+      else if (sourceDomain === "F3") await refreshF3();
+      else await refreshF4();
+      throw error;
+    }
+  };
+
   const ctx: FViewCtx = {
     openActionConfirm: (m) => openActionConfirm(m),
     nav,
@@ -420,6 +453,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     updateF2Config: async (key, value, reason) => {
       await proposeFConfig("F2", key, value, reason);
     },
+    updateFConfigBatch,
     f3Metrics: f3Overview?.metrics ?? [],
     f3Formula: f3Overview?.formula ?? null,
     f3Settlements: f3Overview?.settlements ?? [],
@@ -447,8 +481,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f4Loading,
     f4Error,
     refreshF4,
-    updateF4Config: async (key, value, reason) => {
-      await proposeFConfig("F4", key, value, reason);
+    updateF4Config: async (key, value, reason, expectedVersion) => {
+      await proposeFConfig("F4", key, value, reason, expectedVersion);
     },
     proposeF4Settlement: async (reason) => {
       const def = findHighOp("f4_pool_settle");
@@ -474,6 +508,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f5Loading,
     f5Error,
     refreshF5,
+    exportF5Commissions: async (query, reason) => downloadF5RedactedCsv(query, reason),
     updateF5Config: async (key, value, reason, expectedVersion) => {
       await proposeFConfig("F5", key, value, reason, expectedVersion);
     },
@@ -493,6 +528,25 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         sourceDomain: "F5",
         command: def.buildCommand({ commissionId, refundRef }),
         target: def.buildTarget({ commissionId, refundRef }),
+      });
+    },
+    proposeF4LeaderboardPayout: async (period, reason) => {
+      const def = findHighOp("f4_leaderboard_period_payout");
+      if (!def) throw new Error("F_OP_NOT_FOUND:f4_leaderboard_period_payout");
+      const periodKey = new Date().toISOString().slice(0, 10);
+      await proposeStable(`f4-leaderboard:${period}`, JSON.stringify([period, periodKey, reason]), {
+        action: def.action,
+        obj: `F4 排行榜 ${period}`,
+        before: "待派发",
+        after: "按对应周期真实佣金榜及奖池配置原子派发",
+        type: "fund",
+        amplifies: true,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "F4",
+        command: def.buildCommand({ period }),
+        target: def.buildTarget({ period }),
       });
     },
     reissueF5Commissions: async (commissionIds, reason) => {
@@ -542,10 +596,14 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   // 跨域 / 跨标签跳转 CTA(放进 DomainHeader 的 right 槽,不改 DomainHeader 组件)
   const CTA: Record<string, { label: string; onClick: () => void }> = {
     F1: { label: "领导池票数权重 →", onClick: () => { setTab("F4"); router.push("/network/leadership-pool"); setToast("已跳转 F4 · 领导池票数权重"); } },
-    F2: { label: "合并出口护栏 →", onClick: () => setToast("查看合并出口护栏(§1.8)") },
+    F2: { label: "合并出口护栏 →", onClick: () => openActionConfirm({
+      name: "F2 合并出口保护上限", amplify: false, op: "param",
+      paramKey: "F.unilevel.mergeExitMaxPct",
+      edit: { kind: "number", current: f2Overview?.configValues["F.unilevel.mergeExitMaxPct"] ?? "25", unit: "%" },
+      detail: "限制同一订单经 Influence 与活动倍率放大后的 L1-L7 USDT 合并出口；结算引擎按该上限实时截断，避免重复叠加越界。",
+    }) },
     F3: { label: "B5 风险雷达 →", onClick: () => nav("B") },
     F4: { label: "F5 佣金审计 →", onClick: () => { setTab("F5"); router.push("/network/commissions"); setToast("已跳转 F5 · 佣金事件审计"); } },
-    F5: { label: "导出 CSV →", onClick: () => setToast("导出当前筛选 CSV") },
   };
   const cta = CTA[tab];
 
@@ -589,7 +647,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             } else if (tab === "F3") {
               await ctx.updateF3Config(mc.paramKey, newVal, reason);
             } else if (tab === "F4") {
-              await ctx.updateF4Config(mc.paramKey, newVal, reason);
+              await ctx.updateF4Config(mc.paramKey, newVal, reason, mc.expectedVersion);
             } else if (tab === "F1") {
               await ctx.updateF1Config(mc.paramKey, newVal, reason);
             } else {
@@ -597,17 +655,15 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             }
             setToast(mc.name + " 已生效 · 新值 " + newVal);
           } else if (mc.op === "param-multi" && mc.paramKeys && businessValue) {
-            // 多字段调参:每字段写到自己的 param key;F3/F4 经后端持久化,其它 key 不允许本地兜底。
+            // 多字段调参只生成一张 A2 票；后端 replay 在单事务内整批写入，任一失败整批回滚。
             if (tab === "F3") {
-              for (const { key, paramKey } of mc.paramKeys) {
-                const value = String(businessValue[key] ?? "").trim();
-                if (value) await ctx.updateF3Config(paramKey, value, reason);
-              }
+              await ctx.updateFConfigBatch("F3", mc.paramKeys.map(({ key, paramKey }) => ({
+                key: paramKey, value: String(businessValue[key] ?? "").trim(),
+              })), reason);
             } else if (tab === "F4") {
-              for (const { key, paramKey } of mc.paramKeys) {
-                const value = String(businessValue[key] ?? "").trim();
-                if (value) await ctx.updateF4Config(paramKey, value, reason);
-              }
+              await ctx.updateFConfigBatch("F4", mc.paramKeys.map(({ key, paramKey }) => ({
+                key: paramKey, value: String(businessValue[key] ?? "").trim(),
+              })), reason);
             } else {
               throw new Error(`F_BACKEND_ROUTE_MISSING:${mc.paramKeys.map((item) => item.paramKey).join(",")}`);
             }
@@ -621,7 +677,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             } else if (tab === "F3") {
               await ctx.updateF3Config(mc.paramKey, mc.fixedVal, reason);
             } else if (tab === "F4") {
-              await ctx.updateF4Config(mc.paramKey, mc.fixedVal, reason);
+              await ctx.updateF4Config(mc.paramKey, mc.fixedVal, reason, mc.expectedVersion);
             } else if (tab === "F5") {
               if (mc.expectedVersion === undefined) throw new Error("F5_EXPECTED_VERSION_REQUIRED");
               await ctx.updateF5Config(mc.paramKey, mc.fixedVal, reason, mc.expectedVersion);

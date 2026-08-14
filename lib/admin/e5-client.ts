@@ -4,6 +4,9 @@ import {
   parseE5DevicePage,
   parseE5Overview,
 } from "@/lib/admin/e456-overview-contract";
+import { parseE5Observability, type E5Observability } from "@/lib/admin/e5-observability-contract";
+
+export type { E5Observability } from "@/lib/admin/e5-observability-contract";
 
 export type E5DeviceState = "active" | "busy" | "offline" | "inventory" | "unbound" | "abnormal";
 export type E5DatacenterStatus = "active" | "maintenance" | "disabled";
@@ -366,6 +369,10 @@ export async function fetchE5Overview(): Promise<E5Overview> {
     maxDevicesPerUser: toNumber(overview.maxDevicesPerUser) > 0 ? toNumber(overview.maxDevicesPerUser) : null,
     datacenters: (overview.datacenters ?? []).map(fromDatacenter),
   };
+}
+
+export async function fetchE5Observability(): Promise<E5Observability> {
+  return parseE5Observability(await e5Request<unknown>("/observability"));
 }
 
 export async function fetchE5Datacenters(): Promise<E5Datacenter[]> {

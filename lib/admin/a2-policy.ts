@@ -121,6 +121,11 @@ export function parseA2SchemaVersion(value: string | null | undefined): string {
   return normalized.replace(/^统一\s*schema\s*·?\s*/i, "").trim();
 }
 
+const A2_SUPPORTED_SCHEMA_VERSION_ORDERS: Readonly<Record<string, number>> = {
+  v3: 3,
+  v4: 4,
+};
+
 export function matchesA2OperationRole(operatorRole: string | null | undefined, role: string): boolean {
   const normalized = operatorRole?.trim().toLocaleLowerCase() ?? "";
   const aliases: Record<string, readonly string[]> = {
@@ -164,7 +169,11 @@ function integerInRange(value: string, min: number, max: number): number | null 
   return Number.isSafeInteger(parsed) && parsed >= min && parsed <= max ? parsed : null;
 }
 
-export function validateA2MechanismValue(key: "ttl" | "retention" | "schema", raw: string): A2MechanismValidation {
+export function validateA2MechanismValue(
+  key: "ttl" | "retention" | "schema",
+  raw: string,
+  currentSchemaVersion?: string | null,
+): A2MechanismValidation {
   const value = raw.trim();
   if (key === "ttl") {
     const parsed = integerInRange(value, 8, 200);
@@ -178,8 +187,18 @@ export function validateA2MechanismValue(key: "ttl" | "retention" | "schema", ra
       ? { ok: false, message: "日志保留期必须是 13–36 的整数月" }
       : { ok: true, value: String(parsed) };
   }
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/.test(value)) {
-    return { ok: false, message: "字段结构版本只能包含字母、数字、点、下划线或短横线，最长 32 字符" };
+  const requestedOrder = /^v([1-9]\d*)$/.exec(value)?.[1];
+  const current = parseA2SchemaVersion(currentSchemaVersion);
+  const currentOrder = A2_SUPPORTED_SCHEMA_VERSION_ORDERS[current];
+  if (requestedOrder && currentOrder && Number(requestedOrder) <= currentOrder) {
+    return { ok: false, message: "字段结构版本只能升级，不能降级或重复提交" };
+  }
+  if (!(value in A2_SUPPORTED_SCHEMA_VERSION_ORDERS)) {
+    return { ok: false, message: "字段结构版本仅支持已注册的 v3、v4" };
+  }
+  if (current && (!(current in A2_SUPPORTED_SCHEMA_VERSION_ORDERS)
+      || A2_SUPPORTED_SCHEMA_VERSION_ORDERS[value] <= currentOrder)) {
+    return { ok: false, message: "字段结构版本只能升级，不能降级或重复提交" };
   }
   return { ok: true, value };
 }

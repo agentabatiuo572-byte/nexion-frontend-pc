@@ -52,7 +52,7 @@ test("I2 writes preserve server CTR, reject illegal template transitions and reu
   assert.match(client, /uncertainCommandKeys\.remember\(commandFingerprint, stableKey\)/);
 });
 
-test("all nine non-social channels share one replay-safe server fact gate", () => {
+test("all fixed and dynamic non-social channels share one replay-safe server fact gate", () => {
   const runtime = read(
     backendRoot,
     "src/main/java/ffdd/opsconsole/content/application/NovaBusinessRuntimeService.java",
@@ -65,6 +65,10 @@ test("all nine non-social channels share one replay-safe server fact gate", () =
     backendRoot,
     "src/main/java/ffdd/opsconsole/content/application/NovaSocialRuntimeScheduler.java",
   );
+  const catalog = read(
+    backendRoot,
+    "src/main/java/ffdd/opsconsole/content/application/NovaRuntimeAdapterCatalog.java",
+  );
 
   for (const channel of [
     "welcome",
@@ -76,11 +80,14 @@ test("all nine non-social channels share one replay-safe server fact gate", () =
     "wrapped",
     "taskLockMonthly",
     "quest",
+    "team_event",
+    "staking_event",
+    "market_event",
   ]) {
-    assert.match(runtime, new RegExp(`adapters\\.put\\("${channel}"`));
+    assert.match(catalog, new RegExp(`sources\\.put\\("${channel}"`));
   }
-  assert.match(runtime, /"tradein\.eligible"/);
-  assert.doesNotMatch(runtime, /targeted\("tradein", "tradein\.completed"\)/);
+  assert.match(catalog, /"tradein\.eligible"/);
+  assert.doesNotMatch(catalog, /sources\.put\("tradein", targeted\("tradein\.completed"\)\)/);
   assert.match(runtime, /"NO_REAL_FACT:" \+ String\.join/);
   assert.match(runtime, /runtimeRepository\.claimBusinessFact/);
   assert.match(runtime, /runtimeRepository\.completeBusinessFact/);

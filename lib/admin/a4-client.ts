@@ -79,6 +79,8 @@ export type A4SchemaRegistration = {
   samplingPolicy: string;
   version: string;
   updatedAt: string;
+  lifecycleState: "new" | "pending_publish" | "gray" | "full" | "disabled";
+  lifecycleVersion: number;
 };
 
 export type A4Overview = {
@@ -93,6 +95,16 @@ export type A4Overview = {
   schemaRegistrations: A4SchemaRegistration[];
   domainExtensions: A4DomainExtensionBatch[];
   guardrails: string[];
+};
+
+export type A4RetentionExecution = {
+  retentionMonths: number;
+  evaluatedAt: string;
+  lockAcquired: boolean;
+  archivedRows: number;
+  deletedRows: number;
+  outboxRows: number;
+  behaviorFactRows: number;
 };
 
 let requestSeq = 0;
@@ -123,6 +135,13 @@ function requiredNumber(value: unknown, field: string) {
 function requiredBoolean(value: unknown, field: string) {
   if (typeof value !== "boolean") invalid(field);
   return value;
+}
+
+function lifecycleState(value: unknown): A4SchemaRegistration["lifecycleState"] {
+  const state = requiredText(value, "schemaRegistrations.lifecycleState");
+  return state === "new" || state === "pending_publish" || state === "gray" || state === "full" || state === "disabled"
+    ? state
+    : invalid("schemaRegistrations.lifecycleState");
 }
 
 function requiredRows<T>(value: unknown, field: string, normalize: (row: Record<string, unknown>) => T): T[] {
@@ -221,6 +240,8 @@ function normalizeOverview(raw: unknown): A4Overview {
       samplingPolicy: requiredText(row.samplingPolicy, "schemaRegistrations.samplingPolicy"),
       version: requiredText(row.version, "schemaRegistrations.version"),
       updatedAt: requiredText(row.updatedAt, "schemaRegistrations.updatedAt"),
+      lifecycleState: lifecycleState(row.lifecycleState),
+      lifecycleVersion: requiredNumber(row.lifecycleVersion, "schemaRegistrations.lifecycleVersion"),
     })),
     domainExtensions: requiredNonEmptyRows(data.domainExtensions, "domainExtensions", normalizeBatch),
     guardrails: requiredNonEmptyStrings(data.guardrails, "guardrails"),
@@ -316,4 +337,42 @@ export async function registerA4DomainExtension(input: {
     idempotencyPrefix: "a4-domain-extension",
     stableIdempotencyKey,
   });
+}
+
+export async function transitionA4Lifecycle(
+  eventName: string,
+  targetState: A4SchemaRegistration["lifecycleState"],
+  expectedState: A4SchemaRegistration["lifecycleState"],
+  expectedVersion: number,
+  reason: string,
+  stableIdempotencyKey?: string,
+) {
+  return a4Request(`/events/schema-registrations/${encodeURIComponent(eventName)}/lifecycle`, {
+    method: "POST",
+    body: JSON.stringify({ targetState, expectedState, expectedVersion, reason }),
+    idempotencyPrefix: "a4-lifecycle",
+    stableIdempotencyKey,
+  });
+}
+
+function normalizeRetentionExecution(value: unknown): A4RetentionExecution {
+  const row = rec(value);
+  const integer = (key: string) => requiredNumber(row[key], `retentionRun.${key}`);
+  return {
+    retentionMonths: integer("retentionMonths"), evaluatedAt: requiredText(row.evaluatedAt, "retentionRun.evaluatedAt"),
+    lockAcquired: requiredBoolean(row.lockAcquired, "retentionRun.lockAcquired"),
+    archivedRows: integer("archivedRows"), deletedRows: integer("deletedRows"),
+    outboxRows: integer("outboxRows"), behaviorFactRows: integer("behaviorFactRows"),
+  };
+}
+
+export async function fetchA4RetentionLatest(): Promise<A4RetentionExecution | null> {
+  const response = await a4Request<unknown>("/events/retention-runs/latest");
+  return response == null ? null : normalizeRetentionExecution(response);
+}
+
+export async function runA4RetentionNow(reason: string, commandKey: string): Promise<A4RetentionExecution> {
+  return normalizeRetentionExecution(await a4Request<unknown>("/events/retention-runs", {
+    method: "POST", body: JSON.stringify({ reason }), stableIdempotencyKey: commandKey,
+  }));
 }

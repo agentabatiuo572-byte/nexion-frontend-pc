@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 
 import {
   assertB3Dashboard,
@@ -37,6 +38,7 @@ const b3 = {
     day0Numerator: 1,
     day0Denominator: 1,
     day0Target: 95,
+    day0WindowSeconds: 120,
     day7Retention: 100,
     day7Numerator: 1,
     day7Denominator: 1,
@@ -129,6 +131,16 @@ const b4 = {
 
 test("B3 当前四级漏斗协议可通过，已退役绑卡/KYC 不回填", () => {
   assert.doesNotThrow(() => assertB3Dashboard(b3));
+});
+
+test("B3 PC 必须保留并消费服务端 Day0 窗口，不能回退硬编码 90 秒", () => {
+  const missing = structuredClone(b3);
+  delete missing.auxMetrics.day0WindowSeconds;
+  assert.throws(() => assertB3Dashboard(missing), /B3_RESPONSE_INVALID:auxMetrics\.day0WindowSeconds/);
+
+  const page = readFileSync(new URL("../app/_console/overview/funnel/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /data\.auxMetrics\.day0WindowSeconds/);
+  assert.doesNotMatch(page, />\s*90 秒内首笔收益/);
 });
 
 test("B3 畸形 200 必须失败关闭", () => {

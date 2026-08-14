@@ -485,8 +485,8 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
         </>
       ),
       amplifies: false,
-      run: (reason: string) => {
-        void commitTicketWrite(
+      run: async (reason: string) => {
+        const succeeded = await commitTicketWrite(
           () => setParam("I.support.ticketEscalation.__create", JSON.stringify({
             ticketNo: ticket.id,
             ownerAgentId: String(assignedCandidate.adminId),
@@ -499,9 +499,9 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
             commandKey: `m2:ticket:${ticket.id}:escalate:${ticket.version}`,
           }),
           `${ticket.id} 已升级为即时会话`,
-        ).then((succeeded) => {
-          if (succeeded) setDrawerOpen(false);
-        });
+        );
+        if (succeeded) setDrawerOpen(false);
+        return succeeded;
       },
     });
   };

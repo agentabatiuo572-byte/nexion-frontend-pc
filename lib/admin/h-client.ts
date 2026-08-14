@@ -396,7 +396,18 @@ export interface H8ReferralRewardOverview {
   blockedByK2: number;
   recentSettlements: H8SettlementRow[];
   source: string;
+  sourceEnvironment?: "SANDBOX";
+  sourceType?: "MOCK_REFERRAL";
   settlementMode: string;
+  runId?: string;
+  fixtureCandidates?: Array<{ invitedUserId: number; inviterUserId: number }>;
+}
+
+export function h8AcceptanceRunId(): string | null {
+  // This browser value is an expectation only. The acceptance controller owns
+  // the RunID from its process environment and rejects another valid RunID.
+  const value = process.env.NEXT_PUBLIC_NEXION_H8_ACCEPTANCE_RUN_ID?.trim() ?? "";
+  return /^[A-Za-z0-9][A-Za-z0-9_-]{2,63}$/.test(value) ? value : null;
 }
 
 function h8Invalid(field: string): never {
@@ -475,8 +486,26 @@ export function parseH8ReferralRewardOverview(value: unknown): H8ReferralRewardO
     : h8Invalid("recentSettlements");
   const source = h8String(root.source, "source");
   const settlementMode = h8String(root.settlementMode, "settlementMode");
-  if (source !== "nx_user.sponsor_user_id") h8Invalid("source");
-  if (settlementMode !== "REAL_WALLET_LEDGER") h8Invalid("settlementMode");
+  const sandbox = source === "mock";
+  const sourceEnvironment = root.sourceEnvironment == null ? undefined : h8String(root.sourceEnvironment, "sourceEnvironment");
+  const sourceType = root.sourceType == null ? undefined : h8String(root.sourceType, "sourceType");
+  const runId = root.runId == null ? undefined : h8String(root.runId, "runId");
+  if (sandbox) {
+    if (sourceEnvironment !== "SANDBOX" || sourceType !== "MOCK_REFERRAL" || !runId || settlementMode !== "SANDBOX") {
+      h8Invalid("sandbox.provenance");
+    }
+  } else if (source !== "nx_user.sponsor_user_id" || settlementMode !== "REAL_WALLET_LEDGER") {
+    h8Invalid("production.provenance");
+  }
+  const fixtureCandidates = sandbox
+    ? (Array.isArray(root.fixtureCandidates) ? root.fixtureCandidates.map((value, index) => {
+        const row = h8Record(value, `fixtureCandidates.${index}`);
+        return {
+          invitedUserId: h8PositiveCount(row.invitedUserId, `fixtureCandidates.${index}.invitedUserId`),
+          inviterUserId: h8PositiveCount(row.inviterUserId, `fixtureCandidates.${index}.inviterUserId`),
+        };
+      }) : h8Invalid("fixtureCandidates"))
+    : undefined;
   return {
     version: h8PositiveCount(root.version, "version"),
     rewardSnapshotHash: (() => {
@@ -504,12 +533,90 @@ export function parseH8ReferralRewardOverview(value: unknown): H8ReferralRewardO
     blockedByK2: h8NonNegativeCount(root.blockedByK2, "blockedByK2"),
     recentSettlements: rows,
     source,
+    sourceEnvironment: sandbox ? "SANDBOX" : undefined,
+    sourceType: sandbox ? "MOCK_REFERRAL" : undefined,
     settlementMode,
+    runId,
+    fixtureCandidates,
   };
 }
 
 export async function fetchH8ReferralRewards(): Promise<H8ReferralRewardOverview> {
+  const runId = h8AcceptanceRunId();
+  if (runId) {
+    return fetchH8AcceptanceSandboxOverview(runId);
+  }
   return parseH8ReferralRewardOverview(await growthRequest<unknown>("/referral-rewards"));
+}
+
+/** RunID is part of the authoritative acceptance projection identity, never a UI filter. */
+export async function fetchH8AcceptanceSandboxOverview(runId: string): Promise<H8ReferralRewardOverview> {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{2,63}$/.test(runId)) {
+    throw new Error("H8_ACCEPTANCE_RUN_ID_INVALID");
+  }
+  const overview = parseH8ReferralRewardOverview(await growthRequest<unknown>(
+    `/referral-rewards/acceptance/overview?runId=${encodeURIComponent(runId)}`,
+  ));
+  if (overview.runId !== runId) throw new Error("H8_ACCEPTANCE_RUN_ID_MISMATCH");
+  return overview;
+}
+
+/** The POST API's `data` is the settlement map itself, not an extra wrapper. */
+export interface H8AcceptanceSandboxSettlementResult {
+  runId: string;
+  source: "mock";
+  sourceEnvironment: "SANDBOX";
+  sourceType: "MOCK_REFERRAL";
+  settled: number;
+  skipped: number;
+  limit: number;
+}
+
+function parseH8AcceptanceSandboxSettlement(value: unknown): H8AcceptanceSandboxSettlementResult {
+  const root = h8Record(value, "sandboxSettlement.root");
+  const runId = h8String(root.runId, "sandboxSettlement.runId");
+  const source = h8String(root.source, "sandboxSettlement.source");
+  const sourceEnvironment = h8String(root.sourceEnvironment, "sandboxSettlement.sourceEnvironment");
+  const sourceType = h8String(root.sourceType, "sandboxSettlement.sourceType");
+  if (source !== "mock" || sourceEnvironment !== "SANDBOX" || sourceType !== "MOCK_REFERRAL") {
+    h8Invalid("sandboxSettlement.provenance");
+  }
+  return {
+    runId,
+    source: "mock",
+    sourceEnvironment: "SANDBOX",
+    sourceType: "MOCK_REFERRAL",
+    settled: h8NonNegativeCount(root.settled, "sandboxSettlement.settled"),
+    skipped: h8NonNegativeCount(root.skipped, "sandboxSettlement.skipped"),
+    limit: h8PositiveCount(root.limit, "sandboxSettlement.limit"),
+  };
+}
+
+export async function runH8AcceptanceSandboxSettlement(
+  runId: string,
+  invitedUserId: number,
+  reason: string,
+  idempotencyKey: string,
+) {
+  try {
+    const result = await growthRequest<unknown>("/referral-rewards/acceptance/sandbox-settlements", {
+      method: "POST",
+      body: JSON.stringify({ runId, invitedUserId, reason, operator: currentAdminOperator() }),
+      headers: { "Idempotency-Key": idempotencyKey },
+    });
+    const settlement = parseH8AcceptanceSandboxSettlement(result);
+    if (settlement.runId !== runId) throw new Error("H8_ACCEPTANCE_RUN_ID_MISMATCH");
+    return settlement;
+  } catch (error) {
+    const { status, bodyUnreadable } = error as Error & { status?: number; bodyUnreadable?: boolean };
+    if (typeof status !== "number" || bodyUnreadable || outcomeStaysUnknown(status)) {
+      throw new H8OutcomeUncertainError(
+        (error instanceof Error && error.message) || "H8_ACCEPTANCE_SETTLEMENT_OUTCOME_UNKNOWN",
+        idempotencyKey,
+      );
+    }
+    throw error;
+  }
 }
 
 export async function updateH8ReferralRewardParam(
@@ -566,6 +673,57 @@ export async function createH3MonthlyMission(mission: Record<string, any>, reaso
     "/quest-events/monthly-missions",
     { method: "POST", body: JSON.stringify({ ...mission, reason, operator: currentAdminOperator() }) },
     "h3-monthly-create",
+  );
+}
+
+export type H3MissionKind = "MISSION" | "MONTHLY";
+
+export async function editH3Mission(
+  taskCode: string,
+  taskKind: H3MissionKind,
+  name: string,
+  expectedName: string,
+  reason: string,
+) {
+  return growthRequest<Record<string, any>>(
+    `/quest-events/tasks/${encodeURIComponent(taskCode)}`,
+    { method: "PATCH", body: JSON.stringify({ taskKind, name, expectedName, reason, operator: currentAdminOperator() }) },
+    "h3-mission-edit",
+  );
+}
+
+export async function transitionH3Mission(
+  taskCode: string,
+  taskKind: H3MissionKind,
+  targetStatus: "active" | "paused",
+  expectedStatus: "active" | "paused",
+  reason: string,
+) {
+  return growthRequest<Record<string, any>>(
+    `/quest-events/tasks/${encodeURIComponent(taskCode)}/status`,
+    { method: "PATCH", body: JSON.stringify({ taskKind, targetStatus, expectedStatus, reason, operator: currentAdminOperator() }) },
+    "h3-mission-status",
+  );
+}
+
+export async function archiveH3Mission(
+  taskCode: string,
+  taskKind: H3MissionKind,
+  expectedStatus: "active" | "paused",
+  reason: string,
+) {
+  return growthRequest<Record<string, any>>(
+    `/quest-events/tasks/${encodeURIComponent(taskCode)}/archive`,
+    { method: "POST", body: JSON.stringify({ taskKind, targetStatus: "archived", expectedStatus, reason, operator: currentAdminOperator() }) },
+    "h3-mission-archive",
+  );
+}
+
+export async function deleteH3Mission(taskCode: string, taskKind: H3MissionKind, reason: string) {
+  return growthRequest<Record<string, any>>(
+    `/quest-events/tasks/${encodeURIComponent(taskCode)}`,
+    { method: "DELETE", body: JSON.stringify({ taskKind, targetStatus: "deleted", expectedStatus: "archived", reason, operator: currentAdminOperator() }) },
+    "h3-mission-delete",
   );
 }
 

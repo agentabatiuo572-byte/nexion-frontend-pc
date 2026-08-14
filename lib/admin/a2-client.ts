@@ -105,6 +105,19 @@ interface BackendAuditLog {
   riskLevel?: string | null;
   detailJson?: string | null;
   createdAt?: string | null;
+  schemaVersion?: string | null;
+}
+
+interface BackendA2ReasonPolicy {
+  minChars?: number | null;
+  maxChars?: number | null;
+  sourceKey?: string | null;
+}
+
+export interface A2ReasonPolicy {
+  minChars: number;
+  maxChars: number;
+  sourceKey: "admin.a2.reason_min_chars";
 }
 
 interface BackendOverview {
@@ -183,6 +196,7 @@ export interface A2AuditLogRow {
   riskLevel: string;
   reason: string;
   idempotencyKey?: string;
+  schemaVersion: string;
 }
 
 export interface A2Overview {
@@ -302,6 +316,7 @@ function fromLog(log: BackendAuditLog): A2AuditLogRow {
     riskLevel: log.riskLevel?.trim() || "INFO",
     reason: asText(detail.reason, "—"),
     idempotencyKey: detail.idempotencyKey != null ? String(detail.idempotencyKey) : undefined,
+    schemaVersion: asText(log.schemaVersion, "legacy"),
   };
 }
 
@@ -431,6 +446,37 @@ export async function rejectA2Operation(operationId: string, reason: string, com
   return fromTicket(row);
 }
 
+export type RetentionExecution = {
+  retentionMonths: number;
+  evaluatedAt: string;
+  lockAcquired: boolean;
+  archivedRows: number;
+  deletedRows: number;
+  outboxRows: number;
+  behaviorFactRows: number;
+};
+
+export async function fetchA2ReasonPolicy(): Promise<A2ReasonPolicy> {
+  const policy = await a2Request<BackendA2ReasonPolicy>("/reason-policy");
+  const minChars = Number(policy?.minChars);
+  const maxChars = Number(policy?.maxChars);
+  if (!Number.isInteger(minChars) || minChars < 8 || minChars > 200
+      || !Number.isInteger(maxChars) || maxChars < minChars || maxChars > 200
+      || policy?.sourceKey !== "admin.a2.reason_min_chars") {
+    throw new Error("A2_REASON_POLICY_INVALID");
+  }
+  return { minChars, maxChars, sourceKey: "admin.a2.reason_min_chars" };
+}
+
+export async function withdrawA2Operation(operationId: string, reason: string, operator: string, commandKey?: string) {
+  const row = await a2Request<BackendTicket>(`/operations/${encodeURIComponent(operationId)}/withdraw`, {
+    method: "POST",
+    body: JSON.stringify({ reason, expectedStatus: "pending", operator }),
+    ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-withdraw" }),
+  });
+  return fromTicket(row);
+}
+
 export async function createA2OperationProposal(input: {
   action: string;
   obj: string;
@@ -485,4 +531,29 @@ export async function updateA2MechanismParam(paramKey: string, value: string, re
     body: JSON.stringify({ value, reason }),
     ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-mechanism-param" }),
   });
+}
+
+function normalizeRetentionExecution(value: unknown): RetentionExecution {
+  const row = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  const integer = (key: string) => typeof row?.[key] === "number" && Number.isInteger(row[key]) && row[key] >= 0
+    ? row[key] as number : (() => { throw new Error(`A2_RETENTION_RUN_INVALID:${key}`); })();
+  if (!row || typeof row.evaluatedAt !== "string" || !row.evaluatedAt.trim() || typeof row.lockAcquired !== "boolean") {
+    throw new Error("A2_RETENTION_RUN_INVALID");
+  }
+  return {
+    retentionMonths: integer("retentionMonths"), evaluatedAt: row.evaluatedAt.trim(), lockAcquired: row.lockAcquired,
+    archivedRows: integer("archivedRows"), deletedRows: integer("deletedRows"),
+    outboxRows: integer("outboxRows"), behaviorFactRows: integer("behaviorFactRows"),
+  };
+}
+
+export async function fetchA2RetentionLatest(): Promise<RetentionExecution | null> {
+  const response = await a2Request<RetentionExecution | null>("/retention-runs/latest");
+  return response == null ? null : normalizeRetentionExecution(response);
+}
+
+export async function runA2RetentionNow(reason: string, commandKey: string): Promise<RetentionExecution> {
+  return normalizeRetentionExecution(await a2Request<RetentionExecution>("/retention-runs", {
+    method: "POST", body: JSON.stringify({ reason }), commandKey,
+  }));
 }

@@ -94,7 +94,10 @@ const CLIENTS = readdirSync(new URL("../lib/admin/", import.meta.url))
     const decidesRetention = /\.forget\s*\(/.test(code)
       || /Outcome(?:Uncertain|Unknown)\w*Error/.test(code)
       || /StableMutationFailure/.test(code)
-      || /X-Nexion-Upstream-Outcome/.test(code);
+      || /X-Nexion-Upstream-Outcome/.test(code)
+      // G2 acceptance sandbox 的命令号是模块级重放槽位；它不抛自定义错误，
+      // 但明确拒绝时会把该槽位清空，故同样必须纳入共享归类门。
+      || /replayCommandKey\s*=\s*null/.test(code);
     return inspectsOutcome && decidesRetention;
   });
 

@@ -92,8 +92,59 @@ test("M3 transfer decisions preserve the backend TRANSFERRED snapshot for CAS", 
   assert.match(view, /acceptTransfer\(row\.id, "transferred", before\.version/);
   assert.match(view, /returnTransfer\(row\.id, target, "transferred", before\.version/);
   assert.match(view, /waitTransfer\(row\.id, "transferred", before\.version/);
-  assert.match(view, /fallbackTransfer\(row\.id, "transferred", before\.version/);
-  assert.doesNotMatch(view, /(acceptTransfer|returnTransfer|waitTransfer|fallbackTransfer)\(row\.id,[^\n]*before\.status/);
+  assert.doesNotMatch(view, /fallbackTransfer\(/);
+  assert.doesNotMatch(client, /\/transfer\/fallback/);
+  assert.doesNotMatch(view, /(acceptTransfer|returnTransfer|waitTransfer)\(row\.id,[^\n]*before\.status/);
+});
+
+test("M3 waiting is a dedicated CAS command, not a synthetic agent reply", () => {
+  const view = read("app/components/domain-views/m-view.tsx");
+
+  assert.match(view, /action\?\.includes\("transfer_wait"\) \|\| action\?\.includes\("等待处理"\)/);
+  assert.match(view, /mContentActions\.waitTransfer\(row\.id, "transferred", before\.version, reason, idempotencyKey\)/);
+});
+
+test("M3 keeps the acceptance sandbox visibly separate and cannot write the production inbox while proof is active", () => {
+  const sessions = read("app/components/domain-views/m-tabs/m3-sessions.tsx");
+  const sandbox = read("lib/admin/m-support-acceptance-sandbox.ts");
+  const contentBff = read("app/api/admin/content/[...path]/route.ts");
+
+  assert.match(sandbox, /\/api\/admin\/content\/support\/acceptance\/projection/);
+  assert.match(sandbox, /source !== "mock"/);
+  assert.match(sandbox, /sourceEnvironment !== "SANDBOX"/);
+  assert.match(sandbox, /strictProfile !== true/);
+  assert.match(sandbox, /proof\.productionDelta\?\.status !== "VERIFIED_ZERO"/);
+  assert.match(sandbox, /proof\.productionDelta\.sandboxFacts <= 0/);
+  assert.match(sandbox, /productionDeltaValues\.length !== 8/);
+  assert.match(sandbox, /productionDeltaValues\.some\(value => !Number\.isSafeInteger\(value\) \|\| value !== 0\)/);
+  for (const field of ["ticket", "ticketMessage", "conversation", "conversationMessage", "receipt", "audit", "idempotency", "outbox"]) {
+    assert.match(sandbox, new RegExp(`proof\\.productionDelta\\.${field}`));
+  }
+  assert.match(sessions, /data-proof="m3-acceptance-sandbox-status"/);
+  assert.match(sessions, /独立工单与会话事实/);
+  assert.match(sessions, /if \(acceptanceMode !== "production"\)/);
+  assert.match(sessions, /独立 sandbox 操作面/);
+  assert.match(sessions, /data-proof="m3-acceptance-sandbox-panel"/);
+  assert.match(sessions, /replyMSupportAcceptanceConversation/);
+  assert.match(sandbox, /\/conversations\/\$\{encodeURIComponent\(row\.conversationNo\)\}\/reply/);
+  assert.match(contentBff, /parts\[0\] === "support" && parts\[1\] === "acceptance"/);
+});
+
+test("M25 ledger records the scheduler-only standby fallback without inventing a manual write", () => {
+  const manifest = JSON.parse(read("docs/ops-actions.manifest.json"));
+  const row = manifest.rows.find((candidate) => candidate.id === "OPS-M-25");
+
+  assert.ok(row, "M25 must remain explicitly covered by the operations ledger");
+  assert.equal(row.status, "readonly");
+  assert.match(row.object, /scheduler|调度器/i);
+  assert.match(row.action, /30\s*分钟/);
+  assert.match(row.action, /状态.*CAS|CAS.*状态/);
+  assert.match(row.reason, /移除[\s\S]*人工 fallback 入口/);
+  assert.equal("restAction" in row, false);
+  assert.equal("restActions" in row, false);
+  assert.equal("runtimeConsumerContract" in row, false);
+  assert.doesNotMatch(row.action, /人工.*fallback.*(?:POST|入口)/i);
+  assert.doesNotMatch(row.note ?? "", /manual M3 fallback POST/i);
 });
 
 test("M3 transfer targets retain the selected agent ID when display names collide", () => {
@@ -231,8 +282,16 @@ test("M3 treats scheduler SYSTEM and STATUS events as reload signals instead of 
     view,
     /event\.eventType === "RECEIPT"[\s\S]{0,120}event\.eventType === "STATUS"[\s\S]{0,120}event\.senderType === "SYSTEM"/,
   );
-  assert.match(view, /void reloadMContent\(\);\s*return;/);
+  assert.match(view, /await reconcileLiveConversationSnapshot\(connectionSignal\);\s*return;/);
+  assert.match(view, /event\.eventType === "INITIATE"/);
   assert.doesNotMatch(view, /const lower = \(event\.body \?\? ""\)\.toLowerCase\(\)/);
+});
+
+test("M3 preserves persistent message ids across snapshot reload and SSE dedup", () => {
+  const client = read("lib/admin/m-client.ts");
+  const view = read("app/components/domain-views/m-view.tsx");
+  assert.match(client, /id:\s*m\.id/);
+  assert.match(view, /containsConversationMessage\(convo\.messages/);
 });
 
 test("M3 rejects fractional timeout minutes instead of silently rounding them", () => {
@@ -243,4 +302,50 @@ test("M3 rejects fractional timeout minutes instead of silently rounding them", 
   assert.match(modals, /Number\.isInteger\(closeN\)/);
   assert.match(modals, /step=\{1\}/);
   assert.match(modals, /请输入整数分钟/);
+});
+
+test("M3 sandbox ticket panel supports run-scoped list, detail, reply, close and server readback", () => {
+  const client = read("lib/admin/m-support-acceptance-sandbox.ts");
+  const sessions = read("app/components/domain-views/m-tabs/m3-sessions.tsx");
+  assert.match(client, /\/tickets/);
+  assert.match(client, /fetchMSupportAcceptanceTicket/);
+  assert.match(client, /\$\{encodeURIComponent\(ticketNo\)\}/);
+  assert.match(client, /replyMSupportAcceptanceTicket/);
+  assert.match(client, /closeMSupportAcceptanceTicket/);
+  assert.match(sessions, /sandboxTickets/);
+  assert.match(sessions, /mock\/SANDBOX/);
+  assert.match(sessions, /回复工单并回读/);
+  assert.match(sessions, /关闭工单并回读/);
+  assert.match(sessions, /canOperateAcceptanceSupport/);
+  assert.match(sessions, /transferMSupportAcceptanceConversation/);
+});
+
+test("M3 acceptance proof pins the server run to its configured public run and never persists reply PII", () => {
+  const client = read("lib/admin/m-support-acceptance-sandbox.ts");
+  const sessions = read("app/components/domain-views/m-tabs/m3-sessions.tsx");
+  assert.match(client, /NEXT_PUBLIC_NEXION_ACCEPTANCE_RUN_ID/);
+  assert.match(client, /proof\.runId !== configuredRunId/);
+  assert.match(client, /crypto\.subtle\.digest\("SHA-256"/);
+  assert.doesNotMatch(client, /\$\{method\}:\$\{path\}:\$\{body\}/);
+  assert.match(sessions, /Run \{acceptanceProof!?\.runId\}/);
+  assert.match(sessions, /正式写入验证零：工单/);
+});
+
+test("M3 sandbox unknown writes read back the same opaque command before a new CAS attempt", () => {
+  const client = read("lib/admin/m-support-acceptance-sandbox.ts");
+  assert.match(client, /\/commands\/\$\{encodeURIComponent\(commandKey\)\}/);
+  assert.match(client, /reconcileMSupportAcceptancePending/);
+  assert.match(client, /delete parsed\.expectedVersion/);
+  assert.match(client, /pendingCommands\.remember\(fingerprint, commandKey, \{ operation: method, target: path \}\)/);
+  assert.doesNotMatch(client, /target: body|operation: body/);
+});
+
+test("M3 adopts a committed unknown command after refresh instead of minting a second reply key", () => {
+  const client = read("lib/admin/m-support-acceptance-sandbox.ts");
+  assert.match(client, /settled: true/);
+  assert.match(client, /const committed = pendingCommands\.list\(\)\.find\(row => row\.fingerprint === fingerprint && row\.settled\)/);
+  assert.match(client, /await pendingCommandResult\(committed\.commandKey\)/);
+  assert.match(client, /pendingCommands\.forget\(fingerprint\);\s*return adopted/);
+  assert.doesNotMatch(client, /settledResults/);
+  assert.match(client, /delete parsed\.expectedVersion/);
 });
