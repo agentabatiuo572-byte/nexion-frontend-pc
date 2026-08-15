@@ -167,6 +167,7 @@ test("E1 purchase gate is a structured server-enforced editor, not a HOLD placeh
   assert.match(e1Data, /formToGate\(f\)/);
   assert.match(view, /validateGateForm\(form\)/);
   assert.match(view, /op: "sku-save"/);
+  assert.match(e1Client, /purchaseGate: fromPurchaseGate\(sku\.purchaseGate\)/);
   assert.match(e1Client, /purchaseGate: toPurchaseGate\(sku\.purchaseGate\)/);
   assert.match(registry, /canonicalE1SkuParams/);
   assert.match(registry, /\.\.\.rest/);
