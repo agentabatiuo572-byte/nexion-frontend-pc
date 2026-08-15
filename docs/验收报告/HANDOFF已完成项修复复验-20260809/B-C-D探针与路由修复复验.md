@@ -25,3 +25,4 @@
 - console error、pageerror：0。
 
 范围不包含原生 App 真机路由栈和生产 Janus 链路；二者继续 HOLD。
+

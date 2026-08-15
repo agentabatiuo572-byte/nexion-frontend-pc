@@ -4,6 +4,7 @@ import { requirePasswordChangeCleared } from "@/lib/admin/require-password-chang
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
 const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
+const PRODUCT_REVISION_HEADER = "X-Product-Revision";
 
 type RouteContext = {
   params: Promise<{ path?: string[] }>;
@@ -45,11 +46,15 @@ async function proxy(request: Request, context: RouteContext) {
   });
   const contentType = request.headers.get("Content-Type");
   const idempotencyKey = request.headers.get(IDEMPOTENCY_KEY_HEADER);
+  const productRevision = request.headers.get(PRODUCT_REVISION_HEADER);
   if (contentType) {
     headers.set("Content-Type", contentType);
   }
   if (idempotencyKey) {
     headers.set(IDEMPOTENCY_KEY_HEADER, idempotencyKey);
+  }
+  if (productRevision) {
+    headers.set(PRODUCT_REVISION_HEADER, productRevision);
   }
 
   const hasBody = request.method !== "GET" && request.method !== "HEAD";

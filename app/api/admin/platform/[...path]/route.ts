@@ -25,6 +25,9 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "config" && parts[1] === "overview") {
     return "/api/admin/platform/config/overview";
   }
+  if (parts.length === 2 && parts[0] === "config" && parts[1] === "experience") {
+    return "/api/admin/platform/config/experience";
+  }
   if (parts.length === 1 && parts[0] === "params-registry") {
     return "/api/admin/platform/params-registry";
   }

@@ -61,7 +61,7 @@ export interface McSpec {
   paramKey?: string;
   paramKeys?: { key: string; paramKey: string }[];  // param-multi:businessForm 字段 key → param key 映射
   fixedVal?: string;        // param-fixed / 处置固定写入值
-  target?: string;          // SKU 名 / 实体名(sku-status / sku-save 等)
+  target?: string;          // 稳定实体 ID(sku-status / sku-delete 等)
   isNew?: boolean;          // sku-save:新增 vs 编辑
   hasImg?: boolean;         // sku-save:含商品媒体(商品主图或商品视频)
   status?: string;          // sku-status:"on"|"off";ops-pause:"on"|"off"
@@ -105,8 +105,8 @@ export interface EViewCtx {
   e1Gates: E1GenerationGateData | null;
   phaseCur: string;                              // 当前 Phase,仅来自 E1 后端 generation-gates
   refreshE1: () => Promise<void>;
-  openSku: (name?: string) => void;              // 打开 SKU 抽屉(无 name = 新增)
-  delSku: (name: string) => void;
+  openSku: (skuId?: string, unlockPhase?: string) => void; // 打开 SKU 抽屉;可预选当前解锁阶段
+  delSku: (skuId: string, displayName: string) => void;
   // E2 收益 & 任务引擎(任务列表/新增/改单价/下架均走后端 API)
   canWriteE2: boolean;
   tasks: OpsTask[];

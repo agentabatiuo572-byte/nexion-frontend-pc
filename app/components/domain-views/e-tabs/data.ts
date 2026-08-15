@@ -162,15 +162,16 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
   const features = f.features.split("\n").map((x) => x.trim()).filter(Boolean);
   const stockTrim = f.stock.trim();
   return {
-    name: f.name.trim(), id: f.id.trim() || existing?.id,
+    name: f.name.trim(), id: f.id.trim() || existing?.id || f.name.trim(),
     tier: f.tier, tagline: f.tagline.trim() || undefined, badge: f.badge.trim() || undefined,
     gpu: f.gpu.trim() || undefined, vram: f.vram.trim() || undefined, hashRate: f.hashRate.trim() || undefined, power: f.power.trim() || undefined, datacenter: f.datacenter.trim() || undefined,
     price: skuNum(f.price),
     dailyEarn, dailyEarnNEX, shareYieldMin: skuNumU(f.shareYieldMin), shareYieldMax: skuNumU(f.shareYieldMax), baseRate,
-    sold: skuNumU(f.sold), stock: stockTrim === "" ? "∞" : (skuNumU(stockTrim) ?? stockTrim),
+    sold: skuNumU(f.sold), stock: skuNumU(stockTrim) ?? stockTrim,
     aiImageGenPerMin: skuNumU(f.aiImageGenPerMin), aiLlmTokensPerSec: skuNumU(f.aiLlmTokensPerSec), aiVideoMinPerHour: skuNumU(f.aiVideoMinPerHour), aiFineTuneMins: skuNumU(f.aiFineTuneMins), aiUnlocks: f.aiUnlocks.trim() || undefined,
     features: features.length ? features : undefined,
     lifecycle: f.lifecycle,
     unlock: f.unlock, purchaseGate: formToGate(f), tag: f.tag.trim() || existing?.tag || "", status: existing?.status ?? "pending",
+    updatedAt: existing?.updatedAt,
   };
 }

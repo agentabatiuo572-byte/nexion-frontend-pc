@@ -22,9 +22,12 @@ test("real and nested admin layouts resolve the backend checkout", () => {
   assert.equal(normalize(resolveNexionBackendRoot({ adminRoot: HIGH_ADMIN, env: {}, exists })), normalize(expected));
 });
 
-test("real and nested admin layouts resolve the workspace PRD directory", () => {
-  const expected = path.resolve("D:/workspace/PRD");
-  const exists = (candidate) => normalize(candidate) === normalize(expected);
+test("real and nested admin layouts resolve the authoritative PC PRD directory", () => {
+  const expected = path.resolve("D:/workspace/nexion-ops-console/docs/PRD");
+  const legacyWorkspacePrd = path.resolve("D:/workspace/PRD");
+  const highFidelityPrd = path.resolve("D:/workspace/nexion-高保真/nexion-ops-console/docs/PRD");
+  const exists = (candidate) => [expected, legacyWorkspacePrd, highFidelityPrd]
+    .some((pathValue) => normalize(candidate) === normalize(pathValue));
   assert.equal(normalize(resolveNexionPrdRoot({ adminRoot: REAL_ADMIN, env: {}, exists })), normalize(expected));
   assert.equal(normalize(resolveNexionPrdRoot({ adminRoot: HIGH_ADMIN, env: {}, exists })), normalize(expected));
   assert.throws(

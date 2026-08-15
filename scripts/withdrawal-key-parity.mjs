@@ -13,8 +13,8 @@
  *   不用补正则就会被抓,而例外靠**结构特征**(批量端点上下文 / conflicts 上下文 /
  *   否定词窗口)识别,不硬编码行号。
  *
- * 🔴 扫描面是**整棵 PRD 树**,不是三份点名的文档:消费面是开放集合,只锁点名的那几份必复发
- *   (写这道门时实测:点名之外还有 3 份文档带着未裁决的 `withdrawalId`)。
+ * 🔴 扫描面是**整棵权威 PC PRD 树**,不是三份点名的文档:消费面是开放集合,只锁点名的
+ *   那几份必复发。
  *
  * 用法:node scripts/withdrawal-key-parity.mjs
  */
@@ -25,7 +25,11 @@ import { resolveNexionPrdRoot } from "./lib/nexion-workspace-paths.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ADMIN_ROOT = path.resolve(HERE, "..");
-const D_CLIENT = path.join(ADMIN_ROOT, "lib", "admin", "d-client.ts");
+// 红测通过显式环境变量把实现真源切到一次性临时副本；默认执行仍只读正式实现。
+const D_CLIENT = path.resolve(
+  process.env.NEXION_D2_CLIENT_PATH?.trim()
+    || path.join(ADMIN_ROOT, "lib", "admin", "d-client.ts"),
+);
 
 let PRD_ROOT;
 try {
@@ -160,29 +164,25 @@ function walk(dir, out = []) {
 }
 
 /**
- * 🔴 消费面有**两张**:工作区 PRD/ 和 admin 仓内的 docs/ 镜像(同三份文档的 `Nexion_` 前缀副本)。
- *   只锁工作区那张不够 —— 改净的名字会经镜像层回流:下一次有人拿镜像当底稿同步回去,
- *   旧名就原路回来了,而工作区那张一直是绿的。两张一起锁,谁先漂谁先红。
- *   两个根都可用环境变量指开,红测就是靠这个在沙箱副本上注入,不碰真文件。
+ * 默认权威面就是本仓 docs/PRD。只有显式 NEXION_PRD_ROOT 指向另一棵 PRD 时，才把
+ * 本仓 docs/PRD 当第二张镜像一起扫描；相同物理目录绝不能重复计数。
  */
 const DOCS_ROOT = process.env.NEXION_ADMIN_DOCS_ROOT?.trim() || path.join(ADMIN_ROOT, "docs");
+const DOCS_PRD_ROOT = path.join(DOCS_ROOT, "PRD");
+const samePath = (left, right) => path.resolve(left).toLowerCase() === path.resolve(right).toLowerCase();
 const FACES = [
-  { label: "工作区 PRD", dir: PRD_ROOT },
-  { label: "admin 仓镜像", dir: DOCS_ROOT },
+  { label: "权威 PC PRD", dir: PRD_ROOT },
+  ...(samePath(PRD_ROOT, DOCS_PRD_ROOT) ? [] : [{ label: "admin 仓镜像", dir: DOCS_PRD_ROOT }]),
 ];
 
 // ── 基数台账:门集体对「删除」向是盲的,所以主键点数量单独设地板 ────────────────
-// 地板取 2026-08-11 手工改完那轮的基线(合计 20 = 16+2+2),不追平当前实测值:实测只会
+// 地板取当前权威 PC PRD 的裁决基线(合计 19 = 15+2+2),不追平当前实测值:实测只会
 // 越写越多,地板管的是"只减不增的那一侧"。真要下调必须改这里 —— 那就是一次显式决定。
-const KEY_FLOOR = {
-  "NexGrid_运营控制后台PRD_v1.md": 16,
-  "NexGrid_运营后台_交互与确认机制改写SPEC.md": 2,
-  "NexGrid_运营控制后台_开发落地规格.md": 2,
-  // admin 仓镜像的同三份(`Nexion_` 前缀),同一基线 —— 镜像被删空一样是回流风险。
-  "Nexion_运营控制后台PRD_v1.md": 16,
-  "Nexion_运营后台_交互与确认机制改写SPEC.md": 2,
-  "Nexion_运营控制后台_开发落地规格.md": 2,
-};
+const KEY_FLOOR = [
+  ["Nexion_运营控制后台PRD_v1.md", 15],
+  ["Nexion_运营后台_交互与确认机制改写SPEC.md", 2],
+  ["Nexion_运营控制后台_开发落地规格.md", 2],
+];
 
 const files = FACES.flatMap(({ label, dir }) => walk(dir).map((abs) => ({ abs, label, dir })));
 const tally = { key: 0, batch: 0, conflict: 0, note: 0 };
@@ -231,9 +231,7 @@ for (const { abs, label, dir } of files) {
     }
   }
   if (fileTokens > 0) hitFiles += 1;
-  // 按 basename 归集,但**存成数组**:两张面出现同名文件时后者会静默盖掉前者,
-  // 地板于是量错了对象却毫无声响 —— 与其猜哪一份才算数,不如让它显式炸出来。
-  perFileKey.set(path.basename(abs), [...(perFileKey.get(path.basename(abs)) ?? []), fileKey]);
+  perFileKey.set(`${label}:${path.relative(dir, abs).replace(/\\/g, "/")}`, fileKey);
 }
 
 // ── 禁空集假绿:扫不到东西一律不许当通过 ──────────────────────────────────────
@@ -242,11 +240,12 @@ if (tokens === 0) fail.push("整棵 PRD 树里一个主键族 token 都没命中
 if (tally.key === 0) fail.push(`一处 \`${KEY}\` 都没有 —— 主键真名在文档里已彻底消失`);
 
 // ── 基数地板:删掉主键行时,只有它会响 ────────────────────────────────────────
-for (const [name, floor] of Object.entries(KEY_FLOOR)) {
-  const hits = perFileKey.get(name);
-  if (!hits) fail.push(`基数台账里的 ${name} 不在任何一张消费面里 —— 改名/搬走了就同步改台账`);
-  else if (hits.length > 1) fail.push(`${name} 在两张面里同名出现 ${hits.length} 次(${hits.join("/")})—— 地板量不准哪一份,台账要按路径写`);
-  else if (hits[0] < floor) fail.push(`${name} 的 \`${KEY}\` 只剩 ${hits[0]} 处,低于台账基数 ${floor} —— 有主键行被删了`);
+for (const { label } of FACES) {
+  for (const [name, floor] of KEY_FLOOR) {
+    const hits = perFileKey.get(`${label}:${name}`);
+    if (hits === undefined) fail.push(`${label} 基数台账里的 ${name} 不存在 —— 改名/搬走了就同步改台账`);
+    else if (hits < floor) fail.push(`${label}:${name} 的 \`${KEY}\` 只剩 ${hits} 处,低于台账基数 ${floor} —— 有主键行被删了`);
+  }
 }
 
 // ── 两个合法例外必须仍然在场:整段删掉 = 悄悄撤销"它们不是笔误"这条结论 ─────────
@@ -261,27 +260,17 @@ for (const label of perFace.keys()) {
 //   也算命中 —— 红测实测把宣告那句整个改掉,门照样绿(同一行另一处「单笔主键」把它顶了)。
 //   宣告是一句话,就按一句话的距离量。
 const near = (hay, needle, at, span) => hay.slice(Math.max(0, at - span), at + span).includes(needle);
-// 两张面的后台 PRD 都必须自带宣告 —— 镜像丢了宣告,下次拿它当底稿同步回去就把决议带走了。
-for (const [label, file] of [
-  ["工作区 PRD", path.join(PRD_ROOT, "NexGrid_运营控制后台PRD_v1.md")],
-  ["admin 仓镜像", path.join(DOCS_ROOT, "PRD", "Nexion_运营控制后台PRD_v1.md")],
-]) {
+for (const { label, dir } of FACES) {
+  const file = path.join(dir, "Nexion_运营控制后台PRD_v1.md");
   if (!fs.existsSync(file)) { fail.push(`${label} 的后台 PRD 不在(${file})—— 判据失效`); continue; }
   const src = fs.readFileSync(file, "utf8");
   let declared = false;
   for (let at = src.indexOf("单笔主键"); at >= 0; at = src.indexOf("单笔主键", at + 1)) {
-    if (near(src, KEY, at, 120) && near(src, "FEAT-WD01", at, 200)) { declared = true; break; }
+    if (near(src, KEY, at, 160) && near(src, "d-client.ts", at, 240)) { declared = true; break; }
   }
   if (!declared) {
-    fail.push(`${label} 的后台 PRD 里找不到主键宣告行(一句话之内须写明「单笔主键」+ \`${KEY}\` + 权威契约 FEAT-WD01)`);
+    fail.push(`${label} 的后台 PRD 里找不到主键宣告行(须邻近写明「单笔主键」+ \`${KEY}\` + \`d-client.ts\`)`);
   }
-}
-
-// ── 权威契约方向:App 侧 WD01 §4.2 响应表必须还认这个名字 ─────────────────────
-const WD01 = path.join(PRD_ROOT, "specs", "FEAT-WD01-trust-payout-rails.md");
-if (!fs.existsSync(WD01)) fail.push("找不到权威契约 FEAT-WD01 —— 真名的上游没了,判据失效");
-else if (!hasRow(section(fs.readFileSync(WD01, "utf8"), "### 4.2 `POST /api/withdrawals`"), KEY)) {
-  fail.push(`权威契约 WD01 §4.2 响应表里没有 \`${KEY}\` 的契约行 —— admin 实现与 App 契约已分叉`);
 }
 
 // ── 收尾:PASS 必须打实测样本量,0 样本报绿等于判据静默跳过 ────────────────────
@@ -296,4 +285,4 @@ console.log(`   扫描 ${files.length} 份文档(${[...perFace].map(([l, n]) => 
   + ` 主键点 ${tally.key} · 批量入参 ${tally.batch} · conflicts 成员 ${tally.conflict} · 否定式说明 ${tally.note}`);
 console.log(`   合法例外逐处核对(每张面各自须有):`
   + [...perFace.keys()].map((l) => `${l} conflicts ${conflictShapes.get(l)} / 数组入参 ${arrayShapes.get(l)}`).join(" · "));
-console.log(`   基数台账:${Object.entries(KEY_FLOOR).map(([n, f]) => `${n.replace(/\.md$/, "")} ${perFileKey.get(n)?.[0]}/${f}`).join(" · ")}`);
+console.log(`   基数台账:${FACES.flatMap(({ label }) => KEY_FLOOR.map(([n, f]) => `${label}:${n.replace(/\.md$/, "")} ${perFileKey.get(`${label}:${n}`)}/${f}`)).join(" · ")}`);

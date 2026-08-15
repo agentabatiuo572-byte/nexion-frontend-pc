@@ -121,7 +121,7 @@
 | reject | ②(d)决策区次按钮 + 行内菜单项 | 次按钮 | 仅 `review-pending` | 打开弹窗 D2-MD2(理由+退回余额提示) |
 | delay | ②(d)决策区菜单项 | 菜单项 | 仅 `review-pending` | 打开弹窗 D2-MD3(持有天数选择) |
 | freeze / unfreeze | ②(d)决策区菜单项 | 菜单项 | review-pending 及在途态 / 仅 frozen | 打开弹窗 D2-MD4 / D2-MD5 |
-| 查看单笔详情 | ②(a)行内 withdrawalId 链接 | 链接 | 恒可用 | 跳转单笔详情面板 |
+| 查看单笔详情 | ②(a)行内 withdrawalNo 链接 | 链接 | 恒可用 | 跳转单笔详情面板 |
 
 **(2) 弹窗规格**
 
@@ -129,7 +129,7 @@
 - **功能**:对单笔提现执行 approve(`review-pending → review-passed`),确认金额、
   风险与水位影响后即时生效;放行实时核减 D3 储备并影响 B1 覆盖率。
 - **布局结构**:
-  1. **信息区**:withdrawalId / userId(链至 C1 画像)/ 金额(USDT)/ 目标地址+链 /
+  1. **信息区**:withdrawalNo / userId(链至 C1 画像)/ 金额(USDT)/ 目标地址+链 /
      风险评分(K4,含分档)/ KYC 态(C4)/ 命中规则(K3)/ 24h 第几笔 / 当前状态。
   2. **影响预览区**:server 预检(simulate=withdraw_approve)返回「放行后兑付覆盖率」;
      低于黄线展示警示条(当前值+黄/红线);低于红线时警示条升级为阻断提示

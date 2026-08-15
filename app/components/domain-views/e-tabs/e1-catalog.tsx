@@ -131,7 +131,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   };
   const phaseOptions = phaseOrder;
   const releaseIds = new Set(releases.map((g) => g.id));
-  const skuId = (s: OpsSku) => s.id || s.name;
+  const skuId = (s: OpsSku) => s.id;
   const gateCandidates = skus.filter((s) => !releaseIds.has(skuId(s))); // 任意 SKU 均可挂上架节奏门
   const gateSkuOptions = gateCandidates.map(skuId);
 
@@ -549,7 +549,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
             : `${hasUnlockPhase ? phaseLabel(s.unlock) : "无需阶段"} · ${open ? "已开放" : "门控"}`;
           const isShare = s.tier === "Share";
           return (
-            <div key={s.name} className={`sku-card${st === "off" ? " off" : ""}`}>
+            <div key={s.id} className={`sku-card${st === "off" ? " off" : ""}`}>
               <div className="img">
                 {s.badge ? <span className={`badge ${badgeClass(s.tier)}`}>{s.badge}</span> : null}
                 <div className="ph">
@@ -590,9 +590,10 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                   <span className="stk">库存 {s.stock}</span>
                 </div>
                 <div className="acts">
-                  {canWrite ? <button className="primary" onClick={() => ctx.openSku(s.name)}>改价 / 编辑</button> : null}
-                  {canWrite ? <button disabled={listingBlocked} title={listingBlocked ? listingBlocker : undefined} onClick={() => ctx.openActionConfirm({ name: st === "on" ? `下架 SKU · ${s.name}` : `上架 SKU · ${s.name}`, op: "sku-status", target: s.name, status: st === "on" ? "off" : "on", detail: st === "on" ? "下架后从商城隐藏,不影响已售设备结算" : "上架后对用户可见", amplify: false })}>{st === "on" ? "下架" : "上架"}</button> : null}
-                  {canWrite ? <button className="danger" onClick={() => ctx.delSku(s.name)}>删除</button> : null}
+                  {canWrite ? <button className="primary" onClick={() => ctx.openSku(s.id)}>改价 / 编辑</button> : null}
+                  {canWrite && st === "on" && Number(s.stock) > 0 && !open && !releaseGate && hasPhaseConfig ? <button className="brand" onClick={() => ctx.openSku(s.id, phaseCur)}>按当前阶段上架</button> : null}
+                  {canWrite ? <button disabled={listingBlocked} title={listingBlocked ? listingBlocker : undefined} onClick={() => ctx.openActionConfirm({ name: st === "on" ? `下架 SKU · ${s.name}` : `上架 SKU · ${s.name}`, op: "sku-status", target: s.id, status: st === "on" ? "off" : "on", detail: st === "on" ? "下架后从商城隐藏,不影响已售设备结算" : "上架后对用户可见", amplify: false })}>{st === "on" ? "下架" : "上架"}</button> : null}
+                  {canWrite ? <button className="danger" onClick={() => ctx.delSku(s.id, s.name ?? s.id)}>删除</button> : null}
                 </div>
               </div>
             </div>

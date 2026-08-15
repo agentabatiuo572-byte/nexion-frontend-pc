@@ -574,13 +574,13 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [skuMedia, setSkuMedia] = useState<SkuMedia>(null);
   const [skuMediaUploading, setSkuMediaUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [editName, setEditName] = useState<string | null>(null);
+  const [editSkuId, setEditSkuId] = useState<string | null>(null);
   const mediaSeq = useRef(0);
   const [taskDrawer, setTaskDrawer] = useState(false);
   const [editTaskId, setEditTaskId] = useState<string | null>(null);
   const [taskForm, setTaskForm] = useState<{ n: string; price: string; req: string; unit: string; sat: string; taskClass: string; model: string; minReward: string; maxReward: string; minVRAM: string; killInit: string }>({ n: "", price: "", req: "", unit: "", sat: "", taskClass: "", model: "", minReward: "", maxReward: "", minVRAM: "", killInit: "" });
-  const editedSku = editName ? skus.find((sku) => sku.name === editName) : undefined;
-  const skuFormChanged = !editName || !editedSku
+  const editedSku = editSkuId ? skus.find((sku) => sku.id === editSkuId) : undefined;
+  const skuFormChanged = !editSkuId || !editedSku
     || JSON.stringify(form) !== JSON.stringify(skuToForm(editedSku))
     || (skuMedia?.assetId ?? "") !== (editedSku.imageAssetId ?? "");
   const [dcDrawer, setDcDrawer] = useState(false);
@@ -630,31 +630,32 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   }, [setToast]);
 
   // ── 回调(注入 ctx)──
-  const openSku = (name?: string) => {
+  const openSku = (skuId?: string, unlockPhase?: string) => {
     if (!tasks.length && !e2Loading) void refreshE2();
     if (!e5Datacenters.length && !e5Loading) void refreshE5();
-    if (name) {
-      const s = skus.find((x) => x.name === name);
+    if (skuId) {
+      const s = skus.find((x) => x.id === skuId);
       if (s) {
         const media = skuMediaFromSku(s);
-        setForm(skuToForm(s));
-        setEditName(name);
+        const current = skuToForm(s);
+        setForm({ ...current, unlock: unlockPhase ?? current.unlock });
+        setEditSkuId(skuId);
         resetSkuMedia(media);
         if (media?.assetId) void refreshCurrentSkuMediaPreview(media.assetId);
       }
-      else { setForm({ ...EMPTY_SKU_FORM, unlock: e1PhaseIds[0] ?? "" }); setEditName(null); resetSkuMedia(null); }
-    } else { setForm({ ...EMPTY_SKU_FORM, unlock: e1PhaseIds[0] ?? "" }); setEditName(null); resetSkuMedia(null); }
+      else { setForm({ ...EMPTY_SKU_FORM, unlock: e1PhaseIds[0] ?? "" }); setEditSkuId(null); resetSkuMedia(null); }
+    } else { setForm({ ...EMPTY_SKU_FORM, unlock: e1PhaseIds[0] ?? "" }); setEditSkuId(null); resetSkuMedia(null); }
     setSkuDrawer(true);
   };
-  const delSku = (name: string) => {
+  const delSku = (skuId: string, displayName: string) => {
     openActionConfirm({
-      name: "删除 SKU · " + name,
+      name: "删除 SKU · " + displayName,
       op: "sku-delete",
-      target: name,
-      detail: `删除「${name}」:从商品目录移除,不影响已售设备,但会影响前台商品列表、详情页入口和后续购买。需填写操作理由 + 审计留痕。`,
+      target: skuId,
+      detail: `删除「${displayName}」:从商品目录移除,不影响已售设备,但会影响前台商品列表、详情页入口和后续购买。需填写操作理由 + 审计留痕。`,
       businessForm: {
         kind: "destructive-reason",
-        target: name,
+        target: displayName,
         impact: "商品目录与用户端购买入口会移除;已售设备订单和账本不回溯。",
       },
     });
@@ -817,7 +818,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           domain: "E",
           usage: kind === "video" ? "sku-video" : "sku-image",
           entityType: "SKU",
-          entityId: form.id.trim() || form.name.trim() || editName || "draft-sku",
+          entityId: form.id.trim() || form.name.trim() || editSkuId || "draft-sku",
           operator,
         }),
       ]);
@@ -872,7 +873,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         domain: "E",
         usage: "sku-image",
         entityType: "SKU",
-        entityId: form.id.trim() || form.name.trim() || editName || "draft-sku",
+        entityId: form.id.trim() || form.name.trim() || editSkuId || "draft-sku",
         operator,
       });
       if (seq !== mediaSeq.current) return;
@@ -934,20 +935,26 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     }
     // 已有 SKU 可继续保留已删除 DC 的历史展示名，避免编辑其它字段时静默改写部署中心。
     // 新 SKU 则必须显式选择当前 E5 配置中的有效展示名。
-    if (!skuDatacenterSet.has(datacenter) && !editName) {
+    if (!skuDatacenterSet.has(datacenter) && !editSkuId) {
       setToast("请选择 E5 当前有效的数据中心");
       return;
     }
     const poolErr = validateSkuUnlockPool();
     if (poolErr) { setToast(poolErr); return; }
     const stock = form.stock.trim();
-    if (stock && (!/^\d+$/.test(stock) || !Number.isSafeInteger(Number(stock)))) {
-      setToast("库存必须是非负整数,或留空表示不限量");
+    if (!stock || !/^\d+$/.test(stock) || !Number.isSafeInteger(Number(stock)) || Number(stock) > 2147483647) {
+      setToast("库存必须填写 0 到 2147483647 之间的整数");
+      return;
+    }
+    const sold = form.sold.trim();
+    if (sold && (!/^\d+$/.test(sold) || !Number.isSafeInteger(Number(sold))
+      || Number(sold) > 2147483647 || Number(sold) + Number(stock) > 2147483647)) {
+      setToast("销量必须为非负整数，且销量与库存合计不能超过 2147483647");
       return;
     }
     const gErr = validateGateForm(form);
     if (gErr) { setToast(gErr); return; }
-    openActionConfirm({ name: (editName ? "编辑 SKU · " : "新增 SKU · ") + (form.name || "未命名"), op: "sku-save", isNew: !editName, hasImg: !!skuMedia });
+    openActionConfirm({ name: (editSkuId ? "编辑 SKU · " : "新增 SKU · ") + (form.name || "未命名"), op: "sku-save", isNew: !editSkuId, hasImg: !!skuMedia });
     setSkuDrawer(false);
   };
 
@@ -1135,8 +1142,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       })()}
 
       {/* SKU 新增 / 编辑 抽屉 */}
-      {skuDrawer && <Drawer title={editName ? "编辑 SKU" : "新增 SKU"} sub={<AutoGloss>{editName ? "改价 / 库存 / 日产基准 / 上架阶段 · 改后走操作确认" : "填写商品规格 · 提交后走操作确认"}</AutoGloss>} onClose={() => { setSkuDrawer(false); setEditName(null); resetSkuMedia(null); }}
-        footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setSkuDrawer(false); setEditName(null); resetSkuMedia(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!form.name || !form.price || !skuFormChanged || skuMediaUploading || (!!skuMedia && !skuMedia.assetId)} onClick={openSkuSaveConfirm}>{editName ? "保存修改" : "提交确认"}</Btn></>}>
+      {skuDrawer && <Drawer title={editSkuId ? "编辑 SKU" : "新增 SKU"} sub={<AutoGloss>{editSkuId ? "改价 / 库存 / 日产基准 / 上架阶段 · 改后走操作确认" : "填写商品规格 · 提交后走操作确认"}</AutoGloss>} onClose={() => { setSkuDrawer(false); setEditSkuId(null); resetSkuMedia(null); }}
+        footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setSkuDrawer(false); setEditSkuId(null); resetSkuMedia(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!form.name || !form.price || !skuFormChanged || skuMediaUploading || (!!skuMedia && !skuMedia.assetId)} onClick={openSkuSaveConfirm}>{editSkuId ? "保存修改" : "提交确认"}</Btn></>}>
         <div className="col" style={{ gap: 12 }}>
           <div className="col" style={{ gap: 5 }}><span className="muted tiny">产品图 / 视频</span>
             <label className={"sku-drop" + (dragOver ? " drag" : "")} style={skuMedia ? { padding: 0, borderStyle: "solid" } : {}}
@@ -1235,7 +1242,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             {form.tier !== "Share" ? (
               <div className="grid g-2" style={{ gap: 12 }}>
                 <SkuFld label="累计销量" type="number" value={form.sold} onChange={(v) => setForm({ ...form, sold: v })} placeholder="4821" />
-                <SkuFld label="库存 stock" type="number" min={0} step={1} value={form.stock} onChange={(v) => setForm({ ...form, stock: v })} placeholder="47" hint="非负整数;留空=∞" />
+                <SkuFld label="库存 stock" type="number" min={0} step={1} value={form.stock} onChange={(v) => setForm({ ...form, stock: v })} placeholder="47" hint="必填，0 表示售罄；不自动下架" />
               </div>
             ) : (
               <SkuFld label="累计销量" type="number" value={form.sold} onChange={(v) => setForm({ ...form, sold: v })} placeholder="12483" hint="份额无限量,不设库存" />
@@ -1248,65 +1255,60 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             </div>
             {form.tier !== "Share" && <>
               <div className="grid g-2" style={{ gap: 12 }}>
-                <label className="col" style={{ gap: 5 }}><span className="muted tiny"><AutoGloss>解锁阶段（上架节奏门）</AutoGloss></span><select className="fld" value={form.unlock} onChange={(e) => setForm({ ...form, unlock: e.target.value })} disabled={skuPhaseIds.length === 0}>{skuPhaseIds.length === 0 ? <option value="">请先配置阶段</option> : skuPhaseIds.map((p) => <option key={p} value={p}>{e1PhaseLabel(p)}</option>)}</select></label>
+                <label className="col" style={{ gap: 5 }}><span className="muted tiny"><AutoGloss>解锁阶段（上架节奏门）</AutoGloss></span><select className="fld" value={form.unlock} onChange={(e) => setForm({ ...form, unlock: e.target.value })} disabled={skuPhaseIds.length === 0}>{skuPhaseIds.length === 0 ? <option value="">请先配置阶段</option> : skuPhaseIds.map((p) => <option key={p} value={p}>{e1PhaseLabel(p)}{p === phaseCur ? " · 当前阶段 · A2 执行后 App 进入正常商品区" : ""}</option>)}</select></label>
               </div>
             </>}
             <label className="col" style={{ gap: 5 }}><span className="muted tiny">特性清单 · 每行一条</span><textarea className="fld" style={{ minHeight: 72, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }} value={form.features} onChange={(e) => setForm({ ...form, features: e.target.value })} placeholder={"NexGrid 全托管\n99.9% 在线率 SLA\n免运费与安装"} /></label>
           </SkuFieldGroup>
 
-          <SkuFieldGroup n="⑦" title="购买限制">
+          <SkuFieldGroup n="⑦" title="购买资格与锁额">
+            <div className="tint tiny">结构化购买门由 E1 后端保存，并由 App 商品目录、单品结算、组合结算及服务端成交入口共同复验。空门 = 不设用户条件；锁额已售由服务端回读。</div>
             <label className="col" style={{ gap: 5 }}>
-              <span className="muted tiny">等级门类型 · 谁可购买<span style={{ color: "var(--ink-4)" }}> · 锁额另设(正交)· server 二次校验为权威</span></span>
-              <div className="row wrap" style={{ gap: 6 }}>
-                {[{ k: "none", l: "无等级门" }, { k: "activeDirect", l: "单活跃直推" }, { k: "rank", l: "单 V 级" }, { k: "combo", l: "组合门槛" }].map((t) => (
-                  <Chip key={t.k} tab sel={form.gateType === t.k} onClick={() => { if (form.gateType !== t.k) setForm({ ...form, gateType: t.k, gateRankMin: "", gateActiveDirectMin: "", gateTeamVolumeMin: "" }); }}>{t.l}</Chip>
-                ))}
-              </div>
+              <span className="muted tiny">购买门形态</span>
+              <select className="fld" value={form.gateType} onChange={(e) => setForm({ ...form, gateType: e.target.value as SkuForm["gateType"] })}>
+                <option value="none">无用户条件</option>
+                <option value="activeDirect">活跃直推门</option>
+                <option value="rank">最低 V 级门</option>
+                <option value="combo">组合门（V 级 / 直推 / 团队业绩）</option>
+              </select>
             </label>
-            {form.gateType === "activeDirect" && (
-              <SkuFld label="最少活跃直推数" type="number" value={form.gateActiveDirectMin} onChange={(v) => setForm({ ...form, gateActiveDirectMin: v })} placeholder="5" hint="达标方可购买" />
-            )}
-            {form.gateType === "rank" && (
-              <SkuFld label="最低 V 级(0-12)" type="number" value={form.gateRankMin} onChange={(v) => setForm({ ...form, gateRankMin: v })} placeholder="2" hint="用户 V 级 ≥ 此值" />
-            )}
-            {form.gateType === "combo" && (
-              <>
-                <div className="grid g-2" style={{ gap: 12 }}>
-                  <SkuFld label="最低 V 级(可空)" type="number" value={form.gateRankMin} onChange={(v) => setForm({ ...form, gateRankMin: v })} placeholder="2" hint="0-12" />
-                  <SkuFld label="最少活跃直推(可空)" type="number" value={form.gateActiveDirectMin} onChange={(v) => setForm({ ...form, gateActiveDirectMin: v })} placeholder="15" />
-                </div>
-                <SkuFld label="最低团队业绩 USD(可空)" type="number" value={form.gateTeamVolumeMin} onChange={(v) => setForm({ ...form, gateTeamVolumeMin: v })} placeholder="20000" />
-                <label className="col" style={{ gap: 5 }}>
-                  <span className="muted tiny">多条件判定</span>
-                  <div className="row wrap" style={{ gap: 6 }}>
-                    <Chip tab sel={form.gateMode === "all"} onClick={() => setForm({ ...form, gateMode: "all" })}>全部满足</Chip>
-                    <Chip tab sel={form.gateMode === "either"} onClick={() => setForm({ ...form, gateMode: "either" })}>任一满足</Chip>
-                  </div>
-                </label>
-              </>
-            )}
-            <SkuFld label="锁额上限" type="number" value={form.gateQuotaCap} onChange={(v) => setForm({ ...form, gateQuotaCap: v })} placeholder="1000" hint="留空=不限量;设值=本期可售上限" />
-            {form.gateQuotaCap.trim() && (
-              <>
-                <div className="grid g-2" style={{ gap: 12 }}>
-                  <SkuFld label="已售数量" type="number" value={form.gateQuotaSold} onChange={(v) => setForm({ ...form, gateQuotaSold: v })} placeholder="977" hint="后端维护" />
-                  <label className="col" style={{ gap: 5 }}><span className="muted tiny">锁额周期</span><select className="fld" value={form.gateQuotaPeriod} onChange={(e) => setForm({ ...form, gateQuotaPeriod: e.target.value })}><option value="month">本月</option><option value="lifetime">永久</option></select></label>
-                </div>
-                <label className="col" style={{ gap: 5 }}><span className="muted tiny">购买限制执行方式</span><select className="fld" value={form.gateEnforce} onChange={(e) => setForm({ ...form, gateEnforce: e.target.value })}><option value="true">硬拦截（售罄即禁购）</option><option value="false">仅展示（不拦截购买）</option></select></label>
-              </>
-            )}
-            {(() => {
-              const g = formToGate(form);
-              if (!g) return <div className="tint tiny">无购买门 · 任何用户可直接购买</div>;
-              const parts: string[] = [];
-              if (g.rankMin != null) parts.push(`V≥${g.rankMin}`);
-              if (g.activeDirectMin != null) parts.push(`≥${g.activeDirectMin} 活跃直推`);
-              if (g.teamVolumeMin != null) parts.push(`团队业绩 ≥$${g.teamVolumeMin.toLocaleString()}`);
-              const condTxt = parts.length ? parts.join(g.mode === "either" ? " 或 " : " 且 ") : "无等级条件";
-              const remaining = gateRemaining(g);
-              const quotaTxt = remaining != null ? ` · 锁额 ${g.quotaCap}(余 ${remaining}${g.enforce ? " · 售罄硬拦" : " · 仅展示"})` : "";
-              return <div className="tint cyan tiny">购买门 · {condTxt}{quotaTxt} · 改后对前端商城 / 详情 / 结算页生效,以后端校验为准</div>;
-            })()}
+            {form.gateType !== "none" && <>
+              <div className="grid g-2" style={{ gap: 12 }}>
+                {(form.gateType === "rank" || form.gateType === "combo") && <SkuFld label="最低 V 级 rankMin" type="number" min={0} max={12} step={1} value={form.gateRankMin} onChange={(v) => setForm({ ...form, gateRankMin: v })} placeholder="3" hint="0–12" />}
+                {(form.gateType === "activeDirect" || form.gateType === "combo") && <SkuFld label="活跃直推 activeDirectMin" type="number" min={0} step={1} value={form.gateActiveDirectMin} onChange={(v) => setForm({ ...form, gateActiveDirectMin: v })} placeholder="5" hint="非负整数" />}
+                {form.gateType === "combo" && <SkuFld label="团队业绩 teamVolumeMin (USD)" type="number" min={0} step={0.01} value={form.gateTeamVolumeMin} onChange={(v) => setForm({ ...form, gateTeamVolumeMin: v })} placeholder="20000" hint="非负数" />}
+              </div>
+              {form.gateType === "combo" && <label className="col" style={{ gap: 5 }}>
+                <span className="muted tiny">多条件关系 mode</span>
+                <select className="fld" value={form.gateMode} onChange={(e) => setForm({ ...form, gateMode: e.target.value as SkuForm["gateMode"] })}>
+                  <option value="all">全部满足（AND）</option>
+                  <option value="either">任一满足（OR）</option>
+                </select>
+              </label>}
+            </>}
+            <div className="grid g-2" style={{ gap: 12 }}>
+              <SkuFld label="锁额上限 quotaCap" type="number" min={1} step={1} value={form.gateQuotaCap} onChange={(v) => setForm({ ...form, gateQuotaCap: v })} placeholder="留空 = 不限量" hint="本期可售上限" />
+              <label className="col" style={{ gap: 5 }}>
+                <span className="muted tiny">已售 quotaSold · 服务端回读</span>
+                <input className="fld" type="number" min={0} step={1} value={form.gateQuotaSold} readOnly aria-readonly="true" />
+              </label>
+            </div>
+            {(form.gateType !== "none" || form.gateQuotaCap.trim()) && <div className="grid g-2" style={{ gap: 12 }}>
+              <label className="col" style={{ gap: 5 }}>
+                <span className="muted tiny">锁额周期 quotaPeriod</span>
+                <select className="fld" value={form.gateQuotaPeriod} onChange={(e) => setForm({ ...form, gateQuotaPeriod: e.target.value as SkuForm["gateQuotaPeriod"] })}>
+                  <option value="month">按月</option>
+                  <option value="lifetime">全生命周期</option>
+                </select>
+              </label>
+              <label className="col" style={{ gap: 5 }}>
+                <span className="muted tiny">锁额售罄策略 enforce</span>
+                <select className="fld" value={form.gateEnforce} onChange={(e) => setForm({ ...form, gateEnforce: e.target.value as SkuForm["gateEnforce"] })}>
+                  <option value="true">售罄时服务端拦截成交</option>
+                  <option value="false">售罄仅展示（资格仍由服务端校验）</option>
+                </select>
+              </label>
+            </div>}
           </SkuFieldGroup>
 
           {(() => {
@@ -1411,37 +1413,37 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           // propose 内部自管成功/失败 toast;此处仅做 mc.op → op 映射 + 构造 ctx + 本地 UI 状态收尾。
           try {
             if (mc.op === "sku-save") {
-              const ex = editName ? skus.find((x) => x.name === editName) : undefined;
+              const ex = editSkuId ? skus.find((x) => x.id === editSkuId) : undefined;
               const sku = attachSkuMedia(formToSku(form, ex), skuMedia);
-              const skuId = editName ? (ex?.id || ex?.name || editName) : (form.id.trim() || form.name.trim());
-              const def = findHighOp(editName ? "e1_sku_update" : "e1_sku_create")!;
+              const skuId = editSkuId ?? (form.id.trim() || form.name.trim());
+              const def = findHighOp(editSkuId ? "e1_sku_update" : "e1_sku_create")!;
               await propose(ctx.toast, {
-                action: mc.name, obj: skuId, before: editName ? "编辑前 SKU" : "—", after: form.name || skuId,
+                action: mc.name, obj: skuId, before: editSkuId ? "编辑前 SKU" : "—", after: form.name || skuId,
                 type: def.type, amplifies: false, gate: { roles: [] }, gateLabel: def.gateLabel, reason,
                 sourceDomain: "E1",
                 command: def.buildCommand({ skuId, ...sku }),
                 target: def.buildTarget({ skuId }),
               });
-              setEditName(null);
+              setEditSkuId(null);
               resetSkuMedia(null);
             } else if (mc.op === "sku-delete" && mc.target) {
-              const sku = skus.find((x) => x.name === mc.target || x.id === mc.target);
-              const skuId = sku?.id || mc.target;
+              const sku = skus.find((x) => x.id === mc.target);
+              const skuId = mc.target;
               const def = findHighOp("e1_sku_delete")!;
               await propose(ctx.toast, {
-                action: mc.name, obj: skuId, before: mc.target, after: "已移除", type: def.type, amplifies: false,
+                action: mc.name, obj: skuId, before: sku?.name ?? skuId, after: "已移除", type: def.type, amplifies: false,
                 gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1",
-                command: def.buildCommand({ skuId }),
+                command: def.buildCommand({ skuId, updatedAt: sku?.updatedAt }),
                 target: def.buildTarget({ skuId }),
               });
             } else if (mc.op === "sku-status" && mc.target) {
-              const sku = skus.find((x) => x.name === mc.target || x.id === mc.target);
-              const skuId = sku?.id || mc.target;
+              const sku = skus.find((x) => x.id === mc.target);
+              const skuId = mc.target;
               const def = findHighOp("e1_sku_status")!;
               await propose(ctx.toast, {
-                action: mc.name, obj: skuId, before: mc.target, after: mc.status === "off" ? "下架" : "上架",
+                action: mc.name, obj: skuId, before: sku?.name ?? skuId, after: mc.status === "off" ? "下架" : "上架",
                 type: def.type, amplifies: false, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1",
-                command: def.buildCommand({ skuId, status: String(mc.status ?? "") }),
+                command: def.buildCommand({ skuId, status: String(mc.status ?? ""), updatedAt: sku?.updatedAt }),
                 target: def.buildTarget({ skuId }),
               });
             } else if (mc.op === "task-create") {

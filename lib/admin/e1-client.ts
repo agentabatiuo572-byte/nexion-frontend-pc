@@ -63,6 +63,7 @@ interface BackendSku {
   imagePreviewUrl?: string | null;
   tag?: string | null;
   status?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface E1Phase {
@@ -243,6 +244,7 @@ function fromSku(sku: BackendSku): OpsSku {
     imagePreviewUrl: sku.imagePreviewUrl ?? undefined,
     tag: sku.tag ?? "",
     status: sku.status ?? "pending",
+    updatedAt: sku.updatedAt ?? undefined,
   };
 }
 
@@ -321,6 +323,7 @@ export async function saveE1Sku(sku: OpsSku, previousSkuId: string | undefined, 
     ? await e1Request<BackendSku>(`/skus/${encodeURIComponent(previousSkuId)}`, {
         method: "PUT",
         body,
+        headers: sku.updatedAt ? { "X-Product-Revision": sku.updatedAt } : undefined,
         idempotencyPrefix: "e1-sku-save",
       })
     : await e1Request<BackendSku>("/skus", {
@@ -331,19 +334,23 @@ export async function saveE1Sku(sku: OpsSku, previousSkuId: string | undefined, 
   return fromSku(saved);
 }
 
-export async function updateE1SkuStatus(skuId: string, status: string, reason: string, operator: string) {
+export async function updateE1SkuStatus(
+  skuId: string, expectedUpdatedAt: string, status: string, reason: string, operator: string,
+) {
   const saved = await e1Request<BackendSku>(`/skus/${encodeURIComponent(skuId)}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status, reason, operator }),
+    headers: { "X-Product-Revision": expectedUpdatedAt },
     idempotencyPrefix: "e1-sku-status",
   });
   return fromSku(saved);
 }
 
-export async function deleteE1Sku(skuId: string, reason: string, operator: string) {
+export async function deleteE1Sku(skuId: string, expectedUpdatedAt: string, reason: string, operator: string) {
   await e1Request<{ deleted: boolean }>(`/skus/${encodeURIComponent(skuId)}`, {
     method: "DELETE",
     body: JSON.stringify({ status: "off", reason, operator }),
+    headers: { "X-Product-Revision": expectedUpdatedAt },
     idempotencyPrefix: "e1-sku-delete",
   });
 }

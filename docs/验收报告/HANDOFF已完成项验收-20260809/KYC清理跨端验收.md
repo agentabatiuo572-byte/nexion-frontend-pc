@@ -39,3 +39,4 @@ K4 仍为 `multiAccount / arbitrage / withdrawVelocity / accountAge / anomalyBeh
 2. 用同一 commit/build id 重建并重启 3002，再锁定 PID、BUILD_ID 与浏览器证据。
 3. 在真实 MFA 会话中从可见入口复核 KYC 缺失及 K4/J3/B3 页面。
 4. 修正 J3 语义合同并使 PC 完整 verify 全绿。
+

@@ -71,6 +71,10 @@ const MIGRATED = [
   "app/components/domain-views/k-tabs/k3-rules.tsx",
   "app/components/domain-views/k-tabs/k4-scoring.tsx",
   "app/components/domain-views/e-view.tsx",
+  // C1 account-deletion review commands keep the same key for uncertain POST results.
+  "lib/admin/account-deletion-client.ts",
+  // A3 structured experience config keeps the same key for uncertain CAS updates.
+  "lib/admin/platform-experience-client.ts",
   "app/components/domain-views/h-tabs/h8-referral-rewards.tsx",
   "app/components/domain-views/m-view.tsx",
   "app/_console/overview/funnel/page.tsx",

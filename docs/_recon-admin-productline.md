@@ -40,7 +40,7 @@
 - **KycLedger**:`userId · kycStatus{verified|unverified|in-review} · walletPaired · pairedAddress · network`。`userId` 维度,无产品线。GET `/api/kyc/status/:userId` 单源。
 
 ### 资金
-- **Withdrawal**(12 态):`withdrawalId · userId · amountUsdt · riskScore(K4) · kycStatus(C4) · hitRules(K3)`。userId 键,无产品线。
+- **Withdrawal**(12 态):`withdrawalNo · userId · amountUsdt · riskScore(K4) · kycStatus(C4) · hitRules(K3)`。userId 键,无产品线。
 - **Bill**(7 类):`billId · userId · type · amount · currency`。server 唯一账本,userId 键,无产品线。
 - **TreasuryLedger·B1**(负债 8 科目)+ **D3**(储备账本):**全平台单份聚合**,`coverageRatio/netExposure/reserveTotal` 均全局标量。**无按 App 分账维度**。财务单源 = `lib/mock/admin/ledger.ts` 一份 `LedgerSnapshot`,B1/D 全域金额从它派生,明文「无二源」。
 

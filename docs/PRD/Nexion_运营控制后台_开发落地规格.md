@@ -70,7 +70,7 @@
 - 互锁校验:覆盖率 `yellow>red` / 挤兑 `bankrunRed>bankrunYellow` / K4 六维权重和=1 / staking APY 跨档保序 / E3 产能分段保序与换新阶梯严格保序 / V_RANKS 门槛保序 / Lucky 概率和≤100% / 转盘各档 weight 和=100 且档位∈[2,12] / 里程碑阈值保序 / UNILEVEL_USDT 各层和≤25%。
 
 ### 0.6 ID 全 server mint
-`withdrawalId / topupId / orderId / billId / commissionId / 通知 id / Genesis tokenId` 全部 server 单源生成,client 不可 mint / 枚举 / 撞 ID(§9.11d.2)。
+`withdrawalNo / topupId / orderId / billId / commissionId / 通知 id / Genesis tokenId` 全部 server 单源生成,client 不可 mint / 枚举 / 撞 ID(§9.11d.2)。
 
 ### 0.7 时间与币种
 所有时间戳为 server 权威 **ms-epoch**(对齐 §2.4.4);所有金额字段**明示币种**(USDT / NEX)。
@@ -212,7 +212,7 @@
 
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
-| **Withdrawal 扩展态**(本体属 §12) | state:enum{正常5态 submitted\|review-passed\|processing\|sent\|confirmed · 异常6态 review-rejected\|address-invalid\|tx-failed\|tx-orphaned\|refunded\|frozen · 后台扩展 review-pending} · withdrawalId(server mint) · userId · amountUsdt · address(hash)+chain · riskScore(K4) · pointsOk · count24h · hitRules(K3);**共12态;非法转移 409** | SC | §9.1 / Ch6 D2 / §9.3.6 / §9.11f |
+| **Withdrawal 扩展态**(本体属 §12) | state:enum{正常5态 submitted\|review-passed\|processing\|sent\|confirmed · 异常6态 review-rejected\|address-invalid\|tx-failed\|tx-orphaned\|refunded\|frozen · 后台扩展 review-pending} · withdrawalNo(server mint) · userId · amountUsdt · address(hash)+chain · riskScore(K4) · pointsOk · count24h · hitRules(K3);**共12态;非法转移 409** | SC | §9.1 / Ch6 D2 / §9.3.6 / §9.11f |
 | **WithdrawConfig**(Phase 派发) | withdrawCooldownDays(月8=35d/月9=45d) · withdrawPointsRatio(月9=20) · 日限/上限/fee(source:'d5' 可写) · complianceHold(只读 source:'phase-h1') | SC | §17.1 / Ch6 D5 |
 | **Bill / BillType**(§12/§9.7) | type:enum{swap\|topup\|withdraw\|earning\|commission\|refund\|bonus}(**7类**) · billId(server mint) · userId · amount · currency · ts:ms-epoch;**server 唯一账本;积分调整不落 bill** | SC | §9.1 / Ch6 D4 |
 | **VietQrBankAccount / VietQrReconciliation / VietQrConfig** | 银行账户仅持久化 AES-GCM 密文，读接口只回传尾号；对账动作 enum{match\|writeoff\|return} 携 expectedVersion、reason、evidence 与 Idempotency-Key。match/writeoff 原子更新钱包、`cumulativeDepositUsdt`、D4 与 D3；return 不入钱包 | SC | 2026-07-25 D1 高保真落地 |
@@ -224,8 +224,8 @@
 
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
-| **SKU / Device specs**(E1) | skuKey · price:number/USDT(S1 1,299·Pro 2,399·Pro v2 2,639·Rack P1 8,999·Rack P2 14,999·Cloud Share 199·Genesis 9,999) · baseRate/日(S1 38.50·Pro 76.00·Pro v2 96.00·Rack P1 142.60·Rack P2 248.00·Cloud Share 0.073) · baseRateNEX/日(S1 65·Pro 215·Pro v2 280·Rack P1 950·Rack P2 1,820·Cloud Share 30) · installMonths · stock(<50告警) · status:enum{active\|legacy\|coming-soon};**回本天数/首年净利为派生** | SC | §17.1 / Ch10 E1 |
-| **GENERATION_RELEASES**(E1) | skuKey · releaseMonth(绝对月,Pro v2 月5/Rack P2 月10) · status · tradeinDiscount/USDT · 提前/延迟/强制解锁 | SC | Ch10 E1 |
+| **SKU / Device specs**(E1) | `nx_product` 是交易核心唯一真源：skuKey · name · tier/generation · price · daily_earn_usdt · daily_earn_nex · stock · sold · sale status · unlock phase pointer；PC E1、App catalog、quote、order 共用此真源。`nx_admin_device_sku` 仍同步历史重复列以兼容旧结构，但运行职责只承载 E1 展示/运营扩展（如 baseRate 展示串、数据中心、功耗/AI 参数、功能与媒体），重复列不能覆盖身份、价格、库存、销量和在售状态。完整编辑、上下架和删除携 `X-Product-Revision` 做 CAS；revision 使用 `DATETIME(6)` 且任一商品/库存写入至少单调前进 1 微秒；`stock=0` 仅售罄不自动下架；`purchaseGate` 在成交链路未完成服务端强制前保持 HOLD，历史值不下发两端。**回本天数/首年净利为派生** | SC | §17.1 / Ch10 E1 |
+| **GENERATION_RELEASES**(E1) | `nx_admin_device_generation_gate` 持有 skuKey · releaseMonth · phase · eligibility · phaseOffset · forceUnlock · status 等运营上架规则；E1 上架前置服务端校验已启用，按用户成交授权仍为 HOLD | SC | Ch10 E1 |
 | **CapacitySchedule**(E3) | `capacityBand1/2/3DeltaPct` 按月复利 · `stageEarlyEnd/stageMidEnd` 分段 · `capacityFloorPct` 下限 · `cycleMonths` 仅图表视窗 · 8 个 SKU 参与开关 · `capacitySubsidyDays` 仅标注 · `taskLockS1/Pro/Rack` | SC | FEAT-DEV01 / Ch10 E3 |
 | **TradeInConfig**(E3) | `tradeinEnabled/eligibility` · `tradeinLadderCut1..4` · `tradeinLadderCredit1..5` · `tradeinRequireHigherPrice/tradeinMaxDevicesPerOrder` · promo{...}；**折抵只减少本单应付，不入余额；`salvagePct/minHoldingMonths` 已退役** | SC | FEAT-DEV02 / Ch10 E3 |
 | **Order 状态机**(E4) | orderId(server mint) · state:enum{placed\|paid\|provisioning\|activated\|payment_failed\|expired\|refunded\|chargeback\|provisioning_failed} · relatedOrderId(server 校验) · DC · skuKey · userId;**payment_failed 不计 GMV** | SC | §17.1 / Ch10 E4 |
@@ -396,14 +396,17 @@
 
 | Endpoint | Method | 用途 | 确认 | 模块 |
 |---|---|---|---|---|
-| `/api/admin/products/specs` · `/products/specs/:skuKey` | GET / PUT | 全 SKU 规格(server-canonical)/ 改单 SKU(stock:0 经确认弹窗转下架;返 effectiveAt+lockedInFlightOrders) | E1a-MD1/MD2(price/baseRate/status/stock=0) | E1 |
+| `/api/admin/devices/skus` · `/api/admin/devices/skus/:skuKey` | GET / POST / PUT / DELETE | PC E1 从 `nx_product` 读取并管理全 SKU 交易核心；PUT/DELETE 携 `X-Product-Revision` 做 CAS，stock 接受 0 且不自动下架；扩展字段兼容写 `nx_admin_device_sku`，非空 purchaseGate 失败关闭 | E1a-MD2(完整编辑) | E1 |
+| `/api/admin/devices/skus/:skuKey/status` | PATCH | 携 `X-Product-Revision` 独立切换销售状态 on/off，不复用 lifecycle 或 unlockPhase | 行内确认 | E1 |
+| `/api/admin/devices/e1/generation-gates[/{skuId}]` | GET / POST / PATCH / DELETE | 管理 `nx_admin_device_generation_gate` 上架节奏规则并供 E1 上架前置校验；不代表按用户成交资格已闭环 | 操作确认 | E1 |
+| `/api/store/catalog` | GET | UniApp 商城只读投影同一 `nx_product` 可售集合；Sandbox 仅隔离验收库存写入，目录每次刷新并隐藏当前已下架/删除商品，提交按稳定商品编号重验当前可售、足量库存与价格 | — | E1 / E4 |
 | `/api/config/cart/bundle-discount` | PUT | 套餐折扣 ladder(4件12%/3件8%/2件5%) | E1a-MD3 | E1 |
 | `/api/admin/config/task-pricing` | GET / PUT | 6 类任务定价(热更,仅新派发生效) | E2-MD1~MD4(PUT) | E2 |
 | `/api/admin/devices/e3/config` | GET / PATCH | E3 产能曲线 + 换新阶梯统一配置；拒绝退役键、未知键、无变化与非法保序 | E3-MD1(高敏字段) | E3 |
 | `/api/app/trade-in/config` | GET | 用户端换新开关、资格和 4/5 阶梯只读投影 | — | E3 |
 | `/api/app/trade-in/{config\|quote\|submit}` | GET / POST | 用户换新配置、报价与原子提交；submit 携 Idempotency-Key，折抵不入余额 | — | E3 |
 | `/api/admin/orders?status=&failState=` · `/orders/:id` | GET | 订单列表 / 详情 | — | E4 |
-| `/api/admin/orders/:id` · `/orders/:id/cancel` | PUT/POST | 手动推进回滚改派 DC / 取消(携 Key) | 是(④a,运维/可取消态) | E4 |
+| `/api/admin/orders/:id` · `/orders/:id/cancel` | PUT/POST | 手动推进回滚改派 DC / 取消(携 Key)；placed 进入 payment_failed/expired/cancelled 时与状态更新同事务复库，软删除商品仍承接历史订单复库 | 是(④a,运维/可取消态) | E4 |
 | `/api/orders` | POST | (用户)下单(relatedOrderId server 强校原单 payment_failed+userId 一致否则 400) | — | E4 |
 | `/api/admin/orders/:id/refund` | POST | 退款(联动 D1 退款+D4 冲正+cumulativeDepositUsdt 核减;携 Key) | E4-MD1 | E4 |
 | `/api/admin/devices?userId=&kind=&status=` | GET | 设备 fleet 运维列表 | — | E5 |
@@ -696,7 +699,7 @@
 | `price`(各 SKU USDT) | S1 1,299 / Pro 2,399 / Pro v2 2,639 / Rack P1 8,999 / Rack P2 14,999 / Cloud Share 199 / Genesis 9,999 | > 0 | 仅新单(在途锁价) | E1 |
 | `baseRate`(USDT/日满效率) | S1 38.50 / Pro 76.00 / Pro v2 96.00 / Rack P1 142.60 / Rack P2 248.00 / Cloud Share 0.073 | > 0 | 仅新对象(衰减叠加 E3) | E1 |
 | `baseRateNEX`(NEX/日) | S1 65 / Pro 215 / Pro v2 280 / Rack P1 950 / Rack P2 1,820 / Cloud Share 30 | ≥ 0 | 仅新对象 | E1 |
-| `stock` | 现状,<50 橙告警 | ≥ 0 | 实时(stock=0 须 MC) | E1 |
+| `stock` | 现状,<50 橙告警 | 0–2147483647 整数 | 实时；0 仅售罄，不自动下架 | E1 |
 | 套餐折扣 ladder | 4 件 12% / 3 件 8% / 2 件 5% | 各 0–30% | 仅新结算 | E1 |
 | 6 类任务 minReward/maxReward | IG $0.0001–0.045 / VG $0.45–1.80 / LL $0.00005–0.85 / FT $0.06–0.42 / EM $0.00001–0.09 / SP $0.00005–0.072 | ≥0,min≤max | 实时(仅新派发) | E2 |
 | `QUEUE_SATURATION` | 0.35 | 0–1 | 实时 | E2 |
@@ -708,8 +711,8 @@
 | `capacitySubsidyDays` | 30 天 | ≥ 0；仅以 server 时钟控制标注，不进入收益公式 | 实时 | E3 |
 | 任务锁定月度损失阈值 | S1 / Pro / Rack 三档，以 E3 当前持久值为准 | ≥ 0 USDT；0 表示不展示 | 实时 | E3 |
 | `salvagePct / minHoldingMonths / degrade* / minEfficiency` | **退役** | 禁止运行时读取或写入 | — | E3 |
-| `eligibility[kind]`(购买资格) | S1=open;Pro=any-of(own S1/V≥2/累计≥$1000/trade-in S1);Rack P1=any-of(own Pro/V≥4/≥$5000/trade-in Pro) | 9 类规则组 | 实时(仅新购买判定) | E3 |
-| `eligibility[Gen-2]`(Pro v2/Rack P2) | **待补录**(空值兜底 deny-all,见第7章 #9) | 9 类规则组 | 实时 | E3 |
+| `eligibility[kind]`(购买资格配置) | S1=open;Pro=any-of(own S1/V≥2/累计≥$1000/trade-in S1);Rack P1=any-of(own Pro/V≥4/≥$5000/trade-in Pro) | 9 类规则组 | 当前用于 E1 上架前置；用户成交授权 HOLD | E3 / E1 |
+| `eligibility[Gen-2]`(Pro v2/Rack P2) | **待补录**（空值时 E1 上架阻断；用户成交授权 HOLD，见第7章 #9） | 9 类规则组 | E1 上架实时；用户成交授权 HOLD | E3 / E1 |
 | `promo.{enabled,cooldownHours,maxPerSession,delayMs}` | true / 24 / 1 / 1500 | — | 实时 | E3 |
 | `promo.triggerWhen.minDeviceAgeDays` | 30 | ≥ 0 | 实时 | E3 |
 | `inventory.softMax` | 0(禁用) | ≥ 0 | 实时(超阈仅告警) | E3 |
@@ -1017,7 +1020,7 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | 6 | `commission.paid` 的 `kind` 命名 `network` vs `unilevel` 二选一未定(前端 §12.5 用 unilevel) | F2/F3/F4/F5/F4d | **V2 A4 注册 blocking**:F5⑧/F4d⑧ 不能定稿 | 对齐前端 + A4 | v2 §F5⑧ |
 | 7 | 排行榜派奖事件 `leaderboard.prize_paid` vs 复用 `commission.paid(kind=leaderboard_prize)` 未定 | F5 / F4d | V2:避免非佣金派发混入 commission 语义 | 对齐前端 + A4 | v2 §F5⑧/F4d⑧ |
 | 8 | `cumulativeDepositUsdt` 退款逆向核减写权归属未确认(E4 拟 D4 recordDeposit(-amount),D1⑦ 仅定义正向) | E4 / D1 / D4 | **V2 落地阻断**:E4 不可单方声明 D4 写行为 | 对齐 D1/D4 | v2 §E4⑤⑦ |
-| 9 | Gen-2 SKU(Pro v2 / Rack P2)购买 eligibility 待补录(当前 server 空值兜底 deny-all) | E3 / E1 | **阻塞**:代际发布门打开前必须完成,否则「门开+规则空→任意可购」套利窗 | PM 补录 | v2 §E3③④ / §E1⑤ |
+| 9 | Gen-2 SKU(Pro v2 / Rack P2) eligibility 待补录（当前空值由 E1 上架前置校验阻断；用户成交授权 HOLD） | E3 / E1 | **阻塞**：代际发布门打开前必须完成；按用户的成交资格须另行覆盖全部询价/下单入口后验收 | PM 补录 + 服务端成交授权闭环 | v2 §E3③④ / §E1⑤ |
 | 10 | Cloud Share Premium(§3.3 月 10 新品)SKU 治理(独立 SKU vs 原地 tier 升级)未定 | E1 / E1 | 阻塞:当前 7 管理对象未涵盖,落地路径分叉 | PM | v2 §E1① |
 | 11 | Day-One quest 改窗对在窗用户相位语义二选一未落地(方案 A per-instance 快照 vs 方案 B 全局即时重算) | H3 | 开发:须二选一定接口契约(是否持久化窗快照) | PM / 开发 | v3 §H3⑦ |
 | 12 | `MAX_DEVICES` 是否参数化开放未定(V2 写死=6) | E5 | 不阻塞 V2;V4 评估 | PM(V4) | v2 §E5③ |

@@ -36,3 +36,4 @@
 1. 五个 B 探针把同源 `console.error`、`pageerror` 和 failed request 纳入最终退出码，并增加目标页面语义身份断言。
 2. 用同一 25 组合重新攻击，要求 0 false-pass。
 3. 为默认认证态 raw dot-segment 增加 canonical redirect、catch-all 或可理解失败出口，并复核未登录与已登录两种状态。
+

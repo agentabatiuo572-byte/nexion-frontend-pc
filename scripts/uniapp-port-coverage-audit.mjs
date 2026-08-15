@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PLAN_ROOT = path.resolve(ROOT, "..");
-const UNI_ROOT = path.join(PLAN_ROOT, "Nexion-uniapp");
+const UNI_ROOT = path.resolve(process.env.NEXION_UNIAPP_ROOT || path.join(PLAN_ROOT, "NX1.0-UniApp"));
 const UNI_PAGES_JSON = path.join(UNI_ROOT, "src", "pages.json");
 const SHARDS = path.join(ROOT, "docs", "audit", "shards");
 

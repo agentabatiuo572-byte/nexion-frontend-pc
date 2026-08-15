@@ -26,7 +26,7 @@ export interface PurchaseGate {
 
 export interface OpsSku {
   name: string;
-  id?: string;
+  id: string;
   tier?: string;
   tagline?: string;
   badge?: string;
@@ -60,6 +60,7 @@ export interface OpsSku {
   imagePreviewUrl?: string;
   tag: string;
   status: string;
+  updatedAt?: string;
 }
 
 export interface OpsDataCenter {

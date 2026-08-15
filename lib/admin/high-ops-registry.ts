@@ -26,6 +26,7 @@ export interface HighOpDef {
 function canonicalE1SkuParams(ctx: Record<string, unknown>): Record<string, unknown> {
   const {
     dailyEarnNEX, unlock, generation: _generation, supersededBy: _supersededBy, tradeinDiscount: _tradeinDiscount,
+    updatedAt,
     // 媒体预览链接是带时效的预签名 URL,每次拉目录都会重新续签 —— 它既不是运营编辑的商品属性
     // (后端认 assetId / objectKey,展示时按 assetId 重新签发),又会让「业务输入一字未改的重试」
     // 变成另一个 payload:后端幂等是 payload-bound,同命令号 + 变了的 URL = 409「内容已变化」。
@@ -38,6 +39,7 @@ function canonicalE1SkuParams(ctx: Record<string, unknown>): Record<string, unkn
     ...rest,
     dailyEarnNex: dailyEarnNEX,
     unlockPhase: unlock,
+    expectedUpdatedAt: updatedAt,
     // 数据库仍保留内部兼容列，但该值不再是运营可编辑的商品属性。
     generation: 1,
   };
@@ -978,7 +980,7 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "device_sku",
     buildCommand: (ctx) => ({ domain: "E", op: "e1_sku_status",
-      params: { skuId: String(ctx.skuId), status: String(ctx.status) } }),
+      params: { skuId: String(ctx.skuId), status: String(ctx.status), expectedUpdatedAt: String(ctx.updatedAt ?? "") } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_sku", id: String(ctx.skuId) }),
   },
   {
@@ -990,7 +992,7 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "device_sku",
     buildCommand: (ctx) => ({ domain: "E", op: "e1_sku_delete",
-      params: { skuId: String(ctx.skuId) } }),
+      params: { skuId: String(ctx.skuId), expectedUpdatedAt: String(ctx.updatedAt ?? "") } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_sku", id: String(ctx.skuId) }),
   },
   {

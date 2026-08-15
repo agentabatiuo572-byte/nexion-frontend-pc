@@ -55,8 +55,8 @@ export function resolveNexionBackendRoot({
 }
 
 /**
- * 工作区文档面(PRD/)。它不是 git 仓而是工作区根下的目录,但对 admin-ops 而言同样是
- * 「可能不在这台机器上」的外部依赖 —— 走同一个解析器,免得探测方与齿轮各抄一份候选路径后分叉。
+ * 权威 PRD 位于真实 PC 仓的 docs/PRD。高保真仓只用于原型，不能反向成为
+ * 字段契约的真值来源；因此嵌套布局先回到真实 PC 仓，再以当前仓内目录兜底。
  */
 export function resolveNexionPrdRoot({
   adminRoot,
@@ -69,7 +69,7 @@ export function resolveNexionPrdRoot({
     exists,
     envKey: "NEXION_PRD_ROOT",
     label: "PRD 文档面",
-    candidates: ["../PRD", "../../PRD"],
+    candidates: ["../../nexion-ops-console/docs/PRD", "docs/PRD", "../PRD", "../../PRD"],
   });
 }
 

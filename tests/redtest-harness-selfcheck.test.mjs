@@ -67,6 +67,21 @@ test("提现主键红测的三道自我保护还在(空注入 / 失败关键词 
   assert.ok(!src.includes('"checkout"'), "还原必须走备份文件覆盖,禁 git checkout");
 });
 
+test("提现主键红测只改临时沙箱,绝不备份覆盖真实 d-client", () => {
+  const src = read(WD_REDTEST);
+  const gate = read("scripts/withdrawal-key-parity.mjs");
+  assert.match(gate, /NEXION_D2_CLIENT_PATH/,
+    "parity 门必须允许红测把实现真源切到临时副本");
+  assert.match(src, /SOURCE_D_CLIENT/,
+    "红测应明确区分只读真实实现和可写临时副本");
+  assert.match(src, /SANDBOX_D_CLIENT/,
+    "代码方向的红测必须注入临时 d-client 副本");
+  assert.doesNotMatch(src, /file:\s*SOURCE_D_CLIENT/,
+    "任何红测用例都不得把真实 d-client 作为写入目标");
+  assert.match(src, /NEXION_D2_CLIENT_PATH:\s*SANDBOX_D_CLIENT/,
+    "执行门时必须显式读取临时实现副本");
+});
+
 /**
  * 🔴 归属标记的键名必须是**稳定字面量**(第四轮验收 P1-D)。
  *

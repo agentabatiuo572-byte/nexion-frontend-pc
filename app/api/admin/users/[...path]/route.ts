@@ -45,6 +45,16 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "account-actions" && parts[1] === "alerts") {
     return "/api/admin/users/account-actions/alerts";
   }
+  if (parts.length === 1 && parts[0] === "account-deletions") {
+    return "/api/admin/users/account-deletions";
+  }
+  if (parts.length === 2 && parts[0] === "account-deletions" && isNonEmpty(parts[1])) {
+    return `/api/admin/users/account-deletions/${encodeURIComponent(parts[1])}`;
+  }
+  if (parts.length === 3 && parts[0] === "account-deletions" && isNonEmpty(parts[1])
+      && ["review", "block", "complete", "cancel"].includes(parts[2])) {
+    return `/api/admin/users/account-deletions/${encodeURIComponent(parts[1])}/${parts[2]}`;
+  }
   if (parts.length === 3 && parts[0] === "account-actions" && parts[1] === "accounts" && isNonEmpty(parts[2])) {
     return `/api/admin/users/account-actions/accounts/${encodeURIComponent(parts[2])}`;
   }

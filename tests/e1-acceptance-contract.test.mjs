@@ -6,6 +6,8 @@ import { releaseMonthPresentation } from "../app/components/domain-views/e-tabs/
 const view = readFileSync(new URL("../app/components/domain-views/e-view.tsx", import.meta.url), "utf8");
 const catalog = readFileSync(new URL("../app/components/domain-views/e-tabs/e1-catalog.tsx", import.meta.url), "utf8");
 const e1Client = readFileSync(new URL("../lib/admin/e1-client.ts", import.meta.url), "utf8");
+const e1Data = readFileSync(new URL("../app/components/domain-views/e-tabs/data.ts", import.meta.url), "utf8");
+const e1Route = readFileSync(new URL("../app/api/admin/e1/[...path]/route.ts", import.meta.url), "utf8");
 const domainCss = readFileSync(new URL("../app/components/domain-views/e-domain.css", import.meta.url), "utf8");
 const registry = readFileSync(new URL("../lib/admin/high-ops-registry.ts", import.meta.url), "utf8");
 
@@ -22,7 +24,16 @@ test("E-domain confirmations await A2 and preserve one command key across retrie
 test("E1 SKU editor blocks no-op edits and constrains stock to a non-negative integer", () => {
   assert.match(view, /skuFormChanged/);
   assert.match(view, /type="number"[^\n]*min=\{0\}[^\n]*step=\{1\}/);
-  assert.match(view, /库存必须是非负整数/);
+  assert.match(view, /库存必须填写 0 到 2147483647 之间的整数/);
+});
+
+test("E1 SKU edits carry the product revision through the PC proxy", () => {
+  assert.match(e1Client, /"X-Product-Revision": sku\.updatedAt/);
+  assert.ok((e1Client.match(/"X-Product-Revision": expectedUpdatedAt/g) ?? []).length >= 2);
+  assert.match(registry, /expectedUpdatedAt: updatedAt/);
+  assert.ok((registry.match(/expectedUpdatedAt: String\(ctx\.updatedAt/g) ?? []).length >= 2);
+  assert.match(e1Route, /const PRODUCT_REVISION_HEADER = "X-Product-Revision"/);
+  assert.match(e1Route, /headers\.set\(PRODUCT_REVISION_HEADER, productRevision\)/);
 });
 
 test("E1 exposes retry paths for read and media failures", () => {
@@ -119,9 +130,46 @@ test("E1 consumes the E5 frontend display name and preserves stale SKU datacente
   assert.match(view, /const value = dc\.displayName\.trim\(\)/);
   assert.match(view, /if \(datacenter\) return current/);
   assert.match(view, /历史值\(当前不可选\)/);
-  assert.match(view, /if \(!skuDatacenterSet\.has\(datacenter\) && !editName\)/);
+  assert.match(view, /if \(!skuDatacenterSet\.has\(datacenter\) && !editSkuId\)/);
   assert.doesNotMatch(view, /setForm\(\{ \.\.\.form, datacenter: skuDatacenterDefault \}\)/);
   assert.doesNotMatch(view, /const value = dc\.regionLabel\.trim\(\)/);
+});
+
+test("E1 mutations carry stable SKU ids rather than mutable display names", () => {
+  assert.match(catalog, /ctx\.openSku\(s\.id\)/);
+  assert.match(catalog, /op: "sku-status", target: s\.id/);
+  assert.match(catalog, /ctx\.delSku\(s\.id, s\.name \?\? s\.id\)/);
+  assert.match(catalog, /const skuId = \(s: OpsSku\) => s\.id;/);
+  assert.match(view, /skus\.find\(\(x\) => x\.id === mc\.target\)/);
+  assert.doesNotMatch(view, /x\.name === mc\.target/);
+});
+
+test("E1 lets an operator move an ordinary locked SKU to the current storefront phase", () => {
+  assert.match(catalog, /ctx\.openSku\(s\.id, phaseCur\)/);
+  assert.match(catalog, /st === "on" && Number\(s\.stock\) > 0 && !open && !releaseGate/);
+  assert.match(catalog, />按当前阶段上架<\/button>/);
+  assert.match(view, /const openSku = \(skuId\?: string, unlockPhase\?: string\)/);
+  assert.match(view, /unlock: unlockPhase \?\? current\.unlock/);
+  assert.match(view, /当前阶段 · A2 执行后 App 进入正常商品区/);
+});
+
+test("E1 purchase gate is a structured server-enforced editor, not a HOLD placeholder", () => {
+  assert.doesNotMatch(view, /用户购买资格（HOLD）/);
+  assert.doesNotMatch(view, /不会向商城下发购买门/);
+  assert.match(view, /购买资格与锁额/);
+  assert.match(view, /gateType/);
+  assert.match(view, /gateActiveDirectMin/);
+  assert.match(view, /gateRankMin/);
+  assert.match(view, /gateTeamVolumeMin/);
+  assert.match(view, /gateQuotaCap/);
+  assert.match(view, /gateQuotaPeriod/);
+  assert.match(view, /gateEnforce/);
+  assert.match(e1Data, /formToGate\(f\)/);
+  assert.match(view, /validateGateForm\(form\)/);
+  assert.match(view, /op: "sku-save"/);
+  assert.match(e1Client, /purchaseGate: toPurchaseGate\(sku\.purchaseGate\)/);
+  assert.match(registry, /canonicalE1SkuParams/);
+  assert.match(registry, /\.\.\.rest/);
 });
 
 test("E5 force activation is not mislabeled as a funds-amplifying proposal", () => {
