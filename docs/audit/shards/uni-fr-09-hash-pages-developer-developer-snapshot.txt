@@ -1,4 +1,6 @@
-{
-  "controls": [],
-  "bodyPreview": ""
-}
+- Iframe "NexGrid app preview" [ref=e1]
+  - button "Back" [ref=e2]
+  - button "Notifications" [ref=e3]
+  - textbox [ref=e4]
+  - textbox [ref=e5]
+  - textbox [ref=e6]

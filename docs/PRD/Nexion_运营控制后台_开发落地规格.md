@@ -212,7 +212,7 @@
 
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
-| **Withdrawal 扩展态**(本体属 §12) | state:enum{正常5态 submitted\|review-passed\|processing\|sent\|confirmed · 异常6态 review-rejected\|address-invalid\|tx-failed\|tx-orphaned\|refunded\|frozen · 后台扩展 review-pending} · withdrawalNo(server mint) · userId · amountUsdt · address(hash)+chain · riskScore(K4) · pointsOk · count24h · hitRules(K3);**共12态;非法转移 409** | SC | §9.1 / Ch6 D2 / §9.3.6 / §9.11f |
+| **Withdrawal 扩展态**(本体属 §12) | state:enum{正常5态 submitted\|review-passed\|processing\|sent\|confirmed · 异常6态 review-rejected\|address-invalid\|tx-failed\|tx-orphaned\|refunded\|frozen · 后台扩展 review-pending} · withdrawalNo(server mint) · userId · amountUsdt · address(hash)+chain · riskScore(K4) · pointsOk · count24h · hitRules(K3);**共12态;非法转移 409**;**单笔主键线上真名 = `withdrawalNo`,不是 `withdrawalId`**(权威契约 `PRD/specs/FEAT-WD01-trust-payout-rails.md` §4.2 响应表) | SC | §9.1 / Ch6 D2 / §9.3.6 / §9.11f |
 | **WithdrawConfig**(Phase 派发) | withdrawCooldownDays(月8=35d/月9=45d) · withdrawPointsRatio(月9=20) · 日限/上限/fee(source:'d5' 可写) · complianceHold(只读 source:'phase-h1') | SC | §17.1 / Ch6 D5 |
 | **Bill / BillType**(§12/§9.7) | type:enum{swap\|topup\|withdraw\|earning\|commission\|refund\|bonus}(**7类**) · billId(server mint) · userId · amount · currency · ts:ms-epoch;**server 唯一账本;积分调整不落 bill** | SC | §9.1 / Ch6 D4 |
 | **VietQrBankAccount / VietQrReconciliation / VietQrConfig** | 银行账户仅持久化 AES-GCM 密文，读接口只回传尾号；对账动作 enum{match\|writeoff\|return} 携 expectedVersion、reason、evidence 与 Idempotency-Key。match/writeoff 原子更新钱包、`cumulativeDepositUsdt`、D4 与 D3；return 不入钱包 | SC | 2026-07-25 D1 高保真落地 |

@@ -225,9 +225,8 @@
       "routes": [
         "/#/pages/developer/developer",
         "/#/pages/events/events",
-        "/#/pages/learn/course",
         "/#/pages/learn/courses",
-        "/#/pages/learn/learn"
+        "/#/pages/learn/course"
       ],
       "requiredEvidence": [
         "accessibility snapshot",
