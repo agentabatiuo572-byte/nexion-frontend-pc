@@ -1,2 +1,5 @@
-- button "Claim discount" [ref=e2]
-- button "Claim +120 NEX" [ref=e1]
+- Iframe "NexGrid app preview" [ref=e1]
+  - button "Back" [ref=e2]
+  - button "Notifications" [ref=e3]
+  - button "Claim discount" [ref=e5]
+  - button "Claim +120 NEX" [ref=e4]
