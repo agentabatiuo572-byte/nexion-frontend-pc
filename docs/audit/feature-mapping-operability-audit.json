@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-04T03:04:07.575Z",
+  "generatedAt": "2026-08-16T03:03:29.252Z",
   "counts": {
     "mappings": 18,
     "gap": 0,
@@ -910,7 +910,7 @@
       "frontendSummary": {
         "routeCaptured": 3,
         "routes": 3,
-        "actionSamples": 7,
+        "actionSamples": 3,
         "blockingLedgerIds": [],
         "weakActionSignals": 0,
         "walkthroughProofFiles": [],
@@ -947,10 +947,8 @@
           "runtimeFiles": [
             "docs/audit/shards/uni-fr-09-runtime.ndjson"
           ],
-          "actionSamples": 4,
-          "actionFiles": [
-            "docs/audit/shards/uni-fr-09-front-action-sample.ndjson"
-          ],
+          "actionSamples": 0,
+          "actionFiles": [],
           "noObservable": 0,
           "hashOnly": 0,
           "businessIncomplete": 0,

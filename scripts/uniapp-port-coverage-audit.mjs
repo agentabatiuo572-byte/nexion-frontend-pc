@@ -8,10 +8,23 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveNexionAppRoot } from "./lib/nexion-workspace-paths.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PLAN_ROOT = path.resolve(ROOT, "..");
-const UNI_ROOT = path.resolve(process.env.NEXION_UNIAPP_ROOT || path.join(PLAN_ROOT, "NX1.0-UniApp"));
+// uniapp 根走共享解析器(候选覆盖新旧布局;NEXION_UNIAPP_ROOT 是本脚本历史 env 契约,桥接后仍最高优先)。
+// 解析不到不抛:显式 env 指的路不存在就保留原值让 findings 指名道红(不许静默换树);
+// 无 env 时退规范名,同样落到下方 missing-uni-root 结构化红,报告面与既有一致。
+const configuredUniRoot = process.env.NEXION_UNIAPP_ROOT || process.env.NEXION_APP_ROOT;
+let UNI_ROOT;
+try {
+  UNI_ROOT = resolveNexionAppRoot({
+    adminRoot: ROOT,
+    env: { ...process.env, NEXION_APP_ROOT: configuredUniRoot },
+  });
+} catch {
+  UNI_ROOT = path.resolve(configuredUniRoot || path.join(PLAN_ROOT, "Nexion-uniapp"));
+}
 const UNI_PAGES_JSON = path.join(UNI_ROOT, "src", "pages.json");
 const SHARDS = path.join(ROOT, "docs", "audit", "shards");
 
@@ -21,8 +34,8 @@ const BLOCKING_ACTION_CLASSIFICATIONS = new Set([
   "no-observable-change",
 ]);
 // uniapp-first 页面:运行时取证豁免清单(原"Next 原型无对应"豁免逻辑保留语义)。
+// onboarding/terms 已有 runtime shard 证据,豁免于 2026-08-16 消化移除(留着=证据将来丢失也不红的盲区)。
 const EXPECTED_EXTRA_UNI_ROUTES = new Set([
-  "/#/pages/onboarding/terms",
   "/#/pages/support/messages",
   "/#/pages/support/chat",
   "/#/pages/me/rewards",
