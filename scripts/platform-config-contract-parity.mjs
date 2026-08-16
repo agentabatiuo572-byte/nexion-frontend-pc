@@ -4,9 +4,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveNexionAppRoot } from "./lib/nexion-workspace-paths.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const APP_ROOT = path.resolve(process.env.NEXION_UNIAPP_ROOT || path.join(ROOT, "..", "NX1.0-UniApp"));
+// NEXION_UNIAPP_ROOT 是对外契约(uniapp verify SPEC-7 用它指定被验树,worktree 场景靠它锁靶),桥接后仍最高优先;
+// 无 env 时走共享解析器多候选(旧布局 NX1.0-UniApp / 本布局 Nexion-uniapp),不再锚死旧目录名。env 指路不存在即抛红。
+const APP_ROOT = resolveNexionAppRoot({
+  adminRoot: ROOT,
+  env: { ...process.env, NEXION_APP_ROOT: process.env.NEXION_UNIAPP_ROOT || process.env.NEXION_APP_ROOT },
+});
 
 function read(relative, base = ROOT) {
   const file = path.join(base, ...relative.split("/"));
