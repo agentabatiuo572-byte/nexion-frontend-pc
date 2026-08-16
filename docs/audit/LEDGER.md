@@ -2,7 +2,7 @@
 
 > Generated summary. Source of truth is `docs/audit/ledger.ndjson`.
 
-Generated at: 2026-08-04T03:04:07.529Z
+Generated at: 2026-08-16T03:03:29.087Z
 
 ## Summary
 

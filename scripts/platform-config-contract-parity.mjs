@@ -9,9 +9,14 @@ import { resolveNexionAppRoot } from "./lib/nexion-workspace-paths.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // NEXION_UNIAPP_ROOT 是对外契约(uniapp verify SPEC-7 用它指定被验树,worktree 场景靠它锁靶),桥接后仍最高优先;
 // 无 env 时走共享解析器多候选(旧布局 NX1.0-UniApp / 本布局 Nexion-uniapp),不再锚死旧目录名。env 指路不存在即抛红。
+const configuredAppRoot = process.env.NEXION_UNIAPP_ROOT || process.env.NEXION_APP_ROOT;
+if (configuredAppRoot?.trim() && !fs.existsSync(path.resolve(configuredAppRoot))) {
+  // 双名报错:活调用方(uniapp verify SPEC-7)设的是 NEXION_UNIAPP_ROOT,解析器 envKey 是 NEXION_APP_ROOT,只报后者会误导排障。
+  throw new Error(`NEXION_UNIAPP_ROOT/NEXION_APP_ROOT 配置的 App 路径不存在: ${path.resolve(configuredAppRoot)}`);
+}
 const APP_ROOT = resolveNexionAppRoot({
   adminRoot: ROOT,
-  env: { ...process.env, NEXION_APP_ROOT: process.env.NEXION_UNIAPP_ROOT || process.env.NEXION_APP_ROOT },
+  env: { ...process.env, NEXION_APP_ROOT: configuredAppRoot },
 });
 
 function read(relative, base = ROOT) {

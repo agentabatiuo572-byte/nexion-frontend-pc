@@ -1,38 +1,10 @@
 {
-  "generatedAt": "2026-06-13T08:57:10.213Z",
-  "status": "passed",
-  "runVerifiers": true,
-  "checksPassed": 12,
-  "checksFailed": 0,
-  "verifierRuns": [
-    {
-      "id": "admin-verify",
-      "status": "passed",
-      "exitCode": 0,
-      "evidence": [
-        "docs/audit/l5-admin-verify.log"
-      ],
-      "summary": "✓ verify PASS — 148 checks, 0 failed"
-    },
-    {
-      "id": "next-reference-verify",
-      "status": "passed",
-      "exitCode": 0,
-      "evidence": [
-        "docs/audit/l5-next-reference-verify.log"
-      ],
-      "summary": "=== Result: 230 passed, 0 failed ==="
-    },
-    {
-      "id": "uniapp-verify",
-      "status": "passed",
-      "exitCode": 0,
-      "evidence": [
-        "docs/audit/l5-uniapp-verify.log"
-      ],
-      "summary": "━━ result: 16 pass, 0 fail ━━"
-    }
-  ],
+  "generatedAt": "2026-08-16T03:03:29.008Z",
+  "status": "failed",
+  "runVerifiers": false,
+  "checksPassed": 10,
+  "checksFailed": 2,
+  "verifierRuns": [],
   "gateRuns": [
     {
       "id": "ledger-validate",
@@ -104,16 +76,16 @@
       "evidence": [
         "docs/audit/l5-sku-field-mirror.log"
       ],
-      "summary": "✓ E1 字段镜像 gate:OpsSku(33)⊇ Product(25+AI 6) · OpsReview(7)⊇ Review(7) — 0 缺口"
+      "summary": "ℹ 旧静态后台 store 已删除(lib/store/admin/platform-config-store.ts)— SKU 权威已迁至真实后端接口，跳过旧 store 镜像核对"
     },
     {
       "id": "canon-sentinel",
-      "status": "passed",
-      "exitCode": 0,
+      "status": "failed",
+      "exitCode": 1,
       "evidence": [
         "docs/audit/l5-canon-sentinel.log"
       ],
-      "summary": "\"status\": \"passed\","
+      "summary": "Node.js v24.15.0"
     }
   ],
   "postL5Gates": [
@@ -127,26 +99,21 @@
   ],
   "routeCounts": {
     "admin": 66,
-    "next": 80,
-    "uniapp": 81
+    "uniapp": 92
   },
   "checks": [
     {
       "id": "L5-01",
       "title": "Three app verifiers pass",
-      "status": "passed",
-      "details": "admin-verify:passed ✓ verify PASS — 148 checks, 0 failed; next-reference-verify:passed === Result: 230 passed, 0 failed ===; uniapp-verify:passed ━━ result: 16 pass, 0 fail ━━",
-      "evidence": [
-        "docs/audit/l5-admin-verify.log",
-        "docs/audit/l5-next-reference-verify.log",
-        "docs/audit/l5-uniapp-verify.log"
-      ]
+      "status": "failed",
+      "details": "not run; invoke with --run-verifiers for L5 closure proof",
+      "evidence": []
     },
     {
       "id": "L5-02",
       "title": "UniApp route migration and core persona flows",
       "status": "passed",
-      "details": "uniappRoutes=81; personaProofRows=7; uniapp-port-coverage=passed",
+      "details": "uniappRoutes=92; personaProofRows=7; uniapp-port-coverage=passed",
       "evidence": [
         "docs/audit/uniapp-full-route-batch-audit-evidence.md",
         "docs/audit/uniapp-persona-walkthrough-runtime-evidence.md",
@@ -166,7 +133,7 @@
       "id": "L5-04",
       "title": "Runtime route/action traversal has zero blockers",
       "status": "passed",
-      "details": "routes admin=66, next=80, uniapp=81; runtimeBad=0; actionBad=0; listGlobal=passed",
+      "details": "routes admin=66, uniapp=92; runtimeBad=0; actionBad=0; listGlobal=passed",
       "evidence": [
         "docs/audit/shards/",
         "docs/audit/admin-global-list-capability-runtime-evidence.md"
@@ -205,8 +172,8 @@
     {
       "id": "L5-08",
       "title": "Canon numbers and field mirrors have zero drift",
-      "status": "passed",
-      "details": "canon=passed; skuFieldMirror=passed",
+      "status": "failed",
+      "details": "canon=failed; skuFieldMirror=passed",
       "evidence": [
         "docs/remediation/canon-numbers.json",
         "scripts/canon-sentinel.mjs",
@@ -217,9 +184,8 @@
       "id": "L5-09",
       "title": "i18n mirror, language switching, and meta leak gates",
       "status": "passed",
-      "details": "FM-013=passed; nextVerify=true; uniVerify=true",
+      "details": "FM-013=passed; uniVerify=false",
       "evidence": [
-        "../Nexion-prototype/scripts/verify.sh",
         "../Nexion-uniapp/scripts/verify.sh",
         "docs/audit/shards/feature-mapping-walkthrough-proof.ndjson"
       ]
@@ -228,9 +194,8 @@
       "id": "L5-10",
       "title": "Meta-leak guard has zero product-visible hits",
       "status": "passed",
-      "details": "covered by Next interaction-audit and UniApp grep sentinel",
+      "details": "not run; covered when --run-verifiers is used",
       "evidence": [
-        "../Nexion-prototype/scripts/interaction-audit.mjs",
         "../Nexion-uniapp/scripts/verify.sh"
       ]
     },
@@ -238,7 +203,7 @@
       "id": "L5-11",
       "title": "Runtime console/route errors are zero",
       "status": "passed",
-      "details": "runtimeBad=0; routeCounts={\"admin\":66,\"next\":80,\"uniapp\":81}",
+      "details": "runtimeBad=0; routeCounts={\"admin\":66,\"uniapp\":92}",
       "evidence": [
         "docs/audit/shards/ad-01-runtime.ndjson",
         "docs/audit/shards/ad-02-runtime.ndjson",
