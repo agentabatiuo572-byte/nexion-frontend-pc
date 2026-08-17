@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { canonicalE3ConfigTargetId, findHighOp } from "../lib/admin/high-ops-registry.ts";
+import { optionalNexionBackendRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const e3 = readFileSync(new URL("../app/components/domain-views/e-tabs/e3-lifecycle.tsx", import.meta.url), "utf8");
 const eView = readFileSync(new URL("../app/components/domain-views/e-view.tsx", import.meta.url), "utf8");
@@ -15,10 +18,18 @@ const l4 = readFileSync(new URL("../app/components/domain-views/l-tabs/l4-live-d
 // 「不得露出已退役的促销控件」)在开发机上一条都跑不了。2026-08-06 那批原型对齐
 // 正是这样把退役控件原样加了回来而全程没有一道门吭声。
 // 规则:一个文件里既有本地断言又有跨仓断言时,跨仓那条自己 skip,不许拖垮本地的。
-const BACKEND_E3_PATH = new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/device/application/OpsDeviceService.java", import.meta.url);
-function readBackendE3() {
-  try { return readFileSync(BACKEND_E3_PATH, "utf8"); } catch { return null; }
-}
+//
+// 🔴 但「自己 skip」必须是 node:test 的 **skip + 理由**,不是 try/catch 里 console.log 一行
+// 就当过了(2026-08-17)。原来的写法有两处塌陷:
+//   ① 仓根写死成相对路径 `../../nexion-backend`,`NEXION_BACKEND_ROOT` 设了也不看 —— 仓根有了二源;
+//   ② `catch { return null }` 把**所有**失败都咽了:仓在而文件被改名 / 被删,同样静默降级成
+//      「通过」,而这条断言守的正是后端直写路径的 A2 对象锁 —— 它哑掉没有任何人会知道。
+// 现在:仓不在 → t.skip(带理由,verify 汇总里数得出来);仓在而文件读不到 → 抛错报红。
+const backendRoot = optionalNexionBackendRoot({
+  adminRoot: path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."),
+});
+const readBackendE3 = () =>
+  readFileSync(path.join(backendRoot, "src/main/java/ffdd/opsconsole/device/application/OpsDeviceService.java"), "utf8");
 
 test("E3 treats every FEAT-DEV02 trade-in control as required server-canonical data", () => {
   for (const key of [
@@ -70,7 +81,7 @@ test("L4 exposes real E3 configuration and trade-in result facts", () => {
   assert.match(l4, /completedTradeins/);
 });
 
-test("E3 A2 object locks use the same canonical key as backend direct-write checks", () => {
+test("E3 A2 object locks use the same canonical key as backend direct-write checks", (t) => {
   const scalar = findHighOp("e3_config");
   const batch = findHighOp("e3_config_batch");
   assert.ok(scalar);
@@ -94,21 +105,21 @@ test("E3 A2 object locks use the same canonical key as backend direct-write chec
     canonicalKey,
   );
 
-  const backendE3 = readBackendE3();
-  if (backendE3 === null) {
-    console.log("  ⏭  跨仓断言跳过:本机无 nexion-backend(本文件其余本仓断言照常执行)");
-  } else {
-    assert.match(
-      backendE3,
-      /key = normalizeE3Key\(request\.key\(\)\);[\s\S]*countActiveByTarget\("E", "device_e3_config", key\)[\s\S]*ApiResult\.fail\(409, "OBJECT_LOCKED_BY_A2"\)/,
-    );
-  }
+  // 本仓断言排在 skip 判据之前 —— 缺后端仓时它照样必须跑到(顺序变了,断言一字未改)。
   for (const target of [
     scalar.buildTarget({ key: frontendKey }),
     ...(batch.buildTargets?.({ values: { [frontendKey]: "31" } }) ?? []),
   ]) {
     assert.doesNotMatch(target.id, /^E\.(?:device|tradein|release)\./);
   }
+
+  if (backendRoot === null) {
+    return t.skip("本机无 nexion-backend:仅跨仓断言跳过(设 NEXION_BACKEND_ROOT 或克隆到 ../nexion-backend)");
+  }
+  assert.match(
+    readBackendE3(),
+    /key = normalizeE3Key\(request\.key\(\)\);[\s\S]*countActiveByTarget\("E", "device_e3_config", key\)[\s\S]*ApiResult\.fail\(409, "OBJECT_LOCKED_BY_A2"\)/,
+  );
 });
 
 test("E3 operator copy stays in business language and does not expose implementation details", () => {

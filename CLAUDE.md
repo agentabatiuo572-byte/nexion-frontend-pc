@@ -19,12 +19,12 @@ npm run verify:owner-review          # 验收包闭合检查；:live 变体才�
 npm run remediation:preflight        # 步步全绿后追跑 l5-final-sweep 12 检查（SKU 镜像 / uniapp port 覆盖 / 账本联验 / 走查证据聚合）
 ```
 
-`verify` 是 tripwire，不是 typecheck：tsc 过 ≠ verify 过。channel-parity / FE-BE 映射 / J1 / J2 / K2 五齿轮硬读兄弟仓 `nexion-backend`，缺仓环境链在 channel-parity 齿断（memory: nexion-backend-not-in-workspace）。
+`verify` 是 tripwire，不是 typecheck：tsc 过 ≠ verify 过。**run-all，不 fail-fast**：红齿照记账、后面的齿继续跑，收尾一张汇总表（PASS / FAIL / SKIP / SCOPED-SKIP / NOT-RUN + 耗时），**退出码非零 ⟺ 有 FAIL 或 NOT-RUN**。档位：默认全量；`--static`（或 `VERIFY_MODE=static`）只跳生产构建（本机 131s → 77s），**scoped 绿 ≠ 全量绿**，合并守卫只认 `mode=full`；`--only <子串>` 调试用（未命中记 NOT-RUN，故必然非零退出）。缺兄弟仓 `nexion-backend` 的机器（本机即是）有 8 齿整齿 SKIP、另有 4 齿齿内跳跨仓断言 —— 汇总会逐条列出，**跳过 ≠ 通过**（memory: nexion-backend-not-in-workspace）。落盘：`.verify-exit.code`（真实退出码）/ `.verify-chain.code`（退出码 + 一行计数）/ `.verify-cache/last-run.json`（给合并守卫比树对象）。
 
 ## 完成门（宣布 done 前必走）
 
 1. `npx tsc --noEmit` → 0 错。
-2. `npm run verify` → 全绿(GEARS 全表,清单见上)。verify 之外、改到对应面必单跑的门:SKU 字段镜像 / uniapp port 覆盖 → `npm run remediation:preflight`。已退役：68 路由 HTTP200、旗舰 needle（旧 verify.sh 齿轮，live 探活仅剩 `verify:owner-review:live`）；「4 镜头回归」不是脚本齿轮 = 下条第 3 步。
+2. `npm run verify` → 全绿(GEARS 全表,清单见上;必须是**全量档**,`--static` 不算,且看汇总里 FAIL=0 / NOT-RUN=0)。verify 之外、改到对应面必单跑的门:SKU 字段镜像 / uniapp port 覆盖 → `npm run remediation:preflight`。已退役：68 路由 HTTP200、旗舰 needle（旧 verify.sh 齿轮，live 探活仅剩 `verify:owner-review:live`）；「4 镜头回归」不是脚本齿轮 = 下条第 3 步。
 3. 多镜头 audit：4 并行 reviewer（技术 / 初次运营者 / PM 价值 / 交互打磨），rubric 见 `docs/REVIEW-RUBRIC.md`，修到 P0=0。
 4. Browser self-check（Playwright）：路由 navigate + console error=0 + 截图。**verify 绿 ≠ 渲染 OK**。
 5. 清理 `.playwright-mcp/` + `*.png`。

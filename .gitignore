@@ -38,7 +38,12 @@ next-env.d.ts
 # scratch / exploration / temp (非产品代码,勿托管)
 /_overview-variants/
 /.tmp-design2/
-/.claude/
+
+# 🔴 .claude/ 整体不入库,但**质量门本身要跟着代码走版本**(2026-08-17,镜像 uniapp 同款写法):
+#   写 `.claude/*` 而不是 `/.claude/`:父目录被整体忽略时 git 不会递归进去,底下的
+#   `!` 例外一条都不生效。worktrees/ 与 settings.local.json 仍被 `.claude/*` 兜住。
+.claude/*
+!.claude/settings.json
 
 # nested node_modules(上面 /node_modules 仅锚仓库根,补未锚版本捕获嵌套)
 node_modules/
@@ -65,3 +70,5 @@ codex-*.log
 /c5-acceptance.playwright.config.ts
 /.verify-run.log
 /.verify-exit.code
+/.verify-chain.code
+/.verify-cache/
