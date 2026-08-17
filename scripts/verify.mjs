@@ -1,10 +1,41 @@
+/**
+ * admin-ops 完成门 runner。
+ *
+ * 🔴 **run-all,不 fail-fast**(2026-08-17 主人签字的分档提案 T7)。
+ *   从前第一个红齿就 `process.exit`,于是:① 后面的齿一次都没跑,而输出看起来只是「某齿失败」;
+ *   ② 收尾汇总(那段专门用来喊「跳过≠放宽」的字)**永远打不出来**。现在每个齿都跑完,
+ *   逐齿记 PASS / FAIL / SKIP / SCOPED-SKIP / NOT-RUN + 耗时,收尾一次性摊开,
+ *   **退出码非零 ⟺ 有 FAIL 或 NOT-RUN**(SKIP 是环境事实,SCOPED-SKIP 是档位选择,都不改退出码)。
+ *
+ * 档位(默认 full):
+ *   · `--static` / `VERIFY_MODE=static` —— 只跳「重齿」(生产构建;以及任何起 dev server / Playwright
+ *     的齿,当前一个都没有),记 SCOPED-SKIP。**scoped 绿 ≠ 全量绿**,合并守卫只认 mode=full。
+ *   · `--only <齿名子串>` —— 调试用,未命中的齿记 NOT-RUN(所以 --only 必然非零退出,不会被误当成绿)。
+ *
+ * 落盘(三份,给不同读者):
+ *   · `.verify-exit.code`   —— 真实退出码(防管道吞码,见下方 process.on("exit"))。
+ *   · `.verify-chain.code`  —— 第 1 行退出码,第 2 行一行式计数,给脚本 / agent 扫。
+ *   · `.verify-cache/last-run.json` —— 给合并守卫 `.claude/hooks/verify-fresh-before-merge.mjs` 读:
+ *     它要 mode=full · verdict=pass · treeMoved=false · dirty=false · headTree == 要合的那棵树。
+ *     🔴 开跑即写 verdict:"running" 占位 —— 否则半路崩掉时,守卫会拿**上一轮**的 pass 记录放行
+ *     (headTree 没变的情况下完全对得上)。「中止 ≠ 判红」这个坑在退出码哨兵上踩过一次,不在这里再踩。
+ */
 import { spawnSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import path from "node:path";
 import { resolveNexionAppRoot, resolveNexionBackendRoot, resolveNexionPrdRoot } from "./lib/nexion-workspace-paths.mjs";
 
 const isWindows = process.platform === "win32";
 const npmCmd = isWindows ? "npm.cmd" : "npm";
 const npxCmd = isWindows ? "npx.cmd" : "npx";
+
+const argv = process.argv.slice(2);
+const mode = argv.includes("--static") || process.env.VERIFY_MODE === "static" ? "static" : "full";
+const only = (() => {
+  const i = argv.indexOf("--only");
+  return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[i + 1] : null;
+})();
 
 // 🔴 退出码哨兵文件:进程无论从哪条路径退出,都把真实退出码原子落盘到 .verify-exit.code。
 //   why:调用侧 `npm run verify | tail` 这类管道会吞掉退出码(拿到的是 tail 的 0),
@@ -19,9 +50,11 @@ try { writeFileSync(".verify-exit.code", "running"); } catch { /* 同上 */ }
 /**
  * 🔴 「环境缺件」与「真发现缺陷」必须分开处理(2026-08-05)。
  *
- * 本机没有兄弟仓 `nexion-backend` 时,依赖它的齿轮在 **import 期**就抛错;而 `run()`
- * 一遇非零退出码就 `process.exit`,于是整条链在第 14 齿断掉 —— **后面 19 个齿一次都没跑过**,
+ * 本机没有兄弟仓 `nexion-backend` 时,依赖它的齿轮在 **import 期**就抛错。当年 `run()` 还是
+ * fail-fast(一遇非零退出码就 `process.exit`),整条链在第 14 齿断掉 —— **后面 19 个齿一次都没跑过**,
  * 而输出看起来只是「某个齿失败了」。实测:改后台代码后想验证,拿不到 15-33 齿的任何信号。
+ * (fail-fast 本身已于 2026-08-17 改成 run-all,见文件抬头;下面这套分类**照旧必要** ——
+ *  它决定一个红齿是记 SKIP 还是记 FAIL,也就是决定退出码。)
  *
  * 处置:开跑前先探仓;缺仓就把依赖它的齿**显式标记为跳过并继续**,收尾大声列出跳了哪些。
  * 🔴 **不是放宽判据**:跳过的齿会被逐条打印,且「跳过」与「通过」在收尾里分开计数 ——
@@ -96,16 +129,104 @@ function run(label, command, args, gearName) {
     process.stdout.write(result.stdout ?? "");
     process.stderr.write(result.stderr ?? "");
   }
-  if (result.status === 0) return;
   const out = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+  if (result.status === 0) {
+    // 🔴 「整齿 SKIP」看得见,「齿内某几条断言 skip」也必须看得见,否则又是一次「跳过被读成通过」。
+    //   node:test 缺兄弟仓时按 j1/j2/e3/g4 的约定只 skip 跨仓那几条(本仓断言照跑),整齿仍是绿的。
+    //   这里把它数出来挂到汇总上。能数到的前提正是「有仓缺」→ 此时输出必然是截流的(见上),
+    //   所以对「缺仓导致的齿内 skip」这个成因,判据是**完整**的,不存在只覆盖一半的假安心。
+    const inner = out.match(/^(?:#|ℹ)\s*skipped\s+([1-9]\d*)/m);
+    return { status: "pass", innerSkipped: inner ? Number(inner[1]) : 0 };
+  }
   const missing = SIBLING_REPOS.find((r) => !r.ok && r.signature.test(out));
   if (missing) {
     console.log(`   ⏭  SKIPPED — 本机无兄弟仓 ${missing.name}(设 ${missing.envKey} 可指定)`);
     skipped.push({ gear: gearName, repo: missing.name });
-    return;
+    return { status: "skip", reason: `缺兄弟仓 ${missing.name}` };
   }
-  process.exit(result.status ?? 1);
+  // 🔴 这里从前是 `process.exit(result.status ?? 1)`。改成记账后继续 —— 一个红齿不再让后面几十道门失声。
+  const why = result.status === null ? `进程未正常退出${result.error ? `:${result.error.message}` : ""}` : `退出码 ${result.status}`;
+  console.log(`   ❌ FAIL — ${why}`);
+  return { status: "fail", reason: why };
 }
+
+/**
+ * `--static` 档跳过的「重齿」判据:① 生产构建(next build,本机 1-2 分钟,占全链大头);
+ * ② 任何起 dev server / Playwright 的齿 —— 当前 GEARS 里**一条都没有**(2026-08-17 逐条核过),
+ * 判据仍留着:将来真加进来时自动归到 SCOPED-SKIP,不靠人记得回来改这个函数。
+ */
+function isHeavyGear([, cmd, args]) {
+  const line = [cmd, ...args].join(" ");
+  return /\brun\s+(build|dev|start)\b/.test(line) || /\bnext\s+(build|dev|start)\b/.test(line) || /playwright/i.test(line);
+}
+
+/** git 读命令(只读,失败返回 null —— 拿不到就把记录里的对应字段留空,不编)。 */
+const repoRoot = (() => {
+  const r = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: process.cwd(), encoding: "utf8" });
+  return r.status === 0 ? r.stdout.trim() : process.cwd();
+})();
+const git = (args, input) => {
+  const r = spawnSync("git", args, { cwd: repoRoot, encoding: "utf8", input, maxBuffer: 64 * 1024 * 1024 });
+  return r.status === 0 ? (r.stdout ?? "") : null;
+};
+
+/** 工作树里所有「与 HEAD 不一致」的路径(含未跟踪;-z 免去引号转义歧义,重命名的原路径也收)。 */
+function dirtyPaths() {
+  const out = git(["status", "--porcelain", "-z", "--untracked-files=all"]);
+  if (out === null) return null;
+  const fields = out.split("\0");
+  const paths = [];
+  for (let i = 0; i < fields.length; i += 1) {
+    const f = fields[i];
+    if (!f) continue;
+    const xy = f.slice(0, 2);
+    paths.push(f.slice(3));
+    if (xy[0] === "R" || xy[0] === "C") { i += 1; if (fields[i]) paths.push(fields[i]); }
+  }
+  return [...new Set(paths)].sort();
+}
+
+/**
+ * 工作树指纹:干净时就是 HEAD 的树对象;脏时是 sha256(headTree + 逐个脏文件的 "路径:blob 哈希")。
+ * 用途只有一个 —— 比开跑前 / 跑完后两次指纹,判「这一轮跑的到底是不是同一棵树」。
+ * 已删除的文件哈希不出来,记 `<gone>`(它也是一种差异,不能当不存在)。
+ */
+function fingerprint(headTree, paths) {
+  if (paths === null) return null;
+  if (paths.length === 0) return headTree;
+  const alive = paths.filter((p) => existsSync(path.join(repoRoot, p)));
+  const hashes = new Map();
+  if (alive.length > 0) {
+    const lines = (git(["hash-object", "--stdin-paths"], `${alive.join("\n")}\n`) ?? "").trim().split(/\r?\n/).filter(Boolean);
+    alive.forEach((p, i) => hashes.set(p, lines[i] ?? "?"));
+  }
+  const h = createHash("sha256");
+  h.update(String(headTree));
+  for (const p of paths) h.update(`\n${p}:${hashes.get(p) ?? "<gone>"}`);
+  return h.digest("hex");
+}
+
+const CACHE_DIR = path.join(repoRoot, ".verify-cache");
+/** 合并守卫读的那份记录。开跑写 running 占位,收尾覆盖成真结论(理由见文件抬头)。 */
+function writeRecord(record) {
+  try {
+    mkdirSync(CACHE_DIR, { recursive: true });
+    writeFileSync(path.join(CACHE_DIR, "last-run.json"), `${JSON.stringify(record, null, 2)}\n`);
+  } catch { /* 落盘失败不改变退出语义;守卫读不到会自己判「没跑过」 */ }
+}
+
+// 🔴 rev-parse 的输出必须 trim:合并守卫是 `rec.headTree !== refTree` **全等**比较,而它那边的
+//   git 包装器是 trim 过的 —— 这里留个尾换行,守卫就永远对不上,于是「跑绿了也不许合」。
+//   (`git()` 本身不 trim:`status --porcelain -z` 的首字符可能就是个有意义的空格,如 " M path"。)
+const headTree = git(["rev-parse", "HEAD^{tree}"])?.trim() ?? null;
+const head = git(["rev-parse", "HEAD"])?.trim() ?? null;
+const dirtyStart = dirtyPaths();
+const fpStart = fingerprint(headTree, dirtyStart);
+const startedAt = Date.now();
+writeRecord({
+  mode, verdict: "running", treeMoved: false, tree: null, headTree, dirty: dirtyStart === null ? null : dirtyStart.length > 0,
+  head, at: new Date(startedAt).toISOString(), totalMs: 0, steps: [],
+});
 
 // 齿轮表:序号自动派生(新增/重排齿轮不再手工改 [x/N])。本机注意:channel-parity 起的后端依赖齿轮
 // 硬读兄弟仓 nexion-backend,缺仓环境链在该齿断(memory: nexion-backend-not-in-workspace)。
@@ -142,6 +263,8 @@ const GEARS = [
   ["PC full-menu health gate contract", "node", ["--experimental-strip-types", "--test", "tests/pc-all-modules-health-gate-contract.test.mjs"]],
   ["KYC removal contract", "node", ["--test", "tests/kyc-removal-contract.test.mjs"]],
   ["A2 coverage sentinel", "node", ["scripts/a2-audit-coverage-sentinel.mjs"]],
+  // 全链唯一一道 a2-outcome-uncertain 门(原第 44 齿是同一条命令的重复挂载,2026-08-17 去重:
+  // 同命令跑两遍不多买一分判别力,只多花一份时间,还让「N 个齿」这个数虚高)。
   ["A2 outcome-uncertain contract", "node", ["--test", "tests/a2-outcome-uncertain-contract.test.mjs"]],
   ["E1 acceptance contract", "node", ["--test", "tests/e1-acceptance-contract.test.mjs"]],
   ["E4 commerce acceptance sandbox contract", "node", ["--test", "tests/commerce-acceptance-sandbox-contract.test.mjs"]],
@@ -173,8 +296,7 @@ const GEARS = [
   // 全家族失败归类口径:5xx / 传输层失败必须归「结果未知」保住命令号,只有 4xx 与
   // 2xx 业务码非 0 才算确定性拒绝。散一处口径 = 那个域重复入账 / 重复打款。
   ["outcome classification contract", "node", ["--experimental-strip-types", "--test", "tests/outcome-classification-contract.test.mjs"]],
-  // 同族「结果未知」契约:先前手跑绿但没有门守(2026-08-06 独立验收 P2-6)。
-  ["a2 outcome-uncertain contract", "node", ["--test", "tests/a2-outcome-uncertain-contract.test.mjs"]],
+  // (同族「结果未知」契约 a2-outcome-uncertain 已在上面第 27 齿挂着,这里原本重复挂了第二遍,已去重。)
   ["b2/b3 outcome-unknown contract", "node", ["--test", "tests/b23-outcome-unknown-contract.test.mjs"]],
   ["i4 A2 pending visibility contract", "node", ["--test", "tests/i4-a2-pending-visibility-contract.test.mjs"]],
   // 红测脚本自身的守门人:它是唯一验证「这些门有判别力」的东西,却一度语法错误跑不起来而
@@ -210,12 +332,75 @@ const GEARS = [
   // 原样把那三个控件加了回来,机器门一声没吭。孤儿门 = 没有门。
   ["E3 acceptance contract", "node", ["--test", "tests/e3-acceptance-contract.test.mjs"]],
 ];
-GEARS.forEach(([label, cmd, args], index) => run(`[${index + 1}/${GEARS.length}] ${label}`, cmd, args, label));
+// 🔴 run-all:每个齿都跑到,逐齿记状态与耗时。红齿不再中断链条(理由见文件抬头)。
+const results = [];
+GEARS.forEach((gear, index) => {
+  const [label, cmd, args] = gear;
+  const n = index + 1;
+  const head = `[${n}/${GEARS.length}] ${label}`;
+  // --only 的干草堆 = 齿名 + 它真正跑的那条命令。只匹齿名不够用:齿名是中英混排的人话
+  // (「A2 outcome-uncertain contract」),而调试时手边有的往往是测试文件名(a2-outcome-…test.mjs)。
+  if (only && ![label, cmd, ...args].join(" ").toLowerCase().includes(only.toLowerCase())) {
+    results.push({ n, label, status: "not-run", ms: 0, reason: `--only ${only} 未命中` });
+    return;
+  }
+  if (mode === "static" && isHeavyGear(gear)) {
+    console.log(`== ${head} ==`);
+    console.log("   ⏭  SCOPED-SKIP — --static 档不跑重齿;要它的结论请跑全量 npm run verify");
+    results.push({ n, label, status: "scoped-skip", ms: 0, reason: "--static 档不跑重齿" });
+    return;
+  }
+  const t = Date.now();
+  const r = run(head, cmd, args, label);
+  results.push({ n, label, status: r.status, ms: Date.now() - t, reason: r.reason, innerSkipped: r.innerSkipped ?? 0 });
+});
+
+const totalMs = Date.now() - startedAt;
+const of = (s) => results.filter((r) => r.status === s);
+const counts = { pass: of("pass").length, fail: of("fail").length, skip: of("skip").length, scoped: of("scoped-skip").length, notRun: of("not-run").length };
+const ran = counts.pass + counts.fail;
+// 🔴 退出码非零 ⟺ 有 FAIL 或 NOT-RUN。SKIP(环境缺件)与 SCOPED-SKIP(档位)不改退出码,
+//   但下面会被逐条列出 —— 「跳过 ≠ 放宽」靠的是**看得见**,不是靠把它算成红。
+const exitCode = counts.fail > 0 || counts.notRun > 0 ? 1 : 0;
+
+const NAME = { pass: "PASS", fail: "FAIL", skip: "SKIP", "scoped-skip": "SCOPED-SKIP", "not-run": "NOT-RUN" };
+const secs = (ms) => (ms > 0 ? `${(ms / 1000).toFixed(1)}s` : "–");
+const width = Math.max(...results.map((r) => r.label.length));
+console.log(`\n────── verify 汇总(mode=${mode}${only ? ` · --only ${only}` : ""})──────`);
+for (const r of results) {
+  console.log(
+    `  ${NAME[r.status].padEnd(11)} [${String(r.n).padStart(2)}/${GEARS.length}] ${r.label.padEnd(width)}  ${secs(r.ms)}` +
+    (r.innerSkipped ? `   ⚠ 齿内 ${r.innerSkipped} 条断言 skip` : ""),
+  );
+}
+console.log(`  ── PASS ${counts.pass} · FAIL ${counts.fail} · SKIP ${counts.skip} · SCOPED-SKIP ${counts.scoped} · NOT-RUN ${counts.notRun} / ${GEARS.length}  ·  用时 ${(totalMs / 1000).toFixed(1)}s`);
+
+if (counts.fail > 0) {
+  console.log(`\n❌ FAIL(${counts.fail} 个,必须修):`);
+  for (const r of of("fail")) console.log(`     [${r.n}/${GEARS.length}] ${r.label}  ←  ${r.reason}`);
+}
+if (counts.notRun > 0) {
+  console.log(`\n🚫 NOT-RUN(${counts.notRun} 个,**没跑**,结论不存在):`);
+  // --only 调试时 NOT-RUN 动辄六十几条、理由还全一样,全列出来只是把真信号刷走 ——
+  // 逐条状态上面的表里一条不少,这里只留头 10 条 + 一行尾数。FAIL 不设上限(见上)。
+  for (const r of of("not-run").slice(0, 10)) console.log(`     [${r.n}/${GEARS.length}] ${r.label}  ←  ${r.reason}`);
+  if (counts.notRun > 10) console.log(`     …还有 ${counts.notRun - 10} 个(逐条见上表)`);
+}
+if (counts.scoped > 0) {
+  console.log(`\n⏭  SCOPED-SKIP(${counts.scoped} 个,**没跑**,不是通过):`);
+  for (const r of of("scoped-skip")) console.log(`     [${r.n}/${GEARS.length}] ${r.label}  ←  ${r.reason}`);
+  console.log("   🔴 --static 绿只买内循环速度;宣布 done / 合并主线要的是全量档绿(合并守卫只认 mode=full)。");
+}
+const partial = results.filter((r) => r.innerSkipped > 0);
+if (partial.length > 0) {
+  console.log(`\n⚠️  下列齿整体绿,但**齿内有断言被 skip**(缺兄弟仓 → 只跳跨仓那几条,本仓断言照跑):`);
+  for (const r of partial) console.log(`     [${r.n}/${GEARS.length}] ${r.label}  ←  ${r.innerSkipped} 条`);
+}
 
 // 🔴 收尾必须把「跳过」单独说清楚,且不能只在中间刷屏一行就算 —— 这道汇总正是为了
-//   防止「verify 绿」被误读成「33 个齿全跑了」。跳过数 > 0 时,这段是最后可见的输出。
+//   防止「verify 绿」被误读成「全部齿都跑了」。跳过数 > 0 时,这段是最后可见的输出。
 if (skipped.length > 0) {
-  console.log(`\n⚠️  verify 完成,但 ${skipped.length}/${GEARS.length} 个齿轮**未运行**(环境缺件,非缺陷):`);
+  console.log(`\n⚠️  ${skipped.length}/${GEARS.length} 个齿轮**未运行**(环境缺件,非缺陷):`);
   for (const s of skipped) console.log(`     ⏭  ${s.gear}  ←  缺 ${s.repo}`);
   // 原因按仓分组列 —— 上一版把原因写死成 nexion-backend 一行,第二个兄弟仓加进来时
   // 台账会指着错误的仓让人去克隆(2026-08-05 独立验收 P0 的同族)。
@@ -223,18 +408,46 @@ if (skipped.length > 0) {
     if (r.ok || !skipped.some((s) => s.repo === r.name)) continue;
     console.log(`   原因:本机无兄弟仓 ${r.name}。要跑齐,${r.hint} 或设 ${r.envKey}。`);
   }
-  console.log(`   🔴 在这台机器上「verify 通过」只覆盖 ${GEARS.length - skipped.length} 个齿,涉及跨仓契约的结论不成立。`);
-  // 🔴 结论必须落到**机器可读**的信号上(2026-08-05 独立验收 P1-11)。
-  //   只改人读的告警行不够:CI / 脚本 / 另一个 agent 看的是 stdout 末行与退出码,
-  //   它们照旧收到「verify OK」+ exit 0,于是「26/33」被当成「33/33」继续往下走。
-  //   末行改成带跳过数的形态;退出码保持 0(缺仓是环境事实,不是本仓缺陷),
-  //   但要求显式确认才安静 —— 没设 NEXION_VERIFY_ALLOW_SKIP 时把它标成 DEGRADED。
+  console.log(`   🔴 在这台机器上「verify 通过」只覆盖 ${ran} 个齿,涉及跨仓契约的结论不成立。`);
+}
+
+// 🔴 结论必须落到**机器可读**的信号上(2026-08-05 独立验收 P1-11)。
+//   只改人读的告警行不够:CI / 脚本 / 另一个 agent 看的是 stdout 末行与退出码,
+//   它们照旧收到「verify OK」+ exit 0,于是「26/33」被当成「33/33」继续往下走。
+//   末行三态:红 / 有跳过(exit 0,但没设 NEXION_VERIFY_ALLOW_SKIP 就标 DEGRADED)/ 全绿。
+if (exitCode !== 0) {
+  console.log(`\nverify FAILED (mode=${mode}, ${counts.fail} fail, ${counts.notRun} not-run, ${ran}/${GEARS.length} gears ran)`);
+} else if (skipped.length > 0 || counts.scoped > 0) {
   const acknowledged = process.env.NEXION_VERIFY_ALLOW_SKIP === "1";
-  console.log(acknowledged
-    ? `verify OK (${skipped.length} skipped, acknowledged)`
-    : `verify DEGRADED (${GEARS.length - skipped.length}/${GEARS.length} gears ran, ${skipped.length} skipped) — 设 NEXION_VERIFY_ALLOW_SKIP=1 表示已知悉`);
+  const tail = `mode=${mode}, ${ran}/${GEARS.length} gears ran, ${skipped.length} skipped, ${counts.scoped} scoped-skipped`;
+  console.log(acknowledged ? `verify OK (${tail}, acknowledged)` : `verify DEGRADED (${tail}) — 设 NEXION_VERIFY_ALLOW_SKIP=1 表示已知悉`);
 } else {
   console.log(`\n✅ verify 完成:${GEARS.length}/${GEARS.length} 个齿轮全部运行。`);
-  console.log(`verify OK (${GEARS.length}/${GEARS.length} gears)`);
+  console.log(`verify OK (mode=${mode}, ${GEARS.length}/${GEARS.length} gears)`);
 }
+
+// ── 落盘:给合并守卫与脚本读的两份记录(人读的已经打在上面了)。
+const dirtyEnd = dirtyPaths();
+const fpEnd = fingerprint(headTree, dirtyEnd);
+const treeMoved = fpStart === null || fpEnd === null || fpStart !== fpEnd;
+writeRecord({
+  // --only 调试跑不是任何一档的覆盖面:记 "partial",守卫只认 "full"(tester-C 观察 2:此前记 full+fail 虽安全但命名歧义)
+  mode: only ? "partial" : mode,
+  verdict: exitCode === 0 ? "pass" : "fail",
+  treeMoved,
+  tree: treeMoved ? null : fpEnd,
+  headTree,
+  // dirty 取**开跑时**的工作树状态(那才是这一轮真正验的东西);跑的过程中变了由 treeMoved 兜住。
+  dirty: dirtyStart === null ? null : dirtyStart.length > 0,
+  head,
+  at: new Date(startedAt).toISOString(),
+  totalMs,
+  steps: results.map((r) => ({ step: r.label, status: r.status, ms: r.ms })),
+});
+try {
+  writeFileSync(path.join(repoRoot, ".verify-chain.code"),
+    `${exitCode}\nmode=${mode} pass=${counts.pass} fail=${counts.fail} skip=${counts.skip} scoped_skip=${counts.scoped} not_run=${counts.notRun} tree=${treeMoved ? "moved" : String(fpEnd ?? "?").slice(0, 12)}\n`);
+} catch { /* 同 .verify-exit.code:落盘失败不改变退出语义 */ }
+
+process.exit(exitCode);
 

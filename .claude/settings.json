@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node D:/WORKS/PLAN/.claude/hooks/guard-package-branch.mjs",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node D:/WORKS/PLAN/.claude/hooks/verify-fresh-before-merge.mjs",
+            "timeout": 20
+          }
+        ],
+        "description": "与 D:/WORKS/PLAN/.claude/settings.json 同一批机器门,补给「以 admin-ops 为根的会话」—— 项目 settings 只从会话自己的仓根加载,admin-ops 是独立 git 仓,PLAN 那份对它一条都不生效(2026-08-17 包 ar T8 补洞)。guard-package-branch:admin-ops 主线 main 上 M/L 级 git commit 拦回(仓白名单里本来就有 admin-ops,目录判定 -C > cd > cwd 三级回退,cwd=admin-ops 时判得准)。verify-fresh-before-merge:合并/推 main 前必须有匹配那棵树的 full 档全量绿。依赖:admin-ops scripts/verify.mjs(npm run verify)跑完写 .verify-cache/last-run.json;守卫核 mode=full · verdict=pass · dirty=false · treeMoved=false · headTree==被合树,脏树上跑的 full 不算绿。"
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node D:/WORKS/PLAN/.claude/hooks/audit-freeze-guard.mjs",
+            "timeout": 10
+          }
+        ],
+        "description": "audit-freeze-guard:审计/验收 agent 在途时冻结被审文件。matcher 逐字取自脚本头注释的声明(PreToolUse Edit|Write|MultiEdit|Bash),hooks-selftest 第⑥条会核这个一致性 —— 少一个工具名,该工具就绕过这道门。信号文件与逃生阀都用 PLAN 下的绝对路径,与 cwd 无关。"
+      },
+      {
+        "matcher": "Agent|Workflow",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node D:/WORKS/PLAN/.claude/hooks/audit-dispatch-freeze-guard.mjs",
+            "timeout": 10
+          }
+        ],
+        "description": "audit-dispatch-freeze-guard(WF-19,2026-08-17):派审计/验收类 agent(tester/黑盒/独立验收/审计/skeptic/证伪/走查/对抗)或 Workflow 时,本会话必须已有冻结信号 .audit-freeze-<sid>.json,否则 exit 2 顶回 —— 「写信号」从 skill 层动作升为机器门(包 ar 派 4 个 tester 一个信号没写、跑到一半改了被审脚本,WF-11/12 同族第 3 次)。逃生阀 prompt 里 # NO-FREEZE-NEEDED(只读研究;留痕 .claude/.freeze-valve.log);Explore 只读 agent 不管。红测 hooks/test-audit-dispatch-freeze-guard.mjs(12 条)。"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node D:/WORKS/PLAN/.claude/hooks/admin-prd-lint.mjs",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node D:/WORKS/PLAN/.claude/hooks/audit-pending-tracker.mjs",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node D:/WORKS/PLAN/.claude/hooks/chain-gates-on-edit.mjs",
+            "timeout": 70
+          }
+        ],
+        "description": "三条都只看被编辑文件的路径,与 cwd 无关。admin-prd-lint:运营后台 PRD 中性语言硬门(只认 运营控制后台PRD*.md,正好在本仓 docs/PRD/ 下)。audit-pending-tracker:命中 admin-ops/{app,lib} 功能代码 → 记 audit 欠账(2026-08-17 前它认的是退役旧线 nexion-admin-prototype/app/,后台改动一条都没进过台账)。chain-gates-on-edit:改 admin-ops/lib/admin/d-client.ts 或 PRD md → 跑提现单主键真名门。"
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node D:/WORKS/PLAN/.claude/hooks/admin-prd-progress.mjs",
+            "timeout": 20
+          },
+          {
+            "type": "command",
+            "command": "node D:/WORKS/PLAN/.claude/hooks/audit-stop-gate.mjs",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node D:/WORKS/PLAN/.claude/hooks/merged-branch-hygiene.mjs",
+            "timeout": 60
+          }
+        ],
+        "description": "audit-stop-gate:本会话改过功能代码但没跑 nexion-audit → exit2 顶回(台账与逃生阀都在 PLAN/.claude 下,绝对路径)。merged-branch-hygiene:仓列表写死三仓含 admin-ops,与 cwd 无关。admin-prd-progress:只扫 process.cwd() 根下的 运营控制后台PRD*.md,本仓 PRD 在 docs/PRD/ 子目录 → 以仓根为 cwd 时静默 exit 0(非阻断,零成本,留着是为了在 docs 目录里开会话时照样出看板)。｜ 故意不挂 changelog-stop-gate:它的 workingRoot() 在 cwd 不含 docs/前端产品更新日志.md 时回退到 D:/WORKS/PLAN/Nexion-uniapp 主 checkout,于是会拿 uniapp 近 12 小时的改动去拦 admin 会话 —— 后台会话与前端日志无关,挂上就是必然误拦,而误拦会把逃生阀变成日常(那正是这批门最怕的死法)。"
+      }
+    ]
+  }
+}
