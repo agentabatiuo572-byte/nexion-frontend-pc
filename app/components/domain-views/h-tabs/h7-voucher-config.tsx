@@ -43,6 +43,10 @@ type OpsVoucher = {
   endAt: number;
   claimSurfaces: string[];
   popupEnabled: boolean;
+  popupDelayMs: number;
+  popupCooldownHours: number;
+  popupMaxPerSession: number;
+  popupCadenceEnabled: boolean;
   stackWithTrial: boolean;
   stackWithOthers: boolean;
   splittable: boolean;
@@ -109,6 +113,10 @@ function parseVoucher(bv: Record<string, string>, id: string, version = 1): OpsV
     endAt: toMs(bv.endDate),
     claimSurfaces: surfaces,
     popupEnabled: bv.popupEnabled !== "false",
+    popupDelayMs: Number.isFinite(Number(bv.popupDelayMs)) ? Number(bv.popupDelayMs) : 1300,
+    popupCooldownHours: Number.isFinite(Number(bv.popupCooldownHours)) ? Number(bv.popupCooldownHours) : 24,
+    popupMaxPerSession: Number.isFinite(Number(bv.popupMaxPerSession)) ? Number(bv.popupMaxPerSession) : 1,
+    popupCadenceEnabled: bv.popupCadenceEnabled !== "false",
     stackWithTrial: bv.stackWithTrial === "true",
     stackWithOthers: bv.stackWithOthers === "true",
     splittable: bv.splittable === "true",
@@ -129,6 +137,11 @@ function parseServerVoucher(raw: unknown): OpsVoucher {
   const number = (key: string) => {
     const value = Number(row[key]);
     if (!Number.isSafeInteger(value) || value < 0) throw new Error(`H7_VOUCHER_RESPONSE_INVALID:${key}`);
+    return value;
+  };
+  const cadenceNumber = (key: string, min: number, max: number) => {
+    const value = number(key);
+    if (value < min || value > max) throw new Error(`H7_VOUCHER_CADENCE_INVALID:${key}`);
     return value;
   };
   const status = row.status === "active" || row.status === "paused" ? row.status : null;
@@ -159,6 +172,10 @@ function parseServerVoucher(raw: unknown): OpsVoucher {
     redeemedCount: number("redeemedCount"),
     revokedCount: number("revokedCount"),
     batchCount: number("batchCount"),
+    popupDelayMs: cadenceNumber("popupDelayMs", 0, 60000),
+    popupCooldownHours: cadenceNumber("popupCooldownHours", 0, 720),
+    popupMaxPerSession: cadenceNumber("popupMaxPerSession", 1, 10),
+    popupCadenceEnabled: row.popupCadenceEnabled !== false,
   };
 }
 
@@ -224,7 +241,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   const total = data.stats?.total ?? list.length;
   const activeN = data.stats?.active ?? list.filter((v) => v.status === "active").length;
   const pausedN = data.stats?.paused ?? list.filter((v) => v.status === "paused").length;
-  const popupN = data.stats?.popup ?? list.filter((v) => v.popupEnabled && v.status === "active").length;
+  const popupN = data.stats?.popup ?? list.filter((v) => v.popupEnabled && v.popupCadenceEnabled && v.status === "active").length;
 
   const openAdd = () => {
     openActionConfirm({
@@ -244,6 +261,10 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         currentAudience: "all",
         currentStatus: "active",
         currentPopupEnabled: "true",
+        currentPopupCadenceEnabled: "true",
+        currentPopupDelayMs: "1300",
+        currentPopupCooldownHours: "24",
+        currentPopupMaxPerSession: "1",
         currentStackWithTrial: "false",
         currentStackWithOthers: "false",
         currentSplittable: "false",
@@ -287,6 +308,10 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         currentStartDate: toDateInput(v.startAt),
         currentEndDate: toDateInput(v.endAt),
         currentPopupEnabled: v.popupEnabled ? "true" : "false",
+        currentPopupCadenceEnabled: v.popupCadenceEnabled ? "true" : "false",
+        currentPopupDelayMs: String(v.popupDelayMs),
+        currentPopupCooldownHours: String(v.popupCooldownHours),
+        currentPopupMaxPerSession: String(v.popupMaxPerSession),
         currentStackWithTrial: v.stackWithTrial ? "true" : "false",
         currentStackWithOthers: v.stackWithOthers ? "true" : "false",
         currentSplittable: v.splittable ? "true" : "false",

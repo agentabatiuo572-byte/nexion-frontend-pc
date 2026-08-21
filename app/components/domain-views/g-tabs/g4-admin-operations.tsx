@@ -23,6 +23,12 @@ const CONFIGS = [
   { key: "presale.maxPerUser", label: "预售每人上限", kind: "number" },
   { key: "presale.startAt", label: "预售开始(UTC)", kind: "text" },
   { key: "presale.endAt", label: "预售结束(UTC)", kind: "text" },
+  { key: "holder.allocationNexPerHolding", label: "持有人每节点预留 NEX", kind: "number" },
+  { key: "holder.priorityTop1Percent", label: "优先级 Top 1% 阈值", kind: "number" },
+  { key: "holder.priorityTop3Percent", label: "优先级 Top 3% 阈值", kind: "number" },
+  { key: "holder.priorityTop5Percent", label: "优先级 Top 5% 阈值", kind: "number" },
+  { key: "holder.policyVersion", label: "持有人策略版本", kind: "text" },
+  { key: "holder.effectiveAt", label: "持有人策略生效(UTC)", kind: "text" },
 ] as const;
 
 export default function G4AdminOperations({ ctx }: { ctx: GCtx }) {
@@ -54,17 +60,19 @@ export default function G4AdminOperations({ ctx }: { ctx: GCtx }) {
       run: async (reason, value) => {
         if (value == null || value === "") return;
         let normalized = value;
-        if (definition.key === "presale.startAt" || definition.key === "presale.endAt") {
+        if (definition.key === "presale.startAt" || definition.key === "presale.endAt" || definition.key === "holder.effectiveAt") {
           if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(value) || Number.isNaN(Date.parse(value))) {
             throw new Error("请输入 ISO-8601 UTC 时间，例如 2026-08-01T00:00:00Z");
           }
           normalized = new Date(value).toISOString();
-          const otherKey = definition.key === "presale.startAt" ? "presale.endAt" : "presale.startAt";
-          const other = data?.config[otherKey];
-          if (other) {
-            const start = definition.key === "presale.startAt" ? normalized : String(other);
-            const end = definition.key === "presale.endAt" ? normalized : String(other);
-            if (Date.parse(start) >= Date.parse(end)) throw new Error("预售开始时间必须早于结束时间");
+          if (definition.key === "presale.startAt" || definition.key === "presale.endAt") {
+            const otherKey = definition.key === "presale.startAt" ? "presale.endAt" : "presale.startAt";
+            const other = data?.config[otherKey];
+            if (other) {
+              const start = definition.key === "presale.startAt" ? normalized : String(other);
+              const end = definition.key === "presale.endAt" ? normalized : String(other);
+              if (Date.parse(start) >= Date.parse(end)) throw new Error("预售开始时间必须早于结束时间");
+            }
           }
         }
         await updateG4AdminOperationConfig(

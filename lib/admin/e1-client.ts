@@ -41,6 +41,10 @@ interface BackendSku {
   hashRate?: string | null;
   power?: string | null;
   datacenter?: string | null;
+  uptime?: string | null;
+  warranty?: string | null;
+  phoneDailyEarn?: number | string | null;
+  phoneDailyEarnNex?: number | string | null;
   price?: number | string | null;
   dailyEarn?: number | string | null;
   dailyEarnNex?: number | string | null;
@@ -183,7 +187,9 @@ function fromPurchaseGate(gate: BackendPurchaseGate | null | undefined): Purchas
     mode: gate.mode === "either" ? "either" : "all",
     quotaCap: gate.quotaCap ?? undefined,
     quotaSold: gate.quotaSold ?? undefined,
-    quotaPeriod: gate.quotaPeriod === "lifetime" ? "lifetime" : "month",
+    // Preserve a legacy month value for the editor to surface as HOLD. The
+    // form blocks saving it and formToGate serializes only lifetime.
+    quotaPeriod: gate.quotaPeriod === "month" ? "month" : "lifetime",
     enforce: gate.enforce !== false,
   };
   const hasValue =
@@ -205,7 +211,7 @@ function toPurchaseGate(gate: PurchaseGate | undefined): BackendPurchaseGate | n
     mode: gate.mode,
     quotaCap: gate.quotaCap ?? null,
     quotaSold: gate.quotaSold ?? null,
-    quotaPeriod: gate.quotaPeriod ?? null,
+    quotaPeriod: gate.quotaCap != null ? "lifetime" : null,
     enforce: gate.enforce,
   };
 }
@@ -222,6 +228,10 @@ function fromSku(sku: BackendSku): OpsSku {
     hashRate: sku.hashRate ?? undefined,
     power: sku.power ?? undefined,
     datacenter: sku.datacenter ?? undefined,
+    uptime: sku.uptime ?? undefined,
+    warranty: sku.warranty ?? undefined,
+    phoneDailyEarn: toOptionalNumber(sku.phoneDailyEarn),
+    phoneDailyEarnNEX: toOptionalNumber(sku.phoneDailyEarnNex),
     price: toNumber(sku.price),
     dailyEarn: toNumber(sku.dailyEarn),
     dailyEarnNEX: toNumber(sku.dailyEarnNex),
@@ -260,6 +270,10 @@ function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
     hashRate: sku.hashRate ?? null,
     power: sku.power ?? null,
     datacenter: sku.datacenter ?? null,
+    uptime: sku.uptime ?? null,
+    warranty: sku.warranty ?? null,
+    phoneDailyEarn: sku.phoneDailyEarn ?? null,
+    phoneDailyEarnNex: sku.phoneDailyEarnNEX ?? null,
     price: sku.price,
     dailyEarn: sku.dailyEarn,
     dailyEarnNex: sku.dailyEarnNEX,

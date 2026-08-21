@@ -36,9 +36,10 @@ test("I4 draft authoring saves directly without high-sensitive confirmation", ()
   assert.doesNotMatch(save, /runBackend\(task,[^;]*\);\s*setDraftEditor\(null\)/);
 });
 
-test("I4 publish confirmation exposes version diff bilingual check and sensitive data source", () => {
+test("I4 publish confirmation exposes version diff trilingual check and sensitive data source", () => {
   assert.match(view, /版本差异/);
-  assert.match(view, /双语确认/);
+  assert.match(view, /三语确认/);
+  assert.match(view, /中文、越南语、英文/);
   assert.match(view, /财务\/NEX 数据来源/);
   assert.match(view, /dataSource/);
   assert.match(view, /currentFields:/);

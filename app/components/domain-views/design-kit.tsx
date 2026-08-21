@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import { fetchA2ReasonPolicy } from "@/lib/admin/a2-client";
-import { isOptionalTrustLinkField, validateTrustSectionBilingualFields } from "@/lib/admin/trust-section-validation";
+import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "@/lib/admin/trust-section-validation";
 
 /* ---------------- 域 → 落地路由(ctx.navigate 跨域跳转) ---------------- */
 export const DOMAIN_HOME: Record<string, string> = {
@@ -635,7 +635,7 @@ export type BusinessFormSpec =
   | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "datetime-local"; options?: string[]; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; wide?: boolean; warnAbove?: number; warnText?: string }[] }
   | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
-  | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentIssuanceLimit?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
+  | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentIssuanceLimit?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentPopupCadenceEnabled?: string; currentPopupDelayMs?: string; currentPopupCooldownHours?: string; currentPopupMaxPerSession?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
   | { kind: "promo-banner-edit"; currentBaseReward?: string; currentMultiplier?: string; currentCountdownDays?: string; currentCountdownHours?: string; currentTargetDevice?: string; currentTargetDaily?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "vrank-reward-edit"; subject?: string; voucherOptions?: string[]; voucherLabels?: Record<string, string>; skuOptions?: string[]; skuLabels?: Record<string, string>; currentType?: string; currentAmount?: string; currentVoucherId?: string; currentSkuId?: string; currentCustom?: string }
   | { kind: "mission-create"; subject?: string }
@@ -1138,6 +1138,10 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
       startDate: spec.currentStartDate ?? "",
       endDate: spec.currentEndDate ?? "",
       popupEnabled: spec.currentPopupEnabled ?? "true",
+      popupCadenceEnabled: spec.currentPopupCadenceEnabled ?? "true",
+      popupDelayMs: spec.currentPopupDelayMs ?? "1300",
+      popupCooldownHours: spec.currentPopupCooldownHours ?? "24",
+      popupMaxPerSession: spec.currentPopupMaxPerSession ?? "1",
       stackWithTrial: spec.currentStackWithTrial ?? "false",
       stackWithOthers: spec.currentStackWithOthers ?? "false",
       splittable: spec.currentSplittable ?? "false",
@@ -1334,9 +1338,9 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (normalizedFieldKeys.length !== new Set(normalizedFieldKeys).size) missing.push("字段标识不能重复（不区分大小写）");
   } else if (spec.kind === "trust-section-publish") {
     if (spec.requireDataSource) needs("dataSource", "财务/NEX 数据来源");
-    const bilingual = validateTrustSectionBilingualFields(spec.targetFields);
-    if (!bilingual.valid) missing.push(`中越字段不完整：${bilingual.missing.join("、")}`);
-    if (state.bilingualConfirmed !== "true") missing.push("中越双语确认");
+    const trilingual = validateTrustSectionTrilingualFields(spec.targetFields);
+    if (!trilingual.valid) missing.push(`中越英字段不完整：${trilingual.missing.join("、")}`);
+    if (state.bilingualConfirmed !== "true") missing.push("中越英三语确认");
   } else if (spec.kind === "destructive-reason") {
     if ((spec.requireAck ?? true) && state.ack !== "true") missing.push("影响确认");
   } else if (spec.kind === "identity-verify") {
@@ -1485,6 +1489,12 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (!Number.isSafeInteger(issuanceLimit) || issuanceLimit < 0 || issuanceLimit > 10_000_000) {
       missing.push("发行上限须为 0-10000000 的整数");
     }
+    const delay = Number(state.popupDelayMs);
+    const cooldown = Number(state.popupCooldownHours);
+    const cap = Number(state.popupMaxPerSession);
+    if (!Number.isSafeInteger(delay) || delay < 0 || delay > 60000) missing.push("弹窗延迟须为 0-60000 毫秒");
+    if (!Number.isSafeInteger(cooldown) || cooldown < 0 || cooldown > 720) missing.push("弹窗冷却须为 0-720 小时");
+    if (!Number.isSafeInteger(cap) || cap < 1 || cap > 10) missing.push("单会话上限须为 1-10 次");
   } else if (spec.kind === "vrank-reward-edit") {
     needs("rtype", "奖励类型");
     if (state.rtype === "usdt" || state.rtype === "nex") {
@@ -2372,7 +2382,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
         {spec.requireDataSource && input("dataSource", "财务/NEX 数据来源", "必填：报表、账本快照或市场数据编号")}
         <label className="row" style={{ gap: 8, marginTop: 10 }}>
           <input type="checkbox" checked={value.bilingualConfirmed === "true"} onChange={(event) => set("bilingualConfirmed", String(event.target.checked))} />
-          双语确认：中文与越南语已逐项核对，关键数字和 NEX 口径一致
+          三语确认：中文、越南语、英文已逐项核对，关键数字和 NEX 口径一致
         </label>
       </div>
     );
@@ -2472,6 +2482,14 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
           {select("popupEnabled", "首页弹窗 popup", ["true", "false"], "voucher-popup", { true: "参与弹窗 true", false: "不弹窗 false" })}
+          {select("popupCadenceEnabled", "弹窗总开关 cadence", ["true", "false"], "voucher-cadence-enabled", { true: "启用 true", false: "关闭 false" })}
+        </div>
+        <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
+          {input("popupDelayMs", "弹窗延迟 delay(ms)", "0-60000;服务端单位毫秒", "number")}
+          {input("popupCooldownHours", "账号冷却 cooldown(h)", "0-720;服务端账号级", "number")}
+        </div>
+        <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
+          {input("popupMaxPerSession", "单会话上限 maxPerSession", "1-10;当前登录会话", "number")}
           {select("splittable", "可拆分 splittable", ["false", "true"], "voucher-splittable", { false: "不可拆分 false", true: "可拆分 true" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
@@ -3181,6 +3199,9 @@ export type CoverageSnapshot = {
   coverageRatio: number;
   redlinePct: number;
   healthyPct?: number;
+  sourceEnvironment?: string;
+  runId?: string;
+  sandboxOverrideEnabled?: boolean;
 };
 
 /* 操作确认弹窗 — 高敏动作确认 + 理由必填 + 可编辑「目标新值」(配置型调整);纯动作(放行/退款/封禁/pause)仅确认。 */
@@ -3211,7 +3232,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
     : undefined;
   const effectiveAmplifies = directionalAmplifies ?? Boolean(amplifies);
   // B1 红线禁放行:只有调用方传入真实后端覆盖率时才做前端镜像拦截;后端仍是最终裁决。
-  const covBlocked = Boolean(effectiveAmplifies && coverage && coverage.coverageRatio < coverage.redlinePct);
+  const covBlocked = Boolean(effectiveAmplifies && coverage && coverage.coverageRatio < coverage.redlinePct && !coverage.sandboxOverrideEnabled);
   const requestedMinimum = Number.isFinite(requestedReasonMin)
     ? Math.max(1, Math.min(200, Math.floor(requestedReasonMin!)))
     : 8;
@@ -3315,7 +3336,9 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
                   ? `，高于健康线 ${coverage.healthyPct}%`
                   : coverage.coverageRatio >= coverage.redlinePct
                     ? `，高于红线 ${coverage.redlinePct}%，请审慎提交`
-                    : `，低于红线 ${coverage.redlinePct}%，系统会拒绝提交`}
+                    : coverage.sandboxOverrideEnabled
+                      ? "，当前为同 RunID 的本地 Sandbox 验收覆盖，不会写入生产资金事实"
+                      : `，低于红线 ${coverage.redlinePct}%，系统会拒绝提交`}
               </>
             ) : (
               <>{auditSink === "local-history" ? "本页为本地配置面,覆盖率预检待接入后端后生效;请人工确认资金方向影响。" : "提交时由后端实时校验覆盖率，当前弹窗不使用前端兜底值。"}</>

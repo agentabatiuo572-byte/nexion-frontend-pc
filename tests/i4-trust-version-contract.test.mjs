@@ -46,9 +46,9 @@ test("I4 shows authoritative A2 pending state and refreshes content after status
   assert.match(view, /<Link[^>]+href=\{pendingA2Href\}/);
 });
 
-test("I4 publish validates real Chinese and Vietnamese field pairs", () => {
-  assert.match(view, /validateTrustSectionBilingualFields/);
-  assert.match(view, /中越字段不完整/);
+test("I4 publish validates real Chinese, Vietnamese and English field groups", () => {
+  assert.match(view, /validateTrustSectionTrilingualFields/);
+  assert.match(view, /中越英字段不完整/);
 });
 
 test("I4 freezes all draft mutations while the A2 section lock is pending", () => {

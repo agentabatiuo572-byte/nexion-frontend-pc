@@ -1110,8 +1110,14 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "phone_tier",
     buildCommand: (ctx) => ({ domain: "E", op: "e2_phone_tier",
-      params: { tier: ctx.tier, dailyUsdt: ctx.dailyUsdt, dailyNex: ctx.dailyNex } }),
-    buildTarget: (ctx) => ({ domain: "E", type: "phone_tier", id: String(ctx.tier) }),
+      params: ctx.configKey
+        ? { configKey: String(ctx.configKey), label: String(ctx.label), dailyUsdt: ctx.dailyUsdt,
+          dailyNex: ctx.dailyNex, expectedRevision: Number(ctx.expectedRevision) }
+        : { tier: ctx.tier, dailyUsdt: ctx.dailyUsdt, dailyNex: ctx.dailyNex,
+          expectedRevision: Number(ctx.expectedRevision) } }),
+    buildTarget: (ctx) => ctx.configKey
+      ? ({ domain: "E", type: "onboarding_yield_comparison", id: String(ctx.configKey) })
+      : ({ domain: "E", type: "phone_tier", id: String(ctx.tier) }),
   },
   {
     op: "e2_task_create",

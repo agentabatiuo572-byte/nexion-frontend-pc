@@ -19,6 +19,20 @@
 >
 > ---
 
+## 当前状态合同（2026-08-16）
+
+状态必须按能力边界读取；Sandbox/Mock 通过、单一配置页完成或阶段展示，均不得扩大为生产能力。
+
+| 能力 | 当前状态 | 已签发范围 | 明确保持 HOLD 的范围 |
+|---|---|---|---|
+| Gen-2 E1 `purchaseGate` + App `GET /api/store/purchase-eligibility` | **COMPLETE** | 服务端权威判定；普通单、组合/Sandbox 单、Trade-in 与容量替换均在提交前复验；Pro v2 默认 V≥2、Rack P2 默认 V≥4 | 不得把 E3 九类通用 eligibility 编辑器混入该完成项 |
+| E3 九类通用 eligibility 编辑器 | **HOLD** | 仅未来扩展设计 | 编辑器 UI、九类规则运行时映射和以其作为成交授权 |
+| Passkey / Telegram | **Sandbox Mock COMPLETE** | 显式 Sandbox 使用服务端 Mock 身份并显示 Mock 标识 | 生产 WebAuthn/Passkey ceremony 与 Telegram Login Widget verifier |
+| Janus | **Sandbox executor / 签名回执 / ACK Mock COMPLETE** | 仅 `test/acceptance/local-sandbox` allowlist，回执/证明带 `SANDBOX` 来源 | 实体真机、native attestation、生产 handoff 与真实设备 ACK |
+| 提现结果未知的核验与放弃 | **COMPLETE** | 服务端先核验 canonical withdrawal；未建单才写 `ABANDONED` tombstone；不取消已提交提现 | 真实银行/链上/PSP 出款仍按生产供应商范围 HOLD |
+
+该状态合同与本文件第 3 章 API 表、PRD V2 对应章节共同构成当前开发口径；旧文档中未限定范围的“用户成交授权 HOLD”“Gen-2 待补录”等描述均按上述范围修正。
+
 ## 第 0 章 全局铁律(开发实现前必读)
 
 > 这 11 条贯穿所有 68 模块。任一模块实现与本章冲突,以本章为准；若已有对应 `specs/FEAT-*.md` 后发裁定则以该裁定为准，其余冲突再回溯 PRD 正文。
@@ -224,8 +238,8 @@
 
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
-| **SKU / Device specs**(E1) | `nx_product` 是交易核心唯一真源：skuKey · name · tier/generation · price · daily_earn_usdt · daily_earn_nex · stock · sold · sale status · unlock phase pointer；PC E1、App catalog、quote、order 共用此真源。`nx_admin_device_sku` 仍同步历史重复列以兼容旧结构，但运行职责只承载 E1 展示/运营扩展（如 baseRate 展示串、数据中心、功耗/AI 参数、功能与媒体），重复列不能覆盖身份、价格、库存、销量和在售状态。完整编辑、上下架和删除携 `X-Product-Revision` 做 CAS；revision 使用 `DATETIME(6)` 且任一商品/库存写入至少单调前进 1 微秒；`stock=0` 仅售罄不自动下架；`purchaseGate` 在成交链路未完成服务端强制前保持 HOLD，历史值不下发两端。**回本天数/首年净利为派生** | SC | §17.1 / Ch10 E1 |
-| **GENERATION_RELEASES**(E1) | `nx_admin_device_generation_gate` 持有 skuKey · releaseMonth · phase · eligibility · phaseOffset · forceUnlock · status 等运营上架规则；E1 上架前置服务端校验已启用，按用户成交授权仍为 HOLD | SC | Ch10 E1 |
+| **SKU / Device specs**(E1) | `nx_product` 是交易核心唯一真源：skuKey · name · tier/generation · price · daily_earn_usdt · daily_earn_nex · stock · sold · sale status · unlock phase pointer；PC E1、App catalog、quote、order 共用此真源。`nx_admin_device_sku` 仍同步历史重复列以兼容旧结构，但运行职责只承载 E1 展示/运营扩展与结构化 `purchaseGate`，重复列不能覆盖身份、价格、库存、销量和在售状态。完整编辑、上下架和删除携 `X-Product-Revision` 做 CAS；revision 使用 `DATETIME(6)` 且任一商品/库存写入至少单调前进 1 微秒；`stock=0` 仅售罄不自动下架；`purchaseGate` 由 App 查询并在全部现行成交入口服务端复验。配额周期当前仅支持 `lifetime`；历史 `month` 仅可读并在 E1 标记 HOLD、不可保存，待自然月隔离的原子 usage 计数落地后再启用。**回本天数/首年净利为派生** | SC | §17.1 / Ch10 E1 |
+| **GENERATION_RELEASES**(E1) | `nx_admin_device_generation_gate` 持有 skuKey · releaseMonth · phase · eligibility · phaseOffset · forceUnlock · status 等运营上架规则；E1 上架前置服务端校验已启用；Gen-2 按用户成交授权由 E1 `purchaseGate` + App eligibility 复验闭环，E3 九类通用编辑器另列 HOLD | SC | Ch10 E1 |
 | **CapacitySchedule**(E3) | `capacityBand1/2/3DeltaPct` 按月复利 · `stageEarlyEnd/stageMidEnd` 分段 · `capacityFloorPct` 下限 · `cycleMonths` 仅图表视窗 · 8 个 SKU 参与开关 · `capacitySubsidyDays` 仅标注 · `taskLockS1/Pro/Rack` | SC | FEAT-DEV01 / Ch10 E3 |
 | **TradeInConfig**(E3) | `tradeinEnabled/eligibility` · `tradeinLadderCut1..4` · `tradeinLadderCredit1..5` · `tradeinRequireHigherPrice/tradeinMaxDevicesPerOrder` · promo{...}；**折抵只减少本单应付，不入余额；`salvagePct/minHoldingMonths` 已退役** | SC | FEAT-DEV02 / Ch10 E3 |
 | **Order 状态机**(E4) | orderId(server mint) · state:enum{placed\|paid\|provisioning\|activated\|payment_failed\|expired\|refunded\|chargeback\|provisioning_failed} · relatedOrderId(server 校验) · DC · skuKey · userId;**payment_failed 不计 GMV** | SC | §17.1 / Ch10 E4 |
@@ -396,10 +410,12 @@
 
 | Endpoint | Method | 用途 | 确认 | 模块 |
 |---|---|---|---|---|
-| `/api/admin/devices/skus` · `/api/admin/devices/skus/:skuKey` | GET / POST / PUT / DELETE | PC E1 从 `nx_product` 读取并管理全 SKU 交易核心；PUT/DELETE 携 `X-Product-Revision` 做 CAS，stock 接受 0 且不自动下架；扩展字段兼容写 `nx_admin_device_sku`，非空 purchaseGate 失败关闭 | E1a-MD2(完整编辑) | E1 |
+| `/api/admin/devices/skus` · `/api/admin/devices/skus/:skuKey` | GET / POST / PUT / DELETE | PC E1 从 `nx_product` 读取并管理全 SKU 交易核心；PUT/DELETE 携 `X-Product-Revision` 做 CAS，stock 接受 0 且不自动下架；扩展字段与结构化 purchaseGate 写 `nx_admin_device_sku`，非法 schema 失败关闭 | E1a-MD2(完整编辑) | E1 |
 | `/api/admin/devices/skus/:skuKey/status` | PATCH | 携 `X-Product-Revision` 独立切换销售状态 on/off，不复用 lifecycle 或 unlockPhase | 行内确认 | E1 |
 | `/api/admin/devices/e1/generation-gates[/{skuId}]` | GET / POST / PATCH / DELETE | 管理 `nx_admin_device_generation_gate` 上架节奏规则并供 E1 上架前置校验；不代表按用户成交资格已闭环 | 操作确认 | E1 |
 | `/api/store/catalog` | GET | UniApp 商城只读投影同一 `nx_product` 可售集合；Sandbox 仅隔离验收库存写入，目录每次刷新并隐藏当前已下架/删除商品，提交按稳定商品编号重验当前可售、足量库存与价格 | — | E1 / E4 |
+| `/api/store/purchase-eligibility?productNo=` | GET | **COMPLETE**：读取当前登录用户的 V-rank、有效直推、团队业绩与 E1 `purchaseGate`，返回 `eligible/decisionCode/evaluatedAt`；畸形门或事实缺失失败关闭。该端点供提交前提示，普通/组合/Sandbox 下单、Trade-in 与容量替换入口均执行最终服务端复验 | 用户令牌 | E1 / E3 |
+| `/api/withdrawals/attempts/:idempotencyKey/abandon` | POST | **COMPLETE**：对结果未知的提现尝试做服务端核验与放弃：与 submit 共用用户行锁；已提交返回 canonical withdrawal，未提交写 ABANDONED tombstone；同 key 异 body 拒绝 | 用户令牌 + 原冻结请求体 | D2 / App 钱包 |
 | `/api/config/cart/bundle-discount` | PUT | 套餐折扣 ladder(4件12%/3件8%/2件5%) | E1a-MD3 | E1 |
 | `/api/admin/config/task-pricing` | GET / PUT | 6 类任务定价(热更,仅新派发生效) | E2-MD1~MD4(PUT) | E2 |
 | `/api/admin/devices/e3/config` | GET / PATCH | E3 产能曲线 + 换新阶梯统一配置；拒绝退役键、未知键、无变化与非法保序 | E3-MD1(高敏字段) | E3 |
@@ -536,7 +552,7 @@
 | `/api/admin/janus/health` · `/audit` | GET | 健康度分级(4 档+指标+异常下钻+建议)/ 审计日志(筛选+搜索) | — | K6 |
 | `/api/admin/janus/exports` | POST | 报表导出(漏斗+健康 CSV/JSON),因产生审计副作用使用写接口并携 Idempotency-Key | 导出留痕 | K6 |
 | `/api/admin/janus/remote-targets` · `/remote-targets/origins` · `/:key/:version/disable` | GET/POST | 服务端批准 RemoteTarget 目录与部署白名单；只允许精确 HTTPS origin，拒绝私网、userinfo、query、fragment，并在创建与每次消费前重新解析 DNS、任一地址非公网即失败关闭；URL 变化只能新增不可变版本；停用请求须携 `expectedCatalogVersion`，只按 `(remoteTargetKey, remoteTargetVersion, remoteTargetCatalogVersion)` 精确 CAS 停用并取消该版本未领取命令，不扩大到同 key 的其他版本且不冒充设备已执行 | 是(写仅超管) | K6 |
-| `/api/app/janus/reports` · `/commands/pending` · `/commands/ack` | POST/GET/POST | 登录用户设备上报原始真实信号（同一 reportId 重放不重复评估或写入）；服务端计算评分、执行生效策略并留判定轨迹；策略、`nx_janus_command`、`nx_janus_device` 与 App 待执行载荷必须贯穿同一 `remoteTargetKey + remoteTargetVersion + remoteTargetCatalogVersion`；旧 key-only 或目录不匹配记录不得自动补默认值，必须失败关闭；按用户+设备隔离读取待执行命令；App 落地运行配置后回传执行成功/失败与命令版本，闭合上报态—期望态—ACK | 用户令牌绑定设备归属 | K6 |
+| `/api/app/janus/reports` · `/commands/pending` · `/commands/ack` | POST/GET/POST | **Sandbox executor / 签名回执 / ACK Mock COMPLETE**：登录用户设备上报、命令租约/围栏、应用证明与 ACK 闭环；无真机阶段仅允许 `test/acceptance/local-sandbox` 的 allowlist executor 生成带 `SANDBOX` 来源的回执。production 无 native attestation 时保持 HOLD，绝不回落模拟成功 | 用户令牌绑定设备归属 + executor claim | K6 |
 
 ### 域 L — 数据 BI(无高敏处置权,唯一升 MC=含敏感/超 rowCap 导出)
 
@@ -711,8 +727,8 @@
 | `capacitySubsidyDays` | 30 天 | ≥ 0；仅以 server 时钟控制标注，不进入收益公式 | 实时 | E3 |
 | 任务锁定月度损失阈值 | S1 / Pro / Rack 三档，以 E3 当前持久值为准 | ≥ 0 USDT；0 表示不展示 | 实时 | E3 |
 | `salvagePct / minHoldingMonths / degrade* / minEfficiency` | **退役** | 禁止运行时读取或写入 | — | E3 |
-| `eligibility[kind]`(购买资格配置) | S1=open;Pro=any-of(own S1/V≥2/累计≥$1000/trade-in S1);Rack P1=any-of(own Pro/V≥4/≥$5000/trade-in Pro) | 9 类规则组 | 当前用于 E1 上架前置；用户成交授权 HOLD | E3 / E1 |
-| `eligibility[Gen-2]`(Pro v2/Rack P2) | **待补录**（空值时 E1 上架阻断；用户成交授权 HOLD，见第7章 #9） | 9 类规则组 | E1 上架实时；用户成交授权 HOLD | E3 / E1 |
+| `eligibility[kind]`(E3 九类通用购买资格配置) | S1=open;Pro=any-of(own S1/V≥2/累计≥$1000/trade-in S1);Rack P1=any-of(own Pro/V≥4/≥$5000/trade-in Pro) | 9 类规则组 | **HOLD**：仅未来编辑器/运行时映射；不覆盖当前 E1 `purchaseGate` 成交授权 | E3 |
+| `purchaseGate[Gen-2]`(Pro v2/Rack P2) | **COMPLETE**：Pro v2 V≥2 / Rack P2 V≥4；仅为空时启动补种，PC E1 可调整；`quotaPeriod` 仅 `lifetime`，旧 `month` 为 HOLD 且不可保存 | E1 结构化购买门 | 用户查询与所有新成交入口实时复验 | E1 + App order/trade-in |
 | `promo.{enabled,cooldownHours,maxPerSession,delayMs}` | true / 24 / 1 / 1500 | — | 实时 | E3 |
 | `promo.triggerWhen.minDeviceAgeDays` | 30 | ≥ 0 | 实时 | E3 |
 | `inventory.softMax` | 0(禁用) | ≥ 0 | 实时(超阈仅告警) | E3 |
@@ -1020,7 +1036,7 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | 6 | `commission.paid` 的 `kind` 命名 `network` vs `unilevel` 二选一未定(前端 §12.5 用 unilevel) | F2/F3/F4/F5/F4d | **V2 A4 注册 blocking**:F5⑧/F4d⑧ 不能定稿 | 对齐前端 + A4 | v2 §F5⑧ |
 | 7 | 排行榜派奖事件 `leaderboard.prize_paid` vs 复用 `commission.paid(kind=leaderboard_prize)` 未定 | F5 / F4d | V2:避免非佣金派发混入 commission 语义 | 对齐前端 + A4 | v2 §F5⑧/F4d⑧ |
 | 8 | `cumulativeDepositUsdt` 退款逆向核减写权归属未确认(E4 拟 D4 recordDeposit(-amount),D1⑦ 仅定义正向) | E4 / D1 / D4 | **V2 落地阻断**:E4 不可单方声明 D4 写行为 | 对齐 D1/D4 | v2 §E4⑤⑦ |
-| 9 | Gen-2 SKU(Pro v2 / Rack P2) eligibility 待补录（当前空值由 E1 上架前置校验阻断；用户成交授权 HOLD） | E3 / E1 | **阻塞**：代际发布门打开前必须完成；按用户的成交资格须另行覆盖全部询价/下单入口后验收 | PM 补录 + 服务端成交授权闭环 | v2 §E3③④ / §E1⑤ |
+| 9 | ✅ Gen-2 当前购买资格已以 E1 `purchaseGate` 闭环；E3 九类 eligibility 仅作未来扩展 | E3 / E1 | 已闭环：Pro v2 V≥2、Rack P2 V≥4；查询、普通/组合/Sandbox 下单、Trade-in 与容量替换均服务端复验 | 2026-08-16 已决 | v2 §E3③④ / §E1⑤ |
 | 10 | Cloud Share Premium(§3.3 月 10 新品)SKU 治理(独立 SKU vs 原地 tier 升级)未定 | E1 / E1 | 阻塞:当前 7 管理对象未涵盖,落地路径分叉 | PM | v2 §E1① |
 | 11 | Day-One quest 改窗对在窗用户相位语义二选一未落地(方案 A per-instance 快照 vs 方案 B 全局即时重算) | H3 | 开发:须二选一定接口契约(是否持久化窗快照) | PM / 开发 | v3 §H3⑦ |
 | 12 | `MAX_DEVICES` 是否参数化开放未定(V2 写死=6) | E5 | 不阻塞 V2;V4 评估 | PM(V4) | v2 §E5③ |

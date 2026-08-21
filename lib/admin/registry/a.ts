@@ -46,6 +46,11 @@ export const DOMAIN_A: ModuleEntry[] = [
     summary: "权限字典(A8):全平台权限码(READ/WRITE/HIGH)只读浏览。按域/类型筛选 + 搜索 + 分页,查看每个权限点所属菜单、是否放大资金流出、已绑定角色数。权限码本身由 seed 维护,本页不增删。",
     content: PORTED_EMPTY_CONTENT,
   },
+  {
+    path: "/platform/developer-access",
+    summary: "开发者访问审批(A9):分页读取服务端申请，批准、驳回和撤销均带 expectedStatus、备注与 Idempotency-Key；状态机、数据范围、CAS 和审计以服务端为准。",
+    content: PORTED_EMPTY_CONTENT,
+  },
 ];
 
 export default DOMAIN_A;

@@ -20,6 +20,7 @@ export interface PurchaseGate {
   mode: "all" | "either";
   quotaCap?: number;
   quotaSold?: number;
+  /** Legacy `month` is retained only so old backend rows can be shown as HOLD. */
   quotaPeriod?: "month" | "lifetime";
   enforce: boolean;
 }
@@ -35,6 +36,10 @@ export interface OpsSku {
   hashRate?: string;
   power?: string;
   datacenter?: string;
+  uptime?: string;
+  warranty?: string;
+  phoneDailyEarn?: number;
+  phoneDailyEarnNEX?: number;
   price: number;
   dailyEarn: number;
   dailyEarnNEX: number;

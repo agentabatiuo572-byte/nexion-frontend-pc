@@ -23,7 +23,7 @@ import {
   fetchE1Catalog,
   type E1GenerationGateData,
 } from "@/lib/admin/e1-client";
-import { fetchE2PhoneTiers, fetchE2TaskPricing, fetchE2Tasks, type E2PhoneTier, type E2TaskPricingSnapshot } from "@/lib/admin/e2-client";
+import { fetchE2PhoneTiers, fetchE2TaskPricing, fetchE2Tasks, type E2PhoneTier, type E2TaskPricingSnapshot, type E2YieldComparison } from "@/lib/admin/e2-client";
 import { fetchE3Snapshot, type E3OperationMetric, type E3Stats } from "@/lib/admin/e3-client";
 import { fetchE4OrderDetail, fetchE4OrderPage, type E4OrderDetail } from "@/lib/admin/e4-client";
 import {
@@ -99,10 +99,22 @@ const DC_STATUS_OPTIONS: { value: DatacenterForm["status"]; label: string }[] = 
   { value: "disabled", label: "已禁用" },
 ];
 
-const E2_MUTATION_OPS = new Set<EOp>(["task-create", "task-down", "task-price", "task-save", "phone-tier"]);
+const E2_TASK_MUTATION_OPS = new Set<EOp>(["task-create", "task-down", "task-price", "task-save"]);
+const E2_CONFIG_MUTATION_OPS = new Set<EOp>(["phone-tier", "yield-comparison"]);
 
-function isE2Mutation(op: EOp) {
-  return E2_MUTATION_OPS.has(op);
+function isE2TaskMutation(op: EOp) {
+  return E2_TASK_MUTATION_OPS.has(op);
+}
+
+function isE2ConfigMutation(op: EOp) {
+  return E2_CONFIG_MUTATION_OPS.has(op);
+}
+
+function normalizePositiveDecimal18x6(value: unknown): string | null {
+  const normalized = String(value ?? "").trim();
+  if (!/^(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/.test(normalized)) return null;
+  const numeric = Number(normalized);
+  return Number.isFinite(numeric) && numeric > 0 ? normalized : null;
 }
 
 function fileExt(name: string) {
@@ -349,31 +361,51 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   // ── E2 任务引擎:服务端数据为单一来源 ──
   const [tasks, setTasks] = useState<OpsTask[]>([]);
   const [phoneTiers, setPhoneTiers] = useState<E2PhoneTier[]>([]);
+  const [yieldComparisons, setYieldComparisons] = useState<E2YieldComparison[]>([]);
   const [e2Pricing, setE2Pricing] = useState<E2TaskPricingSnapshot | null>(null);
   const [e2Loading, setE2Loading] = useState(false);
   const [e2Error, setE2Error] = useState<string | null>(null);
+  const [e2TaskCatalogReady, setE2TaskCatalogReady] = useState(false);
   const canMutateE2 = canWriteE2 && !e2Loading && !e2Error && !!e2Pricing;
+  const canMutateE2Tasks = canWriteE2 && !e2Loading && e2TaskCatalogReady;
   useEffect(() => {
-    if (!canMutateE2) setActionConfirm((current) => current && isE2Mutation(current.op) ? null : current);
-  }, [canMutateE2]);
+    setActionConfirm((current) => {
+      if (current && isE2TaskMutation(current.op) && !canMutateE2Tasks) return null;
+      if (current && isE2ConfigMutation(current.op) && !canMutateE2) return null;
+      return current;
+    });
+  }, [canMutateE2, canMutateE2Tasks]);
   const refreshE2 = useCallback(async () => {
     setE2Loading(true);
     setE2Error(null);
-    try {
-      const [nextTasks, nextPhoneTiers, nextPricing] = await Promise.all([
-        fetchE2Tasks(), fetchE2PhoneTiers(), fetchE2TaskPricing(),
-      ]);
-      setTasks(nextTasks);
-      setPhoneTiers(nextPhoneTiers);
-      setE2Pricing(nextPricing);
-    } catch (error) {
-      setE2Error(displayAdminError(error));
+    const [tasksResult, phoneResult, pricingResult] = await Promise.allSettled([
+      fetchE2Tasks(), fetchE2PhoneTiers(), fetchE2TaskPricing(),
+    ]);
+    const errors: string[] = [];
+    if (tasksResult.status === "fulfilled") {
+      setTasks(tasksResult.value);
+      setE2TaskCatalogReady(true);
+    } else {
       setTasks([]);
-      setPhoneTiers([]);
-      setE2Pricing(null);
-    } finally {
-      setE2Loading(false);
+      setE2TaskCatalogReady(false);
+      errors.push(`任务目录：${displayAdminError(tasksResult.reason)}`);
     }
+    if (phoneResult.status === "fulfilled") {
+      setPhoneTiers(phoneResult.value.tiers);
+      setYieldComparisons(phoneResult.value.comparisons);
+    } else {
+      setPhoneTiers([]);
+      setYieldComparisons([]);
+      errors.push(`手机档位：${displayAdminError(phoneResult.reason)}`);
+    }
+    if (pricingResult.status === "fulfilled") {
+      setE2Pricing(pricingResult.value);
+    } else {
+      setE2Pricing(null);
+      errors.push(`任务定价：${displayAdminError(pricingResult.reason)}`);
+    }
+    setE2Error(errors.length ? errors.join("；") : null);
+    setE2Loading(false);
   }, []);
   useEffect(() => { if (tab === "E1" || tab === "E2") void refreshE2(); }, [tab, refreshE2]);
 
@@ -738,12 +770,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     return false;
   };
   const openAddTask = () => {
-    if (!canMutateE2) return rejectE2Mutation();
+    if (!canMutateE2Tasks) return rejectE2Mutation();
     setEditTaskId(null); setTaskForm({ n: "", price: "", req: "", unit: "", sat: "", taskClass: "", model: "", minReward: "", maxReward: "", minVRAM: "", killInit: "" }); setTaskDrawer(true);
   };
   // 编辑任务:把任务字段回填到抽屉全字段。
   const openEditTask = (t: OpsTask) => {
-    if (!canMutateE2) return rejectE2Mutation();
+    if (!canMutateE2Tasks) return rejectE2Mutation();
     setTaskForm({
       n: t.n, price: String(t.price), req: t.req, unit: t.unit, sat: t.sat == null ? "" : String(Math.round(t.sat * 100)),
       taskClass: t.taskClass || "", model: t.model || "",
@@ -754,7 +786,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     setTaskDrawer(true);
   };
   const submitTask = () => {
-    if (!canMutateE2) return rejectE2Mutation();
+    if (!canMutateE2Tasks) return rejectE2Mutation();
     const err = validateTaskForm();
     if (err) { setToast(err); return; }
     openActionConfirm({ name: "新增任务 · " + taskForm.n.trim(), op: "task-create", detail: `新增任务「${taskForm.n.trim()}」全字段(单价 / 资格门槛 / taskClass / 代表模型 / 奖励区间 / minVRAM / kill 初始态)· server-canonical · 进入 A2 待确认队列,批准后对新派单生效。` });
@@ -762,7 +794,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   };
   // 编辑提交:校验后走操作确认(高敏 · 改单价/门槛/taskClass server-canonical)→ onConfirm 真写 updateTask。
   const submitTaskEdit = () => {
-    if (!canMutateE2) return rejectE2Mutation();
+    if (!canMutateE2Tasks) return rejectE2Mutation();
     const err = validateTaskForm();
     if (err) { setToast(err); return; }
     openActionConfirm({ name: "编辑任务 · " + taskForm.n.trim(), op: "task-save", detail: `编辑任务「${taskForm.n.trim()}」全字段(单价 / 资格门槛 / taskClass / 代表模型 / 奖励区间 / minVRAM / kill 初始态)· server-canonical,改后对新派单生效,已派工单维持原配置完成 · 须操作确认。` });
@@ -778,7 +810,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       return id && id !== sku.name ? `${sku.name}(${id})` : sku.name;
   });
   const delTask = (t: { id: string; n: string }) => {
-    if (!canMutateE2) return rejectE2Mutation();
+    if (!canMutateE2Tasks) return rejectE2Mutation();
     const refSkus = skuLabelsUsingTask(t.id, t.n);
     if (refSkus.length > 0) {
       setToast(`任务无法下架:${t.n} 正在被 E1 SKU 使用:${refSkus.join("、")}。请先到 E1 修改这些 SKU 的解锁算力池。`);
@@ -961,7 +993,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const ctx: EViewCtx = {
     pE, openActionConfirm, toast: setToast,
     canWriteE1: canUseE1Writes, skus, e1Loading, e1Error, e1Gates, phaseCur, refreshE1, openSku, delSku,
-    canWriteE2, tasks, phoneTiers, e2Pricing, e2Loading, e2Error, refreshE2, openAddTask, openEditTask, delTask,
+    canWriteE2, tasks, phoneTiers, yieldComparisons, e2Pricing, e2Loading, e2Error, e2TaskCatalogReady, refreshE2, openAddTask, openEditTask, delTask,
     canWriteE3, e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
     canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4Page, e4PageSize, e4Total, e4Filter, e4Keyword, setE4Page, setE4PageSize, setE4Filter, setE4Keyword, refreshE4, orderState, isCancelled, isRefunded, terminalOf, openOrder,
     canWriteE5, canForceActivateE5, canUnbindE5, canPauseDcE5,
@@ -1028,7 +1060,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const headerRight =
     tab === "E1" ? (canUseE1Writes ? <button className="f-cta" onClick={() => openSku()}>+ 新增 SKU</button> : undefined)
-      : tab === "E2" ? (canMutateE2 ? <button className="f-cta" onClick={openAddTask}>+ 新增任务</button> : undefined)
+      : tab === "E2" ? (canMutateE2Tasks ? <button className="f-cta" onClick={openAddTask}>+ 新增任务</button> : undefined)
         : tab === "E3" ? <button className="f-cta manual" onClick={() => setManualOpen(true)}><Icon name="doc" size={15} /> 操作说明手册</button>
           : undefined;
 
@@ -1199,6 +1231,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 {skuDatacenterOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
+            <div className="grid g-2" style={{ gap: 12 }}>
+              <SkuFld label="在线率 SLA uptime" value={form.uptime} onChange={(v) => setForm({ ...form, uptime: v })} placeholder="99.9%" />
+              <SkuFld label="质保 warranty" value={form.warranty} onChange={(v) => setForm({ ...form, warranty: v })} placeholder="24 months" />
+            </div>
           </SkuFieldGroup>
 
           <SkuFieldGroup n="③" title={form.tier === "Share" ? "收益参数(年化 + NEX)" : "收益参数(双币)"}>
@@ -1206,6 +1242,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               <div className="grid g-2" style={{ gap: 12 }}>
                 <SkuFld label="日产 USDT" type="number" value={form.dailyEarn} onChange={(v) => setForm({ ...form, dailyEarn: v })} placeholder="38.50" />
                 <SkuFld label="日产 NEX" type="number" value={form.dailyEarnNEX} onChange={(v) => setForm({ ...form, dailyEarnNEX: v })} placeholder="65" />
+                <SkuFld label="手机日产 USDT" type="number" min={0} step={0.000001} value={form.phoneDailyEarn} onChange={(v) => setForm({ ...form, phoneDailyEarn: v })} placeholder="0.06" hint="可留空，服务端缺值则 App 显示不可用" />
+                <SkuFld label="手机日产 NEX" type="number" min={0} step={0.000001} value={form.phoneDailyEarnNEX} onChange={(v) => setForm({ ...form, phoneDailyEarnNEX: v })} placeholder="10" hint="可留空，服务端缺值则 App 显示不可用" />
               </div>
             ) : (
               <>
@@ -1297,9 +1335,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               <label className="col" style={{ gap: 5 }}>
                 <span className="muted tiny">锁额周期 quotaPeriod</span>
                 <select className="fld" value={form.gateQuotaPeriod} onChange={(e) => setForm({ ...form, gateQuotaPeriod: e.target.value as SkuForm["gateQuotaPeriod"] })}>
-                  <option value="month">按月</option>
                   <option value="lifetime">全生命周期</option>
                 </select>
+                {form.gateQuotaPeriod === "month" && <span className="muted tiny">历史按月配置已暂停(HOLD),请改为全生命周期后保存</span>}
               </label>
               <label className="col" style={{ gap: 5 }}>
                 <span className="muted tiny">锁额售罄策略 enforce</span>
@@ -1325,7 +1363,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
       {/* 任务新增 抽屉 */}
       {taskDrawer && <Drawer title={editTaskId ? "编辑任务" : "新增任务"} sub={<AutoGloss>{editTaskId ? "编辑全字段 · 单价/门槛/taskClass 改后走操作确认 · 对新派单 server-canonical 生效" : "AI 算力任务类型 · 单价/门槛改后对新派单 server-canonical 生效"}</AutoGloss>} onClose={() => { setTaskDrawer(false); setEditTaskId(null); }}
-        footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setTaskDrawer(false); setEditTaskId(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!canMutateE2 || !taskForm.n.trim() || !Number(taskForm.price)} onClick={editTaskId ? submitTaskEdit : submitTask}>{editTaskId ? "保存修改" : "提交新增"}</Btn></>}>
+        footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setTaskDrawer(false); setEditTaskId(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!canMutateE2Tasks || !taskForm.n.trim() || !Number(taskForm.price)} onClick={editTaskId ? submitTaskEdit : submitTask}>{editTaskId ? "保存修改" : "提交新增"}</Btn></>}>
         <div className="col" style={{ gap: 12 }}>
           <label className="col" style={{ gap: 5 }}><span className="muted tiny">任务名称</span><input className="fld" value={taskForm.n} onChange={(e) => setTaskForm({ ...taskForm, n: e.target.value })} placeholder="如 LLM 推理 405B" /></label>
           <div className="grid g-2" style={{ gap: 12 }}>
@@ -1404,7 +1442,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         onClose={() => setActionConfirm(null)}
         onConfirm={async (reason, newValue, businessValue) => {
           if (!mc) return;
-          if (isE2Mutation(mc.op) && !canMutateE2) {
+          if (isE2TaskMutation(mc.op) && !canMutateE2Tasks) {
+            setToast("E2 权威快照不可用，已取消本次配置提交");
+            setActionConfirm(null);
+            return;
+          }
+          if (isE2ConfigMutation(mc.op) && !canMutateE2) {
             setToast("E2 权威快照不可用，已取消本次配置提交");
             setActionConfirm(null);
             return;
@@ -1500,15 +1543,43 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               });
               setEditTaskId(null);
             } else if (mc.op === "phone-tier" && mc.phoneTier && mc.phoneField) {
-              const v = Number(newValue);
-              if (!(Number.isFinite(v) && v > 0)) { setToast("请填写有效档位收益"); return; }
+              const v = normalizePositiveDecimal18x6(newValue);
+              if (!v) { setToast("收益必须为正数，且最多 12 位整数、6 位小数"); return; }
               const def = findHighOp("e2_phone_tier")!;
-              const tierCtx = { tier: mc.phoneTier, dailyUsdt: mc.phoneField === "dailyUsdt" ? v : undefined, dailyNex: mc.phoneField === "dailyNex" ? v : undefined };
+              const currentTier = phoneTiers.find((row) => row.tier === mc.phoneTier);
+              if (!currentTier) { setToast("手机档位配置已刷新，请重试"); return; }
+              const tierCtx = { tier: mc.phoneTier, expectedRevision: currentTier.revision,
+                dailyUsdt: mc.phoneField === "dailyUsdt" ? v : undefined,
+                dailyNex: mc.phoneField === "dailyNex" ? v : undefined };
               await propose(ctx.toast, {
-                action: mc.name, obj: String(mc.phoneTier), before: String(v), after: String(v), type: def.type, amplifies: true,
+                action: mc.name, obj: String(mc.phoneTier),
+                before: String(mc.phoneField === "dailyUsdt" ? currentTier.dailyUsdt : currentTier.dailyNex),
+                after: v, type: def.type, amplifies: true,
                 gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E2",
                 command: def.buildCommand(tierCtx),
                 target: def.buildTarget(tierCtx),
+              });
+            } else if (mc.op === "yield-comparison" && mc.comparisonKey && mc.comparisonField) {
+              const isLabel = mc.comparisonField === "label";
+              const labelValue = String(newValue ?? "").trim();
+              const numericValue = normalizePositiveDecimal18x6(newValue);
+              if ((isLabel && !labelValue) || (!isLabel && !numericValue)) {
+                setToast(isLabel ? "请填写配置名称" : "收益必须为正数，且最多 12 位整数、6 位小数"); return;
+              }
+              const def = findHighOp("e2_phone_tier")!;
+              const comparison = yieldComparisons.find((row) => row.configKey === mc.comparisonKey);
+              if (!comparison) { setToast("收益对比配置已刷新,请重试"); return; }
+              const comparisonCtx = {
+                configKey: comparison.configKey,
+                expectedRevision: comparison.revision,
+                label: isLabel ? labelValue : comparison.label,
+                dailyUsdt: mc.comparisonField === "dailyUsdt" ? numericValue! : String(comparison.dailyUsdt),
+                dailyNex: mc.comparisonField === "dailyNex" ? numericValue! : String(comparison.dailyNex),
+              };
+              await propose(ctx.toast, {
+                action: mc.name, obj: comparison.configKey, before: `${comparison.dailyUsdt} USDT / ${comparison.dailyNex} NEX`, after: `${comparisonCtx.dailyUsdt} USDT / ${comparisonCtx.dailyNex} NEX`, type: def.type, amplifies: true,
+                gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E2",
+                command: def.buildCommand(comparisonCtx), target: def.buildTarget(comparisonCtx),
               });
             } else if (mc.op === "param" && mc.paramKey) {
               const v = (newValue ?? "").trim();

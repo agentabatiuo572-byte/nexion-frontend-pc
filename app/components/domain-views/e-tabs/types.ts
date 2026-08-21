@@ -1,6 +1,6 @@
 import type { BusinessFormSpec, EditSpec } from "../design-kit";
 import type { E1GenerationGateData, E1GenerationGateInput } from "@/lib/admin/e1-client";
-import type { E2PhoneTier, E2TaskPricingSnapshot } from "@/lib/admin/e2-client";
+import type { E2PhoneTier, E2TaskPricingSnapshot, E2YieldComparison } from "@/lib/admin/e2-client";
 import type { E3OperationMetric, E3Stats } from "@/lib/admin/e3-client";
 import type { E5Datacenter, E5DatacenterStatus, E5Device, E5Overview } from "@/lib/admin/e5-client";
 import type { E6ComputeConfigView } from "@/lib/admin/e6-client";
@@ -22,6 +22,7 @@ export type EOp =
   | "task-save"       // 任务全参数编辑(抽屉读 taskForm)→ E2 后端 API
   | "task-create"     // 新增任务(原 submitTask 直调,批6 补 modal)→ E2 后端 API
   | "phone-tier"      // 手机算力档位收益 → E2 后端 API
+  | "yield-comparison" // Onboarding 收益对比 → E2 后端 API
   | "param"           // 自由值调参 → E1/E3 后端配置接口;未接后端的 key 直接失败,不写本地 store
   | "param-multi"     // 多字段调参 → businessForm:{kind:"multi-field"} + paramKeys[];逐字段写后端 config
   | "early-access"    // E1 置换侧抢先购专用命令（权限/审计归 E1）
@@ -68,6 +69,8 @@ export interface McSpec {
   taskId?: string;          // task-price:目标任务 id
   phoneTier?: number;
   phoneField?: "dailyUsdt" | "dailyNex";
+  comparisonKey?: string;
+  comparisonField?: "label" | "dailyUsdt" | "dailyNex";
   phaseId?: string;
   generationGateId?: string;
   generationGate?: E1GenerationGateInput;
@@ -111,9 +114,11 @@ export interface EViewCtx {
   canWriteE2: boolean;
   tasks: OpsTask[];
   phoneTiers: E2PhoneTier[];
+  yieldComparisons: E2YieldComparison[];
   e2Pricing: E2TaskPricingSnapshot | null;
   e2Loading: boolean;
   e2Error: string | null;
+  e2TaskCatalogReady: boolean;
   refreshE2: () => Promise<void>;
   openAddTask: () => void;
   openEditTask: (t: OpsTask) => void;        // 编辑任务全字段(预填抽屉)

@@ -12,25 +12,28 @@ test("App trust center renders only the public server snapshot and fails visibly
   const api = read(appRoot, "src/api/trust-section-api.ts");
   const runtime = read(appRoot, "src/api/runtime.ts");
   const page = read(appRoot, "src/pages/trust/trust.vue");
+  const publishedTrust = read(appRoot, "src/composables/use-published-trust.ts");
+  const zh = read(appRoot, "src/i18n/messages/zh.ts");
 
   assert.match(api, /path:\s*"\/api\/content\/trust\/sections\/current"[\s\S]*authenticated:\s*false/);
   assert.match(api, /path:\s*`\/api\/content\/trust\/sections\/\$\{encodeURIComponent\(validSectionKey\(sectionKey\)\)\}\/view`/);
   assert.match(api, /TRUST_SECTION_DUPLICATE/);
   assert.match(api, /TRUST_SECTION_FIELD_DUPLICATE/);
-  assert.match(runtime, /export const trustSectionApi = createTrustSectionApi\(apiClient\)/);
-  assert.match(page, /await trustSectionApi\.current\(\)/);
+  assert.match(runtime, /export const trustSectionApi = createTrustSectionApi\(apiClient, expectedApiEnvironment\)/);
+  assert.match(page, /usePublishedTrust\(\)/);
+  assert.match(publishedTrust, /trustSectionApi\.current\(\)/);
   assert.doesNotMatch(page, /SECTION_META|FIELD_LABELS/);
   assert.match(api, /description:\s*text\(row\.description\)/);
   assert.match(api, /structure:\s*text\(row\.structure\)/);
-  assert.match(page, /\{\s*\.\.\.field,\s*href:\s*safeHref\(field\)\s*\}/);
-  assert.match(page, /trustSectionApi\.recordView\(section\.sectionKey,\s*language\.value\)/);
-  assert.match(page, /void Promise\.allSettled/);
-  assert.match(page, /trust\\\/nex\|market\\\/market/);
+  assert.match(page, /const href = safeHref\(raw\)/);
+  assert.match(page, /recordPublishedTrustViews\(sections\.value\.map/);
+  assert.match(publishedTrust, /void Promise\.allSettled/);
+  assert.ok(page.includes('if (/^\\/pages\\/[A-Za-z0-9/_-]+$/.test(value)) return value;'));
   assert.match(page, /!parsed\.username\s*&&\s*!parsed\.password/);
-  assert.match(page, /plusRuntime\.openURL\(href\)/);
-  assert.match(page, /pageCopy\.value\.openFailed/);
-  assert.match(page, /v-else-if="error"/);
-  assert.match(page, /页面不会用本地旧内容冒充最新事实/);
+  assert.match(page, /runtime\.openURL\(href\)/);
+  assert.match(page, /t\.value\.trust\.openFailed/);
+  assert.match(page, /v-else-if="hasError"/);
+  assert.match(zh, /页面不会用本地旧内容冒充最新事实/);
   assert.doesNotMatch(page, /\$4\.87M|Marina K\.|Bybit|CertiK/);
 });
 

@@ -35,6 +35,8 @@ import { STANDBY_POOL_LABEL, type AdvisorScript, type SessionConvo, type Session
 import { MAvatar, ownerLabel } from "./m-tabs/hd-ui";
 import type { ConfirmReq, MCtx, ActionConfirmReq } from "./m-tabs/types";
 import { containsConversationMessage } from "./m-sse-dedup";
+import { shouldSendOnEnter } from "@/lib/keyboard-submit";
+import { fetchMSupportAcceptanceProof } from "@/lib/admin/m-support-acceptance-sandbox";
 
 /**
  * M 域两类写入的命令号共用一张表,靠 fingerprint 前缀分命名空间:
@@ -1008,11 +1010,31 @@ function dockRelWhen(ts: number): string {
 function SessionDock({ ctx, hidden }: { ctx: MCtx; hidden: boolean }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [acceptanceMode, setAcceptanceMode] = useState<"loading" | "sandbox" | "production" | "blocked">("loading");
+  const sendInFlight = useRef(false);
+  const authorities = useAdminAuth((state) => state.session?.authorities);
+  const currentRole = useAdminAuth((state) => state.session?.role ?? state.role);
   const lastId = ctx.pget(DOCK_LAST_KEY);
   const convos = useMemo(() => dockParseConvos(ctx.pget(DOCK_CONVO_KEY)), [ctx.params]);
   const conv = convos.find((c) => c.id === lastId) ?? null;
   const open = ctx.pget(DOCK_OPEN_KEY) === "1";
   const offFor = ctx.pget(DOCK_OFF_KEY);
+  const isSuperAdmin = currentRole === "super" || currentRole === "superadmin";
+  const canWriteM3 = isSuperAdmin || Boolean(authorities?.includes("service_m3_write"));
+  const conversationsAvailable = ctx.pget("I.session.conversationsAvailable") === "1";
+  const canWrite = acceptanceMode === "production" && canWriteM3 && conversationsAvailable;
+
+  useEffect(() => {
+    if (hidden) {
+      setAcceptanceMode("loading");
+      return;
+    }
+    let active = true;
+    void fetchMSupportAcceptanceProof()
+      .then((proof) => { if (active) setAcceptanceMode(proof ? "sandbox" : "production"); })
+      .catch(() => { if (active) setAcceptanceMode("blocked"); });
+    return () => { active = false; };
+  }, [hidden]);
 
   // M3 在台 / 无活跃会话 / 已被关闭(且仍是同一会话)→ 不显
   if (hidden || !conv || (offFor && offFor === lastId)) return null;
@@ -1021,7 +1043,8 @@ function SessionDock({ ctx, hidden }: { ctx: MCtx; hidden: boolean }) {
   const closeDock = () => ctx.setParam(DOCK_OFF_KEY, conv.id, { action: "持续接待 dock 关闭", reason: "ui-state" });
   const send = async () => {
     const text = draft.trim();
-    if (!text || sending) return;
+    if (!text || !canWrite || sendInFlight.current) return;
+    sendInFlight.current = true;
     const now = Date.now();
     const next = convos.map((c) =>
       c.id === conv.id
@@ -1038,12 +1061,14 @@ function SessionDock({ ctx, hidden }: { ctx: MCtx; hidden: boolean }) {
       const succeeded = await ctx.setParam(DOCK_CONVO_KEY, JSON.stringify(next), {
         action: `坐席回复会话 ${conv.id} · admin.conversation_replied`,
         reason: "持续接待 dock 回复(正文已留档)",
+        commandKey: `m3:reply:${conv.id}:${text}`,
       });
       if (succeeded) {
         setDraft("");
         ctx.toast(`${conv.id} 已回复`);
       }
     } finally {
+      sendInFlight.current = false;
       setSending(false);
     }
   };
@@ -1116,12 +1141,18 @@ function SessionDock({ ctx, hidden }: { ctx: MCtx; hidden: boolean }) {
           data-proof="session-dock-reply"
           rows={1}
           value={draft}
+          aria-label={`回复会话 ${conv.id}`}
+          disabled={!canWrite || sending}
           onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); } }}
-          placeholder="边处理边回复… ⌘/Ctrl+Enter"
+          onKeyDown={(e) => {
+            if (!shouldSendOnEnter(e)) return;
+            e.preventDefault();
+            void send();
+          }}
+          placeholder="边处理边回复… · Enter 发送 · Shift+Enter 换行"
           style={{ maxHeight: 80 }}
         />
-        <button type="button" className="btn btn-pri btn-sm" disabled={!draft.trim() || sending} onClick={() => void send()}><Icon name="arrow" size={16} /></button>
+        <button type="button" className="btn btn-pri btn-sm" aria-label="发送会话回复" disabled={!canWrite || !draft.trim() || sending} onClick={() => void send()}><Icon name="arrow" size={16} /></button>
       </div>
     </div>
   );

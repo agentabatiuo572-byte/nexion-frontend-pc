@@ -1,13 +1,13 @@
 export type TrustSectionFieldInput = { key: string; label?: string; value: string };
 
-const LOCALIZED_FIELD = /^(.+?)[._-](zh|vi)$/i;
+const LOCALIZED_FIELD = /^(.+?)[._-](zh|vi|en)$/i;
 
 export function isOptionalTrustLinkField(key: string): boolean {
   const normalized = key.trim().toLowerCase();
   return normalized.endsWith("url") || normalized.endsWith("href");
 }
 
-export function validateTrustSectionBilingualFields(fields: TrustSectionFieldInput[]): {
+export function validateTrustSectionTrilingualFields(fields: TrustSectionFieldInput[]): {
   valid: boolean;
   missing: string[];
 } {
@@ -21,8 +21,8 @@ export function validateTrustSectionBilingualFields(fields: TrustSectionFieldInp
     languagesByFamily.set(family, languages);
   }
   const missing = Array.from(languagesByFamily.entries())
-    .filter(([, languages]) => !languages.has("zh") || !languages.has("vi"))
+    .filter(([, languages]) => !languages.has("zh") || !languages.has("vi") || !languages.has("en"))
     .map(([family]) => family);
-  if (languagesByFamily.size === 0) missing.push("至少一组 .zh/.vi 字段");
+  if (languagesByFamily.size === 0) missing.push("至少一组 .zh/.vi/.en 字段");
   return { valid: missing.length === 0, missing };
 }

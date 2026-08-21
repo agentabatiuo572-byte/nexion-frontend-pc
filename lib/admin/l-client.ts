@@ -1,5 +1,9 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import {
+  l6UnavailableStateFromError,
+  l6UnavailableStateFromFailures,
+} from "@/lib/admin/l6-runtime-state";
 import { assertL3FinanceContract, assertL3TreasurySnapshot } from "@/lib/admin/l3-finance-contract";
 import { assertL5OverviewContract, CURRENT_L5_REPORT_TYPES } from "@/lib/admin/l5-overview-contract";
 
@@ -178,7 +182,9 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const text = await res.text();
   const payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
-    throw new Error(formatAdminApiError(payload.message, `BI_API_${res.status}`));
+    const error = new Error(formatAdminApiError(payload.message, `BI_API_${res.status}`)) as Error & { code?: string };
+    error.code = payload.message;
+    throw error;
   }
   return payload.data as T;
 }
@@ -411,10 +417,24 @@ function l6Query(input: L6BehaviorQuery = {}) {
 
 export async function fetchL6Behavior(input: L6BehaviorQuery = {}): Promise<Record<string, unknown>> {
   const query = l6Query(input);
-  const [behaviorRaw, catalogRaw] = await Promise.all([
+  const [behaviorResult, catalogResult] = await Promise.allSettled([
     apiRequest<unknown>(`/behavior?${query.toString()}`),
     apiRequest<unknown>("/behavior/page-catalog"),
   ]);
+  const results = [behaviorResult, catalogResult];
+  const failures = results
+    .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+    .map((result) => result.reason);
+  if (failures.length > 0) {
+    const unavailable = l6UnavailableStateFromFailures(failures, results.length);
+    if (unavailable) return unavailable;
+    throw failures.find((error) => l6UnavailableStateFromError(error) === null) ?? failures[0];
+  }
+  if (behaviorResult.status !== "fulfilled" || catalogResult.status !== "fulfilled") {
+    throw new Error("L6_REQUEST_STATE_INVALID");
+  }
+  const behaviorRaw = behaviorResult.value;
+  const catalogRaw = catalogResult.value;
   const behavior = rec(behaviorRaw);
   const catalog = rec(catalogRaw);
   const window = (input.window || "7d") as "24h" | "7d" | "30d";

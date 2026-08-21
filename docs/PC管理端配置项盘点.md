@@ -172,7 +172,7 @@
 #### E1 · 商品目录 & 代际门（`/devices/pricing`）
 - **基础类（14 项全 ✅）**：SKU 名称/tagline/badge、tier 档位、gpu/vram/hashRate/power 规格、datacenter 归属、AI 算力指标、aiUnlocks 池关联、features 清单、媒体资源、rating/reviews/sold、supersededBy、reviews 评价管理、tag 标签、阶段表 ph.label/meta/skus、阶段 sortOrder/status/增删
 - **业务类（22 项，21✅ + 1❌）**：
-  - ✅ price 售价 / dailyEarn 日产 USDT / dailyEarnNEX 日产 NEX / shareYield 年化 / baseRate / stock 库存 / status 上下架 / generation 代际 / lifecycle / tradeinDiscount 折扣 / unlockPhase / purchaseGate 资格门（rankMin/activeDirectMin/teamVolumeMin/mode）/ purchaseGate 锁额门（quotaCap/quotaSold/quotaPeriod/enforce）/ 代际门 releaseMonth / phase / phaseOffset / discount / eligibility / forceUnlock / archive / setCurrentPhase
+  - ✅ price 售价 / dailyEarn 日产 USDT / dailyEarnNEX 日产 NEX / shareYield 年化 / baseRate / stock 库存 / status 上下架 / generation 代际 / lifecycle / tradeinDiscount 折扣 / unlockPhase / purchaseGate 资格门（rankMin/activeDirectMin/teamVolumeMin/mode）/ purchaseGate 锁额门（quotaCap/quotaSold/quotaPeriod=enforced lifetime；旧 month 读取显示 HOLD、不可保存，按月原子 usage 计数待后续）/ 代际门 releaseMonth / phase / phaseOffset / discount / eligibility / forceUnlock / archive / setCurrentPhase
   - ❌仅PRD：套餐折扣 ladder（monthlyPrice × installMonths）
 
 #### E2 · 收益 & 任务引擎（`/devices/tasks`）

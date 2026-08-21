@@ -31,10 +31,22 @@ test("platform BFF and client expose structured experience config with CAS", () 
   for (const value of ["homeNewcomerTasksEnabled", "homeWeeklyPromoEnabled", "officialUrl", "textTemplate", "urlTemplate", "expectedVersion", "Idempotency-Key", "PLATFORM_EXPERIENCE_VERSION_CONFLICT"]) {
     assert.match(client, new RegExp(value));
   }
+  assert.match(client, /ExperienceSource = "official" \| "unavailable"/);
+  assert.doesNotMatch(client, /source === "mock"|\["official", "mock", "unavailable"\]/);
   const component = read("app/components/domain-views/a-tabs/a3-config.tsx");
   assert.match(component, /PlatformExperienceConfig/);
   const experience = read("app/components/domain-views/a-tabs/platform-experience-config.tsx");
-  assert.match(experience, /首页新手任务开关/);
-  assert.match(experience, /首页周活动开关/);
+  assert.match(experience, /首页新手任务（只读投影）/);
+  assert.match(experience, /首页周促销（只读投影）/);
+  assert.match(experience, /disabled=\{!canWrite \|\| config\.appDownload\.source === "unavailable"\}/);
+  assert.match(experience, /H3 周促销管理/);
   assert.match(experience, /保存并回读/);
+  assert.doesNotMatch(experience, />mock<|value="mock"/);
+});
+
+test("platform experience parser rejects malformed optional channel fields", () => {
+  const client = read("lib/admin/platform-experience-client.ts");
+  for (const field of ["textTemplate", "urlTemplate", "androidPackage", "iosScheme"]) {
+    assert.match(client, new RegExp(`optionalChannelText\\(channel\\.${field}\\)`));
+  }
 });

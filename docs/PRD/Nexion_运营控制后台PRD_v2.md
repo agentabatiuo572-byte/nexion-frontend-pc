@@ -6,6 +6,18 @@
 > **跨卷 §锚点**:§1.x–§9.x(本后台)指向 **V1 文件**;§13.4 / §9.11x / §6.x / §7.x 指向前端 PRD v3.5 与 12 月节奏表。参数默认值锚 12 月节奏表 §6,前端为现状参考。撰写遵循 `nexion-admin-prd` skill 流水线。
 > **E3 后发裁定（2026-07-21）**：`specs/FEAT-DEV01-task-capacity-schedule.md` 与 `specs/FEAT-DEV02-tradein-ladder.md` 是 E3 当前唯一执行规格，优先于本卷中全部 `degradeEarly/degradeMid/degradeLate/minEfficiency/minHoldingMonths/salvage` 旧字段、旧公式、旧接口与旧 K2 联动描述。旧段落只保留为历史设计背景，不得进入代码、配置、页面、CGM 或验收口径。
 
+> **当前状态合同（2026-08-16）**：状态必须按能力边界读取，不得把 Sandbox/Mock、单一配置页或阶段展示扩大为生产能力。
+>
+> | 能力 | 当前状态 | 允许宣称的范围 | 明确保持 HOLD 的范围 |
+> |---|---|---|---|
+> | Gen-2 E1 `purchaseGate` + App `GET /api/store/purchase-eligibility` | **COMPLETE** | 服务端权威判定；普通单、组合/Sandbox 单、Trade-in 与容量替换均在提交前复验；Pro v2 默认 V≥2、Rack P2 默认 V≥4 | 不得把 E3 九类通用规则编辑器混入该完成项 |
+> | E3 九类通用 eligibility 编辑器 | **HOLD** | 仅保留未来扩展设计，当前不覆盖或旁路 E1 `purchaseGate` | 编辑器 UI、九类规则运行时映射和以其作为成交授权 |
+> | Passkey / Telegram | **Sandbox Mock COMPLETE** | 显式 Sandbox 使用服务端 Mock 身份并显示 Mock 标识 | 生产 WebAuthn/Passkey ceremony 与 Telegram Login Widget verifier |
+> | Janus | **Sandbox executor / 签名回执 / ACK Mock COMPLETE** | 仅 `test/acceptance/local-sandbox` allowlist，回执/证明带 `SANDBOX` 来源 | 实体真机、native attestation、生产 handoff 与真实设备 ACK |
+> | 提现结果未知的核验与放弃 | **COMPLETE** | 服务端先核验 canonical withdrawal；未建单才写 `ABANDONED` tombstone；不取消已提交提现 | 真实银行/链上/PSP 出款仍按生产供应商范围 HOLD |
+>
+> **历史口径说明**：2026-08-15 的旧 HOLD 记录仅代表当日快照，已由本节 2026-08-16 状态合同取代；历史事实不改写，当前执行口径以本节为准。
+
 ## 目录(V2 卷)
 
 | 章 | 标题 | 域 | 状态 |
@@ -35,7 +47,7 @@
 > **本章须在 V2 落地前(非 V4 可拖)完成的阻断性跨域确认项**(列入 §3.14 待补条目并标注 V2 gate 阻断):
 > - **`cumulativeDepositUsdt` 退款核减写路径归属待 D1/D4 对齐确认**:E4 退款核减拟由 D4 账本通过 `recordDeposit(-amount)` 原子写入,但 V1 D1⑦ 仅定义正向充值写路径、D1④ chargeback 仅要求「同步核减」而未指定执行域/函数。**该逆向写权归属须在 V2 落地前与 D1/D4 域对齐确认,E4 不可单方面声明 D4 的写行为**(详见 E4⑤/⑦)。
 > - **`order` domain 扩展申请**:V1 §2.4.3 domain 枚举(21 个)不含 `order`;E4 订单状态机事件依赖该 domain。**V2 sprint 开始即向 A4 申请 `order` domain 扩展(blocking 依赖,不可拖至 V4),并登记为 V2 起始工单**(详见 E4⑧)。
-> - **Gen-2 SKU eligibility 补录**:E3 中 `stellarbox-pro-v2` / `stellarrack-p2` 的购买资格规则须在 E1 代际发布门开放前完成补录(阻断条件,详见 E3b③/④ 与 E1⑤ server gate)。
+> - **Gen-2 当前成交授权已完成**：E1 结构化 `purchaseGate`（Pro v2 默认 V≥2、Rack P2 默认 V≥4）及 App eligibility 查询/服务端复验已闭环；E3 九类通用 eligibility 编辑器仍为后续扩展，不能再作为 Gen-2 当前成交阻断项(详见 E1⑤ / E3b③/④)。
 > - **`MAX_DEVICES` 参数化为条件性待补项**:V2 阶段 `MAX_DEVICES` 为写死常量(hardcode=6),不开放运营调整,**不作为现状补录项进入 §3.14**;**V4 评估参数化后,若 `MAX_DEVICES` 开放运营调整,则权威归 E5 并补入 §3.14**(详见 E5③)。
 >
 > 全章遵循三条贯穿原则(§1.8):**server-canonical**(定价 / 衰减 / salvage / 槽位上限 / minHoldingMonths 全部服务端权威,client 仅 UI cache,§9.11d.2)、**操作确认(Confirm-with-Reason)**(改定价 / 上下架 / 代际发布 / 衰减曲线 / salvage / trade-in 参数等放大转化或影响全站回本的高敏动作一律经业务专属确认弹窗 + 理由必填执行并落 A2 审计,2026-06 操作确认决议)、**埋点优先**(所有商城与设备态势派生自 A4 事件流)。
@@ -49,9 +61,9 @@
 **① 目的 & 对齐**
 设备 SKU 的目录、定价、上下架与库存的统一运营面,是硬件 GMV 收入引擎的源头控制点。对齐前端 §7.1(商品列表 `/store`,6+ SKU 卡片)+ §9.11c.1(Device specs,`GET /api/products/specs` 收敛 `lib/store/index.ts` 的 `baseRate / baseRateNEX / price` 全表)。服务的业务目标:设备销售转化(§1.4 收入来源一·硬件 GMV)、回本叙事与首年 ROI 的全站口径管理、套餐折扣驱动多件购买的客单价提升。**E1 是设备规格的唯一权威源**,被 C1 用户画像 fleet 卡只读引用(§3.14)。
 
-> **现行数据契约(2026-08-15)**：E1 与 UniApp 商城不是两份目录。商品编号、名称、档位、价格、双币日产、库存、销量、销售状态、代际和解锁阶段指针统一以 `nx_product` 为服务端交易真源；发布月份、资格前置、阶段偏移和强制解锁等运营规则由 `nx_admin_device_generation_gate` 管理。PC E1 通过 `/api/admin/devices/skus` 管理商品，UniApp 通过 `/api/store/catalog` 只读投影，询价与下单校验同一商品行。`nx_admin_device_sku` 仅作为兼容扩展表补充数据中心、功耗、AI 展示参数、功能列表、`baseRate` 展示串和媒体引用；历史核心字段不能反向覆盖 `nx_product`，历史 `purchaseGate` 也不再返回 E1 或投影 App。Sandbox 可复制库存以隔离验收写入，但读取时刷新可售项，提交时再次联查当前商品状态。完整编辑、上下架和删除均必须携 `X-Product-Revision`；revision 为 `DATETIME(6)`，任一商品或库存写入都至少单调前进 1 微秒，同秒并发也不能复用旧版本，冲突返回 409。
+> **现行数据契约(2026-08-16)**：E1 与 UniApp 商城不是两份目录。商品编号、名称、档位、价格、双币日产、库存、销量、销售状态、代际和解锁阶段指针统一以 `nx_product` 为服务端交易真源；发布月份、资格前置、阶段偏移和强制解锁等运营规则由 `nx_admin_device_generation_gate` 管理。PC E1 通过 `/api/admin/devices/skus` 管理商品，UniApp 通过 `/api/store/catalog` 只读投影，询价与下单校验同一商品行。`nx_admin_device_sku` 仅作为兼容扩展表补充数据中心、功耗、AI 展示参数、功能列表、`baseRate` 展示串、媒体引用与结构化 `purchaseGate`；历史核心字段不能反向覆盖 `nx_product`。Sandbox 可复制库存以隔离验收写入，但读取时刷新可售项，提交时再次联查当前商品状态。完整编辑、上下架和删除均必须携 `X-Product-Revision`；revision 为 `DATETIME(6)`，任一商品或库存写入都至少单调前进 1 微秒，同秒并发也不能复用旧版本，冲突返回 409。
 
-> **销售状态与发布阶段必须分离**：当前 SKU API 的销售状态只接受 `on / off / pending`，`lifecycle` 只表达 `active / legacy`；未发布商品由 `unlockPhase` 和 E1 上架节奏门控制，不能再把 `coming-soon` 混入销售状态。App 的锁定卡只是展示前置；服务端订单阶段复核尚未落地，列入 HOLD，完成前不得把阶段锁定称为服务端授权边界。
+> **销售状态、发布阶段与用户成交资格必须分离**：当前 SKU API 的销售状态只接受 `on / off / pending`，`lifecycle` 只表达 `active / legacy`；未发布商品由 `unlockPhase` 和 E1 上架节奏门控制，不能再把 `coming-soon` 混入销售状态。App 的锁定卡是展示层；Gen-2 用户成交资格已由 E1 `purchaseGate` + 服务端 eligibility 复验闭环。E3 九类通用 eligibility 编辑器仍 HOLD，不得用其 HOLD 状态否定或覆盖 E1 当前完成项。
 
 **② 后台界面**
 SKU 目录管理台,自上而下三区:
@@ -61,7 +73,7 @@ SKU 目录管理台,自上而下三区:
 2. **SKU 详情编辑面**:单 SKU 的价格 / baseRate / baseRateNEX / installMonths / stock 编辑表单 + 派生指标实时回显(回本天数 = round(price / baseRate)、首年净利 = baseRate × 365 − price);改价时高亮「影响全站回本 / ROI」红条 + 确认弹窗 + 理由必填提示(E1a-MD2)。
 3. **套餐折扣 ladder 面**:阶梯折扣配置(4 件 12% / 3 件 8% / 2 件 5%,对齐 §9.11c.1 `GET /api/config/cart/bundle-discount` + 前端 `lib/store/cart.ts`),驱动结算购物车多件购买。
 4. **库存告警视图**:`stock < 50` 的 SKU 以橙色 `NN LEFT` 标注(对齐前端 §7.1 库存告警 `<50 时显示 NN LEFT 橙色`),供运营补货 / 控量决策。
-5. **SKU 购买门配置区(HOLD)**：字段仅保留为后续设计，普通下单、组合下单和换购尚未统一执行服务端资格/配额校验。PC 与后端失败关闭，禁止保存非空 `purchaseGate`；历史值不再返回 E1 或投影 App。待所有成交入口、配额原子扣减和回退补齐后才能启用。
+5. **SKU 购买门配置区（E1，COMPLETE）**：结构化配置 `rankMin / activeDirectMin / teamVolumeMin / mode(all|either) / quotaCap / quotaSold / quotaPeriod / enforce`。App 先通过 `GET /api/store/purchase-eligibility` 获取当前用户决策；普通单、组合单、Sandbox 单、Trade-in 询价/提交及容量替换由服务端按同一规则复验。规则畸形或用户事实缺失时失败关闭；空门表示不附加用户条件。当前仅支持 `quotaPeriod=lifetime`；旧 `month` 数据保留读取但标记 HOLD、不可直接保存，待建立按自然月隔离的原子 usage 计数后再恢复。E3 九类通用 eligibility 编辑器另列 HOLD，不得作为本门的运行时实现。
 
 **③ 可控参数**
 
@@ -76,7 +88,7 @@ SKU 目录管理台,自上而下三区:
 | `stock`(各 SKU) | 现状值(`lib/store` 库存),`< 50` 触发橙色告警 | ≥ 0 | 实时(影响在售) | §7.1 库存告警 `NN LEFT` / 售罄态 |
 | `saleStatus` / `lifecycle` | 销售状态与生命周期分列；新代际的待发布状态由 `unlockPhase` 表达 | saleStatus:`on\|off\|pending`; lifecycle:`active\|legacy` | 实时 | 商品是否可售 / LEGACY chip / 阶段锁定卡 |
 | 套餐折扣 ladder | **现状值**:4 件 12% / 3 件 8% / 2 件 5%(§9.11c.1) | 各档 0–30% | 仅新购物车结算 | §9.11c.1 cart / 结算购物车多件折扣 |
-| **购买门** `purchaseGate` | HOLD；非空配置由 PC 和后端拒绝，历史值不返回两端 | 待服务端成交全链路完成后再开放 | 禁止生效 | 不能只靠 App 前端拦截 |
+| **购买门** `purchaseGate` | Gen-2 初始值：Pro v2 `V≥2`；Rack P2 `V≥4`；PC 可按结构化字段调整 | rank 0–12；直推/团队业绩非负；可选锁额配对 | 新询价/新成交实时；服务端最终授权 | App 目录/结算提示 + 普通/组合/Sandbox/换购/容量替换服务端复验 |
 
 > **默认值口径声明**:设备基础定价(price / baseRate / baseRateNEX / 套餐折扣)**12 月节奏表 §6 未覆盖**,上表取前端 §7.1 / §9.11c.1 现状值为参考并标注「现状值」(供开发对照)。**Pro baseRate $76.00 已对原型 `lib/store/index.ts` 核实**;其余 baseRate 现状值开发落地时按前端 `lib/store/index.ts-91` 实际常量回核,发现差异以前端现状为准。**衰减曲线与代际折扣由 12 月节奏表 §6.1/§6.2 权威,分别在 E3 / E1/E3 落地**,E1 不重复定义。
 >
@@ -158,7 +170,7 @@ SKU 目录管理台,自上而下三区:
 收敛前端 §9.11c.1 Device specs 种子:
 - `GET /api/admin/devices/skus` · `GET /api/admin/devices/skus/:skuKey` — PC E1 返回 `nx_product` 交易核心及 `nx_admin_device_sku` 运营扩展；App `GET /api/store/catalog` 从相同 `nx_product` 投影当前可售集合。商品身份、价格、双币日产、库存、销量和销售状态不得从兼容表或客户端常量补回；`baseRate` 目前仍是 E1 扩展展示串，不能宣称已迁入 `nx_product`。
 - `POST /api/admin/devices/skus` · `PUT /api/admin/devices/skus/:skuKey` · `PATCH /api/admin/devices/skus/:skuKey/status` · `DELETE /api/admin/devices/skus/:skuKey` — 新增、更新、上下架和软删除均在同一事务内先写 `nx_product`，再同步 E1 扩展。PUT、PATCH 和 DELETE 除理由及幂等键外，都必须把最近一次 GET 响应体中的 `updatedAt` 作为 `X-Product-Revision` 请求头；缺失或过期返回 409，客户端刷新后重新操作。库存允许 0，但不会自动改写销售状态。
-- `purchaseGate` 当前为 HOLD：PC 表单和后端 SKU 写入均拒绝非空购买门并返回 `SKU_PURCHASE_GATE_SERVER_ENFORCEMENT_REQUIRED`；历史值不再返回 E1，也不投影 App catalog。普通下单、组合下单、换购、配额原子扣减与回退全部完成前，禁止宣称 server-canonical 资格门。
+- `purchaseGate` 已启用：PC E1 可保存结构化门，App 可查询当前用户资格，普通/组合/Sandbox 下单、Trade-in 和容量替换均在服务端复验；非法配置或事实缺失失败关闭。配额字段仅在成对有效时启用，Sandbox 配额消费限定 RunID 隔离目录。
 - `PUT /api/admin/config/cart/bundle-discount` — 套餐折扣 ladder(对齐 §9.11c.1 `GET /api/config/cart/bundle-discount`;确认弹窗 E1a-MD3,body 携 reason)。
 
 **⑥ 权限 & 审计**
@@ -178,8 +190,8 @@ SKU 目录管理台,自上而下三区:
 - **调价仅影响新单,在途锁价**:已 `placed` 未 `paid` 的订单按下单时价格结算(订单快照价),改价 `effectiveAt` 后仅对新 `placed` 订单生效,避免「支付中价格漂移」。
 - **stock 与销售状态分离**:`stock=0` 表示当前售罄，不等于下架；服务端不自动改写 `saleStatus`。恢复库存后能否重新可售仍取决于独立销售状态与阶段门，避免库存写入偷偷改变商品生命周期。
 - **改价为放大转化向须留意但非资金流出红线**:下调价格 / 提高 baseRate / 加大折扣会放大转化与对平台的应付负债(更优回本叙事 → 更多购买与后续收益负债),属须经确认弹窗 + 理由必填留痕的运营杠杆,但**不直接构成即时资金流出**(资金流出红线由 D 域提现 / B1 兑付覆盖率守门,故 E1a-MD1/MD2/MD3 不前置 B1 红线预检);改价动作建议在 B4 节奏态势与 B1 覆盖率约束下评估。
-- **购买门 HOLD**:`purchaseGate` 尚未接入普通下单、组合下单、换购、配额原子扣减与失败回退，因此不得生效。PC 与后端拒绝非空配置，历史值不返回 E1 或 App；客户端不承担授权。
-- **联动**:E1 的 `unlockPhase` 仅负责阶段锁定展示，`saleStatus` 独立控制是否在售，E3 衰减曲线决定 legacy SKU 的终身产出节奏；C1 fleet 卡引用本规格表(§3.14)。阶段门与购买门成交校验未全部服务端化前保持 HOLD，不宣称可由 PC 放开。
+- **购买门服务端授权**:`purchaseGate` 由 E1 保存并下发只读展示，App 客户端只做预提示；最终授权在普通/组合/Sandbox 下单、Trade-in 与容量替换入口由服务端执行，客户端不能放行或覆盖。
+- **联动**:E1 的 `unlockPhase` 仅负责阶段锁定展示，`saleStatus` 独立控制是否在售，E1 `purchaseGate` 负责 Gen-2 用户成交授权并由服务端复验，E3 衰减曲线决定 legacy SKU 的终身产出节奏；C1 fleet 卡引用本规格表(§3.14)。E3 九类通用 eligibility 编辑器的 UI/运行时映射仍 HOLD；该 HOLD 不回退已完成的 E1 `purchaseGate`。
 
 **⑧ 埋点(事件)**
 对齐 A4(§2.4.5 ②转化 family + ⑥ admin family):
@@ -232,7 +244,7 @@ SKU 目录管理台,自上而下三区:
 | 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
 |---|---|---|---|---|
 | 提前 / 延迟代际发布 | ②第 1 区发布时点表行尾「提前·延迟开关」 | 行内按钮 | 仅商品运营 lead / 超管渲染;releaseState 已 released 时置灰(已释放不可回拨) | 打开弹窗 E1b-MD1 |
-| 强制解锁单 SKU | ②第 2 区「强制解锁」 | 行内按钮(警示色) | 仅商品运营 lead / 超管渲染;releaseState 已 released 时置灰;成交链路服务端阶段校验未完成前整项 HOLD | 打开弹窗 E1b-MD2 |
+| 强制解锁单 SKU（阶段释放能力） | ②第 2 区「强制解锁」 | 行内按钮(警示色) | 仅商品运营 lead / 超管渲染;releaseState 已 released 时置灰;force-unlock 阶段释放操作仍 HOLD；不影响已完成的 E1 `purchaseGate` | 打开弹窗 E1b-MD2 |
 | 调 tradeinDiscount | ②第 3 区 trade-in 折扣编辑「保存抵扣额」 | 主按钮 | 仅商品运营 lead / 超管渲染;表单无变更时置灰 | 打开弹窗 E1b-MD3 |
 | 查看发布时点表 / 距发布剩余 | ②第 1 区 | 只读视图 | 恒可用 | 就地查看,无弹窗 |
 
@@ -253,8 +265,8 @@ SKU 目录管理台,自上而下三区:
 - **成功反馈**:弹窗关闭;发布时点表行就地更新(计划→实际发布月 + 偏移标记);toast「发布月已调整 · 已记审计」;事件 `admin.generation_released`(mode=schedule-advance|schedule-delay)落 A2;实时告警超管 / 商品运营 lead。
 
 ##### [E1b-MD2] 强制解锁 SKU 确认
-- **功能**:目标能力是将单 Gen-2 SKU 的 releaseState 从 locked 变为 released，且不改 saleStatus；当前成交链路服务端阶段复核未完成，动作保持 HOLD。
-- **布局结构**:1. **信息区**:SKU key / 名称 / 当前 status / §6.2 计划发布月 / 距计划发布剩余。2. **影响预览区(必有)**:**「绕过 H1 月龄门,全体用户立即可购」红色警示条恒显**;E3b eligibility 校验结果回显(server 预检下发;为空时阻断警示条 + 确认钮置灰,文案含「server 将拒绝(400),force-unlock 不豁免」);提示行「释放后不可自动回收,回退须经 E1a 上下架(E1a-MD1)」。3. **输入区**:见下表。4. **按钮区**。
+- **功能**:目标能力是将单 Gen-2 SKU 的 `releaseState` 从 `locked` 变为 `released`，且不改 `saleStatus`；该“强制释放阶段门”仍为 **HOLD**，仅表示运营阶段覆盖能力未签发，不回退已完成的 E1 `purchaseGate` 用户成交授权。
+- **布局结构**:1. **信息区**:SKU key / 名称 / 当前 status / §6.2 计划发布月 / 距计划发布剩余。2. **影响预览区(必有)**:**「绕过 H1 月龄门,全体用户立即可购」红色警示条恒显**;E1 阶段释放谓词校验结果回显(server 预检下发;阶段规则为空时阻断警示条 + 确认钮置灰,文案含「server 将拒绝(400),force-unlock 不豁免」);提示行「释放后不可自动回收,回退须经 E1a 上下架(E1a-MD1)」。3. **输入区**:见下表。4. **按钮区**。
 - **输入与选择控件**:
 
 | 字段 | 控件类型 | 必填 | 校验 | 默认值 |
@@ -262,8 +274,8 @@ SKU 目录管理台,自上而下三区:
 | reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
 
 - **按钮区**:`[取消]` · `[确认强制解锁]`(警示色主按钮;eligibility 阻断 / reason 未达标时置灰;loading 防双击)。
-- **错误态**:400(E3b eligibility 为空,弹窗不关,内联阻断条)/ 400 `REASON_REQUIRED` / 409(SKU 已被释放,提示刷新)/ 403。
-- **成功反馈(完成服务端成交复核后)**:弹窗关闭;发布时点表 releaseState 就地更新为 released，E1a saleStatus 保持原值;toast「SKU 已强制解锁 · 已记审计」;事件 `admin.generation_released`(mode=force-unlock)落 A2;实时告警超管 / 商品运营 lead。
+- **错误态**:400(E1 阶段释放谓词为空,弹窗不关,内联阻断条)/ 400 `REASON_REQUIRED` / 409(SKU 已被释放,提示刷新)/ 403。
+- **成功反馈(完成阶段释放服务端复核后)**:弹窗关闭;发布时点表 releaseState 就地更新为 released，E1a saleStatus 保持原值;toast「SKU 已强制解锁 · 已记审计」;事件 `admin.generation_released`(mode=force-unlock)落 A2;实时告警超管 / 商品运营 lead。该动作不改变 E1 `purchaseGate` 判定。
 
 ##### [E1b-MD3] 调 tradeinDiscount 确认
 - **功能**:更新单 Gen-2 SKU 的代际抵扣额(`tradeinDiscount`),确认即生效,仅新置换单生效。
@@ -281,7 +293,7 @@ SKU 目录管理台,自上而下三区:
 
 **⑤ 接口**
 - `GET / POST / PATCH / DELETE /api/admin/devices/e1/generation-gates[/{skuId}]` — 上架节奏配置接口已启用，持久化 `releaseMonth / phase / eligibility / phaseOffset / forceUnlock / status` 等规则并由 E1 列表和上架前置校验消费；PC BFF 对应 `/api/admin/e1/generation-gates[/{skuId}]`。它不替代商品核心字段，也不直接授予某个用户购买资格。
-  - **成交授权完成条件**:服务端按 `releaseMonth`/账户 Phase 在普通下单、组合下单和换购等全部成交入口复核；与 E3b eligibility 互锁；force-unlock 不豁免 eligibility；saleStatus 仍独立控制 on/off。任一入口缺失时，按用户的交易授权继续 HOLD。
+  - **阶段释放与成交授权分轨**:服务端按 `releaseMonth`/账户 Phase 复核 E1 阶段释放；`force-unlock` 不改变 `saleStatus`，也不得旁路 E1 `purchaseGate`。Gen-2 用户购买资格已由 E1 `purchaseGate` 在普通/组合/Sandbox 下单、Trade-in 与容量替换入口复验；E3 九类通用 eligibility 编辑器仍 HOLD。
 - 读取侧由 `nx_product` 商品核心 + `nx_admin_device_generation_gate` 运营规则 + H1 Phase 共同投影；App 锁定卡只是 UI 提示，不能替代订单授权。
 
 **⑥ 权限 & 审计**
@@ -296,8 +308,8 @@ SKU 目录管理台,自上而下三区:
 > 「✅(lead)」指商品运营角色的 lead 层级,member 不可执行(2026-06 操作确认决议:原复核层级转为执行门槛)。审计字段引用 A2 统一 schema:`skuKey / before / after / mode / operator / reason / ts`。
 
 **⑦ 风控 & 联动**
-- **上架前置已服务端校验，成交授权未闭环**：E1 上架动作会读取服务端 generation gate，校验阶段、发布时间与 eligibility 前置，客户端不能绕过该运营校验；但普通下单、组合下单和换购尚未全部按用户 Phase/资格复核，因此不能写成“购买资格已由 server 校验”。
-- **发布释放与 eligibility 互锁**：Gen-2 SKU 在 E1 转为在售前，以 generation gate 的 eligibility 标记、阶段及发布时间为前置，规则不满足则服务端阻断上架。该校验只证明运营上架条件，不等于所有成交入口已具备按用户 deny-all 的授权门。
+- **上架前置与成交授权均已服务端闭环（COMPLETE）**：E1 上架动作读取服务端 generation gate，校验阶段、发布时间与 eligibility 前置；同时普通下单、组合下单、Sandbox、Trade-in 与容量替换均在提交前按用户 Phase/资格由服务端最终复核，客户端不能绕过或覆盖该授权门。Pro v2 默认 V≥2、Rack P2 默认 V≥4。
+- **发布释放与 eligibility 互锁**：Gen-2 SKU 在 E1 转为在售前，以 generation gate 的 eligibility 标记、阶段及发布时间为前置，规则不满足则服务端阻断上架；成交入口另由 E1 `purchaseGate` 服务端复核。E3 九类通用 eligibility 编辑器仍为未来扩展 **HOLD**，不覆盖、旁路或否定当前已完成的 E1 成交授权。
 - **联动 H1**:调整发布月须在 H1 调度的 Phase 拐点 checklist 中评估(代际发布与 P3/P5 升级窗口协同,§1.7);E1 提前 / 延迟为 H1 Phase 推进的连带项之一。
 - **联动 E3 / E1**:发布释放 → E1 SKU `status` 转 active;`tradeinDiscount` 与 E3 salvage 残值叠加构成置换净付(E3 落地置换 tx)。
 
@@ -647,9 +659,9 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 | `salvage.monthlyDecay` | **现状**:0.025/月(月 12 归零) | 0–1;**须满足 `rate(baseline) ≤ monthlyDecay × 12`(月 12 归零约束,接口侧强制校验,违反返回 400,见 ⑦)** | 实时 | §7.5 残值随设备月龄递减 |
 | `salvage.floor` | **现状**:0 | ≥ 0 | 实时 | §7.5 残值触底为 $0 |
 | **`minHoldingMonths`** | **现状**:1(月)——**E3 权威,K2 只读消费** | ≥ 0 | 实时(server enforce 守卫) | §7.5.1 守卫 `if (ageMonths < minHoldingMonths) return 0` |
-| `eligibility[kind]`(购买资格;**`kind` 为设备 kind 枚举值,如 `stellarbox-s1` / `stellarbox-pro` / `stellarrack-p1`,括号为可读简称非 API 字段名**) | **配置参考(§7.5.1,原型 `tradein-config.ts`)**:`stellarbox-s1`(S1)= `open`;`stellarbox-pro`(Pro)= `any-of`〔`own-kind`(kind=stellarbox-s1,≥1)/ V-Rank ≥2 / 累计入金 ≥$1000 / `trade-in`(fromKind=stellarbox-s1)〕;`stellarrack-p1`(Rack P1)= `any-of`〔own ≥1 Pro / V-Rank ≥4 / 累计入金 ≥$5000 / trade-in from Pro〕 | 规则组(9 类型) | **HOLD**：尚未覆盖全部询价/下单入口 | §7.5.1；服务端成交授权待闭环 |
-| `eligibility[stellarbox-pro-v2]`(Gen-2,**待 PM 裁定后补录,V2 发布门开放前须完成(阻断条件)**) | eligibility 为 null/空时由 E1 上架前置校验阻断该 SKU 转为在售；按用户的成交资格判定尚未覆盖全部入口，继续标记 HOLD；建议:`any-of`〔own ≥1 Pro / trade-in from Pro / 累计入金 ≥$2000〕 | 规则组(9 类型) | E1 上架实时；用户成交授权 HOLD | §7.5.1 / E1 上架前置校验 |
-| `eligibility[stellarrack-p2]`(Gen-2,**待 PM 裁定后补录,V2 发布门开放前须完成(阻断条件)**) | eligibility 为 null/空时由 E1 上架前置校验阻断该 SKU 转为在售；按用户的成交资格判定尚未覆盖全部入口，继续标记 HOLD；建议:`any-of`〔own ≥1 Rack P1 / trade-in from Rack P1 / 累计入金 ≥$10000〕 | 规则组(9 类型) | E1 上架实时；用户成交授权 HOLD | §7.5.1 / E1 上架前置校验 |
+| `eligibility[kind]`(E3 九类通用规则编辑器;**`kind` 为设备 kind 枚举值,如 `stellarbox-s1` / `stellarbox-pro` / `stellarrack-p1`,括号为可读简称非 API 字段名**) | **配置参考(§7.5.1,原型 `tradein-config.ts`)**:`stellarbox-s1`(S1)= `open`;`stellarbox-pro`(Pro)= `any-of`〔`own-kind`(kind=stellarbox-s1,≥1)/ V-Rank ≥2 / 累计入金 ≥$1000 / `trade-in`(fromKind=stellarbox-s1)〕;`stellarrack-p1`(Rack P1)= `any-of`〔own ≥1 Pro / V-Rank ≥4 / 累计入金 ≥$5000 / trade-in from Pro〕 | 规则组(9 类型) | **HOLD**：仅未来编辑器/映射；不覆盖当前成交授权 | §7.5.1；E3 通用编辑器 |
+| `purchaseGate[stellarbox-pro-v2]`(Gen-2 当前成交门) | E1 结构化规则默认 `rankMin=2,mode=all,enforce=true`；PC 可调整 | E1 purchaseGate schema | 用户查询与每次新成交实时复验 | `/api/store/purchase-eligibility` + 全成交入口 |
+| `purchaseGate[stellarrack-p2]`(Gen-2 当前成交门) | E1 结构化规则默认 `rankMin=4,mode=all,enforce=true`；PC 可调整 | E1 purchaseGate schema | 用户查询与每次新成交实时复验 | `/api/store/purchase-eligibility` + 全成交入口 |
 | `promo.enabled` | true(kill switch) | bool | 实时 | §7.5.4 promo banner 显隐 |
 | `promo.cooldownHours` | 24 | ≥ 0 | 实时 | §7.5.4 dismiss 后冷却 |
 | `promo.maxPerSession` | 1 | ≥ 0 | 实时 | §7.5.4 单会话弹出上限 |
@@ -662,7 +674,7 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 
 > **eligibility 规则类型说明(9 种规则类型;首次声明)**:eligibility 支持 9 种规则类型(`open` / `own-kind` / `own-prev-tier` / `trade-in` / V-Rank 门槛 / 累计入金门槛 等)。**`stellarbox-pro` 使用 `own-kind`(kind=stellarbox-s1)而非 `own-prev-tier`**——前者匹配**特定 kind**(原型 `tradein-config.ts:106-108` 实为 `{ type: "own-kind", kind: "stellarbox-s1", count: 1 }`),后者按升级阶梯**推断上一级**;Pro 的 trade-in from S1 规则在原型中是 `{ type: "trade-in", fromKind: "stellarbox-s1" }`。如需后台 UI 支持两种规则模式,**规则编辑器须分别提供 `own-kind`(指定 kind)与 `own-prev-tier`(阶梯推断)两种编辑入口**。
 >
-> **默认值口径声明**:trade-in 具体数值(salvage rate / decay / floor / minHoldingMonths / eligibility / promo / inventory.softMax)**12 月节奏表 §6 未覆盖具体值**,上表取前端 §7.5 / §9.11c.1 / 原型 `tradein-config.ts` 现状值为参考并标注「现状」。**代际抵扣(−$300 / −$800)对齐 12 月节奏表 §6.2**(E1 权威登记,E3 落地置换)。`minHoldingMonths` 默认 1 月为防套利守卫值(§7.5.1)。**Gen-2 SKU(Pro v2 / Rack P2)的 eligibility 默认待 PM 裁定后补录,V2 代际发布门打开前须完成(阻断条件,见 ④ / E1⑤ server gate)**；补录前由 E1 server gate 阻断转为在售。按用户的成交资格授权尚未覆盖全部成交入口，继续标记 HOLD，不能宣称已有 deny-all 购买防线。
+> **默认值口径声明**:trade-in 具体数值(salvage rate / decay / floor / minHoldingMonths / eligibility / promo / inventory.softMax)**12 月节奏表 §6 未覆盖具体值**,上表取前端 §7.5 / §9.11c.1 / 原型 `tradein-config.ts` 现状值为参考并标注「现状」。**代际抵扣(−$300 / −$800)对齐 12 月节奏表 §6.2**(E1 权威登记,E3 落地置换)。`minHoldingMonths` 默认 1 月为防套利守卫值(§7.5.1)。Gen-2 当前用户成交资格采用 E1 结构化 `purchaseGate`（Pro v2 V≥2、Rack P2 V≥4）并已覆盖全部现行成交入口；E3 九类 eligibility 编辑器仍为 HOLD，不能把其 HOLD 误写成当前成交门 HOLD，也不能用其未来设计覆盖 E1 已完成门。
 >
 > **Pro salvage 基价误差提示(承 E1③ 原型 bug)**:原型 `DEVICE_PRICE_USDT["stellarbox-pro"]=2639` 与权威定价 $2,399 不符,导致 **Pro 设备 salvage 计算基价在原型中存在约 $240 误差**(salvage = price × rate × 衰减,基价偏高 → 残值偏高)。**V2 服务端 salvage 计算须以 Pro Gen-1 权威定价 $2,399 为基价**,原型代码须同步修正(见 E1③)。
 
@@ -673,8 +685,8 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 | 全局 kill(`enabled=false`,停 trade-in) | 商品运营(lead)/ 超管 | E3b-MD1(理由必填)(紧急停整条置换漏斗) | `admin.tradein_config_changed`(field=enabled / after=false / operator / reason) |
 | 调 salvage rate(baseline / decay / floor) | 商品运营(lead) | E3b-MD2(理由必填)(影响置换扣减额与 GMV / 应付;月 12 归零约束 server 强校验) | `admin.tradein_config_changed`(field=salvage.* / before-after / operator / reason) |
 | **临时降 `minHoldingMonths`(促销)** | 商品运营(lead)/ 超管 | E3b-MD3(理由必填)(**留意 K2 套利风险**:降低后买入即置换的套利窗口打开,确认即自动知会 K2 加强监控) | `admin.tradein_config_changed`(field=minHoldingMonths / before-after / operator / reason / k2_notified) |
-| 调 eligibility 配置(放宽 / 收紧参考规则) | 商品运营(lead) | E3b-MD4(理由必填)；当前只影响 E1 上架前置，用户购买判定仍为 HOLD | `admin.tradein_config_changed`(field=eligibility[kind] / before-after / operator / reason) |
-| **补录 Gen-2 eligibility(Pro v2 / Rack P2)** | 商品运营(lead) | E3b-MD5(理由必填)(**V2 发布门开放前须完成,阻断条件**:未补录则 E1 发布接口 server gate 返回 400 阻断该 SKU 释放) | `admin.tradein_config_changed`(field=eligibility[stellarbox-pro-v2\|stellarrack-p2] / before=∅ / after / operator / reason) |
+| 调 E3 九类通用 eligibility 配置(放宽 / 收紧参考规则) | 商品运营(lead) | E3b-MD4(理由必填)；编辑器与运行时映射仍 HOLD，不覆盖已完成的 E1 `purchaseGate` | `admin.tradein_config_changed`(field=eligibility[kind] / before-after / operator / reason) |
+| **编辑 E3 九类通用 eligibility(Pro v2 / Rack P2 未来扩展)** | 商品运营(lead) | E3b-MD5(理由必填)；当前编辑器与运行时映射 **HOLD**，不阻断或覆盖 E1 `purchaseGate` | `admin.tradein_config_changed`(field=eligibility[stellarbox-pro-v2\|stellarrack-p2] / before-after / operator / reason) |
 | 调 promo 节奏(cooldown / maxPerSession / delay / minAge / hasEligibleDeviceInInventoryOrSlot / routes) | 商品运营(lead) | E3b-MD6(理由必填)(放大 / 收缩 promo 推送强度) | `admin.tradein_config_changed`(field=promo.* / before-after / operator / reason) |
 | 调 `inventory.softMax`(库存软上限警告阈值) | 商品运营(lead) | E3b-MD7(理由必填)(库存软上限影响置换可承接判定) | `admin.tradein_config_changed`(field=inventory.softMax / before-after / operator / reason) |
 
@@ -690,7 +702,7 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 | 调 salvage rate | ②第 1 区 salvage 参数面「保存残值参数」 | 主按钮 | 仅商品运营 lead / 超管渲染;三参数均未变更时置灰 | 打开弹窗 E3b-MD2 |
 | 临时降 minHoldingMonths | ②第 3 区 minHoldingMonths 配置「编辑」 | 行内按钮(警示色) | 仅商品运营 lead / 超管渲染 | 打开弹窗 E3b-MD3 |
 | 调 eligibility 门槛 | ②第 2 区 eligibility 规则组各 SKU 行尾「编辑规则」 | 行内按钮 | 仅商品运营 lead / 超管渲染 | 打开弹窗 E3b-MD4 |
-| 补录 Gen-2 eligibility | ②第 2 区 Gen-2 SKU 行「补录规则」(eligibility 为空时高亮阻断标记) | 行内按钮(高亮) | 仅商品运营 lead / 超管渲染;已补录后该控件转为常规「编辑规则」(走 E3b-MD4) | 打开弹窗 E3b-MD5 |
+| 编辑 E3 九类通用 eligibility | ②第 2 区 Gen-2 SKU 行「未来规则编辑」 | 当前不渲染（HOLD） | 不得以 E3 编辑器阻断、覆盖或旁路 E1 `purchaseGate` | 解除 HOLD 后另行定义 |
 | 调 promo 节奏 | ②第 4 区 promo banner 节奏面「保存节奏配置」 | 主按钮 | 仅商品运营 lead / 超管渲染;未变更时置灰 | 打开弹窗 E3b-MD6 |
 | 调 inventory.softMax | ②第 5 区库存软上限面「保存阈值」 | 主按钮 | 仅商品运营 lead / 超管渲染;未变更时置灰 | 打开弹窗 E3b-MD7 |
 | 查看原子换机 tx 监控 / TRADEIN_UPGRADE_MAP | ②第 6 / 7 区 | 只读视图 | 恒可用 | 就地查看,无弹窗 |
@@ -741,7 +753,7 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 - **成功反馈**:弹窗关闭;配置就地更新;toast「minHoldingMonths 已更新 · K2 已知会 · 已记审计」;事件 `admin.tradein_config_changed`(field=minHoldingMonths,携 `k2_notified`)落 A2;实时告警超管 / 商品运营 lead + K2 风控通道。
 
 ##### [E3b-MD4] 调 eligibility 规则确认
-- **功能**:编辑单 SKU 资格配置参考(`open / any-of / all-of` + 9 种规则类型)；当前保存后用于 E1 上架前置校验，按用户的购买判定继续 HOLD。
+- **功能**:编辑单 SKU 的 E3 通用资格配置参考(`open / any-of / all-of` + 9 种规则类型)；当前编辑器与运行时映射为 HOLD，不覆盖按用户成交已完成的 E1 `purchaseGate`。
 - **布局结构**:1. **信息区**:SKU kind / 当前 mode / 当前规则组逐条列出。2. **影响预览区**:before→after 规则 diff(新增 / 删除 / 修改逐条)；明确提示「当前只改变 E1 上架前置条件，不代表结账资格已生效」。3. **输入区**:见下表。4. **按钮区**。
 - **输入与选择控件**:
 
@@ -753,22 +765,22 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 
 - **按钮区**:`[取消]` · `[确认调资格规则]`(主按钮;规则未变更 / schema 不合法 / reason 未达标时置灰;loading 防双击)。
 - **错误态**:400(规则 schema 不合法或 mode≠open 但规则为空,server 回传违规条目,弹窗不关内联警示)/ 400 `REASON_REQUIRED` / 409(提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;规则组就地更新;toast「资格配置已更新 · 当前用于 E1 上架前置 · 用户购买判定 HOLD · 已记审计」;事件 `admin.tradein_config_changed`(field=eligibility[kind])落 A2;实时告警超管 / 商品运营 lead。
+- **成功反馈**:当前产品不渲染该未来编辑器；不得产生“资格配置已更新”或改变成交授权的成功反馈。若后续解除 HOLD，必须另行补充服务端映射、回读与验收契约。
 
-##### [E3b-MD5] 补录 Gen-2 eligibility 确认
-- **功能**:为 Pro v2 / Rack P2 首次写入非空 eligibility 规则组(before=∅),确认即生效;补录完成即解除 E1 发布门 server gate 的 400 阻断。
-- **布局结构**:1. **信息区**:Gen-2 SKU kind / 当前状态「未补录（E1 上架阻断中；用户成交授权 HOLD）」/ E1 发布门阻断状态。2. **影响预览区(必有)**:**「补录完成后 E1 发布门 400 阻断解除,该 SKU 具备释放条件」提示条恒显**；拟写入规则组逐条预览；提示行「当前仅阻断 E1 上架，按用户的结账授权待服务端全入口闭环」。3. **输入区**:同 E3b-MD4(mode + 规则编辑器 + reason;mode 不允许 open——Gen-2 首录须非空规则组,client 置灰 open 选项 + server 复核拒绝)。4. **按钮区**。
+##### [E3b-MD5] 未来 E3 九类 eligibility 编辑器（Gen-2 展示扩展）确认
+- **功能（未来扩展）**:为 Pro v2 / Rack P2 编辑 E3 九类通用 eligibility 规则组；当前不写入运行时、不解除 E1 阶段发布门，也不改变 E1 `purchaseGate`。
+- **布局结构(未来 E3 九类规则扩展)**:1. **信息区**:Gen-2 SKU kind / 当前 E1 `purchaseGate` 生效摘要 / 拟扩展 E3 规则状态。2. **影响预览区(必有)**:明确提示“现行成交授权继续由 E1 结构化门执行；E3 规则未完成服务端映射前不得覆盖或旁路”。3. **输入区**:同 E3b-MD4(mode + 规则编辑器 + reason)。4. **按钮区**。当前产品不渲染此未来编辑器，运营通过 E1 购买门配置区维护已生效规则。
 - **输入与选择控件**:
 
 | 字段 | 控件类型 | 必填 | 校验 | 默认值 |
 |---|---|---|---|---|
-| mode | 下拉单选(any-of / all-of;open 置灰) | 是 | 枚举内且 ≠ open(server 复核) | any-of(③ 建议值预填) |
-| 规则组 | 规则编辑器(同 E3b-MD4) | 至少 1 条 | 仅 9 种合法规则类型;schema 校验 | ③ 建议规则组预填 |
+| mode | 下拉单选(any-of / all-of;open 置灰) | 是 | 枚举内且 ≠ open(server 复核)；当前编辑器 HOLD | any-of(③ 建议值预填) |
+| 规则组 | 规则编辑器(同 E3b-MD4) | 至少 1 条 | 仅 9 种合法规则类型;schema 校验；当前不写入运行时 | ③ 建议规则组预填 |
 | reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
 
-- **按钮区**:`[取消]` · `[确认补录资格规则]`(主按钮;规则为空 / schema 不合法 / reason 未达标时置灰;loading 防双击)。
-- **错误态**:400(规则为空或 mode=open,内联阻断条)/ 400 `REASON_REQUIRED` / 409(已被他人补录,提示刷新转 E3b-MD4)/ 403。
-- **成功反馈**:弹窗关闭;Gen-2 行阻断标记消除、规则组就地呈现;toast「Gen-2 资格已补录 · E1 发布门阻断解除 · 已记审计」;事件 `admin.tradein_config_changed`(field=eligibility[stellarbox-pro-v2|stellarrack-p2],before=∅)落 A2;实时告警超管 / 商品运营 lead。
+- **按钮区**:`[取消]` · `[确认编辑未来资格规则]`（当前产品不渲染主按钮；解除 HOLD 后另行定义）。
+- **错误态**:当前无运行时提交；解除 HOLD 后再定义 400/409/403 契约。
+- **成功反馈**:当前产品不渲染该未来 E3 编辑器；Gen-2 行不得再以“待补录”阻断 E1 `purchaseGate`。E1 购买门由 E1 配置区维护，E3 九类编辑器解除 HOLD 前不得写入或宣称生效。
 
 ##### [E3b-MD6] 调 promo 节奏确认
 - **功能**:更新 promo banner 门控参数(cooldownHours / maxPerSession / delayMs / minDeviceAgeDays / hasEligibleDeviceInInventoryOrSlot / routes),确认即生效。
@@ -806,7 +818,7 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 **⑤ 接口**
 - `GET /api/admin/config/tradein` — 返回全 trade-in 配置 `{ salvage: { rate, monthlyDecay, floor }, minHoldingMonths, eligibility: { [kind]: { mode, rules[] } }, promo: { enabled, cooldownHours, maxPerSession, delayMs, routes, triggerWhen: { minDeviceAgeDays, hasEligibleDeviceInInventoryOrSlot } }, inventory: { softMax }, tradeinUpgradeMap }`;**server-canonical**。
 - `PUT /api/admin/config/tradein` — 更新配置 `{ salvage?, minHoldingMonths?, eligibility?, promo?, inventory: { softMax? }, tradeinUpgradeMap? }`;经确认弹窗提交(E3b-MD1–E3b-MD7,body 携 reason,server 校验非空 400 `REASON_REQUIRED`)即时生效。**接口侧强制校验 `salvage` 的月 12 归零约束(`baseline ≤ monthlyDecay × 12`),违反返回 `400`(见 ⑦)。**
-- **运行时只读端点(K2 等消费方)**:`GET /api/config/tradein`(§7.5.1 / §9.11c.1,TBD candidate)——salvage 守卫、`<TradeInPromoBanner>` 与 **K2 套利检测**从此只读端点取 E3 权威值；eligibility 仅能作为展示/上架前置配置，完成服务端全入口成交授权前不得作为结账权威。E3 是写权威源,`/api/config/tradein` 是其只读投影(K2 不另建配置端点,§Ch8 K2)。
+- **运行时只读端点(K2 等消费方)**:`GET /api/config/tradein`(§7.5.1 / §9.11c.1,TBD candidate)——salvage 守卫、`<TradeInPromoBanner>` 与 **K2 套利检测**从此只读端点取 E3 权威值；E3 九类 eligibility 目前仅保留未来编辑器/展示语义，仍不得覆盖成交授权。Gen-2 当前成交资格由 E1 `purchaseGate` 及 `/api/store/purchase-eligibility`/全成交入口服务端复验负责。E3 是写权威源,`/api/config/tradein` 是其只读投影(K2 不另建配置端点,§Ch8 K2)。
 - **原子置换 endpoint**(server tx,替代 client composer,§9.11c.1):
   - `POST /api/devices/recycle` — 回收旧设备置换(salvage 抵扣 → server 原子 tx)。
   - `POST /api/devices/replace` — 置换换机(移除旧设备 + 加新设备 + server 原子事务从用户余额扣减净付款〔= price − salvageCredit〕+ 在 D4 落 `device.replaced` bill,单事务)。**server 在单事务内先读旧设备 `generation`,再以 `(old.generation ?? 1) + 1` 写入新设备(对齐 §7.5.3 M4),旧设备移除与新设备写入在同一原子边界内,防止并发 replace 导致 generation 断链。**
@@ -824,7 +836,7 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 | 查看 trade-in 配置 / tx 监控 | ✅ | ✅ | ✅(只读) | ✅ |
 | 全局 kill | ✅(lead) | ✅ | — | — |
 | 调 salvage rate / eligibility / promo / inventory.softMax | ✅(lead) | ✅ | — | — |
-| 补录 Gen-2 eligibility | ✅(lead) | ✅ | — | — |
+| 编辑 E3 九类通用 eligibility（未来扩展） | ✅(lead) | ✅ | — | — |
 | 临时降 minHoldingMonths | ✅(lead) | ✅ | (自动知会 K2) | — |
 
 > 「✅(lead)」指商品运营角色的 lead 层级,member 不可执行(2026-06 操作确认决议:原复核层级转为执行门槛)。审计字段引用 A2 统一 schema:`field / before / after / operator / reason / ts`;`minHoldingMonths` 变更额外携带 `k2_notified`(K2 套利监控知会标记)。
@@ -833,7 +845,7 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 - **salvage credit server-canonical,仅结账抵扣不入余额**(§7.5 不变量 M2):残值额度服务端计算,**唯一用途是置换结账的扣减项(server 原子事务从用户余额扣减净付款 = price − salvageCredit,在 D4 落 bill),绝不写 `creditBalance`、不可提现、不可累加**;后台无「salvage 转余额」动作。残值守卫 `if (ageMonths < minHoldingMonths) return 0` 由 server enforce。
 - **`minHoldingMonths` server enforce(防套利,K2 联动)**:该阈值由 E3 配置、server 在残值计算时强制(buy-then-immediately-tradein 返 $0 salvage);**K2 套利检测只读消费此值**标记「买入未满最短持有月即尝试 trade-in」命中(§Ch8 K2 (b)),K2 不配置该阈值。临时降低 `minHoldingMonths` 经确认弹窗(E3b-MD3,理由必填)执行并自动知会 K2(套利窗口扩大,审计携 `k2_notified`)。
 - **月 12 归零约束 enforce(防套利窗口意外开放)**:`月 12 残值归零` 须在 E3 后台配置校验中 enforce——server 在接受 `PUT /api/admin/config/tradein` 时校验 `baseline ≤ monthlyDecay × 12`(归零约束),违反时返回 `400` + 提示;防止运营调高 `baseline` 而不同步调整 `monthlyDecay` 导致月 12 残值非零、trade-in 套利窗口意外开放(③参数表 `salvage.rate` / `salvage.monthlyDecay` 行「范围」列已明示此互锁约束,体例与 B1⑤ 黄线/红线互锁一致)。
-- **Gen-2 eligibility 空值兜底 + 发布互锁**：E1 发布门 server gate 在 Gen-2 SKU eligibility 为 `null`/空时返回 `400`，阻断该 SKU 转为在售（E1⑤）。当前仅有这道运营上架前置校验；按用户的成交授权仍为 HOLD，必须覆盖全部询价/下单入口并通过验收后才能称为 deny-all 购买防线。
+- **Gen-2 当前成交资格已闭环**：启动迁移仅在值为空时为 Pro v2 / Rack P2 写入 E1 结构化购买门（分别 V2 / V4，不覆盖 PC 已配置值）。App 查询端点与普通单、组合单、Sandbox 单、Trade-in、容量替换复用同一服务端判定；规则畸形、用户事实缺失或锁额售罄均 deny。E3 规划中的 9 类 eligibility 规则编辑器仍是后续扩展，不得与本轮已生效的 E1 结构化门混称为已实现。
 - **原子 tx(防 half-completed replace)**:置换三 endpoint 为 server 单事务,任一步失败全回滚(设备数组 + 余额 + bill 回到调用前,§7.5.3 M1);`generation lineage` 由 server 在单事务内维护(先读旧设备 `generation`,新设备 `generation = (old.generation ?? 1) + 1`,§7.5.3 M4,不写死 2;旧设备移除与新设备写入同一原子边界,防并发 replace 断链)。
 - **联动 E1 / E3 / D / K2**:代际抵扣(TRADEIN_UPGRADE_MAP)与 E1 折扣登记联动;salvage 残值与 E3 衰减效率 / ageMonths 联动;置换扣款走 D 余额、写 D4 bill;套利信号喂 K2(§3.14)。
 

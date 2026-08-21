@@ -21,6 +21,7 @@ import { catCN, Empty, HDSelect, MAvatar, MiniMenu, ownerLabel, PRIO_CN, Prio, r
 import type { MCtx } from "./types";
 import { type MTicketAssigneeCandidate } from "@/lib/admin/m-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { shouldSendOnEnter } from "@/lib/keyboard-submit";
 
 const TICKET_KEY = "I.support.tickets";
 const SLA_KEY = "I.support.sla";
@@ -922,12 +923,15 @@ function TicketDrawer({
             <textarea
               className="ta"
               data-proof="support-ticket-reply"
+              aria-label={`回复工单 ${ticket.id}`}
               rows={3}
-              placeholder={`回复 ${ticket.id} · ⌘/Ctrl+Enter 发送`}
+              placeholder={`回复 ${ticket.id} · Enter 发送 · Shift+Enter 换行`}
               value={replyBody}
               onChange={(e) => onReplyChange(e.target.value)}
               onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") onSend(replyBody);
+                if (!shouldSendOnEnter(e)) return;
+                e.preventDefault();
+                onSend(replyBody);
               }}
             />
             <div style={{ display: "flex", alignItems: "center", marginTop: 9 }}>

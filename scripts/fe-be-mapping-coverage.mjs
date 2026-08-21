@@ -75,7 +75,7 @@ const evidence = [
   ["M6", APP_ROOT, "src/lib/gpu-tiers.ts", ["GPU_TIERS", "matchGpuTier"]],
   ["M7", APP_ROOT, "src/store/device-types.ts", ["MAX_DEVICES"]],
   ["M8", APP_ROOT, "src/pages/entry-surfaces/index.vue", ["entry-surfaces/signed", "entry-surfaces/h5", "entry-surfaces/white"]],
-  ["M9", APP_ROOT, "src/services/janus-c2.ts", ["remoteApiEnabled", "startJanusC2Sync"]],
+  ["M9", APP_ROOT, "src/services/janus-c2.ts", ["currentJanusSyncAvailability", "JANUS_NATIVE_EXECUTOR_REQUIRED", "createJanusCoordinator"]],
   ["M9", APP_ROOT, "src/api/janus-api.ts", ["/api/app/janus/reports", "/api/app/janus/commands/pending", "/api/app/janus/commands/ack"]],
   ["M9", ROOT, "app/components/domain-views/k-tabs/k6-janus-c2.tsx", ["JanusC2"]],
   ["M9", ROOT, "app/api/admin/janus/[...path]/route.ts", ["/api/admin/janus/", "X-Nexion-Upstream-Outcome"]],

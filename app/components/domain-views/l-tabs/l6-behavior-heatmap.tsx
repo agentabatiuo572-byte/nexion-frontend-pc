@@ -71,8 +71,10 @@ function bounceCell(rate: number): React.CSSProperties {
 
 export function L6HeaderActions({ ctx }: { ctx: LCtx }) {
   let available = false;
+  let sandboxOnly = false;
   try {
     const normalized = normalizeL6BehaviorHeatmap(ctx.biData?.l6 ?? null);
+    sandboxOnly = normalized.status === "SANDBOX_ONLY";
     available = normalized.available && activityForWindow(normalized, "7d").length > 0;
   } catch {
     available = false;
@@ -103,8 +105,8 @@ export function L6HeaderActions({ ctx }: { ctx: LCtx }) {
         只读报表域 · 不改任何业务规则
       </span>
       <button className="f-cta" onClick={() => void exportCsv()} disabled={!available || !ctx.canExport || exporting}
-        title={!ctx.canExport ? "当前角色只有查看权限" : !available ? "行为采集已接通，当前没有可导出的生产事件" : undefined}>
-        {exporting ? "导出中…" : available ? "导出近 7 天全端" : "当前暂无生产事件"}
+        title={!ctx.canExport ? "当前角色只有查看权限" : sandboxOnly ? "Sandbox 环境不开放生产行为热力或导出" : !available ? "行为采集已接通，当前没有可导出的生产事件" : undefined}>
+        {exporting ? "导出中…" : available ? "导出近 7 天全端" : sandboxOnly ? "Sandbox 独立观察" : "当前暂无生产事件"}
       </button>
     </>
   );
@@ -139,12 +141,40 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
     setAcceptanceTo(businessClock(0));
   };
   const gradId = "l6heat-" + useId().replace(/:/g, "");
+  const overviewRaw = ctx.biData?.l6 ?? null;
 
   useEffect(() => {
     let cancelled = false;
     setRefreshing(true);
     setLiveError("");
     setSel(null);
+    if (ctx.biLoading) return () => { cancelled = true; };
+
+    if (overviewRaw) {
+      try {
+        const overview = normalizeL6BehaviorHeatmap(overviewRaw);
+        const isDefaultQuery = win === "7d" && device === "ALL" && locale === "ALL" && depth === "all" && sort === "pv";
+        if (overview.status === "SANDBOX_ONLY" || isDefaultQuery) {
+          setLiveRaw(overviewRaw);
+          setRefreshing(false);
+          return () => { cancelled = true; };
+        }
+      } catch (error) {
+        setLiveRaw(null);
+        setLiveHeat(null);
+        setLiveError(displayAdminError(error));
+        setRefreshing(false);
+        return () => { cancelled = true; };
+      }
+    }
+    if (ctx.biError) {
+      setLiveRaw(null);
+      setLiveHeat(null);
+      setLiveError(ctx.biError);
+      setRefreshing(false);
+      return () => { cancelled = true; };
+    }
+
     void fetchL6Behavior({ window: win, device, locale, depth, sort })
       .then((data) => {
         normalizeL6BehaviorHeatmap(data);
@@ -159,7 +189,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
       })
       .finally(() => { if (!cancelled) setRefreshing(false); });
     return () => { cancelled = true; };
-  }, [depth, device, locale, reloadRevision, sort, win]);
+  }, [ctx.biError, ctx.biLoading, depth, device, locale, overviewRaw, reloadRevision, sort, win]);
 
   useEffect(() => {
     let cancelled = false;
@@ -314,6 +344,28 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
       </div>
     </section>
   );
+
+  if (!heatmapData.available && heatmapData.status === "SANDBOX_ONLY") {
+    return (
+      <div>
+        {acceptancePanel}
+        <section className="l-card">
+          <div className="l-h">
+            <span className="ttl">用户行为热力图 · Sandbox 环境</span>
+            <div className="r"><span className="bdg warn">生产面已隔离</span></div>
+          </div>
+          <div className="l-b">
+            <div className="ltint warn" style={{ fontSize: 12.5 }}>
+              <b>这不是可通过重试恢复的加载故障。</b> · <AutoGloss>{heatmapData.message || "生产行为热力读取已按环境隔离策略关闭。"}</AutoGloss>
+            </div>
+            <div className="ltint" style={{ marginTop: 12, fontSize: 12 }}>
+              请在上方输入当前 Run 的观察凭证与时间窗，查询只属于本次验收的 Sandbox 行为事实；生产 fact 与 outbox 不会在此环境展示或写入。
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   if (!heatmapData.pageTree.length) {
     return <div>{acceptancePanel}<LDataState ctx={ctx} label="L6" /></div>;

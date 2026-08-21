@@ -39,6 +39,7 @@ import {
 import type { User360Profile } from "@/lib/admin/user360-client";
 import type { OpsSku } from "@/lib/admin/platform-types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { shouldSendOnEnter } from "@/lib/keyboard-submit";
 import { fetchMSupportAcceptanceProof, fetchMSupportAcceptanceConversations, fetchMSupportAcceptanceTickets, fetchMSupportAcceptanceTicket, replyMSupportAcceptanceConversation, transferMSupportAcceptanceConversation, replyMSupportAcceptanceTicket, closeMSupportAcceptanceTicket, type MSupportAcceptanceProof, type MSupportAcceptanceConversation, type MSupportAcceptanceTicket } from "@/lib/admin/m-support-acceptance-sandbox";
 
 const CONVO_KEY = "I.session.convos";
@@ -1242,13 +1243,16 @@ function ChatComposer({
         <textarea
           className="ta"
           data-proof="session-reply"
+          aria-label={`回复会话 ${convo.id}`}
           rows={2}
-          placeholder="输入回复,⌘/Ctrl+Enter 发送"
+          placeholder="输入回复 · Enter 发送 · Shift+Enter 换行"
           value={replyBody}
           disabled={!canWrite}
           onChange={(e) => onReplyChange(e.target.value)}
           onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") doSend();
+            if (!shouldSendOnEnter(e)) return;
+            e.preventDefault();
+            void doSend();
           }}
         />
         <button type="button" data-proof="session-reply-save" className={`chat-send${sending ? " sending" : ""}`} disabled={!canWrite || !replyBody.trim() || sending} onClick={doSend}>

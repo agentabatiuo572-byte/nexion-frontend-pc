@@ -11,6 +11,11 @@ export const PORTED_DOMAINS = new Set<string>([
   "A", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
 ]);
 
+// Keep newly added A-domain modules explicit in the port registry as well as
+// the domain-level switch; this prevents a future per-module split from
+// silently falling back to the generic scaffold.
+export const PORTED_MODULES = new Set<string>(["A1", "A2", "A3", "A4", "A9"]);
+
 /** 按路由构建域视图页头 meta(供显式旗舰路由复用;catch-all 直接用 match 内联)。server 安全。 */
 export function buildDomainViewMeta(path: string): DomainViewMeta | null {
   const m = findByPath(path);

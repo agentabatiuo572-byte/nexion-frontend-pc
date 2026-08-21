@@ -89,9 +89,12 @@ test("NX1.0 remote Genesis uses canonical APIs and never runs local sale ticks o
   assert.match(api, /\/api\/genesis\/listings\/\$\{encodeURIComponent\(holdingNo\)\}\/buy/);
   assert.match(store, /function tickSales\(\) \{[\s\S]*void syncRemote\(\);[\s\S]*return;/);
   assert.doesNotMatch(store, /function tickSales\(\) \{[\s\S]{0,160}soldSlots\.value\s*\+=/);
-  assert.match(store, /genesisApi\.purchase\(n,[\s\S]*genesis-purchase:/);
-  assert.match(store, /genesisApi\.buy\(holdingNo,[\s\S]*genesis-buy:/);
+  assert.match(store, /function purchaseIdempotencyKey\(n: number,[\s\S]*genesis-purchase:/);
+  assert.match(store, /genesisApi\.purchase\(n,\s*purchaseIdempotencyKey\(n,\s*tokenIds\)\)/);
+  assert.match(store, /function stableIntent\(operation: string, target: string\)[\s\S]*`genesis:\$\{boundKey\}:\$\{operation\}:\$\{target\}`/);
+  assert.match(store, /genesisApi\.buy\(holdingNo,\s*stableIntent\("buy",\s*holdingNo\)\)/);
   assert.match(purchase, /const result = await genesis\.purchase\(qty\.value\)/);
   assert.match(marketplace, /await genesis\.acquireSecondary\(listing\.tokenId\)/);
-  assert.doesNotMatch(purchase + marketplace, /postMoneyBill|debitBalance|creditBalance|captureMoney/);
+  assert.match(purchase, /if \(!remoteApiEnabled\) \{[\s\S]*postMoneyBill[\s\S]*return;[\s\S]*const result = await genesis\.purchase\(qty\.value\)/);
+  assert.doesNotMatch(marketplace, /postMoneyBill|debitBalance|creditBalance|captureMoney/);
 });

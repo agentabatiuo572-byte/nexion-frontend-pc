@@ -586,7 +586,7 @@ function adaptPurchaseGate(gate: SupportWorkbenchPurchaseGate | null | undefined
     mode: gate.mode === "either" ? "either" : "all",
     quotaCap: gate.quotaCap ?? undefined,
     quotaSold: gate.quotaSold ?? undefined,
-    quotaPeriod: gate.quotaPeriod === "lifetime" ? "lifetime" : "month",
+    quotaPeriod: gate.quotaPeriod === "month" ? "month" : "lifetime",
     enforce: gate.enforce !== false,
   };
   const hasValue =

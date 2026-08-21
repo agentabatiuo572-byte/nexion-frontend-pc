@@ -6,6 +6,7 @@ import { releaseMonthPresentation } from "../app/components/domain-views/e-tabs/
 const view = readFileSync(new URL("../app/components/domain-views/e-view.tsx", import.meta.url), "utf8");
 const catalog = readFileSync(new URL("../app/components/domain-views/e-tabs/e1-catalog.tsx", import.meta.url), "utf8");
 const e1Client = readFileSync(new URL("../lib/admin/e1-client.ts", import.meta.url), "utf8");
+const e1Contract = readFileSync(new URL("../lib/admin/e1-overview-contract.ts", import.meta.url), "utf8");
 const e1Data = readFileSync(new URL("../app/components/domain-views/e-tabs/data.ts", import.meta.url), "utf8");
 const e1Route = readFileSync(new URL("../app/api/admin/e1/[...path]/route.ts", import.meta.url), "utf8");
 const domainCss = readFileSync(new URL("../app/components/domain-views/e-domain.css", import.meta.url), "utf8");
@@ -171,6 +172,19 @@ test("E1 purchase gate is a structured server-enforced editor, not a HOLD placeh
   assert.match(e1Client, /purchaseGate: toPurchaseGate\(sku\.purchaseGate\)/);
   assert.match(registry, /canonicalE1SkuParams/);
   assert.match(registry, /\.\.\.rest/);
+});
+
+test("E1 purchase quota is lifetime-only while legacy month rows stay visibly repairable", () => {
+  assert.match(e1Data, /gateQuotaPeriod: "lifetime"/);
+  assert.match(e1Data, /quotaPeriod: hasQuota \? "lifetime"/);
+  assert.match(e1Data, /历史按月周期暂不可用/);
+  assert.doesNotMatch(view, /<option value="month">按月<\/option>/);
+  assert.match(view, /历史按月配置已暂停\(HOLD\)/);
+  assert.match(e1Client, /quotaPeriod: gate\.quotaCap != null \? "lifetime" : null/);
+  assert.match(e1Client, /quotaPeriod: gate\.quotaPeriod === "month" \? "month" : "lifetime"/);
+  assert.match(e1Data, /direct > 1_000_000/);
+  assert.match(e1Data, /已售数量必须和锁额上限成对配置/);
+  assert.match(e1Contract, /value\.activeDirectMin/);
 });
 
 test("E5 force activation is not mislabeled as a funds-amplifying proposal", () => {

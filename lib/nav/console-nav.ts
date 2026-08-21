@@ -93,6 +93,7 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "A6", name: "角色管理", path: "/platform/roles", prdAnchor: "A6", batch: "V1", status: "flagship" },
       { id: "A7", name: "菜单管理", path: "/platform/menus", prdAnchor: "A7", batch: "V1", status: "flagship" },
       { id: "A8", name: "权限字典", path: "/platform/permissions", prdAnchor: "A8", batch: "V1", status: "flagship" },
+      { id: "A9", name: "开发者访问审批", path: "/platform/developer-access", prdAnchor: "A9", batch: "V1", status: "flagship" },
     ],
   },
   {

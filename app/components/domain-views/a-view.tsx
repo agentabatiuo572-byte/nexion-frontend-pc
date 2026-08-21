@@ -3,6 +3,7 @@
 /**
  * A 平台基础 — design_handoff_a_domain 设计稿 port(2026-06-11 重构)。
  * 4 子页(A5 有独立 page,不入 FOLD):A1 账号 RBAC / A2 审计操作确认中心 / A3 系统配置 / A4 事件中台。
+ * A9 开发者访问审批复用本 shell，数据只来自服务端审批接口。
  * 三类弹窗:OperationConfirmModal(操作确认,显式 edit 契约)/ KConfirmModal(普通确认,复用 K 域原语)。
  * A1/A2/A3/A4 读写以各自后端 client 为准,本 shell 只负责弹窗与 toast。
  * A 域三铁律 server-canonical 承诺(UI 不变量,见 a-tabs/types.ts 文件头):
@@ -21,19 +22,21 @@ import { A1Accounts } from "./a-tabs/a1-accounts";
 import { A2Audit } from "./a-tabs/a2-audit";
 import { A3Config } from "./a-tabs/a3-config";
 import { A4Events } from "./a-tabs/a4-events";
+import { A9DeveloperAccess } from "./a-tabs/a9-developer-access";
 import type { ACtx, ConfirmReq, ActionConfirmReq } from "./a-tabs/types";
 import { fetchA1Overview } from "@/lib/admin/a1-client";
 import { fetchA2Overview } from "@/lib/admin/a2-client";
 import { fetchA3Overview } from "@/lib/admin/a3-client";
 import { fetchA4Overview } from "@/lib/admin/a4-client";
 
-const FOLD: Record<string, string> = { A1: "A1", A2: "A2", A3: "A3", A4: "A4" };
+const FOLD: Record<string, string> = { A1: "A1", A2: "A2", A3: "A3", A4: "A4", A9: "A9" };
 
 const RO_COPY: Record<string, string> = {
   A1: "每点一个功能,服务器都会重新核对你有没有权限",
   A2: "日志只能往里加 · 谁也改不了删不了,超级管理员也不行",
   A3: "熔断开关、功能灰度都以服务器为准 · 改本地无效",
   A4: "资金和 KPI 只认服务器正式发出的事件",
+  A9: "审批状态、操作权限和结果只认服务端真实数据",
 };
 
 export function ADomainView({ meta }: { meta: DomainViewMeta }) {
@@ -75,6 +78,10 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
           }
           return;
         }
+        if (tab === "A9") {
+          if (!cancelled) setLive("服务端审批列表 · 状态机/CAS");
+          return;
+        }
         const overview = await fetchA4Overview();
         if (!cancelled) {
           setLive(`今日事件 ${overview.stats?.todayEvents ?? "0"} · 注册域 ${overview.stats?.registeredDomains ?? 0}`);
@@ -105,6 +112,7 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "A2" && <A2Audit ctx={ctx} />}
       {tab === "A3" && <A3Config ctx={ctx} />}
       {tab === "A4" && <A4Events ctx={ctx} />}
+      {tab === "A9" && <A9DeveloperAccess />}
 
       {actionConfirmReq && (
         <OperationConfirmModal

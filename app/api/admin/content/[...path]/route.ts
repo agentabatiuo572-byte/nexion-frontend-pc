@@ -33,6 +33,7 @@ function backendPath(parts: string[]) {
     "trust-disclosure",
     "i18n-learning",
     "learning-acceptance",
+    "how-it-works",
   ]);
   const isAcceptanceSupport = parts[0] === "support" && parts[1] === "acceptance";
   if (!allowedHeads.has(parts[0]) && !isAcceptanceSupport) return null;

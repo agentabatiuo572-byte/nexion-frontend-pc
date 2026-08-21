@@ -24,6 +24,7 @@
     "A6": ["OPS-A-06", "OPS-A-24"],
     "A7": ["OPS-A-25"],
     "A8": ["OPS-A-26"],
+    "A9": ["OPS-A-32"],
     "B1": ["OPS-B-01", "OPS-B-02"],
     "B2": ["OPS-B-05", "OPS-B-06", "OPS-B-15"],
     "B3": ["OPS-B-07", "OPS-B-08"],
@@ -3002,8 +3003,8 @@
         {
           "type": "janus-runtime",
           "file": "src/lib/janus/executor-runtime.ts",
-          "positivePatterns": ["installNativeJanusExecutorBridge\\(\\)", "JANUS_NATIVE_EXECUTOR_REQUIRED", "createProductionJanusExecutor\\(\\{ bridge \\}\\)", "createJanusBackendCommandApi\\("],
-          "negativePatterns": ["createSandboxJanusExecutor", "bridge \\? createProductionJanusExecutor"]
+          "positivePatterns": ["installNativeJanusExecutorBridge\\(\\)", "JANUS_NATIVE_EXECUTOR_REQUIRED", "mode === .sandbox.[\\s\\S]{0,3000}createProductionJanusExecutor\\(\\{ bridge \\}\\)", "createJanusBackendCommandApi\\("],
+          "negativePatterns": ["mode === .production.[\\s\\S]{0,300}createSandboxJanusExecutor", "bridge \\? createProductionJanusExecutor"]
         },
         {
           "type": "janus-runtime",
@@ -3473,6 +3474,17 @@
       "note": "Production：可信服务端 ingest 在持久化前消费 A4 sampling 配置并返回 sampledIn 决策；资金/风控/转化保持服务端 100%，非法浏览采样配置失败关闭，不接受客户端采样猜测。"
     },
     {
+      "id": "OPS-A-32",
+      "domain": "A",
+      "object": "开发者访问审批(A9)",
+      "action": "读取申请并按服务端状态批准、驳回或撤销访问权限",
+      "status": "built",
+      "view": "a-tabs/a9-developer-access.tsx",
+      "batch": "done",
+      "restActions": ["approveDeveloperAccess", "rejectDeveloperAccess", "revokeDeveloperAccess"],
+      "note": "A9 由真实服务端代理读取申请并执行批准、驳回和撤销；前端仅按服务端当前状态开放操作，结果未知保留同一 Idempotency-Key，确定性拒绝后丢弃该次命令号并刷新后重试。"
+    },
+    {
       "id": "OPS-G-17",
       "domain": "G",
       "object": "G2 批处理结果",
@@ -3563,7 +3575,7 @@
         {
           "type": "uniapp-runtime",
           "file": "src/api/referral-reward-api.ts",
-          "positivePatterns": ["source === \"ledger\" && sourceEnvironment === \"PRODUCTION\"", "source === \"mock\" && sourceEnvironment === \"SANDBOX\"", "path: `/api/app/referral-rewards\\?limit=", "environment !== sourceEnvironment"],
+          "positivePatterns": ["row\\.source === \"ledger\" && row\\.sourceEnvironment === \"PRODUCTION\"", "row\\.source === \"mock\"[\\s\\S]{0,80}row\\.sourceEnvironment === \"SANDBOX\"", "path: `/api/app/referral-rewards\\?limit=", "environment !== sourceEnvironment"],
           "negativePatterns": ["estimatedReward", "sourceEnvironment \\|\\| \"PRODUCTION\""]
         },
         {
@@ -3675,7 +3687,7 @@
       "id": "OPS-D-27",
       "domain": "D",
       "object": "App Withdrawal 服务端 Sandbox",
-      "action": "在严格服务端隔离 Sandbox 完成提现请求与权威终态",
+      "action": "在严格服务端隔离 Sandbox 完成提现请求，并由服务端持久化终态",
       "status": "built",
       "view": "d-tabs/d2-withdrawals.tsx",
       "batch": "done",
@@ -3689,11 +3701,11 @@
         {
           "type": "backend-runtime",
           "file": "src/main/java/ffdd/opsconsole/finance/application/FundsSandboxService.java",
-          "positivePatterns": ["No ETA, timer or client-owned completion", "Only applyCallback may enter a terminal state", "transitionOrder\\(runId, normalizedOrderNo, userId, \"SUBMITTED\", normalizedStatus, expectedVersion\\)", "FUNDS_SANDBOX_CALLBACK_REPLAY_CONFLICT"],
+          "positivePatterns": ["public OrderView createWithdrawal\\(", "new OrderWrite\\(orderNo, userId, \"WITHDRAWAL\", normalizedChannel", "mapper\\.transitionOrder\\(runId, orderNo, userId, \"SUBMITTED\", \"CONFIRMED\", 0L\\)", "FUNDS_SANDBOX_CALLBACK_REPLAY_CONFLICT"],
           "negativePatterns": ["@Scheduled", "Thread\\.sleep"]
         }
       ],
-      "note": "仅签严格服务端 LOCAL_SANDBOX：提现请求只形成 SUBMITTED，CONFIRMED/FAILED 必须由服务端 callback+expectedVersion 进入并刷新回读；禁止本地 ETA/定时器确认。Production provider/observer 仍独立 HOLD。"
+      "note": "仅签严格服务端 LOCAL_SANDBOX：提现先以 SUBMITTED 持久化，再由同一服务端事务确认并刷新回读；前端没有本地 ETA 或定时器确认。外部 Production provider/observer 仍独立 HOLD。"
     },
     {
       "id": "OPS-D-28",

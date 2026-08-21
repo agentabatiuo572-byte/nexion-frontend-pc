@@ -77,6 +77,9 @@ interface BackendOverview {
 interface BackendCoverage {
   coverageRatio?: number | string | null;
   redlinePct?: number | string | null;
+  sourceEnvironment?: string | null;
+  runId?: string | null;
+  sandboxOverrideEnabled?: boolean | string | null;
 }
 
 interface BackendF2Metric {
@@ -560,7 +563,7 @@ export interface F2RatesOverview {
   commissionPolicy: Record<string, unknown>;
   guardrails: string[];
   configValues: Record<string, string>;
-  coverage?: { coverageRatio: number; redlinePct: number };
+  coverage?: { coverageRatio: number; redlinePct: number; sourceEnvironment?: string; runId?: string; sandboxOverrideEnabled?: boolean };
   sources: string[];
 }
 
@@ -1133,7 +1136,13 @@ function normalizeF2Overview(data: BackendF2Overview | null | undefined): F2Rate
     configValues: data?.configValues ?? {},
     // coverage 可选:后端 rates() 注入 B1 备付金覆盖率快照;无则不传(OperationConfirmModal 退化为提交时由后端实时校验),范式同 normalizeOverview。
     coverage: data?.coverage
-      ? { coverageRatio: toNumber(data.coverage.coverageRatio), redlinePct: toNumber(data.coverage.redlinePct) }
+      ? {
+          coverageRatio: toNumber(data.coverage.coverageRatio),
+          redlinePct: toNumber(data.coverage.redlinePct),
+          sourceEnvironment: asText(data.coverage.sourceEnvironment, "PRODUCTION"),
+          runId: asText(data.coverage.runId, ""),
+          sandboxOverrideEnabled: toBoolean(data.coverage.sandboxOverrideEnabled),
+        }
       : undefined,
     sources: data?.sources ?? [],
   };

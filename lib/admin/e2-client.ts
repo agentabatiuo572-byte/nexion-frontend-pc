@@ -37,6 +37,17 @@ interface BackendPhoneTier {
   dailyUsdt?: number | string | null;
   dailyNex?: number | string | null;
   status?: string | null;
+  revision?: number | null;
+}
+
+interface BackendYieldComparison {
+  configKey: string;
+  label: string;
+  dailyUsdt?: number | string | null;
+  dailyNex?: number | string | null;
+  sortOrder?: number | null;
+  revision?: number | null;
+  updatedAt?: string | null;
 }
 
 export interface E2PhoneTier {
@@ -46,6 +57,23 @@ export interface E2PhoneTier {
   dailyUsdt: number;
   dailyNex: number;
   status: string;
+  revision: number;
+}
+
+export interface E2YieldComparison {
+  configKey: string;
+  label: string;
+  dailyUsdt: number;
+  dailyNex: number;
+  sortOrder: number;
+  revision: number;
+  updatedAt?: string;
+}
+
+export interface E2OnboardingYieldConfig {
+  tiers: E2PhoneTier[];
+  comparisons: E2YieldComparison[];
+  configRevision: number;
 }
 
 let requestSeq = 0;
@@ -209,7 +237,7 @@ function fromTask(task: BackendTask): OpsTask {
   };
 }
 
-async function e2ConfigRequest<T>(path: "task-pricing" | "phone-tiers", init?: RequestInit & { idempotencyPrefix?: string }) {
+async function e2ConfigRequest<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
   const headers = new Headers(init?.headers);
   if (init?.body) headers.set("Content-Type", "application/json");
   if (init?.idempotencyPrefix) headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
@@ -271,13 +299,48 @@ function toTaskPayload(task: OpsTask, reason: string, operator: string) {
 }
 
 function fromPhoneTier(tier: BackendPhoneTier): E2PhoneTier {
+  const dailyUsdt = toNumber(tier.dailyUsdt, Number.NaN);
+  const dailyNex = toNumber(tier.dailyNex, Number.NaN);
+  const revision = toNumber(tier.revision, Number.NaN);
+  if (!positiveDecimal18x6(dailyUsdt) || !positiveDecimal18x6(dailyNex)
+      || !Number.isSafeInteger(revision) || revision < 1) {
+    throw new Error("E2_ONBOARDING_YIELD_PROTOCOL_INVALID");
+  }
   return {
     tier: tier.tier,
     name: tier.name,
     note: tier.note || "",
-    dailyUsdt: toNumber(tier.dailyUsdt),
-    dailyNex: toNumber(tier.dailyNex),
+    dailyUsdt,
+    dailyNex,
     status: tier.status || "active",
+    revision,
+  };
+}
+
+function positiveDecimal18x6(value: number | string): boolean {
+  const normalized = String(value).trim();
+  if (!/^(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/.test(normalized)) return false;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 999_999_999_999.999999;
+}
+
+function fromYieldComparison(row: BackendYieldComparison): E2YieldComparison {
+  if (!row.configKey || !row.label) throw new Error("E2_ONBOARDING_YIELD_PROTOCOL_INVALID");
+  const dailyUsdt = toNumber(row.dailyUsdt, Number.NaN);
+  const dailyNex = toNumber(row.dailyNex, Number.NaN);
+  const revision = toNumber(row.revision, Number.NaN);
+  if (!positiveDecimal18x6(dailyUsdt) || !positiveDecimal18x6(dailyNex)
+      || !Number.isSafeInteger(revision) || revision < 1) {
+    throw new Error("E2_ONBOARDING_YIELD_PROTOCOL_INVALID");
+  }
+  return {
+    configKey: row.configKey,
+    label: row.label,
+    dailyUsdt,
+    dailyNex,
+    sortOrder: toNumber(row.sortOrder, 0),
+    revision,
+    updatedAt: row.updatedAt || undefined,
   };
 }
 
@@ -332,9 +395,21 @@ export async function deleteE2Task(taskId: string, reason: string, operator: str
   });
 }
 
-export async function fetchE2PhoneTiers() {
-  const tiers = await e2Request<BackendPhoneTier[]>("/phone-tiers");
-  return (tiers ?? []).map(fromPhoneTier);
+export async function fetchE2PhoneTiers(): Promise<E2OnboardingYieldConfig> {
+  const raw = await e2ConfigRequest<unknown>("phone-tiers");
+  if (!isRecord(raw) || !Array.isArray(raw.tiers) || !Array.isArray(raw.comparisons)) {
+    throw new Error("E2_ONBOARDING_YIELD_PROTOCOL_INVALID");
+  }
+  const tiers = raw.tiers.map((row) => {
+    if (!isRecord(row)) throw new Error("E2_ONBOARDING_YIELD_PROTOCOL_INVALID");
+    return fromPhoneTier(row as unknown as BackendPhoneTier);
+  });
+  const comparisons = raw.comparisons.map((row) => {
+    if (!isRecord(row)) throw new Error("E2_ONBOARDING_YIELD_PROTOCOL_INVALID");
+    return fromYieldComparison(row as unknown as BackendYieldComparison);
+  });
+  if (tiers.length !== 5 || comparisons.length === 0) throw new Error("E2_ONBOARDING_YIELD_PROTOCOL_INVALID");
+  return { tiers, comparisons, configRevision: toNumber(raw.configRevision as number | string | null | undefined, 0) };
 }
 
 export async function updateE2PhoneTier(
@@ -343,10 +418,47 @@ export async function updateE2PhoneTier(
   reason: string,
   operator: string,
 ) {
-  const saved = await e2Request<BackendPhoneTier>(`/phone-tiers/${encodeURIComponent(String(tier))}`, {
-    method: "PATCH",
-    body: JSON.stringify({ ...patch, reason, operator }),
+  const current = await fetchE2PhoneTiers();
+  const before = current.tiers.find((item) => item.tier === tier);
+  if (!before) throw new Error("E2_ONBOARDING_YIELD_NOT_FOUND");
+  if (patch.dailyUsdt !== undefined && !positiveDecimal18x6(patch.dailyUsdt)) {
+    throw new Error("E2_ONBOARDING_YIELD_PROTOCOL_INVALID");
+  }
+  if (patch.dailyNex !== undefined && !positiveDecimal18x6(patch.dailyNex)) {
+    throw new Error("E2_ONBOARDING_YIELD_PROTOCOL_INVALID");
+  }
+  await e2ConfigRequest<unknown>("phone-tiers", {
+    method: "PUT",
+    body: JSON.stringify({ tier, baseRateUsdt: patch.dailyUsdt, baseRateNex: patch.dailyNex,
+      expectedRevision: before.revision, reason, operator }),
     idempotencyPrefix: "e2-phone-tier",
   });
-  return fromPhoneTier(saved);
+  const config = await fetchE2PhoneTiers();
+  const row = config.tiers.find((item) => item.tier === tier);
+  if (!row) throw new Error("E2_ONBOARDING_YIELD_PROTOCOL_INVALID");
+  return row;
+}
+
+export async function updateE2YieldComparison(
+  configKey: string,
+  patch: Partial<Pick<E2YieldComparison, "label" | "dailyUsdt" | "dailyNex">>,
+  reason: string,
+  operator: string,
+) {
+  const current = await fetchE2PhoneTiers();
+  const row = current.comparisons.find((item) => item.configKey === configKey);
+  if (!row) throw new Error("E2_ONBOARDING_YIELD_NOT_FOUND");
+  const dailyUsdt = patch.dailyUsdt ?? row.dailyUsdt;
+  const dailyNex = patch.dailyNex ?? row.dailyNex;
+  if (!positiveDecimal18x6(dailyUsdt) || !positiveDecimal18x6(dailyNex)) {
+    throw new Error("E2_ONBOARDING_YIELD_PROTOCOL_INVALID");
+  }
+  await e2ConfigRequest<unknown>("phone-tiers/comparison", {
+    method: "PUT",
+    body: JSON.stringify({ configKey, label: patch.label ?? row.label, dailyUsdt, dailyNex,
+      expectedRevision: row.revision, reason, operator }),
+    idempotencyPrefix: "e2-yield-comparison",
+  });
+  const config = await fetchE2PhoneTiers();
+  return config.comparisons.find((item) => item.configKey === configKey) ?? row;
 }

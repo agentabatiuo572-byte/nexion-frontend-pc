@@ -40,9 +40,27 @@ test("H3 App consumes authenticated server state and atomic claim; remote mode d
   const missions = readApp("src/pages/missions/missions.vue");
   assert.match(api, /path: "\/api\/quests\/state"/);
   assert.match(api, /\/api\/quests\/\$\{encodeURIComponent/);
-  assert.match(store, /if \(remoteApiEnabled\) \{\s+return \{ firstTime: false, rewardNex: 0, rewardUsdt: 0 \}/);
-  assert.match(store, /claimCanonical/);
-  assert.match(store, /pendingClaimKeys/);
-  assert.match(store, /generation !== accountGeneration/);
-  assert.match(missions, /CanonicalWeeklyQuest v-if="remoteApiEnabled"/);
+  assert.match(store, /if \(remoteApiEnabled\) \{[\s\S]*?void refreshRemote\(\);[\s\S]*?return \{ firstTime: false, rewardNex: 0, rewardUsdt: 0 \}/);
+  assert.match(store, /async function claimRemote/);
+  assert.match(store, /claimSequence/);
+  assert.match(store, /isCurrentRequest\(\)/);
+  assert.match(missions, /<WeeklyQuestHero \/>/);
+  assert.match(missions, /<WeeklyQuestList \/>/);
+});
+
+test("H3 identifies the real weekly-card display fields consumed by the App", () => {
+  const view = read("app/components/domain-views/h-tabs/h3-quest-events.tsx");
+  const backendMapper = read("../nexion-backend/src/main/java/ffdd/opsconsole/growth/mapper/AppGrowthEngagementMapper.java");
+  const appPresenter = readApp("src/lib/home-task-carousel.ts");
+
+  assert.match(view, /本周任务卡展示参数/);
+  for (const key of ["countdownDays", "countdownHours", "targetDevice", "targetDaily"]) {
+    assert.match(view, new RegExp(`promoBanner\\.${key}`));
+    assert.match(backendMapper, new RegExp(key));
+    assert.match(appPresenter, new RegExp(key));
+  }
+  assert.match(view, /周任务名称和奖励来自活动任务/);
+  assert.match(view, /启用首页促销兜底/);
+  assert.match(view, /没有未领取周任务时跳商店/);
+  assert.doesNotMatch(view, /上架本周转化卡|下架本周转化卡|转化卡上下架/);
 });

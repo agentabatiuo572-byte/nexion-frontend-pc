@@ -37,7 +37,7 @@ export function effCurve(early: number, mid: number, late: number, stage1: numbe
 // ── SKU 表单 = 前端 Product 全字段镜像。input 一律 string,提交时 formToSku 转结构化 OpsSku ──
 export const EMPTY_SKU_FORM = {
   name: "", id: "", tier: "", tagline: "", badge: "",
-  gpu: "", vram: "", hashRate: "", power: "", datacenter: "",
+  gpu: "", vram: "", hashRate: "", power: "", datacenter: "", uptime: "", warranty: "", phoneDailyEarn: "", phoneDailyEarnNEX: "",
   price: "",
   dailyEarn: "", dailyEarnNEX: "", shareYieldMin: "", shareYieldMax: "",
   sold: "", stock: "",
@@ -48,7 +48,7 @@ export const EMPTY_SKU_FORM = {
   // gateType = 条件门形态:none(无门)/ activeDirect(单活跃直推)/ rank(单 V 级)/ combo(组合)。
   // 锁额(quota)与条件门正交,任意门类型下均可设。
   gateType: "none", gateRankMin: "", gateActiveDirectMin: "", gateTeamVolumeMin: "", gateMode: "all",
-  gateQuotaCap: "", gateQuotaSold: "", gateQuotaPeriod: "month", gateEnforce: "true",
+  gateQuotaCap: "", gateQuotaSold: "", gateQuotaPeriod: "lifetime", gateEnforce: "true",
 };
 export type SkuForm = typeof EMPTY_SKU_FORM;
 
@@ -73,7 +73,7 @@ export function skuToForm(s: OpsSku): SkuForm {
   const g = s.purchaseGate;
   return {
     name: s.name ?? "", id: s.id ?? "", tier: s.tier ?? "", tagline: s.tagline ?? "", badge: s.badge ?? "",
-    gpu: s.gpu ?? "", vram: s.vram ?? "", hashRate: s.hashRate ?? "", power: s.power ?? "", datacenter: s.datacenter ?? "",
+    gpu: s.gpu ?? "", vram: s.vram ?? "", hashRate: s.hashRate ?? "", power: s.power ?? "", datacenter: s.datacenter ?? "", uptime: s.uptime ?? "", warranty: s.warranty ?? "", phoneDailyEarn: str(s.phoneDailyEarn), phoneDailyEarnNEX: str(s.phoneDailyEarnNEX),
     price: str(s.price),
     dailyEarn: str(s.dailyEarn), dailyEarnNEX: str(s.dailyEarnNEX), shareYieldMin: str(s.shareYieldMin), shareYieldMax: str(s.shareYieldMax),
     sold: str(s.sold), stock: str(s.stock),
@@ -84,7 +84,7 @@ export function skuToForm(s: OpsSku): SkuForm {
     gateRankMin: str(g?.rankMin), gateActiveDirectMin: str(g?.activeDirectMin), gateTeamVolumeMin: str(g?.teamVolumeMin),
     gateMode: g?.mode === "either" ? "either" : "all",
     gateQuotaCap: str(g?.quotaCap), gateQuotaSold: str(g?.quotaSold),
-    gateQuotaPeriod: g?.quotaPeriod === "lifetime" ? "lifetime" : "month",
+    gateQuotaPeriod: g?.quotaPeriod === "month" ? "month" : "lifetime",
     gateEnforce: g ? (g.enforce ? "true" : "false") : "true",
   };
 }
@@ -106,7 +106,7 @@ export function formToGate(f: SkuForm): PurchaseGate | undefined {
     mode: f.gateMode === "either" ? "either" : "all",
     quotaCap: cap,
     quotaSold: hasQuota ? Math.max(0, skuNumU(f.gateQuotaSold) ?? 0) : undefined, // 防御:已售下限 0(校验已拦负数,store 层再兜底)
-    quotaPeriod: hasQuota ? (f.gateQuotaPeriod === "lifetime" ? "lifetime" : "month") : undefined,
+    quotaPeriod: hasQuota ? "lifetime" : undefined,
     enforce: f.gateEnforce !== "false",
   };
 }
@@ -141,13 +141,15 @@ export function validateGateForm(f: SkuForm): string | null {
   const rank = skuNumU(f.gateRankMin);
   if (rank != null && (rank < 0 || rank > 12)) return "购买门:V 级须在 0-12 之间";
   const direct = skuNumU(f.gateActiveDirectMin);
-  if (direct != null && direct < 0) return "购买门:活跃直推门槛须为非负数";
+  if (direct != null && (direct < 0 || direct > 1_000_000)) return "购买门:活跃直推门槛须在 0-1000000 之间";
   const vol = skuNumU(f.gateTeamVolumeMin);
   if (vol != null && vol < 0) return "购买门:团队业绩门槛须为非负数";
   const cap = skuNumU(f.gateQuotaCap), sold = skuNumU(f.gateQuotaSold);
+  if (cap == null && sold != null) return "购买门:已售数量必须和锁额上限成对配置";
   if (cap != null && cap <= 0) return "购买门:锁额上限须为正数(留空=不限量)";
   if (sold != null && sold < 0) return "购买门:已售数量不能为负数";
   if (cap != null && sold != null && sold > cap) return "购买门:已售不能超过锁额上限";
+  if (cap != null && f.gateQuotaPeriod !== "lifetime") return "购买门:历史按月周期暂不可用,请改为全生命周期后再保存";
   return null;
 }
 
@@ -164,7 +166,7 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
   return {
     name: f.name.trim(), id: f.id.trim() || existing?.id || f.name.trim(),
     tier: f.tier, tagline: f.tagline.trim() || undefined, badge: f.badge.trim() || undefined,
-    gpu: f.gpu.trim() || undefined, vram: f.vram.trim() || undefined, hashRate: f.hashRate.trim() || undefined, power: f.power.trim() || undefined, datacenter: f.datacenter.trim() || undefined,
+    gpu: f.gpu.trim() || undefined, vram: f.vram.trim() || undefined, hashRate: f.hashRate.trim() || undefined, power: f.power.trim() || undefined, datacenter: f.datacenter.trim() || undefined, uptime: f.uptime.trim() || undefined, warranty: f.warranty.trim() || undefined, phoneDailyEarn: skuNumU(f.phoneDailyEarn), phoneDailyEarnNEX: skuNumU(f.phoneDailyEarnNEX),
     price: skuNum(f.price),
     dailyEarn, dailyEarnNEX, shareYieldMin: skuNumU(f.shareYieldMin), shareYieldMax: skuNumU(f.shareYieldMax), baseRate,
     sold: skuNumU(f.sold), stock: skuNumU(stockTrim) ?? stockTrim,

@@ -89,7 +89,7 @@
 | M6 | G1-G6 显卡算力档位与识别词 | UniApp `gpu-tiers` 与 pc-gpu 设备派生 | E6 显卡算力映射表，档位名称 / TOPS / 单个识别词逐项增删改，禁止单框多值 | ✅ |
 | M7 | pc-gpu 槽位与设备生命周期 | UniApp 6 槽位、pc-gpu 连接 / 下架 / 预留槽位逻辑 | E6 控制入口与映射，E5 继续承接设备运维和槽位上限口径 | ✅ |
 | M8 | 三端入口首页新方案 | 新 `entry-surfaces` 三条首页 + 完整链接索引；旧签名版 APP / H5 / 白壳接管三条旧首页继续删除 | 当前为评审入口与静态首页，不开放后台改文案；若进入运营化，标题 / CTA / 多语言接 I1 文案 A/B 与 I6 i18n | ✅ |
-| M9 | 白壳变脸触发与远程接管地址 | App `janus-c2` 通过真实 `/api/app/janus/reports → commands/pending → commands/ack` 上报、拉取并回执；远程地址只接受服务端批准的 HTTPS 版本 | K6 `/risk/janus-c2` 经 PC 代理和后端 `/api/admin/janus` 管理策略、命令与审计，App ACK 回写同一 `nx_janus_command` 调用链 | ✅ |
+| M9 | 白壳变脸触发与远程接管地址 | 正式 App `janus-c2` 明确显示 `JANUS_NATIVE_EXECUTOR_REQUIRED` HOLD；设备身份、远程命令上报与回执仅由 `NX1.0-Janus` 原生执行器通过 `/api/app/janus/reports → commands/pending → commands/ack` 完成 | K6 `/risk/janus-c2` 经 PC 代理和后端 `/api/admin/janus` 管理策略、命令与审计，原生执行器 ACK 回写同一 `nx_janus_command` 调用链 | ✅ |
 | M10 | 账户数据聚合 | App `account-cloud` 仅为兼容快照；密码、2FA、会话和 KYC 分别读取真实 `/api/app/security`、`/api/kyc/status`，写操作携带幂等键 | C1/C2/C3/C5/E5/D4 通过 PC `/api/admin/users` 代理和真实后端账户投影承接查询、处置、会话下线、设备运维、账本审计 | ✅ |
 | M11 | 三端入口与构建变体识别 | UniApp `entry-surface` 识别签名 App / H5 / 白 App | 载体识别本身无直接业务开关；白 App 接管归 K6，电脑入口归 E6 | ✅ |
 

@@ -44,8 +44,16 @@ function validPurchaseGate(value: unknown) {
   if (value === undefined || value === null) return true;
   if (!isRecord(value)) return false;
   if (!["all", "either", undefined, null].includes(value.mode as never)) return false;
+  // Keep parsing legacy month rows so E1 can display them as a repair/HOLD
+  // state; new writes are normalized to lifetime by the editor/client.
   if (!["month", "lifetime", undefined, null].includes(value.quotaPeriod as never)) return false;
   if (!isOptionalBoolean(value.enforce)) return false;
+  if (value.activeDirectMin !== undefined && value.activeDirectMin !== null
+    && isFiniteNumberLike(value.activeDirectMin) && Number(value.activeDirectMin) > 1_000_000) return false;
+  if ((value.quotaCap == null) !== (value.quotaSold == null)) return false;
+  if (value.quotaCap != null && value.quotaSold != null
+    && isFiniteNumberLike(value.quotaCap) && isFiniteNumberLike(value.quotaSold)
+    && Number(value.quotaSold) > Number(value.quotaCap)) return false;
   return ["rankMin", "activeDirectMin", "teamVolumeMin", "quotaCap", "quotaSold"]
     .every((key) => isOptionalNonNegativeNumberLike(value[key]));
 }
@@ -54,11 +62,11 @@ function validSku(value: unknown) {
   if (!isRecord(value)) return false;
   if (typeof value.skuId !== "string" || value.skuId.trim() === "") return false;
   if (typeof value.name !== "string" || value.name.trim() === "") return false;
-  if (!["tier", "tagline", "badge", "gpu", "vram", "hashRate", "power", "datacenter",
+  if (!["tier", "tagline", "badge", "gpu", "vram", "hashRate", "power", "datacenter", "uptime", "warranty",
     "baseRate", "stock", "aiUnlocks", "lifecycle", "unlockPhase", "imageAssetId",
     "imageObjectKey", "imagePreviewUrl", "tag", "status"]
     .every((key) => isOptionalString(value[key]))) return false;
-  if (!["price", "dailyEarn", "dailyEarnNex", "shareYieldMin", "shareYieldMax", "sold",
+  if (!["price", "dailyEarn", "dailyEarnNex", "phoneDailyEarn", "phoneDailyEarnNex", "shareYieldMin", "shareYieldMax", "sold",
     "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins"]
     .every((key) => isOptionalNonNegativeNumberLike(value[key]))) return false;
   if (value.features !== undefined && value.features !== null && !isStringArray(value.features)) return false;

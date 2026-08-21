@@ -12,7 +12,8 @@ function jsonError(status: number, message: string) {
 
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
-  if (path.length !== 1 || !["task-pricing", "phone-tiers"].includes(path[0])) {
+  const route = path.join("/");
+  if (!(["task-pricing", "phone-tiers", "phone-tiers/comparison"] as string[]).includes(route)) {
     return jsonError(404, "E2_CONFIG_ROUTE_NOT_FOUND");
   }
   const passwordChangeBlocked = requirePasswordChangeCleared(await cookies());
@@ -26,7 +27,7 @@ async function proxy(request: Request, context: RouteContext) {
   if (contentType) headers.set("Content-Type", contentType);
   if (idempotencyKey) headers.set("Idempotency-Key", idempotencyKey);
   try {
-    const upstream = await fetch(`${BACKEND_BASE_URL}/api/admin/config/${path[0]}`, {
+    const upstream = await fetch(`${BACKEND_BASE_URL}/api/admin/config/${route}`, {
       method: request.method,
       headers,
       body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.text(),

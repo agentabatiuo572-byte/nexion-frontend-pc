@@ -80,8 +80,8 @@ test("H8 App/H5 uses server reward projections and fails closed instead of remot
   assert.match(appStore, /const remote = await platformConfigApi\.platformConfig\(\)[\s\S]*rewards: remote\.rewards/);
   assert.match(appApi, /const welcomeGift = record\(root\.welcomeGift\)[\s\S]*const inviterReward = record\(root\.inviterReward\)/);
   assert.match(appReferralApi, /path: `\/api\/app\/referral-rewards\?limit=/);
-  assert.match(appReferralApi, /source === "ledger" && sourceEnvironment === "PRODUCTION"/);
-  assert.match(appReferralApi, /source === "mock" && sourceEnvironment === "SANDBOX"/);
+  assert.match(appReferralApi, /row\.source === "ledger" && row\.sourceEnvironment === "PRODUCTION"/);
+  assert.match(appReferralApi, /row\.source === "mock"[\s\S]{0,80}row\.sourceEnvironment === "SANDBOX"/);
   assert.match(appReferralApi, /nx_referral_reward_settlement[\s\S]*nx_wallet_ledger[\s\S]*nx_earnings_release_entry[\s\S]*nx_user_wallet/);
   assert.match(appReferralStore, /snapshot\.value = null;[\s\S]*REFERRAL_REWARD_LOAD_FAILED/);
   assert.match(appReferralStore, /if \(!remoteApiEnabled\)[\s\S]*REFERRAL_REWARD_SERVER_REQUIRED/);

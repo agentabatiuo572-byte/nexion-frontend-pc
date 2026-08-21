@@ -4,7 +4,7 @@
  * LoginGate — 后台账号密码登录。
  */
 import type { FormEvent } from "react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Loader2, LockKeyhole, LogIn, ShieldCheck, UserRound } from "lucide-react";
 import { changeAdminPassword, currentAdminSession, loginAdmin, verifyAdminMfa, type AdminMfaChallenge, type LoginResult } from "@/lib/admin/auth-client";
 import { completeInteractiveLogin } from "@/lib/admin/login-completion";
@@ -36,6 +36,7 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const submissionInFlight = useRef(false);
   const enrollmentQrDataUrl = useMemo(
     () => mfaChallenge?.mode === "ENROLL"
       ? createTotpEnrollmentQrDataUrl(mfaChallenge.provisioningUri)
@@ -59,12 +60,14 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submissionInFlight.current) return;
     const normalizedUsername = username.trim();
     if (!normalizedUsername || !password) {
       setError("请输入账号和密码");
       return;
     }
 
+    submissionInFlight.current = true;
     setSubmitting(true);
     setError("");
     try {
@@ -91,16 +94,19 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
     } catch (err) {
       setError(errorMessage(err));
     } finally {
+      submissionInFlight.current = false;
       setSubmitting(false);
     }
   }
 
   async function handleMfaSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submissionInFlight.current) return;
     if (!mfaChallenge || !/^\d{6}$/.test(mfaCode.trim())) {
       setError("请输入身份验证器中的 6 位一次性验证码");
       return;
     }
+    submissionInFlight.current = true;
     setSubmitting(true);
     setError("");
     try {
@@ -121,6 +127,7 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
     } catch (err) {
       setError(errorMessage(err));
     } finally {
+      submissionInFlight.current = false;
       setSubmitting(false);
     }
   }
@@ -134,6 +141,7 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
 
   async function handlePasswordChange(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submissionInFlight.current) return;
     if (!pendingLogin || !currentPasswordForChange) {
       setError("请先使用初始密码登录");
       setPendingLogin(null);
@@ -148,6 +156,7 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
       return;
     }
 
+    submissionInFlight.current = true;
     setSubmitting(true);
     setError("");
     try {
@@ -161,6 +170,7 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
     } catch (err) {
       setError(errorMessage(err));
     } finally {
+      submissionInFlight.current = false;
       setSubmitting(false);
     }
   }
@@ -350,7 +360,7 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
         )}
 
         {error && (
-          <p className="mt-3 rounded-[8px] px-3 py-2 text-[12px]" style={{ background: "color-mix(in srgb, var(--v5-danger) 10%, transparent)", color: "var(--v5-danger)" }}>
+          <p role="alert" aria-live="polite" className="mt-3 rounded-[8px] px-3 py-2 text-[12px]" style={{ background: "color-mix(in srgb, var(--v5-danger) 10%, transparent)", color: "var(--v5-danger)" }}>
             {error}
           </p>
         )}

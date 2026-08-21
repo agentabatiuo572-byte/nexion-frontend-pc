@@ -7,6 +7,7 @@ import { useState } from "react";
 import type { BusinessFormValue } from "../design-kit";
 import type { FViewCtx } from "./types";
 import type { F1VRankRow } from "@/lib/admin/f1-client";
+import { PublishedContentEditor } from "@/app/components/domain-views/published-content-editor";
 import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/admin/platform-types";
 
 function popPct(p: number, logMax: number): number { return p <= 0 ? 0 : Math.max(2, (Math.log10(Math.max(p, 1)) / logMax) * 100); }
@@ -268,6 +269,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
 
   return (
     <>
+      <PublishedContentEditor kind="rankHow" />
       <div className="f-stats">
         <div className="f-stat"><div className="k">总会员</div><div className="v">{totalMembers.toLocaleString()}</div><div className="sub">含 V0 {v0Pop.toLocaleString()}</div></div>
         <div className="f-stat ok"><div className="k">V3+ 高价值</div><div className="v">{v3plus}</div><div className="sub">≈ {v3plusPct}% · 顶部漏斗</div></div>

@@ -8,6 +8,10 @@ import {
   canExportBiReports,
 } from "../app/components/domain-views/l-tabs/l1-l2-live-data.ts";
 import { normalizeL6BehaviorHeatmap } from "../app/components/domain-views/l-tabs/l6-live-data.ts";
+import {
+  l6UnavailableStateFromError,
+  l6UnavailableStateFromFailures,
+} from "../lib/admin/l6-runtime-state.ts";
 
 test("L5 aggregate export choices and downloads share the same domain-write permission", () => {
   assert.deepEqual(
@@ -86,6 +90,27 @@ test("L6 rejects dirty HTTP 200 aggregates as a whole instead of manufacturing z
   }
 });
 
+test("L6 treats the local Sandbox production-surface fence as an explicit runtime state", () => {
+  const sandboxState = l6UnavailableStateFromError(Object.assign(new Error("hidden display message"), {
+    code: "L6_PRODUCTION_SURFACE_FORBIDDEN",
+  }));
+  assert.deepEqual(sandboxState, {
+    available: false,
+    status: "SANDBOX_ONLY",
+    message: "当前后端运行在验收 Sandbox；生产行为热力读取已按环境隔离策略关闭。请使用上方 Sandbox 独立观察面核对当前 Run 的行为事实。",
+  });
+  assert.equal(l6UnavailableStateFromError(new Error("BI_API_503")), null);
+  assert.equal(l6UnavailableStateFromError(Object.assign(new Error("other"), { code: "OTHER" })), null);
+
+  const fenceA = Object.assign(new Error("fence-a"), { code: "L6_PRODUCTION_SURFACE_FORBIDDEN" });
+  const fenceB = Object.assign(new Error("fence-b"), { code: "L6_PRODUCTION_SURFACE_FORBIDDEN" });
+  const outage = Object.assign(new Error("outage"), { code: "BI_API_503" });
+  assert.equal(l6UnavailableStateFromFailures([fenceA, fenceB], 2)?.status, "SANDBOX_ONLY");
+  assert.equal(l6UnavailableStateFromFailures([fenceA, outage], 2), null);
+  assert.equal(l6UnavailableStateFromFailures([outage, fenceA], 2), null);
+  assert.equal(l6UnavailableStateFromFailures([fenceA], 2), null);
+});
+
 test("L5 exposes only implemented actions and L6 uses canonical filtered endpoints", async () => {
   const l5 = await readFile(
     new URL("../app/components/domain-views/l-tabs/l5-export.tsx", import.meta.url),
@@ -125,7 +150,14 @@ test("L5 exposes only implemented actions and L6 uses canonical filtered endpoin
   assert.match(l6, /downloadL6Behavior/);
   assert.match(l6, /设备筛选/);
   assert.match(l6, /Locale 筛选/);
-  assert.match(l6, /重新加载/);
+  assert.match(l6, /查询隔离事实/);
   assert.match(l6, /setLiveRaw\(null\)/);
+  assert.match(l6, /heatmapData\.status === "SANDBOX_ONLY"/);
+  assert.match(l6, /生产行为热力读取已按环境隔离策略关闭/);
+  assert.match(l6, /if \(ctx\.biLoading\)/);
+  assert.match(l6, /overview\.status === "SANDBOX_ONLY"/);
+  assert.match(l5Client, /l6UnavailableStateFromError/);
+  assert.match(l5Client, /Promise\.allSettled/);
+  assert.match(l5Client, /error\.code = payload\.message/);
   assert.doesNotMatch(l6, /ctx\.biActions\?\.createReport/);
 });

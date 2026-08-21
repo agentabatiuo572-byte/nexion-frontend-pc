@@ -19,9 +19,10 @@ import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { A2OutcomeUncertainError, createA2CommandKey } from "@/lib/admin/a2-client";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { isOptionalTrustLinkField, validateTrustSectionBilingualFields } from "@/lib/admin/trust-section-validation";
+import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "@/lib/admin/trust-section-validation";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { LegalTermsEditor } from "@/app/components/domain-views/legal-terms-editor";
 
 /** I4 信任版块与 I5 披露共用一张表,靠槽位前缀分命名空间;槽位本身已带目标 id + 动作类型
  *  (`trust|版块键:publish`、`disclosure|辖区:matrix-configure`)。落 sessionStorage,刷新后重试仍去重。 */
@@ -332,7 +333,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       detail: (
         <>
           <b>版本差异</b>：当前线上 <span className="mono">{s.v}</span> → 待发布 <span className="mono">{draft.version}</span>；
-          发布后 /trust 页即时换新。<b>双语确认</b>必须核对中文与越南语语义一致。
+          发布后 /trust 页即时换新。<b>三语确认</b>必须核对中文、越南语、英文语义一致。
           {requiresDataSource(s) && <>财务数字 / NEX 叙事必须填写可追溯的<b>财务/NEX 数据来源</b>。</>}
           <b>执行门槛:{s.roleGate}</b>
         </>
@@ -347,9 +348,9 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         requireDataSource: requiresDataSource(s),
       },
       run: async (reason, _value, form) => {
-        const bilingual = validateTrustSectionBilingualFields(draft.fields);
-        if (!bilingual.valid) {
-          toast(`中越字段不完整：${bilingual.missing.join("、")}`);
+        const trilingual = validateTrustSectionTrilingualFields(draft.fields);
+        if (!trilingual.valid) {
+          toast(`中越英字段不完整：${trilingual.missing.join("、")}`);
           return;
         }
         const def = findHighOp("i4_trust_section_manage")!;
@@ -859,6 +860,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           <div className="sub">未确认者发起提现被拦</div>
         </div></>}
       </div>
+
+      {view === "disclosures" && <LegalTermsEditor />}
 
       {/* (I4 · a) 信任中心 6 版块 */}
       {view === "trust" && <section className="l-card">

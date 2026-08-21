@@ -239,6 +239,7 @@ const GEARS = [
   ["canon sentinel", "node", ["scripts/canon-sentinel.mjs"]],
   ["interaction audit", "node", ["scripts/admin-interaction-audit.mjs"]],
   ["M support surface audit", "node", ["scripts/admin-support-surface-audit.mjs"]],
+  ["keyboard submit contract", "node", ["--experimental-strip-types", "--test", "tests/keyboard-submit-contract.test.mjs"]],
   ["M1 pending/failure state contract", "node", ["--test", "tests/m1-acceptance-contract.test.mjs"]],
   ["M3 App support authority contract", "node", ["--test", "tests/m3-acceptance-contract.test.mjs"]],
   ["CGM field coverage", "node", ["scripts/cgm-coverage.mjs"]],

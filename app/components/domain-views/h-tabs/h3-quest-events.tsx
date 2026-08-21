@@ -548,11 +548,11 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const current = text(model?.promoBanner?.status, "paused").toLowerCase();
     const next = current === "active" ? "paused" : "active";
     openActionConfirm({
-      action: next === "active" ? "上架本周转化卡" : "下架本周转化卡",
-      detail: <>当前状态 <b>{current === "active" ? "上架中" : "已下架"}</b>，提交后用户端按服务端状态显示；并发变更会被拒绝。</>,
+      action: next === "active" ? "启用首页促销兜底" : "暂停首页促销兜底",
+      detail: <>当前促销兜底 <b>{current === "active" ? "已启用" : "已暂停"}</b>。该状态只控制“没有未领取周任务时跳商店”的兜底卡，不影响活动周任务卡及其倒计时、目标设备和日产展示；并发变更会被拒绝。</>,
       amplifies: next === "active",
       run: async (reason) => {
-        await updateConfigWithExpected("promoBanner.status", next, current, reason, "转化卡上下架");
+        await updateConfigWithExpected("promoBanner.status", next, current, reason, "首页促销兜底状态");
       },
     });
   };
@@ -1031,11 +1031,11 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">本周转化卡(首页促销 banner)</span>
-          <span className="sub">· 首页“激活设备领 NEX”促销卡 · 设备 upsell · 单实例配置</span>
+          <span className="ttl">本周任务卡展示参数（首页）</span>
+          <span className="sub">· 周任务优先、促销兜底 · 首页固定视觉槽位 · 单实例配置</span>
           <div className="r">
             <span className={`bdg ${text(promoBanner.status, "") === "active" ? "ok" : "dim"}`}>
-              {text(promoBanner.status, "") === "active" ? "上架中" : "已下架"}
+              {text(promoBanner.status, "") === "active" ? "促销兜底已启用" : "促销兜底已暂停"}
             </span>
           </div>
         </div>
@@ -1043,7 +1043,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           <div className="p-row">
             <span className="k">
               基础奖励 × 倍率 = 最终奖励
-              <small>对应用户端首页促销卡展示。</small>
+              <small>仅在没有活动周任务时计算促销兜底奖励。</small>
             </span>
             <span className="v">{text(promoBanner.baseReward)} × {text(promoBanner.multiplier)} = {promoFinalReward(promoBanner.baseReward, promoBanner.multiplier)} NEX</span>
             <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.baseReward", "转化卡基础奖励", text(promoBanner.baseReward), 0, 100000, 1, "increase")} disabled={!canModuleWrite}>改基础</button>
@@ -1062,18 +1062,19 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.targetDaily", "转化卡日产展示", text(promoBanner.targetDaily), 0, 1000000, 0.01)} disabled={!canModuleWrite}>改日产</button>
           </div>
           <div className="p-row">
-            <span className="k">首页上下架</span>
-            <span className="v">{text(promoBanner.status, "") === "active" ? "上架中" : "已下架"}</span>
+            <span className="k">促销兜底状态</span>
+            <span className="v">{text(promoBanner.status, "") === "active" ? "已启用" : "已暂停"}</span>
             <button
               className="l-btn sm mc"
               onClick={openPromoStatus}
               disabled={!canModuleWrite}
             >
-              {text(promoBanner.status, "") === "active" ? "下架" : "上架"}
+              {text(promoBanner.status, "") === "active" ? "暂停兜底" : "启用兜底"}
             </button>
           </div>
           <div className="htint" style={{ marginTop: 10, fontSize: 12 }}>
-            <b>本周转化卡</b> = 首页设备 upsell 促销 banner,不是任务清单。最终奖励 = 基础 × 倍率;升奖励 / 倍率走 B1 红线。
+            <b>数据归属</b> · 周任务名称和奖励来自活动任务，任务倍率来自 H1；倒计时、目标设备和日产展示来自本区配置。
+            暂停只禁止“没有活动周任务时跳商店”的促销兜底，不影响活动周任务及其展示参数；升奖励 / 倍率走 B1 红线。
           </div>
         </div>
       </section>

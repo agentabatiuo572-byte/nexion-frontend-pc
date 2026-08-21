@@ -8,7 +8,7 @@ import { findBySlugs } from "@/lib/nav/console-nav";
 import { findModuleEntry } from "@/lib/admin/registry";
 import { ModulePage } from "@/app/components/archetypes/module-page";
 import { ScaffoldPage } from "@/app/components/scaffold/scaffold-page";
-import { PORTED_DOMAINS } from "@/app/components/domain-views/ported";
+import { PORTED_DOMAINS, PORTED_MODULES } from "@/app/components/domain-views/ported";
 import { DomainViewSwitch } from "@/app/components/domain-views/registry";
 
 export default async function CatchAllScaffold({
@@ -27,7 +27,7 @@ export default async function CatchAllScaffold({
   const entry = findModuleEntry(match.l2.path);
 
   // 已 port 设计稿内容视图的域 → 渲染域整页(与 B 域同款 DomainHeader + 富内容);导航栏不变。
-  if (PORTED_DOMAINS.has(match.domain.code)) {
+  if (PORTED_DOMAINS.has(match.domain.code) || PORTED_MODULES.has(match.l2.id)) {
     return (
       <DomainViewSwitch
         code={match.domain.code}

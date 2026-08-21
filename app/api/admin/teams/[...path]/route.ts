@@ -18,6 +18,9 @@ function isNonEmpty(value: string | undefined) {
 }
 
 function backendPath(parts: string[]) {
+  if (parts.length === 1 && parts[0] === "rank-policy") {
+    return "/api/admin/teams/rank-policy";
+  }
   if (parts.length === 1 && parts[0] === "ranks") {
     return "/api/admin/teams/ranks";
   }
