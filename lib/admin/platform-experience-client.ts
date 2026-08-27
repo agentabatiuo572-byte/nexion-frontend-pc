@@ -33,6 +33,21 @@ export interface PlatformExperienceConfig {
   updatedAt?: string;
 }
 
+export function recommendedExperienceChannels(): ExperienceChannel[] {
+  const textTemplate = "Join NexGrid with my invitation: {link}";
+  return [
+    { key: "zalo", intentType: "scheme", textTemplate, androidPackage: "com.zing.zalo", iosScheme: "zalo://", enabled: true },
+    { key: "telegram", intentType: "web", textTemplate, urlTemplate: "https://t.me/share/url?url={link}&text={text}", enabled: true },
+    { key: "whatsapp", intentType: "web", textTemplate, urlTemplate: "https://wa.me/?text={text}", enabled: true },
+    { key: "messenger", intentType: "scheme", textTemplate, androidPackage: "com.facebook.orca", iosScheme: "fb-messenger://", enabled: true },
+    { key: "sms", intentType: "web", textTemplate, urlTemplate: "sms:?body={text}", enabled: true },
+    { key: "x", intentType: "web", textTemplate, urlTemplate: "https://twitter.com/intent/tweet?text={text}", enabled: true },
+    { key: "copy", intentType: "copy", enabled: true },
+    { key: "poster", intentType: "poster", enabled: true },
+    { key: "system", intentType: "system", enabled: true },
+  ];
+}
+
 interface ApiResult<T> { code: number; message?: string; data?: T; }
 const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-platform-experience-commands-v1" });
 

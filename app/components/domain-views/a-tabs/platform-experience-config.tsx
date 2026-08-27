@@ -6,6 +6,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   fetchPlatformExperienceConfig,
+  recommendedExperienceChannels,
   updatePlatformExperienceConfig,
   type PlatformExperienceConfig,
 } from "@/lib/admin/platform-experience-client";
@@ -60,6 +61,10 @@ export function PlatformExperienceConfig() {
           <div className="atint"><b>首页周促销（只读投影）</b><br />{config.homeWeeklyPromoEnabled ? "已开启" : "已关闭"}<br /><Link href="/growth/quest">去 H3 周促销管理 →</Link></div>
         </div>
         <label className="tiny">分享基础 URL</label><input aria-label="分享基础 URL" value={config.baseUrl} disabled={!canWrite} onChange={(event) => setConfig({ ...config, baseUrl: event.target.value })} style={{ width: "100%", margin: "4px 0 12px" }} />
+        {config.channels.length === 0 && <div className="atint warn" style={{ marginBottom: 10 }}>
+          当前未配置分享渠道；5173 会使用内置推荐分享渠道兜底，但后台尚未形成可审计配置。
+          {canWrite && <button className="l-btn sm" style={{ marginLeft: 8 }} onClick={() => setConfig({ ...config, channels: recommendedExperienceChannels() })}>补齐 5174 推荐渠道</button>}
+        </div>}
         <div style={{ overflowX: "auto" }}><table className="l-tbl"><thead><tr><th>渠道</th><th>意图</th><th>启用</th><th>文案模板</th><th>URL 模板</th></tr></thead><tbody>{config.channels.map((channel, index) => <tr key={channel.key}>
           <td className="mono">{channel.key}</td><td>{channel.intentType}</td><td><input type="checkbox" aria-label={`${channel.key} 启用`} checked={channel.enabled} disabled={!canWrite} onChange={(event) => patchChannel(index, { enabled: event.target.checked })} /></td>
           <td><input aria-label={`${channel.key} 文案模板`} value={channel.textTemplate ?? ""} disabled={!canWrite} onChange={(event) => patchChannel(index, { textTemplate: event.target.value })} /></td>

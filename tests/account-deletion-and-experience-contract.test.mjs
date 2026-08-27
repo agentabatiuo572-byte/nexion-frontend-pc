@@ -50,3 +50,14 @@ test("platform experience parser rejects malformed optional channel fields", () 
     assert.match(client, new RegExp(`optionalChannelText\\(channel\\.${field}\\)`));
   }
 });
+
+test("A3 can restore the 5174 share-channel matrix from an empty projection", () => {
+  const client = read("lib/admin/platform-experience-client.ts");
+  const experience = read("app/components/domain-views/a-tabs/platform-experience-config.tsx");
+  assert.match(client, /export function recommendedExperienceChannels/);
+  for (const key of ["zalo", "telegram", "whatsapp", "messenger", "sms", "x", "copy", "poster", "system"]) {
+    assert.match(client, new RegExp(`key: "${key}"`));
+  }
+  assert.match(experience, /补齐 5174 推荐渠道/);
+  assert.match(experience, /recommendedExperienceChannels\(\)/);
+});
