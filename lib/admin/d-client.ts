@@ -170,6 +170,9 @@ export interface D1VietQrRow {
   intentNo: string;
   userId: number | null;
   bankAccountId: number | null;
+  assignedBankAccountId: number | null;
+  memoCode: string;
+  mismatchReason: "" | "BANK_ACCOUNT" | "AMOUNT" | "BANK_ACCOUNT_AND_AMOUNT" | "UNKNOWN";
   viewType: "INFLIGHT" | "MATCHED" | "ORPHAN" | "MISMATCH" | "LATE";
   status: "OPEN" | "CREDITED" | "RETURN_PENDING" | "RETURNED";
   payableVnd: number | null;
@@ -625,6 +628,12 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
   return result.data as T;
 }
 
+export interface D2DevelopmentCapabilities {
+  simulateCooldownExpiry: true;
+  environment: "development";
+  source: "server";
+}
+
 export function financeAdminRequest<T>(
   path: string,
   init?: RequestInit & { idempotencyPrefix?: string; idempotencyKey?: string },
@@ -939,8 +948,10 @@ function normalizeD1VietQrOverview(raw: unknown): D1VietQrOverview {
       const row = d1Object(item, `vietqr.page.items[${index}]`);
       const viewType = d1String(row.viewType, `vietqr.page.items[${index}].viewType`);
       const status = d1String(row.status, `vietqr.page.items[${index}].status`);
+      const mismatchReason = d1OptionalText(row.mismatchReason, `vietqr.page.items[${index}].mismatchReason`);
       if (!["INFLIGHT", "MATCHED", "ORPHAN", "MISMATCH", "LATE"].includes(viewType)
-          || !["OPEN", "CREDITED", "RETURN_PENDING", "RETURNED"].includes(status)) {
+          || !["OPEN", "CREDITED", "RETURN_PENDING", "RETURNED"].includes(status)
+          || !["", "BANK_ACCOUNT", "AMOUNT", "BANK_ACCOUNT_AND_AMOUNT", "UNKNOWN"].includes(mismatchReason)) {
         d1Invalid(`vietqr.page.items[${index}].lifecycle`);
       }
       const id = d1Number(row.id, `vietqr.page.items[${index}].id`);
@@ -963,6 +974,9 @@ function normalizeD1VietQrOverview(raw: unknown): D1VietQrOverview {
         intentNo: d1OptionalText(row.intentNo, `vietqr.page.items[${index}].intentNo`),
         userId: d1NullableNumber(row.userId, `vietqr.page.items[${index}].userId`),
         bankAccountId: d1NullableNumber(row.bankAccountId, `vietqr.page.items[${index}].bankAccountId`),
+        assignedBankAccountId: d1NullableNumber(row.assignedBankAccountId, `vietqr.page.items[${index}].assignedBankAccountId`),
+        memoCode: d1OptionalText(row.memoCode, `vietqr.page.items[${index}].memoCode`),
+        mismatchReason: mismatchReason as D1VietQrRow["mismatchReason"],
         viewType: viewType as D1VietQrRow["viewType"],
         status: status as D1VietQrRow["status"],
         payableVnd,
@@ -1220,6 +1234,20 @@ function normalizeD2Page(value: unknown): PageResult<D2Withdrawal> {
   const records = raw.records.map((row) => normalizeWithdrawal(row));
   if (records.length > pageSize || (total === 0 && records.length > 0)) d2Invalid("withdrawals.pagination");
   return { total, pageNum, pageSize, records };
+}
+
+function normalizeD2DevelopmentCapabilities(value: unknown): D2DevelopmentCapabilities {
+  const row = d2Object(value, "developmentCapabilities");
+  if (row.simulateCooldownExpiry !== true
+      || row.environment !== "development"
+      || row.source !== "server") {
+    d2Invalid("developmentCapabilities.provenance");
+  }
+  return {
+    simulateCooldownExpiry: true,
+    environment: "development",
+    source: "server",
+  };
 }
 
 function d3Invalid(field: string): never {
@@ -1837,6 +1865,29 @@ export async function fetchD2Withdrawals(params: { status?: string; keyword?: st
 
 export async function fetchD2WithdrawalDetail(withdrawalNo: string) {
   return normalizeWithdrawal(await apiRequest<unknown>("finance", `/withdrawals/${encodeURIComponent(withdrawalNo)}`));
+}
+
+export async function fetchD2DevelopmentCapabilities() {
+  return normalizeD2DevelopmentCapabilities(await apiRequest<unknown>(
+    "finance",
+    "/withdrawals/development/capabilities",
+  ));
+}
+
+export async function simulateD2CooldownExpiry(
+  withdrawalNo: string,
+  reason: string,
+  idempotencyKey: string,
+) {
+  return normalizeWithdrawal(await apiRequest<unknown>(
+    "finance",
+    `/withdrawals/development/${encodeURIComponent(withdrawalNo)}/simulate-cooldown-expiry`,
+    {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+      idempotencyKey,
+    },
+  ));
 }
 
 export async function reviewD2Withdrawal(

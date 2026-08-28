@@ -47,7 +47,12 @@ export default function G4AdminOperations({ ctx }: { ctx: GCtx }) {
   useEffect(() => { void load(); }, [load]);
 
   const edit = (definition: (typeof CONFIGS)[number]) => {
-    const current = data?.config[definition.key] ?? (definition.kind === "select" ? "false" : "");
+    const configured = data?.config[definition.key];
+    const current = configured ?? (definition.kind === "select" ? "false" : "");
+    // Missing rows use the backend's empty-string CAS baseline. This keeps a
+    // damaged/pre-migration database recoverable from G4 instead of turning the
+    // display fallback "false" into an unavoidable first-write conflict.
+    const expectedValue = configured == null ? "" : String(configured);
     ctx.openActionConfirm({
       action: `G4 运营配置 · ${definition.label}`,
       detail: `${definition.label} 当前 ${current || "未配置"}。配置保存在服务端，不产生用户资产或市场成交。时间须用 ISO-8601 UTC（例如 2026-08-01T00:00:00Z），且开始必须早于结束。`,
@@ -80,7 +85,7 @@ export default function G4AdminOperations({ ctx }: { ctx: GCtx }) {
           normalized,
           reason,
           currentAdminOperator(),
-          String(current),
+          expectedValue,
         );
         await load();
         ctx.toast(`${definition.label} 已更新`);
@@ -119,8 +124,11 @@ export default function G4AdminOperations({ ctx }: { ctx: GCtx }) {
   return <>
     {error && <div className="gtint" data-module-health-state="error" style={{ marginBottom: 12 }}>刷新失败，以下为上次成功快照 · {error} <button className="l-btn sm" onClick={() => void load()}>重试</button></div>}
     <section className="l-card" style={{ marginBottom: 16 }}>
-      <div className="l-h"><span className="ttl">资格门与预售</span><span className="sub">· 统一配置 · 修改后即时生效</span></div>
-      <div className="l-b"><div className="param-grid">{CONFIGS.map((definition) => <div className="p" key={definition.key}><div className="k">{definition.label}</div><div className="v">{data.config[definition.key] ?? "未配置"}{canWrite && <button className="l-btn sm mc" onClick={() => edit(definition)}>调整</button>}</div><div className="s">由平台权威配置统一管理</div></div>)}</div></div>
+      <div className="l-h"><span className="ttl">创世认购新配置与预售</span><span className="sub">· 服务端唯一权威 · 修改后即时投影到前端</span></div>
+      <div className="l-b">
+        <div className="gtint" style={{ marginBottom: 12 }}><b>当前资格配置</b> · 仅使用 <span className="mono">eligibility.enabled / maxPerUser / minAccountAgeDays</span>。旧的入金、旗舰设备、V 等级、邀请码四项组合规则已退役，不再参与认购判定。设备商城自身的购买资格规则属于另一模块，不受影响。</div>
+        <div className="param-grid">{CONFIGS.map((definition) => <div className="p" key={definition.key}><div className="k">{definition.label}</div><div className="v">{data.config[definition.key] ?? "未配置"}{canWrite && <button className="l-btn sm mc" onClick={() => edit(definition)}>调整</button>}</div><div className="s">配置键 market.genesis.ops.{definition.key}</div></div>)}</div>
+      </div>
     </section>
     <section className="l-card" style={{ marginBottom: 16 }}>
       <div className="l-h"><span className="ttl">虚拟成交演练</span><span className="sub">· 明确标记 SIMULATED / ADMIN_ONLY</span></div>

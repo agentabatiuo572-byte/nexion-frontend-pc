@@ -21,4 +21,18 @@ describe("E1 product specification round trip", () => {
     expect(source.phoneDailyEarn).toBeUndefined();
     expect(source.phoneDailyEarnNEX).toBeUndefined();
   });
+
+  it("round-trips explicit unlimited Share inventory without inventing stock", () => {
+    const source: OpsSku = {
+      ...formToSku(EMPTY_SKU_FORM),
+      id: "cloud-share", name: "Cloud Share", tier: "Share", productType: "SHARE",
+      inventoryMode: "UNLIMITED", stock: undefined,
+    };
+    const form = skuToForm(source);
+    const roundTrip = formToSku(form, source);
+    expect(form.inventoryMode).toBe("UNLIMITED");
+    expect(form.stock).toBe("");
+    expect(roundTrip).toMatchObject({ productType: "SHARE", inventoryMode: "UNLIMITED" });
+    expect(roundTrip.stock).toBeUndefined();
+  });
 });

@@ -9,7 +9,7 @@ import {
 } from "@/lib/admin/h-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import type { HCtx } from "./types";
 
 type TrialParam = {
@@ -35,12 +35,25 @@ type TrialSession = {
 
 type TrialState = { key: string; label: string; tone: string };
 
+type TrialProduct = {
+  productNo: string;
+  name: string;
+  priceUsdt?: number | string;
+  stock?: number | string | null;
+  status?: string;
+  productType?: string;
+  inventoryMode?: string;
+  selectable?: boolean;
+  unavailableReason?: string;
+};
+
 type H2Model = {
   stats?: Record<string, any>;
   params: TrialParam[];
   gates: Array<{ gate: string; note?: string }>;
   states: TrialState[];
   sessions: TrialSession[];
+  trialProducts?: TrialProduct[];
   autoPushKilled?: boolean;
   modelA?: Record<string, any>;
   serverOnlyFields?: string[];
@@ -64,37 +77,69 @@ function isTrialDayParam(key: string) {
   return ["trialDays", "graceDays", "extensionDays", "cooldownDays"].includes(key);
 }
 
+function isTrialIntegerParam(key: string) {
+  return isTrialDayParam(key) || key === "seatsLeftToday";
+}
+
 function dayLimitHint(key: string) {
   if (key === "trialDays") return "1-90 天";
   if (key === "graceDays" || key === "extensionDays") return "0-30 天";
   if (key === "cooldownDays") return "0-365 天";
+  if (key === "seatsLeftToday") return "0-1000000 张";
   return "";
+}
+
+function trialProductReason(reason: string | undefined) {
+  return formatAdminApiError(reason, "请到 E1 核对商品状态");
 }
 
 function ParamRow({
   ctx,
   param,
+  trialProducts,
   onChanged,
 }: {
   ctx: HCtx;
   param: TrialParam;
+  trialProducts: TrialProduct[];
   onChanged: (next: H2Model) => void;
 }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
   const canWrite = ctx.can("growth_h2_write");
   const current = text(param.cur);
   const isDay = isTrialDayParam(param.key);
-  const displayCurrent = isDay ? `${current} 天` : current;
-  const readOnly = ["phaseOpen", "trialProductId"].includes(param.key);
+  const isInteger = isTrialIntegerParam(param.key);
+  const isQuota = param.key === "seatsLeftToday";
+  const isProduct = param.key === "trialProductId";
+  const currentProduct = isProduct ? trialProducts.find((product) => product.productNo === current) : undefined;
+  const displayCurrent = isDay ? `${current} 天`
+    : isQuota ? `${current} 张`
+      : currentProduct ? `${currentProduct.name} · ${current}` : current;
+  const readOnly = ["phaseOpen", "trialPriceUSD"].includes(param.key);
+  const productOptions = trialProducts.map((product) => product.productNo);
+  const disabledProductOptions = trialProducts
+    .filter((product) => !product.selectable)
+    .map((product) => product.productNo);
+  const productOptionLabels = Object.fromEntries(trialProducts.map((product) => [
+    product.productNo,
+    `${product.name} · ${product.productNo} · 库存 ${product.stock ?? 0} · $${text(product.priceUsdt, "-")}${product.selectable ? "" : ` · 不可选：${trialProductReason(product.unavailableReason)}`}`,
+  ]));
   // FEAT-TRIAL02 无卡化后自动扣款整链下线,后端不再下发 autoChargeAtEnd,该键的渲染分支随之移除。
   const options = ["autoPushEnabled"].includes(param.key)
     ? ["开", "关"]
-    : param.key === "phaseOpen" ? ["开放", "关闭"] : undefined;
+    : param.key === "phaseOpen" ? ["开放", "关闭"]
+      : isProduct ? productOptions : undefined;
   const detail = (
     <>
       <b>{param.name}</b> · 当前 <span className="mono">{displayCurrent}</span>。
       {param.serverOnly ? "该值仅服务端可见,接口返回仍保持遮罩。" : ""}
-      {isDay ? `请输入整数天数(${dayLimitHint(param.key)})。` : ""}
+      {isInteger ? `请输入整数(${dayLimitHint(param.key)})。` : ""}
+      {isProduct ? "目标商品只能从 E1 中明确开启“允许试用”的在售实物 SKU 选择；试用价格始终读取 E1 当前售价。" : ""}
+      {isProduct && currentProduct && !currentProduct.selectable ? (
+        <span style={{ display: "block", marginTop: 5, color: "var(--danger)", fontWeight: 700 }}>
+          当前目标商品不可用 · 库存 {currentProduct.stock ?? 0} · {trialProductReason(currentProduct.unavailableReason)}
+        </span>
+      ) : null}
       {param.section === "newonly" ? "只影响新开试用。" : "实时生效。"}
     </>
   );
@@ -102,8 +147,12 @@ function ParamRow({
   const submit = async (reason: string, value?: string) => {
     if (!value || value.trim().length === 0) return;
     const normalizedValue = value.trim();
-    if (isDay && !/^\d+$/.test(normalizedValue)) {
-      toast(`${param.name} 请输入整数天数`);
+    if (isInteger && !/^\d+$/.test(normalizedValue)) {
+      toast(`${param.name} 请输入整数`);
+      return;
+    }
+    if (isQuota && Number(normalizedValue) > 1_000_000) {
+      toast(`${param.name} 必须在 0-1000000 张之间`);
       return;
     }
     const next = await updateH2TrialParam(param.key, normalizedValue, reason);
@@ -118,17 +167,25 @@ function ParamRow({
         {param.sub && <small>{param.sub}</small>}
       </div>
       <span className="v">{displayCurrent}</span>
+      {isProduct ? <a className="l-btn sm" href={`/devices/pricing?sku=${encodeURIComponent(current)}`}>去 E1 查看商品</a> : null}
       <button
         className={`l-btn sm${param.hot ? " mc" : ""}`}
         disabled={readOnly || !canWrite}
-        title={readOnly ? (param.key === "phaseOpen" ? "由 H1 当前阶段派发，只读" : "产品标识仅通过版本治理变更") : undefined}
+        title={readOnly ? (param.key === "phaseOpen" ? "由 H1 当前阶段派发，只读" : "由 E1 目标商品售价同步，只读") : undefined}
         onClick={() => {
-          if (param.hot || isDay) {
+          if (param.hot || isInteger || isProduct) {
             openActionConfirm({
               action: `${param.hot ? "试用敏感参数" : "试用参数"} · ${param.name}`,
               detail,
               amplifies: false,
-              edit: { kind: options ? "select" : isDay ? "number" : "text", current, unit: isDay ? "天" : undefined, options },
+              edit: {
+                kind: isProduct ? "select" : options ? "select" : isInteger ? "number" : "text",
+                current,
+                unit: isDay ? "天" : isQuota ? "张" : undefined,
+                options,
+                optionLabels: isProduct ? productOptionLabels : undefined,
+                disabledOptions: isProduct ? disabledProductOptions : undefined,
+              },
               run: submit,
             });
             return;
@@ -299,7 +356,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             {newOnlyParams.map((param) => (
-              <ParamRow ctx={ctx} param={param} key={param.key} onChanged={setModel} />
+              <ParamRow ctx={ctx} param={param} trialProducts={model.trialProducts ?? []} key={param.key} onChanged={setModel} />
             ))}
           </div>
         </section>
@@ -316,7 +373,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             {liveParams.map((param) => (
-              <ParamRow ctx={ctx} param={param} key={param.key} onChanged={setModel} />
+              <ParamRow ctx={ctx} param={param} trialProducts={model.trialProducts ?? []} key={param.key} onChanged={setModel} />
             ))}
           </div>
         </section>

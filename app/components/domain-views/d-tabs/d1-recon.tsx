@@ -10,6 +10,7 @@ import {
   fetchD1TopupFlows,
   fetchD1TopupOverview,
   listD1PendingTopupCommands,
+  isDOutcomeUnknownError,
   loadD1VietQrOverview,
   registerD1VietQrReceipt,
   reconcileD1VietQr,
@@ -29,6 +30,7 @@ import {
   type D1Overview,
   type D1PendingTopupCommand,
   type D1VietQrOverview,
+  type D1VietQrRow,
   type D1VietQrView,
   type PageResult,
 } from "@/lib/admin/d-client";
@@ -41,13 +43,36 @@ const FLOW_TABS = [
   ["confirmed", "已入账"],
   ["abnormal", "异常"],
 ] as const;
-const BANK_VIEW_TABS: Array<[D1VietQrView, string]> = [
-  ["inflight", "在途意向单"],
-  ["matched", "已匹配"],
-  ["orphan", "孤儿队列"],
-  ["mismatch", "差额队列"],
-  ["late", "迟到 / 补充回单"],
-];
+const BANK_VIEW_META: Record<D1VietQrView, { label: string; description: string; next: string }> = {
+  inflight: {
+    label: "待付款单",
+    description: "用户已生成付款单，银行回单尚未登记。",
+    next: "收到银行回单后，从对应付款单右侧登记，可自动带入附言、应收金额和付款单分配账户。",
+  },
+  matched: {
+    label: "已匹配回单",
+    description: "附言、金额、收款账户和到账时间已与付款单匹配。",
+    next: "待处置回单可复核入账；已入账记录保留用于追溯。",
+  },
+  orphan: {
+    label: "未找到付款单",
+    description: "银行回单找不到对应付款单（原“孤儿队列”），当前不会给任何用户入账。",
+    next: "核对附言后匹配到真实付款单；确实无法认领则登记退回。",
+  },
+  mismatch: {
+    label: "信息不一致",
+    description: "已找到付款单，但收款账户或金额与付款单不一致（原“差额队列”）。",
+    next: "只有金额不一致才可按实收核销；收款账户不一致的回单不能按实收核销，应核对凭证并登记退回。",
+  },
+  late: {
+    label: "逾期 / 重复回单",
+    description: "银行到账晚于付款宽限期，或同一付款单已存在另一张回单。",
+    next: "为防重复入账，此类回单不能入账，只能登记退回。",
+  },
+};
+
+const BANK_VIEW_TABS: Array<[D1VietQrView, string]> = (Object.keys(BANK_VIEW_META) as D1VietQrView[])
+  .map((key) => [key, BANK_VIEW_META[key].label]);
 
 function money(value: number, digits = 2) {
   return `$${Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: digits, minimumFractionDigits: digits })}`;
@@ -242,22 +267,121 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
     setBusy(true);
     setError("");
     try {
-      await task();
-      let next = await loadD1VietQrOverview(bankView, bankPage, bankPageSize);
-      if (next.page.items.length === 0 && bankPage > 1 && next.page.total > 0) {
-        const fallbackPage = Math.max(1, Math.ceil(next.page.total / bankPageSize));
-        next = await loadD1VietQrOverview(bankView, fallbackPage, bankPageSize);
-        setBankPage(fallbackPage);
+      try {
+        await task();
+      } catch (err) {
+        const detail = err instanceof Error ? displayAdminError(err) : "银行轨操作失败";
+        setError(isDOutcomeUnknownError(err)
+          ? `银行轨操作结果暂时未知，当前队列保留供核对；请先刷新，并只用原请求号重试 · ${detail}`
+          : `操作已被服务端拒绝，未入账；当前队列和回单仍保留，可按提示修正后重试 · ${detail}`);
+        throw err;
       }
-      setVietQr(next);
-      toast(ok);
-    } catch (err) {
-      setVietQr(null);
-      setError(`银行轨操作结果未确认，已停止展示旧数据；请重新读取后再判断 · ${err instanceof Error ? err.message : "银行轨操作失败"}`);
-      throw err;
+      try {
+        let next = await loadD1VietQrOverview(bankView, bankPage, bankPageSize);
+        if (next.page.items.length === 0 && bankPage > 1 && next.page.total > 0) {
+          const fallbackPage = Math.max(1, Math.ceil(next.page.total / bankPageSize));
+          next = await loadD1VietQrOverview(bankView, fallbackPage, bankPageSize);
+          setBankPage(fallbackPage);
+        }
+        setVietQr(next);
+        toast(ok);
+      } catch (readbackError) {
+        const detail = readbackError instanceof Error ? displayAdminError(readbackError) : "列表读取失败";
+        setError(`操作已被服务端受理，但最新列表回读失败；当前队列保留旧快照，请先刷新核对，不要重复提交 · ${detail}`);
+        return;
+      }
     } finally {
       setBusy(false);
     }
+  };
+
+  const openReceiptRegistration = (source?: D1VietQrRow) => {
+    if (!vietQr) return;
+    const accounts = [...vietQr.accounts].sort((left, right) => {
+      const rank = (status: D1VietQrOverview["accounts"][number]["status"]) => status === "ACTIVE" ? 0 : status === "FUSED" ? 1 : 2;
+      return rank(left.status) - rank(right.status) || left.id - right.id;
+    });
+    const selectedAccount = source?.bankAccountId ? String(source.bankAccountId) : "";
+    const statusLabel: Record<D1VietQrOverview["accounts"][number]["status"], string> = {
+      ACTIVE: "启用",
+      FUSED: "已熔断，仅核对历史回单",
+      DISABLED: "已停用，仅核对历史回单",
+    };
+    openActionConfirm({
+      action: source ? `登记这笔付款的银行回单 · ${source.intentNo}` : "登记真实银行回单",
+      detail: source
+        ? `已从待付款单带入附言、应收金额和付款单分配账户。请逐项对照银行回单；交易参考号不是付款单号，也不能自行编写。`
+        : "请逐项照抄银行回单。交易参考号不是付款单号，也不能自行编写；找不到付款单的真实到账仍可登记，系统会进入“未找到付款单”待认领。",
+      businessForm: {
+        kind: "multi-field",
+        title: "银行回单原始信息",
+        hint: "交易参考号请填写银行回单上的 Transaction ID / Reference No. / FT 号；必须全局唯一。付款单分配账户与实际到账账户不一致时不会入账。带 · 必填 的字段缺一不可。",
+        fields: [
+          {
+            key: "bankAccountId", label: "实际收款账户", inputKind: "select", required: true,
+            current: selectedAccount,
+            options: ["", ...accounts.map((account) => String(account.id))],
+            optionLabels: Object.fromEntries([
+              ["", "请选择银行回单上显示的实际收款账户"],
+              ...accounts.map((account) => [
+                String(account.id),
+                `${account.bankName} · 尾号 ${account.accountLast4} · ${statusLabel[account.status]}${source?.bankAccountId === account.id ? " · 付款单分配账户" : ""}`,
+              ]),
+            ]),
+            help: "不要沿用默认值；必须与银行回单上的入账账户一致。",
+          },
+          {
+            key: "paymentReference", label: "银行交易参考号", inputKind: "text", required: true,
+            placeholder: "例如银行回单上的 Transaction ID / Reference No. / FT 号",
+            minLength: 6, maxLength: 128,
+            pattern: "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+            patternMessage: "银行交易参考号只能包含字母、数字及 . _ : / -",
+            help: "用于去重；不要填写 Nexion 付款单号、附言码或自行编写的测试数字。",
+          },
+          {
+            key: "memoCode", label: "Nexion 转账附言码", inputKind: "text", required: false,
+            current: source?.memoCode ?? "", placeholder: "例如 NX-1234ABCD",
+            maxLength: 32, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+            patternMessage: "转账附言码只能包含字母、数字、下划线和连字符",
+            help: "没有附言或附言无法识别时可留空，回单会进入“未找到付款单”。",
+          },
+          {
+            key: "receivedVnd", label: "银行实收金额（VND）", inputKind: "number", required: true,
+            current: source?.payableVnd ? String(source.payableVnd) : "", min: 1, max: 10_000_000_000, step: 1,
+          },
+          {
+            key: "receivedAt", label: "越南银行到账时间（UTC+7）", inputKind: "text", required: true,
+            current: vietnamLocalDateTimeNow(), help: "按银行回单的到账时间填写；不是登记操作的当前时间。",
+          },
+          {
+            key: "evidenceAssetId", label: "银行回单图片", inputKind: "asset-upload", required: true, wide: true,
+            uploadPurpose: "vietqr-receipt",
+            accept: "image/jpeg,image/png",
+            help: "支持 JPG、PNG，最大 10 MB。服务端完整解码校验通过后才能提交登记。",
+          },
+        ],
+      },
+      run: (reason, _value, business) => {
+        const bankAccountId = Number(business?.bankAccountId);
+        const receivedVnd = Number(business?.receivedVnd);
+        const paymentReference = business?.paymentReference?.trim() ?? "";
+        const evidenceAssetId = business?.evidenceAssetId?.trim() ?? "";
+        if (!Number.isSafeInteger(bankAccountId) || bankAccountId <= 0) throw new Error("请选择银行回单上的实际收款账户");
+        if (!Number.isSafeInteger(receivedVnd) || receivedVnd <= 0) throw new Error("实收金额必须是正整数 VND");
+        if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{5,127}$/.test(paymentReference)) throw new Error("请照抄银行回单上的交易参考号（6–128 位）");
+        if (!evidenceAssetId) throw new Error("请先上传银行回单图片");
+        return applyBankWrite(() => registerD1VietQrReceipt({
+          bankAccountId,
+          paymentReference,
+          memoCode: business?.memoCode?.trim() || undefined,
+          receivedVnd,
+          receivedAt: vietQrReceivedAtInstant(business?.receivedAt ?? ""),
+          evidenceRef: `media:${evidenceAssetId}`,
+          reason,
+          operator,
+        }), "银行回单已登记；系统已按真实付款关系完成分类");
+      },
+    });
   };
 
   const updateChannelNumber = (channel: D1Overview["channels"][number], kind: "fee" | "min" | "max") => {
@@ -502,41 +626,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
           <span className="sub">· 五视图 · 单据锁价快照 · 挂账与 D3 第 9 科目同源</span>
           <div className="r">
             <span className="dcode electric">待核实入金 {money(vietQr?.pendingUnverifiedDepositUsdt ?? 0)}</span>
-            {canBankReconcile && <button className="l-btn sm mc" disabled={busy || !vietQr?.accounts.length} onClick={() => openActionConfirm({
-              action: "登记真实银行回单",
-              detail: "银行流水号全局唯一；系统按附言码、收款账户、实收金额和到账时间分类到已匹配、孤儿、差额或迟到队列，不允许页面直接指定用户。",
-              businessForm: { kind: "multi-field", fields: [
-                {
-                  key: "bankAccountId", label: "实际收款账户", inputKind: "select",
-                  current: String(vietQr?.accounts[0]?.id ?? ""),
-                  options: (vietQr?.accounts ?? []).map((account) => String(account.id)),
-                  optionLabels: Object.fromEntries((vietQr?.accounts ?? []).map((account) => [
-                    String(account.id), `${account.bankName} · 尾号 ${account.accountLast4}`,
-                  ])),
-                },
-                { key: "paymentReference", label: "银行流水号", inputKind: "text", required: true },
-                { key: "memoCode", label: "转账附言码（可空）", inputKind: "text" },
-                { key: "receivedVnd", label: "实收金额（VND）", inputKind: "text", required: true },
-                { key: "receivedAt", label: "越南银行到账时间（UTC+7）", inputKind: "text", current: vietnamLocalDateTimeNow(), required: true },
-                { key: "evidenceRef", label: "银行回单 / 工单凭证", inputKind: "text", required: true },
-              ] },
-              run: (reason, _value, business) => {
-                const bankAccountId = Number(business?.bankAccountId);
-                const receivedVnd = Number(business?.receivedVnd);
-                if (!Number.isSafeInteger(bankAccountId) || bankAccountId <= 0) throw new Error("请选择真实收款账户");
-                if (!Number.isSafeInteger(receivedVnd) || receivedVnd <= 0) throw new Error("实收金额必须是正整数 VND");
-                return applyBankWrite(() => registerD1VietQrReceipt({
-                  bankAccountId,
-                  paymentReference: business?.paymentReference?.trim() ?? "",
-                  memoCode: business?.memoCode?.trim() || undefined,
-                  receivedVnd,
-                  receivedAt: vietQrReceivedAtInstant(business?.receivedAt ?? ""),
-                  evidenceRef: business?.evidenceRef?.trim() ?? "",
-                  reason,
-                  operator,
-                }), "银行回单已登记；请切换相应队列完成复核");
-              },
-            })}>登记银行回单</button>}
+            {canBankReconcile && <button className="l-btn sm mc" disabled={busy || !vietQr?.accounts.length} onClick={() => openReceiptRegistration()}>登记未归属回单</button>}
           </div>
         </div>
         <div className="l-b" style={{ paddingBottom: 8 }}>
@@ -544,6 +634,10 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
             {BANK_VIEW_TABS.map(([key, label]) => (
               <button key={key} className={`chip${bankView === key ? " sel" : ""}`} disabled={loading || busy} onClick={() => { setBankView(key); setBankPage(1); }}>{label}</button>
             ))}
+          </div>
+          <div className="dtint" style={{ marginTop: 12 }} role="status">
+            <b>{BANK_VIEW_META[bankView].label}</b> · {BANK_VIEW_META[bankView].description}
+            <div className="sub" style={{ marginTop: 4 }}>下一步：{BANK_VIEW_META[bankView].next}</div>
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -557,14 +651,25 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                 return (
                   <tr key={row.id}>
                     <td><span className="mono">{row.reconciliationNo}</span><div className="sub mono">{row.paymentReference || "无银行流水号"}</div><div className="sub">{timeText(row.receivedAt)}</div></td>
-                    <td><span className="mono">{row.userId ?? "—"}</span><div className="sub">{row.intentNo || "未匹配意向单"}</div></td>
+                    <td><span className="mono">{row.userId ?? "—"}</span><div className="sub">{row.intentNo || "未匹配意向单"}</div><div className="sub mono">{row.memoCode || "无可识别附言"}</div></td>
                     <td className="num mono">{vnd(row.payableVnd)}</td>
                     <td className="num mono">{vnd(row.receivedVnd)}</td>
                     <td className="num mono">{vnd(row.lockedFxRateVndPerUsdt)}</td>
                     <td className="num mono">{money(amount)}</td>
                     <td><span className={`bdg ${row.status === "CREDITED" ? "ok" : row.status === "RETURNED" ? "dim" : "warn"}`}>{row.status === "OPEN" ? "待处置" : row.status === "CREDITED" ? "已入账" : row.status === "RETURNED" ? "已退回" : "退回处理中"}</span></td>
-                    <td>{row.note || "—"}</td>
+                    <td>{row.viewType === "MISMATCH"
+                      ? row.mismatchReason === "BANK_ACCOUNT"
+                        ? "收款账户与付款单分配账户不一致"
+                        : row.mismatchReason === "BANK_ACCOUNT_AND_AMOUNT"
+                          ? "收款账户和实收金额都与付款单不一致"
+                          : row.mismatchReason === "UNKNOWN"
+                            ? "历史账户信息缺失，无法安全判断；禁止核销"
+                            : "实收金额与付款单不一致"
+                      : row.note || "—"}</td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                      {canBankReconcile && row.status === "OPEN" && row.viewType === "INFLIGHT" && (
+                        <button className="l-btn sm mc" disabled={busy} onClick={() => openReceiptRegistration(row)}>登记这笔回单</button>
+                      )}
                       {canBankReconcile && row.status === "OPEN" && row.viewType === "ORPHAN" && (
                         <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
                           action: `手动匹配入账 · ${row.reconciliationNo}`,
@@ -596,7 +701,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                           }), "匹配回单已确认入账"),
                         })}>确认入账</button>
                       )}
-                      {canBankReconcile && row.status === "OPEN" && row.viewType === "MISMATCH" && (
+                      {canBankReconcile && row.status === "OPEN" && row.viewType === "MISMATCH" && row.mismatchReason === "AMOUNT" && (
                         <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
                           action: `按实收核销 · ${row.reconciliationNo}`,
                           detail: `按实收 ${vnd(row.receivedVnd)} 折算入账；第 9 科目等额转为用户可提负债，原应付金额不覆盖实收事实。`,
@@ -607,6 +712,13 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                             expectedVersion: row.version, evidenceRef: business?.evidenceRef?.trim() ?? "", reason, operator,
                           }), "差额回单已按实收核销"),
                         })}>按实收核销</button>
+                      )}
+                      {canBankReconcile && row.status === "OPEN" && row.viewType === "MISMATCH" && row.mismatchReason !== "AMOUNT" && (
+                        <span className="bdg bad" title={row.mismatchReason === "UNKNOWN"
+                          ? "历史付款单或账户快照信息缺失，系统无法安全判断；只能人工核对并登记退回。"
+                          : "收款账户不一致的回单不能按实收核销；请核对银行回单，确认真实到账后登记退回。"}>
+                          {row.mismatchReason === "UNKNOWN" ? "信息缺失 · 禁止核销" : "账户不一致 · 禁止核销"}
+                        </span>
                       )}
                       {canBankReconcile && row.status === "OPEN" && ["ORPHAN", "MISMATCH", "LATE"].includes(row.viewType) && (
                         <button className="l-btn sm mc" style={{ marginLeft: 6 }} disabled={busy} onClick={() => openActionConfirm({

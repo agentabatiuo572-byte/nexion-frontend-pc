@@ -115,12 +115,6 @@ function backendPath(parts: string[]) {
   if (parts.length === 3 && parts[0] === "nex" && parts[1] === "genesis" && parts[2] === "market-open-state") {
     return "/api/admin/market/nex/genesis/market-open-state";
   }
-  if (parts.length === 3 && parts[0] === "nex" && parts[1] === "genesis" && parts[2] === "invite-codes") {
-    return "/api/admin/market/nex/genesis/invite-codes";
-  }
-  if (parts.length === 5 && parts[0] === "nex" && parts[1] === "genesis" && parts[2] === "invite-codes" && isNonEmpty(parts[3]) && parts[4] === "void") {
-    return `/api/admin/market/nex/genesis/invite-codes/${encodeURIComponent(parts[3])}/void`;
-  }
   if (
     parts.length === 5 &&
     parts[0] === "nex" &&

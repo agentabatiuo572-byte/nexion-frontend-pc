@@ -24,12 +24,42 @@ const scheduler = readFileSync(
   resolve("../nexion-backend/src/main/java/ffdd/opsconsole/growth/application/TrialLifecycleScheduler.java"),
   "utf8",
 );
+const errors = readFileSync(resolve("lib/admin/error-messages.ts"), "utf8");
 
 test("H2 visible offset cap uses the writable Model A policy and read errors can retry", () => {
   assert.match(ui, /param\.key === "trialOffsetCapUSD"/);
   assert.match(ui, />重试<\/button>/);
   assert.match(growthService, /"trialOffsetCapUSD"/);
   assert.match(growthService, /"discountCapUSD", "trialOffsetCapUSD"/);
+});
+
+test("H2 exposes the Earn free-trial card quota as an editable PC policy", () => {
+  assert.match(ui, /seatsLeftToday/);
+  assert.match(ui, /Number\(normalizedValue\) > 1_000_000/);
+  assert.match(growthService, /"seatsLeftToday"/);
+  assert.match(trialService, /"seatsLeftToday"/);
+});
+
+test("H2 trial target is selected from real E1 products and its price cannot drift", () => {
+  assert.match(ui, /trialProducts/);
+  assert.match(ui, /param\.key === "trialProductId"/);
+  assert.match(ui, /kind: isProduct \? "select"/);
+  assert.match(ui, /去 E1 查看商品/);
+  assert.match(ui, /\["phaseOpen", "trialPriceUSD"\]/);
+  assert.match(growthService, /TRIAL_PRODUCT_NOT_FOUND_IN_E1/);
+  assert.match(growthService, /trialProductOptions/);
+  assert.match(growthService, /"trialPriceUSD",\s*price/);
+  assert.match(growthService, /liveTrialProductPrice/);
+  assert.match(ui, /currentProduct && !currentProduct\.selectable/);
+  assert.match(ui, /当前目标商品不可用/);
+  assert.match(ui, /disabledProductOptions/);
+  assert.match(ui, /不可选：/);
+  assert.match(ui, /trialProductReason\(product\.unavailableReason\)/);
+  assert.match(ui, /trialProductReason\(currentProduct\.unavailableReason\)/);
+  assert.match(errors, /TRIAL_POLICY_BUSINESS_TABLE_UNAVAILABLE/);
+  assert.match(errors, /TRIAL_PARAM_READONLY/);
+  assert.match(errors, /TRIAL_QUOTA_INTEGER_REQUIRED/);
+  assert.match(errors, /TRIAL_SESSION_ID_INVALID/);
 });
 
 test("H2 failed is terminal and all admin interventions delegate to the canonical lifecycle", () => {
@@ -47,7 +77,7 @@ test("H2 time projection and rewards use real elapsed or settled values", () => 
   assert.match(trialMapper, /TIMESTAMPDIFF\(SECOND, claimed_at, LEAST\(NOW\(\), expires_at\)\)/);
   assert.match(trialService, /private String effectiveState/);
   assert.match(trialService, /Math\.max\(1, row\.durationDays\(\)/);
-  assert.match(trialService, /result\.put\("config", safePolicy\(policy\)\)/);
+  assert.match(trialService, /result\.put\("config", safePolicy\(policy,/);
   assert.doesNotMatch(trialService.match(/private Map<String, Object> safePolicy[\s\S]*?return result;/)?.[0] ?? "", /chargeFailRate/);
 });
 

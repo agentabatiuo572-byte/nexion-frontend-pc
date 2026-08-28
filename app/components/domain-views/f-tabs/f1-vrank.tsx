@@ -277,8 +277,9 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         <div className="f-stat cyan"><div className="k">已配奖励等级</div><div className="v">{configuredLevels}</div><div className="sub">全 13 阶 · 运营可增删</div></div>
       </div>
 
-      <div className="f1-main">
-        <section className="ladder">
+      <div className="f1-layout-shell">
+        <div className="f1-main">
+          <section className="ladder">
           <div className="ladder-h">
             <span className="ph-ttl">V-Rank 13 阶阶梯</span>
             <span className="ph-sub">门槛 · 奖励 · 在册人数</span>
@@ -427,7 +428,8 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
               },
             })}>配置 13 阶头衔</button>}
           </div>
-        </aside>
+          </aside>
+        </div>
       </div>
 
       <div className="f1-flow-grid">

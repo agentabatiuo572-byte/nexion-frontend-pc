@@ -47,7 +47,13 @@ export interface OpsSku {
   shareYieldMax?: number;
   baseRate?: string;
   sold?: number;
-  stock: string | number;
+  /** 服务端权威商品形态；仅用于展示/约束，不能由库存模式反推。 */
+  productType?: "SERVER" | "DEVICE" | "SHARE";
+  /** FINITE 扣减实际库存；UNLIMITED 不扣库存且仅允许 SHARE。 */
+  inventoryMode?: "FINITE" | "UNLIMITED";
+  stock?: string | number;
+  /** E1-owned opt-in; only marked physical products may be selected by H2. */
+  trialEligible?: boolean;
   aiImageGenPerMin?: number;
   aiLlmTokensPerSec?: number;
   aiVideoMinPerHour?: number;

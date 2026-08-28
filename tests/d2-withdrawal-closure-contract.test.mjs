@@ -5,6 +5,8 @@ import fs from "node:fs";
 const page = fs.readFileSync("app/components/domain-views/d-tabs/d2-withdrawals.tsx", "utf8");
 const d5Page = fs.readFileSync("app/components/domain-views/d-tabs/d5-params.tsx", "utf8");
 const client = fs.readFileSync("lib/admin/d-client.ts", "utf8");
+const dCss = fs.readFileSync("app/components/domain-views/d-domain.css", "utf8");
+const financeRoute = fs.readFileSync("app/api/admin/finance/[...path]/route.ts", "utf8");
 
 test("D2 uses direct business confirmation with exact authority rendering", () => {
   assert.doesNotMatch(page, /usePropose|进入 A2 待确认队列|findHighOp/);
@@ -23,7 +25,7 @@ test("D2 uses direct business confirmation with exact authority rendering", () =
 test("D2 exposes detail, structured lifecycle forms and batch splitting UI", () => {
   assert.match(page, /单笔详情/);
   assert.match(page, /批量执行/);
-  assert.match(page, /持有天数/);
+  assert.match(page, /等待天数/);
   assert.match(page, /责任人/);
   assert.match(page, /复查时间/);
   assert.match(page, /冻结期限/);
@@ -39,6 +41,88 @@ test("D2 exposes detail, structured lifecycle forms and batch splitting UI", () 
   assert.match(page, /全部提现历史/);
   assert.match(client, /reviewD2WithdrawalsBatch/);
   assert.match(client, /fetchD2WithdrawalDetail/);
+});
+
+test("D2 presents an immediately visible drawer with compact Chinese operations copy", () => {
+  assert.match(page, /import \{ Drawer, KV,/);
+  assert.match(page, /<Drawer[\s\S]*title=\{`单笔详情/);
+  assert.match(page, /详情中查看完整费用/);
+  assert.match(page, /H1_COOLDOWN_FAST_TRACK:\s*"低风险提现冷却中，到期后系统自动复查"/);
+  assert.doesNotMatch(page, /延长持有\(extended-hold\)/);
+  assert.doesNotMatch(page, /已提交\(submitted\)/);
+  assert.match(dCss, /\.ddom \.d2-fee-summary/);
+  assert.match(dCss, /\.ddom \.d2-detail-grid/);
+});
+
+test("D2 truncates long withdrawal and asset-chain labels while exposing the full value", () => {
+  assert.match(page, /className="l-btn sm d2-withdrawal-link"/);
+  assert.match(page, /title=\{row\.withdrawalNo\}/);
+  assert.match(page, /aria-label=\{`打开提现单 \$\{row\.withdrawalNo\} 的详情`\}/);
+  assert.match(page, /className="d2-cell-ellipsis">\{row\.withdrawalNo\}<\/span>/);
+  assert.match(page, /title=\{`\$\{row\.asset\} \/ \$\{row\.chain\}`\}/);
+  assert.match(page, /aria-label=\{`资产与链：\$\{row\.asset\} \/ \$\{row\.chain\}`\}/);
+  assert.match(dCss, /\.ddom \.d2-cell-ellipsis\s*\{[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s);
+  assert.match(dCss, /\.ddom \.d2-withdrawal-link\s*\{[^}]*width:\s*100%;[^}]*min-width:\s*0;/s);
+});
+
+test("D2 lets operators select rows before choosing a permitted batch action", () => {
+  assert.doesNotMatch(page, /if \(!action\) return false/);
+  assert.match(page, /availableBatchActions/);
+  assert.match(page, /可先勾选提现单，再选择批量动作/);
+  assert.match(page, /已勾选 \{selectedRows\.length\} 笔/);
+  assert.match(page, /batchTargets\(visibleRows, current, "", availableBatchActions\)/);
+  assert.doesNotMatch(page, /batchTargets\(visibleRows, current, batchAction, availableBatchActions\)/);
+  assert.match(page, /当前批量动作“\$\{actionLabel\(batchAction\)\}”不适用于该状态/);
+  assert.match(page, /disabled=\{!selectable && !selectedNow\}/);
+  assert.match(dCss, /\.ddom \.d2-selection-note/);
+});
+
+test("D2 separates the primary search bar from advanced filters", () => {
+  assert.match(page, /d2-search-toolbar/);
+  assert.match(page, /高级筛选/);
+  assert.match(page, /d2-advanced-filters/);
+  assert.match(dCss, /\.ddom \.d2-search-toolbar/);
+  assert.match(dCss, /\.ddom \.d2-advanced-filters/);
+  assert.match(page, /void load\(1, \{[\s\S]*minAmount: "", maxAmount: "", minRiskScore: ""/);
+});
+
+test("D2 detail fetch is latest-only and fails closed before any write", () => {
+  assert.match(page, /const detailRequestSeq = useRef\(0\)/);
+  assert.match(page, /const seq = \+\+detailRequestSeq\.current/);
+  assert.match(page, /if \(seq === detailRequestSeq\.current\) setDetail\(latest\)/);
+  assert.match(page, /detailRequestSeq\.current \+= 1/);
+  assert.match(page, /setDetailError\(message\)/);
+  assert.match(page, /detailLoading \|\| !!detailError/);
+  assert.match(page, /为避免按旧数据处置，写操作已关闭/);
+});
+
+test("D2 exposes an order-scoped development cooldown simulation without client time travel", () => {
+  assert.match(client, /fetchD2DevelopmentCapabilities/);
+  assert.match(client, /simulateD2CooldownExpiry/);
+  assert.match(client, /\/withdrawals\/development\/capabilities/);
+  assert.match(client, /\/withdrawals\/development\/\$\{encodeURIComponent\(withdrawalNo\)\}\/simulate-cooldown-expiry/);
+  assert.match(financeRoute, /parts\.length === 3[\s\S]*parts\[0\] === "withdrawals"[\s\S]*parts\[1\] === "development"[\s\S]*parts\[2\] === "capabilities"/);
+  assert.match(financeRoute, /parts\.length === 4[\s\S]*parts\[0\] === "withdrawals"[\s\S]*parts\[1\] === "development"[\s\S]*parts\[3\] === "simulate-cooldown-expiry"/);
+  assert.match(financeRoute, /return null;/);
+  assert.doesNotMatch(financeRoute, /parts\[1\] === "development"[\s\S]{0,160}return `\/api\/admin\/finance\/withdrawals\/development\/\$\{parts\.slice/s);
+  assert.match(page, /模拟冷却到期/);
+  assert.match(page, /仅开发环境/);
+  assert.match(page, /按真实到期状态机重新检查 K3、K4、B1/);
+  assert.match(page, /developmentSimulationScope/);
+  assert.match(page, /row\.status\.toUpperCase\(\) === "EXTENDED_HOLD"/);
+  assert.match(page, /row\.previousStatus\.toUpperCase\(\) === "REVIEW_PASSED"/);
+  assert.match(page, /pendingKeys\.remember\(scope, key\)/);
+  assert.doesNotMatch(client, /targetTime|effectiveNow|requestedAt/);
+  assert.doesNotMatch(page, /simulateD2CooldownExpiry\([^)]*Date\./s);
+});
+
+test("D2 localizes unknown machine values instead of exposing raw codes", () => {
+  assert.match(page, /\^\[A-Z0-9_.:-\]\+\$\/i/);
+  assert.match(page, /未识别路由/);
+  assert.match(page, /未识别账户状态/);
+  assert.match(page, /未识别期限/);
+  assert.match(page, /ruleSummary\(row\.hitRules\)/);
+  assert.match(page, /userStatusLabel\(row\.userStatus\)/);
 });
 
 test("D2 blocks SENT freeze and keeps idempotency keys below the server limit", () => {

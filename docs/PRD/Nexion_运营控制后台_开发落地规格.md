@@ -15,6 +15,8 @@
 >
 > **权威性**:本文件为提炼视图,每行带「出处§」可回溯。一般冲突以原 PRD 正文为准；但带编号的已验收实现决策 `specs/FEAT-*.md` 是对应功能的后发裁定，**优先于旧 PRD 与历史 CGM 快照中的同功能字段、公式、接口和检测口径**。标 **✅ PM 裁定** 的口径(如 Genesis 日排放 0.1%、B1 红线拒绝码 422)以裁定为准。标 **TBD / 未定义 / 待裁定** 的项见第 7 章,**开发不得自行硬编**。
 >
+> **Genesis 资格 CURRENT（2026-08-27）**：以 `specs/FEAT-GEN02-unified-eligibility-policy.md` 为唯一执行规格；G4 三项 `eligibility.enabled / maxPerUser / minAccountAgeDays` 是服务端权威配置。旧四项组合资格只作为历史背景，不得出现在运行时、管理项或验收口径。设备 SKU 资格规则与创世资格严格分开。
+>
 > **语言**:全文中性运营语言。
 >
 > ---
@@ -158,7 +160,7 @@
 | G1 | Staking 池配置 | USDT 锁仓+NEX 池 4 档 APY/罚款/最小额/单档 kill | G 金融 | V3·Ch12 | §9.6 / §13.3.1 / §9.11c.1 / §9.11d.1 |
 | G2 | 兑换风控 | NEX↔USDT 三阈值 caps/gate/排队(代币→可提现闸门) | G 金融 | V3·Ch12 | §9.4 / §9.11c.1 |
 | G3 | NEX 行情引擎 | 价格曲线/做市波动/预言机喂价源(G2/G7 定价源) | G 金融 | V3·Ch12 | §5.7 / §11.9 / §9.11c.1 |
-| G4 | Genesis 经济 | 节点总量/单价/日排放率/二级版税/pause/geo | G 金融 | V3·Ch12 | §10 / §9.11d.1 |
+| G4 | Genesis 经济 | 节点总量/单价/日排放率/二级版税/pause/geo；认购资格三项新配置 `enabled/maxPerUser/minAccountAgeDays` | G 金融 | V3·Ch12 | §10 / §9.11d.1 / FEAT-GEN02 |
 | G5 | Premium 订阅 | 月费/首月折扣/权益(gate 由 H1 派发) | G 金融 | V3·Ch12 | §9.5a / §13.4 / §9.11d.1 |
 | G6 | NEX v2 Founders Vault | NEX v2 锁仓(250% APY/24 月/min 1,000 NEX) | G 金融 | V3·Ch12 | §9.5b / §9.11d.1 |
 | G7 | 复投激励 | 复投锁仓 APY/期限/积分倍率/培育倍率/Genesis 抽奖券 | G 金融 | V3·Ch12 | §9.5 |
@@ -273,7 +275,7 @@
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
 | **PhaseConfig 10-dial**(H1) | 逐月(1–12)×10 dial(见第0章 §0.10);每 dial 生效范围:enum{实时全量\|仅新用户};cohortOverrides[]{cohortId(YYYY-Www),monthOffset,区间};**默认值权威=12月§6.4+complianceHoldEnabled** | SC | §9.1 / Ch7 H1 |
-| **TrialConfig**(H2,19参数) | trialDays/graceDays/extensionDays/discountRate/discountCapUSD/autoChargeAtEnd/highQualityThresholdUSD/**chargeFailRate(server-only)**/trialProductId/trialPriceUSD/shadowDailyUSD/shadowDailyNEX/cooldownDays(30,≠withdrawCooldownDays)/phaseOpen(只读)/autoPush{Enabled,DelayMs,CooldownHours,MaxPerSession}/**trialOffsetCapUSD(=50)** | SC | §9.1 / Ch7 H2 |
+| **TrialConfig**(H2,20参数) | trialDays/graceDays/extensionDays/discountRate/discountCapUSD/autoChargeAtEnd/highQualityThresholdUSD/**chargeFailRate(server-only)**/trialProductId(仅可选 E1 `trialEligible=true` 的在售有库存实物有限库存商品)/trialPriceUSD/shadowDailyUSD/shadowDailyNEX/cooldownDays(30,≠withdrawCooldownDays)/phaseOpen(只读)/autoPush{Enabled,DelayMs,CooldownHours,MaxPerSession}/**trialOffsetCapUSD(=50)**/**seatsLeftToday(每日上限=47,实时；当日剩余由 Java+日额度表计算)** | SC | §9.1 / Ch7 H2 |
 | **TrialSession 7态**(H2) | userId · status:enum{idle\|active\|grace\|extended\|redeemed\|failed\|cancelled} · shadowUSD · shadowNEX · 时间线 · 绑卡 token · cohort · phase;**Model A computeTrialOffset** | SC | §9.1 / Ch7 H2 / §9.11.1 |
 | **Quest 配置**(H3) | Day-One{WINDOW_MS=24h,GRACE_END=72h,phase 奖励 500/200/0,6任务} · Weekly{Tier1 9条/Tier2 8条,base+phase mult 曲线 P1 1.0→P6 1.5,Champion +500×mult} · Monthly{5主题,reward 1.5k–10k,3 subGoals};questBonusMultiplier 由 H1 下发 | SC | §17.1 / Ch13 H3 |
 | **活动/Event**(H4) | id · kind:enum{discount\|referral\|wheel\|regional\|boost\|seasonal\|holding\|onboarding} · status:enum{ongoing\|upcoming\|ended} · reward(USDT/NEX) · featured(同时仅1) · trackable · href;**Lucky Spin 8档 EV≈$0.78,Genesis 不进转盘,3护栏+B1红线** | SC(RNG) | §17.1 / Ch13 H4 |
@@ -483,7 +485,7 @@
 |---|---|---|---|---|
 | `/api/admin/phase/dials` | GET / PUT | 逐月 10 dial 矩阵+定时切换(**全 dial 读写唯一路径**;放大流出方向 dial 执行=仅超管+B1;携 Key) | H1-MD1/MD3(PUT) | H1 |
 | `/api/admin/platform/phase-config/cohort-overrides` · `/:cohortId` | GET/POST/DELETE | cohort 月偏移 override 列/增/撤 | H1-MD4/MD5(写) | H1 |
-| `/api/admin/trial/config` | GET / PUT | TrialConfig 19 参数(仅敏感项经确认弹窗;携 Key) | H2-MD1(敏感项) | H2 |
+| `/api/admin/trial/config` | GET / PUT | TrialConfig 20 参数(含今日剩余免费名额；仅敏感项经确认弹窗;携 Key) | H2-MD1(敏感项) | H2 |
 | `/api/admin/trial/sessions[?status=]` · `/sessions/:userId` | GET | 试用会话监控 / 单会话详情(7 态轨迹) | — | H2 |
 | `/api/admin/trial/sessions/:userId/{cancel\|charge}` | POST | 强制取消 / 强制扣款(高敏,经 PSP;携 Key;共用 computeTrialOffset) | H2-MD2/MD3 | H2 |
 | `/api/admin/trial/kpi` | GET | 试用 KPI 看板(喂 B3) | — | H2 |
@@ -666,7 +668,7 @@
 | `questBonusMultiplier` | 月1–2=4 / 其余=1(前端未实装) | 1–4 | 实时全量 | H3 quest 乘数 |
 | `complianceHoldEnabled` | 月8+=是 | 是/否 | 实时全量 | D5/D2 合规留存 |
 
-### 4.6 域 H2 — 免费试用引擎(TrialConfig 19 项)
+### 4.6 域 H2 — 免费试用引擎(TrialConfig 20 项)
 
 | 参数(key) | 默认值 | 生效时机 | 权威源 |
 |---|---|---|---|
@@ -676,12 +678,13 @@
 | `autoChargeAtEnd` | true(实时性待 PM,见第7章 #1) | 暂仅新 trial | H2 |
 | `highQualityThresholdUSD` | 100 | 实时全量 | H2 |
 | `chargeFailRate` | 0.01(**server-only,前端永不可知**) | 实时全量 | H2 |
-| `trialProductId` | stellarbox-s1(只读 schema 治理) | — | H2 |
-| `trialPriceUSD` | 1299(敏感项,MC) | 仅新 trial | H2 |
+| `trialProductId` | stellarbox-s1(从 E1 明确开启 `trialEligible` 的商品中选择) | 仅新 trial | E1 商品目录 + H2 选择 |
+| `trialPriceUSD` | 1299(随目标商品读取 E1 售价) | 仅新 trial | E1 商品目录 |
 | `shadowDailyUSD` / `shadowDailyNEX` | 38.52 / 65 | 仅新 trial | H2 |
 | `cooldownDays`(再次试用冷却) | 30(**≠ D5 withdrawCooldownDays**) | 实时全量 | H2 |
 | `phaseOpen` | true(Phase 派发只读) | 实时全量 | H1 调度 |
 | `autoPush{Enabled,DelayMs,CooldownHours,MaxPerSession}` | true / 1500 / 24 / 1 | 实时全量 | H2 |
+| `seatsLeftToday`(每日免费名额上限；APP 接收当日剩余) | 47 | 实时全量 | H2 |
 
 ### 4.7 域 K — 风控与反作弊
 
@@ -716,6 +719,7 @@
 | `baseRate`(USDT/日满效率) | S1 38.50 / Pro 76.00 / Pro v2 96.00 / Rack P1 142.60 / Rack P2 248.00 / Cloud Share 0.073 | > 0 | 仅新对象(衰减叠加 E3) | E1 |
 | `baseRateNEX`(NEX/日) | S1 65 / Pro 215 / Pro v2 280 / Rack P1 950 / Rack P2 1,820 / Cloud Share 30 | ≥ 0 | 仅新对象 | E1 |
 | `stock` | 现状,<50 橙告警 | 0–2147483647 整数 | 实时；0 仅售罄，不自动下架 | E1 |
+| `trialEligible`(允许试用) | false | 显式开关；仅 `DEVICE/SERVER + FINITE` 可用于 H2，默认关闭 | 实时；H2 只列出已开启商品，领取仍复验在售/正价/库存 | E1 |
 | 套餐折扣 ladder | 4 件 12% / 3 件 8% / 2 件 5% | 各 0–30% | 仅新结算 | E1 |
 | 6 类任务 minReward/maxReward | IG $0.0001–0.045 / VG $0.45–1.80 / LL $0.00005–0.85 / FT $0.06–0.42 / EM $0.00001–0.09 / SP $0.00005–0.072 | ≥0,min≤max | 实时(仅新派发) | E2 |
 | `QUEUE_SATURATION` | 0.35 | 0–1 | 实时 | E2 |

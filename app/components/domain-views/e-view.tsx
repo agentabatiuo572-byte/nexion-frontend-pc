@@ -43,6 +43,7 @@ import { createA2CommandKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-cl
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { summarizeSkuCreation, summarizeSkuProposal } from "@/lib/admin/e1-a2-proposal-summary";
 import { refreshAdminMediaPreviewUrl, uploadAdminMedia } from "@/lib/admin/media-client";
 import {
   FOLD, ORDER_FLOW, TERMINAL_STATES,
@@ -149,16 +150,17 @@ function durationLabel(seconds?: number) {
 }
 
 function skuMediaFromSku(sku: OpsSku): SkuMedia {
-  if (!sku.imagePreviewUrl || !sku.imageAssetId || !sku.imageObjectKey) return null;
+  // 预签名预览会过期；刷新失败时仍必须保留权威 asset/object，只有运营明确点“移除”才能清空媒体。
+  if (!sku.imageAssetId || !sku.imageObjectKey) return null;
   const kind = mediaKindFromPath(sku.imageObjectKey);
   return {
     kind,
-    src: sku.imagePreviewUrl,
+    src: sku.imagePreviewUrl ?? "",
     name: sku.imageObjectKey.split("/").pop() || (kind === "video" ? "商品视频" : "商品主图"),
     size: 0,
     assetId: sku.imageAssetId,
     objectKey: sku.imageObjectKey,
-    previewUrl: sku.imagePreviewUrl,
+    previewUrl: sku.imagePreviewUrl || undefined,
   };
 }
 
@@ -238,11 +240,11 @@ function SkuFieldGroup({ n, title, children }: { n: string; title: string; child
     </div>
   );
 }
-function SkuFld({ label, value, onChange, placeholder, type = "text", hint, list, min, max, step }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string; hint?: string; list?: string; min?: number; max?: number; step?: number }) {
+function SkuFld({ label, value, onChange, placeholder, type = "text", hint, list, min, max, step, disabled = false }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string; hint?: string; list?: string; min?: number; max?: number; step?: number; disabled?: boolean }) {
   return (
     <label className="col" style={{ gap: 5 }}>
       <span className="muted tiny">{label}{hint ? <span style={{ color: "var(--ink-4)" }}> · {hint}</span> : null}</span>
-      <input className="fld" type={type} list={list} min={min} max={max} step={step} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
+      <input className="fld" type={type} list={list} min={min} max={max} step={step} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} />
     </label>
   );
 }
@@ -613,8 +615,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [taskForm, setTaskForm] = useState<{ n: string; price: string; req: string; unit: string; sat: string; taskClass: string; model: string; minReward: string; maxReward: string; minVRAM: string; killInit: string }>({ n: "", price: "", req: "", unit: "", sat: "", taskClass: "", model: "", minReward: "", maxReward: "", minVRAM: "", killInit: "" });
   const editedSku = editSkuId ? skus.find((sku) => sku.id === editSkuId) : undefined;
   const skuFormChanged = !editSkuId || !editedSku
-    || JSON.stringify(form) !== JSON.stringify(skuToForm(editedSku))
-    || (skuMedia?.assetId ?? "") !== (editedSku.imageAssetId ?? "");
+    || summarizeSkuProposal(editedSku, attachSkuMedia(formToSku(form, editedSku), skuMedia)) !== null;
   const [dcDrawer, setDcDrawer] = useState(false);
   const [editDcLocation, setEditDcLocation] = useState<string | null>(null);
   const [dcForm, setDcForm] = useState<DatacenterForm>({ dcLocation: "", regionLabel: "", location: "", displayName: "", status: "active", sortOrder: "100" });
@@ -973,19 +974,41 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     }
     const poolErr = validateSkuUnlockPool();
     if (poolErr) { setToast(poolErr); return; }
+    const inventoryMode = form.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE";
+    if (inventoryMode === "UNLIMITED" && form.tier !== "Share") {
+      setToast("无限库存仅适用于 Cloud Share 等非实物份额商品");
+      return;
+    }
     const stock = form.stock.trim();
-    if (!stock || !/^\d+$/.test(stock) || !Number.isSafeInteger(Number(stock)) || Number(stock) > 2147483647) {
+    if (inventoryMode === "FINITE" && (!stock || !/^\d+$/.test(stock) || !Number.isSafeInteger(Number(stock)) || Number(stock) > 2147483647)) {
       setToast("库存必须填写 0 到 2147483647 之间的整数");
       return;
     }
     const sold = form.sold.trim();
     if (sold && (!/^\d+$/.test(sold) || !Number.isSafeInteger(Number(sold))
-      || Number(sold) > 2147483647 || Number(sold) + Number(stock) > 2147483647)) {
-      setToast("销量必须为非负整数，且销量与库存合计不能超过 2147483647");
+      || Number(sold) > 2147483647 || (inventoryMode === "FINITE" && Number(sold) + Number(stock) > 2147483647))) {
+      setToast(inventoryMode === "FINITE" ? "销量必须为非负整数，且销量与库存合计不能超过 2147483647" : "销量必须为 0 到 2147483647 之间的整数");
       return;
     }
     const gErr = validateGateForm(form);
     if (gErr) { setToast(gErr); return; }
+    const currentSku = editSkuId ? skus.find((sku) => sku.id === editSkuId) : undefined;
+    if (editSkuId && !currentSku) {
+      setToast("原商品快照已刷新，请重新打开商品后再提交");
+      return;
+    }
+    const candidateSku = attachSkuMedia(formToSku(form, currentSku), skuMedia);
+    const previewSummary = currentSku
+      ? summarizeSkuProposal(currentSku, candidateSku)
+      : summarizeSkuCreation(candidateSku);
+    if (editSkuId && !previewSummary) {
+      setToast("未检测到商品字段变化，无需发起高敏审核");
+      return;
+    }
+    if (previewSummary?.omittedFields.length) {
+      setToast(`本次变更字段过多，A2 无法完整展示：${previewSummary.omittedFields.join("、")}。请拆分后提交`);
+      return;
+    }
     openActionConfirm({ name: (editSkuId ? "编辑 SKU · " : "新增 SKU · ") + (form.name || "未命名"), op: "sku-save", isNew: !editSkuId, hasImg: !!skuMedia });
     setSkuDrawer(false);
   };
@@ -1183,7 +1206,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               onDrop={(e) => { e.preventDefault(); setDragOver(false); void onPickSkuMedia(e.dataTransfer.files[0]); }}>
               <input type="file" accept={SKU_MEDIA_ACCEPT} style={{ display: "none" }} onChange={(e) => { void onPickSkuMedia(e.target.files?.[0]); e.currentTarget.value = ""; }} />
               {skuMedia
-                ? skuMedia.kind === "video"
+                ? !skuMediaPreviewSrc(skuMedia)
+                  ? <div className="col" style={{ alignItems: "center", gap: 6, padding: "22px 0", color: "var(--ink-3)" }}><Icon name="image" size={26} /><span className="tiny">媒体已保留，预览链接刷新中或暂不可用</span><span className="muted tiny">可稍后重试，也可选择新文件替换</span></div>
+                  : skuMedia.kind === "video"
                   ? <video key={skuMediaPreviewSrc(skuMedia)} src={skuMediaPreviewSrc(skuMedia)} controls muted playsInline preload="auto" onError={() => void refreshCurrentSkuMediaPreview(skuMedia.assetId)} style={{ width: "100%", height: 140, objectFit: "cover", borderRadius: 9, display: "block", background: "var(--surface-3)" }} />
                   : <img key={skuMediaPreviewSrc(skuMedia)} src={skuMediaPreviewSrc(skuMedia)} alt="" onError={() => void refreshCurrentSkuMediaPreview(skuMedia.assetId)} style={{ width: "100%", height: 140, objectFit: "cover", borderRadius: 9, display: "block" }} />
                 : <div className="col" style={{ alignItems: "center", gap: 6, padding: "22px 0", color: dragOver ? "var(--brand)" : "var(--ink-3)" }}><Icon name="image" size={26} /><span className="tiny">{dragOver ? "松开即上传" : "点击或拖拽图片/视频到此"}</span><span className="muted tiny">图片 ≤ 10MB · 视频 ≤ 200MB · JPG/PNG/WebP/GIF/MP4/WebM/MOV</span></div>}
@@ -1203,14 +1228,17 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           <SkuFieldGroup n="①" title="基本信息">
             <SkuFld label="型号名称" value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="如 NexGridBox Pro v3" />
             <div className="grid g-2" style={{ gap: 12 }}>
-              <label className="col" style={{ gap: 5 }}><span className="muted tiny">档位 tier</span><select className="fld" value={form.tier} onChange={(e) => setForm({ ...form, tier: e.target.value })}><option value="">请选择档位</option>{["Entry", "Pro", "Flagship", "Share"].map((x) => <option key={x} value={x}>{x}</option>)}</select></label>
+              <label className="col" style={{ gap: 5 }}><span className="muted tiny">档位 tier</span><select className="fld" value={form.tier} onChange={(e) => {
+                const tier = e.target.value;
+                setForm({ ...form, tier, inventoryMode: tier === "Share" ? form.inventoryMode : "FINITE" });
+              }}><option value="">请选择档位</option>{["Entry", "Pro", "Flagship", "Share"].map((x) => <option key={x} value={x}>{x}</option>)}</select></label>
               <SkuFld label="营销角标 badge" value={form.badge} onChange={(v) => setForm({ ...form, badge: v })} placeholder="输入活动角标" hint="可自定义" list="sku-badge-presets" />
             </div>
             <datalist id="sku-badge-presets">{SKU_BADGE_PRESETS.map((b) => <option key={b} value={b} />)}</datalist>
             <SkuFld label="标语 tagline" value={form.tagline} onChange={(v) => setForm({ ...form, tagline: v })} placeholder="Personal AI inference box · fully managed" hint="每款独立 slogan · 自由文案" />
             <div className="grid g-2" style={{ gap: 12 }}>
               <SkuFld label="售价(USD)" type="number" value={form.price} onChange={(v) => setForm({ ...form, price: v })} placeholder="1319" />
-              <SkuFld label="槽位 ID(slug)" value={form.id} onChange={(v) => setForm({ ...form, id: v })} placeholder="stellarbox-pro-v2" />
+              <SkuFld label="槽位 ID(slug)" value={form.id} onChange={(v) => setForm({ ...form, id: v })} placeholder="stellarbox-pro-v2" disabled={Boolean(editSkuId)} hint={editSkuId ? "商品稳定标识，创建后不可修改" : undefined} />
             </div>
           </SkuFieldGroup>
 
@@ -1277,17 +1305,36 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           </SkuFieldGroup>
 
           <SkuFieldGroup n="⑤" title="营销 & 社会证明">
-            {form.tier !== "Share" ? (
-              <div className="grid g-2" style={{ gap: 12 }}>
-                <SkuFld label="累计销量" type="number" value={form.sold} onChange={(v) => setForm({ ...form, sold: v })} placeholder="4821" />
-                <SkuFld label="库存 stock" type="number" min={0} step={1} value={form.stock} onChange={(v) => setForm({ ...form, stock: v })} placeholder="47" hint="必填，0 表示售罄；不自动下架" />
-              </div>
-            ) : (
-              <SkuFld label="累计销量" type="number" value={form.sold} onChange={(v) => setForm({ ...form, sold: v })} placeholder="12483" hint="份额无限量,不设库存" />
-            )}
+            <div className="grid g-2" style={{ gap: 12 }}>
+              <label className="col" style={{ gap: 5 }}>
+                <span className="muted tiny">库存模式</span>
+                <select className="fld" value={form.inventoryMode} onChange={(e) => {
+                  const inventoryMode = e.target.value === "UNLIMITED" ? "UNLIMITED" : "FINITE";
+                  setForm({ ...form, inventoryMode, stock: inventoryMode === "UNLIMITED" ? "" : form.stock });
+                }}>
+                  <option value="FINITE">有限库存（实数扣减）</option>
+                  {form.tier === "Share" && <option value="UNLIMITED">无限库存（非实物份额）</option>}
+                </select>
+                <span className="muted tiny">无限库存仅允许 Share 商品；成交只累计销量，不扣减库存。</span>
+              </label>
+              <SkuFld label="累计销量" type="number" value={form.sold} onChange={(v) => setForm({ ...form, sold: v })} placeholder={form.tier === "Share" ? "12483" : "4821"} />
+            </div>
+            {form.inventoryMode !== "UNLIMITED" && <SkuFld label="库存 stock" type="number" min={0} step={1} value={form.stock} onChange={(v) => setForm({ ...form, stock: v })} placeholder="47" hint="必填，0 表示售罄；不自动下架" />}
           </SkuFieldGroup>
 
           <SkuFieldGroup n="⑥" title="生命周期 & 上架">
+            <label className="col" style={{ gap: 6 }}>
+              <span className="muted tiny">允许试用（trialEligible）</span>
+              <span className="row" style={{ alignItems: "center", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={form.trialEligible === "true"}
+                  onChange={(e) => setForm({ ...form, trialEligible: e.target.checked ? "true" : "false" })}
+                />
+                <span className="tiny">{form.trialEligible === "true" ? "已允许 H2 选为免费试用商品" : "未允许试用（默认）"}</span>
+              </span>
+              <span className="muted tiny">该开关不代替在售与库存校验；关闭后 H2 不能新增选择此商品。</span>
+            </label>
             <div className="grid g-2" style={{ gap: 12 }}>
               <label className="col" style={{ gap: 5 }}><span className="muted tiny">生命周期</span><select className="fld" value={form.lifecycle} onChange={(e) => setForm({ ...form, lifecycle: e.target.value })}><option value="">请选择生命周期</option>{SKU_LIFECYCLE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
             </div>
@@ -1460,8 +1507,27 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               const sku = attachSkuMedia(formToSku(form, ex), skuMedia);
               const skuId = editSkuId ?? (form.id.trim() || form.name.trim());
               const def = findHighOp(editSkuId ? "e1_sku_update" : "e1_sku_create")!;
+              if (editSkuId && !ex) {
+                setToast("原商品快照已刷新，请重新打开商品后再提交");
+                setActionConfirm(null);
+                return;
+              }
+              const summary = ex ? summarizeSkuProposal(ex, sku) : summarizeSkuCreation(sku);
+              if (editSkuId && !summary) {
+                setToast("未检测到商品字段变化，无需发起高敏审核");
+                setActionConfirm(null);
+                return;
+              }
+              if (summary?.omittedFields.length) {
+                setToast(`本次变更字段过多，A2 无法完整展示：${summary.omittedFields.join("、")}。请拆分后提交`);
+                setActionConfirm(null);
+                setSkuDrawer(true);
+                return;
+              }
               await propose(ctx.toast, {
-                action: mc.name, obj: skuId, before: editSkuId ? "编辑前 SKU" : "—", after: form.name || skuId,
+                action: mc.name, obj: skuId,
+                before: summary?.before ?? "未创建",
+                after: summary?.after ?? "未配置",
                 type: def.type, amplifies: false, gate: { roles: [] }, gateLabel: def.gateLabel, reason,
                 sourceDomain: "E1",
                 command: def.buildCommand({ skuId, ...sku }),

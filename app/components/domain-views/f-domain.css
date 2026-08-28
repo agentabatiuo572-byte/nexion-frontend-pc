@@ -31,8 +31,12 @@
 .fdom .f-stat.danger .v { color: var(--danger); }
 
 /* ===== F1 · V-Rank 阶梯 ===== */
-.fdom .f1-main { display: grid; grid-template-columns: 1fr 320px; gap: 16px; align-items: start; }
+.fdom .f1-layout-shell { container: f1-layout / inline-size; }
+.fdom .f1-main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
 @media (max-width: 1100px) { .fdom .f1-main { grid-template-columns: 1fr; } }
+@container f1-layout (max-width: 1180px) {
+  .fdom .f1-main { grid-template-columns: minmax(0, 1fr); }
+}
 .fdom .ladder { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); overflow: hidden; }
 .fdom .ladder-h { padding: 16px 20px 12px; display: flex; align-items: center; gap: 10px; }
 .fdom .ladder-h .ph-ttl { font-size: 14.5px; font-weight: 600; white-space: nowrap; }
@@ -81,7 +85,30 @@
 .fdom .pop .bar { flex: 1; height: 8px; background: var(--surface-3); border-radius: 999px; overflow: hidden; }
 .fdom .pop .bar .f { height: 100%; border-radius: 999px; }
 .fdom .pop .ct { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--ink-2); min-width: 60px; text-align: right; font-variant-numeric: tabular-nums; }
-.fdom .lact { display: flex; gap: 6px; justify-content: flex-end; }
+.fdom .lact { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+
+/* 窄内容区把每阶改成三行信息卡，避免固定动作列把名称、奖励挤成逐字竖排。 */
+@container f1-layout (max-width: 860px) {
+  .fdom .lrow {
+    grid-template-columns: 56px minmax(0, 1fr) 160px;
+    gap: 10px 14px;
+    align-items: start;
+  }
+  .fdom .lrow .vbadge { grid-column: 1; grid-row: 1; }
+  .fdom .lrow .lcell { grid-column: 2 / -1; grid-row: 1; align-self: center; }
+  .fdom .lrow .rwd-list { grid-column: 2 / -1; grid-row: 2; }
+  .fdom .lrow .pop { grid-column: 2; grid-row: 3; align-self: center; }
+  .fdom .lrow .lact { grid-column: 3; grid-row: 3; }
+}
+
+@container f1-layout (max-width: 620px) {
+  .fdom .lrow { grid-template-columns: 48px minmax(0, 1fr); }
+  .fdom .lrow .vbadge { grid-column: 1; grid-row: 1; }
+  .fdom .lrow .lcell { grid-column: 2; grid-row: 1; }
+  .fdom .lrow .rwd-list { grid-column: 2; grid-row: 2; }
+  .fdom .lrow .pop { grid-column: 2; grid-row: 3; }
+  .fdom .lrow .lact { grid-column: 2; grid-row: 4; justify-content: flex-start; }
+}
 .fdom .pyr { display: flex; flex-direction: column; gap: 4px; padding: 4px 0 6px; }
 .fdom .pyr-row { display: grid; grid-template-columns: 32px 1fr 56px; align-items: center; gap: 8px; font-size: 11.5px; }
 .fdom .pyr-row .lbl { font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); }

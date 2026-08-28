@@ -6,6 +6,8 @@
 > **跨卷 §锚点**:§1.x–§9.x(本后台)指向 **V1 文件**;§13.4 / §9.11x / §6.x / §7.x 指向前端 PRD v3.5 与 12 月节奏表。参数默认值锚 12 月节奏表 §6,前端为现状参考。撰写遵循 `nexion-admin-prd` skill 流水线。
 > **E3 后发裁定（2026-07-21）**：`specs/FEAT-DEV01-task-capacity-schedule.md` 与 `specs/FEAT-DEV02-tradein-ladder.md` 是 E3 当前唯一执行规格，优先于本卷中全部 `degradeEarly/degradeMid/degradeLate/minEfficiency/minHoldingMonths/salvage` 旧字段、旧公式、旧接口与旧 K2 联动描述。旧段落只保留为历史设计背景，不得进入代码、配置、页面、CGM 或验收口径。
 
+> **Genesis 资格后发裁定（2026-08-27）**：`specs/FEAT-GEN02-unified-eligibility-policy.md` 是创世节点认购资格的当前唯一规格。真实 G4 只配置 `eligibility.enabled / maxPerUser / minAccountAgeDays`；旧四项组合资格及前端本地求值全部退役。本文设备 SKU 的 E1 `purchaseGate` 与 E3 设备 eligibility 属独立能力，不受该裁定影响。
+
 > **当前状态合同（2026-08-16）**：状态必须按能力边界读取，不得把 Sandbox/Mock、单一配置页或阶段展示扩大为生产能力。
 >
 > | 能力 | 当前状态 | 允许宣称的范围 | 明确保持 HOLD 的范围 |
@@ -327,12 +329,20 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 
 > **任务类标识口径**:本子模块 ② ③ ⑤ 中的 `IG / VG / LL / FT / EM / SP` 为**后台内部枚举值(server-side taskClass)**,对应前端 §6.3 显示的六类 AI 任务全称。前端 PRD §6.3 及 §9.11c.1 未定义这组缩写,故此处建立映射表避免开发端混淆:`IG` = Image Gen / `VG` = Video Gen / `LL` = LLM / `FT` = Fine-tune / `EM` = Embedding / `SP` = Speech。下文均以「缩写(全称)」首次声明。
 
+> **逐设备任务进度结算口径（5173 现行口径，区别于旧一次性发放）**:
+> - **一台设备一条独立任务流**:每台已激活、在产、归属当前账号的设备同一时刻最多有 1 个运行中任务；任务完成后才从该设备可承接池派发下一项。设备之间的任务号、开始时间、进度、完成历史和收益相互独立，不得按账号合并成一笔“每日设备收益”。
+> - **设备类型决定任务池**:新派任务只取 E2 当前启用且 `minVRAM ≤ 设备有效能力` 的任务。实体设备使用服务端登记的 VRAM；Cloud Share 的数据库物理 VRAM 仍为 `0`，但它代表托管切片而非本地显卡，路由时按**受管 8 GB 等效能力**进入低能力任务池。这是“物理属性显示值”和“任务路由等效值”的明确区别，不得把 Cloud Share 显示篡改为实体 8 GB。`minVRAM` 只接受 `0..9999` 或同值紧邻 `GB` 的规范整串（如 `8`、`8GB`），不接受前导零、小数、数字与单位间空格或重复单位；任一启用 E2 任务的该字段非法时，所有新派发失败关闭，禁止忽略坏行后继续从剩余任务派发。
+> - **派发冻结、完成入账**:任务派发时冻结 `taskClass / model / requiredSeconds / rewardUsdt / E3 capacityPct`；运行进度只表示任务已执行比例，**不会逐秒产生钱包余额**。只有达到完成时刻，服务端才在同一事务中依次完成任务、生成 Proof-of-Compute 收据、增加钱包、写资金流水和 `earnings.credited` 事件。任一环失败则整体回滚，重复调度不得重复入账。
+> - **今日收益是已完成任务之和**:设备卡“今日收益”和页面“算力收益 · 今天”均按 Asia/Shanghai 自然日汇总已结算任务收据；运行中任务仅显示预计奖励，不计入今日收益。页面每秒按服务端时间锚点更新进度显示；服务端任务快照最多每 5 秒只读一次，并在新快照后刷新设备和首页投影。客户端不得自行 claim、complete 或改钱。
+> - **E1 日产与实际收益区别**:`baseRate / dailyUsdt` 是商品与设备卡的日产基准/预计产能，用于商品叙事、排行和 E3 估算；实际钱包收益唯一来自 E2 单任务完成收据，并按派发时 E2 奖励中点及 E3 产能比例冻结。两者不得互相替代，也不得用 `dailyUsdt` 在零点或首次打开页面时一次性入账。
+> - **旧口径退役边界**:旧 `DEV-HOME-*` 零点日结和每台设备每日一笔 `DEV-ORDER-*` 一次性结算从 2026-08-27 起停止生成；既有历史任务、收据、钱包流水保持不可变，只参与其原业务日历史汇总，不追溯拆分成虚拟任务。逐设备 worker 在每台设备独立事务内先锁定权威设备行，再重新读取该设备事实及当前 E2/E3 配置后选择任务，避免并发改设备或改配置时按锁前旧快照派发。
+
 **② 后台界面**
 1. **6 类 AI 任务定价表**:每类一行 `[任务类 / 代表模型 / minReward / maxReward(USDT)/ minVRAM 路由门槛 / 当前是否可承接(kill 开关)]`。6 类:**IG(Image Gen)**(SDXL Turbo / Flux Schnell)/ **VG(Video Gen)**(Sora-class)/ **LL(LLM)**(Llama 70B / Phi-3-mini)/ **FT(Fine-tune)** / **EM(Embedding)** / **SP(Speech)**(Whisper)。
 2. **QUEUE_SATURATION 配置**:全局饱和因子(影响 locked teaser 的 `dailyPotential` 估算)。
 3. **任务路由门槛**:各类 `minVRAM`(决定哪些设备能承接该类任务,与 fleet 最大 VRAM 对齐,§6.3)。
-4. **Locked teaser 预览**:按设备 VRAM 档(**phone 8** / S1 96 / Pro 192 / Rack 640 / cloud-share 0)预览「被锁任务 + daily potential」文案,校验升级叙事不失真。
-   > **注(phone VRAM 档跨文档差异)**:前端 §6.7 写「phone 12 GB」,但原型 `lib/store/index.ts` 定义 `phone.vramTotal=8`(8 GB)。**以原型代码 8 GB 为准**,本预览段标注 8 GB;前端 §6.7 的 12 GB 与原型 `vramTotal=8` 的矛盾记 V4 跨文档收口。(同理 cloud-share `vramTotal=0`,按原型现状。)
+4. **Locked teaser 预览**:按设备 VRAM 档(**phone 8** / S1 96 / Pro 192 / Rack 640 / cloud-share 物理显示 0、路由等效 8)预览「被锁任务 + daily potential」文案,校验升级叙事不失真。
+   > **注(phone / cloud-share 口径区别)**:前端 §6.7 写「phone 12 GB」,但原型 `lib/store/index.ts` 定义 `phone.vramTotal=8`(8 GB)。**以原型代码 8 GB 为准**,本预览段标注 8 GB;前端 §6.7 的 12 GB 与原型 `vramTotal=8` 的矛盾记 V4 跨文档收口。Cloud Share 继续显示 `vramTotal=0`（它没有用户侧实体显卡），仅在服务端任务路由时按受管 8 GB 等效能力进入低能力池；展示值与路由值不可混写。
 5. **紧急下架面**:某类任务一键 kill(停止派发该类任务,监管点名某类 AI workload 时用)。
 6. **手机算力档位收益配置**:手机端按校准能力分 5 档(Tier 1–5),每档一行 `[档位 / 名称 / 日产 USDT / 日产 NEX]`,每值单行可调(每档「调 USDT / 调 NEX」两个独立单值输入)。手机日产由设备校准能力档位派生(前端 §6.10 手机算力显示规则),T3 为典型机、锚定营销 $0.06;调高任一档放大资金流出,经 B1 覆盖率护栏 + 确认 + 理由。任务路由门槛(③)的设备要求枚举含「手机+」档(手机即可承接的最低门槛,对齐前端手机接低档任务)。
 7. **任务列表浏览能力**:任务定价表支持按 `taskClass` 分类筛选(「全部」+ 各类,各项附该类任务计数)与分页浏览,使任务条目随运营「新增任务」增长后仍可按类高效定位与巡检。筛选与分页为纯查询视图能力,不改变 server-canonical 的任务定价/路由数据,无审计事件。任务条目的类型归属以 `taskClass`(④ 新增/编辑任务时所选的权威枚举,server-canonical)为单一真源,展示侧按该枚举分类,不依赖任务名推断。
@@ -420,11 +430,11 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 
 | 字段 | 控件类型 | 必填 | 校验 | 默认值 |
 |---|---|---|---|---|
-| 目标 minVRAM(GB) | 数字输入 | 是 | ≥ 0(③ 范围);不得与当前值相同 | 当前值 |
+| 目标 minVRAM(GB) | 数字输入 | 是 | 0–9999 的无前导零整数；服务端持久化/兼容输入只接受 `N` 或 `NGB` 紧邻格式，不接受小数、空格或重复单位；不得与当前值相同 | 当前值 |
 | reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
 
 - **按钮区**:`[取消]` · `[确认调门槛]`(主按钮;未变更 / 越界 / reason 未达标时置灰;loading 防双击)。
-- **错误态**:400(越界,内联警示)/ 400 `REASON_REQUIRED` / 409(提示刷新)/ 403。
+- **错误态**:400(越界或 `TASK_MIN_VRAM_INVALID`,内联警示)/ 400 `REASON_REQUIRED` / 409(提示刷新)/ 403。若历史启用行存在非法 `minVRAM`，新任务派发整体失败关闭并告警，运营修复前不得跳过坏行继续派发。
 - **成功反馈**:弹窗关闭;路由门槛行就地更新;toast「路由门槛已更新 · 仅新路由判定生效 · 已记审计」;事件 `admin.task_pricing_changed`(field=minVRAM)落 A2;实时告警超管 / 收益运营 lead。
 
 ##### [E2-MD4] 紧急下架 / 恢复任务类确认
@@ -443,6 +453,8 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 **⑤ 接口**
 - `GET /api/admin/config/task-pricing` — 返回 6 类任务定价表 `[{ taskClass, models[], minReward, maxReward, minVRAM, enabled }]` + `QUEUE_SATURATION`;**server-canonical**,前端 `GET /api/config/task-pricing`(§9.11c.1 收敛 `lib/mock/tasks.ts`)消费只读投影。
 - `PUT /api/admin/config/task-pricing` — 热更任务定价 / QUEUE_SATURATION / minVRAM / kill;经确认弹窗提交(E2-MD1–E2-MD4,body 携 reason,server 校验非空 400 `REASON_REQUIRED`)即时生效;响应回 `{ effectiveAt }`,仅对新派发任务生效(已派发任务奖励按派发时定价结算)。
+- `GET /api/tasks/assignments` — 当前账号逐设备返回 `currentTask + recentTasks + serverNow`;运行中任务不受账号级全局分页挤出，`recentTasks` 每台设备最多返回最近 10 条完成记录，5173 明示为“今日最近完成”，完整历史进入收据页查看。5173 以此计算运行进度和剩余时间，并在发现任务完成后联动刷新设备与首页收益投影；只读接口不产生收益。
+- `GET /api/tasks/receipts[/{receiptNo}]` — 返回已结算 Proof-of-Compute 收据列表/详情；今日收益只汇总其中处于已结算态且完成时间落在当前业务日的记录。
 - `GET /api/admin/config/phone-tiers` — 返回手机算力 5 档日产 `[{ tier, baseRateUsdt, baseRateNex }]`;**server-canonical**,前端 `GET /api/config/phone-tiers`(收敛 `mock/phone-tiers.ts`)消费只读投影,与前端 §6.10 同口径。
 - `PUT /api/admin/config/phone-tiers` — 调某档日产(USDT / NEX);经确认弹窗 + 理由(server 校验非空 `REASON_REQUIRED`)+ **B1 覆盖率护栏**(放大资金流出),即时对下一结算周期生效(已计提不回溯)。
 
@@ -459,6 +471,7 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 
 **⑦ 风控 & 联动**
 - **定价 server-canonical**:任务 min/maxReward / QUEUE_SATURATION / minVRAM 服务端唯一权威,client(`lib/mock/tasks.ts`)仅 fallback 默认值;任务奖励派发与 locked teaser 估算均 server 计算,client 不可篡改奖励额。
+- **任务和资金 server-canonical**:5173 只轮询并展示服务端任务进度；开发环境逐设备 worker 也必须写正式形状的 task → receipt → wallet → ledger → earning event 链，禁止恢复客户端按 tick 增加余额或零点一次性发钱。任务完成更新必须带任务号、用户、设备、运行态、开始时间和所需秒数的联合条件，收据/流水唯一键承担幂等门。
 - **QUEUE_SATURATION 应与真实 GPU 池对齐**:该因子模拟分布式 GPU 池非 100% 饱和(操作者间竞争,§6.3);若与真实任务供给严重背离,locked teaser 的 `dailyPotential` 估算失真(升级叙事说服力受损或夸大),建议运营按真实任务队列水位校准。
 - **任务锁定触发阈值与 dailyPotential 显示数字角色区分**:E3 月度损失阈值($40 / $140 / $450)是 §6.7 TaskLockCumulativeBanner 的**触发判定依据**(决定何时弹);E2 `dailyPotential` 是 locked teaser 的**潜在收益估算值**(决定弹什么数字)。二者是独立计算、独立数据源——E3 阈值决定何时弹,E2 估算决定弹什么数字,开发不得将两个数值对接到同一数据源。
 - **联动 E1 / E3**:双币基准(baseRate / baseRateNEX)归 E1;设备衰减(E3)降低有效产出,任务定价不变但实际接单能力随效率下降;E3 的月度损失叙事引用 locked teaser 的 daily potential 口径(§6.7 TaskLockCumulativeBanner / §6.8 DeviceLifecycleBanner)。

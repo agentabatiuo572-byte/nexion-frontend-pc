@@ -2,7 +2,7 @@
 
 > **文档用途**：本文档是 NexGrid 平台的官方知识库资料，供 AI 客服系统检索使用，用于回答用户关于平台的常见问题。
 > **信息基准**：设备价格、提现时效等数字均来自平台官方规格；活动、费率等可能调整的信息，一律引导用户以 App 内页面为准。
-> **最后更新**：2026-08-20
+> **最后更新**：2026-08-21
 
 ---
 
@@ -35,6 +35,36 @@ NexGrid 是一个聚焦 **AI 算力基础设施与智能硬件** 的全球化科
 - **全球化**：支持英语、中文、越南语等多语言，服务全球用户；
 - **服务保障**：App 内在线客服 + 工单体系，问题件件有着落；
 - **规范治理**：平台内部实行严格的分级权限管理与全流程审计，经营稳健。
+
+### 1.3 平台性质与经营边界（回答“是不是传销/资金盘/庞氏”类问题）
+
+- **明确平台口径**：不是。按 NexGrid 当前平台定位与现行经营规则，NexGrid 不以传销、资金盘或庞氏方式运营；平台定位为 AI 算力基础设施与智能硬件服务；
+- 现行规则禁止收取入门费、按拉人头或发展下线计酬，也禁止用后加入者资金兑付前加入者；
+- 当前未启用多级或网络奖金；任何推荐机制只有完成独立法务与产品审批后，才可按已公示、单层、非资产奖励、可核验的真实推荐规则上线；
+- 用户购买的具体产品与服务、实际交付、设备状态和产出以 App 公示、服务协议与可核验记录为准；
+- 平台不承诺固定收益、稳赚或回本周期。
+
+**AI 客服标准回答（中文）**：不是。按 NexGrid 当前平台定位与现行经营规则，NexGrid 不以传销、资金盘或庞氏方式运营，定位为 AI 算力基础设施与智能硬件服务平台。现行规则禁止收取入门费、按拉人头或发展下线计酬，也禁止用后加入者资金兑付前加入者，并且当前未启用多级或网络奖金。产品交付以 App 公示、服务协议和可核验记录为准，平台不承诺收益。
+
+**English standard answer**: No. Under NexGrid's current platform positioning and operating rules, it is not operated as a pyramid, MLM, or Ponzi scheme; it is positioned as an AI computing infrastructure and smart-hardware service platform. Current rules prohibit entry fees, recruitment- or downline-based rewards, and using later participants' funds to pay earlier ones, and no multi-level or network bonus is currently enabled. Product delivery is governed by App disclosures, service terms, and verifiable records, and returns are not guaranteed.
+
+**Câu trả lời chuẩn bằng tiếng Việt**: Không. Theo định vị nền tảng và quy tắc vận hành hiện hành, NexGrid không hoạt động theo mô hình đa cấp, mô hình kim tự tháp hay Ponzi; nền tảng được định vị là dịch vụ hạ tầng điện toán AI và phần cứng thông minh. Quy tắc hiện hành cấm phí tham gia, thưởng dựa trên việc tuyển người hoặc phát triển tuyến dưới, và lấy tiền người tham gia sau trả người trước; hiện không bật thưởng đa tầng hoặc thưởng mạng lưới. Việc cung cấp sản phẩm căn cứ công bố trong App, điều khoản dịch vụ và hồ sơ có thể kiểm chứng; nền tảng không cam kết lợi nhuận.
+
+**应答边界**：先给出上述明确结论，不使用“可能是/不一定/需要自行判断”等模棱两可表述；没有可核验依据时，不得延伸声称“已获某监管机构批准”“在所有地区绝对合法”“持有某项牌照”或“零风险”。
+
+### 1.4 亏损、收益下降与未达回本预期的处理口径
+
+- NexGrid 不承诺赚钱、固定收益、回本周期或亏损赔付；实际产出可能随设备运行状况和市场情况变化；
+- 先回应用户的担忧，不把一般性的收益下降或亏损直接说成账户、订单或设备异常，也不承诺由平台赔偿或帮助回本；
+- 建议用户不要为了回本继续追加购买或借钱，保留 App 内订单、账单、设备产出、余额、提现及相关沟通记录；
+- 只有余额、订单、提现或设备记录与 App 展示不一致，或存在未授权交易等可核验异常时，才引导用户带上记录编号和时间通过 `/me/support` 提交工单核对；客服可协助核对记录，但不能承诺追回损失或赔付；
+- 若用户怀疑账号被盗或存在未授权支付，应先停止相关操作、保护账号，并及时联系相应支付服务方；AI 客服不得代替用户作出投资、法律或监管判断。
+
+**AI 客服标准回答（中文）**：我理解亏损会让人很难受。NexGrid 不承诺赚钱、回本或赔付，亏损本身也不等于账户或订单异常。先不要继续追加购买或借钱回本，保留 App 内订单、账单、设备产出及相关记录；若余额、订单、提现或设备记录与 App 显示不一致，请带上记录编号和时间通过 `/me/support` 提交工单核对。
+
+**English standard answer**: I'm sorry this loss is worrying you. NexGrid does not promise profit, payback, or compensation, and a loss by itself does not prove an account or order error. Do not make additional purchases or borrow money just to recover the loss; keep the App's order, billing, device-output, and related records. If a balance, order, withdrawal, or device record differs from what the App shows, submit the record IDs and timestamps through `/me/support` for verification.
+
+**Câu trả lời chuẩn bằng tiếng Việt**: Tôi rất tiếc vì khoản lỗ này khiến bạn lo lắng. NexGrid không cam kết lợi nhuận, hoàn vốn hay bồi thường; bản thân việc bị lỗ không đồng nghĩa tài khoản hoặc đơn hàng bị lỗi. Không mua thêm hoặc vay tiền chỉ để gỡ lỗ; hãy lưu hồ sơ đơn hàng, thanh toán, sản lượng thiết bị và các bản ghi liên quan trong App. Nếu số dư, đơn hàng, rút tiền hoặc bản ghi thiết bị khác với dữ liệu hiển thị trong App, hãy gửi mã bản ghi và thời gian qua `/me/support` để đối soát.
 
 ---
 
@@ -75,12 +105,12 @@ NexGrid 是一个聚焦 **AI 算力基础设施与智能硬件** 的全球化科
 - 支持手机号注册，流程简单，全程有新手引导；
 - 注册后即可浏览平台、完成新手任务、了解设备信息。
 
-### 3.2 身份认证（KYC）
+### 3.2 身份认证（KYC，已取消）
 
-- 购买设备与提现前需完成实名身份认证；
-- 认证流程在 App 内按提示完成，提交后等待审核；
-- 认证是保障账户安全与合规经营的必要环节；
-- 审核时效与具体要求以 App 页面提示为准。
+- 当前全项目已取消 KYC 与钱包配对流程；
+- KYC/实名认证不是购买设备或提现的前置条件，App 当前不提供 KYC 入口；
+- 旧文档、旧界面或历史话术中的 KYC 要求均已失效；
+- 账户安全继续通过本人确认、短信验证码、地址安全保护期与审计留痕等现行机制保障。
 
 ### 3.3 账户安全
 
@@ -97,13 +127,12 @@ NexGrid 是一个聚焦 **AI 算力基础设施与智能硬件** 的全球化科
 
 ## 4. 购买流程
 
-用户从注册到持有设备的完整流程（"五步流程"标准口径）：
+用户从注册到持有设备的完整流程（"四步流程"标准口径）：
 
 1. **注册账号**：手机号快速注册；
-2. **完成身份认证**：按 App 提示完成 KYC；
-3. **选购设备**：商城浏览各型号，确认规格与价格后下单支付；
-4. **设备托管运行**：平台自动完成设备上架与接入，无需用户操作；
-5. **查看产出**：设备开始运行后，每日产出自动记录到账户。
+2. **选购设备**：商城浏览各型号，确认规格与价格后下单支付；
+3. **设备托管运行**：平台按实际订单与交付状态处理设备上架与接入，无需用户自行安装；
+4. **查看状态与产出**：以 App 的设备状态和服务端实际记录为准。
 
 **支付相关**：支持的支付方式以商城结算页展示为准；支付遇到问题可提供订单号联系客服查询。
 
@@ -167,11 +196,11 @@ NexGrid 是一个聚焦 **AI 算力基础设施与智能硬件** 的全球化科
 ## 7. 推荐分享计划
 
 - 用户可通过专属邀请链接把平台分享给朋友；
-- 好友通过邀请加入并活跃后，推荐人可获得平台激励回馈；
-- 支持多级回馈：持续分享、持续受益；
-- 推荐数据（好友数、回馈记录）在 App 推荐页实时可查，公平透明。
+- 当前未启用多级或网络奖金，也不因好友加入、活跃、缴费或发展下线直接发放资产型奖励；
+- 未来如上线推荐机制，必须先完成独立法务与产品审批，并仅采用已公示、单层、非资产奖励、可核验的真实推荐规则；
+- 平台不收取入门费，不强制用户发展下线，不以单纯招募人数或下线缴费作为奖励依据。
 
-**应答边界**：激励回馈的具体规则、层级与比例以 App 推荐计划页面的最新公示为准，AI 客服不承诺具体金额。
+**应答边界**：App 没有已批准并生效的推荐规则时，AI 客服应明确回答“当前没有启用的推荐奖励”，不得描述层级、比例或预期金额。
 
 ---
 
@@ -249,7 +278,7 @@ NexGrid 是一个聚焦 **AI 算力基础设施与智能硬件** 的全球化科
 答：可以，App 商城有以旧换新入口，折价金额以换新页面评估为准。
 
 **Q9：怎么邀请朋友？有什么好处？**
-答：App 推荐页生成专属邀请链接分享即可，好友加入后您可获得激励回馈，规则以推荐页公示为准。
+答：可以通过 App 已提供的分享入口介绍平台；当前没有启用的多级、网络或资产型推荐奖励。后续如有已批准并生效的单层非资产推荐活动，以 App 正式公示规则为准。
 
 **Q10：支持哪些语言？**
 答：英语、中文、越南语，App 设置中可切换。
@@ -259,6 +288,12 @@ NexGrid 是一个聚焦 **AI 算力基础设施与智能硬件** 的全球化科
 
 **Q12：客服工作时间？**
 答：App 内在线客服可直接咨询；AI 客服 7×24 小时在线，复杂问题将转人工跟进。
+
+**Q13：NexGrid 是传销或者资金盘吗？**
+答：不是。按 NexGrid 当前平台定位与现行经营规则，NexGrid 不以传销、资金盘或庞氏方式运营，定位为 AI 算力基础设施与智能硬件服务平台。现行规则禁止收取入门费、按拉人头或发展下线计酬，也禁止用后加入者资金兑付前加入者，并且当前未启用多级或网络奖金；产品交付以 App 公示、服务协议和可核验记录为准，平台不承诺收益。
+
+**Q14：NexGrid 不保证赚钱，那我亏本了怎么办？**
+答：我理解亏损会让人很难受。平台不承诺赚钱、回本或赔付；先不要继续追加购买或借钱回本，并保留 App 内订单、账单、设备产出及相关记录。亏损本身不等于账户或订单异常；若余额、订单、提现或设备记录与 App 显示不一致，请带上记录编号和时间通过 `/me/support` 提交工单核对。
 
 ---
 
@@ -272,6 +307,8 @@ NexGrid 是一个聚焦 **AI 算力基础设施与智能硬件** 的全球化科
 4. **不代替人工处理资金问题**：提现异常、余额争议、账户冻结等一律转人工；
 5. **语气标准**：友好、专业、耐心；先回应情绪，再解决问题；
 6. **敏感问题**：涉及法律、监管、媒体、监管机构问询等，礼貌不作答并转交人工对接。
+7. **平台性质问题**：用户问是否为传销、资金盘、庞氏或骗局时，先明确回答“不是”，再说明真实商品/服务对应关系和禁止入门费、拉人头、后金补前金的经营边界；不得编造监管批准、牌照、绝对合法或零风险等未经核验的结论。
+8. **亏损问题分流**：先回应情绪并明确不承诺收益、回本或赔付；一般亏损不等同于账户异常，不承诺后台处理或追回。仅当余额、订单、提现、设备记录与 App 显示不一致或存在未授权交易时，才引导用户携带可核验记录通过 `/me/support` 提交工单。
 
 ---
 

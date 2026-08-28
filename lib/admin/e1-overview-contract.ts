@@ -36,6 +36,12 @@ function isOptionalNonNegativeNumberLike(value: unknown) {
   return value === undefined || value === null || isNonNegativeNumberLike(value);
 }
 
+function isCanonicalFiniteStock(value: unknown) {
+  if (typeof value !== "string" || !/^(0|[1-9]\d*)$/.test(value)) return false;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 && parsed <= 2_147_483_647;
+}
+
 function isStringArray(value: unknown) {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
@@ -62,6 +68,10 @@ function validSku(value: unknown) {
   if (!isRecord(value)) return false;
   if (typeof value.skuId !== "string" || value.skuId.trim() === "") return false;
   if (typeof value.name !== "string" || value.name.trim() === "") return false;
+  if (!["SERVER", "DEVICE", "SHARE"].includes(value.productType as never)) return false;
+  if (!["FINITE", "UNLIMITED"].includes(value.inventoryMode as never)) return false;
+  if (value.inventoryMode === "UNLIMITED" && (value.productType !== "SHARE" || value.stock != null)) return false;
+  if (value.inventoryMode === "FINITE" && !isCanonicalFiniteStock(value.stock)) return false;
   if (!["tier", "tagline", "badge", "gpu", "vram", "hashRate", "power", "datacenter", "uptime", "warranty",
     "baseRate", "stock", "aiUnlocks", "lifecycle", "unlockPhase", "imageAssetId",
     "imageObjectKey", "imagePreviewUrl", "tag", "status"]

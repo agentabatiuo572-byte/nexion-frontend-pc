@@ -687,13 +687,14 @@
       "id": "OPS-D-10",
       "domain": "D",
       "object": "提现申请",
-      "action": "放行/拒绝并退款/延迟/冻结解冻/手动退款/批量操作(普通确认+强制原因;批量大额自动分拣转单笔)",
+      "action": "放行/拒绝并退款/延迟/冻结解冻/手动退款/批量操作；开发环境按真实状态机模拟单笔冷却到期(普通确认+强制原因;批量大额自动分拣转单笔)",
       "status": "built",
       "view": "d-tabs/d2-withdrawals.tsx",
       "batch": "P0",
       "restActions": [
         "reviewD2Withdrawal",
-        "reviewD2WithdrawalsBatch"
+        "reviewD2WithdrawalsBatch",
+        "simulateD2CooldownExpiry"
       ]
     },
     {
@@ -2445,8 +2446,11 @@
       "status": "built",
       "view": "d-tabs/d1-recon.tsx",
       "batch": "done",
-      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭",
-      "restAction": "registerD1VietQrReceipt"
+      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；回单图片先走财务专用上传并一次性绑定登记单，失败与结果未知路径均保持失败关闭",
+      "restActions": [
+        "uploadD1VietQrReceiptEvidence",
+        "registerD1VietQrReceipt"
+      ]
     },
     {
       "id": "OPS-D-22",
@@ -2778,7 +2782,7 @@
         "createG4AdminSimulation",
         "archiveG4AdminSimulation"
       ],
-      "note": "仅签显式 SIMULATED 沙箱记录；不写钱包、账本、真实成交或生产市场统计"
+      "note": "资格只允许 eligibility.enabled|maxPerUser|minAccountAgeDays 三项服务端配置；旧四项组合资格已退役。SIMULATED 沙箱记录不写钱包、账本、真实成交或生产市场统计"
     },
     {
       "id": "OPS-H-14",
@@ -3575,13 +3579,13 @@
         {
           "type": "uniapp-runtime",
           "file": "src/api/referral-reward-api.ts",
-          "positivePatterns": ["row\\.source === \"ledger\" && row\\.sourceEnvironment === \"PRODUCTION\"", "row\\.source === \"mock\"[\\s\\S]{0,80}row\\.sourceEnvironment === \"SANDBOX\"", "path: `/api/app/referral-rewards\\?limit=", "environment !== sourceEnvironment"],
+          "positivePatterns": ["mode === \"prod\" \\|\\| mode === \"dev\"", "row\\.source === \"ledger\" && row\\.sourceEnvironment === \"PRODUCTION\" && row\\.runId === null", "path: `/api/app/referral-rewards\\?limit=", "environment !== sourceEnvironment"],
           "negativePatterns": ["estimatedReward", "sourceEnvironment \\|\\| \"PRODUCTION\""]
         },
         {
           "type": "backend-runtime",
           "file": "src/main/java/ffdd/opsconsole/growth/application/AppReferralRewardService.java",
-          "positivePatterns": ["String environment = sandbox \\? \"SANDBOX\" : \"PRODUCTION\"", "mapper\\.appVerifiedRewardSummary\\(userId, sourceType, environment\\)", "appRecentVerifiedRewards\\(userId, sourceType, environment, limit\\)"],
+          "positivePatterns": ["boolean sandboxFacts = strictSandboxProfile", "String environment = sandboxFacts \\? \"SANDBOX\" : \"PRODUCTION\"", "mapper\\.appVerifiedRewardSummary\\(userId, sourceType, environment, accountSandbox\\)", "appRecentVerifiedRewards\\(userId, sourceType, environment, accountSandbox, limit\\)"],
           "negativePatterns": ["estimate", "environment = \"PRODUCTION\";"]
         }
       ],

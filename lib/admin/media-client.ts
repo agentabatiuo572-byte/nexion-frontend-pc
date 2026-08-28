@@ -73,6 +73,28 @@ export async function uploadAdminMedia(
   });
 }
 
+export async function uploadD1VietQrReceiptEvidence(file: File) {
+  const body = new FormData();
+  body.append("file", file);
+  const headers = new Headers({
+    "Idempotency-Key": idempotencyKey("d1-vietqr-receipt-evidence"),
+  });
+  const response = await guardedFetch("/api/admin/finance/vietqr/receipt-evidence", {
+    method: "POST",
+    body,
+    headers,
+    cache: "no-store",
+  });
+  const result = (await response.json().catch(() => null)) as ApiResult<UploadedAsset> | null;
+  if (!response.ok || !result || result.code !== 0) {
+    throw new Error(formatAdminApiError(
+      result?.message,
+      `VIETQR_RECEIPT_EVIDENCE_UPLOAD_FAILED_${response.status}`,
+    ));
+  }
+  return result.data as UploadedAsset;
+}
+
 export async function refreshAdminMediaPreviewUrl(assetId: string) {
   return mediaRequest<UploadedAsset>(`/uploads/${encodeURIComponent(assetId)}/preview-url`, {
     method: "GET",

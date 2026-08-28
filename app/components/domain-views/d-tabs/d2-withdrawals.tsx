@@ -8,10 +8,13 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   fetchD2WithdrawalDetail,
   fetchD2Withdrawals,
+  fetchD2DevelopmentCapabilities,
   fetchD5WithdrawalParams,
   reviewD2Withdrawal,
   reviewD2WithdrawalsBatch,
+  simulateD2CooldownExpiry,
   type D2BatchResult,
+  type D2DevelopmentCapabilities,
   type D2ReviewAction,
   type D2ReviewInput,
   type D2Withdrawal,
@@ -19,12 +22,12 @@ import {
   type PageResult,
   isDOutcomeUnknownError,
 } from "@/lib/admin/d-client";
-import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
+import { Drawer, KV, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
 import type { DCtx } from "./types";
 
 const OPERATOR = currentAdminOperator;
 const STATUS_TABS = [
-  ["", "全部"], ["SUBMITTED", "已提交"], ["REVIEW_PENDING", "待审核"], ["EXTENDED_HOLD", "延长持有"], ["FROZEN", "冻结"],
+  ["", "全部"], ["SUBMITTED", "已提交"], ["REVIEW_PENDING", "待审核"], ["EXTENDED_HOLD", "冷却期等待复查"], ["FROZEN", "冻结"],
   ["REVIEW_PASSED", "已放行"], ["PROCESSING", "处理中"], ["SENT", "已广播"], ["CONFIRMED", "已确认"],
   ["REVIEW_REJECTED", "审核拒绝"], ["ADDRESS_INVALID", "地址无效"], ["TX_FAILED", "链上失败"], ["TX_ORPHANED", "孤块/死亡信件"], ["REFUNDED", "已退款"],
 ] as const;
@@ -56,15 +59,106 @@ function reviewAtAfter(days: number) {
 
 function statusLabel(status: string) {
   return ({
-    SUBMITTED: "已提交(submitted)", PENDING: "已提交(submitted)",
-    REVIEW_PENDING: "待审核(review-pending)", REVIEWING: "待审核(review-pending)",
-    EXTENDED_HOLD: "延长持有(extended-hold)", DELAYED: "延长持有(extended-hold)", FROZEN: "冻结(frozen)",
-    REVIEW_PASSED: "已放行(review-passed)", PENDING_CHAIN: "已放行(review-passed)", PROCESSING: "处理中(processing)",
-    SENT: "已广播(sent)", CHAIN_SUBMITTED: "已广播(sent)", CONFIRMED: "已确认(confirmed)", SUCCESS: "已确认(confirmed)",
-    REVIEW_REJECTED: "审核拒绝(review-rejected)", REJECTED: "审核拒绝(review-rejected)", ADDRESS_INVALID: "地址无效(address-invalid)",
-    TX_FAILED: "链上失败(tx-failed)", FAILED: "链上失败(tx-failed)", TX_ORPHANED: "孤块/死亡信件(tx-orphaned)", DEAD: "孤块/死亡信件(tx-orphaned)",
-    REFUNDED: "已退款(refunded)",
-  } as Record<string, string>)[status.toUpperCase()] ?? status;
+    SUBMITTED: "已提交", PENDING: "已提交",
+    REVIEW_PENDING: "待审核", REVIEWING: "待审核",
+    EXTENDED_HOLD: "冷却期等待复查", DELAYED: "延迟复查", FROZEN: "冻结",
+    REVIEW_PASSED: "已放行", PENDING_CHAIN: "已放行", PROCESSING: "处理中",
+    SENT: "已广播", CHAIN_SUBMITTED: "已广播", CONFIRMED: "已确认", SUCCESS: "已确认",
+    REVIEW_REJECTED: "审核拒绝", REJECTED: "审核拒绝", ADDRESS_INVALID: "地址无效",
+    TX_FAILED: "链上失败", FAILED: "链上失败", TX_ORPHANED: "孤块/死亡信件", DEAD: "孤块/死亡信件",
+    REFUNDED: "已退款",
+  } as Record<string, string>)[status.toUpperCase()] ?? "未知状态";
+}
+
+const FAILURE_REASON_LABELS: Record<string, string> = {
+  H1_COOLDOWN_FAST_TRACK: "低风险提现冷却中，到期后系统自动复查",
+  H1_COOLDOWN_FAST_TRACK_APPROVED: "冷却期已结束，系统已自动放行",
+  A3_STRONG_REVIEW_THRESHOLD: "达到大额加强审核门槛，需人工复核",
+  K3_RULE_DELAY: "命中 K3 延迟规则，等待到期复查",
+  K3_RULE_FREEZE: "命中 K3 冻结规则，需人工核验",
+  K3_ROUTE_UNAVAILABLE: "K3 路由结论暂不可用，已转人工复核",
+  K4_RISK_SCORE_UNAVAILABLE: "K4 风险评分暂不可用，已转人工复核",
+  WITHDRAWAL_PAYOUT_SUBMISSION_UNKNOWN: "链上提交结果待确认，请勿重复放行",
+  WITHDRAWAL_PAYOUT_PROVIDER_FAILED: "链上服务返回失败，等待人工处置",
+};
+
+const OPERATION_TEXT_LABELS: Record<string, string> = {
+  REVIEW_REJECTED: "审核拒绝",
+  ADDRESS_INVALID: "地址无效",
+  EXTENDED_HOLD: "冷却期等待复查",
+  REVIEW_PENDING: "待审核",
+  REVIEW_PASSED: "已放行",
+  TX_ORPHANED: "孤块/死亡信件",
+  TX_FAILED: "链上失败",
+  PROCESSING: "处理中",
+  CONFIRMED: "已确认",
+  REFUNDED: "已退款",
+  SUBMITTED: "已提交",
+  FROZEN: "冻结",
+  SENT: "已广播",
+  APPROVE: "放行",
+  REJECT: "拒绝",
+  DELAY: "延迟复查",
+  UNFREEZE: "解冻",
+  FREEZE: "冻结",
+  REFUND: "退款",
+  "K3_ROUTE:pass": "K3 路由：通过",
+  "K3_ROUTE:delay": "K3 路由：延迟复查",
+  "K3_ROUTE:manual": "K3 路由：人工复核",
+  "K3_ROUTE:freeze": "K3 路由：冻结核验",
+  "withdraw.submitted": "提现已提交",
+  "withdraw.review_due": "到期转人工复核",
+  "withdraw.approved": "提现已放行",
+  "withdraw.rejected": "提现已拒绝",
+  "withdraw.delayed": "提现已延迟复查",
+  "withdraw.frozen": "提现已冻结",
+  "withdraw.sent": "提现已广播上链",
+  "withdraw.confirmed": "提现已确认到账",
+};
+
+function operationalText(value?: string) {
+  const raw = value?.trim();
+  if (!raw) return "—";
+  if (FAILURE_REASON_LABELS[raw]) return FAILURE_REASON_LABELS[raw];
+  let result = raw;
+  for (const [code, label] of Object.entries(OPERATION_TEXT_LABELS).sort(([left], [right]) => right.length - left.length)) {
+    result = result.replaceAll(code, label);
+  }
+  for (const [code, label] of Object.entries(FAILURE_REASON_LABELS).sort(([left], [right]) => right.length - left.length)) {
+    result = result.replaceAll(code, label);
+  }
+  if (result === raw && /^[A-Z0-9_.:-]+$/i.test(raw)) {
+    return "系统返回了未收录的处置原因，请联系技术人员排查";
+  }
+  if (!/[\u3400-\u9fff]/.test(result) && /[A-Z_]/i.test(result)) {
+    return "系统返回了未收录的处置说明，请联系技术人员排查";
+  }
+  return result;
+}
+
+function ruleSummary(value?: string) {
+  const localized = operationalText(value);
+  return localized === "—" ? "无命中" : localized;
+}
+
+function lifecycleSummary(row: D2Withdrawal) {
+  const reason = operationalText(row.failureReason);
+  if (reason !== "—") return reason;
+  if (["EXTENDED_HOLD", "DELAYED"].includes(row.status.toUpperCase())) return "等待复查时间，到期后系统自动转回待审核";
+  if (row.status.toUpperCase() === "FROZEN") return "资金已冻结，需由有权限人员核验后解冻";
+  return "无异常，按提现状态机正常流转";
+}
+
+function routeLabel(value?: string) {
+  return ({ pass: "通过", delay: "延迟复查", manual: "人工复核", freeze: "冻结核验", "fast-pass": "快速通道" } as Record<string, string>)[value?.toLowerCase() ?? ""] ?? (value ? "未识别路由" : "未提供");
+}
+
+function userStatusLabel(value?: string) {
+  return ({ active: "正常", enabled: "正常", frozen: "冻结", disabled: "停用", locked: "锁定" } as Record<string, string>)[value?.toLowerCase() ?? ""] ?? (value ? "未识别账户状态" : "未知");
+}
+
+function freezePeriodLabel(value?: string) {
+  return ({ "7d": "7 天", "14d": "14 天", "30d": "30 天", "45d": "45 天", LONG_TERM: "长期（需复查）", SEVEN_DAYS: "7 天" } as Record<string, string>)[value ?? ""] ?? (value ? "未识别期限" : "—");
 }
 
 function statusTone(status: string) {
@@ -171,7 +265,7 @@ function routingPriority(row: D2Withdrawal) {
 function routingPriorityLabel(row: D2Withdrawal) {
   return ({
     ESCALATED: "升级处置", HIGH: "高优先", NORMAL: "常规", LOW: "低优先", UNAVAILABLE: "事实不可用",
-  } as const)[routingPriority(row)] ?? routingPriority(row);
+  } as const)[routingPriority(row)] ?? "事实不可用";
 }
 
 function routingPriorityTone(row: D2Withdrawal) {
@@ -187,11 +281,13 @@ function routingUnavailable(row: D2Withdrawal) {
 
 /**
  * 批量可执行判定 —— 勾选框禁用态与真正提交的 ids 共用这一处判定(两套判定必然漂移)。
- * 未选择动作("")时任何行都不可勾选:动作是批量语义的前提,先选动作再选行。
+ * 未选择动作时允许先勾选具备任一可用批量动作的行；真正提交时仍按已选动作再次收窄。
  */
-function batchSelectable(row: D2Withdrawal, action: D2BatchAction | "") {
-  if (!action) return false;
-  return actionCandidates(row).includes(action) && !(action === "APPROVE" && routingUnavailable(row));
+function batchSelectable(row: D2Withdrawal, action: D2BatchAction | "", allowedActions: readonly D2BatchAction[]) {
+  const candidates = action ? [action] : allowedActions;
+  return candidates.some((candidate) => allowedActions.includes(candidate)
+    && actionCandidates(row).includes(candidate)
+    && !(candidate === "APPROVE" && routingUnavailable(row)));
 }
 
 /**
@@ -199,8 +295,8 @@ function batchSelectable(row: D2Withdrawal, action: D2BatchAction | "") {
  * 「已选 N 笔」、批量按钮禁用态、确认弹窗笔数、真正提交的 ids 全部由这一处派生 ——
  * 否则前端筛选把行藏起来后,selected 里的隐藏行仍会被提交(运营看到 3 笔、实际提交 10 笔)。
  */
-function batchTargets(visible: D2Withdrawal[], selectedIds: Set<string>, action: D2BatchAction | "") {
-  return visible.filter((row) => selectedIds.has(row.withdrawalNo) && batchSelectable(row, action));
+function batchTargets(visible: D2Withdrawal[], selectedIds: Set<string>, action: D2BatchAction | "", allowedActions: readonly D2BatchAction[]) {
+  return visible.filter((row) => selectedIds.has(row.withdrawalNo) && batchSelectable(row, action, allowedActions));
 }
 
 function actionBusinessForm(action: D2ReviewAction, row?: D2Withdrawal): BusinessFormSpec | undefined {
@@ -210,8 +306,8 @@ function actionBusinessForm(action: D2ReviewAction, row?: D2Withdrawal): Busines
     ],
   };
   if (action === "DELAY") return {
-    kind: "multi-field", title: "延长持有生命周期", fields: [
-      { key: "holdDays", label: "持有天数", inputKind: "number", required: true, min: 1, max: 45, current: "7" },
+    kind: "multi-field", title: "延迟这笔提现，到期后自动回到待审核", fields: [
+      { key: "holdDays", label: "等待天数", inputKind: "number", required: true, min: 1, max: 45, current: "7" },
       { key: "owner", label: "责任人", required: true, current: OPERATOR() },
       { key: "reviewAt", label: "复查时间", inputKind: "datetime-local", required: true, current: reviewAtAfter(7) },
     ],
@@ -265,6 +361,14 @@ const pendingKeys = createPendingMutationStore({
 const reviewScope = (withdrawalNo: string, action: D2ReviewAction) => `review|${withdrawalNo}|${action}`;
 /** 批量的目标对象 = 本次提交的提现单号集合(排序后),动作类型同上。 */
 const batchScope = (action: D2BatchAction, ids: string[]) => `batch|${action}|${[...ids].sort().join(",")}`;
+const developmentSimulationScope = (withdrawalNo: string) => `simulate-due|${withdrawalNo}`;
+
+function developmentSimulationEligible(row: D2Withdrawal) {
+  return row.status.toUpperCase() === "EXTENDED_HOLD"
+    && row.lifecycleOwner === "H1_PHASE_COOLDOWN"
+    && row.previousStatus.toUpperCase() === "REVIEW_PASSED"
+    && !!row.holdUntil;
+}
 
 export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const { toast, openActionConfirm } = ctx;
@@ -272,6 +376,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const authorities = session?.authorities ?? [];
   const [rows, setRows] = useState<PageResult<D2Withdrawal>>({ total: 0, pageNum: 1, pageSize: 10, records: [] });
   const [d5, setD5] = useState<D5Params | null>(null);
+  const [developmentCapabilities, setDevelopmentCapabilities] = useState<D2DevelopmentCapabilities | null>(null);
   const [status, setStatus] = useState("");
   const [keyword, setKeyword] = useState("");
   const [minAmount, setMinAmount] = useState("");
@@ -281,6 +386,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const [ipSegment, setIpSegment] = useState("");
   const [sortBy, setSortBy] = useState("createdAt");
   const [sortDirection, setSortDirection] = useState("desc");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [loading, setLoading] = useState(true);
@@ -288,17 +394,26 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const [writesEnabled, setWritesEnabled] = useState(false);
   const [submitting, setSubmitting] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  // 无默认动作:按权限过滤下拉后自动落到第一个可用项 =「运营以为选的是 A、实际执行 B」,与「提交隐藏行」同类。
-  // 必须运营显式选择,选中前不可勾选、不可提交。
+  // 无默认动作：必须由运营显式选择后才可提交；但允许先勾选，再选动作。
   const [batchAction, setBatchAction] = useState<D2BatchAction | "">("");
   const [detail, setDetail] = useState<D2Withdrawal | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
   /** 单调递增请求号:并发 load 时只有最后一发的响应可以落地,旧响应不许覆盖新筛选结果。 */
   const requestSeq = useRef(0);
+  /** 详情抽屉同样只接受最后一次请求；关闭抽屉会主动让在途响应失效。 */
+  const detailRequestSeq = useRef(0);
 
   const hasAuthority = (authority: string) => authorities.includes(authority);
+  const availableBatchActions = BATCH_ACTIONS.filter((action) => hasAuthority(ACTION_AUTHORITY[action]));
   const dailyLimit = d5?.dailyLimitCount ?? 0;
 
-  const load = async (nextPage = page) => {
+  type D2FilterOverrides = Partial<{
+    status: string; keyword: string; minAmount: string; maxAmount: string; minRiskScore: string;
+    ipSegment: string; sortBy: string; sortDirection: string; pageSize: number;
+  }>;
+
+  const load = async (nextPage = page, overrides: D2FilterOverrides = {}) => {
     const seq = ++requestSeq.current;
     setLoading(true);
     setError("");
@@ -306,8 +421,16 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     try {
       const [nextRows, nextD5] = await Promise.all([
         fetchD2Withdrawals({
-          status, keyword, minAmount, maxAmount, minRiskScore, ipSegment, sortBy, sortDirection,
-          pageNum: nextPage, pageSize,
+          status: overrides.status ?? status,
+          keyword: overrides.keyword ?? keyword,
+          minAmount: overrides.minAmount ?? minAmount,
+          maxAmount: overrides.maxAmount ?? maxAmount,
+          minRiskScore: overrides.minRiskScore ?? minRiskScore,
+          ipSegment: overrides.ipSegment ?? ipSegment,
+          sortBy: overrides.sortBy ?? sortBy,
+          sortDirection: overrides.sortDirection ?? sortDirection,
+          pageNum: nextPage,
+          pageSize: overrides.pageSize ?? pageSize,
         }),
         fetchD5WithdrawalParams(),
       ]);
@@ -328,21 +451,39 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   };
 
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [status, page, pageSize]);
+  useEffect(() => {
+    let active = true;
+    void fetchD2DevelopmentCapabilities()
+      .then((capabilities) => { if (active) setDevelopmentCapabilities(capabilities); })
+      .catch(() => { if (active) setDevelopmentCapabilities(null); });
+    return () => { active = false; };
+  }, []);
 
   const visibleRows = useMemo(() => {
     const rule = ruleFilter.trim().toLowerCase();
     return rule ? rows.records.filter((row) => `${row.hitRules} ${row.riskReason}`.toLowerCase().includes(rule)) : rows.records;
   }, [rows.records, ruleFilter]);
-  const submittableRows = useMemo(() => batchTargets(visibleRows, selected, batchAction), [visibleRows, selected, batchAction]);
-  // 纯前端筛选 / 批量动作变化时立即收窄选择:否则被筛掉的行还留在 selected 里,
-  // 清空筛选后又悄悄复活成提交目标。
+  const selectedRows = useMemo(
+    () => batchTargets(visibleRows, selected, "", availableBatchActions),
+    // authorities only changes with the authenticated session; keeping the derived action list explicit avoids hidden defaults.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visibleRows, selected, authorities],
+  );
+  const submittableRows = useMemo(
+    () => batchTargets(visibleRows, selected, batchAction, availableBatchActions),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visibleRows, selected, batchAction, authorities],
+  );
+  // 纯前端筛选变化时只剔除已不可见或完全没有批量权限的行。
+  // 切换批量动作不静默取消勾选；不适用当前动作的行保留勾选，并在提交面明确显示“可执行 N 笔”。
   useEffect(() => {
     setSelected((current) => {
       if (current.size === 0) return current;
-      const kept = batchTargets(visibleRows, current, batchAction).map((row) => row.withdrawalNo);
+      const kept = batchTargets(visibleRows, current, "", availableBatchActions).map((row) => row.withdrawalNo);
       return kept.length === current.size ? current : new Set(kept);
     });
-  }, [visibleRows, batchAction]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleRows, authorities]);
   const pages = Math.max(1, Math.ceil(rows.total / Math.max(1, rows.pageSize)));
 
   const runReview = async (row: D2Withdrawal, action: D2ReviewAction, reason: string, form?: BusinessFormValue) => {
@@ -380,7 +521,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     const label = actionLabel(action);
     openActionConfirm({
       action: `${label}提现 · ${row.withdrawalNo}`,
-      detail: `${row.userNo} / ${money(row.amount)} ${row.asset}；当前 ${statusLabel(row.status)}；${k4RiskText(row)}；K3 命中 ${row.hitRules || "无"}；C2 账户 ${row.userStatus}。${action === "APPROVE" ? `B1 当前覆盖率 ${d5?.coverageRatio ?? "—"}%，红线 ${d5?.redlinePct ?? "—"}%。确认后即时执行并核减 D3 储备。` : "确认后即时执行，结果写入审计与 A4 事件。"}`,
+      detail: `${row.userNo} / ${money(row.amount)} ${row.asset}；当前 ${statusLabel(row.status)}；${k4RiskText(row)}；K3 命中 ${ruleSummary(row.hitRules)}；C2 账户 ${userStatusLabel(row.userStatus)}。${action === "APPROVE" ? `B1 当前覆盖率 ${d5?.coverageRatio ?? "—"}%，红线 ${d5?.redlinePct ?? "—"}%。确认后即时执行并核减 D3 储备。` : "确认后即时执行，结果写入审计与 A4 事件。"}`,
       amplifies: action === "APPROVE",
       coverage: d5 ? { coverageRatio: d5.coverageRatio, redlinePct: d5.redlinePct } : undefined,
       businessForm: actionBusinessForm(action, row),
@@ -392,15 +533,96 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   };
 
   const openDetail = async (row: D2Withdrawal) => {
-    try { setDetail(await fetchD2WithdrawalDetail(row.withdrawalNo)); }
-    catch (cause) { toast(cause instanceof Error ? displayAdminError(cause) : "单笔详情加载失败"); }
+    const seq = ++detailRequestSeq.current;
+    setDetail(row);
+    setDetailLoading(true);
+    setDetailError("");
+    try {
+      const latest = await fetchD2WithdrawalDetail(row.withdrawalNo);
+      if (seq === detailRequestSeq.current) setDetail(latest);
+    } catch (cause) {
+      if (seq !== detailRequestSeq.current) return;
+      const message = cause instanceof Error ? displayAdminError(cause) : "单笔详情加载失败";
+      setDetailError(message);
+      toast(message);
+    } finally {
+      if (seq === detailRequestSeq.current) setDetailLoading(false);
+    }
+  };
+
+  const runDevelopmentSimulation = async (row: D2Withdrawal, reason: string) => {
+    const scope = developmentSimulationScope(row.withdrawalNo);
+    const key = pendingKeys.get(scope) ?? operationKey(scope);
+    pendingKeys.remember(scope, key);
+    setSubmitting(scope);
+    try {
+      const updated = await simulateD2CooldownExpiry(row.withdrawalNo, reason, key);
+      pendingKeys.forget(scope);
+      setDetail(updated);
+      toast(`${row.withdrawalNo} 已模拟冷却到期 · 真实状态机结果：${statusLabel(updated.status)}`);
+      await load();
+    } catch (cause) {
+      if (!isDOutcomeUnknownError(cause)) pendingKeys.forget(scope);
+      const message = cause instanceof Error ? displayAdminError(cause) : "模拟冷却到期失败";
+      await load();
+      setError(message);
+      toast(message);
+      throw cause;
+    } finally {
+      setSubmitting("");
+    }
+  };
+
+  const confirmDevelopmentSimulation = (row: D2Withdrawal) => {
+    openActionConfirm({
+      action: `模拟冷却到期 · ${row.withdrawalNo}`,
+      detail: "仅开发环境。只把这笔开发账号提现单的冷却时间推进到当前时刻；随后按真实到期状态机重新检查 K3、K4、B1 和提现开关，不直接标记成功。A2 对象锁、D3 储备、审计与幂等仍然生效。",
+      amplifies: true,
+      coverage: d5 ? { coverageRatio: d5.coverageRatio, redlinePct: d5.redlinePct } : undefined,
+      reasonMin: 8,
+      reasonMax: 200,
+      completionCopy: "到期模拟已提交",
+      run: (reason) => runDevelopmentSimulation(row, reason),
+    });
+  };
+
+  const closeDetail = () => {
+    detailRequestSeq.current += 1;
+    setDetail(null);
+    setDetailLoading(false);
+    setDetailError("");
+  };
+
+  const resetAdvancedFilters = () => {
+    setMinAmount("");
+    setMaxAmount("");
+    setMinRiskScore("");
+    setRuleFilter("");
+    setIpSegment("");
+    setSortBy("createdAt");
+    setSortDirection("desc");
+    setPage(1);
+    void load(1, {
+      minAmount: "", maxAmount: "", minRiskScore: "", ipSegment: "", sortBy: "createdAt", sortDirection: "desc",
+    });
+  };
+
+  const selectableVisibleRows = visibleRows.filter((row) => batchSelectable(row, batchAction, availableBatchActions));
+  const allVisibleSelected = selectableVisibleRows.length > 0
+    && selectableVisibleRows.every((row) => selected.has(row.withdrawalNo));
+  const toggleVisibleSelection = (checked: boolean) => {
+    setSelected((current) => {
+      const next = new Set(current);
+      for (const row of selectableVisibleRows) checked ? next.add(row.withdrawalNo) : next.delete(row.withdrawalNo);
+      return next;
+    });
   };
 
   const confirmBatch = () => {
     const action = batchAction;
     if (!action) { toast("请先选择批量动作，再勾选要执行的提现单"); return; }
     // 只提交「当前筛选结果里真正可执行」的行；弹窗里报的笔数与下面 run 提交的是同一个 ids。
-    const ids = submittableRows.map((row) => row.withdrawalNo);
+    const ids = submittableRows.map((row) => row.withdrawalNo).sort();
     if (ids.length === 0) { toast("当前筛选结果里没有可执行该动作的提现单"); return; }
     openActionConfirm({
       action: `批量执行 · ${actionLabel(action)}`,
@@ -451,53 +673,54 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
     <section className="l-card">
       <div className="l-h"><span className="ttl">提现审核队列</span><span className="sub">· 服务端权威状态 · 逐笔 / 批量</span></div>
-      <div className="l-b d2-filter-grid">
-        <label className="d2-filter-field"><span>提现单 / 用户</span><input value={keyword} onChange={(event) => setKeyword(event.target.value)} /></label>
-        <label className="d2-filter-field"><span>状态</span><select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>{STATUS_TABS.map(([value, label]) => <option key={value || "all"} value={value}>{label}</option>)}</select></label>
-        <label className="d2-filter-field"><span>最低金额</span><input type="number" min="0" value={minAmount} onChange={(event) => setMinAmount(event.target.value)} /></label>
-        <label className="d2-filter-field"><span>最高金额</span><input type="number" min="0" value={maxAmount} onChange={(event) => setMaxAmount(event.target.value)} /></label>
-        <label className="d2-filter-field"><span>最低风险分</span><input type="number" min="0" max="100" value={minRiskScore} onChange={(event) => setMinRiskScore(event.target.value)} /></label>
-        <label className="d2-filter-field"><span>命中规则</span><input value={ruleFilter} onChange={(event) => setRuleFilter(event.target.value)} /></label>
-        <label className="d2-filter-field"><span>IP 段</span><input placeholder="例如 192.168.1" value={ipSegment} onChange={(event) => setIpSegment(event.target.value)} /></label>
-        <label className="d2-filter-field"><span>排序字段</span><select value={sortBy} onChange={(event) => setSortBy(event.target.value)}><option value="createdAt">提交时间</option><option value="amount">金额</option><option value="riskScore">风险分</option><option value="status">状态</option></select></label>
-        <label className="d2-filter-field"><span>排序方向</span><select value={sortDirection} onChange={(event) => setSortDirection(event.target.value)}><option value="desc">降序</option><option value="asc">升序</option></select></label>
-        <button className="l-btn primary" onClick={() => { setPage(1); void load(1); }}>查询</button>
+      <div className="l-b d2-search-panel">
+        <div className="d2-search-toolbar">
+          <label className="d2-filter-field d2-keyword-field"><span>提现单 / 用户</span><input placeholder="输入提现单号、用户编号或昵称" value={keyword} onChange={(event) => setKeyword(event.target.value)} /></label>
+          <label className="d2-filter-field"><span>状态</span><select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>{STATUS_TABS.map(([value, label]) => <option key={value || "all"} value={value}>{label}</option>)}</select></label>
+          <button className="l-btn primary" onClick={() => { setPage(1); void load(1); }}>查询</button>
+          <button className="l-btn" aria-expanded={advancedOpen} onClick={() => setAdvancedOpen((value) => !value)}>{advancedOpen ? "收起高级筛选" : "高级筛选"}</button>
+        </div>
+        {advancedOpen && <div className="d2-advanced-filters">
+          <label className="d2-filter-field"><span>最低金额</span><input type="number" min="0" value={minAmount} onChange={(event) => setMinAmount(event.target.value)} /></label>
+          <label className="d2-filter-field"><span>最高金额</span><input type="number" min="0" value={maxAmount} onChange={(event) => setMaxAmount(event.target.value)} /></label>
+          <label className="d2-filter-field"><span>最低风险分</span><input type="number" min="0" max="100" value={minRiskScore} onChange={(event) => setMinRiskScore(event.target.value)} /></label>
+          <label className="d2-filter-field"><span>命中规则</span><input value={ruleFilter} onChange={(event) => setRuleFilter(event.target.value)} /></label>
+          <label className="d2-filter-field"><span>IP 段</span><input placeholder="例如 192.168.1" value={ipSegment} onChange={(event) => setIpSegment(event.target.value)} /></label>
+          <label className="d2-filter-field"><span>排序字段</span><select value={sortBy} onChange={(event) => setSortBy(event.target.value)}><option value="createdAt">提交时间</option><option value="amount">金额</option><option value="riskScore">风险分</option><option value="status">状态</option></select></label>
+          <label className="d2-filter-field"><span>排序方向</span><select value={sortDirection} onChange={(event) => setSortDirection(event.target.value)}><option value="desc">降序</option><option value="asc">升序</option></select></label>
+          <button className="l-btn" onClick={resetAdvancedFilters}>清空高级筛选</button>
+        </div>}
       </div>
-      {hasAuthority("finance_d2_withdrawal_batch") && <div className="l-b" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+      {hasAuthority("finance_d2_withdrawal_batch") && <div className="l-b d2-batch-toolbar">
         <strong>批量操作面</strong>
         <select aria-label="批量动作" value={batchAction} onChange={(event) => setBatchAction(event.target.value as D2BatchAction | "")}>
-          <option value="">请先选择批量动作</option>
-          {BATCH_ACTIONS.filter((action) => hasAuthority(ACTION_AUTHORITY[action])).map((action) => <option key={action} value={action}>{actionLabel(action)}</option>)}
+          <option value="">选择批量动作</option>
+          {availableBatchActions.map((action) => <option key={action} value={action}>{actionLabel(action)}</option>)}
         </select>
-        <span>已选 {submittableRows.length} 笔</span>
+        <span>已勾选 {selectedRows.length} 笔{batchAction ? ` · 可执行 ${submittableRows.length} 笔` : ""}</span>
         <button className="l-btn primary" disabled={!writesEnabled || !batchAction || submittableRows.length === 0 || !!submitting} onClick={confirmBatch}>批量执行</button>
-        <span className="sub">{!batchAction ? "未选择批量动作时不能勾选、不能提交" : "笔数只统计当前筛选结果里可执行的提现单，换筛选条件会同步收窄"}</span>
+        <span className="sub">{!batchAction ? "可先勾选提现单，再选择批量动作；提交前会按权限和状态再次校验" : "不适用当前动作的勾选会保留但不会提交；服务端仍会逐笔校验"}</span>
       </div>}
-      <div style={{ overflowX: "auto" }}><table className="l-tbl" style={{ minWidth: 1360 }}>
-        <thead><tr><th>选择</th><th>提现单</th><th>用户</th><th>资产/链</th><th className="num">金额/手续费</th><th>审核依据</th><th>24h</th><th>状态</th><th>生命周期/异常</th><th>提交时间</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
-        <tbody>{visibleRows.length === 0 ? <tr><td colSpan={11} style={{ textAlign: "center", padding: 28 }}>暂无提现记录</td></tr> : visibleRows.map((row) => {
-          const selectable = batchSelectable(row, batchAction);
+      <div className="d2-table-wrap"><table className="l-tbl d2-table">
+        <thead><tr><th><label className="d2-check"><input aria-label="全选本页可批量处理的提现单" type="checkbox" disabled={selectableVisibleRows.length === 0} checked={allVisibleSelected} onChange={(event) => toggleVisibleSelection(event.target.checked)} /><span>选择</span></label></th><th>提现单</th><th>用户</th><th>资产 / 链</th><th className="num">金额 / 到账</th><th>审核依据</th><th>状态</th><th>生命周期 / 异常</th><th>提交时间</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
+        <tbody>{visibleRows.length === 0 ? <tr><td colSpan={10} style={{ textAlign: "center", padding: 28 }}>暂无提现记录</td></tr> : visibleRows.map((row) => {
+          const selectedNow = selected.has(row.withdrawalNo);
+          const anyBatchAction = batchSelectable(row, "", availableBatchActions);
+          const selectable = batchSelectable(row, batchAction, availableBatchActions);
+          const selectionHint = !anyBatchAction
+            ? "该状态由系统自动流转，没有可执行的批量动作"
+            : batchAction && !selectable
+              ? `当前批量动作“${actionLabel(batchAction)}”不适用于该状态，可取消勾选或更换动作`
+              : "选择这笔提现";
           return <tr key={row.withdrawalNo}>
-            <td><input aria-label={`选择 ${row.withdrawalNo}`} type="checkbox" disabled={!selectable} checked={selected.has(row.withdrawalNo)} onChange={(event) => setSelected((current) => { const next = new Set(current); event.target.checked ? next.add(row.withdrawalNo) : next.delete(row.withdrawalNo); return next; })} /></td>
-            <td><button className="l-btn sm" onClick={() => void openDetail(row)}>{row.withdrawalNo}</button></td>
+            <td><input aria-label={`${selectionHint}：${row.withdrawalNo}`} title={selectionHint} type="checkbox" disabled={!selectable && !selectedNow} checked={selectedNow} onChange={(event) => setSelected((current) => { const next = new Set(current); event.target.checked ? next.add(row.withdrawalNo) : next.delete(row.withdrawalNo); return next; })} />{!selectable && <span className="d2-selection-note">{anyBatchAction ? "当前动作不适用" : "系统自动流转"}</span>}</td>
+            <td><button className="l-btn sm d2-withdrawal-link" title={row.withdrawalNo} aria-label={`打开提现单 ${row.withdrawalNo} 的详情`} onClick={() => void openDetail(row)}><span className="d2-cell-ellipsis">{row.withdrawalNo}</span></button></td>
             <td>{row.userNo}<div className="sub">{row.nickname}</div></td>
-            <td>{row.asset} / {row.chain}<div className="mono sub">{row.targetAddress}</div></td>
-            {/* FEAT-WD02 费用双形态:新单(feeModel=confirm)只渲染确认费快照,旧单保持全量旧字段 ——
-                单一渲染面对新单会打出一串 null/undefined,双形态分支是显式交付物。 */}
-            <td className="num"><strong>{money(row.amount)}</strong>{row.feeModel === "confirm" ? <>
-              <div className="sub">网络确认费 {money(row.networkConfirmUsd ?? 0)}(每笔固定 · 新费用模型)</div>
-              <div className="sub">NEX抵扣 {row.nexBurned} × ${row.nexFeeOffsetRate}/NEX · 费用减免 {money(row.feeWaived)}</div>
-              <div className="sub">实际手续费 {money(row.actualFee)} · 实际到账 {money(row.netReceive)}</div>
-            </> : <>
-              <div className="sub">网络费 {money(row.networkFee ?? 0)} · 费率 {row.networkFeeRate} · 区间 {money(row.networkFeeMin ?? 0)}–{money(row.networkFeeMax ?? 0)}</div>
-              <div className="sub">毛手续费 {money(row.grossFee ?? 0)} · 按金额费率 {row.penaltyFeeRate}%(旧模型历史单)</div>
-              <div className="sub">NEX抵扣 {row.nexBurned} × ${row.nexFeeOffsetRate}/NEX · 费用减免 {money(row.feeWaived)}</div>
-              <div className="sub">实际手续费 {money(row.actualFee)} · 实际到账 {money(row.netReceive)}</div>
-            </>}</td>
-            <td><span className={`bdg ${routingPriorityTone(row)}`}>{routingPriorityLabel(row)} · {k4RiskText(row)}</span><div className="sub">当前模型阈值 {row.k4BandLowMax ?? "—"} / {row.k4BandHighMin ?? "—"} / 升级 {row.k4AutoEscalateScore ?? "—"}</div><div className="sub">K3 {row.k3RiskRoute || "—"} · {row.hitRules || "无"}</div><div className="sub">C2 {row.userStatus}</div></td>
-            <td>{row.withdrawalCount24h}/{dailyLimit || "—"}</td>
+            <td className="d2-asset-cell"><span className="d2-cell-ellipsis" title={`${row.asset} / ${row.chain}`} aria-label={`资产与链：${row.asset} / ${row.chain}`}>{row.asset} / {row.chain}</span><div className="mono sub d2-address" title={row.targetAddress}>{row.targetAddress}</div></td>
+            <td className="num d2-fee-summary"><strong>{money(row.amount)}</strong><div className="sub">到账 {money(row.netReceive)}</div><div className="sub">手续费 {money(row.actualFee)}</div><button className="d2-inline-link" onClick={() => void openDetail(row)}>详情中查看完整费用</button></td>
+            <td className="d2-review-cell"><span className={`bdg ${routingPriorityTone(row)}`} title={`K4 当前阈值：低风险上限 ${row.k4BandLowMax ?? "—"}，高风险起点 ${row.k4BandHighMin ?? "—"}，自动升级 ${row.k4AutoEscalateScore ?? "—"}`}>{routingPriorityLabel(row)} · {k4RiskText(row)}</span><div className="sub">K3 {routeLabel(row.k3RiskRoute)} · {ruleSummary(row.hitRules)}</div><div className="sub">账户 {userStatusLabel(row.userStatus)} · 24h 第 {row.withdrawalCount24h}/{dailyLimit || "—"} 笔</div></td>
             <td><span className={`bdg ${statusTone(row.status)}`}>{statusLabel(row.status)}</span></td>
-            <td className="sub">{row.failureReason || "—"}</td>
+            <td className="sub d2-lifecycle-cell">{lifecycleSummary(row)}{row.holdUntil && <div>复查时间：{timeText(row.holdUntil)}</div>}</td>
             <td>{timeText(row.createdAt)}</td>
             <td style={{ textAlign: "right" }}><div style={{ display: "flex", flexWrap: "wrap", gap: 5, justifyContent: "flex-end" }}>
               <button className="l-btn sm" onClick={() => void openDetail(row)}>单笔详情</button>
@@ -509,16 +732,62 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       <div className="l-b" style={{ display: "flex", justifyContent: "space-between" }}><span>共 {rows.total} 条 · 第 {rows.pageNum}/{pages} 页</span><div className="chips">{[10, 20, 50].map((size) => <button key={size} className={`chip${pageSize === size ? " sel" : ""}`} onClick={() => { setPageSize(size); setPage(1); }}>{size}/页</button>)}<button className="chip" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button><button className="chip" disabled={page >= pages} onClick={() => setPage((value) => value + 1)}>下一页</button></div></div>
     </section>
 
-    {detail && <section className="l-card" aria-label="D2 单笔详情">
-      <div className="l-h"><span className="ttl">单笔详情 · {detail.withdrawalNo}</span><button className="l-btn sm" onClick={() => setDetail(null)}>关闭</button></div>
-      <div className="l-b"><div className="f-stats">
-        <div className="f-stat"><div className="k">C1 用户画像</div><div className="v">{detail.userNo} · {detail.userLevel}</div><div className="sub">{detail.nickname} · {detail.phoneMasked || "未展示手机号"} · IP 段 {detail.ipSegment}</div></div>
-        <div className="f-stat warn"><div className="k">K4 / K3</div><div className="v">{routingPriorityLabel(detail)} · {k4RiskText(detail)}</div><div className="sub">当前模型阈值 {detail.k4BandLowMax ?? "—"} / {detail.k4BandHighMin ?? "—"} / 升级 {detail.k4AutoEscalateScore ?? "—"}</div><div className="sub">K3 路由 {detail.k3RiskRoute || "—"} · {detail.hitRules || "无命中"} · {detail.riskReason || "无补充原因"}</div><div className="sub">K4 评分明细：{detail.riskScoreBreakdown}</div></div>
-        <div className="f-stat cyan"><div className="k">账户状态</div><div className="v">{detail.userStatus}</div><div className="sub">24h 第 {detail.withdrawalCount24h} 笔</div></div>
-        <div className="f-stat"><div className="k">当前状态</div><div className="v">{statusLabel(detail.status)}</div><div className="sub">{detail.failureReason || "无异常/生命周期备注"}</div><div className="sub">复查 {timeText(detail.holdUntil)} · 责任人 {detail.lifecycleOwner || "—"} · 期限 {detail.freezePeriod || "—"}</div></div>
-      </div><p><strong>设备事实：</strong>{detail.deviceSummary}</p><p><strong>推荐位置：</strong>{detail.referralPosition}</p>{detail.feeModel === "confirm"
-        ? <p><strong>费用明细：</strong>网络确认费 {money(detail.networkConfirmUsd ?? 0)}（每笔固定 · 新费用模型）；NEX抵扣 {detail.nexBurned}；NEX抵扣率 ${detail.nexFeeOffsetRate}/NEX；费用减免 {money(detail.feeWaived)}；实际手续费 {money(detail.actualFee)}；实际到账 {money(detail.netReceive)}</p>
-        : <p><strong>费用明细：</strong>网络费 {money(detail.networkFee ?? 0)}（费率 {detail.networkFeeRate}，区间 {money(detail.networkFeeMin ?? 0)}–{money(detail.networkFeeMax ?? 0)}）；毛手续费 {money(detail.grossFee ?? 0)}；按金额费率 {detail.penaltyFeeRate}%（旧模型历史单）；NEX抵扣 {detail.nexBurned}；NEX抵扣率 ${detail.nexFeeOffsetRate}/NEX；费用减免 {money(detail.feeWaived)}；实际手续费 {money(detail.actualFee)}；实际到账 {money(detail.netReceive)}</p>}<p><strong>全部提现历史：</strong>{detail.withdrawalHistory}</p><p><strong>状态历史：</strong>{detail.statusHistory || "暂无"}</p><p><strong>审计轨迹：</strong>{detail.auditTrail || "暂无"}</p></div>
-    </section>}
+    {detail && <Drawer title={`单笔详情 · ${detail.withdrawalNo}`} sub={`${detail.userNo} · ${statusLabel(detail.status)}`} wide onClose={closeDetail} footer={<>
+      <button className="l-btn" onClick={closeDetail}>关闭</button>
+      {developmentCapabilities?.simulateCooldownExpiry
+        && hasAuthority("finance_d2_withdrawal_approve")
+        && developmentSimulationEligible(detail)
+        && <button className="l-btn primary" disabled={!writesEnabled || !!submitting || detailLoading || !!detailError} onClick={() => confirmDevelopmentSimulation(detail)}>模拟冷却到期</button>}
+      {actionCandidates(detail).filter((action) => hasAuthority(ACTION_AUTHORITY[action])).map((action) => <button key={action} className="l-btn primary" disabled={!writesEnabled || !!submitting || detailLoading || !!detailError || (action === "APPROVE" && routingUnavailable(detail))} onClick={() => confirmReview(detail, action)}>{actionLabel(action)}</button>)}
+    </>}>
+      {detailLoading && <div className="dtint">正在读取服务端最新详情…</div>}
+      {detailError && <div className="dtint warn">服务端最新详情加载失败 · {detailError} · 为避免按旧数据处置，写操作已关闭，请关闭后重试。</div>}
+      <div className="f-stats d2-detail-stats">
+        <div className="f-stat"><div className="k">用户画像</div><div className="v">{detail.userNo}</div><div className="sub">{detail.nickname} · {detail.userLevel} · {detail.phoneMasked || "未展示手机号"}</div></div>
+        <div className="f-stat warn"><div className="k">风险路由</div><div className="v">{routingPriorityLabel(detail)} · {k4RiskText(detail)}</div><div className="sub">K3 {routeLabel(detail.k3RiskRoute)} · {ruleSummary(detail.hitRules)}</div></div>
+        <div className="f-stat cyan"><div className="k">账户状态</div><div className="v">{userStatusLabel(detail.userStatus)}</div><div className="sub">24h 第 {detail.withdrawalCount24h} 笔 · IP 段 {detail.ipSegment || "—"}</div></div>
+        <div className="f-stat"><div className="k">当前状态</div><div className="v">{statusLabel(detail.status)}</div><div className="sub">{lifecycleSummary(detail)}</div></div>
+      </div>
+      <div className="d2-detail-grid">
+        <section className="d2-detail-section">
+          <h3>提现与费用</h3>
+          <KV k="提现金额" v={money(detail.amount)} />
+          <KV k="实际手续费" v={money(detail.actualFee)} />
+          <KV k="实际到账" v={money(detail.netReceive)} />
+          {detail.feeModel === "confirm" ? <KV k="网络确认费" v={`${money(detail.networkConfirmUsd ?? 0)}（每笔固定）`} /> : <>
+            <KV k="网络费" v={money(detail.networkFee ?? 0)} />
+            <KV k="网络费率 / 区间" v={`${detail.networkFeeRate ?? "—"} · ${money(detail.networkFeeMin ?? 0)}–${money(detail.networkFeeMax ?? 0)}`} />
+            <KV k="毛手续费 / 金额费率" v={`${money(detail.grossFee ?? 0)} · ${detail.penaltyFeeRate ?? "—"}%`} />
+          </>}
+          <KV k="NEX 抵扣" v={`${detail.nexBurned} NEX`} />
+          <KV k="费用减免" v={money(detail.feeWaived)} />
+          <KV k="NEX抵扣率" v={`$${detail.nexFeeOffsetRate}/NEX`} />
+        </section>
+        <section className="d2-detail-section">
+          <h3>生命周期</h3>
+          <KV k="状态" v={<span className={`bdg ${statusTone(detail.status)}`}>{statusLabel(detail.status)}</span>} />
+          <KV k="说明" v={lifecycleSummary(detail)} />
+          <KV k="复查时间" v={timeText(detail.holdUntil)} />
+          <KV k="责任人" v={detail.lifecycleOwner || "系统自动"} />
+          <KV k="持有 / 冻结期限" v={freezePeriodLabel(detail.freezePeriod)} />
+          <KV k="上一状态" v={detail.previousStatus ? statusLabel(detail.previousStatus) : "—"} />
+        </section>
+        <section className="d2-detail-section">
+          <h3>收款与用户事实</h3>
+          <KV k="资产 / 网络" v={`${detail.asset} / ${detail.chain}`} />
+          <KV k="目标地址" v={<span className="mono d2-break-text">{detail.targetAddress}</span>} />
+          <KV k="设备事实" v={operationalText(detail.deviceSummary)} />
+          <KV k="推荐位置" v={operationalText(detail.referralPosition)} />
+          <KV k="全部提现历史" v={operationalText(detail.withdrawalHistory)} />
+        </section>
+        <section className="d2-detail-section">
+          <h3>风控与审计</h3>
+          <KV k="K4 评分明细" v={operationalText(detail.riskScoreBreakdown)} />
+          <KV k="K3 风险原因" v={operationalText(detail.riskReason)} />
+          <KV k="状态历史" v={operationalText(detail.statusHistory)} />
+          <KV k="审计轨迹" v={operationalText(detail.auditTrail)} />
+        </section>
+      </div>
+    </Drawer>}
   </>;
 }

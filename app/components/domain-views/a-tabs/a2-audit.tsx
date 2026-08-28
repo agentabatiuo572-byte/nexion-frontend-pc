@@ -284,7 +284,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       action: <>确认执行 · {w.id}({w.action})</>,
       detail: (
         <>
-          对象 <b>{w.obj}</b> · 提案 <b>{w.before} → {w.after}</b> · 发起人 {w.operator}。
+          对象 <b>{w.obj}</b> · 变更前 <b>{w.before}</b> · 变更后 <b>{w.after}</b> · 发起人 {w.operator}。
           操作理由必填,确认后一次性事务写入目标域并落审计
           {w.sos ? (<>,<b> 应急轨:确认后立即生效并通知 J 域值班</b></>) : null}。<br />
           执行门槛:<b>{w.roleGate}</b> · 同一次提交在 24 小时内不会重复生效。
@@ -609,7 +609,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           <table className="l-tbl" style={{ minWidth: 1020 }}>
             <thead>
               <tr>
-                <th>编号</th><th>动作</th><th>对象</th><th>提案值</th>
+                <th>编号</th><th>动作</th><th>对象</th><th>变更内容</th>
                 <th>发起人</th><th>标记</th><th>记录时间</th>
                 <th style={{ textAlign: "right" }}></th>
               </tr>
@@ -632,7 +632,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{w.obj}</td>
                     <td>
                       <span className="a2-ba">
-                        <span className="o">{w.before}</span> → <span className="n">{w.after}</span>
+                        <span className="k">变更前</span><span className="o">{w.before}</span>
+                        <span className="k">变更后</span><span className="n">{w.after}</span>
                       </span>
                     </td>
                     <td style={{ fontSize: 12 }}>{w.operator}</td>
@@ -935,7 +936,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             title={`高敏动作 · ${w.id}`}
             sub={
               <>
-                {w.action} · 对象 {w.obj} · 发起人 {w.operator} · 提案 {w.before} → {w.after}
+                {w.action} · 对象 {w.obj} · 发起人 {w.operator} · 变更前 {w.before} · 变更后 {w.after}
               </>
             }
             onClose={() => setWoIdx(null)}

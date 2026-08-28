@@ -26,6 +26,20 @@ test("E1 SKU editor blocks no-op edits and constrains stock to a non-negative in
   assert.match(view, /skuFormChanged/);
   assert.match(view, /type="number"[^\n]*min=\{0\}[^\n]*step=\{1\}/);
   assert.match(view, /库存必须填写 0 到 2147483647 之间的整数/);
+  assert.match(view, /无限库存仅适用于 Cloud Share 等非实物份额商品/);
+  assert.match(view, /value="UNLIMITED">无限库存（非实物份额）/);
+  assert.match(e1Client, /stock: inventoryMode === "UNLIMITED" \? null/);
+  assert.match(e1Data, /stock: inventoryMode === "UNLIMITED" \? undefined/);
+  assert.match(catalog, /unlimitedInventory \? "∞（非实物）"/);
+});
+
+test("E1 keeps the canonical SERVER product type instead of rejecting physical server SKUs", () => {
+  assert.match(e1Contract, /\["SERVER",\s*"DEVICE",\s*"SHARE"\]/);
+  assert.match(e1Client, /productType:\s*"SERVER"\s*\|\s*"DEVICE"\s*\|\s*"SHARE"/);
+  assert.match(e1Client, /\["SERVER",\s*"DEVICE",\s*"SHARE"\]\.includes\(sku\.productType\)/);
+  assert.match(e1Data, /const productType = existing\?\.productType \?\? \(isShare \? "SHARE" : "DEVICE"\)/);
+  assert.match(e1Data, /sold: skuNumU\(f\.sold\), productType, inventoryMode/);
+  assert.match(e1Client, /inventoryMode === "UNLIMITED" && productType !== "SHARE"/);
 });
 
 test("E1 SKU edits carry the product revision through the PC proxy", () => {
@@ -62,6 +76,8 @@ test("E1 catalog supports keyword, status and tier filtering with an explicit em
   assert.match(catalog, /aria-label="SKU 档位筛选"/);
   assert.match(catalog, /没有符合筛选条件的 SKU/);
   assert.match(catalog, /filteredSkus\.map\(/);
+  assert.match(catalog, /new URLSearchParams\(window\.location\.search\)/);
+  assert.match(catalog, /params\.get\("sku"\)/);
 });
 
 test("E1 release schedule keeps its seven visible cells on a seven-column grid", () => {
@@ -147,7 +163,7 @@ test("E1 mutations carry stable SKU ids rather than mutable display names", () =
 
 test("E1 lets an operator move an ordinary locked SKU to the current storefront phase", () => {
   assert.match(catalog, /ctx\.openSku\(s\.id, phaseCur\)/);
-  assert.match(catalog, /st === "on" && Number\(s\.stock\) > 0 && !open && !releaseGate/);
+  assert.match(catalog, /st === "on" && \(unlimitedInventory \|\| Number\(s\.stock\) > 0\) && !open && !releaseGate/);
   assert.match(catalog, />按当前阶段上架<\/button>/);
   assert.match(view, /const openSku = \(skuId\?: string, unlockPhase\?: string\)/);
   assert.match(view, /unlock: unlockPhase \?\? current\.unlock/);

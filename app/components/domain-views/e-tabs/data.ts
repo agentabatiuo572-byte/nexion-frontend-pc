@@ -40,7 +40,7 @@ export const EMPTY_SKU_FORM = {
   gpu: "", vram: "", hashRate: "", power: "", datacenter: "", uptime: "", warranty: "", phoneDailyEarn: "", phoneDailyEarnNEX: "",
   price: "",
   dailyEarn: "", dailyEarnNEX: "", shareYieldMin: "", shareYieldMax: "",
-  sold: "", stock: "",
+  sold: "", inventoryMode: "FINITE", stock: "", trialEligible: "false",
   aiImageGenPerMin: "", aiLlmTokensPerSec: "", aiVideoMinPerHour: "", aiFineTuneMins: "", aiUnlocks: "",
   features: "",
   lifecycle: "", unlock: "", tag: "",
@@ -76,7 +76,7 @@ export function skuToForm(s: OpsSku): SkuForm {
     gpu: s.gpu ?? "", vram: s.vram ?? "", hashRate: s.hashRate ?? "", power: s.power ?? "", datacenter: s.datacenter ?? "", uptime: s.uptime ?? "", warranty: s.warranty ?? "", phoneDailyEarn: str(s.phoneDailyEarn), phoneDailyEarnNEX: str(s.phoneDailyEarnNEX),
     price: str(s.price),
     dailyEarn: str(s.dailyEarn), dailyEarnNEX: str(s.dailyEarnNEX), shareYieldMin: str(s.shareYieldMin), shareYieldMax: str(s.shareYieldMax),
-    sold: str(s.sold), stock: str(s.stock),
+    sold: str(s.sold), inventoryMode: s.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE", stock: s.inventoryMode === "UNLIMITED" ? "" : str(s.stock), trialEligible: s.trialEligible ? "true" : "false",
     aiImageGenPerMin: str(s.aiImageGenPerMin), aiLlmTokensPerSec: str(s.aiLlmTokensPerSec), aiVideoMinPerHour: str(s.aiVideoMinPerHour), aiFineTuneMins: str(s.aiFineTuneMins), aiUnlocks: s.aiUnlocks ?? "",
     features: (s.features ?? []).join("\n"),
     lifecycle: s.lifecycle ?? "", unlock: s.unlock ?? "", tag: s.tag ?? "",
@@ -158,18 +158,32 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
   const dailyEarn = skuNum(f.dailyEarn);
   const dailyEarnNEX = skuNum(f.dailyEarnNEX);
   const isShare = f.tier === "Share";
-  const baseRate = isShare && (f.shareYieldMin || f.shareYieldMax)
+  const derivedBaseRate = isShare && (f.shareYieldMin || f.shareYieldMax)
     ? `${skuNum(f.shareYieldMin)}–${skuNum(f.shareYieldMax)}% 年化 · ${dailyEarnNEX} NEX`
     : `$${dailyEarn.toFixed(2)}/d · ${dailyEarnNEX.toLocaleString()} NEX`;
+  const shareYieldMin = skuNumU(f.shareYieldMin);
+  const shareYieldMax = skuNumU(f.shareYieldMax);
+  const earningsUnchanged = existing
+    && existing.tier === f.tier
+    && Number(existing.dailyEarn) === dailyEarn
+    && Number(existing.dailyEarnNEX) === dailyEarnNEX
+    && (existing.shareYieldMin == null ? shareYieldMin == null : Number(existing.shareYieldMin) === shareYieldMin)
+    && (existing.shareYieldMax == null ? shareYieldMax == null : Number(existing.shareYieldMax) === shareYieldMax);
+  // baseRate 是收益字段的派生展示串；编辑其他字段时保留旧值，不能制造无操作 A2 提案。
+  const baseRate = earningsUnchanged ? existing.baseRate : derivedBaseRate;
   const features = f.features.split("\n").map((x) => x.trim()).filter(Boolean);
+  const inventoryMode = f.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE";
+  const productType = existing?.productType ?? (isShare ? "SHARE" : "DEVICE");
   const stockTrim = f.stock.trim();
   return {
     name: f.name.trim(), id: f.id.trim() || existing?.id || f.name.trim(),
     tier: f.tier, tagline: f.tagline.trim() || undefined, badge: f.badge.trim() || undefined,
     gpu: f.gpu.trim() || undefined, vram: f.vram.trim() || undefined, hashRate: f.hashRate.trim() || undefined, power: f.power.trim() || undefined, datacenter: f.datacenter.trim() || undefined, uptime: f.uptime.trim() || undefined, warranty: f.warranty.trim() || undefined, phoneDailyEarn: skuNumU(f.phoneDailyEarn), phoneDailyEarnNEX: skuNumU(f.phoneDailyEarnNEX),
     price: skuNum(f.price),
-    dailyEarn, dailyEarnNEX, shareYieldMin: skuNumU(f.shareYieldMin), shareYieldMax: skuNumU(f.shareYieldMax), baseRate,
-    sold: skuNumU(f.sold), stock: skuNumU(stockTrim) ?? stockTrim,
+    dailyEarn, dailyEarnNEX, shareYieldMin, shareYieldMax, baseRate,
+    sold: skuNumU(f.sold), productType, inventoryMode,
+    stock: inventoryMode === "UNLIMITED" ? undefined : (skuNumU(stockTrim) ?? stockTrim),
+    trialEligible: f.trialEligible === "true",
     aiImageGenPerMin: skuNumU(f.aiImageGenPerMin), aiLlmTokensPerSec: skuNumU(f.aiLlmTokensPerSec), aiVideoMinPerHour: skuNumU(f.aiVideoMinPerHour), aiFineTuneMins: skuNumU(f.aiFineTuneMins), aiUnlocks: f.aiUnlocks.trim() || undefined,
     features: features.length ? features : undefined,
     lifecycle: f.lifecycle,

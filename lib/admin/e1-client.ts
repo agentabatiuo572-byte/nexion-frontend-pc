@@ -52,6 +52,9 @@ interface BackendSku {
   shareYieldMax?: number | string | null;
   baseRate?: string | null;
   sold?: number | null;
+  productType: "SERVER" | "DEVICE" | "SHARE";
+  inventoryMode: "FINITE" | "UNLIMITED";
+  trialEligible: boolean;
   stock?: string | null;
   aiImageGenPerMin?: number | null;
   aiLlmTokensPerSec?: number | null;
@@ -217,6 +220,19 @@ function toPurchaseGate(gate: PurchaseGate | undefined): BackendPurchaseGate | n
 }
 
 function fromSku(sku: BackendSku): OpsSku {
+  const finiteStockValid = typeof sku.stock === "string"
+    && /^(0|[1-9]\d*)$/.test(sku.stock)
+    && Number.isSafeInteger(Number(sku.stock))
+    && Number(sku.stock) <= 2_147_483_647;
+  if (!["SERVER", "DEVICE", "SHARE"].includes(sku.productType)
+      || !["FINITE", "UNLIMITED"].includes(sku.inventoryMode)
+      || (sku.inventoryMode === "UNLIMITED" && (sku.productType !== "SHARE" || sku.stock != null))
+      || (sku.inventoryMode === "FINITE" && !finiteStockValid)
+      || typeof sku.trialEligible !== "boolean") {
+    throw new Error("E1_SKU_INVENTORY_CONTRACT_INVALID");
+  }
+  const inventoryMode = sku.inventoryMode;
+  const stock = inventoryMode === "UNLIMITED" ? undefined : sku.stock as string;
   return {
     id: sku.skuId,
     name: sku.name,
@@ -239,7 +255,10 @@ function fromSku(sku: BackendSku): OpsSku {
     shareYieldMax: toOptionalNumber(sku.shareYieldMax),
     baseRate: sku.baseRate ?? undefined,
     sold: sku.sold ?? undefined,
-    stock: sku.stock ?? "0",
+    productType: sku.productType,
+    inventoryMode,
+    stock,
+    trialEligible: sku.trialEligible,
     aiImageGenPerMin: sku.aiImageGenPerMin ?? undefined,
     aiLlmTokensPerSec: sku.aiLlmTokensPerSec ?? undefined,
     aiVideoMinPerHour: sku.aiVideoMinPerHour ?? undefined,
@@ -259,6 +278,11 @@ function fromSku(sku: BackendSku): OpsSku {
 }
 
 function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
+  const inventoryMode = sku.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE";
+  const productType = sku.productType ?? (sku.tier === "Share" ? "SHARE" : "DEVICE");
+  if (inventoryMode === "UNLIMITED" && productType !== "SHARE") {
+    throw new Error("E1_SKU_INVENTORY_CONTRACT_INVALID");
+  }
   return {
     skuId: sku.id || undefined,
     name: sku.name,
@@ -281,7 +305,9 @@ function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
     shareYieldMax: sku.shareYieldMax ?? null,
     baseRate: sku.baseRate ?? null,
     sold: sku.sold ?? null,
-    stock: String(sku.stock ?? "0"),
+    inventoryMode,
+    stock: inventoryMode === "UNLIMITED" ? null : String(sku.stock ?? "0"),
+    trialEligible: sku.trialEligible === true,
     aiImageGenPerMin: sku.aiImageGenPerMin ?? null,
     aiLlmTokensPerSec: sku.aiLlmTokensPerSec ?? null,
     aiVideoMinPerHour: sku.aiVideoMinPerHour ?? null,

@@ -18,7 +18,7 @@ function isText(value: string | undefined) {
 }
 
 function backendPath(parts: string[]) {
-  if (parts.length === 2 && parts[0] === "vietqr" && ["overview", "accounts", "config", "receipts"].includes(parts[1])) {
+  if (parts.length === 2 && parts[0] === "vietqr" && ["overview", "accounts", "config", "receipts", "receipt-evidence"].includes(parts[1])) {
     return `/api/admin/finance/vietqr/${parts[1]}`;
   }
   if (parts.length === 3 && parts[0] === "vietqr" && parts[1] === "accounts" && /^\d+$/.test(parts[2])) {
@@ -69,6 +69,13 @@ function backendPath(parts: string[]) {
   if (parts.length === 1 && parts[0] === "withdrawals") {
     return "/api/admin/finance/withdrawals";
   }
+  if (parts.length === 3 && parts[0] === "withdrawals" && parts[1] === "development" && parts[2] === "capabilities") {
+    return "/api/admin/finance/withdrawals/development/capabilities";
+  }
+  if (parts.length === 4 && parts[0] === "withdrawals" && parts[1] === "development"
+      && isText(parts[2]) && parts[3] === "simulate-cooldown-expiry") {
+    return `/api/admin/finance/withdrawals/development/${encodeURIComponent(parts[2])}/simulate-cooldown-expiry`;
+  }
   if (parts.length === 2 && parts[0] === "withdrawals" && isText(parts[1])) {
     return `/api/admin/finance/withdrawals/${encodeURIComponent(parts[1])}`;
   }
@@ -106,7 +113,7 @@ async function proxy(request: Request, context: RouteContext) {
     const upstream = await fetch(targetUrl, {
       method: request.method,
       headers,
-      body: hasBody ? await request.text() : undefined,
+      body: hasBody ? await request.arrayBuffer() : undefined,
       signal: AbortSignal.timeout(20_000),
       cache: "no-store",
     });

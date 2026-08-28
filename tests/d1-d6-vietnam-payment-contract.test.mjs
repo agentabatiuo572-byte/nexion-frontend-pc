@@ -12,8 +12,16 @@ const registry = readFileSync(new URL("../lib/admin/registry/d.ts", import.meta.
 const errors = readFileSync(new URL("../lib/admin/error-messages.ts", import.meta.url), "utf8");
 
 test("D1 bank rail is real-API backed and has all five operational views plus an empty state", () => {
-  for (const label of ["在途意向单", "已匹配", "孤儿队列", "差额队列", "迟到 / 补充回单", "收款账户池"]) {
+  for (const label of ["待付款单", "已匹配回单", "未找到付款单", "信息不一致", "逾期 / 重复回单", "收款账户池"]) {
     assert.match(d1, new RegExp(label));
+  }
+  for (const explanation of [
+    "用户已生成付款单，银行回单尚未登记",
+    "银行回单找不到对应付款单",
+    "收款账户或金额与付款单不一致",
+    "不能入账，只能登记退回",
+  ]) {
+    assert.match(d1, new RegExp(explanation));
   }
   assert.match(d1, /loadD1VietQrOverview/);
   assert.match(d1, /当前视图暂无银行轨记录/);
@@ -36,7 +44,15 @@ test("D1 manual match trusts canonical intent ownership instead of an operator-e
   assert.match(d1, /银行回单 \/ 工单凭证/);
   assert.match(client, /evidenceRef: string/);
   assert.match(d1, /登记真实银行回单/);
-  assert.match(d1, /银行流水号全局唯一/);
+  assert.match(d1, /交易参考号不是付款单号，也不能自行编写/);
+  assert.match(d1, /inputKind: "asset-upload"/);
+  assert.match(d1, /uploadPurpose: "vietqr-receipt"/);
+  assert.match(financeProxy, /"receipt-evidence"/);
+  assert.match(financeProxy, /request\.arrayBuffer\(\)/);
+  assert.match(d1, /付款单分配账户/);
+  assert.match(d1, /row\.viewType === "INFLIGHT"/);
+  assert.match(d1, /mismatchReason/);
+  assert.match(d1, /收款账户不一致的回单不能按实收核销/);
   assert.match(d1, /vietQrReceivedAtInstant/);
   assert.match(d1, /`\$\{normalized\}\+07:00`/);
   assert.match(d1, /calendarCheck\.getUTCFullYear\(\)/);
@@ -65,6 +81,25 @@ test("D1 manual match trusts canonical intent ownership instead of an operator-e
   assert.match(d1, /\["ORPHAN", "MISMATCH", "LATE"\]\.includes\(row\.viewType\)/);
   assert.match(d1, /迟到或补充回单不复用原付款单的过期锁价/);
   assert.doesNotMatch(d1, /action: `补入账/);
+});
+
+test("D1 keeps the current bank queue visible after a deterministic reconciliation rejection", () => {
+  const bankWrite = d1.match(/const applyBankWrite = async[\s\S]*?\n  };/)?.[0] ?? "";
+  assert.match(bankWrite, /setError/);
+  assert.doesNotMatch(bankWrite, /setVietQr\(null\)/);
+  assert.match(bankWrite, /isDOutcomeUnknownError/);
+  assert.match(bankWrite, /操作已被服务端受理，但最新列表回读失败/);
+  assert.match(bankWrite, /return;/);
+  assert.doesNotMatch(bankWrite, /throw readbackError/);
+});
+
+test("shared operation forms visibly mark and enforce required uploaded evidence", () => {
+  const kit = readFileSync(new URL("../app/components/domain-views/design-kit.tsx", import.meta.url), "utf8");
+  assert.match(kit, /inputKind\?:[\s\S]*"asset-upload"/);
+  assert.match(kit, /uploadAdminMedia/);
+  assert.match(kit, /aria-required/);
+  assert.match(kit, /必填/);
+  assert.match(kit, /role="alert"/);
 });
 
 test("D6 derives quote from base plus spread, renders history from the server, and fails closed", () => {

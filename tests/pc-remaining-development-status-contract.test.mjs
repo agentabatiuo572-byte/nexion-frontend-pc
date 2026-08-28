@@ -472,8 +472,6 @@ test("built rows have real PC callers, including active L3/L4 and C1 detail acti
     ["OPS-G-04", "cancelG2ExchangeQueueOrder", "app/components/domain-views/g-tabs/g2-exchange.tsx"],
     ["OPS-G-04", "processG2ExchangeQueue", "app/components/domain-views/g-tabs/g2-exchange.tsx"],
     ["OPS-G-05", "updateG3Control", "app/components/domain-views/g-tabs/g3-market.tsx"],
-    ["OPS-G-16", "issueG4InviteCodes", "app/components/domain-views/g-tabs/g4-invite-codes.tsx"],
-    ["OPS-G-16", "voidG4InviteCode", "app/components/domain-views/g-tabs/g4-invite-codes.tsx"],
     ["OPS-G-07", "rerunG4GenesisDividendBatch", "app/components/domain-views/g-tabs/g4-genesis.tsx"],
     ["OPS-H-01", "updateH1RhythmParam", "app/components/domain-views/h-tabs/h1-phase.tsx"],
     ["OPS-H-17", "killH2AutoPush", "app/components/domain-views/h-tabs/h2-trial.tsx"],

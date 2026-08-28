@@ -94,6 +94,15 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   const [skuQuery, setSkuQuery] = useState("");
   const [skuStatus, setSkuStatus] = useState("all");
   const [skuTier, setSkuTier] = useState("all");
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedSku = params.get("sku")?.trim();
+    if (requestedSku) {
+      setSkuQuery(requestedSku);
+      setSkuStatus("all");
+      setSkuTier("all");
+    }
+  }, []);
   const filteredSkus = useMemo(() => {
     const keyword = skuQuery.trim().toLocaleLowerCase();
     return skus.filter((sku) => {
@@ -548,6 +557,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
             ? `${phaseLabel(releaseGate.phase)} · ${open ? "已开放" : gateBlockerLabel(releaseState!)}`
             : `${hasUnlockPhase ? phaseLabel(s.unlock) : "无需阶段"} · ${open ? "已开放" : "门控"}`;
           const isShare = s.tier === "Share";
+          const unlimitedInventory = s.inventoryMode === "UNLIMITED";
           return (
             <div key={s.id} className={`sku-card${st === "off" ? " off" : ""}`}>
               <div className="img">
@@ -587,11 +597,12 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                     const txt = `购买门${cond ? " " + cond : ""}${remaining != null ? ` · 余${remaining}` : ""}`;
                     return <Badge tone={g.enforce ? "warn" : "neutral"}>{txt}</Badge>;
                   })()}
-                  <span className="stk">库存 {s.stock}</span>
+                  <span className="stk">库存 {unlimitedInventory ? "∞（非实物）" : (s.stock ?? 0)}</span>
+                  <Badge tone={s.trialEligible ? "ok" : "neutral"}>{s.trialEligible ? "允许试用" : "不可试用"}</Badge>
                 </div>
                 <div className="acts">
                   {canWrite ? <button className="primary" onClick={() => ctx.openSku(s.id)}>改价 / 编辑</button> : null}
-                  {canWrite && st === "on" && Number(s.stock) > 0 && !open && !releaseGate && hasPhaseConfig ? <button className="brand" onClick={() => ctx.openSku(s.id, phaseCur)}>按当前阶段上架</button> : null}
+                  {canWrite && st === "on" && (unlimitedInventory || Number(s.stock) > 0) && !open && !releaseGate && hasPhaseConfig ? <button className="brand" onClick={() => ctx.openSku(s.id, phaseCur)}>按当前阶段上架</button> : null}
                   {canWrite ? <button disabled={listingBlocked} title={listingBlocked ? listingBlocker : undefined} onClick={() => ctx.openActionConfirm({ name: st === "on" ? `下架 SKU · ${s.name}` : `上架 SKU · ${s.name}`, op: "sku-status", target: s.id, status: st === "on" ? "off" : "on", detail: st === "on" ? "下架后从商城隐藏,不影响已售设备结算" : "上架后对用户可见", amplify: false })}>{st === "on" ? "下架" : "上架"}</button> : null}
                   {canWrite ? <button className="danger" onClick={() => ctx.delSku(s.id, s.name ?? s.id)}>删除</button> : null}
                 </div>

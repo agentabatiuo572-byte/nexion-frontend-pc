@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import { fetchA2ReasonPolicy } from "@/lib/admin/a2-client";
+import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
 import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "@/lib/admin/trust-section-validation";
 
 /* ---------------- 域 → 落地路由(ctx.navigate 跨域跳转) ---------------- */
@@ -86,10 +87,10 @@ export const CodeTag = ({ tone, title, children }: { tone?: string; title?: stri
   <span className={"code-tag " + (tone || "") + (title ? " has-tip" : "")} data-tip={title || undefined}>{children}</span>
 );
 
-export const Chip = ({ sel, tab, onClick, children }: { sel?: boolean; tab?: boolean; onClick?: () => void; children: ReactNode }) => {
+export const Chip = ({ sel, tab, disabled, onClick, children }: { sel?: boolean; tab?: boolean; disabled?: boolean; onClick?: () => void; children: ReactNode }) => {
   const className = "chip " + (tab ? "tab " : "") + (sel ? "sel" : "");
   return tab ? (
-    <button type="button" className={className} aria-pressed={!!sel} onClick={onClick}>{children}</button>
+    <button type="button" className={className} aria-pressed={!!sel} disabled={disabled} onClick={onClick}>{children}</button>
   ) : (
     <span className={className}>{children}</span>
   );
@@ -515,7 +516,7 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
 }
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
-export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; min?: number; max?: number; step?: number; disallowCurrent?: boolean; amplifiesWhen?: "increase" | "decrease" };
+export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; step?: number; disallowCurrent?: boolean; amplifiesWhen?: "increase" | "decrease" };
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
@@ -558,6 +559,7 @@ function initEditValue(spec?: EditSpec | null): string {
 function isEditValueValid(spec: EditSpec | null, value: string): boolean {
   if (!spec) return true;
   if (!value.trim()) return false;
+  if (spec.disabledOptions?.includes(value.trim())) return false;
   if (spec.disallowCurrent && value.trim() === (spec.current ?? "").trim()) return false;
   if ((spec.kind ?? "text") !== "number") return true;
   const normalized = value.trim();
@@ -632,7 +634,7 @@ export type BusinessFormSpec =
   // 通用多字段配置:一个「调整」按钮 → 一个弹窗里编辑 N 个带标签的值(各值独立 backend-replaceable,
   // 配合 EOp "param-multi" + McSpec.paramKeys 把每字段写到自己的 param key)。
   // ascending=true 时校验 number 字段严格递增(如 分段月界 早末<中末<总月数)。
-  | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "datetime-local"; options?: string[]; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; wide?: boolean; warnAbove?: number; warnText?: string }[] }
+  | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "datetime-local" | "asset-upload"; options?: string[]; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
   | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentIssuanceLimit?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentPopupCadenceEnabled?: string; currentPopupDelayMs?: string; currentPopupCooldownHours?: string; currentPopupMaxPerSession?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
@@ -1408,6 +1410,19 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     const isVisible = (field: (typeof spec.fields)[number]) =>
       !field.visibleWhen || (state[field.visibleWhen.key] ?? "") === field.visibleWhen.equals;
     spec.fields.filter((f) => isVisible(f) && f.required !== false).forEach((f) => needs(f.key, f.label));
+    spec.fields.filter(isVisible).forEach((field) => {
+      const raw = (state[field.key] ?? "").trim();
+      if (!raw) return;
+      if (field.minLength != null && raw.length < field.minLength) missing.push(`${field.label} 至少 ${field.minLength} 位`);
+      if (field.maxLength != null && raw.length > field.maxLength) missing.push(`${field.label} 最多 ${field.maxLength} 位`);
+      if (field.pattern) {
+        try {
+          if (!new RegExp(field.pattern).test(raw)) missing.push(field.patternMessage ?? `${field.label} 格式不正确`);
+        } catch {
+          missing.push(`${field.label} 校验规则不可用`);
+        }
+      }
+    });
     spec.fields.filter((f) => f.requiredWhenAddedTo).forEach((f) => {
       const target = spec.fields.find((candidate) => candidate.key === f.requiredWhenAddedTo);
       if (!target) return;
@@ -1559,7 +1574,16 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
 
 function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec: BusinessFormSpec; value: BusinessFormValue; onChange: (next: BusinessFormValue) => void; onSelectionChange?: (next: BusinessFormValue) => void }) {
   const [multiSelectSearch, setMultiSelectSearch] = useState<Record<string, string>>({});
-  const set = (key: string, v: string) => onChange({ ...value, [key]: v });
+  const [assetUploading, setAssetUploading] = useState<Record<string, boolean>>({});
+  const [assetNames, setAssetNames] = useState<Record<string, string>>({});
+  const [assetErrors, setAssetErrors] = useState<Record<string, string>>({});
+  const latestValueRef = useRef(value);
+  useEffect(() => { latestValueRef.current = value; }, [value]);
+  const set = (key: string, v: string) => {
+    const next = { ...latestValueRef.current, [key]: v };
+    latestValueRef.current = next;
+    onChange(next);
+  };
   const textArea = (key: string, label: string, placeholder: string, rows = 3, maxLength?: number) => (
     <label className="field" style={{ marginBottom: 0 }}>
       <span>{label}</span>
@@ -1687,17 +1711,61 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
             <div key={f.key} style={f.wide ? { gridColumn: "1 / -1" } : undefined}>
               {multiSelect(f.key, f.label, f.options ?? [], `multi-select-${f.key}`, f.optionLabels, f.searchable, f.current, f.showDiff)}
             </div>
+          ) : f.inputKind === "asset-upload" ? (
+            <label className="field" style={{ marginBottom: 0, ...(f.wide ? { gridColumn: "1 / -1" } : {}) }} key={f.key}>
+              <span>{f.label} {f.required !== false && <b style={{ color: "var(--v5-danger)" }}>· 必填</b>}</span>
+              <input
+                className="fld"
+                type="file"
+                accept={f.accept ?? "image/jpeg,image/png,image/webp"}
+                required={f.required !== false}
+                aria-required={f.required !== false}
+                disabled={assetUploading[f.key]}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  set(f.key, "");
+                  setAssetNames((current) => ({ ...current, [f.key]: "" }));
+                  setAssetErrors((current) => ({ ...current, [f.key]: "" }));
+                  if (!file) return;
+                  setAssetUploading((current) => ({ ...current, [f.key]: true }));
+                  const upload = f.uploadPurpose === "vietqr-receipt"
+                    ? uploadD1VietQrReceiptEvidence(file)
+                    : uploadAdminMedia(file, {
+                        domain: f.uploadDomain ?? "shared",
+                        usage: f.uploadUsage ?? "general",
+                        entityType: "MEDIA_ASSET",
+                        operator: f.uploadOperator,
+                      });
+                  void upload.then((asset) => {
+                    set(f.key, asset.assetId);
+                    setAssetNames((current) => ({ ...current, [f.key]: file.name }));
+                  }).catch((error) => {
+                    setAssetErrors((current) => ({
+                      ...current,
+                      [f.key]: error instanceof Error ? error.message : "凭证上传失败，请重试",
+                    }));
+                  }).finally(() => {
+                    setAssetUploading((current) => ({ ...current, [f.key]: false }));
+                  });
+                }}
+              />
+              <span className="tiny muted">
+                {assetUploading[f.key] ? "正在上传并校验凭证…" : assetNames[f.key] ? `已上传：${assetNames[f.key]}` : (f.help ?? "请上传清晰的银行回单截图")}
+              </span>
+              {assetErrors[f.key] && <span role="alert" className="tiny" style={{ color: "var(--v5-danger)" }}>{assetErrors[f.key]}</span>}
+            </label>
           ) : (
             <label className="field" style={{ marginBottom: 0, ...(f.wide ? { gridColumn: "1 / -1" } : {}) }} key={f.key}>
-              <span>{f.label}</span>
+              <span>{f.label} {f.required !== false && <b style={{ color: "var(--v5-danger)" }}>· 必填</b>}</span>
               {f.inputKind === "select" ? (
                 // 能枚举的值用下拉,不让运营手输(最高设计铁律:能勾选的不要输入)
-                <select className="fld" value={value[f.key] ?? f.options?.[0] ?? ""} onChange={(e) => set(f.key, e.target.value)}>
+                <select className="fld" required={f.required !== false} aria-required={f.required !== false} value={value[f.key] ?? f.options?.[0] ?? ""} onChange={(e) => set(f.key, e.target.value)}>
                   {(f.options ?? []).map((o) => <option key={o} value={o}>{f.optionLabels?.[o] ?? o}</option>)}
                 </select>
               ) : (
-                <input className="fld" type={f.inputKind === "number" ? "number" : f.inputKind === "datetime-local" ? "datetime-local" : "text"} min={f.min} max={f.max} step={f.step} value={value[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder ?? ""} />
+                <input className="fld" type={f.inputKind === "number" ? "number" : f.inputKind === "datetime-local" ? "datetime-local" : "text"} min={f.min} max={f.max} step={f.step} minLength={f.minLength} maxLength={f.maxLength} required={f.required !== false} aria-required={f.required !== false} value={value[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder ?? ""} />
               )}
+              {f.help && <span className="tiny muted">{f.help}</span>}
               {f.warnAbove != null && Number(value[f.key]) > f.warnAbove && (
                 <span className="tiny" style={{ display: "block", marginTop: 4, color: "var(--v5-warning)", fontWeight: 600 }}>
                   ⚠ {f.warnText ?? `已超过 ${f.warnAbove} 的建议上限`}
@@ -3363,7 +3431,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
           <span className="bf-legend">目标新值{spec.current ? <> · 当前 <span className="mono">{spec.current}</span></> : null}</span>
           {kind === "select" || kind === "toggle" ? (
             <div className="row wrap" style={{ gap: 8 }}>
-              {opts.map((o) => <Chip key={o} tab sel={newVal === o} onClick={() => setNewVal(o)}>{spec.optionLabels?.[o] ?? o}</Chip>)}
+              {opts.map((o) => <Chip key={o} tab sel={newVal === o} disabled={spec.disabledOptions?.includes(o)} onClick={() => setNewVal(o)}>{spec.optionLabels?.[o] ?? o}</Chip>)}
             </div>
           ) : (
             <div className="row" style={{ gap: 8, alignItems: "center" }}>

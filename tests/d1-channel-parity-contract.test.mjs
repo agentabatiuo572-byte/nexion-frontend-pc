@@ -7,6 +7,11 @@ const component = readFileSync(
   "utf8",
 );
 const client = readFileSync(new URL("../lib/admin/d-client.ts", import.meta.url), "utf8");
+const mediaClient = readFileSync(new URL("../lib/admin/media-client.ts", import.meta.url), "utf8");
+const designKit = readFileSync(
+  new URL("../app/components/domain-views/design-kit.tsx", import.meta.url),
+  "utf8",
+);
 const pendingStore = readFileSync(new URL("../lib/admin/pending-mutation-store.ts", import.meta.url), "utf8");
 const proxy = readFileSync(
   new URL("../app/api/admin/finance/[...path]/route.ts", import.meta.url),
@@ -59,4 +64,20 @@ test("cross-repository parity gate reads real PC, backend and App sources only",
   assert.match(sentinel, /TopupCardLifecycleService\.java/);
   assert.match(sentinel, /MAX_CARD_DEPOSIT_USDT/);
   assert.doesNotMatch(sentinel, /lib[\\/]mock/);
+});
+
+test("VietQR receipt evidence uses its finance-only binary-safe upload boundary", () => {
+  assert.match(component, /uploadPurpose: "vietqr-receipt"/);
+  assert.match(designKit, /uploadD1VietQrReceiptEvidence/);
+  assert.match(mediaClient, /\/api\/admin\/finance\/vietqr\/receipt-evidence/);
+  assert.match(proxy, /"receipt-evidence"/);
+  assert.match(proxy, /request\.arrayBuffer\(\)/);
+});
+
+test("bank write acceptance is not mislabeled when only the overview readback fails", () => {
+  assert.match(component, /操作已被服务端受理，但最新列表回读失败/);
+  assert.match(component, /不要重复提交/);
+  assert.doesNotMatch(component, /throw readbackError/);
+  assert.match(client, /"UNKNOWN"/);
+  assert.match(component, /历史账户信息缺失/);
 });

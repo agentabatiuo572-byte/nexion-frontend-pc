@@ -122,7 +122,6 @@ const CLASSIFICATION_EXEMPT = {
   "g2-client.ts": "同上",
   "g3-client.ts": "同上",
   "g4-client.ts": "同上",
-  "g4-invite-client.ts": "复用 g4Request 的统一 HTTP 归类并走 stable-mutation 执行器",
   "g7-client.ts": "同上",
   "h9-client.ts": "只在成功后弃号,没有失败期的去留决定;换输入即换号由槽位指纹保证",
   "a4-client.ts": "命令号每次现铸,没有可复用的号 → 谈不上保号/弃号(待迁,交接文档任务 A)",

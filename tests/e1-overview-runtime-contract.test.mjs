@@ -13,6 +13,8 @@ const validSku = {
   price: 199,
   dailyEarn: 0.06,
   dailyEarnNex: 10,
+  productType: "SHARE",
+  inventoryMode: "FINITE",
   stock: "10",
 };
 
@@ -47,6 +49,62 @@ test("E1 runtime contract accepts one complete canonical catalog page", () => {
   }).records, [validSku]);
 });
 
+test("E1 runtime contract accepts canonical server products with finite stock", () => {
+  const serverSku = {
+    ...validSku,
+    tier: "Entry",
+    productType: "SERVER",
+    inventoryMode: "FINITE",
+    stock: "0",
+  };
+  assert.deepEqual(parseE1SkuPage({
+    total: 1,
+    pageNum: 1,
+    pageSize: 100,
+    records: [serverSku],
+  }).records, [serverSku]);
+});
+
+test("E1 runtime contract accepts unlimited Share stock only with an explicit null stock", () => {
+  const unlimitedShare = {
+    ...validSku,
+    productType: "SHARE",
+    inventoryMode: "UNLIMITED",
+    stock: null,
+  };
+  assert.deepEqual(parseE1SkuPage({
+    total: 1,
+    pageNum: 1,
+    pageSize: 100,
+    records: [unlimitedShare],
+  }).records, [unlimitedShare]);
+
+  assert.throws(() => parseE1SkuPage({
+    total: 1,
+    pageNum: 1,
+    pageSize: 100,
+    records: [{ ...unlimitedShare, productType: "DEVICE" }],
+  }), /E1_SKU_PAGE_INVALID/);
+
+  assert.throws(() => parseE1SkuPage({
+    total: 1,
+    pageNum: 1,
+    pageSize: 100,
+    records: [{ ...unlimitedShare, productType: "SERVER" }],
+  }), /E1_SKU_PAGE_INVALID/);
+});
+
+test("E1 runtime contract rejects finite inventory without one canonical stock value", () => {
+  for (const stock of [undefined, null, "", "01", "-1", "2147483648"]) {
+    assert.throws(() => parseE1SkuPage({
+      total: 1,
+      pageNum: 1,
+      pageSize: 100,
+      records: [{ ...validSku, stock }],
+    }), /E1_SKU_PAGE_INVALID/);
+  }
+});
+
 test("E1 runtime contract rejects a malformed 200 that omits records", () => {
   assert.throws(
     () => parseE1SkuPage({ total: 0, pageNum: 1, pageSize: 100 }),
@@ -64,6 +122,16 @@ test("E1 runtime contract rejects incomplete SKU identity and unsafe numbers", (
     }),
     /E1_SKU_PAGE_INVALID/,
   );
+});
+
+test("E1 runtime contract rejects legacy responses without explicit inventory semantics", () => {
+  const { productType: _productType, inventoryMode: _inventoryMode, ...legacySku } = validSku;
+  assert.throws(() => parseE1SkuPage({
+    total: 1,
+    pageNum: 1,
+    pageSize: 100,
+    records: [legacySku],
+  }), /E1_SKU_PAGE_INVALID/);
 });
 
 test("E1 runtime contract accepts a complete generation-gate snapshot", () => {

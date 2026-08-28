@@ -25,7 +25,6 @@ import {
 import type { GCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import G4AdminOperations from "./g4-admin-operations";
-import G4InviteCodes from "./g4-invite-codes";
 
 const OPERATOR = currentAdminOperator;
 
@@ -415,7 +414,6 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
 
       <G4AdminOperations ctx={ctx} />
 
-      <G4InviteCodes ctx={ctx} />
 
       <div className="two-col r11" style={{ marginBottom: 16 }}>
         <section className="l-card">
