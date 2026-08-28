@@ -16,7 +16,7 @@
 
 后端仍必须在成交事务内复核：有效账号、国家/地区完整、地域未禁、销售时间已开放、市场未关闭、库存足够、单账户上限未超。前端资格接口只展示服务端的 `eligible / reasons / ownedCount / maxPerUser / remainingCap / minAccountAgeDays / accountAgeDays` 投影。
 
-5173 开发验收使用的 Genesis Sandbox 也必须直接读取上述三项配置，不得用 `20 个 / 0 天` 等本地常量替代。Sandbox 的资格查询读取 `nx_user.created_at` 计算账户龄；一级认购与二级承接在扣款和转移持有前再次校验同一份开关、账户龄与持有上限。三项配置缺失、停用、越界或格式错误时，查询返回 `SALE_POLICY_UNAVAILABLE`，成交失败关闭。
+5173 标准开发环境直接使用正式 Genesis 业务表和上述三项后台配置，不得用 `20 个 / 0 天` 等本地常量替代，也不得因运行在 `dev` 就切换到 Sandbox。资格查询读取 `nx_user.created_at` 计算账户龄；一级认购与二级承接在扣款和转移持有前再次校验同一份开关、账户龄与持有上限。三项配置缺失、停用、越界或格式错误时，查询返回 `SALE_POLICY_UNAVAILABLE`，成交失败关闭。
 
 ## 2. 新旧区别
 
@@ -35,9 +35,13 @@
 
 历史邀请码数据只读保留在数据库审计边界内，不再提供签发、作废或兑换接口；任何历史记录都不能改变 `eligible` 或绕过成交前复核。
 
-### 2.1 Sandbox RunID 隔离与历史种子
+### 2.1 标准开发环境与专项 Sandbox 的区别
 
-Genesis Sandbox 的订单、持有、资金镜像流水和发生过变更的专用钱包属于实质业务事实；同一测试账号在其他 RunID 已存在任一此类事实时，当前 Run 必须返回 `GENESIS_SANDBOX_USER_RUN_CONFLICT`，不得跨 Run 读取或复用。
+标准 `dev` 启动不设置 Genesis Acceptance RunID：App 读取 `PRODUCTION + runId=""` 的服务端权威回执，认购直接写 `nx_genesis_order / nx_genesis_holding / nx_wallet_ledger`，G4 同源回读。这里的 `PRODUCTION` 表示正式业务数据轨，不代表连接线上生产数据库。
+
+存量开发账号如果因旧 Acceptance 流程仍带 `sandbox=1`，不能只迁订单与持仓：必须在确认其已迁入当前开发库正式业务表后，把该本地账号同步收敛为正式业务账号标记。标准开发环境的 App 认购链与 G4 均只承认 `sandbox=0` 的正式业务账号，不为 `dev + sandbox=1` 另开钱包、资格或台账旁路。否则正式表中的持仓仍会被 App 公共状态、订单回读和持有人聚合过滤，表现为“数据库有记录、页面/G4 仍为 0”。此身份收敛不复制钱包、不新建流水，也不得产生第二次扣款。
+
+显式 `test`/专项验收 Sandbox 才使用 RunID 和 `nx_genesis_sandbox_*`；它不属于普通开发联调，不能由 `start-dev-h5.ps1` 或 `start_ops_console_monolith.ps1` 的默认值隐式开启，也不能聚合进 G4 正式持仓与排放口径。
 
 `nx_genesis_sandbox_wallet.version = 0` 且没有订单、持有或资金镜像流水的历史行仅是旧初始化器留下的惰性种子，不代表账号已经归属于该 Run，也不能单独阻断当前 Run。`version > 0` 的钱包仍按实质事实隔离。App 不展示内部 RunID，只把隔离冲突说明为“测试账号属于另一条验收数据链”；网络、协议或资格接口不可用则显示“资格服务暂时连接失败”，两者都不得伪装成“未通过平台策略”。
 

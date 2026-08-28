@@ -89,8 +89,9 @@ test("NX1.0 remote Genesis uses canonical APIs and never runs local sale ticks o
   assert.match(api, /\/api\/genesis\/listings\/\$\{encodeURIComponent\(holdingNo\)\}\/buy/);
   assert.match(store, /function tickSales\(\) \{[\s\S]*void syncRemote\(\);[\s\S]*return;/);
   assert.doesNotMatch(store, /function tickSales\(\) \{[\s\S]{0,160}soldSlots\.value\s*\+=/);
-  assert.match(store, /function purchaseIdempotencyKey\(n: number,[\s\S]*genesis-purchase:/);
-  assert.match(store, /genesisApi\.purchase\(n,\s*purchaseIdempotencyKey\(n,\s*tokenIds\)\)/);
+  assert.match(store, /function claimGenesisPurchaseIntent\([\s\S]*const key = `genesis-purchase:/);
+  assert.match(store, /function purchaseIdempotencyKey\(n: number,[\s\S]*claimGenesisPurchaseIntent\(previous, boundKey, n, tokenIds\)/);
+  assert.match(store, /const idempotencyKey = purchaseIdempotencyKey\(n, tokenIds\);[\s\S]*resolveRemoteGenesisPurchase\([\s\S]*genesisApi\.purchase\(n, idempotencyKey\)/);
   assert.match(store, /function stableIntent\(operation: string, target: string\)[\s\S]*`genesis:\$\{boundKey\}:\$\{operation\}:\$\{target\}`/);
   assert.match(store, /genesisApi\.buy\(holdingNo,\s*stableIntent\("buy",\s*holdingNo\)\)/);
   assert.match(purchase, /const result = await genesis\.purchase\(qty\.value\)/);

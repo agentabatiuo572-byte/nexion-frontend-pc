@@ -425,9 +425,9 @@
 **② 后台界面**:
 - **节点经济配置面**:`TOTAL_SLOTS / unitPriceUSDT / dailyDividendShare(0.1%/日,已裁定)/ 二级版税% / 一级售出进度 / 已铸造量`。
 - **一二级市场监控**:一级售出 ticker(对齐 §10.1)+ 二级市场 stats(floor / 24h vol / listed / owners,对齐 §10.2.1,SSE 实时)。
-- **排放派发监控**:日排放应付池 + 每日 00:00 UTC 派发批次(喂 B2 负债 / D4 bill)。
+- **排放派发监控**:日排放应付池 + 每日 00:00 UTC 派发批次(喂 B2 负债 / D4 bill)。标准开发环境与生产环境使用同一套 Genesis 正式业务表结构；两者只由运行环境和数据库实例隔离，不再把开发环境认购写入 Sandbox 表。G4 始终读取当前实例的正式持仓、订单和排放批次。
 - **geo / pause 面**:一二级市场全局 pause 开关 + `geo_block` 国家清单(边缘 IP 判定)。
-- **ownership 视图**(只读,server-canonical):`tokenId / 持有者(脱敏)/ 来源(一级 / 二级)/ lifetime 排放`;二级转让时排放跟随 NFT(§10.2「emission moves with the NFT」)。
+- **ownership 视图**(只读,server-canonical):`tokenId / 持有者(脱敏)/ 来源(一级 / 二级)/ lifetime 排放`;二级转让时排放跟随 NFT(§10.2「emission moves with the NFT」)。开发环境已成交的认购必须和 App 余额、订单、钱包流水一起落当前开发数据库的正式业务表，并由本视图直接回读；若存量成交曾属于旧开发 Sandbox，迁入正式表时还必须把对应本地开发账号收敛为正式业务账号标记，否则 App/G4 的账号环境过滤会把已经迁入的持仓继续显示为 0。
 - **状态机**(节点,server-canonical):`minted(一级售出 / 铸造)→ held(持有计排放)`;旁路:`held → listed(二级挂单)→ sold(二级成交·扣 2.5% 版税·排放权跟随新持有者)`。
 
 **③ 可控参数**:
@@ -522,6 +522,7 @@
 - `GET /api/genesis/state` — 节点经济(TOTAL_SLOTS / unitPriceUSDT / dailyDividendShare);**server-canonical**,前端 §10.1 读此。
 - SSE `/api/genesis/marketplace/stats` — 二级市场实时 stats(floor / vol / listed / owners,对齐 §10.2.1)。
 - `GET /api/admin/genesis/ownership?cursor=` — ownership 视图(server 权威持有台账)。
+- `GET /api/admin/market/nex/genesis?page=&pageSize=` — G4 当前实例的正式聚合读接口；`stats.sold / stats.unsold / dividend / nodes / nodePage` 必须全部由 `nx_genesis_series / nx_genesis_holding / nx_genesis_order / nx_genesis_emission_* / nx_wallet_ledger` 同源计算。正式持仓、订单与持有人聚合必须联查 `nx_user.sandbox=0`，即使误有 Sandbox 标记账号的数据落入正式表也不得污染 G4。标准开发环境不得混读 `nx_genesis_sandbox_*`，也不得要求 `sandboxMonitoring` 或 `nodes[].environment` 才能渲染。
 - `PUT /api/admin/genesis/economics` — 改总量 / 单价 / 版税(经确认弹窗 G4-MD1,reason 必填(空值 400 `REASON_REQUIRED`))。
 - `PUT /api/admin/genesis/dividend-rate` — 改排放率(基准 0.1%/日;经确认弹窗 G4-MD2,reason 必填,仅超管;**升率 server 先核 B1,< 红线返 422**)。
 - `POST /api/admin/genesis/pause` — 一二级 pause(对齐 §9.11d.1;经确认弹窗 G4-MD3,reason 必填;payload `geo_block: string[]`;携 `Idempotency-Key`)。
@@ -541,6 +542,7 @@
 
 **⑦ 风控 & 联动**:
 - **server-canonical(§9.11d.2)**:Genesis ownership + 排放派发 + 二级成交 server 权威;前端 `useGenesis.ownedTokenIds` 仅展示真实购买序号,client 不得伪造持有 / 排放;§10.3 holder dashboard `myOwned === 0` 显示真实空状态。
+- **开发 / Sandbox 区别**:标准 `dev` 是真实业务代码对本地开发数据库的联调环境，Genesis 认购、扣款、订单、持仓和 G4 监控统一走正式业务表；Sandbox 仅指显式 `test`/专项验收轨，不能由普通开发启动脚本隐式开启，也不能混入 G4 正式台账。历史开发 Sandbox 成交迁入正式表时只迁订单/持仓并复用原钱包流水，严禁再次扣款。
 - **负债联动(② 跨域事实)**:`genesis.purchased` 增 B2 应付负债科目 4「Genesis 日排放承诺」,**精算公式 = `节点价 × 持有量 × 0.1%/日`**(排放率已裁定 0.1%,§10.1.1;根因账本归 **D3,B2 为其驾驶舱概览卡同口径**,§3.14);日排放派发落 D4 bill。二级版税收入入网络金库(§10.2.3)。
 - **B1 前置(① 跨域事实)**:升排放率提交即 server 核验覆盖率红线。
 - **篡改防御(§9.11d.2)**:tokenId / 排放 server 单源,client 不可枚举 / 撞 ID;OpenSea 外链为站内 P2P 导流,无真实跨链写。
