@@ -71,7 +71,9 @@ test("F3 backend consumes locked controls and publishes the shared commission ev
   assert.match(request, /@NotBlank @Size\(min = 8, max = 200\) String reason/);
   assert.match(appController, /@GetMapping\("\/api\/team\/binary"\)/);
   assert.match(appController, /"USER"\.equals/);
-  assert.match(appProjection, /server-canonical F3 paid orders \+ assignments \+ H1/);
+  assert.match(appProjection, /mapper\.listPaidOrderCandidates/);
+  assert.match(appProjection, /mapper\.countAssignmentsByLeg/);
+  assert.match(appProjection, /GrowthRhythmSnapshot\.from/);
   assert.match(migration, /commission\.paid/);
   assert.match(migration, /F3BinarySettlement/);
   assert.match(migration, /CREATE TABLE IF NOT EXISTS nx_binary_volume_cursor/);
@@ -89,7 +91,8 @@ test("App remote F3 consumes the authenticated server snapshot and clears stale 
   assert.match(store, /refreshCanonicalBinary/);
   assert.match(store, /binarySnapshot\.value = null/);
   assert.match(store, /events\.value = \[\]/);
-  assert.match(page, /Local track or commission data is not used in remote mode/);
+  assert.match(page, /leftMonthVol = computed\(\(\) => remoteApiEnabled \? remoteTrackA\.value : network\.leftVolumeMonth\(\)\)/);
+  assert.match(page, /rightMonthVol = computed\(\(\) => remoteApiEnabled \? remoteTrackB\.value : network\.rightVolumeMonth\(\)\)/);
   assert.match(page, /commission\.binarySnapshot\?\.trackA/);
   assert.match(team, /commission\.binarySnapshot/);
 });
