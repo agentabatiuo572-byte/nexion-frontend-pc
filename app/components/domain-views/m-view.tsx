@@ -36,7 +36,6 @@ import { MAvatar, ownerLabel } from "./m-tabs/hd-ui";
 import type { ConfirmReq, MCtx, ActionConfirmReq } from "./m-tabs/types";
 import { containsConversationMessage } from "./m-sse-dedup";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
-import { fetchMSupportAcceptanceProof } from "@/lib/admin/m-support-acceptance-sandbox";
 
 /**
  * M 域两类写入的命令号共用一张表,靠 fingerprint 前缀分命名空间:
@@ -1010,7 +1009,6 @@ function dockRelWhen(ts: number): string {
 function SessionDock({ ctx, hidden }: { ctx: MCtx; hidden: boolean }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  const [acceptanceMode, setAcceptanceMode] = useState<"loading" | "sandbox" | "production" | "blocked">("loading");
   const sendInFlight = useRef(false);
   const authorities = useAdminAuth((state) => state.session?.authorities);
   const currentRole = useAdminAuth((state) => state.session?.role ?? state.role);
@@ -1022,19 +1020,7 @@ function SessionDock({ ctx, hidden }: { ctx: MCtx; hidden: boolean }) {
   const isSuperAdmin = currentRole === "super" || currentRole === "superadmin";
   const canWriteM3 = isSuperAdmin || Boolean(authorities?.includes("service_m3_write"));
   const conversationsAvailable = ctx.pget("I.session.conversationsAvailable") === "1";
-  const canWrite = acceptanceMode === "production" && canWriteM3 && conversationsAvailable;
-
-  useEffect(() => {
-    if (hidden) {
-      setAcceptanceMode("loading");
-      return;
-    }
-    let active = true;
-    void fetchMSupportAcceptanceProof()
-      .then((proof) => { if (active) setAcceptanceMode(proof ? "sandbox" : "production"); })
-      .catch(() => { if (active) setAcceptanceMode("blocked"); });
-    return () => { active = false; };
-  }, [hidden]);
+  const canWrite = canWriteM3 && conversationsAvailable;
 
   // M3 在台 / 无活跃会话 / 已被关闭(且仍是同一会话)→ 不显
   if (hidden || !conv || (offFor && offFor === lastId)) return null;

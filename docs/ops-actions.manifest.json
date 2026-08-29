@@ -921,8 +921,7 @@
       "batch": "P1",
       "restActions": [
         "e4_order_refund",
-        "e4_order_state",
-        "postCommerceAcceptanceCallback"
+        "e4_order_state"
       ]
     },
     {
@@ -2062,8 +2061,7 @@
       "batch": "done",
       "restActions": [
         "createTicket",
-        "replyTicket",
-        "replyMSupportAcceptanceTicket"
+        "replyTicket"
       ]
     },
     {
@@ -2078,8 +2076,7 @@
         "updateTicketStatus",
         "updateTicketPriority",
         "assignTicket",
-        "archiveTicket",
-        "closeMSupportAcceptanceTicket"
+        "archiveTicket"
       ]
     },
     {
@@ -2106,7 +2103,6 @@
       "restActions": [
         "initiateConversation",
         "replyConversation",
-        "replyMSupportAcceptanceConversation",
         "updateConversationStatus",
         "archiveConversation",
         "archiveConversations"
@@ -2124,8 +2120,7 @@
         "transferConversation",
         "acceptTransfer",
         "returnTransfer",
-        "waitTransfer",
-        "transferMSupportAcceptanceConversation"
+        "waitTransfer"
       ]
     },
     {
@@ -2460,11 +2455,8 @@
       "status": "built",
       "view": "d-tabs/d7-payout-vnd.tsx",
       "batch": "done",
-      "restActions": [
-        "createPayoutVndSandboxOrder",
-        "completePayoutVndSandboxOrder"
-      ],
-      "note": "开发完成(Mock)：独立越南出款 sandbox 订单、账本、签名回调与重放闭环；生产 provider 未配置时失败关闭，不触真实资金"
+      "restActions": [],
+      "note": "Sandbox 环境已退役；D7 仅保留开发环境规范配置与真实 provider 失败关闭路径，不再提供 Mock 订单或回调入口"
     },
     {
       "id": "OPS-E-15",
@@ -2844,11 +2836,11 @@
         {
           "type": "uniapp-runtime",
           "file": "src/store/app.ts",
-          "positivePatterns": ["taskAssignmentApi\\.state\\(\\)", "taskAssignmentApi\\.claim\\(", "taskAssignmentApi\\.complete\\("],
-          "negativePatterns": ["function tick\\(deltaMs: number\\) \\{\\s*if \\(remoteApiEnabled\\) return;"]
+          "positivePatterns": ["taskAssignmentApi\\.state\\(\\)", "applyRemoteAssignments\\(devices\\.value, state\\)", "refreshRemoteFleet\\(request\\)", "refreshHomeTruth\\(request\\)"],
+          "negativePatterns": ["taskAssignmentApi\\.claim\\(", "taskAssignmentApi\\.complete\\(", "function tick\\(deltaMs: number\\) \\{\\s*if \\(remoteApiEnabled\\) return;"]
         }
       ],
-      "note": "权威 assignment/claim/complete、可信设备 proof、lease 与真实奖励链已闭环；sandbox 仅 test/acceptance 且使用隔离奖励账本"
+      "note": "开发与生产客户端均只读服务端 assignment、设备收益和首页聚合；任务创建、完成、回执与资金变动由服务端作业执行，App 不再保留 Sandbox 写链。"
     },
     {
       "id": "OPS-E-19",
@@ -2905,15 +2897,12 @@
     {
       "id": "OPS-G-16",
       "domain": "G",
-      "object": "Genesis 邀请码(G4)",
-      "action": "批量签发并作废邀请码",
-      "status": "built",
-      "view": "g-tabs/g4-invite-codes.tsx",
+      "object": "Genesis 邀请码旧入口(G4)",
+      "action": "旧批量签发与作废入口已退出当前资格策略",
+      "status": "readonly",
+      "view": "g-tabs/g4-genesis.tsx",
       "batch": "done",
-      "restActions": [
-        "issueG4InviteCodes",
-        "voidG4InviteCode"
-      ]
+      "reason": "Genesis 认购资格已统一为服务端新策略配置；旧邀请码签发/作废前端入口及客户端已删除，台账仅保留退役决策。"
     },
     {
       "id": "OPS-I-15",
@@ -3377,8 +3366,7 @@
       "view": "h-tabs/h8-referral-rewards.tsx",
       "batch": "done",
       "restActions": [
-        "h8_referral_settlement",
-        "runH8AcceptanceSandboxSettlement"
+        "h8_referral_settlement"
       ]
     },
     {
@@ -3491,33 +3479,12 @@
     {
       "id": "OPS-G-17",
       "domain": "G",
-      "object": "G2 批处理结果",
-      "action": "展示 Production 服务端逐项回执，并在 Acceptance Sandbox 可见验收 completed/skipped 与幂等处理",
-      "status": "built",
+      "object": "G2 Acceptance Sandbox 旧批处理",
+      "action": "旧验收批次的构造、处理与清理入口已退役",
+      "status": "readonly",
       "view": "g-tabs/g2-exchange.tsx",
       "batch": "done",
-      "restAction": "processG2AcceptanceSandboxBatch",
-      "runtimeEvidence": [
-        {
-          "type": "pc-runtime",
-          "file": "app/components/domain-views/g-tabs/g2-exchange.tsx",
-          "positivePatterns": ["acceptanceSandbox\\.batchResult\\.completed\\.map", "acceptanceSandbox\\.batchResult\\.skipped\\.map", "processG2AcceptanceSandboxBatch\\(acceptanceSandbox\\.batch!\\.batchNo\\)"],
-          "negativePatterns": ["Sandbox 结果计入下方真实 G2 指标", "生产钱包写入=true"]
-        },
-        {
-          "type": "backend-runtime",
-          "file": "src/main/java/ffdd/opsconsole/market/application/G2ExchangeQueueBatchService.java",
-          "positivePatterns": ["completed\\.add\\(item\\(row\\.exchangeNo\\(\\),\"COMPLETED\",\"COMPLETED\"", "skipped\\.add\\(item\\(row\\.exchangeNo\\(\\),\"SKIPPED\"", "\"completedCount\",completed\\.size\\(\\)", "\"skippedCount\",skipped\\.size\\(\\)"],
-          "negativePatterns": ["\"completedCount\",rows\\.size\\(\\)", "skipped\\.clear\\(\\)"]
-        },
-        {
-          "type": "backend-runtime",
-          "file": "src/main/java/ffdd/opsconsole/market/application/G2AcceptanceSandboxRepository.java",
-          "positivePatterns": ["private static final String SOURCE = \"mock\"", "private static final String ENVIRONMENT = \"SANDBOX\"", "INACTIVE_ATTRIBUTION", "\"productionWalletTouched\", false", "\"productionLedgerTouched\", false"],
-          "negativePatterns": ["nx_exchange_order", "nx_user_wallet|nx_user_fund_ledger"]
-        }
-      ],
-      "note": "Production 结果来自真实 G2 批处理器并按 completed/skipped/failed 展示；Acceptance Sandbox 仅在 acceptance/test profile 使用隔离表完成可见处理与幂等重放，明确不触碰 Production 队列、钱包或账本"
+      "reason": "Sandbox 环境已取消；当前 G2 页面只展示并处理开发/生产共用的服务端权威队列回执，旧验收客户端和 BFF 入口均已删除。"
     },
     {
       "id": "OPS-H-19",
@@ -3666,90 +3633,41 @@
     {
       "id": "OPS-D-26",
       "domain": "D",
-      "object": "App Topup 服务端 Sandbox",
-      "action": "在严格服务端隔离 Sandbox 完成充值订单与回执状态机",
-      "status": "built",
+      "object": "App Topup Sandbox 旧链路",
+      "action": "旧隔离充值订单与回执链已退役",
+      "status": "readonly",
       "view": "d-tabs/d1-recon.tsx",
       "batch": "done",
-      "runtimeEvidence": [
-        {
-          "type": "uniapp-runtime",
-          "file": "src/api/funds-sandbox-api.ts",
-          "positivePatterns": ["row\\.source !== \"mock\" \\|\\| row\\.sourceEnvironment !== \"SANDBOX\"", "path: \"/api/app/wallet/sandbox/topups\"", "FUNDS_SANDBOX_ORDER_INVALID"],
-          "negativePatterns": ["localStorage", "status:\\s*\"SETTLED\"[\\s\\S]{0,80}Date\\.now"]
-        },
-        {
-          "type": "backend-runtime",
-          "file": "src/main/java/ffdd/opsconsole/finance/application/FundsSandboxService.java",
-          "positivePatterns": ["public OrderView createTopup\\(", "mapper\\.insertOrder\\(write\\)", "mapper\\.transitionOrder\\(runId, orderNo, userId, \"PENDING\", \"SETTLED\", 0L\\)", "mapper\\.creditWallet\\("],
-          "negativePatterns": ["createTopup[\\s\\S]{0,120}nx_user_wallet", "createTopup[\\s\\S]{0,300}sourceEnvironment\\(\\)"]
-        }
-      ],
-      "note": "仅签严格服务端 LOCAL_SANDBOX：App 真实 HTTP topup 经 mock/SANDBOX 协议校验，服务端持久订单、回调、隔离钱包和 SETTLED 终态；Production 资金通道仍为独立 HOLD，不重复计数。"
+      "reason": "Sandbox 环境已取消，隔离充值事实已归档到开发环境所有的只读归档库；UniApp 运行时客户端与服务端启动迁移均不再暴露该能力。"
     },
     {
       "id": "OPS-D-27",
       "domain": "D",
-      "object": "App Withdrawal 服务端 Sandbox",
-      "action": "在严格服务端隔离 Sandbox 完成提现请求，并由服务端持久化终态",
-      "status": "built",
+      "object": "App Withdrawal Sandbox 旧链路",
+      "action": "旧隔离提现请求与回调链已退役",
+      "status": "readonly",
       "view": "d-tabs/d2-withdrawals.tsx",
       "batch": "done",
-      "runtimeEvidence": [
-        {
-          "type": "uniapp-runtime",
-          "file": "src/api/funds-sandbox-api.ts",
-          "positivePatterns": ["path: \"/api/app/wallet/sandbox/withdrawals\"", "path: `/api/app/wallet/sandbox/orders/\\$\\{encodeURIComponent\\(orderNo\\)\\}/callbacks`", "expectedVersion"],
-          "negativePatterns": ["setTimeout", "estimatedAt"]
-        },
-        {
-          "type": "backend-runtime",
-          "file": "src/main/java/ffdd/opsconsole/finance/application/FundsSandboxService.java",
-          "positivePatterns": ["public OrderView createWithdrawal\\(", "new OrderWrite\\(orderNo, userId, \"WITHDRAWAL\", normalizedChannel", "mapper\\.transitionOrder\\(runId, orderNo, userId, \"SUBMITTED\", \"CONFIRMED\", 0L\\)", "FUNDS_SANDBOX_CALLBACK_REPLAY_CONFLICT"],
-          "negativePatterns": ["@Scheduled", "Thread\\.sleep"]
-        }
-      ],
-      "note": "仅签严格服务端 LOCAL_SANDBOX：提现先以 SUBMITTED 持久化，再由同一服务端事务确认并刷新回读；前端没有本地 ETA 或定时器确认。外部 Production provider/observer 仍独立 HOLD。"
+      "reason": "Sandbox 环境已取消，隔离提现事实已归档到开发环境所有的只读归档库；当前资金操作只能进入正式服务端权威链。"
     },
     {
       "id": "OPS-D-28",
       "domain": "D",
-      "object": "Cregis 用户资金 Sandbox",
-      "action": "在隔离服务端账本持久化用户充值、提现与回调终态",
-      "status": "built",
+      "object": "Cregis 用户资金 Sandbox 旧账本",
+      "action": "旧隔离用户钱包、账本和回调终态已归档并退役",
+      "status": "readonly",
       "view": "d-tabs/d1-recon.tsx",
       "batch": "done",
-      "runtimeEvidence": [
-        {
-          "type": "backend-runtime",
-          "file": "src/main/java/ffdd/opsconsole/finance/application/FundsSandboxProfileGuard.java",
-          "positivePatterns": ["FUNDS_LOCAL_SANDBOX_PROFILE_FORBIDDEN", "Mode\\.LOCAL_SANDBOX", "return properties\\.getMode\\(\\) == FundsSandboxProperties\\.Mode\\.LOCAL_SANDBOX \\? \"SANDBOX\" : \"PRODUCTION\""],
-          "negativePatterns": ["local-sandbox.*production", "return \"SANDBOX\";"]
-        },
-        {
-          "type": "backend-runtime",
-          "file": "src/main/java/ffdd/opsconsole/finance/mapper/FundsSandboxMapper.java",
-          "positivePatterns": ["INSERT INTO nx_funds_sandbox_ledger", "'mock','SANDBOX'", "version=#\\{expectedVersion\\}", "INSERT IGNORE INTO nx_funds_sandbox_wallet"],
-          "negativePatterns": ["nx_user_wallet", "nx_user_fund_ledger"]
-        },
-        {
-          "type": "backend-runtime",
-          "file": "src/main/java/ffdd/opsconsole/finance/cregis/CregisSandboxProfileGuard.java",
-          "positivePatterns": ["CREGIS_LOCAL_SANDBOX_PROFILE_FORBIDDEN", "CregisProperties\\.Mode\\.LOCAL_SANDBOX"],
-          "negativePatterns": ["ALLOWED_PROFILES.*production", "return true"]
-        }
-      ],
-      "note": "只签持久化 Cregis/Funds LOCAL_SANDBOX：profile 守卫拒绝生产混用，回调以 event/version 幂等更新隔离用户钱包与 nx_funds_sandbox_ledger，重放/错配不改余额；Production Cregis 资金仍 HOLD。"
+      "reason": "旧 Sandbox 表已逐表校验后归档并从活动库删除；历史金额没有冒充开发余额，导入账号的钱包在切换点归零并以切换后权威账本逐户核对。"
     },
     {
       "id": "OPS-G-18",
       "domain": "G",
       "object": "G2 批次与单笔统一容量互斥",
-      "action": "Production 批次/单笔共享权威 MySQL cap mutex 并逐项复核 kill/cap；Acceptance Sandbox 验证无效归属逐项 skipped 并独立清理",
+      "action": "开发/生产共用的权威批次与单笔共享 MySQL cap mutex，并逐项复核 kill/cap",
       "status": "built",
       "view": "g-tabs/g2-exchange.tsx",
       "batch": "done",
-      "restAction": "cleanupG2AcceptanceSandboxBatch",
       "runtimeEvidence": [
         {
           "type": "backend-runtime",
@@ -3768,15 +3686,9 @@
           "file": "src/main/java/ffdd/opsconsole/market/application/G2ExchangeQueueBatchService.java",
           "positivePatterns": ["EXCHANGE_EXECUTION_MUTEX\\.equals\\(mapper\\.lockExchangeExecutionMutex\\(\\)\\)", "for \\(AppExchangeMapper\\.QueuedRow row : rows\\)", "if \\(!swapEnabled\\(\\)\\)[\\s\\S]{0,220}\"EXCHANGE_SWAP_PAUSED\"", "platformUsed\\.add\\(gross\\)\\.compareTo\\(number\\(\"wallet\\.exchange\\.platform_daily_cap_usdt\"", "\"USER_INACTIVE\""],
           "negativePatterns": ["G2_ACCEPTANCE_SANDBOX", "\"completedCount\",\\s*rows\\.size\\(\\)"]
-        },
-        {
-          "type": "backend-runtime",
-          "file": "src/main/java/ffdd/opsconsole/market/application/G2AcceptanceSandboxRepository.java",
-          "positivePatterns": ["INACTIVE_ATTRIBUTION", "else mapper\\.skip\\(row\\.exchangeNo\\(\\), now\\)", "mapper\\.deleteLedger\\(batchNo\\)", "mapper\\.deleteOrders\\(batchNo\\)", "mapper\\.deleteBatch\\(batchNo\\)", "\"productionWalletTouched\", false", "\"productionLedgerTouched\", false"],
-          "negativePatterns": ["nx_exchange_order", "nx_user_wallet|nx_user_fund_ledger"]
         }
       ],
-      "note": "Production 事实由 nx_admin_operation_mutex 的 G2_EXCHANGE_EXECUTION 行锁、App/批次共同消费及真实 MySQL 并发测试证明；逐项 kill/cap 复核在 Production 批处理器，INACTIVE_ATTRIBUTION→skipped 与隔离表清理只签 Acceptance Sandbox，绝不扩大为 Production 归属处理声明"
+      "note": "权威事实由 nx_admin_operation_mutex 的 G2_EXCHANGE_EXECUTION 行锁、App/批次共同消费及真实 MySQL 并发测试证明；逐项 kill/cap 复核仅在当前服务端批处理器执行，旧 Acceptance Sandbox 清理入口已删除。"
     }
   ]
 }

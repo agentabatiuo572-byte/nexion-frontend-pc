@@ -77,9 +77,6 @@ interface BackendOverview {
 interface BackendCoverage {
   coverageRatio?: number | string | null;
   redlinePct?: number | string | null;
-  sourceEnvironment?: string | null;
-  runId?: string | null;
-  sandboxOverrideEnabled?: boolean | string | null;
 }
 
 interface BackendF2Metric {
@@ -563,7 +560,7 @@ export interface F2RatesOverview {
   commissionPolicy: Record<string, unknown>;
   guardrails: string[];
   configValues: Record<string, string>;
-  coverage?: { coverageRatio: number; redlinePct: number; sourceEnvironment?: string; runId?: string; sandboxOverrideEnabled?: boolean };
+  coverage?: { coverageRatio: number; redlinePct: number };
   sources: string[];
 }
 
@@ -1139,9 +1136,6 @@ function normalizeF2Overview(data: BackendF2Overview | null | undefined): F2Rate
       ? {
           coverageRatio: toNumber(data.coverage.coverageRatio),
           redlinePct: toNumber(data.coverage.redlinePct),
-          sourceEnvironment: asText(data.coverage.sourceEnvironment, "PRODUCTION"),
-          runId: asText(data.coverage.runId, ""),
-          sandboxOverrideEnabled: toBoolean(data.coverage.sandboxOverrideEnabled),
         }
       : undefined,
     sources: data?.sources ?? [],

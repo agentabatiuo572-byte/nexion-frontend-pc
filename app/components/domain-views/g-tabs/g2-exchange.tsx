@@ -22,13 +22,6 @@ import type { GCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { classifyStableMutationFailure } from "@/lib/admin/stable-mutation";
 import { summarizeG2BatchResult, type G2BatchResult } from "@/lib/admin/g2-batch-result";
-import {
-  cleanupG2AcceptanceSandboxBatch,
-  fetchG2AcceptanceSandbox,
-  generateG2AcceptanceSandboxBatch,
-  processG2AcceptanceSandboxBatch,
-  type G2AcceptanceSandbox,
-} from "@/lib/admin/g2-acceptance-sandbox";
 
 const OPERATOR = currentAdminOperator;
 type GateKey = "user" | "platform" | "geo";
@@ -82,14 +75,12 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
   const [gateDrawer, setGateDrawer] = useState<GateKey | null>(null);
   const [queueDrawer, setQueueDrawer] = useState<string | null>(null);
   const [batchResult, setBatchResult] = useState<G2BatchResult | null>(null);
-  const [acceptanceSandbox, setAcceptanceSandbox] = useState<G2AcceptanceSandbox | null>(null);
 
   const reload = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     setError("");
     try {
       setOverview(await fetchG2ExchangeOverview());
-      setAcceptanceSandbox(await fetchG2AcceptanceSandbox());
     } catch (err) {
       setOverview(null);
       setError(messageOf(err));
@@ -105,10 +96,8 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
       setError("");
       try {
         const next = await fetchG2ExchangeOverview();
-        const sandbox = await fetchG2AcceptanceSandbox();
         if (!cancelled) {
           setOverview(next);
-          setAcceptanceSandbox(sandbox);
         }
       } catch (err) {
         if (!cancelled) {
@@ -167,22 +156,6 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
       setError(message);
       toast(`G2 批次未执行 · ${message}`);
       throw err;
-    } finally {
-      setBusyKey(null);
-    }
-  }, [toast]);
-
-  const mutateAcceptanceSandbox = useCallback(async (key: string, action: () => Promise<G2AcceptanceSandbox | null>, success: string) => {
-    setBusyKey(key);
-    try {
-      const next = await action();
-      if (!next) throw new Error("G2_ACCEPTANCE_SANDBOX_UNAVAILABLE");
-      setAcceptanceSandbox(next);
-      toast(success);
-    } catch (err) {
-      const message = messageOf(err);
-      setError(message);
-      toast(`Acceptance Sandbox 操作失败 · ${message}`);
     } finally {
       setBusyKey(null);
     }
@@ -287,49 +260,6 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
   return (
     <>
       {error && <div className="gtint" style={{ marginBottom: 12 }}>G2 操作提示 · {error}</div>}
-      {acceptanceSandbox && (
-        <section className="l-card" data-proof="g2-acceptance-sandbox" style={{ marginBottom: 16, borderColor: "var(--warning)" }}>
-          <div className="l-h">
-            <span className="ttl">Acceptance Sandbox</span>
-            <span className="bdg warn">mock / SANDBOX</span>
-            <span className="sub">· 仅 acceptance profile；不写生产兑换队列、钱包或账本</span>
-          </div>
-          <div className="l-b">
-            <div className="gtint"><b>隔离证明</b> · source={acceptanceSandbox.source} · sourceEnvironment={acceptanceSandbox.sourceEnvironment} · 生产钱包写入=false · 生产账本写入=false。Sandbox 结果不计入下方真实 G2 指标。</div>
-            {!acceptanceSandbox.batch ? (
-              allowed("finprod_g2_write") && <button className="l-btn mc" disabled={busy} onClick={() => void mutateAcceptanceSandbox("acceptance:generate", generateG2AcceptanceSandboxBatch, "已生成隔离验收批次")}>生成验收批次</button>
-            ) : <>
-              <div style={{ margin: "12px 0 8px" }}><b className="mono">{acceptanceSandbox.batch.batchNo}</b> · {acceptanceSandbox.batch.status}{acceptanceSandbox.batch.replayed ? " · 已按同一命令号重放" : ""}</div>
-              <div className="q-list">
-                {acceptanceSandbox.orders.map((order) => <div className="q-row" key={order.exchangeNo}>
-                  <span className="mono" style={{ fontWeight: 700 }}>{order.exchangeNo}</span>
-                  <span className={`bdg ${order.status === "COMPLETED" ? "ok" : order.status === "SKIPPED" ? "warn" : "dim"}`}>{order.status}</span>
-                  <span style={{ flex: 1 }}>{order.reason || "可执行 fixture"}</span>
-                  <span className="mono">sandbox 账本 {order.sandboxLedgerEntries} 条</span>
-                </div>)}
-              </div>
-              {acceptanceSandbox.batchResult && <div className="gtint" style={{ marginTop: 10 }}>
-                <b>逐单回执</b> · 完成 {acceptanceSandbox.batchResult.completed.map((row) => row.exchangeNo).join(" / ") || "0"}；跳过 {acceptanceSandbox.batchResult.skipped.map((row) => `${row.exchangeNo} · ${row.reason}`).join(" / ") || "0"}；{acceptanceSandbox.batchResult.replayed ? "本次为幂等回放，未重复记账。" : "首次处理完成。"}
-              </div>}
-              {allowed("finprod_g2_write") && <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-                <button className="l-btn mc" disabled={busy || acceptanceSandbox.orders.every((row) => row.status !== "QUEUED")} onClick={() => void mutateAcceptanceSandbox("acceptance:process", () => processG2AcceptanceSandboxBatch(acceptanceSandbox.batch!.batchNo), "验收批次已处理")}>处理验收批次</button>
-                <button className="l-btn" disabled={busy || !acceptanceSandbox.batchResult} onClick={() => void mutateAcceptanceSandbox("acceptance:replay", () => processG2AcceptanceSandboxBatch(acceptanceSandbox.batch!.batchNo), "幂等重放已核验")}>幂等重放</button>
-                <button className="l-btn" disabled={busy} onClick={() => void (async () => {
-                  setBusyKey("acceptance:cleanup");
-                  try {
-                    const cleared = await cleanupG2AcceptanceSandboxBatch(acceptanceSandbox.batch!.batchNo);
-                    setAcceptanceSandbox(cleared ? await fetchG2AcceptanceSandbox() : acceptanceSandbox);
-                    if (cleared) toast("验收 Sandbox 数据已清理");
-                    else setError("G2_ACCEPTANCE_SANDBOX_CLEANUP_FAILED");
-                  } finally {
-                    setBusyKey(null);
-                  }
-                })()}>清理验收数据</button>
-              </div>}
-            </>}
-          </div>
-        </section>
-      )}
       <div className="f-stats">
         <div className="f-stat"><div className="k">今日兑换成交</div><div className="v">{fmtUsdK(stats.todayUsd)}</div><div className="sub">占平台日池 {stats.poolPct}%</div></div>
         <div className="f-stat warn"><div className="k">次日队列深度</div><div className="v">{fmtCount(stats.queueDepth)} 单</div><div className="sub">超 cap 排队 · 可取消</div></div>

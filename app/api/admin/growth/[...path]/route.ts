@@ -41,6 +41,9 @@ function backendPath(parts: string[]) {
 
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
+  if (path[0] === "referral-rewards" && path[1] === "acceptance") {
+    return jsonError(410, "SANDBOX_RUNTIME_RETIRED");
+  }
   const targetPath = backendPath(path);
 
   if (!targetPath) {

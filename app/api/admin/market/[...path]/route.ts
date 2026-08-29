@@ -24,19 +24,6 @@ function backendPath(parts: string[]) {
   if (parts.length === 1 && parts[0] === "exchange") {
     return "/api/admin/market/exchange";
   }
-  if (parts.length === 2 && parts[0] === "exchange" && parts[1] === "acceptance") {
-    return "/api/admin/market/exchange/acceptance";
-  }
-  if (parts.length === 3 && parts[0] === "exchange" && parts[1] === "acceptance" && parts[2] === "batches") {
-    return "/api/admin/market/exchange/acceptance/batches";
-  }
-  if (parts.length === 5 && parts[0] === "exchange" && parts[1] === "acceptance" && parts[2] === "batches"
-    && isNonEmpty(parts[3]) && parts[4] === "process") {
-    return `/api/admin/market/exchange/acceptance/batches/${encodeURIComponent(parts[3])}/process`;
-  }
-  if (parts.length === 4 && parts[0] === "exchange" && parts[1] === "acceptance" && parts[2] === "batches" && isNonEmpty(parts[3])) {
-    return `/api/admin/market/exchange/acceptance/batches/${encodeURIComponent(parts[3])}`;
-  }
   if (parts.length === 2 && parts[0] === "nex" && parts[1] === "curve") {
     return "/api/admin/market/nex/curve";
   }

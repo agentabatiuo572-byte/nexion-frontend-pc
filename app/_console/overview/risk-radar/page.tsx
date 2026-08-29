@@ -80,11 +80,10 @@ export default function RiskRadarPage() {
   const [preview, setPreview] = useState<{ light: string } | null>(null);
   const [previewError, setPreviewError] = useState("");
   const [savingThreshold, setSavingThreshold] = useState(false);
-  const [subscription, setSubscription] = useState({ inApp: true, email: true, webhook: false, webhookUrl: "" });
+  const [subscription, setSubscription] = useState({ inApp: true, email: false, webhook: false, webhookUrl: "" });
   const [savedSubscription, setSavedSubscription] = useState(subscription);
   const [savingSubscription, setSavingSubscription] = useState(false);
   const [subscriptionVersion, setSubscriptionVersion] = useState(0);
-  const [emailMode, setEmailMode] = useState("disabled");
   const [webhookMode, setWebhookMode] = useState("disabled");
   const [updatingSignal, setUpdatingSignal] = useState("");
   const [inbox, setInbox] = useState<B5InboxItem[]>([]);
@@ -104,11 +103,10 @@ export default function RiskRadarPage() {
     fetchB5Subscription()
       .then((next) => {
         if (!alive) return;
-        const normalized = { inApp: next.inApp, email: next.email, webhook: next.webhook, webhookUrl: next.webhookUrl };
+        const normalized = { inApp: next.inApp, email: false, webhook: next.webhook, webhookUrl: next.webhookUrl };
         setSubscription(normalized);
         setSavedSubscription(normalized);
         setSubscriptionVersion(next.version);
-        setEmailMode(next.emailMode);
         setWebhookMode(next.webhookMode);
       })
       .catch((cause) => {
@@ -411,7 +409,7 @@ export default function RiskRadarPage() {
         </div>
         <div className="b5-channel-row">
           <label><input type="checkbox" name="inApp" checked={subscription.inApp} disabled={!canSubscribe} onChange={(event) => setSubscription((value) => ({ ...value, inApp: event.target.checked }))} />站内</label>
-          <label title={emailMode === "sandbox" ? "本地隔离 sandbox 邮件回执" : "未配置邮件 provider，生产环境失败关闭"}><input type="checkbox" name="email" checked={subscription.email} disabled={!canSubscribe || emailMode !== "sandbox"} onChange={(event) => setSubscription((value) => ({ ...value, email: event.target.checked }))} />邮件（{emailMode}）</label>
+          <label title="邮件 provider 尚未配置，当前失败关闭"><input type="checkbox" name="email" checked={false} disabled />邮件（disabled）</label>
           <label title={webhookMode === "controlled-proxy" ? "经受控出口代理投递" : "未配置受控出口代理，失败关闭"}><input type="checkbox" name="webhook" checked={subscription.webhook} disabled={!canSubscribe || (webhookMode !== "controlled-proxy" && !subscription.webhook)} onChange={(event) => setSubscription((value) => ({ ...value, webhook: event.target.checked }))} />Webhook（{webhookMode}）</label>
           {subscription.webhook && (
             <input

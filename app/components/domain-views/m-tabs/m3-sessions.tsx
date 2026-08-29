@@ -40,10 +40,8 @@ import type { User360Profile } from "@/lib/admin/user360-client";
 import type { OpsSku } from "@/lib/admin/platform-types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
-import { fetchMSupportAcceptanceProof, fetchMSupportAcceptanceConversations, fetchMSupportAcceptanceTickets, fetchMSupportAcceptanceTicket, replyMSupportAcceptanceConversation, transferMSupportAcceptanceConversation, replyMSupportAcceptanceTicket, closeMSupportAcceptanceTicket, type MSupportAcceptanceProof, type MSupportAcceptanceConversation, type MSupportAcceptanceTicket } from "@/lib/admin/m-support-acceptance-sandbox";
 
 const CONVO_KEY = "I.session.convos";
-const canOperateAcceptanceSupport = (status: string) => ["open", "resolved"].includes(status.toLowerCase());
 const SCRIPT_LIST_KEY = "I.session.scripts";
 const REPLY_TEMPLATE_LIST_KEY = "I.session.replyTemplates";
 const AGENT_LIST_KEY = "I.support.agents";
@@ -194,18 +192,6 @@ function workbenchUserToCustomerProfile(user: User360Profile): CustomerProfile {
 export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const { pget, setParam, toast, openActionConfirm } = ctx;
   const router = useRouter();
-  const [acceptanceMode, setAcceptanceMode] = useState<"loading" | "sandbox" | "production" | "blocked">("loading");
-  const [acceptanceProof, setAcceptanceProof] = useState<MSupportAcceptanceProof | null>(null);
-  const [sandboxRows, setSandboxRows] = useState<MSupportAcceptanceConversation[]>([]);
-  const [sandboxTickets, setSandboxTickets] = useState<MSupportAcceptanceTicket[]>([]);
-  const [sandboxReply, setSandboxReply] = useState("");
-  useEffect(() => {
-    let active = true;
-    void fetchMSupportAcceptanceProof()
-      .then(async (proof) => { if (!active) return; setAcceptanceProof(proof); setAcceptanceMode(proof ? "sandbox" : "production"); if (proof) { setSandboxRows(await fetchMSupportAcceptanceConversations()); setSandboxTickets(await fetchMSupportAcceptanceTickets()); } })
-      .catch(() => { if (active) setAcceptanceMode("blocked"); });
-    return () => { active = false; };
-  }, []);
   const authorities = useAdminAuth((state) => state.session?.authorities);
   const currentRole = useAdminAuth((state) => state.session?.role ?? state.role);
   const isSuperAdmin = currentRole === "super" || currentRole === "superadmin";
@@ -487,10 +473,6 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const paged = filtered.slice(pageStart, pageStart + INBOX_PAGE_SIZE);
 
   const commitM3Write = async (write: () => Promise<boolean>, successMessage: string): Promise<boolean> => {
-    if (acceptanceMode !== "production") {
-      toast(acceptanceMode === "sandbox" ? "验收沙箱已启用: 请使用独立 sandbox 操作面" : "尚未取得生产收件箱写入许可");
-      return false;
-    }
     if (writeInFlight.current) {
       toast("操作正在提交,请稍候");
       return false;
@@ -826,20 +808,6 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   });
   return (
     <div className="m3-stage">
-      <div data-proof="m3-acceptance-sandbox-status" className="card" style={{ marginBottom: 10, padding: "8px 12px", fontSize: 12 }}>
-        {acceptanceMode === "sandbox"
-          ? <>验收沙箱 · mock/SANDBOX · Run {acceptanceProof!.runId} · 独立工单与会话事实 · {acceptanceProof!.permanentLabel} · 正式写入验证零：工单 {acceptanceProof!.productionDelta.ticket} / 消息 {acceptanceProof!.productionDelta.ticketMessage} / 会话 {acceptanceProof!.productionDelta.conversation} / 回执 {acceptanceProof!.productionDelta.receipt} / 审计 {acceptanceProof!.productionDelta.audit} / 幂等 {acceptanceProof!.productionDelta.idempotency} / outbox {acceptanceProof!.productionDelta.outbox}</>
-          : acceptanceMode === "blocked"
-            ? "验收沙箱证据无效 · 已阻止使用生产收件箱"
-            : acceptanceMode === "loading"
-              ? "正在核验验收沙箱来源…"
-              : "生产收件箱 · 未启用验收沙箱"}
-      </div>
-      {acceptanceMode === "sandbox" && <div data-proof="m3-acceptance-sandbox-panel" className="card" style={{ marginBottom: 10, padding: 12 }}>
-        <b>验收沙箱操作面（仅独立 sandbox fact）</b>
-        {sandboxRows.map((row) => <div key={row.conversationNo} style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}><span className="mono">{row.conversationNo}</span><span>{row.ownerAgentName} · {row.lastMessage}</span><textarea value={sandboxReply} onChange={(event) => setSandboxReply(event.target.value)} placeholder="回复内容" /><button type="button" className="btn btn-pri btn-sm" disabled={!sandboxReply.trim() || !canOperateAcceptanceSupport(row.status)} onClick={() => void replyMSupportAcceptanceConversation(row, sandboxReply, "M3 acceptance reply").then(() => fetchMSupportAcceptanceConversations()).then(setSandboxRows)}>回复并回读</button><button type="button" className="btn btn-ghost btn-sm" disabled={row.status.toLowerCase() !== "open"} onClick={() => void transferMSupportAcceptanceConversation(row, "M3 acceptance transfer").then(() => fetchMSupportAcceptanceConversations()).then(setSandboxRows)}>转交并回读</button></div>)}
-        {sandboxTickets.map((row) => <div key={row.ticketNo} style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}><span className="mono">{row.ticketNo}</span><span>{row.title} · {row.status}</span><button type="button" className="btn btn-pri btn-sm" disabled={!sandboxReply.trim() || !canOperateAcceptanceSupport(row.status)} onClick={() => void replyMSupportAcceptanceTicket(row, sandboxReply, "M3 acceptance ticket reply").then(() => fetchMSupportAcceptanceTicket(row.ticketNo)).then(() => fetchMSupportAcceptanceTickets()).then(setSandboxTickets)}>回复工单并回读</button><button type="button" className="btn btn-ghost btn-sm" disabled={!canOperateAcceptanceSupport(row.status)} onClick={() => void closeMSupportAcceptanceTicket(row, "M3 acceptance ticket close").then(() => fetchMSupportAcceptanceTicket(row.ticketNo)).then(() => fetchMSupportAcceptanceTickets()).then(setSandboxTickets)}>关闭工单并回读</button></div>)}
-      </div>}
       {!conversationsAvailable && (
         <div className="itint" role="alert" style={{ gridColumn: "1 / -1", margin: 10 }}>
           会话数据暂时无法同步,当前不会把空列表当作真实结果,写操作也已关闭。

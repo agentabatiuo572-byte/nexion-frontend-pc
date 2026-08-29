@@ -3,13 +3,9 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  completePayoutVndSandboxOrder,
-  createPayoutVndSandboxOrder,
   loadPayoutVndConfig,
-  loadPayoutVndSandboxOrders,
   togglePayoutVndChannel,
   updatePayoutVndConfig,
-  type PayoutVndSandboxOrder,
 } from "@/lib/admin/payout-vnd-client";
 import {
   PAYOUT_VND_FIELDS,
@@ -83,8 +79,6 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [sandboxUserId, setSandboxUserId] = useState("");
-  const [sandboxOrders, setSandboxOrders] = useState<PayoutVndSandboxOrder[]>([]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -198,45 +192,6 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     });
   };
 
-  const createSandboxOrder = () => {
-    const userId = Number(sandboxUserId);
-    if (!Number.isSafeInteger(userId) || userId <= 0) { toast("请输入有效用户 ID"); return; }
-    openActionConfirm({
-      action: "创建隔离沙箱出款单",
-      detail: "仅当后端显式开启 LOCAL_SANDBOX 时生效；生产/remote 会失败关闭，绝不回退到 Mock。",
-      amplifies: false,
-      reasonMin: 8,
-      reasonMax: 200,
-      completionCopy: "持久化 source=mock 沙箱订单与回调凭证",
-      run: async (reason) => {
-        setBusy(true);
-        try {
-          const created = await createPayoutVndSandboxOrder({
-            userId, amountVnd: 100000, bankCode: "MOCKBANK", accountNo: `sandbox-${userId}`,
-            accountName: `SANDBOX USER ${userId}`, reason,
-          });
-          setSandboxOrders((rows) => [created, ...rows.filter((row) => row.orderNo !== created.orderNo)]);
-          toast(`沙箱出款单 ${created.orderNo} 已持久化`);
-        } finally { setBusy(false); }
-      },
-    });
-  };
-
-  const refreshSandbox = async () => {
-    const userId = Number(sandboxUserId);
-    if (!Number.isSafeInteger(userId) || userId <= 0) { toast("请输入有效用户 ID"); return; }
-    try { setSandboxOrders((await loadPayoutVndSandboxOrders(userId)).orders); }
-    catch (caught) { setError(displayAdminError(caught)); }
-  };
-
-  const completeSandbox = async (order: PayoutVndSandboxOrder) => {
-    try {
-      const updated = await completePayoutVndSandboxOrder(order);
-      setSandboxOrders((rows) => rows.map((row) => row.orderNo === updated.orderNo ? updated : row));
-      toast("签名回调已入持久化沙箱账本");
-    } catch (caught) { setError(displayAdminError(caught)); }
-  };
-
   const fieldRow = (key: PayoutVndWritableField) => {
     const spec = PAYOUT_VND_FIELDS[key];
     return <div className="p-row" key={key}>
@@ -261,15 +216,6 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       供应商状态异常但通道仍显示开启，请立即执行“关闭通道”止损。
     </div>}
     {error && <div className="dtint warn" style={{ marginBottom: 12 }}>{error}</div>}
-
-    {config.sandboxAvailable ? <section className="l-card" style={{ marginBottom: 12 }}>
-      <div className="l-h"><span className="ttl">隔离 Mock / Sandbox 出款验证</span><span className="sub">· source=mock · 账号隔离 · 刷新可恢复</span></div>
-      <div className="l-b">
-        <div className="dtint warn">此入口不会调用真实银行；只有服务端显式 LOCAL_SANDBOX 才可用。生产/remote 必须失败关闭。</div>
-        <div className="p-row"><div className="txt"><div className="k">沙箱用户 ID</div><div className="s">订单查询始终按用户隔离</div></div><input className="l-inp" value={sandboxUserId} onChange={(event) => setSandboxUserId(event.target.value)} /><button className="l-btn sm" onClick={() => void refreshSandbox()}>刷新恢复</button>{canManage && <button className="l-btn primary sm" disabled={busy} onClick={createSandboxOrder}>创建 100,000₫ 沙箱单</button>}</div>
-        {sandboxOrders.map((order) => <div className="p-row" key={order.orderNo}><div className="txt"><div className="k">{order.orderNo} · {order.status}</div><div className="s">{order.amountVnd.toLocaleString()}₫ · {order.accountNoMasked} · source={order.source}</div></div>{canManage && order.status === "PENDING" && order.sandboxCallbackSignature && <button className="l-btn sm" onClick={() => void completeSandbox(order)}>模拟签名成功回调</button>}</div>)}
-      </div>
-    </section> : <section className="l-card" style={{ marginBottom: 12 }}><div className="l-h"><span className="ttl">Sandbox 未启用</span></div><div className="l-b"><div className="dtint">当前服务端未运行在 Test/Acceptance 隔离环境；Mock 出款控件已隐藏。</div></div></section>}
 
     <div className="f-stats">
       <div className="f-stat ok"><div className="k">买入牌价（D6 单源）</div><div className="v">{formatVnd(liveRates.buy)}</div><div className="sub">基准价 {formatVnd(config.baseRateVndPerUsdt)} · 买入点差 {config.buySpreadPct}%</div></div>

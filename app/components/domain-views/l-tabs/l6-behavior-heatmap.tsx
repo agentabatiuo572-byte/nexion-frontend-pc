@@ -10,7 +10,7 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { downloadL6Behavior, fetchL6AcceptanceBehavior, fetchL6Behavior, fetchL6ClickHeat } from "@/lib/admin/l-client";
+import { downloadL6Behavior, fetchL6Behavior, fetchL6ClickHeat } from "@/lib/admin/l-client";
 import {
   aggregateByDepth,
   activityForWindow,
@@ -71,10 +71,8 @@ function bounceCell(rate: number): React.CSSProperties {
 
 export function L6HeaderActions({ ctx }: { ctx: LCtx }) {
   let available = false;
-  let sandboxOnly = false;
   try {
     const normalized = normalizeL6BehaviorHeatmap(ctx.biData?.l6 ?? null);
-    sandboxOnly = normalized.status === "SANDBOX_ONLY";
     available = normalized.available && activityForWindow(normalized, "7d").length > 0;
   } catch {
     available = false;
@@ -105,8 +103,8 @@ export function L6HeaderActions({ ctx }: { ctx: LCtx }) {
         只读报表域 · 不改任何业务规则
       </span>
       <button className="f-cta" onClick={() => void exportCsv()} disabled={!available || !ctx.canExport || exporting}
-        title={!ctx.canExport ? "当前角色只有查看权限" : sandboxOnly ? "Sandbox 环境不开放生产行为热力或导出" : !available ? "行为采集已接通，当前没有可导出的生产事件" : undefined}>
-        {exporting ? "导出中…" : available ? "导出近 7 天全端" : sandboxOnly ? "Sandbox 独立观察" : "当前暂无生产事件"}
+        title={!ctx.canExport ? "当前角色只有查看权限" : !available ? "行为采集已接通，当前没有可导出的生产事件" : undefined}>
+        {exporting ? "导出中…" : available ? "导出近 7 天全端" : "当前暂无生产事件"}
       </button>
     </>
   );
@@ -126,20 +124,6 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
   const [liveError, setLiveError] = useState("");
   const [exporting, setExporting] = useState(false);
   const [reloadRevision, setReloadRevision] = useState(0);
-  const [acceptanceObservation, setAcceptanceObservation] = useState<Record<string, unknown> | null>(null);
-  const [acceptanceError, setAcceptanceError] = useState("输入 Run ID 后读取独立 Sandbox 事实。");
-  const [acceptanceRunId, setAcceptanceRunId] = useState("");
-  const [acceptanceObservationToken, setAcceptanceObservationToken] = useState("");
-  const [acceptanceActorHash, setAcceptanceActorHash] = useState("");
-  const [acceptanceSessionHash, setAcceptanceSessionHash] = useState("");
-  const [acceptanceRoute, setAcceptanceRoute] = useState("");
-  const [acceptanceFrom, setAcceptanceFrom] = useState("");
-  const [acceptanceTo, setAcceptanceTo] = useState("");
-  const useRecentAcceptanceWindow = () => {
-    const businessClock = (offsetMinutes: number) => new Date(Date.now() + (8 * 60 + offsetMinutes) * 60_000).toISOString().slice(0, 16);
-    setAcceptanceFrom(businessClock(-60));
-    setAcceptanceTo(businessClock(0));
-  };
   const gradId = "l6heat-" + useId().replace(/:/g, "");
   const overviewRaw = ctx.biData?.l6 ?? null;
 
@@ -152,9 +136,9 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
 
     if (overviewRaw) {
       try {
-        const overview = normalizeL6BehaviorHeatmap(overviewRaw);
+        normalizeL6BehaviorHeatmap(overviewRaw);
         const isDefaultQuery = win === "7d" && device === "ALL" && locale === "ALL" && depth === "all" && sort === "pv";
-        if (overview.status === "SANDBOX_ONLY" || isDefaultQuery) {
+        if (isDefaultQuery) {
           setLiveRaw(overviewRaw);
           setRefreshing(false);
           return () => { cancelled = true; };
@@ -190,28 +174,6 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
       .finally(() => { if (!cancelled) setRefreshing(false); });
     return () => { cancelled = true; };
   }, [ctx.biError, ctx.biLoading, depth, device, locale, overviewRaw, reloadRevision, sort, win]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!acceptanceRunId || (!acceptanceObservationToken && (!acceptanceActorHash || !acceptanceSessionHash)) || !acceptanceFrom || !acceptanceTo) {
-      setAcceptanceObservation(null);
-      setAcceptanceError("请输入 H5 观察凭证（推荐）或 Run ID、Actor hash、Session hash 与时间窗，以生成本次运行的因果隔离证据。");
-      return () => { cancelled = true; };
-    }
-    setAcceptanceError("");
-    setAcceptanceObservation({ available: false, source: "mock", sourceEnvironment: "SANDBOX", status: "LOADING" });
-    void fetchL6AcceptanceBehavior({ runId: acceptanceRunId, observationToken: acceptanceObservationToken, actorHash: acceptanceActorHash,
-      sessionHash: acceptanceSessionHash, route: acceptanceRoute, from: acceptanceFrom, to: acceptanceTo })
-      .then((data) => { if (!cancelled) setAcceptanceObservation(data); })
-      .catch((error) => { if (!cancelled) {
-        const detail = displayAdminError(error);
-        // Keep a typed failed observation instead of erasing it to null: a
-        // failure is not evidence that this is a non-acceptance environment.
-        setAcceptanceObservation({ available: false, source: "mock", sourceEnvironment: "SANDBOX", status: "FAILED", failure: detail });
-        setAcceptanceError(detail);
-      } });
-    return () => { cancelled = true; };
-  }, [acceptanceActorHash, acceptanceFrom, acceptanceObservationToken, acceptanceRoute, acceptanceRunId, acceptanceSessionHash, acceptanceTo, reloadRevision]);
 
   const heatmapData = useMemo(() => normalizeL6BehaviorHeatmap(liveRaw), [liveRaw]);
 
@@ -309,66 +271,23 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
     );
   }
 
-  const acceptancePanel = (
-    <section className="l-card" style={{ marginBottom: 12 }}>
-      <div className="l-h"><span className="ttl">验收 Sandbox 独立观察面 · source=mock · SANDBOX</span></div>
-      <div className="l-b">
-        <div className="chips" style={{ flexWrap: "wrap" }}>
-          <input aria-label="Run ID" placeholder="Run ID" value={acceptanceRunId} onChange={(e) => setAcceptanceRunId(e.target.value)} />
-          <input aria-label="观察凭证" placeholder="粘贴 H5 观察凭证 (RunID.token)" value={acceptanceObservationToken} onChange={(e) => {
-            const credential = e.target.value.trim();
-            // Run IDs themselves permit dots; the opaque token is fixed-width
-            // hex, so split at the final delimiter rather than the first.
-            const separator = credential.lastIndexOf(".");
-            if (separator > 0) {
-              setAcceptanceRunId(credential.slice(0, separator));
-              setAcceptanceObservationToken(credential.slice(separator + 1));
-            } else setAcceptanceObservationToken(credential);
-          }} />
-          <input aria-label="Actor hash" placeholder="Actor hash（无凭证时必填）" value={acceptanceActorHash} onChange={(e) => setAcceptanceActorHash(e.target.value)} />
-          <input aria-label="Session hash" placeholder="Session hash（无凭证时必填）" value={acceptanceSessionHash} onChange={(e) => setAcceptanceSessionHash(e.target.value)} />
-          <input aria-label="Route" placeholder="Route (可选)" value={acceptanceRoute} onChange={(e) => setAcceptanceRoute(e.target.value)} />
-          <input aria-label="开始时间（Asia/Shanghai UTC+08）" type="datetime-local" value={acceptanceFrom} onChange={(e) => setAcceptanceFrom(e.target.value)} />
-          <input aria-label="结束时间（Asia/Shanghai UTC+08）" type="datetime-local" value={acceptanceTo} onChange={(e) => setAcceptanceTo(e.target.value)} />
-          <button className="f-cta" onClick={useRecentAcceptanceWindow}>使用最近 1 小时</button>
-          <button className="f-cta" onClick={() => setReloadRevision((value) => value + 1)}>查询隔离事实</button>
-          <span className="ltint" style={{ fontSize: 12 }}>观察窗按业务时区 Asia/Shanghai（UTC+08）提交；不按当前浏览器（例如 JST）换算。</span>
-        </div>
-        {acceptanceObservation?.available === true ? (
-          <div className="ltint cyan" style={{ marginTop: 10, fontSize: 12 }}>
-            独立事实：PV {n(Number(acceptanceObservation.pageViews || 0))} / 点击 {n(Number(acceptanceObservation.clicks || 0))}；
-            生产 fact/outbox 增量：{n(Number((acceptanceObservation.productionDelta as Record<string, unknown>)?.factRows || 0))}/
-            {n(Number((acceptanceObservation.productionDelta as Record<string, unknown>)?.outboxRows || 0))}（期望 0/0）。
-          </div>
-        ) : <div className="ltint warn" style={{ marginTop: 10, fontSize: 12 }}><b>验收观察面读取失败，已 fail-closed：</b> {acceptanceError}</div>}
-      </div>
-    </section>
-  );
-
-  if (!heatmapData.available && heatmapData.status === "SANDBOX_ONLY") {
+  if (!heatmapData.available && heatmapData.status === "RETIRED_ENVIRONMENT") {
     return (
-      <div>
-        {acceptancePanel}
-        <section className="l-card">
+      <div><section className="l-card">
           <div className="l-h">
-            <span className="ttl">用户行为热力图 · Sandbox 环境</span>
-            <div className="r"><span className="bdg warn">生产面已隔离</span></div>
+            <span className="ttl">用户行为热力图 · 数据来源无效</span>
           </div>
           <div className="l-b">
             <div className="ltint warn" style={{ fontSize: 12.5 }}>
-              <b>这不是可通过重试恢复的加载故障。</b> · <AutoGloss>{heatmapData.message || "生产行为热力读取已按环境隔离策略关闭。"}</AutoGloss>
-            </div>
-            <div className="ltint" style={{ marginTop: 12, fontSize: 12 }}>
-              请在上方输入当前 Run 的观察凭证与时间窗，查询只属于本次验收的 Sandbox 行为事实；生产 fact 与 outbox 不会在此环境展示或写入。
+              <b>开发环境只接受主数据。</b> · <AutoGloss>{heatmapData.message || "服务端返回了已退役的数据来源，页面已拒绝展示。"}</AutoGloss>
             </div>
           </div>
-        </section>
-      </div>
+        </section></div>
     );
   }
 
   if (!heatmapData.pageTree.length) {
-    return <div>{acceptancePanel}<LDataState ctx={ctx} label="L6" /></div>;
+    return <div><LDataState ctx={ctx} label="L6" /></div>;
   }
 
   const selectRow = (key: string) => {
@@ -379,7 +298,6 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
 
   return (
     <div>
-      {acceptancePanel}
       {/* stat strip */}
       {(refreshing || liveError) && (
         <div className={`ltint ${liveError ? "warn" : "cyan"}`} style={{ marginBottom: 12, fontSize: 12 }}>

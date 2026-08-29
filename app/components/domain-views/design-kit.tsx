@@ -3267,9 +3267,6 @@ export type CoverageSnapshot = {
   coverageRatio: number;
   redlinePct: number;
   healthyPct?: number;
-  sourceEnvironment?: string;
-  runId?: string;
-  sandboxOverrideEnabled?: boolean;
 };
 
 /* 操作确认弹窗 — 高敏动作确认 + 理由必填 + 可编辑「目标新值」(配置型调整);纯动作(放行/退款/封禁/pause)仅确认。 */
@@ -3300,7 +3297,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
     : undefined;
   const effectiveAmplifies = directionalAmplifies ?? Boolean(amplifies);
   // B1 红线禁放行:只有调用方传入真实后端覆盖率时才做前端镜像拦截;后端仍是最终裁决。
-  const covBlocked = Boolean(effectiveAmplifies && coverage && coverage.coverageRatio < coverage.redlinePct && !coverage.sandboxOverrideEnabled);
+  const covBlocked = Boolean(effectiveAmplifies && coverage && coverage.coverageRatio < coverage.redlinePct);
   const requestedMinimum = Number.isFinite(requestedReasonMin)
     ? Math.max(1, Math.min(200, Math.floor(requestedReasonMin!)))
     : 8;
@@ -3404,9 +3401,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
                   ? `，高于健康线 ${coverage.healthyPct}%`
                   : coverage.coverageRatio >= coverage.redlinePct
                     ? `，高于红线 ${coverage.redlinePct}%，请审慎提交`
-                    : coverage.sandboxOverrideEnabled
-                      ? "，当前为同 RunID 的本地 Sandbox 验收覆盖，不会写入生产资金事实"
-                      : `，低于红线 ${coverage.redlinePct}%，系统会拒绝提交`}
+                    : `，低于红线 ${coverage.redlinePct}%，系统会拒绝提交`}
               </>
             ) : (
               <>{auditSink === "local-history" ? "本页为本地配置面,覆盖率预检待接入后端后生效;请人工确认资金方向影响。" : "提交时由后端实时校验覆盖率，当前弹窗不使用前端兜底值。"}</>

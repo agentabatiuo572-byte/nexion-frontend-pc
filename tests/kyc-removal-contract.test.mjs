@@ -81,7 +81,8 @@ test("all KYC-bearing baseline specs are explicitly historical", () => {
 
   for (const file of documents) {
     const preamble = fs.readFileSync(file, "utf8").split(/\r?\n/).slice(0, 8).join("\n");
-    assert.match(preamble, /现行裁决\(2026-08-07\)/, `${file} must carry the current removal ruling`);
+    assert.match(preamble, /现行(?:裁决|客服输出原则)[（(]2026-08-(?:07|28)[）)]/,
+      `${file} must carry a dated current removal ruling`);
     assert.match(preamble, /不得/, `${file} must prevent historical KYC restoration`);
   }
 });

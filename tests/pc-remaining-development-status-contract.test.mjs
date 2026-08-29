@@ -28,7 +28,7 @@ const SEMANTIC_PENDING_IDS = [
 const FINAL_ACCEPTED_IDS = [
   "OPS-A-15", "OPS-A-20", "OPS-L-10", "OPS-E-16", "OPS-F-15", "OPS-F-19", "OPS-E-20",
   "OPS-A-28", "OPS-A-29", "OPS-A-30", "OPS-A-31", "OPS-H-19", "OPS-H-20", "OPS-H-21",
-  "OPS-M-26", "OPS-M-27", "OPS-M-28", "OPS-D-26", "OPS-D-27", "OPS-D-28",
+  "OPS-M-26", "OPS-M-27", "OPS-M-28",
 ];
 
 function readSourceTree(root, excludedSuffix = "") {
@@ -179,32 +179,23 @@ test("H1 month dial mutation is discovered and has exactly one leaf-scoped claim
   assert.deepEqual(claims.map((item) => item.id), ["OPS-H-01"]);
 });
 
-test("G17/G18 keep sandbox writes uniquely claimed while production mutex evidence stays profile-scoped", () => {
-  for (const [action, expectedRow] of [
-    ["processG2AcceptanceSandboxBatch", "OPS-G-17"],
-    ["cleanupG2AcceptanceSandboxBatch", "OPS-G-18"],
-  ]) {
-    const claims = manifest.rows.filter((item) => [item.restAction, ...(item.restActions ?? [])].includes(action));
-    assert.deepEqual(claims.map((item) => item.id), [expectedRow], `${action} must have one exact ${expectedRow} claim`);
-  }
-
+test("G17 retires Sandbox writes while G18 keeps the canonical MySQL mutex evidence", () => {
   const g17 = row("OPS-G-17");
   const g18 = row("OPS-G-18");
-  assert.equal(g17?.status, "built");
+  assert.equal(g17?.status, "readonly");
   assert.equal(g18?.status, "built");
-  assert.equal(g17?.restAction, "processG2AcceptanceSandboxBatch");
-  assert.equal(g18?.restAction, "cleanupG2AcceptanceSandboxBatch");
-  assert.match(`${g17?.action ?? ""} ${g17?.note ?? ""}`, /Acceptance Sandbox[\s\S]*Production|Production[\s\S]*Acceptance Sandbox/i);
-  assert.match(`${g18?.action ?? ""} ${g18?.note ?? ""}`, /Production[\s\S]*MySQL[\s\S]*Acceptance Sandbox/i);
+  assert.equal(g17?.restAction, undefined);
+  assert.equal(g18?.restAction, undefined);
+  assert.match(`${g17?.action ?? ""} ${g17?.reason ?? ""}`, /Sandbox[\s\S]*(?:退役|取消)/i);
+  assert.match(`${g18?.action ?? ""} ${g18?.note ?? ""}`, /(?:开发|生产)[\s\S]*MySQL/i);
 
   const g17Files = g17?.runtimeEvidence?.map((item) => item.file) ?? [];
-  assert.ok(g17Files.includes("app/components/domain-views/g-tabs/g2-exchange.tsx"));
-  assert.ok(g17Files.includes("src/main/java/ffdd/opsconsole/market/application/G2AcceptanceSandboxRepository.java"));
+  assert.deepEqual(g17Files, []);
   const g18Files = g18?.runtimeEvidence?.map((item) => item.file) ?? [];
   assert.ok(g18Files.includes("src/main/java/ffdd/opsconsole/market/mapper/AppExchangeMapper.java"));
   assert.ok(g18Files.includes("src/main/java/ffdd/opsconsole/market/application/AppExchangeService.java"));
   assert.ok(g18Files.includes("src/main/java/ffdd/opsconsole/market/application/G2ExchangeQueueBatchService.java"));
-  assert.ok(g18Files.includes("src/main/java/ffdd/opsconsole/market/application/G2AcceptanceSandboxRepository.java"));
+  assert.ok(!g18Files.some((file) => /Sandbox/i.test(file)));
 });
 
 test("remaining-development ledger has unique claims and preserves semantic consumer debts", () => {
@@ -240,7 +231,6 @@ test("remaining-development ledger has unique claims and preserves semantic cons
     "OPS-F-18",
     "OPS-F-26",
     "OPS-G-14",
-    "OPS-G-17",
     "OPS-G-18",
     ...FINAL_ACCEPTED_IDS,
     "OPS-H-12",
@@ -265,7 +255,7 @@ test("remaining-development ledger has unique claims and preserves semantic cons
   assert.equal(manifest.rows.length, 256);
   assert.deepEqual(
     { built: counts.built?.length, readonly: counts.readonly?.length, pending: counts.pending?.length ?? 0, missing: counts.missing?.length ?? 0 },
-    { built: 232, readonly: 23, pending: 1, missing: 0 },
+    { built: 227, readonly: 28, pending: 1, missing: 0 },
   );
   for (const id of expectedBuiltClosures) assert.equal(row(id)?.status, "built", id + " must stay built");
 

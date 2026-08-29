@@ -48,13 +48,11 @@ test("ordinary unknown machine codes still get the neutral unmapped fallback", (
   assert.equal(formatAdminApiError("F5_REQUEST_FAILED_404", "X"), GENERIC_UNMAPPED_FALLBACK);
 });
 
-test("A2、E5 与 G2 的协议错误给运营可操作的中文指引", () => {
+test("A2、E5 与 G2 的当前协议错误给运营可操作的中文指引", () => {
   assert.match(formatAdminApiError("A2_REASON_POLICY_INVALID", ""), /理由/);
   assert.match(formatAdminApiError("A2_RETENTION_RUN_INVALID:retentionMonths", ""), /留存/);
   assert.match(formatAdminApiError("E5_OBSERVABILITY_SCHEMA_INVALID:telemetry", ""), /可观测/);
   assert.match(formatAdminApiError("G2_BATCH_RESPONSE_INVALID", ""), /批处理/);
-  assert.match(formatAdminApiError("G2_ACCEPTANCE_SANDBOX_RESPONSE_INVALID", ""), /验收沙箱/);
-  assert.match(formatAdminApiError("G2_ACCEPTANCE_SANDBOX_UNAVAILABLE", ""), /验收沙箱/);
 });
 
 test("M3 reconnect snapshot races explain automatic recovery and the manual fallback", () => {

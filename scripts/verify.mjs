@@ -269,9 +269,8 @@ const GEARS = [
   // 同命令跑两遍不多买一分判别力,只多花一份时间,还让「N 个齿」这个数虚高)。
   ["A2 outcome-uncertain contract", "node", ["--test", "tests/a2-outcome-uncertain-contract.test.mjs"]],
   ["E1 acceptance contract", "node", ["--test", "tests/e1-acceptance-contract.test.mjs"]],
-  ["E4 commerce acceptance sandbox contract", "node", ["--test", "tests/commerce-acceptance-sandbox-contract.test.mjs"]],
+  ["deployed sandbox retirement contract", "node", ["scripts/tests/sandbox-retirement.contract.test.mjs"]],
   ["operation-confirm error copy", "node", ["--test", "tests/operation-confirm-error-message.test.mjs"]],
-  ["G4 invite-code registry contract", "node", ["--test", "tests/g4-invite-registry-contract.test.mjs"]],
   // GEN10b 市场状态开关:此前后台侧一道专属门都没有,前一版的自由输入违规就是这么溜过去的。
   ["G4 market-open-state contract", "node", ["--test", "tests/g4-market-open-state-contract.test.mjs"]],
   // 跨仓 parity 单独成齿 —— 缺 Nexion-uniapp 的机器上它整齿跳过并进台账,
@@ -308,7 +307,6 @@ const GEARS = [
   ["F1 direct-write pending-store contract", "node", ["--test", "tests/f1-direct-pending-store-contract.test.mjs"]],
   ["E domain pending-store contract", "node", ["--test", "tests/e-pending-store-contract.test.mjs"]],
   ["H8 pending-store contract", "node", ["--test", "tests/h8-pending-store-contract.test.mjs"]],
-  ["L6 acceptance sandbox observability contract", "node", ["--test", "tests/l6-acceptance-sandbox-observability-contract.test.mjs"]],
   ["endpoint citation ledger", "node", ["scripts/endpoint-citation-sentinel.mjs"]],
   // 提现单主键线上真名(`withdrawalNo`)在 PRD 与 admin 实现之间的 parity:后台 PRD 一度写成
   // `withdrawalId`,错了很久没人发现 —— 手工改完 18 处但没有任何机器判据锁住它。真名从

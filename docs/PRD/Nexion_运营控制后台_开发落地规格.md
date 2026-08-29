@@ -17,20 +17,22 @@
 >
 > **Genesis 资格 CURRENT（2026-08-27）**：以 `specs/FEAT-GEN02-unified-eligibility-policy.md` 为唯一执行规格；G4 三项 `eligibility.enabled / maxPerUser / minAccountAgeDays` 是服务端权威配置。旧四项组合资格只作为历史背景，不得出现在运行时、管理项或验收口径。设备 SKU 资格规则与创世资格严格分开。
 >
+> **Sandbox 退役 CURRENT（2026-08-28）**：以 `specs/NEXION-SANDBOX-RETIREMENT-AND-DEV-MERGE-v1.md` 为唯一执行规格。可部署环境仅允许 `dev` 与 `prod`；旧 Sandbox/Acceptance/Mock 数据按分类归档或迁入 Development 后，所有 Sandbox 页面、接口、启动 profile、RunID 与模拟写操作均已退役，不得实现、恢复或作为当前验收路径。本文其余历史段落若与此裁定冲突，以本条为准。
+>
 > **语言**:全文中性运营语言。
 >
 > ---
 
 ## 当前状态合同（2026-08-16）
 
-状态必须按能力边界读取；Sandbox/Mock 通过、单一配置页完成或阶段展示，均不得扩大为生产能力。
+状态必须按能力边界读取；当前开发验收只允许 Development 的真实服务端数据链，单一配置页完成或阶段展示不得扩大为生产能力。
 
 | 能力 | 当前状态 | 已签发范围 | 明确保持 HOLD 的范围 |
 |---|---|---|---|
-| Gen-2 E1 `purchaseGate` + App `GET /api/store/purchase-eligibility` | **COMPLETE** | 服务端权威判定；普通单、组合/Sandbox 单、Trade-in 与容量替换均在提交前复验；Pro v2 默认 V≥2、Rack P2 默认 V≥4 | 不得把 E3 九类通用 eligibility 编辑器混入该完成项 |
+| Gen-2 E1 `purchaseGate` + App `GET /api/store/purchase-eligibility` | **COMPLETE** | 服务端权威判定；普通单、组合单、Trade-in 与容量替换均在提交前复验；Pro v2 默认 V≥2、Rack P2 默认 V≥4 | 不得把 E3 九类通用 eligibility 编辑器混入该完成项 |
 | E3 九类通用 eligibility 编辑器 | **HOLD** | 仅未来扩展设计 | 编辑器 UI、九类规则运行时映射和以其作为成交授权 |
-| Passkey / Telegram | **Sandbox Mock COMPLETE** | 显式 Sandbox 使用服务端 Mock 身份并显示 Mock 标识 | 生产 WebAuthn/Passkey ceremony 与 Telegram Login Widget verifier |
-| Janus | **Sandbox executor / 签名回执 / ACK Mock COMPLETE** | 仅 `test/acceptance/local-sandbox` allowlist，回执/证明带 `SANDBOX` 来源 | 实体真机、native attestation、生产 handoff 与真实设备 ACK |
+| Passkey / Telegram | **Development local Passkey COMPLETE** | 仅 `dev` 回环来源可用本地 Passkey；Development 账号仍属于 canonical 账号轨 | 生产 WebAuthn/Passkey ceremony 与 Telegram Login Widget verifier；旧 Sandbox Mock 已退役 |
+| Janus | **Sandbox/Mock 已退役，真实链 HOLD** | 当前只保留 dev/prod 服务边界；不得生成模拟回执或 ACK | 实体真机、native attestation、production handoff 与真实设备 ACK 就绪前保持 HOLD，绝不回落模拟成功 |
 | 提现结果未知的核验与放弃 | **COMPLETE** | 服务端先核验 canonical withdrawal；未建单才写 `ABANDONED` tombstone；不取消已提交提现 | 真实银行/链上/PSP 出款仍按生产供应商范围 HOLD |
 
 该状态合同与本文件第 3 章 API 表、PRD V2 对应章节共同构成当前开发口径；旧文档中未限定范围的“用户成交授权 HOLD”“Gen-2 待补录”等描述均按上述范围修正。
@@ -113,7 +115,7 @@
 - `scripts/fe-be-mapping-coverage.mjs` 为机器门：D 表 M1-M11、admin 映射、后台 PRD 与关键前端/admin 源码证据必须同时闭环；新增三端业务时必须新增映射行并补证据。
 - 三端 SPEC-5 M2 口径：手机算力激活登记为前台固定行为，本期无后台登记开关；后台仅承接登记后的算力档位与结算系数，不把“登记开关”误判为后台缺口。
 - K6 规则树编辑器的状态 / 渠道多选条件必须展示运营可读中文，内部枚举仅用于保存与判定，不得出现在交互输入层。
-- 三端 SPEC-4 M10 当前为前台同源 `account-cloud` mock 阶段：已覆盖 stale snapshot 对余额、设备、任务身份、`currentTask` object/null、同 id 任务时间回退、`recentTasks` 与 `latestWithdrawal` 单调状态的合并边界；后台不新增页面，仍由 C1/C2/C3/C5/E5/D4 既有账户查询、处置、会话下线、设备运维与账本审计承接。真实跨物理设备账户云另走后续 SPEC。
+- 三端 SPEC-4 M10 当前为前台同源 `account-cloud` 静态交互阶段：已覆盖 stale snapshot 对余额、设备、任务身份、`currentTask` object/null、同 id 任务时间回退、`recentTasks` 与 `latestWithdrawal` 单调状态的合并边界；后台不新增页面，仍由 C1/C2/C3/C5/E5/D4 既有账户查询、处置、会话下线、设备运维与账本审计承接。真实跨物理设备账户云另走后续 SPEC；该阶段不构成可运行 Sandbox。
 - 三端首页撤回态不得被解释为保留隐藏入口；旧三条首页仍必须删除。SPEC-6 新三端入口首页当前只作评审入口与静态首页，不开放后台改文案；静态评审路由启动阶段不得写账户云、会话、设备身份、账单或里程碑状态；若进入运营化再接 I1 / I6。
 
 ## 第 1 章 核心模块与已验收增量功能索引(总览导航)
@@ -415,8 +417,8 @@
 | `/api/admin/devices/skus` · `/api/admin/devices/skus/:skuKey` | GET / POST / PUT / DELETE | PC E1 从 `nx_product` 读取并管理全 SKU 交易核心；PUT/DELETE 携 `X-Product-Revision` 做 CAS，stock 接受 0 且不自动下架；扩展字段与结构化 purchaseGate 写 `nx_admin_device_sku`，非法 schema 失败关闭 | E1a-MD2(完整编辑) | E1 |
 | `/api/admin/devices/skus/:skuKey/status` | PATCH | 携 `X-Product-Revision` 独立切换销售状态 on/off，不复用 lifecycle 或 unlockPhase | 行内确认 | E1 |
 | `/api/admin/devices/e1/generation-gates[/{skuId}]` | GET / POST / PATCH / DELETE | 管理 `nx_admin_device_generation_gate` 上架节奏规则并供 E1 上架前置校验；不代表按用户成交资格已闭环 | 操作确认 | E1 |
-| `/api/store/catalog` | GET | UniApp 商城只读投影同一 `nx_product` 可售集合；Sandbox 仅隔离验收库存写入，目录每次刷新并隐藏当前已下架/删除商品，提交按稳定商品编号重验当前可售、足量库存与价格 | — | E1 / E4 |
-| `/api/store/purchase-eligibility?productNo=` | GET | **COMPLETE**：读取当前登录用户的 V-rank、有效直推、团队业绩与 E1 `purchaseGate`，返回 `eligible/decisionCode/evaluatedAt`；畸形门或事实缺失失败关闭。该端点供提交前提示，普通/组合/Sandbox 下单、Trade-in 与容量替换入口均执行最终服务端复验 | 用户令牌 | E1 / E3 |
+| `/api/store/catalog` | GET | UniApp 商城只读投影同一 `nx_product` 可售集合；目录每次刷新并隐藏当前已下架/删除商品，Development 提交按稳定商品编号重验当前可售、足量库存与价格 | — | E1 / E4 |
+| `/api/store/purchase-eligibility?productNo=` | GET | **COMPLETE**：读取当前登录用户的 V-rank、有效直推、团队业绩与 E1 `purchaseGate`，返回 `eligible/decisionCode/evaluatedAt`；畸形门或事实缺失失败关闭。该端点供提交前提示，普通/组合下单、Trade-in 与容量替换入口均执行最终服务端复验 | 用户令牌 | E1 / E3 |
 | `/api/withdrawals/attempts/:idempotencyKey/abandon` | POST | **COMPLETE**：对结果未知的提现尝试做服务端核验与放弃：与 submit 共用用户行锁；已提交返回 canonical withdrawal，未提交写 ABANDONED tombstone；同 key 异 body 拒绝 | 用户令牌 + 原冻结请求体 | D2 / App 钱包 |
 | `/api/config/cart/bundle-discount` | PUT | 套餐折扣 ladder(4件12%/3件8%/2件5%) | E1a-MD3 | E1 |
 | `/api/admin/config/task-pricing` | GET / PUT | 6 类任务定价(热更,仅新派发生效) | E2-MD1~MD4(PUT) | E2 |
@@ -554,7 +556,7 @@
 | `/api/admin/janus/health` · `/audit` | GET | 健康度分级(4 档+指标+异常下钻+建议)/ 审计日志(筛选+搜索) | — | K6 |
 | `/api/admin/janus/exports` | POST | 报表导出(漏斗+健康 CSV/JSON),因产生审计副作用使用写接口并携 Idempotency-Key | 导出留痕 | K6 |
 | `/api/admin/janus/remote-targets` · `/remote-targets/origins` · `/:key/:version/disable` | GET/POST | 服务端批准 RemoteTarget 目录与部署白名单；只允许精确 HTTPS origin，拒绝私网、userinfo、query、fragment，并在创建与每次消费前重新解析 DNS、任一地址非公网即失败关闭；URL 变化只能新增不可变版本；停用请求须携 `expectedCatalogVersion`，只按 `(remoteTargetKey, remoteTargetVersion, remoteTargetCatalogVersion)` 精确 CAS 停用并取消该版本未领取命令，不扩大到同 key 的其他版本且不冒充设备已执行 | 是(写仅超管) | K6 |
-| `/api/app/janus/reports` · `/commands/pending` · `/commands/ack` | POST/GET/POST | **Sandbox executor / 签名回执 / ACK Mock COMPLETE**：登录用户设备上报、命令租约/围栏、应用证明与 ACK 闭环；无真机阶段仅允许 `test/acceptance/local-sandbox` 的 allowlist executor 生成带 `SANDBOX` 来源的回执。production 无 native attestation 时保持 HOLD，绝不回落模拟成功 | 用户令牌绑定设备归属 + executor claim | K6 |
+| `/api/app/janus/reports` · `/commands/pending` · `/commands/ack` | POST/GET/POST | **Sandbox/Mock 路径已退役**：当前 dev/prod 均不得用 allowlist executor 生成模拟回执；实体真机、native attestation、production handoff 与真实设备 ACK 未就绪时保持 HOLD，绝不回落模拟成功 | 用户令牌绑定设备归属 + executor claim | K6 |
 
 ### 域 L — 数据 BI(无高敏处置权,唯一升 MC=含敏感/超 rowCap 导出)
 
@@ -1040,7 +1042,7 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | 6 | `commission.paid` 的 `kind` 命名 `network` vs `unilevel` 二选一未定(前端 §12.5 用 unilevel) | F2/F3/F4/F5/F4d | **V2 A4 注册 blocking**:F5⑧/F4d⑧ 不能定稿 | 对齐前端 + A4 | v2 §F5⑧ |
 | 7 | 排行榜派奖事件 `leaderboard.prize_paid` vs 复用 `commission.paid(kind=leaderboard_prize)` 未定 | F5 / F4d | V2:避免非佣金派发混入 commission 语义 | 对齐前端 + A4 | v2 §F5⑧/F4d⑧ |
 | 8 | `cumulativeDepositUsdt` 退款逆向核减写权归属未确认(E4 拟 D4 recordDeposit(-amount),D1⑦ 仅定义正向) | E4 / D1 / D4 | **V2 落地阻断**:E4 不可单方声明 D4 写行为 | 对齐 D1/D4 | v2 §E4⑤⑦ |
-| 9 | ✅ Gen-2 当前购买资格已以 E1 `purchaseGate` 闭环；E3 九类 eligibility 仅作未来扩展 | E3 / E1 | 已闭环：Pro v2 V≥2、Rack P2 V≥4；查询、普通/组合/Sandbox 下单、Trade-in 与容量替换均服务端复验 | 2026-08-16 已决 | v2 §E3③④ / §E1⑤ |
+| 9 | ✅ Gen-2 当前购买资格已以 E1 `purchaseGate` 闭环；E3 九类 eligibility 仅作未来扩展 | E3 / E1 | 已闭环：Pro v2 V≥2、Rack P2 V≥4；查询、普通/组合下单、Trade-in 与容量替换均服务端复验 | 2026-08-16 已决；Sandbox 下单于 2026-08-28 退役 | v2 §E3③④ / §E1⑤ |
 | 10 | Cloud Share Premium(§3.3 月 10 新品)SKU 治理(独立 SKU vs 原地 tier 升级)未定 | E1 / E1 | 阻塞:当前 7 管理对象未涵盖,落地路径分叉 | PM | v2 §E1① |
 | 11 | Day-One quest 改窗对在窗用户相位语义二选一未落地(方案 A per-instance 快照 vs 方案 B 全局即时重算) | H3 | 开发:须二选一定接口契约(是否持久化窗快照) | PM / 开发 | v3 §H3⑦ |
 | 12 | `MAX_DEVICES` 是否参数化开放未定(V2 写死=6) | E5 | 不阻塞 V2;V4 评估 | PM(V4) | v2 §E5③ |

@@ -293,15 +293,15 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
     });
   };
 
-  const openSandbox = () => {
+  const refreshPreview = () => {
     openConfirm({
-      action: "沙盒预览(只读)",
-      detail: <>沙盒预览会重新读取后端 H1 读模型,不写配置。</>,
+      action: "刷新预览(只读)",
+      detail: <>刷新预览会重新读取开发环境 H1 读模型,不写配置。</>,
       chips: [["只读", "ready"], ["后端读取", "done"]],
       okLabel: "运行预览",
       run: async () => {
         await reload();
-        toast("H1 沙盒预览已按后端数据刷新");
+        toast("H1 预览已按开发环境后端数据刷新");
       },
     });
   };
@@ -359,7 +359,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
       </div>
 
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
-        <button className="f-cta" onClick={openSandbox}>沙盒预览(只读)</button>
+        <button className="f-cta" onClick={refreshPreview}>刷新预览(只读)</button>
       </div>
 
       <section className="l-card" style={{ marginBottom: 16 }}>

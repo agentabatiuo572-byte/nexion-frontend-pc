@@ -1,11 +1,11 @@
 export type L6UnavailableState = {
   available: false;
-  status: "SANDBOX_ONLY";
+  status: "RETIRED_ENVIRONMENT";
   message: string;
 };
 
-const SANDBOX_ONLY_MESSAGE =
-  "当前后端运行在验收 Sandbox；生产行为热力读取已按环境隔离策略关闭。请使用上方 Sandbox 独立观察面核对当前 Run 的行为事实。";
+const RETIRED_ENVIRONMENT_MESSAGE =
+  "服务端返回了已退役的运行环境，开发环境已拒绝展示该数据；请检查服务配置后重试。";
 
 export function l6UnavailableStateFromError(error: unknown): L6UnavailableState | null {
   const code = error instanceof Error && "code" in error
@@ -14,8 +14,8 @@ export function l6UnavailableStateFromError(error: unknown): L6UnavailableState 
   if (code !== "L6_PRODUCTION_SURFACE_FORBIDDEN") return null;
   return {
     available: false,
-    status: "SANDBOX_ONLY",
-    message: SANDBOX_ONLY_MESSAGE,
+    status: "RETIRED_ENVIRONMENT",
+    message: RETIRED_ENVIRONMENT_MESSAGE,
   };
 }
 

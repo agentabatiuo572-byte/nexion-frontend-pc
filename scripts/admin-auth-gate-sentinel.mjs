@@ -48,6 +48,8 @@ const EXEMPT = {
     "登出是受限态的逃生阀,必须始终可达,并负责清掉两个 cookie。",
   "app/api/admin/auth/session/route.ts":
     "只读身份端点,且只认全权 cookie:改密态下全权 cookie 根本不存在,天然 401,前端据此回登录页。",
+  "app/api/admin/commerce/[...path]/route.ts":
+    "Sandbox 商城接口的退役墓碑仅固定返回 410,不读取后台 cookie、也不访问后端；保留公开终态便于旧客户端停止重试。",
   "app/api/impersonation/view/route.ts":
     "不读后台 cookie,鉴权走调用方传入的模拟登录 Bearer(只读 H5 镜像),与后台改密态无关。",
 };

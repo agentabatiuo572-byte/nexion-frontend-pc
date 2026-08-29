@@ -27,7 +27,8 @@ test("PC login keeps native form submission for every authentication stage", () 
 
 test("persistent session dock preserves the M3 production authority and single-flight gates", () => {
   const dock = read("app/components/domain-views/m-view.tsx");
-  assert.match(dock, /acceptanceMode === "production"/);
+  assert.doesNotMatch(dock, /acceptanceMode|support-acceptance-sandbox/i,
+    "M3 必须只保留开发/生产共用的服务端权威链，退役 Sandbox 模式不得回潮");
   assert.match(dock, /canWriteM3 && conversationsAvailable/);
   assert.match(dock, /sendInFlight\.current/);
   assert.match(dock, /commandKey: `m3:reply:/);

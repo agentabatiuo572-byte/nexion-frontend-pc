@@ -32,17 +32,18 @@ function backendPath(parts: string[]) {
     "campaigns",
     "trust-disclosure",
     "i18n-learning",
-    "learning-acceptance",
     "how-it-works",
   ]);
-  const isAcceptanceSupport = parts[0] === "support" && parts[1] === "acceptance";
-  if (!allowedHeads.has(parts[0]) && !isAcceptanceSupport) return null;
+  if (!allowedHeads.has(parts[0])) return null;
   if (parts.some((part) => !isSafePart(part))) return null;
   return `/api/admin/content/${parts.map((part) => encodeURIComponent(part)).join("/")}`;
 }
 
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
+  if (path.some((part) => part.toLowerCase().includes("acceptance") || part.toLowerCase().includes("sandbox"))) {
+    return jsonError(410, "SANDBOX_RETIRED");
+  }
   const targetPath = backendPath(path);
   if (!targetPath) return jsonError(404, "CONTENT_ROUTE_NOT_FOUND");
 

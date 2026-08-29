@@ -628,7 +628,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           : tab === "F3" ? f3Overview?.coverage
           : tab === "F4" ? f4Overview?.coverage
           : tab === "F5" ? f5Overview?.coverage
-          : undefined) as { coverageRatio: number; redlinePct: number; sourceEnvironment?: string; runId?: string; sandboxOverrideEnabled?: boolean } | undefined}
+          : undefined) as { coverageRatio: number; redlinePct: number } | undefined}
         edit={mc.edit}
         businessForm={mc.businessForm}
         completionCopy={mc.completionCopy}
