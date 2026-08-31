@@ -36,11 +36,13 @@ test("F003: the authority App checkout consumes F snapshots from NX1.0 and fails
   assert.match(sessionVault, /in-memory vault/);
   assert.match(sessionVault, /createRuntimeSessionVault\(\): SessionVault \{\s*return createSessionVault\(\);\s*\}/);
   assert.match(loginPage, /authApi\.login/);
-  assert.match(loginPage, /completeRemoteSignIn/);
+  assert.match(loginPage, /finishSignIn\(\{ accountId: authenticatedAccountId\(result\.user\)/);
+  assert.match(loginPage, /authApi\.discardSessionIfCurrent\(result\.vaultRevision\)/);
   assert.match(appShell, /remoteApiEnabled/);
   assert.match(appShell, /\/pages\/login\/login/);
   assert.match(mePage, /authApi\.logout/);
-  assert.match(mePage, /clearRemoteAccountState/);
+  assert.match(mePage, /app\.bindAccount\("default"\)/);
+  assert.match(mePage, /rebindAccountScopedStores\("default"\)/);
   assert.match(rankApi, /\/api\/config\/v-ranks/);
   assert.match(rankApi, /\/api\/team\/rank/);
   assert.match(rankApi, /V_RANK_RESPONSE_INVALID/);
@@ -54,5 +56,6 @@ test("F003: the authority App checkout consumes F snapshots from NX1.0 and fails
   assert.match(commissionStore, /binarySnapshot\.value = null/);
   assert.match(commissionStore, /events\.value = \[\]/);
   assert.match(binaryPage, /commission\.binarySnapshot\?\.trackA/);
-  assert.match(binaryPage, /Local track or commission data is not used in remote mode/);
+  assert.match(binaryPage, /remoteApiEnabled && \(commission\.binaryStatus !== 'ready' \|\| network\.remoteStatus !== 'ready'\)/);
+  assert.match(binaryPage, /!remoteApiEnabled \|\| \(commission\.binaryStatus === 'ready' && network\.remoteStatus === 'ready'\)/);
 });

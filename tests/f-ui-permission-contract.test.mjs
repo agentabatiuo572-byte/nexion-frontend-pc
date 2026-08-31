@@ -53,8 +53,8 @@ test("F4 池、常规配置、大使与榜单权限互不替代", () => {
     "network_f4_leaderboard_control",
   ]) assert.match(f4, new RegExp(authority));
   assert.match(f4, /\{canFund && <button/);
-  assert.match(f4, /\{canWrite && <div className="sect-foot"/);
-  assert.match(f4, /\{canApproveAmbassador && <div className="sect-foot"/);
+  assert.match(f4, /\{canWrite && <button/);
+  assert.match(f4, /\{canApproveAmbassador && application\.status\.toUpperCase\(\) === "PENDING"/);
   assert.match(f4, /\{canControlLeaderboard && <button/);
   assert.match(f4, /onClick=\{canFund \?/);
 });
