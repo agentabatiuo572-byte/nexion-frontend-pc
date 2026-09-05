@@ -145,3 +145,13 @@ test("M5 hides every mutation control without effective M5 management authority"
   assert.match(page, /const isContentOperator = currentRoleKey === "content"/);
   assert.match(page, /const isSupportM5Supervisor = currentRoleKey === "support" && isSupportSupervisor\(currentSupportAgent\)/);
 });
+
+test("M5 fails closed when the proactive advisor executor is not connected", () => {
+  const page = read("app/components/domain-views/m-tabs/m5-scripts.tsx");
+
+  assert.match(page, /const DEFAULT_ADVISOR_POLICY = \{ enabled: "off"/);
+  assert.match(page, /const ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE = false/);
+  assert.match(page, /\|\| \(!masterOn && !ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE\)\) return/);
+  assert.match(page, /执行器未接入 · 仅允许停用/);
+  assert.match(page, /disabled=\{!sessionTemplatesAvailable \|\| writePending \|\| \(!masterOn && !ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE\)\}/);
+});

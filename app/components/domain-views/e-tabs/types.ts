@@ -1,5 +1,5 @@
 import type { BusinessFormSpec, EditSpec } from "../design-kit";
-import type { E1GenerationGateData, E1GenerationGateInput } from "@/lib/admin/e1-client";
+import type { E1BundleDiscount, E1GenerationGateData, E1GenerationGateInput } from "@/lib/admin/e1-client";
 import type { E2PhoneTier, E2TaskPricingSnapshot, E2YieldComparison } from "@/lib/admin/e2-client";
 import type { E3OperationMetric, E3Stats } from "@/lib/admin/e3-client";
 import type { E5Datacenter, E5DatacenterStatus, E5Device, E5Overview } from "@/lib/admin/e5-client";
@@ -17,6 +17,7 @@ export type EOp =
   | "sku-save"        // 新增/编辑 SKU(shell 读 form 状态)→ E1 后端 API
   | "sku-delete"      // 删除 SKU(需破坏性理由 + 影响确认)
   | "sku-status"      // 上/下架(真后端 status)
+  | "bundle-discount" // App 组合购阶梯折扣(E1 真后端 CAS 配置)
   | "task-down"       // 下架任务(需破坏性理由 + 影响确认)
   | "task-price"      // 任务改单价(E2 后端 API,操作确认 出价格编辑框)
   | "task-save"       // 任务全参数编辑(抽屉读 taskForm)→ E2 后端 API
@@ -106,6 +107,7 @@ export interface EViewCtx {
   e1Loading: boolean;
   e1Error: string | null;
   e1Gates: E1GenerationGateData | null;
+  e1BundleDiscount: E1BundleDiscount | null;
   phaseCur: string;                              // 当前 Phase,仅来自 E1 后端 generation-gates
   refreshE1: () => Promise<void>;
   openSku: (skuId?: string, unlockPhase?: string) => void; // 打开 SKU 抽屉;可预选当前解锁阶段

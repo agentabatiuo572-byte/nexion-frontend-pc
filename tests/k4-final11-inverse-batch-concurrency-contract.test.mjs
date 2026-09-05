@@ -38,5 +38,5 @@ test("K4 Final11 carrier attacks inverse user order without treating CAS as a de
   assert.match(source, /successfulNavigationPaths/);
   assert.match(source, /cancelledNavigationPaths/);
   assert.match(source, /unexpectedBrowserFaults/);
-  assert.doesNotMatch(source, /Admin@123456|A123456789Z/);
+  assert.doesNotMatch(source, /Admin@[0-9]{6,}|A123456789Z/);
 });

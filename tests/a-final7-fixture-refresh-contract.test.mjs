@@ -30,7 +30,7 @@ test("Final7 A/K4 fixture refresh is explicit, loopback-only, and secret-free", 
   assert.match(source, /\/inheritance:r/);
   assert.match(source, /RESTRICTED_OWNER_UNSAFE/);
   assert.match(source, /ACL_PRINCIPAL_OUTSIDE_ALLOWLIST/);
-  assert.doesNotMatch(source, /Admin@123456|A123456789Z/);
+  assert.doesNotMatch(source, /Admin@[0-9]{6,}|A123456789Z/);
   assert.doesNotMatch(source, /console\.(?:log|error|warn)\([^)]*(?:password|totp|secret|dbPassword)/i);
 });
 

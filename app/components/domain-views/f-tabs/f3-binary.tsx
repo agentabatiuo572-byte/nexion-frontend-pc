@@ -133,7 +133,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
         </section>
 
         <section className="pane cap-card">
-          <div className="pane-h"><span className="ph-ttl">双轨日封顶</span><span className="ph-sub">A/B 两轨每日计酬上限</span><span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="cyan">H1 派发 · 只读</CodeTag></span></div>
+          <div className="pane-h"><span className="ph-ttl">双轨日封顶基准</span><span className="ph-sub">周期结算额度 = 日基准 × 周期天数</span><span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="cyan">H1 派发 · 只读</CodeTag></span></div>
           <div className="cap-body"><div className="vv" data-proof="f3-cap-h1">{text(dailyCap?.currentLabel)}</div><div className="lbl">{text(dailyCap?.windowLabel)}</div></div>
           <div className="next-step">只读镜像 H1 当前月(<b>月 {dailyCap?.currentMonth ?? "—"} · {text(dailyCap?.currentPhase)}</b>)派发值;Phase 推进后随 H1 自动收紧,改值去 H1。</div>
           <div className="cap-action"><button onClick={() => ctx.nav("H")}>前往 H1 调整 →</button></div>

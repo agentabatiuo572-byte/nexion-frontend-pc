@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { createHmac } from "node:crypto";
 
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const PASSWORD = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })());
 const TOTP_SECRET = process.env.ADMIN_E2E_TOTP_SECRET?.trim();
 const EVIDENCE_DIR =
   process.env.I3_EVIDENCE_DIR ||

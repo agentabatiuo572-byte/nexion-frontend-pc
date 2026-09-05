@@ -107,6 +107,27 @@ test("H2 前端四道前置闸与 7 态状态机全部由服务器裁决", () =>
   assert.match(h2, /Model A/);
   assert.match(h2, /抵扣规则由后端返回/);
   assert.match(h2, /server-only 字段不会以真实值下发/);
+  assert.match(h2, /onChanged: \(\) => Promise<void>/);
+  assert.match(h2, /await updateH2TrialParam[\s\S]*await onChanged\(\)/);
+  assert.match(h2, /await killH2AutoPush\(reason\)[\s\S]*await reload\(\)/);
+  assert.match(h2, /onChanged=\{reload\}/);
+});
+
+test("H2 ignores stale page responses after a faster pagination request wins", () => {
+  const h2 = tab("h2-trial.tsx");
+  assert.match(h2, /const reloadEpochRef = useRef\(0\)/);
+  assert.match(h2, /const requestEpoch = \+\+reloadEpochRef\.current/);
+  assert.match(h2, /if \(requestEpoch !== reloadEpochRef\.current\) return/);
+  assert.match(h2, /onPageChange=\{\(next\) => \{ reloadEpochRef\.current \+= 1; setSessionPage\(next\); \}\}/);
+  assert.match(h2, /onPageSizeChange=\{\(next\) => \{ reloadEpochRef\.current \+= 1; setSessionPage\(1\); setSessionPageSize\(next\); \}\}/);
+});
+
+test("E1 combination-discount conflicts have actionable operator messages", () => {
+  for (const code of [
+    "BUNDLE_DISCOUNT_VERSION_CONFLICT",
+    "BUNDLE_DISCOUNT_VALUE_UNCHANGED",
+    "BUNDLE_DISCOUNT_POLICY_INVALID",
+  ]) assert.match(errorMessages, new RegExp(`${code}:`));
 });
 
 test("H2 client 端点对齐后端 trials 路径", () => {

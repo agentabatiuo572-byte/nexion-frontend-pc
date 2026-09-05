@@ -40,7 +40,7 @@ export const EMPTY_SKU_FORM = {
   gpu: "", vram: "", hashRate: "", power: "", datacenter: "", uptime: "", warranty: "", phoneDailyEarn: "", phoneDailyEarnNEX: "",
   price: "",
   dailyEarn: "", dailyEarnNEX: "", shareYieldMin: "", shareYieldMax: "",
-  sold: "", inventoryMode: "FINITE", stock: "", trialEligible: "false",
+  inventoryMode: "FINITE", stock: "", trialEligible: "false",
   aiImageGenPerMin: "", aiLlmTokensPerSec: "", aiVideoMinPerHour: "", aiFineTuneMins: "", aiUnlocks: "",
   features: "",
   lifecycle: "", unlock: "", tag: "",
@@ -76,7 +76,7 @@ export function skuToForm(s: OpsSku): SkuForm {
     gpu: s.gpu ?? "", vram: s.vram ?? "", hashRate: s.hashRate ?? "", power: s.power ?? "", datacenter: s.datacenter ?? "", uptime: s.uptime ?? "", warranty: s.warranty ?? "", phoneDailyEarn: str(s.phoneDailyEarn), phoneDailyEarnNEX: str(s.phoneDailyEarnNEX),
     price: str(s.price),
     dailyEarn: str(s.dailyEarn), dailyEarnNEX: str(s.dailyEarnNEX), shareYieldMin: str(s.shareYieldMin), shareYieldMax: str(s.shareYieldMax),
-    sold: str(s.sold), inventoryMode: s.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE", stock: s.inventoryMode === "UNLIMITED" ? "" : str(s.stock), trialEligible: s.trialEligible ? "true" : "false",
+    inventoryMode: s.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE", stock: s.inventoryMode === "UNLIMITED" ? "" : str(s.stock), trialEligible: s.trialEligible ? "true" : "false",
     aiImageGenPerMin: str(s.aiImageGenPerMin), aiLlmTokensPerSec: str(s.aiLlmTokensPerSec), aiVideoMinPerHour: str(s.aiVideoMinPerHour), aiFineTuneMins: str(s.aiFineTuneMins), aiUnlocks: s.aiUnlocks ?? "",
     features: (s.features ?? []).join("\n"),
     lifecycle: s.lifecycle ?? "", unlock: s.unlock ?? "", tag: s.tag ?? "",
@@ -181,7 +181,11 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
     gpu: f.gpu.trim() || undefined, vram: f.vram.trim() || undefined, hashRate: f.hashRate.trim() || undefined, power: f.power.trim() || undefined, datacenter: f.datacenter.trim() || undefined, uptime: f.uptime.trim() || undefined, warranty: f.warranty.trim() || undefined, phoneDailyEarn: skuNumU(f.phoneDailyEarn), phoneDailyEarnNEX: skuNumU(f.phoneDailyEarnNEX),
     price: skuNum(f.price),
     dailyEarn, dailyEarnNEX, shareYieldMin, shareYieldMax, baseRate,
-    sold: skuNumU(f.sold), productType, inventoryMode,
+    // Sales is an order lifecycle counter. The editor only round-trips its
+    // current value so a display-only field cannot create an A2 change; Java
+    // independently rejects a changed value and its persistence SQL never
+    // updates nx_product.sold_count.
+    sold: existing?.sold ?? 0, productType, inventoryMode,
     stock: inventoryMode === "UNLIMITED" ? undefined : (skuNumU(stockTrim) ?? stockTrim),
     trialEligible: f.trialEligible === "true",
     aiImageGenPerMin: skuNumU(f.aiImageGenPerMin), aiLlmTokensPerSec: skuNumU(f.aiLlmTokensPerSec), aiVideoMinPerHour: skuNumU(f.aiVideoMinPerHour), aiFineTuneMins: skuNumU(f.aiFineTuneMins), aiUnlocks: f.aiUnlocks.trim() || undefined,

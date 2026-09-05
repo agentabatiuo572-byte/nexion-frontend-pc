@@ -120,6 +120,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   }));
   const TUTORIAL_REWARD_RANGE = data?.rewardRange ?? { min: 0, max: 0 };
   const TUTORIAL_FEATURED_DEFAULT = data?.featuredCourseId ?? "";
+  const featuredCourse = COURSES.find((course) => course.id === TUTORIAL_FEATURED_DEFAULT);
   const TUTORIAL_METRICS = (data?.metrics ?? []).map((m) => ({ k: m.key, v: m.value }));
   const runBackend = (task: Promise<void>, ok: string) => {
     return task
@@ -201,9 +202,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       run: () => runBackend(actions.rescanI6("全量重扫词条完整性"), liveIntegrity === 0 ? "扫描完成 · 0 处问题 · 清零 ✓" : `扫描完成 · ${liveIntegrity} 处问题`),
     });
 
-  const editKeyDraft = (mode: "create" | "edit") =>
+  const editKeyDraft = () => selectedMessage &&
     openActionConfirm({
-      action: <>{mode === "create" ? "新增词条" : "编辑词条草稿"}{mode === "edit" && selectedMessage ? ` · ${selectedMessage.messageKey}` : ""}</>,
+      action: <>编辑词条草稿 · {selectedMessage.messageKey}</>,
       detail: (
         <>
           中文、英文、越南语三份一起维护；三种语言的占位符集合必须一致。保存只新增或更新版本草稿，不覆盖当前发布版。
@@ -212,25 +213,21 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       amplifies: false,
       businessForm: {
         kind: "localized-copy",
-        mode,
-        keyName: mode === "edit" ? selectedMessage?.messageKey : "",
-        zh: mode === "edit" ? selectedMessage?.zh : "",
-        en: mode === "edit" ? selectedMessage?.en : "",
-        vi: mode === "edit" ? selectedMessage?.vi : "",
-        placeholders: mode === "edit" ? selectedMessage?.placeholders : [],
+        mode: "edit",
+        keyName: selectedMessage.messageKey,
+        zh: selectedMessage.zh,
+        en: selectedMessage.en,
+        vi: selectedMessage.vi,
+        placeholders: selectedMessage.placeholders,
       },
       run: (reason, _v, form) => {
-        const messageKey = (mode === "create" ? form?.messageKey : selectedMessage?.messageKey)?.trim() || "";
-        if (!messageKey) {
-          toast("词条 key 不能为空");
-          return;
-        }
+        const messageKey = selectedMessage.messageKey;
         setSelectedMessageKey(messageKey);
         return runBackend(actions.saveI6LocalizedDraft(messageKey, {
           zh: form?.zh || "",
           en: form?.en || "",
           vi: form?.vi || "",
-          expectedVersion: mode === "edit" ? selectedMessage?.version : undefined,
+          expectedVersion: selectedMessage.version,
         }, reason), `${messageKey} 草稿已保存 · 当前发布版未被覆盖`);
       },
     });
@@ -691,7 +688,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                     textAlign: "center",
                   }}
                 >
-                  … 共 30+ 命名空间 · 768 词条(全站 ~770)
+                  共 {NAMESPACES.length} 命名空间 · {MESSAGES.length} 词条
                 </td>
               </tr>
             </tbody>
@@ -712,7 +709,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               onChange={(event) => setMessageSearch(event.target.value)}
               style={{ width: 210 }}
             />
-            {canWriteI6 && <button className="l-btn sm mc" onClick={() => editKeyDraft("create")}>新增词条</button>}
+            <span className="sub">只能维护当前已注册词条</span>
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -747,7 +744,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             <div className="r">
               {!canWriteI6 && <span className="bdg dim">只读</span>}
               {canWriteI6 && selectedMessage && <>
-              <button className="l-btn sm" onClick={() => editKeyDraft("edit")}>
+              <button className="l-btn sm" onClick={editKeyDraft}>
                 编辑三语草稿
               </button>
               {selectedMessage.status === "draft" && <button className="l-btn sm mc" onClick={pubKey}>
@@ -791,7 +788,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                   </tbody>
                 </table>
               </div>
-            </> : <div className="itint">暂无真实词条，请先新增词条草稿。</div>}
+            </> : <div className="itint">暂无真实词条，请先选择已注册词条；新 key 需随 App 版本注册后再维护。</div>}
           </div>
         </section>
 
@@ -1058,10 +1055,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               <span className="nm">
                 推荐位课程(首页大卡)
                 <small>
-                  当前固定第 1 课「What is Nexion · 5 分钟速成」· 单一位置,换课走操作确认
+                  当前：{featuredCourse?.title ?? "未设置推荐课程"} · 单一位置，换课走操作确认
                 </small>
               </span>
-              <span className="v">{liveFeatured()}</span>
+              <span className="v">{featuredCourse?.title ?? "未设置"}</span>
               {canWriteI7 && <button className="l-btn sm mc" onClick={setFeat}>
                 换推荐课
               </button>}

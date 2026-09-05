@@ -33,8 +33,8 @@ test("immediate and queued swaps allocate every non-zero fee 30 percent to burn 
   assert.match(migration, /total_fee_usdt=burn_pool_usdt\+fee_buffer_usdt/);
 });
 
-test("PC queue cancellation accurately states that queued funds were never debited", () => {
-  assert.match(pcPage, /排队阶段未扣余额/);
-  assert.doesNotMatch(pcPage, /退回用户余额/);
-  assert.doesNotMatch(pcPage, /钱退回不锁死/);
+test("PC queue cancellation accurately states that queued funds are reserved and refunded", () => {
+  assert.match(pcPage, /源资产已冻结/);
+  assert.match(pcPage, /原路返还/);
+  assert.doesNotMatch(pcPage, /排队阶段未扣余额/);
 });

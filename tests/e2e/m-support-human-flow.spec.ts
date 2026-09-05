@@ -3,7 +3,7 @@ import { CONSOLE_NAV } from "../../lib/nav/console-nav";
 
 const BASE_URL = process.env.ADMIN_BASE_URL ?? "http://127.0.0.1:3002";
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const PASSWORD = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })());
 const WRITE_REASON = "E2E全流程测试-客服中心真实提交-含回滚预案";
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 const mutationFailures = new WeakMap<Page, string[]>();

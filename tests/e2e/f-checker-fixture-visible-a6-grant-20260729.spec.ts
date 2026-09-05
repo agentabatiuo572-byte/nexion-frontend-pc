@@ -294,7 +294,7 @@ function digest(values: unknown[]) {
 async function loginSuperadmin(page: Page) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.locator('input[autocomplete="username"]').fill(process.env.ADMIN_E2E_USERNAME ?? "superadmin");
-  await page.locator('input[autocomplete="current-password"]').fill(process.env.ADMIN_E2E_PASSWORD ?? "Admin@123456");
+  await page.locator('input[autocomplete="current-password"]').fill((process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })()));
   await page.getByRole("button", { name: /继续|登录/ }).click();
   await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });
 }

@@ -36,7 +36,7 @@ test("H8 real settlement can only execute inside the A2 approved replay context"
   assert.match(service, /@Transactional\(isolation = Isolation\.SERIALIZABLE\)/);
   assert.match(service, /requireRewardMutex\(\)/);
   assert.match(service, /requireHealthyCoverage\(\)[\s\S]*requireHealthyCoverage\(\)/);
-  assert.match(service, /insertSettlement[\s\S]*creditWallet[\s\S]*post\(/);
+  assert.match(service, /insertSettlement[\s\S]*creditReward[\s\S]*creditReward[\s\S]*creditReward[\s\S]*post\([\s\S]*post\(/);
   assert.match(service, /base\.multiply\(multiplier\)\.setScale\(6, RoundingMode\.HALF_UP\)/);
   assert.match(service, /MAX_EFFECTIVE_REWARD/);
   assert.match(service, /MAX_INVITER_BASE = new BigDecimal\("249999999\.750000"\)/);
@@ -81,11 +81,11 @@ test("H8 App/H5 uses server reward projections and fails closed instead of remot
   assert.match(appApi, /const welcomeGift = record\(root\.welcomeGift\)[\s\S]*const inviterReward = record\(root\.inviterReward\)/);
   assert.match(appReferralApi, /path: `\/api\/app\/referral-rewards\?limit=/);
   assert.match(appReferralApi, /row\.source === "ledger" && row\.sourceEnvironment === "PRODUCTION"/);
-  assert.match(appReferralApi, /row\.source === "mock"[\s\S]{0,80}row\.sourceEnvironment === "SANDBOX"/);
+  assert.doesNotMatch(appReferralApi, /row\.source === "mock"[\s\S]{0,80}row\.sourceEnvironment === "SANDBOX"/);
   assert.match(appReferralApi, /nx_referral_reward_settlement[\s\S]*nx_wallet_ledger[\s\S]*nx_earnings_release_entry[\s\S]*nx_user_wallet/);
   assert.match(appReferralStore, /snapshot\.value = null;[\s\S]*REFERRAL_REWARD_LOAD_FAILED/);
   assert.match(appReferralStore, /if \(!remoteApiEnabled\)[\s\S]*REFERRAL_REWARD_SERVER_REQUIRED/);
-  assert.match(appReferralCard, /No settled invitation rewards yet/);
+  assert.match(appReferralCard, /t\.team\.noSettledRewards/);
   assert.doesNotMatch(appReferralCard, /INVITER_REWARD_NEX|INVITER_REWARD_USDT_ESTIMATE|TICKER_ITEMS/);
 });
 
@@ -95,16 +95,16 @@ test("H8 remote registration writes one immutable sponsor relation before issuin
   assert.match(registration, /countDailyClient/);
   assert.match(registration, /user\.setSponsorUserId\(sponsor == null \? null : sponsor\.getId\(\)\)/);
   assert.match(registration, /userMapper\.insert\(user\)/);
-  assert.match(registration, /userMapper\.ensureUserWallet\(user\.getId\(\)\)/);
+  assert.match(registration, /userMapper\.ensureRegisteredUserWallet\(user\.getId\(\), sandbox\)/);
   assert.match(registration, /authService\.issueRegisteredSession/);
   assert.match(registrationMapper, /UNIQUE KEY uk_user_registration_otp_no/);
   assert.match(registrationMapper, /findSponsorForUpdate/);
   assert.match(authApi, /path: "\/auth\/users\/register\/otp\/send"/);
   assert.match(authApi, /path: "\/auth\/users\/register"/);
-  assert.match(registrationPage, /if \(remoteApiEnabled\)[\s\S]*authApi\.register/);
+  assert.match(registrationPage, /if \(remoteApiEnabled\)[\s\S]*registerAndLogin\(authApi/);
   assert.match(registrationPage, /sponsorCode: currentSponsorCode\(\)/);
-  assert.match(authApi, /async register\(request\)[\s\S]*consumeLoginResponse\(data, vault, revision\)[\s\S]*result\.kind !== "authenticated"/);
-  assert.match(registrationPage, /await authApi\.register\([\s\S]*launchRegistrationSuccess\(\)/);
+  assert.match(authApi, /async register\(request\)[\s\S]*consumeLoginResponse\(data, vault, revision, refreshCredentialMode\)[\s\S]*result\.kind !== "authenticated"/);
+  assert.match(registrationPage, /await registerAndLogin\(authApi[\s\S]*launchRegistrationSuccess\(\)/);
   assert.doesNotMatch(registrationPage, /authApi\.register\([\s\S]{0,800}authApi\.login/);
 });
 

@@ -5,7 +5,7 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 
 const BASE_URL = process.env.ADMIN_BASE_URL ?? "http://127.0.0.1:3002";
 const USERNAME = process.env.ADMIN_E2E_USERNAME ?? "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD ?? "Admin@123456";
+const PASSWORD = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })());
 const FIXTURE_PATH = process.env.M_REVIEW_L_FIXTURE_PATH ?? process.env.M_PERMISSION_FIXTURE_PATH;
 const fixtureValue = FIXTURE_PATH
   ? JSON.parse(readFileSync(FIXTURE_PATH, "utf8")) as {

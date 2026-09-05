@@ -11,6 +11,7 @@ const DEV_STATE_LABEL: Record<E5DeviceState, string> = {
   busy: "任务中",
   offline: "已激活离线",
   inventory: "库存待激活",
+  "pending-deactivate": "待任务结算后停用",
   unbound: "已解绑/停用",
   abnormal: "异常",
 };
@@ -19,6 +20,7 @@ const DEV_STATE_TONE: Record<E5DeviceState, string> = {
   busy: "cyan",
   offline: "neutral",
   inventory: "warn",
+  "pending-deactivate": "warn",
   unbound: "neutral",
   abnormal: "danger",
 };
@@ -167,7 +169,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
       <EStats items={[
         { k: "在线设备(全网)", v: fmtCount(onlineDevices), sub: "全网设备概览", tone: "ok" },
         { k: "离线 / 异常", v: fmtCount(abnormalDevices), sub: "运行状态汇总", tone: "warn" },
-        { k: "单户设备上限", v: maxDevicesLabel, sub: "服务端固定上限(V2=6)" },
+        { k: "单户设备上限", v: maxDevicesLabel, sub: "服务端 device.max_active_slots" },
         { k: "回收 / 停用", v: fmtCount(recycledDevices), sub: "可恢复设备", tone: "cyan" },
       ]} />
 
@@ -201,7 +203,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
         <div className="row" style={{ gap: 8, padding: "8px 10px", flexWrap: "wrap" }} data-proof="e5-device-filters">
           <input className="fld" style={{ maxWidth: 280 }} value={ctx.e5Keyword} onChange={(event) => ctx.setE5Keyword(event.target.value)} placeholder="搜索用户 / 设备 / SKU" aria-label="搜索用户设备" />
           <select className="fld" style={{ maxWidth: 160 }} value={ctx.e5StateFilter} onChange={(event) => ctx.setE5StateFilter(event.target.value)} aria-label="设备状态筛选">
-            <option value="all">全部状态</option><option value="active">在线</option><option value="busy">任务中</option><option value="offline">离线</option><option value="inventory">库存</option><option value="unbound">已解绑</option><option value="abnormal">异常</option>
+            <option value="all">全部状态</option><option value="active">在线</option><option value="busy">任务中</option><option value="offline">离线</option><option value="inventory">库存</option><option value="pending-deactivate">待任务结算后停用</option><option value="unbound">已解绑</option><option value="abnormal">异常</option>
           </select>
           <select className="fld" style={{ maxWidth: 160 }} value={ctx.e5KindFilter} onChange={(event) => ctx.setE5KindFilter(event.target.value)} aria-label="设备类型筛选">
             <option value="all">全部类型</option><option value="MOBILE">手机</option><option value="S1">S1</option><option value="PRO">Pro</option><option value="RACK">Rack</option>
@@ -271,15 +273,15 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
                     <td style={{ padding: "9px 10px" }}>
                       <div className="mono">{operatorTimestamp(d.heartbeatAt)}</div>
                       <div className="muted tiny" style={{ marginTop: 2 }}>电量 {d.batteryLevel == null ? "未采集" : `${d.batteryLevel}%`} · {d.isCharging == null ? "充电未采集" : d.isCharging ? "充电中" : "未充电"} · {d.isWifiConnected == null ? "网络未采集" : d.isWifiConnected ? "网络可达" : "网络断开"}</div>
-                      <div className="muted tiny" style={{ marginTop: 2 }}>温控 {operatorThermalLabel(d.thermalState)} · 任务 {operatorTaskLabel(d.activeTaskNo)}{d.pausedReason ? ` · 暂停:${operatorOperationalNote(d.pausedReason)}` : ""}</div>
+                      <div className="muted tiny" style={{ marginTop: 2 }}>温控 {operatorThermalLabel(d.thermalState)} · 任务 {operatorTaskLabel(d.activeTaskNo)}{d.pendingDeactivate ? " · 结算后自动停用" : ""}{d.pausedReason ? ` · 暂停:${operatorOperationalNote(d.pausedReason)}` : ""}</div>
                     </td>
                     <td style={{ padding: "9px 10px" }}><Badge tone={DEV_STATE_TONE[d.state]}>{DEV_STATE_LABEL[d.state]}</Badge></td>
                     <td style={{ padding: "9px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
                       {isActivatable(d.state) && (ctx.canWriteE5 || ctx.canForceActivateE5) && (
                         <>
-                          {ctx.canWriteE5 && d.state === "inventory" && <><button className="l-btn sm mc" disabled={!reasonReady || actionBusy || d.activeDevicesForUser >= 6} title={d.activeDevicesForUser >= 6 ? "该用户已占满 6 个激活槽位" : undefined} onClick={() => void runDirect(() => ctx.runE5DeviceAction(d.deviceId, "activate", actionReason.trim()))}>激活</button>{" "}</>}
-                          {ctx.canForceActivateE5 && <button className="l-btn sm mc" disabled={d.activeDevicesForUser >= 6} title={d.activeDevicesForUser >= 6 ? "强制激活也不能绕过 6 台上限" : undefined} onClick={() => devAct(d, "device-activate", "force-activate", "强制激活设备", `设备 ${displaySerial} / 用户 ${displayUserNo} / 类型 ${operatorProductLabel(d.productTier) || displayName} / 购入 ${operatorTimestamp(d.purchasedAt)} / 已激活 ${d.activeDevicesForUser}/${maxDevicesLabel} · 强制激活不绕过固定上限 · 非资金动作`, false)}>强制激活</button>}
-                          {d.activeDevicesForUser >= 6 && <div className="tiny" style={{ color: "var(--danger)", marginTop: 4 }}>槽位已满 {d.activeDevicesForUser}/6</div>}
+                          {ctx.canWriteE5 && d.state === "inventory" && <><button className="l-btn sm mc" disabled={!reasonReady || actionBusy || maxDevicesPerUser == null || d.activeDevicesForUser >= maxDevicesPerUser} title={maxDevicesPerUser == null ? "服务端槽位上限不可用" : d.activeDevicesForUser >= maxDevicesPerUser ? `该用户已占满 ${maxDevicesPerUser} 个激活槽位` : undefined} onClick={() => void runDirect(() => ctx.runE5DeviceAction(d.deviceId, "activate", actionReason.trim()))}>激活</button>{" "}</>}
+                          {ctx.canForceActivateE5 && <button className="l-btn sm mc" disabled={maxDevicesPerUser == null || d.activeDevicesForUser >= maxDevicesPerUser} title={maxDevicesPerUser == null ? "服务端槽位上限不可用" : d.activeDevicesForUser >= maxDevicesPerUser ? `强制激活也不能绕过 ${maxDevicesPerUser} 台上限` : undefined} onClick={() => devAct(d, "device-activate", "force-activate", "强制激活设备", `设备 ${displaySerial} / 用户 ${displayUserNo} / 类型 ${operatorProductLabel(d.productTier) || displayName} / 购入 ${operatorTimestamp(d.purchasedAt)} / 已激活 ${d.activeDevicesForUser}/${maxDevicesLabel} · 强制激活不绕过服务端上限 · 非资金动作`, false)}>强制激活</button>}
+                          {maxDevicesPerUser != null && d.activeDevicesForUser >= maxDevicesPerUser && <div className="tiny" style={{ color: "var(--danger)", marginTop: 4 }}>槽位已满 {d.activeDevicesForUser}/{maxDevicesPerUser}</div>}
                         </>
                       )}
                       {isDeactivatable(d.state) && (ctx.canWriteE5 || ctx.canUnbindE5) && (

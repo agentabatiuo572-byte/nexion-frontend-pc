@@ -48,6 +48,7 @@ test("f1-client 直写函数集合精确受控,每函数槽位与指纹完整且
     "suspendF5UserCommissions",
     "updateF1VRankReward",
     "updateF1VRankThreshold",
+    "updateF4AmbassadorPolicy",
     "updateF5AnomalyConfig",
   ];
   const stableWriteOwners = [...code.matchAll(/f1StableWrite\(/g)].map((call) => {
@@ -78,6 +79,7 @@ test("f1-client 直写函数集合精确受控,每函数槽位与指纹完整且
   assert.match(code, /f1StableWrite\(`f1-reward-add\|\$\{rank\}`, JSON\.stringify\(\[item, operator\]\)/);
   assert.match(code, /f1StableWrite\(`f1-reward-update\|\$\{rank\}\|\$\{rewardId\}`, JSON\.stringify\(\[item, operator\]\)/);
   assert.match(code, /f1StableWrite\(`f1-reward-remove\|\$\{rank\}\|\$\{rewardId\}`, JSON\.stringify\(\[operator\]\)/);
+  assert.match(code, /f1StableWrite\("f4-ambassador-policy", fingerprint/);
 
   // reason 不得进任何指纹:理由是审计元数据,进指纹会让「结果未知后补理由再点」换新号 → 重复打款。
   assert.doesNotMatch(code, /f1StableWrite\([^)]*reason[,\]]/,
@@ -86,7 +88,7 @@ test("f1-client 直写函数集合精确受控,每函数槽位与指纹完整且
     "指纹变量里出现 reason —— 用变量绕过调用表达式检查同样会导致结果未知重试换号");
 
   // f1Request 通道的九个写函数都把 key 放 stableIdempotencyKey;F5 导出直接写请求头,单独精确钉住。
-  assert.equal((code.match(/stableIdempotencyKey: commandKey/g) ?? []).length, 9);
+  assert.equal((code.match(/stableIdempotencyKey: commandKey/g) ?? []).length, 10);
   assert.match(code, /headers: \{ "Content-Type": "application\/json", "Idempotency-Key": commandKey \}/);
   assert.match(
     code,
@@ -130,8 +132,8 @@ test("f1Request:写路径无稳定号直接拒绝,四类结果未知保号,4xx/4
   // 但只对**要读返回值**的调用开:F5 四个 void 写若后端本就返 data:null,无条件启用会每次抛未知
   // 且不弃号 → 重试原样重放、再抛,操作面永久卡死而钱其实已经打了。
   assert.match(code, /if \(init\?\.expectsData && response\.ok && result\?\.code === 0 && result\.data == null\)/);
-  assert.equal((code.match(/expectsData: true/g) ?? []).length, 5,
-    "expectsData 应恰好 5 处(F3 结算 + 4 个 F1 读回 overview 的写);给 void 写开会把它们钉死");
+  assert.equal((code.match(/expectsData: true/g) ?? []).length, 6,
+    "expectsData 应恰好 6 处(F3 结算 + 4 个 F1 读回 overview 的写 + F4 大使政策读回);给 void 写开会把它们钉死");
 
   // 反向:不许把判据放宽成一切非 2xx(4xx 是后端明确拒绝,保号会把下一次真实提交误标成重试)。
   assert.doesNotMatch(code, /if \(response\.status >= 400\) \{\s*throw new F1OutcomeUncertainError/);

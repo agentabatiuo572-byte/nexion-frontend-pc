@@ -99,6 +99,14 @@ function text(value: string | null | undefined) {
   return value == null ? "" : String(value).trim();
 }
 
+function parseTaskStatus(value: string | null | undefined): OpsTask["status"] {
+  const normalized = text(value).toLowerCase();
+  if (normalized === "active" || normalized === "paused" || normalized === "inactive") {
+    return normalized;
+  }
+  throw new Error("E2_TASK_STATUS_PROTOCOL_INVALID");
+}
+
 const E2_TASK_CLASSES = ["IG", "VG", "LL", "FT", "EM", "SP"] as const;
 const E2_TEASER_DEVICE_CLASSES = ["cloud-share", "phone", "S1", "Pro", "Rack"] as const;
 
@@ -194,6 +202,7 @@ function fromTask(task: BackendTask): OpsTask {
     unit: text(task.unit),
     req: text(task.requirement),
     sat: toSat(task.saturation),
+    status: parseTaskStatus(task.status),
     taskClass: text(task.taskClass),
     model: text(task.model),
     minReward: toNumber(task.minReward),
@@ -252,7 +261,7 @@ function toTaskPayload(task: OpsTask, reason: string, operator: string) {
     unit: task.unit,
     requirement: task.req,
     saturation: task.sat,
-    status: "active",
+    status: task.status,
     taskClass: task.taskClass,
     model: task.model || "",
     minReward: task.minReward ?? 0,

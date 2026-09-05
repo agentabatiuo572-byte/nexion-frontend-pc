@@ -152,7 +152,7 @@ assertAbsent("app/components/domain-views/i-view.tsx", "I9Conversation", "客服
 // 自接线断言:本门须在现役管线 verify.mjs 中(2026-08-03 由退役的 verify.sh 迁入;live 探活归 verify:owner-review:live)
 assertContains("scripts/verify.mjs", ["admin-support-surface-audit.mjs"]);
 
-// UniApp 工单必须以 App support API 为权威：服务端字段严格解析、全量分页、刷新/详情回读。
+// UniApp 工单必须以 App support API 为权威：服务端字段严格解析、不可变主键游标全量分页、刷新/详情回读。
 const uniTicketStore = path.join(UNI_ROOT, "src/store/tickets.ts");
 const uniSupportApi = path.join(UNI_ROOT, "src/api/support-api.ts");
 assertContains(uniTicketStore, [
@@ -170,9 +170,11 @@ assertContains(uniSupportApi, [
   "lastReplyAt === null",
   "owner === null",
   "async function allTickets()",
-  "while (items.length < total)",
+  "do {",
+  "while (beforeId !== null)",
+  "page.nextCursor >= beforeId",
   "SUPPORT_TICKET_PAGE_INCOMPLETE",
-  'supportPath("/tickets")',
+  'supportPath("/tickets/cursor")',
   'const page = parseTicketPage(await client.request',
 ]);
 assertAbsent(uniTicketStore, "@/mock/tickets", "生产工单不得回退本地 mock");

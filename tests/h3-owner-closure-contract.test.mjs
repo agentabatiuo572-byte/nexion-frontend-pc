@@ -38,7 +38,8 @@ test("H3 App consumes authenticated server state and atomic claim; remote mode d
   const api = readApp("src/api/quest-api.ts");
   const store = readApp("src/store/quest.ts");
   const missions = readApp("src/pages/missions/missions.vue");
-  assert.match(api, /path: "\/api\/quests\/state"/);
+  assert.match(api, /path: `\/api\/quests\/state\?locale=\$\{encodeURIComponent\(/);
+  assert.match(api, /\["en", "zh", "vi"\]\.includes\(locale\) \? locale : "en"/);
   assert.match(api, /\/api\/quests\/\$\{encodeURIComponent/);
   assert.match(store, /if \(remoteApiEnabled\) \{[\s\S]*?void refreshRemote\(\);[\s\S]*?return \{ firstTime: false, rewardNex: 0, rewardUsdt: 0 \}/);
   assert.match(store, /async function claimRemote/);

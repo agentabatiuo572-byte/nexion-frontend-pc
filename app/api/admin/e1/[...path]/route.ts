@@ -21,6 +21,9 @@ function backendPath(parts: string[]) {
   if (parts[0] === "skus") {
     return `/api/admin/devices/${parts.map(encodeURIComponent).join("/")}`;
   }
+  if (parts[0] === "bundle-discount" && parts.length === 1) {
+    return "/api/admin/devices/bundle-discount";
+  }
   return null;
 }
 

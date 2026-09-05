@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const ADMIN_USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const ADMIN_PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const ADMIN_PASSWORD = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })());
 const BACKEND_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const APP_BASE_URL = process.env.NEXION_APP_BASE_URL || "http://localhost:5174/?nx_device=off";
 const APP_COUNTRY_CODE = process.env.APP_E2E_COUNTRY_CODE?.trim() || "+1";

@@ -49,12 +49,17 @@ async function proxy(request: Request, context: RouteContext) {
       body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.text(),
       cache: "no-store",
     });
+    const responseHeaders = new Headers({
+      "Content-Type": upstream.headers.get("Content-Type") || "application/json",
+      "Cache-Control": "no-store",
+    });
+    const upstreamOutcome = upstream.headers.get("X-Nexion-Upstream-Outcome");
+    if (upstreamOutcome) {
+      responseHeaders.set("X-Nexion-Upstream-Outcome", upstreamOutcome);
+    }
     return new Response(await upstream.text(), {
       status: upstream.status,
-      headers: {
-        "Content-Type": upstream.headers.get("Content-Type") || "application/json",
-        "Cache-Control": "no-store",
-      },
+      headers: responseHeaders,
     });
   } catch {
     // The upstream may have committed a write before the connection broke.

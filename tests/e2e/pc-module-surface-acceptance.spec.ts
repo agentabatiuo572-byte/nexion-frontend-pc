@@ -3,7 +3,7 @@ import { CONSOLE_NAV } from "../../lib/nav/console-nav";
 
 const MODULE_ID = (process.env.ADMIN_MODULE_ID ?? "").trim().toUpperCase();
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const PASSWORD = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })());
 
 const moduleCase = CONSOLE_NAV
   .flatMap((domain) => domain.l2.map((module) => ({ domain, module })))

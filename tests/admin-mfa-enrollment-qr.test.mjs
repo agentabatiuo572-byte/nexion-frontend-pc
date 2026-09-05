@@ -8,7 +8,6 @@ import omggif from "omggif";
 import {
   createTotpEnrollmentQrDataUrl,
   isSafeTotpProvisioningUri,
-  validatedManualTotpKey,
 } from "../lib/admin/mfa-enrollment-qr.ts";
 
 const validUri = "otpauth://totp/Nexion%3Asuperadmin?secret=JBSWY3DPEHPK3PXP&issuer=Nexion&algorithm=SHA1&digits=6&period=30";
@@ -38,16 +37,7 @@ test("QR rendering is local and fails closed for invalid input", () => {
   assert.equal(createTotpEnrollmentQrDataUrl("https://example.com/qr"), null);
 });
 
-test("manual fallback is normalized, base32-valid, and consistent with the QR secret", () => {
-  assert.equal(validatedManualTotpKey(validUri, "  JBSWY3DPEHPK3PXP  "), "JBSWY3DPEHPK3PXP");
-  assert.equal(validatedManualTotpKey(validUri, "   "), null);
-  assert.equal(validatedManualTotpKey(validUri, "not-a-base32-secret"), null);
-  assert.equal(validatedManualTotpKey(validUri, "AAAAAAAAAAAAAAAA"), null);
-  assert.equal(validatedManualTotpKey(undefined, "JBSWY3DPEHPK3PXP"), "JBSWY3DPEHPK3PXP");
-  assert.equal(validatedManualTotpKey("https://example.com/qr", "JBSWY3DPEHPK3PXP"), null);
-});
-
-test("the enrollment screen keeps a manual-key fallback and never calls a remote QR service", () => {
+test("the enrollment screen renders only a local QR and never exposes a text secret", () => {
   const source = readFileSync(join(process.cwd(), "app/components/shell/login-gate.tsx"), "utf8");
   const renderer = readFileSync(join(process.cwd(), "lib/admin/mfa-enrollment-qr.ts"), "utf8");
 
@@ -55,7 +45,7 @@ test("the enrollment screen keeps a manual-key fallback and never calls a remote
   assert.match(source, /mfaChallenge\?\.mode === "ENROLL"/);
   assert.match(source, /mfaChallenge\.provisioningUri/);
   assert.match(source, /alt="Google Authenticator 绑定二维码"/);
-  assert.match(source, /validatedManualTotpKey/);
+  assert.doesNotMatch(source, /validatedManualTotpKey|enrollmentManualKey|手动输入以下密钥|<code/);
   assert.match(source, /无法生成绑定信息/);
   assert.match(source, /返回登录重新获取/);
   assert.doesNotMatch(source, /api\.qrserver|chart\.googleapis|quickchart|qrcode\.tec-it/i);

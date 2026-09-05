@@ -33,6 +33,7 @@ function backendPath(parts: string[]) {
     "trust-disclosure",
     "i18n-learning",
     "how-it-works",
+    "privacy-policy",
   ]);
   if (!allowedHeads.has(parts[0])) return null;
   if (parts.some((part) => !isSafePart(part))) return null;

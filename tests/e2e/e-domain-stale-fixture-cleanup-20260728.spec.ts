@@ -156,7 +156,7 @@ async function mutateAccount<T>(
 async function loginSuperadmin(page: Page) {
   await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
   await page.locator('input[autocomplete="username"]').fill("superadmin");
-  await page.locator('input[autocomplete="current-password"]').fill("Admin@123456");
+  await page.locator('input[autocomplete="current-password"]').fill((process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })()));
   await page.getByRole("button", { name: /登录|继续/ }).click();
   await expect(page.locator("aside")).toBeVisible({ timeout: 30_000 });
 }

@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const PASSWORD = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })());
 const EVIDENCE_DIR = process.env.C2_EVIDENCE_DIR || "D:/workspace/bug-pic/c2-reacceptance-20260718/main";
 
 type Envelope<T> = { code: number; message?: string; data: T };

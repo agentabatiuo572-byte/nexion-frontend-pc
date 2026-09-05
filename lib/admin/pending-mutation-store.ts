@@ -10,7 +10,7 @@
  * 🔴 覆盖范围要说实话(2026-08-06 收尾审计纠正):本模块并**不**覆盖全后台。
  *   全仓约 33 个模块会发出 Idempotency-Key,其中只有登记在
  *   `scripts/pending-idempotency-key-sentinel.mjs` MIGRATED 台账里的那些真正持有**可复用**的号;
- *   其余(a1/a3/a4/a6/a7/b/e1–e6/f1/h/l/m/media 与 j 的默认路径)每次调用现铸新号 ——
+ *   其余(a1/a3/a4/a6/a7/b/e1–e6/f1/h/l/m/media)每次调用现铸新号 ——
  *   它们的「结果未知重试」目前**给不出同号**,属交接文档「任务 A」的迁移范围。
  *   谁读到这段别再默认「全站已保号」:那正是这轮审计纠正的表述。
  * 机器门:`scripts/pending-idempotency-key-sentinel.mjs`(全仓扫内存态幂等键 + 台账)。
@@ -339,6 +339,8 @@ export interface SlotAttemptRecord extends PendingMutationRecord {
 export interface SlotAttemptStore {
   /** 取该槽位可复用的命令号:输入指纹一致才复用,否则铸新号并丢弃旧号。 */
   resolve(slot: string, inputFingerprint: string, mint: () => string): string;
+  /** 该命令号是否已经真正落入可跨刷新读取的 sessionStorage。 */
+  isDurablyStored(slot: string, inputFingerprint: string, commandKey: string): boolean;
   /** 命令已收敛,丢弃该槽位。 */
   forget(slot: string): void;
 }
@@ -368,6 +370,22 @@ export function createSlotAttemptStore(options: { storageKey: string; ttlMs?: nu
       const commandKey = mint();
       store.remember(slot, commandKey, { inputFingerprint });
       return commandKey;
+    },
+    isDurablyStored(slot, inputFingerprint, commandKey) {
+      if (typeof window === "undefined") return false;
+      try {
+        const parsed = JSON.parse(window.sessionStorage.getItem(options.storageKey) ?? "{}") as Record<string, unknown>;
+        const record = parsed?.[commandKey] as Partial<SlotAttemptRecord> | undefined;
+        return !!record
+          && record.commandKey === commandKey
+          && record.fingerprint === slot
+          && record.inputFingerprint === inputFingerprint
+          && Number.isFinite(record.createdAt)
+          && Number.isFinite(record.expiresAt)
+          && Number(record.expiresAt) > Date.now();
+      } catch {
+        return false;
+      }
     },
     forget: store.forget,
   };

@@ -378,6 +378,21 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   const airdropPctParam = paramByKey(overview, "airdropPct");
   const emissionCurveParam = paramByKey(overview, "emissionCurve");
   const airdropLockDaysParam = paramByKey(overview, "airdropLockDays");
+  const showcaseEnabledParam = paramByKey(overview, "showcaseEnabled");
+
+  const toggleShowcase = () => {
+    if (!showcaseEnabledParam || !allowed(paramAuthority(showcaseEnabledParam.key))) return;
+    const next = showcaseEnabledParam.value !== "true";
+    openActionConfirm({
+      action: next ? "展示 Genesis 商城入口" : "隐藏 Genesis 商城入口",
+      detail: <>该操作只控制正式 App 的商城展示入口，不改变现有持仓、分红、市场状态、熔断状态或购买资格。</>,
+      run: async (reason) => {
+        await mutate("param:showcaseEnabled", () => updateG4GenesisParam(
+          "showcaseEnabled", String(next), reason, OPERATOR(),
+        ), next ? "Genesis 商城入口已展示" : "Genesis 商城入口已隐藏");
+      },
+    });
+  };
 
   return (
     <>
@@ -434,6 +449,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
             {airdropPctParam && <div className="p-row"><div className="txt"><div className="k">空投占比</div><div className="s">{airdropPctParam.sub}</div></div><span className="v">{airdropPctParam.displayValue}</span>{allowed(paramAuthority(airdropPctParam.key)) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(airdropPctParam)}>调整</button>}</div>}
             {emissionCurveParam && <div className="p-row"><div className="txt"><div className="k">排放曲线</div><div className="s">{emissionCurveParam.sub}</div></div><span className="v">{emissionCurveParam.displayValue}</span>{allowed(paramAuthority(emissionCurveParam.key)) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(emissionCurveParam)}>调整</button>}</div>}
             {airdropLockDaysParam && <div className="p-row"><div className="txt"><div className="k">OG 倍率锁仓期</div><div className="s">{airdropLockDaysParam.sub}</div></div><span className="v">{airdropLockDaysParam.displayValue}</span>{allowed(paramAuthority(airdropLockDaysParam.key)) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(airdropLockDaysParam)}>调整</button>}</div>}
+            {showcaseEnabledParam && <div className="p-row"><div className="txt"><div className="k">App 商城展示</div><div className="s">{showcaseEnabledParam.sub}</div></div><span className="v">{showcaseEnabledParam.displayValue}</span>{allowed(paramAuthority(showcaseEnabledParam.key)) && <button className="l-btn sm mc" disabled={busy} onClick={toggleShowcase}>{showcaseEnabledParam.value === "true" ? "隐藏" : "展示"}</button>}</div>}
           </div>
         </section>
 

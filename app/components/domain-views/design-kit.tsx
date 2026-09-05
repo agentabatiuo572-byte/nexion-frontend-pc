@@ -830,6 +830,9 @@ function parseSopSlaMinutes(raw?: string): number | null {
 
 function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
   if (!spec) return {};
+  if (spec.kind === "mission-create") {
+    return { category: "explore", actionRoute: "/pages/missions/missions" };
+  }
   if (spec.kind === "role-select") {
     return { role: spec.currentRole };
   }
@@ -1254,6 +1257,9 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (state.ack !== "true") missing.push("启动实验确认");
   } else if (spec.kind === "course-authoring") {
     ["slug", "category", "format", "difficulty", "duration", "reward", "titleZh", "titleEn", "titleVi", "bodyZh", "bodyEn", "bodyVi"].forEach((key) => needs(key, key));
+    for (const key of ["titleZh", "titleEn", "titleVi", "bodyZh", "bodyEn", "bodyVi"]) {
+      if ((state[key] ?? "").trim().length > 1024) missing.push(`${key} 最多 1024 字`);
+    }
     if (spec.mode === "version-create" || spec.mode === "version-edit") {
       needs("version", "课程版本号");
       if (!/^v[1-9][0-9]{0,8}$/i.test(state.version || "")) missing.push("版本号格式 v1、v2…");
@@ -1522,6 +1528,15 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     } else if (state.rtype === "custom") {
       needs("custom", "自定义奖励内容");
     }
+  } else if (spec.kind === "mission-create") {
+    needs("missionCode", "任务编号");
+    needs("missionName", "任务名称");
+    needs("rewardPoints", "奖励 NEX 数");
+    needs("category", "任务类别");
+    needs("actionRoute", "去完成页面");
+    if (!Number.isSafeInteger(Number(state.rewardPoints)) || Number(state.rewardPoints) < 0) {
+      missing.push("奖励 NEX 数须为非负整数");
+    }
   }
   return missing;
 }
@@ -1590,10 +1605,10 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
       <textarea rows={rows} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />
     </label>
   );
-  const input = (key: string, label: string, placeholder: string, type = "text") => (
+  const input = (key: string, label: string, placeholder: string, type = "text", maxLength?: number) => (
     <label className="field" style={{ marginBottom: 0 }}>
       <span>{label}</span>
-      <input className="fld" type={type} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />
+      <input className="fld" type={type} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />
     </label>
   );
   const select = (key: string, label: string, options: string[], proofOrLabels?: string | Record<string, ReactNode>, optionLabels?: Record<string, ReactNode>, onValueChange?: (next: string) => void) => {
@@ -2118,14 +2133,14 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
           {select("duration", "预计时长", spec.durations ?? DEFAULT_COURSE_DURATIONS)}
           {input("reward", `完成奖励(${spec.rewardMin ?? 0}-${spec.rewardMax ?? 999} NEX)`, "5", "number")}
           <div className="itint ok"><b>保存状态</b> · {COURSE_STATUS_LABELS.draft}；发布必须回到课程列表单独确认。</div>
-          {input("titleZh", "中文标题", "课程标题")}
-          {input("titleVi", "越南语标题", "Tiêu đề khóa học")}
-          {input("titleEn", "英语标题", "Course title")}
+          {input("titleZh", "中文标题（最多 1024 字）", "课程标题", "text", 1024)}
+          {input("titleVi", "越南语标题（最多 1024 字）", "Tiêu đề khóa học", "text", 1024)}
+          {input("titleEn", "英语标题（最多 1024 字）", "Course title", "text", 1024)}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {textArea("bodyZh", "中文正文", "课程正文与完成条件", 4)}
-          {textArea("bodyVi", "越南语正文", "Nội dung khóa học và điều kiện hoàn thành", 4)}
-          {textArea("bodyEn", "英语正文", "Course body and completion criteria", 4)}
+          {textArea("bodyZh", "中文正文（最多 1024 字）", "课程正文与完成条件", 4, 1024)}
+          {textArea("bodyVi", "越南语正文（最多 1024 字）", "Nội dung khóa học và điều kiện hoàn thành", 4, 1024)}
+          {textArea("bodyEn", "英语正文（最多 1024 字）", "Course body and completion criteria", 4, 1024)}
         </div>
         <div data-proof="course-quiz" style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed var(--border)" }}>
           <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "var(--ink-2)" }}>结构化测验与发奖触发（发布前必须完整）</div>
@@ -2689,9 +2704,47 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
           {input("missionCode", "任务编号 code(英文唯一)", "如 dayOne-visit-earn")}
           {input("missionName", "任务名称", "如 逛收益页")}
           {input("rewardPoints", "奖励 NEX 数", "如 50", "number")}
+          {select("category", "任务类别", ["wallet", "explore", "recommend", "identity", "social"], {
+            wallet: "钱包", explore: "探索", recommend: "推荐", identity: "身份", social: "社交",
+          })}
+          {select("actionRoute", "去完成页面", [
+            "/pages/missions/missions",
+            "/pages/me/profile",
+            "/pages/me/wallet-cards-new",
+            "/pages/me/wallet-topup",
+            "/pages/me/wallet-exchange",
+            "/pages/me/wallet-repurchase",
+            "/pages/me/devices",
+            "/pages/earn/earn",
+            "/pages/store/store",
+            "/pages/store/detail?id=stellarbox-s1",
+            "/pages/team/team",
+            "/pages/team/commissions",
+            "/pages/learn/courses",
+            "/pages/staking/staking",
+            "/pages/genesis/genesis",
+            "/pages/genesis/marketplace",
+          ], {
+            "/pages/missions/missions": "任务中心",
+            "/pages/me/profile": "个人资料",
+            "/pages/me/wallet-cards-new": "绑定银行卡",
+            "/pages/me/wallet-topup": "钱包充值",
+            "/pages/me/wallet-exchange": "NEX / USDT 兑换",
+            "/pages/me/wallet-repurchase": "复投",
+            "/pages/me/devices": "我的设备",
+            "/pages/earn/earn": "收益",
+            "/pages/store/store": "商城",
+            "/pages/store/detail?id=stellarbox-s1": "StellarBox S1 详情",
+            "/pages/team/team": "团队",
+            "/pages/team/commissions": "佣金",
+            "/pages/learn/courses": "学习中心",
+            "/pages/staking/staking": "Staking",
+            "/pages/genesis/genesis": "Genesis",
+            "/pages/genesis/marketplace": "Genesis 二级市场",
+          })}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          任务编号需英文/数字唯一(作为完成事件标识);奖励放大 NEX 流出,过 B1 红线。
+          类别和“去完成”页面由 PC 保存并下发 App；任务编号需英文/数字唯一(作为完成事件标识)。
         </div>
       </div>
     );

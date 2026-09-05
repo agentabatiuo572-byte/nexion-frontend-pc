@@ -461,6 +461,8 @@ export interface D5Params {
   /** FEAT-WD02 三网络固定确认费(USD,值域 [0,25];取代旧 networkFeeRatio/Min/Max 三件套)。
    *  与 uniapp withdrawRules.networkConfirmFeeUsd 同键同种子(1/1/5),跨仓 parity 哨兵盯值。 */
   networkConfirmFeeUsd: { trc20: number; bep20: number; erc20: number };
+  /** 三网络提现通道状态；由 D5 权威配置下发，缺失时冻结页面而非猜测可用性。 */
+  networkEnabled: { trc20: boolean; bep20: boolean; erc20: boolean };
   nexFeeOffsetRate: number;
   /** FEAT-WD01:小额免审线(USD)。金额 ≤ 此值时可跳过新地址冷却；0 = 关闭快车道。
    *  **永不**免除服务端风控路由裁决(冻结簇/共用地址/风险分)。 */
@@ -1605,7 +1607,7 @@ export function normalizeD5Params(value: unknown): D5Params {
   // 现已由真实后端整组下发，缺失时禁止继续编辑。
   const sourceKeys = [
     "dailyLimitCount", "balanceMaxRatio",
-    "networkConfirmFeeUsd", "nexFeeOffsetRate", "smallAmountThresholdUsd", "payoutSlaHours",
+    "networkConfirmFeeUsd", "networkEnabled", "nexFeeOffsetRate", "smallAmountThresholdUsd", "payoutSlaHours",
     "cooldownDays", "complianceHoldEnabled",
   ];
   const sourceByField: Record<string, "d5" | "phase-h1"> = {};
@@ -1628,6 +1630,14 @@ export function normalizeD5Params(value: unknown): D5Params {
             erc20: d5Number(group.erc20, "networkConfirmFeeUsd.erc20"),
           };
         })(),
+    networkEnabled: (() => {
+      const group = d5Object(raw.networkEnabled, "networkEnabled");
+      return {
+        trc20: d5Boolean(group.trc20, "networkEnabled.trc20"),
+        bep20: d5Boolean(group.bep20, "networkEnabled.bep20"),
+        erc20: d5Boolean(group.erc20, "networkEnabled.erc20"),
+      };
+    })(),
     nexFeeOffsetRate: d5Number(raw.nexFeeOffsetRate, "nexFeeOffsetRate"),
     // These are real D5 server fields. Missing/null freezes the page instead of showing
     // a plausible local value that an operator could mistake for persisted truth.
@@ -2162,7 +2172,7 @@ export async function fetchD5WithdrawalParams() {
 // FEAT-WD02:networkConfirmFeeUsd 以**整组对象**为变更单位(三值一次 PUT,任一失败全回滚 ——
 // 沿用旧三件套的原子提交先例);不提供单键补丁,防止三网络费半更新。
 export type D5OwnedChanges = Partial<Pick<D5Params,
-  "dailyLimitCount" | "maxBalanceRatio" | "networkConfirmFeeUsd" | "nexFeeOffsetRate"
+  "dailyLimitCount" | "maxBalanceRatio" | "networkConfirmFeeUsd" | "networkEnabled" | "nexFeeOffsetRate"
   | "smallAmountThresholdUsd" | "payoutSlaHours">>;
 
 export async function updateD5WithdrawalLimits(

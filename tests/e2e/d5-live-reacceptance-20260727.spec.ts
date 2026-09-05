@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import fs from "node:fs";
 
 const username = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const password = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const password = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })());
 const evidenceDir = process.env.D5_EVIDENCE_DIR
   || "D:/workspace/bug-pic/20260727-d5-live-reacceptance";
 

@@ -2,7 +2,7 @@ import { expect, request as playwrightRequest, test, type Page } from "@playwrig
 import { mkdirSync, writeFileSync } from "node:fs";
 
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const PASSWORD = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })());
 const EVIDENCE_DIR =
   "D:/workspace/nexion-ops-console/docs/验收报告/PC全面测试-20260726/F4-evidence/initial-owner";
 

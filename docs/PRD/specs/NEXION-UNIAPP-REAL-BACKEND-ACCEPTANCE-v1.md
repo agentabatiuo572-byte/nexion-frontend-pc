@@ -17,12 +17,13 @@
 3. Sandbox 账号、钱包、JWT audience、refresh session、注册 OTP、手机号唯一键与登录风控键都绑定同一服务端环境。
 4. Sandbox 表永久保留 `source=mock`、`source_environment=SANDBOX`、RunID；生产路径拒绝 Sandbox 身份，Sandbox 路径拒绝生产身份。
 5. 每个观察面必须同时满足：本 Run 有独立事实、来源标记完整、正式物理表/审计/幂等/outbox 增量为 0。事实为 0 是 `INSUFFICIENT`，任一正式增量非 0 是 `VIOLATION`。
+6. App 所有手机号入口只允许越南 `+84` 与中国 `+86`：生产构建默认 `+84`，开发构建默认 `+86`。国家/地区列表保留其他条目作为覆盖范围说明，但必须置灰、不可聚焦、不可通过点击或键盘选中。Java 后端对 OTP、登录、注册、密码重置、二次验证、提现地址短信确认、OAuth 会话、refresh、JWT 与可信网关会话执行同一白名单和号码格式校验；历史或脏会话失败关闭并撤销，不能仅依赖前端禁用。
 
 ## 3. 八条首用链路
 
 | 链路 | 用户/运营闭环 | 权威与隔离 |
 |---|---|---|
-| 登录与注册 | 注册 → 服务端会话投影 → onboarding → 重登 | JWT/refresh/OTP/手机号按环境；迟到 A 会话不得覆盖 B |
+| 登录与注册 | `+84/+86` 号码注册 → 服务端会话投影 → onboarding → 重登 | 生产默认 `+84`、开发默认 `+86`；其余国家码 UI 置灰且服务端拒绝；JWT/refresh/OTP/手机号按环境；迟到 A 会话不得覆盖 B |
 | 配置 | PC 读取服务端配置；不可用项只读/HOLD | remote 不继承 mock 风控、提现或分享策略 |
 | Funds | App 读钱包 → Sandbox top-up/withdraw receipt → 账本回读 | wallet/order/ledger/callback 按 RunID；Production withdrawal HOLD |
 | H8 | Sandbox 推荐关系 → PC 结算 → App 同 Run 投影 | 独立 settlement/ledger/command/audit；不写正式钱包/A2 |

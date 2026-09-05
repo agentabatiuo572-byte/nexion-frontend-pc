@@ -128,7 +128,10 @@ async function apiSend<T = any>(page: Page, method: "POST" | "PATCH" | "PUT" | "
   }, { p: relPath, m: method, b: body, idem: idemPrefix });
 }
 
-async function loginFromUi(page: Page, username = "superadmin", password = "Admin@123456") {
+async function loginFromUi(page: Page, username = process.env.NEXION_E2E_ADMIN_USERNAME, password = process.env.NEXION_E2E_ADMIN_PASSWORD) {
+  if (!username || !password) {
+    throw new Error("Set NEXION_E2E_ADMIN_USERNAME and NEXION_E2E_ADMIN_PASSWORD before running authenticated acceptance tests.");
+  }
   await page.goto(`${PC_BASE}/`);
   await page.waitForTimeout(1500);
   const userInput = page.getByLabel(/用户名|账号|Username/).first();
@@ -159,6 +162,10 @@ async function getRatesSnapshot(page: Page) {
 async function getCommissionsSnapshot(page: Page) {
   const r = await apiGet<any>(page, "/api/admin/teams/commissions");
   return r.data ?? {};
+}
+
+function sameCommissionSnapshot(before: unknown, after: unknown) {
+  return JSON.stringify(before) === JSON.stringify(after);
 }
 
 test.describe("F2 网络版税费率 独立首次用户验收", () => {
@@ -892,86 +899,61 @@ test.describe("F2 网络版税费率 独立首次用户验收", () => {
       mark("F2-I-12", "failed", [], (e as Error).message);
     }
 
-    // ========== F2-I-13 审计可见 ==========
+    // ========== F2-I-13 未接入参数拒绝 + 快照不变 ==========
     try {
       await dismissDialogs(page);
-      // 触发一个真实写：改 F.royalty.minPayout (或其他低风险写)
-      // 先记录原值
-      const snap = await getCommissionsSnapshot(page);
-      const originalMinPayout = snap?.commissionPolicy?.minPayoutUsdt ?? 0;
+      const before = await getCommissionsSnapshot(page);
       const probeResp = await apiSend(page, "PATCH", "/api/admin/teams/commissions/config/F.royalty.minPayout", {
-        value: String(Number(originalMinPayout) + 1), reason: `${REASON_PREFIX}-I13-audit-probe-min-payout`, operator: "superadmin",
+        value: "1", reason: `${REASON_PREFIX}-I13-reject-unconsumed-min-payout`, operator: "superadmin",
       }, "f2acc-audit-probe");
-      await page.waitForTimeout(2500);
-      // 恢复
-      await apiSend(page, "PATCH", "/api/admin/teams/commissions/config/F.royalty.minPayout", {
-        value: String(originalMinPayout), reason: `${REASON_PREFIX}-I13-restore-min-payout`, operator: "superadmin",
-      }, "f2acc-audit-restore");
-      result.cleanup.push(`F.royalty.minPayout: ${originalMinPayout} -> ${Number(originalMinPayout) + 1} -> restored ${originalMinPayout}`);
-      // 查审计
-      const auditResp = await apiGet<any>(page, "/api/admin/platform/audit/operations?pageNum=1&pageSize=20");
-      const auditList = Array.isArray(auditResp.data?.list) ? auditResp.data.list : (Array.isArray(auditResp.data) ? auditResp.data : []);
-      const recent = auditList.slice(0, 12).map((a: any) => JSON.stringify(a)).join(" || ");
-      const auditHit = /F2|commission|royalty|min.?payout|费率|版税|I13/i.test(recent);
-      // 打开 A2 审计页核对可见
-      await page.locator('a[href="/platform/audit"]').first().click().catch(() => undefined);
-      await page.waitForTimeout(3000);
-      const auditPageText = await page.locator("body").innerText().catch(() => "");
-      const auditPageHit = /F2|commission|royalty|费率|版税|cooling|partner|unilevel|I13/i.test(auditPageText);
+      const after = await getCommissionsSnapshot(page);
+      const rejected = probeResp.status === 409 && /F2_PARAMETER_NOT_CONSUMED/.test(probeResp.raw);
+      const snapshotUnchanged = sameCommissionSnapshot(before, after);
       await shot(page, "13-01-audit-page");
-      // 回到 F2
-      await openF2(page);
-      mark("F2-I-13", auditHit ? "passed" : "warning",
+      mark("F2-I-13", rejected && snapshotUnchanged ? "passed" : "failed",
         ["screenshots/13-01-audit-page.png"],
-        `probeStatus=${probeResp.status}; auditApiHit=${auditHit}; auditPageHit=${auditPageHit}; recent=${recent.slice(0, 400)}`);
-      if (!auditHit) {
-        addDefect("F2-D-AUDIT-NOT-VISIBLE", "P1",
-          "F2 配置写入后,审计列表无对应记录",
-          "PATCH F.royalty.minPayout → GET /api/admin/platform/audit/operations",
-          "近 12 条审计记录无 F2/commission/royalty 关键字",
-          "PRD §1531-1541 + ⑧ §1553 「所有确认弹窗动作落 A2 审计」",
-          ["screenshots/13-01-audit-page.png", "PRD §1553"]);
-      }
+        `probeStatus=${probeResp.status}; rejected=${rejected}; snapshotUnchanged=${snapshotUnchanged}; body=${probeResp.raw.slice(0, 300)}`);
     } catch (e) {
       mark("F2-I-13", "failed", [], (e as Error).message);
     }
 
-    // ========== F2-I-14 幂等重放 ==========
+    // ========== F2-I-14 同幂等键重复拒绝 + 快照不变 ==========
     try {
       await dismissDialogs(page);
-      const snap = await getCommissionsSnapshot(page);
-      const originalPeer = snap?.commissionPolicy?.peerRatePct ?? snap?.peerRate ?? 0;
+      const before = await getCommissionsSnapshot(page);
       const idemKey = `f2acc-idem-replay-${Date.now()}`;
-      // 第一次 PATCH
-      const r1 = await page.evaluate(async ({ k, originalPeer }) => {
+      const request = {
+        value: "0.5",
+        reason: "F2ACC-I14 repeated rejected unconsumed parameter",
+        operator: "superadmin",
+      };
+      // 同一命令以同一 Idempotency-Key 重放，两次都必须被拒绝，且不能留下配置写入。
+      const r1 = await page.evaluate(async ({ k, request }) => {
         const r = await fetch("/api/admin/teams/commissions/config/F.peer.rate", {
           method: "PATCH",
           headers: { "Content-Type": "application/json", "Idempotency-Key": k },
-          body: JSON.stringify({ value: String(Number(originalPeer) + 0.5), reason: "F2ACC-I14 idempotency replay test 1st call", operator: "superadmin" }),
+          body: JSON.stringify(request),
           credentials: "include",
         });
         return { status: r.status, body: await r.text() };
-      }, { k: idemKey, originalPeer });
-      // 第二次同 idem
-      const r2 = await page.evaluate(async ({ k, originalPeer }) => {
+      }, { k: idemKey, request });
+      const r2 = await page.evaluate(async ({ k, request }) => {
         const r = await fetch("/api/admin/teams/commissions/config/F.peer.rate", {
           method: "PATCH",
           headers: { "Content-Type": "application/json", "Idempotency-Key": k },
-          body: JSON.stringify({ value: String(Number(originalPeer) + 0.5), reason: "F2ACC-I14 idempotency replay test 2nd call same key", operator: "superadmin" }),
+          body: JSON.stringify(request),
           credentials: "include",
         });
         return { status: r.status, body: await r.text() };
-      }, { k: idemKey, originalPeer });
-      const replayHandled = r1.status < 400 && (r2.status === r1.status || r2.status === 409 || /IDEMPOTENCY|REPLAY|duplicate|replay/i.test(r2.body));
+      }, { k: idemKey, request });
+      const after = await getCommissionsSnapshot(page);
+      const bothRejected = [r1, r2].every((response) =>
+        response.status === 409 && /F2_PARAMETER_NOT_CONSUMED/.test(response.body));
+      const snapshotUnchanged = sameCommissionSnapshot(before, after);
       await shot(page, "14-01-idempotency-result");
-      // 恢复
-      await apiSend(page, "PATCH", "/api/admin/teams/commissions/config/F.peer.rate", {
-        value: String(originalPeer), reason: `${REASON_PREFIX}-I14-restore-peer`, operator: "superadmin",
-      }, "f2acc-peer-restore");
-      result.cleanup.push(`F.peer.rate: ${originalPeer} -> ${Number(originalPeer) + 0.5} -> restored ${originalPeer}`);
-      mark("F2-I-14", replayHandled ? "passed" : "warning",
+      mark("F2-I-14", bothRejected && snapshotUnchanged ? "passed" : "failed",
         ["screenshots/14-01-idempotency-result.png"],
-        `r1Status=${r1.status}; r2Status=${r2.status}; replayHandled=${replayHandled}; r1Body=${r1.body.slice(0, 200)}; r2Body=${r2.body.slice(0, 200)}`);
+        `r1Status=${r1.status}; r2Status=${r2.status}; bothRejected=${bothRejected}; snapshotUnchanged=${snapshotUnchanged}; r1Body=${r1.body.slice(0, 200)}; r2Body=${r2.body.slice(0, 200)}`);
     } catch (e) {
       mark("F2-I-14", "failed", [], (e as Error).message);
     }

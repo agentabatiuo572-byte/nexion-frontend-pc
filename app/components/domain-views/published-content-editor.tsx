@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { fetchDeveloperDocsAdmin, fetchRankHowPolicyAdmin, updateDeveloperDocsAdmin, updateRankHowPolicyAdmin, type PublishedContentDocument } from "@/lib/admin/published-content-client";
+import { fetchDeveloperDocsAdmin, fetchRankHowPolicyAdmin, fetchPrivacyPolicyAdmin, updateDeveloperDocsAdmin, updateRankHowPolicyAdmin, updatePrivacyPolicyAdmin, type PublishedContentDocument } from "@/lib/admin/published-content-client";
 import styles from "./published-content-editor.module.css";
 
-type Kind = "developerDocs" | "rankHow";
+type Kind = "developerDocs" | "rankHow" | "privacyPolicy";
 type Row = Record<string, unknown>;
 const META: Record<Kind, { title: string; subtitle: string; read: string; write: string }> = {
+  privacyPolicy: { title: "隐私政策", subtitle: "注册、邀请页公开阅读；草稿保留当前公开版本，发布须使用新版本号。请仅发布已审核正文。", read: "content_legal_terms_read", write: "content_legal_terms_write" },
   developerDocs: { title: "Developer API 发布内容", subtitle: "示例、接口和事件将由 App remote 读取", read: "platform_a3_read", write: "platform_a3_write" },
   rankHow: { title: "Rank How-it-works 策略", subtitle: "结构化规则说明将由 App remote 读取", read: "network_f1_read", write: "network_f1_write" },
 };
@@ -21,6 +22,7 @@ export function PublishedContentEditor({ kind }: { kind: Kind }) {
   const meta = META[kind];
   const canRead = session?.role === "superadmin" || session?.authorities?.includes(meta.read) === true;
   const canWrite = session?.role === "superadmin" || session?.authorities?.includes(meta.write) === true;
+  const canPublish = kind !== "privacyPolicy" || session?.role === "superadmin" || session?.authorities?.includes("content_legal_terms_publish") === true;
   const [document, setDocument] = useState<PublishedContentDocument | null>(null);
   const [baseline, setBaseline] = useState<PublishedContentDocument | null>(null);
   const [locale, setLocale] = useState("en");
@@ -34,7 +36,7 @@ export function PublishedContentEditor({ kind }: { kind: Kind }) {
     if (!canRead) return;
     setLoading(true); setError(null);
     try {
-      const value = kind === "developerDocs" ? await fetchDeveloperDocsAdmin() : await fetchRankHowPolicyAdmin();
+      const value = kind === "privacyPolicy" ? await fetchPrivacyPolicyAdmin() : kind === "developerDocs" ? await fetchDeveloperDocsAdmin() : await fetchRankHowPolicyAdmin();
       setDocument(value); setBaseline(value); setLocale(Object.keys(value.locales)[0] ?? "en"); setReason("");
     } catch (cause) { setDocument(null); setBaseline(null); setError(displayAdminError(cause)); setExpanded(true); }
     finally { setLoading(false); }
@@ -59,12 +61,16 @@ export function PublishedContentEditor({ kind }: { kind: Kind }) {
   };
   const save = async () => {
     if (!document || !canWrite) return;
+    if (kind === "privacyPolicy" && document.status !== "DRAFT" && !canPublish) { setError("发布或撤下隐私政策需要发布权限，请先改为草稿。"); return; }
+    if (kind === "privacyPolicy" && document.status === "PUBLISHED" && !document.locales.en) {
+      setError("发布隐私政策必须包含完整的 en 默认语言，供其他未发布语言回退使用；未完成的译文可先保存为草稿。"); return;
+    }
     if (reason.trim().length < 8 || reason.trim().length > 500) { setError("变更理由需为 8–500 个字符。"); return; }
     if (!hasChanges) { setError("内容没有变化，无需提交。"); return; }
     setSaving(true); setError(null);
     try {
-      const payload = { ...document, status: document.status === "UNPUBLISHED" ? "DRAFT" as const : document.status };
-      const value = kind === "developerDocs" ? await updateDeveloperDocsAdmin(payload, reason.trim()) : await updateRankHowPolicyAdmin(payload, reason.trim());
+      const payload = { ...document, status: document.status === "UNPUBLISHED" && kind !== "privacyPolicy" ? "DRAFT" as const : document.status };
+      const value = kind === "privacyPolicy" ? await updatePrivacyPolicyAdmin(payload, reason.trim()) : kind === "developerDocs" ? await updateDeveloperDocsAdmin(payload, reason.trim()) : await updateRankHowPolicyAdmin(payload, reason.trim());
       setDocument(value); setBaseline(value); setReason("");
     } catch (cause) { setError(displayAdminError(cause)); }
     finally { setSaving(false); }
@@ -107,9 +113,10 @@ export function PublishedContentEditor({ kind }: { kind: Kind }) {
               </label>
               <label className={styles.field}>
                 <span>状态</span>
-                <select value={document.status === "UNPUBLISHED" ? "DRAFT" : document.status} disabled={!canWrite} onChange={(event) => setDocument({ ...document, status: event.target.value as PublishedContentDocument["status"] })}>
+                <select value={document.status === "UNPUBLISHED" && kind !== "privacyPolicy" ? "DRAFT" : document.status} disabled={!canWrite} onChange={(event) => setDocument({ ...document, status: event.target.value as PublishedContentDocument["status"] })}>
                   <option value="DRAFT">DRAFT</option>
-                  <option value="PUBLISHED">PUBLISHED</option>
+                  <option value="PUBLISHED" disabled={!canPublish}>PUBLISHED</option>
+                  {kind === "privacyPolicy" && <option value="UNPUBLISHED" disabled={!canPublish}>UNPUBLISHED（撤下公开版本）</option>}
                 </select>
               </label>
             </div>

@@ -29,7 +29,7 @@ test("G1 admin writes are immediate server commands with least-privilege control
   assert.match(page, /disallowCurrent:\s*true/);
   assert.match(page, /triggerBasis/);
   assert.match(page, /dispositionPlan/);
-  assert.match(page, /href="\/emergency\/kill-switch"/);
+  assert.match(page, /emergency_j1_gate_resume/);
   assert.match(client, /Idempotency-Key/);
   assert.match(client, /triggerBasis, dispositionPlan/);
 });
@@ -50,14 +50,15 @@ test("G1 app state is a projection of authenticated server APIs", () => {
   assert.match(service, /\/api\/config\/staking\/pools/);
   assert.match(service, /\/api\/stakes/);
   assert.match(service, /idempotencyKey/);
-  assert.doesNotMatch(page, /creditBalance|bills\.add|markMatured/);
-  assert.doesNotMatch(sheet, /debitBalance|bills\.add|STAKING_APY|STAKING_PENALTY|STAKING_MIN/);
-  assert.match(page, /staking\.refreshAll/);
-  assert.match(sheet, /staking\.openStakingPosition/);
-  assert.doesNotMatch(repurchase, /debitBalance|bills\.add|staking\.stake|openStakingPosition/);
+  assert.doesNotMatch(page, /creditBalance|bills\.add/);
+  assert.match(page, /if \(!staking\.isMockMode\) \{[\s\S]*?return;[\s\S]*?staking\.markMatured\(\)/);
+  assert.doesNotMatch(sheet, /debitBalance|bills\.add/);
+  assert.match(page, /staking\.syncRemote/);
+  assert.match(sheet, /staking\.openRemote/);
+  assert.doesNotMatch(repurchase, /app\.debitBalance\(|bills\.add\(|openStakingPosition\(/);
   assert.match(repurchase, /useRepurchase/);
   assert.match(repurchase, /repurchase\.open/);
-  assert.doesNotMatch(repurchase, /useStaking|staking\.stake|openStakingPosition/);
+  assert.match(repurchase, /if \(isRemote\.value\) \{[\s\S]*?await repurchase\.open\([\s\S]*?return;[\s\S]*?staking\.stake\(/);
 });
 
 test("G1 user mutations are transactional, idempotent and emit durable evidence", () => {

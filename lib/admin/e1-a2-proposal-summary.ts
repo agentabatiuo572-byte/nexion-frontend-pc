@@ -56,7 +56,6 @@ const SKU_FIELDS: FieldDescriptor[] = [
   { label: "商城状态", read: (sku) => sku.status, format: text, equal: stringEqual },
   { label: "商品类型", read: (sku) => sku.productType, format: productType },
   { label: "商品档位", read: (sku) => sku.tier, format: text, equal: stringEqual },
-  { label: "累计销量", read: (sku) => sku.sold, format: number, equal: numberEqual },
   { label: "日产收益", read: (sku) => sku.dailyEarn, format: money, equal: numberEqual },
   { label: "日产 NEX", read: (sku) => sku.dailyEarnNEX, format: number, equal: numberEqual },
   { label: "手机日产收益", read: (sku) => sku.phoneDailyEarn, format: money, equal: numberEqual },

@@ -112,7 +112,6 @@ export interface BDomainDashboard {
   alerts: { coverageRedlineAcked: boolean; sources: string[] };
   ledger: BLedger;
   liquidity: BLiquidity;
-  funnel: BFunnel;
   rhythm: BRhythm;
   riskRadar: BRiskRadar;
 }
@@ -161,15 +160,6 @@ export const EMPTY_B_DOMAIN: BDomainDashboard = {
     runway: [],
     runwayTotalWan: 0,
     flow: [],
-  },
-  funnel: {
-    stages: [],
-    transitions: [],
-    cohort: [],
-    channels: [],
-    daily: [],
-    dailyTarget: 0,
-    overallConversionPct: 0,
   },
   rhythm: {
     h1: {
@@ -509,7 +499,6 @@ export function normalizeBDomainDashboard(raw: Record<string, unknown> | null | 
     },
     ledger,
     liquidity: normalizeLiquidity(requiredRow(source.liquidity, "liquidity"), ledger),
-    funnel: normalizeFunnel(requiredRow(source.funnel, "funnel")),
     rhythm: normalizeRhythm(requiredRow(source.rhythm, "rhythm")),
     riskRadar: normalizeRisk(requiredRow(source.riskRadar, "riskRadar")),
   };

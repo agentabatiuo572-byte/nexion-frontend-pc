@@ -58,6 +58,6 @@ test("wrapper output is secret-safe, ACL-allowlisted and removed on failure", ()
   assert.match(source, /cleanupSensitiveOutputs/);
   assert.match(source, /unlinkSync\(file\)/);
   assert.match(source, /safe-summary\.json/);
-  assert.doesNotMatch(source, /Admin@123456|A123456789Z/);
+  assert.doesNotMatch(source, /Admin@[0-9]{6,}|A123456789Z/);
   assert.doesNotMatch(source, /console\.(?:log|warn|error)\([^)]*(?:password|totp|secret)/i);
 });

@@ -4,11 +4,11 @@
  * LoginGate — 后台账号密码登录。
  */
 import type { FormEvent } from "react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, LockKeyhole, LogIn, ShieldCheck, UserRound } from "lucide-react";
 import { changeAdminPassword, currentAdminSession, loginAdmin, verifyAdminMfa, type AdminMfaChallenge, type LoginResult } from "@/lib/admin/auth-client";
 import { completeInteractiveLogin } from "@/lib/admin/login-completion";
-import { createTotpEnrollmentQrDataUrl, validatedManualTotpKey } from "@/lib/admin/mfa-enrollment-qr";
+import { createTotpEnrollmentQrDataUrl } from "@/lib/admin/mfa-enrollment-qr";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 function strongPassword(value: string) {
@@ -30,6 +30,7 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
   const [password, setPassword] = useState("");
   const [mfaChallenge, setMfaChallenge] = useState<AdminMfaChallenge | null>(null);
   const [mfaCode, setMfaCode] = useState("");
+  const [mfaExpiresAt, setMfaExpiresAt] = useState(0);
   const [pendingLogin, setPendingLogin] = useState<LoginResult | null>(null);
   const [currentPasswordForChange, setCurrentPasswordForChange] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -37,15 +38,21 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const submissionInFlight = useRef(false);
+  useEffect(() => {
+    if (!mfaChallenge || !mfaExpiresAt || submitting) return;
+    const timer = window.setTimeout(() => {
+      if (submissionInFlight.current) return;
+      setMfaChallenge(null);
+      setMfaCode("");
+      setMfaExpiresAt(0);
+      setCurrentPasswordForChange("");
+      setError("本次身份验证已过期，请重新登录后再验证。");
+    }, Math.max(0, mfaExpiresAt - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [mfaChallenge, mfaExpiresAt, submitting]);
   const enrollmentQrDataUrl = useMemo(
     () => mfaChallenge?.mode === "ENROLL"
       ? createTotpEnrollmentQrDataUrl(mfaChallenge.provisioningUri)
-      : null,
-    [mfaChallenge],
-  );
-  const enrollmentManualKey = useMemo(
-    () => mfaChallenge?.mode === "ENROLL"
-      ? validatedManualTotpKey(mfaChallenge.provisioningUri, mfaChallenge.manualKey)
       : null,
     [mfaChallenge],
   );
@@ -91,6 +98,7 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
         throw new Error("登录状态无效，请重试");
       }
       setMfaChallenge(result.mfaChallenge);
+      setMfaExpiresAt(Date.now() + Math.max(0, Number(result.mfaChallenge.expiresInSeconds) || 0) * 1000);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -102,6 +110,11 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
   async function handleMfaSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submissionInFlight.current) return;
+    if (mfaChallenge && Date.now() >= mfaExpiresAt) {
+      restartEnrollment();
+      setError("本次身份验证已过期，请重新登录后再验证。");
+      return;
+    }
     if (!mfaChallenge || !/^\d{6}$/.test(mfaCode.trim())) {
       setError("请输入身份验证器中的 6 位一次性验证码");
       return;
@@ -125,6 +138,9 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
       setCurrentPasswordForChange("");
       setUsername("");
     } catch (err) {
+      const code = err instanceof Error && "code" in err ? String(err.code) : "";
+      if (code === "ADMIN_MFA_CHALLENGE_INVALID" || code === "ADMIN_MFA_CODE_REPLAYED") restartEnrollment();
+      setMfaCode("");
       setError(errorMessage(err));
     } finally {
       submissionInFlight.current = false;
@@ -135,6 +151,7 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
   function restartEnrollment() {
     setMfaChallenge(null);
     setMfaCode("");
+    setMfaExpiresAt(0);
     setCurrentPasswordForChange("");
     setError("");
   }
@@ -178,8 +195,7 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
   const changingPassword = !!pendingLogin;
   const verifyingMfa = !!mfaChallenge;
   const enrollmentUnavailable = mfaChallenge?.mode === "ENROLL"
-    && !enrollmentQrDataUrl
-    && !enrollmentManualKey;
+    && !enrollmentQrDataUrl;
 
   return (
     <div
@@ -261,6 +277,9 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
           </>
         ) : verifyingMfa ? (
           <>
+            <button type="button" disabled={submitting} onClick={restartEnrollment} className="mt-3 text-[12px] underline underline-offset-2">
+              重新登录
+            </button>
             {mfaChallenge?.mode === "ENROLL" && enrollmentQrDataUrl && (
               <div
                 className="mt-5 rounded-[9px] p-3 text-center text-[12px]"
@@ -273,13 +292,6 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
                   className="mx-auto mt-3 block max-w-full rounded-[6px] bg-white"
                   style={{ imageRendering: "pixelated" }}
                 />
-              </div>
-            )}
-            {mfaChallenge?.mode === "ENROLL" && enrollmentManualKey && (
-              <div className="mt-5 rounded-[9px] p-3 text-[12px]" style={{ background: "var(--v5-surface-3)", color: "var(--v5-ink-2)" }}>
-                <p>无法扫码时，可手动输入以下密钥：</p>
-                <code className="mt-2 block break-all select-all font-mono" style={{ color: "var(--v5-ink)" }}>{enrollmentManualKey}</code>
-                <p className="mt-2" style={{ color: "var(--v5-ink-3)" }}>密钥只在本次绑定时显示，请勿发送给他人。</p>
               </div>
             )}
             {enrollmentUnavailable ? (

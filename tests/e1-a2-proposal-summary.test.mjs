@@ -118,6 +118,21 @@ test("缺少历史 baseRate 的 SKU 原样回填不制造 no-op 提案", () => {
   assert.equal(summarizeSkuProposal(existing, roundTripped), null);
 });
 
+test("E1 把累计销量视为订单运行态计数，编辑往返不得提交或提案修改它", () => {
+  const existing = sku({
+    sold: 1245, stock: 3, tier: "Entry", productType: "DEVICE",
+    baseRate: "$0.06/d · 0 NEX",
+  });
+  const roundTripped = formToSku(skuToForm(existing), existing);
+  const e1Source = readFileSync(new URL("../app/components/domain-views/e-view.tsx", import.meta.url), "utf8");
+
+  assert.equal(Object.hasOwn(skuToForm(existing), "sold"), false);
+  assert.equal(roundTripped.sold, 1245);
+  assert.equal(summarizeSkuProposal(existing, roundTripped), null);
+  assert.doesNotMatch(e1Source, /SkuFld label="累计销量"/);
+  assert.match(e1Source, /累计销量由成功支付订单累计/);
+});
+
 test("新建 SKU 展示核心业务字段而非只有商品名称", () => {
   const summary = summarizeSkuCreation(sku({ tier: "Entry", productType: "SERVER", stock: 10000 }));
 

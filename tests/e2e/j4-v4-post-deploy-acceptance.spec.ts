@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const MAKER_USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const MAKER_PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const MAKER_PASSWORD = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })());
 const MAKER_TOTP_SECRET = process.env.J4_V4_MAKER_TOTP_SECRET?.trim() || "";
 const REVIEWER_USERNAME = process.env.J4_V4_REVIEWER_USERNAME?.trim() || "";
 const REVIEWER_PASSWORD = process.env.J4_V4_REVIEWER_PASSWORD || "";

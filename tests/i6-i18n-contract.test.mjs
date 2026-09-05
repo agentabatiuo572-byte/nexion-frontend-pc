@@ -17,11 +17,18 @@ test("I6 uses a real selectable message catalog and complete CRUD actions", () =
   assert.match(view, /actions\.archiveI6LocalizedMessage/);
   assert.match(view, /actions\.fetchI6MessageVersions/);
   assert.match(view, /actions\.rollbackI6LocalizedMessage/);
-  assert.match(view, /expectedVersion:\s*mode === "edit"/);
+  assert.match(view, /expectedVersion:\s*selectedMessage\.version/);
   assert.match(view, /selectedMessage\.version,\s*\n\s*reason/);
   assert.match(view, /row\.status === "archived"/);
   assert.match(view, /selectedMessage\.status === "published"/);
   assert.doesNotMatch(view, /\$\{nsDrawer\.ns\}\.title/);
+});
+
+test("I6 only edits App-registered keys and does not advertise unbound key creation", () => {
+  assert.doesNotMatch(view, /editKeyDraft\("create"\)/);
+  assert.doesNotMatch(view, />新增词条<\/button>/);
+  assert.match(view, /只能维护当前已注册词条/);
+  assert.match(view, /请先选择已注册词条/);
 });
 
 test("I6 confirmation commands stay open until the write and canonical reload settle", () => {

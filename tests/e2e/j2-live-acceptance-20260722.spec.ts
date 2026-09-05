@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const PASSWORD = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })());
 const TOTP_SECRET = process.env.ADMIN_E2E_TOTP_SECRET?.trim() || "";
 const EVIDENCE_DIR = process.env.J2_ACCEPTANCE_EVIDENCE_DIR
   || "D:/workspace/bug-pic/j-domain-acceptance-20260722/j2/initial";

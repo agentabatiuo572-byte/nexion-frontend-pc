@@ -306,7 +306,9 @@ const GEARS = [
   ["pending mutation migration contract", "node", ["--test", "tests/pending-mutation-migration-contract.test.mjs"]],
   ["F1 direct-write pending-store contract", "node", ["--test", "tests/f1-direct-pending-store-contract.test.mjs"]],
   ["E domain pending-store contract", "node", ["--test", "tests/e-pending-store-contract.test.mjs"]],
+  ["E2 task status preservation contract", "node", ["--test", "tests/e2-task-status-preservation-contract.test.mjs"]],
   ["H8 pending-store contract", "node", ["--test", "tests/h8-pending-store-contract.test.mjs"]],
+  ["J emergency pending-store contract", "node", ["--experimental-strip-types", "--test", "tests/j-emergency-pending-store-contract.test.mjs"]],
   ["endpoint citation ledger", "node", ["scripts/endpoint-citation-sentinel.mjs"]],
   // 提现单主键线上真名(`withdrawalNo`)在 PRD 与 admin 实现之间的 parity:后台 PRD 一度写成
   // `withdrawalId`,错了很久没人发现 —— 手工改完 18 处但没有任何机器判据锁住它。真名从

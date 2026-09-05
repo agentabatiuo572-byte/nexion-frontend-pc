@@ -31,7 +31,7 @@ test("J Final9 creates two normal-MFA independent super-admin fixture actors fro
 async function loginBypass(page: Page) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByLabel("账号", { exact: true }).fill("superadmin");
-  await page.getByLabel("密码", { exact: true }).fill("Admin@123456");
+  await page.getByLabel("密码", { exact: true }).fill((process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })()));
   await page.getByRole("button", { name: /继续|登录/ }).click();
   await expect(page.locator("aside")).toBeVisible({ timeout: 30_000 });
 }

@@ -2,7 +2,7 @@ import { expect, request as playwrightRequest, test, type Page } from "@playwrig
 import { mkdir } from "node:fs/promises";
 
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const PASSWORD = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })());
 const EVIDENCE = process.env.L2_ACCEPTANCE_DIR?.trim() || "";
 
 test.describe.configure({ mode: "serial" });

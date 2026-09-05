@@ -1,4 +1,5 @@
 "use client";
+import { finiteDashboardNumber } from "@/lib/admin/dashboard-number";
 
 /**
  * 运营指挥台(首页 /)。按 Claude Design「NexGrid 运营控制后台」稿优点重构:
@@ -54,8 +55,7 @@ function rawNum(value: unknown, fallback = 0) {
 }
 
 function finiteRawNum(value: unknown) {
-  const parsed = rawNum(value, Number.NaN);
-  return Number.isFinite(parsed) ? parsed : null;
+  return finiteDashboardNumber(value);
 }
 
 function rawNumRows(value: unknown): number[] {
@@ -105,11 +105,11 @@ function normalizeDashboardKpis(data: LBiData | null): DashboardKpi[] {
     const value = finiteRawNum(row.value);
     const target = kpiTargetLabel(row);
     const pass = kpiPass(row);
-    if (!label || value == null || target == null || pass == null) return [];
+    if (!label || target == null) return [];
     return [{
       key: `l1-${n}`,
       label,
-      value: `${value}${unit}`,
+      value: value == null ? "—" : `${value}${unit}`,
       target,
       pass,
       series: spark,
@@ -264,7 +264,7 @@ export default function CommandCenter() {
   const role = mounted ? sessionRole : null;
   const operator = mounted ? sessionOperator : "";
   const bDomain = useBDomainDashboard(canReadBDomain);
-  const { ledger: LEDGER, funnel, rhythm, riskRadar } = bDomain;
+  const { ledger: LEDGER, rhythm, riskRadar } = bDomain;
   const renderBDomainState = (error: string | null, loading = false) => (
     <div className="w-full">
       <header className="mb-5 flex flex-wrap items-end gap-4">
@@ -293,9 +293,7 @@ export default function CommandCenter() {
   const homeDataError =
     LEDGER.coverageSeries.length < 2
       ? "B1_COVERAGE_SERIES_EMPTY"
-      : !funnel.stages.length || !funnel.transitions.length || funnel.cohort.length < 2 || !funnel.channels.length || funnel.daily.length < 2
-        ? "B3_REQUIRED_DATA_EMPTY"
-        : "";
+      : "";
   if (homeDataError) {
     return renderBDomainState(homeDataError);
   }
@@ -514,7 +512,7 @@ export default function CommandCenter() {
 
       {/* ⑤ 转化漏斗 */}
       <SecLabel title="转化漏斗" modules="B3 · A4 派生" />
-      <FunnelBars stages={funnel.stages} />
+      <FunnelBars />
 
       {/* ⑥ 八项 KPI 验收墙 */}
       <div className="mt-7">

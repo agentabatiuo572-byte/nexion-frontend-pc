@@ -450,9 +450,9 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
             <input aria-label="晋升批次" value={promotionFilters.cohort} onChange={(event) => setPromotionFilter("cohort", event.target.value)} placeholder="批次 cohort" />
             <input aria-label="晋升开始日期" type="date" value={promotionFilters.from} onChange={(event) => setPromotionFilter("from", event.target.value)} />
             <input aria-label="晋升结束日期" type="date" value={promotionFilters.to} onChange={(event) => setPromotionFilter("to", event.target.value)} />
-            <button type="button" className="f-cta" onClick={() => void ctx.queryPromotions(promotionFilters)}>查询</button>
+            <button type="button" className="f-cta" disabled={ctx.f1PromotionLoading} onClick={() => void ctx.queryPromotions(promotionFilters)}>查询</button>
           </div>
-          {ctx.f1FlowError && <div className="empty">流水加载失败 · {ctx.f1FlowError}</div>}
+          {ctx.f1PromotionError && <div className="empty">晋升流水加载失败 · {ctx.f1PromotionError}</div>}
           <div className="f1-table-wrap">
             <table className="ctbl">
               <thead><tr><th>用户</th><th>等级变化</th><th>方式 / 批次</th><th>资格快照</th><th>触发 / 审计</th><th>时间</th></tr></thead>
@@ -467,12 +467,12 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
                     <td className="uid">{record.createdAt || "—"}</td>
                   </tr>
                 ))}
-                {!ctx.f1FlowLoading && ctx.promotionRecords.length === 0 && <tr className="empty-row"><td colSpan={6}>当前筛选无晋升流水</td></tr>}
-                {ctx.f1FlowLoading && ctx.promotionRecords.length === 0 && <tr className="empty-row"><td colSpan={6}>正在读取晋升流水…</td></tr>}
+                {!ctx.f1PromotionLoading && ctx.promotionRecords.length === 0 && <tr className="empty-row"><td colSpan={6}>当前筛选无晋升流水</td></tr>}
+                {ctx.f1PromotionLoading && ctx.promotionRecords.length === 0 && <tr className="empty-row"><td colSpan={6}>正在读取晋升流水…</td></tr>}
               </tbody>
             </table>
           </div>
-          <div className="f1-flow-foot">当前筛选 {ctx.promotionTotal.toLocaleString()} 条 · 晋升引擎每个触发事件最多前进一阶，确保每阶权益与奖励不被跳过。</div>
+          <div className="f1-flow-foot">当前筛选 {ctx.promotionTotal.toLocaleString()} 条 · 晋升引擎每个触发事件最多前进一阶，确保每阶权益与奖励不被跳过。{" "}{ctx.promotionNextCursor && <button type="button" className="l-btn sm" disabled={ctx.f1PromotionLoading} onClick={() => void ctx.queryPromotions({ ...promotionFilters, cursor: ctx.promotionNextCursor }, true)}>加载更早记录</button>}</div>
         </section>
 
         <section className="f1-flow" aria-label="奖励派发流水">
@@ -495,8 +495,9 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
             <select aria-label="派发状态" value={payoutFilters.status} onChange={(event) => setPayoutFilter("status", event.target.value)}>
               <option value="">全部状态</option><option value="PENDING_GRANT">待派发</option><option value="GRANTED">已派发</option><option value="REISSUED">已重发</option><option value="REVERSED">已冲正</option><option value="FAILED">失败</option>
             </select>
-            <button type="button" className="f-cta" onClick={() => void ctx.queryPayouts(payoutFilters)}>查询</button>
+            <button type="button" className="f-cta" disabled={ctx.f1PayoutLoading} onClick={() => void ctx.queryPayouts(payoutFilters)}>查询</button>
           </div>
+          {ctx.f1PayoutError && <div className="empty">派发流水加载失败 · {ctx.f1PayoutError}</div>}
           <div className="f1-table-wrap">
             <table className="ctbl">
               <thead><tr><th>派发单 / 用户</th><th>等级 / 奖励</th><th>赞助人</th><th>状态</th><th>D4 / 触发事件</th><th>时间</th><th>动作</th></tr></thead>
@@ -522,12 +523,12 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
                     </tr>
                   );
                 })}
-                {!ctx.f1FlowLoading && ctx.payoutRecords.length === 0 && <tr className="empty-row"><td colSpan={7}>当前筛选无奖励派发流水</td></tr>}
-                {ctx.f1FlowLoading && ctx.payoutRecords.length === 0 && <tr className="empty-row"><td colSpan={7}>正在读取派发流水…</td></tr>}
+                {!ctx.f1PayoutLoading && ctx.payoutRecords.length === 0 && <tr className="empty-row"><td colSpan={7}>当前筛选无奖励派发流水</td></tr>}
+                {ctx.f1PayoutLoading && ctx.payoutRecords.length === 0 && <tr className="empty-row"><td colSpan={7}>正在读取派发流水…</td></tr>}
               </tbody>
             </table>
           </div>
-          <div className="f1-flow-foot">当前筛选 {ctx.payoutTotal.toLocaleString()} 条 · 重发会放大资金流出并受 B1 覆盖率约束；冲正与 D4 账单保持可追溯。</div>
+          <div className="f1-flow-foot">当前筛选 {ctx.payoutTotal.toLocaleString()} 条 · 重发会放大资金流出并受 B1 覆盖率约束；冲正与 D4 账单保持可追溯。{" "}{ctx.payoutNextCursor && <button type="button" className="l-btn sm" disabled={ctx.f1PayoutLoading} onClick={() => void ctx.queryPayouts({ ...payoutFilters, cursor: ctx.payoutNextCursor }, true)}>加载更早记录</button>}</div>
         </section>
       </div>
 

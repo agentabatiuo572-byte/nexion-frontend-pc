@@ -143,7 +143,7 @@ test("sensitive manifests are atomic, ACL allowlisted, hashed, and failure-clean
   ]) assert.match(source, new RegExp(marker));
   assert.match(source, /sensitive:\s*true/);
   assert.match(source, /doNotUpload:\s*true/);
-  assert.doesNotMatch(source, /Admin@123456|A123456789Z/);
+  assert.doesNotMatch(source, /Admin@[0-9]{6,}|A123456789Z/);
 });
 
 function escapeRegExp(value) {

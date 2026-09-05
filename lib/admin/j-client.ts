@@ -1,6 +1,7 @@
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 type ApiResult<T> = {
@@ -17,6 +18,26 @@ export function createJEmergencyCommandKey() {
   return idempotencyKey();
 }
 
+const emergencyAttempts = createSlotAttemptStore({
+  storageKey: "nexion-admin-j-emergency-commands-v1",
+});
+
+function emergencyInputFingerprint(body: BodyInit | null | undefined) {
+  if (typeof body !== "string") return body == null ? "" : String(body);
+  try {
+    const parsed = JSON.parse(body) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return body;
+    const canonical = { ...(parsed as Record<string, unknown>) };
+    // reason/operator are audit envelope fields, not the emergency business intent. An operator
+    // may clarify the reason after an outcome-unknown response; that retry must keep the same key.
+    delete canonical.reason;
+    delete canonical.operator;
+    return JSON.stringify(canonical);
+  } catch {
+    return body;
+  }
+}
+
 class EmergencyOutcomeUncertainError extends Error {
   constructor(message: string) {
     super(message);
@@ -31,9 +52,24 @@ export function isEmergencyOutcomeUncertain(error: unknown) {
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
-  const isWrite = Boolean(init?.method && init.method !== "GET");
+  const method = (init?.method ?? "GET").toUpperCase();
+  const isWrite = method !== "GET" && method !== "HEAD";
+  const writeSlot = `${method} ${path}`;
+  const inputFingerprint = emergencyInputFingerprint(init?.body);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  if (init?.method && init.method !== "GET" && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", idempotencyKey());
+  if (isWrite) {
+    const providedCommandKey = headers.get("Idempotency-Key");
+    const commandKey = emergencyAttempts.resolve(
+      writeSlot,
+      inputFingerprint,
+      () => providedCommandKey || idempotencyKey(),
+    );
+    if (!emergencyAttempts.isDurablyStored(writeSlot, inputFingerprint, commandKey)) {
+      emergencyAttempts.forget(writeSlot);
+      throw new Error("EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+    }
+    headers.set("Idempotency-Key", commandKey);
+  }
   let res: Response;
   try {
     res = await guardedFetch(`/api/admin/emergency${path}`, {
@@ -61,24 +97,26 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     const message = `应急控制服务返回了无法确认的内容（HTTP ${res.status}）`;
     throw isWrite ? new EmergencyOutcomeUncertainError(message) : new Error(`${message}，请稍后重试。`);
   }
-  if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
-    if (res.status === 401 || payload.code === 401 || payload.message === "ADMIN_AUTH_REQUIRED") {
-      useAdminAuth.getState().signOut();
-    }
+  const requestFailed = !res.ok || (isWrite
+    ? payload.code !== 0
+    : payload.code !== undefined && payload.code >= 400);
+  if (isWrite && (res.headers.get("X-Nexion-Upstream-Outcome") === "unknown"
+    || (requestFailed && outcomeStaysUnknown(res.status, payload.code)))) {
     // unknown 头只是增强信号,不再是唯一保险丝:5xx 同样归结果未知,让调用方看到「结果未确认」
     // 而不是「失败」——冠失败会诱导运营换渠道重做,而应急止血动作(kill-switch / 地域封锁)
     // 重复执行的代价极高。
-    // ⚠️ 注意范围:j 域**目前还没有 pending store**,命令号在弹窗打开时现铸、刷新即丢
-    //   (属交接文档「任务 A」的迁移范围)。所以这里给的是**正确的失败分类与话术**,
-    //   不是「同号重试」的保证 —— 别照着这段注释以为 j 域已经保号了。
-    if (isWrite && (res.headers.get("X-Nexion-Upstream-Outcome") === "unknown"
-      || outcomeStaysUnknown(res.status, payload.code))) {
-      throw new EmergencyOutcomeUncertainError(
-        "应急控制服务连接在提交后中断，执行结果暂未确认",
-      );
+    throw new EmergencyOutcomeUncertainError(
+      "应急控制服务连接在提交后中断，执行结果暂未确认",
+    );
+  }
+  if (requestFailed) {
+    if (isWrite) emergencyAttempts.forget(writeSlot);
+    if (res.status === 401 || payload.code === 401 || payload.message === "ADMIN_AUTH_REQUIRED") {
+      useAdminAuth.getState().signOut();
     }
     throw new Error(formatAdminApiError(payload.message, `EMERGENCY_API_${res.status}`));
   }
+  if (isWrite) emergencyAttempts.forget(writeSlot);
   return payload.data as T;
 }
 

@@ -3,7 +3,7 @@ import path from "node:path";
 
 const EVIDENCE = path.resolve("docs", "验收报告", "PC全面测试-20260726", "G7-evidence");
 const USERNAME = process.env.ADMIN_E2E_USERNAME || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const PASSWORD = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })());
 
 async function loginFromVisibleEntry(page: Page) {
   await page.goto("/", { waitUntil: "domcontentloaded" });

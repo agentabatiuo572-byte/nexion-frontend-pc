@@ -71,7 +71,7 @@ test("I6 可见入口贯通草稿、幂等、CAS、发布、App、归档与回�
   try {
     await login(page, {
       username: operator,
-      password: process.env.ADMIN_E2E_PASSWORD || "Admin@123456",
+      password: (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })()),
       totpSecret: process.env.ADMIN_E2E_TOTP_SECRET || "",
     });
     await openI6(page);

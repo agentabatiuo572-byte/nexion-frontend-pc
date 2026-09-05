@@ -121,12 +121,16 @@ async function proxy(request: Request, context: RouteContext) {
       body: hasBody ? await request.text() : undefined,
       cache: "no-store",
     });
+    const responseHeaders = new Headers({
+      "Content-Type": upstream.headers.get("Content-Type") || "application/json",
+      "Cache-Control": "no-store",
+    });
+    if (upstream.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown") {
+      responseHeaders.set("X-Nexion-Upstream-Outcome", "unknown");
+    }
     return new Response(await upstream.text(), {
       status: upstream.status,
-      headers: {
-        "Content-Type": upstream.headers.get("Content-Type") || "application/json",
-        "Cache-Control": "no-store",
-      },
+      headers: responseHeaders,
     });
   } catch {
     return jsonError(503, "DEVICES_BACKEND_UNAVAILABLE");

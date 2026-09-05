@@ -25,7 +25,7 @@ test("Final7 A1 carrier binds only to the Final7 fixture manifest and injects ev
   assert.match(source, /const maker = credentials\("maker"\)/);
   assert.match(source, /const checker = credentials\("checker"\)/);
   assert.match(source, /const cleanup = credentials\("cleanup"\)/);
-  assert.doesNotMatch(source, /Admin@123456|A123456789Z|NZOOCZ|CHUD7K|OMIVU3/);
+  assert.doesNotMatch(source, /Admin@[0-9]{6,}|A123456789Z|NZOOCZ|CHUD7K|OMIVU3/);
 });
 
 test("Final7 A1 carrier starts at visible login/A1/A2/A4 and covers CAS, replay, unknown result, A2 evidence, A4 health and exact cleanup", () => {

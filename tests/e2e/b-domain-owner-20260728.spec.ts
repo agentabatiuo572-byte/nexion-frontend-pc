@@ -4,7 +4,7 @@ import path from "node:path";
 import { expect, request as playwrightRequest, test, type Page } from "@playwright/test";
 
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const PASSWORD = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })());
 const TOTP_SECRET = process.env.ADMIN_E2E_TOTP_SECRET?.trim();
 const TOTP_COUNTER_OFFSET = Number(process.env.B_TOTP_COUNTER_OFFSET ?? "-1");
 const EVIDENCE_ROOT =

@@ -5,7 +5,7 @@ import path from "node:path";
 const EVIDENCE_DIR = process.env.K1_EVIDENCE_DIR
   ?? "D:/workspace/bug-pic/pc-full-acceptance-20260727/K1/final";
 const USERNAME = process.env.ADMIN_E2E_USERNAME ?? "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const PASSWORD = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })());
 const OVERVIEW_API = "**/api/admin/risk/multi-account/overview*";
 
 test.describe.configure({ mode: "serial", timeout: 180_000 });

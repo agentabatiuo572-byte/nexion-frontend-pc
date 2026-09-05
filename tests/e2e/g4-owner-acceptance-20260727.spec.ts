@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const PASSWORD = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })());
 const BACKEND = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 // Direct loopback public-route checks model the trusted edge, not an App client.
 const TRUSTED_EDGE_HEADERS = { "X-Nexion-Edge-Country": "JP", "CF-IPCountry": "JP" };

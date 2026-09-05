@@ -250,7 +250,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
     setQueueDrawer(null);
     openActionConfirm({
       action: `强制取消排队单 · ${order.exchangeNo}`,
-      detail: <>取消该兑换排队单,{order.exchangeAmountDisplay} 排队阶段未扣余额,取消只终止后续成交。常用于地域封锁/风控命中;确认后立即执行并写入 A2 审计。</>,
+      detail: <>取消该兑换排队单,{order.exchangeAmountDisplay} 的源资产已冻结；取消会将冻结资产原路返还用户钱包并终止后续成交。常用于地域封锁/风控命中；确认后立即执行并写入 A2 审计与退款账本。</>,
       run: async (reason) => {
         await mutate(`cancel:${order.exchangeNo}`, () => cancelG2ExchangeQueueOrder(order.exchangeNo, reason, OPERATOR()), "排队单已立即取消");
       },

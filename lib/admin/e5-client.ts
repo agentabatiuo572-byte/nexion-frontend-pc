@@ -5,10 +5,15 @@ import {
   parseE5Overview,
 } from "@/lib/admin/e456-overview-contract";
 import { parseE5Observability, type E5Observability } from "@/lib/admin/e5-observability-contract";
+import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import {
+  E5OutcomeUncertainError,
+  e5StableDeviceCommand,
+} from "@/lib/admin/e5-stable-device-command";
 
 export type { E5Observability } from "@/lib/admin/e5-observability-contract";
 
-export type E5DeviceState = "active" | "busy" | "offline" | "inventory" | "unbound" | "abnormal";
+export type E5DeviceState = "active" | "busy" | "offline" | "inventory" | "pending-deactivate" | "unbound" | "abnormal";
 export type E5DatacenterStatus = "active" | "maintenance" | "disabled";
 
 export interface E5Device {
@@ -184,13 +189,6 @@ interface BackendOverview {
   datacenters?: BackendDatacenter[] | null;
 }
 
-let requestSeq = 0;
-
-function idempotencyKey(prefix: string) {
-  requestSeq = (requestSeq + 1) % 1_000_000;
-  return `${prefix}-${Date.now()}-${requestSeq}`;
-}
-
 function toNumber(value: number | string | boolean | null | undefined, fallback = 0) {
   if (typeof value === "number") {
     return Number.isFinite(value) ? value : fallback;
@@ -220,7 +218,8 @@ function text(value: string | number | null | undefined, fallback = "") {
 function normalizeState(statusRaw: string | null | undefined, runtimeRaw: string | null | undefined, pendingDeactivate: boolean): E5DeviceState {
   const status = text(statusRaw).toUpperCase();
   const runtime = text(runtimeRaw).toUpperCase();
-  if (["RECYCLED", "DEACTIVATED", "RETIRED", "UNBOUND"].includes(status) || pendingDeactivate) return "unbound";
+  if (pendingDeactivate) return "pending-deactivate";
+  if (["RECYCLED", "DEACTIVATED", "RETIRED", "UNBOUND"].includes(status)) return "unbound";
   if (["INVENTORY", "PENDING", "PENDING_ACTIVATION", "INACTIVE"].includes(status)) return "inventory";
   if (["ERROR", "ABNORMAL", "LOST"].includes(runtime)) return "abnormal";
   if (status === "BUSY") return "busy";
@@ -229,24 +228,46 @@ function normalizeState(statusRaw: string | null | undefined, runtimeRaw: string
   return "offline";
 }
 
-async function e5Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
+async function e5Request<T>(path: string, init?: RequestInit & { idempotencyKey?: string }) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  if (init?.idempotencyPrefix) {
-    headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
+  const commandKey = init?.idempotencyKey ?? "";
+  if (commandKey) {
+    headers.set("Idempotency-Key", commandKey);
   }
 
-  const response = await guardedFetch(`/api/admin/devices${path}`, {
-    ...init,
-    headers,
-    cache: "no-store",
-  });
+  const { idempotencyKey: _key, ...requestInit } = init ?? {};
+  let response: Response;
+  try {
+    response = await guardedFetch(`/api/admin/devices${path}`, {
+      ...requestInit,
+      headers,
+      cache: "no-store",
+    });
+  } catch (cause) {
+    if (commandKey) {
+      throw new E5OutcomeUncertainError("E5_DEVICE_ACTION_OUTCOME_UNCERTAIN", commandKey, { cause });
+    }
+    throw cause;
+  }
+  if (commandKey && response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown") {
+    throw new E5OutcomeUncertainError("E5_DEVICE_ACTION_OUTCOME_UNCERTAIN", commandKey);
+  }
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
+    if (commandKey && outcomeStaysUnknown(response.status, result?.code)) {
+      throw new E5OutcomeUncertainError(
+        `E5_DEVICE_ACTION_OUTCOME_UNCERTAIN_${response.status}`,
+        commandKey,
+      );
+    }
     throw new Error(formatAdminApiError(result?.message, `E5_REQUEST_FAILED_${response.status}`));
+  }
+  if (commandKey && result.data == null) {
+    throw new E5OutcomeUncertainError("E5_DEVICE_ACTION_OUTCOME_UNCERTAIN", commandKey);
   }
 
   return result.data as T;
@@ -384,62 +405,99 @@ export async function fetchE5Datacenters(): Promise<E5Datacenter[]> {
 
 export async function activateE5Device(deviceId: number, force: boolean, reason: string, operator: string) {
   const action = force ? "force-activate" : "activate";
-  const saved = await e5Request<BackendDevice>(`/${encodeURIComponent(String(deviceId))}/${action}`, {
-    method: "POST",
-    body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "e5-device-activate",
-  });
+  const body = { reason, operator };
+  const saved = await e5StableDeviceCommand(
+    `e5-device:${deviceId}:${action}`,
+    JSON.stringify(body),
+    commandKey => e5Request<BackendDevice>(`/${encodeURIComponent(String(deviceId))}/${action}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+      idempotencyKey: commandKey,
+    }),
+  );
   return mapDevices([saved])[0];
 }
 
 export async function deactivateE5Device(deviceId: number, unbind: boolean, reason: string, operator: string) {
   const action = unbind ? "unbind" : "deactivate";
-  const saved = await e5Request<BackendDevice>(`/${encodeURIComponent(String(deviceId))}/${action}`, {
-    method: "POST",
-    body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "e5-device-deactivate",
-  });
+  const body = { reason, operator };
+  const saved = await e5StableDeviceCommand(
+    `e5-device:${deviceId}:${action}`,
+    JSON.stringify(body),
+    commandKey => e5Request<BackendDevice>(`/${encodeURIComponent(String(deviceId))}/${action}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+      idempotencyKey: commandKey,
+    }),
+  );
   return mapDevices([saved])[0];
 }
 
 export async function setE5UserDevicesPaused(userId: number, paused: boolean, reason: string, operator: string) {
-  return e5Request<{ userId: number; changedCount: number; paused: boolean }>(`/batch/${paused ? "pause" : "resume"}`, {
-    method: "POST",
-    body: JSON.stringify({ userId, reason, operator }),
-    idempotencyPrefix: paused ? "e5-user-pause" : "e5-user-resume",
-  });
+  const action = paused ? "pause" : "resume";
+  const body = { userId, reason, operator };
+  return e5StableDeviceCommand(
+    `e5-user:${userId}:${action}`,
+    JSON.stringify(body),
+    commandKey => e5Request<{ userId: number; changedCount: number; paused: boolean }>(`/batch/${action}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+      idempotencyKey: commandKey,
+    }),
+  );
 }
 
 export async function setE5DatacenterPaused(dcLocation: string, paused: boolean, reason: string, operator: string) {
-  return e5Request<E5Overview>(`/datacenters/${encodeURIComponent(dcLocation)}/${paused ? "pause" : "resume"}`, {
-    method: "POST",
-    body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: paused ? "e5-dc-pause" : "e5-dc-resume",
-  });
+  const action = paused ? "pause" : "resume";
+  const body = { reason, operator };
+  return e5StableDeviceCommand(
+    `e5-datacenter:${dcLocation}:${action}`,
+    JSON.stringify(body),
+    commandKey => e5Request<E5Overview>(`/datacenters/${encodeURIComponent(dcLocation)}/${action}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+      idempotencyKey: commandKey,
+    }),
+  );
 }
 
 export async function createE5Datacenter(input: E5DatacenterInput, reason: string, operator: string) {
-  const saved = await e5Request<BackendDatacenter>("/datacenters", {
-    method: "POST",
-    body: JSON.stringify({ ...input, reason, operator }),
-    idempotencyPrefix: "e5-dc-create",
-  });
+  const body = { ...input, reason, operator };
+  const saved = await e5StableDeviceCommand(
+    "e5-datacenter:create",
+    JSON.stringify(body),
+    commandKey => e5Request<BackendDatacenter>("/datacenters", {
+      method: "POST",
+      body: JSON.stringify(body),
+      idempotencyKey: commandKey,
+    }),
+  );
   return fromDatacenter(saved);
 }
 
 export async function updateE5Datacenter(dcLocation: string, input: E5DatacenterInput, reason: string, operator: string) {
-  const saved = await e5Request<BackendDatacenter>(`/datacenters/${encodeURIComponent(dcLocation)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ ...input, reason, operator }),
-    idempotencyPrefix: "e5-dc-update",
-  });
+  const body = { ...input, reason, operator };
+  const saved = await e5StableDeviceCommand(
+    `e5-datacenter:${dcLocation}:update`,
+    JSON.stringify(body),
+    commandKey => e5Request<BackendDatacenter>(`/datacenters/${encodeURIComponent(dcLocation)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+      idempotencyKey: commandKey,
+    }),
+  );
   return fromDatacenter(saved);
 }
 
 export async function deleteE5Datacenter(dcLocation: string, reason: string, operator: string) {
-  return e5Request<{ dcLocation: string; deleted: boolean }>(`/datacenters/${encodeURIComponent(dcLocation)}`, {
-    method: "DELETE",
-    body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "e5-dc-delete",
-  });
+  const body = { reason, operator };
+  return e5StableDeviceCommand(
+    `e5-datacenter:${dcLocation}:delete`,
+    JSON.stringify(body),
+    commandKey => e5Request<{ dcLocation: string; deleted: boolean }>(`/datacenters/${encodeURIComponent(dcLocation)}`, {
+      method: "DELETE",
+      body: JSON.stringify(body),
+      idempotencyKey: commandKey,
+    }),
+  );
 }

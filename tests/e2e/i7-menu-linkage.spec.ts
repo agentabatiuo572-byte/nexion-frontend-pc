@@ -123,7 +123,7 @@ test("a successful interactive login reloads before rendering merged I6 and I7 c
 
   await page.goto("/content/i18n");
   await page.getByLabel("账号").fill("superadmin");
-  await page.getByLabel("密码").fill("Admin@123456");
+  await page.getByLabel("密码").fill((process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })()));
   await Promise.all([
     page.waitForNavigation({ waitUntil: "domcontentloaded" }),
     page.getByRole("button", { name: "继续" }).click(),

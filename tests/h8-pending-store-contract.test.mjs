@@ -71,8 +71,8 @@ test("h-client:H8「结果未知」三类齐(网络层 / 回执读不出 / 5xx),
   assert.match(code, /const response = await guardedFetch\(`\/api\/admin\/growth\$\{path\}`/);
   // 写入端与读取端都要钉:只钉读取端时,删掉 growthRequest 里的赋值门照样绿,而 status 恒为
   // undefined → 503 全部落回确定性失败弃号(红测 RH3c 实测抓到过这个假绿)。
-  assert.match(code, /Object\.assign\(error, \{ status: response\.status, bodyUnreadable: result === null \}\);/,
-    "growthRequest 必须把状态码与「回执可读性」挂到抛出的错误上,否则调用方分不出 503 与 400");
+  assert.match(code, /Object\.assign\(error, \{ status: response\.status, (?:apiCode: result\?\.code, )?bodyUnreadable: result === null \}\);/,
+    "growthRequest 必须把状态码与「回执可读性」挂到抛出的错误上；apiCode 可作为附加诊断字段，否则调用方分不出 503 与 400");
   assert.match(code, /const \{ status, bodyUnreadable \} = error as Error & \{ status\?: number; bodyUnreadable\?: boolean \};/,
     "H8 必须真读这两个标记来分类");
   // 关键:growth proxy 后端不可达时返回的是**带 JSON body 的 503**,解析得动、走的是普通 Error 分支。

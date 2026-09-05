@@ -109,6 +109,16 @@ export interface E1GenerationGateData {
 export interface E1CatalogSnapshot {
   skus: OpsSku[];
   gates: E1GenerationGateData;
+  bundleDiscount: E1BundleDiscount;
+}
+
+export interface E1BundleDiscount {
+  domain: "E1";
+  version: number;
+  twoItemsPct: number;
+  threeItemsPct: number;
+  fourPlusItemsPct: number;
+  source: "nx_config_item";
 }
 
 export interface E1GenerationGateInput {
@@ -347,14 +357,81 @@ async function withFreshSkuMediaPreview(sku: OpsSku): Promise<OpsSku> {
 }
 
 export async function fetchE1Catalog(): Promise<E1CatalogSnapshot> {
-  const [rawSkuPage, rawGates] = await Promise.all([
+  const [rawSkuPage, rawGates, rawBundleDiscount] = await Promise.all([
     e1Request<unknown>("/skus?pageNum=1&pageSize=100"),
     e1Request<unknown>("/generation-gates"),
+    e1Request<unknown>("/bundle-discount"),
   ]);
-  const skuPage = parseE1SkuPage<BackendSku>(rawSkuPage);
+  const firstSkuPage = parseE1SkuPage<BackendSku>(rawSkuPage);
+  if (firstSkuPage.pageNum !== 1) throw new Error("E1_SKU_PAGINATION_CONTRACT_INVALID");
   const gates = parseE1GenerationGateData<E1GenerationGateData>(rawGates);
-  const skus = await Promise.all((skuPage.records ?? []).map(fromSku).map(withFreshSkuMediaPreview));
-  return { skus, gates };
+  const bundleDiscount = parseE1BundleDiscount(rawBundleDiscount);
+  const skuRows = [...firstSkuPage.records];
+  const seenSkuIds = new Set(skuRows.map((row) => row.skuId));
+  if (seenSkuIds.size !== skuRows.length) throw new Error("E1_SKU_PAGINATION_DUPLICATE");
+  let pageNum = firstSkuPage.pageNum;
+  while (skuRows.length < firstSkuPage.total) {
+    pageNum += 1;
+    const next = parseE1SkuPage<BackendSku>(
+      await e1Request<unknown>(`/skus?pageNum=${pageNum}&pageSize=${firstSkuPage.pageSize}`),
+    );
+    if (next.pageNum !== pageNum || next.pageSize !== firstSkuPage.pageSize || next.total !== firstSkuPage.total
+        || next.records.length === 0) {
+      throw new Error("E1_SKU_PAGINATION_CONTRACT_INVALID");
+    }
+    for (const row of next.records) {
+      if (seenSkuIds.has(row.skuId)) throw new Error("E1_SKU_PAGINATION_DUPLICATE");
+      seenSkuIds.add(row.skuId);
+      skuRows.push(row);
+    }
+  }
+  if (skuRows.length !== firstSkuPage.total) throw new Error("E1_SKU_PAGINATION_CONTRACT_INVALID");
+  const skus = await Promise.all(skuRows.map(fromSku).map(withFreshSkuMediaPreview));
+  return { skus, gates, bundleDiscount };
+}
+
+export function parseE1BundleDiscount(value: unknown): E1BundleDiscount {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("E1_BUNDLE_DISCOUNT_CONTRACT_INVALID");
+  }
+  const row = value as Record<string, unknown>;
+  const numbers = [row.twoItemsPct, row.threeItemsPct, row.fourPlusItemsPct];
+  if (row.domain !== "E1" || row.source !== "nx_config_item"
+      || !Number.isSafeInteger(row.version) || (row.version as number) < 1
+      || numbers.some((item) => typeof item !== "number" || !Number.isFinite(item)
+        || item <= 0 || item > 50)
+      || (numbers[1] as number) < (numbers[0] as number)
+      || (numbers[2] as number) < (numbers[1] as number)) {
+    throw new Error("E1_BUNDLE_DISCOUNT_CONTRACT_INVALID");
+  }
+  return {
+    domain: "E1",
+    version: row.version as number,
+    twoItemsPct: numbers[0] as number,
+    threeItemsPct: numbers[1] as number,
+    fourPlusItemsPct: numbers[2] as number,
+    source: "nx_config_item",
+  };
+}
+
+export async function updateE1BundleDiscount(
+  input: Pick<E1BundleDiscount, "twoItemsPct" | "threeItemsPct" | "fourPlusItemsPct" | "version">,
+  reason: string,
+  operator: string,
+) {
+  const raw = await e1Request<unknown>("/bundle-discount", {
+    method: "PUT",
+    body: JSON.stringify({
+      twoItemsPct: input.twoItemsPct,
+      threeItemsPct: input.threeItemsPct,
+      fourPlusItemsPct: input.fourPlusItemsPct,
+      expectedVersion: input.version,
+      reason,
+      operator,
+    }),
+    idempotencyPrefix: "e1-bundle-discount",
+  });
+  return parseE1BundleDiscount(raw);
 }
 
 export async function saveE1Sku(sku: OpsSku, previousSkuId: string | undefined, reason: string, operator: string) {

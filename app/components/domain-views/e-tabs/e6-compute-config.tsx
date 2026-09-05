@@ -56,6 +56,22 @@ function firstFreeKeywordSlot(keywords: E6GpuTierView["keywords"]): string | nul
   return null;
 }
 
+function isSafeInstallerUrl(value: string): boolean {
+  try {
+    if (!value || value.length > 300) return false;
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    const blockedHost = host === "localhost" || host === "127.0.0.1"
+      || host === "baidu.com" || host.endsWith(".baidu.com")
+      || host === "example.com" || host.endsWith(".example.com");
+    return url.protocol === "https:" && !!host && !blockedHost
+      && !url.username && !url.password && !url.hash
+      && /\.(exe|msi|msix|dmg|pkg|zip)$/i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
 export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
   const {
     canWriteE6, canToggleE6, e6Config, e6Loading, e6Error, refreshE6, openActionConfirm,
@@ -65,17 +81,20 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
   const yields = e6Config?.yieldEstimate ?? [];
   const gpuTiers = e6Config?.gpuTiers ?? [];
   const download = e6Config?.download;
+  const downloadUrl = (download?.url ?? "").trim();
+  const downloadReady = isSafeInstallerUrl(downloadUrl);
   const ready = !!e6Config; // 后端聚合视图已加载
 
   // 入口开关切换 → param-fixed on/off。
   const requestToggle = (key: string, label: string, current: boolean) => {
     const next = !current;
+    if (next && !downloadReady) return;
     openActionConfirm({
       name: `${next ? "开启" : "关闭"}${label}`,
       op: "param-fixed",
       paramKey: e6FlagKey(key),
       fixedVal: next ? "on" : "off",
-      detail: `${next ? "开启" : "关闭"}「${label}」。批准后保存服务端开关并同步用户端配置缓存;PC 载体入口与下载页显隐属于后续 SPEC,当前不会出现新入口。`,
+      detail: `${next ? "开启" : "关闭"}「${label}」。批准后保存服务端开关并同步用户端配置缓存；开启前必须先配置有效的 HTTPS 安装包地址，App 才会开放下载和配对入口。`,
     });
   };
 
@@ -157,7 +176,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
       op: "param",
       paramKey: e6DownloadKey("url"),
       edit: { kind: "text", current, unit: "HTTPS 下载地址", disallowCurrent: true },
-      detail: "仅接受受控 HTTPS 安装包地址。留空或校验失败都会保持未配置；当前用户端没有下载入口。",
+      detail: "仅接受受控 HTTPS 安装包地址。留空或校验失败都会保持未配置；开关和地址同时有效后，App 才会开放下载和配对入口。",
     });
   };
   const clearDownloadUrl = () => {
@@ -215,7 +234,6 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
   }
 
   const onCount = flags.filter((f) => f.enabled).length;
-  const downloadUrl = (download?.url ?? "").trim();
   const keywordCount = gpuTiers.reduce((sum, t) => sum + t.keywords.length, 0);
   const coeffValueByLabel = (labelToken: string): string => {
     const c = coefficients.find((item) => item.label.includes(labelToken));
@@ -227,7 +245,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
       <EStats items={[
         { k: "入口开关", v: flags.length, sub: e6Loading ? "加载中" : `${onCount} 个开启`, tone: "cyan" },
         { k: "显卡档位", v: gpuTiers.length, sub: `${keywordCount} 个识别词`, tone: "ok" },
-        { k: "下载地址", v: downloadUrl ? "待发布核验" : "未配置", sub: downloadUrl ? "已配置安装包地址；当前仍无用户下载入口" : "未配置 · 当前无用户下载入口", tone: downloadUrl ? "ok" : "" },
+        { k: "下载地址", v: downloadReady ? "已配置" : "未配置", sub: downloadReady ? "App 下载与配对入口具备开放条件" : "入口保持关闭", tone: downloadReady ? "ok" : "" },
         { k: "在线系数", v: coefficients.length, sub: "H5 / App 稳定性", tone: "cyan" },
       ]} />
 
@@ -257,6 +275,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
                   className="e6-switch"
                   data-on={on}
                   data-proof="e6-flag-toggle"
+                  disabled={!on && !downloadReady}
                   onClick={() => requestToggle(f.key, f.label, on)}
                 >
                   <span className="e6-switch-knob" aria-hidden />
@@ -266,7 +285,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
           );
         })}
         <div className="tint cyan tiny" style={{ margin: "0 16px 14px" }}>
-          <AutoGloss>此处保存服务端开关并同步用户端配置缓存。PC 载体入口与下载页显隐属于后续 SPEC,当前不会出现新入口;历史设备也不会因切换开关而被隐藏或删除。</AutoGloss>
+          <AutoGloss>此处保存服务端开关并同步用户端配置缓存。只有开关开启且安装包地址通过 HTTPS 校验时，App 才会开放下载与配对入口；历史设备不会因切换开关而被隐藏或删除。</AutoGloss>
         </div>
       </section>
 
@@ -378,7 +397,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
             <span className={downloadUrl ? "v" : "v muted"}>{downloadUrl || "未配置 · 当前无用户下载入口"}</span>
             {canWriteE6 && <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
               <button type="button" className="adj" onClick={editDownloadUrl}>{downloadUrl ? "修改地址" : "填写地址"}</button>
-              <button type="button" className="adj" onClick={clearDownloadUrl} disabled={!downloadUrl}>清空地址</button>
+              <button type="button" className="adj" onClick={clearDownloadUrl} disabled={!downloadUrl || flags.some((flag) => flag.key === "computeShareEnabled" && flag.enabled)}>清空地址</button>
             </div>}
           </div>
           <div className="e6-copy-grid">

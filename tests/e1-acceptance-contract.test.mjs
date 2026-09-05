@@ -12,6 +12,14 @@ const e1Route = readFileSync(new URL("../app/api/admin/e1/[...path]/route.ts", i
 const domainCss = readFileSync(new URL("../app/components/domain-views/e-domain.css", import.meta.url), "utf8");
 const registry = readFileSync(new URL("../lib/admin/high-ops-registry.ts", import.meta.url), "utf8");
 
+test("E1 rejects duplicate SKU ids already present in the first catalog page", () => {
+  assert.match(e1Client, /if \(seenSkuIds\.size !== skuRows\.length\) throw new Error\("E1_SKU_PAGINATION_DUPLICATE"\)/);
+});
+
+test("E1 rejects a first catalog response that does not echo page one", () => {
+  assert.match(e1Client, /if \(firstSkuPage\.pageNum !== 1\) throw new Error\("E1_SKU_PAGINATION_CONTRACT_INVALID"\)/);
+});
+
 test("E-domain confirmations await A2 and preserve one command key across retries", () => {
   assert.doesNotMatch(view, /void propose\(/);
   // 2026-08-06:命令号从弹窗组件态(`spec.commandKey ?? mc?.commandKey`)迁到持久 SlotAttemptStore。
@@ -38,7 +46,7 @@ test("E1 keeps the canonical SERVER product type instead of rejecting physical s
   assert.match(e1Client, /productType:\s*"SERVER"\s*\|\s*"DEVICE"\s*\|\s*"SHARE"/);
   assert.match(e1Client, /\["SERVER",\s*"DEVICE",\s*"SHARE"\]\.includes\(sku\.productType\)/);
   assert.match(e1Data, /const productType = existing\?\.productType \?\? \(isShare \? "SHARE" : "DEVICE"\)/);
-  assert.match(e1Data, /sold: skuNumU\(f\.sold\), productType, inventoryMode/);
+  assert.match(e1Data, /sold: existing\?\.sold \?\? 0, productType, inventoryMode/);
   assert.match(e1Client, /inventoryMode === "UNLIMITED" && productType !== "SHARE"/);
 });
 
@@ -132,7 +140,7 @@ test("E1 early-access promotional discount does not claim B1 cash-outflow gating
 
 test("E1 hides every mutation entry point from read-only identities", () => {
   assert.match(view, /authorities\.includes\("device_e1_write"\)/);
-  assert.match(view, /const canUseE1Writes = canWriteE1 && !e1Loading && !e1Error && e1Gates !== null/);
+  assert.match(view, /const canUseE1Writes = canWriteE1 && !e1Loading && !e1Error\s*&& e1Gates !== null && e1BundleDiscount !== null/);
   assert.match(view, /canWriteE1: canUseE1Writes/);
   assert.match(view, /tab === "E1" \? \(canUseE1Writes \?/);
   assert.match(catalog, /const canWrite = ctx\.canWriteE1/);

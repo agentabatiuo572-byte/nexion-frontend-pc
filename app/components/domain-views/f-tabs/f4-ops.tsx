@@ -43,6 +43,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
   const canFund = ctx.can("network_f4_pool_fund");
   const canApproveAmbassador = ctx.can("network_f4_ambassador_approve");
   const canControlLeaderboard = ctx.can("network_f4_leaderboard_control");
+  const ambassadorPolicy = ctx.f4AmbassadorPolicy;
 
   if (ctx.f4Loading && !data) {
     return <section className="sect"><div className="empty">F4 数据加载中...</div></section>;
@@ -79,7 +80,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
     : "暂无头部占比样本";
   const lbDq = data.leaderboardDisqualified;
   const maxVote = Math.max(1, ...data.voteWeights.map((row) => row.votes));
-  const monthPoolUsd = Math.round(data.weeklyInjectedUsd * 4.33);
+  const monthPoolUsd = data.currentWeekPoolUsd === null ? null : Math.round(data.currentWeekPoolUsd * 4.33);
   const settleCron = data.configValues["F.pool.settleCron"] ?? "";
   const unlockVRank = data.configValues["F.pool.unlockVRank"] ?? "";
   const settlementConfig = validateF4SettlementConfig({
@@ -154,7 +155,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
             <span className="tag">F4 · F.pool.*</span>
           </div>
           <div className="pool-hero">
-            <div><div className="lbl">本周池{data.poolRatio ? `(周 GMV × ${ratioEff})` : ""}</div><div className="v">{usd(data.weeklyInjectedUsd)}</div></div>
+            <div><div className="lbl">本周池 · 已结算取实付，未结算按周 GMV × 比例并受月剩余额度约束</div><div className="v">{data.currentWeekPoolUsd === null ? "暂不可计算" : usd(data.currentWeekPoolUsd)}</div></div>
             <div className="meta">{settlementEff}<br />参与 {unlockLabel} 领袖 <b>{data.participantCount}</b></div>
           </div>
           {!settlementOperable && <div className="f4-warn" role="alert">
@@ -176,7 +177,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
               },
             })}>提前结算本周池</button>}
             {canFund && <button className="primary amp" onClick={() => ctx.openActionConfirm({ name: "领导池比例调整(周 GMV)", amplify: true, op: "param", paramKey: "F.pool.ratio", edit: { kind: "text", current: data.poolRatio, unit: "%" }, detail: `每周 GMV 注入领导池的比例 · 当前 ${ratioEff} · 放大池子流出,受 B1 约束。` })}>调整池比例</button>}
-            {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "领导池月度 cap 调整", op: "param", paramKey: "F.pool.monthlyCap", edit: { kind: "text", current: data.monthlyCapLabel }, detail: `领导池月度预留护栏 · 当前 ${capEff} · 当前月池约 ${usdM(monthPoolUsd)}。` })}>调整月度 cap</button>}
+            {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "领导池月度 cap 调整", op: "param", paramKey: "F.pool.monthlyCap", edit: { kind: "text", current: data.monthlyCapLabel }, detail: `领导池月度预留护栏 · 当前 ${capEff} · 按本周外推月池约 ${monthPoolUsd === null ? "暂不可计算" : usdM(monthPoolUsd)}（仅估算）。` })}>调整月度 cap</button>}
             {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "池结算周期调整", op: "param", paramKey: "F.pool.settleCron", edit: { kind: "text", current: settleCron, unit: "cron 表达式" }, detail: `领导奖池自动结算的 cron 周期 · 当前 ${settleCronEff} · 改后对下一周期派发生效。` })}>结算周期</button>}
             {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "池解锁等级调整", op: "param", paramKey: "F.pool.unlockVRank", edit: { kind: "select", current: unlockVRank, options: POOL_UNLOCK_OPTIONS }, detail: `领导奖池参与门槛 · 当前 ${unlockVRankEff} · 调高收紧参与人数,调低放大分润人数。` })}>解锁等级</button>}
             {canFund && <button onClick={() => ctx.openActionConfirm({ name: "头部集中度·Top1 上限调整", amplify: true, op: "param", paramKey: "F.pool.top1MaxPct", edit: { kind: "number", current: top1MaxPct, unit: "%" }, detail: `领导池 Top1 头部集中度上限 · 当前 ${top1MaxPct}% · 范围 0-100 · 调低抑制头部虹吸,受 B1 约束。` })}>Top1 集中度</button>}
@@ -244,6 +245,64 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
           <div className="kv-row"><span className="k">本月已批准预算</span><span className="v ok">{ambassadorBudgetLabel}</span></div>
           <div className="kv-row"><span className="k">KOL 预算占比</span><span className="v">{data.ambassadorKolBudgetPct}%</span></div>
           <div className="kv-row"><span className="k">下季度配额评估</span><span className="v dim">{nextQuotaReviewDate}</span></div>
+          {ambassadorPolicy && <>
+            <div className="kv-row"><span className="k">申请政策版本</span><span className="v dim">{ambassadorPolicy.policyVersion} · revision {ambassadorPolicy.revision}</span></div>
+            <div className="kv-row"><span className="k">默认申请预算</span><span className="v">${ambassadorPolicy.defaultBudgetUsdt.toLocaleString("en-US")}</span></div>
+            <div className="amb-bands">
+              {ambassadorPolicy.buckets.map((bucket) => <div key={bucket.id} className="amb-band">
+                <div className="nm">{bucket.title} · {bucket.id}</div>
+                <div className="ct">${bucket.minBudgetUsdt.toLocaleString("en-US")} - ${bucket.maxBudgetUsdt.toLocaleString("en-US")} · {bucket.range}</div>
+                <div className="ct">{bucket.rule}</div>
+              </div>)}
+            </div>
+            {canFund && <div className="sect-foot"><button className="primary amp" onClick={() => ctx.openActionConfirm({
+              name: "区域大使申请政策调整",
+              amplify: true,
+              businessForm: {
+                kind: "multi-field",
+                title: "区域大使申请政策",
+                hint: `当前 revision ${ambassadorPolicy.revision}。保存使用版本冲突保护；扩大预算受 B1 覆盖率红线约束。`,
+                fields: [
+                  { key: "policyVersion", label: "政策版本", current: ambassadorPolicy.policyVersion, inputKind: "text" },
+                  { key: "defaultBudgetUsdt", label: "默认预算(USDT)", current: String(ambassadorPolicy.defaultBudgetUsdt), inputKind: "number", min: 100 },
+                  ...ambassadorPolicy.buckets.flatMap((bucket) => [
+                    { key: `${bucket.id}.title`, label: `${bucket.id} 名称`, current: bucket.title, inputKind: "text" as const },
+                    { key: `${bucket.id}.range`, label: `${bucket.id} 展示范围`, current: bucket.range, inputKind: "text" as const },
+                    { key: `${bucket.id}.rule`, label: `${bucket.id} 资格规则`, current: bucket.rule, inputKind: "text" as const },
+                    { key: `${bucket.id}.min`, label: `${bucket.id} 最低预算`, current: String(bucket.minBudgetUsdt), inputKind: "number" as const, min: 100 },
+                    { key: `${bucket.id}.max`, label: `${bucket.id} 最高预算`, current: String(bucket.maxBudgetUsdt), inputKind: "number" as const, min: 100 },
+                  ]),
+                ],
+              },
+              detail: "此处直接维护正式 App 提交时强制校验的 nx_team_ambassador_policy；不是展示镜像。",
+              completionCopy: "政策已按 revision 原子更新；App 下一次打开/刷新申请页即读取新政策。",
+              run: async (reason, values) => {
+                if (!values) throw new Error("请填写完整政策");
+                const defaultBudgetUsdt = Number(values.defaultBudgetUsdt);
+                const buckets = ambassadorPolicy.buckets.map((bucket) => ({
+                  id: bucket.id,
+                  title: String(values[`${bucket.id}.title`] ?? "").trim(),
+                  range: String(values[`${bucket.id}.range`] ?? "").trim(),
+                  rule: String(values[`${bucket.id}.rule`] ?? "").trim(),
+                  minBudgetUsdt: Number(values[`${bucket.id}.min`]),
+                  maxBudgetUsdt: Number(values[`${bucket.id}.max`]),
+                }));
+                if (!String(values.policyVersion ?? "").trim() || !Number.isFinite(defaultBudgetUsdt)
+                  || buckets.some((bucket) => !bucket.title || !bucket.range || !bucket.rule
+                    || !Number.isFinite(bucket.minBudgetUsdt) || !Number.isFinite(bucket.maxBudgetUsdt)
+                    || bucket.minBudgetUsdt < 100 || bucket.maxBudgetUsdt < bucket.minBudgetUsdt || bucket.maxBudgetUsdt > 10_000)) {
+                  throw new Error("政策字段不完整或预算范围无效");
+                }
+                await ctx.updateF4AmbassadorPolicy({
+                  policyVersion: String(values.policyVersion).trim(),
+                  revision: ambassadorPolicy.revision,
+                  defaultBudgetUsdt,
+                  buckets,
+                }, reason);
+                ctx.toast("区域大使申请政策已更新并回读");
+              },
+            })}>调整申请政策</button></div>}
+          </>}
         </section>
 
         <section className="sect">

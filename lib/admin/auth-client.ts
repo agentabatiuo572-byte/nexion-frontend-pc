@@ -81,7 +81,9 @@ export async function verifyAdminMfa(challengeId: string, code: string): Promise
   });
   const result = (await response.json().catch(() => null)) as ApiResult<LoginPayload> | null;
   if (!response.ok || !result || result.code !== 0 || !result.data?.session) {
-    throw new Error(formatAdminApiError(result?.message, "ADMIN_MFA_CODE_INVALID"));
+    throw Object.assign(new Error(formatAdminApiError(result?.message, "ADMIN_MFA_CODE_INVALID")), {
+      code: result?.message || "ADMIN_MFA_CODE_INVALID",
+    });
   }
   return normalizeLoginPayload(result.data);
 }

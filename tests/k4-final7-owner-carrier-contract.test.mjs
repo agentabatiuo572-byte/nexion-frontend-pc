@@ -52,7 +52,7 @@ test("K4 Final7 carrier contains the complete write/consistency/cleanup closure"
   assert.doesNotMatch(source, /operations\s*=\s*\{\s*cas,\s*idempotency/);
   assert.match(source, /password|totpSecret|dbPassword/);
   assert.doesNotMatch(source, /console\.(?:log|warn|error)\([^)]*(?:password|totpSecret|dbPassword)/i);
-  assert.doesNotMatch(source, /Admin@123456|A123456789Z/);
+  assert.doesNotMatch(source, /Admin@[0-9]{6,}|A123456789Z/);
 });
 
 test("K4 Final7 carrier waits for durable cleanup and only exempts replaced navigation cancellations", () => {

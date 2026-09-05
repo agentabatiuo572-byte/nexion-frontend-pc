@@ -5,7 +5,7 @@ import { CONSOLE_NAV } from "../../../lib/nav/console-nav";
 
 export const BASE_URL = process.env.ADMIN_BASE_URL ?? "http://127.0.0.1:3002";
 export const SUPER_USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-export const SUPER_PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+export const SUPER_PASSWORD = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })());
 export const SHIFT_PASSWORD = process.env.ADMIN_E2E_SHIFT_PASSWORD || "E2eShift@12345";
 export const RUN_ID = sanitizeRunId(process.env.ADMIN_E2E_SHIFT_RUN_ID || new Date().toISOString().replace(/[-:.TZ]/g, ""));
 export const REPORT_DIR = process.env.ADMIN_E2E_SHIFT_REPORT_DIR || path.join(process.cwd(), ".codex-run", "ops-shift", RUN_ID, "reports");

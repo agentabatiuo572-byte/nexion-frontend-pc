@@ -1,6 +1,7 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 
 interface ApiResult<T> {
   code: number;
@@ -112,7 +113,7 @@ export async function growthRequest<T>(path: string, init?: RequestInit, idempot
     // 带上 HTTP 状态码 + 回执是否读得出:H8 的稳定命令号靠它们区分「后端明确拒绝(4xx)」与
     // 「结果未知(5xx / 回执读不出)」。growth proxy 后端不可达时返回的是**带 JSON body 的 503**,
     // 只认解析异常会把它误判成确定性失败。网络层异常已由 guardedFetch 接管(抛出的 Error 没有 status)。
-    Object.assign(error, { status: response.status, bodyUnreadable: result === null });
+    Object.assign(error, { status: response.status, apiCode: result?.code, bodyUnreadable: result === null });
     throw error;
   }
   return result.data as T;
@@ -179,8 +180,8 @@ async function fetchH1PhaseMutation(path: string, key: string, value: string | n
   return { ...data, rhythm: normalizeRhythm(data.rhythm) };
 }
 
-export async function fetchH2Trials(): Promise<Record<string, any>> {
-  return growthRequest<Record<string, any>>("/trials");
+export async function fetchH2Trials(pageNum = 1, pageSize = 20): Promise<Record<string, any>> {
+  return growthRequest<Record<string, any>>(`/trials?pageNum=${pageNum}&pageSize=${pageSize}`);
 }
 
 export async function updateH2TrialParam(key: string, value: string, reason: string) {
@@ -383,10 +384,11 @@ export interface H8SettlementRow {
 }
 
 export interface H8ReferralRewardOverview {
+  enabled: boolean;
   version: number;
   rewardSnapshotHash: string;
   effectiveAt: string;
-  params: Record<string, number | string>;
+  params: Record<string, number | string | boolean>;
   effectiveRewards: Record<string, number | string>;
   rhythmMonth: number;
   newcomerMultiplier: number | string;
@@ -395,8 +397,38 @@ export interface H8ReferralRewardOverview {
   settled: number;
   blockedByK2: number;
   recentSettlements: H8SettlementRow[];
+  settlementPageSize: number;
+  settlementHasMore: boolean;
+  settlementNextCursor: string;
   source: string;
   settlementMode: string;
+}
+
+export async function updateH3LocalizedContent(
+  entity: "mission",
+  code: string,
+  field: "name",
+  locale: "en" | "zh" | "vi",
+  value: string,
+  expectedValue: string,
+  reason: string,
+) {
+  return updateH3QuestConfig(`content.${entity}.${code}.${field}.${locale}`, value, reason, expectedValue);
+}
+
+export async function updateH4LocalizedContent(
+  eventCode: string,
+  field: "name" | "description" | "rewardName",
+  locale: "en" | "zh" | "vi",
+  value: string,
+  expectedValue: string,
+  reason: string,
+) {
+  return growthRequest<Record<string, any>>(
+    `/quest-events/events/${encodeURIComponent(eventCode)}/content/${field}/${locale}`,
+    { method: "PATCH", body: commandBody(field, value, reason, currentAdminOperator(), expectedValue) },
+    `h4-content-${field}`,
+  );
 }
 
 function h8Invalid(field: string): never {
@@ -452,8 +484,10 @@ export function parseH8ReferralRewardOverview(value: unknown): H8ReferralRewardO
   const root = h8Record(value, "root");
   const params = h8Record(root.params, "params");
   const effective = h8Record(root.effectiveRewards, "effectiveRewards");
-  const expectedParams = ["newcomer.usdt", "newcomer.nex", "newcomer.lockMode", "inviter.nex"];
+  const expectedParams = ["enabled", "newcomer.usdt", "newcomer.nex", "newcomer.lockMode", "inviter.nex"];
   if (expectedParams.some((key) => !(key in params))) h8Invalid("params.keys");
+  if (typeof root.enabled !== "boolean" || typeof params.enabled !== "boolean"
+      || root.enabled !== params.enabled) h8Invalid("enabled");
   const lockMode = h8String(params["newcomer.lockMode"], "params.newcomer.lockMode");
   if (lockMode !== "risk_bucket" && lockMode !== "direct") h8Invalid("params.newcomer.lockMode");
   const rows = Array.isArray(root.recentSettlements)
@@ -478,7 +512,14 @@ export function parseH8ReferralRewardOverview(value: unknown): H8ReferralRewardO
   if (source !== "nx_user.sponsor_user_id" || settlementMode !== "REAL_WALLET_LEDGER") {
     h8Invalid("production.provenance");
   }
+  const settlementPageSize = h8PositiveCount(root.settlementPageSize, "settlementPageSize");
+  if (settlementPageSize > 100 || typeof root.settlementHasMore !== "boolean"
+      || typeof root.settlementNextCursor !== "string"
+      || (root.settlementHasMore && !/^[1-9]\d*$/.test(root.settlementNextCursor))) {
+    h8Invalid("settlementPagination");
+  }
   return {
+    enabled: root.enabled,
     version: h8PositiveCount(root.version, "version"),
     rewardSnapshotHash: (() => {
       const value = h8String(root.rewardSnapshotHash, "rewardSnapshotHash");
@@ -487,6 +528,7 @@ export function parseH8ReferralRewardOverview(value: unknown): H8ReferralRewardO
     })(),
     effectiveAt: h8IsoInstant(root.effectiveAt, "effectiveAt"),
     params: {
+      enabled: params.enabled,
       "newcomer.usdt": h8Decimal(params["newcomer.usdt"], "params.newcomer.usdt"),
       "newcomer.nex": h8Decimal(params["newcomer.nex"], "params.newcomer.nex"),
       "newcomer.lockMode": lockMode,
@@ -504,13 +546,17 @@ export function parseH8ReferralRewardOverview(value: unknown): H8ReferralRewardO
     settled: h8NonNegativeCount(root.settled, "settled"),
     blockedByK2: h8NonNegativeCount(root.blockedByK2, "blockedByK2"),
     recentSettlements: rows,
+    settlementPageSize,
+    settlementHasMore: root.settlementHasMore,
+    settlementNextCursor: root.settlementNextCursor,
     source,
     settlementMode,
   };
 }
 
-export async function fetchH8ReferralRewards(): Promise<H8ReferralRewardOverview> {
-  return parseH8ReferralRewardOverview(await growthRequest<unknown>("/referral-rewards"));
+export async function fetchH8ReferralRewards(cursor = ""): Promise<H8ReferralRewardOverview> {
+  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}&pageSize=20` : "?pageSize=20";
+  return parseH8ReferralRewardOverview(await growthRequest<unknown>(`/referral-rewards${query}`));
 }
 
 export async function updateH8ReferralRewardParam(
@@ -554,71 +600,220 @@ export async function updateH8ReferralRewardParam(
 
 // ===== H3/H4 业务实体创建(后端 POST /growth/quest-events/*) =====
 
-export async function createH3Mission(mission: Record<string, any>, reason: string) {
-  return growthRequest<Record<string, any>>(
-    "/quest-events/missions",
-    { method: "POST", body: JSON.stringify({ ...mission, reason, operator: currentAdminOperator() }) },
-    "h3-mission-create",
-  );
+const h3MissionCommands = createPendingMutationStore({
+  storageKey: "nexion-admin-h3-mission-commands-v1",
+});
+
+export class H3MissionOutcomeUncertainError extends Error {
+  constructor(message: string, readonly commandKey: string, readonly readback?: Record<string, any>) {
+    super(message);
+    this.name = "H3MissionOutcomeUncertainError";
+  }
 }
 
-export async function createH3MonthlyMission(mission: Record<string, any>, reason: string) {
-  return growthRequest<Record<string, any>>(
-    "/quest-events/monthly-missions",
-    { method: "POST", body: JSON.stringify({ ...mission, reason, operator: currentAdminOperator() }) },
-    "h3-monthly-create",
-  );
+export function isH3MissionOutcomeUncertainError(error: unknown): error is H3MissionOutcomeUncertainError {
+  return error instanceof H3MissionOutcomeUncertainError
+    || (error instanceof Error
+      && error.name === "H3MissionOutcomeUncertainError"
+      && typeof (error as Error & { commandKey?: unknown }).commandKey === "string");
+}
+
+async function h3MissionCommand(
+  path: string,
+  method: "POST" | "PATCH" | "DELETE",
+  command: Record<string, unknown>,
+) {
+  const body = JSON.stringify({ ...command, operator: currentAdminOperator() });
+  const fingerprint = `${method} ${path}\n${body}`;
+  const commandKey = h3MissionCommands.get(fingerprint) ?? nextIdempotencyKey(`h3-mission-${method.toLowerCase()}`);
+  h3MissionCommands.remember(fingerprint, commandKey);
+  let writeAcknowledged = false;
+  try {
+    await growthRequest<Record<string, any>>(path, {
+      method,
+      headers: { "Idempotency-Key": commandKey },
+      body,
+    });
+    writeAcknowledged = true;
+    const readback = await fetchH3QuestEvents("tasks");
+    h3MissionCommands.forget(fingerprint);
+    return readback;
+  } catch (error) {
+    const { status, apiCode, bodyUnreadable } = error as Error & {
+      status?: number;
+      apiCode?: number;
+      bodyUnreadable?: boolean;
+    };
+    if (writeAcknowledged || typeof status !== "number" || bodyUnreadable || outcomeStaysUnknown(status, apiCode)) {
+      const readback = await fetchH3QuestEvents("tasks").catch(() => undefined);
+      throw new H3MissionOutcomeUncertainError(
+        (error instanceof Error && error.message) || "H3_MISSION_OUTCOME_UNKNOWN",
+        commandKey,
+        readback,
+      );
+    }
+    h3MissionCommands.forget(fingerprint);
+    throw error;
+  }
+}
+
+export function createH3Mission(mission: Record<string, any>, reason: string) {
+  return h3MissionCommand("/quest-events/missions", "POST", { ...mission, reason });
+}
+
+export function createH3MonthlyMission(mission: Record<string, any>, reason: string) {
+  return h3MissionCommand("/quest-events/monthly-missions", "POST", { ...mission, reason });
 }
 
 export type H3MissionKind = "MISSION" | "MONTHLY";
 
-export async function editH3Mission(
+export type H3QuestEventBinding = {
+  bindingCode: string;
+  producer: "ORDER" | "REFERRAL" | "LEARNING" | "DEVICE" | "COMMISSION";
+  eventType: string;
+  questCode: string;
+  userIdField: "user_id" | "inviter_user_id";
+  status: number;
+};
+
+export type H3QuestEventBindingCommand = {
+  producer?: H3QuestEventBinding["producer"];
+  eventType?: string;
+  questCode?: string;
+  userIdField?: H3QuestEventBinding["userIdField"];
+  enabled?: boolean;
+  expectedProducer?: H3QuestEventBinding["producer"];
+  expectedEventType?: string;
+  expectedQuestCode?: string;
+  expectedUserIdField?: H3QuestEventBinding["userIdField"];
+  expectedEnabled?: boolean;
+  reason: string;
+};
+
+/**
+ * 绑定命令会改变任务完成归因；响应丢失时不能另铸命令号，否则可能产生重复审计或覆盖重绑。
+ * 成功后强制读回 H3 任务投影，避免用写入响应推断最终绑定状态。
+ */
+const h3BindingCommands = createPendingMutationStore({
+  storageKey: "nexion-admin-h3-binding-commands-v1",
+});
+
+export class H3BindingOutcomeUncertainError extends Error {
+  constructor(message: string, readonly commandKey: string, readonly readback?: Record<string, any>) {
+    super(message);
+    this.name = "H3BindingOutcomeUncertainError";
+  }
+}
+
+export function isH3BindingOutcomeUncertainError(error: unknown): error is H3BindingOutcomeUncertainError {
+  return error instanceof H3BindingOutcomeUncertainError
+    || (error instanceof Error
+      && error.name === "H3BindingOutcomeUncertainError"
+      && typeof (error as Error & { commandKey?: unknown }).commandKey === "string");
+}
+
+async function h3BindingCommand(
+  bindingCode: string,
+  method: "POST" | "PATCH" | "DELETE",
+  command: H3QuestEventBindingCommand,
+) {
+  const path = `/quest-events/bindings/${encodeURIComponent(bindingCode)}`;
+  const body = JSON.stringify({ ...command, operator: currentAdminOperator() });
+  const fingerprint = `${method} ${path}\n${body}`;
+  const commandKey = h3BindingCommands.get(fingerprint) ?? nextIdempotencyKey(`h3-quest-binding-${method.toLowerCase()}`);
+  h3BindingCommands.remember(fingerprint, commandKey);
+  let writeAcknowledged = false;
+  try {
+    await growthRequest<Record<string, any>>(path, {
+      method,
+      headers: { "Idempotency-Key": commandKey },
+      body,
+    });
+    writeAcknowledged = true;
+    // 服务端 mutation 响应只是提交确认；读回才是 UI 的最终事实。
+    const readback = await fetchH3QuestEvents("tasks");
+    h3BindingCommands.forget(fingerprint);
+    return readback;
+  } catch (error) {
+    const { status, apiCode, bodyUnreadable } = error as Error & {
+      status?: number;
+      apiCode?: number;
+      bodyUnreadable?: boolean;
+    };
+    if (writeAcknowledged || typeof status !== "number" || bodyUnreadable || outcomeStaysUnknown(status, apiCode)) {
+      // 即便本次写回执丢失，也先尽力回读权威投影；调用方只能显示回读结果，不能假定写入成功。
+      const readback = await fetchH3QuestEvents("tasks").catch(() => undefined);
+      throw new H3BindingOutcomeUncertainError(
+        (error instanceof Error && error.message) || "H3_BINDING_OUTCOME_UNKNOWN",
+        commandKey,
+        readback,
+      );
+    }
+    h3BindingCommands.forget(fingerprint);
+    throw error;
+  }
+}
+
+export function createH3QuestEventBinding(bindingCode: string, command: H3QuestEventBindingCommand) {
+  return h3BindingCommand(bindingCode, "POST", command);
+}
+
+export function updateH3QuestEventBinding(bindingCode: string, command: H3QuestEventBindingCommand) {
+  return h3BindingCommand(bindingCode, "PATCH", command);
+}
+
+export function deleteH3QuestEventBinding(bindingCode: string, command: H3QuestEventBindingCommand) {
+  return h3BindingCommand(bindingCode, "DELETE", command);
+}
+
+export function editH3Mission(
   taskCode: string,
   taskKind: H3MissionKind,
   name: string,
   expectedName: string,
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
-    `/quest-events/tasks/${encodeURIComponent(taskCode)}`,
-    { method: "PATCH", body: JSON.stringify({ taskKind, name, expectedName, reason, operator: currentAdminOperator() }) },
-    "h3-mission-edit",
-  );
+  return h3MissionCommand(`/quest-events/tasks/${encodeURIComponent(taskCode)}`, "PATCH",
+    { taskKind, name, expectedName, reason });
 }
 
-export async function transitionH3Mission(
+export function updateH3MissionPresentation(
+  taskCode: string,
+  category: string,
+  actionRoute: string,
+  expectedCategory: string,
+  expectedActionRoute: string,
+  reason: string,
+) {
+  return h3MissionCommand(`/quest-events/tasks/${encodeURIComponent(taskCode)}/presentation`, "PATCH", {
+    category, actionRoute, expectedCategory, expectedActionRoute, reason,
+  });
+}
+
+export function transitionH3Mission(
   taskCode: string,
   taskKind: H3MissionKind,
   targetStatus: "active" | "paused",
   expectedStatus: "active" | "paused",
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
-    `/quest-events/tasks/${encodeURIComponent(taskCode)}/status`,
-    { method: "PATCH", body: JSON.stringify({ taskKind, targetStatus, expectedStatus, reason, operator: currentAdminOperator() }) },
-    "h3-mission-status",
-  );
+  return h3MissionCommand(`/quest-events/tasks/${encodeURIComponent(taskCode)}/status`, "PATCH",
+    { taskKind, targetStatus, expectedStatus, reason });
 }
 
-export async function archiveH3Mission(
+export function archiveH3Mission(
   taskCode: string,
   taskKind: H3MissionKind,
   expectedStatus: "active" | "paused",
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
-    `/quest-events/tasks/${encodeURIComponent(taskCode)}/archive`,
-    { method: "POST", body: JSON.stringify({ taskKind, targetStatus: "archived", expectedStatus, reason, operator: currentAdminOperator() }) },
-    "h3-mission-archive",
-  );
+  return h3MissionCommand(`/quest-events/tasks/${encodeURIComponent(taskCode)}/archive`, "POST",
+    { taskKind, targetStatus: "archived", expectedStatus, reason });
 }
 
-export async function deleteH3Mission(taskCode: string, taskKind: H3MissionKind, reason: string) {
-  return growthRequest<Record<string, any>>(
-    `/quest-events/tasks/${encodeURIComponent(taskCode)}`,
-    { method: "DELETE", body: JSON.stringify({ taskKind, targetStatus: "deleted", expectedStatus: "archived", reason, operator: currentAdminOperator() }) },
-    "h3-mission-delete",
-  );
+export function deleteH3Mission(taskCode: string, taskKind: H3MissionKind, reason: string) {
+  return h3MissionCommand(`/quest-events/tasks/${encodeURIComponent(taskCode)}`, "DELETE",
+    { taskKind, targetStatus: "deleted", expectedStatus: "archived", reason });
 }
 
 export async function createH4QuestEvent(event: Record<string, any>, reason: string) {

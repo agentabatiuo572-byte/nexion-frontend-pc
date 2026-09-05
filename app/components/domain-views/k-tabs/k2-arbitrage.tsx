@@ -53,10 +53,16 @@ type ExtraParamDef = { key: string; label: string; unit: string; min?: number; m
 
 const OTP_GATE_PARAMS: ExtraParamDef[] = [
   { key: "otpGate.resendSeconds", label: "验证码重发冷却", unit: "秒", min: 30, max: 300, step: 1 },
-  { key: "otpGate.captchaAfterSends", label: "滑块验证触发次数", unit: "次/24h", min: 1, max: 10, step: 1 },
+  { key: "otpGate.dayLimit", label: "验证码 24h 发送上限", unit: "次/24h", min: 5, max: 50, step: 1 },
   { key: "otpGate.otpTtlSeconds", label: "验证码有效期", unit: "秒", min: 60, max: 900, step: 60 },
   { key: "otpGate.maxVerifyAttempts", label: "最多输错次数", unit: "次", min: 1, max: 10, step: 1 },
-  { key: "otpGate.captchaTicketTtlSeconds", label: "滑块票据有效期", unit: "秒", min: 30, max: 600, step: 1 },
+  {
+    key: "captchaGate.alwaysScenes",
+    label: "每次都要求滑块的场景",
+    unit: "场景",
+    options: ["register", "login", "reset", "register,login", "register,reset", "login,reset", "register,login,reset"],
+  },
+  { key: "captchaGate.afterSends", label: "累计发送后要求滑块", unit: "次/24h", min: 0, max: 50, step: 1 },
 ];
 
 function parseK2Threshold(key: string, value: string): K2Threshold | null {
@@ -448,7 +454,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       </section>
 
       {[
-        { title: "短信闸门参数", sub: "· 冷却 → 24h 限频（完成 N 次发送后，第 N+1 次起要求滑块票据）→ 放行；调整只影响后续发送，已签发验证码沿用签发时参数", params: OTP_GATE_PARAMS, proof: "k2-otp-gate-params" },
+        { title: "短信闸门参数", sub: "· 冷却 → 滑动窗口 → 24h 发送上限；调整只影响后续发送，已签发验证码沿用签发时参数。滑块触发场景与累计发送阈值在此管理；票据验证器接入状态由部署环境决定。", params: OTP_GATE_PARAMS, proof: "k2-otp-gate-params" },
       ].map((group) => (
         <section className="l-card" key={group.title}>
           <div className="l-h">

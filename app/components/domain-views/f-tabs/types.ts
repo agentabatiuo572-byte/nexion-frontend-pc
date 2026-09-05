@@ -18,6 +18,7 @@ import type {
   F3SettlementExecution,
   F3Settlement,
   F4LeadershipPoolOverview,
+  F4AmbassadorPolicy,
   F5CommissionAuditOverview,
   F5CommissionQuery,
 } from "@/lib/admin/f1-client";
@@ -73,12 +74,16 @@ export interface FViewCtx {
   f1ConfigValues: Record<string, string>;
   promotionRecords: F1PromotionRecord[];
   promotionTotal: number;
+  promotionNextCursor: string;
   payoutRecords: F1RewardPayout[];
   payoutTotal: number;
-  f1FlowLoading: boolean;
-  f1FlowError: string | null;
-  queryPromotions: (filters?: F1PromotionFilters) => Promise<void>;
-  queryPayouts: (filters?: F1PayoutFilters) => Promise<void>;
+  payoutNextCursor: string;
+  f1PromotionLoading: boolean;
+  f1PromotionError: string | null;
+  f1PayoutLoading: boolean;
+  f1PayoutError: string | null;
+  queryPromotions: (filters?: F1PromotionFilters, append?: boolean) => Promise<void>;
+  queryPayouts: (filters?: F1PayoutFilters, append?: boolean) => Promise<void>;
   proposeVRankOverride: (userId: string, targetV: string, direction: "promote" | "rollback", reason: string) => Promise<void>;
   proposePayoutAction: (payoutId: string, action: "reissue" | "reverse", reason: string) => Promise<void>;
   // -- 网络版税费率(F2)· 读 + 配置写入 --
@@ -120,10 +125,12 @@ export interface FViewCtx {
   ) => Promise<F3SettlementExecution>;
   // -- 领导奖池/硬件配额/大使/榜单(F4)· 读 + 配置写入 --
   f4Overview: F4LeadershipPoolOverview | null;
+  f4AmbassadorPolicy: F4AmbassadorPolicy | null;
   f4Loading: boolean;
   f4Error: string | null;
   refreshF4: () => Promise<void>;
   updateF4Config: (key: string, value: string, reason: string, expectedVersion?: number) => Promise<void>;
+  updateF4AmbassadorPolicy: (policy: Omit<F4AmbassadorPolicy, "serverCanonical">, reason: string) => Promise<void>;
   proposeF4Settlement: (reason: string) => Promise<void>;
   proposeF4LeaderboardPayout: (period: "today" | "week" | "month" | "allTime", reason: string) => Promise<void>;
   // -- 佣金事件审计(F5)· 读 + 处置状态写入 --

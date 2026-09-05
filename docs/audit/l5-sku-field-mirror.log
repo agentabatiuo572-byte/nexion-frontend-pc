@@ -1,3 +1,0 @@
-$ C:\Program Files\nodejs\node.exe scripts/sku-field-mirror.mjs
-
-ℹ 旧静态后台 store 已删除(lib/store/admin/platform-config-store.ts)— SKU 权威已迁至真实后端接口，跳过旧 store 镜像核对

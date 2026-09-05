@@ -147,6 +147,15 @@ function backendPath(parts: string[]) {
     return `/api/admin/market/staking/pools/${encodeURIComponent(parts[2])}/${parts[3]}`;
   }
   if (
+    parts.length === 4 &&
+    parts[0] === "staking" &&
+    parts[1] === "pools" &&
+    isNonEmpty(parts[2]) &&
+    parts[3] === "restore"
+  ) {
+    return `/api/admin/market/staking/pools/${encodeURIComponent(parts[2])}/restore`;
+  }
+  if (
     parts.length === 3 &&
     parts[0] === "exchange" &&
     parts[1] === "orders" &&

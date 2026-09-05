@@ -4,7 +4,7 @@ import path from "node:path";
 import { createHmac } from "node:crypto";
 
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const PASSWORD = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })());
 const TOTP_SECRET = process.env.ADMIN_E2E_TOTP_SECRET?.trim();
 const AUDIT_USERNAME = process.env.G_AUDIT_E2E_USERNAME?.trim() || USERNAME;
 const AUDIT_PASSWORD = process.env.G_AUDIT_E2E_PASSWORD || PASSWORD;

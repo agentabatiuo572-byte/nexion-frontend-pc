@@ -22,6 +22,7 @@ const backendMapperPath = new URL(
 const appRoot = resolveNexionAppRoot({ adminRoot: path.resolve(import.meta.dirname, "..") });
 const appEventStorePath = path.join(appRoot, "src/store/event-quest.ts");
 const appSpinStorePath = path.join(appRoot, "src/store/lucky-spin.ts");
+const appSpinSheetPath = path.join(appRoot, "src/components/lucky-spin-sheet.vue");
 const appEventsApiPath = path.join(appRoot, "src/api/events-api.ts");
 
 test("H4 PC commands carry stale-write evidence and use the H4 wheel guard contract", async () => {
@@ -55,7 +56,7 @@ test("H4 backend exposes canonical App events and protects wheel governance with
   ]);
 
   assert.match(controller, /@GetMapping\("\/api\/events"\)/);
-  assert.match(controller, /service\.eventState\(userId\)/);
+  assert.match(controller, /service\.eventState\(userId, locale\)/);
   assert.match(service, /request\.expectedSignature\(\)/);
   assert.match(service, /lockWheelMutation\(\)/);
   assert.match(service, /updateWheelGuardValue\(key, oldValue, value\)/);
@@ -70,20 +71,27 @@ test("H4 backend exposes canonical App events and protects wheel governance with
 });
 
 test("H4 App remote mode consumes canonical state and server spin results", async () => {
-  const [eventStore, spinStore, eventsApi] = await Promise.all([
+  const [eventStore, spinStore, eventsApi, spinSheet] = await Promise.all([
     readFile(appEventStorePath, "utf8"),
     readFile(appSpinStorePath, "utf8"),
     readFile(appEventsApiPath, "utf8"),
+    readFile(appSpinSheetPath, "utf8"),
   ]);
 
   assert.match(eventStore, /eventsApi\.state\(\)/);
   assert.match(eventStore, /eventsApi\.join\(/);
   assert.match(eventStore, /eventsApi\.claim\(/);
-  assert.match(eventStore, /pendingKeys/);
+  // Join and claim are once-per-event commands; their stable key is event-scoped.
+  assert.match(eventStore, /eventsApi\.join\(id, `h4-event-join:\$\{id\}`\)/);
+  assert.match(eventStore, /eventsApi\.claim\(id, `h4-event-claim:\$\{id\}`\)/);
+  assert.match(eventStore, /remoteAccountEpoch\.isCurrent\(request\) && refreshRemote\(request\)/);
   assert.match(spinStore, /spinRemote/);
   assert.match(spinStore, /eventsApi\.spin\(/);
-  assert.match(spinStore, /pendingSpinKey/);
-  assert.match(eventsApi, /path: "\/api\/events"/);
+  // The confirmation sheet owns the spin intent across retries; the store forwards it.
+  assert.match(spinSheet, /pendingSpinKey \?\? createSpinIdempotencyKey\(\)/);
+  assert.match(spinStore, /eventsApi\.spin\(eventCode, idempotencyKey\)/);
+  assert.match(eventsApi, /path: `\/api\/events\?locale=\$\{encodeURIComponent\(/);
+  assert.match(eventsApi, /\["en", "zh", "vi"\]\.includes\(locale\) \? locale : "en"/);
   assert.match(eventsApi, /EVENT_FEATURED_DUPLICATED/);
   assert.match(eventsApi, /EVENT_CODE_DUPLICATED/);
 });

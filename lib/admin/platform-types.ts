@@ -5,6 +5,7 @@ export interface OpsTask {
   unit: string;
   req: string;
   sat: number | null;
+  status: "active" | "paused" | "inactive";
   taskClass?: string;
   model?: string;
   minReward?: number;

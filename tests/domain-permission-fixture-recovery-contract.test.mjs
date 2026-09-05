@@ -15,7 +15,7 @@ test("recovery harness has no historical Run or credential defaults and requires
     "DOMAIN_PERMISSION_FIXTURE_EVIDENCE_DIR",
   ]) assert.match(source, new RegExp(`required\\("${name}"\\)`));
   assert.doesNotMatch(source, /pc-full-acceptance-20\d{6}/);
-  assert.doesNotMatch(source, /Admin@123456|A123456789Z/);
+  assert.doesNotMatch(source, /Admin@[0-9]{6,}|A123456789Z/);
 });
 
 test("F maker recovery resumes the already-disabled account, removes dormant privilege, and uses formal keyed cleanup", () => {

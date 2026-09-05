@@ -1,4 +1,5 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
+import { finiteDashboardNumber } from "@/lib/admin/dashboard-number";
 import { formatAdminApiError, guardedFetch, rawFetch } from "@/lib/admin/error-messages";
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { F1OutcomeUncertainError, f1StableWrite } from "@/lib/admin/f1-stable-write";
@@ -263,6 +264,7 @@ interface BackendF4LeadershipPoolOverview {
   settlementConfigUnavailableReason?: string | null;
   metrics?: BackendF4Metric[] | null;
   weeklyInjectedUsd?: number | string | null;
+  currentWeekPoolUsd?: number | string | null;
   weeklyGmvUsd?: number | string | null;
   poolRatio?: string | null;
   poolRatioValue?: number | string | null;
@@ -474,6 +476,7 @@ export interface F1PromotionFilters {
   cohort?: string;
   from?: string;
   to?: string;
+  cursor?: string;
 }
 
 export interface F1RewardPayout {
@@ -680,6 +683,23 @@ export interface F4Podium {
 export interface F4QuotaUsage { id: number; quotaCode: string; productNo: string; userId: number; orderNo: string; quantity: number; status: string; occurredAt: string }
 export interface F4AmbassadorApplication { id: number; userId: number; applicantName: string; region: string; city: string; currentRank: string; requestedBudgetUsd: number; kolBudgetPct: number; status: string; eventDate: string; createdAt: string }
 
+export interface F4AmbassadorPolicyBucket {
+  id: "venue" | "kol" | "print" | "dev";
+  title: string;
+  range: string;
+  rule: string;
+  minBudgetUsdt: number;
+  maxBudgetUsdt: number;
+}
+
+export interface F4AmbassadorPolicy {
+  policyVersion: string;
+  revision: number;
+  defaultBudgetUsdt: number;
+  buckets: F4AmbassadorPolicyBucket[];
+  serverCanonical: true;
+}
+
 export interface F4VoteWeight {
   v: string;
   votes: number;
@@ -704,6 +724,7 @@ export interface F4LeadershipPoolOverview {
   settlementConfigUnavailableReason: string;
   metrics: F4Metric[];
   weeklyInjectedUsd: number;
+  currentWeekPoolUsd: number | null;
   weeklyGmvUsd: number;
   poolRatio: string;
   poolRatioValue: number;
@@ -1020,7 +1041,7 @@ function normalizePromotionPage(data: Record<string, unknown> | null | undefined
   return {
     total: toNumber(data?.total),
     limit: toNumber(data?.limit, 100),
-    nextCursor: "",
+    nextCursor: asText(data?.nextCursor),
     items: rawItems.map((item) => {
       const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
       return {
@@ -1266,6 +1287,7 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     settlementConfigUnavailableReason: asText(data?.settlementConfigUnavailableReason),
     metrics,
     weeklyInjectedUsd: toNumber(data?.weeklyInjectedUsd),
+    currentWeekPoolUsd: finiteDashboardNumber(data?.currentWeekPoolUsd),
     weeklyGmvUsd: toNumber(data?.weeklyGmvUsd),
     poolRatio: asText(data?.poolRatio, asText(config.poolRatio)),
     poolRatioValue: toNumber(data?.poolRatioValue),
@@ -1573,6 +1595,67 @@ export async function fetchF5CommissionAuditOverview(query: F5CommissionQuery = 
   const data = await f1Request<unknown>(`/commissions${suffix}`);
   assertF5Overview(data);
   return normalizeF5Overview(data as unknown as BackendF5CommissionAuditOverview);
+}
+
+function normalizeF4AmbassadorPolicy(raw: unknown): F4AmbassadorPolicy {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("大使政策权威快照不可用");
+  const row = raw as Record<string, unknown>;
+  const policyVersion = asText(row.policyVersion);
+  const revision = toNumber(row.revision);
+  const defaultBudgetUsdt = toNumber(row.defaultBudgetUsdt);
+  const input = Array.isArray(row.buckets) ? row.buckets : [];
+  const ids = ["venue", "kol", "print", "dev"] as const;
+  const buckets = input.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("大使政策预算分类不可用");
+    const bucket = item as Record<string, unknown>;
+    const id = asText(bucket.id) as F4AmbassadorPolicyBucket["id"];
+    return {
+      id,
+      title: asText(bucket.title),
+      range: asText(bucket.range),
+      rule: asText(bucket.rule),
+      minBudgetUsdt: toNumber(bucket.minBudgetUsdt),
+      maxBudgetUsdt: toNumber(bucket.maxBudgetUsdt),
+    };
+  });
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test(policyVersion)
+    || !Number.isSafeInteger(revision) || revision <= 0
+    || !Number.isFinite(defaultBudgetUsdt) || defaultBudgetUsdt <= 0
+    || buckets.length !== ids.length
+    || ids.some((id) => buckets.filter((bucket) => bucket.id === id).length !== 1)
+    || buckets.some((bucket) => !bucket.title || !bucket.range || !bucket.rule
+      || bucket.minBudgetUsdt < 100 || bucket.maxBudgetUsdt < bucket.minBudgetUsdt || bucket.maxBudgetUsdt > 10_000)
+    || !buckets.some((bucket) => defaultBudgetUsdt >= bucket.minBudgetUsdt && defaultBudgetUsdt <= bucket.maxBudgetUsdt)
+    || row.serverCanonical !== true) {
+    throw new Error("大使政策权威快照格式无效");
+  }
+  return { policyVersion, revision, defaultBudgetUsdt, buckets, serverCanonical: true };
+}
+
+export async function fetchF4AmbassadorPolicy() {
+  return normalizeF4AmbassadorPolicy(await f1Request<unknown>("/ambassador-policy"));
+}
+
+export async function updateF4AmbassadorPolicy(
+  policy: Omit<F4AmbassadorPolicy, "serverCanonical">,
+  reason: string,
+  operator: string,
+) {
+  const fingerprint = JSON.stringify([policy, operator]);
+  return f1StableWrite("f4-ambassador-policy", fingerprint, async (commandKey) =>
+    normalizeF4AmbassadorPolicy(await f1Request<unknown>("/ambassador-policy", {
+      method: "PUT",
+      stableIdempotencyKey: commandKey,
+      expectsData: true,
+      body: JSON.stringify({
+        policyVersion: policy.policyVersion,
+        defaultBudgetUsdt: policy.defaultBudgetUsdt,
+        buckets: policy.buckets,
+        expectedRevision: policy.revision,
+        reason,
+        operator,
+      }),
+    })));
 }
 
 export interface F5ExportReceipt {

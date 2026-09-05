@@ -5,7 +5,7 @@ import path from "node:path";
 const EVIDENCE = process.env.I6_EVIDENCE_ROOT
   ?? "D:/workspace/bug-pic/pc-full-acceptance-20260726/I6";
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const PASSWORD = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })());
 
 test.beforeAll(() => fs.mkdirSync(EVIDENCE, { recursive: true }));
 

@@ -23,6 +23,7 @@ import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { LegalTermsEditor } from "@/app/components/domain-views/legal-terms-editor";
+import { PublishedContentEditor } from "@/app/components/domain-views/published-content-editor";
 
 /** I4 信任版块与 I5 披露共用一张表,靠槽位前缀分命名空间;槽位本身已带目标 id + 动作类型
  *  (`trust|版块键:publish`、`disclosure|辖区:matrix-configure`)。落 sessionStorage,刷新后重试仍去重。 */
@@ -861,7 +862,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         </div></>}
       </div>
 
-      {view === "disclosures" && <LegalTermsEditor />}
+      {view === "disclosures" && <><LegalTermsEditor /><PublishedContentEditor kind="privacyPolicy" /></>}
 
       {/* (I4 · a) 信任中心 6 版块 */}
       {view === "trust" && <section className="l-card">

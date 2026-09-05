@@ -84,6 +84,10 @@ test("K2 removes retired holding gates and declares exact OTP boundaries", () =>
   assert.match(component, /min: 30, max: 300/);
   assert.match(component, /min: 1, max: 10/);
   assert.match(component, /min: 60, max: 900, step: 60/);
+  assert.match(component, /captchaGate\.alwaysScenes/);
+  assert.match(component, /captchaGate\.afterSends/);
+  assert.match(riskService, /auth\.risk\.captcha_always_scenes/);
+  assert.match(riskService, /auth\.risk\.captcha_after_sends/);
   assert.match(component, /只影响后续发送/);
   assert.match(component, /已签发验证码/);
   assert.match(component, /updateK2Param\(p\.key, nextValue, p\.version/);

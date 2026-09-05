@@ -4,7 +4,7 @@ import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const PASSWORD = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })());
 const USER_ID = process.env.C_NONOWNER_USER_ID || "990000151023";
 const USER_NO = process.env.C_NONOWNER_USER_NO || "U990000151023";
 const EVIDENCE_DIR = process.env.C_NONOWNER_EVIDENCE_DIR;

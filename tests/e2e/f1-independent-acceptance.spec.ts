@@ -132,7 +132,7 @@ async function getRankRow(page: Page, rank: string): Promise<any> {
   return (r.data?.vrankRows ?? []).find((row: any) => row.v === rank) ?? {};
 }
 
-async function loginFromUi(page: Page, username = "superadmin", password = "Admin@123456") {
+async function loginFromUi(page: Page, username = "superadmin", password = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })())) {
   await page.goto(`${PC_BASE}/`);
   // 等登录页可见
   await page.waitForTimeout(1500);

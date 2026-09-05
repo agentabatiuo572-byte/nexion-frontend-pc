@@ -16,10 +16,11 @@ function percentLabel(value: number) {
 
 /**
  * F2 参数区可见键白名单(后端配置键,不是显示 id)。
- * 只登记**已验证后端可写**的键;未验证的新键在这里登记前不露面,避免出现「改了保存不了」的假入口。
- * 现有两项的可写性由 tests/e2e/f2-independent-acceptance.spec.ts 直调 PATCH 实证。
+ * 只有实际业务消费者已接入的键才允许调整；可保存不等于已参与结算。
  */
-const F2_VISIBLE_PARAM_KEYS = new Set(["F.royalty.minPayout", "F.peer.rate"]);
+const F2_VISIBLE_PARAM_KEYS = new Set([
+  "F.unilevel.depthGate", "F.unilevel.depthGateRank",
+]);
 
 export function F2Rates({ ctx }: { ctx: FViewCtx }) {
   const hasUnilevelRows = ctx.f2Unilevel.length > 0;
@@ -212,10 +213,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
       </div>
 
       <div className="params">
-        {/* 🔴 从「硬编码 id 白名单」改成「已验证可写的后端键白名单」(2026-08-06 原型对比 F-1):
-            旧写法是按 id 硬编码 4 项,后端即使新增参数也被静默隐藏;而版税支付阈值与平级奖比例
-            **后端明明可写**(f2-independent-acceptance 直调 PATCH 成功),只是这里没放行 ——
-            运营看得到平级奖比例(F1 行内只读)却改不了。按 key 放行,新增项在此显式登记。 */}
+        <div className="param"><div className="pk">版税支付阈值 / 平级奖励比例</div><div className="psub">未接入实际结算，不可调整。版税提现以提现渠道的实际限额为准；当前不派发平级奖励。</div></div>
         {ctx.f2Params.filter((p) => F2_VISIBLE_PARAM_KEYS.has(p.key) || ["clampMin", "clampMax", "cool", "promo"].includes(p.id)).map((p) => {
           const eff = p.value || p.def;
           return (

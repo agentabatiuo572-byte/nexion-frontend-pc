@@ -333,6 +333,31 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
       amplify: false,
     });
 
+  const adjustBundleDiscount = () => {
+    const discount = ctx.e1BundleDiscount;
+    if (!discount) {
+      ctx.toast("组合优惠权威快照不可用，请刷新后重试");
+      return;
+    }
+    ctx.openActionConfirm({
+      name: "调整 App 组合购阶梯折扣",
+      op: "bundle-discount",
+      businessForm: {
+        kind: "multi-field",
+        title: "目标新值 · 组合购折扣",
+        hint: "百分比直接影响 App 组合页预估与服务器下单金额；保存采用版本校验，冲突时需刷新重试。",
+        requireAnyChange: true,
+        fields: [
+          { key: "twoItemsPct", label: "2 件折扣(%)", current: String(discount.twoItemsPct), inputKind: "number", min: 0.01, max: 50, step: 0.01, required: true },
+          { key: "threeItemsPct", label: "3 件折扣(%)", current: String(discount.threeItemsPct), inputKind: "number", min: 0.01, max: 50, step: 0.01, required: true },
+          { key: "fourPlusItemsPct", label: "4 件及以上折扣(%)", current: String(discount.fourPlusItemsPct), inputKind: "number", min: 0.01, max: 50, step: 0.01, required: true },
+        ],
+      },
+      detail: `当前版本 v${discount.version} · 数值由服务器配置读取，保存后新报价与新订单即时生效，不回溯已有订单。`,
+      amplify: true,
+    });
+  };
+
   return (
     <>
       <EStats items={[
@@ -343,6 +368,22 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
       ]} />
       {ctx.e1Loading && <div className="tint tiny" style={{ marginBottom: 12 }}>E1 数据同步中...</div>}
       {ctx.e1Error && <div className="tint warn tiny" role="alert" style={{ marginBottom: 12 }}>E1 后端数据读取失败,页面保持空态({ctx.e1Error}) <button type="button" onClick={() => void ctx.refreshE1()}>重新加载 E1 数据</button></div>}
+
+      <div className="tint" style={{ marginBottom: 12, padding: 12 }}>
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div className="col" style={{ gap: 4 }}>
+            <strong>App 组合购阶梯折扣</strong>
+            {ctx.e1BundleDiscount ? (
+              <span className="tiny muted">
+                2 件 {ctx.e1BundleDiscount.twoItemsPct}% · 3 件 {ctx.e1BundleDiscount.threeItemsPct}% · 4 件及以上 {ctx.e1BundleDiscount.fourPlusItemsPct}% · v{ctx.e1BundleDiscount.version}
+              </span>
+            ) : <span className="tiny warn">服务器配置不可用，App 组合报价保持关闭</span>}
+          </div>
+          {canWrite && ctx.e1BundleDiscount
+            ? <button type="button" onClick={adjustBundleDiscount}>调整阶梯折扣</button>
+            : null}
+        </div>
+      </div>
 
       {/* 1. 上架节奏门 timeline */}
       {hasPhaseConfig ? (

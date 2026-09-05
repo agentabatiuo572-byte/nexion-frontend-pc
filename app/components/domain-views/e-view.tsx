@@ -21,6 +21,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { OpsSku, OpsTask } from "@/lib/admin/platform-types";
 import {
   fetchE1Catalog,
+  type E1BundleDiscount,
   type E1GenerationGateData,
 } from "@/lib/admin/e1-client";
 import { fetchE2PhoneTiers, fetchE2TaskPricing, fetchE2Tasks, type E2PhoneTier, type E2TaskPricingSnapshot, type E2YieldComparison } from "@/lib/admin/e2-client";
@@ -331,6 +332,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   // ── E1 商品目录 / 上架门:后端接口为单一来源 ──
   const [e1Skus, setE1Skus] = useState<OpsSku[]>([]);
   const [e1Gates, setE1Gates] = useState<E1GenerationGateData | null>(null);
+  const [e1BundleDiscount, setE1BundleDiscount] = useState<E1BundleDiscount | null>(null);
   const [e1Loading, setE1Loading] = useState(false);
   const [e1Error, setE1Error] = useState<string | null>(null);
   const refreshE1 = useCallback(async () => {
@@ -340,10 +342,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       const snapshot = await fetchE1Catalog();
       setE1Skus(snapshot.skus);
       setE1Gates(snapshot.gates);
+      setE1BundleDiscount(snapshot.bundleDiscount);
     } catch (error) {
       setE1Error(displayAdminError(error));
       setE1Skus([]);
       setE1Gates(null);
+      setE1BundleDiscount(null);
     } finally {
       setE1Loading(false);
     }
@@ -951,7 +955,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (e2Loading) return "E2 任务列表正在加载,请稍后再提交";
     return "解锁算力池请选择 E2 6 类任务中的一项";
   };
-  const canUseE1Writes = canWriteE1 && !e1Loading && !e1Error && e1Gates !== null;
+  const canUseE1Writes = canWriteE1 && !e1Loading && !e1Error
+    && e1Gates !== null && e1BundleDiscount !== null;
   const openSkuSaveConfirm = () => {
     if (skuMediaUploading) { setToast("媒体仍在上传,请稍后提交"); return; }
     if (skuMedia && !skuMedia.assetId) { setToast("媒体未上传成功,请重新选择文件"); return; }
@@ -984,12 +989,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setToast("库存必须填写 0 到 2147483647 之间的整数");
       return;
     }
-    const sold = form.sold.trim();
-    if (sold && (!/^\d+$/.test(sold) || !Number.isSafeInteger(Number(sold))
-      || Number(sold) > 2147483647 || (inventoryMode === "FINITE" && Number(sold) + Number(stock) > 2147483647))) {
-      setToast(inventoryMode === "FINITE" ? "销量必须为非负整数，且销量与库存合计不能超过 2147483647" : "销量必须为 0 到 2147483647 之间的整数");
-      return;
-    }
     const gErr = validateGateForm(form);
     if (gErr) { setToast(gErr); return; }
     const currentSku = editSkuId ? skus.find((sku) => sku.id === editSkuId) : undefined;
@@ -1015,7 +1014,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const ctx: EViewCtx = {
     pE, openActionConfirm, toast: setToast,
-    canWriteE1: canUseE1Writes, skus, e1Loading, e1Error, e1Gates, phaseCur, refreshE1, openSku, delSku,
+    canWriteE1: canUseE1Writes, skus, e1Loading, e1Error, e1Gates, e1BundleDiscount, phaseCur, refreshE1, openSku, delSku,
     canWriteE2, tasks, phoneTiers, yieldComparisons, e2Pricing, e2Loading, e2Error, e2TaskCatalogReady, refreshE2, openAddTask, openEditTask, delTask,
     canWriteE3, e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
     canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4Page, e4PageSize, e4Total, e4Filter, e4Keyword, setE4Page, setE4PageSize, setE4Filter, setE4Keyword, refreshE4, orderState, isCancelled, isRefunded, terminalOf, openOrder,
@@ -1317,7 +1316,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 </select>
                 <span className="muted tiny">无限库存仅允许 Share 商品；成交只累计销量，不扣减库存。</span>
               </label>
-              <SkuFld label="累计销量" type="number" value={form.sold} onChange={(v) => setForm({ ...form, sold: v })} placeholder={form.tier === "Share" ? "12483" : "4821"} />
+              <label className="col" style={{ gap: 5 }}>
+                <span className="muted tiny">累计销量</span>
+                <span className="tiny" style={{ color: "var(--ink-3)", minHeight: 34, display: "flex", alignItems: "center" }}>累计销量由成功支付订单累计；新商品从 0 开始，不能手动调整。</span>
+              </label>
             </div>
             {form.inventoryMode !== "UNLIMITED" && <SkuFld label="库存 stock" type="number" min={0} step={1} value={form.stock} onChange={(v) => setForm({ ...form, stock: v })} placeholder="47" hint="必填，0 表示售罄；不自动下架" />}
           </SkuFieldGroup>
@@ -1502,7 +1504,37 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           // 批6: E 域高敏动作统一 propose 入 A2 后端待确认队列(壳集中回调)。
           // propose 内部自管成功/失败 toast;此处仅做 mc.op → op 映射 + 构造 ctx + 本地 UI 状态收尾。
           try {
-            if (mc.op === "sku-save") {
+            if (mc.op === "bundle-discount" && businessValue) {
+              const current = e1BundleDiscount;
+              if (!current) { setToast("组合优惠权威快照不可用，请刷新后重试"); return; }
+              const next = {
+                twoItemsPct: Number(businessValue.twoItemsPct),
+                threeItemsPct: Number(businessValue.threeItemsPct),
+                fourPlusItemsPct: Number(businessValue.fourPlusItemsPct),
+              };
+              if (Object.values(next).some((value) => !Number.isFinite(value) || value <= 0 || value > 50)
+                  || next.threeItemsPct < next.twoItemsPct
+                  || next.fourPlusItemsPct < next.threeItemsPct) {
+                setToast("折扣必须在 0–50% 之间，且件数越多折扣不得降低");
+                return;
+              }
+              const def = findHighOp("e1_bundle_discount")!;
+              const commandContext = { ...next, expectedVersion: current.version };
+              await propose(ctx.toast, {
+                action: mc.name,
+                obj: "App 组合购阶梯折扣",
+                before: `v${current.version} · 2 件 ${current.twoItemsPct}% · 3 件 ${current.threeItemsPct}% · 4+ 件 ${current.fourPlusItemsPct}%`,
+                after: `2 件 ${next.twoItemsPct}% · 3 件 ${next.threeItemsPct}% · 4+ 件 ${next.fourPlusItemsPct}%`,
+                type: def.type,
+                amplifies: def.amplifies,
+                gate: { roles: [] },
+                gateLabel: def.gateLabel,
+                reason,
+                sourceDomain: "E1",
+                command: def.buildCommand(commandContext),
+                target: def.buildTarget(commandContext),
+              });
+            } else if (mc.op === "sku-save") {
               const ex = editSkuId ? skus.find((x) => x.id === editSkuId) : undefined;
               const sku = attachSkuMedia(formToSku(form, ex), skuMedia);
               const skuId = editSkuId ?? (form.id.trim() || form.name.trim());
@@ -1595,10 +1627,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               const price = Number(taskForm.price) || 0;
               const minR = Number(taskForm.minReward), maxR = Number(taskForm.maxReward);
               const sat = taskForm.sat.trim() ? Math.max(0, Math.min(100, Number(taskForm.sat))) / 100 : null;
+              const currentTask = tasks.find((task) => task.id === editTaskId);
+              if (!currentTask) { setToast("任务状态已刷新，请重新打开任务后再编辑"); return; }
               const def = findHighOp("e2_task_update")!;
               const taskCtx = {
                 taskId: editTaskId, name: taskForm.n.trim(), price, unit: taskForm.unit, requirement: taskForm.req,
-                saturation: sat, status: "active", taskClass: taskForm.taskClass, model: taskForm.model.trim(),
+                saturation: sat, status: currentTask.status, taskClass: taskForm.taskClass, model: taskForm.model.trim(),
                 minReward: minR, maxReward: maxR, minVram: taskForm.minVRAM.trim(), killInit: taskForm.killInit,
               };
               await propose(ctx.toast, {

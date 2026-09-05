@@ -10,7 +10,7 @@ const source = readFileSync(
 test("A Final6 fixture carrier requires injected operator and database credentials", () => {
   assert.match(source, /required\("A_FINAL6_FIXTURE_OPERATOR_PASSWORD"\)/);
   assert.match(source, /required\("A_FINAL6_FIXTURE_DB_PASSWORD"\)/);
-  assert.doesNotMatch(source, /Admin@123456/);
+  assert.doesNotMatch(source, /Admin@[0-9]{6,}/);
   assert.doesNotMatch(source, /A123456789Z/);
 });
 

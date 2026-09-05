@@ -82,7 +82,7 @@ test("repair is resumable and extends cleanup metadata without exposing credenti
   assert.match(source, /cleanup-manifest\.json/);
   assert.match(source, /writeFile\(temporary/);
   assert.match(source, /rename\(temporary, file\)/);
-  assert.doesNotMatch(source, /Admin@123456/);
+  assert.doesNotMatch(source, /Admin@[0-9]{6,}/);
   assert.doesNotMatch(source, /A123456789Z/);
 });
 

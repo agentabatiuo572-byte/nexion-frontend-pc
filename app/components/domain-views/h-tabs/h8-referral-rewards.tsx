@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   createH8CommandKey,
@@ -33,6 +33,10 @@ const LOCK_MODE_LABELS: Record<string, string> = {
   direct: "通过资格校验后直接发放",
 };
 const LOCK_MODE_VALUES: Record<string, string> = Object.fromEntries(Object.entries(LOCK_MODE_LABELS).map(([key, value]) => [value, key]));
+const ENABLED_PARAM = { key: "enabled", label: "邀请奖励", unit: "", kind: "select", options: ["已停用", "已启用"] } as const;
+const ENABLED_LABELS: Record<string, string> = { false: "已停用", true: "已启用" };
+const ENABLED_VALUES: Record<string, string> = { 已停用: "false", 已启用: "true" };
+type H8Param = (typeof PARAMS)[number] | typeof ENABLED_PARAM;
 
 export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const session = useAdminAuth((state) => state.session);
@@ -41,42 +45,70 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const canSettle = isSuperadmin || !!session?.authorities.includes("growth_h8_settle");
   const [data, setData] = useState<H8ReferralRewardOverview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const loadGeneration = useRef(0);
   const propose = usePropose();
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (cursor = "", append = false) => {
+    const request = ++loadGeneration.current;
+    if (append) setLoadingMore(true);
+    else setLoading(true);
     try {
-      setData(await fetchH8ReferralRewards());
+      const next = await fetchH8ReferralRewards(cursor);
+      if (request !== loadGeneration.current) return;
+      setData((current) => append && current ? {
+        ...next,
+        recentSettlements: [...current.recentSettlements, ...next.recentSettlements],
+      } : next);
       setError(null);
     } catch (cause) {
-      setData(null);
+      if (request !== loadGeneration.current) return;
+      if (!append) setData(null);
       setError(displayAdminError(cause));
     } finally {
-      setLoading(false);
+      if (request === loadGeneration.current) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    return () => { loadGeneration.current += 1; };
+  }, [load]);
 
-  const editParam = (param: (typeof PARAMS)[number]) => {
+  const editParam = (param: H8Param, fixedValue?: string) => {
     if (!data) return;
-    const rawCurrent = String(data?.params?.[param.key] ?? (param.kind === "select" ? "risk_bucket" : "0"));
-    const current = param.kind === "select" ? LOCK_MODE_LABELS[rawCurrent] ?? LOCK_MODE_LABELS.risk_bucket : rawCurrent;
+    const isEnabled = param.key === "enabled";
+    const rawCurrent = String(data?.params?.[param.key] ?? (isEnabled ? "false" : param.kind === "select" ? "risk_bucket" : "0"));
+    const current = isEnabled
+      ? ENABLED_LABELS[rawCurrent] ?? ENABLED_LABELS.false
+      : param.kind === "select" ? LOCK_MODE_LABELS[rawCurrent] ?? LOCK_MODE_LABELS.risk_bucket : rawCurrent;
+    const enabling = isEnabled && (fixedValue ?? rawCurrent) === "true";
     ctx.openActionConfirm({
-      action: `H8 发奖参数 · ${param.label}`,
-      detail: `${param.label} 当前 ${current} ${param.unit}。新值只用于后续发放；已入账奖励不回写。升额或切 direct 会先过 B1 覆盖率红线。`,
-      amplifies: true,
-      edit: param.kind === "select"
+      action: isEnabled ? enabling ? "启用邀请奖励" : "停用邀请奖励" : `H8 发奖参数 · ${param.label}`,
+      detail: isEnabled
+        ? enabling
+          ? "启用后，只结算启用时刻之后形成且通过资格与风控校验的邀请；App 将显示当前真实奖励。"
+          : "停用后，App 仍可分享邀请码，但不再承诺新人礼或邀请人奖励，服务端拒绝全部新结算。"
+        : `${param.label} 当前 ${current} ${param.unit}。新值只用于后续发放；已入账奖励不回写。升额或切 direct 会先过 B1 覆盖率红线。`,
+      amplifies: isEnabled ? enabling : true,
+      edit: fixedValue != null ? undefined : param.kind === "select"
         ? { kind: "select", current, options: Object.values(LOCK_MODE_LABELS) }
         : { kind: "number", current, unit: param.unit, min: 0, max: param.max, step: param.step },
       run: async (reason, value) => {
-        if (value == null || value === "") return;
-        const storedValue = param.kind === "select" ? LOCK_MODE_VALUES[value] ?? value : value;
+        if (value == null && fixedValue == null) return;
+        const slot = `param|${param.key}`;
+        const submittedValue = fixedValue ?? value;
+        if (submittedValue == null || submittedValue === "") return;
+        const storedValue = isEnabled
+          ? ENABLED_VALUES[submittedValue] ?? submittedValue
+          : param.kind === "select" ? LOCK_MODE_VALUES[submittedValue] ?? submittedValue : submittedValue;
         // 指纹 = 新值 + 版本号(CAS),**不含 reason**:理由是审计元数据不是意图,进指纹会让
         // 「结果未知后补一句理由再点」换新号 → 重复发奖。版本号进指纹是必须的:基于旧快照的
         // 同值重提是新意图,不是重试。
-        const slot = `param|${param.key}`;
         let mintedFresh = false;
         const commandKey = commandAttempts.resolve(
           slot,
@@ -92,7 +124,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           throw error;
         }
         await load();
-        ctx.toast(`${param.label} 已更新为 ${value} ${param.unit}`);
+        ctx.toast(isEnabled ? enabling ? "邀请奖励已启用" : "邀请奖励已停用" : `${param.label} 已更新为 ${submittedValue} ${param.unit}`);
       },
     });
   };
@@ -151,6 +183,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   return (
     <>
       <div className="f-stats">
+        <div className={data?.enabled ? "f-stat ok" : "f-stat warn"}><div className="k">奖励开关</div><div className="v">{data?.enabled ? "已启用" : "已停用"}</div><div className="sub">服务端结算与 App 奖励展示共用此闸门</div></div>
         <div className="f-stat warn"><div className="k">待结算邀请</div><div className="v">{data?.pending ?? 0}</div><div className="sub">真实 sponsor 关系且未发奖</div></div>
         <div className="f-stat ok"><div className="k">累计已结算</div><div className="v">{data?.settled ?? 0}</div><div className="sub">同一新人只结算一次</div></div>
         <div className="f-stat danger"><div className="k">风控暂缓</div><div className="v">{data?.blockedByK2 ?? 0}</div><div className="sub">仅统计尚未发奖且命中 K1/K2 的邀请关系</div></div>
@@ -158,7 +191,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       </div>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">新人礼与邀请人奖励</span><span className="sub">· H8 唯一配置入口</span><div className="r">{canSettle && <button className="l-btn mc" disabled={!data || Number(data.pending ?? 0) <= 0} title={Number(data?.pending ?? 0) <= 0 ? "当前没有待结算邀请" : undefined} onClick={settle}>执行真实结算</button>}</div></div>
+        <div className="l-h"><span className="ttl">新人礼与邀请人奖励</span><span className="sub">· H8 唯一配置入口 · 生效时间 {data?.effectiveAt ? `${new Date(data.effectiveAt).toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" })}（上海）` : "—"}</span><div className="r">{canWrite && <button className="l-btn mc" disabled={!data} onClick={() => editParam(ENABLED_PARAM, String(!data?.enabled))}>{data?.enabled ? "停用奖励" : "启用奖励"}</button>}{canSettle && <button className="l-btn mc" disabled={!data?.enabled || Number(data.pending ?? 0) <= 0} title={!data?.enabled ? "邀请奖励当前已停用" : Number(data?.pending ?? 0) <= 0 ? "当前没有待结算邀请" : undefined} onClick={settle}>执行真实结算</button>}</div></div>
         <div className="l-b"><div className="param-grid">
           {PARAMS.map((param) => <div className="p" key={param.key}>
             <div className="k">{param.label}</div>
@@ -177,6 +210,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           {!data?.recentSettlements?.length && <tr><td colSpan={6} style={{ textAlign: "center", padding: 24 }}>{Number(data?.pending ?? 0) > 0 ? "当前尚无结算记录，可从上方执行待结算邀请" : "暂无结算记录，当前也没有待结算邀请"}</td></tr>}
         </tbody></table></div>
         <div className="l-b" style={{ paddingTop: 10 }}>
+          {data?.settlementHasMore && <button className="l-btn sm" disabled={loadingMore} onClick={() => void load(data.settlementNextCursor, true)}>{loadingMore ? "加载中..." : "加载更早记录"}</button>}{" "}
           <span className="f-foot">结算后联动核对：</span>{" "}
           <><Link href="/platform/audit" className="l-btn sm">A2 审批与审计</Link>{" "}<Link href="/platform/events" className="l-btn sm">A4 事件</Link>{" "}<Link href="/finance/ledger" className="l-btn sm">D4 钱包台账</Link></>
         </div>

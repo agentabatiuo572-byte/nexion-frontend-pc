@@ -41,5 +41,5 @@ test("Final10 B carrier starts with real visible login and sidebar navigation an
   assert.match(source, /一次性验证码/);
   assert.match(source, /openVisibleB2/);
   assert.match(source, /openVisibleB3/);
-  assert.doesNotMatch(source, /Admin@123456|A123456789Z|console\.(?:log|warn|error)\([^)]*(?:password|totp|token)/i);
+  assert.doesNotMatch(source, /Admin@[0-9]{6,}|A123456789Z|console\.(?:log|warn|error)\([^)]*(?:password|totp|token)/i);
 });

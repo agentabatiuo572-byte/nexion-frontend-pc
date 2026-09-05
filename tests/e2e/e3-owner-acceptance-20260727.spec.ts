@@ -2,7 +2,7 @@ import { expect, request, test, type Page, type Response } from "@playwright/tes
 import { mkdir } from "node:fs/promises";
 
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const PASSWORD = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })());
 const EVIDENCE_DIR =
   process.env.E3_EVIDENCE_DIR ||
   "D:/workspace/nexion-ops-console/docs/验收报告/PC全面测试-20260726/evidence/E3-owner";

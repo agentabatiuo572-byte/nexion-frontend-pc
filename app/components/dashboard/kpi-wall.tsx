@@ -14,7 +14,7 @@ export type DashboardKpi = {
   label: string;
   value: string;
   target: string;
-  pass: boolean;
+  pass: boolean | null;
   series: number[];
   hint: string;
 };
@@ -31,12 +31,13 @@ export function KpiWall({ kpis }: { kpis: DashboardKpi[] }) {
         </p>
         <span className="text-[11.5px]" style={{ color: "var(--v5-ink-3)" }}>
           达标 <span style={{ color: "var(--v5-success)" }}>{passed}</span> / 未达{" "}
-          <span style={{ color: "var(--v5-danger)" }}>{kpis.length - passed}</span>
+          <span style={{ color: "var(--v5-danger)" }}>{kpis.filter((k) => k.pass === false).length}</span>
+          {" / 暂不可计算 "}{kpis.filter((k) => k.pass === null).length}
         </span>
       </div>
       <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
         {kpis.map((k, i) => {
-          const color = k.pass ? "var(--v5-success)" : "var(--v5-danger)";
+          const color = k.pass === null ? "var(--v5-ink-3)" : k.pass ? "var(--v5-success)" : "var(--v5-danger)";
           return (
             <button
               key={k.key}
@@ -49,7 +50,7 @@ export function KpiWall({ kpis }: { kpis: DashboardKpi[] }) {
                 <span className="font-mono-tabular rounded-[6px] px-1.5 py-0.5 text-[10.5px]" style={{ background: "var(--v5-brand-soft)", color: "var(--v5-brand)", border: "1px solid var(--v5-brand-border)" }}>KPI #{i + 1}</span>
                 <span className="ml-auto inline-flex items-center gap-1 rounded-[6px] px-1.5 py-0.5 text-[10.5px] font-medium" style={{ background: k.pass ? "var(--v5-brand-soft)" : "var(--v5-danger-soft)", color }}>
                   <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color }} />
-                  {k.pass ? "达标" : "未达标"}
+                  {k.pass === null ? "暂不可计算" : k.pass ? "达标" : "未达标"}
                 </span>
               </div>
               <p className="mt-2 text-[11.5px]" style={{ color: "var(--v5-ink-3)", minHeight: 30 }}><AutoGloss>{k.label}</AutoGloss></p>
@@ -68,7 +69,7 @@ export function KpiWall({ kpis }: { kpis: DashboardKpi[] }) {
 }
 
 function KpiModal({ kpi, n, onClose }: { kpi: DashboardKpi; n: number; onClose: () => void }) {
-  const color = kpi.pass ? "var(--v5-success)" : "var(--v5-danger)";
+  const color = kpi.pass === null ? "var(--v5-ink-3)" : kpi.pass ? "var(--v5-success)" : "var(--v5-danger)";
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -102,7 +103,7 @@ function KpiModal({ kpi, n, onClose }: { kpi: DashboardKpi; n: number; onClose: 
           <span className="font-mono-tabular rounded-[6px] px-1.5 py-0.5 text-[10.5px]" style={{ background: "var(--v5-brand-soft)", color: "var(--v5-brand)", border: "1px solid var(--v5-brand-border)" }}>KPI #{n}</span>
           <span className="font-display text-[15px]" style={{ color: "var(--v5-ink)" }}><AutoGloss>{kpi.label}</AutoGloss></span>
           <span className="ml-auto inline-flex items-center gap-1 rounded-[6px] px-2 py-0.5 text-[11px] font-medium" style={{ background: kpi.pass ? "var(--v5-brand-soft)" : "var(--v5-danger-soft)", color }}>
-            {kpi.pass ? "达标" : "未达标"}
+            {kpi.pass === null ? "暂不可计算" : kpi.pass ? "达标" : "未达标"}
           </span>
         </div>
         <div className="p-4">

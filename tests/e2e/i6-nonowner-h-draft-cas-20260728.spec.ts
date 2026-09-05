@@ -56,7 +56,7 @@ test("I6 两名运营员同时编辑同一草稿时只能一方通过 CAS", asyn
   try {
     await login(maker, {
       username: process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin",
-      password: process.env.ADMIN_E2E_PASSWORD || "Admin@123456",
+      password: (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })()),
       totpSecret: process.env.ADMIN_E2E_TOTP_SECRET || "",
     });
     await openI6(maker);

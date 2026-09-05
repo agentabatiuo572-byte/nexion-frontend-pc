@@ -1,0 +1,206 @@
+[
+  {
+    "courseId": "nexgrid-account-safety-202609",
+    "titleZh": "账户安全：识别风险与寻求帮助",
+    "titleEn": "Account safety: recognize risks and get help",
+    "titleVi": "An toàn tài khoản: nhận biết rủi ro và tìm trợ giúp",
+    "bodyZh": "使用独立、难猜的密码。不要把密码、短信验证码、身份验证器验证码或恢复码交给任何人，包括自称客服的人。登录前核对可信入口和网址。\n\n遇到保证收益、先转账解锁或远程控制设备的要求，请停止操作，通过 App 内帮助与客服独立核实。发现异常登录或非本人操作时，及时修改密码并联系人工客服，提供时间和相关订单号。\n\n截图应遮盖验证码、完整收款资料及他人信息，只保留处理问题所需内容。自动客服可能理解错误，不能代替付款确认或安全授权。\n\n本课程不要求转账、购买或实际修改账户。阅读后通过测验；奖励资格和状态以课程页面及系统记录为准。",
+    "bodyEn": "Use a strong, unique password. Never share passwords, SMS codes, authenticator codes or recovery codes, even with someone claiming to be support. Check the trusted entry and address before signing in.\n\nStop if someone guarantees earnings, demands a transfer to unlock access or asks to control your device. Verify independently through in-app Help and Support. For an unfamiliar sign-in or action, change your password and contact human support with the time and relevant order reference.\n\nRedact codes, full payment details and other people's data from screenshots. Share only necessary context. Automated support can misunderstand and cannot confirm a payment or authorize a security action for you.\n\nNo transfer, purchase or actual account change is required for this course. Read and pass the quiz. Reward eligibility and status follow the course page and system records.",
+    "bodyVi": "Dùng mật khẩu mạnh, riêng biệt. Không chia sẻ mật khẩu, mã SMS, mã xác thực hoặc mã khôi phục, kể cả với người tự xưng là hỗ trợ. Kiểm tra nguồn và địa chỉ trước khi đăng nhập.\n\nDừng lại nếu có người cam kết lợi nhuận, yêu cầu chuyển tiền để mở khóa hoặc điều khiển thiết bị từ xa. Xác minh qua Trợ giúp và Hỗ trợ trong ứng dụng. Khi có đăng nhập hoặc thao tác lạ, đổi mật khẩu và báo hỗ trợ viên, kèm thời gian và mã đơn liên quan.\n\nChe mã xác thực, thông tin thanh toán đầy đủ và dữ liệu người khác trong ảnh chụp. Chỉ gửi nội dung cần thiết. Hỗ trợ tự động có thể hiểu sai, không thay bạn xác nhận thanh toán hoặc cấp quyền bảo mật.\n\nKhóa học không yêu cầu chuyển tiền, mua hàng hay thực sự đổi tài khoản. Đọc và vượt qua bài kiểm tra; điều kiện và trạng thái thưởng theo trang khóa học và bản ghi hệ thống.",
+    "category": "Security",
+    "format": "Article",
+    "difficulty": "Beginner",
+    "rewardNex": 10,
+    "duration": "5 min",
+    "publishState": "DRAFT",
+    "operator": "superadmin",
+    "reason": "发布基于现有功能的三语账户安全入门课程，不要求真实交易",
+    "passScore": 100,
+    "retryLimit": 2,
+    "completionCondition": "all_questions_correct",
+    "rewardEvent": "course.completed",
+    "version": "v1",
+    "quizQuestions": [
+      {
+        "questionId": "safety-1",
+        "questionZh": "有人自称客服索要登录验证码，应该怎么做？",
+        "questionEn": "Someone claiming to be support asks for your sign-in code. What should you do?",
+        "questionVi": "Người tự xưng là hỗ trợ yêu cầu mã đăng nhập. Bạn nên làm gì?",
+        "optionsZh": [
+          "拒绝提供，并通过 App 内客服独立核实",
+          "发送验证码以加快处理",
+          "只发送一半验证码"
+        ],
+        "optionsEn": [
+          "Refuse and verify through in-app support",
+          "Send the code to speed up help",
+          "Send half of the code"
+        ],
+        "optionsVi": [
+          "Từ chối và xác minh qua hỗ trợ trong ứng dụng",
+          "Gửi mã để được xử lý nhanh",
+          "Gửi một nửa mã"
+        ],
+        "correctOptionIndex": 0
+      },
+      {
+        "questionId": "safety-2",
+        "questionZh": "向客服提交截图前应怎样处理？",
+        "questionEn": "How should you prepare a support screenshot?",
+        "questionVi": "Nên chuẩn bị ảnh chụp gửi hỗ trợ như thế nào?",
+        "optionsZh": [
+          "附上密码帮助核验",
+          "遮盖敏感及无关信息，保留问题所需内容",
+          "公开发布全部账户资料"
+        ],
+        "optionsEn": [
+          "Include your password for verification",
+          "Redact sensitive and unrelated data, keeping necessary context",
+          "Publish all account details"
+        ],
+        "optionsVi": [
+          "Kèm mật khẩu để xác minh",
+          "Che dữ liệu nhạy cảm và không liên quan, giữ nội dung cần thiết",
+          "Công khai toàn bộ thông tin tài khoản"
+        ],
+        "correctOptionIndex": 1
+      }
+    ]
+  },
+  {
+    "courseId": "nexgrid-order-ledger-202609",
+    "titleZh": "读懂订单、余额与账单",
+    "titleEn": "Understand orders, balances and transaction records",
+    "titleVi": "Hiểu đơn hàng, số dư và lịch sử giao dịch",
+    "bodyZh": "订单说明购买或服务请求的状态，余额表示账户当前某类金额，账单解释金额变化及原因。不要只凭一个数字判断流程完成。\n\n操作前核对产品、数量、币种、费用和确认页。单笔上限限制一次申请，每日剩余额度限制当天还能申请的总量，通道可用性是另一条件，三者都要满足。\n\n提交后保存订单号并查看详情。待处理、确认中或网络报错时，先核查记录，必要时联系客服，不要连续重复提交。网络错误不能单独证明失败；平台确认、余额更新、银行到账和链上确认可能不同步。付款截图不能单独证明平台收款。\n\n遇到差异，提供订单号、时间、币种、金额和脱敏证据。本课程不要求充值、提现或购买，仅阅读和测验，不承诺资产收益。",
+    "bodyEn": "Orders show purchase or service status; balances show amounts by account category; transaction records explain changes. One number does not prove a process is complete.\n\nCheck the product, quantity, currency, fees and confirmation page. A per-transaction limit caps one request. Daily remaining capacity caps additional requests that day. Channel availability is separate. All three conditions must be met.\n\nKeep the order reference. For pending status or a network error, check records and ask support before submitting again. A network error alone does not prove failure. Platform confirmation, balance updates, bank receipt and on-chain confirmation may occur at different times. A screenshot alone does not prove the platform received funds.\n\nReport discrepancies with the reference, time, currency, amount and redacted evidence. This course requires no deposit, withdrawal or purchase: read and pass the quiz. No asset returns are promised.",
+    "bodyVi": "Đơn hàng cho biết trạng thái yêu cầu; số dư là tiền theo từng loại tài khoản; lịch sử giao dịch giải thích thay đổi. Một con số không chứng minh quy trình đã xong.\n\nKiểm tra sản phẩm, số lượng, loại tiền, phí và trang xác nhận. Giới hạn mỗi giao dịch áp dụng cho một yêu cầu. Hạn mức ngày còn lại giới hạn tổng tiền có thể yêu cầu thêm hôm nay. Khả dụng của kênh là điều kiện riêng. Phải đáp ứng cả ba.\n\nLưu mã đơn. Khi đang chờ hoặc gặp lỗi mạng, kiểm tra bản ghi và hỏi hỗ trợ trước khi gửi lại. Lỗi mạng không tự chứng minh thất bại. Xác nhận nền tảng, số dư, tiền vào ngân hàng và xác nhận trên chuỗi có thể cập nhật khác lúc. Ảnh thanh toán không đủ chứng minh nền tảng đã nhận tiền.\n\nBáo sai lệch kèm mã đơn, thời gian, loại tiền, số tiền và bằng chứng đã che dữ liệu nhạy cảm. Khóa học không yêu cầu nạp, rút hay mua; chỉ đọc và làm bài kiểm tra, không cam kết lợi nhuận.",
+    "category": "Basics",
+    "format": "Article",
+    "difficulty": "Beginner",
+    "rewardNex": 10,
+    "duration": "5 min",
+    "publishState": "DRAFT",
+    "operator": "superadmin",
+    "reason": "发布三语订单和账单基础课程，澄清限额与外部到账区别",
+    "passScore": 100,
+    "retryLimit": 2,
+    "completionCondition": "all_questions_correct",
+    "rewardEvent": "course.completed",
+    "version": "v1",
+    "quizQuestions": [
+      {
+        "questionId": "ledger-1",
+        "questionZh": "页面出现网络错误时，正确做法是什么？",
+        "questionEn": "What should you do after a network error?",
+        "questionVi": "Nên làm gì sau lỗi mạng?",
+        "optionsZh": [
+          "立即连续重复提交",
+          "认定一定失败",
+          "先核查订单记录，必要时联系客服"
+        ],
+        "optionsEn": [
+          "Immediately submit repeatedly",
+          "Assume it definitely failed",
+          "Check the order record first and contact support if needed"
+        ],
+        "optionsVi": [
+          "Gửi lặp lại ngay",
+          "Cho rằng chắc chắn thất bại",
+          "Kiểm tra đơn trước và liên hệ hỗ trợ khi cần"
+        ],
+        "correctOptionIndex": 2
+      },
+      {
+        "questionId": "ledger-2",
+        "questionZh": "单笔上限与每日剩余额度的关系是什么？",
+        "questionEn": "How do a transaction limit and daily remaining capacity relate?",
+        "questionVi": "Giới hạn mỗi giao dịch và hạn mức ngày còn lại liên quan thế nào?",
+        "optionsZh": [
+          "是不同限制，操作时都要满足",
+          "永远相等",
+          "只要满足其中一个即可"
+        ],
+        "optionsEn": [
+          "They are separate limits and both must be met",
+          "They are always equal",
+          "Meeting either one is enough"
+        ],
+        "optionsVi": [
+          "Là hai giới hạn riêng và phải đáp ứng cả hai",
+          "Luôn bằng nhau",
+          "Chỉ cần đáp ứng một giới hạn"
+        ],
+        "correctOptionIndex": 0
+      }
+    ]
+  },
+  {
+    "courseId": "nexgrid-task-learning-202609",
+    "titleZh": "任务与学习：看清条件再领取",
+    "titleEn": "Tasks and learning: check conditions before claiming",
+    "titleVi": "Nhiệm vụ và học tập: kiểm tra điều kiện trước khi nhận",
+    "bodyZh": "任务的参加条件、完成标准、有效期与奖励各不相同。开始前阅读当前账户页面的正式规则，不以旧说明、他人截图或演示数字代替。\n\n打开页面、点击、完成、审核通过和奖励入账是不同状态。待完成不等于已领取，可领取不等于已入账。领取后查看结果和记录；断网时先核对记录再重试，不重复购买或转账排查问题。\n\n课程需要阅读和测验。提交前检查答案，遵守页面显示的及格线、剩余尝试次数和奖励条件。刷新、重交或重登不能用于重复领赏。课程下架或规则变化时，以当前提示为准。\n\n状态异常时，向客服提供任务或课程名称、时间和错误提示。本课程不要求真实交易，也不规定团队分佣比例；相应规则以另行正式发布内容为准。",
+    "bodyEn": "Tasks differ in eligibility, completion criteria, validity and rewards. Read current official rules for your account; old instructions, other people's screenshots and demo figures are not substitutes.\n\nOpening a page, clicking, completing, approval and reward credit are different states. Pending does not mean claimed; claimable does not mean credited. Check results and records. After a connection failure, check records before retrying. Do not repeat purchases or transfers to troubleshoot.\n\nCourses require reading and a quiz. Review answers and follow the displayed passing score, attempts remaining and reward conditions. Refreshing, resubmitting or signing in again does not authorize duplicate rewards. Follow current instructions if a course is withdrawn or rules change.\n\nReport the task or course name, time and error to support. This course requires no real transaction and specifies no team commission rates; consult separately published official rules.",
+    "bodyVi": "Nhiệm vụ có điều kiện tham gia, tiêu chí, thời hạn và thưởng riêng. Đọc quy tắc chính thức hiện tại cho tài khoản; không thay bằng hướng dẫn cũ, ảnh người khác hay số liệu minh họa.\n\nMở trang, nhấn, hoàn thành, được duyệt và ghi có thưởng là các trạng thái khác nhau. Đang chờ không có nghĩa đã nhận; có thể nhận chưa có nghĩa đã ghi có. Kiểm tra kết quả và bản ghi. Mất kết nối thì kiểm tra trước khi thử lại, không lặp lại mua hàng hoặc chuyển tiền để kiểm tra.\n\nKhóa học yêu cầu đọc và làm bài kiểm tra. Xem lại đáp án, tuân theo điểm đạt, lượt còn lại và điều kiện thưởng. Làm mới, gửi lại hoặc đăng nhập lại không cho phép nhận thưởng trùng. Theo hướng dẫn hiện tại khi khóa học bị gỡ hoặc quy tắc đổi.\n\nBáo hỗ trợ tên nhiệm vụ hoặc khóa học, thời gian và lỗi. Khóa học không yêu cầu giao dịch thật, không nêu tỷ lệ hoa hồng đội nhóm; xem quy tắc chính thức riêng.",
+    "category": "Earn",
+    "format": "Article",
+    "difficulty": "Beginner",
+    "rewardNex": 10,
+    "duration": "5 min",
+    "publishState": "DRAFT",
+    "operator": "superadmin",
+    "reason": "发布三语任务与学习入门课程，区分进度、领取和入账状态",
+    "passScore": 100,
+    "retryLimit": 2,
+    "completionCondition": "all_questions_correct",
+    "rewardEvent": "course.completed",
+    "version": "v1",
+    "quizQuestions": [
+      {
+        "questionId": "task-1",
+        "questionZh": "显示奖励可领取说明了什么？",
+        "questionEn": "What does a claimable reward mean?",
+        "questionVi": "Phần thưởng có thể nhận có nghĩa gì?",
+        "optionsZh": [
+          "已确认外部银行到账",
+          "可以按当前条件发起领取，但不等于已入账",
+          "可以无限次领取"
+        ],
+        "optionsEn": [
+          "An external bank receipt is confirmed",
+          "You may claim under current conditions, but it is not yet proof of credit",
+          "You can claim unlimited times"
+        ],
+        "optionsVi": [
+          "Đã xác nhận tiền vào ngân hàng bên ngoài",
+          "Có thể yêu cầu nhận theo điều kiện hiện tại, chưa chứng minh đã ghi có",
+          "Có thể nhận không giới hạn"
+        ],
+        "correctOptionIndex": 1
+      },
+      {
+        "questionId": "task-2",
+        "questionZh": "任务参加资格应以什么为准？",
+        "questionEn": "What determines your task eligibility?",
+        "questionVi": "Điều gì xác định điều kiện tham gia nhiệm vụ của bạn?",
+        "optionsZh": [
+          "他人的历史截图",
+          "演示页面数字",
+          "当前账户页面的正式规则与状态"
+        ],
+        "optionsEn": [
+          "Someone else's old screenshot",
+          "Demonstration figures",
+          "Current official rules and status for your account"
+        ],
+        "optionsVi": [
+          "Ảnh chụp cũ của người khác",
+          "Số liệu minh họa",
+          "Quy tắc chính thức và trạng thái hiện tại của tài khoản"
+        ],
+        "correctOptionIndex": 2
+      }
+    ]
+  }
+]

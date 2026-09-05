@@ -13,7 +13,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
  * - 处置类(op:"dispose"):写入固定状态值(approved/rejected/disqualified/frozen/unlocked …)。
  * - 放大资金流出(amplify):OperationConfirmModal amplifies={true} → B1 兑付覆盖率护栏。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OperationConfirmModal, useToast, useDomainNav } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
@@ -22,6 +22,8 @@ import {
   executeF3Settlement,
   fetchF3BinaryOverview,
   fetchF4LeadershipPoolOverview,
+  fetchF4AmbassadorPolicy,
+  updateF4AmbassadorPolicy,
   fetchF5CommissionAuditOverview,
   downloadF5RedactedCsv,
   updateF5AnomalyConfig,
@@ -34,6 +36,7 @@ import {
   updateF1VRankThreshold,
   type F3BinaryOverview,
   type F4LeadershipPoolOverview,
+  type F4AmbassadorPolicy,
   type F5CommissionAuditOverview,
   type F2RatesOverview,
   type F1Page,
@@ -99,11 +102,6 @@ function f1ThresholdTarget(paramKey?: string) {
   return match ? { rank: match[1], field: match[2] } : null;
 }
 
-function currentMonthStart() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-}
-
 export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
   const rawPropose = usePropose();
@@ -131,8 +129,10 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [f1Error, setF1Error] = useState<string | null>(null);
   const [f1Promotions, setF1Promotions] = useState<F1Page<F1PromotionRecord>>({ items: [], total: 0, limit: 100, nextCursor: "" });
   const [f1Payouts, setF1Payouts] = useState<F1Page<F1RewardPayout>>({ items: [], total: 0, limit: 100, nextCursor: "" });
-  const [f1FlowLoading, setF1FlowLoading] = useState(tab === "F1");
-  const [f1FlowError, setF1FlowError] = useState<string | null>(null);
+  const [f1PromotionLoading, setF1PromotionLoading] = useState(tab === "F1");
+  const [f1PromotionError, setF1PromotionError] = useState<string | null>(null);
+  const [f1PayoutLoading, setF1PayoutLoading] = useState(tab === "F1");
+  const [f1PayoutError, setF1PayoutError] = useState<string | null>(null);
   const [f2Overview, setF2Overview] = useState<F2RatesOverview | null>(null);
   const [f2Loading, setF2Loading] = useState(tab === "F2");
   const [f2Error, setF2Error] = useState<string | null>(null);
@@ -140,74 +140,125 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [f3Loading, setF3Loading] = useState(tab === "F3");
   const [f3Error, setF3Error] = useState<string | null>(null);
   const [f4Overview, setF4Overview] = useState<F4LeadershipPoolOverview | null>(null);
+  const [f4AmbassadorPolicy, setF4AmbassadorPolicy] = useState<F4AmbassadorPolicy | null>(null);
   const [f4Loading, setF4Loading] = useState(tab === "F4");
   const [f4Error, setF4Error] = useState<string | null>(null);
   const [f5Overview, setF5Overview] = useState<F5CommissionAuditOverview | null>(null);
   const [f5Loading, setF5Loading] = useState(tab === "F5");
   const [f5Error, setF5Error] = useState<string | null>(null);
+  const f1Generation = useRef(0);
+  const f1PromotionGeneration = useRef(0);
+  const f1PayoutGeneration = useRef(0);
+  const f2Generation = useRef(0);
+  const f3Generation = useRef(0);
+  const f4Generation = useRef(0);
+  const f5Generation = useRef(0);
   useEffect(() => {
     setTab(routeTab);
   }, [routeTab]);
+  useEffect(() => {
+    if (tab !== "F1") {
+      f1Generation.current += 1;
+      f1PromotionGeneration.current += 1;
+      f1PayoutGeneration.current += 1;
+    }
+    if (tab !== "F2") f2Generation.current += 1;
+    if (tab !== "F3") f3Generation.current += 1;
+    if (tab !== "F4") f4Generation.current += 1;
+    if (tab !== "F5") f5Generation.current += 1;
+  }, [tab]);
+  useEffect(() => () => {
+    f1Generation.current += 1;
+    f1PromotionGeneration.current += 1;
+    f1PayoutGeneration.current += 1;
+    f2Generation.current += 1;
+    f3Generation.current += 1;
+    f4Generation.current += 1;
+    f5Generation.current += 1;
+  }, []);
 
   const refreshF1 = useCallback(async () => {
+    const request = ++f1Generation.current;
+    const promotionRequest = ++f1PromotionGeneration.current;
+    const payoutRequest = ++f1PayoutGeneration.current;
     setF1Loading(true);
-    setF1FlowLoading(true);
+    setF1PromotionLoading(true);
+    setF1PayoutLoading(true);
     setF1Error(null);
-    setF1FlowError(null);
+    setF1PromotionError(null);
+    setF1PayoutError(null);
     try {
       const [overview, promotions, payouts] = await Promise.allSettled([
         fetchF1VRankOverview(),
-        fetchF1PromotionLog({ from: currentMonthStart() }),
+        fetchF1PromotionLog(),
         fetchF1RewardPayouts(),
       ]);
+      if (request !== f1Generation.current) return;
       if (overview.status === "fulfilled") setF1Overview(overview.value);
       else {
         setF1Overview(null);
         setF1Error(errorMessage(overview.reason));
       }
-      if (promotions.status === "fulfilled") setF1Promotions(promotions.value);
-      else setF1Promotions({ items: [], total: 0, limit: 100, nextCursor: "" });
-      if (payouts.status === "fulfilled") setF1Payouts(payouts.value);
-      else setF1Payouts({ items: [], total: 0, limit: 100, nextCursor: "" });
-      const flowFailures = [promotions, payouts]
-        .filter((result) => result.status === "rejected")
-        .map((result) => errorMessage((result as PromiseRejectedResult).reason));
-      if (flowFailures.length) setF1FlowError(flowFailures.join(" / "));
+      if (promotionRequest === f1PromotionGeneration.current) {
+        if (promotions.status === "fulfilled") setF1Promotions(promotions.value);
+        else setF1Promotions({ items: [], total: 0, limit: 100, nextCursor: "" });
+        if (promotions.status === "rejected") setF1PromotionError(errorMessage(promotions.reason));
+      }
+      if (payoutRequest === f1PayoutGeneration.current) {
+        if (payouts.status === "fulfilled") setF1Payouts(payouts.value);
+        else setF1Payouts({ items: [], total: 0, limit: 100, nextCursor: "" });
+        if (payouts.status === "rejected") setF1PayoutError(errorMessage(payouts.reason));
+      }
     } catch (error) {
+      if (request !== f1Generation.current) return;
       setF1Overview(null);
-      setF1Promotions({ items: [], total: 0, limit: 100, nextCursor: "" });
-      setF1Payouts({ items: [], total: 0, limit: 100, nextCursor: "" });
       setF1Error(errorMessage(error));
-      setF1FlowError(errorMessage(error));
+      if (promotionRequest === f1PromotionGeneration.current) {
+        setF1Promotions({ items: [], total: 0, limit: 100, nextCursor: "" });
+        setF1PromotionError(errorMessage(error));
+      }
+      if (payoutRequest === f1PayoutGeneration.current) {
+        setF1Payouts({ items: [], total: 0, limit: 100, nextCursor: "" });
+        setF1PayoutError(errorMessage(error));
+      }
     } finally {
-      setF1Loading(false);
-      setF1FlowLoading(false);
+      if (request === f1Generation.current) setF1Loading(false);
+      if (promotionRequest === f1PromotionGeneration.current) setF1PromotionLoading(false);
+      if (payoutRequest === f1PayoutGeneration.current) setF1PayoutLoading(false);
     }
   }, []);
 
-  const queryF1Promotions = useCallback(async (filters: F1PromotionFilters = {}) => {
-    setF1FlowLoading(true);
-    setF1FlowError(null);
+  const queryF1Promotions = useCallback(async (filters: F1PromotionFilters = {}, append = false) => {
+    const request = ++f1PromotionGeneration.current;
+    setF1PromotionLoading(true);
+    setF1PromotionError(null);
     try {
-      setF1Promotions(await fetchF1PromotionLog(filters));
+      const page = await fetchF1PromotionLog(filters);
+      if (request !== f1PromotionGeneration.current) return;
+      setF1Promotions((current) => append ? { ...page, items: [...current.items, ...page.items] } : page);
     } catch (error) {
-      setF1Promotions({ items: [], total: 0, limit: 100, nextCursor: "" });
-      setF1FlowError(errorMessage(error));
+      if (request !== f1PromotionGeneration.current) return;
+      if (!append) setF1Promotions({ items: [], total: 0, limit: 100, nextCursor: "" });
+      setF1PromotionError(errorMessage(error));
     } finally {
-      setF1FlowLoading(false);
+      if (request === f1PromotionGeneration.current) setF1PromotionLoading(false);
     }
   }, []);
 
-  const queryF1Payouts = useCallback(async (filters: F1PayoutFilters = {}) => {
-    setF1FlowLoading(true);
-    setF1FlowError(null);
+  const queryF1Payouts = useCallback(async (filters: F1PayoutFilters = {}, append = false) => {
+    const request = ++f1PayoutGeneration.current;
+    setF1PayoutLoading(true);
+    setF1PayoutError(null);
     try {
-      setF1Payouts(await fetchF1RewardPayouts(filters));
+      const page = await fetchF1RewardPayouts(filters);
+      if (request !== f1PayoutGeneration.current) return;
+      setF1Payouts((current) => append ? { ...page, items: [...current.items, ...page.items] } : page);
     } catch (error) {
-      setF1Payouts({ items: [], total: 0, limit: 100, nextCursor: "" });
-      setF1FlowError(errorMessage(error));
+      if (request !== f1PayoutGeneration.current) return;
+      if (!append) setF1Payouts({ items: [], total: 0, limit: 100, nextCursor: "" });
+      setF1PayoutError(errorMessage(error));
     } finally {
-      setF1FlowLoading(false);
+      if (request === f1PayoutGeneration.current) setF1PayoutLoading(false);
     }
   }, []);
 
@@ -216,15 +267,19 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   }, [refreshF1, tab]);
 
   const refreshF2 = useCallback(async () => {
+    const request = ++f2Generation.current;
     setF2Loading(true);
     setF2Error(null);
     try {
-      setF2Overview(await fetchF2RatesOverview());
+      const overview = await fetchF2RatesOverview();
+      if (request !== f2Generation.current) return;
+      setF2Overview(overview);
     } catch (error) {
+      if (request !== f2Generation.current) return;
       setF2Overview(null);
       setF2Error(errorMessage(error));
     } finally {
-      setF2Loading(false);
+      if (request === f2Generation.current) setF2Loading(false);
     }
   }, []);
 
@@ -233,15 +288,19 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   }, [refreshF2, tab]);
 
   const refreshF3 = useCallback(async () => {
+    const request = ++f3Generation.current;
     setF3Loading(true);
     setF3Error(null);
     try {
-      setF3Overview(await fetchF3BinaryOverview());
+      const overview = await fetchF3BinaryOverview();
+      if (request !== f3Generation.current) return;
+      setF3Overview(overview);
     } catch (error) {
+      if (request !== f3Generation.current) return;
       setF3Overview(null);
       setF3Error(errorMessage(error));
     } finally {
-      setF3Loading(false);
+      if (request === f3Generation.current) setF3Loading(false);
     }
   }, []);
 
@@ -250,15 +309,25 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   }, [refreshF3, tab]);
 
   const refreshF4 = useCallback(async () => {
+    const request = ++f4Generation.current;
     setF4Loading(true);
     setF4Error(null);
     try {
-      setF4Overview(await fetchF4LeadershipPoolOverview());
+      const [overview, ambassadorPolicy] = await Promise.allSettled([
+        fetchF4LeadershipPoolOverview(),
+        fetchF4AmbassadorPolicy(),
+      ]);
+      if (request !== f4Generation.current) return;
+      if (overview.status === "rejected") throw overview.reason;
+      setF4Overview(overview.value);
+      setF4AmbassadorPolicy(ambassadorPolicy.status === "fulfilled" ? ambassadorPolicy.value : null);
     } catch (error) {
+      if (request !== f4Generation.current) return;
       setF4Overview(null);
+      setF4AmbassadorPolicy(null);
       setF4Error(errorMessage(error));
     } finally {
-      setF4Loading(false);
+      if (request === f4Generation.current) setF4Loading(false);
     }
   }, []);
 
@@ -267,15 +336,19 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   }, [refreshF4, tab]);
 
   const refreshF5 = useCallback(async (query = {}) => {
+    const request = ++f5Generation.current;
     setF5Loading(true);
     setF5Error(null);
     try {
-      setF5Overview(await fetchF5CommissionAuditOverview(query));
+      const overview = await fetchF5CommissionAuditOverview(query);
+      if (request !== f5Generation.current) return;
+      setF5Overview(overview);
     } catch (error) {
+      if (request !== f5Generation.current) return;
       setF5Overview(null);
       setF5Error(errorMessage(error));
     } finally {
-      setF5Loading(false);
+      if (request === f5Generation.current) setF5Loading(false);
     }
   }, []);
 
@@ -398,10 +471,14 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f1ConfigValues: f1Overview?.configValues ?? {},
     promotionRecords: f1Promotions.items,
     promotionTotal: f1Promotions.total,
+    promotionNextCursor: f1Promotions.nextCursor,
     payoutRecords: f1Payouts.items,
     payoutTotal: f1Payouts.total,
-    f1FlowLoading,
-    f1FlowError,
+    payoutNextCursor: f1Payouts.nextCursor,
+    f1PromotionLoading,
+    f1PromotionError,
+    f1PayoutLoading,
+    f1PayoutError,
     queryPromotions: queryF1Promotions,
     queryPayouts: queryF1Payouts,
     proposeVRankOverride: async (userId, targetV, direction, reason) => {
@@ -478,11 +555,16 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       return result;
     },
     f4Overview,
+    f4AmbassadorPolicy,
     f4Loading,
     f4Error,
     refreshF4,
     updateF4Config: async (key, value, reason, expectedVersion) => {
       await proposeFConfig("F4", key, value, reason, expectedVersion);
+    },
+    updateF4AmbassadorPolicy: async (policy, reason) => {
+      await updateF4AmbassadorPolicy(policy, reason, ADMIN_OPERATOR());
+      await refreshF4();
     },
     proposeF4Settlement: async (reason) => {
       const def = findHighOp("f4_pool_settle");

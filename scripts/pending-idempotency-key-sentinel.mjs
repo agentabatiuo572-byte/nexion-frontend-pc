@@ -45,6 +45,9 @@ const MIGRATED = [
   "lib/admin/k6-client.ts",
   "lib/admin/stable-mutation.ts",
   "lib/admin/f1-stable-write.ts",
+  // H3 task-event bindings keep their key across an unknown write outcome before server readback.
+  "lib/admin/h-client.ts",
+  "lib/admin/e5-stable-device-command.ts",
   "lib/admin/g1-client.ts",
   "lib/admin/g2-client.ts",
   "lib/admin/g3-client.ts",
@@ -53,6 +56,8 @@ const MIGRATED = [
   // H9:失败横幅向运营承诺「原样重试用的是同一个幂等键」,而旧实现每点一次保存都现铸一个新键
   //(模块级 `let commandSeq` 计数器,连刷新都撑不过)。承诺与实现必须同真同假 —— 这一行焊住实现侧。
   "lib/admin/h9-client.ts",
+  // J1/J2/J4 emergency writes retain their command key after an outcome-unknown refresh retry.
+  "lib/admin/j-client.ts",
   "app/components/domain-views/c-tabs/c3-adjust.tsx",
   // A3：参数写入在结果未知时必须保留同一幂等键，刷新后仍可安全重试。
   "app/components/domain-views/a-tabs/a3-config.tsx",

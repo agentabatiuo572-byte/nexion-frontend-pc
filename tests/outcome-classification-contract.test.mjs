@@ -129,7 +129,7 @@ const CLASSIFICATION_EXEMPT = {
   "l-client.ts": "同上",
   "m-client.ts": "同上",
   "e1-client.ts": "同上", "e2-client.ts": "同上", "e3-client.ts": "同上",
-  "e4-client.ts": "同上", "e5-client.ts": "同上", "e6-client.ts": "同上",
+  "e4-client.ts": "同上", "e6-client.ts": "同上",
   "media-client.ts": "同上",
 };
 

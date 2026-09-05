@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 
 const BASE_URL = "http://127.0.0.1:3002";
 const BE = "http://127.0.0.1:3002";
-const SUPER = { username: "superadmin", password: "Admin@123456" };
+const SUPER = { username: "superadmin", password: (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })()) };
 const TS = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
 const PREFIX = `F-A1REVERIFY-${TS}`;
 const FINAL_DIR = "D:/workspace/bug-pic/f-domain-sequential-acceptance-20260721-131216/A1-reverify";

@@ -38,6 +38,30 @@ export type AdminPage<T> = {
   records: T[];
 };
 
+export type MAdvisorBindingUser = {
+  userId: number;
+  userNo: string;
+  nickname: string;
+  phoneMasked: string;
+};
+
+function assertAdvisorBindingUser(value: unknown): MAdvisorBindingUser {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("M1_ADVISOR_BINDING_USER_MALFORMED");
+  }
+  const row = value as Record<string, unknown>;
+  const userId = Number(row.userId);
+  if (!Number.isSafeInteger(userId) || userId <= 0) {
+    throw new Error("M1_ADVISOR_BINDING_USER_ID_MISSING");
+  }
+  return {
+    userId,
+    userNo: typeof row.userNo === "string" ? row.userNo : "",
+    nickname: typeof row.nickname === "string" ? row.nickname : "",
+    phoneMasked: typeof row.phoneMasked === "string" ? row.phoneMasked : "",
+  };
+}
+
 export type ConversationTimeoutPolicy = {
   policyKey: string;
   warnMinutes: number;
@@ -1736,10 +1760,28 @@ export async function fetchMSupportWorkbenchSkus(pageNum = 1, pageSize = 100): P
 }
 
 export async function fetchMSupportWorkbenchUsers(query: UserProfileQuery = {}): Promise<AdminPage<User360Profile>> {
+  return fetchSupportUsersPage("users", query);
+}
+
+export async function fetchMAdvisorBindingUsers(query: UserProfileQuery = {}): Promise<AdminPage<MAdvisorBindingUser>> {
+  const pageNum = query.pageNum ?? 1;
+  const pageSize = query.pageSize ?? 10;
+  const page = await apiRequest<AdminPage<unknown>>(
+    `/support-workbench/advisor-users${supportWorkbenchQueryString({ ...query, pageNum, pageSize })}`,
+  );
+  return {
+    total: num(page.total, 0),
+    pageNum: num(page.pageNum, pageNum),
+    pageSize: num(page.pageSize, pageSize),
+    records: asArray<unknown>(page.records).map(assertAdvisorBindingUser),
+  };
+}
+
+async function fetchSupportUsersPage(endpoint: "users", query: UserProfileQuery): Promise<AdminPage<User360Profile>> {
   const pageNum = query.pageNum ?? 1;
   const pageSize = query.pageSize ?? 10;
   const page = await apiRequest<AdminPage<User360Profile>>(
-    `/support-workbench/users${supportWorkbenchQueryString({ ...query, pageNum, pageSize })}`,
+    `/support-workbench/${endpoint}${supportWorkbenchQueryString({ ...query, pageNum, pageSize })}`,
   );
   return {
     total: num(page.total, 0),

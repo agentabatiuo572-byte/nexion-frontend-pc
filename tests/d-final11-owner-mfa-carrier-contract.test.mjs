@@ -14,7 +14,7 @@ test("D Final11 owner carrier uses the controlled D fixture and visible MFA with
   assert.match(source, /getByLabel\("一次性验证码"\)/);
   assert.match(source, /\/api\/admin\/auth\/mfa\/verify/);
   assert.doesNotMatch(source, /NEXT_PUBLIC_ADMIN_AUTH_BYPASS/);
-  assert.doesNotMatch(source, /Admin@123456|A123456789Z/);
+  assert.doesNotMatch(source, /Admin@[0-9]{6,}|A123456789Z/);
 });
 
 test("D Final11 owner carrier fails closed when an MFA challenge has no fixture secret", () => {

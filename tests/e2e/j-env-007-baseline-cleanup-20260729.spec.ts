@@ -6,7 +6,7 @@ const RUN_ID = "pc-full-acceptance-20260729-114336";
 const EVIDENCE_DIR = process.env.J_ENV_007_EVIDENCE_DIR
   ?? `D:/workspace/bug-pic/.restricted/${RUN_ID}/J/env-007`;
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const PASSWORD = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })());
 const REASON = `${RUN_ID} ENV-007 历史自动关停补录清理；仅补录结论，不伪称恢复`;
 
 type Gate = { key: string; name: string; enabled: boolean };

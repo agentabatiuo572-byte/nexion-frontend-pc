@@ -195,7 +195,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
         {diffs.map((line) => <div key={line}>· {line}</div>)}
         {fleetChanged && <div>
           ⚠️ 设备总数变了,对外公布的日支付额同步从 {money(data.values.fleetDevices * data.publishedDailyUsdPerDevice)} 变成 {money(nextDaily)}
-          (每台每日 {money2(data.publishedDailyUsdPerDevice)} 不变),每秒支付流与本月累计一并跟着变。介绍页 / 信任页 / 全球网格 / 分享海报读的是同一个数,会一起变。
+          (每台每日 {money2(data.publishedDailyUsdPerDevice)} 不变),每秒支付流与本月累计一并跟着变。介绍页与信任页读取这组公开统计，会一起变；全球网络使用独立区域投影，不受此字段驱动。
         </div>}
         {baseChanged && <div>⚠️ 改了注册用户基数,推算起点会重置为本次保存时刻 —— 前端从新起点按增速往后推算,不会回退。</div>}
         {virtualZero && <div>⚠️ 虚拟人口填了 0:名次分母只剩真实注册人口({int(data.realUserCount)} 人),用户看到的名次会大幅提前。确认这是有意为之。</div>}
@@ -326,7 +326,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
             </tbody>
           </table>
           <div className="htint warn" style={{ marginTop: 10 }}>
-            介绍页 / 信任页 / 全球网格 / 分享海报读的是同一个设备总数,改完会一起变。金额口径变化会写进审计,便于事后追溯。
+            介绍页 / 信任页 / 分享海报读的是同一个设备总数,改完会一起变。全球网络读取独立区域投影，不受此字段驱动。金额口径变化会写进审计,便于事后追溯。
           </div>
         </div>
       </section>
@@ -368,7 +368,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
 
     <p className="f-foot">
       <b>这页的数会去哪</b>:保存 → 服务端落库 + 写审计 → 前端下次进首页(或下拉刷新)读到新值 → 首页脉搏三格(注册用户 / 在线设备 / 你的排名)随之变化。
-      设备总数还会带着介绍页、信任页、全球网格、分享海报一起变。改动记录去{" "}
+      设备总数还会带着介绍页、信任页、分享海报一起变；全球网络读取独立区域投影。改动记录去{" "}
       <Link href="/platform/audit" className="l-btn sm">A2 审批与审计</Link>{" "}查。
     </p>
   </>;

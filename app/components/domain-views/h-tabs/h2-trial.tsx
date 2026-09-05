@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { PaginationExemptionList } from "../design-kit";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DataListPager } from "../design-kit";
 import {
   fetchH2Trials,
   killH2AutoPush,
@@ -57,6 +57,7 @@ type H2Model = {
   autoPushKilled?: boolean;
   modelA?: Record<string, any>;
   serverOnlyFields?: string[];
+  sessionsPage?: { total: number; pageNum: number; pageSize: number };
 };
 
 function text(value: unknown, fallback = "-") {
@@ -102,7 +103,7 @@ function ParamRow({
   ctx: HCtx;
   param: TrialParam;
   trialProducts: TrialProduct[];
-  onChanged: (next: H2Model) => void;
+  onChanged: () => Promise<void>;
 }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
   const canWrite = ctx.can("growth_h2_write");
@@ -155,8 +156,8 @@ function ParamRow({
       toast(`${param.name} 必须在 0-1000000 张之间`);
       return;
     }
-    const next = await updateH2TrialParam(param.key, normalizedValue, reason);
-    onChanged(next as H2Model);
+    await updateH2TrialParam(param.key, normalizedValue, reason);
+    await onChanged();
     toast(`H2 ${param.name} 已更新`);
   };
 
@@ -216,22 +217,29 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const [model, setModel] = useState<H2Model | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sessionPage, setSessionPage] = useState(1);
+  const [sessionPageSize, setSessionPageSize] = useState(20);
+  const reloadEpochRef = useRef(0);
 
-  const reload = async () => {
+  const reload = useCallback(async () => {
+    const requestEpoch = ++reloadEpochRef.current;
     setLoading(true);
     try {
-      setModel((await fetchH2Trials()) as H2Model);
+      const nextModel = (await fetchH2Trials(sessionPage, sessionPageSize)) as H2Model;
+      if (requestEpoch !== reloadEpochRef.current) return;
+      setModel(nextModel);
       setError(null);
     } catch (err) {
+      if (requestEpoch !== reloadEpochRef.current) return;
       setError(displayAdminError(err));
     } finally {
-      setLoading(false);
+      if (requestEpoch === reloadEpochRef.current) setLoading(false);
     }
-  };
+  }, [sessionPage, sessionPageSize]);
 
   useEffect(() => {
     void reload();
-  }, []);
+  }, [reload]);
 
   const states = useMemo(() => stateMap(model?.states ?? []), [model?.states]);
   const newOnlyParams = (model?.params ?? []).filter((param) => param.section === "newonly");
@@ -296,7 +304,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       reason: true,
       okLabel: "确认急停",
       run: async (reason) => {
-        setModel((await killH2AutoPush(reason)) as H2Model);
+        await killH2AutoPush(reason);
+        await reload();
         toast("auto-push 已急停");
       },
     });
@@ -356,7 +365,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             {newOnlyParams.map((param) => (
-              <ParamRow ctx={ctx} param={param} trialProducts={model.trialProducts ?? []} key={param.key} onChanged={setModel} />
+              <ParamRow ctx={ctx} param={param} trialProducts={model.trialProducts ?? []} key={param.key} onChanged={reload} />
             ))}
           </div>
         </section>
@@ -373,7 +382,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             {liveParams.map((param) => (
-              <ParamRow ctx={ctx} param={param} trialProducts={model.trialProducts ?? []} key={param.key} onChanged={setModel} />
+              <ParamRow ctx={ctx} param={param} trialProducts={model.trialProducts ?? []} key={param.key} onChanged={reload} />
             ))}
           </div>
         </section>
@@ -466,21 +475,20 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
             </tbody>
           </table>
         </div>
+        <DataListPager
+          label="试用会话"
+          page={model.sessionsPage?.pageNum ?? sessionPage}
+          pageSize={model.sessionsPage?.pageSize ?? sessionPageSize}
+          total={model.sessionsPage?.total ?? model.sessions.length}
+          onPageChange={(next) => { reloadEpochRef.current += 1; setSessionPage(next); }}
+          onPageSizeChange={(next) => { reloadEpochRef.current += 1; setSessionPage(1); setSessionPageSize(next); }}
+        />
       </section>
 
       <div className="htint warn">
         <b>服务端权威</b> · H2 参数、会话处置和自动推送急停均由服务端执行；当前没有会话时保持明确空态，不生成示例用户。
       </div>
 
-      <PaginationExemptionList
-        items={[
-          {
-            label: "会话监控",
-            maxRows: model.sessions.length,
-            reason: "试用会话监控为后端摘要,完整漏斗进 B3/L2",
-          },
-        ]}
-      />
     </>
   );
 }

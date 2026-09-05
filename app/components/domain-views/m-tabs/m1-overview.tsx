@@ -18,8 +18,7 @@ import { Icon, type IconName, Modal, Toggle } from "../design-kit";
 import { catCN, MAvatar } from "./hd-ui";
 import type { MCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import type { User360Profile } from "@/lib/admin/user360-client";
-import { fetchMSupportWorkbenchUsers, type MAdvisorAssignment, type MSupportAgent } from "@/lib/admin/m-client";
+import { fetchMAdvisorBindingUsers, type MAdvisorAssignment, type MAdvisorBindingUser, type MSupportAgent } from "@/lib/admin/m-client";
 
 const TICKET_KEY = "I.support.tickets";
 const SLA_KEY = "I.support.sla";
@@ -37,7 +36,24 @@ const SUPPORT_SEAT_TYPES = [
   { position: "通用客服", label: "通用客服", hint: "接普通工单与即时会话" },
 ];
 const BOUND_ASSIGNMENT_PAGE_SIZE = 8;
+const SUPPORT_USER_PAGE_SIZE = 8;
 const ACTIVE_TICKET_STATUSES = new Set<SupportTicket["status"]>(["open", "in_progress", "pending_user"]);
+
+function clampPage(page: number, total: number, pageSize: number): number {
+  return Math.min(Math.max(1, page), Math.max(1, Math.ceil(total / pageSize)));
+}
+
+function Pager({ page, total, pageSize, onPage }: { page: number; total: number; pageSize: number; onPage: (page: number) => void }) {
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  if (total <= pageSize) return null;
+  return (
+    <div className="row" style={{ alignItems: "center", gap: 8 }}>
+      <span className="sub" style={{ flex: 1 }}>第 {page} / {pages} 页 · 匹配 {total} 人</span>
+      <button type="button" className="btn btn-sec btn-sm" disabled={page <= 1} onClick={() => onPage(Math.max(1, page - 1))}>上一页</button>
+      <button type="button" className="btn btn-sec btn-sm" disabled={page >= pages} onClick={() => onPage(Math.min(pages, page + 1))}>下一页</button>
+    </div>
+  );
+}
 
 function parseParamArray<T>(raw: string | undefined, fallback: T[]): T[] {
   if (!raw) return fallback;
@@ -111,23 +127,12 @@ function SlaBar({ pct, tone }: { pct: number; tone: string }) {
   );
 }
 
-function numericUserId(value: unknown): number {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  const raw = value == null ? "" : String(value).trim();
-  if (!raw) return 0;
-  const direct = Number(raw);
-  if (Number.isFinite(direct)) return direct;
-  const matched = raw.match(/\d+/)?.[0];
-  const parsed = matched ? Number(matched) : 0;
-  return Number.isFinite(parsed) ? parsed : 0;
+function userIdOf(profile: MAdvisorBindingUser): number {
+  return Number.isSafeInteger(profile.userId) && profile.userId > 0 ? profile.userId : 0;
 }
 
-function userIdOf(profile: User360Profile): number {
-  return numericUserId(profile.id) || numericUserId(profile.userNo);
-}
-
-function userNoOf(profile: User360Profile): string {
-  return profile.userNo || (profile.id ? `U${String(profile.id).padStart(8, "0")}` : "未编号用户");
+function userNoOf(profile: MAdvisorBindingUser): string {
+  return profile.userNo || `U${String(profile.userId).padStart(8, "0")}`;
 }
 
 function isDedicatedSupportAgent(agent: MSupportAgent): boolean {
@@ -429,6 +434,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
           currentRole={currentRoleKey}
           currentAdminId={currentAdminId}
           agents={seatAssignmentAgents}
+          canManage={canManageSupportSeats}
           onClose={() => setShowSeatRoles(false)}
         />
       )}
@@ -437,6 +443,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
           ctx={ctx}
           agents={assignableAgents}
           initialAgent={assignAgent}
+          canManage={canManageSupportSeats}
           onClose={() => {
             setShowUserAssign(false);
             setAssignAgent(null);
@@ -633,6 +640,7 @@ function SupportSeatRoleModal({
   currentRole,
   currentAdminId,
   agents,
+  canManage,
   onClose,
 }: {
   ctx: MCtx;
@@ -640,21 +648,25 @@ function SupportSeatRoleModal({
   currentRole: string;
   currentAdminId: number;
   agents: MSupportAgent[];
+  canManage: boolean;
   onClose: () => void;
 }) {
   const [keyword, setKeyword] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const [targetPosition, setTargetPosition] = useState("通用客服");
   const [userKeyword, setUserKeyword] = useState("");
-  const [users, setUsers] = useState<User360Profile[]>([]);
-  const [selectedUsers, setSelectedUsers] = useState<User360Profile[]>([]);
+  const [userPage, setUserPage] = useState(1);
+  const [userTotal, setUserTotal] = useState(0);
+  const [userReload, setUserReload] = useState(0);
+  const [users, setUsers] = useState<MAdvisorBindingUser[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<MAdvisorBindingUser[]>([]);
   const [reason, setReason] = useState("");
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [saving, setSaving] = useState(false);
   const [userError, setUserError] = useState("");
   const canAssignSupervisor = currentRole === "superadmin" || currentRole === "super";
   const currentAgent = agents.find((agent) => agent.adminId === currentAdminId) ?? null;
-  const canAssignSupportStaff = canAssignSupervisor || isSupportSupervisor(currentAgent);
+  const canAssignSupportStaff = canManage && (canAssignSupervisor || isSupportSupervisor(currentAgent));
   const seatOptions = canAssignSupportStaff ? SUPPORT_SEAT_TYPES.filter((seat) => canAssignSupervisor || seat.position !== "客服主管") : [];
   const operatorReady = operatorName.trim().length > 0;
   const normalizedKeyword = keyword.trim().toLowerCase();
@@ -719,36 +731,59 @@ function SupportSeatRoleModal({
   }, [candidates, selected]);
 
   useEffect(() => {
-    if (!assigningDedicated) return;
-    let alive = true;
-    const timer = window.setTimeout(() => {
-      setLoadingUsers(true);
+    setUserPage(1);
+  }, [assigningDedicated, userKeyword]);
+
+  useEffect(() => {
+    if (!assigningDedicated || !canAssignSupportStaff) {
+      setUsers([]);
+      setUserTotal(0);
+      setLoadingUsers(false);
       setUserError("");
-      fetchMSupportWorkbenchUsers({ keyword: userKeyword.trim(), pageNum: 1, pageSize: 8 })
+      return;
+    }
+    let alive = true;
+    let pageRedirected = false;
+    setLoadingUsers(true);
+    setUserError("");
+    setUsers([]);
+    setUserTotal(0);
+    const timer = window.setTimeout(() => {
+      fetchMAdvisorBindingUsers({ keyword: userKeyword.trim(), pageNum: userPage, pageSize: SUPPORT_USER_PAGE_SIZE })
         .then((page) => {
           if (!alive) return;
+          const safePage = clampPage(userPage, page.total, SUPPORT_USER_PAGE_SIZE);
+          if (safePage !== userPage) {
+            setUsers([]);
+            setUserTotal(page.total);
+            pageRedirected = true;
+            setUserPage(safePage);
+            return;
+          }
           setUsers(page.records);
+          setUserTotal(page.total);
         })
         .catch((err) => {
           if (!alive) return;
           setUsers([]);
+          setUserTotal(0);
           setUserError(displayAdminError(err));
         })
         .finally(() => {
-          if (alive) setLoadingUsers(false);
+          if (alive && !pageRedirected) setLoadingUsers(false);
         });
     }, 250);
     return () => {
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [assigningDedicated, userKeyword]);
+  }, [assigningDedicated, canAssignSupportStaff, userKeyword, userPage, userReload]);
 
   useEffect(() => {
     setSelectedUsers([]);
   }, [targetPosition, selected?.adminId]);
 
-  const toggleUser = (user: User360Profile) => {
+  const toggleUser = (user: MAdvisorBindingUser) => {
     const userId = userIdOf(user);
     if (!userId || boundUserIds.has(userId)) return;
     setSelectedUsers((prev) => {
@@ -861,7 +896,7 @@ function SupportSeatRoleModal({
                 <span>绑定服务用户 <b style={{ color: "var(--danger)" }}>*</b></span>
                 <div className="inp">
                   <Icon name="search" size={15} />
-                  <input value={userKeyword} onChange={(e) => setUserKeyword(e.target.value)} placeholder="用户名 / 用户编码 / 手机号" />
+                  <input value={userKeyword} onChange={(e) => setUserKeyword(e.target.value)} placeholder="昵称 / 用户 ID / 用户编码 / 手机号（尾号后 4 位）" />
                 </div>
               </label>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -882,7 +917,8 @@ function SupportSeatRoleModal({
                 ))}
               </div>
               {loadingUsers && <div className="itint">正在查询用户...</div>}
-              {!loadingUsers && userError && <div className="itint">用户加载失败 · {userError}</div>}
+              {!loadingUsers && userError && <div className="itint">用户加载失败 · {userError} <button type="button" className="btn btn-sec btn-sm" onClick={() => setUserReload((value) => value + 1)}>重试</button></div>}
+              {!loadingUsers && !userError && users.length === 0 && <div className="itint">暂无匹配用户</div>}
               {!loadingUsers && !userError && users.map((user) => {
                 const id = userIdOf(user);
                 const checked = selectedUserIds.has(id);
@@ -907,6 +943,7 @@ function SupportSeatRoleModal({
                   </button>
                 );
               })}
+              {!loadingUsers && !userError && <Pager page={userPage} total={userTotal} pageSize={SUPPORT_USER_PAGE_SIZE} onPage={setUserPage} />}
             </div>
           )}
           <label className="field" style={{ marginBottom: 0 }}>
@@ -923,19 +960,24 @@ function SeatAssignmentModal({
   ctx,
   agents,
   initialAgent,
+  canManage,
   onClose,
 }: {
   ctx: MCtx;
   agents: MSupportAgent[];
   initialAgent: MSupportAgent | null;
+  canManage: boolean;
   onClose: () => void;
 }) {
   const [agentAdminId, setAgentAdminId] = useState(initialAgent ? String(initialAgent.adminId) : "");
   const [keyword, setKeyword] = useState("");
+  const [userPage, setUserPage] = useState(1);
+  const [userTotal, setUserTotal] = useState(0);
+  const [userReload, setUserReload] = useState(0);
   const [boundKeyword, setBoundKeyword] = useState("");
   const [boundPage, setBoundPage] = useState(1);
-  const [users, setUsers] = useState<User360Profile[]>([]);
-  const [selectedUsers, setSelectedUsers] = useState<User360Profile[]>([]);
+  const [users, setUsers] = useState<MAdvisorBindingUser[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<MAdvisorBindingUser[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [unbindingId, setUnbindingId] = useState<number | null>(null);
@@ -990,32 +1032,56 @@ function SeatAssignmentModal({
     return userId > 0 && !boundUserIds.has(userId);
   });
   const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
-  const canSave = Boolean(agent && agent.adminId > 0 && agentCanAssign && bindableSelectedUsers.length > 0 && reasonOk && !saving && unbindingId === null);
+  const canSave = Boolean(canManage && agent && agent.adminId > 0 && agentCanAssign && bindableSelectedUsers.length > 0 && reasonOk && !saving && unbindingId === null);
 
   useEffect(() => {
-    let alive = true;
-    const timer = window.setTimeout(() => {
-      setLoading(true);
+    setUserPage(1);
+  }, [keyword, agent?.adminId]);
+
+  useEffect(() => {
+    if (!canManage) {
+      setUsers([]);
+      setUserTotal(0);
+      setLoading(false);
       setError("");
-      fetchMSupportWorkbenchUsers({ keyword: keyword.trim(), pageNum: 1, pageSize: 8 })
+      return;
+    }
+    let alive = true;
+    let pageRedirected = false;
+    setLoading(true);
+    setError("");
+    setUsers([]);
+    setUserTotal(0);
+    const timer = window.setTimeout(() => {
+      fetchMAdvisorBindingUsers({ keyword: keyword.trim(), pageNum: userPage, pageSize: SUPPORT_USER_PAGE_SIZE })
         .then((page) => {
           if (!alive) return;
+          const safePage = clampPage(userPage, page.total, SUPPORT_USER_PAGE_SIZE);
+          if (safePage !== userPage) {
+            setUsers([]);
+            setUserTotal(page.total);
+            pageRedirected = true;
+            setUserPage(safePage);
+            return;
+          }
           setUsers(page.records);
+          setUserTotal(page.total);
         })
         .catch((err) => {
           if (!alive) return;
           setUsers([]);
+          setUserTotal(0);
           setError(displayAdminError(err));
         })
         .finally(() => {
-          if (alive) setLoading(false);
+          if (alive && !pageRedirected) setLoading(false);
         });
     }, 250);
     return () => {
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [keyword]);
+  }, [canManage, keyword, userPage, userReload]);
 
   useEffect(() => {
     setBoundPage(1);
@@ -1025,7 +1091,7 @@ function SeatAssignmentModal({
     setBoundPage((page) => Math.min(Math.max(1, page), boundPageCount));
   }, [boundPageCount]);
 
-  const toggleUser = (user: User360Profile) => {
+  const toggleUser = (user: MAdvisorBindingUser) => {
     const userId = userIdOf(user);
     if (!userId || boundUserIds.has(userId)) return;
     setSelectedUsers((prev) => {
@@ -1164,7 +1230,7 @@ function SeatAssignmentModal({
             <span>搜索用户</span>
             <div className="inp">
               <Icon name="search" size={15} />
-              <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="用户名 / 用户编码 / 手机号" />
+              <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="昵称 / 用户 ID / 用户编码 / 手机号（尾号后 4 位）" disabled={!canManage} />
             </div>
           </label>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
@@ -1197,7 +1263,7 @@ function SeatAssignmentModal({
         <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
           <div className="sub" style={{ fontWeight: 600 }}>可选用户</div>
           {loading && <div className="itint">正在查询用户...</div>}
-          {!loading && error && <div className="itint">用户加载失败 · {error}</div>}
+          {!loading && error && <div className="itint">用户加载失败 · {error} <button type="button" className="btn btn-sec btn-sm" onClick={() => setUserReload((value) => value + 1)}>重试</button></div>}
           {!loading && !error && users.length === 0 && (
             <div className="itint">
               <div style={{ fontSize: 13 }}>暂无匹配用户</div>
@@ -1250,6 +1316,7 @@ function SeatAssignmentModal({
               </div>
             );
           })}
+          {!loading && !error && <Pager page={userPage} total={userTotal} pageSize={SUPPORT_USER_PAGE_SIZE} onPage={setUserPage} />}
         </div>
       </div>
     </Modal>

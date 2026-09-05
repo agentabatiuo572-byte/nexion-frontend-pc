@@ -35,10 +35,12 @@ test("WD02 d-client 默认种子与契约声明逐键一致(跨仓 parity 锚)",
   assert.match(client, /D5_NETWORK_CONFIRM_FEE_MAX = 25/);
 });
 
-test("WD02 D5 类型与可写变更集:三网络确认费在、旧三件套与惩罚费不在", () => {
+test("WD02 D5 类型与可写变更集:三网络确认费和通道开关在、旧三件套与惩罚费不在", () => {
   // 红测:从 D5Params 删掉 networkConfirmFeeUsd → FAIL
   assert.match(client, /networkConfirmFeeUsd: \{ trc20: number; bep20: number; erc20: number \}/);
+  assert.match(client, /networkEnabled: \{ trc20: boolean; bep20: boolean; erc20: boolean \}/);
   assert.match(client, /D5OwnedChanges[\s\S]{0,320}networkConfirmFeeUsd/);
+  assert.match(client, /D5OwnedChanges[\s\S]{0,360}networkEnabled/);
   // 红测:把 networkFeeRatio/penaltyFeeRate 加回 D5Params → FAIL(剥注释后扫)
   const stripped = client.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
   const d5Block = stripped.match(/export interface D5Params \{[\s\S]*?\n\}/)?.[0] ?? "";
@@ -68,8 +70,10 @@ test("WD02 D5/H1 运营渲染面无惩罚费残留(注释已剥;D2 双形态分�
   // 红测:把「提现惩罚费率」行加回 D5 或 H1 → FAIL
   assert.ok(!/penaltyFeeRate|withdrawPenaltyFeeRate|提现惩罚费率/.test(strip(page)), "d5-params 残留惩罚费");
   assert.ok(!/penaltyFeeRate|withdrawPenaltyFeeRate|提现惩罚费率/.test(strip(h1Page)), "h1-phase 残留惩罚费");
-  // D2 渲染层必须按 feeModel 分支(新单不许打出一串 null 旧字段)
-  assert.match(d2Page, /row\.feeModel === "confirm"/);
+  // D2 列表只展示两种费用模型都具备的权威汇总；详情再按 feeModel 展开，
+  // 因而新单不会渲染一串 null 的旧模型字段。
+  assert.match(d2Page, /money\(row\.actualFee\)/);
+  assert.match(d2Page, /money\(row\.netReceive\)/);
   assert.match(d2Page, /detail\.feeModel === "confirm"/);
   assert.match(d2Page, /网络确认费/);
 });
@@ -135,9 +139,10 @@ function d5Payload(overrides = {}) {
     coverageReliable: true,
     smallAmountThresholdUsd: 50,
     payoutSlaHours: 24,
+    networkEnabled: { trc20: true, bep20: true, erc20: true },
     sourceByField: {
       dailyLimitCount: "d5", balanceMaxRatio: "d5", nexFeeOffsetRate: "d5",
-      networkConfirmFeeUsd: "d5", smallAmountThresholdUsd: "d5", payoutSlaHours: "d5",
+      networkConfirmFeeUsd: "d5", networkEnabled: "d5", smallAmountThresholdUsd: "d5", payoutSlaHours: "d5",
       cooldownDays: "phase-h1", complianceHoldEnabled: "phase-h1",
     },
     ...overrides,
@@ -147,6 +152,19 @@ function d5Payload(overrides = {}) {
 test("WD02 行为:networkConfirmFeeUsd 整组缺失/null → fail-closed", () => {
   for (const absent of [d5Payload(), d5Payload({ networkConfirmFeeUsd: null })]) {
     assert.throws(() => extracted.normalizeD5Params(absent), /D5_RESPONSE_INVALID/);
+  }
+});
+
+test("WD02 行为:三网络可用性整组缺失/残缺 → fail-closed，并保留 BEP20", () => {
+  const enabled = { trc20: true, bep20: false, erc20: true };
+  const fees = { trc20: 1, bep20: 1, erc20: 5 };
+  assert.equal(extracted.normalizeD5Params(d5Payload({ networkConfirmFeeUsd: fees, networkEnabled: enabled })).networkEnabled.bep20, false);
+  for (const invalid of [
+    d5Payload({ networkConfirmFeeUsd: fees, networkEnabled: undefined }),
+    d5Payload({ networkConfirmFeeUsd: fees, networkEnabled: null }),
+    d5Payload({ networkConfirmFeeUsd: fees, networkEnabled: { trc20: true, erc20: true } }),
+  ]) {
+    assert.throws(() => extracted.normalizeD5Params(invalid), /D5_RESPONSE_INVALID/);
   }
 });
 

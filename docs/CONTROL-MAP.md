@@ -4,6 +4,8 @@
 > 控制类型:**config**(可编辑参数页)· **list rowActions**(行级操作)· **list primaryAction**(新增入口)· **dashboard controlLink**(跳关联 config)· **旗舰**(bespoke 完整页)。
 > 2026-06-02 · `/goal` 逐域(A–L)核对产出。
 >
+> **现行覆盖说明（2026-09-05）**：2026-08-07 后发产品裁决已取消 KYC、钱包配对、C4 与 K5。下表不再把 C4/K5 计入可用控制面；历史设计以对应 PRD 顶部退役声明为准，禁止据此恢复入口或接口。
+>
 > **字段级第三层(CGM)**:本表为**模块级**核对(每域有无对应控制面)。字段级 1:1(每个前端 store 字段 / 业务常量 → 一个后台控制)见 `docs/cgm/cgm.manifest.json`(185 行机读单一真源)+ 渲染面:旗舰 `/platform/params-registry`(88 平台参数回源真值索引)、per-user 旗舰 `/users/search/[id]`(11 张 360 HUB 卡:投入/提现/设备/收益/邀请/V级/财务/互动/订单商城/账户安全/通知)。覆盖门 `scripts/cgm-coverage.mjs`(默认 B9 = 全 185 行 built/waived,0 gap 常驻 tripwire)。
 
 ## 控制原语(archetype 级,全站通用)
@@ -11,7 +13,17 @@
 - **list archetype**:行详情抽屉 `rowActions`(按真实状态门控的行级操作:冻结/退款/通过/下架…)+ 待办行默认操作确认(通过/驳回)+ `primaryAction` 新增入口(目录/CMS)。
 - **dashboard archetype**:`controlLink` 跳关联 config(分析只读,操作落在 config 模块)。
 - **全站**:总管理员全权限 + 全面仍需操作确认;其余角色操作确认 + 操作理由必填 + A2 留痕。
-- 说明:控制为 mock(本地 state / 确认,server-canonical 结构),按主人指令**不接真前端原型**,只保证后台有完整可控可配的操作面。
+- 说明：现行正式链路是 `nexion-ops-console → nexion-backend → NX1.0-UniApp`。`NX1.0-Prototype` 只作视觉与交互参考，不是数据消费者；控制结果必须由 Java/MySQL 回读，禁止用 PC 本地 state 或原型 Mock 冒充已生效。
+
+## 正式 App 对接核对（2026-09-05）
+
+| 控制面 | PC → Java 写/读 | 正式 App 消费 | 当前结论 |
+|---|---|---|---|
+| E1 商品目录 | E1 PC 代理按服务端分页读取全部 SKU，并保留 `total/pageNum/pageSize` 一致性与重复主键校验 | 商城、商品详情、结算继续读取服务端商品/库存/代际门 | 已对接；不再停在前 100 条 |
+| F1 V-Rank 展示 | PC 配置 `team.ui.F.prize.name` 与 `team.ui.F.vrank.titles`，门槛与奖励仍走 F1 权威接口 | `/api/config/v-ranks` 下发 `prizeName` 和 V0–V12 头衔，App 排名页直接展示 | 已对接；PC 标题和奖项名不再被 App 忽略 |
+| H2 免费试用会话 | `/api/admin/growth/trials?pageNum&pageSize` 返回服务端分页元数据，PC 用 `DataListPager` 翻页 | App 试用资格、商品与生命周期仍由服务端接口判定 | 已对接；PC 不再只取“最新 100 条” |
+| H3 Day-One 任务 | PC/MFA 配置写入任务权威表，任务状态由 `/api/quests/state` 回读 | App 展示 6 个任务的组奖励并通过组级领取接口一次结算 | 已对接；逐任务奖励与组奖励语义已分离 |
+| 开发者访问 | A9 审批开发者资格，开发者页创建/吊销只存密钥摘要 | `GET /openapi/v1/developer/home-overview` 使用一次性展示的 API Key，按密钥所属用户读取服务端事实 | 已对接首个只读业务端点；回调/Webhook 仍按各自真实能力单独验收 |
 
 ## 逐域核对(12 域 / 67 模块)
 
@@ -38,7 +50,6 @@
 | C1 检索&画像 | 用户档案 | bespoke(L3 详情+操作) | 旗舰 |
 | C2 账户操作 | 冻结/解冻/限制 | 冻结/解冻/限制提现/重置密码 | list rowActions |
 | C3 余额&资产调整 | 调账 | 通过/驳回(操作确认) | list rowActions |
-| C4 KYC 台账 | KYC 裁决 | 通过/驳回/要求补件 | list rowActions |
 | C5 安全&会话 | 会话/设备 | 强制下线/锁定账户 | list rowActions |
 | C6 注册风控 | 风险分布 | controlLink→/risk/multi-account | dashboard |
 
@@ -116,7 +127,6 @@
 | K2 套利&刷量 | 违规事件 | 确认违规/标记误报/冻结账户 | list rowActions |
 | K3 提现规则 | 阈值/速率 | 可编辑配置 + 应用 | config |
 | K4 风险评分 | 维度/权重 | 可编辑配置 + 应用 | config |
-| K5 大额 KYC 复审 | 复审裁决 | 通过/驳回/要求补件 | list rowActions |
 
 ### L 数据与分析 BI
 | 模块 | 前端杠杆 | 后台控制 | 类型 |
@@ -132,7 +142,7 @@
 - **list 模块**:行级操作 + 目录新增入口齐全 ✓(行操作按真实状态门控)
 - **dashboard 模块**:controlLink 跳关联 config ✓(分析只读)
 - **旗舰页 B1/C1/D2/D5**:bespoke 完整控制 ✓
-- **已知限制**:控制为 mock 演示,不接真前端原型(按主人指令);C2 已重构为账户实时态列表(acctState 列 · 冻结/解冻/限制按真实状态值门控)。
+- **已知限制**：外部支付、短信、OAuth、真实硬件 Janus、法务发布等必须依赖真实世界或第三方环境的能力仍单列验收；正式 PC/App 内部控制链不得以此为由退回 Mock。C2 已重构为账户实时态列表（acctState 列 · 冻结/解冻/限制按真实状态值门控）。
 
 ## 2026-06-03 确认(设计稿 restyle 后逐域控制审计)
 > 机器可检(Playwright)逐域代表模块断言控制面存在且可交互:**15/15 PASS**。restyle(token/字体/shell/页头标签)未触碰 list/config/dashboard archetype 控制逻辑,控制层零回归。

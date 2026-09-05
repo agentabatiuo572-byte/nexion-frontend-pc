@@ -14,9 +14,9 @@ test.beforeEach(async ({ page }) => {
     await page.waitForTimeout(800);
     await username.fill("superadmin");
     const password = page.locator('input[autocomplete="current-password"]');
-    await password.fill("Admin@123456");
+    await password.fill((process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })()));
     await expect(username).toHaveValue("superadmin");
-    await expect(password).toHaveValue("Admin@123456");
+    await expect(password).toHaveValue((process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })()));
     await page.getByRole("button", { name: /继续|登录/ }).click();
   }
   await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });

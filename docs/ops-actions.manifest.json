@@ -876,7 +876,8 @@
         "e1_phase_patch",
         "e1_phase_create",
         "e1_phase_archive",
-        "e1_early_access_update"
+        "e1_early_access_update",
+        "e1_bundle_discount"
       ]
     },
     {
@@ -1006,6 +1007,7 @@
       "status": "built",
       "view": "f-view.tsx",
       "batch": "done",
+      "restAction": "updateF4AmbassadorPolicy",
       "runtimeEvidence": [
         {
           "type": "backend-runtime",
@@ -2786,7 +2788,12 @@
       "batch": "done",
       "restActions": [
         "createH3Mission",
-        "createH3MonthlyMission"
+        "createH3MonthlyMission",
+        "createH3QuestEventBinding",
+        "updateH3LocalizedContent",
+        "updateH3MissionPresentation",
+        "updateH3QuestEventBinding",
+        "deleteH3QuestEventBinding"
       ],
       "note": "任务创建已接真实服务端；编辑、启停、归档、删除、持久幂等与认证审计主体已由 OPS-H-12 完成"
     },
@@ -2800,7 +2807,8 @@
       "batch": "done",
       "restActions": [
         "createH4QuestEvent",
-        "updateH4EventFeatured"
+        "updateH4EventFeatured",
+        "updateH4LocalizedContent"
       ]
     },
     {
@@ -2836,7 +2844,7 @@
         {
           "type": "uniapp-runtime",
           "file": "src/store/app.ts",
-          "positivePatterns": ["taskAssignmentApi\\.state\\(\\)", "applyRemoteAssignments\\(devices\\.value, state\\)", "refreshRemoteFleet\\(request\\)", "refreshHomeTruth\\(request\\)"],
+          "positivePatterns": ["taskAssignmentApi\\.state\\(\\)", "applyRemoteAssignments\\(devices\\.value, state\\)", "refreshRemoteFleet\\(request,", "refreshHomeTruth\\(request\\)"],
           "negativePatterns": ["taskAssignmentApi\\.claim\\(", "taskAssignmentApi\\.complete\\(", "function tick\\(deltaMs: number\\) \\{\\s*if \\(remoteApiEnabled\\) return;"]
         }
       ],
@@ -3522,13 +3530,13 @@
         {
           "type": "uniapp-runtime",
           "file": "src/store/weekly-quest.ts",
-          "positivePatterns": ["questApi\\.state\\(\\)", "questApi\\.claim\\(quest\\.questCode, key\\)", "const readBack = await questApi\\.state\\(\\)", "WEEKLY_QUEST_CLAIM_MISMATCH"],
+          "positivePatterns": ["questApi\\.state\\(locale\\.code\\)", "questApi\\.claim\\(quest\\.questCode, key, quest\\.instanceKey\\)", "const readBack = await questApi\\.state\\(locale\\.code\\)", "WEEKLY_QUEST_CLAIM_MISMATCH"],
           "negativePatterns": ["quest\\.status = \"CLAIMED\"", "rewardNex[\\s\\S]{0,80}wallet.*\\+="]
         },
         {
           "type": "backend-runtime",
           "file": "src/main/java/ffdd/opsconsole/growth/application/AppGrowthEngagementService.java",
-          "positivePatterns": ["executeOnce\\(\"QUEST_CLAIM\"", "QUEST_NOT_CLAIMABLE", "mapper\\.claimQuest\\(userId, reward\\.missionId\\(\\)\\) != 1", "H3_QUEST_CLAIMED"],
+          "positivePatterns": ["executeOnce\\(\"QUEST_CLAIM\"", "QUEST_NOT_CLAIMABLE", "mapper\\.claimQuest\\(userId, reward\\.missionId\\(\\), reward\\.instanceKey\\(\\)\\) != 1", "H3_QUEST_CLAIMED"],
           "negativePatterns": ["QUEST_NOT_CLAIMABLE[\\s\\S]{0,120}ledgerPostingFacade", "claimQuest[\\s\\S]{0,100}catch[\\s\\S]{0,100}CLAIMED"]
         }
       ],
@@ -3618,17 +3626,17 @@
         {
           "type": "uniapp-runtime",
           "file": "src/api/support-api.ts",
-          "positivePatterns": ["faqs: async \\(language, category\\)", "path: `/api/app/support/faqs\\?", "SUPPORT_FAQ_RESPONSE_INVALID"],
+          "positivePatterns": ["async function faqPage\\(", "path: `/api/app/support/faqs/page\\?", "SUPPORT_FAQ_RESPONSE_INVALID"],
           "negativePatterns": ["mockFaq", "fallbackFaq"]
         },
         {
           "type": "backend-runtime",
           "file": "src/main/java/ffdd/opsconsole/content/application/AppSupportService.java",
-          "positivePatterns": ["public ApiResult<List<SupportFaqView>> faqs\\(", "filter\\(faq -> \"PUBLISHED\"\\.equals\\(normalizeUpper\\(faq\\.status\\(\\)\\)\\)\\)", "filter\\(faq -> \"Help Center\"\\.equals\\(faq\\.surface\\(\\)\\)\\)"],
+          "positivePatterns": ["public ApiResult<PageResult<SupportFaqView>> faqPage\\(", "countPublishedFaqs\\(", "listPublishedFaqPage\\("],
           "negativePatterns": ["status\\(\\).*DRAFT", "List\\.of\\(new SupportFaqView"]
         }
       ],
-      "note": "Production：App FAQ 只查询真实服务端接口并严格解析；服务端只投影 PUBLISHED 且 Help Center 可见版本，查询失败不回退到 bundled/mock FAQ 事实。"
+      "note": "Production：App FAQ 只查询真实服务端分页接口并严格解析页元数据；服务端在数据库层按 PUBLISHED、surface 与语言过滤并限制每页最多 50 条，查询失败不回退到 bundled/mock FAQ 事实。"
     },
     {
       "id": "OPS-D-26",

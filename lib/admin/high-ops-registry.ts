@@ -948,6 +948,26 @@ export const HIGH_OPS: HighOpDef[] = [
   // —— E 域设备(批 6) ——
   // E1 目录(e1 sku/review/phase/gate)
   {
+    op: "e1_bundle_discount",
+    domain: "E",
+    action: "调整 App 组合购阶梯折扣",
+    amplifies: true,
+    type: "fund",
+    gateLabel: "门槛者",
+    targetType: "store_bundle_discount",
+    buildCommand: (ctx) => ({
+      domain: "E",
+      op: "e1_bundle_discount",
+      params: {
+        twoItemsPct: Number(ctx.twoItemsPct),
+        threeItemsPct: Number(ctx.threeItemsPct),
+        fourPlusItemsPct: Number(ctx.fourPlusItemsPct),
+        expectedVersion: Number(ctx.expectedVersion),
+      },
+    }),
+    buildTarget: () => ({ domain: "E", type: "store_bundle_discount", id: "canonical" }),
+  },
+  {
     op: "e1_sku_create",
     domain: "E",
     action: "新建设备 SKU",

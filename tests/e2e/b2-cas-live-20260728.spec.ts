@@ -5,7 +5,7 @@ import { expect, test, type APIResponse, type Browser, type Page } from "@playwr
 
 const SUPERADMIN = {
   username: process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin",
-  password: process.env.ADMIN_E2E_PASSWORD || "Admin@123456",
+  password: (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })()),
 };
 const FIXTURE_PATH = process.env.A_PERMISSION_FIXTURE_PATH;
 const EVIDENCE_DIR = process.env.B_EVIDENCE_DIR;

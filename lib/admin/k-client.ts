@@ -837,10 +837,11 @@ const K2_PARAM_KEYS = [
   "welcomeGiftAnomalyThreshold",
   "leaderboardVelocityMultiplier",
   "otpGate.resendSeconds",
-  "otpGate.captchaAfterSends",
+  "otpGate.dayLimit",
   "otpGate.otpTtlSeconds",
   "otpGate.maxVerifyAttempts",
-  "otpGate.captchaTicketTtlSeconds",
+  "captchaGate.alwaysScenes",
+  "captchaGate.afterSends",
 ] as const;
 const K2_REQUIRED_SOURCES = [
   "nx_tradein_application:E3",
@@ -864,12 +865,16 @@ function validateK2ParamValue(key: string, value: string): boolean {
     const match = value.match(/^(>=|>)\s*(\d+)\s*x\s*(基线|上周期|7日均值|同层级均值)$/i);
     return !!match && Number(match[2]) >= 2 && Number(match[2]) <= 20;
   }
+  if (key === "captchaGate.alwaysScenes") {
+    return ["register", "login", "reset", "register,login", "register,reset", "login,reset", "register,login,reset"].includes(value);
+  }
   const numeric = Number(value);
   if (!Number.isInteger(numeric)) return false;
   if (key === "otpGate.resendSeconds") return numeric >= 30 && numeric <= 300;
-  if (key === "otpGate.captchaAfterSends" || key === "otpGate.maxVerifyAttempts") return numeric >= 1 && numeric <= 10;
+  if (key === "otpGate.dayLimit") return numeric >= 5 && numeric <= 50;
+  if (key === "otpGate.maxVerifyAttempts") return numeric >= 1 && numeric <= 10;
   if (key === "otpGate.otpTtlSeconds") return numeric >= 60 && numeric <= 900 && numeric % 60 === 0;
-  if (key === "otpGate.captchaTicketTtlSeconds") return numeric >= 30 && numeric <= 600;
+  if (key === "captchaGate.afterSends") return numeric >= 0 && numeric <= 50;
   return false;
 }
 

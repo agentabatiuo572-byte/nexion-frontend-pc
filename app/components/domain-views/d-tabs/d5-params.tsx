@@ -206,6 +206,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       <div className="f-stat"><div className="k">每日提现次数</div><div className="v">{params.dailyLimitCount}</div><div className="sub">D5 · D2 实时消费</div></div>
       <div className="f-stat cyan"><div className="k">余额可提上限</div><div className="v">{pctRatio(params.maxBalanceRatio)}</div><div className="sub">D5 权威</div></div>
       <div className="f-stat warn"><div className="k">网络确认费</div><div className="v">${params.networkConfirmFeeUsd.trc20} / ${params.networkConfirmFeeUsd.bep20} / ${params.networkConfirmFeeUsd.erc20}</div><div className="sub">TRC20 / BEP20 / ERC20 · 每笔固定</div></div>
+      <div className="f-stat"><div className="k">提现网络</div><div className="v">{params.networkEnabled.trc20 ? "TRC20 开" : "TRC20 关"} / {params.networkEnabled.bep20 ? "BEP20 开" : "BEP20 关"} / {params.networkEnabled.erc20 ? "ERC20 开" : "ERC20 关"}</div><div className="sub">D5 权威 · App 将按此隐藏不可用通道</div></div>
       <div className="f-stat cyan"><div className="k">NEX 抵扣率</div><div className="v">${params.nexFeeOffsetRate.toFixed(2)}/NEX</div><div className="sub">D5 权威</div></div>
       <div className="f-stat"><div className="k">小额免审线</div><div className="v">${params.smallAmountThresholdUsd}</div><div className="sub">提交时快车道判定</div></div>
       <div className="f-stat"><div className="k">到账 SLA</div><div className="v">{params.payoutSlaHours}h</div><div className="sub">写入提现到期时间</div></div>
@@ -233,6 +234,15 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
             <input aria-label="小额免审线目标值" className="l-inp" type="number" min="0" max={D5_SMALL_AMOUNT_THRESHOLD_MAX} step="0.01" value={drafts.smallAmount} disabled={!canDailyWrite} onChange={(event) => updateDraft("smallAmount", event.target.value)} />
             <span>USD</span>
             {canDailyWrite && <button className="l-btn sm mc" disabled={!smallAmountValid || smallAmount === params.smallAmountThresholdUsd} onClick={() => submit("小额免审线", { smallAmountThresholdUsd: smallAmount }, smallAmount > params.smallAmountThresholdUsd, `$${params.smallAmountThresholdUsd} → $${smallAmount}`)}>预览并提交</button>}
+          </div>
+          <div className="p-row">
+            <div className="txt"><div className="k">提现通道（三网络 · 原子更新）</div><div className="s">关闭会收紧资金流出；开启会放大可提现范围，服务器将校验 B1 覆盖率。App 读取同一权威快照。</div></div>
+            {(["trc20", "bep20", "erc20"] as const).map((network) => {
+              const enabled = params.networkEnabled[network];
+              const label = network.toUpperCase();
+              const next = { ...params.networkEnabled, [network]: !enabled };
+              return <button key={network} aria-label={`${label} 提现通道${enabled ? "关闭" : "开启"}`} className={`l-btn sm ${enabled ? "mc" : ""}`} disabled={!canFeeWrite} onClick={() => submit(`${label} 提现通道`, { networkEnabled: next }, !enabled, `${label} ${enabled ? "开启" : "关闭"} → ${enabled ? "关闭" : "开启"}`)}>{label} {enabled ? "已开启" : "已关闭"}</button>;
+            })}
           </div>
           <div className="p-row">
             <div className="txt"><div className="k">到账时效</div><div className="s">{D5_PAYOUT_SLA_HOURS_MIN}–{D5_PAYOUT_SLA_HOURS_MAX} 小时；缩短时效会放大资金执行压力</div></div>

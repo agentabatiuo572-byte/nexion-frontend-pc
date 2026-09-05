@@ -5,7 +5,7 @@ import { CONSOLE_NAV } from "../../lib/nav/console-nav";
 
 const BASE_URL = process.env.ADMIN_BASE_URL ?? "http://127.0.0.1:3002";
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const PASSWORD = (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })());
 const EVIDENCE_DIR = process.env.JM_REVIEW_EVIDENCE_DIR
   ?? "D:/workspace/bug-pic/pc-full-acceptance-20260727/adversarial-J-M";
 const DOMAIN_CODES = new Set(["J", "K", "L", "M"]);

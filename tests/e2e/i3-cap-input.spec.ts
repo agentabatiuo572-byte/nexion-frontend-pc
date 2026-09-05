@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test("I3 通知容量使用受约束的整数输入，而不是自由文本", async ({ page }) => {
   const login = await page.request.post("/api/admin/auth/login", {
-    data: { username: "superadmin", password: "Admin@123456" },
+    data: { username: "superadmin", password: (process.env.ADMIN_E2E_PASSWORD || (() => { throw new Error("ADMIN_E2E_PASSWORD is required for authenticated acceptance"); })()) },
   });
   expect(login.ok()).toBeTruthy();
 

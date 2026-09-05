@@ -25,6 +25,6 @@ for (const name of ["a5-live-reacceptance.spec.ts", "a6-a8-live-reacceptance.spe
     assert.match(source, /getByLabel\("一次性验证码"\)/);
     assert.match(source, /\/api\/admin\/auth\/mfa\/verify/);
     assert.doesNotMatch(source, /NEXT_PUBLIC_ADMIN_AUTH_BYPASS/);
-    assert.doesNotMatch(source, /Admin@123456/);
+    assert.doesNotMatch(source, /Admin@[0-9]{6,}/);
   });
 }
