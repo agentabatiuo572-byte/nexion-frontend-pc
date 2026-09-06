@@ -191,7 +191,10 @@ function promoFinalReward(base: unknown, multiplier: unknown) {
 }
 
 function contractForTask(task: QuestTask, contracts: Array<Record<string, any>> | undefined, index: number) {
-  return contracts?.find((item) => String(item.taskId) === String(task.id ?? index)) ?? {};
+  // Mission codes are stable across legacy numeric projections and reordering.
+  // A missing contract must stay missing, never borrow the adjacent task's facts.
+  if (task.taskCode) return contracts?.find((item) => item.taskKey === task.taskCode) ?? {};
+  return task.id == null ? {} : contracts?.find((item) => String(item.taskId) === String(task.id)) ?? {};
 }
 
 function statusOptions(current: EventState) {
