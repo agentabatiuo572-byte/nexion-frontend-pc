@@ -3,8 +3,8 @@
 /**
  * H9「对外公布数据」—— 规格 FEAT-HOME02b 后台单元。
  *
- * 运营在这里配置前端首页对外公布的平台规模(设备总数 / 在线占比 / 注册用户)与名次口径
- * (虚拟人口 + 算力分位表)。7 个参数 + 1 张分位表整组原子保存:
+ * 运营在这里配置首页对外公布的平台规模与历史本地估算参数。
+ * 虚拟人口与算力分位表不参与正式 App 当前服务端排名。整组原子保存:
  * 确认弹窗给前后值 diff → 必填理由 → 服务端落审计 + 幂等键,任一项非法整组不落库。
  *
  * 🔴 页面里没有任何平台数字的字面量:当前值、默认种子、公布日产锚都从服务端读模型来。
@@ -43,7 +43,7 @@ type ScalarDrafts = Record<ScalarKey, string>;
 const SECTIONS: { title: string; sub: string; keys: ScalarKey[] }[] = [
   { title: "平台规模", sub: "首页「在线设备」这一格,以及全部对外公布的平台级金额都从这里派生", keys: ["fleetDevices", "onlineRatePct", "onlineJitter"] },
   { title: "用户规模", sub: "首页「注册用户」这一格的展示基数与增速", keys: ["registeredUsersBase", "registeredUsersMonthlyGrowthPct"] },
-  { title: "名次口径", sub: "决定用户在首页看到的「你的排名」怎么算出来", keys: ["virtualUserCount"] },
+  { title: "历史排名估算", sub: "仅用于本地估算；不改变正式 App 当前服务端名次", keys: ["virtualUserCount"] },
 ];
 
 const int = (value: number) => (Number.isFinite(value) ? Math.round(value).toLocaleString("en-US") : "—");
@@ -198,7 +198,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
           (每台每日 {money2(data.publishedDailyUsdPerDevice)} 不变),每秒支付流与本月累计一并跟着变。介绍页与信任页读取这组公开统计，会一起变；全球网络使用独立区域投影，不受此字段驱动。
         </div>}
         {baseChanged && <div>⚠️ 改了注册用户基数,推算起点会重置为本次保存时刻 —— 前端从新起点按增速往后推算,不会回退。</div>}
-        {virtualZero && <div>⚠️ 虚拟人口填了 0:名次分母只剩真实注册人口({int(data.realUserCount)} 人),用户看到的名次会大幅提前。确认这是有意为之。</div>}
+        {virtualZero && <div>虚拟人口填了 0:历史本地估算分母仅含真实注册人口({int(data.realUserCount)} 人)。此参数不改变正式 App 当前服务端名次。</div>}
         <div>本次提交基于配置版本 v{data.version};并发改动会返回 409,任何一项不合法都整组不落库。</div>
         <div>保存后影响前端展示与派生金额口径,操作理由会写入审计。</div>
       </>,
@@ -244,7 +244,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       <div className="f-stat cyan"><div className="k">对外公布设备总数</div><div className="v">{int(data.values.fleetDevices)}</div><div className="sub">首页在线设备与平台金额的共同来源</div></div>
       <div className="f-stat"><div className="k">首页在线设备</div><div className="v">{int(data.values.fleetDevices * data.values.onlineRatePct / 100)}</div><div className="sub">设备总数 × 在线占比 {data.values.onlineRatePct}%</div></div>
       <div className="f-stat"><div className="k">对外公布注册用户</div><div className="v">{int(data.values.registeredUsersBase)}</div><div className="sub">按 {data.values.registeredUsersMonthlyGrowthPct}%/月 往后推算展示</div></div>
-      <div className="f-stat ok"><div className="k">名次分母</div><div className="v">{int(data.realUserCount + data.values.virtualUserCount)}</div><div className="sub">真实注册人口 + 虚拟人口</div></div>
+      <div className="f-stat ok"><div className="k">历史估算分母</div><div className="v">{int(data.realUserCount + data.values.virtualUserCount)}</div><div className="sub">真实注册人口 + 虚拟人口；不用于当前服务端名次</div></div>
     </div>
 
     {saveError && <div className="htint danger" style={{ marginBottom: 12 }}>
@@ -317,7 +317,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
                 { label: "平台日支付额", now: money(impact?.current.daily ?? Number.NaN), next: money(impact?.next.daily ?? Number.NaN) },
                 { label: "每秒支付流", now: money2(impact?.current.perSec ?? Number.NaN), next: money2(impact?.next.perSec ?? Number.NaN) },
                 { label: "本月支付额(按 30 天)", now: money(impact?.current.monthly ?? Number.NaN), next: money(impact?.next.monthly ?? Number.NaN) },
-                { label: "名次分母", now: int(impact?.current.denominator ?? Number.NaN), next: int(impact?.next.denominator ?? Number.NaN) },
+                { label: "历史估算分母", now: int(impact?.current.denominator ?? Number.NaN), next: int(impact?.next.denominator ?? Number.NaN) },
               ].map((row) => <tr key={row.label}>
                 <td>{row.label}</td>
                 <td className="num">{row.now}</td>
@@ -335,7 +335,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     <section className="l-card">
       <div className="l-h">
         <span className="ttl">算力分位表</span>
-        <span className="sub">· 把用户算力换算成「超过百分之多少的人」,决定首页名次</span>
+        <span className="sub">· 历史本地估算参数，不参与正式 App 当前服务端排名</span>
         <div className="r">
           <PaginationExemption label="算力分位表" reason="整表原子保存,分页会切断行间单调性校验" maxRows={bands.length} kind="fixed-matrix" />
           {canWrite && <button className="l-btn sm" onClick={addBand}>添加档</button>}
@@ -344,7 +344,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       <div className="l-b">
         {bandCountError && <div className="htint danger" style={{ marginBottom: 10 }}>{bandCountError}。{bands.length < H9_BAND_MIN ? "点右上角「添加档」补齐 —— 少于两档没法把算力换算成百分比。" : ""}</div>}
         {bands.length === 0
-          ? <div className="htint">还没有任何档位。至少添加 {H9_BAND_MIN} 档,首页名次才算得出来。</div>
+          ? <div className="htint">还没有任何档位。历史估算表至少需要 {H9_BAND_MIN} 档才能保存。</div>
           : <table className="l-tbl">
               <thead><tr><th>档</th><th>算力档位 <span className="hcode">tops</span></th><th>累计占比(%) <span className="hcode">cumPct</span></th><th>含义</th><th /></tr></thead>
               <tbody>
@@ -361,13 +361,13 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
             </table>}
         <div className="htint" style={{ marginTop: 10 }}>
           填表规则:算力档位从小到大排,累计占比只能一行比一行大或持平,最高不超过 100%。
-          最高档一般留点余量(比如停在 96%),免得算力最高的用户一上来就是「第 1 名」这种不可信的结果。
+          这些参数保留用于历史本地估算。正式 App 的当前名次由服务端按符合条件的设备有效算力排序。
         </div>
       </div>
     </section>
 
     <p className="f-foot">
-      <b>这页的数会去哪</b>:保存 → 服务端落库 + 写审计 → 前端下次进首页(或下拉刷新)读到新值 → 首页脉搏三格(注册用户 / 在线设备 / 你的排名)随之变化。
+      <b>这页的数会去哪</b>:保存 → 服务端落库 + 写审计 → 前端下次进首页(或下拉刷新)读到新值 → 更新首页公布的注册用户与预计在线设备。个人名次由独立服务端排名接口提供，不随虚拟人口或分位表变化。
       设备总数还会带着介绍页、信任页、分享海报一起变；全球网络读取独立区域投影。改动记录去{" "}
       <Link href="/platform/audit" className="l-btn sm">A2 审批与审计</Link>{" "}查。
     </p>

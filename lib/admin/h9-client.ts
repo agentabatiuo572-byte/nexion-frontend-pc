@@ -1,5 +1,5 @@
 /**
- * H9「对外公布数据」client —— 前端首页对外公布的平台规模与排名口径,后台单源。
+ * H9「对外公布数据」client —— 首页公布规模与历史本地排名估算参数。
  *
  * 数据面沿用 H 域既有后端族(与 H1–H8 同一 growthRequest 通道 · 见 h-client.ts):
  *   GET   /public-stats  → 当前值 + 默认种子 + 派生锚(公布日产 / 真实注册人口)
@@ -51,7 +51,7 @@ export interface H9PublicStatsOverview {
   defaults: H9PublicStatsValues;
   /** 对外公布的单台日产(USD/台/日)—— 派生影响预览的另一半,后台不另存一份。 */
   publishedDailyUsdPerDevice: number;
-  /** 真实注册人口 —— 排名分母 = 它 + 虚拟人口。 */
+  /** 真实注册人口 —— 历史本地估算分母使用它加虚拟人口，正式服务端名次另算。 */
   realUserCount: number;
   effectiveAt: string;
 }
@@ -133,7 +133,7 @@ export const H9_FIELDS: readonly H9FieldDef[] = [
     max: 10_000_000,
     step: 1,
     integer: true,
-    hint: "名次分母 = 真实注册人口 + 本数值。它只参与名次计算,不出现在用户看得到的任何地方。填 0 = 只按真实人口排名。",
+    hint: "历史本地估算分母 = 真实注册人口 + 本数值。正式 App 当前服务端排名不使用此参数；修改它不会改变当前名次。",
   },
 ] as const;
 
