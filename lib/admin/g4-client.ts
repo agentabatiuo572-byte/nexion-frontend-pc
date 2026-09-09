@@ -317,6 +317,9 @@ export interface G4Overview {
 }
 
 let requestSeq = 0;
+// 服务端代理先在 20 秒将 Genesis 概览的上游挂起转为 503；浏览器 deadline 留出余量，
+// 只保护 GET 概览，不改变任何 G4 写命令的结果未知/幂等语义。
+const G4_OVERVIEW_READ_TIMEOUT_MS = 25_000;
 
 function idempotencyKey(prefix: string) {
   requestSeq = (requestSeq + 1) % 1_000_000;
@@ -585,7 +588,9 @@ export async function fetchG4GenesisOverview(page = 1, pageSize = 10) {
     page: String(page),
     pageSize: String(pageSize),
   });
-  return normalizeOverview(await g4Request<BackendOverview>(`/nex/genesis?${query.toString()}`));
+  return normalizeOverview(await g4Request<BackendOverview>(`/nex/genesis?${query.toString()}`, {
+    signal: AbortSignal.timeout(G4_OVERVIEW_READ_TIMEOUT_MS),
+  }));
 }
 
 export async function updateG4GenesisParam(paramKey: string, value: string, reason: string, operator: string, decisionRef?: string) {
