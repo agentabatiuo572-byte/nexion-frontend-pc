@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ADMIN_PASSWORD_CHANGE_COOKIE, sessionRequiresPasswordChange } from "@/lib/admin/require-password-change-cleared";
+import { ADMIN_AUTH_UPSTREAM_TIMEOUT_MS, fetchAdminAuthBffResponse } from "@/lib/admin/auth-deadline";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
@@ -35,13 +36,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ code: 422, message: "ADMIN_MFA_CODE_REQUIRED", data: null }, { status: 422 });
   }
   try {
-    const upstream = await fetch(`${BACKEND_BASE_URL}/api/admin/auth/mfa/verify`, {
+    const upstreamResult = await fetchAdminAuthBffResponse(`${BACKEND_BASE_URL}/api/admin/auth/mfa/verify`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...sessionMetadataHeaders(request) },
       body: JSON.stringify({ challengeId, code }),
       cache: "no-store",
-    });
-    const text = await upstream.text();
+    }, (response) => response.text(), { timeoutMs: ADMIN_AUTH_UPSTREAM_TIMEOUT_MS });
+    if (!upstreamResult.ok) return upstreamResult.response;
+    const { response: upstream, value: text } = upstreamResult;
     const parsed = JSON.parse(text) as BackendVerifyResult;
     const accessToken = typeof parsed.data?.accessToken === "string" ? parsed.data.accessToken : "";
     if (!upstream.ok || parsed.code !== 0 || !accessToken || !parsed.data?.session) {

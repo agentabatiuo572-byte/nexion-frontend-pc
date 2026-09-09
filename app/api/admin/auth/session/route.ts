@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { ADMIN_AUTH_UPSTREAM_TIMEOUT_MS, fetchAdminAuthBffResponse } from "@/lib/admin/auth-deadline";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
@@ -21,11 +22,12 @@ export async function GET() {
   }
 
   try {
-    const upstream = await fetch(`${BACKEND_BASE_URL}/api/admin/auth/me`, {
+    const upstreamResult = await fetchAdminAuthBffResponse(`${BACKEND_BASE_URL}/api/admin/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
-    });
-    const text = await upstream.text();
+    }, (response) => response.text(), { timeoutMs: ADMIN_AUTH_UPSTREAM_TIMEOUT_MS });
+    if (!upstreamResult.ok) return upstreamResult.response;
+    const { response: upstream, value: text } = upstreamResult;
     let parsed: BackendSessionResult;
     try {
       parsed = JSON.parse(text) as BackendSessionResult;

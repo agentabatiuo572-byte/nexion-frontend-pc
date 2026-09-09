@@ -5,6 +5,7 @@ import {
   readAdminAccessToken,
   sessionRequiresPasswordChange,
 } from "@/lib/admin/require-password-change-cleared";
+import { ADMIN_AUTH_UPSTREAM_TIMEOUT_MS, fetchAdminAuthBffResponse } from "@/lib/admin/auth-deadline";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const upstream = await fetch(`${BACKEND_BASE_URL}/api/admin/auth/password/change`, {
+    const upstreamResult = await fetchAdminAuthBffResponse(`${BACKEND_BASE_URL}/api/admin/auth/password/change`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -77,8 +78,9 @@ export async function POST(request: Request) {
       },
       body: JSON.stringify({ currentPassword, newPassword }),
       cache: "no-store",
-    });
-    const text = await upstream.text();
+    }, (response) => response.text(), { timeoutMs: ADMIN_AUTH_UPSTREAM_TIMEOUT_MS });
+    if (!upstreamResult.ok) return upstreamResult.response;
+    const { response: upstream, value: text } = upstreamResult;
     let parsed: BackendPasswordChangeResult;
     try {
       parsed = JSON.parse(text) as BackendPasswordChangeResult;

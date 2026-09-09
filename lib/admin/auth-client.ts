@@ -4,6 +4,7 @@ import type { AdminSession } from "@/lib/store/admin-auth";
 import { normalizeEffectiveMenuNodes, normalizeEffectiveMenus, normalizeSessionRole } from "@/lib/admin/session-role";
 import { authoritativeAdminSessionPayload } from "@/lib/admin/session-response";
 import { AdminAuthEpochChangedError, adminAuthLifecycleEpoch } from "@/lib/admin/auth-lifecycle";
+import { withAdminAuthDeadline } from "@/lib/admin/auth-deadline";
 
 interface ApiResult<T> {
   code: number;
@@ -50,14 +51,40 @@ export function normalizeAdminRole(role: string | undefined): AdminRole {
   return normalizeSessionRole(role);
 }
 
+async function requestAdminAuthJson(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  options: { signal?: AbortSignal } = {},
+): Promise<{ response: Response; result: ApiResult<LoginPayload> | null }> {
+  try {
+    return await withAdminAuthDeadline(async (signal) => {
+      const response = await guardedFetch(input, { ...init, signal });
+      try {
+        return { response, result: await response.json() as ApiResult<LoginPayload> };
+      } catch (error) {
+        // A deadline can interrupt body consumption after headers arrived. It is
+        // a recoverable transport error, never an invalid-credentials result.
+        if (signal.aborted) throw error;
+        return { response, result: null };
+      }
+    }, options);
+  } catch (error) {
+    // Session bootstrap owns cancellation during navigation/logout. Preserve
+    // its AbortError identity so callers can distinguish it from recovery UI.
+    if (options.signal?.aborted) throw options.signal.reason;
+    const original = error instanceof Error ? error.message : String(error);
+    const translated = formatAdminApiError(original, "NETWORK_FAILURE");
+    throw new Error(translated);
+  }
+}
+
 export async function loginAdmin(username: string, password: string): Promise<LoginStartResult> {
-  const response = await guardedFetch("/api/admin/auth/login", {
+  const { response, result } = await requestAdminAuthJson("/api/admin/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username: username.trim(), password }),
     cache: "no-store",
   });
-  const result = (await response.json().catch(() => null)) as ApiResult<LoginPayload> | null;
 
   if (!response.ok || !result || result.code !== 0 || !result.data) {
     throw new Error(formatAdminApiError(result?.message, "ADMIN_CREDENTIAL_INVALID"));
@@ -73,13 +100,12 @@ export async function loginAdmin(username: string, password: string): Promise<Lo
 }
 
 export async function verifyAdminMfa(challengeId: string, code: string): Promise<LoginResult> {
-  const response = await guardedFetch("/api/admin/auth/mfa/verify", {
+  const { response, result } = await requestAdminAuthJson("/api/admin/auth/mfa/verify", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ challengeId, code: code.trim() }),
     cache: "no-store",
   });
-  const result = (await response.json().catch(() => null)) as ApiResult<LoginPayload> | null;
   if (!response.ok || !result || result.code !== 0 || !result.data?.session) {
     throw Object.assign(new Error(formatAdminApiError(result?.message, "ADMIN_MFA_CODE_INVALID")), {
       code: result?.message || "ADMIN_MFA_CODE_INVALID",
@@ -92,21 +118,19 @@ export async function verifyAdminMfa(challengeId: string, code: string): Promise
 // 专项的 guardedFetch 咽喉(英文网络异常在此转中文,全 client 单一出口)。
 export async function currentAdminSession(options: { signal?: AbortSignal } = {}): Promise<LoginResult | null> {
   const requestEpoch = adminAuthLifecycleEpoch();
-  const response = await guardedFetch("/api/admin/auth/session", { cache: "no-store", signal: options.signal });
-  const result = (await response.json().catch(() => null)) as ApiResult<LoginPayload> | null;
+  const { response, result } = await requestAdminAuthJson("/api/admin/auth/session", { cache: "no-store" }, options);
   if (requestEpoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
   const payload = authoritativeAdminSessionPayload(response.status, response.ok, result);
   return payload ? normalizeLoginPayload(payload) : null;
 }
 
 export async function changeAdminPassword(currentPassword: string, newPassword: string): Promise<LoginResult> {
-  const response = await guardedFetch("/api/admin/auth/password/change", {
+  const { response, result } = await requestAdminAuthJson("/api/admin/auth/password/change", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ currentPassword, newPassword }),
     cache: "no-store",
   });
-  const result = (await response.json().catch(() => null)) as ApiResult<LoginPayload> | null;
 
   if (!response.ok || !result || result.code !== 0 || !result.data?.session) {
     throw new Error(formatAdminApiError(result?.message, "ADMIN_PASSWORD_CHANGE_FAILED"));
