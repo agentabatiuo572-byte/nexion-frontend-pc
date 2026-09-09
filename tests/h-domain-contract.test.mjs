@@ -172,6 +172,10 @@ test("H3 前端任务清单消费 canonical 契约表(task_key 串起服务端�
   assert.match(h3, /契约 = 归因共同事实源/);
   // 全局任务加成只读跟随 H1,本页只套用不派发。
   assert.match(h3, /全局任务加成 H1 派发/);
+  assert.match(h3, /进入时冻结已启用任务、三相奖励与资格截止/);
+  assert.match(h3, /此后改动仅影响尚未进入任务的用户/);
+  assert.match(h3, /停用仅影响尚未进入任务的用户，既有实例按快照展示/);
+  assert.doesNotMatch(h3, /24h 内 6 项完成领 500/);
 });
 
 test("H3 client 端点对齐后端 quest-events 路径", () => {

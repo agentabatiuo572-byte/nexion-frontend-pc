@@ -1137,7 +1137,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">首日任务(Day-One)</span>
-            <span className="sub">· 新人转化最核心的钩子 · 改动只影响新进窗用户</span>
+            <span className="sub">· 新人转化最核心的钩子 · 进入时冻结已启用任务、三相奖励与资格截止；此后改动仅影响尚未进入任务的用户</span>
             <div className="r">
               <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.windowMs", "首日任务时窗", text(model.dayOneWindow), false)} disabled={!canModuleWrite}>
                 调整
@@ -1173,7 +1173,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
             <div className="l-h" style={{ marginTop: 12, border: 0, paddingBottom: 0 }}>
               <span className="ttl" style={{ fontSize: 13 }}>任务清单</span>
-              <span className="sub">· 多字段读模型 · 奖励可调 · 停用任务不在用户端展示</span>
+              <span className="sub">· 多字段读模型 · 奖励可调 · 停用仅影响尚未进入任务的用户，既有实例按快照展示</span>
             </div>
             <div style={{ overflowX: "auto", marginTop: 8 }}>
               <table className="l-tbl" style={{ minWidth: 680 }}>
@@ -1198,7 +1198,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                         <td style={{ fontWeight: 600, color: active ? "var(--ink)" : "var(--ink-3)" }}>{text(task.task)}</td>
                         <td><span className="bdg">{TASK_CATEGORY_LABELS[text(task.category, "explore")] ?? text(task.category)}</span></td>
                         <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(task.href)}</td>
-                        <td style={{ color: "var(--ink-3)" }}>计入新手总奖励</td>
+                        <td style={{ color: "var(--ink-3)" }}>新进入用户的快照总奖励</td>
                         <td><span className={`bdg ${statusTone}`}>{statusLabel}</span></td>
                         <td style={{ fontSize: 11.5 }}>
                           <span style={{ color: "var(--ink-2)" }}>{COMPLETION_LABEL[text(task.completionType, "visit")] ?? "访问路径"}</span>
@@ -1224,7 +1224,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               ))}
             </div>
             <div className="htint" style={{ marginTop: 10, fontSize: 12 }}>
-              <b>状态机</b> · active(24h 内 6 项完成领 500)→ grace(72h 内 200)→ expired(0,首页让位)。
+              <b>状态机</b> · active(实例冻结的全部任务完成后按快照奖励领取)→ grace(按快照窗口与奖励降档)→ expired(0,首页让位)。
             </div>
           </div>
         </section>
