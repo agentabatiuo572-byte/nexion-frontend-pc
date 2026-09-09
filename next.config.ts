@@ -60,6 +60,8 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig: NextConfig = {
+  // Opt-in Linux deployment artifact; ordinary local builds retain their existing layout.
+  output: process.env.NEXGRID_STANDALONE_BUILD === "1" ? "standalone" : undefined,
   distDir: process.env.NEXT_DIST_DIR || ".next",
   devIndicators: false,
   allowedDevOrigins: ["127.0.0.1", "localhost", "192.168.8.*"],
