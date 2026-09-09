@@ -366,3 +366,13 @@ test("G1/G2/G3/G4/G7 clients complete command keys only through the shared accep
   assert.match(g4, /g4AckMutation/);
   assert.match(g4, /G4_COMMAND_RESPONSE_INVALID/);
 });
+
+test("G4 accepts the published nine-parameter policy including App showcase visibility", () => {
+  const keys = ["supply", "price", "dividend", "royalty", "divBase", "airdropPct", "emissionCurve", "airdropLockDays", "showcaseEnabled"];
+  const overview = { ...g4, params: keys.map(key => ({
+    key, configKey: `genesis.${key}`, name: key, sub: "canonical policy", value: key === "showcaseEnabled" ? "false" : "1",
+    displayValue: key === "showcaseEnabled" ? "hidden" : "1", note: "canonical", valueType: key === "showcaseEnabled" ? "boolean" : "number", b1RedlineTriggered: false,
+  })) };
+  assert.equal(assertG4OverviewContract(overview), overview);
+  assert.throws(() => assertG4OverviewContract({ ...overview, params: overview.params.map(row => row.key === "showcaseEnabled" ? { ...row, key: "unknownFlag" } : row) }), /G4_RESPONSE_INVALID/);
+});
