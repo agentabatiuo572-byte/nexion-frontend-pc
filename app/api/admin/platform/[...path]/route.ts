@@ -40,6 +40,17 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "events" && parts[1] === "overview") {
     return "/api/admin/platform/events/overview";
   }
+  // Audited recovery is deliberately a single-event read/command pair. Do not
+  // add an outbox collection route: the backend is the authority for DEAD
+  // state, original-row identity, and the narrow H3 event-type allowlist.
+  if (parts.length === 4 && parts[0] === "events" && parts[1] === "outbox"
+      && isNonEmpty(parts[2]) && parts[3] === "redrive-preview") {
+    return `/api/admin/platform/events/outbox/${encodeURIComponent(parts[2])}/redrive-preview`;
+  }
+  if (parts.length === 4 && parts[0] === "events" && parts[1] === "outbox"
+      && isNonEmpty(parts[2]) && parts[3] === "redrive") {
+    return `/api/admin/platform/events/outbox/${encodeURIComponent(parts[2])}/redrive`;
+  }
   if (parts.length === 3 && parts[0] === "events" && parts[1] === "retention-runs" && parts[2] === "latest") {
     return "/api/admin/platform/events/retention-runs/latest";
   }
@@ -48,6 +59,12 @@ function backendPath(parts: string[]) {
   }
   if (parts.length === 3 && parts[0] === "events" && parts[1] === "params" && isNonEmpty(parts[2])) {
     return `/api/admin/platform/events/params/${encodeURIComponent(parts[2])}`;
+  }
+  if (parts.length === 3 && parts[0] === "events" && parts[1] === "schema-registrations" && parts[2] === "properties") {
+    return "/api/admin/platform/events/schema-registrations/properties";
+  }
+  if (parts.length === 3 && parts[0] === "events" && parts[1] === "schema-registrations" && isNonEmpty(parts[2])) {
+    return `/api/admin/platform/events/schema-registrations/${encodeURIComponent(parts[2])}`;
   }
   if (parts.length === 2 && parts[0] === "events" && (parts[1] === "schema-registrations" || parts[1] === "domain-extension-batches")) {
     return `/api/admin/platform/events/${parts[1]}`;

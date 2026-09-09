@@ -32,7 +32,8 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   AUTH_REQUIRED: "登录已失效,请重新登录。",
   AUTH_TOKEN_INVALID: "登录凭证无效,请重新登录。",
   ADMIN_AUTH_REQUIRED: "登录已失效，系统已退出当前会话，请重新登录后再查看应急控制状态。",
-  ADMIN_PERMISSION_DENIED: "当前账号没有查看或操作该应急能力的权限，请联系管理员核对菜单、按钮和接口权限。",
+  ADMIN_PERMISSION_DENIED: "当前账号没有查看或操作此功能的权限，请联系管理员核对菜单、按钮和接口权限。",
+  ACCESS_DENIED: "当前账号没有执行此操作的权限；请联系管理员核对所需权限后再试。",
   EMERGENCY_ROUTE_NOT_FOUND: "当前服务版本未提供该应急能力，请刷新页面；若仍出现，请联系值班人员检查前后端版本。",
   EMERGENCY_BACKEND_UNAVAILABLE: "应急控制后端当前不可用，控制项已隐藏；请稍后重新读取，持续失败时联系值班人员。",
   EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE: "当前浏览器无法安全保存应急命令号，本次操作未提交；请启用会话存储或更换受支持的浏览器后重试。",
@@ -344,6 +345,14 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   A4_DOMAIN_EXTENSION_EVENT_INVALID: "扩展事件名必须与 domain 一致，并使用已发生动作。",
   A4_DOMAIN_EXTENSION_DUPLICATE: "该 domain 扩展工单已经登记，请刷新列表。",
   A4_SCHEMA_NOT_REGISTERED: "系统事件登记不完整，操作未生效。请联系平台管理员修复配置后重试。",
+  A4_H3_OUTBOX_REDRIVE_PREVIEW_MISMATCH: "当前核验结果与输入的事件编号不一致，重投命令未发送；请重新核验该事件编号后再提交。",
+  A4_H3_OUTBOX_REDRIVE_NOT_ELIGIBLE: "该事件不处于可恢复失败状态：它可能不存在、不是允许的 H3 原事实，或原事实及 h3-quest-completion 投递层未同时处于 DEAD。无需重投；请在审计记录核对目标和当前状态。",
+  A4_H3_OUTBOX_REDRIVE_STATE_STALE: "核验后的失败状态或尝试次数已变化，本次重投未执行；请重新核验当前状态，仅在两层仍均为 DEAD 时再决定是否重投。",
+  A4_H3_OUTBOX_EVENT_ID_INVALID: "事件 ID 格式无效，未进行核验或重投；请输入 8-64 位有效事件 ID。",
+  A4_H3_OUTBOX_RETRY_COUNT_INVALID: "原事实的核验尝试次数无效，重投未执行；请重新核验当前事件。",
+  A4_H3_OUTBOX_DELIVERY_ATTEMPT_COUNT_INVALID: "投递层的核验尝试次数无效，重投未执行；请重新核验当前事件。",
+  A4_H3_OUTBOX_DELIVERY_STATUS_INVALID: "投递层状态不再是可恢复的 DEAD，重投未执行；请重新核验当前状态。",
+  A4_H3_OUTBOX_REDRIVE_HASH_FAILED: "服务端未能生成本次重投的审计命令摘要，状态转换未执行；请联系平台值班人员处理。",
   // 「刷新页面后重新发起」是错误指引:命令号存 sessionStorage,刷新后仍是同一个,照旧撞同样的拒绝。
   // 正解是把输入恢复成首次提交的内容(即可按同键去重重试),或先核对首次提交是否已经生效。
   IDEMPOTENCY_KEY_PAYLOAD_MISMATCH: "同一请求标识对应的内容已变化，本次未执行；请把输入恢复为首次提交时的内容再重试，或先到审计记录核对首次提交是否已生效。",
@@ -699,6 +708,11 @@ export function formatAdminApiError(message: string | null | undefined, fallback
     const executionId = raw.split(":")[1] || "未知";
     return `执行 ${executionId} 在中途失败；失败前的止血步骤可能已经生效。请立即刷新执行追溯并评估是否回滚。`;
   }
+
+  const reasonTooShort = /^REASON_TOO_SHORT_MIN_([1-9][0-9]*)$/.exec(raw);
+  if (reasonTooShort) return `操作理由至少填写 ${reasonTooShort[1]} 个可见字符。`;
+  const reasonTooLong = /^REASON_TOO_LONG_MAX_([1-9][0-9]*)$/.exec(raw);
+  if (reasonTooLong) return `操作理由不能超过 ${reasonTooLong[1]} 个可见字符。`;
 
   const exact = ADMIN_ERROR_MESSAGES[raw];
   if (exact) return exact;

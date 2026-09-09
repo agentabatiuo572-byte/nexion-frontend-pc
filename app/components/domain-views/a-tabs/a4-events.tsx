@@ -26,13 +26,17 @@
  *
  * 设计稿元素省略:f-bar/f-nav/f-title/f-desc/f-cta 已由 DomainHeader 承担,本组件从 .f-stats 开始。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Drawer } from "../design-kit";
 import {
+  addA4SchemaProperty,
   createA4IdempotencyKey,
   fetchA4RetentionLatest,
+  fetchA4SchemaRegistration,
   fetchA4Overview,
+  fetchH3DeadOutboxRedrivePreview,
+  redriveAuditedH3DeadOutboxEvent,
   registerA4DomainExtension,
   registerA4Schema,
   runA4RetentionNow,
@@ -40,9 +44,13 @@ import {
   updateA4DimensionParam,
   type A4DomainExtensionBatch,
   type A4EventFamily,
+  type A4H3DeadOutboxRedrivePreview,
+  type A4H3DeadOutboxRedriveResult,
   type A4Overview,
   type A4RetentionExecution,
 } from "@/lib/admin/a4-client";
+import { runH3DeadOutboxRedriveCommand, type A4H3DeadOutboxRedriveCommand } from "@/lib/admin/a4-redrive-command";
+
 import { fetchA2ReasonPolicy } from "@/lib/admin/a2-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -61,13 +69,25 @@ const BATCH_STATE: Record<A4DomainExtensionBatch["state"], { tone: "ok" | "warn"
 const PAST_ACTION = /(?:ed|sent|paid|held|bound|dau)$/;
 const eventNameValid = (value: string) => /^[a-z][a-z0-9_]*\.[a-z0-9]+(?:_[a-z0-9]+)*$/.test(value) && PAST_ACTION.test(value);
 
+// This is an audited recovery entry, not an event search or a general outbox
+// console. It permits one ID at a time and never accepts mutable payload.
+const H3_DEAD_REDRIVABLE_EVENT_TYPES = [
+  "H3_STOREFRONT_THREE_PRODUCTS_VIEWED",
+  "H3_GENESIS_SECONDARY_MARKET_VIEWED",
+  "H3_COMPUTE_COMPLETED_50",
+  "H3_REFERRAL_REGISTERED",
+  "H3_EXCHANGE_COMPLETED",
+] as const;
+
 /* ────────────────── 组件 ────────────────── */
 
 export function A4Events({ ctx }: { ctx: ACtx }) {
   const { toast, openActionConfirm } = ctx;
   const canWrite = useAdminAuth((state) => state.session?.authorities.includes("platform_a4_write") ?? false);
+  const canRead = useAdminAuth((state) => state.session?.authorities.includes("platform_a4_read") ?? false) || canWrite;
   const canA2Write = useAdminAuth((state) => state.session?.authorities.includes("platform_a2_write") ?? false);
   const canRunRetention = canWrite && canA2Write;
+  const canRedriveH3Dead = canWrite && canA2Write;
   const [overview, setOverview] = useState<A4Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -75,6 +95,20 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
   const [retentionRun, setRetentionRun] = useState<A4RetentionExecution | null>(null);
   const [retentionRunError, setRetentionRunError] = useState<string | null>(null);
   const [a2ReasonMin, setA2ReasonMin] = useState(8);
+  const [redriveEventId, setRedriveEventId] = useState("");
+  const [redrivePreview, setRedrivePreview] = useState<A4H3DeadOutboxRedrivePreview | null>(null);
+  const [redriveResult, setRedriveResult] = useState<A4H3DeadOutboxRedriveResult | null>(null);
+  const [redrivePreviewing, setRedrivePreviewing] = useState(false);
+  const [redrivePreviewError, setRedrivePreviewError] = useState<string | null>(null);
+  const [redriveCommand, setRedriveCommand] = useState<A4H3DeadOutboxRedriveCommand | null>(null);
+  const redriveCommandRef = useRef<A4H3DeadOutboxRedriveCommand | null>(null);
+  const redrivePreviewSequence = useRef(0);
+  const [schemaLookupEventName, setSchemaLookupEventName] = useState("");
+  const [schemaLookup, setSchemaLookup] = useState<A4Overview["schemaRegistrations"][number] | null>(null);
+  const [schemaLookupLoading, setSchemaLookupLoading] = useState(false);
+  const [schemaLookupError, setSchemaLookupError] = useState<string | null>(null);
+  const schemaLookupSequence = useRef(0);
+  const schemaLookupEventNameRef = useRef("");
 
   const refreshOverview = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
@@ -305,6 +339,136 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
     setNaBatch(true);
   };
 
+  const openSchemaPropertyExtension = (schema: A4Overview["schemaRegistrations"][number]) => {
+    if (!canWrite) { toast("当前账号只有 A4 读取权限，不能扩展既有 schema 属性"); return; }
+    // Both values are frozen before the confirm drawer opens. A later lookup/input
+    // response or overview refresh must not redirect this write to another schema.
+    const schemaSnapshot = { ...schema };
+    // A successful mutation returns a fresh overview, but a separately fetched
+    // exact preview can otherwise keep showing the old row version/properties.
+    // Keep both the input target and lookup generation so a completion can only
+    // reconcile the preview it was opened from; it must never overwrite a later lookup.
+    const lookupTargetAtOpen = schemaLookupEventNameRef.current.trim();
+    const lookupSequenceAtOpen = schemaLookupSequence.current;
+    // Property writes advance the global registry revision, whereas schema.version is this event's own revision.
+    // Freeze the registry value from the overview that the operator reviewed so the server can reject a stale command.
+    const registryVersion = overview?.stats.schemaVersion ?? "";
+    if (!/^v[1-9][0-9]*$/.test(registryVersion)) {
+      toast("当前全局 schema 注册表版本不可用，请刷新后重试");
+      return;
+    }
+    const stableKey = createA4IdempotencyKey(`a4-schema-property-${schemaSnapshot.eventName}`);
+    openActionConfirm({
+      action: `扩展既有 schema 属性 · ${schemaSnapshot.eventName}`,
+      detail: <>
+        事件登记版本 <b>{schemaSnapshot.version}</b> · 全局注册表 CAS 版本 <b>{registryVersion}</b> · 生产 <span className="acode">{schemaSnapshot.producer}</span> ·
+        消费 <span className="acode">{schemaSnapshot.consumers || "未指定"}</span> · 现有属性 <span className="acode">{schemaSnapshot.properties}</span>。
+        此入口只增加一个属性和类型；归属、生产方、消费方、采样和权威标记由服务端保留，不可在此覆盖。提交时以全局注册表版本校验，不以事件登记版本替代。
+      </>,
+      amplifies: false,
+      reasonMin: a2ReasonMin,
+      reasonMax: 200,
+      businessForm: {
+        kind: "multi-field",
+        title: `新增属性 · ${schemaSnapshot.eventName}`,
+        hint: "填写新属性名并选择类型；服务端以当前 schema 版本 CAS，并拒绝重复、PII 或不支持类型。",
+        fields: [
+          { key: "propertyName", label: "属性名", current: "", inputKind: "text", required: true, placeholder: "例如 instance_key" },
+          {
+            key: "propertyType", label: "属性类型", current: "string", inputKind: "select", required: true,
+            options: ["string", "number", "boolean", "enum", "timestamp", "id", "json"],
+          },
+        ],
+      },
+      run: async (reason, _value, businessValue) => {
+        const propertyName = String(businessValue?.propertyName ?? "").trim();
+        const propertyType = String(businessValue?.propertyType ?? "").trim();
+        if (!/^[a-z][a-z0-9_]{0,63}$/.test(propertyName)) {
+          toast("属性名须为小写字母开头，后接小写字母、数字或下划线");
+          return;
+        }
+        if (!["string", "number", "boolean", "enum", "timestamp", "id", "json"].includes(propertyType)) {
+          toast("请选择受支持的属性类型");
+          return;
+        }
+        setMutating(`schema-property-${schemaSnapshot.eventName}`);
+        try {
+          const next = await addA4SchemaProperty(schemaSnapshot.eventName, propertyName, propertyType, registryVersion, reason, stableKey);
+          setOverview(next);
+          if (lookupTargetAtOpen === schemaSnapshot.eventName
+            && schemaLookupEventNameRef.current.trim() === schemaSnapshot.eventName
+            && schemaLookupSequence.current === lookupSequenceAtOpen) {
+            // Invalidate an earlier exact GET before replacing the preview, so a
+            // late response cannot put the pre-extension schema back on screen.
+            schemaLookupSequence.current += 1;
+            setSchemaLookupLoading(false);
+            const refreshedSchema = next.schemaRegistrations.find((item) => item.eventName === schemaSnapshot.eventName) ?? null;
+            if (refreshedSchema) {
+              setSchemaLookup(refreshedSchema);
+              setSchemaLookupError(null);
+            } else {
+              // The overview is intentionally capped. Do not retain an old exact
+              // preview when this target is outside the returned current rows.
+              setSchemaLookup(null);
+              setSchemaLookupError("属性已增加；最新总览未包含该事件，请重新核验当前 Schema");
+            }
+          }
+          toast(`schema ${schemaSnapshot.eventName} 已增加属性 ${propertyName}`);
+        } catch (error) {
+          toast(`属性扩展未提交：${displayAdminError(error)}`);
+          throw error;
+        } finally {
+          setMutating(null);
+        }
+      },
+    });
+  };
+
+  const resetSchemaLookup = (nextEventName: string) => {
+    if (nextEventName === schemaLookupEventName) return;
+    schemaLookupSequence.current += 1;
+    schemaLookupEventNameRef.current = nextEventName;
+    setSchemaLookupEventName(nextEventName);
+    setSchemaLookup(null);
+    setSchemaLookupLoading(false);
+    setSchemaLookupError(null);
+  };
+
+  const lookupSchemaRegistration = async () => {
+    if (!canRead) {
+      toast("当前账号没有 A4 读取权限，不能查询既有 schema");
+      return;
+    }
+    const requestedEventName = schemaLookupEventName.trim();
+    if (!eventNameValid(requestedEventName)) {
+      setSchemaLookup(null);
+      setSchemaLookupError("事件名格式无效，请输入已登记的精确事件名");
+      return;
+    }
+    const sequence = schemaLookupSequence.current + 1;
+    schemaLookupSequence.current = sequence;
+    setSchemaLookup(null);
+    setSchemaLookupError(null);
+    setSchemaLookupLoading(true);
+    try {
+      const found = await fetchA4SchemaRegistration(requestedEventName);
+      if (sequence !== schemaLookupSequence.current) return;
+      if (found.eventName !== requestedEventName) {
+        setSchemaLookupError("服务端返回的 schema 与本次精确查询不一致");
+        return;
+      }
+      setSchemaLookup(found);
+    } catch (error) {
+      if (sequence === schemaLookupSequence.current) {
+        setSchemaLookupError(displayAdminError(error));
+      }
+    } finally {
+      if (sequence === schemaLookupSequence.current) {
+        setSchemaLookupLoading(false);
+      }
+    }
+  };
+
   const runRetention = () => {
     if (!canRunRetention) { toast("立即清理需要 A4 写权限和 A2 审计执行权限"); return; }
     const commandKey = createA4IdempotencyKey("a4-retention-run");
@@ -324,6 +488,106 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
             : "已有事件保留清理在执行，本次未删除任何数据");
         } catch (error) {
           toast(`执行失败:${displayAdminError(error)}`);
+          throw error;
+        } finally {
+          setMutating(null);
+        }
+      },
+    });
+  };
+
+  const resetRedriveTarget = (nextEventId: string) => {
+    if (nextEventId === redriveEventId) return;
+    redrivePreviewSequence.current += 1;
+    setRedriveEventId(nextEventId);
+    setRedrivePreview(null);
+    setRedriveResult(null);
+    setRedrivePreviewError(null);
+    redriveCommandRef.current = null;
+    setRedriveCommand(null);
+  };
+
+  const previewH3DeadEvent = async () => {
+    if (!canRedriveH3Dead) {
+      toast("核验原 H3 事实需要 A4 写权限和 A2 审计执行权限");
+      return;
+    }
+    const eventId = redriveEventId.trim();
+    if (!/^[A-Za-z0-9-]{8,64}$/.test(eventId)) {
+      setRedrivePreview(null);
+      setRedrivePreviewError("请输入 8–64 位字母、数字或连字符组成的事件 ID");
+      return;
+    }
+    const sequence = ++redrivePreviewSequence.current;
+    setRedrivePreviewing(true);
+    setRedrivePreviewError(null);
+    setRedrivePreview(null);
+    setRedriveResult(null);
+    try {
+      const preview = await fetchH3DeadOutboxRedrivePreview(eventId);
+      if (sequence !== redrivePreviewSequence.current) return;
+      if (preview.eventId !== eventId) throw new Error("A4_H3_OUTBOX_REDRIVE_PREVIEW_MISMATCH");
+      setRedrivePreview(preview);
+    } catch (error) {
+      if (sequence !== redrivePreviewSequence.current) return;
+      setRedrivePreviewError(displayAdminError(error));
+    } finally {
+      if (sequence === redrivePreviewSequence.current) setRedrivePreviewing(false);
+    }
+  };
+
+  const redriveAuditedH3DeadEvent = () => {
+    if (!canRedriveH3Dead) {
+      toast("重投原 H3 事实需要 A4 写权限和 A2 审计执行权限");
+      return;
+    }
+    const snapshot = redrivePreview;
+    if (!snapshot || snapshot.status !== "DEAD" || snapshot.deliveryStatus !== "DEAD" || snapshot.eventId !== redriveEventId.trim()) {
+      toast("请先核验当前事件，只有原事实和 h3-quest-completion 投递层均仍为 DEAD 的同一 H3 事实可重投");
+      return;
+    }
+    // The command key is selected in the confirmation callback, when the full
+    // normalized request (including the audit reason) is available.
+    openActionConfirm({
+      action: "重投审计 H3 DEAD 原事实",
+      detail: (
+        <>
+          目标事件 ID <span className="acode">{snapshot.eventId}</span> · 类型 <span className="acode">{snapshot.eventType}</span> ·
+          原事实状态 <b>{snapshot.status}</b> · 已失败 {snapshot.retryCount} 次；h3-quest-completion 投递层状态 <b>{snapshot.deliveryStatus}</b> · 已尝试 {snapshot.deliveryAttemptCount} 次。
+          这里重投的是原 H3 事实，不是编辑或补造下游事件。服务端会同时锁定两层并以两个次数 CAS；仅在它仍是未删除的 <b>DEAD</b> 原事件、投递层也为 <b>DEAD</b>、类型仍属于这五项 H3 事实时，才将原事件改回 PENDING：
+          <span className="acode"> {H3_DEAD_REDRIVABLE_EVENT_TYPES.join(" / ")}</span>。不会传入或编辑 payload、source、时间、重试次数或错误内容。
+        </>
+      ),
+      amplifies: false,
+      reasonMin: a2ReasonMin,
+      reasonMax: 200,
+      run: async (reason) => {
+        setMutating("h3-dead-redrive");
+        try {
+          const result = await runH3DeadOutboxRedriveCommand(
+            redriveCommandRef,
+            snapshot,
+            reason,
+            () => createA4IdempotencyKey("a4-h3-dead-redrive"),
+            async (command) => {
+              setRedriveCommand(command);
+              return redriveAuditedH3DeadOutboxEvent(
+                snapshot.eventId,
+                snapshot.retryCount,
+                snapshot.deliveryStatus,
+                snapshot.deliveryAttemptCount,
+                command.reason,
+                command.commandKey,
+              );
+            },
+          );
+          setRedrivePreview(null);
+          setRedriveResult(result);
+          redriveCommandRef.current = null;
+          setRedriveCommand(null);
+          toast(`原 H3 事实已请求重投：${result.eventId} · ${result.eventType} · ${result.status}`);
+        } catch (error) {
+          toast(`原 H3 事实重投结果未确认：${displayAdminError(error)}；请核对当前状态后再操作。`);
           throw error;
         } finally {
           setMutating(null);
@@ -388,6 +652,47 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
           </div>
         </section>
       )}
+
+      <section className="l-card" data-proof="a4-h3-dead-redrive">
+        <div className="l-h">
+          <span className="ttl">审计 H3 DEAD 原事实恢复</span>
+          <span className="sub">· 每次只核验一个 ID；仅原事件与 h3-quest-completion 投递层均为 DEAD 才可恢复</span>
+        </div>
+        <div className="l-b">
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <label style={{ fontSize: 12, color: "var(--ink-3)" }}>
+              原事件 ID
+              <input
+                value={redriveEventId}
+                onChange={(event) => resetRedriveTarget(event.target.value)}
+                placeholder="输入单个原 H3 事件 ID"
+                aria-label="原 H3 事件 ID"
+                style={{ marginLeft: 8, minWidth: 290 }}
+                disabled={!canRedriveH3Dead || !!mutating}
+              />
+            </label>
+            <button className="l-btn sm mc" disabled={!canRedriveH3Dead || !!loadError || !!mutating || redrivePreviewing} onClick={() => void previewH3DeadEvent()}>
+              {redrivePreviewing ? "核验中…" : "核验事件"}
+            </button>
+            <button className="l-btn sm mc" disabled={!canRedriveH3Dead || !!loadError || !!mutating || !redrivePreview || redrivePreview.status !== "DEAD" || redrivePreview.deliveryStatus !== "DEAD"} onClick={redriveAuditedH3DeadEvent}>
+              重投原 H3 事实
+            </button>
+          </div>
+          <div className="atint" style={{ marginTop: 10 }}>
+            只读取两层状态、类型、失败次数和受控失败码；不提供 payload、source、用户或批量操作。服务端仅接受两层均为 DEAD 的五类 H3 原事实。
+          </div>
+          {redrivePreviewError ? <div className="atint warn" style={{ marginTop: 8 }}>核验失败：{redrivePreviewError}</div> : null}
+          {redrivePreview ? <div className="atint" style={{ marginTop: 8 }}>
+            已核验 · ID <span className="acode">{redrivePreview.eventId}</span> · 类型 <span className="acode">{redrivePreview.eventType}</span> ·
+            原事实状态 <b>{redrivePreview.status}</b> · 失败次数 {redrivePreview.retryCount} · 失败摘要 {redrivePreview.lastError ?? "—"} ·
+            h3-quest-completion 投递层 <b>{redrivePreview.deliveryStatus}</b> · 尝试次数 {redrivePreview.deliveryAttemptCount} · 失败摘要 {redrivePreview.deliveryLastError ?? "—"}
+          </div> : null}
+          {redriveResult ? <div className="atint" style={{ marginTop: 8 }}>
+            已收到重投回执 · ID <span className="acode">{redriveResult.eventId}</span> · 类型 <span className="acode">{redriveResult.eventType}</span> ·
+            原事实状态 <b>{redriveResult.status}</b> · 投递层状态 <b>{redriveResult.deliveryStatus}</b>。如需再次操作，请重新核验当前状态。
+          </div> : null}
+        </div>
+      </section>
       {loading && !overview && (
         <section className="l-card">
           <div className="l-b">
@@ -618,9 +923,31 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
             </div>
           </div>
           <div style={{ fontSize: 12, fontWeight: 600, margin: "12px 0 5px" }}>真实 Schema Registry（最近 {SCHEMA_REGISTRATIONS.length} 条）</div>
+          <div className="atint" style={{ marginBottom: 10 }}>
+            <b>查询既有 Schema</b> · 最近列表不会替代完整注册表。输入一个已登记的精确事件名以核验其当前元数据；不会做模糊搜索、枚举或返回 payload。
+            <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <input
+                aria-label="精确事件名"
+                value={schemaLookupEventName}
+                placeholder="例如 quest.completed"
+                onChange={(event) => resetSchemaLookup(event.target.value)}
+                style={{ minWidth: 260 }}
+              />
+              <button className="l-btn sm mc" disabled={!canRead || !!loadError || schemaLookupLoading} onClick={() => void lookupSchemaRegistration()}>
+                {schemaLookupLoading ? "核验中…" : "核验既有 schema"}
+              </button>
+              {schemaLookupError && <span className="bad">{schemaLookupError}</span>}
+            </div>
+            {schemaLookup && <div style={{ marginTop: 8 }}>
+              <span className="acode">{schemaLookup.eventName}</span> · 事件登记版本 <span className="acode">{schemaLookup.version}</span> ·
+              全局注册表 CAS 版本 <span className="acode">{liveSchemaVer}</span> · {schemaLookup.producer} → {schemaLookup.consumers || "未指定"} ·
+              属性 <span className="acode">{schemaLookup.properties}</span>
+              <button className="l-btn sm mc" style={{ marginLeft: 8 }} disabled={!canWrite || !!mutating || !!loadError} onClick={() => openSchemaPropertyExtension(schemaLookup)}>扩展属性</button>
+            </div>}
+          </div>
           <div style={{ overflowX: "auto" }}>
-            <table className="l-tbl" style={{ minWidth: 920 }}>
-              <thead><tr><th>事件</th><th>归属 / family</th><th>产 → 消</th><th>属性</th><th>权威 / 采样</th><th>版本</th></tr></thead>
+            <table className="l-tbl" style={{ minWidth: 1020 }}>
+              <thead><tr><th>事件</th><th>归属 / family</th><th>产 → 消</th><th>属性</th><th>权威 / 采样</th><th>版本</th><th>操作</th></tr></thead>
               <tbody>
                 {SCHEMA_REGISTRATIONS.map((schema) => (
                   <tr key={schema.eventName}>
@@ -630,6 +957,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
                     <td className="mono">{schema.properties}</td>
                     <td>{schema.serverAuthoritative ? "服务器权威" : "客户端事件"} · {schema.samplingPolicy}</td>
                     <td className="mono">{schema.version}</td>
+                    <td><button className="l-btn sm mc" disabled={!canWrite || !!mutating || !!loadError} onClick={() => openSchemaPropertyExtension(schema)}>扩展属性</button></td>
                   </tr>
                 ))}
               </tbody>

@@ -137,11 +137,34 @@ function requiredBoolean(value: unknown, field: string) {
   return value;
 }
 
+function textOrFallback(value: unknown, field: string, fallback: string) {
+  return value == null ? fallback : requiredText(value, field);
+}
+
 function lifecycleState(value: unknown): A4SchemaRegistration["lifecycleState"] {
   const state = requiredText(value, "schemaRegistrations.lifecycleState");
   return state === "new" || state === "pending_publish" || state === "gray" || state === "full" || state === "disabled"
     ? state
     : invalid("schemaRegistrations.lifecycleState");
+}
+
+function normalizeSchemaRegistration(row: Record<string, unknown>): A4SchemaRegistration {
+  return {
+    eventName: requiredText(row.eventName, "schemaRegistrations.eventName"),
+    ownerDomain: requiredText(row.ownerDomain, "schemaRegistrations.ownerDomain"),
+    familyKey: requiredText(row.familyKey, "schemaRegistrations.familyKey"),
+    producer: requiredText(row.producer, "schemaRegistrations.producer"),
+    consumers: requiredText(row.consumers, "schemaRegistrations.consumers"),
+    // A valid existing schema may have no custom property rows yet. The exact
+    // lookup must still allow its first controlled property to be added.
+    properties: textOrFallback(row.properties, "schemaRegistrations.properties", "暂无自定义字段"),
+    serverAuthoritative: requiredBoolean(row.serverAuthoritative, "schemaRegistrations.serverAuthoritative"),
+    samplingPolicy: requiredText(row.samplingPolicy, "schemaRegistrations.samplingPolicy"),
+    version: requiredText(row.version, "schemaRegistrations.version"),
+    updatedAt: requiredText(row.updatedAt, "schemaRegistrations.updatedAt"),
+    lifecycleState: lifecycleState(row.lifecycleState),
+    lifecycleVersion: requiredNumber(row.lifecycleVersion, "schemaRegistrations.lifecycleVersion"),
+  };
 }
 
 function requiredRows<T>(value: unknown, field: string, normalize: (row: Record<string, unknown>) => T): T[] {
@@ -229,20 +252,7 @@ function normalizeOverview(raw: unknown): A4Overview {
     commonFields: requiredNonEmptyRows(data.commonFields, "commonFields", (row) => ({ key: requiredText(row.key, "commonFields.key"), name: requiredText(row.name, "commonFields.name"), sub: requiredText(row.sub, "commonFields.sub"), value: requiredText(row.value, "commonFields.value") })),
     dimensionParams: requiredNonEmptyRows(data.dimensionParams, "dimensionParams", (row) => ({ key: requiredText(row.key, "dimensionParams.key"), name: requiredText(row.name, "dimensionParams.name"), sub: requiredText(row.sub, "dimensionParams.sub"), value: requiredText(row.value, "dimensionParams.value"), locked: requiredBoolean(row.locked, "dimensionParams.locked") })),
     kpiFormulas: requiredNonEmptyRows(data.kpiFormulas, "kpiFormulas", (row) => ({ n: requiredNumber(row.n, "kpiFormulas.n"), kpi: requiredText(row.kpi, "kpiFormulas.kpi"), formula: requiredText(row.formula, "kpiFormulas.formula") })),
-    schemaRegistrations: requiredNonEmptyRows(data.schemaRegistrations, "schemaRegistrations", (row) => ({
-      eventName: requiredText(row.eventName, "schemaRegistrations.eventName"),
-      ownerDomain: requiredText(row.ownerDomain, "schemaRegistrations.ownerDomain"),
-      familyKey: requiredText(row.familyKey, "schemaRegistrations.familyKey"),
-      producer: requiredText(row.producer, "schemaRegistrations.producer"),
-      consumers: requiredText(row.consumers, "schemaRegistrations.consumers"),
-      properties: requiredText(row.properties, "schemaRegistrations.properties"),
-      serverAuthoritative: requiredBoolean(row.serverAuthoritative, "schemaRegistrations.serverAuthoritative"),
-      samplingPolicy: requiredText(row.samplingPolicy, "schemaRegistrations.samplingPolicy"),
-      version: requiredText(row.version, "schemaRegistrations.version"),
-      updatedAt: requiredText(row.updatedAt, "schemaRegistrations.updatedAt"),
-      lifecycleState: lifecycleState(row.lifecycleState),
-      lifecycleVersion: requiredNumber(row.lifecycleVersion, "schemaRegistrations.lifecycleVersion"),
-    })),
+    schemaRegistrations: requiredNonEmptyRows(data.schemaRegistrations, "schemaRegistrations", normalizeSchemaRegistration),
     domainExtensions: requiredNonEmptyRows(data.domainExtensions, "domainExtensions", normalizeBatch),
     guardrails: requiredNonEmptyStrings(data.guardrails, "guardrails"),
   };
@@ -277,6 +287,14 @@ async function a4Request<T>(path: string, init?: RequestInit & { idempotencyPref
 
 export async function fetchA4Overview() {
   return normalizeOverview(await a4Request<unknown>("/events/overview"));
+}
+
+/** Read one known schema by exact event name; this deliberately is not a registry search/list API. */
+export async function fetchA4SchemaRegistration(eventName: string): Promise<A4SchemaRegistration> {
+  return normalizeSchemaRegistration(rec(await a4Request<unknown>(
+    `/events/schema-registrations/${encodeURIComponent(eventName)}`,
+    { method: "GET" },
+  )));
 }
 
 export async function updateA4DimensionParam(paramKey: string, value: string, reason: string, stableIdempotencyKey?: string) {
@@ -320,6 +338,25 @@ export async function registerA4Schema(input: A4SchemaRegistrationInput, stableI
       reason: input.reason,
     }),
     idempotencyPrefix: "a4-schema",
+    stableIdempotencyKey,
+  }).then(normalizeOverview);
+}
+
+/** Adds one property to a server-returned existing schema. Metadata remains server-owned. */
+export async function addA4SchemaProperty(
+  eventName: string,
+  propertyName: string,
+  propertyType: string,
+  expectedVersion: string,
+  reason: string,
+  stableIdempotencyKey: string,
+) {
+  if (!/^v[1-9][0-9]*$/.test(expectedVersion)) {
+    throw new Error("schema version must use the server canonical v<positive integer> form");
+  }
+  return a4Request<unknown>("/events/schema-registrations/properties", {
+    method: "POST",
+    body: JSON.stringify({ eventName, propertyName, propertyType, expectedVersion, reason }),
     stableIdempotencyKey,
   }).then(normalizeOverview);
 }
@@ -375,4 +412,79 @@ export async function runA4RetentionNow(reason: string, commandKey: string): Pro
   return normalizeRetentionExecution(await a4Request<unknown>("/events/retention-runs", {
     method: "POST", body: JSON.stringify({ reason }), stableIdempotencyKey: commandKey,
   }));
+}
+
+/**
+ * A narrowly scoped recovery command for an audited original H3 fact.  The
+ * server, not this client, locks the row and checks DEAD/original/type guards;
+ * this function never accepts or sends the immutable event payload/source.
+ */
+export type A4H3DeadOutboxRedrivePreview = {
+  eventId: string;
+  eventType: string;
+  status: "DEAD";
+  retryCount: number;
+  lastError: string | null;
+  deliveryStatus: "DEAD";
+  deliveryAttemptCount: number;
+  deliveryLastError: string | null;
+};
+
+export type A4H3DeadOutboxRedriveResult = Omit<A4H3DeadOutboxRedrivePreview, "status" | "deliveryStatus"> & {
+  status: "PENDING";
+  deliveryStatus: "FAILED";
+};
+
+function normalizeH3DeadOutboxPreview(value: unknown): A4H3DeadOutboxRedrivePreview {
+  const row = rec(value);
+  const retryCount = requiredNumber(row.retryCount, "h3DeadOutbox.retryCount");
+  const lastError = row.lastError == null ? null : requiredText(row.lastError, "h3DeadOutbox.lastError");
+  const deliveryAttemptCount = requiredNumber(row.deliveryAttemptCount, "h3DeadOutbox.deliveryAttemptCount");
+  const deliveryLastError = row.deliveryLastError == null ? null : requiredText(row.deliveryLastError, "h3DeadOutbox.deliveryLastError");
+  if (!Number.isInteger(retryCount) || retryCount < 0 || !Number.isInteger(deliveryAttemptCount) || deliveryAttemptCount < 0) invalid("h3DeadOutbox.attemptCount");
+  if (row.status !== "DEAD" || row.deliveryStatus !== "DEAD") invalid("h3DeadOutbox.deadState");
+  if (lastError != null && !/^[A-Z0-9_]{3,128}$/.test(lastError)) invalid("h3DeadOutbox.lastError");
+  if (deliveryLastError != null && !/^[A-Z0-9_]{3,128}$/.test(deliveryLastError)) invalid("h3DeadOutbox.deliveryLastError");
+  return {
+    eventId: requiredText(row.eventId, "h3DeadOutbox.eventId"),
+    eventType: requiredText(row.eventType, "h3DeadOutbox.eventType"),
+    status: "DEAD",
+    retryCount,
+    lastError,
+    deliveryStatus: "DEAD",
+    deliveryAttemptCount,
+    deliveryLastError,
+  };
+}
+
+function normalizeH3DeadOutboxRedriveResult(value: unknown): A4H3DeadOutboxRedriveResult {
+  const row = rec(value);
+  const preview = normalizeH3DeadOutboxPreview({ ...row, status: "DEAD", deliveryStatus: "DEAD" });
+  if (row.status !== "PENDING" || row.deliveryStatus !== "FAILED") invalid("h3DeadOutbox.redrive.status");
+  return { ...preview, status: "PENDING", deliveryStatus: "FAILED" };
+}
+
+export async function fetchH3DeadOutboxRedrivePreview(eventId: string): Promise<A4H3DeadOutboxRedrivePreview> {
+  return normalizeH3DeadOutboxPreview(await a4Request<unknown>(
+    `/events/outbox/${encodeURIComponent(eventId)}/redrive-preview`,
+    { method: "GET" },
+  ));
+}
+
+export async function redriveAuditedH3DeadOutboxEvent(
+  eventId: string,
+  expectedRetryCount: number,
+  expectedDeliveryStatus: "DEAD",
+  expectedDeliveryAttemptCount: number,
+  reason: string,
+  commandKey: string,
+): Promise<A4H3DeadOutboxRedriveResult> {
+  return normalizeH3DeadOutboxRedriveResult(await a4Request<unknown>(
+    `/events/outbox/${encodeURIComponent(eventId)}/redrive`,
+    {
+      method: "POST",
+      body: JSON.stringify({ reason, expectedRetryCount, expectedDeliveryStatus, expectedDeliveryAttemptCount }),
+      stableIdempotencyKey: commandKey,
+    },
+  ));
 }
