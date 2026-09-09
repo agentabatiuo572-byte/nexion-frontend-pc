@@ -1,4 +1,7 @@
 const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+  DEVELOPER_DOCS_CONTENT_TOO_LARGE: "接口文档与保留的公开版本合计超过 65535 字节，本次未保存；请精简内容后重试，当前公开版本未改变。",
+  RANK_HOW_POLICY_TOO_LARGE: "等级说明与保留的公开版本合计超过 65535 字节，本次未保存；请精简内容后重试，当前公开版本未改变。",
+  HOW_CONTENT_TOO_LARGE: "产品说明与保留的公开版本合计超过 65535 字节，本次未保存；请精简内容后重试，当前公开版本未改变。",
   PRIVACY_POLICY_TOO_LARGE: "隐私政策所有语言正文与保留的发布快照合计超过 64KB，本次未保存；请精简内容后重试。当前公开版本未改变。",
   PRIVACY_POLICY_VERSION_CONFLICT: "隐私政策已被其他操作员更新，本次未覆盖；请刷新后基于最新版本修改。",
   PRIVACY_POLICY_NEW_VERSION_REQUIRED: "发布修改后的隐私政策需要新的版本号，请修改版本号后再发布。",

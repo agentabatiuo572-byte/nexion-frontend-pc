@@ -17,3 +17,14 @@ test("PC exposes structured managers for developer docs and rank policy", () => 
   assert.match(developerProxy, /parts\[0\] === "docs"/); assert.match(developerProxy, /export async function PUT/);
   assert.match(teamsProxy, /parts\[0\] === "rank-policy"/);
 });
+
+test("draft retention and bounded storage failures are explained without claiming publication", () => {
+  const editor = read("app/components/domain-views/published-content-editor.tsx");
+  const errors = read("lib/admin/error-messages.ts");
+  assert.match(editor, /保存草稿不会发布内容/);
+  assert.match(editor, /document.hasPublishedVersion/);
+  assert.match(editor, /暂无公开版/);
+  for (const key of ["DEVELOPER_DOCS_CONTENT_TOO_LARGE", "RANK_HOW_POLICY_TOO_LARGE", "HOW_CONTENT_TOO_LARGE"]) {
+    assert.match(errors, new RegExp(`${key}: ".*65535.*当前公开版本未改变`));
+  }
+});

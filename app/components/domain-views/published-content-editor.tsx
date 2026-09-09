@@ -10,8 +10,8 @@ type Kind = "developerDocs" | "rankHow" | "privacyPolicy";
 type Row = Record<string, unknown>;
 const META: Record<Kind, { title: string; subtitle: string; read: string; write: string }> = {
   privacyPolicy: { title: "隐私政策", subtitle: "注册、邀请页公开阅读；草稿保留当前公开版本，发布须使用新版本号。请仅发布已审核正文。", read: "content_legal_terms_read", write: "content_legal_terms_write" },
-  developerDocs: { title: "Developer API 发布内容", subtitle: "示例、接口和事件将由 App remote 读取", read: "platform_a3_read", write: "platform_a3_write" },
-  rankHow: { title: "Rank How-it-works 策略", subtitle: "结构化规则说明将由 App remote 读取", read: "network_f1_read", write: "network_f1_write" },
+  developerDocs: { title: "Developer API 发布内容", subtitle: "示例、接口和事件由 App 读取；保存草稿不会发布内容，发布后才替换公开版本。", read: "platform_a3_read", write: "platform_a3_write" },
+  rankHow: { title: "Rank How-it-works 策略", subtitle: "结构化规则说明由 App 读取；保存草稿不会发布内容，发布后才替换公开版本。", read: "network_f1_read", write: "network_f1_write" },
 };
 function row(value: unknown): Row { return value && typeof value === "object" && !Array.isArray(value) ? value as Row : {}; }
 function text(value: unknown) { return typeof value === "string" ? value : ""; }
@@ -84,7 +84,7 @@ export function PublishedContentEditor({ kind }: { kind: Kind }) {
           <div className={styles.subtitle}>{meta.subtitle}</div>
         </div>
         <div className={styles.headerActions}>
-          <span className={styles.status}>{document?.status ?? "—"} · rev {document?.revision ?? 0}</span>
+          <span className={styles.status}>{document?.status ?? "—"} · rev {document?.revision ?? 0}{document && (document.hasPublishedVersion ? " · 已有公开版，草稿不替换" : " · 暂无公开版")}</span>
           <button className={`${styles.button} ${styles.smallButton}`} type="button" onClick={() => void refresh()} disabled={loading}>刷新</button>
           <button
             className={`${styles.button} ${styles.smallButton} ${styles.toggleButton}`}
@@ -198,6 +198,12 @@ function DeveloperLocaleEditor({ value, disabled, onChange }: { value: Row; disa
 
 function RankLocaleEditor({ value, disabled, onChange }: { value: Row; disabled: boolean; onChange: (value: Row) => void }) {
   const sections = list(value.sections).map(row);
+  const addSection = () => {
+    const ids = new Set(sections.map((section) => text(section.id).trim()));
+    let suffix = sections.length + 1;
+    while (ids.has(`section-${suffix}`)) suffix++;
+    onChange({ ...value, sections: [...sections, { id: `section-${suffix}`, title: "", body: "", order: sections.length }] });
+  };
   const setSection = (index: number, key: string, next: unknown) => onChange({ ...value, sections: sections.map((item, i) => i === index ? { ...item, [key]: next } : item) });
   return (
     <div className={styles.localeEditor}>
@@ -216,7 +222,7 @@ function RankLocaleEditor({ value, disabled, onChange }: { value: Row; disabled:
           </section>
         ))}
       </div>
-      {!disabled && sections.length < 100 && <button className={`${styles.button} ${styles.smallButton} ${styles.addAction}`} type="button" onClick={() => onChange({ ...value, sections: [...sections, { id: `section-${sections.length + 1}`, title: "", body: "", order: sections.length }] })}>新增段落</button>}
+      {!disabled && sections.length < 100 && <button className={`${styles.button} ${styles.smallButton} ${styles.addAction}`} type="button" onClick={addSection}>新增段落</button>}
     </div>
   );
 }

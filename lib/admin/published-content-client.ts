@@ -1,7 +1,7 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 
-export interface PublishedContentDocument { version: string; status: "PUBLISHED" | "DRAFT" | "UNPUBLISHED"; locales: Record<string, Record<string, unknown>>; revision: number; source?: string; configKey?: string }
-export interface PublishedHowContentDocument { version: string; status: "PUBLISHED" | "DRAFT" | "UNPUBLISHED"; contents: Record<string, Record<string, unknown>>; revision: number; source?: string; configKey?: string }
+export interface PublishedContentDocument { version: string; status: "PUBLISHED" | "DRAFT" | "UNPUBLISHED"; locales: Record<string, Record<string, unknown>>; revision: number; hasPublishedVersion?: boolean; source?: string; configKey?: string }
+export interface PublishedHowContentDocument { version: string; status: "PUBLISHED" | "DRAFT" | "UNPUBLISHED"; contents: Record<string, Record<string, unknown>>; revision: number; hasPublishedVersion?: boolean; source?: string; configKey?: string }
 interface ApiResult<T> { code: number; message?: string; data?: T }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -17,7 +17,7 @@ function normalize(raw: unknown): PublishedContentDocument {
   if (typeof row.version !== "string" || !["PUBLISHED", "DRAFT", "UNPUBLISHED"].includes(String(row.status)) || !row.locales || typeof row.locales !== "object" || Array.isArray(row.locales)) throw new Error("PUBLISHED_CONTENT_RESPONSE_INVALID");
   const revision = row.revision == null ? 0 : Number(row.revision);
   if (!Number.isSafeInteger(revision) || revision < 0) throw new Error("PUBLISHED_CONTENT_RESPONSE_INVALID");
-  return { version: row.version, status: row.status as PublishedContentDocument["status"], locales: row.locales as Record<string, Record<string, unknown>>, revision, source: typeof row.source === "string" ? row.source : undefined, configKey: typeof row.configKey === "string" ? row.configKey : undefined };
+  return { version: row.version, status: row.status as PublishedContentDocument["status"], locales: row.locales as Record<string, Record<string, unknown>>, revision, hasPublishedVersion: row.hasPublishedVersion === true || row.status === "PUBLISHED", source: typeof row.source === "string" ? row.source : undefined, configKey: typeof row.configKey === "string" ? row.configKey : undefined };
 }
 function normalizeHow(raw: unknown): PublishedHowContentDocument {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("HOW_CONTENT_RESPONSE_INVALID");
@@ -25,7 +25,7 @@ function normalizeHow(raw: unknown): PublishedHowContentDocument {
   if (typeof row.version !== "string" || !["PUBLISHED", "DRAFT", "UNPUBLISHED"].includes(String(row.status)) || !row.contents || typeof row.contents !== "object" || Array.isArray(row.contents)) throw new Error("HOW_CONTENT_RESPONSE_INVALID");
   const revision = row.revision == null ? 0 : Number(row.revision);
   if (!Number.isSafeInteger(revision) || revision < 0) throw new Error("HOW_CONTENT_RESPONSE_INVALID");
-  return { version: row.version, status: row.status as PublishedHowContentDocument["status"], contents: row.contents as Record<string, Record<string, unknown>>, revision, source: typeof row.source === "string" ? row.source : undefined, configKey: typeof row.configKey === "string" ? row.configKey : undefined };
+  return { version: row.version, status: row.status as PublishedHowContentDocument["status"], contents: row.contents as Record<string, Record<string, unknown>>, revision, hasPublishedVersion: row.hasPublishedVersion === true || row.status === "PUBLISHED", source: typeof row.source === "string" ? row.source : undefined, configKey: typeof row.configKey === "string" ? row.configKey : undefined };
 }
 
 export async function fetchDeveloperDocsAdmin() { return normalize(await request<unknown>("/api/admin/developer/docs")); }
