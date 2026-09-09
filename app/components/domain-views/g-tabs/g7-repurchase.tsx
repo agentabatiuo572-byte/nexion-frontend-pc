@@ -5,7 +5,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 /**
  * G7 复投激励 — 数据来自后端 /api/admin/market/nex/repurchase;空库返回空态。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   fetchG7RepurchaseOverview,
@@ -83,53 +83,69 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<number | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const requestGeneration = useRef(0);
+  const moreInFlight = useRef(false);
 
   const reload = useCallback(async (silent = false) => {
+    const generation = ++requestGeneration.current;
+    moreInFlight.current = false;
+    setLoadingMore(false);
     if (!silent) setLoading(true);
     setError("");
     try {
       const [nextOverview, nextOrders] = await Promise.all([
         fetchG7RepurchaseOverview(), fetchG7RepurchaseOrders(),
       ]);
+      if (generation !== requestGeneration.current) return;
       setOverview(nextOverview);
       setOrders(nextOrders.orders);
+      setNextCursor(nextOrders.nextCursor);
+      setHasMore(nextOrders.hasMore);
     } catch (err) {
-      setOverview(null);
-      setOrders([]);
-      setError(messageOf(err));
+      if (generation === requestGeneration.current) setError(messageOf(err));
     } finally {
-      if (!silent) setLoading(false);
+      if (generation === requestGeneration.current && !silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError("");
-      try {
-        const [next, nextOrders] = await Promise.all([
-          fetchG7RepurchaseOverview(), fetchG7RepurchaseOrders(),
-        ]);
-        if (!cancelled) {
-          setOverview(next);
-          setOrders(nextOrders.orders);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setOverview(null);
-          setOrders([]);
-          setError(messageOf(err));
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+    void reload();
+    return () => {
+      requestGeneration.current += 1;
+    };
+  }, [reload]);
+
+  const loadMore = async () => {
+    if (loading || moreInFlight.current || !hasMore || nextCursor === null) return;
+    moreInFlight.current = true;
+    setLoadingMore(true);
+    setError("");
+    const generation = requestGeneration.current;
+    try {
+      const page = await fetchG7RepurchaseOrders("", nextCursor);
+      if (generation !== requestGeneration.current) return;
+      setOrders((current) => {
+        const seen = new Set(current.map((order) => order.orderNo));
+        return [...current, ...page.orders.filter((order) => {
+          if (seen.has(order.orderNo)) return false;
+          seen.add(order.orderNo);
+          return true;
+        })];
+      });
+      setNextCursor(page.nextCursor);
+      setHasMore(page.hasMore);
+    } catch (err) {
+      if (generation === requestGeneration.current) setError(messageOf(err));
+    } finally {
+      if (generation === requestGeneration.current) {
+        moreInFlight.current = false;
+        setLoadingMore(false);
       }
     }
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  };
 
   const mutate = useCallback(async (key: string, action: () => Promise<G7Overview>, success: string) => {
     setBusyKey(key);
@@ -290,6 +306,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
               {!orders.length && <tr><td colSpan={8} style={{ textAlign: "center", padding: 20 }}>暂无真实复投单</td></tr>}
             </tbody>
           </table>
+          {hasMore && nextCursor !== null && <button className="btn" disabled={loading || loadingMore} onClick={() => void loadMore()}>加载更多</button>}
         </div>
       </section>
 

@@ -303,9 +303,11 @@ export async function fetchG7RepurchaseOverview() {
 
 const executeG7Mutation = createStableMutationExecutor(idempotencyKey, "nexion-admin-g7-repurchase-commands-v1");
 
-export async function fetchG7RepurchaseOrders(status = "") {
-  const query = status ? `?status=${encodeURIComponent(status)}` : "";
-  const data = await g7Request<BackendOrderPage>(`/nex/repurchase/orders${query}`);
+export async function fetchG7RepurchaseOrders(status = "", cursor: number | null = null) {
+  const query = new URLSearchParams();
+  if (status) query.set("status", status);
+  if (cursor !== null) query.set("cursor", String(cursor));
+  const data = await g7Request<BackendOrderPage>(`/nex/repurchase/orders${query.size ? `?${query.toString()}` : ""}`);
   assertG7OrderPageContract(data);
   return {
     orders: (data?.orders ?? []).map((order) => ({
