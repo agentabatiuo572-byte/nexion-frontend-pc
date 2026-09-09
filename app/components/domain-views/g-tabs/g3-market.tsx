@@ -84,6 +84,29 @@ function changePct(points: number[]) {
   return ((last - first) / first) * 100;
 }
 
+export function deriveG3RuntimeStatus(paused: boolean, pinValue: string) {
+  const pin = pinValue.trim().toUpperCase();
+  if (paused) {
+    return {
+      label: "已暂停",
+      detail: "现价冻结，自动推进已停止。",
+      tone: "bad",
+    };
+  }
+  if (/^D[1-7]$/.test(pin)) {
+    return {
+      label: `已钉住 ${pin}`,
+      detail: "当前帧已钉住，自动推进暂停。",
+      tone: "warn",
+    };
+  }
+  return {
+    label: "按排程配置",
+    detail: "是否推进以服务端排程执行为准。",
+    tone: "",
+  };
+}
+
 export function G3Market({ ctx }: { ctx: GCtx }) {
   const { toast, openActionConfirm } = ctx;
   const session = useAdminAuth((state) => state.session);
@@ -207,6 +230,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
     : "—";
   const pinV = controlValue(overview, "pin");
   const loopV = controlValue(overview, "loop");
+  const runtimeStatus = deriveG3RuntimeStatus(paused, pinV);
   const coverageSnapshot = {
     coverageRatio: overview.coverage.coverageRatio,
     redlinePct: overview.coverage.redlinePct,
@@ -316,8 +340,8 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
       <div className="f-stats">
         <div className="f-stat ok"><div className="k">NEX 现价</div><div className="v">{price}</div><div className="sub">{change == null ? "24h 历史未返回" : `24h ${change >= 0 ? "+" : ""}${change.toFixed(2)}%`} · 当日帧 D{curDay} 派发</div></div>
         <div className="f-stat cyan"><div className="k">排程进度</div><div className="v">D{curDay} / 7</div><div className="sub">{schedV} · 周峰值 {fmtPrice(peak)}</div></div>
-        <div className="f-stat"><div className="k">喂价源</div><div className="v">{oracle}</div><div className="sub">健康 · 偏离告警阈值 {deviation}</div></div>
-        <div className="f-stat warn"><div className="k">引擎状态</div><div className="v" style={{ color: paused ? "var(--danger)" : "var(--success)" }}>{paused ? "已暂停" : "运行中"}</div><div className="sub">暂停即冻结现价 + 停推进</div></div>
+        <div className="f-stat"><div className="k">喂价源</div><div className="v">{oracle}</div><div className="sub">健康状态未提供 · 偏离告警阈值 {deviation}</div></div>
+        <div className="f-stat"><div className="k">引擎状态</div><div className="v" style={{ color: runtimeStatus.tone === "bad" ? "var(--danger)" : runtimeStatus.tone === "warn" ? "var(--warning)" : "var(--ink-3)" }}>{runtimeStatus.label}</div><div className="sub">{runtimeStatus.detail}</div></div>
       </div>
 
       <section className="l-card">
@@ -325,7 +349,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
           <span className="ttl">周曲线关键帧(7 天 × 3 项 · 逐值权威)</span>
           <span className="sub">· 点有权限的单元格保存排程参数 · 当前生效日高亮 · 黄色 = 与昨日不同 · ★ 周峰值</span>
           <div className="r">
-            <span className="bdg ok">自动按日推进 · 可调时间</span>
+            <span className={`bdg ${runtimeStatus.tone}`}>{runtimeStatus.label}</span>
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -407,7 +431,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
           <div className="l-b" style={{ paddingTop: 4 }}>
             <div className="p-row"><div className="txt"><div className="k">现价直写(应急)</div><div className="s">绕过曲线临时压价,过红线</div></div><span className="v">{price}</span>{allowed("finprod_g3_override_price_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => adj("currentPrice", "现价直写", rawValue(overview.currentPrice), "临时压过自动排程 · 过红线", true)}>调整(立即执行)</button>}</div>
             <div className="p-row"><div className="txt"><div className="k">做市波动幅度</div><div className="s">单 tick 的最大波动(曲线未覆盖时兜底)</div></div><span className="v">{volatility}</span>{allowed("finprod_g3_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => adj("volatilityPct", "做市波动幅度", rawValue(overview.overrides.volatilityPct), "范围 0-20%")}>调整(立即执行)</button>}</div>
-            <div className="p-row"><div className="txt"><div className="k">喂价源</div><div className="s">内部做市源 / 外部喂价源 · 外部源 1 tick/4s 同频</div></div><span className="v">{oracle}</span>{isSuper && <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
+            <div className="p-row"><div className="txt"><div className="k">喂价源</div><div className="s">内部做市源 / 外部喂价源 · 当前接口未提供喂价频率或健康状态</div></div><span className="v">{oracle}</span>{isSuper && <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
               action: "切换喂价源",
               detail: <>内部做市源 / 外部喂价源切换。基础设施操作,RBAC 细分前由超管代理执行门槛:超管。</>,
               edit: { kind: "select", current: oracle, options: ["内部做市", "外部喂价"], disallowCurrent: true },
