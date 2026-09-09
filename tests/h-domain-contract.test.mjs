@@ -52,9 +52,9 @@ test("H1 前端读模型由后端裁决,逐月旋钮矩阵写后端配置", () =
   // 节奏阶段闭集 P1-P6。
   assert.match(h1, /P1:[^}]*拉新/);
   assert.match(h1, /P6:[^}]*软退场/);
-  // 沙盒预览只读,不写配置。
-  assert.match(h1, /沙盒预览\(只读\)/);
-  assert.match(h1, /沙盒预览会重新读取后端 H1 读模型,不写配置/);
+  // 开发环境预览只读,重新读取后端读模型而不写配置。
+  assert.match(h1, /刷新预览\(只读\)/);
+  assert.match(h1, /刷新预览会重新读取开发环境 H1 读模型,不写配置/);
   // 阶段效果归因回链 B4 节奏看板(与 b4-rhythm 断言的 href 一致)。
   assert.match(h1, /href="\/overview\/rhythm"[^>]*>去 B4 节奏看板/);
 });
@@ -132,7 +132,7 @@ test("E1 combination-discount conflicts have actionable operator messages", () =
 
 test("H2 client 端点对齐后端 trials 路径", () => {
   assert.match(hClient, /\/api\/admin\/growth\$\{path\}/);
-  assert.ok(hClient.includes('"/trials"'));
+  assert.match(hClient, /`\/trials\?pageNum=\$\{pageNum\}&pageSize=\$\{pageSize\}`/);
   assert.match(hClient, /`\/trials\/params\/\$\{encodeURIComponent\(key\)}`/);
   assert.match(hClient, /`\/trials\/sessions\/\$\{encodeURIComponent\(sessionId\)}\/cancel`/);
   assert.match(hClient, /`\/trials\/sessions\/\$\{encodeURIComponent\(sessionId\)}\/charge`/);
@@ -355,9 +355,11 @@ test("H8 金额编辑精度与后端六位小数契约一致", () => {
   }
 });
 
-test("H8 未知结果保留弹窗并使用打开弹窗时生成的同一幂等键", () => {
+test("H8 未知结果保留弹窗,提交时按同请求指纹复用同一幂等键", () => {
   const h8 = tab("h8-referral-rewards.tsx");
-  assert.match(h8, /const commandKey = createH8CommandKey\("h8-param"\)/);
+  assert.match(h8, /const commandKey = commandAttempts\.resolve\(\s*slot,\s*JSON\.stringify\(\[storedValue, data\.version\]\),\s*\(\) => \{ mintedFresh = true; return createH8CommandKey\("h8-param"\); \},/);
+  assert.doesNotMatch(h8, /const commandKey = createH8CommandKey\("h8-param"\)/);
+  assert.match(h8, /if \(mintedFresh && !isH8OutcomeUncertainError\(error\)\) commandAttempts\.forget\(slot\)/);
   assert.match(h8, /updateH8ReferralRewardParam\(param\.key, storedValue, reason, data\.version, commandKey\)/);
   assert.match(hClient, /headers: \{ "Idempotency-Key": idempotencyKey \}/);
   assert.match(hView, /onConfirm=\{async \(reason, newValue, businessValue\) =>/);
@@ -379,7 +381,8 @@ test("H8 参数写入使用服务端版本与 CAS,拒绝路径单独留痕", () 
 
 test("H8 client only exposes read/param endpoints; settlement is reachable exclusively through A2 replay", () => {
   assert.match(hClient, /\/api\/admin\/growth\$\{path\}/);
-  assert.ok(hClient.includes('"/referral-rewards"'));
+  assert.match(hClient, /\?cursor=\$\{encodeURIComponent\(cursor\)\}&pageSize=20/);
+  assert.match(hClient, /growthRequest<unknown>\(`\/referral-rewards\$\{query\}`\)/);
   assert.match(hClient, /`\/referral-rewards\/params\/\$\{encodeURIComponent\(key\)}`/);
   assert.doesNotMatch(hClient, /\/referral-rewards\/settlements\/run/);
   assert.match(hClient, /"h8-param"/);
