@@ -28,6 +28,7 @@ const VALID = {
     socialEventStatuses: [],
     templateStatuses: [],
     templateCtaOptions: [],
+    runtimeSourceOptions: [],
     sources: [],
   },
   I3: {

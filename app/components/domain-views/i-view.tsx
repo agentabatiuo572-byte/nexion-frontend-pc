@@ -8,7 +8,7 @@
  * 真写统一走后端 /content/* 接口;概览为空时保持空态,不在前端补业务样例。
  * amplifies 唯一流出方向 = 课程奖励上调(B1 红线核验,SPEC §4 注:拒绝码 V4 目标 422,B1 现行 403)。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./i-domain.css";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
@@ -20,6 +20,7 @@ import { I3Campaign } from "./i-tabs/i3-campaign";
 import { I4Trust } from "./i-tabs/i4-trust";
 import { I6I18n } from "./i-tabs/i6-i18n";
 import type { ConfirmReq, ICtx, ActionConfirmReq } from "./i-tabs/types";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 const FOLD: Record<string, string> = {
   I1: "I1",
@@ -102,33 +103,80 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "I1", [meta.l2Id]);
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
-  const [content, setContent] = useState<IContentData>({});
-  const [contentLoading, setContentLoading] = useState(true);
-  const [contentError, setContentError] = useState<string | null>(null);
+  const contentPermissionScope = useAdminAuth((state) => {
+    const session = state.session;
+    return [
+      state.authEpoch,
+      state.isAuthenticated,
+      state.sessionResolution,
+      state.operator,
+      session?.adminId,
+      session?.operator,
+      session?.username,
+      session?.role,
+      ...(session?.authorities ?? []).slice().sort(),
+    ].join("\u0000");
+  });
+  const scopeKey = [tab, contentPermissionScope].join("\u0000");
+  const contentRequestSequence = useRef(0);
+  const [contentSnapshot, setContentSnapshot] = useState<{
+    data: IContentData;
+    dataScope: string | null;
+    loading: boolean;
+    error: string | null;
+    errorScope: string | null;
+  }>({ data: {}, dataScope: null, loading: true, error: null, errorScope: null });
+  const contentReadable = contentSnapshot.dataScope === scopeKey;
+  const content = contentReadable ? contentSnapshot.data : {};
+  const contentLoading = contentReadable ? contentSnapshot.loading : true;
+  const contentError = contentSnapshot.errorScope === scopeKey ? contentSnapshot.error : null;
 
   const reloadIContent = useCallback(async () => {
-    setContentLoading(true);
-    setContentError(null);
-    setContent({});
+    const requestSequence = ++contentRequestSequence.current;
+    setContentSnapshot((current) => ({ ...current, loading: true }));
     try {
       const nextContent = await fetchIContentOverviews();
-      setContent(nextContent);
-      setContentError(contentErrorForTab(tab, nextContent));
+      if (requestSequence !== contentRequestSequence.current) return;
+      const nextError = contentErrorForTab(tab, nextContent);
+      setContentSnapshot((current) => {
+        if (nextError && current.dataScope === scopeKey) {
+          return {
+            ...current,
+            loading: false,
+            error: nextError,
+            errorScope: scopeKey,
+          };
+        }
+        return {
+          data: nextContent,
+          dataScope: scopeKey,
+          loading: false,
+          error: nextError,
+          errorScope: scopeKey,
+        };
+      });
     } catch (error) {
-      setContentError(`${tab} 数据加载失败，请刷新重试`);
-    } finally {
-      setContentLoading(false);
+      if (requestSequence !== contentRequestSequence.current) return;
+      setContentSnapshot((current) => ({
+        ...current,
+        loading: false,
+        error: tab + " 数据加载失败，请刷新重试",
+        errorScope: scopeKey,
+      }));
     }
-  }, [tab]);
+  }, [scopeKey, tab]);
+
+  useEffect(() => {
+    // A completed request from the prior route or auth/permission generation
+    // must not repopulate this scope before its own initial read starts.
+    contentRequestSequence.current += 1;
+    setActionConfirm(null);
+    setCf(null);
+  }, [scopeKey]);
 
   useEffect(() => {
     void reloadIContent();
   }, [reloadIContent]);
-
-  useEffect(() => {
-    setActionConfirm(null);
-    setCf(null);
-  }, [tab]);
 
   const actions = useMemo(
     () => ({
@@ -176,12 +224,12 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
         </section>
       )}
 
-      {!contentError && tab === "I1" && <I1CopyAb ctx={ctx} />}
-      {!contentError && tab === "I2" && <I2Nova ctx={ctx} />}
-      {!contentError && tab === "I3" && <I3Campaign ctx={ctx} />}
-      {!contentError && tab === "I4" && <I4Trust ctx={ctx} view="trust" />}
-      {!contentError && tab === "I5" && <I4Trust ctx={ctx} view="disclosures" />}
-      {!contentError && tab === "I6" && <I6I18n ctx={ctx} />}
+      {(!contentError || contentReadable) && tab === "I1" && <I1CopyAb ctx={ctx} />}
+      {(!contentError || contentReadable) && tab === "I2" && <I2Nova ctx={ctx} />}
+      {(!contentError || contentReadable) && tab === "I3" && <I3Campaign ctx={ctx} />}
+      {(!contentError || contentReadable) && tab === "I4" && <I4Trust ctx={ctx} view="trust" />}
+      {(!contentError || contentReadable) && tab === "I5" && <I4Trust ctx={ctx} view="disclosures" />}
+      {(!contentError || contentReadable) && tab === "I6" && <I6I18n ctx={ctx} />}
 
       {mc && (
         <OperationConfirmModal
