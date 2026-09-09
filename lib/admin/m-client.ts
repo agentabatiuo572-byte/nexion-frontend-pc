@@ -470,7 +470,7 @@ export type MContentData = {
 
 export type MLoadConfigWrite = Omit<MLoadConfig, "version"> & {
   expectedVersion: number;
-  agentState: MAgentState;
+  agentState: Record<string, { cap: number; busy?: boolean; expectedProfileVersion?: number }>;
 };
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -1366,7 +1366,8 @@ function adaptLoadConfig(raw: Record<string, unknown> | undefined, agents: MSupp
     const row = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
     agentState[id] = {
       cap: num(row.cap, agentState[id]?.cap ?? base.defaultCap),
-      busy: bool(row.busy, false),
+      // M5 profile is routing authority; a legacy load flag must not override it.
+      busy: agents.find((agent) => agent.id === id)?.busy ?? false,
     };
   });
   return {
@@ -1857,7 +1858,7 @@ export function buildMLegacyParams(data: MContentData): Record<string, string> {
     const state = data.agentState[agent.id] ?? { cap: agent.maxConcurrent, busy: agent.busy };
     if (state) {
       params[`I.support.agent.${agent.name}.cap`] = String(state.cap);
-      params[`I.support.agent.${agent.name}.busy`] = state.busy ? "1" : "0";
+      params[`I.support.agent.${agent.name}.busy`] = agent.busy ? "1" : "0";
     }
   });
   Object.entries(data.agentState).forEach(([id, state]) => {

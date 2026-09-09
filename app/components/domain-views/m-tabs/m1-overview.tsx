@@ -5,7 +5,7 @@
  * 数字单源派生自 pget(I.support.* / I.session.*),与 M2/M3/M4 写的真写键同源。
  * 4 KPI(可点进台)+ 分类 SLA 达成与超时风险 + 坐席负载;调整负载 = 高敏配置(必填理由 → setParam + logAudit)。
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import {
@@ -19,6 +19,7 @@ import { catCN, MAvatar } from "./hd-ui";
 import type { MCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fetchMAdvisorBindingUsers, type MAdvisorAssignment, type MAdvisorBindingUser, type MSupportAgent } from "@/lib/admin/m-client";
+import { commandForM1Retry, createM1PendingCommand, type M1PendingCommand } from "@/lib/admin/m1-pending-command";
 
 const TICKET_KEY = "I.support.tickets";
 const SLA_KEY = "I.support.sla";
@@ -28,7 +29,6 @@ const ASSIGNMENT_LIST_KEY = "I.support.advisorAssignments";
 const LOAD_WARNINGS_KEY = "I.support.loadWarnings";
 const LOAD_KEY = (f: string) => `I.support.load.${f}`;
 const AGENT_CAP_KEY = (name: string) => `I.support.agent.${name}.cap`;
-const AGENT_BUSY_KEY = (name: string) => `I.support.agent.${name}.busy`;
 
 const SUPPORT_SEAT_TYPES = [
   { position: "客服主管", label: "客服主管", hint: "由超管分配;可分配专属/通用客服坐席" },
@@ -68,7 +68,6 @@ const numOr = (raw: string | undefined, fb: number) => {
   const n = Number(raw);
   return raw != null && raw !== "" && !Number.isNaN(n) ? n : fb;
 };
-const boolOr = (raw: string | undefined, fb: boolean) => (raw === "1" ? true : raw === "0" ? false : fb);
 const boolParam = (raw: string | undefined): boolean | null => (raw === "1" ? true : raw === "0" ? false : null);
 const numParam = (raw: string | undefined): number | null => {
   const n = Number(raw);
@@ -203,7 +202,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
     const assignments = advisorAssignments.filter((row) => row.agentAdminId === a.adminId && row.status === "ACTIVE").length;
     const total = openTk + openCv;
     const cap = numOr(pget(AGENT_CAP_KEY(a.name)), a.maxConcurrent || loadCfg?.defaultCap || 0);
-    const busy = boolOr(pget(AGENT_BUSY_KEY(a.name)), Boolean(a.busy || !a.enabled));
+    const busy = Boolean(a.busy);
     const util = Math.round((total / Math.max(1, cap)) * 100);
     return { id: a.id, agent: a, name: a.name, role: a.position, enabled: a.enabled, openTk, openCv, total, cap, busy, util, assignments };
   }).sort((x, y) => y.util - x.util);
@@ -470,6 +469,12 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
   const [noChangeMessage, setNoChangeMessage] = useState("");
   const [writeOutcomeUnknown, setWriteOutcomeUnknown] = useState(false);
   const [saving, setSaving] = useState<"config" | "rebalance" | null>(null);
+  // Props may refresh after an uncertain write. This modal keeps its opening read as the only editable baseline.
+  const editBaselineRef = useRef({ loadCfg, rows });
+  const pendingCommandRef = useRef<M1PendingCommand | null>(null);
+  const commandInFlightRef = useRef(false);
+  const pendingKind = pendingCommandRef.current?.kind;
+  const inputsLocked = writeOutcomeUnknown || commandInFlightRef.current;
   const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
 
   useEffect(() => {
@@ -480,81 +485,95 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
   const clamp = (v: string, lo: number, hi: number) => String(Math.max(lo, Math.min(hi, Math.round(Number(v) || 0))));
 
   async function save() {
-    if (!reasonOk || saving) return;
-    const r = reason.trim();
-    let changed = autoBalance !== loadCfg.autoBalance
-      || quietHour !== loadCfg.quietHourBalance
-      || Number(defaultCap) !== loadCfg.defaultCap
-      || Number(burstCap) !== loadCfg.burstCap
-      || Number(warnPct) !== loadCfg.warnPct
-      || overflow.trim() !== loadCfg.overflowQueue;
-    const agentState: Record<string, { cap: number; busy: boolean }> = {};
-    for (const r2 of rows) {
-      const nc = clamp(caps[r2.id] ?? String(r2.cap), 0, 40);
-      agentState[r2.id] = { cap: Number(nc), busy: Boolean(busyMap[r2.id]) };
-      if (Number(nc) !== r2.cap || busyMap[r2.id] !== r2.busy) changed = true;
-    }
-    if (!changed) {
-      setNoChangeMessage("当前配置没有变化,无需保存。");
-      ctx.toast("当前配置没有变化,无需保存");
-      return;
-    }
+    if (!reasonOk || saving || commandInFlightRef.current) return;
+    const command = commandForM1Retry(pendingCommandRef.current, "config", () => {
+      const baseline = editBaselineRef.current;
+      const r = reason.trim();
+      let changed = autoBalance !== baseline.loadCfg.autoBalance || quietHour !== baseline.loadCfg.quietHourBalance
+        || Number(defaultCap) !== baseline.loadCfg.defaultCap || Number(burstCap) !== baseline.loadCfg.burstCap
+        || Number(warnPct) !== baseline.loadCfg.warnPct || overflow.trim() !== baseline.loadCfg.overflowQueue;
+      const agentState: Record<string, { cap: number; busy?: boolean; expectedProfileVersion?: number }> = {};
+      for (const r2 of baseline.rows) {
+        const nc = clamp(caps[r2.id] ?? String(r2.cap), 0, 40);
+        agentState[r2.id] = { cap: Number(nc) };
+        if (busyMap[r2.id] !== r2.busy) {
+          agentState[r2.id].busy = Boolean(busyMap[r2.id]);
+          agentState[r2.id].expectedProfileVersion = r2.agent.version;
+        }
+        if (Number(nc) !== r2.cap || busyMap[r2.id] !== r2.busy) changed = true;
+      }
+      if (!changed) {
+        setNoChangeMessage("当前配置没有变化,无需保存。");
+        ctx.toast("当前配置没有变化,无需保存");
+        return null;
+      }
+      return createM1PendingCommand("config", JSON.stringify({
+        expectedVersion: baseline.loadCfg.version, autoBalance,
+        defaultCap: Number(clamp(defaultCap, 0, 40)), burstCap: Number(clamp(burstCap, 0, 40)),
+        warnPct: Number(clamp(warnPct, 50, 100)), quietHourBalance: quietHour,
+        overflowQueue: overflow.trim(), agentState,
+      }), "M1 坐席负载调度", r);
+    });
+    if (!command) return;
+    pendingCommandRef.current = command;
+    commandInFlightRef.current = true;
     setSaving("config");
     setWriteOutcomeUnknown(false);
     try {
-      const ok = await ctx.setParam("I.support.load.__bulk", JSON.stringify({
-        expectedVersion: loadCfg.version,
-        autoBalance,
-        defaultCap: Number(clamp(defaultCap, 0, 40)),
-        burstCap: Number(clamp(burstCap, 0, 40)),
-        warnPct: Number(clamp(warnPct, 50, 100)),
-        quietHourBalance: quietHour,
-        overflowQueue: overflow.trim(),
-        agentState,
-      }), { action: "M1 坐席负载调度", reason: r });
+      const ok = await ctx.setParam("I.support.load.__bulk", command.value, { action: command.action, reason: command.reason, commandKey: command.key });
       if (!ok) {
         setWriteOutcomeUnknown(true);
         return;
       }
+      pendingCommandRef.current = null;
       ctx.toast("负载调度已提交 · 后端留档");
       onClose();
+    } catch {
+      setWriteOutcomeUnknown(true);
+      ctx.toast("写入结果未确认,请使用同一命令重试");
     } finally {
+      commandInFlightRef.current = false;
       setSaving(null);
     }
   }
 
   async function rebalance() {
-    if (saving) return;
-    if (!reasonOk) {
-      ctx.toast("手动均衡需先填变更理由(8-200 字)");
+    if (saving || commandInFlightRef.current || !reasonOk) {
+      if (!saving && !commandInFlightRef.current && !reasonOk) ctx.toast("手动均衡需先填变更理由(8-200 字)");
       return;
     }
+    const command = commandForM1Retry(pendingCommandRef.current, "rebalance", () => {
+      const baseline = editBaselineRef.current;
+      return createM1PendingCommand("rebalance", JSON.stringify(baseline.rows.map((r) => ({
+        id: r.id, name: r.name, cap: r.cap, total: r.total, util: r.util,
+      }))), "M1 坐席负载手动均衡", reason.trim());
+    });
+    if (!command) return;
+    pendingCommandRef.current = command;
+    commandInFlightRef.current = true;
     setSaving("rebalance");
     setWriteOutcomeUnknown(false);
     try {
-      const ok = await ctx.setParam("I.support.load.__rebalance", JSON.stringify(rows.map((r) => ({
-        id: r.id,
-        name: r.name,
-        cap: r.cap,
-        busy: r.busy,
-        total: r.total,
-        util: r.util,
-      }))), { action: "M1 坐席负载手动均衡", reason: reason.trim() });
+      const ok = await ctx.setParam("I.support.load.__rebalance", command.value, { action: command.action, reason: command.reason, commandKey: command.key });
       if (!ok) {
         setWriteOutcomeUnknown(true);
         return;
       }
+      pendingCommandRef.current = null;
       ctx.toast("已触发一次手动均衡 · 后端留档");
       onClose();
+    } catch {
+      setWriteOutcomeUnknown(true);
+      ctx.toast("写入结果未确认,请使用同一命令重试");
     } finally {
+      commandInFlightRef.current = false;
       setSaving(null);
     }
   }
-
   const numField = (label: string, hint: string, val: string, set: (v: string) => void, min: number, max: number) => (
     <label className="row" style={{ justifyContent: "space-between", gap: 12, alignItems: "center" }}>
       <span><span style={{ fontSize: 13 }}>{label}</span><span className="sub" style={{ display: "block" }}>{hint}</span></span>
-      <input className="fld mono" type="number" min={min} max={max} value={val} onChange={(e) => set(e.target.value)} style={{ width: 88, textAlign: "right" }} />
+      <input className="fld mono" type="number" min={min} max={max} value={val} onChange={(e) => { if (!commandInFlightRef.current && !writeOutcomeUnknown) set(e.target.value); }} disabled={inputsLocked} style={{ width: 88, textAlign: "right" }} />
     </label>
   );
 
@@ -563,16 +582,16 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
       title="坐席负载调度"
       icon="gauge"
       wide
-      onClose={onClose}
+      onClose={() => { if (!commandInFlightRef.current) onClose(); }}
       footer={
         <div className="row" style={{ gap: 10, alignItems: "center", width: "100%" }}>
           <span className="sub" style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <Icon name="shield" size={13} />负载调度影响所有新单分配 · 变更与手动均衡均记入 A2 审计
           </span>
           <div className="spacer" style={{ flex: 1 }} />
-          <button type="button" className="btn btn-sec btn-sm" onClick={onClose} disabled={Boolean(saving)}>取消</button>
-          <button type="button" className="btn btn-sec btn-sm" onClick={rebalance} disabled={Boolean(saving)}>{saving === "rebalance" ? "提交中..." : "立即手动均衡"}</button>
-          <button type="button" className="btn btn-pri btn-sm" onClick={save} disabled={!reasonOk || Boolean(saving)}>{saving === "config" ? "提交中..." : writeOutcomeUnknown ? "使用同一命令重试" : `保存${!reasonOk ? " · 需填理由" : ""}`}</button>
+          <button type="button" className="btn btn-sec btn-sm" onClick={() => { if (!commandInFlightRef.current) onClose(); }} disabled={Boolean(saving)}>取消</button>
+          <button type="button" className="btn btn-sec btn-sm" onClick={rebalance} disabled={Boolean(saving) || (inputsLocked && pendingKind !== "rebalance")}>{saving === "rebalance" ? "提交中..." : "立即手动均衡"}</button>
+          <button type="button" className="btn btn-pri btn-sm" onClick={save} disabled={!reasonOk || Boolean(saving) || (inputsLocked && pendingKind !== "config")}>{saving === "config" ? "提交中..." : writeOutcomeUnknown ? "使用同一命令重试" : `保存${!reasonOk ? " · 需填理由" : ""}`}</button>
         </div>
       }
     >
@@ -585,7 +604,7 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
       {writeOutcomeUnknown && (
         <div className="itint" role="alert" style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 13 }}>写入失败或结果未知,输入已保留。</div>
-          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>请使用同一命令重试;若仍失败,可取消后刷新核对服务器状态。</div>
+          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>当前编辑已锁定,请使用同一命令重试;若要发起新变更,请取消后重新打开并读取当前状态。</div>
         </div>
       )}
       <div className="mcol" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
@@ -593,18 +612,18 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
           <div className="sub" style={{ fontWeight: 600 }}>全局策略</div>
           <label className="row" style={{ justifyContent: "space-between", gap: 12, alignItems: "center" }}>
             <span><span style={{ fontSize: 13 }}>自动平衡负载</span><span className="sub" style={{ display: "block" }}>新工单 / 会话按使用率分给最空闲坐席</span></span>
-            <Toggle on={autoBalance} onClick={() => setAutoBalance((v) => !v)} />
+            <Toggle on={autoBalance} onClick={() => { if (!commandInFlightRef.current && !writeOutcomeUnknown) setAutoBalance((v) => !v); }} />
           </label>
           {numField("默认负载上限(人均)", "单 + 话 合计上限", defaultCap, setDefaultCap, 0, 40)}
           {numField("突发可超额上限", "临时峰值兜底", burstCap, setBurstCap, 0, 40)}
           {numField("使用率预警阈值 %", "达到即标黄", warnPct, setWarnPct, 50, 100)}
           <label className="col" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <span style={{ fontSize: 13 }}>超额溢出去向</span>
-            <input className="fld" value={overflow} onChange={(e) => setOverflow(e.target.value)} placeholder="例:转人工备勤 / 排队 / Nova AI" />
+            <input className="fld" value={overflow} onChange={(e) => { if (!commandInFlightRef.current && !writeOutcomeUnknown) setOverflow(e.target.value); }} disabled={inputsLocked} placeholder="例:转人工备勤 / 排队 / Nova AI" />
           </label>
           <label className="row" style={{ justifyContent: "space-between", gap: 12, alignItems: "center" }}>
             <span><span style={{ fontSize: 13 }}>夜间均衡(22:00–08:00)</span><span className="sub" style={{ display: "block" }}>夜间在岗坐席人均上限减半</span></span>
-            <Toggle on={quietHour} onClick={() => setQuietHour((v) => !v)} />
+            <Toggle on={quietHour} onClick={() => { if (!commandInFlightRef.current && !writeOutcomeUnknown) setQuietHour((v) => !v); }} />
           </label>
         </div>
 
@@ -615,10 +634,10 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
               <div key={r.id} className="row" style={{ alignItems: "center", gap: 10, padding: "9px 12px", borderTop: i ? "1px solid var(--border)" : "none" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 500 }}>{r.name}</div>
-                  <div className="sub mono">{r.role} · {r.total}/{r.cap} · {r.util}%</div>
+                  <div className="sub mono">{r.role} · {r.total}/{r.cap} · {r.util}% · {r.enabled ? (busyMap[r.id] ? "暂停接派单" : "接派单中") : "未启用"}</div>
                 </div>
-                <input className="fld mono" type="number" min={0} max={40} value={caps[r.id] ?? String(r.cap)} onChange={(e) => setCaps((s) => ({ ...s, [r.id]: e.target.value }))} style={{ width: 68, textAlign: "right" }} aria-label={`${r.name} 接派单上限`} />
-                <Toggle on={!busyMap[r.id]} onClick={() => setBusyMap((s) => ({ ...s, [r.id]: !s[r.id] }))} />
+                <input className="fld mono" type="number" min={0} max={40} value={caps[r.id] ?? String(r.cap)} onChange={(e) => { if (!commandInFlightRef.current && !writeOutcomeUnknown) setCaps((s) => ({ ...s, [r.id]: e.target.value })); }} disabled={inputsLocked} style={{ width: 68, textAlign: "right" }} aria-label={`${r.name} 接派单上限`} />
+                <div aria-disabled={!r.enabled || inputsLocked} style={{ opacity: r.enabled ? 1 : 0.45, pointerEvents: r.enabled && !inputsLocked ? undefined : "none" }}><Toggle on={r.enabled && !busyMap[r.id]} onClick={() => { if (r.enabled && !commandInFlightRef.current && !writeOutcomeUnknown) setBusyMap((s) => ({ ...s, [r.id]: !s[r.id] })); }} /></div>
               </div>
             ))}
           </div>
@@ -628,7 +647,7 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
 
       <label className="col" style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 16 }}>
         <span style={{ fontSize: 13 }}>变更理由 <span style={{ color: "var(--danger)" }}>*</span> <span className="sub">(必填 8-200 字 · 留档至 A2 审计)</span></span>
-        <textarea className="fld" rows={2} maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:周一早高峰预期 Withdrawal 峰值,临时提升 Marina K. 上限并暂停 Aisha 接派单培训" style={{ resize: "vertical" }} />
+        <textarea className="fld" rows={2} maxLength={200} value={reason} onChange={(e) => { if (!commandInFlightRef.current && !writeOutcomeUnknown) setReason(e.target.value); }} disabled={inputsLocked} placeholder="例:周一早高峰预期 Withdrawal 峰值,临时提升 Marina K. 上限并暂停 Aisha 接派单培训" style={{ resize: "vertical" }} />
       </label>
     </Modal>
   );
