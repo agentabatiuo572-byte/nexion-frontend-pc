@@ -7,7 +7,8 @@
  * 例行坐席操作(回复/转交/改状态/推送/归档/标签/备注)直接执行 + 自动 A2 审计;
  * 主动发起会话 / 转工单走真实后端写链。续聊恢复后刷新仍回上次会话。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { subscribeAdminRealtime,getAdminRealtimeSnapshot,watchAdminConversation,sendAdminTyping } from '@/lib/admin/admin-conversation-realtime';
 import { useRouter } from "next/navigation";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { Icon, MessageThread, type ThreadMessage } from "../design-kit";
@@ -30,6 +31,7 @@ import { IdlePolicyModal, InitiateModal, QuickActionModal, ReturnModal, Transfer
 import type { MCtx } from "./types";
 import {
   fetchMConversationTimeoutPolicy,
+  markMConversationRead,
   fetchMSupportWorkbenchSkus,
   fetchMSupportWorkbenchUsers,
   updateMConversationTimeoutPolicy,
@@ -40,6 +42,7 @@ import type { User360Profile } from "@/lib/admin/user360-client";
 import type { OpsSku } from "@/lib/admin/platform-types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
+import { m3ApplyReplyInput, m3ClearDeliveredDraft, m3DerivedSelected, m3ReplySubmission, m3VisibleReplyBody, type M3ReplyDraft } from "@/lib/admin/m3-composer-state";
 
 const CONVO_KEY = "I.session.convos";
 const SCRIPT_LIST_KEY = "I.session.scripts";
@@ -254,7 +257,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState(() => pget(LAST_CONVO_KEY) ?? convos[0]?.id ?? "cv-advisor-1");
-  const [replyBody, setReplyBody] = useState("");
+  const [replyDraft, setReplyDraft] = useState<M3ReplyDraft>({ conversationNo: null, body: "" });
   const [quick, setQuick] = useState<"history" | "tickets" | "resetpw" | "account" | "note" | null>(null);
   const [showInitiate, setShowInitiate] = useState(false);
   const [showIdlePolicy, setShowIdlePolicy] = useState(false);
@@ -432,7 +435,18 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   }, [convos, query, seg, typeFilter]);
 
   // 详情必须属于当前筛选结果。筛选为 0 条时清空详情和写入口，避免误操作旧会话。
-  const selected = filtered.find((c) => c.id === selectedId) ?? filtered[0] ?? null;
+  const selected = m3DerivedSelected(selectedId, filtered);
+  const replyBody=m3VisibleReplyBody(replyDraft,selected?.id);
+  const realtime=useSyncExternalStore(subscribeAdminRealtime,getAdminRealtimeSnapshot,getAdminRealtimeSnapshot);
+  useEffect(()=>{watchAdminConversation(selected?.id??null);return()=>watchAdminConversation(null);},[selected?.id]);
+  useEffect(()=>{
+    if(!selected||!canWriteM3||!conversationsAvailable||document.visibilityState==='hidden')return;
+    const last=[...selected.messages].reverse().find(m=>m.sender==='user');
+    if(!last?.id||last.status==='read')return;
+    const controller=new AbortController();
+    void markMConversationRead(selected.id,last.id,controller.signal).catch(()=>undefined);
+    return()=>controller.abort();
+  },[selected,canWriteM3,conversationsAvailable,realtime.ready]);
   const ownerName = selected?.owner ?? "Unassigned";
   const currentAgentIds = useMemo(() => supportAgents.filter((agent) => agent.adminId === currentAdminId).map((agent) => agent.id), [supportAgents, currentAdminId]);
   const canAcceptSelectedTransfer = Boolean(selected?.transfer) && (
@@ -444,7 +458,6 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const selectConvo = (id: string) => {
     restoredRef.current = true;
     setSelectedId(id);
-    setReplyBody("");
     setParam(LAST_CONVO_KEY, id, { action: "记录坐席当前会话", reason: "ui-state" });
   };
 
@@ -505,28 +518,30 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
 
   const sendReply = async () => {
     if (!selected) return;
-    if (!replyBody.trim()) {
+    const submission=m3ReplySubmission(replyDraft,selected.id);
+    if (!submission) {
       toast("回复需要正文");
       return;
     }
+    const { recipient, body }=submission;
     const now = Date.now();
     const succeeded = await commitM3Write(
       () => updateConvo(
-        selected.id,
+        recipient,
         (c) => ({
           ...c,
           unread: 0,
           lastTs: now,
           status: c.status === "resolved" ? "open" : c.status,
-          messages: [...c.messages, { ts: now, sender: "agent", agentName: c.owner === "Unassigned" ? "客服台" : c.owner, status: "sent", text: replyBody.trim() }],
+          messages: [...c.messages, { ts: now, sender: "agent", agentName: c.owner === "Unassigned" ? "客服台" : c.owner, status: "sent", text: body }],
         }),
         "坐席回复(正文已留档)",
-        `坐席回复会话 ${selected.id} · admin.conversation_replied`,
-        `m3:reply:${selected.id}:${replyBody.trim()}`,
+        `坐席回复会话 ${recipient} · admin.conversation_replied`,
+        `m3:reply:${recipient}:${body}`,
       ),
-      `${selected.id} 已回复`,
+      `${recipient} 已回复`,
     );
-    if (succeeded) setReplyBody("");
+    if (succeeded) setReplyDraft((current)=>m3ClearDeliveredDraft(current,recipient,body));
   };
 
   // ── 跨坐席转交处置(全程例行内部交接:不弹 MC、不调 logAudit;转交/退回原因记入会话系统消息)──
@@ -962,6 +977,9 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       {/* 中:对话面板 */}
       {selected ? (
         <div className="m3-col-chat">
+          <div role="status" style={{padding:'8px 16px',fontSize:12,color:'var(--text-muted)'}}>
+            {realtime.presence?.conversationNo===selected.id && realtime.presence.typing ? '对方正在输入…' : !realtime.ready ? '连接恢复中' : realtime.presence?.conversationNo===selected.id && realtime.presence.online ? '用户在线' : '用户离线'}
+          </div>
           <ChatHeader
             convo={selected}
             canWrite={canWriteM3 && conversationsAvailable && !writePending}
@@ -985,7 +1003,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
             <ChatComposer
               convo={selected}
               replyBody={replyBody}
-              onReplyChange={setReplyBody}
+              onReplyChange={(body)=>setReplyDraft(m3ApplyReplyInput(selected.id,body))}
               onSend={sendReply}
               onPushSku={pushSku}
               pushSkus={pushSkus}
@@ -1185,6 +1203,7 @@ function ChatComposer({
   const doSend = async () => {
     if (!canWrite || !replyBody.trim() || sending) return;
     setSending(true);
+    sendAdminTyping(false);
     try {
       await onSend();
     } finally {
@@ -1216,7 +1235,8 @@ function ChatComposer({
           placeholder="输入回复 · Enter 发送 · Shift+Enter 换行"
           value={replyBody}
           disabled={!canWrite}
-          onChange={(e) => onReplyChange(e.target.value)}
+          onChange={(e) => {onReplyChange(e.target.value);sendAdminTyping(Boolean(e.target.value.trim()));}}
+          onBlur={()=>sendAdminTyping(false)}
           onKeyDown={(e) => {
             if (!shouldSendOnEnter(e)) return;
             e.preventDefault();

@@ -38,7 +38,7 @@ test("M3 waits for backend truth before clearing forms, closing dialogs, or show
 
   assert.match(sessions, /const commitM3Write = async/);
   assert.match(sessions, /const succeeded = await commitM3Write/);
-  assert.match(sessions, /if \(succeeded\) setReplyBody\(""\)/);
+  assert.match(sessions, /if \(succeeded\) setReplyDraft\(\(current\)=>m3ClearDeliveredDraft\(current,recipient,body\)\)/);
   assert.match(view, /const succeeded = await mc\.run/);
   assert.match(view, /if \(succeeded !== false\) setActionConfirm\(null\)/);
   assert.match(types, /addCustomerTag: .*Promise<boolean>/);

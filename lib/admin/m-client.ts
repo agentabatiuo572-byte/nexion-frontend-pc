@@ -505,6 +505,13 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (init?.method && init.method !== "GET" && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", idempotencyKey());
+  const match=init?.method==='POST' && /^\/conversations(?:\/([^/?]+)\/(replies|read))?$/.exec(path);
+  if(match){
+    const { adminConversationCommand }=await import('./admin-conversation-realtime');
+    const pending=adminConversationCommand(match[2]==='read'?'read':match[2]==='replies'?'reply':'create',match[1]?decodeURIComponent(match[1]):undefined,
+      typeof init.body==='string'?JSON.parse(init.body):{},headers.get('Idempotency-Key')??undefined,init.signal??undefined);
+    if(pending){const result=await pending;return parseMContentApiEnvelope<T>(result.code===0?200:result.code,JSON.stringify(result),false);}
+  }
   const controller = new AbortController();
   const upstreamSignal = init?.signal;
   let timedOut = false;
@@ -1177,7 +1184,7 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
       ts: asTs(m.createdAt, updated),
       sender: agent ? ("agent" as const) : ("user" as const),
       agentName: agent ? str(m.senderName, base.ownerAgentName || "客服台") : undefined,
-      status: agent && str(m.receiptStatus, "sent").toLowerCase() === "read" ? ("read" as const) : agent ? ("sent" as const) : undefined,
+      status: str(m.receiptStatus, "sent").toLowerCase() === "read" ? ("read" as const) : ("sent" as const),
       text: str(m.content, ""),
     };
   });
@@ -1694,6 +1701,12 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
 export async function fetchMServicePendingConversations(): Promise<SessionConvo[]> {
   const page = await fetchAllSupportConversations();
   return page.records.map(adaptConversation);
+}
+
+export async function markMConversationRead(no:string,lastSeenMessageId:number,signal:AbortSignal){
+  const detail=await apiRequest<{conversation:{status:string;version:number};messages:Array<{id:number;receiptStatus?:string}>}>(`/conversations/${encodeURIComponent(no)}`,{signal});
+  if(signal.aborted || detail.messages.find(m=>m.id===lastSeenMessageId)?.receiptStatus==='read')return;
+  await apiRequest(`/conversations/${encodeURIComponent(no)}/read`,{method:'POST',signal,body:JSON.stringify({lastSeenMessageId,expectedStatus:detail.conversation.status,expectedVersion:detail.conversation.version})});
 }
 
 /**
