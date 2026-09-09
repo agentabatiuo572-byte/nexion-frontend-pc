@@ -389,7 +389,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
         <div className="pane-h">
           <span className="ttl">客户端下载配置</span>
           <span className="sub">地址与双语内容分别编辑</span>
-          <span className="r"><CodeTag>后续 SPEC 预置</CodeTag></span>
+          <span className="r"><CodeTag>入口开关与 HTTPS 地址共同生效</CodeTag></span>
         </div>
         <div className="e6-download-box">
           <div className="e6-download-url">
@@ -443,12 +443,12 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
           <span className="sub">全局配置,不跟随 H1 阶段切换</span>
         </div>
         <div className="tint cyan tiny" style={{ margin: "12px 16px 14px" }}>
-          <AutoGloss>A2 批准并写入后立即成为服务端当前版本,不等待 H1 的阶段/月度切换。App/H5 最迟在下一次 60 秒配置刷新后读取新值;E1 目录、E2 任务、E3 生命周期与 E5 运维状态仍各自按本域规则运行,E6 不绕过它们的上架、路由、容量或设备状态保护。新值只参与后续算力展示与收益计算,不重算历史已结算记录。</AutoGloss>
+          <AutoGloss>A2 批准并写入后立即成为服务端当前版本,不等待 H1 的阶段/月度切换。App/H5 在启动、返回前台或用户下拉刷新时重拉配置后读取新值;E1 目录、E2 任务、E3 生命周期与 E5 运维状态仍各自按本域规则运行,E6 不绕过它们的上架、路由、容量或设备状态保护。新值只参与后续算力展示与收益计算,不重算历史已结算记录。</AutoGloss>
         </div>
       </section>
 
       <p className="f-foot">
-        <b>配置边界</b>:<AutoGloss>本页维护服务端入口开关、在线系数、显卡映射和下载内容,所有改动都进入 A2 待确认并留审计。App/H5 每 60 秒刷新公共配置缓存;PC 载体入口与下载页属于后续 SPEC,当前不会出现新入口。</AutoGloss>
+        <b>配置边界</b>:<AutoGloss>本页维护服务端入口开关、在线系数、显卡映射和下载内容,所有改动都进入 A2 待确认并留审计。App/H5 在启动、返回前台或用户下拉刷新时重拉公共配置；只有开关开启且安装包地址通过 HTTPS 校验时，才开放电脑共享算力的下载与配对入口。实际接入仍需桌面客户端完成配对。</AutoGloss>
       </p>
     </div>
   );

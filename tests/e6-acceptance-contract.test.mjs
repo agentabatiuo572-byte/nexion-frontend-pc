@@ -46,9 +46,13 @@ test("E6 fails visibly, preserves keyword slots, and never invents yield values"
   assert.doesNotMatch(tab, /166\.67|0\.06|topsBaseline", 28/);
 });
 
-test("E6 copy distinguishes saved server config from future carrier UI work", () => {
-  assert.match(tab, /后续 SPEC/);
-  assert.match(tab, /当前不会出现新入口/);
+test("E6 copy explains the implemented flag and HTTPS installer gates", () => {
+  assert.match(tab, /入口开关与 HTTPS 地址共同生效/);
+  assert.match(tab, /只有开关开启且安装包地址通过 HTTPS 校验时/);
+  assert.match(tab, /实际接入仍需桌面客户端完成配对/);
+  assert.match(tab, /启动、返回前台或用户下拉刷新时重拉公共配置/);
+  assert.doesNotMatch(tab, /后续 SPEC|当前不会出现新入口/);
+  assert.doesNotMatch(tab, /每 60 秒刷新公共配置缓存|下一次 60 秒配置刷新/);
   assert.doesNotMatch(tab, /确认后客户端会按新状态显示或隐藏对应入口/);
   assert.doesNotMatch(tab, /客户端读取服务端配置后生效/);
   assert.doesNotMatch(moduleRegistry, /版本、强制升级开关/);
@@ -63,7 +67,7 @@ test("E6 exposes version rollback, phase boundary, structural and B1 failure con
   assert.match(tab, /\/platform\/audit\?domain=E&object=E\.compute/);
   assert.match(tab, /data-proof="e6-effective-boundary"/);
   assert.match(tab, /不等待 H1 的阶段\/月度切换/);
-  assert.match(tab, /App\/H5 最迟在下一次 60 秒配置刷新后读取新值/);
+  assert.match(tab, /App\/H5 在启动、返回前台或用户下拉刷新时重拉配置后读取新值/);
   assert.match(tab, /B1 覆盖率低于红线时服务端失败关闭/);
   assert.match(errorMessages, /COMPUTE_GPU_TOPS_ORDER_INVALID/);
   assert.match(errorMessages, /COMPUTE_GPU_KEYWORD_DUPLICATE/);
