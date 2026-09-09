@@ -80,8 +80,8 @@ test("③ 组件:卡片存在 + fail-closed 不给入口 + 三动作接线 + 唯
 
 test("③b 单价仲裁:tiers 在场时一级单价只读(主人拍板 2026-08-06)", () => {
   // 同页两扇写门改同一个钱数曾语义未定义(skeptic P2-3);拍板后:tiers 在场 → 档位卡是唯一调价入口。
-  assert.match(component, /\{!tiers && allowed\(paramAuthority\(priceParam\.key\)\)/, "一级单价的调整入口必须收在 tiers 缺席分支(在场时只读)");
-  assert.match(component, /param\.key === "price" && overview\.tiers/, "adjustParam 缺一级单价的函数级双保险");
+  assert.match(component, /overview\.tierPrice\.status === "legacy" && allowed\(paramAuthority\(priceParam\.key\)\)/, "一级单价的调整入口只能收在旧策略 fallback 分支(坏档时不许编辑旧价)");
+  assert.match(component, /param\.key === "price" && overview\.tierPrice\.status !== "legacy"/, "adjustParam 缺一级单价的函数级双保险");
   assert.match(component, /按阶梯派生/, "只读态必须向运营标明「按阶梯派生」,不能只是按钮消失");
 });
 

@@ -257,6 +257,42 @@ export interface G4Tier {
   priceUSDT: number;
 }
 
+/** 仅供运营端展示的当前报价口径；不参与任何购买、排放或预提计算。 */
+export type G4TierPrice =
+  | { status: "active"; tier: G4Tier }
+  | { status: "soldout" }
+  | { status: "legacy" }
+  | { status: "invalid" };
+
+/**
+ * 阶梯报价显示与认购的累计售出边界同源：[from, to)。
+ * 原始 tiers 缺席才回退旧 policy；空表、坏表、库存不一致或非整数销量都不允许伪造当前档价。
+ */
+export function deriveG4TierPrice(
+  tiers: G4Tier[] | null,
+  sold: number,
+  totalSlots: number,
+  tierPayloadPresent: boolean,
+): G4TierPrice {
+  if (!tierPayloadPresent) return { status: "legacy" };
+  if (!tiers || !Number.isSafeInteger(sold) || sold < 0 || !Number.isSafeInteger(totalSlots) || totalSlots <= 0 || sold > totalSlots) {
+    return { status: "invalid" };
+  }
+  const seenIds = new Set<string>();
+  let previousTo = 0;
+  for (const tier of tiers) {
+    if (!tier || !tier.id || seenIds.has(tier.id) || ![tier.from, tier.to, tier.priceUSDT].every(Number.isSafeInteger)
+      || tier.from !== previousTo || tier.to <= tier.from || tier.priceUSDT <= 0) return { status: "invalid" };
+    seenIds.add(tier.id);
+    previousTo = tier.to;
+  }
+  const lastTier = tiers[tiers.length - 1];
+  if (!lastTier || lastTier.to !== totalSlots) return { status: "invalid" };
+  const activeTier = tiers.find((tier) => sold >= tier.from && sold < tier.to);
+  if (activeTier) return { status: "active", tier: activeTier };
+  return sold === totalSlots ? { status: "soldout" } : { status: "invalid" };
+}
+
 export interface G4Overview {
   stats: G4Stats;
   params: G4Param[];
@@ -271,6 +307,8 @@ export interface G4Overview {
   /** 阶梯档位。null = 后端未下发或数据坏形 —— 与 marketOpenState 的 fail-open 相反,
    *  档位是编辑对象本身,坏数据上做增删改会写出错档,所以整组判 null、卡片 fail-closed 不给入口。 */
   tiers: G4Tier[] | null;
+  /** 当前报价展示口径；档表字段缺席才沿用旧 policy，坏档或售罄均不显示旧单价为当前价。 */
+  tierPrice: G4TierPrice;
   /** 档表整表版本:提交增/编/删时作为 expectedTiersVersion 回传,服务端 CAS 拒绝过期提交
    *  (幂等键只防重复,防不了两运营基于旧档表并发互踩 —— 区间耦合结构必须 CAS)。 */
   tiersVersion: number;
@@ -376,10 +414,14 @@ function normalizeOverview(data: BackendOverview | null | undefined): G4Overview
   const total = Math.max(0, Math.trunc(toNumber(nodePage.total, nodes.length)));
   const totalPages = Math.max(1, Math.trunc(toNumber(nodePage.totalPages, Math.ceil(total / pageSize) || 1)));
   const page = Math.max(1, Math.min(totalPages, Math.trunc(toNumber(nodePage.page, 1))));
+  const sold = toNumber(stats.sold);
+  const totalSlots = toNumber(stats.totalSlots);
+  const tierPayloadPresent = data?.tiers !== undefined && data?.tiers !== null;
+  const tiers = normalizeTiers(data?.tiers, sold);
   return {
     stats: {
-      totalSlots: toNumber(stats.totalSlots),
-      sold: toNumber(stats.sold),
+      totalSlots,
+      sold,
       unitPrice: toNumber(stats.unitPrice),
       unsold: toNumber(stats.unsold),
       soldPct: toNumber(stats.soldPct),
@@ -446,7 +488,8 @@ function normalizeOverview(data: BackendOverview | null | undefined): G4Overview
       hasNext: toBool(nodePage.hasNext, page < totalPages),
     },
     stateMachine: data?.stateMachine ?? ["minted", "held", "listed", "sold"],
-    tiers: normalizeTiers(data?.tiers, toNumber(stats.sold)),
+    tiers,
+    tierPrice: deriveG4TierPrice(tiers, sold, totalSlots, tierPayloadPresent),
     tiersVersion: Math.max(0, Math.trunc(toNumber(data?.tiersVersion, 0))),
     coverage: {
       coverageRatio: toNumber(coverage.coverageRatio),

@@ -195,7 +195,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     if (!allowed(paramAuthority(param.key))) return;
     // 主人拍板(2026-08-06):阶梯档位在场时一级单价由档位派生、本参数只读,调价走档位卡
     // (OPS-G-07/G-13 仲裁)。入口已不渲染,这里是钱路径双保险。
-    if (param.key === "price" && overview.tiers) return;
+    if (param.key === "price" && overview.tierPrice.status !== "legacy") return;
     const numeric = !["divBase", "emissionCurve"].includes(param.key);
     const bounds = param.key === "supply" ? { min: stats.sold, max: 100000, step: 1 }
       : param.key === "price" ? { min: 0.01, max: 1000000, step: 0.01 }
@@ -379,6 +379,15 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   const emissionCurveParam = paramByKey(overview, "emissionCurve");
   const airdropLockDaysParam = paramByKey(overview, "airdropLockDays");
   const showcaseEnabledParam = paramByKey(overview, "showcaseEnabled");
+  const legacyPriceText = priceParam?.displayValue || (stats.unitPrice > 0 ? fmtUsd(stats.unitPrice, 0) : "旧策略单价未下发");
+  const tierPriceText = overview.tierPrice.status === "active" ? fmtUsd(overview.tierPrice.tier.priceUSDT, 0)
+    : overview.tierPrice.status === "legacy" ? legacyPriceText
+      : overview.tierPrice.status === "soldout" ? "已售罄" : "无当前报价";
+  const tierPriceNote = overview.tierPrice.status === "active"
+    ? `当前档 ${overview.tierPrice.tier.id} [${fmtNumber(overview.tierPrice.tier.from, 0)}, ${fmtNumber(overview.tierPrice.tier.to, 0)}) · 距售罄 ${fmtNumber(stats.unsold, 0)} 张`
+    : overview.tierPrice.status === "legacy" ? "未启用阶梯档位 · 沿用旧策略单价"
+      : overview.tierPrice.status === "soldout" ? "所有阶梯档位已售罄，无当前认购档"
+        : "阶梯档位数据无效，不能展示当前认购报价";
 
   const toggleShowcase = () => {
     if (!showcaseEnabledParam || !allowed(paramAuthority(showcaseEnabledParam.key))) return;
@@ -398,7 +407,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     <>
       {error && <div className="gtint" style={{ marginBottom: 12 }}>G4 操作提示 · {error}</div>}
       <div className="f-stats">
-        <div className="f-stat ok"><div className="k">一级售出</div><div className="v">{fmtNumber(stats.sold, 0)} / {fmtNumber(stats.totalSlots, 0)}</div><div className="sub">{fmtUsd(stats.unitPrice, 0)} / 张 · 距售罄 {fmtNumber(stats.unsold, 0)} 张</div></div>
+        <div className="f-stat ok"><div className="k">一级售出</div><div className="v">{fmtNumber(stats.sold, 0)} / {fmtNumber(stats.totalSlots, 0)}</div><div className="sub">{tierPriceText}{overview.tierPrice.status === "active" ? " / 张 · " : " · "}{tierPriceNote}</div></div>
         <div className="f-stat"><div className="k">排放承诺预提</div><div className="v">{fmtUsdCompact(stats.genesisAccrualUsd)}</div><div className="sub">上所开阀后按真实策略计提</div></div>
         <div className="f-stat cyan"><div className="k">二级地板价</div><div className="v">{fmtUsdCompact(stats.secondary.floor)}</div><div className="sub">24h 量 {fmtUsdCompact(stats.secondary.vol24h)} · 在挂 {fmtNumber(stats.secondary.listed, 0)}</div></div>
         <div className="f-stat warn"><div className="k">市场熔断</div><div className="v">{marketOn ? "未启用" : "已熔断"}</div><div className="sub">联动 {overview.market.linkedDomain} · 恢复统一由 J1 执行</div></div>
@@ -442,7 +451,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
               <div className="sold"><i style={{ width: `${soldPct}%` }} /></div>
             </div>
             {supplyParam && <div className="p-row"><div className="txt"><div className="k">节点总量</div><div className="s">{supplyParam.sub}</div></div><span className="v">{supplyParam.displayValue}</span>{allowed(paramAuthority(supplyParam.key)) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(supplyParam)}>调整</button>}</div>}
-            {priceParam && <div className="p-row"><div className="txt"><div className="k">一级单价{tiers && <span className="bdg ok" style={{ fontSize: 9, marginLeft: 6 }}>按阶梯派生</span>}</div><div className="s">{tiers ? "阶梯档位在场:单价由累计售出所落档位派生,本参数不生效;调价走下方「阶梯档位定价」卡" : priceParam.sub}</div></div><span className="v">{priceParam.displayValue}</span>{!tiers && allowed(paramAuthority(priceParam.key)) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(priceParam)}>调整</button>}</div>}
+            {priceParam && <div className="p-row"><div className="txt"><div className="k">一级单价{tiers && <span className="bdg ok" style={{ fontSize: 9, marginLeft: 6 }}>按阶梯派生</span>}</div><div className="s">{overview.tierPrice.status === "active" ? "阶梯档位在场:单价由累计售出所落档位派生,本参数不生效;调价走下方「阶梯档位定价」卡" : tierPriceNote}</div></div><span className="v">{tierPriceText}</span>{overview.tierPrice.status === "legacy" && allowed(paramAuthority(priceParam.key)) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(priceParam)}>调整</button>}</div>}
             {dividendParam && <div className="p-row"><div className="txt"><div className="k">每日排放率 <span className="bdg ok" style={{ fontSize: 9 }}>基准 0.1%/日</span></div><div className="s">{dividendParam.sub}</div></div><span className="v">{dividendParam.displayValue}</span>{allowed(paramAuthority(dividendParam.key)) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(dividendParam)}>调整</button>}</div>}
             {royaltyParam && <div className="p-row"><div className="txt"><div className="k">二级版税</div><div className="s">{royaltyParam.sub}</div></div><span className="v">{royaltyParam.displayValue}</span>{allowed(paramAuthority(royaltyParam.key)) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(royaltyParam)}>调整</button>}</div>}
             <div className="p-row"><div className="txt"><div className="k">排放开阀 <span className="bdg ok" style={{ fontSize: 9 }}>H1 权威</span></div><div className="s">上所前关闭；由 H1 逐月节奏旋钮控制，本页只读</div></div><span className="v">{overview.emissionGate.open ? "已开放" : "未开放"}</span></div>
