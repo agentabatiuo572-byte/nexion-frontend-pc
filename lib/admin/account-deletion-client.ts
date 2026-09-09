@@ -20,7 +20,7 @@ export interface AccountDeletionRequest {
 
 export interface AccountDeletionPage {
   records: AccountDeletionRequest[];
-  total: number;
+  total: number | null;
   page: number;
   limit: number;
 }
@@ -60,7 +60,7 @@ function normalizePage(raw: unknown, page: number, limit: number): AccountDeleti
   const recordsRaw = Array.isArray(root.records) ? root.records : Array.isArray(root.items) ? root.items : Array.isArray(raw) ? raw : [];
   return {
     records: recordsRaw.map(normalizeRow),
-    total: Number(root.total ?? recordsRaw.length) || 0,
+    total: typeof root.total === "number" && Number.isSafeInteger(root.total) && root.total >= 0 ? root.total : null,
     page: Number(root.page ?? root.pageNum ?? page) || page,
     limit: Number(root.limit ?? root.pageSize ?? limit) || limit,
   };

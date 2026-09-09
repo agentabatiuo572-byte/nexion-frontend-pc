@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Drawer } from "../design-kit";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -12,6 +12,11 @@ import {
   type AccountDeletionRequest,
   type AccountDeletionStatus,
 } from "@/lib/admin/account-deletion-client";
+import {
+  isCurrentAccountDeletionListRead,
+  isCurrentAccountDeletionSelection,
+  syncSelectedAccountDeletion,
+} from "./account-deletion-queue-state";
 
 const LABELS: Record<string, string> = {
   REQUESTED: "待审核",
@@ -22,6 +27,8 @@ const LABELS: Record<string, string> = {
 };
 
 const ACTION_LABELS = { review: "开始审核", block: "阻断申请", complete: "完成注销", cancel: "取消申请" } as const;
+
+type ListQuery = { canRead: boolean; status: AccountDeletionStatus | ""; page: number };
 
 function tone(status: string) {
   if (status === "COMPLETED") return "ok";
@@ -52,53 +59,113 @@ export function AccountDeletionQueue({ toast }: { toast: (message: string) => vo
   const [selected, setSelected] = useState<AccountDeletionRequest | null>(null);
   const [reason, setReason] = useState("");
   const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
+  const [total, setTotal] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const selectedRef = useRef<AccountDeletionRequest | null>(null);
+  const detailGenerationRef = useRef(0);
+  const listGenerationRef = useRef(0);
+  const loadingListGenerationRef = useRef(0);
+  const listLoadingRef = useRef(false);
+  const currentQueryRef = useRef<ListQuery>({ canRead, status, page });
+  useEffect(() => { currentQueryRef.current = { canRead, status, page }; }, [canRead, page, status]);
 
-  const refresh = useCallback(async (quiet = false) => {
-    if (!canRead) return;
-    if (!quiet) setLoading(true);
+  const refresh = useCallback(async (quiet = false, query: ListQuery = { canRead, status, page }) => {
+    if (!query.canRead) return;
+    const generation = listGenerationRef.current + 1;
+    listGenerationRef.current = generation;
+    if (!quiet) {
+      listLoadingRef.current = true;
+      loadingListGenerationRef.current = generation;
+      setLoading(true);
+    } else if (listLoadingRef.current) {
+      // A quiet mutation read can supersede an in-flight visible list read.
+      // Keep its spinner until this newer response, rather than letting the
+      // old request's finally clear loading while the current read is pending.
+      loadingListGenerationRef.current = generation;
+    }
     setError(null);
     try {
-      const result = await fetchAccountDeletions(status, page, 20);
+      const result = await fetchAccountDeletions(query.status, query.page, 20);
+      if (!isCurrentAccountDeletionListRead(listGenerationRef.current, generation)) return;
       setRows(result.records);
       setTotal(result.total);
-      if (selected) {
-        const current = result.records.find((item) => item.requestNo === selected.requestNo);
-        if (current) setSelected(current);
+      const current = selectedRef.current;
+      const next = syncSelectedAccountDeletion(current, result.records);
+      if (next !== current) {
+        detailGenerationRef.current += 1;
+        selectedRef.current = next;
+        setSelected((active) => active?.requestNo === current?.requestNo ? next : active);
       }
     } catch (cause) {
-      setError(displayAdminError(cause));
+      if (isCurrentAccountDeletionListRead(listGenerationRef.current, generation)) setError(displayAdminError(cause));
     } finally {
-      if (!quiet) setLoading(false);
+      if (listLoadingRef.current && loadingListGenerationRef.current === generation) {
+        listLoadingRef.current = false;
+        setLoading(false);
+      }
     }
-  }, [canRead, page, selected, status]);
+  }, [canRead, page, status]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
+  const changeStatus = (nextStatus: AccountDeletionStatus | "") => {
+    currentQueryRef.current = { canRead, status: nextStatus, page: 1 };
+    setStatus(nextStatus);
+    setPage(1);
+  };
+
+  const changePage = (nextPage: number) => {
+    currentQueryRef.current = { canRead, status, page: nextPage };
+    setPage(nextPage);
+  };
+
+  const closeDetail = () => {
+    detailGenerationRef.current += 1;
+    selectedRef.current = null;
+    setSelected(null);
+  };
+
   const openDetail = async (row: AccountDeletionRequest) => {
+    const generation = detailGenerationRef.current + 1;
+    detailGenerationRef.current = generation;
+    selectedRef.current = row;
     setSelected(row);
     setReason("");
-    try { setSelected(await fetchAccountDeletion(row.requestNo)); }
-    catch (cause) { toast(`读取注销申请失败：${displayAdminError(cause)}`); }
+    try {
+      const detail = await fetchAccountDeletion(row.requestNo);
+      if (!isCurrentAccountDeletionSelection(selectedRef.current?.requestNo ?? null, row.requestNo, detailGenerationRef.current, generation)) return;
+      selectedRef.current = detail;
+      setSelected(detail);
+    } catch (cause) {
+      if (isCurrentAccountDeletionSelection(selectedRef.current?.requestNo ?? null, row.requestNo, detailGenerationRef.current, generation)) {
+        toast(`读取注销申请失败：${displayAdminError(cause)}`);
+      }
+    }
   };
 
   const act = async (action: keyof typeof ACTION_LABELS) => {
     if (!selected || !canWrite) return;
+    const requestNo = selected.requestNo;
+    const detailGeneration = detailGenerationRef.current;
     const normalized = reason.trim();
     if (normalized.length < 1) { toast("请填写本次审核理由。"); return; }
     setBusy(true);
     try {
       const expectedVersion = selected.version;
-      const next = await updateAccountDeletion(selected.requestNo, action, expectedVersion, normalized);
-      setSelected(next);
-      setReason("");
-      toast(`${ACTION_LABELS[action]}成功，审计反馈已写入；当前版本 ${next.version}。`);
-      await refresh(true);
+      const next = await updateAccountDeletion(requestNo, action, expectedVersion, normalized);
+      if (isCurrentAccountDeletionSelection(selectedRef.current?.requestNo ?? null, requestNo, detailGenerationRef.current, detailGeneration)) {
+        selectedRef.current = next;
+        setSelected(next);
+        setReason("");
+        toast(`${ACTION_LABELS[action]}成功，审计反馈已写入；当前版本 ${next.version}。`);
+      }
+      await refresh(true, currentQueryRef.current);
     } catch (cause) {
-      toast(`操作失败：${displayAdminError(cause)}；请刷新后核对版本，禁止盲目重提。`);
+      if (isCurrentAccountDeletionSelection(selectedRef.current?.requestNo ?? null, requestNo, detailGenerationRef.current, detailGeneration)) {
+        toast(`操作失败：${displayAdminError(cause)}；请刷新后核对版本，禁止盲目重提。`);
+      }
     } finally { setBusy(false); }
   };
 
@@ -109,7 +176,7 @@ export function AccountDeletionQueue({ toast }: { toast: (message: string) => vo
       <div className="l-h">
         <div><div className="ttl">账号注销申请</div><div className="sub">服务端权威状态 · user_c1_read / user_c1_write · 每次写入均要求理由与 CAS</div></div>
         <div className="r">
-          <select aria-label="注销申请状态筛选" value={status} onChange={(event) => { setStatus(event.target.value as AccountDeletionStatus | ""); setPage(1); }}>
+          <select aria-label="注销申请状态筛选" value={status} onChange={(event) => changeStatus(event.target.value as AccountDeletionStatus | "")}>
             <option value="">全部状态</option>
             {ACCOUNT_DELETION_STATUSES.map((value) => <option key={value} value={value}>{LABELS[value]}</option>)}
           </select>
@@ -127,9 +194,9 @@ export function AccountDeletionQueue({ toast }: { toast: (message: string) => vo
             </tr>)}
           </tbody></table>
         )}
-        <div className="row" style={{ justifyContent: "space-between", marginTop: 12 }}><span className="tiny">共 {total} 条 · 第 {page} 页</span><span className="row"><button className="l-btn sm" disabled={page <= 1 || loading} onClick={() => setPage((value) => value - 1)}>上一页</button><button className="l-btn sm" disabled={rows.length < 20 || loading} onClick={() => setPage((value) => value + 1)}>下一页</button></span></div>
+        <div className="row" style={{ justifyContent: "space-between", marginTop: 12 }}><span className="tiny">{total === null ? "总数待确认" : `共 ${total} 条`} · 第 {page} 页</span><span className="row"><button className="l-btn sm" disabled={page <= 1 || loading} onClick={() => changePage(page - 1)}>上一页</button><button className="l-btn sm" disabled={(total === null ? rows.length < 20 : page * 20 >= total) || loading} onClick={() => changePage(page + 1)}>下一页</button></span></div>
       </div>
-      {selected && <Drawer title={`注销申请详情 · ${selected.requestNo}`} onClose={() => setSelected(null)}>
+      {selected && <Drawer title={`注销申请详情 · ${selected.requestNo}`} onClose={closeDetail}>
         <div className="kv"><span className="k">用户 ID</span><span className="v">{selected.userId}</span></div>
         <div className="kv"><span className="k">状态</span><span className="v">{LABELS[selected.status] ?? selected.status}</span></div>
         <div className="kv"><span className="k">CAS 版本</span><span className="v mono">{selected.version}</span></div>
