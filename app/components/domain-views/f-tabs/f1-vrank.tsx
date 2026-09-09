@@ -196,9 +196,9 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   }
   const configuredLevels = rows.filter((r) => rewardsOf(r.v).length > 0).length;
   const topConcPct = ctx.leadership?.topConcentrationPct ?? 0; // 顶部 N 名领袖占池比(后端派生)
-  // 顶栏会员数派生自后端 rows/leadership,不硬编码。
-  const v3plus = ctx.leadership?.qualifiers ?? rows.filter((r) => Number(r.v.replace("V", "")) >= 3).reduce((s, r) => s + r.pop, 0);
-  const totalMembers = ctx.leadership?.totalMembers ?? rows.reduce((s, r) => s + r.pop, 0);
+  // 领导池仅含有票权的等级；顶部人口统计须与本页全等级阶梯行同源。
+  const v3plus = rows.filter((r) => Number(r.v.replace("V", "")) >= 3).reduce((s, r) => s + r.pop, 0);
+  const totalMembers = rows.reduce((s, r) => s + r.pop, 0);
   const v0Pop = rows.find((r) => r.v === "V0")?.pop ?? 0;
   const v3plusPct = totalMembers > 0 ? ((v3plus / totalMembers) * 100).toFixed(2) : "0.00";
   const unlockRank = ctx.leadership?.unlockRank ?? 3;
