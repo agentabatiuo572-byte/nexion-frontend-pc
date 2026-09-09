@@ -269,7 +269,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
                     <td style={{ padding: "9px 10px", fontFamily: "var(--mono)", color: "var(--ink-3)" }}>{displayDc}</td>
                     <td style={{ padding: "9px 10px", fontFamily: "var(--mono)" }}>{slotLabel(d)}</td>
                     <td style={{ padding: "9px 10px" }}><div className="mono">购 {operatorTimestamp(d.purchasedAt)}</div><div className="mono" style={{ marginTop: 2 }}>激 {operatorTimestamp(d.activatedAt)}</div></td>
-                    <td style={{ padding: "9px 10px" }}><div>{operatorRate(d.baseRate)}</div><div style={{ marginTop: 2 }}>{(d.currentEfficiency * 100).toFixed(1)}%</div></td>
+                    <td style={{ padding: "9px 10px" }}><div>{operatorRate(d.dailyUsdt, d.dailyNex)}</div><div style={{ marginTop: 2 }}>{(d.currentEfficiency * 100).toFixed(1)}%</div></td>
                     <td style={{ padding: "9px 10px" }}>
                       <div className="mono">{operatorTimestamp(d.heartbeatAt)}</div>
                       <div className="muted tiny" style={{ marginTop: 2 }}>电量 {d.batteryLevel == null ? "未采集" : `${d.batteryLevel}%`} · {d.isCharging == null ? "充电未采集" : d.isCharging ? "充电中" : "未充电"} · {d.isWifiConnected == null ? "网络未采集" : d.isWifiConnected ? "网络可达" : "网络断开"}</div>

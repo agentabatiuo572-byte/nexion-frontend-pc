@@ -1,7 +1,8 @@
 const INTERNAL_FIXTURE_PATTERN = /(?:TRIALDEV|DEVTI|E3ACC|TIO|DEVICETRIALSTANDARD|INTERNAL|FIXTURE|QA(?:TEST)?|TEST(?:DEVICE|TASK)?)/i;
-const SAFE_DEVICE_IDENTIFIER = /^NX-[A-Z0-9]{3,32}$/;
+const SAFE_DEVICE_IDENTIFIER = /^[A-Za-z0-9._:-]{3,64}$/;
 const SAFE_DATACENTER_IDENTIFIER = /^[A-Z]{2,6}-\d{1,3}$/;
 const SAFE_SKU_DISPLAY = /^[\p{L}\p{N}][\p{L}\p{N} ._+()/-]{1,79}$/u;
+const SAFE_DEVICE_NAME = /^[\p{L}\p{N}][\p{L}\p{N} ._+()/:·~\-]{1,79}$/u;
 const TRUSTED_SKU_SOURCES = new Set(["ORDER_ITEM", "PRODUCT_CATALOG"]);
 
 function text(value: string | null | undefined, fallback = "") {
@@ -22,7 +23,7 @@ export function operatorDeviceIdentifier(value: string | null | undefined) {
 export function operatorDeviceName(value: string | null | undefined, identity: string | null | undefined) {
   const normalized = text(value);
   if (hasInternalFixtureMarker(normalized) || hasInternalFixtureMarker(identity)) return "本地验收设备";
-  return SAFE_DEVICE_IDENTIFIER.test(text(identity)) && SAFE_SKU_DISPLAY.test(normalized) ? normalized : "设备信息待核验";
+  return SAFE_DEVICE_IDENTIFIER.test(text(identity)) && SAFE_DEVICE_NAME.test(normalized) ? normalized : "设备信息待核验";
 }
 
 export function operatorDeviceStatus(value: string | null | undefined) {
@@ -88,9 +89,13 @@ export function operatorTimestamp(value: string | null | undefined) {
   return /^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?$/.test(normalized) ? normalized : "未采集";
 }
 
-export function operatorRate(value: string | null | undefined) {
-  const normalized = text(value);
-  return /^\$?\d+(?:\.\d+)?(?:\s*(?:USDT|NEX|\/日|\/天))?$/i.test(normalized) ? normalized : "收益待核验";
+export function operatorRate(dailyUsdt: number | null | undefined, dailyNex: number | null | undefined) {
+  const format = (value: number, unit: string) => `${value.toLocaleString("en-US", { maximumFractionDigits: 6 })} ${unit}/日`;
+  const usdt = typeof dailyUsdt === "number" && Number.isFinite(dailyUsdt) && dailyUsdt >= 0 ? dailyUsdt : null;
+  const nex = typeof dailyNex === "number" && Number.isFinite(dailyNex) && dailyNex >= 0 ? dailyNex : null;
+  if (usdt == null && nex == null) return "收益待核验";
+  return [usdt == null ? null : format(usdt, "USDT"), nex == null ? null : format(nex, "NEX")]
+    .filter((value): value is string => value != null).join(" · ");
 }
 
 export function operatorThermalLabel(value: string | null | undefined) {

@@ -4,6 +4,8 @@ import {
   parseE5DevicePage,
   parseE5Overview,
 } from "@/lib/admin/e456-overview-contract";
+import { parseE5DeviceDailyRate } from "@/lib/admin/e5-device-rate";
+import { parseE5DeviceIdentity } from "@/lib/admin/e5-device-identity";
 import { parseE5Observability, type E5Observability } from "@/lib/admin/e5-observability-contract";
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import {
@@ -33,8 +35,8 @@ export interface E5Device {
   rawStatus: string;
   runtimeStatus: string;
   hashrate: number;
-  dailyUsdt: number;
-  dailyNex: number;
+  dailyUsdt: number | null;
+  dailyNex: number | null;
   activeTaskNo: string;
   heartbeatAt: string;
   purchasedAt: string;
@@ -312,37 +314,37 @@ function fromDatacenter(row: BackendDatacenter): E5Datacenter {
   };
 }
 
-function fromDevice(row: BackendDevice): E5Device {
+export function mapE5Device(row: BackendDevice): E5Device {
   const deviceId = toNumber(row.id);
-  const instanceNo = text(row.instanceNo, deviceId ? `dev-${deviceId}` : "unknown-device");
+  const identity = parseE5DeviceIdentity(row.instanceNo, row.name, deviceId);
   const userId = text(row.userId);
   const userNo = text(row.userNo, userId ? `U${userId.padStart(8, "0")}` : "");
   const nickname = text(row.nickname, userId ? `user-${userId}` : "未绑定用户");
   const pendingDeactivate = toBool(row.pendingDeactivate);
   const productTier = text(row.productTier);
   const productCode = text(row.productCode);
-  const deviceName = text(row.name, instanceNo);
   const sku = [productCode, productTier].filter(Boolean).join(" / ") || "未知 SKU";
   const slotNo = toNumber(row.userDeviceSlotNo);
+  const dailyRate = parseE5DeviceDailyRate(row.dailyUsdt, row.dailyNex);
   return {
-    id: instanceNo,
+    id: identity.id,
     deviceId,
     userId,
     userNo,
     nickname,
     user: userNo ? `${nickname} · ${userNo}` : nickname,
-    deviceName,
+    deviceName: identity.deviceName,
     sku,
     productTier,
     productCode,
-    serial: instanceNo,
+    serial: identity.serial,
     dc: text(row.dcLocation, "UNASSIGNED"),
     state: normalizeState(row.status, row.runtimeStatus, pendingDeactivate),
     rawStatus: text(row.status, "UNKNOWN"),
     runtimeStatus: text(row.runtimeStatus, "UNKNOWN"),
     hashrate: toNumber(row.hashrate),
-    dailyUsdt: toNumber(row.dailyUsdt),
-    dailyNex: toNumber(row.dailyNex),
+    dailyUsdt: dailyRate.dailyUsdt,
+    dailyNex: dailyRate.dailyNex,
     activeTaskNo: text(row.activeTaskNo, "—"),
     heartbeatAt: text(row.heartbeatAt || row.lastSeenAt, "—"),
     purchasedAt: text(row.purchasedAt, "—"),
@@ -363,7 +365,7 @@ function fromDevice(row: BackendDevice): E5Device {
 }
 
 function mapDevices(records: BackendDevice[]) {
-  return (records ?? []).map(fromDevice);
+  return (records ?? []).map(mapE5Device);
 }
 
 export async function fetchE5Devices(query: E5DeviceQuery = {}): Promise<E5DevicePage> {
