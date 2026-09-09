@@ -1,0 +1,217 @@
+.root {
+  min-width: 0;
+}
+
+.headerCopy {
+  min-width: 0;
+}
+
+.body,
+.editor {
+  display: grid;
+  gap: 16px;
+}
+
+.alert,
+.emptyState {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.scopeGrid,
+.metadataGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+}
+
+.field {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  color: var(--ink-3);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.field > span {
+  color: var(--ink-3);
+}
+
+.root :is(input, select, textarea) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  outline: none;
+  font: inherit;
+  font-size: 12.5px;
+  transition: border-color .14s, box-shadow .14s, background .14s;
+}
+
+.root :is(input, select) {
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+.root textarea {
+  min-height: 92px;
+  padding: 10px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.root :is(input, select, textarea):focus {
+  background: var(--surface);
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 3px var(--cyan-soft);
+}
+
+.root :is(input, select, textarea):disabled {
+  cursor: not-allowed;
+  color: var(--ink-2);
+  background: var(--surface-3);
+  border-color: var(--border);
+  opacity: 1;
+}
+
+.versionStrip,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.versionStrip {
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+.versionButton {
+  min-height: 32px;
+}
+
+.root .versionButton.versionSelected,
+.root .versionButton.versionSelected:hover {
+  color: var(--cyan);
+  background: var(--cyan-soft);
+  border-color: color-mix(in srgb, var(--cyan) 48%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cyan) 28%, transparent);
+}
+
+.createRow {
+  display: flex;
+  align-items: center;
+}
+
+.sectionHeading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+  color: var(--ink-3);
+  border-top: 1px solid var(--border);
+  font-size: 11.5px;
+}
+
+.sectionHeading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.sectionHeading strong {
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+
+.sectionList {
+  display: grid;
+  gap: 12px;
+}
+
+.root .sectionCard {
+  display: grid;
+  min-width: 0;
+  gap: 13px;
+  margin: 0;
+  padding: 15px;
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+
+.sectionCard :is(input, textarea) {
+  background: var(--surface);
+}
+
+.sectionCard :is(input, textarea):disabled {
+  background: var(--surface-3);
+}
+
+.sectionMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.sectionMeta > span {
+  color: var(--cyan);
+  font-weight: 700;
+}
+
+.sectionMeta code {
+  max-width: 50%;
+  overflow: hidden;
+  color: var(--ink-4);
+  font-family: var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sectionBody {
+  min-height: 178px !important;
+}
+
+.reasonField {
+  padding-top: 2px;
+}
+
+.actions {
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+
+@media (max-width: 720px) {
+  .scopeGrid,
+  .metadataGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .sectionHeading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 520px) {
+  .versionStrip,
+  .actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .versionStrip :global(.l-btn),
+  .actions :global(.l-btn),
+  .createRow :global(.l-btn) {
+    width: 100%;
+  }
+}
