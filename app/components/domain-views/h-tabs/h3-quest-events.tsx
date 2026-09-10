@@ -96,6 +96,7 @@ const TASK_STATUS: Record<string, [string, string]> = {
 
 const COMPLETION_LABEL: Record<string, string> = {
   event: "业务事件",
+  unbound: "待绑定规范事件",
   visit: "访问路径",
   ledger: "账本入账",
 };
@@ -152,6 +153,14 @@ const H3_BINDING_EVENT_PRODUCERS: Record<string, H3QuestEventBinding["producer"]
   LEARNING_COURSE_COMPLETED: "LEARNING",
   "admin.device_activated": "DEVICE",
   COMMISSION_UNLOCKED: "COMMISSION",
+  H3_STOREFRONT_THREE_PRODUCTS_VIEWED: "SYSTEM",
+  H3_GENESIS_SECONDARY_MARKET_VIEWED: "SYSTEM",
+  H3_COMPUTE_COMPLETED_50: "SYSTEM",
+  H3_REFERRAL_REGISTERED: "SYSTEM",
+  H3_EXCHANGE_COMPLETED: "SYSTEM",
+  H3_DAY_ONE_EARN_PAGE_VIEWED: "SYSTEM",
+  H3_DAY_ONE_STORE_PAGE_VIEWED: "SYSTEM",
+  H3_DAY_ONE_S1_ROI_VIEWED: "SYSTEM",
 };
 const H3_BINDING_EVENT_OPTIONS = Object.keys(H3_BINDING_EVENT_PRODUCERS);
 const H3_BINDING_EVENT_LABELS: Record<string, string> = {
@@ -160,6 +169,14 @@ const H3_BINDING_EVENT_LABELS: Record<string, string> = {
   LEARNING_COURSE_COMPLETED: "学习课程完成",
   "admin.device_activated": "设备激活",
   COMMISSION_UNLOCKED: "佣金解锁",
+  H3_STOREFRONT_THREE_PRODUCTS_VIEWED: "浏览3个不同商品",
+  H3_GENESIS_SECONDARY_MARKET_VIEWED: "查看Genesis二级市场",
+  H3_COMPUTE_COMPLETED_50: "完成50笔已验证AI任务",
+  H3_REFERRAL_REGISTERED: "有效邀请注册",
+  H3_EXCHANGE_COMPLETED: "完成一次兑换",
+  H3_DAY_ONE_EARN_PAGE_VIEWED: "查看收益页（Day One）",
+  H3_DAY_ONE_STORE_PAGE_VIEWED: "查看商城页（Day One）",
+  H3_DAY_ONE_S1_ROI_VIEWED: "查看 StellarBox S1 收益估算（Day One）",
 };
 const H3_BINDING_USER_FIELDS = ["user_id", "inviter_user_id"];
 const H3_BINDING_USER_FIELD_LABELS: Record<string, string> = {
@@ -264,10 +281,11 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     ];
     const seen = new Set<string>();
     return tasks.flatMap((task) => {
-      const missionCode = text(task.taskCode ?? task.missionCode ?? task.completionEvent ?? task.id, "").trim();
-      if (!missionCode || text(task.status, "") !== "active" || seen.has(missionCode)) return [];
+      const missionCode = text(task.taskCode ?? task.missionCode ?? task.id, "").trim();
+      const status = text(task.status, "");
+      if (!missionCode || !["active", "paused"].includes(status) || seen.has(missionCode)) return [];
       seen.add(missionCode);
-      return [{ missionCode, label: `${text(task.task ?? task.cond, missionCode)} · ${missionCode}` }];
+      return [{ missionCode, label: `${text(task.task ?? task.cond, missionCode)} · ${missionCode}${status === "paused" ? " · 待启用" : ""}` }];
     });
   }, [model?.dayOneTasks, model?.weeklyTier1, model?.weeklyTier2]);
 
@@ -394,7 +412,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openCreateMission = (missionType: "DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2", subject: string) => {
     openActionConfirm({
       action: `新建任务 · ${subject}`,
-      detail: <>新建一条{subject};编号英文唯一,奖励放大 NEX 流出过 B1 红线。</>,
+      detail: <>新建一条{subject};初始为待绑定停用态。请先在下方「规范事件绑定」绑定可信服务端事件，再启用任务。</>,
       amplifies: true,
       businessForm: { kind: "mission-create", subject },
       run: async (reason, _v, bv) => {
@@ -410,7 +428,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           category: String(bv.category || "").trim(),
           actionRoute: String(bv.actionRoute || "").trim(),
         }, reason));
-        toast(`· 任务「${missionName}」已新建`);
+        toast(`· 任务「${missionName}」已新建为待绑定停用态`);
       },
     });
   };
@@ -467,7 +485,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   };
 
   const taskIdentity = (task: QuestTask, monthly = false) => ({
-    taskCode: text(task.taskCode ?? task.completionEvent ?? task.id),
+    taskCode: text(task.taskCode ?? task.missionCode ?? task.id),
     taskKind: (text(task.taskKind, monthly ? "MONTHLY" : "MISSION") === "MONTHLY" ? "MONTHLY" : "MISSION") as H3MissionKind,
     status: text(task.status, "paused") as "active" | "paused" | "archived",
   });
@@ -619,7 +637,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       ? [currentQuestCode, ...bindingMissionOptions.map((item) => item.missionCode)]
       : bindingMissionOptions.map((item) => item.missionCode);
     const questLabels = binding && !bindingMissionLabels[currentQuestCode]
-      ? { ...bindingMissionLabels, [currentQuestCode]: `${currentQuestCode} · 当前绑定（已不在生效任务列表）` }
+      ? { ...bindingMissionLabels, [currentQuestCode]: `${currentQuestCode} · 当前绑定（已不在可发布任务列表）` }
       : bindingMissionLabels;
     return [
       ...(binding ? [] : [{
@@ -643,7 +661,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       },
       {
         key: "questCode",
-        label: "目标生效任务",
+        label: "目标可发布任务",
         current: currentQuestCode,
         inputKind: "select" as const,
         options: questCodes,
@@ -676,12 +694,12 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
   const openCreateBinding = () => {
     if (bindingMissionOptions.length === 0) {
-      toast("没有可绑定的生效任务，请先创建并启用 H3 任务");
+      toast("没有可绑定任务，请先新建 H3 任务；新任务保持待启用，绑定后再发布");
       return;
     }
     openActionConfirm({
       action: "新增任务完成事件绑定",
-      detail: <>选择 Java 已发布的规范事件与一条生效任务。事件生产者由选择自动确定，后端会校验重复事件槽位并记录理由。</>,
+      detail: <>选择 Java 已发布的规范事件与一条可发布任务（待启用或已生效）。新任务应先完成本绑定再发布；事件生产者由选择自动确定，后端会校验重复事件槽位并记录理由。</>,
       businessForm: {
         kind: "multi-field",
         title: "新增事件绑定",
@@ -711,7 +729,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openBindingEdit = (binding: H3QuestEventBinding) => {
     openActionConfirm({
       action: `改绑事件 · ${binding.bindingCode}`,
-      detail: <>选择新的规范事件、目标生效任务或用户字段；提交带当前整行 CAS，冲突或结果未知时不会以页面猜测覆盖服务端状态。</>,
+      detail: <>选择新的规范事件、目标可发布任务或用户字段；提交带当前整行 CAS，冲突或结果未知时不会以页面猜测覆盖服务端状态。</>,
       businessForm: {
         kind: "multi-field",
         title: `改绑 · ${binding.bindingCode}`,
@@ -1036,7 +1054,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const localizedRows = section === "tasks"
     ? [
         ...[...model.dayOneTasks, ...model.weeklyTier1, ...model.weeklyTier2].map((task) => ({
-          entity: "mission" as const, code: text(task.taskCode ?? task.completionEvent ?? task.id, ""), label: text(task.task),
+          entity: "mission" as const, code: text(task.taskCode ?? task.missionCode ?? task.id, ""), label: text(task.task),
         })),
       ]
     : model.events.map((event) => ({ entity: "event" as const, code: event.id, label: event.name }));
@@ -1201,7 +1219,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                         <td style={{ color: "var(--ink-3)" }}>新进入用户的快照总奖励</td>
                         <td><span className={`bdg ${statusTone}`}>{statusLabel}</span></td>
                         <td style={{ fontSize: 11.5 }}>
-                          <span style={{ color: "var(--ink-2)" }}>{COMPLETION_LABEL[text(task.completionType, "visit")] ?? "访问路径"}</span>
+                          <span style={{ color: "var(--ink-2)" }}>{COMPLETION_LABEL[text(task.completionType, "unbound")] ?? "待绑定规范事件"}</span>
                           {task.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{text(task.completionEvent)}</span> : null}
                         </td>
                         <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
@@ -1266,11 +1284,11 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                         <td className="num mono" style={{ fontWeight: 700 }}>{text(task.reward)}</td>
                         <td><span className={`bdg ${statusTone}`}>{statusLabel}</span></td>
                         <td style={{ fontSize: 11.5 }}>
-                          <span style={{ color: "var(--ink-2)" }}>{COMPLETION_LABEL[text(task.completionType, "event")] ?? "业务事件"}</span>
+                          <span style={{ color: "var(--ink-2)" }}>{COMPLETION_LABEL[text(task.completionType, "unbound")] ?? "待绑定规范事件"}</span>
                           {task.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{text(task.completionEvent)}</span> : null}
                         </td>
                         <td style={{ textAlign: "right" }}>
-                          <button className="l-btn sm mc" onClick={() => openTaskReward(`mission.${text(task.completionEvent)}.reward`, text(task.cond), text(task.reward))} disabled={!canModuleWrite}>改奖励</button>
+                          <button className="l-btn sm mc" onClick={() => openTaskReward(`mission.${text(task.taskCode ?? task.missionCode ?? task.id)}.reward`, text(task.cond), text(task.reward))} disabled={!canModuleWrite}>改奖励</button>
                           {" "}{missionLifecycleActions(task, text(task.cond))}
                         </td>
                       </tr>
@@ -1307,11 +1325,11 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                         <td className="num mono" style={{ fontWeight: 700 }}>{text(task.reward)}</td>
                         <td><span className={`bdg ${statusTone}`}>{statusLabel}</span></td>
                         <td style={{ fontSize: 11.5 }}>
-                          <span style={{ color: "var(--ink-2)" }}>{COMPLETION_LABEL[text(task.completionType, "event")] ?? "业务事件"}</span>
+                          <span style={{ color: "var(--ink-2)" }}>{COMPLETION_LABEL[text(task.completionType, "unbound")] ?? "待绑定规范事件"}</span>
                           {task.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{text(task.completionEvent)}</span> : null}
                         </td>
                         <td style={{ textAlign: "right" }}>
-                          <button className="l-btn sm mc" onClick={() => openTaskReward(`mission.${text(task.completionEvent)}.reward`, text(task.cond), text(task.reward))} disabled={!canModuleWrite}>改奖励</button>
+                          <button className="l-btn sm mc" onClick={() => openTaskReward(`mission.${text(task.taskCode ?? task.missionCode ?? task.id)}.reward`, text(task.cond), text(task.reward))} disabled={!canModuleWrite}>改奖励</button>
                           {" "}{missionLifecycleActions(task, text(task.cond))}
                         </td>
                       </tr>
@@ -1356,7 +1374,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       <section className="l-card" data-proof="h3-event-binding">
         <div className="l-h">
           <span className="ttl">任务完成事件绑定</span>
-          <span className="sub">· Java 规范事件 → 已启用 H3 任务；新增、改绑、启停和删除都保留理由、CAS 与服务端回读</span>
+          <span className="sub">· Java 规范事件 → 可发布 H3 任务；新任务先绑定再启用。新增、改绑、启停和删除都保留理由、CAS 与服务端回读</span>
           <div className="r"><button className="l-btn sm mc" onClick={openCreateBinding} disabled={!canModuleWrite}>+ 新增绑定</button></div>
         </div>
         <div style={{ overflowX: "auto" }}>

@@ -669,7 +669,7 @@ export type H3MissionKind = "MISSION" | "MONTHLY";
 
 export type H3QuestEventBinding = {
   bindingCode: string;
-  producer: "ORDER" | "REFERRAL" | "LEARNING" | "DEVICE" | "COMMISSION";
+  producer: "ORDER" | "REFERRAL" | "LEARNING" | "DEVICE" | "COMMISSION" | "SYSTEM";
   eventType: string;
   questCode: string;
   userIdField: "user_id" | "inviter_user_id";
