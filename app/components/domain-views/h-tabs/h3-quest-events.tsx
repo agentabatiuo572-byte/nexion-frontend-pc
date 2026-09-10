@@ -162,7 +162,21 @@ const H3_BINDING_EVENT_PRODUCERS: Record<string, H3QuestEventBinding["producer"]
   H3_DAY_ONE_STORE_PAGE_VIEWED: "SYSTEM",
   H3_DAY_ONE_S1_ROI_VIEWED: "SYSTEM",
 };
-const H3_BINDING_EVENT_OPTIONS = Object.keys(H3_BINDING_EVENT_PRODUCERS);
+// Keep existing bindings readable/removable, but defer these choices until the
+// published App sends authenticated Day-One page observations (not analytics).
+const H3_BINDING_DEFERRED_APP_EVENTS = new Set([
+  "H3_DAY_ONE_EARN_PAGE_VIEWED",
+  "H3_DAY_ONE_STORE_PAGE_VIEWED",
+  "H3_DAY_ONE_S1_ROI_VIEWED",
+]);
+const H3_BINDING_EVENT_OPTIONS = Object.keys(H3_BINDING_EVENT_PRODUCERS)
+  .filter((eventType) => !H3_BINDING_DEFERRED_APP_EVENTS.has(eventType));
+
+function requireAvailableBindingEvent(eventType: string, enabled: boolean) {
+  if (enabled && H3_BINDING_DEFERRED_APP_EVENTS.has(eventType)) {
+    throw new Error("H3_BINDING_APP_OBSERVATION_UNAVAILABLE");
+  }
+}
 const H3_BINDING_EVENT_LABELS: Record<string, string> = {
   "checkout.started": "订单 · checkout.started",
   H8_REFERRAL_REWARD_SETTLED: "邀请奖励结算",
@@ -608,11 +622,12 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const enabled = Number(binding.status) === 1;
     openConfirm({
       action: `${enabled ? "停用" : "启用"}事件绑定 · ${binding.bindingCode}`,
-      detail: <>绑定只会在目标任务仍为生效中时被 Java 接受；保存按当前整行 CAS 校验，避免覆盖并发配置。</>,
+      detail: <>目标任务须为待启用或已生效；保存按当前整行 CAS 校验，避免覆盖并发配置。</>,
       chips: [["启用任务校验", "ready"], ["审计留痕", "done"]],
       reason: true,
       okLabel: enabled ? "确认停用" : "确认启用",
       run: async (reason) => {
+        requireAvailableBindingEvent(binding.eventType, !enabled);
         await applyBindingMutation(updateH3QuestEventBinding(binding.bindingCode, {
           producer: binding.producer,
           eventType: binding.eventType,
@@ -654,7 +669,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         label: "规范业务事件",
         current: binding?.eventType ?? H3_BINDING_EVENT_OPTIONS[0],
         inputKind: "select" as const,
-        options: H3_BINDING_EVENT_OPTIONS,
+        options: binding && H3_BINDING_DEFERRED_APP_EVENTS.has(binding.eventType)
+          ? [binding.eventType, ...H3_BINDING_EVENT_OPTIONS] : H3_BINDING_EVENT_OPTIONS,
         optionLabels: H3_BINDING_EVENT_LABELS,
         required: true,
         showDiff: Boolean(binding),
@@ -713,6 +729,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         const userIdField = String(form?.userIdField ?? "").trim() as H3QuestEventBinding["userIdField"];
         const producer = H3_BINDING_EVENT_PRODUCERS[eventType];
         if (!bindingCode || !producer || !questCode || !userIdField) return;
+        // The form must not create even a disabled binding for an unavailable event.
+        requireAvailableBindingEvent(eventType, true);
         await applyBindingMutation(createH3QuestEventBinding(bindingCode, {
           producer,
           eventType,
@@ -744,6 +762,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         const userIdField = String(form?.userIdField ?? "").trim() as H3QuestEventBinding["userIdField"];
         if (!producer || !questCode || !userIdField) return;
         const enabled = form?.enabled === "true";
+        requireAvailableBindingEvent(eventType, enabled);
         await applyBindingMutation(updateH3QuestEventBinding(binding.bindingCode, {
           producer,
           eventType,
@@ -1389,10 +1408,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   <td className="mono" style={{ fontSize: 11 }}>{binding.eventType}</td>
                   <td className="mono">{binding.questCode}</td>
                   <td className="mono">{binding.userIdField}</td>
-                  <td>{enabled ? <span className="bdg ok">生效</span> : <span className="bdg dim">停用</span>}</td>
+                  <td>{enabled ? <span className="bdg ok">生效</span> : <span className="bdg dim">停用</span>}{H3_BINDING_DEFERRED_APP_EVENTS.has(binding.eventType) ? <span className="bdg warn">页面任务暂不可用，可停用或改绑</span> : null}</td>
                   <td>
                     <button className="l-btn sm mc" onClick={() => openBindingEdit(binding)} disabled={!canModuleWrite}>改绑</button>{" "}
-                    <button className="l-btn sm" onClick={() => openBindingStatus(binding)} disabled={!canModuleWrite}>{enabled ? "停用" : "启用"}</button>{" "}
+                    <button className="l-btn sm" onClick={() => openBindingStatus(binding)} disabled={!canModuleWrite || (!enabled && H3_BINDING_DEFERRED_APP_EVENTS.has(binding.eventType))}>{enabled ? "停用" : "启用"}</button>{" "}
                     <button className="l-btn sm" onClick={() => openBindingDelete(binding)} disabled={!canModuleWrite}>删除</button>
                   </td>
                 </tr>;

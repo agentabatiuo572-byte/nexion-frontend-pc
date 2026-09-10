@@ -23,6 +23,8 @@ function render(patch = {}, writable = true, client = {}) {
     if (name.endsWith("h-client")) return new Proxy({
       updateH3QuestConfig: async (...args) => { writes.push(args); return model; },
       createH3QuestEventBinding: async (...args) => { writes.push(args); return model; },
+      updateH3QuestEventBinding: async (...args) => { writes.push(args); return model; },
+      deleteH3QuestEventBinding: async (...args) => { writes.push(args); return model; },
       ...client,
     }, { get: (obj, key) => obj[key] ?? (() => assert.fail(`unexpected client call ${String(key)}`)) });
     assert.fail(`unexpected import ${name}`);
@@ -75,8 +77,8 @@ test("each weekly reward button sends the mission code and original CAS reward t
   ]);
 });
 
-test("all eight supported SYSTEM events generate a typed binding request without changing the mission identity", async () => {
-  const events = ["H3_STOREFRONT_THREE_PRODUCTS_VIEWED", "H3_GENESIS_SECONDARY_MARKET_VIEWED", "H3_COMPUTE_COMPLETED_50", "H3_REFERRAL_REGISTERED", "H3_EXCHANGE_COMPLETED", "H3_DAY_ONE_EARN_PAGE_VIEWED", "H3_DAY_ONE_STORE_PAGE_VIEWED", "H3_DAY_ONE_S1_ROI_VIEWED"];
+test("five available SYSTEM events generate typed binding requests without changing mission identity", async () => {
+  const events = ["H3_STOREFRONT_THREE_PRODUCTS_VIEWED", "H3_GENESIS_SECONDARY_MARKET_VIEWED", "H3_COMPUTE_COMPLETED_50", "H3_REFERRAL_REGISTERED", "H3_EXCHANGE_COMPLETED"];
   const view = render({ dayOneTasks: [{ taskCode: "visit_earn", status: "paused" }] });
   const dialog = view.click("+ 新增绑定");
   assert.ok(dialog, "paused task must open the binding form");
@@ -98,3 +100,38 @@ test("read-only users see disabled mutation controls and unknown completion kind
   assert.match(view.text(view.tree), /待绑定规范事件/);
   assert.deepEqual(view.writes, []);
 });
+
+const deferred = ["H3_DAY_ONE_EARN_PAGE_VIEWED", "H3_DAY_ONE_STORE_PAGE_VIEWED", "H3_DAY_ONE_S1_ROI_VIEWED"];
+for (const eventType of deferred) {
+  test(`${eventType} cannot be created or enabled, but existing bindings remain recoverable`, async () => {
+    const mission = { taskCode: "visit_earn", status: "paused" };
+    const view = render({ dayOneTasks: [mission] });
+    const create = view.click("+ 新增绑定");
+    assert.ok(!create.businessForm.fields.find(f => f.key === "eventType").options.includes(eventType));
+    const form = { bindingCode: "EXISTING", eventType, questCode: "visit_earn", userIdField: "user_id", enabled: "true" };
+    for (const enabled of ["true", "false"]) {
+      await assert.rejects(create.run("fixture", undefined, { ...form, enabled }), /H3_BINDING_APP_OBSERVATION_UNAVAILABLE/);
+    }
+    assert.deepEqual(view.writes, []);
+    const binding = { bindingCode: "EXISTING", producer: "SYSTEM", eventType, questCode: "visit_earn", userIdField: "user_id", status: 0 };
+    const paused = render({ eventBindings: [binding] });
+    assert.equal(paused.buttons("启用")[0].props.disabled, true);
+    // Exercise the actual callback as well as the UI disabled state.
+    paused.buttons("启用")[0].props.onClick();
+    await assert.rejects(paused.dialogs.at(-1).run("fixture"), /H3_BINDING_APP_OBSERVATION_UNAVAILABLE/);
+    const edit = paused.click("改绑");
+    assert.ok(edit.businessForm.fields.find(f => f.key === "eventType").options.includes(eventType));
+    await assert.rejects(edit.run("fixture", undefined, form), /H3_BINDING_APP_OBSERVATION_UNAVAILABLE/);
+    assert.deepEqual(paused.writes, []);
+    await edit.run("fixture", undefined, { ...form, enabled: "false" });
+    assert.equal(paused.writes.at(-1)[1].enabled, false);
+    await edit.run("fixture", undefined, { ...form, eventType: "H3_EXCHANGE_COMPLETED" });
+    assert.equal(paused.writes.at(-1)[1].eventType, "H3_EXCHANGE_COMPLETED");
+    const active = render({ eventBindings: [{ ...binding, status: 1 }] });
+    await active.click("停用").run("fixture");
+    assert.equal(active.writes.at(-1)[1].enabled, false);
+    assert.equal(active.writes.at(-1)[1].expectedEnabled, true);
+    await active.click("删除").run("fixture");
+    assert.equal(active.writes.length, 2);
+  });
+}

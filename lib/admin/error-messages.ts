@@ -27,6 +27,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   ADMIN_MFA_CODE_INVALID: "验证码不正确，请核对身份验证器中的最新 6 位验证码后重试。",
   ADMIN_MFA_CODE_REPLAYED: "该验证码已使用，请重新登录并等待身份验证器生成下一组验证码。",
   QUEST_DAY_ONE_GROUP_REWARD_REQUIRED: "新手任务统一使用总奖励，请在首日任务总奖励中调整，不能修改单项奖励。",
+  H3_BINDING_APP_OBSERVATION_UNAVAILABLE: "该页面任务当前暂不可用，不能新增或启用；已有绑定可停用，或改绑为其他可用事件。",
   LEARNING_COURSE_COPY_TOO_LONG: "课程各语言标题和正文分别最多 1024 字，请精简超长内容后重试；本次未保存。",
   ADMIN_SESSION_STORE_UNAVAILABLE: "登录会话服务暂时不可用，请稍后重试；持续失败时请联系值班人员。",
   AUTH_REQUIRED: "登录已失效,请重新登录。",

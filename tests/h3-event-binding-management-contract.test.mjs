@@ -49,7 +49,6 @@ test("H3 threshold events are selectable SYSTEM events with the event user as th
   ];
 
   assert.match(page, /const H3_BINDING_EVENT_OPTIONS = Object\.keys\(H3_BINDING_EVENT_PRODUCERS\)/);
-  assert.match(page, /key: "eventType"[\s\S]*?options: H3_BINDING_EVENT_OPTIONS/);
   assert.match(page, /const H3_BINDING_USER_FIELDS = \["user_id", "inviter_user_id"\]/);
   assert.match(page, /binding\?\.userIdField \?\? "user_id"/);
   assert.match(client, /producer: "ORDER" \| "REFERRAL" \| "LEARNING" \| "DEVICE" \| "COMMISSION" \| "SYSTEM"/);
@@ -75,7 +74,7 @@ test("H3 referral and exchange tasks only offer their confirmed SYSTEM events", 
   assert.doesNotMatch(page, /referral\.bound|exchange\.swapped/);
 });
 
-test("H3 Day One page observations are selectable SYSTEM events with their explicit scopes", () => {
+test("H3 retains Day One labels for existing bindings while deferring unavailable App observations", () => {
   const dayOneEvents = [
     ["H3_DAY_ONE_EARN_PAGE_VIEWED", "查看收益页（Day One）"],
     ["H3_DAY_ONE_STORE_PAGE_VIEWED", "查看商城页（Day One）"],
@@ -86,4 +85,6 @@ test("H3 Day One page observations are selectable SYSTEM events with their expli
     assert.match(page, new RegExp(`${eventType}:\\s*"SYSTEM"`));
     assert.match(page, new RegExp(`${eventType}:\\s*"${label}"`));
   }
+  assert.match(page, /H3_BINDING_DEFERRED_APP_EVENTS/);
+  assert.match(page, /H3_BINDING_APP_OBSERVATION_UNAVAILABLE/);
 });
