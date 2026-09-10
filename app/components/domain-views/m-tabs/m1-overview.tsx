@@ -544,9 +544,10 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
     }
     const command = commandForM1Retry(pendingCommandRef.current, "rebalance", () => {
       const baseline = editBaselineRef.current;
-      return createM1PendingCommand("rebalance", JSON.stringify(baseline.rows.map((r) => ({
-        id: r.id, name: r.name, cap: r.cap, total: r.total, util: r.util,
-      }))), "M1 坐席负载手动均衡", reason.trim());
+      return createM1PendingCommand("rebalance", JSON.stringify({
+        expectedVersion: baseline.loadCfg.version,
+        rows: baseline.rows.map((r) => ({ id: r.id, name: r.name, cap: r.cap, total: r.total, util: r.util })),
+      }), "M1 坐席负载手动均衡", reason.trim());
     });
     if (!command) return;
     pendingCommandRef.current = command;

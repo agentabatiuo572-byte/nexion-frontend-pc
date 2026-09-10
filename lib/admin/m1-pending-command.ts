@@ -14,8 +14,9 @@ function commandNonce(): string {
 
 /**
  * Keeps one logical M1 write byte-for-byte stable until the server confirms it.
- * A modal close discards the in-memory command; reopening deliberately creates a
- * new command against a fresh authoritative read.
+ * This key identifies a logical modal slot, not the HTTP Idempotency-Key.
+ * On reopening, m-view's persistent mCommands store reuses the HTTP key for the
+ * same full value/reason; a newly reviewed version is a different input.
  */
 export function createM1PendingCommand(
   kind: M1CommandKind,

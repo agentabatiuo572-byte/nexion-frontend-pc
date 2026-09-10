@@ -281,6 +281,7 @@ const GEARS = [
   ["G4 tier-pricing contract", "node", ["--test", "tests/g4-tier-pricing-contract.test.mjs"]],
   ["F5 commission-hold contract", "node", ["--test", "tests/f5-commission-hold-contract.test.mjs"]],
   ["F4 quota criteria and policy behavior", "node", ["--test", "tests/f4-quota-criteria-behavior.test.mjs", "tests/f4-ambassador-policy-authority.test.mjs"]],
+  ["A4 redrive and M1 versioned retry behavior", "node", ["--experimental-strip-types", "--test", "tests/a4-redrive-reload-behavior.test.mjs", "tests/h3-dead-event-redrive-contract.test.mjs", "tests/m1-availability-retry-baseline.test.mjs"]],
   // F 域稳定命令号:静态半钉咽喉表达式级接线 + 运行时半跑真 store 语义(只读本仓,任何机器真跑)。
   ["F pending-store contract", "node", ["--experimental-strip-types", "--test", "tests/f-pending-store-contract.test.mjs"]],
   ["K1 release-params contract", "node", ["--test", "tests/k1-release-params-contract.test.mjs"]],

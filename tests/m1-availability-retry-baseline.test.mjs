@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
 import { commandForM1Retry, createM1PendingCommand } from "../lib/admin/m1-pending-command.ts";
+import { createPendingMutationStore, clearPendingCommandRecords } from "../lib/admin/pending-mutation-store.ts";
 
 const candidateModal = readFileSync(new URL("../app/components/domain-views/m-tabs/m1-overview.tsx", import.meta.url), "utf8");
 const candidateAst = ts.createSourceFile("m1-overview.tsx", candidateModal, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -79,7 +80,56 @@ test("current rebalance callback keeps its original workload snapshot and parent
   assert.match(firstCommand.value, /"total":2/);
   assert.doesNotMatch(attempts[0].value, /"total":3/);
   const view = readFileSync(new URL("../app/components/domain-views/m-view.tsx", import.meta.url), "utf8");
-  assert.match(view, /rebalanceLoad\(parseRows<Record<string, unknown>>\(value\), data\.loadConfig\.version/);
+  assert.match(view, /rebalanceLoad\(payload\.rows, payload\.expectedVersion/);
+});
+
+test("real M1 writer keeps one HTTP key bound to one versioned request through reloads", async () => {
+  const source = readFileSync(new URL("../app/components/domain-views/m-view.tsx", import.meta.url), "utf8");
+  const ast = ts.createSourceFile("m-view.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const functions = new Map();
+  let writer;
+  const walk = node => {
+    if (ts.isFunctionDeclaration(node) && node.name) functions.set(node.name.text, node);
+    if (ts.isVariableDeclaration(node) && node.name.getText(ast) === "runMWrite") writer = node.initializer.arguments[0];
+    ts.forEachChild(node, walk);
+  };
+  walk(ast);
+  assert.ok(writer);
+  const compile = text => ts.transpileModule(text, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const captured = [];
+  const helperCode = ["parseRows", "parseRecord", "reasonOf", "applyMBackendWrite"].map(name => functions.get(name).getText(ast)).join("\n");
+  const apply = new Function("mContentActions", compile(helperCode) + "; return applyMBackendWrite;")({
+    rebalanceLoad: async (rows, expectedVersion, reason, key) => { captured.push({ rows, expectedVersion, reason, key }); throw new Error("lost response"); },
+  });
+  const storage = new Map();
+  const oldWindow = globalThis.window;
+  globalThis.window = { sessionStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key), get length() { return storage.size; }, key: i => [...storage.keys()][i] ?? null } };
+  clearPendingCommandRecords();
+  try {
+    const makeWriter = version => new Function("mCommands", "isMUiKey", "commandSlot", "pendingMCommandMetadata", "pendingMCommandBaselines", "legacyParams", "mData", "applyMBackendWrite", "reloadMContent", "setToast", "displayAdminError", compile("const write = " + writer.getText(ast)) + "; return write;")(
+      createPendingMutationStore({ storageKey: "m1-real-writer-test" }), () => false, value => `cmd|${value}`, { current: new Map() }, { current: new Map() }, {}, { loadConfig: { version } }, apply, async () => {}, () => {}, error => error.message,
+    );
+    const v7 = makeLoadProps(7, false, 11, 2, 50);
+    const v8 = makeLoadProps(8, false, 11, 2, 50);
+    const sameModal = makeRefs(v7);
+    await executeCandidateCallback("rebalance", v7, draft, sameModal, makeWriter(7));
+    await executeCandidateCallback("rebalance", v8, draft, sameModal, makeWriter(8));
+    assert.equal(captured[1].expectedVersion, 7, "the uncertain command must retain its original CAS version");
+    assert.equal(captured[1].key, captured[0].key);
+    await executeCandidateCallback("rebalance", v8, draft, makeRefs(v8), makeWriter(8));
+    assert.equal(captured[2].expectedVersion, 8);
+    assert.notEqual(captured[2].key, captured[0].key, "a reviewed new version must not reuse the old body's key");
+    await executeCandidateCallback("rebalance", v8, draft, makeRefs(v8), makeWriter(8));
+    assert.deepEqual(captured[3], captured[2], "equal inputs after reload retain the actual HTTP key");
+    const count = captured.length;
+    for (const expectedVersion of [null, -1, 1.5, "8", Number.MAX_SAFE_INTEGER + 1]) {
+      await assert.rejects(apply("I.support.load.__rebalance", JSON.stringify({ rows: [], expectedVersion }), {}, { loadConfig: { version: 99 } }, { reason: draft.reason }), /M_LOAD_REBALANCE_PAYLOAD_INVALID/);
+    }
+    assert.equal(captured.length, count, "invalid snapshots never reach the transport");
+  } finally {
+    clearPendingCommandRecords();
+    if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow;
+  }
 });
 
 test("unknown result permits cancel and a reopened modal uses the fresh baseline", async () => {

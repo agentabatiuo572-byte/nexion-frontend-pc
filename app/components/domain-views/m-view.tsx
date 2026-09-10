@@ -796,8 +796,11 @@ async function applyMBackendWrite(
     return;
   }
   if (key === "I.support.load.__rebalance") {
-    if (!data?.loadConfig) throw new Error("M_LOAD_CONFIG_BACKEND_SNAPSHOT_MISSING");
-    await mContentActions.rebalanceLoad(parseRows<Record<string, unknown>>(value), data.loadConfig.version, reason, idempotencyKey);
+    const payload = parseRecord<{ rows?: Record<string, unknown>[]; expectedVersion?: number }>(value);
+    if (!payload || !Array.isArray(payload.rows) || !Number.isSafeInteger(payload.expectedVersion) || payload.expectedVersion! < 0) {
+      throw new Error("M_LOAD_REBALANCE_PAYLOAD_INVALID");
+    }
+    await mContentActions.rebalanceLoad(payload.rows, payload.expectedVersion!, reason, idempotencyKey);
     return;
   }
   if (key === "I.support.agentProfile.__update") {

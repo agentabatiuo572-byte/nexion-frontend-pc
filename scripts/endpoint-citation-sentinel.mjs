@@ -35,9 +35,6 @@ const LEDGER = {
     "route: app/api/admin/devices/[...path]/route.ts(isComputeConfig 分支)",
   "PATCH /api/admin/devices/compute-config/params/{paramKey}":
     "route: app/api/admin/devices/[...path]/route.ts(isComputeConfigParam 分支)",
-  "/api/admin/content/conversations/stream":
-    "route: app/api/admin/content/conversations/stream/route.ts",
-  "/api/admin/content": "route: app/api/admin/content/[...path]/route.ts(域前缀)",
   "/api/admin/growth/*": "route: app/api/admin/growth/[...path]/route.ts(H 域族引用,非单一 endpoint)",
   "/api/admin/growth": "route: app/api/admin/growth/[...path]/route.ts(错误字典注释指认 GROWTH_* 机器码的铸码处,域前缀)",
   "/api/admin/growth/public-stats":
