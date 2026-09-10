@@ -34,6 +34,20 @@ function presentText(value: string, fallback = "未配置") {
   return value.trim() ? value : fallback;
 }
 
+function quotaPrerequisites(row: { directRefs: number; monthVolumeUsdText: string | null; unlockMode: "ALL" | "EITHER"; criteriaKnown: boolean }) {
+  if (!row.criteriaKnown || row.monthVolumeUsdText === null) return "资格条件暂不可用";
+  const parts: string[] = [];
+  if (row.directRefs > 0) parts.push(`有效直推 ≥ ${row.directRefs}`);
+  if (/[1-9]/.test(row.monthVolumeUsdText)) {
+    const [integer, fraction = ""] = row.monthVolumeUsdText.split(".");
+    const decimals = fraction.replace(/0+$/, "");
+    const amount = integer.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (decimals ? `.${decimals}` : "");
+    parts.push(`团队业绩 ≥ $${amount}`);
+  }
+  if (!parts.length) return "无额外资格门槛";
+  return parts.join(row.unlockMode === "EITHER" ? " 或 " : " 且 ");
+}
+
 // 领导奖池参与门槛枚举(V0 为新人,无奖池资格 → 从 V1 起)。
 const POOL_UNLOCK_OPTIONS = ["V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10", "V11", "V12"];
 
@@ -204,6 +218,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
                   edit: { kind: "number", current: String(quota.cap), unit: "台" },
                   detail: `CAS 更新权威配额 tier ${quota.quotaCode || quota.id}，当前已用 ${quota.current} / ${quota.cap}；若其他管理员先改，返回 409 并回读最新值。`,
                 })}>调额度</button>}
+                <span className="ct" style={{ gridColumn: "1 / -1", whiteSpace: "normal", textAlign: "left", overflowWrap: "anywhere" }}>SKU {quota.productNo || quota.quotaCode} · {quotaPrerequisites(quota)}</span>
               </div>
             )) : <div className="empty">暂无硬件配额样本</div>}
             <div className="stock-note">月库存上限 {stockEff} · 已出 {data.quotaMonthlyStockUsed} 台 · 剩余 {data.quotaMonthlyStockRemaining} 台</div>

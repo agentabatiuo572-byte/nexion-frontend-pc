@@ -217,7 +217,12 @@ interface BackendF4Metric {
 interface BackendF4QuotaRow {
   id?: number | string | null;
   quotaCode?: string | null;
+  productNo?: string | null;
   name?: string | null;
+  directRefs?: number | string | null;
+  monthVolumeUsd?: number | string | null;
+  monthVolumeUsdText?: string | null;
+  unlockMode?: string | null;
   current?: number | string | null;
   cap?: number | string | null;
   tight?: boolean | string | null;
@@ -660,7 +665,13 @@ export interface F4Metric {
 export interface F4QuotaRow {
   id: number;
   quotaCode: string;
+  productNo: string;
   name: string;
+  directRefs: number;
+  monthVolumeUsd: number;
+  monthVolumeUsdText: string | null;
+  unlockMode: "ALL" | "EITHER";
+  criteriaKnown: boolean;
   current: number;
   cap: number;
   tight: boolean;
@@ -1235,6 +1246,19 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
   };
 }
 
+function quotaVolumeText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  return /^(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/.test(text) ? text : null;
+}
+
+function quotaCriteriaKnown(row: BackendF4QuotaRow): boolean {
+  const refs = finiteDashboardNumber(row.directRefs);
+  return refs !== null && Number.isSafeInteger(refs) && refs >= 0
+    && quotaVolumeText(row.monthVolumeUsdText) !== null
+    && ["ALL", "EITHER"].includes(asText(row.unlockMode).toUpperCase());
+}
+
 function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | undefined): F4LeadershipPoolOverview {
   const metrics = (data?.metrics ?? []).map((item) => ({
     id: asText(item.id, "metric"),
@@ -1246,7 +1270,13 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
   const quotaRows = (data?.quotaRows ?? []).map((row) => ({
     id: toNumber(row.id),
     quotaCode: asText(row.quotaCode),
+    productNo: asText(row.productNo),
     name: asText(row.name, "Quota"),
+    directRefs: toNumber(row.directRefs),
+    monthVolumeUsd: toNumber(row.monthVolumeUsd),
+    monthVolumeUsdText: quotaVolumeText(row.monthVolumeUsdText),
+    unlockMode: asText(row.unlockMode).toUpperCase() === "EITHER" ? "EITHER" as const : "ALL" as const,
+    criteriaKnown: quotaCriteriaKnown(row),
     current: toNumber(row.current),
     cap: toNumber(row.cap),
     tight: toBoolean(row.tight),

@@ -713,7 +713,11 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           : undefined) as { coverageRatio: number; redlinePct: number } | undefined}
         edit={mc.edit}
         businessForm={mc.businessForm}
-        completionCopy={mc.completionCopy}
+        completionCopy={mc.completionCopy ?? (
+          mc.op === "param" || mc.op === "param-multi" || mc.op === "dispose"
+            ? "提交后进入 A2 待确认队列，批准执行后生效"
+            : undefined
+        )}
         onClose={() => setActionConfirm(null)}
         onConfirm={async (reason, newVal, businessValue) => {
           try {
@@ -735,7 +739,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             } else {
               throw new Error(`F_BACKEND_ROUTE_MISSING:${mc.paramKey}`);
             }
-            setToast(mc.name + " 已生效 · 新值 " + newVal);
+            setToast(mc.name + " 已提交 · 等待 A2 执行");
           } else if (mc.op === "param-multi" && mc.paramKeys && businessValue) {
             // 多字段调参只生成一张 A2 票；后端 replay 在单事务内整批写入，任一失败整批回滚。
             if (tab === "F3") {
@@ -749,8 +753,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             } else {
               throw new Error(`F_BACKEND_ROUTE_MISSING:${mc.paramKeys.map((item) => item.paramKey).join(",")}`);
             }
-            const summary = mc.paramKeys.map(({ key }) => String(businessValue[key] ?? "").trim()).join(" / ");
-            setToast(mc.name + " 已生效 · " + summary);
+            setToast(mc.name + " 已提交 · 等待 A2 执行");
           } else if (mc.op === "dispose" && mc.paramKey && mc.fixedVal) {
             if (tab === "F1") {
               await ctx.updateF1Config(mc.paramKey, mc.fixedVal, reason);

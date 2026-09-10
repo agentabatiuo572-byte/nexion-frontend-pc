@@ -17,7 +17,9 @@ test("F4 reads and updates the exact ambassador policy consumed by the App", asy
   assert.match(client, /updateF4AmbassadorPolicy/);
   assert.match(client, /expectedRevision:\s*policy\.revision/);
   assert.match(client, /row\.serverCanonical !== true/);
-  assert.match(view, /Promise\.all\(\[\s*fetchF4LeadershipPoolOverview\(\),\s*fetchF4AmbassadorPolicy\(\)/s);
+  assert.match(view, /Promise\.allSettled\(\[\s*fetchF4LeadershipPoolOverview\(\),\s*fetchF4AmbassadorPolicy\(\)/s);
+  assert.match(view, /if \(overview\.status === "rejected"\) throw overview\.reason/);
+  assert.match(view, /setF4AmbassadorPolicy\(ambassadorPolicy\.status === "fulfilled" \? ambassadorPolicy\.value : null\)/);
   assert.match(tab, /nx_team_ambassador_policy/);
   assert.match(tab, /调整申请政策/);
   assert.match(route, /\/api\/admin\/teams\/ambassador-policy/);

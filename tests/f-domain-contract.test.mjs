@@ -225,3 +225,33 @@ test("proposeFConfig honors per-key fund-amplifies override (缺口 ②)", () =>
   // isFFundAmplifyingKey(key) || def.amplifies(JS 逻辑或双竖线)
   assert.match(view, /amplifies:\s*isFFundAmplifyingKey\(key\)\s*\|\|\s*def\.amplifies/);
 });
+
+test("F 参数提案如实显示等待 A2 执行，不把建票误报为已生效", () => {
+  const view = read(OPS_ROOT, "app/components/domain-views/f-view.tsx");
+  const paramBranch = view.slice(
+    view.indexOf('mc.op === "param" && mc.paramKey'),
+    view.indexOf('mc.op === "param-multi" && mc.paramKeys'),
+  );
+  const multiBranch = view.slice(
+    view.indexOf('mc.op === "param-multi" && mc.paramKeys'),
+    view.indexOf('mc.op === "dispose" && mc.paramKey'),
+  );
+
+  assert.ok(paramBranch.length > 0 && multiBranch.length > 0, "F 参数确认分支必须存在");
+  assert.match(paramBranch, /已提交 · 等待 A2 执行/);
+  assert.doesNotMatch(paramBranch, /已生效/);
+  assert.match(multiBranch, /已提交 · 等待 A2 执行/);
+  assert.doesNotMatch(multiBranch, /已生效/);
+});
+
+test("F A2 参数与处置确认框默认说明批准后才生效，显式说明优先", () => {
+  const view = read(OPS_ROOT, "app/components/domain-views/f-view.tsx");
+  const modal = view.slice(view.indexOf("{mc && <OperationConfirmModal"), view.indexOf("{toastNode}"));
+
+  assert.ok(modal.length > 0, "F shell 必须渲染共用确认框");
+  assert.match(modal, /completionCopy=\{mc\.completionCopy \?\?/);
+  for (const operation of ["param", "param-multi", "dispose"]) {
+    assert.match(modal, new RegExp(`mc\\.op === "${operation}"`));
+  }
+  assert.match(modal, /提交后进入 A2 待确认队列，批准执行后生效/);
+});
