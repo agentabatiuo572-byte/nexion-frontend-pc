@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { register } from "node:module";
+register("./e5-client-test-loader.mjs", import.meta.url);
+const { mapE5Device } = await import("../lib/admin/e5-client.ts");
 
 const view = readFileSync(new URL("../app/components/domain-views/e-view.tsx", import.meta.url), "utf8");
 const ops = readFileSync(new URL("../app/components/domain-views/e-tabs/e5-ops.tsx", import.meta.url), "utf8");
@@ -18,7 +21,9 @@ test("E5 maker-only Growth can see force and unbind proposal actions without dir
 });
 
 test("E5 canonical UNBOUND state renders as unbound and cannot expose active-device actions", () => {
-  assert.match(client, /\["RECYCLED", "DEACTIVATED", "RETIRED", "UNBOUND"\]\.includes\(status\)/);
+  for (const status of ["RECYCLED", "DEACTIVATED", "RETIRED", "UNBOUND"]) {
+    assert.equal(mapE5Device({ id: 42, userId: 7, status, runtimeStatus: "ONLINE", activatedAt: "2026-09-01T12:00:00" }).state, "unbound");
+  }
   assert.match(ops, /return state === "active" \|\| state === "busy" \|\| state === "offline" \|\| state === "abnormal"/);
   assert.doesNotMatch(ops, /isDeactivatable[\s\S]{0,180}state === "unbound"/);
 });

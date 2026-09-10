@@ -10,6 +10,7 @@ const DEV_STATE_LABEL: Record<E5DeviceState, string> = {
   active: "已激活在线",
   busy: "任务中",
   offline: "已激活离线",
+  unknown: "运行状态待确认",
   inventory: "库存待激活",
   "pending-deactivate": "待任务结算后停用",
   unbound: "已解绑/停用",
@@ -19,6 +20,7 @@ const DEV_STATE_TONE: Record<E5DeviceState, string> = {
   active: "ok",
   busy: "cyan",
   offline: "neutral",
+  unknown: "neutral",
   inventory: "warn",
   "pending-deactivate": "warn",
   unbound: "neutral",
@@ -49,7 +51,7 @@ function isActivatable(state: E5DeviceState) {
 }
 
 function isDeactivatable(state: E5DeviceState) {
-  return state === "active" || state === "busy" || state === "offline" || state === "abnormal";
+  return state === "active" || state === "busy" || state === "offline" || state === "abnormal" || state === "unknown";
 }
 
 function dcStatusLabel(status: string) {
@@ -203,7 +205,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
         <div className="row" style={{ gap: 8, padding: "8px 10px", flexWrap: "wrap" }} data-proof="e5-device-filters">
           <input className="fld" style={{ maxWidth: 280 }} value={ctx.e5Keyword} onChange={(event) => ctx.setE5Keyword(event.target.value)} placeholder="搜索用户 / 设备 / SKU" aria-label="搜索用户设备" />
           <select className="fld" style={{ maxWidth: 160 }} value={ctx.e5StateFilter} onChange={(event) => ctx.setE5StateFilter(event.target.value)} aria-label="设备状态筛选">
-            <option value="all">全部状态</option><option value="active">在线</option><option value="busy">任务中</option><option value="offline">离线</option><option value="inventory">库存</option><option value="pending-deactivate">待任务结算后停用</option><option value="unbound">已解绑</option><option value="abnormal">异常</option>
+            <option value="all">全部状态</option><option value="active">在线（含任务中）</option><option value="busy">任务中</option><option value="offline">离线</option><option value="unknown">运行状态待确认</option><option value="inventory">库存</option><option value="pending-deactivate">待任务结算后停用</option><option value="unbound">已解绑</option><option value="abnormal">异常</option>
           </select>
           <select className="fld" style={{ maxWidth: 160 }} value={ctx.e5KindFilter} onChange={(event) => ctx.setE5KindFilter(event.target.value)} aria-label="设备类型筛选">
             <option value="all">全部类型</option><option value="MOBILE">手机</option><option value="S1">S1</option><option value="PRO">Pro</option><option value="RACK">Rack</option>

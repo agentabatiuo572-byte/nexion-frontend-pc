@@ -15,7 +15,7 @@ import {
 
 export type { E5Observability } from "@/lib/admin/e5-observability-contract";
 
-export type E5DeviceState = "active" | "busy" | "offline" | "inventory" | "pending-deactivate" | "unbound" | "abnormal";
+export type E5DeviceState = "active" | "busy" | "offline" | "inventory" | "pending-deactivate" | "unbound" | "abnormal" | "unknown";
 export type E5DatacenterStatus = "active" | "maintenance" | "disabled";
 
 export interface E5Device {
@@ -217,17 +217,18 @@ function text(value: string | number | null | undefined, fallback = "") {
   return normalized || fallback;
 }
 
-function normalizeState(statusRaw: string | null | undefined, runtimeRaw: string | null | undefined, pendingDeactivate: boolean): E5DeviceState {
+function normalizeState(statusRaw: string | null | undefined, runtimeRaw: string | null | undefined, pendingDeactivate: boolean, activatedAt?: string | null, deactivatedAt?: string | null): E5DeviceState {
   const status = text(statusRaw).toUpperCase();
   const runtime = text(runtimeRaw).toUpperCase();
   if (pendingDeactivate) return "pending-deactivate";
   if (["RECYCLED", "DEACTIVATED", "RETIRED", "UNBOUND"].includes(status)) return "unbound";
   if (["INVENTORY", "PENDING", "PENDING_ACTIVATION", "INACTIVE"].includes(status)) return "inventory";
+  if (!["ACTIVE", "ONLINE", "BUSY", "RUNNING", "OFFLINE"].includes(status)
+      || !text(activatedAt) || text(deactivatedAt)) return "unknown";
   if (["ERROR", "ABNORMAL", "LOST"].includes(runtime)) return "abnormal";
-  if (status === "BUSY") return "busy";
-  if (status === "ONLINE") return "active";
-  if (status === "OFFLINE") return "offline";
-  return "offline";
+  if (runtime === "OFFLINE") return "offline";
+  if (runtime === "ONLINE") return status === "BUSY" ? "busy" : "active";
+  return "unknown";
 }
 
 async function e5Request<T>(path: string, init?: RequestInit & { idempotencyKey?: string }) {
@@ -339,7 +340,7 @@ export function mapE5Device(row: BackendDevice): E5Device {
     productCode,
     serial: identity.serial,
     dc: text(row.dcLocation, "UNASSIGNED"),
-    state: normalizeState(row.status, row.runtimeStatus, pendingDeactivate),
+    state: normalizeState(row.status, row.runtimeStatus, pendingDeactivate, row.activatedAt, row.deactivatedAt),
     rawStatus: text(row.status, "UNKNOWN"),
     runtimeStatus: text(row.runtimeStatus, "UNKNOWN"),
     hashrate: toNumber(row.hashrate),
