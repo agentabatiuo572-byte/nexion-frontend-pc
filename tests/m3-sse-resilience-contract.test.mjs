@@ -38,6 +38,27 @@ test('M3 ready cancels the five-second fallback, while a disconnected socket res
   socket.onclose({code:1006});await f.tick(4999);assert.equal(calls,1,'the disconnect fallback must remain bounded before five seconds');
   await f.tick(1);assert.equal(calls,2,'the disconnected socket must reconcile at its five-second fallback boundary');f.client.stop();
 });
+test('M3 recovers a failed initial snapshot through the five-second fallback before reopening writes',async()=>{
+  let conversationsAvailable=false,reconciles=0,tickets=0;
+  const canWrite=()=>true&&conversationsAvailable;
+  const f=fixture(async()=>{
+    reconciles++;
+    if(reconciles===1)throw new Error('initial snapshot unavailable');
+    conversationsAvailable=true;
+  },async()=>{tickets++;return {ticket:'one-time'}});
+
+  // The M view begins this read-only recovery channel after it has published
+  // its fail-closed snapshot.  No M3 write is enabled until reconciliation
+  // itself has obtained the complete authoritative snapshot.
+  assert.equal(canWrite(),false);
+  f.client.start();await f.tick(0);assert.equal(tickets,1,'authorized recovery obtains a realtime ticket');
+  const socket=f.sockets[0];socket.onopen();f.frame(socket,{type:'ready'});await f.tick(0);
+  assert.equal(reconciles,1);assert.equal(conversationsAvailable,false);assert.equal(f.client.ready,false);
+  await f.tick(5000);
+  assert.equal(reconciles,2,'the bounded fallback retries the failed initial reconciliation');
+  assert.equal(conversationsAvailable,true);assert.equal(canWrite(),true);
+  f.client.stop();
+});
 test('M3 terminal ticket failures stop reconnect and fallback polling',async()=>{
   for(const status of [401,403,428]){
     let tickets=0,reconciles=0;
@@ -80,7 +101,10 @@ test('M3 hook implementation follows simulated lifecycle cleanup across visibili
     throw new Error(`unexpected import: ${id}`);
   },window:{},document,location:{origin:'http://console.test'},AbortController,Error,Promise,console});
   const lifecycle=new AbortController();const options={onEvent(){},onReconnectSnapshot:async()=>{},lifecycleSignal:lifecycle.signal};
-  const render=()=>hooks.render(()=>module.exports.useConversationStream(options));
+  const render=(enabled=true)=>hooks.render(()=>module.exports.useConversationStream({...options,enabled}));
+  // A caller that lacks M3 read authority passes enabled:false: the hook must
+  // not construct a realtime client, so it cannot obtain a ticket.
+  render(false);assert.equal(instances.length,0,'no M3 read authority must not construct realtime or request a ticket');
   render();assert.equal(instances.length,1);assert.equal(instances[0].startCount,1);assert.equal(installs.at(-1),instances[0]);
   document.visibilityState='hidden';listeners.get('visibilitychange')();assert.equal(instances[0].stopCount,1);assert.equal(installs.at(-1),null);
   document.visibilityState='visible';listeners.get('visibilitychange')();assert.equal(instances[0].startCount,2);assert.equal(installs.at(-1),instances[0]);

@@ -22,6 +22,7 @@ import {
 } from "@/lib/admin/m-client";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { MDomainLoadCoordinator } from "@/lib/admin/m-content-load-coordinator";
+import { shouldStartM3ConversationRecovery } from "@/lib/admin/m-conversation-recovery-gate";
 import { failClosedSupportAgentsAfterReload, preserveVerifiedSupportAgentsDuringReload } from "@/lib/admin/m-progressive-support-state";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useConversationStream, type ConversationStreamEvent } from "@/lib/admin/use-conversation-stream";
@@ -229,11 +230,16 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   // 鉴权：走同源 cookie（nexion_admin_token 由 Next route 转 Authorization 头）。
   // 仅走同源 httpOnly cookie 代理；JWT 永不进入 SSE URL。
   const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
+  const m3RecoveryEnabled = shouldStartM3ConversationRecovery({
+    hasM3ReadAuthority: authorities.includes("service_m3_read"),
+    hasMContentSnapshot: Boolean(mData),
+    isMContentLoading: mLoading,
+  });
   const { ready: conversationStreamReady, reconnectExhausted, retry: retryConversationStream } = useConversationStream({
     onEvent: handleStreamEvent,
     onReconnectSnapshot: reconcileConversationSnapshot,
     lifecycleSignal: mLoadCoordinator.current.conversationStreamSignal,
-    enabled: authorities.includes("service_m3_read") && Boolean(mData?.conversationsAvailable) && !mLoading,
+    enabled: m3RecoveryEnabled,
   });
 
   const legacyParams = useMemo(() => (mData ? buildMLegacyParams(mData) : {}), [mData]);

@@ -64,7 +64,10 @@ test("M3 snapshot generations cannot cancel a full M1 reload, while newer full l
   assert.match(view, /mLoadCoordinator\.current\.beginFullLoad\(\)/);
   assert.match(view, /mLoadCoordinator\.current\.beginConversationSnapshot\(\)/);
   assert.match(view, /failClosedSupportAgentsAfterReload/);
-  assert.match(view, /Boolean\(mData\?\.conversationsAvailable\) && !mLoading/);
+  assert.match(view, /hasM3ReadAuthority: authorities\.includes\("service_m3_read"\)/);
+  assert.match(view, /hasMContentSnapshot: Boolean\(mData\)/);
+  assert.match(view, /isMContentLoading: mLoading/);
+  assert.match(view, /enabled: m3RecoveryEnabled/);
 });
 
 test("M1 permission, auth, malformed and unavailable results revoke cached transfer authority fail-closed", () => {
@@ -81,6 +84,6 @@ test("a full M reload owns and synchronously cancels the hook reconnect snapshot
   assert.match(loadCoordinator, /conversationStreamSignal/);
   assert.match(loadCoordinator, /this\.conversationStreamController\.abort\(\)/);
   assert.match(view, /lifecycleSignal:\s*mLoadCoordinator\.current\.conversationStreamSignal/);
-  assert.match(stream, /lifecycleSignal\?\.addEventListener\("abort",\s*suspend,\s*\{ once: true \}\)/);
-  assert.match(stream, /lifecycleSignal\?\.removeEventListener\("abort",\s*suspend\)/);
+  assert.match(stream, /lifecycleSignal\?\.addEventListener\(['"]abort['"],\s*stop,\s*\{\s*once:\s*true\s*\}\)/);
+  assert.match(stream, /lifecycleSignal\?\.removeEventListener\(['"]abort['"],\s*stop\)/);
 });
