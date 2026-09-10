@@ -70,8 +70,13 @@ test("semantic debts stay pending until producer, runtime consumer and behavior 
   );
   assert.deepEqual(
     row("OPS-A-20")?.restActions,
-    ["updateA4DimensionParam", "runA4RetentionNow"],
-    "A4 retention is a real pending write and must be claimed exactly once by OPS-A-20",
+    ["updateA4DimensionParam", "runA4RetentionNow", "redriveAuditedH3DeadOutboxEvent"],
+    "A4 dimension, retention, and two-layer H3 DEAD recovery writes must each be claimed exactly once by OPS-A-20",
+  );
+  assert.deepEqual(
+    row("OPS-A-08")?.restActions,
+    ["registerA4Schema", "addA4SchemaProperty"],
+    "A4 schema registration and strict existing-schema property extension share the Registry write boundary",
   );
   assert.deepEqual(validateRuntimeConsumerContracts(manifest, () => undefined), []);
 

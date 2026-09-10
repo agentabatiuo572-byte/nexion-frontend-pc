@@ -70,7 +70,9 @@ test("M1 writes await the real result and reuse the same idempotency key after a
   assert.match(overview, /if \(!ok\)[\s\S]{0,240}return;/);
   assert.match(overview, /结果未知[\s\S]{0,240}保留/);
   assert.match(view, /updateLoadConfig\(payload, reason, idempotencyKey\)/);
-  assert.match(view, /rebalanceLoad\([^;]+loadConfig\.version, reason, idempotencyKey\)/);
+  assert.match(view, /rebalanceLoad\(payload\.rows, payload\.expectedVersion!, reason, idempotencyKey\)/);
+  assert.match(view, /Number\.isSafeInteger\(payload\.expectedVersion\)/);
+  assert.doesNotMatch(view, /rebalanceLoad\([^;]+data\.loadConfig\.version/);
   assert.match(view, /assignSupportSeat\([^;]+reason, idempotencyKey\)/);
   assert.match(view, /assignAdvisorUsers\([^;]+reason, idempotencyKey\)/);
   assert.match(view, /deactivateAdvisorAssignment\([^;]+reason, idempotencyKey\)/);

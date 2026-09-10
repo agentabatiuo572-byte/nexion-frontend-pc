@@ -199,11 +199,12 @@
       "id": "OPS-A-08",
       "domain": "A",
       "object": "埋点事件",
-      "action": "新增事件",
+      "action": "新增事件或为既有 Schema 增加属性",
       "status": "built",
       "view": "a-tabs/a4-events.tsx",
       "batch": "P2",
-      "restAction": "registerA4Schema"
+      "restActions": ["registerA4Schema", "addA4SchemaProperty"],
+      "note": "事件注册与既有 Schema 属性扩展同属 A4 Registry 写入边界；扩展只接受精确事件名、冻结的全局 Registry 版本和操作理由，既有事件元数据不允许被前端覆盖。"
     },
     {
       "id": "OPS-A-09",
@@ -313,11 +314,11 @@
       "id": "OPS-A-20",
       "domain": "A",
       "object": "KPI 口径参数(A4)",
-      "action": "让 Day0 窗口被 B3 漏斗与 L1 KPI 聚合共同消费，并受控触发事件保留执行器后回读终态",
+      "action": "维护 Day0 口径、事件保留与受控 H3 原事实重投，并回读终态",
       "status": "built",
       "view": "a-tabs/a4-events.tsx",
       "batch": "done",
-      "restActions": ["updateA4DimensionParam", "runA4RetentionNow"],
+      "restActions": ["updateA4DimensionParam", "runA4RetentionNow", "redriveAuditedH3DeadOutboxEvent"],
       "runtimeEvidence": [
         {
           "type": "backend-runtime",
@@ -345,7 +346,7 @@
           "negativePatterns": ["DAY0_SECONDS\\s*=", "day0Seconds\\s*=\\s*60"]
         }
       ],
-      "note": "Production：B3 漏斗与 L1 KPI/BI 聚合均在运行时调用同一 A4 day0Seconds 权威参数；缺失或非法配置由服务端失败关闭。A4 参数写入和保留执行入口保留精确唯一 claim。"
+      "note": "Production：B3 漏斗与 L1 KPI/BI 聚合均在运行时调用同一 A4 day0Seconds 权威参数；缺失或非法配置由服务端失败关闭。A4 参数、保留执行及 H3 原事实重投各保留精确唯一 claim。重投仅接受精确事件 ID，前后两层均为 DEAD 时以冻结尝试次数 CAS 执行，且不读取或修改 payload/source。"
     },
     {
       "id": "OPS-A-21",
@@ -3133,7 +3134,7 @@
       "id": "OPS-M-24",
       "domain": "M",
       "object": "M 域权限隔离读取",
-      "action": "按叶权限加载数据/SSE 并显式区分不可用与零值",
+      "action": "按叶权限加载数据和 WebSocket，并显式区分不可用与零值",
       "status": "built",
       "view": "m-view.tsx",
       "batch": "done",
@@ -3141,17 +3142,56 @@
         {
           "type": "pc-runtime",
           "file": "lib/admin/use-conversation-stream.ts",
-          "positivePatterns": ["if \\(response\\.status === 401 \\|\\| response\\.status === 403\\)", "isTerminalConversationStreamStatus\\(streamStatusResponse\\.status\\)", "const generation = recoveryGate\\.begin\\(\\)", "snapshotController\\?\\.abort\\(\\)", "void onReconnectSnapshotRef\\.current\\(controller\\.signal\\)\\.then\\(async \\(\\) =>", "const reconciled = await recoveryGate\\.complete\\(", "if \\(!reconciled\\) return;\\s*setReady\\(true\\)", "connectionController\\.abort\\(\\)", "scheduleReconnect\\(connect\\)"],
-          "negativePatterns": ["es\\.onerror\\s*=\\s*\\(\\)\\s*=>\\s*\\{[\\s\\S]{0,500}setTimeout\\(connect, delay\\)"]
+          "positivePatterns": [
+            "new ConversationRealtime\\(",
+            "/ws/conversations",
+            "new WebSocket\\(url\\)",
+            "/conversations/realtime-ticket",
+            "method:'POST',credentials:'same-origin',cache:'no-store',signal",
+            "reconcile:signal=>reconcile\\.current\\(signal\\)",
+            "lifecycleSignal\\?\\.addEventListener\\('abort',stop",
+            "enabled,authorized,authEpoch,lifecycleSignal,nonce"
+          ],
+          "negativePatterns": [
+            "new EventSource\\(",
+            "scheduleReconnect\\(connect\\)"
+          ]
         },
         {
           "type": "pc-runtime",
           "file": "app/components/domain-views/m-view.tsx",
-          "positivePatterns": ["const generation = mLoadCoordinator\\.current\\.beginConversationSnapshot\\(\\)", "const conversations = await fetchMConversationSnapshot\\(signal\\)", "if \\(signal\\.aborted\\) return", "!mLoadCoordinator\\.current\\.isConversationSnapshotCurrent\\(generation\\) \\|\\| mDataAuthEpoch\\.current !== snapshotAuthEpoch", "const generation = mLoadCoordinator\\.current\\.beginFullLoad\\(\\)", "mLoadCoordinator\\.current\\.isFullLoadCurrent\\(generation\\)", "onReconnectSnapshot: reconcileConversationSnapshot"],
-          "negativePatterns": ["onReconnectSnapshot: reloadMContent", "fetchMConversationSnapshot\\(\\s*\\)"]
+          "positivePatterns": [
+            "const generation = mLoadCoordinator\\.current\\.beginConversationSnapshot\\(\\)",
+            "const conversations = await fetchMConversationSnapshot\\(signal\\)",
+            "if \\(signal\\.aborted\\) return",
+            "!mLoadCoordinator\\.current\\.isConversationSnapshotCurrent\\(generation\\) \\|\\| mDataAuthEpoch\\.current !== snapshotAuthEpoch",
+            "const generation = mLoadCoordinator\\.current\\.beginFullLoad\\(\\)",
+            "mLoadCoordinator\\.current\\.isFullLoadCurrent\\(generation\\)",
+            "onReconnectSnapshot: reconcileConversationSnapshot"
+          ],
+          "negativePatterns": [
+            "onReconnectSnapshot: reloadMContent",
+            "fetchMConversationSnapshot\\(\\s*\\)"
+          ]
+        },
+        {
+          "type": "pc-runtime",
+          "file": "lib/admin/conversation-realtime.ts",
+          "positivePatterns": [
+            "this\\.controller\\.abort\\(\\);this\\.fallback\\.abort\\(\\)",
+            "code===401\\|\\|code===403\\|\\|code===428",
+            "await this\\.options\\.reconcile\\(signal\\)",
+            "epoch===this\\.epoch&&!signal\\.aborted",
+            "if\\(!this\\.ready&&!this\\.authenticated\\)",
+            "\\},5000\\)"
+          ],
+          "negativePatterns": [
+            "new EventSource\\("
+          ]
         }
       ],
-      "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
+      "note": "实现使用同源短期票据建立 WebSocket；先完成有权限的快照补拉再就绪，鉴权拒绝终止重连，断链保留有界轮询兜底。useConversationStream 的 POST claim 仅覆盖实时换票与同步生命周期，不代表客服业务写操作。此处源码契约证据不能替代真实会话的握手、事件、重连及权限拒绝验收。",
+      "restAction": "useConversationStream"
     },
     {
       "id": "OPS-C-35",
@@ -3536,8 +3576,8 @@
         {
           "type": "backend-runtime",
           "file": "src/main/java/ffdd/opsconsole/growth/application/AppGrowthEngagementService.java",
-          "positivePatterns": ["executeOnce\\(\"QUEST_CLAIM\"", "QUEST_NOT_CLAIMABLE", "mapper\\.claimQuest\\(userId, reward\\.missionId\\(\\), reward\\.instanceKey\\(\\)\\) != 1", "H3_QUEST_CLAIMED"],
-          "negativePatterns": ["QUEST_NOT_CLAIMABLE[\\s\\S]{0,120}ledgerPostingFacade", "claimQuest[\\s\\S]{0,100}catch[\\s\\S]{0,100}CLAIMED"]
+          "positivePatterns": ["executeOnce\\(\"QUEST_CLAIM\"", "QUEST_INSTANCE_NOT_FOUND", "QUEST_ALREADY_CLAIMED", "QUEST_DEFINITION_INACTIVE", "QUEST_EXPIRED", "QUEST_NOT_COMPLETED", "mapper\\.claimQuest\\(userId, reward\\.missionId\\(\\), reward\\.instanceKey\\(\\)\\) != 1", "H3_QUEST_CLAIMED"],
+          "negativePatterns": ["claimFailure\\(mapper\\.lockQuestClaimState\\([\\s\\S]{0,240}ledgerPostingFacade", "claimQuest[\\s\\S]{0,100}catch[\\s\\S]{0,100}CLAIMED"]
         }
       ],
       "note": "Production：UniApp 周任务列表/进度来自服务端 state，领奖后强制再次读回同一 questCode；服务端幂等且仅 claimable 可入账，重复、陈旧或拒绝不授予本地奖励。"
@@ -3602,17 +3642,36 @@
         {
           "type": "uniapp-runtime",
           "file": "src/api/support-api.ts",
-          "positivePatterns": ["supportPath\\(\"/conversations\"\\)", "supportPath\\(`/conversations/\\$\\{pathId\\(conversation\\.id\\)\\}/replies`\\)", "SUPPORT_CONVERSATION_RESPONSE_INVALID", "expectedVersion: conversation\\.version"],
-          "negativePatterns": ["messages\\.push\\(", "receiptStatus:\\s*\"delivered\""]
+          "positivePatterns": [
+            "supportPath\\(\"/conversations\"\\)",
+            "supportPath\\(`/conversations/\\$\\{pathId\\(conversation\\.id\\)\\}/replies`\\)",
+            "SUPPORT_CONVERSATION_RESPONSE_INVALID",
+            "expectedVersion: conversation\\.version"
+          ],
+          "negativePatterns": [
+            "messages\\.push\\(",
+            "receiptStatus:\\s*\"delivered\""
+          ]
         },
         {
           "type": "backend-runtime",
           "file": "src/main/java/ffdd/opsconsole/content/application/AppSupportService.java",
-          "positivePatterns": ["idempotent\\(\"APP_CONVERSATION_REPLY:", "conversationRepository\\.replyAsUser\\(", "conversationConflict\\(\\)", "transferToType\\(\\)"],
-          "negativePatterns": ["replyConversation[\\s\\S]{0,120}catch[\\s\\S]{0,120}APP_CONVERSATION_REPLIED", "CONVERSATION_CONFLICT[\\s\\S]{0,100}return ApiResult\\.ok"]
+          "positivePatterns": [
+            "idempotent\\(\"APP_CONVERSATION_REPLY:",
+            "conversationRepository\\.replyAsUser\\(",
+            "conversationConflict\\(\\)",
+            "transferToType\\(\\)"
+          ],
+          "negativePatterns": [
+            "replyConversation[\\s\\S]{0,120}catch[\\s\\S]{0,120}APP_CONVERSATION_REPLIED",
+            "CONVERSATION_CONFLICT[\\s\\S]{0,100}return ApiResult\\.ok"
+          ]
         }
       ],
-      "note": "Production：App 会话、消息已读/回复与转工单全部围绕服务端 conversationNo、status/version 读写；Acceptance Sandbox 下 PC 回复只写独立客服沙箱事实并以稳定命令号回读，断连、冲突或拒绝保持未发送，不伪造 delivered。"
+      "note": "Production：App 会话、消息已读/回复与转工单全部围绕服务端 conversationNo、status/version 读写；Acceptance Sandbox 下 PC 回复只写独立客服沙箱事实并以稳定命令号回读，断连、冲突或拒绝保持未发送，不伪造 delivered。",
+      "restActions": [
+        "markMConversationRead"
+      ]
     },
     {
       "id": "OPS-M-28",

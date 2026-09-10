@@ -425,6 +425,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   M4_KNOWLEDGE_FAQ_ID_COLLISION: "知识库服务返回了重复的 FAQ 条目，页面已停止展示可疑数据；请重试读取或联系值班人员。",
   M_LOAD_CONFIG_BACKEND_RESPONSE_MISSING: "客服工作台配置读取失败，后台未返回有效配置；页面已停止使用本地猜测值，请重试读取或联系值班人员。",
   M_LOAD_CONFIG_FIELD_MISSING: "客服工作台配置缺少必需字段，页面已停止使用不完整配置；请重试读取或联系值班人员。",
+  M_LOAD_REBALANCE_PAYLOAD_INVALID: "本次均衡数据或版本无效，未发起均衡；请重新打开负载调度，读取最新配置后再试。",
   M5_SESSION_TEMPLATE_PROTOCOL_INVALID: "会话话术模板服务返回的数据不完整或不一致，页面已停止展示推测值；请重试读取或联系值班人员。",
   M2_TICKET_DETAIL_MALFORMED: "客服工单详情返回的数据不完整或格式异常，页面已停止展示推测值；请重试读取或联系值班人员。",
   M2_TICKET_PAGE_INCOMPLETE: "客服工单列表分页读取不完整，页面已停止展示部分数据；请重试读取或联系值班人员。",
