@@ -74,7 +74,7 @@ test("H3 referral and exchange tasks only offer their confirmed SYSTEM events", 
   assert.doesNotMatch(page, /referral\.bound|exchange\.swapped/);
 });
 
-test("H3 retains Day One labels for existing bindings while deferring unavailable App observations", () => {
+test("H3 offers the published Day One source contracts", () => {
   const dayOneEvents = [
     ["H3_DAY_ONE_EARN_PAGE_VIEWED", "查看收益页（Day One）"],
     ["H3_DAY_ONE_STORE_PAGE_VIEWED", "查看商城页（Day One）"],
@@ -85,6 +85,7 @@ test("H3 retains Day One labels for existing bindings while deferring unavailabl
     assert.match(page, new RegExp(`${eventType}:\\s*"SYSTEM"`));
     assert.match(page, new RegExp(`${eventType}:\\s*"${label}"`));
   }
-  assert.match(page, /H3_BINDING_DEFERRED_APP_EVENTS/);
-  assert.match(page, /H3_BINDING_APP_OBSERVATION_UNAVAILABLE/);
+  assert.doesNotMatch(page, /H3_BINDING_DEFERRED_APP_EVENTS|H3_BINDING_APP_OBSERVATION_UNAVAILABLE/);
+  assert.match(page, /H3_DAY_ONE_PROFILE_SAVED: "SYSTEM"/);
+  assert.match(page, /H3_DAY_ONE_CARD_BOUND: "SYSTEM"/);
 });

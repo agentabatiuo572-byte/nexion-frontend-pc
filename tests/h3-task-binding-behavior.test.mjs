@@ -101,37 +101,26 @@ test("read-only users see disabled mutation controls and unknown completion kind
   assert.deepEqual(view.writes, []);
 });
 
-const deferred = ["H3_DAY_ONE_EARN_PAGE_VIEWED", "H3_DAY_ONE_STORE_PAGE_VIEWED", "H3_DAY_ONE_S1_ROI_VIEWED"];
-for (const eventType of deferred) {
-  test(`${eventType} cannot be created or enabled, but existing bindings remain recoverable`, async () => {
-    const mission = { taskCode: "visit_earn", status: "paused" };
-    const view = render({ dayOneTasks: [mission] });
+const published = [
+  ["H3_DAY_ONE_EARN_PAGE_VIEWED", "visit_earn"],
+  ["H3_DAY_ONE_STORE_PAGE_VIEWED", "visit_store"],
+  ["H3_DAY_ONE_S1_ROI_VIEWED", "view_product_roi"],
+  ["H3_DAY_ONE_PROFILE_SAVED", "setup_profile"],
+  ["H3_DAY_ONE_CARD_BOUND", "bind_bank_card"],
+];
+for (const [eventType, questCode] of published) {
+  test(`${eventType} creates and enables the real typed binding with CAS identity`, async () => {
+    const view = render({ dayOneTasks: [{ taskCode: questCode, status: "paused" }] });
     const create = view.click("+ 新增绑定");
-    assert.ok(!create.businessForm.fields.find(f => f.key === "eventType").options.includes(eventType));
-    const form = { bindingCode: "EXISTING", eventType, questCode: "visit_earn", userIdField: "user_id", enabled: "true" };
-    for (const enabled of ["true", "false"]) {
-      await assert.rejects(create.run("fixture", undefined, { ...form, enabled }), /H3_BINDING_APP_OBSERVATION_UNAVAILABLE/);
-    }
-    assert.deepEqual(view.writes, []);
-    const binding = { bindingCode: "EXISTING", producer: "SYSTEM", eventType, questCode: "visit_earn", userIdField: "user_id", status: 0 };
+    assert.ok(create.businessForm.fields.find(f => f.key === "eventType").options.includes(eventType));
+    const form = { bindingCode: "EXISTING", eventType, questCode, userIdField: "user_id", enabled: "true" };
+    await create.run("fixture", undefined, form);
+    assert.deepEqual(view.writes.at(-1), ["EXISTING", { producer: "SYSTEM", eventType, questCode, userIdField: "user_id", enabled: true, reason: "fixture" }]);
+    const binding = { bindingCode: "EXISTING", producer: "SYSTEM", eventType, questCode, userIdField: "user_id", status: 0 };
     const paused = render({ eventBindings: [binding] });
-    assert.equal(paused.buttons("启用")[0].props.disabled, true);
-    // Exercise the actual callback as well as the UI disabled state.
-    paused.buttons("启用")[0].props.onClick();
-    await assert.rejects(paused.dialogs.at(-1).run("fixture"), /H3_BINDING_APP_OBSERVATION_UNAVAILABLE/);
-    const edit = paused.click("改绑");
-    assert.ok(edit.businessForm.fields.find(f => f.key === "eventType").options.includes(eventType));
-    await assert.rejects(edit.run("fixture", undefined, form), /H3_BINDING_APP_OBSERVATION_UNAVAILABLE/);
-    assert.deepEqual(paused.writes, []);
-    await edit.run("fixture", undefined, { ...form, enabled: "false" });
-    assert.equal(paused.writes.at(-1)[1].enabled, false);
-    await edit.run("fixture", undefined, { ...form, eventType: "H3_EXCHANGE_COMPLETED" });
-    assert.equal(paused.writes.at(-1)[1].eventType, "H3_EXCHANGE_COMPLETED");
-    const active = render({ eventBindings: [{ ...binding, status: 1 }] });
-    await active.click("停用").run("fixture");
-    assert.equal(active.writes.at(-1)[1].enabled, false);
-    assert.equal(active.writes.at(-1)[1].expectedEnabled, true);
-    await active.click("删除").run("fixture");
-    assert.equal(active.writes.length, 2);
+    await paused.click("启用").run("fixture");
+    assert.equal(paused.writes.at(-1)[1].enabled, true);
+    assert.equal(paused.writes.at(-1)[1].expectedEnabled, false);
+    assert.equal(paused.writes.at(-1)[1].expectedEventType, eventType);
   });
 }
