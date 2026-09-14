@@ -7,11 +7,12 @@
  * 写动作仅导出/监管报告/排程模板类,真写统一走 L 后端接口并由后端审计留痕;
  * 聚合导出仍需操作确认(confirm + 审计);视图参数普通确认批(ViewParamModal,会话级)。操作确认 显式 edit 契约同全域。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./l-domain.css";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { L1HeaderActions, L1Kpi } from "./l-tabs/l1-kpi";
+import type { L1ExportSource } from "./l-tabs/l1-export-contract";
 import { L2HeaderActions, L2Funnel } from "./l-tabs/l2-funnel";
 import { L3HeaderActions, L3Finance } from "./l-tabs/l3-finance";
 import { L4HeaderActions, L4Ops } from "./l-tabs/l4-ops";
@@ -30,20 +31,30 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "L1", [meta.l2Id]);
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
-  const [biData, setBiData] = useState<LBiData | null>(null);
+  const [biSnapshot, setBiData] = useState<LBiData | null>(null);
+  const [biOwner, setBiOwner] = useState<unknown>(null);
   const [biLoading, setBiLoading] = useState(true);
   const [biError, setBiError] = useState<string | null>(null);
+  const [l1ExportSource, setL1ExportSource] = useState<L1ExportSource | null>(null);
   const [l2Query, setL2Query] = useState<L2FunnelQuery>({});
   const [l2SliceExportable, setL2SliceExportable] = useState(true);
   const [l3Query, setL3Query] = useState<L3FinanceQuery>({ period: "month" });
   const [l4Query, setL4Query] = useState<L4OperationsQuery>({ period: "week", phase: "ALL" });
   const session = useAdminAuth((state) => state.session);
+  const currentOwner = useRef(session);
+  currentOwner.current = session;
+  const readGeneration = useRef(0);
+  const biData = biOwner === session ? biSnapshot : null;
   const aggregateExportOptions = useMemo(
     () => allowedAggregateExportOptions(session?.role, session?.authorities ?? []),
     [session?.role, session?.authorities],
   );
 
   const reloadBi = useCallback(async () => {
+    const generation = ++readGeneration.current;
+    const owner = session;
+    const isCurrent = () => generation === readGeneration.current && owner === currentOwner.current;
+    setBiOwner(owner);
     if (tab === "L4" && l4Query.period === "custom" && (!l4Query.from || !l4Query.to)) {
       setBiLoading(false);
       setBiError(null);
@@ -61,24 +72,25 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
       if (tab === "L4" && !readL4Operations(nextData.l4)) {
         throw new Error(formatAdminApiError("L4_RESPONSE_INVALID", "L4_RESPONSE_INVALID"));
       }
-      setBiData(nextData);
+      if (isCurrent()) setBiData(nextData);
     } catch (error) {
-      setBiError(displayAdminError(error));
+      if (isCurrent()) setBiError(displayAdminError(error));
     } finally {
-      setBiLoading(false);
+      if (isCurrent()) setBiLoading(false);
     }
-  }, [l3Query, l4Query, tab]);
+  }, [l3Query, l4Query, tab, session]);
 
   useEffect(() => {
     void reloadBi();
+    return () => { ++readGeneration.current; };
   }, [reloadBi]);
 
   const ctx: LCtx = {
     toast: setToast,
     openActionConfirm: setActionConfirm,
     biData,
-    biLoading,
-    biError,
+    biLoading: biLoading || biOwner !== session,
+    biError: biOwner === session ? biError : null,
     reloadBi,
     biActions: lBiActions,
     canExport: canExportBiReports(session?.role, session?.authorities ?? [], tab),
@@ -103,7 +115,7 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
   };
 
   const right =
-    tab === "L1" ? <L1HeaderActions ctx={ctx} />
+    tab === "L1" ? <L1HeaderActions ctx={ctx} source={l1ExportSource?.parentData === biData?.l1 ? l1ExportSource : undefined} />
     : tab === "L2" ? <L2HeaderActions ctx={ctx} />
     : tab === "L3" ? <L3HeaderActions ctx={ctx} />
     : tab === "L4" ? <L4HeaderActions ctx={ctx} />
@@ -114,7 +126,7 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
     <div className="dkpage ldom">
       <DomainHeader {...meta} right={right} />
 
-      {tab === "L1" && <L1Kpi ctx={ctx} />}
+      {tab === "L1" && <L1Kpi key={session ? `${session.adminId}:${session.username}` : "anonymous"} ctx={ctx} onExportSource={setL1ExportSource} />}
       {tab === "L2" && <L2Funnel ctx={ctx} />}
       {tab === "L3" && <L3Finance ctx={ctx} />}
       {tab === "L4" && <L4Ops ctx={ctx} />}

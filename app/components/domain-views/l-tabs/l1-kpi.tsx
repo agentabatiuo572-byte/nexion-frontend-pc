@@ -17,7 +17,7 @@ import { ViewParamModal, type ViewParamReq } from "./view-param-modal";
 import type { LCtx } from "./types";
 import { fetchL1Kpi, fetchL1KpiDrilldown, fetchL1KpiTrend, type L1KpiQuery } from "@/lib/admin/l-client";
 import { validateL1Dashboard, validateL1Drilldown, validateL1Trend } from "./l1-kpi-contract";
-import { resolveL1ExportMode, submitL1Export } from "./l1-export-contract";
+import { resolveL1ExportMode, resolveL1ExportUnavailableReason, submitL1Export, type L1ExportSource } from "./l1-export-contract";
 import { loadL1LocalView, saveL1LocalView } from "./l1-local-view";
 import { createL1ReadController } from "./l1-request-generation";
 import { assertL1AttributionLinks } from "./l-attribution-routes";
@@ -52,17 +52,23 @@ const tgtLabel = (k: Kpi) => {
 };
 const tgtValue = (k: Kpi) => (k.dir === "band" ? (k.band?.[0] ?? k.target) : k.target);
 
-export function L1HeaderActions({ ctx }: { ctx: LCtx }) {
-  const sourceUnavailable = Boolean(ctx.biError || ctx.biLoading);
-  const exportMode = resolveL1ExportMode(ctx.biData?.l1, sourceUnavailable);
+export function L1HeaderActions({ ctx, source }: { ctx: LCtx; source?: L1ExportSource | null }) {
+  const sourceUnavailable = Boolean(ctx.biError || ctx.biLoading || (source && source.status !== "ready"));
+  const exportData = source ? source.data : ctx.biData?.l1;
+  const exportMode = resolveL1ExportMode(exportData, sourceUnavailable);
   const exportable = exportMode !== null;
+  const exportUnavailableReason = resolveL1ExportUnavailableReason(
+    exportData, ctx.biLoading || source?.status === "loading" ? "loading" : ctx.biError || source?.status === "error" ? "error" : "ready",
+  );
   const complete = exportMode === "series";
   const exportKpi = async () => {
+    if (!ctx.canExport) return;
     try {
       const submittedMode = await submitL1Export(
-        ctx.biData?.l1,
-        Boolean(ctx.biError || ctx.biLoading),
+        exportData,
+        sourceUnavailable,
         ctx.biActions?.createReport,
+        source?.query ?? { window: "7d" },
       );
       if (!submittedMode) {
         ctx.toast("L1 权威数据当前不可导出 · 请重新读取后再试");
@@ -78,7 +84,7 @@ export function L1HeaderActions({ ctx }: { ctx: LCtx }) {
     <>
       <span className="f-ro"><span className="d" />只读报表域 · 不改任何业务规则</span>
       {!ctx.canExport && <span className="f-ro">当前角色仅可查看 · 导出需报表管理权限</span>}
-      <button className="f-cta" onClick={exportKpi} disabled={!ctx.canExport || !exportable || ctx.biLoading} title={!ctx.canExport ? "当前角色没有报表导出权限" : !exportable ? "L1 权威数据尚未通过协议校验" : undefined}>
+      <button className="f-cta" onClick={exportKpi} disabled={!ctx.canExport || !exportable || ctx.biLoading} title={!ctx.canExport ? "当前角色没有报表导出权限" : exportUnavailableReason}>
         {complete ? "导出 KPI 序列 CSV" : "导出 KPI 当前汇总 CSV"}
       </button>
     </>
@@ -92,7 +98,7 @@ function renderFx(fx: string, bold: string[]) {
   return fx.split(re).map((part, i) => (bold.includes(part) ? <b key={i}>{part}</b> : <span key={i}>{part}</span>));
 }
 
-export function L1Kpi({ ctx }: { ctx: LCtx }) {
+export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (source: L1ExportSource) => void }) {
   const [selKpi, setSelKpi] = useState(1); // index → #2(最弱预警项)
   const [ylOffset, setYlOffset] = useState(10);
   const [phaseOn, setPhaseOn] = useState(true);
@@ -114,15 +120,42 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
   const [drillTrend, setDrillTrend] = useState<number[] | null>(null);
   const [drillError, setDrillError] = useState("");
   const l1Requests = useRef(createL1ReadController());
+  const selectedQuery = useRef<L1KpiQuery>({ window: "7d" });
 
   useEffect(() => {
     l1Requests.current.invalidate();
-    setLocalData(null);
     setDrillKpi(null);
     setDrillTrend(null);
     setDrillError("");
     setRefreshError("");
+    const parentData = ctx.biData?.l1;
+    const query = selectedQuery.current;
+    const hasSelection = query.window !== "7d" || Boolean(query.from || query.to || query.cohort || query.phase || query.locale || query.ref);
+    if (!hasSelection) setLocalData(null);
+    if (parentData && hasSelection) {
+      setRefreshing(true);
+      onExportSource?.({ parentData, data: parentData, query, status: "loading" });
+      l1Requests.current.run(
+        () => fetchL1Kpi(query),
+        next => {
+          validateL1Dashboard(next);
+          setLocalData(next);
+          setWin(query.window);
+          onExportSource?.({ parentData, data: next, query, status: "ready" });
+        },
+        error => {
+          setRefreshError(displayAdminError(error));
+          onExportSource?.({ parentData, data: parentData, query, status: "error" });
+        },
+        () => setRefreshing(false),
+      );
+    } else {
+      setRefreshing(false);
+      onExportSource?.({ parentData, data: parentData, query, status: parentData ? "ready" : "loading" });
+    }
   }, [ctx.biData?.l1]);
+
+  useEffect(() => () => l1Requests.current.invalidate(), []);
 
   useEffect(() => {
     let saved: ReturnType<typeof loadL1LocalView>;
@@ -143,23 +176,34 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
     setPhaseFilter(saved.phaseFilter);
     setLocaleFilter(saved.localeFilter);
     setRefFilter(saved.refFilter);
-    l1Requests.current.run(
-      () => fetchL1Kpi({
+    const savedQuery: L1KpiQuery = {
         ...(saved.window === "custom" ? { window: "custom", from: saved.customFrom, to: saved.customTo } : { window: saved.window }),
         cohort: saved.cohortFilter || undefined, phase: saved.phaseFilter || undefined,
         locale: saved.localeFilter || undefined, ref: saved.refFilter || undefined,
-      }),
+    };
+    selectedQuery.current = savedQuery;
+    setRefreshing(true);
+    onExportSource?.({ parentData: ctx.biData?.l1, data: ctx.biData?.l1, query: savedQuery, status: "loading" });
+    l1Requests.current.run(
+      () => fetchL1Kpi(savedQuery),
       (next) => {
         validateL1Dashboard(next);
         setLocalData(next);
         setRefreshError("");
+        onExportSource?.({ parentData: ctx.biData?.l1, data: next, query: savedQuery, status: "ready" });
       },
-      (error) => setRefreshError(displayAdminError(error)),
+      (error) => {
+        setRefreshError(displayAdminError(error));
+        onExportSource?.({ parentData: ctx.biData?.l1, data: ctx.biData?.l1, query: savedQuery, status: "error" });
+      },
+      () => setRefreshing(false),
     );
     return () => l1Requests.current.invalidate();
   }, []);
 
-  const data = localData ?? ctx.biData?.l1;
+  const query = selectedQuery.current;
+  const selectedReadRequired = query.window !== "7d" || Boolean(query.from || query.to || query.cohort || query.phase || query.locale || query.ref);
+  const data = localData ?? (selectedReadRequired ? undefined : ctx.biData?.l1);
   const rawKpis = rows<Kpi>(data?.kpis);
   const liveTotals = readL1LiveTotals(data);
   let protocolError = "";
@@ -171,7 +215,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
     }
   }
   if (!rawKpis.length && liveTotals.length) return <L1LiveTotals metrics={liveTotals} />;
-  if (!rawKpis.length) return <LDataState ctx={ctx} label="L1" />;
+  if (!rawKpis.length) return <LDataState ctx={{ ...ctx, biLoading: refreshing || ctx.biLoading, biError: refreshError || ctx.biError }} label="L1" />;
   if (protocolError) {
     return (
       <section className="l-card">
@@ -209,7 +253,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
     num: k.numerator == null ? baseExt.num : String(k.numerator),
     den: k.denominator == null ? baseExt.den : String(k.denominator),
   };
-  const phase = rec(ctx.biData?.currentPhase);
+  const phase = rec(data?.currentPhase);
   const phaseKnown = typeof phase.code === "string" && phase.code.length > 0;
   const rs = { currentPhase: phaseKnown ? String(phase.code) : "未返回", currentMonth: phaseKnown ? num(phase.month, 0) : "—" };
 
@@ -232,11 +276,16 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
     filters: Partial<L1KpiQuery> = {},
   ) => {
     setRefreshing(true);
+    setLocalData(data ?? null);
+    const query = activeQuery(nextWindow, filters);
+    selectedQuery.current = query;
+    onExportSource?.({ parentData: ctx.biData?.l1, data, query, status: "loading" });
     l1Requests.current.run(
-      () => fetchL1Kpi(activeQuery(nextWindow, filters)),
+      () => fetchL1Kpi(query),
       (next) => {
         validateL1Dashboard(next);
         setLocalData(next);
+        onExportSource?.({ parentData: ctx.biData?.l1, data: next, query, status: "ready" });
         setDrillKpi(null);
         setDrillTrend(null);
         setDrillError("");
@@ -248,6 +297,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
       (error) => {
         const message = displayAdminError(error);
         setRefreshError(message);
+        onExportSource?.({ parentData: ctx.biData?.l1, data, query, status: "error" });
         ctx.toast(`KPI 刷新失败 · ${message}`);
       },
       () => setRefreshing(false),

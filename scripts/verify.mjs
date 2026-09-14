@@ -231,12 +231,14 @@ writeRecord({
 // 齿轮表:序号自动派生(新增/重排齿轮不再手工改 [x/N])。本机注意:channel-parity 起的后端依赖齿轮
 // 硬读兄弟仓 nexion-backend,缺仓环境链在该齿断(memory: nexion-backend-not-in-workspace)。
 const GEARS = [
+  ["L1 selected-source export contract", "node", ["--experimental-strip-types", "--test", "tests/l1-export-source-flow.test.mjs", "tests/l1-narrow-phase-readback.test.mjs", "tests/l-final10-protocol-repair-contract.test.mjs"]],
   ["typecheck", npxCmd, ["--no-install", "tsc", "--noEmit"]],
   ["runtime mock import guard", "node", ["scripts/check-runtime-mock-imports.mjs"]],
   ["admin auth gate sentinel", "node", ["scripts/admin-auth-gate-sentinel.mjs"]],
   ["admin auth gate contract", "node", ["--test", "tests/admin-auth-password-change-gate.test.mjs"]],
   ["workspace path resolver", "node", ["--test", "scripts/nexion-workspace-paths.test.mjs"]],
   ["canon sentinel", "node", ["scripts/canon-sentinel.mjs"]],
+  ["canon royalty projection regression", "node", ["--test", "tests/canon-royalty-projection-contract.test.mjs"]],
   ["interaction audit", "node", ["scripts/admin-interaction-audit.mjs"]],
   ["M support surface audit", "node", ["scripts/admin-support-surface-audit.mjs"]],
   ["keyboard submit contract", "node", ["--experimental-strip-types", "--test", "tests/keyboard-submit-contract.test.mjs"]],

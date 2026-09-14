@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   resolveL1ExportMode,
+  resolveL1ExportUnavailableReason,
   submitL1Export,
 } from "../app/components/domain-views/l-tabs/l1-export-contract.ts";
 import {
@@ -72,6 +73,24 @@ test("L1 incomplete KPI spark sequences are not exportable", () => {
   incomplete.kpis[3].spark = incomplete.kpis[3].spark.slice(0, 5);
 
   assert.equal(resolveL1ExportMode(incomplete, false), null);
+});
+
+test("L1 distinguishes unavailable metrics, invalid data and read failures without enabling export", async () => {
+  const noMetrics = validL1Dashboard();
+  noMetrics.kpis = noMetrics.kpis.map((row) => ({ ...row, available: false, value: null }));
+  assert.equal(resolveL1ExportUnavailableReason(noMetrics), "当前时间窗没有可用 KPI，暂不能导出");
+  assert.equal(resolveL1ExportMode(noMetrics, false), null);
+  let writes = 0;
+  assert.equal(await submitL1Export(noMetrics, false, async () => { writes += 1; }), null);
+  assert.equal(writes, 0);
+  const malformed = { ...noMetrics, kpis: noMetrics.kpis.slice(0, 7) };
+  assert.equal(resolveL1ExportUnavailableReason(malformed), "KPI 数据格式异常，请重新读取后再试");
+  assert.equal(resolveL1ExportUnavailableReason(validL1Dashboard(), "loading"), "正在读取 KPI 数据，请稍候");
+  assert.equal(resolveL1ExportUnavailableReason(validL1Dashboard(), "error"), "KPI 数据读取失败，请重试");
+  assert.equal(resolveL1ExportUnavailableReason({ available: false }), "KPI 数据暂不可用，请重新读取后再试");
+  assert.equal(resolveL1ExportUnavailableReason(null), "尚未读取到可导出的 KPI 数据");
+  assert.equal(resolveL1ExportUnavailableReason(validL1Dashboard()), undefined);
+  assert.equal(resolveL1ExportUnavailableReason({ totals: { users: 3 } }), undefined);
 });
 
 test("L1 recovery with a normal eight-KPI response enables and submits exactly one export", async () => {

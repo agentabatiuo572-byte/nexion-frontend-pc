@@ -70,6 +70,9 @@ export type LBiData = {
 };
 
 export type LReportCreateInput = {
+  window?: L1KpiQuery["window"];
+  from?: string;
+  to?: string;
   exportType?: string;
   timeRange?: string;
   fields?: string;
@@ -515,6 +518,7 @@ export async function fetchLBiOverview(
   if (moduleCode === "L4") return fetchL4OperationsOverview(l4Query);
   const raw = await apiRequest<unknown>(MODULE_OVERVIEW_PATH[moduleCode]);
   const key = moduleCode.toLowerCase() as Lowercase<LModuleCode>;
+  if (moduleCode === "L1") return { l1: rec(raw), currentPhase: rec(rec(raw).currentPhase) };
   if (moduleCode === "L5") return { [key]: normalizeL5(raw) } as LBiData;
   return { [key]: rec(raw) } as LBiData;
 }

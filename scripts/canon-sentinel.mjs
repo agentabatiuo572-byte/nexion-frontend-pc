@@ -130,6 +130,12 @@ function expectNumber(id, actual, expected, evidence, tolerance = 1e-9) {
   if (!ok) failures.push(`${id}: ${actual} expected ${expected}`);
 }
 
+function expectPattern(id, source, pattern, details, evidence) {
+  const ok = source !== null && pattern.test(source);
+  pushCheck(checks, id, ok, details, evidence);
+  if (!ok) failures.push(`${id}: ${details}`);
+}
+
 const uniStaking = readIfExists(path.join(UNI_ROOT, "src", "store", "staking.ts"));
 // 2026-07-02 admin 4fdb080:g-tabs/data.ts(USDT_TIERS/GENESIS mock)随 server-canonical 化删除,
 // 原 if (adminG) 分支自此静默跳过——正是本文件自己警告的「空集全过」假绿形态。现改响亮真锚:
@@ -171,14 +177,61 @@ if (!uniGenesis) {
     expectNumber(`genesis.${label}.unitPriceAnchor`, t1Match ? Number(t1Match[1]) : null, canon.genesis.unitPriceUSDT, ["../Nexion-uniapp/src/store/genesis-config.ts"]);
     expectNumber(`genesis.${label}.seedSoldSlots`, extractFieldNumber(src, "soldSlots"), canon.genesis.seedSoldSlots, [evidence]);
   }
-  // 2026-07-10 uniapp 177261f 删「创世 18% 凭空成交」引擎时一并删了 GENESIS_ROYALTY_RATE 常量
-  //(数值 0.025 未变);2.5% 版税在 uni 侧仅存于三语市场页文案 royaltyFooter。哨兵改锚该文案——
-  // 本哨兵的本职即「display copy 不得静默 fork 经济学」,逐语言对账防单语种文案漂移。
+  // 版税是可运营调整的服务端参数；App 只投影当前值，不能把默认 2.5% 写回三语文案。
+  // 数值基线锚定 Java 参数定义，App 则逐语言检查模板和未知态，避免任一端静默伪造费率。
+  const backendGenesisMarket = readIfExists(path.join(
+    BACKEND_ROOT,
+    "src",
+    "main",
+    "java",
+    "ffdd",
+    "opsconsole",
+    "market",
+    "application",
+    "OpsNexMarketService.java",
+  ));
+  const defaultRoyalty = backendGenesisMarket?.match(
+    /case "royalty"\s*->\s*new GenesisParamDef\(\s*key,\s*"nx_genesis_series\.royalty_bps",\s*"NUMBER",\s*"(\d+(?:\.\d+)?)"/s,
+  );
+  expectNumber(
+    "genesis.backend.defaultRoyaltyRate",
+    defaultRoyalty ? Number(defaultRoyalty[1]) / 100 : null,
+    canon.genesis.royaltyRate,
+    ["../nexion-backend/src/main/java/ffdd/opsconsole/market/application/OpsNexMarketService.java"],
+  );
   for (const locale of ["zh", "en", "vi"]) {
     const localeMessages = readIfExists(path.join(UNI_ROOT, "src", "i18n", "messages", `${locale}.ts`));
-    const royaltyCopy = localeMessages ? localeMessages.match(/royaltyFooter:\s*"[^"]*?(\d+(?:\.\d+)?)\s*%/) : null;
-    expectNumber(`genesis.uni.royaltyRate.${locale}`, royaltyCopy ? Number(royaltyCopy[1]) / 100 : null, canon.genesis.royaltyRate, [`../Nexion-uniapp/src/i18n/messages/${locale}.ts`]);
+    const evidence = [`../Nexion-uniapp/src/i18n/messages/${locale}.ts`];
+    expectPattern(
+      `genesis.uni.royaltyTemplate.${locale}`,
+      localeMessages,
+      /marketplace:\s*\{[\s\S]{0,12000}royaltyFooter:\s*"(?![^"]*\d+(?:\.\d+)?\s*%)[^"]*\{royalty\}/,
+      "royaltyFooter must interpolate the server-projected rate",
+      evidence,
+    );
+    expectPattern(
+      `genesis.uni.royaltyUnavailable.${locale}`,
+      localeMessages,
+      /marketplace:\s*\{[\s\S]{0,12000}royaltyUnavailable:\s*"[^"]+"/,
+      "royaltyUnavailable must explain an unavailable server rate",
+      evidence,
+    );
   }
+  const marketplace = readIfExists(path.join(UNI_ROOT, "src", "pages", "genesis", "marketplace.vue"));
+  expectPattern(
+    "genesis.uni.royaltyRemoteProjection",
+    uniGenesis,
+    /remoteRoyaltyPct\.value\s*=\s*state\.series\.royaltyPct/,
+    "Genesis store must project state.series.royaltyPct",
+    ["../Nexion-uniapp/src/store/genesis.ts"],
+  );
+  expectPattern(
+    "genesis.uni.royaltyMarketplaceFallback",
+    marketplace,
+    /presentGenesisRoyalty\(genesis\.remoteRoyaltyPct\)[\s\S]{0,180}royaltyUnavailable[\s\S]{0,180}royaltyFooter/,
+    "marketplace must show unknown state instead of a local royalty fallback",
+    ["../Nexion-uniapp/src/pages/genesis/marketplace.vue"],
+  );
   // 2026-07-02 4fdb080:g-tabs GENESIS mock 删除,genesis.admin 数值(totalSlots/unitPrice/royalty/
   // perSlot/floor)改由 G4 真接口下发,本仓无字面量 → 值检查退役(原 if (adminGenesis) 已静默跳过
   // 多时);uni 侧 + canon 仍逐项对账,canon 里这批键继续作为权威台账保留。本仓仅存的 admin 侧
