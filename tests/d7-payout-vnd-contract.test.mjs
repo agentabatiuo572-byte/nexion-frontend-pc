@@ -62,5 +62,8 @@ test("D7 registry and header describe the server parameter capability without cl
   const source = `${read("lib/admin/registry/d.ts")}\n${read("app/components/domain-views/d-view.tsx")}`;
   assert.match(source, /服务端权威整组配置/);
   assert.match(source, /真实出款轨仍关闭/);
+  assert.match(source, /HDPay 银行提现已接入报价、审核、订单、账本与回调处理/);
+  assert.match(source, /供应商语义确认及授权验收/);
+  assert.doesNotMatch(source, /订单、账本与回调仍未完成/);
   assert.doesNotMatch(source, /只读 HOLD|本页不保存|通道停用不影响在途单|调整只影响新提现单/);
 });

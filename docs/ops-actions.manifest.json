@@ -2466,7 +2466,7 @@
       "view": "d-tabs/d7-payout-vnd.tsx",
       "batch": "done",
       "restActions": [],
-      "note": "Sandbox 环境已退役；D7 仅保留开发环境规范配置与真实 provider 失败关闭路径，不再提供 Mock 订单或回调入口"
+      "note": "HDPay 银行提现已接入报价、审核、订单、账本与回调处理；真实出款仍须完成商户权限、回调配置、供应商语义确认及授权验收。供应商未就绪时失败关闭，不提供 Mock 订单或回调入口"
     },
     {
       "id": "OPS-E-15",
