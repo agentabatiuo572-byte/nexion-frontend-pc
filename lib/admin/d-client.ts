@@ -1741,7 +1741,7 @@ export async function registerD1VietQrReceipt(input: {
   memoCode?: string;
   receivedVnd: number;
   receivedAt: string;
-  evidenceRef: string;
+  evidenceRef?: string;
   reason: string;
   operator: string;
 }) {

@@ -1587,11 +1587,12 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
   return undefined;
 }
 
-function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec: BusinessFormSpec; value: BusinessFormValue; onChange: (next: BusinessFormValue) => void; onSelectionChange?: (next: BusinessFormValue) => void }) {
+function BusinessFormBlock({ spec, value, onChange, onSelectionChange, onUploadStateChange }: { spec: BusinessFormSpec; value: BusinessFormValue; onChange: (next: BusinessFormValue) => void; onSelectionChange?: (next: BusinessFormValue) => void; onUploadStateChange: (key: string, state: "uploading" | "failed" | undefined) => void }) {
   const [multiSelectSearch, setMultiSelectSearch] = useState<Record<string, string>>({});
   const [assetUploading, setAssetUploading] = useState<Record<string, boolean>>({});
   const [assetNames, setAssetNames] = useState<Record<string, string>>({});
   const [assetErrors, setAssetErrors] = useState<Record<string, string>>({});
+  const assetInputs = useRef<Record<string, HTMLInputElement | null>>({});
   const latestValueRef = useRef(value);
   useEffect(() => { latestValueRef.current = value; }, [value]);
   const set = (key: string, v: string) => {
@@ -1736,12 +1737,17 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
                 required={f.required !== false}
                 aria-required={f.required !== false}
                 disabled={assetUploading[f.key]}
+                ref={(input) => { assetInputs.current[f.key] = input; }}
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   set(f.key, "");
                   setAssetNames((current) => ({ ...current, [f.key]: "" }));
                   setAssetErrors((current) => ({ ...current, [f.key]: "" }));
-                  if (!file) return;
+                  if (!file) {
+                    onUploadStateChange(f.key, undefined);
+                    return;
+                  }
+                  onUploadStateChange(f.key, "uploading");
                   setAssetUploading((current) => ({ ...current, [f.key]: true }));
                   const upload = f.uploadPurpose === "vietqr-receipt"
                     ? uploadD1VietQrReceiptEvidence(file)
@@ -1754,7 +1760,9 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
                   void upload.then((asset) => {
                     set(f.key, asset.assetId);
                     setAssetNames((current) => ({ ...current, [f.key]: file.name }));
+                    onUploadStateChange(f.key, undefined);
                   }).catch((error) => {
+                    onUploadStateChange(f.key, "failed");
                     setAssetErrors((current) => ({
                       ...current,
                       [f.key]: error instanceof Error ? error.message : "凭证上传失败，请重试",
@@ -1768,6 +1776,16 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
                 {assetUploading[f.key] ? "正在上传并校验凭证…" : assetNames[f.key] ? `已上传：${assetNames[f.key]}` : (f.help ?? "请上传清晰的银行回单截图")}
               </span>
               {assetErrors[f.key] && <span role="alert" className="tiny" style={{ color: "var(--v5-danger)" }}>{assetErrors[f.key]}</span>}
+              {!assetUploading[f.key] && (assetNames[f.key] || assetErrors[f.key]) && (
+                <button type="button" className="l-btn sm" onClick={(event) => {
+                  event.preventDefault();
+                  set(f.key, "");
+                  setAssetNames((current) => ({ ...current, [f.key]: "" }));
+                  setAssetErrors((current) => ({ ...current, [f.key]: "" }));
+                  if (assetInputs.current[f.key]) assetInputs.current[f.key]!.value = "";
+                  onUploadStateChange(f.key, undefined);
+                }}>{f.required === false ? "不附图片" : "清除图片并重新上传"}</button>
+              )}
             </label>
           ) : (
             <label className="field" style={{ marginBottom: 0, ...(f.wide ? { gridColumn: "1 / -1" } : {}) }} key={f.key}>
@@ -3328,6 +3346,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   const [newVal, setNewVal] = useState(() => initEditValue(edit));
   const [activeBusinessForm, setActiveBusinessForm] = useState<BusinessFormSpec | undefined>(businessForm);
   const [businessValue, setBusinessValue] = useState<BusinessFormValue>(() => initBusinessForm(businessForm));
+  const [uploadStates, setUploadStates] = useState<Record<string, "uploading" | "failed" | undefined>>({});
   const [businessSelectionLoading, setBusinessSelectionLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -3376,7 +3395,8 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   const businessMissing = missingBusinessFields(activeBusinessForm, businessValue);
   const derivedNewVal = businessNewValue(activeBusinessForm, businessValue);
   const editValueOk = isEditValueValid(spec, newVal);
-  const canConfirm = reasonPolicyReady && !covBlocked && !businessSelectionLoading && !submitting && reasonOk && editValueOk && businessMissing.length === 0;
+  const uploadBlocked = Object.values(uploadStates).some(Boolean);
+  const canConfirm = reasonPolicyReady && !covBlocked && !businessSelectionLoading && !submitting && reasonOk && editValueOk && businessMissing.length === 0 && !uploadBlocked;
   useEffect(() => {
     let active = true;
     setAuthoritativeReasonMin(null);
@@ -3471,8 +3491,11 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         <span className="mc" style={{ background: "var(--surface-3)", color: "var(--ink-3)" }}>{completionCopy ?? (isJ4Command ? "提交后等待服务端确认" : "确认后立即生效")}</span>
       </div>
       {activeBusinessForm && (
-        <BusinessFormBlock spec={activeBusinessForm} value={businessValue} onChange={setBusinessValue} onSelectionChange={(next) => void handleBusinessSelectionChange(next)} />
+        <BusinessFormBlock spec={activeBusinessForm} value={businessValue} onChange={setBusinessValue} onSelectionChange={(next) => void handleBusinessSelectionChange(next)} onUploadStateChange={(key, state) => setUploadStates((current) => ({ ...current, [key]: state }))} />
       )}
+      {uploadBlocked && <div role="alert" className="itint" style={{ marginTop: 8 }}>
+        {Object.values(uploadStates).includes("uploading") ? "图片正在上传，请完成后再提交。" : "图片上传失败，请重新上传或明确清除图片后再提交。"}
+      </div>}
       {businessSelectionLoading && <div className="itint" style={{ marginTop: 8 }}>正在加载目标法域版本快照…</div>}
       {spec && (
         <div className="field">

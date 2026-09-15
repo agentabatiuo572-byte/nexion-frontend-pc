@@ -354,10 +354,10 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
             current: vietnamLocalDateTimeNow(), help: "按银行回单的到账时间填写；不是登记操作的当前时间。",
           },
           {
-            key: "evidenceAssetId", label: "银行回单图片", inputKind: "asset-upload", required: true, wide: true,
+            key: "evidenceAssetId", label: "银行回单图片（选填）", inputKind: "asset-upload", required: false, wide: true,
             uploadPurpose: "vietqr-receipt",
             accept: "image/jpeg,image/png",
-            help: "支持 JPG、PNG，最大 10 MB。服务端完整解码校验通过后才能提交登记。",
+            help: "可不上传图片直接登记；如上传，支持 JPG、PNG，最大 10 MB，须通过服务端图片校验。",
           },
         ],
       },
@@ -369,14 +369,13 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
         if (!Number.isSafeInteger(bankAccountId) || bankAccountId <= 0) throw new Error("请选择银行回单上的实际收款账户");
         if (!Number.isSafeInteger(receivedVnd) || receivedVnd <= 0) throw new Error("实收金额必须是正整数 VND");
         if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{5,127}$/.test(paymentReference)) throw new Error("请照抄银行回单上的交易参考号（6–128 位）");
-        if (!evidenceAssetId) throw new Error("请先上传银行回单图片");
         return applyBankWrite(() => registerD1VietQrReceipt({
           bankAccountId,
           paymentReference,
           memoCode: business?.memoCode?.trim() || undefined,
           receivedVnd,
           receivedAt: vietQrReceivedAtInstant(business?.receivedAt ?? ""),
-          evidenceRef: `media:${evidenceAssetId}`,
+          evidenceRef: evidenceAssetId ? `media:${evidenceAssetId}` : undefined,
           reason,
           operator,
         }), "银行回单已登记；系统已按真实付款关系完成分类");
@@ -630,6 +629,9 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
           </div>
         </div>
         <div className="l-b" style={{ paddingBottom: 8 }}>
+          <div className="dtint" style={{ marginBottom: 12 }}>
+            HDPay 充值由支付通知和定期查单确认到账，无需上传银行回单图片。下方人工登记用于核对银行转账，图片可选填。
+          </div>
           <div className="chips">
             {BANK_VIEW_TABS.map(([key, label]) => (
               <button key={key} className={`chip${bankView === key ? " sel" : ""}`} disabled={loading || busy} onClick={() => { setBankView(key); setBankPage(1); }}>{label}</button>
