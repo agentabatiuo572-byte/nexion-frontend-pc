@@ -60,7 +60,7 @@ test("D2 truncates long withdrawal and asset-chain labels while exposing the ful
   assert.match(page, /aria-label=\{`打开提现单 \$\{row\.withdrawalNo\} 的详情`\}/);
   assert.match(page, /className="d2-cell-ellipsis">\{row\.withdrawalNo\}<\/span>/);
   assert.match(page, /title=\{`\$\{row\.asset\} \/ \$\{row\.chain\}`\}/);
-  assert.match(page, /aria-label=\{`资产与链：\$\{row\.asset\} \/ \$\{row\.chain\}`\}/);
+  assert.match(page, /aria-label=\{`资产与渠道：\$\{row\.asset\} \/ \$\{row\.chain\}`\}/);
   assert.match(dCss, /\.ddom \.d2-cell-ellipsis\s*\{[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s);
   assert.match(dCss, /\.ddom \.d2-withdrawal-link\s*\{[^}]*width:\s*100%;[^}]*min-width:\s*0;/s);
 });
@@ -89,7 +89,7 @@ test("D2 separates the primary search bar from advanced filters", () => {
 test("D2 detail fetch is latest-only and fails closed before any write", () => {
   assert.match(page, /const detailRequestSeq = useRef\(0\)/);
   assert.match(page, /const seq = \+\+detailRequestSeq\.current/);
-  assert.match(page, /if \(seq === detailRequestSeq\.current\) setDetail\(latest\)/);
+  assert.match(page, /if \(seq === detailRequestSeq\.current\) \{ setDetail\(latest\); setBankDetail\(bank\); \}/);
   assert.match(page, /detailRequestSeq\.current \+= 1/);
   assert.match(page, /setDetailError\(message\)/);
   assert.match(page, /detailLoading \|\| !!detailError/);

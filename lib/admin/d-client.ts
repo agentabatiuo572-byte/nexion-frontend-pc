@@ -1884,6 +1884,36 @@ export async function fetchD2WithdrawalDetail(withdrawalNo: string) {
   return normalizeWithdrawal(await apiRequest<unknown>("finance", `/withdrawals/${encodeURIComponent(withdrawalNo)}`));
 }
 
+export interface D2BankPayout {
+  withdrawalNo: string; state: string; version: number; providerOrderId: string | null; providerStatus: number | null; lastError: string | null;
+  bankName: string; maskedAccount: string; amountVnd: number; rateVnd: number; feeUsdt: number; netUsdt: number;
+}
+export async function fetchD2BankPayout(withdrawalNo: string): Promise<D2BankPayout> {
+  const row = d2Object(await apiRequest<unknown>("finance", `/withdrawals/${encodeURIComponent(withdrawalNo)}/bank`), "bankPayout");
+  const quote = d2Object(row.quote, "bankQuote");
+  if (row.withdrawalNo !== withdrawalNo || row.provider !== "HDPAY") d2Invalid("bankIdentity");
+  const amountVnd = d2Number(quote.amountVnd, "amountVnd");
+  const rateVnd = d2Number(quote.rateVnd, "rateVnd");
+  const feeUsdt = d2Number(quote.feeUsdt, "feeUsdt"), netUsdt = d2Number(quote.netUsdt, "netUsdt");
+  if (!Number.isSafeInteger(amountVnd) || amountVnd <= 0 || rateVnd <= 0 || feeUsdt < 0 || netUsdt <= 0) d2Invalid("bankAmounts");
+  const version = d2Number(row.version, "bankVersion");
+  const state = d2String(row.state, "bankState");
+  if (!Number.isSafeInteger(version) || version < 0 || !["READY", "DISPATCHING", "PENDING", "PAID", "FAILED", "MANUAL_REVIEW"].includes(state)) d2Invalid("bankState");
+  return { withdrawalNo, state, version,
+    providerOrderId: row.providerOrderId == null ? null : d2String(row.providerOrderId, "providerOrderId"),
+    providerStatus: d2NullableNumber(row.providerStatus), lastError: row.lastError == null ? null : d2String(row.lastError, "bankError"),
+    bankName: d2String(quote.bankName, "bankName"), maskedAccount: d2String(quote.maskedAccount, "maskedAccount"),
+    amountVnd, rateVnd, feeUsdt, netUsdt };
+}
+
+export async function requeryD2BankPayout(withdrawalNo: string, version: number, reason: string, idempotencyKey: string) {
+  const row = d2Object(await apiRequest<unknown>("finance", `/withdrawals/${encodeURIComponent(withdrawalNo)}/bank/requery`, {
+    method: "POST", body: JSON.stringify({ version, reason }), idempotencyKey,
+  }), "bankRecovery");
+  if (row.withdrawalNo !== withdrawalNo || !["PAID", "FAILED", "MANUAL_REVIEW"].includes(String(row.state))) d2Invalid("bankRecovery");
+  return String(row.state);
+}
+
 export async function fetchD2DevelopmentCapabilities() {
   return normalizeD2DevelopmentCapabilities(await apiRequest<unknown>(
     "finance",

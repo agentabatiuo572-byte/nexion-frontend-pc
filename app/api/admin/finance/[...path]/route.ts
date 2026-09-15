@@ -75,6 +75,13 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "withdrawals" && isText(parts[1])) {
     return `/api/admin/finance/withdrawals/${encodeURIComponent(parts[1])}`;
   }
+  if (parts.length === 3 && parts[0] === "withdrawals" && isText(parts[1]) && parts[2] === "bank") {
+    return `/api/admin/finance/withdrawals/${encodeURIComponent(parts[1])}/bank`;
+  }
+  if (parts.length === 4 && parts[0] === "withdrawals" && /^WD-[A-Za-z0-9]{1,60}$/.test(parts[1])
+      && parts[2] === "bank" && parts[3] === "requery") {
+    return `/api/admin/finance/withdrawals/${encodeURIComponent(parts[1])}/bank/requery`;
+  }
   if (parts.length === 3 && parts[0] === "withdrawals" && isText(parts[1]) && parts[2] === "review") {
     return `/api/admin/finance/withdrawals/${encodeURIComponent(parts[1])}/review`;
   }

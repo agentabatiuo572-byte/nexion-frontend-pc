@@ -7,6 +7,9 @@ import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   fetchD2WithdrawalDetail,
+  fetchD2BankPayout,
+  requeryD2BankPayout,
+  type D2BankPayout,
   fetchD2Withdrawals,
   fetchD2DevelopmentCapabilities,
   fetchD5WithdrawalParams,
@@ -68,6 +71,14 @@ function statusLabel(status: string) {
     TX_FAILED: "链上失败", FAILED: "链上失败", TX_ORPHANED: "孤块/死亡信件", DEAD: "孤块/死亡信件",
     REFUNDED: "已退款",
   } as Record<string, string>)[status.toUpperCase()] ?? "未知状态";
+}
+
+function bankStatusLabel(row: D2Withdrawal) {
+  if (row.chain !== "BANK-VND") return statusLabel(row.status);
+  if (row.status === "SENT") return "银行处理中";
+  if (row.status === "TX_ORPHANED") return "人工核对 · 未解冻";
+  if (["FAILED", "TX_FAILED"].includes(row.status)) return "代付失败 · 已退回";
+  return statusLabel(row.status);
 }
 
 const FAILURE_REASON_LABELS: Record<string, string> = {
@@ -175,6 +186,7 @@ function actionLabel(action: D2ReviewAction) {
 
 function actionCandidates(row: D2Withdrawal): D2ReviewAction[] {
   const status = row.status.toUpperCase();
+  if (row.chain === "BANK-VND" && ["PROCESSING", "FAILED", "TX_FAILED", "TX_ORPHANED", "REVIEW_REJECTED", "ADDRESS_INVALID", "DEAD"].includes(status)) return [];
   if (["REVIEW_PENDING", "REVIEWING"].includes(status)) return ["APPROVE", "DELAY", "FREEZE", "REJECT"];
   if (["EXTENDED_HOLD", "DELAYED"].includes(status)) return [];
   if (["REVIEW_PASSED", "PENDING_CHAIN", "PROCESSING"].includes(status)) return ["FREEZE"];
@@ -397,6 +409,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   // 无默认动作：必须由运营显式选择后才可提交；但允许先勾选，再选动作。
   const [batchAction, setBatchAction] = useState<D2BatchAction | "">("");
   const [detail, setDetail] = useState<D2Withdrawal | null>(null);
+  const [bankDetail, setBankDetail] = useState<D2BankPayout | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
   /** 单调递增请求号:并发 load 时只有最后一发的响应可以落地,旧响应不许覆盖新筛选结果。 */
@@ -535,11 +548,13 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const openDetail = async (row: D2Withdrawal) => {
     const seq = ++detailRequestSeq.current;
     setDetail(row);
+    setBankDetail(null);
     setDetailLoading(true);
     setDetailError("");
     try {
       const latest = await fetchD2WithdrawalDetail(row.withdrawalNo);
-      if (seq === detailRequestSeq.current) setDetail(latest);
+      const bank = latest.chain === "BANK-VND" ? await fetchD2BankPayout(row.withdrawalNo) : null;
+      if (seq === detailRequestSeq.current) { setDetail(latest); setBankDetail(bank); }
     } catch (cause) {
       if (seq !== detailRequestSeq.current) return;
       const message = cause instanceof Error ? displayAdminError(cause) : "单笔详情加载失败";
@@ -548,6 +563,31 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     } finally {
       if (seq === detailRequestSeq.current) setDetailLoading(false);
     }
+  };
+
+  const confirmBankRequery = (row: D2Withdrawal, bank: D2BankPayout) => {
+    openActionConfirm({
+      action: `查询原银行代付单 · ${row.withdrawalNo}`,
+      detail: "只向 HDPay 查询这笔原订单，不重新打款。收款人、金额及回调证据一致时，按查单结果完成入账或退回冻结款；证据冲突继续保留人工核对。请勿在原因中填写完整银行卡号。",
+      reasonMin: 10, reasonMax: 300, completionCopy: "原订单查询完成",
+      run: async (reason) => {
+        const scope = `bank-requery:${row.withdrawalNo}:${bank.version}`;
+        const key = pendingKeys.get(scope) ?? operationKey(scope);
+        pendingKeys.remember(scope, key); setSubmitting(scope);
+        try {
+          const state = await requeryD2BankPayout(row.withdrawalNo, bank.version, reason, key);
+          pendingKeys.forget(scope);
+          toast(state === "MANUAL_REVIEW" ? "证据仍不足或冲突，继续人工核对；未重复打款" : "原订单已按供应商证据核对完成");
+          await load();
+          await openDetail(row);
+        } catch (cause) {
+          if (!isDOutcomeUnknownError(cause)) pendingKeys.forget(scope);
+          await load(); await openDetail(row);
+          toast(cause instanceof Error ? displayAdminError(cause) : "原订单查询失败，未重新打款");
+          throw cause;
+        } finally { setSubmitting(""); }
+      },
+    });
   };
 
   const runDevelopmentSimulation = async (row: D2Withdrawal, reason: string) => {
@@ -716,10 +756,10 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
             <td><input aria-label={`${selectionHint}：${row.withdrawalNo}`} title={selectionHint} type="checkbox" disabled={!selectable && !selectedNow} checked={selectedNow} onChange={(event) => setSelected((current) => { const next = new Set(current); event.target.checked ? next.add(row.withdrawalNo) : next.delete(row.withdrawalNo); return next; })} />{!selectable && <span className="d2-selection-note">{anyBatchAction ? "当前动作不适用" : "系统自动流转"}</span>}</td>
             <td><button className="l-btn sm d2-withdrawal-link" title={row.withdrawalNo} aria-label={`打开提现单 ${row.withdrawalNo} 的详情`} onClick={() => void openDetail(row)}><span className="d2-cell-ellipsis">{row.withdrawalNo}</span></button></td>
             <td>{row.userNo}<div className="sub">{row.nickname}</div></td>
-            <td className="d2-asset-cell"><span className="d2-cell-ellipsis" title={`${row.asset} / ${row.chain}`} aria-label={`资产与链：${row.asset} / ${row.chain}`}>{row.asset} / {row.chain}</span><div className="mono sub d2-address" title={row.targetAddress}>{row.targetAddress}</div></td>
-            <td className="num d2-fee-summary"><strong>{money(row.amount)}</strong><div className="sub">到账 {money(row.netReceive)}</div><div className="sub">手续费 {money(row.actualFee)}</div><button className="d2-inline-link" onClick={() => void openDetail(row)}>详情中查看完整费用</button></td>
+            <td className="d2-asset-cell"><span className="d2-cell-ellipsis" title={`${row.asset} / ${row.chain}`} aria-label={`资产与渠道：${row.asset} / ${row.chain}`}>{row.chain === "BANK-VND" ? "越南银行卡 · HDPay" : `${row.asset} / ${row.chain}`}</span><div className="mono sub d2-address" title={row.targetAddress}>{row.chain === "BANK-VND" ? "账户信息见详情" : row.targetAddress}</div></td>
+            <td className="num d2-fee-summary"><strong>{money(row.amount)}</strong><div className="sub">{row.chain === "BANK-VND" ? "兑换本金" : "到账"} {money(row.netReceive)}</div><div className="sub">手续费 {money(row.actualFee)}</div><button className="d2-inline-link" onClick={() => void openDetail(row)}>详情中查看完整费用</button></td>
             <td className="d2-review-cell"><span className={`bdg ${routingPriorityTone(row)}`} title={`K4 当前阈值：低风险上限 ${row.k4BandLowMax ?? "—"}，高风险起点 ${row.k4BandHighMin ?? "—"}，自动升级 ${row.k4AutoEscalateScore ?? "—"}`}>{routingPriorityLabel(row)} · {k4RiskText(row)}</span><div className="sub">K3 {routeLabel(row.k3RiskRoute)} · {ruleSummary(row.hitRules)}</div><div className="sub">账户 {userStatusLabel(row.userStatus)} · 24h 第 {row.withdrawalCount24h}/{dailyLimit || "—"} 笔</div></td>
-            <td><span className={`bdg ${statusTone(row.status)}`}>{statusLabel(row.status)}</span></td>
+            <td><span className={`bdg ${statusTone(row.status)}`}>{bankStatusLabel(row)}</span></td>
             <td className="sub d2-lifecycle-cell">{lifecycleSummary(row)}{row.holdUntil && <div>复查时间：{timeText(row.holdUntil)}</div>}</td>
             <td>{timeText(row.createdAt)}</td>
             <td style={{ textAlign: "right" }}><div style={{ display: "flex", flexWrap: "wrap", gap: 5, justifyContent: "flex-end" }}>
@@ -732,8 +772,12 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       <div className="l-b" style={{ display: "flex", justifyContent: "space-between" }}><span>共 {rows.total} 条 · 第 {rows.pageNum}/{pages} 页</span><div className="chips">{[10, 20, 50].map((size) => <button key={size} className={`chip${pageSize === size ? " sel" : ""}`} onClick={() => { setPageSize(size); setPage(1); }}>{size}/页</button>)}<button className="chip" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button><button className="chip" disabled={page >= pages} onClick={() => setPage((value) => value + 1)}>下一页</button></div></div>
     </section>
 
-    {detail && <Drawer title={`单笔详情 · ${detail.withdrawalNo}`} sub={`${detail.userNo} · ${statusLabel(detail.status)}`} wide onClose={closeDetail} footer={<>
+    {detail && <Drawer title={`单笔详情 · ${detail.withdrawalNo}`} sub={`${detail.userNo} · ${bankStatusLabel(detail)}`} wide onClose={closeDetail} footer={<>
       <button className="l-btn" onClick={closeDetail}>关闭</button>
+      {detail.chain === "BANK-VND" && bankDetail?.state === "MANUAL_REVIEW"
+        && hasAuthority("finance_d2_withdrawal_approve") && hasAuthority("finance_d2_withdrawal_refund")
+        && <button className="l-btn primary" disabled={!!submitting || detailLoading || !!detailError}
+          onClick={() => confirmBankRequery(detail, bankDetail)}>查询原代付单并核对</button>}
       {developmentCapabilities?.simulateCooldownExpiry
         && hasAuthority("finance_d2_withdrawal_approve")
         && developmentSimulationEligible(detail)
@@ -746,15 +790,25 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         <div className="f-stat"><div className="k">用户画像</div><div className="v">{detail.userNo}</div><div className="sub">{detail.nickname} · {detail.userLevel} · {detail.phoneMasked || "未展示手机号"}</div></div>
         <div className="f-stat warn"><div className="k">风险路由</div><div className="v">{routingPriorityLabel(detail)} · {k4RiskText(detail)}</div><div className="sub">K3 {routeLabel(detail.k3RiskRoute)} · {ruleSummary(detail.hitRules)}</div></div>
         <div className="f-stat cyan"><div className="k">账户状态</div><div className="v">{userStatusLabel(detail.userStatus)}</div><div className="sub">24h 第 {detail.withdrawalCount24h} 笔 · IP 段 {detail.ipSegment || "—"}</div></div>
-        <div className="f-stat"><div className="k">当前状态</div><div className="v">{statusLabel(detail.status)}</div><div className="sub">{lifecycleSummary(detail)}</div></div>
+        <div className="f-stat"><div className="k">当前状态</div><div className="v">{bankStatusLabel(detail)}</div><div className="sub">{detail.chain === "BANK-VND" ? "已派发后以 HDPay 查单结果结算；结果不明不重发、不手工退款。" : lifecycleSummary(detail)}</div></div>
       </div>
       <div className="d2-detail-grid">
+        {detail.chain === "BANK-VND" && <section className="d2-detail-section">
+          <h3>HDPay 银行代付</h3>
+          {bankDetail ? <>
+            <KV k="收款银行" v={bankDetail.bankName} /><KV k="收款账号" v={bankDetail.maskedAccount} />
+            <KV k="锁定汇率" v={`${bankDetail.rateVnd.toLocaleString()} VND / USDT`} />
+            <KV k="银行到账金额" v={`${bankDetail.amountVnd.toLocaleString()} VND`} />
+            <KV k="代付状态" v={bankDetail.state} /><KV k="HDPay 单号" v={bankDetail.providerOrderId || "尚未取得"} />
+            <KV k="核对提示" v={bankDetail.lastError || "按供应商查询结果自动结算；接单不等于到账"} />
+          </> : <div>银行卡快照正在读取或暂不可用；不能按旧数据放行。</div>}
+        </section>}
         <section className="d2-detail-section">
           <h3>提现与费用</h3>
           <KV k="提现金额" v={money(detail.amount)} />
           <KV k="实际手续费" v={money(detail.actualFee)} />
-          <KV k="实际到账" v={money(detail.netReceive)} />
-          {detail.feeModel === "confirm" ? <KV k="网络确认费" v={`${money(detail.networkConfirmUsd ?? 0)}（每笔固定）`} /> : <>
+          <KV k={detail.chain === "BANK-VND" ? "兑换本金（USDT）" : "实际到账"} v={money(detail.netReceive)} />
+          {detail.chain === "BANK-VND" ? <KV k="D7 银行渠道费" v={money(detail.actualFee)} /> : detail.feeModel === "confirm" ? <KV k="网络确认费" v={`${money(detail.networkConfirmUsd ?? 0)}（每笔固定）`} /> : <>
             <KV k="网络费" v={money(detail.networkFee ?? 0)} />
             <KV k="网络费率 / 区间" v={`${detail.networkFeeRate ?? "—"} · ${money(detail.networkFeeMin ?? 0)}–${money(detail.networkFeeMax ?? 0)}`} />
             <KV k="毛手续费 / 金额费率" v={`${money(detail.grossFee ?? 0)} · ${detail.penaltyFeeRate ?? "—"}%`} />
@@ -765,7 +819,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         </section>
         <section className="d2-detail-section">
           <h3>生命周期</h3>
-          <KV k="状态" v={<span className={`bdg ${statusTone(detail.status)}`}>{statusLabel(detail.status)}</span>} />
+          <KV k="状态" v={<span className={`bdg ${statusTone(detail.status)}`}>{bankStatusLabel(detail)}</span>} />
           <KV k="说明" v={lifecycleSummary(detail)} />
           <KV k="复查时间" v={timeText(detail.holdUntil)} />
           <KV k="责任人" v={detail.lifecycleOwner || "系统自动"} />

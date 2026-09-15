@@ -252,7 +252,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     </div>
 
     <section className="l-card" style={{ marginTop: 12 }}><div className="l-h"><span className="ttl">通道总开关</span><span className="sub">· 独立高风险权限 · 供应商未就绪时只能保持或切回关闭</span></div><div className="l-b"><div className="p-row">
-      <div className="txt"><div className="k">银行卡（越南盾）提现</div><div className="s">关闭后拒绝新单；真实供应商、订单、账本、回调未验收前禁止开启</div></div>
+      <div className="txt"><div className="k">银行卡（越南盾）提现 · HDPay</div><div className="s">App 绑定银行账户后锁定报价，D2 审核放行后提交 HDPay 代付。关闭后拒绝新单与首次出款，已提交订单继续查询结算。商户 BANK 代付权限、回调、加密配置及明确出款授权完成前保持关闭。</div></div>
       <span className={`bdg ${config.channelEnabled ? "warn" : "ok"}`}>{config.channelEnabled ? "开启" : "关闭"}</span>
       {canToggle ? <button className="l-btn sm mc" disabled={busy || (!config.channelEnabled && !config.providerReady)} onClick={toggleChannel}>{config.channelEnabled ? "关闭通道" : "开启通道"}</button> : <span className="s">无通道启停权限</span>}
     </div>{!config.providerReady && !config.channelEnabled && <div className="s">开启按钮已禁用：真实出款供应商未就绪。</div>}</div></section>

@@ -695,7 +695,14 @@
       "restActions": [
         "reviewD2Withdrawal",
         "reviewD2WithdrawalsBatch",
-        "simulateD2CooldownExpiry"
+        "simulateD2CooldownExpiry",
+        "requeryD2BankPayout"
+      ],
+      "note": "BANK-VND 单据派发后禁止通用退款/确认/拒绝；异常单仅可查询 HDPay 原单，必须同时拥有读取、放行、退款权限，携带版本、原因和稳定幂等键。供应商证据一致才走共享账务终结；不会重新创建代付单。",
+      "runtimeEvidence": [
+        { "type": "pc-runtime", "file": "app/components/domain-views/d-tabs/d2-withdrawals.tsx", "positivePatterns": ["confirmBankRequery", "requeryD2BankPayout\\(row.withdrawalNo, bank.version, reason, key\\)"], "negativePatterns": ["bankDetail\\.account(?![A-Za-z])"] },
+        { "type": "backend-runtime", "file": "src/main/java/ffdd/opsconsole/finance/application/BankPayoutRecoveryService.java", "positivePatterns": ["gateway\\.query", "executeRetained"], "negativePatterns": ["gateway\\.create\\s*\\("] },
+        { "type": "backend-runtime", "file": "src/main/java/ffdd/opsconsole/finance/application/HdPayPayoutTransactions.java", "positivePatterns": ["reconcileLocked", "resumeHeld"], "negativePatterns": ["gateway\\.create\\s*\\("] }
       ]
     },
     {
