@@ -957,12 +957,19 @@ function normalizeD1VietQrOverview(raw: unknown): D1VietQrOverview {
         d1Invalid(`vietqr.page.items[${index}].lifecycle`);
       }
       const id = d1Number(row.id, `vietqr.page.items[${index}].id`);
+      const reconciliationNo = d1String(row.reconciliationNo, `vietqr.page.items[${index}].reconciliationNo`);
+      const intentNo = d1OptionalText(row.intentNo, `vietqr.page.items[${index}].intentNo`);
       const payableVnd = d1NullableNumber(row.payableVnd, `vietqr.page.items[${index}].payableVnd`);
       const receivedVnd = d1NullableNumber(row.receivedVnd, `vietqr.page.items[${index}].receivedVnd`);
       const lockedFxRateVndPerUsdt = d1Number(row.lockedFxRateVndPerUsdt, `vietqr.page.items[${index}].lockedFxRateVndPerUsdt`);
       const creditedUsdt = d1Number(row.creditedUsdt, `vietqr.page.items[${index}].creditedUsdt`);
       const version = d1Number(row.version, `vietqr.page.items[${index}].version`);
-      if (!Number.isSafeInteger(id) || id <= 0
+      // Negative IDs are reserved for backend-derived, already-credited HDPay read-only rows.
+      // They are never valid manual reconciliation targets (the backend rejects them before any write).
+      const hdPayReadOnly = id < 0 && viewType === "MATCHED" && status === "CREDITED"
+        && intentNo.startsWith("VQR-") && reconciliationNo === `HDPAY-${intentNo}`
+        && creditedUsdt > 0 && receivedVnd !== null && receivedVnd > 0;
+      if (!Number.isSafeInteger(id) || id === 0 || (id < 0 && !hdPayReadOnly)
           || (payableVnd !== null && payableVnd < 0)
           || (receivedVnd !== null && receivedVnd < 0)
           || lockedFxRateVndPerUsdt <= 0
@@ -972,8 +979,8 @@ function normalizeD1VietQrOverview(raw: unknown): D1VietQrOverview {
       }
       return {
         id,
-        reconciliationNo: d1String(row.reconciliationNo, `vietqr.page.items[${index}].reconciliationNo`),
-        intentNo: d1OptionalText(row.intentNo, `vietqr.page.items[${index}].intentNo`),
+        reconciliationNo,
+        intentNo,
         userId: d1NullableNumber(row.userId, `vietqr.page.items[${index}].userId`),
         bankAccountId: d1NullableNumber(row.bankAccountId, `vietqr.page.items[${index}].bankAccountId`),
         assignedBankAccountId: d1NullableNumber(row.assignedBankAccountId, `vietqr.page.items[${index}].assignedBankAccountId`),
