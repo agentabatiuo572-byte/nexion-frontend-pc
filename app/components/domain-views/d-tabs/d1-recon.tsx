@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { d1VietQrUsdtAmount } from "@/lib/admin/d1-vietqr-amount";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   createD1VietQrAccount,
@@ -649,7 +650,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
               {(vietQr?.page.items ?? []).length === 0 ? (
                 <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--ink-4)", padding: "26px 12px" }}>当前视图暂无银行轨记录</td></tr>
               ) : vietQr?.page.items.map((row) => {
-                const amount = row.receivedVnd === null ? row.creditedUsdt : row.receivedVnd / row.lockedFxRateVndPerUsdt;
+                const amount = d1VietQrUsdtAmount(row);
                 return (
                   <tr key={row.id}>
                     <td><span className="mono">{row.reconciliationNo}</span><div className="sub mono">{row.paymentReference || "无银行流水号"}</div><div className="sub">{timeText(row.receivedAt)}</div></td>
@@ -657,7 +658,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                     <td className="num mono">{vnd(row.payableVnd)}</td>
                     <td className="num mono">{vnd(row.receivedVnd)}</td>
                     <td className="num mono">{vnd(row.lockedFxRateVndPerUsdt)}</td>
-                    <td className="num mono">{money(amount)}</td>
+                    <td className="num mono">{amount === null ? "—" : money(amount)}<div className="sub">{amount === null ? "金额未确认" : row.status === "CREDITED" ? "实际入账" : row.viewType === "INFLIGHT" ? "预计折算" : "按实收折算"}</div></td>
                     <td><span className={`bdg ${row.status === "CREDITED" ? "ok" : row.status === "RETURNED" ? "dim" : "warn"}`}>{row.status === "OPEN" ? "待处置" : row.status === "CREDITED" ? "已入账" : row.status === "RETURNED" ? "已退回" : "退回处理中"}</span></td>
                     <td>{row.viewType === "MISMATCH"
                       ? row.mismatchReason === "BANK_ACCOUNT"
