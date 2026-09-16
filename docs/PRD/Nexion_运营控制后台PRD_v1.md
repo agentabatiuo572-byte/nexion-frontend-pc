@@ -861,6 +861,7 @@ Nexion 运营控制后台
 | D3 | 资金池水位仪表盘 | B2 的财务深度页(储备 vs 负债 / 到期利息) | §9.6 / §9.6.3 | V1 |
 | D4 | 账本 / 账单审计 | /me/wallet/bills(server 唯一账本) | §9.7 / §12 | V1 |
 | D5 | 提现参数配置 | 日限/80%上限/fee/cooldown/惩罚费率(Phase 联动)/NEX 抵扣率 | §9.3.2 / §13.4.1 | V1 |
+| D7 | 银行法币提现配置 | 卖出点差、费用、限额、服务商就绪态与通道开关；D6 牌价只读引用 | §9.3 | V1 |
 
 #### E 设备与商城 — V2
 
@@ -2249,6 +2250,8 @@ C5 是**用户账户安全管理面**——2FA 状态、session 列表、密码�
 **② 后台界面**
 四区:2FA 状态 + session 列表 + 密码重置 + 锁定状态。
 
+App 自助修改密码先校验旧密码，再提交本次校验通过的固定输入；恢复已有成功指令时只读取原回执，不重复改密。忘记密码先验证原短信挑战，成功后填写新密码，最终提交再次校验并消费挑战、吊销原会话，回到密码登录，不自动建立新会话。登录与验码请求只作用于原手机号、输入和当前步骤，编辑输入或离开页面后的旧响应不得推进状态，也不能令按钮永久停留在提交中。
+
 1. **2FA 状态**:单用户 2FA 状态 `[2FA 是否启用(TOTP)/ recovery codes 剩余数(8 个上限,§4.5.1)/ 启用时间]` + 人工 disable 2FA 动作(丢设备路径)。
 2. **session 列表**:该用户活跃 session `[sessionId / IP / UA / lastActiveAt(§4.5.2)/ 是否当前 session]` + 强制登出(指定 / 全部)动作;30 天未活跃自动过期(§4.5.2)。
 3. **密码重置**:人工触发密码重置(KYC 二次验证路径),不直接看 / 改密码明文(server `argon2id` 哈希,§4.6.3)。
@@ -2322,7 +2325,7 @@ C5 是**用户账户安全管理面**——2FA 状态、session 列表、密码�
 **⑤ 接口**
 - `GET /api/admin/users/:userId/sessions` — session 列表(IP / UA / lastActiveAt / 当前标识,§4.5.2)+ 2FA 状态 + 锁定态。
 - `POST /api/admin/users/:userId/revoke-session`(强制登出;`?scope=current|all|:sessionId`;经 §4.5.2 revoke refresh + access token revocation list / JTI)。
-- `POST /api/admin/users/:userId/invalidate-password`(密码重置,确认弹窗 C5-MD3,body 携 reason + **KYC 二验前置**(未过 422 `KYC_REVERIFY_REQUIRED`);server **置该用户密码失效**并向用户手机发送 reset OTP(或令下次登录强制走 reset 路径),用户侧走 **§4.2.3 一次性 reset** 完成设置新密码并获得 session;server `argon2id` 哈希存储,§4.6.3;`Idempotency-Key` 必带)。
+- `POST /api/admin/users/:userId/invalidate-password`(密码重置,确认弹窗 C5-MD3,body 携 reason + **KYC 二验前置**(未过 422 `KYC_REVERIFY_REQUIRED`);server **置该用户密码失效**并向用户手机发送 reset OTP(或令下次登录强制走 reset 路径),用户侧走 **§4.2.3 一次性 reset** 完成设置新密码并撤销原会话，再回到密码登录，不自动签发 session;server `argon2id` 哈希存储,§4.6.3;`Idempotency-Key` 必带)。
 - `POST /api/admin/users/:userId/disable-2fa`(人工 disable 2FA,确认弹窗 C5-MD2,body 携 reason + **KYC 二验前置**;server revoke recovery codes,§4.5.1;`Idempotency-Key` 必带)。
 - `POST /api/admin/users/:userId/unlock`(解除锁定,账户解锁处置权落 C5;确认弹窗 C5-MD4,body 携 reason + KYC 二验;server 按锁定类型校验执行门槛——24h 长锁须风控(lead)/超管(资质不足 403),15min 短锁风控/客服,§4.6.2;与 C6 共用同一 endpoint,C6 不另设解锁端点)。
 
@@ -2442,7 +2445,7 @@ C6 是**注册登录侧风控参数配置面**——OTP 配置、登录锁定配
 **⑤ 接口**
 - `GET /api/admin/auth/config` — 注册登录风控参数现值 `{ otpTtlSec, otpResendCooldownSec, otpMaxPer24h, lockoutShortAttempts, lockoutShortWindowMin, lockoutLongAttempts, lockoutLongWindowH, captchaEnabled, captchaTriggerOtpCount }`;**不含** `maxSignupPerIp24h` 等 K1 去重参数(§3.14:K1 权威)。
 - `PUT /api/admin/auth/config`(参数配置,确认弹窗 C6-MD1~MD3,body 携 reason(空值 400 `REASON_REQUIRED`),执行权 = 风控(lead)/超管;**请求体含 `maxSignupPerIp24h` / `maxAccountsPerDevice` / `maxAccountsPerPaymentInstrument` 时 server 返回 422** + error body `{code:'MULTI_ACCOUNT_PARAM_BELONGS_TO_K1', message:'多账户去重阈值由 K1 反多账户引擎配置', suggestedPath:'/admin/risk/multi-account'}`——这些参数只能经 K1 修改,C6 不接受其写入,从接口层 enforce 分工,防双源。**注:`suggestedPath` 为「建议导航路径」(advisory-only),非 HTTP redirect 语义**;接口文档须注明 advisory-only,消除 422 + redirect 的语义矛盾)。**双向文档对齐**:**K1⑤ 需补「C6 `PUT /api/admin/auth/config` endpoint 会拒绝 K1 三个去重参数写入并给出 `suggestedPath`;K1 是这三个参数的唯一配置入口」**,形成 K1 与 C6 双向文档链。
-- **server-side enforce(注册 / 登录侧,非 admin)**:§4.6.2 / §16.2.1——`POST /api/auth/otp/send`(server TTL + 24h 限频 + CAPTCHA 触发,§4.6.2)、`POST /api/auth/otp/verify`(server TTL + 试次 + idempotency 去重,§4.1 step 2 / §4.6.2)、登录锁定计数器(IP + userId 维度,server 持有,§4.6.2)。C6 后台为这些 enforce 提供阈值配置 + 命中观测。
+- **服务端认证顺序**：正式 App 注册使用 `POST /auth/users/register/otp/send` 发码、`POST /auth/users/register/otp/verify` 预验。预验核对 `countryCode/phone/challengeNo/code` 及注册场景、环境、有效期、剩余试次和未消费状态；错误累计试次并返回 `USER_REGISTRATION_OTP_INVALID`，成功只返回 `REGISTRATION_OTP_VERIFIED`，不消费挑战、不创建账户或会话、不签发 `verifyToken`。最终 `POST /auth/users/register` 再次校验并原子消费，错误或过期回到验码步骤；不能只凭填满 6 位或前端成功标记注册。短信登录 `/auth/users/login/otp/verify` 与二次登录 `/auth/users/login/2fa` 验证成功后才签会话；忘记密码 `/auth/users/password-reset/otp/verify` 先预验，`/auth/users/password-reset/otp/complete` 最终消费并改密、吊销会话。C6 提供 OTP/锁定/CAPTCHA 参数，不改变各场景顺序或允许跨场景复用。
 - 账户解锁:经 C5 `POST /api/admin/users/:userId/unlock`(§4.6.2,账户解锁处置权落 C5,C6 不另设解锁端点)。
 
 参数配置 server-canonical(client 仅 UI 正则校验 OTP 格式,真值 server,§9.11d.2);时间戳 ms epoch 服务端权威。
@@ -2671,6 +2674,21 @@ D2 是后台**最高频操盘动作**,控制平台**资金流出节奏**与**兑
 **D2 字段契约**:单笔主键线上真名为 `withdrawalNo`，由 `lib/admin/d-client.ts` 的详情寻址与响应模型共同约束；批量入参保持 `withdrawalIds:[]`，冲突回传成员保持 `conflicts[].withdrawalId`，三者不可互换。
 
 **(b) 完整提现状态机**(server-canonical,client 仅订阅):
+
+**银行轨详情与恢复**：BANKQR 单据在同一 D2 队列展示，读取锁定报价、收款账户一致性 `beneficiaryEligibility:{canWithdraw,reasonCode}` 和资金终态证据 `settlementEvidence`。详情只展示掩码账号；服务端检查当前平台账号、收款账户编号和版本与原报价一致，不要求外部账户/本人归属核验证据，也不生成伪造 verified。服务商原始状态不能单独证明已到账或已退款；终态以服务端完成原单和账本核对后落库的 `paid/refunded` 证据为准。
+
+银行单 `MANUAL_REVIEW` 的“重新查单”仅查询原服务商订单，再由服务端裁决恢复；不新建提现、不重复出款。请求携 `Idempotency-Key`、当前 `version` 和 10–300 字理由，版本变化或已有处理中/未知命令时拒绝重发。权限同时要求 `finance_d2_read`、`finance_d2_withdrawal_approve`、`finance_d2_withdrawal_refund`；结果冲突继续人工核对并保留资金原状态。
+
+```mermaid
+flowchart LR
+  BQ["锁定报价与账户证据"] --> BO["提交一次原提现"]
+  BO --> BQRY["服务端查原服务商订单"]
+  BQRY -->|"证据一致"| DONE["资金终态证据：已到账或已退款"]
+  BQRY -->|"未知或冲突"| HOLD["人工核对，保留原资金状态"]
+  HOLD -->|"权限、版本、理由和幂等校验"| BQRY
+```
+
+**链上轨状态**：以下原有链上状态不替代银行轨资金证据。
 
 ```
                     ┌──────────── 异常 / 失败支线(§9.11f)────────────┐
@@ -3184,7 +3202,46 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 ---
 
+#### [D7] 银行法币提现配置
+
+**① 目的 & 对齐**
+管理 BANKQR 提现的卖出点差、费用、限额与通道可用性，对齐前端 §9.3 的提现方式选择及银行单恢复。D6 持有基准牌价和买入点差，D7 只管理出金参数；D2 持有单据处置与资金终态。
+字段及 App 账户、报价、恢复契约见[银行卡提现规格](../../../PRD/specs/FEAT-PAYOUT-VND01-bank-payout-rail.md)。
+
+**② 后台界面**
+展示当前版本、D6 只读牌价、出金参数与服务商就绪态；不再返回或展示外部账户核验能力 `capabilitySummary`。读取失败或服务商状态未知时展示不可用原因和重新加载入口，不能用默认值假装现值。恢复默认只回填表单，仍须确认保存。通道关闭后保留已有单据查询和恢复，不把配置成功等同于真实银行已付款。
+
+**③ 可控参数**
+
+| 字段 | 默认值 | 合法域 | 生效规则 |
+|---|---|---|---|
+| sellSpreadPct | 1.5% | 0–3%，最多两位小数 | 新报价 |
+| quoteTtlMinWithdraw | 10 分钟 | 1–60 整数 | 新报价有效期 |
+| requoteTolerancePct | 2% | 0–10%，步长 0.1 | 配置保留；现行银行单按锁定报价执行，不据此自动重新报价 |
+| feeRatePct | 1% | 0–5%，步长 0.1 | 新报价 |
+| feeMinUsd / feeMaxUsd | 1 / 25 | 各 0–1000，步长 0.5 | 正数最低费必须小于单笔下限，且不大于封顶 |
+| minAmountUsd / maxAmountUsd | 20 / 5000 | 整数；0–10000 / 1–100000，下限不大于上限 | 配置下限可为 0；实际报价最低额为 max(20, minAmountUsd) USDT |
+| channelEnabled | false | 开 / 关 | 新报价与提交重验；已提交单据继续恢复 |
+
+报价绑定 D5/D7 版本与收款账户版本；未提交报价遇配置变化须重新确认，已提交订单不得被新参数改写。
+
+**④ 操作动作**
+保存参数、启停通道均先展示前后值与业务影响，再填写理由确认，携版本和幂等键提交；重复命令恢复原结果。失败保留输入并给重试或重新加载入口，不显示成功。扩大流出或开启通道须通过服务端储备覆盖率检查；倒挂配置另需强制倒挂权限，不能由普通保存绕过。
+
+**⑤ 接口**
+`GET /api/admin/finance/payout-vnd/config` 读取现值；`PATCH /api/admin/finance/payout-vnd/config` 提交参数、`expectedVersion/reason/forceInverted`；`PATCH /api/admin/finance/payout-vnd/channel` 提交 `enabled/expectedVersion/reason`。写入携 `Idempotency-Key`，版本冲突重新读取后确认。
+
+**⑥ 权限 & 审计**
+读取要求 `finance_d7_read`；参数保存要求 `finance_d7_manage`；强制倒挂另需 `finance_d7_force_inverted`；通道启停要求 `finance_d7_channel_toggle`。服务端记录操作者、前后版本/参数、理由及成功或拒绝结果，幂等重放不重复执行业务写入。
+
+**⑦ 风控 & 联动**
+开启通道必须同时满足真实服务商配置及运行环境就绪、状态读取可用、储备覆盖率健康；外部账户真实性与本人归属核验已不作为开启前提。App 依据服务端 `enabled` 与 `unresolvedIntent` 决定新单入口，账户与报价编号/版本仍须一致。读取失败和旧请求都不能被当作可重复提交的新单。供应商契约及授权实盘验收未完成前真实代付继续 HOLD；该边界不由撤销外部核验门自动解除。
+
+**⑧ 埋点(事件)**
+配置、通道变更及拒绝写入 D7 审计记录；D2 资金事件由服务端资金状态推进产生，配置操作不产生提现到账事件。
+
 ## 第 7 章 增长与运营节奏(H1 Phase 调度 + H2 Trial)
+
 
 > **域归属**:本章覆盖域 H(增长与运营节奏)的 V1 部分,含两个功能子模块:**[H1] 12 月节奏 Phase 调度器**与 **[H2] 免费试用引擎**。
 >

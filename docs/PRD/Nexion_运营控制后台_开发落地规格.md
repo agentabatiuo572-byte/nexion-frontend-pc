@@ -142,6 +142,7 @@
 | D3 | 资金池水位仪表盘 | 储备/负债/到期底层账本权威(储备明细+8科目+净敞口) | D 资金 | V1·Ch6 | §9.6 / §9.6.3 / §9.2 / §10 |
 | D4 | 账本 / 账单审计 | server 唯一账本审计面:账单流水/Running Balance/对账导出 | D 资金 | V1·Ch6 | §9.7 / §12 |
 | D5 | 提现参数配置 | 日限额/余额上限/网络费(cooldown/积分门由 H1 派发只读) | D 资金 | V1·Ch6 | §9.3.2 / §13.4.1 / §9.11c.1 |
+| D7 | 银行法币提现配置 | 出金参数、服务商就绪态和通道开关；D6 牌价只读 | D 资金 | V1·Ch6 | §9.3 |
 | D6 | 汇率与锁价参数 | VND/USDT 基础汇率、点差、锁价时长与不可变变更历史；报价由服务端单源计算 | D 资金 | 2026-07 高保真增量 | 高保真 `finance/fx-rate` |
 | E1 | 商品目录 & 定价 | 设备 SKU 目录/定价/上下架/库存 + 设备规格唯一权威 | E 设备 | V2·Ch10 | §7.1 / §9.11c.1 |
 | E1 | 代际发布门 | 控制 Gen-2 发布时点 + trade-in 折扣 | E 设备 | V2·Ch10 | §7.1 / 节奏表§6.2 |
@@ -227,6 +228,13 @@
 | 用户 session/锁定态(C5/C6) | 多载体 sessions 列表 · twoFactorEnabled · 锁定态(15min 短锁/24h 长锁);C6 auth 风控参数;SPEC-4 起不因异端登录自动强踢 | SC | Ch5 C5/C6 / 三端 SPEC-4 |
 
 ### 域 D — 资金中心
+
+银行轨复用正式提现与账本，不以本地缓存建立第二份资金事实。扩展模型如下：
+
+| 实体 | 关键字段 | 权威源 | 出处§ |
+|---|---|---|---|
+| **BankWithdrawalQuote / Intent** | quoteNo · withdrawalNo · userId · beneficiaryNo/账户版本 · d5Version · d7Version · amountUsdt/feeUsdt/netUsdt/rateVnd/amountVnd · expiresAt；unresolvedIntent 为 null 或对象；对象的 state 为 NOT_SUBMITTED、COMMITTED 或 MULTIPLE，按服务端记录恢复 | SC | v1 D2/D7 |
+| **BankBeneficiaryEligibility / SettlementEvidence** | beneficiaryEligibility 为 canWithdraw/reasonCode，校验当前平台账号、收款账户编号/版本与报价一致；资金证据 status 为 unconfirmed/review_required/paid/refunded，只有匹配原单与账本的持久化证据可证明终态；不再要求外部 verification/capability 字段 | SC | v1 D2/D7 |
 
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
@@ -381,6 +389,11 @@
 | `/api/admin/auth/config` | GET / PUT | 注册登录风控参数(携 K1 去重参数返 422) | C6-MD1~MD3(PUT) | C6 |
 
 ### 域 D — 资金
+
+- 银行 App：`GET /api/withdrawals/bank/config`、`GET /api/withdrawals/bank/recovery`、`GET /api/withdrawals/bank/quotes/{quoteNo}`、`GET /api/withdrawals/bank/orders/{orderNo}` 读取配置或恢复原请求；`POST /api/withdrawals/bank/quotes` 获取报价，`POST /api/withdrawals/bank/quotes/{quoteNo}/abandon` 放弃未提交报价，`POST /api/withdrawals/bank/orders` 只接收原 `quoteNo` 与幂等键提交。旧 `POST /api/withdrawals/bank/beneficiary/verify` 鉴权后返回 410 `BANK_BENEFICIARY_VERIFICATION_NOT_REQUIRED`，不写核验记录。
+- 银行账户绑定：`POST /api/withdrawals/bank/beneficiary` 携 `{bankCode:"", account, holder}` 与 `Idempotency-Key`；首次免短信，已有账户换卡须另携 `challengeNo/code`。`POST /api/withdrawals/bank/beneficiary/otp` 只为已有账户向当前注册手机号发换卡短信，返回 `PAYOUT-BANK-` 加 32 位十六进制挑战、300 秒有效期、60 秒重发间隔；与提现地址共享每天 10 次限额，但挑战用途隔离。`bindingOtpRequired` 随有无账户变化；首次/更换均立即生效，历史 24 小时保护和 7 天间隔取消。有在途单或未决意图不得换绑；旧成功幂等回执不再消费 OTP。
+- 银行后台：`GET /api/admin/finance/withdrawals/{withdrawalNo}/bank` 返回报价、账户与报价一致性及资金证据；`POST /api/admin/finance/withdrawals/{withdrawalNo}/bank/requery` 仅查询原单，携 `version/reason` 和 `Idempotency-Key`。理由 10–300 字；同时要求读取、提现放行和退款权限，状态或版本冲突不重发。
+- D7：`GET/PATCH /api/admin/finance/payout-vnd/config`、`PATCH /api/admin/finance/payout-vnd/channel`；写入携 `expectedVersion/reason`、幂等键，强制倒挂另携 `forceInverted` 并校验专用权限。
 
 | Endpoint | Method | 用途 | 确认 | 模块 |
 |---|---|---|---|---|
@@ -582,7 +595,10 @@
 
 | Endpoint | Method | 用途 | 模块 |
 |---|---|---|---|
-| `/api/auth/otp/{send,verify}` | POST | (用户)OTP 下发/校验(server TTL+24h 限频+CAPTCHA+锁定;超 maxSignupPerIp24h reject) | C6/K1 |
+| `/auth/users/register/otp/send` · `/auth/users/register/otp/verify` | POST | 注册发码与预验；核对手机号/挑战/验证码/场景/环境/有效期/试次；成功 REGISTRATION_OTP_VERIFIED，不消费或签会话 | C6/K1 |
+| `/auth/users/register` | POST | 最终重验并原子消费注册挑战，再创建账户及认证结果；失败不放行密码步骤后的注册 | C6/K1 |
+| `/auth/users/login/otp/verify` · `/auth/users/login/2fa` | POST | 验证成功后才签发登录会话；旧请求不能推进已经改变的前端输入或步骤 | C5/C6 |
+| `/auth/users/password-reset/otp/verify` · `/auth/users/password-reset/otp/complete` | POST | 预验后设置新密码，最终消费并改密、吊销会话；回到密码登录 | C5/C6 |
 | `/api/sponsorship/bind` | POST | (用户)赞助绑定(三层去重任一重复 reject;welcome gift 单次幂等) | K1 |
 
 ### 3.X API 结构性说明(开发须知)
@@ -637,6 +653,8 @@
 | CAPTCHA 开关 | ON(按阈值触发) | ON/OFF | 实时 | C6 | C6 |
 
 ### 4.4 域 D — 资金与财务
+
+BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以 D7③–⑦ 为单源；D6 的基准牌价和买入点差在 D7 只读。新报价锁定 D5/D7 与收款账户版本；配置变化不改写已提交原单。通道开启仍须满足真实服务商配置、运行环境及储备覆盖率，不再检查外部账户核验能力；真实供应商契约和授权出款验收边界仍保留。
 
 | 参数(key) | 默认值 | 范围 | 生效时机 | 权威源 | 模块 |
 |---|---|---|---|---|---|
@@ -898,6 +916,10 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 > **全局约束**:所有状态机 server-canonical,client 仅订阅、绝不本地推进;每次推进 server 校验合法转移,**非法转移返 409**;资金/资产类推进携 `Idempotency-Key`,失败保持原态、目标域无副作用;推进时 server 发 `is_server_authoritative=true` 事件。
 
 ### 5.1 D2 提现状态机(Ch6 D2,对齐 §9.3.6 / §9.11f)
+
+**银行轨**：报价未提交、已提交和多原请求均从服务端恢复；不确定提交必须先查原报价/原单，不能换幂等键再付一次。未提交报价放弃后须由服务端确认 ABANDONED/EXPIRED，再释放新单入口。订单成功/退款只依据 settlementEvidence 的 paid/refunded 与证据编号；原始 provider 状态、页面文字和本地缓存不能推进资金终态。MANUAL_REVIEW 仅允许受权的原单查单恢复，证据未知或冲突继续保持原资金状态。
+
+**链上轨**：
 - **状态集(12)**:正常 `submitted / review-passed / processing / sent / confirmed` + 后台扩展 `review-pending` + 异常 `review-rejected / address-invalid / tx-failed / tx-orphaned / refunded / frozen`
 - **合法转移**:
   - `submitted → review-pending`(风控评分后 server 自动,K4;submitted 仅此转出)/ `submitted → address-invalid`

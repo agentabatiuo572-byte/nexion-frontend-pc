@@ -89,6 +89,11 @@
 
 ## D. 资金与兑付安全 🔴
 
+### D.0 认证与原单边界
+
+- [ ] 注册错误、过期或已消费验证码不能进入设置密码；服务端预验成功后才进入，最终提交仍原子重验消费；预验不创建账户、会话或 verifyToken。
+- [ ] 登录、二次验证、忘记密码覆盖编辑输入、离页、重发和旧响应；忘记密码成功后会话失效并回到密码登录；账户内改密仅提交已校验的本次输入，成功回执恢复不重复改密。
+
 ### D.1 双账本(PRD B1/B2 + D3 / §17.3e)
 - [ ] 真实储备聚合口径实装(topup+注入−已确认出金−未到期 staking 本金)
 - [ ] 应付负债 8 科目实装;trial shadow 按 Model A 仅 remainderUSD+全额NEX 入余额成应付(offsetUSD 是购机折扣非负债)
@@ -100,6 +105,10 @@
 - [ ] NEX 计价负债以拟生效新价重估(含锁仓本金 USDT 等值)后再判红线
 
 ### D.3 资金操作 credit/debit 原子性(PRD D 域 / nexion-audit 规则#6)
+- [ ] BANKQR 首次绑卡免 OTP，已有卡每次更换须消费当前账号专属 PAYOUT-BANK 短信挑战；与提现地址挑战不可互用，错误试次、发送未知结果限频及单次消费耐久保存。新旧绑定均立即生效；报价、提交、D2 审核及派发检查平台账号、收款账户编号/版本与原报价一致，不再依赖外部核验字段或伪造 verified。
+- [ ] App 通过银行卡管理入口维护独立 BANKQR 收款账户，不复用 PSP 支付卡 token，首次免短信、换卡要求短信；必须完成 App 新换卡表单及旧核验守卫适配后才可签发三端闭环；关闭通道时旧提现仍能恢复，读取失败与未知结果不放行新单；unresolvedIntent 为 null 或对象，对象 state 为 NOT_SUBMITTED/COMMITTED/MULTIPLE，不能将字段缺失视为 null；银行卡与 USDT 不并发创建未决提现。
+- [ ] 报价锁定金额、费用、汇率、D5/D7 版本和收款账户版本，提交/发出前重验；原报价/原单恢复、放弃和跨设备重复提交均不重复冻结或出款。
+- [ ] App 与 D2 仅凭 settlementEvidence 的 paid/refunded 与证据编号显示资金终态；不一致进入人工核对；D2 重新查原单受权限、理由、版本和幂等保护。
 - [ ] 提现放行 / 余额调整 / 各类派发(commission/trial/staking/genesis 排放/quest/milestone/event/转盘)实际 credit/debit + 账单 + 失败回滚 + 失败提示,非仅 toast
 - [ ] 全站同形 credit*/debit* 调用点逐个补全(grep 验证无遗漏)
 - [ ] 提现状态机(submitted→review→processing→sent→confirmed + 失败态)全 server canonical
