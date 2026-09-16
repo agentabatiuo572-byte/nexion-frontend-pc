@@ -2,6 +2,7 @@ import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
+import { validateH1DialValue } from "@/lib/admin/h1-dial-validation";
 
 interface ApiResult<T> {
   code: number;
@@ -160,6 +161,7 @@ export async function updateH1RhythmParam(
 }
 
 export async function updateH1MonthDial(month: number, key: string, value: string | number, reason: string) {
+  validateH1DialValue(key, value);
   return fetchH1PhaseMutation(`/phases/months/${month}/dials/${encodeURIComponent(key)}`, key, value, reason, "h1-month-dial");
 }
 

@@ -11,6 +11,7 @@ import {
   type H1RhythmOverview,
 } from "@/lib/admin/h-client";
 import { usePropose } from "@/lib/admin/use-propose";
+import { validateH1DialValue } from "@/lib/admin/h1-dial-validation";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import type { HCtx } from "./types";
@@ -214,6 +215,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
         : { kind: "text", current, amplifiesWhen },
       run: async (reason, value) => {
         if (!value) return;
+        validateH1DialValue(key, value);
         if (dialAmplifies(key, current, value)) {
           const def = findHighOp("h1_phase_dial")!;
           void propose(ctx.toast, {
