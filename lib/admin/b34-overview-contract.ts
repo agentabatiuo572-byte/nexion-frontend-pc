@@ -275,7 +275,7 @@ export function assertB4PhaseOverview(value: unknown): asserts value is JsonReco
       numberInRange(dial.currentValue, 0, 100, "B4", `dials.${index}.currentValue`);
     } else if (key === "withdrawCooldownDays") {
       const days = nonNegativeInteger(dial.currentValue, "B4", `dials.${index}.currentValue`);
-      if (days < 7 || days > 90) invalid("B4", `dials.${index}.currentValue`);
+      if (days > 90) invalid("B4", `dials.${index}.currentValue`);
     } else if (key === "binaryDailyCap") {
       numberInRange(dial.currentValue, 0, 50_000, "B4", `dials.${index}.currentValue`);
     }

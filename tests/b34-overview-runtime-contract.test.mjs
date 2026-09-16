@@ -133,6 +133,17 @@ test("B3 当前四级漏斗协议可通过，已退役绑卡/KYC 不回填", () 
   assert.doesNotThrow(() => assertB3Dashboard(b3));
 });
 
+test("B4 accepts zero review days while rejecting negative and fractional days", () => {
+  const value = structuredClone(b4);
+  const dial = value.dials.find((item) => item.key === "withdrawCooldownDays");
+  dial.currentValue = 0;
+  assert.doesNotThrow(() => assertB4PhaseOverview(value));
+  for (const days of [-1, 0.5]) {
+    dial.currentValue = days;
+    assert.throws(() => assertB4PhaseOverview(value), /B4_RESPONSE_INVALID/);
+  }
+});
+
 test("B3 PC 必须保留并消费服务端 Day0 窗口，不能回退硬编码 90 秒", () => {
   const missing = structuredClone(b3);
   delete missing.auxMetrics.day0WindowSeconds;
