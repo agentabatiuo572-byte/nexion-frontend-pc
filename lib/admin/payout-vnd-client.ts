@@ -34,15 +34,3 @@ export async function updatePayoutVndConfig(
     idempotencyPrefix: "d7-payout-config",
   }));
 }
-
-export async function togglePayoutVndChannel(
-  enabled: boolean,
-  expectedVersion: number,
-  reason: string,
-): Promise<PayoutVndConfig> {
-  return normalizeServerConfig(await financeAdminRequest<unknown>("/payout-vnd/channel", {
-    method: "PATCH",
-    body: JSON.stringify({ enabled, expectedVersion, reason }),
-    idempotencyPrefix: "d7-payout-channel",
-  }));
-}

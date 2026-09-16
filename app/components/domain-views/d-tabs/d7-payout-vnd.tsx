@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   loadPayoutVndConfig,
-  togglePayoutVndChannel,
   updatePayoutVndConfig,
 } from "@/lib/admin/payout-vnd-client";
 import {
@@ -72,7 +71,6 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
   const canManage = authorities.includes("finance_d7_manage");
-  const canToggle = authorities.includes("finance_d7_channel_toggle");
   const canForce = authorities.includes("finance_d7_force_inverted");
   const [config, setConfig] = useState<PayoutVndConfig | null>(null);
   const [drafts, setDrafts] = useState<Drafts | null>(null);
@@ -164,35 +162,6 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     });
   };
 
-  const toggleChannel = () => {
-    const enabled = !config.channelEnabled;
-    openActionConfirm({
-      action: `D7 法币提现通道${enabled ? "开启" : "关闭"}`,
-      detail: <>
-        <div>{config.channelEnabled ? "开启" : "关闭"} → <b>{enabled ? "开启" : "关闭"}</b></div>
-        <div>{enabled ? "开启要求真实出款供应商已就绪，且资金覆盖率健康。" : "关闭是止损动作，不受供应商或覆盖率故障阻断；已派发订单继续查询和结算。"}</div>
-      </>,
-      amplifies: enabled,
-      reasonMin: 8,
-      reasonMax: 200,
-      completionCopy: "服务端生效并写入 A2 审计",
-      run: async (reason) => {
-        setBusy(true);
-        try {
-          applySnapshot(await togglePayoutVndChannel(enabled, config.version, reason));
-          toast(`D7 通道已${enabled ? "开启" : "关闭"}`);
-        } catch (caught) {
-          const message = displayAdminError(caught);
-          await reload();
-          setError(message);
-          throw caught;
-        } finally {
-          setBusy(false);
-        }
-      },
-    });
-  };
-
   const fieldRow = (key: PayoutVndWritableField) => {
     const spec = PAYOUT_VND_FIELDS[key];
     return <div className="p-row" key={key}>
@@ -210,11 +179,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
 
   return <>
     {!config.providerReady && <div className="dtint warn" role="status" style={{ marginBottom: 12 }}>
-      <b>{config.providerStatusAvailable ? "真实出款供应商未就绪" : "真实出款供应商状态读取失败"}</b>：参数管理已接入服务端，
-      {config.providerStatusAvailable ? "银行卡（越南盾）提现通道仍由后端强制关闭，不能从页面绕过。" : "系统已按未就绪失败关闭；若存量通道仍开启，关闭止损入口保持可用。"}
-    </div>}
-    {config.channelEnabled && !config.providerReady && <div className="dtint warn" role="alert" style={{ marginBottom: 12 }}>
-      供应商状态异常但通道仍显示开启，请立即执行“关闭通道”止损。
+      <b>HDPay 配置不可用</b>：请检查支付共用的商户配置及服务状态。
     </div>}
     {error && <div className="dtint warn" style={{ marginBottom: 12 }}>{error}</div>}
 
@@ -222,7 +187,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       <div className="f-stat ok"><div className="k">买入牌价（D6 单源）</div><div className="v">{formatVnd(liveRates.buy)}</div><div className="sub">基准价 {formatVnd(config.baseRateVndPerUsdt)} · 买入点差 {config.buySpreadPct}%</div></div>
       <div className="f-stat cyan"><div className="k">卖出牌价（D7 派生）</div><div className="v">{formatVnd(liveRates.sell)}</div><div className="sub">卖出点差 {config.sellSpreadPct}%</div></div>
       <div className={`f-stat ${inverted ? "danger" : ""}`}><div className="k">草稿双向价差</div><div className="v">{formatVnd(draftRates.buy - draftRates.sell)}</div><div className="sub">{inverted ? "倒挂，默认禁止保存" : "买入牌价 − 卖出牌价"}</div></div>
-      <div className={`f-stat ${config.channelEnabled ? "warn" : "ok"}`}><div className="k">真实通道</div><div className="v">{config.channelEnabled ? "开启" : "关闭"}</div><div className="sub">供应商：{config.providerReady ? "已就绪" : config.providerStatusAvailable ? "未就绪" : "状态不可用（按未就绪处理）"}</div></div>
+      <div className={`f-stat ${config.providerReady ? "ok" : "warn"}`}><div className="k">HDPay 代付配置</div><div className="v">{config.providerReady ? "已配置" : "不可用"}</div><div className="sub">与代收共用商户配置</div></div>
     </div>
 
     <section className="l-card" style={{ marginBottom: 12 }}>
@@ -252,10 +217,8 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       </div></section>
     </div>
 
-    <section className="l-card" style={{ marginTop: 12 }}><div className="l-h"><span className="ttl">通道总开关</span><span className="sub">· 独立高风险权限 · 供应商未就绪时只能保持或切回关闭</span></div><div className="l-b"><div className="p-row">
-      <div className="txt"><div className="k">银行卡（越南盾）提现 · HDPay</div><div className="s">App 绑定银行账户后锁定报价，D2 审核放行后提交 HDPay 代付。关闭后拒绝新单与首次出款，已提交订单继续查询结算。商户 BANK 代付权限、回调、加密配置及明确出款授权完成前保持关闭。</div></div>
-      <span className={`bdg ${config.channelEnabled ? "warn" : "ok"}`}>{config.channelEnabled ? "开启" : "关闭"}</span>
-      {canToggle ? <button className="l-btn sm mc" disabled={busy || (!config.channelEnabled && !config.providerReady)} onClick={toggleChannel}>{config.channelEnabled ? "关闭通道" : "开启通道"}</button> : <span className="s">无通道启停权限</span>}
-    </div>{!config.providerReady && !config.channelEnabled && <div className="s">开启按钮已禁用：真实出款供应商未就绪。</div>}</div></section>
+    <section className="l-card" style={{ marginTop: 12 }}><div className="l-h"><span className="ttl">银行卡提现 · HDPay</span></div><div className="l-b">
+      <div>绑定银行账户后申请提现，经审核放行后由 HDPay 代付，处理结果自动更新。</div>
+    </div></section>
   </>;
 }

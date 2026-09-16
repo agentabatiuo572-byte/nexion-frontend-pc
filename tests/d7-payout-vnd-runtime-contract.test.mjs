@@ -64,7 +64,7 @@ test("D7 rejects type coercion, impossible limits and forged source ownership", 
   }
 });
 
-test("D7 still renders an enabled channel during provider outage so the stop-loss action stays reachable", () => {
+test("D7 tolerates legacy channel projection during a rolling backend upgrade", () => {
   const outage = fixture();
   outage.channelEnabled = true;
   outage.providerReady = false;

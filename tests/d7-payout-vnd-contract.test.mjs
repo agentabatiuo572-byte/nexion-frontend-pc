@@ -10,11 +10,12 @@ const D7_VIEW = "app/components/domain-views/d-tabs/d7-payout-vnd.tsx";
 const D7_CLIENT = "lib/admin/payout-vnd-client.ts";
 const D7_LOCAL = "lib/admin/payout-vnd-local.ts";
 
-test("D7 parameter management uses a real server client while the provider channel remains blocked", () => {
+test("D7 parameter management uses a real server client and shares the HDPay merchant configuration", () => {
   const source = read(D7_VIEW);
   assert.match(source, /payout-vnd-client/);
   assert.match(source, /providerReady/);
-  assert.match(source, /真实出款供应商未就绪/);
+  assert.match(source, /HDPay 配置不可用/);
+  assert.doesNotMatch(source, /togglePayoutVndChannel|开启通道|关闭通道|通道总开关/);
   assert.match(source, /loadPayoutVndConfig/);
   assert.ok(existsSync(path.join(ROOT, D7_CLIENT)));
   assert.ok(!existsSync(path.join(ROOT, D7_LOCAL)));
@@ -28,10 +29,10 @@ test("D7 writes use server CAS, reason, idempotency and never localStorage", () 
   assert.match(source, /idempotencyPrefix/);
   assert.match(source, /formatAdminApiError/);
   assert.match(source, /updatePayoutVndConfig/);
-  assert.match(source, /togglePayoutVndChannel/);
+  assert.doesNotMatch(source, /togglePayoutVndChannel/);
   assert.match(source, /alignsToStep/);
   assert.match(source, /displayAdminError\(caught\)/);
-  assert.equal((view.match(/const message = displayAdminError\(caught\);\s*await reload\(\);\s*setError\(message\);/g) ?? []).length, 2);
+  assert.equal((view.match(/const message = displayAdminError\(caught\);\s*await reload\(\);\s*setError\(message\);/g) ?? []).length, 1);
   assert.doesNotMatch(view, /setError\(caught instanceof Error/);
   assert.doesNotMatch(source, /localStorage|sessionStorage/);
   assert.doesNotMatch(source, /saved locally|本地配置|local-history/i);
@@ -61,9 +62,9 @@ test("D7 cross-domain links are gated by each target read authority", () => {
 test("D7 registry and header describe the server parameter capability without claiming a live payout rail", () => {
   const source = `${read("lib/admin/registry/d.ts")}\n${read("app/components/domain-views/d-view.tsx")}`;
   assert.match(source, /服务端权威整组配置/);
-  assert.match(source, /真实出款轨仍关闭/);
+  assert.match(source, /代收代付共用 HDPay 配置/);
   assert.match(source, /HDPay 银行提现已接入报价、审核、订单、账本与回调处理/);
-  assert.match(source, /供应商语义确认及授权验收/);
+  assert.match(source, /不再维护独立通道开关/);
   assert.doesNotMatch(source, /订单、账本与回调仍未完成/);
   assert.doesNotMatch(source, /只读 HOLD|本页不保存|通道停用不影响在途单|调整只影响新提现单/);
 });

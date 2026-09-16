@@ -61,15 +61,15 @@ async function enterD7(page: Page): Promise<D7Snapshot> {
 }
 
 async function assertD7Surface(page: Page, expectedTtl: number, expectedVersion: number) {
-  await expect(page.getByText("真实出款供应商未就绪", { exact: true })).toBeVisible();
+  await expect(page.getByText("HDPay 配置不可用", { exact: true })).toBeVisible();
   await expect(page.getByText(/参数管理已接入服务端/)).toBeVisible();
   await expect(page.getByText(new RegExp(`服务端 v${expectedVersion}`))).toBeVisible();
   await expect(page.getByText(/D6 基准价与买入点差/)).toBeVisible();
   await expect(page.locator('input[aria-label$="目标值"]')).toHaveCount(8);
   await expect(page.getByLabel("卖出点差目标值")).toHaveValue("1.5");
   await expect(page.getByLabel("出金报价有效期目标值")).toHaveValue(String(expectedTtl));
-  await expect(page.getByRole("button", { name: "开启通道" })).toBeDisabled();
-  await expect(page.getByText("开启按钮已禁用：真实出款供应商未就绪。")).toBeVisible();
+  await expect(page.getByRole("button", { name: "开启通道" })).toHaveCount(0);
+  await expect(page.getByText("与代收共用商户配置", { exact: true })).toBeVisible();
 }
 
 async function submitTtlChange(
