@@ -45,10 +45,10 @@ test("D7 accepts one internally consistent authoritative server snapshot", () =>
   assert.equal(result.baseRateVndPerUsdt, 26000);
 });
 
-test("malformed auxiliary evidence preserves the enabled config for audited closure", () => {
+test("retired verification metadata cannot block the operational channel config", () => {
   const result = normalizePayoutVndConfig({...fixture(), channelEnabled:true, capabilitySummary:{status:'ready'}});
   assert.equal(result.channelEnabled,true);
-  assert.equal(result.capabilitySummary,null);
+  assert.equal("capabilitySummary" in result,false);
 });
 
 test("D7 rejects type coercion, impossible limits and forged source ownership", () => {

@@ -1,28 +1,8 @@
 import { parseStrictFiniteNumber } from "./strict-number.ts";
 
-export interface BankCapabilitySummary {
-  status: "ready" | "unavailable";
-  provider: string | null;
-  country: "VN";
-  currency: "VND";
-  recipientIdentifier: "bank_account";
-  accountVerificationAvailable: boolean;
-  ownershipVerificationAvailable: boolean;
-  reasonCode: string | null;
-  capabilityVersion: string | null;
-  checkedAt: string | null;
-}
-export interface BankVerificationEvidence {
-  verificationStatus: "pending" | "verified" | "rejected" | "unavailable";
-  payoutCapability: "supported" | "unsupported" | "unknown";
-  ownershipStatus: "matched" | "mismatched" | "unknown";
-  accountType: "payment_account" | "credit_card" | "prepaid" | "unknown";
-  reasonCode: string | null;
-  checkedAt: string | null;
-  expiresAt: string | null;
-  evidenceRef: string | null;
-  capabilityVersion: string | null;
+export interface BankBeneficiaryEligibility {
   canWithdraw: boolean;
+  reasonCode: string | null;
 }
 export interface BankSettlementEvidence {
   status: "unconfirmed" | "paid" | "refunded" | "review_required";
@@ -70,34 +50,11 @@ export function readBankEvidence<T>(parser: (value: unknown) => T | null, value:
 }
 
 // Older servers can omit evidence; omission keeps reads/recovery available but never authorizes a new payout.
-export function parseBankCapability(value: unknown): BankCapabilitySummary | null {
+export function parseBankEligibility(value: unknown): BankBeneficiaryEligibility | null {
   if (value == null) return null;
   const r = object(value);
-  const result: BankCapabilitySummary = {
-    status: option(r.status, ["ready", "unavailable"]), provider: nullableText(r.provider),
-    country: option(r.country, ["VN"]), currency: option(r.currency, ["VND"]),
-    recipientIdentifier: option(r.recipientIdentifier, ["bank_account"]),
-    accountVerificationAvailable: bool(r.accountVerificationAvailable), ownershipVerificationAvailable: bool(r.ownershipVerificationAvailable),
-    reasonCode: nullableText(r.reasonCode), capabilityVersion: nullableText(r.capabilityVersion), checkedAt: date(r.checkedAt),
-  };
-  if (result.status === "ready" && (!result.provider || !result.capabilityVersion || !result.checkedAt
-      || !result.accountVerificationAvailable || !result.ownershipVerificationAvailable)) invalid();
-  return result;
-}
-export function parseBankVerification(value: unknown): BankVerificationEvidence | null {
-  if (value == null) return null;
-  const r = object(value);
-  const result: BankVerificationEvidence = {
-    verificationStatus: option(r.verificationStatus, ["pending", "verified", "rejected", "unavailable"]),
-    payoutCapability: option(r.payoutCapability, ["supported", "unsupported", "unknown"]),
-    ownershipStatus: option(r.ownershipStatus, ["matched", "mismatched", "unknown"]),
-    accountType: option(r.accountType, ["payment_account", "credit_card", "prepaid", "unknown"]),
-    reasonCode: nullableText(r.reasonCode), checkedAt: date(r.checkedAt), expiresAt: date(r.expiresAt),
-    evidenceRef: nullableText(r.evidenceRef), capabilityVersion: nullableText(r.capabilityVersion), canWithdraw: bool(r.canWithdraw),
-  };
-  if (result.canWithdraw && (result.verificationStatus !== "verified" || result.payoutCapability !== "supported"
-      || result.ownershipStatus !== "matched" || result.accountType !== "payment_account"
-      || !result.evidenceRef || !result.capabilityVersion || !result.checkedAt || !result.expiresAt)) invalid();
+  const result = { canWithdraw: bool(r.canWithdraw), reasonCode: nullableText(r.reasonCode) };
+  if (result.canWithdraw && result.reasonCode !== null) invalid();
   return result;
 }
 export function parseBankSettlement(value: unknown): BankSettlementEvidence | null {
@@ -117,11 +74,7 @@ export function parseBankSettlement(value: unknown): BankSettlementEvidence | nu
   return result;
 }
 export const bankEvidenceLabels = {
-  pending: "待核验", verified: "已核验", rejected: "核验未通过", unavailable: "暂无法核验",
-  supported: "支持提现", unsupported: "不支持提现", unknown: "尚未确认",
-  matched: "本人账户已核实", mismatched: "账户归属不符", payment_account: "银行支付账户",
-  credit_card: "信用卡", prepaid: "预付卡", unconfirmed: "尚无结算证据", paid: "已到账",
-  refunded: "已退回余额", review_required: "结果待核实",
+  unconfirmed: "尚无结算证据", paid: "已到账", refunded: "已退回余额", review_required: "结果待核实",
 } as const;
 export function bankEvidenceTime(value: string | null): string {
   if (!value) return "尚无记录";

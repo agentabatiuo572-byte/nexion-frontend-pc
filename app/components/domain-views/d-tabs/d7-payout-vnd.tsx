@@ -16,7 +16,6 @@ import {
 } from "@/lib/admin/payout-vnd-contract";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { bankEvidenceTime } from "@/lib/admin/bank-payout-evidence";
 import type { DCtx } from "./types";
 
 type Drafts = Record<PayoutVndWritableField, string>;
@@ -114,7 +113,6 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     .some((key) => parsed.values[key] !== config[key]);
   const invalid = Object.keys(parsed.errors).length > 0 || parsed.cross.length > 0;
   const amplifies = !invalid && amplification(config, parsed.values);
-  const verificationReady = config.capabilitySummary?.status === "ready";
 
   const applySnapshot = (next: PayoutVndConfig) => {
     setConfig(next);
@@ -172,7 +170,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       action: `D7 法币提现通道${enabled ? "开启" : "关闭"}`,
       detail: <>
         <div>{config.channelEnabled ? "开启" : "关闭"} → <b>{enabled ? "开启" : "关闭"}</b></div>
-        <div>{enabled ? "开启要求真实供应商、账户能力与归属核验均就绪，且资金覆盖率健康。" : "关闭是止损动作，不受供应商或覆盖率故障阻断；已派发订单继续查询和结算。"}</div>
+        <div>{enabled ? "开启要求真实出款供应商已就绪，且资金覆盖率健康。" : "关闭是止损动作，不受供应商或覆盖率故障阻断；已派发订单继续查询和结算。"}</div>
       </>,
       amplifies: enabled,
       reasonMin: 8,
@@ -219,15 +217,6 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       供应商状态异常但通道仍显示开启，请立即执行“关闭通道”止损。
     </div>}
     {error && <div className="dtint warn" style={{ marginBottom: 12 }}>{error}</div>}
-    <section className="l-card" style={{ marginBottom: 12 }} aria-label="银行收款能力">
-      <div className="l-h"><span className="ttl">银行收款能力</span><span className="sub">· 越南 / VND · 服务端证据只读</span></div>
-      <div className="l-b">
-        <div>账户核验：{config.capabilitySummary?.accountVerificationAvailable ? "已接入" : "未就绪"} · 本人归属核验：{config.capabilitySummary?.ownershipVerificationAvailable ? "已接入" : "未就绪"}</div>
-        <div>验证服务商：{config.capabilitySummary?.provider || "尚未确认"} · 收款标识：银行账户号</div>
-        <div>能力版本：{config.capabilitySummary?.capabilityVersion || "尚无证据"} · 核对时间：{bankEvidenceTime(config.capabilitySummary?.checkedAt ?? null)}</div>
-        {!verificationReady && <div className="dtint warn" role="status">账户核验和银行支持范围尚未确认，不能开启新出款；已有订单仍可在 D2 查询核对。</div>}
-      </div>
-    </section>
 
     <div className="f-stats">
       <div className="f-stat ok"><div className="k">买入牌价（D6 单源）</div><div className="v">{formatVnd(liveRates.buy)}</div><div className="sub">基准价 {formatVnd(config.baseRateVndPerUsdt)} · 买入点差 {config.buySpreadPct}%</div></div>
@@ -266,7 +255,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     <section className="l-card" style={{ marginTop: 12 }}><div className="l-h"><span className="ttl">通道总开关</span><span className="sub">· 独立高风险权限 · 供应商未就绪时只能保持或切回关闭</span></div><div className="l-b"><div className="p-row">
       <div className="txt"><div className="k">银行卡（越南盾）提现 · HDPay</div><div className="s">App 绑定银行账户后锁定报价，D2 审核放行后提交 HDPay 代付。关闭后拒绝新单与首次出款，已提交订单继续查询结算。商户 BANK 代付权限、回调、加密配置及明确出款授权完成前保持关闭。</div></div>
       <span className={`bdg ${config.channelEnabled ? "warn" : "ok"}`}>{config.channelEnabled ? "开启" : "关闭"}</span>
-      {canToggle ? <button className="l-btn sm mc" disabled={busy || (!config.channelEnabled && (!config.providerReady || !verificationReady))} onClick={toggleChannel}>{config.channelEnabled ? "关闭通道" : "开启通道"}</button> : <span className="s">无通道启停权限</span>}
+      {canToggle ? <button className="l-btn sm mc" disabled={busy || (!config.channelEnabled && !config.providerReady)} onClick={toggleChannel}>{config.channelEnabled ? "关闭通道" : "开启通道"}</button> : <span className="s">无通道启停权限</span>}
     </div>{!config.providerReady && !config.channelEnabled && <div className="s">开启按钮已禁用：真实出款供应商未就绪。</div>}</div></section>
   </>;
 }

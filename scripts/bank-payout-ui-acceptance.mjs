@@ -23,12 +23,11 @@ const row = {
   routingPriority:"NORMAL",riskScore:10, k4BandLowMax:30,k4BandHighMin:70,k4AutoEscalateScore:80,
 };
 const bank = {withdrawalNo:no,provider:"HDPAY",state:"MANUAL_REVIEW",version:4,providerOrderId:"1234",providerStatus:3,
-  beneficiaryVerification:{verificationStatus:"unavailable",payoutCapability:"unknown",ownershipStatus:"unknown",accountType:"unknown",reasonCode:"BANK_VERIFICATION_PROVIDER_UNAVAILABLE",checkedAt:null,expiresAt:null,evidenceRef:null,capabilityVersion:null,canWithdraw:false},
+  beneficiaryEligibility:{canWithdraw:false,reasonCode:"BANK_BENEFICIARY_CHANGED"},
   settlementEvidence:{status:"review_required",evidenceRef:null,providerOrderId:"1234",providerStatus:3,checkedAt:null,amountUsdt:null},
   quote:{bankName:"Vietcombank",maskedAccount:"******6789",amountVnd:2475000,rateVnd:25000,feeUsdt:1,netUsdt:99}};
 const d7 = {version:4,baseRateVndPerUsdt:26000,buySpreadPct:1.5,sellSpreadPct:1.5,quoteTtlMinWithdraw:10,requoteTolerancePct:2,feeRatePct:1,feeMinUsd:1,feeMaxUsd:25,minAmountUsd:20,maxAmountUsd:5000,
   channelEnabled:false,providerReady:true,providerStatusAvailable:true,sandboxAvailable:false,
-  capabilitySummary:{status:"unavailable",provider:null,country:"VN",currency:"VND",recipientIdentifier:"bank_account",accountVerificationAvailable:false,ownershipVerificationAvailable:false,reasonCode:"BANK_VERIFICATION_PROVIDER_UNAVAILABLE",capabilityVersion:null,checkedAt:null},
   defaults:{sellSpreadPct:1.5,quoteTtlMinWithdraw:10,requoteTolerancePct:2,feeRatePct:1,feeMinUsd:1,feeMaxUsd:25,minAmountUsd:20,maxAmountUsd:5000},
   effectiveAt:"2026-09-16T01:00:00Z",lastUpdatedBy:"fixture",sources:{baseRateVndPerUsdt:"D6",buySpreadPct:"D6",d7:"platform-config"}};
 const sourceKeys = ["dailyLimitCount","balanceMaxRatio","networkConfirmFeeUsd","networkEnabled","nexFeeOffsetRate","smallAmountThresholdUsd","payoutSlaHours","cooldownDays","complianceHoldEnabled"];
@@ -83,10 +82,10 @@ try {
   await page.getByText("Vietcombank",{exact:false}).first().waitFor();
   assert.match(await page.locator("body").innerText(),/2,475,000/);
   assert.equal(await page.getByText("0123456789",{exact:false}).count(),0);
-  assert.match(await page.locator("body").innerText(),/收款资格尚未通过/);
+  assert.match(await page.locator("body").innerText(),/暂不能审核放行/);
   assert.match(await page.locator("body").innerText(),/结果待核实/);
   await page.getByRole("button",{name:"关闭",exact:true}).last().click();
-  bank.beneficiaryVerification={canWithdraw:true};
+  bank.beneficiaryEligibility={canWithdraw:true,reasonCode:null};
   bank.settlementEvidence={status:"refunded"};
   await open.click();
   await page.getByText("Vietcombank",{exact:false}).first().waitFor();
@@ -110,25 +109,22 @@ try {
   await page.getByText(/为避免按旧数据处置/).waitFor();
   assert.ok(await recover.count()===0 || await recover.isDisabled());
   await page.goto(`${origin}/finance/payout-vnd`);
-  const capability = page.getByRole("region",{name:"银行收款能力"});
-  await capability.waitFor();
-  assert.match(await capability.innerText(),/账户核验：未就绪/);
-  assert.equal(await page.getByRole("button",{name:"开启通道",exact:true}).isDisabled(),true);
-  // The same unavailable verification provider must never hide the stop-loss path.
+  assert.equal(await page.getByRole("region",{name:"银行收款能力"}).count(),0);
+  assert.equal(await page.getByRole("button",{name:"开启通道",exact:true}).isDisabled(),false);
+  // Real provider readiness still controls opening; audited closure remains available during an outage.
+  d7.providerReady=false;
   d7.channelEnabled=true;
-  d7.capabilitySummary={status:"ready"};
   await page.reload();
   await page.getByRole("button",{name:"关闭通道",exact:true}).click();
-  await page.locator("textarea").fill("账户核验服务未就绪，关闭新出款并保留原单查询");
+  await page.locator("textarea").fill("真实出款供应商未就绪，关闭新出款并保留原单查询");
   await page.getByRole("button",{name:"确认提交",exact:true}).click();
   await page.getByRole("button",{name:"开启通道",exact:true}).waitFor();
   assert.equal(await page.getByRole("button",{name:"开启通道",exact:true}).isDisabled(),true);
   assert.equal(mutations.length,2);assert.equal(mutations[1].body.enabled,false);assert.ok(mutations[1].key);
   assert.equal(unexpected.length,0,JSON.stringify(unexpected));
   assert.deepEqual(pageErrors,[]);
-  await capability.scrollIntoViewIfNeeded();
-  await capability.screenshot({path:"artifacts/bank-d7-capability.png"});
-  console.log("PASS D2/D7 built UI: eligibility/ledger evidence, masked snapshot, query-only recovery, stale detail blocks writes; unavailable verification blocks enabling but permits audited close; no live API");
+  await page.screenshot({path:"artifacts/bank-d7-channel.png",fullPage:true});
+  console.log("PASS D2/D7 built UI: eligibility/ledger evidence, masked snapshot, query-only recovery, stale detail blocks writes; no external verification prerequisite; unavailable payout provider blocks enabling but permits audited close; no live API");
 } finally {
   if (browser) await browser.close();
   if (server.exitCode===null) {

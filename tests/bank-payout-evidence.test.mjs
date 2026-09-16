@@ -1,22 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseBankCapability, parseBankVerification, parseBankSettlement, readBankEvidence, bankEvidenceTime } from '../lib/admin/bank-payout-evidence.ts';
+import { parseBankEligibility, parseBankSettlement, readBankEvidence, bankEvidenceTime } from '../lib/admin/bank-payout-evidence.ts';
 
-const verification = () => ({ verificationStatus:'unavailable',payoutCapability:'unknown',ownershipStatus:'unknown',accountType:'unknown',reasonCode:'BANK_VERIFICATION_PROVIDER_UNAVAILABLE',checkedAt:null,expiresAt:null,evidenceRef:null,capabilityVersion:null,canWithdraw:false });
-const capability = () => ({ status:'unavailable',provider:null,country:'VN',currency:'VND',recipientIdentifier:'bank_account',accountVerificationAvailable:false,ownershipVerificationAvailable:false,reasonCode:'BANK_VERIFICATION_PROVIDER_UNAVAILABLE',capabilityVersion:null,checkedAt:null });
 const settlement = () => ({ status:'unconfirmed',evidenceRef:null,providerOrderId:null,providerStatus:null,checkedAt:null,amountUsdt:null });
-test('missing old-server evidence remains unknown rather than enabling payments', () => {
-  assert.equal(parseBankCapability(undefined),null); assert.equal(parseBankVerification(null),null); assert.equal(parseBankSettlement(undefined),null);
-  assert.equal(parseBankVerification(verification()).canWithdraw,false);
-});
-test('transport readiness cannot substitute for account and ownership verification', () => {
-  assert.equal(parseBankCapability(capability()).status,'unavailable');
-  assert.throws(()=>parseBankCapability({...capability(),status:'ready'}),/EVIDENCE_INVALID/);
-  assert.throws(()=>parseBankCapability({...capability(),accountVerificationAvailable:'true'}),/EVIDENCE_INVALID/);
-  assert.throws(()=>parseBankVerification({...verification(),canWithdraw:true}),/EVIDENCE_INVALID/);
-  const valid={...verification(),verificationStatus:'verified',payoutCapability:'supported',ownershipStatus:'matched',accountType:'payment_account',canWithdraw:true,checkedAt:'2026-09-16T01:00:00Z',expiresAt:'2026-09-17T01:00:00Z',evidenceRef:'verification-1',capabilityVersion:'v1'};
-  assert.equal(parseBankVerification(valid).canWithdraw,true);
-  for(const change of [{ownershipStatus:'mismatched'},{accountType:'credit_card'},{payoutCapability:'unsupported'},{evidenceRef:null}]) assert.throws(()=>parseBankVerification({...valid,...change}),/EVIDENCE_INVALID/);
+test('account identity readiness is required without any external verification evidence', () => {
+  assert.equal(parseBankEligibility(undefined),null);
+  assert.equal(parseBankEligibility({canWithdraw:false,reasonCode:'BANK_BENEFICIARY_CHANGED'}).canWithdraw,false);
+  assert.equal(parseBankEligibility({canWithdraw:true,reasonCode:null}).canWithdraw,true);
+  for (const value of [{canWithdraw:'true',reasonCode:null},{canWithdraw:true,reasonCode:'BANK_BENEFICIARY_CHANGED'},{reasonCode:null}])
+    assert.throws(()=>parseBankEligibility(value),/EVIDENCE_INVALID/);
 });
 test('success/refund needs receipt evidence rather than a failed order label', () => {
   for(const status of ['paid','refunded']) assert.throws(()=>parseBankSettlement({...settlement(),status}),/EVIDENCE_INVALID/);
@@ -36,7 +28,7 @@ test('evidence timestamps show Vietnam time consistently',()=>{
 });
 
 test('malformed optional evidence denies approval without losing the surrounding order or config',()=>{
-  for (const [parser,value] of [[parseBankCapability,{...capability(),status:'ready'}],[parseBankVerification,{...verification(),canWithdraw:true}],[parseBankSettlement,{...settlement(),status:'refunded'}]]) {
+  for (const [parser,value] of [[parseBankEligibility,{canWithdraw:'true',reasonCode:null}],[parseBankSettlement,{...settlement(),status:'refunded'}]]) {
     assert.equal(readBankEvidence(parser,value),null);
   }
   assert.throws(()=>readBankEvidence(()=>{throw new Error('unexpected programming error');},{}),/unexpected programming error/);
