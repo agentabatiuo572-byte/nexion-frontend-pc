@@ -5,6 +5,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { bankEvidenceLabels, bankEvidenceTime } from "@/lib/admin/bank-payout-evidence";
 import {
   fetchD2WithdrawalDetail,
   fetchD2BankPayout,
@@ -299,7 +300,7 @@ function batchSelectable(row: D2Withdrawal, action: D2BatchAction | "", allowedA
   const candidates = action ? [action] : allowedActions;
   return candidates.some((candidate) => allowedActions.includes(candidate)
     && actionCandidates(row).includes(candidate)
-    && !(candidate === "APPROVE" && routingUnavailable(row)));
+    && !(candidate === "APPROVE" && (routingUnavailable(row) || row.chain === "BANK-VND")));
 }
 
 /**
@@ -782,7 +783,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         && hasAuthority("finance_d2_withdrawal_approve")
         && developmentSimulationEligible(detail)
         && <button className="l-btn primary" disabled={!writesEnabled || !!submitting || detailLoading || !!detailError} onClick={() => confirmDevelopmentSimulation(detail)}>模拟冷却到期</button>}
-      {actionCandidates(detail).filter((action) => hasAuthority(ACTION_AUTHORITY[action])).map((action) => <button key={action} className="l-btn primary" disabled={!writesEnabled || !!submitting || detailLoading || !!detailError || (action === "APPROVE" && routingUnavailable(detail))} onClick={() => confirmReview(detail, action)}>{actionLabel(action)}</button>)}
+      {actionCandidates(detail).filter((action) => hasAuthority(ACTION_AUTHORITY[action])).map((action) => <button key={action} className="l-btn primary" disabled={!writesEnabled || !!submitting || detailLoading || !!detailError || (action === "APPROVE" && (routingUnavailable(detail) || (detail.chain === "BANK-VND" && bankDetail?.beneficiaryVerification?.canWithdraw !== true)))} onClick={() => confirmReview(detail, action)}>{actionLabel(action)}</button>)}
     </>}>
       {detailLoading && <div className="dtint">正在读取服务端最新详情…</div>}
       {detailError && <div className="dtint warn">服务端最新详情加载失败 · {detailError} · 为避免按旧数据处置，写操作已关闭，请关闭后重试。</div>}
@@ -801,6 +802,23 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
             <KV k="银行到账金额" v={`${bankDetail.amountVnd.toLocaleString()} VND`} />
             <KV k="代付状态" v={bankDetail.state} /><KV k="HDPay 单号" v={bankDetail.providerOrderId || "尚未取得"} />
             <KV k="核对提示" v={bankDetail.lastError || "按供应商查询结果自动结算；接单不等于到账"} />
+            {bankDetail.beneficiaryVerification ? <>
+              <KV k="账户核验" v={bankEvidenceLabels[bankDetail.beneficiaryVerification.verificationStatus]} />
+              <KV k="收款能力" v={bankEvidenceLabels[bankDetail.beneficiaryVerification.payoutCapability]} />
+              <KV k="账户归属" v={bankEvidenceLabels[bankDetail.beneficiaryVerification.ownershipStatus]} />
+              <KV k="账户类型" v={bankEvidenceLabels[bankDetail.beneficiaryVerification.accountType]} />
+              <KV k="核验凭据" v={bankDetail.beneficiaryVerification.evidenceRef || "尚无证据"} />
+              <KV k="能力版本" v={bankDetail.beneficiaryVerification.capabilityVersion || "尚未确认"} />
+              <KV k="核验时间" v={bankEvidenceTime(bankDetail.beneficiaryVerification.checkedAt)} />
+              <KV k="有效至" v={bankEvidenceTime(bankDetail.beneficiaryVerification.expiresAt)} />
+            </> : <div className="dtint warn">尚无收款账户核验证据，不能审核放行新出款。</div>}
+            {bankDetail.beneficiaryVerification && !bankDetail.beneficiaryVerification.canWithdraw && <div className="dtint warn">收款资格尚未通过，不能审核放行。{bankDetail.beneficiaryVerification.reasonCode ? displayAdminError(new Error(bankDetail.beneficiaryVerification.reasonCode)) : "请核对账户核验和安全等待状态。"}</div>}
+            <KV k="结算证明" v={bankDetail.settlementEvidence ? bankEvidenceLabels[bankDetail.settlementEvidence.status] : "尚无结算证据"} />
+            {bankDetail.settlementEvidence?.evidenceRef && <>
+              <KV k="结算凭据" v={bankDetail.settlementEvidence.evidenceRef} />
+              <KV k="确认时间" v={bankEvidenceTime(bankDetail.settlementEvidence.checkedAt)} />
+              {bankDetail.settlementEvidence.status === "refunded" && <KV k="已退回余额" v={`${bankDetail.settlementEvidence.amountUsdt?.toLocaleString("zh-CN", { maximumFractionDigits: 6 })} USDT`} />}
+            </>}
           </> : <div>银行卡快照正在读取或暂不可用；不能按旧数据放行。</div>}
         </section>}
         <section className="d2-detail-section">

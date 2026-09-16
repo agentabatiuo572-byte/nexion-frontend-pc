@@ -45,6 +45,12 @@ test("D7 accepts one internally consistent authoritative server snapshot", () =>
   assert.equal(result.baseRateVndPerUsdt, 26000);
 });
 
+test("malformed auxiliary evidence preserves the enabled config for audited closure", () => {
+  const result = normalizePayoutVndConfig({...fixture(), channelEnabled:true, capabilitySummary:{status:'ready'}});
+  assert.equal(result.channelEnabled,true);
+  assert.equal(result.capabilitySummary,null);
+});
+
 test("D7 rejects type coercion, impossible limits and forged source ownership", () => {
   for (const mutate of [
     (value) => { value.version = true; },

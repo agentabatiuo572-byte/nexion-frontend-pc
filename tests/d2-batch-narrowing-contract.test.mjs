@@ -200,6 +200,8 @@ test("① 固定靶:可见 + 已勾但当前动作不可执行的行被排除(�
   // 勾选框禁用态与提交面同源
   assert.equal(ext.batchSelectable(frozen, "APPROVE", ["APPROVE"]), false);
   assert.equal(ext.batchSelectable(noK4, "APPROVE", ["APPROVE"]), false);
+  assert.equal(ext.batchSelectable(row("BANK", { chain: "BANK-VND" }), "APPROVE", ["APPROVE"]), false);
+  assert.equal(ext.batchSelectable(row("BANK", { chain: "BANK-VND" }), "FREEZE", ["FREEZE"]), true);
   assert.equal(ext.batchSelectable(row("W1"), "APPROVE", ["APPROVE"]), true);
   // FROZEN 行换成 UNFREEZE 语义不在批量集合里;换 FREEZE 动作则 REVIEW_PENDING 行可执行
   assert.equal(ext.batchSelectable(row("W1"), "FREEZE", ["FREEZE"]), true);

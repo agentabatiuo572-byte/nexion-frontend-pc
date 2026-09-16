@@ -1,4 +1,5 @@
 import { parseStrictFiniteNumber } from "./strict-number.ts";
+import { parseBankCapability, readBankEvidence, type BankCapabilitySummary } from "./bank-payout-evidence.ts";
 
 export const PAYOUT_VND_FIELDS = {
   sellSpreadPct: { label: "卖出点差", unit: "%", min: 0, max: 3, step: 0.01 },
@@ -21,6 +22,7 @@ export type PayoutVndConfig = PayoutVndValues & {
   channelEnabled: boolean;
   providerReady: boolean;
   providerStatusAvailable: boolean;
+  capabilitySummary: BankCapabilitySummary | null;
   sandboxAvailable: boolean;
   defaults: PayoutVndValues;
   effectiveAt: string;
@@ -101,6 +103,7 @@ export function normalizePayoutVndConfig(value: unknown): PayoutVndConfig {
     channelEnabled,
     providerReady,
     providerStatusAvailable,
+    capabilitySummary: readBankEvidence(parseBankCapability, source.capabilitySummary),
     sandboxAvailable,
     defaults,
     effectiveAt: isoInstant(source.effectiveAt, "effectiveAt"),

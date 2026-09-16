@@ -1,4 +1,5 @@
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { parseBankVerification, parseBankSettlement, readBankEvidence, type BankVerificationEvidence, type BankSettlementEvidence } from "@/lib/admin/bank-payout-evidence";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { normalizeD1NullableString } from "@/lib/admin/d1-nullable-string";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
@@ -1887,6 +1888,8 @@ export async function fetchD2WithdrawalDetail(withdrawalNo: string) {
 export interface D2BankPayout {
   withdrawalNo: string; state: string; version: number; providerOrderId: string | null; providerStatus: number | null; lastError: string | null;
   bankName: string; maskedAccount: string; amountVnd: number; rateVnd: number; feeUsdt: number; netUsdt: number;
+  beneficiaryVerification: BankVerificationEvidence | null;
+  settlementEvidence: BankSettlementEvidence | null;
 }
 export async function fetchD2BankPayout(withdrawalNo: string): Promise<D2BankPayout> {
   const row = d2Object(await apiRequest<unknown>("finance", `/withdrawals/${encodeURIComponent(withdrawalNo)}/bank`), "bankPayout");
@@ -1903,7 +1906,8 @@ export async function fetchD2BankPayout(withdrawalNo: string): Promise<D2BankPay
     providerOrderId: row.providerOrderId == null ? null : d2String(row.providerOrderId, "providerOrderId"),
     providerStatus: d2NullableNumber(row.providerStatus), lastError: row.lastError == null ? null : d2String(row.lastError, "bankError"),
     bankName: d2String(quote.bankName, "bankName"), maskedAccount: d2String(quote.maskedAccount, "maskedAccount"),
-    amountVnd, rateVnd, feeUsdt, netUsdt };
+    amountVnd, rateVnd, feeUsdt, netUsdt,
+    beneficiaryVerification: readBankEvidence(parseBankVerification, row.beneficiaryVerification), settlementEvidence: readBankEvidence(parseBankSettlement, row.settlementEvidence) };
 }
 
 export async function requeryD2BankPayout(withdrawalNo: string, version: number, reason: string, idempotencyKey: string) {
