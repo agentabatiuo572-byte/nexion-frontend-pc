@@ -84,11 +84,14 @@ test("H4 App remote mode consumes canonical state and server spin results", asyn
   // Join and claim are once-per-event commands; their stable key is event-scoped.
   assert.match(eventStore, /eventsApi\.join\(id, `h4-event-join:\$\{id\}`\)/);
   assert.match(eventStore, /eventsApi\.claim\(id, `h4-event-claim:\$\{id\}`\)/);
-  assert.match(eventStore, /remoteAccountEpoch\.isCurrent\(request\) && refreshRemote\(request\)/);
+  assert.match(eventStore, /if \(!remoteAccountEpoch\.isCurrent\(request\)\) return false/);
+  assert.match(eventStore, /await refreshRemote\(request\);\s*return remoteAccountEpoch\.isCurrent\(request\)/);
   assert.match(spinStore, /spinRemote/);
   assert.match(spinStore, /eventsApi\.spin\(/);
   // The confirmation sheet owns the spin intent across retries; the store forwards it.
-  assert.match(spinSheet, /pendingSpinKey \?\? createSpinIdempotencyKey\(\)/);
+  assert.match(spinSheet, /pendingSpinKeys\.get\(eventCode\) \?\? createSpinIdempotencyKey\(\)/);
+  assert.match(spinSheet, /pendingSpinKeys\.set\(eventCode, key\)/);
+  assert.match(spinSheet, /spin\.spinRemote\(eventCode, key\)/);
   assert.match(spinStore, /eventsApi\.spin\(eventCode, idempotencyKey\)/);
   assert.match(eventsApi, /path: `\/api\/events\?locale=\$\{encodeURIComponent\(/);
   assert.match(eventsApi, /\["en", "zh", "vi"\]\.includes\(locale\) \? locale : "en"/);

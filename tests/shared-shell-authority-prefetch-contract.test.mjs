@@ -46,7 +46,7 @@ test("M badges and shell alerts do not call domains absent from the session", ()
   assert.match(shell, /<TopBar[\s\S]{0,220}servicePending=\{servicePending\}/);
   assert.match(sidebar, /servicePending > 0 \? \{ "\/service\/sessions": servicePending \} : \{\}/);
   assert.doesNotMatch(sidebar, /useNavBadges|useServicePendingCount/);
-  assert.doesNotMatch(topbar, /useServicePendingCount/);
+  assert.doesNotMatch(topbar, /useServicePendingCount\s*\(/);
   assert.match(topbar, /<SupportInboxPill pending=\{servicePending\}/);
   assert.match(bell, /const session = useAdminAuth\(\(state\) => state\.session\)/);
   assert.match(bell, /const hasAdminSession = session != null/);

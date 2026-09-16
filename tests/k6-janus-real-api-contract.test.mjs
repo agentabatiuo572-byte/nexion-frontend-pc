@@ -336,7 +336,7 @@ test("K6 CSV exports neutralize formulas hidden behind whitespace and control ch
   assert.equal((files.match(/\^\[\\s\\u0000-\\u001f\]\*\[=\+\\-@\]/g) ?? []).length, 2);
 });
 
-test("K6 current App consumes report, pending command and ACK through one exact approved-target contract", () => {
+test("K6 retained API validates approved targets while formal App remains HOLD without an executor", () => {
   const api = readApp("src/api/janus-api.ts");
   const coordinator = readApp("src/services/janus-c2.ts");
   const runtime = readApp("src/services/janus-runtime.ts");
@@ -358,9 +358,10 @@ test("K6 current App consumes report, pending command and ACK through one exact 
   assert.match(runtime, /parsed\.protocol !== "https:"/);
   assert.match(coordinator, /nexgrid-janus-pending-report-v2/);
   assert.match(coordinator, /nexgrid-janus-pending-ack-v2/);
-  assert.match(coordinator, /scope:\s*\(\) => String\(sessionVault\.read\(\)\?\.user\.userId/);
-  assert.match(app, /startJanusC2Sync\(\)/);
-  assert.match(app, /stopJanusC2Sync\(\)/);
+  assert.match(coordinator, /return \{ state: "HOLD", code: "JANUS_NATIVE_EXECUTOR_REQUIRED" \}/);
+  assert.match(coordinator, /const scope = options\.scope\?\.\(\)\.trim\(\)/);
+  assert.match(coordinator, /return scope \? `\$\{base\}:\$\{scope\}` : base/);
+  assert.doesNotMatch(app, /startJanusC2Sync\(|createJanusCoordinator\(/);
   assert.doesNotMatch(combined, /remoteUrlKey\s*===\s*["'](?:default|backup|promo)["']/);
 });
 

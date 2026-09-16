@@ -44,20 +44,25 @@ test("D-19 consumes small amount and payout SLA parameters in withdrawal creatio
 
 test("D-21 finance BFF forwards the VietQR receipt collection", () => {
   const proxy = readFront("app/api/admin/finance/[...path]/route.ts");
-  assert.match(proxy, /\["overview", "accounts", "config", "receipts"\]/);
+  assert.match(proxy, /\["overview", "accounts", "config", "receipts", "receipt-evidence"\]/);
 });
 
-test("D-22 local sandbox persists isolated payout orders and signed replay-safe callbacks", () => {
+test("D-22 sandbox remains a test-only fixture with signed replay-safe callbacks", () => {
   const service = readBack("src/main/java/ffdd/opsconsole/finance/application/PayoutVndSandboxService.java");
   const mapper = readBack("src/main/java/ffdd/opsconsole/finance/mapper/PayoutVndSandboxMapper.java");
   const properties = readBack("src/main/java/ffdd/opsconsole/finance/application/PayoutVndProviderProperties.java");
   const controller = readBack("src/main/java/ffdd/opsconsole/finance/web/OpsPayoutVndController.java");
+  const fixtureController = readBack("src/main/java/ffdd/opsconsole/finance/web/OpsPayoutVndSandboxController.java");
   assert.match(properties, /DISABLED[\s\S]*LOCAL_SANDBOX[\s\S]*PROVIDER/);
   assert.match(service, /source", "mock"/);
   assert.match(service, /PAYOUT_VND_PROVIDER_UNAVAILABLE/);
   assert.match(service, /PAYOUT_VND_CALLBACK_SIGNATURE_INVALID/);
   assert.match(mapper, /nx_payout_vnd_sandbox_order/);
   assert.match(mapper, /nx_payout_vnd_sandbox_ledger/);
-  assert.match(controller, /\/sandbox\/orders/);
-  assert.match(controller, /\/sandbox\/callbacks/);
+  assert.doesNotMatch(controller, /\/sandbox|PayoutVndSandboxService/);
+  assert.match(fixtureController, /@Profile\("test"\)/);
+  assert.match(fixtureController, /ADMIN_PREFIX \+ "\/finance\/payout-vnd\/sandbox"/);
+  assert.match(fixtureController, /@PostMapping\("\/orders"\)/);
+  assert.match(fixtureController, /@PostMapping\("\/callbacks"\)/);
+  assert.match(fixtureController, /hasAuthority\('finance_d7_manage'\)/);
 });

@@ -60,7 +60,7 @@
 
 | 任务 | 触发 / 完成判定 | 领取 | 当前 uniapp 可用性 |
 |---|---|---|---|
-| 首日任务（route 类） | App.vue 路由 watcher 1s 轮询自动（`App.vue:375-397`） | 自动 `creditNex` + toast | ✅ 仅 `visit_earn`/`visit_store`/`view_product_roi` 3 项能跑 |
+| 首日任务（页面访问三项） | 正式 App 仅在认证会话与当前账号匹配、权威页面数据成功加载且页面可见后，发出受控 `SYSTEM` observation；Java 再按 PC H3 binding 和用户实例裁决 | 服务端完成后仍须用户显式 claim | `visit_earn` / `visit_store` / `view_product_roi` 已有专用 event；未绑定、过期或已完成均不生成新的完成事实 |
 | 首日任务（动作类） | 无触发逻辑（`connect_wallet`/`setup_profile`/`invite_friend`） | — | ⚠️ 当前**触发不了**（`invite-earn-card.vue:9` 注释：`markComplete("invite_friend") omitted`） |
 | 每日签到 | 用户主动点签到（`daily.vue:305` → `nex-faucet.ts:125 signIn`） | 主动 `claimMilestone` | ✅ 能跑 |
 | 签到里程碑 | streak 累积达阈值（`daily.vue:329`） | 主动领取 | ✅ 能跑 |
@@ -70,6 +70,7 @@
 
 **关键认知**：
 - 真 weekly 的「触发（完成判定）」靠**真实业务行为 + server 归因**，理论上**不依赖** weekly 渲染面（用户照样在质押页质押、商城加购）。
+- 页面访问不是本地 `creditNex` 触发器。三项 Day-One 页面事实沿 `App → canonical outbox → PC binding → H3 instance` 进入 `COMPLETED`，再由独立 claim 事务处理奖励；任务数、资格窗与奖励规则不由本页定义。
 - **但「领取」依赖渲染面** —— `weeklyQuest` ns 有 `claim:"领取 +{n} NEX"`、`bonusCta:"领取 Weekly Champion 奖"`，这套设计是**要用户主动领的**（尤其周冠军 bonus），没渲染面就没领取入口。
 - 且 uniapp 当前**纯 mock、无 server、无归因 watcher**，所以现在连「自动判定」都不存在。后台 17 条 weekly 配置在 uniapp 端**完全悬空**。
 

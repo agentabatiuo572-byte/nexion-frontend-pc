@@ -89,5 +89,5 @@ test("H2 due settlement is server-driven and survives a closed App client", () =
   // FEAT-TRIAL02(Signed 2026-07-31)无卡化后自动扣款整链下线 → 不再要求后端实现
   // autoChargeAtEnd 闸门。到期结算本身仍是服务端职责(到点把试用推进到终态,零扣款零下单),
   // 故 cancelOnce("auto_end") 断言保留。
-  assert.match(trialService, /cancelOnce\(userId, "auto_end"\)/);
+  assert.match(trialService, /return cancelOnce\(userId, flag\(policy, "autoChargeAtEnd", false\) && now\.isAfter\(dueAt\.plus\(MAX_AUTO_SETTLEMENT_DELAY\)\)\s*\? "auto_settlement_window_expired" : "auto_end"\)/);
 });

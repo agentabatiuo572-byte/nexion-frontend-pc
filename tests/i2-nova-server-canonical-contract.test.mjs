@@ -26,7 +26,7 @@ test("social dispatch becomes visible before commit and emits server-authoritati
   const runtime = read(backendRoot, "src/main/java/ffdd/opsconsole/content/application/NovaSocialRuntimeService.java");
   const clicks = read(backendRoot, "src/main/java/ffdd/opsconsole/content/application/AppNotificationService.java");
 
-  assert.match(mapper, /SET push_status = 'DELIVERED'/);
+  assert.match(mapper, /SET n\.push_status = 'DELIVERED'/);
   assert.match(runtime, /NOVA_SOCIAL_DELIVERY_COUNT_MISMATCH/);
   assert.match(runtime, /"nova\.push_sent"/);
   assert.match(runtime, /"notification\.delivered"/);

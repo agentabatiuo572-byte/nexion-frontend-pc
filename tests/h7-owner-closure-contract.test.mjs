@@ -52,7 +52,7 @@ test("H7 App remote mode uses canonical claim and order redemption only", () => 
   assert.match(store, /createRemoteAccountEpoch/);
   assert.match(store, /remoteRequestIsCurrent/);
   assert.match(store, /await voucherApi\.claim/);
-  assert.match(store, /return refreshRemote\(\)/);
+  assert.match(store, /await refreshRemote\(\);\s*return remoteAccountEpoch\.isCurrent\(request\) && isCurrentRuntimeRevision\(runScope\)/);
   assert.doesNotMatch(store, /pendingClaimKeys/);
   assert.match(checkout, /voucherId: requestedVoucherId/);
   assert.match(checkout, /created\.voucherId !== requestedVoucherId/);

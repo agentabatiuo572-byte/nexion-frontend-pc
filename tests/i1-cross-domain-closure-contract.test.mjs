@@ -9,7 +9,7 @@ const backend = (path) => readFileSync(resolve(process.cwd(), "..", "nexion-back
 const appRoot = resolveNexionAppRoot({ adminRoot: process.cwd() });
 const app = (path) => readFileSync(resolve(appRoot, path), "utf8");
 
-test("I1 后台投放位置由 App 可见组件真实消费，而不是只停留在管理页", () => {
+test("I1 首页保留实验归因，周任务展示仍由 H3 权威卡片决定", () => {
   const controller = backend("src/main/java/ffdd/opsconsole/content/web/AppCopyExperimentController.java");
   const mapper = backend("src/main/java/ffdd/opsconsole/content/mapper/ContentExperimentRuntimeMapper.java");
   const component = app("src/components/home/conversion-banner.vue");
@@ -21,7 +21,9 @@ test("I1 后台投放位置由 App 可见组件真实消费，而不是只停留
   assert.match(component, /MANAGED_POSITION = "home\.conversion-banner"/);
   assert.match(component, /managedCopy\.refresh\(MANAGED_POSITION\)/);
   assert.match(component, /refreshCanonicalOrders\(true\)/);
-  assert.match(component, /managedCopyText\.value/);
+  assert.match(component, /presentHomeWeeklyCard\(/);
+  assert.match(component, /weeklyCard\.value\.subtitle/);
+  assert.doesNotMatch(component, /managedCopyText/);
   assert.match(component, /data-copy-version/);
   assert.match(api, /\/api\/content\/positions\//);
 });

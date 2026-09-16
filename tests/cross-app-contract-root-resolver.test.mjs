@@ -22,7 +22,6 @@ const CONTRACTS = [
   "i5-disclosure-contract.test.mjs",
   "i6-owner-closure-contract.test.mjs",
   "k6-janus-real-api-contract.test.mjs",
-  "l6-cross-domain-closure-contract.test.mjs",
 ];
 
 test("every cross-App acceptance contract resolves its App checkout through the declared root resolver", () => {
@@ -33,4 +32,11 @@ test("every cross-App acceptance contract resolves its App checkout through the 
     assert.doesNotMatch(source, /(?:\.\.\\|\.\.\/)NX1\.0(?:\\|\/)/, `${file} derives the App checkout directly`);
     assert.doesNotMatch(source, /["']NX1\.0(?:\\|\/)/, `${file} embeds an App-root path fragment`);
   }
+});
+
+test("L6 is an explicit cross-module blocker, not an App-source consumer", () => {
+  const source = readFileSync(new URL("./l6-cross-domain-closure-contract.test.mjs", import.meta.url), "utf8");
+  assert.match(source, /BLOCKED_CROSS_MODULE/);
+  assert.match(source, /等待跨模块接入/);
+  assert.doesNotMatch(source, /NX1\.0|resolveNexionAppRoot/);
 });

@@ -41,7 +41,11 @@ test("H5 App remote mode has canonical endpoints and cannot mint local rewards",
   const page = readApp("src/pages/daily/daily.vue");
   assert.match(api, /\/api\/points\/sign-in/);
   assert.match(api, /\/api\/points\/streak-saver\/use/);
-  assert.match(store, /if \(remoteApiEnabled\) \{\s*return \{ ok: false/s);
-  assert.match(store, /signInCanonical/);
-  assert.match(page, /if \(remoteApiEnabled\)[\s\S]*signInCanonical/);
+  for (const name of ["signIn", "useSaver", "claimMilestone"]) {
+    const fn = store.slice(store.indexOf(`function ${name}(`));
+    assert.match(fn, /^function [^\n]+\n\s*if \(remoteApiEnabled\) return \{ ok: false/);
+  }
+  assert.match(store, /async function checkInRemote\(/);
+  assert.match(store, /pointsApi\.checkIn\(`h5-check-in:\$\{businessDate\}`\)/);
+  assert.match(page, /if \(remoteApiEnabled\)[\s\S]*await faucet\.checkInRemote\(\)/);
 });

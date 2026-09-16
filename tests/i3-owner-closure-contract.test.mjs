@@ -57,7 +57,9 @@ test("App notification feed paginates, fails visibly, and navigates only to the 
   assert.match(store, /const nextCursor = ref<string \| null>/);
   assert.match(store, /async function loadMoreRemote/);
   assert.match(store, /NOTIFICATION_PAGE_CURSOR_OVERLAP/);
-  assert.match(store, /return result\.route/);
+  assert.match(store, /return \{ kind: "done", route: result\.route \}/);
+  assert.match(store, /if \(!queued \|\| !remoteAccountEpoch\.isCurrent\(request\)\) return null/);
+  assert.match(store, /return queued\.route/);
   assert.match(api, /NOTIFICATION_ACTION_RESPONSE_MISMATCH/);
   assert.match(backend, /NOTIFICATION_READ_FACT_MISMATCH/);
   assert.match(

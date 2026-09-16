@@ -80,7 +80,7 @@ test("M24 gates cross-leaf reads and SSE and renders unavailable KPIs differentl
   assert.match(client, /if \(!authorities\.includes\("service_m3_read"\)\)/);
   assert.match(client, /if \(!authorities\.includes\("service_m4_read"\)\)/);
   assert.match(client, /if \(!authorities\.includes\("service_m5_read"\)\)/);
-  assert.match(view, /useConversationStream\(\{[\s\S]{0,160}enabled:/);
+  assert.match(view, /useConversationStream\(\{[^}]*enabled: authorities\.includes\("service_m3_read"\) && Boolean\(mData\?\.conversationsAvailable\) && !mLoading,/);
   assert.match(m1, /ticketsAvailable[\s\S]{0,1500}不可用/);
   assert.match(m1, /conversationsAvailable[\s\S]{0,1500}不可用/);
   assert.match(m5, /hasM1ReadAuthority[\s\S]{0,2500}fetchMSupportAgentsPage/);

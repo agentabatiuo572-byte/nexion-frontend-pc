@@ -12,7 +12,12 @@ test("I5 risk acknowledgement uses the current jurisdiction snapshot and fails c
 
   assert.match(store, /riskDisclosureApi\.current\(\)/);
   assert.match(store, /riskDisclosureApi\.acknowledge\(/);
-  assert.match(store, /accepted\.value\s*=\s*snapshot\.acknowledged/);
+  assert.match(store, /accepted\.value\s*=\s*snapshot\?\.acknowledged \?\? false/);
+  const requestIsCurrentGate = /function requestIsCurrent\(request: ReturnType<typeof remoteAccountScope\.snapshot>, generation: number\) \{\s*return requestGeneration === generation && remoteAccountScope\.isCurrent\(request\);\s*\}/;
+  assert.match(store, requestIsCurrentGate);
+  assert.match(store, /if \(requestIsCurrent\(request, generation\)\) apply\(snapshot\)/);
+  // A generation check alone is not enough: switching accounts must still invalidate the response.
+  assert.doesNotMatch(store.replace(" && remoteAccountScope.isCurrent(request)", ""), requestIsCurrentGate);
   assert.match(page, /await risk\.refresh\(\)/);
   assert.match(page, /await risk\.accept\(\)/);
   assert.match(page, /v-else-if="loadError"/);
@@ -39,12 +44,14 @@ test("I6 tutorial center consumes the learning API for course, quiz, completion 
   assert.match(pages, /pages\/learn\/course/);
 });
 
-test("I4 keeps public active-device truth independent from the server trust snapshot", () => {
+test("I4 displays only published trust fields and fails closed without a snapshot", () => {
   const page = read("src/pages/trust/trust.vue");
-  assert.match(page, /publicStatsHealth\(cfg\.config\.publicStats\)/);
-  assert.match(page, /await trustSectionApi\.current\(\)/);
-  assert.match(page, /activeDevicesText/);
-  assert.match(page, /trustLoadError/);
-  assert.match(page, /v-else-if="error"/);
-  assert.match(page, /GEO_COUNTRY_UNRESOLVED/);
+  const consumer = read("src/composables/use-published-trust.ts");
+  assert.match(page, /usePublishedTrust\(\)/);
+  assert.match(consumer, /trustSectionApi\.current\(\)/);
+  assert.match(page, /activeDevicesText = computed\(\(\) => trustFieldValue\(financialSection\.value\?\.fields \?\? \[\], "devicesOnlineValue"\) \?\? "—"\)/);
+  assert.doesNotMatch(page, /publicStatsHealth|cfg\.config\.publicStats/);
+  assert.match(page, /v-else-if="hasError"/);
+  assert.match(consumer, /sections\.value = \[\];\s*status\.value = "error"/);
+  assert.match(consumer, /if \(generation !== authorityGeneration\) return false/);
 });

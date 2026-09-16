@@ -21,7 +21,7 @@ test("B1 closes threshold, D3 injection, reconciliation export, and advisory-onl
   assert.match(page, /红线必须在 80%–150%/);
   assert.match(page, /黄线必须在 100%–200%/);
   assert.match(page, /createD3Injection\(/);
-  assert.match(page, /downloadD3Csv\("reconciliation"\)/);
+  assert.match(page, /downloadD3Csv\("reconciliation", reason, operator, current\.idempotencyKey\)/);
   assert.match(page, /B1 只给出水位、告警与建议，不自动执行提现收紧或全局熔断/);
   assert.doesNotMatch(page, /jEmergencyActions|emergencyDisableJ1|触发全局熔断/);
 });

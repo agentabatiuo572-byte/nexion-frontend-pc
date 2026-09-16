@@ -1713,7 +1713,7 @@ export async function markMConversationRead(no:string,lastSeenMessageId:number,s
 /**
  * Authoritative M3 reconnect snapshot. The list is fully paged and every row is
  * replaced with its current detail (including persistent message ids) before
- * the SSE hook may report ready.
+ * the WebSocket transport may report ready.
  */
 export async function fetchMConversationSnapshot(signal?: AbortSignal): Promise<SessionConvo[]> {
   for (let attempt = 0; attempt < 3; attempt += 1) {

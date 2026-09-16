@@ -13,6 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
+import ts from "typescript";
 
 const PAGE_FILE = "app/components/domain-views/d-tabs/d2-withdrawals.tsx";
 const page = fs.readFileSync(path.join(process.cwd(), PAGE_FILE), "utf8");
@@ -21,25 +22,26 @@ const page = fs.readFileSync(path.join(process.cwd(), PAGE_FILE), "utf8");
 
 test("(a) 批量的四个出口(勾选禁用/已选笔数/按钮禁用/提交 ids)只有一处判定", () => {
   // 红测:把勾选框改回内联 actionCandidates(...).includes(batchAction) → FAIL(两套判定必然漂移)
-  assert.match(page, /function batchSelectable\(row: D2Withdrawal, action: D2BatchAction \| ""\)/);
-  assert.match(page, /function batchTargets\(visible: D2Withdrawal\[\], selectedIds: Set<string>, action: D2BatchAction \| ""\)/);
-  assert.match(page, /const selectable = batchSelectable\(row, batchAction\);/);
-  assert.match(page, /const submittableRows = useMemo\(\(\) => batchTargets\(visibleRows, selected, batchAction\)/);
+  assert.match(page, /function batchSelectable\(row: D2Withdrawal, action: D2BatchAction \| "", allowedActions: readonly D2BatchAction\[\]\)/);
+  assert.match(page, /function batchTargets\(visible: D2Withdrawal\[\], selectedIds: Set<string>, action: D2BatchAction \| "", allowedActions: readonly D2BatchAction\[\]\)/);
+  assert.match(page, /const selectable = batchSelectable\(row, batchAction, availableBatchActions\);/);
+  assert.match(page, /const submittableRows = useMemo\(\s*\(\) => batchTargets\(visibleRows, selected, batchAction, availableBatchActions\)/);
   // 屏幕上的「已选 N 笔」「批量执行」禁用态必须读收窄后的集合,不许再读 selected.size
-  assert.match(page, /已选 \{submittableRows\.length\} 笔/);
+  assert.match(page, /已勾选 \{selectedRows\.length\} 笔/);
+  assert.match(page, /可执行 \$\{submittableRows\.length\} 笔/);
   assert.match(page, /disabled=\{!writesEnabled \|\| !batchAction \|\| submittableRows\.length === 0 \|\| !!submitting\}/);
   assert.doesNotMatch(page, /已选 \{selected\.size\} 笔/);
   assert.doesNotMatch(page, /const ids = Array\.from\(selected\)/);
   // 提交的 ids 与弹窗笔数同一个变量
-  assert.match(page, /const ids = submittableRows\.map\(\(row\) => row\.withdrawalNo\);/);
+  assert.match(page, /const ids = submittableRows\.map\(\(row\) => row\.withdrawalNo\)\.sort\(\);/);
   assert.match(page, /reviewD2WithdrawalsBatch\(action, ids,/);
 });
 
-test("(a) 纯前端筛选 / 动作变化时收窄选择", () => {
+test("(a) 可见性和权限变化收窄勾选，动作变化只收窄提交集合", () => {
   // 红测:删掉这个 effect → 被筛掉的行仍留在 selected,清空筛选后悄悄复活成提交目标
-  assert.match(page, /useEffect\(\(\) => \{\s*setSelected\(\(current\) => \{[\s\S]*?\}, \[visibleRows, batchAction\]\);/);
+  assert.match(page, /useEffect\(\(\) => \{\s*setSelected\(\(current\) => \{[\s\S]*?\}, \[visibleRows, authorities\]\);/);
   // 收窄用的是同一处 batchTargets 判定,不是另抄一套
-  assert.match(page, /const kept = batchTargets\(visibleRows, current, batchAction\)\.map\(\(row\) => row\.withdrawalNo\);/);
+  assert.match(page, /const kept = batchTargets\(visibleRows, current, "", availableBatchActions\)\.map\(\(row\) => row\.withdrawalNo\);/);
 });
 
 test("(b) 批量动作无默认值:初值为空 + 不自动选第一个可用项 + 空值不可提交", () => {
@@ -48,7 +50,7 @@ test("(b) 批量动作无默认值:初值为空 + 不自动选第一个可用项
   assert.doesNotMatch(page, /useState<[^>]*>\("APPROVE"\)/);
   // 红测:加一句「没权限就自动选第一个」→ FAIL(以为选的是 A、实际执行 B,与原缺陷同类)
   assert.doesNotMatch(page, /setBatchAction\([^)]*\[0\]/);
-  assert.match(page, /<option value="">请先选择批量动作<\/option>/);
+  assert.match(page, /<option value="">选择批量动作<\/option>/);
   assert.match(page, /if \(!action\) \{ toast\("请先选择批量动作/);
   // 下拉选项仍按权限过滤(既有纪律不许弱化)
   assert.match(page, /BATCH_ACTIONS\.filter\(\(action\) => hasAuthority\(ACTION_AUTHORITY\[action\]\)\)/);
@@ -83,48 +85,28 @@ test("高敏批量纪律未被弱化:确认弹窗 + 必填理由 + 幂等 + 覆�
   assert.match(page, /const batchScope = \(action: D2BatchAction, ids: string\[\]\) => `batch\\|\$\{action\}\\|\$\{\[\.\.\.ids\]\.sort\(\)\.join\(","\)\}`/);
   assert.match(page, /finally \{ setSubmitting\(""\); \}/);
   // 运营可读中文:禁用原因 / 提交后果都用人话,不吐字段名与枚举值
-  assert.match(page, /未选择批量动作时不能勾选、不能提交/);
+  assert.match(page, /可先勾选提现单，再选择批量动作；提交前会按权限和状态再次校验/);
   assert.match(page, /被筛选隐藏的、以及当前状态不能执行该动作的提现单已自动排除/);
 });
 
 // ─────────────── 行为固定靶:抽 d2-withdrawals.tsx 真源码跑 ───────────────
 
 /**
- * 抽 `function x(` 或 `const x = async (` / `const x = (` 到花括号配平处(仅用于无 JSX 的纯逻辑块)。
- * 表达式体箭头(`const x = (a) => \`...\`;`,没有花括号)按语句末尾的 `;` 收口 —— 否则会一路吞到
- * 下一个函数的花括号里,抽出一坨语法错误的东西。
+ * 用 TypeScript AST 抽出真实声明，避免默认参数的 {} 或模板串被误当函数体边界。
  */
 function grabDecl(source, name) {
-  const start = [`function ${name}(`, `const ${name} = async (`, `const ${name} = (`]
-    .map((needle) => source.indexOf(needle))
-    .find((index) => index >= 0);
-  assert.ok(start !== undefined && start >= 0, `${PAGE_FILE} 里找不到 ${name}(被改名或删除?)`);
-  // 体是块还是表达式,必须从**本声明的参数表右括号**往后看,不能满文件找第一个 `=>`
-  // (函数声明后面随便哪个箭头函数都会被误认),也不能拿「第一个 { 」判断
-  // (模板串的 `${...}` 也是花括号,`const x = (a) => \`p|${a}\`;` 会被截在 ${a} 的 } 上)。
-  let parens = 0;
-  let paramsEnd = -1;
-  for (let p = source.indexOf("(", start); p < source.length; p++) {
-    if (source[p] === "(") parens++;
-    else if (source[p] === ")" && --parens === 0) { paramsEnd = p + 1; break; }
-  }
-  assert.ok(paramsEnd > 0, `${name} 参数表括号不配平`);
-  const afterParams = source.slice(paramsEnd).trimStart();
-  if (afterParams.startsWith("=>") && !afterParams.slice(2).trimStart().startsWith("{")) {
-    let template = 0;
-    for (let p = paramsEnd; p < source.length; p++) {
-      if (source[p] === "`") template = template ? 0 : 1;
-      else if (!template && source[p] === ";") return source.slice(start, p + 1);
+  const ast = ts.createSourceFile(PAGE_FILE, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let declaration;
+  function visit(node) {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === name) declaration = node.getText(ast);
+    if (ts.isVariableDeclaration(node) && node.name.getText(ast) === name && node.initializer) {
+      declaration = `const ${name} = ${node.initializer.getText(ast)};`;
     }
-    assert.fail(`${name} 表达式体没有以 ; 收口`);
+    ts.forEachChild(node, visit);
   }
-  let depth = 0;
-  let started = false;
-  for (let p = source.indexOf("{", start); p < source.length; p++) {
-    if (source[p] === "{") { depth++; started = true; }
-    else if (source[p] === "}") { depth--; if (started && depth === 0) return source.slice(start, p + 1); }
-  }
-  assert.fail(`${name} 花括号不配平`);
+  visit(ast);
+  assert.ok(declaration, `${PAGE_FILE} 里找不到 ${name}`);
+  return declaration;
 }
 
 async function loadExtracted() {
@@ -135,9 +117,10 @@ async function loadExtracted() {
   ].map((name) => grabDecl(page, name)).join("\n");
   const bundle = `// auto-extracted from ${PAGE_FILE} by d2-batch contract test — DO NOT EDIT
 type D2Withdrawal = any; type D2ReviewAction = any; type D2BatchAction = any;
-type D2ReviewInput = any; type D2BatchResult = any;
+type D2ReviewInput = any; type D2BatchResult = any; type D2FilterOverrides = any;
 type BusinessFormSpec = any; type BusinessFormValue = any;
 const OPERATOR = () => "tester";
+const displayAdminError = (error: Error) => error.message;
 export const calls: any = { rows: [], d5: [], loading: [], writes: [], errors: [], toasts: [], opened: [], submitted: [], submitting: [], selectedCleared: 0 };
 export const stubs: any = { fetchD2Withdrawals: async () => ({}), fetchD5WithdrawalParams: async () => ({}) };
 // load 的闭包桩
@@ -202,7 +185,7 @@ test("① 固定靶:提交的 ids ⊆ 当前可见行 —— 被前端筛选隐�
   const visible = [row("W1"), row("W2")];
   // selected 里混入两笔「上一次筛选下勾的、现在已被 ruleFilter 隐藏」的单
   const picked = new Set(["W1", "W2", "W-HIDDEN-1", "W-HIDDEN-2"]);
-  const targets = ext.batchTargets(visible, picked, "APPROVE");
+  const targets = ext.batchTargets(visible, picked, "APPROVE", ["APPROVE"]);
   assert.deepEqual(ids(targets), ["W1", "W2"]);
   const visibleIds = new Set(ids(visible));
   assert.ok(targets.every((r) => visibleIds.has(r.withdrawalNo)), "提交目标越出了可见行");
@@ -212,14 +195,14 @@ test("① 固定靶:可见 + 已勾但当前动作不可执行的行被排除(�
   const frozen = row("W3", { status: "FROZEN" });                                  // APPROVE 不在候选动作里
   const noK4 = row("W4", { riskScore: null, routingPriority: "UNAVAILABLE" });      // K4 事实不可用禁放行
   const unchecked = row("W5");                                                     // 可见可执行但没勾
-  const targets = ext.batchTargets([row("W1"), frozen, noK4, unchecked], new Set(["W1", "W3", "W4"]), "APPROVE");
+  const targets = ext.batchTargets([row("W1"), frozen, noK4, unchecked], new Set(["W1", "W3", "W4"]), "APPROVE", ["APPROVE"]);
   assert.deepEqual(ids(targets), ["W1"]);
   // 勾选框禁用态与提交面同源
-  assert.equal(ext.batchSelectable(frozen, "APPROVE"), false);
-  assert.equal(ext.batchSelectable(noK4, "APPROVE"), false);
-  assert.equal(ext.batchSelectable(row("W1"), "APPROVE"), true);
+  assert.equal(ext.batchSelectable(frozen, "APPROVE", ["APPROVE"]), false);
+  assert.equal(ext.batchSelectable(noK4, "APPROVE", ["APPROVE"]), false);
+  assert.equal(ext.batchSelectable(row("W1"), "APPROVE", ["APPROVE"]), true);
   // FROZEN 行换成 UNFREEZE 语义不在批量集合里;换 FREEZE 动作则 REVIEW_PENDING 行可执行
-  assert.equal(ext.batchSelectable(row("W1"), "FREEZE"), true);
+  assert.equal(ext.batchSelectable(row("W1"), "FREEZE", ["FREEZE"]), true);
 });
 
 test("② 固定靶:确认弹窗报的笔数 == 屏幕已选笔数 == 真正提交的笔数", async () => {
@@ -240,10 +223,11 @@ test("② 固定靶:确认弹窗报的笔数 == 屏幕已选笔数 == 真正提�
   assert.ok(ext.calls.submitted[0].key.startsWith("d2-batch-"), "幂等键缺失");
 });
 
-test("③ 固定靶:无权限(未显式选动作)时默认动作不是 APPROVE,且提交被禁用", async () => {
-  // 初值为空 → 没有任何行可勾选 → submittableRows 为空 → 批量按钮 disabled
-  assert.equal(ext.batchSelectable(row("W1"), ""), false);
-  assert.deepEqual(ext.batchTargets([row("W1"), row("W2")], new Set(["W1", "W2"]), ""), []);
+test("③ 固定靶:可以先勾选，但无权限不可选、未显式选动作不可提交", async () => {
+  assert.equal(ext.batchSelectable(row("W1"), "", []), false);
+  assert.equal(ext.batchSelectable(row("W1"), "", ["APPROVE"]), true);
+  assert.equal(ext.batchSelectable(row("W1"), "APPROVE", ["FREEZE"]), false);
+  assert.deepEqual(ext.batchTargets([row("W1"), row("W2")], new Set(["W1", "W2"]), "", []), []);
   // 即便有人绕过禁用态点下去,confirmBatch 也不许开弹窗、不许提交
   ext.setup({ batchAction: "", submittableRows: [row("W1")], selected: new Set(["W1"]) });
   ext.confirmBatch();
