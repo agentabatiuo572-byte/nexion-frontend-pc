@@ -30,7 +30,7 @@
     "B3": ["OPS-B-07", "OPS-B-08"],
     "B4": ["OPS-B-09", "OPS-B-10"],
     "B5": ["OPS-B-11", "OPS-B-12", "OPS-B-13", "OPS-B-14", "OPS-B-16"],
-    "C1": ["OPS-C-22", "OPS-C-23", "OPS-C-34", "OPS-C-35"],
+    "C1": ["OPS-C-22", "OPS-C-23", "OPS-C-34", "OPS-C-35", "OPS-C-36"],
     "C2": ["OPS-C-01", "OPS-C-02a"],
     "C3": ["OPS-C-03", "OPS-C-21"],
     "C5": ["OPS-C-18"],
@@ -3209,6 +3209,17 @@
       "batch": "done",
       "restAction": "unbindUserPaymentMethod",
       "note": "Nexion 本地解绑已完成；PSP token 撤销命令、租约、重试与终态原子收口已由 OPS-C-23 完成，真实适配器缺席时失败关闭"
+    },
+    {
+      "id": "OPS-C-36",
+      "domain": "C",
+      "object": "单条欢迎通知展示时间(C1)",
+      "action": "以唯一且精确关联的注册与投递事实校正此条通知时间",
+      "status": "built",
+      "view": "_console/users/search/[id]/notification-time-evidence.tsx",
+      "batch": "done",
+      "restAction": "correctNotificationTime",
+      "note": "仅有 C1 与 A4 双读写权限时可单条确认；后端重锁并核验三项事实、原时间 CAS、必达审计与幂等回执同事务。不重发、不改变已读；未知结果保留原证据、理由与命令号。隔离 MySQL 和实际组件验收已通过，具体历史行须经公开环境证据核验与授权页面操作后才能称已校正。"
     },
     {
       "id": "OPS-D-25",

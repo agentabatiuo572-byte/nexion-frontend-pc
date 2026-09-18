@@ -1,4 +1,8 @@
 const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+  NOTIFICATION_TIME_CORRECTION_INVALID: "校正信息不完整，请重新读取证据并填写理由。",
+  NOTIFICATION_TIME_SNAPSHOT_CHANGED: "通知记录已变化，本次未校正；请核对重新读取的证据。",
+  NOTIFICATION_TIME_EVIDENCE_CHANGED: "关联证据缺失或已变化，本次未校正；请重新核验。",
+  NOTIFICATION_TIME_ALREADY_CORRECT: "当前通知时间已与投递事实一致，无需再次校正。",
   L1_EXPORT_NO_AVAILABLE_KPI: "当前筛选范围没有可用 KPI，未生成报表；请重新读取数据或调整筛选后再导出。",
   L1_EXPORT_WINDOW_REQUIRED: "请选择 KPI 时间范围或有效的起止日期后再导出；仅填写月份或周次不能确定导出范围。",
   L1_EXPORT_DATA_INVALID: "KPI 数据格式异常，未生成报表；请重新读取，持续失败时联系值班人员。",

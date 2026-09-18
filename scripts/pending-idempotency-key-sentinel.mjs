@@ -39,6 +39,8 @@ const EXECUTOR_MODULE = "lib/admin/stable-mutation.ts";
 
 /** 已迁到共享 store 的文件:必须仍 import 它,且不得再出现裸内存态幂等键。 */
 const MIGRATED = [
+  // C1 single-notification time correction retains the immutable command across unknown outcomes.
+  "app/_console/users/search/[id]/notification-time-evidence.tsx",
   "lib/admin/a4-redrive-command.ts",
   "lib/admin/d-client.ts",
   "lib/admin/user360-client.ts",

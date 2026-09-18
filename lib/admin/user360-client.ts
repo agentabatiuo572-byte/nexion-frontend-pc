@@ -734,6 +734,22 @@ export function fetchNotificationTimeEvidence(userKey: string, notificationId: n
     .then(value => normalizeNotificationTimeEvidence(value, notificationId));
 }
 
+export async function correctNotificationTime(userKey: string, preview: NotificationTimeEvidence, reason: string, commandKey: string) {
+  if (!userKey.trim() || !Number.isSafeInteger(preview.notificationId) || preview.notificationId <= 0) throw new Error("通知时间校正信息无效，请重新读取证据");
+  const checked = normalizeNotificationTimeEvidence(preview, preview.notificationId);
+  // classification-ok: 500 is the correction reason's character limit, not an HTTP outcome threshold.
+  if (checked.status !== "MATCHED" || !reason.trim() || reason.trim().length > 500 || !commandKey.trim()
+    || checked.storedCreatedAt === checked.deliveryFactTime) throw new Error("通知时间校正信息无效，请重新读取证据");
+  const result = await usersRequest<unknown>(`/profiles/${encodeURIComponent(userKey)}/notifications/${checked.notificationId}/time-correction`, {
+    method: "POST", idempotencyKey: commandKey,
+    body: JSON.stringify({ expectedCreatedAt: checked.storedCreatedAt, facts: checked.facts, reason: reason.trim() }),
+  });
+  if (!isJsonRecord(result) || result.notificationId !== checked.notificationId || result.status !== "CORRECTED"
+    || result.previousCreatedAt !== checked.storedCreatedAt || result.correctedCreatedAt !== checked.deliveryFactTime
+    || result.timeZone !== "Asia/Shanghai") throw new UsersOutcomeUnknownError(commandKey);
+  return { notificationId: checked.notificationId, correctedCreatedAt: result.correctedCreatedAt as string };
+}
+
 export async function fetchC1Overview() {
   const value = await usersRequest<unknown>("/overview");
   if (!isJsonRecord(value)) throw new Error("USER360_RESPONSE_INVALID:c1Overview");

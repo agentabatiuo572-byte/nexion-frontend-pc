@@ -317,6 +317,8 @@ export default function UserDetailPage() {
     || (!!session?.authorities.includes("user_c1hub_read") && !!session?.authorities.includes("platform_a4_read"));
   const [notificationEvidence, setNotificationEvidence] = useState<{ userKey: string; authEpoch: number; id: number } | null>(null);
   const canWriteC1 = session?.role === "superadmin" || !!session?.authorities.includes("user_c1hub_write");
+  const canCorrectNotificationTime = canReadNotificationEvidence && canWriteC1
+    && (session?.role === "superadmin" || !!session?.authorities.includes("platform_a4_write"));
   const canWriteC2 = session?.role === "superadmin" || !!session?.authorities.includes("user_c2_write");
   const canReadC2 = session?.role === "superadmin" || !!session?.authorities.includes("user_c2_read");
   const canReadC3 = session?.role === "superadmin" || !!session?.authorities.includes("user_c3_read");
@@ -903,7 +905,8 @@ export default function UserDetailPage() {
       {notificationEvidence && canReadNotificationEvidence
         && notificationEvidence.userKey === userKey && notificationEvidence.authEpoch === authEpoch && (
         <NotificationTimeEvidenceDrawer key={`${userKey}:${authEpoch}:${notificationEvidence.id}`}
-          userKey={userKey} notificationId={notificationEvidence.id} onClose={() => setNotificationEvidence(null)} />
+          userKey={userKey} notificationId={notificationEvidence.id} actorKey={session?.adminId == null ? undefined : String(session.adminId)}
+          canCorrect={canCorrectNotificationTime} onCorrected={() => { void load(); }} onClose={() => setNotificationEvidence(null)} />
       )}
     </div>
   );

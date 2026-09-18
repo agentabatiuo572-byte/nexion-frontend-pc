@@ -1,20 +1,39 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Drawer } from "@/app/components/domain-views/design-kit";
-import { fetchNotificationTimeEvidence, type NotificationTimeEvidence } from "@/lib/admin/user360-client";
+import { useEffect, useRef, useState } from "react";
+import { Drawer, OperationConfirmModal } from "@/app/components/domain-views/design-kit";
+import { correctNotificationTime, fetchNotificationTimeEvidence, UsersRequestError, type NotificationTimeEvidence } from "@/lib/admin/user360-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 
-export function NotificationTimeEvidenceDrawer({ userKey, notificationId, onClose }: {
-  userKey: string; notificationId: number; onClose: () => void;
+type CorrectionCommand = PendingMutationRecord & { preview: NotificationTimeEvidence; reason: string };
+const corrections = createPendingMutationStore<CorrectionCommand>({
+  storageKey: "nexion-admin-notification-time-corrections-v1",
+  isValidRecord: command => typeof command.reason === "string" && command.reason.trim().length > 0 && command.reason.length <= 500
+    && !!command.preview && command.preview.status === "MATCHED" && Number.isSafeInteger(command.preview.notificationId)
+    && command.preview.notificationId > 0 && typeof command.preview.storedCreatedAt === "string"
+    && typeof command.preview.deliveryFactTime === "string" && Array.isArray(command.preview.facts) && command.preview.facts.length === 3,
+});
+
+export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorKey, canCorrect = false, onCorrected, onClose }: {
+  userKey: string; notificationId: number; actorKey?: string; canCorrect?: boolean; onCorrected?: () => void; onClose: () => void;
 }) {
   const [data, setData] = useState<NotificationTimeEvidence | null>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
+  const [confirmation, setConfirmation] = useState<NotificationTimeEvidence | null>(null);
+  const [notice, setNotice] = useState("");
+  const [pending, setPending] = useState<CorrectionCommand | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const slot = JSON.stringify([actorKey, userKey, notificationId]);
+  const generation = useRef(0);
+  const busy = useRef(false);
+  useEffect(() => { setNotice(""); setPending(corrections.list().find(command => command.fingerprint === slot) ?? null); }, [slot]);
   useEffect(() => {
+    generation.current += 1;
     const controller = new AbortController();
     let active = true;
-    setData(null); setError("");
+    setData(null); setError(""); setConfirmation(null);
     fetchNotificationTimeEvidence(userKey, notificationId, controller.signal)
       .then(result => {
         if (!active) return;
@@ -22,11 +41,51 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, onClos
         setData(result);
       })
       .catch(cause => { if (active) setError(displayAdminError(cause)); });
-    return () => { active = false; controller.abort(); };
-  }, [userKey, notificationId, attempt]);
+    return () => { active = false; generation.current += 1; controller.abort(); };
+  }, [userKey, notificationId, actorKey, canCorrect, attempt]);
+  const submit = async (reason: string) => {
+    if (!canCorrect || !actorKey || busy.current) return;
+    let command = corrections.list().find(value => value.fingerprint === slot);
+    if (!command) {
+      if (!confirmation) return;
+      corrections.remember(slot, `notification-time-${crypto.randomUUID()}`, { preview: confirmation, reason: reason.trim() });
+      command = corrections.list().find(value => value.fingerprint === slot);
+    }
+    if (!command) throw new Error("无法保留原校正请求，请重试");
+    setPending(command);
+    busy.current = true;
+    setSubmitting(true);
+    const ownedGeneration = generation.current;
+    try {
+      await correctNotificationTime(userKey, command.preview, command.reason, command.commandKey);
+      if (ownedGeneration !== generation.current) return;
+      corrections.forget(slot);
+      setPending(null);
+      setNotice("已按投递事实校正通知时间，已读状态保持不变。");
+      onCorrected?.();
+    } catch (cause) {
+      if (ownedGeneration !== generation.current) return;
+      if (cause instanceof UsersRequestError && ["NOTIFICATION_TIME_SNAPSHOT_CHANGED", "NOTIFICATION_TIME_EVIDENCE_CHANGED", "NOTIFICATION_TIME_ALREADY_CORRECT", "NOTIFICATION_TIME_CORRECTION_INVALID"].includes(cause.code ?? "")) {
+        corrections.forget(slot); setPending(null);
+      }
+      setNotice(displayAdminError(cause));
+    } finally {
+      busy.current = false;
+      setSubmitting(false);
+      if (ownedGeneration === generation.current) {
+        setConfirmation(null); setData(null); setAttempt(value => value + 1);
+      }
+    }
+  };
   return <Drawer title={`通知时间证据 · ${notificationId}`} onClose={onClose}>
     <div style={{ padding: 16, display: "grid", gap: 14 }}>
-      <p>只读核验，不修改通知时间或已读状态。</p>
+      <p>读取证据不会修改通知。校正时间需要单独确认，已读状态保持不变。</p>
+      {notice && <p role="status">{notice}</p>}
+      {pending && canCorrect && actorKey && <div role="status">
+        <p>原校正请求尚未收敛。重试将保留原证据、理由和请求号。</p>
+        <p>原理由：{pending.reason}</p><p>请求号：{pending.commandKey}</p>
+        <button type="button" disabled={submitting} onClick={() => void submit(pending.reason)}>重试原校正</button>
+      </div>}
       {!data && !error && <p role="status">正在读取关联证据…</p>}
       {error && <div role="alert"><p>{error}</p><button type="button" onClick={() => setAttempt(value => value + 1)}>重试</button></div>}
       {data && <>
@@ -40,7 +99,12 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, onClos
           UTC：{new Date(fact.timestampMillis).toISOString()}
         </li>)}</ul>}
         <p>证据一致仅表示关联可核对，不表示历史记录已修复。</p>
+        {!pending && canCorrect && actorKey && data.status === "MATCHED" && data.storedCreatedAt !== data.deliveryFactTime
+          && <button type="button" onClick={() => setConfirmation(data)}>按投递事实校正时间</button>}
       </>}
     </div>
+    {confirmation && canCorrect && actorKey && <OperationConfirmModal action={`校正通知 ${notificationId} 的时间`}
+      detail={`仅此通知：${confirmation.storedCreatedAt} → ${confirmation.deliveryFactTime}（北京时间）。根据实际投递事实校正展示时间，不会重新发送通知或改变已读状态。`}
+      reasonMax={500} onClose={() => { if (!busy.current) setConfirmation(null); }} onConfirm={submit} />}
   </Drawer>;
 }
