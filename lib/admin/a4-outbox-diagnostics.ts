@@ -9,7 +9,10 @@ export type OutboxDiagnostics = {
 };
 const errorCodes = new Set(["OTHER_ERROR", "C1_AUDIT_EVIDENCE_NOT_UNIQUE", "C1_AUDIT_ENVELOPE_INVALID",
   "C1_AUDIT_PAYLOAD_INVALID", "C1_AUDIT_DELIVERY_NOT_COMPLETE", "C1_AUDIT_RECEIPT_NOT_PERSISTED",
-  "C1_AUDIT_SOURCE_INVALID", "H3_EVENT_BINDING_PENDING"]);
+  "C1_AUDIT_SOURCE_INVALID", "H3_EVENT_BINDING_PENDING", "L6_EVIDENCE_FACT_MISSING",
+  "L6_EVIDENCE_ENVELOPE_INVALID", "L6_EVIDENCE_PAYLOAD_INVALID", "L6_EVIDENCE_FACT_CONFLICT",
+  "L6_EVIDENCE_RECEIPT_FAILED", "L6_EVIDENCE_RECEIPT_CONFLICT", "L6_EVIDENCE_PUBLICATION_FAILED",
+  "L6_EVIDENCE_VERIFICATION_UNAVAILABLE"]);
 function invalid(): never { throw new Error("A4_OUTBOX_DIAGNOSTICS_INVALID"); }
 function obj(v: unknown): Record<string, unknown> { return v !== null && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : invalid(); }
 function count(v: unknown): number { return typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? v : invalid(); }

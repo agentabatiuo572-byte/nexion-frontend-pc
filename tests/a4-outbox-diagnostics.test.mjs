@@ -27,6 +27,20 @@ test("known-field projection rejects raw error text and drops extra PII", () => 
   value.rows[0].errorCode = "private email alice@example.com";
   assert.throws(() => normalizeOutboxDiagnostics(value));
 });
+test("L6 unresolved evidence codes are explicit while unknown or disguised codes remain rejected", () => {
+  const allowed = ["L6_EVIDENCE_FACT_MISSING", "L6_EVIDENCE_ENVELOPE_INVALID", "L6_EVIDENCE_PAYLOAD_INVALID",
+    "L6_EVIDENCE_FACT_CONFLICT", "L6_EVIDENCE_RECEIPT_FAILED", "L6_EVIDENCE_RECEIPT_CONFLICT",
+    "L6_EVIDENCE_PUBLICATION_FAILED", "L6_EVIDENCE_VERIFICATION_UNAVAILABLE"];
+  for (const code of allowed) {
+    const value = sample(); value.rows[0].errorCode = code;
+    assert.equal(normalizeOutboxDiagnostics(value).rows[0].errorCode, code);
+  }
+  for (const code of ["L6_EVIDENCE_UNKNOWN", "L6_EVIDENCE_SUCCESS", "l6_evidence_fact_missing",
+    "L6_EVIDENCE_FACT_MISSING ", "L6_EVIDENCE_FÁCT_MISSING", "secret actor=42"]) {
+    const value = sample(); value.rows[0].errorCode = code;
+    assert.throws(() => normalizeOutboxDiagnostics(value), /A4_OUTBOX_DIAGNOSTICS_INVALID/);
+  }
+});
 test("query is bounded and uses explicit exact filters and cursor", () => {
   const result = outboxDiagnosticsQuery({ eventType: "ADMIN_USER_PROFILE_VIEWED", status: "FAILED", unresolvedOnly: true }, "42");
   assert.equal(result.get("pageSize"), "25"); assert.equal(result.get("afterId"), "42");
