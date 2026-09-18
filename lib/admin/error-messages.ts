@@ -334,6 +334,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   A3_REASON_LENGTH_INVALID: "操作理由必须填写 8-200 个字符。",
   A3_RESPONSE_INVALID: "系统配置返回的数据不完整，页面已停止展示推测状态；请重试或联系值班人员。",
   A4_OVERVIEW_INVALID: "事件治理服务返回的数据不完整，页面已停止展示推测状态；请重新读取或联系值班人员。",
+  A4_OUTBOX_DIAGNOSTICS_INVALID: "事件积压诊断数据不完整或统计不一致，本次结果未展示；请重新查询或联系值班人员。",
   A4_REASON_LENGTH_INVALID: "操作理由必须填写 8-200 个字符。",
   A4_DAY0_VALUE_INVALID: "Day0 接入窗口必须是 30-600 秒。",
   A4_EVENT_RETENTION_INVALID: "事件留存期必须是 13-60 个月。",

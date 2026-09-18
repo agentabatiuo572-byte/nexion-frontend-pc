@@ -170,7 +170,9 @@ function backendPath(parts: string[]) {
 
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
-  const targetPath = backendPath(path);
+  const diagnostics = path.length === 2 && path[0] === "events" && path[1] === "outbox-diagnostics";
+  if (diagnostics && request.method !== "GET") return jsonError(405, "METHOD_NOT_ALLOWED");
+  const targetPath = diagnostics ? "/api/admin/platform/events/outbox-diagnostics" : backendPath(path);
 
   if (!targetPath) {
     return jsonError(404, "PLATFORM_ROUTE_NOT_FOUND");

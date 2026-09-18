@@ -781,12 +781,11 @@
       "id": "OPS-D-17",
       "domain": "D",
       "object": "法币提现通道",
-      "action": "关闭存量 VND 通道，或在 provider/覆盖率护栏通过后启用",
-      "status": "built",
+      "action": "查看 HDPay 代付共享配置可用状态",
+      "status": "readonly",
       "view": "d-tabs/d7-payout-vnd.tsx",
       "batch": "done",
-      "restAction": "togglePayoutVndChannel",
-      "note": "CAS、幂等与护栏链已接通；未接真实供应商时允许关闭止损、拒绝虚假开启。OPS-D-22 已完成显式 Sandbox 隔离夹具，生产仍在供应商未就绪时失败关闭"
+      "reason": "2026-09-16 用户决定取消独立代付通道开关，沿用 HDPay 共享配置；见 docs/changes/2026-09-16-hdpay-shared-config.md。D7 只读展示配置可用状态，旧切换接口返回 410；配置已就绪不等于供应商探测或到账证明。参数写入仍由 OPS-D-18 登记"
     },
     {
       "id": "OPS-D-18",

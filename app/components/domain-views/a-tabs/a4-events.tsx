@@ -1,5 +1,7 @@
 "use client";
 
+import { A4OutboxDiagnostics } from "./a4-outbox-diagnostics";
+
 /**
  * A4 埋点事件中台 — design_handoff_a_domain/A4 设计稿 port(296 行 + SPEC §4 KPI 算式 + §2.4.6 口径权威)。
  *
@@ -82,6 +84,7 @@ const H3_DEAD_REDRIVABLE_EVENT_TYPES = [
 /* ────────────────── 组件 ────────────────── */
 
 export function A4Events({ ctx }: { ctx: ACtx }) {
+  const canReadOutbox = useAdminAuth((state) => state.session?.authorities.includes("platform_a4_read") ?? false);
   const { toast, openActionConfirm } = ctx;
   const canWrite = useAdminAuth((state) => state.session?.authorities.includes("platform_a4_write") ?? false);
   const canRead = useAdminAuth((state) => state.session?.authorities.includes("platform_a4_read") ?? false) || canWrite;
@@ -653,6 +656,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
         </section>
       )}
 
+      <A4OutboxDiagnostics canRead={canReadOutbox} />
       <section className="l-card" data-proof="a4-h3-dead-redrive">
         <div className="l-h">
           <span className="ttl">审计 H3 DEAD 原事实恢复</span>

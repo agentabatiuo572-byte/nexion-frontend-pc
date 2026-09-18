@@ -1,5 +1,6 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { normalizeOutboxDiagnostics, outboxDiagnosticsQuery, type OutboxFilters } from "./a4-outbox-diagnostics";
 
 interface ApiResult<T> {
   code: number;
@@ -287,6 +288,10 @@ async function a4Request<T>(path: string, init?: RequestInit & { idempotencyPref
 
 export async function fetchA4Overview() {
   return normalizeOverview(await a4Request<unknown>("/events/overview"));
+}
+
+export async function fetchA4OutboxDiagnostics(filters: OutboxFilters, cursor = "0") {
+  return normalizeOutboxDiagnostics(await a4Request<unknown>(`/events/outbox-diagnostics?${outboxDiagnosticsQuery(filters, cursor)}`, { method: "GET" }));
 }
 
 /** Read one known schema by exact event name; this deliberately is not a registry search/list API. */

@@ -260,7 +260,7 @@ test("remaining-development ledger has unique claims and preserves semantic cons
   assert.equal(manifest.rows.length, 256);
   assert.deepEqual(
     { built: counts.built?.length, readonly: counts.readonly?.length, pending: counts.pending?.length ?? 0, missing: counts.missing?.length ?? 0 },
-    { built: 227, readonly: 28, pending: 1, missing: 0 },
+    { built: 226, readonly: 29, pending: 1, missing: 0 },
   );
   for (const id of expectedBuiltClosures) assert.equal(row(id)?.status, "built", id + " must stay built");
 
@@ -327,7 +327,10 @@ test("ledger scopes match implemented PC actions instead of compound or aspirati
   );
   assert.equal(row("OPS-F-11")?.status, "built");
   assert.equal(row("OPS-I-14")?.status, "built");
-  assert.equal(row("OPS-D-17")?.restAction, "togglePayoutVndChannel");
+  assert.equal(row("OPS-D-17")?.status, "readonly");
+  assert.equal(row("OPS-D-17")?.restAction, undefined);
+  assert.match(row("OPS-D-17")?.reason ?? "", /2026-09-16.*共享配置/);
+  assert.doesNotMatch(read("app/components/domain-views/d-tabs/d7-payout-vnd.tsx"), /togglePayoutVndChannel|开启通道|关闭通道/);
   assert.ok(row("OPS-D-09")?.restActions?.includes("updateD3ForecastConfig"));
   assert.deepEqual(row("OPS-H-07")?.restActions, [
     "createH4WheelTier", "updateH4WheelProbabilities", "updateH4WheelTier",
@@ -425,7 +428,7 @@ test("built rows have real PC callers, including active L3/L4 and C1 detail acti
     ["OPS-D-23", "updateD1VietQrAccount", "app/components/domain-views/d-tabs/d1-recon.tsx"],
     ["OPS-D-09", "updateD3ForecastConfig", "app/components/domain-views/d-tabs/d3-treasury.tsx"],
     ["OPS-D-25", "downloadD3Csv", "app/components/domain-views/d-tabs/d3-treasury.tsx"],
-    ["OPS-D-17", "togglePayoutVndChannel", "app/components/domain-views/d-tabs/d7-payout-vnd.tsx"],
+    ["OPS-D-18", "updatePayoutVndConfig", "app/components/domain-views/d-tabs/d7-payout-vnd.tsx"],
     ["OPS-F-20", "executeF3Settlement", "app/components/domain-views/f-tabs/f3-binary.tsx"],
     ["OPS-F-21", "updateF5AnomalyConfig", "app/components/domain-views/f-tabs/f5-audit.tsx"],
     ["OPS-F-22", "f_vrank_override", "app/components/domain-views/f-view.tsx"],
