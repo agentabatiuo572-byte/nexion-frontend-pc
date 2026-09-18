@@ -10,6 +10,7 @@
  * 凭据 / 合规铁律:披露全链 操作员 = 风控,执行门槛 = 风控 / 超管;详情文案体现这一点。
  */
 import Link from "next/link";
+import { disclosurePublicationIssue } from "@/lib/admin/disclosure-publication-diagnostic";
 import { useEffect, useState } from "react";
 import { Drawer, PaginationExemptionList, type BusinessFormSpec } from "../design-kit";
 import type { ICtx } from "./types";
@@ -1043,6 +1044,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
             <tbody>
               {JURISDICTIONS.map((j) => {
                 const v = liveJurVersion(j);
+                const publicationIssue = !contentLoading ? disclosurePublicationIssue({ code: j.code, version: j.v, status: j.status }, I5_VERSION_ROWS) : null;
                 const jurisdictionEnabled = jurisdictionCatalog.find((item) => item.code === j.code)?.status.toLowerCase() === "active";
                 return (
                   <tr key={j.code} className="click" onClick={() => openJurDetail(j)}>
@@ -1052,7 +1054,10 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                     </td>
                     <td>{j.countryCodes?.join("、") || "未配置"}</td>
                     <td className="mono" style={{ fontWeight: 700 }}>{v}</td>
-                    <td><span className="bdg ok">{statusZh(j.status)}</span></td>
+                    <td>
+                      <span className={publicationIssue ? "bdg danger" : "bdg ok"}>{publicationIssue ? "引用异常" : statusZh(j.status)}</span>
+                      {publicationIssue && <div role="alert" data-proof="disclosure-publication-issue" style={{ fontSize: 12, color: "var(--danger)", maxWidth: 320, marginTop: 6 }}>{publicationIssue}</div>}
+                    </td>
                     <td className="mono" style={{ fontSize: 11.5 }}>{j.publishedAt}</td>
                     <td className="num mono">{j.affected.toLocaleString("en-US")}</td>
                     <td>

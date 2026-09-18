@@ -89,16 +89,20 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
       {!data && !error && <p role="status">正在读取关联证据…</p>}
       {error && <div role="alert"><p>{error}</p><button type="button" onClick={() => setAttempt(value => value + 1)}>重试</button></div>}
       {data && <>
-        <p role="status">{data.reason}</p>
+        <p role="status">{data.status === "MATCHED"
+          ? data.storedCreatedAt === data.deliveryFactTime
+            ? "当前记录时间与投递事实时间一致，无需校正。"
+            : "关联证据一致；记录时间与投递事实时间不一致，尚未校正。"
+          : data.reason}</p>
         <dl>
-          <dt>原记录时间（北京时间）</dt><dd>{data.storedCreatedAt}</dd>
+          <dt>当前记录时间（北京时间）</dt><dd>{data.storedCreatedAt}</dd>
           <dt>投递事实时间（北京时间）</dt><dd>{data.deliveryFactTime ?? "尚不可确认"}</dd>
         </dl>
         {data.facts.length > 0 && <ul>{data.facts.map(fact => <li key={fact.eventId}>
           <strong>{fact.eventName}</strong><br />事件编号：{fact.eventId}<br />
           UTC：{new Date(fact.timestampMillis).toISOString()}
         </li>)}</ul>}
-        <p>证据一致仅表示关联可核对，不表示历史记录已修复。</p>
+        <p>此处展示当前回读证据；是否曾执行校正请查审计记录。</p>
         {!pending && canCorrect && actorKey && data.status === "MATCHED" && data.storedCreatedAt !== data.deliveryFactTime
           && <button type="button" onClick={() => setConfirmation(data)}>按投递事实校正时间</button>}
       </>}

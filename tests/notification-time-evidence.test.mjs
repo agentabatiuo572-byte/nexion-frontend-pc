@@ -85,3 +85,38 @@ test("correction client submits evidence and old value only, retains caller key,
 
 
 
+function drawerText(data, notice = "") {
+  const source = readFileSync(new URL("../app/_console/users/search/[id]/notification-time-evidence.tsx", import.meta.url), "utf8");
+  const output = ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const states = [data, "", 0, null, notice, null, false];
+  const element = (type, props) => ({ type, props });
+  const exports = {};
+  new Function("require", "exports", output)(name => {
+    if (name === "react") return { useState: () => [states.shift(), () => {}], useEffect: () => {}, useRef: value => ({current:value}) };
+    if (name === "react/jsx-runtime") return {jsx:element,jsxs:element};
+    if (name.endsWith("pending-mutation-store")) return {createPendingMutationStore:()=>({})};
+    return {};
+  }, exports);
+  const text = node => node == null || typeof node === "boolean" ? "" : typeof node === "string" || typeof node === "number" ? String(node) : Array.isArray(node) ? node.map(text).join(" ") : text(node.props?.children);
+  return text(exports.NotificationTimeEvidenceDrawer({userKey:"7",notificationId:99,actorKey:"reader",canCorrect:true,onClose:()=>{}}));
+}
+const matchedDisplay = {notificationId:99,status:"MATCHED",reason:"关联证据一致，仅供核验；尚未校正通知时间",storedCreatedAt:"2026-09-18 03:38:59",deliveryFactTime:"2026-09-18 11:38:58",facts:[]};
+test("matched unequal timestamps show pending correction without claiming it happened",()=>{
+  const text=drawerText(matchedDisplay);
+  assert.match(text,/记录时间与投递事实时间不一致/);
+  assert.match(text,/尚未校正/);
+  assert.match(text,/按投递事实校正时间/);
+});
+test("equal timestamps derive consistency from readback and never infer a past correction",()=>{
+  for(const notice of ["","已按投递事实校正通知时间，已读状态保持不变。"]){
+    const text=drawerText({...matchedDisplay,storedCreatedAt:matchedDisplay.deliveryFactTime},notice);
+    assert.match(text,/当前记录时间与投递事实时间一致/);
+    assert.doesNotMatch(text,/尚未校正|不表示历史记录已修复|按投递事实校正时间/);
+    if(!notice) assert.doesNotMatch(text,/已按投递事实校正通知时间/);
+  }
+});
+test("missing evidence retains server reason and does not claim consistency or correction",()=>{
+  const text=drawerText({...matchedDisplay,status:"NO_EVIDENCE",reason:"持久证据缺失",deliveryFactTime:null});
+  assert.match(text,/持久证据缺失/);
+  assert.doesNotMatch(text,/当前记录时间与投递事实时间一致|尚未校正通知时间/);
+});
