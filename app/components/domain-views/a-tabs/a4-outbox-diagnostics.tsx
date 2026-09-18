@@ -30,6 +30,7 @@ export function A4OutboxDiagnostics({ canRead }: { canRead: boolean }) {
     <div className="l-b">
       <p>沿用 A3 积压口径（PENDING / FAILED），数据库匹配到的非标准状态统一归为 OTHER。不执行重投、补链或清理。统计包含全部积压，筛选仅作用于下方明细。未知类型合并为 UNREGISTERED_EVENT_TYPE，不展示原始内容。</p>
       {!canRead ? <div className="atint warn">需要 A4 读取权限</div> : <>
+        <p>leadership_pool.settlement_blocked 的成功回执仅表示配置阻断告警已核验并消费，不表示配置已修复或结算已恢复。</p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <label>精确类型 <input className="fld" aria-label="积压事件类型" maxLength={96} value={filters.eventType} onChange={e => setFilters({ ...filters, eventType: e.target.value })} /></label>
           <label>状态 <select className="fld" aria-label="积压事件状态" value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })}><option value="">全部</option><option>PENDING</option><option>FAILED</option><option>OTHER</option></select></label>

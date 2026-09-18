@@ -41,6 +41,21 @@ test("L6 unresolved evidence codes are explicit while unknown or disguised codes
     assert.throws(() => normalizeOutboxDiagnostics(value), /A4_OUTBOX_DIAGNOSTICS_INVALID/);
   }
 });
+test("F4 alert evidence codes are explicit and never claim settlement recovery", () => {
+  const allowed = ["F4_ALERT_AUDIT_MISSING", "F4_ALERT_ENVELOPE_INVALID", "F4_ALERT_PAYLOAD_INVALID",
+    "F4_ALERT_AUDIT_NOT_UNIQUE", "F4_ALERT_AUDIT_CONFLICT", "F4_ALERT_AUDIT_ALREADY_CLAIMED",
+    "F4_ALERT_RECEIPT_FAILED", "F4_ALERT_RECEIPT_CONFLICT", "F4_ALERT_PUBLICATION_FAILED",
+    "F4_ALERT_VERIFICATION_UNAVAILABLE"];
+  for (const code of allowed) {
+    const value = sample(); value.rows[0].errorCode = code;
+    assert.equal(normalizeOutboxDiagnostics(value).rows[0].errorCode, code);
+  }
+  for (const code of ["F4_ALERT_UNKNOWN", "F4_ALERT_SETTLEMENT_RECOVERED", "f4_alert_audit_missing",
+    "F4_ALERT_AUDIT_MISSING ", "F4_ÁLERT_AUDIT_MISSING", "secret actor=42"]) {
+    const value = sample(); value.rows[0].errorCode = code;
+    assert.throws(() => normalizeOutboxDiagnostics(value), /A4_OUTBOX_DIAGNOSTICS_INVALID/);
+  }
+});
 test("query is bounded and uses explicit exact filters and cursor", () => {
   const result = outboxDiagnosticsQuery({ eventType: "ADMIN_USER_PROFILE_VIEWED", status: "FAILED", unresolvedOnly: true }, "42");
   assert.equal(result.get("pageSize"), "25"); assert.equal(result.get("afterId"), "42");
