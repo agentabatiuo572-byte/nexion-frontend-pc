@@ -406,6 +406,10 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   return (
     <>
       {error && <div className="gtint" style={{ marginBottom: 12 }}>G4 操作提示 · {error}</div>}
+      {!(stats.totalSlots > 0) && <div className="gtint" role="status" style={{ marginBottom: 12 }}>
+        G4 配置前置未就绪：未取得有效创世系列总量。请核验未删除的 ACTIVE 系列及正式配置发布记录；
+        市场开关开放不代表认购可用。调整市场开关或价格档不会创建系列，当前页面不提供系列初始化。
+      </div>}
       <div className="f-stats">
         <div className="f-stat ok"><div className="k">一级售出</div><div className="v">{fmtNumber(stats.sold, 0)} / {fmtNumber(stats.totalSlots, 0)}</div><div className="sub">{tierPriceText}{overview.tierPrice.status === "active" ? " / 张 · " : " · "}{tierPriceNote}</div></div>
         <div className="f-stat"><div className="k">排放承诺预提</div><div className="v">{fmtUsdCompact(stats.genesisAccrualUsd)}</div><div className="sub">上所开阀后按真实策略计提</div></div>
@@ -427,7 +431,9 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
                   : "市场关闭与熔断同时生效;用户端显示的是「暂未开放」(它优先级更高),恢复销售需两者都解除")
               : !marketOn
                 ? "当前实际生效:市场熔断,恢复走 J1"
-                : "购买链路正常"}
+                : !(stats.totalSlots > 0)
+                  ? "市场开关已开放；系列配置前置未就绪，不能确认认购可用"
+                  : "市场开关已开放；认购仍需通过系列、发售、资格与资金校验"}
             {/* 🔴 规格 ②/⑤ 点名「当前状态 + 最近一次变更信息」两件都要;此前只有状态没有
                 变更信息(独立验收 confirmed P1:J1/J2/A3 等同类高敏闸都实现了这一格,
                 G4 是孤例缺失)。空 = 服务端尚无审计记录(如本地预览)。 */}

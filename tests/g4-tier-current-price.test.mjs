@@ -80,6 +80,23 @@ const validTiers = [
   { id: "t3", from: 550, to: 1000, priceUSDT: 11999 },
 ];
 
+test("missing series cannot be described as a healthy purchase chain even with open market switch", () => {
+  const row = overview({ sold: 0, tiers: [] });
+  row.stats.totalSlots = 0; row.stats.unsold = 0;
+  const text = renderG4(row);
+  assert.match(text, /未取得有效创世系列总量/);
+  assert.match(text, /ACTIVE 系列及正式配置发布记录/);
+  assert.match(text, /市场开关已开放；系列配置前置未就绪/);
+  assert.doesNotMatch(text, /购买链路正常/);
+  assert.match(text, /当前页面不提供系列初始化/);
+});
+
+test("an open switch with a valid quote does not promise sale eligibility or funds admission", () => {
+  const text = renderG4(overview({ sold: 0, tiers: validTiers }));
+  assert.doesNotMatch(text, /配置前置未就绪|购买链路正常/);
+  assert.match(text, /认购仍需通过系列、发售、资格与资金校验/);
+});
+
 test("G4 rendered headline uses the active sold-tier price instead of legacy stats.unitPrice", () => {
   const text = renderG4(overview({ sold: 1, tiers: validTiers }));
   assert.match(text, /\$7,999 \/ 张 · 当前档 t1/);
