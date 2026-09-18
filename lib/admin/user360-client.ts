@@ -691,6 +691,49 @@ export async function fetchUser360(userKey: string) {
   return usersRequest<User360Detail>(`/profiles/${encodeURIComponent(userKey)}/360`);
 }
 
+export type NotificationTimeEvidence = {
+  notificationId: number;
+  status: "MATCHED" | "NO_EVIDENCE" | "CONFLICT" | "UNSUPPORTED";
+  reason: string;
+  storedCreatedAt: string;
+  deliveryFactTime: string | null;
+  timeZone: string;
+  facts: { eventId: string; eventName: string; timestampMillis: number }[];
+};
+
+function normalizeNotificationTimeEvidence(value: unknown, notificationId: number): NotificationTimeEvidence {
+  const invalid = () => { throw new Error("通知证据响应无效，请重试"); };
+  const validDate = (date: unknown): date is string => {
+    if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(date)) return false;
+    const parsed = new Date(date.replace(" ", "T") + "Z");
+    return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 19).replace("T", " ") === date;
+  };
+  if (!isJsonRecord(value) || value.notificationId !== notificationId
+    || typeof value.status !== "string" || !["MATCHED", "NO_EVIDENCE", "CONFLICT", "UNSUPPORTED"].includes(value.status)
+    || typeof value.reason !== "string" || !value.reason.trim() || value.reason.length > 256
+    || value.timeZone !== "Asia/Shanghai" || !validDate(value.storedCreatedAt) || !Array.isArray(value.facts)) return invalid();
+  const matched = value.status === "MATCHED";
+  if (matched ? value.facts.length !== 3 || !validDate(value.deliveryFactTime)
+    : value.facts.length !== 0 || value.deliveryFactTime !== null) return invalid();
+  const facts = value.facts.map((fact: unknown) => {
+    if (!isJsonRecord(fact) || typeof fact.eventId !== "string" || !/^[a-f0-9]{32}$/.test(fact.eventId)
+      || typeof fact.eventName !== "string" || !["auth.register_completed", "nova.push_sent", "notification.delivered"].includes(fact.eventName)
+      || typeof fact.timestampMillis !== "number" || !Number.isSafeInteger(fact.timestampMillis)
+      || fact.timestampMillis < 946684800000 || fact.timestampMillis > 253402300799999) return invalid();
+    return { eventId: fact.eventId, eventName: String(fact.eventName), timestampMillis: fact.timestampMillis };
+  });
+  if (new Set(facts.map(fact => fact.eventId)).size !== facts.length
+    || new Set(facts.map(fact => fact.eventName)).size !== facts.length) return invalid();
+  return { notificationId, status: value.status as NotificationTimeEvidence["status"], reason: value.reason,
+    storedCreatedAt: value.storedCreatedAt, deliveryFactTime: value.deliveryFactTime as string | null, timeZone: "Asia/Shanghai", facts };
+}
+
+export function fetchNotificationTimeEvidence(userKey: string, notificationId: number, signal?: AbortSignal) {
+  if (!Number.isSafeInteger(notificationId) || notificationId <= 0) throw new Error("通知编号无效");
+  return usersRequest<unknown>(`/profiles/${encodeURIComponent(userKey)}/notifications/${notificationId}/time-evidence`, { signal })
+    .then(value => normalizeNotificationTimeEvidence(value, notificationId));
+}
+
 export async function fetchC1Overview() {
   const value = await usersRequest<unknown>("/overview");
   if (!isJsonRecord(value)) throw new Error("USER360_RESPONSE_INVALID:c1Overview");

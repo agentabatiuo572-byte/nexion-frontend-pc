@@ -4,6 +4,7 @@
  * C1 用户详情(L3 · 画像全景)。页面只消费后端聚合的 360 画像和操作接口。
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { NotificationTimeEvidenceDrawer } from "./notification-time-evidence";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { ArrowLeft, Bell, CreditCard, RefreshCcw, ShieldAlert, Snowflake, UserCog } from "lucide-react";
@@ -311,6 +312,10 @@ function ActionButton({
 
 export default function UserDetailPage() {
   const session = useAdminAuth((state) => state.session);
+  const authEpoch = useAdminAuth((state) => state.authEpoch);
+  const canReadNotificationEvidence = session?.role === "superadmin"
+    || (!!session?.authorities.includes("user_c1hub_read") && !!session?.authorities.includes("platform_a4_read"));
+  const [notificationEvidence, setNotificationEvidence] = useState<{ userKey: string; authEpoch: number; id: number } | null>(null);
   const canWriteC1 = session?.role === "superadmin" || !!session?.authorities.includes("user_c1hub_write");
   const canWriteC2 = session?.role === "superadmin" || !!session?.authorities.includes("user_c2_write");
   const canReadC2 = session?.role === "superadmin" || !!session?.authorities.includes("user_c2_read");
@@ -840,6 +845,12 @@ export default function UserDetailPage() {
           title="参与与通知"
           section={detail.notifications}
           columns={[
+            { key: "notificationId", label: "通知编号", render: value => {
+              const id = Number(value);
+              return canReadNotificationEvidence && Number.isSafeInteger(id) && id > 0
+                ? <button type="button" onClick={() => setNotificationEvidence({ userKey, authEpoch, id })}>查看证据 · {id}</button>
+                : displayValue(value);
+            } },
             { key: "title", label: "标题" },
             { key: "type", label: "类型" },
             { key: "pushStatus", label: "推送" },
@@ -888,6 +899,11 @@ export default function UserDetailPage() {
             if (succeeded !== false) setActionConfirm(null);
           }}
         />
+      )}
+      {notificationEvidence && canReadNotificationEvidence
+        && notificationEvidence.userKey === userKey && notificationEvidence.authEpoch === authEpoch && (
+        <NotificationTimeEvidenceDrawer key={`${userKey}:${authEpoch}:${notificationEvidence.id}`}
+          userKey={userKey} notificationId={notificationEvidence.id} onClose={() => setNotificationEvidence(null)} />
       )}
     </div>
   );

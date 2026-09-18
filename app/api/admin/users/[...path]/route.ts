@@ -36,6 +36,10 @@ function sanitizePhoneMasked(value: unknown): unknown {
 }
 
 function backendPath(parts: string[]) {
+  if (parts.length === 5 && parts[0] === "profiles" && isNonEmpty(parts[1])
+      && parts[2] === "notifications" && /^[1-9]\d*$/.test(parts[3]) && parts[4] === "time-evidence") {
+    return `/api/admin/users/profiles/${encodeURIComponent(parts[1])}/notifications/${parts[3]}/time-evidence`;
+  }
   if (parts.length === 1 && parts[0] === "overview") {
     return "/api/admin/users/overview";
   }
@@ -172,6 +176,9 @@ async function proxy(request: Request, context: RouteContext) {
   }
 
   const passwordChangeBlocked = requirePasswordChangeCleared(await cookies());
+  if (targetPath.endsWith("/time-evidence") && request.method !== "GET") {
+    return jsonError(405, "METHOD_NOT_ALLOWED");
+  }
   if (passwordChangeBlocked) return passwordChangeBlocked;
   const token = (await cookies()).get(ADMIN_TOKEN_COOKIE)?.value;
   if (!token) {
