@@ -13,6 +13,7 @@ import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-erro
 import { fetchA2ReasonPolicy } from "@/lib/admin/a2-client";
 import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
 import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "@/lib/admin/trust-section-validation";
+import { isL5KpiExport, l5KpiRange, L5_KPI_WINDOWS, l5BusinessToday } from "./l-tabs/l5-kpi-range";
 
 /* ---------------- 域 → 落地路由(ctx.navigate 跨域跳转) ---------------- */
 export const DOMAIN_HOME: Record<string, string> = {
@@ -601,7 +602,7 @@ export type BusinessFormSpec =
       currentActionSeq?: string; currentNotifyCampaignNo?: string; currentNotifyTemplate?: string; currentRollback?: string; currentDrillRequired?: boolean }
   | { kind: "j4-execution-confirmation"; triggerBases: string[]; defaultTriggerBasis?: string;
       steps: { domain: string; action: string; ref: string; approve: boolean }[] }
-  | { kind: "export-wizard"; mode?: "aggregate-only"; exportTypes?: string[]; piiLevels?: string[]; maskPolicies?: string[] }
+  | { kind: "export-wizard"; mode?: "aggregate-only"; kpiStructuredRange?: boolean; exportTypes?: string[]; piiLevels?: string[]; maskPolicies?: string[] }
   | { kind: "permission-matrix"; roles: PermissionRole[]; actionLabel?: string; guardHint?: string; grantOptions?: string[] }
   | { kind: "localized-copy"; mode?: "create" | "edit"; keyName?: string; zh?: string; en?: string; vi?: string; placeholders?: string[] }
   | { kind: "copy-edit"; keyName?: string; version?: string; versionOptions?: CopyVersionOption[]; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; trafficSplit?: string; zh?: string; en?: string; vi?: string; placeholders?: string[]; audiences?: string[]; trafficSplits?: string[]; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; versionNote?: string; saveModeChoice?: boolean }
@@ -1104,7 +1105,7 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
     };
   }
   if (spec.kind === "export-wizard") {
-    return { exportType: spec.exportTypes?.[0] ?? "账单 CSV", timeRange: "", fields: "", piiLevel: spec.piiLevels?.[0] ?? "无 PII", maskPolicy: spec.maskPolicies?.[0] ?? "默认脱敏", recipient: "", ticket: "" };
+    return { exportType: spec.exportTypes?.[0] ?? "账单 CSV", timeRange: "", window: "7d", from: "", to: "", fields: "", piiLevel: spec.piiLevels?.[0] ?? "无 PII", maskPolicy: spec.maskPolicies?.[0] ?? "默认脱敏", recipient: "", ticket: "" };
   }
   if (spec.kind === "task-edit") {
     return { name: spec.currentName ?? "", path: spec.currentPath ?? "", reward: spec.currentReward ?? "", status: spec.currentStatus ?? "active", completionType: spec.currentCompletionType ?? "visit", completionEvent: spec.currentCompletionEvent ?? "" };
@@ -1390,7 +1391,10 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
       if (state[`stepConfirm.${index}`] !== "true") missing.push(`确认第 ${index + 1} 步`);
     });
   } else if (spec.kind === "export-wizard") {
-    ["exportType", "timeRange", "fields", "piiLevel", "maskPolicy", "recipient", "ticket"].forEach((k) => needs(k, k));
+    ["exportType", "fields", "piiLevel", "maskPolicy", "recipient", "ticket"].forEach((k) => needs(k, k));
+    if (spec.kpiStructuredRange && isL5KpiExport(state.exportType ?? "")) {
+      try { l5KpiRange(state); } catch (error) { missing.push((error as Error).message); }
+    } else needs("timeRange", "timeRange");
   } else if (spec.kind === "task-edit") {
     needs("name", "任务名称");
     needs("path", "跳转路径");
@@ -3268,6 +3272,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange, onUploadS
 
   if (spec.kind === "export-wizard") {
     const aggregateOnly = spec.mode === "aggregate-only";
+    const kpiRange = spec.kpiStructuredRange && isL5KpiExport(value.exportType ?? "");
     // 仅用于通用导出向导的界面提示；最终敏感性判定必须由服务端按字段复核。
     const hasPII = !/^(无 PII|无隐私信息|NONE)$/i.test(value.piiLevel || "");
     const detail = hasPII || /账单|明细|CSV/.test(value.exportType || "");
@@ -3281,7 +3286,12 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange, onUploadS
         <span className="bf-legend">业务表单 · 导出任务向导</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {select("exportType", "导出类型", spec.exportTypes ?? ["账单 CSV", "漏斗序列", "财务报表", "运营报表", "监管报告"])}
-          {input("timeRange", "时间范围", "如 2026-W17 ~ W22 / 2026-05")}
+          {kpiRange ? select("window", "KPI 时间范围", Object.keys(L5_KPI_WINDOWS), L5_KPI_WINDOWS)
+            : input("timeRange", "时间范围", "如 2026-W17 ~ W22 / 2026-05")}
+          {kpiRange && value.window === "custom" && <>
+            <label className="field"><span>开始日期（北京时间）</span><input className="fld" type="date" value={value.from ?? ""} max={value.to || l5BusinessToday()} onChange={(event) => set("from", event.target.value)} /></label>
+            <label className="field"><span>结束日期（北京时间）</span><input className="fld" type="date" value={value.to ?? ""} min={value.from || undefined} max={l5BusinessToday()} onChange={(event) => set("to", event.target.value)} /></label>
+          </>}
           {input("fields", aggregateOnly ? "聚合字段" : "字段范围", aggregateOnly ? "如 用户数、订单数、完成率" : "如 user_id, amount, ts(留空=全字段)")}
           {select("piiLevel", aggregateOnly ? "数据范围" : "PII 范围", spec.piiLevels ?? ["无 PII", "低(脱敏 ID)", "高(含手机 / 地址)"])}
           {select("maskPolicy", aggregateOnly ? "保护策略" : "脱敏策略", spec.maskPolicies ?? ["默认脱敏", "字段掩码", "解密(强操作确认)"])}

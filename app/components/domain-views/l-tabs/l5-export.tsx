@@ -21,6 +21,7 @@ import {
 import { downloadD4BillsCsv } from "@/lib/admin/d-client";
 import type { LCtx } from "./types";
 import { clampL5Page, l5PageCount } from "./l5-pagination";
+import { isL5KpiExport, l5KpiRange } from "./l5-kpi-range";
 
 type ExportParam = { k: string; v: string; fixed?: boolean; cur?: string; s: string };
 type MaskRule = { f: string; cat: string; catTone: string; rule: string; ruleNote: string; dec: string; appr: string };
@@ -46,15 +47,18 @@ export function L5HeaderActions({ ctx }: { ctx: LCtx }) {
     businessForm: {
       kind: "export-wizard",
       mode: "aggregate-only",
+      kpiStructuredRange: true,
       exportTypes: [...exportTypes],
       piiLevels: ["无隐私信息"],
       maskPolicies: ["无需脱敏（仅聚合）"],
     },
     run: async (reason, _v, bv) => {
-      const summary = `${bv?.exportType} · ${bv?.timeRange} · 聚合字段[${bv?.fields || "服务端默认汇总项"}] · 用途 ${bv?.recipient}`;
+      const range = isL5KpiExport(String(bv?.exportType ?? ""))
+        ? l5KpiRange(bv ?? {}) : { timeRange: String(bv?.timeRange ?? "ON_DEMAND") };
+      const summary = `${bv?.exportType} · ${range.timeRange} · 聚合字段[${bv?.fields || "服务端默认汇总项"}] · 用途 ${bv?.recipient}`;
       await ctx.biActions?.createReport({
         exportType: String(bv?.exportType ?? "后台导出报表"),
-        timeRange: String(bv?.timeRange ?? "ON_DEMAND"),
+        ...range,
         fields: String(bv?.fields || "聚合指标"),
         piiLevel: String(bv?.piiLevel ?? "无隐私信息"),
         maskPolicy: "NONE",

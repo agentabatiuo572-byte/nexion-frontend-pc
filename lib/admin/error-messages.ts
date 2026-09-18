@@ -1,5 +1,6 @@
 const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   L1_EXPORT_NO_AVAILABLE_KPI: "当前筛选范围没有可用 KPI，未生成报表；请重新读取数据或调整筛选后再导出。",
+  L1_EXPORT_WINDOW_REQUIRED: "请选择 KPI 时间范围或有效的起止日期后再导出；仅填写月份或周次不能确定导出范围。",
   L1_EXPORT_DATA_INVALID: "KPI 数据格式异常，未生成报表；请重新读取，持续失败时联系值班人员。",
   DEVELOPER_DOCS_CONTENT_TOO_LARGE: "接口文档与保留的公开版本合计超过 65535 字节，本次未保存；请精简内容后重试，当前公开版本未改变。",
   RANK_HOW_POLICY_TOO_LARGE: "等级说明与保留的公开版本合计超过 65535 字节，本次未保存；请精简内容后重试，当前公开版本未改变。",
