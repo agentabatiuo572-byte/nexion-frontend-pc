@@ -4,7 +4,7 @@ import type { E1GenerationRelease, E1Phase } from "@/lib/admin/e1-client";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 import type { OpsSku } from "@/lib/admin/platform-types";
 import type { EViewCtx } from "./types";
-import { effectiveReleaseMonth, gateRemaining, releaseMonthPresentation } from "./data";
+import { e1GateReadiness, effectiveReleaseMonth, gateRemaining, releaseMonthPresentation, type E1GateReadiness } from "./data";
 import { EStats } from "./stats";
 
 const PHASE_STATUS_LABELS: Record<string, string> = {
@@ -144,36 +144,21 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   const gateCandidates = skus.filter((s) => !releaseIds.has(skuId(s))); // 任意 SKU 均可挂上架节奏门
   const gateSkuOptions = gateCandidates.map(skuId);
 
-  // 上架节奏门「是否解锁」单一判定源:当前阶段已到达 + 设备资格已补齐 + 平台月龄已到。
-  // forceUnlock 仅绕过月龄门,不能绕过阶段或设备资格,避免标题写“阶段联动”但状态仍按历史月龄规则开放。
-  const gateReadiness = (g: E1GenerationRelease) => {
-    const offset = g.phaseOffset ?? 0;
-    const effectiveMonth = effectiveReleaseMonth(g.releaseMonth, offset);
-    const gatePhaseIdx = phaseIdx(g.phase);
-    const eligibilityReady = !!g.eligibility;
-    const phaseReached = hasPhaseConfig && gatePhaseIdx >= 0 && curIdx >= gatePhaseIdx;
-    const monthReached = platformMonth >= effectiveMonth;
-    const forceMonthOpen = !!g.forceUnlock;
-    const blockers: string[] = [];
-
-    if (!eligibilityReady) blockers.push("待设备资格");
-    if (!phaseReached) blockers.push(gatePhaseIdx >= 0 ? `待${phaseLabel(g.phase)}` : "阶段未匹配");
-    if (!monthReached && !forceMonthOpen) blockers.push(`待M${effectiveMonth}`);
-
-    return {
-      effectiveMonth,
-      eligibilityReady,
-      forceMonthOpen,
-      gatePhaseIdx,
-      monthReached,
-      phaseReached,
-      unlocked: eligibilityReady && phaseReached && (monthReached || forceMonthOpen),
-      blockers,
-    };
-  };
-  const gateBlockerLabel = (state: ReturnType<typeof gateReadiness>): string =>
+  // 上架节奏门判定走 data.ts 的单一纯函数源(与 E1 发布时点表 / 顶部 Pro v2 标共用),
+  // 阶段绑定冲突(门引用的阶段 ≠ SKU 在阶段配置里的唯一归属阶段)一律视为未开放。
+  const gateReadiness = (g: E1GenerationRelease): E1GateReadiness =>
+    e1GateReadiness({
+      release: g,
+      phaseOrder,
+      phases,
+      sku: skus.find((item) => skuId(item) === g.id),
+      currentPhase: phaseCur,
+      platformMonth,
+    });
+  const gateBlockerLabel = (state: E1GateReadiness): string =>
     state.blockers.slice(0, 2).join(" / ") || "待发布";
-  const gateCountdownLabel = (state: ReturnType<typeof gateReadiness>): string => {
+  const gateCountdownLabel = (state: E1GateReadiness): string => {
+    if (state.phaseConflict) return "阶段冲突";
     if (state.unlocked) return "已发布";
     if (!state.eligibilityReady) return "待设备资格";
     if (!state.phaseReached) return state.gatePhaseIdx >= 0 ? "待阶段" : "阶段未匹配";
@@ -194,8 +179,11 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   const gateManaged = releases.length;
   const enabledPhaseCount = phases.filter((ph) => (ph.status || "active") === "active").length;
 
+  // 目录累计口径:来自 E1 商品目录的 nx_product.sold_count × 目录现价,是**商品目录计数器**,
+  // 不是订单主数据聚合值。E4 订单状态机读的是 nx_order 主数据,两者可能不一致,
+  // 所以这里既不改名成「GMV」也不声称可与订单对账 —— 对账口径以 E4 为准。
   const soldUnits = skus.reduce((sum, s) => sum + (s.sold ?? 0), 0);
-  const catalogGmv = skus.reduce((sum, s) => sum + (s.sold ?? 0) * (s.price ?? 0), 0);
+  const catalogSoldValue = skus.reduce((sum, s) => sum + (s.sold ?? 0) * (s.price ?? 0), 0);
 
   // 上架门连接线渐变:success 到当前节点、brand 当前段、surface-3 锁定段(随 phaseCur 动态)
   const phaseStep = phases.length > 1 ? 100 / (phases.length - 1) : 100;
@@ -213,6 +201,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
     });
   const genForceUnlock = (g: E1GenerationRelease) => {
     const state = gateReadiness(g);
+    if (state.phaseConflict) { ctx.toast(`拒绝 · ${g.name} 阶段配置声明属${phaseLabel(state.declaredPhase)},与上架门引用的${phaseLabel(g.phase)}冲突 · 请先修正阶段映射`); return; }
     if (!state.eligibilityReady) { ctx.toast(`拒绝 · ${g.name} 设备资格未补录 · 发布门不能解锁`); return; }
     if (!state.phaseReached) { ctx.toast(`拒绝 · ${g.name} 当前阶段未到达 ${phaseLabel(g.phase)} · 发布门不能解锁`); return; }
     ctx.openActionConfirm({
@@ -361,7 +350,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   return (
     <>
       <EStats items={[
-        { k: "SKU GMV(累计)", v: compactUsd(catalogGmv), sub: `${soldUnits.toLocaleString()} 台销量` },
+        { k: "目录累计售出额", v: compactUsd(catalogSoldValue), sub: `商品目录计数器 · ${soldUnits.toLocaleString()} 台(非订单主数据,对账以 E4 为准)` },
         { k: "在售 SKU", v: onSale, sub: `+ ${pending} 个待确认`, tone: "ok" },
         { k: "节奏门管控 SKU", v: gateManaged, sub: "Pro v2 · Rack P2 分批上架", tone: "cyan" },
         { k: "门控 SKU", v: gated, sub: "解锁需阶段推进", tone: "warn" },
@@ -504,8 +493,15 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                   <span className="release-effective">{releasePresentation.effectiveLabel}</span>
                   <span className="release-adjustment">{releasePresentation.adjustmentLabel}</span>
                 </div>
-                <div className="c"><span className={`st ${unlocked ? "active" : "coming"}`} title={unlocked ? (g.forceUnlock ? "阶段 / 设备资格已满足,月龄由强制提前开放绕过" : "阶段 / 月龄 / 设备资格均满足") : gateBlockerLabel(gateState)}>{unlocked ? "已开放" : "待发布"}</span></div>
-                <div className="c"><span className="phaseChip">{phaseLabel(g.phase)}</span></div>
+                <div className="c"><span className={`st ${unlocked ? "active" : "coming"}`} title={unlocked ? (g.forceUnlock ? "阶段 / 设备资格已满足,月龄由强制提前开放绕过" : "阶段 / 月龄 / 设备资格均满足") : gateBlockerLabel(gateState)}>{unlocked ? "已开放" : gateState.phaseConflict ? "阶段冲突" : "待发布"}</span>{g.forceUnlock && <span className="st coming" style={{ marginLeft: 6 }} title="该门已开启强制提前开放(forceUnlock),月龄门被绕过;后端未返回批准人与审计编号">强制提前</span>}</div>
+                <div className="c">
+                  <span className="phaseChip">{phaseLabel(g.phase)}</span>
+                  {gateState.phaseConflict && (
+                    <span className="st coming" style={{ marginLeft: 6 }} title={`阶段配置声明该 SKU 属${phaseLabel(gateState.declaredPhase)},上架门却引用${phaseLabel(g.phase)};阶段门被错误映射,未到阶段不得开放`}>
+                      应属 {phaseLabel(gateState.declaredPhase)}
+                    </span>
+                  )}
+                </div>
                 <div className="c"><span className={`countdown ${cdCls}`}>{cdTxt}</span></div>
                 <div className="c"><span className={`elg ${g.eligibility ? "ok" : "miss"}`}><span className="dot" />{g.eligibility ? "已配置" : "未补录"}</span></div>
                 <div className="c acts">

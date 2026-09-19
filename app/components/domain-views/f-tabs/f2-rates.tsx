@@ -3,6 +3,7 @@
 /** F2 · 网络版税费率 —— L1-L7 单一费率源 + Partner Status 权益档 + 结算参数/护栏。 */
 import { CodeTag } from "../design-kit";
 import type { FViewCtx } from "./types";
+import { f2EnumGateSpec, parseF2DepthGateLayer, parseF2DepthGateRank } from "@/lib/admin/f2-depth-gate";
 
 function formatNumber(value: number) {
   if (!Number.isFinite(value)) return "-";
@@ -216,15 +217,27 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
         <div className="param"><div className="pk">版税支付阈值 / 平级奖励比例</div><div className="psub">未接入实际结算，不可调整。版税提现以提现渠道的实际限额为准；当前不派发平级奖励。</div></div>
         {ctx.f2Params.filter((p) => F2_VISIBLE_PARAM_KEYS.has(p.key) || ["clampMin", "clampMax", "cool", "promo"].includes(p.id)).map((p) => {
           const eff = p.value || p.def;
+          // 深度门两键是离散枚举(L1–L7 / V0–V12):非法遗留值(如 0.4)必须显式告警,
+          // 且编辑器只给合法枚举 —— 不允许把非法值改写成另一个非法值。
+          const enumSpec = f2EnumGateSpec(p.key);
+          const parsed = p.key === "F.unilevel.depthGate" ? parseF2DepthGateLayer(eff)
+            : p.key === "F.unilevel.depthGateRank" ? parseF2DepthGateRank(eff)
+              : null;
+          const illegal = !!parsed && !parsed.legal;
           return (
             <div key={p.id} className="param">
               <div className="pk">{p.name}<span className="tag">{p.key}</span></div>
-              <div className={`pv${p.vcls ? " " + p.vcls : ""}`}>{eff}</div>
+              <div className={`pv${p.vcls ? " " + p.vcls : ""}`}>{illegal ? `${parsed.raw || "未配置"}(非法值)` : eff}</div>
               <div className="psub">{p.sub}</div>
+              {illegal && <div className="psub" role="alert" style={{ color: "var(--danger)" }}>{enumSpec?.illegalCopy}</div>}
               {canPolicyAmplify && <button className={`fbtn primary${p.vamp ? " amp" : ""}`} onClick={() => ctx.openActionConfirm({
                 name: `${p.name}调整`, amplify: p.amp, op: "param", paramKey: p.key,
-                edit: { kind: "text", current: eff, unit: p.unit },
-                detail: `${p.name} 当前 ${eff}` + (p.amp ? " · 此项为放大资金流出动作,须核验 B1 覆盖率。" : " · 改后对下一笔结算生效。"),
+                edit: enumSpec
+                  ? { kind: "select", current: parsed?.normalized ?? parsed?.raw ?? "", options: enumSpec.options, unit: enumSpec.unit }
+                  : { kind: "text", current: eff, unit: p.unit },
+                detail: `${p.name} 当前 ${illegal ? `${parsed?.raw} · 非法值,结算侧已阻断` : eff}`
+                  + (enumSpec ? ` · 只能取 ${enumSpec.options[0]}–${enumSpec.options[enumSpec.options.length - 1]} 中的合法${enumSpec.unit}` : "")
+                  + (p.amp ? " · 此项为放大资金流出动作,须核验 B1 覆盖率。" : " · 改后对下一笔结算生效。"),
               })}>调整</button>}
             </div>
           );

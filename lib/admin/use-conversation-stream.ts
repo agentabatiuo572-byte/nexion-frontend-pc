@@ -13,7 +13,9 @@ export interface UseConversationStreamOptions {
 export function useConversationStream({onReconnectSnapshot,enabled=true,lifecycleSignal}:UseConversationStreamOptions){
   const reconcile=useRef(onReconnectSnapshot);reconcile.current=onReconnectSnapshot;
   const [ready,setReady]=useState(false);const [reconnectExhausted,setExhausted]=useState(false);
+  const [reconnectReason,setReconnectReason]=useState("");
   const [nonce,setNonce]=useState(0);
+  const clientRef=useRef<ConversationRealtime|null>(null);
   const authEpoch=useAdminAuth(s=>s.authEpoch);
   const authorized=useAdminAuth(s=>s.isAuthenticated&&!s.logoutPending);
   useEffect(()=>{
@@ -27,14 +29,21 @@ export function useConversationStream({onReconnectSnapshot,enabled=true,lifecycl
         return result.data;
       },
       reconcile:signal=>reconcile.current(signal),
-      state:(value,terminal)=>{setReady(value);setExhausted(terminal);updateAdminRealtime(value);},
+      state:(value,terminal,reason)=>{setReady(value);setExhausted(terminal||!!reason);setReconnectReason(reason??"");updateAdminRealtime(value);},
       presence:receiveAdminPresence,
     });
+    clientRef.current=socket;
     let stopped=false;
     const visibility=()=>{if(stopped)return;if(document.visibilityState==='hidden'){socket.stop();installAdminRealtime(null);}else{installAdminRealtime(socket);socket.start();}};
-    const stop=()=>{stopped=true;socket.stop();installAdminRealtime(null);};
+    const stop=()=>{stopped=true;socket.stop();installAdminRealtime(null);clientRef.current=null;};
     lifecycleSignal?.addEventListener('abort',stop,{once:true});document.addEventListener('visibilitychange',visibility);visibility();
     return()=>{stop();lifecycleSignal?.removeEventListener('abort',stop);document.removeEventListener('visibilitychange',visibility);};
   },[enabled,authorized,authEpoch,lifecycleSignal,nonce]);
-  return {ready,reconnectExhausted,retry:()=>setNonce(n=>n+1)};
+  return {ready,reconnectExhausted,reconnectReason,retry:()=>{
+    // 手动重试优先走同一实例的即时重连(不重建 socket 对象,保留快照轮询);
+    // 实例已销毁(生命周期/可见性停表)时才用 nonce 重建。
+    const client=clientRef.current;
+    if(client){setExhausted(false);setReconnectReason("");client.retry();return;}
+    setNonce(n=>n+1);
+  }};
 }

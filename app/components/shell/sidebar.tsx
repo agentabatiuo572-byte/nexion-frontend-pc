@@ -115,6 +115,7 @@ export function Sidebar({
         href="/"
         prefetch={false}
         onClick={() => setExpanded([])}
+        aria-label="NexGrid 运营控制台"
         className="flex items-center gap-2.5 px-3.5"
         style={{ height: "var(--admin-topbar-h)", borderBottom: "1px solid var(--v5-border)" }}
       >
@@ -123,7 +124,7 @@ export function Sidebar({
           <>
             <span className="flex flex-col leading-tight">
               <span className="font-display text-[13.5px]" style={{ color: "var(--v5-ink)" }}>
-                NEXION
+                NexGrid
               </span>
               <span className="text-[10px]" style={{ color: "var(--v5-ink-3)" }}>
                 运营控制台

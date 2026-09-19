@@ -48,8 +48,21 @@ export function operatorDatacenterLabel(value: string | null | undefined) {
   return SAFE_DATACENTER_IDENTIFIER.test(normalized) && !hasInternalFixtureMarker(normalized) ? normalized : "数据中心待核验";
 }
 
+// 原子换机 tx 监控按后端三条独立事务分列(recycle / replace / deactivate)。
+// 后端已下发各自的业务名与 operation,必须逐个映射成互不相同的运营标签,
+// 否则三列会渲染成三组同名同数的卡片,运营会误判成「三套重复监控」。
+const E3_OPERATION_LABELS: Record<string, string> = {
+  RECYCLE: "设备回收",
+  REPLACE: "设备置换",
+  DEACTIVATE: "设备停用",
+  "设备回收": "设备回收",
+  "设备置换": "设备置换",
+  "设备停用": "设备停用",
+};
+
 export function operatorE3OperationLabel(value: string | null | undefined) {
-  return "升级置换处理";
+  const normalized = text(value).normalize("NFKC").toUpperCase();
+  return E3_OPERATION_LABELS[normalized] ?? "升级置换处理";
 }
 
 export function operatorE3OperationState(value: string | null | undefined) {

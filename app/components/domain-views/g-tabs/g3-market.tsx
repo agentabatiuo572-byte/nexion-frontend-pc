@@ -120,6 +120,9 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
       : "finprod_g3_write";
   const [overview, setOverview] = useState<G3Overview | null>(null);
   const [history, setHistory] = useState<G3HistoryPoint[]>([]);
+  // 概览与历史是两个独立服务面:历史读取失败必须有自己的原因与重试入口,
+  // 不能只留一句「未返回」让运营无从定位(简报 #66)。
+  const [historyError, setHistoryError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -127,18 +130,23 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
   const reload = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     setError("");
-    try {
-      const [nextOverview, nextHistory] = await Promise.all([
-        fetchG3MarketOverview(),
-        fetchG3MarketHistory(),
-      ]);
-      setOverview(nextOverview);
-      setHistory(nextHistory.points);
-    } catch (err) {
-      setError(messageOf(err));
-    } finally {
-      if (!silent) setLoading(false);
+    setHistoryError("");
+    const [overviewResult, historyResult] = await Promise.allSettled([
+      fetchG3MarketOverview(),
+      fetchG3MarketHistory(),
+    ]);
+    if (overviewResult.status === "fulfilled") {
+      setOverview(overviewResult.value);
+    } else {
+      setError(messageOf(overviewResult.reason));
     }
+    if (historyResult.status === "fulfilled") {
+      setHistory(historyResult.value.points);
+    } else {
+      setHistory([]);
+      setHistoryError(messageOf(historyResult.reason));
+    }
+    if (!silent) setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -146,20 +154,24 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
     async function load() {
       setLoading(true);
       setError("");
-      try {
-        const [nextOverview, nextHistory] = await Promise.all([
-          fetchG3MarketOverview(),
-          fetchG3MarketHistory(),
-        ]);
-        if (!cancelled) {
-          setOverview(nextOverview);
-          setHistory(nextHistory.points);
-        }
-      } catch (err) {
-        if (!cancelled) setError(messageOf(err));
-      } finally {
-        if (!cancelled) setLoading(false);
+      setHistoryError("");
+      const [overviewResult, historyResult] = await Promise.allSettled([
+        fetchG3MarketOverview(),
+        fetchG3MarketHistory(),
+      ]);
+      if (cancelled) return;
+      if (overviewResult.status === "fulfilled") {
+        setOverview(overviewResult.value);
+      } else {
+        setError(messageOf(overviewResult.reason));
       }
+      if (historyResult.status === "fulfilled") {
+        setHistory(historyResult.value.points);
+      } else {
+        setHistory([]);
+        setHistoryError(messageOf(historyResult.reason));
+      }
+      setLoading(false);
     }
     void load();
     return () => {
@@ -172,9 +184,16 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
     setError("");
     try {
       const next = await action();
-      const nextHistory = await fetchG3MarketHistory();
       setOverview(next);
-      setHistory(nextHistory.points);
+      // 写入成功后回读历史属于附加刷新:历史面失败不能把已成功的写入报成失败。
+      const [historyResult] = await Promise.allSettled([fetchG3MarketHistory()]);
+      if (historyResult.status === "fulfilled") {
+        setHistory(historyResult.value.points);
+        setHistoryError("");
+      } else {
+        setHistory([]);
+        setHistoryError(messageOf(historyResult.reason));
+      }
       toast(success);
     } catch (err) {
       const message = messageOf(err);
@@ -418,7 +437,17 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
                 <circle cx={X(chart.length - 1)} cy={Y(chart[chart.length - 1])} r={3.5} fill="var(--bg)" stroke="var(--admin-domain-g)" strokeWidth={2} />
               </svg>
             ) : (
-              <div className="gtint" style={{ marginTop: 16 }}>近 24h 历史价格点未返回,不生成前端走势线。</div>
+              <div className="gtint" style={{ marginTop: 16 }} data-proof="g3-history-empty">
+                {historyError
+                  ? `近 24h 历史读取失败 · ${historyError}`
+                  : "近 24h 历史价格点未返回,不生成前端走势线。"}
+                <div className="row" style={{ marginTop: 10, gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <button className="l-btn sm mc" disabled={busy} onClick={() => void reload(true)}>重新加载行情历史</button>
+                  <span className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>
+                    数据源 nx_price_index:NEX_USDT · 由 G3 排程推进写入,窗口 24h
+                  </span>
+                </div>
+              </div>
             )}
           </div>
         </section>

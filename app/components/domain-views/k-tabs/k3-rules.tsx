@@ -46,6 +46,8 @@ const ACTION_BY_LABEL: Record<string, RuleAction> = {
   延迟: "delay", 冻结: "freeze", 转人工: "manual", delay: "delay", freeze: "freeze", manual: "manual",
 };
 const DIMENSION_OPTIONS: K3RuleDimensionName[] = ["金额", "速度", "新账户", "地址信誉"];
+/** 引擎声明的四个风险维度。服务端评估器支持全部四个,但只有已配置生效规则的维度才真正参与判定。 */
+const DECLARED_DIMENSIONS: K3RuleDimensionName[] = ["金额", "速度", "新账户", "地址信誉"];
 const ACTION_OPTIONS = [ACTION_LABELS.delay, ACTION_LABELS.manual, ACTION_LABELS.freeze];
 const ADDRESS_SOURCE_OPTIONS = ["内部", "第三方", "组合"];
 const ADDRESS_SOURCE_VALUE: Record<string, "internal" | "third-party" | "combined"> = {
@@ -339,7 +341,20 @@ export function K3Rules({ ctx, dryRunResult }: { ctx: KCtx; dryRunResult: K3DryR
       <div className="f-stats"><div className="f-stat"><div className="k">模拟批次</div><div className="v" style={{ fontSize: 15 }}>{dryRunResult.batchNo}</div><div className="sub">样本窗口 {dryRunResult.sampleWindowDays} 天</div></div><div className="f-stat"><div className="k">评估提现</div><div className="v">{fmt(dryRunResult.evaluatedWithdrawals)}</div><div className="sub">启用规则 {dryRunResult.activeRules} 条</div></div><div className="f-stat warn"><div className="k">命中次数</div><div className="v">{fmt(dryRunResult.hitCount)}</div><div className="sub">本次历史样本模拟</div></div><div className="f-stat cyan"><div className="k">路由结果</div><div className="v">{dryRunResult.routeCounts.length}</div><div className="sub">{dryRunResult.routeCounts.map((r) => `${RULE_ACT[r.key][0]} ${r.count}`).join(" · ") || "无路由命中"}</div></div></div>
     </div></section>}
 
-    <section className="l-card"><div className="l-h"><span className="ttl">四道关 · 规则配置</span><span className="sub">· 条件、动作、优先级均以服务器返回为准</span></div><div className="l-b"><div className="dim-grid">
+    <section className="l-card"><div className="l-h"><span className="ttl">四道关 · 规则配置</span><span className="sub">· 条件、动作、优先级均以服务器返回为准</span></div><div className="l-b">{(() => {
+      // 规则引擎声明从四维判定,但只有已配置生效规则的维度才真正参与评估。
+      // 缺维度时必须显式降级告警,不能继续宣称四维规则引擎完整生效。
+      const covered = new Set(dimensions.map((dimension) => dimensionLabel(dimension.name)));
+      const missing = DECLARED_DIMENSIONS.filter((name) => !covered.has(name));
+      if (dimensions.length === 0) {
+        return <div className="sub" role="alert" style={{ color: "var(--danger)" }}>四道关均未配置生效规则 · 当前提现按服务端安全默认策略放行(无维度命中),并非四维规则引擎完整生效。</div>;
+      }
+      return missing.length === 0 ? null : (
+        <div className="sub" role="alert" style={{ color: "var(--danger)" }}>
+          维度缺失告警 · 声明的 {DECLARED_DIMENSIONS.join(" / ")} 中,<b>{missing.join(" / ")}</b> 尚无生效规则,当前不参与判定;引擎按现有维度降级运行,补齐后四维规则才完整生效。
+        </div>
+      );
+    })()}<div className="dim-grid">
       {dimensions.length === 0 && <div className="sub">暂无生效中的四道关配置</div>}
       {dimensions.map((dimension) => {
         const parsed = parseK3Condition(k3KindFromDimension(dimension.name, dimension.ruleKey), dimension.conditionText);

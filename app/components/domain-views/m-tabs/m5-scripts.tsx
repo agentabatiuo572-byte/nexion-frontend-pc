@@ -12,10 +12,7 @@ import { Icon, Modal, Toggle, type IconName } from "../design-kit";
 import {
   fetchMAdvisorBindingUsers,
   type MAdvisorBindingUser,
-  fetchMReplyTemplatesPage,
-  fetchMSessionScriptsPage,
   fetchMSupportAgentsPage,
-  type AdminPage,
   type MAdvisorAssignment,
   type MSupportAgentPage,
   type MSupportAgent,
@@ -87,6 +84,18 @@ function isDedicatedSupportAgent(agent: MSupportAgent): boolean {
   return agent.seatType === "DEDICATED" || agent.position.includes("专属");
 }
 
+/**
+ * 自动验收占位内容识别。M5 的自动验收脚本会写入 `M5RA<时间戳> 顾问主动话术` /
+ * `M5RA<时间戳> 即时回复模板` 这类编号化文案并归档;它们不是业务草稿也不是正式话术,
+ * 混在列表里会让运营把列表主体误读成真实配置(简报 #77)。识别出来单独标记并可筛除,
+ * 不用「隐藏」冒充「已清理」——记录仍在后端,运营能看到并决定是否走归档清理。
+ */
+const AUTO_ACCEPTANCE_PLACEHOLDER = /^M5RA\d{6,}\s*(?:顾问主动话术|即时回复模板)?$/;
+
+function isAutoAcceptancePlaceholder(text: string): boolean {
+  return AUTO_ACCEPTANCE_PLACEHOLDER.test(text.trim());
+}
+
 function isSupportSupervisor(agent: MSupportAgent | null | undefined): boolean {
   return Boolean(agent?.seatType === "MANAGER" || agent?.position.includes("主管"));
 }
@@ -146,14 +155,8 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
   const [scriptPage, setScriptPage] = useState(1);
   const [replyTemplatePage, setReplyTemplatePage] = useState(1);
   const [agentPageData, setAgentPageData] = useState<MSupportAgentPage | null>(null);
-  const [scriptPageData, setScriptPageData] = useState<AdminPage<AdvisorScript> | null>(null);
-  const [replyTemplatePageData, setReplyTemplatePageData] = useState<AdminPage<SessionReplyTpl> | null>(null);
   const [agentPageLoading, setAgentPageLoading] = useState(false);
-  const [scriptPageLoading, setScriptPageLoading] = useState(false);
-  const [replyTemplatePageLoading, setReplyTemplatePageLoading] = useState(false);
   const [agentPageError, setAgentPageError] = useState("");
-  const [scriptPageError, setScriptPageError] = useState("");
-  const [replyTemplatePageError, setReplyTemplatePageError] = useState("");
   const [writePending, setWritePending] = useState(false);
   const pendingReplyTemplateDraftIds = useRef(new Map<string, string>());
 
@@ -174,8 +177,6 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
     [advisorAssignments],
   );
   const agentTotal = agentPageData?.total ?? supportAgents.length;
-  const scriptTotal = scriptPageData?.total ?? scripts.length;
-  const replyTemplateTotal = replyTemplatePageData?.total ?? replyTemplates.length;
   const visibleSupportAgents = useMemo(
     () => agentPageData?.records ?? pageSlice(supportAgents, agentPage, SUPPORT_AGENT_PAGE_SIZE),
     [agentPageData, supportAgents, agentPage],
@@ -195,14 +196,21 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
   const canManageSupportSeats = (isSuperAdmin || Boolean(authorities?.includes("service_m1_write")))
     && (isSuperAdmin || isSupportSupervisor(currentSupportAgent));
   const sessionTemplatesAvailable = pget("I.session.templatesAvailable") === "1";
-  const visibleScripts = useMemo(
-    () => scriptPageData?.records ?? pageSlice(scripts, scriptPage, SCRIPT_PAGE_SIZE),
-    [scriptPageData, scripts, scriptPage],
-  );
-  const visibleReplyTemplates = useMemo(
-    () => replyTemplatePageData?.records ?? pageSlice(replyTemplates, replyTemplatePage, REPLY_TEMPLATE_PAGE_SIZE),
-    [replyTemplatePageData, replyTemplates, replyTemplatePage],
-  );
+  // 自动验收占位记录默认从列表主体筛除,避免运营把编号化占位文案当成真实配置(简报 #77);
+  // 记录本身仍可一键显示出来走归档清理 —— 不伪造「已删除」,也不让分页数与可见行脱节。
+  const [showAutoAcceptance, setShowAutoAcceptance] = useState(false);
+  const scriptPlaceholderCount = scripts.filter((row) => isAutoAcceptancePlaceholder(row.text)).length;
+  const replyTemplatePlaceholderCount = replyTemplates.filter((row) => isAutoAcceptancePlaceholder(row.text)).length;
+  const keptScripts = showAutoAcceptance ? scripts : scripts.filter((row) => !isAutoAcceptancePlaceholder(row.text));
+  const keptReplyTemplates = showAutoAcceptance ? replyTemplates : replyTemplates.filter((row) => !isAutoAcceptancePlaceholder(row.text));
+  // 分页与计数一律以「筛除占位后」的完整可见集为准:
+  // ① 分页条不会声称有 N 条而列表只有几行;
+  // ② 若某一服务端分页整页都是占位,真实业务行不会被卡在不可达的后续页。
+  // 完整集来自 overview 的全量列表(与服务端分页同源),因此不改变数据权威性。
+  const scriptTotal = keptScripts.length;
+  const replyTemplateTotal = keptReplyTemplates.length;
+  const visibleScripts = pageSlice(keptScripts, scriptPage, SCRIPT_PAGE_SIZE);
+  const visibleReplyTemplates = pageSlice(keptReplyTemplates, replyTemplatePage, REPLY_TEMPLATE_PAGE_SIZE);
 
   const commitM5Write = async (
     key: string,
@@ -246,46 +254,6 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
       alive = false;
     };
   }, [agentPage, agentSnapshot, assignmentSnapshot, hasM1ReadAuthority]);
-
-  useEffect(() => {
-    let alive = true;
-    setScriptPageLoading(true);
-    setScriptPageError("");
-    fetchMSessionScriptsPage(scriptPage, SCRIPT_PAGE_SIZE)
-      .then((page) => {
-        if (alive) setScriptPageData(page);
-      })
-      .catch((err) => {
-        if (!alive) return;
-        setScriptPageError(displayAdminError(err));
-      })
-      .finally(() => {
-        if (alive) setScriptPageLoading(false);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [scriptPage, scripts.length]);
-
-  useEffect(() => {
-    let alive = true;
-    setReplyTemplatePageLoading(true);
-    setReplyTemplatePageError("");
-    fetchMReplyTemplatesPage(replyTemplatePage, REPLY_TEMPLATE_PAGE_SIZE)
-      .then((page) => {
-        if (alive) setReplyTemplatePageData(page);
-      })
-      .catch((err) => {
-        if (!alive) return;
-        setReplyTemplatePageError(displayAdminError(err));
-      })
-      .finally(() => {
-        if (alive) setReplyTemplatePageLoading(false);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [replyTemplatePage, replyTemplates.length]);
 
   useEffect(() => {
     setAgentPage((page) => clampPage(page, agentTotal, SUPPORT_AGENT_PAGE_SIZE));
@@ -678,6 +646,11 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
           </div>
           <SensTag />
           <span className="sp" style={{ flex: 1 }} />
+          {scriptPlaceholderCount > 0 && (
+            <button type="button" data-proof="session-script-placeholder-toggle" className="btn btn-sec btn-sm" onClick={() => setShowAutoAcceptance((v) => !v)}>
+              {showAutoAcceptance ? "隐藏自动验收占位" : `显示自动验收占位(${scriptPlaceholderCount})`}
+            </button>
+          )}
           {canManageM5Content && (
             <button type="button" data-proof="session-script-new" className="btn btn-pri btn-sm" disabled={!sessionTemplatesAvailable || writePending || audienceOptions.length === 0} onClick={newScript}>
               <Icon name="plus" size={16} />
@@ -685,6 +658,11 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
             </button>
           )}
         </div>
+        {scriptPlaceholderCount > 0 && !showAutoAcceptance && (
+          <div className="itint tiny" data-module-health-state="warn" style={{ margin: "0 12px 8px" }}>
+            已筛除 {scriptPlaceholderCount} 条自动验收占位话术(编号化 M5RA… 文案,非业务草稿);它们仍留在后端,可点上方按钮显示后归档清理。
+          </div>
+        )}
         <div style={{ padding: "0 8px 8px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "92px 1fr 120px 88px 96px", gap: 10, padding: "0 12px 8px", fontSize: 11.5, color: "var(--ink-4)" }}>
             <span>编号 · 分类</span>
@@ -693,10 +671,6 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
             <span>CTA</span>
             <span style={{ textAlign: "right" }}>发布</span>
           </div>
-          {scriptPageLoading && <div className="itint" style={{ margin: "0 12px 8px" }}>正在加载话术分页...</div>}
-          {!scriptPageLoading && scriptPageError && (
-            <div className="itint" style={{ margin: "0 12px 8px" }}>话术分页加载失败 · {scriptPageError}</div>
-          )}
           {scriptTotal === 0 && (
             <div className="itint" style={{ margin: "8px 12px 12px" }}>
               <div style={{ fontSize: 13 }}>暂无顾问主动话术</div>
@@ -746,6 +720,11 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
           </div>
           <span className="dim2" style={{ fontSize: 11.5 }}>坐席快捷回复 · 例行维护</span>
           <span className="sp" style={{ flex: 1 }} />
+          {replyTemplatePlaceholderCount > 0 && (
+            <button type="button" data-proof="session-tpl-placeholder-toggle" className="btn btn-sec btn-sm" onClick={() => setShowAutoAcceptance((v) => !v)}>
+              {showAutoAcceptance ? "隐藏自动验收占位" : `显示自动验收占位(${replyTemplatePlaceholderCount})`}
+            </button>
+          )}
           {canManageM5Content && (
             <button type="button" data-proof="session-tpl-new" className="btn btn-pri btn-sm" disabled={!sessionTemplatesAvailable || writePending} onClick={newReplyTemplate}>
               <Icon name="plus" size={16} />
@@ -753,11 +732,12 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
             </button>
           )}
         </div>
+        {replyTemplatePlaceholderCount > 0 && !showAutoAcceptance && (
+          <div className="itint tiny" data-module-health-state="warn" style={{ margin: "0 12px 8px" }}>
+            已筛除 {replyTemplatePlaceholderCount} 条自动验收占位模板(编号化 M5RA… 文案,非业务草稿);它们仍留在后端,可点上方按钮显示后归档清理。
+          </div>
+        )}
         <div style={{ padding: "0 8px 8px" }}>
-          {replyTemplatePageLoading && <div className="itint" style={{ margin: "0 12px 8px" }}>正在加载模板分页...</div>}
-          {!replyTemplatePageLoading && replyTemplatePageError && (
-            <div className="itint" style={{ margin: "0 12px 8px" }}>模板分页加载失败 · {replyTemplatePageError}</div>
-          )}
           {replyTemplateTotal === 0 && (
             <div className="itint" style={{ margin: "8px 12px 12px" }}>
               <div style={{ fontSize: 13 }}>暂无即时回复模板</div>

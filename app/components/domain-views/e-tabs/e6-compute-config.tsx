@@ -19,6 +19,9 @@ import {
   e6YieldKey,
   e6GpuTierKey,
   e6DownloadKey,
+  E6_DOWNLOAD_COPY_MAX_LENGTH,
+  E6_DOWNLOAD_COPY_PATTERN,
+  E6_DOWNLOAD_COPY_PATTERN_MESSAGE,
   type E6YieldView,
   type E6GpuTierView,
 } from "@/lib/admin/e6-client";
@@ -204,12 +207,12 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
       businessForm: {
         kind: "multi-field",
         title: "下载页双语内容",
-        hint: "四个字段分别编辑,禁止把中英文或多段内容塞进同一个输入框。",
+        hint: "四个字段分别编辑,禁止把中英文或多段内容塞进同一个输入框。保存前会校验长度(≤320 字符)并拦截测试标点(如「！！！」「？？？」);未通过校验的文案不会写成当前正式配置。",
         fields: [
-          { key: "zhTitle", label: "中文标题", current: dl.zhTitle, inputKind: "text", wide: true },
-          { key: "zhGuide", label: "中文说明", current: dl.zhGuide, inputKind: "text", wide: true },
-          { key: "enTitle", label: "英文标题", current: dl.enTitle, inputKind: "text", wide: true },
-          { key: "enGuide", label: "英文说明", current: dl.enGuide, inputKind: "text", wide: true },
+          { key: "zhTitle", label: "中文标题", current: dl.zhTitle, inputKind: "text", wide: true, maxLength: E6_DOWNLOAD_COPY_MAX_LENGTH, pattern: E6_DOWNLOAD_COPY_PATTERN, patternMessage: E6_DOWNLOAD_COPY_PATTERN_MESSAGE },
+          { key: "zhGuide", label: "中文说明", current: dl.zhGuide, inputKind: "text", wide: true, maxLength: E6_DOWNLOAD_COPY_MAX_LENGTH, pattern: E6_DOWNLOAD_COPY_PATTERN, patternMessage: E6_DOWNLOAD_COPY_PATTERN_MESSAGE },
+          { key: "enTitle", label: "英文标题", current: dl.enTitle, inputKind: "text", wide: true, maxLength: E6_DOWNLOAD_COPY_MAX_LENGTH, pattern: E6_DOWNLOAD_COPY_PATTERN, patternMessage: E6_DOWNLOAD_COPY_PATTERN_MESSAGE },
+          { key: "enGuide", label: "英文说明", current: dl.enGuide, inputKind: "text", wide: true, maxLength: E6_DOWNLOAD_COPY_MAX_LENGTH, pattern: E6_DOWNLOAD_COPY_PATTERN, patternMessage: E6_DOWNLOAD_COPY_PATTERN_MESSAGE },
         ],
       },
       detail: "编辑客户端下载页的中文与英文内容。确认后写入配置审计,前台按语言分别读取。",
@@ -235,6 +238,18 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
 
   const onCount = flags.filter((f) => f.enabled).length;
   const keywordCount = gpuTiers.reduce((sum, t) => sum + t.keywords.length, 0);
+  // 双语文案质量门:后端只拦长度,测试标点必须由运营面在提交前拦住。
+  // 判定用与弹窗同一组常量,避免两处规则漂移。
+  const copyPattern = new RegExp(E6_DOWNLOAD_COPY_PATTERN);
+  const copyFields = [
+    { label: "中文标题", value: download?.zhTitle ?? "" },
+    { label: "中文说明", value: download?.zhGuide ?? "" },
+    { label: "英文标题", value: download?.enTitle ?? "" },
+    { label: "英文说明", value: download?.enGuide ?? "" },
+  ];
+  const copyIssues = copyFields
+    .filter((field) => !copyPattern.test(field.value))
+    .map((field) => field.label);
   const coeffValueByLabel = (labelToken: string): string => {
     const c = coefficients.find((item) => item.label.includes(labelToken));
     return c ? c.value : "—";
@@ -418,6 +433,11 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
               <span className="v">{download?.enGuide ?? ""}</span>
             </div>
           </div>
+          {copyIssues.length > 0 && (
+            <div className="tint warn tiny" role="alert" data-proof="e6-copy-quality-gate" style={{ margin: "0 16px 12px" }}>
+              当前双语文案含测试标点({copyIssues.join(" / ")}),不会作为正式文案下发;请点「编辑双语文案」清理后再保存。
+            </div>
+          )}
           {canWriteE6 && <button type="button" className="adj" onClick={editDownloadCopy}>编辑双语文案</button>}
         </div>
       </section>

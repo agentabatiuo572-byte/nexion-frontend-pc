@@ -235,7 +235,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     hasMContentSnapshot: Boolean(mData),
     isMContentLoading: mLoading,
   });
-  const { ready: conversationStreamReady, reconnectExhausted, retry: retryConversationStream } = useConversationStream({
+  const { ready: conversationStreamReady, reconnectExhausted, reconnectReason, retry: retryConversationStream } = useConversationStream({
     onEvent: handleStreamEvent,
     onReconnectSnapshot: reconcileConversationSnapshot,
     lifecycleSignal: mLoadCoordinator.current.conversationStreamSignal,
@@ -406,7 +406,9 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "M3" && reconnectExhausted && (
         <div className="card card-pad" role="alert" style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Icon name="bell" size={16} />
-          <span className="dim" style={{ fontSize: 13 }}>实时会话连接已停止自动重试；当前页面数据可能不是最新状态。</span>
+          <span className="dim" style={{ fontSize: 13 }}>
+            实时会话连接已停止自动重试{reconnectReason ? `（${reconnectReason}）` : ""}；当前页面数据可能不是最新状态，列表仍按服务端快照每 5 秒刷新。
+          </span>
           <span className="sp" />
           <button type="button" className="btn btn-sec btn-sm" onClick={retryConversationStream}>重新连接</button>
         </div>

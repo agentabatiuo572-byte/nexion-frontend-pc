@@ -78,8 +78,15 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   const edgeSource = data.edge.source;
   const edgeSourceKnown = data.edge.sourceKnown;
   const healthStatus = data.edge.healthStatus;
-  const health = !edgeSourceKnown ? "判定源未登记" : healthStatus === "healthy" ? "正常" : healthStatus === "degraded" ? "异常" : healthStatus === "stale" ? "已过期" : "待采样";
-  const healthTone = !edgeSourceKnown || healthStatus === "degraded" ? "danger" : healthStatus === "healthy" ? "ok" : "warn";
+  // 判定系统健康 ≠ 全站已接入:目录里仍处「待实装确认」的功能入口说明地域封锁尚未在那些业务入口生效。
+  // 只要还有未接入入口,健康状态就必须降级,不能以「正常」掩盖待实装范围。
+  const pendingEndpoints = geoEndpoints.filter((entry) => !entry.configurable);
+  const endpointsFullyWired = geoEndpoints.length > 0 && pendingEndpoints.length === 0;
+  const healthBase = !edgeSourceKnown ? "判定源未登记" : healthStatus === "healthy" ? "正常" : healthStatus === "degraded" ? "异常" : healthStatus === "stale" ? "已过期" : "待采样";
+  const health = endpointsFullyWired || !edgeSourceKnown || healthStatus !== "healthy"
+    ? healthBase
+    : `降级 · ${pendingEndpoints.length} 个入口待实装`;
+  const healthTone = !edgeSourceKnown || healthStatus === "degraded" || !endpointsFullyWired ? "danger" : healthStatus === "healthy" ? "ok" : "warn";
   const countryOptions = data.countryOptions.map((option) => option.value);
   const blockedCodes = new Set(banned.map((country) => country.cc));
   const emergencyCandidates = countryOptions.filter((country) => !blockedCodes.has(country));
@@ -282,7 +289,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         <div className="f-stat danger"><div className="k">封禁国家</div><div className="v">{banned.length}</div><div className="sub">注册、登录、资金操作全停</div></div>
         <div className="f-stat warn"><div className="k">受限国家</div><div className="v">{limited.length}</div><div className="sub">可浏览，不可新增资金操作</div></div>
         <div className="f-stat cyan"><div className="k">今日拦截</div><div className="v">{totalHits}</div><div className="sub">在业务入口被拒绝</div></div>
-        <div className={`f-stat ${healthTone}`}><div className="k">判定系统健康</div><div className="v">{health}</div><div className="sub">服务端实时判定</div></div>
+        <div className={`f-stat ${healthTone}`}><div className="k">判定系统健康</div><div className="v">{health}</div><div className="sub">{endpointsFullyWired ? "服务端实时判定 · 全入口已接入" : `服务端实时判定 · ${pendingEndpoints.length}/${geoEndpoints.length} 个入口待实装`}</div></div>
       </div>
 
       <div className="emer-strip">
@@ -364,7 +371,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         </div></div>
       </section>
 
-      <p className="f-foot"><b>封锁在服务端业务入口生效，客户端无法绕过。</b>全局名单与各功能入口规则均以服务端状态为准；每次变更都记录操作者、理由、前后状态和通知事件。</p>
+      <p className="f-foot"><b>全局名单在请求边界生效,客户端无法绕过。</b>全局封禁名单与受限名单由服务端边缘过滤器对 <span className="mono">/api/</span>、<span className="mono">/auth/</span> 等用户请求路径统一判定;<b>各功能入口的单独封锁只对已接入入口生效</b> —— 标记「待实装确认」的入口当前不受入口级规则保护,判定系统健康已相应降级。每次变更都记录操作者、理由、前后状态和通知事件。</p>
     </div>
   );
 }

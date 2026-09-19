@@ -54,6 +54,18 @@ function amount(value: number) {
 
 const LIST_PAGE_SIZE = 6;   // 任务列表每页行数
 
+/**
+ * Onboarding 收益对比档位 → E1 商城权威 SKU。
+ * 后端 `nx_onboarding_yield_comparison_config.config_key` 用 phone/s1/pro/rack 四个档位标识,
+ * 它们必须能对上当前在售 SKU,否则运营会把旧品牌/过期收益当成现售商品的真实收益(简报 #40)。
+ * 映射只用于**对账提示**,不改写后端数据:不匹配时页面显式标出目录现值与「独立营销档位」定性。
+ */
+const E2_COMPARISON_SKU_ID: Record<string, string> = {
+  s1: "stellarbox-s1",
+  pro: "stellarbox-pro",
+  rack: "stellarrack-p1",
+};
+
 export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const { tasks } = ctx;
   const canMutate = ctx.canWriteE2 && !ctx.e2Loading && !ctx.e2Error && !!ctx.e2Pricing;
@@ -205,16 +217,33 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           <span className="sub">App 校准结果同源</span>
         </div>
         <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-          {ctx.yieldComparisons.length === 0 && !ctx.e2Loading ? <div className="tint tiny">暂无收益对比数据。</div> : ctx.yieldComparisons.map((row) => (
+          {ctx.yieldComparisons.length === 0 && !ctx.e2Loading ? <div className="tint tiny">暂无收益对比数据。</div> : ctx.yieldComparisons.map((row) => {
+            const catalogSku = ctx.skus.find((sku) => sku.id === E2_COMPARISON_SKU_ID[row.configKey]);
+            const labelDrift = !!catalogSku && catalogSku.name !== row.label;
+            const rateDrift = !!catalogSku && catalogSku.dailyEarn != null && Math.abs(catalogSku.dailyEarn - row.dailyUsdt) > 1e-9;
+            const drift = labelDrift || rateDrift;
+            return (
             <div key={row.configKey} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 14, alignItems: "center", paddingTop: row.sortOrder === 1 ? 0 : 10, borderTop: row.sortOrder === 1 ? "none" : "1px solid var(--border)" }}>
-              <div className="col" style={{ gap: 2 }}><span style={{ fontSize: 13.5, fontWeight: 600 }}>{row.label}</span><span className="tint tiny">{row.configKey}</span></div>
+              <div className="col" style={{ gap: 2 }}>
+                <span style={{ fontSize: 13.5, fontWeight: 600 }}>{row.label}</span>
+                <span className="tint tiny">{row.configKey}</span>
+                {drift && (
+                  <span className="tiny" style={{ color: "var(--warning)" }} data-proof={`e2-comparison-drift-${row.configKey}`}>
+                    与 E1 商城权威商品不一致：当前目录为
+                    {labelDrift ? `「${catalogSku!.name}」` : ""}
+                    {rateDrift ? ` 日产 $${catalogSku!.dailyEarn!.toFixed(2)}` : ""}
+                    ——本行是独立营销档位,不与真实商品同名同价,也不参与账务。
+                  </span>
+                )}
+              </div>
               <div className="tnum" style={{ textAlign: "right", fontSize: 12.5 }}>${amount(row.dailyUsdt)} · {amount(row.dailyNex)} NEX/天</div>
               {canMutate && <div className="row" style={{ gap: 6 }}>
                 <Btn sm variant="primary" onClick={() => ctx.openActionConfirm({ name: `${row.label} USDT 日收益调整`, op: "yield-comparison", comparisonKey: row.configKey, comparisonField: "dailyUsdt", amplify: true, edit: { kind: "number", current: amount(row.dailyUsdt), unit: "USDT/天", min: 0.00001, step: 0.00001, disallowCurrent: true }, detail: "该值会同步 onboarding App 收益对比；调高会放大资金流出并经过 B1 覆盖率护栏。" })}>调 USDT</Btn>
                 <Btn sm onClick={() => ctx.openActionConfirm({ name: `${row.label} NEX 日收益调整`, op: "yield-comparison", comparisonKey: row.configKey, comparisonField: "dailyNex", amplify: true, edit: { kind: "number", current: amount(row.dailyNex), unit: "NEX/天", min: 0.00001, step: 0.00001, disallowCurrent: true }, detail: "该值会同步 onboarding App 收益对比；改动从下一结算周期生效。" })}>调 NEX</Btn>
               </div>}
             </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 

@@ -73,3 +73,31 @@ test("E6 exposes version rollback, phase boundary, structural and B1 failure con
   assert.match(errorMessages, /COMPUTE_GPU_KEYWORD_DUPLICATE/);
   assert.match(errorMessages, /COVERAGE_BELOW_REDLINE/);
 });
+
+test("E6 download copy rejects test punctuation before it can become the published configuration", () => {
+  // 后端只校验 ≤320 字符长度(COMPUTE_DOWNLOAD_TEXT_INVALID);测试标点必须由运营面在提交前拦住,
+  // 否则「！！！Download the desktop client...」会被当成正式文案写入并下发给用户端(简报 #45)。
+  const patternLiteral = client.match(/E6_DOWNLOAD_COPY_PATTERN = "((?:[^"\\]|\\.)*)"/);
+  assert.ok(patternLiteral, "the copy gate pattern must live in the shared e6-client constants");
+  const copyPattern = new RegExp(JSON.parse(`"${patternLiteral[1]}"`));
+  assert.match(client, /E6_DOWNLOAD_COPY_MAX_LENGTH = 320/);
+  assert.match(client, /E6_DOWNLOAD_COPY_PATTERN_MESSAGE/);
+
+  // 简报里的真实坏值:必须被拒。
+  assert.equal(copyPattern.test("！！！Download the desktop client, sign in with the same account."), false);
+  assert.equal(copyPattern.test("为什么？？？"), false);
+  assert.equal(copyPattern.test("Wait!!"), false);
+  // 正式文案不得被误伤。
+  assert.equal(copyPattern.test("Download the desktop client, sign in with the same account."), true);
+  assert.equal(copyPattern.test("电脑显卡算力共享"), true);
+  assert.equal(copyPattern.test("What is this?"), true, "a single question mark is normal prose");
+
+  // 四个字段共用同一条规则与同一组常量,避免只改一个字段绕过质量门。
+  for (const field of ["zhTitle", "zhGuide", "enTitle", "enGuide"]) {
+    assert.match(tab, new RegExp(`key: "${field}"[^}]*maxLength: E6_DOWNLOAD_COPY_MAX_LENGTH`));
+    assert.match(tab, new RegExp(`key: "${field}"[^}]*pattern: E6_DOWNLOAD_COPY_PATTERN`));
+  }
+  // 已存在的不合规文案必须在页面上显式暴露,而不是静默当正式值展示。
+  assert.match(tab, /e6-copy-quality-gate/);
+  assert.match(tab, /含测试标点/);
+});

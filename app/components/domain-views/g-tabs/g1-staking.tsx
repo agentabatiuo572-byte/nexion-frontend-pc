@@ -95,6 +95,17 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
   const groupByStatus = useMemo(() => {
     return new Map((overview?.positions ?? []).map((group) => [group.status, group]));
   }, [overview?.positions]);
+  // 持仓状态的中文业务名(机器枚举仅作接口对齐,不进主文案)。
+  const POSITION_STATE_LABELS: Record<string, string> = {
+    pending_lock: "待确认",
+    active: "计息中",
+    mature_unclaimed: "到期未领",
+    claimed: "已领取",
+    early_withdrawn: "提前赎回",
+    slashed: "熔断处置",
+    refunded: "已退款",
+  };
+  const positionStateLabel = (state: string): string => POSITION_STATE_LABELS[state] ?? state;
   const canonicalPools = useMemo(() => {
     const byTier = new Map((overview?.pools ?? [])
       .filter((pool) => pool.product.toUpperCase() === "USDT")
@@ -162,7 +173,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
         当前 APY {pool.apyDisplay} · 影响产品 <b>{pool.product} · {displayTerm(pool)}</b> · 影响范围 <b>仅新单</b>(存量按开锁时锁定值结算,不追溯)。
         <div className="gtint" data-proof="g1-apy-preview" style={{ marginTop: 10 }}>
           <div><b>调整影响预览</b></div>
-          <div>当前在锁本金:<b>{pool.lockedDisplay}</b> · active position:<b>{fmtCount(stats.activeCount)}</b> 单</div>
+          <div>当前在锁本金:<b>{pool.lockedDisplay}</b> · 计息中持仓:<b>{fmtCount(stats.activeCount)}</b> 单</div>
           <div>当前累计应付利息:<b>{fmtM(stats.interestUsd)}</b> · 来自真实锁仓持仓</div>
           <div>B1 兑付覆盖率:<b>{cov}%</b> · 红线 {redline}%</div>
           <div>升 APY 是放大流出,提交后由后端重新验覆盖率红线与跨档 APY 保序。</div>
@@ -355,7 +366,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
 
       <div className="f-stats">
         <div className="f-stat ok"><div className="k">USDT 在锁本金</div><div className="v">{fmtM(stats.usdtPoolUsd)}</div><div className="sub">G1 USDT 池 · NEX 质押已下线</div></div>
-        <div className="f-stat"><div className="k">在锁 position 数</div><div className="v">{fmtCount(stats.positionCount)}</div><div className="sub">active {fmtCount(stats.activeCount)} · 到期未领 {fmtCount(stats.matureCount)}</div></div>
+        <div className="f-stat"><div className="k">在锁持仓数</div><div className="v">{fmtCount(stats.positionCount)}</div><div className="sub">计息中 {fmtCount(stats.activeCount)} · 到期未领 {fmtCount(stats.matureCount)}</div></div>
         <div className="f-stat warn"><div className="k">累计应付利息</div><div className="v">{fmtM(stats.interestUsd)}</div><div className="sub">按已锁天数线性派生 · 真实持仓</div></div>
         <div className="f-stat danger"><div className="k">单档熔断</div><div className="v">{stats.killedCount}</div><div className="sub">高息长锁档重点盯 · 整池闸 {gate.enabled ? "在线(J1)" : "已熔断(J1)"}</div></div>
       </div>
@@ -376,23 +387,23 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
         </div>
         <div className="l-b">
           <div className="pos-grid" style={{ marginBottom: 14 }}>
-            <div className="p click" onClick={() => setDrawer("pending_lock")}><div className="k">pending_lock 待确认 <span className="more">看清单›</span></div><div className="v">{fmtCount(pendingGroup?.count ?? stats.pendingCount)}</div></div>
-            <div className="p click" onClick={() => setDrawer("active")}><div className="k">active 计息中 <span className="more">看清单›</span></div><div className="v" style={{ color: "var(--success)" }}>{fmtCount(activeGroup?.count ?? stats.activeCount)}</div></div>
-            <div className="p click" onClick={() => setDrawer("mature_unclaimed")}><div className="k">mature_unclaimed 到期未领 <span className="more">看清单›</span></div><div className="v" style={{ color: "var(--warning)" }}>{fmtCount(matureGroup?.count ?? stats.matureCount)}</div></div>
-            <div className="p click" onClick={() => setDrawer("early_withdrawn")}><div className="k">本月 early_withdrawn 提前赎回 <span className="more">看清单›</span></div><div className="v">{fmtCount(earlyGroup?.count ?? stats.earlyWithdrawnMonth)}</div></div>
-            <div className="p click" onClick={() => setDrawer("claimed")}><div className="k">claimed 已领取 <span className="more">看清单›</span></div><div className="v">{fmtCount(claimedGroup?.count ?? 0)}</div></div>
-            <div className="p click" onClick={() => setDrawer("slashed")}><div className="k">slashed 熔断处置 <span className="more">看清单›</span></div><div className="v" style={{ color: "var(--danger)" }}>{fmtCount(slashedGroup?.count ?? 0)}</div></div>
-            <div className="p click" onClick={() => setDrawer("refunded")}><div className="k">refunded 已退款 <span className="more">看清单›</span></div><div className="v">{fmtCount(refundedGroup?.count ?? 0)}</div></div>
+            <div className="p click" onClick={() => setDrawer("pending_lock")}><div className="k">{positionStateLabel("pending_lock")} <span className="more">看清单›</span></div><div className="v">{fmtCount(pendingGroup?.count ?? stats.pendingCount)}</div></div>
+            <div className="p click" onClick={() => setDrawer("active")}><div className="k">{positionStateLabel("active")} <span className="more">看清单›</span></div><div className="v" style={{ color: "var(--success)" }}>{fmtCount(activeGroup?.count ?? stats.activeCount)}</div></div>
+            <div className="p click" onClick={() => setDrawer("mature_unclaimed")}><div className="k">{positionStateLabel("mature_unclaimed")} <span className="more">看清单›</span></div><div className="v" style={{ color: "var(--warning)" }}>{fmtCount(matureGroup?.count ?? stats.matureCount)}</div></div>
+            <div className="p click" onClick={() => setDrawer("early_withdrawn")}><div className="k">本月{positionStateLabel("early_withdrawn")} <span className="more">看清单›</span></div><div className="v">{fmtCount(earlyGroup?.count ?? stats.earlyWithdrawnMonth)}</div></div>
+            <div className="p click" onClick={() => setDrawer("claimed")}><div className="k">{positionStateLabel("claimed")} <span className="more">看清单›</span></div><div className="v">{fmtCount(claimedGroup?.count ?? 0)}</div></div>
+            <div className="p click" onClick={() => setDrawer("slashed")}><div className="k">{positionStateLabel("slashed")} <span className="more">看清单›</span></div><div className="v" style={{ color: "var(--danger)" }}>{fmtCount(slashedGroup?.count ?? 0)}</div></div>
+            <div className="p click" onClick={() => setDrawer("refunded")}><div className="k">{positionStateLabel("refunded")} <span className="more">看清单›</span></div><div className="v">{fmtCount(refundedGroup?.count ?? 0)}</div></div>
           </div>
           <div className="sm-strip">
-            <span className="st">pending_lock</span><span className="ar">确认 →</span>
-            <span className="st ok">active 计息中</span><span className="ar">到期 →</span>
-            <span className="st warn">mature_unclaimed</span><span className="ar">领取 →</span>
-            <span className="st ok">claimed 已领本息</span>
+            <span className="st">{positionStateLabel("pending_lock")}</span><span className="ar">确认 →</span>
+            <span className="st ok">{positionStateLabel("active")}</span><span className="ar">到期 →</span>
+            <span className="st warn">{positionStateLabel("mature_unclaimed")}</span><span className="ar">领取 →</span>
+            <span className="st ok">{positionStateLabel("claimed")}</span>
             <span className="ar" style={{ marginLeft: 12 }}>旁路:</span>
-            <span className="st bad">early_withdrawn 罚款 forfeit 利息</span>
-            <span className="st bad">slashed 熔断处置</span>
-            <span className="st">refunded 锁失败退本</span>
+            <span className="st bad">{positionStateLabel("early_withdrawn")} · 罚款并没收利息</span>
+            <span className="st bad">{positionStateLabel("slashed")}</span>
+            <span className="st">{positionStateLabel("refunded")} · 锁失败退本</span>
           </div>
           <div className="gtint" style={{ marginTop: 12 }}><b>到期与负债联动</b> · 开锁即增应付负债(本金 + 按已锁天数线性派生的应付利息),到期派发记账单;本息派发带防重号,熔断锁定优先。</div>
         </div>
@@ -404,7 +415,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
         <Drawer title={`锁仓单清单 · ${dd.label}`} sub={dd.note} onClose={() => setDrawer(null)}
           footer={<button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => setDrawer(null)}>关闭</button>}>
           <table className="l-tbl">
-            <thead><tr><th>position</th><th>用户</th><th>产品档</th><th>本金</th><th>锁定 APY / 罚款</th><th>锁定 / 解锁</th><th>预计利息</th><th>备注</th></tr></thead>
+            <thead><tr><th>持仓编号</th><th>用户</th><th>产品档</th><th>本金</th><th>锁定 APY / 罚款</th><th>锁定 / 解锁</th><th>预计利息</th><th>备注</th></tr></thead>
             <tbody>
               {dd.rows.length === 0 && <tr><td colSpan={8} style={{ color: "var(--ink-3)", textAlign: "center", padding: 18 }}>暂无该状态锁仓单</td></tr>}
               {dd.rows.map((row) => (
@@ -421,7 +432,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
               ))}
             </tbody>
           </table>
-          <div className="gtint" style={{ marginTop: 12 }}><b>只读监控</b> · position 状态只能服务器推进,这里不手动改单。要点名某个档止损走「单档熔断」;单用户资产去用户域(C3)。</div>
+          <div className="gtint" style={{ marginTop: 12 }}><b>只读监控</b> · 持仓状态只能服务器推进,这里不手动改单。要点名某个档止损走「单档熔断」;单用户资产去用户域(C3)。</div>
         </Drawer>
       )}
     </>

@@ -119,6 +119,85 @@ export function gateRemaining(g: PurchaseGate): number | null {
 
 export const effectiveReleaseMonth = (releaseMonth: number, phaseOffset = 0): number => releaseMonth + phaseOffset;
 
+/**
+ * 上架门判定结果。`declaredPhase` 是该 SKU 在阶段配置里的唯一归属阶段;
+ * `phaseConflict` = 上架门引用的阶段与之不一致 —— 阶段门被错误映射,必须视为未开放。
+ */
+export interface E1GateReadiness {
+  effectiveMonth: number;
+  eligibilityReady: boolean;
+  forceMonthOpen: boolean;
+  gatePhaseIdx: number;
+  monthReached: boolean;
+  phaseReached: boolean;
+  declaredPhase: string;
+  phaseConflict: boolean;
+  unlocked: boolean;
+  blockers: string[];
+}
+
+export interface E1GateReadinessInput {
+  release: { id: string; phase: string; releaseMonth: number; phaseOffset?: number; eligibility?: boolean; forceUnlock?: boolean };
+  phaseOrder: string[];
+  /** 阶段配置行:skus 是 SKU 标签列(该 SKU 的阶段归属声明)。 */
+  phases: Array<{ p: string; label?: string; skus: string }>;
+  /** 该门上挂的 SKU(用于读阶段归属);缺省表示目录里查不到该 SKU。 */
+  sku?: { id: string; name?: string } | null;
+  currentPhase: string;
+  platformMonth: number;
+}
+
+const phaseLabelOf = (phases: Array<{ p: string; label?: string; skus: string }>, phaseId: string): string =>
+  !phaseId ? "未配置" : (phases.find((item) => item.p === phaseId)?.label || phaseId);
+
+/**
+ * SKU 在阶段配置里的唯一归属阶段。阶段配置是「SKU 解锁阶段 / 上架门发布阶段的唯一来源」,
+ * 其 skus 标签列即归属声明;匹配 SKU id 或名称(标签可写「StellarBox Pro v2」或「stellarbox-pro-v2」)。
+ */
+export function declaredPhaseForSku(
+  sku: { id: string; name?: string } | null | undefined,
+  phases: Array<{ p: string; skus: string }>,
+): string {
+  if (!sku) return "";
+  const id = (sku.id || "").trim().toLocaleLowerCase();
+  const name = (sku.name || "").trim().toLocaleLowerCase();
+  return phases.find((ph) => {
+    const label = (ph.skus || "").toLocaleLowerCase();
+    return !!label && ((!!id && label.includes(id)) || (!!name && label.includes(name)));
+  })?.p ?? "";
+}
+
+/**
+ * 上架门「是否解锁」单一判定源:阶段已到达 + 设备资格已补齐 + 平台月龄已到。
+ * forceUnlock 仅绕过月龄门,不能绕过阶段或设备资格,也不能掩盖阶段映射冲突。
+ */
+export function e1GateReadiness(input: E1GateReadinessInput): E1GateReadiness {
+  const { release, phaseOrder, phases, sku, currentPhase, platformMonth } = input;
+  const gatePhaseIdx = phaseOrder.indexOf(release.phase);
+  const curIdx = phaseOrder.indexOf(currentPhase);
+  const hasPhaseConfig = phaseOrder.length > 0 && phases.length > 0 && curIdx >= 0;
+  const declaredPhase = declaredPhaseForSku(sku, phases);
+  const phaseConflict = !!declaredPhase && !!release.phase && declaredPhase !== release.phase;
+  const eligibilityReady = !!release.eligibility;
+  const phaseReached = hasPhaseConfig && gatePhaseIdx >= 0 && curIdx >= gatePhaseIdx;
+  const effectiveMonth = effectiveReleaseMonth(release.releaseMonth, release.phaseOffset ?? 0);
+  const monthReached = platformMonth >= effectiveMonth;
+  const forceMonthOpen = !!release.forceUnlock;
+  const blockers: string[] = [];
+
+  if (phaseConflict) blockers.push(`阶段冲突 · 该 SKU 属${phaseLabelOf(phases, declaredPhase)}`);
+  if (!eligibilityReady) blockers.push("待设备资格");
+  if (!phaseReached) blockers.push(gatePhaseIdx >= 0 ? `待${phaseLabelOf(phases, release.phase)}` : "阶段未匹配");
+  if (!monthReached && !forceMonthOpen) blockers.push(`待M${effectiveMonth}`);
+
+  return {
+    effectiveMonth, eligibilityReady, forceMonthOpen, gatePhaseIdx, monthReached, phaseReached,
+    declaredPhase, phaseConflict,
+    unlocked: !phaseConflict && eligibilityReady && phaseReached && (monthReached || forceMonthOpen),
+    blockers,
+  };
+}
+
 export function releaseMonthPresentation(releaseMonth: number, phaseOffset = 0): {
   effectiveLabel: string;
   adjustmentLabel: string;

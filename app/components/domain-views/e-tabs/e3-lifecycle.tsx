@@ -270,7 +270,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
       <section className="tx-card">
         <div className="tx-h">
           <span className="ttl">原子换机 tx 监控</span>
-          <span className="sub">· 所有步骤一起完成，失败时不会留下半成品</span>
+          <span className="sub">· 三类事务分列:设备回收 / 设备置换 / 设备停用;所有步骤一起完成，失败时不会留下半成品</span>
           <span className="r"><CodeTag tone="electric">A2 审计</CodeTag><span>24h · 成功率 <span style={{ color: "var(--success)" }}>{txSuccessRate.toFixed(1)}%</span></span></span>
         </div>
         <div className="tx-grid">

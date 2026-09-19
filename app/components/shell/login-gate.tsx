@@ -218,7 +218,7 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
           N
         </span>
         <h1 className="font-display mt-4 text-[20px]" style={{ color: "var(--v5-ink)" }}>
-          {changingPassword ? "首次登录修改密码" : verifyingMfa ? "双因素身份验证" : "运营控制台登录"}
+          {changingPassword ? "首次登录修改密码" : verifyingMfa ? "双因素身份验证" : "NexGrid 运营控制台登录"}
         </h1>
         <p className="mt-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
           {changingPassword

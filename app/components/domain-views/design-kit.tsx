@@ -3482,9 +3482,11 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
                 当前覆盖率 <b className="mono">{coverage.coverageRatio}%</b>
                 {coverage.healthyPct !== undefined && coverage.coverageRatio >= coverage.healthyPct
                   ? `，高于健康线 ${coverage.healthyPct}%`
-                  : coverage.coverageRatio >= coverage.redlinePct
+                  : coverage.coverageRatio > coverage.redlinePct
                     ? `，高于红线 ${coverage.redlinePct}%，请审慎提交`
-                    : `，低于红线 ${coverage.redlinePct}%，系统会拒绝提交`}
+                    : coverage.coverageRatio === coverage.redlinePct
+                      ? `，等于红线 ${coverage.redlinePct}%，缓冲为 0 个百分点，请审慎提交`
+                      : `，低于红线 ${coverage.redlinePct}%，系统会拒绝提交`}
               </>
             ) : (
               <>{auditSink === "local-history" ? "本页为本地配置面,覆盖率预检待接入后端后生效;请人工确认资金方向影响。" : "提交时由后端实时校验覆盖率，当前弹窗不使用前端兜底值。"}</>

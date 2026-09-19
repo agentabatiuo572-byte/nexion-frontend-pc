@@ -1735,26 +1735,6 @@ export async function fetchMConversationSnapshot(signal?: AbortSignal): Promise<
   throw new Error("M3_CONVERSATION_SNAPSHOT_UNSTABLE");
 }
 
-export async function fetchMSessionScriptsPage(pageNum = 1, pageSize = 5): Promise<AdminPage<AdvisorScript>> {
-  const page = await apiRequest<AdminPage<SessionScriptView>>(`/session-templates/scripts?pageNum=${encodeURIComponent(String(pageNum))}&pageSize=${encodeURIComponent(String(pageSize))}`);
-  return {
-    total: page.total,
-    pageNum: page.pageNum,
-    pageSize: page.pageSize,
-    records: asArray<SessionScriptView>(page.records).map(adaptScript),
-  };
-}
-
-export async function fetchMReplyTemplatesPage(pageNum = 1, pageSize = 5): Promise<AdminPage<SessionReplyTpl>> {
-  const page = await apiRequest<AdminPage<SessionReplyTemplateView>>(`/session-templates/reply-templates?pageNum=${encodeURIComponent(String(pageNum))}&pageSize=${encodeURIComponent(String(pageSize))}`);
-  return {
-    total: page.total,
-    pageNum: page.pageNum,
-    pageSize: page.pageSize,
-    records: asArray<SessionReplyTemplateView>(page.records).map(adaptReplyTemplate),
-  };
-}
-
 export async function fetchMSupportAgentsPage(pageNum = 1, pageSize = 5): Promise<MSupportAgentPage> {
   const page = await apiRequest<SupportAgentPageView>(`/support-agents/page?pageNum=${encodeURIComponent(String(pageNum))}&pageSize=${encodeURIComponent(String(pageSize))}`);
   return {

@@ -410,6 +410,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setE2Pricing(null);
       errors.push(`任务定价：${displayAdminError(pricingResult.reason)}`);
     }
+    if (errors.length) {
+      // 简报要求失败时可定位:附上读取时刻与逐面结果,值班人员据此能直接区分
+      // 「后端没有 6 类权威定价」和「前端解析拒绝」,不必靠猜。
+      errors.push(`读取时刻 ${new Date().toLocaleString("zh-CN", { hour12: false })}`);
+      errors.push(`逐面结果 任务目录=${tasksResult.status === "fulfilled" ? "成功" : "失败"} · 手机档位=${phoneResult.status === "fulfilled" ? "成功" : "失败"} · 任务定价=${pricingResult.status === "fulfilled" ? "成功" : "失败"}`);
+    }
     setE2Error(errors.length ? errors.join("；") : null);
     setE2Loading(false);
   }, []);
@@ -535,28 +541,39 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const refreshE5 = useCallback(async () => {
     setE5Loading(true);
     setE5Error(null);
-    try {
-      const [nextDevicePage, nextOverview, nextDatacenters] = await Promise.all([
-        fetchE5Devices({ pageNum: e5Page, pageSize: e5PageSize,
-          keyword: e5Keyword, status: e5StateFilter, kind: e5KindFilter, heartbeat: e5HeartbeatFilter }),
-        fetchE5Overview(),
-        fetchE5Datacenters(),
-      ]);
-      setE5Devices(nextDevicePage.records);
-      setE5Total(nextDevicePage.total);
-      setE5Page(nextDevicePage.pageNum);
-      setE5PageSizeState(nextDevicePage.pageSize);
-      setE5Overview(nextOverview);
-      setE5Datacenters(nextDatacenters);
-    } catch (error) {
-      setE5Error(displayAdminError(error));
+    // 设备库存 / 概览 / 数据中心是三个独立服务面:任一面失败只冻结它自己,
+    // 不能把另外两面的真实数据一起清空 —— 那会让运维台在单面故障时整页失明。
+    const [deviceResult, overviewResult, datacenterResult] = await Promise.allSettled([
+      fetchE5Devices({ pageNum: e5Page, pageSize: e5PageSize,
+        keyword: e5Keyword, status: e5StateFilter, kind: e5KindFilter, heartbeat: e5HeartbeatFilter }),
+      fetchE5Overview(),
+      fetchE5Datacenters(),
+    ]);
+    const errors: string[] = [];
+    if (deviceResult.status === "fulfilled") {
+      setE5Devices(deviceResult.value.records);
+      setE5Total(deviceResult.value.total);
+      setE5Page(deviceResult.value.pageNum);
+      setE5PageSizeState(deviceResult.value.pageSize);
+    } else {
       setE5Devices([]);
       setE5Total(0);
-      setE5Overview(null);
-      setE5Datacenters([]);
-    } finally {
-      setE5Loading(false);
+      errors.push(`设备库存：${displayAdminError(deviceResult.reason)}`);
     }
+    if (overviewResult.status === "fulfilled") {
+      setE5Overview(overviewResult.value);
+    } else {
+      setE5Overview(null);
+      errors.push(`设备概览：${displayAdminError(overviewResult.reason)}`);
+    }
+    if (datacenterResult.status === "fulfilled") {
+      setE5Datacenters(datacenterResult.value);
+    } else {
+      setE5Datacenters([]);
+      errors.push(`数据中心：${displayAdminError(datacenterResult.reason)}`);
+    }
+    setE5Error(errors.length ? errors.join("；") : null);
+    setE5Loading(false);
   }, [e5HeartbeatFilter, e5Keyword, e5KindFilter, e5Page, e5PageSize, e5StateFilter]);
   useEffect(() => { if (tab === "E5") void refreshE5(); }, [tab, refreshE5]);
   const e5PausedDcs = useMemo(() => new Map(e5Datacenters.map((dc) => [dc.dcLocation, dc.dispatchPaused])), [e5Datacenters]);

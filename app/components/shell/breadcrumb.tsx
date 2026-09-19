@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 面包屑 — usePathname() → nav 查表 → 「运营控制台 / 域 / L2」。
+ * 面包屑 — usePathname() → nav 查表 → 「NexGrid 运营控制台 / 域 / L2」。
  * 根路径 / 显示「总览驾驶舱」。未匹配路径回退展示原始 segment。
  */
 import Link from "next/link";
@@ -11,7 +11,7 @@ import { findByPath } from "@/lib/nav/console-nav";
 
 export function Breadcrumb() {
   const pathname = usePathname() ?? "";
-  const crumbs: { label: string; accent?: string }[] = [{ label: "运营控制台" }];
+  const crumbs: { label: string; accent?: string }[] = [{ label: "NexGrid 运营控制台" }];
 
   if (pathname === "/" || pathname === "") {
     crumbs.push({ label: "总览驾驶舱" });

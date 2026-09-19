@@ -48,9 +48,9 @@ test("G2 首次用户真实入口、权威读模型、域外链接与失败关�
   ]));
 
   for (const [index, label] of [
-    "单用户超限(user-cap)",
-    "平台超限(platform-cap)",
-    "地域封锁(geo-blocked)",
+    "单用户超限",
+    "平台超限",
+    "地域封锁",
   ].entries()) {
     await page.locator(".gate-tiles .t").nth(index).click();
     await expect(page.getByText(new RegExp(`拦截命中清单.*${label.replace(/[()]/g, "\\$&")}`))).toBeVisible();

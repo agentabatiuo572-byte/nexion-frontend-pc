@@ -24,8 +24,35 @@ const PARAM_COPY: Record<string, { name: string; sub: string }> = {
   nurture: { name: "培育奖倍率", sub: "复投者培育奖计算即用" },
   lottery: { name: "Genesis 抽奖券", sub: "每复投单发放 · 改规则核对 G4 奖池容量" },
   penalty: { name: "早赎罚款", sub: "本金罚款 + 没收利息/券" },
-  presets: { name: "preset 金额档", sub: "用户复投金额快捷档 · 实时生效" },
+  presets: { name: "复投金额快捷档", sub: "用户复投金额快捷档 · 实时生效" },
 };
+
+/** 复投单状态机的中文业务名;未知状态原样回显,不伪造中文。 */
+const REPURCHASE_STATE_LABELS: Record<string, string> = {
+  pending_lock: "待锁定",
+  active: "锁仓中",
+  mature_unclaimed: "到期未领取",
+  claimed: "已领取",
+  early_withdrawn: "已提前赎回",
+};
+
+/**
+ * 参数展示值的中文化。
+ * 后端 `displayValue` 是机器口径英文串("90 days" / "+1 / order" / "principal 15% + forfeit" / "x1.5"),
+ * 中文管理页不得直接当业务文案;这里按参数键 + 原始数值重建中文名称、单位与说明。
+ */
+function paramDisplayValue(param: G7Param) {
+  const raw = (param.value || "").trim();
+  if (!raw) return "未配置";
+  switch (param.key) {
+    case "apy": return `${raw}% 年化`;
+    case "lockDays": return `${raw} 天`;
+    case "nurture": return `${raw} 倍`;
+    case "lottery": return `${raw} 张 / 单`;
+    case "penalty": return `本金 ${raw}% + 没收利息与抽奖券`;
+    default: return raw;
+  }
+}
 
 function messageOf(error: unknown) {
   return displayAdminError(error);
@@ -195,7 +222,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
       action: `产品参数调整 · ${label}`,
       detail: (
         <>
-          <b>{label}</b> · 当前 {param.displayValue} · {param.note}。
+          <b>{label}</b> · 当前 {paramDisplayValue(param)} · {param.note}。
           {param.b1RedlineTriggered && <>放大流出方向确认放行时过备付金红线，当前 {cov}%, 422。</>}
           操作确认，{param.newOnly ? "只对新单生效" : "实时生效"}。
         </>
@@ -249,7 +276,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
           {overview.params.map((param) => (
             <div className="p-row" key={param.key}>
               <div className="txt"><div className="k">{paramName(param)}</div><div className="s">{paramSub(param)}</div></div>
-              <span className="v">{param.displayValue}</span>
+              <span className="v">{paramDisplayValue(param)}</span>
               {canEdit(param.key) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(param)}>编辑 {paramName(param)}</button>}
             </div>
           ))}
@@ -267,9 +294,15 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
           <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 8px" }}>复投单状态机与金额分布</div>
           <div className="sm-strip">
             {overview.stateMachine.map((state, index) => (
-              <span key={state} className={index === 1 ? "st ok" : index === 2 ? "st warn" : index === 4 ? "st bad" : "st"}>{state}</span>
+              <span key={state} className={index === 1 ? "st ok" : index === 2 ? "st warn" : index === 4 ? "st bad" : "st"}>{REPURCHASE_STATE_LABELS[state] ?? state}</span>
             ))}
           </div>
+          <details className="gtint" style={{ marginTop: 6 }}>
+            <summary>技术详情 · 状态机机器枚举</summary>
+            <div className="mono" style={{ marginTop: 4, fontSize: 11.5 }}>
+              {overview.stateMachine.map((state) => `${state} = ${REPURCHASE_STATE_LABELS[state] ?? "未知状态"}`).join(" · ")}
+            </div>
+          </details>
           <div className="mk-tiles" style={{ marginTop: 12 }}>
             {overview.statusBreakdown.length === 0 ? (
               <div className="t"><div className="k">状态分布</div><div className="v">暂无</div></div>
@@ -310,7 +343,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
         </div>
       </section>
 
-      <p className="f-foot"><b>阶段开关与产品参数分两层</b>:「什么时候解锁/限时倍率」是节奏调度器(H1)下发的阶段开关，这页只读；「利率/倍率/罚款/preset」才是这页能改的。所有升利率、升培育奖倍率、降罚款都过备付金红线。数据源:{overview.sources.join(" / ")}。</p>
+      <p className="f-foot"><b>阶段开关与产品参数分两层</b>:「什么时候解锁/限时倍率」是节奏调度器(H1)下发的阶段开关，这页只读；「利率/倍率/罚款/复投金额快捷档」才是这页能改的。所有升利率、升培育奖倍率、降罚款都过备付金红线。数据源:{overview.sources.join(" / ")}。</p>
     </>
   );
 }

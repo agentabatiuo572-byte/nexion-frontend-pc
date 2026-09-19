@@ -4,18 +4,19 @@ import test from 'node:test';
 import ts from 'typescript';
 import vm from 'node:vm';
 const source=fs.readFileSync(new URL('../lib/admin/conversation-realtime.ts',import.meta.url),'utf8');
-function fixture(reconcile=async()=>{},ticket=async()=>({ticket:'one-time'})) {
-  let now=100000,id=0;const timers=new Map();const sockets=[];
+function fixture(reconcile=async()=>{},ticket=async()=>({ticket:'one-time'}),onState) {
+  let now=100000,id=0;const timers=new Map();const sockets=[];const states=[];
   const clock={setTimeout(fn,delay){timers.set(++id,{at:now+delay,fn});return id},clearTimeout(id){timers.delete(id)}};
   const module={exports:{}};
   vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,
     {exports:module.exports,module,AbortController,Date:{now:()=>now},Math,Map,Set,Promise,Error,JSON,...clock});
   const client=new module.exports.ConversationRealtime({url:'ws://test',ticket,reconcile,
+    state:(ready,terminal,reason)=>{states.push({ready,terminal,reason});onState?.(ready,terminal,reason);},
     socket:()=>{const socket={sent:[],send(data){this.sent.push(JSON.parse(data))},close(){}};sockets.push(socket);return socket}});
   const flush=async()=>{for(let i=0;i<12;i++)await Promise.resolve()};
   const tick=async(ms)=>{const end=now+ms;await flush();for(;;){const due=[...timers].filter(([,v])=>v.at<=end).sort((a,b)=>a[1].at-b[1].at)[0];if(!due)break;now=due[1].at;timers.delete(due[0]);due[1].fn();await flush()}now=end;await flush()};
   const frame=(socket,data)=>socket.onmessage?.({data:JSON.stringify(data)});
-  return {client,sockets,tick,frame};
+  return {client,sockets,tick,frame,states};
 }
 test('M3 waits for catch-up, coalesces invalidations, and does not poll a healthy socket',async()=>{
   let release,calls=0;const f=fixture(async()=>{calls++;if(calls===1)await new Promise(r=>release=r)});
@@ -72,6 +73,31 @@ test('M3 terminal ticket failures stop reconnect and fallback polling',async()=>
 });
 test('M3 ignores old connection messages after logout or lifecycle cancellation',async()=>{
   const f=fixture();f.client.start();await f.tick(0);const socket=f.sockets[0];f.client.stop();f.frame(socket,{type:'ready'});await f.tick(60000);assert.equal(f.client.ready,false);assert.equal(f.sockets.length,1);
+});
+test('M3 stops unbounded reconnect on a permanent transport failure and keeps the snapshot poll alive',async()=>{
+  let reconciles=0;
+  const f=fixture(async()=>{reconciles++});
+  f.client.start();await f.tick(0);
+  // WS 升级始终失败(后端不可达 / 握手被拦):每个 socket 立刻 onerror。
+  // 没有上限时这里会无限重连,状态永久停在「正在重连」且运维面拿不到任何原因。
+  for(let i=0;i<12;i++){
+    const socket=f.sockets[f.sockets.length-1];
+    if(!socket)break;
+    socket.onopen();socket.onerror();await f.tick(65000);
+  }
+  assert.ok(f.sockets.length<=8,`permanent failure must bound reconnect attempts, opened ${f.sockets.length}`);
+  assert.equal(f.client.ready,false);
+  const exhausted=f.states.filter((row)=>row.reason);
+  assert.equal(exhausted.length,1,'exhaustion must be reported exactly once with an actionable reason');
+  assert.equal(exhausted[0].terminal,false,'a transport outage is degraded, not an auth-terminal stop');
+  assert.equal(exhausted[0].reason,'实时通道连接失败');
+  const beforeRetry=reconciles;
+  await f.tick(15000);
+  assert.ok(reconciles>beforeRetry,'degraded mode must keep the five-second snapshot poll running');
+  const before=f.sockets.length;
+  f.client.retry();await f.tick(0);
+  assert.ok(f.sockets.length>before,'manual retry must reopen a connection attempt');
+  f.client.stop();
 });
 test('M3 binding acquires a one-time ticket and observes auth and page visibility boundaries',()=>{
   const hook=fs.readFileSync(new URL('../lib/admin/use-conversation-stream.ts',import.meta.url),'utf8');
