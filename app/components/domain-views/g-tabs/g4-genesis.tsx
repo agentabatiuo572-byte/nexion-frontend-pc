@@ -65,6 +65,7 @@ function catalogBlockText(reason: string) {
   const labels: Record<string, string> = {
     GENESIS_CATALOG_UNAVAILABLE: "Genesis 配置状态不可用",
     GENESIS_SERIES_UNAVAILABLE: "未找到有效 ACTIVE 系列",
+    GENESIS_SERIES_RECOVERY_REQUIRED: "检测到历史持仓，但缺少可匹配的 ACTIVE 系列",
     GENESIS_ACTIVE_SERIES_AMBIGUOUS: "检测到多个 ACTIVE 系列",
     GENESIS_SERIES_INVALID: "ACTIVE 系列的总量或基础报价无效",
     GENESIS_TIERS_UNAVAILABLE: "未配置有效报价档位",
@@ -309,37 +310,24 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   };
 
   const initializeSeries = () => {
-    if (!overview.seriesSetupRequired || !allowed("finprod_g4_write")) return;
+    if (!overview.seriesInitializationAvailable || !allowed("finprod_g4_write")) return;
     openActionConfirm({
       action: "初始化并发布 Genesis ACTIVE 系列",
-      detail: <>总量与首档报价由当前有效阶梯档位派生，避免重复维护。发布后市场保持暂未开放，需再次核验后手动开放。</>,
+      detail: <>总量与首档报价由当前有效阶梯档位派生。版税、每日排放率与排放公式固定以零值初始化；后续调整必须分别通过专用权限、上限、B1 预检及 PM/财务决议门禁。发布后市场保持暂未开放，需再次核验后手动开放。</>,
       // Initializing the catalog does not start sales or create a payout. The
       // backend forces the market closed and requires a separate reviewed open.
       amplifies: false,
       businessForm: { kind: "multi-field", title: "ACTIVE 系列资料", fields: [
         { key: "seriesCode", label: "系列编码", current: "", inputKind: "text", required: true },
         { key: "name", label: "系列名称", current: "", inputKind: "text", required: true },
-        { key: "royaltyBps", label: "二级版税（基点，100 = 1%）", current: "0", inputKind: "number", min: 0, max: 10000, step: 1, required: true },
-        { key: "dailyEmissionRatePct", label: "每日排放率（%）", current: "0", inputKind: "number", min: 0, max: 100, step: 0.000001, required: true },
-        { key: "dividendBaseFormula", label: "排放基数公式", current: "", inputKind: "text", required: false },
       ] },
       run: async (reason, _value, businessValue) => {
         const seriesCode = businessValue?.seriesCode?.trim() ?? "";
         const name = businessValue?.name?.trim() ?? "";
-        const royaltyBps = Number(businessValue?.royaltyBps);
-        const dailyEmissionRatePct = Number(businessValue?.dailyEmissionRatePct);
-        if (!seriesCode || !name || !Number.isInteger(royaltyBps)
-          || royaltyBps < 0 || royaltyBps > 10000
-          || !Number.isFinite(dailyEmissionRatePct)
-          || dailyEmissionRatePct < 0 || dailyEmissionRatePct > 100) {
-          throw new Error("系列编码、名称、版税或每日排放率不合法");
-        }
+        if (!seriesCode || !name) throw new Error("系列编码和名称不能为空");
         await mutate("series:initialize", () => initializeG4GenesisSeries({
           seriesCode,
           name,
-          royaltyBps,
-          dailyEmissionRatePct,
-          dividendBaseFormula: businessValue?.dividendBaseFormula?.trim() ?? "",
           reason,
           operator: OPERATOR(),
         }), "Genesis ACTIVE 系列已初始化；市场保持暂未开放，请复核后手动开放");
@@ -396,19 +384,23 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   };
 
   const addTier = () => {
-    if (!canPriceTiers || !tiers || tiers.length === 0) return;
-    const lastTier = tiers[tiers.length - 1];
+    if (!canPriceTiers || !tiers) return;
+    const firstTier = tiers.length === 0;
+    const lastTier = firstTier ? null : tiers[tiers.length - 1];
+    const rangeFrom = lastTier?.to ?? 0;
     openActionConfirm({
-      action: "增开创世档位",
-      detail: <>在末档 <b>{lastTier.id}</b>(截止 {fmtInt(lastTier.to)})之后追加新档:起始固定 = {fmtInt(lastTier.to)}(服务端派生保持连续),档号由服务端分配,扩大总供应。<b>扩大供应会放大远期排放负债</b>,服务端按 B1 覆盖率预检(当前 {cov}%),越线整单拒绝。新档单价通常应 ≥ 末档 ${fmtInt(lastTier.priceUSDT)}(售罄跳价方向);只影响未来供应。</>,
-      amplifies: overview.coverage.redlineBreached,
-      businessForm: { kind: "multi-field", title: "新档位", hint: `起始固定 = ${fmtInt(lastTier.to)}(上档截止);截止与单价均为整数。`, fields: [
-        { key: "to", label: "截止(累计售出上界)", inputKind: "number", min: lastTier.to + 1, step: 1, required: true },
+      action: firstTier ? "创建 Genesis 首档报价" : "增开创世档位",
+      detail: firstTier
+        ? <>创建首档 [0, 截止) 与首档报价，为系列初始化提供权威总量和基础报价。此操作不创建 ACTIVE 系列、不开放市场，也不产生持仓或排放；历史持仓存在时服务端会拒绝，必须先完成受控恢复。</>
+        : <>在末档 <b>{lastTier!.id}</b>(截止 {fmtInt(lastTier!.to)})之后追加新档:起始固定 = {fmtInt(lastTier!.to)}(服务端派生保持连续),档号由服务端分配,扩大总供应。<b>扩大供应会放大远期排放负债</b>,服务端按 B1 覆盖率预检(当前 {cov}%),越线整单拒绝。新档单价通常应 ≥ 末档 ${fmtInt(lastTier!.priceUSDT)}(售罄跳价方向);只影响未来供应。</>,
+      amplifies: firstTier ? false : overview.coverage.redlineBreached,
+      businessForm: { kind: "multi-field", title: firstTier ? "首档报价" : "新档位", hint: `起始固定 = ${fmtInt(rangeFrom)}${firstTier ? "" : "(上档截止)"};截止与单价均为整数。`, fields: [
+        { key: "to", label: "截止(累计售出上界)", inputKind: "number", min: rangeFrom + 1, step: 1, required: true },
         { key: "priceUSDT", label: "单价(USDT)", inputKind: "number", min: 1, step: 1, required: true },
       ] },
       run: async (reason, _value, businessValue) => {
         const { to, priceUSDT } = requireTierInts(businessValue);
-        await mutate("tier:create", () => createG4GenesisTier(to, priceUSDT, overview.tiersVersion, reason, OPERATOR()), `已增开新档 · [${fmtInt(lastTier.to)}, ${fmtInt(to)}) · $${fmtInt(priceUSDT)}`);
+        await mutate("tier:create", () => createG4GenesisTier(to, priceUSDT, overview.tiersVersion, reason, OPERATOR()), `${firstTier ? "已创建首档" : "已增开新档"} · [${fmtInt(rangeFrom)}, ${fmtInt(to)}) · $${fmtInt(priceUSDT)}`);
       },
     });
   };
@@ -464,9 +456,19 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
       {error && <div className="gtint" style={{ marginBottom: 12 }}>G4 操作提示 · {error}</div>}
       {!overview.catalogAvailable && <div className="gtint" role="status" style={{ marginBottom: 12 }}>
         <b>G4 配置前置未就绪</b>：{catalogBlockText(overview.tradeBlockedReason)}。市场已按不可交易处理；
-        {overview.seriesSetupRequired ? " 当前没有有效 ACTIVE 系列，可由已有阶梯档位派生总量与首档报价后初始化。" : " 请先修复系列与阶梯档位的一致性。"}
-        {overview.seriesSetupRequired && allowed("finprod_g4_write") && (
+        {overview.seriesRecoveryRequired
+          ? " 历史持仓禁止覆盖初始化。请由数据负责人按持仓 series_code 恢复原系列，在事务内核对持仓归属、系列总量与档位覆盖后，再单独复核开放市场。"
+          : overview.seriesInitializationAvailable
+            ? " 当前没有有效 ACTIVE 系列，可由已有阶梯档位派生总量与首档报价后初始化。"
+            : overview.seriesSetupRequired && overview.tradeBlockedReason === "GENESIS_TIERS_UNAVAILABLE"
+              ? " 当前还没有报价档位；先创建 [0, 截止) 首档，随后才能初始化系列。"
+              : " 请先修复系列与阶梯档位的一致性；当前状态不允许初始化。"}
+        {overview.seriesInitializationAvailable && allowed("finprod_g4_write") && (
           <button className="l-btn sm mc" style={{ marginLeft: 10 }} disabled={busy} onClick={initializeSeries}>初始化并发布系列</button>
+        )}
+        {overview.seriesSetupRequired && !overview.seriesRecoveryRequired
+          && overview.tradeBlockedReason === "GENESIS_TIERS_UNAVAILABLE" && canPriceTiers && tiers && (
+          <button className="l-btn sm mc" style={{ marginLeft: 10 }} disabled={busy} onClick={addTier}>创建首档报价</button>
         )}
       </div>}
       <div className="f-stats">
@@ -569,7 +571,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
           <span className="ttl">阶梯档位定价</span>
           <span className="sub">· 累计售出落 [起始, 截止) 决定当前档单价 · 售罄硬跳价 · 服务端权威校验</span>
           {tiers && canPriceTiers && (
-            <div className="r"><button className="l-btn sm mc" disabled={busy} onClick={addTier}>+ 增开档位</button></div>
+            <div className="r"><button className="l-btn sm mc" disabled={busy} onClick={addTier}>{tiers.length === 0 ? "+ 创建首档报价" : "+ 增开档位"}</button></div>
           )}
         </div>
         {tiers ? (

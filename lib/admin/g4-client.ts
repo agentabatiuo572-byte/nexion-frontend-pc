@@ -65,6 +65,8 @@ interface BackendMarket {
   configuredMarketOpenState?: string | null;
   prerequisiteStatus?: string | null;
   seriesSetupRequired?: boolean | string | null;
+  seriesInitializationAvailable?: boolean | string | null;
+  seriesRecoveryRequired?: boolean | string | null;
 }
 
 interface BackendGeoBlocked {
@@ -145,6 +147,8 @@ interface BackendOverview {
   tradeAvailable?: boolean | string | null;
   tradeBlockedReason?: string | null;
   seriesSetupRequired?: boolean | string | null;
+  seriesInitializationAvailable?: boolean | string | null;
+  seriesRecoveryRequired?: boolean | string | null;
   serverCanonical?: boolean | null;
   sources?: string[] | null;
 }
@@ -209,6 +213,8 @@ export interface G4Market {
   configuredMarketOpenState: "open" | "closed";
   prerequisiteStatus: string;
   seriesSetupRequired: boolean;
+  seriesInitializationAvailable: boolean;
+  seriesRecoveryRequired: boolean;
 }
 
 export interface G4GeoBlocked {
@@ -326,6 +332,8 @@ export interface G4Overview {
   tradeAvailable: boolean;
   tradeBlockedReason: string;
   seriesSetupRequired: boolean;
+  seriesInitializationAvailable: boolean;
+  seriesRecoveryRequired: boolean;
   serverCanonical: boolean;
   sources: string[];
 }
@@ -370,7 +378,11 @@ function asText(value: unknown, fallback = "-") {
  *  留样本 —— 只做字段级校验会让「显示取整、编辑拒存」三处契约互相矛盾,且对乱序/重叠档渲染
  *  假的「顺移」声明。 */
 function normalizeTiers(value: BackendTier[] | null | undefined, sold: number): G4Tier[] | null {
-  if (!Array.isArray(value) || value.length === 0) return null;
+  if (!Array.isArray(value)) return null;
+  // An explicit empty array is a valid, recoverable catalog state. Preserve it
+  // so the operator can create the first [0, to) tier. Null stays reserved for
+  // an absent or malformed payload, where writes remain disabled.
+  if (value.length === 0) return [];
   const reject = (why: string): null => {
     console.error(`[G4] tiers 契约坏形(${why}),整组 fail-closed`, value);
     return null;
@@ -491,6 +503,8 @@ function normalizeOverview(data: BackendOverview | null | undefined): G4Overview
       configuredMarketOpenState: asText(market.configuredMarketOpenState, "closed") === "open" ? "open" : "closed",
       prerequisiteStatus: asText(market.prerequisiteStatus, "GENESIS_CATALOG_UNAVAILABLE"),
       seriesSetupRequired: toBool(market.seriesSetupRequired, false),
+      seriesInitializationAvailable: toBool(market.seriesInitializationAvailable, false),
+      seriesRecoveryRequired: toBool(market.seriesRecoveryRequired, false),
     },
     geoBlocked: (data?.geoBlocked ?? []).map((geo) => ({
       cc: asText(geo.cc),
@@ -515,6 +529,8 @@ function normalizeOverview(data: BackendOverview | null | undefined): G4Overview
     tradeAvailable: toBool(data?.tradeAvailable, false),
     tradeBlockedReason: asText(data?.tradeBlockedReason, "GENESIS_CATALOG_UNAVAILABLE"),
     seriesSetupRequired: toBool(data?.seriesSetupRequired, false),
+    seriesInitializationAvailable: toBool(data?.seriesInitializationAvailable, false),
+    seriesRecoveryRequired: toBool(data?.seriesRecoveryRequired, false),
     coverage: {
       coverageRatio: toNumber(coverage.coverageRatio),
       redlinePct: toNumber(coverage.redlinePct),
@@ -661,9 +677,6 @@ export async function updateG4GenesisMarketOpenState(
 export async function initializeG4GenesisSeries(input: {
   seriesCode: string;
   name: string;
-  royaltyBps: number;
-  dailyEmissionRatePct: number;
-  dividendBaseFormula: string;
   reason: string;
   operator: string;
 }) {
