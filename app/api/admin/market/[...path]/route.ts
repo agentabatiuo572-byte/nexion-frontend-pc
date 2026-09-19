@@ -92,6 +92,12 @@ function backendPath(parts: string[]) {
     return "/api/admin/market/nex/genesis/tiers";
   }
   if (
+    parts.length === 4 && parts[0] === "nex" && parts[1] === "genesis" &&
+    parts[2] === "series" && parts[3] === "initialize"
+  ) {
+    return "/api/admin/market/nex/genesis/series/initialize";
+  }
+  if (
     parts.length === 4 && parts[0] === "nex" && parts[1] === "genesis" && parts[2] === "tiers" &&
     isNonEmpty(parts[3])
   ) {

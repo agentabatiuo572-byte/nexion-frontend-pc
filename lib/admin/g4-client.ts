@@ -62,6 +62,9 @@ interface BackendMarket {
   closedNoticeKey?: string | null;
   /** 最近一次市场状态变更摘要(来自服务端审计,如「08-05 14:02 ops-lin 开放→暂未开放:节奏调控」)。 */
   marketLastChange?: string | null;
+  configuredMarketOpenState?: string | null;
+  prerequisiteStatus?: string | null;
+  seriesSetupRequired?: boolean | string | null;
 }
 
 interface BackendGeoBlocked {
@@ -138,6 +141,10 @@ interface BackendOverview {
   tiers?: BackendTier[] | null;
   /** 档表整表版本(区间耦合结构,任一行增删改都递增):三个档位 mutation 以它做 CAS。 */
   tiersVersion?: RawNumber;
+  catalogAvailable?: boolean | string | null;
+  tradeAvailable?: boolean | string | null;
+  tradeBlockedReason?: string | null;
+  seriesSetupRequired?: boolean | string | null;
   serverCanonical?: boolean | null;
   sources?: string[] | null;
 }
@@ -199,6 +206,9 @@ export interface G4Market {
   /** 最近一次市场状态变更摘要(规格 ②/⑤「当前状态 + 最近变更信息」;J1/J2/A3 同款成例)。
    *  空串 = 服务端尚无记录。 */
   lastChange: string;
+  configuredMarketOpenState: "open" | "closed";
+  prerequisiteStatus: string;
+  seriesSetupRequired: boolean;
 }
 
 export interface G4GeoBlocked {
@@ -312,6 +322,10 @@ export interface G4Overview {
   /** 档表整表版本:提交增/编/删时作为 expectedTiersVersion 回传,服务端 CAS 拒绝过期提交
    *  (幂等键只防重复,防不了两运营基于旧档表并发互踩 —— 区间耦合结构必须 CAS)。 */
   tiersVersion: number;
+  catalogAvailable: boolean;
+  tradeAvailable: boolean;
+  tradeBlockedReason: string;
+  seriesSetupRequired: boolean;
   serverCanonical: boolean;
   sources: string[];
 }
@@ -474,6 +488,9 @@ function normalizeOverview(data: BackendOverview | null | undefined): G4Overview
       marketOpenStateVersion: Math.max(0, Math.trunc(toNumber(market.marketOpenStateVersion, 0))),
       closedNoticeKey: asText(market.closedNoticeKey, "default"),
       lastChange: asText(market.marketLastChange, ""),
+      configuredMarketOpenState: asText(market.configuredMarketOpenState, "closed") === "open" ? "open" : "closed",
+      prerequisiteStatus: asText(market.prerequisiteStatus, "GENESIS_CATALOG_UNAVAILABLE"),
+      seriesSetupRequired: toBool(market.seriesSetupRequired, false),
     },
     geoBlocked: (data?.geoBlocked ?? []).map((geo) => ({
       cc: asText(geo.cc),
@@ -494,6 +511,10 @@ function normalizeOverview(data: BackendOverview | null | undefined): G4Overview
     tiers,
     tierPrice: deriveG4TierPrice(tiers, sold, totalSlots, tierPayloadPresent),
     tiersVersion: Math.max(0, Math.trunc(toNumber(data?.tiersVersion, 0))),
+    catalogAvailable: toBool(data?.catalogAvailable, false),
+    tradeAvailable: toBool(data?.tradeAvailable, false),
+    tradeBlockedReason: asText(data?.tradeBlockedReason, "GENESIS_CATALOG_UNAVAILABLE"),
+    seriesSetupRequired: toBool(data?.seriesSetupRequired, false),
     coverage: {
       coverageRatio: toNumber(coverage.coverageRatio),
       redlinePct: toNumber(coverage.redlinePct),
@@ -634,6 +655,23 @@ export async function updateG4GenesisMarketOpenState(
     "PATCH",
     { value: status, reason, operator, noticeKey, expectedMarketOpenStateVersion },
     "g4-market-open-state",
+  );
+}
+
+export async function initializeG4GenesisSeries(input: {
+  seriesCode: string;
+  name: string;
+  royaltyBps: number;
+  dailyEmissionRatePct: number;
+  dividendBaseFormula: string;
+  reason: string;
+  operator: string;
+}) {
+  return g4OverviewMutation(
+    "/nex/genesis/series/initialize",
+    "POST",
+    input,
+    "g4-series-initialize",
   );
 }
 

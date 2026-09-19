@@ -12,6 +12,7 @@ import {
   createG4GenesisTier,
   deleteG4GenesisTier,
   fetchG4GenesisOverview,
+  initializeG4GenesisSeries,
   rerunG4GenesisDividendBatch,
   updateG4GenesisMarketStatus,
   updateG4GenesisMarketOpenState,
@@ -58,6 +59,21 @@ function paramEditValue(param: G4Param) {
 
 function paramByKey(overview: G4Overview, key: string) {
   return overview.params.find((param) => param.key === key);
+}
+
+function catalogBlockText(reason: string) {
+  const labels: Record<string, string> = {
+    GENESIS_CATALOG_UNAVAILABLE: "Genesis 配置状态不可用",
+    GENESIS_SERIES_UNAVAILABLE: "未找到有效 ACTIVE 系列",
+    GENESIS_ACTIVE_SERIES_AMBIGUOUS: "检测到多个 ACTIVE 系列",
+    GENESIS_SERIES_INVALID: "ACTIVE 系列的总量或基础报价无效",
+    GENESIS_TIERS_UNAVAILABLE: "未配置有效报价档位",
+    GENESIS_TIERS_INVALID: "报价档位不连续或价格无效",
+    GENESIS_TIERS_BELOW_SOLD: "报价档位总量低于已售数量",
+    GENESIS_TIERS_SUPPLY_MISMATCH: "报价档位总量与 ACTIVE 系列总量不一致",
+    GENESIS_TIER_QUOTE_UNAVAILABLE: "当前已售位置没有可用报价档位",
+  };
+  return labels[reason] ?? "Genesis 系列或报价前置未通过校验";
 }
 
 export function G4Genesis({ ctx }: { ctx: GCtx }) {
@@ -246,6 +262,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   const runMarketOpenState = () => {
     if (!allowed("finprod_g4_market_toggle")) return;
     const next: "open" | "closed" = marketClosed ? "open" : "closed";
+    if (next === "open" && !overview.catalogAvailable) return;
     openActionConfirm({
       action: next === "closed" ? "创世市场设为「暂未开放」" : "恢复创世市场开放",
       detail: next === "closed"
@@ -287,6 +304,45 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
           ),
           next === "closed" ? "创世市场已设为暂未开放;前端仍可浏览,购买已锁" : "创世市场已恢复开放",
         );
+      },
+    });
+  };
+
+  const initializeSeries = () => {
+    if (!overview.seriesSetupRequired || !allowed("finprod_g4_write")) return;
+    openActionConfirm({
+      action: "初始化并发布 Genesis ACTIVE 系列",
+      detail: <>总量与首档报价由当前有效阶梯档位派生，避免重复维护。发布后市场保持暂未开放，需再次核验后手动开放。</>,
+      // Initializing the catalog does not start sales or create a payout. The
+      // backend forces the market closed and requires a separate reviewed open.
+      amplifies: false,
+      businessForm: { kind: "multi-field", title: "ACTIVE 系列资料", fields: [
+        { key: "seriesCode", label: "系列编码", current: "", inputKind: "text", required: true },
+        { key: "name", label: "系列名称", current: "", inputKind: "text", required: true },
+        { key: "royaltyBps", label: "二级版税（基点，100 = 1%）", current: "0", inputKind: "number", min: 0, max: 10000, step: 1, required: true },
+        { key: "dailyEmissionRatePct", label: "每日排放率（%）", current: "0", inputKind: "number", min: 0, max: 100, step: 0.000001, required: true },
+        { key: "dividendBaseFormula", label: "排放基数公式", current: "", inputKind: "text", required: false },
+      ] },
+      run: async (reason, _value, businessValue) => {
+        const seriesCode = businessValue?.seriesCode?.trim() ?? "";
+        const name = businessValue?.name?.trim() ?? "";
+        const royaltyBps = Number(businessValue?.royaltyBps);
+        const dailyEmissionRatePct = Number(businessValue?.dailyEmissionRatePct);
+        if (!seriesCode || !name || !Number.isInteger(royaltyBps)
+          || royaltyBps < 0 || royaltyBps > 10000
+          || !Number.isFinite(dailyEmissionRatePct)
+          || dailyEmissionRatePct < 0 || dailyEmissionRatePct > 100) {
+          throw new Error("系列编码、名称、版税或每日排放率不合法");
+        }
+        await mutate("series:initialize", () => initializeG4GenesisSeries({
+          seriesCode,
+          name,
+          royaltyBps,
+          dailyEmissionRatePct,
+          dividendBaseFormula: businessValue?.dividendBaseFormula?.trim() ?? "",
+          reason,
+          operator: OPERATOR(),
+        }), "Genesis ACTIVE 系列已初始化；市场保持暂未开放，请复核后手动开放");
       },
     });
   };
@@ -406,9 +462,12 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   return (
     <>
       {error && <div className="gtint" style={{ marginBottom: 12 }}>G4 操作提示 · {error}</div>}
-      {!(stats.totalSlots > 0) && <div className="gtint" role="status" style={{ marginBottom: 12 }}>
-        G4 配置前置未就绪：未取得有效创世系列总量。请核验未删除的 ACTIVE 系列及正式配置发布记录；
-        市场开关开放不代表认购可用。调整市场开关或价格档不会创建系列，当前页面不提供系列初始化。
+      {!overview.catalogAvailable && <div className="gtint" role="status" style={{ marginBottom: 12 }}>
+        <b>G4 配置前置未就绪</b>：{catalogBlockText(overview.tradeBlockedReason)}。市场已按不可交易处理；
+        {overview.seriesSetupRequired ? " 当前没有有效 ACTIVE 系列，可由已有阶梯档位派生总量与首档报价后初始化。" : " 请先修复系列与阶梯档位的一致性。"}
+        {overview.seriesSetupRequired && allowed("finprod_g4_write") && (
+          <button className="l-btn sm mc" style={{ marginLeft: 10 }} disabled={busy} onClick={initializeSeries}>初始化并发布系列</button>
+        )}
       </div>}
       <div className="f-stats">
         <div className="f-stat ok"><div className="k">一级售出</div><div className="v">{fmtNumber(stats.sold, 0)} / {fmtNumber(stats.totalSlots, 0)}</div><div className="sub">{tierPriceText}{overview.tierPrice.status === "active" ? " / 张 · " : " · "}{tierPriceNote}</div></div>
@@ -476,7 +535,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
               {/* 市场状态开关(FEAT-GEN10b):双向可切,两个方向都走确认 + 理由 + 审计。
                   与右侧熔断按钮并列摆放,让运营看得出这是两个独立动作。 */}
               {allowed("finprod_g4_market_toggle") && (
-                <button className="l-btn mc" disabled={busy} onClick={runMarketOpenState}>
+                <button className="l-btn mc" disabled={busy || (marketClosed && !overview.catalogAvailable)} onClick={runMarketOpenState}>
                   {marketClosed ? "恢复市场开放" : "设为暂未开放"}
                 </button>
               )}
