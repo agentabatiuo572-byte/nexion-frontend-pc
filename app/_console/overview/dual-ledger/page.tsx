@@ -177,12 +177,18 @@ export default function DualLedgerPage() {
   const redlinePos = round2((effRedline / SCALE_MAX) * 100);
   const healthyPos = round2((healthyPct / SCALE_MAX) * 100);
 
+  // 覆盖率与红线/健康线的关系必须三分(zentao #169):数值**等于**红线时既不是「高于」也没有缓冲,
+  // 与 #68 在 J1 修过的是同一类缺陷 —— 二分写法把「等于」归进「高于」,于是 100% 对 100% 会报
+  // 「高于红线 +0.0pct」。等于时明说「触及红线 / 缓冲 0.0pct」。
+  const bufferPct = round2(coverageRatio - effRedline);
   const refTail =
     zone === "danger"
       ? `已跌破红线 ${(effRedline - coverageRatio).toFixed(1)}pct`
-      : zone === "warning"
-        ? `当前高于红线 +${(coverageRatio - effRedline).toFixed(1)}pct,但已跌破健康线`
-        : `高于健康线 +${(coverageRatio - healthyPct).toFixed(1)}pct`;
+      : bufferPct === 0
+        ? "触及红线 · 缓冲 0.0pct"
+        : zone === "warning"
+          ? `当前高于红线 +${bufferPct.toFixed(1)}pct,但已跌破健康线`
+          : `高于健康线 +${round2(coverageRatio - healthyPct).toFixed(1)}pct`;
 
   // 触红线预测:由近 8 窗口斜率外推(真实趋势,非装饰)
   const slope =
@@ -433,7 +439,9 @@ export default function DualLedgerPage() {
             </div>
             <div className="lr-bar"><div className="f" style={{ width: `${round2(Math.min(coverageRatio, 100))}%`, background: "var(--success)" }} /></div>
             <div className="muted tiny" style={{ marginTop: 7 }}>
-              储备覆盖应付的 <b style={{ color: "var(--warning)", fontWeight: 600 }}>{fmtPct(coverageRatio)}</b>(超 100% 已现盈余)→ 即当前兑付覆盖率
+              储备覆盖应付的 <b style={{ color: "var(--warning)", fontWeight: 600 }}>{fmtPct(coverageRatio)}</b>
+              {/* 「超 100% 已现盈余」只在严格大于 100% 时成立;等于 100% 是刚好覆盖、无盈余(zentao #169)。 */}
+              {round2(coverageRatio - 100) > 0 ? "(超 100% 已现盈余)" : round2(coverageRatio - 100) === 0 ? "(刚好覆盖 · 无盈余)" : "(未达 100% · 覆盖不足)"}→ 即当前兑付覆盖率
             </div>
           </div>
 
@@ -446,8 +454,9 @@ export default function DualLedgerPage() {
               {netExposure < 0 ? "−" : ""}{fmtUsd(Math.abs(netExposure))}
             </div>
             <div className="net-tags">
-              <span className="gap-tag" style={{ color: netExposure < 0 ? "var(--danger)" : "var(--success)" }}>
-                <TrendingDown size={13} /> {netExposure < 0 ? "缺口" : "盈余"}
+              {/* 敞口为 0 时既不是缺口也不是盈余,是持平(zentao #169):旧写法把 0 归进「盈余」。 */}
+              <span className="gap-tag" style={{ color: netExposure < 0 ? "var(--danger)" : netExposure > 0 ? "var(--success)" : "var(--v5-ink-3)" }}>
+                <TrendingDown size={13} /> {netExposure < 0 ? "缺口" : netExposure > 0 ? "盈余" : "持平 · 无盈余无缺口"}
               </span>
               <span className="muted">覆盖差额 · {fmtUsdCompact(reserveUsd)} − {fmtUsdCompact(liabilitiesUsd)}</span>
             </div>

@@ -43,3 +43,19 @@ test("B1 mutations preserve one command idempotency key across result-unknown re
   assert.match(dClient, /updateD3Thresholds\([\s\S]*idempotencyKey\?: string[\s\S]*idempotencyKey,/);
   assert.match(bClient, /acknowledgeBDomainAlert\([\s\S]*idempotencyKey\?: string[\s\S]*idempotencyKey \|\| nextId/);
 });
+
+test("B1 states equality with the red line and a zero exposure as neutral, never as headroom", () => {
+  // A value that merely EQUALS the red line has zero buffer, and a zero net exposure is
+  // neither a gap nor a surplus. Reporting either as "above"/"surplus" is the defect this
+  // pins; the same two-way mistake was fixed in J1 (zentao #68) and reappeared here.
+  assert.match(page, /bufferPct\s*=\s*round2\(coverageRatio - effRedline\)/);
+  assert.match(page, /bufferPct === 0[\s\S]*?触及红线 · 缓冲 0\.0pct/);
+  // The surplus claim must be gated on strictly exceeding 100%.
+  assert.match(page, /round2\(coverageRatio - 100\) > 0 \? "\(超 100% 已现盈余\)"/);
+  assert.match(page, /round2\(coverageRatio - 100\) === 0 \? "\(刚好覆盖 · 无盈余\)"/);
+  // Net exposure: negative is a gap, positive is a surplus, zero is level.
+  assert.match(page, /netExposure < 0 \? "缺口" : netExposure > 0 \? "盈余" : "持平 · 无盈余无缺口"/);
+  // Neither branch may fall back to the old two-way copy.
+  assert.doesNotMatch(page, /\(超 100% 已现盈余\)→ 即当前兑付覆盖率/);
+  assert.doesNotMatch(page, /netExposure < 0 \? "缺口" : "盈余"/);
+});
