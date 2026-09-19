@@ -55,6 +55,8 @@ interface BackendSku {
   productType: "SERVER" | "DEVICE" | "SHARE";
   inventoryMode: "FINITE" | "UNLIMITED";
   trialEligible: boolean;
+  publishBlocked: boolean;
+  publishBlockReason?: "PRODUCT_TEST_IDENTIFIER" | "PRODUCT_NO_EFFECTIVE_EARNINGS" | null;
   stock?: string | null;
   aiImageGenPerMin?: number | null;
   aiLlmTokensPerSec?: number | null;
@@ -238,7 +240,11 @@ function fromSku(sku: BackendSku): OpsSku {
       || !["FINITE", "UNLIMITED"].includes(sku.inventoryMode)
       || (sku.inventoryMode === "UNLIMITED" && (sku.productType !== "SHARE" || sku.stock != null))
       || (sku.inventoryMode === "FINITE" && !finiteStockValid)
-      || typeof sku.trialEligible !== "boolean") {
+      || typeof sku.trialEligible !== "boolean"
+      || typeof sku.publishBlocked !== "boolean"
+      || (sku.publishBlocked && (sku.publishBlockReason !== "PRODUCT_TEST_IDENTIFIER"
+            && sku.publishBlockReason !== "PRODUCT_NO_EFFECTIVE_EARNINGS"))
+      || (!sku.publishBlocked && sku.publishBlockReason != null)) {
     throw new Error("E1_SKU_INVENTORY_CONTRACT_INVALID");
   }
   const inventoryMode = sku.inventoryMode;
@@ -269,6 +275,8 @@ function fromSku(sku: BackendSku): OpsSku {
     inventoryMode,
     stock,
     trialEligible: sku.trialEligible,
+    publishBlocked: sku.publishBlocked,
+    publishBlockReason: sku.publishBlocked ? sku.publishBlockReason ?? undefined : undefined,
     aiImageGenPerMin: sku.aiImageGenPerMin ?? undefined,
     aiLlmTokensPerSec: sku.aiLlmTokensPerSec ?? undefined,
     aiVideoMinPerHour: sku.aiVideoMinPerHour ?? undefined,

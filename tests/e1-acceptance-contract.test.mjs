@@ -114,7 +114,9 @@ test("E1 release schedule presents the effective month as the primary date", () 
 
 test("E1 blocks every off-SKU whose backend-authoritative release state is not open", () => {
   assert.match(catalog, /const listingBlocked = st !== "on" && !open/);
-  assert.match(catalog, /disabled=\{listingBlocked\}/);
+  // The listing action is also refused for rows the server publish gate withholds
+  // from the App catalogue, so the disable binding carries both reasons.
+  assert.match(catalog, /disabled=\{listingBlocked \|\| s\.publishBlocked\}/);
   assert.doesNotMatch(catalog, /disabled=\{st !== "on" && !!releaseState && !releaseState\.unlocked\}/);
 });
 

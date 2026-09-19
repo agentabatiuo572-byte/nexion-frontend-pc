@@ -55,6 +55,9 @@ export interface OpsSku {
   stock?: string | number;
   /** E1-owned opt-in; only marked physical products may be selected by H2. */
   trialEligible?: boolean;
+  /** 服务端发布门结论:true 表示该行不会进入 App 用户目录(测试标识或无有效收益)。 */
+  publishBlocked?: boolean;
+  publishBlockReason?: "PRODUCT_TEST_IDENTIFIER" | "PRODUCT_NO_EFFECTIVE_EARNINGS";
   aiImageGenPerMin?: number;
   aiLlmTokensPerSec?: number;
   aiVideoMinPerHour?: number;
