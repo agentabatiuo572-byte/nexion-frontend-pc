@@ -282,7 +282,10 @@ const CHECKER_ONLY = [
   "finance_d2_withdrawal_approve",
   "network_f4_ambassador_approve",
   "bi_l5_task_approve",
-  "bi_l5_decrypt_export",
+  // bi_l5_decrypt_export is deliberately absent: plaintext PII export is
+  // permanently blocked server-side, so the permission is retired and no role
+  // may be granted it. Granting it here would fail permission-dictionary
+  // validation against the real backend.
   "device_e6_write",
 ];
 const CHECKER_REQUIRED_MUTATIONS = ["platform_a6_role_grants_update"];

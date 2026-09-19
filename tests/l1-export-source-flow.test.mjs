@@ -19,6 +19,13 @@ const settle = async () => { await new Promise(setImmediate); await new Promise(
 const text = node => Array.isArray(node) ? node.map(text).join("") : node && typeof node === "object" ? text(node.props?.children) : node == null ? "" : String(node);
 function find(node, predicate) {
   if (!node || typeof node !== "object") return undefined;
+  // A function `type` is a component the renderer has not expanded yet (the harness only
+  // invokes the page component itself). Expand it the way React would, so a wrapper such as
+  // TabGroup — whose children are a render prop — is reachable from a tree walk.
+  if (typeof node.type === "function") {
+    if (predicate(node)) return node;
+    return find(node.type(node.props), predicate);
+  }
   if (predicate(node)) return node;
   for (const child of Array.isArray(node) ? node : [node.props?.children]) { const found = find(child, predicate); if (found) return found; }
 }
@@ -45,6 +52,32 @@ function harness(dependencies = {}) {
       if (name === "react") return react;
       if (name === "react/jsx-runtime") return { jsx: element, jsxs: element, Fragment: "fragment" };
       if (name === "./live-data") return load("../app/components/domain-views/l-tabs/live-data.tsx");
+      // TabGroup is a presentation-only semantic wrapper (role=tablist/tab + roving tabindex).
+      // The harness renders presentation children as opaque elements, so give it the same
+      // button structure the real component produces: the flow under test picks a window by
+      // finding a button whose text is the label, then calling its onClick.
+      if (name.endsWith("kit/tab-group")) {
+        // The harness renders presentation children as opaque elements and calls component
+        // functions directly, so the stub must be a plain function returning the same button
+        // structure the real component produces (a <button> whose text is the label).
+        return {
+          TabGroup: (props) => {
+            const { items, value, onSelect, children, className, label, labelClassName } = props;
+            const buttons = items.map(item => element("button", {
+              type: "button",
+              role: "tab",
+              "aria-selected": item === value,
+              onClick: () => onSelect(item),
+              children: children(item, item === value),
+            }));
+            return element("div", {
+              className,
+              role: "tablist",
+              children: labelClassName !== undefined && label ? [element("span", { className: labelClassName, children: label }), ...buttons] : buttons,
+            });
+          },
+        };
+      }
       if (name.endsWith("l1-kpi-contract")) return kpiContract;
       if (name.endsWith("l1-l2-live-data")) return liveTotals;
       if (name.endsWith("l1-export-contract")) return exportContract;

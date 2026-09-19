@@ -7,6 +7,7 @@
  */
 import { useEffect, useState } from "react";
 import { AutoGloss } from "@/app/components/kit/gloss";
+import { TabGroup } from "@/app/components/kit/tab-group";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { LDataState, num, rec, rows, str } from "./live-data";
 import {
@@ -25,6 +26,9 @@ import { isL5KpiExport, l5KpiRange } from "./l5-kpi-range";
 
 type ExportParam = { k: string; v: string; fixed?: boolean; cur?: string; s: string };
 type MaskRule = { f: string; cat: string; catTone: string; rule: string; ruleNote: string; dec: string; appr: string };
+
+/** 导出任务状态筛选(索引 = filter 状态值;label 同时用于按钮文本与切换 toast)。 */
+const L5_TASK_FILTERS = ["全部", "待确认", "生成中", "已就绪（含历史）"] as const;
 
 function downloadBlob(blob: Blob, fileName: string) {
   const href = URL.createObjectURL(blob);
@@ -313,11 +317,14 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         <div className="l-h">
           <span className="ttl">导出任务管理</span>
           <span className="sub">· <AutoGloss>四类聚合与 I5 监管报告统一跟踪</AutoGloss></span>
-          <div className="r"><div className="chips">
-            {["全部", "待确认", "生成中", "已就绪（含历史）"].map((c, i) => (
-              <button key={c} className={"chip" + (i === filter ? " sel" : "")} onClick={() => { setFilter(i); setTaskPageNum(1); toast(`任务列表筛选:${c}`); }}>{c}</button>
-            ))}
-          </div></div>
+          <div className="r"><TabGroup
+            className="chips"
+            label="导出任务状态筛选"
+            value={filter}
+            items={[0, 1, 2, 3]}
+            onSelect={(i) => { setFilter(i); setTaskPageNum(1); toast(`任务列表筛选:${L5_TASK_FILTERS[i]}`); }}
+            itemClassName={(_i, selected) => `chip${selected ? " sel" : ""}`}
+          >{(i) => L5_TASK_FILTERS[i]}</TabGroup></div>
         </div>
         <div className="l-b" style={{ paddingBottom: 10 }}>
           <div className="sm-strip">

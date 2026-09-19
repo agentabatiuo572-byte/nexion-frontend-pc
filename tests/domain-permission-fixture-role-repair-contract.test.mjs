@@ -33,7 +33,9 @@ test("all A-M domains use exact menu, read, and maker allowlists", () => {
   assert.match(source, /user_c3_adjust_approve/);
   assert.match(source, /finance_d2_withdrawal_approve/);
   assert.match(source, /bi_l5_task_approve/);
-  assert.match(source, /bi_l5_decrypt_export/);
+  // The retired plaintext-decrypt permission must not be granted to any fixture role:
+  // it has no callable server capability and is absent from the A8 dictionary.
+  assert.doesNotMatch(source, /"bi_l5_decrypt_export"/);
   assert.match(source, /const CHECKER_ONLY = \[[\s\S]*"device_e6_write"/);
   assert.match(source, /const CHECKER_REQUIRED_MUTATIONS = \["platform_a6_role_grants_update"\]/);
 });

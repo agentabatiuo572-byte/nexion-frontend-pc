@@ -56,7 +56,7 @@ test("L4 parses complete historical device/task/network/phase analytics without 
       dialChangeCount: phase === "P2" ? 2 : 0,
       conversionStepPct: null,
     })),
-    history: [{ bucket: "2026-07-21", devicePurchases: 1, deviceRetirements: 0, yieldUsdt: 10, tasksCompleted: 2, directRefs: 1, commissionPaidUsdt: 2 }],
+    history: [{ bucket: "2026-07-21", devicePurchases: 1, deviceRetirements: 0, yieldUsdt: 10, tasksCompleted: 7, directRefs: 1, commissionPaidUsdt: 2 }],
     quality: {
       serverCanonical: true,
       sameActorRates: true,
@@ -168,6 +168,15 @@ test("L4 rejects malformed or internally contradictory HTTP 200 analytics instea
   assert.equal(readL4Operations({
     ...valid,
     tasks: { ...valid.tasks, summary: { ...valid.tasks.summary, completed: 3 } },
+  }), null);
+  // 汇总完成量必须等于趋势各桶之和；join 不可用时不得给出承接率。
+  assert.equal(readL4Operations({
+    ...valid,
+    tasks: { ...valid.tasks, summary: { ...valid.tasks.summary, acceptanceRate: null, orderedTaskJoin: false } },
+  })?.tasks.summary.completed, 1);
+  assert.equal(readL4Operations({
+    ...valid,
+    tasks: { ...valid.tasks, summary: { ...valid.tasks.summary, acceptanceRate: 50, orderedTaskJoin: false } },
   }), null);
   assert.equal(readL4Operations({
     ...valid,

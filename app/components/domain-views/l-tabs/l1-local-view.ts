@@ -2,7 +2,7 @@ export const L1_LOCAL_VIEW_STORAGE_KEY = "nexion:l1:local-view:v1";
 export const L1_LOCAL_VIEW_MAX_BYTES = 2_048;
 
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
-type L1Window = "1d" | "7d" | "30d" | "custom";
+export type L1Window = "1d" | "7d" | "30d" | "custom";
 type L1Granularity = "week" | "month";
 
 export type L1LocalView = {

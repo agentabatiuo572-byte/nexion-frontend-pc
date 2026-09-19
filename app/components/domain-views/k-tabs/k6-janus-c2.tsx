@@ -12,6 +12,7 @@ import { K6StrategyCenter } from "./k6/strategy-center";
 import { K6AuditLog } from "./k6/audit-log";
 import { K6RemoteTargetManager } from "./k6/remote-target-manager";
 import { useJanusC2Store } from "@/lib/store/admin/janus-c2-store";
+import { TabGroup } from "@/app/components/kit/tab-group";
 
 type Tab = "dashboard" | "queue" | "strategy" | "targets" | "audit";
 
@@ -39,14 +40,17 @@ export function K6JanusC2() {
 
   return (
     <div className="k6c2">
-      <nav className="k6-tabs" aria-label="C2 控制台模块">
-        {TABS.map((t) => (
-          <button key={t.id} className={`k6-tab${tab === t.id ? " active" : ""}`} onClick={() => setTab(t.id)} aria-current={tab === t.id}>
-            <span className="k6-tab-n">{t.n}</span>
-            {t.name}
-          </button>
-        ))}
-      </nav>
+      <TabGroup<Tab>
+        className="k6-tabs"
+        label="C2 控制台模块"
+        value={tab}
+        items={TABS.map((t) => t.id)}
+        onSelect={setTab}
+        itemClassName={(id, selected) => `k6-tab${selected ? " active" : ""}`}
+      >{(id) => {
+        const entry = TABS.find((t) => t.id === id);
+        return <><span className="k6-tab-n">{entry?.n}</span>{entry?.name}</>;
+      }}</TabGroup>
 
       {tab === "dashboard" && <K6Dashboard />}
       {tab === "queue" && <K6Queue />}

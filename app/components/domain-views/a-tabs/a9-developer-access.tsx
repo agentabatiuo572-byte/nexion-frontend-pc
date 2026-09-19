@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Btn, Card, CardH, DataListPager } from "../design-kit";
+import { TabGroup } from "@/app/components/kit/tab-group";
 import {
   approveDeveloperAccess,
   fetchDeveloperAccessRequests,
@@ -79,9 +80,14 @@ export function A9DeveloperAccess() {
         <CardH title="开发者访问审批" right={<span className="mono" style={{ color: "var(--ink-3)", fontSize: 12 }}>{loading ? "同步中…" : `共 ${data?.total ?? 0} 条`}</span>} />
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
           <input aria-label="开发者访问申请搜索" placeholder="申请编号 / 公司 / 邮箱" value={keywordInput} onChange={(event) => setKeywordInput(event.target.value)} style={{ flex: "1 1 220px", padding: "8px 12px" }} />
-          {(["", "PENDING", "APPROVED", "REJECTED", "REVOKED", "EXPIRED"] as const).map((value) => (
-            <Btn key={value || "ALL"} sm onClick={() => { setStatus(value); setPage(1); }}>{value || "全部"}</Btn>
-          ))}
+          <TabGroup
+            label="开发者访问申请状态筛选"
+            value={status}
+            items={["", "PENDING", "APPROVED", "REJECTED", "REVOKED", "EXPIRED"] as const}
+            onSelect={(value) => { setStatus(value); setPage(1); }}
+            style={{ display: "flex", flexWrap: "wrap", gap: 8 }}
+            itemClassName={() => "btn sm"}
+          >{(value) => value || "全部"}</TabGroup>
         </div>
         {error && <div className="alertbar warn" role="alert" style={{ margin: 12 }}>{error} <Btn sm onClick={() => setReloadKey((value) => value + 1)}>重试</Btn></div>}
         <div style={{ overflowX: "auto" }}>

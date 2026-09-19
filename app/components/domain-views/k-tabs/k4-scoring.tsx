@@ -579,6 +579,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
                       disabled={!canModelWrite}
                       checked={edit.inputSources[dimension.dimKey]}
                       onChange={(event) => setModelDraft({ ...edit, inputSources: { ...edit.inputSources, [dimension.dimKey]: event.target.checked } })}
+                      aria-label={`${dimension.name}输入源`}
                     />
                     {edit.inputSources[dimension.dimKey] ? "输入源已启用" : "输入源已停用"}
                   </label>

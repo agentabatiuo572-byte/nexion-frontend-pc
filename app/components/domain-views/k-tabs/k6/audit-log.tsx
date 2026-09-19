@@ -10,6 +10,7 @@
 import { useMemo, useState } from "react";
 import { Download, Search } from "lucide-react";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { TabGroup } from "@/app/components/kit/tab-group";
 import { useJanusC2Store } from "@/lib/store/admin/janus-c2-store";
 import { useK6Operator } from "./use-operator";
 import { auditActionLabel } from "@/lib/admin/janus-c2/labels";
@@ -99,11 +100,14 @@ export function K6AuditLog() {
       {exportError && <div className="k6-empty k6-error">导出失败：{exportError}</div>}
       <div className="k6-body">
         <div className="k6-audit-filters">
-          <div className="k6-seg-tabs" role="tablist" aria-label="对象类型筛选">
-            {([["all", "全部"], ["strategy", "策略"], ["device", "设备"], ["config", "批准目标"]] as const).map(([k, lbl]) => (
-              <button key={k} role="tab" aria-selected={targetType === k} className={`k6-seg-tab${targetType === k ? " active" : ""}`} onClick={() => setTargetType(k)}>{lbl}</button>
-            ))}
-          </div>
+          <TabGroup
+            className="k6-seg-tabs"
+            label="对象类型筛选"
+            value={targetType}
+            items={["all", "strategy", "device", "config"] as const}
+            onSelect={setTargetType}
+            itemClassName={(_k, selected) => `k6-seg-tab${selected ? " active" : ""}`}
+          >{(k) => ({ all: "全部", strategy: "策略", device: "设备", config: "批准目标" })[k]}</TabGroup>
           <div className="k6-search">
             <Search size={14} aria-hidden />
             <input className="k6-search-in" value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索动作 / 对象 / 操作者 / 原因" aria-label="搜索审计记录" />

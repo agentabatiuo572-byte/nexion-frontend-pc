@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { DataListPager, Modal } from "../design-kit";
+import { TabGroup } from "@/app/components/kit/tab-group";
 import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1_RELEASE_MODE_VALUES, K1_RELEASE_PARAM_LIMITS, newK1CommandKey } from "@/lib/admin/k-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
@@ -812,7 +813,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               <div className="p" key={p.key}>
                 <div className="txt"><div className="k">{p.name}</div><div className="s">{p.sub}</div></div>
                 <span className="v" style={p.key === "linkWeight" ? { fontSize: 13 } : undefined}>{p.value}{p.unit ? ` ${p.unit}` : ""}</span>
-                {canWrite && <button className="l-btn sm mc" onClick={() => adjParam(p)}>调整</button>}
+                {canWrite && <button className="l-btn sm mc" aria-label={`调整${p.name}`} onClick={() => adjParam(p)}>调整</button>}
               </div>
             ))}
           </div>
@@ -834,7 +835,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                   <div className="p" key={p.key}>
                     <div className="txt"><div className="k">{p.name}</div><div className="s">{p.sub}</div></div>
                     <span className="v">{releaseParamDisplay(p)}{p.unit && K1_RELEASE_PARAM_LIMITS[p.key] ? ` ${p.unit}` : ""}</span>
-                    {canRelease && p.adjustable !== false && <button className="l-btn sm mc" onClick={() => adjReleaseParam(p)}>调整</button>}
+                    {canRelease && p.adjustable !== false && <button className="l-btn sm mc" aria-label={`调整${p.name}`} onClick={() => adjReleaseParam(p)}>调整</button>}
                   </div>
                 ))}
               </div>
@@ -883,11 +884,14 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           <span className="ttl">三层去重命中列表</span>
           <span className="sub">· 点任意一行看簇详情</span>
           <div className="r">
-            <div className="chips">
-              {([["all", "全部"], ["ip", "IP"], ["device", "设备指纹"], ["payment", "支付工具"]] as const).map(([v, lb]) => (
-                <button key={v} aria-pressed={layer === v} className={`chip${layer === v ? " sel" : ""}`} onClick={() => { setLayer(v); setClusterPage(1); }}>{lb}</button>
-              ))}
-            </div>
+            <TabGroup<"all" | "ip" | "device" | "payment">
+              className="chips"
+              label="去重命中维度筛选"
+              value={layer}
+              items={["all", "ip", "device", "payment"] as const}
+              onSelect={(v) => { setLayer(v); setClusterPage(1); }}
+              itemClassName={(_v, selected) => `chip${selected ? " sel" : ""}`}
+            >{(v) => ({ all: "全部", ip: "IP", device: "设备指纹", payment: "支付工具" })[v]}</TabGroup>
             <select className="fld" aria-label="账户簇状态" value={clusterStatus} onChange={(event) => { setClusterStatusFilter(event.target.value as K1ClusterStatusFilter); setClusterPage(1); }} style={{ width: 120 }}>
               <option value="all">全部状态</option><option value="detected">待判定</option><option value="flagged">可疑</option><option value="frozen">已冻结</option><option value="released">已解除</option><option value="cleared">正常</option>
             </select>

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { CodeTag, Badge, DataListPager } from "../design-kit";
+import { TabGroup } from "@/app/components/kit/tab-group";
 import type { EViewCtx } from "./types";
 import { ostate, stateLabel } from "./data";
 import { EStats } from "./stats";
@@ -100,7 +101,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           <span className="ttl">订单队列</span>
           <span className="sub">当前筛选结果</span>
         </div>
-        <div className="filter-bar" role="tablist" aria-label="订单状态筛选">
+        <div className="filter-bar">
           <input
             className="fld"
             aria-label="搜索订单"
@@ -109,18 +110,13 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
             placeholder="订单号 / 用户编码 / SKU"
             style={{ minWidth: 240, flex: "1 1 280px" }}
           />
-          {FILTERS.map((f) => (
-            <button
-              key={f.s}
-              type="button"
-              role="tab"
-              aria-selected={curF === f.s}
-              className={`fchip${curF === f.s ? " on" : ""}`}
-              onClick={() => ctx.setE4Filter(f.s)}
-            >
-              {f.label}
-            </button>
-          ))}
+          <TabGroup
+            label="订单状态筛选"
+            value={curF}
+            items={FILTERS.map((f) => f.s)}
+            onSelect={ctx.setE4Filter}
+            itemClassName={(_s, selected) => `fchip${selected ? " on" : ""}`}
+          >{(s) => FILTERS.find((f) => f.s === s)?.label}</TabGroup>
         </div>
         <div className="q-row head">
           <div>订单 ID</div><div>用户</div><div>SKU</div><div style={{ textAlign: "right" }}>金额</div>

@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AutoGloss } from "@/app/components/kit/gloss";
+import { TabGroup } from "@/app/components/kit/tab-group";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import {
   fetchL2Cross,
@@ -485,15 +486,19 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
           }}>清空</button>
         </div>
         <div className="sep" />
-        <div className="chips"><span className="lb">cohort 粒度</span>
-          {["注册周 YYYY-Www", "注册月"].map((c, i) => (
-            <button key={c} className={"chip" + (i === gran ? " sel" : "")} onClick={() => { setGran(i); ctx.toast(`切片已切换:${c} · 仅视图,实时生效`); }}>{c}</button>
-          ))}
-        </div>
+        <TabGroup
+          className="chips"
+          label="cohort 粒度"
+          labelClassName="lb"
+          value={gran}
+          items={[0, 1] as const}
+          onSelect={(i) => { setGran(i); ctx.toast(`切片已切换:${i === 0 ? "注册周 YYYY-Www" : "注册月"} · 仅视图,实时生效`); }}
+          itemClassName={(_i, selected) => `chip${selected ? " sel" : ""}`}
+        >{(i) => (i === 0 ? "注册周 YYYY-Www" : "注册月")}</TabGroup>
         <div className="sep" />
         <div className="chips"><span className="lb">留存窗</span>
           {["Day1", "Day7", "Day14", "Day30", "Day60"].map((w) => (
-            <button key={w} disabled={queryLoading} className={"chip" + (wins.includes(w) ? " sel" : "")} onClick={() => {
+            <button key={w} disabled={queryLoading} className={"chip" + (wins.includes(w) ? " sel" : "")} aria-pressed={wins.includes(w)} onClick={() => {
               const nextWins = wins.includes(w) ? wins.filter((x) => x !== w) : [...wins, w];
               if (!nextWins.length) {
                 ctx.toast("至少保留一个留存窗");
@@ -514,25 +519,32 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
           <div className="r"><span className="lcode lock" title="漏斗口径由服务端统一维护">🔒 漏斗定义锁定</span><span className="lcode electric">和驾驶舱漏斗是同一份数字</span></div>
         </div>
         <div className="l-b">
-          <div className="fn-wrap">
-            {FUNNEL.map((f, i) => {
-              const w = Math.max((f.users / maxUsers) * 100, 4);
-              const ex = FUNNEL_EXT[i];
-              return (
-                <button key={f.stage} disabled={queryLoading} className={"fn-row" + (i === safeStage ? " sel" : "")} onClick={() => {
-                  setSelStage(i);
-                  void applySlice(L2_STAGE_EVENTS[i]);
-                }}>
-                  <div className="lbl">
-                    <span className="nm"><AutoGloss>{f.stage}</AutoGloss><span className="lc">{f.lc}</span>{ex.v1 && <span className="bdg dim" style={{ fontSize: 10.5 }}>暂用二次下单口径</span>}</span>
-                    <span className="ev" title={STAGE_EV[i] ?? f.ev ?? ""}><AutoGloss>{ex.plain}</AutoGloss></span>
-                  </div>
-                  <div className="barzone"><div className="bar" style={{ width: `${w}%`, background: f.color }}><span>{f.users.toLocaleString("en-US")}</span></div></div>
-                  <div className="cvr">{f.cvr != null ? <><span className="pc">{f.cvr}%</span><span className="tg">{ex.tg ? `目标 ${ex.tg}` : "上级转化"}</span></> : <span className="tg">漏斗顶</span>}</div>
-                </button>
-              );
-            })}
-          </div>
+          <TabGroup
+            className="fn-wrap"
+            label="漏斗阶段下钻"
+            value={safeStage}
+            items={FUNNEL.map((_f, i) => i)}
+            disabled={() => queryLoading}
+            onSelect={(i) => {
+              setSelStage(i);
+              void applySlice(L2_STAGE_EVENTS[i]);
+            }}
+            itemClassName={(_i, selected) => `fn-row${selected ? " sel" : ""}`}
+          >{(i) => {
+            const f = FUNNEL[i];
+            const ex = FUNNEL_EXT[i];
+            const w = Math.max((f.users / maxUsers) * 100, 4);
+            return (
+              <>
+                <div className="lbl">
+                  <span className="nm"><AutoGloss>{f.stage}</AutoGloss><span className="lc">{f.lc}</span>{ex.v1 && <span className="bdg dim" style={{ fontSize: 10.5 }}>暂用二次下单口径</span>}</span>
+                  <span className="ev" title={STAGE_EV[i] ?? f.ev ?? ""}><AutoGloss>{ex.plain}</AutoGloss></span>
+                </div>
+                <div className="barzone"><div className="bar" style={{ width: `${w}%`, background: f.color }}><span>{f.users.toLocaleString("en-US")}</span></div></div>
+                <div className="cvr">{f.cvr != null ? <><span className="pc">{f.cvr}%</span><span className="tg">{ex.tg ? `目标 ${ex.tg}` : "上级转化"}</span></> : <span className="tg">漏斗顶</span>}</div>
+              </>
+            );
+          }}</TabGroup>
           <div className="stage-x">
             <div className="hd">
               <span className="t"><AutoGloss>{s.stage}</AutoGloss> 级展开</span>
@@ -603,11 +615,16 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
             <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 4 }}>留存衰减曲线 · {COHORTS[safeCohort].w}</div>
             <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginBottom: 10 }}>该 cohort 留存率随天数衰减 · 虚线为对比 cohort</div>
             {curveChart()}
-            <div className="chips" style={{ marginTop: 10 }}><span className="lb">对比</span>
-              {[...cohortCurveKeys.filter((key) => key !== COHORTS[safeCohort].w).slice(-2).map((key) => [key, `vs ${key}`]), ["none", "关闭对比"]].map(([v, lb]) => (
-                <button key={v} className={"chip" + (cmp === v ? " sel" : "")} onClick={() => setCmp(v)}>{lb}</button>
-              ))}
-            </div>
+            <TabGroup
+              className="chips"
+              style={{ marginTop: 10 }}
+              label="对比"
+              labelClassName="lb"
+              value={cmp}
+              items={[...cohortCurveKeys.filter((key) => key !== COHORTS[safeCohort].w).slice(-2), "none"]}
+              onSelect={setCmp}
+              itemClassName={(_v, selected) => `chip${selected ? " sel" : ""}`}
+            >{(v) => (v === "none" ? "关闭对比" : `vs ${v}`)}</TabGroup>
           </div>
         </div>
       </section>
@@ -617,11 +634,16 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
         <div className="l-h">
           <span className="ttl">多维交叉分析</span>
           <span className="sub">· <AutoGloss>phase × locale × 渠道任意交叉 · 定位「P3 某渠道首购转化骤降」类信号</AutoGloss></span>
-          <div className="r"><div className="chips"><span className="lb">指标</span>
-            {([["cvr", "首购 CVR(L3→L4)"], ["ret", "Day7 留存"], ["trial", "trial→购买率"]] as const).map(([v, lb]) => (
-              <button key={v} disabled={queryLoading} className={"chip" + (metric === v ? " sel" : "")} onClick={() => void loadCrossMetric(v)}>{lb}</button>
-            ))}
-          </div></div>
+          <div className="r"><TabGroup<"cvr" | "ret" | "trial">
+            className="chips"
+            label="指标"
+            labelClassName="lb"
+            value={metric}
+            items={["cvr", "ret", "trial"] as const}
+            disabled={() => queryLoading}
+            onSelect={(v) => void loadCrossMetric(v)}
+            itemClassName={(_v, selected) => `chip${selected ? " sel" : ""}`}
+          >{(v) => ({ cvr: "首购 CVR(L3→L4)", ret: "Day7 留存", trial: "trial→购买率" })[v]}</TabGroup></div>
         </div>
         <div className="l-b">
           <div style={{ overflowX: "auto" }}>

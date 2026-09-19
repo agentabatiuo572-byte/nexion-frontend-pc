@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Icon, MessageThread, Modal, type ThreadMessage } from "../design-kit";
+import { TabGroup } from "@/app/components/kit/tab-group";
 import {
   type SessionReplyTpl,
   type SupportSla,
@@ -555,15 +556,20 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
         </div>
       )}
       <div className="tk-toolbar">
-        <div className="seg">
-          {SCOPES.map(([k, lab]) => (
-            <button key={k} className={scope === k ? "on" : ""} onClick={() => setScope(k)}>
-              {k === "archived" && <Icon name="box" size={14} />}
-              {lab}
-              {k === "resolved" ? ` ${resolvedCount}` : k === "archived" ? ` ${archivedCount}` : ""}
-            </button>
-          ))}
-        </div>
+        <TabGroup<Scope>
+          className="seg"
+          label="工单范围筛选"
+          value={scope}
+          items={SCOPES.map(([k]) => k)}
+          onSelect={setScope}
+          itemClassName={(_k, selected) => (selected ? "on" : undefined)}
+        >{(k) => (
+          <>
+            {k === "archived" && <Icon name="box" size={14} />}
+            {SCOPES.find(([value]) => value === k)?.[1]}
+            {k === "resolved" ? ` ${resolvedCount}` : k === "archived" ? ` ${archivedCount}` : ""}
+          </>
+        )}</TabGroup>
         <div style={{ width: 188 }}>
           <HDSelect value={categoryFilter} onChange={(v) => setCategoryFilter(v as "all" | SupportTicketCategory)} options={categoryOptions} />
         </div>
@@ -576,7 +582,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
         </div>
         <div className="inp" style={{ flex: 1, maxWidth: 320 }}>
           <Icon name="search" size={15} />
-          <input data-proof="support-ticket-search" placeholder="搜索主题 / 单号 / 负责人 / 分类 / 用户编码" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input data-proof="support-ticket-search" aria-label="搜索工单主题、单号、负责人、分类或用户编码" placeholder="搜索主题 / 单号 / 负责人 / 分类 / 用户编码" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
         {canWriteM2 && ticketsAvailable && ticketAssigneeCandidatesAvailable && ownerOptions.length > 0 && (
           <button type="button" data-proof="support-ticket-create" className="btn btn-pri btn-sm" disabled={writePending} onClick={() => setShowCreate(true)}>

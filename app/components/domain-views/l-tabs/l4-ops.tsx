@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { TabGroup } from "@/app/components/kit/tab-group";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { LDataState } from "./live-data";
 import { readL4Operations, type L4DistRow, type L4OperationsData } from "./l4-live-data";
@@ -86,6 +87,7 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
   const data = readL4Operations(ctx.biData?.l4);
   const query = ctx.l4Query ?? { period: "week", phase: "ALL" };
   const [tab, setTab] = useState<ReportTab>("device");
+  const periodLabelId = useId();
   const [from, setFrom] = useState(query.from ?? "");
   const [to, setTo] = useState(query.to ?? "");
   const restoredRef = useRef(false);
@@ -157,16 +159,16 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
           <div className="r"><span className="lcode electric">{data.period.label} · {data.phaseFilter}</span></div>
         </div>
         <div className="l-b" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ fontSize: 12, color: "var(--ink-3)" }}>报表周期</span>
-          {PERIODS.map(([period, label]) => (
-            <button
-              key={period}
-              className="l-btn sm"
-              aria-pressed={query.period === period}
-              style={query.period === period ? { color: "var(--cyan)", borderColor: "var(--cyan)" } : undefined}
-              onClick={() => period === "custom" ? updateQuery({ period }) : updateQuery({ period, from: undefined, to: undefined })}
-            >{label}</button>
-          ))}
+          <span id={periodLabelId} style={{ fontSize: 12, color: "var(--ink-3)" }}>报表周期</span>
+          <TabGroup
+            labelledBy={periodLabelId}
+            style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}
+            value={query.period}
+            items={PERIODS.map(([period]) => period)}
+            onSelect={(period) => period === "custom" ? updateQuery({ period }) : updateQuery({ period, from: undefined, to: undefined })}
+            itemClassName={() => "l-btn sm"}
+            itemStyle={(_period, selected) => (selected ? { color: "var(--cyan)", borderColor: "var(--cyan)" } : undefined)}
+          >{(period) => PERIODS.find(([value]) => value === period)?.[1]}</TabGroup>
           <label style={{ fontSize: 12, color: "var(--ink-3)" }}>Phase
             <select
               aria-label="Phase 筛选"
@@ -190,18 +192,15 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
         </div>
       </section>
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }} role="tablist" aria-label="L4 四类运营报表">
-        {REPORT_TABS.map(([key, label]) => (
-          <button
-            key={key}
-            role="tab"
-            aria-selected={tab === key}
-            className="l-btn"
-            style={tab === key ? { color: "var(--cyan)", borderColor: "var(--cyan)" } : undefined}
-            onClick={() => setTab(key)}
-          >{label}</button>
-        ))}
-      </div>
+      <TabGroup<ReportTab>
+        style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}
+        label="L4 四类运营报表"
+        value={tab}
+        items={REPORT_TABS.map(([key]) => key)}
+        onSelect={setTab}
+        itemClassName={() => "l-btn"}
+        itemStyle={(_key, selected) => (selected ? { color: "var(--cyan)", borderColor: "var(--cyan)" } : undefined)}
+      >{(key) => REPORT_TABS.find(([value]) => value === key)?.[1]}</TabGroup>
 
       {!data.available && (
         <div className="ltint warn" style={{ marginBottom: 14, fontSize: 12 }}>

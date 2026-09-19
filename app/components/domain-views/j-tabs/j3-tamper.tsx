@@ -9,6 +9,7 @@
 import { useId, useMemo, useState } from "react";
 import Link from "next/link";
 import { Btn, CodeTag, Modal } from "../design-kit";
+import { TabGroup } from "@/app/components/kit/tab-group";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import type { JCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -309,11 +310,15 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
         <div className="trend-h">
           <span className="ttl">篡改拦截趋势</span>
           <span className="sub">· <AutoGloss>都是被服务器成功拦下的尝试 · 越多说明防御越活跃</AutoGloss></span>
-          <div className="r"><div className="seg">
-            {(["24h", "7d", "30d"] as const).map((w) => (
-              <button key={w} disabled={accountLoading} className={win === w ? "on" : ""} onClick={() => loadWindow(w)}>{w}</button>
-            ))}
-          </div></div>
+          <div className="r"><TabGroup<"24h" | "7d" | "30d">
+            className="seg"
+            label="篡改趋势时间范围"
+            value={win}
+            items={["24h", "7d", "30d"] as const}
+            disabled={() => accountLoading}
+            onSelect={loadWindow}
+            itemClassName={(_w, selected) => (selected ? "on" : undefined)}
+          >{(w) => w}</TabGroup></div>
         </div>
         {!data.hasData ? (
           <div className="tint tiny" style={{ margin: 16 }}>

@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AutoGloss } from "@/app/components/kit/gloss";
+import { TabGroup } from "@/app/components/kit/tab-group";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { PaginationExemptionList } from "../design-kit";
 import { LDataState, kpiState, num, rec, rows, strings, type KpiRow } from "./live-data";
@@ -18,7 +19,7 @@ import type { LCtx } from "./types";
 import { fetchL1Kpi, fetchL1KpiDrilldown, fetchL1KpiTrend, type L1KpiQuery } from "@/lib/admin/l-client";
 import { validateL1Dashboard, validateL1Drilldown, validateL1Trend } from "./l1-kpi-contract";
 import { resolveL1ExportMode, resolveL1ExportUnavailableReason, submitL1Export, type L1ExportSource } from "./l1-export-contract";
-import { loadL1LocalView, saveL1LocalView } from "./l1-local-view";
+import { loadL1LocalView, saveL1LocalView, type L1Window } from "./l1-local-view";
 import { createL1ReadController } from "./l1-request-generation";
 import { assertL1AttributionLinks } from "./l-attribution-routes";
 
@@ -104,7 +105,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
   const [phaseOn, setPhaseOn] = useState(true);
   const [ovlSel, setOvlSel] = useState<number[]>([1, 2, 3]);
   const [vp, setVp] = useState<ViewParamReq | null>(null);
-  const [win, setWin] = useState<L1KpiQuery["window"]>("7d");
+  const [win, setWin] = useState<L1Window>("7d");
   const [customOpen, setCustomOpen] = useState(false);
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
@@ -140,7 +141,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
         next => {
           validateL1Dashboard(next);
           setLocalData(next);
-          setWin(query.window);
+          setWin(query.window ?? "7d");
           onExportSource?.({ parentData, data: next, query, status: "ready" });
         },
         error => {
@@ -258,7 +259,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
   const rs = { currentPhase: phaseKnown ? String(phase.code) : "未返回", currentMonth: phaseKnown ? num(phase.month, 0) : "—" };
 
   const activeQuery = (
-    nextWindow: L1KpiQuery["window"] = win,
+    nextWindow: L1Window = win,
     filters: Partial<L1KpiQuery> = {},
   ): L1KpiQuery => ({
     ...(nextWindow === "custom"
@@ -272,7 +273,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
   });
 
   const reloadKpi = (
-    nextWindow: L1KpiQuery["window"] = win,
+    nextWindow: L1Window = win,
     filters: Partial<L1KpiQuery> = {},
   ) => {
     setRefreshing(true);
@@ -427,21 +428,21 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
 
       {/* view params bar(全部仅视图 · 实时生效 · 普通确认批) */}
       <div className="view-bar">
-        <div className="chips"><span className="lb">时间窗</span>
-          {[["1d", "当日"], ["7d", "滚动 7d"], ["30d", "滚动 30d"], ["custom", "自定义"]].map(([v, lb]) => (
-            <button
-              key={v}
-              className={"chip" + (win === v ? " sel" : "")}
-              onClick={() => {
-                if (v === "custom") {
-                  setCustomOpen(true);
-                  return;
-                }
-                void reloadKpi(v as L1KpiQuery["window"]);
-              }}
-            >{lb}</button>
-          ))}
-        </div>
+        <TabGroup<L1Window>
+          className="chips"
+          label="时间窗"
+          labelClassName="lb"
+          value={win}
+          items={["1d", "7d", "30d", "custom"] as const}
+          onSelect={(v) => {
+            if (v === "custom") {
+              setCustomOpen(true);
+              return;
+            }
+            void reloadKpi(v);
+          }}
+          itemClassName={(_v, selected) => `chip${selected ? " sel" : ""}`}
+        >{(v) => ({ "1d": "当日", "7d": "滚动 7d", "30d": "滚动 30d", custom: "自定义" })[v]}</TabGroup>
         {customOpen && (
           <div className="chips">
             <label className="lb" htmlFor="l1-custom-from">起</label>
@@ -452,11 +453,15 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
           </div>
         )}
         <div className="sep" />
-        <div className="chips"><span className="lb">cohort 粒度</span>
-          {[["week", "注册周 YYYY-Www"], ["month", "注册月"]].map(([v, lb]) => (
-            <button key={v} className={"chip" + (gran === v ? " sel" : "")} onClick={() => { setGran(v); ctx.toast(`视图已切换:${lb} · 仅视图参数,实时生效`); }}>{lb}</button>
-          ))}
-        </div>
+        <TabGroup
+          className="chips"
+          label="cohort 粒度"
+          labelClassName="lb"
+          value={gran}
+          items={["week", "month"] as const}
+          onSelect={(v) => { setGran(v); ctx.toast(`视图已切换:${v === "week" ? "注册周 YYYY-Www" : "注册月"} · 仅视图参数,实时生效`); }}
+          itemClassName={(_v, selected) => `chip${selected ? " sel" : ""}`}
+        >{(v) => (v === "week" ? "注册周 YYYY-Www" : "注册月")}</TabGroup>
         <div className="sep" />
         <button className={"toggle" + (phaseOn ? " on" : "")} onClick={() => { setPhaseOn(!phaseOn); ctx.toast(`Phase 效果叠加:${!phaseOn ? "开启" : "关闭"}`); }}>
           <span className="tk" />Phase 效果叠加
@@ -492,7 +497,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
           const dUp = !ex.delta.startsWith("-");
           const goodUp = kk.dir !== "lte";
           return (
-            <button key={kk.n} className={"kpi-card" + (i === selKpi ? " sel" : "")} onClick={() => selectKpi(i)} title="点击下钻">
+            <button key={kk.n} className={"kpi-card" + (i === selKpi ? " sel" : "")} aria-pressed={i === selKpi} onClick={() => selectKpi(i)} title="点击下钻">
               <div className="top"><span className="n">#{kk.n}</span><span className="nm"><AutoGloss>{kk.name}</AutoGloss></span><span className={"led " + st} /></div>
               <div className="vrow">
                 <span className="v">{kk.available === false || kk.value == null ? "不可计算" : kk.value}<span className="u">{kk.available === false || kk.value == null ? "" : kk.unit}</span></span>
@@ -586,7 +591,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
           <div className="ovl-picks">
             {KPIS.map((kk, i) => {
               const on = ovlSel.includes(i);
-              return <button key={kk.n} className={"chip" + (on ? " sel" : "")} style={on ? { background: KPI_COLORS[i], color: "#0A0A0A" } : undefined} onClick={() => toggleOvl(i)}>#{kk.n} {kk.name}</button>;
+              return <button key={kk.n} className={"chip" + (on ? " sel" : "")} aria-pressed={on} style={on ? { background: KPI_COLORS[i], color: "#0A0A0A" } : undefined} onClick={() => toggleOvl(i)}>#{kk.n} {kk.name}</button>;
             })}
           </div>
           {ovlChart()}

@@ -210,8 +210,10 @@ export function readL4Operations(value: unknown): L4OperationsData | null {
     ["commissionTriggerRate", { percent: true, nullable: true }],
   ]);
   if (!deviceSummary || !taskSummary || !networkSummary
-      || typeof record(tasks.summary).orderedTaskJoin !== "boolean"
-      || (taskSummary.completed ?? 0) > (taskSummary.dispatched ?? 0)) return null;
+      || typeof record(tasks.summary).orderedTaskJoin !== "boolean") return null;
+  // 承接率只有在派发-完成 join 可用时才有分母；服务端已按 orderedTaskJoin 置空，
+  // 前端不得接受一个「join 不可用却仍给出比率」的畸形 200。
+  if (taskSummary.acceptanceRate !== null && record(tasks.summary).orderedTaskJoin !== true) return null;
 
   const byGeneration = dist(device.byGeneration);
   const byModel = dist(device.byModel);
@@ -264,6 +266,11 @@ export function readL4Operations(value: unknown): L4OperationsData | null {
       || (seenBuckets.add(row.bucket), false)
       || row.devicePurchases === null || row.deviceRetirements === null || row.yieldUsdt === null
       || row.tasksCompleted === null || row.directRefs === null || row.commissionPaidUsdt === null)) return null;
+
+  // 汇总卡与周期趋势同窗口同口径：完成量必须等于趋势各桶完成数之和。
+  // 两者矛盾时页面宁可失败关闭，也不能把一个错误的「完成量 0」当成权威值展示。
+  const trendCompletedTotal = history.reduce((total, row) => total + (row.tasksCompleted ?? 0), 0);
+  if ((taskSummary.completed ?? 0) !== trendCompletedTotal) return null;
 
   const actorCoveragePct = number(quality.actorCoveragePct, { percent: true });
   const eventCount = number(quality.eventCount, { integer: true });

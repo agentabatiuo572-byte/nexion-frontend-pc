@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { PaginationExemptionList } from "../design-kit";
+import { TabGroup } from "@/app/components/kit/tab-group";
 import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
 import { K1OutcomeUncertainError, newK1CommandKey, type K2Row, type KRiskParam } from "@/lib/admin/k-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -444,7 +445,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
                 <div className="v">
                   <K2ParamValue param={p} />
                   {p.unit ? <span className="vu">{p.unit}</span> : null}
-                  {canWrite && <button className="l-btn sm mc" onClick={() => adjParam(p)}>调整</button>}
+                  {canWrite && <button className="l-btn sm mc" aria-label={`调整${p.name}`} onClick={() => adjParam(p)}>调整</button>}
                 </div>
                 <div className="s">{p.sub}</div>
               </div>
@@ -471,7 +472,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
                     <div className="k">{definition.label}</div>
                     <div className="v">
                       {param?.value ?? "—"} <span className="vu">{definition.unit}</span>
-                      {canWrite && <button className="l-btn sm mc" disabled={!param} onClick={() => adjExtraParam(definition)}>调整</button>}
+                      {canWrite && <button className="l-btn sm mc" aria-label={`调整${definition.label}`} disabled={!param} onClick={() => adjExtraParam(definition)}>调整</button>}
                     </div>
                     <div className="s">{param?.sub ?? "等待后端配置"}</div>
                   </div>
@@ -487,11 +488,14 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
           <span className="ttl">检测命中</span>
           <span className="sub">{current?.sub ?? "后端暂无命中视图"}</span>
           <div className="r">
-            <div className="chips">
-              {views.map((view) => (
-                <button key={view.key} className={`chip${current?.key === view.key ? " sel" : ""}`} onClick={() => setViewKey(view.key)}>{view.label}</button>
-              ))}
-            </div>
+            <TabGroup
+              className="chips"
+              label="套利检测命中视图"
+              value={current?.key ?? viewKey}
+              items={views.map((view) => view.key)}
+              onSelect={setViewKey}
+              itemClassName={(_key, selected) => `chip${selected ? " sel" : ""}`}
+            >{(key) => views.find((view) => view.key === key)?.label ?? key}</TabGroup>
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
