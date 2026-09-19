@@ -30,7 +30,10 @@ test("D4 contains user-wide category totals, running-balance breaks, masked expo
   assert.match(page, /setBills\(EMPTY_PAGE\)/);
   assert.match(page, /setUserLedger\(null\)/);
   assert.match(page, /setRunningBalance\(null\)/);
-  assert.match(page, /setLoading\(true\);\s*setBills\(\{ total: 0, pageNum: page, pageSize, records: \[\] \}\)/s);
+  // BUG 121: 翻页时不得把总数清零,否则分页会短暂出现「共 0 条 · 第 2 / 1 页」这种违反分页约束的中间态。
+  // 现在保留上一份 total/pageSize,只清空本页记录(由 loading 占位行表达)。
+  assert.match(page, /setBills\(\(current\) => \(\{ \.\.\.current, pageNum: page, pageSize, records: \[\] \}\)\)/);
+  assert.doesNotMatch(page, /setBills\(\{ total: 0, pageNum: page, pageSize, records: \[\] \}\)/);
   assert.match(page, /disabled=\{!canExport \|\| loading \|\| Boolean\(error\)\}/);
   assert.match(page, /重试/);
 });

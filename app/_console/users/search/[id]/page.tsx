@@ -33,6 +33,15 @@ import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import type { AdminRole } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import {
+  formatC1DeviceStatus,
+  formatC1DeviceTier,
+  formatC1NotificationType,
+  formatC1PushStatus,
+  formatC1ReadFlag,
+  formatC1RuntimeStatus,
+  formatC1SessionStatus,
+} from "@/lib/admin/c1-detail-display";
 
 /**
  * C1 用户详情三类写动作(昵称重置 / 支付方式解绑 / 换绑通知)共用一张表,槽位分命名空间。
@@ -47,6 +56,15 @@ const paymentSlot = (action: "unbind" | "rebind", userId: string | number, metho
   `payment-${action}|${userId}|${methodId}`;
 const deviceSlot = (action: "replace" | "recycle", userId: string | number, deviceId: number) =>
   `device-${action}|${userId}|${deviceId}`;
+
+/** C1 画像「安全 & 会话」默认每页条数:后端一次下发全部会话,首屏只渲染最近一页。 */
+const C1_SESSION_PAGE_SIZE = 5;
+const C1_SESSION_STATUS_FILTERS: ReadonlyArray<readonly ["ALL" | "ACTIVE" | "REVOKED" | "EXPIRED", string]> = [
+  ["ALL", "全部"],
+  ["ACTIVE", "活跃"],
+  ["REVOKED", "已撤销"],
+  ["EXPIRED", "已过期"],
+];
 
 type Column = {
   key: string;
@@ -342,6 +360,8 @@ export default function UserDetailPage() {
   const [paymentMethods, setPaymentMethods] = useState<UserPaymentMethodPage | null>(null);
   const [includeUnbound, setIncludeUnbound] = useState(false);
   const [paymentPage, setPaymentPage] = useState(1);
+  const [sessionPage, setSessionPage] = useState(1);
+  const [sessionStatusFilter, setSessionStatusFilter] = useState<"ALL" | "ACTIVE" | "REVOKED" | "EXPIRED">("ALL");
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [actionConfirm, setActionConfirm] = useState<null | {
     action: string;
@@ -417,6 +437,18 @@ export default function UserDetailPage() {
   }, [detail, paymentMethods]);
 
   const sessions = useMemo(() => asArray(detail?.sessions), [detail?.sessions]);
+  // 后端一次下发全部会话(含大量 REVOKED),画像首屏会被长列表拉长。默认只渲染最近一页,
+  // 并提供状态筛选;筛选或换页时回到第 1 页。
+  const filteredSessions = useMemo(() => {
+    if (sessionStatusFilter === "ALL") return sessions;
+    return sessions.filter((row) => asText(row.status, "").toUpperCase() === sessionStatusFilter);
+  }, [sessionStatusFilter, sessions]);
+  const sessionPageCount = Math.max(1, Math.ceil(filteredSessions.length / C1_SESSION_PAGE_SIZE));
+  const visibleSessions = useMemo(
+    () => filteredSessions.slice((sessionPage - 1) * C1_SESSION_PAGE_SIZE, sessionPage * C1_SESSION_PAGE_SIZE),
+    [filteredSessions, sessionPage],
+  );
+  useEffect(() => { setSessionPage(1); }, [sessionStatusFilter, userKey]);
   const auditEntries = useMemo(() => toAuditEntries(detail?.audit), [detail?.audit]);
 
   function scrollToHub(id: string) {
@@ -621,17 +653,47 @@ export default function UserDetailPage() {
               <KpiStatCard label="2FA" value={summary.twoFactorEnabled ? "开启" : "关闭"} accent="var(--admin-domain-e)" />
               <KpiStatCard label="锁定" value={summary.locked ? "是" : "否"} accent="var(--v5-warning)" />
             </div>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {C1_SESSION_STATUS_FILTERS.map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={sessionStatusFilter === value}
+                    onClick={() => setSessionStatusFilter(value)}
+                    className="rounded-[8px] px-2.5 py-1 text-[11.5px]"
+                    style={{
+                      border: "1px solid var(--v5-border)",
+                      background: sessionStatusFilter === value ? "var(--v5-surface-2)" : "transparent",
+                      color: sessionStatusFilter === value ? "var(--v5-ink)" : "var(--v5-ink-3)",
+                      fontWeight: sessionStatusFilter === value ? 600 : 400,
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <span className="text-[11.5px]" style={{ color: "var(--v5-ink-4)" }}>
+                共 {filteredSessions.length} 条 · 第 {sessionPage}/{sessionPageCount} 页
+              </span>
+            </div>
             <DataTable
-              rows={sessions}
+              rows={visibleSessions}
               columns={[
                 { key: "deviceName", label: "设备" },
                 { key: "clientIpMasked", label: "IP" },
-                { key: "status", label: "状态", render: (value) => <StatusPill label={asText(value)} tone={asText(value).toUpperCase() === "ACTIVE" ? "success" : "neutral"} size="sm" /> },
+                { key: "status", label: "状态", render: (value) => <StatusPill label={formatC1SessionStatus(value)} tone={asText(value).toUpperCase() === "ACTIVE" ? "success" : "neutral"} size="sm" /> },
                 { key: "issuedAt", label: "签发", render: formatDate },
                 { key: "expiresAt", label: "过期", render: formatDate },
               ]}
-              emptyText="暂无会话"
+              emptyText={sessionStatusFilter === "ALL" ? "暂无会话" : "当前筛选下没有会话"}
             />
+            {sessionPageCount > 1 && (
+              <div className="mt-2 flex items-center justify-end gap-2">
+                <button type="button" className="rounded-[8px] px-2.5 py-1.5 text-[12px] disabled:opacity-40" style={{ border: "1px solid var(--v5-border)" }} disabled={sessionPage <= 1} onClick={() => setSessionPage((value) => Math.max(1, value - 1))}>上一页</button>
+                <button type="button" className="rounded-[8px] px-2.5 py-1.5 text-[12px] disabled:opacity-40" style={{ border: "1px solid var(--v5-border)" }} disabled={sessionPage >= sessionPageCount} onClick={() => setSessionPage((value) => Math.min(sessionPageCount, value + 1))}>下一页</button>
+              </div>
+            )}
           </Section>}
         </div>
       </div>
@@ -711,9 +773,9 @@ export default function UserDetailPage() {
           columns={[
             { key: "instanceNo", label: "实例" },
             { key: "name", label: "名称" },
-            { key: "productTier", label: "规格" },
-            { key: "status", label: "状态" },
-            { key: "runtimeStatus", label: "运行态" },
+            { key: "productTier", label: "规格", render: formatC1DeviceTier },
+            { key: "status", label: "状态", render: formatC1DeviceStatus },
+            { key: "runtimeStatus", label: "运行态", render: formatC1RuntimeStatus },
             { key: "dailyUsdt", label: "日 USDT", numeric: true },
             { key: "dailyNex", label: "日 NEX", numeric: true },
           ]}
@@ -854,9 +916,9 @@ export default function UserDetailPage() {
                 : displayValue(value);
             } },
             { key: "title", label: "标题" },
-            { key: "type", label: "类型" },
-            { key: "pushStatus", label: "推送" },
-            { key: "readFlag", label: "已读" },
+            { key: "type", label: "类型", render: formatC1NotificationType },
+            { key: "pushStatus", label: "推送", render: formatC1PushStatus },
+            { key: "readFlag", label: "已读", render: formatC1ReadFlag },
             { key: "createdAt", label: "创建时间", render: formatDate },
           ]}
         >

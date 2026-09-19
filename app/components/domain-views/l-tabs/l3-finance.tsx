@@ -432,12 +432,13 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
                <div className="t"><div className="k">已兑付</div><div className="v" style={{ color: "var(--success)" }}>{REDEMPTION.confirmed.toLocaleString("zh-CN")}</div><div className="s">本期已完成兑付</div></div>
                <div className="t"><div className="k">兑付率</div><div className="v" style={{ color: "var(--success)" }}>{redRate}%</div><div className="s">已兑付占提现申请的比例</div></div>
                <div className="t"><div className="k">平均兑付时延</div><div className="v">{REDEMPTION.avgLatency}</div><div className="s">从申请到完成的平均耗时</div></div>
-               <div className="t"><div className="k">驳回</div><div className="v">{REDEMPTION.rejected}</div><div className="s">本期已驳回申请</div></div>
-               <div className="t"><div className="k">延迟</div><div className="v" style={{ color: "var(--warning)" }}>{REDEMPTION.delayed}</div><div className="s">计入本期申请总数</div></div>
-               <div className="t"><div className="k">冻结</div><div className="v" style={{ color: "var(--danger)" }}>{REDEMPTION.frozen}</div><div className="s">计入本期申请总数</div></div>
+               <div className="t"><div className="k">驳回</div><div className="v">{REDEMPTION.rejected}</div><div className="s">本期已驳回申请（结果分类）</div></div>
+               <div className="t"><div className="k">延迟</div><div className="v" style={{ color: "var(--warning)" }}>{REDEMPTION.delayed}</div><div className="s">本期曾延迟 · 过程事件，可与最终兑付重叠</div></div>
+               <div className="t"><div className="k">冻结</div><div className="v" style={{ color: "var(--danger)" }}>{REDEMPTION.frozen}</div><div className="s">本期曾冻结 · 过程事件，可与最终兑付重叠</div></div>
                <div className="t"><div className="k">较上期变化</div><div className="v" style={{ color: "var(--success)" }}>+{(parseFloat(redRate) - REDEMPTION.prevRate).toFixed(1)} 个百分点</div><div className="s">{REDEMPTION.prevLabel}为 {REDEMPTION.prevRate}%</div></div>
             </div>
             <div className="ltint" style={{ fontSize: 12, marginBottom: 8 }}><b>比率与余额不可混用</b> · <AutoGloss>兑付率衡量本期申请完成比例；在途余额衡量尚未完成的应付款。两者同源但含义不同。</AutoGloss></div>
+            <div className="ltint" style={{ fontSize: 12, marginBottom: 8 }}><b>口径说明</b> · <AutoGloss>提现申请、已兑付、驳回是互斥的结果分类；延迟与冻结是过程中的生命周期事件，一笔提现可能先延迟或冻结、之后仍完成兑付，因此二者可与已兑付重叠，不与申请总数相加等于分母。兑付率固定按 已兑付 ÷ 本期申请总数 计算，不把延迟/冻结计入分子或分母。</AutoGloss></div>
             <div className="ltint warn" style={{ fontSize: 12 }}><b>告警归属</b> · <AutoGloss>兑付率用于周期核账；急性提现安全信号以覆盖率和挤兑比率越线记录为准。需要处置时请进入提现审核队列。</AutoGloss></div>
           </div>
         </section>

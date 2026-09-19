@@ -157,6 +157,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   // 近 90d 统计只取后端汇总；字段未返回时明确显示“未返回”。
   const liveExecs = statNumber("liveExec90d");
   const drillExecs = statNumber("drill90d");
+  const drillExecRows = statNumber("drillExecutionRows90d");
 
   const runBackend = async (task: Promise<void>, ok: string) => {
     try {
@@ -358,7 +359,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       {/* stat strip */}
       <div className="f-stats">
         <div className="f-stat"><div className="k">剧本库</div><div className="v">{PLAYBOOKS.length}</div><div className="sub">已发布 + 草稿</div></div>
-        <div className="f-stat ok"><div className="k">演练就绪</div><div className="v">{ready}</div><div className="sub">90 天内已演练</div></div>
+        <div className="f-stat ok"><div className="k">演练就绪</div><div className="v">{ready}</div><div className="sub">剧本最近演练在 90 天内</div></div>
         <div className="f-stat warn"><div className="k">待演练</div><div className="v">{todo}</div><div className="sub">超期 · 阻断「演练就绪」</div></div>
         <div className="f-stat danger"><div className="k">应急轨剧本</div><div className="v">{emerCount}</div><div className="sub">可走应急加急通道</div></div>
       </div>
@@ -398,7 +399,8 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         </div>
         <div className="stats">
           <span>近 90d 实战执行 <b>{liveExecs == null ? "未返回" : `${liveExecs} 次`}</b></span>
-          <span>近 90d 演练 <b>{drillExecs == null ? "未返回" : `${drillExecs} 次`}</b></span>
+          <span>近 90d 演练就绪剧本 <b>{drillExecs == null ? "未返回" : `${drillExecs} 个`}</b></span>
+          <span>近 90d 演练台账 <b>{drillExecRows == null ? "未返回" : `${drillExecRows} 条`}</b></span>
         </div>
       </div>
 

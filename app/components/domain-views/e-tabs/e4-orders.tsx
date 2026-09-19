@@ -100,7 +100,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           <span className="ttl">订单队列</span>
           <span className="sub">当前筛选结果</span>
         </div>
-        <div className="filter-bar">
+        <div className="filter-bar" role="tablist" aria-label="订单状态筛选">
           <input
             className="fld"
             aria-label="搜索订单"
@@ -110,9 +110,16 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
             style={{ minWidth: 240, flex: "1 1 280px" }}
           />
           {FILTERS.map((f) => (
-            <span key={f.s} className={`fchip${curF === f.s ? " on" : ""}`} onClick={() => ctx.setE4Filter(f.s)}>
+            <button
+              key={f.s}
+              type="button"
+              role="tab"
+              aria-selected={curF === f.s}
+              className={`fchip${curF === f.s ? " on" : ""}`}
+              onClick={() => ctx.setE4Filter(f.s)}
+            >
               {f.label}
-            </span>
+            </button>
           ))}
         </div>
         <div className="q-row head">

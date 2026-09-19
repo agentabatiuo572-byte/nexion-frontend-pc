@@ -329,7 +329,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
           <div className="podium">
             {data.podium.length ? data.podium.map((row) => (
               <div key={row.userId} className={`pod ${row.className}`}><span className="rank">{row.rank}</span><div className="uid">{row.userId}</div><div className="gv">{row.gmvLabel}<small>{row.tip}</small></div>
-                {canControlLeaderboard && row.memberUserId > 0 && !row.className.includes("dq") && <button className="danger" onClick={() => ctx.openActionConfirm({
+                {canControlLeaderboard && row.memberUserId > 0 && !row.className.includes("dq") && <button className="danger" aria-label={`取消 ${row.userId} 的榜单资格`} onClick={() => ctx.openActionConfirm({
                   name: `取消 ${row.userId} 本周榜单资格`, op: "dispose",
                   paramKey: `F.leaderboard.week.user.${row.memberUserId}.status`, fixedVal: "disqualified",
                   detail: `按 member_user_id=${row.memberUserId} 精确排除；写入榜单动作后排名查询与奖池结算共同过滤该用户。`,

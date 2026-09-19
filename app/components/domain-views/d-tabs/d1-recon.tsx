@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { d1VietQrUsdtAmount } from "@/lib/admin/d1-vietqr-amount";
+import { formatD1FuseReason } from "@/lib/admin/d1-account-display";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   createD1VietQrAccount,
@@ -791,9 +792,11 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
           <div className="l-b">
             {(vietQr?.accounts ?? []).length === 0 ? (
               <div className="dtint">当前没有收款账户。空账户池会使 VietQR 新付款单不可分配，请由具备权限的财务管理员新增真实银行账户。</div>
-            ) : vietQr?.accounts.map((account) => (
+            ) : vietQr?.accounts.map((account) => {
+              const fuseReason = formatD1FuseReason(account.fuseReason);
+              return (
               <div className="p-row" key={account.id}>
-                <div className="txt"><div className="k">{account.bankName} · 尾号 {account.accountLast4}</div><div className="s">{account.holderMasked} · 今日 {vnd(account.receivedTodayVnd)} / 上限 {vnd(account.dailyCapVnd)}{account.fuseReason ? ` · ${account.fuseReason}` : ""}</div></div>
+                <div className="txt"><div className="k">{account.bankName} · 尾号 {account.accountLast4}</div><div className="s">{account.holderMasked} · 今日 {vnd(account.receivedTodayVnd)} / 上限 {vnd(account.dailyCapVnd)}{fuseReason.label ? ` · ${fuseReason.label}` : ""}</div></div>
                 <span className={`bdg ${account.status === "ACTIVE" ? "ok" : account.status === "FUSED" ? "bad" : "dim"}`}>{account.status === "ACTIVE" ? "启用" : account.status === "FUSED" ? "已熔断" : "停用"}</span>
                 {canManageBankAccounts && <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
                   action: `调整日收上限 · ${account.bankName} 尾号 ${account.accountLast4}`,
@@ -812,7 +815,8 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                   }), "账户状态已更新"),
                 })}>{account.status === "ACTIVE" ? "停用" : account.status === "FUSED" ? "恢复" : "启用"}</button>}
               </div>
-            ))}
+              );
+            })}
           </div>
         </section>
 
@@ -862,8 +866,15 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                 <button key={key || "all"} disabled={loading || busy} className={`chip${status === key ? " sel" : ""}`} onClick={() => { setStatus(key); setPage(1); }}>{label}</button>
               ))}
             </div>
-            <div className="lookup">
-              <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="充值单 / 用户编号 / 凭证" />
+            <div className="lookup" style={{ width: 380 }}>
+              <label className="sub" htmlFor="d1-flow-keyword" style={{ whiteSpace: "nowrap" }}>查询关键字</label>
+              <input
+                id="d1-flow-keyword"
+                value={keyword}
+                aria-label="充值流水查询关键字：充值单号 / 用户编号 / 凭证"
+                placeholder="充值单 / 用户编号 / 凭证"
+                onChange={(e) => setKeyword(e.target.value)}
+              />
               <button className="l-btn primary" disabled={loading || busy} onClick={() => { if (page === 1) void refresh(); else setPage(1); }}>查询</button>
             </div>
           </div>
@@ -940,8 +951,16 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
             <span className="sub">· 24 小时失败聚合 · 到期时间来自服务端</span>
           </div>
           <div className="l-b">
-            <div className="lookup" style={{ marginBottom: 10 }}>
-              <input value={manualBin} disabled={loading || busy || !canCreateBinLock} onChange={(e) => setManualBin(e.target.value.replace(/\D/g, "").slice(0, 8))} placeholder="输入 6 至 8 位 BIN，如 424242" />
+            <div className="lookup" style={{ marginBottom: 10, width: 380 }}>
+              <label className="sub" htmlFor="d1-manual-lock" style={{ whiteSpace: "nowrap" }}>手动锁定标识</label>
+              <input
+                id="d1-manual-lock"
+                value={manualBin}
+                disabled={loading || busy || !canCreateBinLock}
+                aria-label="手动锁定标识：BIN 卡段(6 至 8 位数字) / IP / 设备指纹"
+                onChange={(e) => setManualBin(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                placeholder="输入 6 至 8 位 BIN，如 424242"
+              />
               {canCreateBinLock && <button className="l-btn primary" disabled={loading || busy} onClick={() => {
                 const segment = manualBin.trim();
                 if (!/^\d{6,8}$/.test(segment)) {

@@ -333,7 +333,12 @@ export function C1Search({
           <span className="sub">· 用户分层口径 L0-L5 / V0-V12 · 手机号仅脱敏展示</span>
           <div className="r">
             <div className="search-bar">
-              <input placeholder="用户编码 / 昵称 / 推荐码 / 脱敏手机号 / 手机哈希" value={q} onChange={(e) => changeKeyword(e.target.value)} />
+              <input
+                aria-label="检索用户"
+                placeholder="用户编码 / 昵称 / 推荐码 / 脱敏手机号 / 手机哈希"
+                value={q}
+                onChange={(e) => changeKeyword(e.target.value)}
+              />
             </div>
             <div className="chips">
               {SEGS.filter(([value]) => value !== "highrisk" || canReadRisk).map(([v, lb]) => (

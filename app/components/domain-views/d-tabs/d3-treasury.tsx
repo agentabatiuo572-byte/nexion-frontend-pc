@@ -291,8 +291,8 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
             {canInject ? (
               <>
                 <div className="lookup" style={{ marginBottom: 10 }}>
-                  <input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" placeholder="注资金额 USDT" />
-                  <input value={voucherNo} onChange={(event) => setVoucherNo(event.target.value)} placeholder="真实凭证号（必填且唯一）" />
+                  <input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" placeholder="注资金额 USDT" aria-label="注资金额（USDT，最多两位小数）" />
+                  <input value={voucherNo} onChange={(event) => setVoucherNo(event.target.value)} placeholder="真实凭证号（必填且唯一）" aria-label="真实凭证号（必填且唯一，登记后不可重复）" />
                   <button className="l-btn primary" onClick={saveInjection}>登记</button>
                 </div>
                 <div className="dtint">重复凭证返回冲突，不会写储备、审计或事件。</div>

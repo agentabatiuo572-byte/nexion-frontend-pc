@@ -300,7 +300,7 @@ export default function RiskRadarPage() {
       <div className="b5-summary">
         <span><Radar size={15} /> 服务端权威聚合</span>
         <span>更新于 {new Date(data.generatedAt).toLocaleString()}</span>
-        <span>e(t) 固定红线 0.7（70%）</span>
+        <span>出金压力比 e(t) 固定红线 {pct(data.bankrun.pressureRedLine)}（仅人工警戒）</span>
       </div>
       {radar.streamWarning && <div className="b5-error" role="status">{radar.streamWarning}</div>}
 
@@ -323,7 +323,7 @@ export default function RiskRadarPage() {
               <small>{data.bankrun.pressureCalculable ? `固定红线 ${pct(data.bankrun.pressureRedLine)} · 仅人工警戒` : "近 24h 入金分母为 0，不生成伪百分比"}</small>
             </div>
           </div>
-          <p>黄线 {bankRunYellowPct}% · 红线 {bankRunRedlinePct}%（J1 R1 已同步引用）</p>
+          <p>挤兑比率（24h 提现 ÷ 真实储备）动态阈值：黄线 {bankRunYellowPct}% · 红线 {bankRunRedlinePct}%（J1 R1 已同步引用，越线触发 P0/自动关停）</p>
           <div className="b5-actions">
             {canTriageDimension("bankrun") && <button onClick={() => void triage("bankrun")}>处置 → D2 提现队列</button>}
             {canThreshold && <button className="secondary" onClick={openThreshold}>阈值配置</button>}
@@ -459,7 +459,7 @@ export default function RiskRadarPage() {
         <div className="b5-modal-mask" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setThresholdOpen(false)}>
           <div className="b5-modal" role="dialog" aria-modal="true" aria-labelledby="b5-threshold-title">
             <h2 id="b5-threshold-title">B5-MD1 · 挤兑阈值配置</h2>
-            <p>当前挤兑比率 {pct(data.bankrun.ratio24h)} · e(t) {pct(data.bankrun.pressureRatio)}（{data.bankrun.pressureCalculable ? "固定红线 70%，不可修改" : "入金分母为 0，不可计算"}）</p>
+            <p>本配置只影响挤兑比率（24h 提现 ÷ 真实储备）的动态黄线/红线，越线触发 P0 并联动 J1 R1 提现闸自动熔断。当前挤兑比率 {pct(data.bankrun.ratio24h)}；出金压力比 e(t) {pct(data.bankrun.pressureRatio)}（{data.bankrun.pressureCalculable ? `固定红线 ${pct(data.bankrun.pressureRedLine)}，仅人工警戒，不在此处调整` : "入金分母为 0，不可计算"}）</p>
             <div className="b5-threshold-fields">
               <label>黄线（5%–50%）<input value={yellowInput} onChange={(event) => setYellowInput(event.target.value)} inputMode="decimal" /></label>
               <label>红线（10%–80%）<input value={redInput} onChange={(event) => setRedInput(event.target.value)} inputMode="decimal" /></label>

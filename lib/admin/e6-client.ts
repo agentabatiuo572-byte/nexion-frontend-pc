@@ -25,10 +25,17 @@ const E6_KEYWORD_FIELDS = ["keyword1", "keyword2", "keyword3", "keyword4", "keyw
  * 下载页双语文案的内容质量门(与后端 `COMPUTE_DOWNLOAD_TEXT_INVALID` 的 ≤320 字符长度门互补)。
  * 后端只校验长度,测试标点(「！！！」「???」等连续感叹/问号)会被当成正式文案写入并下发给用户端,
  * 所以运营面在提交前必须自己拦住:四字段共用同一条规则,避免只改一个字段就绕过。
+ *
+ * 判定实体在 @/lib/admin/installer-url —— 安装包地址规则同住那里,因为 A5 参数寄存器
+ * 也必须按同一判据显示「已存储但未生效」的值(zentao #156)。这里只做转出,不复制规则。
  */
-export const E6_DOWNLOAD_COPY_MAX_LENGTH = 320;
-export const E6_DOWNLOAD_COPY_PATTERN = "^(?![\\s\\S]*[!?！？]{2,})[\\s\\S]*$";
-export const E6_DOWNLOAD_COPY_PATTERN_MESSAGE = "文案含测试标点(连续感叹号 / 问号),请改为正式文案后再保存";
+export {
+  E6_DOWNLOAD_COPY_MAX_LENGTH,
+  E6_DOWNLOAD_COPY_PATTERN,
+  E6_DOWNLOAD_COPY_PATTERN_MESSAGE,
+  isAcceptableDownloadCopy,
+  isSafeInstallerUrl,
+} from "@/lib/admin/installer-url";
 const exactKeys = [
   e6FlagKey("computeShareEnabled"),
   e6CoeffKey("h5BaseFactor"),

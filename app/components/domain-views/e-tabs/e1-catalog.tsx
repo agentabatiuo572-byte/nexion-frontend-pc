@@ -638,10 +638,10 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                   <Badge tone={s.trialEligible ? "ok" : "neutral"}>{s.trialEligible ? "允许试用" : "不可试用"}</Badge>
                 </div>
                 <div className="acts">
-                  {canWrite ? <button className="primary" onClick={() => ctx.openSku(s.id)}>改价 / 编辑</button> : null}
-                  {canWrite && st === "on" && (unlimitedInventory || Number(s.stock) > 0) && !open && !releaseGate && hasPhaseConfig ? <button className="brand" onClick={() => ctx.openSku(s.id, phaseCur)}>按当前阶段上架</button> : null}
-                  {canWrite ? <button disabled={listingBlocked} title={listingBlocked ? listingBlocker : undefined} onClick={() => ctx.openActionConfirm({ name: st === "on" ? `下架 SKU · ${s.name}` : `上架 SKU · ${s.name}`, op: "sku-status", target: s.id, status: st === "on" ? "off" : "on", detail: st === "on" ? "下架后从商城隐藏,不影响已售设备结算" : "上架后对用户可见", amplify: false })}>{st === "on" ? "下架" : "上架"}</button> : null}
-                  {canWrite ? <button className="danger" onClick={() => ctx.delSku(s.id, s.name ?? s.id)}>删除</button> : null}
+                  {canWrite ? <button className="primary" aria-label={`改价 / 编辑 ${s.name}`} onClick={() => ctx.openSku(s.id)}>改价 / 编辑</button> : null}
+                  {canWrite && st === "on" && (unlimitedInventory || Number(s.stock) > 0) && !open && !releaseGate && hasPhaseConfig ? <button className="brand" aria-label={`按当前阶段上架 ${s.name}`} onClick={() => ctx.openSku(s.id, phaseCur)}>按当前阶段上架</button> : null}
+                  {canWrite ? <button disabled={listingBlocked} title={listingBlocked ? listingBlocker : undefined} aria-label={`${st === "on" ? "下架" : "上架"} ${s.name}`} onClick={() => ctx.openActionConfirm({ name: st === "on" ? `下架 SKU · ${s.name}` : `上架 SKU · ${s.name}`, op: "sku-status", target: s.id, status: st === "on" ? "off" : "on", detail: st === "on" ? "下架后从商城隐藏,不影响已售设备结算" : "上架后对用户可见", amplify: false })}>{st === "on" ? "下架" : "上架"}</button> : null}
+                  {canWrite ? <button className="danger" aria-label={`删除 ${s.name}`} onClick={() => ctx.delSku(s.id, s.name ?? s.id)}>删除</button> : null}
                 </div>
               </div>
             </div>

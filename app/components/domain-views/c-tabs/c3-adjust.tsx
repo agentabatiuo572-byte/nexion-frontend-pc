@@ -492,6 +492,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
                 <span className="bf-legend">账户</span>
                 <div style={{ flex: 1, minWidth: 260, position: "relative" }}>
                   <input
+                    aria-label="选择资产调整账户"
                     value={userQuery}
                     onChange={(event) => {
                       const next = event.target.value;

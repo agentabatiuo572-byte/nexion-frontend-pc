@@ -421,6 +421,9 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
                       <td
                         key={key}
                         className={String(current) !== String(previous) ? "chg" : undefined}
+                        aria-label={canWrite
+                          ? `月${row.month} ${label}，当前 ${current}，点击修改`
+                          : `月${row.month} ${label}，当前 ${current}（只读）`}
                         onClick={canWrite ? () => openDial(row, key, label) : undefined}
                         title={canWrite ? "点击改值" : "只读"}
                       >
@@ -450,7 +453,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
                   <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{control.description}</span>
                 </span>
                 <span className="bdg">{text(control.value, "未设置")}</span>
-                <button className="l-btn sm mc" onClick={() => openControl(control)} disabled={!canControlWrite}>调整</button>
+                <button className="l-btn sm mc" aria-label={`调整${control.label}`} onClick={() => openControl(control)} disabled={!canControlWrite}>调整</button>
               </div>
             ))}
 
@@ -462,7 +465,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
                   {override.description}
                   {override.disabled && <span className="bdg dim" style={{ marginLeft: 8 }}>已撤销</span>}
                 </span>
-                <button className="l-btn sm mc" disabled={!!override.disabled || !canOverrideRevoke} onClick={() => openOverrideRemove(override)}>
+                <button className="l-btn sm mc" aria-label={`撤销覆盖 ${override.cohort}`} disabled={!!override.disabled || !canOverrideRevoke} onClick={() => openOverrideRemove(override)}>
                   {override.disabled ? "已撤销" : "撤销"}
                 </button>
               </div>

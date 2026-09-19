@@ -9,6 +9,7 @@
  */
 import { Fragment, type ReactNode } from "react";
 import { GLOSSARY, GLOSSARY_TERMS, GLOSSARY_GUARD } from "@/lib/admin/glossary";
+import { createGlossaryMatcher } from "@/lib/admin/glossary-match";
 
 export function Gloss({ children }: { children: string }) {
   const tip = GLOSSARY[children];
@@ -16,29 +17,19 @@ export function Gloss({ children }: { children: string }) {
   return <span className="gloss" data-tip={tip} role="note" aria-label={`${children}:${tip}`}>{children}</span>;
 }
 
-// 术语匹配正则:长词优先(GLOSSARY_TERMS 已按长度降序),转义正则特殊字符,一次构建。
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const TERM_RE = new RegExp("(" + GLOSSARY_TERMS.map(escapeRe).join("|") + ")", "g");
+// 匹配边界规则(守护词 / 拉丁词边界 / 长词优先)见 lib/admin/glossary-match.ts。
+// 术语表是模块常量 → 正则只编译一次,渲染路径不重复编译。
+const matchTerms = createGlossaryMatcher(GLOSSARY_TERMS, GLOSSARY_GUARD);
 
 export function AutoGloss({ children }: { children: ReactNode }) {
   if (typeof children !== "string" || !children) return <>{children}</>;
   const text = children;
-  // 守护词区间:完整词内部不拆术语(如「累计提现」不把「计提」拆出误标)
-  const guards: Array<[number, number]> = [];
-  for (const g of GLOSSARY_GUARD) {
-    for (let i = text.indexOf(g); i >= 0; i = text.indexOf(g, i + g.length)) guards.push([i, i + g.length]);
-  }
-  const inGuard = (s: number, e: number) => guards.some(([gs, ge]) => s >= gs && e <= ge);
-  // 按术语扫描,跳过落在守护词内部的匹配;长词优先由 GLOSSARY_TERMS 降序保证。
   const nodes: ReactNode[] = [];
   let last = 0, key = 0;
-  TERM_RE.lastIndex = 0;
-  for (let m = TERM_RE.exec(text); m; m = TERM_RE.exec(text)) {
-    const s = m.index, e = s + m[0].length;
-    if (inGuard(s, e)) continue;
-    if (s > last) nodes.push(<Fragment key={key++}>{text.slice(last, s)}</Fragment>);
-    nodes.push(<Gloss key={key++}>{m[0]}</Gloss>);
-    last = e;
+  for (const hit of matchTerms(text)) {
+    if (hit.start > last) nodes.push(<Fragment key={key++}>{text.slice(last, hit.start)}</Fragment>);
+    nodes.push(<Gloss key={key++}>{hit.term}</Gloss>);
+    last = hit.end;
   }
   if (last < text.length) nodes.push(<Fragment key={key++}>{text.slice(last)}</Fragment>);
   return <>{nodes}</>;

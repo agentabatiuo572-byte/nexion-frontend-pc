@@ -378,6 +378,25 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   });
 
   const onlineCount = novas.filter((n) => n.on).length;
+  // 「不在节奏表里的推送」必须由真实目录派生,不能写死名单:
+  // team_event / staking_event / market_event 已由服务端 seedV3RuntimeChannels 落进 nx_nova_channel,
+  // 它们就在上面的可调节奏表里(有开关 + 服务器 cadence),不该再出现在本区(#146)。
+  const cadenceKeys = new Set(novas.map((n) => n.key));
+  const offTableChannels = NOVA_EVENT_DRIVEN.filter((r) => !cadenceKeys.has(r.name));
+  const cadenceChannelCount = novas.length;
+  const offTableTitle = offTableChannels.length
+    ? `不在 ${cadenceChannelCount} 频道里的推送(口径闭合)`
+    : `全部 ${cadenceChannelCount} 频道均已在节奏表内(口径闭合)`;
+  // 点击率达标判定必须按同一数值口径算:0% < 19% 不能显示达标勾。
+  // 服务端未返回可解析的点击率时(分母不存在)显示「暂不可计算」,不判达标也不判未达标。
+  const ctrValue = Number.parseFloat(String(I2_STATS.ctr).replace("%", "").trim());
+  const ctrTargetValue = Number(I2_STATS.ctrTarget);
+  const ctrComparable = Number.isFinite(ctrValue) && Number.isFinite(ctrTargetValue) && String(I2_STATS.ctr).trim() !== "—";
+  const ctrVerdict = !ctrComparable
+    ? "暂不可计算(送达量为 0 或未返回) · 点击 ÷ 送达"
+    : ctrValue > ctrTargetValue
+      ? `目标 >${ctrTargetValue}% ✓ 已达标 · 点击 ÷ 送达`
+      : `目标 >${ctrTargetValue}% ✗ 未达标 · 点击 ÷ 送达`;
 
   if (contentLoading && !data) {
     return <section className="l-card"><div className="l-b"><div className="itint">I2 数据加载中...</div></div></section>;
@@ -394,10 +413,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           <div className="v">{I2_STATS.todayDelivered}</div>
           <div className="sub">送达事件服务器口径</div>
         </div>
-        <div className="f-stat ok">
+        <div className={`f-stat ${!ctrComparable ? "" : ctrValue > ctrTargetValue ? "ok" : "warn"}`}>
           <div className="k">Nova 点击率</div>
           <div className="v">{I2_STATS.ctr}</div>
-          <div className="sub">目标 &gt;{I2_STATS.ctrTarget}% ✓ · 点击 ÷ 送达</div>
+          <div className="sub">{ctrVerdict}</div>
         </div>
         <div className="f-stat cyan">
           <div className="k">频道在线</div>
@@ -488,41 +507,45 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         </div>
       </section>
 
-      {/* 不在 10 通道里的推送(口径闭合) */}
+      {/* 不在节奏表里的推送(口径闭合)· 名单与频道总数实时由服务端目录派生 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">不在 10 频道里的推送(口径闭合)</span>
+          <span className="ttl">{offTableTitle}</span>
           <span className="sub">· 文案归这页的模板池管,节奏这页管不了 · 防止盘点时漏数或多数</span>
         </div>
-        <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 760 }}>
-            <thead>
-              <tr>
-                <th>频道</th>
-                <th>为什么不可调</th>
-                <th>节奏归谁</th>
-                <th>状态</th>
-              </tr>
-            </thead>
-            <tbody>
-              {NOVA_EVENT_DRIVEN.map((r) => (
-                <tr key={r.name}>
-                  <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{r.name}</td>
-                  <td style={{ fontSize: 12, color: "var(--ink-3)" }}>
-                    {r.name.startsWith("team_event") ? (
-                      <>这三个 v3 业务频道的节奏目前<b>写死在 App 代码里</b>,没有开关字段、不读服务器配置——把它们接进这张节奏表是一张已登记的整合工单,落地前这页不持有它们的调频项</>
-                    ) : r.why}
-                  </td>
-                  <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{r.owner}</td>
-                  <td><span className={`bdg ${r.tone}`}>{r.st}</span></td>
+        {offTableChannels.length === 0 ? (
+          <div className="l-b" style={{ paddingTop: 4 }}>
+            <div className="itint ok">
+              服务端目录里没有任何「不在节奏表内」的推送频道:每个频道都有开关字段、读服务器 cadence,并已在上方可调节奏表中逐条列出。
+            </div>
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table className="l-tbl" style={{ minWidth: 760 }}>
+              <thead>
+                <tr>
+                  <th>频道</th>
+                  <th>为什么不可调</th>
+                  <th>节奏归谁</th>
+                  <th>状态</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {offTableChannels.map((r) => (
+                  <tr key={r.name}>
+                    <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{r.name}</td>
+                    <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{r.why}</td>
+                    <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{r.owner}</td>
+                    <td><span className={`bdg ${r.tone}`}>{r.st}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
         <div className="l-b" style={{ paddingTop: 8 }}>
           <div className="itint">
-            <b>容易混的两个 market</b> · 节奏表里的 market(12 分钟一查)是全网算力 / 币价的氛围播报;上面待整合的 market_event 是 v3 的业务市场事件,两者不是一回事——节奏表只暴露前者,后者等整合工单。
+            <b>容易混的两个 market</b> · 节奏表里的 market(12 分钟一查)是全网算力 / 币价的氛围播报;market_event 是 v3 的业务市场事件(消费 market.curve_advanced 广播事实),两者不是一回事,但在节奏表里是两条独立频道、各自有开关和 cadence。
           </div>
         </div>
       </section>
@@ -712,9 +735,11 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             reason: "首屏同屏校验通道的检查间隔与个人冷却时间",
           },
           {
-            label: "不在 10 频道里的推送(口径闭合)",
-            maxRows: 3,
-            reason: "三类不可调频道只做口径闭合说明",
+            label: offTableTitle,
+            maxRows: Math.max(offTableChannels.length, 1),
+            reason: offTableChannels.length
+              ? "剩余不可调频道只做口径闭合说明"
+              : "服务端目录里已无不可调频道,本区只留口径闭合结论",
           },
           {
             label: "推送模板池(b)",

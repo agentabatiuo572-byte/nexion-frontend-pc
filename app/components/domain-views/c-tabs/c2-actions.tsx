@@ -778,15 +778,22 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
                   const locked = status === "FROZEN";
                   return (
                     <tr className={`click${locked ? " frozen-row" : ""}`} key={accountId(account)} onClick={() => openAccount(account)}>
-                      <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{text(account.userNo, accountId(account))} <span style={{ fontSize: 10.5, color: "var(--c-ac)" }}>详情›</span></td>
+                      <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{text(account.userNo, accountId(account))}{" "}
+                        <button
+                          type="button"
+                          aria-label={`查看账户详情 ${displayAccount(account)}`}
+                          onClick={(e) => { e.stopPropagation(); openAccount(account); }}
+                          style={{ background: "none", border: "none", padding: 0, font: "inherit", fontSize: 10.5, color: "var(--c-ac)", cursor: "pointer" }}
+                        >详情›</button>
+                      </td>
                       <td>{text(account.nickname)}</td>
                       <td><span className={`bdg ${tone}`}>{label}</span></td>
                       <td><span className={`bdg ${riskTone(account.riskScore)}`}>{text(account.riskScore)}</span></td>
                       <td className="mono">{sessionCounts.get(accountId(account)) ?? 0} 个</td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                        {status === "ACTIVE" && canFreeze && <button disabled={busy} className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); freeze(account); }}>冻结</button>}
-                        {status === "FROZEN" && canUnfreeze && <button disabled={busy} className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); unfreeze(account); }}>恢复</button>}
-                        {canLogout && <button disabled={busy || (sessionCounts.get(accountId(account)) ?? 0) <= 0} className="l-btn sm" style={{ marginLeft: 6 }} onClick={(e) => { e.stopPropagation(); logoutAll(account); }}>强制登出</button>}
+                        {status === "ACTIVE" && canFreeze && <button disabled={busy} className="l-btn sm mc" aria-label={`冻结 ${displayAccount(account)}`} onClick={(e) => { e.stopPropagation(); freeze(account); }}>冻结</button>}
+                        {status === "FROZEN" && canUnfreeze && <button disabled={busy} className="l-btn sm mc" aria-label={`恢复 ${displayAccount(account)}`} onClick={(e) => { e.stopPropagation(); unfreeze(account); }}>恢复</button>}
+                        {canLogout && <button disabled={busy || (sessionCounts.get(accountId(account)) ?? 0) <= 0} className="l-btn sm" aria-label={`强制登出 ${displayAccount(account)}`} style={{ marginLeft: 6 }} onClick={(e) => { e.stopPropagation(); logoutAll(account); }}>强制登出</button>}
                         {!canFreeze && !canUnfreeze && !canLogout && <span className="tiny">只读</span>}
                       </td>
                     </tr>
@@ -947,9 +954,9 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
 
             <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 4px" }}>处置入口</div>
             <div className="row wrap" style={{ gap: 8 }}>
-              {status === "ACTIVE" && canFreeze && <button disabled={busy || !!accountContextError} className="l-btn sm mc" onClick={() => freeze(selectedAccount)}>冻结</button>}
-              {status === "FROZEN" && canUnfreeze && <button disabled={busy || !!accountContextError} className="l-btn sm mc" onClick={() => unfreeze(selectedAccount)}>恢复</button>}
-              {canLogout && <button disabled={busy || !!accountContextError || (accountContext?.account && accountId(accountContext.account) === accountId(selectedAccount) ? asNumber(accountContext.activeSessions) : accountSessions.filter(activeSession).length) <= 0} className="l-btn sm" onClick={() => logoutAll(selectedAccount)}>强制登出</button>}
+              {status === "ACTIVE" && canFreeze && <button disabled={busy || !!accountContextError} className="l-btn sm mc" aria-label={`冻结 ${displayAccount(selectedAccount)}`} onClick={() => freeze(selectedAccount)}>冻结</button>}
+              {status === "FROZEN" && canUnfreeze && <button disabled={busy || !!accountContextError} className="l-btn sm mc" aria-label={`恢复 ${displayAccount(selectedAccount)}`} onClick={() => unfreeze(selectedAccount)}>恢复</button>}
+              {canLogout && <button disabled={busy || !!accountContextError || (accountContext?.account && accountId(accountContext.account) === accountId(selectedAccount) ? asNumber(accountContext.activeSessions) : accountSessions.filter(activeSession).length) <= 0} className="l-btn sm" aria-label={`强制登出 ${displayAccount(selectedAccount)}`} onClick={() => logoutAll(selectedAccount)}>强制登出</button>}
             </div>
           </Drawer>
         );

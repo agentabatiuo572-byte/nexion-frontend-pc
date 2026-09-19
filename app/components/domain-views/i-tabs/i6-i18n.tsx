@@ -725,7 +725,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                   <td className="mono">{message.version}</td>
                   <td><span className={`bdg ${message.status === "published" ? "ok" : message.status === "draft" ? "warn" : "dim"}`}>{statusLabel(message.status)}</span></td>
                   <td>{languageCount}/3 · {languageCount === 3 ? "中英越完整" : "待补齐"}</td>
-                  <td style={{ textAlign: "right" }}><button className="l-btn sm" onClick={(event) => { event.stopPropagation(); setSelectedMessageKey(message.messageKey); }}>选择</button></td>
+                  <td style={{ textAlign: "right" }}><button className="l-btn sm" aria-label={`选择 ${message.messageKey}`} onClick={(event) => { event.stopPropagation(); setSelectedMessageKey(message.messageKey); }}>选择</button></td>
                 </tr>;
               })}
               {filteredMessages.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--ink-4)" }}>暂无符合条件的真实词条</td></tr>}
@@ -963,16 +963,17 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                       )}
                     </td>
                     <td style={{ textAlign: "right" }}>
-                      <button className="l-btn sm" onClick={() => setVersionCourseId(c.id)} style={{ marginRight: 6 }}>版本管理</button>
+                      <button className="l-btn sm" aria-label={`版本管理 ${c.title}`} onClick={() => setVersionCourseId(c.id)} style={{ marginRight: 6 }}>版本管理</button>
                       {canWriteI7 && <>
                       {isDraft && <>
-                      <button className="l-btn sm" onClick={() => editCrs(c)} style={{ marginRight: 6 }}>编辑</button>
-                      <button className="l-btn sm mc" onClick={() => pubCrs(c)} style={{ marginRight: 6 }}>发布</button>
-                      <button className="l-btn sm" onClick={() => deleteCrs(c)} style={{ marginRight: 6 }}>删除草稿</button>
+                      <button className="l-btn sm" aria-label={`编辑 ${c.title}`} onClick={() => editCrs(c)} style={{ marginRight: 6 }}>编辑</button>
+                      <button className="l-btn sm mc" aria-label={`发布 ${c.title}`} onClick={() => pubCrs(c)} style={{ marginRight: 6 }}>发布</button>
+                      <button className="l-btn sm" aria-label={`删除草稿 ${c.title}`} onClick={() => deleteCrs(c)} style={{ marginRight: 6 }}>删除草稿</button>
                       </>}
                       {!archived && !isDraft && (
                         <button
                           className="l-btn sm"
+                          aria-label={`下架 ${c.title}`}
                           onClick={() => archiveCrs(c)}
                         >
                           下架
@@ -982,6 +983,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                       {canAdjustI7Reward && !archived && !isDraft && (
                         <button
                           className="l-btn sm mc"
+                          aria-label={`调整奖励 ${c.title}`}
                           onClick={() => adjRwd(c)}
                           style={{ marginRight: 6 }}
                         >

@@ -5,6 +5,23 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowUpRight, Database, RefreshCw, Search, ShieldCheck } from "lucide-react";
 import { A5LoadError, fetchA5Registry, type A5LoadErrorKind } from "@/lib/admin/a5-client";
 import type { A5RegistryOverview, A5RegistryRow } from "@/lib/admin/a5-contract";
+// 与 E6 共用同一份安装包地址判定(zentao #156):E6 已判为无效的值,A5 不得再把它
+// 展示成「当前服务端值」——否则同一事实在两页互相矛盾。
+import { isSafeInstallerUrl } from "@/lib/admin/installer-url";
+
+/**
+ * 该行的当前值是否真的生效。
+ *
+ * 现在只有客户端下载地址一类的键需要内容级校验:后端只保证「已写入」,不保证值
+ * 可下发;E6 会按同一规则把它判为未配置并拦住开关,所以 A5 必须照同一判据显示,
+ * 否则运营会在参数寄存器里看到一个实际不生效的值。
+ */
+function rowValueEffective(row: A5RegistryRow): boolean {
+  if (row.canonicalKey === "E.compute.download.url") {
+    return isSafeInstallerUrl(row.currentValue.trim());
+  }
+  return true;
+}
 
 const DOMAIN_ACCENT: Record<string, string> = {
   A: "var(--admin-domain-a)", B: "var(--admin-domain-b)", C: "var(--admin-domain-c)",
@@ -167,13 +184,20 @@ function DomainSection({ domain, rows }: { domain: string; rows: A5RegistryRow[]
               </Link>
             </div>
             <div className="mt-2 rounded-[7px] px-2.5 py-2" style={{ background: "var(--v5-surface)" }}>
-              <p className="text-[9.5px]" style={{ color: "var(--v5-ink-4)" }}>当前服务端值</p>
-              <p className="font-mono-tabular mt-0.5 break-all text-[13px]" style={{ color: "var(--v5-ink)" }}>{row.currentValue || "空值"}{row.unit ? <span className="ml-1 text-[10px]" style={{ color: "var(--v5-ink-3)" }}>{row.unit}</span> : null}</p>
+              <p className="text-[9.5px]" style={{ color: "var(--v5-ink-4)" }}>{rowValueEffective(row) ? "当前服务端值" : "当前服务端值 · 未生效"}</p>
+              <p className="font-mono-tabular mt-0.5 break-all text-[13px]" style={{ color: rowValueEffective(row) ? "var(--v5-ink)" : "var(--v5-warning)" }}>{row.currentValue || "空值"}{row.unit ? <span className="ml-1 text-[10px]" style={{ color: "var(--v5-ink-3)" }}>{row.unit}</span> : null}</p>
+              {!rowValueEffective(row) && (
+                <p className="mt-1 text-[10px] leading-relaxed" style={{ color: "var(--v5-warning)" }}>
+                  该值未通过归属模块的有效性校验，当前不生效、也不会下发给用户端；请在{row.ownerLabel}修正后重新保存。
+                </p>
+              )}
             </div>
             <p className="mt-2 text-[10.5px] leading-relaxed" style={{ color: "var(--v5-ink-3)" }}>{row.description}</p>
             <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[9.5px]" style={{ color: "var(--v5-ink-4)" }}>
               <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-surface)" }}>{row.valueType}</span>
-              <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-success-soft)", color: "var(--v5-success)" }}>服务端权威</span>
+              {rowValueEffective(row)
+                ? <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-success-soft)", color: "var(--v5-success)" }}>服务端权威</span>
+                : <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-warning-soft)", color: "var(--v5-warning)" }}>已存储 · 未生效</span>}
               {row.operationConfirm && <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-warning-soft)", color: "var(--v5-warning)" }}><ShieldCheck size={9} />修改需确认</span>}
               <span>更新于 {formatTime(row.updatedAt)}</span>
             </div>

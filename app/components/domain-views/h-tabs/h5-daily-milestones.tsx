@@ -271,7 +271,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                   {rule.sub && <small>{rule.sub}</small>}
                 </div>
                 <span className="v">{text(rule.cur)}</span>
-                <button className={`l-btn sm${rule.hot ? " mc" : ""}`} onClick={() => openRule(rule)} disabled={!canRuleWrite}>
+                <button className={`l-btn sm${rule.hot ? " mc" : ""}`} aria-label={`调整 ${rule.name}`} onClick={() => openRule(rule)} disabled={!canRuleWrite}>
                   调整
                 </button>
               </div>
@@ -320,7 +320,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                   <td>{text(milestone.kind)}</td>
                   <td className="num mono">{milestone.reward}</td>
                   <td style={{ textAlign: "right" }}>
-                    <button className="l-btn sm mc" onClick={() => openStreak(milestone)} disabled={!canWrite}>改奖励</button>
+                    <button className="l-btn sm mc" aria-label={`修改 ${milestone.day} 天连签奖励`} onClick={() => openStreak(milestone)} disabled={!canWrite}>改奖励</button>
                   </td>
                 </tr>
               ))}
@@ -343,7 +343,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(powerUp.sub)} · 前往{rewardDestination(powerUp.downstream)}</span>
               </span>
               <span className="bdg">{powerUp.day} 天</span>
-              <button className="l-btn sm mc" onClick={() => openPowerUp(powerUp)} disabled={!canWrite}>调整</button>
+              <button className="l-btn sm mc" aria-label={`调整成长奖励 ${powerUp.label}（${powerUp.day} 天）`} onClick={() => openPowerUp(powerUp)} disabled={!canWrite}>调整</button>
             </div>
           ))}
         </div>
@@ -376,7 +376,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                   <td className="num mono">{Number(milestone.nex).toLocaleString()}</td>
                   <td className="num mono">{Number(milestone.weekTrigger ?? 0).toLocaleString()}</td>
                   <td style={{ textAlign: "right" }}>
-                    <button className="l-btn sm mc" onClick={() => openEarn(milestone)} disabled={!canWrite}>调整</button>
+                    <button className="l-btn sm mc" aria-label={`调整收益里程碑 ${milestone.key}`} onClick={() => openEarn(milestone)} disabled={!canWrite}>调整</button>
                   </td>
                 </tr>
               ))}

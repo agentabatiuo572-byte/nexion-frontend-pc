@@ -641,7 +641,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                     <td>{position.status.toUpperCase() === "ACTIVE"
                       ? <span className="bdg ok">启用</span>
                       : <span className="bdg dim">停用</span>}</td>
-                    <td style={{ textAlign: "right" }}>{canWrite && <button type="button" className="l-btn sm" onClick={() => deleteCopyPosition(position.positionKey)}>删除</button>}</td>
+                    <td style={{ textAlign: "right" }}>{canWrite && <button type="button" className="l-btn sm" aria-label={`删除位置 ${position.positionKey}`} onClick={() => deleteCopyPosition(position.positionKey)}>删除</button>}</td>
                   </tr>
                 );
               })}
@@ -672,8 +672,8 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                     <td className="num mono">{option.sortOrder}</td>
                     <td className="num mono">{option.usageCount}</td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      {canWrite && <button type="button" className="l-btn sm mc" onClick={() => editCopyVersionOption(option)}>编辑</button>}
-                      {canWrite && <button type="button" className="l-btn sm dgr" style={{ marginLeft: 6 }} disabled={referenced} title={referenced ? "已有文案历史引用，不能删除" : "删除未使用版本"} onClick={() => deleteCopyVersionOption(option)}>删除</button>}
+                      {canWrite && <button type="button" className="l-btn sm mc" aria-label={`编辑版本 ${option.versionKey}`} onClick={() => editCopyVersionOption(option)}>编辑</button>}
+                      {canWrite && <button type="button" className="l-btn sm dgr" style={{ marginLeft: 6 }} disabled={referenced} aria-label={`删除版本 ${option.versionKey}`} title={referenced ? "已有文案历史引用，不能删除" : "删除未使用版本"} onClick={() => deleteCopyVersionOption(option)}>删除</button>}
                     </td>
                   </tr>
                 );

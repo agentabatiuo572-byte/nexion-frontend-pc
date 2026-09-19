@@ -101,6 +101,13 @@ const COMPLETION_LABEL: Record<string, string> = {
   ledger: "账本入账",
 };
 
+// 三语列在表格里只有按钮本身可读，语言名必须进可访问名称才能区分同行的三枚按钮。
+const LOCALE_LABEL: Record<"en" | "zh" | "vi", string> = {
+  en: "英文",
+  zh: "中文",
+  vi: "越南语",
+};
+
 const TASK_CATEGORY_OPTIONS = ["wallet", "explore", "recommend", "identity", "social"];
 const TASK_CATEGORY_LABELS: Record<string, string> = {
   wallet: "钱包",
@@ -205,6 +212,20 @@ function numberId(value: unknown, fallback: number) {
 
 function statusMeta(value: unknown) {
   return TASK_STATUS[text(value, "")] ?? ["未知", "dim"];
+}
+
+/**
+ * 生效中但完成判定仍为「待绑定规范事件」的任务必须被标出来。
+ * 后端 `H3_MISSION_ACTIVE_BINDING_REQUIRED` 只拦「新启用」,历史遗留的 active+unbound
+ * 行会照常下发到 App 引导用户做真实动作,却因为没有规范完成事件而无法完成/发奖。
+ * 权威页面显示成普通「生效中」会让运营误以为任务可用。
+ */
+function taskStatusMeta(task: QuestTask) {
+  const label = text(task.status, "");
+  if (label === "active" && text(task.completionType, "unbound") === "unbound") {
+    return ["生效中 · 待绑定", "warn"] as const;
+  }
+  return statusMeta(task.status);
 }
 
 function promoFinalReward(base: unknown, multiplier: unknown) {
@@ -1048,11 +1069,13 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const h4Stats = model.h4Stats ?? {};
   const currentPhase = text(model.phaseMultiplierReadonly?.currentPhase, "");
   const currentPhaseCode = cleanPhaseKey(currentPhase);
-  const phaseMultiplier = text(model.phaseMultiplierReadonly?.value, "0");
-  const currentWeeklyMultiplier = text(
-    model.weeklyMultipliers?.find((item) => cleanPhaseKey(item.p) === currentPhaseCode)?.mult,
-    "0×",
-  );
+  // 同一页面出现两个互斥倍率的根因:顶部读「每周任务自己的阶段倍率曲线」,底部读「H1 全局任务加成」,
+  // 两者是不同旋钮,却都被说成「当前 P2 任务加成」(#138)。这里只保留 H1 权威值作为「任务加成」,
+  // 周任务曲线单独标注为「每周任务曲线倍率」,并在服务端未返回时统一显示「暂不可计算」而不是 0×。
+  const phaseMultiplierRaw = text(model.phaseMultiplierReadonly?.value, "");
+  const phaseMultiplier = phaseMultiplierRaw ? `${phaseMultiplierRaw}x` : "暂不可计算";
+  const weeklyCurveMultiplier = model.weeklyMultipliers?.find((item) => cleanPhaseKey(item.p) === currentPhaseCode)?.mult;
+  const weeklyCurveLabel = weeklyCurveMultiplier ? `${weeklyCurveMultiplier}` : "暂不可计算";
   const promoBanner = model.promoBanner ?? {};
   const wheelProbabilitySum = (model.wheelTiers ?? []).reduce((sum, tier) => sum + numericValue(tier.prob), 0);
   const wheelProbabilityOk = Math.abs(wheelProbabilitySum - 100) < 0.001;
@@ -1081,7 +1104,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           <div className="f-stat warn">
             <div className="k">本周 NEX 派发</div>
             <div className="v">{text(h3Stats.weeklyNex)}</div>
-            <div className="sub">含 Phase 加成 {currentPhaseCode} {currentWeeklyMultiplier}</div>
+            <div className="sub">含 Phase 加成 {currentPhaseCode} {phaseMultiplier}（H1 权威）；每周任务曲线 {weeklyCurveLabel}</div>
           </div>
           <div className="f-stat cyan">
             <div className="k">月度挑战在途</div>
@@ -1139,6 +1162,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   {(["en", "zh", "vi"] as const).map((language) => (
                     <td key={language}>
                       <button className="l-btn sm mc" disabled={!canModuleWrite || !item.code}
+                        aria-label={`${localizedValue(item.entity, item.code, row.field, language) ? "编辑" : "填写"} ${row.label} ${LOCALE_LABEL[language]}`}
                         onClick={() => openLocalizedContent(item.entity, item.code, row.field, language, row.source)}>
                         {localizedValue(item.entity, item.code, row.field, language) || "填写"}
                       </button>
@@ -1214,7 +1238,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                 <tbody>
                   {model.dayOneTasks.map((task, index) => {
                     const id = numberId(task.id, index);
-                    const [statusLabel, statusTone] = statusMeta(task.status);
+                    const [statusLabel, statusTone] = taskStatusMeta(task);
                     const active = text(task.status, "") === "active";
                     return (
                       <tr key={id}>
@@ -1224,8 +1248,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                         <td style={{ color: "var(--ink-3)" }}>新进入用户的快照总奖励</td>
                         <td><span className={`bdg ${statusTone}`}>{statusLabel}</span></td>
                         <td style={{ fontSize: 11.5 }}>
-                          <span style={{ color: "var(--ink-2)" }}>{COMPLETION_LABEL[text(task.completionType, "unbound")] ?? "待绑定规范事件"}</span>
-                          {task.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{text(task.completionEvent)}</span> : null}
+                          <span style={{ color: task.completionEvent ? "var(--ink-2)" : "var(--warning)" }}>{COMPLETION_LABEL[text(task.completionType, "unbound")] ?? "待绑定规范事件"}</span>
+                          {task.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{text(task.completionEvent)}</span> : <span style={{ color: "var(--warning)", marginLeft: 4 }}>· 未绑定则无法完成发奖</span>}
                         </td>
                         <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                           <span className="tiny" style={{ color: "var(--ink-3)" }}>统一奖励</span>
@@ -1280,7 +1304,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                 </thead>
                 <tbody>
                   {model.weeklyTier1.map((task, index) => {
-                    const [statusLabel, statusTone] = statusMeta(task.status);
+                    const [statusLabel, statusTone] = taskStatusMeta(task);
                     return (
                       <tr key={`${task.cond}-${index}`}>
                         <td style={{ fontWeight: 600 }}>{text(task.cond)}</td>
@@ -1289,8 +1313,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                         <td className="num mono" style={{ fontWeight: 700 }}>{text(task.reward)}</td>
                         <td><span className={`bdg ${statusTone}`}>{statusLabel}</span></td>
                         <td style={{ fontSize: 11.5 }}>
-                          <span style={{ color: "var(--ink-2)" }}>{COMPLETION_LABEL[text(task.completionType, "unbound")] ?? "待绑定规范事件"}</span>
-                          {task.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{text(task.completionEvent)}</span> : null}
+                          <span style={{ color: task.completionEvent ? "var(--ink-2)" : "var(--warning)" }}>{COMPLETION_LABEL[text(task.completionType, "unbound")] ?? "待绑定规范事件"}</span>
+                          {task.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{text(task.completionEvent)}</span> : <span style={{ color: "var(--warning)", marginLeft: 4 }}>· 未绑定则无法完成发奖</span>}
                         </td>
                         <td style={{ textAlign: "right" }}>
                           <button className="l-btn sm mc" onClick={() => openTaskReward(`mission.${text(task.taskCode ?? task.missionCode ?? task.id)}.reward`, text(task.cond), text(task.reward))} disabled={!canModuleWrite}>改奖励</button>
@@ -1321,7 +1345,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                 </thead>
                 <tbody>
                   {model.weeklyTier2.map((task, index) => {
-                    const [statusLabel, statusTone] = statusMeta(task.status);
+                    const [statusLabel, statusTone] = taskStatusMeta(task);
                     return (
                       <tr key={`${task.cond}-${index}`}>
                         <td style={{ fontWeight: 600 }}>{text(task.cond)}</td>
@@ -1330,8 +1354,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                         <td className="num mono" style={{ fontWeight: 700 }}>{text(task.reward)}</td>
                         <td><span className={`bdg ${statusTone}`}>{statusLabel}</span></td>
                         <td style={{ fontSize: 11.5 }}>
-                          <span style={{ color: "var(--ink-2)" }}>{COMPLETION_LABEL[text(task.completionType, "unbound")] ?? "待绑定规范事件"}</span>
-                          {task.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{text(task.completionEvent)}</span> : null}
+                          <span style={{ color: task.completionEvent ? "var(--ink-2)" : "var(--warning)" }}>{COMPLETION_LABEL[text(task.completionType, "unbound")] ?? "待绑定规范事件"}</span>
+                          {task.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{text(task.completionEvent)}</span> : <span style={{ color: "var(--warning)", marginLeft: 4 }}>· 未绑定则无法完成发奖</span>}
                         </td>
                         <td style={{ textAlign: "right" }}>
                           <button className="l-btn sm mc" onClick={() => openTaskReward(`mission.${text(task.taskCode ?? task.missionCode ?? task.id)}.reward`, text(task.cond), text(task.reward))} disabled={!canModuleWrite}>改奖励</button>
@@ -1517,9 +1541,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         <div className="l-b" style={{ paddingTop: 4 }}>
           <div className="htint warn" style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ flex: 1 }}>
-              <b>全局任务加成 H1 派发</b> · 当前阶段 {currentPhaseCode},当前全局任务倍率 {phaseMultiplier}x。要调去 H1。
+              <b>全局任务加成 H1 派发</b> · 当前阶段 {currentPhaseCode},当前全局任务倍率 {phaseMultiplier}。要调去 H1。
             </span>
-            <span className="v mono" style={{ fontWeight: 700 }}>{phaseMultiplier}x</span>
+            <span className="v mono" style={{ fontWeight: 700 }}>{phaseMultiplier}</span>
           </div>
           <div className="htint" style={{ marginTop: 8, fontSize: 12 }}>
             <b>两套倍率别混</b> · 上方“一档阶段倍率”是每周任务自己的曲线;“全局任务加成”是 H1 的节奏旋钮。
@@ -1705,8 +1729,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   <span className="mono" style={{ fontWeight: 700 }}>{percentText(tier.prob)}%</span>
                   <span>{real ? <span className="bdg bad">真实流出</span> : <span className="bdg dim">{text(tier.kind)}</span>}</span>
                   <span style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                    <button className="l-btn sm mc" onClick={() => openEditWheelTier(tier)} disabled={!canWheelWrite}>编辑</button>
-                    <button className="l-btn sm" onClick={() => openDeleteWheelTier(tier)} disabled={numericValue(tier.prob) !== 0 || !canWheelWrite} title={numericValue(tier.prob) === 0 ? "删除档位" : "先将概率调为 0%"}>删除</button>
+                    <button className="l-btn sm mc" aria-label={`编辑 ${text(tier.tier)}（${text(tier.reward)}）`} onClick={() => openEditWheelTier(tier)} disabled={!canWheelWrite}>编辑</button>
+                    <button className="l-btn sm" aria-label={`删除 ${text(tier.tier)}（${text(tier.reward)}）`} onClick={() => openDeleteWheelTier(tier)} disabled={numericValue(tier.prob) !== 0 || !canWheelWrite} title={numericValue(tier.prob) === 0 ? "删除档位" : "先将概率调为 0%"}>删除</button>
                   </span>
                 </div>
               );

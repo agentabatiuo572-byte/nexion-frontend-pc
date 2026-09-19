@@ -163,13 +163,14 @@ function MenuRow({ node, depth, expanded, onToggle, onCreate, onEdit, onDelete, 
   const hasChildren = node.children.length > 0;
   const isOpen = expanded.has(node.id);
   const isDomain = node.parentId == null;
+  const targetName = node.menuNameZh || node.menuName;
   return (
     <div>
       <div className="row" style={{ alignItems: "center", gap: 8, padding: "8px 0", paddingLeft: depth * 22, borderBottom: "1px solid var(--border)" }}>
         <button
           onClick={() => hasChildren && onToggle(node.id)}
           style={{ width: 18, color: "var(--ink-3)", cursor: hasChildren ? "pointer" : "default", background: "none", border: "none", fontSize: 11 }}
-          aria-label={isOpen ? "收起" : "展开"}
+          aria-label={hasChildren ? `${isOpen ? "收起" : "展开"} ${targetName}` : `${targetName} 无子级`}
         >
           {hasChildren ? (isOpen ? "▼" : "▶") : "·"}
         </button>
@@ -178,9 +179,9 @@ function MenuRow({ node, depth, expanded, onToggle, onCreate, onEdit, onDelete, 
         {node.routePath && <CodeTag><span className="mono" style={{ fontSize: 11 }}>{node.routePath}</span></CodeTag>}
         <Badge tone={node.status === 1 ? "ok" : "dim"}>{node.status === 1 ? "启用" : "停用"}</Badge>
         <span style={{ flex: 1 }} />
-        {canWrite && <Btn sm onClick={() => onCreate(node)}>+ 子级</Btn>}
-        {canWrite && <Btn sm onClick={() => onEdit(node)}>编辑</Btn>}
-        {canWrite && <Btn sm onClick={() => onDelete(node)}>删除</Btn>}
+        {canWrite && <Btn sm onClick={() => onCreate(node)} aria-label={`为 ${targetName} 新建子级`}>+ 子级</Btn>}
+        {canWrite && <Btn sm onClick={() => onEdit(node)} aria-label={`编辑 ${targetName}`}>编辑</Btn>}
+        {canWrite && <Btn sm onClick={() => onDelete(node)} aria-label={`删除 ${targetName}`}>删除</Btn>}
       </div>
       {hasChildren && isOpen && node.children.map((child) => (
         <MenuRow key={child.id} node={child} depth={depth + 1} expanded={expanded} onToggle={onToggle} onCreate={onCreate} onEdit={onEdit} onDelete={onDelete} canWrite={canWrite} />

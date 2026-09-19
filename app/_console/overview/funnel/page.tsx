@@ -16,6 +16,7 @@ import {
   type B3Filters,
 } from "@/lib/admin/b3-client";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import { normalizeB3RefOptions } from "@/lib/admin/b3-ref-display";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { B3RestoredInsights } from "@/app/components/dashboard/restored-b-insights";
 import { canAccessCrossDomainPath } from "@/lib/admin/cross-domain-authority";
@@ -147,7 +148,7 @@ export default function FunnelPage() {
               onChange={(event) => setFilters((current) => ({ ...current, ref: event.target.value }))}
             >
               <option value={ALL}>全部渠道</option>
-              {options.refs.map((value) => <option key={value} value={value}>{value}</option>)}
+              {normalizeB3RefOptions(options.refs).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
           <label className="b3-view-name">

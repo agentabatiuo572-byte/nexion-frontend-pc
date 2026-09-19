@@ -46,6 +46,10 @@ const WATER_LABEL: Record<B2WaterLevel["tier"], string> = {
   DANGER: "危险",
 };
 
+/** 负债分类数一律由服务端口径常量派生 —— 页首、摘要、表格、导出共用同一个数,
+ *  服务端增删科目时四处同步变化,不再各自硬编码(#108:页首写「8 类」而实际展示 9 类)。 */
+const LIABILITY_CATEGORY_COUNT = B2_LIABILITY_KEYS.length;
+
 const LIABILITY_LABELS: Record<(typeof B2_LIABILITY_KEYS)[number], string> = {
   withdrawable_balance: "可提现余额",
   usdt_staking_principal: "USDT 质押本金",
@@ -182,7 +186,7 @@ export default function LiquidityPage() {
         <BPageHeader
           id="B2"
           title="资金池水位"
-          desc="正在从 D3 权威资金口径读取储备、8 类应付负债与到期预测。"
+          desc={`正在从 D3 权威资金口径读取储备、${LIABILITY_CATEGORY_COUNT} 类应付负债与到期预测。`}
           ctaLabel="D3 资金池深页"
           ctaHref="/finance/pool"
           ctaAllowed={canCross("/finance/pool")}
@@ -230,7 +234,7 @@ export default function LiquidityPage() {
       <BPageHeader
         id="B2"
         title="资金池水位"
-        desc="以 D3 权威口径回答：当前可动用储备够不够、8 类负债来自哪里、未来 7/30 天何时到期。"
+        desc={`以 D3 权威口径回答：当前可动用储备够不够、${LIABILITY_CATEGORY_COUNT} 类负债来自哪里、未来 7/30 天何时到期。`}
         ctaLabel="D3 资金池深页"
         ctaHref="/finance/pool"
         ctaAllowed={canCross("/finance/pool")}
@@ -283,7 +287,7 @@ export default function LiquidityPage() {
         <article className="card b2-kpi">
           <span>应付负债</span>
           <strong>{money(liabilities.totalUsdt)}</strong>
-          <small>{liabilities.hardLiabilityCategoryCount}/{B2_LIABILITY_KEYS.length} 类服务端科目</small>
+          <small>{liabilities.hardLiabilityCategoryCount}/{LIABILITY_CATEGORY_COUNT} 类服务端科目</small>
         </article>
         <article className={`card b2-kpi tier-${reserve.waterLevel.tier.toLowerCase()}`}>
           <span>当前资金水位</span>
@@ -381,7 +385,7 @@ export default function LiquidityPage() {
 
       <section className="card b2-liabilities">
         <header>
-          <div><b>应付负债 · {B2_LIABILITY_KEYS.length} 类科目</b><span>{liabilities.hardLiabilityCategoryCount}/{B2_LIABILITY_KEYS.length} · 合计 {money(liabilities.totalUsdt)}</span></div>
+          <div><b>应付负债 · {LIABILITY_CATEGORY_COUNT} 类科目</b><span>{liabilities.hardLiabilityCategoryCount}/{LIABILITY_CATEGORY_COUNT} · 合计 {money(liabilities.totalUsdt)}</span></div>
           <span>Trial 仅为压力测试：{liabilities.trialShadowIncluded ? "当前展示" : "未计入硬负债"}</span>
         </header>
         <div className="b2-table-wrap">
@@ -444,7 +448,7 @@ export default function LiquidityPage() {
                   </label>
                 </div>
                 <fieldset>
-                  <legend>{B2_LIABILITY_KEYS.length} 类负债口径</legend>
+                  <legend>{LIABILITY_CATEGORY_COUNT} 类负债口径</legend>
                   <div className="b2-check-grid">
                     {B2_LIABILITY_KEYS.map((key) => (
                       <label key={key}>

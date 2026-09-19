@@ -17,6 +17,7 @@ import {
   type PageResult,
 } from "@/lib/admin/d-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { formatD4Remark, formatD4Subtype } from "@/lib/admin/d4-ledger-display";
 import type { DCtx } from "./types";
 
 const BILL_TYPES: ReadonlyArray<readonly [D4BillType | "", string]> = [
@@ -58,6 +59,13 @@ function tone(row: D4Bill) {
   if (["SUCCESS", "POSTED", "COMPLETED"].includes(row.status.toUpperCase())) return "ok";
   if (["FAILED", "REJECTED"].includes(row.status.toUpperCase())) return "bad";
   return "warn";
+}
+
+function D4RemarkCell({ value }: { value: unknown }) {
+  const remark = formatD4Remark(value);
+  return remark.technical
+    ? <span title={remark.technical}>{remark.label}</span>
+    : <>{remark.label}</>;
 }
 
 function userLabel(row: Pick<D4Bill, "userNo" | "nickname"> | Pick<D4UserLedger, "userNo" | "nickname"> | null | undefined) {
@@ -108,8 +116,10 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
     }
     const requestId = ++billsRequest.current;
     setLoading(true);
-    setBills({ total: 0, pageNum: page, pageSize, records: [] });
     setError("");
+    // 翻页时保留上一份 total/pageSize:清成 EMPTY_PAGE 会让分页短暂显示「共 0 条 · 第 2 / 1 页」
+    // 这种违反分页约束的中间态,并让统计卡闪变。记录本身清空由 loading 占位行表达。
+    setBills((current) => ({ ...current, pageNum: page, pageSize, records: [] }));
     const query: D4BillQuery = {
       type,
       userId: applied.userId,
@@ -257,11 +267,11 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
                     <tr key={row.id} style={deepBizNo && row.bizNo === deepBizNo ? { background: "color-mix(in srgb, var(--c-ac) 12%, transparent)" } : undefined}>
                       <td className="mono" style={{ color: "var(--ink)" }}>{row.bizNo}</td>
                       <td><span className="mono">{row.userNo}</span>{row.nickname && <div style={{ color: "var(--ink-4)", fontSize: 11 }}>{row.nickname}</div>}</td>
-                      <td><span className="bdg dim">{BILL_TYPE_LABELS[row.billType]}</span></td><td className="mono">{row.subtype}</td>
+                      <td><span className="bdg dim">{BILL_TYPE_LABELS[row.billType]}</span></td><td>{formatD4Subtype(row.subtype)}</td>
                       <td className="num mono" style={{ color: row.direction === "IN" || row.direction === "CREDIT" ? "var(--success)" : "var(--negative)", fontWeight: 700 }}>{signed(row)}</td>
                       <td className="num mono">{assetAmount(row.balanceAfter, row.asset)} {row.asset}</td>
                       <td><span className={`bdg ${tone(row)}`}>{BILL_STATUS_LABELS[row.status.toUpperCase()] ?? row.status}</span></td>
-                      <td style={{ color: "var(--ink-4)" }}>{row.remark || "—"}</td><td className="mono" style={{ color: "var(--ink-4)" }}>{timeText(row.createdAt)}</td>
+                      <td style={{ color: "var(--ink-4)" }}><D4RemarkCell value={row.remark} /></td><td className="mono" style={{ color: "var(--ink-4)" }}>{timeText(row.createdAt)}</td>
                       <td style={{ textAlign: "right" }}><button className="l-btn sm" onClick={() => { setUserInput(String(row.userId)); setSelectedUserId(row.userId); }}>查看账户</button></td>
                     </tr>
                   ))}

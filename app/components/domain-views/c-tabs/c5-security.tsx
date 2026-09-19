@@ -593,6 +593,12 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
             <div className="r">
               <div className="lookup" style={{ position: "relative", minWidth: 320 }}>
                 <input
+                  aria-label="检索安全处置用户"
+                  aria-describedby="c5-user-lookup-hint"
+                  aria-expanded={showUserMenu}
+                  aria-controls="c5-user-lookup-options"
+                  role="combobox"
+                  aria-autocomplete="list"
                   value={userLookup}
                   onChange={(event) => {
                     const next = event.target.value;
@@ -620,11 +626,14 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
                   }}
                   placeholder="搜索用户编码 / 用户名 / 推荐码 / 手机号"
                 />
-                <div style={{ marginTop: 4, fontSize: 10.5, color: "var(--ink-4)" }}>
+                <div id="c5-user-lookup-hint" style={{ marginTop: 4, fontSize: 10.5, color: "var(--ink-4)" }}>
                   手机号仅在本机转为哈希后检索，服务端不会接收明文号码
                 </div>
                 {showUserMenu && (
                   <div
+                    id="c5-user-lookup-options"
+                    role="listbox"
+                    aria-label="匹配的安全处置用户"
                     style={{
                       position: "absolute",
                       top: "calc(100% + 6px)",

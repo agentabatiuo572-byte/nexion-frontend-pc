@@ -172,6 +172,7 @@ function ParamRow({
       <button
         className={`l-btn sm${param.hot ? " mc" : ""}`}
         disabled={readOnly || !canWrite}
+        aria-label={readOnly ? `只读 · ${param.name}` : canWrite ? `调整 ${param.name}` : `无写权限 · ${param.name}`}
         title={readOnly ? (param.key === "phaseOpen" ? "由 H1 当前阶段派发，只读" : "由 E1 目标商品售价同步，只读") : undefined}
         onClick={() => {
           if (param.hot || isInteger || isProduct) {

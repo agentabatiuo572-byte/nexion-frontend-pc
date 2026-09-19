@@ -25,6 +25,9 @@ import {
   type E6YieldView,
   type E6GpuTierView,
 } from "@/lib/admin/e6-client";
+// 安装包地址判定是 E6/A5 共用的单一来源(zentao #156:两页曾各自判定,于是 A5 把 E6
+// 已判为无效的值当成「当前服务端值」展示)。规则住在 installer-url.ts,这里只引用。
+import { isSafeInstallerUrl } from "@/lib/admin/installer-url";
 
 const numberFmt = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 });
 
@@ -57,22 +60,6 @@ function firstFreeKeywordSlot(keywords: E6GpuTierView["keywords"]): string | nul
     if (!occupied.has(slot)) return slot;
   }
   return null;
-}
-
-function isSafeInstallerUrl(value: string): boolean {
-  try {
-    if (!value || value.length > 300) return false;
-    const url = new URL(value);
-    const host = url.hostname.toLowerCase();
-    const blockedHost = host === "localhost" || host === "127.0.0.1"
-      || host === "baidu.com" || host.endsWith(".baidu.com")
-      || host === "example.com" || host.endsWith(".example.com");
-    return url.protocol === "https:" && !!host && !blockedHost
-      && !url.username && !url.password && !url.hash
-      && /\.(exe|msi|msix|dmg|pkg|zip)$/i.test(url.pathname);
-  } catch {
-    return false;
-  }
 }
 
 export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
@@ -381,18 +368,18 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
                   {tier.keywords.map((kw) => (
                     <span className="e6-keyword-chip" key={`${tier.id}-${kw.slot}`}>
                       <span>{kw.value}</span>
-                      {canWriteE6 && <button type="button" onClick={() => editKeyword(tier, kw.slot, kw.value)}>改</button>}
-                      {canWriteE6 && <button type="button" className="danger" onClick={() => deleteKeyword(tier, kw.slot, kw.value)}>删</button>}
+                      {canWriteE6 && <button type="button" aria-label={`修改 ${kw.value}（${tier.label} · 第 ${index + 1} 档）`} onClick={() => editKeyword(tier, kw.slot, kw.value)}>改</button>}
+                      {canWriteE6 && <button type="button" className="danger" aria-label={`删除 ${kw.value}（${tier.label} · 第 ${index + 1} 档）`} onClick={() => deleteKeyword(tier, kw.slot, kw.value)}>删</button>}
                     </span>
                   ))}
                   {canWriteE6 && nextSlot ? (
-                    <button type="button" className="e6-inline-add" onClick={() => editKeyword(tier, nextSlot)}>新增识别词</button>
+                    <button type="button" className="e6-inline-add" aria-label={`为 ${tier.label}（第 ${index + 1} 档）新增识别词`} onClick={() => editKeyword(tier, nextSlot)}>新增识别词</button>
                   ) : canWriteE6 ? (
                     <span className="e6-slot-full">识别词槽位已满</span>
                   ) : null}
                 </div>
                 <div className="e6-row-actions">
-                  {canWriteE6 && <button type="button" className="adj" onClick={() => editTier(tier)}>编辑档位</button>}
+                  {canWriteE6 && <button type="button" className="adj" aria-label={`编辑档位 ${tier.label}（第 ${index + 1} 档）`} onClick={() => editTier(tier)}>编辑档位</button>}
                 </div>
               </div>
             );
