@@ -379,10 +379,20 @@ test("L1 时间窗 / cohort 粒度 / KPI 卡 / 叠加选择都暴露选中态", 
   assertSingleSelection(html, "时间窗", 1, ["当日", "滚动 7d", "滚动 30d", "自定义"]);
   assert.equal(tablistNamed(html, "cohort 粒度").length, 1, "L1 cohort 粒度必须暴露组名");
   assertSingleSelection(html, "cohort 粒度", 0, ["注册周 YYYY-Www", "注册月"]);
+  // 🔴 zentao #209:八张 KPI 卡是**互斥单选**(点 #1 会把 #2 自动置 0),此前它们只是
+  // `aria-pressed` 的按钮 —— 浏览器把带 aria-pressed 的按钮当 toggle button,读屏按复选框
+  // 朗读(Value=1/0),运营会以为能多选。本用例过去只断言「aria-pressed 存在」,那正是缺陷
+  // 本身,所以门开着。现在要求:同一 tablist 内恰好一个 aria-selected、roving tabindex 只在
+  // 选中项上,并且**不得**再出现 aria-pressed。
   const cards = elements(html).filter((element) => (element.attrs.class ?? "").includes("kpi-card"));
   assert.equal(cards.length, 8, `L1 必须渲染八张 KPI 卡,实际 ${cards.length}`);
-  assert.equal(cards.every((card) => card.attrs["aria-pressed"] !== undefined), true, "八张 KPI 卡必须暴露选中态");
-  assert.equal(cards.filter((card) => card.attrs["aria-pressed"] === "true").length, 1, "同一时刻只能有一张 KPI 卡选中");
+  assert.equal(cards.every((card) => card.attrs.role === "tab"), true, "八张 KPI 卡必须是 role=tab");
+  assert.equal(cards.every((card) => card.attrs["aria-pressed"] === undefined), true,
+    "互斥下钻不得再用 aria-pressed(读屏会按复选框朗读)");
+  assert.equal(cards.filter((card) => card.attrs["aria-selected"] === "true").length, 1, "同一时刻只能有一张 KPI 卡选中");
+  assert.equal(cards.filter((card) => card.attrs.tabindex === "0").length, 1, "roving tabindex 只给选中卡");
+  const kpiGroup = tablists(html).find((list) => tabsOf(html, groupName(html, list)).some((tab) => (tab.attrs.class ?? "").includes("kpi-card")));
+  assert.ok(kpiGroup, "八张 KPI 卡必须挂在同一个 tablist 里");
   const overlayPicks = elements(html).filter((element) => (element.attrs.class ?? "").includes("chip") && element.attrs["aria-pressed"] !== undefined);
   assert.ok(overlayPicks.length >= 8, "叠加选择是多选组,必须暴露 aria-pressed");
 });

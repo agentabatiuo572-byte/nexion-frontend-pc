@@ -490,14 +490,27 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
       </div>
 
       {/* (a) 8-KPI matrix */}
-      <div className="kpi-grid">
-        {KPIS.map((kk, i) => {
+      {/* 🔴 互斥下钻必须暴露「唯一选中项」(zentao #209):此前每张卡是 button + aria-pressed,
+          浏览器把它当 toggle button、读屏按复选框朗读(Value=1/0),而点 #1 会自动把 #2 置 0 ——
+          运营无从判断这组是单选。改用与时间窗同款 TabGroup(role=tablist + aria-selected +
+          roving tabindex + 方向键)。下方「多 KPI 趋势叠加」是可同时开启的多选组,保留 aria-pressed。 */}
+      <TabGroup<number>
+        className="kpi-grid"
+        label="KPI 下钻选择"
+        value={selKpi}
+        items={KPIS.map((_kk, i) => i)}
+        onSelect={(index) => void selectKpi(index)}
+        itemClassName={(_index, selected) => "kpi-card" + (selected ? " sel" : "")}
+        itemTitle={() => "点击下钻"}
+      >
+        {(i) => {
+          const kk = KPIS[i];
           const st = states[i];
           const ex = KPI_EXT[kk.n];
           const dUp = !ex.delta.startsWith("-");
           const goodUp = kk.dir !== "lte";
           return (
-            <button key={kk.n} className={"kpi-card" + (i === selKpi ? " sel" : "")} aria-pressed={i === selKpi} onClick={() => selectKpi(i)} title="点击下钻">
+            <>
               <div className="top"><span className="n">#{kk.n}</span><span className="nm"><AutoGloss>{kk.name}</AutoGloss></span><span className={"led " + st} /></div>
               <div className="vrow">
                 <span className="v">{kk.available === false || kk.value == null ? "不可计算" : kk.value}<span className="u">{kk.available === false || kk.value == null ? "" : kk.unit}</span></span>
@@ -512,10 +525,10 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
                 </svg>
               )}
               <div className="ft"><span className="ev" title={ex.fx}><AutoGloss>{KPI_PLAIN[kk.n]}</AutoGloss></span><span className="ph">{rs.currentPhase}</span><span className="lat">~2min</span></div>
-            </button>
+            </>
           );
-        })}
-      </div>
+        }}
+      </TabGroup>
 
       {/* (b) 单 KPI 下钻 */}
       <section className="l-card">

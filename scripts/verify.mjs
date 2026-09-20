@@ -344,6 +344,12 @@ const GEARS = [
   // 那一轮),但既不在 GEARS 也不在任何 npm script —— 一道从没跑过的门。结果 08-06 的原型对齐批
   // 原样把那三个控件加了回来,机器门一声没吭。孤儿门 = 没有门。
   ["E3 acceptance contract", "node", ["--test", "tests/e3-acceptance-contract.test.mjs"]],
+  // 2026-09-21 补挂(同一教训再犯一次):`tests/pc-a11y-selected-state.test.mjs` 写于 #157/#158/#159/#161/#166
+  // 那一轮,却同样既不在 GEARS 也不在任何 npm script —— 又一道孤儿门。后果是 #209 直接穿了过去:
+  // L1 八张 KPI 卡用 aria-pressed 表达互斥下钻(读屏按复选框朗读),而那道**专门守互斥选中语义**的门
+  // 从没跑过。下面这道新齿同时挂上二者:既把孤儿门接回链条,也钉住 #208 的三态口径只有一个实现。
+  ["PC a11y selected-state + KPI three-state rollup", "node",
+    ["--test", "tests/pc-a11y-selected-state.test.mjs", "tests/kpi-rollup-three-state-contract.test.mjs"]],
 ];
 // 🔴 run-all:每个齿都跑到,逐齿记状态与耗时。红齿不再中断链条(理由见文件抬头)。
 const results = [];

@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { Sparkline } from "@/app/components/kit/kpi-stat-card";
 import { AreaChart } from "@/app/components/kit/charts/area-chart";
 import { AutoGloss } from "@/app/components/kit/gloss";
+import { rollupKpiPassState } from "@/lib/admin/dashboard-number";
 
 export type DashboardKpi = {
   key: string;
@@ -20,7 +21,8 @@ export type DashboardKpi = {
 };
 
 export function KpiWall({ kpis }: { kpis: DashboardKpi[] }) {
-  const passed = kpis.filter((k) => k.pass).length;
+  // 三态口径与运营总览的 L 域速览共用同一个汇总函数(zentao #208),两处不再各写一套算式。
+  const rollup = rollupKpiPassState(kpis);
   const [sel, setSel] = useState<{ kpi: DashboardKpi; n: number } | null>(null);
 
   return (
@@ -30,9 +32,9 @@ export function KpiWall({ kpis }: { kpis: DashboardKpi[] }) {
           八项 KPI 验收墙 · 可下钻
         </p>
         <span className="text-[11.5px]" style={{ color: "var(--v5-ink-3)" }}>
-          达标 <span style={{ color: "var(--v5-success)" }}>{passed}</span> / 未达{" "}
-          <span style={{ color: "var(--v5-danger)" }}>{kpis.filter((k) => k.pass === false).length}</span>
-          {" / 暂不可计算 "}{kpis.filter((k) => k.pass === null).length}
+          达标 <span style={{ color: "var(--v5-success)" }}>{rollup.passed}</span> / 未达{" "}
+          <span style={{ color: "var(--v5-danger)" }}>{rollup.failed}</span>
+          {" / 暂不可计算 "}{rollup.unknown}
         </span>
       </div>
       <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">

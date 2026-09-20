@@ -1,5 +1,5 @@
 "use client";
-import { finiteDashboardNumber } from "@/lib/admin/dashboard-number";
+import { finiteDashboardNumber, rollupKpiPassState } from "@/lib/admin/dashboard-number";
 
 /**
  * 运营指挥台(首页 /)。按 Claude Design「NexGrid 运营控制后台」稿优点重构:
@@ -377,7 +377,10 @@ export default function CommandCenter() {
     { id: "al-kill", level: killTripped === 0 ? "low" : "mid", text: killText, href: "/emergency/kill-switch" },
   ];
 
-  const passedKpi = dashboardKpis.filter((k) => k.pass).length;
+  // 三态口径与八项 KPI 验收墙共用同一个汇总函数:pass === null 是「没有分母、暂不可计算」,
+  // 不是「未达标」。此前这里用「总数减达标数」倒推未达标,把不可计算也算成失败,
+  // L 域速览显示「达标 0 / 未达 8」,而同屏验收墙显示「达标 0 / 未达 4 / 暂不可计算 4」(zentao #208)。
+  const kpiRollup = rollupKpiPassState(dashboardKpis);
   function pulseFor(code: string): string {
     if (code === "B") return `覆盖率 ${fmtPct(cov)} · ${zoneLabel}`;
     if (code === "A") {
@@ -391,7 +394,7 @@ export default function CommandCenter() {
     if (code === "J") return KILL_GATES.length > 0 ? `Kill ${killOnline}/${KILL_GATES.length} 在线${killTripped ? ` · ${killTripped} 熔断` : ""}${killMissing ? ` · ${killMissing} 未配置` : ""} · Geo 策略待读取` : "Kill 状态同步中 · Geo 策略待读取";
     if (code === "K") return `风险命中 ${fmtNum(flaggedAccounts)} · 规则 ${riskRadar.rules.length}`;
     if (code === "L") {
-      if (dashboardKpis.length) return `${dashboardKpis.length} KPI · 达标 ${passedKpi} / 未达 ${dashboardKpis.length - passedKpi}`;
+      if (dashboardKpis.length) return `${kpiRollup.total} KPI · 达标 ${kpiRollup.passed} / 未达 ${kpiRollup.failed}${kpiRollup.unknown ? ` / 暂不可计算 ${kpiRollup.unknown}` : ""}`;
       return lBiError ? "L1 KPI 同步失败" : "L1 KPI 同步中";
     }
     if (code === "H") {
