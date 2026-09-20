@@ -167,7 +167,12 @@ export interface EViewCtx {
   e5Overview: E5Overview | null;
   e5Datacenters: E5Datacenter[];
   e5Loading: boolean;
-  e5Error: string | null;
+  /** 设备库存这一面自己的失败态:表体只以它为准,不被概览/数据中心的故障连坐(zentao #44)。 */
+  e5DeviceError: string | null;
+  /** 概览面的失败态;单独呈现,不隐藏设备行。 */
+  e5OverviewError: string | null;
+  /** 数据中心面的失败态;单独呈现,不隐藏设备行。 */
+  e5DatacenterError: string | null;
   e5Page: number;
   e5PageSize: number;
   e5Total: number;

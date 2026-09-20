@@ -214,6 +214,10 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
             <option value="all">全部心跳</option><option value="fresh">10 分钟内</option><option value="stale">失联 / 未采集</option>
           </select>
           <span className="muted tiny">当前页命中 {filteredDevices.length} 台</span>
+          {/* zentao #44:概览/数据中心各自的失败在这里单独说明 —— 拆开失败态是为了不连坐,
+              但也不能把另外两面的故障悄悄吞掉,否则运维会以为「都正常」。 */}
+          {!ctx.e5Loading && ctx.e5OverviewError && <span className="tiny" style={{ color: "var(--warning)" }}>{ctx.e5OverviewError}</span>}
+          {!ctx.e5Loading && ctx.e5DatacenterError && <span className="tiny" style={{ color: "var(--warning)" }}>{ctx.e5DatacenterError}</span>}
           {ctx.canWriteE5 && <input className="fld" style={{ minWidth: 300 }} maxLength={200} value={actionReason} onChange={(event) => setActionReason(event.target.value)} placeholder="直接操作理由(8–200 字)" aria-label="E5 直接操作理由" />}
           {ctx.canWriteE5 && <span className="muted tiny">{actionReason.trim().length}/200{reasonReady ? " · 可执行" : " · 需 8–200 字"}</span>}
         </div>
@@ -233,17 +237,17 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
                   <td colSpan={11} style={{ padding: "18px 10px", color: "var(--ink-3)" }}>正在加载第 {ctx.e5Page} 页设备库存...</td>
                 </tr>
               )}
-              {!ctx.e5Loading && ctx.e5Error && (
+              {!ctx.e5Loading && ctx.e5DeviceError && (
                 <tr style={{ borderTop: "1px solid var(--border)" }}>
-                  <td colSpan={11} style={{ padding: "18px 10px", color: "var(--danger)" }}>设备库存读取异常:{ctx.e5Error}</td>
+                  <td colSpan={11} style={{ padding: "18px 10px", color: "var(--danger)" }}>设备库存读取异常:{ctx.e5DeviceError}</td>
                 </tr>
               )}
-              {!ctx.e5Loading && !ctx.e5Error && filteredDevices.length === 0 && (
+              {!ctx.e5Loading && !ctx.e5DeviceError && filteredDevices.length === 0 && (
                 <tr style={{ borderTop: "1px solid var(--border)" }}>
                   <td colSpan={11} style={{ padding: "18px 10px", color: "var(--ink-3)" }}>当前筛选无设备数据</td>
                 </tr>
               )}
-              {!ctx.e5Loading && !ctx.e5Error && filteredDevices.map((d) => {
+              {!ctx.e5Loading && !ctx.e5DeviceError && filteredDevices.map((d) => {
                 const skuMain = d.productCode || d.sku;
                 const skuSub = d.productTier && d.productTier !== skuMain ? d.productTier : "";
                 const displaySerial = operatorDeviceIdentifier(d.serial);
@@ -320,7 +324,10 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
         {ctx.canWriteE5 && <button className="l-btn sm mc" onClick={() => ctx.openDatacenter()}>+ 新增数据中心</button>}
       </div>
       <div className="dc-grid">
-        {!ctx.e5Loading && !ctx.e5Error && dcRows.length === 0 && (
+        {!ctx.e5Loading && ctx.e5DatacenterError && (
+          <section className="feed-card dc-empty" style={{ color: "var(--warning)" }}>{ctx.e5DatacenterError}</section>
+        )}
+        {!ctx.e5Loading && !ctx.e5DatacenterError && dcRows.length === 0 && (
           <section className="feed-card dc-empty">暂无数据中心配置</section>
         )}
         {dcRows.map((dc) => {

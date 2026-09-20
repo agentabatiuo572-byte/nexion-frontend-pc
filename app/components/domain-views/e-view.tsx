@@ -528,7 +528,14 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [e5Overview, setE5Overview] = useState<E5Overview | null>(null);
   const [e5Datacenters, setE5Datacenters] = useState<E5Datacenter[]>([]);
   const [e5Loading, setE5Loading] = useState(tab === "E5");
-  const [e5Error, setE5Error] = useState<string | null>(null);
+  // 🔴 zentao #44:三个服务面各留各的失败态。此前只有一个 e5Error,任一面失败就把它写满,
+  // 而设备表以它为准 —— 于是「概览」或「数据中心」5xx 会把**已经读到的设备**整表藏掉,
+  // 运维台在单面故障时对设备失明(工单截图正是:页脚「当前页命中 4 台 / 筛选后 4 条」还在,
+  // 表体却只有一行「设备库存读取异常」)。上面 Promise.allSettled 的注释早就写明「任一面失败
+  // 只冻结它自己,不能把另外两面的真实数据一起清空」—— 分状态才是那句话的落地。
+  const [e5DeviceError, setE5DeviceError] = useState<string | null>(null);
+  const [e5OverviewError, setE5OverviewError] = useState<string | null>(null);
+  const [e5DatacenterError, setE5DatacenterError] = useState<string | null>(null);
   const [e5Page, setE5Page] = useState(1);
   const [e5PageSize, setE5PageSizeState] = useState(10);
   const [e5Total, setE5Total] = useState(0);
@@ -546,7 +553,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   }, []);
   const refreshE5 = useCallback(async () => {
     setE5Loading(true);
-    setE5Error(null);
+    setE5DeviceError(null);
+    setE5OverviewError(null);
+    setE5DatacenterError(null);
     // 设备库存 / 概览 / 数据中心是三个独立服务面:任一面失败只冻结它自己,
     // 不能把另外两面的真实数据一起清空 —— 那会让运维台在单面故障时整页失明。
     const [deviceResult, overviewResult, datacenterResult] = await Promise.allSettled([
@@ -555,7 +564,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       fetchE5Overview(),
       fetchE5Datacenters(),
     ]);
-    const errors: string[] = [];
     if (deviceResult.status === "fulfilled") {
       setE5Devices(deviceResult.value.records);
       setE5Total(deviceResult.value.total);
@@ -564,21 +572,20 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     } else {
       setE5Devices([]);
       setE5Total(0);
-      errors.push(`设备库存：${displayAdminError(deviceResult.reason)}`);
+      setE5DeviceError(`设备库存：${displayAdminError(deviceResult.reason)}`);
     }
     if (overviewResult.status === "fulfilled") {
       setE5Overview(overviewResult.value);
     } else {
       setE5Overview(null);
-      errors.push(`设备概览：${displayAdminError(overviewResult.reason)}`);
+      setE5OverviewError(`设备概览：${displayAdminError(overviewResult.reason)}`);
     }
     if (datacenterResult.status === "fulfilled") {
       setE5Datacenters(datacenterResult.value);
     } else {
       setE5Datacenters([]);
-      errors.push(`数据中心：${displayAdminError(datacenterResult.reason)}`);
+      setE5DatacenterError(`数据中心：${displayAdminError(datacenterResult.reason)}`);
     }
-    setE5Error(errors.length ? errors.join("；") : null);
     setE5Loading(false);
   }, [e5HeartbeatFilter, e5Keyword, e5KindFilter, e5Page, e5PageSize, e5StateFilter]);
   useEffect(() => { if (tab === "E5") void refreshE5(); }, [tab, refreshE5]);
@@ -1043,7 +1050,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4Page, e4PageSize, e4Total, e4Filter, e4Keyword, setE4Page, setE4PageSize, setE4Filter, setE4Keyword, refreshE4, orderState, isCancelled, isRefunded, terminalOf, openOrder,
     canWriteE5, canForceActivateE5, canUnbindE5, canPauseDcE5,
     runE5DeviceAction, runE5UserBatch,
-    e5Devices, e5Overview, e5Datacenters, e5Loading, e5Error, e5Page, e5PageSize, e5Total,
+    e5Devices, e5Overview, e5Datacenters, e5Loading, e5DeviceError, e5OverviewError, e5DatacenterError, e5Page, e5PageSize, e5Total,
     e5Keyword, e5StateFilter, e5KindFilter, e5HeartbeatFilter, setE5Keyword, setE5StateFilter, setE5KindFilter, setE5HeartbeatFilter,
     setE5Page, setE5PageSize, refreshE5, isDcPaused, openDatacenter, deleteDatacenter,
     canWriteE6, canToggleE6, e6Config, e6Loading, e6Error, refreshE6,

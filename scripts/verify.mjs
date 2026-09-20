@@ -356,6 +356,7 @@ const GEARS = [
   ["E2 acceptance contract", "node", ["--test", "tests/e2-acceptance-contract.test.mjs"]],
   ["A4 extension batch identity contract", "node", ["--test", "tests/a4-extension-batch-identity-contract.test.mjs"]],
   ["F1 reward label internal identifier contract", "node", ["--test", "tests/f1-reward-label-internal-identifier-contract.test.mjs"]],
+  ["E5 per-face error contract", "node", ["--test", "tests/e5-per-face-error-contract.test.mjs"]],
 ];
 // 🔴 run-all:每个齿都跑到,逐齿记状态与耗时。红齿不再中断链条(理由见文件抬头)。
 const results = [];
