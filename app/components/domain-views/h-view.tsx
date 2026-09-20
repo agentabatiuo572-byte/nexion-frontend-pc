@@ -23,7 +23,7 @@ import H7VoucherConfig from "./h-tabs/h7-voucher-config";
 import H8ReferralRewards from "./h-tabs/h8-referral-rewards";
 import H9PublicStats from "./h-tabs/h9-public-stats";
 import type { ConfirmReq, HCtx, ActionConfirmReq } from "./h-tabs/types";
-import { fetchH1Rhythm, type H1RhythmOverview } from "@/lib/admin/h-client";
+import { fetchH1Rhythm, describeH1Schedule, type H1RhythmOverview } from "@/lib/admin/h-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
@@ -79,7 +79,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
   const [ro, liveSeed] = RO_COPY[tab];
   const live = tab === "H1"
     ? rhythm
-      ? `${rhythm.currentPhase} · 月 ${rhythm.currentMonth}/${rhythm.totalMonths} · 每月 1 日 00:00 UTC 自动推进`
+      ? `${rhythm.currentPhase} · 月 ${rhythm.currentMonth}/${rhythm.totalMonths} · ${describeH1Schedule(rhythm.schedule)}`
       : "0"
     : liveSeed;
   const right = (

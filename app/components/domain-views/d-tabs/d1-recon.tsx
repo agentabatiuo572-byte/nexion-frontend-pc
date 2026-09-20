@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { d1VietQrUsdtAmount } from "@/lib/admin/d1-vietqr-amount";
-import { formatD1FuseReason } from "@/lib/admin/d1-account-display";
+import { formatD1FuseReason, requiresReprovision } from "@/lib/admin/d1-account-display";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   createD1VietQrAccount,
@@ -794,6 +794,9 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
               <div className="dtint">当前没有收款账户。空账户池会使 VietQR 新付款单不可分配，请由具备权限的财务管理员新增真实银行账户。</div>
             ) : vietQr?.accounts.map((account) => {
               const fuseReason = formatD1FuseReason(account.fuseReason);
+              // 密文解不开的历史账户:状态动作一律无意义(恢复/启用只会把它放回派单池然后
+              // 必然失败),唯一出口是重新录入收款信息。故禁用状态按钮并给出重配入口。
+              const needsReprovision = requiresReprovision(account.fuseReason);
               return (
               <div className="p-row" key={account.id}>
                 <div className="txt"><div className="k">{account.bankName} · 尾号 {account.accountLast4}</div><div className="s">{account.holderMasked} · 今日 {vnd(account.receivedTodayVnd)} / 上限 {vnd(account.dailyCapVnd)}{fuseReason.label ? ` · ${fuseReason.label}` : ""}</div></div>
@@ -806,7 +809,30 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                     action: "UPDATE_CAP", dailyCapVnd: Number(value), expectedVersion: account.version, reason, operator,
                   }), "账户日收上限已更新"),
                 })}>调上限</button>}
-                {canManageBankAccounts && <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
+                {canManageBankAccounts && needsReprovision && <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
+                  action: `重新配置收款信息 · ${account.bankName} 尾号 ${account.accountLast4}`,
+                  detail: "该账户的账号密文无法用当前密钥解密，恢复或启用都会进入必然失败的状态。请重新录入银行代码、名称、户名与完整账号；账号只提交给后端加密保存，列表与审计均不回显全号。保存成功后账户恢复为启用。",
+                  businessForm: { kind: "multi-field", fields: [
+                    { key: "bankCode", label: "银行代码", inputKind: "text", required: true, current: account.bankCode },
+                    { key: "bankName", label: "银行名称", inputKind: "text", required: true, current: account.bankName },
+                    { key: "accountHolder", label: "账户户名", inputKind: "text", required: true },
+                    { key: "accountNumber", label: "银行账号（完整）", inputKind: "text", required: true },
+                  ] },
+                  run: (reason, _value, business) => {
+                    const bankCode = business?.bankCode?.trim() ?? "";
+                    const bankName = business?.bankName?.trim() ?? "";
+                    const accountHolder = business?.accountHolder?.trim() ?? "";
+                    const accountNumber = business?.accountNumber?.trim() ?? "";
+                    if (!bankCode || !bankName || !accountHolder || !accountNumber) {
+                      throw new Error("请完整填写银行代码、银行名称、账户户名与银行账号");
+                    }
+                    return applyBankWrite(() => updateD1VietQrAccount(account.id, {
+                      action: "REPROVISION", bankCode, bankName, accountHolder, accountNumber,
+                      expectedVersion: account.version, reason, operator,
+                    }), "收款账户已重新配置");
+                  },
+                })}>重新配置收款信息</button>}
+                {canManageBankAccounts && <button className="l-btn sm mc" disabled={busy || needsReprovision} title={needsReprovision ? "账号密文无法解密，请先重新配置收款信息" : undefined} onClick={() => openActionConfirm({
                   action: `${account.status === "ACTIVE" ? "停用" : account.status === "FUSED" ? "恢复" : "启用"}收款账户 · ${account.bankName} 尾号 ${account.accountLast4}`,
                   detail: "状态通过服务端版本号比较后更新；熔断账户只能走恢复动作。",
                   run: (reason) => applyBankWrite(() => updateD1VietQrAccount(account.id, {

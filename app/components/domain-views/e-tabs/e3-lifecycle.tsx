@@ -108,7 +108,10 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const stats = e3Stats ?? { averageAgeMonths: 0, cliffDeviceCount: 0, tradeinMonthCount: 0, tradeinDiscountUsdt: 0, k2ArbitrageHits: 0 };
   const totalTxSuccess = e3Operations.reduce((sum, item) => sum + item.ok, 0);
   const totalTxFailure = e3Operations.reduce((sum, item) => sum + item.fail, 0);
-  const txSuccessRate = totalTxSuccess + totalTxFailure > 0 ? (totalTxSuccess / (totalTxSuccess + totalTxFailure)) * 100 : 0;
+  // 分母为 0 时成功率不可计算,不是 0%。此前把「24h 内一次事务都没有」渲染成
+  // 「成功率 0.0%」,读起来就是「事务全部失败」——与旁边三列全 0 的事实互相矛盾。
+  const txSampleSize = totalTxSuccess + totalTxFailure;
+  const txSuccessRate = txSampleSize > 0 ? (totalTxSuccess / txSampleSize) * 100 : null;
 
   const px = (i: number) => (i / cyc) * 700;
   const py = (v: number) => 4 + ((100 - v) / (100 - floorPct)) * 183;
@@ -271,7 +274,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
         <div className="tx-h">
           <span className="ttl">原子换机 tx 监控</span>
           <span className="sub">· 三类事务分列:设备回收 / 设备置换 / 设备停用;所有步骤一起完成，失败时不会留下半成品</span>
-          <span className="r"><CodeTag tone="electric">A2 审计</CodeTag><span>24h · 成功率 <span style={{ color: "var(--success)" }}>{txSuccessRate.toFixed(1)}%</span></span></span>
+          <span className="r"><CodeTag tone="electric">A2 审计</CodeTag><span>24h · 成功率 <span style={{ color: txSuccessRate === null ? "var(--ink-3)" : "var(--success)" }}>{txSuccessRate === null ? "不可计算（24h 内无事务）" : `${txSuccessRate.toFixed(1)}%`}</span></span></span>
         </div>
         <div className="tx-grid">
           {e3Operations.length === 0 ? (

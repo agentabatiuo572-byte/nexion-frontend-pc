@@ -382,7 +382,20 @@ export function C1Search({
                     style={loading ? { opacity: 0.56, cursor: "wait", pointerEvents: "none" } : undefined}
                     onClick={loading ? undefined : () => openProfile(u)}
                   >
-                    <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{text(u.userNo, "未生成")} <span style={{ fontSize: 10.5, color: "var(--c-ac)" }}>详情›</span></td>
+                    <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>
+                      {text(u.userNo, "未生成")}{" "}
+                      {/* 整行点击此前是打开画像的唯一入口,键盘与读屏都进不去(行只是 row/cell)。
+                          这里给用户编码一个真实可聚焦的链接语义入口,整行点击保留。 */}
+                      <button
+                        type="button"
+                        aria-label={`查看用户详情 ${text(u.userNo, "未生成")}`}
+                        disabled={loading}
+                        onClick={(event) => { event.stopPropagation(); openProfile(u); }}
+                        style={{ border: 0, background: "none", padding: 0, font: "inherit", color: "var(--c-ac)", cursor: "pointer" }}
+                      >
+                        详情›
+                      </button>
+                    </td>
                     <td>{text(u.nickname)}</td>
                     <td><span className="bdg dim">{text(u.userLevel)}</span></td>
                     <td><span className="bdg dim">{text(u.vRank)}</span></td>

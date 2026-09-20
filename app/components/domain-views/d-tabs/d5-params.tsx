@@ -223,7 +223,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         <div className="l-b">
           <div className="p-row">
             <div className="txt"><div className="k">每日提现次数</div><div className="s">1–10；上调放大、下调收紧</div></div>
-            <input aria-label="每日提现次数目标值" className="l-inp" type="number" min="1" max="10" step="1" value={drafts.daily} disabled={!canDailyWrite} onChange={(event) => updateDraft("daily", event.target.value)} />
+            <input aria-label="每日提现次数目标值" className="l-inp" type="text" inputMode="numeric" maxLength={2} value={drafts.daily} disabled={!canDailyWrite} onChange={(event) => updateDraft("daily", event.target.value)} />
             {canDailyWrite && <button className="l-btn sm mc" disabled={!dailyValid || daily === params.dailyLimitCount} onClick={() => submit("每日提现次数", { dailyLimitCount: daily }, daily > params.dailyLimitCount, `${params.dailyLimitCount} 次 → ${daily} 次`)}>预览并提交</button>}
           </div>
           <div className="dtint ok" style={{ marginBottom: 12 }}>
@@ -231,7 +231,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
           </div>
           <div className="p-row">
             <div className="txt"><div className="k">小额免审线</div><div className="s">0–{D5_SMALL_AMOUNT_THRESHOLD_MAX} USD；上调会放大小额快车道范围</div></div>
-            <input aria-label="小额免审线目标值" className="l-inp" type="number" min="0" max={D5_SMALL_AMOUNT_THRESHOLD_MAX} step="0.01" value={drafts.smallAmount} disabled={!canDailyWrite} onChange={(event) => updateDraft("smallAmount", event.target.value)} />
+            <input aria-label="小额免审线目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.smallAmount} disabled={!canDailyWrite} onChange={(event) => updateDraft("smallAmount", event.target.value)} />
             <span>USD</span>
             {canDailyWrite && <button className="l-btn sm mc" disabled={!smallAmountValid || smallAmount === params.smallAmountThresholdUsd} onClick={() => submit("小额免审线", { smallAmountThresholdUsd: smallAmount }, smallAmount > params.smallAmountThresholdUsd, `$${params.smallAmountThresholdUsd} → $${smallAmount}`)}>预览并提交</button>}
           </div>
@@ -246,13 +246,13 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
           </div>
           <div className="p-row">
             <div className="txt"><div className="k">到账时效</div><div className="s">{D5_PAYOUT_SLA_HOURS_MIN}–{D5_PAYOUT_SLA_HOURS_MAX} 小时；缩短时效会放大资金执行压力</div></div>
-            <input aria-label="到账时效目标值" className="l-inp" type="number" min={D5_PAYOUT_SLA_HOURS_MIN} max={D5_PAYOUT_SLA_HOURS_MAX} step="1" value={drafts.payoutSla} disabled={!canDailyWrite} onChange={(event) => updateDraft("payoutSla", event.target.value)} />
+            <input aria-label="到账时效目标值" className="l-inp" type="text" inputMode="numeric" value={drafts.payoutSla} disabled={!canDailyWrite} onChange={(event) => updateDraft("payoutSla", event.target.value)} />
             <span>小时</span>
             {canDailyWrite && <button className="l-btn sm mc" disabled={!payoutSlaValid || payoutSla === params.payoutSlaHours} onClick={() => submit("到账时效", { payoutSlaHours: payoutSla }, payoutSla < params.payoutSlaHours, `${params.payoutSlaHours} 小时 → ${payoutSla} 小时`)}>预览并提交</button>}
           </div>
           <div className="p-row">
             <div className="txt"><div className="k">余额可提上限</div><div className="s">50%–100%；上调放大、下调收紧</div></div>
-            <input aria-label="余额可提上限目标值" className="l-inp" type="number" min="50" max="100" step="0.01" value={drafts.balancePct} disabled={!canBalanceWrite} onChange={(event) => updateDraft("balancePct", event.target.value)} />
+            <input aria-label="余额可提上限目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.balancePct} disabled={!canBalanceWrite} onChange={(event) => updateDraft("balancePct", event.target.value)} />
             <span>%</span>
             {canBalanceWrite && <button className="l-btn sm mc" disabled={!balanceValid || balancePct / 100 === params.maxBalanceRatio} onClick={() => submit("余额可提上限", { maxBalanceRatio: balancePct / 100 }, balancePct / 100 > params.maxBalanceRatio, `${pctRatio(params.maxBalanceRatio)} → ${balancePct.toFixed(2)}%`)}>预览并提交</button>}
           </div>
@@ -267,15 +267,15 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
               {canFeeWrite && !feeErcValid && drafts.feeErc !== "" && <div className="s" style={{ color: "var(--admin-danger, #e5484d)" }}>ERC20 超出 0–{D5_NETWORK_CONFIRM_FEE_MAX} 值域</div>}
               {feeValid && (feeTrc === 0 || feeBep === 0 || feeErc === 0) && <div className="s" style={{ color: "var(--admin-warning, #f5a623)" }}>配置为 0 的网络将免手续费,请确认这是有意为之</div>}
             </div>
-            <input aria-label="TRC20 网络确认费目标值" className="l-inp" type="number" min="0" max={D5_NETWORK_CONFIRM_FEE_MAX} step="0.5" value={drafts.feeTrc} disabled={!canFeeWrite} onChange={(event) => updateDraft("feeTrc", event.target.value)} />
-            <input aria-label="BEP20 网络确认费目标值" className="l-inp" type="number" min="0" max={D5_NETWORK_CONFIRM_FEE_MAX} step="0.5" value={drafts.feeBep} disabled={!canFeeWrite} onChange={(event) => updateDraft("feeBep", event.target.value)} />
-            <input aria-label="ERC20 网络确认费目标值" className="l-inp" type="number" min="0" max={D5_NETWORK_CONFIRM_FEE_MAX} step="0.5" value={drafts.feeErc} disabled={!canFeeWrite} onChange={(event) => updateDraft("feeErc", event.target.value)} />
+            <input aria-label="TRC20 网络确认费目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.feeTrc} disabled={!canFeeWrite} onChange={(event) => updateDraft("feeTrc", event.target.value)} />
+            <input aria-label="BEP20 网络确认费目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.feeBep} disabled={!canFeeWrite} onChange={(event) => updateDraft("feeBep", event.target.value)} />
+            <input aria-label="ERC20 网络确认费目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.feeErc} disabled={!canFeeWrite} onChange={(event) => updateDraft("feeErc", event.target.value)} />
             {canFeeWrite && <button className="l-btn sm mc" disabled={!feeValid || feeUnchanged} onClick={() => submit("网络确认费", { networkConfirmFeeUsd: { trc20: feeTrc, bep20: feeBep, erc20: feeErc } }, feeAmplifies, `TRC20 $${params.networkConfirmFeeUsd.trc20} / BEP20 $${params.networkConfirmFeeUsd.bep20} / ERC20 $${params.networkConfirmFeeUsd.erc20} → $${feeTrc} / $${feeBep} / $${feeErc}`)}>预览并提交</button>}
             {canFeeWrite && <button className="l-btn sm" disabled={feeIsDefault && feeUnchanged} onClick={() => submit("网络确认费恢复默认", { networkConfirmFeeUsd: { ...D5_NETWORK_CONFIRM_FEE_DEFAULT } }, D5_NETWORK_CONFIRM_FEE_DEFAULT.trc20 < params.networkConfirmFeeUsd.trc20 || D5_NETWORK_CONFIRM_FEE_DEFAULT.bep20 < params.networkConfirmFeeUsd.bep20 || D5_NETWORK_CONFIRM_FEE_DEFAULT.erc20 < params.networkConfirmFeeUsd.erc20, `TRC20 $${params.networkConfirmFeeUsd.trc20} / BEP20 $${params.networkConfirmFeeUsd.bep20} / ERC20 $${params.networkConfirmFeeUsd.erc20} → 默认 $${D5_NETWORK_CONFIRM_FEE_DEFAULT.trc20} / $${D5_NETWORK_CONFIRM_FEE_DEFAULT.bep20} / $${D5_NETWORK_CONFIRM_FEE_DEFAULT.erc20}`)}>恢复默认</button>}
           </div>
           <div className="p-row">
             <div className="txt"><div className="k">NEX 抵扣率</div><div className="s">必须大于 0；上调放大、下调收紧</div></div>
-            <input aria-label="NEX 抵扣率目标值" className="l-inp" type="number" min="0.000001" step="0.01" value={drafts.nex} disabled={!canFeeWrite} onChange={(event) => updateDraft("nex", event.target.value)} />
+            <input aria-label="NEX 抵扣率目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.nex} disabled={!canFeeWrite} onChange={(event) => updateDraft("nex", event.target.value)} />
             {canFeeWrite && <button className="l-btn sm mc" disabled={!nexValid || nex === params.nexFeeOffsetRate} onClick={() => submit("NEX 抵扣率", { nexFeeOffsetRate: nex }, nex > params.nexFeeOffsetRate, `$${params.nexFeeOffsetRate}/NEX → $${nex}/NEX`)}>预览并提交</button>}
           </div>
         </div>

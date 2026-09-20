@@ -1,5 +1,5 @@
 import type { BusinessFormSpec, EditSpec } from "../design-kit";
-import type { E1BundleDiscount, E1GenerationGateData, E1GenerationGateInput } from "@/lib/admin/e1-client";
+import type { E1BundleDiscount, E1GenerationGateData, E1GenerationGateInput, E1InvalidSku } from "@/lib/admin/e1-client";
 import type { E2PhoneTier, E2TaskPricingSnapshot, E2YieldComparison } from "@/lib/admin/e2-client";
 import type { E3OperationMetric, E3Stats } from "@/lib/admin/e3-client";
 import type { E5Datacenter, E5DatacenterStatus, E5Device, E5Overview } from "@/lib/admin/e5-client";
@@ -104,6 +104,8 @@ export interface EViewCtx {
   // E1 商品目录 & 上架门
   canWriteE1: boolean;
   skus: OpsSku[];
+  /** 被逐行判定拒绝的 SKU(字段不合规)。页面必须具名展示,不得静默丢弃。 */
+  e1InvalidSkus: E1InvalidSku[];
   e1Loading: boolean;
   e1Error: string | null;
   e1Gates: E1GenerationGateData | null;

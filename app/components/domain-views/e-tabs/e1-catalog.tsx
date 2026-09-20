@@ -174,8 +174,11 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
 
   // 真 store 派生 stat(改 SKU 即刷新)。发布门未通过的 SKU(测试标识 / 无有效收益)
   // 不会进入 App 用户目录,因此不得计入「在售 SKU」与「目录累计售出额」这两项商品统计。
-  const publishableSkus = skus.filter((s) => !s.publishBlocked);
-  const publishBlocked = skus.length - publishableSkus.length;
+  // publishBlocked 为 undefined = 服务端未声明该结论(旧后端构建):既不能算作已过门
+  // (会把未过门的行计入在售),也不能算作被挡(会谎报数量)。单独计数并如实说明。
+  const publishableSkus = skus.filter((s) => s.publishBlocked !== true && s.publishBlocked !== undefined);
+  const publishBlocked = skus.filter((s) => s.publishBlocked === true).length;
+  const publishGateUndeclared = skus.filter((s) => s.publishBlocked === undefined).length;
   const onSale = publishableSkus.filter((s) => (s.status || "on") === "on").length;
   const pending = publishableSkus.filter((s) => s.status === "pending").length;
   const gated = releases.filter((gate) => !genUnlocked(gate)).length;
@@ -355,12 +358,27 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
     <>
       <EStats items={[
         { k: "目录累计售出额", v: compactUsd(catalogSoldValue), sub: `商品目录计数器 · ${soldUnits.toLocaleString()} 台(非订单主数据,对账以 E4 为准)` },
-        { k: "在售 SKU", v: onSale, sub: publishBlocked > 0 ? `+ ${pending} 个待确认 · 另有 ${publishBlocked} 个未过发布门` : `+ ${pending} 个待确认`, tone: "ok" },
+        { k: "在售 SKU", v: onSale, sub: `${pending} 个待确认${publishBlocked > 0 ? ` · ${publishBlocked} 个未过发布门` : ""}${ctx.e1InvalidSkus.length > 0 ? ` · ${ctx.e1InvalidSkus.length} 个字段不合规未纳入` : ""}`, tone: "ok" },
+        ...(publishGateUndeclared > 0 ? [{ k: "发布门未声明", v: publishGateUndeclared, sub: "服务端未返回发布门结论(旧构建)；该批 SKU 是否进入 App 目录未确认", tone: "warn" as const }] : []),
         { k: "节奏门管控 SKU", v: gateManaged, sub: "Pro v2 · Rack P2 分批上架", tone: "cyan" },
         { k: "门控 SKU", v: gated, sub: "解锁需阶段推进", tone: "warn" },
       ]} />
       {ctx.e1Loading && <div className="tint tiny" style={{ marginBottom: 12 }}>E1 数据同步中...</div>}
       {ctx.e1Error && <div className="tint warn tiny" role="alert" style={{ marginBottom: 12 }}>E1 后端数据读取失败,页面保持空态({ctx.e1Error}) <button type="button" onClick={() => void ctx.refreshE1()}>重新加载 E1 数据</button></div>}
+
+      {/* 被逐行判定拒绝的 SKU:具名列出是哪个 SKU 的哪个字段不合规。
+          此前这类行会让整份目录读取失败并清空页面,运营看到的是「0 SKU」而非真实原因 ——
+          同一份 nx_product 在 App 侧照常展示,后台却整目录为空。 */}
+      {ctx.e1InvalidSkus.length > 0 && (
+        <div className="tint warn tiny" role="alert" style={{ marginBottom: 12 }}>
+          有 {ctx.e1InvalidSkus.length} 个 SKU 的字段不合规，未纳入下列目录（其余商品照常展示）：
+          <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+            {ctx.e1InvalidSkus.map((row) => (
+              <li key={row.skuId}>{row.skuId} · {row.name} — 无效字段：{row.invalidFields.join("、")}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="tint" style={{ marginBottom: 12, padding: 12 }}>
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -642,12 +660,13 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                   })()}
                   <span className="stk">库存 {unlimitedInventory ? "∞（非实物）" : (s.stock ?? 0)}</span>
                   <Badge tone={s.trialEligible ? "ok" : "neutral"}>{s.trialEligible ? "允许试用" : "不可试用"}</Badge>
-                  {s.publishBlocked ? <Badge tone="warn">{`未过发布门 · ${publishBlockLabel}`}</Badge> : null}
+                  {s.publishBlocked === true ? <Badge tone="warn">{`未过发布门 · ${publishBlockLabel}`}</Badge> : null}
+                  {s.publishBlocked === undefined ? <Badge tone="neutral">发布门未声明</Badge> : null}
                 </div>
                 <div className="acts">
                   {canWrite ? <button className="primary" aria-label={`改价 / 编辑 ${s.name}`} onClick={() => ctx.openSku(s.id)}>改价 / 编辑</button> : null}
                   {canWrite && st === "on" && (unlimitedInventory || Number(s.stock) > 0) && !open && !releaseGate && hasPhaseConfig ? <button className="brand" aria-label={`按当前阶段上架 ${s.name}`} onClick={() => ctx.openSku(s.id, phaseCur)}>按当前阶段上架</button> : null}
-                  {canWrite ? <button disabled={listingBlocked || s.publishBlocked} title={s.publishBlocked ? `未过发布门 · ${publishBlockLabel} · 该行不会进入 App 用户目录` : listingBlocked ? listingBlocker : undefined} aria-label={`${st === "on" ? "下架" : "上架"} ${s.name}`} onClick={() => ctx.openActionConfirm({ name: st === "on" ? `下架 SKU · ${s.name}` : `上架 SKU · ${s.name}`, op: "sku-status", target: s.id, status: st === "on" ? "off" : "on", detail: st === "on" ? "下架后从商城隐藏,不影响已售设备结算" : "上架后对用户可见", amplify: false })}>{st === "on" ? "下架" : "上架"}</button> : null}
+                  {canWrite ? <button disabled={listingBlocked || s.publishBlocked === true} title={s.publishBlocked === true ? `未过发布门 · ${publishBlockLabel} · 该行不会进入 App 用户目录` : s.publishBlocked === undefined ? "服务端未返回发布门结论，上架是否生效未确认" : listingBlocked ? listingBlocker : undefined} aria-label={`${st === "on" ? "下架" : "上架"} ${s.name}`} onClick={() => ctx.openActionConfirm({ name: st === "on" ? `下架 SKU · ${s.name}` : `上架 SKU · ${s.name}`, op: "sku-status", target: s.id, status: st === "on" ? "off" : "on", detail: st === "on" ? "下架后从商城隐藏,不影响已售设备结算" : "上架后对用户可见", amplify: false })}>{st === "on" ? "下架" : "上架"}</button> : null}
                   {canWrite ? <button className="danger" aria-label={`删除 ${s.name}`} onClick={() => ctx.delSku(s.id, s.name ?? s.id)}>删除</button> : null}
                 </div>
               </div>

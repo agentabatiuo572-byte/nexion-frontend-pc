@@ -851,12 +851,13 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
                     <td><span className="mono">{op.sessions}</span></td>
                     <td style={{ textAlign: "right" }}>
                       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
-                        <button className="l-btn sm" onClick={(event) => stopRowAction(event, () => setEditAccountTarget(op))} disabled={!!mutatingAction || governanceFrozen}>编辑</button>
-                        <button className="l-btn sm" title={changeRoleBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => changeRole(op))} disabled={!!mutatingAction || !roles.length || !!changeRoleBlockReason(op)}>改角色</button>
-                        <button className="l-btn sm" title={reset2faBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => reset2fa(op))} disabled={!!mutatingAction || !!reset2faBlockReason(op)}>重置 2FA</button>
-                        <button className="l-btn sm" onClick={(event) => stopRowAction(event, () => resetPassword(op))} disabled={!!mutatingAction || governanceFrozen}>重置密码</button>
+                        <button className="l-btn sm" aria-label={`编辑 ${operatorDisplayLabel(op)}`} onClick={(event) => stopRowAction(event, () => setEditAccountTarget(op))} disabled={!!mutatingAction || governanceFrozen}>编辑</button>
+                        <button className="l-btn sm" aria-label={`修改 ${operatorDisplayLabel(op)} 的角色`} title={changeRoleBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => changeRole(op))} disabled={!!mutatingAction || !roles.length || !!changeRoleBlockReason(op)}>改角色</button>
+                        <button className="l-btn sm" aria-label={`重置 ${operatorDisplayLabel(op)} 的两步验证`} title={reset2faBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => reset2fa(op))} disabled={!!mutatingAction || !!reset2faBlockReason(op)}>重置 2FA</button>
+                        <button className="l-btn sm" aria-label={`重置 ${operatorDisplayLabel(op)} 的密码`} onClick={(event) => stopRowAction(event, () => resetPassword(op))} disabled={!!mutatingAction || governanceFrozen}>重置密码</button>
                         <button
                           className="l-btn sm"
+                          aria-label={`强制登出 ${operatorDisplayLabel(op)}`}
                           onClick={(event) => stopRowAction(event, () => kickAllSessions(op))}
                           disabled={!!mutatingAction || !!logoutBlock}
                           data-blocked={logoutBlock ? "true" : undefined}
@@ -866,9 +867,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
                           强制登出
                         </button>
                         {op.status === "enabled" ? (
-                          <button className="l-btn sm dgr" title={disableAccountBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => disableAcct(op))} disabled={!!mutatingAction || !!disableAccountBlockReason(op)}>禁用</button>
+                          <button className="l-btn sm dgr" aria-label={`禁用 ${operatorDisplayLabel(op)}`} title={disableAccountBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => disableAcct(op))} disabled={!!mutatingAction || !!disableAccountBlockReason(op)}>禁用</button>
                         ) : (
-                          <button className="l-btn sm mc" onClick={(event) => stopRowAction(event, () => enableAcct(op))} disabled={!!mutatingAction || governanceFrozen}>启用</button>
+                          <button className="l-btn sm mc" aria-label={`启用 ${operatorDisplayLabel(op)}`} onClick={(event) => stopRowAction(event, () => enableAcct(op))} disabled={!!mutatingAction || governanceFrozen}>启用</button>
                         )}
                       </div>
                     </td>

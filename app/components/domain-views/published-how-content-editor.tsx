@@ -144,11 +144,11 @@ export function PublishedHowContentEditor() {
           {item.kind === "list" && <div>
             {(Array.isArray(item.items) ? item.items : []).map((value, itemIndex, items) => <div className="r" key={identityOf(item).items[itemIndex]}>
               <label className="tiny">列表项 {itemIndex + 1}<textarea rows={2} value={text(value)} maxLength={2000} disabled={locked} onChange={e => patchBlock(index, { items: items.map((entry, i) => i === itemIndex ? e.target.value : entry) })} /></label>
-              {canWrite && <button className="l-btn sm" disabled={locked || items.length <= 1} onClick={() => removeListItem(index, itemIndex)}>删除列表项</button>}
+              {canWrite && <button className="l-btn sm" aria-label={`删除 ${key} 内容块 ${text(item.id)} 的列表项 ${itemIndex + 1}${text(value) ? `：${text(value)}` : ""}`} disabled={locked || items.length <= 1} onClick={() => removeListItem(index, itemIndex)}>删除列表项</button>}
             </div>)}
             {canWrite && <button className="l-btn sm" disabled={locked || (Array.isArray(item.items) && item.items.length >= 50)} onClick={() => patchBlock(index, { items: [...(Array.isArray(item.items) ? item.items : []), ""] })}>新增列表项</button>}
           </div>}
-          {canWrite && <button className="l-btn sm" disabled={locked || currentBlocks.length <= 1} onClick={() => removeBlock(index)}>删除内容块</button>}
+          {canWrite && <button className="l-btn sm" aria-label={`删除内容块 ${text(item.id)}（${key}）`} disabled={locked || currentBlocks.length <= 1} onClick={() => removeBlock(index)}>删除内容块</button>}
         </div>)}
         {canWrite && <>
           <button className="l-btn sm" style={{ marginTop: 8 }} disabled={locked || !current || currentBlocks.length >= 200} onClick={addBlock}>新增内容块</button>

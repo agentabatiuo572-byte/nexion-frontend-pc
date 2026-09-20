@@ -15,8 +15,17 @@ const READ_AUTHORITY_BY_PATH = {
   "/emergency/kill-switch": "emergency_j1_read",
 } as const;
 
+/**
+ * 目标路径 → 所需 read 权限码。
+ *
+ * 只认 pathname:调用方拿到的 href 常带查询串/锚点(B4 的 B3 归因入口是后端下发的
+ * `/overview/funnel?phase=ALL`,B5 的告警目标同理)。按整串精确查表会让带查询串的
+ * 目标落空 → 判定为"未知目标" → 连 superadmin 都被判无权,而同一个页面直接打开却
+ * 正常。查询串不改变目标域,故先剥离再查。
+ */
 export function requiredReadAuthority(path: string): string | null {
-  return READ_AUTHORITY_BY_PATH[path as keyof typeof READ_AUTHORITY_BY_PATH] ?? null;
+  const pathname = path.split(/[?#]/, 1)[0];
+  return READ_AUTHORITY_BY_PATH[pathname as keyof typeof READ_AUTHORITY_BY_PATH] ?? null;
 }
 
 export function canAccessCrossDomainPath(

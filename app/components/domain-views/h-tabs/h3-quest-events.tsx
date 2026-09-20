@@ -108,6 +108,12 @@ const LOCALE_LABEL: Record<"en" | "zh" | "vi", string> = {
   vi: "越南语",
 };
 
+const LOCALIZED_FIELD_LABEL: Record<"name" | "description" | "rewardName", string> = {
+  name: "标题",
+  description: "活动说明",
+  rewardName: "奖项名称",
+};
+
 const TASK_CATEGORY_OPTIONS = ["wallet", "explore", "recommend", "identity", "social"];
 const TASK_CATEGORY_LABELS: Record<string, string> = {
   wallet: "钱包",
@@ -1087,6 +1093,21 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       ]
     : model.events.map((event) => ({ entity: "event" as const, code: event.id, label: event.name }));
 
+  /**
+   * 目标语言缺失清单。
+   *
+   * 从 PC 已经收到的 `contentLocales` 直接派生,不额外要后端下发一份 —— 同一份数据算两遍
+   * 就有两个真相。英文可回退事件原文,zh/vi 没有回退来源:缺了就是中文/越南语用户看到英文。
+   * 该清单同时用于表格标记与顶部阻断提示,并被后端「转入 ongoing 必须填全」的门对齐。
+   */
+  const localizedGaps = model.events.flatMap((event) =>
+    (["zh", "vi"] as const).flatMap((locale) =>
+      (["name", "description", "rewardName"] as const)
+        .filter((field) => !text(model.contentLocales?.event?.[event.id]?.[locale]?.[field], ""))
+        .map((field) => ({ eventCode: event.id, locale, field })),
+    ),
+  );
+
   return (
     <>
       {section === "tasks" ? (
@@ -1142,6 +1163,15 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           <span className="ttl">App 运营内容（三语）</span>
           <span className="sub">· en / 简体中文 / Tiếng Việt；缺失时保留当前原文，不自动生成翻译</span>
         </div>
+        {/* 缺失即阻断:事件转入「进行中」= 对用户发布,后端要求 zh/vi 填全。此前表格只把空值
+            显示成中性的「填写」按钮,运营看不出缺内容会挡住发布;中文 App 于是直接回退英文原文。 */}
+        {localizedGaps.length > 0 && (
+          <div className="gtint" role="status" style={{ margin: "0 0 10px" }}>
+            有 {localizedGaps.length} 项目标语言内容未配置，相关事件无法发布为「进行中」：
+            {localizedGaps.slice(0, 6).map((gap) => `${gap.eventCode} ${LOCALE_LABEL[gap.locale]} ${LOCALIZED_FIELD_LABEL[gap.field]}`).join(" · ")}
+            {localizedGaps.length > 6 ? ` 等 ${localizedGaps.length} 项` : ""}
+          </div>
+        )}
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 740 }}>
             <thead><tr><th>内容</th><th>原文</th><th>英文</th><th>中文</th><th>越南语</th></tr></thead>
@@ -1159,15 +1189,21 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                 <tr key={`${item.entity}:${item.code}:${row.field}`}>
                   <td className="mono">{row.label}</td>
                   <td>{row.source}</td>
-                  {(["en", "zh", "vi"] as const).map((language) => (
-                    <td key={language}>
-                      <button className="l-btn sm mc" disabled={!canModuleWrite || !item.code}
-                        aria-label={`${localizedValue(item.entity, item.code, row.field, language) ? "编辑" : "填写"} ${row.label} ${LOCALE_LABEL[language]}`}
-                        onClick={() => openLocalizedContent(item.entity, item.code, row.field, language, row.source)}>
-                        {localizedValue(item.entity, item.code, row.field, language) || "填写"}
-                      </button>
-                    </td>
-                  ))}
+                  {(["en", "zh", "vi"] as const).map((language) => {
+                    const current = localizedValue(item.entity, item.code, row.field, language);
+                    // 目标语言缺失(zh/vi)是发布阻断项,不是可忽略的空值 —— 单独标出。
+                    const missing = !current && item.entity === "event" && language !== "en";
+                    return (
+                      <td key={language}>
+                        <button className="l-btn sm mc" disabled={!canModuleWrite || !item.code}
+                          aria-label={`${current ? "编辑" : missing ? "填写(发布前必须补齐)" : "填写"} ${row.label} ${LOCALE_LABEL[language]}`}
+                          onClick={() => openLocalizedContent(item.entity, item.code, row.field, language, row.source)}>
+                          {current || (missing ? "缺失" : "填写")}
+                        </button>
+                        {missing && <span className="bdg warn" style={{ marginLeft: 6 }} title="事件发布为「进行中」前必须补齐该语言">缺</span>}
+                      </td>
+                    );
+                  })}
                 </tr>
               ));
             })}</tbody>

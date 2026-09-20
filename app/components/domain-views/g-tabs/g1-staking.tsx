@@ -301,8 +301,18 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
           )}
           {rows.map((pool) => {
             const busy = !!busyKey;
+            // 对客可售 = 档位自身可售 且 整池闸开。整池闸熔断时四档必须显示为不可售,
+            // 否则 PC 顶部「整池闸 已熔断(J1)」与档位「营业中」同屏自相矛盾(App 显示停售)。
+            const blockedByGate = !gate.enabled;
+            const sellable = pool.sellable && !blockedByGate;
+            const statusLabel = blockedByGate ? "暂停售卖" : pool.statusLabel;
+            const statusTone = blockedByGate ? "bad" : pool.statusTone;
+            const blockedReason = blockedByGate
+              ? "整池闸已熔断(J1)：全档对客停售，恢复只能走 J1 流程"
+              : pool.blockedBy === "TIER_KILLED" ? "该档已熔断"
+                : pool.blockedBy === "TIER_DISABLED" ? "该档已停售" : "";
             return (
-              <tr key={pool.tierKey} style={pool.killed ? { opacity: 0.55 } : undefined}>
+              <tr key={pool.tierKey} style={!sellable ? { opacity: 0.55 } : undefined}>
                 <td style={{ fontWeight: 600, color: "var(--ink)" }}>{displayTerm(pool)}</td>
                 <td className="num mono" style={{ fontWeight: 700, color: pool.highYield ? "var(--warning)" : undefined }}>
                   <span className="row" style={{ gap: 6, justifyContent: "flex-end", alignItems: "center" }}>
@@ -323,12 +333,18 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
                   </span>
                 </td>
                 <td className="num mono">{pool.lockedDisplay}</td>
-                <td><span className={`bdg ${pool.statusTone === "bad" ? "bad" : pool.statusTone}`}>{pool.statusLabel}</span></td>
+                <td>
+                  <span className={`bdg ${statusTone === "bad" ? "bad" : statusTone}`}>{statusLabel}</span>
+                  {/* 档位自身配置状态与对客可售是两件事:被整池闸挡住时也要让运营看见
+                      这一档自己是不是 enabled/killed,否则无法判断解除熔断后谁会立刻开售。 */}
+                  {blockedReason && <span className="bdg dim" style={{ marginLeft: 6 }} title={blockedReason}>{pool.enabled && !pool.killed ? "档位配置:启用" : "档位配置:停用"}</span>}
+                </td>
                 <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                   <button
                     className={`l-btn sm${pool.enabled && !pool.killed ? " mc" : ""}`}
                     onClick={() => togglePool(pool)}
                     disabled={busy || pool.killed || !canToggleSale}
+                    title={blockedByGate ? "整池闸已熔断,该档在恢复闸门后才会对客开售" : undefined}
                     style={pool.killed ? { opacity: 0.4, cursor: "not-allowed" } : undefined}
                   >
                     {pool.enabled ? "停售" : "恢复开售"}

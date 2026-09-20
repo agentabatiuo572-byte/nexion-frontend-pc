@@ -19,6 +19,26 @@ export interface H1RhythmOverview {
   phaseProgressPct: number;
   options: number[];
   sources: string[];
+  /**
+   * 服务端权威排程事实。
+   *
+   * 页头此前把「每月 1 日 00:00 UTC 自动推进」写死成常量,与下方「Phase 切换控制」
+   * 读的 `growth.phase.control.schedule` 完全无关 —— 于是同页可以一边声称自动推进、
+   * 一边显示排程未设置。现在两处都读这一个对象:未配置时不声称自动推进,已配置时
+   * 展示服务端给出的原文、时区与下一次执行时刻。
+   *
+   * 可选:旧服务端不返回该字段,此时页面显示"排程状态不可用",而不是退回常量。
+   */
+  schedule?: H1Schedule | null;
+}
+
+/** 排程权威事实。`automatic` 为 false 时服务端没有真正的自动推进机制。 */
+export interface H1Schedule {
+  configured: boolean;
+  expression: string | null;
+  timezone: string | null;
+  nextAdvanceAt: string | null;
+  automatic: boolean;
 }
 
 let requestSeq = 0;
@@ -89,7 +109,46 @@ function normalizeRhythm(raw?: Record<string, unknown> | null): H1RhythmOverview
     phaseProgressPct: rawPhaseProgress == null ? 0 : clampInt(rawPhaseProgress, 0, 100),
     options,
     sources: Array.isArray(raw?.sources) ? raw.sources.map(String) : [],
+    schedule: normalizeSchedule(raw.schedule),
   };
+}
+
+/**
+ * 排程事实严格解析:形状不对就整块判为不可用(null),而不是部分采信。
+ * 页头据此渲染 —— 宁可显示"不可用",也不能凭残缺字段声称自动推进。
+ */
+function normalizeSchedule(raw: unknown): H1Schedule | null {
+  if (raw == null) return null;
+  if (typeof raw !== "object" || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  if (typeof row.configured !== "boolean" || typeof row.automatic !== "boolean") return null;
+  const asText = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
+  return {
+    configured: row.configured,
+    automatic: row.automatic,
+    expression: asText(row.expression),
+    timezone: asText(row.timezone),
+    nextAdvanceAt: asText(row.nextAdvanceAt),
+  };
+}
+
+/**
+ * 页头「实时」位的排程文案。
+ *
+ * 只陈述服务端给出的事实:没有排程就不说自动推进,没有自动机制就不说"自动"。
+ * 时间按运营本地时区展示,避免把 UTC 时刻当成运营所在时区。
+ */
+export function describeH1Schedule(schedule: H1Schedule | null | undefined): string {
+  if (!schedule) return "排程状态不可用";
+  if (!schedule.configured) return "排程未设置";
+  const parts = [`排程 ${schedule.expression ?? "已配置"}`];
+  if (schedule.timezone) parts.push(schedule.timezone);
+  if (schedule.nextAdvanceAt) {
+    const next = new Date(schedule.nextAdvanceAt);
+    parts.push(Number.isNaN(next.getTime()) ? `下次 ${schedule.nextAdvanceAt}` : `下次 ${next.toLocaleString()}`);
+  }
+  if (!schedule.automatic) parts.push("服务端未启用自动推进");
+  return parts.join(" · ");
 }
 
 export async function growthRequest<T>(path: string, init?: RequestInit, idempotencyPrefix?: string): Promise<T> {

@@ -7,6 +7,7 @@ import { useState } from "react";
 import type { BusinessFormValue } from "../design-kit";
 import type { FViewCtx } from "./types";
 import type { F1VRankRow } from "@/lib/admin/f1-client";
+import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { PublishedContentEditor } from "@/app/components/domain-views/published-content-editor";
 import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/admin/platform-types";
 
@@ -181,7 +182,9 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     });
   };
 
-  const prizeName = ctx.f1ConfigValues["F.prize.name"] ?? "";
+  // 服务端存量行仍可能带旧品牌(改名 NexGrid 前的 "Nexion V-Rank")。展示层归一,
+  // 但**提交值不变** —— 归一只作用于上屏文案,协议与配置仍写原值。
+  const prizeName = nexGridBrandText(ctx.f1ConfigValues["F.prize.name"] ?? "");
   const permanentOn = (ctx.f1ConfigValues["F.vrank.permanent"] ?? "on") === "on";
   // V-Rank 13 阶头衔(JSON V0-V12)回填解析 · 无记录用空串,首次配置时 13 阶全填。
   const titlesByLevel: Record<string, string> = {};

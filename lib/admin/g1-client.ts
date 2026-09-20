@@ -55,6 +55,8 @@ interface BackendPool {
   statusLabel?: string | null;
   statusTone?: string | null;
   highYield?: boolean | string | null;
+  sellable?: boolean | string | null;
+  blockedBy?: string | null;
 }
 
 interface BackendPositionRow {
@@ -142,7 +144,17 @@ export interface G1Pool {
   statusLabel: string;
   statusTone: "ok" | "bad" | "warn" | "dim";
   highYield: boolean;
+  /**
+   * 对客实际可售。`enabled` 只是**产品配置启用**,整池闸(J1)熔断时档位仍可能 enabled
+   * 但对外不可售 —— 两者必须分开,否则 PC 会在顶部已熔断时把四档显示成「营业中」,
+   * 与 App 的「暂停售卖」互相矛盾。
+   */
+  sellable: boolean;
+  /** 不可售的原因码;可售时为 null。 */
+  blockedBy: G1PoolBlockReason;
 }
+
+export type G1PoolBlockReason = "GLOBAL_GATE" | "TIER_KILLED" | "TIER_DISABLED" | null;
 
 export interface G1PositionRow {
   positionNo: string;
@@ -223,6 +235,10 @@ function moneyMillions(value: number) {
   return `$${(value / 1_000_000).toFixed(2).replace(/\.?0+$/, "")}M`;
 }
 
+function normalizePoolBlockReason(value: unknown): G1PoolBlockReason {
+  return value === "GLOBAL_GATE" || value === "TIER_KILLED" || value === "TIER_DISABLED" ? value : null;
+}
+
 function normalizePool(row: BackendPool): G1Pool {
   const termDays = toNumber(row.termDays);
   const tierKey = asText(row.tierKey, "unknown");
@@ -246,6 +262,12 @@ function normalizePool(row: BackendPool): G1Pool {
     statusLabel: asText(row.statusLabel, "营业中"),
     statusTone: normalizeTone(row.statusTone),
     highYield: toBool(row.highYield, termDays >= 180),
+    // 服务端未下发 sellable 时**不臆造可售性**:按档位自身配置派生,整池闸的阻断由
+    // gate.enabled 在页面层叠加。这样旧服务端仍能显示档位配置,而不会谎称整池可售。
+    sellable: row.sellable === undefined || row.sellable === null
+      ? toBool(row.enabled, true) && !toBool(row.killed, false)
+      : toBool(row.sellable, false),
+    blockedBy: normalizePoolBlockReason(row.blockedBy),
   };
 }
 

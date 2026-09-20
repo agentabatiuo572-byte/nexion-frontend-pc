@@ -148,13 +148,25 @@
   margin-top: 6px;
 }
 
+/**
+ * 功能闸自适应列宽。
+ *
+ * 此前固定 5 列,把「提现/质押/Genesis/兑换/试用入口」五张卡挤进常规桌面宽度下
+ * 约 110px 一列,中文被逐字竖排(默认 CJK 可在任意字符间断行),状态与名称的对应
+ * 关系也随之散掉。改成按最小卡宽自适应:宽度够就一行 5 列,不够自动落到 2~3 列,
+ * 配合 keep-all 禁止汉字内部断行。不设 max 列数,窄屏仍可退到 1 列。
+ */
 .radarpage .b5-gates {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
 .radarpage .b5-gates > div {
   justify-content: flex-start;
   border-bottom: 0;
+  min-width: 0;
+  flex-wrap: wrap;
+  word-break: keep-all;
+  overflow-wrap: normal;
 }
 
 .radarpage .b5-gates b {

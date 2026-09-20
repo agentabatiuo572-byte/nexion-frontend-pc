@@ -159,8 +159,24 @@ export default function A8Permissions() {
             ) : records.length === 0 ? (
               <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "var(--ink-3)" }}>无匹配权限</td></tr>
             ) : records.map((p) => (
-              <tr key={p.permissionCode} onClick={() => openDetail(p.permissionCode)} style={{ cursor: "pointer", borderBottom: "1px solid var(--border)" }}>
-                <td style={{ padding: "10px 12px" }}><CodeTag>{p.permissionCode}</CodeTag></td>
+              <tr
+                key={p.permissionCode}
+                className="click"
+                onClick={() => openDetail(p.permissionCode)}
+                style={{ cursor: "pointer", borderBottom: "1px solid var(--border)" }}
+              >
+                <td style={{ padding: "10px 12px" }}>
+                  {/* 整行点击此前是打开权限详情的唯一入口:辅助树里行只是 row/cell,
+                      键盘既停不上也按不动。给权限值本身一个真实按钮,整行点击保留。 */}
+                  <button
+                    type="button"
+                    aria-label={`查看权限详情 ${p.permissionCode}`}
+                    onClick={(event) => { event.stopPropagation(); openDetail(p.permissionCode); }}
+                    style={{ border: 0, background: "none", padding: 0, font: "inherit", cursor: "pointer" }}
+                  >
+                    <CodeTag>{p.permissionCode}</CodeTag>
+                  </button>
+                </td>
                 <td style={{ padding: "10px 12px" }}>{p.permissionName || "—"}</td>
                 <td style={{ padding: "10px 12px" }}><Badge tone={TONE_BY_TYPE[p.permType] || "neutral"}>{LABEL_BY_TYPE[p.permType] || "未知类型"}</Badge></td>
                 <td style={{ padding: "10px 12px" }}><span className="mono" style={{ fontSize: 12, color: "var(--ink-3)" }}>{p.menuCodePath}</span></td>

@@ -2,9 +2,13 @@ import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 import {
+  inspectE1SkuPage,
   parseE1GenerationGateData,
   parseE1SkuPage,
+  type E1InvalidSku,
 } from "@/lib/admin/e1-overview-contract";
+
+export type { E1InvalidSku };
 
 interface ApiResult<T> {
   code: number;
@@ -55,7 +59,12 @@ interface BackendSku {
   productType: "SERVER" | "DEVICE" | "SHARE";
   inventoryMode: "FINITE" | "UNLIMITED";
   trialEligible: boolean;
-  publishBlocked: boolean;
+  /**
+   * 发布门结论。**可选**:该字段由发布门提交引入,`DeviceSkuView` 的历史兼容构造器
+   * 把它填 null,早于该提交的后端构建根本不返回它。undefined = 服务端未声明该结论,
+   * 页面必须如实显示「未声明」,既不能当成 false(谎称已过门),也不能判该行无效。
+   */
+  publishBlocked?: boolean | null;
   publishBlockReason?: "PRODUCT_TEST_IDENTIFIER" | "PRODUCT_NO_EFFECTIVE_EARNINGS" | null;
   stock?: string | null;
   aiImageGenPerMin?: number | null;
@@ -112,6 +121,8 @@ export interface E1CatalogSnapshot {
   skus: OpsSku[];
   gates: E1GenerationGateData;
   bundleDiscount: E1BundleDiscount;
+  /** 被逐行判定拒绝的 SKU(字段不合规)。空数组 = 整份目录都合规。 */
+  invalidSkus: E1InvalidSku[];
 }
 
 export interface E1BundleDiscount {
@@ -231,22 +242,13 @@ function toPurchaseGate(gate: PurchaseGate | undefined): BackendPurchaseGate | n
   };
 }
 
+/**
+ * 单行 → OpsSku。
+ *
+ * 行级合规性由 `inspectE1SkuPage` 在调用前逐字段判定并具名,不合规的行根本到不了这里 ——
+ * 校验只有一处,不会出现「同一个条件在两处各写一遍、改一处漏一处」。
+ */
 function fromSku(sku: BackendSku): OpsSku {
-  const finiteStockValid = typeof sku.stock === "string"
-    && /^(0|[1-9]\d*)$/.test(sku.stock)
-    && Number.isSafeInteger(Number(sku.stock))
-    && Number(sku.stock) <= 2_147_483_647;
-  if (!["SERVER", "DEVICE", "SHARE"].includes(sku.productType)
-      || !["FINITE", "UNLIMITED"].includes(sku.inventoryMode)
-      || (sku.inventoryMode === "UNLIMITED" && (sku.productType !== "SHARE" || sku.stock != null))
-      || (sku.inventoryMode === "FINITE" && !finiteStockValid)
-      || typeof sku.trialEligible !== "boolean"
-      || typeof sku.publishBlocked !== "boolean"
-      || (sku.publishBlocked && (sku.publishBlockReason !== "PRODUCT_TEST_IDENTIFIER"
-            && sku.publishBlockReason !== "PRODUCT_NO_EFFECTIVE_EARNINGS"))
-      || (!sku.publishBlocked && sku.publishBlockReason != null)) {
-    throw new Error("E1_SKU_INVENTORY_CONTRACT_INVALID");
-  }
   const inventoryMode = sku.inventoryMode;
   const stock = inventoryMode === "UNLIMITED" ? undefined : sku.stock as string;
   return {
@@ -275,7 +277,7 @@ function fromSku(sku: BackendSku): OpsSku {
     inventoryMode,
     stock,
     trialEligible: sku.trialEligible,
-    publishBlocked: sku.publishBlocked,
+    publishBlocked: sku.publishBlocked ?? undefined,
     publishBlockReason: sku.publishBlocked ? sku.publishBlockReason ?? undefined : undefined,
     aiImageGenPerMin: sku.aiImageGenPerMin ?? undefined,
     aiLlmTokensPerSec: sku.aiLlmTokensPerSec ?? undefined,
@@ -394,8 +396,11 @@ export async function fetchE1Catalog(): Promise<E1CatalogSnapshot> {
     }
   }
   if (skuRows.length !== firstSkuPage.total) throw new Error("E1_SKU_PAGINATION_CONTRACT_INVALID");
-  const skus = await Promise.all(skuRows.map(fromSku).map(withFreshSkuMediaPreview));
-  return { skus, gates, bundleDiscount };
+  // 逐行体检:不合规的行**只被挑出来并具名**,不再让整份目录失败。
+  // E1 与 App 读同一张 nx_product;一行历史取值不该把运营后台的商品目录清成 0。
+  const { valid, invalid } = inspectE1SkuPage<BackendSku>({ ...firstSkuPage, records: skuRows });
+  const skus = await Promise.all(valid.map(fromSku).map(withFreshSkuMediaPreview));
+  return { skus, gates, bundleDiscount, invalidSkus: invalid };
 }
 
 export function parseE1BundleDiscount(value: unknown): E1BundleDiscount {

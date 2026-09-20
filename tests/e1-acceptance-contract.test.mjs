@@ -44,7 +44,9 @@ test("E1 SKU editor blocks no-op edits and constrains stock to a non-negative in
 test("E1 keeps the canonical SERVER product type instead of rejecting physical server SKUs", () => {
   assert.match(e1Contract, /\["SERVER",\s*"DEVICE",\s*"SHARE"\]/);
   assert.match(e1Client, /productType:\s*"SERVER"\s*\|\s*"DEVICE"\s*\|\s*"SHARE"/);
-  assert.match(e1Client, /\["SERVER",\s*"DEVICE",\s*"SHARE"\]\.includes\(sku\.productType\)/);
+  // 2026-09-20:词表校验从 e1-client 的 fromSku 移到 e1-overview-contract 的逐行体检,
+  // 因为行级不合规不再允许让整页失败(一行历史取值把目录清成 0 SKU 才是缺陷)。
+  assert.match(e1Contract, /\["SERVER",\s*"DEVICE",\s*"SHARE"\]\.includes\(value\.productType/);
   assert.match(e1Data, /const productType = existing\?\.productType \?\? \(isShare \? "SHARE" : "DEVICE"\)/);
   assert.match(e1Data, /sold: existing\?\.sold \?\? 0, productType, inventoryMode/);
   assert.match(e1Client, /inventoryMode === "UNLIMITED" && productType !== "SHARE"/);
@@ -116,7 +118,9 @@ test("E1 blocks every off-SKU whose backend-authoritative release state is not o
   assert.match(catalog, /const listingBlocked = st !== "on" && !open/);
   // The listing action is also refused for rows the server publish gate withholds
   // from the App catalogue, so the disable binding carries both reasons.
-  assert.match(catalog, /disabled=\{listingBlocked \|\| s\.publishBlocked\}/);
+  // 2026-09-20:发布门结论改为可选(旧后端构建不返回该字段),故只把明确的 true 当作
+  // 「被挡」;undefined 是「未声明」,不当 false 用也不禁用(详见 e1-overview-contract)。
+  assert.match(catalog, /disabled=\{listingBlocked \|\| s\.publishBlocked === true\}/);
   assert.doesNotMatch(catalog, /disabled=\{st !== "on" && !!releaseState && !releaseState\.unlocked\}/);
 });
 

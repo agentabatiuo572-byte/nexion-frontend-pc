@@ -29,3 +29,14 @@ export function formatD1FuseReason(value: unknown): { label: string; technical: 
   if (mapped) return { label: `${mapped.label} · ${mapped.action}`, technical: raw };
   return { label: "账户已熔断，需财务核对后恢复 · 恢复前不再分配新付款单。", technical: raw };
 }
+
+/**
+ * 该账户是否必须重新录入收款信息才能恢复。
+ *
+ * 这类账户的账号密文用旧密钥写入、现密钥解不开,「恢复/启用」只会把它放回派单池然后
+ * 必然失败 —— 唯一出口是重新录入银行账号。页面据此提供重配入口并禁用状态动作。
+ */
+export function requiresReprovision(fuseReason: unknown): boolean {
+  return typeof fuseReason === "string"
+    && fuseReason.trim().toUpperCase() === "MIGRATED_CIPHERTEXT_REQUIRES_REPROVISION";
+}

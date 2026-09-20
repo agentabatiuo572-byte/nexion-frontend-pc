@@ -1779,8 +1779,13 @@ export async function createD1VietQrAccount(input: {
 export async function updateD1VietQrAccount(
   id: number,
   input: {
-    action: "ENABLE" | "DISABLE" | "RECOVER" | "UPDATE_CAP";
+    action: "ENABLE" | "DISABLE" | "RECOVER" | "UPDATE_CAP" | "REPROVISION";
     dailyCapVnd?: number;
+    /** REPROVISION 专用:重新录入的收款信息。账号只提交给后端加密,列表与审计均不回显全号。 */
+    bankCode?: string;
+    bankName?: string;
+    accountHolder?: string;
+    accountNumber?: string;
     expectedVersion: number;
     reason: string;
     operator: string;

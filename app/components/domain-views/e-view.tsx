@@ -23,6 +23,7 @@ import {
   fetchE1Catalog,
   type E1BundleDiscount,
   type E1GenerationGateData,
+  type E1InvalidSku,
 } from "@/lib/admin/e1-client";
 import { fetchE2PhoneTiers, fetchE2TaskPricing, fetchE2Tasks, type E2PhoneTier, type E2TaskPricingSnapshot, type E2YieldComparison } from "@/lib/admin/e2-client";
 import { fetchE3Snapshot, type E3OperationMetric, type E3Stats } from "@/lib/admin/e3-client";
@@ -331,6 +332,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
   // ── E1 商品目录 / 上架门:后端接口为单一来源 ──
   const [e1Skus, setE1Skus] = useState<OpsSku[]>([]);
+  const [e1InvalidSkus, setE1InvalidSkus] = useState<E1InvalidSku[]>([]);
   const [e1Gates, setE1Gates] = useState<E1GenerationGateData | null>(null);
   const [e1BundleDiscount, setE1BundleDiscount] = useState<E1BundleDiscount | null>(null);
   const [e1Loading, setE1Loading] = useState(false);
@@ -341,11 +343,15 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     try {
       const snapshot = await fetchE1Catalog();
       setE1Skus(snapshot.skus);
+      // 逐行不合规的行不再让整页失败,但也不能静默丢弃 —— 交给目录页具名展示。
+      setE1InvalidSkus(snapshot.invalidSkus);
       setE1Gates(snapshot.gates);
       setE1BundleDiscount(snapshot.bundleDiscount);
     } catch (error) {
+      // 只有页级契约坏了(响应根本不是分页形状)才清空:此时没有任何可信的行可展示。
       setE1Error(displayAdminError(error));
       setE1Skus([]);
+      setE1InvalidSkus([]);
       setE1Gates(null);
       setE1BundleDiscount(null);
     } finally {
@@ -1031,7 +1037,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const ctx: EViewCtx = {
     pE, openActionConfirm, toast: setToast,
-    canWriteE1: canUseE1Writes, skus, e1Loading, e1Error, e1Gates, e1BundleDiscount, phaseCur, refreshE1, openSku, delSku,
+    canWriteE1: canUseE1Writes, skus, e1InvalidSkus, e1Loading, e1Error, e1Gates, e1BundleDiscount, phaseCur, refreshE1, openSku, delSku,
     canWriteE2, tasks, phoneTiers, yieldComparisons, e2Pricing, e2Loading, e2Error, e2TaskCatalogReady, refreshE2, openAddTask, openEditTask, delTask,
     canWriteE3, e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
     canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4Page, e4PageSize, e4Total, e4Filter, e4Keyword, setE4Page, setE4PageSize, setE4Filter, setE4Keyword, refreshE4, orderState, isCancelled, isRefunded, terminalOf, openOrder,

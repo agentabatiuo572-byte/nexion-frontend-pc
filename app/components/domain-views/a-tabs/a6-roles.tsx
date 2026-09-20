@@ -122,6 +122,15 @@ export default function A6Roles() {
             <div style={{ padding: "4px 8px" }}>
               {roles.map((r) => (
                 <div key={r.id} onClick={() => setSelectedId(r.id)}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={selectedId === r.id}
+                  aria-label={`查看角色 ${r.roleName || r.roleCode}`}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    setSelectedId(r.id);
+                  }}
                   style={{ padding: "10px 12px", cursor: "pointer", background: selectedId === r.id ? "var(--surface-2)" : "transparent", borderRadius: 8, marginBottom: 4, border: "1px solid var(--border)" }}>
                   <div className="row" style={{ alignItems: "center", gap: 8 }}>
                     <span style={{ fontWeight: 600 }}>{r.roleName || r.roleCode}</span>
