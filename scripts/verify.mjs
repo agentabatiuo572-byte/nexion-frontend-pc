@@ -350,6 +350,10 @@ const GEARS = [
   // 从没跑过。下面这道新齿同时挂上二者:既把孤儿门接回链条,也钉住 #208 的三态口径只有一个实现。
   ["PC a11y selected-state + KPI three-state rollup", "node",
     ["--test", "tests/pc-a11y-selected-state.test.mjs", "tests/kpi-rollup-three-state-contract.test.mjs"]],
+  // 2026-09-21 补挂:同一批里发现的第三道孤儿门。`tests/e2-acceptance-contract.test.mjs` 同样
+  // 既不在 GEARS 也不在任何 npm script,所以 #203(中文业务页直接展示 minReward / minVRAM /
+  // QUEUE_SATURATION 等内部字段名)一路穿到验收 —— 而这道门当时恰好把这些字段名当**正确文案**钉着。
+  ["E2 acceptance contract", "node", ["--test", "tests/e2-acceptance-contract.test.mjs"]],
 ];
 // 🔴 run-all:每个齿都跑到,逐齿记状态与耗时。红齿不再中断链条(理由见文件抬头)。
 const results = [];

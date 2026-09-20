@@ -132,16 +132,16 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         </div>
         <div style={{ overflowX: "auto", padding: "8px 16px 14px" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-            <thead><tr style={{ color: "var(--ink-4)", textAlign: "left" }}><th>任务类</th><th>代表模型</th><th>minReward</th><th>maxReward</th><th>minVRAM</th><th>派发状态</th><th>操作</th></tr></thead>
+            <thead><tr style={{ color: "var(--ink-4)", textAlign: "left" }}><th>任务类</th><th>代表模型</th><th title="服务端字段 minReward">最低奖励</th><th title="服务端字段 maxReward">最高奖励</th><th title="服务端字段 minVRAM">最低显存</th><th>派发状态</th><th>操作</th></tr></thead>
             <tbody>{pricingRows.map((row) => <tr key={row.taskClass} style={{ borderTop: "1px solid var(--border)" }}>
               <td style={{ padding: "11px 6px", fontFamily: "var(--mono)", fontWeight: 700 }}>{row.taskClass} · {KIND_LABEL[CLASS_TO_KIND[row.taskClass]]}</td>
               <td>{row.models.join(" / ")}</td><td className="tnum">${amount(row.minReward)}</td><td className="tnum">${amount(row.maxReward)}</td>
               <td className="tnum">{row.minVRAM} GB</td><td><CodeTag tone={row.enabled ? "electric" : "warn"}>{row.enabled ? "派发中" : "已 Kill"}</CodeTag></td>
               <td><div className="row" style={{ gap: 5 }}>
                 {canMutate && <>
-                  <Btn sm onClick={() => setPricingAction({ row, field: "minReward", current: row.minReward })}>调 min</Btn>
-                  <Btn sm onClick={() => setPricingAction({ row, field: "maxReward", current: row.maxReward })}>调 max</Btn>
-                  <Btn sm onClick={() => setPricingAction({ row, field: "minVRAM", current: row.minVRAM })}>调门槛</Btn>
+                  <Btn sm onClick={() => setPricingAction({ row, field: "minReward", current: row.minReward })}>调最低奖励</Btn>
+                  <Btn sm onClick={() => setPricingAction({ row, field: "maxReward", current: row.maxReward })}>调最高奖励</Btn>
+                  <Btn sm onClick={() => setPricingAction({ row, field: "minVRAM", current: row.minVRAM })}>调最低显存</Btn>
                   <Btn sm variant={row.enabled ? "danger" : "primary"} onClick={() => setPricingAction({ row, field: "enabled", current: row.enabled, nextEnabled: !row.enabled })}>{row.enabled ? "Kill" : "恢复"}</Btn>
                 </>}
               </div></td>
@@ -153,19 +153,19 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
 
       <div className="e3-main">
         <section className="pane" data-testid="e2-queue-saturation">
-          <div className="pane-h"><span className="ttl">QUEUE_SATURATION</span><span className="r"><CodeTag>{ctx.e2Pricing?.queueSaturation ?? "—"}</CodeTag></span></div>
+          <div className="pane-h"><span className="ttl" title="服务端字段 QUEUE_SATURATION">队列饱和度</span><span className="r"><CodeTag>{ctx.e2Pricing?.queueSaturation ?? "—"}</CodeTag></span></div>
           <div style={{ padding: 16 }}>
             <div className="tnum" style={{ fontSize: 30, fontWeight: 700 }}>{ctx.e2Pricing ? `${Math.round(ctx.e2Pricing.queueSaturation * 100)}%` : "—"}</div>
-            <div className="tint tiny" style={{ margin: "10px 0" }}>locked teaser 的 dailyPotential 使用服务端公式：(86400 / avgSec) × 饱和因子 × 平均奖励。</div>
-            {canMutate && <Btn variant="primary" onClick={() => setPricingAction({ field: "queueSaturation", current: ctx.e2Pricing!.queueSaturation })}>调整全局饱和因子</Btn>}
+            <div className="tint tiny" style={{ margin: "10px 0" }}>锁定预览的每日潜在收益使用服务端公式：(86400 / avgSec) × 饱和因子 × 平均奖励。</div>
+            {canMutate && <Btn variant="primary" onClick={() => setPricingAction({ field: "queueSaturation", current: ctx.e2Pricing!.queueSaturation })}>调整全局队列饱和度</Btn>}
           </div>
         </section>
         <section className="pane" data-testid="e2-locked-teaser">
-          <div className="pane-h"><span className="ttl">Locked teaser 预览</span><span className="sub">设备 VRAM 档</span></div>
+          <div className="pane-h"><span className="ttl" title="服务端字段 teaser">锁定预览</span><span className="sub">设备 VRAM 档</span></div>
           <div style={{ padding: 16 }}>
             <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>{(ctx.e2Pricing?.teaser ?? []).map((row) => <Btn key={row.deviceClass} sm variant={teaserDevice === row.deviceClass ? "primary" : undefined} onClick={() => setTeaserDevice(row.deviceClass)}>{row.deviceClass} · {row.vram}GB</Btn>)}</div>
             <div style={{ marginTop: 14, fontSize: 13 }}>被锁任务：<b>{selectedTeaser?.lockedTasks.join(" / ") || "无"}</b></div>
-            <div style={{ marginTop: 8, fontSize: 13 }}>daily potential：<b className="tnum">${amount(selectedTeaser?.dailyPotential ?? 0)} / 天</b></div>
+            <div style={{ marginTop: 8, fontSize: 13 }}>每日潜在收益:<b className="tnum">${amount(selectedTeaser?.dailyPotential ?? 0)} / 天</b></div>
           </div>
         </section>
       </div>
@@ -368,7 +368,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       </div>
       <p className="f-foot">当前最高单价任务{maxPriceTask ? `「${maxPriceTask.n}」` : "暂无"}、最高负载任务{peakTask ? `「${peakTask.n}」` : "暂无"}会影响任务池展示。任务单价调整后<b>对新派发任务生效</b>，已派发任务仍按原单价完成。</p>
       {pricingAction && <OperationConfirmModal
-        action={pricingAction.field === "enabled" ? `${pricingAction.nextEnabled ? "恢复派发" : "紧急 Kill"} · ${pricingAction.row?.taskClass}` : pricingAction.field === "queueSaturation" ? "调整 QUEUE_SATURATION" : `调整 ${pricingAction.row?.taskClass} · ${pricingAction.field}`}
+        action={pricingAction.field === "enabled" ? `${pricingAction.nextEnabled ? "恢复派发" : "紧急 Kill"} · ${pricingAction.row?.taskClass}` : pricingAction.field === "queueSaturation" ? "调整队列饱和度" : `调整 ${pricingAction.row?.taskClass} · ${pricingAction.field}`}
         detail={pricingAction.field === "enabled" && !pricingAction.nextEnabled ? "立即停止该类新任务派发；已派任务继续按派发时价格结算。" : "确认后服务端立即热更，只影响新派发/新路由判定，并写入 A2/A4 审计链。"}
         amplifies={pricingAction.field !== "enabled" || !!pricingAction.nextEnabled}
         edit={pricingAction.field === "enabled" ? undefined : {

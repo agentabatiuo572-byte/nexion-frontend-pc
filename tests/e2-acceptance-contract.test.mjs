@@ -20,17 +20,31 @@ test("E2 renders all canonical task classes including Speech", () => {
     assert.match(e2, new RegExp(`${taskClass}:`));
   }
   assert.match(e2, /6 类 AI 任务定价/);
-  assert.match(e2, /minReward/);
-  assert.match(e2, /maxReward/);
-  assert.match(e2, /minVRAM/);
+  // zentao #203:中文业务页此前直接把这些**服务端字段名**当列头渲染,运营看到的是
+  // minReward/maxReward/minVRAM 而不是中文业务名。现在列头出中文名,机器字段只保留在
+  // title 提示里做溯源 —— 所以断言要同时守住「中文名存在」和「字段名仍可追溯到」。
+  assert.match(e2, /最低奖励/);
+  assert.match(e2, /最高奖励/);
+  assert.match(e2, /最低显存/);
+  assert.match(e2, /title="服务端字段 minReward"/);
+  assert.match(e2, /title="服务端字段 maxReward"/);
+  assert.match(e2, /title="服务端字段 minVRAM"/);
+  // 不得再把这些字段名渲染成可见文本。
+  assert.doesNotMatch(e2, /<th>minReward<\/th>/);
+  assert.doesNotMatch(e2, /<th>maxReward<\/th>/);
+  assert.doesNotMatch(e2, /<th>minVRAM<\/th>/);
 });
 
 test("E2 exposes saturation, five-tier teaser and kill or recovery", () => {
-  assert.match(e2, /QUEUE_SATURATION/);
-  assert.match(e2, /Locked teaser 预览/);
+  // 同上:饱和度与锁定预览改出中文业务名,字段名退到 title 提示。
+  assert.match(e2, /title="服务端字段 QUEUE_SATURATION">队列饱和度/);
+  assert.match(e2, /title="服务端字段 teaser">锁定预览/);
+  assert.match(e2, /每日潜在收益/);
   assert.match(client, /cloud-share/);
-  assert.match(e2, /daily potential/);
   assert.match(e2, /row\.enabled \? "Kill" : "恢复"/);
+  assert.doesNotMatch(e2, /<span className="ttl">QUEUE_SATURATION<\/span>/);
+  assert.doesNotMatch(e2, /Locked teaser 预览/);
+  assert.doesNotMatch(e2, /daily potential/);
 });
 
 test("E2 hides all mutation entry points without write authority", () => {
