@@ -810,7 +810,7 @@ export default function UserDetailPage() {
                 }
               },
             });
-            return <div key={`device-actions-${deviceId}`} className="mt-2 flex items-center justify-between gap-3 rounded-[8px] px-3 py-2" style={{ background: "var(--v5-surface-2)" }}><span className="text-[12px]" style={{ color: "var(--v5-ink-3)" }}>{asText(device.instanceNo)} · {deviceStatus}</span><span className="flex gap-2"><ActionButton disabled={!!actionPending} onClick={() => execute("replace")}>设备置换</ActionButton><ActionButton disabled={!!actionPending} onClick={() => execute("recycle")}>设备回收</ActionButton></span></div>;
+            return <div key={`device-actions-${deviceId}`} className="mt-2 flex items-center justify-between gap-3 rounded-[8px] px-3 py-2" style={{ background: "var(--v5-surface-2)" }}><span className="text-[12px]" style={{ color: "var(--v5-ink-3)" }}>{asText(device.instanceNo)} · {formatC1DeviceStatus(deviceStatus)}</span><span className="flex gap-2"><ActionButton disabled={!!actionPending} onClick={() => execute("replace")}>设备置换</ActionButton><ActionButton disabled={!!actionPending} onClick={() => execute("recycle")}>设备回收</ActionButton></span></div>;
           })}
         </HubSection>
 

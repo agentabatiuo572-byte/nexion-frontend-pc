@@ -456,6 +456,46 @@ export type RetentionExecution = {
   behaviorFactRows: number;
 };
 
+export type RetentionPreview = {
+  retentionMonths: number;
+  eligibleRows: number;
+  earliestExpireAt: string | null;
+  notYetExpiredRows: number;
+  legacyRowsWithoutExpireAt: number;
+  archiveRequired: boolean;
+  approvalAuthority: string;
+};
+
+/**
+ * 「立即清理」的操作前预览。
+ *
+ * 计数与最早日期由服务端用与执行相同的谓词算出,前端只做形状校验、不做任何推断 —— 页面必须
+ * 在点击前说清本次范围(缺陷 99)。
+ */
+function normalizeRetentionPreview(value: unknown): RetentionPreview {
+  const row = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  if (!row) throw new Error("A2_RETENTION_PREVIEW_INVALID");
+  const integer = (key: string) => typeof row[key] === "number" && Number.isInteger(row[key]) && row[key] >= 0
+    ? row[key] as number : (() => { throw new Error(`A2_RETENTION_PREVIEW_INVALID:${key}`); })();
+  const earliest = row.earliestExpireAt;
+  if (earliest != null && (typeof earliest !== "string" || !earliest.trim())) {
+    throw new Error("A2_RETENTION_PREVIEW_INVALID:earliestExpireAt");
+  }
+  if (typeof row.archiveRequired !== "boolean" || typeof row.approvalAuthority !== "string" || !row.approvalAuthority.trim()) {
+    throw new Error("A2_RETENTION_PREVIEW_INVALID");
+  }
+  return {
+    retentionMonths: integer("retentionMonths"), eligibleRows: integer("eligibleRows"),
+    earliestExpireAt: earliest == null ? null : earliest.trim(),
+    notYetExpiredRows: integer("notYetExpiredRows"), legacyRowsWithoutExpireAt: integer("legacyRowsWithoutExpireAt"),
+    archiveRequired: row.archiveRequired, approvalAuthority: row.approvalAuthority.trim(),
+  };
+}
+
+export async function fetchA2RetentionPreview(): Promise<RetentionPreview> {
+  return normalizeRetentionPreview(await a2Request<RetentionPreview>("/retention-preview"));
+}
+
 export async function fetchA2ReasonPolicy(): Promise<A2ReasonPolicy> {
   const policy = await a2Request<BackendA2ReasonPolicy>("/reason-policy");
   const minChars = Number(policy?.minChars);

@@ -7,7 +7,15 @@ import { A5LoadError, fetchA5Registry, type A5LoadErrorKind } from "@/lib/admin/
 import type { A5RegistryOverview, A5RegistryRow } from "@/lib/admin/a5-contract";
 // 与 E6 共用同一份安装包地址判定(zentao #156):E6 已判为无效的值,A5 不得再把它
 // 展示成「当前服务端值」——否则同一事实在两页互相矛盾。
-import { isSafeInstallerUrl } from "@/lib/admin/installer-url";
+import { isAcceptableDownloadCopy, isSafeInstallerUrl } from "@/lib/admin/installer-url";
+
+/** E6 客户端下载配置里承载文案的四个键(与 ComputeConfigRegistry.DOWNLOAD_FIELDS 对应)。 */
+const E6_DOWNLOAD_COPY_KEYS: ReadonlySet<string> = new Set([
+  "E.compute.download.zhTitle",
+  "E.compute.download.zhGuide",
+  "E.compute.download.enTitle",
+  "E.compute.download.enGuide",
+]);
 
 /**
  * 该行的当前值是否真的生效。
@@ -19,6 +27,13 @@ import { isSafeInstallerUrl } from "@/lib/admin/installer-url";
 function rowValueEffective(row: A5RegistryRow): boolean {
   if (row.canonicalKey === "E.compute.download.url") {
     return isSafeInstallerUrl(row.currentValue.trim());
+  }
+  // 四段下载文案(中/英标题与说明)与下载地址同属「E6 才能判定是否可下发」的键。
+  // E6 用内容质量门(长度 + 测试标点)把它们判为未配置,所以 A5 必须用**同一份规则**,
+  // 否则运营在参数寄存器里看到「当前服务端值 · 服务端权威」,而 E6 明明拒绝下发 ——
+  // 同一事实两页互相矛盾(zentao #156)。判定函数与 E6 共用同一实现,不再各写一份。
+  if (E6_DOWNLOAD_COPY_KEYS.has(row.canonicalKey)) {
+    return isAcceptableDownloadCopy(row.currentValue.trim());
   }
   return true;
 }

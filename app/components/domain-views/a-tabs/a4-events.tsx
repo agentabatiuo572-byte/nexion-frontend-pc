@@ -162,6 +162,20 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
   const COMMON_FIELDS = overview?.commonFields ?? [];
   const KPI_DIMENSION_PARAMS = overview?.dimensionParams ?? [];
   const KPI_FORMULAS = overview?.kpiFormulas ?? [];
+/**
+ * 扩展批次行操作的目标名。
+ *
+ * 缺陷 100:同一张表里每行的操作按钮都只写「明细」,读屏与键盘用户无法分辨这一行到底指向
+ * 哪个批次/事件。目标名取「批次标题 + 首个新增 domain/事件」,两者都缺时退回行序号 ——
+ * 绝不产出空标签(空 aria-label 等于没有可访问名称)。
+ */
+  const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: string }> }, index?: number) => {
+    const title = (batch.title ?? "").trim();
+    const first = (batch.newDomains ?? []).map((domain) => (domain?.name ?? "").trim()).find(Boolean) ?? "";
+    const label = [title, first].filter(Boolean).join(" / ");
+    return label || `第 ${(index ?? 0) + 1} 行`;
+  };
+
   const DOMAIN_EXTENSIONS = overview?.domainExtensions ?? [];
   const SCHEMA_REGISTRATIONS = overview?.schemaRegistrations ?? [];
   const SCHEMA_OWNER_DOMAINS = Array.from(new Set([
@@ -1030,8 +1044,10 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
                     <td style={{ textAlign: "right" }}>
                       <button
                         className="l-btn sm"
+                        aria-label={`查看扩展批次明细:${batchActionTarget(b, i)}`}
+                        title={`查看扩展批次明细:${batchActionTarget(b, i)}`}
                         onClick={(e) => { e.stopPropagation(); setBatchIdx(i); }}
-                      >明细</button>
+                      >明细 · {batchActionTarget(b, i)}</button>
                     </td>
                   </tr>
                 );

@@ -398,7 +398,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">Position 状态机与监控</span>
+          <span className="ttl">持仓状态机与监控</span>
           <span className="sub">· 真实持仓只读 · 状态只能服务器推进,客户端伪造无效</span>
         </div>
         <div className="l-b">

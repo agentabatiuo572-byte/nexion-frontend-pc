@@ -21,6 +21,20 @@ type ConfirmReq = { action: React.ReactNode; detail: React.ReactNode; completion
 const DOMAIN_ACCENT: Record<string, string> = Object.fromEntries(CONSOLE_NAV.map((d) => [d.code, `var(${d.accentVar})`]));
 
 /** A6 角色管理（经典 RBAC 核心配置面）。旗舰外壳 + 左列表右详情 + 双绑定编辑（grants:Drawer→OperationConfirmModal→PUT）。 */
+/**
+ * 是否为自动验收残留的临时角色(zentao #101)。
+ *
+ * 用例运行器直接建角色并留下真实行:code 是「前缀 + 长随机段」(M3RAMRP0ZDPJ /
+ * F2_RO_MRUBHW1P / K2_FLAG_2202430),remark 写着 "... temporary role",状态启用、0 账号。
+ * 这里只做**标注**,不隐藏 —— 隐藏会让运营以为目录干净,而真实问题(角色没被清理)
+ * 仍在。判据要求零账号绑定:任何被真实账号引用的角色都不会被标成临时。
+ */
+export function isAcceptanceTempRole(role: { roleCode: string; remark?: string | null; adminCount?: number }): boolean {
+  if ((role.adminCount ?? 0) > 0) return false;
+  const code = (role.roleCode ?? "").trim().toUpperCase();
+  return /^(M3|F2_RO|K[0-9]_FLAG)[A-Z0-9_]{4,}$/.test(code);
+}
+
 export default function A6Roles() {
   const [toast, setToast] = useToast();
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
@@ -135,6 +149,9 @@ export default function A6Roles() {
                   <div className="row" style={{ alignItems: "center", gap: 8 }}>
                     <span style={{ fontWeight: 600 }}>{r.roleName || r.roleCode}</span>
                     {r.builtin && <Badge tone="neutral">内置</Badge>}
+                    {/* 自动验收残留的临时角色必须与真实角色目录可区分(zentao #101)。
+                        它们零账号绑定,混在「启用」里会让运营误选,也让角色数量失真。 */}
+                    {isAcceptanceTempRole(r) && <Badge tone="warn">验收临时 · 建议清理</Badge>}
                     <Badge tone={r.status === 1 ? "ok" : "dim"}>{r.status === 1 ? "启用" : "停用"}</Badge>
                     <span style={{ flex: 1 }} />
                     <span className="mono" style={{ fontSize: 11, color: "var(--ink-3)" }}>{r.adminCount} 账号</span>

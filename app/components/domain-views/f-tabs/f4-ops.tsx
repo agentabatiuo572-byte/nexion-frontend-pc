@@ -1,6 +1,7 @@
 "use client";
 
 /** F4 · 池/配额/大使/榜 —— 数据源为后端 /api/admin/teams/leadership-pool。 */
+import { formatF4AmbassadorBucketRule, formatF4AmbassadorBucketTitle } from "@/lib/admin/f4-ambassador-display";
 import type { FViewCtx } from "./types";
 import { validateF4SettlementConfig } from "@/lib/admin/f4-settlement-config";
 
@@ -265,9 +266,9 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
             <div className="kv-row"><span className="k">默认申请预算</span><span className="v">${ambassadorPolicy.defaultBudgetUsdt.toLocaleString("en-US")}</span></div>
             <div className="amb-bands">
               {ambassadorPolicy.buckets.map((bucket) => <div key={bucket.id} className="amb-band">
-                <div className="nm">{bucket.title} · {bucket.id}</div>
+                <div className="nm">{formatF4AmbassadorBucketTitle(bucket.id, bucket.title)} · {bucket.id}</div>
                 <div className="ct">${bucket.minBudgetUsdt.toLocaleString("en-US")} - ${bucket.maxBudgetUsdt.toLocaleString("en-US")} · {bucket.range}</div>
-                <div className="ct">{bucket.rule}</div>
+                <div className="ct">{formatF4AmbassadorBucketRule(bucket.id, bucket.rule)}</div>
               </div>)}
             </div>
             {canFund && <div className="sect-foot"><button className="primary amp" onClick={() => ctx.openActionConfirm({

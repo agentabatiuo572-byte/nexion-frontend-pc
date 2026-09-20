@@ -94,7 +94,16 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
   const FINANCIALS_FIELDS = (data?.financialFields ?? []).map((f) => ({ k: f.key, v: f.value, delta: f.delta }));
   const JURISDICTIONS: Jurisdiction[] = (data?.jurisdictions ?? []).map((j) => ({ ...j, v: j.version }));
   const DISCLOSURE_CHAPTERS = data?.chapters ?? [];
-  const GATED_ACTIONS: GateAction[] = (data?.gatedActions ?? []).map((g) => ({ key: g.key, name: g.name, sub: g.sub, st: g.status, tone: g.tone, active: g.active }));
+  // 🔴 badge 文案由 active 派生,与按钮**同一个判据**(zentao #149)。
+  //   服务端下发 status 列是一个静态字符串,可能与派生出的 active 相反 —— 提现行
+  //   显示 ACTIVE、按钮却是「已移出 · 纳入」,同一行两个互斥答案。这里不再渲染原始列,
+  //   改由 active 决定文案,PC 侧也就不会与按钮打架。
+  const GATED_ACTIONS: GateAction[] = (data?.gatedActions ?? []).map((g) => ({
+    key: g.key, name: g.name, sub: g.sub,
+    st: g.active ? "受限内" : "已移出",
+    tone: g.active ? g.tone : "dim",
+    active: g.active,
+  }));
   const SECTION_FIELDS = (data?.sectionFields ?? []).reduce<Record<string, [string, string][]>>((acc, field) => {
     acc[field.sectionKey] = [...(acc[field.sectionKey] ?? []), [field.key, field.value]];
     return acc;

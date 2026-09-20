@@ -20,6 +20,7 @@ import {
 import { confirm } from "@/lib/store/ui";
 import { PaginationExemptionList } from "../design-kit";
 import { LDataState, num, rec, rows, str, strings, type KpiRow } from "./live-data";
+import { formatB3RefOption } from "@/lib/admin/b3-ref-display";
 import { readL2LiveStages } from "./l1-l2-live-data";
 import { L2LiveStages } from "./l1-l2-live-fallback";
 import {
@@ -194,6 +195,22 @@ export function L2HeaderActions({ ctx }: { ctx: LCtx }) {
       </button>
     </>
   );
+}
+
+/**
+ * 多维交叉分析的行标签是后端拼的 `{ref} · {phase}` 组合串。
+ *
+ * B3 已把空 ref 归一到「无推荐码 / 自然渠道」,L2 此前直接渲染原始串,于是同一个
+ * 渠道在 B3 是中文业务名、在 L2 是「null · SYSTEM」—— 缺陷要求两页统一口径。
+ * 这里复用 B3 的归一化函数处理 ref 部分(Phase 是枚举,原样保留)。
+ */
+function formatL2CrossRowLabel(value: unknown): string {
+  const raw = typeof value === "string" ? value : String(value ?? "");
+  const separator = raw.indexOf(" · ");
+  if (separator < 0) return formatB3RefOption(raw);
+  const ref = raw.slice(0, separator);
+  const rest = raw.slice(separator);
+  return formatB3RefOption(ref) + rest;
 }
 
 export function L2Funnel({ ctx }: { ctx: LCtx }) {
@@ -652,7 +669,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
               <tbody>
                 {xd.rows.map((r, ri) => (
                   <tr key={String(r[0])}>
-                    <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{r[0]}</td>
+                    <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{formatL2CrossRowLabel(r[0])}</td>
                     {r.slice(1, xd.columns.length + 1).map((v, ci) => (
                       <td key={ci} className={"xv" + (ri === xd.alert[0] && ci === xd.alert[1] - 1 ? " alert" : "")}>{v == null ? "—" : `${v}${xd.unit}`}</td>
                     ))}

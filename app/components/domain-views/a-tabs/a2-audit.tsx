@@ -29,6 +29,7 @@ import {
   createA2CommandKey,
   exportA2Audit,
   fetchA2RetentionLatest,
+  fetchA2RetentionPreview,
   fetchA2Overview,
   rejectA2Operation,
   runA2RetentionNow,
@@ -40,6 +41,7 @@ import {
   type A2OperationType,
   type A2Overview,
   type RetentionExecution,
+  type RetentionPreview,
 } from "@/lib/admin/a2-client";
 import {
   A2_AUDIT_DOMAINS,
@@ -167,6 +169,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const [routeFilterReady, setRouteFilterReady] = useState(false);
   const [retentionRun, setRetentionRun] = useState<RetentionExecution | null>(null);
   const [retentionRunError, setRetentionRunError] = useState<string | null>(null);
+  const [retentionPreview, setRetentionPreview] = useState<RetentionPreview | null>(null);
+  const [retentionPreviewError, setRetentionPreviewError] = useState<string | null>(null);
   const [retentionPending, setRetentionPending] = useState(false);
 
   const loadOverview = useCallback(async (filter: A2AuditFilter) => {
@@ -213,9 +217,24 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     }
   }, []);
 
+  /* 操作前预览:与执行同谓词的服务端计数,让「立即清理」在点击前就能说清本次范围(缺陷 99)。 */
+  const refreshRetentionPreview = useCallback(async () => {
+    try {
+      setRetentionPreviewError(null);
+      setRetentionPreview(await fetchA2RetentionPreview());
+    } catch (error) {
+      setRetentionPreview(null);
+      setRetentionPreviewError(displayAdminError(error));
+    }
+  }, []);
+
   useEffect(() => {
     void refreshRetentionRun();
   }, [refreshRetentionRun]);
+
+  useEffect(() => {
+    void refreshRetentionPreview();
+  }, [refreshRetentionPreview]);
 
   const stats = overview?.stats ?? {
     pendingTickets: 0,
@@ -236,10 +255,26 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   const runRetention = () => {
     if (!canWrite) { toast("当前账号没有 A2 执行留存清理权限"); return; }
+    // 服务端预览拿不到时不允许执行:操作前无法说清范围的高风险动作,宁可挡住。
+    if (!retentionPreview) {
+      toast(retentionPreviewError
+        ? `无法取得清理范围,已阻止执行:${retentionPreviewError}`
+        : "正在读取清理范围,请稍候重试");
+      return;
+    }
+    const preview = retentionPreview;
     const commandKey = createA2CommandKey("a2-retention-run");
     openActionConfirm({
       action: <>立即执行审计冷归档保留清理</>,
-      detail: <>只处理已到 <b>expire_at</b> 的新审计行；每行先写入 append-only 冷归档并校验后才删除热表。历史无 expire_at 行、执行审计自身和未归档行都不会删除；同一命令号重试不会重复生效。</>,
+      detail: (
+        <>
+          本次范围由服务端按当前保留期({preview.retentionMonths} 个月)算出:<b>可清理 {preview.eligibleRows} 行</b>
+          {preview.earliestExpireAt ? <>,最早到期 <b>{preview.earliestExpireAt}</b></> : null}
+          ;未到期 <b>{preview.notYetExpiredRows}</b> 行与政策前历史 <b>{preview.legacyRowsWithoutExpireAt}</b> 行均不会被触及。
+          每行先写入 append-only 冷归档并校验摘要后才从热表移除,执行审计自身和未归档行都不会删除;同一命令号重试不会重复生效。
+          执行需 <b>{preview.approvalAuthority}</b> 权限,由服务端强制校验,动作不可逆并写入 A2 审计。
+        </>
+      ),
       amplifies: false,
       reasonMin,
       reasonMax: 200,
@@ -251,6 +286,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           toast(result.lockAcquired
             ? `保留清理完成：归档 ${result.archivedRows}，删除热表 ${result.deletedRows}`
             : "已有保留清理在执行，本次未删除任何数据");
+          void refreshRetentionPreview();
         } catch (error) {
           toast(`执行失败:${displayAdminError(error)}`);
           throw error;
@@ -812,7 +848,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             <div className="atint">
               可见性按角色自动裁剪:客服仅看自己的操作记录;财务看资金域、风控看风控域;
               只读审计可全量查询并脱敏导出。页面最多展示当前筛选最近 500 条;导出超过 5000 条时需缩小筛选范围。
-              日志只能看不能改、不能删。
+              日志只能看不能改、不能单独删;唯一的移出路径是按下方保留期把<b>已超期</b>行冷归档后从热表移除,
+              未到期行与政策前的历史行都不会被触及。
             </div>
           </div>
         </section>
@@ -885,12 +922,14 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               if (p.key === "retention") {
                 return (
                   <div className="a-vrow" key={p.key}>
-                    <span className="nm">{p.name}<small>{p.sub} · {retentionRun
+                    <span className="nm">{p.name}<small>{p.sub} · {retentionPreview
+                      ? `本次可清理:${retentionPreview.eligibleRows} 行${retentionPreview.earliestExpireAt ? `(最早到期 ${retentionPreview.earliestExpireAt})` : ""} · 未到期不触及:${retentionPreview.notYetExpiredRows} 行 · 历史行不触及:${retentionPreview.legacyRowsWithoutExpireAt} 行`
+                      : retentionPreviewError ? `清理范围读取失败:${retentionPreviewError}(已阻止执行)` : "正在读取清理范围"} · {retentionRun
                       ? `最近执行:${retentionRun.evaluatedAt} · 锁:${retentionRun.lockAcquired ? "已取得" : "占用"} · 归档:${retentionRun.archivedRows} · 删除:${retentionRun.deletedRows}`
                       : retentionRunError ? `最近状态读取失败:${retentionRunError}` : "暂无人工执行记录"}</small></span>
                     <span className="v">{p.value}</span>
                     {canWrite && <button className="l-btn sm mc" onClick={adjRet}>调整</button>}
-                    {canWrite && <button className="l-btn sm mc" disabled={retentionPending || !overview || !!loadError} onClick={runRetention}>立即清理</button>}
+                    {canWrite && <button className="l-btn sm mc" disabled={retentionPending || !overview || !!loadError || !retentionPreview} onClick={runRetention}>立即清理</button>}
                   </div>
                 );
               }

@@ -120,6 +120,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   A2_OPERATION_ALREADY_TERMINAL: "该待确认票已经处理完成，不能再次执行或取消；请刷新查看最新状态。",
   A2_REASON_POLICY_INVALID: "操作理由规则配置无效，当前无法提交；请联系值班人员核对理由长度和格式策略。",
   A2_RETENTION_RUN_INVALID: "留存清理任务返回的数据不完整或格式异常，结果尚未确认；请刷新 A2 记录核对执行状态，持续出现时联系值班人员。",
+  A2_RETENTION_PREVIEW_INVALID: "留存清理范围预览返回的数据不完整或格式异常，为避免误删已停止执行；请刷新页面重新读取范围，持续出现时联系值班人员。",
   A2_WITHDRAW_WRITE_NOT_CONFIRMED: "撤回请求已提交但未取得服务端权威回读；请刷新 A2 列表核对状态，不要换新命令号重复提交。",
   E5_OBSERVABILITY_SCHEMA_INVALID: "舰队可观测数据不完整或格式异常，页面已停止展示推测状态；请重新读取，持续出现时联系设备运维值班人员。",
   E5_DEVICE_ACTION_OUTCOME_UNCERTAIN: "设备操作的结果尚未确认；请保留当前输入并原样重试，系统会复用同一命令号避免重复执行。",

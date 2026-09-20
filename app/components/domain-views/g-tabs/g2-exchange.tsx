@@ -283,7 +283,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
                 </div>
                 <span className="v">{cap.displayValue}</span>
                 {allowed(capAuthority(cap.key)) && <button className="l-btn sm mc" disabled={busy || (!swap.enabled && !["fee", "feeMin"].includes(cap.key))}
-                  title={!swap.enabled && !["fee", "feeMin"].includes(cap.key) ? "swap 已熔断；额度与队列策略暂不可调整" : undefined}
+                  title={!swap.enabled && !["fee", "feeMin"].includes(cap.key) ? "兑换已全局熔断；额度与队列策略暂不可调整" : undefined}
                   onClick={() => adjCap(cap)}>调整 {cap.name}</button>}
               </div>
             ))}

@@ -57,6 +57,20 @@ const REMARK_LABELS: Record<string, string> = {
   "d5 nex fee offset; penalty first, then network fee": "提现 · NEX 手续费抵扣（先抵违约金，再抵网络费）",
 };
 
+/**
+ * 带业务单号的备注前缀 → 中文业务名。
+ *
+ * 这些串由服务端在记账时写入(如 HDPayCallbackSettlementService 的
+ * `"HDPay BANKQR deposit " + merchantOrderId`),前缀是稳定的业务词,单号是可变的。
+ * 按前缀归一既中文化了单元格,又保留了原始串作为技术详情。
+ */
+const REMARK_PREFIXES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^HDPay\s+BANKQR\s+deposit\b/i, "HDPay 扫码入金"],
+  [/^HDPay\s+.*\bwithdraw(al)?\b/i, "HDPay 出款"],
+  [/^VietQR\s+.*\bdeposit\b/i, "VietQR 银行入金"],
+  [/^D[0-9]\s+/i, "平台参数调整"],
+];
+
 function normalizeKey(value: string) {
   return value.trim().toLowerCase().replace(/[\s_-]+/g, " ");
 }
@@ -76,5 +90,21 @@ export function formatD4Remark(value: unknown): { label: string; technical: stri
   const raw = typeof value === "string" ? value.trim() : "";
   if (!raw) return { label: "—", technical: "" };
   const mapped = REMARK_LABELS[normalizeKey(raw)];
-  return mapped ? { label: mapped, technical: raw } : { label: raw, technical: "" };
+  if (mapped) return { label: mapped, technical: raw };
+
+  // 带业务单号的备注:形如 `HDPay BANKQR deposit VQR-...`、`HDPay BANKQR deposit WD-...`。
+  // 此前这类值整串直上屏,运营看到的是英文技术串 + 内部单号 —— 缺陷要求「中文化,或把原始
+  // 技术值降级为技术详情」。这里把前缀归一到中文业务名,单号降级为 title(鼠标悬停可见),
+  // 单元格只留可读文案。前缀按**已知的业务词**匹配,不做「猜语义」的模糊替换。
+  const prefixed = REMARK_PREFIXES.find(([pattern]) => pattern.test(raw));
+  if (prefixed) {
+    return { label: prefixed[1], technical: raw };
+  }
+
+  // 未命中任何已知业务词的英文技术串:整串降级为技术详情,单元格给中性说明而不是把
+  // 内部标识当业务文案展示(否则仍是一次内部信息泄露)。
+  if (/^[A-Za-z][A-Za-z0-9 ._:-]*$/.test(raw)) {
+    return { label: "系统备注（详见技术详情）", technical: raw };
+  }
+  return { label: raw, technical: "" };
 }
