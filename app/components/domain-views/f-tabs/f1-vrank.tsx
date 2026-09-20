@@ -18,6 +18,24 @@ function popColor(i: number): string { return i <= 2 ? "var(--cyan)" : i <= 5 ? 
 type VRow = F1VRankRow;
 type VField = { k: string; label: string; cur: string; kind: "text" | "number"; options?: string[] };
 
+/**
+ * `nx_v_rank_reward_rule.custom_label` 是运营手填自由文本,没有发布审核,因此可能存着
+ * **测试工具名**。实测两处写入源:PC 验收脚本写 `F-A1REVERIFY-<ts>-custom-reward`
+ * (tests/e2e/a1-reverify.mjs),F1 引擎自检写 `F1ENGINE …` 行。它们是内部标识符,不是
+ * 用户文案 —— 绝不能让它们出现在 App 的 V 级头衔页(zentao #30)。
+ *
+ * App 侧已有一道同样的闸(src/lib/rank-entitlement-label.ts 的 INTERNAL_LABEL_PATTERN),
+ * 但 PC 的 F1 阶梯是**另一条**上屏路径,此前没有闸,于是「F1ENGINE custom reward」照样
+ * 出现在等级奖励 chip 上。判据与 App 保持一致,免得两边各自漂移。
+ */
+const INTERNAL_LABEL_PATTERN = /f1engine|reverify/i;
+
+/** 内部标识符一律不上屏;空值同样退回占位。 */
+function safeCustomLabel(raw: string | undefined, fallback = "自定义"): string {
+  const label = (raw ?? "").trim();
+  return label && !INTERNAL_LABEL_PATTERN.test(label) ? label : fallback;
+}
+
 // 奖励 chip 文案(运营可读)。
 function rewardLabel(it: OpsVRankRewardItem, voucherLabels: Record<string, string>, skuLabels: Record<string, string>): string {
   switch (it.type) {
@@ -25,7 +43,7 @@ function rewardLabel(it: OpsVRankRewardItem, voucherLabels: Record<string, strin
     case "nex": return `${(it.amount ?? 0).toLocaleString()} NEX`;
     case "voucher": return `券 · ${voucherLabels[it.voucherId ?? ""] ?? it.voucherId ?? "—"}`;
     case "sku": return `SKU · ${skuLabels[it.skuId ?? ""] ?? it.skuId ?? "—"}`;
-    case "custom": return it.custom ?? "自定义";
+    case "custom": return safeCustomLabel(it.custom);
     default: return "—";
   }
 }
@@ -233,7 +251,8 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     if (record.rewardType === "USDT" || record.rewardType === "NEX") {
       return `${record.amount.toLocaleString()} ${record.rewardType}`;
     }
-    return record.voucherId || record.skuId || record.customLabel || record.rewardType || "—";
+    // 派发台账同样可能带内部标识符(custom_label 是自由文本),同 #30 一并归一。
+    return record.voucherId || record.skuId || safeCustomLabel(record.customLabel, record.rewardType || "—") || record.rewardType || "—";
   };
   const openManualOverride = () => {
     ctx.openActionConfirm({
