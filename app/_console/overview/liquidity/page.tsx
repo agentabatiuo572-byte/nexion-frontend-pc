@@ -36,6 +36,7 @@ import {
   type B2WaterLevel,
 } from "@/lib/admin/b2-client";
 import { BPageHeader } from "../b-page-header";
+import { TabGroup } from "@/app/components/kit/tab-group";
 import "../b-domain.css";
 import "./liquidity.css";
 
@@ -241,20 +242,17 @@ export default function LiquidityPage() {
       />
 
       <div className="b2-toolbar" aria-label="B2 操作栏">
-        <div className="b2-window" role="group" aria-label="到期预测窗口">
-          {(["7d", "30d"] as const).map((item) => (
-            <button
-              type="button"
-              key={item}
-              className={window === item ? "active" : ""}
-              aria-pressed={window === item}
-              disabled={loading}
-              onClick={() => selectWindow(item)}
-            >
-              {item === "7d" ? "7 天" : "30 天"}
-            </button>
-          ))}
-        </div>
+        {/* 互斥到期预测窗口(zentao #159):aria-pressed 会被读屏按 toggle button 朗读,
+            运营无法判断「7 天 / 30 天」是一组单选。TabGroup 给 tablist + aria-selected。 */}
+        <TabGroup<"7d" | "30d">
+          className="b2-window"
+          label="到期预测窗口"
+          value={window}
+          items={["7d", "30d"] as const}
+          onSelect={selectWindow}
+          disabled={() => loading}
+          itemClassName={(_v, selected) => (selected ? "active" : "")}
+        >{(item) => (item === "7d" ? "7 天" : "30 天")}</TabGroup>
         <span className="b2-asof">口径时点：{reserve.asOf}</span>
         <button type="button" className="b2-button" disabled={loading} onClick={() => void load(window)}>
           <RefreshCw size={14} className={loading ? "spin" : ""} />刷新

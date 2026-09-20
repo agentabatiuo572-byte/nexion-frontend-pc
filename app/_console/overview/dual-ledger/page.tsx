@@ -29,6 +29,7 @@ import { createD3Injection, downloadD3Csv, updateD3Thresholds } from "@/lib/admi
 import { displayAdminError, guardedFetch } from "@/lib/admin/error-messages";
 import { fmtUsd, fmtUsdCompact, fmtPct, fmtNum } from "@/lib/format";
 import { Sparkline as MiniSparkline } from "@/app/components/kit/kpi-stat-card";
+import { TabGroup } from "@/app/components/kit/tab-group";
 import {
   OperationConfirmModal,
   Sparkline as TrendSparkline,
@@ -566,17 +567,18 @@ export default function DualLedgerPage() {
           <span className="h">净敞口趋势</span>
           <span className="sub">储备 − 负债 · 服务端权威序列</span>
           <div className="r" style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            {(["7d", "30d", "90d"] as const).map((window) => (
-              <button
-                key={window}
-                type="button"
-                className={exposureWindow === window ? "btn primary" : "btn ghost"}
-                aria-pressed={exposureWindow === window}
-                onClick={() => setExposureWindow(window)}
-              >
-                {window.slice(0, -1)} 天
-              </button>
-            ))}
+            {/* 互斥时间范围必须暴露「当前选中项」(zentao #159)。此前三个按钮只有
+                aria-pressed:浏览器把 aria-pressed 按钮当 toggle button,读屏按复选框朗读
+                (「30 天,已按下」),运营无法判断这是一组单选。TabGroup 给 role=tablist +
+                role=tab + aria-selected + roving tabindex,方向键即可切换。 */}
+            <TabGroup<"7d" | "30d" | "90d">
+              className="r"
+              label="净敞口趋势时间范围"
+              value={exposureWindow}
+              items={["7d", "30d", "90d"] as const}
+              onSelect={setExposureWindow}
+              itemClassName={(_v, selected) => (selected ? "btn primary" : "btn ghost")}
+            >{(window) => `${window.slice(0, -1)} 天`}</TabGroup>
             {canExport && (
               <button
                 type="button"

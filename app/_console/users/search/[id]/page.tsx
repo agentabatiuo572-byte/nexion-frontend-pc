@@ -27,6 +27,7 @@ import { OperationConfirmModal } from "@/app/components/domain-views/design-kit"
 import { fmtNum, fmtUsd } from "@/lib/format";
 import { toast } from "@/lib/store/ui";
 import { KpiStatCard } from "@/app/components/kit/kpi-stat-card";
+import { TabGroup } from "@/app/components/kit/tab-group";
 import { StatusPill, type PillTone } from "@/app/components/kit/status-pill";
 import { AuditTimeline, type AuditEntry } from "@/app/components/kit/audit-timeline";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
@@ -59,7 +60,9 @@ const deviceSlot = (action: "replace" | "recycle", userId: string | number, devi
 
 /** C1 画像「安全 & 会话」默认每页条数:后端一次下发全部会话,首屏只渲染最近一页。 */
 const C1_SESSION_PAGE_SIZE = 5;
-const C1_SESSION_STATUS_FILTERS: ReadonlyArray<readonly ["ALL" | "ACTIVE" | "REVOKED" | "EXPIRED", string]> = [
+/** 会话状态筛选的取值域 —— 组件的泛型参数与常量表共用同一份声明。 */
+type SessionStatusFilter = "ALL" | "ACTIVE" | "REVOKED" | "EXPIRED";
+const C1_SESSION_STATUS_FILTERS: ReadonlyArray<readonly [SessionStatusFilter, string]> = [
   ["ALL", "全部"],
   ["ACTIVE", "活跃"],
   ["REVOKED", "已撤销"],
@@ -654,25 +657,19 @@ export default function UserDetailPage() {
               <KpiStatCard label="锁定" value={summary.locked ? "是" : "否"} accent="var(--v5-warning)" />
             </div>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-1.5">
-                {C1_SESSION_STATUS_FILTERS.map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={sessionStatusFilter === value}
-                    onClick={() => setSessionStatusFilter(value)}
-                    className="rounded-[8px] px-2.5 py-1 text-[11.5px]"
-                    style={{
-                      border: "1px solid var(--v5-border)",
-                      background: sessionStatusFilter === value ? "var(--v5-surface-2)" : "transparent",
-                      color: sessionStatusFilter === value ? "var(--v5-ink)" : "var(--v5-ink-3)",
-                      fontWeight: sessionStatusFilter === value ? 600 : 400,
-                    }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+              <TabGroup<SessionStatusFilter>
+                label="会话状态筛选"
+                value={sessionStatusFilter}
+                items={C1_SESSION_STATUS_FILTERS.map(([value]) => value)}
+                onSelect={setSessionStatusFilter}
+                itemClassName={(value, selected) => "rounded-[8px] px-2.5 py-1 text-[11.5px]" + (selected ? " font-semibold" : "")}
+                itemStyle={(value, selected) => ({
+                  border: "1px solid var(--v5-border)",
+                  background: selected ? "var(--v5-surface-2)" : "transparent",
+                  color: selected ? "var(--v5-ink)" : "var(--v5-ink-3)",
+                  fontWeight: selected ? 600 : 400,
+                })}
+              >{(value) => C1_SESSION_STATUS_FILTERS.find(([v]) => v === value)?.[1] ?? value}</TabGroup>
               <span className="text-[11.5px]" style={{ color: "var(--v5-ink-4)" }}>
                 共 {filteredSessions.length} 条 · 第 {sessionPage}/{sessionPageCount} 页
               </span>

@@ -63,6 +63,11 @@ function text(value: unknown, field: string, allowEmpty = false) {
   return value.trim();
 }
 
+/** 可选文本:字段缺失时给空串,存在时仍按 text 的规则校验(不接受非字符串)。 */
+function optionalText(value: unknown, field: string): string {
+  return value === undefined || value === null ? "" : text(value, field, true);
+}
+
 function count(value: unknown, field: string) {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0) invalid(field);
   return value;
@@ -71,6 +76,22 @@ function count(value: unknown, field: string) {
 function flag(value: unknown, field: string) {
   if (typeof value !== "boolean") invalid(field);
   return value;
+}
+
+/**
+ * 可选布尔(zentao #198 的部署兼容面)。
+ *
+ * `live` / `stale` 由后端在「健康类键改为实时 provider 供值」那次提交里新增。老构建
+ * 不返回它们,而把它们当必填会让**整页**判为数据一致性失败 —— 运营看到的是
+ * 「数据一致性校验未通过,已停止展示可疑数据」,连一条参数都读不到;这与 #187 的
+ * E1 是同一个缺陷类(一个未声明字段把整页读取打掉)。
+ *
+ * 缺失 = 「这个后端不做实时健康采样」,按非实时/非过期降级:行仍如实展示存量值,
+ * 只是不打「实时权威」徽章。字段存在时仍严格按布尔校验,不接受半吊子取值。
+ */
+function optionalFlag(value: unknown, field: string): boolean {
+  if (value === undefined || value === null) return false;
+  return flag(value, field);
 }
 
 function status<T extends string>(value: unknown, field: string, allowed: readonly T[]): T {
@@ -104,9 +125,11 @@ export function normalizeA5Overview(raw: unknown): A5RegistryOverview {
       updatedAt: text(row.updatedAt, `rows[${index}].updatedAt`),
       operationConfirm: flag(row.operationConfirm, `rows[${index}].operationConfirm`),
       serverCanonical: true,
-      live: flag(row.live, `rows[${index}].live`),
-      observedAt: text(row.observedAt, `rows[${index}].observedAt`, true),
-      stale: flag(row.stale, `rows[${index}].stale`),
+      // 老后端不返回这三个字段(见 optionalFlag 注释):缺失按「非实时、未过期」降级,
+      // 而不是把整页判成一致性失败。
+      live: optionalFlag(row.live, `rows[${index}].live`),
+      observedAt: optionalText(row.observedAt, `rows[${index}].observedAt`),
+      stale: optionalFlag(row.stale, `rows[${index}].stale`),
     };
   });
 

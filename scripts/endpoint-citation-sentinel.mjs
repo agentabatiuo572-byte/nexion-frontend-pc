@@ -47,6 +47,8 @@ const LEDGER = {
   "/api/admin/market/nex/repurchase": "route: app/api/admin/market/[...path]/route.ts:33",
   "/api/admin/teams/leadership-pool": "route: app/api/admin/teams/[...path]/route.ts",
   "/api/admin/treasury/b-domain": "route: app/api/admin/treasury/[...path]/route.ts",
+  "/api/admin/platform/audit/retention-preview":
+    "route: app/api/admin/platform/[...path]/route.ts(audit 分支白名单;上游 nexion-backend 的 OpsAuditController#retentionPreview 已实现 —— zentao #201 就是本路由漏放行该子路径)",
   "/api/admin/users/profiles": "route: app/api/admin/users/[...path]/route.ts",
 };
 

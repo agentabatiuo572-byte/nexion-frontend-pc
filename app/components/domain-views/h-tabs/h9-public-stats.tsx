@@ -312,13 +312,17 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
                   <div className="s">合法范围 {field.min}–{field.max}{field.unit}{field.integer ? "(整数)" : ""} · {field.hint}</div>
                   {fieldErrors[key] && <div className="ferr">{fieldErrors[key]}</div>}
                 </div>
+                {/* 🔴 type="text" 而不是 type="number"(zentao #200)。
+                    Chrome 对 number 控件的可访问值走 float32 转换:String(97.6) 得到的
+                    字符串会被重新解析成 97.5999984741211 再交给无障碍树 —— 视觉文本是 97.6,
+                    读屏/自动化却读到二进制尾差,编辑后还会把尾差提交回去。这与 #185 的
+                    D5 数值输入是同一个缺陷类,修法也一致:用文本控件承载已按业务精度规范化
+                    的草稿,inputMode 保留移动端数字键盘。合法域校验仍由 scalarError 执行。 */}
                 <input
                   aria-label={`${field.label}目标值`}
                   className="l-inp"
-                  type="number"
-                  min={field.min}
-                  max={field.max}
-                  step={field.step}
+                  type="text"
+                  inputMode={field.integer ? "numeric" : "decimal"}
                   value={drafts[key]}
                   disabled={!canWrite}
                   onChange={(event) => setDraft(key, event.target.value)}
@@ -385,8 +389,8 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
               <tbody>
                 {bands.map((row, index) => <tr key={index}>
                   <td className="mono">{index + 1}</td>
-                  <td><input aria-label={`第 ${index + 1} 档算力档位`} className="l-inp" type="number" min={H9_BAND_TOPS_MIN} step={H9_BAND_STEP} value={row.tops} disabled={!canWrite} onChange={(event) => setBand(index, "tops", event.target.value)} /></td>
-                  <td><input aria-label={`第 ${index + 1} 档累计占比`} className="l-inp" type="number" min={0} max={100} step={H9_BAND_STEP} value={row.cumPct} disabled={!canWrite} onChange={(event) => setBand(index, "cumPct", event.target.value)} /></td>
+                  <td><input aria-label={`第 ${index + 1} 档算力档位`} className="l-inp" type="text" inputMode="numeric" value={row.tops} disabled={!canWrite} onChange={(event) => setBand(index, "tops", event.target.value)} /></td>
+                  <td><input aria-label={`第 ${index + 1} 档累计占比`} className="l-inp" type="text" inputMode="decimal" value={row.cumPct} disabled={!canWrite} onChange={(event) => setBand(index, "cumPct", event.target.value)} /></td>
                   <td>{rowErrors[index]
                     ? <span className="ferr">{rowErrors[index]}</span>
                     : h9BandMeaning(row.tops, row.cumPct)}</td>
@@ -395,7 +399,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
               </tbody>
             </table>}
         <div className="htint" style={{ marginTop: 10 }}>
-          填表规则:算力档位从小到大排,累计占比只能一行比一行大或持平,最高不超过 100%。
+          填表规则:算力档位从 {H9_BAND_TOPS_MIN} 起从小到大排,累计占比只能一行比一行大或持平,最高不超过 100%。
           这些参数保留用于历史本地估算。正式 App 的当前名次由服务端按符合条件的设备有效算力排序。
         </div>
       </div>

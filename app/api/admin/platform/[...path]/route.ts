@@ -115,7 +115,11 @@ function backendPath(parts: string[]) {
     return "/api/admin/platform/rbac/actions";
   }
   if (parts.length >= 1 && parts[0] === "audit") {
-    if (parts.length === 2 && (parts[1] === "overview" || parts[1] === "logs" || parts[1] === "exports" || parts[1] === "reason-policy" || parts[1] === "retention-runs")) {
+    // 🔴 `retention-preview` 必须在列(zentao #201):A2 客户端请求
+    //    /api/admin/platform/audit/retention-preview,白名单漏掉它时代理回
+    //    PLATFORM_ROUTE_NOT_FOUND,页面把「自己漏放行」显示成「清理范围读取失败」
+    //    并永久禁用清理按钮。服务端该端点早已存在(OpsAuditController#retentionPreview)。
+    if (parts.length === 2 && ["overview", "logs", "exports", "reason-policy", "retention-runs", "retention-preview"].includes(parts[1])) {
       return `/api/admin/platform/audit/${parts[1]}`;
     }
     if (parts.length === 3 && parts[1] === "retention-runs" && parts[2] === "latest") {

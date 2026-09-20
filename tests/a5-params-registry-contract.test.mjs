@@ -68,6 +68,40 @@ test("A5 rejects duplicate keys and inconsistent summary counts", () => {
   assert.throws(() => normalizeA5Overview(inconsistent), /A5_DATA_INTEGRITY_ERROR:stats\.registeredCount/);
 });
 
+/**
+ * zentao #198 的部署兼容面:`live`/`observedAt`/`stale` 是后端在「健康类键改为实时
+ * provider 供值」那次提交里新增的。把它们当必填时,任何尚未部署该提交的后端都会让
+ * **整页**判为一致性失败 —— 运营看到「数据一致性校验未通过,已停止展示可疑数据」,
+ * 一条参数都读不到(与 #187 的 E1 同一缺陷类:一个未声明字段打掉整页读取)。
+ *
+ * 这里用的是**老后端的真实响应形状**(上面 validOverview() 就没有这三个字段)。
+ */
+test("A5 tolerates a backend that predates the live/stale fields instead of failing the page", () => {
+  const legacy = validOverview();
+  for (const row of legacy.rows) {
+    delete row.live;
+    delete row.observedAt;
+    delete row.stale;
+  }
+  const overview = normalizeA5Overview(legacy);
+  assert.equal(overview.rows.length, 2);
+  // 缺失即「这个后端不做实时健康采样」:降级为非实时、非过期,值照常展示。
+  assert.equal(overview.rows[0].live, false);
+  assert.equal(overview.rows[0].stale, false);
+  assert.equal(overview.rows[0].observedAt, "");
+  assert.equal(overview.rows[0].currentValue, "off");
+});
+
+test("A5 still validates the live fields strictly when the backend does send them", () => {
+  const malformed = validOverview();
+  malformed.rows[0] = { ...malformed.rows[0], live: "yes", observedAt: "2026-07-18T10:00:00", stale: false };
+  assert.throws(() => normalizeA5Overview(malformed), /A5_DATA_INTEGRITY_ERROR:rows\[0\]\.live/);
+
+  const wrongType = validOverview();
+  wrongType.rows[0] = { ...wrongType.rows[0], live: true, observedAt: 42, stale: false };
+  assert.throws(() => normalizeA5Overview(wrongType), /A5_DATA_INTEGRITY_ERROR:rows\[0\]\.observedAt/);
+});
+
 test("A5 keeps owner routing server-defined and exposes distinct recovery states", async () => {
   const page = await readFile(new URL("../app/_console/platform/params-registry/page.tsx", import.meta.url), "utf8");
   const client = await readFile(new URL("../app/_console/platform/params-registry/params-registry-client.tsx", import.meta.url), "utf8");
