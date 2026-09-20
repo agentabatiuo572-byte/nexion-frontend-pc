@@ -24,6 +24,23 @@ const E6_DOWNLOAD_COPY_KEYS: ReadonlySet<string> = new Set([
  * 可下发;E6 会按同一规则把它判为未配置并拦住开关,所以 A5 必须照同一判据显示,
  * 否则运营会在参数寄存器里看到一个实际不生效的值。
  */
+/**
+ * 值区顶部标签(zentao #198)。
+ *
+ * 三种事实必须能一眼分开:实时采样的权威值、已过期的历史快照、以及普通配置行。
+ * 此前健康类键与配置键共用「当前服务端值」一句,于是 A3 的「严重积压」与 A5 的
+ * 「正常 · 延迟 1.2s」同屏出现且都自称当前值。
+ */
+function rowValueLabel(row: A5RegistryRow): string {
+  if (row.live) {
+    return row.stale
+      ? "实时采样 · 当前不可用"
+      : `实时采样${row.observedAt ? ` · 观测于 ${row.observedAt}` : ""}`;
+  }
+  if (row.stale) return "历史快照 · 已过期";
+  return rowValueEffective(row) ? "当前服务端值" : "当前服务端值 · 未生效";
+}
+
 function rowValueEffective(row: A5RegistryRow): boolean {
   if (row.canonicalKey === "E.compute.download.url") {
     return isSafeInstallerUrl(row.currentValue.trim());
@@ -201,8 +218,16 @@ function DomainSection({ domain, rows }: { domain: string; rows: A5RegistryRow[]
               </Link>
             </div>
             <div className="mt-2 rounded-[7px] px-2.5 py-2" style={{ background: "var(--v5-surface)" }}>
-              <p className="text-[9.5px]" style={{ color: "var(--v5-ink-4)" }}>{rowValueEffective(row) ? "当前服务端值" : "当前服务端值 · 未生效"}</p>
-              <p className="font-mono-tabular mt-0.5 break-all text-[13px]" style={{ color: rowValueEffective(row) ? "var(--v5-ink)" : "var(--v5-warning)" }}>{row.currentValue || "空值"}{row.unit ? <span className="ml-1 text-[10px]" style={{ color: "var(--v5-ink-3)" }}>{row.unit}</span> : null}</p>
+              {/* 🔴 值标签必须说清这个数是不是实时权威事实(zentao #198)。
+                  实时行标「实时采样 · 观测于 …」;过期/读不到的行标「历史快照 · 已过期」——
+                  不许把 2026-06-24 的死行显示成「当前服务端值」。 */}
+              <p className="text-[9.5px]" style={{ color: row.stale ? "var(--v5-warning)" : "var(--v5-ink-4)" }}>{rowValueLabel(row)}</p>
+              <p className="font-mono-tabular mt-0.5 break-all text-[13px]" style={{ color: rowValueEffective(row) && !row.stale ? "var(--v5-ink)" : "var(--v5-warning)" }}>{row.currentValue || "空值"}{row.unit ? <span className="ml-1 text-[10px]" style={{ color: "var(--v5-ink-3)" }}>{row.unit}</span> : null}</p>
+              {row.stale && (
+                <p className="mt-1 text-[10px] leading-relaxed" style={{ color: "var(--v5-warning)" }}>
+                  该值不是当前实时事实{row.observedAt ? `（最近采样 ${row.observedAt}）` : "（实时读取失败）"}；请以{row.ownerLabel}的实时页面为准，不要把这里的快照当成当前状态。
+                </p>
+              )}
               {!rowValueEffective(row) && (
                 <p className="mt-1 text-[10px] leading-relaxed" style={{ color: "var(--v5-warning)" }}>
                   该值未通过归属模块的有效性校验，当前不生效、也不会下发给用户端；请在{row.ownerLabel}修正后重新保存。
@@ -212,11 +237,15 @@ function DomainSection({ domain, rows }: { domain: string; rows: A5RegistryRow[]
             <p className="mt-2 text-[10.5px] leading-relaxed" style={{ color: "var(--v5-ink-3)" }}>{row.description}</p>
             <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[9.5px]" style={{ color: "var(--v5-ink-4)" }}>
               <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-surface)" }}>{row.valueType}</span>
-              {rowValueEffective(row)
-                ? <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-success-soft)", color: "var(--v5-success)" }}>服务端权威</span>
-                : <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-warning-soft)", color: "var(--v5-warning)" }}>已存储 · 未生效</span>}
+              {/* 过期/读不到的实时行不得标「服务端权威」(zentao #198):那句声明的是
+                  「这就是当前生效的服务端事实」,而陈旧快照恰恰不是。 */}
+              {row.stale
+                ? <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-warning-soft)", color: "var(--v5-warning)" }}>历史快照 · 已过期</span>
+                : rowValueEffective(row)
+                  ? <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-success-soft)", color: "var(--v5-success)" }}>{row.live ? "实时权威" : "服务端权威"}</span>
+                  : <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-warning-soft)", color: "var(--v5-warning)" }}>已存储 · 未生效</span>}
               {row.operationConfirm && <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-warning-soft)", color: "var(--v5-warning)" }}><ShieldCheck size={9} />修改需确认</span>}
-              <span>更新于 {formatTime(row.updatedAt)}</span>
+              <span>更新于 {formatTime(row.live && row.observedAt ? row.observedAt : row.updatedAt)}</span>
             </div>
           </article>
         ))}

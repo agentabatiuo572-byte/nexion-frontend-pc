@@ -15,6 +15,18 @@ export type A5RegistryRow = {
   updatedAt: string;
   operationConfirm: boolean;
   serverCanonical: true;
+  /**
+   * 该值是否为实时权威事实(zentao #198)。
+   *
+   * A3 的系统健康指标由实时 provider 现算;A5 此前把 nx_config_item 里种下的
+   * admin.health.* 死行当普通参数展示,同一个事件管道在 A3 显示「严重积压」、
+   * 在 A5 显示「正常 · 延迟 1.2s」。`live` 为 false 表示这行不是实时事实,
+   * `stale` 为 true 表示当前读不到实时值 —— 两种都不许标成「当前服务端值」。
+   */
+  live: boolean;
+  /** 实时采样的观测时刻;非实时行为空串。 */
+  observedAt: string;
+  stale: boolean;
 };
 
 export type A5RegistrySource = {
@@ -92,6 +104,9 @@ export function normalizeA5Overview(raw: unknown): A5RegistryOverview {
       updatedAt: text(row.updatedAt, `rows[${index}].updatedAt`),
       operationConfirm: flag(row.operationConfirm, `rows[${index}].operationConfirm`),
       serverCanonical: true,
+      live: flag(row.live, `rows[${index}].live`),
+      observedAt: text(row.observedAt, `rows[${index}].observedAt`, true),
+      stale: flag(row.stale, `rows[${index}].stale`),
     };
   });
 
