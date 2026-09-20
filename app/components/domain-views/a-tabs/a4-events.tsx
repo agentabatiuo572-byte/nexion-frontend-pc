@@ -166,15 +166,19 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
  * 扩展批次行操作的目标名。
  *
  * 缺陷 100:同一张表里每行的操作按钮都只写「明细」,读屏与键盘用户无法分辨这一行到底指向
- * 哪个批次/事件。目标名取「批次标题 + 首个新增 domain/事件」,两者都缺时退回行序号 ——
+ * 哪个批次/事件。目标名取「批次标题 + 首个新增 domain/事件」,两者都缺时退回行序号 --
  * 绝不产出空标签(空 aria-label 等于没有可访问名称)。
+ *
+ * 缺陷 202:动态批次(登记扩展工单)的标题是常量、domain 又可能相同,只取 domain 仍会
+ * 让多行**同名**。把首个明细项(事件名)一并带上 —— 它才是同一 domain 下区分不同工单的字段。
  */
-  const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: string }> }, index?: number) => {
-    const title = (batch.title ?? "").trim();
-    const first = (batch.newDomains ?? []).map((domain) => (domain?.name ?? "").trim()).find(Boolean) ?? "";
-    const label = [title, first].filter(Boolean).join(" / ");
-    return label || `第 ${(index ?? 0) + 1} 行`;
-  };
+const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: string }>; details?: Array<{ item?: string }> }, index?: number) => {
+  const title = (batch.title ?? "").trim();
+  const first = (batch.newDomains ?? []).map((domain) => (domain?.name ?? "").trim()).find(Boolean) ?? "";
+  const event = (batch.details ?? []).map((detail) => (detail?.item ?? "").trim()).find(Boolean) ?? "";
+  const label = [title, first, event].filter(Boolean).join(" / ");
+  return label || `第 ${(index ?? 0) + 1} 行`;
+};
 
   const DOMAIN_EXTENSIONS = overview?.domainExtensions ?? [];
   const SCHEMA_REGISTRATIONS = overview?.schemaRegistrations ?? [];
@@ -1035,6 +1039,16 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
                       ) : (
                         <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
                           全后台 admin.* 事件清单 ↔ registry 逐条对账
+                        </span>
+                      )}
+                      {/* 🔴 zentao #202:列头写的是「新增 domain / 事件」,但此前只渲染 domain。
+                          同一 domain 下登记多个事件时,行的「批次」列都是同一个常量标题
+                          (登记扩展工单)、domain 又相同,于是若干条**看起来完全一样**的记录
+                          并排出现,运营无法判断是重复工单还是不同事件。事件名是唯一区分字段,
+                          必须出现在行上;工单号(b.id)同时给出来,便于与后端核对。 */}
+                      {b.details.length > 0 && (
+                        <span className="block" style={{ marginTop: 4, fontSize: 11, color: "var(--ink-4)", fontFamily: "var(--mono)" }}>
+                          {b.details[0].item} · 工单 {b.id}
                         </span>
                       )}
                     </td>
