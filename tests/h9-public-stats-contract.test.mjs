@@ -24,6 +24,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   H9_BAND_MIN,
   H9_BAND_TOPS_MIN,
+  h9BandMeaning,
   h9BandRowErrors,
   h9DraftNumber,
   h9PlaceholderCopy,
@@ -130,4 +131,20 @@ test("占位卡拼接恒出恰好一个句号(字典整句 / 无句号透传串 
     assert.ok(!copy.includes("。。"), `${label}:拼出了双句号「。。」——「${copy}」`);
     assert.match(copy, /。为免拿旧值当真值/, `${label}:错误句与固定尾句之间不是恰好一个句号 ——「${copy}」`);
   }
+});
+
+test("分位档含义按累计占比表述，100% 边界不读成「超过 100% 的人」", () => {
+  // cumPct 是「达到或低于该阈值的用户累计占比」(与 App network-rank 同口径)。
+  // 缺陷原形:一律写成「超过 X% 的人」,最后一档 100% 就成了「超过 100% 的人」。
+  const mid = h9BandMeaning("1000", "40");
+  assert.match(mid, /及以下/);
+  assert.match(mid, /累计 40%/);
+  assert.doesNotMatch(mid, /超过/);
+
+  const top = h9BandMeaning("53000", "100");
+  assert.match(top, /覆盖全部/);
+  assert.doesNotMatch(top, /超过/, "100% 边界不得出现「超过」");
+
+  // 空值仍走占位,不抛错也不编数。
+  assert.match(h9BandMeaning("", ""), /—/);
 });

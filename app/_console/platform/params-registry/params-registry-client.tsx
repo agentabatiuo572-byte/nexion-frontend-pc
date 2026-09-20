@@ -124,9 +124,9 @@ export function PlatformParamsRegistry() {
               <div className="mb-4 grid gap-2 sm:grid-cols-[minmax(240px,1fr)_220px_auto]">
                 <label className="flex items-center gap-2 rounded-[9px] px-3" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}>
                   <Search size={15} style={{ color: "var(--v5-ink-4)" }} />
-                  <input aria-label="搜索参数" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索参数名称、参数键、当前值或归属模块" className="min-w-0 flex-1 bg-transparent py-2 text-[12px] outline-none" style={{ color: "var(--v5-ink)" }} />
+                  <input aria-label="搜索平台参数" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索参数名称、参数键、当前值或归属模块" className="min-w-0 flex-1 bg-transparent py-2 text-[12px] outline-none" style={{ color: "var(--v5-ink)" }} />
                 </label>
-                <select aria-label="筛选业务域" value={domain} onChange={(event) => setDomain(event.target.value)} className="rounded-[9px] px-3 py-2 text-[12px] outline-none" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)", color: "var(--v5-ink)" }}>
+                <select aria-label="业务域筛选" value={domain} onChange={(event) => setDomain(event.target.value)} className="rounded-[9px] px-3 py-2 text-[12px] outline-none" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)", color: "var(--v5-ink)" }}>
                   <option value="ALL">全部业务域</option>
                   {domains.map(([code, label]) => <option key={code} value={code}>{code} · {label}</option>)}
                 </select>
@@ -179,7 +179,9 @@ function DomainSection({ domain, rows }: { domain: string; rows: A5RegistryRow[]
                 <p className="text-[12.5px] font-semibold leading-snug" style={{ color: "var(--v5-ink)" }}>{row.displayName}</p>
                 <p className="font-mono-tabular mt-1 break-all text-[10px]" style={{ color: "var(--v5-ink-4)" }}>参数键 · {row.canonicalKey}</p>
               </div>
-              <Link href={row.ownerRoute} prefetch={false} className="inline-flex shrink-0 items-center gap-1 rounded-[7px] px-2 py-1 text-[10.5px]" style={{ border: "1px solid var(--v5-border)", color: accent }}>
+              {/* 归属链接此前只暴露模块名(如「A2 审计与追溯」),同一模块下多条链接完全同名,
+                  读屏与语音控制无法区分目标。名称必须含该卡片的参数本身。 */}
+              <Link href={row.ownerRoute} prefetch={false} aria-label={`前往${row.ownerLabel}：${row.displayName}`} className="inline-flex shrink-0 items-center gap-1 rounded-[7px] px-2 py-1 text-[10.5px]" style={{ border: "1px solid var(--v5-border)", color: accent }}>
                 {row.ownerLabel}<ArrowUpRight size={11} />
               </Link>
             </div>

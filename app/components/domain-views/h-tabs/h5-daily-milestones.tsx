@@ -16,7 +16,16 @@ import type { HCtx } from "./types";
 
 type CheckInRule = { key: string; name: string; sub?: string; cur: string; hot?: boolean };
 type StreakMilestone = { id: number; day: string; reward: string; kind?: string };
-type PowerUp = { id: number; day: number; label: string; sub?: string; downstream?: string; note?: string };
+type PowerUp = {
+  id: number;
+  day: number;
+  label: string;
+  sub?: string;
+  downstream?: string;
+  note?: string;
+  /** 该档指向的业务当前是否对客可用;null/undefined = 该档不依赖受管业务。 */
+  businessAvailable?: boolean | null;
+};
 type EarnMilestone = { id: number; key: string; threshold: number; nex: number; weekTrigger?: number };
 type H5Model = {
   stats?: Record<string, any>;
@@ -341,6 +350,13 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 <b>{powerUp.label}</b>
                 <br />
                 <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(powerUp.sub)} · 前往{rewardDestination(powerUp.downstream)}</span>
+                {/* BUG 195:该档指向的业务已停用时,App 不再给「激活」入口。
+                    运营必须看得见这件事 —— 否则会一直以为用户连签 30/60 天后真能拿到入口。 */}
+                {powerUp.businessAvailable === false && (
+                  <span style={{ display: "block", fontSize: 11.5, color: "var(--warning)", marginTop: 2 }}>
+                    目标业务当前已停用（质押整池熔断 / Genesis 未开放），客户端不再向用户承诺可激活；恢复后自动生效。
+                  </span>
+                )}
               </span>
               <span className="bdg">{powerUp.day} 天</span>
               <button className="l-btn sm mc" aria-label={`调整成长奖励 ${powerUp.label}（${powerUp.day} 天）`} onClick={() => openPowerUp(powerUp)} disabled={!canWrite}>调整</button>

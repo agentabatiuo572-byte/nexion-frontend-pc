@@ -32,6 +32,7 @@ import {
   H9_BAND_TOPS_MIN,
   h9BandRowErrors,
   h9DraftNumber as num,
+  h9BandMeaning,
   h9PlaceholderCopy,
   type H9BandDraft as BandDraft,
 } from "@/lib/admin/h9-validation";
@@ -354,7 +355,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
                   <td><input aria-label={`第 ${index + 1} 档累计占比`} className="l-inp" type="number" min={0} max={100} step={0.1} value={row.cumPct} disabled={!canWrite} onChange={(event) => setBand(index, "cumPct", event.target.value)} /></td>
                   <td>{rowErrors[index]
                     ? <span className="ferr">{rowErrors[index]}</span>
-                    : `算力到 ${row.tops || "—"} 的用户,超过 ${row.cumPct || "—"}% 的人`}</td>
+                    : h9BandMeaning(row.tops, row.cumPct)}</td>
                   <td><button className="l-btn sm" disabled={!canWrite} onClick={() => removeBand(index)}>删除</button></td>
                 </tr>)}
               </tbody>

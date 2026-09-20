@@ -54,6 +54,25 @@ export function h9BandRowErrors(rows: readonly H9BandDraft[]): string[] {
 }
 
 /**
+ * 某一档的运营可读含义。
+ *
+ * `cumPct` 的语义是「算力**达到或低于**该阈值的用户累计占比」(与 App
+ * `src/lib/network-rank.ts` 的 `percentileForTops` 同一口径)。此前把它写成
+ * 「超过 X% 的人」,在最后一档 100% 处会读成「超过 100% 的人」—— 边界上自相矛盾,
+ * 也把「累计占比」与「超过多少人」两个概念混用了。
+ *
+ * 100% 单独措辞:它是「覆盖全部用户」这一边界事实,不是「超过所有人」。
+ */
+export function h9BandMeaning(tops: string, cumPct: string): string {
+  const topsText = tops || "—";
+  const pctText = cumPct || "—";
+  if (h9DraftNumber(cumPct) === 100) {
+    return `算力到 ${topsText} 及以下的用户已覆盖全部公布口径(累计 100%)`;
+  }
+  return `算力到 ${topsText} 及以下的用户,占累计 ${pctText}%`;
+}
+
+/**
  * 占位卡文案拼接:错误字典整句以「。」收尾,再接固定尾句就是「。。」;
  * 原样透传的非字典串(如网络层英文)又没有句号,直接拼会连成一句。
  * 这里统一收敛成**恰好一个**句号衔接。契约测试钉双向(有句号不叠、没句号补上)。
