@@ -120,3 +120,16 @@ test("A5 keeps owner routing server-defined and exposes distinct recovery states
   assert.match(client, /平台参数服务返回异常/);
   assert.match(client, /重新加载/);
 });
+
+test("A5 exposes explicit control labels and a unique owner-link name per parameter", async () => {
+  const client = await readFile(new URL("../app/_console/platform/params-registry/params-registry-client.tsx", import.meta.url), "utf8");
+
+  assert.match(client, /htmlFor={SEARCH_INPUT_ID}/);
+  assert.match(client, />搜索平台参数<\/span>/);
+  assert.match(client, /id={SEARCH_INPUT_ID}/);
+  assert.match(client, /htmlFor={DOMAIN_FILTER_ID}/);
+  assert.match(client, />业务域筛选<\/label>/);
+  assert.match(client, /id={DOMAIN_FILTER_ID}/);
+  assert.match(client, /aria-label={ownerLinkAccessibleName\(row\)}/);
+  assert.match(client, /`前往 \${row\.ownerLabel}：\${row\.displayName}（参数 \${row\.canonicalKey}）`/);
+});

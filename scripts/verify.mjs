@@ -361,6 +361,12 @@ const GEARS = [
   // 任何 npm script,于是 #49 的「条目版本填不进去」这一半长期无人拦 —— 服务端机制存在却不可达。
   ["Published how-content editor contract", "node",
     ["--test", "tests/published-how-content-contract.test.mjs", "tests/published-how-editor-behavior.test.mjs"]],
+  // 2026-09-21 补挂(孤儿门第七道):`tests/a5-params-registry-contract.test.mjs` 只在 package.json
+  // 里有一条 `test:a5-contract` 脚本,而该脚本**不在 verify 链上** —— 与「既不在 GEARS 也不在
+  // npm script」是同一后果:从没跑过。于是 #84 穿到了验收(参数归属链接在 AX 树里同名,读屏/
+  // 语音控制无法区分目标),而这道专门守 A5 契约的门当时只钉住「aria-label 存在」。
+  ["A5 params-registry contract", "node",
+    ["--experimental-strip-types", "--test", "tests/a5-params-registry-contract.test.mjs"]],
 ];
 // 🔴 run-all:每个齿都跑到,逐齿记状态与耗时。红齿不再中断链条(理由见文件抬头)。
 const results = [];
