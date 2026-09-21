@@ -1046,7 +1046,9 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                 <th>发布日</th>
                 <th className="num">受影响</th>
                 <th>重新确认进度</th>
-                <th className="num">拦截数</th>
+                {/* 后端 countBlocksSince(..., minusDays(7)) 是近 7 天窗口(zentao #149),
+                    表头必须自带口径 —— 顶部统计卡的「本周」是另一条独立读数。 */}
+                <th className="num">拦截数(近7天)</th>
                 <th style={{ textAlign: "right" }}></th>
               </tr>
             </thead>
@@ -1178,7 +1180,9 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                 <th className="num">已确认</th>
                 <th className="num">待确认</th>
                 <th>进度</th>
-                <th className="num">拦截数</th>
+                {/* 后端 countBlocksSince(..., minusDays(7)) 是近 7 天窗口(zentao #149),
+                    表头必须自带口径 —— 顶部统计卡的「本周」是另一条独立读数。 */}
+                <th className="num">拦截数(近7天)</th>
               </tr>
             </thead>
             <tbody>
