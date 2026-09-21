@@ -72,7 +72,11 @@ type H3Model = {
   contentLocales?: Record<string, Record<string, Record<string, Record<string, string>>>>;
   phaseMultiplierReadonly?: Record<string, any>;
   eventBindings?: H3QuestEventBinding[];
-  events: QuestEvent[];
+  // 🔴 tasks 段的服务端响应**不含** events(OpsGrowthService.questTasks 显式移除)。
+  //   此前这里声明为必填,PC 在 tasks 段却仍无条件解引用它 → 渲染期 TypeError →
+  //   /growth/quest 整页无法加载(zentao #139)。与同结构其它可选字段一致改为可选,
+  //   取用处一律 `?? []` 兜底。
+  events?: QuestEvent[];
   eventStates?: Array<{ state: EventState; label: string; tone: string }>;
   wheelTiers?: Array<Record<string, any>>;
   wheelSignature?: string;
@@ -1091,7 +1095,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           entity: "mission" as const, code: text(task.taskCode ?? task.missionCode ?? task.id, ""), label: text(task.task),
         })),
       ]
-    : model.events.map((event) => ({ entity: "event" as const, code: event.id, label: event.name }));
+    : (model.events ?? []).map((event) => ({ entity: "event" as const, code: event.id, label: event.name }));
 
   /**
    * 目标语言缺失清单。
@@ -1100,7 +1104,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
    * 就有两个真相。英文可回退事件原文,zh/vi 没有回退来源:缺了就是中文/越南语用户看到英文。
    * 该清单同时用于表格标记与顶部阻断提示,并被后端「转入 ongoing 必须填全」的门对齐。
    */
-  const localizedGaps = model.events.flatMap((event) =>
+  const localizedGaps = (model.events ?? []).flatMap((event) =>
     (["zh", "vi"] as const).flatMap((locale) =>
       (["name", "description", "rewardName"] as const)
         .filter((field) => !text(model.contentLocales?.event?.[event.id]?.[locale]?.[field], ""))
@@ -1181,8 +1185,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               ];
               if (item.entity === "event") {
                 rows.push(
-                  { field: "description", source: text(model.events.find((event) => event.id === item.code)?.description), label: `${item.code} · 活动说明` },
-                  { field: "rewardName", source: text(model.events.find((event) => event.id === item.code)?.rewardName), label: `${item.code} · 奖项名称` },
+                  { field: "description", source: text((model.events ?? []).find((event) => event.id === item.code)?.description), label: `${item.code} · 活动说明` },
+                  { field: "rewardName", source: text((model.events ?? []).find((event) => event.id === item.code)?.rewardName), label: `${item.code} · 奖项名称` },
                 );
               }
               return rows.map((row) => (
@@ -1656,7 +1660,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       <div className="two-col">
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">活动列表(玩法闭集 8 种 · 当前 {model.events.length} 条)</span>
+            <span className="ttl">活动列表(玩法闭集 8 种 · 当前 {(model.events ?? []).length} 条)</span>
             <span className="sub">· 主推位同时只能有一个 · 陈旧页面提交会被拒绝</span>
             <div className="r">
               <button className="l-btn sm mc" onClick={() => openCreateEvent()} disabled={!canModuleWrite}>+ 新建活动</button>
@@ -1675,7 +1679,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                 </tr>
               </thead>
               <tbody>
-                {model.events.map((event) => {
+                {(model.events ?? []).map((event) => {
                   const [label, tone] = stateTone.get(event.state) ?? EVENT_LABEL[event.state] ?? [event.state, "dim"];
                   const ended = event.state === "ended";
                   const wheelEvent = text(event.kind).toLowerCase() === "wheel";
@@ -1879,7 +1883,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           : [
               {
                 label: "活动列表",
-                maxRows: model.events.length,
+                maxRows: (model.events ?? []).length,
                 reason: "活动状态和主推关系需要同屏校验",
               },
               {

@@ -91,6 +91,18 @@ test("five available SYSTEM events generate typed binding requests without chang
   }
 });
 
+test("the tasks section renders when the server omits events", () => {
+  // zentao #139:OpsGrowthService.questTasks 在 tasks 段**显式移除** events
+  // (H3 任务页只需要任务与绑定,不需要活动列表)。此前组件把 events 声明为必填并在
+  // tasks 段无条件解引用它 → 渲染期 TypeError → /growth/quest 整页无法加载。
+  // 这里删掉 harness 默认的 events 字段,重现服务端真实形状。
+  const view = render({ dayOneTasks: [{ taskCode: "visit_earn", status: "paused", task: "收益页" }], events: undefined });
+  const rendered = view.text(view.tree);
+  // 关键判据:整页渲染成功(缺 events 不再抛 TypeError),且任务行照常出。
+  assert.match(rendered, /收益页/);
+  assert.match(rendered, /首日任务/);
+});
+
 test("read-only users see disabled mutation controls and unknown completion kinds remain unbound", () => {
   const view = render({ weeklyTier1: [{ taskCode: "weekly_exchange", cond: "兑换", reward: "25 NEX", status: "paused", completionType: "unknown" }] }, false);
   for (const label of ["+ 新增绑定", "改奖励", "编辑", "启用"]) {
