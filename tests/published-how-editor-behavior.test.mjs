@@ -169,3 +169,33 @@ test("editable IDs retain DOM identity, deletion retains survivor keys and moves
   assert.deepEqual(listKeys(), originalListKeys.slice(1)); assert.equal(focused, 2);
   assert.equal(ui.field("列表项 1").props.value, "second");
 });
+
+/**
+ * 简报 #49:六个 contentKey 是六个不同业务域,页脚要显示**本页自己的**发布修订。
+ * 服务端读侧早已支持条目级版本,但本编辑器此前只有文档级「版本」一个输入框 ——
+ * 条目版本无从填写,机制不可达,于是三页都退回同一个 commissions-guide。
+ */
+test("operators can declare each page's own published revision, and it reaches the server", async () => {
+  const ui = await mount();
+  // 文档级版本仍可编辑。
+  await ui.change("版本", "2026.09.10-document");
+  // 当前页面(team-binary-how)的专属修订必须可填,且写进 contents[key].version。
+  const entryField = ui.field("当前页面（team-binary-how）的发布修订");
+  assert.equal(entryField.props.value, "", "初始未声明时应为空,不臆造");
+  await ui.change("当前页面（team-binary-how）的发布修订", "2026.09.11-binary-guide");
+  await ui.change("变更理由（必填）", "Declare the per-page published revision");
+  await ui.click("保存并回读");
+  const saved = ui.writes.at(-1).payload;
+  assert.equal(saved.contents["team-binary-how"].version, "2026.09.11-binary-guide",
+    "条目版本必须写到 contents[key].version,而不是文档级 version");
+  assert.equal(saved.version, "2026.09.10-document", "文档级版本不受影响");
+  // 切到另一页时,输入框显示那一页自己的值,不能串页。
+  await ui.change("How content key", "team-commissions-how");
+  assert.equal(ui.field("当前页面（team-commissions-how）的发布修订").props.value, "");
+});
+
+test("the editor no longer claims a single shared version document", async () => {
+  const ui = await mount();
+  assert.doesNotMatch(ui.text(), /6 个页面共用一个版本化文档/);
+  assert.match(ui.text(), /每个页面各自声明发布修订/);
+});

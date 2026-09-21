@@ -357,6 +357,10 @@ const GEARS = [
   ["A4 extension batch identity contract", "node", ["--test", "tests/a4-extension-batch-identity-contract.test.mjs"]],
   ["F1 reward label internal identifier contract", "node", ["--test", "tests/f1-reward-label-internal-identifier-contract.test.mjs"]],
   ["E5 per-face error contract", "node", ["--test", "tests/e5-per-face-error-contract.test.mjs"]],
+  // 2026-09-21 补挂(孤儿门第五、六道):两个 published-how 编辑器测试都既不在 GEARS 也不在
+  // 任何 npm script,于是 #49 的「条目版本填不进去」这一半长期无人拦 —— 服务端机制存在却不可达。
+  ["Published how-content editor contract", "node",
+    ["--test", "tests/published-how-content-contract.test.mjs", "tests/published-how-editor-behavior.test.mjs"]],
 ];
 // 🔴 run-all:每个齿都跑到,逐齿记状态与耗时。红齿不再中断链条(理由见文件抬头)。
 const results = [];

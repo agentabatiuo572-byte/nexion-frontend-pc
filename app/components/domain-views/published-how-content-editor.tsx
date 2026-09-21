@@ -59,6 +59,13 @@ export function PublishedHowContentEditor() {
   if (!canRead) return null;
   const locked = !canWrite || loading || saving;
   const patchLocale = (next: Row) => { if (!document || locked || busyRef.current) return; const entry = row(document.contents[key]); const locales = row(entry.locales); setDocument({ ...document, contents: { ...document.contents, [key]: { ...entry, locales: { ...locales, [locale]: next } } } }); };
+  /**
+   * 🔴 简报 #49:六个 contentKey 是六个不同业务域,页脚要显示**本页自己的**发布修订。
+   * 服务端已按条目优先取值(entryVersion),但此前本界面只有文档级「版本」一个输入框,
+   * 条目级版本无从填写 —— 机制在服务端存在却不可达,于是三个页面都退回同一个文档名
+   * (commissions-guide)。这里补上逐页面的版本输入。
+   */
+  const patchEntryVersion = (next: string) => { if (!document || locked || busyRef.current) return; const entry = row(document.contents[key]); setDocument({ ...document, contents: { ...document.contents, [key]: { ...entry, version: next } } }); };
   const addLocale = () => { if (!document || locked || busyRef.current) return; const normalized = newLocale.trim().toLowerCase().replace("_", "-"); if (!/^[a-z]{2}(?:-[a-z0-9]{2,8})?$/.test(normalized)) { setError("Locale 格式无效，例如 en、zh、vi 或 zh-cn。"); return; } const entry = row(document.contents[key]); const locales = row(entry.locales); if (locales[normalized]) { setLocale(normalized); setNewLocale(""); return; } if (Object.keys(locales).length >= 10) { setError("单页最多 10 个 Locale。"); return; } setDocument({ ...document, contents: { ...document.contents, [key]: { ...entry, locales: { ...locales, [normalized]: { blocks: [{ id: "intro", kind: "text", title: key, body: "" }] } } } } }); setLocale(normalized); setNewLocale(""); setError(null); };
   // UI identity is independent of the editable business ID and never enters the API payload.
   const nextIdentity = (kind: string) => `how-${kind}-${++identitySequence.current}`;
@@ -113,7 +120,7 @@ export function PublishedHowContentEditor() {
     finally { busyRef.current = false; setSaving(false); }
   };
   return <section className="l-card" data-testid="published-content-how">
-    <div className="l-h"><div><div className="ttl">How-it-works 服务端发布内容</div><div className="sub">6 个页面共用一个版本化文档；规则块只能引用 canonical key，不能在此复制业务数值</div></div>
+    <div className="l-h"><div><div className="ttl">How-it-works 服务端发布内容</div><div className="sub">每个页面各自声明发布修订；规则块只能引用 canonical key，不能在此复制业务数值</div></div>
       <div className="r"><span className="bdg cyan">{document?.status ?? "—"} · rev {document?.revision ?? 0}</span><button className="l-btn sm" onClick={() => void refresh()} disabled={loading || saving}>刷新</button></div></div>
     <div className="l-b">
       {document && <div className="tiny">{document.hasPublishedVersion ? "当前有公开版本；保存草稿不会替换公开内容。" : "当前没有公开版本；保存草稿不会发布内容。"}</div>}
@@ -122,6 +129,10 @@ export function PublishedHowContentEditor() {
         <div className="two-col">
           <label className="tiny">版本<input value={document.version} maxLength={64} disabled={locked} onChange={e => setDocument({ ...document, version: e.target.value })} /></label>
           <label className="tiny">发布状态<select value={document.status === "UNPUBLISHED" ? "DRAFT" : document.status} disabled={locked} onChange={e => setDocument({ ...document, status: e.target.value as PublishedHowContentDocument["status"] })}><option>DRAFT</option><option>PUBLISHED</option></select></label>
+        </div>
+        <div className="two-col" style={{ marginTop: 10 }}>
+          <label className="tiny">当前页面（{key}）的发布修订<input value={text(row(row(document.contents[key]).version))} maxLength={64} disabled={locked} placeholder="例如 2026.09.01-genesis-guide" onChange={e => patchEntryVersion(e.target.value)} /></label>
+          <div className="tiny">页脚显示本页自己的修订；留空则退回上面的文档版本。发布态必须逐页填写。</div>
         </div>
         <div className="r" style={{ marginTop: 10 }}>
           <select aria-label="How content key" value={key} disabled={loading || saving} onChange={e => { const next = e.target.value as (typeof KEYS)[number]; setKey(next); setLocale(Object.keys(row(row(document.contents[next]).locales))[0] ?? "en"); }}>{KEYS.map(item => <option key={item}>{item}</option>)}</select>
