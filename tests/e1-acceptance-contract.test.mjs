@@ -221,3 +221,35 @@ test("E5 force activation is not mislabeled as a funds-amplifying proposal", () 
   assert.match(view, /amplifies: !!def\.amplifies/);
   assert.doesNotMatch(view, /highOp = mc\.deviceAction === "force-activate"[\s\S]{0,500}amplifies: true/);
 });
+
+/**
+ * 简报 #38:「强制提前开放」绕过平台月龄门,属于放大开放范围的动作。
+ * 验收要求页面能显示**批准人与审计编号** —— 而此前 tooltip 只写着
+ * 「后端未返回批准人与审计编号」,那是仓库缺口而非终局:数据一直在审计日志里
+ * (E1_GENERATION_GATE_UPDATED 记了 operator/reason/before-after),只是没投影到门视图。
+ */
+test("E1 projects force-unlock provenance instead of admitting the backend omits it", () => {
+  // 后端下发三个溯源字段(取不到时为空串,由前端显示「未记录」)。
+  const service = readFileSync(new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/device/application/OpsDeviceService.java", import.meta.url), "utf8");
+  assert.match(service, /row\.put\("forceUnlockApprovedBy"/);
+  assert.match(service, /row\.put\("forceUnlockAuditId"/);
+  assert.match(service, /row\.put\("forceUnlockApprovedAt"/);
+  // 溯源来自审计日志的发布门变更记录,而不是编造。
+  assert.match(service, /query\.setAction\("E1_GENERATION_GATE_UPDATED"\)/);
+  // 取不到溯源不能让整页失败。
+  assert.match(service, /溯源取不到不能让整页失败/);
+
+  // 前端类型声明这三个字段。
+  assert.match(e1Client, /forceUnlockApprovedBy\?: string;/);
+  assert.match(e1Client, /forceUnlockAuditId\?: string;/);
+
+  // 渲染必须用溯源函数,不得再写死「后端未返回批准人与审计编号」。
+  // (注释里保留那句是为了记录历史缺口,所以只断言**渲染代码**不含它。)
+  assert.match(catalog, /title=\{forceUnlockProvenanceTitle\(g\)\}/);
+  const renderCode = catalog.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.doesNotMatch(renderCode, /后端未返回批准人与审计编号/);
+  // 有溯源就显示,没有则如实说未记录 —— 不编造批准人。
+  assert.match(catalog, /审计日志中未找到该门的变更记录/);
+  assert.match(catalog, /批准人 \$\{approver\}/);
+  assert.match(catalog, /审计编号 \$\{auditId\}/);
+});

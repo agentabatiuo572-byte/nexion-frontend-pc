@@ -26,6 +26,28 @@ const compactUsd = (value: number): string =>
       : `$${Math.round(value).toLocaleString()}`;
 const isVideoMedia = (s: OpsSku): boolean => /\.(mp4|webm|mov)(?:$|\?)/i.test(s.imageObjectKey || s.imagePreviewUrl || "");
 
+/**
+ * 简报 #38:「强制提前开放」绕过平台月龄门,属于放大开放范围的动作,验收要求能显示批准人与审计编号。
+ *
+ * 此前这里写的是「后端未返回批准人与审计编号」—— 那是实情,但它是**仓库缺口**而不是终局:
+ * 数据一直在审计日志里(E1_GENERATION_GATE_UPDATED 记了 operator / reason / before-after),
+ * 只是没有投影到门视图。现在后端按门下发 forceUnlockApprovedBy / AuditId / ApprovedAt。
+ *
+ * 取不到时如实说「未记录」—— 不编造批准人,也不把「没记录」说成「后端不支持」。
+ */
+function forceUnlockProvenanceTitle(g: E1GenerationRelease): string {
+  const base = "该门已开启强制提前开放(forceUnlock),月龄门被绕过";
+  const approver = (g.forceUnlockApprovedBy ?? "").trim();
+  const auditId = (g.forceUnlockAuditId ?? "").trim();
+  const approvedAt = (g.forceUnlockApprovedAt ?? "").trim();
+  if (!approver && !auditId) return `${base};审计日志中未找到该门的变更记录`;
+  const parts: string[] = [];
+  if (approver) parts.push(`批准人 ${approver}`);
+  if (auditId) parts.push(`审计编号 ${auditId}`);
+  if (approvedAt) parts.push(`批准时间 ${approvedAt}`);
+  return `${base};${parts.join(" · ")}`;
+}
+
 function RackIcon() {
   return (
     <svg width={44} height={44} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -515,7 +537,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                   <span className="release-effective">{releasePresentation.effectiveLabel}</span>
                   <span className="release-adjustment">{releasePresentation.adjustmentLabel}</span>
                 </div>
-                <div className="c"><span className={`st ${unlocked ? "active" : "coming"}`} title={unlocked ? (g.forceUnlock ? "阶段 / 设备资格已满足,月龄由强制提前开放绕过" : "阶段 / 月龄 / 设备资格均满足") : gateBlockerLabel(gateState)}>{unlocked ? "已开放" : gateState.phaseConflict ? "阶段冲突" : "待发布"}</span>{g.forceUnlock && <span className="st coming" style={{ marginLeft: 6 }} title="该门已开启强制提前开放(forceUnlock),月龄门被绕过;后端未返回批准人与审计编号">强制提前</span>}</div>
+                <div className="c"><span className={`st ${unlocked ? "active" : "coming"}`} title={unlocked ? (g.forceUnlock ? "阶段 / 设备资格已满足,月龄由强制提前开放绕过" : "阶段 / 月龄 / 设备资格均满足") : gateBlockerLabel(gateState)}>{unlocked ? "已开放" : gateState.phaseConflict ? "阶段冲突" : "待发布"}</span>{g.forceUnlock && <span className="st coming" style={{ marginLeft: 6 }} title={forceUnlockProvenanceTitle(g)}>强制提前</span>}</div>
                 <div className="c">
                   <span className="phaseChip">{phaseLabel(g.phase)}</span>
                   {gateState.phaseConflict && (

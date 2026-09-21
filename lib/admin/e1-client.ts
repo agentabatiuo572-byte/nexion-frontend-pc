@@ -101,6 +101,14 @@ export interface E1GenerationRelease {
   eligibility: boolean;
   phaseOffset?: number;
   forceUnlock?: boolean;
+  /**
+   * 简报 #38:强制提前开放的溯源。forceUnlock 绕过平台月龄门,属于放大开放范围的动作,
+   * 页面必须能显示批准人与审计记录号 —— 数据来自审计日志(E1_GENERATION_GATE_UPDATED),
+   * 由后端投影下发。取不到时为空串,页面显示「未记录」而不是编造。
+   */
+  forceUnlockApprovedBy?: string;
+  forceUnlockAuditId?: string;
+  forceUnlockApprovedAt?: string;
   effectiveReleaseMonth?: number;
   status?: string;
 }
