@@ -1,13 +1,13 @@
 "use client";
 
 /**
- * H9「对外公布数据」—— 规格 FEAT-HOME02b 后台单元。
+ * H9「历史估算配置」—— 规格 FEAT-HOME02b 后台单元。
  *
- * 运营在这里配置首页对外公布的平台规模与历史本地估算参数。
+ * 运营在这里维护历史估算参数；正式 App 对外事实读取服务端实测聚合。
  * 虚拟人口与算力分位表不参与正式 App 当前服务端排名。整组原子保存:
  * 确认弹窗给前后值 diff → 必填理由 → 服务端落审计 + 幂等键,任一项非法整组不落库。
  *
- * 🔴 页面里没有任何平台数字的字面量:当前值、默认种子、公布日产锚都从服务端读模型来。
+ * 页面里没有任何平台数字的字面量:当前值、默认种子、历史日产锚都从服务端读模型来。
  *    「改了设备总数会连带改掉哪些金额」由下方影响预览现算给运营看(规格 ②异常2),
  *    不靠运营自己心算,也不在后台另存一份日产档。
  */
@@ -45,8 +45,8 @@ type ScalarDrafts = Record<ScalarKey, string>;
 const H9_BAND_STEP = 0.1;
 
 const SECTIONS: { title: string; sub: string; keys: ScalarKey[] }[] = [
-  { title: "平台规模", sub: "首页「在线设备」这一格,以及全部对外公布的平台级金额都从这里派生", keys: ["fleetDevices", "onlineRatePct", "onlineJitter"] },
-  { title: "用户规模", sub: "首页「注册用户」这一格的展示基数与增速", keys: ["registeredUsersBase", "registeredUsersMonthlyGrowthPct"] },
+  { title: "历史规模配置", sub: "仅供历史估算；正式 App 对外在线设备读取服务端实测聚合", keys: ["fleetDevices", "onlineRatePct", "onlineJitter"] },
+  { title: "历史用户配置", sub: "仅供历史估算；正式 App 对外注册账户读取服务端真实记录", keys: ["registeredUsersBase", "registeredUsersMonthlyGrowthPct"] },
   { title: "历史排名估算", sub: "仅用于本地估算；不改变正式 App 当前服务端名次", keys: ["virtualUserCount"] },
 ];
 
@@ -224,25 +224,25 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     const nextDaily = nextValues.fleetDevices * data.publishedDailyUsdPerDevice;
 
     ctx.openActionConfirm({
-      action: "保存对外公布数据",
+      action: "保存历史估算配置",
       detail: <>
         <div>本次改动({diffs.length} 项):</div>
         {diffs.map((line) => <div key={line}>· {line}</div>)}
         {fleetChanged && <div>
-          ⚠️ 设备总数变了,对外公布的日支付额同步从 {money(data.values.fleetDevices * data.publishedDailyUsdPerDevice)} 变成 {money(nextDaily)}
-          (每台每日 {money2(data.publishedDailyUsdPerDevice)} 不变),每秒支付流与本月累计一并跟着变。介绍页与信任页读取这组公开统计，会一起变；全球网络使用独立区域投影，不受此字段驱动。
+          ⚠️ 历史估算日金额从 {money(data.values.fleetDevices * data.publishedDailyUsdPerDevice)} 变成 {money(nextDaily)}
+          (每台每日配置值 {money2(data.publishedDailyUsdPerDevice)} 不变)。这是内部估算，不代表实际支付，也不改变正式 App 对外统计。
         </div>}
-        {baseChanged && <div>⚠️ 改了注册用户基数,推算起点会重置为本次保存时刻 —— 前端从新起点按增速往后推算,不会回退。</div>}
+        {baseChanged && <div>⚠️ 改了历史注册基数，估算起点会重置为本次保存时刻；正式 App 的注册账户总数仍来自真实账户记录。</div>}
         {virtualZero && <div>虚拟人口填了 0:历史本地估算分母仅含真实注册人口({int(data.realUserCount)} 人)。此参数不改变正式 App 当前服务端名次。</div>}
         <div>本次提交基于配置版本 v{data.version};并发改动会返回 409,任何一项不合法都整组不落库。</div>
-        <div>保存后影响前端展示与派生金额口径,操作理由会写入审计。</div>
+        <div>保存后仅影响历史估算配置；操作理由会写入审计。</div>
       </>,
       // 🔴 不挂 amplifies:它的语义是「放大资金流出方向,系统会先检查备付金覆盖率」(K 域契约),
-      //    而本页改的是**对外公布口径**,一分钱都不流出,也没传 coverage —— 挂上等于在弹窗里
+      //    而本页改的是历史估算配置,一分钱都不流出,也没传 coverage —— 挂上等于在弹窗里
       //    向运营承诺一道根本没跑的资金闸。改设备总数的警示由上方 fleetChanged 段落负责。
       reasonMin: 8,
       reasonMax: 200,
-      completionCopy: "保存成功后立即对前端生效并写入审计",
+      completionCopy: "保存成功后更新历史估算配置并写入审计",
       run: async (reason) => {
         try {
           const saved = await updateH9PublicStats(nextValues, data.version, reason);
@@ -250,7 +250,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
           setDrafts(draftsFrom(saved.values));
           setBands(bandDraftsFrom(saved.values));
           setSaveError(null);
-          ctx.toast(`对外公布数据已保存 · 版本 v${saved.version} · 已记审计`);
+          ctx.toast(`历史估算配置已保存 · 版本 v${saved.version} · 已记审计`);
         } catch (cause) {
           const message = formatAdminApiError(cause instanceof Error ? cause.message : null, "H9_SAVE_FAILED");
           setSaveError(message);
@@ -261,11 +261,11 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     });
   };
 
-  if (loading && !data) return <section className="l-card"><div className="l-b">对外公布数据加载中...</div></section>;
+  if (loading && !data) return <section className="l-card"><div className="l-b">历史估算配置加载中...</div></section>;
 
   if (!data || !drafts) {
     return <section className="l-card">
-      <div className="l-h"><span className="ttl">对外公布数据暂时读不到</span></div>
+      <div className="l-h"><span className="ttl">历史估算配置暂时读不到</span></div>
       <div className="l-b">
         {/* 文案拼接走 h9PlaceholderCopy:字典整句自带句号,直接再拼「。」就是双句号(P2-15 回归)。 */}
         <div className="htint danger">{h9PlaceholderCopy(error)}</div>
@@ -276,9 +276,9 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
 
   return <>
     <div className="f-stats">
-      <div className="f-stat cyan"><div className="k">对外公布设备总数</div><div className="v">{int(data.values.fleetDevices)}</div><div className="sub">首页在线设备与平台金额的共同来源</div></div>
-      <div className="f-stat"><div className="k">首页在线设备</div><div className="v">{int(data.values.fleetDevices * data.values.onlineRatePct / 100)}</div><div className="sub">设备总数 × 在线占比 {data.values.onlineRatePct}%</div></div>
-      <div className="f-stat"><div className="k">对外公布注册用户</div><div className="v">{int(data.values.registeredUsersBase)}</div><div className="sub">按 {data.values.registeredUsersMonthlyGrowthPct}%/月 往后推算展示</div></div>
+      <div className="f-stat cyan"><div className="k">历史设备配置</div><div className="v">{int(data.values.fleetDevices)}</div><div className="sub">非实测设备数，不用于对外事实</div></div>
+      <div className="f-stat"><div className="k">历史在线估算</div><div className="v">{int(data.values.fleetDevices * data.values.onlineRatePct / 100)}</div><div className="sub">配置设备数 × 配置占比 {data.values.onlineRatePct}%</div></div>
+      <div className="f-stat"><div className="k">历史注册估算基数</div><div className="v">{int(data.values.registeredUsersBase)}</div><div className="sub">仅供内部估算；月增速 {data.values.registeredUsersMonthlyGrowthPct}%</div></div>
       <div className="f-stat ok"><div className="k">历史估算分母</div><div className="v">{int(data.realUserCount + data.values.virtualUserCount)}</div><div className="sub">真实注册人口 + 虚拟人口；不用于当前服务端名次</div></div>
     </div>
 
@@ -292,7 +292,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     <div className="two-col">
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">对外公布数据</span>
+          <span className="ttl">历史估算配置</span>
           <span className="sub">· 生效版本 v{data.version} · {when(Date.parse(data.effectiveAt))} · {canWrite ? "可改" : "当前角色只读"}</span>
           <div className="r">
             <button className="l-btn sm" onClick={() => void load()}>刷新</button>
@@ -334,7 +334,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
           <div className="p-row">
             <div className="txt">
               <div className="k">注册用户推算起点 <span className="hcode">registeredUsersAnchorAt</span></div>
-              <div className="s">前端从这个时刻按月增长率往后推算当前注册数。不用手填 —— 改了注册用户基数,保存时自动重置为保存时刻。</div>
+              <div className="s">仅用于历史估算；正式 App 对外账户数读取真实注册记录。修改基数时起点自动重置为保存时刻。</div>
             </div>
             <span className="v">{when(data.values.registeredUsersAnchorAt)}</span>
           </div>
@@ -345,17 +345,16 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
         <div className="l-h"><span className="ttl">改动影响预览</span><span className="sub">· 按当前草稿现算,保存前就能看见</span></div>
         <div className="l-b">
           <div className="htint cyan">
-            对外公布的每台每日产出 <b>{money2(impact?.perDevice ?? Number.NaN)}</b> 是既有公布口径,本页不改它;
-            改设备总数就等于按这个单价改掉下面这一整列金额。
+            每台每日配置值 <b>{money2(impact?.perDevice ?? Number.NaN)}</b> 仅用于历史估算；下表不是实付金额。
           </div>
           <table className="l-tbl" style={{ marginTop: 10 }}>
             <thead><tr><th>指标</th><th className="num">当前生效</th><th className="num">保存后</th></tr></thead>
             <tbody>
               {[
-                { label: "首页在线设备", now: int(impact?.current.online ?? Number.NaN), next: int(impact?.next.online ?? Number.NaN) },
-                { label: "平台日支付额", now: money(impact?.current.daily ?? Number.NaN), next: money(impact?.next.daily ?? Number.NaN) },
-                { label: "每秒支付流", now: money2(impact?.current.perSec ?? Number.NaN), next: money2(impact?.next.perSec ?? Number.NaN) },
-                { label: "本月支付额(按 30 天)", now: money(impact?.current.monthly ?? Number.NaN), next: money(impact?.next.monthly ?? Number.NaN) },
+                { label: "在线设备估算", now: int(impact?.current.online ?? Number.NaN), next: int(impact?.next.online ?? Number.NaN) },
+                { label: "日金额估算", now: money(impact?.current.daily ?? Number.NaN), next: money(impact?.next.daily ?? Number.NaN) },
+                { label: "每秒金额估算", now: money2(impact?.current.perSec ?? Number.NaN), next: money2(impact?.next.perSec ?? Number.NaN) },
+                { label: "30 天金额估算", now: money(impact?.current.monthly ?? Number.NaN), next: money(impact?.next.monthly ?? Number.NaN) },
                 { label: "历史估算分母", now: int(impact?.current.denominator ?? Number.NaN), next: int(impact?.next.denominator ?? Number.NaN) },
               ].map((row) => <tr key={row.label}>
                 <td>{row.label}</td>
@@ -365,7 +364,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
             </tbody>
           </table>
           <div className="htint warn" style={{ marginTop: 10 }}>
-            介绍页 / 信任页 / 分享海报读的是同一个设备总数,改完会一起变。全球网络读取独立区域投影，不受此字段驱动。金额口径变化会写进审计,便于事后追溯。
+            这些估算不作为正式 App 的在线设备、注册账户、已付金额或信任中心财务数据。真实数字由服务端业务表聚合，并附统计时刻。
           </div>
         </div>
       </section>
@@ -406,8 +405,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     </section>
 
     <p className="f-foot">
-      <b>这页的数会去哪</b>:保存 → 服务端落库 + 写审计 → 前端下次进首页(或下拉刷新)读到新值 → 更新首页公布的注册用户与预计在线设备。个人名次由独立服务端排名接口提供，不随虚拟人口或分位表变化。
-      设备总数还会带着介绍页、信任页、分享海报一起变；全球网络读取独立区域投影。改动记录去{" "}
+      <b>这页的数会去哪</b>:保存 → 服务端保留历史估算配置并写审计。正式 App 对外事实读取真实聚合；个人名次由独立服务端排名接口提供。改动记录去{" "}
       <Link href="/platform/audit" className="l-btn sm">A2 审批与审计</Link>{" "}查。
     </p>
   </>;

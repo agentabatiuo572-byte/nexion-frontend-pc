@@ -67,7 +67,7 @@ export function h9BandMeaning(tops: string, cumPct: string): string {
   const topsText = tops || "—";
   const pctText = cumPct || "—";
   if (h9DraftNumber(cumPct) === 100) {
-    return `算力到 ${topsText} 及以下的用户已覆盖全部公布口径(累计 100%)`;
+    return `算力到 ${topsText} 及以下的用户已覆盖全部历史估算分母(累计 100%)`;
   }
   return `算力到 ${topsText} 及以下的用户,占累计 ${pctText}%`;
 }

@@ -1,16 +1,13 @@
 /**
- * H9「对外公布数据」client —— 首页公布规模与历史本地排名估算参数。
+ * H9「历史估算配置」client —— 保留原有参数供内部历史估算。
  *
  * 数据面沿用 H 域既有后端族(与 H1–H8 同一 growthRequest 通道 · 见 h-client.ts):
- *   GET   /public-stats  → 当前值 + 默认种子 + 派生锚(公布日产 / 真实注册人口)
+ *   GET   /public-stats  → 当前值 + 默认种子 + 历史估算锚与真实注册人口
  *   PATCH /public-stats  → 整组原子写:expectedVersion CAS + 必填理由 + 幂等键;任一字段非法整组不落库。
  *
- * ⚠️ 上面两个端点是**本文件的契约期望,不是已核实的后端事实**:开发机无兄弟仓 nexion-backend,
- *    `/api/admin/growth/public-stats` 在后端是否已实现**未核实**;A/B(让后端补端点 vs 前端 mock
- *    兜底)需在有仓的环境或远端确认后再定。端点缺席时本页走占位卡:不显示任何数字、写操作一并
- *    后端真实 H9 聚合接口已经落地；读取失败或契约非法时冻结，**不会拿假数字冒充真值**。
+ * 后端真实 H9 配置接口已经落地；读取失败或契约非法时冻结本页。
  *
- * 🔴 本文件**没有任何平台数字的字面量**:当前值、默认种子、公布日产锚全部由服务端读模型下发。
+ * 本文件**没有任何平台数字的字面量**:当前值、默认种子、历史日产锚全部由服务端读模型下发。
  *    在后台再抄一份设备总数 / 日产档,就是把单源变双源,两处早晚分叉(前端 platform_stats_anchor
  *    哨兵守的正是这条,后台侧同理)。「恢复默认」回填的是 overview.defaults,不是本地常量。
  *
@@ -49,7 +46,7 @@ export interface H9PublicStatsOverview {
   values: H9PublicStatsValues;
   /** 服务端下发的出厂种子,「恢复默认」按钮回填用。 */
   defaults: H9PublicStatsValues;
-  /** 对外公布的单台日产(USD/台/日)—— 派生影响预览的另一半,后台不另存一份。 */
+  /** 历史估算的单台日产(USD/台/日)—— 仅用于内部影响预览。 */
   publishedDailyUsdPerDevice: number;
   /** 真实注册人口 —— 历史本地估算分母使用它加虚拟人口，正式服务端名次另算。 */
   realUserCount: number;
@@ -75,53 +72,53 @@ export interface H9FieldDef {
 export const H9_FIELDS: readonly H9FieldDef[] = [
   {
     key: "fleetDevices",
-    label: "对外公布的设备总数",
+    label: "历史估算设备总数",
     unit: "台",
     min: 1000,
     max: 1_000_000,
     step: 1,
     integer: true,
-    hint: "首页「在线设备」和平台对外公布的日支付额都由它算出来。改它等于改掉对外公布的全部平台级金额口径,保存前请看下方影响预览。",
+    hint: "仅用于历史在线量与日金额估算；正式 App 的在线设备和已完成提现不读此值。",
   },
   {
     key: "onlineRatePct",
-    label: "在线设备占比",
+    label: "历史在线设备占比",
     unit: "%",
     min: 50,
     max: 100,
     step: 0.1,
     integer: false,
-    hint: "首页显示的在线设备数 = 设备总数 × 本比例。只影响展示,不改金额。",
+    hint: "仅用于历史估算中的在线设备占比；正式 App 读取实际在线状态。",
   },
   {
     key: "onlineJitter",
-    label: "在线数展示浮动幅度",
+    label: "历史在线浮动幅度",
     unit: "台",
     min: 0,
     max: 500,
     step: 1,
     integer: true,
-    hint: "让首页在线设备数看起来有呼吸感的上下浮动范围。只动展示,不参与任何金额计算。",
+    hint: "仅保留历史估算参数；正式 App 在线设备数不使用人为浮动。",
   },
   {
     key: "registeredUsersBase",
-    label: "对外公布的注册用户数",
+    label: "历史注册账户基数",
     unit: "人",
     min: 0,
     max: 100_000_000,
     step: 1,
     integer: true,
-    hint: "首页「注册用户」的展示基数。改这一项会把下面的推算起点重置为本次保存时刻。",
+    hint: "仅用于历史注册量估算；正式 App 读取未删除账户记录。改动时历史推算起点重置为保存时刻。",
   },
   {
     key: "registeredUsersMonthlyGrowthPct",
-    label: "注册用户月增长率",
+    label: "历史注册月增长率",
     unit: "%/月",
     min: 0,
     max: 50,
     step: 0.1,
     integer: false,
-    hint: "首页按这个速率从推算起点往后算出当前注册数 —— 是推算不是累加,所以用户刷新页面数字不会回退。",
+    hint: "仅用于历史注册量估算；正式 App 不把推算增长率作为已注册事实。",
   },
   {
     key: "virtualUserCount",
