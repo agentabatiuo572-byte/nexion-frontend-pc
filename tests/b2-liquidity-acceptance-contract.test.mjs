@@ -5,6 +5,7 @@ import test from "node:test";
 const read = (url) => (existsSync(url) ? readFileSync(url, "utf8") : "");
 const page = read(new URL("../app/_console/overview/liquidity/page.tsx", import.meta.url));
 const client = read(new URL("../lib/admin/b2-client.ts", import.meta.url));
+const restoredInsights = read(new URL("../app/components/dashboard/restored-b-insights.tsx", import.meta.url));
 const controller = read(
   new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/treasury/web/OpsTreasuryController.java", import.meta.url),
 );
@@ -58,6 +59,17 @@ test("B2 zero-due copy does not invent cover days or recommend scheduling zero f
   assert.match(page, /maturity\.cumulativeUsdt === 0/);
   assert.match(page, /当前窗口无到期兑付/);
   assert.doesNotMatch(page, /Math\.max\(RW_TOTAL\s*\/\s*7,\s*1\)/);
+});
+
+test("B2 zero-due chart keeps its safe scale internal and reports real zero summaries", () => {
+  assert.match(restoredInsights, /const maxDaily = Math\.max\([\s\S]*?, 0\);/);
+  assert.match(restoredInsights, /const maxCumulative = Math\.max\([\s\S]*?, 0\);/);
+  assert.match(restoredInsights, /const dailyScaleMax = Math\.max\(maxDaily, 1\);/);
+  assert.match(restoredInsights, /const cumulativeScaleMax = Math\.max\(maxCumulative, 1\);/);
+  assert.match(restoredInsights, /row\.totalDueUsdt \/ dailyScaleMax/);
+  assert.match(restoredInsights, /row\.amountUsdt \/ cumulativeScaleMax/);
+  assert.match(restoredInsights, /每日峰值 \{maxDaily\.toLocaleString/);
+  assert.match(restoredInsights, /累计 \{maxCumulative\.toLocaleString/);
 });
 
 test("B2 write and export controls use dedicated authorities, reason validation and optimistic concurrency", () => {

@@ -84,12 +84,14 @@ function MaturityChart({ daily, cumulative }: { daily: Array<{ date: string; tot
   const padTop = 22;
   const padBottom = 36;
   const chartHeight = height - padTop - padBottom;
-  const maxDaily = Math.max(...daily.map((row) => row.totalDueUsdt), 1);
-  const maxCumulative = Math.max(...cumulative.map((row) => row.amountUsdt), 1);
+  const maxDaily = Math.max(...daily.map((row) => row.totalDueUsdt), 0);
+  const maxCumulative = Math.max(...cumulative.map((row) => row.amountUsdt), 0);
+  const dailyScaleMax = Math.max(maxDaily, 1);
+  const cumulativeScaleMax = Math.max(maxCumulative, 1);
   const slot = (width - padX * 2) / Math.max(daily.length, 1);
   const cumulativePoints = cumulative.map((row, index) => ({
     x: padX + slot * index + slot / 2,
-    y: padTop + chartHeight - row.amountUsdt / maxCumulative * chartHeight,
+    y: padTop + chartHeight - row.amountUsdt / cumulativeScaleMax * chartHeight,
   }));
   const cumulativePath = cumulativePoints.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" ");
   return <div>
@@ -97,7 +99,7 @@ function MaturityChart({ daily, cumulative }: { daily: Array<{ date: string; tot
     <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label="每日预计兑付额柱状图与累计到期负债曲线" style={{ width: "100%", height: 205, overflow: "visible" }}>
       <line x1={padX} y1={height - padBottom} x2={width - padX} y2={height - padBottom} stroke="var(--border-strong)" />
       {daily.map((row, index) => {
-        const barHeight = row.totalDueUsdt / maxDaily * chartHeight;
+        const barHeight = row.totalDueUsdt / dailyScaleMax * chartHeight;
         const x = padX + slot * index + slot * 0.18;
         return <g key={row.date}><rect x={x} y={height - padBottom - barHeight} width={slot * 0.64} height={barHeight} rx="4" fill="var(--admin-domain-b)" /><text x={x + slot * 0.32} y={height - 12} textAnchor="middle" fill="var(--ink-4)" fontSize="10">{row.date.slice(5)}</text></g>;
       })}
