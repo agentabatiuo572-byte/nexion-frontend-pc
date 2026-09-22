@@ -354,6 +354,11 @@ const GEARS = [
   // 既不在 GEARS 也不在任何 npm script,所以 #203(中文业务页直接展示 minReward / minVRAM /
   // QUEUE_SATURATION 等内部字段名)一路穿到验收 —— 而这道门当时恰好把这些字段名当**正确文案**钉着。
   ["E2 acceptance contract", "node", ["--test", "tests/e2-acceptance-contract.test.mjs"]],
+  // 2026-09-22 挂上 zentao #229:审计主体曾被写成用户手机号,而 `AuditTimeline` 是
+  // C1/D2/E1 共同的渲染边界 —— 写入侧已修,但审计 append-only,历史行改不回来,
+  // 所以展示侧的脱敏必须有门守着,否则同一泄露会随下一批历史数据再上屏。
+  ["audit actor mask contract", "node",
+    ["--experimental-strip-types", "--test", "tests/audit-actor-mask-contract.test.mjs"]],
   ["A4 extension batch identity contract", "node", ["--test", "tests/a4-extension-batch-identity-contract.test.mjs"]],
   ["F1 reward label internal identifier contract", "node", ["--test", "tests/f1-reward-label-internal-identifier-contract.test.mjs"]],
   ["E5 per-face error contract", "node", ["--test", "tests/e5-per-face-error-contract.test.mjs"]],

@@ -3,6 +3,7 @@
  * 对齐 PRD §A2 审计记录;用于 D2 详情、E1 详情、C1 画像。
  */
 import type { AdminRole } from "@/lib/nav/console-nav";
+import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { RoleBadge } from "./role-badge";
 
 export interface AuditEntry {
@@ -42,7 +43,10 @@ export function AuditTimeline({ entries }: { entries: AuditEntry[] }) {
               <div className="flex flex-wrap items-center gap-2">
                 {e.role && <RoleBadge role={e.role} size="sm" />}
                 <span className="text-[12.5px]" style={{ color: "var(--v5-ink)" }}>
-                  {e.actor}
+                  {/* 🔴 zentao #229:历史审计行的主体可能是用户手机号(写入侧已修,但审计
+                      是 append-only,改写入侧修不好过去)。这里是所有消费方的共同渲染边界,
+                      统一打码后再上屏。 */}
+                  {maskAuditActor(e.actor)}
                 </span>
                 <span className="text-[12.5px]" style={{ color: "var(--v5-ink-2)" }}>
                   {e.action}
