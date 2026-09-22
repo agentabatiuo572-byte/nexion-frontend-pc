@@ -130,7 +130,7 @@ async function openVisibleA4(page: Page) {
   if (!await link.isVisible().catch(() => false)) await page.locator("aside").getByRole("button", { name: /平台基础.*A|A.*平台基础/ }).click();
   await link.click();
   await expect(page).toHaveURL(/\/platform\/events$/);
-  await expect(page.getByText("事件目录 · 6 个 family × domain 注册表", { exact: true })).toBeVisible();
+  await expect(page.getByText(/事件目录 · \d+ 个 family × domain 注册表/)).toBeVisible();
   await expect(page.getByText(/A4 数据校验失败|A4 接口读取失败/)).toHaveCount(0);
 }
 

@@ -128,6 +128,13 @@ function requiredText(value: unknown, field: string) {
   return value.trim();
 }
 
+function requiredCount(value: unknown, field: string) {
+  const text = requiredText(value, field);
+  const count = Number(text);
+  if (!/^(0|[1-9][0-9]*)$/.test(text) || !Number.isSafeInteger(count)) invalid(field);
+  return text;
+}
+
 function requiredNumber(value: unknown, field: string) {
   if (typeof value !== "number" || !Number.isFinite(value)) invalid(field);
   return value;
@@ -207,7 +214,7 @@ function normalizeFamily(row: Record<string, unknown>): A4EventFamily {
     sub: requiredText(row.sub, "eventFamily.sub"),
     sample: requiredText(row.sample, "eventFamily.sample"),
     serverAuth: requiredText(row.serverAuth, "eventFamily.serverAuth"),
-    todayCount: requiredText(row.todayCount, "eventFamily.todayCount"),
+    todayCount: requiredCount(row.todayCount, "eventFamily.todayCount"),
     events: requiredRows(row.events, "eventFamily.events", normalizeDetail),
   };
 }
@@ -238,7 +245,7 @@ function normalizeOverview(raw: unknown): A4Overview {
   if (!Object.keys(stats).length) invalid("stats");
   const overview: A4Overview = {
     stats: {
-      todayEvents: requiredText(stats.todayEvents, "stats.todayEvents"),
+      todayEvents: requiredCount(stats.todayEvents, "stats.todayEvents"),
       todayAuditEvents: requiredNumber(stats.todayAuditEvents, "stats.todayAuditEvents"),
       registeredDomains: requiredNumber(stats.registeredDomains, "stats.registeredDomains"),
       pendingDomains: requiredNumber(stats.pendingDomains, "stats.pendingDomains"),
@@ -261,6 +268,10 @@ function normalizeOverview(raw: unknown): A4Overview {
       || overview.stats.pendingDomains !== overview.pendingDomains.length
       || overview.stats.batchTotal !== overview.domainExtensions.length) {
     invalid("stats.businessCounts");
+  }
+  const familyTotal = overview.eventFamilies.reduce((sum, family) => sum + Number(family.todayCount), 0);
+  if (!Number.isSafeInteger(familyTotal) || familyTotal !== Number(overview.stats.todayEvents)) {
+    invalid("stats.todayEvents.familyTotal");
   }
   return overview;
 }

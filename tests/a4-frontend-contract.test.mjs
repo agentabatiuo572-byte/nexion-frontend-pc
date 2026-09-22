@@ -42,6 +42,15 @@ test("A4 overview normalization fails closed on malformed or incomplete data", (
   assert.doesNotMatch(client, /todayEvents:\s*text\(stats\.todayEvents,\s*"0"\)/);
   assert.match(client, /requiredNonEmptyRows/);
   assert.match(client, /stats\.businessCounts/);
+  assert.match(client, /stats\.todayEvents\.familyTotal/);
+});
+
+test("A4 shows the reconciled family count and names the catch-all scope", () => {
+  const page = read("app/components/domain-views/a-tabs/a4-events.tsx");
+
+  assert.match(page, /EVENT_FAMILIES\.length\} 个 family/);
+  assert.match(page, /OTHER \/ UNREGISTERED，与下表今日量合计一致/);
+  assert.doesNotMatch(page, /事件目录 · 6 个 family/);
 });
 
 test("A4 parameter editors block invalid values before opening a write request", () => {

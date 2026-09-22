@@ -725,9 +725,9 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       {/* ───── 4 f-stat ───── */}
       <div className="f-stats">
         <div className="f-stat">
-          <div className="k">今日事件量</div>
+          <div className="k">今日事件量（含 OTHER / UNREGISTERED）</div>
           <div className="v">{A4_STATS.todayEvents}</div>
-          <div className="sub">资金/风控/转化类 100% 全量采</div>
+          <div className="sub">六类目录 + OTHER / UNREGISTERED，与下表今日量合计一致</div>
         </div>
         <div className="f-stat cyan">
           <div className="k">注册 domain</div>
@@ -746,10 +746,10 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         </div>
       </div>
 
-      {/* ───── 事件目录 · 6 family × domain 注册表 ───── */}
+      {/* ───── 事件目录 × domain 注册表 ───── */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">事件目录 · 6 个 family × domain 注册表</span>
+          <span className="ttl">事件目录 · {EVENT_FAMILIES.length} 个 family × domain 注册表</span>
           <span className="sub">· 命名一律「域.对象_动作(过去式)」,事件 = 已发生的事实 · 点 family 看事件清单</span>
         </div>
         <div style={{ overflowX: "auto" }}>
