@@ -186,3 +186,22 @@ test("D5 renders each write control only for its exact authority", () => {
   assert.match(d5Page, /canBalanceWrite\s*&&/);
   assert.match(d5Page, /canFeeWrite\s*&&/);
 });
+
+/**
+ * zentao #243:D2 列表页加载时请求了一个**在该部署上不存在**的接口并拿到 404。
+ *
+ * `/finance/withdrawals/development/capabilities` 在后端受双重门控 ——
+ * `@Profile("dev & !prod")` 且 `nexion.deployment.public-test=false` —— 在 TEST(public-test)
+ * 上控制器根本不注册。而它唯一的作用是决定单笔详情抽屉里「模拟冷却到期」按钮显不显示。
+ * 此前页面一挂载就预拉,于是**只是打开列表**就产生 404。
+ */
+test("D2 probes the development capability on demand instead of on page load", () => {
+  // 挂载即探测的写法不许回来(空依赖数组 + 无条件调用)。
+  assert.doesNotMatch(page, /\n  \}, \[\]\);\n\n  const visibleRows/);
+  assert.match(page, /developmentCapabilitiesProbed/);
+  // 必须由「打开了详情」驱动,并且会话内只探一次。
+  assert.match(page, /if \(!detail \|\| developmentCapabilitiesProbed\.current\) return;/);
+  assert.match(page, /\}, \[detail\]\);/);
+  // 404 是探测结果而非错误:失败路径必须把能力置为 null(隐藏按钮),不得抛出或留 loading。
+  assert.match(page, /\.catch\(\(\) => \{ if \(active\) setDevelopmentCapabilities\(null\); \}\)/);
+});
