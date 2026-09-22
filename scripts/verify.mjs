@@ -359,6 +359,14 @@ const GEARS = [
   // 所以展示侧的脱敏必须有门守着,否则同一泄露会随下一批历史数据再上屏。
   ["audit actor mask contract", "node",
     ["--experimental-strip-types", "--test", "tests/audit-actor-mask-contract.test.mjs"]],
+  // 2026-09-22 补挂:**第三、第四道孤儿门**。`tests/c3-adjustment-closure-contract.test.mjs`
+  // 与 `tests/c3-adjustment-runtime-contract.test.mjs` 既不在 GEARS 也不在任何 npm script ——
+  // 与 #209 / #203 同一教训:门写着、文件在,就是没人跑。后果是 #231(未选账户时影响预览
+  // 仍展示具体余额与覆盖率)从这道本该守着 C3 的门底下穿了过去。现在接回链条,
+  // 并已把 #231 的判据补进 closure 门。
+  ["C3 adjustment closure + runtime", "node",
+    ["--experimental-strip-types", "--test", "tests/c3-adjustment-closure-contract.test.mjs",
+     "tests/c3-adjustment-runtime-contract.test.mjs"]],
   ["A4 extension batch identity contract", "node", ["--test", "tests/a4-extension-batch-identity-contract.test.mjs"]],
   ["F1 reward label internal identifier contract", "node", ["--test", "tests/f1-reward-label-internal-identifier-contract.test.mjs"]],
   ["E5 per-face error contract", "node", ["--test", "tests/e5-per-face-error-contract.test.mjs"]],

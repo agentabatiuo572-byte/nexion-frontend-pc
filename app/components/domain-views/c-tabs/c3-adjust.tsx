@@ -543,13 +543,21 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         <section className="l-card">
           <div className="l-h"><span className="ttl">执行影响预览</span><span className="sub">· 提交前核对余额与覆盖率</span></div>
           <div className="l-b">
+            {/* 🔴 zentao #231:未选账户时**不能**展示余额与覆盖率。此前本块无条件渲染,
+                于是 currentBalance 取到 number(undefined)=0 显示成「0 USDT」,覆盖率则来自
+                全局 overview.coverage —— 一个与所选账户无关的百分比被摆在「本次调整的影响」
+                位置上,读起来像是这笔操作的结果。页面别处(账户摘要)早已用 selectedAccount
+                门控,这里漏了。覆盖率总览另有独立卡片,不受此影响。 */}
+            {!selectedAccount && (
+              <div className="ctint cyan" style={{ marginBottom: 12 }}>请先在上方选择目标账户,选定后此处才展示余额与覆盖率预估。</div>
+            )}
             <div className="kv"><span className="k">目标账户</span><span className="v">{displayUser(selectedAccount)}</span></div>
-            <div className="kv"><span className="k">当前余额</span><span className="v mono">{formatNumber(currentBalance)} {asset}</span></div>
-            <div className="kv"><span className="k">批准后余额预估</span><span className="v mono" style={{ color: debitInsufficient ? "var(--danger)" : "var(--ink)" }}>{formatNumber(balanceAfter)} {asset}</span></div>
+            <div className="kv"><span className="k">当前余额</span><span className="v mono">{selectedAccount ? `${formatNumber(currentBalance)} ${asset}` : "—"}</span></div>
+            <div className="kv"><span className="k">批准后余额预估</span><span className="v mono" style={{ color: debitInsufficient ? "var(--danger)" : "var(--ink)" }}>{selectedAccount ? `${formatNumber(balanceAfter)} ${asset}` : "—"}</span></div>
             <div className="kv"><span className="k">USDT 等值</span><span className="v mono">${formatUsdEquivalent(amountUsd)}</span></div>
-            <div className="kv"><span className="k">当前覆盖率</span><span className="v">{formatPercent(coverageRatio)}</span></div>
-            <div className="kv"><span className="k">批准后覆盖率预估</span><span className="v" style={{ color: creditCoverageUnavailable || creditBelowRedline ? "var(--danger)" : "var(--success)" }}>{formatPercent(projectedCoverage)}</span></div>
-            <div className="kv"><span className="k">红线</span><span className="v">{formatPercent(redlinePct)}</span></div>
+            <div className="kv"><span className="k">当前覆盖率</span><span className="v">{selectedAccount ? formatPercent(coverageRatio) : "—"}</span></div>
+            <div className="kv"><span className="k">批准后覆盖率预估</span><span className="v" style={{ color: selectedAccount && (creditCoverageUnavailable || creditBelowRedline) ? "var(--danger)" : "var(--success)" }}>{selectedAccount ? formatPercent(projectedCoverage) : "—"}</span></div>
+            <div className="kv"><span className="k">红线</span><span className="v">{selectedAccount ? formatPercent(redlinePct) : "—"}</span></div>
             <div className="ctint cyan" style={{ marginTop: 14 }}><b>复核闭环</b> · 提交仅落待放行申请与必达审计；独立复核员批准后，才原子完成余额更新、财务账单与两类业务事件。</div>
           </div>
         </section>

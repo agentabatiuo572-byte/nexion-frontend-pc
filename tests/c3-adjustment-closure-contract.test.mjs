@@ -83,3 +83,20 @@ test("C3 reversal is dedicated, append-only and D4-linked by adjustment number",
   assert.doesNotMatch(treasuryRoute, /ledger\/adjustments/);
   assert.match(dRegistry, /该页面只负责核对/);
 });
+
+/**
+ * zentao #231:未选账户时「执行影响预览」仍展示具体余额与覆盖率。
+ *
+ * 此前该区块无条件渲染:currentBalance 取到 number(undefined)=0 → 显示「0 USDT」;
+ * 覆盖率来自全局 overview.coverage —— 一个与所选账户无关的百分比被摆在「本次调整的影响」
+ * 位置上,读起来像这笔操作的结果。页面别处(账户摘要)早已用 selectedAccount 门控。
+ */
+test("C3 impact preview withholds balances and coverage until a target account is chosen", () => {
+  assert.match(c3, /!selectedAccount &&/, "缺少「未选账户」的提示分支");
+  assert.match(c3, /请先在上方选择目标账户/, "缺少未选账户时的引导文案");
+  // 五个账户相关读数都必须按 selectedAccount 降级为占位,而不是给出具体数字。
+  for (const label of ["当前余额", "批准后余额预估", "当前覆盖率", "批准后覆盖率预估", "红线"]) {
+    const row = new RegExp(`>${label}</span><span[^>]*>\\{[^}]*selectedAccount[^}]*\\}`);
+    assert.match(c3, row, `${label} 未按 selectedAccount 降级`);
+  }
+});
