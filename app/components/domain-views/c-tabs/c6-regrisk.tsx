@@ -359,7 +359,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         </section>
 
         <section className="l-card">
-          <div className="l-h"><span className="ttl">连错锁定</span><span className="sub">· 改动写入服务端配置，解锁在 C5</span></div>
+          <div className="l-h"><span className="ttl">App 用户连错锁定</span><span className="sub">· 按手机号与账户风控配置；PC 管理员登录锁由 A1 单独展示；解锁在 C5</span></div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             {lockParams.map(adjustRow)}
             {lockParams.length === 0 && <div className="ctint">暂无锁定参数</div>}

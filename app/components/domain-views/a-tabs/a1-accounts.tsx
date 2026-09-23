@@ -916,8 +916,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
 
       <section className="l-card">
           <div className="l-h">
-            <span className="ttl">登录与安全基线</span>
-            <span className="sub">· 服务端实时返回；锁定项只读，可调项逐项生效</span>
+            <span className="ttl">后台运营账号登录与安全基线</span>
+            <span className="sub">· 仅用于 PC 管理员登录；服务端实时返回；锁定项只读，可调项逐项生效</span>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             {securityBaselineRows.map((baseline) => (
@@ -935,7 +935,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
               <div className="atint">后端未返回安全基线配置。</div>
             )}
             <div className="atint" style={{ marginTop: 10 }}>
-              <b>疑似被盗怎么办</b> · 超管可立即强制登出非超管账号全部 session(普通确认、必填原因,事后可查);不能登出自己,Redis 无活跃会话代表目标未登录。要收权限走「禁用账号」操作确认。登录失败短锁基线: <b>{lockBaseline}</b>。
+              <b>疑似被盗怎么办</b> · 超管可立即强制登出非超管账号全部 session(普通确认、必填原因,事后可查);不能登出自己,Redis 无活跃会话代表目标未登录。要收权限走「禁用账号」操作确认。后台管理员登录锁基线: <b>{lockBaseline}</b>；App 用户登录锁由 C6 独立配置。
             </div>
           </div>
         </section>
