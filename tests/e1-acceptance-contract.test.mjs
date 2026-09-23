@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { e1GateReadiness, releaseMonthPresentation } from "../app/components/domain-views/e-tabs/data.ts";
+import { resolveNexionBackendRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const view = readFileSync(new URL("../app/components/domain-views/e-view.tsx", import.meta.url), "utf8");
 const catalog = readFileSync(new URL("../app/components/domain-views/e-tabs/e1-catalog.tsx", import.meta.url), "utf8");
@@ -252,7 +255,8 @@ test("E5 force activation is not mislabeled as a funds-amplifying proposal", () 
  */
 test("E1 projects force-unlock provenance instead of admitting the backend omits it", () => {
   // 后端下发三个溯源字段(取不到时为空串,由前端显示「未记录」)。
-  const service = readFileSync(new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/device/application/OpsDeviceService.java", import.meta.url), "utf8");
+  const backendRoot = resolveNexionBackendRoot({ adminRoot: fileURLToPath(new URL("..", import.meta.url)) });
+  const service = readFileSync(join(backendRoot, "src/main/java/ffdd/opsconsole/device/application/OpsDeviceService.java"), "utf8");
   assert.match(service, /row\.put\("forceUnlockApprovedBy"/);
   assert.match(service, /row\.put\("forceUnlockAuditId"/);
   assert.match(service, /row\.put\("forceUnlockApprovedAt"/);
