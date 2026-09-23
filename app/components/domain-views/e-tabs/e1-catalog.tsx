@@ -4,7 +4,7 @@ import type { E1GenerationRelease, E1Phase } from "@/lib/admin/e1-client";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 import type { OpsSku } from "@/lib/admin/platform-types";
 import type { EViewCtx } from "./types";
-import { e1GateReadiness, effectiveReleaseMonth, gateRemaining, releaseMonthPresentation, type E1GateReadiness } from "./data";
+import { e1GateReadiness, effectiveReleaseMonth, gateRemaining, releaseMonthPresentation, resolveE1PhaseId, type E1GateReadiness } from "./data";
 import { EStats } from "./stats";
 
 const PHASE_STATUS_LABELS: Record<string, string> = {
@@ -30,8 +30,8 @@ const isVideoMedia = (s: OpsSku): boolean => /\.(mp4|webm|mov)(?:$|\?)/i.test(s.
  * 简报 #38:「强制提前开放」绕过平台月龄门,属于放大开放范围的动作,验收要求能显示批准人与审计编号。
  *
  * 此前这里写的是「后端未返回批准人与审计编号」—— 那是实情,但它是**仓库缺口**而不是终局:
- * 数据一直在审计日志里(E1_GENERATION_GATE_UPDATED 记了 operator / reason / before-after),
- * 只是没有投影到门视图。现在后端按门下发 forceUnlockApprovedBy / AuditId / ApprovedAt。
+ * 已记录的强制提前操作可由审计日志溯源,后端按门下发
+ * forceUnlockApprovedBy / AuditId / ApprovedAt。
  *
  * 取不到时如实说「未记录」—— 不编造批准人,也不把「没记录」说成「后端不支持」。
  */
@@ -40,7 +40,7 @@ function forceUnlockProvenanceTitle(g: E1GenerationRelease): string {
   const approver = (g.forceUnlockApprovedBy ?? "").trim();
   const auditId = (g.forceUnlockAuditId ?? "").trim();
   const approvedAt = (g.forceUnlockApprovedAt ?? "").trim();
-  if (!approver && !auditId) return `${base};审计日志中未找到该门的变更记录`;
+  if (!approver && !auditId) return `${base};未找到可核实的强制提前开放审计记录`;
   const parts: string[] = [];
   if (approver) parts.push(`批准人 ${approver}`);
   if (auditId) parts.push(`审计编号 ${auditId}`);
@@ -154,10 +154,10 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   const activePhaseIdx = phaseOrder.indexOf(phaseCur);
   const hasPhaseConfig = phaseOrder.length > 0 && phases.length > 0 && activePhaseIdx >= 0;
   const curIdx = hasPhaseConfig ? activePhaseIdx : -1;
-  const phaseIdx = (p: string): number => phaseOrder.indexOf(p);
+  const phaseIdx = (p: string): number => phaseOrder.indexOf(resolveE1PhaseId(phases, p));
   const phaseLabel = (phaseId: string): string => {
     if (!phaseId) return "未配置";
-    const phase = phases.find((item) => item.p === phaseId);
+    const phase = phases.find((item) => item.p === resolveE1PhaseId(phases, phaseId));
     return phase?.label || phaseId;
   };
   const phaseOptions = phaseOrder;
@@ -537,7 +537,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                     : "强制提前开放,仅绕过平台月龄门";
             return (
               <div className="rw" key={g.id}>
-                <div className="c sku">{g.name}<span className="id">{g.id}</span></div>
+                <div className="c sku">{g.name}<span className="id">{g.id}</span>{g.forceUnlock && <span className="force-audit">批准人 {g.forceUnlockApprovedBy || "未记录"} · A2 编号 {g.forceUnlockAuditId || "未记录"}</span>}</div>
                 <div className="c mono release-plan">
                   <span className="release-effective">{releasePresentation.effectiveLabel}</span>
                   <span className="release-adjustment">{releasePresentation.adjustmentLabel}</span>

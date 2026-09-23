@@ -150,6 +150,9 @@ export interface E1GateReadinessInput {
 const phaseLabelOf = (phases: Array<{ p: string; label?: string; skus: string }>, phaseId: string): string =>
   !phaseId ? "未配置" : (phases.find((item) => item.p === phaseId)?.label || phaseId);
 
+export const resolveE1PhaseId = (phases: Array<{ p: string; label?: string }>, value: string): string =>
+  phases.find((phase) => phase.p === value)?.p ?? phases.find((phase) => phase.label === value)?.p ?? value;
+
 /**
  * 商品解锁阶段来自 nx_product.unlock_phase,与服务端发布判定同源。
  */
@@ -165,11 +168,13 @@ export function declaredPhaseForSku(
  */
 export function e1GateReadiness(input: E1GateReadinessInput): E1GateReadiness {
   const { release, phaseOrder, phases, sku, currentPhase, platformMonth } = input;
-  const gatePhaseIdx = phaseOrder.indexOf(release.phase);
-  const curIdx = phaseOrder.indexOf(currentPhase);
+  const phaseId = (value: string): string => resolveE1PhaseId(phases, value);
+  const gatePhase = phaseId(release.phase);
+  const gatePhaseIdx = phaseOrder.indexOf(gatePhase);
+  const curIdx = phaseOrder.indexOf(phaseId(currentPhase));
   const hasPhaseConfig = phaseOrder.length > 0 && phases.length > 0 && curIdx >= 0;
-  const declaredPhase = declaredPhaseForSku(sku);
-  const phaseConflict = !!declaredPhase && !!release.phase && declaredPhase !== release.phase;
+  const declaredPhase = phaseId(declaredPhaseForSku(sku));
+  const phaseConflict = !!declaredPhase && !!gatePhase && declaredPhase !== gatePhase;
   const eligibilityReady = !!release.eligibility;
   const phaseReached = hasPhaseConfig && gatePhaseIdx >= 0 && curIdx >= gatePhaseIdx;
   const effectiveMonth = effectiveReleaseMonth(release.releaseMonth, release.phaseOffset ?? 0);

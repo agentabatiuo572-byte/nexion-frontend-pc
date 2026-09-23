@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { e1GateReadiness, releaseMonthPresentation } from "../app/components/domain-views/e-tabs/data.ts";
+import { e1GateReadiness, releaseMonthPresentation, resolveE1PhaseId } from "../app/components/domain-views/e-tabs/data.ts";
 import { resolveNexionBackendRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const view = readFileSync(new URL("../app/components/domain-views/e-view.tsx", import.meta.url), "utf8");
@@ -137,6 +137,19 @@ test("E1 release state follows product unlockPhase, never the free-text phase SK
   const matching = e1GateReadiness({ ...input, sku: { id: "rack-p2", unlock: "seed" } });
   assert.equal(matching.phaseConflict, false);
   assert.equal(matching.unlocked, true);
+  const labelled = e1GateReadiness({ ...input, release: { ...input.release, phase: "种子期" }, sku: { id: "rack-p2", unlock: "seed" } });
+  assert.equal(labelled.phaseConflict, false);
+  assert.equal(labelled.unlocked, true);
+  const laterLabel = e1GateReadiness({ ...input, sku: { id: "rack-p2", unlock: "成熟期" } });
+  assert.equal(laterLabel.declaredPhase, "mature");
+  assert.equal(laterLabel.unlocked, false);
+  const collisionPhases = [{ p: "1", label: "2", skus: "" }, { p: "2", label: "扩张期", skus: "" }];
+  assert.equal(resolveE1PhaseId(collisionPhases, "2"), "2");
+  const collision = e1GateReadiness({ ...input, release: { ...input.release, phase: "2" },
+    phaseOrder: ["1", "2"], phases: collisionPhases, currentPhase: "1", sku: { id: "rack-p2", unlock: "2" } });
+  assert.equal(collision.unlocked, false);
+  assert.equal(collision.phaseReached, false);
+  assert.match(catalog, /phaseOrder\.indexOf\(resolveE1PhaseId\(phases, p\)\)/);
 });
 
 test("E1 blocks every off-SKU whose backend-authoritative release state is not open", () => {
@@ -261,7 +274,8 @@ test("E1 projects force-unlock provenance instead of admitting the backend omits
   assert.match(service, /row\.put\("forceUnlockAuditId"/);
   assert.match(service, /row\.put\("forceUnlockApprovedAt"/);
   // 溯源来自审计日志的发布门变更记录,而不是编造。
-  assert.match(service, /query\.setAction\("E1_GENERATION_GATE_UPDATED"\)/);
+  assert.match(service, /query\.setResourceType\("DEVICE_GENERATION_GATE"\)/);
+  assert.match(service, /enabledForceUnlock/);
   // 取不到溯源不能让整页失败。
   assert.match(service, /溯源取不到不能让整页失败/);
 
@@ -272,10 +286,11 @@ test("E1 projects force-unlock provenance instead of admitting the backend omits
   // 渲染必须用溯源函数,不得再写死「后端未返回批准人与审计编号」。
   // (注释里保留那句是为了记录历史缺口,所以只断言**渲染代码**不含它。)
   assert.match(catalog, /title=\{forceUnlockProvenanceTitle\(g\)\}/);
+  assert.match(catalog, /批准人 \{g\.forceUnlockApprovedBy \|\| "未记录"\} · A2 编号 \{g\.forceUnlockAuditId \|\| "未记录"\}/);
   const renderCode = catalog.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   assert.doesNotMatch(renderCode, /后端未返回批准人与审计编号/);
   // 有溯源就显示,没有则如实说未记录 —— 不编造批准人。
-  assert.match(catalog, /审计日志中未找到该门的变更记录/);
+  assert.match(catalog, /未找到可核实的强制提前开放审计记录/);
   assert.match(catalog, /批准人 \$\{approver\}/);
   assert.match(catalog, /审计编号 \$\{auditId\}/);
 });
