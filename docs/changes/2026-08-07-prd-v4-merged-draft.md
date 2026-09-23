@@ -360,7 +360,7 @@
 | 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
 |---|---|---|---|---|
 | `CAP_CRITICAL` | **现状值 Infinity**(永不淘汰,§11.2.4) | 固定 Infinity(不可降,合规/风控通知不丢) | 固定 | `/me/notifications` critical tier(§11.2.4) |
-| `CAP_HIGH` | **现状值 50**(§11.2.4) | 运营设定(tier 内 LIFO) | 实时(对新通知保留生效) | high tier 保留窗 |
+| `CAP_HIGH` | **现状值 50**(§11.2.4) | 运营设定(每用户保留最新 N 条,淘汰最旧) | 实时(清理现有超额通知) | high tier 保留窗 |
 | `CAP_NORMAL` | **现状值 200**(§11.2.4;亦即通知中心上限 200) | 运营设定 | 实时 | normal tier |
 | `CAP_LOW` | **现状值 30**(§11.2.4;真后台对接后改 24-48h 自动淘汰) | 运营设定 / TTL 模式 | 实时 | low tier |
 | campaign 优先级 | 按 NotifKind 默认(system/监管类 → critical/high) | critical / high / normal / low(§11.2.4 适用类型) | 下发时锁定 | 通知 tier 归属 |
@@ -416,8 +416,8 @@
 - **成功反馈**:弹窗关闭;列表行状态更新 cancelled;toast「已取消 · 已记审计」;事件 `admin.notification_campaign_cancelled`;实时告警超管与内容 lead。
 
 ##### [I3-MD3] 优先级 CAP 调整确认
-- **功能**:调整 high/normal/low tier 的保留 CAP(`CAP_CRITICAL` 固定 Infinity 不可调),确认即对新通知保留生效。
-- **布局结构**:1. **信息区**:目标 tier / 当前 CAP / 当前 tier 内通知量(server 派生)。2. **影响预览区**:before→after 并排;调小 CAP 时提示「超出部分按 LIFO 淘汰,影响存量可见性」。3. **输入区**:目标 CAP 值(数字输入;范围校验同 ③ 表)+ reason(多行文本,必填,8–200 字)。4. **按钮区**:取消 / 确认调整。
+- **功能**:调整 high/normal/low tier 的保留 CAP(`CAP_CRITICAL` 固定 Infinity 不可调),确认后立即清理现有超额通知,后续新通知也按 CAP 清理。
+- **布局结构**:1. **信息区**:目标 tier / 当前 CAP / 当前 tier 内通知量(server 派生)。2. **影响预览区**:before→after 并排;调小 CAP 时提示「超出部分淘汰最旧通知,影响存量可见性」。3. **输入区**:目标 CAP 值(数字输入;范围校验同 ③ 表)+ reason(多行文本,必填,8–200 字)。4. **按钮区**:取消 / 确认调整。
 - **错误态**:422(目标值超 ③ 表范围或试图调 `CAP_CRITICAL`,server 拒绝)/ 400 `REASON_REQUIRED` / 409 / 403。
 - **成功反馈**:弹窗关闭;CAP 表行就地更新;toast「CAP 已生效 · 已记审计」;事件 `admin.notification_cap_changed`;实时告警超管与内容 lead。
 
@@ -438,7 +438,7 @@
 审计记录字段:统一 schema(§2.x A2 ⑥)`操作者(operator)/ 角色 / 动作 / 对象(campaign ID / CAP tier)/ 前值 / 后值 / 理由(reason)/ IP / 时间(ms)`。
 
 **⑦ 风控 & 联动**
-- **通知 server-canonical**:系统通知 server 唯一账本(§9.11d.2:client 仅 UI cache,LIFO cap 仅显示窗口、非权威数据源,§11.2.4);优先级升级由 server emit canonical 记录,client 不直接 PATCH(§11.2.4)。已读态 server 权威(`POST /api/notifications/:id/read`)。
+- **通知 server-canonical**:系统通知 server 唯一账本(§9.11d.2:client 仅 UI cache;服务端按每用户、每档 CAP 保留最新通知并软删除超额最旧记录,§11.2.4);优先级升级由 server emit canonical 新记录,client 不直接 PATCH(§11.2.4)。已读态 server 权威(`POST /api/notifications/:id/read`)。
 - **跨模块联动**:critical 通知承载 I5 风险披露 re-ack 提示(§11.2.4 critical 含「合规要求 re-acknowledge」)+ 风控异动(K 域触发)+ 资金账户异动(D 域)+ J 域监管公告;swipe-to-action 第一 action 与 NotifKind 联动(§11.2.2a)——**commission kind → `/me/wallet/repurchase`(复投,资金留存 + 下游转化),system kind 无 conversion swipe**(见 ①),有 conversion 路径的 kind 的 swipe 转化喂 B3 漏斗。
 - **篡改防御(§9.11d)**:已读态/优先级 client 不可篡改(server 权威);通知 id server 单源(§9.11d.2:client mint ID 可枚举/撞 ID 风险由 server 单源 ID 修复)。
 

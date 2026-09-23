@@ -347,14 +347,18 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           {model.powerUps.map((powerUp) => (
             <div className="p-row" key={powerUp.id}>
               <span style={{ flex: 1 }}>
-                <b>{powerUp.label}</b>
+                <b>{powerUp.businessAvailable === false ? "目标业务已停用" : powerUp.businessAvailable == null && (powerUp.downstream === "/wallet/staking" || powerUp.downstream === "/market/genesis") ? "目标业务状态待核实" : powerUp.label}</b>
                 <br />
-                <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(powerUp.sub)} · 前往{rewardDestination(powerUp.downstream)}</span>
+                <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>
+                  {powerUp.businessAvailable === false ? "当前不可兑现，历史权益记录保留"
+                    : powerUp.businessAvailable == null && (powerUp.downstream === "/wallet/staking" || powerUp.downstream === "/market/genesis") ? "暂不可确认能否兑现"
+                    : <>{text(powerUp.sub)} · 前往{rewardDestination(powerUp.downstream)}</>}
+                </span>
                 {/* BUG 195:该档指向的业务已停用时,App 不再给「激活」入口。
                     运营必须看得见这件事 —— 否则会一直以为用户连签 30/60 天后真能拿到入口。 */}
                 {powerUp.businessAvailable === false && (
                   <span style={{ display: "block", fontSize: 11.5, color: "var(--warning)", marginTop: 2 }}>
-                    目标业务当前已停用（质押整池熔断 / Genesis 未开放），客户端不再向用户承诺可激活；恢复后自动生效。
+                    目标业务当前已停用，客户端不会展示可激活承诺；请核对配置后再开放。
                   </span>
                 )}
               </span>
