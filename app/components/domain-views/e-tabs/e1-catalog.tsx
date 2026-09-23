@@ -167,7 +167,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   const gateSkuOptions = gateCandidates.map(skuId);
 
   // 上架节奏门判定走 data.ts 的单一纯函数源(与 E1 发布时点表 / 顶部 Pro v2 标共用),
-  // 阶段绑定冲突(门引用的阶段 ≠ SKU 在阶段配置里的唯一归属阶段)一律视为未开放。
+  // 阶段绑定冲突(门引用的阶段 ≠ 商品 unlockPhase)一律视为未开放。
   const gateReadiness = (g: E1GenerationRelease): E1GateReadiness =>
     e1GateReadiness({
       release: g,
@@ -230,7 +230,8 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
     });
   const genForceUnlock = (g: E1GenerationRelease) => {
     const state = gateReadiness(g);
-    if (state.phaseConflict) { ctx.toast(`拒绝 · ${g.name} 阶段配置声明属${phaseLabel(state.declaredPhase)},与上架门引用的${phaseLabel(g.phase)}冲突 · 请先修正阶段映射`); return; }
+    if (!state.declaredPhase) { ctx.toast(`拒绝 · ${g.name} 商品解锁阶段缺失 · 请先核对商品配置`); return; }
+    if (state.phaseConflict) { ctx.toast(`拒绝 · ${g.name} 商品解锁阶段为${phaseLabel(state.declaredPhase)},与上架门引用的${phaseLabel(g.phase)}冲突 · 请先修正阶段映射`); return; }
     if (!state.eligibilityReady) { ctx.toast(`拒绝 · ${g.name} 设备资格未补录 · 发布门不能解锁`); return; }
     if (!state.phaseReached) { ctx.toast(`拒绝 · ${g.name} 当前阶段未到达 ${phaseLabel(g.phase)} · 发布门不能解锁`); return; }
     ctx.openActionConfirm({
@@ -525,11 +526,15 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
             const cdCls = unlocked ? "ok" : (!gateState.eligibilityReady || !gateState.phaseReached || gateState.effectiveMonth - platformMonth <= 1) ? "warn" : "";
             const cdTxt = gateCountdownLabel(gateState);
             const releasePresentation = releaseMonthPresentation(g.releaseMonth, offset);
-            const forceHint = !gateState.eligibilityReady
-              ? "需先补录设备资格后才能提前开放"
-              : !gateState.phaseReached
-                ? `需先推进到 ${phaseLabel(g.phase)} 阶段后才能提前开放`
-                : "强制提前开放,仅绕过平台月龄门";
+            const forceHint = !gateState.declaredPhase
+              ? "商品解锁阶段缺失,不能提前开放"
+              : gateState.phaseConflict
+                ? "商品解锁阶段与上架门阶段冲突,不能提前开放"
+                : !gateState.eligibilityReady
+                  ? "需先补录设备资格后才能提前开放"
+                  : !gateState.phaseReached
+                    ? `需先推进到 ${phaseLabel(g.phase)} 阶段后才能提前开放`
+                    : "强制提前开放,仅绕过平台月龄门";
             return (
               <div className="rw" key={g.id}>
                 <div className="c sku">{g.name}<span className="id">{g.id}</span></div>
@@ -541,7 +546,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                 <div className="c">
                   <span className="phaseChip">{phaseLabel(g.phase)}</span>
                   {gateState.phaseConflict && (
-                    <span className="st coming" style={{ marginLeft: 6 }} title={`阶段配置声明该 SKU 属${phaseLabel(gateState.declaredPhase)},上架门却引用${phaseLabel(g.phase)};阶段门被错误映射,未到阶段不得开放`}>
+                    <span className="st coming" style={{ marginLeft: 6 }} title={`商品解锁阶段为${phaseLabel(gateState.declaredPhase)},上架门却引用${phaseLabel(g.phase)};阶段门被错误映射,未到阶段不得开放`}>
                       应属 {phaseLabel(gateState.declaredPhase)}
                     </span>
                   )}

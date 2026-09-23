@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { releaseMonthPresentation } from "../app/components/domain-views/e-tabs/data.ts";
+import { e1GateReadiness, releaseMonthPresentation } from "../app/components/domain-views/e-tabs/data.ts";
 
 const view = readFileSync(new URL("../app/components/domain-views/e-view.tsx", import.meta.url), "utf8");
 const catalog = readFileSync(new URL("../app/components/domain-views/e-tabs/e1-catalog.tsx", import.meta.url), "utf8");
@@ -112,6 +112,28 @@ test("E1 release schedule presents the effective month as the primary date", () 
   assert.match(catalog, /releaseMonthPresentation\(g\.releaseMonth, offset\)/);
   assert.match(catalog, /releasePresentation\.effectiveLabel/);
   assert.match(catalog, /releasePresentation\.adjustmentLabel/);
+});
+
+test("E1 release state follows product unlockPhase, never the free-text phase SKU label", () => {
+  const input = {
+    release: { id: "rack-p2", phase: "seed", releaseMonth: 1, eligibility: true, forceUnlock: true },
+    phaseOrder: ["seed", "mature"],
+    phases: [
+      { p: "seed", label: "种子期", skus: "Rack P2" },
+      { p: "mature", label: "成熟期", skus: "" },
+    ],
+    currentPhase: "seed",
+    platformMonth: 1,
+  };
+  const conflict = e1GateReadiness({ ...input, sku: { id: "rack-p2", unlock: "mature" } });
+  assert.equal(conflict.phaseConflict, true);
+  assert.equal(conflict.unlocked, false);
+  const missing = e1GateReadiness({ ...input, sku: { id: "rack-p2", unlock: "" } });
+  assert.equal(missing.unlocked, false);
+  assert.ok(missing.blockers.includes("商品解锁阶段未配置"));
+  const matching = e1GateReadiness({ ...input, sku: { id: "rack-p2", unlock: "seed" } });
+  assert.equal(matching.phaseConflict, false);
+  assert.equal(matching.unlocked, true);
 });
 
 test("E1 blocks every off-SKU whose backend-authoritative release state is not open", () => {
