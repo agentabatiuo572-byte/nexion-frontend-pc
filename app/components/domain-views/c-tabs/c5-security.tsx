@@ -2,6 +2,7 @@
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { sessionTimeAnomaly } from "@/lib/admin/session-time";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -707,7 +708,9 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
                       <td className="mono" style={{ fontSize: 11.5 }}>{text(session.clientIpMasked)}</td>
                       <td style={{ fontSize: 12 }}>{text(session.deviceName)}</td>
                       <td><span className={`bdg ${sessionTone(session.status)}`}>{sessionStatusLabel(session.status)}</span></td>
-                      <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{formatDateTime(session.lastActiveAt ?? session.issuedAt)}</td>
+                      <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>
+                        {sessionTimeAnomaly(session) ? <span style={{ color: "var(--v5-warning)" }} title="服务端时间顺序异常，请核对会话原始记录">时间异常 · 查看详情</span> : formatDateTime(session.lastActiveAt ?? session.issuedAt)}
+                      </td>
                       <td style={{ textAlign: "right" }}>
                         {!active ? (
                           <span className="bdg dim">{sessionStatusLabel(session.status)}</span>
@@ -794,12 +797,13 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       {selectedSession && (
         <Drawer title={`会话详情 · ${maskSessionId(sessionId(selectedSession))}`} sub={`${userLabel(selectedUser)} · ${sessionStatusLabel(selectedSession.status)}`} onClose={() => setSsId(null)}
           footer={<button className="l-btn danger" disabled={busy || !canRevokeOne || text(selectedSession.status, "").toUpperCase() !== "ACTIVE"} onClick={() => revokeOne(sessionId(selectedSession))}>踢线</button>}>
-          <SecLabel>服务器会话</SecLabel>
+          <SecLabel>服务器会话 · 北京时间（UTC+08）</SecLabel>
           <div className="kv"><span className="k">刷新凭证</span><span className="v mono">{maskSessionId(sessionId(selectedSession))}</span></div>
           <div className="kv"><span className="k">设备</span><span className="v">{text(selectedSession.deviceName)}</span></div>
           <div className="kv"><span className="k">IP</span><span className="v mono">{text(selectedSession.clientIpMasked)}</span></div>
           <div className="kv"><span className="k">状态</span><span className="v">{sessionStatusLabel(selectedSession.status)}</span></div>
           <div className="kv"><span className="k">签发</span><span className="v mono">{formatDateTime(selectedSession.issuedAt)}</span></div>
+          <div className="kv"><span className="k">最近活跃</span><span className="v mono">{formatDateTime(selectedSession.lastActiveAt ?? selectedSession.issuedAt)}{sessionTimeAnomaly(selectedSession) ? " · 源数据时间异常" : ""}</span></div>
           <div className="kv"><span className="k">过期</span><span className="v mono">{formatDateTime(selectedSession.expiresAt)}</span></div>
           <div className="kv"><span className="k">吊销</span><span className="v mono">{formatDateTime(selectedSession.revokedAt)}</span></div>
         </Drawer>
