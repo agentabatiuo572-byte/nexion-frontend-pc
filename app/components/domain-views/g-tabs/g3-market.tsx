@@ -344,6 +344,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
   const P = 30;
   const chart = chartPrices;
   const hasChart = chart.length >= 2;
+  const latestSampledAt = history.at(-1)?.sampledAt.replace("T", " ") ?? "暂无";
   const minPrice = (hasChart ? Math.min(...chart, overview.currentPrice) : overview.currentPrice) * 0.98;
   const maxPrice = (hasChart ? Math.max(...chart, peak, overview.currentPrice) : Math.max(peak, overview.currentPrice)) * 1.02;
   const spread = Math.max(0.000001, maxPrice - minPrice);
@@ -423,7 +424,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">行情走势</span>
-            <span className="sub">· 近 24h · 周峰值 {fmtPrice(peak)}</span>
+            <span className="sub">· 近 24h · 服务端最新采样 {latestSampledAt} · 周峰值 {fmtPrice(peak)}</span>
             <div className="r">{allowed("finprod_g3_engine_pause_toggle") && (!paused || isSuper) && <button className="l-btn mc" disabled={busy} onClick={pauseEngine}>{paused ? "恢复引擎(立即执行)" : "暂停引擎(立即执行)"}</button>}</div>
           </div>
           <div className="l-b">
