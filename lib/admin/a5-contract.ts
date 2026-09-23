@@ -86,8 +86,8 @@ function flag(value: unknown, field: string) {
  * 「数据一致性校验未通过,已停止展示可疑数据」,连一条参数都读不到;这与 #187 的
  * E1 是同一个缺陷类(一个未声明字段把整页读取打掉)。
  *
- * 缺失 = 「这个后端不做实时健康采样」,按非实时/非过期降级:行仍如实展示存量值,
- * 只是不打「实时权威」徽章。字段存在时仍严格按布尔校验,不接受半吊子取值。
+ * 缺失 = 「这个后端不做实时健康采样」。普通配置行照常展示；健康行不能把
+ * 存量快照当作当前状态。字段存在时仍严格按布尔校验,不接受半吊子取值。
  */
 function optionalFlag(value: unknown, field: string): boolean {
   if (value === undefined || value === null) return false;
@@ -108,8 +108,12 @@ export function normalizeA5Overview(raw: unknown): A5RegistryOverview {
     const ownerRoute = text(row.ownerRoute, `rows[${index}].ownerRoute`);
     if (!ownerRoute.startsWith("/") || ownerRoute.startsWith("//")) invalid(`rows[${index}].ownerRoute`);
     if (flag(row.serverCanonical, `rows[${index}].serverCanonical`) !== true) invalid(`rows[${index}].serverCanonical`);
+    const canonicalKey = text(row.canonicalKey, `rows[${index}].canonicalKey`);
+    const live = optionalFlag(row.live, `rows[${index}].live`);
+    const healthSnapshot = canonicalKey.startsWith("admin.health.") && !live;
+    const currentValue = text(row.currentValue, `rows[${index}].currentValue`, true);
     return {
-      canonicalKey: text(row.canonicalKey, `rows[${index}].canonicalKey`),
+      canonicalKey,
       displayName: text(row.displayName, `rows[${index}].displayName`),
       description: text(row.description, `rows[${index}].description`),
       domain: text(row.domain, `rows[${index}].domain`),
@@ -117,7 +121,7 @@ export function normalizeA5Overview(raw: unknown): A5RegistryOverview {
       ownerCode: text(row.ownerCode, `rows[${index}].ownerCode`),
       ownerLabel: text(row.ownerLabel, `rows[${index}].ownerLabel`),
       ownerRoute,
-      currentValue: text(row.currentValue, `rows[${index}].currentValue`, true),
+      currentValue: healthSnapshot ? "实时状态不可用" : currentValue,
       valueType: text(row.valueType, `rows[${index}].valueType`),
       unit: text(row.unit, `rows[${index}].unit`, true),
       source: text(row.source, `rows[${index}].source`),
@@ -125,11 +129,10 @@ export function normalizeA5Overview(raw: unknown): A5RegistryOverview {
       updatedAt: text(row.updatedAt, `rows[${index}].updatedAt`),
       operationConfirm: flag(row.operationConfirm, `rows[${index}].operationConfirm`),
       serverCanonical: true,
-      // 老后端不返回这三个字段(见 optionalFlag 注释):缺失按「非实时、未过期」降级,
-      // 而不是把整页判成一致性失败。
-      live: optionalFlag(row.live, `rows[${index}].live`),
+      // 老后端不返回这三个字段:普通配置行兼容读取；健康快照隐藏旧值并标过期。
+      live,
       observedAt: optionalText(row.observedAt, `rows[${index}].observedAt`),
-      stale: optionalFlag(row.stale, `rows[${index}].stale`),
+      stale: optionalFlag(row.stale, `rows[${index}].stale`) || healthSnapshot,
     };
   });
 

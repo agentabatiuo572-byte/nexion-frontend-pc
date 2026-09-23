@@ -92,6 +92,21 @@ test("A5 tolerates a backend that predates the live/stale fields instead of fail
   assert.equal(overview.rows[0].currentValue, "off");
 });
 
+test("A5 never presents a legacy stored health snapshot as current health", () => {
+  const legacy = validOverview();
+  legacy.rows[0] = {
+    ...legacy.rows[0],
+    canonicalKey: "admin.health.event_pipeline",
+    currentValue: "正常 · 延迟 1.2s",
+    updatedAt: "2026-06-24T08:00:00",
+  };
+  const overview = normalizeA5Overview(legacy);
+  assert.equal(overview.rows[0].live, false);
+  assert.equal(overview.rows[0].stale, true);
+  assert.equal(overview.rows[0].currentValue, "实时状态不可用");
+  assert.equal(overview.rows[1].stale, false);
+});
+
 test("A5 still validates the live fields strictly when the backend does send them", () => {
   const malformed = validOverview();
   malformed.rows[0] = { ...malformed.rows[0], live: "yes", observedAt: "2026-07-18T10:00:00", stale: false };
