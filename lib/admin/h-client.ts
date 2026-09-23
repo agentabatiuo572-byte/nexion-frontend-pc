@@ -141,13 +141,13 @@ function normalizeSchedule(raw: unknown): H1Schedule | null {
 export function describeH1Schedule(schedule: H1Schedule | null | undefined): string {
   if (!schedule) return "排程状态不可用";
   if (!schedule.configured) return "排程未设置";
+  if (!schedule.automatic) return "排程配置已保存 · 服务端未启用自动推进";
   const parts = [`排程 ${schedule.expression ?? "已配置"}`];
   if (schedule.timezone) parts.push(schedule.timezone);
   if (schedule.nextAdvanceAt) {
     const next = new Date(schedule.nextAdvanceAt);
     parts.push(Number.isNaN(next.getTime()) ? `下次 ${schedule.nextAdvanceAt}` : `下次 ${next.toLocaleString()}`);
   }
-  if (!schedule.automatic) parts.push("服务端未启用自动推进");
   return parts.join(" · ");
 }
 

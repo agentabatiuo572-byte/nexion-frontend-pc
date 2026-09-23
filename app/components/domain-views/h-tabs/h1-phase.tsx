@@ -8,6 +8,7 @@ import {
   fetchH1Phases,
   updateH1MonthDial,
   updateH1RhythmParam,
+  describeH1Schedule,
   type H1RhythmOverview,
 } from "@/lib/admin/h-client";
 import { usePropose } from "@/lib/admin/use-propose";
@@ -121,6 +122,15 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
   const currentPhase = rhythm?.currentPhase ?? "";
   const coverageRatio = text(model?.coverage?.coverageRatio, "-");
   const redlinePct = text(model?.coverage?.redlinePct, "-");
+  const controlDescription = (control: H1Model["controls"][number]) =>
+    control.key === "schedule" ? describeH1Schedule(rhythm?.schedule) : control.description;
+  const controlValue = (control: H1Model["controls"][number]) => {
+    if (control.key !== "schedule") return text(control.value, "未设置");
+    const schedule = rhythm?.schedule;
+    if (!schedule) return "排程状态不可用";
+    if (!schedule.configured) return "未设置";
+    return schedule.automatic ? schedule.expression ?? "已配置" : "未启用自动推进";
+  };
 
   const stats = useMemo(() => {
     const current = currentMonth == null ? undefined : monthlyRows.find((row) => row.month === currentMonth);
@@ -244,7 +254,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
     const current = text(control.value, control.key === "pin" ? "未钉住" : "");
     openActionConfirm({
       action: `Phase 切换控制 · ${control.label}`,
-      detail: <>{control.description || "控制项变更会写入后端配置并留痕。"} 当前值 <b>{current || "未设置"}</b>。</>,
+      detail: <>{controlDescription(control) || "控制项变更会写入后端配置并留痕。"} 当前值 <b>{current || "未设置"}</b>。</>,
       amplifies: false,
       edit: CONTROL_OPTIONS[control.key]
         ? { kind: "select", current, options: CONTROL_OPTIONS[control.key] }
@@ -450,9 +460,9 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
                 <span style={{ flex: 1 }}>
                   <b>{control.label}</b>
                   <br />
-                  <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{control.description}</span>
+                  <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{controlDescription(control)}</span>
                 </span>
-                <span className="bdg">{text(control.value, "未设置")}</span>
+                <span className="bdg">{controlValue(control)}</span>
                 <button className="l-btn sm mc" aria-label={`调整${control.label}`} onClick={() => openControl(control)} disabled={!canControlWrite}>调整</button>
               </div>
             ))}
