@@ -68,7 +68,16 @@ async function proxy(request: Request, context: RouteContext) {
       body: hasBody ? await request.text() : undefined,
       cache: "no-store",
     });
-    return new Response(await upstream.text(), {
+    const body = await upstream.text();
+    let responseBody = body;
+    if (upstream.ok && path[0] === "skus") {
+      try {
+        responseBody = JSON.stringify(JSON.parse(body), (key, value) => key === "imagePreviewUrl" ? null : value);
+      } catch {
+        return jsonError(502, "E1_SKU_RESPONSE_INVALID");
+      }
+    }
+    return new Response(responseBody, {
       status: upstream.status,
       headers: {
         "Content-Type": upstream.headers.get("Content-Type") || "application/json",

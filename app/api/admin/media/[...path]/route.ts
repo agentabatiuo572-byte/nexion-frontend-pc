@@ -28,6 +28,17 @@ function backendPath(parts: string[]) {
   return null;
 }
 
+function publicAssetResponse(result: { code?: number; data?: { assetId?: string; previewUrl?: string } }) {
+  const assetId = result.data?.assetId;
+  if (result.code !== 0 || typeof assetId !== "string" || !assetId) {
+    return jsonError(502, "MEDIA_RESPONSE_INVALID");
+  }
+  return Response.json({
+    ...result,
+    data: { ...result.data, previewUrl: `/api/admin/media/uploads/${encodeURIComponent(assetId)}/content` },
+  }, { headers: { "Cache-Control": "private, no-store" } });
+}
+
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
   const contentRequest = path.length === 3 && path[0] === "uploads" && path[2] === "content";
@@ -69,8 +80,11 @@ async function proxy(request: Request, context: RouteContext) {
     });
     if (contentRequest) {
       if (!upstream.ok) return jsonError(upstream.status, "MEDIA_PREVIEW_UNAVAILABLE");
-      const result = await upstream.json() as { code?: number; data?: { previewUrl?: string } };
+      const result = await upstream.json() as { code?: number; data?: { objectKey?: string; previewUrl?: string } };
       if (result.code !== 0 || !result.data?.previewUrl) return jsonError(502, "MEDIA_PREVIEW_UNAVAILABLE");
+      if (!/^admin\/e\/sku-(?:image|video)\//.test(result.data.objectKey || "")) {
+        return jsonError(403, "MEDIA_PREVIEW_SCOPE_DENIED");
+      }
 
       const mediaUrl = new URL(result.data.previewUrl);
       if (mediaUrl.origin !== new URL(MEDIA_ORIGIN).origin || mediaUrl.username || mediaUrl.password) {
@@ -102,13 +116,11 @@ async function proxy(request: Request, context: RouteContext) {
       }
       return new Response(media.body, { status: media.status, headers: responseHeaders });
     }
-    return new Response(await upstream.text(), {
-      status: upstream.status,
-      headers: {
-        "Content-Type": upstream.headers.get("Content-Type") || "application/json",
-        "Cache-Control": "no-store",
-      },
-    });
+    if (upstream.ok) {
+      const result = await upstream.json() as { code?: number; data?: { assetId?: string; previewUrl?: string } };
+      return publicAssetResponse(result);
+    }
+    return jsonError(upstream.status, "MEDIA_REQUEST_FAILED");
   } catch {
     return jsonError(503, "MEDIA_BACKEND_UNAVAILABLE");
   }
