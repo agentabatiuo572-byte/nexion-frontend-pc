@@ -802,10 +802,10 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
           <div className="kv"><span className="k">设备</span><span className="v">{text(selectedSession.deviceName)}</span></div>
           <div className="kv"><span className="k">IP</span><span className="v mono">{text(selectedSession.clientIpMasked)}</span></div>
           <div className="kv"><span className="k">状态</span><span className="v">{sessionStatusLabel(selectedSession.status)}</span></div>
-          <div className="kv"><span className="k">签发</span><span className="v mono">{formatDateTime(selectedSession.issuedAt)}</span></div>
-          <div className="kv"><span className="k">最近活跃</span><span className="v mono">{formatDateTime(selectedSession.lastActiveAt ?? selectedSession.issuedAt)}{sessionTimeAnomaly(selectedSession) ? " · 源数据时间异常" : ""}</span></div>
-          <div className="kv"><span className="k">过期</span><span className="v mono">{formatDateTime(selectedSession.expiresAt)}</span></div>
-          <div className="kv"><span className="k">吊销</span><span className="v mono">{formatDateTime(selectedSession.revokedAt)}</span></div>
+          <div className="kv"><span className="k">签发</span><span className="v mono">{text(selectedSession.issuedAt)}</span></div>
+          <div className="kv"><span className="k">最近活跃</span><span className="v mono">{text(selectedSession.lastActiveAt ?? selectedSession.issuedAt)}{sessionTimeAnomaly(selectedSession) ? " · 源数据时间异常" : ""}</span></div>
+          <div className="kv"><span className="k">过期</span><span className="v mono">{text(selectedSession.expiresAt)}</span></div>
+          <div className="kv"><span className="k">吊销</span><span className="v mono">{text(selectedSession.revokedAt)}</span></div>
         </Drawer>
       )}
 
