@@ -275,6 +275,7 @@ const GEARS = [
   // (zentao #201 的 retention-preview 就是这么漏掉的)。
   ["A2 audit BFF allowlist contract", "node", ["--test", "tests/a2-audit-proxy-allowlist-contract.test.mjs"]],
   ["E1 acceptance contract", "node", ["--test", "tests/e1-acceptance-contract.test.mjs"]],
+  ["E1 private media proxy", "node", ["tests/e1-private-media-proxy.test.mjs"]],
   ["deployed sandbox retirement contract", "node", ["scripts/tests/sandbox-retirement.contract.test.mjs"]],
   ["operation-confirm error copy", "node", ["--test", "tests/operation-confirm-error-message.test.mjs"]],
   // GEN10b 市场状态开关:此前后台侧一道专属门都没有,前一版的自由输入违规就是这么溜过去的。

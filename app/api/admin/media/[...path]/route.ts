@@ -4,6 +4,11 @@ import { requirePasswordChangeCleared } from "@/lib/admin/require-password-chang
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
 const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
+const MEDIA_ORIGIN = process.env.NEXION_MEDIA_INTERNAL_ORIGIN || "http://127.0.0.1:9000";
+const MEDIA_TYPES = new Set([
+  "image/jpeg", "image/png", "image/webp", "image/gif",
+  "video/mp4", "video/webm", "video/quicktime",
+]);
 
 type RouteContext = {
   params: Promise<{ path?: string[] }>;
@@ -25,11 +30,13 @@ function backendPath(parts: string[]) {
 
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
-  const targetPath = backendPath(path);
+  const contentRequest = path.length === 3 && path[0] === "uploads" && path[2] === "content";
+  const targetPath = backendPath(contentRequest ? ["uploads", path[1], "preview-url"] : path);
 
   if (!targetPath) {
     return jsonError(404, "MEDIA_ROUTE_NOT_FOUND");
   }
+  if (contentRequest && request.method !== "GET") return jsonError(405, "MEDIA_METHOD_NOT_ALLOWED");
 
   const passwordChangeBlocked = requirePasswordChangeCleared(await cookies());
   if (passwordChangeBlocked) return passwordChangeBlocked;
@@ -60,6 +67,41 @@ async function proxy(request: Request, context: RouteContext) {
       body: hasBody ? await request.arrayBuffer() : undefined,
       cache: "no-store",
     });
+    if (contentRequest) {
+      if (!upstream.ok) return jsonError(upstream.status, "MEDIA_PREVIEW_UNAVAILABLE");
+      const result = await upstream.json() as { code?: number; data?: { previewUrl?: string } };
+      if (result.code !== 0 || !result.data?.previewUrl) return jsonError(502, "MEDIA_PREVIEW_UNAVAILABLE");
+
+      const mediaUrl = new URL(result.data.previewUrl);
+      if (mediaUrl.origin !== new URL(MEDIA_ORIGIN).origin || mediaUrl.username || mediaUrl.password) {
+        return jsonError(502, "MEDIA_PREVIEW_ORIGIN_INVALID");
+      }
+      const range = request.headers.get("Range");
+      const media = await fetch(mediaUrl, {
+        headers: range ? { Range: range } : undefined,
+        cache: "no-store",
+        redirect: "error",
+      });
+      if (media.status === 416) {
+        return new Response(null, { status: 416, headers: {
+          "Content-Range": media.headers.get("Content-Range") || "bytes */*",
+          "Cache-Control": "private, no-store",
+        } });
+      }
+      if (media.status !== 200 && media.status !== 206) return jsonError(502, "MEDIA_STORAGE_UNAVAILABLE");
+      const contentType = media.headers.get("Content-Type")?.split(";", 1)[0].trim().toLowerCase();
+      if (!contentType || !MEDIA_TYPES.has(contentType)) return jsonError(502, "MEDIA_CONTENT_TYPE_INVALID");
+      const responseHeaders = new Headers({
+        "Content-Type": contentType,
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+      });
+      for (const header of ["Content-Length", "Content-Range", "Accept-Ranges"]) {
+        const value = media.headers.get(header);
+        if (value) responseHeaders.set(header, value);
+      }
+      return new Response(media.body, { status: media.status, headers: responseHeaders });
+    }
     return new Response(await upstream.text(), {
       status: upstream.status,
       headers: {

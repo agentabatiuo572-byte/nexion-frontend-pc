@@ -18,6 +18,13 @@ export interface UploadedAsset {
   usage?: string | null;
 }
 
+function sameOriginPreview(asset: UploadedAsset): UploadedAsset {
+  return {
+    ...asset,
+    previewUrl: `/api/admin/media/uploads/${encodeURIComponent(asset.assetId)}/content`,
+  };
+}
+
 let requestSeq = 0;
 
 function idempotencyKey(prefix: string) {
@@ -66,11 +73,11 @@ export async function uploadAdminMedia(
     params.set("operator", options.operator);
   }
 
-  return mediaRequest<UploadedAsset>(`/uploads?${params.toString()}`, {
+  return sameOriginPreview(await mediaRequest<UploadedAsset>(`/uploads?${params.toString()}`, {
     method: "POST",
     body,
     idempotencyPrefix: "admin-media-upload",
-  });
+  }));
 }
 
 export async function uploadD1VietQrReceiptEvidence(file: File) {
@@ -96,7 +103,7 @@ export async function uploadD1VietQrReceiptEvidence(file: File) {
 }
 
 export async function refreshAdminMediaPreviewUrl(assetId: string) {
-  return mediaRequest<UploadedAsset>(`/uploads/${encodeURIComponent(assetId)}/preview-url`, {
+  return sameOriginPreview(await mediaRequest<UploadedAsset>(`/uploads/${encodeURIComponent(assetId)}/preview-url`, {
     method: "GET",
-  });
+  }));
 }
