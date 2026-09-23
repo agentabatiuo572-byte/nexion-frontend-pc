@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
@@ -166,6 +166,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const [selectedUser, setSelectedUser] = useState<User360Profile | null>(null);
   const [context, setContext] = useState<UserAssetAdjustmentContext | null>(null);
   const [contextLoading, setContextLoading] = useState(false);
+  const contextGeneration = useRef(0);
   const [userSearchLoading, setUserSearchLoading] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
 
@@ -229,7 +230,8 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     return () => window.clearTimeout(timer);
   }, [toast, userQuery]);
 
-  const selectedAccount = context?.account ?? null;
+  const selectedUserId = accountId(selectedUser);
+  const selectedAccount = selectedUserId && accountId(context?.account) === selectedUserId ? context?.account ?? null : null;
   const currentBalance = asset === "USDT" ? number(selectedAccount?.walletUsdt) : number(selectedAccount?.walletNex);
   const normalizedAmountText = amountText.trim();
   const amountFormatValid = /^(?:0|[1-9]\d*)(?:\.\d{1,6})?$/.test(normalizedAmountText);
@@ -295,8 +297,10 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
 
   const selectUser = (account: User360Profile) => {
     const id = accountId(account);
+    const generation = ++contextGeneration.current;
     setSelectedUser(account);
     setContext(null);
+    setContextLoading(false);
     setUserQuery(displayUser(account));
     setShowUserMenu(false);
     if (!id) {
@@ -305,9 +309,13 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     }
     setContextLoading(true);
     fetchUserAssetAdjustmentContext(id)
-      .then(setContext)
-      .catch((err) => toast(errorMessage(err)))
-      .finally(() => setContextLoading(false));
+      .then((nextContext) => {
+        if (generation !== contextGeneration.current) return;
+        if (accountId(nextContext.account) !== id) throw new Error("账户资金信息与所选账户不一致，请重新选择");
+        setContext(nextContext);
+      })
+      .catch((err) => { if (generation === contextGeneration.current) toast(errorMessage(err)); })
+      .finally(() => { if (generation === contextGeneration.current) setContextLoading(false); });
   };
 
   const submitAdjustment = () => {
@@ -321,6 +329,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     const key = c3Commands.get(fingerprint) ?? newIdempotencyKey("c3-adjust");
     c3Commands.remember(fingerprint, key);
     const supportRequest = supportLargeRequest;
+    const selectionGeneration = contextGeneration.current;
     openConfirm({
       action: supportRequest
         ? `提交大额调整请求 · ${formatNumber(amount)} ${asset}`
@@ -332,6 +341,10 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       reason: false,
       okLabel: supportRequest ? "确认提交请求" : "确认提交调整申请",
       run: async () => {
+        if (selectionGeneration !== contextGeneration.current) {
+          toast("目标账户已变化，请重新核对后提交");
+          return false;
+        }
         setBusy(true);
         try {
           const input = {
@@ -341,7 +354,10 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
           const result = supportRequest
             ? await requestLargeUserAssetAdjustment(id, input)
             : await createUserAssetAdjustment(id, input);
-          const [loaded] = await Promise.all([loadData(true), fetchUserAssetAdjustmentContext(id).then(setContext)]);
+          const [loaded] = await Promise.all([loadData(true), fetchUserAssetAdjustmentContext(id).then((nextContext) => {
+            if (accountId(nextContext.account) !== id) throw new Error("账户资金信息与所选账户不一致，请重新选择");
+            if (selectionGeneration === contextGeneration.current) setContext(nextContext);
+          })]);
           if (!loaded) throw new Error("操作可能已成功，但结果回读失败；请保留当前表单并使用同一请求重试");
           c3Commands.forget(fingerprint);
           setAmountText("");
@@ -497,7 +513,12 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
                     onChange={(event) => {
                       const next = event.target.value;
                       setUserQuery(next);
-                      if (selectedUser && next !== selectedDisplay) { setSelectedUser(null); setContext(null); }
+                      if (selectedUser && next !== selectedDisplay) {
+                        contextGeneration.current += 1;
+                        setSelectedUser(null);
+                        setContext(null);
+                        setContextLoading(false);
+                      }
                       setShowUserMenu(true);
                     }}
                     onFocus={() => setShowUserMenu(true)}
@@ -554,7 +575,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
             <div className="kv"><span className="k">目标账户</span><span className="v">{displayUser(selectedAccount)}</span></div>
             <div className="kv"><span className="k">当前余额</span><span className="v mono">{selectedAccount ? `${formatNumber(currentBalance)} ${asset}` : "—"}</span></div>
             <div className="kv"><span className="k">批准后余额预估</span><span className="v mono" style={{ color: debitInsufficient ? "var(--danger)" : "var(--ink)" }}>{selectedAccount ? `${formatNumber(balanceAfter)} ${asset}` : "—"}</span></div>
-            <div className="kv"><span className="k">USDT 等值</span><span className="v mono">${formatUsdEquivalent(amountUsd)}</span></div>
+            <div className="kv"><span className="k">USDT 等值</span><span className="v mono">{selectedAccount ? `$${formatUsdEquivalent(amountUsd)}` : "—"}</span></div>
             <div className="kv"><span className="k">当前覆盖率</span><span className="v">{selectedAccount ? formatPercent(coverageRatio) : "—"}</span></div>
             <div className="kv"><span className="k">批准后覆盖率预估</span><span className="v" style={{ color: selectedAccount && (creditCoverageUnavailable || creditBelowRedline) ? "var(--danger)" : "var(--success)" }}>{selectedAccount ? formatPercent(projectedCoverage) : "—"}</span></div>
             <div className="kv"><span className="k">红线</span><span className="v">{selectedAccount ? formatPercent(redlinePct) : "—"}</span></div>

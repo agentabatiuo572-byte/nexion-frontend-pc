@@ -94,9 +94,11 @@ test("C3 reversal is dedicated, append-only and D4-linked by adjustment number",
 test("C3 impact preview withholds balances and coverage until a target account is chosen", () => {
   assert.match(c3, /!selectedAccount &&/, "缺少「未选账户」的提示分支");
   assert.match(c3, /请先在上方选择目标账户/, "缺少未选账户时的引导文案");
-  // 五个账户相关读数都必须按 selectedAccount 降级为占位,而不是给出具体数字。
-  for (const label of ["当前余额", "批准后余额预估", "当前覆盖率", "批准后覆盖率预估", "红线"]) {
+  // 影响预览内的所有读数都必须在账户上下文就绪前降级为占位。
+  for (const label of ["当前余额", "批准后余额预估", "USDT 等值", "当前覆盖率", "批准后覆盖率预估", "红线"]) {
     const row = new RegExp(`>${label}</span><span[^>]*>\\{[^}]*selectedAccount[^}]*\\}`);
     assert.match(c3, row, `${label} 未按 selectedAccount 降级`);
   }
+  assert.match(c3, /accountId\(context\?\.account\) === selectedUserId/, "上下文须属于当前所选账户");
+  assert.match(c3, /generation !== contextGeneration\.current/, "切换或清空账户后须丢弃旧请求");
 });
