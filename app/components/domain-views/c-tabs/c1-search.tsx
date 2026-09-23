@@ -340,9 +340,9 @@ export function C1Search({
                 onChange={(e) => changeKeyword(e.target.value)}
               />
             </div>
-            <div className="chips">
+            <div className="chips" role="group" aria-label="用户状态快捷筛选">
               {SEGS.filter(([value]) => value !== "highrisk" || canReadRisk).map(([v, lb]) => (
-                <button key={v} className={`chip${seg === v ? " sel" : ""}`} onClick={() => changeSeg(v)}>{lb}</button>
+                <button key={v} type="button" className={`chip${seg === v ? " sel" : ""}`} aria-pressed={seg === v} onClick={() => changeSeg(v)}>{lb}</button>
               ))}
             </div>
           </div>
