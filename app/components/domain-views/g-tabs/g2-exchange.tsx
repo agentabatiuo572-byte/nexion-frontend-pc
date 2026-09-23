@@ -309,7 +309,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
               <span>次日队列(超额排队)</span>
               {allowed("finprod_g2_write") && <button className="l-btn sm mc" disabled={busy || queue.length === 0} onClick={() => openActionConfirm({
                 action: "处理今日兑换队列批次",
-                detail: <>按服务器实时 G3 价格、G2 caps、J2 地域和钱包余额逐单重新校验;同一事务写订单、钱包、D4 账本及 exchange.swapped 事件。</>,
+                detail: <>按服务器实时 G3 价格、G2 每日额度、J2 地域和钱包余额逐单重新校验;同一事务写订单、钱包、D4 账本及兑换完成事件。</>,
                 edit: { kind: "number", current: String(Math.min(queue.length, 50)), min: 1, max: 100, step: 1 },
                 run: async (reason, value) => processQueueBatch(Number(value || 50), reason),
               })}>处理今日批次</button>}
@@ -354,7 +354,8 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
         </div>
       </section>
 
-      <p className="f-foot"><b>拦截判定 100% 在服务器</b>:额度、地域与风险拦截都由服务端执行,客户端改本地状态无效。<b>放宽额度受备付金红线强约束</b>:升单用户/平台日额度提交即验覆盖率,低于红线拒绝(422);收紧不受限。成交 exchange.swapped → 账本(D4)+ 资金池(D3,NEX→USDT 减 USDT 储备)。数据源: {overview.sources.join(" / ")}。</p>
+      <p className="f-foot"><b>拦截判定 100% 在服务器</b>:额度、地域与风险拦截都由服务端执行,客户端改本地状态无效。<b>放宽额度受备付金红线强约束</b>:升单用户/平台日额度提交即验覆盖率,低于红线拒绝(422);收紧不受限。成交后同步账本(D4)与资金池(D3)。</p>
+      <details className="f-foot"><summary>技术数据来源与事件</summary>{overview.sources.join(" / ")} · exchange.swapped</details>
 
       {gateDrawer && (() => {
         const detail = gateDetails[gateDrawer];

@@ -343,7 +343,8 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
         </div>
       </section>
 
-      <p className="f-foot"><b>阶段开关与产品参数分两层</b>:「什么时候解锁/限时倍率」是节奏调度器(H1)下发的阶段开关，这页只读；「利率/倍率/罚款/复投金额快捷档」才是这页能改的。所有升利率、升培育奖倍率、降罚款都过备付金红线。数据源:{overview.sources.join(" / ")}。</p>
+      <p className="f-foot"><b>阶段开关与产品参数分两层</b>:「什么时候解锁/限时倍率」是节奏调度器(H1)下发的阶段开关，这页只读；「利率/倍率/罚款/复投金额快捷档」才是这页能改的。所有升利率、升培育奖倍率、降罚款都过备付金红线。</p>
+      <details className="f-foot"><summary>技术数据来源</summary>{overview.sources.join(" / ")}</details>
     </>
   );
 }
