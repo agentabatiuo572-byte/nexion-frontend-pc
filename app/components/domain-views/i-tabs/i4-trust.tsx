@@ -108,8 +108,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     acc[field.sectionKey] = [...(acc[field.sectionKey] ?? []), [field.key, field.value]];
     return acc;
   }, {});
-  const activeJurisdiction = JURISDICTIONS[0];
-  const activeJurisdictionCode = activeJurisdiction?.code ?? "";
+  const activeJurisdictionCode = JURISDICTIONS[0]?.code ?? "";
   const jurisdictionCatalog: DisclosureJurisdictionOption[] = data?.jurisdictionCatalog ?? [];
   const jurisdictionOptions = jurisdictionCatalog.map((item) => ({ value: item.code, label: `${item.code} · ${item.name}` }));
   const activeJurisdictionOptions = jurisdictionCatalog
@@ -861,14 +860,14 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           <div className="sub">{JURISDICTIONS.map((j) => j.code).join(" · ") || "暂无后端法域"}</div>
         </div>
         <div className="f-stat warn">
-          <div className="k">待重确认用户</div>
+          <div className="k">当前版本待确认用户</div>
           <div className="v">{I4_STATS.staleAckUsers.toLocaleString("en-US")}</div>
-          <div className="sub">{activeJurisdiction ? `${activeJurisdiction.code} ${activeJurisdiction.v}` : "暂无后端法域版本"} · 下次提现前必须确认</div>
+          <div className="sub">{gateOn("withdraw") ? "提现受限内 · 未确认时拦截" : "提现已移出受限动作范围"}</div>
         </div>
         <div className="f-stat">
-          <div className="k">合规闸拦截(本周)</div>
+          <div className="k">合规闸历史拦截(近7天)</div>
           <div className="v">{I4_STATS.weeklyGateBlocked} 次</div>
-          <div className="sub">未确认者发起提现被拦</div>
+          <div className="sub">全部受限动作的历史事件，不代表当前提现状态</div>
         </div></>}
       </div>
 
@@ -1046,9 +1045,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                 <th>发布日</th>
                 <th className="num">受影响</th>
                 <th>重新确认进度</th>
-                {/* 后端 countBlocksSince(..., minusDays(7)) 是近 7 天窗口(zentao #149),
-                    表头必须自带口径 —— 顶部统计卡的「本周」是另一条独立读数。 */}
-                <th className="num">拦截数(近7天)</th>
+                {/* 当前覆盖人数与近 7 天历史拦截事件属于不同时间口径。 */}
+                <th className="num">历史拦截(近7天)</th>
                 <th style={{ textAlign: "right" }}></th>
               </tr>
             </thead>
@@ -1168,7 +1166,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">重确认覆盖监控(I5)</span>
-          <span className="sub">· 改版后各法域确认进度 · 数字来自服务器确认事件</span>
+          <span className="sub">· 当前覆盖人数按账号地区统计，确认进度按当前版本统计</span>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 620 }}>
@@ -1180,9 +1178,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                 <th className="num">已确认</th>
                 <th className="num">待确认</th>
                 <th>进度</th>
-                {/* 后端 countBlocksSince(..., minusDays(7)) 是近 7 天窗口(zentao #149),
-                    表头必须自带口径 —— 顶部统计卡的「本周」是另一条独立读数。 */}
-                <th className="num">拦截数(近7天)</th>
+                {/* 当前覆盖人数与近 7 天历史拦截事件属于不同时间口径。 */}
+                <th className="num">历史拦截(近7天)</th>
               </tr>
             </thead>
             <tbody>
@@ -1218,7 +1215,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         </div>
         <div className="l-b" style={{ paddingTop: 8 }}>
           <div className="itint">
-            <b>没确认会怎样</b> · 确认状态已过期的用户,发起受限动作时被服务器拦下并跳去披露页;拦截数持续偏高说明催办不够——重新确认提醒走通知页(I3)的关键级通道,永不被淘汰。
+            <b>没确认会怎样</b> · 确认状态已过期的用户,发起当前受限动作时会被服务器拦下并跳去披露页。历史拦截数可能包含已恢复的用户或已移出的动作；需要提醒当前待确认用户时，使用通知页(I3)的关键级通道。
           </div>
         </div>
       </section>

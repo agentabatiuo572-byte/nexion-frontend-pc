@@ -87,9 +87,10 @@ function liveFromBackend(tab: string, content: IContentData, loading: boolean, e
   if (tab === "I5") {
     const stats = content.trustDisclosure?.stats;
     if (!stats) return "暂无后端业务数据";
-    return stats.reackPct !== undefined
-      ? `${stats.reackJurisdiction || "法域"} 重新确认 ${stats.reackPct}% · 待确认用户 ${countText(stats.staleAckUsers)}`
-      : `待确认用户 ${countText(stats.staleAckUsers)} · 本周阻断 ${countText(stats.weeklyGateBlocked)}`;
+    const coverage = stats.reackPct !== undefined
+      ? `${stats.reackJurisdiction || "法域"} 重新确认 ${stats.reackPct}% · 当前待确认 ${countText(stats.staleAckUsers)}`
+      : `当前待确认 ${countText(stats.staleAckUsers)}`;
+    return `${coverage} · 近7天历史拦截 ${countText(stats.weeklyGateBlocked)}`;
   }
   if (tab === "I6") {
     const stats = content.i18nLearning?.stats;
