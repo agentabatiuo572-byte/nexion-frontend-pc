@@ -183,6 +183,7 @@ export interface UserRegistrationRiskK1Guard extends JsonRecord {
 export interface UserRegistrationRiskOverview extends JsonRecord {
   stats?: UserRegistrationRiskStats | null;
   params?: UserRegistrationRiskParam[] | null;
+  captchaAfterSends?: number | null;
   k1Guards?: UserRegistrationRiskK1Guard[] | null;
   configVersion?: number | string | null;
   k1RejectCode?: string | null;
@@ -1067,6 +1068,9 @@ function requireC6Overview(value: unknown): UserRegistrationRiskOverview {
     || !Array.isArray(value.k1Guards)
     || !Array.isArray(value.sources)
     || !Array.isArray(value.redlines)
+    || !Number.isInteger(value.captchaAfterSends)
+    || (value.captchaAfterSends as number) < 0
+    || (value.captchaAfterSends as number) > 50
     || !c6Numeric(value.configVersion)) return c6ResponseInvalid();
   const stats = value.stats;
   for (const key of ["otpToday", "captchaTriggeredToday", "lockedShort", "lockedLong", "locked", "stuffingClusters7d", "captchaRemainingSeconds"]) {

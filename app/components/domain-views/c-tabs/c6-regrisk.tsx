@@ -46,10 +46,6 @@ function errorMessage(error: unknown) {
   return displayAdminError(error);
 }
 
-function stripTimesUnit(value: unknown) {
-  return text(value, "3 次").replace(/\s*次\s*$/, "");
-}
-
 function newCommandKey(prefix: string) {
   const suffix = typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -185,9 +181,8 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   const params = overview.params ?? [];
   const otpParams = params.filter((param) => param.group === "otp");
   const lockParams = params.filter((param) => param.group === "lock");
-  const otpMaxParam = params.find((param) => param.key === "otpMax24h");
-  const otpMaxN = stripTimesUnit(otpMaxParam?.value);
-  const otpCaptchaStart = Number.isFinite(Number(otpMaxN)) ? String(Number(otpMaxN) + 1) : "N+1";
+  const otpCaptchaAfterSends = overview.captchaAfterSends!;
+  const otpCaptchaStart = otpCaptchaAfterSends + 1;
   const captchaRestoreAt = overview.stats?.captchaTemporarilyDisabled ? text(overview.stats.captchaRestoreAt, "") : "";
   const configVersion = toNumber(overview.configVersion, -1);
   const k1Guards = overview?.k1Guards ?? [];
@@ -336,7 +331,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         {captchaRestoreAt ? (
           <StatCard tone="danger" label="人机验证" value="临时关闭" sub={`服务端自动恢复：${formatCaptchaRestoreAt(captchaRestoreAt)}`} />
         ) : (
-          <StatCard tone="ok" label="人机验证" value="开启" sub={`完成 ${otpMaxN} 次发送后，第 ${otpCaptchaStart} 次起要求滑块`} />
+          <StatCard tone="ok" label="人机验证" value="开启" sub={`非强制场景中，同一手机号跨注册/登录/找回 24h 累计完成 ${otpCaptchaAfterSends} 次发送后，第 ${otpCaptchaStart} 次起要求滑块；K2 强制场景每次要求`} />
         )}
         <StatCard
           tone="cyan"
@@ -390,9 +385,9 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
             <div className="p-row">
               <div className="txt">
                 <div className="k">触发阈值 <span className="bdg dim">K2 唯一入口</span></div>
-                <div className="s">同号完成 {otpMaxN} 次发送后，第 {otpCaptchaStart} 次起要求滑块；权威配置在 K2，C6 只读。</div>
+                <div className="s">非强制场景中，同一手机号跨注册/登录/找回 24h 累计完成 {otpCaptchaAfterSends} 次发送后，第 {otpCaptchaStart} 次起要求滑块；K2 强制场景每次要求，C6 只读。</div>
               </div>
-              <span className="v">&gt;= {otpMaxN} 次</span>
+              <span className="v">&gt;= {otpCaptchaAfterSends} 次/24h</span>
             </div>
             <div className="ctint warn" style={{ marginTop: 10 }}><b>给增长同事的话</b> · 人机验证影响注册漏斗转化，但这是安全开关，不开放写权。</div>
           </div>
