@@ -1683,12 +1683,18 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   const [label, tone] = stateTone.get(event.state) ?? EVENT_LABEL[event.state] ?? [event.state, "dim"];
                   const ended = event.state === "ended";
                   const wheelEvent = text(event.kind).toLowerCase() === "wheel";
+                  const zhName = localizedValue("event", event.id, "name", "zh");
+                  const zhDescription = localizedValue("event", event.id, "description", "zh");
+                  const zhRewardName = localizedValue("event", event.id, "rewardName", "zh");
                   return (
                     <tr key={event.id}>
-                      <td style={{ fontWeight: 600, color: "var(--ink)" }}>{event.name}</td>
+                      <td style={{ color: "var(--ink)" }}>
+                        <div style={{ fontWeight: 600 }}>{zhName || "中文标题未配置"}</div>
+                        <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{zhDescription || "中文说明未配置"}</div>
+                      </td>
                       <td><span className="bdg dim">{text(event.kind)}</span></td>
                       <td><span className={`bdg ${tone}`}>{label}</span></td>
-                      <td className="num mono">{text(event.reward)}</td>
+                      <td className="num">{zhRewardName || "中文奖项未配置"}</td>
                       <td>{event.featured ? <span className="bdg warn">主推</span> : <span style={{ color: "var(--ink-4)" }}>-</span>}</td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                         {wheelEvent ? (
