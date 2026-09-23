@@ -347,7 +347,7 @@ function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
     purchaseGate: toPurchaseGate(sku.purchaseGate),
     imageAssetId: sku.imageAssetId ?? null,
     imageObjectKey: sku.imageObjectKey ?? null,
-    imagePreviewUrl: sku.imagePreviewUrl ?? null,
+    imagePreviewUrl: sku.imageAssetId ? null : sku.imagePreviewUrl ?? null,
     tag: sku.tag ?? "",
     status: sku.status ?? "pending",
     reason,
