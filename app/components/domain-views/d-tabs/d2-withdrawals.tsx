@@ -465,20 +465,12 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   };
 
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [status, page, pageSize]);
-  /**
-   * 🔴 zentao #243:开发态能力**按需探测**,不在列表页挂载时预拉。
-   *
-   * 该端点(`/finance/withdrawals/development/capabilities`)在后端受双重门控 ——
-   * `@Profile("dev & !prod")` 且 `nexion.deployment.public-test=false` —— 在 TEST(public-test)
-   * 上**控制器根本不注册**,请求必然 404。此前页面一挂载就拉它,于是**只是打开 D2 列表**
-   * 就会产生一个 404;而它唯一的作用是决定单笔详情抽屉里那个「模拟冷却到期」按钮显不显示。
-   *
-   * 现在改为:打开详情时才探一次,且**每次会话只探一次**(结果缓存)。404 不是错误 ——
-   * 它是「这个部署没有该开发能力」这个**探测结果**,如实隐藏按钮即可。
-   */
+  // 后端只在私有 dev 注册此能力；公网及生产构建不应探测不存在的接口。
   const developmentCapabilitiesProbed = useRef(false);
   useEffect(() => {
-    if (!detail || developmentCapabilitiesProbed.current) return;
+    if (process.env.NODE_ENV !== "development"
+        || !["localhost", "127.0.0.1", "::1"].includes(window.location.hostname)
+        || !detail || developmentCapabilitiesProbed.current) return;
     developmentCapabilitiesProbed.current = true;
     let active = true;
     void fetchD2DevelopmentCapabilities()
