@@ -1696,6 +1696,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               if ((isLabel && !labelValue) || (!isLabel && !numericValue)) {
                 setToast(isLabel ? "请填写配置名称" : "收益必须为正数，且最多 12 位整数、6 位小数"); return;
               }
+              if (isLabel && labelValue.length > 128) { setToast("配置名称最多 128 个字符"); return; }
               const def = findHighOp("e2_phone_tier")!;
               const comparison = yieldComparisons.find((row) => row.configKey === mc.comparisonKey);
               if (!comparison) { setToast("收益对比配置已刷新,请重试"); return; }
@@ -1707,7 +1708,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 dailyNex: mc.comparisonField === "dailyNex" ? numericValue! : String(comparison.dailyNex),
               };
               await propose(ctx.toast, {
-                action: mc.name, obj: comparison.configKey, before: `${comparison.dailyUsdt} USDT / ${comparison.dailyNex} NEX`, after: `${comparisonCtx.dailyUsdt} USDT / ${comparisonCtx.dailyNex} NEX`, type: def.type, amplifies: true,
+                action: mc.name, obj: comparison.configKey,
+                before: isLabel ? comparison.label : `${comparison.dailyUsdt} USDT / ${comparison.dailyNex} NEX`,
+                after: isLabel ? comparisonCtx.label : `${comparisonCtx.dailyUsdt} USDT / ${comparisonCtx.dailyNex} NEX`,
+                type: def.type, amplifies: !isLabel,
                 gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E2",
                 command: def.buildCommand(comparisonCtx), target: def.buildTarget(comparisonCtx),
               });

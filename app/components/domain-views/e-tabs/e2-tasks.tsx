@@ -238,6 +238,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
               </div>
               <div className="tnum" style={{ textAlign: "right", fontSize: 12.5 }}>${amount(row.dailyUsdt)} · {amount(row.dailyNex)} NEX/天</div>
               {canMutate && <div className="row" style={{ gap: 6 }}>
+                <Btn sm onClick={() => ctx.openActionConfirm({ name: `${row.label} 名称调整`, op: "yield-comparison", comparisonKey: row.configKey, comparisonField: "label", edit: { kind: "text", current: row.label, disallowCurrent: true }, detail: "修改 Onboarding 对比档位名称；若对应商城商品，请先核对 E1 当前名称和收益。" })}>改名称</Btn>
                 <Btn sm variant="primary" onClick={() => ctx.openActionConfirm({ name: `${row.label} USDT 日收益调整`, op: "yield-comparison", comparisonKey: row.configKey, comparisonField: "dailyUsdt", amplify: true, edit: { kind: "number", current: amount(row.dailyUsdt), unit: "USDT/天", min: 0.00001, step: 0.00001, disallowCurrent: true }, detail: "该值会同步 onboarding App 收益对比；调高会放大资金流出并经过 B1 覆盖率护栏。" })}>调 USDT</Btn>
                 <Btn sm onClick={() => ctx.openActionConfirm({ name: `${row.label} NEX 日收益调整`, op: "yield-comparison", comparisonKey: row.configKey, comparisonField: "dailyNex", amplify: true, edit: { kind: "number", current: amount(row.dailyNex), unit: "NEX/天", min: 0.00001, step: 0.00001, disallowCurrent: true }, detail: "该值会同步 onboarding App 收益对比；改动从下一结算周期生效。" })}>调 NEX</Btn>
               </div>}

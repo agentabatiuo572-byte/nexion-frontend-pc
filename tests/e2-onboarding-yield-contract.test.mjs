@@ -17,7 +17,10 @@ test("E2 UI exposes structured editable comparison rows", () => {
   assert.match(view, /收益对比|comparison/i);
   assert.match(view, /调 USDT|dailyUsdt/);
   assert.match(view, /调 NEX|dailyNex/);
+  assert.match(view, /comparisonField: "label".*kind: "text".*改名称/);
   assert.match(shell, /fetchE2PhoneTiers/);
+  assert.match(shell, /before: isLabel \? comparison\.label/);
+  assert.match(shell, /after: isLabel \? comparisonCtx\.label/);
 });
 
 test("E2 writes roundtrip canonical revisions and preserve decimal boundaries", () => {
