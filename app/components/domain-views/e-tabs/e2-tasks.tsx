@@ -252,8 +252,9 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
             ) : pageRows.map((t) => {
               const k = kindMap.get(t.id) ?? "unknown";
               const pct = t.sat == null ? null : Math.round(t.sat * 100);
-              const reqLabel = t.req || "未返回门槛";
-              const locked = t.req.includes("需");
+              const minVram = Number.parseInt(t.minVRAM ?? "", 10);
+              const reqLabel = Number.isFinite(minVram) ? `最低 ${minVram}GB 显存` : "未返回最低显存";
+              const locked = Number.isFinite(minVram) && minVram > 8;
               return (
                 <div className="task" key={t.id}>
                   <span className={`ic ${k}`}><KindIcon k={k} /></span>

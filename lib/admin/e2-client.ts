@@ -134,7 +134,7 @@ function assertE2TaskPricingSnapshot(raw: unknown): asserts raw is E2TaskPricing
   const queueSaturation = finiteValue(raw.queueSaturation);
   pricingProtocol(queueSaturation != null && queueSaturation >= 0 && queueSaturation <= 1, "queueSaturation must be between 0 and 1");
   pricingProtocol(raw.taskClasses.length === E2_TASK_CLASSES.length, "taskClasses must contain the exact six canonical classes");
-  pricingProtocol(raw.teaser.length === E2_TEASER_DEVICE_CLASSES.length, "teaser must contain the exact five device classes");
+  pricingProtocol(raw.teaser.length >= 2 && raw.teaser.length <= E2_TEASER_DEVICE_CLASSES.length, "teaser must contain available device classes");
 
   const taskClasses = new Set<string>();
   for (const row of raw.taskClasses) {
@@ -168,7 +168,7 @@ function assertE2TaskPricingSnapshot(raw: unknown): asserts raw is E2TaskPricing
     pricingProtocol(Array.isArray(row.lockedTasks) && row.lockedTasks.every((task) => typeof task === "string"), "teaser row requires lockedTasks");
     deviceClasses.add(row.deviceClass);
   }
-  pricingProtocol(deviceClasses.size === E2_TEASER_DEVICE_CLASSES.length && E2_TEASER_DEVICE_CLASSES.every((deviceClass) => deviceClasses.has(deviceClass)), "teaser must not omit or duplicate device classes");
+  pricingProtocol(deviceClasses.size === raw.teaser.length && deviceClasses.has("cloud-share") && deviceClasses.has("phone"), "teaser must not omit the base classes or repeat device classes");
 }
 
 async function e2Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
