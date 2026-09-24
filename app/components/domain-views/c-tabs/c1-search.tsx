@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { TabGroup } from "@/app/components/kit/tab-group";
 import { Download } from "lucide-react";
 import { DataListPager } from "../design-kit";
 import {
@@ -22,6 +23,9 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { CCtx } from "./types";
 
 type Seg = "all" | "frozen" | "highrisk";
+export function visibleC1Seg(seg: Seg, canReadRisk: boolean): Seg {
+  return seg === "highrisk" && !canReadRisk ? "all" : seg;
+}
 type C1Stats = {
   totalUsers: number;
   highRisk: number | null;
@@ -190,6 +194,7 @@ export function C1Search({
   const canReadRisk = session?.role === "superadmin"
     || session?.authorities.includes("risk_k4_read") === true;
   const [seg, setSeg] = useState<Seg>("all");
+  const effectiveSeg = visibleC1Seg(seg, canReadRisk);
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
@@ -211,6 +216,10 @@ export function C1Search({
     setFilters(Object.fromEntries(Object.keys(EMPTY_FILTERS).map((key) => [key, params.get(key) ?? ""])) as AdvancedFilters);
     setHydrated(true);
   }, []);
+
+  useEffect(() => {
+    if (session && !canReadRisk && seg === "highrisk") setSeg("all");
+  }, [canReadRisk, seg, session]);
 
   useEffect(() => {
     let alive = true;
@@ -235,7 +244,7 @@ export function C1Search({
     setError(null);
     let query: C1ExportQuery;
     try {
-      query = currentExportQuery(seg, q, filters);
+      query = currentExportQuery(effectiveSeg, q, filters);
     } catch (err) {
       setPageData({ ...EMPTY_PAGE, pageNum: page, pageSize });
       setError(errorMessage(err));
@@ -262,21 +271,21 @@ export function C1Search({
     return () => {
       alive = false;
     };
-  }, [filters, hydrated, page, pageSize, q, seg]);
+  }, [effectiveSeg, filters, hydrated, page, pageSize, q]);
 
   useEffect(() => {
     if (!hydrated) return;
     try {
-      onExportQueryChange?.(currentExportQuery(seg, q, filters));
+      onExportQueryChange?.(currentExportQuery(effectiveSeg, q, filters));
     } catch {
       onExportQueryChange?.(null);
     }
-  }, [filters, hydrated, onExportQueryChange, q, seg]);
+  }, [effectiveSeg, filters, hydrated, onExportQueryChange, q]);
 
   useEffect(() => {
     if (!hydrated) return;
     const params = new URLSearchParams();
-    if (seg !== "all") params.set("seg", seg);
+    if (effectiveSeg !== "all") params.set("seg", effectiveSeg);
     try {
       keywordQuery(q);
       if (q.trim()) params.set("q", q.trim());
@@ -290,7 +299,7 @@ export function C1Search({
     });
     const search = params.toString();
     window.history.replaceState(null, "", `${window.location.pathname}${search ? `?${search}` : ""}`);
-  }, [filters, hydrated, page, pageSize, q, seg]);
+  }, [effectiveSeg, filters, hydrated, page, pageSize, q]);
 
   const changeSeg = (next: Seg) => {
     setSeg(next);
@@ -340,11 +349,12 @@ export function C1Search({
                 onChange={(e) => changeKeyword(e.target.value)}
               />
             </div>
-            <div className="chips" role="group" aria-label="用户状态快捷筛选">
-              {SEGS.filter(([value]) => value !== "highrisk" || canReadRisk).map(([v, lb]) => (
-                <button key={v} type="button" className={`chip${seg === v ? " sel" : ""}`} aria-pressed={seg === v} onClick={() => changeSeg(v)}>{lb}</button>
-              ))}
-            </div>
+            <TabGroup label="用户状态快捷筛选" value={effectiveSeg}
+              items={SEGS.filter(([value]) => value !== "highrisk" || canReadRisk).map(([value]) => value)}
+              onSelect={changeSeg} className="chips"
+              itemClassName={(_value, selected) => `chip${selected ? " sel" : ""}`}>
+              {(value) => SEGS.find(([key]) => key === value)?.[1]}
+            </TabGroup>
           </div>
         </div>
         <div className="grid gap-2 px-3 pb-3 pt-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6" style={{ borderBottom: "1px solid var(--line)" }}>

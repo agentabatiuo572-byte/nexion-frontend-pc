@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { TabGroup } from "@/app/components/kit/tab-group";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
@@ -548,10 +549,10 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
                 </div>
               )}
 
-              <div className="row"><span className="bf-legend">资产</span><div className="chips">{ASSETS.map((item) => <button type="button" key={item} className={`chip${asset === item ? " sel" : ""}`} onClick={() => setAsset(item)}>{item}</button>)}</div></div>
-              <div className="row"><span className="bf-legend">方向</span><div className="chips"><button type="button" className={`chip${direction === "CREDIT" ? " sel" : ""}`} onClick={() => setDirection("CREDIT")}>增加</button><button type="button" className={`chip${direction === "DEBIT" ? " sel" : ""}`} onClick={() => setDirection("DEBIT")}>扣减</button></div></div>
+              <div className="row"><TabGroup label="资产" labelClassName="bf-legend" value={asset} items={ASSETS} onSelect={setAsset} className="chips" itemClassName={(_item, selected) => `chip${selected ? " sel" : ""}`}>{(item) => item}</TabGroup></div>
+              <div className="row"><TabGroup<Direction> label="方向" labelClassName="bf-legend" value={direction} items={["CREDIT", "DEBIT"]} onSelect={setDirection} className="chips" itemClassName={(_item, selected) => `chip${selected ? " sel" : ""}`}>{(item) => item === "CREDIT" ? "增加" : "扣减"}</TabGroup></div>
               <div className="row"><span className="bf-legend">金额</span><input aria-label="调整金额" value={amountText} onChange={(event) => setAmountText(event.target.value)} inputMode="decimal" style={{ width: 140 }} /><span style={{ fontSize: 12, color: "var(--ink-4)" }}>{asset === "NEX" ? `≈ $${formatUsdEquivalent(amountUsd)}` : "USDT"}</span></div>
-              <div className="row"><span className="bf-legend">原因分类</span><div className="chips">{REASON_CODES.map(([code, label]) => <button type="button" key={code} className={`chip${reasonCode === code ? " sel" : ""}`} onClick={() => setReasonCode(code)}>{label}</button>)}</div></div>
+              <div className="row"><TabGroup label="原因分类" labelClassName="bf-legend" value={reasonCode} items={REASON_CODES.map(([code]) => code)} onSelect={setReasonCode} className="chips" itemClassName={(_item, selected) => `chip${selected ? " sel" : ""}`}>{(code) => REASON_CODES.find(([value]) => value === code)?.[1]}</TabGroup></div>
               <div className="row" style={{ alignItems: "flex-start" }}><span className="bf-legend">详细原因</span><textarea aria-label="详细原因" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="8–200 字，说明事实、判断和处理依据" rows={3} style={{ flex: 1 }} /><span style={{ fontSize: 12, color: reasonLength >= 8 && reasonLength <= 200 ? "var(--success)" : "var(--ink-4)" }}>{reasonLength}/200</span></div>
               <div className="row"><span className="bf-legend">证据引用</span><input aria-label="证据引用" value={evidenceRef} onChange={(event) => setEvidenceRef(event.target.value)} placeholder="例如：工单 20260718-001" style={{ flex: 1 }} /></div>
               <div className="row" style={{ justifyContent: "flex-end" }}><button className="l-btn mc" disabled={busy || !!formError} onClick={submitAdjustment}>{isSupport && largeAdjustment ? "提交大额调整请求" : "提交调整申请"}</button></div>
@@ -618,7 +619,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       </section>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">调整历史</span><span className="sub">· 已执行与已拒绝记录</span><div className="r"><div className="chips">{HISTORY_FILTERS.map((item) => <button type="button" key={item} className={`chip${historyFilter === item ? " sel" : ""}`} onClick={() => { setHistoryFilter(item); setHistoryPage(1); }}>{item}</button>)}</div></div></div>
+        <div className="l-h"><span className="ttl">调整历史</span><span className="sub">· 已执行与已拒绝记录</span><div className="r"><TabGroup label="调整历史资产筛选" value={historyFilter} items={HISTORY_FILTERS} onSelect={(item) => { setHistoryFilter(item); setHistoryPage(1); }} className="chips" itemClassName={(_item, selected) => `chip${selected ? " sel" : ""}`}>{(item) => item}</TabGroup></div></div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 1120 }}>
             <thead><tr><th>调整单</th><th>账户</th><th>资产</th><th className="num">增减</th><th>原因</th><th>证据</th><th>状态</th><th>账单</th><th>时间</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>

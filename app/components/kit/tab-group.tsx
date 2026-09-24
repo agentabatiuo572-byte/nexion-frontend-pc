@@ -30,6 +30,7 @@ export function TabGroup<T extends string | number>({
   itemClassName,
   itemStyle,
   itemTitle,
+  itemDataTestId,
   orientation = "horizontal",
   children,
 }: {
@@ -49,6 +50,7 @@ export function TabGroup<T extends string | number>({
   itemClassName?: (value: T, selected: boolean) => string | undefined;
   itemStyle?: (value: T, selected: boolean) => CSSProperties | undefined;
   itemTitle?: (value: T, selected: boolean) => string | undefined;
+  itemDataTestId?: string;
   orientation?: "horizontal" | "vertical";
   children: (value: T, selected: boolean) => ReactNode;
 }) {
@@ -89,6 +91,7 @@ export function TabGroup<T extends string | number>({
             tabIndex={item === focusValue ? 0 : -1}
             disabled={disabled?.(item) ?? false}
             title={itemTitle?.(item, selected)}
+            data-testid={itemDataTestId}
             className={itemClassName?.(item, selected)}
             style={itemStyle?.(item, selected)}
             onClick={() => {

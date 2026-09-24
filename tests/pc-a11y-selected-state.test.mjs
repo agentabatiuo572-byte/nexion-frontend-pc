@@ -520,3 +520,22 @@ test("E4 订单状态筛选暴露组名与唯一选中项", () => {
   assert.equal(tabs[0].text.trim(), "全部");
   assert.deepEqual(selectedFlags(tabs), tabs.map((_tab, index) => (index === 0 ? "true" : "false")), "E4 同一时刻只有一个选中项");
 });
+
+test("D4 默认账单类型与每页条数在真实组件 DOM 中各有唯一选中项", () => {
+  const html = renderToHtml("app/components/domain-views/d-tabs/d4-ledger.tsx", "D4Ledger", {
+    ctx: { toast: () => {}, openActionConfirm: () => {} },
+  });
+  assertSingleSelection(html, "账单类型", 0, ["全部", "兑换", "充值", "提现", "收益", "佣金", "退款", "奖励"]);
+  assertSingleSelection(html, "每页条数", 0, ["10/页", "20/页", "50/页"]);
+});
+
+test("C1 权限下降后，高风险深链归一到可见的全部筛选", () => {
+  const { visibleC1Seg } = load(path.join(root, "app/components/domain-views/c-tabs/c1-search.tsx"));
+  assert.equal(visibleC1Seg("highrisk", false), "all");
+  assert.equal(visibleC1Seg("highrisk", true), "highrisk");
+  assert.equal(visibleC1Seg("frozen", false), "frozen");
+  const html = renderToHtml("app/components/domain-views/c-tabs/c1-search.tsx", "C1Search", {
+    ctx: { toast: () => {}, openConfirm: () => {} },
+  });
+  assertSingleSelection(html, "用户状态快捷筛选", 0, ["全部", "冻结", "高风险"]);
+});

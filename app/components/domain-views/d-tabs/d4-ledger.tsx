@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { TabGroup } from "@/app/components/kit/tab-group";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import {
   downloadD4BillsCsv,
@@ -245,9 +246,11 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
         {!canGlobalRead ? <div className="l-b"><div className="dtint">当前角色仅可按用户核对，不可浏览全平台流水。</div></div> : (
           <>
             <div className="l-b" style={{ display: "grid", gap: 10 }}>
-              <div className="chips">
-                {BILL_TYPES.map(([key, label]) => <button key={key || "all"} className={`chip${type === key ? " sel" : ""}`} onClick={() => { setType(key); setPage(1); }}>{label}</button>)}
-              </div>
+              <TabGroup label="账单类型" value={type} items={BILL_TYPES.map(([key]) => key)}
+                onSelect={(key) => { setType(key); setPage(1); }} className="chips"
+                itemClassName={(_key, selected) => `chip${selected ? " sel" : ""}`}>
+                {(key) => BILL_TYPES.find(([value]) => value === key)?.[1]}
+              </TabGroup>
               <div className="lookup" style={{ flexWrap: "wrap" }}>
                 <input aria-label="精确用户 ID" value={draft.userId} onChange={(event) => setDraft((value) => ({ ...value, userId: event.target.value }))} placeholder="用户 ID" />
                 <select aria-label="账单状态" value={draft.status} onChange={(event) => setDraft((value) => ({ ...value, status: event.target.value }))}>
@@ -280,7 +283,11 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
             </div>
             <div className="l-b" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
               <span className="sub">共 {bills.total} 条 · 第 {bills.pageNum}/{pages} 页</span>
-              <div className="chips">{[10, 20, 50].map((size) => <button key={size} className={`chip${pageSize === size ? " sel" : ""}`} onClick={() => { setPageSize(size); setPage(1); }}>{size}/页</button>)}<button className="chip" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button><button className="chip" disabled={page >= pages} onClick={() => setPage((value) => value + 1)}>下一页</button></div>
+              <div className="chips"><TabGroup label="每页条数" value={pageSize} items={[10, 20, 50]}
+                onSelect={(size) => { setPageSize(size); setPage(1); }} className="chips"
+                itemClassName={(_size, selected) => `chip${selected ? " sel" : ""}`}>
+                {(size) => `${size}/页`}
+              </TabGroup><button className="chip" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button><button className="chip" disabled={page >= pages} onClick={() => setPage((value) => value + 1)}>下一页</button></div>
             </div>
           </>
         )}

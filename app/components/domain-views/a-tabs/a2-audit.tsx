@@ -23,6 +23,7 @@
  * 设计稿元素省略:f-bar/f-nav/f-title/f-desc/f-cta 已由 DomainHeader 承担,本组件从 .f-stats 开始。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { TabGroup } from "@/app/components/kit/tab-group";
 import { DataListPager, Drawer, useDataListPager } from "../design-kit";
 import {
   approveA2Operation,
@@ -622,23 +623,17 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         <div className="l-h">
           <span className="ttl">高敏操作动态(b)· 待处理</span>
           <span className="sub">· 大额/资金类置顶 · 点击执行会打开独立操作确认弹窗,理由必填后立即生效</span>
-          <div className="r chips">
-            <span className="lb">筛</span>
-            {TYPE_CHIPS.map((c) => (
-              <button
-                key={c.key}
-                className={`chip${qType === c.key ? " sel" : ""}`}
-                onClick={() => { setQType(c.key); setQPage(0); }}
-              >{c.label}</button>
-            ))}
-            <span className="lb" style={{ marginLeft: 10 }}>发起人</span>
-            {OPERATOR_CHIPS.map((c) => (
-              <button
-                key={c.key}
-                className={`chip${qOperator === c.key ? " sel" : ""}`}
-                onClick={() => { setQOperator(c.key); setQPage(0); }}
-              >{c.label}</button>
-            ))}
+          <div className="r" style={{ display: "flex", gap: 10 }}>
+            <TabGroup label="操作类型" labelClassName="lb" value={qType} items={TYPE_CHIPS.map((c) => c.key)}
+              onSelect={(key) => { setQType(key); setQPage(0); }} className="chips"
+              itemClassName={(_key, selected) => `chip${selected ? " sel" : ""}`}>
+              {(key) => TYPE_CHIPS.find((c) => c.key === key)?.label}
+            </TabGroup>
+            <TabGroup label="发起人" labelClassName="lb" value={qOperator} items={OPERATOR_CHIPS.map((c) => c.key)}
+              onSelect={(key) => { setQOperator(key); setQPage(0); }} className="chips"
+              itemClassName={(_key, selected) => `chip${selected ? " sel" : ""}`}>
+              {(key) => OPERATOR_CHIPS.find((c) => c.key === key)?.label}
+            </TabGroup>
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>

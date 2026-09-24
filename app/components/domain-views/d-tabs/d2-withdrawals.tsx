@@ -3,6 +3,7 @@
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { TabGroup } from "@/app/components/kit/tab-group";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { bankEvidenceLabels, bankEvidenceTime } from "@/lib/admin/bank-payout-evidence";
@@ -776,7 +777,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           </tr>;
         })}</tbody>
       </table></div>
-      <div className="l-b" style={{ display: "flex", justifyContent: "space-between" }}><span>共 {rows.total} 条 · 第 {rows.pageNum}/{pages} 页</span><div className="chips">{[10, 20, 50].map((size) => <button key={size} className={`chip${pageSize === size ? " sel" : ""}`} onClick={() => { setPageSize(size); setPage(1); }}>{size}/页</button>)}<button className="chip" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button><button className="chip" disabled={page >= pages} onClick={() => setPage((value) => value + 1)}>下一页</button></div></div>
+      <div className="l-b" style={{ display: "flex", justifyContent: "space-between" }}><span>共 {rows.total} 条 · 第 {rows.pageNum}/{pages} 页</span><div className="chips"><TabGroup label="提现队列每页条数" value={pageSize} items={[10, 20, 50]} onSelect={(size) => { setPageSize(size); setPage(1); }} className="chips" itemClassName={(_size, selected) => `chip${selected ? " sel" : ""}`}>{(size) => `${size}/页`}</TabGroup><button className="chip" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button><button className="chip" disabled={page >= pages} onClick={() => setPage((value) => value + 1)}>下一页</button></div></div>
     </section>
 
     {detail && <Drawer title={`单笔详情 · ${detail.withdrawalNo}`} sub={`${detail.userNo} · ${bankStatusLabel(detail)}`} wide onClose={closeDetail} footer={<>

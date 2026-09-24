@@ -4,6 +4,7 @@ import "../b-domain.css";
 import "./funnel.css";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { TabGroup } from "@/app/components/kit/tab-group";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { Download, RefreshCw, Save, TrendingUp } from "lucide-react";
 import { BPageHeader } from "../b-page-header";
@@ -238,25 +239,23 @@ export default function FunnelPage() {
               <span className="h">四级同用户漏斗</span>
               <span className="sub">注册 → 首购 → 复投 → 提现</span>
             </div>
-            <div className="b3-stage-grid">
-              {data.stages.map((item, index) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  data-testid="b3-stage"
-                  className={`b3-stage${stage === item.key ? " selected" : ""}`}
-                  onClick={() => setStage(item.key)}
-                  aria-pressed={stage === item.key}
-                >
+            <TabGroup label="漏斗阶段" value={selectedStage?.key ?? data.stages[0]?.key ?? ""}
+              items={data.stages.map((item) => item.key)} onSelect={setStage}
+              className="b3-stage-grid" itemDataTestId="b3-stage"
+              itemClassName={(_key, selected) => `b3-stage${selected ? " selected" : ""}`}>
+              {(key) => {
+                const index = data.stages.findIndex((item) => item.key === key);
+                const item = data.stages[index];
+                return <>
                   <span className="b3-stage-index">{index + 1}</span>
                   <span className="b3-stage-name">{item.stage}</span>
                   <span className="b3-stage-life">{item.lifecycleLabel}</span>
                   <strong>{item.distinctUsers.toLocaleString()}</strong>
                   <small>{index === 0 ? "漏斗入口" : `自上级 ${pct(item.cvrFromPrev)}`}</small>
                   <code>{item.event}</code>
-                </button>
-              ))}
-            </div>
+                </>;
+              }}
+            </TabGroup>
             {biggestDrop && (
               <p className="b3-bottleneck">
                 当前最大流失环节：<b>{biggestDrop.stage}</b>（自上级 {pct(biggestDrop.cvrFromPrev)}）。

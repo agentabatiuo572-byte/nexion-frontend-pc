@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { TabGroup } from "@/app/components/kit/tab-group";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { d1VietQrUsdtAmount } from "@/lib/admin/d1-vietqr-amount";
 import { formatD1FuseReason, requiresReprovision } from "@/lib/admin/d1-account-display";
@@ -634,11 +635,11 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
           <div className="dtint" style={{ marginBottom: 12 }}>
             HDPay 充值由支付通知和定期查单确认到账，无需上传银行回单图片。下方人工登记用于核对银行转账，图片可选填。
           </div>
-          <div className="chips">
-            {BANK_VIEW_TABS.map(([key, label]) => (
-              <button key={key} className={`chip${bankView === key ? " sel" : ""}`} disabled={loading || busy} onClick={() => { setBankView(key); setBankPage(1); }}>{label}</button>
-            ))}
-          </div>
+          <TabGroup label="VietQR 视图" value={bankView} items={BANK_VIEW_TABS.map(([key]) => key)}
+            onSelect={(key) => { setBankView(key); setBankPage(1); }} className="chips" disabled={() => loading || busy}
+            itemClassName={(_key, selected) => `chip${selected ? " sel" : ""}`}>
+            {(key) => BANK_VIEW_META[key].label}
+          </TabGroup>
           <div className="dtint" style={{ marginTop: 12 }} role="status">
             <b>{BANK_VIEW_META[bankView].label}</b> · {BANK_VIEW_META[bankView].description}
             <div className="sub" style={{ marginTop: 4 }}>下一步：{BANK_VIEW_META[bankView].next}</div>
@@ -887,11 +888,11 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
           <span className="ttl">充值流水</span>
           <span className="sub">· 后端分页 · 支持状态与关键字查询</span>
           <div className="r">
-            <div className="chips">
-              {FLOW_TABS.map(([key, label]) => (
-                <button key={key || "all"} disabled={loading || busy} className={`chip${status === key ? " sel" : ""}`} onClick={() => { setStatus(key); setPage(1); }}>{label}</button>
-              ))}
-            </div>
+            <TabGroup label="充值流水状态" value={status} items={FLOW_TABS.map(([key]) => key)}
+              onSelect={(key) => { setStatus(key); setPage(1); }} className="chips" disabled={() => loading || busy}
+              itemClassName={(_key, selected) => `chip${selected ? " sel" : ""}`}>
+              {(key) => FLOW_TABS.find(([value]) => value === key)?.[1]}
+            </TabGroup>
             <div className="lookup" style={{ width: 380 }}>
               <label className="sub" htmlFor="d1-flow-keyword" style={{ whiteSpace: "nowrap" }}>查询关键字</label>
               <input
@@ -931,7 +932,11 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
         <div className="l-b" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
           <span className="sub">共 {flows.total} 条 · 第 {flows.pageNum}/{pages} 页</span>
           <div className="chips">
-            {[10, 20, 50].map((size) => <button key={size} disabled={loading || busy} className={`chip${pageSize === size ? " sel" : ""}`} onClick={() => { setPageSize(size); setPage(1); }}>{size}/页</button>)}
+            <TabGroup label="充值流水每页条数" value={pageSize} items={[10, 20, 50]}
+              onSelect={(size) => { setPageSize(size); setPage(1); }} className="chips" disabled={() => loading || busy}
+              itemClassName={(_size, selected) => `chip${selected ? " sel" : ""}`}>
+              {(size) => `${size}/页`}
+            </TabGroup>
             <button className="chip" disabled={loading || busy || page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>上一页</button>
             <button className="chip" disabled={loading || busy || page >= pages} onClick={() => setPage((p) => Math.min(pages, p + 1))}>下一页</button>
           </div>
