@@ -10,6 +10,7 @@ import { Fragment, isValidElement, useEffect, useId, useMemo, useRef, useState, 
 import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
+import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
 import { fetchA2ReasonPolicy } from "@/lib/admin/a2-client";
 import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
 import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "@/lib/admin/trust-section-validation";
@@ -1207,6 +1208,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     (spec.placeholders ?? []).forEach((ph) => {
       if (!state.zh?.includes(ph) || !state.en?.includes(ph) || !state.vi?.includes(ph)) missing.push(`三语占位符 ${ph}`);
     });
+    if (state.saveMode === "发布生效") missing.push(...i6CopyQualityIssues(state.zh ?? "", state.en ?? "", state.vi ?? ""));
   } else if (spec.kind === "copy-create") {
     needs("copyKey", "文案标识");
     needs("description", "文案名称");
@@ -1229,6 +1231,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     (spec.placeholders ?? []).forEach((ph) => {
       if (!state.zh?.includes(ph) || !state.en?.includes(ph) || !state.vi?.includes(ph)) missing.push(`三语占位符 ${ph}`);
     });
+    missing.push(...i6CopyQualityIssues(state.zh ?? "", state.en ?? "", state.vi ?? ""));
   } else if (spec.kind === "copy-position-create") {
     needs("positionKey", "位置标识");
     needs("positionName", "位置名称");

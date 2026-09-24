@@ -381,6 +381,8 @@ const GEARS = [
   // 语音控制无法区分目标),而这道专门守 A5 契约的门当时只钉住「aria-label 存在」。
   ["A5 params-registry contract", "node",
     ["--experimental-strip-types", "--test", "tests/a5-params-registry-contract.test.mjs"]],
+  ["I1/I6 published copy quality", "node",
+    ["--experimental-strip-types", "--test", "tests/i6-copy-quality.test.mjs"]],
 ];
 // 🔴 run-all:每个齿都跑到,逐齿记状态与耗时。红齿不再中断链条(理由见文件抬头)。
 const results = [];

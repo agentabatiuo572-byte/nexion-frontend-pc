@@ -196,10 +196,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const rescan = () =>
     openConfirm({
       action: <>全量重扫 {I6_STATS.managedKeys} 词条</>,
-      detail: <>扫缺镜像 / 占位符不匹配 / 疑似硬编码 / 禁词,只读不改数据;结果刷新本表。</>,
+      detail: <>扫缺镜像 / 占位符不匹配 / 无意义占位文本 / 旧品牌 / 疑似硬编码 / 禁词，只读不改数据；结果刷新本表。</>,
       chips: [["只读扫描 · 普通确认", "done"]],
       okLabel: "开始扫描",
-      run: () => runBackend(actions.rescanI6("全量重扫词条完整性"), liveIntegrity === 0 ? "扫描完成 · 0 处问题 · 清零 ✓" : `扫描完成 · ${liveIntegrity} 处问题`),
+      run: () => runBackend(actions.rescanI6("全量重扫词条完整性"), "扫描完成 · 请核对刷新后的完整性问题"),
     });
 
   const editKeyDraft = () => selectedMessage &&
@@ -238,8 +238,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       detail: (
         <>
           发布即对全体用户下一次渲染生效。服务器发布闸:
-          <b> zh/en/vi 镜像齐 ✓ 占位符一致 ✓ 禁词扫描通过 ✓</b>
-          ——任何一项不过直接拒,<b>禁止单语言发布</b>。审计记录带语言集字段,印证两语言同步。
+          <b> zh/en/vi 镜像齐 ✓ 占位符一致 ✓ 无意义占位文本与旧品牌检查 ✓ 禁词扫描通过 ✓</b>
+          ——任何一项不过直接拒,<b>禁止单语言发布</b>。审计记录带语言集字段，印证三语同步。
         </>
       ),
       amplifies: false,
@@ -798,7 +798,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             <span className="ttl">
               完整性扫描 · {liveIntegrity} 处问题
             </span>
-            <span className="sub">· 缺镜像 / 占位符 / 疑似硬编码 / 禁词</span>
+            <span className="sub">· 缺镜像 / 占位符不匹配 / 无意义占位文本 / 旧品牌 / 疑似硬编码 / 禁词</span>
           </div>
           <div className="l-b" style={{ paddingTop: 6 }}>
             {INTEGRITY_ISSUES.map((iss) => (
