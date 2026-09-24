@@ -1,4 +1,5 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { parseBusinessTime } from "@/lib/admin/business-time";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
@@ -785,7 +786,7 @@ function requireSessionTemplateOverview(value: unknown): SessionTemplateOverview
 
 function asTs(value: string | undefined, fallback = Date.now()) {
   if (!value) return fallback;
-  const ts = new Date(value).getTime();
+  const ts = parseBusinessTime(value);
   return Number.isFinite(ts) ? ts : fallback;
 }
 

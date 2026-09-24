@@ -2,9 +2,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { parseBusinessTime } from "../lib/admin/business-time.ts";
 
 const root = process.cwd();
 const read = (path) => readFileSync(resolve(root, path), "utf8");
+
+test("M3 business time is independent of the browser timezone", () => {
+  const instant = Date.parse("2026-09-24T05:24:00Z");
+  assert.equal(parseBusinessTime("2026-09-24 13:24:00"), instant);
+  assert.equal(parseBusinessTime("2026-09-24T13:24:00"), instant);
+  assert.equal(parseBusinessTime("2026-09-24T05:24:00Z"), instant);
+  assert.equal(parseBusinessTime("2026-09-24T13:24:00+08:00"), instant);
+});
 
 test("M3 fails closed when the conversation backend is unavailable and respects write permission", () => {
   const client = read("lib/admin/m-client.ts");
