@@ -289,10 +289,14 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
           }
           return;
         }
+        if (focusUserCode && keyword === focusUserCode && selectedUserKey === focusUserCode) {
+          if (!cancelled) setUserOptions([]);
+          return;
+        }
         const pageData = await fetchUserProfilesPage({
           ...(await privacySafeUserLookup(keyword)),
           pageNum: 1,
-          pageSize: 8,
+          pageSize: 20,
         });
         if (!cancelled) {
           const records = pageData.records ?? [];
@@ -306,6 +310,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       } catch (err) {
         if (!cancelled) {
           setUserOptions([]);
+          setOverview(null);
           setError(`C5 用户搜索失败 · ${errorMessage(err)}`);
         }
       } finally {
@@ -316,7 +321,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [focusUserCode, replaceFocusUserCode, selectedLookupUser, userLookup]);
+  }, [focusUserCode, replaceFocusUserCode, selectedLookupUser, selectedUserKey, userLookup]);
 
   const perform = useCallback(async (
     fingerprint: string,
