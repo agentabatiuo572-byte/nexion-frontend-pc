@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { resolveNexionBackendRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
+
+const backendRoot = resolveNexionBackendRoot({ adminRoot: fileURLToPath(new URL("..", import.meta.url)) });
 
 const component = readFileSync(
   new URL("../app/components/domain-views/j-tabs/j4-sop.tsx", import.meta.url),
@@ -21,11 +26,11 @@ const v4Acceptance = readFileSync(
 );
 const styles = readFileSync(new URL("../app/components/domain-views/j-domain.css", import.meta.url), "utf8");
 const backend = readFileSync(
-  new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/emergency/application/OpsEmergencyControlService.java", import.meta.url),
+  path.join(backendRoot, "src/main/java/ffdd/opsconsole/emergency/application/OpsEmergencyControlService.java"),
   "utf8",
 );
 const emergencyMapper = readFileSync(
-  new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/emergency/mapper/EmergencyControlMapper.java", import.meta.url),
+  path.join(backendRoot, "src/main/java/ffdd/opsconsole/emergency/mapper/EmergencyControlMapper.java"),
   "utf8",
 );
 const emergencyRepository = readFileSync(
@@ -125,8 +130,11 @@ test("J4 quarantines legacy playbooks that still contain retired actions", () =>
 
 test("J4 uses the versioned safe-execution contract and degrades old backends to read-only", () => {
   assert.match(client, /contractVersion/);
-  assert.match(backend, /J4_REAL_EXECUTION_V4/);
-  assert.match(component, /const contractReady = data\.contractVersion === "J4_REAL_EXECUTION_V4"/);
+  assert.match(backend, /J4_REAL_EXECUTION_V5/);
+  assert.match(component, /const contractReady = data\.contractVersion === "J4_REAL_EXECUTION_V5"/);
+  assert.match(component, /emergency\.sop\?\.contractVersion === "J4_REAL_EXECUTION_V5"/);
+  assert.match(component, /p\.drillEvidence === true/);
+  assert.match(component, /!contractReady \? "后端未升级"/);
   assert.match(component, /后端 J4 安全执行契约未就绪/);
 });
 

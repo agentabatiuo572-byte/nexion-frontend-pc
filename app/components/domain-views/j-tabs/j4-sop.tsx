@@ -63,7 +63,7 @@ function executionModeLabel(mode: string) {
 export function J4HeaderActions({ ctx }: { ctx: JCtx }) {
   const { toast, openActionConfirm, actions, emergency } = ctx;
   const canWrite = useAdminAuth((state) => state.session?.authorities.includes("emergency_j4_write") ?? false);
-  const contractReady = emergency.sop?.contractVersion === "J4_REAL_EXECUTION_V4";
+  const contractReady = emergency.sop?.contractVersion === "J4_REAL_EXECUTION_V5";
   const runBackend = async (task: Promise<void>, ok: string) => {
     try {
       await task;
@@ -144,7 +144,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     return step.ref.startsWith(prefix) && step.ref.length > prefix.length;
   });
   const unsupportedStepCount = (playbook: Playbook) => playbook.seq.filter((step) => !isSupportedStep(step)).length;
-  const contractReady = data.contractVersion === "J4_REAL_EXECUTION_V4";
+  const contractReady = data.contractVersion === "J4_REAL_EXECUTION_V5";
   const PB_SCENES = data.scenes;
   const EXECS = data.executions;
   const statNumber = (...keys: string[]) => {
@@ -178,10 +178,11 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       toast(`${ok}，但页面刷新失败，请点击当前页签重新读取`);
     }
   };
-  const effDrillState = (p: Playbook): "active" | "todo" | string => unsupportedStepCount(p) === 0 && p.executionReady === true && p.state === "active" && !p.draft ? "active" : "todo";
+  const effDrillState = (p: Playbook): "active" | "todo" | string => contractReady && unsupportedStepCount(p) === 0 && p.executionReady === true && p.drillEvidence === true && p.state === "active" && !p.draft ? "active" : "todo";
   const shown = PLAYBOOKS.filter((p) => scene === "全部" || p.scene === scene);
   const ready = PLAYBOOKS.filter((p) => effDrillState(p) === "active").length;
   const todo = PLAYBOOKS.length - ready;
+  const missingDrillLedger = PLAYBOOKS.filter((p) => p.drillFresh === true && p.drillEvidence === false).length;
   const emerCount = PLAYBOOKS.filter((p) => p.emer).length;
 
   const editPb = (p: Playbook) => {
@@ -359,10 +360,13 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       {/* stat strip */}
       <div className="f-stats">
         <div className="f-stat"><div className="k">剧本库</div><div className="v">{PLAYBOOKS.length}</div><div className="sub">已发布 + 草稿</div></div>
-        <div className="f-stat ok"><div className="k">演练就绪</div><div className="v">{ready}</div><div className="sub">剧本最近演练在 90 天内</div></div>
-        <div className="f-stat warn"><div className="k">待演练</div><div className="v">{todo}</div><div className="sub">超期 · 阻断「演练就绪」</div></div>
+        <div className="f-stat ok"><div className="k">演练就绪</div><div className="v">{ready}</div><div className="sub">近 90 天成功演练且台账可追溯</div></div>
+        <div className="f-stat warn"><div className="k">待演练</div><div className="v">{todo}</div><div className="sub">超期或证据缺失 · 阻断就绪</div></div>
         <div className="f-stat danger"><div className="k">应急轨剧本</div><div className="v">{emerCount}</div><div className="sub">可走应急加急通道</div></div>
       </div>
+      {missingDrillLedger > 0 && <div className="tint" role="alert" style={{ marginTop: 12 }}>
+        {missingDrillLedger} 个剧本有最近演练时间，但缺少对应成功台账；已阻断执行，请重新演练并核对历史记录。
+      </div>}
 
       {/* SLA + 执行框架 */}
       <div className="top-side">
@@ -399,7 +403,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         </div>
         <div className="stats">
           <span>近 90d 实战执行 <b>{liveExecs == null ? "未返回" : `${liveExecs} 次`}</b></span>
-          <span>近 90d 演练就绪剧本 <b>{drillExecs == null ? "未返回" : `${drillExecs} 个`}</b></span>
+          <span>近 90d 演练就绪剧本 <b>{!contractReady ? "后端未升级" : drillExecs == null ? "未返回" : `${drillExecs} 个`}</b></span>
           <span>近 90d 演练台账 <b>{drillExecRows == null ? "未返回" : `${drillExecRows} 条`}</b></span>
         </div>
       </div>

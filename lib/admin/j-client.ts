@@ -460,6 +460,7 @@ export type Playbook = {
   version?: string;
   executionReady?: boolean;
   drillFresh?: boolean;
+  drillEvidence?: boolean;
   campaignReady?: boolean;
   readinessReason?: string;
 };
@@ -1101,6 +1102,7 @@ function normalizeSop(raw: unknown): SopOverview {
         version: str(row.version) || undefined,
         executionReady: bool(row.executionReady),
         drillFresh: bool(row.drillFresh),
+        drillEvidence: row.drillEvidence == null ? undefined : bool(row.drillEvidence),
         campaignReady: bool(row.campaignReady),
         readinessReason: str(row.readinessReason),
       };
