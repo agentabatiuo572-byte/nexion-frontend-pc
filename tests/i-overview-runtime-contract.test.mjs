@@ -92,6 +92,22 @@ test("I1 畸形 copies 数组必须失败关闭", () => {
   );
 });
 
+test("I1 已发布版本允许空草稿受众条件", () => {
+  const overview = {
+    ...VALID.I1,
+    copies: [{ key: "home.abExperimentBanner", version: "v4", status: "published",
+      draftAudienceTarget: null, usedVersionKeys: ["v1", "v2", "v3", "v4"] }],
+    versions: [{ copyKey: "home.abExperimentBanner", v: "v4", st: "published",
+      audienceTarget: { locales: ["zh-CN", "en-US", "vi-VN"], tiers: ["P1", "P6"], registrationDaysMin: 1 } }],
+  };
+  assert.equal(parseIOverview("I1", overview), overview);
+  assert.equal(parseIOverview("I1", { ...overview, versions: [{ audienceTarget: null }] }).versions.length, 1);
+  assert.throws(
+    () => parseIOverview("I1", { ...overview, copies: [{ draftAudienceTarget: "malformed" }] }),
+    /I1 返回数据格式异常，请刷新重试/,
+  );
+});
+
 test("I2 畸形模板数组必须失败关闭", () => {
   assert.throws(
     () => parseIOverview("I2", { ...VALID.I2, templates: {} }),

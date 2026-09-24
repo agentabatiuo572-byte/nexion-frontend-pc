@@ -22,14 +22,14 @@ type VersionStatusFlt = "all" | "draft" | "published" | "archived";
 type CopyRow = {
   key: string; desc: string; surface: string;
   version: string; status: string; i18nKey: string; expId: string; lastChange: string;
-  draftVersion?: string; draftZh?: string; draftEn?: string; draftVi?: string; copyPosition?: string; draftCopyPosition?: string; draftSurface?: string; draftAudience?: string; draftAudienceTarget?: AudienceTarget; draftTrafficSplit?: string; draftNote?: string;
+  draftVersion?: string; draftZh?: string; draftEn?: string; draftVi?: string; copyPosition?: string; draftCopyPosition?: string; draftSurface?: string; draftAudience?: string; draftAudienceTarget?: AudienceTarget | null; draftTrafficSplit?: string; draftNote?: string;
   revision?: number; usedVersionKeys?: string[];
 };
 type AudienceTarget = { locales?: string[]; tiers?: string[]; registrationDaysMin?: number | null; registrationDaysMax?: number | null };
 type VersionRow = {
   copyKey: string; v: string; st: string; chain: string; ts: string;
   zh: string; en: string; vi: string; copyPosition?: string; surface: string;
-  audience: string; audienceTarget?: AudienceTarget; estimatedAudience?: number; trafficSplit: string; versionNote: string;
+  audience: string; audienceTarget?: AudienceTarget | null; estimatedAudience?: number; trafficSplit: string; versionNote: string;
 };
 type VersionOptionRow = {
   versionKey: string; name: string; description: string; status: string;
@@ -97,7 +97,7 @@ function composeAudienceTarget(form?: Record<string, string>) {
   };
 }
 
-function audienceTargetFields(target?: AudienceTarget) {
+function audienceTargetFields(target?: AudienceTarget | null) {
   if (!target) return {};
   const tiers = (target.tiers ?? []).map((tier) => Number(tier.replace(/^P/i, ""))).filter(Number.isFinite).sort((a, b) => a - b);
   return {
@@ -187,7 +187,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
         value: version.v,
         label: `${version.v} · ${version.st.toLowerCase() === "published" ? "已发布" : "已归档"}`,
         audience: version.audience,
-        audienceTarget: version.audienceTarget,
+        audienceTarget: version.audienceTarget ?? undefined,
         estimatedAudience: version.estimatedAudience,
       })),
   })).filter((copy) => copy.versions.length >= 2);

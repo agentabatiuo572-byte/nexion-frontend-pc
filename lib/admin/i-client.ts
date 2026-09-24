@@ -117,7 +117,7 @@ export type CopyContentRow = {
   draftCopyPosition?: string;
   draftSurface?: string;
   draftAudience?: string;
-  draftAudienceTarget?: CopyAudienceTarget;
+  draftAudienceTarget?: CopyAudienceTarget | null;
   draftTrafficSplit?: string;
   draftNote?: string;
   revision?: number;
@@ -136,7 +136,7 @@ export type CopyVersionRow = {
   copyPosition?: string;
   surface: string;
   audience: string;
-  audienceTarget?: CopyAudienceTarget;
+  audienceTarget?: CopyAudienceTarget | null;
   trafficSplit: string;
   versionNote: string;
   estimatedAudience?: number;

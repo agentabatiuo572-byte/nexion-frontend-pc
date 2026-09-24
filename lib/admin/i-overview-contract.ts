@@ -60,14 +60,14 @@ function optionalArray(moduleId: IModuleId, owner: Record<string, unknown>, key:
 function validateI1(moduleId: IModuleId, value: Record<string, unknown>) {
   for (const copy of records(moduleId, value.copies)) {
     optionalArray(moduleId, copy, "usedVersionKeys");
-    if (copy.draftAudienceTarget !== undefined) {
+    if (copy.draftAudienceTarget != null) {
       const target = record(moduleId, copy.draftAudienceTarget);
       array(moduleId, target.locales);
       array(moduleId, target.tiers);
     }
   }
   for (const version of records(moduleId, value.versions)) {
-    if (version.audienceTarget !== undefined) {
+    if (version.audienceTarget != null) {
       const target = record(moduleId, version.audienceTarget);
       array(moduleId, target.locales);
       array(moduleId, target.tiers);

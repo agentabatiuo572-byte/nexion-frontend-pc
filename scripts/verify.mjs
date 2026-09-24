@@ -382,7 +382,7 @@ const GEARS = [
   ["A5 params-registry contract", "node",
     ["--experimental-strip-types", "--test", "tests/a5-params-registry-contract.test.mjs"]],
   ["I1/I6 published copy quality", "node",
-    ["--experimental-strip-types", "--test", "tests/i6-copy-quality.test.mjs"]],
+    ["--experimental-strip-types", "--test", "tests/i6-copy-quality.test.mjs", "tests/i-overview-runtime-contract.test.mjs"]],
 ];
 // 🔴 run-all:每个齿都跑到,逐齿记状态与耗时。红齿不再中断链条(理由见文件抬头)。
 const results = [];
