@@ -232,7 +232,8 @@ function validateParam(module: string, value: unknown, path: string, allowed: Re
   const row = record(module, value, path);
   requiredKeys(module, row, path, ["key", "configKey", "name", "sub", "value", "displayValue", "note", "valueType", ...flags]);
   enumText(module, row.key, `${path}.key`, allowed);
-  ["configKey", "name", "sub", "displayValue", "note", "valueType"].forEach((key) => text(module, row[key], `${path}.${key}`));
+  ["configKey", "name", "sub", "note", "valueType"].forEach((key) => text(module, row[key], `${path}.${key}`));
+  text(module, row.displayValue, `${path}.displayValue`, module === "G4" && row.key === "divBase" && row.value === "");
   if (typeof row.value !== "string" && typeof row.value !== "number") fail(module, `${path}.value`);
   flags.forEach((key) => bool(module, row[key], `${path}.${key}`));
 }

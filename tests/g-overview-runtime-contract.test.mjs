@@ -375,4 +375,9 @@ test("G4 accepts the published nine-parameter policy including App showcase visi
   })) };
   assert.equal(assertG4OverviewContract(overview), overview);
   assert.throws(() => assertG4OverviewContract({ ...overview, params: overview.params.map(row => row.key === "showcaseEnabled" ? { ...row, key: "unknownFlag" } : row) }), /G4_RESPONSE_INVALID/);
+  const safeInitialPolicy = { ...overview, params: overview.params.map(row => row.key === "divBase"
+    ? { ...row, value: "", displayValue: "" } : row) };
+  assert.equal(assertG4OverviewContract(safeInitialPolicy), safeInitialPolicy);
+  assert.throws(() => assertG4OverviewContract({ ...overview, params: overview.params.map(row => row.key === "price"
+    ? { ...row, displayValue: "" } : row) }), /G4_RESPONSE_INVALID:data.params\[1\].displayValue/);
 });
