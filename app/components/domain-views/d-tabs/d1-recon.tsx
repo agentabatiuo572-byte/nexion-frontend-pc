@@ -339,10 +339,10 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
             minLength: 6, maxLength: 128,
             pattern: "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
             patternMessage: "银行交易参考号只能包含字母、数字及 . _ : / -",
-            help: "用于去重；不要填写 NexGrid 付款单号、附言码或自行编写的测试数字。",
+            help: "用于去重；不要填写 UVEL 付款单号、附言码或自行编写的测试数字。",
           },
           {
-            key: "memoCode", label: "NexGrid 转账附言码", inputKind: "text", required: false,
+            key: "memoCode", label: "UVEL 转账附言码", inputKind: "text", required: false,
             current: source?.memoCode ?? "", placeholder: "例如 NX-1234ABCD",
             maxLength: 32, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$",
             patternMessage: "转账附言码只能包含字母、数字、下划线和连字符",

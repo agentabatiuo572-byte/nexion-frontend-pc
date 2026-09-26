@@ -92,7 +92,8 @@ test("用户端不再保留 H9 落盘种子或硬编码回退", () => {
   const mock = fs.readFileSync(path.join(APP_ROOT, "src", "mock", "platform-config.ts"), "utf8");
   const parser = fs.readFileSync(path.join(APP_ROOT, "src", "api", "platform-config-api.ts"), "utf8");
   assert.doesNotMatch(mock, /hashratePercentileTable\s*:/, "H9 分位表不得从 mock/落盘种子恢复");
-  assert.match(parser, /!Array\.isArray\(values\.hashratePercentileTable\)/);
+  assert.match(parser, /hashratePercentileTable:\s*\[\]/);
+  assert.match(parser, /onlineJitter:\s*-1/);
   assert.match(parser, /H9_PUBLIC_STATS_RESPONSE_INVALID/);
 });
 

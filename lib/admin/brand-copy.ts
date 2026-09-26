@@ -13,9 +13,9 @@
  * 直接写字面量会被品牌哨兵抓红,而这里的字符串恰恰就是哨兵要守的那个旧词。
  */
 const LEGACY_BRAND = "Nexi" + "on";
-const BRAND = "NexGrid";
+const BRAND = "UVEL";
 
 /** 大小写不敏感,命中即整词替换。 */
 export function nexGridBrandText(value: string): string {
-  return value.replace(new RegExp(LEGACY_BRAND, "gi"), BRAND);
+  return value.replace(new RegExp(LEGACY_BRAND, "gi"), BRAND).replace(/NexGrid/gi, BRAND);
 }

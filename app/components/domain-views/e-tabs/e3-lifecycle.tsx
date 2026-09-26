@@ -65,11 +65,11 @@ const APPLY_TO_SKUS: { kind: string; label: string }[] = [
   { kind: "phone", label: "手机" },
   { kind: "cloud-share", label: "Cloud Share" },
   { kind: "pc-gpu", label: "电脑共享" },
-  { kind: "stellarbox-s1", label: "NexGridBox S1" },
-  { kind: "stellarbox-pro", label: "NexGridBox Pro" },
-  { kind: "stellarbox-pro-v2", label: "NexGridBox Pro v2" },
-  { kind: "stellarrack-p1", label: "NexGridRack P1" },
-  { kind: "stellarrack-p2", label: "NexGridRack P2" },
+  { kind: "stellarbox-s1", label: "UVELBox S1" },
+  { kind: "stellarbox-pro", label: "UVELBox Pro" },
+  { kind: "stellarbox-pro-v2", label: "UVELBox Pro v2" },
+  { kind: "stellarrack-p1", label: "UVELRack P1" },
+  { kind: "stellarrack-p2", label: "UVELRack P2" },
 ];
 
 const num = (value: string, fallback: number) => {

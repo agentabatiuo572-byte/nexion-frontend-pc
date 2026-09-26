@@ -601,3 +601,10 @@ body {
 .dkpage .drawer-h { padding: 18px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
 .dkpage .drawer-b { padding: 20px; overflow-y: auto; flex: 1; }
 .dkpage .drawer-f { padding: 16px 20px; border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 10px; background: var(--surface-2); }
+/* The same UVEL mark is used by the App and the operator console. */
+.uvel-logo-mark { display: inline-flex; width: 30px; height: 30px; flex-shrink: 0; }
+.uvel-logo-mark img { width: 30px; height: 30px; object-fit: contain; }
+.uvel-logo-mark--login, .uvel-logo-mark--login img { width: 36px; height: 36px; }
+.uvel-logo-mark__light { display: none; }
+html:not([data-theme="dark"]) .uvel-logo-mark__dark { display: none; }
+html:not([data-theme="dark"]) .uvel-logo-mark__light { display: block; }

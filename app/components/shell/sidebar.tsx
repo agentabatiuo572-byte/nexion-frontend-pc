@@ -6,6 +6,7 @@
  */
 import { useEffect, useRef } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { PanelLeftClose, PanelLeftOpen, LayoutDashboard } from "lucide-react";
 import type { AdminRole, NavDomain } from "@/lib/nav/console-nav";
@@ -14,20 +15,9 @@ import { SidebarGroup } from "./sidebar-group";
 
 function LogoMark() {
   return (
-    <span
-      className="flex shrink-0 items-center justify-center rounded-[9px] font-display"
-      style={{
-        width: 30,
-        height: 30,
-        background: "linear-gradient(135deg, var(--v5-brand) 0%, #9B89E0 130%)",
-        color: "var(--v5-on-brand)",
-        fontWeight: 700,
-        fontSize: 16,
-        boxShadow: "var(--v5-spotlight-brand)",
-      }}
-      aria-hidden
-    >
-      N
+    <span className="uvel-logo-mark" aria-hidden>
+      <Image className="uvel-logo-mark__dark" src="/uvel-mark-dark.png" width={30} height={30} alt="" />
+      <Image className="uvel-logo-mark__light" src="/uvel-mark-light.png" width={30} height={30} alt="" />
     </span>
   );
 }
@@ -115,7 +105,7 @@ export function Sidebar({
         href="/"
         prefetch={false}
         onClick={() => setExpanded([])}
-        aria-label="NexGrid 运营控制台"
+        aria-label="UVEL 运营控制台"
         className="flex items-center gap-2.5 px-3.5"
         style={{ height: "var(--admin-topbar-h)", borderBottom: "1px solid var(--v5-border)" }}
       >
@@ -124,7 +114,7 @@ export function Sidebar({
           <>
             <span className="flex flex-col leading-tight">
               <span className="font-display text-[13.5px]" style={{ color: "var(--v5-ink)" }}>
-                NexGrid
+                UVEL
               </span>
               <span className="text-[10px]" style={{ color: "var(--v5-ink-3)" }}>
                 运营控制台

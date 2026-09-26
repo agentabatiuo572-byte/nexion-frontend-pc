@@ -28,7 +28,7 @@ export interface ImpersonateUser {
 
 const SESSION_SECONDS = 30 * 60; // 只读代入会话 ≤ 30min
 // canon SKU(对齐 canon-numbers.json / E1 目录):型号与日产率按 index 一一对应。
-const DEVICE_MODELS = ["NexGridBox S1", "NexGridBox Pro", "NexGridBox Pro v2", "NexGridRack P1", "NexGridRack P2", "Cloud Share"];
+const DEVICE_MODELS = ["UVELBox S1", "UVELBox Pro", "UVELBox Pro v2", "UVELRack P1", "UVELRack P2", "Cloud Share"];
 const DEVICE_RATE = [7, 13, 14, 45, 75, 0.19];
 
 const fmtUsd = (n: number) => "$" + Math.round(n).toLocaleString("en-US");

@@ -34,7 +34,7 @@ export interface PlatformExperienceConfig {
 }
 
 export function recommendedExperienceChannels(): ExperienceChannel[] {
-  const textTemplate = "Join NexGrid with my invitation: {link}";
+  const textTemplate = "Join UVEL with my invitation: {link}";
   return [
     { key: "zalo", intentType: "scheme", textTemplate, androidPackage: "com.zing.zalo", iosScheme: "zalo://", enabled: true },
     { key: "telegram", intentType: "web", textTemplate, urlTemplate: "https://t.me/share/url?url={link}&text={text}", enabled: true },

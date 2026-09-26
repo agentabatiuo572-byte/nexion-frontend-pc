@@ -6,6 +6,7 @@ import type { OpsSku } from "@/lib/admin/platform-types";
 import type { EViewCtx } from "./types";
 import { e1GateReadiness, effectiveReleaseMonth, gateRemaining, releaseMonthPresentation, resolveE1PhaseId, type E1GateReadiness } from "./data";
 import { EStats } from "./stats";
+import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 const PHASE_STATUS_LABELS: Record<string, string> = {
   active: "启用",
@@ -132,6 +133,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
       const searchable = [
         sku.id,
         sku.name,
+        nexGridBrandText(sku.name),
         sku.tagline,
         sku.badge,
         sku.gpu,
@@ -222,7 +224,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
 
   const genShift = (g: E1GenerationRelease, offset: number, delta: number) =>
     ctx.openActionConfirm({
-      name: `上架节奏 · ${delta < 0 ? "提前" : "延迟"} ${Math.abs(delta)} 个月 · ${g.name}`,
+      name: `上架节奏 · ${delta < 0 ? "提前" : "延迟"} ${Math.abs(delta)} 个月 · ${nexGridBrandText(g.name)}`,
       op: "param", paramKey: `E.gen.${g.id}.phaseOffset`,
       edit: { kind: "number", current: String(offset), unit: "M" },
       detail: `当前计划发布月 ${g.releaseMonth}${offset ? `(偏移 ${offset}M)` : ""} · 调整发布偏移改发布门时点 · 以后端为准,改后对发布门生效`,
@@ -230,12 +232,12 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
     });
   const genForceUnlock = (g: E1GenerationRelease) => {
     const state = gateReadiness(g);
-    if (!state.declaredPhase) { ctx.toast(`拒绝 · ${g.name} 商品解锁阶段缺失 · 请先核对商品配置`); return; }
-    if (state.phaseConflict) { ctx.toast(`拒绝 · ${g.name} 商品解锁阶段为${phaseLabel(state.declaredPhase)},与上架门引用的${phaseLabel(g.phase)}冲突 · 请先修正阶段映射`); return; }
-    if (!state.eligibilityReady) { ctx.toast(`拒绝 · ${g.name} 设备资格未补录 · 发布门不能解锁`); return; }
-    if (!state.phaseReached) { ctx.toast(`拒绝 · ${g.name} 当前阶段未到达 ${phaseLabel(g.phase)} · 发布门不能解锁`); return; }
+    if (!state.declaredPhase) { ctx.toast(`拒绝 · ${nexGridBrandText(g.name)} 商品解锁阶段缺失 · 请先核对商品配置`); return; }
+    if (state.phaseConflict) { ctx.toast(`拒绝 · ${nexGridBrandText(g.name)} 商品解锁阶段为${phaseLabel(state.declaredPhase)},与上架门引用的${phaseLabel(g.phase)}冲突 · 请先修正阶段映射`); return; }
+    if (!state.eligibilityReady) { ctx.toast(`拒绝 · ${nexGridBrandText(g.name)} 设备资格未补录 · 发布门不能解锁`); return; }
+    if (!state.phaseReached) { ctx.toast(`拒绝 · ${nexGridBrandText(g.name)} 当前阶段未到达 ${phaseLabel(g.phase)} · 发布门不能解锁`); return; }
     ctx.openActionConfirm({
-      name: `强制提前开放 · ${g.name}`,
+      name: `强制提前开放 · ${nexGridBrandText(g.name)}`,
       op: "generation-gate-force",
       generationGateId: g.id,
       generationGate: { forceUnlock: true },
@@ -245,7 +247,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   };
   const genForceLock = (g: E1GenerationRelease) =>
     ctx.openActionConfirm({
-      name: `撤销强制提前开放 · ${g.name}`,
+      name: `撤销强制提前开放 · ${nexGridBrandText(g.name)}`,
       op: "generation-gate-force",
       generationGateId: g.id,
       generationGate: { forceUnlock: false },
@@ -319,7 +321,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
     const gatePhaseOptions = g?.phase && !phaseOptions.includes(g.phase) ? [g.phase, ...phaseOptions] : phaseOptions;
     const gatePhaseLabels = Object.fromEntries(gatePhaseOptions.map((phaseId) => [phaseId, phaseLabel(phaseId)]));
     ctx.openActionConfirm({
-      name: g ? `编辑上架门 · ${g.name}` : "新增上架门",
+      name: g ? `编辑上架门 · ${nexGridBrandText(g.name)}` : "新增上架门",
       op: "generation-gate-save",
       generationGateId: g?.id,
       businessForm: {
@@ -344,7 +346,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   };
   const archiveGate = (g: E1GenerationRelease) =>
     ctx.openActionConfirm({
-      name: `移除上架门 · ${g.name}`,
+      name: `移除上架门 · ${nexGridBrandText(g.name)}`,
       op: "generation-gate-archive",
       generationGateId: g.id,
       businessForm: { kind: "destructive-reason", target: g.name, impact: "该 SKU 将从发布时点表移除,用户端上架门不会再读取这条配置。" },
@@ -537,7 +539,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                     : "强制提前开放,仅绕过平台月龄门";
             return (
               <div className="rw" key={g.id}>
-                <div className="c sku">{g.name}<span className="id">{g.id}</span>{g.forceUnlock && <span className="force-audit">批准人 {g.forceUnlockApprovedBy || "未记录"} · A2 编号 {g.forceUnlockAuditId || "未记录"}</span>}</div>
+                <div className="c sku">{nexGridBrandText(g.name)}<span className="id">{g.id}</span>{g.forceUnlock && <span className="force-audit">批准人 {g.forceUnlockApprovedBy || "未记录"} · A2 编号 {g.forceUnlockAuditId || "未记录"}</span>}</div>
                 <div className="c mono release-plan">
                   <span className="release-effective">{releasePresentation.effectiveLabel}</span>
                   <span className="release-adjustment">{releasePresentation.adjustmentLabel}</span>
@@ -657,7 +659,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
               <div className="body">
                 <div className="top">
                   <div className="l">
-                    <div className="nm">{s.name}</div>
+                    <div className="nm">{nexGridBrandText(s.name)}</div>
                     {s.tagline ? <div className="tagline">{s.tagline}</div> : null}
                   </div>
                   <div className="r">

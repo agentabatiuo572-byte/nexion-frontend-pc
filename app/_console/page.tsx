@@ -270,7 +270,7 @@ export default function CommandCenter() {
       <header className="mb-5 flex flex-wrap items-end gap-4">
         <div className="min-w-0 flex-1">
           <p className="font-mono-tabular text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--v5-ink-3)" }}>
-            NexGrid Ops Console · 指挥台
+            UVEL Ops Console · 指挥台
           </p>
           <h1 className="font-display mt-1.5 text-[26px]" style={{ color: "var(--v5-ink)" }}>运营总览</h1>
           <p className="mt-1.5 text-[13.5px]" style={{ color: "var(--v5-ink-2)" }}>
@@ -436,7 +436,7 @@ export default function CommandCenter() {
       <header className="mb-5 flex flex-wrap items-end gap-4">
         <div className="min-w-0 flex-1">
           <p className="font-mono-tabular text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--v5-ink-3)" }}>
-            NexGrid Ops Console · 指挥台
+            UVEL Ops Console · 指挥台
           </p>
           <h1 className="font-display mt-1.5 text-[26px]" style={{ color: "var(--v5-ink)" }}>运营总览</h1>
           <p className="mt-1.5 text-[13.5px]" style={{ color: "var(--v5-ink-2)" }}>

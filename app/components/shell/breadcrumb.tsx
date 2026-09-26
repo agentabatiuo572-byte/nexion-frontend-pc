@@ -11,7 +11,7 @@ import { findByPath } from "@/lib/nav/console-nav";
 
 export function Breadcrumb() {
   const pathname = usePathname() ?? "";
-  const crumbs: { label: string; accent?: string }[] = [{ label: "NexGrid 运营控制台" }];
+  const crumbs: { label: string; accent?: string }[] = [{ label: "UVEL 运营控制台" }];
 
   if (pathname === "/" || pathname === "") {
     crumbs.push({ label: "总览驾驶舱" });

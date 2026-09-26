@@ -5,6 +5,7 @@
  */
 import type { FormEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { Loader2, LockKeyhole, LogIn, ShieldCheck, UserRound } from "lucide-react";
 import { changeAdminPassword, currentAdminSession, loginAdmin, verifyAdminMfa, type AdminMfaChallenge, type LoginResult } from "@/lib/admin/auth-client";
 import { completeInteractiveLogin } from "@/lib/admin/login-completion";
@@ -211,14 +212,12 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
           boxShadow: "var(--v5-card-shadow-lift-strong)",
         }}
       >
-        <span
-          className="flex h-9 w-9 items-center justify-center rounded-[9px] font-display"
-          style={{ background: "var(--v5-brand)", color: "var(--v5-on-brand)", fontWeight: 600, fontSize: 18 }}
-        >
-          N
+        <span className="uvel-logo-mark uvel-logo-mark--login" aria-hidden>
+          <Image className="uvel-logo-mark__dark" src="/uvel-mark-dark.png" width={36} height={36} alt="" />
+          <Image className="uvel-logo-mark__light" src="/uvel-mark-light.png" width={36} height={36} alt="" />
         </span>
         <h1 className="font-display mt-4 text-[20px]" style={{ color: "var(--v5-ink)" }}>
-          {changingPassword ? "首次登录修改密码" : verifyingMfa ? "双因素身份验证" : "NexGrid 运营控制台登录"}
+          {changingPassword ? "首次登录修改密码" : verifyingMfa ? "双因素身份验证" : "UVEL 运营控制台登录"}
         </h1>
         <p className="mt-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
           {changingPassword

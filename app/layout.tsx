@@ -5,8 +5,9 @@ import { ToastHost } from "./components/kit/toast-host";
 import { ConfirmDialog } from "./components/kit/confirm-dialog";
 
 export const metadata: Metadata = {
-  title: "NexGrid 运营控制台",
-  description: "NexGrid Ops Console — 内部运营操盘系统(原型)",
+  title: "UVEL 运营控制台",
+  description: "UVEL 运营控制台",
+  icons: { icon: "/uvel-mark-dark.png" },
 };
 
 export default function RootLayout({
