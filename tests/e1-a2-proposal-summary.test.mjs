@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { summarizeSkuCreation, summarizeSkuProposal } from "../lib/admin/e1-a2-proposal-summary.ts";
-import { formToSku, skuToForm } from "../app/components/domain-views/e-tabs/data.ts";
+import { fromPurchaseGate, toPurchaseGate } from "../lib/admin/e1-purchase-gate.ts";
+import { formToSku, skuToForm, validateGateForm } from "../app/components/domain-views/e-tabs/data.ts";
 
 function sku(overrides = {}) {
   return {
@@ -135,6 +136,41 @@ test("不匹配的产品图标识不能靠对象键压缩后混入 A2", () => {
 
   assert.deepEqual(summary.changedFields, ["产品图对象键"]);
   assert.deepEqual(summary.omittedFields, ["产品图对象键"]);
+});
+
+test("Pro v2 无锁额等级门往返不制造购买限制变更，换图只审图片", () => {
+  const oldKey = "admin/e/sku-image/20260925/6315ec9b-61fc-4e1c-9fb9-0a9aba089835.png";
+  const newKey = "admin/e/sku-image/20260926/1315ec9b-61fc-4e1c-9fb9-0a9aba089835.png";
+  const existing = sku({
+    id: "stellarbox-pro-v2",
+    name: "UVELBox Pro v2",
+    productType: "DEVICE",
+    baseRate: "$0.06/d · 0 NEX",
+    unlock: "P3",
+    purchaseGate: fromPurchaseGate({ rankMin: 2, mode: "all", quotaCap: null, quotaPeriod: null, enforce: true }),
+    imageAssetId: Buffer.from(oldKey).toString("base64url"),
+    imageObjectKey: oldKey,
+  });
+  const roundTripped = {
+    ...formToSku(skuToForm(existing), existing),
+    imageAssetId: existing.imageAssetId,
+    imageObjectKey: existing.imageObjectKey,
+  };
+  assert.deepEqual(roundTripped.purchaseGate, existing.purchaseGate);
+  assert.equal(toPurchaseGate(roundTripped.purchaseGate).quotaPeriod, null);
+  assert.equal(summarizeSkuProposal(existing, roundTripped), null);
+
+  const imageOnly = { ...roundTripped, imageAssetId: Buffer.from(newKey).toString("base64url"), imageObjectKey: newKey };
+  const summary = summarizeSkuProposal(existing, imageOnly);
+  assert.deepEqual(summary.changedFields, ["产品图对象键"]);
+  assert.deepEqual(summary.omittedFields, []);
+});
+
+test("锁额周期仍为 lifetime，历史 month 仍在编辑器中可识别", () => {
+  assert.equal(fromPurchaseGate({ rankMin: 2, quotaCap: 50, quotaSold: 3 }).quotaPeriod, "lifetime");
+  const legacy = fromPurchaseGate({ rankMin: 2, quotaPeriod: "month" });
+  assert.equal(legacy.quotaPeriod, "month");
+  assert.match(validateGateForm(skuToForm(sku({ unlock: "P3", purchaseGate: legacy }))), /历史按月周期暂不可用/);
 });
 
 test("缺少历史 baseRate 的 SKU 原样回填不制造 no-op 提案", () => {

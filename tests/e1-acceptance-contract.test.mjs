@@ -10,6 +10,7 @@ import { resolveNexionBackendRoot } from "../scripts/lib/nexion-workspace-paths.
 const view = readFileSync(new URL("../app/components/domain-views/e-view.tsx", import.meta.url), "utf8");
 const catalog = readFileSync(new URL("../app/components/domain-views/e-tabs/e1-catalog.tsx", import.meta.url), "utf8");
 const e1Client = readFileSync(new URL("../lib/admin/e1-client.ts", import.meta.url), "utf8");
+const e1Gate = readFileSync(new URL("../lib/admin/e1-purchase-gate.ts", import.meta.url), "utf8");
 const e1Contract = readFileSync(new URL("../lib/admin/e1-overview-contract.ts", import.meta.url), "utf8");
 const e1Data = readFileSync(new URL("../app/components/domain-views/e-tabs/data.ts", import.meta.url), "utf8");
 const e1Route = readFileSync(new URL("../app/api/admin/e1/[...path]/route.ts", import.meta.url), "utf8");
@@ -254,8 +255,8 @@ test("E1 purchase quota is lifetime-only while legacy month rows stay visibly re
   assert.match(e1Data, /历史按月周期暂不可用/);
   assert.doesNotMatch(view, /<option value="month">按月<\/option>/);
   assert.match(view, /历史按月配置已暂停\(HOLD\)/);
-  assert.match(e1Client, /quotaPeriod: gate\.quotaCap != null \? "lifetime" : null/);
-  assert.match(e1Client, /quotaPeriod: gate\.quotaPeriod === "month" \? "month" : "lifetime"/);
+  assert.match(e1Gate, /quotaPeriod: gate\.quotaCap != null \? "lifetime" : null/);
+  assert.match(e1Gate, /quotaPeriod: gate\.quotaPeriod === "month" \? "month" : gate\.quotaCap != null \? "lifetime" : undefined/);
   assert.match(e1Data, /direct > 1_000_000/);
   assert.match(e1Data, /已售数量必须和锁额上限成对配置/);
   assert.match(e1Contract, /value\.activeDirectMin/);

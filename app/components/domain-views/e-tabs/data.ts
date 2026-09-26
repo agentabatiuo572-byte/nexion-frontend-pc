@@ -227,7 +227,7 @@ export function validateGateForm(f: SkuForm): string | null {
   if (cap != null && cap <= 0) return "购买门:锁额上限须为正数(留空=不限量)";
   if (sold != null && sold < 0) return "购买门:已售数量不能为负数";
   if (cap != null && sold != null && sold > cap) return "购买门:已售不能超过锁额上限";
-  if (cap != null && f.gateQuotaPeriod !== "lifetime") return "购买门:历史按月周期暂不可用,请改为全生命周期后再保存";
+  if (f.gateQuotaPeriod !== "lifetime") return "购买门:历史按月周期暂不可用,请改为全生命周期后再保存";
   return null;
 }
 
