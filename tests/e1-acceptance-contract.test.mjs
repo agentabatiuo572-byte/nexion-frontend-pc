@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { e1GateReadiness, releaseMonthPresentation, resolveE1PhaseId } from "../app/components/domain-views/e-tabs/data.ts";
+import { nexGridBrandText } from "../lib/admin/brand-copy.ts";
 import { resolveNexionBackendRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const view = readFileSync(new URL("../app/components/domain-views/e-view.tsx", import.meta.url), "utf8");
@@ -14,6 +15,11 @@ const e1Data = readFileSync(new URL("../app/components/domain-views/e-tabs/data.
 const e1Route = readFileSync(new URL("../app/api/admin/e1/[...path]/route.ts", import.meta.url), "utf8");
 const domainCss = readFileSync(new URL("../app/components/domain-views/e-domain.css", import.meta.url), "utf8");
 const registry = readFileSync(new URL("../lib/admin/high-ops-registry.ts", import.meta.url), "utf8");
+
+test("E1 display maps persisted legacy product names in phase descriptions and action labels", () => {
+  assert.equal(nexGridBrandText("StellarBox S1 / StellarRack P1"), "UVELBox S1 / UVELRack P1");
+  assert.equal(nexGridBrandText("NexGridBox Pro v2 · NexGridRack P2"), "UVELBox Pro v2 · UVELRack P2");
+});
 
 test("E1 rejects duplicate SKU ids already present in the first catalog page", () => {
   assert.match(e1Client, /if \(seenSkuIds\.size !== skuRows\.length\) throw new Error\("E1_SKU_PAGINATION_DUPLICATE"\)/);

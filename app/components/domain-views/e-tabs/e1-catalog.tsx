@@ -147,7 +147,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   }, [skuQuery, skuStatus, skuTier, skus]);
   const skuTiers = Array.from(new Set(skus.map((sku) => sku.tier).filter(Boolean))).sort();
   const taskNameById = new Map(tasks.map((task) => [task.id, task.n]));
-  const unlockPoolName = (value?: string) => value ? (taskNameById.get(value) ?? value) : "—";
+  const unlockPoolName = (value?: string) => value ? nexGridBrandText(taskNameById.get(value) ?? value) : "—";
   const phaseOrder = ctx.e1Gates?.phaseOrder ?? [];
   const phases = ctx.e1Gates?.phases ?? [];
   const platformMonth = ctx.e1Gates?.platformMonth ?? 0;
@@ -160,7 +160,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   const phaseLabel = (phaseId: string): string => {
     if (!phaseId) return "未配置";
     const phase = phases.find((item) => item.p === resolveE1PhaseId(phases, phaseId));
-    return phase?.label || phaseId;
+    return nexGridBrandText(phase?.label || phaseId);
   };
   const phaseOptions = phaseOrder;
   const releaseIds = new Set(releases.map((g) => g.id));
@@ -180,7 +180,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
       platformMonth,
     });
   const gateBlockerLabel = (state: E1GateReadiness): string =>
-    state.blockers.slice(0, 2).join(" / ") || "待发布";
+    nexGridBrandText(state.blockers.slice(0, 2).join(" / ") || "待发布");
   const gateCountdownLabel = (state: E1GateReadiness): string => {
     if (state.phaseConflict) return "阶段冲突";
     if (state.unlocked) return "已发布";
@@ -349,7 +349,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
       name: `移除上架门 · ${nexGridBrandText(g.name)}`,
       op: "generation-gate-archive",
       generationGateId: g.id,
-      businessForm: { kind: "destructive-reason", target: g.name, impact: "该 SKU 将从发布时点表移除,用户端上架门不会再读取这条配置。" },
+      businessForm: { kind: "destructive-reason", target: nexGridBrandText(g.name), impact: "该 SKU 将从发布时点表移除,用户端上架门不会再读取这条配置。" },
       detail: "归档这条发布规则,不物理删除,便于审计和恢复",
       amplify: false,
     });
@@ -399,7 +399,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
           有 {ctx.e1InvalidSkus.length} 个 SKU 的字段不合规，未纳入下列目录（其余商品照常展示）：
           <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
             {ctx.e1InvalidSkus.map((row) => (
-              <li key={row.skuId}>{row.skuId} · {row.name} — 无效字段：{row.invalidFields.join("、")}</li>
+              <li key={row.skuId}>{row.skuId} · {nexGridBrandText(row.name)} — 无效字段：{row.invalidFields.join("、")}</li>
             ))}
           </ul>
         </div>
@@ -436,8 +436,8 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
               return (
                 <div key={ph.p} className={`phase ${st}`}>
                   <div className="dot">{i + 1}</div>
-                  <div className="nm">{ph.label || ph.p}</div>
-                  <div className="skus">{[ph.meta, ph.skus].filter(Boolean).join(" · ") || "未配置说明"}</div>
+                  <div className="nm">{phaseLabel(ph.p)}</div>
+                  <div className="skus">{nexGridBrandText([ph.meta, ph.skus].filter(Boolean).join(" · ") || "未配置说明")}</div>
                 </div>
               );
             })}
@@ -478,10 +478,10 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
             const isCurrentPhase = ph.p === phaseCur;
             return (
               <div className="rw" key={ph.p}>
-                <div className="c phase-name ellipsis">{ph.label || ph.p}</div>
+                <div className="c phase-name ellipsis">{phaseLabel(ph.p)}</div>
                 <div className="c">{isCurrentPhase ? <span className="phaseNow"><span className="dot" />当前</span> : <span className="muted">—</span>}</div>
-                <div className="c optional ellipsis">{ph.meta || "—"}</div>
-                <div className="c optional ellipsis">{ph.skus || "—"}</div>
+                <div className="c optional ellipsis">{nexGridBrandText(ph.meta || "—")}</div>
+                <div className="c optional ellipsis">{nexGridBrandText(ph.skus || "—")}</div>
                 <div className="c optional mono">{ph.sortOrder ?? 0}</div>
                 <div className="c optional"><Badge tone={ph.status === "active" ? "ok" : "neutral"}>{phaseStatusLabel(ph.status)}</Badge></div>
                 <div className="c acts">
@@ -651,7 +651,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
           return (
             <div key={s.id} className={`sku-card${st === "off" ? " off" : ""}`}>
               <div className="img">
-                {s.badge ? <span className={`badge ${badgeClass(s.tier)}`}>{s.badge}</span> : null}
+                {s.badge ? <span className={`badge ${badgeClass(s.tier)}`}>{nexGridBrandText(s.badge)}</span> : null}
                 <div className="ph">
                   <SkuMediaThumb sku={s} />
                 </div>
@@ -660,7 +660,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                 <div className="top">
                   <div className="l">
                     <div className="nm">{nexGridBrandText(s.name)}</div>
-                    {s.tagline ? <div className="tagline">{s.tagline}</div> : null}
+                    {s.tagline ? <div className="tagline">{nexGridBrandText(s.tagline)}</div> : null}
                   </div>
                   <div className="r">
                     <div className="px">${s.price.toLocaleString()}</div>
@@ -693,10 +693,10 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                   {s.publishBlocked === undefined ? <Badge tone="neutral">发布门未声明</Badge> : null}
                 </div>
                 <div className="acts">
-                  {canWrite ? <button className="primary" aria-label={`改价 / 编辑 ${s.name}`} onClick={() => ctx.openSku(s.id)}>改价 / 编辑</button> : null}
-                  {canWrite && st === "on" && (unlimitedInventory || Number(s.stock) > 0) && !open && !releaseGate && hasPhaseConfig ? <button className="brand" aria-label={`按当前阶段上架 ${s.name}`} onClick={() => ctx.openSku(s.id, phaseCur)}>按当前阶段上架</button> : null}
-                  {canWrite ? <button disabled={listingBlocked || s.publishBlocked === true} title={s.publishBlocked === true ? `未过发布门 · ${publishBlockLabel} · 该行不会进入 App 用户目录` : s.publishBlocked === undefined ? "服务端未返回发布门结论，上架是否生效未确认" : listingBlocked ? listingBlocker : undefined} aria-label={`${st === "on" ? "下架" : "上架"} ${s.name}`} onClick={() => ctx.openActionConfirm({ name: st === "on" ? `下架 SKU · ${s.name}` : `上架 SKU · ${s.name}`, op: "sku-status", target: s.id, status: st === "on" ? "off" : "on", detail: st === "on" ? "下架后从商城隐藏,不影响已售设备结算" : "上架后对用户可见", amplify: false })}>{st === "on" ? "下架" : "上架"}</button> : null}
-                  {canWrite ? <button className="danger" aria-label={`删除 ${s.name}`} onClick={() => ctx.delSku(s.id, s.name ?? s.id)}>删除</button> : null}
+                  {canWrite ? <button className="primary" aria-label={`改价 / 编辑 ${nexGridBrandText(s.name)}`} onClick={() => ctx.openSku(s.id)}>改价 / 编辑</button> : null}
+                  {canWrite && st === "on" && (unlimitedInventory || Number(s.stock) > 0) && !open && !releaseGate && hasPhaseConfig ? <button className="brand" aria-label={`按当前阶段上架 ${nexGridBrandText(s.name)}`} onClick={() => ctx.openSku(s.id, phaseCur)}>按当前阶段上架</button> : null}
+                  {canWrite ? <button disabled={listingBlocked || s.publishBlocked === true} title={s.publishBlocked === true ? `未过发布门 · ${publishBlockLabel} · 该行不会进入 App 用户目录` : s.publishBlocked === undefined ? "服务端未返回发布门结论，上架是否生效未确认" : listingBlocked ? listingBlocker : undefined} aria-label={`${st === "on" ? "下架" : "上架"} ${nexGridBrandText(s.name)}`} onClick={() => ctx.openActionConfirm({ name: st === "on" ? `下架 SKU · ${nexGridBrandText(s.name)}` : `上架 SKU · ${nexGridBrandText(s.name)}`, op: "sku-status", target: s.id, status: st === "on" ? "off" : "on", detail: st === "on" ? "下架后从商城隐藏,不影响已售设备结算" : "上架后对用户可见", amplify: false })}>{st === "on" ? "下架" : "上架"}</button> : null}
+                  {canWrite ? <button className="danger" aria-label={`删除 ${nexGridBrandText(s.name)}`} onClick={() => ctx.delSku(s.id, s.name ?? s.id)}>删除</button> : null}
                 </div>
               </div>
             </div>

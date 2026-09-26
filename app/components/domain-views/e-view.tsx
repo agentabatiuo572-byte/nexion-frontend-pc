@@ -715,7 +715,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     } else { setForm({ ...EMPTY_SKU_FORM, unlock: e1PhaseIds[0] ?? "" }); setEditSkuId(null); resetSkuMedia(null); }
     setSkuDrawer(true);
   };
-  const delSku = (skuId: string, displayName: string) => {
+  const delSku = (skuId: string, rawDisplayName: string) => {
+    const displayName = nexGridBrandText(rawDisplayName);
     openActionConfirm({
       name: "删除 SKU · " + displayName,
       op: "sku-delete",
