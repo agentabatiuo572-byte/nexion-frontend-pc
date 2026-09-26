@@ -110,6 +110,33 @@ test("库存变更不能夹带未显示的 AI 配额变更", () => {
   assert.match(summary.after, /解锁算力池：TK-9/);
 });
 
+test("替换产品图以完整对象键展示前后资产，不占用两份 A2 容量", () => {
+  const oldKey = "admin/e/sku-image/20260925/6315ec9b-61fc-4e1c-9fb9-0a9aba089835.png";
+  const newKey = "admin/e/sku-image/20260926/1315ec9b-61fc-4e1c-9fb9-0a9aba089835.png";
+  const before = sku({ imageAssetId: Buffer.from(oldKey).toString("base64url"), imageObjectKey: oldKey });
+  const after = sku({ imageAssetId: Buffer.from(newKey).toString("base64url"), imageObjectKey: newKey });
+  const summary = summarizeSkuProposal(before, after);
+
+  assert.deepEqual(summary, {
+    before: `产品图对象键：${oldKey}`,
+    after: `产品图对象键：${newKey}`,
+    changedFields: ["产品图对象键"],
+    omittedFields: [],
+  });
+  assert.ok(summary.before.length <= 128 && summary.after.length <= 128);
+});
+
+test("不匹配的产品图标识不能靠对象键压缩后混入 A2", () => {
+  const objectKey = "admin/e/sku-image/20260926/1315ec9b-61fc-4e1c-9fb9-0a9aba089835.png";
+  const summary = summarizeSkuProposal(
+    sku({ imageAssetId: Buffer.from(objectKey).toString("base64url"), imageObjectKey: objectKey }),
+    sku({ imageAssetId: "x".repeat(129), imageObjectKey: objectKey }),
+  );
+
+  assert.deepEqual(summary.changedFields, ["产品图对象键"]);
+  assert.deepEqual(summary.omittedFields, ["产品图对象键"]);
+});
+
 test("缺少历史 baseRate 的 SKU 原样回填不制造 no-op 提案", () => {
   const existing = sku({ tier: "Entry", productType: "SERVER", baseRate: undefined });
   const roundTripped = formToSku(skuToForm(existing), existing);

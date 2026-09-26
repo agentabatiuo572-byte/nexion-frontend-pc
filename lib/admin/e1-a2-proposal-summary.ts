@@ -44,6 +44,16 @@ const stock = (value: unknown, sku: OpsSku): string => sku.inventoryMode === "UN
 const productType = (value: unknown): string => ({ SERVER: "服务器", DEVICE: "实体设备", SHARE: "云份额" }[String(value)] ?? text(value));
 const features = (value: unknown): string => Array.isArray(value) ? text(value.join(" / ")) : text(value);
 const structured = (value: unknown): string => text(value == null ? "未设置" : JSON.stringify(value));
+const mediaIdentity = (sku: OpsSku): [string, string] => [normalizedText(sku.imageAssetId), normalizedText(sku.imageObjectKey)];
+const mediaIdentityText = (value: unknown): string => {
+  const [assetId, objectKey] = value as [string, string];
+  if (!assetId && !objectKey) return "未设置";
+  try {
+    // E1 assetId is the base64url encoding of objectKey; the full key identifies both values.
+    if (assetId === btoa(objectKey).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")) return objectKey;
+  } catch { /* An unrepresentable key must keep both raw values in the summary. */ }
+  return `标识 ${text(assetId)} / 对象 ${text(objectKey)}`;
+};
 
 // 高风险审核首先回答“改了哪个字段、从什么改成什么”。库存放在首位，避免长配置挤掉核心变更。
 const SKU_FIELDS: FieldDescriptor[] = [
@@ -82,8 +92,8 @@ const SKU_FIELDS: FieldDescriptor[] = [
   { label: "解锁算力池", read: (sku) => sku.aiUnlocks, format: text, equal: stringEqual },
   { label: "产品特性", read: (sku) => sku.features, format: features, equal: (a, b) => JSON.stringify(a ?? []) === JSON.stringify(b ?? []) },
   { label: "购买限制", read: (sku) => sku.purchaseGate, format: structured, equal: (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null) },
-  { label: "产品图", read: (sku) => sku.imageAssetId, format: text, equal: stringEqual },
-  { label: "产品图对象", read: (sku) => sku.imageObjectKey, format: text, equal: stringEqual },
+  { label: "产品图对象键", read: mediaIdentity, format: mediaIdentityText,
+    equal: (a, b) => JSON.stringify(a) === JSON.stringify(b) },
 ];
 
 /** 生成可直接写入 A2 before_value/after_value 的字段级摘要。 */

@@ -2852,7 +2852,7 @@
         {
           "type": "uniapp-runtime",
           "file": "src/store/app.ts",
-          "positivePatterns": ["taskAssignmentApi\\.state\\(\\)", "applyRemoteAssignments\\(devices\\.value, state\\)", "refreshRemoteFleet\\(request,", "refreshHomeTruth\\(request\\)"],
+          "positivePatterns": ["taskAssignmentApi\\.state\\(\\)", "applyRemoteAssignments\\(devices\\.value, assignmentResult\\.value\\)", "refreshRemoteFleet\\(request,", "refreshHomeTruth\\(request\\)"],
           "negativePatterns": ["taskAssignmentApi\\.claim\\(", "taskAssignmentApi\\.complete\\(", "function tick\\(deltaMs: number\\) \\{\\s*if \\(remoteApiEnabled\\) return;"]
         }
       ],
