@@ -1440,7 +1440,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           {(() => {
             if (form.tier === "Share") {
               const lo = skuNum(form.shareYieldMin); const hi = skuNum(form.shareYieldMax); const nex = skuNum(form.dailyEarnNEX); const pr = skuNum(form.price);
-              return (lo > 0 || hi > 0) ? <div className="tint cyan tiny">派生 · 年化 <span className="nowrap">{lo}–{hi}%</span> · 日产 <span className="nowrap">{nex.toLocaleString()} NEX</span>{pr > 0 ? <> · 起投 <span className="nowrap">${pr.toLocaleString()}</span></> : null}</div> : null;
+              const complete = form.shareYieldMin.trim() !== "" && form.shareYieldMax.trim() !== "" && lo >= 0 && hi >= lo;
+              return <div className="tint cyan tiny">派生 · {complete ? <>参考年化 <span className="nowrap">{lo}–{hi}%</span></> : "年化区间暂不可用"} · 日产 <span className="nowrap">{nex.toLocaleString()} NEX/天</span>{pr > 0 ? <> · 起投 <span className="nowrap">${pr.toLocaleString()}</span></> : null}</div>;
             }
             const p = skuNum(form.price); const d = skuNum(form.dailyEarn);
             return p > 0 && d > 0 ? <div className="tint cyan tiny">派生 · 回本 ≈ <span className="nowrap">{Math.round(p / d)} 天</span> · 首年净 ≈ <span className="nowrap">${(d * 365 - p).toLocaleString()}</span> · 年化 ≈ <span className="nowrap">{Math.round((d * 365 / p) * 100)}%</span> · vs 手机 ≈ <span className="nowrap">{Math.round(d / 0.08).toLocaleString()}×</span></div> : null;
