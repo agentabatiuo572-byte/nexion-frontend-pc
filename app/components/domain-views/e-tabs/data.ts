@@ -236,19 +236,19 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
   const dailyEarn = skuNum(f.dailyEarn);
   const dailyEarnNEX = skuNum(f.dailyEarnNEX);
   const isShare = f.tier === "Share";
-  const derivedBaseRate = isShare && (f.shareYieldMin || f.shareYieldMax)
-    ? `${skuNum(f.shareYieldMin)}–${skuNum(f.shareYieldMax)}% 年化 · ${dailyEarnNEX} NEX`
-    : `$${dailyEarn.toFixed(2)}/d · ${dailyEarnNEX.toLocaleString()} NEX`;
   const shareYieldMin = skuNumU(f.shareYieldMin);
   const shareYieldMax = skuNumU(f.shareYieldMax);
+  const derivedBaseRate = isShare
+    ? `${shareYieldMin != null && shareYieldMax != null ? `参考年化 ${shareYieldMin}–${shareYieldMax}%` : "年化区间暂不可用"} · ${dailyEarnNEX.toLocaleString()} NEX/天`
+    : `$${dailyEarn.toFixed(2)}/d · ${dailyEarnNEX.toLocaleString()} NEX`;
   const earningsUnchanged = existing
     && existing.tier === f.tier
     && Number(existing.dailyEarn) === dailyEarn
     && Number(existing.dailyEarnNEX) === dailyEarnNEX
     && (existing.shareYieldMin == null ? shareYieldMin == null : Number(existing.shareYieldMin) === shareYieldMin)
     && (existing.shareYieldMax == null ? shareYieldMax == null : Number(existing.shareYieldMax) === shareYieldMax);
-  // baseRate 是收益字段的派生展示串；编辑其他字段时保留旧值，不能制造无操作 A2 提案。
-  const baseRate = earningsUnchanged ? existing.baseRate : derivedBaseRate;
+  // Share 的旧美元日产展示串即使在编辑其他字段时也不能继续透传。
+  const baseRate = isShare ? derivedBaseRate : earningsUnchanged ? existing.baseRate : derivedBaseRate;
   const features = f.features.split("\n").map((x) => x.trim()).filter(Boolean);
   const inventoryMode = f.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE";
   const productType = existing?.productType ?? (isShare ? "SHARE" : "DEVICE");

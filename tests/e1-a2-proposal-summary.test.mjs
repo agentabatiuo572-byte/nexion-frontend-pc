@@ -181,6 +181,21 @@ test("缺少历史 baseRate 的 SKU 原样回填不制造 no-op 提案", () => {
   assert.equal(summarizeSkuProposal(existing, roundTripped), null);
 });
 
+test("Cloud Share 表单不再生成或透传旧美元日产展示串", () => {
+  const legacy = sku({
+    id: "cloud-share", tier: "Share", productType: "SHARE", price: 19.9,
+    dailyEarn: 0.19, dailyEarnNEX: 3, baseRate: "$0.19/d · 3 NEX",
+  });
+  const missing = formToSku(skuToForm(legacy), legacy);
+  assert.equal(missing.baseRate, "年化区间暂不可用 · 3 NEX/天");
+
+  const oneSided = formToSku({ ...skuToForm(legacy), shareYieldMax: "12" }, legacy);
+  assert.equal(oneSided.baseRate, "年化区间暂不可用 · 3 NEX/天");
+
+  const configured = formToSku({ ...skuToForm(legacy), shareYieldMin: "8", shareYieldMax: "12" }, legacy);
+  assert.equal(configured.baseRate, "参考年化 8–12% · 3 NEX/天");
+});
+
 test("E1 把累计销量视为订单运行态计数，编辑往返不得提交或提案修改它", () => {
   const existing = sku({
     sold: 1245, stock: 3, tier: "Entry", productType: "DEVICE",
