@@ -1,6 +1,8 @@
-# NEXION 术语与多语言词典 v1
+# UVEL 术语与多语言词典 v1
 
 > **现行裁决(2026-08-07)**:全项目已取消 KYC、钱包配对、C4 与 K5；本文相关旧字段、门禁、用例、权限或流程仅保留为历史基线，不得作为现行实现、运营或验收依据。
+
+> 品牌口径：当前 App 品牌是 UVEL；旧资料中的 NEXION 或 NexGrid 只作为历史检索别名，不代表当前品牌。
 
 > 目标：让 App、PC、客服、PRD、事件和 API 对同一业务对象使用同一名字，降低“同词异义”和翻译漂移。
 > 语言：中文 `zh`、英语 `en`、越南语 `vi`。品牌、代币、协议字段不翻译。
@@ -9,7 +11,7 @@
 ## 1. 使用规则
 
 1. 代码标识、事件名、状态枚举、货币精度与展示文案分层管理；翻译不能改变服务端合同。
-2. `NEXION`、`NEX`、`USDT`、`Nova`、`Genesis`、`KYC`、`MFA`、`API`、`ID`、`UTC` 保留原文；大小写不得变化。
+2. `UVEL`、`NEX`、`USDT`、`Nova`、`Genesis`、`KYC`、`MFA`、`API`、`ID`、`UTC` 保留原文；大小写不得变化。
 3. 中文与越南语为受管文案必填，英语按当前后台能力可选；App 三语言包必须保持 key 集与占位符集一致。
 4. 金额、APY、收益、排名、稀缺性和倒计时必须来自实时字段，不得把营销形容词写进权威字段。
 5. 禁止把 `pending` 一律译为“处理中”：它可能是待审核、待支付、待上链或待确认，必须按对象选词。
@@ -21,7 +23,7 @@
 
 | ID | 领域 | 代码/事件词 | 中文 zh | English en | Tiếng Việt vi | 释义与使用边界 |
 |---|---|---|---|---|---|---|
-| TERM-001 | 品牌 | `NEXION` | NEXION | NEXION | NEXION | 品牌名，不翻译、不变大小写 |
+| TERM-001 | 品牌 | `UVEL` | UVEL | UVEL | UVEL | 品牌名，不翻译、不变大小写 |
 | TERM-002 | 资产 | `NEX` | NEX | NEX | NEX | 平台代币符号，不写“币价保证” |
 | TERM-003 | 资产 | `USDT` | USDT | USDT | USDT | 计价/结算资产符号 |
 | TERM-004 | 账户 | `user` | 用户 | User | Người dùng | 使用产品的自然人账户；后台管理员另称“运营账号” |
@@ -37,11 +39,11 @@
 | TERM-014 | KYC | `kyc_pending` | 待审核 | Pending review | Đang chờ xét duyệt | 材料已提交但未决 |
 | TERM-015 | KYC | `kyc_approved` | 已通过 | Approved | Đã phê duyệt | KYC 通过，不等于交易必然通过 |
 | TERM-016 | KYC | `kyc_rejected` | 未通过 | Not approved | Không được phê duyệt | 用户侧避免惩罚性“拒绝”，须给下一步 |
-| TERM-017 | 资金 | `wallet` | 钱包 | Wallet | Ví | NEXION 账户内资产视图；外部链上钱包需显式加“外部” |
+| TERM-017 | 资金 | `wallet` | 钱包 | Wallet | Ví | UVEL 账户内资产视图；外部链上钱包需显式加“外部” |
 | TERM-018 | 资金 | `available_balance` | 可用余额 | Available balance | Số dư khả dụng | 可用于当前动作的余额，不含冻结/待结算 |
 | TERM-019 | 资金 | `ledger_balance` | 账本余额 | Ledger balance | Số dư sổ cái | 服务端权威账本金额，非展示缓存 |
-| TERM-020 | 资金 | `deposit` | 充值 | Deposit | Nạp tiền | 外部资产进入 NEXION；银行入金可用“银行转账充值” |
-| TERM-021 | 资金 | `withdrawal` | 提现 | Withdrawal | Rút tiền | NEXION 资产转出，不用“退款”代替 |
+| TERM-020 | 资金 | `deposit` | 充值 | Deposit | Nạp tiền | 外部资产进入 UVEL；银行入金可用“银行转账充值” |
+| TERM-021 | 资金 | `withdrawal` | 提现 | Withdrawal | Rút tiền | UVEL 资产转出，不用“退款”代替 |
 | TERM-022 | 资金 | `pending_review` | 待审核 | Pending review | Chờ xét duyệt | 需要人工/规则审核 |
 | TERM-023 | 资金 | `processing` | 处理中 | Processing | Đang xử lý | 已进入执行链，结果尚未确定 |
 | TERM-024 | 资金 | `completed` | 已完成 | Completed | Đã hoàn tất | 业务终态；链上交易另核对确认数 |

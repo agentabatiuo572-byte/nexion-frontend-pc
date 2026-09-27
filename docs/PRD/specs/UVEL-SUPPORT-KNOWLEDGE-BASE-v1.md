@@ -1,4 +1,4 @@
-# NEXION 客服知识库与标准话术 v1
+# UVEL 客服知识库与标准话术 v1
 
 > **现行客服输出原则（2026-08-28）**：对用户只说明当前生效的产品规则、入口、条件和结果；不得描述、确认、比较或枚举任何历史产品设计、曾用规则、已替代方案或曾经存在的功能。当前购买和提现不要求 KYC，提现地址按 App 当前页面直接管理。
 
@@ -338,9 +338,9 @@
 
 ### 6.2 安全提醒
 
-- 中文：“NEXION 客服不会索取你的密码、验证码、MFA 恢复码、私钥或助记词。请不要发送这些信息，也不要向陌生地址转账。”
-- English: “NEXION Support will never ask for your password, verification code, MFA recovery code, private key, or seed phrase. Do not share them or transfer assets to an unfamiliar address.”
-- Tiếng Việt: “Bộ phận Hỗ trợ NEXION sẽ không bao giờ yêu cầu mật khẩu, mã xác minh, mã khôi phục MFA, khóa riêng tư hoặc cụm từ khôi phục. Vui lòng không chia sẻ hoặc chuyển tài sản tới địa chỉ lạ.”
+- 中文：“UVEL 客服不会索取你的密码、验证码、MFA 恢复码、私钥或助记词。请不要发送这些信息，也不要向陌生地址转账。”
+- English: “UVEL Support will never ask for your password, verification code, MFA recovery code, private key, or seed phrase. Do not share them or transfer assets to an unfamiliar address.”
+- Tiếng Việt: “Bộ phận Hỗ trợ UVEL sẽ không bao giờ yêu cầu mật khẩu, mã xác minh, mã khôi phục MFA, khóa riêng tư hoặc cụm từ khôi phục. Vui lòng không chia sẻ hoặc chuyển tài sản tới địa chỉ lạ.”
 
 ### 6.3 无法承诺收益/时限
 
