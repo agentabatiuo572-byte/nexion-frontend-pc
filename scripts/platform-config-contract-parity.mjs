@@ -51,15 +51,20 @@ for (const token of ["interface FeatureFlags", "interface OnlineBonus", "interfa
   includes(appTypes, token);
 }
 
-// PC admin contract: real E6 endpoint `/api/admin/devices/compute-config` and strict parser, not the retired mock.
+// PC E6 no longer edits the retired h5BaseFactor phone multiplier; the App
+// still parses it from the server platform snapshot for existing devices.
+// Keep the current E6 key registry and endpoint checks instead of requiring
+// the removed admin write key.
 for (const token of [
   "fetchE6ComputeConfig",
   "parseE6ComputeConfig",
   '"/compute-config"',
   'e6FlagKey("computeShareEnabled")',
-  'e6CoeffKey("h5BaseFactor")',
   'e6CoeffKey("continuityFullHours")',
 ]) includes(pcE6, token);
+if (pcE6.text.includes('e6CoeffKey("h5BaseFactor")')) {
+  throw new Error(`${pcE6.file} still exposes retired h5BaseFactor as an E6 write key`);
+}
 for (const token of ["compute-config", "params"]) includes(pcE6Route, token);
 
 // SPEC-7 risk controls now come from the real K1/K2 server APIs. Keep the
