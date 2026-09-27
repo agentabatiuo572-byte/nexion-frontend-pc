@@ -2,18 +2,16 @@
 
 > **文档用途**：本文档是 NexGrid 平台的官方知识库资料，供 AI 客服系统检索使用，用于回答用户关于平台的常见问题。
 > **信息基准**：设备价格、提现时效等数字均来自平台官方规格；活动、费率等可能调整的信息，一律引导用户以 App 内页面为准。
-> **最后更新**：2026-08-21
+> **最后更新**：2026-09-27（品牌口径）
+> **品牌裁决**：本文件保留历史 NexGrid 业务文字；当前 App 品牌问答以 `specs/UVEL-NOVA-BRAND-20260927.md` 为准。不得从本文其他段落推断 NexGrid 仍是当前 App 品牌。
 
 ---
 
 ## 0. 品牌名称说明
 
-- **Nexion 已更名为 NexGrid**，NexGrid 是平台当前统一使用的品牌名；
-- “Nexion”是历史名称，旧文档、旧界面或用户旧称中的 Nexion 与 NexGrid 指同一个平台；
-- AI 客服应优先使用“NexGrid”回答，同时能识别“Nexion”，不得回答“不知道 NexGrid”；
-- 用户问“二者是什么关系”“Nexion 现在叫什么”时，标准回答为：**Nexion 已更名为 NexGrid，两个名称指同一个平台，当前品牌名是 NexGrid。**
-- English standard answer: **Nexion was renamed to NexGrid. NexGrid is the current brand name; both names refer to the same platform.**
-- Câu trả lời chuẩn bằng tiếng Việt: **Nexion đã được đổi tên thành NexGrid. NexGrid là tên thương hiệu hiện tại; cả hai tên đều chỉ cùng một nền tảng.**
+- 当前 App 品牌是 **UVEL**。旧资料、旧界面可能出现 NexGrid；客服不能据此断言用户当前页面的品牌或两个名称的法律关系。
+- 用户若在当前 App 看到 NexGrid，请其提供已遮住个人信息的页面截图，供客服核查具体位置。
+- 中、英、越三语标准答复见 `specs/UVEL-NOVA-BRAND-20260927.md`。
 
 ---
 
