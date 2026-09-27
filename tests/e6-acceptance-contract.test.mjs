@@ -6,6 +6,7 @@ const shell = readFileSync(new URL("../app/components/domain-views/e-view.tsx", 
 const tab = readFileSync(new URL("../app/components/domain-views/e-tabs/e6-compute-config.tsx", import.meta.url), "utf8");
 const types = readFileSync(new URL("../app/components/domain-views/e-tabs/types.ts", import.meta.url), "utf8");
 const client = readFileSync(new URL("../lib/admin/e6-client.ts", import.meta.url), "utf8");
+const installer = readFileSync(new URL("../lib/admin/installer-url.ts", import.meta.url), "utf8");
 const registry = readFileSync(new URL("../lib/admin/high-ops-registry.ts", import.meta.url), "utf8");
 const moduleRegistry = readFileSync(new URL("../lib/admin/registry/e.ts", import.meta.url), "utf8");
 const errorMessages = readFileSync(new URL("../lib/admin/error-messages.ts", import.meta.url), "utf8");
@@ -77,10 +78,10 @@ test("E6 exposes version rollback, phase boundary, structural and B1 failure con
 test("E6 download copy rejects test punctuation before it can become the published configuration", () => {
   // 后端只校验 ≤320 字符长度(COMPUTE_DOWNLOAD_TEXT_INVALID);测试标点必须由运营面在提交前拦住,
   // 否则「！！！Download the desktop client...」会被当成正式文案写入并下发给用户端(简报 #45)。
-  const patternLiteral = client.match(/E6_DOWNLOAD_COPY_PATTERN = "((?:[^"\\]|\\.)*)"/);
-  assert.ok(patternLiteral, "the copy gate pattern must live in the shared e6-client constants");
+  const patternLiteral = installer.match(/E6_DOWNLOAD_COPY_PATTERN = "((?:[^"\\]|\\.)*)"/);
+  assert.ok(patternLiteral, "the copy gate pattern must live in the shared installer-url constants");
   const copyPattern = new RegExp(JSON.parse(`"${patternLiteral[1]}"`));
-  assert.match(client, /E6_DOWNLOAD_COPY_MAX_LENGTH = 320/);
+  assert.match(installer, /E6_DOWNLOAD_COPY_MAX_LENGTH = 320/);
   assert.match(client, /E6_DOWNLOAD_COPY_PATTERN_MESSAGE/);
 
   // 简报里的真实坏值:必须被拒。

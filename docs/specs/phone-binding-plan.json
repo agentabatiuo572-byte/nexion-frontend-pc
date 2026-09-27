@@ -1,0 +1,146 @@
+{
+  "schemaVersion": 2,
+  "id": "ops-phone-binding-20260927",
+  "title": "运营后台手机换绑配置",
+  "repo": "D:/WORKS/PLAN/nexion-frontend-pc",
+  "base": "dca2793",
+  "mode": "implement",
+  "risk": "high",
+  "owner": "codex-primary",
+  "outOfScope": [
+    "真实原生设备凭据及手机任务调度全链",
+    "生产部署",
+    "无关工作区改动"
+  ],
+  "inputs": [
+    "phone-binding-scope.md"
+  ],
+  "steps": [
+    {
+      "id": "config",
+      "title": "配置读写及权限退役入口",
+      "dependsOn": [],
+      "scope": [
+        "app/components/domain-views/e-tabs/e6-compute-config.tsx",
+        "app/components/domain-views/e-view.tsx",
+        "lib/admin/**",
+        "app/_console/platform/params-registry/**",
+        "app/api/admin/devices/**",
+        "tests/e6*",
+        "scripts/verify.mjs",
+        "docs/specs/phone-binding*"
+      ],
+      "acceptance": [
+        {
+          "id": "config-contract",
+          "description": "换绑开关和间隔校验、缺失失败关闭、旧H5参数不可编辑、审计路径复用",
+          "source": {
+            "input": "phone-binding-scope.md",
+            "locator": "配置契约"
+          },
+          "kind": "behavior",
+          "checks": [
+            "config/contract"
+          ]
+        }
+      ],
+      "checks": [
+        {
+          "id": "contract",
+          "argv": [
+            "node",
+            "--experimental-strip-types",
+            "--test",
+            "tests/e6-phone-binding-contract.test.mjs"
+          ],
+          "kind": "exit",
+          "timeoutMs": 60000
+        }
+      ],
+      "reviewRequired": false
+    },
+    {
+      "id": "runtime",
+      "title": "运营页面实际操作与恢复",
+      "dependsOn": [
+        "config"
+      ],
+      "scope": [
+        "tests/e6-phone-binding-ui.mjs",
+        "docs/specs/phone-binding*"
+      ],
+      "acceptance": [
+        {
+          "id": "config-runtime",
+          "description": "真实组件开关、间隔、权限、错误、刷新和旧参数退役实景验证",
+          "source": {
+            "input": "phone-binding-scope.md",
+            "locator": "验收"
+          },
+          "kind": "ui",
+          "checks": [
+            "runtime/browser"
+          ]
+        }
+      ],
+      "checks": [
+        {
+          "id": "browser",
+          "argv": [
+            "node",
+            "tests/e6-phone-binding-ui.mjs"
+          ],
+          "kind": "record",
+          "capability": "runtime",
+          "report": ".verify-cache/phone-binding-runtime.json",
+          "requiredChecks": [
+            "config-runtime"
+          ],
+          "timeoutMs": 120000
+        }
+      ],
+      "reviewRequired": false
+    }
+  ],
+  "integration": {
+    "id": "integration",
+    "title": "整体验收",
+    "dependsOn": [
+      "config",
+      "runtime"
+    ],
+    "scope": [
+      "app",
+      "lib",
+      "tests",
+      "scripts/verify.mjs",
+      "docs/specs/phone-binding*"
+    ],
+    "acceptance": [
+      {
+        "id": "regression",
+        "description": "全量verify及独立交叉审查，区分本地验证与真实联调边界",
+        "source": {
+          "input": "phone-binding-scope.md",
+          "locator": "验收"
+        },
+        "kind": "behavior",
+        "checks": [
+          "integration/full"
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "id": "full",
+        "argv": [
+          "node",
+          "scripts/verify.mjs"
+        ],
+        "kind": "exit",
+        "timeoutMs": 600000
+      }
+    ],
+    "reviewRequired": true
+  }
+}

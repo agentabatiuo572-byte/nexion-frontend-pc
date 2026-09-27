@@ -635,6 +635,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   // E6 算力与设备配置校验(后端 OpsDeviceService.validateComputeValue)
   COMPUTE_URL_INVALID: "客户端下载地址必须以 https:// 开头且不超过 300 字符。",
   COMPUTE_FLAG_INVALID: "入口开关值无效(仅支持开启 / 关闭)。",
+  COMPUTE_PHONE_INTERVAL_INVALID: "手机换机间隔须为非负整数天数，0 表示不限制间隔。",
   COMPUTE_COEFF_INVALID: "系数值无效:H5 基础托管系数须 >0 且 ≤1、连续在线满额时长须 >0。",
   COMPUTE_YIELD_INVALID: "收益估算值必须为大于 0 的数字。",
   COMPUTE_TOPS_INVALID: "显卡 TOPS 必须为大于 0 的数字。",

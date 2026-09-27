@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, win32 } from "node:path";
 import test from "node:test";
 import {
   auditRepositoryReverseCoverage,
@@ -661,15 +661,21 @@ test("historical audit receipt cannot override the live machine-readable pending
   assert.equal(manifest.rows.filter((item) => item.status === "pending").length, 1);
 });
 
-test("historical selected-evidence SHA256 receipt remains parseable without overriding the dirty candidate", () => {
+test("historical selected-evidence SHA256 receipt retains its inventory without requiring retired external artifacts", () => {
   const ledger = read("docs/验收报告/PC管理后台遗留功能审计-20260810.files.sha256");
   const entries = ledger.split(/\r?\n/).filter((line) => line.trim() && !line.startsWith("#"));
-  assert.ok(entries.length >= 100, "selected evidence ledger unexpectedly shrank");
+  assert.equal(entries.length, 541, "archived selected evidence inventory changed");
+  const paths = new Set();
+  // The owner confirmed these external artifacts were cleaned up (2026-09-27).
+  // Preserve their receipt; current checks cannot attest to unavailable historical content.
   for (const line of entries) {
     const match = line.match(/^([0-9a-f]{64}) \*(.+)$/);
     assert.ok(match, `invalid SHA256 ledger line: ${line}`);
     const [, expected, absolute] = match;
-    assert.ok(existsSync(absolute), `SHA256 ledger file is missing: ${absolute}`);
+    assert.ok(win32.isAbsolute(absolute), `SHA256 ledger path is not absolute: ${absolute}`);
+    const key = win32.normalize(absolute).toLowerCase();
+    assert.ok(!paths.has(key), `duplicate SHA256 ledger path: ${absolute}`);
+    paths.add(key);
     assert.match(expected, /^[0-9a-f]{64}$/);
   }
 });

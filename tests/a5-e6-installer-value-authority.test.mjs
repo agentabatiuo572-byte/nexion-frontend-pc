@@ -29,7 +29,7 @@ test("安装包地址判定是单一实现:E6 与 A5 都从共享模块取", () 
   const a5 = read("app/_console/platform/params-registry/params-registry-client.tsx");
   assert.match(e6, /export\s*\{[^}]*isSafeInstallerUrl[^}]*\}\s*from\s*"@\/lib\/admin\/installer-url"/s,
     "e6-client 必须转出共享判定,不得自留一份");
-  assert.match(a5, /import\s*\{\s*isSafeInstallerUrl\s*\}\s*from\s*"@\/lib\/admin\/installer-url"/,
+  assert.match(a5, /import\s*\{[^}]*\bisSafeInstallerUrl\b[^}]*\}\s*from\s*"@\/lib\/admin\/installer-url"/,
     "A5 必须引用共享判定");
   const e6Component = read("app/components/domain-views/e-tabs/e6-compute-config.tsx");
   assert.doesNotMatch(e6Component, /function\s+isSafeInstallerUrl\s*\(/,

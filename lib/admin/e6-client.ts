@@ -17,6 +17,7 @@ export const e6CoeffKey = (key: string): string => `${E6_PARAM_PREFIX}${key}`;
 export const e6YieldKey = (key: string): string => `${E6_PARAM_PREFIX}yieldEstimate.${key}`;
 export const e6GpuTierKey = (id: string, field: string): string => `${E6_PARAM_PREFIX}gpuTier.${id}.${field}`;
 export const e6DownloadKey = (field: string): string => `${E6_PARAM_PREFIX}download.${field}`;
+export const e6PhoneBindingKey = (field: "allowReplacement" | "minReplacementIntervalDays"): string => `${E6_PARAM_PREFIX}phoneBinding.${field}`;
 
 export const E6_GPU_TIER_IDS = ["G1", "G2", "G3", "G4", "G5", "G6"] as const;
 const E6_KEYWORD_FIELDS = ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5", "keyword6"] as const;
@@ -38,7 +39,8 @@ export {
 } from "@/lib/admin/installer-url";
 const exactKeys = [
   e6FlagKey("computeShareEnabled"),
-  e6CoeffKey("h5BaseFactor"),
+  e6PhoneBindingKey("allowReplacement"),
+  e6PhoneBindingKey("minReplacementIntervalDays"),
   e6CoeffKey("continuityFullHours"),
   e6YieldKey("topsBaseline"),
   e6YieldKey("dailyUsdtPerBaseline"),
@@ -100,6 +102,7 @@ export interface E6DownloadView {
 }
 export interface E6ComputeConfigView {
   domain: string;
+  phoneBinding?: { allowReplacement: boolean; minReplacementIntervalDays: number } | null;
   flags: E6FlagView[];
   coefficients: E6CoeffView[];
   yieldEstimate: E6YieldView[];

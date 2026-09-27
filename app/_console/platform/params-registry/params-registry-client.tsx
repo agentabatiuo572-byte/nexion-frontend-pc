@@ -32,6 +32,7 @@ const E6_DOWNLOAD_COPY_KEYS: ReadonlySet<string> = new Set([
  * 「正常 · 延迟 1.2s」同屏出现且都自称当前值。
  */
 function rowValueLabel(row: A5RegistryRow): string {
+  if (row.canonicalKey === "E.compute.h5BaseFactor") return "历史配置 · 已退役（只读）";
   if (row.live) {
     return row.stale
       ? "实时采样 · 当前不可用"
@@ -229,9 +230,9 @@ function DomainSection({ domain, rows }: { domain: string; rows: A5RegistryRow[]
               </div>
               {/* 归属链接此前只暴露模块名(如「A2 审计与追溯」),同一模块下多条链接完全同名,
                   读屏与语音控制无法区分目标。名称必须含该卡片的参数本身。 */}
-              <Link href={row.ownerRoute} aria-label={ownerLinkAccessibleName(row)} prefetch={false} className="inline-flex shrink-0 items-center gap-1 rounded-[7px] px-2 py-1 text-[10.5px] outline-none focus-visible:ring-2 focus-visible:ring-[var(--admin-domain-a)] focus-visible:ring-offset-1" style={{ border: "1px solid var(--v5-border)", color: accent }}>
+              {row.canonicalKey !== "E.compute.h5BaseFactor" && <Link href={row.ownerRoute} aria-label={ownerLinkAccessibleName(row)} prefetch={false} className="inline-flex shrink-0 items-center gap-1 rounded-[7px] px-2 py-1 text-[10.5px] outline-none focus-visible:ring-2 focus-visible:ring-[var(--admin-domain-a)] focus-visible:ring-offset-1" style={{ border: "1px solid var(--v5-border)", color: accent }}>
                 {row.ownerLabel}<ArrowUpRight aria-hidden="true" size={11} />
-              </Link>
+              </Link>}
             </div>
             <div className="mt-2 rounded-[7px] px-2.5 py-2" style={{ background: "var(--v5-surface)" }}>
               {/* 🔴 值标签必须说清这个数是不是实时权威事实(zentao #198)。
@@ -250,17 +251,19 @@ function DomainSection({ domain, rows }: { domain: string; rows: A5RegistryRow[]
                 </p>
               )}
             </div>
-            <p className="mt-2 text-[10.5px] leading-relaxed" style={{ color: "var(--v5-ink-3)" }}>{row.description}</p>
+            <p className="mt-2 text-[10.5px] leading-relaxed" style={{ color: "var(--v5-ink-3)" }}>{row.canonicalKey === "E.compute.h5BaseFactor" ? "仅保留历史值，不再提供编辑入口；H5 手机算力奖励已退役，其它已购设备不受影响。" : row.description}</p>
             <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[9.5px]" style={{ color: "var(--v5-ink-4)" }}>
               <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-surface)" }}>{row.valueType}</span>
               {/* 过期/读不到的实时行不得标「服务端权威」(zentao #198):那句声明的是
                   「这就是当前生效的服务端事实」,而陈旧快照恰恰不是。 */}
-              {row.stale
+              {row.canonicalKey === "E.compute.h5BaseFactor"
+                ? <span>已退役 · 只读</span>
+                : row.stale
                 ? <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-warning-soft)", color: "var(--v5-warning)" }}>历史快照 · 已过期</span>
                 : rowValueEffective(row)
                   ? <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-success-soft)", color: "var(--v5-success)" }}>{row.live ? "实时权威" : "服务端权威"}</span>
                   : <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-warning-soft)", color: "var(--v5-warning)" }}>已存储 · 未生效</span>}
-              {row.operationConfirm && <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-warning-soft)", color: "var(--v5-warning)" }}><ShieldCheck size={9} />修改需确认</span>}
+              {row.operationConfirm && row.canonicalKey !== "E.compute.h5BaseFactor" && <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-warning-soft)", color: "var(--v5-warning)" }}><ShieldCheck size={9} />修改需确认</span>}
               <span>更新于 {formatTime(row.live && row.observedAt ? row.observedAt : row.updatedAt)}</span>
             </div>
           </article>

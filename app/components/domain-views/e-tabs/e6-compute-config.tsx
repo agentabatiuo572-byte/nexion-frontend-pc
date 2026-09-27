@@ -1,6 +1,6 @@
 /**
  * E6 · 算力与设备配置(server-canonical 聚合视图)。
- * 4 区块:电脑算力入口开关 / 在线加成系数 / 电脑显卡映射表(G1-G6) / 客户端下载配置。
+ * 手机绑定换机 / 电脑算力入口开关 / App 在线加成系数 / 显卡映射表(G1-G6) / 客户端下载配置。
  * 所有写入经 OperationConfirmModal,由 shell(e-view)统一落 A2 审计 + Idempotency-Key。
  *
  * 数据源:ctx.e6Config(后端 GET /api/admin/devices/compute-config 聚合视图),
@@ -19,6 +19,7 @@ import {
   e6YieldKey,
   e6GpuTierKey,
   e6DownloadKey,
+  e6PhoneBindingKey,
   E6_DOWNLOAD_COPY_MAX_LENGTH,
   E6_DOWNLOAD_COPY_PATTERN,
   E6_DOWNLOAD_COPY_PATTERN_MESSAGE,
@@ -28,6 +29,7 @@ import {
 // 安装包地址判定是 E6/A5 共用的单一来源(zentao #156:两页曾各自判定,于是 A5 把 E6
 // 已判为无效的值当成「当前服务端值」展示)。规则住在 installer-url.ts,这里只引用。
 import { isSafeInstallerUrl } from "@/lib/admin/installer-url";
+import { parseE6PhoneBinding } from "@/lib/admin/e456-overview-contract";
 
 const numberFmt = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 });
 
@@ -67,13 +69,33 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
     canWriteE6, canToggleE6, e6Config, e6Loading, e6Error, refreshE6, openActionConfirm,
   } = ctx;
   const flags = e6Config?.flags ?? [];
-  const coefficients = e6Config?.coefficients ?? [];
+  const coefficients = (e6Config?.coefficients ?? []).filter((c) => c.key !== "h5BaseFactor");
+  const phoneBinding = parseE6PhoneBinding(e6Config?.phoneBinding);
   const yields = e6Config?.yieldEstimate ?? [];
   const gpuTiers = e6Config?.gpuTiers ?? [];
   const download = e6Config?.download;
   const downloadUrl = (download?.url ?? "").trim();
   const downloadReady = isSafeInstallerUrl(downloadUrl);
   const ready = !!e6Config; // 后端聚合视图已加载
+
+  const togglePhoneReplacement = () => {
+    if (!phoneBinding || !canToggleE6) return;
+    openActionConfirm({
+      name: phoneBinding.allowReplacement ? "禁止更换绑定手机" : "允许更换绑定手机",
+      op: "param-fixed", paramKey: e6PhoneBindingKey("allowReplacement"),
+      fixedVal: phoneBinding.allowReplacement ? "off" : "on",
+      detail: "仅调整已绑定手机能否更换。首次绑定不受影响；提交理由并经 A2 批准后生效，不改变其它已购设备。",
+    });
+  };
+  const editPhoneReplacementInterval = () => {
+    if (!phoneBinding || !canWriteE6) return;
+    openActionConfirm({
+      name: "调整手机换机最短间隔",
+      op: "param", paramKey: e6PhoneBindingKey("minReplacementIntervalDays"),
+      edit: { kind: "number", current: String(phoneBinding.minReplacementIntervalDays), unit: "天", min: 0, max: Number.MAX_SAFE_INTEGER, step: 1, disallowCurrent: true },
+      detail: "填写非负整数天数，0 表示不限制间隔。禁止更换时仍可预设间隔；提交理由并经 A2 批准后生效。",
+    });
+  };
 
   // 入口开关切换 → param-fixed on/off。
   const requestToggle = (key: string, label: string, current: boolean) => {
@@ -96,7 +118,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
       paramKey: e6CoeffKey(c.key),
       edit: {
         kind: "number", current: c.value, unit: c.unit,
-        min: Number.MIN_VALUE, max: c.key === "h5BaseFactor" ? 1 : undefined,
+        min: Number.MIN_VALUE,
         disallowCurrent: true,
       },
       detail: `${c.label}: ${c.desc} 调整后对后续结算生效,不回溯已结算收益。${c.frontendEffect}`,
@@ -237,10 +259,6 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
   const copyIssues = copyFields
     .filter((field) => !copyPattern.test(field.value))
     .map((field) => field.label);
-  const coeffValueByLabel = (labelToken: string): string => {
-    const c = coefficients.find((item) => item.label.includes(labelToken));
-    return c ? c.value : "—";
-  };
 
   return (
     <div>
@@ -248,10 +266,27 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
         { k: "入口开关", v: flags.length, sub: e6Loading ? "加载中" : `${onCount} 个开启`, tone: "cyan" },
         { k: "显卡档位", v: gpuTiers.length, sub: `${keywordCount} 个识别词`, tone: "ok" },
         { k: "下载地址", v: downloadReady ? "已配置" : "未配置", sub: downloadReady ? "App 下载与配对入口具备开放条件" : "入口保持关闭", tone: downloadReady ? "ok" : "" },
-        { k: "在线系数", v: coefficients.length, sub: "H5 / App 稳定性", tone: "cyan" },
+        { k: "在线系数", v: coefficients.length, sub: "App 稳定性", tone: "cyan" },
       ]} />
 
-      <section className="pane">
+      <section className="pane" data-proof="e6-phone-binding">
+        <div className="pane-h"><span className="ttl">手机绑定与换机</span><span className="sub">修改需理由与 A2 确认</span></div>
+        {!phoneBinding ? <div className="empty" role="status">手机绑定配置未就绪，暂不可修改。请刷新重试。</div> : <>
+          <div className="e6-flag-row">
+            <div className="e6-flag-meta"><span className="e6-flag-name">允许更换绑定手机</span><span className="e6-flag-desc">首次绑定不受换机开关限制。</span></div>
+            <div className="e6-flag-ctl"><span className="e6-flag-state">{phoneBinding.allowReplacement ? "已允许" : "已禁止"}</span>
+              {canToggleE6 && <button type="button" role="switch" aria-label="允许更换绑定手机" aria-checked={phoneBinding.allowReplacement} className="e6-switch" data-on={phoneBinding.allowReplacement} data-proof="e6-phone-replacement-toggle" disabled={e6Loading} onClick={togglePhoneReplacement}><span className="e6-switch-knob" aria-hidden /></button>}
+            </div>
+          </div>
+          <div className="pkv"><div className="lhs"><span className="zh">换机最短间隔</span><span className="desc">0 表示不限制间隔；禁止更换时仍可调整。</span></div><span className="v">{phoneBinding.minReplacementIntervalDays}<span className="u">天</span></span>
+            {canWriteE6 && <button type="button" className="adj" data-proof="e6-phone-replacement-interval" disabled={e6Loading} onClick={editPhoneReplacementInterval}>调整换机间隔</button>}
+          </div>
+        </>}
+        <div className="tint cyan tiny" style={{ margin: "12px 16px" }}>H5 手机算力奖励已退役。手机绑定和换机不影响其它已购设备。</div>
+        <button type="button" className="adj" style={{ margin: "0 16px 14px" }} disabled={e6Loading} onClick={() => void refreshE6()}>刷新手机绑定配置</button>
+      </section>
+
+      <section className="pane" style={{ marginTop: 14 }}>
         <div className="pane-h">
           <span className="ttl">电脑算力入口开关</span>
           <span className="sub">切换需理由 + A2 审计</span>
@@ -307,18 +342,8 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
             {canWriteE6 && <button type="button" className="adj" data-proof={`e6-coeff-${c.key}`} onClick={() => editCoefficient(c)}>调整</button>}
           </div>
         ))}
-        <div className="tint cyan tiny" data-proof="e6-h5-app-impact" style={{ margin: "12px 16px 0" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <div>
-              <b>H5 基础托管</b> · 当前 {coeffValueByLabel("基础托管")} 倍。网页登录只拿保守基线,页面关闭后仍按账户托管结算,不吃连续在线加成。
-            </div>
-            <div>
-              <b>App 在线加成</b> · 当前满额时长 {coeffValueByLabel("满额时长")} 小时。App 连续在线达到该时长后爬满在线收益,用于承接 H5 升级动机。
-            </div>
-          </div>
-        </div>
         <div className="tint cyan tiny" style={{ margin: "12px 16px 14px" }}>
-          <AutoGloss>H5 基础托管系数决定网页登录态的保守产出;连续在线满额时长决定 App 稳定性加成爬满需要多久。提高 H5 系数或缩短满额时长属于资金放大方向,B1 覆盖率低于红线时服务端失败关闭;收紧与回滚方向保持可用。两个值都不回溯已结算收益。</AutoGloss>
+          <AutoGloss>连续在线满额时长决定 App 稳定性加成爬满需要多久。缩短满额时长属于资金放大方向,B1 覆盖率低于红线时服务端失败关闭;收紧与回滚方向保持可用。调整不回溯已结算收益，不恢复 H5 手机算力奖励。</AutoGloss>
         </div>
       </section>
 

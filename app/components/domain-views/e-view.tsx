@@ -1074,6 +1074,13 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   };
   // 自由值/固定值/多字段调参统一入口:按 paramKey 路由到 e6_compute_config / e1_gate_field / e3_config。
   const proposeParam = async (paramKey: string, value: string, before: string, reason: string, action: string, amplify: boolean) => {
+    if (paramKey === "E.compute.phoneBinding.minReplacementIntervalDays") {
+      const days = Number(value);
+      if (!value.trim() || !Number.isSafeInteger(days) || days < 0) {
+        throw new Error("手机换机间隔须为非负整数天数，0 表示不限制间隔。");
+      }
+      value = String(days);
+    }
     if (isE6ParamKey(paramKey)) {
       const def = findHighOp("e6_compute_config")!;
       await propose(ctx.toast, {
