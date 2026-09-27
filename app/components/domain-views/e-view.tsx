@@ -1440,7 +1440,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           {(() => {
             if (form.tier === "Share") {
               const lo = skuNum(form.shareYieldMin); const hi = skuNum(form.shareYieldMax); const nex = skuNum(form.dailyEarnNEX); const pr = skuNum(form.price);
-              const complete = form.shareYieldMin.trim() !== "" && form.shareYieldMax.trim() !== "" && lo >= 0 && hi >= lo;
+              const complete = form.shareYieldMin.trim() !== "" && form.shareYieldMax.trim() !== "" && lo > 0 && hi >= lo;
               return <div className="tint cyan tiny">派生 · {complete ? <>参考年化 <span className="nowrap">{lo}–{hi}%</span></> : "年化区间暂不可用"} · 日产 <span className="nowrap">{nex.toLocaleString()} NEX/天</span>{pr > 0 ? <> · 起投 <span className="nowrap">${pr.toLocaleString()}</span></> : null}</div>;
             }
             const p = skuNum(form.price); const d = skuNum(form.dailyEarn);

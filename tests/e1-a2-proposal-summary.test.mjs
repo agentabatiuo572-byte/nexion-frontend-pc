@@ -192,6 +192,9 @@ test("Cloud Share 表单不再生成或透传旧美元日产展示串", () => {
   const oneSided = formToSku({ ...skuToForm(legacy), shareYieldMax: "12" }, legacy);
   assert.equal(oneSided.baseRate, "年化区间暂不可用 · 3 NEX/天");
 
+  const zeroMin = formToSku({ ...skuToForm(legacy), shareYieldMin: "0", shareYieldMax: "12" }, legacy);
+  assert.equal(zeroMin.baseRate, "年化区间暂不可用 · 3 NEX/天");
+
   const configured = formToSku({ ...skuToForm(legacy), shareYieldMin: "8", shareYieldMax: "12" }, legacy);
   assert.equal(configured.baseRate, "参考年化 8–12% · 3 NEX/天");
 });

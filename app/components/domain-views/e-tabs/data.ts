@@ -239,7 +239,7 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
   const shareYieldMin = skuNumU(f.shareYieldMin);
   const shareYieldMax = skuNumU(f.shareYieldMax);
   const derivedBaseRate = isShare
-    ? `${shareYieldMin != null && shareYieldMax != null && shareYieldMin >= 0 && shareYieldMax >= shareYieldMin ? `参考年化 ${shareYieldMin}–${shareYieldMax}%` : "年化区间暂不可用"} · ${dailyEarnNEX.toLocaleString()} NEX/天`
+    ? `${shareYieldMin != null && shareYieldMax != null && shareYieldMin > 0 && shareYieldMax >= shareYieldMin ? `参考年化 ${shareYieldMin}–${shareYieldMax}%` : "年化区间暂不可用"} · ${dailyEarnNEX.toLocaleString()} NEX/天`
     : `$${dailyEarn.toFixed(2)}/d · ${dailyEarnNEX.toLocaleString()} NEX`;
   const earningsUnchanged = existing
     && existing.tier === f.tier
