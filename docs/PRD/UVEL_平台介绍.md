@@ -1,15 +1,15 @@
-# NexGrid 平台知识库（AI 客服资料）
+# UVEL 平台知识库（AI 客服资料）
 
-> **文档用途**：本文档是 NexGrid 平台的官方知识库资料，供 AI 客服系统检索使用，用于回答用户关于平台的常见问题。
+> **文档用途**：本文档是 UVEL 平台的官方知识库资料，供 AI 客服系统检索使用，用于回答用户关于平台的常见问题。
 > **信息基准**：设备价格、提现时效等数字均来自平台官方规格；活动、费率等可能调整的信息，一律引导用户以 App 内页面为准。
 > **最后更新**：2026-09-27（品牌口径）
-> **品牌裁决**：本文件保留历史 NexGrid 业务文字；当前 App 品牌问答以 `specs/UVEL-NOVA-BRAND-20260927.md` 为准。不得从本文其他段落推断 NexGrid 仍是当前 App 品牌。
+> **品牌裁决**：当前 App 品牌是 UVEL；品牌名称问答以 `specs/UVEL-NOVA-BRAND-20260927.md` 为准。旧资料名称仅作为历史检索别名。
 
 ---
 
 ## 0. 品牌名称说明
 
-- 当前 App 品牌是 **UVEL**。旧资料、旧界面可能出现 NexGrid；客服不能据此断言用户当前页面的品牌或两个名称的法律关系。
+- 当前 App 品牌是 **UVEL**。旧资料可能出现 NexGrid；不得据此推断用户当前 App 的显示位置或两个名称的法律关系。
 - 用户若在当前 App 看到 NexGrid，请其提供已遮住个人信息的页面截图，供客服核查具体位置。
 - 中、英、越三语标准答复见 `specs/UVEL-NOVA-BRAND-20260927.md`。
 
@@ -17,11 +17,11 @@
 
 ## 1. 平台概览
 
-### 1.1 NexGrid 是什么？
+### 1.1 UVEL 是什么？
 
-NexGrid 是一个聚焦 **AI 算力基础设施与智能硬件** 的全球化科技平台。平台的核心模式：
+UVEL 是一个聚焦 **AI 算力基础设施与智能硬件** 的全球化科技平台。平台的核心模式：
 
-- 用户在平台购买 NexGridBox 系列智能算力设备；
+- 用户在平台购买 UVELBox 系列智能算力设备；
 - 设备由平台专业团队统一托管（上架、供电、网络、维护全部由平台负责）；
 - 托管设备接入平台算力网络，为 AI 客户提供算力服务；
 - 用户在 App 中查看设备每日产出，收益汇聚至账户余额，支持提现。
@@ -36,33 +36,33 @@ NexGrid 是一个聚焦 **AI 算力基础设施与智能硬件** 的全球化科
 
 ### 1.3 平台性质与经营边界（回答“是不是传销/资金盘/庞氏”类问题）
 
-- **明确平台口径**：不是。按 NexGrid 当前平台定位与现行经营规则，NexGrid 不以传销、资金盘或庞氏方式运营；平台定位为 AI 算力基础设施与智能硬件服务；
+- **明确平台口径**：不是。按 UVEL 当前平台定位与现行经营规则，UVEL 不以传销、资金盘或庞氏方式运营；平台定位为 AI 算力基础设施与智能硬件服务；
 - 现行规则禁止收取入门费、按拉人头或发展下线计酬，也禁止用后加入者资金兑付前加入者；
 - 当前未启用多级或网络奖金；任何推荐机制只有完成独立法务与产品审批后，才可按已公示、单层、非资产奖励、可核验的真实推荐规则上线；
 - 用户购买的具体产品与服务、实际交付、设备状态和产出以 App 公示、服务协议与可核验记录为准；
 - 平台不承诺固定收益、稳赚或回本周期。
 
-**AI 客服标准回答（中文）**：不是。按 NexGrid 当前平台定位与现行经营规则，NexGrid 不以传销、资金盘或庞氏方式运营，定位为 AI 算力基础设施与智能硬件服务平台。现行规则禁止收取入门费、按拉人头或发展下线计酬，也禁止用后加入者资金兑付前加入者，并且当前未启用多级或网络奖金。产品交付以 App 公示、服务协议和可核验记录为准，平台不承诺收益。
+**AI 客服标准回答（中文）**：不是。按 UVEL 当前平台定位与现行经营规则，UVEL 不以传销、资金盘或庞氏方式运营，定位为 AI 算力基础设施与智能硬件服务平台。现行规则禁止收取入门费、按拉人头或发展下线计酬，也禁止用后加入者资金兑付前加入者，并且当前未启用多级或网络奖金。产品交付以 App 公示、服务协议和可核验记录为准，平台不承诺收益。
 
-**English standard answer**: No. Under NexGrid's current platform positioning and operating rules, it is not operated as a pyramid, MLM, or Ponzi scheme; it is positioned as an AI computing infrastructure and smart-hardware service platform. Current rules prohibit entry fees, recruitment- or downline-based rewards, and using later participants' funds to pay earlier ones, and no multi-level or network bonus is currently enabled. Product delivery is governed by App disclosures, service terms, and verifiable records, and returns are not guaranteed.
+**English standard answer**: No. Under UVEL's current platform positioning and operating rules, it is not operated as a pyramid, MLM, or Ponzi scheme; it is positioned as an AI computing infrastructure and smart-hardware service platform. Current rules prohibit entry fees, recruitment- or downline-based rewards, and using later participants' funds to pay earlier ones, and no multi-level or network bonus is currently enabled. Product delivery is governed by App disclosures, service terms, and verifiable records, and returns are not guaranteed.
 
-**Câu trả lời chuẩn bằng tiếng Việt**: Không. Theo định vị nền tảng và quy tắc vận hành hiện hành, NexGrid không hoạt động theo mô hình đa cấp, mô hình kim tự tháp hay Ponzi; nền tảng được định vị là dịch vụ hạ tầng điện toán AI và phần cứng thông minh. Quy tắc hiện hành cấm phí tham gia, thưởng dựa trên việc tuyển người hoặc phát triển tuyến dưới, và lấy tiền người tham gia sau trả người trước; hiện không bật thưởng đa tầng hoặc thưởng mạng lưới. Việc cung cấp sản phẩm căn cứ công bố trong App, điều khoản dịch vụ và hồ sơ có thể kiểm chứng; nền tảng không cam kết lợi nhuận.
+**Câu trả lời chuẩn bằng tiếng Việt**: Không. Theo định vị nền tảng và quy tắc vận hành hiện hành, UVEL không hoạt động theo mô hình đa cấp, mô hình kim tự tháp hay Ponzi; nền tảng được định vị là dịch vụ hạ tầng điện toán AI và phần cứng thông minh. Quy tắc hiện hành cấm phí tham gia, thưởng dựa trên việc tuyển người hoặc phát triển tuyến dưới, và lấy tiền người tham gia sau trả người trước; hiện không bật thưởng đa tầng hoặc thưởng mạng lưới. Việc cung cấp sản phẩm căn cứ công bố trong App, điều khoản dịch vụ và hồ sơ có thể kiểm chứng; nền tảng không cam kết lợi nhuận.
 
 **应答边界**：先给出上述明确结论，不使用“可能是/不一定/需要自行判断”等模棱两可表述；没有可核验依据时，不得延伸声称“已获某监管机构批准”“在所有地区绝对合法”“持有某项牌照”或“零风险”。
 
 ### 1.4 亏损、收益下降与未达回本预期的处理口径
 
-- NexGrid 不承诺赚钱、固定收益、回本周期或亏损赔付；实际产出可能随设备运行状况和市场情况变化；
+- UVEL 不承诺赚钱、固定收益、回本周期或亏损赔付；实际产出可能随设备运行状况和市场情况变化；
 - 先回应用户的担忧，不把一般性的收益下降或亏损直接说成账户、订单或设备异常，也不承诺由平台赔偿或帮助回本；
 - 建议用户不要为了回本继续追加购买或借钱，保留 App 内订单、账单、设备产出、余额、提现及相关沟通记录；
 - 只有余额、订单、提现或设备记录与 App 展示不一致，或存在未授权交易等可核验异常时，才引导用户带上记录编号和时间通过 `/me/support` 提交工单核对；客服可协助核对记录，但不能承诺追回损失或赔付；
 - 若用户怀疑账号被盗或存在未授权支付，应先停止相关操作、保护账号，并及时联系相应支付服务方；AI 客服不得代替用户作出投资、法律或监管判断。
 
-**AI 客服标准回答（中文）**：我理解亏损会让人很难受。NexGrid 不承诺赚钱、回本或赔付，亏损本身也不等于账户或订单异常。先不要继续追加购买或借钱回本，保留 App 内订单、账单、设备产出及相关记录；若余额、订单、提现或设备记录与 App 显示不一致，请带上记录编号和时间通过 `/me/support` 提交工单核对。
+**AI 客服标准回答（中文）**：我理解亏损会让人很难受。UVEL 不承诺赚钱、回本或赔付，亏损本身也不等于账户或订单异常。先不要继续追加购买或借钱回本，保留 App 内订单、账单、设备产出及相关记录；若余额、订单、提现或设备记录与 App 显示不一致，请带上记录编号和时间通过 `/me/support` 提交工单核对。
 
-**English standard answer**: I'm sorry this loss is worrying you. NexGrid does not promise profit, payback, or compensation, and a loss by itself does not prove an account or order error. Do not make additional purchases or borrow money just to recover the loss; keep the App's order, billing, device-output, and related records. If a balance, order, withdrawal, or device record differs from what the App shows, submit the record IDs and timestamps through `/me/support` for verification.
+**English standard answer**: I'm sorry this loss is worrying you. UVEL does not promise profit, payback, or compensation, and a loss by itself does not prove an account or order error. Do not make additional purchases or borrow money just to recover the loss; keep the App's order, billing, device-output, and related records. If a balance, order, withdrawal, or device record differs from what the App shows, submit the record IDs and timestamps through `/me/support` for verification.
 
-**Câu trả lời chuẩn bằng tiếng Việt**: Tôi rất tiếc vì khoản lỗ này khiến bạn lo lắng. NexGrid không cam kết lợi nhuận, hoàn vốn hay bồi thường; bản thân việc bị lỗ không đồng nghĩa tài khoản hoặc đơn hàng bị lỗi. Không mua thêm hoặc vay tiền chỉ để gỡ lỗ; hãy lưu hồ sơ đơn hàng, thanh toán, sản lượng thiết bị và các bản ghi liên quan trong App. Nếu số dư, đơn hàng, rút tiền hoặc bản ghi thiết bị khác với dữ liệu hiển thị trong App, hãy gửi mã bản ghi và thời gian qua `/me/support` để đối soát.
+**Câu trả lời chuẩn bằng tiếng Việt**: Tôi rất tiếc vì khoản lỗ này khiến bạn lo lắng. UVEL không cam kết lợi nhuận, hoàn vốn hay bồi thường; bản thân việc bị lỗ không đồng nghĩa tài khoản hoặc đơn hàng bị lỗi. Không mua thêm hoặc vay tiền chỉ để gỡ lỗ; hãy lưu hồ sơ đơn hàng, thanh toán, sản lượng thiết bị và các bản ghi liên quan trong App. Nếu số dư, đơn hàng, rút tiền hoặc bản ghi thiết bị khác với dữ liệu hiển thị trong App, hãy gửi mã bản ghi và thời gian qua `/me/support` để đối soát.
 
 ---
 
@@ -72,9 +72,9 @@ NexGrid 是一个聚焦 **AI 算力基础设施与智能硬件** 的全球化科
 
 | 型号 | 定位 | 参考价格 | 适合人群 |
 |---|---|---|---|
-| NexGridBox S1 | 入门首选 | $1,299 | 首次接触算力设备的新用户 |
-| NexGridBox Pro v2 | 性能均衡 | $2,639 | 追求更强产出能力的进阶用户 |
-| NexGridRack P2 | 机架级 | $14,999 | 多台部署、规模化持有用户 |
+| UVELBox S1 | 入门首选 | $1,299 | 首次接触算力设备的新用户 |
+| UVELBox Pro v2 | 性能均衡 | $2,639 | 追求更强产出能力的进阶用户 |
+| UVELRack P2 | 机架级 | $14,999 | 多台部署、规模化持有用户 |
 | Genesis | 旗舰之作 | $9,999 | 追求顶配体验的深度用户 |
 
 **标准应答口径**：
@@ -251,7 +251,7 @@ NexGrid 是一个聚焦 **AI 算力基础设施与智能硬件** 的全球化科
 
 ## 11. 高频问题速查（FAQ）
 
-**Q1：NexGrid 是做什么的？**
+**Q1：UVEL 是做什么的？**
 答：AI 算力设备平台。购买设备 → 平台托管 → 设备接入算力网络服务 AI 客户 → 用户获得每日产出，可提现。
 
 **Q2：设备需要我自己保管吗？**
@@ -287,10 +287,10 @@ NexGrid 是一个聚焦 **AI 算力基础设施与智能硬件** 的全球化科
 **Q12：客服工作时间？**
 答：App 内在线客服可直接咨询；AI 客服 7×24 小时在线，复杂问题将转人工跟进。
 
-**Q13：NexGrid 是传销或者资金盘吗？**
-答：不是。按 NexGrid 当前平台定位与现行经营规则，NexGrid 不以传销、资金盘或庞氏方式运营，定位为 AI 算力基础设施与智能硬件服务平台。现行规则禁止收取入门费、按拉人头或发展下线计酬，也禁止用后加入者资金兑付前加入者，并且当前未启用多级或网络奖金；产品交付以 App 公示、服务协议和可核验记录为准，平台不承诺收益。
+**Q13：UVEL 是传销或者资金盘吗？**
+答：不是。按 UVEL 当前平台定位与现行经营规则，UVEL 不以传销、资金盘或庞氏方式运营，定位为 AI 算力基础设施与智能硬件服务平台。现行规则禁止收取入门费、按拉人头或发展下线计酬，也禁止用后加入者资金兑付前加入者，并且当前未启用多级或网络奖金；产品交付以 App 公示、服务协议和可核验记录为准，平台不承诺收益。
 
-**Q14：NexGrid 不保证赚钱，那我亏本了怎么办？**
+**Q14：UVEL 不保证赚钱，那我亏本了怎么办？**
 答：我理解亏损会让人很难受。平台不承诺赚钱、回本或赔付；先不要继续追加购买或借钱回本，并保留 App 内订单、账单、设备产出及相关记录。亏损本身不等于账户或订单异常；若余额、订单、提现或设备记录与 App 显示不一致，请带上记录编号和时间通过 `/me/support` 提交工单核对。
 
 ---
@@ -310,4 +310,4 @@ NexGrid 是一个聚焦 **AI 算力基础设施与智能硬件** 的全球化科
 
 ---
 
-*文档位置：`docs/PRD/NexGrid_平台介绍.md`（作为 AI 客服知识库使用）· 信息若有更新请同步修改本文档。*
+*文档位置：`docs/PRD/UVEL_平台介绍.md`（供当前 AI 客服检索使用）。*
