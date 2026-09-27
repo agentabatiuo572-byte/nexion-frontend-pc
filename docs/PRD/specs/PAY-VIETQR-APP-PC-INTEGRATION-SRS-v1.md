@@ -84,7 +84,7 @@
 
 App 响应解析必须逐字段校验。畸形 2xx、未知状态、无效日期、非正金额或缺少收款账户均按协议错误失败关闭。
 
-`INFLIGHT` 是 canonical intent 的 PC 只读投影，不是第二份资金订单。投影号固定为 `APP-{intentNo}`；其创建与 intent 同事务，取消/过期、账户停用或回单登记后软关闭。D1 的常规入口是从“待付款单”某一行点击“登记这笔回单”，页面自动带入该单分配的收款账户、附言和应付金额；顶部“登记未归属回单”只用于银行流水暂时找不到付款单的例外场景，不得默认选择第一张账户。登记写入唯一 `paymentReference`、实际收款账户、实收 VND、银行到账时间和专属上传接口生成的 `evidenceRef`，服务端按 canonical intent 分类为 `MATCHED/ORPHAN/MISMATCH/LATE`，页面不能指定入账用户。证据引用不是对象路径：登记表单只保存并提交不透明资产号；只有 `nx_vietqr_receipt_evidence` 中状态为 `AVAILABLE` 的资产号可用，登记时原子改为 `BOUND` 并记录对应对账单，任何第二次使用均失败关闭。`paymentReference` 必须提示为银行 App/网银显示的 Transaction ID、Reference No. 或 FT 流水，不是 Nexion 付款单号，也不是任意备注。凡附言直接命中 intent 的回单，银行到账时间也必须不早于该 intent 的创建时间，禁止用新附言登记历史流水。`receivedAt` 的 HTTP 契约必须是带 `Z` 或明确偏移量的 ISO-8601 绝对时间；PC 的无偏移人工输入固定按越南 `UTC+7` 解释后再发送，后端转换为统一业务时区比较 intent 创建与到期边界。回单同时持久化 `intent_transition_required`：首笔回单负责推进 intent，终态或已占用 intent 的后续独立流水只作为补充回单处置，永不重开原状态机。
+`INFLIGHT` 是 canonical intent 的 PC 只读投影，不是第二份资金订单。投影号固定为 `APP-{intentNo}`；其创建与 intent 同事务，取消/过期、账户停用或回单登记后软关闭。D1 的常规入口是从“待付款单”某一行点击“登记这笔回单”，页面自动带入该单分配的收款账户、附言和应付金额；顶部“登记未归属回单”只用于银行流水暂时找不到付款单的例外场景，不得默认选择第一张账户。登记写入唯一 `paymentReference`、实际收款账户、实收 VND、银行到账时间和专属上传接口生成的 `evidenceRef`，服务端按 canonical intent 分类为 `MATCHED/ORPHAN/MISMATCH/LATE`，页面不能指定入账用户。证据引用不是对象路径：登记表单只保存并提交不透明资产号；只有 `nx_vietqr_receipt_evidence` 中状态为 `AVAILABLE` 的资产号可用，登记时原子改为 `BOUND` 并记录对应对账单，任何第二次使用均失败关闭。`paymentReference` 必须提示为银行 App/网银显示的 Transaction ID、Reference No. 或 FT 流水，不是 UVEL 付款单号，也不是任意备注。凡附言直接命中 intent 的回单，银行到账时间也必须不早于该 intent 的创建时间，禁止用新附言登记历史流水。`receivedAt` 的 HTTP 契约必须是带 `Z` 或明确偏移量的 ISO-8601 绝对时间；PC 的无偏移人工输入固定按越南 `UTC+7` 解释后再发送，后端转换为统一业务时区比较 intent 创建与到期边界。回单同时持久化 `intent_transition_required`：首笔回单负责推进 intent，终态或已占用 intent 的后续独立流水只作为补充回单处置，永不重开原状态机。
 
 ### PC 对账收紧
 
