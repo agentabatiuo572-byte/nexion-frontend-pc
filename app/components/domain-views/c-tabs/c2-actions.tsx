@@ -188,6 +188,13 @@ function jsonRecords(value: unknown): JsonRecord[] {
   return Array.isArray(value) ? value.map(jsonRecord) : [];
 }
 
+function deviceDailyReference(device: JsonRecord): string {
+  if (text(device.deviceType, "").toUpperCase() === "SHARE") {
+    return device.dailyNex == null ? "NEX/天暂不可用" : `${formatAmount(device.dailyNex)} NEX/天`;
+  }
+  return `${formatAmount(device.dailyUsdt)} USDT · ${formatAmount(device.dailyNex)} NEX`;
+}
+
 function ImpersonationUserScreen({ screen }: { screen: JsonRecord }) {
   const template = text(screen.template, "");
   if (template === "H5_HOME") {
@@ -215,7 +222,7 @@ function ImpersonationUserScreen({ screen }: { screen: JsonRecord }) {
       <h3 style={{ margin: "14px 0 8px" }}>用户视角设备</h3>
       <div className="kv"><span className="k">设备概况</span><span className="v">活跃 {text(screen.active, "0")} / 共 {text(screen.total, "0")}</span></div>
       {Boolean(screen.truncated) && <div className="ctint warn" style={{ marginBottom: 10 }}>该用户共有 {text(screen.total, "0")} 台设备，当前按服务器限制展示最近 {text(screen.shown, String(devices.length))} 台。</div>}
-      {devices.length > 0 ? <table className="l-tbl"><thead><tr><th>设备</th><th>状态</th><th>算力</th><th>日收益</th></tr></thead><tbody>{devices.map((device) => <tr key={text(device.instanceNo)}><td>{text(device.name)}<br /><span className="mono">{text(device.instanceNo)}</span></td><td>{text(device.status)}</td><td>{formatAmount(device.hashrate)}</td><td>{formatAmount(device.dailyUsdt)} USDT · {formatAmount(device.dailyNex)} NEX</td></tr>)}</tbody></table> : <p className="tiny">该用户暂无设备。</p>}
+      {devices.length > 0 ? <table className="l-tbl"><thead><tr><th>设备</th><th>状态</th><th>算力</th><th>日产参考</th></tr></thead><tbody>{devices.map((device) => <tr key={text(device.instanceNo)}><td>{text(device.name)}<br /><span className="mono">{text(device.instanceNo)}</span></td><td>{text(device.status)}</td><td>{formatAmount(device.hashrate)}</td><td>{deviceDailyReference(device)}</td></tr>)}</tbody></table> : <p className="tiny">该用户暂无设备。</p>}
     </div>;
   }
   return <div data-testid="impersonation-profile-screen">

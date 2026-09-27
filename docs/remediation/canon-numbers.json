@@ -92,7 +92,7 @@
     },
     "cloud-share": {
       "price": 19.9,
-      "dailyEarn": 0.19,
+      "dailyEarn": 0,
       "dailyEarnNEX": 3
     }
   },
