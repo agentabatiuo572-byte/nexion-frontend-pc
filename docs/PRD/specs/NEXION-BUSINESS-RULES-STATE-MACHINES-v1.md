@@ -48,8 +48,8 @@
 - [PC 开发落地规格](../Nexion_运营控制后台_开发落地规格.md)
 - [后台产品更新日志](../../后台产品更新日志.md)
 - 当前后端域合同：`D:\workspace\nexion-backend\docs\ops-console-domain-contracts.md`
-- `D:\workspace\NX1.0\PRD\NexGrid_APP端开发落地规格.md`
-- `D:\workspace\NX1.0\docs\业务流程说明.md`
+- App 开发落地规格以正式 `NX1.0-UniApp/PRD` 中的现存规格为准；历史绝对路径由 2026-09-28 UVEL RAG v13 `manifest.json` 的 `legacy_prd_paths_removed_from_ingest_text` 保留作迁移溯源。
+- `D:\workspace\NX1.0-UniApp\docs\业务流程说明.md`
 - 当前后端 Service、状态常量和迁移策略
 
 `docs/OPS-ACTIONS-MATRIX.md` 是历史快照；当前控制清单以 `docs/ops-actions.manifest.json` 为准。

@@ -1399,17 +1399,10 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 
 ## 第 10 章 PRD canonical 治理
 
-- 产品 PRD canonical 路径固定为 `D:\WORKS\PLAN\PRD\Nexion_产品功能架构设计文档_v3.7.md`。
-- 运营后台 canonical 文档固定为 `D:\WORKS\PLAN\PRD\Nexion_运营控制后台PRD_v4.md` 与 `D:\WORKS\PLAN\PRD\Nexion_运营控制后台_开发落地规格.md`。
+- 本开发落地规格位于本仓 `docs/PRD/Nexion_运营控制后台_开发落地规格.md`。本仓 `Nexion_运营控制后台PRD_v4.md` 是指向旧机器路径的退役指针，不能据此认定现行权威位置；产品 PRD 与运营后台需求 PRD 的现行权威位置须另行核定，不以旧绝对路径作为同步目标。
+- 旧绝对路径由 2026-09-28 UVEL RAG v13 的 `manifest.json` 中 `legacy_prd_paths_removed_from_ingest_text` 保留作迁移溯源，不写入训练正文。
 - `_bak/`、`_bakF/`、remediation backups 不参与唯一性判断。
-- hook、verify gate 与同步流程只认 canonical 文件。
-
-## 第 10 章 PRD canonical 治理
-
-- 产品 PRD canonical 路径固定为 `D:\WORKS\PLAN\PRD\NexGrid_产品功能架构设计文档_v3.7.md`。
-- 运营后台 canonical 文档固定为 `D:\WORKS\PLAN\PRD\NexGrid_运营控制后台PRD_v4.md` 与 `D:\WORKS\PLAN\PRD\NexGrid_运营控制后台_开发落地规格.md`。
-- `_bak/`、`_bakF/`、remediation backups 不参与唯一性判断。
-- hook、verify gate 与同步流程只认 canonical 文件。
+- hook、verify gate 与同步流程的实际作用范围以仓库脚本为准；本节不把旧路径声明为现行 canonical。
 
 ## 附:与原 4 卷 PRD 的关系 + 维护约定
 
