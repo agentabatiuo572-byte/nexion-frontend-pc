@@ -193,7 +193,8 @@ export function CregisStatus({ canManage = false }: { canManage?: boolean }) {
           </div>)}
           {reviewCases.length > 0 && reviewCases.length < (data.openReviewCaseCount ?? 0) && <button className="l-btn sm" disabled={busy} onClick={() => void loadMoreReviewCases(Number(reviewCases[reviewCases.length - 1].id))}>加载更早工单</button>}
         </div></div>}
-        {(!data.depositEnabled || !data.depositCreditEnabled) && <div className="dtint warn">USDT 充值尚未开放；请勿向测试地址转账。</div>}
+        {(!data.depositEnabled || !data.depositCreditEnabled || !data.provisionGate.assignEnabled) && <div className="dtint warn">USDT 充值尚未开放；请勿向测试地址转账。</div>}
+        {data.depositEnabled && data.depositCreditEnabled && data.provisionGate.assignEnabled && !data.provisionGate.creditEnabled && <div className="dtint warn">仅开放试点收款地址，到账后进入人工复核，暂不自动入账；请仅按测试安排转账。</div>}
         {count === 0 && (data.openRiskAlertCount ?? 0) === 0 && (data.pendingAcceptedDeliveries ?? 0) === 0 && <div className="dtint">当前异常队列为空。入账与 App 开放状态仍以服务端开关为准。</div>}
         {QUEUES.map(([key, label]) => <div className="p-row" key={key}>
           <div className="txt"><div className="k">{label} · {data[key].length}</div>
