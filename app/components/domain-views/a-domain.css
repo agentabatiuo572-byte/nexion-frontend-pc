@@ -175,6 +175,15 @@
 .adom .a3-experience textarea { min-height: 72px; resize: vertical; }
 .adom .a3-experience .l-tbl { min-width: 860px; }
 .adom .a3-experience .l-tbl input:not([type="checkbox"]) { min-width: 160px; }
+.adom [data-testid="published-content-how"] .l-b label.tiny { display: block; min-width: 0; }
+.adom [data-testid="published-content-how"] .l-b :is(input, select, textarea) { box-sizing: border-box; min-height: 36px; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 12.5px; }
+.adom [data-testid="published-content-how"] .l-b label.tiny > :is(input, select, textarea) { display: block; width: 100%; margin-top: 6px; }
+.adom [data-testid="published-content-how"] .l-b textarea { min-height: 72px; resize: vertical; }
+.adom [data-testid="published-content-how"] .l-b :is(input, select, textarea):focus-visible { outline: 2px solid var(--a-ac); outline-offset: 1px; }
+.adom [data-testid="published-content-how"] .l-b > .r { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.adom [data-testid="published-content-how"] .l-b > .r select { min-width: 150px; }
+.adom [data-testid="published-content-how"] .l-b .l-card .r { display: flex; align-items: flex-start; gap: 8px; }
+.adom [data-testid="published-content-how"] .l-b .l-card .r label { flex: 1; }
 
 /* ============================ A4 事件中台 ============================ */
 .adom .a4-pipe { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 6px 0 2px; }
