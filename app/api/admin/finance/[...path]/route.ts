@@ -18,6 +18,12 @@ function isText(value: string | undefined) {
 }
 
 function backendPath(parts: string[]) {
+  if (parts.length === 2 && parts[0] === "cregis" && parts[1] === "exceptions") {
+    return "/api/admin/finance/cregis/exceptions";
+  }
+  if (parts.length === 3 && parts[0] === "cregis" && parts[1] === "addresses" && parts[2] === "provision") {
+    return "/api/admin/finance/cregis/addresses/provision";
+  }
   if (parts.length === 2 && parts[0] === "vietqr" && ["overview", "accounts", "config", "receipts", "receipt-evidence"].includes(parts[1])) {
     return `/api/admin/finance/vietqr/${parts[1]}`;
   }
