@@ -60,7 +60,7 @@ export function PlatformExperienceConfig() {
           <div className="atint"><b>首页新手任务（只读投影）</b><br />{config.homeNewcomerTasksEnabled ? "已开启" : "已关闭"}<br /><Link href="/growth/quest">去 H3 任务引擎管理 →</Link></div>
           <div className="atint"><b>首页周促销（只读投影）</b><br />{config.homeWeeklyPromoEnabled ? "已开启" : "已关闭"}<br /><Link href="/growth/quest">去 H3 周促销管理 →</Link></div>
         </div>
-        <nav className="a3-experience-nav" aria-label="App 体验配置分区"><a href="#a3-sharing">分享渠道</a><a href="#a3-installer">App 官方安装</a></nav>
+        <nav className="a3-experience-nav" aria-label="App 体验配置分区"><a href="#a3-sharing" onClick={(event) => { event.preventDefault(); document.getElementById("a3-sharing")?.scrollIntoView({ block: "start" }); }}>分享渠道</a><a href="#a3-installer" onClick={(event) => { event.preventDefault(); document.getElementById("a3-installer")?.scrollIntoView({ block: "start" }); }}>App 官方安装</a></nav>
         <h3 id="a3-sharing" className="a3-experience-heading">分享渠道与文案</h3>
         <label className="tiny">分享基础 URL</label><input aria-label="分享基础 URL" value={config.baseUrl} disabled={!canWrite} onChange={(event) => setConfig({ ...config, baseUrl: event.target.value })} style={{ width: "100%", margin: "4px 0 12px" }} />
         {config.channels.length === 0 && <div className="atint warn" style={{ marginBottom: 10 }}>
