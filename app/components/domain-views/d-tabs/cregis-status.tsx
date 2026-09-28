@@ -162,7 +162,7 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
       {data && <>
         <div className="p-row">
           <div className="txt"><div className="k">供应商连接：{data.mode}</div>
-            <div className="s">App 收款入口：{data.depositEnabled ? "启用" : "关闭"} · 自动入账：{data.depositCreditEnabled ? "启用" : "关闭"}</div>
+            <div className="s">接入配置：App 收款入口{data.depositEnabled ? "已启用" : "已关闭"} · 自动入账能力{data.depositCreditEnabled ? "已配置" : "未配置"}；实际入账以资金开关为准</div>
             <div className="s">建址许可：{data.provisionGate.state} · {data.provisionGate.updatedAt ?? "更新时间未知"}</div></div>
           <span className={`bdg ${data.provisionGate.state === "IDLE" ? "ok" : "bad"}`}>
             {data.provisionGate.state === "IDLE" ? "可继续核验" : "停止新地址分配"}
