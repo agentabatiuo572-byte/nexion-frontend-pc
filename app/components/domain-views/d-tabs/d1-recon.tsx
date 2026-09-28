@@ -6,6 +6,7 @@ import { TabGroup } from "@/app/components/kit/tab-group";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { d1VietQrUsdtAmount } from "@/lib/admin/d1-vietqr-amount";
 import { formatD1FuseReason, requiresReprovision } from "@/lib/admin/d1-account-display";
+import { CregisStatus } from "./cregis-status";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   createD1VietQrAccount,
@@ -175,6 +176,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
   const isSuper = session?.role === "superadmin" || session?.role === "super";
+  const canReadCregis = isSuper || authorities.includes("finance_d1_read");
   const operator = session?.operator || session?.username || "";
   const canManageChannels = isSuper || authorities.includes("finance_d1_channel_manage");
   const canSwitchPsp = isSuper || authorities.includes("finance_d1_psp_switch");
@@ -518,16 +520,17 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
   ) : null;
 
   if (loading && !overview) {
-    return <section className="l-card"><div className="l-b">D1 数据加载中...</div></section>;
+    return <>{canReadCregis && <CregisStatus />}<section className="l-card"><div className="l-b">D1 数据加载中...</div></section></>;
   }
 
   if (error && !overview) {
-    return <>{pendingCommandPanel}<section className="l-card"><div className="l-b"><div className="dtint warn">D1 已停止展示旧数据 · {error}</div><button className="l-btn primary" disabled={loading || busy} style={{ marginTop: 12 }} onClick={() => void refresh()}>重试读取</button></div></section></>;
+    return <>{pendingCommandPanel}{canReadCregis && <CregisStatus />}<section className="l-card"><div className="l-b"><div className="dtint warn">D1 已停止展示旧数据 · {error}</div><button className="l-btn primary" disabled={loading || busy} style={{ marginTop: 12 }} onClick={() => void refresh()}>重试读取</button></div></section></>;
   }
 
   return (
     <>
       {pendingCommandPanel}
+      {canReadCregis && <CregisStatus />}
       {error && <div className="dtint warn" style={{ marginBottom: 12 }}>D1 数据加载失败 · {error}</div>}
       {notice && <div className="dtint warn" style={{ marginBottom: 12 }}>{notice}</div>}
       {overview && !overview.historicalBackfillComplete && (
