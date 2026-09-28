@@ -52,7 +52,7 @@ const MODULES: ModuleProbe[] = [
       reason: "权限边界探针不得执行",
       operator: "permission-probe",
     },
-    visibleText: /银行转账（VietQR）对账/,
+    visibleText: /充值收款对账/,
     forbiddenButtons: /最小额|费率|单笔上限|停用充值渠道|启用充值渠道|登记真实银行回单|新增 VietQR 收款账户|调整日收上限|收款账户池轮换策略调整/,
   },
   {

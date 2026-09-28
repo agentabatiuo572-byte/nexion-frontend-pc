@@ -24,7 +24,7 @@ test("D1 bank rail is real-API backed and has all five operational views plus an
     assert.match(d1, new RegExp(explanation));
   }
   assert.match(d1, /loadD1VietQrOverview/);
-  assert.match(d1, /当前视图暂无银行轨记录/);
+  assert.match(d1, /当前视图暂无银行转账或 HDPay 记录/);
   assert.doesNotMatch(d1, /lib\/mock\/admin\/bank-rail/);
 });
 

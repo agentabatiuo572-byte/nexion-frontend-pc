@@ -55,8 +55,8 @@ const BANK_VIEW_META: Record<D1VietQrView, { label: string; description: string;
   },
   matched: {
     label: "已匹配回单",
-    description: "附言、金额、收款账户和到账时间已与付款单匹配。",
-    next: "待处置回单可复核入账；已入账记录保留用于追溯。",
+    description: "银行回单已与付款单匹配；这里也展示 HDPay 已确认并入账的只读历史。",
+    next: "待处置的银行回单可复核入账；HDPay 记录只读，用于追溯。",
   },
   orphan: {
     label: "未找到付款单",
@@ -192,6 +192,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
   const [overview, setOverview] = useState<D1Overview | null>(null);
   const [vietQr, setVietQr] = useState<D1VietQrOverview | null>(null);
   const [bankView, setBankView] = useState<D1VietQrView>("inflight");
+  const [reconciliationType, setReconciliationType] = useState<"bank" | "cregis">("bank");
   const [bankPage, setBankPage] = useState(1);
   const [bankPageSize, setBankPageSize] = useState(20);
   const [flows, setFlows] = useState<PageResult<D1DepositFlow>>(EMPTY_D1_FLOWS);
@@ -520,17 +521,16 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
   ) : null;
 
   if (loading && !overview) {
-    return <>{canReadCregis && <CregisStatus canManage={canManageChannels} />}<section className="l-card"><div className="l-b">D1 数据加载中...</div></section></>;
+    return <>{canReadCregis && <CregisStatus canManage={canManageChannels} openActionConfirm={openActionConfirm} />}<section className="l-card"><div className="l-b">D1 数据加载中...</div></section></>;
   }
 
   if (error && !overview) {
-    return <>{pendingCommandPanel}{canReadCregis && <CregisStatus canManage={canManageChannels} />}<section className="l-card"><div className="l-b"><div className="dtint warn">D1 已停止展示旧数据 · {error}</div><button className="l-btn primary" disabled={loading || busy} style={{ marginTop: 12 }} onClick={() => void refresh()}>重试读取</button></div></section></>;
+    return <>{pendingCommandPanel}{canReadCregis && <CregisStatus canManage={canManageChannels} openActionConfirm={openActionConfirm} />}<section className="l-card"><div className="l-b"><div className="dtint warn">D1 已停止展示旧数据 · {error}</div><button className="l-btn primary" disabled={loading || busy} style={{ marginTop: 12 }} onClick={() => void refresh()}>重试读取</button></div></section></>;
   }
 
   return (
     <>
       {pendingCommandPanel}
-      {canReadCregis && <CregisStatus canManage={canManageChannels} />}
       {error && <div className="dtint warn" style={{ marginBottom: 12 }}>D1 数据加载失败 · {error}</div>}
       {notice && <div className="dtint warn" style={{ marginBottom: 12 }}>{notice}</div>}
       {overview && !overview.historicalBackfillComplete && (
@@ -552,13 +552,23 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">充值渠道</span>
-            <span className="sub">· 真实配置读取 / 写入服务端配置</span>
+            <span className="sub">· 银行与刷卡配置；链上收款以 Cregis 实际状态为准</span>
             <div className="r">
               <button className="l-btn sm" disabled={loading || busy} onClick={() => void refresh()}>刷新</button>
             </div>
           </div>
           <div className="l-b">
-            {(overview?.channels ?? []).map((channel) => (
+            <div className="p-row">
+              <div className="txt">
+                <div className="k">USDT-BEP20 · Cregis</div>
+                <div className="s">地址分配、入账与异常处置由 Cregis 资金开关控制。</div>
+              </div>
+              <button className="l-btn sm" onClick={() => {
+                setReconciliationType("cregis");
+                document.getElementById("d1-collection-reconcile")?.scrollIntoView({ behavior: "smooth" });
+              }}>查看实际状态</button>
+            </div>
+            {(overview?.channels ?? []).filter((channel) => !["trc20", "bep20", "erc20"].includes(channel.code)).map((channel) => (
               <div className="p-row" key={channel.code}>
                 <div className="txt">
                   <div className="k">{channel.id}</div>
@@ -625,9 +635,23 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
         </section>
       </div>
 
-      <section className="l-card">
+      <section className="l-card" id="d1-collection-reconcile">
         <div className="l-h">
-          <span className="ttl">银行转账（VietQR）对账</span>
+          <span className="ttl">充值收款对账</span>
+          <span className="sub">· 银行回单、HDPay 已入账历史与 Cregis 收款状态</span>
+        </div>
+        <div className="l-b" style={{ paddingBottom: 8 }}>
+          <TabGroup label="收款类型" value={reconciliationType} items={canReadCregis ? ["bank", "cregis"] : ["bank"]}
+            onSelect={setReconciliationType} className="chips" disabled={() => loading || busy}
+            itemClassName={(_key, selected) => `chip${selected ? " sel" : ""}`}>
+            {(key) => key === "bank" ? "银行转账（VietQR）/ HDPay 已入账" : "USDT-BEP20（Cregis）"}
+          </TabGroup>
+        </div>
+        {reconciliationType === "cregis" && canReadCregis ? (
+          <CregisStatus canManage={canManageChannels} openActionConfirm={openActionConfirm} embedded />
+        ) : <>
+        <div className="l-h">
+          <span className="ttl">银行转账与 HDPay 已入账历史</span>
           <span className="sub">· 五视图 · 单据锁价快照 · 挂账与 D3 第 9 科目同源</span>
           <div className="r">
             <span className="dcode electric">待核实入金 {money(vietQr?.pendingUnverifiedDepositUsdt ?? 0)}</span>
@@ -636,9 +660,9 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
         </div>
         <div className="l-b" style={{ paddingBottom: 8 }}>
           <div className="dtint" style={{ marginBottom: 12 }}>
-            HDPay 充值由支付通知和定期查单确认到账，无需上传银行回单图片。下方人工登记用于核对银行转账，图片可选填。
+            HDPay 仅展示已核实并入账的只读历史；未结算与异常款项不在下方五视图。银行转账可人工登记回单，图片可选填。
           </div>
-          <TabGroup label="VietQR 视图" value={bankView} items={BANK_VIEW_TABS.map(([key]) => key)}
+          <TabGroup label="银行转账视图及 HDPay 已入账历史" value={bankView} items={BANK_VIEW_TABS.map(([key]) => key)}
             onSelect={(key) => { setBankView(key); setBankPage(1); }} className="chips" disabled={() => loading || busy}
             itemClassName={(_key, selected) => `chip${selected ? " sel" : ""}`}>
             {(key) => BANK_VIEW_META[key].label}
@@ -650,14 +674,15 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 1120 }}>
-            <thead><tr><th>回单 / 银行流水 / 到账时间</th><th>用户 / 意向单</th><th className="num">应付 VND</th><th className="num">实收 VND</th><th className="num">锁定牌价</th><th className="num">折算 USDT</th><th>状态</th><th>说明</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
+            <thead><tr><th>类型</th><th>回单 / 银行流水 / 到账时间</th><th>用户 / 意向单</th><th className="num">应付 VND</th><th className="num">实收 VND</th><th className="num">锁定牌价</th><th className="num">折算 USDT</th><th>状态</th><th>说明</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
             <tbody>
               {(vietQr?.page.items ?? []).length === 0 ? (
-                <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--ink-4)", padding: "26px 12px" }}>当前视图暂无银行轨记录</td></tr>
+                <tr><td colSpan={10} style={{ textAlign: "center", color: "var(--ink-4)", padding: "26px 12px" }}>当前视图暂无银行转账或 HDPay 记录</td></tr>
               ) : vietQr?.page.items.map((row) => {
                 const amount = d1VietQrUsdtAmount(row);
                 return (
                   <tr key={row.id}>
+                    <td><span className="bdg dim">{row.paymentRail === "HDPAY" ? "HDPay" : "银行转账 · VietQR"}</span></td>
                     <td><span className="mono">{row.reconciliationNo}</span><div className="sub mono">{row.paymentReference || "无银行流水号"}</div><div className="sub">{timeText(row.receivedAt)}</div></td>
                     <td><span className="mono">{row.userId ?? "—"}</span><div className="sub">{row.intentNo || "未匹配意向单"}</div><div className="sub mono">{row.memoCode || "无可识别附言"}</div></td>
                     <td className="num mono">{vnd(row.payableVnd)}</td>
@@ -764,6 +789,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
             <button className="l-btn sm" disabled={loading || busy || bankPage >= Math.max(1, Math.ceil((vietQr?.page.total ?? 0) / bankPageSize))} onClick={() => setBankPage((value) => value + 1)}>下一页</button>
           </div>
         </div>
+        </>}
       </section>
 
       <div className="two-col r11">
@@ -857,9 +883,6 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
               ["toleranceVnd", "金额容差", vietQr.config.toleranceVnd, "VND", 0, 5_000],
               ["graceMinutes", "回单宽限", vietQr.config.graceMinutes, "分钟", 0, 60],
               ["perTxLimitUsd", "VietQR 单笔上限", vietQr.config.perTxLimitUsd, "USD", 100, 10_000],
-              ["trc20Confirmations", "TRC20 入账确认数", vietQr.config.trc20Confirmations, "确认", 1, 64],
-              ["erc20Confirmations", "ERC20 入账确认数", vietQr.config.erc20Confirmations, "确认", 1, 64],
-              ["bep20Confirmations", "BEP20 入账确认数", vietQr.config.bep20Confirmations, "确认", 1, 64],
             ].map(([key, label, value, unit, min, max]) => (
               <div className="p-row" key={String(key)}>
                 <div className="txt"><div className="k">{label}</div><div className="s">当前服务端版本 v{vietQr.config.version}</div></div>

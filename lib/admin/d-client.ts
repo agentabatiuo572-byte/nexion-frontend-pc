@@ -167,6 +167,7 @@ export interface D1VietQrAccount {
 
 export interface D1VietQrRow {
   id: number;
+  paymentRail: "VIETQR" | "HDPAY";
   reconciliationNo: string;
   intentNo: string;
   userId: number | null;
@@ -958,6 +959,7 @@ function normalizeD1VietQrOverview(raw: unknown): D1VietQrOverview {
         d1Invalid(`vietqr.page.items[${index}].lifecycle`);
       }
       const id = d1Number(row.id, `vietqr.page.items[${index}].id`);
+      const paymentRail = d1String(row.paymentRail, `vietqr.page.items[${index}].paymentRail`);
       const reconciliationNo = d1String(row.reconciliationNo, `vietqr.page.items[${index}].reconciliationNo`);
       const intentNo = d1OptionalText(row.intentNo, `vietqr.page.items[${index}].intentNo`);
       const payableVnd = d1NullableNumber(row.payableVnd, `vietqr.page.items[${index}].payableVnd`);
@@ -970,7 +972,8 @@ function normalizeD1VietQrOverview(raw: unknown): D1VietQrOverview {
       const hdPayReadOnly = id < 0 && viewType === "MATCHED" && status === "CREDITED"
         && intentNo.startsWith("VQR-") && reconciliationNo === `HDPAY-${intentNo}`
         && creditedUsdt > 0 && receivedVnd !== null && receivedVnd > 0;
-      if (!Number.isSafeInteger(id) || id === 0 || (id < 0 && !hdPayReadOnly)
+      if (!["VIETQR", "HDPAY"].includes(paymentRail)
+          || !Number.isSafeInteger(id) || id === 0 || (id < 0 && (!hdPayReadOnly || paymentRail !== "HDPAY"))
           || (payableVnd !== null && payableVnd < 0)
           || (receivedVnd !== null && receivedVnd < 0)
           || lockedFxRateVndPerUsdt <= 0
@@ -980,6 +983,7 @@ function normalizeD1VietQrOverview(raw: unknown): D1VietQrOverview {
       }
       return {
         id,
+        paymentRail: paymentRail as D1VietQrRow["paymentRail"],
         reconciliationNo,
         intentNo,
         userId: d1NullableNumber(row.userId, `vietqr.page.items[${index}].userId`),

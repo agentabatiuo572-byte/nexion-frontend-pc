@@ -66,7 +66,7 @@ async function openFinanceEntry(page: Page, linkName: string, expectedPath: RegE
 
 async function openD1(page: Page) {
   await openFinanceEntry(page, "充值对账中心", /\/finance\/recon$/);
-  await expect(page.getByText("银行转账（VietQR）对账", { exact: true })).toBeVisible();
+  await expect(page.getByText("充值收款对账", { exact: true })).toBeVisible();
   await expect(page.getByText("在途意向单", { exact: true })).toBeVisible();
 }
 
@@ -223,7 +223,7 @@ test("D1 五视图与 D3 九类科目可从可见入口发现，且只展示运�
     viewResults.push({
       view,
       status: response.status(),
-      empty: await page.getByText("当前视图暂无银行轨记录", { exact: true }).isVisible().catch(() => false),
+      empty: await page.getByText("当前视图暂无银行转账或 HDPay 记录", { exact: true }).isVisible().catch(() => false),
     });
   }
 
@@ -371,7 +371,7 @@ test("D1 与 D6 的真实写入具备中文 CAS 指引、幂等防重、审计�
   expect(d1Restore.status()).toBe(200);
   await d1Dialog.getByRole("button", { name: "取消", exact: true }).click();
   await page.reload();
-  await expect(page.getByText("银行转账（VietQR）对账", { exact: true })).toBeVisible();
+  await expect(page.getByText("充值收款对账", { exact: true })).toBeVisible();
   await expect(toleranceRow.locator(".v")).toContainText(tolerance.toLocaleString("en-US"));
 
   await openD6(page);

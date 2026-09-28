@@ -18,7 +18,7 @@ vm.runInNewContext(ts.transpileModule(code, {
 const normalize = context.normalizeD1VietQrOverview;
 
 function row(overrides = {}) {
-  return { id: -1, reconciliationNo: "HDPAY-VQR-1", intentNo: "VQR-1", userId: 7,
+  return { id: -1, paymentRail: "HDPAY", reconciliationNo: "HDPAY-VQR-1", intentNo: "VQR-1", userId: 7,
     viewType: "MATCHED", status: "CREDITED", payableVnd: 870870, receivedVnd: 870870,
     lockedFxRateVndPerUsdt: 26390, creditedUsdt: 33, version: 1,
     createdAt: "2026-09-15T15:47:50", updatedAt: "2026-09-15T15:50:01", ...overrides };
@@ -33,17 +33,19 @@ function overview(items) {
 }
 
 test("real D1 normalizer accepts credited HDPay read-only rows alongside ordinary receipts", () => {
-  const result = normalize(overview([row(), row({ id: 10, reconciliationNo: "MANUAL-1" })]));
+  const result = normalize(overview([row(), row({ id: 10, paymentRail: "VIETQR", reconciliationNo: "MANUAL-1" })]));
   assert.equal(result.page.items.length, 2);
   assert.equal(result.page.items[0].id, -1);
   assert.equal(result.page.items[0].creditedUsdt, 33);
   assert.equal(result.page.items[1].id, 10);
+  assert.equal(result.page.items[1].paymentRail, "VIETQR");
+  assert.equal(normalize(overview([row({ id: 101, reconciliationNo: "LEGACY-HDPAY-1" })])).page.items[0].paymentRail, "HDPAY");
 });
 
 test("negative ids cannot masquerade as mutable/manual rows or a different intent", () => {
   for (const changes of [{ status: "OPEN" }, { status: "RETURN_PENDING" }, { viewType: "ORPHAN" },
     { reconciliationNo: "MANUAL-1" }, { intentNo: "VQR-2" }, { intentNo: "" },
-    { creditedUsdt: 0 }, { receivedVnd: null }]) {
+    { creditedUsdt: 0 }, { receivedVnd: null }, { paymentRail: "VIETQR" }, { paymentRail: "UNKNOWN" }]) {
     assert.throws(() => normalize(overview([row(changes)])), /D1_RESPONSE_INVALID/);
   }
 });

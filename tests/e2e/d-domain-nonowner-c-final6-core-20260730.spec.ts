@@ -16,7 +16,7 @@ const EVIDENCE_DIR = process.env.D_FINAL6_CORE_EVIDENCE
   ?? "D:/workspace/bug-pic/.restricted/pc-full-acceptance-20260729-114336/D/nonowner-C-final6/core";
 
 const modules = [
-  { id: "D1", route: "/finance/recon", text: "银行转账（VietQR）对账", read: "/api/admin/finance/vietqr/overview?view=inflight&pageNum=1&pageSize=20" },
+  { id: "D1", route: "/finance/recon", text: "充值收款对账", read: "/api/admin/finance/vietqr/overview?view=inflight&pageNum=1&pageSize=20" },
   { id: "D2", route: "/finance/withdrawals", text: "提现审核队列", read: "/api/admin/finance/withdrawals?pageNum=1&pageSize=10" },
   { id: "D3", route: "/finance/pool", text: "应付负债 · 9 类科目", read: "/api/admin/treasury/reserve" },
   { id: "D4", route: "/finance/ledger", text: "全平台账单流水", read: "/api/admin/bills?pageNum=1&pageSize=10" },
@@ -74,7 +74,7 @@ test("首次用户从登录和可见侧栏完整找到 D1–D6，五视图/九�
   const signals = monitor(page);
   await login(page, dAccount("maker"), "d-maker-first-user");
 
-  await openAndSettleD(page, "/finance/recon", "银行转账（VietQR）对账");
+  await openAndSettleD(page, "/finance/recon", "充值收款对账");
   const views = [["matched", "已匹配"], ["orphan", "孤儿队列"], ["mismatch", "差额队列"], ["late", "迟到 / 补充回单"], ["inflight", "在途意向单"]] as const;
   for (const [view, label] of views) {
     const response = page.waitForResponse((candidate) =>
@@ -141,7 +141,7 @@ test("墨菲故障包：D1–D6 的 500/畸形 200/超时均清空旧权威态�
   await expect(page.getByRole("button", { name: "重试读取", exact: true })).toBeVisible();
   await page.unroute("**/api/admin/finance/topup/overview*");
   await page.getByRole("button", { name: "重试读取", exact: true }).click();
-  await expect(page.getByText("银行转账（VietQR）对账", { exact: true })).toBeVisible();
+  await expect(page.getByText("充值收款对账", { exact: true })).toBeVisible();
   results.D1 = "500_FAIL_CLOSED_RECOVERED";
 
   await page.route("**/api/admin/finance/withdrawals?*", (route) => route.fulfill({
