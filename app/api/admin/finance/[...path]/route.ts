@@ -24,6 +24,21 @@ function backendPath(parts: string[]) {
   if (parts.length === 3 && parts[0] === "cregis" && parts[1] === "addresses" && parts[2] === "provision") {
     return "/api/admin/finance/cregis/addresses/provision";
   }
+  if (parts[0] === "cregis") {
+    if (parts.length === 2 && ["reconciliation", "review-cases", "switch-cases"].includes(parts[1])) {
+      return `/api/admin/finance/cregis/${parts[1]}`;
+    }
+    if (parts.length === 3 && parts[1] === "reconciliation" && parts[2] === "run") {
+      return "/api/admin/finance/cregis/reconciliation/run";
+    }
+    if (parts.length === 3 && parts[1] === "switches" && parts[2] === "emergency-off") {
+      return "/api/admin/finance/cregis/switches/emergency-off";
+    }
+    if (parts.length === 4 && ["review-cases", "switch-cases"].includes(parts[1])
+        && /^[0-9]+$/.test(parts[2]) && parts[3] === "decision") {
+      return `/api/admin/finance/cregis/${parts[1]}/${parts[2]}/decision`;
+    }
+  }
   if (parts.length === 2 && parts[0] === "vietqr" && ["overview", "accounts", "config", "receipts", "receipt-evidence"].includes(parts[1])) {
     return `/api/admin/finance/vietqr/${parts[1]}`;
   }

@@ -520,17 +520,17 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
   ) : null;
 
   if (loading && !overview) {
-    return <>{canReadCregis && <CregisStatus />}<section className="l-card"><div className="l-b">D1 数据加载中...</div></section></>;
+    return <>{canReadCregis && <CregisStatus canManage={canManageChannels} />}<section className="l-card"><div className="l-b">D1 数据加载中...</div></section></>;
   }
 
   if (error && !overview) {
-    return <>{pendingCommandPanel}{canReadCregis && <CregisStatus />}<section className="l-card"><div className="l-b"><div className="dtint warn">D1 已停止展示旧数据 · {error}</div><button className="l-btn primary" disabled={loading || busy} style={{ marginTop: 12 }} onClick={() => void refresh()}>重试读取</button></div></section></>;
+    return <>{pendingCommandPanel}{canReadCregis && <CregisStatus canManage={canManageChannels} />}<section className="l-card"><div className="l-b"><div className="dtint warn">D1 已停止展示旧数据 · {error}</div><button className="l-btn primary" disabled={loading || busy} style={{ marginTop: 12 }} onClick={() => void refresh()}>重试读取</button></div></section></>;
   }
 
   return (
     <>
       {pendingCommandPanel}
-      {canReadCregis && <CregisStatus />}
+      {canReadCregis && <CregisStatus canManage={canManageChannels} />}
       {error && <div className="dtint warn" style={{ marginBottom: 12 }}>D1 数据加载失败 · {error}</div>}
       {notice && <div className="dtint warn" style={{ marginBottom: 12 }}>{notice}</div>}
       {overview && !overview.historicalBackfillComplete && (
