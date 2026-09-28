@@ -51,7 +51,7 @@ export function PlatformExperienceConfig() {
     } finally { setSaving(false); }
   };
 
-  return <><section className="l-card" data-testid="platform-experience-config">
+  return <><section className="l-card a3-experience" data-testid="platform-experience-config">
     <div className="l-h"><div><div className="ttl">App 体验配置</div><div className="sub">官方安装 URL、分享渠道/模板与首页开关 · 服务端版本 CAS · A3 审计</div></div><div className="r"><span className="bdg cyan">v{config?.version ?? "—"}</span><button className="l-btn sm" onClick={() => void refresh()} disabled={loading}>刷新</button></div></div>
     <div className="l-b">
       {error && <div className="atint warn" style={{ marginBottom: 10 }}>{error}</div>}
@@ -60,25 +60,28 @@ export function PlatformExperienceConfig() {
           <div className="atint"><b>首页新手任务（只读投影）</b><br />{config.homeNewcomerTasksEnabled ? "已开启" : "已关闭"}<br /><Link href="/growth/quest">去 H3 任务引擎管理 →</Link></div>
           <div className="atint"><b>首页周促销（只读投影）</b><br />{config.homeWeeklyPromoEnabled ? "已开启" : "已关闭"}<br /><Link href="/growth/quest">去 H3 周促销管理 →</Link></div>
         </div>
+        <nav className="a3-experience-nav" aria-label="App 体验配置分区"><a href="#a3-sharing">分享渠道</a><a href="#a3-installer">App 官方安装</a></nav>
+        <h3 id="a3-sharing" className="a3-experience-heading">分享渠道与文案</h3>
         <label className="tiny">分享基础 URL</label><input aria-label="分享基础 URL" value={config.baseUrl} disabled={!canWrite} onChange={(event) => setConfig({ ...config, baseUrl: event.target.value })} style={{ width: "100%", margin: "4px 0 12px" }} />
         {config.channels.length === 0 && <div className="atint warn" style={{ marginBottom: 10 }}>
-          当前未配置分享渠道；5173 会使用内置推荐分享渠道兜底，但后台尚未形成可审计配置。
-          {canWrite && <button className="l-btn sm" style={{ marginLeft: 8 }} onClick={() => setConfig({ ...config, channels: recommendedExperienceChannels() })}>补齐 5174 推荐渠道</button>}
+          当前未配置分享渠道；App 会使用内置推荐渠道兜底，但后台尚未形成可审计配置。
+          {canWrite && <button className="l-btn sm" style={{ marginLeft: 8 }} onClick={() => setConfig({ ...config, channels: recommendedExperienceChannels() })}>补齐推荐渠道</button>}
         </div>}
         <div style={{ overflowX: "auto" }}><table className="l-tbl"><thead><tr><th>渠道</th><th>意图</th><th>启用</th><th>文案模板</th><th>URL 模板</th></tr></thead><tbody>{config.channels.map((channel, index) => <tr key={channel.key}>
           <td className="mono">{channel.key}</td><td>{channel.intentType}</td><td><input type="checkbox" aria-label={`${channel.key} 启用`} checked={channel.enabled} disabled={!canWrite} onChange={(event) => patchChannel(index, { enabled: event.target.checked })} /></td>
           <td><input aria-label={`${channel.key} 文案模板`} value={channel.textTemplate ?? ""} disabled={!canWrite} onChange={(event) => patchChannel(index, { textTemplate: event.target.value })} /></td>
           <td><input aria-label={`${channel.key} URL 模板`} value={channel.urlTemplate ?? ""} disabled={!canWrite} onChange={(event) => patchChannel(index, { urlTemplate: event.target.value })} /></td>
         </tr>)}</tbody></table></div>
+        <h3 id="a3-installer" className="a3-experience-heading">App 官方安装</h3>
         <div className="two-col" style={{ marginTop: 12, marginBottom: 0 }}><div>
           <label className="tiny">官方安装 URL</label><input aria-label="官方安装 URL" value={config.appDownload.officialUrl} disabled={!canWrite || config.appDownload.source === "unavailable"} onChange={(event) => setConfig({ ...config, appDownload: { ...config.appDownload, officialUrl: event.target.value } })} style={{ width: "100%", marginTop: 4 }} />
           <label className="tiny" style={{ display: "block", marginTop: 8 }}>iOS 官方 URL（可选）</label><input aria-label="iOS 官方 URL" value={config.appDownload.iosUrl} disabled={!canWrite || config.appDownload.source === "unavailable"} onChange={(event) => setConfig({ ...config, appDownload: { ...config.appDownload, iosUrl: event.target.value } })} style={{ width: "100%", marginTop: 4 }} />
           <label className="tiny" style={{ display: "block", marginTop: 8 }}>Android 官方 URL（可选）</label><input aria-label="Android 官方 URL" value={config.appDownload.androidUrl} disabled={!canWrite || config.appDownload.source === "unavailable"} onChange={(event) => setConfig({ ...config, appDownload: { ...config.appDownload, androidUrl: event.target.value } })} style={{ width: "100%", marginTop: 4 }} />
           <label className="tiny" style={{ display: "block", marginTop: 8 }}>APK 官方 URL（可选）</label><input aria-label="APK 官方 URL" value={config.appDownload.apkUrl} disabled={!canWrite || config.appDownload.source === "unavailable"} onChange={(event) => setConfig({ ...config, appDownload: { ...config.appDownload, apkUrl: event.target.value } })} style={{ width: "100%", marginTop: 4 }} />
           <label className="tiny" style={{ display: "block", marginTop: 8 }}>版本</label><input aria-label="安装包版本" value={config.appDownload.version} disabled={!canWrite || config.appDownload.source === "unavailable"} onChange={(event) => setConfig({ ...config, appDownload: { ...config.appDownload, version: event.target.value } })} style={{ width: "100%", marginTop: 4 }} />
-        </div><div><label className="tiny">来源（仅允许官方）</label><select aria-label="安装包来源" value={config.appDownload.source} disabled={!canWrite} onChange={(event) => setConfig({ ...config, appDownload: { ...config.appDownload, source: event.target.value as PlatformExperienceConfig["appDownload"]["source"] } })} style={{ width: "100%", marginTop: 4 }}><option value="official">official</option><option value="unavailable">unavailable</option></select>
+        </div><div><label className="tiny">来源（仅允许官方）</label><select aria-label="安装包来源" value={config.appDownload.source} disabled={!canWrite} onChange={(event) => setConfig({ ...config, appDownload: { ...config.appDownload, source: event.target.value as PlatformExperienceConfig["appDownload"]["source"] } })} style={{ width: "100%", marginTop: 4 }}><option value="official">官方渠道</option><option value="unavailable">暂不提供</option></select>
           <label className="tiny" style={{ display: "block", marginTop: 8 }}>发布说明（中文 / English）</label><div className="row"><input aria-label="中文发布说明" value={config.appDownload.releaseNotes.zh} disabled={!canWrite || config.appDownload.source === "unavailable"} onChange={(event) => setConfig({ ...config, appDownload: { ...config.appDownload, releaseNotes: { ...config.appDownload.releaseNotes, zh: event.target.value } } })} /><input aria-label="English release notes" value={config.appDownload.releaseNotes.en} disabled={!canWrite || config.appDownload.source === "unavailable"} onChange={(event) => setConfig({ ...config, appDownload: { ...config.appDownload, releaseNotes: { ...config.appDownload.releaseNotes, en: event.target.value } } })} /></div>
-          {config.appDownload.source === "unavailable" && <div className="tiny" style={{ marginTop: 6 }}>当前来源为 unavailable；安装 URL、版本和发布说明不生效，请先切换来源。</div>}
+          {config.appDownload.source === "unavailable" && <div className="tiny" style={{ marginTop: 6 }}>当前暂不提供官方安装包；安装 URL、版本和发布说明不生效。确定官方发布地址后再切换来源。</div>}
         </div></div>
         {canWrite && <><label className="tiny" style={{ display: "block", marginTop: 12 }}>保存理由（8–200 字，写入 A3_PLATFORM_EXPERIENCE_CHANGED）</label><textarea aria-label="体验配置保存理由" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={200} rows={2} style={{ width: "100%", marginTop: 4 }} /><button className="l-btn mc" style={{ marginTop: 8 }} disabled={saving || reason.trim().length < 8} onClick={() => void save()}>{saving ? "保存中…" : "保存并回读"}</button></>}
       </>}
