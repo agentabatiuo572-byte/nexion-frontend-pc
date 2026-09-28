@@ -11,9 +11,13 @@ type CregisExceptions = {
   provisionGate: { state: string; updatedAt?: string; version?: number;
     assignEnabled?: boolean | number; creditEnabled?: boolean | number; payoutEnabled?: boolean | number };
   unresolvedExposureUsdt?: number | string;
+  openRiskAlertCount?: number;
+  pendingAcceptedDeliveries?: number;
+  pendingDeliveries: ExceptionRow[];
   riskAlerts?: ExceptionRow[];
   reconcileRuns?: ExceptionRow[];
   reviewCases?: ExceptionRow[];
+  openReviewCaseCount?: number;
   switchCases?: ExceptionRow[];
   uncertainAddresses: ExceptionRow[];
   heldDeposits: ExceptionRow[];
@@ -23,10 +27,11 @@ type CregisExceptions = {
 };
 
 const QUEUES: Array<[keyof Pick<CregisExceptions,
-  "uncertainAddresses" | "heldDeposits" | "failedDeliveries" | "unattributed" | "providerMissing">, string]> = [
+  "uncertainAddresses" | "heldDeposits" | "failedDeliveries" | "pendingDeliveries" | "unattributed" | "providerMissing">, string]> = [
   ["uncertainAddresses", "建址待核验 / 未知"],
   ["heldDeposits", "入金待人工处理"],
   ["failedDeliveries", "回调处理失败"],
+  ["pendingDeliveries", "已验签待处理回调"],
   ["unattributed", "未归属链上入金"],
   ["providerMissing", "供应商缺单 / 链上待核对"],
 ];
@@ -44,6 +49,7 @@ function parseExceptions(value: unknown): CregisExceptions {
 function rowSummary(row: ExceptionRow) {
   return [row.id == null ? null : `#${row.id}`, row.state ?? row.status,
     row.address, row.cid == null ? null : `CID ${row.cid}`, row.txid,
+    row.ageSeconds == null ? null : `等待 ${row.ageSeconds} 秒`,
     row.lastError ?? row.last_error].filter((part) => part != null && part !== "").join(" · ");
 }
 
@@ -54,12 +60,16 @@ export function CregisStatus({ canManage = false }: { canManage?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [reason, setReason] = useState("");
   const [cid, setCid] = useState("");
-  const [evidenceHash, setEvidenceHash] = useState("");
+  const [reviewEvidence, setReviewEvidence] = useState<ExceptionRow | null>(null);
+  const [extraAlerts, setExtraAlerts] = useState<ExceptionRow[]>([]);
+  const [extraReviewCases, setExtraReviewCases] = useState<ExceptionRow[]>([]);
   const [assign, setAssign] = useState(false);
   const [credit, setCredit] = useState(false);
   const refresh = useCallback(async () => {
     setLoading(true);
     setError("");
+    setExtraAlerts([]);
+    setExtraReviewCases([]);
     try {
       setData(parseExceptions(await financeAdminRequest<unknown>("/cregis/exceptions")));
     } catch (failure) {
@@ -72,8 +82,8 @@ export function CregisStatus({ canManage = false }: { canManage?: boolean }) {
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  const command = async (path: string, body?: Record<string, unknown>) => {
-    if (busy || !window.confirm("请确认 Cregis 操作、目标与证据。提交后请刷新核对状态。")) return;
+  const command = async (path: string, body?: Record<string, unknown>, confirmation?: string) => {
+    if (busy || !window.confirm(confirmation ?? "请确认 Cregis 操作、目标与证据。提交后请刷新核对状态。")) return;
     setBusy(true);
     setError("");
     try {
@@ -87,7 +97,42 @@ export function CregisStatus({ canManage = false }: { canManage?: boolean }) {
     } finally { setBusy(false); }
   };
 
+  const previewReview = async (targetCid: number) => {
+    setBusy(true);
+    setError("");
+    setReviewEvidence(null);
+    try {
+      setReviewEvidence(await financeAdminRequest<ExceptionRow>(`/cregis/review-evidence/${targetCid}`));
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "实时证据核验失败");
+    } finally { setBusy(false); }
+  };
+
+  const loadMoreAlerts = async (beforeId: number) => {
+    setBusy(true);
+    setError("");
+    try {
+      const rows = await financeAdminRequest<ExceptionRow[]>(`/cregis/risk-alerts/${beforeId}`);
+      setExtraAlerts((previous) => [...previous, ...rows]);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "读取告警失败");
+    } finally { setBusy(false); }
+  };
+
+  const loadMoreReviewCases = async (beforeId: number) => {
+    setBusy(true);
+    setError("");
+    try {
+      const rows = await financeAdminRequest<ExceptionRow[]>(`/cregis/review-cases/before/${beforeId}`);
+      setExtraReviewCases((previous) => [...previous, ...rows]);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "读取待复核工单失败");
+    } finally { setBusy(false); }
+  };
+
   const count = data ? QUEUES.reduce((sum, [key]) => sum + data[key].length, 0) : 0;
+  const alerts = [...(data?.riskAlerts ?? []), ...extraAlerts];
+  const reviewCases = [...(data?.reviewCases ?? []), ...extraReviewCases];
   return <section className="l-card" style={{ marginBottom: 12 }}>
     <div className="l-h">
       <span className="ttl">Cregis · USDT-BEP20 收款观察</span>
@@ -109,10 +154,13 @@ export function CregisStatus({ canManage = false }: { canManage?: boolean }) {
         <div className="p-row"><div className="txt">
           <div className="k">资金开关与未决敞口</div>
           <div className="s">分配地址：{data.provisionGate.assignEnabled ? "开" : "关"} · 自动入账：{data.provisionGate.creditEnabled ? "开" : "关"} · 链上出款：{data.provisionGate.payoutEnabled ? "开" : "关"} · 版本 {data.provisionGate.version ?? "未知"}</div>
-          <div className="s">未决资金：{String(data.unresolvedExposureUsdt ?? "未知")} USDT · P0/P1 告警 {data.riskAlerts?.length ?? 0}</div>
+          <div className="s">未决资金：{String(data.unresolvedExposureUsdt ?? "未知")} USDT · 未解除 P0/P1 告警 {data.openRiskAlertCount ?? "未知"} · 已验签待处理回调 {data.pendingAcceptedDeliveries ?? "未知"}</div>
           <div className="s">最近完整对账：{data.reconcileRuns?.find((row) => row.status === "COMPLETE")?.completedAt?.toString() ?? "尚无"}</div>
           {data.reconcileRuns?.slice(0, 3).map((row, index) => <div className="s" key={`recon-${index}`}>对账 {String(row.runId ?? "")} · {String(row.status ?? "")} · {String(row.failureCode ?? row.fullRowHash ?? "")}</div>)}
-          {data.riskAlerts?.slice(0, 5).map((row, index) => <div className="s" key={`risk-${index}`}>{rowSummary(row)} · {String(row.kind ?? "")}</div>)}
+          <details><summary>查看未解除告警（已载入 {alerts.length} / {data.openRiskAlertCount ?? "未知"}）</summary>
+            {alerts.map((row) => <div className="s" key={`risk-${row.id}`}>{rowSummary(row)} · {String(row.severity)} · {String(row.kind)} · {String(row.evidence)}</div>)}
+            {alerts.length > 0 && alerts.length < (data.openRiskAlertCount ?? 0) && <button className="l-btn sm" disabled={busy} onClick={() => void loadMoreAlerts(Number(alerts[alerts.length - 1].id))}>加载更早告警</button>}
+          </details>
         </div></div>
         {canManage && <div className="p-row"><div className="txt">
           <div className="k">对账与熔断操作</div>
@@ -133,16 +181,20 @@ export function CregisStatus({ canManage = false }: { canManage?: boolean }) {
           <div className="k">大额入金双人处置</div>
           <div className="s">仅支持 REVIEW_HOLD；供应商缺单、孤儿资金和重组仍须保持冻结并核查。</div>
           <input aria-label="待复核 Cregis CID" placeholder="Cregis CID" value={cid} onChange={(event) => setCid(event.target.value)} />{" "}
-          <input aria-label="复核证据 SHA-256" placeholder="证据 SHA-256" value={evidenceHash} onChange={(event) => setEvidenceHash(event.target.value)} style={{ width: "min(100%, 420px)" }} />{" "}
-          <button className="l-btn sm mc" disabled={busy || !Number.isSafeInteger(Number(cid)) || Number(cid) <= 0 || !/^\d+$/.test(cid) || !/^[a-fA-F0-9]{64}$/.test(evidenceHash) || reason.trim().length < 10} onClick={() => void command("/cregis/review-cases", { cid: Number(cid), evidenceHash, reason })}>提交入金复核</button>
-          {data.reviewCases?.filter((row) => row.status === "MAKER_DONE").map((row) => <div className="s" key={`review-${row.id}`}>
-            工单 #{String(row.id)} · CID {String(row.cid)} · 入金事件 #{String(row.eventId)} · 发起人 {String(row.makerId)} · 证据 {String(row.evidenceHash)}{" "}
-            <button className="l-btn sm" disabled={busy || reason.trim().length < 10} onClick={() => void command(`/cregis/review-cases/${row.id}/decision`, { expectedVersion: row.version, decision: "APPROVE", reason })}>复核入账</button>{" "}
+          <button className="l-btn sm" disabled={busy || !/^\d+$/.test(cid) || !Number.isSafeInteger(Number(cid)) || Number(cid) <= 0} onClick={() => void previewReview(Number(cid))}>实时核验证据</button>{" "}
+          <button className="l-btn sm mc" disabled={busy || String(reviewEvidence?.cid) !== cid || reason.trim().length < 10} onClick={() => void command("/cregis/review-cases", { cid: Number(cid), evidenceHash: reviewEvidence?.evidenceHash, reason })}>提交入金复核</button>
+          {reviewEvidence && <div className="s">实时核验 {String(reviewEvidence.checkedAt)} · Cregis {reviewEvidence.providerMatched ? "匹配" : "未匹配"} / BSC {reviewEvidence.chainMatched ? "匹配" : "未匹配"} · CID {String(reviewEvidence.cid)} · 用户 {String(reviewEvidence.userId)} · 毛额 {String(reviewEvidence.grossAmount)} / 净入账 {String(reviewEvidence.proposedNetAmount)} USDT · Tx {String(reviewEvidence.txid)} · 地址 {String(reviewEvidence.address)} · 区块哈希 {String(reviewEvidence.blockHash)} · 确认 {String(reviewEvidence.confirmations)} · 证据摘要 {String(reviewEvidence.evidenceHash)}</div>}
+          <div className="s">待复核工单：已载入 {reviewCases.length} / {data.openReviewCaseCount ?? "未知"}</div>
+          {reviewCases.map((row) => <div className="s" key={`review-${row.id}`}>
+            工单 #{String(row.id)} · CID {String(row.cid)} · 用户 {String(row.userId)} · 链上毛额 {String(row.grossAmount)} USDT / 手续费 1 USDT / 钱包净入账 {String(row.proposedNetAmount)} USDT · 地址 {String(row.address)} · Tx {String(row.txid)} · 区块 {String(row.blockNumber)} / 日志 {String(row.logIndex)} / 确认 {String(row.confirmations)} · 发起人 {String(row.makerId)} · 理由 {String(row.reason)} · 证据 {String(row.evidenceHash)}{" "}
+            <button className="l-btn sm" disabled={busy} onClick={() => void previewReview(Number(row.cid))}>刷新证据</button>{" "}
+            <button className="l-btn sm" disabled={busy || reason.trim().length < 10 || String(reviewEvidence?.cid) !== String(row.cid) || String(reviewEvidence?.evidenceHash) !== String(row.evidenceHash)} onClick={() => void command(`/cregis/review-cases/${row.id}/decision`, { expectedVersion: row.version, decision: "APPROVE", reason }, `确认将 CID ${String(row.cid)}、交易 ${String(row.txid)} 的毛额 ${String(row.grossAmount)} USDT 扣除 1 USDT 手续费后，净入账 ${String(row.proposedNetAmount)} USDT 给用户 ${String(row.userId)}？请独立核对地址 ${String(row.address)}、发起理由 ${String(row.reason)} 与证据 ${String(row.evidenceHash)}。`)}>复核入账</button>{" "}
             <button className="l-btn sm" disabled={busy || reason.trim().length < 10} onClick={() => void command(`/cregis/review-cases/${row.id}/decision`, { expectedVersion: row.version, decision: "REJECT", reason })}>拒绝</button>
           </div>)}
+          {reviewCases.length > 0 && reviewCases.length < (data.openReviewCaseCount ?? 0) && <button className="l-btn sm" disabled={busy} onClick={() => void loadMoreReviewCases(Number(reviewCases[reviewCases.length - 1].id))}>加载更早工单</button>}
         </div></div>}
         {(!data.depositEnabled || !data.depositCreditEnabled) && <div className="dtint warn">USDT 充值尚未开放；请勿向测试地址转账。</div>}
-        {count === 0 && <div className="dtint">当前异常队列为空。入账与 App 开放状态仍以服务端开关为准。</div>}
+        {count === 0 && (data.openRiskAlertCount ?? 0) === 0 && (data.pendingAcceptedDeliveries ?? 0) === 0 && <div className="dtint">当前异常队列为空。入账与 App 开放状态仍以服务端开关为准。</div>}
         {QUEUES.map(([key, label]) => <div className="p-row" key={key}>
           <div className="txt"><div className="k">{label} · {data[key].length}</div>
             {data[key].slice(0, 5).map((item, index) => <div className="s" key={`${key}-${index}`}>{rowSummary(item)}</div>)}

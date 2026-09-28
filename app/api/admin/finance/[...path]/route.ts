@@ -25,6 +25,14 @@ function backendPath(parts: string[]) {
     return "/api/admin/finance/cregis/addresses/provision";
   }
   if (parts[0] === "cregis") {
+    if (parts.length === 3 && ["review-evidence", "risk-alerts"].includes(parts[1])
+        && /^[1-9][0-9]*$/.test(parts[2])) {
+      return `/api/admin/finance/cregis/${parts[1]}/${parts[2]}`;
+    }
+    if (parts.length === 4 && parts[1] === "review-cases" && parts[2] === "before"
+        && /^[1-9][0-9]*$/.test(parts[3])) {
+      return `/api/admin/finance/cregis/review-cases/before/${parts[3]}`;
+    }
     if (parts.length === 2 && ["reconciliation", "review-cases", "switch-cases"].includes(parts[1])) {
       return `/api/admin/finance/cregis/${parts[1]}`;
     }
