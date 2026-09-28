@@ -1460,6 +1460,12 @@ export const HIGH_OPS: HighOpDef[] = [
   },
   // E6 算力(e6 compute_config)
   {
+    op: "e6_phone_calibration", domain: "E", action: "发布手机校准规则", amplifies: true,
+    type: "param", gateLabel: "另一位有审批权的管理员", targetType: "phone_calibration_policy",
+    buildCommand: (ctx) => ({ domain: "E", op: "e6_phone_calibration", params: ctx }),
+    buildTarget: () => ({ domain: "E", type: "phone_calibration_policy", id: "phone-calibration" }),
+  },
+  {
     op: "e6_compute_config",
     domain: "E",
     action: "更新算力配置参数",

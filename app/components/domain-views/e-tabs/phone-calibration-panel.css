@@ -1,0 +1,17 @@
+.phone-calibration-panel { padding: 24px; margin-bottom: 24px; color: var(--ink); font: 13px/1.6 system-ui, sans-serif; }
+.phone-calibration-panel .pane-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.phone-calibration-panel h3 { margin: 0; font-size: 17px; font-weight: 650; }
+.phone-calibration-panel p { margin: 12px 0; }
+.phone-calibration-panel fieldset { min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin: 16px 0; }
+.phone-calibration-panel legend { padding: 0 8px; font-weight: 600; }
+.phone-calibration-panel label { min-width: 0; display: flex; flex-direction: column; gap: 6px; color: var(--ink-2); }
+.phone-calibration-panel input, .phone-calibration-panel select { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--border-strong); border-radius: 8px; padding: 9px 11px; color: var(--ink); background: var(--surface-2); font: inherit; }
+.phone-calibration-panel input:focus-visible, .phone-calibration-panel select:focus-visible, .phone-calibration-panel summary:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.phone-calibration-panel fieldset:disabled { opacity: .65; }
+.phone-calibration-panel .btn { margin-right: 8px; margin-top: 10px; }
+.phone-calibration-panel [role="alert"] { color: var(--danger); }
+.phone-calibration-panel details { overflow-x: auto; margin: 16px 0; }
+.phone-calibration-panel summary { cursor: pointer; font-weight: 600; }
+.phone-calibration-panel th, .phone-calibration-panel td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.phone-calibration-panel a { color: var(--brand); text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 600px) { .phone-calibration-panel { padding: 16px; } }

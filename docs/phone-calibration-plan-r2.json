@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 2,
+  "id": "phone-calibration-pc-20260928-r2",
+  "title": "运营后台手机算力规则配置",
+  "repo": "..",
+  "base": "9cfed55",
+  "mode": "implement",
+  "risk": "high",
+  "owner": "/root",
+  "outOfScope": [
+    "远端部署",
+    "Janus启用",
+    "真机验收"
+  ],
+  "inputs": [
+    "phone-calibration-requirements.md"
+  ],
+  "steps": [
+    {
+      "id": "admin",
+      "title": "E6规则与E2分界编辑、预览、A2发布",
+      "dependsOn": [],
+      "scope": [
+        "docs/phone-calibration*",
+        "app/components/domain-views/e-tabs/**",
+        "lib/admin/**",
+        "tests/phone-calibration*",
+        "scripts/verify-phone-calibration*",
+        "scripts/verify-phone-calibration*",
+        "scripts/endpoint-citation-sentinel.mjs",
+        "scripts/i18n-hardcoded-en-copy-sentinel.mjs",
+        "scripts/phone-activation-defer-contract.test.mjs",
+        "PRD/**",
+        "docs/PRD/**",
+        "docs/ops-actions.manifest.json",
+        "app/components/domain-views/a-tabs/**"
+      ],
+      "acceptance": [
+        {
+          "id": "admin-contract",
+          "description": "规则参数正确解析与校验，A2契约正确",
+          "source": {
+            "input": "phone-calibration-requirements.md",
+            "locator": "功能与数据 1-3"
+          },
+          "kind": "behavior",
+          "checks": [
+            "admin/contract"
+          ]
+        },
+        {
+          "id": "admin-ui",
+          "description": "加载、编辑、试算、提交审批、待生效与失败状态实际可操作",
+          "source": {
+            "input": "phone-calibration-requirements.md",
+            "locator": "分步验收 clients"
+          },
+          "kind": "ui",
+          "checks": [
+            "admin/browser"
+          ]
+        }
+      ],
+      "checks": [
+        {
+          "id": "contract",
+          "argv": [
+            "node",
+            "--experimental-strip-types",
+            "--test",
+            "tests/phone-calibration-contract.test.mjs"
+          ],
+          "kind": "exit",
+          "timeoutMs": 600000
+        },
+        {
+          "id": "browser",
+          "argv": [
+            "node",
+            "scripts/verify-phone-calibration-runtime.mjs"
+          ],
+          "kind": "record",
+          "capability": "runtime",
+          "report": ".verify-cache/phone-calibration-runtime.json",
+          "requiredChecks": [
+            "admin-ui"
+          ],
+          "timeoutMs": 600000
+        }
+      ],
+      "reviewRequired": true
+    }
+  ],
+  "integration": {
+    "id": "integration",
+    "title": "后台规则全链路集成",
+    "dependsOn": [
+      "admin"
+    ],
+    "scope": [
+      "docs/phone-calibration*",
+      "app/**",
+      "lib/**",
+      "tests/**",
+      "scripts/**",
+      "scripts/**",
+      "PRD/**",
+      "docs/PRD/**",
+      "docs/ops-actions.manifest.json"
+    ],
+    "acceptance": [
+      {
+        "id": "admin-integrated",
+        "description": "E6 E2 A2共享版本且失败不伪报成功",
+        "source": {
+          "input": "phone-calibration-requirements.md",
+          "locator": "分步验收 integration"
+        },
+        "kind": "behavior",
+        "checks": [
+          "admin/contract"
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "id": "typecheck",
+        "argv": [
+          "node",
+          "node_modules/typescript/bin/tsc",
+          "--noEmit"
+        ],
+        "kind": "exit",
+        "timeoutMs": 600000
+      }
+    ],
+    "reviewRequired": true
+  }
+}

@@ -4,6 +4,7 @@ import { AutoGloss } from "@/app/components/kit/gloss";
 import type { EViewCtx } from "./types";
 import type { OpsTask } from "@/lib/admin/platform-types";
 import { EStats } from "./stats";
+import { PhoneCalibrationPanel } from "./phone-calibration-panel";
 import { updateE2TaskPricing, type E2TaskPricingClass } from "@/lib/admin/e2-client";
 
 /* ── 任务类型 → 图标 kind(单一真源:taskClass 权威枚举 ↔ 图标)── */
@@ -105,6 +106,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
 
   return (
     <>
+      <PhoneCalibrationPanel ctx={ctx} thresholdsOnly />
       <EStats items={[
         { k: "任务类型", v: pricingRows.length, sub: pricingRows.length === 6 ? "IG/VG/LL/FT/EM/SP" : "权威类型未齐", tone: pricingRows.length === 6 ? "ok" : "warn" },
         { k: "平均单价", v: money(avgPrice), sub: tasks.length ? `${tasks.length} 个任务均价` : "暂无任务" },

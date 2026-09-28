@@ -9,6 +9,7 @@
  * 值规则权威校验在后端 validateComputeValue。
  */
 import Link from "next/link";
+import { PhoneCalibrationPanel } from "./phone-calibration-panel";
 import { CodeTag } from "../design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import type { EViewCtx } from "./types";
@@ -262,6 +263,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
 
   return (
     <div>
+      <div id="phone-calibration"><PhoneCalibrationPanel ctx={ctx} /></div>
       <EStats items={[
         { k: "入口开关", v: flags.length, sub: e6Loading ? "加载中" : `${onCount} 个开启`, tone: "cyan" },
         { k: "显卡档位", v: gpuTiers.length, sub: `${keywordCount} 个识别词`, tone: "ok" },

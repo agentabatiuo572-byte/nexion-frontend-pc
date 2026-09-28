@@ -1,4 +1,5 @@
 "use client";
+import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 
 /**
  * A2 审计 & 操作确认中心 — design_handoff_a_domain/A2 设计稿 port(387 行 + SPEC §4 矩阵 14 行权威 + §7 三铁律)。
@@ -316,6 +317,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   /* ────────────────── 高敏动作 ────────────────── */
 
   const approveWo = (w: A2OperationRow) => {
+    if (w.phoneCalibrationError) { toast(w.phoneCalibrationError); return; }
     const commandKey = createA2CommandKey(`a2-approve-${w.id}`);
     openActionConfirm({
       action: <>确认执行 · {w.id}({w.action})</>,
@@ -325,6 +327,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           操作理由必填,确认后一次性事务写入目标域并落审计
           {w.sos ? (<>,<b> 应急轨:确认后立即生效并通知 J 域值班</b></>) : null}。<br />
           执行门槛:<b>{w.roleGate}</b> · 同一次提交在 24 小时内不会重复生效。
+          {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
+          {w.phoneCalibrationError && <p role="alert">{w.phoneCalibrationError}</p>}
         </>
       ),
       amplifies: w.amplifies,
@@ -689,6 +693,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                         <>
                           <button
                             className="l-btn sm mc"
+                            disabled={!!w.phoneCalibrationError}
                             onClick={(e) => { e.stopPropagation(); approveWo(w); }}
                           >执行</button>{" "}
                           <button
@@ -980,6 +985,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   <div style={{ display: "flex", gap: 8, padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
                     <button
                       className="l-btn mc"
+                      disabled={!!w.phoneCalibrationError}
                       style={{ flex: 1, justifyContent: "center" }}
                       onClick={() => { setWoIdx(null); approveWo(w); }}
                     >执行</button>
@@ -1000,6 +1006,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             }
           >
             <div className="l-b" style={{ padding: "4px 0 0" }}>
+              {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
+              {w.phoneCalibrationError && <p role="alert">{w.phoneCalibrationError}</p>}
               <div className="kv"><span className="k">操作理由</span><span className="v" style={{ maxWidth: 360, textAlign: "right" }}>{w.reason}</span></div>
               <div className="kv"><span className="k">记录时间</span><span className="v">{w.ts}{w.sos ? "(应急 SLA)" : "(理由必填留痕)"}</span></div>
               <div className="kv"><span className="k">执行门槛</span><span className="v">{w.roleGate}</span></div>

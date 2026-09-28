@@ -2472,13 +2472,14 @@
       "id": "OPS-E-15",
       "domain": "E",
       "object": "算力与设备配置(E6)",
-      "action": "调整入口开关、系数、产出、GPU 档位/关键词与下载文案",
+      "action": "调整入口开关、系数、产出、GPU 档位/关键词、手机硬件算力规则与下载文案",
       "status": "built",
       "view": "e-tabs/e6-compute-config.tsx",
       "batch": "done",
       "restActions": [
         "e6_compute_config",
-        "e6_compute_config_batch"
+        "e6_compute_config_batch",
+        "e6_phone_calibration"
       ]
     },
     {

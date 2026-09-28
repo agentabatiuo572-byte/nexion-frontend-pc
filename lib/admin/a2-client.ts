@@ -1,5 +1,6 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { phoneProposalError, type PhonePolicyProposal } from "@/lib/admin/phone-calibration-client";
 import {
   buildA2FilterQuery,
   resolveA2AuditObject,
@@ -57,6 +58,7 @@ interface BackendTicket {
   obj: string;
   beforeValue?: string | null;
   afterValue?: string | null;
+  phoneCalibrationProposal?: string | null;
   operator?: string | null;
   operatorRole?: string | null;
   type?: string | null;
@@ -141,6 +143,8 @@ export interface A2Stats {
 }
 
 export interface A2OperationRow {
+  phoneCalibrationProposal?: PhonePolicyProposal;
+  phoneCalibrationError?: string;
   id: string;
   action: string;
   obj: string;
@@ -275,7 +279,18 @@ function formatTime(value: string | null | undefined) {
 }
 
 function fromTicket(ticket: BackendTicket): A2OperationRow {
+  let phoneCalibrationProposal: PhonePolicyProposal | undefined;
+  let phoneCalibrationError: string | undefined;
+  if (ticket.obj === "phone-calibration") {
+    try {
+      const value = JSON.parse(ticket.phoneCalibrationProposal ?? "null");
+      if (!value || phoneProposalError(value)) throw new Error();
+      phoneCalibrationProposal = value;
+    } catch { phoneCalibrationError = "手机规则提案详情不可读取，禁止批准；可驳回后重新提交。"; }
+  }
   return {
+    ...(phoneCalibrationProposal ? { phoneCalibrationProposal } : {}),
+    ...(phoneCalibrationError ? { phoneCalibrationError } : {}),
     id: ticket.id,
     action: ticket.action,
     obj: ticket.obj,

@@ -1147,65 +1147,35 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 
 ---
 
-#### [E6a] 在线加成系数
+#### [E6a] 手机算力规则与换机策略
 
-**① 目的 & 对齐**:为运营提供「载体在线分层」数值系数的调参面 —— 调整 H5 非常驻载体的基础托管档位与 App 连续在线达满的稳定加成时长,以服务端为唯一权威下发给用户端计产。对齐前端 §6.11(载体分层与收益服务端结算 · 载体因子表 / 登记 / 结算 / `onlineBonus`)、§6.10(手机算力显示规则与校准)、§13.3(关键参数集:在线加成系数 `h5BaseFactor` 0.6 / `continuityFullHours` 2)、§12.2(`Device.lastSettledAt` 登记结算锚点);代码事实源:uniapp `store/config-types.ts`(`OnlineBonus`)+ `mock/platform-config.ts`(`DEFAULT_PLATFORM_CONFIG.onlineBonus`)+ `lib/hashpower.ts`(`H5_BASE_FACTOR` / `CONTINUITY_FULL_MS` 派生)+ `lib/carrier.ts`(`Carrier`),admin `lib/mock/admin/compute-config.ts`(`COMPUTE_COEFFICIENTS`)。服务的业务目标:维持手机算力呈现口径可信、调控 H5↔App 的产出差以引导用户升级到 App 载体。served goal 主锚 = §18.2 留存(Day-7 留存 / 「仍开过 app」—— 连续在线激励)+ §1.3 设备阶梯零门槛 top-of-funnel(手机→NexionBox→…→创世节点 中,H5→App 是免费手机层内子步骤,属留存 / engagement 杠杆,App「升级」为免费下载、不直接产生设备销售或撮合服务费);§1.4(设备销售收入 + 算力撮合服务费)为显式 distal 漏斗终点链接(常驻 App → 更多触点 → 下游设备销售转化),非本系数直接归因。
+**① 目的 & 对齐**：为原生 APP 提供可审计的硬件匹配规则、五档分界和换机资格。普通手机校准自动匹配，不逐个审批；平台算力不冒充物理 TOPS 或真实跑分。对齐前端 §4.7.3、§6.10、§6.11。
 
-**② 后台界面**:路由 `/devices/compute-config`(E 域 flagship tab,真渲染面 = `domain-views/e-view.tsx` + `e-tabs/e6-compute-config.tsx`)。顶部 `EStats` 四联:平台特性开关数 / 已开启数 / 待填配置项(SPEC-2)/ 在线加成系数数。本子模块对应「在线加成系数 · 载体在线分层」面板:逐行 = 系数中文名 + key(`h5BaseFactor` / `continuityFullHours`)+ 用途说明 + 当前值(带单位)+ 行尾「调整」按钮(`data-proof=e6-coeff-<key>`);未设值时回退 `COMPUTE_COEFFICIENTS.defaultVal`。改值唯一出口 = shell 持有的 `OperationConfirmModal`(经 `EViewCtx.openActionConfirm` 注入,显式 `edit` 契约出「目标新值」number 输入)。
+**② 后台界面**：/devices/compute-config 展示当前与待生效版本、四个分界、硬件规则、来源说明、待核验硬件汇总及试算。/devices/tasks 复用分界配置入口，不重复编辑硬件表。/platform/config 提供只读摘要；发布审批在 /platform/audit。空配置明确尚未发布，读取失败提供重试；待生效版本存在时禁止继续提交。只读权限不显示提交能力。
 
-数据流水线(admin 改系数 → 审计 → server-canonical → 前端读 → 载体分层计产):
+**③ 可控参数**：
 
-```mermaid
-flowchart LR
-  classDef existing fill:#10243a,stroke:#3a93ff,color:#fff
-  classDef done fill:#0a3b25,stroke:#19a463,color:#fff
-  classDef pending fill:#4a2c08,stroke:#c07a1c,color:#fff
-  A["运营在 /devices/compute-config 调系数 / 切开关"]:::existing --> B["操作确认弹窗:目标新值 + 理由 ≥8 字"]:::existing
-  B --> C["setParam(E.compute.*) 写入 + A2 审计 append-only"]:::done
-  C --> D["服务端权威 PlatformConfig:featureFlags + onlineBonus"]:::done
-  D --> E["GET /api/config/platform 下发 · 客户端只读缓存(下次拉取读取)"]:::done
-  E --> F["前端 hashpower.ts 派生 H5_BASE_FACTOR / CONTINUITY_FULL_MS"]:::done
-  F --> G["载体分层计产:H5 基础托管 · App 全因子在线加成(§6.11)"]:::done
-  F --> H["手机算力实时显示与校准(§6.10)"]:::done
-  D --> I["computeShareEnabled 规划门控 PC 入口显隐 · 前端消费 / 本体后续 SPEC"]:::pending
-```
+| 参数 | 约束 | 生效 |
+|---|---|---|
+| thresholds | 四个严格递增正数，划分五档 | 下次校准 |
+| rules | 最多 500 条；唯一 id、android/ios、可选型号、必填 SoC/GPU、RAM 左闭右开区间、平台算力值、来源说明；同优先级不得重叠 | 下次校准 |
+| computeValue | 大于 0、不超过 1,000,000、最多三位小数；不是 TOPS | 下次校准 |
+| expectedRevision | 必须匹配服务端当前修订 | 审批执行时再校验 |
+| effectiveAt | 立即或未来至多 366 天；仅允许一个待生效版本 | 到达时间自动读取为当前版本 |
+| phoneBinding.allowReplacement | 允许或禁止替换绑定 | 新安装登录与激活时 |
+| phoneBinding.minReplacementIntervalDays | 非负整数天数，按最近成功替换时间计算 | 新安装登录与激活时 |
 
-**③ 可控参数**:
+不提供未经核实的硬件种子或默认能力值。未知硬件进入待核验；精确型号已知但硬件不符时不能使用泛型号兜底。普通注册礼独立于手机能力，H5 登记奖励与基础托管收益停用。
 
-| 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
-|---|---|---|---|---|
-| `h5BaseFactor`(H5 基础托管系数) | 0.6(现状实现值,12 月节奏表未覆盖,取前端 `DEFAULT_PLATFORM_CONFIG.onlineBonus`) | `(0,1]`(开下界、含 1;`hashpower.ts` INVARIANT,排除 0 —— 0 会把 H5 产出清零、违反不变量) | 下次 `platform-config` 拉取生效(客户端冷启动或 TTL 刷新;无服务端推送通道),不回溯已结算收益 | H5 载体手机算力 = baseline × `h5BaseFactor` × 在线 × 抖动(基础托管,不叠充电 / 散热 / 连续在线);影响 §6.10 显示 + §6.11 计产 |
-| `continuityFullHours`(连续在线满额时长) | 2(现状实现值,单位小时) | `> 0`(建议 0.5–24) | 下次 `platform-config` 拉取生效(冷启动 / TTL 刷新),不回溯已结算收益 | App 载体连续在线达此时长后稳定加成因子升至满额 1.0(此前自 0.85 线性爬升,`hashpower.ts` `CONTINUITY_FLOOR`);影响 §6.10 / §6.11 |
+**④ 操作动作**：编辑规则→试算及影响预览→输入 8–200 字理由→提交 A2 审批。编辑后原试算失效。提交成功仅表示待审批，不显示已生效。另一名具备权限的操作员检查完整阈值、规则、来源、目标版本与生效时间后批准；确认弹窗仍展示完整提案。审批重放按版本锁、幂等键与覆盖率护栏执行，禁止自批及过期版本覆盖。
 
-> 默认值依据:`NEXION_12月节奏表.md` 未覆盖在线加成系数,按现状实现值取数(前端 `mock/platform-config.ts` 与 admin `COMPUTE_COEFFICIENTS` 一致),供开发对照现状。
->
-> 配套不可配下限:`CONTINUITY_FLOOR`(`hashpower.ts` = 0.85,连续在线斜坡下限)是前端数值杠杆但**有意固定的客户端常量**(换机 / 被踢出后的起步惩罚起点),当前**不纳入 server-canonical 配置** —— `OnlineBonus` 仅 `h5BaseFactor` / `continuityFullHours` 两键(`config-types.ts`)。若运营确需调下限,须作为 `onlineBonus` 第三键纳入 E6a 三端同步,否则保持 by-design 固定。
+**⑤ 接口**：GET /api/admin/config/phone-calibration 返回当前/待生效策略与待核验硬件汇总；POST /api/admin/config/phone-calibration/preview 试算样本并返回历史影响统计。写入使用既有 A2 提案流程，command.op=e6_phone_calibration，目标为 E / phone_calibration_policy / phone-calibration。APP 只读校准结果，不获得管理端规则编辑权限。
 
-**④ 操作动作**:`调整<系数>`(改 `h5BaseFactor` / `continuityFullHours`)。执行角色:**超管**(平台经济口径参数,直接影响全网产出;必要时风控会签 / 知会);参数批改类高敏动作,不涉资金流出 / kill-switch。每次改值经业务专属确认弹窗 + 理由必填 → `setParam(E.compute.<key>, value)` 写入 server-canonical(下次拉取生效)+ A2 审计 + 实时告警。
+**⑥ 权限 & 审计**：读取要求 E6 或 E2 read；试算要求 E6 read；发布要求 E6 业务权限并通过 A2 双人审批。A2 从持久化 command 读取详情，不信任提交方摘要。记录操作人、审批人、理由、前后版本及幂等执行结果；A5 显示规则版本摘要。
 
-**④a 交互与弹窗规格**:
-- 触发控件:系数行右侧「调整」按钮(`.adj`,`data-proof=e6-coeff-<key>`;位置:在线加成系数面板每行尾;可用态:`hydrated` 后可点;点击行为:`openActionConfirm({op:"param", paramKey:computeCoeffParamKey(key), edit:{kind:"number", current, unit}})` → 因传 `edit` 而出「目标新值」number 输入)。
-- 弹窗(shell `OperationConfirmModal`,唯一动作出口):
-  - 信息区:动作名(如「H5 基础托管系数 调整」)+ detail(server-canonical 说明 + `frontendEffect`)。
-  - 影响预览区:当前值 → 目标新值;「改后写入 server-canonical,全网下次拉取生效,不回溯已结算收益,以服务器为准」提示。
-  - 输入区:① 目标新值(number 输入,`kind=number`,带单位「× 基线 · 取值 `(0,1]`」/「小时」,placeholder `0.6` / `2`);② 理由(reason,必填 ≥8 字 / `reasonMin=8`)。
-  - 输入控件表:目标新值 number(必填 —— **现状仅校验非空** / `newVal.trim().length>0`;范围约束 `(0,1]` / `>0` 为 server-canonical 不变量,**PROD 服务端兜底拒绝越界**;现状 admin `EditSpec` 无 min/max/step 槽位、`canConfirm` 与 `e-view` `E.compute` param 分支均未做客户端范围校验,标 TBD);reason text(必填 ≥8 字;无客户端上界,`textarea` 无 maxLength;空 reason 由 PROD 服务端拒绝为**建议契约(TBD)**)。
-  - 按钮区:确认(写入)/ 取消(视觉弱于确认)。
-  - 错误态:目标新值空值 → `canConfirm` 阻止提交(现状仅非空校验);数字越界 / 非有限值的拒绝为 **PROD 服务端兜底(TBD,现状客户端未拦)**;reason 不足 8 字 → 阻止提交(`reasonMin`)。
-  - 成功反馈:toast「<动作名>:已写入 <值> · server-canonical」;A2 审计落账。
+**⑦ 风控 & 联动**：配置解析、持久化或证明不可用时禁止手机激活，不伪造成功。策略不回溯已结算收益，不直接改已激活手机值；已有手机在下一次主动校准时使用新规则。异机原生登录先停止旧手机任务，即使换机被拒也不得继续领取；原绑定合法恢复只解除换机暂停并等待新心跳，运营暂停保留。已购设备不受手机绑定策略影响。
 
-**⑤ 接口**:
-- 用户端读(已落地,server-canonical):`GET /api/config/platform` → `PlatformConfig { featureFlags, onlineBonus }`(`mock/platform-config.ts` 头注 PROD 行;客户端只读缓存,前端 `hashpower.ts` 派生 `H5_BASE_FACTOR` / `CONTINUITY_FULL_MS`)。
-- admin 改(TBD·建议):`PATCH /api/admin/config/online-bonus/:key` body `{ value: number; reason: string }`,`Idempotency-Key` 请求去重头(PROD PATCH);`:key ∈ {h5BaseFactor, continuityFullHours}`。
-- admin 读(TBD·建议):`GET /api/admin/config/online-bonus` → `{ key: ComputeCoefficientKey; value: number }[]`。
-- 现状 mock(backend-replaceable):`e6-compute-config.tsx` → `openActionConfirm(op:"param")` → `e-view.tsx` `setParam("E.compute.<key>", value, {action, reason})`(走 `E.compute` else 分支,自带 A2 审计);读经 `pget("E.compute.<key>")`,未设回退 `defaultVal`。DR-7:admin 与 uniapp 各自 mock,结构 / 键一致,PROD 由服务端打通。
-- 注:admin `compute-config.ts` PROD 头注当前仅文档化 feature-flags 的 GET/PATCH,未文档化 online-bonus(`COMPUTE_COEFFICIENTS`)的 admin 读 / 改端点 —— 故上述 online-bonus admin 端点标 TBD·建议是准确的(头注非对称,非本草稿缺陷)。
-
-**⑥ 权限 & 审计**:角色×动作矩阵片段 —— 查看:全运营角色只读;调整系数:**超管**执行(必要时风控会签)+ 理由必填 + A2 审计。审计**沿用统一 A2 schema(§2.x A2 ⑥)**,字段(append-only):`actor`(operator)、`role`、`ip`、`action`(如「H5 基础托管系数 调整」)、`target`(paramKey `E.compute.h5BaseFactor` / `E.compute.continuityFullHours`)、`before`、`after`、`reason`(≥8 字)、`ts`;`setParam` 调用即写审计(`e-view.tsx` `setParam(..., {action, reason})`)。高敏配置变更实时告警运营群。注:现状 mock `OpsAuditEntry` = `{id,ts,actor,action,target,before,after,reason}`,**缺 `role` / `ip`**,登记为代码侧待补(code ↔ PRD-canonical 审计 schema 漂移,以 §2.x A2 ⑥ 为审计 schema 单源);`Idempotency-Key` 非审计列,为 PROD PATCH 请求去重头(见 ⑤)。
-
-**⑦ 风控 & 联动**:server-canonical —— `PlatformConfig` 服务端权威,客户端仅 UI cache(DR-7,对齐 §9.11d server-driven 理念),客户端不可篡改;前端 `hashpower.ts` 不变量(每个因子 ∈ `(0,1]`)仅为显示兜底,权威值以服务端为准。下次拉取生效(非实时):改后对全网在客户端**下次 `platform-config` 拉取(冷启动或 TTL 刷新)时生效**;无服务端推送 / SSE 通道,故非实时;客户端 re-fetch 节奏 / TTL 现状代码未定义,须 PROD 定义(建议冷启动 + 周期 TTL 刷新)。不回溯已结算收益(§6.11 收益服务端结算 + §12.2 `Device.lastSettledAt` 为结算边界)。范围不变量:`h5BaseFactor ∈ (0,1]`(排除 0)、`continuityFullHours > 0`,为 server-canonical 约束(`hashpower.ts` INVARIANT);PROD 须服务端兜底拒绝越界,防异常系数放大产出;现状 admin mock 仅校验非空、未做客户端范围校验(TBD,见 ④a)。联动:调 `h5BaseFactor` 改变 H5↔App 产出差 → §6.10 手机算力显示 + §6.11 载体计产口径(影响「升级 App」转化口径)。注:App 满额在线加成仅在**充电 + 连续在线**时达成(`charge` 1.0 × `continuity` 满额 1.0);非充电新会话 App(`charge` 0.6 × `continuity` floor 0.85 ≈ 0.51,jitter 后)渲染可**低于** H5 平 0.6 基线(≈0.58)—— 「升级 App 拿在线加成」对充电 + 连续在线 App 成立,operator 调参勿假设 App 恒高于 H5(App 产出独立于 `h5BaseFactor`,调低 `h5BaseFactor` 仅拉大差距)。跨端一致:admin `E.compute.*` 与 uniapp `PlatformConfig.onlineBonus` 同 key(单一标识),增减 / 改名 key 须三端同步(`config-types.ts` / `platform-config.ts` / `hashpower.ts` ↔ `compute-config.ts`)。
-
-**⑧ 埋点(事件)**:纯平台配置,无用户侧业务事件;仅 admin 审计事件(对齐 A4 命名 `domain.object_action`)。`compute.coefficient_changed` —— 触发点:E6a「调整」确认提交成功;关键属性:`actor`、`coeffKey`(`h5BaseFactor` | `continuityFullHours`)、`before`、`after`、`reason`、`ts`;消费:A2 审计流水 + 配置变更告警,不进用户漏斗 / KPI。
+**⑧ 埋点(事件)**：沿用 A2 审计、配置审计与 compute.config_changed 事件。验收覆盖空配置、非法/冲突规则、试算失败重试、取消不写入、待审批、不同审批人、版本冲突、预约生效、待核验重试及只读权限。原生 Android 证明与执行需要独立真机验收。
 
 #### [E6b] 平台特性开关
 
