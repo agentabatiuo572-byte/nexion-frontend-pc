@@ -114,13 +114,13 @@ function CregisDepositHistory() {
     <div className="cregis-section-title">USDT 入金记录 / 充值单
       <button className="l-btn sm" disabled={loading} onClick={() => void load()}>刷新列表</button>
     </div>
-    <div className="sub">链上转账经供应商与链核实后形成入金记录；完成入账时生成充值单。之后若发生风险冻结，仍保留历史单号和入账额，当前可用余额以钱包与风控状态为准。</div>
+    <div className="sub">链上转账经供应商与链核实后形成入金记录；完成入账时生成充值单。未入账记录的净额仅供核对；之后若发生风险冻结，仍保留历史单号和入账额，当前可用余额以钱包与风控状态为准。</div>
     {error && <div className="dtint warn">入金列表不可用：{error}</div>}
     {loading && !page && <div className="dtint">正在读取入金记录…</div>}
     {page && !page.available && <div className="dtint warn">Cregis 收款模式已停用，历史列表当前不可查询；请勿将此状态视为无入金记录。</div>}
     {page?.available && <>
       <div className="cregis-history-scroll"><table className="l-tbl">
-        <thead><tr><th>记录 / 充值单</th><th>用户</th><th>链上交易 / 地址</th><th className="num">毛额 USDT</th><th className="num">手续费</th><th className="num">历史净入账</th><th>确认数</th><th>状态</th><th>发现 / 入账时间</th></tr></thead>
+        <thead><tr><th>记录 / 充值单</th><th>用户</th><th>链上交易 / 地址</th><th className="num">毛额 USDT</th><th className="num">手续费</th><th className="num">净额 USDT</th><th>确认数</th><th>状态</th><th>发现 / 入账时间</th></tr></thead>
         <tbody>{page.items.length === 0 ? <tr><td colSpan={9} className="cregis-history-empty">暂无已核实的链上入金；待处理回调和链上缺单请查看下方异常队列。</td></tr>
           : page.items.map((row) => <tr key={row.id}>
             <td className="mono">CID {row.cid}<div className="sub">{row.depositNo || (row.status === "CREDITED" ? "充值单缺失，请核对" : "尚未生成充值单")}</div></td>
