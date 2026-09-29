@@ -45,6 +45,6 @@ done-review六维：①真落地=规格已落盘读回，不宣称功能落地�
 
 S3可消费冻结SPEC/CONTRACTS和验收条目；S2生图/可点原型仍由设计会话负责，S5须等两线汇合。S3/S4/S5/S6的runtime检查脚本、隔离数据库/图片实际测试及S7三仓验收计划和APP实机证据尚待对应阶段交付。未跑构建/verify/业务测试，原因是本阶段明确只写规格，无生产代码变更。
 
-后台远端失败证据已由原始输入确认（授权账号Repository not found）；本轮依授权不重复访问、不换账号、不改owner。只作本地任务分支提交，远端push未完成。原始OWNER-DECISIONS原样纳入提交便于后续读取，未改写其内容；提交完整SHA由最终交付报告给出，避免文档自引用commit。
+后台远端更正：协调会话随后转达主人确认的新仓为`https://github.com/agentabatiuo572-byte/nexion-frontend-pc`，目标`test`，远端已核实SHA为`248d6da89becb113402046ab3a9f27c48f3e010d`；授权账号`fakerli998877-ship-it`可访问。旧Repository not found是历史输入，阻塞已解除。主线负责更新共享origin/fetch并核对新基线、迁入本地规格；按最新调度本会话暂不push/rebase。原始OWNER-DECISIONS原样纳入提交，保留原历史输入；本次新远端说明以此交接为准。完整提交SHA由最终报告给出，避免自引用commit。
 
 大白话：规格和接口规则已写清并通过独立复审，可以进入后端隔离实现；生产功能和跨端验收尚未做，本阶段无需主人追加拍板。

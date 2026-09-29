@@ -72,6 +72,6 @@ Java目录前缀 `src/main/java/ffdd/opsconsole/`。以下符号是稳定回源�
 
 ## 环境与命令边界
 
-后台远端`https://github.com/jasonukkd/nexion-ops-console.git`的授权身份查询失败证据来自OWNER-DECISIONS（Repository not found）；不回退旧账号、不改owner。此限制不阻断本地规格交付，但不能称远端同步成功。
+远端更正（协调会话转达主人确认）：后台当前权威为`https://github.com/agentabatiuo572-byte/nexion-frontend-pc`，目标`test`，已核实远端SHA`248d6da89becb113402046ab3a9f27c48f3e010d`，授权账号`fakerli998877-ship-it`可访问。OWNER-DECISIONS中的旧URL/Repository not found保留为原始历史输入，不再代表当前阻塞。本规格源码调查仍基于表首旧本地SHA；主线须比较新基线再迁入，S1按调度暂不push/rebase，不宣称已对新后台test重新做源码审计。
 
 后端工具已由协调会话核实存在：`D:/WORKS/PLAN/.local-runtime/phone-calibration-tools/jdk-17.0.20.1+1`、`apache-maven-3.9.9/bin/mvn.cmd`、`mysql-verified/mysql-8.4.6-winx64/bin/{mysqld,mysql}.exe`（后二者路径同此前缀）。不在PATH不等于未安装；后端阶段设置临时JAVA_HOME/PATH，不下载替代工具。任何测试DB须独立schema及隔离凭据，生产数据不触及。本文未运行这些测试。
