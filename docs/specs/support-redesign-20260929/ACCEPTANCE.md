@@ -40,3 +40,5 @@
 - S7：同一隔离数据库/附件存储/三仓固定提交执行AC01–AC14，逐项pass/fail/unverified；缺失项不能用已有单仓测试替代。
 
 新增测试文件名与runtime record生产器尚未存在，由实施阶段编写并核对真实路径后加入机器计划。任何占位命令、模板JSON可解析、截图存盘、spec-lint通过都不能单独证明这些行为成立。
+
+新后台test基线补充AC05/AC06/AC12：真实主通路为WebSocket，必须验证realtime-ticket、watch/typing/presence及create/reply/read command的归属撤权；WS提交后断线再HTTP恢复同key仅一次。保留新M1未知结果锁载荷/版本、M3按会话隔离草稿、重新连接先授权快照再ready、退化轮询与M2键盘可访问性回归。不能因旧hook/测试名含SSE而漏测实际WS。

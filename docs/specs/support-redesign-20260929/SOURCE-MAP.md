@@ -4,7 +4,7 @@
 
 | 仓 | 只读基线 | 读取方式 |
 |---|---|---|
-| 后台 | `0f54a406404a7d0ced9d629566a27586076771b6` | 本工作树 `D:/WORKS/PLAN/.wt/cs-spec-20260929-admin`，分支`codex/cs-spec-20260929` |
+| 后台 | 实施/复核`248d6da89becb113402046ab3a9f27c48f3e010d`（origin/test）；初查`0f54a406404a7d0ced9d629566a27586076771b6` | 本工作树仍旧基线，使用git show/diff读取新远端SHA；仅规格增量由主线迁入 |
 | 后端 | `cc5d96f928c82f081ce0d1e62c9874486634187a` | `git -C D:/WORKS/PLAN/nexion-backend show <SHA>:<path>`；本地test较旧，不能读工作树冒充最新 |
 | 客户端 | `710e9eecfeefee36014c779ca699ec8fcc66fd87` | `D:/WORKS/PLAN/Nexion-uniapp` main；客服相关文件只读，无关WIP不动 |
 
@@ -13,12 +13,29 @@
 | 文件 / 方法 | 已核实事实 | 目标影响 |
 |---|---|---|
 | `lib/nav/console-nav.ts` M域；`app/components/shell/console-shell.tsx` SUPPORT_HOME_PATH | `/service/overview,tickets,sessions,kb-sla,scripts`；support登录根页转overview | 保留入口，overview改本人工作台，主管管理和超管规则权限分开 |
-| `app/components/domain-views/m-view.tsx` MDomainView | fetchMContentData、会话SSE、持续接待dock、sessionStorage命令恢复 | 全部同样执行归属撤权与状态恢复 |
+| `app/components/domain-views/m-view.tsx` MDomainView | fetchMContentData、名为useConversationStream但新基线实际WebSocket、持续接待dock、sessionStorage命令恢复 | 实时/快照轮询/HTTP全部同样执行归属撤权与恢复 |
 | `lib/admin/m-client.ts` apiRequest、mContentActions | 代理前缀`/api/admin/content`；M1/M5绑定、seat-assignment、普通转接、主动发信、工单回复路径齐全 | 收敛所有写入口；新增body与响应严格验证，不能信名字反推adminId |
-| `app/components/domain-views/m-tabs/m1-overview.tsx`、`m5-scripts.tsx` | 两处绑定/坐席操作 | 不允许一处换新契约另一处绕行 |
+| `app/components/domain-views/m-tabs/m1-overview.tsx`、`m5-scripts.tsx` | 两处绑定/坐席；新基线统一fetchMAdvisorBindingUsers→advisor-users，严格userId、脱敏手机号、分页/重试；M1权限额外canManage门 | 复用新picker，不回退从userNo提取数字或旧全资料接口；两入口收敛 |
 | `app/components/domain-views/m-tabs/m3-sessions.tsx`、`m3-modals.tsx` | 旧队列/备勤/坐席转接交互 | 人工服务线退役为正式转绑提示 |
 | `app/api/admin/content/[...path]/route.ts` proxy | cookie认证、allowlist、sandbox拒绝；request.text()/upstream.text() | 图片需要保持认证的二进制路径，不能文字代理原样转图 |
 | `package.json` | `verify`、`test:m2-contract`…`test:m5-contract`、`verify:m-domain-config`、`test:e2e` | 命令存在但尚未验证新功能；后续全量verify不可由spec-lint替代 |
+
+### 新后台test增量复核
+
+已实际执行`git diff 0f54a406404a7d0ced9d629566a27586076771b6..248d6da89becb113402046ab3a9f27c48f3e010d -- <客服相关路径>`并读取新增依赖全文/关键符号。直接M1/M2/M3/M5/m-view/m-client/代理/nav共8文件变化410增255删；package.json与shell本次路径比较无变化。仅核对客服相关差异，不声称533个全仓变更已审计。
+
+| 新基线文件 / 符号 | 差异及实施保留要求 |
+|---|---|
+| `lib/admin/admin-conversation-realtime.ts`；`conversation-realtime.ts`；`use-conversation-stream.ts` | `/ws/conversations`+POST `/api/admin/content/conversations/realtime-ticket`；auth/watch/typing/command/create/reply/read、ack/event/presence；发信优先WS，未就绪才HTTP。保留短票、无token URL、重连先补全授权快照、退化轮询、原key未知结果恢复；不能只修HTTP/SSE漏WS命令/typing/presence |
+| `lib/admin/m-client.ts` apiRequest/markMConversationRead | create/replies/read优先adminConversationCommand；增加后台read调用；m-view仍有旧SSE注释，不能由注释误判运行通路 |
+| `lib/admin/m-conversation-recovery-gate.ts`；`m3-composer-state.ts` | 恢复门不再依赖conversationsAvailable；草稿绑定conversationNo防切换误发，成功只清对应提交草稿。S5扩图片/归属撤权时保留这些回归 |
+| `lib/admin/m1-pending-command.ts`；M1 LoadConfigModal | 结果未知时锁旧载荷/版本/理由与稳定命令；busy以M5 profile权威，改busy带expectedProfileVersion。新规则/转绑复用恢复，不退回旧负载位覆盖profile |
+| M5 scripts | 自动推送默认off且执行器缺席禁止启用；话术/模板移除旧server-page函数，用overview可见全集过滤验收占位后分页；保留真实数据与筛选总数一致，不恢复已删除fetchMSessionScriptsPage/fetchMReplyTemplatesPage |
+| M2 tickets | TabGroup与搜索aria-label改进，重构保留键盘/可访问性 |
+| `lib/admin/business-time.ts` | m-client用parseBusinessTime替代裸Date；新UTC事件明确offset，保持旧业务时区解析兼容，不错移8小时 |
+| 代理/nav | 代理allowlist只新增privacy-policy，二进制缺口仍在；M域路由未改，nav差异为无关H9名，禁止回灌旧nav整文件 |
+
+新增现有回归文件（新test存在）：`tests/m1-acceptance-contract.test.mjs`、`m1-advisor-binding-picker-contract.test.mjs`、`m1-availability-authority.test.mjs`、`m1-availability-retry-baseline.test.mjs`、`m3-conversation-recovery-gate.test.mjs`、`m3-filter-draft-cross-conversation.test.mjs`、`m3-sse-resilience-contract.test.mjs`。最后一个名字有sse但不能推断实现仍SSE，读断言与实际通路。S5按新基线复用并扩相邻回归。
 
 ## 后端链路（路径均相对仓根）
 
@@ -72,6 +89,6 @@ Java目录前缀 `src/main/java/ffdd/opsconsole/`。以下符号是稳定回源�
 
 ## 环境与命令边界
 
-远端更正（协调会话转达主人确认）：后台当前权威为`https://github.com/agentabatiuo572-byte/nexion-frontend-pc`，目标`test`，已核实远端SHA`248d6da89becb113402046ab3a9f27c48f3e010d`，授权账号`fakerli998877-ship-it`可访问。OWNER-DECISIONS中的旧URL/Repository not found保留为原始历史输入，不再代表当前阻塞。本规格源码调查仍基于表首旧本地SHA；主线须比较新基线再迁入，S1按调度暂不push/rebase，不宣称已对新后台test重新做源码审计。
+远端更正（协调会话转达主人确认）：后台当前权威为`https://github.com/agentabatiuo572-byte/nexion-frontend-pc`，目标`test`，完整SHA见表首，授权账号可访问。协调会话已更新OWNER-DECISIONS环境段，S1不改该文件。本S1已复核上述客服相关增量；主线只迁入规格文档，不合旧线代码。按调度不push/rebase，旧权限阻塞不再成立。
 
 后端工具已由协调会话核实存在：`D:/WORKS/PLAN/.local-runtime/phone-calibration-tools/jdk-17.0.20.1+1`、`apache-maven-3.9.9/bin/mvn.cmd`、`mysql-verified/mysql-8.4.6-winx64/bin/{mysqld,mysql}.exe`（后二者路径同此前缀）。不在PATH不等于未安装；后端阶段设置临时JAVA_HOME/PATH，不下载替代工具。任何测试DB须独立schema及隔离凭据，生产数据不触及。本文未运行这些测试。

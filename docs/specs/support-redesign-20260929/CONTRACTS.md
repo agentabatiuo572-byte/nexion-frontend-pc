@@ -123,6 +123,7 @@ coverageStartAt是自最近一次采集缺口结束后可证明连续观察的�
 | GET/POST `/conversations`；GET `/{no}`；POST `/{no}/replies` | 列表、详情、主动发信和回复均查当前客户归属；扩展kind/attachment/intent/replyTargets（兼容当前会话replyThroughMessageId）；新会话 owner 从服务端归属派生 |
 | POST `/conversations/{no}/transfer`、`/transfer/accept`、`/transfer/return`、`/transfer/wait` | 人工客服线不再变更接待人，返回 409 正式转绑提示；取消普通客服/队列/备勤绕行；不触及 Nova AI 业务 |
 | GET `/conversations/stream` | 按实时归属过滤，转绑撤订阅/终止旧权限，下次连接重新校验 |
+| POST `/conversations/realtime-ticket`；WebSocket `/ws/conversations` | 新后台test实际主通路；短票只认证，不永久缓存对象授权。watch/typing/presence、create/reply/read命令与每个事件均校验实时归属，原key/载荷和HTTP同一事务；ping/pong、presence和已读不算账户活跃 |
 | POST `/tickets/{no}/replies`、`/tickets/{no}/escalate`、`/conversations/{no}/ticket` | 对客回复只当前顾问；内部工单指派不改变顾问，对客升级不绕归属 |
 | App GET/POST `/conversations`、GET `/{no}`、POST `/{no}/replies`、`/{no}/read` | 只自己；advisor/support 两个入口同专属授权；closed 后重开不回退其他客服；read 不记活跃或成功 |
 | App GET `/commands/{key}` | 保留命令恢复；扩展图片/消息结果；只当前客户本人可查 |

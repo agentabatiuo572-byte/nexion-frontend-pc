@@ -22,6 +22,8 @@ S3/S4同后端文件高度重合，必须顺序；S5/S6分仓可并行。S7发�
 
 后台S5：`app/components/domain-views/m*`、`lib/admin/m*`、必要`app/api/admin/content`二进制代理、shell badge/nav权限、对应tests/scripts与本仓PRD契约引用。S2拥有设计目录，本阶段消费不覆盖。客户端S6：`src/api/support-api.ts`、`src/domain/support.ts`、`src/store/conversations.ts`、`src/pages/support/`、`src/components/support/`、必要求助/工单入口和现有语言文件，禁止扩到网站/native打包/无关a11y WIP。
 
+后台实施基线更新为`248d6da89becb113402046ab3a9f27c48f3e010d`（新权威origin/test），不是S1所在旧checkout。S5允许范围还包含现有`lib/admin/{admin-conversation-realtime,conversation-realtime,use-conversation-stream}.ts`以覆盖真实WS路径；保留新基线m1-pending-command、m3-composer-state、恢复门和business-time语义。新增现有回归清单见SOURCE-MAP。协调会话只搬本目录文档增量，不能将旧源码整分支合入新test。
+
 每次交接提供：完整commit、分支和树路径；本阶段变更集；API真实样例（脱敏）、错误/版本/幂等规则；DDL与可重复迁移/回滚；检查命令、运行结果、日志；独立review findings和已复验证据；未测环境；下一阶段允许消费的字段。S4不能只给接口声明而不给实际读写样例；S5/S6不能把mock样例当真实后端。
 
 ## 已存在且核实入口的检查
