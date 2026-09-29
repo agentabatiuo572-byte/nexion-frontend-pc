@@ -1,0 +1,243 @@
+{
+  "schemaVersion": 2,
+  "id": "cs-admin-s5-20260929-draft",
+  "title": "按选定设计稿实施后台（契约草案，未激活）",
+  "repo": "D:/WORKS/PLAN/.wt/cs-spec-20260929-admin",
+  "base": "0f54a406404a7d0ced9d629566a27586076771b6",
+  "mode": "implement",
+  "risk": "high",
+  "owner": "unassigned-s5",
+  "outOfScope": [
+    "禁止在此占位repo原树执行；必须改为该阶段独立树并固定新task id",
+    "不写生产库、不部署、不改邀请财务关系、不覆盖其他WIP"
+  ],
+  "inputs": [
+    "../OWNER-DECISIONS.md",
+    "../HANDOFF.md",
+    "../SPEC.md",
+    "../CONTRACTS.md",
+    "../ACCEPTANCE.md",
+    "../SOURCE-MAP.md",
+    "../IMPLEMENTATION-PLAN.md"
+  ],
+  "activation": {
+    "status": "DRAFT_NOT_RUN",
+    "required": [
+      "分配该阶段独立工作树与真实owner",
+      "S1审阅通过；按阶段索引确认上游提交/接口并加入inputs",
+      "S2设计稿/交互说明固定文件加入inputs",
+      "S3/S4实际接口交付",
+      "实现runtime检查与报告生产器、验证隔离环境和命令副作用",
+      "报告路径置于授权仓外目录，不能手填通过"
+    ],
+    "missingCommands": [
+      "scripts/support-redesign-s5-runtime.mjs"
+    ],
+    "existingChecksAreOnly": "既有回归入口，不代表本期验收已覆盖"
+  },
+  "steps": [
+    {
+      "id": "s5",
+      "title": "按选定设计稿实施后台",
+      "dependsOn": [],
+      "scope": [
+        "app/components/domain-views/m*",
+        "app/components/domain-views/m-tabs/**",
+        "lib/admin/m*",
+        "app/api/admin/content/**",
+        "app/components/shell/console-shell.tsx",
+        "app/components/shell/use-service-badges.ts",
+        "lib/nav/console-nav.ts",
+        "tests/**",
+        "scripts/**",
+        "scripts/support-redesign-s5-runtime.mjs"
+      ],
+      "acceptance": [
+        {
+          "id": "s5-ac01",
+          "description": "本人六指标与列表、unknown、待回复及分页一致；详见ACCEPTANCE完整场景",
+          "source": {
+            "input": "../ACCEPTANCE.md",
+            "locator": "AC01"
+          },
+          "kind": "ui",
+          "checks": [
+            "s5/runtime"
+          ]
+        },
+        {
+          "id": "s5-ac05",
+          "description": "全部REST/SSE/Socket/旧入口/回查对象权限与撤权；详见ACCEPTANCE完整场景",
+          "source": {
+            "input": "../ACCEPTANCE.md",
+            "locator": "AC05"
+          },
+          "kind": "ui",
+          "checks": [
+            "s5/runtime"
+          ]
+        },
+        {
+          "id": "s5-ac06",
+          "description": "工单知识库及真实作者回归、不冒名对客发送；详见ACCEPTANCE完整场景",
+          "source": {
+            "input": "../ACCEPTANCE.md",
+            "locator": "AC06"
+          },
+          "kind": "ui",
+          "checks": [
+            "s5/runtime"
+          ]
+        },
+        {
+          "id": "s5-ac07",
+          "description": "执行与成功分离、新活动与单周期去重；详见ACCEPTANCE完整场景",
+          "source": {
+            "input": "../ACCEPTANCE.md",
+            "locator": "AC07"
+          },
+          "kind": "ui",
+          "checks": [
+            "s5/runtime"
+          ]
+        },
+        {
+          "id": "s5-ac09",
+          "description": "能力声明图片上传、私有访问、转绑撤权、恢复；详见ACCEPTANCE完整场景",
+          "source": {
+            "input": "../ACCEPTANCE.md",
+            "locator": "AC09"
+          },
+          "kind": "ui",
+          "checks": [
+            "s5/runtime"
+          ]
+        },
+        {
+          "id": "s5-ac10",
+          "description": "停止恢复及转绑周期终结、历史归因和并发；详见ACCEPTANCE完整场景",
+          "source": {
+            "input": "../ACCEPTANCE.md",
+            "locator": "AC10"
+          },
+          "kind": "ui",
+          "checks": [
+            "s5/runtime"
+          ]
+        },
+        {
+          "id": "s5-ac12",
+          "description": "设计先行及默认空加载失败权限窄屏、双端语言；详见ACCEPTANCE完整场景",
+          "source": {
+            "input": "../ACCEPTANCE.md",
+            "locator": "AC12"
+          },
+          "kind": "ui",
+          "checks": [
+            "s5/runtime"
+          ]
+        },
+        {
+          "id": "s5-ac13",
+          "description": "规则独立配置/继承模式/权限/CAS及无生产默认；详见ACCEPTANCE完整场景",
+          "source": {
+            "input": "../ACCEPTANCE.md",
+            "locator": "AC13"
+          },
+          "kind": "ui",
+          "checks": [
+            "s5/runtime"
+          ]
+        }
+      ],
+      "checks": [
+        {
+          "id": "regression",
+          "argv": [
+            "node",
+            "scripts/verify.mjs"
+          ],
+          "kind": "exit",
+          "timeoutMs": 600000
+        },
+        {
+          "id": "runtime",
+          "argv": [
+            "node",
+            "scripts/support-redesign-s5-runtime.mjs",
+            "--report",
+            "C:/Users/jason/.codex/workflow-runs/customer-service-20260929/s5/runtime.json"
+          ],
+          "kind": "record",
+          "capability": "runtime",
+          "report": "C:/Users/jason/.codex/workflow-runs/customer-service-20260929/s5/runtime.json",
+          "requiredChecks": [
+            "s5-ac01",
+            "s5-ac05",
+            "s5-ac06",
+            "s5-ac07",
+            "s5-ac09",
+            "s5-ac10",
+            "s5-ac12",
+            "s5-ac13"
+          ],
+          "timeoutMs": 600000
+        }
+      ],
+      "reviewRequired": true
+    }
+  ],
+  "integration": {
+    "id": "integration",
+    "title": "本仓阶段独立集成，不能代替三仓S7",
+    "dependsOn": [
+      "s5"
+    ],
+    "scope": [
+      "app/components/domain-views/m*",
+      "app/components/domain-views/m-tabs/**",
+      "lib/admin/m*",
+      "app/api/admin/content/**",
+      "app/components/shell/console-shell.tsx",
+      "app/components/shell/use-service-badges.ts",
+      "lib/nav/console-nav.ts",
+      "tests/**",
+      "scripts/**",
+      "scripts/support-redesign-s5-runtime.mjs"
+    ],
+    "acceptance": [
+      {
+        "id": "s5-handoff",
+        "description": "阶段提交、上游依赖、未验证范围与逐项完整性独立审查，满足AC14",
+        "source": {
+          "input": "../OWNER-DECISIONS.md",
+          "locator": "阶段交付纪律"
+        },
+        "kind": "behavior",
+        "checks": [
+          "integration/closure"
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "id": "closure",
+        "argv": [
+          "node",
+          "scripts/support-redesign-s5-runtime.mjs",
+          "--integration",
+          "--report",
+          "C:/Users/jason/.codex/workflow-runs/customer-service-20260929/s5/integration.json"
+        ],
+        "kind": "record",
+        "capability": "runtime",
+        "report": "C:/Users/jason/.codex/workflow-runs/customer-service-20260929/s5/integration.json",
+        "requiredChecks": [
+          "s5-handoff"
+        ],
+        "timeoutMs": 600000
+      }
+    ],
+    "reviewRequired": true
+  }
+}

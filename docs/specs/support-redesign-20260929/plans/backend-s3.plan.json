@@ -1,0 +1,230 @@
+{
+  "schemaVersion": 2,
+  "id": "cs-backend-s3-20260929-draft",
+  "title": "归属、注册继承、权限与迁移（契约草案，未激活）",
+  "repo": "D:/WORKS/PLAN/nexion-backend",
+  "base": "cc5d96f928c82f081ce0d1e62c9874486634187a",
+  "mode": "implement",
+  "risk": "high",
+  "owner": "unassigned-s3",
+  "outOfScope": [
+    "禁止在此占位repo原树执行；必须改为该阶段独立树并固定新task id",
+    "不写生产库、不部署、不改邀请财务关系、不覆盖其他WIP"
+  ],
+  "inputs": [
+    "../OWNER-DECISIONS.md",
+    "../HANDOFF.md",
+    "../SPEC.md",
+    "../CONTRACTS.md",
+    "../ACCEPTANCE.md",
+    "../SOURCE-MAP.md",
+    "../IMPLEMENTATION-PLAN.md"
+  ],
+  "activation": {
+    "status": "DRAFT_NOT_RUN",
+    "required": [
+      "分配该阶段独立工作树与真实owner",
+      "S1审阅通过；按阶段索引确认上游提交/接口并加入inputs",
+      "实现runtime检查与报告生产器、验证隔离环境和命令副作用",
+      "报告路径置于授权仓外目录，不能手填通过"
+    ],
+    "missingCommands": [
+      "scripts/support-redesign-s3-runtime.mjs"
+    ],
+    "existingChecksAreOnly": "既有回归入口，不代表本期验收已覆盖"
+  },
+  "steps": [
+    {
+      "id": "s3",
+      "title": "归属、注册继承、权限与迁移",
+      "dependsOn": [],
+      "scope": [
+        "src/main/java/ffdd/opsconsole/content/**",
+        "src/main/java/ffdd/opsconsole/auth/application/AppUserRegistrationService.java",
+        "src/main/java/ffdd/opsconsole/auth/mapper/AppUserRegistrationMapper.java",
+        "src/main/java/ffdd/opsconsole/platform/application/OpsAdminAccountService.java",
+        "src/test/java/ffdd/opsconsole/content/**",
+        "src/test/java/ffdd/opsconsole/auth/**",
+        "src/test/java/ffdd/opsconsole/platform/**",
+        "scripts/migrations/**",
+        "scripts/support-redesign-s3-runtime.mjs"
+      ],
+      "acceptance": [
+        {
+          "id": "s3-ac02",
+          "description": "注册邀请继承未配/有限0/有限2/不限、防环与准确入池；详见ACCEPTANCE完整场景",
+          "source": {
+            "input": "../ACCEPTANCE.md",
+            "locator": "AC02"
+          },
+          "kind": "behavior",
+          "checks": [
+            "s3/runtime"
+          ]
+        },
+        {
+          "id": "s3-ac03",
+          "description": "双人工入口严格专属、忙碌离线不回退、未绑定留言；详见ACCEPTANCE完整场景",
+          "source": {
+            "input": "../ACCEPTANCE.md",
+            "locator": "AC03"
+          },
+          "kind": "behavior",
+          "checks": [
+            "s3/runtime"
+          ]
+        },
+        {
+          "id": "s3-ac04",
+          "description": "单客/显式范围转绑、历史后代不动、幂等与新段；详见ACCEPTANCE完整场景",
+          "source": {
+            "input": "../ACCEPTANCE.md",
+            "locator": "AC04"
+          },
+          "kind": "behavior",
+          "checks": [
+            "s3/runtime"
+          ]
+        },
+        {
+          "id": "s3-ac05",
+          "description": "全部REST/SSE/Socket/旧入口/回查对象权限与撤权；详见ACCEPTANCE完整场景",
+          "source": {
+            "input": "../ACCEPTANCE.md",
+            "locator": "AC05"
+          },
+          "kind": "behavior",
+          "checks": [
+            "s3/runtime"
+          ]
+        },
+        {
+          "id": "s3-ac06",
+          "description": "工单知识库及真实作者回归、不冒名对客发送；详见ACCEPTANCE完整场景",
+          "source": {
+            "input": "../ACCEPTANCE.md",
+            "locator": "AC06"
+          },
+          "kind": "behavior",
+          "checks": [
+            "s3/runtime"
+          ]
+        },
+        {
+          "id": "s3-ac11",
+          "description": "迁移原始预检、异常裁决、幂等回滚与不改邀请财务；详见ACCEPTANCE完整场景",
+          "source": {
+            "input": "../ACCEPTANCE.md",
+            "locator": "AC11"
+          },
+          "kind": "behavior",
+          "checks": [
+            "s3/runtime"
+          ]
+        },
+        {
+          "id": "s3-ac13",
+          "description": "规则独立配置/继承模式/权限/CAS及无生产默认；详见ACCEPTANCE完整场景",
+          "source": {
+            "input": "../ACCEPTANCE.md",
+            "locator": "AC13"
+          },
+          "kind": "behavior",
+          "checks": [
+            "s3/runtime"
+          ]
+        }
+      ],
+      "checks": [
+        {
+          "id": "regression",
+          "argv": [
+            "cmd.exe",
+            "/d",
+            "/c",
+            "D:/WORKS/PLAN/.local-runtime/phone-calibration-tools/apache-maven-3.9.9/bin/mvn.cmd",
+            "-Dtest=OpsSupportAgentServiceTest,AppSupportServiceTest,OpsConversationServiceTest,MybatisSupportAgentRepositoryTest,MybatisConversationRepositoryTest,AppUserRegistrationServiceTest,AppUserRegistrationReferralLockContractTest,ConversationSocketAccessTest,ConversationAdminReadServiceTest,OpsConversationStreamControllerTest,OpsAdminAccountServiceTest",
+            "test"
+          ],
+          "kind": "exit",
+          "timeoutMs": 600000
+        },
+        {
+          "id": "runtime",
+          "argv": [
+            "node",
+            "scripts/support-redesign-s3-runtime.mjs",
+            "--report",
+            "C:/Users/jason/.codex/workflow-runs/customer-service-20260929/s3/runtime.json"
+          ],
+          "kind": "record",
+          "capability": "runtime",
+          "report": "C:/Users/jason/.codex/workflow-runs/customer-service-20260929/s3/runtime.json",
+          "requiredChecks": [
+            "s3-ac02",
+            "s3-ac03",
+            "s3-ac04",
+            "s3-ac05",
+            "s3-ac06",
+            "s3-ac11",
+            "s3-ac13"
+          ],
+          "timeoutMs": 600000
+        }
+      ],
+      "reviewRequired": true
+    }
+  ],
+  "integration": {
+    "id": "integration",
+    "title": "本仓阶段独立集成，不能代替三仓S7",
+    "dependsOn": [
+      "s3"
+    ],
+    "scope": [
+      "src/main/java/ffdd/opsconsole/content/**",
+      "src/main/java/ffdd/opsconsole/auth/application/AppUserRegistrationService.java",
+      "src/main/java/ffdd/opsconsole/auth/mapper/AppUserRegistrationMapper.java",
+      "src/main/java/ffdd/opsconsole/platform/application/OpsAdminAccountService.java",
+      "src/test/java/ffdd/opsconsole/content/**",
+      "src/test/java/ffdd/opsconsole/auth/**",
+      "src/test/java/ffdd/opsconsole/platform/**",
+      "scripts/migrations/**",
+      "scripts/support-redesign-s3-runtime.mjs"
+    ],
+    "acceptance": [
+      {
+        "id": "s3-handoff",
+        "description": "阶段提交、上游依赖、未验证范围与逐项完整性独立审查，满足AC14",
+        "source": {
+          "input": "../OWNER-DECISIONS.md",
+          "locator": "阶段交付纪律"
+        },
+        "kind": "behavior",
+        "checks": [
+          "integration/closure"
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "id": "closure",
+        "argv": [
+          "node",
+          "scripts/support-redesign-s3-runtime.mjs",
+          "--integration",
+          "--report",
+          "C:/Users/jason/.codex/workflow-runs/customer-service-20260929/s3/integration.json"
+        ],
+        "kind": "record",
+        "capability": "runtime",
+        "report": "C:/Users/jason/.codex/workflow-runs/customer-service-20260929/s3/integration.json",
+        "requiredChecks": [
+          "s3-handoff"
+        ],
+        "timeoutMs": 600000
+      }
+    ],
+    "reviewRequired": true
+  }
+}
