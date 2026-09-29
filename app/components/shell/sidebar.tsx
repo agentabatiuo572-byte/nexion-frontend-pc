@@ -28,12 +28,16 @@ export function Sidebar({
   collapsed,
   expanded,
   servicePending,
+  mobile = false,
+  onMobileOpenChange,
 }: {
   role: AdminRole;
   domains: NavDomain[];
   collapsed: boolean;
   expanded: string[];
   servicePending: number;
+  mobile?: boolean;
+  onMobileOpenChange?: (open: boolean) => void;
 }) {
   const pathname = usePathname();
   const navRef = useRef<HTMLElement>(null);
@@ -88,6 +92,7 @@ export function Sidebar({
   const badges: Record<string, number> = servicePending > 0 ? { "/service/sessions": servicePending } : {};
 
   const onCollapsedOpen = (code: string) => {
+    if (mobile) { onMobileOpenChange?.(true); setExpanded([code]); return; }
     setSidebar(false);
     setExpanded([code]);
   };
@@ -199,7 +204,7 @@ export function Sidebar({
         )}
         <button
           type="button"
-          onClick={toggleSidebar}
+          onClick={mobile ? () => onMobileOpenChange?.(collapsed) : toggleSidebar}
           title={collapsed ? "展开侧栏" : "收起侧栏"}
           aria-label={collapsed ? "展开侧栏" : "收起侧栏"}
           className={`flex h-8 items-center justify-center rounded-[8px] transition-colors hover:bg-[var(--v5-surface-2)] ${collapsed ? "mx-auto w-8" : "w-8"}`}

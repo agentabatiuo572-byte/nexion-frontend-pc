@@ -128,6 +128,7 @@ const CLASSIFICATION_EXEMPT = {
   "b-client.ts": "同上",
   "l-client.ts": "同上",
   "m-client.ts": "同上",
+  "m-support-client.ts": "S5a 请求传输层只转发调用方持有的命令号；结果未知与清除命令槽由三个页面的持久 store 判断，传输层不裁决去留",
   "e1-client.ts": "同上", "e2-client.ts": "同上", "e3-client.ts": "同上",
   "e4-client.ts": "同上", "e6-client.ts": "同上",
   "media-client.ts": "同上",

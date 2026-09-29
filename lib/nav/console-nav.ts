@@ -278,11 +278,11 @@ export const CONSOLE_NAV: NavDomain[] = [
     roles: ["support", "risk"],
     // 客服中心 = 抽 I8(工单)+ I9(即时会话)重组的独立域;真写键沿用 I.support.*/I.session.* 保 persist 兼容。
     l2: [
-      { id: "M1", name: "客服总览", path: "/service/overview", prdAnchor: "M1", batch: "V4", status: "flagship" },
+      { id: "M1", name: "客服工作台", path: "/service/overview", prdAnchor: "M1", batch: "V4", status: "flagship" },
       { id: "M2", name: "工单台", path: "/service/tickets", prdAnchor: "M2", batch: "V4", status: "flagship" },
-      { id: "M3", name: "即时会话台", path: "/service/sessions", prdAnchor: "M3", batch: "V4", status: "flagship" },
+      { id: "M3", name: "专属会话", path: "/service/sessions", prdAnchor: "M3", batch: "V4", status: "flagship" },
       { id: "M4", name: "知识库与 SLA", path: "/service/kb-sla", prdAnchor: "M4", batch: "V4", status: "flagship" },
-      { id: "M5", name: "话术与模板配置", path: "/service/scripts", prdAnchor: "M5", batch: "V4", status: "flagship" },
+      { id: "M5", name: "服务规则与话术", path: "/service/scripts", prdAnchor: "M5", batch: "V4", status: "flagship" },
     ],
   },
 ];

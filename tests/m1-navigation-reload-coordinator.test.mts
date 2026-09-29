@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { MDomainLoadCoordinator } from "../lib/admin/m-content-load-coordinator.ts";
 import { failClosedSupportAgentsAfterReload } from "../lib/admin/m-progressive-support-state.ts";
@@ -80,4 +81,22 @@ test("late progress and final results from an older full load cannot overwrite t
   await Promise.all([publishOldProgress, publishOldFinal]);
 
   assert.deepEqual(applied, ["current"]);
+});
+
+test("a scope revocation invalidates both in-flight read lanes before stale data can return", async () => {
+  const view = readFileSync(new URL("../app/components/domain-views/m-view.tsx", import.meta.url), "utf8");
+  assert.match(view, /const invalidateScope = useCallback\(\(conversationNo\?: string, customerId\?: string\) => \{\s*void reloadMContent\(\);/);
+  const coordinator = new MDomainLoadCoordinator();
+  const oldFull = coordinator.beginFullLoad();
+  const oldSnapshot = coordinator.beginConversationSnapshot();
+  const late = deferred();
+  const visible = ["customer-101", "customer-202"];
+  const oldResult = late.promise.then(() => {
+    if (coordinator.isFullLoadCurrent(oldFull) && coordinator.isConversationSnapshotCurrent(oldSnapshot)) visible.push("customer-101");
+  });
+  coordinator.beginFullLoad();
+  visible.splice(visible.indexOf("customer-101"), 1);
+  late.resolve();
+  await oldResult;
+  assert.deepEqual(visible, ["customer-202"]);
 });

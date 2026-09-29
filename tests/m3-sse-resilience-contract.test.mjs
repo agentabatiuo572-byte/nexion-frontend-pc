@@ -4,7 +4,7 @@ import test from 'node:test';
 import ts from 'typescript';
 import vm from 'node:vm';
 const source=fs.readFileSync(new URL('../lib/admin/conversation-realtime.ts',import.meta.url),'utf8');
-function fixture(reconcile=async()=>{},ticket=async()=>({ticket:'one-time'}),onState) {
+function fixture(reconcile=async()=>{},ticket=async()=>({ticket:'one-time'}),onState,onScopeInvalidated) {
   let now=100000,id=0;const timers=new Map();const sockets=[];const states=[];
   const clock={setTimeout(fn,delay){timers.set(++id,{at:now+delay,fn});return id},clearTimeout(id){timers.delete(id)}};
   const module={exports:{}};
@@ -12,12 +12,21 @@ function fixture(reconcile=async()=>{},ticket=async()=>({ticket:'one-time'}),onS
     {exports:module.exports,module,AbortController,Date:{now:()=>now},Math,Map,Set,Promise,Error,JSON,...clock});
   const client=new module.exports.ConversationRealtime({url:'ws://test',ticket,reconcile,
     state:(ready,terminal,reason)=>{states.push({ready,terminal,reason});onState?.(ready,terminal,reason);},
+    scopeInvalidated:onScopeInvalidated,
     socket:()=>{const socket={sent:[],send(data){this.sent.push(JSON.parse(data))},close(){}};sockets.push(socket);return socket}});
   const flush=async()=>{for(let i=0;i<12;i++)await Promise.resolve()};
   const tick=async(ms)=>{const end=now+ms;await flush();for(;;){const due=[...timers].filter(([,v])=>v.at<=end).sort((a,b)=>a[1].at-b[1].at)[0];if(!due)break;now=due[1].at;timers.delete(due[0]);due[1].fn();await flush()}now=end;await flush()};
   const frame=(socket,data)=>socket.onmessage?.({data:JSON.stringify(data)});
   return {client,sockets,tick,frame,states};
 }
+test('M3 numeric customer scope invalidation targets only that customer',async()=>{
+  const invalidated=[];
+  const f=fixture(async()=>{},async()=>({ticket:'one-time'}),undefined,(conversationNo,customerId)=>invalidated.push({conversationNo,customerId}));
+  f.client.start();await f.tick(0);const socket=f.sockets[0];socket.onopen();f.frame(socket,{type:'ready'});
+  f.frame(socket,{type:'scope-invalidated',customerId:101});
+  assert.deepEqual(invalidated,[{conversationNo:undefined,customerId:'101'}]);
+  f.client.stop();
+});
 test('M3 waits for catch-up, coalesces invalidations, and does not poll a healthy socket',async()=>{
   let release,calls=0;const f=fixture(async()=>{calls++;if(calls===1)await new Promise(r=>release=r)});
   f.client.start();await f.tick(0);const socket=f.sockets[0];socket.onopen();f.frame(socket,{type:'ready'});

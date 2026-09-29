@@ -106,7 +106,7 @@ test("real M1 writer keeps one HTTP key bound to one versioned request through r
   globalThis.window = { sessionStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key), get length() { return storage.size; }, key: i => [...storage.keys()][i] ?? null } };
   clearPendingCommandRecords();
   try {
-    const makeWriter = version => new Function("mCommands", "isMUiKey", "commandSlot", "pendingMCommandMetadata", "pendingMCommandBaselines", "legacyParams", "mData", "applyMBackendWrite", "reloadMContent", "setToast", "displayAdminError", compile("const write = " + writer.getText(ast)) + "; return write;")(
+    const makeWriter = version => new Function("mCommands", "isMUiKey", "commandSlot", "pendingMCommandMetadata", "pendingMCommandBaselines", "legacyParams", "safeMData", "applyMBackendWrite", "reloadMContent", "setToast", "displayAdminError", compile("const write = " + writer.getText(ast)) + "; return write;")(
       createPendingMutationStore({ storageKey: "m1-real-writer-test" }), () => false, value => `cmd|${value}`, { current: new Map() }, { current: new Map() }, {}, { loadConfig: { version } }, apply, async () => {}, () => {}, error => error.message,
     );
     const v7 = makeLoadProps(7, false, 11, 2, 50);

@@ -10,6 +10,7 @@ interface Options {
   url:string; ticket:(signal:AbortSignal)=>Promise<{ticket:string}>; socket:(url:string)=>RealtimeSocket;
   reconcile:(signal:AbortSignal)=>Promise<void>; state?:(ready:boolean,terminal:boolean,reason?:string)=>void;
   presence?:(value:RealtimePresence|null)=>void;
+  scopeInvalidated?:(conversationNo?:string,customerId?:string)=>void;
 }
 type Timer=ReturnType<typeof setTimeout>;
 /**
@@ -98,6 +99,12 @@ export class ConversationRealtime {
               if(typeof f.eventId!=='string'||this.eventIds.has(f.eventId))break;
               this.eventIds.add(f.eventId);if(this.eventIds.size>2048)this.eventIds.delete(this.eventIds.values().next().value!);
               this.dirty=true;if(!this.syncing){clearTimeout(this.eventTimer);this.eventTimer=setTimeout(()=>void this.sync(epoch),80)}break;
+            case 'scope-invalidated':
+              this.options.scopeInvalidated?.(
+                typeof f.conversationNo==='string'?f.conversationNo:undefined,
+                typeof f.customerId==='string'?f.customerId:Number.isSafeInteger(f.customerId)&&f.customerId>0?String(f.customerId):undefined,
+              );
+              this.dirty=true;if(!this.syncing){clearTimeout(this.eventTimer);this.eventTimer=setTimeout(()=>void this.sync(epoch),0)}break;
             case 'presence':if(f.conversationNo===this.watched)this.options.presence?.(f);break;
             case 'error':{
               const denied=f.code===401||f.code===403;

@@ -8,7 +8,7 @@ import { PORTED_EMPTY_CONTENT } from "./ported-content";
 export const DOMAIN_M: ModuleEntry[] = [
   {
     path: "/service/overview",
-    summary: "客服工作的实时概况:多少工单在处理、多少会话在接待、哪类工单快超时、坐席忙不忙。指标本身只读;授权主管可维护客服坐席与负载策略。",
+    summary: "查看本人客户、待办与维护进展；主管可审阅客户并办理分配和交接。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
@@ -18,7 +18,7 @@ export const DOMAIN_M: ModuleEntry[] = [
   },
   {
     path: "/service/sessions",
-    summary: "和用户实时聊天接待。能主动发起会话找用户、把会话跨坐席转交给别的客服 / 技能队列 / 备勤池、处理别人转入待处理的会话、把会话转成工单;切到别的页面也不断线,切回来接着聊。涉及提现或账户安全处置的咨询去开工单。",
+    summary: "与本人专属客户沟通；主管可审阅，客户归属变更须走正式转绑。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
@@ -28,7 +28,7 @@ export const DOMAIN_M: ModuleEntry[] = [
   },
   {
     path: "/service/scripts",
-    summary: "管顾问主动推送的开关、频率和人群,以及顾问话术和客服快捷回复模板。改动要确认并填理由。",
+    summary: "配置服务规则、坐席资格以及客服话术；规则修改须确认并填写理由。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];

@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 2,
+  "id": "cs-admin-s5a-20260929-ui",
+  "title": "客服后台 S5a 界面与前端行为",
+  "repo": "D:/WORKS/PLAN/.wt/cs-ui-20260929-admin",
+  "base": "36517103240203bdaf04e6f5a4dc6e79f50bd7ab",
+  "mode": "implement",
+  "risk": "high",
+  "owner": "s5a-admin-ui-01a0ebeb",
+  "outOfScope": [
+    "不改冻结 S1 规格和 S2 原图，不写其他树或真实数据库",
+    "不把 fixture 当后端持久化、权限或图片授权验收",
+    "不合入 test，不部署"
+  ],
+  "inputs": [
+    "../OWNER-DECISIONS.md",
+    "../SPEC.md",
+    "../CONTRACTS.md",
+    "../ACCEPTANCE.md",
+    "../../../design/support-redesign-20260929/UI-INTERACTION.md",
+    "../../../design/support-redesign-20260929/ASSET-REVIEW.md",
+    "../../../design/support-redesign-20260929/personal-dashboard-final-v3.png",
+    "../../../design/support-redesign-20260929/my-customers-final-v3.png",
+    "../../../design/support-redesign-20260929/conversation-final-v2.png",
+    "../../../design/support-redesign-20260929/supervisor-pool-final-v1.png",
+    "../../../design/support-redesign-20260929/service-rules-final-v2.png",
+    "EXECUTION.md"
+  ],
+  "steps": [
+    {
+      "id": "s5a",
+      "title": "还原五类界面并验证前端交互",
+      "dependsOn": [],
+      "scope": [
+        "app/components/domain-views/m*",
+        "app/components/domain-views/design-kit.tsx",
+        "app/components/domain-views/domain-header.tsx",
+        "app/components/domain-views/m-tabs/**",
+        "app/api/admin/content/**",
+        "app/components/shell/console-shell.tsx",
+        "app/components/shell/sidebar.tsx",
+        "app/components/shell/topbar.tsx",
+        "app/components/shell/use-service-badges.ts",
+        "lib/admin/m*",
+        "lib/admin/registry/m.ts",
+        "lib/admin/admin-conversation-realtime.ts",
+        "lib/admin/conversation-realtime.ts",
+        "lib/admin/use-conversation-stream.ts",
+        "lib/nav/console-nav.ts",
+        "tests/**",
+        "scripts/admin-support-surface-audit.mjs",
+        "scripts/pending-idempotency-key-sentinel.mjs",
+        "docs/ops-actions.manifest.json",
+        "lib/admin/error-messages.ts",
+        "scripts/s5a-support-fixture-runtime.mjs",
+        "docs/specs/support-redesign-20260929/s5/**"
+      ],
+      "acceptance": [
+        { "id": "s5a-dashboard", "description": "六指标与待办同口径，未知和未配置不作零，统计期间可见", "source": { "input": "../../../design/support-redesign-20260929/UI-INTERACTION.md", "locator": "工作台六指标" }, "kind": "ui", "checks": ["s5a/fixture-runtime"] },
+        { "id": "s5a-customers", "description": "客户双状态、详情、停止恢复理由及失败草稿保留", "source": { "input": "../../../design/support-redesign-20260929/UI-INTERACTION.md", "locator": "我的客户" }, "kind": "ui", "checks": ["s5a/fixture-runtime"] },
+        { "id": "s5a-conversation", "description": "专属私聊文字发送、归属未核实禁发、结果不明原命令恢复、图片草稿清理、失权退出和窄屏已读", "source": { "input": "../SPEC.md", "locator": "[FEAT-M03]" }, "kind": "ui", "checks": ["s5a/fixture-runtime"] },
+        { "id": "s5a-m3-actions", "description": "关闭、转工单与详情直达、旧段人工选游标接续、快捷话术、主管转绑以及窄屏和缩放下的操作入口可用", "source": { "input": "../SPEC.md", "locator": "⑥ 点击流矩阵" }, "kind": "ui", "checks": ["s5a/fixture-runtime"] },
+        { "id": "s5a-pool", "description": "主管池半选、精确客户范围、成功分配和版本冲突保留", "source": { "input": "../../../design/support-redesign-20260929/UI-INTERACTION.md", "locator": "主管池" }, "kind": "ui", "checks": ["s5a/fixture-runtime"] },
+        { "id": "s5a-rules", "description": "规则部分配置、合法零值、保存成功、失权隔离和冲突重审", "source": { "input": "../../../design/support-redesign-20260929/UI-INTERACTION.md", "locator": "服务规则" }, "kind": "ui", "checks": ["s5a/fixture-runtime"] }
+      ],
+      "checks": [
+        { "id": "typecheck", "argv": ["node", "node_modules/typescript/bin/tsc", "--noEmit"], "kind": "exit", "timeoutMs": 180000 },
+        { "id": "client-contract", "argv": ["node", "--experimental-strip-types", "--test", "--test-reporter=tap", "tests/s5a-support-client.test.mjs"], "kind": "tap", "minTests": 8, "timeoutMs": 120000 },
+        { "id": "chat-contract", "argv": ["node", "--test", "--test-reporter=tap", "tests/s5a-dedicated-chat.test.mjs"], "kind": "tap", "minTests": 1, "timeoutMs": 120000 },
+        { "id": "rules-pool", "argv": ["node", "node_modules/vitest/vitest.mjs", "run", "tests/s5a-rules-pool.test.mjs", "--config", "tests/vitest-admin-auth.config.cjs"], "kind": "exit", "timeoutMs": 120000 },
+        { "id": "proxy-runtime", "argv": ["node", "--test", "tests/s5a-support-proxy.test.mjs"], "kind": "exit", "timeoutMs": 180000 },
+        { "id": "build", "argv": ["node", "node_modules/next/dist/bin/next", "build"], "kind": "exit", "timeoutMs": 300000 },
+        { "id": "fixture-runtime", "argv": ["node", "scripts/s5a-support-fixture-runtime.mjs", "--report", "C:/Users/jason/.codex/workflow-runs/customer-service-20260929/s5a/fixture-runtime.json"], "kind": "record", "capability": "runtime", "report": "C:/Users/jason/.codex/workflow-runs/customer-service-20260929/s5a/fixture-runtime.json", "requiredChecks": ["s5a-dashboard", "s5a-customers", "s5a-detail-gate", "s5a-conversation", "s5a-new-message-reply-target", "s5a-m3-actions", "s5a-pool", "s5a-rules"], "timeoutMs": 600000 }
+      ],
+      "reviewRequired": true
+    }
+  ],
+  "integration": {
+    "id": "integration",
+    "title": "S5a 前端集成；真实后端仍待 S5b",
+    "dependsOn": ["s5a"],
+    "scope": ["app/components/domain-views/m*", "app/components/domain-views/design-kit.tsx", "app/components/domain-views/domain-header.tsx", "app/components/domain-views/m-tabs/**", "app/api/admin/content/**", "lib/admin/m*", "lib/admin/error-messages.ts", "lib/admin/conversation-realtime.ts", "lib/admin/use-conversation-stream.ts", "app/components/shell/**", "lib/nav/console-nav.ts", "lib/admin/registry/m.ts", "tests/**", "scripts/s5a-support-fixture-runtime.mjs", "scripts/admin-support-surface-audit.mjs", "scripts/pending-idempotency-key-sentinel.mjs", "docs/ops-actions.manifest.json", "docs/specs/support-redesign-20260929/s5/**"],
+    "acceptance": [
+      { "id": "s5a-handoff", "description": "五页与存量 M2/M4 的前端回归和 fixture 边界均有实际证据，S5b 留待真实接口", "source": { "input": "EXECUTION.md", "locator": "S5a：界面与前端行为" }, "kind": "behavior", "checks": ["integration/full-verify"] }
+    ],
+    "checks": [
+      { "id": "full-verify", "argv": ["node", "scripts/verify.mjs"], "kind": "exit", "timeoutMs": 600000 }
+    ],
+    "reviewRequired": true
+  }
+}

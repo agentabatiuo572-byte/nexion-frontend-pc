@@ -71,7 +71,7 @@ assertContains("lib/admin/registry/m.ts", [
 assertContains("app/components/domain-views/m-view.tsx", [
   'M2: "M2"',
   "<M2Tickets ctx={ctx} />",
-  "<M3Sessions ctx={ctx} />",
+  "<M3DedicatedChat ctx={ctx} />",
 ]);
 assertContains("app/components/domain-views/ported.ts", ['"M"']);
 assertContains("app/components/domain-views/registry.tsx", ["MDomainView", "M: MDomainView"]);

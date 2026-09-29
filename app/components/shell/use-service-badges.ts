@@ -1,43 +1,41 @@
 "use client";
 
 /**
- * 侧栏导航徽标 — 客服中心「待处理」实时计数(供左侧风琴导航 M3 入口显数量)。
- * 待处理 = 未读 或 转入待处理 且未归档,与 M3 收件箱 SEGS「未读/转入待处理」同口径。
- * 只读取后端会话快照;未加载时保持 0,不再用静态会话种子或本地 persist 兜底。
+ * 侧栏待办数来自服务端 TODO 分页同一快照的 total。
  */
 import { useEffect, useState } from "react";
-import { fetchMServicePendingConversations } from "@/lib/admin/m-client";
-import type { SessionConvo } from "../domain-views/m-tabs/data";
+import { supportClient } from "@/lib/admin/m-support-client";
 
-function pendingCount(conversations: SessionConvo[]) {
-  return conversations.filter((c) => !c.archived && (c.unread > 0 || c.transfer != null)).length;
-}
-
-/** 客服会话待处理数(未读 或 转入待处理 · 未归档)。 */
-export function useServicePendingCount(enabled = true): number {
+/** 待维护、待回复、首次联系按客户去重后的服务端计数。 */
+export function useServicePendingCount(enabled = true, sessionKey = ""): number {
   const [pending, setPending] = useState(0);
   useEffect(() => {
+    setPending(0);
     if (!enabled) {
-      setPending(0);
       return undefined;
     }
     let cancelled = false;
-    void fetchMServicePendingConversations()
-      .then((conversations) => {
-        if (!cancelled) setPending(pendingCount(conversations));
+    const refresh = () => void supportClient.customers({ pageNum: 1, pageSize: 1, filter: "TODO" })
+      .then((page) => {
+        if (!cancelled) setPending(page.total);
       })
       .catch(() => {
         if (!cancelled) setPending(0);
       });
+    refresh();
+    const timer = window.setInterval(refresh, 30_000);
+    window.addEventListener("support-todo-changed", refresh);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener("support-todo-changed", refresh);
     };
-  }, [enabled]);
+  }, [enabled, sessionKey]);
   return pending;
 }
 
-/** 导航徽标映射:path → 待处理数(目前仅 M3 即时会话台)。 */
+/** 导航徽标映射:path → 本人待办客户数。 */
 export function useNavBadges(enabled = true): Record<string, number> {
   const pending = useServicePendingCount(enabled);
-  return pending > 0 ? { "/service/sessions": pending } : {};
+  return pending > 0 ? { "/service/overview": pending } : {};
 }

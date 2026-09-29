@@ -2105,33 +2105,52 @@
     {
       "id": "OPS-M-07",
       "domain": "M",
-      "object": "即时会话(M3)",
-      "action": "主动发起/回复/改状态/单个或批量归档",
+      "object": "专属会话(M3)",
+      "action": "本人客户发起与回复，并按当前归属上传或取消私聊图片",
       "status": "built",
-      "view": "m-tabs/m3-sessions.tsx",
+      "view": "m-tabs/m3-dedicated-chat.tsx",
       "batch": "done",
       "restActions": [
-        "initiateConversation",
+        "startConversation",
         "replyConversation",
+        "sendConversationReply",
+        "uploadAttachment",
+        "cancelAttachment",
         "updateConversationStatus",
         "archiveConversation",
         "archiveConversations"
-      ]
+      ],
+      "note": "S5a 专属会话接入当前顾问发起、回复、图片、关闭与转工单；归档命令仍在共享写链，真实服务端联调留待 S5b。"
     },
     {
       "id": "OPS-M-08",
       "domain": "M",
-      "object": "会话转交(M3)",
-      "action": "发起/接收/退回/等待",
+      "object": "专属客户正式转绑(M1)",
+      "action": "主管按精确客户范围正式转绑，旧会话临时转接入口停用",
       "status": "built",
-      "view": "m-tabs/m3-sessions.tsx",
+      "view": "m-tabs/m1-personal-workbench.tsx + m-tabs/m1-supervisor-pool.tsx",
       "batch": "done",
-      "restActions": [
-        "transferConversation",
-        "acceptTransfer",
-        "returnTransfer",
-        "waitTransfer"
-      ]
+      "restAction": "transfer"
+    },
+    {
+      "id": "OPS-M-29",
+      "domain": "M",
+      "object": "本人客户维护(M1)",
+      "action": "当前顾问按版本和理由暂停或恢复主动维护",
+      "status": "built",
+      "view": "m-tabs/m1-personal-workbench.tsx",
+      "batch": "done",
+      "restAction": "setMaintenance"
+    },
+    {
+      "id": "OPS-M-30",
+      "domain": "M",
+      "object": "服务规则(M5)",
+      "action": "超管按版本和理由保存已修改的服务规则字段",
+      "status": "built",
+      "view": "m-tabs/m5-service-rules.tsx",
+      "batch": "done",
+      "restAction": "updateRules"
     },
     {
       "id": "OPS-M-09",

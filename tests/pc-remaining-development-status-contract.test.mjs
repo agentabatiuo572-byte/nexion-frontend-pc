@@ -257,10 +257,10 @@ test("remaining-development ledger has unique claims and preserves semantic cons
   const counts = Object.groupBy(manifest.rows, (item) => item.status);
 
   assert.equal(new Set(ids).size, ids.length, "action IDs must be unique");
-  assert.equal(manifest.rows.length, 257);
+  assert.equal(manifest.rows.length, 259);
   assert.deepEqual(
     { built: counts.built?.length, readonly: counts.readonly?.length, pending: counts.pending?.length ?? 0, missing: counts.missing?.length ?? 0 },
-    { built: 227, readonly: 29, pending: 1, missing: 0 },
+    { built: 229, readonly: 29, pending: 1, missing: 0 },
   );
   for (const id of expectedBuiltClosures) assert.equal(row(id)?.status, "built", id + " must stay built");
 
@@ -599,17 +599,19 @@ test("built rows have real PC callers, including active L3/L4 and C1 detail acti
 
   const mView = read("app/components/domain-views/m-view.tsx");
   const mClient = read("lib/admin/m-client.ts");
-  const mPages = ["m1-overview", "m2-tickets", "m3-sessions", "m4-kb-sla", "m5-scripts"]
+  const mPages = ["m1-overview", "m2-tickets", "m3-dedicated-chat", "m4-kb-sla", "m5-scripts"]
     .map((name) => read(`app/components/domain-views/m-tabs/${name}.tsx`))
     .join("\n");
   for (const action of [
     "createTicket", "replyTicket", "updateTicketStatus", "assignTicket", "escalateTicket",
-    "initiateConversation", "replyConversation", "transferConversation", "convertConversationToTicket",
+    "replyConversation", "convertConversationToTicket",
     "createFaq", "updateSla", "assignSupportSeat", "createScript", "createReplyTemplate",
   ]) {
     assert.match(mClient, new RegExp(`\\b${action}\\(`), `${action} must have a real M client command`);
     assert.match(mView, new RegExp(`mContentActions\\.${action}\\(`), `${action} must be called by the active M surface`);
   }
+  assert.match(read("app/components/domain-views/m-tabs/m3-dedicated-chat.tsx"), /supportClient\.startConversation\(/);
+  assert.match(read("app/components/domain-views/m-tabs/m1-supervisor-pool.tsx"), /supportClient\.transfer\(/);
 
   const manifestMCommands = new Set(manifest.rows
     .filter((item) => item.domain === "M")

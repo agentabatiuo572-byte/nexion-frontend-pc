@@ -31,9 +31,11 @@ test("persistent session dock preserves the M3 production authority and single-f
     "M3 必须只保留开发/生产共用的服务端权威链，退役 Sandbox 模式不得回潮");
   assert.match(dock, /canWriteM3 && conversationsAvailable/);
   assert.match(dock, /sendInFlight\.current/);
-  assert.match(dock, /commandKey: `m3:reply:/);
-  assert.match(dock, /aria-label="发送会话回复"/);
-  assert.match(dock, /disabled=\{!canWrite \|\| sending\}/, "Dock must freeze the draft while an acknowledged send is in flight");
+  assert.match(dock, /dockCommands\.remember\(dockSlot, key/);
+  assert.match(dock, /supportClient\.command\(key\)/);
+  assert.match(dock, /supportClient\.sendConversationReply\(conv\.id, input, key\)/);
+  assert.match(dock, /aria-label=\{pendingDock \? "查询结果并重试会话回复" : "发送会话回复"\}/);
+  assert.match(dock, /disabled=\{!canWrite \|\| sending \|\| Boolean\(pendingDock\)\}/, "Dock must freeze the draft while an acknowledged send is in flight");
 });
 
 test("all PC support composers use Enter to send and Shift+Enter to add a line", () => {

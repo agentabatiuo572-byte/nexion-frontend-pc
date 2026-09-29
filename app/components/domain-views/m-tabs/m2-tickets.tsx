@@ -162,6 +162,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
   const [categoryFilter, setCategoryFilter] = useState<"all" | SupportTicketCategory>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | SupportTicketStatus>("all");
   const [query, setQuery] = useState("");
+  const [requestedTicketNo, setRequestedTicketNo] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -177,6 +178,8 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
     const params = new URLSearchParams(window.location.search);
     const requestedScope = params.get("scope");
     const requestedStatus = params.get("status");
+    const requestedQuery = params.get("query");
+    if (requestedQuery) { setScope("all"); setQuery(requestedQuery); setRequestedTicketNo(requestedQuery); }
     if (requestedScope === "active" || requestedScope === "resolved" || requestedScope === "archived" || requestedScope === "all") {
       setScope(requestedScope);
     }
@@ -186,6 +189,13 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
   }, []);
 
   const selected = tickets.find((t) => t.id === selectedId) ?? null;
+
+  useEffect(() => {
+    if (!requestedTicketNo || !tickets.some((ticket) => ticket.id === requestedTicketNo)) return;
+    setSelectedId(requestedTicketNo);
+    setDrawerOpen(true);
+    setRequestedTicketNo(null);
+  }, [requestedTicketNo, tickets]);
 
   useEffect(() => {
     const pending = pendingCreatedTicket;
@@ -793,7 +803,7 @@ function TicketDrawer({
   return (
     <>
       <div className="tk-drawer-back" onClick={onClose} />
-      <div className="tk-drawer">
+      <div className="tk-drawer" role="dialog" aria-label={`工单 ${ticket.id} 详情`}>
         <div style={{ padding: "15px 18px 14px", borderBottom: "1px solid var(--border)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span className="idtag">{ticket.id}</span>

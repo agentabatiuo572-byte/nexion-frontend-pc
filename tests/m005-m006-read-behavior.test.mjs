@@ -76,6 +76,8 @@ test("malformed 200 candidate bodies and over-broad rows fail closed", () => {
 
 test("M1 overview validates every authority-bearing roster row and relation", () => {
   assert.deepEqual(parseM1SupportAgentOverview(validM1Overview), validM1Overview);
+  const zeroCapacity = { ...validM1Overview, agents: [{ ...validM1Overview.agents[0], maxConcurrent: 0 }] };
+  assert.deepEqual(parseM1SupportAgentOverview(zeroCapacity), zeroCapacity);
   for (const value of [
     { ...validM1Overview, agents: [{}] },
     { ...validM1Overview, agents: [{ ...validM1Overview.agents[0], adminId: 0 }] },

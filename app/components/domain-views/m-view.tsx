@@ -27,16 +27,18 @@ import { failClosedSupportAgentsAfterReload, preserveVerifiedSupportAgentsDuring
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useConversationStream, type ConversationStreamEvent } from "@/lib/admin/use-conversation-stream";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
-import { M1Overview } from "./m-tabs/m1-overview";
+import { M1PersonalWorkbench } from "./m-tabs/m1-personal-workbench";
 import { M2Tickets } from "./m-tabs/m2-tickets";
-import { M3Sessions } from "./m-tabs/m3-sessions";
+import { M3DedicatedChat } from "./m-tabs/m3-dedicated-chat";
 import { M4KbSla } from "./m-tabs/m4-kb-sla";
 import { M5Scripts } from "./m-tabs/m5-scripts";
+import { M5ServiceRules } from "./m-tabs/m5-service-rules";
 import { STANDBY_POOL_LABEL, type AdvisorScript, type SessionConvo, type SessionMsg, type SessionReplyTpl, type SessionType, type SupportFaq, type SupportSla, type SupportTicket, type SupportTicketCategory, type SupportTicketPriority } from "./m-tabs/data";
 import { MAvatar, ownerLabel } from "./m-tabs/hd-ui";
 import type { ConfirmReq, MCtx, ActionConfirmReq } from "./m-tabs/types";
 import { containsConversationMessage } from "./m-sse-dedup";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
+import { supportClient, SupportClientError, type SupportMessageInput } from "@/lib/admin/m-support-client";
 
 /**
  * M 域两类写入的命令号共用一张表,靠 fingerprint 前缀分命名空间:
@@ -50,11 +52,18 @@ interface MCommandRecord extends PendingMutationRecord {
   value?: string;
   /** 参数指纹(`参数键\0值\0理由`)。同一参数换了逻辑命令 id 时,靠它回收上一次的命令号。 */
   paramFingerprint?: string;
+  clientMessageId?: string;
 }
 const mCommands = createPendingMutationStore<MCommandRecord>({
   storageKey: "nexion-admin-m-content-commands-v1",
   isValidRecord: (record) => (record.value === undefined || typeof record.value === "string")
-    && (record.paramFingerprint === undefined || typeof record.paramFingerprint === "string"),
+    && (record.paramFingerprint === undefined || typeof record.paramFingerprint === "string")
+    && (record.clientMessageId === undefined || typeof record.clientMessageId === "string"),
+});
+interface DockCommandRecord extends PendingMutationRecord { payload: string; conversationNo: string }
+const dockCommands = createPendingMutationStore<DockCommandRecord>({
+  storageKey: "nexion-admin-m-dock-pending-v1",
+  isValidRecord: (record) => typeof record.payload === "string" && typeof record.conversationNo === "string",
 });
 const commandSlot = (commandFingerprint: string) => `cmd|${commandFingerprint}`;
 const directWriteSlot = (fingerprint: string) => `m3direct|${fingerprint}`;
@@ -64,6 +73,24 @@ const DOCK_CONVO_KEY = "I.session.convos";
 const DOCK_LAST_KEY = "I.session.ui.lastConvo";
 const DOCK_OPEN_KEY = "I.session.ui.dockOpen"; // "1" = 展开面板,否则收为药丸
 const DOCK_OFF_KEY = "I.session.ui.dockOff";   // 记录被关闭时的会话 id;坐席切到新会话即自动复现
+const dockUiStorageKey = (adminId: number) => `nexion-admin-m-dock-ui-v1:${adminId}`;
+
+function readDockUi(adminId: number): Record<string, string> {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(dockUiStorageKey(adminId)) ?? "{}");
+    return Object.fromEntries([DOCK_LAST_KEY, DOCK_OPEN_KEY, DOCK_OFF_KEY]
+      .filter((key) => typeof saved[key] === "string")
+      .map((key) => [key, saved[key]]));
+  } catch { return {}; }
+}
+
+function saveDockUi(adminId: number, params: Record<string, string>) {
+  try {
+    sessionStorage.setItem(dockUiStorageKey(adminId), JSON.stringify(Object.fromEntries(
+      [DOCK_LAST_KEY, DOCK_OPEN_KEY, DOCK_OFF_KEY].map((key) => [key, params[key] ?? ""]),
+    )));
+  } catch { /* storage unavailable; current page still works */ }
+}
 
 const FOLD: Record<string, string> = {
   M1: "M1",
@@ -74,11 +101,11 @@ const FOLD: Record<string, string> = {
 };
 
 const RO_LIVE: Record<string, [ro: string, live: string]> = {
-  M1: ["指标只读 · 授权主管可维护坐席与负载", "工单 + 会话实时汇总"],
+  M1: ["本人客户与待办 · 主管可处理待绑定客户", "待办按客户去重"],
   M2: ["回复 / 关单自动留痕 · 放钱去 D2", "处理中工单实时计数"],
-  M3: ["会话不断线 · 坐席回复自动留痕", "进行中会话 + 待回复实时计数"],
+  M3: ["本人专属会话 · 主管只读审阅", "会话按当前归属显示"],
   M4: ["改常见问答 / 响应时限要填理由留痕", "帮助内容 + 各类响应时限"],
-  M5: ["改推送 / 话术要确认留痕", "顾问推送 + 话术模板"],
+  M5: ["服务规则需理由与版本校验", "服务规则 + 话术模板"],
 };
 
 function templateStatus(value: string | undefined): AdvisorScript["status"] {
@@ -89,6 +116,8 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "M1", [meta.l2Id]);
   const authEpoch = useAdminAuth((state) => state.authEpoch);
+  const session = useAdminAuth((state) => state.session);
+  const [m5Pane, setM5Pane] = useState<"rules" | "templates">("rules");
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
   const [mData, setMData] = useState<MContentData | null>(null);
@@ -97,12 +126,22 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const [uiParams, setUiParams] = useState<Record<string, string>>({});
   const mLoadCoordinator = useRef(new MDomainLoadCoordinator());
   const mDataAuthEpoch = useRef<number | null>(null);
+  const currentAuthEpoch = useRef(authEpoch);
+  currentAuthEpoch.current = authEpoch;
   const mDataRef = useRef<MContentData | null>(null);
   const liveSnapshotController = useRef<AbortController | null>(null);
-  mDataRef.current = mData;
+  const safeMData = mDataAuthEpoch.current === authEpoch ? mData : null;
+  mDataRef.current = safeMData;
+
+  useEffect(() => {
+    setUiParams(session?.adminId ? readDockUi(session.adminId) : {});
+  }, [authEpoch, session?.adminId]);
 
   const reloadMContent = useCallback(async () => {
+    if (currentAuthEpoch.current !== authEpoch) return;
     const generation = mLoadCoordinator.current.beginFullLoad();
+    const isCurrent = () => currentAuthEpoch.current === authEpoch
+      && mLoadCoordinator.current.isFullLoadCurrent(generation);
     liveSnapshotController.current?.abort();
     // A changed authenticated session must never inherit the previous
     // operator's seat authority.  Same-session refreshes retain only a
@@ -115,18 +154,18 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     setMLoading(true);
     try {
       const next = await fetchMContentData((partial) => {
-        if (!mLoadCoordinator.current.isFullLoadCurrent(generation)) return;
+        if (!isCurrent()) return;
         setMData((previous) => preserveVerifiedSupportAgentsDuringReload(previous, partial));
       });
-      if (!mLoadCoordinator.current.isFullLoadCurrent(generation)) return;
+      if (!isCurrent()) return;
       setMData((previous) => preserveVerifiedSupportAgentsDuringReload(previous, next));
       setMError(null);
     } catch (error) {
-      if (!mLoadCoordinator.current.isFullLoadCurrent(generation)) return;
+      if (!isCurrent()) return;
       setMData((previous) => failClosedSupportAgentsAfterReload(previous));
       setMError(displayAdminError(error));
     } finally {
-      if (mLoadCoordinator.current.isFullLoadCurrent(generation)) setMLoading(false);
+      if (isCurrent()) setMLoading(false);
     }
   }, [authEpoch]);
 
@@ -230,19 +269,35 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   // 鉴权：走同源 cookie（nexion_admin_token 由 Next route 转 Authorization 头）。
   // 仅走同源 httpOnly cookie 代理；JWT 永不进入 SSE URL。
   const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
+  const invalidateScope = useCallback((conversationNo?: string, customerId?: string) => {
+    void reloadMContent();
+    setMData((previous) => previous ? {
+      ...previous,
+      conversations: previous.conversations.filter((conversation) =>
+        conversationNo || customerId
+          ? conversation.id !== conversationNo && conversation.customerId !== customerId
+          : false),
+    } : previous);
+    setUiParams((previous) => {
+      const next = { ...previous, [DOCK_LAST_KEY]: "", [DOCK_OPEN_KEY]: "0" };
+      if (session?.adminId) saveDockUi(session.adminId, next);
+      return next;
+    });
+  }, [reloadMContent, session?.adminId]);
   const m3RecoveryEnabled = shouldStartM3ConversationRecovery({
     hasM3ReadAuthority: authorities.includes("service_m3_read"),
-    hasMContentSnapshot: Boolean(mData),
+    hasMContentSnapshot: Boolean(safeMData),
     isMContentLoading: mLoading,
   });
   const { ready: conversationStreamReady, reconnectExhausted, reconnectReason, retry: retryConversationStream } = useConversationStream({
     onEvent: handleStreamEvent,
     onReconnectSnapshot: reconcileConversationSnapshot,
+    onScopeInvalidated: invalidateScope,
     lifecycleSignal: mLoadCoordinator.current.conversationStreamSignal,
     enabled: m3RecoveryEnabled,
   });
 
-  const legacyParams = useMemo(() => (mData ? buildMLegacyParams(mData) : {}), [mData]);
+  const legacyParams = useMemo(() => (safeMData ? buildMLegacyParams(safeMData) : {}), [safeMData]);
   const mergedParams = useMemo(
     () => ({ ...uiParams, ...legacyParams }),
     [uiParams, legacyParams],
@@ -256,7 +311,11 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const runMWrite = useCallback(
     async (key: string, value: string, meta?: { action?: string; reason?: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void }): Promise<boolean> => {
       if (isMUiKey(key)) {
-        setUiParams((prev) => ({ ...prev, [key]: value }));
+        setUiParams((prev) => {
+          const next = { ...prev, [key]: value };
+          if (session?.adminId) saveDockUi(session.adminId, next);
+          return next;
+        });
         return true;
       }
       const fingerprint = `${key}\u0000${value}\u0000${meta?.reason?.trim() ?? ""}`;
@@ -271,7 +330,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       const stableMetadata = pendingMCommandMetadata.current.get(commandFingerprint)
         ?? { action: meta?.action, reason: meta?.reason };
       const stableBaseline = pendingMCommandBaselines.current.get(commandFingerprint)
-        ?? { legacyParams, data: mData };
+        ?? { legacyParams, data: safeMData };
       mCommands.remember(commandSlot(commandFingerprint), idempotencyKey, { value: stableValue, paramFingerprint: fingerprint });
       pendingMCommandMetadata.current.set(commandFingerprint, stableMetadata);
       pendingMCommandBaselines.current.set(commandFingerprint, stableBaseline);
@@ -292,7 +351,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         return false;
       }
     },
-    [legacyParams, mData, reloadMContent, setToast],
+    [legacyParams, safeMData, reloadMContent, setToast, session?.adminId],
   );
 
   const runM3DirectWrite = useCallback(async (
@@ -349,6 +408,10 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     pget: (k) => mergedParams[k] as string | undefined,
     params: mergedParams,
     setParam: runMWrite,
+    refreshConversations: async () => {
+      const controller = new AbortController();
+      await reconcileConversationSnapshot(controller.signal);
+    },
     addCustomerTag,
     removeCustomerTag,
     addCustomerNote,
@@ -358,11 +421,20 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     openConfirm: setCf,
   };
 
+  const currentAgent = safeMData?.supportAgents.find((agent) => agent.adminId === session?.adminId);
+  const permissionUnknown = session?.role !== "superadmin" && session?.role !== "super"
+    && Boolean(session?.authorities.includes("service_m1_write")) && !safeMData?.supportAgentsAvailable;
+  const permission = session?.role === "superadmin" || session?.role === "super"
+    ? "superadmin"
+    : session?.authorities.includes("service_m1_write") && (currentAgent?.seatType === "MANAGER" || currentAgent?.position.includes("主管"))
+      ? "supervisor" : "agent";
+  const effectiveM5Pane = permission === "agent" ? "templates" : m5Pane;
+
   const [ro, liveLabel] = RO_LIVE[tab];
   // 实时计数:M1/M2/M3 的「实时计数/汇总」从后端会话 / 工单快照派生;
   // M4/M5 是描述标签(未声称计数)保留原文。
   const liveCount = useMemo(() => {
-    if (tab !== "M1" && tab !== "M2" && tab !== "M3") return null;
+    if (tab !== "M2") return null;
     const convos = dockParseConvos(mergedParams["I.session.convos"] as string | undefined);
     const tickets = parseTicketsLive(mergedParams["I.support.tickets"] as string | undefined);
     const openConvos = convos.filter((c) => c.status === "open" && !c.archived).length;
@@ -370,14 +442,9 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     const openTickets = tickets.filter((t) => t.status !== "resolved" && t.status !== "closed").length;
     const ticketsAvailable = mergedParams["I.support.ticketsAvailable"] === "1";
     const conversationsAvailable = mergedParams["I.session.conversationsAvailable"] === "1";
-    if (tab === "M3" && !conversationsAvailable) return "会话数据不可用";
     if (tab === "M2" && !ticketsAvailable) return "工单数据不可用";
-    if (tab === "M1" && (!ticketsAvailable || !conversationsAvailable)) {
-      return `工单 ${ticketsAvailable ? openTickets : "不可用"} · 会话 ${conversationsAvailable ? openConvos : "不可用"}`;
-    }
-    if (tab === "M3") return `进行中 ${openConvos} · 待回复 ${unreadConvos}`;
     if (tab === "M2") return `处理中工单 ${openTickets}`;
-    return `工单 ${openTickets} · 会话 ${openConvos}`; // M1
+    return null;
   }, [tab, mergedParams]);
   const live = liveCount ?? liveLabel;
   const right = (
@@ -402,6 +469,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
           </button>
         </div>
       )}
+      {permissionUnknown && (tab === "M1" || tab === "M5") && <div className="card card-pad" role="status">主管身份暂时无法核对，管理入口已暂缓显示。<button type="button" className="btn btn-sec btn-sm" onClick={() => void reloadMContent()}>重试核对</button></div>}
 
       {tab === "M3" && reconnectExhausted && (
         <div className="card card-pad" role="alert" style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -413,23 +481,25 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
           <button type="button" className="btn btn-sec btn-sm" onClick={retryConversationStream}>重新连接</button>
         </div>
       )}
-      {tab === "M3" && !reconnectExhausted && mData?.conversationsAvailable && (
+      {tab === "M3" && !reconnectExhausted && safeMData?.conversationsAvailable && (
         <span className="sr-only" aria-live="polite">{conversationStreamReady ? "实时会话已连接" : "实时会话正在重连"}</span>
       )}
 
-      {!mData ? (
+      {tab === "M1" && <M1PersonalWorkbench permission={permission} />}
+      {tab === "M5" && permission !== "agent" && <nav className="s5a-nav" aria-label="服务配置"><button type="button" className={m5Pane === "rules" ? "active" : ""} onClick={() => setM5Pane("rules")}>服务规则</button><button type="button" className={m5Pane === "templates" ? "active" : ""} onClick={() => setM5Pane("templates")}>话术与模板</button></nav>}
+      {tab === "M5" && effectiveM5Pane === "rules" && <M5ServiceRules permission={permission} />}
+      {tab !== "M1" && !(tab === "M5" && effectiveM5Pane === "rules") && !safeMData ? (
         <div className="card card-pad">
           <span className="dim" style={{ fontSize: 13 }}>
             {mError ? "客服中心暂时无法同步数据,请稍后重试。" : mLoading ? "正在加载 M 客服中心真实数据..." : "暂无可展示的 M 客服中心真实数据"}
           </span>
         </div>
-      ) : (
+      ) : safeMData && (
         <>
-          {tab === "M1" && <M1Overview ctx={ctx} />}
           {tab === "M2" && <M2Tickets ctx={ctx} />}
-          {tab === "M3" && <M3Sessions ctx={ctx} />}
+          {tab === "M3" && <M3DedicatedChat ctx={ctx} />}
           {tab === "M4" && <M4KbSla ctx={ctx} />}
-          {tab === "M5" && <M5Scripts ctx={ctx} />}
+          {tab === "M5" && effectiveM5Pane === "templates" && <M5Scripts ctx={ctx} showSeatOperations={false} showSeatProfiles={permission !== "agent"} />}
         </>
       )}
 
@@ -450,7 +520,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         />
       )}
       {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
-      <SessionDock ctx={ctx} hidden={tab === "M3"} />
+      {safeMData && <SessionDock ctx={ctx} hidden={tab === "M3"} />}
       {toastNode}
     </div>
   );
@@ -638,49 +708,41 @@ async function writeTicketRows(
 async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[], reason: string, action?: string, data?: MContentData | null, idempotencyKey?: string) {
   const added = addedRow(prev, next);
   if (added) {
-    const ownerAgentName = added.owner === "Unassigned" ? added.agentName : added.owner;
-    return mContentActions.initiateConversation(
-      {
-        conversationType: added.type,
-        userId: userIdFromProfile(added),
-        ownerAgentId: agentIdForName(ownerAgentName, data),
-        ownerAgentName,
-        openingText: firstAgentText(added),
-      },
-      reason,
-      idempotencyKey,
-    );
+    throw new Error("请从本人客户详情发起新会话，当前入口不能指定顾问");
   }
 
   const row = changedRow(prev, next);
   if (!row) return;
   const before = prev.find((item) => item.id === row.id);
   if (!before) return;
+  const currentAdminId = useAdminAuth.getState().session?.adminId;
+  if (!before.customerId || !before.assignmentId || !currentAdminId || before.ownerAdminId !== currentAdminId) {
+    throw new Error("当前账号不是该客户的专属顾问，不能执行对客操作");
+  }
 
   if (!before.transfer && row.transfer) {
-    await mContentActions.transferConversation(row.id, row.transfer, before.status, before.version, row.transfer.reason || reason, idempotencyKey);
-    return;
+    throw new Error("请由客服主管使用正式转绑入口");
   }
   if (before.transfer && !row.transfer) {
-    if (action?.includes("退回") || action?.includes("return")) {
-      const target: "from" | "standby" = row.owner === STANDBY_POOL_LABEL ? "standby" : "from";
-      await mContentActions.returnTransfer(row.id, target, "transferred", before.version, reason, idempotencyKey);
-    } else await mContentActions.acceptTransfer(row.id, "transferred", before.version, reason, idempotencyKey);
-    return;
+    throw new Error("旧会话转接已停用，请联系主管正式转绑");
   }
   if (before.transfer && row.transfer && JSON.stringify(before.transfer) !== JSON.stringify(row.transfer)) {
-    await mContentActions.transferConversation(row.id, row.transfer, before.status, before.version, row.transfer.reason || reason, idempotencyKey);
-    return;
+    throw new Error("旧会话转接已停用，请联系主管正式转绑");
   }
 
   const newMessage = row.messages.length > before.messages.length ? row.messages[row.messages.length - 1] : null;
   if (newMessage?.sender === "agent") {
-    if (action?.includes("transfer_wait") || action?.includes("等待处理")) {
-      await mContentActions.waitTransfer(row.id, "transferred", before.version, reason, idempotencyKey);
-    } else {
-      const body = newMessage.ctaHref ? `${newMessage.text} ${newMessage.ctaHref}` : newMessage.text;
-      await mContentActions.replyConversation(row.id, body, before.status, before.version, reason, idempotencyKey);
-    }
+    if (!newMessage.clientMessageId) throw new Error("消息缺少稳定提交编号，请保留草稿重试");
+    if (newMessage.kind === "IMAGE" && !newMessage.attachmentId) throw new Error("图片尚未上传成功");
+    const body = newMessage.ctaHref ? `${newMessage.text} ${newMessage.ctaHref}` : newMessage.text;
+    await mContentActions.replyConversation(row.id, body, before.status, before.version, reason, idempotencyKey, {
+      kind: newMessage.kind,
+      attachmentId: newMessage.attachmentId,
+      intent: newMessage.intent,
+      clientMessageId: newMessage.clientMessageId,
+      replyTargets: newMessage.replyTargets,
+      expectedAssignmentId: before.assignmentId,
+    });
     return;
   }
   if (row.status !== before.status) {
@@ -769,7 +831,7 @@ async function applyMBackendWrite(
       expectedVersion?: number;
     }>(value);
     if (!payload?.conversationNo || !payload.category || !payload.priority || !payload.title || !payload.expectedStatus || !Number.isSafeInteger(payload.expectedVersion)) throw new Error("M3_TICKET_CONVERSION_PAYLOAD_INVALID");
-    await mContentActions.convertConversationToTicket(payload.conversationNo, {
+    return await mContentActions.convertConversationToTicket(payload.conversationNo, {
       category: payload.category,
       priority: payload.priority,
       title: payload.title,
@@ -778,7 +840,6 @@ async function applyMBackendWrite(
       expectedStatus: payload.expectedStatus,
       expectedVersion: payload.expectedVersion!,
     }, reason, idempotencyKey);
-    return;
   }
   if (key === "I.session.archiveBatch.__create") {
     const payload = parseRecord<{ conversationNos?: string[]; expectedVersions?: Record<string, number> }>(value);
@@ -1020,9 +1081,11 @@ function dockRelWhen(ts: number): string {
 function SessionDock({ ctx, hidden }: { ctx: MCtx; hidden: boolean }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState("");
   const sendInFlight = useRef(false);
   const authorities = useAdminAuth((state) => state.session?.authorities);
   const currentRole = useAdminAuth((state) => state.session?.role ?? state.role);
+  const currentAdminId = useAdminAuth((state) => state.session?.adminId);
   const lastId = ctx.pget(DOCK_LAST_KEY);
   const convos = useMemo(() => dockParseConvos(ctx.pget(DOCK_CONVO_KEY)), [ctx.params]);
   const conv = convos.find((c) => c.id === lastId) ?? null;
@@ -1031,39 +1094,57 @@ function SessionDock({ ctx, hidden }: { ctx: MCtx; hidden: boolean }) {
   const isSuperAdmin = currentRole === "super" || currentRole === "superadmin";
   const canWriteM3 = isSuperAdmin || Boolean(authorities?.includes("service_m3_write"));
   const conversationsAvailable = ctx.pget("I.session.conversationsAvailable") === "1";
-  const canWrite = canWriteM3 && conversationsAvailable;
+  const owned = Boolean(conv?.customerId && conv.assignmentId && currentAdminId && conv.ownerAdminId === currentAdminId && conv.type === "advisor" && conv.status === "open");
+  const canWrite = canWriteM3 && conversationsAvailable && owned;
+  const dockSlot = `dock|${currentAdminId}|${conv?.id ?? ""}`;
+  const pendingDock = dockCommands.list().find((row) => row.fingerprint === dockSlot && row.conversationNo === conv?.id);
+
+  useEffect(() => {
+    if (!canWrite || draft) return;
+    if (!pendingDock) return;
+    try { setDraft((JSON.parse(pendingDock.payload) as SupportMessageInput).content ?? ""); }
+    catch { dockCommands.forget(dockSlot); }
+  }, [canWrite, dockSlot, draft, pendingDock]);
 
   // M3 在台 / 无活跃会话 / 已被关闭(且仍是同一会话)→ 不显
-  if (hidden || !conv || (offFor && offFor === lastId)) return null;
+  if (hidden || !conv || !owned || (offFor && offFor === lastId)) return null;
 
   const setOpen = (v: boolean) => ctx.setParam(DOCK_OPEN_KEY, v ? "1" : "0", { action: "持续接待 dock 展开/收起", reason: "ui-state" });
   const closeDock = () => ctx.setParam(DOCK_OFF_KEY, conv.id, { action: "持续接待 dock 关闭", reason: "ui-state" });
   const send = async () => {
     const text = draft.trim();
     if (!text || !canWrite || sendInFlight.current) return;
+    const latest = conv.messages.at(-1);
+    const input: SupportMessageInput = pendingDock ? JSON.parse(pendingDock.payload) : {
+      kind: "TEXT", content: text, intent: "SERVICE", clientMessageId: crypto.randomUUID(),
+      expectedAssignmentId: conv.assignmentId!, expectedVersion: conv.version,
+      replyTargets: latest?.sender === "user" && Number.isSafeInteger(latest.id)
+        ? [{ conversationNo: conv.id, throughMessageId: latest.id! }] : undefined,
+    };
+    const key = pendingDock?.commandKey ?? crypto.randomUUID();
+    if (!pendingDock) dockCommands.remember(dockSlot, key, { payload: JSON.stringify(input), conversationNo: conv.id });
     sendInFlight.current = true;
-    const now = Date.now();
-    const next = convos.map((c) =>
-      c.id === conv.id
-        ? {
-            ...c,
-            unread: 0,
-            lastTs: now,
-            messages: [...c.messages, { ts: now, sender: "agent" as const, agentName: c.owner === "Unassigned" ? "Support desk" : c.owner, text }],
-          }
-        : c,
-    );
     setSending(true);
+    setSendError("");
     try {
-      const succeeded = await ctx.setParam(DOCK_CONVO_KEY, JSON.stringify(next), {
-        action: `坐席回复会话 ${conv.id} · admin.conversation_replied`,
-        reason: "持续接待 dock 回复(正文已留档)",
-        commandKey: `m3:reply:${conv.id}:${text}`,
-      });
-      if (succeeded) {
-        setDraft("");
-        ctx.toast(`${conv.id} 已回复`);
+      if (pendingDock) {
+        const result = await supportClient.command(key).catch((error: unknown) => {
+          if (error instanceof SupportClientError && error.status === 404) return null;
+          throw error;
+        });
+        if (result?.status === "PENDING") { setSendError("发送结果仍在确认，请稍后查询。"); return; }
+        if (result?.status === "FAILED") { dockCommands.forget(dockSlot); setSendError("服务端确认发送失败，原文已保留，可重新发送。"); return; }
+        if (!result) await supportClient.sendConversationReply(conv.id, input, key);
+      } else {
+        await supportClient.sendConversationReply(conv.id, input, key);
       }
+      await ctx.refreshConversations();
+      dockCommands.forget(dockSlot);
+      setDraft("");
+      ctx.toast(`${conv.id} 已回复`);
+      window.dispatchEvent(new Event("support-todo-changed"));
+    } catch (error) {
+      setSendError(`发送失败或结果待确认：${displayAdminError(error)}。请查询结果并重试。`);
     } finally {
       sendInFlight.current = false;
       setSending(false);
@@ -1079,7 +1160,7 @@ function SessionDock({ ctx, hidden }: { ctx: MCtx; hidden: boolean }) {
         data-proof="session-dock-pill"
         onClick={() => setOpen(true)}
         className="card"
-        style={{ position: "fixed", right: 22, bottom: 22, zIndex: 60, display: "flex", alignItems: "center", gap: 9, padding: "8px 12px 8px 9px", borderRadius: 999, boxShadow: "var(--m-sh-pop)", cursor: "pointer", color: "var(--ink)" }}
+        style={{ position: "fixed", right: 22, bottom: 22, zIndex: 30, display: "flex", alignItems: "center", gap: 9, padding: "8px 12px 8px 9px", borderRadius: 999, boxShadow: "var(--m-sh-pop)", cursor: "pointer", color: "var(--ink)" }}
         title="持续接待 · 切页不挂断"
       >
         <MAvatar name={customer} size="sm" />
@@ -1109,7 +1190,7 @@ function SessionDock({ ctx, hidden }: { ctx: MCtx; hidden: boolean }) {
     <div
       data-proof="session-dock-panel"
       className="card"
-      style={{ position: "fixed", right: 22, bottom: 22, zIndex: 60, width: 372, maxHeight: "min(72vh, 540px)", boxShadow: "var(--m-sh-pop)", overflow: "hidden", display: "flex", flexDirection: "column" }}
+      style={{ position: "fixed", right: 22, bottom: 22, zIndex: 30, width: "min(372px, calc(100vw - 24px))", maxHeight: "min(72vh, 540px)", boxShadow: "var(--m-sh-pop)", overflow: "hidden", display: "flex", flexDirection: "column" }}
     >
       <div style={{ padding: "9px 12px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8, background: "var(--m-bg-2)" }}>
         <span style={{ display: "inline-flex", width: 8, height: 8, borderRadius: "50%", background: "var(--m-hd)", animation: "m-hd-pulse-blue 1.8s ease-out infinite" }} />
@@ -1132,6 +1213,7 @@ function SessionDock({ ctx, hidden }: { ctx: MCtx; hidden: boolean }) {
       <div className="ChatBody" style={{ flex: 1, minHeight: 0 }}>
         <MessageThread messages={threadMessages} relWhen={dockRelWhen} resetKey={conv.id} />
       </div>
+      {sendError && <div role="alert" style={{ padding: "8px 11px", color: "var(--danger)", fontSize: 12 }}>{sendError}</div>}
       <div style={{ padding: "9px 11px", borderTop: "1px solid var(--border)", display: "flex", gap: 8, alignItems: "flex-end" }}>
         <textarea
           className="ta"
@@ -1139,7 +1221,7 @@ function SessionDock({ ctx, hidden }: { ctx: MCtx; hidden: boolean }) {
           rows={1}
           value={draft}
           aria-label={`回复会话 ${conv.id}`}
-          disabled={!canWrite || sending}
+          disabled={!canWrite || sending || Boolean(pendingDock)}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (!shouldSendOnEnter(e)) return;
@@ -1149,7 +1231,7 @@ function SessionDock({ ctx, hidden }: { ctx: MCtx; hidden: boolean }) {
           placeholder="边处理边回复… · Enter 发送 · Shift+Enter 换行"
           style={{ maxHeight: 80 }}
         />
-        <button type="button" className="btn btn-pri btn-sm" aria-label="发送会话回复" disabled={!canWrite || !draft.trim() || sending} onClick={() => void send()}><Icon name="arrow" size={16} /></button>
+        <button type="button" className="btn btn-pri btn-sm" aria-label={pendingDock ? "查询结果并重试会话回复" : "发送会话回复"} disabled={!canWrite || !draft.trim() || sending} onClick={() => void send()}><Icon name="arrow" size={16} /></button>
       </div>
     </div>
   );

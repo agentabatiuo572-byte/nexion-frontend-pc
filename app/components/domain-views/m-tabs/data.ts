@@ -144,7 +144,7 @@ export type SegCond = { field: string; op: string; value: string };
 export type SessionStatus = "open" | "resolved" | "closed";
 /** 坐席消息回执:sent=已送达用户未读,read=用户已读(仅 sender==="agent" 有意义;镜像前端 ConvMessageStatus) */
 export type SessionMsgStatus = "sent" | "read";
-export type SessionMsg = { id?: number; ts: number; sender: "user" | "agent"; agentName?: string; status?: SessionMsgStatus; text: string; ctaHref?: string };
+export type SessionMsg = { id?: number; ts: number; sender: "user" | "agent"; sourceSenderType?: "USER" | "AGENT" | "SYSTEM" | "INTERNAL"; agentName?: string; status?: SessionMsgStatus; text: string; ctaHref?: string; kind?: "TEXT" | "IMAGE"; attachmentId?: string; intent?: "SERVICE" | "MAINTENANCE"; clientMessageId?: string; replyTargets?: Array<{ conversationNo: string; throughMessageId: number }> };
 
 /* 完整客户档案(设计稿 CustomerProfile 合并）—— 坐席接待时一眼看清价值 / 风险。只读快照,
  * 客户侧真实账户操作回 C/D 域;systemTags 派生只读,customTags / notes 持久化于后端(nx_customer_tag / nx_customer_note)。 */
@@ -206,6 +206,9 @@ export type SessionConvo = {
   lastTs: number;      // 镜像前端 lastTs
   status: SessionStatus; // 后台坐席态
   ownerAgentId?: string; // 后台分配坐席的唯一身份，用于排除自转交
+  customerId?: string;
+  assignmentId?: string | null;
+  ownerAdminId?: number | null;
   owner: string;       // 后台分配坐席
   messages: SessionMsg[]; // 镜像前端 messages{sender,text,ctaHref,ts}
   customer?: string;   // 接待的终端用户昵称(对话主角;agentName 为坐席)

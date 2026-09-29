@@ -12,7 +12,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { currentAdminSession } from "@/lib/admin/auth-client";
 import { fetchA3RuntimeFlags } from "@/lib/admin/a3-client";
 import { installAdminAuthFetchLifecycle } from "@/lib/admin/auth-lifecycle";
-import { adminShellSessionKey, M_CONTENT_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
+import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { canAccessResolvedPath, resolveVisibleDomains, type NavDomain } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { DEFAULT_EXPANDED_GROUPS, useAdminUi } from "@/lib/store/admin-ui";
@@ -93,9 +93,18 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
   const [bootstrapState, setBootstrapState] = useState<AdminBootstrapState>("checking");
   const [maintenanceBanner, setMaintenanceBanner] = useState(false);
+  const [narrow, setNarrow] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const bootstrapAttemptRef = useRef(0);
   useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 640px)");
+    const update = () => { setNarrow(media.matches); if (!media.matches) setMobileNavOpen(false); };
+    update(); media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
   const pathname = usePathname();
+  useEffect(() => setMobileNavOpen(false), [pathname]);
   const router = useRouter();
 
   const isAuthenticated = useAdminAuth((s) => s.isAuthenticated);
@@ -112,9 +121,9 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const expandedRaw = useAdminUi((s) => s.expandedGroups);
   const authorities = session?.authorities ?? [];
   const canReadA3 = authorities.includes("platform_a3_read");
-  const canReadMContent = M_CONTENT_READ_AUTHORITIES.every((authority) => authorities.includes(authority));
-  const servicePending = useServicePendingCount(canReadMContent);
+  const canReadMContent = authorities.includes("service_m1_read") || authRole === "superadmin" || authRole === "super";
   const sessionKey = adminShellSessionKey(session, authEpoch);
+  const servicePending = useServicePendingCount(canReadMContent, sessionKey);
   const observedAuthEpochRef = useRef(authEpoch);
 
   const restoreAdminSession = useCallback(async (signal?: AbortSignal) => {
@@ -230,7 +239,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
 
   const role = mounted ? authRole : "auditor";
   const operator = mounted ? operatorRaw : "总管理员";
-  const collapsed = mounted ? collapsedRaw : false;
+  const collapsed = mounted ? (narrow ? !mobileNavOpen : collapsedRaw) : false;
   const expanded = mounted ? expandedRaw : DEFAULT_EXPANDED_GROUPS;
   const domains = useMemo(() => resolveVisibleDomains({
     role,
@@ -275,21 +284,22 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
       key={sessionKey}
       className="grid h-screen w-screen overflow-hidden"
       style={{
-        gridTemplateColumns: `${
-          collapsed ? "var(--admin-sidebar-w-collapsed)" : "var(--admin-sidebar-w)"
-        } 1fr`,
+        gridTemplateColumns: `${narrow ? "var(--admin-sidebar-w-collapsed)" : collapsed ? "var(--admin-sidebar-w-collapsed)" : "var(--admin-sidebar-w)"} 1fr`,
         gridTemplateRows: "var(--admin-topbar-h) 1fr",
         background: "var(--v5-bg)",
         transition: "grid-template-columns 200ms ease",
       }}
     >
-      <div style={{ gridColumn: 1, gridRow: "1 / span 2", minWidth: 0 }}>
+      {narrow && mobileNavOpen && <button type="button" aria-label="关闭侧栏" onClick={() => setMobileNavOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 39, border: 0, background: "rgba(0,0,0,.55)" }} />}
+      <div style={{ gridColumn: 1, gridRow: "1 / span 2", minWidth: 0, ...(narrow && mobileNavOpen ? { position: "fixed" as const, inset: "0 auto 0 0", width: 252, zIndex: 40 } : {}) }}>
         <Sidebar
           role={role}
           domains={domains}
           collapsed={collapsed}
           expanded={expanded}
           servicePending={servicePending}
+          mobile={narrow}
+          onMobileOpenChange={setMobileNavOpen}
         />
       </div>
       <div style={{ gridColumn: 2, gridRow: 1, minWidth: 0 }}>

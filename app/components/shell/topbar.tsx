@@ -70,7 +70,7 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
         onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex items-center gap-2 rounded-[9px] py-1 pl-2 pr-1.5 transition-colors hover:bg-[var(--v5-surface-2)]"
+        className="flex items-center gap-2 whitespace-nowrap rounded-[9px] py-1 pl-2 pr-1.5 transition-colors hover:bg-[var(--v5-surface-2)]"
       >
         <span className="text-[12.5px]" style={{ color: "var(--v5-ink-2)" }}>
           {operator}
@@ -258,7 +258,7 @@ export function TopBar({
         borderBottom: "1px solid var(--v5-border)",
       }}
     >
-      <div className="flex min-w-0 items-center gap-4">
+      <div className="hidden min-w-0 items-center gap-4 sm:flex">
         <Breadcrumb />
         <SearchBox domains={domains} />
       </div>

@@ -8,10 +8,12 @@ export interface ConversationStreamEvent {conversationNo:string;messageId?:numbe
 export interface UseConversationStreamOptions {
   onEvent:(event:ConversationStreamEvent,signal:AbortSignal)=>void|Promise<void>;
   onReconnectSnapshot:(signal:AbortSignal)=>Promise<void>;enabled?:boolean;lifecycleSignal?:AbortSignal;
+  onScopeInvalidated?:(conversationNo?:string,customerId?:string)=>void;
 }
 /** Every connection first reconciles a full authorized snapshot, then consumes invalidations. */
-export function useConversationStream({onReconnectSnapshot,enabled=true,lifecycleSignal}:UseConversationStreamOptions){
+export function useConversationStream({onReconnectSnapshot,onScopeInvalidated,enabled=true,lifecycleSignal}:UseConversationStreamOptions){
   const reconcile=useRef(onReconnectSnapshot);reconcile.current=onReconnectSnapshot;
+  const invalidate=useRef(onScopeInvalidated);invalidate.current=onScopeInvalidated;
   const [ready,setReady]=useState(false);const [reconnectExhausted,setExhausted]=useState(false);
   const [reconnectReason,setReconnectReason]=useState("");
   const [nonce,setNonce]=useState(0);
@@ -31,6 +33,7 @@ export function useConversationStream({onReconnectSnapshot,enabled=true,lifecycl
       reconcile:signal=>reconcile.current(signal),
       state:(value,terminal,reason)=>{setReady(value);setExhausted(terminal||!!reason);setReconnectReason(reason??"");updateAdminRealtime(value);},
       presence:receiveAdminPresence,
+      scopeInvalidated:(conversationNo,customerId)=>invalidate.current?.(conversationNo,customerId),
     });
     clientRef.current=socket;
     let stopped=false;

@@ -83,7 +83,7 @@ test("M3 retries an unknown-result write with the same payload and idempotency k
   assert.match(view, /applyMBackendWrite\(key, stableValue/);
   assert.match(sessions, /`m3:reply:/);
   assert.match(sessions, /`m3:initiate:/);
-  assert.match(client, /replyConversation\([^)]*idempotencyKey\?: string\)/);
+  assert.match(client, /replyConversation\([^)]*idempotencyKey\?: string, message\?:/);
   assert.match(client, /transferConversation\([^)]*idempotencyKey\?: string\)/);
   assert.match(client, /initiateConversation\([\s\S]{0,300}reason: string, idempotencyKey\?: string\)/);
   assert.match(client, /headers: idempotencyKey \? \{ "Idempotency-Key": idempotencyKey \} : undefined/);
@@ -93,24 +93,20 @@ test("M3 retries an unknown-result write with the same payload and idempotency k
   assert.match(view, /archiveConversation\(row\.id, Boolean\(row\.archived\), before\.status, before\.version, reason, idempotencyKey\)/);
 });
 
-test("M3 transfer decisions preserve the backend TRANSFERRED snapshot for CAS", () => {
+test("M3 legacy transfer commands are absent from the active dedicated write path", () => {
   const view = read("app/components/domain-views/m-view.tsx");
-  const client = read("lib/admin/m-client.ts");
+  const workbench = read("app/components/domain-views/m-tabs/m1-personal-workbench.tsx");
 
-  assert.match(client, /type ConversationExpectedStatus = SessionConvo\["status"\] \| "transferred"/);
-  assert.match(view, /acceptTransfer\(row\.id, "transferred", before\.version/);
-  assert.match(view, /returnTransfer\(row\.id, target, "transferred", before\.version/);
-  assert.match(view, /waitTransfer\(row\.id, "transferred", before\.version/);
+  assert.match(view, /旧会话转接已停用，请联系主管正式转绑/);
+  assert.match(workbench, /supportClient\.transfer\(payload, commandKey\)/);
+  assert.doesNotMatch(view, /mContentActions\.(acceptTransfer|returnTransfer|waitTransfer)\(/);
   assert.doesNotMatch(view, /fallbackTransfer\(/);
-  assert.doesNotMatch(client, /\/transfer\/fallback/);
-  assert.doesNotMatch(view, /(acceptTransfer|returnTransfer|waitTransfer)\(row\.id,[^\n]*before\.status/);
 });
 
-test("M3 waiting is a dedicated CAS command, not a synthetic agent reply", () => {
+test("M3 waiting cannot be spoofed by a synthetic agent reply", () => {
   const view = read("app/components/domain-views/m-view.tsx");
-
-  assert.match(view, /action\?\.includes\("transfer_wait"\) \|\| action\?\.includes\("等待处理"\)/);
-  assert.match(view, /mContentActions\.waitTransfer\(row\.id, "transferred", before\.version, reason, idempotencyKey\)/);
+  assert.doesNotMatch(view, /action\?\.includes\("transfer_wait"\)/);
+  assert.match(view, /if \(!newMessage\.clientMessageId\) throw/);
 });
 
 test("M25 ledger records the scheduler-only standby fallback without inventing a manual write", () => {
@@ -152,7 +148,8 @@ test("M3 transfer targets retain the selected agent ID when display names collid
   assert.match(modals, /data-proof=\{`session-transfer-agent-\$\{a\.id\}`\}/);
   assert.match(sessions, /currentAgentIds\.includes\(selected\.transfer\.to\.agentId\)/);
   assert.match(sessions, /<TransferModal currentOwnerId=\{selected\.ownerAgentId\}/);
-  assert.match(view, /transferConversation\(row\.id, row\.transfer, before\.status, before\.version, row\.transfer\.reason \|\| reason, idempotencyKey\)/);
+  assert.doesNotMatch(view, /mContentActions\.transferConversation\(/);
+  assert.match(read("app/components/domain-views/m-tabs/m1-supervisor-pool.tsx"), /supportClient\.transfer\(command\.payload, command\.key\)/);
   assert.doesNotMatch(view, /agentIdForName\(row\.transfer\.to\.name, data\)/);
   assert.match(client, /targetId: target\.agentId, targetName: target\.name/);
   assert.doesNotMatch(client, /targetIdOverride \|\| agentIdForName\(target\.name\)/);

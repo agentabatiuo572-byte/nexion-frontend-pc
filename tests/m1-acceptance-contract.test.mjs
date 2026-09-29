@@ -13,7 +13,7 @@ test("M1 explains its read and write boundary and deep-links KPI cards to matchi
 
   assert.doesNotMatch(overview, /只看不改/);
   assert.doesNotMatch(registry, /只看不改/);
-  assert.match(view, /指标只读 · 授权主管可维护坐席与负载/);
+  assert.match(view, /本人客户与待办 · 主管可处理待绑定客户/);
   assert.match(overview, /\/service\/tickets\?scope=active&status=pending_user/);
   assert.match(overview, /\/service\/sessions\?seg=unread/);
   assert.match(overview, /只有总管理员或客服主管能调整坐席与负载策略/);

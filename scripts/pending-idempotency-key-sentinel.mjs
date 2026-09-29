@@ -84,6 +84,11 @@ const MIGRATED = [
   "lib/admin/platform-experience-client.ts",
   "app/components/domain-views/h-tabs/h8-referral-rewards.tsx",
   "app/components/domain-views/m-view.tsx",
+  // S5a maintenance, pool assignment and rule CAS retain command keys across retries.
+  "app/components/domain-views/m-tabs/m1-personal-workbench.tsx",
+  "app/components/domain-views/m-tabs/m1-supervisor-pool.tsx",
+  "app/components/domain-views/m-tabs/m3-dedicated-chat.tsx",
+  "app/components/domain-views/m-tabs/m5-service-rules.tsx",
   "app/_console/overview/funnel/page.tsx",
   "app/_console/overview/liquidity/page.tsx",
   "app/_console/overview/risk-radar/page.tsx",

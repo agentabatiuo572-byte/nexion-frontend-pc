@@ -133,7 +133,7 @@ function Pager({
   );
 }
 
-export function M5Scripts({ ctx }: { ctx: MCtx }) {
+export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = false }: { ctx: MCtx; showSeatOperations?: boolean; showSeatProfiles?: boolean }) {
   const { pget, setParam, toast, openActionConfirm } = ctx;
   const currentRole = useAdminAuth((s) => s.session?.role ?? s.role);
   const currentAdminId = useAdminAuth((s) => s.session?.adminId ?? 0);
@@ -468,7 +468,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
         <div className="itint">当前账号未获 M1 坐席名册权限；M5 内容维护仍可正常使用。</div>
       )}
 
-      {hasM1ReadAuthority && <div className="card">
+      {(showSeatOperations || showSeatProfiles) && hasM1ReadAuthority && <div className="card">
         <div className="card-pad" style={{ paddingBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
           <div className="sec-h" style={{ margin: 0 }}>
             <span className="t">客服岗位与专属客服</span>
@@ -516,7 +516,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
                   ) : (
                     <div className="row wrap" style={{ gap: 5, marginTop: 6 }}>
                       {assignments.slice(0, 4).map((row) => (
-                        canManageSupportSeats ? (
+                        canManageSupportSeats && showSeatOperations ? (
                           <button key={row.id} type="button" className="chip" disabled={writePending} title="解绑专属客服" onClick={() => unbindAdvisor(agent, row)}>
                             {row.nickname} · <span className="mono">{row.userNo}</span>
                             <Icon name="x" size={11} />
@@ -538,10 +538,10 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
                         <Icon name="gauge" size={15} />
                         配置岗位
                       </button>
-                      <button type="button" className="btn btn-pri btn-sm" disabled={writePending || !advisorEnabled || !isDedicatedSupportAgent(agent)} onClick={() => setAssignAgent(agent)} title={advisorEnabled && isDedicatedSupportAgent(agent) ? "绑定服务用户" : "先在 M1 分配为专属客服并开启专属客服服务"}>
+                      {showSeatOperations && <button type="button" className="btn btn-pri btn-sm" disabled={writePending || !advisorEnabled || !isDedicatedSupportAgent(agent)} onClick={() => setAssignAgent(agent)} title={advisorEnabled && isDedicatedSupportAgent(agent) ? "绑定服务用户" : "先在 M1 分配为专属客服并开启专属客服服务"}>
                         <Icon name="users" size={15} />
                         绑定用户
-                      </button>
+                      </button>}
                     </>
                   )}
                 </div>

@@ -2,6 +2,7 @@ import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { parseBusinessTime } from "@/lib/admin/business-time";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
+import { supportWireId } from "@/lib/admin/m-support-client";
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { User360Profile, UserProfileQuery } from "@/lib/admin/user360-client";
@@ -22,6 +23,7 @@ import type {
   CustomerProfile,
   SessionCategory,
   SessionConvo,
+  SessionMsg,
   SessionReplyTpl,
   SessionType,
   SupportFaq,
@@ -129,12 +131,16 @@ type ContentConversationView = {
   id?: number;
   conversationNo?: string;
   userId?: number;
+  customerId?: number;
+  assignmentId?: number | string | null;
+  ownerAdminId?: number | null;
   conversationType?: string;
   status?: string;
   ownerAgentId?: string;
   ownerAgentName?: string;
   unreadCount?: number;
   lastMessage?: string;
+  lastMessageKind?: string;
   lastMessageAt?: string;
   transferFromAgentId?: string;
   transferFromAgentName?: string;
@@ -153,6 +159,10 @@ type ContentConversationMessageView = {
   senderType?: string;
   senderName?: string;
   content?: string;
+  kind?: string;
+  attachmentId?: string;
+  intent?: string;
+  replyTargets?: Array<{ conversationNo: string; throughMessageId: number }>;
   receiptStatus?: string;
   createdAt?: string;
 };
@@ -1179,14 +1189,18 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
   const type = conversationType(base.conversationType);
   const updated = asTs(base.updatedAt);
   const messages = asArray<ContentConversationMessageView>("messages" in detail ? detail.messages : []).map((m) => {
-    const agent = upper(m.senderType, "USER") !== "USER";
+    const sourceSenderType = upper(m.senderType, "USER") as "USER" | "AGENT" | "SYSTEM" | "INTERNAL";
+    const agent = sourceSenderType !== "USER";
     return {
       id: m.id,
       ts: asTs(m.createdAt, updated),
       sender: agent ? ("agent" as const) : ("user" as const),
-      agentName: agent ? str(m.senderName, base.ownerAgentName || "客服台") : undefined,
+      sourceSenderType,
+      agentName: agent ? sourceSenderType === "SYSTEM" ? "系统" : str(m.senderName, base.ownerAgentName || "客服台") : undefined,
       status: str(m.receiptStatus, "sent").toLowerCase() === "read" ? ("read" as const) : ("sent" as const),
       text: str(m.content, ""),
+      kind: m.kind === "IMAGE" ? "IMAGE" as const : "TEXT" as const,
+      attachmentId: typeof m.attachmentId === "string" ? m.attachmentId : undefined,
     };
   });
   const transfer = base.transferToType
@@ -1213,6 +1227,9 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
     lastTs: asTs(base.lastMessageAt, updated),
     status: conversationStatus(base.status),
     ownerAgentId: str(base.ownerAgentId),
+    customerId: Number.isSafeInteger(base.customerId ?? base.userId) && Number(base.customerId ?? base.userId) > 0 ? String(base.customerId ?? base.userId) : undefined,
+    assignmentId: base.assignmentId == null ? null : String(base.assignmentId),
+    ownerAdminId: Number.isSafeInteger(base.ownerAdminId) && Number(base.ownerAdminId) > 0 ? base.ownerAdminId : null,
     owner: str(base.ownerAgentName, "Unassigned"),
     messages,
     customer: profile.nickname,
@@ -1705,6 +1722,17 @@ export async function fetchMServicePendingConversations(): Promise<SessionConvo[
   return page.records.map(adaptConversation);
 }
 
+/** First page uses the server's most-recent ordering and current assignment filter. */
+export async function fetchMRecentAdvisorConversations(ownerAdminId: number, signal?: AbortSignal) {
+  const owner = supportWireId(ownerAdminId, "recent.ownerAdminId");
+  const page = assertConversationPage(await apiRequest<unknown>(`/conversations?type=advisor&ownerAgentId=${owner}&pageNum=1&pageSize=5`, { signal }));
+  return page.records.flatMap((row) => {
+    const customerId = row.customerId ?? row.userId;
+    if (!Number.isSafeInteger(customerId) || Number(customerId) <= 0 || !row.conversationNo) return [];
+    return [{ conversationNo: row.conversationNo, customerId: String(customerId), lastMessage: str(row.lastMessage), lastMessageKind: str(row.lastMessageKind), lastTs: asTs(row.lastMessageAt ?? row.updatedAt), unreadCount: num(row.unreadCount, 0) }];
+  });
+}
+
 export async function markMConversationRead(no:string,lastSeenMessageId:number,signal:AbortSignal){
   const detail=await apiRequest<{conversation:{status:string;version:number};messages:Array<{id:number;receiptStatus?:string}>}>(`/conversations/${encodeURIComponent(no)}`,{signal});
   if(signal.aborted || detail.messages.find(m=>m.id===lastSeenMessageId)?.receiptStatus==='read')return;
@@ -1980,11 +2008,11 @@ export const mContentActions = {
       }, reason)),
     });
   },
-  replyConversation(conversationNo: string, body: string, expectedStatus: SessionConvo["status"], expectedVersion: number, reason: string, idempotencyKey?: string) {
+  replyConversation(conversationNo: string, body: string, expectedStatus: SessionConvo["status"], expectedVersion: number, reason: string, idempotencyKey?: string, message?: Pick<SessionMsg, "kind" | "attachmentId" | "intent" | "replyTargets" | "clientMessageId"> & { expectedAssignmentId?: string | null }) {
     return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/replies`, {
       method: "POST",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
-      body: JSON.stringify(withReason({ body, expectedStatus: toBackendConversationStatus(expectedStatus), expectedVersion }, reason)),
+      body: JSON.stringify(withReason({ body, kind: message?.kind ?? "TEXT", attachmentId: message?.attachmentId, intent: message?.intent ?? "SERVICE", clientMessageId: message?.clientMessageId, replyTargets: message?.replyTargets, expectedAssignmentId: supportWireId(message?.expectedAssignmentId, "conversation.expectedAssignmentId"), expectedStatus: toBackendConversationStatus(expectedStatus), expectedVersion }, reason)),
     });
   },
   updateConversationStatus(conversationNo: string, statusValue: SessionConvo["status"], expectedStatus: SessionConvo["status"], expectedVersion: number, reason: string, idempotencyKey?: string) {
