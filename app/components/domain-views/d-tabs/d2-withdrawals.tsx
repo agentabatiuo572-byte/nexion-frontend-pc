@@ -804,7 +804,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         {detail.chain === "BANK-VND" && <section className="d2-detail-section">
           <h3>HDPay 银行代付</h3>
           {bankDetail ? <>
-            <KV k="收款银行" v={bankDetail.bankName} /><KV k="收款账号" v={bankDetail.maskedAccount} />
+            <KV k="收款方式" v="按收款账号路由 · 银行未预先核验" /><KV k="收款账号" v={bankDetail.maskedAccount} />
             <KV k="锁定汇率" v={`${bankDetail.rateVnd.toLocaleString()} VND / USDT`} />
             <KV k="银行到账金额" v={`${bankDetail.amountVnd.toLocaleString()} VND`} />
             <KV k="代付状态" v={bankDetail.state} /><KV k="HDPay 单号" v={bankDetail.providerOrderId || "尚未取得"} />
