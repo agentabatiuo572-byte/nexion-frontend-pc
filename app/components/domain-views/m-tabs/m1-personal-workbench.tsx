@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Activity, ArrowRight, ChevronLeft, ChevronRight, Clock3, MessageSquare, Moon, RefreshCw, Search, Users, UserRoundPlus, X } from "lucide-react";
-import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { parseBusinessTime } from "@/lib/admin/business-time";
 import { fetchMRecentAdvisorConversations } from "@/lib/admin/m-client";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
-import { supportClient, SupportClientError, type SupportAgentCandidate, type SupportCustomer, type SupportCustomerDetail, type SupportCustomerFilter, type SupportMaintenanceHistory, type SupportOverview, type SupportPage } from "@/lib/admin/m-support-client";
+import { supportClient, SupportClientError, isIndeterminateSupportError, type SupportAgentCandidate, type SupportCustomer, type SupportCustomerDetail, type SupportCustomerFilter, type SupportMaintenanceHistory, type SupportWorkbenchSnapshot } from "@/lib/admin/m-support-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { M1SupervisorPool } from "./m1-supervisor-pool";
 import "./m-support-workbench.css";
@@ -35,10 +35,12 @@ const filters: Array<{ value: SupportCustomerFilter; label: string }> = [
   { value: "FIRST_CONTACT", label: "首次待联系" },
   { value: "STOPPED", label: "暂停主动维护" },
 ];
-const maintenanceCommands = createPendingMutationStore({ storageKey: "nexion-admin-m-maintenance-v1" });
+type MaintenancePayload = { customerId: string; assignmentId: string; enabled: boolean; reason: string; expectedVersion: number };
+type MaintenanceRecord = PendingMutationRecord & { actorId: number; payload: MaintenancePayload };
+const maintenanceCommands = createPendingMutationStore<MaintenanceRecord>({ storageKey: "nexion-admin-m-maintenance-v1", isValidRecord: (row) => Boolean(Number.isSafeInteger(row.actorId) && row.payload?.customerId && row.payload.assignmentId && row.payload.reason) });
 type TransferPayload = Parameters<typeof supportClient.transfer>[0];
-type TransferRecord = { fingerprint: string; commandKey: string; createdAt: number; expiresAt: number; payload: TransferPayload };
-const transferCommands = createPendingMutationStore<TransferRecord>({ storageKey: "nexion-admin-m-transfer-v1", isValidRecord: (row) => Boolean(row.payload && Array.isArray(row.payload.customers)) });
+type TransferRecord = { fingerprint: string; commandKey: string; createdAt: number; expiresAt: number; actorId: number; payload: TransferPayload };
+const transferCommands = createPendingMutationStore<TransferRecord>({ storageKey: "nexion-admin-m-transfer-v1", isValidRecord: (row) => Boolean(Number.isSafeInteger(row.actorId) && row.payload && Array.isArray(row.payload.customers)) });
 const actorStamp = () => { const auth = useAdminAuth.getState(); return adminShellSessionKey(auth.session, auth.authEpoch); };
 
 function formatTime(value: string | null | undefined): string {
@@ -47,6 +49,7 @@ function formatTime(value: string | null | undefined): string {
   return Number.isNaN(ts) ? "数据待核对" : new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(ts);
 }
 function errorText(error: unknown): string {
+  if (isIndeterminateSupportError(error)) return "操作结果待确认，请查询原命令或用原命令重试。";
   if (error instanceof SupportClientError) {
     if (error.status === 401) return "登录已失效，请重新登录后重试。";
     if (error.status === 403 || error.status === 404) return "当前无权查看该客户，归属可能已经变更。";
@@ -68,17 +71,23 @@ const HISTORY_STATES: Record<string, string> = { OPEN: "进行中", SUCCEEDED: "
 const HISTORY_KINDS: Record<string, string> = { EXECUTION: "主动联系", MAINTENANCE_EXECUTION: "主动联系", CYCLE: "维护周期", MAINTENANCE_CYCLE: "维护周期" };
 function historyLabel(value: string, labels: Record<string, string>): string { return labels[value] ?? "记录待核对"; }
 function customerName(row: SupportCustomer): string { return row.displayName || row.customerNo || `客户 ${row.customerId}`; }
+function invalidateCustomerOnDenied(customerId: string, error: unknown): boolean {
+  if (!(error instanceof SupportClientError) || ![403, 404].includes(error.status)) return false;
+  window.dispatchEvent(new CustomEvent("support-scope-invalidated", { detail: { customerId } }));
+  return true;
+}
 
 export function M1PersonalWorkbench({ permission }: { permission: Permission }) {
   const router = useRouter();
   const authEpoch = useAdminAuth((state) => state.authEpoch);
   const adminId = useAdminAuth((state) => state.session?.adminId);
   const [view, setView] = useState<View>("dashboard");
-  const [overview, setOverview] = useState<SupportOverview | null>(null);
+  const [snapshot, setSnapshot] = useState<SupportWorkbenchSnapshot | null>(null);
+  const overview = snapshot?.overview ?? null;
+  const rows = snapshot?.customers ?? null;
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [overviewError, setOverviewError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [rows, setRows] = useState<SupportPage<SupportCustomer> | null>(null);
   const [rowsLoading, setRowsLoading] = useState(true);
   const [rowsError, setRowsError] = useState<string | null>(null);
   const [rowsRefresh, setRowsRefresh] = useState(0);
@@ -95,67 +104,77 @@ export function M1PersonalWorkbench({ permission }: { permission: Permission }) 
   const [detailError, setDetailError] = useState<string | null>(null);
   const [history, setHistory] = useState<SupportMaintenanceHistory | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [maintenanceAction, setMaintenanceAction] = useState<"stop" | "resume" | null>(null);
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [maintenancePending, setMaintenancePending] = useState<MaintenanceRecord | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferAgents, setTransferAgents] = useState<SupportAgentCandidate[]>([]);
   const [transferLoading, setTransferLoading] = useState(false);
   const [transferTarget, setTransferTarget] = useState<number | null>(null);
   const [transferReason, setTransferReason] = useState("");
   const [transferError, setTransferError] = useState("");
+  const [transferAgentsError, setTransferAgentsError] = useState(false);
   const [transferSaving, setTransferSaving] = useState(false);
   const [transferPending, setTransferPending] = useState<TransferRecord | null>(null);
   const detailsGeneration = useRef(0);
+  const snapshotController = useRef<AbortController | null>(null);
+  const recentController = useRef<AbortController | null>(null);
   const drawerRef = useRef<HTMLElement>(null);
   const drawerCloseRef = useRef<HTMLButtonElement>(null);
 
-  const loadOverview = useCallback(async (signal?: AbortSignal) => {
-    setOverviewLoading(true); setOverviewError(null);
-    try { const next = await supportClient.overview({ signal }); if (!signal?.aborted) setOverview(next); }
-    catch (error) { if (!signal?.aborted) { setOverview(null); setOverviewError(errorText(error)); } }
-    finally { if (!signal?.aborted) setOverviewLoading(false); }
-  }, []);
   useEffect(() => {
-    const controller = new AbortController();
-    setDetailId(null); setDetail(null); setRows(null); setOverview(null);
-    void loadOverview(controller.signal);
-    return () => controller.abort();
-  }, [authEpoch, loadOverview]);
+    setDetailId(null); setDetail(null); setSnapshot(null);
+  }, [authEpoch]);
 
   const activeFilter = view === "dashboard" ? "TODO" : filter;
   useEffect(() => {
     if (view === "pool") return;
     const controller = new AbortController();
-    setRowsLoading(true); setRowsError(null);
-    void supportClient.customers({ pageNum: view === "dashboard" ? 1 : page, pageSize: view === "dashboard" ? 6 : PAGE_SIZE, keyword: view === "dashboard" ? undefined : keyword || undefined, filter: activeFilter, signal: controller.signal })
-      .then((next) => { if (!controller.signal.aborted) setRows(next); })
-      .catch((error) => { if (!controller.signal.aborted) { setRows(null); setRowsError(errorText(error)); } })
-      .finally(() => { if (!controller.signal.aborted) setRowsLoading(false); });
-    return () => controller.abort();
+    snapshotController.current = controller;
+    setSnapshot(null); setRowsLoading(true); setOverviewLoading(true); setRowsError(null); setOverviewError(null);
+    void supportClient.snapshot({ pageNum: view === "dashboard" ? 1 : page, pageSize: view === "dashboard" ? 6 : PAGE_SIZE, keyword: view === "dashboard" ? undefined : keyword || undefined, filter: activeFilter, signal: controller.signal })
+      .then((next) => { if (!controller.signal.aborted) { setSnapshot(next); if (!next.customers.available) setRowsError("当前筛选条件暂不可用，请调整服务规则后重试。"); } })
+      .catch((error) => { if (!controller.signal.aborted) { setSnapshot(null); setRowsError(errorText(error)); setOverviewError(errorText(error)); } })
+      .finally(() => { if (!controller.signal.aborted) { setRowsLoading(false); setOverviewLoading(false); } });
+    return () => { controller.abort(); if (snapshotController.current === controller) snapshotController.current = null; };
   }, [authEpoch, view, page, keyword, activeFilter, rowsRefresh]);
   useEffect(() => {
     if (!adminId) { setRecent(null); return; }
     const controller = new AbortController();
+    recentController.current = controller;
     setRecent(null); setRecentError(null);
     void fetchMRecentAdvisorConversations(adminId, controller.signal)
       .then((next) => { if (!controller.signal.aborted) setRecent(next); })
       .catch(() => { if (!controller.signal.aborted) setRecentError("最近会话暂无法同步，请稍后重试。"); });
-    return () => controller.abort();
+    return () => { controller.abort(); if (recentController.current === controller) recentController.current = null; };
   }, [adminId, authEpoch, recentRefresh]);
 
   const openDetail = useCallback(async (customerId: string) => {
     const generation = ++detailsGeneration.current;
-    setDetailId(customerId); setDetail(null); setHistory(null); setDetailLoading(true); setDetailError(null); setMaintenanceAction(null); setSaveError(null); setReason("");
+    const pending = maintenanceCommands.list().find((row) => row.actorId === adminId && row.payload.customerId === customerId) ?? null;
+    setDetailId(customerId); setDetail(null); setHistory(null); setDetailLoading(true); setDetailError(null); setMaintenanceAction(pending ? pending.payload.enabled ? "resume" : "stop" : null); setSaveError(pending ? "上次操作结果待确认，请先查询原命令。" : null); setReason(pending?.payload.reason ?? ""); setMaintenancePending(pending);
     try { const next = await supportClient.customerDetail(customerId); if (detailsGeneration.current === generation) setDetail(next); }
-    catch (error) { if (detailsGeneration.current === generation) setDetailError(errorText(error)); }
+    catch (error) { if (detailsGeneration.current === generation && !invalidateCustomerOnDenied(customerId, error)) setDetailError(errorText(error)); }
     finally { if (detailsGeneration.current === generation) setDetailLoading(false); }
-  }, []);
+  }, [adminId]);
   const closeDetail = useCallback(() => {
-    detailsGeneration.current += 1; setDetailId(null); setDetail(null); setHistory(null); setMaintenanceAction(null); setReason(""); setSaveError(null); setTransferOpen(false);
+    detailsGeneration.current += 1; setDetailId(null); setDetail(null); setHistory(null); setMaintenanceAction(null); setReason(""); setSaveError(null); setMaintenancePending(null); setTransferOpen(false);
   }, []);
   useEffect(() => { closeDetail(); }, [authEpoch, closeDetail]);
+  useEffect(() => {
+    const onScope = (event: Event) => {
+      const customerId = (event as CustomEvent<{ customerId?: string }>).detail?.customerId;
+      if (!customerId || detailId === customerId) { closeDetail(); setNotice("客户归属已变化，详情已关闭。"); }
+      snapshotController.current?.abort(); recentController.current?.abort();
+      setSnapshot(null); setRowsRefresh((value) => value + 1);
+      setRecent(null); setRecentRefresh((value) => value + 1);
+    };
+    window.addEventListener("support-scope-invalidated", onScope);
+    return () => window.removeEventListener("support-scope-invalidated", onScope);
+  }, [detailId, closeDetail]);
   useEffect(() => {
     const customerId = new URLSearchParams(window.location.search).get("customerId");
     if (!customerId || !/^[1-9]\d*$/.test(customerId)) return;
@@ -180,74 +199,105 @@ export function M1PersonalWorkbench({ permission }: { permission: Permission }) 
 
   const showCustomers = (next: SupportCustomerFilter) => { setFilter(next); setPage(1); setView("customers"); };
   const openChat = (customerId: string) => router.push(`/service/sessions?customerId=${encodeURIComponent(customerId)}`);
-  const loadHistory = async () => {
+  const loadHistory = async (pageNum = 1) => {
     if (!detailId) return;
     const generation = detailsGeneration.current;
-    setHistoryError(null);
-    try { const result = await supportClient.maintenanceHistory(detailId, { pageNum: 1, pageSize: 10 }); if (detailsGeneration.current === generation) setHistory(result); }
-    catch (error) { if (detailsGeneration.current === generation) setHistoryError(errorText(error)); }
+    setHistoryError(null); setHistoryLoading(true);
+    if (pageNum === 1) setHistory(null);
+    try {
+      const result = await supportClient.maintenanceHistory(detailId, { pageNum, pageSize: 10 });
+      if (detailsGeneration.current === generation) setHistory((old) => pageNum === 1 || !old ? result : { ...result, cycles: [...old.cycles, ...result.cycles], executions: [...old.executions, ...result.executions] });
+    }
+    catch (error) { if (detailsGeneration.current === generation && !invalidateCustomerOnDenied(detailId, error)) setHistoryError(errorText(error)); }
+    finally { if (detailsGeneration.current === generation) setHistoryLoading(false); }
   };
   const saveMaintenance = async () => {
-    if (!detail || !detail.assignmentId || !maintenanceAction || reason.trim().length < 8 || reason.trim().length > 200 || saving || detail.agentAdminId !== adminId) return;
+    if (!detail || !detail.assignmentId || !maintenanceAction || saving || detail.agentAdminId !== adminId) return;
     const actor = actorStamp();
     const generation = detailsGeneration.current;
-    const enabled = maintenanceAction === "resume";
-    const fingerprint = `maintenance:${detail.customerId}:${detail.assignmentId}:${detail.maintenanceVersion}:${enabled}:${reason.trim()}`;
-    const key = maintenanceCommands.get(fingerprint) ?? crypto.randomUUID();
-    maintenanceCommands.remember(fingerprint, key);
+    const payload: MaintenancePayload = maintenancePending?.payload ?? { customerId: detail.customerId, assignmentId: detail.assignmentId, enabled: maintenanceAction === "resume", reason: reason.trim(), expectedVersion: detail.maintenanceVersion };
+    if (payload.reason.length < 8 || payload.reason.length > 200) return;
+    const fingerprint = maintenancePending?.fingerprint ?? `maintenance:${payload.customerId}:${payload.assignmentId}:${payload.expectedVersion}:${payload.enabled}:${payload.reason}`;
+    const key = maintenancePending?.commandKey ?? maintenanceCommands.get(fingerprint) ?? crypto.randomUUID();
+    maintenanceCommands.remember(fingerprint, key, { actorId: adminId, payload });
+    setMaintenancePending(maintenanceCommands.list().find((row) => row.commandKey === key) ?? null);
     setSaving(true); setSaveError(null);
     try {
-      const next = await supportClient.setMaintenance(detail.customerId, { enabled, reason: reason.trim(), expectedVersion: detail.maintenanceVersion, expectedAssignmentId: detail.assignmentId }, key);
+      const next = await supportClient.setMaintenance(payload.customerId, { enabled: payload.enabled, reason: payload.reason, expectedVersion: payload.expectedVersion, expectedAssignmentId: payload.assignmentId }, key);
       if (actor !== actorStamp()) return;
+      if (next.customerId !== payload.customerId || next.assignmentId !== payload.assignmentId || next.enabled !== payload.enabled) throw new Error("MAINTENANCE_RESULT_MISMATCH");
       maintenanceCommands.forget(fingerprint);
+      setMaintenancePending(null);
       window.dispatchEvent(new Event("support-todo-changed"));
-      if (detailsGeneration.current === generation) { setDetail(next); setMaintenanceAction(null); setReason(""); }
-      await loadOverview();
+      if (detailsGeneration.current === generation) { setMaintenanceAction(null); setReason(""); await openDetail(payload.customerId); }
       setRowsRefresh((value) => value + 1);
     } catch (error) {
       if (actor !== actorStamp()) return;
       if (detailsGeneration.current === generation) {
-        setSaveError(errorText(error));
-        if (error instanceof SupportClientError && (error.status === 403 || error.status === 404)) { setNotice(errorText(error)); closeDetail(); setRowsRefresh((value) => value + 1); }
+        const definite = error instanceof SupportClientError && ([400, 401, 403, 404, 422].includes(error.status) || error.status === 409 && !isIndeterminateSupportError(error));
+        if (definite) { maintenanceCommands.forget(fingerprint); setMaintenancePending(null); }
+        setSaveError(definite ? errorText(error) : "操作结果待确认。请查询原命令，或用原命令重试。");
+        invalidateCustomerOnDenied(payload.customerId, error);
       }
     } finally { setSaving(false); }
   };
-  const openTransfer = async () => {
-    if (!detail || permission === "agent") return;
-    setTransferOpen(true); setTransferLoading(true); setTransferError("");
-    const existing = transferCommands.list().find((row) => row.payload.customers.some((item) => item.id === detail.customerId));
-    setTransferPending(existing ?? null);
-    setTransferTarget(existing?.payload.targetAgentAdminId ?? null);
-    setTransferReason(existing?.payload.reason ?? "");
+  const checkMaintenance = async () => {
+    if (!maintenancePending || saving) return;
+    setSaving(true);
+    try {
+      const result = await supportClient.command(maintenancePending.commandKey);
+      if (result.status === "SUCCEEDED") {
+        maintenanceCommands.forget(maintenancePending.fingerprint); setMaintenancePending(null); setSaveError(null);
+        window.dispatchEvent(new Event("support-todo-changed"));
+        await openDetail(maintenancePending.payload.customerId); setRowsRefresh((value) => value + 1);
+      } else if (result.status === "FAILED") {
+        maintenanceCommands.forget(maintenancePending.fingerprint); setMaintenancePending(null);
+        setSaveError("原操作已失败。理由已保留，请刷新详情后重新确认。");
+      } else setSaveError("原操作仍在处理中，请稍后查询，或用原命令重试。");
+    } catch { setSaveError("结果暂时无法确认，原命令与理由已保留。"); }
+    finally { setSaving(false); }
+  };
+  const loadTransferAgents = async () => {
+    setTransferAgents([]); setTransferLoading(true); setTransferError(""); setTransferAgentsError(false);
     try {
       const first = await supportClient.agents({ pageNum: 1, pageSize: 100 });
       const pages = [first];
       for (let pageNum = 2; (pageNum - 1) * 100 < first.total; pageNum++) pages.push(await supportClient.agents({ pageNum, pageSize: 100 }));
       setTransferAgents(pages.flatMap((page) => page.records));
-    } catch (error) { setTransferError(errorText(error)); }
+    } catch (error) { setTransferAgents([]); setTransferTarget(null); setTransferAgentsError(true); setTransferError(errorText(error)); }
     finally { setTransferLoading(false); }
   };
+  const openTransfer = async () => {
+    if (!detail || permission === "agent") return;
+    setTransferOpen(true);
+    const existing = transferCommands.list().find((row) => row.actorId === adminId && row.payload.customers.some((item) => item.id === detail.customerId));
+    setTransferPending(existing ?? null);
+    setTransferTarget(existing?.payload.targetAgentAdminId ?? null);
+    setTransferReason(existing?.payload.reason ?? "");
+    await loadTransferAgents();
+  };
   const submitTransfer = async () => {
-    if (!detail || !detail.assignmentId || permission === "agent" || transferSaving) return;
+    if (!detail || !detail.assignmentId || !adminId || permission === "agent" || transferSaving) return;
     const actor = actorStamp();
     const target = transferAgents.find((agent) => agent.adminId === transferTarget && agent.enabled && agent.seatType === "DEDICATED" && agent.serviceTypes.includes("advisor"));
     if (!transferPending && (!target || transferReason.trim().length < 8 || transferReason.trim().length > 200)) return;
-    const payload: TransferPayload = transferPending?.payload ?? { targetAgentAdminId: target!.adminId, customers: [{ id: detail.customerId, expectedAssignmentId: detail.assignmentId, expectedVersion: detail.version }], reason: transferReason.trim() };
-    const fingerprint = `bound-transfer:${detail.customerId}:${detail.assignmentId}:${detail.version}`;
+    const payload: TransferPayload = transferPending?.payload ?? { targetAgentAdminId: target!.adminId, customers: [{ id: detail.customerId, expectedAssignmentId: detail.assignmentId, expectedVersion: detail.assignmentVersion }], reason: transferReason.trim() };
+    const fingerprint = `bound-transfer:${detail.customerId}:${detail.assignmentId}:${detail.assignmentVersion}`;
     const commandKey = transferPending?.commandKey ?? transferCommands.get(fingerprint) ?? crypto.randomUUID();
-    transferCommands.remember(fingerprint, commandKey, { payload });
+    transferCommands.remember(fingerprint, commandKey, { actorId: adminId, payload });
     setTransferSaving(true); setTransferError("");
     try {
       await supportClient.transfer(payload, commandKey);
       if (actor !== actorStamp()) return;
       transferCommands.forget(fingerprint); setTransferPending(null); setTransferOpen(false); closeDetail();
-      window.dispatchEvent(new Event("support-todo-changed")); setRowsRefresh((value) => value + 1); void loadOverview();
+      window.dispatchEvent(new Event("support-todo-changed")); setRowsRefresh((value) => value + 1);
     } catch (error) {
       if (actor !== actorStamp()) return;
-      if (error instanceof SupportClientError && [401, 403, 409, 422].includes(error.status)) {
+      if (error instanceof SupportClientError && [400, 401, 403, 404, 409, 422].includes(error.status) && !isIndeterminateSupportError(error)) {
         transferCommands.forget(fingerprint); setTransferPending(null);
+        if (error.status === 403 || error.status === 404) { setNotice(errorText(error)); closeDetail(); setRowsRefresh((value) => value + 1); return; }
         if (error.status === 409) { setTransferError("客户归属已变化。原因已保留，请关闭详情后重新打开核对版本。"); return; }
-      } else setTransferPending({ fingerprint, commandKey, payload, createdAt: Date.now(), expiresAt: Date.now() + 24 * 60 * 60 * 1000 });
+      } else setTransferPending(transferCommands.list().find((row) => row.commandKey === commandKey && row.actorId === adminId) ?? null);
       setTransferError(errorText(error));
     } finally { setTransferSaving(false); }
   };
@@ -259,7 +309,7 @@ export function M1PersonalWorkbench({ permission }: { permission: Permission }) 
       const result = await supportClient.command(transferPending.commandKey);
       if (actor !== actorStamp()) return;
       if (result.status === "SUCCEEDED") {
-        transferCommands.forget(transferPending.fingerprint); setTransferPending(null); setTransferOpen(false); closeDetail(); setRowsRefresh((value) => value + 1); void loadOverview();
+        transferCommands.forget(transferPending.fingerprint); setTransferPending(null); setTransferOpen(false); closeDetail(); setRowsRefresh((value) => value + 1);
       } else if (result.status === "FAILED") {
         transferCommands.forget(transferPending.fingerprint); setTransferPending(null); setTransferError("原命令已失败。原因已保留，请刷新客户详情后重审。");
       } else setTransferError("原转绑仍在处理中，请稍后查询或用原命令重试。");
@@ -284,7 +334,7 @@ export function M1PersonalWorkbench({ permission }: { permission: Permission }) 
     {view === "pool" ? <M1SupervisorPool permission={permission} /> : <>
       {view === "dashboard" && <>
         <div className="s5a-intro"><div><h2>我的工作台</h2><p>当前归属客户与可执行待办</p></div><span className="s5a-stamp">统计于 {overview ? formatTime(overview.evaluatedAt) : "待同步"}</span></div>
-        {overviewError && <div className="s5a-alert" role="alert">{overviewError}<button type="button" onClick={() => void loadOverview()}><RefreshCw size={15} />重试</button></div>}
+        {overviewError && <div className="s5a-alert" role="alert">{overviewError}<button type="button" onClick={() => setRowsRefresh((value) => value + 1)}><RefreshCw size={15} />重试</button></div>}
         <div className="s5a-metrics">
           {metrics.map(({ key, label, filter: metricFilter, icon: Icon, hint, count }) => <button type="button" key={key} className="s5a-metric" onClick={() => showCustomers(metricFilter)} aria-label={`${key === "windowActiveCustomers" ? overview?.activityWindowDays ? `近 ${overview.activityWindowDays} 天活跃` : "活跃客户，窗口待同步" : label}，${overviewLoading ? "加载中" : count === null ? "未配置或数据待核对" : `${count} 位`}，查看名单`}>
             <Icon size={21} aria-hidden="true" /><span>{key === "windowActiveCustomers" && overview?.activityWindowDays ? `近 ${overview.activityWindowDays} 天活跃` : label}</span><strong>{overviewLoading ? "···" : count === null ? "—" : count.toLocaleString("zh-CN")}</strong>
@@ -328,18 +378,19 @@ export function M1PersonalWorkbench({ permission }: { permission: Permission }) 
         <dl><div><dt>客户 ID</dt><dd>{detail.customerNo || detail.customerId}</dd></div><div><dt>账户状态</dt><dd>{labelForAccount(detail.accountState)}</dd></div><div><dt>维护状态</dt><dd>{labelForMaintenance(detail)}</dd></div><div><dt>上次账户活动</dt><dd>{formatTime(detail.lastEffectiveAt)}</dd></div><div><dt>下次维护</dt><dd>{formatTime(detail.nextMaintenanceAt)}</dd></div></dl>
         {detail.accountState === "UNKNOWN" && <p className="s5a-note">账户活动数据待核对，不能推定为沉睡或活跃。</p>}
         <button type="button" className="s5a-primary" onClick={() => openChat(detail.customerId)}>联系客户 <ArrowRight size={16} /></button>
-        {canMaintain ? <button type="button" className="s5a-secondary" onClick={() => { setMaintenanceAction(detail.maintenanceEnabled ? "stop" : "resume"); setReason(""); setSaveError(null); }}>{detail.maintenanceEnabled ? "不再维护" : "恢复维护"}</button> : <p className="s5a-note">仅当前专属顾问可调整主动维护；主管可审阅并办理正式转绑。</p>}
+        {canMaintain ? <button type="button" className="s5a-secondary" disabled={Boolean(maintenancePending)} onClick={() => { setMaintenanceAction(detail.maintenanceEnabled ? "stop" : "resume"); setReason(""); setSaveError(null); }}>{detail.maintenanceEnabled ? "不再维护" : "恢复维护"}</button> : <p className="s5a-note">仅当前专属顾问可调整主动维护；主管可审阅并办理正式转绑。</p>}
         {permission !== "agent" && detail.assignmentId && <button type="button" className="s5a-secondary" onClick={() => void openTransfer()}>正式转绑客户</button>}
         {transferOpen && <div className="s5a-confirm"><h3>正式转绑此客户</h3><p>仅变更当前客户的专属顾问；提交后原顾问立即失去私聊与图片权限。</p>
           {transferLoading ? <p role="status">正在读取可接待顾问…</p> : <label>目标顾问<select value={transferTarget ?? ""} disabled={transferSaving || Boolean(transferPending)} onChange={(event) => setTransferTarget(Number(event.target.value) || null)}><option value="">请选择专属顾问</option>{transferAgents.filter((agent) => agent.enabled && agent.seatType === "DEDICATED" && agent.serviceTypes.includes("advisor") && agent.adminId !== detail.agentAdminId).map((agent) => <option key={agent.adminId} value={agent.adminId}>{agent.name}{agent.busy ? " · 忙碌" : ""}</option>)}</select></label>}
-          {!transferLoading && !transferAgents.some((agent) => agent.enabled && agent.seatType === "DEDICATED" && agent.serviceTypes.includes("advisor") && agent.adminId !== detail.agentAdminId) && <p className="s5a-note">暂无可接待的其他专属顾问。请到“服务规则与话术 → 话术与模板 → 配置岗位”核对顾问资格。</p>}
+          {!transferLoading && transferAgentsError && <button type="button" onClick={() => void loadTransferAgents()}>重试读取顾问名单</button>}
+          {!transferLoading && !transferAgentsError && !transferAgents.some((agent) => agent.enabled && agent.seatType === "DEDICATED" && agent.serviceTypes.includes("advisor") && agent.adminId !== detail.agentAdminId) && <p className="s5a-note">暂无可接待的其他专属顾问。请到“服务规则与话术 → 话术与模板 → 配置岗位”核对顾问资格。</p>}
           <label>转绑理由（8–200 字）<textarea value={transferReason} maxLength={200} disabled={transferSaving || Boolean(transferPending)} onChange={(event) => setTransferReason(event.target.value)} /></label><small>{transferReason.trim().length}/200 字</small>
           {transferPending && <p role="alert">上次转绑结果未确认，原客户范围和命令已锁定。<button type="button" onClick={() => void checkTransfer()} disabled={transferSaving}>查询原命令</button></p>}
           {transferError && <p role="alert">{transferError}</p>}
-          <footer><button type="button" onClick={() => setTransferOpen(false)} disabled={transferSaving}>返回</button><button type="button" className="s5a-primary" disabled={transferSaving || transferLoading || (!transferPending && (!transferTarget || transferTarget === detail.agentAdminId || transferReason.trim().length < 8 || transferReason.trim().length > 200))} onClick={() => void submitTransfer()}>{transferSaving ? "提交中…" : transferPending ? "用原命令重试" : "确认正式转绑"}</button></footer>
+          <footer><button type="button" onClick={() => setTransferOpen(false)} disabled={transferSaving}>返回</button><button type="button" className="s5a-primary" disabled={transferSaving || transferLoading || transferAgentsError || (!transferPending && (!transferTarget || transferTarget === detail.agentAdminId || transferReason.trim().length < 8 || transferReason.trim().length > 200))} onClick={() => void submitTransfer()}>{transferSaving ? "提交中…" : transferPending ? "用原命令重试" : "确认正式转绑"}</button></footer>
         </div>}
-        {maintenanceAction && <div className="s5a-confirm"><h3>{maintenanceAction === "stop" ? "暂停主动维护" : "恢复主动维护"}</h3><p>{maintenanceAction === "stop" ? "仅停止主动跟进。客户归属、私聊和求助保持可用。" : "旧周期不会恢复，也不会自动产生执行或成功。"}</p><label>操作理由（8–200 字）<textarea value={reason} maxLength={200} onChange={(event) => setReason(event.target.value)} placeholder="填写本次操作的原因" /></label><small>{reason.trim().length}/200 字</small>{saveError && <p role="alert">{saveError}</p>}<footer><button type="button" onClick={() => { setMaintenanceAction(null); setSaveError(null); }} disabled={saving}>取消</button><button type="button" className="s5a-primary" disabled={saving || reason.trim().length < 8 || reason.trim().length > 200} onClick={() => void saveMaintenance()}>{saving ? "提交中…" : "确认"}</button></footer></div>}
-        <section className="s5a-history"><button type="button" onClick={() => void loadHistory()}>查看维护记录 <ArrowRight size={15} /></button>{historyError && <p role="alert">{historyError}</p>}{history && (history.records.length ? <ul>{history.records.map((item) => <li key={item.id}>{historyLabel(item.kind, HISTORY_KINDS)} · {formatTime(item.occurredAt)}{item.state ? ` · ${historyLabel(item.state, HISTORY_STATES)}` : ""}</li>)}</ul> : <p>尚无人工联系记录。</p>)}</section>
+        {maintenanceAction && <div className="s5a-confirm"><h3>{maintenanceAction === "stop" ? "暂停主动维护" : "恢复主动维护"}</h3><p>{maintenanceAction === "stop" ? "仅停止主动跟进。客户归属、私聊和求助保持可用。" : "旧周期不会恢复，也不会自动产生执行或成功。"}</p><label>操作理由（8–200 字）<textarea value={reason} maxLength={200} disabled={Boolean(maintenancePending)} onChange={(event) => setReason(event.target.value)} placeholder="填写本次操作的原因" /></label><small>{reason.trim().length}/200 字</small>{maintenancePending && <p role="alert">上次操作结果待确认，原理由与命令已保留。<button type="button" onClick={() => void checkMaintenance()} disabled={saving}>查询原命令</button></p>}{saveError && <p role="alert">{saveError}</p>}<footer><button type="button" onClick={() => { setMaintenanceAction(null); setSaveError(null); }} disabled={saving || Boolean(maintenancePending)}>取消</button><button type="button" className="s5a-primary" disabled={saving || reason.trim().length < 8 || reason.trim().length > 200} onClick={() => void saveMaintenance()}>{saving ? "提交中…" : maintenancePending ? "用原命令重试" : "确认"}</button></footer></div>}
+        <section className="s5a-history"><button type="button" disabled={historyLoading} onClick={() => void loadHistory()}>{historyLoading ? "读取中…" : "查看维护记录"} <ArrowRight size={15} /></button>{historyError && <p role="alert">{historyError}</p>}{history && <><p>维护周期 {history.totalCycles} 条 · 主动联系 {history.totalExecutions} 条</p>{history.cycles.length || history.executions.length ? <ul>{[...history.cycles, ...history.executions].sort((a, b) => parseBusinessTime(b.occurredAt) - parseBusinessTime(a.occurredAt)).map((item) => <li key={`${item.kind}:${item.id}`}>{historyLabel(item.kind, HISTORY_KINDS)} · {formatTime(item.occurredAt)}{item.state ? ` · ${historyLabel(item.state, HISTORY_STATES)}` : ""}</li>)}</ul> : <p>尚无人工联系记录。</p>}{(history.cycles.length < history.totalCycles || history.executions.length < history.totalExecutions) && <button type="button" disabled={historyLoading} onClick={() => void loadHistory(history.pageNum + 1)}>加载更多维护记录</button>}</>}</section>
       </div>}
     </aside></div>}
   </section>;

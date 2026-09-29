@@ -6,7 +6,7 @@
  * 例行坐席操作(回复/改状态/改优先级/转交/关闭重开)直接执行 + 自动 A2 审计;
  * 仅「升级为即时会话」这类跨载体处置走操作确认 + 理由。
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import Link from "next/link";
 import { Icon, MessageThread, Modal, type ThreadMessage } from "../design-kit";
 import { TabGroup } from "@/app/components/kit/tab-group";
@@ -20,7 +20,8 @@ import {
 } from "./data";
 import { catCN, Empty, HDSelect, MAvatar, MiniMenu, ownerLabel, PRIO_CN, Prio, relWhen, TicketStatus, TK_STATUS_CN, type HDOption, type MenuItem } from "./hd-ui";
 import type { MCtx } from "./types";
-import { type MTicketAssigneeCandidate } from "@/lib/admin/m-client";
+import { fetchSupportTicketDetail, type MTicketAssigneeCandidate } from "@/lib/admin/m-client";
+import { SupportClientError } from "@/lib/admin/m-support-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
 
@@ -62,7 +63,6 @@ const CATEGORY_CROSS_LINKS: Array<{ category: SupportTicketCategory; href: (user
   { category: "deposit", href: (uid) => `/users/search/${uid}#hub-deposit`, label: "去充值记录", icon: "wallet" },
   { category: "account", href: () => `/users/actions`, label: "去账户处置", icon: "users" },
   { category: "hardware", href: (uid) => `/users/search/${uid}#hub-devices`, label: "去设备明细", icon: "box" },
-  { category: "earnings", href: (uid) => `/users/search/${uid}#hub-deposit`, label: "去收益明细", icon: "coin" },
 ];
 function findCategoryCrossLink(category: SupportTicketCategory): typeof CATEGORY_CROSS_LINKS[number] | null {
   return CATEGORY_CROSS_LINKS.find((link) => link.category === category) ?? null;
@@ -122,6 +122,7 @@ function linkedConversation(ticket: SupportTicket): LinkedConversation | null {
 export function M2Tickets({ ctx }: { ctx: MCtx }) {
   const { pget, setParam, toast, openActionConfirm } = ctx;
   const authorities = useAdminAuth((state) => state.session?.authorities);
+  const authEpoch = useAdminAuth((state) => state.authEpoch);
   const currentRole = useAdminAuth((state) => state.session?.role ?? state.role);
   const isSuperAdmin = currentRole === "super" || currentRole === "superadmin";
   const canWriteM2 = isSuperAdmin || Boolean(authorities?.includes("service_m2_write"));
@@ -165,6 +166,9 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
   const [requestedTicketNo, setRequestedTicketNo] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const [ticketDetail, setTicketDetail] = useState<{ ticket: SupportTicket; epoch: number; error: string } | null>(null);
+  const [detailRetry, setDetailRetry] = useState(0);
   const [showCreate, setShowCreate] = useState(false);
   const [replyBody, setReplyBody] = useState("");
   const [internalNoteBody, setInternalNoteBody] = useState("");
@@ -188,7 +192,29 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
     }
   }, []);
 
-  const selected = tickets.find((t) => t.id === selectedId) ?? null;
+  const selectedRow = tickets.find((ticket) => ticket.id === selectedId) ?? null;
+  const detailError = ticketDetail && ticketDetail.epoch === authEpoch && ticketDetail.ticket.id === selectedRow?.id ? ticketDetail.error : "";
+  const selected = !detailError && ticketDetail && ticketDetail.epoch === authEpoch && ticketDetail.ticket.id === selectedRow?.id
+    && ticketDetail.ticket.version === selectedRow?.version && ticketDetail.ticket.contentRestricted === selectedRow?.contentRestricted
+    ? ticketDetail.ticket : null;
+
+  useEffect(() => {
+    if (!drawerOpen || !selectedRow) return;
+    const controller = new AbortController();
+    setTicketDetail(null);
+    void fetchSupportTicketDetail(selectedRow.id, controller.signal)
+      .then((ticket) => {
+        if (controller.signal.aborted) return;
+        if (ticket.contentRestricted && !selectedRow.contentRestricted && selectedRow.sourceConversationNo && selectedRow.sourceConversationNo !== "DIRECT") ctx.invalidateScope(selectedRow.sourceConversationNo, String(selectedRow.userId ?? ""));
+        setTicketDetail({ ticket, epoch: authEpoch, error: ticket.version !== selectedRow.version || ticket.contentRestricted !== selectedRow.contentRestricted ? "工单已更新，请刷新列表后重试。" : "" });
+      })
+      .catch((cause: unknown) => {
+        if (controller.signal.aborted) return;
+        if (cause instanceof SupportClientError && [403, 404].includes(cause.status) && !selectedRow.contentRestricted && selectedRow.sourceConversationNo && selectedRow.sourceConversationNo !== "DIRECT") ctx.invalidateScope(selectedRow.sourceConversationNo, String(selectedRow.userId ?? ""));
+        setTicketDetail({ ticket: selectedRow, epoch: authEpoch, error: "工单详情读取失败，请重试。" });
+      });
+    return () => controller.abort();
+  }, [drawerOpen, selectedRow?.id, selectedRow?.version, selectedRow?.contentRestricted, authEpoch, detailRetry, ctx.invalidateScope]);
 
   useEffect(() => {
     if (!requestedTicketNo || !tickets.some((ticket) => ticket.id === requestedTicketNo)) return;
@@ -254,15 +280,24 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
     setInternalNoteBody("");
   }, [selectedId]);
 
-  // Esc 关抽屉
+  // Keep keyboard focus inside the active drawer and return it to the opener.
   useEffect(() => {
     if (!drawerOpen) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setDrawerOpen(false);
+      if (e.key === "Escape") { setDrawerOpen(false); return; }
+      if (e.key !== "Tab" || !drawerRef.current) return;
+      const focusable = [...drawerRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]')];
+      if (!focusable.length) { e.preventDefault(); drawerRef.current.focus(); return; }
+      if (e.shiftKey && (document.activeElement === drawerRef.current || document.activeElement === focusable[0] || !drawerRef.current.contains(document.activeElement))) { e.preventDefault(); focusable.at(-1)?.focus(); }
+      else if (!e.shiftKey && (document.activeElement === focusable.at(-1) || !drawerRef.current.contains(document.activeElement))) { e.preventDefault(); focusable[0].focus(); }
     };
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    return () => { document.removeEventListener("keydown", onKey); if (previousFocus?.isConnected) previousFocus.focus(); };
   }, [drawerOpen]);
+  useEffect(() => {
+    if (drawerOpen) drawerRef.current?.focus();
+  }, [drawerOpen, Boolean(selected)]);
 
   const openTicket = (id: string) => {
     setSelectedId(id);
@@ -481,7 +516,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
     if (!selected || !canWriteM2 || !ticketsAvailable || selected.archived) return;
     const ticket = selected;
     if (!ticket.userId || ticket.userId <= 0 || !ticket.userVerified) {
-      toast("该工单没有后端确认的真实用户,请先核对用户后再升级会话");
+      toast("客户身份尚未核实，请先核对后再升级会话");
       return;
     }
     const assignedCandidate = ticketAssigneeCandidates.find((candidate) => ticket.ownerAdminId === candidate.adminId);
@@ -493,7 +528,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
       action: <>升级为即时会话 · {ticket.id}</>,
       detail: (
         <>
-          把工单 <b>{ticket.subject}</b> 升级为即时会话,坐席 <b>{ticket.owner}</b> 在会话中心继续实时接待;系统会保留真实用户关联,并在本工单同步记录会话编号。仅迁移接待载体,资金放行仍回 D2。
+          把工单 <b>{ticket.subject}</b> 升级为即时会话,坐席 <b>{ticket.owner}</b> 在会话中心继续实时接待;系统会保留真实用户关联,并在本工单同步记录会话编号。仅迁移接待载体,资金放行仍需在提现处置页面办理。
         </>
       ),
       amplifies: false,
@@ -550,19 +585,19 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
       {ticketsAvailable && !canWriteM2 && (
         <div className="itint" role="status" style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 13 }}>当前账号为只读模式。</div>
-          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>可以筛选和查看工单,回复、流转、归档及升级会话需要 M2 写权限。</div>
+          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>可以筛选和查看工单；回复、流转、归档及升级会话需要工单操作权限。</div>
         </div>
       )}
       {ticketsAvailable && canWriteM2 && !ticketAssigneeCandidatesAvailable && (
         <div className="itint" role="alert" style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 13 }}>坐席候选数据暂时无法同步,当前不会开放新建或转交操作。</div>
-          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>这不是 M2 权限不足;请稍后刷新,持续失败时检查客服坐席目录服务。</div>
+          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>请稍后刷新；持续失败时请联系平台管理员检查客服坐席数据。</div>
         </div>
       )}
       {ticketsAvailable && canWriteM2 && ticketAssigneeCandidatesAvailable && ownerOptions.length === 0 && (
         <div className="itint" role="alert" style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 13 }}>当前没有可接单的客服坐席。</div>
-          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>请先在 M1 启用具备客服服务类型且允许转交的坐席。</div>
+          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>请在客服坐席配置中启用可接单人员。</div>
         </div>
       )}
       <div className="tk-toolbar">
@@ -644,7 +679,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
                   </td>
                   <td>
                     <div className="mono" style={{ fontSize: 12, color: "var(--ink-2)" }}>{relWhen(t.lastReplyAt)}</div>
-                    <div className="dim2" style={{ fontSize: 11 }}>{last ? WHO_CN[last.author] : "—"}回复</div>
+                    {last && <div className="dim2" style={{ fontSize: 11 }}>{WHO_CN[last.author]}回复</div>}
                   </td>
                   <td onClick={(e) => e.stopPropagation()}>
                     <div className="tk-acts">
@@ -714,8 +749,16 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
         </div>
       )}
 
+      {drawerOpen && selectedRow && !selected && (
+        <div ref={drawerRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={`工单 ${selectedRow.id} 详情`} className="tk-drawer">
+          <div className="itint" role={detailError ? "alert" : "status"}>{detailError || "正在读取工单详情…"}</div>
+          {detailError && <button type="button" className="btn btn-sec btn-sm" onClick={() => { if (detailError.includes("已更新")) void ctx.refreshContent(); else setDetailRetry((value) => value + 1); }}>{detailError.includes("已更新") ? "刷新工单列表" : "重试读取详情"}</button>}
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setDrawerOpen(false)}>关闭</button>
+        </div>
+      )}
       {drawerOpen && selected && (
         <TicketDrawer
+          dialogRef={drawerRef}
           ticket={selected}
           replyBody={replyBody}
           onReplyChange={setReplyBody}
@@ -733,7 +776,8 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
           thread={threadMessages}
           replyTemplates={replyTemplates}
           ownerOptions={ownerOptions}
-          canWrite={canWriteM2 && ticketsAvailable && !writePending}
+          canWrite={canWriteM2 && ticketsAvailable}
+          submitting={writePending}
         />
       )}
 
@@ -751,6 +795,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
 }
 
 function TicketDrawer({
+  dialogRef,
   ticket,
   replyBody,
   onReplyChange,
@@ -769,7 +814,9 @@ function TicketDrawer({
   replyTemplates,
   ownerOptions,
   canWrite,
+  submitting,
 }: {
+  dialogRef: RefObject<HTMLDivElement | null>;
   ticket: SupportTicket;
   replyBody: string;
   onReplyChange: (v: string) => void;
@@ -788,9 +835,10 @@ function TicketDrawer({
   replyTemplates: string[];
   ownerOptions: TicketOwnerOption[];
   canWrite: boolean;
+  submitting: boolean;
 }) {
   const isTerminal = ticket.status === "resolved" || ticket.status === "closed";
-  const conversation = linkedConversation(ticket);
+  const conversation = ticket.contentRestricted ? null : linkedConversation(ticket);
   const categoryCrossLink = findCategoryCrossLink(ticket.category);
   const statusItems: MenuItem[] = STATUS_TRANSITIONS[ticket.status].map((status) => ({ label: STATUS_ACTION_CN[status], onClick: () => onStatus(status) }));
   const priorityItems: MenuItem[] = PRIORITY_LIST.map((p) => ({ label: PRIO_CN[p], cur: ticket.priority === p, onClick: () => onPriority(p) }));
@@ -803,7 +851,7 @@ function TicketDrawer({
   return (
     <>
       <div className="tk-drawer-back" onClick={onClose} />
-      <div className="tk-drawer" role="dialog" aria-label={`工单 ${ticket.id} 详情`}>
+      <div ref={dialogRef} tabIndex={-1} className="tk-drawer" role="dialog" aria-modal="true" aria-busy={submitting} aria-label={`工单 ${ticket.id} 详情`}>
         <div style={{ padding: "15px 18px 14px", borderBottom: "1px solid var(--border)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span className="idtag">{ticket.id}</span>
@@ -814,6 +862,7 @@ function TicketDrawer({
             </button>
           </div>
           <h2 style={{ fontSize: 18, margin: "11px 0 0", fontWeight: 500 }}>{ticket.subject}</h2>
+          {ticket.contentRestricted && <div className="callout warn" data-proof="support-ticket-content-restricted" style={{ marginTop: 10 }}>私聊内容仅当前顾问和主管可阅；工单状态、负责人及内部备注仍可办理。</div>}
           <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 9, flexWrap: "wrap" }}>
             <span className="chip" style={{ border: "none" }}>{catCN(ticket.category)}</span>
             <span className="agent dim" style={{ fontSize: 12.5 }}>
@@ -824,9 +873,9 @@ function TicketDrawer({
             </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 13, flexWrap: "wrap" }}>
-            {canWrite && !ticket.archived && <MiniMenu label="状态" items={statusItems} />}
-            {canWrite && !ticket.archived && !isTerminal && <MiniMenu label="优先级" items={priorityItems} />}
-            {canWrite && !ticket.archived && ticket.status !== "closed" && ownerItems.length > 0 && <MiniMenu label="转交" icon="users" items={ownerItems} />}
+            {canWrite && !ticket.archived && <MiniMenu label="状态" items={statusItems} disabled={submitting} />}
+            {canWrite && !ticket.archived && !isTerminal && <MiniMenu label="优先级" items={priorityItems} disabled={submitting} />}
+            {canWrite && !ticket.archived && ticket.status !== "closed" && ownerItems.length > 0 && <MiniMenu label="转交" icon="users" items={ownerItems} disabled={submitting} />}
             {ticket.userId && ticket.userVerified && <Link className="btn btn-sec btn-sm" href={`/users/search/${ticket.userId}#hub-payment-methods`}><Icon name="wallet" size={16} />用户支付方式</Link>}
             {ticket.userId && ticket.userVerified && categoryCrossLink && (
               <Link className="btn btn-cyan btn-sm" href={categoryCrossLink.href(ticket.userId)}>
@@ -840,43 +889,44 @@ function TicketDrawer({
                 : `/service/sessions?q=${encodeURIComponent(conversation.no)}`}>
                 <Icon name="arrow" size={16} />查看会话 {conversation.no}
               </Link>
-            ) : canWrite && !ticket.archived && !isTerminal && (
+            ) : canWrite && !ticket.contentRestricted && !ticket.archived && !isTerminal && (
               <button
                 type="button"
                 data-proof="support-ticket-escalate"
                 className="btn btn-cyan btn-sm"
                 onClick={onEscalate}
-                disabled={!ticket.userId || ticket.userId <= 0 || !ticket.userVerified || !ownerOptions.some((candidate) => candidate.adminId === ticket.ownerAdminId)}
+                disabled={submitting || !ticket.userId || ticket.userId <= 0 || !ticket.userVerified || !ownerOptions.some((candidate) => candidate.adminId === ticket.ownerAdminId)}
                 title={!ownerOptions.some((candidate) => candidate.adminId === ticket.ownerAdminId)
                   ? "坐席候选数据不可用或当前负责人已不可接单,暂不能升级会话"
                   : ticket.userId && ticket.userId > 0 && ticket.userVerified
                     ? "升级为与该用户的即时会话"
-                    : "该工单没有后端确认的真实用户,无法升级会话"}
+                    : "客户身份尚未核实，暂不能升级会话"}
               >
                 <Icon name="arrow" size={16} />
                 升级会话
               </button>
             )}
             {canWrite && !ticket.archived && (
-              <button type="button" data-proof="support-ticket-close" className={`btn btn-sm ${isTerminal ? "btn-sec" : "btn-danger"}`} onClick={onCloseReopen}>
+              <button type="button" data-proof="support-ticket-close" className={`btn btn-sm ${isTerminal ? "btn-sec" : "btn-danger"}`} disabled={submitting} onClick={onCloseReopen}>
                 <Icon name={isTerminal ? "arrow" : "x"} size={16} />
                 {isTerminal ? "重新打开" : "关闭"}
               </button>
             )}
             {canWrite && !ticket.archived && isTerminal && (
-              <button type="button" className="btn btn-sec btn-sm" onClick={() => onArchive(true)} title="移入可查询的已归档队列">
+              <button type="button" className="btn btn-sec btn-sm" disabled={submitting} onClick={() => onArchive(true)} title="移入可查询的已归档队列">
                 <Icon name="box" size={16} />归档
               </button>
             )}
             {canWrite && ticket.archived && (
-              <button type="button" className="btn btn-sec btn-sm" onClick={() => onArchive(false)} title="恢复到已解决队列">
+              <button type="button" className="btn btn-sec btn-sm" disabled={submitting} onClick={() => onArchive(false)} title="恢复到已解决队列">
                 <Icon name="arrow" size={16} />恢复
               </button>
             )}
           </div>
+          {submitting && <div role="status" style={{ marginTop: 8 }}>正在提交工单操作…</div>}
           {ticket.userId && !ticket.userVerified && (
             <div className="callout warn" style={{ marginTop: 10, fontSize: 12 }}>
-              用户 ID {ticket.userId} 未通过后端用户表校验；支付方式、跨域处置和升级会话均已关闭。
+              客户 {ticket.userId} 的身份尚未核实；支付方式、相关处置和升级会话暂不可用。
             </div>
           )}
           {ticket.slaTarget && (
@@ -902,10 +952,12 @@ function TicketDrawer({
             <textarea
               className="ta"
               data-proof="support-ticket-internal-note"
+              aria-label="内部备注"
               rows={2}
               maxLength={2000}
               placeholder="记录内部核查、交接或 SLA 处置"
               value={internalNoteBody}
+              disabled={submitting}
               onChange={(e) => onInternalNoteChange(e.target.value)}
             />
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
@@ -913,7 +965,7 @@ function TicketDrawer({
                 type="button"
                 data-proof="support-ticket-internal-note-save"
                 className="btn btn-sec btn-sm"
-                disabled={!internalNoteBody.trim()}
+                disabled={submitting || !internalNoteBody.trim()}
                 onClick={() => onInternalNote(internalNoteBody)}
               >
                 保存内部备注
@@ -922,7 +974,8 @@ function TicketDrawer({
           </div>
         )}
 
-        {canWrite && ticket.status !== "closed" && !ticket.archived && (
+        {ticket.contentRestricted && <div className="callout warn">当前无法查看这段私聊；可继续处理内部备注、状态和指派。</div>}
+        {canWrite && !ticket.contentRestricted && ticket.status !== "closed" && !ticket.archived && (
           <div className="ChatComposer">
             <div style={{ display: "flex", gap: 7, marginBottom: 9, flexWrap: "wrap", alignItems: "center" }}>
               <span className="dim2" style={{ fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 4 }}>
@@ -931,7 +984,7 @@ function TicketDrawer({
               </span>
               {replyTemplates.length === 0 && <span className="dim2" style={{ fontSize: 11.5 }}>暂无可用回复模板</span>}
               {replyTemplates.map((tpl, i) => (
-                <button key={i} type="button" className="chip" title={tpl} onClick={() => onReplyChange(replyBody ? `${replyBody} ${tpl}` : tpl)}>
+                <button key={i} type="button" className="chip" title={tpl} disabled={submitting} onClick={() => onReplyChange(replyBody ? `${replyBody} ${tpl}` : tpl)}>
                   {tpl.slice(0, 14)}…
                 </button>
               ))}
@@ -943,6 +996,7 @@ function TicketDrawer({
               rows={3}
               placeholder={`回复 ${ticket.id} · Enter 发送 · Shift+Enter 换行`}
               value={replyBody}
+              disabled={submitting}
               onChange={(e) => onReplyChange(e.target.value)}
               onKeyDown={(e) => {
                 if (!shouldSendOnEnter(e)) return;
@@ -951,8 +1005,8 @@ function TicketDrawer({
               }}
             />
             <div style={{ display: "flex", alignItems: "center", marginTop: 9 }}>
-              <span className="dim2" style={{ fontSize: 11.5 }}>例行回复直接执行并自动留档,无需理由 · 资金放行回 D2 / 账户处置回 C5 / 设备换货回 E5</span>
-              <button type="button" data-proof="support-ticket-reply-save" className="btn btn-pri btn-sm" style={{ marginLeft: "auto" }} onClick={() => onSend(replyBody)}>
+              <span className="dim2" style={{ fontSize: 11.5 }}>例行回复直接执行并自动留档,无需理由 · 资金放行请到提现处置、账户处置请到账户安全、设备换货请到设备售后办理</span>
+              <button type="button" data-proof="support-ticket-reply-save" className="btn btn-pri btn-sm" style={{ marginLeft: "auto" }} disabled={submitting} onClick={() => onSend(replyBody)}>
                 <Icon name="arrow" size={16} />
                 发送回复
               </button>

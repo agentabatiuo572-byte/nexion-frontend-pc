@@ -155,9 +155,10 @@ export function HDSelect({
 
 /* ---- 动作下拉菜单 ---- */
 export type MenuItem = { label: string; cur?: boolean; tone?: string; icon?: IconName; onClick: () => void };
-export function MiniMenu({ label, icon, align, items }: { label: string; icon?: IconName; align?: "left" | "right"; items: MenuItem[] }) {
+export function MiniMenu({ label, icon, align, items, disabled = false }: { label: string; icon?: IconName; align?: "left" | "right"; items: MenuItem[]; disabled?: boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
@@ -168,12 +169,12 @@ export function MiniMenu({ label, icon, align, items }: { label: string; icon?: 
   }, [open]);
   return (
     <div ref={ref} style={{ position: "relative" }}>
-      <button type="button" className="btn btn-sec btn-sm" onClick={() => setOpen((v) => !v)}>
+      <button type="button" className="btn btn-sec btn-sm" disabled={disabled} onClick={() => setOpen((v) => !v)}>
         {icon && <Icon name={icon} size={16} />}
         {label}
         <Caret size={14} />
       </button>
-      {open && (
+      {open && !disabled && (
         <div className="card" style={{ position: "absolute", top: 34, [align === "right" ? "right" : "left"]: 0, minWidth: 176, zIndex: 30, padding: 5, boxShadow: "var(--m-sh-pop)" }}>
           {items.map((it, i) => (
             <button

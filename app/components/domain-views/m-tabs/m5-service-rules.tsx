@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supportClient, type SupportRules } from "../../../../lib/admin/m-support-client";
+import { supportClient, isIndeterminateSupportError, type SupportRules } from "../../../../lib/admin/m-support-client";
 import { Modal } from "../design-kit";
 import { createPendingMutationStore } from "../../../../lib/admin/pending-mutation-store";
 import { adminShellSessionKey } from "../../../../lib/admin/shell-authorities";
@@ -12,8 +12,8 @@ export type MSupportPermission = "superadmin" | "supervisor" | "agent";
 type RuleDraft = { dormantDays: string; maintenanceDays: string; activityWindowDays: string; inheritanceMode: SupportRules["inheritanceMode"]; maxInheritanceDepth: string };
 type Field = keyof RuleDraft;
 type RulePayload = Parameters<typeof supportClient.updateRules>[0];
-type RulePendingRecord = { fingerprint: string; commandKey: string; createdAt: number; expiresAt: number; payload: RulePayload };
-const ruleCommands = createPendingMutationStore<RulePendingRecord>({ storageKey: "nexion-admin-m-support-rules-v1", isValidRecord: (row) => Boolean(row.payload && Number.isSafeInteger(row.payload.expectedVersion)) });
+type RulePendingRecord = { fingerprint: string; commandKey: string; createdAt: number; expiresAt: number; actorId: number; payload: RulePayload };
+const ruleCommands = createPendingMutationStore<RulePendingRecord>({ storageKey: "nexion-admin-m-support-rules-v1", isValidRecord: (row) => Boolean(Number.isSafeInteger(row.actorId) && row.payload && Number.isSafeInteger(row.payload.expectedVersion)) });
 const LABELS: Record<Field, string> = {
   dormantDays: "沉睡判定天数", maintenanceDays: "主动维护间隔天数", activityWindowDays: "活跃统计窗口天数", inheritanceMode: "自动继承方式", maxInheritanceDepth: "最大自动继承层数",
 };
@@ -57,14 +57,17 @@ function labelValue(key: Field, value: SupportRules[Field]): string {
 }
 
 function errorText(error: unknown): string {
+  if (isIndeterminateSupportError(error)) return "操作结果待确认，请查询原命令或用原命令重试。";
   const status = error && typeof error === "object" && "status" in error ? Number(error.status) : 0;
   if (status === 401) return "登录已失效，请重新登录。";
   if (status === 403) return "当前账号无权修改服务规则。";
   if (status === 409) return "规则已被其他管理员修改，请查看差异后重新确认。";
+  if (status === 400 || status === 422) return "输入未通过校验，请检查天数、继承层数和修改理由后再提交。";
   return "服务规则暂不可用，请重试；当前输入已保留。";
 }
 
 export function M5ServiceRules({ permission }: { permission: MSupportPermission }) {
+  const adminId = useAdminAuth((state) => state.session?.adminId);
   const [current, setCurrent] = useState<SupportRules | null>(null);
   const [draft, setDraft] = useState<RuleDraft | null>(null);
   const [latest, setLatest] = useState<SupportRules | null>(null);
@@ -84,31 +87,33 @@ export function M5ServiceRules({ permission }: { permission: MSupportPermission 
     setLoading(true);
     supportClient.rules(controller.signal).then((value) => {
       if (controller.signal.aborted) return;
-      const pending = ruleCommands.list()[0];
-      setCurrent(value); setDraft(toDraft(pending ? { ...value, ...pending.payload } : value)); setError(""); setLatest(null); setReadUnavailable(false); setConflict(false);
-      setRetry(pending ? { key: pending.commandKey, payload: pending.payload } : null);
-      setReason(pending?.payload.reason ?? "");
+      const pending = ruleCommands.list().find((row) => row.actorId === adminId);
+      const writablePending = permission === "superadmin" ? pending : null;
+      setCurrent(value); setDraft(toDraft(writablePending ? { ...value, ...writablePending.payload } : value)); setError(""); setLatest(null); setReadUnavailable(false); setConflict(false);
+      setRetry(writablePending ? { key: writablePending.commandKey, payload: writablePending.payload } : null);
+      setReason(writablePending?.payload.reason ?? "");
     }).catch((cause: unknown) => { if (!controller.signal.aborted) { setReadUnavailable(true); setError(errorText(cause)); } })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [permission, reload]);
+  }, [permission, reload, adminId]);
 
   const parsed = useMemo(() => draft ? parseRuleDraft(draft) : null, [draft]);
   const changed = current && parsed ? changedFields(current, parsed) : [];
   const editable = permission === "superadmin" && Boolean(current) && !loading && !readUnavailable && !saving && !conflict && !retry;
   const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
   const canConfirm = editable && parsed && changed.length > 0 && reasonOk;
+  const readOnlyPending = permission === "supervisor" && ruleCommands.list().some((row) => row.actorId === adminId);
   const setField = (field: Field, value: string) => setDraft((old) => old ? { ...old, [field]: value } : old);
 
   async function save() {
-    if ((!canConfirm && !retry) || !current || !parsed || saving) return;
+    if (permission !== "superadmin" || ((!canConfirm && !retry) || !current || !parsed || saving || !adminId)) return;
     const actor = actorStamp();
     const command = retry ?? {
       key: crypto.randomUUID(),
       payload: { ...parsed, expectedVersion: current.version, reason: reason.trim() },
     };
     const fingerprint = `support-rules:${command.payload.expectedVersion}`;
-    if (!retry) ruleCommands.remember(fingerprint, command.key, { payload: command.payload });
+    if (!retry) ruleCommands.remember(fingerprint, command.key, { actorId: adminId, payload: command.payload });
     setSaving(true); setError("");
     try {
       const value = await supportClient.updateRules(command.payload, command.key);
@@ -119,13 +124,13 @@ export function M5ServiceRules({ permission }: { permission: MSupportPermission 
       if (actor !== actorStamp()) return;
       const status = cause && typeof cause === "object" && "status" in cause ? Number(cause.status) : 0;
       setError(errorText(cause));
-      if (status === 409) {
+      if (status === 409 && !isIndeterminateSupportError(cause)) {
         ruleCommands.forget(fingerprint);
         setRetry(null); setConflict(true); setConfirm(false);
         try { const latestRules = await supportClient.rules(); if (actor === actorStamp()) setLatest(latestRules); } catch { /* Keep the draft; retry loading latest explicitly. */ }
-      } else if (status !== 401 && status !== 403 && status !== 422) {
+      } else if (![400, 401, 403, 422].includes(status)) {
         setRetry(command);
-      } else ruleCommands.forget(fingerprint);
+      } else { ruleCommands.forget(fingerprint); setRetry(null); }
     } finally { setSaving(false); }
   }
 
@@ -171,6 +176,7 @@ export function M5ServiceRules({ permission }: { permission: MSupportPermission 
         <h2>服务规则</h2>
         <div className="m-admin-muted">沉睡、维护与活跃统计分别配置。未配置的能力会显示不可用，不影响其他已配置规则。</div>
         {permission === "supervisor" && <div className="m-admin-error">仅超管可修改服务规则；当前为只读视图。</div>}
+        {readOnlyPending && <div className="m-admin-error" role="status">此账号有一笔规则提交结果尚未确认；下方仅显示服务端已保存的规则。请恢复超管权限后查询原命令。</div>}
         {loading && <div className="m-admin-muted" role="status">正在读取规则…</div>}
         {error && <div className="m-admin-error" role="alert">{error} {readUnavailable && <button type="button" className="btn btn-sec btn-sm" disabled={Boolean(retry)} onClick={() => setReload((n) => n + 1)}>重试读取</button>}</div>}
         {!loading && !current && <div className="m-admin-muted">规则暂不可用，无法保存。</div>}
@@ -191,7 +197,7 @@ export function M5ServiceRules({ permission }: { permission: MSupportPermission 
           </div>}
           {!parsed && <div className="m-admin-error" role="alert">天数须为正整数，有限层数须为非负整数；同时设置沉睡与活跃天数时，活跃窗口不得大于沉睡天数。</div>}
           {conflict && <div className="m-admin-error" role="alert">规则版本已变化。{latest ? `新版本为 ${latest.version}，原版本为 ${current.version}。` : "尚未取得最新版本。"}输入已保留。{latest && <ul>{changedFields(current, latest).map((field) => <li key={field}>{LABELS[field]}：原值 {labelValue(field, current[field])} → 最新 {labelValue(field, latest[field])}</li>)}</ul>}{latest ? <button type="button" className="btn btn-sec btn-sm" onClick={reviewLatest} disabled={!parsed}>以最新规则重审</button> : <button type="button" className="btn btn-sec btn-sm" onClick={() => void refreshLatest()}>读取最新规则</button>}</div>}
-          <div className="m-admin-toolbar"><span className="m-admin-muted">当前版本 {current.version} · {changed.length} 项变更</span><button type="button" className="btn btn-pri btn-sm" disabled={retry ? false : !editable || !parsed || changed.length === 0} onClick={() => setConfirm(true)}>{retry ? "继续确认上次提交" : "预览并保存"}</button></div>
+          <div className="m-admin-toolbar"><span className="m-admin-muted">当前版本 {current.version} · {changed.length} 项变更</span><button type="button" className="btn btn-pri btn-sm" disabled={permission !== "superadmin" || (retry ? false : !editable || !parsed || changed.length === 0)} onClick={() => setConfirm(true)}>{retry ? "继续确认上次提交" : "预览并保存"}</button></div>
         </>}
       </div>
       <aside className="m-admin-panel">
@@ -200,7 +206,7 @@ export function M5ServiceRules({ permission }: { permission: MSupportPermission 
         <div className="m-admin-stats"><div className="m-admin-stat">沉睡判定<strong>{parsed?.dormantDays == null ? "未配置" : "可用"}</strong></div><div className="m-admin-stat">维护待办<strong>{parsed?.maintenanceDays == null ? "未配置" : "可用"}</strong></div><div className="m-admin-stat">活跃统计<strong>{parsed?.activityWindowDays == null ? "未配置" : "可用"}</strong></div></div>
         <div className="m-admin-muted">继承规则只影响之后的新注册；现有客户归属和待绑定池不会自动重排。变更天数只重算对应标签，不生成维护执行或成功记录。</div>
       </aside>
-      {confirm && current && parsed && <Modal title="确认保存服务规则" icon="gauge" onClose={() => { if (!saving) setConfirm(false); }} busy={saving} wide footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => setConfirm(false)}>返回</button><button type="button" className="btn btn-pri btn-sm" disabled={(!canConfirm && !retry) || saving || Boolean(latest)} onClick={() => void save()}>{saving ? "保存中…" : retry ? "使用同一命令重试" : "确认保存"}</button></>}>
+      {confirm && current && parsed && permission === "superadmin" && <Modal title="确认保存服务规则" icon="gauge" onClose={() => { if (!saving) setConfirm(false); }} busy={saving} wide footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => setConfirm(false)}>返回</button><button type="button" className="btn btn-pri btn-sm" disabled={permission !== "superadmin" || (!canConfirm && !retry) || saving || Boolean(latest)} onClick={() => void save()}>{saving ? "保存中…" : retry ? "使用同一命令重试" : "确认保存"}</button></>}>
         <div className="m-admin-muted">仅保存下列实际修改；其余规则保留。更新后按新规则重新计算对应标签，继承只作用于未来注册。</div>
         <div className="m-admin-list">{changed.map((field) => <div key={field}>{LABELS[field]}：{labelValue(field, current[field])} → {labelValue(field, parsed[field])}</div>)}</div>
         <label className="field"><span>修改理由（8–200 字）</span><textarea value={reason} maxLength={200} disabled={saving || Boolean(retry)} onChange={(event) => setReason(event.target.value)} /></label>

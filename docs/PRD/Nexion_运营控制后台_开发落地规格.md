@@ -589,6 +589,12 @@
 
 | Endpoint | Method | 用途 | 确认 | 模块 |
 |---|---|---|---|---|
+| `/api/admin/content/support-workbench/customers` · `/customers/{id}` | GET | 同一 `snapshotId` 返回本人或主管范围的统计、客户页、绩效、完整性与规则；详情携当前归属和维护版本。活跃、沉睡、到期不可判定时为 `null`，待办按客户去重 | — | M1 |
+| `/api/admin/content/support-workbench/customers/{id}/maintenance` · `/maintenance/history` | PATCH / GET | 当前顾问按归属 ID、偏好版本、理由和 Key 暂停或恢复主动维护；周期和人工执行分别分页，成功周期由后续真实活动确认 | 是 | M1 |
+| `/api/admin/content/support-agents/assignments/transfer` · `/rules` | POST / GET / PUT | 主管正式转绑；超管配置可空沉睡、维护、活跃天数及继承模式，`LIMITED` 深度 0 合法；写入均用版本、理由和 Key | 是 | M1/M5 |
+| `/api/admin/content/conversations` · `/{no}/replies` · `/attachments/policy` · `/attachments` | GET / POST | 本人当前归属下发起/回复顾问会话，明确指定 `replyTargets`；图片按服务端策略上传，经授权读取并在撤权时清理 | 按动作 | M3 |
+| `/api/admin/content/support-workbench/commands/{key}` | GET | 结果未知时查询原命令；`PROCESSING`/`UNKNOWN` 不铸新 Key，成功或明确失败后才解除锁定 | — | M1/M3/M5 |
+| `/api/admin/content/tickets` · `/{no}` | GET | 私聊转工单副本正文、摘要、搜索只供当前顾问和审阅主管；其他工单角色仍可协作指派、状态和内部备注 | — | M2 |
 | `/api/admin/content/conversations/timeout-policy` | GET / PUT | 读取/更新全局会话空闲提醒与自动关闭时长；PUT 携 Key + expectedVersion，定时器先提醒后自动关闭，并写审计 | 是(写仅超管) | M3 |
 
 ### 域 C6/K1 用户侧 server-enforce 端点(配置阈值,写权非 admin)
@@ -1339,19 +1345,10 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 
 ### 9.9a 客服后台(/service/* · 域 M;原 /content/support 已退役)
 
-- FAQ 管理:创建、编辑、发布、下架、排序、分类。
-- Ticket 分类/SLA:category、priority、owner、SLA target。
-- 工单处理:回复、关闭、重开、改 owner、改 priority、写 audit reason。
-- 工单列表必须支持分页、搜索、状态筛选、owner/priority 筛选和空态。
-- 所有写动作必须刷新后仍可见,并写入 audit feed。
-
-### 9.9a 客服后台(/service/* · 域 M;原 /content/support 已退役)
-
-- FAQ 管理:创建、编辑、发布、下架、排序、分类。
-- Ticket 分类/SLA:category、priority、owner、SLA target。
-- 工单处理:回复、关闭、重开、改 owner、改 priority、写 audit reason。
-- 工单列表必须支持分页、搜索、状态筛选、owner/priority 筛选和空态。
-- 所有写动作必须刷新后仍可见,并写入 audit feed。
+- M1 的统计、列表、绩效及完整性来自同一服务端快照；筛选不可用应明确提示，未知数量不填 0。主管可看全局范围并正式转绑，当前顾问可暂停或恢复主动维护；停用不解除归属、私聊或求助。
+- M3 只由当前专属顾问发送服务或维护消息；主管可审阅，不能代发。维护执行与服务回复分开计数；已读不清待回复，新到消息不被旧 `replyTargets` 清除。图片仅接受服务端允许的 PNG/JPEG、大小和像素范围，撤权后旧字节与本地预览不可继续访问。
+- M2 工单支持分页、搜索、状态、负责人及优先级操作；私聊来源正文受当前顾问/主管权限约束，受限者仍能协作工单指派、状态和内部备注。FAQ、分类和 SLA 按既有功能契约管理。
+- M5 的沉睡 D、维护 M、活跃窗口 W 独立可空；写规则须有理由、版本和原命令号，冲突须读回比较。所有高敏写入以服务端结果及刷新后状态为准；结果未知时保留原输入、范围和 Key，查询或同键重试。
 
 ### 9.10 J 紧急与合规控制
 

@@ -10,7 +10,7 @@ const MODES = ["UNCONFIGURED", "UNLIMITED", "LIMITED"] as const;
 export type SupportCustomerFilter = typeof FILTERS[number];
 export type SupportPoolReason = typeof POOL_REASONS[number];
 export type SupportInheritanceMode = typeof MODES[number];
-export type SupportPage<T> = { records: T[]; total: number; pageNum: number; pageSize: number };
+export type SupportPage<T> = { records: T[]; total: number; pageNum: number; pageSize: number; available?: boolean; filter?: SupportCustomerFilter };
 export type SupportCounts = {
   boundCustomers: number | null;
   windowActiveCustomers: number | null;
@@ -21,33 +21,41 @@ export type SupportCounts = {
   stoppedMaintenanceCustomers?: number | null;
 };
 export type SupportOverview = {
+  snapshotId: string;
   evaluatedAt: string;
   rulesVersion: number;
-  scope: string;
+  scope: { actorId: number; agentAdminId: number | null; mode: "AGENT" | "SUPERVISOR_ALL" };
   counts: SupportCounts;
   knownActiveCount: number;
   unknownWindowCount: number;
   activityWindowDays?: number | null;
-  performance?: { executionCount: number; successfulCycleCount: number; successfulCustomerCount: number; from: string; to: string; trend?: Array<{ day: string; executionCount: number; successfulCycleCount: number }> };
+  performance: { executionCount: number; successfulCycleCount: number; successfulCustomerCount: number; from: string; to: string; timeZone: string; trend: Array<{ day: string; executionCount: number; successfulCycleCount: number }> };
 };
+export type SupportWorkbenchSnapshot = { overview: SupportOverview; customers: SupportPage<SupportCustomer>; completeness: { unknownCount: number; unknownWindowCount: number; coverageStartAt: string; observedThroughAt: string; observationLagMillis: number; activitySource: "INTERACTIVE_LOGIN" } };
 export type SupportCustomer = {
   customerId: string;
   assignmentId: string | null;
+  assignmentVersion: number;
   agentAdminId: number | null;
   version: number;
   customerNo?: string;
   displayName?: string;
   accountState: "ACTIVE" | "DORMANT" | "UNKNOWN";
+  windowStatus: "ACTIVE" | "INACTIVE" | "UNKNOWN";
   maintenanceEnabled: boolean;
   maintenanceStatus: string;
   lastEffectiveAt: string | null;
   nextMaintenanceAt: string | null;
-  waitingReply?: boolean;
-  firstContact?: boolean;
+  waitingReply: boolean;
+  firstContact: boolean;
+  due: boolean | null;
+  pendingReplyCount: number;
+  pendingConversationNo: string | null;
+  pendingThroughMessageId: number | null;
 };
 export type SupportCustomerDetail = SupportCustomer & { agentAdminId: number; maintenanceEnabled: boolean; maintenanceVersion: number };
 export type SupportMaintenanceRecord = { id: string; kind: string; occurredAt: string; state?: string };
-export type SupportMaintenanceHistory = SupportPage<SupportMaintenanceRecord>;
+export type SupportMaintenanceHistory = { customerId: string; cycles: SupportMaintenanceRecord[]; executions: SupportMaintenanceRecord[]; totalCycles: number; totalExecutions: number; pageNum: number; pageSize: number };
 export type SupportBindingPoolItem = {
   customerId: string;
   reason: SupportPoolReason;
@@ -96,8 +104,9 @@ export type SupportAttachment = {
   state: "READY";
   expiresAt: string;
 };
-export type SupportMessageResult = { conversationNo: string; messageId: string; clientMessageId: string; assignmentId: string };
-export type SupportCommandResult = { status: "PENDING" | "SUCCEEDED" | "FAILED"; result?: unknown };
+export type SupportAttachmentPolicy = { available: boolean; allowedMimeTypes: Array<"image/png" | "image/jpeg">; maxBytes: number | null; maxPixels: number | null; ttlSeconds: number | null; unavailableReason: string | null };
+export type SupportMessageResult = { conversationNo: string };
+export type SupportCommandResult = { status: "PROCESSING" | "UNKNOWN" | "PENDING" | "SUCCEEDED" | "FAILED"; result?: unknown };
 export type SupportReplyTarget = { conversationNo: string; throughMessageId: number };
 export type SupportMessageInput = {
   kind: "TEXT" | "IMAGE";
@@ -130,6 +139,10 @@ export class SupportClientError extends Error {
     this.apiCode = apiCode;
     this.backendMessage = backendMessage;
   }
+}
+export function isIndeterminateSupportError(error: unknown): boolean {
+  return error instanceof SupportClientError && error.status === 409
+    && (error.backendMessage ?? "").startsWith("IDEMPOTENCY_");
 }
 
 function malformed(field: string): never { throw new Error(`SUPPORT_CONTRACT_MALFORMED:${field}`); }
@@ -177,6 +190,9 @@ function optionalString(value: unknown, field: string): string | undefined {
   if (value === undefined) return undefined;
   return nonempty(value, field);
 }
+function nullableString(value: unknown, field: string): string | null {
+  return value === null ? null : nonempty(value, field);
+}
 function nullableTimestamp(value: unknown, field: string): string | null | undefined {
   if (value === undefined || value === null) return value;
   return timestamp(value, field);
@@ -195,53 +211,85 @@ function page<T>(value: unknown, parse: (value: unknown) => T): SupportPage<T> {
 }
 function customer(value: unknown): SupportCustomer {
   const row = object(value, "customer");
+  const enabled = bool(row.enabled, "customer.enabled");
+  const due = row.due === null ? null : bool(row.due, "customer.due");
+  const openCycleId = row.openCycleId === null ? null : id(row.openCycleId, "customer.openCycleId");
   return {
     customerId: id(row.customerId, "customer.customerId"),
     assignmentId: row.assignmentId === null ? null : id(row.assignmentId, "customer.assignmentId"),
+    assignmentVersion: count(row.assignmentVersion, "customer.assignmentVersion"),
     agentAdminId: row.agentAdminId === null ? null : positive(row.agentAdminId, "customer.agentAdminId"),
-    version: count(row.version, "customer.version"),
+    version: count(row.preferenceVersion, "customer.preferenceVersion"),
     customerNo: optionalString(row.customerNo, "customer.customerNo"),
-    displayName: optionalString(row.displayName, "customer.displayName"),
-    accountState: enumValue(row.accountState, ["ACTIVE", "DORMANT", "UNKNOWN"] as const, "customer.accountState"),
-    maintenanceEnabled: bool(row.maintenanceEnabled, "customer.maintenanceEnabled"),
-    maintenanceStatus: nonempty(row.maintenanceStatus, "customer.maintenanceStatus"),
+    displayName: nullableString(row.nickname, "customer.nickname") ?? undefined,
+    accountState: enumValue(row.activityStatus, ["ACTIVE", "DORMANT", "UNKNOWN"] as const, "customer.activityStatus"),
+    windowStatus: enumValue(row.windowStatus, ["ACTIVE", "INACTIVE", "UNKNOWN"] as const, "customer.windowStatus"),
+    maintenanceEnabled: enabled,
+    maintenanceStatus: !enabled ? "STOPPED" : due === null ? "UNCONFIGURED" : due ? "DUE" : openCycleId ? "OPEN" : "CURRENT",
     lastEffectiveAt: row.lastEffectiveAt === null ? null : timestamp(row.lastEffectiveAt, "customer.lastEffectiveAt"),
-    nextMaintenanceAt: row.nextMaintenanceAt === null ? null : timestamp(row.nextMaintenanceAt, "customer.nextMaintenanceAt"),
-    waitingReply: optionalBool(row.waitingReply, "customer.waitingReply"),
-    firstContact: optionalBool(row.firstContact, "customer.firstContact"),
+    nextMaintenanceAt: row.nextDueAt === null ? null : timestamp(row.nextDueAt, "customer.nextDueAt"),
+    waitingReply: bool(row.waitingReply, "customer.waitingReply"),
+    firstContact: bool(row.firstContact, "customer.firstContact"),
+    due,
+    pendingReplyCount: count(row.pendingReplyCount, "customer.pendingReplyCount"),
+    pendingConversationNo: nullableString(row.pendingConversationNo, "customer.pendingConversationNo"),
+    pendingThroughMessageId: row.pendingThroughMessageId === null ? null : positive(row.pendingThroughMessageId, "customer.pendingThroughMessageId"),
   };
 }
 function detail(value: unknown): SupportCustomerDetail {
   const row = object(value, "detail");
-  return { ...customer(row), agentAdminId: positive(row.agentAdminId, "detail.agentAdminId"), maintenanceEnabled: bool(row.maintenanceEnabled, "detail.maintenanceEnabled"), maintenanceVersion: count(row.maintenanceVersion, "detail.maintenanceVersion") };
+  const parsed = customer(row.customer);
+  return { ...parsed, agentAdminId: positive(parsed.agentAdminId, "detail.agentAdminId"), maintenanceVersion: parsed.version };
 }
-function overview(value: unknown): SupportOverview {
-  const row = object(value, "overview");
-  const rawCounts = object(row.counts ?? row.overview, "overview.counts");
-  const keys = ["boundCustomers", "windowActiveCustomers", "dormantCustomers", "dueMaintenanceCustomers", "waitingReplyCustomers", "firstContactCustomers"] as const;
-  const counts = Object.fromEntries(keys.map((key) => [key, nullableCount(rawCounts[key], `overview.counts.${key}`)])) as SupportCounts;
-  if (rawCounts.stoppedMaintenanceCustomers !== undefined) counts.stoppedMaintenanceCustomers = nullableCount(rawCounts.stoppedMaintenanceCustomers, "overview.counts.stoppedMaintenanceCustomers");
-  const result: SupportOverview = {
-    evaluatedAt: timestamp(row.evaluatedAt, "overview.evaluatedAt"),
-    rulesVersion: count(row.rulesVersion, "overview.rulesVersion"),
-    scope: nonempty(row.scope, "overview.scope"), counts,
-    knownActiveCount: count(row.knownActiveCount, "overview.knownActiveCount"),
-    unknownWindowCount: count(row.unknownWindowCount, "overview.unknownWindowCount"),
-    activityWindowDays: row.activityWindowDays === undefined ? undefined : nullablePositive(row.activityWindowDays, "overview.activityWindowDays"),
+function workbenchSnapshot(value: unknown): SupportWorkbenchSnapshot {
+  const row = object(value, "workbench");
+  const scope = object(row.scope, "workbench.scope");
+  const rules = object(row.rules, "workbench.rules");
+  const totals = object(row.overview, "workbench.overview");
+  const performance = object(row.performance, "workbench.performance");
+  const completeness = object(row.completeness, "workbench.completeness");
+  const rawPage = object(row.customers, "workbench.customers");
+  if (!Array.isArray(performance.days)) malformed("workbench.performance.days");
+  const unknownWindowCount = count(totals.unknownWindowCount, "workbench.unknownWindowCount");
+  const counts: SupportCounts = {
+    boundCustomers: count(totals.boundTotal, "workbench.boundTotal"),
+    windowActiveCustomers: nullableCount(totals.activeTotal, "workbench.activeTotal"),
+    dormantCustomers: nullableCount(totals.dormantTotal, "workbench.dormantTotal"),
+    dueMaintenanceCustomers: nullableCount(totals.dueTotal, "workbench.dueTotal"),
+    waitingReplyCustomers: count(totals.waitingReplyTotal, "workbench.waitingReplyTotal"),
+    firstContactCustomers: count(totals.firstContactTotal, "workbench.firstContactTotal"),
+    stoppedMaintenanceCustomers: count(totals.stoppedTotal, "workbench.stoppedTotal"),
   };
-  if (result.unknownWindowCount > 0 && result.counts.windowActiveCustomers !== null) malformed("overview.windowActiveCustomers");
-  if (row.performance !== undefined) {
-    const performance = object(row.performance, "overview.performance");
-    result.performance = {
-      executionCount: count(performance.executionCount, "overview.performance.executionCount"),
-      successfulCycleCount: count(performance.successfulCycleCount, "overview.performance.successfulCycleCount"),
-      successfulCustomerCount: count(performance.successfulCustomerCount, "overview.performance.successfulCustomerCount"),
-      from: timestamp(performance.from, "overview.performance.from"),
-      to: timestamp(performance.to, "overview.performance.to"),
-      trend: performance.trend === undefined ? undefined : Array.isArray(performance.trend) ? performance.trend.map((entry) => { const point = object(entry, "overview.performance.trend"); const day = nonempty(point.day, "overview.performance.trend.day"); if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(parseBusinessTime(`${day}T00:00:00`))) malformed("overview.performance.trend.day"); return { day, executionCount: count(point.executionCount, "overview.performance.trend.executionCount"), successfulCycleCount: count(point.successfulCycleCount, "overview.performance.trend.successfulCycleCount") }; }) : malformed("overview.performance.trend"),
-    };
-  }
-  return result;
+  if (unknownWindowCount > 0 && counts.windowActiveCustomers !== null) malformed("workbench.activeTotal");
+  const trend = performance.days.map((entry) => {
+    const point = object(entry, "workbench.performance.day");
+    const day = nonempty(point.day, "workbench.performance.day.day");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) malformed("workbench.performance.day.day");
+    return { day, executionCount: count(point.executionCount, "workbench.performance.day.executionCount"), successfulCycleCount: count(point.successfulCycleCount, "workbench.performance.day.successfulCycleCount") };
+  });
+  const overview: SupportOverview = {
+    snapshotId: nonempty(row.snapshotId, "workbench.snapshotId"),
+    evaluatedAt: timestamp(row.evaluatedAt, "workbench.evaluatedAt"),
+    rulesVersion: count(row.rulesVersion, "workbench.rulesVersion"),
+    scope: { actorId: positive(scope.actorId, "workbench.scope.actorId"), agentAdminId: scope.agentAdminId === null ? null : positive(scope.agentAdminId, "workbench.scope.agentAdminId"), mode: enumValue(scope.mode, ["AGENT", "SUPERVISOR_ALL"] as const, "workbench.scope.mode") },
+    counts,
+    knownActiveCount: count(totals.knownActiveCount, "workbench.knownActiveCount"),
+    unknownWindowCount,
+    activityWindowDays: nullablePositive(rules.activityWindowDays, "workbench.rules.activityWindowDays"),
+    performance: { executionCount: count(performance.executionCount, "workbench.performance.executionCount"), successfulCycleCount: count(performance.successfulCycleCount, "workbench.performance.successfulCycleCount"), successfulCustomerCount: count(performance.successfulCustomerCount, "workbench.performance.successfulCustomerCount"), from: timestamp(performance.from, "workbench.performance.from"), to: timestamp(performance.to, "workbench.performance.to"), timeZone: nonempty(performance.timeZone, "workbench.performance.timeZone"), trend },
+  };
+  const customers = { ...page(rawPage, customer), available: bool(rawPage.available, "workbench.customers.available"), filter: enumValue(rawPage.filter, FILTERS, "workbench.customers.filter") };
+  if (!customers.available && customers.records.length) malformed("workbench.customers.records");
+  const completenessValue = {
+    unknownCount: count(completeness.unknownCount, "workbench.completeness.unknownCount"),
+    unknownWindowCount: count(completeness.unknownWindowCount, "workbench.completeness.unknownWindowCount"),
+    coverageStartAt: timestamp(completeness.coverageStartAt, "workbench.completeness.coverageStartAt"),
+    observedThroughAt: timestamp(completeness.observedThroughAt, "workbench.completeness.observedThroughAt"),
+    observationLagMillis: count(completeness.observationLagMillis, "workbench.completeness.observationLagMillis"),
+    activitySource: enumValue(completeness.activitySource, ["INTERACTIVE_LOGIN"] as const, "workbench.completeness.activitySource"),
+  };
+  if (completenessValue.unknownWindowCount !== unknownWindowCount) malformed("workbench.completeness.unknownWindowCount");
+  return { overview, customers, completeness: completenessValue };
 }
 function rules(value: unknown): SupportRules {
   const row = object(value, "rules");
@@ -290,18 +338,30 @@ function customerPath(customerId: string): string { return `/support-workbench/c
 function attachmentPath(attachmentId: string): string { return `/conversations/attachments/${encodeURIComponent(opaqueId(attachmentId, "attachmentId"))}`; }
 
 export const supportClient = {
-  overview: (options: { from?: string; to?: string; signal?: AbortSignal } = {}) =>
-    request(`/support-workbench/overview${query({ from: options.from, to: options.to })}`, overview, { signal: options.signal }),
-  customers: (options: { pageNum: number; pageSize: number; keyword?: string; filter?: SupportCustomerFilter; signal?: AbortSignal }) =>
-    request(`/support-workbench/customers${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize"), keyword: options.keyword, filter: options.filter })}`, (value) => page(value, customer), { signal: options.signal }),
+  snapshot: (options: { pageNum: number; pageSize: number; keyword?: string; filter?: SupportCustomerFilter; agentId?: number; from?: string; to?: string; signal?: AbortSignal }) =>
+    request(`/support-workbench/customers${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize"), keyword: options.keyword, filter: options.filter, agentId: options.agentId, from: options.from, to: options.to })}`, workbenchSnapshot, { signal: options.signal }),
+  overview: async (options: { from?: string; to?: string; signal?: AbortSignal } = {}) =>
+    (await supportClient.snapshot({ pageNum: 1, pageSize: 1, filter: "ALL", ...options })).overview,
+  customers: async (options: { pageNum: number; pageSize: number; keyword?: string; filter?: SupportCustomerFilter; signal?: AbortSignal }) =>
+    (await supportClient.snapshot(options)).customers,
   customerDetail: (customerId: string, signal?: AbortSignal) => request(customerPath(customerId), detail, { signal }),
+  conversationState: (conversationNo: string, signal?: AbortSignal) => request(`/conversations/${encodeURIComponent(nonempty(conversationNo, "conversationNo"))}`, (value) => {
+    const row = object(object(value, "conversation.detail").conversation, "conversation");
+    return { status: enumValue(row.status, ["OPEN", "TRANSFERRED", "RESOLVED", "CLOSED"] as const, "conversation.status"), version: count(row.version, "conversation.version") };
+  }, { signal }),
   maintenanceHistory: (customerId: string, options: { pageNum: number; pageSize: number; signal?: AbortSignal }) =>
-    request(`${customerPath(customerId)}/maintenance${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize") })}`, (value): SupportMaintenanceHistory => page(value, (entry) => {
-      const row = object(entry, "maintenance.record");
-      return { id: id(row.id, "maintenance.id"), kind: nonempty(row.kind, "maintenance.kind"), occurredAt: timestamp(row.occurredAt, "maintenance.occurredAt"), state: optionalString(row.state, "maintenance.state") };
-    }), { signal: options.signal }),
+    request(`${customerPath(customerId)}/maintenance/history${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize") })}`, (value): SupportMaintenanceHistory => {
+      const row = object(value, "maintenance.history");
+      if (!Array.isArray(row.cycles) || !Array.isArray(row.executions)) malformed("maintenance.history.records");
+      return {
+        customerId: id(row.customerId, "maintenance.customerId"), pageNum: positive(row.pageNum, "maintenance.pageNum"), pageSize: positive(row.pageSize, "maintenance.pageSize"),
+        totalCycles: count(row.totalCycles, "maintenance.totalCycles"), totalExecutions: count(row.totalExecutions, "maintenance.totalExecutions"),
+        cycles: row.cycles.map((entry) => { const cycle = object(entry, "maintenance.cycle"); return { id: id(cycle.id, "maintenance.cycle.id"), kind: "CYCLE", occurredAt: timestamp(cycle.openedAt, "maintenance.cycle.openedAt"), state: nonempty(cycle.status, "maintenance.cycle.status") }; }),
+        executions: row.executions.map((entry) => { const execution = object(entry, "maintenance.execution"); return { id: id(execution.id, "maintenance.execution.id"), kind: "EXECUTION", occurredAt: timestamp(execution.executedAt, "maintenance.execution.executedAt") }; }),
+      };
+    }, { signal: options.signal }),
   setMaintenance: (customerId: string, input: { enabled: boolean; reason: string; expectedVersion: number; expectedAssignmentId: string }, idempotencyKey: string, signal?: AbortSignal) =>
-    request(`${customerPath(customerId)}/maintenance`, detail, json("PATCH", { ...input, expectedVersion: positive(input.expectedVersion, "maintenance.expectedVersion"), expectedAssignmentId: wireId(input.expectedAssignmentId, "maintenance.expectedAssignmentId") }, idempotencyKey, signal)),
+    request(`${customerPath(customerId)}/maintenance`, (value) => { const row = object(value, "maintenance.result"); return { customerId: id(row.customerId, "maintenance.customerId"), assignmentId: id(row.assignmentId, "maintenance.assignmentId"), enabled: bool(row.enabled, "maintenance.enabled"), version: positive(row.version, "maintenance.version") }; }, json("PATCH", { ...input, expectedVersion: positive(input.expectedVersion, "maintenance.expectedVersion"), expectedAssignmentId: wireId(input.expectedAssignmentId, "maintenance.expectedAssignmentId") }, idempotencyKey, signal)),
   bindingPool: (options: { pageNum: number; pageSize: number; keyword?: string; reason?: SupportPoolReason; signal?: AbortSignal }) =>
     request(`/support-agents/binding-pool${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize"), keyword: options.keyword, reason: options.reason })}`, (value) => page(value, (entry): SupportBindingPoolItem => {
       const row = object(entry, "bindingPool.item");
@@ -325,7 +385,14 @@ export const supportClient = {
     request("/support-agents/rules", rules, json("PUT", { ...input, expectedVersion: positive(input.expectedVersion, "rules.expectedVersion") }, idempotencyKey, signal)),
   command: (key: string, signal?: AbortSignal) => request(`/support-workbench/commands/${encodeURIComponent(key)}`, (value): SupportCommandResult => {
     const row = object(value, "command");
-    return { status: enumValue(row.status, ["PENDING", "SUCCEEDED", "FAILED"] as const, "command.status"), result: row.result };
+    const result = row.result === undefined ? undefined : object(row.result, "command.result");
+    if (result && result.code !== 0) malformed("command.result.code");
+    return { status: enumValue(row.status, ["PROCESSING", "UNKNOWN", "PENDING", "SUCCEEDED", "FAILED"] as const, "command.status"), result: result?.data };
+  }, { signal }),
+  attachmentPolicy: (signal?: AbortSignal) => request("/conversations/attachments/policy", (value): SupportAttachmentPolicy => {
+    const row = object(value, "attachment.policy");
+    if (!Array.isArray(row.allowedMimeTypes)) malformed("attachment.policy.allowedMimeTypes");
+    return { available: bool(row.available, "attachment.policy.available"), allowedMimeTypes: row.allowedMimeTypes.map((mime) => enumValue(mime, ["image/png", "image/jpeg"] as const, "attachment.policy.allowedMimeTypes")), maxBytes: nullablePositive(row.maxBytes, "attachment.policy.maxBytes"), maxPixels: nullablePositive(row.maxPixels, "attachment.policy.maxPixels"), ttlSeconds: nullablePositive(row.ttlSeconds, "attachment.policy.ttlSeconds"), unavailableReason: nullableString(row.unavailableReason, "attachment.policy.unavailableReason") };
   }, { signal }),
   uploadAttachment: (input: { file: File; customerId: string; clientUploadId: string; expectedAssignmentId: string }, idempotencyKey: string, signal?: AbortSignal) => {
     const form = new FormData();
@@ -335,7 +402,7 @@ export const supportClient = {
     form.set("expectedAssignmentId", id(input.expectedAssignmentId, "upload.expectedAssignmentId"));
     return request("/conversations/attachments", (value): SupportAttachment => {
       const row = object(value, "attachment");
-      return { id: opaqueId(row.id, "attachment.id"), customerId: id(row.customerId, "attachment.customerId"), mime: enumValue(row.mime, ["image/jpeg", "image/png", "image/webp"] as const, "attachment.mime"), bytes: positive(row.bytes, "attachment.bytes"), width: positive(row.width, "attachment.width"), height: positive(row.height, "attachment.height"), state: enumValue(row.state, ["READY"] as const, "attachment.state"), expiresAt: timestamp(row.expiresAt, "attachment.expiresAt") };
+      return { id: opaqueId(row.id, "attachment.id"), customerId: id(row.customerId, "attachment.customerId"), mime: enumValue(row.mime, ["image/jpeg", "image/png"] as const, "attachment.mime"), bytes: positive(row.bytes, "attachment.bytes"), width: positive(row.width, "attachment.width"), height: positive(row.height, "attachment.height"), state: enumValue(row.state, ["READY"] as const, "attachment.state"), expiresAt: timestamp(row.expiresAt, "attachment.expiresAt") };
     }, { method: "POST", body: form, headers: keyHeader(idempotencyKey), signal });
   },
   attachmentContentUrl: (attachmentId: string) => `${BASE}${attachmentPath(attachmentId)}/content`,
@@ -349,24 +416,20 @@ export const supportClient = {
       catch (error) { if (error instanceof MContentReadError) throw new SupportClientError(error.status, error.apiCode, error.backendMessage); throw error; }
       throw new SupportClientError(response.status, undefined, undefined);
     }
-    if (!["image/jpeg", "image/png", "image/webp"].includes((response.headers.get("Content-Type") || "").split(";")[0].toLowerCase())) malformed("attachment.contentType");
+    if (!["image/jpeg", "image/png"].includes((response.headers.get("Content-Type") || "").split(";")[0].toLowerCase())) malformed("attachment.contentType");
     return response.blob();
   },
   cancelAttachment: (attachmentId: string, idempotencyKey: string, signal?: AbortSignal) =>
     request(attachmentPath(attachmentId), () => undefined, { method: "DELETE", headers: keyHeader(idempotencyKey), signal }),
   sendConversationReply: (conversationNo: string, input: SupportMessageInput, idempotencyKey: string, signal?: AbortSignal) =>
-    request(`/conversations/${encodeURIComponent(nonempty(conversationNo, "conversationNo"))}/replies`, messageResult, json("POST", wireMessageInput(input), idempotencyKey, signal)),
+    request(`/conversations/${encodeURIComponent(nonempty(conversationNo, "conversationNo"))}/replies`, messageResult, json("POST", { body: input.content ?? "", kind: input.kind, attachmentId: input.attachmentId, intent: input.intent, clientMessageId: input.clientMessageId, expectedAssignmentId: wireId(input.expectedAssignmentId, "conversation.expectedAssignmentId"), expectedStatus: "OPEN", expectedVersion: count(input.expectedVersion, "conversation.expectedVersion"), replyTargets: input.replyTargets?.map((target) => ({ ...target, throughMessageId: positive(target.throughMessageId, "conversation.throughMessageId") })), reason: "专属客服回复客户消息" }, idempotencyKey, signal)),
   createConversation: (input: SupportMessageInput & { customerId: string }, idempotencyKey: string, signal?: AbortSignal) =>
-    request("/conversations", messageResult, json("POST", { ...wireMessageInput(input), customerId: wireId(input.customerId, "conversation.customerId") }, idempotencyKey, signal)),
+    request("/conversations", messageResult, json("POST", { conversationType: "ADVISOR", userId: wireId(input.customerId, "conversation.customerId"), openingText: input.content ?? "", kind: input.kind, attachmentId: input.attachmentId, intent: input.intent, clientMessageId: input.clientMessageId, expectedAssignmentId: wireId(input.expectedAssignmentId, "conversation.expectedAssignmentId"), replyTargets: input.replyTargets?.map((target) => ({ ...target, throughMessageId: positive(target.throughMessageId, "conversation.throughMessageId") })) }, idempotencyKey, signal)),
   startConversation: (input: SupportStartConversationInput, idempotencyKey: string, signal?: AbortSignal) =>
-    request("/conversations", messageResult, json("POST", { customerId: wireId(input.customerId, "conversation.customerId"), content: input.openingText, kind: "TEXT", intent: input.intent, clientMessageId: input.clientMessageId, expectedAssignmentId: wireId(input.expectedAssignmentId, "conversation.expectedAssignmentId"), expectedVersion: positive(input.expectedVersion, "conversation.expectedVersion"), replyTargets: input.replyTargets?.map((target) => ({ ...target, throughMessageId: positive(target.throughMessageId, "conversation.throughMessageId") })) }, idempotencyKey, signal)),
+    request("/conversations", messageResult, json("POST", { conversationType: "ADVISOR", userId: wireId(input.customerId, "conversation.customerId"), openingText: input.openingText, kind: "TEXT", intent: input.intent, clientMessageId: input.clientMessageId, expectedAssignmentId: wireId(input.expectedAssignmentId, "conversation.expectedAssignmentId"), replyTargets: input.replyTargets?.map((target) => ({ ...target, throughMessageId: positive(target.throughMessageId, "conversation.throughMessageId") })) }, idempotencyKey, signal)),
 };
-
-function wireMessageInput(input: SupportMessageInput): Omit<SupportMessageInput, "expectedAssignmentId"> & { expectedAssignmentId: number } {
-  return { ...input, expectedAssignmentId: wireId(input.expectedAssignmentId, "conversation.expectedAssignmentId"), expectedVersion: positive(input.expectedVersion, "conversation.expectedVersion"), replyTargets: input.replyTargets?.map((target) => ({ ...target, throughMessageId: positive(target.throughMessageId, "conversation.throughMessageId") })) };
-}
 
 function messageResult(value: unknown): SupportMessageResult {
   const row = object(value, "messageResult");
-  return { conversationNo: nonempty(row.conversationNo, "messageResult.conversationNo"), messageId: id(row.messageId, "messageResult.messageId"), clientMessageId: nonempty(row.clientMessageId, "messageResult.clientMessageId"), assignmentId: id(row.assignmentId, "messageResult.assignmentId") };
+  return { conversationNo: nonempty(row.conversationNo, "messageResult.conversationNo") };
 }

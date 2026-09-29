@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { supportClient, type SupportAgentCandidate, type SupportBindingPoolItem, type SupportPoolReason } from "../../../../lib/admin/m-support-client";
+import { supportClient, isIndeterminateSupportError, type SupportAgentCandidate, type SupportBindingPoolItem, type SupportPoolReason } from "../../../../lib/admin/m-support-client";
 import { Modal } from "../design-kit";
 import { createPendingMutationStore } from "../../../../lib/admin/pending-mutation-store";
 import { parseBusinessTime } from "../../../../lib/admin/business-time";
@@ -19,14 +19,15 @@ const POOL_REASONS: Record<SupportPoolReason, string> = {
 type PoolPage = Awaited<ReturnType<typeof supportClient.bindingPool>>;
 type AgentPage = Awaited<ReturnType<typeof supportClient.agents>>;
 type TransferPayload = Parameters<typeof supportClient.transfer>[0];
-type PoolPendingRecord = { fingerprint: string; commandKey: string; createdAt: number; expiresAt: number; payload: TransferPayload; selected: SupportBindingPoolItem[]; target: SupportAgentCandidate };
-const poolCommands = createPendingMutationStore<PoolPendingRecord>({ storageKey: "nexion-admin-m-pool-transfer-v1", isValidRecord: (row) => Boolean(row.payload && Array.isArray(row.payload.customers) && Array.isArray(row.selected) && row.target) });
+type PoolPendingRecord = { fingerprint: string; commandKey: string; createdAt: number; expiresAt: number; actorId: number; payload: TransferPayload; selected: SupportBindingPoolItem[]; target: SupportAgentCandidate };
+const poolCommands = createPendingMutationStore<PoolPendingRecord>({ storageKey: "nexion-admin-m-pool-transfer-v1", isValidRecord: (row) => Boolean(Number.isSafeInteger(row.actorId) && row.payload && Array.isArray(row.payload.customers) && Array.isArray(row.selected) && row.target) });
 
 export function isAssignable(agent: SupportAgentCandidate): boolean {
   return agent.enabled && agent.seatType === "DEDICATED" && agent.serviceTypes.includes("advisor");
 }
 
 function errorText(error: unknown): string {
+  if (isIndeterminateSupportError(error)) return "分配结果待确认，请查询原命令或用原命令重试。";
   const status = error && typeof error === "object" && "status" in error ? Number(error.status) : 0;
   if (status === 401) return "登录已失效，请重新登录。";
   if (status === 403) return "当前账号无权查看或分配待绑定客户。";
@@ -35,6 +36,7 @@ function errorText(error: unknown): string {
 }
 
 export function M1SupervisorPool({ permission }: { permission: MSupportPermission }) {
+  const adminId = useAdminAuth((state) => state.session?.adminId);
   const [page, setPage] = useState(1);
   const [keywordInput, setKeywordInput] = useState("");
   const [keyword, setKeyword] = useState("");
@@ -57,12 +59,12 @@ export function M1SupervisorPool({ permission }: { permission: MSupportPermissio
   const [pending, setPending] = useState<{ key: string; payload: Parameters<typeof supportClient.transfer>[0] } | null>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    const record = poolCommands.list()[0];
+    const record = poolCommands.list().find((row) => row.actorId === adminId);
     if (!record) return;
     setPending({ key: record.commandKey, payload: record.payload });
     setSelected(new Map(record.selected.map((item) => [item.customerId, item])));
     setTarget(record.target); setAssignmentReason(record.payload.reason);
-  }, []);
+  }, [adminId]);
 
   useEffect(() => {
     if (permission === "agent") return;
@@ -137,14 +139,14 @@ export function M1SupervisorPool({ permission }: { permission: MSupportPermissio
   }
 
   async function assign() {
-    if ((!canSubmit && !pending) || saving || !target) return;
+    if ((!canSubmit && !pending) || saving || !target || !adminId) return;
     const actor = actorStamp();
     const command = pending ?? {
       key: crypto.randomUUID(),
       payload: { targetAgentAdminId: target.adminId, customers: [...selected.values()].map((item) => ({ id: item.customerId, expectedAssignmentId: null, expectedVersion: item.version })), reason: assignmentReason.trim() },
     };
     const fingerprint = `pool-transfer:${command.payload.customers.map((item) => item.id).sort().join(",")}`;
-    if (!pending) poolCommands.remember(fingerprint, command.key, { payload: command.payload, selected: [...selected.values()], target });
+    if (!pending) poolCommands.remember(fingerprint, command.key, { actorId: adminId, payload: command.payload, selected: [...selected.values()], target });
     setSaving(true); setError("");
     try {
       await supportClient.transfer(command.payload, command.key);
@@ -156,12 +158,12 @@ export function M1SupervisorPool({ permission }: { permission: MSupportPermissio
       if (actor !== actorStamp()) return;
       const status = cause && typeof cause === "object" && "status" in cause ? Number(cause.status) : 0;
       setError(errorText(cause));
-      if (status === 409) {
+      if (status === 409 && !isIndeterminateSupportError(cause)) {
         poolCommands.forget(fingerprint);
         setPending(null); setStaleIds(new Set(selected.keys()));
-      } else if (status !== 401 && status !== 403 && status !== 422) {
+      } else if (![400, 401, 403, 422].includes(status)) {
         setPending(command);
-      } else poolCommands.forget(fingerprint);
+      } else { poolCommands.forget(fingerprint); setPending(null); }
     } finally { setSaving(false); }
   }
 

@@ -1,5 +1,6 @@
 const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   SUPPORT_CONTRACT_MALFORMED: "客服数据格式暂不匹配，请刷新后重试；若持续出现，请联系技术人员核对接口。",
+  MAINTENANCE_RESULT_MISMATCH: "维护状态返回结果与本次操作不一致，请重新读取客户资料，确认当前状态后再操作。",
   NOTIFICATION_TIME_CORRECTION_INVALID: "校正信息不完整，请重新读取证据并填写理由。",
   NOTIFICATION_TIME_SNAPSHOT_CHANGED: "通知记录已变化，本次未校正；请核对重新读取的证据。",
   NOTIFICATION_TIME_EVIDENCE_CHANGED: "关联证据缺失或已变化，本次未校正；请重新核验。",

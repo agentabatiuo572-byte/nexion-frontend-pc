@@ -37,6 +37,13 @@ export class MDomainLoadCoordinator {
     };
   }
 
+  captureConversationSnapshot(): MConversationSnapshotGeneration {
+    return {
+      fullLoadGeneration: this.fullLoadGeneration,
+      conversationSnapshotGeneration: this.conversationSnapshotGeneration,
+    };
+  }
+
   isConversationSnapshotCurrent(generation: MConversationSnapshotGeneration): boolean {
     return generation.fullLoadGeneration === this.fullLoadGeneration
       && generation.conversationSnapshotGeneration === this.conversationSnapshotGeneration;

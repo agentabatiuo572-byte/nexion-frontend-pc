@@ -4,6 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import net from "node:net";
 import { chromium } from "playwright";
+import sharp from "sharp";
 
 const reportPath = process.argv[process.argv.indexOf("--report") + 1];
 const socket = net.createServer();
@@ -24,23 +25,30 @@ let activeRole = "superadmin";
 let failNextMaintenance = false;
 let failNextTransfer = false;
 let failNextRules = false;
+let failNextRules400 = false;
 let failNextReply = false;
 let rejectNextReply = false;
 let holdCustomerDetail = false;
 let releaseCustomerDetail = null;
 let failNextCreate = false;
+let failNextTicketDetail = false;
+let restrictNextTicketDetail = false;
+let blockedConversationDetailNo = "";
 const unrepliedMessageIds = new Set();
 let readCalls = 0;
 let holdRulesWrite = false;
 let releaseRulesWrite = null;
 const stamp = "2026-09-29T08:00:00Z";
 const customer = { customerId: 101, assignmentId: 501, agentAdminId: 7, version: 3, customerNo: "C-101", displayName: "测试客户甲", accountState: "UNKNOWN", maintenanceEnabled: true, maintenanceStatus: "DUE", lastEffectiveAt: null, nextMaintenanceAt: stamp, waitingReply: true, firstContact: false, maintenanceVersion: 2 };
+const wireCustomer = () => ({ customerId: customer.customerId, assignmentId: customer.assignmentId, assignmentVersion: customer.version, agentAdminId: customer.agentAdminId, preferenceVersion: customer.maintenanceVersion, version: customer.maintenanceVersion, customerNo: customer.customerNo, nickname: customer.displayName, activityStatus: customer.accountState, windowStatus: "UNKNOWN", enabled: customer.maintenanceEnabled, lastEffectiveAt: customer.lastEffectiveAt, nextDueAt: customer.nextMaintenanceAt, due: customer.maintenanceEnabled, openCycleId: null, waitingReply: customer.waitingReply, firstContact: customer.firstContact, pendingReplyCount: customer.waitingReply ? 1 : 0, pendingConversationNo: customer.waitingReply ? "CV-101" : null, pendingThroughMessageId: customer.waitingReply ? 11 : null });
 const pool = [{ customerId: 201, reason: "NO_INVITER", enteredAt: stamp, version: 1, displayName: "待分配甲", pendingMessageCount: 1 }, { customerId: 202, reason: "DEPTH_LIMIT", enteredAt: stamp, version: 1, displayName: "待分配乙", pendingMessageCount: 0 }];
 const agent = { adminId: 7, name: "顾问甲", seatType: "DEDICATED", serviceTypes: ["advisor"], enabled: true, busy: false, assignedUserCount: 1, maxConcurrent: 5, currentActiveSessions: 1, version: 1 };
 let rules = { version: 2, dormantDays: null, maintenanceDays: 7, activityWindowDays: null, inheritanceMode: "LIMITED", maxInheritanceDepth: 0, updatedAt: stamp, updatedBy: "fixture" };
 const convo = { id: 1, conversationNo: "CV-101", customerId: 101, userId: 101, assignmentId: 501, ownerAdminId: 7, conversationType: "ADVISOR", status: "OPEN", ownerAgentId: "agent-7", ownerAgentName: "顾问甲", unreadCount: 1, version: 3, updatedAt: stamp, lastMessageAt: stamp, lastMessage: "请协助处理", lastMessageKind: "TEXT" };
 const messages = [{ id: 11, senderType: "USER", senderName: "测试客户甲", content: "请协助处理", receiptStatus: "sent", createdAt: stamp }];
 let extraConvo = null;
+let bulkConvos = [];
+const conversationDetailReads = [];
 let convertedTicket = null;
 const extraMessages = [];
 const templateOverview = { categories: ["advisor", "support", "ai"].map((type) => ({ type, name: type, roleKey: type, managedBy: "客服", enabled: true, readOnly: type === "ai" })), advisorPolicy: { enabled: false, delayMs: 0, cooldownHours: 24, maxPerSession: 1, audience: "全部" }, workbenchPolicy: { timeoutFallback: false }, audienceOptions: ["全部"], segmentFields: [], scripts: [{ id: "quick-1", scriptGroup: "开场", text: "快捷话术只填稿", ctaPath: "", status: "published", audience: "全部" }], replyTemplates: [] };
@@ -75,26 +83,29 @@ try {
     if (!url.pathname.startsWith("/api/")) return route.continue();
     const path = url.pathname;
     const method = request.method();
-    if (path === "/api/admin/auth/session") return route.fulfill(envelope({ ...session, session: { ...session.session, adminId: activeAdminId, username: `s5a-fixture-${activeAdminId}`, operator: activeAdminId === 7 ? "顾问甲" : "顾问乙", role: activeRole, authorities: activeRole === "support" ? ["service_m1_read", "service_m3_read", "service_m5_read"] : session.session.authorities } }));
+    if (path === "/api/admin/auth/session") return route.fulfill(envelope({ ...session, session: { ...session.session, adminId: activeAdminId, username: `s5a-fixture-${activeAdminId}`, operator: activeAdminId === 7 ? "顾问甲" : "顾问乙", role: activeRole, authorities: activeRole === "support" ? ["service_m1_read", "service_m3_read", "service_m5_read"] : activeRole === "supervisor" ? [...session.session.authorities, "service_m1_write"] : session.session.authorities } }));
     if (path === "/api/admin/platform/flags") return route.fulfill(envelope({}));
     if (path === "/api/admin/platform/audit/reason-policy") return route.fulfill(envelope({ minChars: 8, maxChars: 200, sourceKey: "admin.a2.reason_min_chars" }));
-    if (path === "/api/admin/content/support-workbench/overview") return route.fulfill(envelope({ evaluatedAt: stamp, rulesVersion: rules.version, scope: "SELF", counts: { boundCustomers: activeAdminId === 7 ? 1 : 0, windowActiveCustomers: null, dormantCustomers: null, dueMaintenanceCustomers: activeAdminId === 7 && customer.maintenanceEnabled ? 1 : 0, waitingReplyCustomers: activeAdminId === 7 ? 1 : 0, firstContactCustomers: 0, stoppedMaintenanceCustomers: activeAdminId === 7 && !customer.maintenanceEnabled ? 1 : 0 }, knownActiveCount: 0, unknownWindowCount: activeAdminId === 7 ? 1 : 0, performance: { executionCount: activeAdminId === 7 ? 6 : 0, successfulCycleCount: activeAdminId === 7 ? 3 : 0, successfulCustomerCount: activeAdminId === 7 ? 1 : 0, from: "2026-09-23T00:00:00Z", to: stamp, trend: ["2026-09-23", "2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27", "2026-09-28", "2026-09-29"].map((day, index) => ({ day, executionCount: activeAdminId === 7 ? index % 3 : 0, successfulCycleCount: activeAdminId === 7 ? index % 2 : 0 })) } }));
-    if (path === "/api/admin/content/support-workbench/customers") return route.fulfill(envelope(pageResult(activeAdminId === 7 ? [customer] : [], url)));
+    if (path === "/api/admin/content/support-workbench/customers") {
+      const bound = activeAdminId === 7 ? 1 : 0;
+      return route.fulfill(envelope({ snapshotId: "fixture-snapshot", evaluatedAt: stamp, rulesVersion: rules.version, scope: { actorId: activeAdminId, agentAdminId: activeAdminId, mode: "AGENT" }, rules: { dormantDays: rules.dormantDays, maintenanceDays: rules.maintenanceDays, activityWindowDays: rules.activityWindowDays }, overview: { boundTotal: bound, activeTotal: null, dormantTotal: null, dueTotal: bound && customer.maintenanceEnabled ? 1 : 0, waitingReplyTotal: bound && customer.waitingReply ? 1 : 0, firstContactTotal: 0, stoppedTotal: bound && !customer.maintenanceEnabled ? 1 : 0, knownActiveCount: 0, unknownWindowCount: bound, unknownCount: bound, todoTotal: bound }, customers: { ...pageResult(bound ? [wireCustomer()] : [], url), filter: url.searchParams.get("filter") || "ALL", available: true }, performance: { executionCount: bound ? 6 : 0, successfulCycleCount: bound ? 3 : 0, successfulCustomerCount: bound ? 1 : 0, from: "2026-09-23T00:00:00Z", to: stamp, timeZone: "Asia/Shanghai", days: ["2026-09-23", "2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27", "2026-09-28", "2026-09-29"].map((day, index) => ({ day, executionCount: bound ? index % 3 : 0, successfulCycleCount: bound ? index % 2 : 0 })) }, completeness: { unknownCount: bound, unknownWindowCount: bound, coverageStartAt: stamp, observedThroughAt: stamp, observationLagMillis: 0, activitySource: "INTERACTIVE_LOGIN" } }));
+    }
     if (path === "/api/admin/content/support-workbench/customers/101") {
       if (holdCustomerDetail) await new Promise((resolve) => { releaseCustomerDetail = resolve; });
-      return route.fulfill(activeAdminId === 7 ? envelope(customer) : envelope(null, 403));
+      return route.fulfill(activeAdminId === 7 ? envelope({ customer: wireCustomer() }) : envelope(null, 403));
     }
+    if (path === "/api/admin/content/support-workbench/customers/101/maintenance/history") return route.fulfill(activeAdminId === 7 ? envelope({ customerId: 101, cycles: [{ id: 801, status: "OPEN", openedAt: "2026-09-29T08:00:00" }, { id: 802, status: "SUCCEEDED", openedAt: "2026-09-29T00:00:00Z" }], executions: [], totalCycles: 2, totalExecutions: 0, pageNum: 1, pageSize: 10 }) : envelope(null, 403));
     if (path === "/api/admin/content/support-workbench/customers/101/maintenance") {
-      if (method === "GET") return route.fulfill(envelope(pageResult([{ id: 801, kind: "CYCLE", state: "OPEN", occurredAt: "2026-09-29T08:00:00" }, { id: 802, kind: "CYCLE", state: "SUCCEEDED", occurredAt: "2026-09-29T00:00:00Z" }], url)));
       const body = request.postDataJSON();
       mutations.push({ path, body, key: request.headers()["idempotency-key"] });
       assert.equal(body.expectedAssignmentId, 501);
       assert.ok(body.reason.length >= 8);
       if (failNextMaintenance) { failNextMaintenance = false; return route.fulfill(envelope(null, 503)); }
       customer.maintenanceEnabled = body.enabled; customer.maintenanceStatus = body.enabled ? "DUE" : "STOPPED"; customer.maintenanceVersion += 1;
-      return route.fulfill(envelope(customer));
+      return route.fulfill(envelope({ customerId: 101, assignmentId: 501, enabled: customer.maintenanceEnabled, version: customer.maintenanceVersion }));
     }
     if (path === "/api/admin/content/support-agents/binding-pool") return route.fulfill(envelope(pageResult(pool, url)));
+    if (path === "/api/admin/content/support-agents" && activeRole === "supervisor") return route.fulfill(envelope({ agents: [{ ...agent, id: String(agent.adminId), email: "fixture@example.invalid", adminRole: "supervisor", status: "ACTIVE", position: "客服主管", tags: [], transferable: false, updatedAt: stamp }], advisorAssignments: [], transferTargets: [] }));
     if (path === "/api/admin/content/support-agents/page") return route.fulfill(envelope(pageResult([agent], url)));
     if (path === "/api/admin/content/support-agents/assignments/transfer" && method === "POST") {
       const body = request.postDataJSON(); mutations.push({ path, body, key: request.headers()["idempotency-key"] });
@@ -109,21 +120,24 @@ try {
         await new Promise((resolve) => { releaseRulesWrite = resolve; });
         return route.fulfill(envelope({ ...rules, ...body, version: rules.version + 1 }));
       }
+      if (failNextRules400) { failNextRules400 = false; return route.fulfill(envelope(null, 400)); }
       if (failNextRules) { failNextRules = false; rules = { ...rules, activityWindowDays: 4, version: rules.version + 1 }; return route.fulfill(envelope(null, 409)); }
       rules = { ...rules, ...body, version: rules.version + 1 }; return route.fulfill(envelope(rules));
     }
     if (path === "/api/admin/content/session-templates/overview") return route.fulfill(envelope(templateOverview));
-    if (path === "/api/admin/content/conversations" && method === "GET") return route.fulfill(envelope(pageResult(activeAdminId === 7 ? [convo, ...(extraConvo ? [extraConvo] : [])] : [], url)));
+    if (path === "/api/admin/content/conversations/attachments/policy") return route.fulfill(envelope({ available: true, allowedMimeTypes: ["image/png", "image/jpeg"], maxBytes: 5000000, maxPixels: 10000000, ttlSeconds: 86400, unavailableReason: null }));
+    if (path === "/api/admin/content/conversations" && method === "GET") return route.fulfill(envelope(pageResult(activeAdminId === 7 ? [convo, ...(extraConvo ? [extraConvo] : []), ...bulkConvos] : [], url)));
     if (path === "/api/admin/content/conversations" && method === "POST") {
       const body = request.postDataJSON(); mutations.push({ path, body, key: request.headers()["idempotency-key"] });
       if (failNextCreate) { failNextCreate = false; return route.fulfill(envelope(null, 503)); }
       for (const target of body.replyTargets ?? []) if (target.conversationNo === "CV-101") for (const id of unrepliedMessageIds) if (id <= target.throughMessageId) unrepliedMessageIds.delete(id);
-      extraConvo = { ...convo, id: 2, conversationNo: "CV-102", status: "OPEN", version: 1, unreadCount: 0, lastMessage: body.content ?? body.openingText };
-      extraMessages.push({ id: 41, senderType: "AGENT", senderName: "顾问甲", content: body.content ?? body.openingText, createdAt: stamp });
+      extraConvo = { ...convo, id: 2, conversationNo: "CV-102", status: "OPEN", version: 1, unreadCount: 0, lastMessage: body.openingText };
+      extraMessages.push({ id: 41, senderType: "AGENT", senderName: "顾问甲", content: body.openingText, createdAt: stamp });
       return route.fulfill(envelope({ conversationNo: "CV-102", messageId: 41, clientMessageId: body.clientMessageId, assignmentId: 501 }));
     }
-    if (path === "/api/admin/content/conversations/CV-101") return route.fulfill(activeAdminId === 7 ? envelope({ conversation: convo, messages }) : envelope(null, 403));
-    if (path === "/api/admin/content/conversations/CV-102") return route.fulfill(activeAdminId === 7 && extraConvo ? envelope({ conversation: extraConvo, messages: extraMessages }) : envelope(null, 403));
+    if (path === "/api/admin/content/conversations/CV-101") { conversationDetailReads.push(path); return route.fulfill(blockedConversationDetailNo === "CV-101" ? envelope(null, 503) : activeAdminId === 7 ? envelope({ conversation: convo, messages }) : envelope(null, 403)); }
+    if (path === "/api/admin/content/conversations/CV-102") { conversationDetailReads.push(path); return route.fulfill(path.endsWith(blockedConversationDetailNo) && blockedConversationDetailNo ? envelope(null, 503) : activeAdminId === 7 && extraConvo ? envelope({ conversation: extraConvo, messages: extraMessages }) : envelope(null, 403)); }
+    if (/^\/api\/admin\/content\/conversations\/CV-BULK-\d+$/.test(path)) { conversationDetailReads.push(path); const row = bulkConvos.find((item) => path.endsWith(item.conversationNo)); return route.fulfill(row && activeAdminId === 7 ? envelope({ conversation: row, messages: [] }) : envelope(null, 403)); }
     if (path.startsWith("/api/admin/content/support-workbench/commands/") && method === "GET") return route.fulfill(envelope(null, 404));
     if (path === "/api/admin/content/conversations/CV-101/replies" && method === "POST") {
       const body = request.postDataJSON(); mutations.push({ path, body, key: request.headers()["idempotency-key"] });
@@ -146,12 +160,16 @@ try {
     if (path === "/api/admin/content/conversations/CV-101/ticket" && method === "POST") {
       const body = request.postDataJSON(); mutations.push({ path, body, key: request.headers()["idempotency-key"] });
       if (unrepliedMessageIds.size) return route.fulfill(envelope(null, 409));
-      convertedTicket = { ticketNo: "T-101", userId: 101, userExists: true, title: body.title, category: body.category, status: "OPEN", priority: body.priority, createdAt: stamp, updatedAt: stamp, assignedAdminId: 7, assignedAdminName: "顾问甲", version: 1, messages: [] };
+      convertedTicket = { ticketNo: "T-101", sourceConversationNo: "CV-101", userId: 101, userExists: true, title: body.title, category: body.category, status: "OPEN", priority: body.priority, createdAt: stamp, updatedAt: stamp, assignedAdminId: 7, assignedAdminName: "顾问甲", version: 1, messages: [] };
       return route.fulfill(envelope({ ticketNo: "T-101" }));
     }
     if (path === "/api/admin/content/conversations/CV-101/read") { readCalls += 1; return route.fulfill(envelope({})); }
     if (path === "/api/admin/content/tickets") return route.fulfill(envelope(pageResult(convertedTicket ? [convertedTicket] : [], url)));
-    if (path === "/api/admin/content/tickets/T-101" && convertedTicket) return route.fulfill(envelope({ ticket: convertedTicket, messages: [], slaTarget: { ruleVersion: 1, firstResponseMins: 30, resolutionHours: 24, queue: "客服", escalation: "主管", firstResponseDeadlineAt: stamp, resolutionDeadlineAt: stamp, firstResponseOverdue: false, resolutionOverdue: false, evaluatedAt: stamp } }));
+    if (path === "/api/admin/content/tickets/T-101" && convertedTicket) {
+      if (failNextTicketDetail) { failNextTicketDetail = false; return route.fulfill(envelope(null, 503)); }
+      if (restrictNextTicketDetail) { restrictNextTicketDetail = false; convertedTicket = { ...convertedTicket, contentRestricted: true }; }
+      return route.fulfill(envelope({ ticket: convertedTicket, messages: [], slaTarget: { ruleVersion: 1, firstResponseMins: 30, resolutionHours: 24, queue: "客服", escalation: "主管", firstResponseDeadlineAt: stamp, resolutionDeadlineAt: stamp, firstResponseOverdue: false, resolutionOverdue: false, evaluatedAt: stamp } }));
+    }
     if (path === "/api/admin/content/tickets/assignee-candidates") return route.fulfill(envelope([]));
     if (path === "/api/admin/content/conversations/transfer-targets") return route.fulfill(envelope([]));
     unhandled.add(`${method} ${path}`);
@@ -217,13 +235,16 @@ try {
     assert.equal(await page.getByRole("region", { name: "专属客服会话" }).count(), 1);
     await page.getByText("请协助处理").first().waitFor();
     await page.getByRole("textbox", { name: "输入会话消息" }).fill("已收到，正在处理");
+    const reply = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/conversations/CV-101/replies"));
     await page.getByRole("button", { name: /发送文字/ }).click();
+    await reply;
     assert.ok(mutations.some((item) => item.path.endsWith("/replies") && item.body.clientMessageId));
     await page.getByText("已收到，正在处理").waitFor();
   });
   await check("s5a-dock", page, async () => {
     messages.push({ id: 13, senderType: "USER", senderName: "测试客户甲", content: "旧待回复问题", createdAt: stamp });
     unrepliedMessageIds.add(13);
+    customer.waitingReply = true;
     convo.version = 4;
     await page.goto(`${origin}/service/overview`);
     await page.locator('[data-proof="session-dock-pill"]').waitFor();
@@ -232,7 +253,7 @@ try {
     failNextReply = true;
     await page.getByRole("button", { name: "发送会话回复" }).click();
     await page.getByRole("alert").filter({ hasText: "发送失败或结果待确认" }).waitFor();
-    const first = mutations.filter((item) => item.path.endsWith("/replies") && item.body.content === "浮窗待确认回复").at(-1);
+    const first = mutations.filter((item) => item.path.endsWith("/replies") && item.body.body === "浮窗待确认回复").at(-1);
     assert.ok(first?.key);
     assert.deepEqual(first.body.replyTargets, [{ conversationNo: "CV-101", throughMessageId: 13 }]);
     messages.push({ id: 14, senderType: "USER", senderName: "测试客户甲", content: "新待回复问题", createdAt: stamp });
@@ -243,11 +264,43 @@ try {
     assert.equal(await page.locator('[data-proof="session-dock-reply"]').inputValue(), "浮窗待确认回复");
     await page.getByRole("button", { name: "查询结果并重试会话回复" }).click();
     await page.waitForFunction(() => document.querySelector('[data-proof="session-dock-reply"]')?.value === "");
-    const attempts = mutations.filter((item) => item.path.endsWith("/replies") && item.body.content === "浮窗待确认回复");
+    const attempts = mutations.filter((item) => item.path.endsWith("/replies") && item.body.body === "浮窗待确认回复");
     assert.equal(attempts.length, 2);
     assert.equal(attempts[1].key, first.key);
     assert.deepEqual(attempts[1].body, first.body);
     assert.deepEqual([...unrepliedMessageIds], [14]);
+    await page.locator('[data-proof="session-dock-reply"]').fill("浮窗关闭段待确认");
+    failNextReply = true;
+    await page.getByRole("button", { name: "发送会话回复" }).click();
+    await page.getByRole("alert").filter({ hasText: "发送失败或结果待确认" }).waitFor();
+    convo.status = "CLOSED";
+    await page.reload();
+    await page.locator('[data-proof="session-dock-panel"]').waitFor();
+    await page.getByRole("button", { name: "查询结果并重试会话回复" }).click();
+    await page.getByRole("alert").filter({ hasText: "原命令未找到" }).waitFor();
+    convo.status = "OPEN";
+    await page.reload();
+    await page.getByRole("button", { name: "查询结果并重试会话回复" }).click();
+    await page.waitForFunction(() => document.querySelector('[data-proof="session-dock-reply"]')?.value === "");
+    await page.locator('[data-proof="session-dock-reply"]').fill("剪贴板拒绝后手工保存的原文");
+    failNextReply = true;
+    await page.getByRole("button", { name: "发送会话回复" }).click();
+    await page.getByRole("alert").filter({ hasText: "发送失败或结果待确认" }).waitFor();
+    convo.status = "CLOSED";
+    await page.reload();
+    await page.getByRole("button", { name: "查询结果并重试会话回复" }).click();
+    await page.getByRole("button", { name: "复制原文" }).waitFor();
+    await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => { throw new Error("denied"); } } }));
+    await page.getByRole("button", { name: "复制原文" }).click();
+    await page.getByRole("alert").filter({ hasText: "手动选择并复制" }).waitFor();
+    const originalBox = page.locator('[data-proof="session-dock-reply"]');
+    assert.equal(await originalBox.isDisabled(), false);
+    assert.equal(await originalBox.getAttribute("readonly"), "");
+    assert.equal(await originalBox.evaluate((node) => { node.select(); return node.selectionEnd - node.selectionStart; }), "剪贴板拒绝后手工保存的原文".length);
+    page.once("dialog", (dialog) => void dialog.accept());
+    await page.getByRole("button", { name: "放弃查询" }).click();
+    await page.getByRole("button", { name: "放弃查询" }).waitFor({ state: "hidden" });
+    convo.status = "OPEN";
   });
   await check("s5a-private-retry-original", page, async () => {
     await page.goto(`${origin}/service/sessions`);
@@ -255,14 +308,22 @@ try {
     failNextReply = true;
     await page.getByRole("button", { name: "发送文字" }).click();
     await page.getByRole("alert").filter({ hasText: "发送失败或结果待确认" }).waitFor();
-    const first = mutations.filter((item) => item.path.endsWith("/replies") && item.body.content === "结果未知后同键重试").at(-1);
+    const first = mutations.filter((item) => item.path.endsWith("/replies") && item.body.body === "结果未知后同键重试").at(-1);
     assert.ok(first?.key);
     messages.push({ id: 20, senderType: "USER", senderName: "测试客户甲", content: "失败期间新到的消息", createdAt: stamp });
     unrepliedMessageIds.add(20); convo.version += 1;
+    blockedConversationDetailNo = "CV-101";
     await page.reload();
+    await page.getByRole("alert").filter({ hasText: "会话详情读取失败" }).waitFor();
     await page.getByRole("button", { name: "查询结果并重试" }).click();
-    for (let attempt = 0; attempt < 50 && mutations.filter((item) => item.path.endsWith("/replies") && item.body.content === "结果未知后同键重试").length < 2; attempt++) await page.waitForTimeout(100);
-    const attempts = mutations.filter((item) => item.path.endsWith("/replies") && item.body.content === "结果未知后同键重试");
+    await page.getByRole("alert").filter({ hasText: "原命令未找到" }).waitFor();
+    assert.equal(mutations.filter((item) => item.path.endsWith("/replies") && item.body.body === "结果未知后同键重试").length, 1);
+    blockedConversationDetailNo = "";
+    await page.getByLabel("会话消息", { exact: true }).getByRole("button", { name: "重试读取详情" }).click();
+    await page.getByLabel("会话消息", { exact: true }).getByText("失败期间新到的消息").waitFor();
+    await page.getByRole("button", { name: "查询结果并重试" }).click();
+    for (let attempt = 0; attempt < 50 && mutations.filter((item) => item.path.endsWith("/replies") && item.body.body === "结果未知后同键重试").length < 2; attempt++) await page.waitForTimeout(100);
+    const attempts = mutations.filter((item) => item.path.endsWith("/replies") && item.body.body === "结果未知后同键重试");
     assert.equal(attempts.length, 2);
     assert.equal(attempts[1].key, first.key);
     assert.deepEqual(attempts[1].body, first.body);
@@ -274,6 +335,7 @@ try {
     rejectNextReply = true;
     await page.getByRole("button", { name: "发送文字" }).click();
     await page.getByRole("alert").filter({ hasText: "服务端已拒绝本次发送" }).waitFor();
+    await page.waitForFunction(() => !document.querySelector('textarea[aria-label="输入会话消息"]')?.disabled);
     assert.equal(await page.getByRole("textbox", { name: "输入会话消息" }).isEnabled(), true);
     await page.getByRole("textbox", { name: "输入会话消息" }).fill("根据新版本修改后重发");
     assert.equal(await page.getByRole("button", { name: "查询结果并重试" }).count(), 0);
@@ -287,10 +349,26 @@ try {
     unrepliedMessageIds.add(21); customer.waitingReply = true; convo.version += 1;
     await page.getByLabel("会话消息", { exact: true }).getByText("实时新增待回复").waitFor({ timeout: 20000 });
     await page.getByRole("textbox", { name: "输入会话消息" }).fill("收到实时新消息后回复");
+    const replyResponse = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/conversations/CV-101/replies"));
     await page.getByRole("button", { name: "发送文字" }).click();
-    const reply = mutations.filter((item) => item.path.endsWith("/replies") && item.body.content === "收到实时新消息后回复").at(-1);
+    await replyResponse;
+    const reply = mutations.filter((item) => item.path.endsWith("/replies") && item.body.body === "收到实时新消息后回复").at(-1);
     assert.deepEqual(reply?.body.replyTargets, [{ conversationNo: "CV-101", throughMessageId: 21 }]);
     assert.equal(unrepliedMessageIds.has(21), false);
+  });
+  await check("s5b-preflight-new-message", page, async () => {
+    await page.goto(`${origin}/service/sessions`);
+    await page.getByRole("textbox", { name: "输入会话消息" }).fill("预检后回复新消息");
+    messages.push({ id: 22, senderType: "USER", senderName: "测试客户甲", content: "发送前新到的消息", receiptStatus: "sent", createdAt: stamp });
+    unrepliedMessageIds.add(22); customer.waitingReply = true; convo.version += 1;
+    await page.getByRole("button", { name: "发送文字" }).click();
+    await page.getByRole("alert").filter({ hasText: "会话有新消息" }).waitFor();
+    assert.equal(mutations.filter((item) => item.path.endsWith("/replies") && item.body.body === "预检后回复新消息").length, 0);
+    await page.getByLabel("会话消息", { exact: true }).getByText("发送前新到的消息").waitFor();
+    await page.getByRole("button", { name: "发送文字" }).click();
+    await page.waitForFunction(() => document.querySelector('textarea[aria-label="输入会话消息"]')?.value === "");
+    const reply = mutations.filter((item) => item.path.endsWith("/replies") && item.body.body === "预检后回复新消息").at(-1);
+    assert.deepEqual(reply?.body.replyTargets, [{ conversationNo: "CV-101", throughMessageId: 22 }]);
   });
   await check("s5a-pool", page, async () => {
     await page.goto(`${origin}/service/overview`);
@@ -324,9 +402,14 @@ try {
     await page.getByRole("button", { name: /测试客户甲|用户 U-00101/ }).first().click();
     await page.getByRole("textbox", { name: "输入会话消息" }).fill("切换身份前的未发送草稿");
     const input = page.getByLabel("选择图片");
-    await input.setInputFiles({ name: "private.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7+P8cAAAAASUVORK5CYII=", "base64") });
+    const validImage = await sharp({ create: { width: 2, height: 2, channels: 4, background: "#20a0dc" } }).png().toBuffer();
+    await input.setInputFiles({ name: "private.png", mimeType: "image/png", buffer: validImage });
     await page.getByAltText("待发送图片预览").waitFor();
     const priorBlobUrl = await page.getByAltText("待发送图片预览").getAttribute("src");
+    const tooManyPixels = await sharp({ create: { width: 4000, height: 3000, channels: 4, background: "#20a0dc" } }).png().toBuffer();
+    await input.setInputFiles({ name: "too-large.png", mimeType: "image/png", buffer: tooManyPixels });
+    await page.getByText("图片像素超过当前上限，请重新选择。").waitFor();
+    assert.equal(await page.getByAltText("待发送图片预览").getAttribute("src"), priorBlobUrl);
     await page.evaluate(() => { const original = URL.revokeObjectURL.bind(URL); window.__s5aRevoked = []; URL.revokeObjectURL = (url) => { window.__s5aRevoked.push(url); original(url); }; });
     activeAdminId = 8;
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
@@ -346,7 +429,9 @@ try {
     await page.getByLabel("本条消息用途").selectOption("MAINTENANCE");
     await page.getByRole("textbox", { name: "输入会话消息" }).fill("待确认的私聊内容仅属于顾问甲");
     failNextReply = true;
+    const replyResponse = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/conversations/CV-101/replies"));
     await page.getByRole("button", { name: /发送文字/ }).click();
+    await replyResponse;
     assert.ok(mutations.some((item) => item.path.endsWith("/replies") && (item.body.content ?? item.body.body) === "待确认的私聊内容仅属于顾问甲"), JSON.stringify(mutations.slice(-2)));
     await page.getByText(/发送失败或结果待确认/).waitFor();
     assert.match(await page.evaluate(() => sessionStorage.getItem("nexion-admin-m3-private-pending-v1") || ""), /待确认的私聊内容仅属于顾问甲/);
@@ -430,9 +515,9 @@ try {
     await page.getByRole("textbox", { name: /操作理由/ }).fill(reason);
     failNextMaintenance = true;
     await page.getByRole("button", { name: "确认", exact: true }).click();
-    await page.getByRole("dialog", { name: "客户详情" }).getByRole("alert").getByText(/暂无法同步客服数据/).waitFor();
+    await page.getByRole("dialog", { name: "客户详情" }).getByRole("alert").getByText(/操作结果待确认/).first().waitFor();
     assert.equal(await page.getByRole("textbox", { name: /操作理由/ }).inputValue(), reason);
-    await page.getByRole("button", { name: "确认", exact: true }).click();
+    await page.getByRole("button", { name: "用原命令重试" }).click();
     await page.getByRole("button", { name: "不再维护" }).waitFor();
     const attempts = mutations.filter((item) => item.path.endsWith("/maintenance") && item.body.enabled === true);
     assert.equal(attempts.length, 2);
@@ -443,6 +528,10 @@ try {
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
     await page.getByRole("heading", { name: "我的工作台" }).waitFor();
     assert.equal(await page.getByRole("button", { name: "待绑定客户池" }).count(), 0);
+    await page.goto(`${origin}/service/sessions`);
+    await page.getByText("当前账号只可查看会话，发送需会话操作权限。").waitFor();
+    assert.equal(await page.getByRole("textbox", { name: "输入会话消息" }).isDisabled(), true);
+    assert.equal(await page.getByRole("button", { name: "关闭服务会话" }).count(), 0);
     await page.goto(`${origin}/service/scripts`);
     await page.getByRole("heading", { name: "服务规则与话术" }).waitFor();
     assert.equal(await page.getByRole("region", { name: "服务规则" }).count(), 0);
@@ -465,6 +554,15 @@ try {
     await page.getByRole("textbox", { name: /修改理由/ }).fill("测试规则冲突重审后确认保存");
     await page.getByRole("button", { name: "确认保存" }).click();
     assert.equal(rules.activityWindowDays, 6);
+  });
+  await check("s5b-rules-definite-400", page, async () => {
+    await page.getByLabel("活跃统计窗口天数").fill("7");
+    await page.getByRole("button", { name: "预览并保存" }).click();
+    await page.getByRole("textbox", { name: /修改理由/ }).fill("测试后端明确校验失败后可修改");
+    failNextRules400 = true;
+    await page.getByRole("button", { name: "确认保存" }).click();
+    await page.getByText("输入未通过校验，请检查天数、继承层数和修改理由后再提交。").first().waitFor();
+    assert.equal(await page.getByLabel("活跃统计窗口天数").isEnabled(), true);
   });
   await check("s5a-pool-conflict", page, async () => {
     await page.goto(`${origin}/service/overview`);
@@ -507,7 +605,7 @@ try {
     await page.getByText("快捷话术", { exact: true }).click();
     await page.getByRole("button", { name: /快捷话术只填稿/ }).click();
     assert.equal(await page.getByRole("textbox", { name: "输入会话消息" }).inputValue(), "快捷话术只填稿");
-    assert.equal(mutations.filter((item) => item.path.endsWith("/replies") && item.body.content === "快捷话术只填稿").length, 0);
+    assert.equal(mutations.filter((item) => item.path.endsWith("/replies") && item.body.body === "快捷话术只填稿").length, 0);
     await page.getByLabel("本条消息用途").selectOption("MAINTENANCE");
     await page.getByRole("textbox", { name: "输入会话消息" }).fill("人工维护消息不清待回复");
     await page.getByRole("button", { name: "发送文字" }).click();
@@ -555,6 +653,7 @@ try {
     assert.equal(convo.status, "CLOSED");
     assert.equal(customer.agentAdminId, 7);
     messages.push({ id: 40, senderType: "USER", senderName: "测试客户甲", content: "历史关闭段遗留问题", receiptStatus: "sent", createdAt: stamp });
+    messages.push({ id: 41, senderType: "SYSTEM", senderName: "系统", content: "会话已关闭", receiptStatus: "sent", createdAt: stamp });
     unrepliedMessageIds.add(40);
     await page.reload();
     await page.getByRole("button", { name: "接续回复" }).click();
@@ -570,7 +669,7 @@ try {
     failNextCreate = true;
     await page.getByRole("button", { name: "发送文字" }).click();
     await page.getByRole("alert").filter({ hasText: "发送失败或结果待确认" }).waitFor();
-    const first = mutations.filter((item) => item.path === "/api/admin/content/conversations" && item.body.content === "新会话明确处理旧消息").at(-1);
+    const first = mutations.filter((item) => item.path === "/api/admin/content/conversations" && item.body.openingText === "新会话明确处理旧消息").at(-1);
     assert.equal(first.body.intent, "MAINTENANCE");
     assert.deepEqual(first.body.replyTargets, [{ conversationNo: "CV-101", throughMessageId: 40 }]);
     assert.equal(unrepliedMessageIds.has(40), true);
@@ -583,7 +682,7 @@ try {
     await page.getByRole("button", { name: "查询结果并重试" }).click();
     for (let attempt = 0; attempt < 50 && !extraConvo; attempt++) await page.waitForTimeout(100);
     assert.equal(extraConvo?.conversationNo, "CV-102");
-    const createdAttempts = mutations.filter((item) => item.path === "/api/admin/content/conversations" && item.body.content === "新会话明确处理旧消息");
+    const createdAttempts = mutations.filter((item) => item.path === "/api/admin/content/conversations" && item.body.openingText === "新会话明确处理旧消息");
     assert.equal(createdAttempts.length, 2);
     assert.equal(createdAttempts[1].key, first.key);
     assert.deepEqual(createdAttempts[1].body, first.body);
@@ -592,6 +691,93 @@ try {
     await page.getByRole("link", { name: "正式转绑客户" }).click();
     await page.getByRole("dialog", { name: "客户详情" }).waitFor();
     await page.getByRole("button", { name: "正式转绑客户" }).waitFor();
+  });
+  await check("s5a-ticket-detail-lazy", page, async () => {
+    failNextTicketDetail = true;
+    await page.goto(`${origin}/service/tickets?query=T-101`);
+    const drawer = page.getByRole("dialog", { name: "工单 T-101 详情" });
+    await drawer.getByText("工单详情读取失败，请重试。").waitFor();
+    assert.equal(await drawer.getByPlaceholder(/回复 T-101/).count(), 0);
+    await drawer.getByRole("button", { name: "重试读取详情" }).click();
+    await drawer.getByPlaceholder(/回复 T-101/).waitFor();
+    await page.goto(`${origin}/service/tickets`);
+    const row = page.locator("tr").filter({ hasText: "T-101" });
+    await row.waitFor();
+    convertedTicket.version += 1;
+    await row.getByRole("button", { name: "处理" }).click();
+    await drawer.getByText("工单已更新，请刷新列表后重试。").waitFor();
+    await drawer.getByRole("button", { name: "刷新工单列表" }).click();
+    await drawer.getByPlaceholder(/回复 T-101/).waitFor();
+  });
+  await check("s5b-ticket-private-revocation", page, async () => {
+    await page.goto(`${origin}/service/tickets`);
+    await page.locator("tr").filter({ hasText: "T-101" }).waitFor();
+    restrictNextTicketDetail = true;
+    await page.locator("tr").filter({ hasText: "T-101" }).getByRole("button", { name: "处理" }).click();
+    await page.getByText("私聊内容仅当前顾问和主管可阅").first().waitFor();
+    assert.equal(await page.getByText(/由会话 CV-101 转入/).count(), 0);
+  });
+  let m3HistoryDetailReads = 0;
+  await check("s5b-conversation-request-budget", page, async () => {
+    bulkConvos = Array.from({ length: 60 }, (_, index) => ({ ...convo, id: 200 + index, conversationNo: `CV-BULK-${index + 1}`, userId: 2000 + index, customerId: 2000 + index, status: "CLOSED", lastMessage: `历史摘要 ${index + 1}`, lastMessageAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z" }));
+    conversationDetailReads.length = 0;
+    await page.goto(`${origin}/service/sessions`);
+    await page.getByRole("region", { name: "专属客服会话" }).waitFor();
+    await page.getByRole("button", { name: /历史摘要 60/ }).waitFor();
+    await page.getByText("请协助处理").first().waitFor();
+    m3HistoryDetailReads = conversationDetailReads.length;
+    assert.ok(conversationDetailReads.length < 10, `60 historical rows must not fan out details: ${conversationDetailReads.length}`);
+    assert.equal(conversationDetailReads.some((path) => path.includes("CV-BULK-")), false);
+    bulkConvos = [];
+  });
+  checks.at(-1).evidence.push(`60 historical conversations; detail GET count ${m3HistoryDetailReads}`);
+  console.log(`S5b 60-history detail GET count: ${m3HistoryDetailReads}`);
+  await check("s5b-conversation-detail-retry", page, async () => {
+    blockedConversationDetailNo = "CV-102";
+    await page.goto(`${origin}/service/sessions?customerId=101`);
+    await page.getByRole("alert").filter({ hasText: "会话详情读取失败" }).waitFor();
+    assert.equal(await page.getByRole("textbox", { name: "输入会话消息" }).isEnabled(), false);
+    blockedConversationDetailNo = "";
+    await page.getByLabel("会话消息", { exact: true }).getByRole("button", { name: "重试读取详情" }).click();
+    await page.waitForFunction(() => !document.querySelector('textarea[aria-label="输入会话消息"]')?.disabled);
+    assert.equal(await page.getByRole("textbox", { name: "输入会话消息" }).isEnabled(), true);
+  });
+  await check("s5b-workbench-denied-detail", page, async () => {
+    await page.goto(`${origin}/service/overview`);
+    await page.locator(".s5a-recent").getByRole("button", { name: /客户 101/ }).first().waitFor();
+    await page.getByRole("navigation", { name: "客服工作区" }).getByRole("button", { name: "我的客户" }).click();
+    await page.getByRole("button", { name: "测试客户甲" }).waitFor();
+    activeAdminId = 8;
+    await page.getByRole("button", { name: "测试客户甲" }).click();
+    await page.getByRole("dialog", { name: "客户详情" }).waitFor({ state: "hidden" });
+    await page.getByRole("button", { name: "测试客户甲" }).waitFor({ state: "hidden" });
+    assert.equal(await page.locator(".s5a-recent").getByRole("button", { name: /客户 101/ }).count(), 0);
+    activeAdminId = 7;
+    await page.goto(`${origin}/service/overview?customerId=101`);
+    await page.getByRole("dialog", { name: "客户详情" }).getByRole("button", { name: /查看维护记录/ }).waitFor();
+    activeAdminId = 8;
+    await page.getByRole("dialog", { name: "客户详情" }).getByRole("button", { name: /查看维护记录/ }).click();
+    await page.getByRole("dialog", { name: "客户详情" }).waitFor({ state: "hidden" });
+    await page.getByRole("button", { name: "测试客户甲" }).waitFor({ state: "hidden" });
+    activeAdminId = 7;
+  });
+  await check("s5b-rules-readonly-pending", page, async () => {
+    agent.seatType = "MANAGER";
+    activeRole = "supervisor";
+    await page.goto(`${origin}/service/scripts`);
+    await page.evaluate((serverRules) => {
+      const now = Date.now();
+      sessionStorage.setItem("nexion-admin-m-support-rules-v1", JSON.stringify({
+        "pending-readonly": { fingerprint: `support-rules:${serverRules.version}`, commandKey: "pending-readonly", createdAt: now, expiresAt: now + 60000, actorId: 7, payload: { ...serverRules, activityWindowDays: 99, expectedVersion: serverRules.version, reason: "测试降权后待确认草稿隔离" } },
+      }));
+    }, rules);
+    await page.reload();
+    await page.getByRole("region", { name: "服务规则" }).waitFor();
+    await page.getByText("此账号有一笔规则提交结果尚未确认").waitFor();
+    assert.equal(await page.getByLabel("活跃统计窗口天数").inputValue(), String(rules.activityWindowDays));
+    assert.equal(await page.getByRole("button", { name: "预览并保存" }).isDisabled(), true);
+    agent.seatType = "DEDICATED";
+    activeRole = "superadmin";
   });
   assert.deepEqual(errors, [], `Unhandled fixture routes: ${[...unhandled].join(", ")}`);
   const required = ["WORKFLOW_TASK_ID", "WORKFLOW_STEP_ID", "WORKFLOW_CHECK_ID", "WORKFLOW_RUN_ID", "WORKFLOW_REPO", "WORKFLOW_SNAPSHOT_HASH"];

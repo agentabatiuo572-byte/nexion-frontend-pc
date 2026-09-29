@@ -35,7 +35,9 @@ test("persistent session dock preserves the M3 production authority and single-f
   assert.match(dock, /supportClient\.command\(key\)/);
   assert.match(dock, /supportClient\.sendConversationReply\(conv\.id, input, key\)/);
   assert.match(dock, /aria-label=\{pendingDock \? "查询结果并重试会话回复" : "发送会话回复"\}/);
-  assert.match(dock, /disabled=\{!canWrite \|\| sending \|\| Boolean\(pendingDock\)\}/, "Dock must freeze the draft while an acknowledged send is in flight");
+  assert.match(dock, /readOnly=\{Boolean\(pendingDock\)\}/, "Pending original must remain selectable without allowing edits");
+  assert.match(dock, /disabled=\{!pendingDock && \(!canWrite \|\| sending\)\}/, "Ordinary draft must stay disabled without authority or during send");
+  assert.match(dock, /if \(pendingDock\) return;/, "Enter must not resend a pending original");
 });
 
 test("all PC support composers use Enter to send and Shift+Enter to add a line", () => {

@@ -36,7 +36,9 @@ export type SupportTicketSlaTarget = {
 };
 
 export type SupportTicket = {
-  id: string;
+    id: string;
+    sourceConversationNo?: string;
+    contentRestricted?: boolean;
   userId?: number;
   userVerified: boolean;
   subject: string;
@@ -211,6 +213,9 @@ export type SessionConvo = {
   ownerAdminId?: number | null;
   owner: string;       // 后台分配坐席
   messages: SessionMsg[]; // 镜像前端 messages{sender,text,ctaHref,ts}
+  detailReady?: boolean; // false means messages are a list summary, never a complete thread
+  lastPreview?: string;
+  lastMessageKind?: "TEXT" | "IMAGE";
   customer?: string;   // 接待的终端用户昵称(对话主角;agentName 为坐席)
   profile?: CustomerProfile; // 完整客户档案(只读快照 + 客服备注)
   archived?: boolean;  // 归档态(已解决会话可单条 / 批量归档,默认 false)

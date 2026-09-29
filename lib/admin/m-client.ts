@@ -78,6 +78,8 @@ export type ConversationTimeoutPolicy = {
 type SupportTicketView = {
   id?: number;
   ticketNo?: string;
+  sourceConversationNo?: string;
+  contentRestricted?: boolean;
   userId?: number;
   category?: string;
   priority?: string;
@@ -956,7 +958,10 @@ function adaptTicket(detail: SupportTicketDetail | SupportTicketView): SupportTi
   const slaTarget = "ticket" in detail ? detail.slaTarget : undefined;
   const created = asTs(base.createdAt);
   const updated = asTs(base.updatedAt, created);
-  const messages = asArray<SupportTicketMessageView>("messages" in detail ? detail.messages : []).map((m) => {
+  const contentRestricted = base.contentRestricted === true;
+  const messages = asArray<SupportTicketMessageView>("messages" in detail ? detail.messages : [])
+    .filter((message) => !contentRestricted || ["INTERNAL", "SYSTEM"].includes(upper(message.senderType, "")))
+    .map((m) => {
     const senderType = upper(m.senderType, "USER");
     return {
       id: typeof m.id === "number" && Number.isSafeInteger(m.id) ? m.id : undefined,
@@ -976,9 +981,11 @@ function adaptTicket(detail: SupportTicketDetail | SupportTicketView): SupportTi
   });
   return {
     id: str(base.ticketNo, `TK-${base.id ?? "UNKNOWN"}`),
+    sourceConversationNo: base.sourceConversationNo,
+    contentRestricted,
     userId: base.userId,
     userVerified: Boolean(base.userExists),
-    subject: str(base.title, "未命名工单"),
+    subject: contentRestricted ? "私聊内容仅当前顾问和主管可阅" : str(base.title, "未命名工单"),
     category: ticketCategory(base.category),
     status: ticketStatus(base.status),
     priority: ticketPriority(base.priority),
@@ -1007,6 +1014,10 @@ function adaptTicket(detail: SupportTicketDetail | SupportTicketView): SupportTi
     },
     messages,
   };
+}
+
+export async function fetchSupportTicketDetail(ticketNo: string, signal?: AbortSignal): Promise<SupportTicket> {
+  return adaptTicket(assertSupportTicketDetail(await apiRequest<unknown>(`/tickets/${encodeURIComponent(ticketNo)}`, { signal })));
 }
 
 function assertSupportTicketPage(value: unknown): AdminPage<SupportTicketView> {
@@ -1186,6 +1197,7 @@ async function fetchAllSupportConversations(signal?: AbortSignal): Promise<Admin
 
 function adaptConversation(detail: ContentConversationDetail | ContentConversationView): SessionConvo {
   const base = "conversation" in detail && detail.conversation ? detail.conversation : (detail as ContentConversationView);
+  const detailReady = "messages" in detail && Array.isArray(detail.messages);
   const type = conversationType(base.conversationType);
   const updated = asTs(base.updatedAt);
   const messages = asArray<ContentConversationMessageView>("messages" in detail ? detail.messages : []).map((m) => {
@@ -1229,9 +1241,14 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
     ownerAgentId: str(base.ownerAgentId),
     customerId: Number.isSafeInteger(base.customerId ?? base.userId) && Number(base.customerId ?? base.userId) > 0 ? String(base.customerId ?? base.userId) : undefined,
     assignmentId: base.assignmentId == null ? null : String(base.assignmentId),
-    ownerAdminId: Number.isSafeInteger(base.ownerAdminId) && Number(base.ownerAdminId) > 0 ? base.ownerAdminId : null,
+    ownerAdminId: Number.isSafeInteger(Number(base.ownerAgentId)) && Number(base.ownerAgentId) > 0
+      ? Number(base.ownerAgentId)
+      : Number.isSafeInteger(base.ownerAdminId) && Number(base.ownerAdminId) > 0 ? base.ownerAdminId : null,
     owner: str(base.ownerAgentName, "Unassigned"),
     messages,
+    detailReady,
+    lastPreview: str(base.lastMessage),
+    lastMessageKind: upper(base.lastMessageKind, "TEXT") === "IMAGE" ? "IMAGE" : "TEXT",
     customer: profile.nickname,
     profile,
     archived: upper(base.status, "OPEN") === "CLOSED",
@@ -1394,21 +1411,6 @@ function adaptLoadConfig(raw: Record<string, unknown> | undefined, agents: MSupp
   };
 }
 
-async function detailOrUnavailable<T extends { id?: string }>(
-  rows: T[],
-  loader: (id: string) => Promise<unknown>,
-  adapt: (value: unknown) => T,
-): Promise<{ rows: T[]; complete: boolean }> {
-  const details = await Promise.allSettled(
-    rows.map(async (row) => (row.id ? adapt(await loader(row.id)) : row)),
-  );
-  const complete = details.every((detail) => detail.status === "fulfilled");
-  return {
-    rows: complete ? details.map((detail) => (detail as PromiseFulfilledResult<T>).value) : [],
-    complete,
-  };
-}
-
 const M1_SUPPORT_AGENT_MAX_ATTEMPTS = 2;
 let m1SupportAgentGeneration = 0;
 let m1SupportAgentTask: {
@@ -1506,22 +1508,11 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
       publish({ tickets: [], ticketsAvailable: false });
       return;
     }
-    let warning = "工单数据";
     try {
       const page = await fetchAllSupportTickets();
-      const rows = page.records.map(adaptTicket);
-      const details = await detailOrUnavailable(
-        rows,
-        (id) => apiRequest<unknown>(`/tickets/${encodeURIComponent(id)}`),
-        (value) => adaptTicket(assertSupportTicketDetail(value)),
-      );
-      if (!details.complete) {
-        warning = "工单明细";
-        throw new Error("M2_TICKET_DETAILS_UNAVAILABLE");
-      }
-      publish({ tickets: details.rows, ticketsAvailable: true });
+      publish({ tickets: page.records.map(adaptTicket), ticketsAvailable: true });
     } catch {
-      publish({ tickets: [], ticketsAvailable: false }, warning);
+      publish({ tickets: [], ticketsAvailable: false }, "工单数据");
     }
   })();
 
@@ -1533,17 +1524,7 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
     let warning = "会话数据";
     try {
       const page = await fetchAllSupportConversations();
-      const rows = page.records.map(adaptConversation);
-      const details = await detailOrUnavailable(
-        rows,
-        (id) => apiRequest<unknown>(`/conversations/${encodeURIComponent(id)}`),
-        (value) => adaptConversation(assertConversationDetail(value)),
-      );
-      if (!details.complete) {
-        warning = "会话明细";
-        throw new Error("M3_CONVERSATION_DETAILS_UNAVAILABLE");
-      }
-      publish({ conversations: details.rows, conversationsAvailable: true });
+      publish({ conversations: page.records.map(adaptConversation), conversationsAvailable: true });
     } catch {
       publish({ conversations: [], conversationsAvailable: false }, warning);
     }
@@ -1725,7 +1706,7 @@ export async function fetchMServicePendingConversations(): Promise<SessionConvo[
 /** First page uses the server's most-recent ordering and current assignment filter. */
 export async function fetchMRecentAdvisorConversations(ownerAdminId: number, signal?: AbortSignal) {
   const owner = supportWireId(ownerAdminId, "recent.ownerAdminId");
-  const page = assertConversationPage(await apiRequest<unknown>(`/conversations?type=advisor&ownerAgentId=${owner}&pageNum=1&pageSize=5`, { signal }));
+  const page = assertConversationPage(await apiRequest<unknown>(`/conversations?conversationType=ADVISOR&ownerAgentId=${owner}&pageNum=1&pageSize=5`, { signal }));
   return page.records.flatMap((row) => {
     const customerId = row.customerId ?? row.userId;
     if (!Number.isSafeInteger(customerId) || Number(customerId) <= 0 || !row.conversationNo) return [];
@@ -1740,28 +1721,27 @@ export async function markMConversationRead(no:string,lastSeenMessageId:number,s
 }
 
 /**
- * Authoritative M3 reconnect snapshot. The list is fully paged and every row is
- * replaced with its current detail (including persistent message ids) before
- * the WebSocket transport may report ready.
+ * Authoritative M3 reconnect snapshot. The list is fully paged and checked
+ * for a stable conversation set; message detail loads when a row is opened.
  */
 export async function fetchMConversationSnapshot(signal?: AbortSignal): Promise<SessionConvo[]> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const page = await fetchAllSupportConversations(signal);
-    const rows = page.records.map(adaptConversation);
-    const details = await detailOrUnavailable(
-      rows,
-      (id) => apiRequest<unknown>(`/conversations/${encodeURIComponent(id)}`, { signal }),
-      (value) => adaptConversation(assertConversationDetail(value)),
-    );
-    if (!details.complete) throw new Error("M3_CONVERSATION_DETAILS_UNAVAILABLE");
     const verification = await fetchAllSupportConversations(signal);
     const beforeIds = page.records.map((row) => row.conversationNo).sort();
     const afterIds = verification.records.map((row) => row.conversationNo).sort();
     if (page.total === verification.total && JSON.stringify(beforeIds) === JSON.stringify(afterIds)) {
-      return details.rows;
+      return page.records.map(adaptConversation);
     }
   }
   throw new Error("M3_CONVERSATION_SNAPSHOT_UNSTABLE");
+}
+
+export async function fetchMConversationDetail(no: string, signal?: AbortSignal): Promise<SessionConvo> {
+  const detail = assertConversationDetail(await apiRequest<unknown>(`/conversations/${encodeURIComponent(no)}`, { signal }));
+  const conversation = adaptConversation(detail);
+  if (conversation.id !== no || !conversation.detailReady) throw new Error("M3_CONVERSATION_DETAIL_INVALID");
+  return conversation;
 }
 
 export async function fetchMSupportAgentsPage(pageNum = 1, pageSize = 5): Promise<MSupportAgentPage> {

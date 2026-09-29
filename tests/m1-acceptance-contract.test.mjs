@@ -40,7 +40,8 @@ test("M1 keeps usable sections visible when a sibling M endpoint fails", () => {
   const overview = read("app/components/domain-views/m-tabs/m1-overview.tsx");
   const client = read("lib/admin/m-client.ts");
 
-  assert.match(client, /Promise\.allSettled/);
+  assert.match(client, /const tasks = \[ticketsTask, conversationsTask, m1Task/);
+  assert.match(client, /await Promise\.all\(tasks\)/);
   assert.match(client, /loadWarnings/);
   assert.match(overview, /部分信息暂未同步/);
 });
@@ -103,13 +104,16 @@ test("M1 load writes carry a visible-snapshot version and enforce the 8-200 audi
 test("M1 KPI links match their target queues and conversation detail failures fail closed", () => {
   const overview = read("app/components/domain-views/m-tabs/m1-overview.tsx");
   const client = read("lib/admin/m-client.ts");
+  const chat = read("app/components/domain-views/m-tabs/m3-dedicated-chat.tsx");
 
   assert.match(overview, /ACTIVE_TICKET_STATUSES\.has\(t\.status\)/);
   assert.match(overview, /c\.unread > 0/);
   assert.match(client, /const conversationsTask =/);
-  assert.match(client, /const details = await detailOrUnavailable/);
-  assert.match(client, /warning = "会话明细"/);
+  assert.match(client, /page\.records\.map\(adaptConversation\)/);
+  assert.match(client, /export async function fetchMConversationDetail/);
+  assert.match(chat, /selected\.detailReady === true/);
+  assert.match(chat, /会话详情读取失败/);
   assert.match(client, /publish\(\{ conversations: \[\], conversationsAvailable: false \}, warning\)/);
-  assert.match(client, /publish\(\{ conversations: details\.rows, conversationsAvailable: true \}\)/);
+  assert.match(client, /publish\(\{ conversations: page\.records\.map\(adaptConversation\), conversationsAvailable: true \}\)/);
   assert.doesNotMatch(client, /async function detailOrRow/);
 });

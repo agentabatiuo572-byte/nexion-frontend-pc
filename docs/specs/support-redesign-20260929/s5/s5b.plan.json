@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 2,
+  "id": "cs-admin-s5b-20260929-real",
+  "title": "客服后台 S5b 真实接口与跨仓验收",
+  "repo": "D:/WORKS/PLAN/.wt/cs-ui-20260929-admin",
+  "base": "57a6f3a70b68f1af10dae359825ce551d242653e",
+  "mode": "implement",
+  "risk": "high",
+  "owner": "s5b-admin-real-01a0ebeb",
+  "outOfScope": [
+    "不修改 S1 冻结输入、S6 客户端或共享后端服务和数据库配置",
+    "不把 S5a fixture、接口声明或前端渲染当真实持久化与权限验收",
+    "不合入 test、不部署、不重置 S6 测试档案或 M5 全局规则"
+  ],
+  "inputs": [
+    "../OWNER-DECISIONS.md",
+    "../SPEC.md",
+    "../CONTRACTS.md",
+    "../ACCEPTANCE.md",
+    "../../../design/support-redesign-20260929/UI-INTERACTION.md",
+    "EXECUTION.md",
+    "C:/Users/jason/.codex/workflow-runs/customer-service-20260929/ROOT-S5A-ACCEPTANCE.md",
+    "C:/Users/jason/.codex/workflow-runs/customer-service-20260929/OWNER-AMENDMENTS.md",
+    "C:/Users/jason/.codex/workflow-runs/customer-service-20260929/CLIENT-SOURCE-CONFIRMATION.md",
+    "D:/WORKS/PLAN/.wt/cs-maintenance-20260929-backend/docs/HANDOFF-support-s4.md",
+    "D:/WORKS/PLAN/.wt/cs-maintenance-20260929-backend/docs/support-s4-workbench.md",
+    "D:/WORKS/PLAN/.wt/cs-maintenance-20260929-backend/docs/support-s4-attachments.md",
+    "D:/WORKS/PLAN/.wt/cs-maintenance-20260929-backend/docs/HANDOFF-support-s4-maintenance.md"
+  ],
+  "steps": [
+    {
+      "id": "s5b",
+      "title": "按固定后端契约接通并实测后台五页",
+      "dependsOn": [],
+      "scope": [
+        "app/components/domain-views/m-view.tsx",
+        "app/components/domain-views/m-tabs/**",
+        "app/components/shell/**",
+        "app/api/admin/content/**",
+        "lib/admin/m*",
+        "lib/admin/conversation-realtime.ts",
+        "lib/admin/use-conversation-stream.ts",
+        "lib/admin/registry/m.ts",
+        "lib/nav/console-nav.ts",
+        "lib/admin/error-messages.ts",
+        "docs/PRD/Nexion_运营控制后台_开发落地规格.md",
+        "docs/PRD/M3-会话实时通信契约.md",
+        "docs/PRD/specs/NEXION-PC-RBAC-MATRIX-v1.md",
+        "docs/specs/support-redesign-20260929/s5/**",
+        "docs/ops-actions.manifest.json",
+        "scripts/s5b-real-runtime.mjs",
+        "tests/**"
+      ],
+      "acceptance": [
+        { "id": "s5b-snapshot", "description": "M1 六指标、筛选、客户列表和绩效取同一权威响应原子更新；null、TODO 去重、分页及完整性保持真实语义", "source": { "input": "D:/WORKS/PLAN/.wt/cs-maintenance-20260929-backend/docs/support-s4-workbench.md", "locator": "查询与快照" }, "kind": "ui", "checks": ["s5b/real-runtime"] },
+        { "id": "s5b-maintenance", "description": "当前顾问停止/恢复维护真写、重新读取及刷新仍在；历史双分页、执行与成功分开，失权不能代签或读私有结果", "source": { "input": "D:/WORKS/PLAN/.wt/cs-maintenance-20260929-backend/docs/support-s4-workbench.md", "locator": "客户、未回复与维护" }, "kind": "ui", "checks": ["s5b/real-runtime"] },
+        { "id": "s5b-message", "description": "当前归属下真实文字/图片消息按原命令和 clientMessageId 恢复，显式 replyTargets 只清选中旧段，较新消息保持未回复", "source": { "input": "D:/WORKS/PLAN/.wt/cs-maintenance-20260929-backend/docs/HANDOFF-support-s4.md", "locator": "接入契约" }, "kind": "ui", "checks": ["s5b/real-runtime"] },
+        { "id": "s5b-attachment", "description": "PNG/JPEG 按服务端 policy 上传、发信和受权 blob 读取；撤权后字节及 Range 被拒、旧 blob 被清理", "source": { "input": "D:/WORKS/PLAN/.wt/cs-maintenance-20260929-backend/docs/support-s4-attachments.md", "locator": "HTTP" }, "kind": "ui", "checks": ["s5b/real-runtime"] },
+        { "id": "s5b-revocation", "description": "真实转绑失效帧仅清目标客户且作废在途 full/snapshot 旧响应；新顾问可读、旧顾问刷新后不可读", "source": { "input": "C:/Users/jason/.codex/workflow-runs/customer-service-20260929/ROOT-S5A-ACCEPTANCE.md", "locator": "S5b 必验" }, "kind": "ui", "checks": ["s5b/real-runtime"] },
+        { "id": "s5b-ticket", "description": "R08 私聊副本正文、摘要和搜索只给当前顾问及审阅主管；无权者保留工单内部指派、状态和备注协作", "source": { "input": "C:/Users/jason/.codex/workflow-runs/customer-service-20260929/OWNER-AMENDMENTS.md", "locator": "R08 工单私聊副本" }, "kind": "ui", "checks": ["s5b/real-runtime"] },
+        { "id": "s5b-rules", "description": "M5 真实规则保留可空 D/M/W 与合法 LIMITED 0；保存、版本冲突、读回和恢复原值均有证据", "source": { "input": "../SPEC.md", "locator": "[FEAT-M05]" }, "kind": "ui", "checks": ["s5b/real-runtime"] },
+        { "id": "s5b-prd", "description": "后台功能契约和 M3 契约同步真实数据、状态、权限及异常，保留冻结输入和 S6 来源确认", "source": { "input": "C:/Users/jason/.codex/workflow-runs/customer-service-20260929/CLIENT-SOURCE-CONFIRMATION.md", "locator": "R09 客户端实施源确认" }, "kind": "static", "checks": ["s5b/typecheck"] }
+      ],
+      "checks": [
+        { "id": "typecheck", "argv": ["node", "node_modules/typescript/bin/tsc", "--noEmit"], "kind": "exit", "timeoutMs": 180000 },
+        { "id": "client-contract", "argv": ["node", "--experimental-strip-types", "--test", "--test-reporter=tap", "tests/s5a-support-client.test.mjs"], "kind": "tap", "minTests": 8, "timeoutMs": 120000 },
+        { "id": "build", "argv": ["node", "node_modules/next/dist/bin/next", "build"], "kind": "exit", "timeoutMs": 300000 },
+        { "id": "real-runtime", "argv": ["node", "scripts/s5b-real-runtime.mjs", "--report", "C:/Users/jason/.codex/workflow-runs/customer-service-20260929/s5b/runtime.json"], "kind": "record", "capability": "runtime", "report": "C:/Users/jason/.codex/workflow-runs/customer-service-20260929/s5b/runtime.json", "requiredChecks": ["s5b-snapshot", "s5b-maintenance", "s5b-message", "s5b-attachment", "s5b-revocation", "s5b-ticket", "s5b-rules"], "timeoutMs": 600000 }
+      ],
+      "reviewRequired": true
+    }
+  ],
+  "integration": {
+    "id": "integration",
+    "title": "S5b 当前仓与固定跨仓依赖最终验收",
+    "dependsOn": ["s5b"],
+    "scope": ["app/components/domain-views/m-view.tsx", "app/components/domain-views/m-tabs/**", "app/components/shell/**", "app/api/admin/content/**", "lib/admin/m*", "lib/admin/conversation-realtime.ts", "lib/admin/use-conversation-stream.ts", "lib/admin/registry/m.ts", "lib/nav/console-nav.ts", "lib/admin/error-messages.ts", "docs/PRD/**", "docs/specs/support-redesign-20260929/s5/**", "docs/ops-actions.manifest.json", "scripts/s5b-real-runtime.mjs", "tests/**"],
+    "acceptance": [
+      { "id": "s5b-handoff", "description": "真实后端、S5 页面、M2/M4 回归、固定 S6 源和功能契约在同一快照验收，未把阶段结果当部署", "source": { "input": "EXECUTION.md", "locator": "S5b：真实接口与跨仓验收" }, "kind": "behavior", "checks": ["s5b/real-runtime", "integration/full-verify"] }
+    ],
+    "checks": [
+      { "id": "full-verify", "argv": ["node", "scripts/verify.mjs"], "kind": "exit", "timeoutMs": 600000 }
+    ],
+    "reviewRequired": true
+  }
+}

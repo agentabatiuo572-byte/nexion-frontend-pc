@@ -195,11 +195,11 @@
 
 | 模块 | R 权限 | 可读角色 | W/H/X 角色 | 数据范围与关键限制 |
 |---|---|---|---|---|
-| M1 客服总览 | `service_m1_read` | SUPPORT、RISK、AUDITOR | W：SUPPORT lead（负载配置） | QUEUE/聚合；无用户资产写 |
-| M2 工单台 | `service_m2_read` | SUPPORT、RISK、AUDITOR | W：SUPPORT；升级/跨队列 H：SUPPORT lead | QUEUE；负责人、状态、归档、SLA 分离 |
-| M3 即时会话台 | `service_m3_read` | SUPPORT、RISK、AUDITOR | W：SUPPORT；强制转交 H | QUEUE；CAS 转交，关闭后不可普通发言 |
+| M1 客服总览 | `service_m1_read` | SUPPORT、RISK、AUDITOR | W：当前专属顾问可调本人客户维护；具管理权限的主管可正式转绑 | 顾问仅本人、主管可审阅全局；转绑须当前归属版本、理由和 Key，停止维护不解除归属 |
+| M2 工单台 | `service_m2_read` | SUPPORT、RISK、AUDITOR | W：按工单操作权限；升级与跨队列继续独立核权 | 私聊副本正文、摘要和搜索仅当前顾问及审阅主管；其他工单角色仍可协作指派、状态与内部备注 |
+| M3 即时会话台 | `service_m3_read` | SUPPORT、RISK、AUDITOR | W：当前专属顾问且有 `service_m3_write`；主管只审阅 | 顾问仅本人授权会话；发送用当前归属 ID、版本和 Key；撤权后历史正文及图片同步失效 |
 | M4 知识库与 SLA | `service_m4_read` | SUPPORT、CONTENT、AUDITOR | W：SUPPORT；SLA H：SUPPORT lead | REGION/QUEUE；FAQ 版本与发布状态分离 |
-| M5 话术与模板配置 | `service_m5_read` | SUPPORT、CONTENT、AUDITOR | W：SUPPORT/CONTENT；全局发布 H | locale/queue；变量白名单、禁词与预览 |
+| M5 话术与模板配置 | `service_m5_read` | SUPPORT、CONTENT、AUDITOR | 规则写仅超管；话术写按独立权限 | 全局 D/M/W 可空，`LIMITED` 深度 0 合法；版本冲突及结果未知必须保留原命令与理由 |
 
 ## 4. 跨层执行合同
 

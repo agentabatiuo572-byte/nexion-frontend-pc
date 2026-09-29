@@ -1,22 +1,27 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { supportClient, SupportClientError } from "../lib/admin/m-support-client.ts";
+import { supportClient, SupportClientError, isIndeterminateSupportError } from "../lib/admin/m-support-client.ts";
 
 const envelope = (data, status = 200) => new Response(JSON.stringify({ code: status === 200 ? 0 : status, data, message: status === 200 ? "OK" : "unavailable" }), { status, headers: { "Content-Type": "application/json" } });
 const originalFetch = globalThis.fetch;
+const snapshot = (overview = {}) => ({
+  snapshotId: "test-snapshot", evaluatedAt: "2026-09-29T00:00:00Z", rulesVersion: 1,
+  scope: { actorId: 12, agentAdminId: 12, mode: "AGENT" },
+  rules: { dormantDays: null, maintenanceDays: 7, activityWindowDays: null },
+  overview: { boundTotal: 5, activeTotal: null, dormantTotal: null, dueTotal: null, waitingReplyTotal: 2, firstContactTotal: 1, stoppedTotal: 0, knownActiveCount: 3, unknownWindowCount: 2, ...overview },
+  customers: { records: [], total: 0, pageNum: 1, pageSize: 1, filter: "ALL", available: true },
+  performance: { executionCount: 0, successfulCycleCount: 0, successfulCustomerCount: 0, days: [], from: "2026-09-01T00:00:00Z", to: "2026-09-29T00:00:00Z", timeZone: "Asia/Shanghai" },
+  completeness: { unknownCount: 2, unknownWindowCount: 2, coverageStartAt: "2026-09-01T00:00:00Z", observedThroughAt: "2026-09-29T00:00:00Z", observationLagMillis: 0, activitySource: "INTERACTIVE_LOGIN" },
+});
 
 test("overview preserves unknown counts and rejects a fabricated zero", async () => {
   try {
-    globalThis.fetch = async () => envelope({
-      evaluatedAt: "2026-09-29T00:00:00Z", rulesVersion: 1, scope: "SELF",
-      counts: { boundCustomers: 5, windowActiveCustomers: null, dormantCustomers: null, dueMaintenanceCustomers: null, waitingReplyCustomers: 2, firstContactCustomers: 1 },
-      knownActiveCount: 3, unknownWindowCount: 2,
-    });
+    globalThis.fetch = async () => envelope(snapshot());
     const overview = await supportClient.overview();
     assert.equal(overview.counts.windowActiveCustomers, null);
     assert.equal(overview.unknownWindowCount, 2);
-    globalThis.fetch = async () => envelope({ evaluatedAt: "2026-09-29T00:00:00Z", rulesVersion: 1, scope: "SELF", counts: {} });
+    globalThis.fetch = async () => envelope(snapshot({ activeTotal: 0 }));
     await assert.rejects(supportClient.overview(), /SUPPORT_CONTRACT_MALFORMED/);
   } finally { globalThis.fetch = originalFetch; }
 });
@@ -47,10 +52,10 @@ test("rules keep independently unconfigured values and reject invalid inheritanc
 
 test("customer detail requires current owner and preference version while keeping unknown activity", async () => {
   try {
-    const detail = { customerId: 7, assignmentId: 9, agentAdminId: 12, version: 4, maintenanceVersion: 2, maintenanceEnabled: false, maintenanceStatus: "STOPPED", accountState: "UNKNOWN", lastEffectiveAt: null, nextMaintenanceAt: null };
-    globalThis.fetch = async () => envelope(detail);
+    const detail = { customerId: 7, assignmentId: 9, assignmentVersion: 2, agentAdminId: 12, version: 4, preferenceVersion: 4, enabled: false, activityStatus: "UNKNOWN", windowStatus: "UNKNOWN", lastEffectiveAt: null, nextDueAt: null, due: false, openCycleId: null, waitingReply: false, firstContact: false, pendingReplyCount: 0, pendingConversationNo: null, pendingThroughMessageId: null, nickname: null };
+    globalThis.fetch = async () => envelope({ customer: detail });
     assert.deepEqual({ owner: (await supportClient.customerDetail("7")).agentAdminId, activity: (await supportClient.customerDetail("7")).lastEffectiveAt }, { owner: 12, activity: null });
-    globalThis.fetch = async () => envelope({ ...detail, maintenanceVersion: undefined });
+    globalThis.fetch = async () => envelope({ customer: { ...detail, preferenceVersion: undefined } });
     await assert.rejects(supportClient.customerDetail("7"), /SUPPORT_CONTRACT_MALFORMED/);
   } finally { globalThis.fetch = originalFetch; }
 });
@@ -81,6 +86,40 @@ test("transfer sends safe JSON integer IDs and reads the S3 assignment list", as
     assert.equal(result.assignments[0].assignmentId, "99");
     assert.throws(() => supportClient.transfer({ targetAgentAdminId: 12, customers: [{ id: "9007199254740992", expectedAssignmentId: null, expectedVersion: 1 }], reason: "八个字的正式转绑原因" }, "transfer-key-123"), /SUPPORT_CONTRACT_MALFORMED/);
     assert.equal(seen.length, 1);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("real command states keep in-progress and unknown outcomes recoverable", async () => {
+  try {
+    globalThis.fetch = async () => envelope({ status: "PROCESSING" });
+    assert.equal((await supportClient.command("stable-key-123")).status, "PROCESSING");
+    globalThis.fetch = async () => envelope({ status: "UNKNOWN" });
+    assert.equal((await supportClient.command("stable-key-123")).status, "UNKNOWN");
+    globalThis.fetch = async () => envelope({ status: "SUCCEEDED", result: { code: 0, message: "success", data: { conversationNo: "CV-1" } } });
+    assert.deepEqual((await supportClient.command("stable-key-123")).result, { conversationNo: "CV-1" });
+    for (const code of ["IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_KEY_CONFLICT", "IDEMPOTENCY_RECLAIM_CONFLICT", "IDEMPOTENCY_RETRY_CONFLICT"]) {
+      assert.equal(isIndeterminateSupportError(new SupportClientError(409, 409, code)), true, code);
+    }
+    assert.equal(isIndeterminateSupportError(new SupportClientError(409, 409, "SUPPORT_VERSION_CONFLICT")), false);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("conversation preflight reads the current version and accepts terminal states", async () => {
+  try {
+    globalThis.fetch = async () => envelope({ conversation: { status: "OPEN", version: 7 } });
+    assert.deepEqual(await supportClient.conversationState("CV-1"), { status: "OPEN", version: 7 });
+    globalThis.fetch = async () => envelope({ conversation: { status: "RESOLVED", version: 8 } });
+    assert.deepEqual(await supportClient.conversationState("CV-1"), { status: "RESOLVED", version: 8 });
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("advisor reply sends the S4 body, assignment, version and stable message ID", async () => {
+  let body;
+  try {
+    globalThis.fetch = async (_url, init) => { body = JSON.parse(init.body); return envelope({ conversationNo: "CV-1", version: 4 }); };
+    const sent = await supportClient.sendConversationReply("CV-1", { kind: "TEXT", content: "已处理", intent: "SERVICE", clientMessageId: "message-1", expectedAssignmentId: "9", expectedVersion: 3, replyTargets: [{ conversationNo: "CV-1", throughMessageId: 7 }] }, "stable-key-123");
+    assert.equal(sent.conversationNo, "CV-1");
+    assert.deepEqual({ body: body.body, expectedStatus: body.expectedStatus, expectedVersion: body.expectedVersion, expectedAssignmentId: body.expectedAssignmentId, clientMessageId: body.clientMessageId, replyTargets: body.replyTargets }, { body: "已处理", expectedStatus: "OPEN", expectedVersion: 3, expectedAssignmentId: 9, clientMessageId: "message-1", replyTargets: [{ conversationNo: "CV-1", throughMessageId: 7 }] });
   } finally { globalThis.fetch = originalFetch; }
 });
 
