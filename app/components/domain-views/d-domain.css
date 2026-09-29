@@ -39,10 +39,41 @@
 .ddom .l-card .l-h .sub { font-size: 12px; color: var(--ink-4); }
 .ddom .l-card .l-h .r { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .ddom .l-card .l-b { padding: 16px 20px 20px; }
-.ddom .cregis-status-embedded .p-row { align-items: flex-start; }
-.ddom .cregis-status-embedded .txt { min-width: 0; overflow-wrap: anywhere; }
-.ddom .cregis-status-embedded .s { line-height: 1.5; overflow-wrap: anywhere; }
-.ddom .cregis-status-embedded details { margin-top: 8px; }
+.ddom .l-card.cregis-status-embedded { margin-bottom: 0; border-radius: 0; background: transparent; }
+.ddom .cregis-status-embedded .l-h { border-top: 1px solid var(--border); }
+.ddom .cregis-status .l-b, .ddom .cregis-status-embedded .l-b { display: grid; gap: 16px; }
+.ddom .cregis-intro { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--ink-3); }
+.ddom .cregis-intro strong { color: var(--ink-2); margin-right: 12px; }
+.ddom .cregis-overview { margin: 0; gap: 10px; }
+.ddom .cregis-overview .f-stat { background: var(--surface-2); min-width: 0; }
+.ddom .cregis-overview .v { font-size: 19px; }
+.ddom .cregis-overview .v small { font-size: 11px; font-weight: 500; }
+.ddom .cregis-overview .v.cregis-off { color: var(--warning); }
+.ddom .cregis-overview .sub { overflow-wrap: anywhere; }
+.ddom .cregis-recon { display: flex; align-items: center; gap: 12px 24px; flex-wrap: wrap; padding: 10px 14px; background: var(--surface-2); border-radius: 8px; font-size: 12px; color: var(--ink-3); }
+.ddom .cregis-recon strong { color: var(--ink-2); }
+.ddom .cregis-recon details { flex: 1 1 220px; }
+.ddom .cregis-recon summary { cursor: pointer; color: var(--ink-2); }
+.ddom .cregis-recon .s, .ddom .cregis-queue .s { margin-top: 7px; line-height: 1.5; overflow-wrap: anywhere; }
+.ddom .cregis-operations { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.ddom .cregis-panel { min-width: 0; padding: 16px; border-radius: 9px; background: var(--surface-2); font-size: 12px; color: var(--ink-3); }
+.ddom .cregis-panel-title, .ddom .cregis-section-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+.ddom .cregis-panel p { line-height: 1.5; margin: 6px 0 14px; }
+.ddom .cregis-switch-form, .ddom .cregis-review-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.ddom .cregis-switch-form label { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; white-space: nowrap; }
+.ddom .cregis-review-form input { min-width: 0; max-width: 145px; padding: 5px 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--ink); }
+.ddom .cregis-case { margin-top: 10px; padding: 10px; border-radius: 7px; background: var(--surface-3); line-height: 1.55; overflow-wrap: anywhere; }
+.ddom .cregis-case .l-btn { margin: 4px 4px 0 0; }
+.ddom .cregis-case-count { margin-top: 14px; }
+.ddom .cregis-exceptions { display: grid; gap: 10px; }
+.ddom .cregis-section-title span { margin-left: 6px; font-size: 11px; font-weight: 500; color: var(--ink-4); }
+.ddom .cregis-queue-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.ddom .cregis-queue { min-width: 0; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); color: var(--ink-3); font-size: 12px; }
+.ddom .cregis-queue.active { background: var(--warning-soft); }
+.ddom .cregis-queue-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.ddom .cregis-queue-head strong { color: var(--ink); font-size: 15px; font-variant-numeric: tabular-nums; }
+@container ddom (max-width: 900px) { .ddom .cregis-operations { grid-template-columns: 1fr; } .ddom .cregis-queue-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container ddom (max-width: 560px) { .ddom .cregis-queue-grid, .ddom .cregis-overview { grid-template-columns: 1fr; } }
 
 .ddom .dcode { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3);
   background: var(--surface-3); border-radius: 5px; padding: 2px 7px; white-space: nowrap; }
