@@ -21,6 +21,9 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "cregis" && parts[1] === "exceptions") {
     return "/api/admin/finance/cregis/exceptions";
   }
+  if (parts.length === 2 && parts[0] === "cregis" && parts[1] === "deposits") {
+    return "/api/admin/finance/cregis/deposits";
+  }
   if (parts.length === 3 && parts[0] === "cregis" && parts[1] === "addresses" && parts[2] === "provision") {
     return "/api/admin/finance/cregis/addresses/provision";
   }

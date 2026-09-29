@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { financeAdminRequest } from "@/lib/admin/d-client";
 import type { DCtx } from "./types";
 
@@ -52,6 +52,91 @@ function rowSummary(row: ExceptionRow) {
     row.address, row.cid == null ? null : `CID ${row.cid}`, row.txid,
     row.ageSeconds == null ? null : `等待 ${row.ageSeconds} 秒`,
     row.lastError ?? row.last_error].filter((part) => part != null && part !== "").join(" · ");
+}
+
+type DepositRow = {
+  id: string; cid: string; userId: string; txid: string; logIndex: number; address: string;
+  grossAmount: string; feeAmount: string; netAmount: string;
+  confirmations: number; status: string; depositNo?: string | null;
+  createdAt: string; creditedAt?: string | null;
+};
+type DepositPage = { available: boolean; items: DepositRow[]; hasMore: boolean; nextBeforeId: string };
+
+function parseDepositPage(value: unknown): DepositPage {
+  if (!value || typeof value !== "object") throw new Error("Cregis 入金记录响应无效");
+  const page = value as Record<string, unknown>;
+  if (typeof page.available !== "boolean" || !Array.isArray(page.items) || typeof page.hasMore !== "boolean"
+      || typeof page.nextBeforeId !== "string" || !/^(0|[1-9]\d*)$/.test(page.nextBeforeId)
+      || page.items.some((item) => !item || typeof item !== "object"
+        || typeof item.id !== "string" || !/^[1-9]\d*$/.test(item.id)
+        || typeof item.cid !== "string" || !/^[1-9]\d*$/.test(item.cid)
+        || typeof item.userId !== "string" || !/^[1-9]\d*$/.test(item.userId)
+        || typeof item.txid !== "string"
+        || typeof item.status !== "string" || typeof item.address !== "string"
+        || !Number.isSafeInteger(item.logIndex) || !Number.isSafeInteger(item.confirmations)
+        || typeof item.grossAmount !== "string" || !/^\d+\.\d{6}$/.test(item.grossAmount)
+        || typeof item.feeAmount !== "string" || !/^\d+\.\d{6}$/.test(item.feeAmount)
+        || typeof item.netAmount !== "string" || !/^\d+\.\d{6}$/.test(item.netAmount)
+        || typeof item.createdAt !== "string")) {
+    throw new Error("Cregis 入金记录响应无效");
+  }
+  return value as DepositPage;
+}
+
+const DEPOSIT_STATUS: Record<string, string> = {
+  CREDITED: "已入账", REVIEW_HOLD: "待人工复核", DUST_HOLD: "低额冻结",
+  REORG_INVESTIGATING: "链重组调查", PROVIDER_CONFLICT_HOLD: "供应商冲突冻结",
+};
+
+function CregisDepositHistory() {
+  const [page, setPage] = useState<DepositPage | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const requestId = useRef(0);
+  const load = useCallback(async (beforeId = "0") => {
+    const current = ++requestId.current;
+    setLoading(true);
+    setError("");
+    if (beforeId === "0") setPage(null);
+    try {
+      const next = parseDepositPage(await financeAdminRequest<unknown>(`/cregis/deposits?beforeId=${encodeURIComponent(beforeId)}&limit=20`));
+      if (current === requestId.current) setPage((previous) => beforeId !== "0" && previous
+        ? { ...next, items: [...previous.items, ...next.items] } : next);
+    } catch (failure) {
+      if (current === requestId.current) setError(failure instanceof Error ? failure.message : "读取入金记录失败");
+    } finally {
+      if (current === requestId.current) setLoading(false);
+    }
+  }, []);
+  useEffect(() => { void load(); return () => { requestId.current++; }; }, [load]);
+
+  return <div className="cregis-history">
+    <div className="cregis-section-title">USDT 入金记录 / 充值单
+      <button className="l-btn sm" disabled={loading} onClick={() => void load()}>刷新列表</button>
+    </div>
+    <div className="sub">链上转账经供应商与链核实后形成入金记录；完成入账时生成充值单。之后若发生风险冻结，仍保留历史单号和入账额，当前可用余额以钱包与风控状态为准。</div>
+    {error && <div className="dtint warn">入金列表不可用：{error}</div>}
+    {loading && !page && <div className="dtint">正在读取入金记录…</div>}
+    {page && !page.available && <div className="dtint warn">Cregis 收款模式已停用，历史列表当前不可查询；请勿将此状态视为无入金记录。</div>}
+    {page?.available && <>
+      <div className="cregis-history-scroll"><table className="l-tbl">
+        <thead><tr><th>记录 / 充值单</th><th>用户</th><th>链上交易 / 地址</th><th className="num">毛额 USDT</th><th className="num">手续费</th><th className="num">历史净入账</th><th>确认数</th><th>状态</th><th>发现 / 入账时间</th></tr></thead>
+        <tbody>{page.items.length === 0 ? <tr><td colSpan={9} className="cregis-history-empty">暂无已核实的链上入金；待处理回调和链上缺单请查看下方异常队列。</td></tr>
+          : page.items.map((row) => <tr key={row.id}>
+            <td className="mono">CID {row.cid}<div className="sub">{row.depositNo || (row.status === "CREDITED" ? "充值单缺失，请核对" : "尚未生成充值单")}</div></td>
+            <td className="mono">{row.userId}</td>
+            <td className="cregis-chain-cell mono">{row.txid} <span>日志 {row.logIndex} · {row.address}</span></td>
+            <td className="num mono">{String(row.grossAmount)}</td>
+            <td className="num mono">{String(row.feeAmount)}</td>
+            <td className="num mono">{String(row.netAmount)}</td>
+            <td className="mono">{row.confirmations}</td>
+            <td><span className={`bdg ${row.status === "CREDITED" && row.depositNo ? "ok" : row.status.endsWith("HOLD") || row.status === "REORG_INVESTIGATING" ? "bad" : "warn"}`}>{row.status === "CREDITED" && !row.depositNo ? "入账记录异常" : DEPOSIT_STATUS[row.status] ?? row.status}</span></td>
+            <td className="mono">{String(row.createdAt).replace("T", " ")}<div className="sub">{row.creditedAt ? `入账 ${String(row.creditedAt).replace("T", " ")}` : "尚未入账"}</div></td>
+          </tr>)}</tbody>
+      </table></div>
+      {page.hasMore && <button className="l-btn sm" disabled={loading} onClick={() => void load(page.nextBeforeId)}>加载更早记录</button>}
+    </>}
+  </div>;
 }
 
 export function CregisStatus({ canManage = false, openActionConfirm, embedded = false }: {
@@ -181,6 +266,9 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
         </div>
         {(!data.depositEnabled || !data.depositCreditEnabled || !data.provisionGate.assignEnabled) && <div className="dtint warn">USDT 充值尚未开放；请勿向测试地址转账。</div>}
         {data.depositEnabled && data.depositCreditEnabled && data.provisionGate.assignEnabled && !data.provisionGate.creditEnabled && <div className="dtint warn">仅开放试点收款地址，到账后进入人工复核，暂不自动入账；请仅按测试安排转账。</div>}
+      </>}
+      <CregisDepositHistory />
+      {data && <>
         {canManage && <div className="cregis-operations">
         <div className="cregis-panel">
           <div className="cregis-panel-title">对账与熔断</div>
