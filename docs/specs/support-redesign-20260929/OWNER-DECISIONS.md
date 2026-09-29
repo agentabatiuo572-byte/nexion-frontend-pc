@@ -66,8 +66,8 @@
 
 ## 已核对的代码事实与环境
 
-- 后台仓：D:/WORKS/PLAN/admin-ops，当前 main 基线 0f54a406404a7d0ced9d629566a27586076771b6；原工作树有无关 .claude/settings.json 删除，必须保留。
-- 后台远端当前配置为 https://github.com/jasonukkd/nexion-ops-console.git；以已批准身份 fakerli998877-ship-it fetch/查询失败（Repository not found）。不换旧账号、不改 owner、不强推；文档与本地实施可继续，远端同步要如实标未完成。
+- 后台仓：D:/WORKS/PLAN/admin-ops，初查本地 main 为 0f54a406404a7d0ced9d629566a27586076771b6；原工作树有无关 .claude/settings.json 删除，必须保留。该本地快照已不是本次实施基线。
+- 主人于 2026-09-29 明确更正后台最新远端为 https://github.com/agentabatiuo572-byte/nexion-frontend-pc/tree/test，并要求清除旧后台地址记忆。主线已将 origin 更新为 https://github.com/agentabatiuo572-byte/nexion-frontend-pc.git，以指定账号 fakerli998877-ship-it 成功 fetch；本轮固定 origin/test 基线 248d6da89becb113402046ab3a9f27c48f3e010d。规格和设计仅保留本次文档增量迁入此基线，不合并旧线无关代码、不覆盖原树改动。旧地址访问阻塞已解除。
 - 后端仓：D:/WORKS/PLAN/nexion-backend，当前本地 test 为 7df066a12eba03192a6b78580d76fe49d9f8c68c；2026-09-29 fetch 后 origin/test 已前进到 cc5d96f9，实施须固定核实后的最新远端完整提交，不切换原工作树。
 - 客户端仓：D:/WORKS/PLAN/Nexion-uniapp，main 基线 710e9eecfeefee36014c779ca699ec8fcc66fd87；原树有 .claude 删除与 src/lib/a11y-activate.ts 修改，必须保留。
 - 本机实际存在后端，旧文档里“后端缺席”不能作当前事实。
