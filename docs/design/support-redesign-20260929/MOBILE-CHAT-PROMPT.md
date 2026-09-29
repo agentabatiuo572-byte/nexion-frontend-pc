@@ -1,0 +1,20 @@
+# 手机私聊生图记录
+
+本补充使用内置 `image_gen`，先生成再实看。`mobile-chat-final-v1.png` 是首稿，保留以记录产品示例文案修正；`mobile-chat-final-v2.png` 是 S6 的视觉输入。两张图都在本目录，生成源保存在 `C:/Users/jason/.codex/generated_images/01a0eba5-e1e8-7211-ba0a-c43876bd3b3b/`，项目引用只用本目录的 v2。均为 1536×1024、不透明 PNG。
+
+| 文件 | 工具原始文件 | 字节 | SHA-256 | 实看结论 |
+|---|---|---:|---|---|
+| `mobile-chat-final-v1.png` | `exec-8e792ec4-8999-47ab-a305-47bc3994a986.png` | 1,417,259 | `4b5ff277d6dd4f44e5f231bd129900df99c1da24cc43941572fa816524fa3049` | 三屏结构、两段失败成立，但示例对话混入产品库存/尺寸，不能作为最终示例。 |
+| `mobile-chat-final-v2.png` | `exec-93132572-01bf-46f2-af74-486ff7231fe2.png` | 1,463,847 | `1859ac4f9b398808fd8d5fc604bcce4f3f58b2414cd00fde950e49a12f724730` | 已绑定、待分配、图片上传失败与消息发送失败清晰分开；示例改为中性的账户通知设置求助。 |
+
+## v1 主提示词（原文）
+
+> Use case: ui-mockup. Asset type: high-fidelity mobile app customer support design sheet for implementation reference. Create ONE wide landscape canvas containing THREE separate full-height smartphone screens side by side, each clearly labeled at the top outside the phone: 已绑定私聊, 等待分配, 图片失败恢复. Each phone is a real usable single-screen UI, not tiny arbitrary widgets. Visual language follows the existing UniApp V5 LIGHT theme: warm ivory app background, white surfaces, near-black readable Chinese text, electric-blue primary message bubbles/buttons, restrained teal informational state, subtle neutral borders, generous 12–24 px spacing, soft rounded corners, no large glow. Preserve a native-looking status bar/top safe area and bottom home indicator/safe area. First phone: title '专属顾问', fixed CURRENT advisor name '林顾问', small note '离线时消息仍留给当前顾问'; 1v1 text bubbles with distinct customer/advisor alignment, one received image thumbnail and an accessible image-open affordance, bottom composer with image-attach icon, text field and blue '发送' button; no extra contact identity selector. Second phone: title '等待分配', clear status '尚未分配顾问', neutral explanation '留言已收到，分配后由专属顾问接续'; customer can still type and send a text message; show one preserved customer message and a service receipt. Do not show a substitute advisor. Third phone: title '专属顾问', same current advisor identity; show TWO separate failures with obvious exits: attachment draft card '图片上传失败' with '重试上传' and '取消附件'; outgoing message bubble '消息发送失败' with '重试发送'. Add small plain note '上传成功后仍需发送消息'; keep failed attachment from being sent, gray disabled '发送' when no text or ready image. Use customer IDs only, no age/sex/location/wealth. All counts/content are illustrative. Chinese labels must be crisp and legible. No Nova AI, no voice/video/call buttons, no marketing/prices, no agent switching, no internal codes, no fixed policy values, no watermark. Keep each phone screen sufficiently wide to inspect and hand off.
+
+## v2 编辑提示词（原文）
+
+输入图：本目录 `mobile-chat-final-v1.png`，已先用 `view_image(detail: original)` 实看。
+
+> Use case: precise-object-edit / text-localization on a mobile UI triptych. Preserve the three side-by-side phones, V5 light ivory/white/electric-blue style, all layout, advisor/awaiting-assignment states, image upload failure card, message send failure retry, bottom composers and safe areas. Correct ONLY the example conversation content to neutral app customer support, removing product stock, shipping, sales, product size, pricing or marketing claims. First phone: customer blue message should read '您好，账户设置里的通知开关在哪里？'; advisor white reply '您好，我来帮您确认入口，请稍等。'; customer's follow-up '好的，谢谢'; advisor's received image message should say '请参考这张设置页面截图。' and the thumbnail should depict a generic simple app settings screen with a notification toggle, not a sofa or product photo. Middle phone customer blue message should read '您好，我想咨询账户通知设置。' and receipt can remain '留言已收到，分配后由专属顾问接续'. Third phone the failed outgoing blue message should read '这张设置截图里，通知开关为什么不可用？'. Do not change the two distinct failures '图片上传失败 · 重试上传/取消附件' and '消息发送失败 · 重试发送', or the disabled send button. Avoid any Nova AI, voice/video, agent switch, prices or policy numbers. Ensure text legible and unambiguous, no watermark.
+
+图片里的顾问姓名、头像、时间、设置缩略图与文字仅为设计示例，不表示真实客户、已发布功能或既定业务承诺。精确状态与可操作文案以 `MOBILE-CHAT-INTERACTION.md` 和 S1 `CONTRACTS.md` 为准。
