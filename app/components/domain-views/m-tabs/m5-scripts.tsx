@@ -48,6 +48,8 @@ const DEFAULT_ADVISOR_POLICY = { enabled: "off", delayMs: 1500, cooldownHours: 2
 const ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE = false;
 
 const CAT_ICON: Record<SessionType, IconName> = { advisor: "users", support: "bell", ai: "power" };
+const SEAT_LABEL: Record<string, string> = { MANAGER: "客服主管", DEDICATED: "专属客服", GENERAL: "通用客服" };
+const seatLabel = (position: string) => Object.hasOwn(SEAT_LABEL, position) ? SEAT_LABEL[position] : (position || "通用客服");
 
 function SensTag() {
   return (
@@ -502,7 +504,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
                   <div className="dim2" style={{ fontSize: 11.5, marginTop: 3 }}>{agent.email || agent.adminRole || "客服管理员"} · <span className="mono">A1#{agent.adminId}</span></div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{agent.position}</div>
+                  <div data-proof="m5-seat-position-label" style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{seatLabel(agent.position)}</div>
                   <div className="row wrap" style={{ gap: 5, marginTop: 5 }}>
                     {agent.serviceTypes.map((type) => (
                       <span key={type} className="chip" style={{ height: 18, fontSize: 11, border: "none" }}>{type === "advisor" ? "专属客服服务" : "普通客服"}</span>
@@ -851,7 +853,7 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
           </div>
           <label className="field" style={{ marginBottom: 0 }}>
             <span>坐席类型</span>
-            <input className="fld" value={position} readOnly disabled />
+            <input data-proof="m5-seat-position-field" className="fld" value={seatLabel(position)} readOnly disabled />
             <span className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>客服主管 / 专属客服 / 通用客服由 M1「分配坐席」维护。</span>
           </label>
           <label className="field" style={{ marginBottom: 0 }}>
@@ -1046,7 +1048,7 @@ function AdvisorAssignModal({ agent, ctx, onClose }: { agent: MSupportAgent; ctx
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div>
             <div style={{ fontSize: 15, fontWeight: 600 }}>{agent.name}</div>
-            <div className="dim2" style={{ fontSize: 11.5, marginTop: 3 }}>{agent.position} · <span className="mono">A1#{agent.adminId}</span></div>
+            <div data-proof="m5-seat-position-label" className="dim2" style={{ fontSize: 11.5, marginTop: 3 }}>{seatLabel(agent.position)} · <span className="mono">A1#{agent.adminId}</span></div>
           </div>
           <label className="field" style={{ marginBottom: 0 }}>
             <span>搜索用户</span>

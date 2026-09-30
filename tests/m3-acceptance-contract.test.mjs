@@ -14,6 +14,11 @@ test("M5 cards follow content width while tabular scripts retain their own scrol
   assert.doesNotMatch(view, /gridTemplateColumns:/);
   assert.doesNotMatch(view, /<span className="mono">\{c\.type\}<\/span>/);
   assert.match(view, /managed \? "由 AI 平台统一管理" : c\.managedBy/);
+  assert.match(view, /MANAGER: "客服主管", DEDICATED: "专属客服", GENERAL: "通用客服"/);
+  assert.match(view, /Object\.hasOwn\(SEAT_LABEL, position\)/);
+  assert.match(view, /value=\{seatLabel\(position\)\} readOnly disabled/);
+  assert.doesNotMatch(view, />\{agent\.position\}/);
+  assert.match(view, /const dedicatedSeat = agent\.seatType === "DEDICATED" \|\| position\.includes\("专属"\);/);
   for (const name of ["m5-panels", "m5-policy-grid", "m5-seat-row", "m5-table-scroll", "m5-script-row", "m5-modal-grid", "m5-template-row", "m5-heading", "m5-pager"]) assert.ok(view.includes(name), name);
   assert.match(css, /\.mdom \.m5-table-scroll \{ overflow-x: auto; \}/);
   assert.match(css, /\.mdom \.m5-seat-row \.chip \{[^}]*max-width: 100%;[^}]*height: auto;[^}]*flex-wrap: wrap;[^}]*white-space: normal;/);
