@@ -238,6 +238,8 @@
 .mdom .m5-seat-row { display: grid; grid-template-columns: minmax(180px, 1fr) 220px minmax(220px, 1.2fr) 170px; }
 .mdom .m5 .sec-h, .mdom .m5-heading, .mdom .m5-category-row, .mdom .m5-template-row, .mdom .m5-pager { flex-wrap: wrap; }
 .mdom .m5-category-row > span:first-child { flex-shrink: 0; }
+.mdom .m5-seat-row .chip { max-width: 100%; height: auto; min-height: 22px; flex-wrap: wrap; white-space: normal; }
+.mdom .m5-seat-row .chip > span { min-width: 0; }
 .mdom .m5-table-scroll { overflow-x: auto; }
 .mdom .m5-script-row { display: grid; min-width: 640px; grid-template-columns: 92px minmax(0, 1fr) 120px 88px 96px; }
 @container mdom (max-width: 1040px) { .mdom .m5-seat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
