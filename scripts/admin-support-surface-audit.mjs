@@ -70,7 +70,7 @@ assertContains("lib/admin/registry/m.ts", [
 // 域 M 视图接线
 assertContains("app/components/domain-views/m-view.tsx", [
   'M2: "M2"',
-  "<M2Tickets ctx={ctx} />",
+  "<M2Tickets ctx={ctx} advisorQualified={Boolean(",
   "<M3DedicatedChat ctx={ctx} />",
 ]);
 assertContains("app/components/domain-views/ported.ts", ['"M"']);
