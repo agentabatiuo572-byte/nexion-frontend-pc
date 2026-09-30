@@ -2,6 +2,8 @@
 
 输入：[OWNER-DECISIONS.md](OWNER-DECISIONS.md)、[SPEC.md](SPEC.md)、[CONTRACTS.md](CONTRACTS.md)、[ACCEPTANCE.md](ACCEPTANCE.md)、[SOURCE-MAP.md](SOURCE-MAP.md)。默认无部署/生产库写入；分仓计划由各阶段在自己独立工作树激活，不以仓目录名代替branch/SHA。
 
+阶段状态更新（2026-09-30）：S1/S2/S3/S4/S5b/S6 已有各自交付和阶段验收，固定提交见 SOURCE-MAP 与阶段验收记录；S2 移动稿已由后台同仓提交 b375ff867fd9196eb54760cb354ae554bf65bd0f 纳入设计目录。S7 三仓集成、APP 实机、目标 test 同步和生产发布不由阶段证据代替。下表与检查清单为原阶段计划，不能倒读为当前未实施。
+
 ## 阶段索引与唯一所有权
 
 | 阶段 | 唯一负责人 / 写入范围 | 必要依赖 | 接口交接与退出门 |
@@ -22,7 +24,7 @@ S3/S4同后端文件高度重合，必须顺序；S5/S6分仓可并行。S7发�
 
 后台S5：`app/components/domain-views/m*`、`lib/admin/m*`、必要`app/api/admin/content`二进制代理、shell badge/nav权限、对应tests/scripts与本仓PRD契约引用。S2拥有设计目录，本阶段消费不覆盖。客户端S6：`src/api/support-api.ts`、`src/domain/support.ts`、`src/store/conversations.ts`、`src/pages/support/`、`src/components/support/`、必要求助/工单入口和现有语言文件，禁止扩到网站/native打包/无关a11y WIP。
 
-后台实施基线更新为`248d6da89becb113402046ab3a9f27c48f3e010d`（新权威origin/test），不是S1所在旧checkout。S5允许范围还包含现有`lib/admin/{admin-conversation-realtime,conversation-realtime,use-conversation-stream}.ts`以覆盖真实WS路径；保留新基线m1-pending-command、m3-composer-state、恢复门和business-time语义。新增现有回归清单见SOURCE-MAP。协调会话只搬本目录文档增量，不能将旧源码整分支合入新test。
+S1 当时选定的后台实施起点为 248d6da89becb113402046ab3a9f27c48f3e010d；正式 S5b 阶段验收提交见上文。S5 允许范围包含 lib/admin/{admin-conversation-realtime,conversation-realtime,use-conversation-stream}.ts，以覆盖真实 WS 路径；旧调查树与正式客户端原型代码都不得整分支回灌目标 test。
 
 每次交接提供：完整commit、分支和树路径；本阶段变更集；API真实样例（脱敏）、错误/版本/幂等规则；DDL与可重复迁移/回滚；检查命令、运行结果、日志；独立review findings和已复验证据；未测环境；下一阶段允许消费的字段。S4不能只给接口声明而不给实际读写样例；S5/S6不能把mock样例当真实后端。
 
@@ -44,7 +46,7 @@ Maven实际入口：`D:/WORKS/PLAN/.local-runtime/phone-calibration-tools/apache
 
 `plans/`提供按仓的v2契约草案及总索引，所有行为验收来源为本目录普通文件。计划repo目前指可解析的只读基线仓，仅供验证结构：**不得在原树init/start/run**。协调会话创建各阶段树后，在该树获准文档位置复制计划、替换repo为真实独立树绝对路径、base为实际已验收上游SHA、owner为执行会话身份、inputs为固定规格/设计的普通文件路径，并以新task id初始化。跨仓依赖不由单仓CLI自动证明：先验证上游handoff提交与接口证据，作为inputs加入；S5另加入S2选定稿和交互说明。S7分别读取三仓状态/提交，不能用一个repo的hash代表三仓。
 
-新增维护/图片/集成runtime检查还未写，草案中这些检查明确指向**待实现测试/报告生产器**，因此计划不可执行通过；不能换成恒成功、JSON可解析或空报告。后续负责人实现并验证命令真实存在、失败可见、隔离环境安全后才激活。所有ui acceptance映射record+runtime，requiredChecks含对应id；真实报告带WORKFLOW_TASK_ID/STEP_ID/CHECK_ID/RUN_ID/REPO/SNAPSHOT_HASH，不把人工填pass当浏览器证据。
+原计划的新增维护/图片/集成runtime检查曾标为待实现；各阶段执行证据分别见S4、S5b、S6验收记录，S7另对固定三仓快照重跑完整矩阵。不能换成恒成功、JSON可解析或空报告。后续负责人实现并验证命令真实存在、失败可见、隔离环境安全后才激活。所有ui acceptance映射record+runtime，requiredChecks含对应id；真实报告带WORKFLOW_TASK_ID/STEP_ID/CHECK_ID/RUN_ID/REPO/SNAPSHOT_HASH，不把人工填pass当浏览器证据。
 
 生命周期：init→bind实际session→start→实施→run→独立review→status；所有步通过后integration重跑所有checks+独立coverageReview→finish。状态/报告保存在协调会话授权的仓外证据路径，防止输出改变快照。快照或输入变化reopen最早受影响步骤；中断先证实进程终止才recover，不改JSON机器状态。review只能由实际独立审查者给出，主线不伪造身份。
 
@@ -52,4 +54,4 @@ Maven实际入口：`D:/WORKS/PLAN/.local-runtime/phone-calibration-tools/apache
 
 S3先避免现有ensureSchema去重污染预检，再保存隔离数据映射并演练重跑。S4不补造历史活动/业绩；S5/S6回退不得解除服务端专属门。S7证实回滚仍保留所有消息/附件和绑定历史，不能直接回退为旧广播/转接。没有生产执行授权，不启动生产迁移或部署。
 
-S1文档审阅通过可放行S3的隔离实现；并不表示后端完成。S5必须等待实际接口与设计产物；各阶段“检查通过”只覆盖报告明确列出的能力。后台新权威远端/test与本地调查基线差异由主线核对（见HANDOFF），本会话按调度不push/rebase，不能把本地commit当远端迁入。最终需要主人拍板的只有新的业务范围或真实生产发布决定，本阶段没有额外此类请求。
+S1 文档审阅只放行当时的隔离实施；S3–S6 阶段验收已有独立记录，仍不能替代 S7。R09 正式客户端仓为 nexion-frontend-uniapp/test，旧 Nexion-uniapp/main 仅保留调查证据。最终新的业务范围或真实生产发布决定仍由主人拍板。

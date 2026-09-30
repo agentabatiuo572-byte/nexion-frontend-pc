@@ -68,12 +68,13 @@
 
 - 后台仓：D:/WORKS/PLAN/admin-ops，初查本地 main 为 0f54a406404a7d0ced9d629566a27586076771b6；原工作树有无关 .claude/settings.json 删除，必须保留。该本地快照已不是本次实施基线。
 - 主人于 2026-09-29 明确更正后台最新远端为 https://github.com/agentabatiuo572-byte/nexion-frontend-pc/tree/test，并要求清除旧后台地址记忆。主线已将 origin 更新为 https://github.com/agentabatiuo572-byte/nexion-frontend-pc.git，以指定账号 fakerli998877-ship-it 成功 fetch；本轮固定 origin/test 基线 248d6da89becb113402046ab3a9f27c48f3e010d。规格和设计仅保留本次文档增量迁入此基线，不合并旧线无关代码、不覆盖原树改动。旧地址访问阻塞已解除。
-- 后端仓：D:/WORKS/PLAN/nexion-backend，当前本地 test 为 7df066a12eba03192a6b78580d76fe49d9f8c68c；2026-09-29 fetch 后 origin/test 已前进到 cc5d96f9，实施须固定核实后的最新远端完整提交，不切换原工作树。
-- 客户端仓：D:/WORKS/PLAN/Nexion-uniapp，main 基线 710e9eecfeefee36014c779ca699ec8fcc66fd87；原树有 .claude 删除与 src/lib/a11y-activate.ts 修改，必须保留。
+- 后端仓：D:/WORKS/PLAN/nexion-backend 是 S1 原调查树，当时本地 test 为 7df066a12eba03192a6b78580d76fe49d9f8c68c、origin/test 为 cc5d96f928c82f081ce0d1e62c9874486634187a；正式阶段验收工作树 D:/WORKS/PLAN/.wt/cs-app-assignment-20260929-backend 固定提交 0ec95980aa8a436113acdc86e67a50b05f11c738。并发远端修复仍须由协调会话核对并集成，不以原树旧 SHA 判断缺功能。
+- 客户端实施源依主人 R09 确认为 https://github.com/agentabatiuo572-byte/nexion-frontend-uniapp.git 的 test，固定起点 44b5ef0ddf4914fb6e5cb1140a997cd67ae36c7c；S6 隔离工作树 D:/WORKS/PLAN/.wt/cs-client-20260929-app 阶段验收提交 544bff449888ef7ae27eb3f05e8ddbf486366ea0。原 Nexion-uniapp/main 的 710e9eecfeefee36014c779ca699ec8fcc66fd87 只保留为 S1 调查证据，不是实施或合入依据；原树 .claude 删除与 src/lib/a11y-activate.ts 修改须保留。
+- 后台 S5b 阶段验收提交为 8d0ff62cb10ba7b996df88800d8cbf7493f5d920；后端、后台、客户端的这些 SHA 是阶段证据，不等于三仓 S7 总验收、test 同步或生产发布。R08 私聊转工单权限以仓外 OWNER-AMENDMENTS.md 原决定为准，本段不改写该决定。
 - 本机实际存在后端，旧文档里“后端缺席”不能作当前事实。
 - 后台既有路径：app/components/domain-views/m-tabs/、lib/admin/m-client.ts、m-view.tsx、console-shell.tsx。M1 与 M5 均有绑定入口，M3 有独立会话转接。
 - 后端既有路径：content/application/OpsSupportAgentService.java、AppSupportService.java、OpsConversationService.java，content/mapper/SupportAgentMapper.java，auth/application/AppUserRegistrationService.java。
-- 当前路由存在忙碌过滤与其他顾问回退；文字会话模型未实现本期所需图片契约。上述是源码事实，未在本轮运行验证。
+- S1 调查时路由仍有忙碌过滤与其他顾问回退，文字会话缺图片契约；这是旧基线源码事实，不代表正式三仓现行状态。
 - 后台 docs/PRD/Nexion_运营控制后台PRD_v4.md 等旧指针与更晚的项目自有 PRD 规则有冲突；本任务新规格放后台仓内，不恢复旧独立 PRD 仓，也不顺带改全局规则。
 
 ## 阶段交付纪律

@@ -1,12 +1,12 @@
 # 源码基线与需求映射
 
-本轮只读源码核对，不代表运行验证。规则/功能权威是 [OWNER-DECISIONS.md](OWNER-DECISIONS.md)，而不是下述现状行为。
+本表保留 S1 当时的只读调查事实，不作为现行实现状态。正式实施源：后台 nexion-frontend-pc/test（S5b 阶段验收 8d0ff62cb10ba7b996df88800d8cbf7493f5d920）、后端 nexion-backend（阶段验收 0ec95980aa8a436113acdc86e67a50b05f11c738）、客户端 nexion-frontend-uniapp/test（R09 起点 44b5ef0ddf4914fb6e5cb1140a997cd67ae36c7c；S6 阶段验收 544bff449888ef7ae27eb3f05e8ddbf486366ea0）。S7 跨仓验收及合入状态以协调会话新证据为准。
 
-| 仓 | 只读基线 | 读取方式 |
+| 仓 | S1 只读调查基线（历史） | 当时读取方式与限制 |
 |---|---|---|
 | 后台 | 实施/复核`248d6da89becb113402046ab3a9f27c48f3e010d`（origin/test）；初查`0f54a406404a7d0ced9d629566a27586076771b6` | 本工作树仍旧基线，使用git show/diff读取新远端SHA；仅规格增量由主线迁入 |
 | 后端 | `cc5d96f928c82f081ce0d1e62c9874486634187a` | `git -C D:/WORKS/PLAN/nexion-backend show <SHA>:<path>`；本地test较旧，不能读工作树冒充最新 |
-| 客户端 | `710e9eecfeefee36014c779ca699ec8fcc66fd87` | `D:/WORKS/PLAN/Nexion-uniapp` main；客服相关文件只读，无关WIP不动 |
+| 客户端 | 710e9eecfeefee36014c779ca699ec8fcc66fd87，旧 Nexion-uniapp/main | 仅 S1 原型调查；R09 后不再作 S6 实施或最终合入依据 |
 
 ## 后台链路
 
@@ -64,7 +64,9 @@ Java目录前缀 `src/main/java/ffdd/opsconsole/`。以下符号是稳定回源�
 
 主要控制器：`content/web/{OpsSupportAgentController,OpsSupportWorkbenchController,OpsConversationController,AppSupportController,OpsSessionTemplateController}.java`。后台会话status/archive现有为PATCH；transfer及其accept/return/wait为POST；ticket replies与conversation replies为POST。API目标详细表见CONTRACTS C5。
 
-## 客户端链路
+## 客户端链路（下表为 S1 旧原型调查，不是正式 S6 现状）
+
+正式 nexion-frontend-uniapp/test 的 S6 回源锚点：`src/api/support-api.ts` 已解析 IMAGE/attachmentId、GET /api/app/support/advisor、附件 policy/上传/私有内容/取消；`src/domain/support.ts` 的 ConvMessage 已有 kind/attachmentId；`src/store/conversations.ts` 按账号维护图片草稿、失败恢复和顾问状态；`src/pages/support/chat.vue` 与 `messages.vue` 承载双入口。下表各行仅是 S1 旧 Nexion-uniapp/main 调查记录，其“纯文字/待扩展”不描述现行功能。S2 移动稿已由后台同仓提交 b375ff867fd9196eb54760cb354ae554bf65bd0f 纳入 `docs/design/support-redesign-20260929/`，不是旧客户端实施源；APP 实机及同客三端完整旅程仍待 S7。
 
 | 文件 / 方法 | 已核实事实 | 目标影响 |
 |---|---|---|
@@ -89,6 +91,6 @@ Java目录前缀 `src/main/java/ffdd/opsconsole/`。以下符号是稳定回源�
 
 ## 环境与命令边界
 
-远端更正（协调会话转达主人确认）：后台当前权威为`https://github.com/agentabatiuo572-byte/nexion-frontend-pc`，目标`test`，完整SHA见表首，授权账号可访问。协调会话已更新OWNER-DECISIONS环境段，S1不改该文件。本S1已复核上述客服相关增量；主线只迁入规格文档，不合旧线代码。按调度不push/rebase，旧权限阻塞不再成立。
+后台远端更正及旧 SHA 是 S1 当时的交接记录；正式客户端源已由 R09 更正，见本文件开头。S5b/S6 阶段已各自验收，S7 仍须在固定三仓提交上重跑集成门；不能把阶段结果当生产上线。
 
 后端工具已由协调会话核实存在：`D:/WORKS/PLAN/.local-runtime/phone-calibration-tools/jdk-17.0.20.1+1`、`apache-maven-3.9.9/bin/mvn.cmd`、`mysql-verified/mysql-8.4.6-winx64/bin/{mysqld,mysql}.exe`（后二者路径同此前缀）。不在PATH不等于未安装；后端阶段设置临时JAVA_HOME/PATH，不下载替代工具。任何测试DB须独立schema及隔离凭据，生产数据不触及。本文未运行这些测试。

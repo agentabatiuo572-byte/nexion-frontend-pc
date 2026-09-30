@@ -1,4 +1,6 @@
-# S1规格交接
+# S1 规格交接（历史记录；现行阶段状态见下）
+
+现行实施源与阶段证据（2026-09-30）：后台为 nexion-frontend-pc/test，后端为 nexion-backend，主人 R09 确认客户端为 nexion-frontend-uniapp/test；固定起点与阶段验收提交见 SOURCE-MAP 和各阶段记录。S2 移动稿已由后台同仓提交 b375ff867fd9196eb54760cb354ae554bf65bd0f 纳入 `docs/design/support-redesign-20260929/`。以下记录的是 S1 当时交接与审查，凡“未实现/待交付”均只描述彼时状态；S7 三仓集成、APP 实机和目标 test 同步仍需独立证据。
 
 工作树：`D:/WORKS/PLAN/.wt/cs-spec-20260929-admin`；分支`codex/cs-spec-20260929`；基线`0f54a406404a7d0ced9d629566a27586076771b6`。只改本目录，未改原始决定、生产代码或设计目录。
 
@@ -45,10 +47,10 @@
 
 done-review六维：①真落地=规格已落盘读回，不宣称功能落地；②该有的在不在=SOURCE-MAP逐原始来源→7功能→AC01–14；③交互完整=7功能点击/状态/异常/权限文档审查；④同形覆盖=M1/M5/seat/transfer/dock/工单/REST/SSE/Socket/附件全部列入契约；⑤不变量=单一归属、邀请财务不变、维护事实分离、双端与语言验收要求齐；⑥实景回归=文档任务不适用，后续阶段待运行。防自欺六问均据此区分“文档已验”与“功能未验”，未用grep/lint代替实景。
 
-## 交接边界与剩余工作
+## S1 当时的交接边界与剩余工作
 
 S3可消费冻结SPEC/CONTRACTS和验收条目；S2生图/可点原型仍由设计会话负责，S5须等两线汇合。S3/S4/S5/S6的runtime检查脚本、隔离数据库/图片实际测试及S7三仓验收计划和APP实机证据尚待对应阶段交付。未跑构建/verify/业务测试，原因是本阶段明确只写规格，无生产代码变更。
 
-后台远端更正：协调会话随后转达主人确认的新仓为`https://github.com/agentabatiuo572-byte/nexion-frontend-pc`，目标`test`，远端已核实SHA为`248d6da89becb113402046ab3a9f27c48f3e010d`；授权账号`fakerli998877-ship-it`可访问。旧Repository not found是历史输入，阻塞已解除。主线负责更新共享origin/fetch并核对新基线、迁入本地规格；按最新调度本会话暂不push/rebase。原始OWNER-DECISIONS原样纳入提交，保留原历史输入；本次新远端说明以此交接为准。完整提交SHA由最终报告给出，避免自引用commit。
+后台远端更正：协调会话随后转达主人确认的新仓为`https://github.com/agentabatiuo572-byte/nexion-frontend-pc`，目标`test`，远端已核实SHA为`248d6da89becb113402046ab3a9f27c48f3e010d`；授权账号`fakerli998877-ship-it`可访问。旧Repository not found是历史输入，阻塞已解除。主线负责更新共享origin/fetch并核对新基线、迁入本地规格；按最新调度本会话暂不push/rebase。S1当时未改写OWNER-DECISIONS；本次仅校正环境段，原始业务决定与历史细节保留；本次新远端说明以此交接为准。完整提交SHA由最终报告给出，避免自引用commit。
 
-大白话：规格和接口规则已写清并通过独立复审，可以进入后端隔离实现；生产功能和跨端验收尚未做，本阶段无需主人追加拍板。
+大白话：S1 当时交付了规格；如今 S3–S6 已有阶段验收，最终三仓集成、APP 实机与发布仍由后续验收决定。

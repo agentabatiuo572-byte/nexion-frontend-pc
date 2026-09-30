@@ -1,6 +1,6 @@
 # 客服重构：数据、权限与接口契约
 
-需求来源：[OWNER-DECISIONS.md](OWNER-DECISIONS.md)。本文所有新增字段、端点和事件均为**目标契约，尚未实现**；现状证据见 [SOURCE-MAP.md](SOURCE-MAP.md)。业务规则唯一由本文定义，SPEC 引用本文，不另设默认数字。视觉由 S2 独立交付。
+需求来源：[OWNER-DECISIONS.md](OWNER-DECISIONS.md)及 R08 仓外 OWNER-AMENDMENTS.md。本文定义目标契约；S3–S6 已有阶段实现与验收，实际路由/字段以三仓固定提交为准，S7 尚须跨仓核验。S1 调查事实见 [SOURCE-MAP.md](SOURCE-MAP.md)，不能拿旧原型源覆盖 R09 正式客户端。业务规则由本文与主人后续决定共同约束，SPEC 引用本文；视觉由 S2 独立交付。
 
 ## C1 不变量与最小默认
 
@@ -128,26 +128,30 @@ coverageStartAt是自最近一次采集缺口结束后可证明连续观察的�
 | App GET/POST `/conversations`、GET `/{no}`、POST `/{no}/replies`、`/{no}/read` | 只自己；advisor/support 两个入口同专属授权；closed 后重开不回退其他客服；read 不记活跃或成功 |
 | App GET `/commands/{key}` | 保留命令恢复；扩展图片/消息结果；只当前客户本人可查 |
 
-表内 `/{no}` 指各行所属 conversations 路径；最终 HTTP 方法以 SOURCE-MAP 和 S3 实测路由为准，不能把新增目标当成已上线能力。
+表内 /{no} 指各行所属 conversations 路径；路由和方法以正式仓固定提交为准。阶段实装与隔离验收不代表生产已上线。
 
-### C5.2 新目标端点（尚不存在）
+### C5.2 目标端点（按正式仓实装核对）
 
 | 方法 / 路径 | 请求 | 响应/权限 |
 |---|---|---|
-| GET `/support-workbench/overview` | 可选 from/to，仅历史业绩；普通客服不可选他人 agentId | 六指标+业绩+unknownCount+规则可用性+evaluatedAt |
-| GET `/support-workbench/customers` | pageNum/pageSize、keyword、filter(ALL/WINDOW_ACTIVE/ACTIVE/DORMANT/UNKNOWN/DUE/WAITING_REPLY/FIRST_CONTACT/STOPPED) | 服务端授权分页，records 含 assignment/version/activity/maintenance/未回复摘要 |
+| GET `/support-workbench/overview` | agentId、filter、keyword、pageNum/pageSize、from/to；普通客服不可选他人 agentId | 与 /customers 返回同一原子 envelope：overview、customers 分页、performance、completeness、snapshotId/evaluatedAt；不是可复用快照令牌 |
+| GET `/support-workbench/customers` | 同上；filter 含 ALL/WINDOW_ACTIVE/ACTIVE/DORMANT/UNKNOWN/DUE/WAITING_REPLY/FIRST_CONTACT/STOPPED/TODO | 服务端授权分页；同一响应同时给概览卡、records、业绩与完整性，不能拼不同请求快照 |
 | GET `/support-workbench/customers/{customerId}` | 无 | 授权客户详情、当前归属、维护偏好、周期/执行分页入口；避免全量泄漏交易资料 |
-| GET `/support-workbench/customers/{customerId}/maintenance` | pageNum/pageSize | 维护执行/周期历史，当前顾问/主管可审阅；旧顾问仅其统计汇总 |
+| GET `/support-workbench/customers/{customerId}/maintenance/history`（旧 /maintenance 仍为同一读路由） | pageNum/pageSize | 当前顾问/主管可审阅；cycles 与 executions 各自分页数组及 totalCycles/totalExecutions，不把两者相加当单一总数 |
 | PATCH `/support-workbench/customers/{customerId}/maintenance` | enabled、reason、expectedVersion、expectedAssignmentId；key | 更新偏好与周期，返回权威详情；仅当前顾问 |
 | GET `/support-agents/binding-pool` | 分页、keyword、reason | 主管待绑定池、原因、邀请关系最小信息 |
 | POST `/support-agents/assignments/transfer` | targetAgentAdminId、customers:[id,expectedAssignmentId,expectedVersion]、reason；key | 显式范围原子转绑结果+每客新 assignment，主管 |
 | GET/PUT `/support-agents/rules` | PUT D/M/W、inheritanceMode/L、expectedVersion、reason；key | 规则版本与独立未配置状态，超管写 |
+| App GET `/advisor` | 无代查参数；仅认证客户本人 | assignmentId、currentAdvisorId/currentAdvisorName、assignmentState、availability；未绑定与状态未知不得冒称在线，no-store |
+| GET `/conversations/attachments/policy`（后台） / `/attachments/policy`（App） | 登录态 | 独立附件能力与 MIME/容量/TTL 策略；未启用则明确不可用，不从 rules 猜测 |
 | GET `/support-workbench/commands/{key}` | 无 | 当前认证主体的写入结果；转绑后不能重放出失权内容 |
 | POST `/conversations/attachments`（后台） / `/attachments`（App） | multipart file、customerId（后台）、clientUploadId、expectedAssignmentId（后台）；key | READY 附件元信息；后台仅当前顾问，App 从 token 取客户 |
-| GET `/conversations/attachments/{id}/content`（后台） / `/attachments/{id}/content`（App） | 登录态、可选 Range | 私有字节流、每请求实时鉴权、no-store；当前顾问/主管/本人客户 |
+| GET `/conversations/attachments/{id}/content`（后台） / `/attachments/{id}/content`（App） | 登录态、附件 id；当前实现返回完整字节流，不承诺分段 Range | 私有字节流、每请求实时鉴权、no-store；当前顾问/主管/本人客户 |
 | DELETE 对应 `/attachments/{id}` | 尚未 ATTACHED；key | 取消本人暂存文件；已附着拒绝，不能删历史消息 |
 
-上传限制由服务端能力响应（可扩展rules GET的attachmentPolicy只读段）提供：允许MIME/大小/像素/暂存期限必须在启用前配置并验证；不写无来源生产数值。最低静态JPEG/PNG解码后重编码、去EXIF；WebP只在真实编解码器验证后加入能力，不为它新增非必要依赖，未支持时明确提示。拒SVG/HTML/脚本、路径及远程URL抓取。管理员代理目前request.text()/response.text()：S5必须增加二进制通路且保留认证，不可文字代理转图。图片使用登录鉴权流，每次实时校验，不能发公共URL/长期签名链接；撤权不能抹去已下载副本，但阻止后续获取，页面清缓存和blob URL。
+R08 私聊转工单：仅当前顾问及有审阅权主管可见转入工单的私聊正文及摘要；详情、列表、搜索、返回结果、旧成功回放和旧缓存同样受限，转绑后旧顾问不得继续读回或刷新取回。工单指派、状态、内部备注仍按原协作权限，客户仍可访问自己的工单；无权协作人只见受限说明，不泄露副本。来源须由可核验字段区分直接工单 DIRECT 与真实来源会话号；旧记录来源未知时保守隐藏私聊副本，不根据正文猜测，也不删除历史。
+
+上传限制由附件 policy 响应提供：允许MIME/大小/像素/暂存期限必须在启用前配置并验证；不写无来源生产数值。最低静态JPEG/PNG解码后重编码、去EXIF；WebP只在真实编解码器验证后加入能力，不为它新增非必要依赖，未支持时明确提示。拒SVG/HTML/脚本、路径及远程URL抓取。S1调查时管理员代理为文字通路；S5b已交付二进制通路，S7仍须在固定提交上复验认证与撤权。图片使用登录鉴权流，每次实时校验，不能发公共URL/长期签名链接；撤权不能抹去已下载副本，但阻止后续获取，页面清缓存和blob URL。客户端H5私有下载已做阶段验证；APP实机临时文件寿命仍未验证，不能外推。
 
 错误遵从现有 envelope；目标语义：401 登录失效、403 无动作授权、404 不存在或无对象访问（不泄漏存在）、409 版本/归属/命令冲突、422 内容校验/规则未配置、413 图片过大、415 类型不支持、429 限流、503 服务/存储不可用。界面转译为可操作中文或客户端现有语言，保留输入与重试，日志不存 token/图片内容。
 
