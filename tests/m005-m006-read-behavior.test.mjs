@@ -107,6 +107,26 @@ test("M1 roster identity is adminId, so legal duplicate display names remain rea
   assert.deepEqual(parseM1SupportAgentOverview(duplicateNameOverview), duplicateNameOverview);
 });
 
+test("M1 keeps legal busy seats readable but excludes them from transfer targets", () => {
+  const busyAgent = { ...validM1Overview.agents[0], id: "8", adminId: 8, busy: true };
+  const overview = {
+    ...validM1Overview,
+    agents: [...validM1Overview.agents, busyAgent],
+    advisorAssignments: [{ id: 1, agentAdminId: 8, userId: 2, status: "ACTIVE" }],
+  };
+  assert.deepEqual(parseM1SupportAgentOverview(overview), overview);
+  const onlyBusy = { ...overview, agents: [busyAgent], transferTargets: [] };
+  assert.deepEqual(parseM1SupportAgentOverview(onlyBusy), onlyBusy);
+  for (const transferTargets of [
+    [],
+    [...overview.transferTargets, { ...overview.transferTargets[0], targetId: "8" }],
+    [...overview.transferTargets, overview.transferTargets[0]],
+    [{ ...overview.transferTargets[0], targetId: "999" }],
+  ]) {
+    assert.throws(() => parseM1SupportAgentOverview({ ...overview, transferTargets }), /M1_SUPPORT_AGENT_OVERVIEW_MALFORMED/);
+  }
+});
+
 test("non-JSON HTTP failures preserve 401/403/500 classification before envelope parsing", () => {
   for (const status of [401, 403, 500]) {
     assert.throws(

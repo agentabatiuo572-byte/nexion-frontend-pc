@@ -123,12 +123,13 @@ export function parseM1SupportAgentOverview(value: unknown): M1SupportAgentOverv
     return Boolean(agent)
       && agent!.enabled === true
       && agent!.transferable === true
+      && agent!.busy === false
       && target.targetName === agent!.name
       && target.position === agent!.position
       && JSON.stringify(target.serviceTypes) === JSON.stringify(agent!.serviceTypes);
   })) return m1OverviewMalformed();
   const expectedTargetIds = agents
-    .filter((agent) => agent.enabled === true && agent.transferable === true)
+    .filter((agent) => agent.enabled === true && agent.transferable === true && agent.busy === false)
     .map((agent) => String(agent.adminId));
   const targetIds = targets.map((target) => String(target.targetId));
   if (new Set(targetIds).size !== targets.length
