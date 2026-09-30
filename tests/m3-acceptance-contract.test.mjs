@@ -7,6 +7,11 @@ import { parseBusinessTime } from "../lib/admin/business-time.ts";
 const root = process.cwd();
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 
+test("M3 shared profile drawer fits within its actual conversation container", () => {
+  const css = read("app/components/domain-views/m-domain.css");
+  assert.match(css, /\.mdom \.cv-profile \{[^}]*width: min\(320px, 100%\)/);
+});
+
 test("M3 roster failure exposes qualification retry instead of claiming an empty inbox", () => {
   const view = read("app/components/domain-views/m-view.tsx");
   const chat = read("app/components/domain-views/m-tabs/m3-dedicated-chat.tsx");
