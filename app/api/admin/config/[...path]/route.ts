@@ -3,18 +3,29 @@ import { requirePasswordChangeCleared } from "@/lib/admin/require-password-chang
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
+const ROUTE_METHODS: readonly (readonly [string, readonly string[]])[] = [
+  ["task-pricing", ["GET", "HEAD", "PUT"]],
+  ["phone-tiers", ["GET", "HEAD", "PUT"]],
+  ["phone-tiers/comparison", ["GET", "HEAD", "PUT"]],
+  ["phone-calibration", ["GET"]],
+  ["phone-calibration/preview", ["POST"]],
+];
 
 type RouteContext = { params: Promise<{ path?: string[] }> };
 
-function jsonError(status: number, message: string) {
-  return Response.json({ code: status, message, data: null }, { status });
+function jsonError(status: number, message: string, headers?: Record<string, string>) {
+  return Response.json({ code: status, message, data: null }, { status, headers: { "Cache-Control": "no-store", ...headers } });
 }
 
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
   const route = path.join("/");
-  if (!(["task-pricing", "phone-tiers", "phone-tiers/comparison"] as string[]).includes(route)) {
+  const allowedMethods = ROUTE_METHODS.find(([path]) => path === route)?.[1];
+  if (!allowedMethods) {
     return jsonError(404, "E2_CONFIG_ROUTE_NOT_FOUND");
+  }
+  if (!allowedMethods.includes(request.method)) {
+    return jsonError(405, "E2_CONFIG_METHOD_NOT_ALLOWED", { Allow: allowedMethods.join(", ") });
   }
   const passwordChangeBlocked = requirePasswordChangeCleared(await cookies());
   if (passwordChangeBlocked) return passwordChangeBlocked;
@@ -44,3 +55,4 @@ async function proxy(request: Request, context: RouteContext) {
 
 export async function GET(request: Request, context: RouteContext) { return proxy(request, context); }
 export async function PUT(request: Request, context: RouteContext) { return proxy(request, context); }
+export async function POST(request: Request, context: RouteContext) { return proxy(request, context); }
