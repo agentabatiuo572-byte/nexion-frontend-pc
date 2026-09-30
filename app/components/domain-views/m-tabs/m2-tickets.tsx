@@ -21,7 +21,7 @@ import {
 import { catCN, Empty, HDSelect, MAvatar, MiniMenu, ownerLabel, PRIO_CN, Prio, relWhen, TicketStatus, TK_STATUS_CN, type HDOption, type MenuItem } from "./hd-ui";
 import type { MCtx } from "./types";
 import { fetchSupportTicketDetail, type MTicketAssigneeCandidate } from "@/lib/admin/m-client";
-import { SupportClientError } from "@/lib/admin/m-support-client";
+import { supportClient, SupportClientError } from "@/lib/admin/m-support-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
 
@@ -119,13 +119,18 @@ function linkedConversation(ticket: SupportTicket): LinkedConversation | null {
   return null;
 }
 
-export function M2Tickets({ ctx }: { ctx: MCtx }) {
+export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualified: boolean }) {
   const { pget, setParam, toast, openActionConfirm } = ctx;
   const authorities = useAdminAuth((state) => state.session?.authorities);
   const authEpoch = useAdminAuth((state) => state.authEpoch);
+  const adminId = useAdminAuth((state) => state.session?.adminId ?? 0);
   const currentRole = useAdminAuth((state) => state.session?.role ?? state.role);
   const isSuperAdmin = currentRole === "super" || currentRole === "superadmin";
   const canWriteM2 = isSuperAdmin || Boolean(authorities?.includes("service_m2_write"));
+  const canRespondToCustomers = canWriteM2 && advisorQualified;
+  const responseAuthority = useRef({ authEpoch, adminId, canRespondToCustomers });
+  responseAuthority.current = { authEpoch, adminId, canRespondToCustomers };
+  const responseScope = useRef(0);
   const ticketsAvailable = pget("I.support.ticketsAvailable") === "1";
   const ticketAssigneeCandidatesAvailable = pget("I.support.ticketAssigneeCandidatesAvailable") === "1";
   const tickets = useMemo(() => cloneTickets(parseParamArray<SupportTicket>(pget(TICKET_KEY), [])), [ctx.params, pget]);
@@ -167,7 +172,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerRef = useRef<HTMLDivElement>(null);
-  const [ticketDetail, setTicketDetail] = useState<{ ticket: SupportTicket; epoch: number; error: string } | null>(null);
+  const [ticketDetail, setTicketDetail] = useState<{ ticket: SupportTicket; epoch: number; scope: number; error: string; replyAgentAdminId: number | null; replyError: string } | null>(null);
   const [detailRetry, setDetailRetry] = useState(0);
   const [showCreate, setShowCreate] = useState(false);
   const [replyBody, setReplyBody] = useState("");
@@ -197,24 +202,47 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
   const selected = !detailError && ticketDetail && ticketDetail.epoch === authEpoch && ticketDetail.ticket.id === selectedRow?.id
     && ticketDetail.ticket.version === selectedRow?.version && ticketDetail.ticket.contentRestricted === selectedRow?.contentRestricted
     ? ticketDetail.ticket : null;
+  const canReplyToSelected = canRespondToCustomers && adminId > 0 && Boolean(selected && ticketDetail?.scope === responseScope.current && ticketDetail.replyAgentAdminId === adminId);
+
+  useEffect(() => {
+    const invalidateReply = () => {
+      responseScope.current += 1;
+      setTicketDetail((detail) => detail ? { ...detail, replyAgentAdminId: null } : detail);
+      setReplyBody("");
+      setDetailRetry((retry) => retry + 1);
+    };
+    window.addEventListener("support-scope-invalidated", invalidateReply);
+    return () => window.removeEventListener("support-scope-invalidated", invalidateReply);
+  }, []);
 
   useEffect(() => {
     if (!drawerOpen || !selectedRow) return;
     const controller = new AbortController();
+    const scope = responseScope.current;
     setTicketDetail(null);
     void fetchSupportTicketDetail(selectedRow.id, controller.signal)
-      .then((ticket) => {
+      .then(async (ticket) => {
         if (controller.signal.aborted) return;
         if (ticket.contentRestricted && !selectedRow.contentRestricted && selectedRow.sourceConversationNo && selectedRow.sourceConversationNo !== "DIRECT") ctx.invalidateScope(selectedRow.sourceConversationNo, String(selectedRow.userId ?? ""));
-        setTicketDetail({ ticket, epoch: authEpoch, error: ticket.version !== selectedRow.version || ticket.contentRestricted !== selectedRow.contentRestricted ? "工单已更新，请刷新列表后重试。" : "" });
+        setTicketDetail({ ticket, epoch: authEpoch, scope, replyAgentAdminId: null, replyError: advisorQualified ? "正在核对客户归属，请稍候。" : "", error: ticket.version !== selectedRow.version || ticket.contentRestricted !== selectedRow.contentRestricted ? "工单已更新，请刷新列表后重试。" : "" });
+        if (advisorQualified && !ticket.contentRestricted && ticket.userId) {
+          try {
+            const customer = await supportClient.customerDetail(String(ticket.userId), controller.signal);
+            if (controller.signal.aborted || scope !== responseScope.current) return;
+            setTicketDetail((detail) => detail ? { ...detail, replyAgentAdminId: customer.customerId === String(ticket.userId) ? customer.agentAdminId : null, replyError: "" } : detail);
+          } catch {
+            if (controller.signal.aborted || scope !== responseScope.current) return;
+            setTicketDetail((detail) => detail ? { ...detail, replyAgentAdminId: null, replyError: "客户归属暂时无法核对，请重试读取详情。" } : detail);
+          }
+        }
       })
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return;
         if (cause instanceof SupportClientError && [403, 404].includes(cause.status) && !selectedRow.contentRestricted && selectedRow.sourceConversationNo && selectedRow.sourceConversationNo !== "DIRECT") ctx.invalidateScope(selectedRow.sourceConversationNo, String(selectedRow.userId ?? ""));
-        setTicketDetail({ ticket: selectedRow, epoch: authEpoch, error: "工单详情读取失败，请重试。" });
+        setTicketDetail({ ticket: selectedRow, epoch: authEpoch, scope, replyAgentAdminId: null, replyError: "", error: "工单详情读取失败，请重试。" });
       });
     return () => controller.abort();
-  }, [drawerOpen, selectedRow?.id, selectedRow?.version, selectedRow?.contentRestricted, authEpoch, detailRetry, ctx.invalidateScope]);
+  }, [drawerOpen, selectedRow?.id, selectedRow?.version, selectedRow?.contentRestricted, authEpoch, adminId, advisorQualified, detailRetry, ctx.invalidateScope]);
 
   useEffect(() => {
     if (!requestedTicketNo || !tickets.some((ticket) => ticket.id === requestedTicketNo)) return;
@@ -326,8 +354,28 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
     return setParam(TICKET_KEY, JSON.stringify(next), { action, reason });
   };
 
+  const verifyCustomerReply = async (userId: number): Promise<boolean> => {
+    const scope = responseScope.current;
+    const stillAuthorized = () => {
+      const current = useAdminAuth.getState();
+      return current.authEpoch === authEpoch && current.session?.adminId === adminId
+        && responseAuthority.current.authEpoch === authEpoch && responseAuthority.current.adminId === adminId
+        && responseAuthority.current.canRespondToCustomers && scope === responseScope.current;
+    };
+    if (!stillAuthorized()) return false;
+    try {
+      const customer = await supportClient.customerDetail(String(userId));
+      if (!stillAuthorized()) return false;
+      if (customer.customerId !== String(userId) || customer.agentAdminId !== adminId) {
+        toast("仅当前专属顾问可以为该客户办理对客操作");
+        return false;
+      }
+      return true;
+    } catch { toast("客户归属暂时无法核对，请重试"); return false; }
+  };
+
   const createTicket = async (form: CreateTicketForm) => {
-    if (!canWriteM2 || !ticketsAvailable || !ticketAssigneeCandidatesAvailable) return;
+    if (!canRespondToCustomers || !ticketsAvailable || !ticketAssigneeCandidatesAvailable) return;
     const title = form.title.trim();
     const body = form.body.trim();
     const userId = form.userId.trim() ? Number(form.userId) : undefined;
@@ -336,9 +384,11 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
       return;
     }
     if (userId !== undefined && (!Number.isSafeInteger(userId) || userId <= 0)) {
-      toast("用户 ID 必须是正整数,也可以留空");
+      toast("客户 ID 必须是正整数");
       return;
     }
+    if (!userId) { toast("请先核对已绑定的真实客户，再新建工单"); return; }
+    if (!await verifyCustomerReply(userId)) return;
     const selectedOwner = ownerOptions.find((candidate) => candidate.adminId === form.ownerAdminId);
     if (!selectedOwner) {
       toast("新建工单需要选择真实客服负责人");
@@ -394,11 +444,12 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
 
   // 例行:回复(正文本身即留档)
   const sendReply = async (body: string) => {
-    if (!selected || !canWriteM2 || !ticketsAvailable || selected.archived) return;
+    if (!selected || !canReplyToSelected || !ticketsAvailable || selected.contentRestricted || selected.archived) return;
     if (!body.trim()) {
       toast("回复需要正文");
       return;
     }
+    if (!selected.userId || !await verifyCustomerReply(selected.userId)) return;
     const now = Date.now();
     const succeeded = await commitTicketWrite(
       () => updateTicket(
@@ -513,7 +564,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
 
   // 处置:升级为即时会话(不传 edit;真写对方真写键 I.session.convos + 工单 thread 留系统标注)
   const escalateToConversation = () => {
-    if (!selected || !canWriteM2 || !ticketsAvailable || selected.archived) return;
+    if (!selected || !canReplyToSelected || !ticketsAvailable || selected.contentRestricted || selected.archived) return;
     const ticket = selected;
     if (!ticket.userId || ticket.userId <= 0 || !ticket.userVerified) {
       toast("客户身份尚未核实，请先核对后再升级会话");
@@ -533,6 +584,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
       ),
       amplifies: false,
       run: async (reason: string) => {
+        if (!await verifyCustomerReply(ticket.userId!)) return false;
         const succeeded = await commitTicketWrite(
           () => setParam("I.support.ticketEscalation.__create", JSON.stringify({
             ticketNo: ticket.id,
@@ -629,7 +681,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
           <Icon name="search" size={15} />
           <input data-proof="support-ticket-search" aria-label="搜索工单主题、单号、负责人、分类或用户编码" placeholder="搜索主题 / 单号 / 负责人 / 分类 / 用户编码" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
-        {canWriteM2 && ticketsAvailable && ticketAssigneeCandidatesAvailable && ownerOptions.length > 0 && (
+        {canRespondToCustomers && ticketsAvailable && ticketAssigneeCandidatesAvailable && ownerOptions.length > 0 && (
           <button type="button" data-proof="support-ticket-create" className="btn btn-pri btn-sm" disabled={writePending} onClick={() => setShowCreate(true)}>
             <Icon name="plus" size={16} />
             新建工单
@@ -717,7 +769,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
             })}
           </tbody>
         </table>
-        {ticketsAvailable && !filtered.length && <Empty icon="search">没有匹配的工单;可以调整筛选条件{canWriteM2 && ticketAssigneeCandidatesAvailable && ownerOptions.length > 0 ? "或新建工单" : ""}</Empty>}
+        {ticketsAvailable && !filtered.length && <Empty icon="search">没有匹配的工单;可以调整筛选条件{canRespondToCustomers && ticketAssigneeCandidatesAvailable && ownerOptions.length > 0 ? "或新建工单" : ""}</Empty>}
       </div>
 
       {filtered.length > 0 && (
@@ -777,11 +829,14 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
           replyTemplates={replyTemplates}
           ownerOptions={ownerOptions}
           canWrite={canWriteM2 && ticketsAvailable}
+          canReply={canReplyToSelected}
+          replyReadonlyReason={ticketDetail?.replyError || "仅当前专属顾问可以回复客户；内部备注、状态和指派仍可办理。"}
+          onRetryReply={() => setDetailRetry((value) => value + 1)}
           submitting={writePending}
         />
       )}
 
-      {showCreate && ticketAssigneeCandidatesAvailable && ownerOptions.length > 0 && (
+      {showCreate && canRespondToCustomers && ticketAssigneeCandidatesAvailable && ownerOptions.length > 0 && (
         <CreateTicketModal
           categoryOptions={ticketCategoryOptions}
           ownerOptions={ownerOptions}
@@ -814,6 +869,9 @@ function TicketDrawer({
   replyTemplates,
   ownerOptions,
   canWrite,
+  canReply,
+  replyReadonlyReason,
+  onRetryReply,
   submitting,
 }: {
   dialogRef: RefObject<HTMLDivElement | null>;
@@ -835,6 +893,9 @@ function TicketDrawer({
   replyTemplates: string[];
   ownerOptions: TicketOwnerOption[];
   canWrite: boolean;
+  canReply: boolean;
+  replyReadonlyReason: string;
+  onRetryReply: () => void;
   submitting: boolean;
 }) {
   const isTerminal = ticket.status === "resolved" || ticket.status === "closed";
@@ -889,7 +950,7 @@ function TicketDrawer({
                 : `/service/sessions?q=${encodeURIComponent(conversation.no)}`}>
                 <Icon name="arrow" size={16} />查看会话 {conversation.no}
               </Link>
-            ) : canWrite && !ticket.contentRestricted && !ticket.archived && !isTerminal && (
+            ) : canReply && !ticket.contentRestricted && !ticket.archived && !isTerminal && (
               <button
                 type="button"
                 data-proof="support-ticket-escalate"
@@ -977,6 +1038,7 @@ function TicketDrawer({
         {ticket.contentRestricted && <div className="callout warn">当前无法查看这段私聊；可继续处理内部备注、状态和指派。</div>}
         {canWrite && !ticket.contentRestricted && ticket.status !== "closed" && !ticket.archived && (
           <div className="ChatComposer">
+            {!canReply && <div className="callout" role="status">{replyReadonlyReason} <button type="button" className="btn btn-sec btn-sm" disabled={submitting} onClick={onRetryReply}>重试读取详情</button></div>}
             <div style={{ display: "flex", gap: 7, marginBottom: 9, flexWrap: "wrap", alignItems: "center" }}>
               <span className="dim2" style={{ fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 4 }}>
                 <Icon name="flame" size={13} />
@@ -984,7 +1046,7 @@ function TicketDrawer({
               </span>
               {replyTemplates.length === 0 && <span className="dim2" style={{ fontSize: 11.5 }}>暂无可用回复模板</span>}
               {replyTemplates.map((tpl, i) => (
-                <button key={i} type="button" className="chip" title={tpl} disabled={submitting} onClick={() => onReplyChange(replyBody ? `${replyBody} ${tpl}` : tpl)}>
+                <button key={i} type="button" className="chip" title={tpl} disabled={submitting || !canReply} onClick={() => onReplyChange(replyBody ? `${replyBody} ${tpl}` : tpl)}>
                   {tpl.slice(0, 14)}…
                 </button>
               ))}
@@ -996,17 +1058,17 @@ function TicketDrawer({
               rows={3}
               placeholder={`回复 ${ticket.id} · Enter 发送 · Shift+Enter 换行`}
               value={replyBody}
-              disabled={submitting}
+              disabled={submitting || !canReply}
               onChange={(e) => onReplyChange(e.target.value)}
               onKeyDown={(e) => {
-                if (!shouldSendOnEnter(e)) return;
+                if (!canReply || !shouldSendOnEnter(e)) return;
                 e.preventDefault();
                 onSend(replyBody);
               }}
             />
             <div style={{ display: "flex", alignItems: "center", marginTop: 9 }}>
               <span className="dim2" style={{ fontSize: 11.5 }}>例行回复直接执行并自动留档,无需理由 · 资金放行请到提现处置、账户处置请到账户安全、设备换货请到设备售后办理</span>
-              <button type="button" data-proof="support-ticket-reply-save" className="btn btn-pri btn-sm" style={{ marginLeft: "auto" }} disabled={submitting} onClick={() => onSend(replyBody)}>
+              <button type="button" data-proof="support-ticket-reply-save" className="btn btn-pri btn-sm" style={{ marginLeft: "auto" }} disabled={submitting || !canReply} onClick={() => onSend(replyBody)}>
                 <Icon name="arrow" size={16} />
                 发送回复
               </button>
@@ -1053,7 +1115,7 @@ function CreateTicketModal({
             type="button"
             data-proof="support-ticket-create-save"
             className="btn btn-pri btn-sm"
-            disabled={submitting || !ownerAdminId || !title.trim() || !body.trim()}
+            disabled={submitting || !userId.trim() || !ownerAdminId || !title.trim() || !body.trim()}
             onClick={() => onSave({ userId, category, priority, ownerAdminId, title, body })}
           >
             {submitting ? "保存中…" : "保存工单"}
@@ -1083,8 +1145,8 @@ function CreateTicketModal({
       </div>
       <div style={{ display: "grid", gap: 12 }}>
         <label className="field">
-          <span className="bf-legend">用户 ID(可选)</span>
-          <input className="fld" inputMode="numeric" value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="关联真实用户后才可升级即时会话" />
+          <span className="bf-legend">客户 ID（必填）</span>
+          <input className="fld" required inputMode="numeric" value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="填写当前归属的真实客户 ID" />
         </label>
         <label className="field">
           <span className="bf-legend">标题</span>

@@ -282,7 +282,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   return (
     <div
       key={sessionKey}
-      className="grid h-screen w-screen overflow-hidden"
+      className="grid h-screen w-screen overflow-clip"
       style={{
         gridTemplateColumns: `${narrow ? "var(--admin-sidebar-w-collapsed)" : collapsed ? "var(--admin-sidebar-w-collapsed)" : "var(--admin-sidebar-w)"} 1fr`,
         gridTemplateRows: "var(--admin-topbar-h) 1fr",

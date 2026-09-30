@@ -506,7 +506,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
           </button>
         </div>
       )}
-      {permissionUnknown && (tab === "M1" || tab === "M3" || tab === "M5") && <div className="card card-pad" role="status">主管身份暂时无法核对，管理入口已暂缓显示。<button type="button" className="btn btn-sec btn-sm" onClick={() => void reloadMContent()}>重试核对</button></div>}
+      {(permissionUnknown && (tab === "M1" || tab === "M2" || tab === "M3" || tab === "M5") || tab === "M2" && safeMData && !safeMData.supportAgentsAvailable) && <div className="card card-pad" role="status">坐席身份暂时无法核对，对客操作和管理入口已暂缓显示。<button type="button" className="btn btn-sec btn-sm" onClick={() => void reloadMContent()}>重试核对</button></div>}
 
       {tab === "M3" && reconnectExhausted && (
         <div className="card card-pad" role="alert" style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -533,7 +533,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         </div>
       ) : safeMData && (
         <>
-          {tab === "M2" && <M2Tickets ctx={ctx} />}
+          {tab === "M2" && <M2Tickets ctx={ctx} advisorQualified={Boolean(safeMData.supportAgentsAvailable && currentAgent?.enabled && currentAgent.seatType === "DEDICATED" && currentAgent.serviceTypes.includes("advisor"))} />}
           {tab === "M3" && <M3DedicatedChat ctx={ctx} />}
           {tab === "M4" && <M4KbSla ctx={ctx} />}
           {tab === "M5" && effectiveM5Pane === "templates" && <M5Scripts ctx={ctx} showSeatOperations={false} showSeatProfiles={permission !== "agent"} />}

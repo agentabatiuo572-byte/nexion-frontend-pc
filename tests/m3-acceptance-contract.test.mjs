@@ -12,15 +12,48 @@ test("M3 shared profile drawer fits within its actual conversation container", (
   assert.match(css, /\.mdom \.cv-profile \{[^}]*width: min\(320px, 100%\)/);
   assert.match(css, /\.mdom \.m3-col-list \{[^}]*min-width: 0/);
   assert.match(css, /@container mdom \(max-width: 1060px\) \{[^}]*\}[\s\S]*?\.mdom \.cv-profile:not\(\.open\) \{ display: none; \}/);
+  const shell = read("app/components/shell/console-shell.tsx");
+  assert.match(shell, /className="grid h-screen w-screen overflow-clip"/);
+  const topbar = read("app/components/shell/topbar.tsx");
+  assert.match(topbar, /className="hidden text-\[12\.5px\] sm:inline"[^>]*>[\s\S]*?\{operator\}/);
+  assert.match(topbar, /justify-between gap-4 px-3 sm:px-5/);
+  assert.match(topbar, /className="flex items-center gap-2 sm:gap-3"/);
 });
 
 test("M3 roster failure exposes qualification retry instead of claiming an empty inbox", () => {
   const view = read("app/components/domain-views/m-view.tsx");
   const chat = read("app/components/domain-views/m-tabs/m3-dedicated-chat.tsx");
-  assert.match(view, /permissionUnknown && \(tab === "M1" \|\| tab === "M3" \|\| tab === "M5"\)/);
+  assert.match(view, /permissionUnknown && \(tab === "M1" \|\| tab === "M2" \|\| tab === "M3" \|\| tab === "M5"\)/);
   assert.match(view, /重试核对<\/button>/);
   assert.match(chat, /qualificationUnknown.*[\s\S]*I\.support\.agentsAvailable/);
   assert.match(chat, /qualificationUnknown \? "坐席身份待核对/);
+});
+
+test("M2 customer replies require a verified advisor while internal work stays available", () => {
+  const view = read("app/components/domain-views/m-view.tsx");
+  const tickets = read("app/components/domain-views/m-tabs/m2-tickets.tsx");
+  assert.match(view, /advisorQualified=\{Boolean\(safeMData\.supportAgentsAvailable && currentAgent\?\.enabled && currentAgent\.seatType === "DEDICATED" && currentAgent\.serviceTypes\.includes\("advisor"\)\)\}/);
+  assert.match(tickets, /const canRespondToCustomers = canWriteM2 && advisorQualified/);
+  assert.match(tickets, /canReply=\{canReplyToSelected\}/);
+  assert.match(tickets, /ticketDetail\.replyAgentAdminId === adminId/);
+  assert.match(tickets, /customer\.customerId === String\(ticket\.userId\) \? customer\.agentAdminId : null/);
+  assert.match(tickets, /customer\.agentAdminId !== adminId/);
+  assert.match(tickets, /current\.authEpoch === authEpoch && current\.session\?\.adminId === adminId/);
+  assert.match(tickets, /support-scope-invalidated/);
+  assert.ok(tickets.indexOf('setTicketDetail({ ticket, epoch: authEpoch, scope') < tickets.indexOf('await supportClient.customerDetail(String(ticket.userId)'));
+  assert.match(tickets, /if \(!await verifyCustomerReply\(userId\)\) return/);
+  assert.match(tickets, /run: async \(reason: string\) => \{\s*if \(!await verifyCustomerReply\(ticket\.userId!\)\) return false/);
+  assert.match(tickets, /disabled=\{submitting \|\| !userId\.trim\(\)/);
+  assert.match(tickets, /客户 ID（必填）/);
+  assert.doesNotMatch(tickets, /用户 ID\(可选\)|也可以留空/);
+  assert.match(tickets, /data-proof="support-ticket-reply"[\s\S]*?disabled=\{submitting \|\| !canReply\}/);
+  assert.match(tickets, /data-proof="support-ticket-reply-save"[^>]*disabled=\{submitting \|\| !canReply\}/);
+  assert.match(tickets, /仅当前专属顾问可以回复客户/);
+  assert.match(tickets, /canWrite=\{canWriteM2 && ticketsAvailable\}/);
+  assert.match(tickets, /const createTicket = [\s\S]*?if \(!canRespondToCustomers/);
+  assert.match(tickets, /const sendReply = [\s\S]*?!canReplyToSelected[^\n]*selected\.contentRestricted/);
+  assert.match(tickets, /const escalateToConversation = [\s\S]*?!canReplyToSelected[^\n]*selected\.contentRestricted/);
+  assert.match(tickets, /data-proof="support-ticket-internal-note"[\s\S]*?disabled=\{submitting\}/);
 });
 
 test("M3 explicit unbound review avoids assigned-only profile reads and reaches the real pool", () => {

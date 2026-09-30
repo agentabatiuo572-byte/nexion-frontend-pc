@@ -72,7 +72,7 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
         aria-expanded={open}
         className="flex items-center gap-2 whitespace-nowrap rounded-[9px] py-1 pl-2 pr-1.5 transition-colors hover:bg-[var(--v5-surface-2)]"
       >
-        <span className="text-[12.5px]" style={{ color: "var(--v5-ink-2)" }}>
+        <span className="hidden text-[12.5px] sm:inline" style={{ color: "var(--v5-ink-2)" }}>
           {operator}
         </span>
         <RoleBadge role={role} size="sm" />
@@ -156,7 +156,7 @@ function CoveragePill({ enabled }: { enabled: boolean }) {
       href="/overview/dual-ledger"
       prefetch={false}
       title={unavailable ? "B 域聚合接口暂不可用 · 点击进双账本" : "兑付覆盖率 = 储备 ÷ 应付负债 · 点击进双账本"}
-      className="inline-flex items-center gap-2 rounded-[9px] px-3 py-1.5 text-[12px] transition-opacity hover:opacity-90"
+      className="hidden items-center gap-2 rounded-[9px] px-3 py-1.5 text-[12px] transition-opacity hover:opacity-90 sm:inline-flex"
       style={{ background: `color-mix(in srgb, ${zoneVar} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${zoneVar} 35%, transparent)` }}
     >
       <span className="hidden md:inline" style={{ color: "var(--v5-ink-3)" }}>兑付覆盖率</span>
@@ -251,7 +251,7 @@ export function TopBar({
   const canReadMContent = M_CONTENT_READ_AUTHORITIES.every((authority) => authorities.includes(authority));
   return (
     <header
-      className="flex items-center justify-between gap-4 px-5"
+      className="flex items-center justify-between gap-4 px-3 sm:px-5"
       style={{
         height: "var(--admin-topbar-h)",
         background: "var(--v5-surface)",
@@ -262,7 +262,7 @@ export function TopBar({
         <Breadcrumb />
         <SearchBox domains={domains} />
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3">
         {!supportOnly && canReadBDomain && <CoveragePill enabled />}
         {!supportOnly && <span className="hidden h-4 w-px sm:block" style={{ background: "var(--v5-border)" }} />}
         {!supportOnly && <span className="hidden md:block"><SyncChip /></span>}
