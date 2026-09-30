@@ -10,6 +10,8 @@ const read = (path) => readFileSync(resolve(root, path), "utf8");
 test("M3 shared profile drawer fits within its actual conversation container", () => {
   const css = read("app/components/domain-views/m-domain.css");
   assert.match(css, /\.mdom \.cv-profile \{[^}]*width: min\(320px, 100%\)/);
+  assert.match(css, /\.mdom \.m3-col-list \{[^}]*min-width: 0/);
+  assert.match(css, /@container mdom \(max-width: 1060px\) \{[^}]*\}[\s\S]*?\.mdom \.cv-profile:not\(\.open\) \{ display: none; \}/);
 });
 
 test("M3 roster failure exposes qualification retry instead of claiming an empty inbox", () => {
