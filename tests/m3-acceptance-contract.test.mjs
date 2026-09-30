@@ -46,6 +46,8 @@ test("M2 customer replies require a verified advisor while internal work stays a
   assert.match(tickets, /disabled=\{submitting \|\| !userId\.trim\(\)/);
   assert.match(tickets, /客户 ID（必填）/);
   assert.doesNotMatch(tickets, /用户 ID\(可选\)|也可以留空/);
+  assert.match(tickets, /data-proof="support-ticket-drawer-heading"[^\n]*flexWrap: "wrap"/);
+  assert.match(tickets, /overflowWrap: "anywhere".*查看会话/);
   assert.match(tickets, /data-proof="support-ticket-reply"[\s\S]*?disabled=\{submitting \|\| !canReply\}/);
   assert.match(tickets, /data-proof="support-ticket-reply-save"[^>]*disabled=\{submitting \|\| !canReply\}/);
   assert.match(tickets, /仅当前专属顾问可以回复客户/);

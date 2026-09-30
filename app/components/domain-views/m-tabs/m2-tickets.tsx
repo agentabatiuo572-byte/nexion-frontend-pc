@@ -914,7 +914,7 @@ function TicketDrawer({
       <div className="tk-drawer-back" onClick={onClose} />
       <div ref={dialogRef} tabIndex={-1} className="tk-drawer" role="dialog" aria-modal="true" aria-busy={submitting} aria-label={`工单 ${ticket.id} 详情`}>
         <div style={{ padding: "15px 18px 14px", borderBottom: "1px solid var(--border)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div data-proof="support-ticket-drawer-heading" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <span className="idtag">{ticket.id}</span>
             <TicketStatus status={ticket.status} />
             <Prio p={ticket.priority} />
@@ -947,8 +947,8 @@ function TicketDrawer({
             {conversation ? (
               <Link className="btn btn-cyan btn-sm" href={conversation.archived
                 ? `/service/sessions?seg=archived&q=${encodeURIComponent(conversation.no)}`
-                : `/service/sessions?q=${encodeURIComponent(conversation.no)}`}>
-                <Icon name="arrow" size={16} />查看会话 {conversation.no}
+                : `/service/sessions?q=${encodeURIComponent(conversation.no)}`} style={{ maxWidth: "100%", whiteSpace: "normal", height: "auto", minHeight: 28, padding: "6px 10px" }}>
+                <Icon name="arrow" size={16} /><span style={{ minWidth: 0, overflowWrap: "anywhere" }}>查看会话 {conversation.no}</span>
               </Link>
             ) : canReply && !ticket.contentRestricted && !ticket.archived && !isTerminal && (
               <button
