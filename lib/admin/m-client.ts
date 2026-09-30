@@ -138,7 +138,7 @@ type ContentConversationView = {
   ownerAdminId?: number | null;
   conversationType?: string;
   status?: string;
-  ownerAgentId?: string;
+  ownerAgentId?: string | null;
   ownerAgentName?: string;
   unreadCount?: number;
   lastMessage?: string;
@@ -1239,6 +1239,7 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
     lastTs: asTs(base.lastMessageAt, updated),
     status: conversationStatus(base.status),
     ownerAgentId: str(base.ownerAgentId),
+    ownerUnbound: base.ownerAgentId === null,
     customerId: Number.isSafeInteger(base.customerId ?? base.userId) && Number(base.customerId ?? base.userId) > 0 ? String(base.customerId ?? base.userId) : undefined,
     assignmentId: base.assignmentId == null ? null : String(base.assignmentId),
     ownerAdminId: Number.isSafeInteger(Number(base.ownerAgentId)) && Number(base.ownerAgentId) > 0

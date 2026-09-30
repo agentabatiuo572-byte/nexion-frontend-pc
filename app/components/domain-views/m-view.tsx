@@ -506,7 +506,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
           </button>
         </div>
       )}
-      {permissionUnknown && (tab === "M1" || tab === "M5") && <div className="card card-pad" role="status">主管身份暂时无法核对，管理入口已暂缓显示。<button type="button" className="btn btn-sec btn-sm" onClick={() => void reloadMContent()}>重试核对</button></div>}
+      {permissionUnknown && (tab === "M1" || tab === "M3" || tab === "M5") && <div className="card card-pad" role="status">主管身份暂时无法核对，管理入口已暂缓显示。<button type="button" className="btn btn-sec btn-sm" onClick={() => void reloadMContent()}>重试核对</button></div>}
 
       {tab === "M3" && reconnectExhausted && (
         <div className="card card-pad" role="alert" style={{ display: "flex", alignItems: "center", gap: 10 }}>

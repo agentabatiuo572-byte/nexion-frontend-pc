@@ -208,6 +208,7 @@ export type SessionConvo = {
   lastTs: number;      // 镜像前端 lastTs
   status: SessionStatus; // 后台坐席态
   ownerAgentId?: string; // 后台分配坐席的唯一身份，用于排除自转交
+  ownerUnbound?: boolean; // 后端明确返回 ownerAgentId=null，缺字段不视为待分配
   customerId?: string;
   assignmentId?: string | null;
   ownerAdminId?: number | null;

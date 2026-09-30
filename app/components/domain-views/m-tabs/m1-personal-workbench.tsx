@@ -176,11 +176,13 @@ export function M1PersonalWorkbench({ permission }: { permission: Permission }) 
     return () => window.removeEventListener("support-scope-invalidated", onScope);
   }, [detailId, closeDetail]);
   useEffect(() => {
-    const customerId = new URLSearchParams(window.location.search).get("customerId");
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("view") === "pool" && permission !== "agent") { setView("pool"); return; }
+    const customerId = params.get("customerId");
     if (!customerId || !/^[1-9]\d*$/.test(customerId)) return;
     setView("customers"); setFilter("ALL"); setKeyword(customerId);
     void openDetail(customerId);
-  }, [authEpoch, openDetail]);
+  }, [authEpoch, openDetail, permission]);
   useEffect(() => {
     if (!detailId) return;
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;

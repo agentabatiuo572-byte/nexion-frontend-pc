@@ -7,6 +7,28 @@ import { parseBusinessTime } from "../lib/admin/business-time.ts";
 const root = process.cwd();
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 
+test("M3 roster failure exposes qualification retry instead of claiming an empty inbox", () => {
+  const view = read("app/components/domain-views/m-view.tsx");
+  const chat = read("app/components/domain-views/m-tabs/m3-dedicated-chat.tsx");
+  assert.match(view, /permissionUnknown && \(tab === "M1" \|\| tab === "M3" \|\| tab === "M5"\)/);
+  assert.match(view, /重试核对<\/button>/);
+  assert.match(chat, /qualificationUnknown.*[\s\S]*I\.support\.agentsAvailable/);
+  assert.match(chat, /qualificationUnknown \? "坐席身份待核对/);
+});
+
+test("M3 explicit unbound review avoids assigned-only profile reads and reaches the real pool", () => {
+  const client = read("lib/admin/m-client.ts");
+  const chat = read("app/components/domain-views/m-tabs/m3-dedicated-chat.tsx");
+  const workbench = read("app/components/domain-views/m-tabs/m1-personal-workbench.tsx");
+  assert.match(client, /ownerUnbound: base\.ownerAgentId === null/);
+  assert.match(chat, /selected\?\.ownerUnbound === true/);
+  assert.match(chat, /if \(selectedUnbound\) \{[\s\S]*?return;[\s\S]*?supportClient\.customerDetail\(String\(selected\.customerId\)/);
+  assert.match(chat, /lostPermission\(cause\)[\s\S]*?ctx\.invalidateScope\(selected\.id, String\(selected\.customerId\)\)/);
+  assert.match(chat, /href="\/service\/overview\?view=pool"/);
+  assert.match(workbench, /get\("view"\) === "pool" && permission !== "agent"/);
+  assert.match(chat, /待分配顾问/);
+});
+
 test("M3 business time is independent of the browser timezone", () => {
   const instant = Date.parse("2026-09-24T05:24:00Z");
   assert.equal(parseBusinessTime("2026-09-24 13:24:00"), instant);
