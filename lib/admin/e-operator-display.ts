@@ -29,8 +29,10 @@ export function operatorDeviceName(value: string | null | undefined, identity: s
 export function operatorDeviceStatus(value: string | null | undefined) {
   const normalized = text(value).toUpperCase();
   const labels: Record<string, string> = {
-    ACTIVE: "运行中",
-    BUSY: "任务中",
+    ACTIVE: "已激活",
+    ONLINE: "已激活",
+    BUSY: "已分配任务",
+    RUNNING: "已分配任务",
     OFFLINE: "离线",
     RECYCLED: "已回收",
     DEACTIVATED: "已停用",

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { operatorDatacenterLabel, operatorDeviceIdentifier, operatorDeviceName, operatorDeviceStatus, operatorOperationalNote, operatorProductLabel, operatorRate, operatorTaskLabel, operatorThermalLabel, operatorTimestamp, operatorUserIdentifier, operatorUserName } from "@/lib/admin/e-operator-display";
 import { Badge, DataListPager } from "../design-kit";
-import { fetchE5Devices, fetchE5Observability, type E5Device, type E5DeviceState, type E5Observability } from "@/lib/admin/e5-client";
+import { e5HeartbeatLagMinutes, fetchE5Devices, fetchE5Observability, type E5Device, type E5DeviceState, type E5Observability } from "@/lib/admin/e5-client";
 import type { EViewCtx } from "./types";
 import { EStats } from "./stats";
 
@@ -58,13 +58,6 @@ function dcStatusLabel(status: string) {
   if (status === "maintenance") return "维护中";
   if (status === "disabled") return "已禁用";
   return "启用";
-}
-
-function heartbeatLagMinutes(value: string) {
-  if (!value || value === "—") return null;
-  const time = new Date(value).getTime();
-  if (!Number.isFinite(time)) return null;
-  return Math.max(0, Math.round((Date.now() - time) / 60_000));
 }
 
 function percentile95(values: number[]) {
@@ -378,7 +371,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
         const dc = dcRows.find((item) => item.dcLocation === selectedDc);
         const live = dcStats.get(selectedDc) ?? dc;
         if (!dc || !live) return null;
-        const heartbeatLags = healthDevices.map((device) => heartbeatLagMinutes(device.heartbeatAt)).filter((value): value is number => value != null);
+        const heartbeatLags = healthDevices.map((device) => e5HeartbeatLagMinutes(device.heartbeatAgeSeconds)).filter((value): value is number => value != null);
         const heartbeatP95 = percentile95(heartbeatLags);
         const freshHeartbeats = heartbeatLags.filter((value) => value <= 10).length;
         const activeTasks = healthDevices.filter((device) => device.activeTaskNo && device.activeTaskNo !== "—").length;
@@ -388,7 +381,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
             <span>绑定设备 <b>{fmtCount(live.totalDevices)}</b></span><span>在线 <b>{fmtCount(live.onlineDevices)}</b></span><span>异常 <b>{fmtCount(live.abnormalDevices)}</b></span>
             <span>GPU 平均 <b>{Math.round(live.avgGpuUsage)}%</b></span><span>GPU 温度 <b>{Math.round(live.avgGpuTempC)}℃</b></span><span>GPU 功耗 <b>{Math.round(live.avgGpuPowerW)}W</b></span>
             <span>派单 <b>{live.dispatchPaused ? `已暂停:${live.pausedReason || "未填写"}` : "正常"}</b></span><span>当前任务设备 <b>{healthLoading ? "读取中" : fmtCount(activeTasks)}</b></span>
-            <span>心跳延迟 P95 <b>{healthLoading ? "读取中" : heartbeatP95 == null ? "未采集" : `${heartbeatP95} 分钟`}</b></span><span>CPU 平均 <b>未采集</b></span>
+            <span>心跳延迟 P95 <b>{healthLoading ? "读取中" : heartbeatP95 == null ? "未采集" : `${heartbeatP95.toFixed(2)} 分钟`}</b></span><span>CPU 平均 <b>未采集</b></span>
           </div>
           <div style={{ margin: "0 14px 14px", padding: 12, border: "1px solid var(--border)", borderRadius: 10 }} data-proof="e5-dc-heartbeat-samples">
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8 }}><b>心跳新鲜度样本</b><span className="muted tiny">10 分钟内 {freshHeartbeats}/{heartbeatLags.length} · 取该 DC 当前最新心跳，不伪造历史时序</span></div>

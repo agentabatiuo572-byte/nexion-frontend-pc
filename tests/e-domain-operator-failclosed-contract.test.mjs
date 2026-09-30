@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { resolveNexionBackendRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 import {
   operatorDeviceIdentifier,
   operatorDeviceName,
@@ -17,12 +20,15 @@ const e3Client = readFileSync(new URL("../lib/admin/e3-client.ts", import.meta.u
 const e5Tab = readFileSync(new URL("../app/components/domain-views/e-tabs/e5-ops.tsx", import.meta.url), "utf8");
 const e4Client = readFileSync(new URL("../lib/admin/e4-client.ts", import.meta.url), "utf8");
 const e6Tab = readFileSync(new URL("../app/components/domain-views/e-tabs/e6-compute-config.tsx", import.meta.url), "utf8");
-const backend = readFileSync(new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/device/application/OpsDeviceService.java", import.meta.url), "utf8");
+const backendRoot = resolveNexionBackendRoot({ adminRoot: fileURLToPath(new URL("../", import.meta.url)) });
+const backend = readFileSync(path.join(backendRoot, "src/main/java/ffdd/opsconsole/device/application/OpsDeviceService.java"), "utf8");
 
 test("E3 and E5 redact internal fixture identifiers while preserving business-readable state", () => {
   assert.equal(operatorDeviceIdentifier("TRIAL-DEV-001"), "本地验收夹具");
   assert.equal(operatorDeviceName("H2 复审闭环设备", "DEV-TI-001"), "本地验收设备");
-  assert.equal(operatorDeviceStatus("ACTIVE"), "运行中");
+  assert.equal(operatorDeviceStatus("ACTIVE"), "已激活");
+  assert.equal(operatorDeviceStatus("ONLINE"), "已激活");
+  assert.equal(operatorDeviceStatus("BUSY"), "已分配任务");
   assert.equal(operatorDeviceStatus("UNASSIGNED"), "未分配");
   assert.equal(operatorDatacenterLabel("UNASSIGNED"), "未分配");
   assert.equal(operatorProductLabel("device-trial-standard"), "验收设备规格");

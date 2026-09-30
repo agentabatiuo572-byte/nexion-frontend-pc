@@ -39,6 +39,7 @@ export interface E5Device {
   dailyNex: number | null;
   activeTaskNo: string;
   heartbeatAt: string;
+  heartbeatAgeSeconds: number | null;
   purchasedAt: string;
   activatedAt: string;
   deactivatedAt: string;
@@ -153,6 +154,7 @@ interface BackendDevice {
   pausedReason?: string | null;
   activeTaskNo?: string | null;
   heartbeatAt?: string | null;
+  heartbeatAgeSeconds?: number | string | null;
   batteryLevel?: number | string | null;
   isCharging?: number | string | boolean | null;
   networkReachable?: number | string | boolean | null;
@@ -327,6 +329,7 @@ export function mapE5Device(row: BackendDevice): E5Device {
   const sku = [productCode, productTier].filter(Boolean).join(" / ") || "未知 SKU";
   const slotNo = toNumber(row.userDeviceSlotNo);
   const dailyRate = parseE5DeviceDailyRate(row.dailyUsdt, row.dailyNex);
+  const heartbeatAgeSeconds = toNumber(row.heartbeatAgeSeconds, Number.NaN);
   return {
     id: identity.id,
     deviceId,
@@ -347,7 +350,8 @@ export function mapE5Device(row: BackendDevice): E5Device {
     dailyUsdt: dailyRate.dailyUsdt,
     dailyNex: dailyRate.dailyNex,
     activeTaskNo: text(row.activeTaskNo, "—"),
-    heartbeatAt: text(row.heartbeatAt || row.lastSeenAt, "—"),
+    heartbeatAt: text(row.heartbeatAt, "—"),
+    heartbeatAgeSeconds: Number.isFinite(heartbeatAgeSeconds) && heartbeatAgeSeconds >= 0 ? heartbeatAgeSeconds : null,
     purchasedAt: text(row.purchasedAt, "—"),
     activatedAt: text(row.activatedAt, "—"),
     deactivatedAt: text(row.deactivatedAt, ""),
@@ -363,6 +367,10 @@ export function mapE5Device(row: BackendDevice): E5Device {
     slotNo: slotNo > 0 ? slotNo : null,
     slot: slotNo > 0 ? String(slotNo) : "—",
   };
+}
+
+export function e5HeartbeatLagMinutes(ageSeconds: number | null | undefined): number | null {
+  return typeof ageSeconds === "number" && Number.isFinite(ageSeconds) && ageSeconds >= 0 ? ageSeconds / 60 : null;
 }
 
 function mapDevices(records: BackendDevice[]) {
