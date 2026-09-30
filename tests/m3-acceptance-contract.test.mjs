@@ -7,6 +7,19 @@ import { parseBusinessTime } from "../lib/admin/business-time.ts";
 const root = process.cwd();
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 
+test("M5 cards follow content width while tabular scripts retain their own scroller", () => {
+  const view = read("app/components/domain-views/m-tabs/m5-scripts.tsx");
+  const css = read("app/components/domain-views/m-domain.css");
+  assert.match(view, /<div className="m5">/);
+  assert.doesNotMatch(view, /gridTemplateColumns:/);
+  assert.doesNotMatch(view, /<span className="mono">\{c\.type\}<\/span>/);
+  assert.match(view, /managed \? "由 AI 平台统一管理" : c\.managedBy/);
+  for (const name of ["m5-panels", "m5-policy-grid", "m5-seat-row", "m5-table-scroll", "m5-script-row", "m5-modal-grid", "m5-template-row", "m5-heading", "m5-pager"]) assert.ok(view.includes(name), name);
+  assert.match(css, /\.mdom \.m5-table-scroll \{ overflow-x: auto; \}/);
+  assert.match(css, /@container mdom \(max-width: 900px\).*m5-panels.*minmax\(0, 1fr\)/);
+  assert.match(css, /@container mdom \(max-width: 560px\) \{[\s\S]*?m5-policy-grid.*m5-seat-row.*m5-modal-grid.*minmax\(0, 1fr\)/);
+});
+
 test("M3 shared profile drawer fits within its actual conversation container", () => {
   const css = read("app/components/domain-views/m-domain.css");
   assert.match(css, /\.mdom \.cv-profile \{[^}]*width: min\(320px, 100%\)/);

@@ -116,7 +116,7 @@ function Pager({
   const start = total === 0 ? 0 : (safePage - 1) * pageSize + 1;
   const end = Math.min(total, safePage * pageSize);
   return (
-    <div className="row" style={{ justifyContent: "flex-end", gap: 8, padding: "10px 12px 4px", borderTop: total > 0 ? "1px solid var(--border)" : "none" }}>
+    <div className="row m5-pager" style={{ justifyContent: "flex-end", gap: 8, padding: "10px 12px 4px", borderTop: total > 0 ? "1px solid var(--border)" : "none" }}>
       <span className="dim2" style={{ fontSize: 11.5, marginRight: "auto" }}>
         {total === 0 ? "暂无记录" : `${start}-${end} / ${total}`}
       </span>
@@ -456,7 +456,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
   const tileVal = (v: string) => <div className="mono" style={{ fontSize: 15, marginTop: 5, color: "var(--ink)" }}>{v}</div>;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div className="m5">
       <p className="dim" style={{ margin: 0, fontSize: 13 }}>管会话类别、顾问主动推送、话术和回复模板。改动要确认 + 填理由。</p>
       {!sessionTemplatesAvailable && (
         <div className="itint" data-module-health-state="error">话术与模板后端当前不可用，页面已进入只读保护；恢复同步后才能修改。</div>
@@ -469,7 +469,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
       )}
 
       {(showSeatOperations || showSeatProfiles) && hasM1ReadAuthority && <div className="card">
-        <div className="card-pad" style={{ paddingBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
+        <div className="card-pad m5-heading" style={{ paddingBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
           <div className="sec-h" style={{ margin: 0 }}>
             <span className="t">客服岗位与专属客服</span>
             <span className="n">{agentTotal} 名客服</span>
@@ -492,7 +492,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
             const assignments = visibleAdvisorAssignments.filter((row) => row.agentAdminId === agent.adminId && row.status === "ACTIVE");
             const advisorEnabled = agent.serviceTypes.includes("advisor");
             return (
-              <div key={agent.id} style={{ display: "grid", gridTemplateColumns: "minmax(180px, 1fr) 220px minmax(220px, 1.2fr) 170px", gap: 12, alignItems: "center", padding: "12px", borderTop: "1px solid var(--border)" }}>
+              <div key={agent.id} className="m5-seat-row" style={{ gap: 12, alignItems: "center", padding: "12px", borderTop: "1px solid var(--border)" }}>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <span style={{ fontSize: 13.5, fontWeight: 500, color: "var(--ink)" }}>{agent.name}</span>
@@ -531,7 +531,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
                     </div>
                   )}
                 </div>
-                <div className="row" style={{ justifyContent: "flex-end", gap: 8 }}>
+                <div className="row wrap" style={{ justifyContent: "flex-end", gap: 8 }}>
                   {canManageSupportSeats && (
                     <>
                       <button type="button" className="btn btn-sec btn-sm" disabled={writePending} onClick={() => setProfileAgent(agent)}>
@@ -552,7 +552,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
         </div>
       </div>}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.15fr 1fr", gap: 16 }}>
+      <div className="m5-panels" style={{ gap: 16 }}>
         <div className="card card-pad">
           <div className="sec-h">
             <span className="t">会话类别</span>
@@ -564,7 +564,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
               const managed = c.type === "ai";
               const on = catEnabled(c);
               return (
-                <div key={c.type} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", background: "var(--surface-2)", borderRadius: 10 }}>
+                <div key={c.type} className="m5-category-row" style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", background: "var(--surface-2)", borderRadius: 10 }}>
                   <span style={{ width: 32, height: 32, borderRadius: 9, display: "grid", placeItems: "center", background: managed ? "var(--surface-3)" : "var(--m-hd-soft)", color: managed ? "var(--ink-3)" : "var(--m-hd-2)" }}>
                     <Icon name={CAT_ICON[c.type]} size={16} />
                   </span>
@@ -572,13 +572,13 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
                     <div style={{ fontSize: 13.5, fontWeight: 500, color: "var(--ink)" }}>
                       {c.name}
                       {managed && (
-                        <span className="chip" style={{ height: 18, fontSize: 11.5, marginLeft: 8, border: "none" }}>
+                        <span className="chip" style={{ height: "auto", minHeight: 18, fontSize: 11.5, marginLeft: 8, border: "none" }}>
                           <Icon name="lock" size={11} />
                           AI 平台域管理
                         </span>
                       )}
                     </div>
-                    <div className="dim2" style={{ fontSize: 11.5, marginTop: 2 }}>{c.managedBy} · <span className="mono">{c.type}</span></div>
+                    <div className="dim2" style={{ fontSize: 11.5, marginTop: 2 }}>{managed ? "由 AI 平台统一管理" : c.managedBy}</div>
                   </div>
                   {managed ? (
                     <span className="chip" style={{ color: on ? "var(--m-ok)" : "var(--ink-3)", border: "none" }}>{on ? "已启用(只读)" : "已停用(只读)"}</span>
@@ -606,14 +606,14 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
               </button>
             ) : null}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--surface-2)", borderRadius: 10, marginBottom: 10 }}>
+          <div className="m5-heading" style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--surface-2)", borderRadius: 10, marginBottom: 10 }}>
             <span className="dim" style={{ fontSize: 13 }}>主动推送总开关</span>
             <SensTag />
             <span className="sp" style={{ flex: 1 }} />
             <span className="dim" style={{ fontSize: 12 }}>执行器未接入 · 仅允许停用</span>
             <span className={`stat ${masterOn ? "active" : "closed"}`}>{masterOn ? "配置 ON / 未执行" : "OFF"}</span>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div className="m5-policy-grid" style={{ gap: 10 }}>
             {canManageM5Operations ? (
               <button type="button" data-proof="session-policy-delay" disabled={!sessionTemplatesAvailable || writePending} style={tileStyle} onClick={() => editPolicy("delayMs", "首推延迟", policyVal("delayMs", DEFAULT_ADVISOR_POLICY.delayMs), " ms")}>
                 {tileHead("首推延迟")}{tileVal(`${policyVal("delayMs", DEFAULT_ADVISOR_POLICY.delayMs)} ms`)}
@@ -639,7 +639,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
       </div>
 
       <div className="card">
-        <div className="card-pad" style={{ paddingBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
+        <div className="card-pad m5-heading" style={{ paddingBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
           <div className="sec-h" style={{ margin: 0 }}>
             <span className="t">顾问主动话术</span>
               <span className="n">{scriptTotal} 条</span>
@@ -664,7 +664,8 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
           </div>
         )}
         <div style={{ padding: "0 8px 8px" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "92px 1fr 120px 88px 96px", gap: 10, padding: "0 12px 8px", fontSize: 11.5, color: "var(--ink-4)" }}>
+          <div className="m5-table-scroll" role="region" aria-label="顾问主动话术列表" tabIndex={0}>
+          <div className="m5-script-row" style={{ gap: 10, padding: "0 12px 8px", fontSize: 11.5, color: "var(--ink-4)" }}>
             <span>编号 · 分类</span>
             <span>文案</span>
             <span>受众</span>
@@ -682,7 +683,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
             const published = currentStatus === "published";
             const archived = currentStatus === "archived";
             return (
-              <div key={a.id} style={{ display: "grid", gridTemplateColumns: "92px 1fr 120px 88px 96px", gap: 10, alignItems: "center", padding: "11px 12px", borderTop: "1px solid var(--border)" }}>
+              <div key={a.id} className="m5-script-row" style={{ gap: 10, alignItems: "center", padding: "11px 12px", borderTop: "1px solid var(--border)" }}>
                 <div>
                   <div className="idtag" style={{ fontSize: 11.5 }}>{a.id}</div>
                   <div className="dim2" style={{ fontSize: 11 }}>{a.group}</div>
@@ -708,12 +709,13 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
               </div>
             );
           })}
+          </div>
           <Pager page={scriptPage} total={scriptTotal} pageSize={SCRIPT_PAGE_SIZE} onPage={setScriptPage} />
         </div>
       </div>
 
       <div className="card">
-        <div className="card-pad" style={{ paddingBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
+        <div className="card-pad m5-heading" style={{ paddingBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
           <div className="sec-h" style={{ margin: 0 }}>
             <span className="t">即时回复模板库</span>
               <span className="n">{replyTemplateTotal} 条</span>
@@ -749,7 +751,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
             const published = currentStatus === "published";
             const archived = currentStatus === "archived";
             return (
-              <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderTop: "1px solid var(--border)" }}>
+              <div key={t.id} className="m5-template-row" style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderTop: "1px solid var(--border)" }}>
                 <span className="idtag" style={{ fontSize: 11.5, minWidth: 48 }}>{t.id}</span>
                 <span className="chip" style={{ height: 20, border: "none" }}>{t.type === "advisor" ? "专属客服" : "普通客服"}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -774,7 +776,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
       </div>
 
       <p className="dim2" style={{ fontSize: 12, lineHeight: 1.6, margin: 0 }}>
-        <b style={{ color: "var(--ink-3)", fontWeight: 500 }}>执行门槛</b>:类别启停 / 顾问推送策略 / 受众圈定 / 话术与模板发布走操作确认(理由必填);调参类(受众 / 延迟 / 冷却 / 上限)展示目标新值,处置类(启停 / 发布)只确认动作。<b style={{ color: "var(--ink-3)", fontWeight: 500 }}>边界</b>:Nova(ai)推送配置见 I2;平台级停客服能力走 J1。话术挂双语词条(I6),发布前服务器校验中英镜像。
+        <b style={{ color: "var(--ink-3)", fontWeight: 500 }}>执行门槛</b>:类别启停 / 顾问推送策略 / 受众圈定 / 话术与模板发布走操作确认(理由必填);调参类(受众 / 延迟 / 冷却 / 上限)展示目标新值,处置类(启停 / 发布)只确认动作。<b style={{ color: "var(--ink-3)", fontWeight: 500 }}>边界</b>:AI 推送由 AI 平台统一管理;平台级停客服能力走 J1。话术挂双语词条(I6),发布前服务器校验中英镜像。
       </p>
 
       {canManageSupportSeats && profileAgent && <AgentProfileModal agent={profileAgent} agents={supportAgents} ctx={ctx} onClose={() => setProfileAgent(null)} />}
@@ -841,7 +843,7 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
       onClose={onClose}
       footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={onClose}>取消</button><button type="button" className="btn btn-pri btn-sm" disabled={!canSave} onClick={() => void save()}>{saving ? "保存中..." : `保存${!canSave ? " · 待补全" : ""}`}</button></>}
     >
-      <div className="mcol" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
+      <div className="mcol m5-modal-grid" style={{ gap: 22 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div>
             <div style={{ fontSize: 15, fontWeight: 600 }}>{agent.name}</div>
@@ -1040,7 +1042,7 @@ function AdvisorAssignModal({ agent, ctx, onClose }: { agent: MSupportAgent; ctx
       onClose={onClose}
       footer={<><span className="sub">用户来自客服工作台查询 · 已选 {bindableSelectedUsers.length} 人</span><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={onClose}>取消</button><button type="button" data-proof="advisor-assignment-save" className="btn btn-pri btn-sm" disabled={!canSave} onClick={() => void save()}>{saving ? "绑定中..." : `绑定${canSave ? ` ${bindableSelectedUsers.length} 人` : " · 待补全"}`}</button></>}
     >
-      <div className="mcol" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
+      <div className="mcol m5-modal-grid" style={{ gap: 22 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div>
             <div style={{ fontSize: 15, fontWeight: 600 }}>{agent.name}</div>
