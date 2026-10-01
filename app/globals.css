@@ -350,6 +350,16 @@ body {
   background-clip: padding-box;
 }
 
+/* 原生下拉弹层不继承页面底色，必须同时指定主题、文字和背景。 */
+select { color-scheme: light; }
+html[data-theme="dark"] select { color-scheme: dark; }
+select option,
+select optgroup {
+  background-color: var(--v5-surface);
+  color: var(--v5-ink);
+}
+select option:disabled { color: var(--v5-ink-3); }
+
 /* 选区色 — 柠檬绿低饱和 */
 ::selection {
   background: var(--v5-brand-soft);

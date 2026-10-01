@@ -167,10 +167,23 @@ for (const f of walk(path.join(ROOT, "app/components/domain-views"), /-view\.tsx
   if (!/td:last-child:has\(\.btn/.test(css)) add("I", "HIGH", path.join(ROOT, "app/globals.css"), "globals.css 缺操作列右对齐统一规则 `td:last-child:has(.btn,.sw)` → 全站表格末列操作按钮退回左对齐(主人抽检暴露的系统问题)。补回该规则,勿改回逐处 inline。");
 })();
 
+// 原生弹层有独立系统底色；保护全局修复不被删除，实景展开仍须浏览器验收。
+(() => {
+  const file = path.join(ROOT, "app/globals.css");
+  const css = read(file).replace(/\/\*[\s\S]*?\*\//g, "");
+  const popup = css.match(/select\s+option\s*,\s*select\s+optgroup\s*\{([^}]+)\}/)?.[1] ?? "";
+  if (!/(?:^|\})\s*select\s*\{[^}]*color-scheme:\s*light\s*;/.test(css)
+    || !/html\[data-theme="dark"\]\s+select\s*\{[^}]*color-scheme:\s*dark\s*;/.test(css)
+    || !/background-color:\s*var\(--v5-surface\)/.test(popup)
+    || !/(?:^|;)\s*color:\s*var\(--v5-ink\)/.test(popup)) {
+    add("J", "HIGH", file, "原生下拉菜单缺双主题或成对前景/背景规则，可能再次出现白底白字。恢复共用规则并实景检查展开菜单。");
+  }
+})();
+
 // ───────────── 报告 ─────────────
 const high = findings.filter((f) => f.sev === "HIGH");
 console.log(`交互完整性自查:扫描完成,发现 ${findings.length} 项(HIGH ${high.length})`);
-const CLS = { A: "死控件", B: "页头动作错配", C: "详情页链全局", E: "persist 水合门", F: "版本漂移", G: "凭据反模式", H: "绕 操作确认", I: "操作列对齐规则" };
+const CLS = { A: "死控件", B: "页头动作错配", C: "详情页链全局", E: "persist 水合门", F: "版本漂移", G: "凭据反模式", H: "绕 操作确认", I: "操作列对齐规则", J: "原生下拉配色" };
 for (const f of findings) console.log(`  ${f.sev === "HIGH" ? "✗" : "·"} [${f.cls} ${CLS[f.cls]}] ${f.file}\n      ${f.msg}`);
 if (high.length) { console.log(`\n✗ 交互完整性 FAIL — ${high.length} 项 HIGH 需修复(修后或显式 // audit-ok:* 豁免)`); process.exit(1); }
 console.log("✓ 交互完整性 PASS — 无 HIGH 残留");
