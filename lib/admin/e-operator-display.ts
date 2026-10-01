@@ -126,18 +126,26 @@ function compactIdentifier(value: string) {
   return value.normalize("NFKC").replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
 }
 
-export function operatorSkuLabel(input: { orderNo: string; skuName?: string | null; skuId?: string | null; skuSource?: string | null }) {
+export function operatorSkuLabel(input: { orderNo: string; skuName?: string | null; skuId?: string | null; skuSource?: string | null }): string {
   const skuName = text(input.skuName);
   const skuId = text(input.skuId);
   const compactSkuName = compactIdentifier(skuName);
+  const compactNameWithoutQuantity = compactIdentifier(skuName.normalize("NFKC").replace(/×\d+$/u, ""));
   const compactOrderNo = compactIdentifier(text(input.orderNo));
   const compactSkuId = compactIdentifier(skuId);
   const looksLikeOrderReference = /^(?:ord|order)(?:id)?[\p{L}\p{N}]*$/iu.test(compactSkuName);
-  const looksLikeSkuIdentifier = /^(?:sku|product)(?:id)?[\p{L}\p{N}]*$/iu.test(compactSkuName) || compactSkuName === compactSkuId;
+  const hasReadableWords = /\p{Script=Han}/u.test(skuName)
+    || (/\s/u.test(skuName) && /(?:^|\s)\p{L}{2,}(?=\s|×|$)/u.test(skuName));
+  const looksLikeSkuIdentifier = /^(?:sku|product)(?:id)?[\p{L}\p{N}]*$/iu.test(compactSkuName)
+    || (compactSkuName === compactSkuId
+      && (skuName.normalize("NFKC").toLowerCase() === skuId.normalize("NFKC").toLowerCase()
+        || !hasReadableWords));
   const humanReadable = /[\p{Script=Han}\s]|[A-Z][a-z]/u.test(skuName);
   if (!TRUSTED_SKU_SOURCES.has(text(input.skuSource).toUpperCase())
-      || !SAFE_SKU_DISPLAY.test(skuName)
+      || !/^[\p{L}\p{N}][\p{L}\p{N} ._+()/×-]{1,79}$/u.test(skuName)
       || !humanReadable
+      || /^\p{N}+$/u.test(compactNameWithoutQuantity)
+      || /^[a-f0-9]{32,}$/u.test(compactNameWithoutQuantity)
       || !skuName
       || compactSkuName === compactOrderNo
       || looksLikeOrderReference
@@ -145,6 +153,14 @@ export function operatorSkuLabel(input: { orderNo: string; skuName?: string | nu
     return "商品信息待补";
   }
   if (hasInternalFixtureMarker(skuName)) {
+    return "商品信息待补";
+  }
+  // ORDER_COLUMNS joins quantity-suffixed members with " + "; a name may itself contain +.
+  const skuNames = skuName.normalize("NFKC").split(/(?<=×\d+) \+ /u);
+  const skuIds = skuId.normalize("NFKC").split(/(?<=×\d+) \+ /u);
+  if (skuNames.length !== skuIds.length
+      || (skuNames.length > 1 && skuNames.some((name, index) =>
+        operatorSkuLabel({ ...input, skuName: name, skuId: skuIds[index] }) === "商品信息待补"))) {
     return "商品信息待补";
   }
   return skuName;
