@@ -118,9 +118,26 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
             itemClassName={(_s, selected) => `fchip${selected ? " on" : ""}`}
           >{(s) => FILTERS.find((f) => f.s === s)?.label}</TabGroup>
         </div>
-        <div className="q-row head">
-          <div>订单 ID</div><div>用户</div><div>SKU</div><div style={{ textAlign: "right" }}>金额</div>
-          <div>DC 分配</div><div>状态</div><div style={{ textAlign: "right" }}>时长</div><div />
+        <div className="q-scroll" role="region" aria-label="订单列表" tabIndex={0}>
+          <div className="q-row head">
+            <div>订单 ID</div><div>用户</div><div>SKU</div><div style={{ textAlign: "right" }}>金额</div>
+            <div>DC 分配</div><div>状态</div><div style={{ textAlign: "right" }}>时长</div><div />
+          </div>
+          {!ctx.e4Loading && !ctx.e4Error && rows.map((o) => {
+            const st = ctx.orderState(o);
+            return (
+              <div className="q-row" key={o.id} onClick={() => ctx.openOrder(o)}>
+                <div className="oid">{o.id}</div>
+                <div className="uid">{o.user}</div>
+                <div className="sku">{o.sku}</div>
+                <div className="amt">${o.amt.toLocaleString()}</div>
+                <div className="dc">{o.dc}</div>
+                <div><Badge tone={ostate[st] ?? "neutral"}>{stateLabel(st)}</Badge></div>
+                <div className="age">{o.age}</div>
+                <div className="chev"><Chevron /></div>
+              </div>
+            );
+          })}
         </div>
         {ctx.e4Loading ? (
           <div className="q-empty">正在从后端加载第 {ctx.e4Page} 页订单...</div>
@@ -128,21 +145,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           <div className="q-empty">E4 订单接口读取失败:{ctx.e4Error}</div>
         ) : rows.length === 0 ? (
           <div className="q-empty">{curF === "all" ? "后端暂无订单记录" : "当前状态无匹配订单"}</div>
-        ) : rows.map((o) => {
-          const st = ctx.orderState(o);
-          return (
-            <div className="q-row" key={o.id} onClick={() => ctx.openOrder(o)}>
-              <div className="oid">{o.id}</div>
-              <div className="uid">{o.user}</div>
-              <div className="sku">{o.sku}</div>
-              <div className="amt">${o.amt.toLocaleString()}</div>
-              <div className="dc">{o.dc}</div>
-              <div><Badge tone={ostate[st] ?? "neutral"}>{stateLabel(st)}</Badge></div>
-              <div className="age">{o.age}</div>
-              <div className="chev"><Chevron /></div>
-            </div>
-          );
-        })}
+        ) : null}
         <DataListPager
           label="订单队列"
           page={ctx.e4Page}

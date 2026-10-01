@@ -409,7 +409,7 @@
 .edom .sm-branch.neutral .nm { color: var(--ink-2); }
 
 /* ===== Order queue table ===== */
-.edom .q-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); }
+.edom .q-card { min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); }
 .edom .q-h { padding: 16px 18px 12px; display: flex; align-items: center; gap: 10px; }
 .edom .q-h .ttl { font-size: 14.5px; font-weight: 600; }
 .edom .q-h .sub { font-size: 12px; color: var(--ink-3); }
@@ -419,11 +419,13 @@
 .edom .fchip:hover { background: var(--surface-3); color: var(--ink); }
 .edom .fchip.on { background: var(--brand); color: #0A0A0A; border-color: var(--brand); font-weight: 600; }
 .edom .filter-bar .fdiv { width: 1px; align-self: stretch; min-height: 18px; background: var(--border); margin: 0 5px; }
-.edom .q-row { display: grid; grid-template-columns: 110px 110px 1fr 110px 130px 110px 70px 60px; align-items: center; gap: 12px; padding: 13px 20px; border-top: 1px solid var(--border); font-size: 13px; cursor: pointer; transition: background .12s; }
+.edom .q-scroll { overflow-x: auto; overscroll-behavior-inline: contain; }
+.edom .q-row { display: grid; grid-template-columns: 110px 110px minmax(160px, 1fr) 110px 130px 110px 70px 60px; min-width: 984px; align-items: center; gap: 12px; padding: 13px 20px; border-top: 1px solid var(--border); font-size: 13px; cursor: pointer; transition: background .12s; }
 .edom .q-row.head { padding: 11px 20px; background: var(--surface-2); border-top: 0; cursor: default; font-size: 10.5px; font-weight: 600; color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }
 .edom .q-row:hover:not(.head) { background: var(--surface-2); }
 .edom .q-row .oid { font-family: var(--mono); font-size: 12.5px; font-weight: 600; }
 .edom .q-row .uid { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+.edom .q-row .oid, .edom .q-row .uid { overflow-wrap: anywhere; }
 .edom .q-row .sku { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .edom .q-row .amt { font-family: var(--mono); font-size: 14px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
 .edom .q-row .dc { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
