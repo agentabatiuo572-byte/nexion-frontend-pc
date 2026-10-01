@@ -1,0 +1,1314 @@
+{
+  "schemaVersion": 2,
+  "id": "cs-enhance-cross-20261001-v2",
+  "title": "主线三仓集成，全部77项和原AC01–14真实服务验收",
+  "repo": "D:/WORKS/PLAN/.wt/cs-enhance-ui-20261001-admin",
+  "base": "747d95796dd233a67a57ce614581ee6023673f43",
+  "mode": "implement",
+  "risk": "high",
+  "owner": "customer-service-coordinator-20261001",
+  "outOfScope": [
+    "不部署生产或执行生产迁移",
+    "不改原服务端口/运行目录",
+    "不改变邀请/结算/财务写规则或扩大客服全局权限",
+    "不夹带其它任务WIP；不强推、不绕质量门",
+    "阶段外依赖必须实际通过，不以本文或静态绿灯代替运行验收",
+    "不由集成检查越阶段scope改产品；修补需重开对应阶段"
+  ],
+  "inputs": [
+    "./ASSESSMENT.md",
+    "./SPEC.md",
+    "./CONTRACTS.md",
+    "./ACCEPTANCE.md",
+    "./IMPLEMENTATION-PLAN.md",
+    "../support-redesign-20260929/OWNER-DECISIONS.md",
+    "../support-redesign-20260929/CONTRACTS.md",
+    "../support-redesign-20260929/ACCEPTANCE.md",
+    "D:/WORKS/PLAN/.wt/cs-enhance-core-20261001-backend/pom.xml",
+    "D:/WORKS/PLAN/.wt/cs-enhance-core-20261001-backend/src/main/java/ffdd/opsconsole/content/application/SupportHumanMessageService.java",
+    "D:/WORKS/PLAN/.wt/cs-enhance-client-20261001-app/package.json",
+    "D:/WORKS/PLAN/.wt/cs-enhance-client-20261001-app/src/api/support-api.ts",
+    "D:/WORKS/PLAN/.wt/cs-enhance-ui-20261001-admin/package.json"
+  ],
+  "steps": [
+    {
+      "id": "quality",
+      "title": "P5 核定实际三仓提交后重跑质量门",
+      "dependsOn": [],
+      "scope": [
+        "package.json",
+        "lib/admin/m-support-client.ts",
+        "scripts/verify.mjs"
+      ],
+      "acceptance": [
+        {
+          "id": "quality-X06",
+          "description": "三仓实际消费提交的质量门全量通过，不沿用子阶段静态旧报告",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "X06"
+          },
+          "kind": "static",
+          "checks": [
+            "quality/backend-verify",
+            "quality/admin-verify",
+            "quality/client-verify"
+          ]
+        }
+      ],
+      "checks": [
+        {
+          "id": "backend-verify",
+          "argv": [
+            "pwsh.exe",
+            "-NoProfile",
+            "-Command",
+            "& 'D:/WORKS/PLAN/.local-runtime/phone-calibration-tools/apache-maven-3.9.9/bin/mvn.cmd' '-f' 'D:/WORKS/PLAN/.wt/cs-enhance-core-20261001-backend/pom.xml' '-Dtest=*Test' 'test'; exit $LASTEXITCODE"
+          ],
+          "kind": "exit",
+          "timeoutMs": 600000
+        },
+        {
+          "id": "admin-verify",
+          "argv": [
+            "node",
+            "D:/WORKS/PLAN/.wt/cs-enhance-ui-20261001-admin/scripts/verify.mjs"
+          ],
+          "kind": "exit",
+          "timeoutMs": 600000
+        },
+        {
+          "id": "client-verify",
+          "argv": [
+            "pwsh.exe",
+            "-NoProfile",
+            "-Command",
+            "Push-Location -LiteralPath 'D:/WORKS/PLAN/.wt/cs-enhance-client-20261001-app'; try { & node 'scripts/verify-chain.mjs' '--full'; exit $LASTEXITCODE } finally { Pop-Location }"
+          ],
+          "kind": "exit",
+          "timeoutMs": 600000
+        }
+      ],
+      "reviewRequired": true
+    }
+  ],
+  "integration": {
+    "id": "integration",
+    "title": "全部场景与原AC、三仓连接处、独立覆盖审查",
+    "dependsOn": [
+      "quality"
+    ],
+    "scope": [
+      "scripts/support-enhancements-cross-runtime.mjs",
+      "tests/e2e/support-enhancements-20261001.spec.ts",
+      "lib/admin/m-support-client.ts"
+    ],
+    "acceptance": [
+      {
+        "id": "integration-A01",
+        "description": "Given 超管 When 保存唯一 AUTO_RANDOM/SUPERVISOR Then 版本/理由/审计可读回，刷新仍在；主管只读",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "A01"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-A02",
+        "description": "Given 合法邀请继承 When 新注册 Then 两模式都优先继承；L=0/有限边界/无限/未配置各自正确，未配置不猜层数",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "A02"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-A03",
+        "description": "Given 自然注册/邀请人未绑/超层 When AUTO_RANDOM Then 同一候选规则等概率随机合格adminId去重，不依赖在线/并发",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "A03"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-A04",
+        "description": "Given 超层且随机又中原顾问 When 提交 Then 新root=本人/depth0，之后新邀请继承，已有下级原归属",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "A04"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-A05",
+        "description": "Given 旧主管池 When 开自动/新建顾问/规则变更 Then 旧池不暗批；预览准确人数/排除/范围后明确批量随机才处理",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "A05"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-A06",
+        "description": "Given 新自动记录无候选 When 注册/求助及后续重试 Then 不阻断客户，记录尝试/原因可追踪，仅eligible新记录重试",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "A06"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-A07",
+        "description": "Given 自动任务未提交 When 先提交改主管模式 Then 尚未提交任务暂停，重新启用不吸纳历史池；已绑定不变",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "A07"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-A08",
+        "description": "Given 绑定顾问离线/忙碌/停用 When 客户求助 Then 不随机重分；停用由主管正式转绑，转一个不转下级",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "A08"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-A09",
+        "description": "Given 随机/人工同时分同客或选中顾问停用 When 提交 Then 一个归属提交、后者冲突刷新，候选重验拒失效，无死锁",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "A09"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-A10",
+        "description": "Given 原key响应丢失/重放/换载荷 When 查询或重试 Then 原结果可恢复，不重新抽签/重置新段，换载荷409",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "A10"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-A11",
+        "description": "Given 重复归属/孤儿/环/未知继承关系 When 随机或迁移 Then 待核对不任取；上级后补绑不迁旧下级，L变化不重排",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "A11"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-A12",
+        "description": "Given 历史预览过期/名单版本变/部分无候选 When 确认 Then 重验或拒绝，逐客结果完整，不隐含转后代、不假报整批全成功",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "A12"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R01",
+        "description": "Given 已发布普通客服回复模板 When 搜索/分组/点选 Then 数量正确、真实内容按光标插入",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R01"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R02",
+        "description": "Given 顾问话术 When 搜索/分组/点选 Then 发布状态过滤且原草稿不静默覆盖",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R02"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R03",
+        "description": "Given 在售/下架SKU When 名称/编号搜索及推送 Then 真实分页、下架过滤、提交再验，有文案及合法商城链接",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R03"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R04",
+        "description": "Given 历史商城/锁仓/创世消息 When 查看/点开 Then 原文保留，合法目标可达，失效说明不可用，不伪购买",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R04"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R05",
+        "description": "Given 客户/顾问 When 列表/标题/消息/资料打开 Then 姓名占位或真实头像与身份一致，昵称可读",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R05"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R06",
+        "description": "Given 客户 When 查看 Then 客户编码userNo与内部数字ID分别显示",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R06"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R07",
+        "description": "Given 客户等级 When 查看/筛选 Then 权威等级展示；未采集未知不猜",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R07"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R08",
+        "description": "Given 联系资料 When 查看 Then 脱敏手机、地区、注册时间均存在",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R08"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R09",
+        "description": "Given 最近登录与有效活动不同 When 查看 Then 两个值分别命名，注册时间不充当它们",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R09"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R10",
+        "description": "Given 风险等级/服务说明 When 查看 Then 可信来源正确，无评级未知，不展示受限案件/模型细节",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R10"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R11",
+        "description": "Given 超30笔成功充值 When 查看 Then 累计实际入账全历史正确、退款另列",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R11"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R12",
+        "description": "Given 成功/失败/处理中提现 When 查看 Then 累计成功本金、费用、到账、处理中分别正确",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R12"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R13",
+        "description": "Given 双币或更多实际币种余额 When 查看 Then 余额按币显示、不混加",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R13"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R14",
+        "description": "Given 长资金流水 When 筛选/分页/详情 Then 状态/币种/本金/费用/到账完整，近期不冒累计",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R14"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R15",
+        "description": "Given 客户持有设备超一页 When 查看 Then 全部持有设备可分页到达",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R15"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R16",
+        "description": "Given 设备信号 When 查看 Then 在网、算力、闲置真实，缺失/失败不同于无设备/0",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R16"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R17",
+        "description": "Given 系统标签 When 查看/试编辑 Then 可读且只读，不能改",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R17"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R18",
+        "description": "Given 本人客户自定义标签 When 增/删 Then 原动作权限+持久刷新，转绑后旧客不可改",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R18"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R19",
+        "description": "Given 本人客户备注 When 增/删 Then 内容/作者/时间可追溯，主管仅审阅不自动编辑",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R19"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R20",
+        "description": "Given 360入口 When 点击 Then 真到本人客户完整服务视图，返回可续聊；不发全局360权",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R20"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R21",
+        "description": "Given 多历史会话 When 入口/分页 Then 当前客户历史完整、原作者保留，转绑旧顾问撤权",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R21"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R22",
+        "description": "Given 关联工单和数量 When 点击 Then 真到正确工单，内部协作保留，R08私聊副本受限",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R22"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R23",
+        "description": "Given 有/无重置密码原权限 When 入口操作 Then 进入原授权流程或显示禁用原因，不只toast成功",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R23"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R24",
+        "description": "Given 有/无账户操作原权限 When 资金/冻结等入口操作 Then 原权限独立，不因客服360新增写权",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R24"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R25",
+        "description": "Given 未读/进行中/结束/归档列表 When 筛选 Then 计数和records授权scope一致",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R25"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R26",
+        "description": "Given 长列表 When 搜索/分页 Then 未读数、来源、接待身份保留，跨页无漏/重复",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R26"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R27",
+        "description": "Given 已回复/未回复/CLOSED会话 When 归档/撤销归档 Then 未处理客户消息禁止归档；archived独立且status不变，CLOSED撤销归档后仍不可在旧段发送；不删历史、不清待回复、不改变归属；迁移不能仅凭CLOSED猜归档",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R27"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R28",
+        "description": "Given 圈选含未回复多会话 When 批量归档 Then 未回复保护不得绕过，显式名单正确、冲突可恢复，未选不变",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R28"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R29",
+        "description": "Given 本人客户 When M3单客主动联系 Then 专属新段可发，原未回复接续可显式replyTargets处理",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R29"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R30",
+        "description": "Given 两客户不同草稿 When 切页/刷新/续聊 Then 各自隔离，命令恢复不重复发",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R30"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R31",
+        "description": "Given 已回复/未回复open会话 When 转工单/详情/返回 Then 未处理客户消息禁止转工单；合法转工单正确目标、源私聊鉴权、原会话续聊",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R31"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R32",
+        "description": "Given 已回复/未回复 When 结束服务/新求助 Then 未回复阻止结束，关闭后新段接续，不任改旧段",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R32"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R33",
+        "description": "Given 有/无超时配置权 When 配置入口 Then 可达原配置或有禁用说明，静默超时不换顾问",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R33"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R34",
+        "description": "Given 真实在线/离线/输入/已读信号或无信号 When 显示 Then 正确信号或未知；已读不等于回复/维护成功",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R34"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-R35",
+        "description": "Given 新版资料 When 打开 Then 当前顾问、会话状态、账户ACTIVE/DORMANT/UNKNOWN、维护开/停、有效活动、下次维护、最近服务全部保留",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "R35"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-F01",
+        "description": "Given 全历史超过30笔跨链/银行/卡充值含成功实际入账/未入账/退款/拒付/跨表重复 When 详情/360/筛选 Then 原成功入账去重累计、退款独立，无近20/30笔截断，不因后续状态变化缩减原累计",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "F01"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-F02",
+        "description": "Given 提现成功/处理中/拒绝/失败/撤销及费用 When 查看 Then 成功本金/费用/净到账/处理中各自正确且不重复",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "F02"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-F03",
+        "description": "Given 同客多币及小数边界、卡付款currency与入账ledger.asset不同 When 累计/筛选 Then decimal字符串精确、按实际入账币种隔离，不用currency配amount_usdt，无Number误差/汇率猜测",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "F03"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-F04",
+        "description": "Given 真实0/未采集/无权限/子来源失败 When 各资料分组 Then READY0/UNKNOWN/FORBIDDEN/ERROR分开，可独立重试",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "F04"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-F05",
+        "description": "Given 无可信风险评级/账户停用/设备接口失败 When 展示 Then 不猜风险20/76/88分、不默认中风险、不猜无设备零算力",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "F05"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-B01",
+        "description": "Given 我的客户或M3主动联系 When 批量入口 Then 同一选人/内容/确认/结果闭环，单客仍可联系",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "B01"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-B02",
+        "description": "Given 本人多页客户 When 单选/本页/跨页/全筛选/排除 Then 实际人数及冻结集合正确，新入筛选不追加",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "B02"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-B03",
+        "description": "Given 活动/维护/等级/标签/注册/活动区间/金额币种筛选 When 查询 Then 权威字段准确，未知单列不当0",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "B03"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-B04",
+        "description": "Given 确认前 When 下一步 Then 名单/数量/排除原因/内容/用途/当前顾问完整，返回输入保留，退出无写",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "B04"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-B05",
+        "description": "Given SERVICE或MAINTENANCE When 逐客提交 Then 1v1隔离；普通0执行、维护每消息1执行，后续新有效活动才1成功",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "B05"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-B06",
+        "description": "Given 不再维护客户 When 两类主动群发 Then 均排除；主动求助仍可普通单客回复，停止/恢复规则不变",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "B06"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-B07",
+        "description": "Given 中途转绑/坐席停用/客户停止 When 执行 Then 提交前重验，跳过失格项，新顾问不续原任务",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "B07"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-B08",
+        "description": "Given 部分失败/响应丢失UNKNOWN/重试 When 回查 Then 稳定消息id先查真实落库，SENT不再发，失败重试不重复执行",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "B08"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-B09",
+        "description": "Given 关闭浏览器/服务进程中断 When 重开/恢复执行 Then 原批次/名单/结果保存，认领重入不重发",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "B09"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-B10",
+        "description": "Given 部分已发 When 取消剩余 Then 已发不回滚，未发取消，取消与提交线性化；counts和固定人数一致",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "B10"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-B11",
+        "description": "Given 同一图片发送多人 When 各客读取及其中一客转绑 Then 逐客附件权限隔离，旧顾问失权、其它客不受影响",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "B11"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-B12",
+        "description": "Given 模板/文字/图片/SKU/链接 When 群发 Then 当前消息链处理、旧API不能旁路，下架/失效逐客说明",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "B12"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-B13",
+        "description": "Given 既有待回复 When 群发 Then replyTargets空且待回复保留；失败/上传/已读不记执行/成功",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "B13"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-V01",
+        "description": "Given 新建顾问/客服 When 超管上传并保存 Then 账号唯一asset/version，创建后修改可持久回读；未选图不额外阻断既有账号流程",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "V01"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-V02",
+        "description": "Given 原头像/姓名/账号/邮箱 When 上传失败/取消/替换冲突或仅换头像 Then 失败原图不变；avatar-only成功版本增加、其它资料尤其邮箱不变，省略头像不变，不能被no-change吞掉",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "V02"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-V03",
+        "description": "Given 非超管/伪MIME/SVG/超策略/其它人资产 When 上传或保存 Then 拒绝，复用存储、不赋device权限",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "V03"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-V04",
+        "description": "Given 头像更换 When 重载账号/坐席/列表/标题/消息/客户端 Then 同一真实资源版本，无双源漂移",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "V04"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-V05",
+        "description": "Given 转绑、原顾问改头像、历史作者UNKNOWN When 历史显示 Then 原作者不改，可信原作者头像或占位，不贴成新顾问",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "V05"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-V06",
+        "description": "Given 客户头像 When 客服查看/试改 Then 只读现有头像、无客服代改权限，旧服务缺字段仍占位可聊",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "V06"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-X01",
+        "description": "Given 顾问A/B/主管/超管/客户C/D When REST/WS/SSE/附件/360/工单副本/旧结果回放访问 Then 严格当前scope，主管无冒名发信，转绑即撤权",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "X01"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-X02",
+        "description": "Given 正式uniapp旧TEXT/IMAGE和新SKU/LINK/头像 When support/advisor/工单历史/命令恢复 Then 内容、游标、author、归属和失败重试兼容；坏payload显式失败",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "X02"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-X03",
+        "description": "Given 默认/空/加载/失败/权限/窄屏/长数字/键盘/减少动画 When 每受影响页面遍历 Then 无死按钮，禁用原因/返回/取消/重试齐全，原气泡色/分组/仅新消息动效按设计",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "X03"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-X04",
+        "description": "Given 当前支持语言 When 客户端新增文案及错误 Then 每语言完整，无内部枚举/错误码泄漏，H5不充APP证据",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "X04"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-X05",
+        "description": "Given 旧有效能力及退役项 When 回归 Then R01–R35逐项在，M2/M4/AI不退化、KYC不复活、临时转接仅正式转绑，财务/邀请不变",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "X05"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-X06",
+        "description": "Given 三仓实际合入SHA/真实隔离服务 When 全流程保存/发送/转绑/刷新 Then 全部验收有绑定证据、质量门+独立审查+最终集成通过，无生产迁移/发布",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "X06"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-legacy-AC01",
+        "description": "两顾问多客户/多会话，逐客户算六指标与分页列表一致；同客户多会话待办只一条；读消息不清待回复；unknown/未配不冒零",
+        "source": {
+          "input": "../support-redesign-20260929/ACCEPTANCE.md",
+          "locator": "AC01"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-legacy-AC02",
+        "description": "旧AC02按本轮D01/P01/P02更新：SUPERVISOR下L=0/2、A0→B1→C2→D池、D手动新0仍有效；AUTO_RANDOM下D随机新0且可抽原顾问由A03/A04证明。无邀请人/邀请人未绑/继承未配的真正无归属遵循统一模式；已绑定停用不得当无顾问重分。父后补绑不追溯、团队/财务不变。",
+        "source": {
+          "input": "../support-redesign-20260929/ACCEPTANCE.md",
+          "locator": "AC02"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-legacy-AC03",
+        "description": "G1忙/离线/并发满/transferable=false均不换绑定；advisor/support/重开会话/主动发信/工单升级全测；无绑定可文字和图片留言",
+        "source": {
+          "input": "../support-redesign-20260929/ACCEPTANCE.md",
+          "locator": "AC03"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-legacy-AC04",
+        "description": "单客转绑后代不动；显式批量每客新root0；同目标no-op；同key重放不重置；改L旧客户不动",
+        "source": {
+          "input": "../support-redesign-20260929/ACCEPTANCE.md",
+          "locator": "AC04"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-legacy-AC05",
+        "description": "普通客服伪造agentId/customerId/operator/ownerName、猜会话/附件id、旧命令结果、旧SSE/Socket、标签备注、原M1/M5/seat/transfer/DELETE全部拒绝；主管可审不能冒名发",
+        "source": {
+          "input": "../support-redesign-20260929/ACCEPTANCE.md",
+          "locator": "AC05"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-legacy-AC06",
+        "description": "M2内部指派不授对客回复；M4知识库/SLA既有权限与内容正常；AI不变；消息作者历史不改，新消息真实认证顾问；转工单私聊正文及摘要仅当前顾问/有审阅权主管可见，详情、列表、搜索、返回结果、旧成功回放和旧缓存不得旁路；转绑后旧顾问刷新/读回仍拒绝，来源不明历史副本保守隐藏；客户本人仍可看自己的工单，内部备注/指派/状态照旧协作",
+        "source": {
+          "input": "../support-redesign-20260929/ACCEPTANCE.md",
+          "locator": "AC06"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-legacy-AC07",
+        "description": "人工维护发信提交1→execution1、OPEN1、success0；响应丢失重试仍1；新消息同周期执行2；新有效事件只success1；原本活跃/unknown也需新事件",
+        "source": {
+          "input": "../support-redesign-20260929/ACCEPTANCE.md",
+          "locator": "AC07"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-legacy-AC08",
+        "description": "聊天回复、read、心跳、刷新token、自动结算/设备任务、管理员编辑不成功；旧活动迟到/重复/未来客户端时间拒绝；D/M/W重算不造事件；D边界等号与W窗口、unknown",
+        "source": {
+          "input": "../support-redesign-20260929/ACCEPTANCE.md",
+          "locator": "AC08"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-legacy-AC09",
+        "description": "JPEG/PNG合法，WebP按能力支持或明确拒绝；伪MIME/SVG/超限/解码坏拒绝；未发图仅上传者；转绑后旧顾问URL/Range/缓存重读拒绝，新顾问仅看已发；存储失败/暂存过期不造消息；刷新仍图",
+        "source": {
+          "input": "../support-redesign-20260929/ACCEPTANCE.md",
+          "locator": "AC09"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-legacy-AC10",
+        "description": "OPEN停止→STOPPED，停止后活动不成功但求助可回复；恢复不复活、依锚点到期；转绑→TRANSFERRED，新顾问另开周期；历史成功归旧；同一事件不能结多个周期；并发停止/发信/活动/转绑线性化",
+        "source": {
+          "input": "../support-redesign-20260929/ACCEPTANCE.md",
+          "locator": "AC10"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-legacy-AC11",
+        "description": "预检必须在ensureSchema去重前；重复/孤儿/仅会话owner/停用/缺历史；不自动任选、不推断；迁移二跑幂等，邀请财务不变，回滚不复开越权",
+        "source": {
+          "input": "../support-redesign-20260929/ACCEPTANCE.md",
+          "locator": "AC11"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-legacy-AC12",
+        "description": "image_gen真实产物+校正说明+可点关键流先验；后台每页按选定稿截图对照；默认/空/加载/失败/权限/窄屏，键盘/退出/禁用原因；客户端现有支持语言、H5/APP图片和求助",
+        "source": {
+          "input": "../support-redesign-20260929/ACCEPTANCE.md",
+          "locator": "AC12"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-legacy-AC13",
+        "description": "超管可写D/M/W/mode/L；主管只读；无默认30/7/2；有限L0合法、负/小数/LIMITED缺L/同时配置W>D拒绝；D/M/W各自可未配置，M有值即待维护可用；冲突留输入、重试原key；100单批不当总绑定上限",
+        "source": {
+          "input": "../support-redesign-20260929/ACCEPTANCE.md",
+          "locator": "AC13"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-legacy-AC14",
+        "description": "每阶段独立树/会话、来源映射、真实检查、独立审查，无生产写/部署；S7固定三仓SHA实际集成；后台远端不可达如实报告",
+        "source": {
+          "input": "../support-redesign-20260929/ACCEPTANCE.md",
+          "locator": "AC14"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "id": "runtime",
+        "argv": [
+          "node",
+          "scripts/support-enhancements-cross-runtime.mjs",
+          "--phase",
+          "integration",
+          "--plan",
+          "D:/WORKS/PLAN/.wt/cs-enhance-spec-20261001-admin/docs/specs/support-enhancements-20261001/integration.plan.json",
+          "--report",
+          "C:/Users/jason/.codex/workflow-runs/support-enhancements-20261001/cross/integration.json"
+        ],
+        "kind": "record",
+        "capability": "runtime",
+        "report": "C:/Users/jason/.codex/workflow-runs/support-enhancements-20261001/cross/integration.json",
+        "requiredChecks": [
+          "integration-A01",
+          "integration-A02",
+          "integration-A03",
+          "integration-A04",
+          "integration-A05",
+          "integration-A06",
+          "integration-A07",
+          "integration-A08",
+          "integration-A09",
+          "integration-A10",
+          "integration-A11",
+          "integration-A12",
+          "integration-R01",
+          "integration-R02",
+          "integration-R03",
+          "integration-R04",
+          "integration-R05",
+          "integration-R06",
+          "integration-R07",
+          "integration-R08",
+          "integration-R09",
+          "integration-R10",
+          "integration-R11",
+          "integration-R12",
+          "integration-R13",
+          "integration-R14",
+          "integration-R15",
+          "integration-R16",
+          "integration-R17",
+          "integration-R18",
+          "integration-R19",
+          "integration-R20",
+          "integration-R21",
+          "integration-R22",
+          "integration-R23",
+          "integration-R24",
+          "integration-R25",
+          "integration-R26",
+          "integration-R27",
+          "integration-R28",
+          "integration-R29",
+          "integration-R30",
+          "integration-R31",
+          "integration-R32",
+          "integration-R33",
+          "integration-R34",
+          "integration-R35",
+          "integration-F01",
+          "integration-F02",
+          "integration-F03",
+          "integration-F04",
+          "integration-F05",
+          "integration-B01",
+          "integration-B02",
+          "integration-B03",
+          "integration-B04",
+          "integration-B05",
+          "integration-B06",
+          "integration-B07",
+          "integration-B08",
+          "integration-B09",
+          "integration-B10",
+          "integration-B11",
+          "integration-B12",
+          "integration-B13",
+          "integration-V01",
+          "integration-V02",
+          "integration-V03",
+          "integration-V04",
+          "integration-V05",
+          "integration-V06",
+          "integration-X01",
+          "integration-X02",
+          "integration-X03",
+          "integration-X04",
+          "integration-X05",
+          "integration-X06",
+          "integration-legacy-AC01",
+          "integration-legacy-AC02",
+          "integration-legacy-AC03",
+          "integration-legacy-AC04",
+          "integration-legacy-AC05",
+          "integration-legacy-AC06",
+          "integration-legacy-AC07",
+          "integration-legacy-AC08",
+          "integration-legacy-AC09",
+          "integration-legacy-AC10",
+          "integration-legacy-AC11",
+          "integration-legacy-AC12",
+          "integration-legacy-AC13",
+          "integration-legacy-AC14"
+        ],
+        "timeoutMs": 600000
+      }
+    ],
+    "reviewRequired": true
+  }
+}

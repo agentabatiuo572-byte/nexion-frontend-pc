@@ -1,0 +1,1173 @@
+{
+  "schemaVersion": 2,
+  "id": "cs-enhance-backend-20261001-v2",
+  "title": "后端core后串行群发；仅后续授权阶段执行",
+  "repo": "D:/WORKS/PLAN/.wt/cs-enhance-core-20261001-backend",
+  "base": "968fbdcfbbbd2a583d4015661b613a23cfd6e954",
+  "mode": "implement",
+  "risk": "high",
+  "owner": "cs-enhance-core-20261001-backend",
+  "outOfScope": [
+    "不部署生产或执行生产迁移",
+    "不改原服务端口/运行目录",
+    "不改变邀请/结算/财务写规则或扩大客服全局权限",
+    "不夹带其它任务WIP；不强推、不绕质量门",
+    "阶段外依赖必须实际通过，不以本文或静态绿灯代替运行验收"
+  ],
+  "inputs": [
+    "./ASSESSMENT.md",
+    "./SPEC.md",
+    "./CONTRACTS.md",
+    "./ACCEPTANCE.md",
+    "./IMPLEMENTATION-PLAN.md",
+    "../support-redesign-20260929/OWNER-DECISIONS.md",
+    "../support-redesign-20260929/CONTRACTS.md",
+    "../support-redesign-20260929/ACCEPTANCE.md",
+    "D:/WORKS/PLAN/.wt/cs-enhance-core-20261001-backend/pom.xml",
+    "D:/WORKS/PLAN/.wt/cs-enhance-core-20261001-backend/src/main/java/ffdd/opsconsole/content/application/SupportBindingService.java",
+    "D:/WORKS/PLAN/.wt/cs-enhance-core-20261001-backend/src/main/java/ffdd/opsconsole/content/application/SupportHumanMessageService.java"
+  ],
+  "steps": [
+    {
+      "id": "core",
+      "title": "P1 分配、服务资料、账号头像、共享消息协议",
+      "dependsOn": [],
+      "scope": [
+        "src/main/java/ffdd/opsconsole/content/application/SupportBinding*",
+        "src/main/java/ffdd/opsconsole/content/application/SupportOwnership*",
+        "src/main/java/ffdd/opsconsole/content/application/SupportWorkbench*",
+        "src/main/java/ffdd/opsconsole/content/application/SupportHumanMessage*",
+        "src/main/java/ffdd/opsconsole/content/application/SupportAttachment*",
+        "src/main/java/ffdd/opsconsole/content/application/OpsConversation*",
+        "src/main/java/ffdd/opsconsole/content/application/AppSupportService.java",
+        "src/main/java/ffdd/opsconsole/content/domain/Support*",
+        "src/main/java/ffdd/opsconsole/content/domain/ContentConversation*",
+        "src/main/java/ffdd/opsconsole/content/dto/Support*",
+        "src/main/java/ffdd/opsconsole/content/dto/Conversation*",
+        "src/main/java/ffdd/opsconsole/content/mapper/Support*",
+        "src/main/java/ffdd/opsconsole/content/mapper/Conversation*",
+        "src/main/java/ffdd/opsconsole/content/infrastructure/Conversation*",
+        "src/main/java/ffdd/opsconsole/content/web/*Support*",
+        "src/main/java/ffdd/opsconsole/content/web/OpsConversationController.java",
+        "src/main/java/ffdd/opsconsole/content/realtime/Conversation*",
+        "src/main/java/ffdd/opsconsole/user/application/OpsUser360Service.java",
+        "src/main/java/ffdd/opsconsole/finance/mapper/DepositOrderMapper.java",
+        "src/main/java/ffdd/opsconsole/finance/mapper/WithdrawalOrderMapper.java",
+        "src/main/java/ffdd/opsconsole/platform/application/OpsAdminAccountService.java",
+        "src/main/java/ffdd/opsconsole/platform/web/OpsAdminAccountController.java",
+        "src/main/java/ffdd/opsconsole/platform/dto/AdminAccount*",
+        "src/main/java/ffdd/opsconsole/media/application/OpsMediaUploadService.java",
+        "src/test/java/ffdd/opsconsole/content/**",
+        "src/test/java/ffdd/opsconsole/user/application/OpsUser360ServiceTest.java",
+        "src/test/java/ffdd/opsconsole/platform/**",
+        "src/test/java/ffdd/opsconsole/media/**",
+        "scripts/migrations/20261001_support_enhancements_core.sql",
+        "scripts/support-enhancements-runtime.mjs",
+        "src/main/java/ffdd/opsconsole/auth/application/AppUserRegistrationService.java",
+        "src/main/java/ffdd/opsconsole/auth/application/AppUserRegistrationTransactionExecutor.java",
+        "src/main/java/ffdd/opsconsole/auth/infrastructure/AdminEntity.java",
+        "src/main/java/ffdd/opsconsole/auth/mapper/AdminMapper.java",
+        "src/main/java/ffdd/opsconsole/content/domain/AppSupportAdvisorView.java",
+        "src/main/java/ffdd/opsconsole/content/domain/ConversationRepository.java",
+        "src/main/java/ffdd/opsconsole/content/infrastructure/MybatisConversationRepository.java",
+        "src/main/java/ffdd/opsconsole/content/infrastructure/MybatisSupportAgentRepository.java",
+        "src/main/java/ffdd/opsconsole/content/application/OpsSupportAgentService.java",
+        "src/test/java/ffdd/opsconsole/auth/application/AppUserRegistration*Test.java",
+        "src/test/java/ffdd/opsconsole/content/application/SupportEnhancementPreparationTest.java",
+        "scripts/support-enhancements-core-env.ps1",
+        "docs/HANDOFF-support-enhancements-core.md",
+        "src/main/java/ffdd/opsconsole/platform/mapper/AdminAccountStateMapper.java",
+        "src/main/java/ffdd/opsconsole/platform/infrastructure/AdminAccountStateEntity.java",
+        "src/main/java/ffdd/opsconsole/user/mapper/UserOpsMapper.java",
+        "src/main/java/ffdd/opsconsole/content/mapper/CustomerProfileMapper.java",
+        "src/main/java/ffdd/opsconsole/content/infrastructure/MybatisCustomerProfileRepository.java",
+        "src/main/java/ffdd/opsconsole/content/domain/CustomerProfileRepository.java"
+      ],
+      "acceptance": [
+        {
+          "id": "core-A01",
+          "description": "服务端子契约A01：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 超管 When 保存唯一 AUTO_RANDOM/SUPERVISOR Then 版本/理由/审计可读回，刷新仍在；主管只读",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "A01"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-A02",
+          "description": "服务端子契约A02：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 合法邀请继承 When 新注册 Then 两模式都优先继承；L=0/有限边界/无限/未配置各自正确，未配置不猜层数",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "A02"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-A03",
+          "description": "服务端子契约A03：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 自然注册/邀请人未绑/超层 When AUTO_RANDOM Then 同一候选规则等概率随机合格adminId去重，不依赖在线/并发",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "A03"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-A04",
+          "description": "服务端子契约A04：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 超层且随机又中原顾问 When 提交 Then 新root=本人/depth0，之后新邀请继承，已有下级原归属",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "A04"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-A05",
+          "description": "服务端子契约A05：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 旧主管池 When 开自动/新建顾问/规则变更 Then 旧池不暗批；预览准确人数/排除/范围后明确批量随机才处理",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "A05"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-A06",
+          "description": "服务端子契约A06：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 新自动记录无候选 When 注册/求助及后续重试 Then 不阻断客户，记录尝试/原因可追踪，仅eligible新记录重试",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "A06"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-A07",
+          "description": "服务端子契约A07：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 自动任务未提交 When 先提交改主管模式 Then 尚未提交任务暂停，重新启用不吸纳历史池；已绑定不变",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "A07"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-A08",
+          "description": "服务端子契约A08：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 绑定顾问离线/忙碌/停用 When 客户求助 Then 不随机重分；停用由主管正式转绑，转一个不转下级",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "A08"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-A09",
+          "description": "服务端子契约A09：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 随机/人工同时分同客或选中顾问停用 When 提交 Then 一个归属提交、后者冲突刷新，候选重验拒失效，无死锁",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "A09"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-A10",
+          "description": "服务端子契约A10：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 原key响应丢失/重放/换载荷 When 查询或重试 Then 原结果可恢复，不重新抽签/重置新段，换载荷409",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "A10"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-A11",
+          "description": "服务端子契约A11：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 重复归属/孤儿/环/未知继承关系 When 随机或迁移 Then 待核对不任取；上级后补绑不迁旧下级，L变化不重排",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "A11"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-A12",
+          "description": "服务端子契约A12：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 历史预览过期/名单版本变/部分无候选 When 确认 Then 重验或拒绝，逐客结果完整，不隐含转后代、不假报整批全成功",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "A12"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R03",
+          "description": "后端子契约R03：真实SKU搜索分页/下架过滤和专属消息提交再验；搜索控件和商城点击由P3/P4证明。",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R03"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R04",
+          "description": "后端子契约R04：旧原文保留、新LINK白名单payload与失效目标标记；导航点击由P3/P4证明。",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R04"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R06",
+          "description": "服务端子契约R06：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 客户 When 查看 Then 客户编码userNo与内部数字ID分别显示",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R06"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R07",
+          "description": "服务端子契约R07：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 客户等级 When 查看/筛选 Then 权威等级展示；未采集未知不猜",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R07"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R08",
+          "description": "服务端子契约R08：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 联系资料 When 查看 Then 脱敏手机、地区、注册时间均存在",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R08"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R09",
+          "description": "服务端子契约R09：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 最近登录与有效活动不同 When 查看 Then 两个值分别命名，注册时间不充当它们",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R09"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R10",
+          "description": "服务端子契约R10：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 风险等级/服务说明 When 查看 Then 可信来源正确，无评级未知，不展示受限案件/模型细节",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R10"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R11",
+          "description": "服务端子契约R11：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 超30笔成功充值 When 查看 Then 累计实际入账全历史正确、退款另列",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R11"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R12",
+          "description": "服务端子契约R12：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 成功/失败/处理中提现 When 查看 Then 累计成功本金、费用、到账、处理中分别正确",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R12"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R13",
+          "description": "服务端子契约R13：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 双币或更多实际币种余额 When 查看 Then 余额按币显示、不混加",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R13"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R14",
+          "description": "服务端子契约R14：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 长资金流水 When 筛选/分页/详情 Then 状态/币种/本金/费用/到账完整，近期不冒累计",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R14"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R15",
+          "description": "服务端子契约R15：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 客户持有设备超一页 When 查看 Then 全部持有设备可分页到达",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R15"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R16",
+          "description": "服务端子契约R16：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 设备信号 When 查看 Then 在网、算力、闲置真实，缺失/失败不同于无设备/0",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R16"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R17",
+          "description": "服务端子契约R17：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 系统标签 When 查看/试编辑 Then 可读且只读，不能改",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R17"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R18",
+          "description": "服务端子契约R18：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 本人客户自定义标签 When 增/删 Then 原动作权限+持久刷新，转绑后旧客不可改",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R18"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R19",
+          "description": "服务端子契约R19：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 本人客户备注 When 增/删 Then 内容/作者/时间可追溯，主管仅审阅不自动编辑",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R19"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R20",
+          "description": "后端子契约R20：客服scope 360接口、完整字段、原actions权限及其它customerId拒绝；实际点击和返回续聊由P3证明。",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R20"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R21",
+          "description": "服务端子契约R21：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 多历史会话 When 入口/分页 Then 当前客户历史完整、原作者保留，转绑旧顾问撤权",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R21"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R22",
+          "description": "服务端子契约R22：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 关联工单和数量 When 点击 Then 真到正确工单，内部协作保留，R08私聊副本受限",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R22"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R23",
+          "description": "后端子契约R23：重置密码入口能力与原模块权限校验不被客服资料读授权扩大；实际页面操作由P3证明。",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R23"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R24",
+          "description": "后端子契约R24：资金/冻结等actions独立按原模块鉴权，不新增客服写权；界面流程由P3证明。",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R24"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R27",
+          "description": "服务端子契约R27：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 已回复/未回复/CLOSED会话 When 归档/撤销归档 Then 未处理客户消息禁止归档；archived独立且status不变，CLOSED撤销归档后仍不可在旧段发送；不删历史、不清待回复、不改变归属；迁移不能仅凭CLOSED猜归档",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R27"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R28",
+          "description": "服务端子契约R28：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 圈选含未回复多会话 When 批量归档 Then 未回复保护不得绕过，显式名单正确、冲突可恢复，未选不变",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R28"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R31",
+          "description": "服务端子契约R31：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 已回复/未回复open会话 When 转工单/详情/返回 Then 未处理客户消息禁止转工单；合法转工单正确目标、源私聊鉴权、原会话续聊",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R31"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R32",
+          "description": "服务端子契约R32：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 已回复/未回复 When 结束服务/新求助 Then 未回复阻止结束，关闭后新段接续，不任改旧段",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R32"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R33",
+          "description": "服务端子契约R33：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 有/无超时配置权 When 配置入口 Then 可达原配置或有禁用说明，静默超时不换顾问",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R33"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R34",
+          "description": "服务端子契约R34：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 真实在线/离线/输入/已读信号或无信号 When 显示 Then 正确信号或未知；已读不等于回复/维护成功",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R34"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-R35",
+          "description": "服务端子契约R35：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 新版资料 When 打开 Then 当前顾问、会话状态、账户ACTIVE/DORMANT/UNKNOWN、维护开/停、有效活动、下次维护、最近服务全部保留",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R35"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-F01",
+          "description": "服务端子契约F01：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 全历史超过30笔跨链/银行/卡充值含成功实际入账/未入账/退款/拒付/跨表重复 When 详情/360/筛选 Then 原成功入账去重累计、退款独立，无近20/30笔截断，不因后续状态变化缩减原累计",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "F01"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-F02",
+          "description": "服务端子契约F02：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 提现成功/处理中/拒绝/失败/撤销及费用 When 查看 Then 成功本金/费用/净到账/处理中各自正确且不重复",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "F02"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-F03",
+          "description": "服务端子契约F03：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 同客多币及小数边界、卡付款currency与入账ledger.asset不同 When 累计/筛选 Then decimal字符串精确、按实际入账币种隔离，不用currency配amount_usdt，无Number误差/汇率猜测",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "F03"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-F04",
+          "description": "服务端子契约F04：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 真实0/未采集/无权限/子来源失败 When 各资料分组 Then READY0/UNKNOWN/FORBIDDEN/ERROR分开，可独立重试",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "F04"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-F05",
+          "description": "服务端子契约F05：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 无可信风险评级/账户停用/设备接口失败 When 展示 Then 不猜风险20/76/88分、不默认中风险、不猜无设备零算力",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "F05"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-V01",
+          "description": "服务端子契约V01：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 新建顾问/客服 When 超管上传并保存 Then 账号唯一asset/version，创建后修改可持久回读；未选图不额外阻断既有账号流程",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "V01"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-V02",
+          "description": "服务端子契约V02：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 原头像/姓名/账号/邮箱 When 上传失败/取消/替换冲突或仅换头像 Then 失败原图不变；avatar-only成功版本增加、其它资料尤其邮箱不变，省略头像不变，不能被no-change吞掉",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "V02"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-V03",
+          "description": "服务端子契约V03：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 非超管/伪MIME/SVG/超策略/其它人资产 When 上传或保存 Then 拒绝，复用存储、不赋device权限",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "V03"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-V04",
+          "description": "后端子契约V04：账号/坐席/顾问/消息API投影使用同一头像asset/version，HTTP刷新读回；后台与客户端视觉一致由P3/P4及P5证明。",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "V04"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-V05",
+          "description": "服务端子契约V05：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 转绑、原顾问改头像、历史作者UNKNOWN When 历史显示 Then 原作者不改，可信原作者头像或占位，不贴成新顾问",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "V05"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-V06",
+          "description": "服务端子契约V06：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 客户头像 When 客服查看/试改 Then 只读现有头像、无客服代改权限，旧服务缺字段仍占位可聊",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "V06"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-X01",
+          "description": "服务端子契约X01：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 顾问A/B/主管/超管/客户C/D When REST/WS/SSE/附件/360/工单副本/旧结果回放访问 Then 严格当前scope，主管无冒名发信，转绑即撤权",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "X01"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        },
+        {
+          "id": "core-X05",
+          "description": "后端子契约X05：本仓已有M2/M4/AI与专属权限、关闭/归档/转工单guard不退化、KYC不复活、邀请/财务不变；R01–R35完整UI由P3及P5证明。",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "X05"
+          },
+          "kind": "behavior",
+          "checks": [
+            "core/runtime"
+          ]
+        }
+      ],
+      "checks": [
+        {
+          "id": "regression",
+          "argv": [
+            "pwsh.exe",
+            "-NoProfile",
+            "-Command",
+            "& 'D:/WORKS/PLAN/.local-runtime/phone-calibration-tools/apache-maven-3.9.9/bin/mvn.cmd' '-f' 'D:/WORKS/PLAN/.wt/cs-enhance-core-20261001-backend/pom.xml' '-Dtest=SupportBindingRuntimeTest,SupportHumanMessageServiceTest,OpsUser360ServiceTest,OpsSupportAgentControllerTest,SupportWorkbenchProfileTest' 'test'; exit $LASTEXITCODE"
+          ],
+          "kind": "exit",
+          "timeoutMs": 600000
+        },
+        {
+          "id": "runtime",
+          "argv": [
+            "node",
+            "scripts/support-enhancements-runtime.mjs",
+            "--phase",
+            "core",
+            "--plan",
+            "D:/WORKS/PLAN/.wt/cs-enhance-spec-20261001-admin/docs/specs/support-enhancements-20261001/backend.plan.json",
+            "--report",
+            "C:/Users/jason/.codex/workflow-runs/support-enhancements-20261001/backend/core.json"
+          ],
+          "kind": "record",
+          "capability": "runtime",
+          "report": "C:/Users/jason/.codex/workflow-runs/support-enhancements-20261001/backend/core.json",
+          "requiredChecks": [
+            "core-A01",
+            "core-A02",
+            "core-A03",
+            "core-A04",
+            "core-A05",
+            "core-A06",
+            "core-A07",
+            "core-A08",
+            "core-A09",
+            "core-A10",
+            "core-A11",
+            "core-A12",
+            "core-R03",
+            "core-R04",
+            "core-R06",
+            "core-R07",
+            "core-R08",
+            "core-R09",
+            "core-R10",
+            "core-R11",
+            "core-R12",
+            "core-R13",
+            "core-R14",
+            "core-R15",
+            "core-R16",
+            "core-R17",
+            "core-R18",
+            "core-R19",
+            "core-R20",
+            "core-R21",
+            "core-R22",
+            "core-R23",
+            "core-R24",
+            "core-R27",
+            "core-R28",
+            "core-R31",
+            "core-R32",
+            "core-R33",
+            "core-R34",
+            "core-R35",
+            "core-F01",
+            "core-F02",
+            "core-F03",
+            "core-F04",
+            "core-F05",
+            "core-V01",
+            "core-V02",
+            "core-V03",
+            "core-V04",
+            "core-V05",
+            "core-V06",
+            "core-X01",
+            "core-X05"
+          ],
+          "timeoutMs": 600000
+        }
+      ],
+      "reviewRequired": true
+    },
+    {
+      "id": "bulk",
+      "title": "P2 持久化逐客群发及恢复，依赖core验收",
+      "dependsOn": [
+        "core"
+      ],
+      "scope": [
+        "src/main/java/ffdd/opsconsole/content/application/SupportBulk*",
+        "src/main/java/ffdd/opsconsole/content/domain/SupportBulk*",
+        "src/main/java/ffdd/opsconsole/content/dto/SupportBulk*",
+        "src/main/java/ffdd/opsconsole/content/mapper/SupportBulk*",
+        "src/main/java/ffdd/opsconsole/content/web/SupportBulk*",
+        "src/main/java/ffdd/opsconsole/content/application/SupportHumanMessageService.java",
+        "src/main/java/ffdd/opsconsole/content/application/SupportAttachmentService.java",
+        "src/main/java/ffdd/opsconsole/content/application/OpsConversationService.java",
+        "src/main/java/ffdd/opsconsole/content/web/OpsConversationController.java",
+        "src/main/java/ffdd/opsconsole/content/realtime/Conversation*",
+        "src/test/java/ffdd/opsconsole/content/**",
+        "scripts/migrations/20261001_support_enhancements_bulk.sql",
+        "scripts/support-enhancements-runtime.mjs",
+        "scripts/support-enhancements-bulk-env.ps1",
+        "docs/HANDOFF-support-enhancements-bulk.md"
+      ],
+      "acceptance": [
+        {
+          "id": "bulk-B01",
+          "description": "后端子契约B01：两前端入口可共用同一preview/create/query批次API和专属单客写链；页面入口由P3证明。",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "B01"
+          },
+          "kind": "behavior",
+          "checks": [
+            "bulk/runtime"
+          ]
+        },
+        {
+          "id": "bulk-B02",
+          "description": "后端子契约B02：授权筛选/显式名单/排除/跨页集合冻结与实际计数正确，新客不追加；圈选控件由P3证明。",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "B02"
+          },
+          "kind": "behavior",
+          "checks": [
+            "bulk/runtime"
+          ]
+        },
+        {
+          "id": "bulk-B03",
+          "description": "服务端子契约B03：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 活动/维护/等级/标签/注册/活动区间/金额币种筛选 When 查询 Then 权威字段准确，未知单列不当0",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "B03"
+          },
+          "kind": "behavior",
+          "checks": [
+            "bulk/runtime"
+          ]
+        },
+        {
+          "id": "bulk-B04",
+          "description": "后端子契约B04：预览响应包含冻结名单、数量、排除原因、内容、用途、认证顾问；仅preview不写消息，前进/返回草稿由P3证明。",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "B04"
+          },
+          "kind": "behavior",
+          "checks": [
+            "bulk/runtime"
+          ]
+        },
+        {
+          "id": "bulk-B05",
+          "description": "服务端子契约B05：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given SERVICE或MAINTENANCE When 逐客提交 Then 1v1隔离；普通0执行、维护每消息1执行，后续新有效活动才1成功",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "B05"
+          },
+          "kind": "behavior",
+          "checks": [
+            "bulk/runtime"
+          ]
+        },
+        {
+          "id": "bulk-B06",
+          "description": "服务端子契约B06：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 不再维护客户 When 两类主动群发 Then 均排除；主动求助仍可普通单客回复，停止/恢复规则不变",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "B06"
+          },
+          "kind": "behavior",
+          "checks": [
+            "bulk/runtime"
+          ]
+        },
+        {
+          "id": "bulk-B07",
+          "description": "服务端子契约B07：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 中途转绑/坐席停用/客户停止 When 执行 Then 提交前重验，跳过失格项，新顾问不续原任务",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "B07"
+          },
+          "kind": "behavior",
+          "checks": [
+            "bulk/runtime"
+          ]
+        },
+        {
+          "id": "bulk-B08",
+          "description": "服务端子契约B08：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 部分失败/响应丢失UNKNOWN/重试 When 回查 Then 稳定消息id先查真实落库，SENT不再发，失败重试不重复执行",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "B08"
+          },
+          "kind": "behavior",
+          "checks": [
+            "bulk/runtime"
+          ]
+        },
+        {
+          "id": "bulk-B09",
+          "description": "后端子契约B09：服务进程中断后DB批次与逐客结果可恢复，重复执行不重发；浏览器关闭重开由P3证明。",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "B09"
+          },
+          "kind": "behavior",
+          "checks": [
+            "bulk/runtime"
+          ]
+        },
+        {
+          "id": "bulk-B10",
+          "description": "后端子契约B10：取消/逐客提交两种锁顺序真实DB线性化，已发不回滚、未发取消、计数正确；页面取消反馈由P3证明。",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "B10"
+          },
+          "kind": "behavior",
+          "checks": [
+            "bulk/runtime"
+          ]
+        },
+        {
+          "id": "bulk-B11",
+          "description": "服务端子契约B11：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 同一图片发送多人 When 各客读取及其中一客转绑 Then 逐客附件权限隔离，旧顾问失权、其它客不受影响",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "B11"
+          },
+          "kind": "behavior",
+          "checks": [
+            "bulk/runtime"
+          ]
+        },
+        {
+          "id": "bulk-B12",
+          "description": "服务端子契约B12：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 模板/文字/图片/SKU/链接 When 群发 Then 当前消息链处理、旧API不能旁路，下架/失效逐客说明",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "B12"
+          },
+          "kind": "behavior",
+          "checks": [
+            "bulk/runtime"
+          ]
+        },
+        {
+          "id": "bulk-B13",
+          "description": "服务端子契约B13：仅验对应服务端字段、权限、DB事务/持久化与API读回；界面点击/视觉、语言、APP及跨仓整体由下游和P5证明。原要求：Given 既有待回复 When 群发 Then replyTargets空且待回复保留；失败/上传/已读不记执行/成功",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "B13"
+          },
+          "kind": "behavior",
+          "checks": [
+            "bulk/runtime"
+          ]
+        }
+      ],
+      "checks": [
+        {
+          "id": "regression",
+          "argv": [
+            "pwsh.exe",
+            "-NoProfile",
+            "-Command",
+            "& 'D:/WORKS/PLAN/.local-runtime/phone-calibration-tools/apache-maven-3.9.9/bin/mvn.cmd' '-f' 'D:/WORKS/PLAN/.wt/cs-enhance-core-20261001-backend/pom.xml' '-Dtest=SupportHumanMessageServiceTest,SupportMaintenanceServiceTest,SupportAttachmentServiceTest,OpsConversationServiceTest' 'test'; exit $LASTEXITCODE"
+          ],
+          "kind": "exit",
+          "timeoutMs": 600000
+        },
+        {
+          "id": "runtime",
+          "argv": [
+            "node",
+            "scripts/support-enhancements-runtime.mjs",
+            "--phase",
+            "bulk",
+            "--plan",
+            "D:/WORKS/PLAN/.wt/cs-enhance-spec-20261001-admin/docs/specs/support-enhancements-20261001/backend.plan.json",
+            "--report",
+            "C:/Users/jason/.codex/workflow-runs/support-enhancements-20261001/backend/bulk.json"
+          ],
+          "kind": "record",
+          "capability": "runtime",
+          "report": "C:/Users/jason/.codex/workflow-runs/support-enhancements-20261001/backend/bulk.json",
+          "requiredChecks": [
+            "bulk-B01",
+            "bulk-B02",
+            "bulk-B03",
+            "bulk-B04",
+            "bulk-B05",
+            "bulk-B06",
+            "bulk-B07",
+            "bulk-B08",
+            "bulk-B09",
+            "bulk-B10",
+            "bulk-B11",
+            "bulk-B12",
+            "bulk-B13"
+          ],
+          "timeoutMs": 600000
+        }
+      ],
+      "reviewRequired": true
+    }
+  ],
+  "integration": {
+    "id": "integration",
+    "title": "后端集成重跑core/bulk检查及归属/旧入口/维护/持久化",
+    "dependsOn": [
+      "core",
+      "bulk"
+    ],
+    "scope": [
+      "src/main/java/ffdd/opsconsole/content/application/SupportBinding*",
+      "src/main/java/ffdd/opsconsole/content/application/SupportOwnership*",
+      "src/main/java/ffdd/opsconsole/content/application/SupportWorkbench*",
+      "src/main/java/ffdd/opsconsole/content/application/SupportHumanMessage*",
+      "src/main/java/ffdd/opsconsole/content/application/SupportAttachment*",
+      "src/main/java/ffdd/opsconsole/content/application/OpsConversation*",
+      "src/main/java/ffdd/opsconsole/content/application/AppSupportService.java",
+      "src/main/java/ffdd/opsconsole/content/domain/Support*",
+      "src/main/java/ffdd/opsconsole/content/domain/ContentConversation*",
+      "src/main/java/ffdd/opsconsole/content/dto/Support*",
+      "src/main/java/ffdd/opsconsole/content/dto/Conversation*",
+      "src/main/java/ffdd/opsconsole/content/mapper/Support*",
+      "src/main/java/ffdd/opsconsole/content/mapper/Conversation*",
+      "src/main/java/ffdd/opsconsole/content/infrastructure/Conversation*",
+      "src/main/java/ffdd/opsconsole/content/web/*Support*",
+      "src/main/java/ffdd/opsconsole/content/web/OpsConversationController.java",
+      "src/main/java/ffdd/opsconsole/content/realtime/Conversation*",
+      "src/main/java/ffdd/opsconsole/user/application/OpsUser360Service.java",
+      "src/main/java/ffdd/opsconsole/finance/mapper/DepositOrderMapper.java",
+      "src/main/java/ffdd/opsconsole/finance/mapper/WithdrawalOrderMapper.java",
+      "src/main/java/ffdd/opsconsole/platform/application/OpsAdminAccountService.java",
+      "src/main/java/ffdd/opsconsole/platform/web/OpsAdminAccountController.java",
+      "src/main/java/ffdd/opsconsole/platform/dto/AdminAccount*",
+      "src/main/java/ffdd/opsconsole/media/application/OpsMediaUploadService.java",
+      "src/test/java/ffdd/opsconsole/content/**",
+      "src/test/java/ffdd/opsconsole/user/application/OpsUser360ServiceTest.java",
+      "src/test/java/ffdd/opsconsole/platform/**",
+      "src/test/java/ffdd/opsconsole/media/**",
+      "scripts/migrations/20261001_support_enhancements_core.sql",
+      "scripts/support-enhancements-runtime.mjs",
+      "src/main/java/ffdd/opsconsole/auth/application/AppUserRegistrationService.java",
+      "src/main/java/ffdd/opsconsole/auth/application/AppUserRegistrationTransactionExecutor.java",
+      "src/main/java/ffdd/opsconsole/auth/infrastructure/AdminEntity.java",
+      "src/main/java/ffdd/opsconsole/auth/mapper/AdminMapper.java",
+      "src/main/java/ffdd/opsconsole/content/domain/AppSupportAdvisorView.java",
+      "src/main/java/ffdd/opsconsole/content/domain/ConversationRepository.java",
+      "src/main/java/ffdd/opsconsole/content/infrastructure/MybatisConversationRepository.java",
+      "src/main/java/ffdd/opsconsole/content/infrastructure/MybatisSupportAgentRepository.java",
+      "src/main/java/ffdd/opsconsole/content/application/OpsSupportAgentService.java",
+      "src/test/java/ffdd/opsconsole/auth/application/AppUserRegistration*Test.java",
+      "src/test/java/ffdd/opsconsole/content/application/SupportEnhancementPreparationTest.java",
+      "scripts/support-enhancements-core-env.ps1",
+      "docs/HANDOFF-support-enhancements-core.md",
+      "src/main/java/ffdd/opsconsole/platform/mapper/AdminAccountStateMapper.java",
+      "src/main/java/ffdd/opsconsole/platform/infrastructure/AdminAccountStateEntity.java",
+      "src/main/java/ffdd/opsconsole/user/mapper/UserOpsMapper.java",
+      "src/main/java/ffdd/opsconsole/content/mapper/CustomerProfileMapper.java",
+      "src/main/java/ffdd/opsconsole/content/infrastructure/MybatisCustomerProfileRepository.java",
+      "src/main/java/ffdd/opsconsole/content/domain/CustomerProfileRepository.java",
+      "src/main/java/ffdd/opsconsole/content/application/SupportBulk*",
+      "src/main/java/ffdd/opsconsole/content/domain/SupportBulk*",
+      "src/main/java/ffdd/opsconsole/content/dto/SupportBulk*",
+      "src/main/java/ffdd/opsconsole/content/mapper/SupportBulk*",
+      "src/main/java/ffdd/opsconsole/content/web/SupportBulk*",
+      "src/main/java/ffdd/opsconsole/content/application/SupportHumanMessageService.java",
+      "src/main/java/ffdd/opsconsole/content/application/SupportAttachmentService.java",
+      "src/main/java/ffdd/opsconsole/content/application/OpsConversationService.java",
+      "scripts/migrations/20261001_support_enhancements_bulk.sql",
+      "scripts/support-enhancements-bulk-env.ps1",
+      "docs/HANDOFF-support-enhancements-bulk.md"
+    ],
+    "acceptance": [
+      {
+        "id": "integration-X01",
+        "description": "后端仓内集成子契约X01：只证明本仓及已消费服务的对应义务；原跨端整体要求由P5证明。Given 顾问A/B/主管/超管/客户C/D When REST/WS/SSE/附件/360/工单副本/旧结果回放访问 Then 严格当前scope，主管无冒名发信，转绑即撤权",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "X01"
+        },
+        "kind": "behavior",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-X05",
+        "description": "后端仓内集成子契约X05：只证明本仓及已消费服务的对应义务；原跨端整体要求由P5证明。Given 旧有效能力及退役项 When 回归 Then R01–R35逐项在，M2/M4/AI不退化、KYC不复活、临时转接仅正式转绑，财务/邀请不变",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "X05"
+        },
+        "kind": "behavior",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-X06",
+        "description": "后端仓内集成子契约X06：重跑本仓全部步骤检查，当前快照、独立审查和runtime结果可信，无生产写入；三仓目标完成只由P5证明。",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "X06"
+        },
+        "kind": "behavior",
+        "checks": [
+          "integration/runtime"
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "id": "runtime",
+        "argv": [
+          "node",
+          "scripts/support-enhancements-runtime.mjs",
+          "--phase",
+          "integration",
+          "--plan",
+          "D:/WORKS/PLAN/.wt/cs-enhance-spec-20261001-admin/docs/specs/support-enhancements-20261001/backend.plan.json",
+          "--report",
+          "C:/Users/jason/.codex/workflow-runs/support-enhancements-20261001/backend/integration.json"
+        ],
+        "kind": "record",
+        "capability": "runtime",
+        "report": "C:/Users/jason/.codex/workflow-runs/support-enhancements-20261001/backend/integration.json",
+        "requiredChecks": [
+          "integration-X01",
+          "integration-X05",
+          "integration-X06"
+        ],
+        "timeoutMs": 600000
+      }
+    ],
+    "reviewRequired": true
+  }
+}

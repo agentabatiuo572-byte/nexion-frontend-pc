@@ -1,0 +1,415 @@
+{
+  "schemaVersion": 2,
+  "id": "cs-enhance-client-20261001-v2",
+  "title": "正式客户端必要兼容；detached树，不创建或推逃生分支",
+  "repo": "D:/WORKS/PLAN/.wt/cs-enhance-client-20261001-app",
+  "base": "a90d7d4035245b91c44f2bf5d9f8632605cc3d30",
+  "mode": "implement",
+  "risk": "high",
+  "owner": "cs-enhance-client-20261001-app",
+  "outOfScope": [
+    "不部署生产或执行生产迁移",
+    "不改原服务端口/运行目录",
+    "不改变邀请/结算/财务写规则或扩大客服全局权限",
+    "不夹带其它任务WIP；不强推、不绕质量门",
+    "阶段外依赖必须实际通过，不以本文或静态绿灯代替运行验收",
+    "不创建codex分支；full verify后本地commit交主线集成test",
+    "不将H5实景当APP实机证据"
+  ],
+  "inputs": [
+    "./ASSESSMENT.md",
+    "./SPEC.md",
+    "./CONTRACTS.md",
+    "./ACCEPTANCE.md",
+    "./IMPLEMENTATION-PLAN.md",
+    "../support-redesign-20260929/OWNER-DECISIONS.md",
+    "../support-redesign-20260929/CONTRACTS.md",
+    "../support-redesign-20260929/ACCEPTANCE.md",
+    "D:/WORKS/PLAN/.wt/cs-enhance-client-20261001-app/AGENTS.md",
+    "D:/WORKS/PLAN/.wt/cs-enhance-client-20261001-app/package.json",
+    "D:/WORKS/PLAN/.wt/cs-enhance-client-20261001-app/src/api/support-api.ts"
+  ],
+  "steps": [
+    {
+      "id": "client",
+      "title": "P4 真实作者头像、SKU/LINK、私有图片和必要语言",
+      "dependsOn": [],
+      "scope": [
+        "src/api/support-api.ts",
+        "src/api/support-*.test.ts",
+        "src/domain/support.ts",
+        "src/pages/me/support.vue",
+        "src/pages/me/support-tickets.vue",
+        "src/pages/me/support-*.test.ts",
+        "src/lib/support-*",
+        "src/i18n/*.ts",
+        "scripts/m-support-authority-contract.test.mjs",
+        "scripts/support-enhancements-runtime.mjs",
+        "src/pages/support/chat.vue",
+        "src/pages/support/messages.vue",
+        "src/pages/support/*conversation*.test.ts",
+        "src/pages/support/messages-*.test.ts",
+        "src/pages/support/history-pagination.contract.test.ts",
+        "src/pages/support/human-history-window.contract.test.ts",
+        "src/pages/support/conversation-realtime-page.ts",
+        "src/pages/support/conversation-realtime-page.test.ts",
+        "src/components/support/conversation-thread.vue",
+        "src/components/support/thread-types.ts",
+        "src/components/support/*.test.ts",
+        "src/store/conversations.ts",
+        "src/store/conversations-*.test.ts",
+        "src/api/conversation-realtime.ts",
+        "src/api/conversation-realtime.test.ts",
+        "src/i18n/messages/en.ts",
+        "src/i18n/messages/zh.ts",
+        "src/i18n/messages/vi.ts",
+        "src/i18n/messages/*.test.ts",
+        "docs/HANDOFF-support-enhancements-client.md"
+      ],
+      "acceptance": [
+        {
+          "id": "client-R03",
+          "description": "客户端子契约R03：接收专属SKU消息、展示真实SKU内容及合法商城链接，下架目标不可伪购买；后台SKU搜索筛选不属本阶段。",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R03"
+          },
+          "kind": "ui",
+          "checks": [
+            "client/runtime"
+          ]
+        },
+        {
+          "id": "client-R04",
+          "description": "客户端子契约R04：旧商城/锁仓/创世原文兼容，合法白名单导航和失效说明正确。",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R04"
+          },
+          "kind": "ui",
+          "checks": [
+            "client/runtime"
+          ]
+        },
+        {
+          "id": "client-R05",
+          "description": "客户端子契约R05：仅验本客户端显示、交互、语言及H5/APP能力；后台/后端义务由对应阶段证明。原要求：Given 客户/顾问 When 列表/标题/消息/资料打开 Then 姓名占位或真实头像与身份一致，昵称可读",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R05"
+          },
+          "kind": "ui",
+          "checks": [
+            "client/runtime"
+          ]
+        },
+        {
+          "id": "client-R21",
+          "description": "客户端子契约R21：仅验本客户端显示、交互、语言及H5/APP能力；后台/后端义务由对应阶段证明。原要求：Given 多历史会话 When 入口/分页 Then 当前客户历史完整、原作者保留，转绑旧顾问撤权",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R21"
+          },
+          "kind": "ui",
+          "checks": [
+            "client/runtime"
+          ]
+        },
+        {
+          "id": "client-R30",
+          "description": "客户端子契约R30：仅验本客户端显示、交互、语言及H5/APP能力；后台/后端义务由对应阶段证明。原要求：Given 两客户不同草稿 When 切页/刷新/续聊 Then 各自隔离，命令恢复不重复发",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R30"
+          },
+          "kind": "ui",
+          "checks": [
+            "client/runtime"
+          ]
+        },
+        {
+          "id": "client-R34",
+          "description": "客户端子契约R34：仅验本客户端显示、交互、语言及H5/APP能力；后台/后端义务由对应阶段证明。原要求：Given 真实在线/离线/输入/已读信号或无信号 When 显示 Then 正确信号或未知；已读不等于回复/维护成功",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "R34"
+          },
+          "kind": "ui",
+          "checks": [
+            "client/runtime"
+          ]
+        },
+        {
+          "id": "client-B11",
+          "description": "客户端子契约B11：客户仅读取自身群发图片，新旧顾问授权由后端证明；H5/APP私有图读取与清理分别留证。",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "B11"
+          },
+          "kind": "ui",
+          "checks": [
+            "client/runtime"
+          ]
+        },
+        {
+          "id": "client-B12",
+          "description": "客户端子契约B12：仅验本客户端显示、交互、语言及H5/APP能力；后台/后端义务由对应阶段证明。原要求：Given 模板/文字/图片/SKU/链接 When 群发 Then 当前消息链处理、旧API不能旁路，下架/失效逐客说明",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "B12"
+          },
+          "kind": "ui",
+          "checks": [
+            "client/runtime"
+          ]
+        },
+        {
+          "id": "client-V04",
+          "description": "客户端子契约V04：当前顾问与可信历史作者头像来自唯一账号资源版本、客户端刷新一致；后台各页面一致由P3/P5证明。",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "V04"
+          },
+          "kind": "ui",
+          "checks": [
+            "client/runtime"
+          ]
+        },
+        {
+          "id": "client-V05",
+          "description": "客户端子契约V05：仅验本客户端显示、交互、语言及H5/APP能力；后台/后端义务由对应阶段证明。原要求：Given 转绑、原顾问改头像、历史作者UNKNOWN When 历史显示 Then 原作者不改，可信原作者头像或占位，不贴成新顾问",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "V05"
+          },
+          "kind": "ui",
+          "checks": [
+            "client/runtime"
+          ]
+        },
+        {
+          "id": "client-V06",
+          "description": "客户端子契约V06：仅验本客户端显示、交互、语言及H5/APP能力；后台/后端义务由对应阶段证明。原要求：Given 客户头像 When 客服查看/试改 Then 只读现有头像、无客服代改权限，旧服务缺字段仍占位可聊",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "V06"
+          },
+          "kind": "ui",
+          "checks": [
+            "client/runtime"
+          ]
+        },
+        {
+          "id": "client-X01",
+          "description": "客户端子契约X01：仅验本客户端显示、交互、语言及H5/APP能力；后台/后端义务由对应阶段证明。原要求：Given 顾问A/B/主管/超管/客户C/D When REST/WS/SSE/附件/360/工单副本/旧结果回放访问 Then 严格当前scope，主管无冒名发信，转绑即撤权",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "X01"
+          },
+          "kind": "ui",
+          "checks": [
+            "client/runtime"
+          ]
+        },
+        {
+          "id": "client-X02",
+          "description": "客户端子契约X02：仅验本客户端显示、交互、语言及H5/APP能力；后台/后端义务由对应阶段证明。原要求：Given 正式uniapp旧TEXT/IMAGE和新SKU/LINK/头像 When support/advisor/工单历史/命令恢复 Then 内容、游标、author、归属和失败重试兼容；坏payload显式失败",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "X02"
+          },
+          "kind": "ui",
+          "checks": [
+            "client/runtime"
+          ]
+        },
+        {
+          "id": "client-X04",
+          "description": "客户端子契约X04：仅验本客户端显示、交互、语言及H5/APP能力；后台/后端义务由对应阶段证明。原要求：Given 当前支持语言 When 客户端新增文案及错误 Then 每语言完整，无内部枚举/错误码泄漏，H5不充APP证据",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "X04"
+          },
+          "kind": "ui",
+          "checks": [
+            "client/runtime"
+          ]
+        },
+        {
+          "id": "client-X05",
+          "description": "客户端子契约X05：仅验本客户端显示、交互、语言及H5/APP能力；后台/后端义务由对应阶段证明。原要求：Given 旧有效能力及退役项 When 回归 Then R01–R35逐项在，M2/M4/AI不退化、KYC不复活、临时转接仅正式转绑，财务/邀请不变",
+          "source": {
+            "input": "./ACCEPTANCE.md",
+            "locator": "X05"
+          },
+          "kind": "ui",
+          "checks": [
+            "client/runtime"
+          ]
+        }
+      ],
+      "checks": [
+        {
+          "id": "full-verify",
+          "argv": [
+            "node",
+            "scripts/verify-chain.mjs",
+            "--full"
+          ],
+          "kind": "exit",
+          "timeoutMs": 600000
+        },
+        {
+          "id": "runtime",
+          "argv": [
+            "node",
+            "scripts/support-enhancements-runtime.mjs",
+            "--phase",
+            "client",
+            "--plan",
+            "D:/WORKS/PLAN/.wt/cs-enhance-spec-20261001-admin/docs/specs/support-enhancements-20261001/client.plan.json",
+            "--report",
+            "C:/Users/jason/.codex/workflow-runs/support-enhancements-20261001/client/client.json"
+          ],
+          "kind": "record",
+          "capability": "runtime",
+          "report": "C:/Users/jason/.codex/workflow-runs/support-enhancements-20261001/client/client.json",
+          "requiredChecks": [
+            "client-R03",
+            "client-R04",
+            "client-R05",
+            "client-R21",
+            "client-R30",
+            "client-R34",
+            "client-B11",
+            "client-B12",
+            "client-V04",
+            "client-V05",
+            "client-V06",
+            "client-X01",
+            "client-X02",
+            "client-X04",
+            "client-X05"
+          ],
+          "timeoutMs": 600000
+        }
+      ],
+      "reviewRequired": true
+    }
+  ],
+  "integration": {
+    "id": "integration",
+    "title": "正式H5与APP、语言和旧消息回归",
+    "dependsOn": [
+      "client"
+    ],
+    "scope": [
+      "src/api/support-api.ts",
+      "src/api/support-*.test.ts",
+      "src/domain/support.ts",
+      "src/pages/me/support.vue",
+      "src/pages/me/support-tickets.vue",
+      "src/pages/me/support-*.test.ts",
+      "src/lib/support-*",
+      "src/i18n/*.ts",
+      "scripts/m-support-authority-contract.test.mjs",
+      "scripts/support-enhancements-runtime.mjs",
+      "src/pages/support/chat.vue",
+      "src/pages/support/messages.vue",
+      "src/pages/support/*conversation*.test.ts",
+      "src/pages/support/messages-*.test.ts",
+      "src/pages/support/history-pagination.contract.test.ts",
+      "src/pages/support/human-history-window.contract.test.ts",
+      "src/pages/support/conversation-realtime-page.ts",
+      "src/pages/support/conversation-realtime-page.test.ts",
+      "src/components/support/conversation-thread.vue",
+      "src/components/support/thread-types.ts",
+      "src/components/support/*.test.ts",
+      "src/store/conversations.ts",
+      "src/store/conversations-*.test.ts",
+      "src/api/conversation-realtime.ts",
+      "src/api/conversation-realtime.test.ts",
+      "src/i18n/messages/en.ts",
+      "src/i18n/messages/zh.ts",
+      "src/i18n/messages/vi.ts",
+      "src/i18n/messages/*.test.ts",
+      "docs/HANDOFF-support-enhancements-client.md"
+    ],
+    "acceptance": [
+      {
+        "id": "integration-X01",
+        "description": "正式客户端仓内集成子契约X01：只证明本仓及已消费服务的对应义务；原跨端整体要求由P5证明。Given 顾问A/B/主管/超管/客户C/D When REST/WS/SSE/附件/360/工单副本/旧结果回放访问 Then 严格当前scope，主管无冒名发信，转绑即撤权",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "X01"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-X02",
+        "description": "正式客户端仓内集成子契约X02：只证明本仓及已消费服务的对应义务；原跨端整体要求由P5证明。Given 正式uniapp旧TEXT/IMAGE和新SKU/LINK/头像 When support/advisor/工单历史/命令恢复 Then 内容、游标、author、归属和失败重试兼容；坏payload显式失败",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "X02"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-X04",
+        "description": "正式客户端仓内集成子契约X04：只证明本仓及已消费服务的对应义务；原跨端整体要求由P5证明。Given 当前支持语言 When 客户端新增文案及错误 Then 每语言完整，无内部枚举/错误码泄漏，H5不充APP证据",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "X04"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      },
+      {
+        "id": "integration-X06",
+        "description": "正式客户端仓内集成子契约X06：重跑本仓全部步骤检查，当前快照、独立审查和runtime结果可信，无生产写入；三仓目标完成只由P5证明。",
+        "source": {
+          "input": "./ACCEPTANCE.md",
+          "locator": "X06"
+        },
+        "kind": "ui",
+        "checks": [
+          "integration/runtime"
+        ]
+      }
+    ],
+    "checks": [
+      {
+        "id": "runtime",
+        "argv": [
+          "node",
+          "scripts/support-enhancements-runtime.mjs",
+          "--phase",
+          "integration",
+          "--plan",
+          "D:/WORKS/PLAN/.wt/cs-enhance-spec-20261001-admin/docs/specs/support-enhancements-20261001/client.plan.json",
+          "--report",
+          "C:/Users/jason/.codex/workflow-runs/support-enhancements-20261001/client/integration.json"
+        ],
+        "kind": "record",
+        "capability": "runtime",
+        "report": "C:/Users/jason/.codex/workflow-runs/support-enhancements-20261001/client/integration.json",
+        "requiredChecks": [
+          "integration-X01",
+          "integration-X02",
+          "integration-X04",
+          "integration-X06"
+        ],
+        "timeoutMs": 600000
+      }
+    ],
+    "reviewRequired": true
+  }
+}
