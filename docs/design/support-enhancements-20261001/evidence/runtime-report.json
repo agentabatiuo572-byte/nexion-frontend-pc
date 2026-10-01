@@ -1,0 +1,144 @@
+{
+  "scope": "Design prototype only; no product or server acceptance",
+  "capability": "runtime",
+  "evaluatedAt": "2026-10-01T05:32:32.943Z",
+  "prototypeSha256": "22ee22c1fae747e90d153619cb48b0a0f11b6a981af2ce27d75efcf40d66765f",
+  "artifacts": {
+    "UI-INTERACTION.md": "25499907681d413aaff347bd135f3778004ff4d94ad5a5fe31015c69cbebc204",
+    "images/conversation.png": "059ae5859ca4208052ae1a1d556d48fac943d46906f4040d62943971fca06f75",
+    "images/broadcast.png": "589998bbcb103e0ee4b7482737e434413880900911fb07fab3b603d259a4cf06",
+    "images/assignment-avatar.png": "ea499272440f6cd9a49d1a99c5c2eb7b22608b51fb9465bc38200ef2cd603745"
+  },
+  "url": "http://127.0.0.1:33031/prototype.html",
+  "verdict": "pass",
+  "steps": [
+    {
+      "id": "conversation-completeness",
+      "verdict": "pass",
+      "evidence": [
+        "Full old and new profile sections, supported assets and unknown presence inspected in DOM; conversation-dark.png"
+      ]
+    },
+    {
+      "id": "draft-switch-reload-and-template",
+      "verdict": "pass",
+      "evidence": [
+        "Draft survives switching, reload and insertion of both published template groups"
+      ]
+    },
+    {
+      "id": "send-failure-cancel-and-unsent-preview",
+      "verdict": "pass",
+      "evidence": [
+        "send-failure-cancel-and-unsent-preview"
+      ]
+    },
+    {
+      "id": "360-history-ticket-and-archive",
+      "verdict": "pass",
+      "evidence": [
+        "360-history-ticket-and-archive"
+      ]
+    },
+    {
+      "id": "read-only-and-revoked-permissions",
+      "verdict": "pass",
+      "evidence": [
+        "read-only-and-revoked-permissions"
+      ]
+    },
+    {
+      "id": "list-paging-and-stopped-active-help",
+      "verdict": "pass",
+      "evidence": [
+        "list-paging-and-stopped-active-help"
+      ]
+    },
+    {
+      "id": "bulk-cross-page-selection-and-filters",
+      "verdict": "pass",
+      "evidence": [
+        "bulk-cross-page-selection-and-filters"
+      ]
+    },
+    {
+      "id": "bulk-draft-back-confirm-unknown-before-retry",
+      "verdict": "pass",
+      "evidence": [
+        "Explicit failure retry does not touch UNKNOWN; query resolves old saved result without resend; cancel only pending"
+      ]
+    },
+    {
+      "id": "policy-reason-and-separate-historical-batch",
+      "verdict": "pass",
+      "evidence": [
+        "policy-reason-and-separate-historical-batch"
+      ]
+    },
+    {
+      "id": "avatar-create-edit-failed-original-retention",
+      "verdict": "pass",
+      "evidence": [
+        "avatar-create-edit-failed-original-retention"
+      ]
+    },
+    {
+      "id": "review-regressions-permissions-history-pending-archive",
+      "verdict": "pass",
+      "evidence": [
+        "Supervisor mutations blocked; customer annotations isolated; old targets retained; unread=0 does not clear pending; unarchive remains closed; history animation does not replay"
+      ]
+    },
+    {
+      "id": "review-regressions-image-readiness-both-entrypoints",
+      "verdict": "pass",
+      "evidence": [
+        "SVG rejected, PNG decoded, failure/ready/remove exercised in both chat and bulk, unready images cannot advance"
+      ]
+    },
+    {
+      "id": "review-regressions-nex-unknown-template-group",
+      "verdict": "pass",
+      "evidence": [
+        "Known NEX zero included, unknown excluded across pages; both template groups/count/search have real controls"
+      ]
+    },
+    {
+      "id": "review-regressions-async-image-owner-and-order",
+      "verdict": "pass",
+      "evidence": [
+        "Real PNG decode delayed through promise: switching customers discards old result; out-of-order same-customer and avatar completion preserves latest selection"
+      ]
+    },
+    {
+      "id": "review-regressions-pool-reason-and-avatar-two-modes",
+      "verdict": "pass",
+      "evidence": [
+        "Pool failure reason survives refresh, exact selected per-customer results shown; optional avatar creation allows empty only, creation/edit readiness and malformed bytes blocked; edit profile immutable"
+      ]
+    },
+    {
+      "id": "all-routes-multistate-light-and-keyboard",
+      "verdict": "pass",
+      "evidence": [
+        "all-routes-multistate-light-and-keyboard"
+      ]
+    },
+    {
+      "id": "mobile-three-layer-320-and-390",
+      "verdict": "pass",
+      "evidence": [
+        "mobile-three-layer-320-and-390"
+      ]
+    },
+    {
+      "id": "reduced-motion-and-real-image-gallery",
+      "verdict": "pass",
+      "evidence": [
+        "All three generated images load; zero page errors and zero external/business requests"
+      ]
+    }
+  ],
+  "errors": [],
+  "unexpectedRequests": []
+}

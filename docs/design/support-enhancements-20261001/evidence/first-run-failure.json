@@ -1,0 +1,54 @@
+{
+  "scope": "Design prototype only; no product or server acceptance",
+  "capability": "runtime",
+  "evaluatedAt": "2026-10-01T04:47:57.350Z",
+  "prototypeSha256": "26c3cb0605b2495d0b8e1d3cf98ba17016f60885223971c880ea4374557edd65",
+  "url": "http://127.0.0.1:33031/prototype.html",
+  "verdict": "fail",
+  "steps": [
+    {
+      "id": "conversation-completeness",
+      "verdict": "pass",
+      "evidence": [
+        "Full old and new profile sections, supported assets and unknown presence inspected in DOM; conversation-dark.png"
+      ]
+    },
+    {
+      "id": "draft-switch-reload-and-template",
+      "verdict": "pass",
+      "evidence": [
+        "Draft survives switching, reload and insertion of both published template groups"
+      ]
+    },
+    {
+      "id": "send-failure-cancel-and-unsent-preview",
+      "verdict": "pass",
+      "evidence": [
+        "send-failure-cancel-and-unsent-preview"
+      ]
+    },
+    {
+      "id": "360-history-ticket-and-archive",
+      "verdict": "pass",
+      "evidence": [
+        "360-history-ticket-and-archive"
+      ]
+    },
+    {
+      "id": "read-only-and-revoked-permissions",
+      "verdict": "pass",
+      "evidence": [
+        "read-only-and-revoked-permissions"
+      ]
+    },
+    {
+      "id": "list-paging-and-stopped-active-help",
+      "verdict": "fail",
+      "evidence": [
+        "AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:\n\n  assert(await page.locator('#intent option').filter({ hasText: '联系维护' }).isDisabled())\n"
+      ]
+    }
+  ],
+  "errors": [],
+  "unexpectedRequests": []
+}

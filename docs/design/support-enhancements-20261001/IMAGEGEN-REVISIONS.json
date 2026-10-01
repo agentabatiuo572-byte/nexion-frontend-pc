@@ -1,0 +1,30 @@
+[
+  {
+    "file": "images/conversation.png",
+    "source": "C:/Users/jason/.codex/generated_images/01a0f5b1-edc3-7163-8d5a-af49e3e3026a/exec-a133a283-9e0a-4aa6-850e-7978b89b0d51.png",
+    "prompt": "Edit this provided customer support UI screenshot. Keep the three-column inbox/chat/profile composition, portrait avatars, sky-blue advisor bubbles, charcoal customer bubbles, lime primary actions and all unaffected controls. Correct the header brand from Nexion to \"UVEL\" and change the brand mark N to neutral \"U\". Preserve current admin navigation labels exactly: \"客服工作台\", \"工单台\", \"专属会话\", \"知识库与 SLA\", \"服务规则与话术\". Breadcrumb \"客服中心 / 专属会话\". Remove global search/notifications if they would imply a new navigation; keep it restrained. Change right profile label \"证件号码\" to \"客户 ID\" with example \"102\"; customer code B002 remains separately. Region must be \"中国\" only, not city/wealth/age/gender. Replace all CNY values/labels with supported asset NEX, clearly \"0 NEX\" amounts. Keep USDT separate, no combined total. Remove the typing indicator completely and use \"在线与输入状态：未知\" under the chat title; no fake live signals. The toolbar and product remain but product name should be \"UVELBox S1\". Thin visible label \"设计示例 · 不连接服务\". All values are examples. Do not show KYC or identity document fields. Otherwise keep layout, visual density and style exactly."
+  },
+  {
+    "file": "images/broadcast.png",
+    "source": "C:/Users/jason/.codex/generated_images/01a0f5b1-edc3-7163-8d5a-af49e3e3026a/exec-24899955-8191-4f84-ba55-812c6b29898a.png",
+    "prompt": "Edit the supplied Chinese group-message design storyboard, keeping its three panels, hierarchy, palette, spacing and controls. Replace header \"NEXION\" with \"UVEL\". Remove decorative marketing slogans and claims \"安全合规\", \"独立送达\"; subtitle should say exactly \"仅当前顾问本人客户 · 逐客私聊 · 不连接服务\". All financial filter options use existing supported assets USDT / NEX only. In panel 3 replace the three result cards with four explicit cards arranged 2 by 2 if needed: \"成功 1\", \"失败 0\", \"核对中 1\", \"跳过 1\". Keep row B002 \"发送成功 · 已保存，未读\", row A389 \"核对中 · 先查原结果，暂不重发\", row C721 \"已跳过 · 归属已变更\". The unknown row must not appear in a failure-details group; change that group's heading to \"待核对详情（1）\". Disable/dim \"仅重试失败项\" because failed count is zero; \"查询原结果\" remains available. Change any delivery wording to stored message status. Keep \"维护执行 1 · 维护成功 0\" as design examples. All data visibly labelled \"设计示例\". Do not show unsupported guarantee, real send completion, or new production rules. Keep the two prior steps unchanged except branding and subtitle."
+  },
+  {
+    "file": "images/assignment-avatar.png",
+    "source": "C:/Users/jason/.codex/generated_images/01a0f5b1-edc3-7163-8d5a-af49e3e3026a/exec-9ee32678-57b7-445a-a75e-d3612b01a30a.png",
+    "prompt": "Edit this Chinese admin settings and avatar design. Keep the two equal panels, dark UVEL admin palette, native readable inputs, radio group, historical pool and two portrait previews. Change Nexion brand to UVEL. Header navigation must align current support navigation exactly: \"客服工作台 / 工单台 / 专属会话 / 知识库与 SLA / 服务规则与话术\"; this page is within existing service rules with A1 avatar form shown alongside as a design board, not a new global navigation. Delete unsupported fixed upload size text \"大小不超过5MB\"; replace helper with \"类型与容量以当前上传规则为准\". Remove the entire extra \"头像设置（创建时）\" card, its toggle, \"待上线\" badge and suggested policy language. Avatar is a direct file upload with preview, not another business switch. In create/edit tabs show \"编辑顾问\" selected, because this board shows original and replacement portraits and a failed replacement. New creation can simply show name placeholder plus optional upload in the eventual interactive prototype; no fabricated required policy. Historical pool row B012 \"关系待核对\" checkbox must be disabled and NOT checked. Show exactly two selected rows B008 and B011. Batch confirm button must be visibly disabled while reason empty or confirmation unchecked; policy preview button disabled if reason empty. Keep cancel controls visible. Correct inherited-limit text typo to \"继承超限\". Keep notes that effective inheritance precedes mode, only new true-unbound records automatic, history must be explicitly confirmed, root self depth 0, old descendants unchanged, offline/disabled bound advisor isn't unbound. All values design examples.",
+    "selected": false
+  },
+  {
+    "file": "images/assignment-avatar.png",
+    "source": "C:/Users/jason/.codex/generated_images/01a0f5b1-edc3-7163-8d5a-af49e3e3026a/exec-e00f9096-7b7c-4330-8693-58a68c6355ba.png",
+    "prompt": "Change ONLY two tiny visual errors in the supplied design; all other pixels/layout/text invariant. In left bottom historical table, B012 row (third data row, labelled 关系待核对/不符合条件) currently has a grey square with a checkmark. REMOVE the checkmark entirely: show an EMPTY dimmed square checkbox, unselected and disabled. B008 and B011 stay checked blue. Header checkbox remains correctly reflecting two eligible selected rows. In bottom-right avatar form, upload failure is shown so green \"保存修改\" must become disabled grey and read \"预览保存\". Keep cancel/retry available and original avatar intact. Do not redraw navigation or other content.",
+    "selected": false
+  },
+  {
+    "file": "images/assignment-avatar.png",
+    "source": "C:/Users/jason/.codex/generated_images/01a0f5b1-edc3-7163-8d5a-af49e3e3026a/exec-da4475c6-ea55-42dc-8d49-a2a48cd4e720.png",
+    "prompt": "Edit the image with one essential correction. Focus ONLY on lower-left table's third row B012 / 关系待核对 / 不符合条件. ERASE the entire grey checkbox square and checkmark at the left of B012. Put plain small grey text \"不可选\" in its place. This row must have NO checkbox icon at all. B008 and B011 still have blue checked boxes. Change B011 reason text to exactly \"继承超限\". Keep the upload failure, disabled grey avatar save, all other layout and contents untouched. Do not preserve any check mark in B012.",
+    "selected": true
+  }
+]

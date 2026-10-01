@@ -1,0 +1,63 @@
+{
+  "scope": "Design prototype only; no product or server acceptance",
+  "capability": "runtime",
+  "evaluatedAt": "2026-10-01T04:52:47.379Z",
+  "prototypeSha256": "b0438bdb9c213879f1a01592a2b7298b44299a929ee5d3226780e9ecbc20206e",
+  "url": "http://127.0.0.1:33031/prototype.html",
+  "verdict": "fail",
+  "steps": [
+    {
+      "id": "conversation-completeness",
+      "verdict": "pass",
+      "evidence": [
+        "Full old and new profile sections, supported assets and unknown presence inspected in DOM; conversation-dark.png"
+      ]
+    },
+    {
+      "id": "draft-switch-reload-and-template",
+      "verdict": "pass",
+      "evidence": [
+        "Draft survives switching, reload and insertion of both published template groups"
+      ]
+    },
+    {
+      "id": "send-failure-cancel-and-unsent-preview",
+      "verdict": "pass",
+      "evidence": [
+        "send-failure-cancel-and-unsent-preview"
+      ]
+    },
+    {
+      "id": "360-history-ticket-and-archive",
+      "verdict": "pass",
+      "evidence": [
+        "360-history-ticket-and-archive"
+      ]
+    },
+    {
+      "id": "read-only-and-revoked-permissions",
+      "verdict": "pass",
+      "evidence": [
+        "read-only-and-revoked-permissions"
+      ]
+    },
+    {
+      "id": "list-paging-and-stopped-active-help",
+      "verdict": "pass",
+      "evidence": [
+        "list-paging-and-stopped-active-help"
+      ]
+    },
+    {
+      "id": "bulk-cross-page-selection-and-filters",
+      "verdict": "fail",
+      "evidence": [
+        "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#bulk-min')\u001b[22m\n\u001b[2m    - locator resolved to <input min=\"0\" value=\"1000\" id=\"bulk-min\" type=\"number\"/>\u001b[22m\n\u001b[2m    - fill(\"\")\u001b[22m\n\u001b[2m  - attempting fill action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and editable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying fill action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and editable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying fill action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    59 × waiting for element to be visible, enabled and editable\u001b[22m\n\u001b[2m       - element is not visible\u001b[22m\n\u001b[2m     - retrying fill action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+      ]
+    }
+  ],
+  "errors": [
+    "Failed to set the 'innerHTML' property on 'Element': The node to be removed is no longer a child of this node. Perhaps it was moved in a 'blur' event handler?"
+  ],
+  "unexpectedRequests": []
+}

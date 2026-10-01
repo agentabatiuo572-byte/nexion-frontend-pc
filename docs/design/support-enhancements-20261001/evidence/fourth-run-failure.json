@@ -1,0 +1,103 @@
+{
+  "scope": "Design prototype only; no product or server acceptance",
+  "capability": "runtime",
+  "evaluatedAt": "2026-10-01T04:54:47.191Z",
+  "prototypeSha256": "7d0f7f2265aa2faeaf793c3ab54de6f8c80004f568166b53e35af7e377957d1a",
+  "url": "http://127.0.0.1:33031/prototype.html",
+  "verdict": "fail",
+  "steps": [
+    {
+      "id": "conversation-completeness",
+      "verdict": "pass",
+      "evidence": [
+        "Full old and new profile sections, supported assets and unknown presence inspected in DOM; conversation-dark.png"
+      ]
+    },
+    {
+      "id": "draft-switch-reload-and-template",
+      "verdict": "pass",
+      "evidence": [
+        "Draft survives switching, reload and insertion of both published template groups"
+      ]
+    },
+    {
+      "id": "send-failure-cancel-and-unsent-preview",
+      "verdict": "pass",
+      "evidence": [
+        "send-failure-cancel-and-unsent-preview"
+      ]
+    },
+    {
+      "id": "360-history-ticket-and-archive",
+      "verdict": "pass",
+      "evidence": [
+        "360-history-ticket-and-archive"
+      ]
+    },
+    {
+      "id": "read-only-and-revoked-permissions",
+      "verdict": "pass",
+      "evidence": [
+        "read-only-and-revoked-permissions"
+      ]
+    },
+    {
+      "id": "list-paging-and-stopped-active-help",
+      "verdict": "pass",
+      "evidence": [
+        "list-paging-and-stopped-active-help"
+      ]
+    },
+    {
+      "id": "bulk-cross-page-selection-and-filters",
+      "verdict": "pass",
+      "evidence": [
+        "bulk-cross-page-selection-and-filters"
+      ]
+    },
+    {
+      "id": "bulk-draft-back-confirm-unknown-before-retry",
+      "verdict": "pass",
+      "evidence": [
+        "Explicit failure retry does not touch UNKNOWN; query resolves old saved result without resend; cancel only pending"
+      ]
+    },
+    {
+      "id": "policy-reason-and-separate-historical-batch",
+      "verdict": "pass",
+      "evidence": [
+        "policy-reason-and-separate-historical-batch"
+      ]
+    },
+    {
+      "id": "avatar-create-edit-failed-original-retention",
+      "verdict": "pass",
+      "evidence": [
+        "avatar-create-edit-failed-original-retention"
+      ]
+    },
+    {
+      "id": "all-routes-multistate-light-and-keyboard",
+      "verdict": "pass",
+      "evidence": [
+        "all-routes-multistate-light-and-keyboard"
+      ]
+    },
+    {
+      "id": "mobile-three-layer-320-and-390",
+      "verdict": "fail",
+      "evidence": [
+        "AssertionError [ERR_ASSERTION]: [[\"DIV\",\"\",\"row between\",350],[\"SPAN\",\"\",\"pill\",350],[\"SECTION\",\"\",\"panel stack\",350],[\"DIV\",\"\",\"row\",333],[\"DIV\",\"\",\"formgrid\",333],[\"LABEL\",\"\",\"\",333],[\"INPUT\",\"advisor-name\",\"\",333],[\"LABEL\",\"\",\"\",333],[\"SELECT\",\"advisor-role\",\"\",333],[\"LABEL\",\"\",\"\",333],[\"SELECT\",\"\",\"\",333],[\"H2\",\"\",\"\",333]]"
+      ]
+    }
+  ],
+  "errors": [
+    "Failed to set the 'innerHTML' property on 'Element': The node to be removed is no longer a child of this node. Perhaps it was moved in a 'blur' event handler?",
+    "Failed to set the 'innerHTML' property on 'Element': The node to be removed is no longer a child of this node. Perhaps it was moved in a 'blur' event handler?"
+  ],
+  "unexpectedRequests": [
+    "blob:http://127.0.0.1:33031/55040f7a-ca7c-4896-bcfb-db44faea58d6",
+    "blob:http://127.0.0.1:33031/9b4e7278-9aca-42d9-bd07-d907c2def19b",
+    "blob:http://127.0.0.1:33031/a99d5f8b-3bfb-472b-b131-322de03efc22"
+  ]
+}
