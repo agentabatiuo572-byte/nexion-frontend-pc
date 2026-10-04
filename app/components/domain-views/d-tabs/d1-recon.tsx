@@ -680,6 +680,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                 <tr><td colSpan={10} style={{ textAlign: "center", color: "var(--ink-4)", padding: "26px 12px" }}>当前视图暂无银行转账或 HDPay 记录</td></tr>
               ) : vietQr?.page.items.map((row) => {
                 const amount = d1VietQrUsdtAmount(row);
+                const canWriteBankRow = canBankReconcile && row.paymentRail === "VIETQR";
                 return (
                   <tr key={row.id}>
                     <td><span className="bdg dim">{row.paymentRail === "HDPAY" ? "HDPay" : "银行转账 · VietQR"}</span></td>
@@ -700,10 +701,10 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                             : "实收金额与付款单不一致"
                       : row.note || "—"}</td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      {canBankReconcile && row.status === "OPEN" && row.viewType === "INFLIGHT" && (
+                      {canWriteBankRow && row.status === "OPEN" && row.viewType === "INFLIGHT" && (
                         <button className="l-btn sm mc" disabled={busy} onClick={() => openReceiptRegistration(row)}>登记这笔回单</button>
                       )}
-                      {canBankReconcile && row.status === "OPEN" && row.viewType === "ORPHAN" && (
+                      {canWriteBankRow && row.status === "OPEN" && row.viewType === "ORPHAN" && (
                         <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
                           action: `手动匹配入账 · ${row.reconciliationNo}`,
                           detail: `实收 ${vnd(row.receivedVnd)} 将按该回单锁定牌价入账，并把第 9 科目等额转为用户可提负债。用户归属由服务端意向单唯一确定，页面不能手工指定入账用户。`,
@@ -721,7 +722,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                           },
                         })}>手动匹配入账</button>
                       )}
-                      {canBankReconcile && row.status === "OPEN" && row.viewType === "MATCHED" && (
+                      {canWriteBankRow && row.status === "OPEN" && row.viewType === "MATCHED" && (
                         <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
                           action: `确认匹配入账 · ${row.reconciliationNo}`,
                           detail: "服务端以回单登记时冻结的匹配分类为准，再次核对意向单用户、收款账户和锁价快照，并在同一事务中入账；后续调参不会反向卡死已匹配回单，已到账资金也不会因账户日上限被拒绝。",
@@ -734,7 +735,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                           }), "匹配回单已确认入账"),
                         })}>确认入账</button>
                       )}
-                      {canBankReconcile && row.status === "OPEN" && row.viewType === "MISMATCH" && row.mismatchReason === "AMOUNT" && (
+                      {canWriteBankRow && row.status === "OPEN" && row.viewType === "MISMATCH" && row.mismatchReason === "AMOUNT" && (
                         <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
                           action: `按实收核销 · ${row.reconciliationNo}`,
                           detail: `按实收 ${vnd(row.receivedVnd)} 折算入账；第 9 科目等额转为用户可提负债，原应付金额不覆盖实收事实。`,
@@ -746,14 +747,14 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                           }), "差额回单已按实收核销"),
                         })}>按实收核销</button>
                       )}
-                      {canBankReconcile && row.status === "OPEN" && row.viewType === "MISMATCH" && row.mismatchReason !== "AMOUNT" && (
+                      {canWriteBankRow && row.status === "OPEN" && row.viewType === "MISMATCH" && row.mismatchReason !== "AMOUNT" && (
                         <span className="bdg bad" title={row.mismatchReason === "UNKNOWN"
                           ? "历史付款单或账户快照信息缺失，系统无法安全判断；只能人工核对并登记退回。"
                           : "收款账户不一致的回单不能按实收核销；请核对银行回单，确认真实到账后登记退回。"}>
                           {row.mismatchReason === "UNKNOWN" ? "信息缺失 · 禁止核销" : "账户不一致 · 禁止核销"}
                         </span>
                       )}
-                      {canBankReconcile && row.status === "OPEN" && ["ORPHAN", "MISMATCH", "LATE"].includes(row.viewType) && (
+                      {canWriteBankRow && row.status === "OPEN" && ["ORPHAN", "MISMATCH", "LATE"].includes(row.viewType) && (
                         <button className="l-btn sm mc" style={{ marginLeft: 6 }} disabled={busy} onClick={() => openActionConfirm({
                           action: `登记退回 · ${row.reconciliationNo}`,
                           detail: row.viewType === "LATE"

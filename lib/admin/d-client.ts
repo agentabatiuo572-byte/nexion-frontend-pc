@@ -967,13 +967,13 @@ function normalizeD1VietQrOverview(raw: unknown): D1VietQrOverview {
       const lockedFxRateVndPerUsdt = d1Number(row.lockedFxRateVndPerUsdt, `vietqr.page.items[${index}].lockedFxRateVndPerUsdt`);
       const creditedUsdt = d1Number(row.creditedUsdt, `vietqr.page.items[${index}].creditedUsdt`);
       const version = d1Number(row.version, `vietqr.page.items[${index}].version`);
-      // Negative IDs are reserved for backend-derived, already-credited HDPay read-only rows.
-      // They are never valid manual reconciliation targets (the backend rejects them before any write).
-      const hdPayReadOnly = id < 0 && viewType === "MATCHED" && status === "CREDITED"
-        && intentNo.startsWith("VQR-") && reconciliationNo === `HDPAY-${intentNo}`
-        && creditedUsdt > 0 && receivedVnd !== null && receivedVnd > 0;
+      // HDPay is read-only even when a legacy credited receipt has a positive ID.
+      // Negative IDs additionally identify the backend-derived HDPay projection.
+      const hdPayReadOnly = paymentRail === "HDPAY" && viewType === "MATCHED" && status === "CREDITED"
+        && intentNo.startsWith("VQR-") && creditedUsdt > 0 && receivedVnd !== null && receivedVnd > 0
+        && (id > 0 || reconciliationNo === `HDPAY-${intentNo}`);
       if (!["VIETQR", "HDPAY"].includes(paymentRail)
-          || !Number.isSafeInteger(id) || id === 0 || (id < 0 && (!hdPayReadOnly || paymentRail !== "HDPAY"))
+          || !Number.isSafeInteger(id) || id === 0 || ((paymentRail === "HDPAY" || id < 0) && !hdPayReadOnly)
           || (payableVnd !== null && payableVnd < 0)
           || (receivedVnd !== null && receivedVnd < 0)
           || lockedFxRateVndPerUsdt <= 0
