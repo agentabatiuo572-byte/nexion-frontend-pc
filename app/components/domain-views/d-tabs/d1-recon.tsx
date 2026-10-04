@@ -429,7 +429,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
           minLength: 6, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
           help: "照抄银行或支付商收款凭证的交易参考号；不能填付款单号、附言码或自行编写数字。" },
         { key: "receivedAt", label: "实际到账时间（越南 UTC+7）", inputKind: "text", required: true,
-          current: vietnamLocalDateTimeNow(), help: "按真实收款凭证填写到账时间，不是操作登记时间。" },
+          current: "", help: "按真实收款凭证填写到账时间，不是操作登记时间。" },
         VIETQR_ACTION_EVIDENCE_FIELD,
       ] },
       run: async (reason, _value, business) => {

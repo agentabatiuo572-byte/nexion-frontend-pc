@@ -210,6 +210,63 @@ function openedManual(changes = {}, manualTransport, auth = {}) {
   return { calls, confirmation: confirmations[0], settled };
 }
 
+test("actual manual confirmation starts with no receipt time and keeps the shared reason, proof and reference gates", async () => {
+  const kit = parse("app/components/domain-views/design-kit.tsx", ts.ScriptKind.TSX);
+  const modal = kit.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "OperationConfirmModal");
+  assert.ok(modal);
+  const declarations = new Map(modal.body.statements.filter(ts.isVariableStatement)
+    .flatMap(node => node.declarationList.declarations.map(item => [item.name.getText(kit), item])));
+  const gateNames = ["requestedMinimum", "reasonPolicyReady", "reasonMin", "requestedMaximum", "reasonMax",
+    "reasonLength", "reasonOk", "businessMissing", "uploadBlocked", "canConfirm"];
+  const helpers = kit.statements.filter(node => ts.isFunctionDeclaration(node)
+    && ["initBusinessForm", "missingBusinessFields"].includes(node.name?.text));
+  assert.equal(helpers.length, 2);
+  for (const name of [...gateNames, "handleConfirm"]) assert.ok(declarations.get(name)?.initializer, name);
+  const gateCode = gateNames.map(name => `const ${declarations.get(name).getText(kit)};`).join("\n");
+  const runModal = async (reason, changes = {}, uploadStates = {}) => {
+    const opened = openedManual(), errors = [];
+    const actualTime = opened.confirmation.businessForm.fields.find(field => field.key === "receivedAt");
+    assert.equal(actualTime.current, "", "opening the manual action must not invent a bank receipt time");
+    assert.equal(actualTime.required, true); assert.match(actualTime.help, /真实收款凭证.*不是操作登记时间/);
+    const modalScope = { activeBusinessForm: opened.confirmation.businessForm, reason,
+      requestedReasonMin: opened.confirmation.reasonMin, requestedReasonMax: opened.confirmation.reasonMax,
+      authoritativeReasonMin: 8, authoritativeReasonMax: 200, isJ4Command: false,
+      covBlocked: false, businessSelectionLoading: false, submitting: false, editValueOk: true,
+      uploadStates, derivedNewVal: undefined, newVal: "", onConfirm: opened.confirmation.run,
+      setSubmitting: () => {}, setSubmitError: value => errors.push(value),
+      operationConfirmErrorMessage: error => error.message };
+    execute(helpers.map(node => node.getText(kit)).join("\n"), modalScope);
+    modalScope.businessValue = { ...modalScope.initBusinessForm(opened.confirmation.businessForm),
+      paymentReference: "FT-TEST20", evidenceAssetId: "vqr_123e4567e89b12d3a456426614174000", ...changes };
+    execute(`${gateCode}\nvar ready = canConfirm; var submit = ${declarations.get("handleConfirm").initializer.getText(kit)};`, modalScope);
+    await modalScope.submit();
+    return { ...opened, errors, ready: modalScope.ready, values: modalScope.businessValue };
+  };
+  const validReason = "核实实际到账与凭证", actualReceipt = { receivedAt: "2026-10-04T16:00:00" };
+  const untouchedTime = await runModal(validReason);
+  assert.equal(untouchedTime.values.receivedAt, ""); assert.equal(untouchedTime.ready, false);
+  assert.equal(untouchedTime.calls.length, 0);
+  await assert.rejects(() => untouchedTime.confirmation.run(validReason, undefined, untouchedTime.values), /银行到账时间格式无效/);
+  assert.equal(untouchedTime.calls.length, 0);
+  for (const reason of ["", "短理由", "核\u200b \u200b对"]) {
+    const blocked = await runModal(reason, actualReceipt); assert.equal(blocked.ready, false); assert.equal(blocked.calls.length, 0);
+  }
+  for (const changes of [{ evidenceAssetId: "" }, { paymentReference: "" }, { paymentReference: "短" }]) {
+    const blocked = await runModal(validReason, { ...actualReceipt, ...changes });
+    assert.equal(blocked.ready, false); assert.equal(blocked.calls.length, 0);
+  }
+  const uploading = await runModal(validReason, actualReceipt, { evidenceAssetId: "uploading" });
+  assert.equal(uploading.ready, false); assert.equal(uploading.calls.length, 0);
+  for (const changes of [{ evidenceAssetId: "admin_generic_image" }, { paymentReference: "VQR-TEST20" }, { paymentReference: "NX-TEST20" }]) {
+    const blocked = await runModal(validReason, { ...actualReceipt, ...changes });
+    assert.equal(blocked.calls.length, 0); assert.match(blocked.errors.at(-1), /请先上传本次操作的回单图片|真实收款凭证上的交易参考号/);
+  }
+  const accepted = await runModal(validReason, actualReceipt);
+  assert.equal(accepted.ready, true); assert.equal(accepted.calls.length, 1);
+  assert.equal(accepted.calls[0][1].receivedAt, "2026-10-04T09:00:00.000Z");
+  assert.equal(accepted.calls[0][1].reason, validReason);
+});
+
 test("actual manual dialog locks amount/user/version, requires scoped proof and sends independent manual command", async () => {
   const { calls, confirmation } = openedManual();
   assert.match(confirmation.detail, /用户 7.*原状态 AWAITING_PAYMENT.*人工已入账/);
