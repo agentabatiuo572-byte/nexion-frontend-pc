@@ -131,6 +131,19 @@ function vietQrReceivedAtInstant(value: string) {
   return instant.toISOString();
 }
 
+const VIETQR_ACTION_EVIDENCE_FIELD = {
+  key: "evidenceAssetId", label: "银行回单图片", inputKind: "asset-upload" as const, required: true, wide: true,
+  uploadPurpose: "vietqr-receipt" as const,
+  accept: "image/jpeg,image/png",
+  help: "请在本次操作上传清晰的 JPG / PNG 银行回单图片，最大 10 MB；等待上传校验完成后再确认。",
+};
+
+function vietQrActionEvidenceRef(assetId?: string) {
+  const value = assetId?.trim() ?? "";
+  if (!/^vqr_[0-9a-f]{32}$/.test(value)) throw new Error("请先上传本次操作的回单图片并等待校验完成");
+  return `media:${value}`;
+}
+
 function vnd(value: number | null) {
   return value === null ? "—" : `${Number(value).toLocaleString("en-US")}₫`;
 }
@@ -710,11 +723,11 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                           detail: `实收 ${vnd(row.receivedVnd)} 将按该回单锁定牌价入账，并把第 9 科目等额转为用户可提负债。用户归属由服务端意向单唯一确定，页面不能手工指定入账用户。`,
                           businessForm: { kind: "multi-field", fields: [
                             { key: "intentNo", label: "目标意向单号", inputKind: "text", required: true },
-                            { key: "evidenceRef", label: "银行回单 / 工单凭证", inputKind: "text", required: true },
+                            VIETQR_ACTION_EVIDENCE_FIELD,
                           ] },
                           run: (reason, _value, business) => {
                             const intentNo = business?.intentNo?.trim() ?? "";
-                            const evidenceRef = business?.evidenceRef?.trim() ?? "";
+                            const evidenceRef = vietQrActionEvidenceRef(business?.evidenceAssetId);
                             if (!intentNo) throw new Error("请输入真实付款意向单号");
                             return applyBankWrite(() => reconcileD1VietQr(row.id, "match-credit", {
                               expectedVersion: row.version, intentNo, evidenceRef, reason, operator,
@@ -727,11 +740,11 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                           action: `确认匹配入账 · ${row.reconciliationNo}`,
                           detail: "服务端以回单登记时冻结的匹配分类为准，再次核对意向单用户、收款账户和锁价快照，并在同一事务中入账；后续调参不会反向卡死已匹配回单，已到账资金也不会因账户日上限被拒绝。",
                           businessForm: { kind: "multi-field", fields: [
-                            { key: "evidenceRef", label: "银行回单 / 工单凭证", inputKind: "text", required: true },
+                            VIETQR_ACTION_EVIDENCE_FIELD,
                           ] },
                           run: (reason, _value, business) => applyBankWrite(() => reconcileD1VietQr(row.id, "match-credit", {
                             expectedVersion: row.version, intentNo: row.intentNo,
-                            evidenceRef: business?.evidenceRef?.trim() ?? "", reason, operator,
+                            evidenceRef: vietQrActionEvidenceRef(business?.evidenceAssetId), reason, operator,
                           }), "匹配回单已确认入账"),
                         })}>确认入账</button>
                       )}
@@ -740,10 +753,10 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                           action: `按实收核销 · ${row.reconciliationNo}`,
                           detail: `按实收 ${vnd(row.receivedVnd)} 折算入账；第 9 科目等额转为用户可提负债，原应付金额不覆盖实收事实。`,
                           businessForm: { kind: "multi-field", fields: [
-                            { key: "evidenceRef", label: "银行回单 / 工单凭证", inputKind: "text", required: true },
+                            VIETQR_ACTION_EVIDENCE_FIELD,
                           ] },
                           run: (reason, _value, business) => applyBankWrite(() => reconcileD1VietQr(row.id, "write-off", {
-                            expectedVersion: row.version, evidenceRef: business?.evidenceRef?.trim() ?? "", reason, operator,
+                            expectedVersion: row.version, evidenceRef: vietQrActionEvidenceRef(business?.evidenceAssetId), reason, operator,
                           }), "差额回单已按实收核销"),
                         })}>按实收核销</button>
                       )}
@@ -761,10 +774,10 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                             ? "迟到或补充回单不复用原付款单的过期锁价，只允许登记退回；终态回单不可重复处置。"
                             : "登记退回会同时冲减真实储备与第 9 科目；终态回单不可重复处置。",
                           businessForm: { kind: "multi-field", fields: [
-                            { key: "evidenceRef", label: "退款凭证 / 工单凭证", inputKind: "text", required: true },
+                            { ...VIETQR_ACTION_EVIDENCE_FIELD, label: "银行退款回单图片", help: "请在本次操作上传清晰的 JPG / PNG 银行退款回单图片，最大 10 MB；等待上传校验完成后再确认。" },
                           ] },
                           run: (reason, _value, business) => applyBankWrite(() => reconcileD1VietQr(row.id, "return", {
-                            expectedVersion: row.version, evidenceRef: business?.evidenceRef?.trim() ?? "", reason, operator,
+                            expectedVersion: row.version, evidenceRef: vietQrActionEvidenceRef(business?.evidenceAssetId), reason, operator,
                           }), "回单已登记退回"),
                         })}>登记退回</button>
                       )}

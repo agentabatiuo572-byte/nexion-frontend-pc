@@ -180,7 +180,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   VIETQR_INTENT_BANK_ACCOUNT_MISMATCH: "回单收款账户与付款意向单分配账户不一致；本次未入账，请核对银行凭证。",
   VIETQR_RECEIPT_PREDATES_INTENT: "该银行回单到账时间早于目标付款意向单创建时间，不能追溯绑定；请核对流水或登记退回。",
   VIETQR_EVIDENCE_REFERENCE_INVALID: "必须填写格式正确的银行回单或工单凭证编号；本次未执行。",
-  VIETQR_RECEIPT_UPLOAD_EVIDENCE_REQUIRED: "请先上传清晰的银行回单图片；手工输入的凭证编号不能用于登记回单。",
+  VIETQR_RECEIPT_UPLOAD_EVIDENCE_REQUIRED: "请先上传本次操作的清晰回单图片并等待校验完成；手工输入的凭证编号不能代替图片。",
   VIETQR_RECEIPT_FILE_TOO_LARGE: "银行回单图片不得超过 10 MB；请压缩图片后重新上传。",
   VIETQR_RECEIPT_IMAGE_SIGNATURE_INVALID: "上传内容不是完整、可解码的 JPG 或 PNG 图片；请重新选择真实银行回单。",
   VIETQR_RECEIPT_IMAGE_TYPE_MISMATCH: "银行回单的文件扩展名、声明类型与实际图片内容不一致；请导出为 JPG 或 PNG 后重新上传。",

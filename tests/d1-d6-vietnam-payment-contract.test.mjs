@@ -41,7 +41,7 @@ test("D1 and D6 writes use real finance proxy routes with idempotency and optimi
 test("D1 manual match trusts canonical intent ownership instead of an operator-entered user id", () => {
   assert.doesNotMatch(d1, /\{ key: "userId", label: "目标用户 ID"/);
   assert.match(d1, /用户归属由服务端意向单唯一确定/);
-  assert.match(d1, /银行回单 \/ 工单凭证/);
+  assert.match(d1, /银行回单图片/);
   assert.match(client, /evidenceRef: string/);
   assert.match(d1, /登记真实银行回单/);
   assert.match(d1, /交易参考号不是付款单号，也不能自行编写/);

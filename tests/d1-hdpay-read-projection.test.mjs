@@ -97,7 +97,12 @@ function findBankRowCallback(node) {
 }
 findBankRowCallback(uiParsed);
 assert.ok(bankRowCallback, "the D1 bank row renderer must exist");
-const bankRowCode = ts.transpileModule(`var renderBankRow = ${bankRowCallback.getText(uiParsed)};`, {
+const bankEvidenceCode = uiParsed.statements.filter(node =>
+  (ts.isFunctionDeclaration(node) && node.name?.text === "vietQrActionEvidenceRef")
+  || (ts.isVariableStatement(node) && node.declarationList.declarations.some(
+    declaration => declaration.name.getText(uiParsed) === "VIETQR_ACTION_EVIDENCE_FIELD")))
+  .map(node => node.getText(uiParsed)).join("\n");
+const bankRowCode = ts.transpileModule(`${bankEvidenceCode}\nvar renderBankRow = ${bankRowCallback.getText(uiParsed)};`, {
   fileName: "d1-row.tsx",
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS,
     jsx: ts.JsxEmit.React, jsxFactory: "jsx" },
@@ -105,8 +110,11 @@ const bankRowCode = ts.transpileModule(`var renderBankRow = ${bankRowCallback.ge
 
 function renderedBankButtons(item, canBankReconcile = true) {
   const events = [];
+  const calls = [];
   const scope = {
-    canBankReconcile, busy: false,
+    canBankReconcile, busy: false, operator: "finance-fixture",
+    applyBankWrite: async task => task(),
+    reconcileD1VietQr: async (...args) => { calls.push(args); return { code: 0 }; },
     jsx: (type, props, ...children) => ({ type, props, children }),
     d1VietQrUsdtAmount: () => null,
     vnd: String, money: String, timeText: String,
@@ -122,7 +130,7 @@ function renderedBankButtons(item, canBankReconcile = true) {
     node.children?.forEach(visit);
   }
   visit(scope.renderBankRow(item));
-  return { buttons, events };
+  return { buttons, events, calls };
 }
 
 test("real D1 row renderer exposes bank actions only for permitted VIETQR open rows", () => {
@@ -149,4 +157,160 @@ test("real D1 row renderer never exposes manual callbacks for HDPay rows of eith
     }
     assert.equal(renderedBankButtons(row({ id })).buttons.length, 0);
   }
+});
+
+// Invoke the real click and command callbacks with an isolated transport fixture.
+const actionCases = [
+  { viewType: "ORPHAN", label: "手动匹配入账", action: "match-credit" },
+  { viewType: "MATCHED", label: "确认入账", action: "match-credit" },
+  { viewType: "MISMATCH", mismatchReason: "AMOUNT", label: "按实收核销", action: "write-off" },
+  ...["ORPHAN", "MISMATCH", "LATE"].map(viewType => ({ viewType, label: "登记退回", action: "return" })),
+];
+const fixtureAssetId = "vqr_123e4567e89b12d3a456426614174000";
+function openedBankAction(changes) {
+  const item = row({ id: 10, paymentRail: "VIETQR", reconciliationNo: "MANUAL-1",
+    status: "OPEN", creditedUsdt: 0, ...changes });
+  const rendered = renderedBankButtons(item);
+  const button = rendered.buttons.find(candidate => candidate.label === changes.label);
+  assert.ok(button, `expected the actual ${changes.label} button`);
+  button.click();
+  return { ...rendered, item, confirmation: rendered.events[0].confirmation };
+}
+
+test("every real bank reconciliation dialog obtains fresh purpose-scoped image evidence", async () => {
+  for (const changes of actionCases) {
+    const { confirmation, calls, item } = openedBankAction(changes);
+    const field = confirmation.businessForm.fields.find(candidate => candidate.key === "evidenceAssetId");
+    assert.ok(field);
+    assert.equal(field.inputKind, "asset-upload");
+    assert.equal(field.uploadPurpose, "vietqr-receipt");
+    assert.equal(field.accept, "image/jpeg,image/png");
+    assert.equal(field.required, true);
+    assert.match(field.label, /回单图片/);
+    assert.match(field.help, /本次操作.*上传.*校验完成/);
+    assert.equal(confirmation.businessForm.fields.some(candidate => candidate.key === "evidenceRef"), false);
+    await confirmation.run("核对银行到账与付款单后处置", undefined,
+      { intentNo: " VQR-1 ", evidenceAssetId: ` ${fixtureAssetId} ` });
+    assert.equal(calls.length, 1);
+    const [id, action, input] = calls[0];
+    assert.equal(id, item.id);
+    assert.equal(action, changes.action);
+    assert.equal(input.evidenceRef, `media:${fixtureAssetId}`);
+    assert.equal(input.expectedVersion, item.version);
+    assert.equal(input.operator, "finance-fixture");
+    assert.equal(input.reason, "核对银行到账与付款单后处置");
+    assert.equal(input.userId, undefined);
+    if (changes.viewType === "ORPHAN" && changes.action === "match-credit") assert.equal(input.intentNo, "VQR-1");
+    if (changes.viewType === "MATCHED") assert.equal(input.intentNo, item.intentNo);
+  }
+});
+
+test("real reconciliation callbacks reject missing images and the old hand-entered reference before transport", async () => {
+  for (const changes of actionCases) {
+    for (const values of [{}, { evidenceRef: "121212" }, { evidenceRef: `media:${fixtureAssetId}` },
+      { evidenceAssetId: "121212" }, { evidenceAssetId: `media:${fixtureAssetId}` },
+      { evidenceAssetId: "admin_generic_image" }]) {
+      const { confirmation, calls } = openedBankAction(changes);
+      await assert.rejects(async () => confirmation.run("核对银行到账与付款单后处置", undefined,
+        { intentNo: "VQR-1", ...values }), /请先上传本次操作的回单图片/);
+      assert.equal(calls.length, 0);
+    }
+  }
+  const { confirmation, calls } = openedBankAction(actionCases[0]);
+  await assert.rejects(async () => confirmation.run("核对银行到账与付款单后处置", undefined,
+    { evidenceAssetId: fixtureAssetId }), /真实付款意向单号/);
+  assert.equal(calls.length, 0);
+});
+
+// Exercise the existing shared file-input handler and real confirmation predicates.
+// Upload calls are contained fixtures; no file, API, receipt, ledger or wallet is written.
+const kit = readFileSync(new URL("../app/components/domain-views/design-kit.tsx", import.meta.url), "utf8");
+const kitParsed = ts.createSourceFile("design-kit.tsx", kit, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+let uploadSelection, uploadBlockedExpression, canConfirmExpression;
+function findUploadContract(node) {
+  if (ts.isJsxAttribute(node) && node.name.getText(kitParsed) === "onChange"
+      && node.initializer?.getText(kitParsed).includes("uploadD1VietQrReceiptEvidence(file)")) {
+    uploadSelection = node.initializer.expression;
+  }
+  if (ts.isVariableDeclaration(node)) {
+    if (node.name.getText(kitParsed) === "uploadBlocked") uploadBlockedExpression = node.initializer.getText(kitParsed);
+    if (node.name.getText(kitParsed) === "canConfirm") canConfirmExpression = node.initializer.getText(kitParsed);
+  }
+  ts.forEachChild(node, findUploadContract);
+}
+findUploadContract(kitParsed);
+assert.ok(uploadSelection && uploadBlockedExpression && canConfirmExpression);
+const missingFields = kitParsed.statements.find(node =>
+  ts.isFunctionDeclaration(node) && node.name?.text === "missingBusinessFields");
+assert.ok(missingFields);
+const sharedUploadCode = ts.transpileModule(`
+${missingFields.getText(kitParsed)}
+var handleUploadSelection = ${uploadSelection.getText(kitParsed)};
+var confirmationReady = (spec, values, uploadStates) => {
+  const reasonPolicyReady = true, covBlocked = false, businessSelectionLoading = false;
+  const submitting = false, reasonOk = true, editValueOk = true;
+  const businessMissing = missingBusinessFields(spec, values);
+  const uploadBlocked = ${uploadBlockedExpression};
+  return ${canConfirmExpression};
+};`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
+
+function sharedUploadFixture(confirmation) {
+  const values = { intentNo: "VQR-1" }, states = {}, names = {}, errors = {}, uploading = {}, pending = [];
+  const field = confirmation.businessForm.fields.find(candidate => candidate.key === "evidenceAssetId");
+  const update = target => updater => Object.assign(target, updater(target));
+  const scope = {
+    f: field, set: (key, value) => { values[key] = value; },
+    setAssetNames: update(names), setAssetErrors: update(errors), setAssetUploading: update(uploading),
+    onUploadStateChange: (key, value) => { states[key] = value; },
+    uploadD1VietQrReceiptEvidence: file => new Promise((resolve, reject) => pending.push({ file, resolve, reject })),
+    uploadAdminMedia: () => { throw new Error("VietQR must not use the generic upload route"); },
+  };
+  vm.runInNewContext(sharedUploadCode, scope);
+  return { values, states, names, errors, uploading, pending,
+    select: file => scope.handleUploadSelection({ target: { files: file ? [file] : [] } }),
+    ready: () => scope.confirmationReady(confirmation.businessForm, values, states) };
+}
+const flushUpload = () => new Promise(resolve => setImmediate(resolve));
+
+test("real upload callback enables a bank action only after the finance upload resolves", async () => {
+  for (const changes of actionCases) {
+    const { confirmation, calls } = openedBankAction(changes);
+    const upload = sharedUploadFixture(confirmation);
+    assert.equal(upload.ready(), false);
+    const file = { name: "isolated-bank-receipt.png" };
+    upload.select(file);
+    assert.equal(upload.pending[0].file, file);
+    assert.equal(upload.states.evidenceAssetId, "uploading");
+    assert.equal(upload.values.evidenceAssetId, "");
+    assert.equal(upload.ready(), false);
+    assert.equal(calls.length, 0);
+    upload.pending[0].resolve({ assetId: fixtureAssetId });
+    await flushUpload();
+    assert.equal(upload.values.evidenceAssetId, fixtureAssetId);
+    assert.equal(upload.uploading.evidenceAssetId, false);
+    assert.equal(upload.ready(), true);
+    await confirmation.run("核对银行到账与付款单后处置", undefined, upload.values);
+    assert.equal(calls[0][2].evidenceRef, `media:${fixtureAssetId}`);
+  }
+});
+
+test("real upload failure blocks confirmation and a successful retry restores it", async () => {
+  const { confirmation, calls } = openedBankAction(actionCases[0]);
+  const upload = sharedUploadFixture(confirmation);
+  upload.select({ name: "bad.png" });
+  upload.pending[0].reject(new Error("VIETQR_RECEIPT_IMAGE_TYPE_MISMATCH"));
+  await flushUpload();
+  assert.equal(upload.values.evidenceAssetId, "");
+  assert.equal(upload.states.evidenceAssetId, "failed");
+  assert.equal(upload.ready(), false);
+  assert.ok(upload.errors.evidenceAssetId);
+  assert.equal(calls.length, 0);
+  upload.select(undefined);
+  assert.equal(upload.ready(), false); // required action images cannot use registration's no-image path
+  upload.select({ name: "correct-bank-receipt.png" });
+  assert.equal(upload.ready(), false);
+  upload.pending[1].resolve({ assetId: fixtureAssetId });
+  await flushUpload();
+  assert.equal(upload.errors.evidenceAssetId, "");
+  assert.equal(upload.ready(), true);
 });
