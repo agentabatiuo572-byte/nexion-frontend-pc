@@ -23,6 +23,8 @@ const row = (id) => manifest.rows.find((item) => item.id === id);
 
 const SEMANTIC_PENDING_IDS = [
   "OPS-K-17",
+  "OPS-D-29",
+  "OPS-D-30",
 ];
 
 const FINAL_ACCEPTED_IDS = [
@@ -46,7 +48,7 @@ function readSourceTree(root, excludedSuffix = "") {
 }
 
 test("semantic debts stay pending until producer, runtime consumer and behavior evidence all exist", () => {
-  assert.equal(SEMANTIC_PENDING_IDS.length, 1);
+  assert.equal(SEMANTIC_PENDING_IDS.length, 3);
   for (const id of SEMANTIC_PENDING_IDS) {
     assert.equal(row(id)?.status, "pending", `${id} must remain pending until its runtime consumer contract is proven`);
     assert.ok(row(id)?.runtimeConsumerContract, `${id} must describe its pending runtime consumer contract`);
@@ -257,10 +259,10 @@ test("remaining-development ledger has unique claims and preserves semantic cons
   const counts = Object.groupBy(manifest.rows, (item) => item.status);
 
   assert.equal(new Set(ids).size, ids.length, "action IDs must be unique");
-  assert.equal(manifest.rows.length, 259);
+  assert.equal(manifest.rows.length, 261);
   assert.deepEqual(
     { built: counts.built?.length, readonly: counts.readonly?.length, pending: counts.pending?.length ?? 0, missing: counts.missing?.length ?? 0 },
-    { built: 229, readonly: 29, pending: 1, missing: 0 },
+    { built: 229, readonly: 29, pending: 3, missing: 0 },
   );
   for (const id of expectedBuiltClosures) assert.equal(row(id)?.status, "built", id + " must stay built");
 
@@ -660,7 +662,7 @@ test("historical audit receipt cannot override the live machine-readable pending
   const report = read(relative);
   assert.match(report, /生产环境没有真实供应商时一律失败关闭/);
   assert.match(report, /没有执行真实资金\/供应商动作，没有提交、推送或部署/);
-  assert.equal(manifest.rows.filter((item) => item.status === "pending").length, 1);
+  assert.equal(manifest.rows.filter((item) => item.status === "pending").length, 3);
 });
 
 test("historical selected-evidence SHA256 receipt retains its inventory without requiring retired external artifacts", () => {

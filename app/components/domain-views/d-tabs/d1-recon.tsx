@@ -4,9 +4,11 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { TabGroup } from "@/app/components/kit/tab-group";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { adminAuthLifecycleEpoch, AdminAuthEpochChangedError } from "@/lib/admin/auth-lifecycle";
 import { d1VietQrUsdtAmount } from "@/lib/admin/d1-vietqr-amount";
 import { formatD1FuseReason, requiresReprovision } from "@/lib/admin/d1-account-display";
 import { CregisStatus } from "./cregis-status";
+import { D1BankOrders } from "./d1-bank-orders";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   createD1VietQrAccount,
@@ -16,10 +18,12 @@ import {
   listD1PendingTopupCommands,
   isDOutcomeUnknownError,
   loadD1VietQrOverview,
+  manualCreditD1BankOrder,
   registerD1VietQrReceipt,
   reconcileD1VietQr,
   refundD1Chargeback,
   retryD1PendingTopupCommand,
+  retryD1PendingBankOrderCommand,
   setD1BinLock,
   switchD1Psp,
   updateD1CardRisk,
@@ -31,6 +35,7 @@ import {
   updateD1VietQrConfig,
   writeoffD1Reconciliation,
   type D1DepositFlow,
+  type D1BankOrder,
   type D1Overview,
   type D1PendingTopupCommand,
   type D1VietQrOverview,
@@ -282,29 +287,38 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
     }
   };
 
-  const applyBankWrite = async (task: () => Promise<unknown>, ok: string) => {
+  const applyBankWrite = async (task: () => Promise<unknown>, ok: string, bankManualAuthEpoch?: number) => {
+    const checkAuth = () => {
+      if (bankManualAuthEpoch !== undefined && bankManualAuthEpoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
+    };
+    checkAuth();
     setBusy(true);
     setError("");
     try {
       try {
         await task();
       } catch (err) {
+        checkAuth();
         const detail = err instanceof Error ? displayAdminError(err) : "银行轨操作失败";
         setError(isDOutcomeUnknownError(err)
           ? `银行轨操作结果暂时未知，当前队列保留供核对；请先刷新，并只用原请求号重试 · ${detail}`
           : `操作已被服务端拒绝，未入账；当前队列和回单仍保留，可按提示修正后重试 · ${detail}`);
         throw err;
       }
+      checkAuth();
       try {
-        let next = await loadD1VietQrOverview(bankView, bankPage, bankPageSize);
+        let next = await loadD1VietQrOverview(bankView, bankPage, bankPageSize, bankManualAuthEpoch);
+        checkAuth();
         if (next.page.items.length === 0 && bankPage > 1 && next.page.total > 0) {
           const fallbackPage = Math.max(1, Math.ceil(next.page.total / bankPageSize));
-          next = await loadD1VietQrOverview(bankView, fallbackPage, bankPageSize);
+          next = await loadD1VietQrOverview(bankView, fallbackPage, bankPageSize, bankManualAuthEpoch);
+          checkAuth();
           setBankPage(fallbackPage);
         }
         setVietQr(next);
         toast(ok);
       } catch (readbackError) {
+        checkAuth();
         const detail = readbackError instanceof Error ? displayAdminError(readbackError) : "列表读取失败";
         setError(`操作已被服务端受理，但最新列表回读失败；当前队列保留旧快照，请先刷新核对，不要重复提交 · ${detail}`);
         return;
@@ -314,7 +328,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
     }
   };
 
-  const openReceiptRegistration = (source?: D1VietQrRow) => {
+  const openReceiptRegistration = (source?: Pick<D1VietQrRow, "intentNo" | "memoCode" | "payableVnd" | "bankAccountId">) => {
     if (!vietQr) return;
     const accounts = [...vietQr.accounts].sort((left, right) => {
       const rank = (status: D1VietQrOverview["accounts"][number]["status"]) => status === "ACTIVE" ? 0 : status === "FUSED" ? 1 : 2;
@@ -398,6 +412,39 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
           reason,
           operator,
         }), "银行回单已登记；系统已按真实付款关系完成分类");
+      },
+    });
+  };
+
+  const openBankManualCredit = (order: D1BankOrder, onSettled: () => void | Promise<void>) => {
+    const providerVersion = order.providerVersion;
+    if (!canBankReconcile || !order.manualCreditAllowed || order.paymentRail !== "HDPAY"
+        || order.creditedUsdt > 0 || providerVersion === null) return;
+    const authEpoch = adminAuthLifecycleEpoch();
+    openActionConfirm({
+      action: `人工确认入账 · ${order.intentNo}`,
+      detail: `用户 ${order.userId} · 原状态 ${order.status} → 人工已入账。必须先核实实际到账 ${vnd(order.payableVnd)}，按订单锁定金额入账 ${order.requestedUsdt} USDT；本操作记录为人工确认，不伪造支付商成功回调。自动确认与人工确认共享防重复校验，已入账单不能再次入账。`,
+      businessForm: { kind: "multi-field", fields: [
+        { key: "paymentReference", label: "实际收款交易参考号", inputKind: "text", required: true,
+          minLength: 6, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+          help: "照抄银行或支付商收款凭证的交易参考号；不能填付款单号、附言码或自行编写数字。" },
+        { key: "receivedAt", label: "实际到账时间（越南 UTC+7）", inputKind: "text", required: true,
+          current: vietnamLocalDateTimeNow(), help: "按真实收款凭证填写到账时间，不是操作登记时间。" },
+        VIETQR_ACTION_EVIDENCE_FIELD,
+      ] },
+      run: async (reason, _value, business) => {
+        if (authEpoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
+        const paymentReference = business?.paymentReference?.trim() ?? "";
+        if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{5,127}$/.test(paymentReference)
+            || paymentReference === order.intentNo || paymentReference === order.memoCode) throw new Error("请填写真实收款凭证上的交易参考号");
+        const receivedAt = vietQrReceivedAtInstant(business?.receivedAt ?? "");
+        const evidenceRef = vietQrActionEvidenceRef(business?.evidenceAssetId);
+        try {
+          await applyBankWrite(() => manualCreditD1BankOrder(order.intentNo, {
+            expectedVersion: order.version, providerVersion,
+            receivedVnd: order.payableVnd, paymentReference, receivedAt, evidenceRef, reason, operator,
+          }), "人工入账请求已受理；请核对订单与钱包账本", authEpoch);
+        } finally { if (authEpoch === adminAuthLifecycleEpoch()) await onSettled(); }
       },
     });
   };
@@ -651,20 +698,24 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
       <section className="l-card" id="d1-collection-reconcile">
         <div className="l-h">
           <span className="ttl">充值收款对账</span>
-          <span className="sub">· 银行回单、HDPay 已入账历史与 Cregis 收款状态</span>
+          <span className="sub">· 全部银行转账订单、回单处置与 Cregis 收款状态</span>
         </div>
         <div className="l-b" style={{ paddingBottom: 8 }}>
           <TabGroup label="收款类型" value={reconciliationType} items={canReadCregis ? ["bank", "cregis"] : ["bank"]}
             onSelect={setReconciliationType} className="chips" disabled={() => loading || busy}
             itemClassName={(_key, selected) => `chip${selected ? " sel" : ""}`}>
-            {(key) => key === "bank" ? "银行转账（VietQR）/ HDPay 已入账" : "USDT-BEP20（Cregis）"}
+            {(key) => key === "bank" ? "银行转账（VietQR）/ HDPay" : "USDT-BEP20（Cregis）"}
           </TabGroup>
         </div>
         {reconciliationType === "cregis" && canReadCregis ? (
           <CregisStatus canManage={canManageChannels} openActionConfirm={openActionConfirm} embedded />
         ) : <>
+        <D1BankOrders canManage={canBankReconcile} busy={busy}
+          canRegisterReceipt={!!vietQr?.accounts.length} refreshKey={vietQr?.asOf ?? ""}
+          onRegister={(order) => openReceiptRegistration(order)} onManualCredit={openBankManualCredit}
+          onRetry={(commandKey) => applyBankWrite(() => retryD1PendingBankOrderCommand(commandKey), "原请求号人工入账重试已受理；请核对订单与账本", adminAuthLifecycleEpoch())} />
         <div className="l-h">
-          <span className="ttl">银行转账与 HDPay 已入账历史</span>
+          <span className="ttl">银行回单处置与已入账历史</span>
           <span className="sub">· 五视图 · 单据锁价快照 · 挂账与 D3 第 9 科目同源</span>
           <div className="r">
             <span className="dcode electric">待核实入金 {money(vietQr?.pendingUnverifiedDepositUsdt ?? 0)}</span>
@@ -673,7 +724,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
         </div>
         <div className="l-b" style={{ paddingBottom: 8 }}>
           <div className="dtint" style={{ marginBottom: 12 }}>
-            HDPay 仅展示已核实并入账的只读历史；未结算与异常款项不在下方五视图。银行转账可人工登记回单，图片可选填。
+            上方银行订单展示 MANUAL / HDPay 全部状态；下方五视图处理真实银行回单。HDPay 人工确认在上方订单行单独执行，这里的已入账历史用于追溯。银行转账可人工登记真实回单，登记图片可选填。
           </div>
           <TabGroup label="银行转账视图及 HDPay 已入账历史" value={bankView} items={BANK_VIEW_TABS.map(([key]) => key)}
             onSelect={(key) => { setBankView(key); setBankPage(1); }} className="chips" disabled={() => loading || busy}

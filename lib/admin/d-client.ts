@@ -1,9 +1,11 @@
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { parseBankEligibility, parseBankSettlement, readBankEvidence, type BankBeneficiaryEligibility, type BankSettlementEvidence } from "@/lib/admin/bank-payout-evidence";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
+import { adminAuthLifecycleEpoch, AdminAuthEpochChangedError } from "@/lib/admin/auth-lifecycle";
 import { normalizeD1NullableString } from "@/lib/admin/d1-nullable-string";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 interface ApiResult<T> {
   code: number;
@@ -135,6 +137,54 @@ export interface D1DepositFlow {
   createdAt: string;
   confirmedAt: string;
   creditedAt: string;
+}
+
+export interface D1BankOrder {
+  intentNo: string;
+  paymentRail: "MANUAL" | "HDPAY";
+  userId: number;
+  status: string;
+  intentStatus: string;
+  submissionStatus: string;
+  providerStatus: string;
+  settlementStatus: string;
+  requestedUsdt: number;
+  payableVnd: number;
+  lockedFxRateVndPerUsdt: number;
+  receivedVnd: number | null;
+  creditedUsdt: number;
+  bankAccountId: number | null;
+  memoCode: string;
+  expiresAt: string;
+  receivedAt: string;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+  providerVersion: number | null;
+  confirmationSource: string;
+  manualCreditAllowed: boolean;
+  manualCreditBlockReason: string;
+  manualRegistrationAllowed: boolean;
+  manualConfirmationNo: string;
+  settlementTargetType: "WALLET_TOPUP";
+  targetOrderNo: string;
+  paymentUrl: string;
+}
+
+export interface D1BankOrdersPage extends PageResult<D1BankOrder> {
+  source: string;
+  asOf: string;
+}
+
+export interface D1BankManualCreditInput {
+  expectedVersion: number;
+  providerVersion: number;
+  receivedVnd: number;
+  paymentReference: string;
+  receivedAt: string;
+  evidenceRef: string;
+  reason: string;
+  operator: string;
 }
 
 export type D1VietQrView = "inflight" | "matched" | "orphan" | "mismatch" | "late";
@@ -561,7 +611,12 @@ function buildQuery(params: Record<string, string | number | undefined | null>) 
   return qs ? `?${qs}` : "";
 }
 
-async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw", path: string, init?: RequestInit & { idempotencyPrefix?: string; idempotencyKey?: string }) {
+function assertD1BankManualAuthEpoch(epoch: number | undefined) {
+  if (epoch !== undefined && epoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
+}
+
+async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw", path: string, init?: RequestInit & { idempotencyPrefix?: string; idempotencyKey?: string; retainOnSuccess?: boolean; bankManualAuthEpoch?: number }) {
+  assertD1BankManualAuthEpoch(init?.bankManualAuthEpoch);
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -596,15 +651,26 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
       cache: "no-store",
     });
   } catch {
+    assertD1BankManualAuthEpoch(init?.bankManualAuthEpoch);
     const commandKey = headers.get("Idempotency-Key");
     if (commandKey && method !== "GET") {
       throw new DOutcomeUnknownError(commandKey);
     }
     throw new Error("财务服务请求超时，请检查连接后重试");
   }
+  assertD1BankManualAuthEpoch(init?.bankManualAuthEpoch);
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  assertD1BankManualAuthEpoch(init?.bankManualAuthEpoch);
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {
+      if (init?.bankManualAuthEpoch !== undefined) {
+        // Do not start an uncoordinated logout whose late Set-Cookie can clear
+        // a later login. Local signOut preserves this owner's uncertain command.
+        useAdminAuth.getState().signOut();
+        const commandKey = headers.get("Idempotency-Key");
+        if (commandKey && method !== "GET") throw new DOutcomeUnknownError(commandKey);
+        throw new AdminAuthEpochChangedError();
+      }
       resetAdminSession();
     }
     const commandKey = headers.get("Idempotency-Key");
@@ -628,7 +694,7 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
     }
     throw new Error(formatAdminApiError(result?.message, `D_REQUEST_FAILED_${response.status}`));
   }
-  if (mutationFingerprint) pendingMutations.forget(mutationFingerprint);
+  if (mutationFingerprint && !init?.retainOnSuccess) pendingMutations.forget(mutationFingerprint);
   return result.data as T;
 }
 
@@ -916,6 +982,79 @@ function requireD1FlowsPage(raw: unknown): PageResult<D1DepositFlow> {
     pageSize: d1Number(page.pageSize, "flows.pageSize"),
     records: d1Array(page.records, "flows.records").map(requireD1Flow),
   };
+}
+
+function requireD1BankOrdersPage(raw: unknown): D1BankOrdersPage {
+  const page = d1Object(raw, "bankOrders");
+  const records = d1Array(page.records, "bankOrders.records").map((value, index): D1BankOrder => {
+    const row = d1Object(value, `bankOrders.records[${index}]`);
+    const field = (key: string) => `bankOrders.records[${index}].${key}`;
+    const intentNo = d1String(row.intentNo, field("intentNo"));
+    const paymentRail = d1String(row.paymentRail, field("paymentRail"));
+    const status = d1String(row.status, field("status"));
+    const userId = d1Number(row.userId, field("userId"));
+    const requestedUsdt = d1Number(row.requestedUsdt, field("requestedUsdt"));
+    const payableVnd = d1Number(row.payableVnd, field("payableVnd"));
+    const lockedFxRateVndPerUsdt = d1Number(row.lockedFxRateVndPerUsdt, field("lockedFxRateVndPerUsdt"));
+    const receivedVnd = d1NullableNumber(row.receivedVnd, field("receivedVnd"));
+    const creditedUsdt = d1Number(row.creditedUsdt, field("creditedUsdt"));
+    const version = d1Number(row.version, field("version"));
+    const providerVersion = d1NullableNumber(row.providerVersion, field("providerVersion"));
+    const paymentUrl = d1OptionalText(row.paymentUrl, field("paymentUrl"));
+    const manualCreditAllowed = d1Boolean(row.manualCreditAllowed, field("manualCreditAllowed"));
+    const manualRegistrationAllowed = d1Boolean(row.manualRegistrationAllowed, field("manualRegistrationAllowed"));
+    const settlementTargetType = d1String(row.settlementTargetType, field("settlementTargetType"));
+    if (!/^VQR-[A-Za-z0-9]+$/.test(intentNo) || !["MANUAL", "HDPAY"].includes(paymentRail)
+        || !Number.isSafeInteger(userId) || userId <= 0 || requestedUsdt <= 0
+        || !Number.isSafeInteger(payableVnd) || payableVnd <= 0
+        || lockedFxRateVndPerUsdt <= 0 || settlementTargetType !== "WALLET_TOPUP"
+        || (receivedVnd !== null && (!Number.isSafeInteger(receivedVnd) || receivedVnd < 0))
+        || creditedUsdt < 0 || !Number.isSafeInteger(version) || version < 0
+        || (providerVersion !== null && (!Number.isSafeInteger(providerVersion) || providerVersion < 0))
+        || (status === "CREDITED" && creditedUsdt <= 0)
+        || (manualCreditAllowed && (paymentRail !== "HDPAY" || creditedUsdt > 0 || providerVersion === null
+          || ["CREDITED", "RETURNED", "RETURN_PENDING"].includes(status)))
+        || (manualRegistrationAllowed && (paymentRail !== "MANUAL" || creditedUsdt > 0 || status === "RETURNED"))) {
+      d1Invalid(field("businessRange"));
+    }
+    if (paymentUrl) {
+      try {
+        const parsed = new URL(paymentUrl);
+        if (paymentRail !== "HDPAY" || creditedUsdt > 0 || parsed.protocol !== "https:" || parsed.username || parsed.password) d1Invalid(field("paymentUrl"));
+      } catch { d1Invalid(field("paymentUrl")); }
+    }
+    return {
+      intentNo, paymentRail: paymentRail as D1BankOrder["paymentRail"], userId, status,
+      intentStatus: d1OptionalText(row.intentStatus, field("intentStatus")),
+      submissionStatus: d1OptionalText(row.submissionStatus, field("submissionStatus")),
+      providerStatus: typeof row.providerStatus === "number"
+        ? String(d1Number(row.providerStatus, field("providerStatus"))) : d1OptionalText(row.providerStatus, field("providerStatus")),
+      settlementStatus: d1OptionalText(row.settlementStatus, field("settlementStatus")),
+      requestedUsdt, payableVnd, lockedFxRateVndPerUsdt, receivedVnd, creditedUsdt,
+      bankAccountId: d1NullableNumber(row.bankAccountId, field("bankAccountId")),
+      memoCode: d1OptionalText(row.memoCode, field("memoCode")),
+      expiresAt: d1OptionalText(row.expiresAt, field("expiresAt")),
+      receivedAt: d1OptionalText(row.receivedAt, field("receivedAt")),
+      createdAt: d1String(row.createdAt, field("createdAt")),
+      updatedAt: d1String(row.updatedAt, field("updatedAt")), version, providerVersion,
+      confirmationSource: d1OptionalText(row.confirmationSource, field("confirmationSource")),
+      manualCreditAllowed,
+      manualCreditBlockReason: d1OptionalText(row.manualCreditBlockReason, field("manualCreditBlockReason")),
+      manualRegistrationAllowed,
+      manualConfirmationNo: d1OptionalText(row.manualConfirmationNo, field("manualConfirmationNo")),
+      settlementTargetType: "WALLET_TOPUP", targetOrderNo: d1OptionalText(row.targetOrderNo, field("targetOrderNo")),
+      paymentUrl,
+    };
+  });
+  const total = d1Number(page.total, "bankOrders.total");
+  const pageNum = d1Number(page.pageNum, "bankOrders.pageNum");
+  const pageSize = d1Number(page.pageSize, "bankOrders.pageSize");
+  if (![total, pageNum, pageSize].every(Number.isSafeInteger) || total < 0 || pageNum < 1 || pageSize < 1
+      || records.length > pageSize || total < records.length || new Set(records.map(row => row.intentNo)).size !== records.length) {
+    d1Invalid("bankOrders.page");
+  }
+  return { records, total, pageNum, pageSize,
+    source: d1String(page.source, "bankOrders.source"), asOf: d1String(page.asOf, "bankOrders.asOf") };
 }
 
 function d1OptionalText(value: unknown, field: string): string {
@@ -1716,13 +1855,76 @@ export async function fetchD1TopupFlows(params: { status?: string; keyword?: str
   return requireD1FlowsPage(await apiRequest<PageResult<D1DepositFlow>>("finance", `/topup/flows${buildQuery(params)}`));
 }
 
+export async function fetchD1BankOrders(params: { paymentRail?: string; status?: string; keyword?: string; pageNum?: number; pageSize?: number }, bankManualAuthEpoch = adminAuthLifecycleEpoch()) {
+  const page = requireD1BankOrdersPage(await apiRequest<unknown>("finance", `/vietqr/orders${buildQuery(params)}`, { bankManualAuthEpoch }));
+  assertD1BankManualAuthEpoch(bankManualAuthEpoch);
+  return page;
+}
+
+export function listD1PendingBankOrderCommands(): D1PendingTopupCommand[] {
+  return pendingMutations.list()
+    .filter(value => value.base === "finance" && /^\/vietqr\/orders\/VQR-[A-Za-z0-9]+\/manual-credit$/.test(value.path))
+    .map(({ commandKey, path, createdAt, expiresAt }) => ({ commandKey, path, createdAt, expiresAt }))
+    .sort((left, right) => left.createdAt - right.createdAt);
+}
+
+export async function manualCreditD1BankOrder(intentNo: string, input: D1BankManualCreditInput) {
+  if (!/^VQR-[A-Za-z0-9]+$/.test(intentNo)) throw new Error("付款单号无效");
+  return submitD1BankManualCredit(`/vietqr/orders/${encodeURIComponent(intentNo)}/manual-credit`, JSON.stringify(input));
+}
+
+async function submitD1BankManualCredit(path: string, body: string, commandKey?: string) {
+  const authEpoch = adminAuthLifecycleEpoch();
+  // An already-open confirmation dialog can change its body after an unknown
+  // result. Resolve this order's capsule before the generic body fingerprint.
+  const unresolved = pendingMutations.list().find(value => value.base === "finance"
+    && value.method === "POST" && value.path === path);
+  if (unresolved) {
+    if (body !== unresolved.body || (commandKey && commandKey !== unresolved.commandKey)) {
+      throw new DOutcomeUnknownError(unresolved.commandKey);
+    }
+    body = unresolved.body;
+    commandKey = unresolved.commandKey;
+  }
+  const fingerprint = `POST|finance|${path}|${body}`;
+  const result = await apiRequest<unknown>("finance", path, {
+    method: "POST", body, idempotencyPrefix: "d1-bank-manual-credit", idempotencyKey: commandKey,
+    retainOnSuccess: true, bankManualAuthEpoch: authEpoch,
+  });
+  assertD1BankManualAuthEpoch(authEpoch);
+  const retainedKey = pendingMutations.get(fingerprint) ?? commandKey;
+  try {
+    const intentNo = path.split("/")[3];
+    const latest = await fetchD1BankOrders({ keyword: intentNo, pageNum: 1, pageSize: 20 }, authEpoch);
+    assertD1BankManualAuthEpoch(authEpoch);
+    const order = latest.records.find(value => value.intentNo === intentNo);
+    if (!order || order.status !== "CREDITED" || order.creditedUsdt <= 0) throw new Error("人工入账尚未回读确认");
+    pendingMutations.forget(fingerprint);
+    return result;
+  } catch {
+    assertD1BankManualAuthEpoch(authEpoch);
+    if (retainedKey) throw new DOutcomeUnknownError(retainedKey);
+    throw new Error("人工入账已受理但订单回读未确认，请先核对订单与账本，不要重新提交");
+  }
+}
+
+export async function retryD1PendingBankOrderCommand(commandKey: string) {
+  const pending = pendingMutations.list().find(value => value.commandKey === commandKey);
+  if (!pending || pending.base !== "finance" || pending.method !== "POST"
+      || !/^\/vietqr\/orders\/VQR-[A-Za-z0-9]+\/manual-credit$/.test(pending.path)) {
+    throw new Error("待重试的银行入账请求不存在或已过期，请先读取真实订单状态");
+  }
+  return submitD1BankManualCredit(pending.path, pending.body, pending.commandKey);
+}
+
 export async function loadD1VietQrOverview(
   view: D1VietQrView,
   pageNum = 1,
   pageSize = 20,
+  bankManualAuthEpoch?: number,
 ) {
   return normalizeD1VietQrOverview(await apiRequest<Record<string, unknown>>(
-    "finance", `/vietqr/overview${buildQuery({ view, pageNum, pageSize })}`,
+    "finance", `/vietqr/overview${buildQuery({ view, pageNum, pageSize })}`, { bankManualAuthEpoch },
   ));
 }
 

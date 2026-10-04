@@ -50,8 +50,12 @@ function backendPath(parts: string[]) {
       return `/api/admin/finance/cregis/${parts[1]}/${parts[2]}/decision`;
     }
   }
-  if (parts.length === 2 && parts[0] === "vietqr" && ["overview", "accounts", "config", "receipts", "receipt-evidence"].includes(parts[1])) {
+  if (parts.length === 2 && parts[0] === "vietqr" && ["overview", "orders", "accounts", "config", "receipts", "receipt-evidence"].includes(parts[1])) {
     return `/api/admin/finance/vietqr/${parts[1]}`;
+  }
+  if (parts.length === 4 && parts[0] === "vietqr" && parts[1] === "orders"
+      && /^VQR-[A-Za-z0-9]+$/.test(parts[2]) && parts[3] === "manual-credit") {
+    return `/api/admin/finance/vietqr/orders/${parts[2]}/manual-credit`;
   }
   if (parts.length === 3 && parts[0] === "vietqr" && parts[1] === "accounts" && /^\d+$/.test(parts[2])) {
     return `/api/admin/finance/vietqr/accounts/${parts[2]}`;
@@ -126,6 +130,11 @@ async function proxy(request: Request, context: RouteContext) {
 
   if (!targetPath) {
     return jsonError(404, "FINANCE_ROUTE_NOT_FOUND");
+  }
+  if (path[0] === "vietqr" && path[1] === "orders"
+      && ((path.length === 2 && !["GET", "HEAD"].includes(request.method))
+        || (path.length === 4 && request.method !== "POST"))) {
+    return jsonError(405, "VIETQR_ORDER_METHOD_NOT_ALLOWED");
   }
 
   const passwordChangeBlocked = requirePasswordChangeCleared(await cookies());

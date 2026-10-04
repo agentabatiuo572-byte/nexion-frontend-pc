@@ -35,7 +35,7 @@
     "C3": ["OPS-C-03", "OPS-C-21"],
     "C5": ["OPS-C-18"],
     "C6": ["OPS-C-20"],
-    "D1": ["OPS-D-04", "OPS-D-21", "OPS-D-23", "OPS-D-24", "OPS-D-26", "OPS-D-28"],
+    "D1": ["OPS-D-04", "OPS-D-21", "OPS-D-23", "OPS-D-24", "OPS-D-26", "OPS-D-28", "OPS-D-29", "OPS-D-30"],
     "D2": ["OPS-D-10", "OPS-D-27"],
     "D3": ["OPS-D-09", "OPS-D-15", "OPS-D-25"],
     "D4": ["OPS-D-06"],
@@ -3055,7 +3055,7 @@
         "successOutcome": "Janus claims the command and returns non-replayable ACK and applied proof",
         "failureOutcome": "missing executor, invalid proof or profile mismatch leaves the command unapplied"
       },
-      "note": "源码 executor、Android UTS 桥与 Sandbox fail-closed 边界已有证据；Production 原生真机 enrollment/handoff 尚未验收，保持唯一 pending/HOLD，不以源码、UTS 或 Sandbox 完成假绿。"
+      "note": "源码 executor、Android UTS 桥与 Sandbox fail-closed 边界已有证据；Production 原生真机 enrollment/handoff 尚未验收，保持 pending/HOLD，不以源码、UTS 或 Sandbox 完成假绿。"
     },
     {
       "id": "OPS-M-18",
@@ -3764,6 +3764,110 @@
       "view": "d-tabs/d1-recon.tsx",
       "batch": "done",
       "reason": "旧 Sandbox 表已逐表校验后归档并从活动库删除；历史金额没有冒充开发余额，导入账号的钱包在切换点归零并以切换后权威账本逐户核对。"
+    },
+    {
+      "id": "OPS-D-29",
+      "domain": "D",
+      "object": "HDPay 银行充值订单人工入账(D1)",
+      "action": "按本单锁定金额与实际收款证据独立人工确认，并回读 canonical 入账事实",
+      "status": "pending",
+      "view": "d-tabs/d1-recon.tsx",
+      "batch": "P0",
+      "restAction": "manualCreditD1BankOrder",
+      "runtimeEvidence": [
+        {
+          "type": "pc-runtime",
+          "file": "lib/admin/d-client.ts",
+          "positivePatterns": ["export async function manualCreditD1BankOrder\\(", "order\\.status !== \"CREDITED\" \\|\\| order\\.creditedUsdt <= 0", "retainOnSuccess: true, bankManualAuthEpoch: authEpoch"],
+          "negativePatterns": ["manualCreditD1BankOrder[\\s\\S]{0,300}return\\s+Promise\\.resolve"]
+        },
+        {
+          "type": "pc-runtime",
+          "file": "app/components/domain-views/d-tabs/d1-recon.tsx",
+          "positivePatterns": ["const openBankManualCredit", "manualCreditD1BankOrder\\(order\\.intentNo", "onManualCredit=\\{openBankManualCredit\\}"],
+          "negativePatterns": ["manualCreditD1BankOrder\\(\\s*order\\.id\\b"]
+        }
+      ],
+      "runtimeConsumerContract": {
+        "profiles": ["pc-bank-manual"],
+        "producer": "manualCreditD1BankOrder issues the stable intentNo command and confirms its canonical CREDITED result before releasing the capsule",
+        "consumer": "D1 bank order row and actual openBankManualCredit confirmation run consume server capability, locked amounts, evidence and result",
+        "successOutcome": "BANK_MANUAL_CREDIT_CONFIRMED",
+        "failureOutcome": "BANK_MANUAL_EDITED_UNKNOWN_BLOCKED"
+      },
+      "runtimeConsumerEvidence": [
+        {
+          "profile": "pc-bank-manual",
+          "producer": {
+            "type": "pc-runtime",
+            "file": "lib/admin/d-client.ts",
+            "positivePatterns": ["export async function manualCreditD1BankOrder\\(", "pendingMutations\\.forget\\(fingerprint\\)", "order\\.status !== \"CREDITED\""]
+          },
+          "consumer": {
+            "type": "pc-runtime",
+            "file": "app/components/domain-views/d-tabs/d1-recon.tsx",
+            "positivePatterns": ["manualCreditD1BankOrder\\(order\\.intentNo", "receivedVnd: order\\.payableVnd", "vietQrActionEvidenceRef\\(business\\?\\.evidenceAssetId\\)"]
+          },
+          "behaviorTest": {
+            "type": "test-runtime",
+            "file": "tests/d1-bank-orders.test.mjs",
+            "positivePatterns": ["BANK_MANUAL_CREDIT_CONFIRMED", "BANK_MANUAL_EDITED_UNKNOWN_BLOCKED", "confirmation\\.run\\(reason, undefined, business\\)"]
+          }
+        }
+      ],
+      "note": "真实 PC producer/UI 与隔离行为测试已接线；保留 pending，等待 Root 实际 D1 页面、服务端资金/证据/版本与自动人工竞态闭环后才可改 built。不是供应商通知成功，也不以测试夹具代替实际入账。"
+    },
+    {
+      "id": "OPS-D-30",
+      "domain": "D",
+      "object": "HDPay 人工入账未知结果恢复(D1)",
+      "action": "按未确认 capsule 的原 body/key 恢复同单命令，并在同会话 canonical 入账回读后清号",
+      "status": "pending",
+      "view": "d-tabs/d1-recon.tsx",
+      "batch": "P0",
+      "restAction": "retryD1PendingBankOrderCommand",
+      "runtimeEvidence": [
+        {
+          "type": "pc-runtime",
+          "file": "lib/admin/d-client.ts",
+          "positivePatterns": ["export async function retryD1PendingBankOrderCommand\\(", "return submitD1BankManualCredit\\(pending\\.path, pending\\.body, pending\\.commandKey\\)"],
+          "negativePatterns": ["retryD1PendingBankOrderCommand[\\s\\S]{0,900}idempotencyKey: nextId\\("]
+        },
+        {
+          "type": "pc-runtime",
+          "file": "app/components/domain-views/d-tabs/d1-recon.tsx",
+          "positivePatterns": ["onRetry=\\{\\(commandKey\\) => applyBankWrite", "retryD1PendingBankOrderCommand\\(commandKey\\)", "原请求号人工入账重试已受理"],
+          "negativePatterns": ["retryD1PendingBankOrderCommand\\(\\s*(?:nextId|Date\\.now)\\("]
+        }
+      ],
+      "runtimeConsumerContract": {
+        "profiles": ["pc-bank-manual-recovery"],
+        "producer": "retryD1PendingBankOrderCommand restores the owner's exact retained path/body/key through the same command and epoch checks",
+        "consumer": "D1 pending command retry invokes the actual parent bank write chain and final orders load while the original auth epoch retains authority",
+        "successOutcome": "BANK_MANUAL_ORIGINAL_KEY_RECOVERED",
+        "failureOutcome": "BANK_MANUAL_RETRY_STALE_OWNER_BLOCKED"
+      },
+      "runtimeConsumerEvidence": [
+        {
+          "profile": "pc-bank-manual-recovery",
+          "producer": {
+            "type": "pc-runtime",
+            "file": "lib/admin/d-client.ts",
+            "positivePatterns": ["export async function retryD1PendingBankOrderCommand\\(", "return submitD1BankManualCredit\\(pending\\.path, pending\\.body, pending\\.commandKey\\)"]
+          },
+          "consumer": {
+            "type": "pc-runtime",
+            "file": "app/components/domain-views/d-tabs/d1-recon.tsx",
+            "positivePatterns": ["retryD1PendingBankOrderCommand\\(commandKey\\)", "原请求号人工入账重试已受理", "adminAuthLifecycleEpoch\\(\\)\\)\\} /\\>"]
+          },
+          "behaviorTest": {
+            "type": "test-runtime",
+            "file": "tests/d1-bank-orders.test.mjs",
+            "positivePatterns": ["BANK_MANUAL_ORIGINAL_KEY_RECOVERED", "BANK_MANUAL_RETRY_STALE_OWNER_BLOCKED", "runtime\\.actualOrderRetry\\(\"original-owner-A-command\"\\)"]
+          }
+        }
+      ],
+      "note": "原号恢复与 owner/epoch/Cookie 的实际源链和隔离异步行为测试已接线；真实资金未知/重登恢复及 D1 页面闭环尚待 Root，保持 pending。原 body/key 不得改体重铸，已确认同单不能第二次入账。"
     },
     {
       "id": "OPS-G-18",
