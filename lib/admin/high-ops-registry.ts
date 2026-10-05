@@ -1747,6 +1747,20 @@ export const HIGH_OPS: HighOpDef[] = [
     buildTarget: (ctx) => ({ domain: "I", type: "learning_course", id: String(ctx.courseId) }),
   },
   // —— F 域网络(批 9) ——
+  {
+    op: "f_direct_referral_policy",
+    domain: "F",
+    action: "直属分成政策整组调整",
+    amplifies: true,
+    type: "fund",
+    gateLabel: "门槛者",
+    targetType: "direct_referral_policy",
+    buildCommand: (ctx) => ({ domain: "F", op: "f_direct_referral_policy", params: {
+      expectedVersion: ctx.expectedVersion,
+      purchase: ctx.purchase, deviceEarning: ctx.deviceEarning,
+    } }),
+    buildTarget: () => ({ domain: "F", type: "direct_referral_policy", id: "current" }),
+  },
   // 4 polymorphic op:后端 OpsTeamService 单端点 /commissions/config/{key} 按 key 分发,
   // replay switch 4 op 全部 params {key, value}(commit afe51f2)。锁 target id 从 key 派生(对齐后端查锁 countActiveByTarget)。
   // f_config: ACTIVE_KEYS 数值政策(directRoyaltyPct/binary-rate/pool-ratio 等)。amplifies true(资金类政策放大佣金流出)。

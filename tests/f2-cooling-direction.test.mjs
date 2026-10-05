@@ -13,6 +13,7 @@ new Function("require", "exports", "module", component)((name) => {
   if (name === "react/jsx-runtime") return { jsx: tree, jsxs: tree, Fragment: Symbol("Fragment") };
   if (name.endsWith("design-kit")) return { CodeTag: () => null };
   if (name.endsWith("f2-depth-gate")) return { f2EnumGateSpec: () => null };
+  if (name.endsWith("f2-direct-policy")) return { F2DirectPolicy: () => null };
   throw new Error(`unexpected F2 dependency: ${name}`);
 }, exports, { exports });
 

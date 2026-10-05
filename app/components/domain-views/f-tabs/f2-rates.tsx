@@ -1,37 +1,17 @@
 "use client";
 
-/** F2 · 网络版税费率 —— L1-L7 单一费率源 + Partner Status 权益档 + 结算参数/护栏。 */
+/** F2 · 直属分成政策与保留的独立权益/其他奖励冷却控制。 */
 import { CodeTag } from "../design-kit";
+import { F2DirectPolicy } from "./f2-direct-policy";
 import type { FViewCtx } from "./types";
-import { f2EnumGateSpec, parseF2DepthGateLayer, parseF2DepthGateRank } from "@/lib/admin/f2-depth-gate";
-
-function formatNumber(value: number) {
-  if (!Number.isFinite(value)) return "-";
-  const rounded = Math.round(value * 100) / 100;
-  return Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/\.?0+$/, "");
-}
-
-function percentLabel(value: number) {
-  return `${formatNumber(value)}%`;
-}
-
-/**
- * F2 参数区可见键白名单(后端配置键,不是显示 id)。
- * 只有实际业务消费者已接入的键才允许调整；可保存不等于已参与结算。
- */
-const F2_VISIBLE_PARAM_KEYS = new Set([
-  "F.unilevel.depthGate", "F.unilevel.depthGateRank",
-]);
 
 export function F2Rates({ ctx }: { ctx: FViewCtx }) {
-  const hasUnilevelRows = ctx.f2Unilevel.length > 0;
-  const canRoyaltyRate = ctx.can("network_f2_royalty_rate");
+  const hasIndependentData = ctx.f2Params.length > 0 || Object.keys(ctx.f2ConfigValues).length > 0;
   const canPolicyAmplify = ctx.can("network_f2_policy_amplify");
   const coolingRaw = ctx.f2ConfigValues["F.cooldown"]?.trim() ?? "";
   const coolingDays = /^[+-]?\d+$/.test(coolingRaw) && Number(coolingRaw) >= 0 && Number(coolingRaw) <= 90
     ? Number(coolingRaw) : 30;
-  const totalUnilevelPct = ctx.f2Unilevel.reduce((sum, row) => sum + row.usdt, 0);
-  // Partner Status 是权益档，不改变 L1-L7 费率。兼容读取旧 bronze/silver/gold，
+  // Partner Status 是独立权益档。兼容读取旧 bronze/silver/gold，
   // 提交时只写当前 Standard/Verified/Premium/Diamond schema。
   const partnerTiersRaw = ctx.f2ConfigValues["F.partner.tiers"] ?? "";
   let ptStandard = "0";
@@ -51,118 +31,40 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
     } catch { /* schema 异常用默认,提交时后端 validatePartnerTiers 兜底 */ }
   }
 
-  if (ctx.f2Loading && !hasUnilevelRows) {
+  if (ctx.f2Loading && !hasIndependentData) {
     return (
-      <section className="pane">
-        <div className="pane-h"><span className="ph-ttl">F2 网络版税费率</span><span className="ph-sub">数据加载中</span></div>
+      <><F2DirectPolicy ctx={ctx} /><section className="pane">
+        <div className="pane-h"><span className="ph-ttl">F2 独立奖励参数</span><span className="ph-sub">数据加载中</span></div>
         <div style={{ padding: 18, color: "var(--ink-4)", fontSize: 13 }}>F2 数据加载中...</div>
-      </section>
+      </section></>
     );
   }
 
-  if (ctx.f2Error && !hasUnilevelRows) {
+  if (ctx.f2Error && !hasIndependentData) {
     return (
-      <section className="pane">
-        <div className="pane-h"><span className="ph-ttl">F2 网络版税费率</span><span className="ph-sub">数据加载失败</span></div>
+      <><F2DirectPolicy ctx={ctx} /><section className="pane">
+        <div className="pane-h"><span className="ph-ttl">F2 独立奖励参数</span><span className="ph-sub">数据加载失败</span></div>
         <div style={{ padding: 18, color: "var(--ink-3)", fontSize: 13 }}>F2 数据加载失败 · {ctx.f2Error}</div>
         <div style={{ padding: "0 18px 18px" }}>
           <button className="fbtn primary" onClick={() => void ctx.refreshF2()}>重试</button>
         </div>
-      </section>
+      </section></>
     );
   }
 
-  if (!hasUnilevelRows) {
+  if (!hasIndependentData) {
     return (
-      <section className="pane">
-        <div className="pane-h"><span className="ph-ttl">F2 网络版税费率</span><span className="ph-sub">暂无数据</span></div>
-        <div style={{ padding: 18, color: "var(--ink-4)", fontSize: 13 }}>F2 暂无网络版税数据</div>
-      </section>
+      <><F2DirectPolicy ctx={ctx} /><section className="pane">
+        <div className="pane-h"><span className="ph-ttl">F2 独立奖励参数</span><span className="ph-sub">暂无数据</span></div>
+        <div style={{ padding: 18, color: "var(--ink-4)", fontSize: 13 }}>暂无其他奖励配置，直属分成可独立读取</div>
+      </section></>
     );
   }
 
   return (
     <>
-      {ctx.f2Metrics.length > 0 && (
-        <div className="f-stats">
-          {ctx.f2Metrics.map((metric) => (
-            <div key={metric.id} className={`f-stat${metric.tone ? " " + metric.tone : ""}`}>
-              <div className="k">{metric.name}</div>
-              <div className="v">{metric.value}</div>
-              <div className="sub">{metric.sub}</div>
-            </div>
-          ))}
-        </div>
-      )}
-
+      <F2DirectPolicy ctx={ctx} />
       <div className="f2-top">
-        <section className="pane">
-          <div className="pane-h">
-            <span className="ph-ttl">L1–L7 网络版税费率(Unilevel)</span>
-            <span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="electric">F.unilevel.*</CodeTag><span className="tag" style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--ink-4)", border: "1px solid var(--border)", padding: "1px 6px", borderRadius: 5 }}>user · 2-state</span></span>
-          </div>
-          <div className="casc">
-            {ctx.f2Unilevel.map((u) => {
-              const eff = percentLabel(u.usdt);
-              const nv = formatNumber(u.nex);
-              const w = Math.max(8, Math.min(100, (u.usdt / 10) * 100));
-              return (
-                <div key={u.l} className="casc-row">
-                  <span className={`lchip${u.direct ? "" : " ext"}`}>{u.l}</span>
-                  <div className="rate-bar"><div className={`f${u.direct ? "" : " ext"}`} style={{ width: `${w}%` }}><span className="pct">{eff}</span></div></div>
-                  {canRoyaltyRate ? <button className="nex-val" title="点击调整 NEX 奖励/$1" style={{ background: "none", border: 0, padding: 0, cursor: "pointer" }}
-                    onClick={() => ctx.openActionConfirm({
-                      name: `网络版税 ${u.l} NEX 奖励调整`, amplify: true, op: "param", paramKey: `F.unilevel.nex.${u.l}`,
-                      edit: { kind: "text", current: nv }, detail: `${u.l} NEX 奖励/$1 当前 ${nv} · NEX 派发为资金流出,受 B1 覆盖率约束`,
-                    })}>{nv}<small>NEX/$1</small></button> : <span className="nex-val">{nv}<small>NEX/$1</small></span>}
-                  <div style={{ fontSize: 11.5, fontWeight: u.direct ? 600 : 400, color: u.direct ? "var(--brand)" : "var(--ink-4)" }}>{u.ui}</div>
-                  {u.direct ? (
-                    <span className="tag" style={{ justifySelf: "end" }}>固定 10%</span>
-                  ) : canRoyaltyRate ? (
-                    <button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({
-                      name: `网络版税 ${u.l} 费率调整`, amplify: true, op: "param", paramKey: `F.unilevel.${u.l}`,
-                      edit: { kind: "number", current: formatNumber(u.usdt), unit: "%" },
-                      detail: `${u.l} 当前 USDT ${eff} · NEX ${nv}/$1 · 改后对下一笔结算生效,不回溯已计提`,
-                    })}>调整</button>
-                  ) : <span />}
-                </div>
-              );
-            })}
-          </div>
-          <div className="casc-foot" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", fontSize: 11.5, color: "var(--ink-4)" }}>
-            <span className="lg">直推 DIRECT(L1)</span>
-            <span className="lg ext">扩展 EXTENDED(L2–L7)</span>
-            <span className="mono" style={{ marginLeft: "auto", fontFamily: "var(--mono)" }}>改后对下一笔结算生效 · 不回溯</span>
-          </div>
-          <div className="casc-foot" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", fontSize: 11.5, color: "var(--ink-4)", padding: "10px 18px 14px", borderTop: "1px solid var(--border)" }}>
-            <span>单层暂停 · L1–L7 各层独立暂停网络版税派发</span>
-            {canPolicyAmplify && <button className="fbtn" style={{ marginLeft: "auto" }} onClick={() => ctx.openActionConfirm({
-              name: "单层暂停管理(L1–L7)",
-              businessForm: {
-                kind: "multi-field",
-                title: "单层暂停管理",
-                hint: "暂停后该层网络版税停止计提 · 不影响其他层 · 改后对下一笔结算生效。",
-                fields: ctx.f2Unilevel.map((u) => ({
-                  key: u.l,
-                  label: `${u.l} ${u.direct ? "直推" : "扩展"}`,
-                  current: (ctx.f2ConfigValues[`F.unilevel.${u.l}.paused`] ?? "off") === "on" ? "on" : "off",
-                  inputKind: "select" as const,
-                  options: ["on", "off"],
-                })),
-              },
-              detail: "L1-L7 各层网络版税独立暂停开关 · on=暂停该层派发 / off=正常计提 · 写 A2 审计。",
-              run: async (reason, bv) => {
-                if (!bv) return;
-                const changes = ctx.f2Unilevel.map((u) => ({
-                  key: `F.unilevel.${u.l}.paused`, value: bv[u.l],
-                })).filter((item) => item.value === "on" || item.value === "off");
-                await ctx.updateFConfigBatch("F2", changes, reason);
-                ctx.toast("单层暂停已整批提交 · 一张 A2 票，批准后原子生效");
-              },
-            })}>单层暂停管理</button>}
-          </div>
-        </section>
-
         <section className="pane">
           <div className="pane-h"><span className="ph-ttl">Partner Status 权益档</span><span className="ph-sub">不改变版税费率</span><span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag>非资金倍率</CodeTag></span></div>
           <div className="tier-list">
@@ -179,7 +81,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
               </div>
             ))}
           </div>
-          <div style={{ padding: "0 18px 14px", fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.55 }}>按月度网络活跃度判定并解锁权益；L1 固定 10%，Partner Status 不叠加、不升档任何版税费率。</div>
+          <div style={{ padding: "0 18px 14px", fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.55 }}>按月度网络活跃度判定并解锁权益；Partner Status 不改变直属分成政策。</div>
           <div className="casc-foot" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", fontSize: 11.5, color: "var(--ink-4)", padding: "10px 18px 14px", borderTop: "1px solid var(--border)" }}>
             <span>门槛 · 当前 <b style={{ color: "var(--ink-2)" }}>${ptStandard}/${ptVerified}/${ptPremium}/${ptDiamond}</b>(Standard/Verified/Premium/Diamond)</span>
             {canPolicyAmplify && <button className="fbtn primary" style={{ marginLeft: "auto" }} onClick={() => ctx.openActionConfirm({
@@ -217,52 +119,25 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
       </div>
 
       <div className="params">
-        <div className="param"><div className="pk">版税支付阈值 / 平级奖励比例</div><div className="psub">未接入实际结算，不可调整。版税提现以提现渠道的实际限额为准；当前不派发平级奖励。</div></div>
-        {ctx.f2Params.filter((p) => F2_VISIBLE_PARAM_KEYS.has(p.key) || ["clampMin", "clampMax", "cool", "promo"].includes(p.id)).map((p) => {
+        <div className="param"><div className="pk">其他奖励参数</div><div className="psub">直属分成使用上方各自冷却期；下方冷却只用于其他奖励，规则按服务端权威配置执行。</div></div>
+        {ctx.f2Params.filter((p) => p.key === "F.cooldown").map((p) => {
           const eff = p.key === "F.cooldown" ? String(coolingDays) : p.value || p.def;
-          // 深度门两键是离散枚举(L1–L7 / V0–V12):非法遗留值(如 0.4)必须显式告警,
-          // 且编辑器只给合法枚举 —— 不允许把非法值改写成另一个非法值。
-          const enumSpec = f2EnumGateSpec(p.key);
-          const parsed = p.key === "F.unilevel.depthGate" ? parseF2DepthGateLayer(eff)
-            : p.key === "F.unilevel.depthGateRank" ? parseF2DepthGateRank(eff)
-              : null;
-          const illegal = !!parsed && !parsed.legal;
           return (
             <div key={p.id} className="param">
-              <div className="pk">{p.name}<span className="tag">{p.key}</span></div>
-              <div className={`pv${p.vcls ? " " + p.vcls : ""}`}>{illegal ? `${parsed.raw || "未配置"}(非法值)` : eff}</div>
+              <div className="pk">其他奖励冷却期</div>
+              <div className={`pv${p.vcls ? " " + p.vcls : ""}`}>{eff}</div>
               <div className="psub">{p.sub}</div>
-              {illegal && <div className="psub" role="alert" style={{ color: "var(--danger)" }}>{enumSpec?.illegalCopy}</div>}
               {canPolicyAmplify && <button className={`fbtn primary${p.vamp ? " amp" : ""}`} onClick={() => ctx.openActionConfirm({
-                name: `${p.name}调整`, amplify: p.amp, op: "param", paramKey: p.key,
-                edit: enumSpec
-                  ? { kind: "select", current: parsed?.normalized ?? parsed?.raw ?? "", options: enumSpec.options, unit: enumSpec.unit }
-                  : p.key === "F.cooldown"
-                    ? { kind: "number", current: eff, unit: p.unit, min: 0, max: 90, step: 1, amplifiesWhen: "decrease" }
-                    : { kind: "text", current: eff, unit: p.unit },
-                detail: `${p.name} 当前 ${illegal ? `${parsed?.raw} · 非法值,结算侧已阻断` : eff}`
-                  + (enumSpec ? ` · 只能取 ${enumSpec.options[0]}–${enumSpec.options[enumSpec.options.length - 1]} 中的合法${enumSpec.unit}` : "")
-                  + (p.key === "F.cooldown" ? " · 缩短冷却期须核验 B1 覆盖率。"
-                    : p.amp ? " · 此项为放大资金流出动作,须核验 B1 覆盖率。" : " · 改后对下一笔结算生效。"),
+                name: "其他奖励冷却期调整", amplify: p.amp, op: "param", paramKey: p.key,
+                edit: { kind: "number", current: eff, unit: p.unit, min: 0, max: 90, step: 1, amplifiesWhen: "decrease" },
+                detail: `其他奖励冷却期当前 ${eff} 天；缩短须核验 B1 覆盖率，不影响直属政策的独立冷却期。`,
               })}>调整</button>}
             </div>
           );
         })}
       </div>
 
-      <div className="guard">
-        <span className="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /><path d="M9 12l2 2 4-4" /></svg></span>
-        <div>
-          <b>版税出口护栏</b> · L1 是唯一 10% 直推来源，不与另一条 Direct 费率重复叠加；当前 L1–L7 名义费率合计 <b>{percentLabel(totalUnilevelPct)}</b>。资金放大调整经 <b>A2 审批 + B1 预检</b>后对下一笔结算生效，不回溯已计提。
-          {ctx.f2Guardrails.length > 0 && (
-            <div style={{ marginTop: 6, display: "grid", gap: 3 }}>
-              {ctx.f2Guardrails.map((item) => <span key={item} className="mono">{item}</span>)}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <p className="f-foot">L1 直推恒定 10%；L2–L7 才应用 InfluenceScore。Partner Status 只解锁权益。费率、NEX/$1 与 promo 倍率上调会放大资金流出，必须经 A2 审批并通过 B1 覆盖率预检。</p>
+      <p className="f-foot">直属购买与设备收益两类政策整组审批；历史网络奖励保留，Partner Status 与其他奖励冷却独立设置。</p>
     </>
   );
 }

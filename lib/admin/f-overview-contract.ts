@@ -2,6 +2,13 @@ import { parseStrictFiniteNumber } from "./strict-number.ts";
 
 type JsonRecord = Record<string, unknown>;
 
+export const F5_KIND_LABELS: Record<string, string> = {
+  direct_purchase: "直属购买分成", direct_device_earning: "直属设备收益分成",
+  network: "历史网络版税", binary: "双轨匹配", peer: "平级奖", cultivation: "培育奖", leadership: "领导奖池", genesis: "创世排放",
+};
+export const F5_KINDS = Object.keys(F5_KIND_LABELS);
+export const F5_STATUSES = ["cooling", "unlocked", "withdrawn", "reversed", "frozen", "rejected", "recovery_pending"];
+
 function invalid(module: string, detail: string): never {
   throw new Error(`${module}_OVERVIEW_RESPONSE_INVALID:${detail}`);
 }
@@ -208,7 +215,7 @@ export function assertF5Overview(value: unknown): asserts value is JsonRecord {
     kinds,
     "F5",
     "commissionKinds",
-    ["network", "binary", "peer", "cultivation", "leadership", "genesis"],
+    F5_KINDS,
     "key",
   );
   const kindCounts: number[] = [];
@@ -227,7 +234,7 @@ export function assertF5Overview(value: unknown): asserts value is JsonRecord {
     }
   });
   const filters = array(row, "commissionFilters", "F5");
-  uniqueCodes(filters, "F5", "commissionFilters", ["all", "cooling", "unlocked", "withdrawn", "reversed", "frozen"], "key");
+  uniqueCodes(filters, "F5", "commissionFilters", ["all", ...F5_STATUSES], "key");
   filters.forEach((value, index) => text(
     record(value, "F5", `commissionFilters[${index}]`).label,
     "F5",
@@ -250,9 +257,9 @@ export function assertF5Overview(value: unknown): asserts value is JsonRecord {
     const kind = text(event.kind, "F5", `commissionEvents[${index}].kind`);
     const currency = text(event.currency, "F5", `commissionEvents[${index}].currency`);
     const status = text(event.status, "F5", `commissionEvents[${index}].status`);
-    if (!["network", "binary", "peer", "cultivation", "leadership", "genesis"].includes(kind)
+    if (!F5_KINDS.includes(kind)
         || !["USDT", "NEX"].includes(currency)
-        || !["cooling", "unlocked", "withdrawn", "reversed", "frozen"].includes(status)) {
+        || !F5_STATUSES.includes(status)) {
       invalid("F5", `commissionEvents[${index}].enum`);
     }
     if (text(event.commissionId, "F5", `commissionEvents[${index}].commissionId`) !== `CM-${eventId}`
@@ -262,10 +269,17 @@ export function assertF5Overview(value: unknown): asserts value is JsonRecord {
         || cooldownPercent !== (status === "cooling" ? 0 : 100)) {
       invalid("F5", `commissionEvents[${index}].relation`);
     }
+    if (kind === "direct_purchase" || kind === "direct_device_earning") {
+      for (const field of ["settlementNo", "sourceRef"]) text(event[field], "F5", `commissionEvents[${index}].${field}`);
+      positiveInteger(event.policyVersion, "F5", `commissionEvents[${index}].policyVersion`);
+      for (const field of ["basisUsdt", "nexUsdtPrice"]) if (nonNegative(event[field], "F5", field) <= 0) invalid("F5", field);
+      for (const field of ["amountUSDT", "amountNEX", "recoveryPendingUSDT", "recoveryPendingNEX"]) nonNegative(event[field], "F5", field);
+      if (typeof event.reversalRecorded !== "boolean") invalid("F5", "reversalRecorded");
+    }
   });
   if (eventIds.some((eventId, index) => index > 0 && eventIds[index - 1] <= eventId)) invalid("F5", "commissionEvents.order");
   const statuses = array(row, "statusDistribution", "F5");
-  uniqueCodes(statuses, "F5", "statusDistribution", ["已解锁可提", "冷却计提中", "已提现", "已撤销", "已冻结"], "name");
+  uniqueCodes(statuses, "F5", "statusDistribution", ["已解锁可提", "冷却计提中", "已提现", "已撤销", "已冻结", "已拒绝", "待追回"], "name");
   const statusCounts = new Map<string, number>();
   statuses.forEach((value, index) => {
     const status = record(value, "F5", `statusDistribution[${index}]`);

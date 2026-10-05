@@ -13,7 +13,7 @@ export const DOMAIN_F: ModuleEntry[] = [
   },
   {
     path: "/network/royalty",
-    summary: "推荐分销的版税费率体系。直推版税固定 10%(不可调);费率档(L1–L7)是合伙人身份对应的权益层级、不是在 10% 上再加成;佣金算出来后有 30 天冷却期。改费率走操作确认。",
+    summary: "分别设置直属购买与直属设备收益分成的总比例、USDT/NEX 拆分与冷却期，两组规则一次提交审批。平台额外支付，成员原收益不减少；其他独立奖励保持各自规则。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
@@ -28,7 +28,7 @@ export const DOMAIN_F: ModuleEntry[] = [
   },
   {
     path: "/network/commissions",
-    summary: "佣金事件审计流水。每笔佣金计提都按类型记一条(网络版税、平衡匹配、同级、培育、领导奖池、Genesis 排放、榜单奖金),含层级、金额、冷却、状态。冻结异常事件要风控确认 + A2 留痕。",
+    summary: "八类佣金事件审计：直属购买、直属设备收益、历史网络版税、双轨、平级、培育、领导池和创世。直属双币按结算组核对和处置，保留来源、政策、退款及待追回记录；高敏操作经 A2。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];

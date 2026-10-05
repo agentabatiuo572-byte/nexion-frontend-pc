@@ -32,7 +32,7 @@ function fixture() {
       withdrawableThisMonth: { usdt: 0, nex: 0, count: 0 },
       frozenCount: 0,
     },
-    commissionKinds: ["network", "binary", "peer", "cultivation", "leadership", "genesis"].map((key) => ({
+    commissionKinds: ["network", "binary", "peer", "cultivation", "leadership", "genesis", "direct_purchase", "direct_device_earning"].map((key) => ({
       key,
       code: key.toUpperCase(),
       label: key,
@@ -44,12 +44,12 @@ function fixture() {
     })),
     commissionFilters: [
       ["all", "全部状态"], ["cooling", "冷却计提"], ["unlocked", "已解锁可提"],
-      ["withdrawn", "已提现"], ["reversed", "已撤销"], ["frozen", "已冻结"],
+      ["withdrawn", "已提现"], ["reversed", "已撤销"], ["frozen", "已冻结"], ["rejected", "已拒绝"], ["recovery_pending", "待追回"],
     ].map(([key, label]) => ({ key, label })),
     commissionEvents: [event],
     statusDistribution: [
       ["已解锁可提", "var(--success)"], ["冷却计提中", "var(--warning)"],
-      ["已提现", "var(--cyan)"], ["已撤销", "var(--danger)"], ["已冻结", "var(--ink-4)"],
+      ["已提现", "var(--cyan)"], ["已撤销", "var(--danger)"], ["已冻结", "var(--ink-4)"], ["已拒绝", "var(--danger)"], ["待追回", "var(--danger)"],
     ].map(([name, color]) => ({ name, color, count: name === "冷却计提中" ? 1 : 0 })),
     recentAuditFeed: [],
     pagination: { mode: "server-cursor", defaultWindow: "全量游标", defaultPageSize: 20, pageSize: 20, maxPageSize: 100, requestCursor: "", nextCursor: "", total: 1 },
@@ -66,8 +66,20 @@ function fixture() {
   };
 }
 
-test("F5 接受六类五态内的权威游标事件", () => {
+test("F5 接受八类七态内的权威游标事件", () => {
   assert.doesNotThrow(() => assertF5Overview(fixture()));
+});
+
+test("F5 new kinds require the original settlement group, price, split and refund facts", () => {
+  for (const kind of ["direct_purchase", "direct_device_earning"]) {
+    const value = fixture();
+    Object.assign(value.commissionEvents[0], { kind, settlementNo: "DR-1", sourceRef: "ORDER-1", sourceDeviceId: "DEV-1", policyVersion: 1, basisUsdt: 1000, nexUsdtPrice: 0.01, amountUSDT: 60, amountNEX: 4000, recoveryPendingUSDT: 0, recoveryPendingNEX: 0, reversalRecorded: false });
+    assert.doesNotThrow(() => assertF5Overview(value));
+    for (const field of ["settlementNo", "sourceRef", "policyVersion", "basisUsdt", "nexUsdtPrice", "amountUSDT", "amountNEX", "recoveryPendingUSDT", "recoveryPendingNEX", "reversalRecorded"]) {
+      const invalid = structuredClone(value); delete invalid.commissionEvents[0][field];
+      assert.throws(() => assertF5Overview(invalid), /F5_OVERVIEW_RESPONSE_INVALID/, field);
+    }
+  }
 });
 
 test("F5 拒绝旧类别、旧状态、旧币种、畸形时间和非整数标识", () => {
@@ -133,7 +145,7 @@ test("F5 拒绝事件标识关系和游标总数互相矛盾", () => {
   }
 });
 
-test("F5 六类金额/笔数文案和五态总数必须由结构化全量聚合派生", () => {
+test("F5 八类金额/笔数文案和七态总数必须由结构化全量聚合派生", () => {
   for (const mutate of [
     (value) => { value.summary.monthlyCommissionSpendLabel = "香蕉"; },
     (value) => { value.commissionKinds[0].countLabel = "999999 笔"; },

@@ -40,7 +40,7 @@ test("F5 rejects a partial 200 payload instead of normalizing missing totals to 
   assert.throws(() => assertF5Overview({
     domain: "F5",
     summary: {},
-    commissionKinds: ["network", "binary", "peer", "cultivation", "leadership", "genesis"]
+    commissionKinds: ["network", "binary", "peer", "cultivation", "leadership", "genesis", "direct_purchase", "direct_device_earning"]
       .map((key) => ({ key })),
     commissionFilters: [],
     commissionEvents: [],
@@ -122,7 +122,7 @@ test("F2-F5 accept their minimum complete contracts", () => {
       withdrawableThisMonth: { usdt: 0, nex: 0, count: 0 },
       frozenCount: 0,
     },
-    commissionKinds: ["network", "binary", "peer", "cultivation", "leadership", "genesis"]
+    commissionKinds: ["network", "binary", "peer", "cultivation", "leadership", "genesis", "direct_purchase", "direct_device_earning"]
       .map((key) => ({
         key,
         code: key.toUpperCase(),
@@ -139,7 +139,7 @@ test("F2-F5 accept their minimum complete contracts", () => {
       ["unlocked", "已解锁可提"],
       ["withdrawn", "已提现"],
       ["reversed", "已撤销"],
-      ["frozen", "已冻结"],
+      ["frozen", "已冻结"], ["rejected", "已拒绝"], ["recovery_pending", "待追回"],
     ].map(([key, label]) => ({ key, label })),
     commissionEvents: [],
     statusDistribution: [
@@ -147,7 +147,7 @@ test("F2-F5 accept their minimum complete contracts", () => {
       ["冷却计提中", "var(--warning)"],
       ["已提现", "var(--cyan)"],
       ["已撤销", "var(--danger)"],
-      ["已冻结", "var(--ink-4)"],
+      ["已冻结", "var(--ink-4)"], ["已拒绝", "var(--danger)"], ["待追回", "var(--danger)"],
     ].map(([name, color]) => ({ name, color, count: 0 })),
     recentAuditFeed: [],
     pagination: {

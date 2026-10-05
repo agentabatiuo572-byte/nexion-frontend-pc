@@ -5,22 +5,16 @@ import { useMemo, useState } from "react";
 import { Badge } from "../design-kit";
 import type { F5CommissionEvent, F5CommissionQuery } from "@/lib/admin/f1-client";
 import type { FViewCtx } from "./types";
+import { F5_KINDS as KINDS, F5_KIND_LABELS as KIND_LABELS } from "@/lib/admin/f-overview-contract";
 
-const KINDS = ["network", "binary", "peer", "cultivation", "leadership", "genesis"];
-const KIND_LABELS: Record<string, string> = {
-  network: "网络版税",
-  binary: "双轨匹配",
-  peer: "平级奖",
-  cultivation: "培育奖",
-  leadership: "领导奖池",
-  genesis: "创世排放",
-};
 const STATUS_BY_LABEL: Record<string, string> = {
   已解锁可提: "unlocked",
   冷却计提中: "cooling",
   已提现: "withdrawn",
   已撤销: "reversed",
   已冻结: "frozen",
+  已拒绝: "rejected",
+  待追回: "recovery_pending",
 };
 const LINK_STYLE = {
   color: "var(--ink-4)",
@@ -40,8 +34,15 @@ function badge(status: string): { label: string; tone: "ok" | "warn" | "err" | "
   if (status === "withdrawn") return { label: "已提现", tone: "neutral" };
   if (status === "reversed") return { label: "已撤销", tone: "err" };
   if (status === "frozen") return { label: "已冻结", tone: "warn" };
+  if (status === "rejected") return { label: "已拒绝", tone: "err" };
+  if (status === "recovery_pending") return { label: "待追回", tone: "err" };
   return { label: "冷却计提中", tone: "warn" };
 }
+
+const directGroup = (row: F5CommissionEvent) => row.kind === "direct_purchase" || row.kind === "direct_device_earning";
+const amountLabel = (row: F5CommissionEvent) => directGroup(row)
+  ? `结算组 ${row.settlementNo} · ${row.amountUSDT} USDT + ${row.amountNEX} NEX（整组处理）`
+  : `${row.amt.toLocaleString("en-US")} ${row.cur}`;
 
 export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const canWrite = ctx.can("network_f5_write");
@@ -93,7 +94,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   // 走既有 dispose 管线:openActionConfirm(op:"dispose") → shell updateF5Config → proposeFConfig
   // → f_commission_status A2 票(幂等 + 服务端 CAS + 审计),paramKey 用行上现成的 auditKey。
   const dispose = (kind: "freeze" | "unlock" | "unfreeze", row: F5CommissionEvent) => {
-    const amount = `${row.amt.toLocaleString("en-US")} ${row.cur}`;
+    const amount = amountLabel(row);
     const map = {
       freeze: { name: `冻结佣金 ${row.id}`, amplify: false, fixedVal: "frozen", detail: `冻结 ${row.id} · ${amount} · 先按住观察:暂停该笔的解锁与提现,可随时解冻,与不可逆冲正分层。确认后进入 A2 执行链,服务端按状态 CAS 变更并落审计。` },
       unlock: { name: `佣金提前解锁 ${row.id}`, amplify: true, fixedVal: "unlocked", detail: `提前解锁 ${row.id} · ${amount} · 跳过剩余冷却直接进入可提余额,放大资金流出。确认后进入 A2 执行链,服务端按状态 CAS 变更并联动 D4 / B1 护栏。` },
@@ -105,7 +106,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const reverse = (row: F5CommissionEvent) => {
     ctx.openActionConfirm({
       name: `冲正佣金 ${row.id}`,
-      detail: `冲正 ${row.id} · ${row.amt} ${row.cur}。服务端校验退款单、V-Rank 派发单或工单证据，使用状态 CAS，并联动 D4、A2、A4。`,
+      detail: `冲正 ${row.id} · ${amountLabel(row)}。服务端校验退款单、V-Rank 派发单或工单证据，使用状态 CAS，并联动 D4、A2、A4。余额不足时显示待追回，不把改状态当作追回成功。`,
       businessForm: {
         kind: "multi-field",
         title: "冲正证据",
@@ -124,6 +125,10 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   };
 
   const reissue = () => {
+    if (selectedRows.some(row => directGroup(row) || row.reversalRecorded || row.status === "recovery_pending")) {
+      ctx.toast("直属分成需按原来源核对，不能重复补发；已退款或待追回记录也不能补发。");
+      return;
+    }
     if (!selectedRows.length) {
       ctx.toast("请先勾选已撤销佣金");
       return;
@@ -213,7 +218,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       <section className="pane">
         <div className="pane-h">
           <span className="ph-ttl">F5 佣金事件审计</span>
-          <span className="ph-sub">服务端游标 · 六类佣金真实账本</span>
+          <span className="ph-sub">服务端游标 · 八类佣金真实账本</span>
         </div>
         {ctx.f5Error && <div style={{ padding: 12, color: "var(--danger)" }}>加载失败：{ctx.f5Error}。佣金权威快照不可用，批量补发已暂停。 <button className="fbtn" onClick={() => void ctx.refreshF5(query())}>重试</button></div>}
         <div className="filter-bar" style={{ gap: 8, flexWrap: "wrap" }}>
@@ -229,7 +234,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           <select aria-label="佣金状态" value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">全部状态</option>
             <option value="cooling">冷却计提</option><option value="unlocked">已解锁</option>
-            <option value="withdrawn">已提现</option><option value="reversed">已撤销</option><option value="frozen">已冻结</option>
+            <option value="withdrawn">已提现</option><option value="reversed">已撤销</option><option value="frozen">已冻结</option><option value="rejected">已拒绝</option><option value="recovery_pending">待追回</option>
           </select>
           <button className="fbtn primary" onClick={() => void ctx.refreshF5(query())}>服务端筛选</button>
           <button className="fbtn" onClick={exportAllFiltered}>导出筛选全量 CSV</button>
@@ -240,13 +245,13 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       {data && (
         <>
           <div className="f-stats">
-            <div className="f-stat"><div className="k">佣金全量合计</div><div className="v">{data.summary.monthlyCommissionSpendLabel}</div><div className="sub">六类 · USDT / NEX 分币种</div></div>
-            <div className="f-stat warn"><div className="k">冷却中全量余额</div><div className="v">{data.summary.coolingBalanceLabel}</div><div className="sub">仅 network / binary</div></div>
-            <div className="f-stat ok"><div className="k">可提佣金全量</div><div className="v">{data.summary.withdrawableThisMonthLabel}</div><div className="sub">其他四类即时入账</div></div>
+            <div className="f-stat"><div className="k">佣金全量合计</div><div className="v">{data.summary.monthlyCommissionSpendLabel}</div><div className="sub">八类 · USDT / NEX 分币种</div></div>
+            <div className="f-stat warn"><div className="k">冷却中全量余额</div><div className="v">{data.summary.coolingBalanceLabel}</div><div className="sub">按各类奖励的冷却快照统计</div></div>
+            <div className="f-stat ok"><div className="k">可提佣金全量</div><div className="v">{data.summary.withdrawableThisMonthLabel}</div><div className="sub">各类已解锁可提余额</div></div>
             <div className="f-stat danger"><div className="k">已冻结（全量）</div><div className="v">{data.summary.frozenCount}</div><div className="sub">来自全量状态聚合；异常样本另列</div></div>
           </div>
 
-          <section className="pane" aria-label="六类佣金支出与状态分布">
+          <section className="pane" aria-label="八类佣金支出与状态分布">
             <div className="pane-h">
               <span className="ph-ttl">佣金支出去向与全量状态</span>
               <span className="ph-sub">点击任一卡片后由服务端过滤流水，再点一次取消</span>
@@ -263,9 +268,9 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                   onClick={() => applyKindFilter(item.key)}
                   style={{ textAlign: "left", cursor: "pointer", borderColor: kind === item.key ? "var(--cyan)" : undefined }}
                 >
-                  <span className="k">{item.lbl}</span>
-                  <strong className="v" style={{ color: item.amtColor || undefined }}>{item.amt}</strong>
-                  <span className="sub">{item.ct}</span>
+                  <span className="k" style={{ display: "block" }}>{KIND_LABELS[item.key] ?? item.lbl}</span>
+                  <strong className="v" style={{ color: item.amtColor || undefined, display: "block" }}>{item.amt}</strong>
+                  <span className="sub" style={{ display: "block" }}>{item.ct}</span>
                 </button>
               ))}
             </div>
@@ -302,15 +307,20 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                 {!events.length && <tr className="empty-row"><td colSpan={9}>当前筛选无佣金事件；筛选器和处置入口仍可用</td></tr>}
                 {events.map((row) => {
                   const state = badge(row.status);
-                  const selectable = canDispose && row.status === "reversed";
+                  const selectable = canDispose && row.status === "reversed" && !directGroup(row) && !row.reversalRecorded;
                   return (
                     <tr key={row.id}>
-                      <td><input aria-label={`选择 ${row.id}`} type="checkbox" disabled={!selectable} checked={selected.includes(row.id)} onChange={(e) => setSelected((old) => e.target.checked ? [...old, row.id] : old.filter((id) => id !== row.id))} /></td>
-                      <td><span className="cid">{row.id}</span></td>
+                      <td><input aria-label={`选择 ${row.id}`} type="checkbox" disabled={!selectable} title={directGroup(row) ? "直属分成需按原来源核对，不能重复补发" : row.reversalRecorded ? "已退款记录禁止补发" : undefined} checked={selected.includes(row.id)} onChange={(e) => setSelected((old) => e.target.checked ? [...old, row.id] : old.filter((id) => id !== row.id))} /></td>
+                      <td><span className="cid">{row.id}</span>{directGroup(row) && <details style={{ marginTop: 6, maxWidth: 260 }}><summary>来源详情</summary><div style={{ display: "grid", gap: 5, padding: "8px 0", overflowWrap: "anywhere" }}>
+                        <span>结算组：{row.settlementNo}</span><span>来源编号：{row.sourceRef}</span><span>设备：{row.sourceDeviceId || "不适用"}</span>
+                        <span>政策版本：{row.policyVersion}</span><span>计价基数：{row.basisUsdt} USDT</span><span>当笔 NEX 价格：{row.nexUsdtPrice} USDT</span>
+                        <span>整组奖励：{row.amountUSDT} USDT + {row.amountNEX} NEX</span><span>待追回：{row.recoveryPendingUSDT} USDT + {row.recoveryPendingNEX} NEX</span>
+                        <span>{row.reversalRecorded ? "来源已退款或冲正，禁止补发" : "直属分成需按原来源核对，不能重复补发"}</span>
+                      </div></details>}</td>
                       <td>{KIND_LABELS[row.kind] ?? row.kind}</td>
                       <td>{row.user} / {row.sourceUserId ? `U${row.sourceUserId}` : "--"}</td>
                       <td>{row.amt.toLocaleString()} {row.cur}</td>
-                      <td>{row.layer ? `L${row.layer}` : "--"} / {row.settledAt}</td>
+                      <td>{directGroup(row) ? "直属" : row.layer ? `L${row.layer}` : "--"} / {row.settledAt}</td>
                       <td>{row.coolingDaysLeft > 0 ? `剩余 ${row.coolingDaysLeft} 天` : "无独立冷却"}</td>
                       <td><Badge tone={state.tone}>{state.label}</Badge></td>
                       <td>
@@ -326,7 +336,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                         {canDispose && row.status === "cooling" && <button className="fbtn" onClick={() => dispose("freeze", row)}>冻结</button>}
                         {canDispose && row.status === "cooling" && <button className="fbtn" onClick={() => dispose("unlock", row)}>提前解锁</button>}
                         {canDispose && row.status === "frozen" && <button className="fbtn" onClick={() => dispose("unfreeze", row)}>解冻</button>}
-                        {canReject && row.status !== "reversed" && row.status !== "withdrawn" && <button className="fbtn" onClick={() => reverse(row)}>冲正</button>}
+                        {canReject && !["reversed", "withdrawn", "rejected", "recovery_pending"].includes(row.status) && <button className="fbtn" onClick={() => reverse(row)}>冲正</button>}
                         {canReject && <button className="fbtn" onClick={() => suspend(row)}>暂停奖种</button>}
                       </td>
                     </tr>
@@ -349,7 +359,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
               </table>
             </section>
             <aside className="rail">
-              <div className="rail-card"><div className="rc-h">六类冷却口径</div>{data.coolingPolicy.map((item) => <div className="it" key={item.kind}>{KIND_LABELS[item.kind]} · {item.days ? `${item.days} 天` : "即时"} · {item.policy}</div>)}</div>
+              <div className="rail-card"><div className="rc-h">八类冷却口径</div>{data.coolingPolicy.map((item) => <div className="it" key={item.kind}>{KIND_LABELS[item.kind]} · {item.days ? `${item.days} 天` : "即时"} · {item.policy}</div>)}</div>
               <div className="rail-card"><div className="rc-h">跨域调用链</div>
                 {canReadD4
                   ? <Link href="/finance/ledger" style={LINK_STYLE}>D4 账本</Link>

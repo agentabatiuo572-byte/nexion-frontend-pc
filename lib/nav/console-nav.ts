@@ -169,7 +169,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     roles: ["growth"],
     l2: [
       { id: "F1", name: "V-Rank 晋升", path: "/network/v-rank", prdAnchor: "F1", batch: "V2", status: "flagship" },
-      { id: "F2", name: "网络版税费率", path: "/network/royalty", prdAnchor: "F2", batch: "V2", status: "flagship" },
+      { id: "F2", name: "直属分成配置", path: "/network/royalty", prdAnchor: "F2", batch: "V2", status: "flagship" },
       { id: "F3", name: "双轨结算引擎", path: "/network/binary", prdAnchor: "F3", batch: "V2", status: "flagship" },
       { id: "F4", name: "池 / 配额 / 大使 / 榜", path: "/network/leadership-pool", prdAnchor: "F4", batch: "V2", status: "flagship" },
       { id: "F5", name: "佣金事件审计", path: "/network/commissions", prdAnchor: "F5", batch: "V2", status: "flagship" },

@@ -4,6 +4,7 @@ import { formatAdminApiError, guardedFetch, rawFetch } from "@/lib/admin/error-m
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { F1OutcomeUncertainError, f1StableWrite } from "@/lib/admin/f1-stable-write";
 import { verifyF5CsvArtifact } from "@/lib/admin/f5-export-verifier";
+import { parseDirectReferralPolicy } from "@/lib/admin/direct-referral-policy";
 import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/admin/platform-types";
 import {
   assertF1Overview,
@@ -346,6 +347,17 @@ interface BackendF5Filter {
 }
 
 interface BackendF5CommissionEvent {
+  settlementNo?: string | null;
+  sourceRef?: string | null;
+  sourceDeviceId?: string | null;
+  policyVersion?: number | string | null;
+  basisUsdt?: number | string | null;
+  nexUsdtPrice?: number | string | null;
+  amountUSDT?: number | string | null;
+  amountNEX?: number | string | null;
+  recoveryPendingUSDT?: number | string | null;
+  recoveryPendingNEX?: number | string | null;
+  reversalRecorded?: boolean | null;
   id?: string | null;
   commissionId?: string | null;
   eventId?: number | string | null;
@@ -801,6 +813,17 @@ export interface F5CommissionFilter {
 }
 
 export interface F5CommissionEvent {
+  settlementNo?: string;
+  sourceRef?: string;
+  sourceDeviceId?: string;
+  policyVersion?: number;
+  basisUsdt?: number;
+  nexUsdtPrice?: number;
+  amountUSDT?: number;
+  amountNEX?: number;
+  recoveryPendingUSDT?: number;
+  recoveryPendingNEX?: number;
+  reversalRecorded?: boolean;
   id: string;
   eventId: number;
   kind: string;
@@ -1406,6 +1429,12 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       version: toNumber(item.version),
       frozenFromStatus: optionalText(item.frozenFromStatus),
       ledgerBizNo: optionalText(item.ledgerBizNo),
+      settlementNo: optionalText(item.settlementNo), sourceRef: optionalText(item.sourceRef), sourceDeviceId: optionalText(item.sourceDeviceId),
+      policyVersion: item.policyVersion == null ? undefined : toNumber(item.policyVersion),
+      basisUsdt: item.basisUsdt == null ? undefined : toNumber(item.basisUsdt), nexUsdtPrice: item.nexUsdtPrice == null ? undefined : toNumber(item.nexUsdtPrice),
+      amountUSDT: item.amountUSDT == null ? undefined : toNumber(item.amountUSDT), amountNEX: item.amountNEX == null ? undefined : toNumber(item.amountNEX),
+      recoveryPendingUSDT: item.recoveryPendingUSDT == null ? undefined : toNumber(item.recoveryPendingUSDT), recoveryPendingNEX: item.recoveryPendingNEX == null ? undefined : toNumber(item.recoveryPendingNEX),
+      reversalRecorded: item.reversalRecorded ?? undefined,
     };
   });
   const pagination = data.pagination;
@@ -1602,6 +1631,10 @@ export async function fetchF2RatesOverview() {
   const data = await f1Request<unknown>("/rates");
   assertF2Overview(data);
   return normalizeF2Overview(data as BackendF2Overview);
+}
+
+export async function fetchF2DirectReferralPolicy() {
+  return parseDirectReferralPolicy(await f1Request<unknown>("/direct-referral-policy"));
 }
 
 export async function fetchF3BinaryOverview() {

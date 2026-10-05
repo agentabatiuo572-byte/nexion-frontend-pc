@@ -28,6 +28,7 @@ import {
   downloadF5RedactedCsv,
   updateF5AnomalyConfig,
   fetchF2RatesOverview,
+  fetchF2DirectReferralPolicy,
   fetchF1PromotionLog,
   fetchF1RewardPayouts,
   fetchF1VRankOverview,
@@ -59,6 +60,7 @@ import { F3Binary } from "./f-tabs/f3-binary";
 import { F4Ops } from "./f-tabs/f4-ops";
 import { F5Audit } from "./f-tabs/f5-audit";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
+import { directReferralAmplifies, directReferralSummary, validateDirectReferralUpdate, type DirectReferralPolicy } from "@/lib/admin/direct-referral-policy";
 import "./f-domain.css";
 
 const FOLD: Record<string, string> = { F1: "F1", F2: "F2", F3: "F3", F4: "F4", F5: "F5" };
@@ -69,8 +71,7 @@ const ADMIN_OPERATOR = currentAdminOperator;
  *  (如同一佣金事件先冻结后解冻)铸新号并弃旧号,防真实新操作被当成重复提交静默吞掉。 */
 const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-f-commands-v1" });
 
-// F 域 polymorphic key→op 分发(对齐后端 OpsTeamService.updateConfig 分发逻辑,commit afe51f2)。
-// 4 replay op 全部 params {key,value},后端从 key 派生锁 target id(unilevel→L+layerNo,commission→eventId)。
+// 保留参数与历史佣金处置；直属政策使用独立的整组命令。
 const F_ACTIVE_KEYS = new Set([
   "directRoyaltyPct", "networkRoyaltyPct", "binaryPairRatePct",
   "maxCombinedOutflowPct", "minPayoutUsdt", "rankWindowDays", "hardwareQuotaPerRank",
@@ -78,7 +79,7 @@ const F_ACTIVE_KEYS = new Set([
 
 function resolveFOp(key: string): string {
   if (key.startsWith("F.commission.") && key.endsWith(".status")) return "f_commission_status";
-  if (/^F\.unilevel\.(?:nex\.)?L\d+/.test(key)) return "f_unilevel_rule";
+  if (key.startsWith("F.unilevel.")) throw new Error("旧网络费率已停用，请使用直属分成配置。");
   if (F_ACTIVE_KEYS.has(key)) return "f_config";
   return "f_ui_config";
 }
@@ -134,6 +135,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [f1PayoutLoading, setF1PayoutLoading] = useState(tab === "F1");
   const [f1PayoutError, setF1PayoutError] = useState<string | null>(null);
   const [f2Overview, setF2Overview] = useState<F2RatesOverview | null>(null);
+  const [f2DirectPolicy, setF2DirectPolicy] = useState<DirectReferralPolicy | null>(null);
+  const [f2DirectPolicyLoading, setF2DirectPolicyLoading] = useState(tab === "F2");
+  const [f2DirectPolicyError, setF2DirectPolicyError] = useState<string | null>(null);
   const [f2Loading, setF2Loading] = useState(tab === "F2");
   const [f2Error, setF2Error] = useState<string | null>(null);
   const [f3Overview, setF3Overview] = useState<F3BinaryOverview | null>(null);
@@ -270,16 +274,21 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     const request = ++f2Generation.current;
     setF2Loading(true);
     setF2Error(null);
+    setF2DirectPolicyLoading(true);
+    setF2DirectPolicyError(null);
     try {
-      const overview = await fetchF2RatesOverview();
+      const [overview, policy] = await Promise.allSettled([fetchF2RatesOverview(), fetchF2DirectReferralPolicy()]);
       if (request !== f2Generation.current) return;
-      setF2Overview(overview);
+      if (policy.status === "fulfilled") setF2DirectPolicy(policy.value);
+      else { setF2DirectPolicy(null); setF2DirectPolicyError(errorMessage(policy.reason)); }
+      if (overview.status === "fulfilled") setF2Overview(overview.value);
+      else { setF2Overview(null); setF2Error(errorMessage(overview.reason)); }
     } catch (error) {
       if (request !== f2Generation.current) return;
       setF2Overview(null);
       setF2Error(errorMessage(error));
     } finally {
-      if (request === f2Generation.current) setF2Loading(false);
+      if (request === f2Generation.current) { setF2Loading(false); setF2DirectPolicyLoading(false); }
     }
   }, []);
 
@@ -518,6 +527,24 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       });
     },
     f2Metrics: f2Overview?.metrics ?? [],
+    f2DirectPolicy,
+    f2DirectPolicyLoading,
+    f2DirectPolicyError,
+    updateF2DirectPolicy: async (policy, reason) => {
+      const invalid = validateDirectReferralUpdate(policy);
+      if (invalid) throw new Error(invalid);
+      if (!f2DirectPolicy || f2DirectPolicy.policyVersion !== policy.expectedVersion) throw new Error("直属分成配置已变化，请重新读取后再确认。");
+      const def = findHighOp("f_direct_referral_policy");
+      if (!def) throw new Error("F_OP_NOT_FOUND:f_direct_referral_policy");
+      await proposeStable("f-direct-referral-policy", JSON.stringify([policy, reason]), {
+        action: def.action, obj: "current",
+        before: `当前版本 ${f2DirectPolicy.policyVersion}；${directReferralSummary(f2DirectPolicy)}`,
+        after: `${directReferralSummary(policy)}；审批通过后立即对新来源生效`,
+        type: "fund", amplifies: directReferralAmplifies(f2DirectPolicy, policy),
+        gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "F2",
+        command: def.buildCommand({ ...policy }), target: def.buildTarget({}),
+      });
+    },
     f2Unilevel: f2Overview?.unilevel ?? [],
     f2RateTiers: f2Overview?.rateTiers ?? [],
     f2Params: f2Overview?.params ?? [],
@@ -678,12 +705,6 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   // 跨域 / 跨标签跳转 CTA(放进 DomainHeader 的 right 槽,不改 DomainHeader 组件)
   const CTA: Record<string, { label: string; onClick: () => void }> = {
     F1: { label: "领导池票数权重 →", onClick: () => { setTab("F4"); router.push("/network/leadership-pool"); setToast("已跳转 F4 · 领导池票数权重"); } },
-    F2: { label: "合并出口护栏 →", onClick: () => openActionConfirm({
-      name: "F2 合并出口保护上限", amplify: false, op: "param",
-      paramKey: "F.unilevel.mergeExitMaxPct",
-      edit: { kind: "number", current: f2Overview?.configValues["F.unilevel.mergeExitMaxPct"] ?? "25", unit: "%" },
-      detail: "限制同一订单经 Influence 与活动倍率放大后的 L1-L7 USDT 合并出口；结算引擎按该上限实时截断，避免重复叠加越界。",
-    }) },
     F3: { label: "B5 风险雷达 →", onClick: () => nav("B") },
     F4: { label: "F5 佣金审计 →", onClick: () => { setTab("F5"); router.push("/network/commissions"); setToast("已跳转 F5 · 佣金事件审计"); } },
   };

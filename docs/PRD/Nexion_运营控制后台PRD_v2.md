@@ -1218,42 +1218,23 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 
 ## 第 11 章 分销与团队(域 F)
 
-> **编号收编(2026-06 实现对齐)**:域 F 原 8 子模块在运营后台**收编为 5 个页面级模块 F1-F5**(连续编号,与导航 / 实现一致):**F1** V-Rank 晋升 · **F2** 网络版税费率 · **F3** 双轨结算引擎 · **F4** 池 / 配额 / 大使 / 榜(原 F4 领导奖池 + 原 F6 硬件配额 + 原 F7 区域大使审批 + 原 F8 排行榜&反欺诈,四区聚合)· **F5** 佣金事件审计。F4 聚合页内 4 功能区:**F4**(领导奖池,主)/ **F4b** 硬件配额 / **F4c** 区域大使审批 / **F4d** 排行榜&反欺诈,各保留完整 8 段规格(F4b/F4c/F4d 文档位置排在 F5 之后为历史编排,聚合归属以本注为准)。全章 F 编号引用均按此收编后口径。
+F 域保留五个页面：F1 V-Rank 晋升、F2 直属分成配置、F3 双轨结算引擎、F4 池/配额/大使/榜、F5 佣金事件审计。F4 的领导奖池、硬件配额、大使审批和排行榜各有独立功能契约。
 
-> **本章是 V2 分卷的第二章**,覆盖域 F 收编后的 **5 个页面级子模块 F1-F5**(F4 聚合 4 功能区,合 8 功能规格:F1 V-Rank 晋升管理 / F2 网络版税费率 / F3 双轨结算引擎 / F4 领导奖池 + F4b 硬件配额 + F4c 区域大使审批 + F4d 排行榜 & 反欺诈 / F5 佣金事件审计),全部 V2。F 域是平台两大收入引擎之一(团队分润佣金体系)的运营控制面:从「头衔阶梯与晋升发奖」(F1)到「网络版税费率与冷却」(F2)、「双轨平衡匹配结算」(F3)、「领导奖池周分配 + 硬件配额门 + 区域大使预算 + 排行榜反欺诈」(F4 聚合)、「六类佣金事件审计与撤销」(F5),构成影响力网络版税(Unilevel)+ 双轨对碰两条腿的完整团队分润运营闭环。
->
-> 本章承接 V1 已落地的横切地基:**审计 / 操作确认权威归 A2**(§3.14;全章高敏写操作——手动晋升 / 回滚 V 级、改费率、改匹配比例、注入奖池、撤销 / 补发佣金、覆盖配额、审批大使预算、排行榜派奖纠错 / 取消资格——一律复用 A2 操作确认契约:确认弹窗 + 理由必填(server 强制非空 400 `REASON_REQUIRED`)+ 审计 schema,2026-06 操作确认决议,F 域不另立确认机制)、**埋点命名 / 身份 / 通用属性权威归 A4**(§2.4;本章所有 `commission.*` / `admin.*` 事件均在 A4 schema registry 注册,⑧ 段不另立命名;`commission.paid` 已在 V1 §2.4.5③ money family 登记)、**资金动作权威归 D 域**(佣金发放即在 **D4 账本落 commission bill**,见各子模块 ⑦/⑧)。
->
-> **跨域归属(§3.14)在本章的体现 / 须补登条目**:
-> - **F3 双轨日封顶 `binaryDailyCapUSD` 是 H1 Phase 派发参数,权威归 H1(§1.7 / V1 §3.14),F3 是其在双轨结算的生效面,不另设第二源**——与 D5 提现 cooldown/points(H1 派发、D5 生效)、E1 代际发布门(H1 派发月龄、E1 生效)同一分工范式。F3 只读展示 Phase 现值并跳 H1 调整,不持 dial 写权。V1 §3.14 已列「F3 双轨(binaryDailyCapUSD 随 Phase)」为 H1 引用方,本章据此落地。
-> - **佣金发放写 D4 账本 + 受 B1 兑付覆盖率约束**:六类佣金(network / binary / peer / cultivation / leadership / genesis)的 USDT 发放与 NEX 发放均为「放大资金流出 / 放大应付负债」方向,**发放即在 D4 落 commission bill**(§3.14:server 唯一记账源归 D4),且任何「放大佣金流出」的运营动作(上调费率 / 上调匹配比例 / 额外注入奖池 / 补发佣金)**须先核验 B1 覆盖率约束**(§1.8 原则一;§3.14:兑付覆盖率权威归 B1)。F 域不另立佣金账本。
-> - **佣金冷却 `commission/cooling-days` 是 commission 域独立参数,与提现冷却 `withdrawCooldownDays` 分属两条线,开发不得混用**:`withdrawCooldownDays` 是 H1 Phase 10 dial 之一(V1 §1.7 / B2⑦ / B4 dial 表注),其生效面在 **D5 提现**;`commission/cooling-days` 是独立于 Phase 引擎的 **commission 域参数(V1 B2⑦)**,作用于佣金从计提到可提的解锁,默认 30d,参考前端 §9.11c.1(`lib/v3/commission.ts:141`)。**其权威归属须在 V2 sprint 中与 commission 域对齐确认(可能归 F2 自持或 D5 共享,需回源确认),F2 暂作配置 / 展示面,经确认弹窗 + 理由必填(见 F2③/④)**。二者拐点节奏可能相近,但**不是同一参数、不同源**,任何「同源拐点」表述均为错误,开发须严格区分两套配置。
-> - **F4d 排行榜反欺诈复用 K1 + 消费 K2,owns 取消资格执行**:F4d **复用 K1 反多账户引擎**(IP / 设备指纹 / 支付工具三层去重,§Ch8 K1)识别冲榜账户簇,**消费 K2 刷榜信号**(§Ch8 K2④/⑤ 已声明「取消资格执行接口归 F4d 接管,K2 仅产信号」);**F4d owns 排行榜取消资格 / 奖池剔除的执行与确认弹窗动作,不重复 K1 去重引擎、不重复 K2 信号检测**。这落地了 V1 §Ch8 K2④/⑤「排行榜取消资格端点归 F4d(V2)」与「§3.14 须补『排行榜刷榜处置执行 → F4d 权威 / K2 信号输入方』」。**K2 当前实际产出的刷榜信号事件名待 F5⑧ blocking 工单与 A4 一并核定**(§2.4.5⑤ 同时登记 `risk.arbitrage_suspected` 含 `type=leaderboard` 与 `risk.leaderboard_velocity_flagged` 两名,K2⑧ 正文实际产出前者;F4d 消费锚点须跟随工单结论,见 F4d⑦⑧)。
-> - **V-Rank 可见性 gating 读 12 月 §6.3**:F1 的 V 级网络深度可见性(`ROYALTY_VISIBILITY_BY_VRANK`)以 **12 月节奏表 §6.3 为权威**——V0-1=`[direct]` / V2=`[direct,indirect]` / V3=`[direct,indirect,network_pool]` / V4-5=`[direct,indirect,network_pool,cultivation]` / V6+=`[direct,indirect,network_pool,cultivation,founders_tier]`(V4 与 V5 为**独立键、值相同但不可合并**,§6.3);此为用户端 UI 渐进解锁映射,F1 配置面据此设默认。
->
-> **本章须在 V4 跨文档收口时补入 V1 §3.14 跨域归属表的条目**(与 V1 / V2 其他章节记录 §3.14 待补条目的体例一致):**F1 V_RANKS 阶梯 / 晋升判定 / 等级奖励清单配置权威归 F1**(C1 用户画像、B 域只读引用 V 级 / 风险分档不重算;奖励清单含 SKU / 代金券项时引用 E 域 SKU 目录与 H7 代金券定义为现存项下拉源,不另建)/ **F2 `UNILEVEL_USDT`(含固定 10% 直推)/ `UNILEVEL_NEX` / Partner Status 门槛权益 / InfluenceScore 权威归 F2**(D4 commission bill 计提引用)/ **`commission/cooling-days` 权威归属待 V2 确认(F2 自持或 commission 域 / D5 共享,回源后落 §3.14)**/ **F3 `binaryDailyCapUSD` 权威归 H1**(F3 生效面,不另设源,与 D5 体例一致)/ **F4 领导奖池 `V_VOTES` 权重与注入比例权威归 F4**(受 B1 覆盖率约束)/ **F4d 排行榜取消资格执行 → F4d 权威 / K2 信号输入方 / K1 去重引擎复用方**(承 V1 §Ch8 K2④/⑤ 已记入收口的条目)/ **佣金类别数量(genesis 是否纳入前端 §8.6 filter pills)前端文档 §8.6 标题↔正文不一致须收口**。
->
-> **本章须在 V2 落地前(非 V4 可拖)完成的阻断性跨域确认项**(列入 §3.14 待补条目并标注 V2 gate 阻断):
-> 1. **`commission` domain 与 `commission.paid` 的 `kind` 枚举扩展**:V1 §2.4.5③ money family 已登记 `commission.paid` 单一事件,但**未细分 `kind`**;F 域七类派发(network / binary / peer / cultivation / leadership / genesis / leaderboard_prize)依赖 `commission.paid` 携 `kind` 维度做分类审计与 KPI #7。**V2 sprint 开始即向 A4 申请 `commission.paid` 的 `kind` 枚举扩展(blocking 依赖,不可拖至 V4),并登记为 V2 起始工单**(详见 F5⑧)。**同时须在该工单中评估:排行榜派奖是否应走独立事件(如 `leaderboard.prize_paid`)而非复用 `commission.paid`,以避免将非佣金结构的奖池派发混入 commission 语义;二选一后 F5⑧ / F4d⑧ 两处须保持一致**。
-> 2. **`commission.paid` 的 `kind` 值命名(`network` vs `unilevel`)+ `layer` 属性注册**:前端现有 TypeScript 类型(**§12.5** Commission Event,非 §12.4)网络版税类用 `"unilevel"`,本章草拟为 `"network"`;**V2 申请 A4 注册时须二选一统一**(建议优先沿用前端现有 `"unilevel"` 以减少改动面;若改为 `network` 须同步前端 §12.5 类型)。同时确认 `commission.paid` 的 `layer` 属性(整型,L1-L7 层号)在 A4 schema registry 中登记为可聚合过滤维度,作为 KPI #7 基础计数的 server 聚合锚点(详见 F5⑧)。本章 F2③/F3⑧/F4⑧/F5⑧/F4d 全文凡出现 `kind:"network"` 处均标注「候选值,待工单确认」。
-> 3. **KPI #7「团队佣金触发率」由 F5 落地基础读数**:V1 B3⑧ 明确 #7「为 V2 基础计数 / V4 完整下钻,V1 阶段 F 域未落地」(§1.6);**F5 佣金审计模块落地后由其提供 #7 基础读数**(§2.4.6 #7),V1 B3 已明确不承载 #7,**F5 为唯一产出方**。#7 口径以 V1 §2.4.6 权威定义为准(「L1 被推荐人首单 `commission.paid` ÷ 直推数」,不限 kind),不在 F5 悬空收窄(详见 F5⑧)。
-> 4. **排行榜奖池派发 / 取消资格端点归属确认**:V1 §Ch8 K2④/⑤ 已声明 `POST /api/admin/risk/leaderboard/:userId/disqualify` 写端点与奖池剔除由 F4d(V2)接管;**V2 落地须确认 F4d 不与 K2 在 `/api/admin/risk/` namespace 双写**,K2 仅产刷榜信号、F4d 持取消资格执行端点(详见 F4d⑤/⑦)。**排行榜正常派奖为 server 自动执行(§8.11.3),F4d 后台展示结算结果并提供纠错入口;all-time 奖池无自动 reset(§8.11.4 Resets In = —),其结算触发规则(milestone 触发或纯手动)须一并确认(详见 F4d②/④/⑤)**。
-> 5. **`residualPolicy`(较大侧未匹配处置 / 沉淀处置)— ✅ 已 PM 裁定**:裁定为**三档运营可配**枚举 `每月清零 | 每次对碰清零 | 转结`,默认 `每月清零`(前端 §8.4.1.2 权威,取代 §8.4.0.2「累积或备付金」并存表述);字段已解冻为有效写入(F3③ 列入参数 / F3⑤ PUT 接受校验 / F3-MD5 确认弹窗),改向「转结」前置 B1 红线核验。同时新增 `settlePeriod`(结算周期 每日/每周/每月,默认每月,§8.4.1.2)。
-> 6. **`binaryTrackMinUsd`(两轨门槛)结算路径单一口径 — ✅ 已 PM 裁定**:两轨任一未达 $1,000/月门槛 → 该周期匹配归零(前端 §8.4.1.2 权威,非 pending 批量结算);门槛恒按月口径,与结算周期正交。后台 UI 文案与结算逻辑据「归零」口径落地(详见 F3③)。
-> 7. **`commission/cooling-days` 权威归属**:候选三项——①F2 自持;②D5 共享(保持独立参数);③commission 结算引擎独立配置面。归属变化直接影响 F2⑤ 写入接口实现(若归 D5 则该端点退化为只读)。确认时同步明确与 B2 §7 冷却负债计算的取数路径(详见 F2③/④/⑤)。
-> 8. **F2 出口费率合并护栏**:`UNILEVEL_USDT[L1..L7]` 各层之和 25% 护栏为编辑自设,无 V1 / 前端 / 12 月节奏表依据,须 PM 确认。**原 Direct Rate-Tier(8-15%)与 Network L1 叠加风险已随 v3.7「直推固定 10% / Direct = `UNILEVEL_USDT[1]` 单一源」化解**(L1 仅计一次,名义总 22%,无 25% 叠加),无需额外合并出口护栏(详见 F2③)。
-> 9. **佣金类别 5 类 vs 6 类**:前端 §8.6 节标题写「5 类」,正文 table / filter pills / how-it-works 写「6 类(含 genesis)」;后台按 6 类实现而前端按 5 类过滤会致 genesis 数据在 `/team/commissions` 消失。**V2 sprint 前由 PM 与前端确认 genesis 是否纳入 filter pills 并更新 §8.6 标题,不得等到 V4**(详见 F5①)。
-> 10. **F4 注入比例 3%-10% 护栏与头部集中度阈值(top1≤25% / top5≤60%)**:均为编辑自设,无来源;**确认前 F4⑤ 接口校验从硬 400 改为可配告警(不硬阻断)或加超管覆盖确认门控**,避免上线即锁死业务可用性(详见 F4③/⑤)。
->
-> 全章遵循三条贯穿原则(§1.8):**server-canonical**(V 级晋升判定 / 费率 / 匹配比例 / 冷却 / 奖池权重 / 配额解锁 / 排行榜排序键全部服务端权威,client 仅 UI cache / preview,§9.11d.2 / §13.2)、**操作确认(Confirm-with-Reason)**(手动调 V 级 / 费率 / 匹配比例 / 培育奖 / 奖池注入 / 佣金撤销补发 / 配额覆盖 / 大使预算 / 排行榜派奖纠错 / 取消资格等放大流出或影响全站分润的高敏动作一律经业务专属确认弹窗 + 理由必填执行并落 A2 审计;其中放大资金流出方向(费率 / 倍率 / 奖池调升、佣金补发等)前置 B1 红线核验(低于红线 422 `COVERAGE_BELOW_REDLINE`),2026-06 操作确认决议)、**埋点优先**(所有分销与团队态势派生自 A4 事件流,佣金账与 KPI 只认 `is_server_authoritative=true` 的 server 事件)。
->
-> **默认值口径(§7 硬规则)**:本章参数默认值,凡 12 月节奏表 §6 覆盖者(V 级可见性 §6.3 / 双轨日封顶 §6.4 `binaryDailyCap`)**以 12 月节奏表为权威**;V 级门槛 / 等级奖励清单(培育奖 NEX 等)/ `UNILEVEL_USDT` / `UNILEVEL_NEX` / Partner Status 门槛 / 领导池票数 / 配额门 / 大使预算 / 排行榜奖池 / 佣金冷却天数等业务常量 12 月节奏表未覆盖,**以前端 §8.2–§8.11 / §13.2 / §13.3 现状为参考**并在文中标注「现状值」。三者冲突时以 12 月节奏表为准,就地注明前端现状值与差异(供开发对照现状↔目标)。**全章用户侧语言中性**:用 团队分润 / 影响力网络版税 / 双轨对碰 / Track A·B / 较小侧 / 平衡匹配 / 网络伙伴 / 自动分配;`left/right/spillover/upline/downline` 仅内部技术字段,用户侧与界面文案一律不暴露(§8.4 铁律)。
+- F2 只将新购买的多层 network 分成改为直属购买分成，并新增直属设备收益分成；平台额外支付，不减少成员原收益。两规则独立配置、同一政策版本审批；未配置禁用，不填正式费率。
+- F1 等级、培育奖，F3 二元对碰，F4 领导池、配额、大使和排行榜保持原公式、参数与入口。等级及关系网络的既有可见性规则不扩大新直属奖励的受益范围。
+- F5 保留历史 network、binary、peer、cultivation、leadership、genesis，新增 direct_purchase、direct_device_earning；八类金额按 USDT/NEX 分币种统计，新直属事件按结算组处置。
+- 高敏操作复用 A2 的确认、理由、审批、稳定命令号和审计；资金放大复用 B1 服务端覆盖率门；钱包资金和佣金账归 D4，不新建另一套账本。
+- 直属两类冷却归 F2 各自政策。其他佣金冷却沿用已有 commission 配置，提现冷却仍归 D5/H1；三者不可混用。
+- F3 双轨日封顶仍由 H1 Phase 派发；F4 排行榜反欺诈继续复用 K1、消费 K2，取消资格执行归 F4d。既有未确认的 F4 资金阈值、排行榜事件与 all-time 派奖触发口径不由本节另作裁决。
+- F1 的等级门槛与奖励清单、Partner Status 权益、领导池票权及配额继续使用各自已确认来源。直属政策不得继承旧 UNILEVEL_USDT/UNILEVEL_NEX 或固定 10% 默认。
+- 埋点命名、身份和通用属性继续归 A4；直属事件带结算号、来源和政策快照。统计只计真实已到账净额，不把待审批、冻结或已撤销奖励当作到账。
+- 账户侧文案使用可理解的业务名称，不暴露内部层级、字段或错误码；后台契约与权限由服务端权威执行。
 
 ---
 
 #### [F1] V-Rank 晋升管理
 
-**① 目的 & 对齐**: 管理 13 阶 V 级头衔体系(V0–V12)的阶梯门槛、server 晋升判定、以及每个 V 级的**运营可配等级奖励清单**派发,是团队分润体系的「身份与解锁」中枢——V 级决定网络版税扩展覆盖度、平级奖 / 领导池票数解锁、以及用户端网络深度可见性的渐进暴露。对齐前端 §8.2(V 级头衔体系 `/team/rank`)+ §13.2(V 级升级判定 server canonical)+ 12 月节奏表 §6.3(`ROYALTY_VISIBILITY_BY_VRANK` 可见性 gating)。服务的业务目标:用阶梯门槛与永久保留机制驱动持续团队业绩投入、用**可由运营自由编排的等级奖励清单**(USDT / NEX / 代金券 / 系统 SKU / 自定义项,每阶可多项,增删改走操作确认)强化晋升获得感、用可见性 gating 实现网络深度的渐进解锁(前期不暴露完整网络结构);为 B5 头部集中度监控供 V 级分布维度。**实物奖品 / 发货队列 / Claim 履约机制已下线**——奖励统一由结构化奖励清单表达,不再含需物流履约的实物条目。
+**① 目的 & 对齐**: 管理 13 阶 V 级头衔体系(V0–V12)的阶梯门槛、server 晋升判定、以及每个 V 级的**运营可配等级奖励清单**派发,是团队分润体系的「身份与解锁」中枢——V 级决定平级奖 / 领导池票数解锁、以及用户端网络深度可见性的渐进暴露。直属两类分成不按 V 级扩展层级。对齐前端 §8.2(V 级头衔体系 `/team/rank`)+ §13.2(V 级升级判定 server canonical)+ 12 月节奏表 §6.3(`ROYALTY_VISIBILITY_BY_VRANK` 可见性 gating)。服务的业务目标:用阶梯门槛与永久保留机制驱动持续团队业绩投入、用**可由运营自由编排的等级奖励清单**(USDT / NEX / 代金券 / 系统 SKU / 自定义项,每阶可多项,增删改走操作确认)强化晋升获得感、用可见性 gating 实现网络深度的渐进解锁(前期不暴露完整网络结构);为 B5 头部集中度监控供 V 级分布维度。**实物奖品 / 发货队列 / Claim 履约机制已下线**——奖励统一由结构化奖励清单表达,不再含需物流履约的实物条目。
 
 > **V3 / V4 头衔跨文档口径**:V3 / V4 头衔以前端 §8.2.1 为准——V3 = 「Captain 舰长」、V4 = 「Commander 指挥官」。12 月节奏表 §2.2「V 级阶梯渐进式深度解锁」表在 V3 行括号内使用 **Engineer**、V4-V5 行括号内使用 **Architect / Wing Leader** 作为辅助标记(非正式头衔),与 §8.2.1 的 Captain / Commander 不一致;后台配置面以前端 §8.2.1 为准,列入 V4 跨文档收口澄清。可见性 key 值逻辑不受头衔命名影响。
 
@@ -1289,7 +1270,7 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 | 编辑 V 级门槛 / 等级奖励清单(增删改奖励项)/ 可见性映射 | 增长运营(lead)/ 超管 | F1-MD2(理由必填;**奖励清单新增 / 调升资金类(USDT / NEX)项方向 + B1 红线预检**)(改门槛影响全站晋升节奏;增 / 调升资金奖励放大资金流出) | `admin.vrank_config_changed`(field / before / after / operator / reason) |
 | 手动补发 / 撤销单条奖励派发 | 财务(lead)/ 超管 | F1-MD4(理由必填;**资金类(USDT / NEX)补发方向 + B1 红线预检**)(资金类奖励变更,联动 D4 bill 与 C3 资产调整;代金券 / SKU 项补发为发账户权益,无 B1) | `admin.commission_reversed` / `admin.commission_reissued`(资金类,kind=cultivation 等,见 F5⑧)/ `admin.vrank_reward_granted`(代金券 / SKU 项) |
 
-> **手动调 V 级为高敏确认动作的依据(2026-06 操作确认决议)**:V 级直接决定网络版税扩展覆盖度、平级奖 / 领导池票数解锁与网络深度可见性,手动 promote 可绕过 server 判定放大下游分润、rollback 可剥夺已得权益,风险等级与 C3 余额调整对称,故执行权就高(增长运营 lead / 超管,原超管复核层级转为执行门槛)+ 业务专属确认弹窗 + 理由必填(server 强制非空 400 `REASON_REQUIRED`)+ 即时生效 + 实时告警超管 / 增长 lead。**server 判定为常态**(§13.2:所有晋升由 server 二次判定,client preview 仅 UI 提示,client 显 100% 仍可能被 server reject),手动覆盖仅用于纠错 / 申诉处置,不替代 server 判定。等级奖励清单编辑与单条奖励补发 / 撤销执行权以 F1⑥ 权限矩阵为准。**新增 / 调升资金类(USDT / NEX)奖励项与补发资金类奖励为放大资金流出方向,确认弹窗前置 B1 覆盖率红线核验(低于红线 422 `COVERAGE_BELOW_REDLINE`);代金券 / SKU / 自定义项及调降 / 删除 / 撤销 / 收紧方向不前置**。
+> **手动调 V 级为高敏确认动作的依据(2026-06 操作确认决议)**:V 级直接决定平级奖 / 领导池票数解锁与网络深度可见性,手动 promote 可绕过 server 判定放大下游分润、rollback 可剥夺已得权益,风险等级与 C3 余额调整对称,故执行权就高(增长运营 lead / 超管,原超管复核层级转为执行门槛)+ 业务专属确认弹窗 + 理由必填(server 强制非空 400 `REASON_REQUIRED`)+ 即时生效 + 实时告警超管 / 增长 lead。**server 判定为常态**(§13.2:所有晋升由 server 二次判定,client preview 仅 UI 提示,client 显 100% 仍可能被 server reject),手动覆盖仅用于纠错 / 申诉处置,不替代 server 判定。等级奖励清单编辑与单条奖励补发 / 撤销执行权以 F1⑥ 权限矩阵为准。**新增 / 调升资金类(USDT / NEX)奖励项与补发资金类奖励为放大资金流出方向,确认弹窗前置 B1 覆盖率红线核验(低于红线 422 `COVERAGE_BELOW_REDLINE`);代金券 / SKU / 自定义项及调降 / 删除 / 撤销 / 收紧方向不前置**。
 
 **④a 交互与弹窗规格**
 
@@ -1388,173 +1369,75 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 
 ---
 
-#### [F2] 网络版税费率
+#### [F2] 直属分成配置
 
-**① 目的 & 对齐**: 配置影响力网络版税的 L1–L7 数学层费率、Partner Status 升档门槛与权益、InfluenceScore 算法 clamp 与佣金冷却,是横向团队分润(Direct Royalty + Network Yield Bonus)的费率中枢。**直推费率固定 10%(`UNILEVEL_USDT[1]` 单一源),Partner Status 仅按月度网络活跃度解锁权益、不改费率**(对齐前端 v3.7 §8.3;原"Rate Tier 8/10/12/15% 按活跃度改费率"已废止)。对齐前端 §8.3(影响力网络版税 `/team/unilevel`)+ §13.3(Partner Status / InfluenceScore 关键参数)+ §9.11c.1(`commission/cooling-days`,`lib/v3/commission.ts:141`)。服务的业务目标:用 L1–L7 数学层费率与 InfluenceScore 驱动网络收益奖金、用 **Partner Status 权益(非费率)** 驱动网络活跃度投入、用 promotion 周倍率做限时拉升、用佣金冷却延迟佣金从计提到可提的解锁(沉淀);费率是平台利润出口的主要应付负债来源之一,须受兑付安全约束。**用户侧不暴露 L{N} 层级编号**(§8.6:UI 只展示「直推 DIRECT / 扩展 EXTENDED」二态,数学层 `UNILEVEL_USDT[layer]` 计算不动)。
+**① 目的 & 对齐**：作为具备 F2 配置权限的运营者，我想分别配置直接成员购买与设备实际收益的双币分成，以便控制平台额外奖励支出；作为审批者，我想核对整组改前改后与资金影响，以便一次批准一致的政策版本。对齐 App 现有 Team 直属分成页及后台 F5、A2、B1、D4。
 
-**② 后台界面**: L1–L7 费率面 + Partner Status 面 + InfluenceScore 面 + 冷却面,四区。
-1. **L1–L7 费率表**:`[layer / UNILEVEL_USDT% / UNILEVEL_NEX(per $1)/ promotion 周 multiplier(可选)/ 启停]`;UI 内部用 layer 标识,旁注「用户侧二分类:L1=直推(Direct Royalty 固定 10%)/ L2-L7=扩展(Network Yield Bonus)」。
-2. **Partner Status 升档表**:`[status(Standard / Verified / Premium / Diamond)/ 月度网络活跃度门槛 / 解锁权益(优先客服 / 新品优先 / AMA+VIP)/ 当前各档用户分布]`;**仅配置门槛与权益,直推费率恒 10% 不随档变**。
-3. **InfluenceScore 面**:公式参数只读展示 `clamp(1 + log10(monthlyNetworkVolume / 100), 1.0, 5.0)` + 下限 / 上限 clamp 可配。
-4. **冷却面**:`commission/cooling-days` 当前值 + 暂停某层结算开关(故障应急)+ 「commission 域独立参数 / 权威归属待 V2 确认」口径说明(**不与提现冷却 `withdrawCooldownDays` 混用**,见 ⑦)。
+A 直接邀请 B，只可获得 B 的这两类分成；B 邀请 C 时，这两类来源只奖励 B，不继续奖励 A。平台额外支付，B 的实付与设备原收益不因该奖励再次扣减。二元对碰、V 等级、培育奖、领导池、邀请注册礼及 Partner Status 保持独立规则；历史 network 佣金保留。新来源不再经过七层 network 引擎，不叠加旧层级、推广倍率或 Influence 系数；关闭或配置失败不恢复旧费率。
 
-**③ 可控参数**:
+**② 后台界面**：沿用 `/network/royalty`，展示「直属购买分成」「直属设备收益分成」两组参数、当前政策版本和生效时间。每组展示启用状态、总分成比例、USDT 占比、自动派生的 NEX 占比及冷却天数。NEX 价格只读引用现有价格服务，不在此新增行情配置。保留 Partner Status 权益门槛及其他奖励的独立冷却控制。
 
-| 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
-|---|---|---|---|---|
-| `UNILEVEL_USDT[L1..L7]` | **现状**(§8.3.1):`[10%, 5%, 3%, 2%, 1%, 0.5%, 0.5%]`(L1 折算入 Direct Royalty,L2-L7 合并入 Network Yield Bonus) | 各层 0–100%;`UNILEVEL_USDT[L1..L7]` 数组各层之和 ≤ 25%(护栏,见下注) | 仅新结算(改后对下一笔订单版税生效,不回溯已计提) | `/team/unilevel` Direct Royalty + Network Yield Bonus 金额(数学层常量) |
-| `UNILEVEL_NEX[L1..L7]`(per $1) | **现状**(§8.3.1):`[50, 20, 10, 5, 2.5, 1, 1]` NEX | 各层 ≥ 0 | 仅新结算 | `/team/unilevel` NEX 双币奖励(放大 NEX 流出) |
-| Direct Royalty 费率 | **固定 10%**(`UNILEVEL_USDT[1]` 单一源,§8.3.1 v3.7) | 不随活跃度变;如需全局调整走「调 L1–L7 费率」同口径(经 B1 覆盖率门) | 仅新结算 | `/team/unilevel` Direct Royalty 金额 + Partner Status chip(固定 10%) |
-| Partner Status 门槛 + 权益 | **现状**(§8.3.2):Standard `$0+`(基础)· Verified `$5,000+`(优先客服)· Premium `$50,000+`(新品优先)· Diamond `$500,000+`(AMA+VIP) | 门槛 ≥ 0 保序;**权益为非现金,不改费率** | 仅新评定周期(过去 30 天网络活跃度自动评定) | `/team/unilevel` Partner Status 进度卡(显示权益、不显示费率) |
-| InfluenceScore clamp 下/上限 | **现状**(§8.3.1 / §13.3):`clamp(…, 1.0, 5.0)` | 下限 ≥ 0;上限 ≤ 10(护栏) | 仅新结算 | `/team/unilevel` Network Yield Bonus 算法倍率(Influence Score 1.00–5.00) |
-| 佣金冷却 `commission/cooling-days` | **现状**(§9.11c.1,`lib/v3/commission.ts:141`):默认 **30d**;commission 域独立参数,**与提现冷却 `withdrawCooldownDays` 不同源**,权威归属待 V2 确认(候选:F2 自持 / D5 共享 / commission 结算引擎独立配置面,见引言阻断项 7) | 0–90 天 | 由其最终权威方下发(V2 确认后落地) | `/team/commissions` 冷却 N 天状态(§8.6:network / binary 佣金冷却现状)+ B1/B2 科目 7「佣金冷却未解锁」负债 |
-| promotion 周倍率(`unilevelPromoMultiplier`) | 默认 1.0(无 promo) | 1.0–3.0 | 限时(运营设定起止周,到期自动回 1.0) | `/team/unilevel` 限时活动话术(「Limited time · N× bonus」真实电商促销文案,不暴露 phase) |
+- 默认态：读取服务端当前快照，编辑为草稿；提交前显示两组改前改后。
+- 空状态：未配置明确显示「未配置，尚未启用」，两个规则均禁用；占位数字不是生产费率。
+- 加载态：保留表单结构，禁止提交。
+- 报错态：显示可读失败原因和重试；保留已编辑草稿；版本冲突要求重新读取并重新确认，不静默覆盖草稿。
 
-> **默认值口径**:`UNILEVEL_USDT` / `UNILEVEL_NEX` / Partner Status 门槛 / InfluenceScore clamp 为 12 月节奏表未覆盖的数学层 / 业务常量,以前端 §8.3.1 / §8.3.2 / §13.3 现状为参考;直推费率固定 10%、不入可变档;**佣金冷却 `commission/cooling-days` 默认 30d 取前端 §9.11c.1 现状**,其为 commission 域独立参数(V1 B2⑦),**与 H1 Phase dial `withdrawCooldownDays`(生效面在 D5)分属两条线,不同源、不得混用**——权威归属须在 V2 sprint 回源确认(见 ⑦ 及引言阻断项 7)。
->
-> **`UNILEVEL_USDT` 总和护栏来源**:护栏「`UNILEVEL_USDT[L1..L7]` 数组各层之和 ≤ 25%」**为编辑自设,无 V1 / 前端 PRD / 12 月节奏表依据**,PM 须在 V2 gate 前确认该上限是否符合业务需求,否则改为「须 PM 确认」并据结论修订。
->
-> **合并出口叠加风险——已随固定 10% 化解**:原顾虑(Direct Rate-Tier 8–15% 与 Network `UNILEVEL_USDT[L1]=10%` 在同一 L1 订单叠加、合并出口达 25%)**不再成立**——v3.7 下 **Direct Royalty = `UNILEVEL_USDT[1]` = 固定 10% 单一源**,L1 仅计一次(归 Direct),L2-L7 计入 Network,名义总额 = 10%+5%+3%+2%+1%+0.5%+0.5% = 22%,**无 25% 叠加**。B1 覆盖率按此 22% 名义出口约束即可,无需额外「合并出口上限护栏」。
+**③ 可控参数与数据字典**：以下字段为服务端权威，页面仅缓存。
 
-**④ 操作动作**:
-
-| 动作 | 执行权 | 确认弹窗 | 审计点(A2) |
+| 参数 | 类型 / 默认 | 范围与约束 | 生效时机 |
 |---|---|---|---|
-| 调 L1–L7 费率 / NEX 系数 | 增长运营(lead)/ 超管 | F2-MD1(理由必填;**上调方向 + B1 红线预检**)(上调费率放大佣金流出 / 应付负债) | `admin.commission_rate_changed`(field=UNILEVEL_USDT[L]\|UNILEVEL_NEX[L] / before / after / operator / reason) |
-| 调 Partner Status 门槛 / 权益 | 增长运营(lead) | F2-MD2(理由必填)(权益履约成本,但**不改费率、不直接放大现金流出**) | `admin.partner_status_changed`(field=partnerStatus.* / before / after / operator / reason) |
-| 设 / 撤 promotion 周倍率 | 增长运营(lead) | F2-MD3(理由必填;**设倍率(>1.0)方向 + B1 红线预检**)(限时放大流出,须设起止) | `admin.commission_promo_set`(multiplier / startAt / endAt / operator / reason) |
-| 暂停 / 恢复某层结算(故障应急) | 风控运营(lead)/ 增长运营(lead)(任一可独立执行) | F2-MD4(理由必填)(暂停影响用户应得分润) | `admin.commission_layer_paused`(layer / paused / operator / reason) |
-| 回滚误发佣金(联动 D 退回) | 财务(lead)/ 超管 | 复用 F5 撤销弹窗 F5-MD1(理由必填)(资产回退,联动 D4 + C3) | `admin.commission_reversed`(见 F5⑧) |
-| 调佣金冷却 `commission/cooling-days` | 增长运营(lead)/ 财务(lead)(任一可独立执行;**待 V2 确认最终权威方:若归 D5 共享则改去 D5 调整**) | F2-MD5(理由必填)(冷却影响佣金可提解锁节奏) | `admin.commission_cooling_changed`(before / after / operator / reason)(若归 D5 则由 D5 记录) |
+| policyVersion / expectedVersion | 非负整数，初始 0 | 整组比较版本；批准后递增 | 一次批准两规则 |
+| effectiveAt | 服务端批准时生成的 ISO UTC；未配置 null | 只读；按来源确认时间选择政策，不追溯补奖 | 批准成功后立即生效 |
+| purchase / deviceEarning | 两个恒有对象 | 购买与设备收益独立规则 | 同一政策版本 |
+| enabled | boolean，默认 false | 各自控制新计提；关闭不恢复七层 | 新来源 |
+| totalRatePct | decimal，未配置 0 | 0–100；启用时大于 0 | 新来源 |
+| usdtSharePct | decimal，未配置占位 50 | 0–100；启用时严格大于 0 且小于 100 | NEX 占比恒为 100 减该值 |
+| coolingDays | integer，未配置 0 | 0–365 | 计提时保存快照 |
+| reason | string | 8–200 字 | 提交和审批审计 |
+| nexUsdtPrice | decimal/null | 现有价格能力；有效时大于 0 | 每笔奖励保存价格快照 |
 
-> **改费率为放大流出向须核 B1 的依据(2026-06 操作确认决议)**:上调 `UNILEVEL_USDT`(含直推固定费率的全局调整)/ 设 promotion 倍率会放大平台对用户的应付佣金负债(§1.8 原则一:放大资金流出的参数调整须先核验 B1 兑付覆盖率约束,§3.14 覆盖率权威归 B1)——**确认弹窗前置 B1 红线核验,低于红线 server 返回 422 `COVERAGE_BELOW_REDLINE` 拒绝执行;下调 / 撤 promo / 暂停结算等收紧方向不前置**。**Partner Status 仅动非现金权益,不入此约束**。原复核层级转为执行门槛:调费率原复核为超管层级,执行权就高 = 增长运营(lead)/ 超管;其余动作执行权为对应角色 lead 层级。所有确认弹窗动作经理由必填(server 强制非空 400 `REASON_REQUIRED`)即时生效,落 A2 审计并实时告警超管 / 对应域 lead。**佣金冷却 `commission/cooling-days` 与提现冷却 `withdrawCooldownDays` 是两个独立参数**:后者是 H1 Phase dial(生效面 D5),前者是 commission 域参数(默认 30d),**开发不得混用、不得视为同源拐点**;`commission/cooling-days` 权威归属须 V2 回源确认(候选三项见引言阻断项 7),确认前 F2 暂作配置 / 展示面经确认弹窗 + 理由必填。
+购买基数为设备订单实付 USDT，赠送、券抵扣及零实付不计。设备收益基数为真实已入账凭证的 USDT 加 NEX 按当笔价格折算的 USDT；试用影子收益、活动/团队奖励、邀请佣金、开发模拟和测试工作器不计。免费手机的合格真实任务按实际凭证参与。总分成按 USDT/NEX 比例拆分，金额向下取六位；无价格或任一币舍入为零不伪造双币到账。参数变更不重算旧账。
 
-**④a 交互与弹窗规格**
+**④ 操作动作与验收**：编辑草稿 → 确认理由与影响 → A2 待审批 → 批准生效或拒绝。禁止逐字段生效、过期覆盖、绕审批写生效或未配置套用固定 10%。
 
-**(1) 动作触发总表**
+- Given 有配置权限且 B1 允许，When 提交完整两规则并获 A2 批准，Then 一次产生一个政策版本，GET 读回和刷新一致。
+- 异常1：Given 版本已变化，When 提交或审批重放，Then 整组拒绝，显示冲突并提供重新读取；不更新任一规则。
+- 异常2：Given 权限缺失、理由不足或比例越界，When 提交，Then 阻止并明确原因；服务端直调同样拒绝。
+- 异常3：Given B1 覆盖率不足，When 任一规则启用、任一币有效支出率增加或冷却缩短，Then 拒绝放大；停用或实际收缩仍可提交。
+- 异常4：Given 网络超时或重复点击，When 重试，Then 沿用同一命令号核对 A2，不重复建立生效版本；待审批不得显示为已生效。
 
-| 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
-|---|---|---|---|---|
-| 调 L1–L7 费率 / NEX 系数 | ②第 1 区费率表行尾「编辑该层」 | 行内按钮 | 仅增长运营 lead / 超管渲染 | 打开弹窗 F2-MD1 |
-| 调 Partner Status 门槛 / 权益 | ②第 2 区升档表行尾「编辑该档」 | 行内按钮 | 仅增长运营 lead / 超管渲染 | 打开弹窗 F2-MD2 |
-| 设 / 撤 promotion 周倍率 | ②第 1 区费率面「设置限时倍率」/ 生效中倍率条「撤销」 | 主按钮 / 行内按钮 | 仅增长运营 lead / 超管渲染;已有生效中 promo 时「设置」置灰(先撤后设) | 打开弹窗 F2-MD3 |
-| 暂停 / 恢复某层结算 | ②第 4 区冷却面「暂停该层 / 恢复该层」 | 开关(警示色) | 仅风控运营 lead / 增长运营 lead / 超管渲染 | 打开弹窗 F2-MD4 |
-| 回滚误发佣金 | 经 F5 佣金审计页发起(F5④a) | 行内按钮 | 见 F5 | 打开 F5-MD1 |
-| 调佣金冷却 | ②第 4 区冷却面「编辑冷却天数」 | 行内按钮 | 仅增长运营 lead / 财务 lead / 超管渲染;若 V2 确认归 D5 则本控件转只读跳 D5 | 打开弹窗 F2-MD5 |
-| 查看 InfluenceScore 公式 | ②第 3 区 | 只读视图(clamp 可配走 F2-MD1 同口径) | 恒可用 | 就地查看,无弹窗 |
+**④a 交互与弹窗规格**：
 
-**(2) 弹窗规格(逐弹窗)**
+| 触发控件 | 响应 | 可用条件与反馈 |
+|---|---|---|
+| 启用选择、比例、冷却数值框 | 当前草稿 | 使用原生选择和数值控件；NEX 占比只读派生 |
+| 生效时间 | 服务端批准记录 | 只读；审批成功后立即对新来源生效 |
+| 提交审批 | 现有操作确认弹窗 | 有权限、输入有效、快照已加载且有改动 |
+| 确认 | 一张 A2 提案 | 完整两规则、版本、理由；禁止重复；明确待审批 |
+| 取消 | 返回草稿 | 不提交，保留输入 |
+| 重新读取 / 放弃草稿并重载 | 当前页面 | 不静默覆盖已有草稿；失败保留输入并可重试 |
+| 调整权益门槛 / 其他奖励冷却 | 原独立确认链路 | 不改直属政策，不恢复多层费率 |
 
-##### [F2-MD1] 调 L1–L7 费率 / NEX 系数确认
-- **功能**:更新某数学层的 `UNILEVEL_USDT[L]` / `UNILEVEL_NEX[L]`(或 InfluenceScore clamp),确认即生效,仅新结算生效,不回溯已计提。
-- **布局结构**:1. **信息区**:layer 编号 + 用户侧二分类旁注(L1=直推 / L2-L7=扩展)/ 当前 USDT% / NEX 系数 / 当前七层费率全表。2. **影响预览区(必有)**:before→after 并排展示 + **七层总和重算预览**(≤ 25% 护栏校验回显,违反阻断;护栏为编辑自设待 PM 确认,③ 注);**上调方向 B1 红线核验结果回显**(server 预检执行后覆盖率,**低于红线时红线警示条渲染 + 确认钮置灰**,文案含「server 将拒绝(422 `COVERAGE_BELOW_REDLINE`)」);提示行「仅新结算生效,不回溯已计提;L1 为直推固定 10% 单一源,全局调整同口径」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
+确认弹窗含两类改前/改后、当前版本、批准后立即生效说明和资金影响，理由必填 8–200 字；放大方向复用 B1 预检。提交失败在原弹窗显示可读错误并保留输入；关闭取消始终可达。
 
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标 UNILEVEL_USDT[L](%) | 数字输入 | 否(至少改一项) | 0–100%;七层和 ≤ 25%(③ 护栏,server 复核) | 当前值 |
-| 目标 UNILEVEL_NEX[L](per $1) | 数字输入 | 否(至少改一项) | ≥ 0(③) | 当前值 |
-| InfluenceScore clampMin / clampMax | 数字输入 | 否(至少改一项) | 下限 ≥ 0 / 上限 ≤ 10(③ 护栏) | 当前值 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
+**⑤ 接口**：
 
-- **按钮区**:`[取消]` · `[确认调费率]`(警示色主按钮;均未变更 / 护栏违反 / B1 阻断 / reason 未达标时置灰;loading 防双击)。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(上调方向 B1 阻断,弹窗不关,server 回传当前覆盖率与红线值内联展示)/ 400(护栏越界,回传违规层)/ 400 `REASON_REQUIRED` / 409(费率已被他人变更,提示刷新当前值)/ 403。
-- **成功反馈**:弹窗关闭;费率表行就地更新 + 总和重算;toast「费率已更新 · 仅新结算生效 · 已记审计」;事件 `admin.commission_rate_changed`(携 `coverage_checked`)落 A2;实时告警超管 / 增长运营 lead。
+| 接口 | 权限 / 请求 | 返回与约束 |
+|---|---|---|
+| GET /api/admin/teams/direct-referral-policy | F2 读取 | source、serverCanonical、sourceEnvironment、runId、configured、policyVersion、effectiveAt、nexUsdtPrice、purchase、deviceEarning |
+| GET /api/config/commission/direct-referral | 公开只读 | 同一当前生效政策；两个规则恒在，未配置返回禁用占位 |
+| PUT /api/admin/teams/direct-referral-policy | network_f2_royalty_rate；Idempotency-Key | expectedVersion、purchase、deviceEarning、reason；须经 A2，不接受客户端生效时间、行情或另一份 NEX 比例 |
+| A2 f_direct_referral_policy | target=direct_referral_policy/current | 服务端重验权限、版本、整组参数及真实资金方向 |
 
-##### [F2-MD2] 调 Partner Status 门槛 / 权益确认
-- **功能**:更新某档月度网络活跃度门槛与解锁权益(非现金,不改费率),确认即生效,仅新评定周期生效。
-- **布局结构**:1. **信息区**:status 档名 / 当前门槛 / 当前权益 / 该档当前用户分布。2. **影响预览区**:before→after 门槛与权益 diff;门槛保序校验回显(Standard ≤ Verified ≤ Premium ≤ Diamond,违反阻断);提示行「仅动非现金权益,直推费率恒 10% 不随档变,不入 B1 现金门」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
+页面通过既有 A2 提案入口提交，审批重放使用完整快照；未经批准不得直接生效。公开配置缺价格可返回 null，结算等待有效价格；读取失败不得伪造禁用成功快照。
 
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标门槛(USD) | 数字输入 | 否(至少改一项) | ≥ 0 且各档保序(③,server 复核) | 当前值 |
-| 权益描述 | 文本输入 | 否(至少改一项) | 非现金权益文本 | 当前值 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
+**⑥ 权限 & 审计**：读取沿用 F2 读取权限，编辑沿用 `network_f2_royalty_rate`，其他独立政策沿用对应原权限。服务端是最终授权边界。审计记录操作人、理由、命令号、两规则改前改后、期望/实际版本、生效时间、审批及失败结果；追加记录，不覆盖历史。
 
-- **按钮区**:`[取消]` · `[确认调升档配置]`(主按钮;未变更 / 失序 / reason 未达标时置灰;loading 防双击)。
-- **错误态**:400(门槛失序,内联警示)/ 400 `REASON_REQUIRED` / 409(提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;升档表行就地更新;toast「Partner Status 配置已更新 · 仅新评定周期生效 · 已记审计」;事件 `admin.partner_status_changed` 落 A2;实时告警超管 / 增长运营 lead。
+**⑦ 风控 & 联动**：整组原子比较版本；锁目标固定为 `direct_referral_policy/current`。启用、两币有效支出率任一增加或有效规则冷却缩短均属放大，B1 服务端复验；停止或真实收缩不能误挡。结算归属、价格及政策保存快照，F5 对同一结算组安全处置；退款后禁止补发，待追回不能标作已完成追回。A2 审批、B1 覆盖率、D4 钱包账本、F5 审计和 NEX 行情各沿用原归属，避免重复配置。
 
-##### [F2-MD3] 设 / 撤 promotion 周倍率确认
-- **功能**:设定限时 `unilevelPromoMultiplier`(含起止周,到期自动回 1.0)或提前撤销生效中倍率,确认即生效。
-- **布局结构**:1. **信息区**:当前倍率 / 生效中 promo 起止(如有)。2. **影响预览区(必有)**:设方向——倍率 before→after + 预计放大佣金流出测算(server 预检按近 4 周版税基数 × 倍率下发)+ **B1 红线核验结果回显**(低于红线阻断 + 置灰,422 文案);撤方向——「提前终止限时活动,前端话术同步下线」提示。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标 multiplier | 数字输入(步进 0.1) | 设时必填 | 1.0–3.0(③ 范围) | 1.0 |
-| startAt / endAt | 日期区间选择 | 设时必填 | endAt > startAt;起止为周边界 | 空 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认设置倍率]` / `[确认撤销倍率]`(警示色主按钮,按方向取文案;B1 阻断(设)/ 区间非法 / reason 未达标时置灰;loading 防双击)。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(设方向 B1 阻断)/ 400(倍率或区间越界)/ 400 `REASON_REQUIRED` / 409(已有生效中 promo 或已被撤,提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;费率面 promo 条就地更新;toast「限时倍率已设置 / 已撤销 · 已记审计」;事件 `admin.commission_promo_set` 落 A2;实时告警超管 / 增长运营 lead。
-
-##### [F2-MD4] 暂停 / 恢复某层结算确认
-- **功能**:故障应急暂停(或恢复)某数学层的版税结算,确认即生效。
-- **布局结构**:1. **信息区**:layer 编号 / 当前启停态 / 该层近 7 日结算量(server 下发)。2. **影响预览区(必有)**:暂停方向**「该层用户应得分润将停止计提,恢复后不自动补结」红色警示条恒显**;受影响用户量预估;提示行「故障应急动作,尽快恢复并经 F5 审计面核对漏结」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认暂停该层]` / `[确认恢复该层]`(警示色主按钮,按方向取文案;reason 未达标时置灰;loading 防双击)。
-- **错误态**:400 `REASON_REQUIRED` / 409(该层启停态已被他人变更,提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;层开关态就地更新;toast「该层结算已暂停 / 已恢复 · 已记审计」;事件 `admin.commission_layer_paused` 落 A2;实时告警超管 / 风控 lead / 增长运营 lead。
-
-##### [F2-MD5] 调佣金冷却天数确认
-- **功能**:更新 `commission/cooling-days`(佣金计提到可提的解锁天数),确认即生效;权威归属待 V2 确认(若归 D5 本弹窗下线转跳 D5)。
-- **布局结构**:1. **信息区**:当前 coolingDays(默认 30d)/ authorityOwner 待确认标记。2. **影响预览区**:before→after 并排展示 + B1/B2 科目 7「佣金冷却未解锁」负债变化预估(server 预检下发);**「与提现冷却 `withdrawCooldownDays` 不同参数、不同源,勿混用」提示条恒显**;调短方向提示「加速佣金可提,放大短期兑付压力(B2 负债释放提前)」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标 coolingDays | 数字输入(整数) | 是 | 0–90 天(③ 范围);不得与当前值相同 | 当前值 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认调冷却天数]`(主按钮;未变更 / 越界 / reason 未达标时置灰;loading 防双击)。
-- **错误态**:400(越界,内联警示)/ 400 `REASON_REQUIRED` / 409(提示刷新)/ 403(含权威已移交 D5 后本端点退化只读的 403 提示)。
-- **成功反馈**:弹窗关闭;冷却面就地更新;toast「佣金冷却已更新 · 已记审计」;事件 `admin.commission_cooling_changed` 落 A2;实时告警超管 / 增长运营 lead / 财务 lead。
-
-**⑤ 接口**:
-- `GET /api/admin/config/commission/rates` — 返回 `{ unilevelUsdt:[...7], unilevelNex:[...7], directRoyaltyRate: 0.10(固定 = unilevelUsdt[0]), partnerStatus:[{tier, thresholdUsd, perk}], influenceScore:{ clampMin, clampMax, formula }, promoMultiplier:{ value, startAt, endAt }, layerPaused:[...] }`,**server-canonical**。
-- `PUT /api/admin/config/commission/rates` — 更新 `UNILEVEL_USDT` 费率 / Partner Status 门槛权益 / InfluenceScore clamp / promotion;经确认弹窗提交(F2-MD1 / F2-MD2 / F2-MD3,body 携 reason,server 校验非空 400 `REASON_REQUIRED`)即时生效;**上调 `UNILEVEL_USDT` / 设 promo 前置 B1 覆盖率红线校验(低于红线返回 422 `COVERAGE_BELOW_REDLINE` 拒绝执行)**;Partner Status 权益调整不入 B1 现金门。
-- `GET /api/admin/config/commission/cooling-days` — 返回 `{ coolingDays, authorityOwner(待 V2 确认:"F2"\|"commission-domain"\|"D5-shared"), asOf }`(对齐前端 `GET /api/config/commission/cooling-days`,§9.11c.1);**此为 commission 域独立参数,不复用提现 `withdrawCooldownDays` 端点**。
-- `PUT /api/admin/config/commission/cooling-days` — 更新佣金冷却天数;经确认弹窗 F2-MD5(body 携 reason)即时生效;**V2 回源确认前 F2 暂持此写入面;若确认归 D5 共享,则改由 D5 调整入口接管,本端点退化为只读投影**(归属确认是引言阻断项 7,直接决定本端点是写入面还是只读)。
-- `POST /api/admin/config/commission/layer/:layer/pause` — 暂停 / 恢复某层结算(故障应急);经确认弹窗 F2-MD4(body 携 reason,server 校验非空 400 `REASON_REQUIRED`)即时生效。
-- **server-side 计算(非 admin)**:版税在 §8.3.1 公式由 server 结算(Direct Royalty = `Σ(L1 月订单额) × 10%`,固定 `UNILEVEL_USDT[1]`;Network Bonus = `Σ(L2-L7 各层订单额 × UNILEVEL_USDT[layer]) × InfluenceScore`);F2 后台提供费率配置,**费率 server-canonical**,client 不算佣金账。
-
-**⑥ 权限 & 审计**:
-
-| 动作 \ 角色 | 超管 | 财务 | 增长 | 风控 | 只读审计 |
-|---|---|---|---|---|---|
-| 查看费率 / Partner Status / 冷却 | ✅ | ✅(只读) | ✅ | ✅(只读) | ✅(只读) |
-| 调费率(UNILEVEL_USDT)/ Partner Status / promo | ✅ | — | ✅(lead) | — | — |
-| 调佣金冷却(待 V2 权威确认) | ✅ | ✅(lead,任一可独立执行) | ✅(lead,任一可独立执行) | — | — |
-| 暂停 / 恢复某层结算 | ✅ | — | ✅(lead,任一可独立执行) | ✅(lead,任一可独立执行) | — |
-| 回滚误发佣金(经 F5-MD1) | ✅ | ✅(lead) | — | — | — |
-
-> 「✅(lead)」指对应角色的 lead 层级,member 不可执行(2026-06 操作确认决议:原复核层级转为执行门槛)。审计字段引用 A2 统一 schema:`field / before / after / scope(layer\|tier\|promo\|cooling\|pause) / operator / reason / ts`。
-
-**⑦ 风控 & 联动**:
-- **费率 server-canonical**:`UNILEVEL_USDT`(含固定 10% 直推)/ `UNILEVEL_NEX` / Partner Status 映射 / InfluenceScore 全部 server 权威,client 仅展示版税金额(§9.11d.2 / §13.2);后台改费率仅作用于下一笔订单结算,不回溯已计提佣金。
-- **佣金冷却独立于提现冷却(关键区分)**:`commission/cooling-days`(commission 域参数,默认 30d,§9.11c.1)作用于「佣金从计提到可提的解锁」;`withdrawCooldownDays`(H1 Phase 10 dial,V1 §1.7 / B2⑦ / B4 dial 表注)作用于「提现申请的冷却」,生效面在 D5。**两者是不同参数、不同源、不得混用**——即便节奏拐点相近也不可视为同源;`commission/cooling-days` 权威归属(候选三项见引言阻断项 7)须在 V2 sprint 回源确认后落 §3.14,同步明确与 B2 §7 冷却负债计算的取数路径。
-- **撤销联动 D 退回**:误发 / 异常佣金撤销时,server 原子回退用户余额 + 在 D4 落冲正 bill(§3.14:D4 唯一记账),联动 C3 资产调整;撤销窗口受冷却期保护(冷却内未解锁佣金可直接核减,已提现部分走 C3 追回流程)。
-- **放大流出前置约束**:上调费率 / 设 promotion 前 server 强制核验 B1 覆盖率(§1.8 原则一);费率是平台利润出口,放大须经兑付安全门。
-
-**⑧ 埋点(事件)**:
-对齐 A4(§2.4.5③ money / ⑥ admin family):
-- **产生(资金记账,§2.4.5③)**:`commission.paid` — 触发点:被推荐人订单产生网络版税(Direct + Network Yield Bonus);属性 `userId / kind: "network"(候选值,待 F5⑧ blocking 工单 A4 确认后统一;若选 unilevel 则全文同步)/ currency(USDT\|NEX)/ amount / sourceUserId / layer / partnerStatus / influenceScore / is_server_authoritative: true / ts`;落 D4 commission bill + 喂 B1/B2 应付负债 + KPI #7(由 F5 提供基础读数,§2.4.6)。
-- **产生(admin 审计,须 A4 schema registry 注册)**:
-  - `admin.commission_rate_changed` — 触发点:`UNILEVEL_USDT` 费率 / InfluenceScore 确认执行(F2-MD1;Partner Status 权益变更走 `admin.partner_status_changed`);属性 `field / before / after / operator / reason / coverage_checked(B1 覆盖率前置标记)/ ts`;喂 A2 + B4 + L3。
-  - `admin.commission_promo_set` / `admin.commission_layer_paused` / `admin.commission_cooling_changed` — 触发点:promotion 设撤 / 某层暂停 / 佣金冷却调整;属性见 ④;喂 A2 + B4。
-- **消费**:`checkout.completed` / `wallet.reinvest`(订单 paid → 触发版税结算)、`risk.multi_account_flagged`(K1 簇 → 异常佣金标记);F2 消费订单事实作版税结算输入,不作其权威产生方。
-- **喂给**:D4 commission bill、B1/B2 应付负债(科目 7 佣金冷却未解锁)、KPI #7(经 F5)。
+**⑧ 埋点(事件)**：政策调整仅产生后台审批与配置审计事件。真实分成事件沿用佣金事件体系，新增 `direct_purchase`、`direct_device_earning`，携带结算号、来源编号、政策版本、币种、金额及服务端权威标记；历史 `network` 继续可查。不得以政策保存或待审批事件充当资金到账事件。
 
 ---
-
 #### [F3] 双轨结算引擎
 
 **① 目的 & 对齐**: 配置双轨对碰(平衡匹配)的较小侧匹配比例、两轨最低门槛、自动分配(内部 spillover)规则、结算周期与沉淀处置策略、月度 GV 归零,并以只读方式展示 H1 Phase 派发的双轨日封顶现值。对齐前端 §8.4(双轨平衡匹配 `/team/binary`,含 §8.4.1.2 结算周期与沉淀处置)+ §13.4.1(`binaryDailyCapUSD` Phase 派发)+ 12 月节奏表 §6.4(`binaryDailyCap` 权威值)。服务的业务目标:用 `min(A, B) × 10%` 较小侧匹配公式鼓励两轨均衡发展、用两轨门槛形成业绩沉淀缓冲、用自动分配增强网络绑定降低退出意愿、用日封顶随 Phase 收紧延长 LTV 并控制日结流出。**用户侧一律称 Track A / Track B,不暴露翼 / 左 / 右 / spillover / 上线 / 下线**(§8.4 铁律;内部 enum `binary: "left"|"right"` 仅技术字段)。
@@ -1867,137 +1750,69 @@ flowchart TD
 
 #### [F5] 佣金事件审计
 
-**① 目的 & 对齐**: 六类佣金事件(network / binary / peer / cultivation / leadership / genesis)的统一实时流水、异常预警、冷却状态与撤销 / 补发处置入口,是团队分润体系的「资金出口审计」中枢——佣金发放是平台利润出口,撤销联动 D 退回。对齐前端 §8.6(`/team/commissions` 佣金事件)。服务的业务目标:统一审计六类佣金流水以保证账实相符、异常金额 / 层比例异常预警以堵套利、提供撤销 / 补发 / 暂停的处置入口;为 KPI #7(团队佣金触发率)提供基础读数(§1.6:V2 基础计数)。
+**① 目的 & 对齐**：作为财务和风控运营，我想按来源、奖种、币种和状态核对佣金与钱包账本，以便安全处置异常、冻结、退款及待追回金额。对齐 App 佣金列表、直属分成明细、后台 F2 政策、A2 审批、B1 覆盖率与 D4 账本。
 
-> **佣金类别数量「5 类 vs 6 类」前端内部不一致(V2 gate 阻断,引言阻断项 9)**:前端 §8.6 section 标题写「5 类」,但正文 table / filter pills(全部 / 网络版税 / 平衡匹配 / 平级 / 培育 / 领导池 / 创世)/ how-it-works(`ALL 6 COMMISSION TYPES`)均列 **6 类(含 genesis)**。**后台按 6 类实现而前端按 5 类过滤,会导致 genesis 数据在前端 `/team/commissions` 页消失的 UX bug**。须**升级为 V2 gate 阻断性确认项**,由 PM 在 V2 sprint 前与前端确认 genesis 是否纳入 filter pills 并更新 §8.6 标题,**不得等到 V4 收口**。后台 PRD 暂以 6 类实现(含 genesis 审计),最终以前端确认结论为准。
->
-> **genesis 类批次依赖说明**:genesis 类佣金计提权威归 **G4(V3)**,F5 审计消费其 `commission.paid(kind=genesis)` 事件但不产出该类事件;**V2 阶段若 G4 未落地,genesis 行在 F5 流水显示为空集,不阻断 F5 其余五类审计**。
+**② 后台界面**：沿用 `/network/commissions`。八类为直属购买、直属设备收益、历史网络版税、双轨匹配、平级、培育、领导池、创世；历史 `network` 仅保留旧账，不代表新来源仍按七层计提。所有分类汇总、筛选、分页、脱敏导出与详情使用同一查询口径；双币金额分币种汇总，不相加为一个金额。
 
-**② 后台界面**: 六类佣金流水 + 异常预警 + 冷却状态 + 撤销/补发,四区。
-1. **六类佣金实时流水**:`[commissionId / userId / kind(network\|binary\|peer\|cultivation\|leadership\|genesis)/ currency(USDT\|NEX)/ amount / sourceUserId / layer(network 类)/ 结算时间 / 冷却剩余天数 / 状态(cooling\|unlocked\|withdrawn\|reversed)]`;支持按 kind / 币种 / 用户 / cohort / 状态筛选(对齐 §8.6 filter pills:全部 / 网络版税 / 平衡匹配 / 平级 / 培育 / 领导池 / 创世)。
-2. **异常预警面**:`[异常类型(金额 >3σ / 层比例异常 / 高频)/ userId\|cluster / 证据 / 关联 K 簇 / 处置态]`(联动 K)。
-3. **冷却状态面**:各 kind 冷却期现值(network / binary 佣金冷却 `commission/cooling-days` 默认 30d;peer / leadership / genesis / cultivation 无独立冷却)+ 冷却中未解锁佣金汇总(对应 B1/B2 科目 7)。
-4. **撤销/补发面**:单笔撤销(退款对应)+ 批量异常核查 + 暂停特定用户佣金(反欺诈调查)入口。
+列表展示佣金号、结算组号、奖种、受益账户/来源账户、单币金额、来源编号、结算时间、冷却与状态。直属明细额外展示完整双币组、设备、政策版本、基数、价格快照、是否发生退款及两币待追回数额。没有真实来源路由时直接展示来源编号，不伪造跳转。保留异常预警、异常阈值、按奖种暂停/恢复、操作历史及 D4/B1/L4/A2/A4 关联入口。
 
-**③ 可控参数**:
+- 默认态：真实汇总与游标事件，支持种类、币种、账户、账户群、状态查询。
+- 空状态：明确当前筛选无记录，保留筛选与返回。
+- 加载态：保留页面结构，禁重复查询和处置。
+- 报错态：停止使用旧快照执行写动作，保留查询条件并提供重试。
 
-| 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
-|---|---|---|---|---|
-| 六类佣金结算触发条件(只读口径) | **现状**(§8.6):network=被推荐人订单(实时)/ binary=双轨条件满足(每日)/ peer=同 V 级团员业绩 5%(每月,V3+)/ cultivation=下属升 V(实时,NEX)/ leadership=领导池周分红(每周,V3+)/ genesis=创世节点持有人排放(上所后) | 只读口径(各 kind 触发逻辑由 F1-F4 / G 域配置) | — | `/team/commissions` 六类汇总 grid + 时间线 |
-| 异常金额预警阈值(`commissionAnomalySigma`) | **3σ**(单笔金额偏离同 kind 均值 > 3 标准差 → 预警) | 2σ–5σ | 实时(下一笔评估) | 无用户侧(运营内部预警 + 联动 K) |
-| 层比例异常阈值(`layerRatioAnomalyPct`) | network 各层占比偏离 `UNILEVEL_USDT` 理论比 > 20% → 预警 | 10%–50% | 实时 | 无用户侧(联动 K4 套利维度) |
-| peer bonus 比例(`peerBonusRate`) | **现状**(§8.6 / §8.2.1):**5%**(同 V 级团员业绩,V3+) | 0–10% | 仅新结算周期(peer 每月结) | `/team/commissions` peer 类 + `/team/rank` 平级奖 |
-| 各 kind 冷却期 | **cultivation = 无冷却**(NEX 即时入账,§8.2.5)/ **peer / leadership = 无独立冷却期**(按各自结算节奏月结 / 周结)/ **genesis = 无独立冷却**(每日 USDT,§8.6)/ **仅 network + binary 受 `commission/cooling-days`(默认 30d)约束**(§8.6,commission 域参数,见 F2③/⑦,**不与提现冷却混用**) | 见 F2 冷却(仅 network / binary) | 由 `commission/cooling-days` 最终权威方下发(V2 确认) | `/team/commissions` 冷却 N 天状态(仅 network / binary 显冷却) |
+**③ 数据字典与可控参数**：
 
-> **默认值口径**:六类佣金触发条件为 §8.6 现状只读口径(各 kind 参数权威分散在 F1 cultivation / F2 network / F3 binary / F4 leadership / G 域 genesis);异常阈值(3σ / 层比例 20%)为 12 月节奏表未覆盖的反套利护栏,按异常检测惯例设默认并联动 K;peer bonus 5% 取 §8.2.1 / §8.6 现状。**冷却期精确口径**:仅 network + binary 受 `commission/cooling-days`(默认 30d,commission 域独立参数,F2③ 权威,与提现冷却 `withdrawCooldownDays` 不同源不混用)约束;cultivation / peer / leadership / genesis **均无独立冷却期**(cultivation NEX 即时入账无冷却,§8.2.5;peer / leadership 按月结 / 周结节奏入账;genesis 每日 USDT),与 §8.6 和 §8.2.5 完全对齐——开发不得误认为 peer 有 30d 冷却。
+| 字段 / 参数 | 约束 |
+|---|---|
+| kind | direct_purchase / direct_device_earning / network / binary / peer / cultivation / leadership / genesis |
+| status | cooling / unlocked / withdrawn / frozen / reversed / rejected / recovery_pending |
+| eventId / commissionId / version | 服务端单币事件标识与版本 |
+| settlementNo / sourceRef | 直属双币共用结算号；订单号或真实设备结算凭证号 |
+| sourceUserId / sourceDeviceId | 来源账户及设备，按权限展示 |
+| policyVersion / basisUsdt / nexUsdtPrice | 原始政策、计价基数和价格快照，不随政策修改 |
+| amountUSDT / amountNEX | 直属整组应发两币数量 |
+| recoveryPendingUSDT / recoveryPendingNEX | 尚未实际追回金额；不得当作已追回 |
+| reversalRecorded | 来源已退款或人工冲正时为 true；禁止补发 |
+| commissionAnomalySigma | 沿用现有 2–5、步长 0.5 的异常阈值 |
+| layerRatioAnomalyPct | 沿用现有 10%–50% 的历史网络异常阈值 |
 
-**④ 操作动作**:
+直属冷却天数归 F2 两类政策；其他奖励冷却仍归各自有效配置，不强制全部改为同一天数。新版政策不改旧事件快照。
 
-| 动作 | 角色 | 确认弹窗 | 审计点(A2) |
-|---|---|---|---|
-| 单笔佣金撤销(退款对应) | 财务(lead)/ 超管 | F5-MD1(理由必填) | `admin.commission_reversed`(commissionId / userId / kind / amount / refundRef / operator / reason) |
-| 批量核查 / 补发异常佣金 | 财务(lead)/ 超管 | F5-MD2(理由必填+B1 红线预检) | `admin.commission_reissued`(commissionId[] / kind / amount / operator / reason) |
-| 暂停特定用户佣金(反欺诈调查) | 风控(lead)/ 超管 | F5-MD3(理由必填) | `admin.commission_user_suspended`(userId / kinds[] / reason / operator) |
-| 设异常预警阈值(3σ / 层比例) | 风控(lead)/ 超管 | F5-MD4(理由必填) | `admin.commission_anomaly_config_changed`(field / before / after / operator / reason) |
+**④ 操作动作与验收**：查询、分页、详情、导出、冻结、提前解锁、解冻、冲正、合法补发、按奖种暂停/恢复与调整异常阈值。高敏处置都经确认、理由、稳定命令号与 A2；服务端重新核验状态、版本、权限和 B1。
 
-> **佣金撤销 / 暂停为高敏动作的依据**:佣金发放 = 平台利润出口与已入账 / 计提的应付负债,撤销 = 资产回退(联动 D4 冲正 bill + C3 追回已提现部分)、暂停 = 剥夺用户应得分润,风险等级与 D 域提现放行 / C3 余额调整对称,故经确认弹窗 + 理由必填执行(2026-06 操作确认决议:原复核层级转为执行门槛,执行权 = 对应角色 lead 层级 / 超管),落 A2 审计并实时告警。撤销须关联具体退款 / 套利证据(refundRef / 证据链);补发为放大资金流出方向,前置 B1 覆盖率红线预检。「风控(lead)」「财务(lead)」为对应角色的 lead 层级(V1 A1 member/lead 权限层级,见 F4b⑥ 角色对齐说明)。
+直属从任一币种行发起动作都必须作用于同一结算组，不能只改该行状态或 D4 记录。冷却或冻结期没有可消费钱包余额；双币入账同事务成功才显示已解锁。退款发生后未发放则取消，已发放则实际追回应退双币；余额不足记 `recovery_pending` 并保留尚待追回金额，不制造负可用余额，也不阻止购买者应得退款。退款、人工冲正后及待追回状态禁止补发；直属分成不复制补发，恢复须按同一原来源核对。
 
-**④a 交互与弹窗规格**
+- Given 两币同一结算，When 从单币行冻结、解锁或冲正，Then 服务端整组执行，钱包、佣金和账本一致；任一币失败整组回滚。
+- 异常1：Given 事件版本或状态已变化，When 确认处置，Then 拒绝并要求刷新，不覆盖并发结果。
+- 异常2：Given 已退款或待追回，When 尝试补发，Then 页面禁用并说明原因，直调服务端同样拒绝。
+- 异常3：Given 权限不足、短理由、无幂等号、B1 放大预检不通过，When 确认，Then 无资金变化，显示可读原因。
+- 异常4：Given 网络结果不确定，When 重试，Then 保持同一命令号并指引核对 A2，不把未知结果提示为成功。
+- 异常5：Given 导出超限、分页快照变化或完整性校验失败，When 导出，Then 不下载不完整文件，保留筛选供缩小范围或重试。
 
-**(1) 动作触发总表**
+**④a 交互与弹窗规格**：
 
-| 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
-|---|---|---|---|---|
-| 单笔佣金撤销 | ②(4)撤销/补发面 + ②(1)流水行内菜单「撤销」 | 菜单项 / 次按钮 | 仅 `cooling`/`unlocked` 态佣金可撤;`reversed` 态隐藏;财务(lead)/超管渲染 | 打开弹窗 F5-MD1 |
-| 批量补发 | ②(4)撤销/补发面「批量核查/补发」 | 主按钮 | 勾选 ≥1 条异常核查结果后可用 | 打开弹窗 F5-MD2 |
-| 暂停用户佣金 | ②(2)异常预警面行内「暂停佣金」+ ②(4)入口 | 菜单项 | 该用户未处于暂停态;风控(lead)/超管渲染 | 打开弹窗 F5-MD3 |
-| 设异常预警阈值 | ②(2)异常预警面顶部「阈值配置」 | 次按钮 | 风控(lead)/超管渲染 | 打开弹窗 F5-MD4 |
-| 查看流水 / 异常 / 冷却 | ②(1)-(3) 筛选条与 tab | 筛选控件 / 链接 | 恒可用(按角色裁剪) | 就地筛选 / 跳转视图,无弹窗 |
+| 触发控件 | 响应 | 可用条件 / 反馈 |
+|---|---|---|
+| 奖种卡、状态分布、筛选查询 | 同一服务端查询 | 切条件清空已选行；八类与七态完整 |
+| 下一批 | 服务端游标 | 继续同条件，失败可重试 |
+| 来源详情 | 当前行完整快照 | 可折叠；双币、退款和待追回信息同屏 |
+| 导出 | 脱敏 CSV 确认 | 理由必填，使用当前完整筛选，校验文件与行数 |
+| 冻结 / 提前解锁 / 解冻 | 对应业务确认 | 状态允许且有处置权限；直属明确整组 |
+| 冲正 | 证据编号与理由确认 | 可处置状态；服务端验证真实证据和退款事实 |
+| 批量补发 | 已选合法历史记录确认 | 不含已退款、人工冲正或待追回；直属分成须按原来源核对，不复制补发 |
+| 暂停奖种 / 恢复奖种 | 奖种选择与理由确认 | 以现有权限控制；恢复不自动解冻旧记录 |
+| 调整异常阈值 | 数值控件确认 | 当前值、合法范围、理由 |
+| D4 / B1 / L4 / A2 / A4 | 已有真实页面 | 按读取权限显示，缺关联显示原因 |
+| 取消 / 重试 | 当前页面 | 保留输入及筛选，无副作用 |
 
-**(2) 弹窗规格**
+**⑤ 接口**：PC `/api/admin/teams/commissions` 代理服务端 `GET /api/admin/commissions`；沿用 `kind/currency/userId/cohort/status/cursor/limit` 查询和 `/export` 脱敏导出。状态处置沿用既有 F5 A2 命令；服务端把直属行解析为同一结算组，再执行冻结、解锁、冲正、补发或暂停。返回八类汇总、七态分布及完整来源快照；不以列表当前页代替全量汇总。真实退款事实优先于客户端提交的状态或金额。
 
-##### [F5-MD1] 单笔佣金撤销确认
-- **功能**:撤销单笔已发放佣金(资产回退:冷却内未解锁直接核减,已提现走 C3 追回),确认即生效并联动 D4 冲正 bill。
-- **布局结构**:1. **信息区**:commissionId / userId(链 C1)/ kind / 币种+金额 / sourceUserId / 结算时间 / 当前状态(cooling|unlocked|withdrawn)/ 关联 K 簇与异常证据(如有)。2. **影响预览区**:server 预检回收路径(「冷却内直接核减」或「已提现,将走 C3 追回 $X」)+ D4 冲正 bill 预览。3. **输入区**:见下表。4. **按钮区**:取消 / 确认撤销。
-- **输入与选择控件**:
+**⑥ 权限 & 审计**：读取、异常配置、处置和冲正/暂停分别沿用 `network_f5_read`、`network_f5_write`、`network_f5_commission_dispose`、`network_f5_commission_reject`。权限由服务端验证，前端仅提供便利。审计追加记录结算组、源/结果事件、两币实际金额、追回与待追回、证据、理由、命令号、审批人及时间。导出按现有脱敏策略处理。
 
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| refundRef(退款/证据关联) | 单行文本(关联单号) | 是 | server 校验单号存在,不存在 422 | 空 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
+**⑦ 风控 & 联动**：B1 检查仅资金放大；真实冻结、退款、释放及补发共用结算层，不能绕过两币事务。按来源唯一性防重复，不将政策版本加入防重键；退单重试不重复扣款、累计追回不超过原奖励。其他独立奖励保留原计算、冷却与处置；排行榜仅计合法净到账，不把未释放或已撤销奖励当作收入。D4、钱包、佣金状态与 A2 审计必须一致。
 
-- **按钮区**:`[取消]` · `[确认撤销]`(警示色主按钮;必填未过置灰;loading 防双击;携 `Idempotency-Key`)。
-- **错误态**:422 `REFUND_REF_NOT_FOUND`(弹窗不关,字段内联错误)/ 409(佣金已被撤销/状态变更,提示刷新)/ 400 `REASON_REQUIRED` / 403。
-- **成功反馈**:弹窗关闭;流水行状态更新 `reversed`;toast「已撤销并冲正 · 已记审计」;事件 `admin.commission_reversed`;实时告警;D4/B1/B2 联动核减。
-
-##### [F5-MD2] 批量补发异常佣金确认
-- **功能**:对核查确认的漏发/误发佣金批量补发(USDT/NEX 资金流出),确认即派发并落 D4 bill。
-- **布局结构**:1. **信息区**:本批条目数 / 按 kind 分组的补发金额合计 / 受影响用户数 / 核查依据摘要。2. **影响预览区**:server 预检「补发后兑付覆盖率」;低于黄线警示、低于红线阻断(确认钮置灰,文案含「server 将拒绝(422)」);server 分拣预览(可补发 / 被拦截条目清单)。3. **输入区**:reason(多行文本,必填,8–200 字)。4. **按钮区**:取消 / 确认补发。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(含 server 回传当前覆盖率,弹窗不关)/ 409(部分条目状态已变,展示失效清单)/ 400 / 403。
-- **成功反馈**:弹窗关闭;批量条目状态就地更新;toast「已补发 N 条 · 已记审计」;事件 `admin.commission_reissued`;实时告警;D4 落 bill + B1/B2 计提。
-
-##### [F5-MD3] 暂停用户佣金确认
-- **功能**:暂停特定用户的指定 kind 佣金发放(反欺诈调查期间),确认即生效,解除须再次确认。
-- **布局结构**:1. **信息区**:userId(链 C1)/ 当前各 kind 发放状态 / 关联 K1 簇 / K2 信号 / 本期已发放金额。2. **输入区**:见下表。3. **按钮区**:取消 / 确认暂停。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 暂停 kinds | 多选(六类佣金 chip) | 是(≥1) | 至少选 1 类 | 全选 |
-| reason | 多行文本 | 是 | 8–200 字;400 `REASON_REQUIRED` | 空 |
-
-- **错误态**:409(该用户该 kind 已暂停,提示刷新)/ 400 / 403。
-- **成功反馈**:弹窗关闭;反欺诈面该用户行标「已暂停」;toast「已暂停 · 已记审计」;事件 `admin.commission_user_suspended`;实时告警。
-
-##### [F5-MD4] 异常预警阈值配置
-- **功能**:调整异常金额预警阈值(σ 倍数)与层比例异常阈值,确认即对下一笔评估生效。
-- **布局结构**:1. **信息区**:两阈值当前值 / 最近 7 日各自触发预警次数(server 派生)。2. **影响预览区**:放宽方向(σ 调大 / 比例调大)展示警示行「预警灵敏度将下降」。3. **输入区**:见下表。4. **按钮区**:取消 / 确认变更。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| commissionAnomalySigma | 数字输入(步长 0.5) | 是 | 2–5(引③表) | 当前值 |
-| layerRatioAnomalyPct | 数字输入(%) | 是 | 10–50(引③表) | 当前值 |
-| reason | 多行文本 | 是 | 8–200 字;400 `REASON_REQUIRED` | 空 |
-
-- **错误态**:422(超③表范围,server 回传合法区间)/ 400 / 403 / 409。
-- **成功反馈**:弹窗关闭;预警面阈值就地更新;toast「阈值已生效 · 已记审计」;事件 `admin.commission_anomaly_config_changed`;实时告警。
-
-**⑤ 接口**:
-- `GET /api/admin/commissions?kind=&currency=&userId=&status=&cohort=&cursor=` — 六类佣金统一流水;返回 `{ items:[{ commissionId, userId, kind, currency, amount, sourceUserId, layer?, settledAt, coolingDaysLeft, status }], nextCursor }`,**server-canonical**(由 A4 `commission.paid` 事件流派生,非临时查询)。
-- `GET /api/admin/commissions/anomalies?type=&cursor=` — 异常预警列表(金额 / 层比例 / 高频)+ 关联 K 簇。
-- `POST /api/admin/commissions/:id/reverse` — 单笔撤销;payload `{ refundRef, reason }`(reason 空值 400 `REASON_REQUIRED`);**`Idempotency-Key` 必带**(资产回退防重复);确认弹窗 F5-MD1;server 原子核减 / 追回 + D4 冲正 bill。
-- `POST /api/admin/commissions/reissue` — 批量补发;payload `{ commissionIds:[...], reason }`;确认弹窗 F5-MD2;server 前置 B1 覆盖率红线核验(低于红线 422 `COVERAGE_BELOW_REDLINE`);`Idempotency-Key` 必带。
-- `POST /api/admin/users/:userId/commission/suspend` — 暂停特定用户佣金;payload `{ kinds:[...], reason }`;确认弹窗 F5-MD3。
-
-**⑥ 权限 & 审计**:
-
-| 动作 \ 角色 | 超管 | 财务 | 风控 | 增长 | 只读审计 |
-|---|---|---|---|---|---|
-| 查看六类流水 / 异常 / 冷却 | ✅ | ✅ | ✅ | ✅(只读) | ✅(只读) |
-| 单笔撤销 / 批量补发 | ✅ | ✅(lead) | — | — | — |
-| 暂停用户佣金 | ✅ | — | ✅(lead) | — | — |
-| 设异常阈值 | ✅ | — | ✅(lead) | — | — |
-
-审计字段引用 A2 统一 schema:`operator / role / action(reverse\|reissue\|suspend\|anomaly_config) / commissionId(s) / userId / kind / amount / refundRef / reason / ts`。
-
-**⑦ 风控 & 联动**:
-- **佣金发放 = 平台利润出口,撤销联动 D 退回**:六类佣金发放即在 D4 落 commission bill(§3.14:D4 唯一记账),撤销时 server 原子核减(冷却内未解锁直接核减 / 已提现走 C3 追回)+ D4 冲正 bill;账实相符 = `commission.paid` 事件计数与 D4 commission bill 加总对齐(任一不符触发对账告警,联动 D3/B2)。
-- **异常金额 / 层比例异常预警(联动 K)**:单笔 > 3σ 或 network 层占比偏离理论比 > 20% → 预警并喂 K4 评分(套利维度)+ B5 风险雷达;关联 K1 簇命中的异常佣金标红;F5 不重算评分,引用 K4(§3.14)。
-- **server 唯一佣金账**:佣金发放 / 撤销 / 状态流转 100% server-canonical(§9.11d.2:`Bills 客户端 push 无 server 二次入账 = 伪造账单`),client 仅展示流水与冷却态。
-
-**⑧ 埋点(事件)**:
-对齐 A4(§2.4.5③ money / ⑥ admin family):
-- **消费(六类佣金,§2.4.5③)**:`commission.paid`(`kind ∈ {network, binary, peer, cultivation, leadership, genesis}`)——F5 是六类佣金的**主审计消费方**,按 kind / currency / cohort 聚合流水 + 异常检测;`commission.paid` 由 F1(cultivation)/ F2(network)/ F3(binary)/ F4(leadership)/ G 域(genesis,V3)各自产生,F5 统一消费审计;**F5 是审计消费方,不自产 `commission.paid`**(与其余五类佣金保持一致分工原则)。
-- **产生(admin 审计,须 A4 schema registry 注册)**:
-  - `admin.commission_reversed` — 触发点:单笔佣金撤销确认执行;属性 `commission_id / user_id / kind / amount / currency / refund_ref / operator / reason / ts`;喂 A2 + D4(冲正 bill)+ B1/B2(核减应付负债)。
-  - `admin.commission_reissued` / `admin.commission_user_suspended` / `admin.commission_anomaly_config_changed` — 见 ④;喂 A2 + 对应消费方。
-- **peer 类佣金产生方归属(V2 gate 阻断,见引言阻断项 1 + 工单)**:**`peerBonusRate` 当前写在 F5③,但 F5 定位为审计消费方,不应既是产生方又是消费审计方**。peer 类佣金(每月,V3+)的 server 月结触发逻辑须在 V2 gate 前明确归属——若 peer 结算归 **F2**(同 V 级直推版税扩展),则将 `peerBonusRate` 移至 F2③、由 F2⑦/⑧ 补 peer 月结产生逻辑;若独立,则新建 peer-settlement 配置子模块声明产生方。确认后 `commission.paid(kind=peer)` 的产生方落到该模块,F5 仅消费审计。本条列入 §3.14 待补条目。
-- **`commission.paid` 的 `kind` 枚举扩展(V2 起始工单,blocking;引言阻断项 1/2)**:V1 §2.4.5③ 已登记 `commission.paid` 但未细分 kind;**F 域全部派发类别依赖 `kind` 维度,V2 sprint 开始即向 A4 申请枚举扩展(不可拖至 V4),登记为 V2 起始工单**,枚举须含七元素:**`kind ∈ {network, binary, peer, cultivation, leadership, genesis, leaderboard_prize}`**(leaderboard_prize 为 F4d 排行榜派奖,统一在本工单一并申请)。本工单须同时确认下列三项:
-  1. **`kind` 值命名 network vs unilevel**:前端现有 TypeScript 类型(**§12.5** Commission Event,非 §12.4)网络版税类用 `"unilevel"`,本章草拟为 `"network"`;**A4 注册时二选一统一**——建议优先沿用前端现有 `"unilevel"` 以减少改动面;若改为 `network` 须同步前端 §12.5 类型,且 F2/F3/F4/F5/F4d 全文 `kind:"network"`(及 F4d `leaderboardSortKey` 的 network 组成项)一并改回 `"unilevel"`。本章全文该值已统一标注「候选值」。
-  2. **`layer` 属性注册**:确认 `commission.paid` 的 `layer` 属性(整型,L1-L7 层号;前端 §12.5 注「仅 unilevel」)在 A4 schema registry 中登记为可聚合过滤维度,作为 KPI #7 基础计数的 server 聚合锚点。
-  3. **排行榜派奖是否走独立事件**:评估排行榜派奖应走独立事件(如 `leaderboard.prize_paid`)还是复用 `commission.paid(kind=leaderboard_prize)`,以避免将非佣金结构的奖池派发混入 commission 语义;**二选一后 F5⑧ / F4d⑧ 两处须保持一致**。
-- **喂给 KPI #7(经 F5)**:`#7 = L1 被推荐人首单 commission.paid ÷ 直推数`(V1 §2.4.6 权威定义)。具体口径锁定:**#7 分子 = 该推荐人下 L1 首次出现 `commission.paid` 的去重 userId 计数(不限 kind);分母 = 直推数**。V1 §1.6 明确 V2 基础计数由 F5 提供、**V1 B3 不承载 #7,F5 为唯一产出方**。**该口径为 V1 §2.4.6 已确立权威,不在 F5 悬空收窄**;若实现确需限定 kind(如仅取 network layer=1 第一笔),须先经 A4 治理修订 V1 §2.4.6 原文,不得在 F5⑧ 悬空注记为「V2 待确认」。
+**⑧ 埋点(事件)**：沿用服务端佣金计提、释放、冻结和冲正事件，新奖种为 `direct_purchase`、`direct_device_earning`，历史 `network` 保留。结算号关联双币，来源编号关联真实订单/收益凭证；统计按合法净到账聚合，待审批、冷却、待追回不能伪装成功。事件继续向 B1/B2、D4、L4 与团队佣金统计供数。
 
 ---
 

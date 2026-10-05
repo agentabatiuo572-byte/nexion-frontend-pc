@@ -231,6 +231,7 @@ writeRecord({
 // 齿轮表:序号自动派生(新增/重排齿轮不再手工改 [x/N])。本机注意:channel-parity 起的后端依赖齿轮
 // 硬读兄弟仓 nexion-backend,缺仓环境链在该齿断(memory: nexion-backend-not-in-workspace)。
 const GEARS = [
+  ["direct referral policy contract", "node", ["--experimental-strip-types", "--test", "tests/direct-referral-policy.test.mjs", "tests/f5-event-runtime-contract.test.mjs"]],
   ["E6 phone binding policy contract", "node", ["--experimental-strip-types", "--test", "tests/e6-phone-binding-contract.test.mjs"]],
   ["E2/E6 phone calibration contract", "node", ["--test", "tests/phone-calibration-contract.test.mjs", "tests/phone-calibration-proxy.test.mjs"]],
   ["L1 selected-source export contract", "node", ["--experimental-strip-types", "--test", "tests/l1-export-source-flow.test.mjs", "tests/l1-narrow-phase-readback.test.mjs", "tests/l-final10-protocol-repair-contract.test.mjs"]],

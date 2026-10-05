@@ -6,7 +6,7 @@ const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const view = read("../app/components/domain-views/f-view.tsx");
 const types = read("../app/components/domain-views/f-tabs/types.ts");
 const f1 = read("../app/components/domain-views/f-tabs/f1-vrank.tsx");
-const f2 = read("../app/components/domain-views/f-tabs/f2-rates.tsx");
+const f2 = read("../app/components/domain-views/f-tabs/f2-rates.tsx") + read("../app/components/domain-views/f-tabs/f2-direct-policy.tsx");
 const f3 = read("../app/components/domain-views/f-tabs/f3-binary.tsx");
 const f4 = read("../app/components/domain-views/f-tabs/f4-ops.tsx");
 const f5 = read("../app/components/domain-views/f-tabs/f5-audit.tsx");
@@ -65,7 +65,7 @@ test("F5 异常阈值、补发、冲正与暂停使用对应后端 authority", (
   assert.match(f5, /network_f5_commission_reject/);
   assert.match(f5, /const reissueAvailable = canDispose && !ctx\.f5Error && !!data;/);
   assert.match(f5, /\{reissueAvailable && <button[^>]+onClick=\{reissue\}/);
-  assert.match(f5, /canReject && row\.status/);
+  assert.match(f5, /canReject && !\["reversed", "withdrawn", "rejected", "recovery_pending"\]\.includes\(row\.status\)/);
   assert.match(f5, /\{canReject && <button[^>]+onClick=\{\(\) => suspend\(row\)\}/);
   assert.match(f5, /\{canWrite && <button[^>]+onClick=\{editThreshold\}/);
 });

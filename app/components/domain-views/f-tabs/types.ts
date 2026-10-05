@@ -1,5 +1,6 @@
 import type { EditSpec, BusinessFormSpec, BusinessFormValue } from "../design-kit";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
+import type { DirectReferralPolicy, DirectReferralUpdate } from "@/lib/admin/direct-referral-policy";
 import type {
   F1Leadership,
   F1PayoutFilters,
@@ -88,6 +89,10 @@ export interface FViewCtx {
   proposePayoutAction: (payoutId: string, action: "reissue" | "reverse", reason: string) => Promise<void>;
   // -- 网络版税费率(F2)· 读 + 配置写入 --
   f2Metrics: F2Metric[];
+  f2DirectPolicy: DirectReferralPolicy | null;
+  f2DirectPolicyLoading: boolean;
+  f2DirectPolicyError: string | null;
+  updateF2DirectPolicy: (policy: DirectReferralUpdate, reason: string) => Promise<void>;
   f2Unilevel: F2UnilevelRate[];
   f2RateTiers: F2RateTier[];
   f2Params: F2PolicyParam[];

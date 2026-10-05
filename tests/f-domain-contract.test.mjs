@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import { resolveNexionBackendRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 import { isFFundAmplifyingKey } from "../lib/admin/high-ops-registry.ts";
+import { displayAdminError } from "../lib/admin/error-messages.ts";
 
 /**
  * F 域前后端契约(验收 5.12 F 域三项缺口修复)。
@@ -20,6 +21,13 @@ const BACKEND_ROOT = resolveNexionBackendRoot({ adminRoot: OPS_ROOT });
 function read(root, relative) {
   return fs.readFileSync(path.join(root, relative), "utf8");
 }
+
+test("直属政策版本冲突使用服务端实际错误码并提示重新读取", () => {
+  const service = read(BACKEND_ROOT, "src/main/java/ffdd/opsconsole/team/application/DirectReferralPolicyService.java");
+  const code = service.match(/new BizException\(409,"([A-Z_]+)"\)/)?.[1];
+  assert.equal(code, "DIRECT_REFERRAL_VERSION_CONFLICT");
+  assert.equal(displayAdminError(new Error(code)), "直属分成配置已被修改，请重新读取并核对后再次提交。");
+});
 
 // 后端 loosensPayoutControlUiKey 静态 switch key 白单(权崴资金放大集)。
 // 注:F.unilevel.L{n}/F.unilevel.nex.L{n} 走由 isUnilevelRuleKey 勹缀分支处理,不在此 7 个靕态 key 内。
@@ -136,7 +144,7 @@ test("shared F config endpoint delegates F1 key authorization to exact service m
 
 // ---------- ② polymorphic key→op 路由对齐后端 replay 4 case 分发 ----------
 
-test("F domain polymorphic key→op routing mirrors backend replay switch (4 op)", () => {
+test("F domain keeps historical replay compatibility while new policy uses one direct command", () => {
   const view = read(OPS_ROOT, "app/components/domain-views/f-view.tsx");
   const registry = read(OPS_ROOT, "lib/admin/high-ops-registry.ts");
   const backend = read(BACKEND_ROOT, "src/main/java/ffdd/opsconsole/team/application/OpsTeamService.java");
@@ -150,11 +158,13 @@ test("F domain polymorphic key→op routing mirrors backend replay switch (4 op)
     assert.match(backend, new RegExp(`case "${op}"`));
   }
 
-  // resolveFOp 路由:4 分支都在(resolveFOp 为 F 域 polymorphic 真源)
+  // 历史重放仍兼容，现行页面不再创建七层费率写入。
   assert.match(view, /F\.commission\.[\s\S]*\.status/, "resolveFOp 缺 F.commission.{id}.status 分支");
-  // unilevel 勹缀路由(读源文本判断,不过重转义)
-  assert.ok(view.includes("unilevel"), "resolveFOp 缺 unilevel 分支");
-  assert.ok(view.includes("L\\d+"), "resolveFOp 缺 unilevel L{n} 正则");
+  assert.doesNotMatch(view, /return "f_unilevel_rule"/);
+  assert.match(view, /key\.startsWith\("F\.unilevel\."\)\) throw new Error/);
+  assert.match(view, /findHighOp\("f_direct_referral_policy"\)/);
+  assert.match(view, /action: def\.action, obj: "current"/);
+  assert.doesNotMatch(view, /合并出口护栏/);
   // ACTIVE_KEYS 裸名 → f_config(对齐后端 ACTIVE_KEYS Set.of)
   assert.match(view, /directRoyaltyPct/);
   assert.match(view, /hardwareQuotaPerRank/);

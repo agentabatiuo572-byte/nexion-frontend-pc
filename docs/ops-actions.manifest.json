@@ -989,12 +989,12 @@
     {
       "id": "OPS-F-02",
       "domain": "F",
-      "object": "网络版税费率",
-      "action": "调L1-L7费率",
+      "object": "直属双币分成政策",
+      "action": "购买与设备收益双规则整组审批",
       "status": "built",
       "view": "f-view.tsx",
       "batch": "P1",
-      "restAction": "f_unilevel_rule"
+      "restAction": "f_direct_referral_policy"
     },
     {
       "id": "OPS-F-03",
@@ -2528,17 +2528,17 @@
     {
       "id": "OPS-F-12",
       "domain": "F",
-      "object": "F2 多层暂停",
-      "action": "多层费率暂停整批原子提交并回读",
+      "object": "F2 直属分成启停",
+      "action": "两类规则连同启停整组提交并回读",
       "status": "built",
       "view": "f-tabs/f2-rates.tsx",
       "batch": "done",
       "runtimeEvidence": [
         {
           "type": "pc-runtime",
-          "file": "app/components/domain-views/f-tabs/f2-rates.tsx",
-          "positivePatterns": ["F\\.unilevel\\.\\$\\{u\\.l\\}\\.paused", "updateFConfigBatch\\(\\\"F2\\\", changes, reason\\)"],
-          "negativePatterns": ["void ctx\\.updateFConfigBatch"]
+          "file": "app/components/domain-views/f-tabs/f2-direct-policy.tsx",
+          "positivePatterns": ["purchase", "deviceEarning", "await ctx\\.updateF2DirectPolicy\\(value, reason\\)", "draft\\.expectedVersion !== policy\\.policyVersion"],
+          "negativePatterns": ["void ctx\\.updateF2DirectPolicy", "F\\.unilevel\\."]
         }
       ],
       "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
@@ -2546,17 +2546,17 @@
     {
       "id": "OPS-F-13",
       "domain": "F",
-      "object": "F2 合并退出保护",
-      "action": "让可见 CTA 进入真实规则写入与消费闭环",
+      "object": "F2 双币支出保护",
+      "action": "服务端按两币有效比例与冷却期判断资金放大并核验覆盖率",
       "status": "built",
       "view": "f-tabs/f2-rates.tsx",
       "batch": "done",
       "runtimeEvidence": [
         {
           "type": "backend-runtime",
-          "file": "src/main/java/ffdd/opsconsole/team/application/UnilevelCommissionService.java",
-          "positivePatterns": ["CONFIG_KEY_MERGE_EXIT_MAX_PCT", "mergeExitCap"],
-          "negativePatterns": ["bridge failed; keep ui value"]
+          "file": "src/main/java/ffdd/opsconsole/team/application/DirectReferralPolicyService.java",
+          "positivePatterns": ["request\\.purchase\\(\\)\\.amplifies", "request\\.deviceEarning\\(\\)\\.amplifies", "COVERAGE_BELOW_REDLINE"],
+          "negativePatterns": ["CONFIG_KEY_MERGE_EXIT_MAX_PCT", "mergeExitCap"]
         }
       ],
       "note": "本轮已按遗留验收闭环可见入口、服务端权威写入/状态机、并发与幂等、审计回读及真实业务消费者；失败与结果未知路径均保持失败关闭"
