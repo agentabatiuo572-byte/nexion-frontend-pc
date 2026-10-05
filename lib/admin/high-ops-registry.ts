@@ -1972,6 +1972,7 @@ export function findHighOp(op: string): HighOpDef | undefined {
  * 但 isFFundAmplifyingKey 一并覆盖,保单源真值。
  */
 export const F_FUND_AMPLIFYING_UI_KEYS: ReadonlySet<string> = new Set([
+  "F.cooldown",              // F2 佣金冷却缩短 → 放大未来可提余额释放
   "F.binary.matchRate",      // F3 平衡匹配比例上调 → 放大佣金流出
   "F.binary.threshold",      // F3 两轨结算门槛下调 → 放大(更低门槛触发更多结算)
   "F.pool.ratio",            // F4 领导池比例上调 → 放大池子流出

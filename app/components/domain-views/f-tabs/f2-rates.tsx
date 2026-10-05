@@ -27,6 +27,9 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
   const hasUnilevelRows = ctx.f2Unilevel.length > 0;
   const canRoyaltyRate = ctx.can("network_f2_royalty_rate");
   const canPolicyAmplify = ctx.can("network_f2_policy_amplify");
+  const coolingRaw = ctx.f2ConfigValues["F.cooldown"]?.trim() ?? "";
+  const coolingDays = /^[+-]?\d+$/.test(coolingRaw) && Number(coolingRaw) >= 0 && Number(coolingRaw) <= 90
+    ? Number(coolingRaw) : 30;
   const totalUnilevelPct = ctx.f2Unilevel.reduce((sum, row) => sum + row.usdt, 0);
   // Partner Status 是权益档，不改变 L1-L7 费率。兼容读取旧 bronze/silver/gold，
   // 提交时只写当前 Standard/Verified/Premium/Diamond schema。
@@ -216,7 +219,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
       <div className="params">
         <div className="param"><div className="pk">版税支付阈值 / 平级奖励比例</div><div className="psub">未接入实际结算，不可调整。版税提现以提现渠道的实际限额为准；当前不派发平级奖励。</div></div>
         {ctx.f2Params.filter((p) => F2_VISIBLE_PARAM_KEYS.has(p.key) || ["clampMin", "clampMax", "cool", "promo"].includes(p.id)).map((p) => {
-          const eff = p.value || p.def;
+          const eff = p.key === "F.cooldown" ? String(coolingDays) : p.value || p.def;
           // 深度门两键是离散枚举(L1–L7 / V0–V12):非法遗留值(如 0.4)必须显式告警,
           // 且编辑器只给合法枚举 —— 不允许把非法值改写成另一个非法值。
           const enumSpec = f2EnumGateSpec(p.key);
@@ -234,10 +237,13 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
                 name: `${p.name}调整`, amplify: p.amp, op: "param", paramKey: p.key,
                 edit: enumSpec
                   ? { kind: "select", current: parsed?.normalized ?? parsed?.raw ?? "", options: enumSpec.options, unit: enumSpec.unit }
-                  : { kind: "text", current: eff, unit: p.unit },
+                  : p.key === "F.cooldown"
+                    ? { kind: "number", current: eff, unit: p.unit, min: 0, max: 90, step: 1, amplifiesWhen: "decrease" }
+                    : { kind: "text", current: eff, unit: p.unit },
                 detail: `${p.name} 当前 ${illegal ? `${parsed?.raw} · 非法值,结算侧已阻断` : eff}`
                   + (enumSpec ? ` · 只能取 ${enumSpec.options[0]}–${enumSpec.options[enumSpec.options.length - 1]} 中的合法${enumSpec.unit}` : "")
-                  + (p.amp ? " · 此项为放大资金流出动作,须核验 B1 覆盖率。" : " · 改后对下一笔结算生效。"),
+                  + (p.key === "F.cooldown" ? " · 缩短冷却期须核验 B1 覆盖率。"
+                    : p.amp ? " · 此项为放大资金流出动作,须核验 B1 覆盖率。" : " · 改后对下一笔结算生效。"),
               })}>调整</button>}
             </div>
           );

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { resolveNexionBackendRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
+import { isFFundAmplifyingKey } from "../lib/admin/high-ops-registry.ts";
 
 /**
  * F 域前后端契约(验收 5.12 F 域三项缺口修复)。
@@ -13,7 +15,7 @@ import test from "node:test";
  *   ④ F5 佣金事件行带 D4/B1/L4 跨域 CTA
  */
 const OPS_ROOT = path.resolve(import.meta.dirname, "..");
-const BACKEND_ROOT = path.resolve(OPS_ROOT, "..", "nexion-backend");
+const BACKEND_ROOT = resolveNexionBackendRoot({ adminRoot: OPS_ROOT });
 
 function read(root, relative) {
   return fs.readFileSync(path.join(root, relative), "utf8");
@@ -22,6 +24,7 @@ function read(root, relative) {
 // 后端 loosensPayoutControlUiKey 静态 switch key 白单(权崴资金放大集)。
 // 注:F.unilevel.L{n}/F.unilevel.nex.L{n} 走由 isUnilevelRuleKey 勹缀分支处理,不在此 7 个靕态 key 内。
 const BACKEND_LOOSENS_KEYS = [
+  "F.cooldown",
   "F.binary.matchRate",
   "F.binary.threshold",
   "F.pool.ratio",
@@ -179,12 +182,14 @@ test("F_FUND_AMPLIFYING_UI_KEYS mirrors backend loosensPayoutControlUiKey whitel
   const setMatch = registry.match(/F_FUND_AMPLIFYING_UI_KEYS[\s\S]*?\]/);
   assert.ok(setMatch, "未找到 F_FUND_AMPLIFYING_UI_KEYS 集合");
   const setBlock = setMatch[0];
+  const directionBlock = backend.slice(backend.indexOf("private boolean loosensPayoutControlUiKey("),
+    backend.indexOf("private int depthGateLayer("));
 
   // 后端 loosensPayoutControlUiKey 的 7 个靕态 key 全部在前端集合,且后端确实判这些 key 为资金放大
   for (const k of BACKEND_LOOSENS_KEYS) {
     assert.ok(setBlock.includes(k), `前端资金放大集缺 ${k}`);
     // 后端 loosensPayoutControlUiKey switch 里必须出现该 key(switch 表达式形如 case "F.xxx" 或 "F.xxx" ->)
-    assert.ok(backend.includes(k), `后端 loosensPayoutControlUiKey 未提及 ${k}`);
+    assert.ok(directionBlock.includes(k), `后端 loosensPayoutControlUiKey 未提及 ${k}`);
   }
   // unilevel 费由 isFFundAmplifyingKey 勹缀覆盖
   assert.match(registry, /isFFundAmplifyingKey/);
@@ -194,6 +199,14 @@ test("F_FUND_AMPLIFYING_UI_KEYS mirrors backend loosensPayoutControlUiKey whitel
   for (const toggle of ["F.binary.paused", "F.leaderboard.paused", "F.leaderboard.minUsd"]) {
     assert.ok(!setBlock.includes(toggle), `toggle key ${toggle} 不应在 F_FUND_AMPLIFYING_UI_KEYS:${setBlock.slice(0, 300)}`);
   }
+});
+
+test("F2 cooling belongs to the existing fund category in PC and canonical A2", () => {
+  assert.equal(isFFundAmplifyingKey("F.cooldown"), true);
+  const guard = read(BACKEND_ROOT, "src/main/java/ffdd/opsconsole/platform/application/AuditReplayBusinessPermissionGuard.java");
+  const classification = guard.slice(guard.indexOf("private boolean fUiConfigAmplifies("), guard.indexOf("private String f5CommissionAuthority("));
+  assert.ok(classification.includes('"F.cooldown"'), "A2 canonical 分类遗漏佣金冷却");
+  assert.equal(isFFundAmplifyingKey("F.binary.paused"), false);
 });
 
 // ---------- ④ F5 佣金事件行跨域 CTA ----------
