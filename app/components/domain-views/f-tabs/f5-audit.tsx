@@ -334,7 +334,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                         <GatedLink allowed={canReadB1} href="/overview/dual-ledger" label="B1" />
                         <GatedLink allowed={canReadL4} href="/analytics/operations" label="L4" />
                         {canDispose && row.status === "cooling" && <button className="fbtn" onClick={() => dispose("freeze", row)}>冻结</button>}
-                        {canDispose && row.status === "cooling" && <button className="fbtn" onClick={() => dispose("unlock", row)}>提前解锁</button>}
+                        {canDispose && row.status === "cooling" && !directGroup(row) && <button className="fbtn" onClick={() => dispose("unlock", row)}>提前解锁</button>}
                         {canDispose && row.status === "frozen" && <button className="fbtn" onClick={() => dispose("unfreeze", row)}>解冻</button>}
                         {canReject && !["reversed", "withdrawn", "rejected", "recovery_pending"].includes(row.status) && <button className="fbtn" onClick={() => reverse(row)}>冲正</button>}
                         {canReject && <button className="fbtn" onClick={() => suspend(row)}>暂停奖种</button>}

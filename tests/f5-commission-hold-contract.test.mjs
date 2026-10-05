@@ -10,11 +10,14 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import ts from "typescript";
+import { F5_KINDS, F5_KIND_LABELS } from "../lib/admin/f-overview-contract.ts";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
 
-const component = strip(read("../app/components/domain-views/f-tabs/f5-audit.tsx"));
+const componentSource = read("../app/components/domain-views/f-tabs/f5-audit.tsx");
+const component = strip(componentSource);
 const shell = strip(read("../app/components/domain-views/f-view.tsx"));
 const registry = strip(read("../lib/admin/high-ops-registry.ts"));
 const f1Client = strip(read("../lib/admin/f1-client.ts"));
@@ -30,13 +33,110 @@ function grabBetween(src, from, to) {
   return body;
 }
 
-test("① 行内按钮按状态机渲染:cooling → 冻结+提前解锁,frozen → 解冻,全挂处置权限", () => {
-  assert.match(component, /\{canDispose && row\.status === "cooling" && <button[^>]+onClick=\{\(\) => dispose\("freeze", row\)\}/, "cooling 行丢了「冻结」入口(底账 §二#4 同型退化)");
-  assert.match(component, /\{canDispose && row\.status === "cooling" && <button[^>]+onClick=\{\(\) => dispose\("unlock", row\)\}/, "cooling 行丢了「提前解锁」入口");
-  assert.match(component, /\{canDispose && row\.status === "frozen" && <button[^>]+onClick=\{\(\) => dispose\("unfreeze", row\)\}/, "frozen 行丢了「解冻」出口 —— 冻结将变成变相终态");
-  // 三个调用点必须恰好收在上述两种状态条件下,不许出现无状态守卫的第四个入口。
-  const disposeCalls = component.match(/dispose\("(?:freeze|unlock|unfreeze)", row\)/g) ?? [];
-  assert.equal(disposeCalls.length, 3, `dispose 调用点应恰为 3 处(freeze/unlock/unfreeze 各一),实际 ${disposeCalls.length} 处`);
+// 编译真实组件，只替换 React 渲染和外部上下文；按钮条件和点击回调来自生产源码。
+const output = ts.transpileModule(componentSource, {
+  compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+const element = (type, props, key) => ({ type, props: { ...props, key } });
+const exports = {};
+new Function("require", "exports", "module", output)((name) => {
+  if (name === "react") return { useState: (value) => [value, () => undefined], useMemo: (fn) => fn() };
+  if (name === "react/jsx-runtime") return { jsx: element, jsxs: element, Fragment: Symbol("Fragment") };
+  if (name === "next/link") return { default: () => null };
+  if (name.endsWith("design-kit")) return { Badge: () => null };
+  if (name === "@/lib/admin/f-overview-contract") return { F5_KINDS, F5_KIND_LABELS };
+  throw new Error(`未覆盖的组件依赖: ${name}`);
+}, exports, { exports });
+
+function textOf(node) {
+  if (node == null || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(textOf).join("");
+  return textOf(node.props?.children);
+}
+
+function walk(node) {
+  if (node == null || typeof node !== "object") return [];
+  if (Array.isArray(node)) return node.flatMap(walk);
+  return [node, ...walk(node.props?.children)];
+}
+
+function renderRow(kind, status, cur, canDispose = true, coolingDaysLeft = 3) {
+  const row = {
+    id: "CM-71", eventId: 71, kind, status, cur, amt: 12, user: "U00000009", userId: 9,
+    settledAt: "2026-10-05 12:00:00", coolingDaysLeft, coolPct: 0, coolLb: "冷却计提", state: "计提",
+    auditKey: "F.commission.CM-71.status", version: 4, settlementNo: "DR-71", amountUSDT: 12, amountNEX: 120,
+  };
+  const confirmations = [];
+  const tree = exports.F5Audit({ ctx: {
+    can: (permission) => permission === "network_f5_commission_dispose" && canDispose,
+    f5Overview: {
+      summary: { monthlyCommissionSpendLabel: "", coolingBalanceLabel: "", withdrawableThisMonthLabel: "", frozenCount: 0 },
+      commissionEvents: [row], commissionKinds: [], statusDistribution: [], anomalies: [], coolingPolicy: [],
+      activeSuspensions: [], operationHistory: [], configValues: {}, total: 1, nextCursor: "",
+    },
+    openActionConfirm: (confirmation) => confirmations.push(confirmation),
+  } });
+  return { row, confirmations, buttons: walk(tree).filter((node) => node.type === "button") };
+}
+
+const button = (view, label) => view.buttons.find((node) => textOf(node) === label);
+const disposalLabels = ["冻结", "提前解锁", "解冻"];
+
+test("①a 直属两类双币冷却行不提供提前解锁，包括剩余天数显示为零", () => {
+  for (const kind of ["direct_purchase", "direct_device_earning"]) {
+    for (const cur of ["USDT", "NEX"]) {
+      for (const days of [3, 0]) {
+        const view = renderRow(kind, "cooling", cur, true, days);
+        assert.equal(button(view, "提前解锁"), undefined, `${kind}/${cur}/${days} 天仍处于 cooling，不应承诺跳过冷却`);
+      }
+    }
+  }
+});
+
+test("①b 历史 network 双币保留冻结、提前解锁与解冻确认", () => {
+  for (const cur of ["USDT", "NEX"]) {
+    for (const [status, actions] of [["cooling", ["冻结", "提前解锁"]], ["frozen", ["解冻"]]]) {
+      const view = renderRow("network", status, cur);
+      assert.deepEqual(view.buttons.map(textOf).filter((label) => disposalLabels.includes(label)), actions);
+      for (const label of actions) button(view, label).props.onClick();
+      assert.deepEqual(view.confirmations.map(({ op, paramKey, expectedVersion, fixedVal, amplify }) =>
+        ({ op, paramKey, expectedVersion, fixedVal, amplify })), actions.map((label) => ({
+        op: "dispose", paramKey: view.row.auditKey, expectedVersion: 4,
+        fixedVal: { 冻结: "frozen", 提前解锁: "unlocked", 解冻: "cooling" }[label], amplify: label === "提前解锁",
+      })));
+      if (status === "cooling") assert.match(view.confirmations[1].detail, /跳过剩余冷却直接进入可提余额/);
+    }
+  }
+});
+
+test("①c 直属两类双币保留整组冻结、解冻，解冻恢复 cooling", () => {
+  for (const kind of ["direct_purchase", "direct_device_earning"]) {
+    for (const cur of ["USDT", "NEX"]) {
+      for (const [status, label, fixedVal] of [["cooling", "冻结", "frozen"], ["frozen", "解冻", "cooling"]]) {
+        const view = renderRow(kind, status, cur);
+        assert.deepEqual(view.buttons.map(textOf).filter((item) => disposalLabels.includes(item)), [label]);
+        button(view, label).props.onClick();
+        assert.equal(view.confirmations.length, 1);
+        const confirmation = view.confirmations[0];
+        assert.deepEqual({ op: confirmation.op, paramKey: confirmation.paramKey, expectedVersion: confirmation.expectedVersion,
+          fixedVal: confirmation.fixedVal, amplify: confirmation.amplify },
+        { op: "dispose", paramKey: view.row.auditKey, expectedVersion: 4, fixedVal, amplify: false });
+        assert.match(confirmation.detail, /结算组 DR-71 · 12 USDT \+ 120 NEX（整组处理）/);
+        if (status === "frozen") assert.match(confirmation.detail, /不会绕过剩余冷却期/);
+      }
+    }
+  }
+});
+
+test("①d 无处置权限时历史与直属 cooling/frozen 行均无处置按钮", () => {
+  for (const kind of ["network", "direct_purchase", "direct_device_earning"]) {
+    for (const status of ["cooling", "frozen"]) {
+      const view = renderRow(kind, status, "USDT", false);
+      assert.deepEqual(view.buttons.map(textOf).filter((label) => disposalLabels.includes(label)), []);
+      assert.deepEqual(view.confirmations, []);
+    }
+  }
 });
 
 test("② dispose 规格:paramKey=auditKey · 目标值固定 · amplify 按资金方向", () => {
