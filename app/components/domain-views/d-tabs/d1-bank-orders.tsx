@@ -41,7 +41,9 @@ function D1BankOrderRow({ order, blocked, onSettled, ...actions }: OrderActions 
     <td className="num mono">{orderVnd(order.receivedVnd)}<div className="sub">{order.receivedVnd === null ? "—" : orderTime(order.receivedAt)}</div></td>
     <td className="num mono">{credited ? orderUsdt(order.creditedUsdt) : "—"}<div className="sub">{credited ? (order.confirmationSource === "ADMIN_MANUAL" ? "人工确认入账" : "已入账") : "尚未入账"}</div></td>
     <td><span className={`bdg ${tone}`}>{orderStatusText(order.status)}</span><div className="sub mono">原订单 {order.intentStatus || "—"}</div></td>
-    <td className="mono"><div>提交 {order.submissionStatus || "—"}</div><div className="sub">支付 {order.providerStatus || "—"} · 本地 {order.settlementStatus || "—"}</div><div className="sub">确认来源 {order.confirmationSource || "尚未确认"}</div><div className="sub mono">{order.manualConfirmationNo}</div></td>
+    <td className="mono"><div>提交 {order.submissionStatus || "—"}</div><div className="sub">支付 {order.providerStatus || "—"} · 本地 {order.settlementStatus || "—"}</div>
+      {order.paymentRail === "HDPAY" && order.submissionStatus === "REJECTED" && <div className="sub" style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>支付商拒绝原因：{order.providerReason || "支付商未提供具体原因"}</div>}
+      <div className="sub">确认来源 {order.confirmationSource || "尚未确认"}</div><div className="sub mono">{order.manualConfirmationNo}</div></td>
     <td className="mono"><div>{orderTime(order.createdAt)}</div><div className="sub">截止 {orderTime(order.expiresAt)}</div></td>
     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
       {order.paymentUrl && (actions.busy || blocked ? <span className="bdg dim">正在核对结果，暂不打开付款渠道</span> : <a className="l-btn sm" href={order.paymentUrl} target="_blank" rel="noopener noreferrer">打开付款渠道</a>)}

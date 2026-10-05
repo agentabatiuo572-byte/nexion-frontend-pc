@@ -147,6 +147,7 @@ export interface D1BankOrder {
   intentStatus: string;
   submissionStatus: string;
   providerStatus: string;
+  providerReason: string;
   settlementStatus: string;
   requestedUsdt: number;
   payableVnd: number;
@@ -1029,6 +1030,7 @@ function requireD1BankOrdersPage(raw: unknown): D1BankOrdersPage {
       submissionStatus: d1OptionalText(row.submissionStatus, field("submissionStatus")),
       providerStatus: typeof row.providerStatus === "number"
         ? String(d1Number(row.providerStatus, field("providerStatus"))) : d1OptionalText(row.providerStatus, field("providerStatus")),
+      providerReason: d1OptionalText(row.providerReason, field("providerReason")),
       settlementStatus: d1OptionalText(row.settlementStatus, field("settlementStatus")),
       requestedUsdt, payableVnd, lockedFxRateVndPerUsdt, receivedVnd, creditedUsdt,
       bankAccountId: d1NullableNumber(row.bankAccountId, field("bankAccountId")),

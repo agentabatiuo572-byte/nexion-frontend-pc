@@ -49,6 +49,20 @@ test("real normalizer retains both rails in every order state and preserves prov
   }
 });
 
+test("real normalizer retains optional safe provider reason without changing order facts", () => {
+  const rejected = order({ status: "FAILED", submissionStatus: "REJECTED", paymentUrl: null });
+  const baseline = normalize(page([rejected])).records[0];
+  assert.equal(baseline.providerReason, "");
+  for (const providerReason of [undefined, null, "", "支付商已拒绝创建", "原".repeat(256)]) {
+    const actual = normalize(page([{ ...rejected, providerReason }])).records[0];
+    assert.equal(actual.providerReason, providerReason ?? "");
+    assert.deepEqual({ ...actual, providerReason: "" }, { ...baseline });
+  }
+  for (const providerReason of [1, true, [], {}, "   "]) {
+    assert.throws(() => normalize(page([{ ...rejected, providerReason }])), /D1_RESPONSE_INVALID/);
+  }
+});
+
 test("real order normalizer preserves backend total/page and rejects duplicate canonical orders", () => {
   const raw = { ...page([order()]), total: 41, pageNum: 3, pageSize: 20 };
   const result = normalize(raw);
@@ -117,11 +131,79 @@ test("actual pending renderer shows due money with no received or credited funds
 test("actual renderer keeps manual source and provider rejection after credit, with no second credit button", () => {
   const { cells, nodes } = rendered({ status: "CREDITED", intentStatus: "CREDITED", creditedUsdt: 20,
     receivedVnd: 527800, receivedAt: "2026-10-04T16:00:00", paymentUrl: null,
-    submissionStatus: "REJECTED", providerStatus: null, manualCreditAllowed: false,
+    submissionStatus: "REJECTED", providerStatus: null, providerReason: "支付商已拒绝创建", manualCreditAllowed: false,
     confirmationSource: "ADMIN_MANUAL", manualConfirmationNo: "ADM-TEST20" });
   assert.match(cells[4], /20\.00 USDT人工确认入账/); assert.match(cells[6], /REJECTED.*ADMIN_MANUAL.*ADM-TEST20/);
+  assert.match(cells[6], /支付商拒绝原因：支付商已拒绝创建/);
   assert.equal(nodes.some(node => node.type === "button"), false);
   assert.match(cells[8], /不可重复确认/);
+});
+
+test("actual renderer shows only explicit HDPay rejection reasons and generic missing reason", () => {
+  const rejected = { status: "FAILED", submissionStatus: "REJECTED", paymentUrl: null };
+  for (const status of ["FAILED", "EXPIRED"]) {
+    const { cells } = rendered({ ...rejected, status, providerReason: "支付商已拒绝创建" });
+    assert.match(cells[6], /提交 REJECTED.*支付商拒绝原因：支付商已拒绝创建/);
+  }
+  for (const providerReason of [undefined, null, ""]) {
+    assert.match(rendered({ ...rejected, providerReason }).cells[6], /支付商拒绝原因：支付商未提供具体原因/);
+  }
+  for (const changes of [{ status: "UNKNOWN", submissionStatus: "SUBMIT_UNKNOWN" },
+    { status: "CREATING", submissionStatus: "CREATED" }, { status: "PROCESSING", submissionStatus: "CREATED" },
+    { status: "FAILED", submissionStatus: "CREATED" },
+    { paymentRail: "MANUAL", bankAccountId: 1, manualCreditAllowed: false, submissionStatus: "REJECTED" }]) {
+    const { cells } = rendered({ paymentUrl: null, providerReason: "不应展示的原因", ...changes });
+    assert.doesNotMatch(cells.join(""), /支付商拒绝原因|不应展示的原因/);
+  }
+  const text = "<script>literal-only</script>";
+  const { cells, nodes } = rendered({ ...rejected, providerReason: text });
+  assert.ok(cells[6].includes(text));
+  assert.equal(nodes.some(node => node.type === "script" || node.props?.dangerouslySetInnerHTML), false);
+});
+
+test("provider rejection reason never changes actual actions, permission or unknown guards", () => {
+  const rejected = { status: "FAILED", submissionStatus: "REJECTED", paymentUrl: null };
+  const actionFacts = view => view.nodes.filter(node => ["button", "a"].includes(node.type))
+    .map(node => [node.type, textOf(node), node.props.disabled, node.props.href]);
+  for (const [changes, props] of [[{}, {}], [{ manualCreditAllowed: false }, {}], [{}, { canManage: false }],
+    [{}, { busy: true }], [{}, { blocked: true }],
+    [{ paymentUrl: "https://payments.example.test/order/TEST20" }, {}]]) {
+    const before = rendered({ ...rejected, ...changes }, props);
+    const after = rendered({ ...rejected, ...changes, providerReason: "支付商已拒绝创建" }, props);
+    assert.deepEqual(actionFacts(after), actionFacts(before));
+    for (const view of [before, after]) {
+      view.nodes.find(node => node.type === "button" && !node.props.disabled)?.props.onClick();
+    }
+    assert.deepEqual(after.events.map(event => [event[0], event[1].intentNo]),
+      before.events.map(event => [event[0], event[1].intentNo]));
+  }
+});
+
+test("fresh real order loads reread rejection reason and do not retain a missing or older summary", async () => {
+  let providerReason = "首次读取原因";
+  const loads = [], reads = [];
+  const runtime = { URLSearchParams, adminAuthLifecycleEpoch: () => 1, requireD1BankOrdersPage: normalize,
+    requestId: { current: 0 }, rail: "HDPAY", status: "FAILED", query: "VQR-TEST20", pageNum: 1, pageSize: 20,
+    setLoading: () => {}, setError: () => {}, setPending: () => {}, listD1PendingBankOrderCommands: () => [],
+    setPageNum: () => assert.fail("one-row fixture must remain on page one"), setData: value => { if (value) loads.push(value); },
+    apiRequest: async (base, path) => {
+      reads.push({ base, path });
+      return page([order({ status: "FAILED", submissionStatus: "REJECTED", paymentUrl: null, providerReason })]);
+    } };
+  const methods = client.statements.filter(node => ts.isFunctionDeclaration(node)
+    && ["buildQuery", "assertD1BankManualAuthEpoch", "fetchD1BankOrders"].includes(node.name?.text))
+    .map(node => node.getText(client).replace(/^export\s+/, "")).join("\n");
+  const initialize = () => execute(`${methods}\nvar load = ${orderLoadCallback.getText(ui)};`, runtime);
+  initialize(); await runtime.load();
+  initialize(); await runtime.load(); // A fresh client callback reads the same durable server summary.
+  providerReason = "最新读取原因"; await runtime.load();
+  providerReason = undefined; await runtime.load();
+  assert.deepEqual(loads.map(value => value.records[0].providerReason), ["首次读取原因", "首次读取原因", "最新读取原因", ""]);
+  for (const read of reads) {
+    assert.equal(read.base, "finance"); assert.match(read.path, /^\/vietqr\/orders\?.*keyword=VQR-TEST20/);
+  }
+  assert.match(rendered(loads[1].records[0]).cells[6], /支付商拒绝原因：首次读取原因/);
+  assert.match(rendered(loads[3].records[0]).cells[6], /支付商拒绝原因：支付商未提供具体原因/);
 });
 
 test("manual registration, role controls, server block reason and unknown capsule block remain observable", () => {
