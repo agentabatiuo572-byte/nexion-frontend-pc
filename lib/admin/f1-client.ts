@@ -124,6 +124,7 @@ interface BackendF2PolicyParam {
 }
 
 interface BackendF2Overview {
+  sevenLayerRevision?: number | string;
   metrics?: BackendF2Metric[] | null;
   unilevelRates?: BackendF2UnilevelRate[] | null;
   rateTiers?: BackendF2RateTier[] | null;
@@ -404,6 +405,8 @@ interface BackendF5Pagination {
 }
 
 interface BackendF5CommissionAuditOverview {
+  pendingCalculations?: F5PendingCalculation[];
+  pendingCalculationCount?: number | string;
   summary: BackendF5Summary;
   commissionKinds: BackendF5CommissionKind[];
   commissionFilters: BackendF5Filter[];
@@ -573,6 +576,7 @@ export interface F2PolicyParam {
 }
 
 export interface F2RatesOverview {
+  sevenLayerRevision: number | null;
   metrics: F2Metric[];
   unilevel: F2UnilevelRate[];
   rateTiers: F2RateTier[];
@@ -845,6 +849,22 @@ export interface F5CommissionEvent {
   ledgerBizNo?: string;
 }
 
+export interface F5PendingCalculation {
+  id: string;
+  settlementNo: string;
+  kind: "direct_purchase" | "direct_device_earning";
+  layer: number | string;
+  sourceRef: string;
+  sourceUserName: string;
+  basisUsdt: number | string;
+  amountUSDT: 0;
+  amountNEX: 0;
+  nexUsdtPrice: null;
+  status: "waiting_calculation";
+  unlockAt: string | null;
+  ts: string;
+}
+
 export interface F5CommissionQuery {
   kind?: string;
   currency?: string;
@@ -906,6 +926,8 @@ export interface F5CommissionPagination {
 }
 
 export interface F5CommissionAuditOverview {
+  pendingCalculations: F5PendingCalculation[];
+  pendingCalculationCount: number;
   summary: F5CommissionSummary;
   commissionKinds: F5CommissionKind[];
   commissionFilters: F5CommissionFilter[];
@@ -1179,6 +1201,7 @@ function normalizeF2Overview(data: BackendF2Overview | null | undefined): F2Rate
     };
   });
   return {
+    sevenLayerRevision: data?.sevenLayerRevision === undefined ? null : toNumber(data.sevenLayerRevision),
     metrics,
     unilevel,
     rateTiers,
@@ -1439,6 +1462,8 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
   });
   const pagination = data.pagination;
   return {
+    pendingCalculations: data.pendingCalculations ?? [],
+    pendingCalculationCount: data.pendingCalculationCount == null ? 0 : toNumber(data.pendingCalculationCount),
     summary: {
       monthlyCommissionSpendLabel: summary.monthlyCommissionSpendLabel,
       coolingBalanceLabel: summary.coolingBalanceLabel,
@@ -1628,13 +1653,13 @@ export async function fetchF1RewardPayouts(filters: F1PayoutFilters = {}) {
 }
 
 export async function fetchF2RatesOverview() {
-  const data = await f1Request<unknown>("/rates");
+  const data = await f1Request<unknown>("/rates?schemaVersion=2");
   assertF2Overview(data);
   return normalizeF2Overview(data as BackendF2Overview);
 }
 
 export async function fetchF2DirectReferralPolicy() {
-  return parseDirectReferralPolicy(await f1Request<unknown>("/direct-referral-policy"));
+  return parseDirectReferralPolicy(await f1Request<unknown>("/direct-referral-policy?schemaVersion=2"));
 }
 
 export async function fetchF3BinaryOverview() {
@@ -1651,6 +1676,7 @@ export async function fetchF4LeadershipPoolOverview() {
 
 export async function fetchF5CommissionAuditOverview(query: F5CommissionQuery = {}) {
   const search = new URLSearchParams();
+  search.set("schemaVersion", "2");
   for (const [key, value] of Object.entries(query)) {
     if (value?.trim()) search.set(key, value.trim());
   }

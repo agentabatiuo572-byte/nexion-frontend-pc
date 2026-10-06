@@ -24,9 +24,10 @@ function read(root, relative) {
 
 test("直属政策版本冲突使用服务端实际错误码并提示重新读取", () => {
   const service = read(BACKEND_ROOT, "src/main/java/ffdd/opsconsole/team/application/DirectReferralPolicyService.java");
-  const code = service.match(/new BizException\(409,"([A-Z_]+)"\)/)?.[1];
-  assert.equal(code, "DIRECT_REFERRAL_VERSION_CONFLICT");
-  assert.equal(displayAdminError(new Error(code)), "直属分成配置已被修改，请重新读取并核对后再次提交。");
+  for (const code of ["DIRECT_REFERRAL_VERSION_CONFLICT", "SEVEN_LAYER_REVISION_CONFLICT"]) {
+    assert.ok(service.includes(`"${code}"`), `service must emit ${code}`);
+    assert.match(displayAdminError(new Error(code)), /重新读取/);
+  }
 });
 
 // 后端 loosensPayoutControlUiKey 静态 switch key 白单(权崴资金放大集)。
@@ -144,7 +145,7 @@ test("shared F config endpoint delegates F1 key authorization to exact service m
 
 // ---------- ② polymorphic key→op 路由对齐后端 replay 4 case 分发 ----------
 
-test("F domain keeps historical replay compatibility while new policy uses one direct command", () => {
+test("F domain keeps current seven-layer writes while split policy uses one version-bound command", () => {
   const view = read(OPS_ROOT, "app/components/domain-views/f-view.tsx");
   const registry = read(OPS_ROOT, "lib/admin/high-ops-registry.ts");
   const backend = read(BACKEND_ROOT, "src/main/java/ffdd/opsconsole/team/application/OpsTeamService.java");
@@ -158,11 +159,13 @@ test("F domain keeps historical replay compatibility while new policy uses one d
     assert.match(backend, new RegExp(`case "${op}"`));
   }
 
-  // 历史重放仍兼容，现行页面不再创建七层费率写入。
+  // 七层实际写入沿原 A2 路径；新拆分只有一个完整双版本命令。
   assert.match(view, /F\.commission\.[\s\S]*\.status/, "resolveFOp 缺 F.commission.{id}.status 分支");
-  assert.doesNotMatch(view, /return "f_unilevel_rule"/);
-  assert.match(view, /key\.startsWith\("F\.unilevel\."\)\) throw new Error/);
+  assert.match(view, /return "f_unilevel_rule"/);
+  assert.match(view, /key\.startsWith\("F\.unilevel\."\)[\s\S]*?throw new Error\("该网络版税参数未接入结算/);
   assert.match(view, /findHighOp\("f_direct_referral_policy"\)/);
+  assert.match(registry, /expectedSevenLayerRevision: ctx\.expectedSevenLayerRevision/);
+  assert.match(registry, /purchaseSplit: ctx\.purchaseSplit/);
   assert.match(view, /action: def\.action, obj: "current"/);
   assert.doesNotMatch(view, /合并出口护栏/);
   // ACTIVE_KEYS 裸名 → f_config(对齐后端 ACTIVE_KEYS Set.of)

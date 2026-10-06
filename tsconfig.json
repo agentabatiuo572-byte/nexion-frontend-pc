@@ -87,7 +87,11 @@
     ".next-audit-20260909-terms-v2/types/**/*.ts",
     ".next-audit-20260909-terms-v2/dev/types/**/*.ts",
     ".next-audit-20260909-i5-polling/types/**/*.ts",
-    ".next-audit-20260909-i5-polling/dev/types/**/*.ts"
+    ".next-audit-20260909-i5-polling/dev/types/**/*.ts",
+    ".next-seven-fixture/types/**/*.ts",
+    ".next-seven-fixture/dev/types/**/*.ts",
+    ".next-seven-verify/types/**/*.ts",
+    ".next-seven-verify/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

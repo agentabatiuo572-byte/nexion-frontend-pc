@@ -61,7 +61,7 @@ function walk(node) {
   return [node, ...walk(node.props?.children)];
 }
 
-function renderRow(kind, status, cur, canDispose = true, coolingDaysLeft = 3) {
+function renderRow(kind, status, cur, canDispose = true, coolingDaysLeft = 3, overrides = {}) {
   const row = {
     id: "CM-71", eventId: 71, kind, status, cur, amt: 12, user: "U00000009", userId: 9,
     settledAt: "2026-10-05 12:00:00", coolingDaysLeft, coolPct: 0, coolLb: "冷却计提", state: "计提",
@@ -71,17 +71,70 @@ function renderRow(kind, status, cur, canDispose = true, coolingDaysLeft = 3) {
   const tree = exports.F5Audit({ ctx: {
     can: (permission) => permission === "network_f5_commission_dispose" && canDispose,
     f5Overview: {
+      pendingCalculations: [], pendingCalculationCount: 0,
       summary: { monthlyCommissionSpendLabel: "", coolingBalanceLabel: "", withdrawableThisMonthLabel: "", frozenCount: 0 },
       commissionEvents: [row], commissionKinds: [], statusDistribution: [], anomalies: [], coolingPolicy: [],
       activeSuspensions: [], operationHistory: [], configValues: {}, total: 1, nextCursor: "",
     },
     openActionConfirm: (confirmation) => confirmations.push(confirmation),
+    ...overrides,
   } });
-  return { row, confirmations, buttons: walk(tree).filter((node) => node.type === "button") };
+  return { row, confirmations, nodes: walk(tree), buttons: walk(tree).filter((node) => node.type === "button") };
 }
 
 const button = (view, label) => view.buttons.find((node) => textOf(node) === label);
 const disposalLabels = ["冻结", "提前解锁", "解冻"];
+
+test("F5 注册月份使用月份控件，不要求手工记输入格式", () => {
+  const view = renderRow("network", "cooling", "USDT");
+  const month = view.nodes.find((node) => node.props?.["aria-label"] === "用户群");
+  assert.equal(month.type, "input");
+  assert.equal(month.props.type, "month");
+});
+
+test("F5 暂停提示显示奖种名称，提交仍保持真实枚举", async () => {
+  const calls = [];
+  const toasts = [];
+  const view = renderRow("network", "cooling", "USDT", true, 3, {
+    can: (permission) => permission === "network_f5_commission_reject",
+    suspendF5UserCommissions: async (...args) => calls.push(args),
+    toast: (message) => toasts.push(message),
+  });
+  const pause = view.buttons.find((node) => textOf(node).includes("暂停"));
+  assert.ok(pause, "真实行内暂停入口必须存在");
+  pause.props.onClick();
+  await view.confirmations[0].run("核对工单后暂停", { kinds: "network,direct_device_earning" });
+  assert.deepEqual(calls, [[9, ["network", "direct_device_earning"], true, "核对工单后暂停"]]);
+  assert.equal(toasts[0], `用户 9 的 ${F5_KIND_LABELS.network}、${F5_KIND_LABELS.direct_device_earning} 已提交 A2 待确认`);
+  assert.doesNotMatch(toasts[0], /network|direct_device_earning/);
+});
+
+test("F5 恢复确认和提示使用相同奖种名称", async () => {
+  const calls = [], toasts = [];
+  const data = {
+    pendingCalculations: [], pendingCalculationCount: 0,
+    summary: { monthlyCommissionSpendLabel: "", coolingBalanceLabel: "", withdrawableThisMonthLabel: "", frozenCount: 0 },
+    commissionEvents: [], commissionKinds: [], statusDistribution: [], anomalies: [], coolingPolicy: [],
+    activeSuspensions: [{ userId: "9", kind: "direct_device_earning", reason: "核对", operator: "审核", updatedAt: "2026-10-06" }],
+    operationHistory: [{ operationNo: "F5-1", operationType: "RESUME", userId: "9", kinds: "network,direct_device_earning", reason: "核对", operator: "审核", createdAt: "2026-10-06" }], configValues: {}, total: 0, nextCursor: "",
+  };
+  const view = renderRow("network", "cooling", "USDT", true, 3, {
+    can: (permission) => permission === "network_f5_commission_reject", f5Overview: data,
+    suspendF5UserCommissions: async (...args) => calls.push(args), toast: (message) => toasts.push(message),
+  });
+  button(view, "恢复奖种").props.onClick();
+  const confirmation = view.confirmations[0];
+  const history = textOf(view.nodes.find((node) => node.type === "tr" && textOf(node).includes("F5-1")));
+  assert.match(history, /恢复/);
+  assert.match(history, /网络购买奖励、直属设备收益分成/);
+  assert.doesNotMatch(history, /RESUME|network|direct_device_earning/);
+  assert.match(confirmation.name, /直属设备收益分成/);
+  assert.doesNotMatch(confirmation.name + confirmation.detail, /direct_device_earning|suspended=/);
+  await confirmation.run("核对后恢复奖种");
+  assert.deepEqual(calls, [[9, ["direct_device_earning"], false, "核对后恢复奖种"]]);
+  assert.match(toasts[0], /直属设备收益分成/);
+  assert.doesNotMatch(toasts[0], /direct_device_earning/);
+});
 
 test("①a 直属两类双币冷却行不提供提前解锁，包括剩余天数显示为零", () => {
   for (const kind of ["direct_purchase", "direct_device_earning"]) {

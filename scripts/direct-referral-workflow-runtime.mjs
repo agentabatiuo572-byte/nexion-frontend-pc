@@ -24,11 +24,11 @@ assert.equal(path.resolve(proof.source.repo).toLowerCase(), process.cwd().toLowe
 assert.deepEqual(proof.pageErrors, []);
 assert(proof.steps.length > 0 && proof.steps.every(step => step.status === 'passed' && step.evidence?.length), 'Incomplete browser steps');
 const groups = {
-  'pc-policy': ['F2-loading-empty', 'F2-error-retry', 'F2-validation-cancel', 'F2-one-atomic-proposal', 'F2-approved-readback-persistence', 'F2-version-conflict', 'F2-B1-direction'],
-  'pc-ledger': ['F5-new-groups-and-history'],
+  'pc-policy': ['F2-cutover-not-active', 'F2-error-retry', 'F2-validation-cancel', 'F2-one-atomic-proposal', 'F2-approved-readback-persistence', 'F2-seven-revision-conflict', 'F2-late-version-conflict', 'F2-B1-direction'],
+  'pc-ledger': ['F5-new-groups-and-current-network', 'F5-CSV-all-rows', 'F5-CSV-filtered-rows'],
   'pc-legacy': ['preserved-/network/v-rank', 'preserved-/network/binary', 'preserved-/network/leadership-pool'],
-  'pc-usability': ['F2-readonly', 'F2-keyboard-accessibility'],
-  'pc-history': ['F2-legacy-empty-independent', 'F2-legacy-readonly-isolated'],
+  'pc-usability': ['F2-readonly', 'F2-keyboard-accessibility', 'F2-theme-narrow', 'F5-native-month-filter'],
+  'pc-history': ['F2-empty-independent', 'F2-seven-layer-current'],
 };
 const steps = Object.entries(groups).map(([id, required]) => {
   const found = required.map(name => { const step = proof.steps.find(item => item.id === name); assert(step, `Missing ${name}`); return step; });

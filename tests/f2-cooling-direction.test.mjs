@@ -72,6 +72,7 @@ test("F2 opens the cooling editor only from valid canonical days and leaves unco
 });
 
 const baseContext = (overrides = {}) => ({
+  f2DirectPolicy: { sevenLayerEnabled: true, purchaseSplit: { enabled: false } }, f2DirectPolicyLoading: false, f2DirectPolicyError: null,
   f2Unilevel: [], f2Metrics: [], f2RateTiers: [], f2Guardrails: [], f2CommissionPolicy: {},
   f2ConfigValues: {}, f2Params: [], f2Loading: false, f2Error: null,
   can: () => true, openActionConfirm: () => {}, ...overrides,
@@ -82,7 +83,7 @@ const copy = (node) => [...walk(node)].flatMap((item) => {
   return (Array.isArray(children) ? children : [children]).filter((child) => typeof child === "string" || typeof child === "number");
 }).join(" ");
 
-test("F2 empty history still renders independent configuration with no invented current values", async () => {
+test("F2 unconfigured seven-layer rules still render independent settings without invented rates", async () => {
   let action;
   let updates = 0;
   const rendered = render({
@@ -92,7 +93,8 @@ test("F2 empty history still renders independent configuration with no invented 
   const content = copy(rendered);
   assert.match(content, /Partner Status 权益档/);
   assert.match(content, /其他奖励冷却期/);
-  assert.match(content, /暂无历史 L1–L7 费率数据/);
+  assert.match(content, /七层购买奖励/);
+  assert.match(content, /七层购买奖励尚未配置/);
   assert.doesNotMatch(content, /5000|50000|500000|30 天|固定 10%/);
   const button = [...walk(rendered)].find((item) => item.type === "button" && item.props.children === "配置权益门槛");
   button.props.onClick();
@@ -135,20 +137,75 @@ test("F2 partner thresholds show only a complete valid server configuration and 
   assert.deepEqual(saved, ["F.partner.tiers", '{"standard":0,"verified":20,"premium":200,"diamond":2000}', "保存有效权益门槛"]);
 });
 
-test("F2 historical rates, pauses and business parameters render read-only without exposing technical guardrails", () => {
+test("F2 restores seven-layer purchase edits with exact permissions and no unsupported controls", async () => {
+  let action;
+  let paused;
   const rendered = render({
-    f2Unilevel: Array.from({ length: 7 }, (_, index) => ({ l: `L${index + 1}`, usdt: index + 2, nex: index + 0.5, ui: "历史分层", direct: index === 0 })),
+    openActionConfirm: (value) => { action = value; }, toast: () => {}, updateFConfigBatch: async (...value) => { paused = value; },
+    f2Unilevel: Array.from({ length: 7 }, (_, index) => ({ l: `L${index + 1}`, usdt: index === 0 ? 10 : index + 2, nex: index + 0.5, ui: "原购买层级", direct: index === 0 })),
     f2ConfigValues: { "F.unilevel.L1.paused": "on", "F.unilevel.L2.paused": "off", "F.unilevel.depthGate": "L4", "F.unilevel.depthGateRank": "0.4", "F.influence.clampMin": "0.8", "F.promo.weekMultiplier": "1.2", "F.unilevel.mergeExitMaxPct": "25" },
     f2Metrics: [{ id: "old", name: "旧指标", value: "18 USDT", sub: "旧读数" }],
     f2Params: [{ id: "depth", name: "旧深度", key: "F.unilevel.depthGate", value: "L4", sub: "depthGate 字段" }, { id: "rank", name: "旧等级", key: "F.unilevel.depthGateRank", value: "0.4" }, { id: "influence", name: "InfluenceScore 下限", key: "F.influence.clampMin", value: "0.8", sub: "clamp 运算" }, { id: "promo", name: "promo 倍率", key: "F.promo.weekMultiplier", value: "1.2", sub: "peer 字段" }, { id: "cap", name: "旧封顶", key: "F.unilevel.nexCap", value: "$50/d" }, { id: "backfill", name: "旧回溯", key: "F.unilevel.backfill", value: "0d" }],
     f2Guardrails: ["B1 coverageRatio=0 redline100", "Idempotency-Key", "confirm-with-reason", "wallet mapper"],
   });
-  const history = [...walk(rendered)].find((node) => node.type === "section" && copy(node).includes("历史网络版税"));
-  assert.ok(history);
-  assert.equal([...walk(history)].filter((node) => node.type === "button").length, 0);
-  const content = copy(history);
-  for (const text of ["L1", "L7", "2", "0.5", "NEX/USDT版税", "已暂停", "未暂停", "L4", "历史值无效", "影响分下限", "活动周倍率", "合并出口保护上限", "25", "旧指标", "18 USDT", "NEX 日封顶（旧引擎未接入）", "回溯窗口（旧引擎未接入）"]) assert.ok(content.includes(text), text);
-  assert.doesNotMatch(content, /固定 10%|下一笔结算生效|InfluenceScore|clamp|promo|peer|coverageRatio|Idempotency-Key|confirm-with-reason|wallet mapper/);
+  const rules = [...walk(rendered)].find((node) => node.type === "section" && copy(node).includes("七层购买奖励"));
+  assert.ok(rules);
+  const content = copy(rules);
+  for (const text of ["L1", "L7", "10", "0.5", "NEX/USDT版税", "已暂停", "未暂停", "L4", "配置无效", "影响分下限", "活动周倍率", "合并出口保护上限", "25", "旧指标", "18 USDT", "NEX 日封顶（旧引擎未接入）", "回溯窗口（旧引擎未接入）"]) assert.ok(content.includes(text), text);
+  assert.doesNotMatch(content, /InfluenceScore|clamp|promo|peer|coverageRatio|Idempotency-Key|confirm-with-reason|wallet mapper|不参与新增分佣/);
+  const actions = [...walk(rules)].filter((node) => node.type === "button").map((node) => { node.props.onClick(); return action; });
+  const keys = actions.filter((item) => item.op === "param").map((item) => item.paramKey);
+  assert.ok(!keys.includes("F.unilevel.L1"), "L1 USDT is never editable");
+  for (const key of ["F.unilevel.L2", "F.unilevel.L7", "F.unilevel.nex.L1", "F.unilevel.nex.L7", "F.unilevel.depthGate", "F.unilevel.depthGateRank", "F.influence.clampMin", "F.influence.clampMax", "F.promo.weekMultiplier", "F.unilevel.mergeExitMaxPct"]) assert.ok(keys.includes(key), key);
+  for (const key of ["F.peer.rate", "F.royalty.minPayout", "F.unilevel.depth", "F.unilevel.nexCap", "F.unilevel.backfill"]) assert.ok(!keys.includes(key), key);
+  const pause = actions.find((item) => item.businessForm?.title === "单层暂停管理");
+  assert.equal(pause.businessForm.fields.length, 7);
+  assert.equal(pause.businessForm.fields[0].current, "on");
+  assert.equal(pause.businessForm.fields[2].current, "");
+  await assert.rejects(() => pause.run("空暂停草稿不能写", {}), /请选择全部/);
+  assert.equal(paused, undefined);
+  const values = Object.fromEntries(Array.from({ length: 7 }, (_, index) => [`L${index + 1}`, index === 0 ? "on" : "off"]));
+  await pause.run("提交七层暂停管理", values);
+  assert.deepEqual(paused, ["F2", Object.entries(values).map(([level, value]) => ({ key: `F.unilevel.${level}.paused`, value })), "提交七层暂停管理"]);
+  const depth = actions.find((item) => item.paramKey === "F.unilevel.depthGate");
+  const rank = actions.find((item) => item.paramKey === "F.unilevel.depthGateRank");
+  assert.equal(depth.edit.kind, "select");
+  assert.deepEqual(depth.edit.options, ["L1", "L2", "L3", "L4", "L5", "L6", "L7"]);
+  assert.equal(rank.edit.current, "0.4");
+  assert.ok(!rank.edit.options.includes("0.4"));
+  for (const [key, increased, reduced] of [["F.unilevel.L2", "4", "2"], ["F.unilevel.nex.L1", "0.6", "0.4"], ["F.promo.weekMultiplier", "1.3", "1.1"]]) {
+    const action = actions.find((item) => item.paramKey === key);
+    assert.equal(action.edit.amplifiesWhen, "increase");
+    assert.equal(blocked(action.edit, increased, action.amplify, lowCoverage), true, `${key} increase`);
+    assert.equal(blocked(action.edit, reduced, action.amplify, lowCoverage), false, `${key} reduction`);
+  }
+});
+
+test("F2 royalty-only and policy-only roles cannot use each other's purchase controls", () => {
+  for (const [authority, allowed, denied] of [
+    ["network_f2_royalty_rate", ["F.unilevel.L2", "F.unilevel.nex.L1", "F.promo.weekMultiplier"], ["F.unilevel.depthGate", "F.influence.clampMin", "F.unilevel.mergeExitMaxPct"]],
+    ["network_f2_policy_amplify", ["F.unilevel.depthGate", "F.influence.clampMin", "F.unilevel.mergeExitMaxPct"], ["F.unilevel.L2", "F.unilevel.nex.L1", "F.promo.weekMultiplier"]],
+  ]) {
+    let action;
+    const rendered = render({ can: (value) => value === authority, openActionConfirm: (value) => { action = value; } });
+    const actions = [...walk(rendered)].filter((node) => node.type === "button").map((node) => { node.props.onClick(); return action; });
+    const keys = actions.map((item) => item.paramKey);
+    for (const key of allowed) assert.ok(keys.includes(key), `${authority} allows ${key}`);
+    for (const key of denied) assert.ok(!keys.includes(key), `${authority} denies ${key}`);
+    for (const action of actions.filter((item) => item.edit)) assert.equal(action.edit.current, "", `${authority} unconfigured ${action.paramKey} draft`);
+  }
+});
+
+test("L1 old NEX is read-only while split is effective or its authority is unknown, with all deep-layer controls preserved", () => {
+  for (const overrides of [{ f2DirectPolicy: null }, { f2DirectPolicyError: "读取失败" }, { f2DirectPolicyLoading: true }, { f2DirectPolicy: { sevenLayerEnabled: true, purchaseSplit: { enabled: true } } }]) {
+    let action;
+    const actions = [...walk(render({ ...overrides, openActionConfirm: value => { action = value; } }))]
+      .filter(node => node.type === "button").map(node => { node.props.onClick(); return action; });
+    const keys = actions.map(item => item?.paramKey);
+    assert.ok(!keys.includes("F.unilevel.nex.L1"));
+    assert.ok(keys.includes("F.unilevel.nex.L2"));
+    assert.ok(keys.includes("F.unilevel.nex.L7"));
+  }
 });
 
 test("F2 loading and failure never expose independent writes while direct policy remains mounted", () => {

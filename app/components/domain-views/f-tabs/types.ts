@@ -90,6 +90,7 @@ export interface FViewCtx {
   // -- 网络版税费率(F2)· 读 + 配置写入 --
   f2Metrics: F2Metric[];
   f2DirectPolicy: DirectReferralPolicy | null;
+  f2SevenLayerRevision: number | null;
   f2DirectPolicyLoading: boolean;
   f2DirectPolicyError: string | null;
   updateF2DirectPolicy: (policy: DirectReferralUpdate, reason: string) => Promise<void>;

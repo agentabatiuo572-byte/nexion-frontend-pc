@@ -4,7 +4,7 @@ type JsonRecord = Record<string, unknown>;
 
 export const F5_KIND_LABELS: Record<string, string> = {
   direct_purchase: "直属购买分成", direct_device_earning: "直属设备收益分成",
-  network: "历史网络版税", binary: "双轨匹配", peer: "平级奖", cultivation: "培育奖", leadership: "领导奖池", genesis: "创世排放",
+  network: "网络购买奖励", binary: "双轨匹配", peer: "平级奖", cultivation: "培育奖", leadership: "领导奖池", genesis: "创世排放",
 };
 export const F5_KINDS = Object.keys(F5_KIND_LABELS);
 export const F5_STATUSES = ["cooling", "unlocked", "withdrawn", "reversed", "frozen", "rejected", "recovery_pending"];
@@ -150,6 +150,10 @@ export function assertF1Overview(value: unknown): asserts value is JsonRecord {
 export function assertF2Overview(value: unknown): asserts value is JsonRecord {
   const row = record(value, "F2");
   domain(row, "F2");
+  if (row.sevenLayerRevision !== undefined) {
+    const revision = nonNegativeInteger(row.sevenLayerRevision, "F2", "sevenLayerRevision");
+    if (!Number.isSafeInteger(revision)) invalid("F2", "sevenLayerRevision");
+  }
   const stringFields = (item: JsonRecord, fields: string[], path: string) => {
     for (const field of fields) {
       if (item[field] !== undefined && typeof item[field] !== "string") invalid("F2", `${path}.${field}`);
@@ -169,7 +173,7 @@ export function assertF2Overview(value: unknown): asserts value is JsonRecord {
     stringFields(metric, ["sub", "tone", "configKey"], path);
   });
   const rates = array(row, "unilevelRates", "F2");
-  // 退役后允许显式空历史；有历史时仍须完整，不能把缺失费率归零。
+  // 未配置可显式为空；已有七层必须完整，不能把缺失费率归零。
   if (rates.length) uniqueCodes(rates, "F2", "unilevelRates", Array.from({ length: 7 }, (_, index) => `L${index + 1}`), "level");
   rates.forEach((value, index) => {
     const path = `unilevelRates[${index}]`;
@@ -243,6 +247,20 @@ export function assertF4Overview(value: unknown): asserts value is JsonRecord {
 export function assertF5Overview(value: unknown): asserts value is JsonRecord {
   const row = record(value, "F5");
   domain(row, "F5");
+  if (row.pendingCalculations !== undefined || row.pendingCalculationCount !== undefined) {
+    const pending = array(row, "pendingCalculations", "F5");
+    const pendingCount = nonNegativeInteger(row.pendingCalculationCount, "F5", "pendingCalculationCount");
+    if (pendingCount < pending.length) invalid("F5", "pendingCalculationCount");
+    const ids = new Set<string>();
+    pending.forEach((value, index) => {
+      const item = record(value, "F5", `pendingCalculations[${index}]`);
+      for (const key of ["id", "settlementNo", "sourceRef", "sourceUserName", "ts"]) text(item[key], "F5", key);
+      if (item.id !== item.settlementNo || ids.has(String(item.id)) || !["direct_purchase", "direct_device_earning"].includes(String(item.kind)) || item.status !== "waiting_calculation" || item.nexUsdtPrice !== null || finite(item.amountUSDT, "F5", "amountUSDT") !== 0 || finite(item.amountNEX, "F5", "amountNEX") !== 0 || positiveInteger(item.layer, "F5", "layer") !== 1) invalid("F5", `pendingCalculations[${index}].relation`);
+      nonNegative(item.basisUsdt, "F5", "basisUsdt");
+      if (item.unlockAt !== null && (typeof item.unlockAt !== "string" || !Number.isFinite(Date.parse(item.unlockAt)))) invalid("F5", "unlockAt");
+      ids.add(String(item.id));
+    });
+  }
   const summary = object(row, "summary", "F5");
   const spend = moneySnapshot(summary.monthlyCommissionSpend, "summary.monthlyCommissionSpend");
   const cooling = moneySnapshot(summary.coolingBalance, "summary.coolingBalance");

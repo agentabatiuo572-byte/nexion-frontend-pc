@@ -49,7 +49,7 @@
     "E5": ["OPS-E-14", "OPS-E-16"],
     "E6": ["OPS-E-15"],
     "F1": ["OPS-F-01", "OPS-F-11", "OPS-F-22", "OPS-F-23"],
-    "F2": ["OPS-F-02", "OPS-F-04", "OPS-F-12", "OPS-F-13"],
+    "F2": ["OPS-F-02", "OPS-F-04", "OPS-F-12", "OPS-F-13", "OPS-F-27"],
     "F3": ["OPS-F-05", "OPS-F-14", "OPS-F-20"],
     "F4": ["OPS-F-07", "OPS-F-08", "OPS-F-09", "OPS-F-15", "OPS-F-16", "OPS-F-17", "OPS-F-24"],
     "F5": ["OPS-F-10", "OPS-F-18", "OPS-F-19", "OPS-F-21", "OPS-F-25", "OPS-F-26"],
@@ -994,8 +994,18 @@
       "status": "built",
       "view": "f-view.tsx",
       "batch": "P1",
-      "restAction": "f_direct_referral_policy"
-    },
+        "restAction": "f_direct_referral_policy"
+      },
+      {
+        "id": "OPS-F-27",
+        "domain": "F",
+        "object": "七层购买现行规则",
+        "action": "沿原 A2 调整各层基础预算和额外 NEX 系数；L1 基础预算固定，生效拆分时旧 L1 NEX 只读",
+        "status": "built",
+        "view": "f-view.tsx",
+        "batch": "done",
+        "restAction": "f_unilevel_rule"
+      },
     {
       "id": "OPS-F-03",
       "domain": "F",
@@ -2669,7 +2679,7 @@
         {
           "type": "backend-runtime",
           "file": "src/main/java/ffdd/opsconsole/team/mapper/F5CommissionMapper.java",
-          "positivePatterns": ["Bounded server-side export page", "List<Map<String, Object>> queryExportEvents\\(", "LIMIT #\\{limit\\}"],
+          "positivePatterns": ["e\\.order_no AS orderNo", "List<Map<String, Object>> queryExportEvents\\(", "LIMIT #\\{limit\\}"],
           "negativePatterns": ["SELECT \\* FROM nx_team_commission_event", "queryExportEvents[\\s\\S]{0,500}ledger_ref AS ledgerRef"]
         }
       ],

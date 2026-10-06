@@ -87,7 +87,7 @@
 - 业务规则前置失败 → **400 / 422**;状态机非法转移 → **409**。
 - 高敏写 `reason` 缺失 → **400 `REASON_REQUIRED`**(确认弹窗理由必填,server 强制非空,8–200 字)。
 - **放大资金流出方向**(上调 APY/费率/奖励/排放率/匹配比/cap、下调罚款/冷却/积分门、kill 恢复)提交时 server 前置核 **B1 覆盖率红线**,低于 `coverageRedLine`(默认 100%)**统一拒绝返 422**(✅ PM 2026-06-02;旧文 403 已废)。
-- 互锁校验:覆盖率 `yellow>red` / 挤兑 `bankrunRed>bankrunYellow` / K4 六维权重和=1 / staking APY 跨档保序 / E3 产能分段保序与换新阶梯严格保序 / V_RANKS 门槛保序 / Lucky 概率和≤100% / 转盘各档 weight 和=100 且档位∈[2,12] / 里程碑阈值保序。旧 UNILEVEL_USDT 各层和护栏仅属历史契约，不应用于新直属政策。
+- 互锁校验:覆盖率 `yellow>red` / 挤兑 `bankrunRed>bankrunYellow` / K4 六维权重和=1 / staking APY 跨档保序 / E3 产能分段保序与换新阶梯严格保序 / V_RANKS 门槛保序 / Lucky 概率和≤100% / 转盘各档 weight 和=100 且档位∈[2,12] / 里程碑阈值保序。原七层费率和合并上限继续约束购买预算；L1 拆分仅改变发放构成，不改变预算占用，设备分成不占购买额度。
 
 ### 0.6 ID 全 server mint
 `withdrawalNo / topupId / orderId / billId / commissionId / 通知 id / Genesis tokenId` 全部 server 单源生成,client 不可 mint / 枚举 / 撞 ID(§9.11d.2)。
@@ -155,7 +155,7 @@
 | E5 | 设备运维 | fleet heartbeat 监控/批量操作/库存激活/强制激活解绑 | E 设备 | V2·Ch10 | §6.1 / §11.1 / §9.11d.2 |
 | E6 | 算力与设备配置 | PC 算力备用模块入口开关、在线系数、显卡档位映射、下载内容配置 | E 设备 | V2·Ch10 | 三端改造 SPEC-0~2 |
 | F1 | V-Rank 晋升管理 | 13 阶 V 级门槛/server 晋升判定/实物奖发货/培育奖 | F 分销 | V2·Ch11 | §8.2 / §13.2 / 节奏表§6.3 |
-| F2 | 网络版税与分成 | 两类直属双币政策整组审批；独立 Partner Status 权益/其他奖励冷却；旧 L1–L7 历史只读，空历史合法 | F 分销 | V2·Ch11 | v2 F2 / F5 / A2 / B1 |
+| F2 | 网络版税与分成 | 现行七层配置、原 L1 预算与冷却只读引用的购买拆分、独立设备总比例/拆分/冷却整组审批；Partner Status 独立；空配置不补默认 | F 分销 | V2·Ch11 | v2 F2 / F5 / A2 / B1 |
 | F3 | 双轨结算引擎 | 较小侧匹配比例/两轨门槛/自动分配/月度 GV 归零(日封顶只读) | F 分销 | V2·Ch11 | §8.4 / §13.4.1 / 节奏表§6.4 |
 | F4 | 领导奖池 | 周注入比例/V_VOTES 票数权重/周结算(V3+ 头部分享) | F 分销 | V2·Ch11 | §8.5 |
 | F5 | 佣金事件审计 | 六类佣金统一流水/异常预警/冷却/撤销补发(资金出口审计中枢) | F 分销 | V2·Ch11 | §8.6 |
@@ -265,7 +265,7 @@
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
 | **V_RANKS**(F1 13阶) | v:enum{V0…V12} · 头衔 · 晋升条件{selfBuyUSD?,directRefs?,teamVolumeUSD?,vDownlines?}(AND 复合,各阶组合不一) · unilevelDepth(旧扩展版税历史，不作用于新直属) · peerBonus[V](V0–V2=0/V3+=5%) · leadershipVotes · prizeName(全局唯一) · cultivationBonus(NEX) · 可见性解锁 · vRankPermanent=true；本人权益、培育与领导票权保持原规则 | SC | §17.1 / Ch11 F1 |
-| **直属分成政策**(F2) | policyVersion / expectedVersion · effectiveAt(服务端批准时间) · purchase / deviceEarning{enabled,totalRatePct,usdtSharePct,coolingDays} · nexUsdtPrice(现有行情只读)；未配置禁用占位，不继承固定 10% 或旧层级；两规则整组审批与原子版本，平台额外支付、只给直接邀请人 | SC | Ch11 F2 |
+| **直属分成政策**(F2) | schemaVersion=2 · policyVersion/expectedVersion 与 sevenLayerRevision/expectedSevenLayerRevision 双版本；settlementMode/sevenLayerEnabled/cutoverAt 标记代际 · effectiveAt 为批准时间 · purchaseSplit{enabled,usdtSharePct}，原 L1 固定 10% 基础预算/冷却/旧系数只读 sevenLayerReference 引用 · deviceEarning{enabled,totalRatePct,usdtSharePct,coolingDays} 独立 · nexUsdtPrice 只读；整组审批，缺配置不补默认，拆分 NEX 替代旧 L1 额外 NEX | SC | Ch11 F2 |
 | **独立权益与冷却**(F2) | `F.partner.tiers`{standard,verified,premium,diamond} 非负保序，只决定非现金权益；`F.cooldown` 整数 0–90 天，仅用于其他奖励；当前值取服务端，缺值不填默认 | SC | Ch11 F2 |
 | **旧网络版税历史**(F2) | 当前 PC historicalOnly：unilevelRates 为空或完整 L1–L7 实值快照；NEX 系数按每 1 USDT 版税计，不按订单额；旧出口合并上限只读实值、缺值未配置；新购 checkout.completed 不再调用旧结算。后端 Unilevel 引擎及旧参数写入/A2重放仍保留，并非全局禁用；旧账查询、释放及处置保留 | SC | Ch11 F2 / F5 |
 | **双轨**(F3) | binaryDailyCap(月1-6=$5000/月7+=$2000,权威 H1) · balanceMatchRate(10%) · binaryTrackMinUsd($1000) · spillover · gvResetCron | SC | §17.1 / Ch11 F3 |
@@ -464,8 +464,8 @@
 | `/api/admin/config/v-ranks` · `/v-ranks` | GET / PUT | 13 阶 V 级配置(门槛保序 Vn≥Vn-1 违反 400) | F1-MD2(高敏) | F1 |
 | `/api/admin/users/:userId/vrank/override` | POST | 手动晋升/回滚 V 级(携 Key;执行=增长 lead/超管) | F1-MD1 | F1 |
 | `/api/admin/team/prize-queue` · `/prize-queue/:id/ship` | GET/POST | 实物奖发货队列 / 标发货(须 kycAddressVerified 否则 409) | F1-MD3(ship) | F1 |
-| `/api/admin/teams/direct-referral-policy` · `/api/config/commission/direct-referral` | GET；admin PUT | 同一当前生效政策；PUT 携 expectedVersion、完整 purchase/deviceEarning、reason、Idempotency-Key，仅 A2 批准后生效；不接受客户端生效时间/行情 | f_direct_referral_policy，target=direct_referral_policy/current | F2 |
-| `/api/admin/teams/rates` | GET | 独立权益/其他奖励冷却与历史概览；unilevelRates=[] 合法，不补七层或业务默认；与直属政策读取独立处理成功/空/失败 | — | F2 |
+| `/api/admin/teams/direct-referral-policy` · `/api/config/commission/direct-referral` | GET；admin PUT | GET 显式 ?schemaVersion=2；PUT 携 schemaVersion=2、expectedVersion、expectedSevenLayerRevision、完整 purchaseSplit/deviceEarning、reason、Idempotency-Key，仅 A2 批准后生效；拒绝旧 purchase 和第二购买总比例；T 前只读，T 后 Team 旧版明确升级提示 | f_direct_referral_policy，target=direct_referral_policy/current | F2 |
+| `/api/admin/teams/rates` | GET | 现行七层、sevenLayerRevision、独立权益及购买/其他奖励冷却；unilevelRates=[] 合法，不补业务默认；七层变化令旧拆分预览过期；与直属政策分块处理成功/空/失败 | — | F2 |
 | `/api/admin/teams/commissions/config/:key` | PATCH，既有 A2 写入 | 当前 `F.partner.tiers` / `F.cooldown` 独立配置，reason + Idempotency-Key；冷却初始化/缩短前置 B1。后端旧层级写入仍保留权限与校验，当前 PC 不提供旧层写入口 | f_ui_config；旧层级 A2 f_unilevel_rule 重放仍保留 | F2 |
 | `/api/admin/config/binary` | GET / PUT | 双轨配置(binaryDailyCapUSD 不可写返 422;高敏+B1 前置) | F3-MD1/MD3(高敏) | F3 |
 | `/api/admin/team/binary/:userId/adjust` | POST | 补发/纠错 Balance Match(携 Key;原子+D4 bill) | F3-MD2 | F3 |

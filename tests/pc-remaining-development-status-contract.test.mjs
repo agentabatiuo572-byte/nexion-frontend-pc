@@ -232,6 +232,7 @@ test("remaining-development ledger has unique claims and preserves semantic cons
     "OPS-F-11",
     "OPS-F-12",
     "OPS-F-13",
+    "OPS-F-27",
     "OPS-F-14",
     "OPS-F-16",
     "OPS-F-17",
@@ -259,10 +260,10 @@ test("remaining-development ledger has unique claims and preserves semantic cons
   const counts = Object.groupBy(manifest.rows, (item) => item.status);
 
   assert.equal(new Set(ids).size, ids.length, "action IDs must be unique");
-  assert.equal(manifest.rows.length, 261);
+  assert.equal(manifest.rows.length, 262);
   assert.deepEqual(
     { built: counts.built?.length, readonly: counts.readonly?.length, pending: counts.pending?.length ?? 0, missing: counts.missing?.length ?? 0 },
-    { built: 229, readonly: 29, pending: 3, missing: 0 },
+    { built: 230, readonly: 29, pending: 3, missing: 0 },
   );
   for (const id of expectedBuiltClosures) assert.equal(row(id)?.status, "built", id + " must stay built");
 

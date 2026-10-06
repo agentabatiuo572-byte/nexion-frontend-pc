@@ -156,10 +156,10 @@ function CoveragePill({ enabled }: { enabled: boolean }) {
       href="/overview/dual-ledger"
       prefetch={false}
       title={unavailable ? "B 域聚合接口暂不可用 · 点击进双账本" : "兑付覆盖率 = 储备 ÷ 应付负债 · 点击进双账本"}
-      className="hidden items-center gap-2 rounded-[9px] px-3 py-1.5 text-[12px] transition-opacity hover:opacity-90 sm:inline-flex"
+      className="hidden shrink-0 items-center gap-2 whitespace-nowrap rounded-[9px] px-3 py-1.5 text-[12px] transition-opacity hover:opacity-90 sm:inline-flex"
       style={{ background: `color-mix(in srgb, ${zoneVar} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${zoneVar} 35%, transparent)` }}
     >
-      <span className="hidden md:inline" style={{ color: "var(--v5-ink-3)" }}>兑付覆盖率</span>
+      <span className="hidden xl:inline" style={{ color: "var(--v5-ink-3)" }}>兑付覆盖率</span>
       <span className="font-mono-tabular" style={{ color: zoneVar, fontWeight: 600 }}>{label}</span>
     </Link>
   );
@@ -186,7 +186,7 @@ function SearchBox({ domains }: { domains: NavDomain[] }) {
         onClick={() => setOpen(true)}
         aria-label="打开全局命令面板"
         aria-keyshortcuts="Meta+K Control+K"
-        className="hidden items-center gap-2 rounded-[9px] px-3 py-1.5 text-left transition-opacity hover:opacity-90 lg:flex"
+        className="hidden shrink-0 items-center gap-2 rounded-[9px] px-3 py-1.5 text-left transition-opacity hover:opacity-90 2xl:flex"
         style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)", width: 240 }}
       >
         <Search size={15} style={{ color: "var(--v5-ink-4)" }} aria-hidden />
@@ -258,15 +258,15 @@ export function TopBar({
         borderBottom: "1px solid var(--v5-border)",
       }}
     >
-      <div className="hidden min-w-0 items-center gap-4 sm:flex">
+      <div className="hidden min-w-0 flex-1 items-center gap-4 sm:flex">
         <Breadcrumb />
         <SearchBox domains={domains} />
       </div>
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex shrink-0 items-center gap-2 whitespace-nowrap sm:gap-3">
         {!supportOnly && canReadBDomain && <CoveragePill enabled />}
         {!supportOnly && <span className="hidden h-4 w-px sm:block" style={{ background: "var(--v5-border)" }} />}
-        {!supportOnly && <span className="hidden md:block"><SyncChip /></span>}
-        <span className="hidden lg:block"><UtcClock /></span>
+        {!supportOnly && <span className="hidden xl:block"><SyncChip /></span>}
+        <span className="hidden 2xl:block"><UtcClock /></span>
         <span className="h-4 w-px" style={{ background: "var(--v5-border)" }} />
         {canReadMContent && <SupportInboxPill pending={servicePending} />}
         {!supportOnly && <NotificationBell />}

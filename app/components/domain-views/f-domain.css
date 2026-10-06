@@ -124,20 +124,65 @@
 .fdom .gov-list .it::before { content: '·'; position: absolute; left: 1px; top: 0; color: var(--cyan); font-weight: 700; font-size: 15px; line-height: 1.55; }
 
 /* ===== F2 · 网络版税 cascade + tier + 参数卡 ===== */
-.fdom .f2-top { display: grid; grid-template-columns: 1.55fr 1fr; gap: 16px; }
-@media (max-width: 1080px) { .fdom .f2-top { grid-template-columns: 1fr; } }
+.fdom .f2-top { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.fdom .f2-top > .pane { min-width: 0; }
+.fdom .f2-direct-policy .pane-h { flex-wrap: wrap; gap: 6px 12px; }
+.fdom .f2-direct-policy .ph-sub { min-width: 0; white-space: normal; }
+.fdom .f2-top .casc-foot > span { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 1080px) { .fdom .f2-top { grid-template-columns: minmax(0, 1fr); } }
 .fdom .casc { padding: 6px 18px 14px; }
-.fdom .casc-row { display: grid; grid-template-columns: 50px 1fr 110px 90px 70px; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px dashed var(--border); }
+.fdom .casc-row, .fdom .casc-head { display: grid; grid-template-columns: 104px minmax(140px, 1fr) minmax(210px, 1.5fr) minmax(100px, 1fr) 132px; align-items: center; gap: 20px; padding: 11px 0; border-bottom: 1px solid var(--border); font-size: 13px; line-height: 1.5; }
+.fdom .casc-row > * { min-width: 0; }
+.fdom .casc-head { color: var(--ink-3); font-size: 12px; padding: 10px 0; }
+.fdom .casc-level { display: flex; align-items: center; gap: 8px; }
+.fdom .casc-rate { display: grid; gap: 7px; justify-items: start; }
+.fdom .casc-level .lchip { width: 34px; height: 26px; flex-shrink: 0; }
+.fdom .casc-level small, .fdom .casc-fixed small { display: block; color: var(--ink-3); font-size: 12px; font-weight: 400; }
+.fdom .casc-rate strong { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 600; }
+.fdom .casc-action { justify-self: end; text-align: right; }
+.fdom .casc-fixed { color: var(--ink-2); white-space: nowrap; }
+.fdom .casc-mobile-label { display: none; }
 .fdom .casc-row:last-child { border-bottom: 0; }
 .fdom .lchip { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 28px; border-radius: 7px; font-family: var(--mono); font-size: 12.5px; font-weight: 600; background: var(--brand-soft); color: var(--brand); }
 .fdom .lchip.ext { background: var(--surface-3); color: var(--ink-3); }
-.fdom .rate-bar { position: relative; height: 24px; background: var(--surface-3); border-radius: 7px; overflow: hidden; }
-.fdom .rate-bar .f { height: 100%; border-radius: 6px; background: linear-gradient(90deg,var(--brand) 0%,#6FA51A 100%); display: flex; align-items: center; padding-left: 10px; }
-.fdom .rate-bar .f.ext { background: linear-gradient(90deg,var(--cyan) 0%,#7763B8 100%); }
-.fdom .rate-bar .f .pct { font-family: var(--mono); font-size: 12px; font-weight: 600; color: #0A0A0A; }
-.fdom .rate-bar .f.ext .pct { color: #fff; }
-.fdom .nex-val { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--brand); text-align: right; }
-.fdom .nex-val small { font-family: var(--font-v5); font-size: 10.5px; color: var(--ink-4); font-weight: 400; margin-left: 4px; }
+.fdom .rate-bar { width: 96px; max-width: 100%; height: 3px; background: var(--surface-3); border-radius: 2px; overflow: hidden; }
+.fdom .rate-bar .f { height: 100%; border-radius: inherit; background: var(--brand); }
+.fdom .rate-bar .f.ext { background: var(--cyan); }
+.fdom .nex-val { display: block; max-width: 100%; font-family: var(--mono); font-size: 14px; font-weight: 600; color: var(--ink-2); text-align: left; line-height: 1.5; }
+.fdom button.nex-val { color: var(--brand); }
+.fdom .nex-val small { display: block; font-family: var(--font-v5); font-size: 12px; color: var(--ink-3); font-weight: 400; margin-top: 4px; }
+.fdom .params.f2-rule-params { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 24px; padding: 18px; margin-top: 0; border-top: 1px solid var(--border); }
+.fdom .f2-rule-params .param { min-width: 0; border: 0; border-radius: 0; padding: 0; background: none; display: flex; flex-direction: column; align-items: start; }
+.fdom .f2-rule-params .param .fbtn { margin-top: auto; }
+.fdom .f2-legacy { margin: 0 18px 18px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 12px; color: var(--ink-3); }
+.fdom .f2-legacy summary { cursor: pointer; padding: 4px 0; }
+.fdom .f2-legacy-values { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.fdom .f2-legacy-values .param { border: 0; padding: 0; }
+.fdom .f2-legacy-values .param .pv { font-size: 16px; }
+.fdom .f2-top .tier { grid-template-columns: minmax(110px, 1fr) 64px minmax(100px, 1fr); }
+.fdom .f2-cooling > p { padding: 0 18px; color: var(--ink-3); font-size: 13px; line-height: 1.6; }
+.fdom .f2-cooling > .param { border: 0; padding: 0 18px 18px; }
+@media (max-width: 1100px) {
+  .fdom .casc-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 20px; padding: 18px 0; }
+  .fdom .casc-head { display: none; }
+  .fdom .casc-level { grid-column: 1; grid-row: 1; display: flex; align-items: center; }
+  .fdom .casc-action { grid-column: 2; grid-row: 1; }
+  .fdom .casc-status { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; }
+  .fdom .casc-mobile-label { display: block; color: var(--ink-3); font-size: 12px; font-weight: 400; margin-bottom: 5px; }
+  .fdom .casc-status .casc-mobile-label { margin-bottom: 0; }
+  .fdom .params.f2-rule-params { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .fdom .casc { padding-inline: 14px; }
+  .fdom .casc-row { gap: 14px 16px; }
+  .fdom .params.f2-rule-params { grid-template-columns: 1fr; }
+  .fdom .f2-rule-params .param { padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+  .fdom .f2-rule-params .param:last-child { padding-bottom: 0; border: 0; }
+  .fdom .f2-legacy-values { grid-template-columns: 1fr; }
+  .fdom .f2-top .tier { grid-template-columns: minmax(0, 1fr) auto; }
+  .fdom .f2-top .tier .dist { grid-column: 1 / -1; text-align: left; }
+  .fdom .f2-top .pane-h { flex-wrap: wrap; }
+}
 .fdom .casc-foot { padding: 12px 18px 16px; display: flex; gap: 12px; flex-wrap: wrap; font-size: 11.5px; color: var(--ink-4); align-items: center; }
 .fdom .casc-foot .lg { display: inline-flex; align-items: center; gap: 5px; }
 .fdom .casc-foot .lg::before { content: ''; width: 10px; height: 10px; border-radius: 3px; background: var(--brand); }

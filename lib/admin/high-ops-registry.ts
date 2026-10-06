@@ -1756,8 +1756,10 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "direct_referral_policy",
     buildCommand: (ctx) => ({ domain: "F", op: "f_direct_referral_policy", params: {
+      schemaVersion: 2,
       expectedVersion: ctx.expectedVersion,
-      purchase: ctx.purchase, deviceEarning: ctx.deviceEarning,
+      expectedSevenLayerRevision: ctx.expectedSevenLayerRevision,
+      purchaseSplit: ctx.purchaseSplit, deviceEarning: ctx.deviceEarning,
     } }),
     buildTarget: () => ({ domain: "F", type: "direct_referral_policy", id: "current" }),
   },

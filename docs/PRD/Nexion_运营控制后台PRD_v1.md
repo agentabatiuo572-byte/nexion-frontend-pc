@@ -111,7 +111,7 @@
 | 支柱 | 收入来源(§1.4) | 后台关注的杠杆 |
 |---|---|---|
 | 硬件 GMV | 设备销售:NexionBox S1 / Pro / Rack / Genesis | 设备定价与上下架、套餐折扣 ladder、试用→购机转化、trade-in 折旧定价 |
-| 团队分润佣金体系 | 直属购买与设备收益分成 + 独立团队奖励 | F2 两类直属双币政策、Partner Status 权益、V-Rank 门槛、binary 双轨日封顶(`binaryDailyCapUSD`,Phase 派发,§13.4.1)、提现冷却、领导池；历史 network 保留 |
+| 团队分润佣金体系 | 七层购买与直属双币拆分 + 独立设备分成和团队奖励 | F2 原七层购买、L1 预算拆分、直属设备政策、Partner Status 权益、V-Rank 门槛、binary 双轨日封顶(`binaryDailyCapUSD`,Phase 派发,§13.4.1)、提现冷却、领导池；现行与历史 network 保留 |
 | 代币经济 | NEX 平台代币经济(兑换 / 二级市场) | NEX 周价格曲线关键帧排程与做市、Staking 池(USDT 锁仓)APY/penalty、Genesis 节点经济与二级市场、Exchange 三阈值 |
 | 算力市场服务费 | 算力市场撮合服务费(向 AI 客户收取) | 向 AI 客户侧收取的平台撮合佣金;**当前前端 PRD 无对应后台参数控制面,AI 客户侧接口均标注 TBD,待 V4 架构收口补入**(注:`GET /api/products/specs` 属设备规格/E 域,与本支柱无关,不作为本支柱锚点) |
 
@@ -209,7 +209,7 @@
 | Phase 引擎(`useProductPhase`) | 按用户 `joinedAt` 计算所处 Phase 并派发时变 dial 的单一真相源。后台权威模型 = **8 dial**(12 月 §6.4 的 7 dial,Premium/NEXv2 gate 已下线 + 前端 `complianceHoldEnabled`),月粒度,见 §1.7 |
 | TrialConfig | 免费试用模块的后台可控参数模型(§9.11b) |
 | Shadow earning(试用收益) | 试用期累计的模拟算力收益。**系统层面**:进入 `redeemed` 终态时合并至账户余额(creditBalance/NEX + 双 bill 记录),作为后续购机的余额来源;`failed / cancelled` 终态则归零不入账。**用户侧文案口径**:统一入口统称"试用收益 / 试用累计 / 试用奖励"(§16.2.5);仅 claim sheet 转化场景专用"购机抵扣 / 抵扣购机款"(§9.11b),该口径不适用于所有 UI 入口;两类口径均不向用户暴露 shadow 技术名词(参 §9.11a-f) |
-| 直属分成 / 历史 network | 新购买与真实设备收益分别按 F2 政策奖励唯一直接邀请人，拆为 USDT/NEX，由平台额外支付；不递归且不继承七层或固定 10% 默认。旧 network 仅保留历史查询和处置；二元、等级、培育与领导池保持独立规则 |
+| 七层购买 / 直属拆分 | 购买按原 L1–L7，L1 唯一基础预算固定 10%，仅发放构成拆双币且替代原额外 NEX；L2–L7 不变。设备真实收益只奖励直接邀请人，总比例和拆分独立配置，平台额外支付且本人原收益不减；对碰、等级、培育与领导池保持独立规则 |
 | 双轨(Binary Track) | 双轨对碰佣金体系:用户发展 A/B 两侧团队,按 `min(A, B) × 10%` 平衡匹配公式(取两轨中业绩较小一侧的月 GV)日结算佣金,受 Phase 派发的 `binaryDailyCapUSD` 日封顶约束(§8.4 / §13.4.1);与 Unilevel 版税并列构成团队分润两条腿。用户侧一律称 Track A / Track B,不暴露翼 / 左 / 右 / spillover / 上线 / 下线等词汇 |
 | V-Rank | 团队业绩驱动的 V0–V12 军衔体系(13 级门槛) |
 | 用户生命周期 L0–L5 | 用户产品使用阶段内部 ID(Visitor→Ambassador);用户侧仅显示功能化标签,不暴露 L 编号 |

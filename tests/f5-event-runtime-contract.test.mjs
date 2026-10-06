@@ -70,6 +70,16 @@ test("F5 接受八类七态内的权威游标事件", () => {
   assert.doesNotThrow(() => assertF5Overview(fixture()));
 });
 
+test("waiting price groups are separate from actual commission rows and never fabricate money or CM ids", () => {
+  const value = fixture();
+  value.pendingCalculations = [{ id: "DR-WAIT", settlementNo: "DR-WAIT", kind: "direct_purchase", layer: 1, sourceRef: "ORDER-WAIT", sourceUserName: "U00000010", basisUsdt: 1000, amountUSDT: 0, amountNEX: 0, nexUsdtPrice: null, status: "waiting_calculation", unlockAt: null, ts: "2026-10-06 12:00:00" }];
+  value.pendingCalculationCount = 1;
+  assert.doesNotThrow(() => assertF5Overview(value));
+  for (const mutate of [p => { p.pendingCalculationCount = 0; }, p => { delete p.pendingCalculations[0].settlementNo; }, p => { p.pendingCalculations[0].amountUSDT = 1; }, p => { p.pendingCalculations[0].nexUsdtPrice = 1; }, p => { p.pendingCalculations[0].status = "unlocked"; }, p => { p.pendingCalculations.push(p.pendingCalculations[0]); p.pendingCalculationCount = 2; }]) {
+    const invalid = structuredClone(value); mutate(invalid); assert.throws(() => assertF5Overview(invalid), /F5_OVERVIEW_RESPONSE_INVALID/);
+  }
+});
+
 test("F5 new kinds require the original settlement group, price, split and refund facts", () => {
   for (const kind of ["direct_purchase", "direct_device_earning"]) {
     const value = fixture();

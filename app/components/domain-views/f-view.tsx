@@ -71,7 +71,7 @@ const ADMIN_OPERATOR = currentAdminOperator;
  *  (如同一佣金事件先冻结后解冻)铸新号并弃旧号,防真实新操作被当成重复提交静默吞掉。 */
 const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-f-commands-v1" });
 
-// 保留参数与历史佣金处置；直属政策使用独立的整组命令。
+// 原七层购买奖励与其他参数继续走既有 A2 命令；直属政策使用独立整组命令。
 const F_ACTIVE_KEYS = new Set([
   "directRoyaltyPct", "networkRoyaltyPct", "binaryPairRatePct",
   "maxCombinedOutflowPct", "minPayoutUsdt", "rankWindowDays", "hardwareQuotaPerRank",
@@ -79,7 +79,10 @@ const F_ACTIVE_KEYS = new Set([
 
 function resolveFOp(key: string): string {
   if (key.startsWith("F.commission.") && key.endsWith(".status")) return "f_commission_status";
-  if (key.startsWith("F.unilevel.")) throw new Error("旧网络费率已停用，请使用直属分成配置。");
+  if (/^F\.unilevel\.(?:nex\.)?L[1-7]$/.test(key)) return "f_unilevel_rule";
+  if (key.startsWith("F.unilevel.")
+      && !["F.unilevel.depthGate", "F.unilevel.depthGateRank", "F.unilevel.mergeExitMaxPct"].includes(key)
+      && !/^F\.unilevel\.L[1-7]\.paused$/.test(key)) throw new Error("该网络版税参数未接入结算，不能调整。");
   if (F_ACTIVE_KEYS.has(key)) return "f_config";
   return "f_ui_config";
 }
@@ -380,6 +383,11 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
 
   // F 域 5 写函数统一改 A2 propose:按 key 分发到 4 polymorphic op(commit afe51f2)。
   const proposeFConfig = async (sourceDomain: string, key: string, value: string, reason: string, expectedVersion?: number) => {
+    if (key === "F.unilevel.nex.L1") {
+      const current = await fetchF2DirectReferralPolicy();
+      setF2DirectPolicy(current);
+      if (current.sevenLayerEnabled && current.purchaseSplit.enabled) throw new Error("DIRECT_REFERRAL_L1_NEX_READONLY");
+    }
     const op = resolveFOp(key);
     const def = findHighOp(op);
     if (!def) throw new Error(`F_OP_NOT_FOUND:${op}`);
@@ -528,19 +536,22 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     },
     f2Metrics: f2Overview?.metrics ?? [],
     f2DirectPolicy,
+    f2SevenLayerRevision: f2Overview?.sevenLayerRevision ?? null,
     f2DirectPolicyLoading,
     f2DirectPolicyError,
     updateF2DirectPolicy: async (policy, reason) => {
       const invalid = validateDirectReferralUpdate(policy);
       if (invalid) throw new Error(invalid);
-      if (!f2DirectPolicy || f2DirectPolicy.policyVersion !== policy.expectedVersion) throw new Error("直属分成配置已变化，请重新读取后再确认。");
+      const current = await fetchF2DirectReferralPolicy();
+      setF2DirectPolicy(current);
+      if (current.policyVersion !== policy.expectedVersion || current.sevenLayerRevision !== policy.expectedSevenLayerRevision) throw new Error("直属分成或七层规则已变化，原预览已失效；草稿保留，请重新读取后再确认。");
       const def = findHighOp("f_direct_referral_policy");
       if (!def) throw new Error("F_OP_NOT_FOUND:f_direct_referral_policy");
       await proposeStable("f-direct-referral-policy", JSON.stringify([policy, reason]), {
         action: def.action, obj: "current",
-        before: `当前版本 ${f2DirectPolicy.policyVersion}；${directReferralSummary(f2DirectPolicy)}`,
+        before: `当前政策版本 ${current.policyVersion}，七层引用版本 ${current.sevenLayerRevision}；${directReferralSummary(current)}；旧 L1 NEX 系数 ${current.sevenLayerReference.legacyNexPerUsd ?? "未配置"}`,
         after: `${directReferralSummary(policy)}；审批通过后立即对新来源生效`,
-        type: "fund", amplifies: directReferralAmplifies(f2DirectPolicy, policy),
+        type: "fund", amplifies: directReferralAmplifies(current, policy),
         gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "F2",
         command: def.buildCommand({ ...policy }), target: def.buildTarget({}),
       });

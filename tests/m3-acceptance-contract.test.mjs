@@ -36,7 +36,8 @@ test("M3 shared profile drawer fits within its actual conversation container", (
   const topbar = read("app/components/shell/topbar.tsx");
   assert.match(topbar, /className="hidden text-\[12\.5px\] sm:inline"[^>]*>[\s\S]*?\{operator\}/);
   assert.match(topbar, /justify-between gap-4 px-3 sm:px-5/);
-  assert.match(topbar, /className="flex items-center gap-2 sm:gap-3"/);
+  assert.match(topbar, /className="flex shrink-0 items-center gap-2 whitespace-nowrap sm:gap-3"/);
+  assert.match(topbar, /className="hidden min-w-0 flex-1 items-center gap-4 sm:flex"/);
 });
 
 test("M3 roster failure exposes qualification retry instead of claiming an empty inbox", () => {

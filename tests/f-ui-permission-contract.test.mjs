@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import ts from "typescript";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const view = read("../app/components/domain-views/f-view.tsx");
@@ -43,6 +44,29 @@ test("F2 与 F3 按费率、政策、结算、配置和引擎暂停权限失败�
   assert.match(f3, /\{canSettle && <button/);
   assert.match(f3, /\{canConfigure && <div className="cfg-foot"/);
   assert.match(f3, /\{canPause && <div className="cfg-foot"/);
+});
+
+test("F2 七层购买参数恢复既有 A2 命令分发且不放开未接入参数", () => {
+  const source = ts.createSourceFile("f-view.tsx", view, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const selected = source.statements.filter((statement) =>
+    (ts.isFunctionDeclaration(statement) && statement.name?.text === "resolveFOp")
+    || (ts.isVariableStatement(statement) && statement.declarationList.declarations.some((declaration) => declaration.name.getText(source) === "F_ACTIVE_KEYS")));
+  assert.equal(selected.length, 2);
+  const body = ts.transpileModule(selected.map((statement) => statement.getText(source)).join("\n"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const resolve = new Function(body + "\nreturn resolveFOp;")();
+  for (let layer = 1; layer <= 7; layer++) {
+    assert.equal(resolve(`F.unilevel.L${layer}`), "f_unilevel_rule");
+    assert.equal(resolve(`F.unilevel.nex.L${layer}`), "f_unilevel_rule");
+    assert.equal(resolve(`F.unilevel.L${layer}.paused`), "f_ui_config");
+  }
+  for (const key of ["F.unilevel.depthGate", "F.unilevel.depthGateRank", "F.unilevel.mergeExitMaxPct", "F.influence.clampMin", "F.influence.clampMax", "F.promo.weekMultiplier", "F.cooldown", "F.partner.tiers"]) {
+    assert.equal(resolve(key), "f_ui_config", key);
+  }
+  for (const key of ["F.unilevel.depth", "F.unilevel.nexCap", "F.unilevel.backfill", "F.unilevel.L8", "F.unilevel.L1junk", "F.unilevel.nex.L1.paused"]) {
+    assert.throws(() => resolve(key), /未接入结算/, key);
+  }
 });
 
 test("F4 池、常规配置、大使与榜单权限互不替代", () => {

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 面包屑 — usePathname() → nav 查表 → 「NexGrid 运营控制台 / 域 / L2」。
+ * 面包屑 — usePathname() → nav 查表 → 「UVEL 运营控制台 / 域 / L2」。
  * 根路径 / 显示「总览驾驶舱」。未匹配路径回退展示原始 segment。
  */
 import Link from "next/link";
@@ -35,13 +35,13 @@ export function Breadcrumb() {
   }
 
   return (
-    <nav aria-label="面包屑" className="flex items-center gap-1.5 text-[12.5px]">
+    <nav aria-label="面包屑" className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[12.5px]">
       {crumbs.map((c, i) => {
         const last = i === crumbs.length - 1;
         return (
-          <span key={i} className="flex items-center gap-1.5">
+          <span key={i} className={last ? "flex min-w-0 items-center gap-1.5" : "hidden shrink-0 items-center gap-1.5 xl:flex"}>
             {i > 0 && (
-              <ChevronRight size={13} style={{ color: "var(--v5-ink-4)" }} aria-hidden />
+              <ChevronRight size={13} className="shrink-0" style={{ color: "var(--v5-ink-4)" }} aria-hidden />
             )}
             {c.accent && (
               <span
@@ -59,7 +59,7 @@ export function Breadcrumb() {
                 {c.label}
               </Link>
             ) : (
-              <span style={{ color: last ? "var(--v5-ink)" : "var(--v5-ink-3)", fontWeight: last ? 600 : 400 }}>
+              <span className="truncate" title={c.label} style={{ color: last ? "var(--v5-ink)" : "var(--v5-ink-3)", fontWeight: last ? 600 : 400 }}>
                 {c.label}
               </span>
             )}
