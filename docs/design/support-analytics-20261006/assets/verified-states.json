@@ -1,0 +1,426 @@
+{
+  "htmlHash": "2FE60632C74F293639CF6A981B41D76A669B5D3A92770B4C3D7B8BF7E6A75405",
+  "method": "Observed DOM innerText and computed body background for each state. Layout verified separately by screenshots; this file does not assert element geometry.",
+  "checks": [
+    {
+      "role": "普通客服 · Mia",
+      "page": "工作台",
+      "states": [
+        {
+          "state": "默认",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PERSONAL\n我的工作台\n\nMia，今天先把每一次等待接住。当前客户快照与本月服务成绩分开展示。\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n当前绑定客户\n↗\n120 人\n当前归属快照 · 不随期间变化\n当前活跃客户\n↗\n86 人\n按已有配置窗口 · 演示7天\n本月首充（含购机）\n↗\n12 人\n发生时归属 · 充值 8 / 购机 4\n本月期间充值\n↗\n24,000 USDT\n成功充值 · 购机单列\n今天先处理\n待回复 8\n首次待联系 6\n待维护 14\n陈\n陈默 U-55108\n\n请问设备的保修期是多久？\n\n72 分钟\n等待回复\n回复\n林\n林海 U-88421\n\n订单号是 DG20260928001，可以帮我查一下物",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "空",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PERSONAL\n工作台\n\n范围：本人绑定客户 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n○\n当前范围暂无记录\n\n已保留角色与筛选范围。没有记录不代表其他范围也为空。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "加载",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PERSONAL\n工作台\n\n范围：本人绑定客户 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n◌\n正在读取当前范围\n\n加载演示：数值保持占位，未知数据不会显示成 0。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "失败",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PERSONAL\n工作台\n\n范围：本人绑定客户 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n!\n暂时无法读取数据\n\n失败演示：此处不是无客户或未首充。重试保留当前角色、页面及筛选。\n\n重试读取",
+          "renderedTextObserved": true
+        }
+      ]
+    },
+    {
+      "role": "普通客服 · Mia",
+      "page": "客户列表",
+      "states": [
+        {
+          "state": "默认",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PERSONAL\n我的客户\n\n当前范围：本人绑定客户。邀请关系不等于服务归属。\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n全部\n待回复\n首次待联系\n待维护\n活跃\n沉默\n不再维护\n静态演示数据\n全部首充状态\n已首充（含购机）\n未首充\n历史待核实\n演示币种 USDT · 未知始终置末\n导出预览\n当前Tab：全部 · 排序：最近活跃从大到小 / 从新到旧 · 范围：本人绑定客户\n客户 / 业务 UID\t服务原因 / 当前归属\t直属邀请 ↕\t邀请团队人数 ↕\t个人累充 / USDT ↕\t邀请团队累充 / USDT ↕\t首充（含购机） ↕\t最近活跃 ↓\t操作\n\n林\n林海 V3\nU-88421\n\t待回复\n顾问 Mia · 星河组",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "空",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PERSONAL\n客户列表\n\n范围：本人绑定客户 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n○\n当前范围暂无记录\n\n已保留角色与筛选范围。没有记录不代表其他范围也为空。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "加载",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PERSONAL\n客户列表\n\n范围：本人绑定客户 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n◌\n正在读取当前范围\n\n加载演示：数值保持占位，未知数据不会显示成 0。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "失败",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PERSONAL\n客户列表\n\n范围：本人绑定客户 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n!\n暂时无法读取数据\n\n失败演示：此处不是无客户或未首充。重试保留当前角色、页面及筛选。\n\n重试读取",
+          "renderedTextObserved": true
+        }
+      ]
+    },
+    {
+      "role": "普通客服 · Mia",
+      "page": "即时会话 ·",
+      "states": [
+        {
+          "state": "默认",
+          "background": "rgb(10, 10, 10)",
+          "text": "即时会话台\n静态演示数据\n保留旧会话三栏 · 新资料在原资料之后补齐\n范围：本人绑定客户 ⓘ\n会话收件箱 6\n＋ 主动联系\n全部6\n未读2\n待回复3\n进行中3\n已结束2\n归档1\n◷ 超时策略\n批量归档\n林\n林海\nV3\n10:24\n\n订单号是 DG20260928001，可以帮我查一下物流吗？\n\n● 进行中 · 顾问 Mia\n2\nU-88421 · 客户主动咨询\n雨\n小雨儿\nV2\n09:18\n\n设备已经收到了，非常好用，谢谢！\n\n● 进行中 · 顾问 Mia\n1\nU-77633 · 客户主动咨询\n陈\n陈默\nV1\n20:36\n\n请问设备的保修期是多久？\n\n● 进行中 · 顾问 Mia\nU-55108 · 客户主动咨询\nS\nSunny\nV2\n16:12\n\n我想再买一台，有什么可选的型号？\n\n● 已结束 · 顾问 Mia\nU-66890 · 客户主动咨询\n凯",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "空",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PERSONAL\n即时会话\n\n范围：本人绑定客户 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n○\n当前范围暂无记录\n\n已保留角色与筛选范围。没有记录不代表其他范围也为空。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "加载",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PERSONAL\n即时会话\n\n范围：本人绑定客户 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n◌\n正在读取当前范围\n\n加载演示：数值保持占位，未知数据不会显示成 0。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "失败",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PERSONAL\n即时会话\n\n范围：本人绑定客户 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n!\n暂时无法读取数据\n\n失败演示：此处不是无客户或未首充。重试保留当前角色、页面及筛选。\n\n重试读取",
+          "renderedTextObserved": true
+        }
+      ]
+    },
+    {
+      "role": "普通客服 · Mia",
+      "page": "服务规则",
+      "states": [
+        {
+          "state": "默认",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PERSONAL\n服务规则\n\n当前身份：普通客服\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n♙\n此角色没有规则查看与修改权限\n\n普通客服的服务范围保持本人绑定客户。需要归属调整时联系主管处理。\n\n返回我的工作台",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "空",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PERSONAL\n服务规则\n\n范围：本人绑定客户 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n○\n当前范围暂无记录\n\n已保留角色与筛选范围。没有记录不代表其他范围也为空。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "加载",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PERSONAL\n服务规则\n\n范围：本人绑定客户 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n◌\n正在读取当前范围\n\n加载演示：数值保持占位，未知数据不会显示成 0。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "失败",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PERSONAL\n服务规则\n\n范围：本人绑定客户 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n!\n暂时无法读取数据\n\n失败演示：此处不是无客户或未首充。重试保留当前角色、页面及筛选。\n\n重试读取",
+          "renderedTextObserved": true
+        }
+      ]
+    },
+    {
+      "role": "主管",
+      "page": "工作台",
+      "states": [
+        {
+          "state": "默认",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / SUPERVISOR\n客服管理台\n\n先看积压，再调度服务。仅查看本人负责的组；当前归属和事件发生时的组分别统计。待分配客户只属于本人负责组，全局未路由池不可见。\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n待分配客户\n↗\n352 人\n进入池最早优先\n待回复客户\n↗\n96 人\n等待最久优先\n逾期待维护\n↗\n38 人\n维护到期最早优先\n停用待交接\n↗\n0 项\n交接任务数，与停用账号数不同\n客服负载与期间表现\n当前负载 / 本月发生时归属 · 各列不混加\n统计口径 ⓘ\n客服\t当前绑定\t活跃客户\t待回复\t待维护\t本月首充\t本月充值 / USDT\t操作\n\n周\n周芷宁\n接待中（演示）\n\t420 ↗\t286 ↗\n\t9 ↗\t7 ↗\t2",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "空",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / SUPERVISOR\n工作台\n\n范围：许安负责的组 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n○\n当前范围暂无记录\n\n已保留角色与筛选范围。没有记录不代表其他范围也为空。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "加载",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / SUPERVISOR\n工作台\n\n范围：许安负责的组 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n◌\n正在读取当前范围\n\n加载演示：数值保持占位，未知数据不会显示成 0。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "失败",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / SUPERVISOR\n工作台\n\n范围：许安负责的组 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n!\n暂时无法读取数据\n\n失败演示：此处不是无客户或未首充。重试保留当前角色、页面及筛选。\n\n重试读取",
+          "renderedTextObserved": true
+        }
+      ]
+    },
+    {
+      "role": "主管",
+      "page": "客户列表",
+      "states": [
+        {
+          "state": "默认",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / SUPERVISOR\n客户列表\n\n当前范围：许安负责的组。邀请关系不等于服务归属。\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n全部\n待回复\n首次待联系\n待维护\n活跃\n沉默\n不再维护\n待分配\n静态演示数据\n全部首充状态\n已首充（含购机）\n未首充\n历史待核实\n当前授权范围客服\n周芷宁\n杨帆\n演示币种 USDT · 未知始终置末\n导出预览\n当前Tab：全部 · 排序：最近活跃从大到小 / 从新到旧 · 范围：许安负责的组\n客户 / 业务 UID\t服务原因 / 当前归属\t直属邀请 ↕\t邀请团队人数 ↕\t个人累充 / USDT ↕\t邀请团队累充 / USDT ↕\t首充（含购机） ↕\t最近活跃 ↓\t操作\n\n星\n顾星 V1\nU-9",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "空",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / SUPERVISOR\n客户列表\n\n范围：许安负责的组 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n○\n当前范围暂无记录\n\n已保留角色与筛选范围。没有记录不代表其他范围也为空。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "加载",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / SUPERVISOR\n客户列表\n\n范围：许安负责的组 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n◌\n正在读取当前范围\n\n加载演示：数值保持占位，未知数据不会显示成 0。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "失败",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / SUPERVISOR\n客户列表\n\n范围：许安负责的组 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n!\n暂时无法读取数据\n\n失败演示：此处不是无客户或未首充。重试保留当前角色、页面及筛选。\n\n重试读取",
+          "renderedTextObserved": true
+        }
+      ]
+    },
+    {
+      "role": "主管",
+      "page": "即时会话 ·",
+      "states": [
+        {
+          "state": "默认",
+          "background": "rgb(10, 10, 10)",
+          "text": "即时会话台\n静态演示数据\n保留旧会话三栏 · 新资料在原资料之后补齐\n范围：许安负责的组 ⓘ\n会话收件箱 3\n＋ 主动联系\n全部3\n未读0\n待回复1\n进行中1\n已结束2\n归档0\n◷ 超时策略\n批量归档\n顾\n顾明\nV2\n08:30\n\n请帮忙确认设备使用说明。\n\n● 进行中 · 顾问 周芷宁\nU-90521 · 客户主动咨询\n晓\n顾晓\nV1\n08:57\n\n设备购买已完成。\n\n● 已结束 · 顾问 周芷宁\nU-90522 · 客户主动咨询\n星\n顾星\nV1\n08:58\n\n充值已经到账。\n\n● 已结束 · 顾问 杨帆\nU-90523 · 客户主动咨询\n3 条授权演示会话 · 1–3\n‹\n1\n›\n顾\n顾明 V2\nU-90521 · 当前顾问 周芷宁 · 进行中\n✓ 标记已解决\n▤ 转工单\n•••\n审阅模式 · 管理权限不代表代发权限；此会话由 周芷宁 接待。\n2",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "空",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / SUPERVISOR\n即时会话\n\n范围：许安负责的组 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n○\n当前范围暂无记录\n\n已保留角色与筛选范围。没有记录不代表其他范围也为空。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "加载",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / SUPERVISOR\n即时会话\n\n范围：许安负责的组 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n◌\n正在读取当前范围\n\n加载演示：数值保持占位，未知数据不会显示成 0。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "失败",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / SUPERVISOR\n即时会话\n\n范围：许安负责的组 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n!\n暂时无法读取数据\n\n失败演示：此处不是无客户或未首充。重试保留当前角色、页面及筛选。\n\n重试读取",
+          "renderedTextObserved": true
+        }
+      ]
+    },
+    {
+      "role": "主管",
+      "page": "分组看板",
+      "states": [
+        {
+          "state": "默认",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / SUPERVISOR\n我的客服分组\n\n仅查看许安负责的组，不显示其他主管的组、对象或数量。\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n组范围\n全部负责组\n海岚组\n海岚组 · 19名客服\n导出预览\n管理分组\n当前快照\n截至 2026-10-06 10:30 · 日期不改变当前归属\n普通客服成员\n◇\n19 ↗\n按普通客服成员资格去重\n当前绑定客户\n◇\n6,790 ↗\n当前顾问所属组 · 不含组队列\n当前持有设备\n◇\n8,430 ↗\n按设备去重 · 来源分类独立\n窗口内确认活跃\n◇\n4,200 ↗\n现有配置7天 · 未知不算未活跃\n本月期间事件\n发生时组归属 · 2026-10-01起 · Asia/Tokyo\n首充（含购",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "空",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / SUPERVISOR\n分组看板\n\n范围：许安负责的组 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n○\n当前范围暂无记录\n\n已保留角色与筛选范围。没有记录不代表其他范围也为空。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "加载",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / SUPERVISOR\n分组看板\n\n范围：许安负责的组 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n◌\n正在读取当前范围\n\n加载演示：数值保持占位，未知数据不会显示成 0。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "失败",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / SUPERVISOR\n分组看板\n\n范围：许安负责的组 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n!\n暂时无法读取数据\n\n失败演示：此处不是无客户或未首充。重试保留当前角色、页面及筛选。\n\n重试读取",
+          "renderedTextObserved": true
+        }
+      ]
+    },
+    {
+      "role": "主管",
+      "page": "服务规则",
+      "states": [
+        {
+          "state": "默认",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / SUPERVISOR\n服务规则\n\n自动继承是客服归属规则，不是邀请统计的层数。\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n新注册客户的服务归属\n主管只读\n目标默认：不限继承代数。已有明确配置保持不变，存量未配置只走有审计的迁移。\n自动继承模式\n 不限代数（默认）\n\n有效邀请上级的客服归属可继续继承。\n\n 最多 N 代\n\n根客户为0，直接邀请为1；N=0不继承下一代。\n\n无有效顾问时\n按组路由分配\n\n按可信组路由进入组队列，由负责主管分配；没有可信组路由时由总管理员处理。本原型不改变其他已明确配置。\n\n影响范围\n只影响规则生效后的新注册分配\n\n已有绑定不重排；历史待分配池不自动捞取。手工转移只影响明确列出的客户。\n\n迁",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "空",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / SUPERVISOR\n服务规则\n\n范围：许安负责的组 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n○\n当前范围暂无记录\n\n已保留角色与筛选范围。没有记录不代表其他范围也为空。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "加载",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / SUPERVISOR\n服务规则\n\n范围：许安负责的组 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n◌\n正在读取当前范围\n\n加载演示：数值保持占位，未知数据不会显示成 0。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "失败",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / SUPERVISOR\n服务规则\n\n范围：许安负责的组 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n!\n暂时无法读取数据\n\n失败演示：此处不是无客户或未首充。重试保留当前角色、页面及筛选。\n\n重试读取",
+          "renderedTextObserved": true
+        }
+      ]
+    },
+    {
+      "role": "总管理员 · Admin",
+      "page": "工作台",
+      "states": [
+        {
+          "state": "默认",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PLATFORM\n全平台运营总览\n\n看清客户覆盖、服务能力和期间结果。全平台包含未分配及归属异常。\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n主管与分组 · 当前管理结构\n主管 2 人 · 查看统计\n全部 3 组 →\n客服账号\n♙\n24 个\n启用 22\n/\n停用 2\n查看账号 →\n全平台客户\n当前归属快照\n8,420 人\n已绑定 7,960\n/\n待分配 420\n/\n归属异常 40\n查看归属 →\n本月充值与首充\n发生时归属 · USDT\n期间成功充值\n286,000 USDT\n查看同口径明细 →\n首充（含购机）\n326 人\n充值 218 / 购机 108\n月初\n走势仅作版式示意\n当前\n● 期间充值\n● 首充人数（独立量",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "空",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PLATFORM\n工作台\n\n范围：全平台，含未分配与归属异常 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n○\n当前范围暂无记录\n\n已保留角色与筛选范围。没有记录不代表其他范围也为空。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "加载",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PLATFORM\n工作台\n\n范围：全平台，含未分配与归属异常 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n◌\n正在读取当前范围\n\n加载演示：数值保持占位，未知数据不会显示成 0。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "失败",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PLATFORM\n工作台\n\n范围：全平台，含未分配与归属异常 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n!\n暂时无法读取数据\n\n失败演示：此处不是无客户或未首充。重试保留当前角色、页面及筛选。\n\n重试读取",
+          "renderedTextObserved": true
+        }
+      ]
+    },
+    {
+      "role": "总管理员 · Admin",
+      "page": "客户列表",
+      "states": [
+        {
+          "state": "默认",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PLATFORM\n客户列表\n\n当前范围：全平台，含未分配与归属异常。邀请关系不等于服务归属。\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n全部\n待回复\n首次待联系\n待维护\n活跃\n沉默\n不再维护\n待分配\n静态演示数据\n全部首充状态\n已首充（含购机）\n未首充\n历史待核实\n当前授权范围客服\n张晓雨\n王浩然\n李思琪\n陈子航\nMia\n周芷宁\n杨帆\n演示币种 USDT · 未知始终置末\n导出预览\n当前Tab：全部 · 排序：最近活跃从大到小 / 从新到旧 · 范围：全平台，含未分配与归属异常\n客户 / 业务 UID\t服务原因 / 当前归属\t直属邀请 ↕\t邀请团队人数 ↕\t个人累充 / USDT ↕\t邀请团队累充 / USDT ↕\t",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "空",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PLATFORM\n客户列表\n\n范围：全平台，含未分配与归属异常 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n○\n当前范围暂无记录\n\n已保留角色与筛选范围。没有记录不代表其他范围也为空。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "加载",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PLATFORM\n客户列表\n\n范围：全平台，含未分配与归属异常 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n◌\n正在读取当前范围\n\n加载演示：数值保持占位，未知数据不会显示成 0。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "失败",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PLATFORM\n客户列表\n\n范围：全平台，含未分配与归属异常 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n!\n暂时无法读取数据\n\n失败演示：此处不是无客户或未首充。重试保留当前角色、页面及筛选。\n\n重试读取",
+          "renderedTextObserved": true
+        }
+      ]
+    },
+    {
+      "role": "总管理员 · Admin",
+      "page": "即时会话 ·",
+      "states": [
+        {
+          "state": "默认",
+          "background": "rgb(10, 10, 10)",
+          "text": "即时会话台\n静态演示数据\n保留旧会话三栏 · 新资料在原资料之后补齐\n范围：全平台，含未分配与归属异常 ⓘ\n会话收件箱 13\n＋ 主动联系\n全部13\n未读3\n待回复5\n进行中6\n已结束6\n归档1\n◷ 超时策略\n批量归档\n林\n林海\nV3\n10:24\n\n订单号是 DG20260928001，可以帮我查一下物流吗？\n\n● 进行中 · 顾问 Mia\n2\nU-88421 · 客户主动咨询\n雨\n小雨儿\nV2\n09:18\n\n设备已经收到了，非常好用，谢谢！\n\n● 进行中 · 顾问 Mia\n1\nU-77633 · 客户主动咨询\n陈\n陈默\nV1\n20:36\n\n请问设备的保修期是多久？\n\n● 进行中 · 顾问 Mia\nU-55108 · 客户主动咨询\nS\nSunny\nV2\n16:12\n\n我想再买一台，有什么可选的型号？\n\n● 已结束 · 顾问 Mia\nU-66890 ·",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "空",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PLATFORM\n即时会话\n\n范围：全平台，含未分配与归属异常 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n○\n当前范围暂无记录\n\n已保留角色与筛选范围。没有记录不代表其他范围也为空。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "加载",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PLATFORM\n即时会话\n\n范围：全平台，含未分配与归属异常 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n◌\n正在读取当前范围\n\n加载演示：数值保持占位，未知数据不会显示成 0。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "失败",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PLATFORM\n即时会话\n\n范围：全平台，含未分配与归属异常 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n!\n暂时无法读取数据\n\n失败演示：此处不是无客户或未首充。重试保留当前角色、页面及筛选。\n\n重试读取",
+          "renderedTextObserved": true
+        }
+      ]
+    },
+    {
+      "role": "总管理员 · Admin",
+      "page": "分组看板",
+      "states": [
+        {
+          "state": "默认",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PLATFORM\n全部客服分组\n\n总管理员可查看全部组与未路由分类。\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n组范围\n全部组\n星河组\n晨光组\n海岚组\n星河组 · 2名客服\n晨光组 · 3名客服\n海岚组 · 19名客服\n导出预览\n主管管理\n管理分组\n当前快照\n截至 2026-10-06 10:30 · 日期不改变当前归属\n普通客服成员\n◇\n24 ↗\n按普通客服成员资格去重\n当前绑定客户\n◇\n7,960 ↗\n当前顾问所属组 · 不含组队列\n当前持有设备\n◇\n9,820 ↗\n按设备去重 · 来源分类独立\n窗口内确认活跃\n◇\n4,833 ↗\n现有配置7天 · 未知不算未活跃\n本月期间事件\n发生时组归属 · 2026-10-",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "空",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PLATFORM\n分组看板\n\n范围：全平台，含未分配与归属异常 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n○\n当前范围暂无记录\n\n已保留角色与筛选范围。没有记录不代表其他范围也为空。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "加载",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PLATFORM\n分组看板\n\n范围：全平台，含未分配与归属异常 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n◌\n正在读取当前范围\n\n加载演示：数值保持占位，未知数据不会显示成 0。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "失败",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PLATFORM\n分组看板\n\n范围：全平台，含未分配与归属异常 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n!\n暂时无法读取数据\n\n失败演示：此处不是无客户或未首充。重试保留当前角色、页面及筛选。\n\n重试读取",
+          "renderedTextObserved": true
+        }
+      ]
+    },
+    {
+      "role": "总管理员 · Admin",
+      "page": "服务规则",
+      "states": [
+        {
+          "state": "默认",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PLATFORM\n服务规则\n\n自动继承是客服归属规则，不是邀请统计的层数。\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n新注册客户的服务归属\n本地预览 · 未保存到服务器\n目标默认：不限继承代数。已有明确配置保持不变，存量未配置只走有审计的迁移。\n自动继承模式\n 不限代数（默认）\n\n有效邀请上级的客服归属可继续继承。\n\n 最多 N 代\n\n根客户为0，直接邀请为1；N=0不继承下一代。\n\n无有效顾问时\n按组路由分配\n\n按可信组路由进入组队列，由负责主管分配；没有可信组路由时由总管理员处理。本原型不改变其他已明确配置。\n\n影响范围\n只影响规则生效后的新注册分配\n\n已有绑定不重排；历史待分配池不自动捞取。手工转移只影响明确列",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "空",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PLATFORM\n服务规则\n\n范围：全平台，含未分配与归属异常 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n○\n当前范围暂无记录\n\n已保留角色与筛选范围。没有记录不代表其他范围也为空。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "加载",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PLATFORM\n服务规则\n\n范围：全平台，含未分配与归属异常 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n◌\n正在读取当前范围\n\n加载演示：数值保持占位，未知数据不会显示成 0。\n\n返回默认演示",
+          "renderedTextObserved": true
+        },
+        {
+          "state": "失败",
+          "background": "rgb(10, 10, 10)",
+          "text": "SUPPORT CENTER / PLATFORM\n服务规则\n\n范围：全平台，含未分配与归属异常 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n!\n暂时无法读取数据\n\n失败演示：此处不是无客户或未首充。重试保留当前角色、页面及筛选。\n\n重试读取",
+          "renderedTextObserved": true
+        }
+      ]
+    }
+  ]
+}

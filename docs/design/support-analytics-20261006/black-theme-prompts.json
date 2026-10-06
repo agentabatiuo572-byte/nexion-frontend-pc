@@ -1,0 +1,52 @@
+{
+  "date": "2026-10-06",
+  "themeSource": "app/globals.css: html[data-theme=dark]",
+  "purpose": "Adopted black/neutral-gray revision. Generated text and metrics are illustrative, contracts and clickable prototype are authoritative.",
+  "prompts": [
+    {
+      "id": "agent",
+      "prompt": "Use case: ui-mockup, style-transfer edit. Image 1 is the edit target. Image 2 is the authoritative existing customer-service console style reference. Correct the target to match the reference's NEUTRAL BLACK theme exactly. Canvas/background/header/sidebar/chat background RGB #0A0A0A, primary surfaces #121214, secondary small controls #17171B, tertiary #202027; thin neutral white 7% opacity separators. Remove ALL blue/navy/cyan color casts from large backgrounds, cards, table headers, dialogs, lighting and shadows. NO blue gradients, NO glows, NO smoky texture. Flat restrained enterprise admin UI. Background color must look genuinely black, NOT midnight blue. Main text white, secondary #C8CDD6, muted #8A95A8. Lemon green #9EDC1D primary action. Sky blue #38BDF8 ONLY in tiny links/selection marks and small selected rows or advisor chat bubbles, as original reference, never page surfaces. Retain the layout, Chinese information hierarchy, content sections, visible actions, avatars, tables and major metrics of target except the explicit corrections below. Clean 14px-like body, max medium/semibold weight600, flat sections no card-in-card stacks. Dates use 2026-10-06 and mark 设计示例数据. Wide single desktop screenshot, not collage.\n个人工作台. Keep service-first hierarchy and customer statistics, show highest wait first 126分钟/72分钟/42分钟/28分钟. First-paid包含真实购机, purchase amount is ALL successful actual paid purchases, separately not added into充值. Bottom customer table unchanged structure.",
+      "reference": [
+        "assets/concept-agent.png",
+        "assets/legacy-reference.png"
+      ],
+      "output": "assets/concept-agent-black.png"
+    },
+    {
+      "id": "supervisor",
+      "prompt": "Use case: ui-mockup, style-transfer edit. Image 1 is the edit target. Image 2 is the authoritative existing customer-service console style reference. Correct the target to match the reference's NEUTRAL BLACK theme exactly. Canvas/background/header/sidebar/chat background RGB #0A0A0A, primary surfaces #121214, secondary small controls #17171B, tertiary #202027; thin neutral white 7% opacity separators. Remove ALL blue/navy/cyan color casts from large backgrounds, cards, table headers, dialogs, lighting and shadows. NO blue gradients, NO glows, NO smoky texture. Flat restrained enterprise admin UI. Background color must look genuinely black, NOT midnight blue. Main text white, secondary #C8CDD6, muted #8A95A8. Lemon green #9EDC1D primary action. Sky blue #38BDF8 ONLY in tiny links/selection marks and small selected rows or advisor chat bubbles, as original reference, never page surfaces. Retain the layout, Chinese information hierarchy, content sections, visible actions, avatars, tables and major metrics of target except the explicit corrections below. Clean 14px-like body, max medium/semibold weight600, flat sections no card-in-card stacks. Dates use 2026-10-06 and mark 设计示例数据. Wide single desktop screenshot, not collage.\n主管工作台. Replace ALL 全部客服/全平台 scopes with 本人负责组 or 全部负责组. Supervisor林思远 manages 星河组 and 晨光组 only. Navigation 工作台/客户列表/即时会话/分组看板/服务规则. Main table仅负责组内客服. Header group selector全部负责组, no outside group information. Show firstpaid46, recharge48780USDT, currentbound1170, active633, wait42, groupunassigned18. Historical performance stays event-time group, current assets current group. No global pool.",
+      "reference": [
+        "assets/concept-supervisor.png",
+        "assets/legacy-reference.png"
+      ],
+      "output": "assets/concept-supervisor-black.png"
+    },
+    {
+      "id": "superadmin",
+      "prompt": "Use case: ui-mockup, style-transfer edit. Image 1 is the edit target. Image 2 is the authoritative existing customer-service console style reference. Correct the target to match the reference's NEUTRAL BLACK theme exactly. Canvas/background/header/sidebar/chat background RGB #0A0A0A, primary surfaces #121214, secondary small controls #17171B, tertiary #202027; thin neutral white 7% opacity separators. Remove ALL blue/navy/cyan color casts from large backgrounds, cards, table headers, dialogs, lighting and shadows. NO blue gradients, NO glows, NO smoky texture. Flat restrained enterprise admin UI. Background color must look genuinely black, NOT midnight blue. Main text white, secondary #C8CDD6, muted #8A95A8. Lemon green #9EDC1D primary action. Sky blue #38BDF8 ONLY in tiny links/selection marks and small selected rows or advisor chat bubbles, as original reference, never page surfaces. Retain the layout, Chinese information hierarchy, content sections, visible actions, avatars, tables and major metrics of target except the explicit corrections below. Clean 14px-like body, max medium/semibold weight600, flat sections no card-in-card stacks. Dates use 2026-10-06 and mark 设计示例数据. Wide single desktop screenshot, not collage.\n总管理员运营总览. Add clear compact supervisor management overview 主管账号3（启用2/停用1）, ordinary客服24, 有负责组主管2, 分组3. Show a supervisor table 林思远2组5名客服1170绑定; 许安1组19名客服6790绑定; 周宁停用0组0. Platform customers8420=bound7960+unassigned420+unknown40. All counts have subtle drilldown arrow. Firstpaid326=已归组300+当时未分组18+归属待核实8. Recharge286000=已归组268000+当时未分组12000+归属待核实6000USDT. Service rules unlimited and globalunrouted handledby总管理员. Preservecharts/tabularhierarchy.",
+      "reference": [
+        "assets/concept-superadmin.png",
+        "assets/legacy-reference.png"
+      ],
+      "output": "assets/concept-superadmin-black.png"
+    },
+    {
+      "id": "sessions",
+      "prompt": "Use case: ui-mockup, style-transfer edit. Image 1 is the edit target. Image 2 is the authoritative existing customer-service console style reference. Correct the target to match the reference's NEUTRAL BLACK theme exactly. Canvas/background/header/sidebar/chat background RGB #0A0A0A, primary surfaces #121214, secondary small controls #17171B, tertiary #202027; thin neutral white 7% opacity separators. Remove ALL blue/navy/cyan color casts from large backgrounds, cards, table headers, dialogs, lighting and shadows. NO blue gradients, NO glows, NO smoky texture. Flat restrained enterprise admin UI. Background color must look genuinely black, NOT midnight blue. Main text white, secondary #C8CDD6, muted #8A95A8. Lemon green #9EDC1D primary action. Sky blue #38BDF8 ONLY in tiny links/selection marks and small selected rows or advisor chat bubbles, as original reference, never page surfaces. Retain the layout, Chinese information hierarchy, content sections, visible actions, avatars, tables and major metrics of target except the explicit corrections below. Clean 14px-like body, max medium/semibold weight600, flat sections no card-in-card stacks. Dates use 2026-10-06 and mark 设计示例数据. Wide single desktop screenshot, not collage.\n即时会话台. Preserve original3column, rightprofileallsections and5shortcuts. Add compact missing accountrows 算力6.4TH/s、闲置近7天约三成、地区越南·胡志明市、手机号+84···7741. Dates2026. Rightpanelneutralblack, advisorbubbles small desaturated blue like source notsaturated electricblue. The selectedcontact also subtle like source. KeepclientidentityavatarnameUIDlevelriskfinanceaccountsdevicescustomertagsactions and newfirstpaid/invites/activity. No KYC.",
+      "reference": [
+        "assets/concept-sessions.png",
+        "assets/legacy-reference.png"
+      ],
+      "output": "assets/concept-sessions-black.png"
+    },
+    {
+      "id": "groups",
+      "prompt": "Use case: ui-mockup, style-transfer edit. Image 1 is the edit target. Image 2 is the authoritative existing customer-service console style reference. Correct the target to match the reference's NEUTRAL BLACK theme exactly. Canvas/background/header/sidebar/chat background RGB #0A0A0A, primary surfaces #121214, secondary small controls #17171B, tertiary #202027; thin neutral white 7% opacity separators. Remove ALL blue/navy/cyan color casts from large backgrounds, cards, table headers, dialogs, lighting and shadows. NO blue gradients, NO glows, NO smoky texture. Flat restrained enterprise admin UI. Background color must look genuinely black, NOT midnight blue. Main text white, secondary #C8CDD6, muted #8A95A8. Lemon green #9EDC1D primary action. Sky blue #38BDF8 ONLY in tiny links/selection marks and small selected rows or advisor chat bubbles, as original reference, never page surfaces. Retain the layout, Chinese information hierarchy, content sections, visible actions, avatars, tables and major metrics of target except the explicit corrections below. Clean 14px-like body, max medium/semibold weight600, flat sections no card-in-card stacks. Dates use 2026-10-06 and mark 设计示例数据. Wide single desktop screenshot, not collage.\n分组看板. Supervisor林思远, scope本人负责组, groupselector全部负责组/星河组/晨光组. Separate top CURRENT snapshot row:负责组2/普通客服5/当前绑定1170/已确认活跃633/当前设备1390. Separate 本月业绩 row:首充46/成功充值48780USDT/实付购机24000USDT. Two group rows 星河组2客服440绑定24首充32420充值14200购机, 晨光组3客服730绑定22首充16360充值9800购机. Five tabs 总览/资金/设备/活跃/成员. Currentdeviceclassification1390=实购1100+试用200+赠送70+来源未知20. Activity1170=活跃633+不活跃517+未知20. Groupunassigned18. All metric labels/counts carry discreet drilldown chevron. Keep visualflatnotcardpiles. No globalpoolfigures in supervisor scope.",
+      "reference": [
+        "assets/concept-groups.png",
+        "assets/legacy-reference.png"
+      ],
+      "output": "assets/concept-groups-black.png"
+    }
+  ]
+}
