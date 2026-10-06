@@ -18,8 +18,8 @@ function loadMarketRoute() {
   const output = compile(routeSource);
   const exports = {};
   new Function("require", "exports", "module", output)((name) => {
-    if (name === "next/headers") return { cookies: async () => ({ get: () => ({ value: "test-token" }) }) };
-    if (name.endsWith("require-password-change-cleared")) return { requirePasswordChangeCleared: () => null };
+    if (name === "next/headers") return { cookies: async () => ({ get: (cookieName) => cookieName === "nexion_admin_token" ? { value: "test-token" } : undefined }) };
+    if (name.endsWith("require-password-change-cleared")) return { ADMIN_TOKEN_COOKIE: "nexion_admin_token", requirePasswordChangeCleared: () => null };
     throw new Error(`unexpected import: ${name}`);
   }, exports, { exports });
   return exports;

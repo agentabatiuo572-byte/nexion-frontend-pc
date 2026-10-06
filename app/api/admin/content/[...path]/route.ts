@@ -1,8 +1,8 @@
 import { cookies } from "next/headers";
-import { requirePasswordChangeCleared } from "@/lib/admin/require-password-change-cleared";
+import { ADMIN_TOKEN_COOKIE, requirePasswordChangeCleared } from "@/lib/admin/require-password-change-cleared";
+import { boundedUpload } from "@/lib/admin/support-image-proxy";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
-const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
 const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 const DEFAULT_UPLOAD_TRANSPORT_MAX_BYTES = 32 * 1024 * 1024;
 
@@ -41,27 +41,6 @@ function backendPath(parts: string[]) {
   return `/api/admin/content/${parts.map((part) => encodeURIComponent(part)).join("/")}`;
 }
 
-async function boundedUpload(request: Request, maxBytes: number): Promise<ArrayBuffer | null> {
-  if (!request.body) return new ArrayBuffer(0);
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > maxBytes) { await reader.cancel(); return null; }
-      chunks.push(value);
-    }
-  } finally { reader.releaseLock(); }
-  const buffer = new ArrayBuffer(size);
-  const body = new Uint8Array(buffer);
-  let offset = 0;
-  for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
-  return buffer;
-}
-
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
   if (path.some((part) => part.toLowerCase().includes("acceptance") || part.toLowerCase().includes("sandbox"))) {
@@ -70,10 +49,13 @@ async function proxy(request: Request, context: RouteContext) {
   const targetPath = backendPath(path);
   if (!targetPath) return jsonError(404, "CONTENT_ROUTE_NOT_FOUND");
   const attachmentUpload = request.method === "POST"
-    && path.length === 2 && path[0] === "conversations" && path[1] === "attachments";
+    && (path.length === 2 && path[0] === "conversations" && path[1] === "attachments"
+      || path.length === 3 && path[0] === "support-workbench" && path[1] === "bulk" && path[2] === "attachments");
+  const avatarContent = request.method === "GET" && (path.length === 3 && path[0] === "support-agents" && path[2] === "avatar"
+    || path.length === 4 && path[0] === "support-workbench" && path[1] === "customers" && path[3] === "avatar");
   const attachmentContent = request.method === "GET"
-    && path.length === 4 && path[0] === "conversations"
-    && path[1] === "attachments" && path[3] === "content";
+    && (path.length === 4 && path[0] === "conversations" && path[1] === "attachments" && path[3] === "content"
+      || avatarContent);
 
   const passwordChangeBlocked = requirePasswordChangeCleared(await cookies());
   if (passwordChangeBlocked) return passwordChangeBlocked;
@@ -106,6 +88,7 @@ async function proxy(request: Request, context: RouteContext) {
   }
 
   try {
+    request.signal.throwIfAborted();
     const upstream = await fetch(`${BACKEND_BASE_URL}${targetPath}${sourceUrl.search}`, {
       method: request.method,
       headers,
@@ -113,12 +96,13 @@ async function proxy(request: Request, context: RouteContext) {
         ? undefined : attachmentUpload ? uploadBody : await request.text(),
       cache: "no-store",
       redirect: "manual",
+      signal: attachmentContent || attachmentUpload ? AbortSignal.any([request.signal, AbortSignal.timeout(45_000)]) : request.signal,
     });
     if (upstream.status >= 300 && upstream.status < 400) {
       return jsonError(502, "CONTENT_BACKEND_REDIRECT_BLOCKED");
     }
     const upstreamType = upstream.headers.get("Content-Type") || "application/json";
-    if (upstreamType.includes("text/event-stream") && upstream.body) {
+    if (!attachmentContent && upstreamType.includes("text/event-stream") && upstream.body) {
       return new Response(upstream.body, {
         status: upstream.status,
         headers: {
@@ -133,6 +117,14 @@ async function proxy(request: Request, context: RouteContext) {
       if (!upstream.body) return jsonError(502, "CONTENT_ATTACHMENT_EMPTY");
       if (!["image/jpeg", "image/png", "image/webp"].includes(upstreamType.split(";")[0].toLowerCase())) {
         return jsonError(502, "CONTENT_ATTACHMENT_TYPE_INVALID");
+      }
+      if (avatarContent) {
+        const limit = Number(process.env.NEXION_SUPPORT_ATTACHMENT_PROXY_MAX_BYTES ?? DEFAULT_UPLOAD_TRANSPORT_MAX_BYTES);
+        if (!Number.isSafeInteger(limit) || limit <= 0) return jsonError(503, "CONTENT_ATTACHMENT_LIMIT_UNCONFIGURED");
+        if (!(path[0]==="support-workbench"?["image/jpeg","image/png","image/webp"]:["image/jpeg","image/png"]).includes(upstreamType.split(";")[0].toLowerCase())) return jsonError(502, "CONTENT_ATTACHMENT_TYPE_INVALID");
+        const bytes = await boundedUpload(upstream, limit);
+        if (!bytes || !bytes.byteLength) return jsonError(502, "CONTENT_ATTACHMENT_EMPTY");
+        return new Response(bytes, { status: upstream.status, headers: { "Content-Type": upstreamType, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
       }
       const reader = upstream.body.getReader();
       let first = await reader.read();
@@ -164,6 +156,7 @@ async function proxy(request: Request, context: RouteContext) {
       headers: {
         "Content-Type": upstreamType,
         "Cache-Control": "no-store",
+        ...(upstream.headers.get("X-Nexion-Upstream-Outcome") ? { "X-Nexion-Upstream-Outcome": upstream.headers.get("X-Nexion-Upstream-Outcome")! } : {}),
       },
     });
   } catch {

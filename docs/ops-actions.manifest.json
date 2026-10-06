@@ -101,7 +101,7 @@
       "action": "新增账号",
       "status": "built",
       "view": "a-tabs/a1-accounts.tsx",
-      "restAction": "createA1Account",
+      "restActions": ["createA1Account", "uploadA1Avatar", "cancelA1Avatar"],
       "restFile": "lib/admin/a1-client.ts",
       "batch": "done",
       "note": "A1 账号治理走真后端 REST(createA1Account @ a1-client.ts,a1-accounts.tsx:465 调用),server 侧落审计 + 前端补 A2 镜像;store addAccount 仅本地 mock 兜底非真写路径(门按 restAction 校验真落地+接线)"

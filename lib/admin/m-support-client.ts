@@ -40,6 +40,8 @@ export type SupportCustomer = {
   version: number;
   customerNo?: string;
   displayName?: string;
+  agentName?: string;
+  advisorAvatar?: {assetId:string;version:number};
   accountState: "ACTIVE" | "DORMANT" | "UNKNOWN";
   windowStatus: "ACTIVE" | "INACTIVE" | "UNKNOWN";
   maintenanceEnabled: boolean;
@@ -66,6 +68,11 @@ export type SupportBindingPoolItem = {
   inviterCustomerId?: string | null;
   pendingMessageCount?: number;
   lastMessageAt?: string | null;
+  autoEligible?: boolean;
+  autoAttemptState?: string;
+  attempts?: number;
+  lastAttemptAt?: string | null;
+  lastOutcome?: string | null;
 };
 export type SupportAgentCandidate = {
   adminId: number;
@@ -77,6 +84,8 @@ export type SupportAgentCandidate = {
   assignedUserCount: number;
   maxConcurrent: number;
   currentActiveSessions?: number;
+  avatarAssetId?: string;
+  avatarVersion?: number;
   version: number;
 };
 export type SupportTransferResult = {
@@ -84,6 +93,7 @@ export type SupportTransferResult = {
 };
 export type SupportRules = {
   version: number;
+  unboundAssignmentMode?: "AUTO_RANDOM" | "SUPERVISOR";
   dormantDays: number | null;
   maintenanceDays: number | null;
   activityWindowDays: number | null;
@@ -109,7 +119,9 @@ export type SupportMessageResult = { conversationNo: string };
 export type SupportCommandResult = { status: "PROCESSING" | "UNKNOWN" | "PENDING" | "SUCCEEDED" | "FAILED"; result?: unknown };
 export type SupportReplyTarget = { conversationNo: string; throughMessageId: number };
 export type SupportMessageInput = {
-  kind: "TEXT" | "IMAGE";
+  kind: "TEXT" | "IMAGE" | "SKU" | "LINK";
+  skuId?: string;
+  linkTarget?: { type: "HOME" | "WALLET" | "SUPPORT"; params: Record<string, never> };
   content?: string;
   attachmentId?: string;
   intent: "SERVICE" | "MAINTENANCE";
@@ -222,6 +234,8 @@ function customer(value: unknown): SupportCustomer {
     version: count(row.preferenceVersion, "customer.preferenceVersion"),
     customerNo: optionalString(row.customerNo, "customer.customerNo"),
     displayName: nullableString(row.nickname, "customer.nickname") ?? undefined,
+    agentName: row.agentName==null?undefined:nonempty(row.agentName,"customer.agentName"),
+    advisorAvatar: row.advisorAvatar==null?undefined:(()=>{const avatar=object(row.advisorAvatar,"customer.avatar");return {assetId:nonempty(avatar.assetId,"avatar.assetId"),version:count(avatar.version,"avatar.version")};})(),
     accountState: enumValue(row.activityStatus, ["ACTIVE", "DORMANT", "UNKNOWN"] as const, "customer.activityStatus"),
     windowStatus: enumValue(row.windowStatus, ["ACTIVE", "INACTIVE", "UNKNOWN"] as const, "customer.windowStatus"),
     maintenanceEnabled: enabled,
@@ -296,6 +310,7 @@ function rules(value: unknown): SupportRules {
   const mode = enumValue(row.inheritanceMode, MODES, "rules.inheritanceMode");
   const result: SupportRules = {
     version: count(row.version, "rules.version"),
+    unboundAssignmentMode: row.unboundAssignmentMode === undefined ? "SUPERVISOR" : enumValue(row.unboundAssignmentMode, ["AUTO_RANDOM", "SUPERVISOR"] as const, "rules.unboundAssignmentMode"),
     dormantDays: nullablePositive(row.dormantDays, "rules.dormantDays"),
     maintenanceDays: nullablePositive(row.maintenanceDays, "rules.maintenanceDays"),
     activityWindowDays: nullablePositive(row.activityWindowDays, "rules.activityWindowDays"),
@@ -365,13 +380,13 @@ export const supportClient = {
   bindingPool: (options: { pageNum: number; pageSize: number; keyword?: string; reason?: SupportPoolReason; signal?: AbortSignal }) =>
     request(`/support-agents/binding-pool${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize"), keyword: options.keyword, reason: options.reason })}`, (value) => page(value, (entry): SupportBindingPoolItem => {
       const row = object(entry, "bindingPool.item");
-      return { customerId: id(row.customerId, "bindingPool.customerId"), reason: enumValue(row.reason, POOL_REASONS, "bindingPool.reason"), enteredAt: timestamp(row.enteredAt, "bindingPool.enteredAt"), version: count(row.version, "bindingPool.version"), customerNo: optionalString(row.customerNo, "bindingPool.customerNo"), displayName: optionalString(row.displayName, "bindingPool.displayName"), inviterCustomerId: row.inviterCustomerId === null ? null : row.inviterCustomerId === undefined ? undefined : id(row.inviterCustomerId, "bindingPool.inviterCustomerId"), pendingMessageCount: row.pendingMessageCount === undefined ? undefined : count(row.pendingMessageCount, "bindingPool.pendingMessageCount"), lastMessageAt: nullableTimestamp(row.lastMessageAt, "bindingPool.lastMessageAt") };
+      return { customerId: id(row.customerId, "bindingPool.customerId"), reason: enumValue(row.reason, POOL_REASONS, "bindingPool.reason"), enteredAt: timestamp(row.enteredAt, "bindingPool.enteredAt"), version: count(row.version, "bindingPool.version"), customerNo: optionalString(row.customerNo, "bindingPool.customerNo"), displayName: optionalString(row.displayName, "bindingPool.displayName"), inviterCustomerId: row.inviterCustomerId === null ? null : row.inviterCustomerId === undefined ? undefined : id(row.inviterCustomerId, "bindingPool.inviterCustomerId"), pendingMessageCount: row.pendingMessageCount === undefined ? undefined : count(row.pendingMessageCount, "bindingPool.pendingMessageCount"), autoEligible: row.autoEligible==null?undefined:row.autoEligible===0?false:row.autoEligible===1?true:bool(row.autoEligible,"pool.autoEligible"), autoAttemptState: optionalString(row.autoAttemptState,"pool.autoAttemptState"), attempts: row.attempts==null?undefined:count(row.attempts,"pool.attempts"), lastAttemptAt: nullableTimestamp(row.lastAttemptAt,"pool.lastAttemptAt"), lastOutcome: row.lastOutcome==null?row.lastOutcome:nullableString(row.lastOutcome,"pool.lastOutcome"), lastMessageAt: nullableTimestamp(row.lastMessageAt, "bindingPool.lastMessageAt") };
     }), { signal: options.signal }),
   agents: (options: { pageNum: number; pageSize: number; signal?: AbortSignal }) =>
     request(`/support-agents/page${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize") })}`, (value) => page(value, (entry): SupportAgentCandidate => {
       const row = object(entry, "agent");
       if (!Array.isArray(row.serviceTypes)) malformed("agent.serviceTypes");
-      return { adminId: positive(row.adminId, "agent.adminId"), name: nonempty(row.name, "agent.name"), seatType: enumValue(row.seatType, ["MANAGER", "DEDICATED", "GENERAL"] as const, "agent.seatType"), serviceTypes: row.serviceTypes.map((type) => enumValue(type, ["support", "advisor"] as const, "agent.serviceTypes")), enabled: bool(row.enabled, "agent.enabled"), busy: bool(row.busy, "agent.busy"), assignedUserCount: count(row.assignedUserCount, "agent.assignedUserCount"), maxConcurrent: count(row.maxConcurrent, "agent.maxConcurrent"), currentActiveSessions: row.currentActiveSessions === undefined ? undefined : count(row.currentActiveSessions, "agent.currentActiveSessions"), version: count(row.version, "agent.version") };
+      return { adminId: positive(row.adminId, "agent.adminId"), name: nonempty(row.name, "agent.name"), seatType: enumValue(row.seatType, ["MANAGER", "DEDICATED", "GENERAL"] as const, "agent.seatType"), serviceTypes: row.serviceTypes.map((type) => enumValue(type, ["support", "advisor"] as const, "agent.serviceTypes")), enabled: bool(row.enabled, "agent.enabled"), busy: bool(row.busy, "agent.busy"), assignedUserCount: count(row.assignedUserCount, "agent.assignedUserCount"), maxConcurrent: count(row.maxConcurrent, "agent.maxConcurrent"), currentActiveSessions: row.currentActiveSessions === undefined ? undefined : count(row.currentActiveSessions, "agent.currentActiveSessions"), avatarAssetId: row.avatarAssetId==null?undefined:nonempty(row.avatarAssetId,"agent.avatar"), avatarVersion: row.avatarVersion==null?undefined:count(row.avatarVersion,"agent.avatarVersion"), version: count(row.version, "agent.version") };
     }), { signal: options.signal }),
   transfer: (input: { targetAgentAdminId: number; customers: Array<{ id: string; expectedAssignmentId: string | null; expectedVersion: number }>; reason: string }, idempotencyKey: string, signal?: AbortSignal) =>
     request("/support-agents/assignments/transfer", (value): SupportTransferResult => {
@@ -381,13 +396,18 @@ export const supportClient = {
       return { assignments };
     }, json("POST", { ...input, targetAgentAdminId: positive(input.targetAgentAdminId, "transfer.targetAgentAdminId"), customers: input.customers.map((item) => ({ id: wireId(item.id, "transfer.customerId"), expectedAssignmentId: item.expectedAssignmentId === null ? null : wireId(item.expectedAssignmentId, "transfer.expectedAssignmentId"), expectedVersion: positive(item.expectedVersion, "transfer.expectedVersion") })) }, idempotencyKey, signal)),
   rules: (signal?: AbortSignal) => request("/support-agents/rules", rules, { signal }),
-  updateRules: (input: Pick<SupportRules, "dormantDays" | "maintenanceDays" | "activityWindowDays" | "inheritanceMode" | "maxInheritanceDepth"> & { expectedVersion: number; reason: string }, idempotencyKey: string, signal?: AbortSignal) =>
+  updateRules: (input: Pick<SupportRules, "dormantDays" | "maintenanceDays" | "activityWindowDays" | "inheritanceMode" | "maxInheritanceDepth" | "unboundAssignmentMode"> & { expectedVersion: number; reason: string }, idempotencyKey: string, signal?: AbortSignal) =>
     request("/support-agents/rules", rules, json("PUT", { ...input, expectedVersion: positive(input.expectedVersion, "rules.expectedVersion") }, idempotencyKey, signal)),
   command: (key: string, signal?: AbortSignal) => request(`/support-workbench/commands/${encodeURIComponent(key)}`, (value): SupportCommandResult => {
     const row = object(value, "command");
     const result = row.result === undefined ? undefined : object(row.result, "command.result");
-    if (result && result.code !== 0) malformed("command.result.code");
-    return { status: enumValue(row.status, ["PROCESSING", "UNKNOWN", "PENDING", "SUCCEEDED", "FAILED"] as const, "command.status"), result: result?.data };
+    if (typeof row.operationId === "string" && typeof row.previewId === "string" && Array.isArray(row.customers) && ["RUNNING", "COMPLETED"].includes(String(row.status))) return { status: row.status === "COMPLETED" ? "SUCCEEDED" : "PENDING", result: row };
+    const status = enumValue(row.status, ["PROCESSING", "UNKNOWN", "PENDING", "SUCCEEDED", "FAILED"] as const, "command.status");
+    if (result && result.code === 0) return { status, result: result.data };
+    if (result && typeof result.batchId === "string" && result.counts) return { status, result };
+    if (typeof row.operationId === "string" && Array.isArray(row.customers)) return { status, result: row };
+    if (result) malformed("command.result.code");
+    return { status };
   }, { signal }),
   attachmentPolicy: (signal?: AbortSignal) => request("/conversations/attachments/policy", (value): SupportAttachmentPolicy => {
     const row = object(value, "attachment.policy");
@@ -422,9 +442,9 @@ export const supportClient = {
   cancelAttachment: (attachmentId: string, idempotencyKey: string, signal?: AbortSignal) =>
     request(attachmentPath(attachmentId), () => undefined, { method: "DELETE", headers: keyHeader(idempotencyKey), signal }),
   sendConversationReply: (conversationNo: string, input: SupportMessageInput, idempotencyKey: string, signal?: AbortSignal) =>
-    request(`/conversations/${encodeURIComponent(nonempty(conversationNo, "conversationNo"))}/replies`, messageResult, json("POST", { body: input.content ?? "", kind: input.kind, attachmentId: input.attachmentId, intent: input.intent, clientMessageId: input.clientMessageId, expectedAssignmentId: wireId(input.expectedAssignmentId, "conversation.expectedAssignmentId"), expectedStatus: "OPEN", expectedVersion: count(input.expectedVersion, "conversation.expectedVersion"), replyTargets: input.replyTargets?.map((target) => ({ ...target, throughMessageId: positive(target.throughMessageId, "conversation.throughMessageId") })), reason: "专属客服回复客户消息" }, idempotencyKey, signal)),
+    request(`/conversations/${encodeURIComponent(nonempty(conversationNo, "conversationNo"))}/replies`, messageResult, json("POST", { body: input.content ?? "", kind: input.kind, skuId: input.skuId, linkTarget: input.linkTarget, attachmentId: input.attachmentId, intent: input.intent, clientMessageId: input.clientMessageId, expectedAssignmentId: wireId(input.expectedAssignmentId, "conversation.expectedAssignmentId"), expectedStatus: "OPEN", expectedVersion: count(input.expectedVersion, "conversation.expectedVersion"), replyTargets: input.replyTargets?.map((target) => ({ ...target, throughMessageId: positive(target.throughMessageId, "conversation.throughMessageId") })), reason: "专属客服回复客户消息" }, idempotencyKey, signal)),
   createConversation: (input: SupportMessageInput & { customerId: string }, idempotencyKey: string, signal?: AbortSignal) =>
-    request("/conversations", messageResult, json("POST", { conversationType: "ADVISOR", userId: wireId(input.customerId, "conversation.customerId"), openingText: input.content ?? "", kind: input.kind, attachmentId: input.attachmentId, intent: input.intent, clientMessageId: input.clientMessageId, expectedAssignmentId: wireId(input.expectedAssignmentId, "conversation.expectedAssignmentId"), replyTargets: input.replyTargets?.map((target) => ({ ...target, throughMessageId: positive(target.throughMessageId, "conversation.throughMessageId") })) }, idempotencyKey, signal)),
+    request("/conversations", messageResult, json("POST", { conversationType: "ADVISOR", userId: wireId(input.customerId, "conversation.customerId"), openingText: input.content ?? "", kind: input.kind, skuId: input.skuId, linkTarget: input.linkTarget, attachmentId: input.attachmentId, intent: input.intent, clientMessageId: input.clientMessageId, expectedAssignmentId: wireId(input.expectedAssignmentId, "conversation.expectedAssignmentId"), replyTargets: input.replyTargets?.map((target) => ({ ...target, throughMessageId: positive(target.throughMessageId, "conversation.throughMessageId") })) }, idempotencyKey, signal)),
   startConversation: (input: SupportStartConversationInput, idempotencyKey: string, signal?: AbortSignal) =>
     request("/conversations", messageResult, json("POST", { conversationType: "ADVISOR", userId: wireId(input.customerId, "conversation.customerId"), openingText: input.openingText, kind: "TEXT", intent: input.intent, clientMessageId: input.clientMessageId, expectedAssignmentId: wireId(input.expectedAssignmentId, "conversation.expectedAssignmentId"), replyTargets: input.replyTargets?.map((target) => ({ ...target, throughMessageId: positive(target.throughMessageId, "conversation.throughMessageId") })) }, idempotencyKey, signal)),
 };
@@ -433,3 +453,5 @@ function messageResult(value: unknown): SupportMessageResult {
   const row = object(value, "messageResult");
   return { conversationNo: nonempty(row.conversationNo, "messageResult.conversationNo") };
 }
+
+export { request as supportRequest, object as supportObject, id as parseSupportId, count as parseSupportCount, page as parseSupportPage, json as supportJson, query as supportQuery, timestamp as parseSupportTime };

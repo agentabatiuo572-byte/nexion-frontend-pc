@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TabGroup } from "@/app/components/kit/tab-group";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
@@ -143,6 +144,8 @@ const withdrawFingerprint = (adjustmentNo: string, reason: string) => `withdraw|
 export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
   const session = useAdminAuth((state) => state.session);
+  const authEpoch = useAdminAuth((state) => state.authEpoch);
+  const focusUserId = useSearchParams()?.get("userId") ?? "";
   const authorities = session?.authorities ?? [];
   const canCreate = authorities.includes("user_c3_adjust_create");
   const canApprove = authorities.includes("user_c3_adjust_approve");
@@ -167,6 +170,8 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const [selectedUser, setSelectedUser] = useState<User360Profile | null>(null);
   const [context, setContext] = useState<UserAssetAdjustmentContext | null>(null);
   const [contextLoading, setContextLoading] = useState(false);
+  const [focusError, setFocusError] = useState("");
+  const [focusRetry, setFocusRetry] = useState(0);
   const contextGeneration = useRef(0);
   const [userSearchLoading, setUserSearchLoading] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -300,6 +305,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     const id = accountId(account);
     const generation = ++contextGeneration.current;
     setSelectedUser(account);
+    setFocusError("");
     setContext(null);
     setContextLoading(false);
     setUserQuery(displayUser(account));
@@ -318,6 +324,23 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       .catch((err) => { if (generation === contextGeneration.current) toast(errorMessage(err)); })
       .finally(() => { if (generation === contextGeneration.current) setContextLoading(false); });
   };
+
+  useEffect(() => {
+    if (!focusUserId) return;
+    const generation = ++contextGeneration.current;
+    let active = true;
+    setFocusError("");
+    setSelectedUser(null); setContext(null); setShowUserMenu(false); setContextLoading(false);
+    if (!/^\d+$/.test(focusUserId) || !/[1-9]/.test(focusUserId)) { setFocusError("客户定位编号无效，请返回会话核对。"); return; }
+    setContextLoading(true);
+    fetchUserAssetAdjustmentContext(focusUserId).then(next => {
+      if (!active || generation !== contextGeneration.current) return;
+      if (!next.account || accountId(next.account) !== focusUserId) throw new Error("读取账户与会话客户不一致，请返回会话核对。");
+      setSelectedUser(next.account); setUserQuery(displayUser(next.account)); setContext(next);
+    }).catch(cause => { if (active && generation === contextGeneration.current) setFocusError(errorMessage(cause)); })
+      .finally(() => { if (active && generation === contextGeneration.current) setContextLoading(false); });
+    return () => { active = false; };
+  }, [focusUserId, authEpoch, focusRetry]);
 
   const submitAdjustment = () => {
     if (formError || !selectedAccount) {
@@ -541,6 +564,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
                 </div>
               </div>
 
+              {focusError && <div className="itint danger" role="alert">会话客户定位失败：{focusError}<button className="l-btn sm" type="button" disabled={contextLoading} onClick={() => setFocusRetry(n => n + 1)}>重试客户定位</button></div>}
               {selectedAccount && (
                 <div className="ctint cyan" data-proof="c3-target-card">
                   <b>{displayUser(selectedAccount)}</b> · 用户ID <span className="mono">{accountId(selectedAccount)}</span><br />

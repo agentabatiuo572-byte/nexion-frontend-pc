@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import {
+  ADMIN_TOKEN_COOKIE,
   ADMIN_PASSWORD_CHANGE_COOKIE,
   readAdminAccessToken,
   sessionRequiresPasswordChange,
@@ -8,7 +9,6 @@ import {
 import { ADMIN_AUTH_UPSTREAM_TIMEOUT_MS, fetchAdminAuthBffResponse } from "@/lib/admin/auth-deadline";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
-const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
 const ADMIN_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 8;
 
 interface BackendPasswordChangeResult {

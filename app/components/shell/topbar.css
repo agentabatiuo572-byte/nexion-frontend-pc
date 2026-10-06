@@ -1,0 +1,158 @@
+.admin-topbar {
+  container: admin-topbar / inline-size;
+}
+
+.admin-topbar-location {
+  flex: 1 1 0;
+}
+
+.admin-topbar-actions {
+  flex: 0 0 auto;
+}
+
+.admin-topbar-actions > button {
+  width: 44px;
+  min-height: 44px;
+}
+
+.admin-topbar-coverage-icon,
+.admin-topbar-account-icon {
+  display: none;
+}
+
+.admin-topbar-actions > *,
+.admin-topbar-breadcrumb svg,
+.admin-topbar-crumb > .rounded-full {
+  flex-shrink: 0;
+}
+
+.admin-topbar-breadcrumb,
+.admin-topbar-crumb {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.admin-topbar-breadcrumb {
+  flex: 1 1 0;
+}
+
+.admin-topbar-crumb-current {
+  flex: 1 1 0;
+}
+
+.admin-topbar-crumb-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-topbar-search {
+  flex: 0 0 auto;
+  width: 240px;
+  min-height: 44px;
+}
+
+.admin-topbar-coverage,
+.admin-topbar-support {
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+.admin-topbar-sync-chip {
+  white-space: nowrap;
+}
+
+.admin-topbar-account {
+  min-height: 44px;
+}
+
+.admin-topbar-operator {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Use the space beside the sidebar, not the full browser width. */
+@container admin-topbar (max-width: 1200px) {
+  .admin-topbar-search {
+    width: 44px;
+    justify-content: center;
+    padding-inline: 0;
+  }
+  .admin-topbar-search-label,
+  .admin-topbar-search-shortcut {
+    display: none;
+  }
+  .admin-topbar-coverage-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+@container admin-topbar (max-width: 1000px) {
+  .admin-topbar-operator {
+    max-width: 88px;
+  }
+  .admin-topbar-crumb-ancestor,
+  .admin-topbar-clock {
+    display: none;
+  }
+  .admin-topbar-crumb-current > svg {
+    display: none;
+  }
+  .admin-topbar-sync-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .admin-topbar-actions {
+    gap: 8px;
+  }
+}
+
+@container admin-topbar (max-width: 760px) {
+  .admin-topbar-location {
+    flex: 0 0 44px;
+    gap: 0;
+  }
+  .admin-topbar-actions {
+    gap: 6px;
+  }
+  .admin-topbar-breadcrumb,
+  .admin-topbar-actions > span,
+  .admin-topbar-coverage-value,
+  .admin-topbar-account-role,
+  .admin-topbar-operator {
+    display: none;
+  }
+  .admin-topbar-coverage,
+  .admin-topbar-support,
+  .admin-topbar-account {
+    width: 44px;
+    flex: 0 0 44px;
+    justify-content: center;
+    padding-inline: 0;
+  }
+  .admin-topbar-coverage-icon,
+  .admin-topbar-account-icon {
+    display: block;
+  }
+  .admin-topbar-support-count {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 6px;
+    min-width: 6px !important;
+    height: 6px !important;
+    padding: 0;
+    font-size: 0;
+  }
+}

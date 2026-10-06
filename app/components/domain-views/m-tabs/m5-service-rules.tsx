@@ -9,12 +9,13 @@ import { useAdminAuth } from "../../../../lib/store/admin-auth";
 import "./m-support-admin.css";
 
 export type MSupportPermission = "superadmin" | "supervisor" | "agent";
-type RuleDraft = { dormantDays: string; maintenanceDays: string; activityWindowDays: string; inheritanceMode: SupportRules["inheritanceMode"]; maxInheritanceDepth: string };
+type RuleDraft = { dormantDays: string; maintenanceDays: string; activityWindowDays: string; inheritanceMode: SupportRules["inheritanceMode"]; maxInheritanceDepth: string; unboundAssignmentMode?: SupportRules["unboundAssignmentMode"] };
 type Field = keyof RuleDraft;
 type RulePayload = Parameters<typeof supportClient.updateRules>[0];
 type RulePendingRecord = { fingerprint: string; commandKey: string; createdAt: number; expiresAt: number; actorId: number; payload: RulePayload };
 const ruleCommands = createPendingMutationStore<RulePendingRecord>({ storageKey: "nexion-admin-m-support-rules-v1", isValidRecord: (row) => Boolean(Number.isSafeInteger(row.actorId) && row.payload && Number.isSafeInteger(row.payload.expectedVersion)) });
 const LABELS: Record<Field, string> = {
+  unboundAssignmentMode: "无顾问客户分配方式",
   dormantDays: "沉睡判定天数", maintenanceDays: "主动维护间隔天数", activityWindowDays: "活跃统计窗口天数", inheritanceMode: "自动继承方式", maxInheritanceDepth: "最大自动继承层数",
 };
 const dayFields = ["dormantDays", "maintenanceDays", "activityWindowDays"] as const;
@@ -22,6 +23,7 @@ const actorStamp = () => { const auth = useAdminAuth.getState(); return adminShe
 
 function toDraft(rules: SupportRules): RuleDraft {
   return {
+    unboundAssignmentMode: rules.unboundAssignmentMode ?? "SUPERVISOR",
     dormantDays: rules.dormantDays == null ? "" : String(rules.dormantDays),
     maintenanceDays: rules.maintenanceDays == null ? "" : String(rules.maintenanceDays),
     activityWindowDays: rules.activityWindowDays == null ? "" : String(rules.activityWindowDays),
@@ -44,7 +46,7 @@ export function parseRuleDraft(draft: RuleDraft): Omit<SupportRules, "version"> 
   if (dormantDays === undefined || maintenanceDays === undefined || activityWindowDays === undefined || maxInheritanceDepth === undefined) return null;
   if (draft.inheritanceMode === "LIMITED" && maxInheritanceDepth === null) return null;
   if (dormantDays !== null && activityWindowDays !== null && activityWindowDays > dormantDays) return null;
-  return { dormantDays, maintenanceDays, activityWindowDays, inheritanceMode: draft.inheritanceMode, maxInheritanceDepth };
+  return { dormantDays, maintenanceDays, activityWindowDays, inheritanceMode: draft.inheritanceMode, maxInheritanceDepth, unboundAssignmentMode: draft.unboundAssignmentMode ?? "SUPERVISOR" };
 }
 
 function changedFields(before: SupportRules, after: Omit<SupportRules, "version">): Field[] {
@@ -52,6 +54,7 @@ function changedFields(before: SupportRules, after: Omit<SupportRules, "version"
 }
 
 function labelValue(key: Field, value: SupportRules[Field]): string {
+  if (key === "unboundAssignmentMode") return value === "AUTO_RANDOM" ? "自动随机分配" : "主管分配";
   if (key === "inheritanceMode") return value === "LIMITED" ? "有限层数" : value === "UNLIMITED" ? "不限制" : "未配置";
   return value == null ? "未配置" : `${value}${key === "maxInheritanceDepth" ? " 层" : " 天"}`;
 }
@@ -181,6 +184,14 @@ export function M5ServiceRules({ permission }: { permission: MSupportPermission 
         {error && <div className="m-admin-error" role="alert">{error} {readUnavailable && <button type="button" className="btn btn-sec btn-sm" disabled={Boolean(retry)} onClick={() => setReload((n) => n + 1)}>重试读取</button>}</div>}
         {!loading && !current && <div className="m-admin-muted">规则暂不可用，无法保存。</div>}
         {draft && current && <>
+          <fieldset disabled={!editable} className="m-assignment-mode" aria-describedby="m-assignment-help">
+            <legend>无顾问客户分配方式</legend>
+            <div className="m-assignment-options">
+              <label className="m-assignment-option"><input type="radio" name="unbound-mode" value="AUTO_RANDOM" checked={draft.unboundAssignmentMode === "AUTO_RANDOM"} onChange={() => setField("unboundAssignmentMode", "AUTO_RANDOM")} /><span>自动随机分配</span></label>
+              <label className="m-assignment-option"><input type="radio" name="unbound-mode" value="SUPERVISOR" checked={draft.unboundAssignmentMode === "SUPERVISOR"} onChange={() => setField("unboundAssignmentMode", "SUPERVISOR")} /><span>主管分配</span></label>
+            </div>
+            <p id="m-assignment-help" className="m-assignment-help">有效邀请继承优先。只影响保存后新进入的无顾问客户；历史池须单独预览确认。已绑定顾问离线或忙碌不会重新分配。</p>
+          </fieldset>
           {dayFields.map((field) => <div className="m-admin-row" key={field}>
             <div><label htmlFor={`m-rule-${field}`}>{LABELS[field]}</label><p>{field === "dormantDays" ? "有效账户活动超出设定天数且记录完整，才可判定沉睡。" : field === "maintenanceDays" ? "已到维护时间的客户会进入主动维护待办。" : "用于活跃客户统计，与当前沉睡状态分别计算。"}</p></div>
             <input id={`m-rule-${field}`} type="number" min="1" step="1" placeholder="未配置" value={draft[field]} disabled={!editable} onChange={(event) => setField(field, event.target.value)} />
@@ -202,6 +213,7 @@ export function M5ServiceRules({ permission }: { permission: MSupportPermission 
       </div>
       <aside className="m-admin-panel">
         <h2>影响预览</h2>
+        <a className="btn btn-sec btn-sm" href="/service/overview?view=pool">核对历史池并明确分配</a>
         <div className="m-admin-muted">已配置的能力按新规则计算；未配置的能力保持不可用。</div>
         <div className="m-admin-stats"><div className="m-admin-stat">沉睡判定<strong>{parsed?.dormantDays == null ? "未配置" : "可用"}</strong></div><div className="m-admin-stat">维护待办<strong>{parsed?.maintenanceDays == null ? "未配置" : "可用"}</strong></div><div className="m-admin-stat">活跃统计<strong>{parsed?.activityWindowDays == null ? "未配置" : "可用"}</strong></div></div>
         <div className="m-admin-muted">继承规则只影响之后的新注册；现有客户归属和待绑定池不会自动重排。变更天数只重算对应标签，不生成维护执行或成功记录。</div>

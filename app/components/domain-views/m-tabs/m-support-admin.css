@@ -4,9 +4,10 @@
 .mdom .m-admin-muted { color: var(--v5-ink-3); font-size: 12.5px; line-height: 1.6; }
 .mdom .m-admin-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin: 12px 0; }
 .mdom .m-admin-toolbar form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; flex: 1 1 320px; }
-.mdom .m-admin-toolbar form input { flex: 1 1 220px; }
-.mdom .m-admin-toolbar input, .mdom .m-admin-row input, .mdom .m-admin-row select, .mdom .m-admin-panel textarea { width: 100%; min-height: 38px; padding: 8px 10px; color: var(--v5-ink); background: var(--v5-surface-2); border: 1px solid var(--v5-border-strong); border-radius: 8px; font: inherit; }
-.mdom .m-admin-toolbar input { max-width: 310px; }
+.mdom .m-admin-toolbar form input:not([type='radio']):not([type='checkbox']) { flex: 1 1 220px; }
+.mdom .m-admin-toolbar input:not([type='radio']):not([type='checkbox']), .mdom .m-admin-row input:not([type='radio']):not([type='checkbox']), .mdom .m-admin-row select, .mdom .m-admin-panel textarea { width: 100%; min-height: 38px; padding: 8px 10px; color: var(--v5-ink); background: var(--v5-surface-2); border: 1px solid var(--v5-border-strong); border-radius: 8px; font: inherit; }
+.mdom .m-admin-toolbar input:not([type='radio']):not([type='checkbox']) { max-width: 310px; }
+.mdom .m-admin-toolbar input:is([type='radio'], [type='checkbox']), .mdom .m-admin-row input:is([type='radio'], [type='checkbox']) { width: 18px; height: 18px; min-height: 18px; flex: 0 0 18px; margin: 0; padding: 0; accent-color: var(--admin-domain-m); }
 .mdom .m-admin-panel textarea { min-height: 86px; resize: vertical; }
 .mdom .m-admin-toolbar input:focus-visible, .mdom .m-admin-row input:focus-visible, .mdom .m-admin-row select:focus-visible, .mdom .m-admin-panel textarea:focus-visible, .mdom .m-admin-panel button:focus-visible { outline: 2px solid var(--v5-brand); outline-offset: 2px; }
 .mdom .m-admin-table-wrap { overflow-x: auto; }
@@ -19,6 +20,17 @@
 .mdom .m-admin-row:last-child { border-bottom: 0; }
 .mdom .m-admin-row label { color: var(--v5-ink); font-size: 13.5px; font-weight: 600; }
 .mdom .m-admin-row p { margin: 4px 0 0; color: var(--v5-ink-3); font-size: 12px; line-height: 1.5; }
+.mdom .m-assignment-mode { min-width: 0; margin: 18px 0 0; padding: 0 0 16px; border: 0; border-bottom: 1px solid var(--v5-border); }
+.mdom .m-assignment-mode legend { padding: 0; color: var(--v5-ink); font-size: 13.5px; font-weight: 600; }
+.mdom .m-assignment-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; margin-top: 10px; }
+.mdom .m-assignment-option { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 44px; padding: 10px 8px; border-radius: 8px; color: var(--v5-ink); font-size: 13.5px; line-height: 1.5; cursor: pointer; }
+.mdom .m-assignment-option input { width: 18px; height: 18px; min-height: 18px; flex: 0 0 18px; margin: 0; padding: 0; accent-color: var(--admin-domain-m); }
+.mdom .m-assignment-option span { min-width: 0; overflow-wrap: anywhere; }
+.mdom .m-assignment-option:has(input:checked), .mdom .m-assignment-option:has(input:not(:disabled)):hover { background: var(--v5-surface-2); }
+.mdom .m-assignment-option:has(input:not(:disabled)):active { background: var(--v5-surface-3); }
+.mdom .m-assignment-option:has(input:focus-visible) { outline: 2px solid var(--v5-brand); outline-offset: 2px; }
+.mdom .m-assignment-option:has(input:disabled) { cursor: default; color: var(--v5-ink-2); }
+.mdom .m-assignment-help { margin: 12px 0 0; color: var(--v5-ink-3); font-size: 12.5px; line-height: 1.6; }
 .mdom .m-admin-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 14px 0; }
 .mdom .m-admin-stat { padding: 13px; background: var(--v5-surface-2); border: 1px solid var(--v5-border); border-radius: 9px; }
 .mdom .m-admin-stat strong { display: block; margin-top: 5px; font-size: 18px; font-weight: 600; color: var(--v5-ink); font-variant-numeric: tabular-nums; }
@@ -26,4 +38,5 @@
 .mdom .m-admin-list { max-height: 174px; overflow: auto; padding: 10px; background: var(--v5-surface-2); border: 1px solid var(--v5-border); border-radius: 8px; color: var(--v5-ink-2); font-size: 12.5px; }
 .mdom .m-admin-list div + div { margin-top: 7px; }
 @container mdom (max-width: 900px) { .mdom .m-admin-grid { grid-template-columns: 1fr; } }
+@container mdom (max-width: 420px) { .mdom .m-assignment-options { grid-template-columns: 1fr; } }
 @container mdom (max-width: 620px) { .mdom .m-admin-stats { grid-template-columns: 1fr 1fr; } .mdom .m-admin-row { grid-template-columns: 1fr; } .mdom .m-admin-table, .mdom .m-admin-table tbody { display: block; } .mdom .m-admin-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); } .mdom .m-admin-table tr { display: grid; grid-template-columns: 32px 1fr; gap: 5px 8px; padding: 10px; border: 1px solid var(--v5-border); border-radius: 9px; margin-bottom: 8px; } .mdom .m-admin-table td { display: block; padding: 3px 0; border: 0; } .mdom .m-admin-table td:first-child { grid-row: span 6; } .mdom .m-admin-table td::before { content: attr(data-label); display: block; color: var(--v5-ink-3); font-size: 11px; } }

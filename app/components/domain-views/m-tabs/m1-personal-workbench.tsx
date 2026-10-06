@@ -5,12 +5,16 @@ import { useRouter } from "next/navigation";
 import { Activity, ArrowRight, ChevronLeft, ChevronRight, Clock3, MessageSquare, Moon, RefreshCw, Search, Users, UserRoundPlus, X } from "lucide-react";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { parseBusinessTime } from "@/lib/admin/business-time";
-import { fetchMRecentAdvisorConversations } from "@/lib/admin/m-client";
+import { fetchMRecentAdvisorConversations, type MSupportAgent } from "@/lib/admin/m-client";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { supportClient, SupportClientError, isIndeterminateSupportError, type SupportAgentCandidate, type SupportCustomer, type SupportCustomerDetail, type SupportCustomerFilter, type SupportMaintenanceHistory, type SupportWorkbenchSnapshot } from "@/lib/admin/m-support-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { M1SupervisorPool } from "./m1-supervisor-pool";
+import { SupportSeatRoleModal } from "./m1-overview";
 import "./m-support-workbench.css";
+import { SupportBulkComposer } from "./support-bulk-composer";
+import { SupportAvatar, advisorAvatarPath, customerAvatarPath } from "./support-avatar";
+import type { MCtx } from "./types";
 
 type Permission = "agent" | "supervisor" | "superadmin";
 type View = "dashboard" | "customers" | "pool";
@@ -77,11 +81,26 @@ function invalidateCustomerOnDenied(customerId: string, error: unknown): boolean
   return true;
 }
 
-export function M1PersonalWorkbench({ permission }: { permission: Permission }) {
+export function M1PersonalWorkbench({ permission, ctx }: { permission: Permission; ctx: MCtx }) {
   const router = useRouter();
   const authEpoch = useAdminAuth((state) => state.authEpoch);
   const adminId = useAdminAuth((state) => state.session?.adminId);
+  const currentRole = useAdminAuth((state) => state.session?.role ?? state.role);
+  const operatorName = useAdminAuth((state) => state.operator || state.session?.operator || state.session?.username || "");
+  const canManageSupportSeats = useAdminAuth((state) => state.session?.role === "super" || state.session?.role === "superadmin" || Boolean(state.session?.authorities.includes("service_m1_write"))) && permission !== "agent";
+  const supportAgentsAvailable = ctx.pget("I.support.agentsAvailable") === "1";
+  const supportAgentsPending = !supportAgentsAvailable && ctx.pget("I.support.agentsError") === "none";
+  const seatAssignmentAgents = useMemo(() => {
+    try {
+      const agents = JSON.parse(ctx.pget("I.support.agents") ?? "[]") as MSupportAgent[];
+      return Array.isArray(agents) ? agents.filter((agent) => agent.adminId > 0 && agent.enabled) : [];
+    } catch { return []; }
+  }, [ctx.params, ctx.pget]);
+  const canBulk = useAdminAuth(state => state.session?.role==="super"||state.session?.role==="superadmin"||Boolean(state.session?.authorities.includes("service_m3_write")));
+  const selfAgent = (() => { try { return (JSON.parse(ctx.pget("I.support.agents")??"[]") as SupportAgentCandidate[]).find(a=>a.adminId===adminId); } catch { return undefined; } })();
   const [view, setView] = useState<View>("dashboard");
+  const [bulkOpen,setBulkOpen]=useState(false);
+  const [showSeatRoles, setShowSeatRoles] = useState(false);
   const [snapshot, setSnapshot] = useState<SupportWorkbenchSnapshot | null>(null);
   const overview = snapshot?.overview ?? null;
   const rows = snapshot?.customers ?? null;
@@ -128,6 +147,7 @@ export function M1PersonalWorkbench({ permission }: { permission: Permission }) 
   useEffect(() => {
     setDetailId(null); setDetail(null); setSnapshot(null);
   }, [authEpoch]);
+  useEffect(() => { if (permission !== "agent" && new URLSearchParams(window.location.search).get("view") === "pool") setView("pool"); }, [permission]);
 
   const activeFilter = view === "dashboard" ? "TODO" : filter;
   useEffect(() => {
@@ -330,12 +350,20 @@ export function M1PersonalWorkbench({ permission }: { permission: Permission }) 
     <nav className="s5a-nav" aria-label="客服工作区">
       <button type="button" className={view === "dashboard" ? "active" : ""} onClick={() => setView("dashboard")}>工作台</button>
       <button type="button" className={view === "customers" ? "active" : ""} onClick={() => showCustomers("ALL")}>我的客户</button>
+      <button type="button" disabled={!canBulk} title={canBulk?"联系明确圈选的本人客户":"需要会话发送权限"} onClick={()=>setBulkOpen(true)}>圈选群发</button>
       {permission !== "agent" && <button type="button" className={view === "pool" ? "active" : ""} onClick={() => setView("pool")}>待绑定客户池</button>}
+      {permission !== "agent" && <button
+        type="button"
+        data-proof="m1-seat-role-entry"
+        disabled={!canManageSupportSeats || !supportAgentsAvailable}
+        title={!canManageSupportSeats ? "只有总管理员或客服主管可以分配坐席" : supportAgentsPending ? "坐席数据正在同步，请稍候" : !supportAgentsAvailable ? "坐席数据暂不可用，请刷新后重试" : "从客服管理员里分配客服主管 / 专属客服 / 通用客服坐席"}
+        onClick={() => { if (canManageSupportSeats && supportAgentsAvailable) setShowSeatRoles(true); }}
+      >分配坐席</button>}
     </nav>
 
     {view === "pool" ? <M1SupervisorPool permission={permission} /> : <>
       {view === "dashboard" && <>
-        <div className="s5a-intro"><div><h2>我的工作台</h2><p>当前归属客户与可执行待办</p></div><span className="s5a-stamp">统计于 {overview ? formatTime(overview.evaluatedAt) : "待同步"}</span></div>
+        <div className="s5a-intro"><div><div style={{display:"flex",gap:10,alignItems:"center"}}><SupportAvatar name={selfAgent?.name??"本人顾问"} path={selfAgent?.avatarAssetId&&adminId?advisorAvatarPath(adminId):undefined} version={selfAgent?.avatarVersion??undefined}/><h2>我的工作台</h2></div><p>当前归属客户与可执行待办</p></div><span className="s5a-stamp">统计于 {overview ? formatTime(overview.evaluatedAt) : "待同步"}</span></div>
         {overviewError && <div className="s5a-alert" role="alert">{overviewError}<button type="button" onClick={() => setRowsRefresh((value) => value + 1)}><RefreshCw size={15} />重试</button></div>}
         <div className="s5a-metrics">
           {metrics.map(({ key, label, filter: metricFilter, icon: Icon, hint, count }) => <button type="button" key={key} className="s5a-metric" onClick={() => showCustomers(metricFilter)} aria-label={`${key === "windowActiveCustomers" ? overview?.activityWindowDays ? `近 ${overview.activityWindowDays} 天活跃` : "活跃客户，窗口待同步" : label}，${overviewLoading ? "加载中" : count === null ? "未配置或数据待核对" : `${count} 位`}，查看名单`}>
@@ -372,18 +400,29 @@ export function M1PersonalWorkbench({ permission }: { permission: Permission }) 
       </>}
     </>}
 
+    {bulkOpen&&<SupportBulkComposer ctx={ctx} onClose={()=>setBulkOpen(false)}/>}
+    {showSeatRoles && canManageSupportSeats && <SupportSeatRoleModal
+      ctx={ctx}
+      operatorName={operatorName}
+      currentRole={String(currentRole)}
+      currentAdminId={adminId ?? 0}
+      agents={supportAgentsAvailable ? seatAssignmentAgents : []}
+      canManage={canManageSupportSeats && supportAgentsAvailable}
+      onClose={() => setShowSeatRoles(false)}
+    />}
     {detailId && <div className="s5a-drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDetail(); }}><aside ref={drawerRef} className="s5a-drawer" role="dialog" aria-modal="true" aria-label="客户详情">
       <header><h2>{detail ? customerName(detail) : "客户详情"}</h2><button ref={drawerCloseRef} type="button" onClick={closeDetail} aria-label="关闭客户详情"><X size={20} /></button></header>
       {detailLoading && <div className="s5a-skeleton" aria-label="正在加载客户详情"><i /><i /><i /><i /></div>}
       {detailError && <div className="s5a-alert" role="alert">{detailError}<button type="button" onClick={() => void openDetail(detailId)}>重试</button></div>}
       {detail && <div className="s5a-drawer-body">
-        <dl><div><dt>客户 ID</dt><dd>{detail.customerNo || detail.customerId}</dd></div><div><dt>账户状态</dt><dd>{labelForAccount(detail.accountState)}</dd></div><div><dt>维护状态</dt><dd>{labelForMaintenance(detail)}</dd></div><div><dt>上次账户活动</dt><dd>{formatTime(detail.lastEffectiveAt)}</dd></div><div><dt>下次维护</dt><dd>{formatTime(detail.nextMaintenanceAt)}</dd></div></dl>
+        <div style={{display:"flex",gap:12,alignItems:"center"}}><SupportAvatar name={customerName(detail)} path={customerAvatarPath(detail.customerId)}/><SupportAvatar name={detail.agentName??"当前顾问"} path={detail.agentAdminId&&detail.advisorAvatar?advisorAvatarPath(detail.agentAdminId,detail.customerId):undefined} version={detail.advisorAvatar?.version}/><span>当前顾问：{detail.agentName??"资料未知"}</span></div><dl><div><dt>客户编码</dt><dd>{detail.customerNo||"未知"}</dd></div><div><dt>客户 ID</dt><dd>{detail.customerId}</dd></div><div><dt>账户状态</dt><dd>{labelForAccount(detail.accountState)}</dd></div><div><dt>维护状态</dt><dd>{labelForMaintenance(detail)}</dd></div><div><dt>上次账户活动</dt><dd>{formatTime(detail.lastEffectiveAt)}</dd></div><div><dt>下次维护</dt><dd>{formatTime(detail.nextMaintenanceAt)}</dd></div></dl>
         {detail.accountState === "UNKNOWN" && <p className="s5a-note">账户活动数据待核对，不能推定为沉睡或活跃。</p>}
         <button type="button" className="s5a-primary" onClick={() => openChat(detail.customerId)}>联系客户 <ArrowRight size={16} /></button>
         {canMaintain ? <button type="button" className="s5a-secondary" disabled={Boolean(maintenancePending)} onClick={() => { setMaintenanceAction(detail.maintenanceEnabled ? "stop" : "resume"); setReason(""); setSaveError(null); }}>{detail.maintenanceEnabled ? "不再维护" : "恢复维护"}</button> : <p className="s5a-note">仅当前专属顾问可调整主动维护；主管可审阅并办理正式转绑。</p>}
         {permission !== "agent" && detail.assignmentId && <button type="button" className="s5a-secondary" onClick={() => void openTransfer()}>正式转绑客户</button>}
         {transferOpen && <div className="s5a-confirm"><h3>正式转绑此客户</h3><p>仅变更当前客户的专属顾问；提交后原顾问立即失去私聊与图片权限。</p>
           {transferLoading ? <p role="status">正在读取可接待顾问…</p> : <label>目标顾问<select value={transferTarget ?? ""} disabled={transferSaving || Boolean(transferPending)} onChange={(event) => setTransferTarget(Number(event.target.value) || null)}><option value="">请选择专属顾问</option>{transferAgents.filter((agent) => agent.enabled && agent.seatType === "DEDICATED" && agent.serviceTypes.includes("advisor") && agent.adminId !== detail.agentAdminId).map((agent) => <option key={agent.adminId} value={agent.adminId}>{agent.name}{agent.busy ? " · 忙碌" : ""}</option>)}</select></label>}
+          {transferTarget&&<SupportAvatar name={transferAgents.find(a=>a.adminId===transferTarget)?.name??"目标顾问"} path={transferAgents.find(a=>a.adminId===transferTarget)?.avatarAssetId?advisorAvatarPath(transferTarget):undefined} version={transferAgents.find(a=>a.adminId===transferTarget)?.avatarVersion??undefined}/>}
           {!transferLoading && transferAgentsError && <button type="button" onClick={() => void loadTransferAgents()}>重试读取顾问名单</button>}
           {!transferLoading && !transferAgentsError && !transferAgents.some((agent) => agent.enabled && agent.seatType === "DEDICATED" && agent.serviceTypes.includes("advisor") && agent.adminId !== detail.agentAdminId) && <p className="s5a-note">暂无可接待的其他专属顾问。请到“服务规则与话术 → 话术与模板 → 配置岗位”核对顾问资格。</p>}
           <label>转绑理由（8–200 字）<textarea value={transferReason} maxLength={200} disabled={transferSaving || Boolean(transferPending)} onChange={(event) => setTransferReason(event.target.value)} /></label><small>{transferReason.trim().length}/200 字</small>
@@ -402,5 +441,5 @@ function CustomerRows({ rows, loading, error, onRetry, onOpen, onChat }: { rows:
   if (loading) return <div className="s5a-skeleton" aria-label="正在加载客户列表"><i /><i /><i /><i /></div>;
   if (error) return <div className="s5a-alert" role="alert">{error}<button type="button" onClick={onRetry}>重试</button></div>;
   if (!rows.length) return <div className="s5a-empty">当前筛选下没有客户。可切换筛选或等待主管分配。</div>;
-  return <div className="s5a-table-wrap"><table className="s5a-table"><thead><tr><th>客户</th><th>上次账户活动</th><th>账户状态</th><th>维护状态</th><th>待办</th><th>操作</th></tr></thead><tbody>{rows.map((row) => <tr key={row.customerId}><td><button type="button" className="s5a-link" onClick={() => onOpen(row.customerId)}>{customerName(row)}</button><small>ID {row.customerNo || row.customerId}</small></td><td>{formatTime(row.lastEffectiveAt)}</td><td><span className={`s5a-tag ${row.accountState?.toLowerCase() || "unknown"}`}>{labelForAccount(row.accountState)}</span></td><td><span className="s5a-tag">{labelForMaintenance(row)}</span></td><td>{[row.waitingReply ? "待顾问回复" : null, row.maintenanceEnabled && row.firstContact ? "首次待联系" : null, row.maintenanceEnabled && row.maintenanceStatus === "DUE" ? "待维护" : null].filter(Boolean).join(" · ") || "—"}</td><td><button type="button" onClick={() => row.waitingReply || (row.maintenanceEnabled && (row.firstContact || row.maintenanceStatus === "DUE")) ? onChat(row.customerId) : onOpen(row.customerId)}>{row.waitingReply ? "回复" : row.maintenanceEnabled && (row.firstContact || row.maintenanceStatus === "DUE") ? "联系" : "查看"}</button></td></tr>)}</tbody></table></div>;
+  return <div className="s5a-table-wrap"><table className="s5a-table"><thead><tr><th>客户</th><th>上次账户活动</th><th>账户状态</th><th>维护状态</th><th>待办</th><th>操作</th></tr></thead><tbody>{rows.map((row) => <tr key={row.customerId}><td><SupportAvatar name={customerName(row)} path={customerAvatarPath(row.customerId)}/><button type="button" className="s5a-link" onClick={() => onOpen(row.customerId)}>{customerName(row)}</button><small>编码 {row.customerNo||"未知"} · ID {row.customerId}</small></td><td>{formatTime(row.lastEffectiveAt)}</td><td><span className={`s5a-tag ${row.accountState?.toLowerCase() || "unknown"}`}>{labelForAccount(row.accountState)}</span></td><td><span className="s5a-tag">{labelForMaintenance(row)}</span></td><td>{[row.waitingReply ? "待顾问回复" : null, row.maintenanceEnabled && row.firstContact ? "首次待联系" : null, row.maintenanceEnabled && row.maintenanceStatus === "DUE" ? "待维护" : null].filter(Boolean).join(" · ") || "—"}</td><td><button type="button" onClick={() => row.waitingReply || (row.maintenanceEnabled && (row.firstContact || row.maintenanceStatus === "DUE")) ? onChat(row.customerId) : onOpen(row.customerId)}>{row.waitingReply ? "回复" : row.maintenanceEnabled && (row.firstContact || row.maintenanceStatus === "DUE") ? "联系" : "查看"}</button></td></tr>)}</tbody></table></div>;
 }

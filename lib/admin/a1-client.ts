@@ -43,6 +43,8 @@ export interface A1Operator {
   roleHistory?: A1RoleHistory[];
   version: string;
   temporaryPassword?: string | null;
+  avatarAssetId?: string | null;
+  avatarVersion?: number | null;
 }
 
 export interface A1SessionDetail {
@@ -89,12 +91,14 @@ export interface A1CreateAccountInput {
   displayName: string;
   role: string;
   email?: string;
+  avatarAssetId?: string;
 }
 
 export interface A1UpdateAccountInput {
   username: string;
   displayName: string;
   email?: string;
+  avatarAssetId?: string;
 }
 
 export interface A1PasswordResetResult {
@@ -131,12 +135,12 @@ export function isA1OutcomeUncertainError(error: unknown): error is A1OutcomeUnc
 
 async function a1Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
   const headers = new Headers(init?.headers);
-  let commandKey = "";
-  if (init?.body && !headers.has("Content-Type")) {
+  let commandKey = headers.get("Idempotency-Key") ?? "";
+  if (init?.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   if (init?.idempotencyPrefix) {
-    commandKey = idempotencyKey(init.idempotencyPrefix);
+    commandKey = commandKey || idempotencyKey(init.idempotencyPrefix);
     headers.set("Idempotency-Key", commandKey);
   }
 
@@ -180,12 +184,24 @@ export function fetchA1Overview() {
   return a1Request<A1Overview>("/accounts/overview");
 }
 
-export function createA1Account(input: A1CreateAccountInput, reason: string, operator: string) {
+export function createA1Account(input: A1CreateAccountInput, reason: string, operator: string, stableKey?: string) {
   return a1Request<A1Operator>("/accounts", {
     method: "POST",
     body: JSON.stringify({ ...input, reason, operator }),
     idempotencyPrefix: "a1-account-create",
+    headers: stableKey ? { "Idempotency-Key": stableKey } : undefined,
   });
+}
+
+export async function uploadA1Avatar(file: File, clientUploadId: string, key: string, signal?: AbortSignal) {
+  const body=new FormData();body.set("file",file);body.set("clientUploadId",clientUploadId);
+  const asset=await a1Request<{assetId:string;status:string;expiresAt:string;previewRef:string}>("/accounts/avatar-assets",{method:"POST",body,headers:{"Idempotency-Key":key},idempotencyPrefix:"a1-avatar-upload",signal});
+  if(!asset||typeof asset.assetId!=="string"||asset.status!=="READY"||asset.previewRef!==`/api/admin/platform/accounts/avatar-assets/${asset.assetId}`||!Number.isFinite(Date.parse(asset.expiresAt)))throw new A1OutcomeUncertainError("A1_AVATAR_RESPONSE_UNREADABLE",key);
+  return asset;
+}
+export function cancelA1Avatar(assetId:string,key:string) {
+  if(!/^[A-Za-z0-9_-]+$/.test(assetId))throw new Error("A1_AVATAR_ID_INVALID");
+  return a1Request<void>(`/accounts/avatar-assets/${assetId}`,{method:"DELETE",headers:{"Idempotency-Key":key},idempotencyPrefix:"a1-avatar-cancel"});
 }
 
 export function changeA1AccountRole(

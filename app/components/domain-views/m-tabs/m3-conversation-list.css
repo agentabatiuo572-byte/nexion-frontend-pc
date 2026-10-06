@@ -1,0 +1,15 @@
+.mdom .m3-col-list { overflow-y: auto; overscroll-behavior-y: contain; }
+.mdom .m3-col-list > .cv-list { flex: 1 0 160px; min-height: 160px; }
+.mdom .m3-list-header { flex: 0 0 auto; min-width: 0; padding: 16px; border-bottom: 1px solid var(--v5-border); }
+.mdom .m3-list-header h2 { margin: 0; font-size: 18px; font-weight: 600; color: var(--v5-ink); }
+.mdom .m3-list-description { margin: 5px 0 14px; color: var(--v5-ink-3); font-size: 12.5px; line-height: 1.6; }
+.mdom .m3-list-search { width: 100%; min-width: 0; min-height: 44px; }
+.mdom .m3-list-primary-actions, .mdom .m3-list-secondary-actions, .mdom .m3-list-statuses { display: grid; align-items: stretch; gap: 8px; }
+.mdom .m3-list-primary-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 12px; }
+.mdom .m3-list-statuses { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 12px 0; }
+.mdom .m3-list-secondary-actions { grid-template-columns: minmax(0, 1fr) auto; padding-top: 12px; border-top: 1px solid var(--v5-border); }
+.mdom .m3-list-header .l-btn.sm { min-width: 0; min-height: 44px; justify-content: center; padding: 8px; white-space: normal; overflow-wrap: anywhere; line-height: 1.4; }
+.mdom .m3-list-statuses .l-btn.sm { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 5px; font-size: 12.5px; }
+.mdom .m3-list-count { min-width: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.mdom .m3-list-header .l-btn:not(:disabled):active { background: var(--v5-surface-3); }
+.mdom .m3-list-header button:focus-visible, .mdom .m3-list-search:focus-visible { outline: 2px solid var(--v5-brand); outline-offset: 2px; }

@@ -2,7 +2,7 @@ import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { parseBusinessTime } from "@/lib/admin/business-time";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
-import { supportWireId } from "@/lib/admin/m-support-client";
+import { supportWireId, supportRequest, supportObject, parseSupportCount } from "@/lib/admin/m-support-client";
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { User360Profile, UserProfileQuery } from "@/lib/admin/user360-client";
@@ -130,6 +130,7 @@ type SupportTicketDetail = {
 };
 
 type ContentConversationView = {
+  archived?: boolean;
   id?: number;
   conversationNo?: string;
   userId?: number;
@@ -146,7 +147,7 @@ type ContentConversationView = {
   lastMessageAt?: string;
   transferFromAgentId?: string;
   transferFromAgentName?: string;
-  transferToType?: string;
+  transferToType?: string | null;
   transferToId?: string;
   transferToName?: string;
   transferReason?: string;
@@ -156,6 +157,13 @@ type ContentConversationView = {
 };
 
 type ContentConversationMessageView = {
+  senderId?: number;
+  authorConfidence?: "VERIFIED" | "UNKNOWN";
+  senderAvatar?: { assetId: string; version: number };
+  skuId?: string;
+  skuName?: string;
+  linkTarget?: { type: "HOME" | "WALLET" | "SUPPORT"; params: Record<string, never> };
+  targetAvailability?: "AVAILABLE" | "UNAVAILABLE";
   id?: number;
   conversationNo?: string;
   senderType?: string;
@@ -421,6 +429,8 @@ export type MSupportAgent = {
   transferable: boolean;
   busy: boolean;
   assignedUserCount: number;
+  avatarAssetId?: string;
+  avatarVersion?: number;
   version: number;
   updatedAt?: string;
 };
@@ -576,15 +586,20 @@ export function updateMConversationTimeoutPolicy(
   policy: ConversationTimeoutPolicy,
   input: { warnMinutes: number; closeMinutes: number; reason: string },
   stableIdempotencyKey?: string,
+  operator = currentAdminOperator(),
 ) {
-  return apiRequest<ConversationTimeoutPolicy>("/conversations/timeout-policy", {
+  return supportRequest("/conversations/timeout-policy", value => {
+    const row=supportObject(value,"timeout.policy"),warnMinutes=parseSupportCount(row.warnMinutes,"warn"),closeMinutes=parseSupportCount(row.closeMinutes,"close");
+    if(typeof row.policyKey!=="string"||warnMinutes<1||warnMinutes>30||closeMinutes<=warnMinutes||closeMinutes>120)throw new Error("SUPPORT_CONTRACT_MALFORMED");
+    return {policyKey:row.policyKey,warnMinutes,closeMinutes,version:parseSupportCount(row.version,"version"),updatedBy:typeof row.updatedBy==="string"?row.updatedBy:undefined,reason:typeof row.reason==="string"?row.reason:undefined,updatedAt:typeof row.updatedAt==="string"?row.updatedAt:undefined};
+  }, {
     method: "PUT",
     headers: stableIdempotencyKey ? { "Idempotency-Key": stableIdempotencyKey } : undefined,
     body: JSON.stringify({
       warnMinutes: input.warnMinutes,
       closeMinutes: input.closeMinutes,
       expectedVersion: policy.version,
-      operator: currentAdminOperator(),
+      operator,
       reason: input.reason,
     }),
   });
@@ -863,6 +878,7 @@ function conversationStatus(value: string | undefined): SessionConvo["status"] {
   const v = upper(value, "OPEN");
   if (v === "RESOLVED") return "resolved";
   if (v === "CLOSED") return "closed";
+  if (v === "TRANSFERRED") return "transferred";
   return "open";
 }
 
@@ -1091,7 +1107,7 @@ function assertSupportTicketDetail(value: unknown): SupportTicketDetail {
 function assertConversationRow(value: unknown): ContentConversationView {
   if (!value || typeof value !== "object") throw new Error("M3_CONVERSATION_DETAIL_INVALID");
   const row = value as ContentConversationView;
-  const transferType = row.transferToType?.toLowerCase();
+  const transferType = typeof row.transferToType === "string" ? row.transferToType.toLowerCase() : null;
   if (
     !Number.isSafeInteger(row.id)
     || typeof row.conversationNo !== "string"
@@ -1107,7 +1123,9 @@ function assertConversationRow(value: unknown): ContentConversationView {
     || Number(row.version) < 0
     || typeof row.updatedAt !== "string"
     || Number.isNaN(Date.parse(row.updatedAt))
-    || (upper(row.status, "") === "TRANSFERRED" && !["agent", "queue", "standby"].includes(transferType || ""))
+    // This is an optional projection of the current PENDING transfer, not
+    // the status of the historical conversation segment itself.
+    || (row.transferToType != null && !["agent", "queue", "standby"].includes(transferType || ""))
   ) {
     throw new Error("M3_CONVERSATION_DETAIL_INVALID");
   }
@@ -1195,6 +1213,17 @@ async function fetchAllSupportConversations(signal?: AbortSignal): Promise<Admin
   return { total, pageNum: 1, pageSize: Math.max(records.length, pageSize), records };
 }
 
+function parseSupportMessageKind(message: ContentConversationMessageView, payloadRequired = true): NonNullable<SessionMsg["kind"]> {
+  const kind = message.kind ?? "TEXT";
+  if (!["TEXT", "IMAGE", "SKU", "LINK"].includes(kind)
+      || payloadRequired && kind === "IMAGE" && !message.attachmentId
+      || payloadRequired && kind === "SKU" && (!message.skuId || !message.skuName)
+      || payloadRequired && kind === "LINK" && (!message.linkTarget || !["HOME", "WALLET", "SUPPORT"].includes(message.linkTarget.type) || !message.linkTarget.params || Object.keys(message.linkTarget.params).length)) {
+    throw new Error("M3_MESSAGE_PAYLOAD_INVALID");
+  }
+  return kind as NonNullable<SessionMsg["kind"]>;
+}
+
 function adaptConversation(detail: ContentConversationDetail | ContentConversationView): SessionConvo {
   const base = "conversation" in detail && detail.conversation ? detail.conversation : (detail as ContentConversationView);
   const detailReady = "messages" in detail && Array.isArray(detail.messages);
@@ -1211,17 +1240,27 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
       agentName: agent ? sourceSenderType === "SYSTEM" ? "系统" : str(m.senderName, base.ownerAgentName || "客服台") : undefined,
       status: str(m.receiptStatus, "sent").toLowerCase() === "read" ? ("read" as const) : ("sent" as const),
       text: str(m.content, ""),
-      kind: m.kind === "IMAGE" ? "IMAGE" as const : "TEXT" as const,
+      kind: parseSupportMessageKind(m),
+      senderId: m.senderId,
+      authorConfidence: m.authorConfidence ?? "UNKNOWN",
+      senderAvatar: m.authorConfidence === "VERIFIED" ? m.senderAvatar : undefined,
+      skuId: m.skuId,
+      skuName: m.skuName,
+      linkTarget: m.linkTarget,
+      targetAvailability: m.targetAvailability,
+      intent: m.intent === "MAINTENANCE" ? "MAINTENANCE" as const : "SERVICE" as const,
+      replyTargets: m.replyTargets,
       attachmentId: typeof m.attachmentId === "string" ? m.attachmentId : undefined,
     };
   });
-  const transfer = base.transferToType
+  const transferType = base.transferToType?.toLowerCase();
+  const transfer = transferType
     ? {
         from: str(base.transferFromAgentName, "客服台"),
         to:
-          base.transferToType === "agent"
+          transferType === "agent"
             ? ({ kind: "agent" as const, agentId: str(base.transferToId), name: str(base.transferToName, "Unassigned") })
-            : base.transferToType === "queue"
+            : transferType === "queue"
               ? ({ kind: "queue" as const, queue: str(base.transferToName, "客服队列") })
               : ({ kind: "standby" as const }),
         reason: str(base.transferReason, "转入待处理"),
@@ -1249,11 +1288,11 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
     messages,
     detailReady,
     lastPreview: str(base.lastMessage),
-    lastMessageKind: upper(base.lastMessageKind, "TEXT") === "IMAGE" ? "IMAGE" : "TEXT",
+    lastMessageKind: base.lastMessageKind === "IDLE_TIMEOUT_CLOSE" ? "TEXT" : parseSupportMessageKind({ kind: base.lastMessageKind }, false),
     customer: profile.nickname,
     profile,
-    archived: upper(base.status, "OPEN") === "CLOSED",
-    origin: type,
+    archived: base.archived === true,
+    origin: undefined,
     transfer,
   };
 }
@@ -1358,6 +1397,8 @@ function adaptSupportAgent(row: Record<string, unknown>): MSupportAgent {
     transferable: bool(row.transferable, true),
     busy: bool(row.busy, false),
     assignedUserCount: num(row.assignedUserCount, 0),
+    avatarAssetId: typeof row.avatarAssetId === "string" ? row.avatarAssetId : undefined,
+    avatarVersion: typeof row.avatarVersion === "number" ? row.avatarVersion : undefined,
     version: num(row.version, 1),
     updatedAt: str(row.updatedAt, ""),
   };
@@ -2110,6 +2151,12 @@ export const mContentActions = {
       method: "POST",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason({ ...ticket, expectedStatus: toBackendConversationStatus(ticket.expectedStatus), category: ticket.category.toUpperCase(), priority: toBackendTicketPriority(ticket.priority) }, reason)),
+    }).then((value) => {
+      const result = supportObject(value, "conversation.ticketResult");
+      const created = result.ticket === undefined ? result : supportObject(supportObject(result.ticket, "conversation.ticketDetail").ticket, "conversation.ticket");
+      if (result.ticket !== undefined && (supportObject(result.conversation, "conversation.ticketSource").conversationNo !== conversationNo || created.sourceConversationNo !== conversationNo)) throw new Error("M3_TICKET_SOURCE_MISMATCH");
+      if (typeof created.ticketNo !== "string" || !created.ticketNo.trim()) throw new Error("M3_TICKET_RESULT_MALFORMED");
+      return { ticketNo: created.ticketNo };
     });
   },
   updateSupportAgentProfile(adminId: number, profile: {

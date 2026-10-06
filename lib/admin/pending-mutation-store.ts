@@ -47,8 +47,10 @@ export interface PendingMutationStore<T extends PendingMutationRecord> {
    * —— 过期时刻恒为「首次尝试 + TTL」,对齐后端从首次请求起算的固定 24h 幂等窗。
    */
   remember(fingerprint: string, commandKey: string, extra?: PendingMutationExtra<T>): void;
-  /** 命令已收敛(成功 / 确定性失败),丢弃该 fingerprint 的全部记录。 */
-  forget(fingerprint: string): void;
+  /** True only when the command can be recovered after a page refresh. */
+  isDurablyStored(fingerprint: string, commandKey: string): boolean;
+  /** 命令已收敛，丢弃该 fingerprint；迁移或独立回查可指定只删除原 commandKey。 */
+  forget(fingerprint: string, commandKey?: string): void;
   /** 当前仍有效的全部记录(已剔除过期 / 结构非法项)。 */
   list(): T[];
 }
@@ -318,12 +320,19 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
       } as T;
       writeAll(persisted);
     },
-    forget(fingerprint) {
+    forget(fingerprint, onlyCommandKey) {
       const persisted = readAll();
       Object.entries(persisted).forEach(([commandKey, value]) => {
-        if (value.fingerprint === fingerprint) delete persisted[commandKey];
+        if (value.fingerprint === fingerprint && (onlyCommandKey === undefined || commandKey === onlyCommandKey)) delete persisted[commandKey];
       });
       writeAll(persisted);
+    },
+    isDurablyStored(fingerprint, commandKey) {
+      if (typeof window === "undefined") return false;
+      try {
+        const record = JSON.parse(window.sessionStorage.getItem(storageKey) ?? "{}")[commandKey] as T | undefined;
+        return !!record && record.fingerprint === fingerprint && usable(record, commandKey, Date.now());
+      } catch { return false; }
     },
     list() {
       return Object.values(readAll());

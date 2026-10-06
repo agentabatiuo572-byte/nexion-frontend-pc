@@ -68,6 +68,17 @@ function findCategoryCrossLink(category: SupportTicketCategory): typeof CATEGORY
   return CATEGORY_CROSS_LINKS.find((link) => link.category === category) ?? null;
 }
 const PAGE_SIZE_OPTIONS = ["8", "15", "30"];
+
+function visibleTicketPages(pageCount: number, currentPage: number): Array<number | string> {
+  const pages = pageCount <= 5
+    ? Array.from({ length: pageCount }, (_, index) => index + 1)
+    : [...new Set([1, currentPage - 1, currentPage, currentPage + 1, pageCount])]
+      .filter((page) => page >= 1 && page <= pageCount)
+      .sort((left, right) => left - right);
+  return pages.flatMap((page, index) => index > 0 && page - pages[index - 1] > 1
+    ? [`gap-${page}`, page]
+    : [page]);
+}
 const WHO_CN: Record<"user" | "agent" | "system" | "internal", string> = {
   user: "用户",
   agent: "坐席",
@@ -105,16 +116,15 @@ function cloneTickets(rows: SupportTicket[]): SupportTicket[] {
   return rows.map((ticket) => ({ ...ticket, messages: ticket.messages.map((m) => ({ ...m })) }));
 }
 
-type LinkedConversation = { no: string; archived: boolean };
+type LinkedConversation = { no: string };
 
 function linkedConversation(ticket: SupportTicket): LinkedConversation | null {
+  if (ticket.sourceConversationNo && ticket.sourceConversationNo !== "DIRECT") return { no: ticket.sourceConversationNo };
   for (const message of ticket.messages) {
-    // M3→M2 转单会关闭源会话，因此返回链接必须直接进入“归档”；否则 q 搜索会落到空列表。
     const converted = message.body.match(/会话号[:：]\s*(CV-[^，。\s]+)/);
-    if (converted?.[1]) return { no: converted[1], archived: true };
-    // M2→M3 升级产生的是仍在处理的即时会话，继续进入默认活跃范围。
+    if (converted?.[1]) return { no: converted[1] };
     const escalated = message.body.match(/即时会话\s+(CV-[^，。\s]+)/);
-    if (escalated?.[1]) return { no: escalated[1], archived: false };
+    if (escalated?.[1]) return { no: escalated[1] };
   }
   return null;
 }
@@ -773,31 +783,33 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
       </div>
 
       {filtered.length > 0 && (
-        <div className="tk-pager" data-list-pager="true">
+        <div className="tk-pager tk-ticket-pager" data-list-pager="true">
           <span className="dim2" style={{ fontSize: 12.5 }}>
             显示 {start + 1}–{Math.min(start + pageSize, filtered.length)} · 共 {filtered.length} 条
           </span>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 14 }}>
+          <div className="tk-ticket-page-size">
             <span className="dim2" style={{ fontSize: 12.5 }}>每页</span>
             <div style={{ width: 78 }}>
               <HDSelect value={String(pageSize)} onChange={(v) => setPageSize(Number(v))} options={PAGE_SIZE_OPTIONS.map((n) => ({ value: n, label: n }))} />
             </div>
           </div>
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+          <nav className="tk-ticket-page-controls" aria-label="工单分页">
             <button type="button" className="btn btn-sec btn-sm btn-icon" disabled={curPage <= 1} title="上一页" onClick={() => setPage(curPage - 1)}>
               <span style={{ display: "inline-flex", transform: "rotate(180deg)" }}>
                 <Icon name="chevron" size={16} />
               </span>
             </button>
-            {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
-              <button key={p} type="button" className={`tk-pageno${p === curPage ? " on" : ""}`} onClick={() => setPage(p)}>
+            {visibleTicketPages(pageCount, curPage).map((p) => typeof p === "string" ? (
+              <span key={p} className="dim2" aria-hidden="true">…</span>
+            ) : (
+              <button key={p} type="button" className={`tk-pageno${p === curPage ? " on" : ""}`} aria-label={`第 ${p} 页`} aria-current={p === curPage ? "page" : undefined} onClick={() => setPage(p)}>
                 {p}
               </button>
             ))}
             <button type="button" className="btn btn-sec btn-sm btn-icon" disabled={curPage >= pageCount} title="下一页" onClick={() => setPage(curPage + 1)}>
               <Icon name="chevron" size={16} />
             </button>
-          </div>
+          </nav>
         </div>
       )}
 
@@ -945,9 +957,7 @@ function TicketDrawer({
             )}
             <div style={{ flex: 1 }} />
             {conversation ? (
-              <Link className="btn btn-cyan btn-sm" href={conversation.archived
-                ? `/service/sessions?seg=archived&q=${encodeURIComponent(conversation.no)}`
-                : `/service/sessions?q=${encodeURIComponent(conversation.no)}`} style={{ maxWidth: "100%", whiteSpace: "normal", height: "auto", minHeight: 28, padding: "6px 10px" }}>
+              <Link className="btn btn-cyan btn-sm" href={`/service/sessions?conversationNo=${encodeURIComponent(conversation.no)}`} style={{ maxWidth: "100%", whiteSpace: "normal", height: "auto", minHeight: 28, padding: "6px 10px" }}>
                 <Icon name="arrow" size={16} /><span style={{ minWidth: 0, overflowWrap: "anywhere" }}>查看会话 {conversation.no}</span>
               </Link>
             ) : canReply && !ticket.contentRestricted && !ticket.archived && !isTerminal && (

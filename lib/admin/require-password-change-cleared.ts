@@ -15,8 +15,14 @@
  * 接线由 scripts/admin-auth-gate-sentinel.mjs 机器门看着:新增业务代理路由忘接 guard 会红。
  */
 
-export const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
-export const ADMIN_PASSWORD_CHANGE_COOKIE = "nexion_admin_pwd_change_token";
+// Cookie scope ignores ports. Each co-hosted preview needs its own server-side namespace.
+const cookieNamespace = process.env.NEXION_ADMIN_COOKIE_NAMESPACE;
+if (cookieNamespace !== undefined && !/^[a-z0-9][a-z0-9_-]{0,31}$/.test(cookieNamespace)) {
+  throw new Error("ADMIN_COOKIE_NAMESPACE_INVALID");
+}
+const cookieSuffix = cookieNamespace === undefined ? "" : `__${cookieNamespace}`;
+export const ADMIN_TOKEN_COOKIE = `nexion_admin_token${cookieSuffix}`;
+export const ADMIN_PASSWORD_CHANGE_COOKIE = `nexion_admin_pwd_change_token${cookieSuffix}`;
 /** 用户可见文案在 lib/admin/error-messages.ts 单源维护,此处只出 code。 */
 export const ADMIN_PASSWORD_CHANGE_REQUIRED_CODE = "ADMIN_PASSWORD_CHANGE_REQUIRED";
 

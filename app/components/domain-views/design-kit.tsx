@@ -336,7 +336,7 @@ export function Modal({ title, icon, onClose, children, footer, wide, busy = fal
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy) onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy && ref.current?.contains(document.activeElement)) onClose(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [busy, onClose]);
@@ -351,7 +351,7 @@ export function Modal({ title, icon, onClose, children, footer, wide, busy = fal
     <div className="modal-scrim" onClick={() => { if (!busy) onClose(); }}>
       <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-busy={busy} aria-labelledby={titleId} className="modal" style={wide ? { maxWidth: 680, outline: "none" } : { outline: "none" }} onClick={(e) => e.stopPropagation()} onKeyDown={(event) => {
         if (event.key !== "Tab" || !ref.current) return;
-        const controls = [...ref.current.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]')];
+        const controls = [...ref.current.querySelectorAll<HTMLElement>('button, input, select, textarea, a[href], summary, [tabindex="0"]')].filter(element => !element.matches(":disabled") && element.getClientRects().length > 0);
         if (!controls.length) { event.preventDefault(); return; }
         if (event.shiftKey && (document.activeElement === controls[0] || document.activeElement === ref.current)) { event.preventDefault(); controls.at(-1)?.focus(); }
         else if (!event.shiftKey && document.activeElement === controls.at(-1)) { event.preventDefault(); controls[0].focus(); }
@@ -373,19 +373,30 @@ export function Modal({ title, icon, onClose, children, footer, wide, busy = fal
 /* Drawer — 补 ESC 关闭 + 打开聚焦(a11y 铁律) */
 export function Drawer({ title, sub, onClose, children, footer, wide }: { title: ReactNode; sub?: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
+  const titleId = useId();
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && ref.current?.contains(document.activeElement)) onClose(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
   // 仅在打开(mount)时聚焦一次:绝不放进 [onClose] effect,否则父组件每次渲染(输入框 onChange 改父 state → 新 inline onClose)都会重跑 focus() 抢回容器焦点 → 输入框打一个字就失焦。
-  useEffect(() => { ref.current?.focus(); }, []);
+  useEffect(() => {
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    ref.current?.focus();
+    return () => { if (previous?.isConnected) previous.focus(); };
+  }, []);
   return (
     <div className="dkpage">
       <div className="drawer-scrim" onClick={onClose} aria-hidden />
-      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" className="drawer" style={{ outline: "none", ...(wide ? { width: "min(1180px, 96vw)" } : {}) }}>
+      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} className="drawer" style={{ outline: "none", ...(wide ? { width: "min(1180px, 96vw)" } : {}) }} onKeyDown={(event) => {
+        if (event.key !== "Tab" || !ref.current) return;
+        const controls = [...ref.current.querySelectorAll<HTMLElement>('button, input, select, textarea, a[href], summary, [tabindex="0"]')].filter(element => !element.matches(":disabled") && element.getClientRects().length > 0);
+        if (!controls.length) { event.preventDefault(); return; }
+        if (event.shiftKey && (document.activeElement === controls[0] || document.activeElement === ref.current)) { event.preventDefault(); controls.at(-1)?.focus(); }
+        else if (!event.shiftKey && document.activeElement === controls.at(-1)) { event.preventDefault(); controls[0].focus(); }
+      }}>
         <div className="drawer-h">
-          <div><div style={{ fontSize: 15, fontWeight: 600, color: "var(--ink)" }}>{title}</div>{sub && <div className="muted tiny">{sub}</div>}</div>
+          <div><div id={titleId} style={{ fontSize: 15, fontWeight: 600, color: "var(--ink)" }}>{title}</div>{sub && <div className="muted tiny">{sub}</div>}</div>
           <div className="spacer" />
           <button className="icon-btn" onClick={onClose} aria-label="关闭"><Icon name="x" size={16} /></button>
         </div>
