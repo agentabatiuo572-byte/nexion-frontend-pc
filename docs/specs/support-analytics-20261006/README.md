@@ -8,7 +8,7 @@
 2. [详细交互设计](../../design/support-analytics-20261006/DESIGN.md)：布局、动效、旧资料保留与新统计位置。
 3. [功能契约](CONTRACTS.md)：首充、金额、邀请、历史归属、权限和无限继承规则。
 
-配套：[六项功能规格](SPEC.md)、[分组与多角度看板契约](GROUPS.md)、[旧能力覆盖清单](LEGACY-COVERAGE.md)、[基础59项实施验收](ACCEPTANCE.md)、[设计审查及证据](REVIEW.md)。分组25项独立列在 GROUPS，合计84项产品验收要求，均待实施。
+配套：[六项功能规格](SPEC.md)、[分组与多角度看板契约](GROUPS.md)、[旧能力覆盖清单](LEGACY-COVERAGE.md)、[基础69项实施验收](ACCEPTANCE.md)、[设计审查及证据](REVIEW.md)。分组25项独立列在 GROUPS，合计94项产品验收要求，均待实施。
 
 视觉以当前后台黑灰令牌为准，五张采用稿为 `concept-*-black.png`。此前偏蓝稿停止采用。实景：[即时会话](../../design/support-analytics-20261006/assets/verified-sessions-black.jpg)、[分组看板](../../design/support-analytics-20261006/assets/verified-groups-black.jpg)、[总管理员](../../design/support-analytics-20261006/assets/verified-superadmin-black.jpg)。
 
@@ -53,4 +53,4 @@
 
 可直接打开 HTML；或在 `docs/design/support-analytics-20261006` 运行 `python -m http.server 33106 --bind 127.0.0.1` 后访问 `http://127.0.0.1:33106/prototype.html`。此为设计专用服务，不替换33041。
 
-规格检查：`node C:/Users/jason/.agents/skills/nexion-spec/spec-lint.mjs docs/specs/support-analytics-20261006/SPEC.md --strict`。设计原型静态检查与实际浏览器证据见 REVIEW；产品59项用例仍保持待实施状态。
+规格检查：`node C:/Users/jason/.agents/skills/nexion-spec/spec-lint.mjs docs/specs/support-analytics-20261006/SPEC.md --strict`。设计原型静态检查与实际浏览器证据见 REVIEW；产品69项基础用例及25项分组用例仍保持待实施状态。

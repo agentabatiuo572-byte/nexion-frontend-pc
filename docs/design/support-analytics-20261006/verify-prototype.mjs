@@ -1,6 +1,6 @@
 // Dependency-free checks for the design prototype; browser layout is verified separately.
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import vm from 'node:vm';
 
 const html = readFileSync(new URL('./prototype.html', import.meta.url), 'utf8');
@@ -10,15 +10,24 @@ const elements = new Map();
 const element = selector => {
   if (!elements.has(selector)) elements.set(selector, {
     innerHTML: '', textContent: '', value: '', open: false, disabled: false,
-    isConnected: true, scrollTop: 0, scrollHeight: 200,
-    classList: { toggle() {} }, addEventListener() {}, focus() {},
-    showModal() { this.open = true; }, close() { this.open = false; },
+    isConnected: true, scrollTop: 0, scrollHeight: 200, style: {},
+    getBoundingClientRect() { return this.rect || { top: 500, bottom: 200 }; },
+    classList: { toggle() {} }, listeners: {}, addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }, focus() {},
+    showModal() { this.open = true; }, close() { this.open = false; for (const listener of this.listeners.close || []) listener(); },
     insertAdjacentHTML(_position, text) { this.innerHTML += text; }
   });
   return elements.get(selector);
 };
-const context = vm.createContext({ document: {
-  querySelector: element, querySelectorAll: () => [], addEventListener() {},
+const localStore = new Map();
+const documentEvents = new Map();
+const context = vm.createContext({ localStorage: {
+  getItem: key => localStore.get(key) ?? null,
+  setItem: (key, value) => localStore.set(key, value)
+}, document: {
+  querySelector: element, querySelectorAll: () => [], addEventListener(type, listener) {
+    if (!documentEvents.has(type)) documentEvents.set(type, []);
+    documentEvents.get(type).push(listener);
+  },
   activeElement: element('opener')
 } });
 vm.runInContext(script, context);
@@ -191,4 +200,150 @@ for (const value of ['', '-1', '1.5']) {
 }
 assert.match(html, /prefers-reduced-motion/);
 assert.doesNotMatch(script, /\b(?:fetch|XMLHttpRequest)\s*\(/);
-console.log('PASS: role homes, supervisor isolation, scoped event/asset drills, currency boundaries, group reconciliation, v5 tokens, read-only sessions, consistent details, historical author, dialog navigation, draft isolation, non-negative depth, reduced motion, no real API calls.');
+run("role='agent'; selected='林海'; modalCustomer=null; page='sessions'; currency='USDT'; render()");
+run('closeDialog()');
+element('#composer').rect = { top: 515 };
+element('.chat-head').rect = { bottom: 210 };
+run("openComposerTool('templates')");
+assert.equal(element('#composerPopover').hidden, false);
+assert.equal(element('#composerPopover').style.maxHeight, '291px', 'Tool list fits below the actual chat header');
+assert.equal(element('#detailDialog').open, false, 'Composer tool opens without a page-blocking modal');
+assert.match(element('#composerToolList').innerHTML, /R01/);
+run("renderComposerToolList('不存在的话术')");
+assert.match(element('#composerToolList').innerHTML, /没有匹配内容/);
+element('#messageInput').value = '已有草稿';
+run("chooseComposerTool('R01')");
+assert.match(element('#messageInput').value, /^已有草稿\n已收到/);
+assert.equal(run("messages.get('林海').length"), 1, 'Choosing a reply does not send');
+run("openComposerTool('products'); chooseComposerTool('AIR-DEMO')");
+assert.match(element('#pendingProduct').innerHTML, /待发送商品/);
+assert.equal(run("pendingProducts.get(composeKey())"), 'AIR-DEMO');
+run("selected='小雨儿'; renderPendingProduct()");
+assert.equal(element('#pendingProduct').hidden, true, 'Pending product stays in its own customer conversation');
+run("selected='林海'; openComposerTool('products'); chooseComposerTool('PRO-DEMO')");
+assert.equal(run("pendingProducts.get(composeKey())"), 'AIR-DEMO', 'Unavailable product cannot replace the pending item');
+run("role='supervisor'; openComposerTool('templates')");
+assert.match(element('#composerToolList').innerHTML, /disabled/);
+const beforeReadonly = element('#messageInput').value;
+run("chooseComposerTool('R02')");
+assert.equal(element('#messageInput').value, beforeReadonly);
+run("role='agent'; selected='林海'; messages.set(selected,[]); pendingProducts.clear(); closeComposerTool(); sendScenario='unknown'");
+for (const kind of ['templates', 'products']) {
+  run(`openComposerTool('${kind}')`);
+  element('#messageInput').value = '搜索期间应保留的草稿';
+  let prevented = false;
+  for (const listener of documentEvents.get('submit')) listener({ target: { id: 'composer' }, preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(run('messages.get(selected).length'), 0, kind + ' search implicit submit never sends');
+  assert.equal(element('#messageInput').value, '搜索期间应保留的草稿');
+}
+assert.match(run('sessionsHTML()'), /id="sendMessage" type="button" data-action="sendLocal"/);
+element('#messageInput').value = '<img onerror=alert(1)>';
+run('sendMessage()');
+assert.match(element('#chatScroll').innerHTML, /&lt;img onerror=alert\(1\)&gt;/);
+assert.match(run('threadHTML(current())'), /发送结果未知/);
+assert.equal(run("messages.get(selected)[0].read"), null, 'Unconfirmed send has no unread claim');
+const unknownId = run('messages.get(selected)[0].id');
+run(`changeMessageState('${unknownId}','retry')`);
+assert.equal(run('messages.get(selected)[0].attempts'), 1, 'Unknown send cannot retry');
+run(`sendScenario='unread'; changeMessageState('${unknownId}','query')`);
+assert.equal(run('messages.get(selected)[0].state'), 'sent');
+assert.equal(run('messages.get(selected)[0].read'), false);
+assert.equal(run('messages.get(selected).length'), 1);
+run(`changeMessageState('${unknownId}','read')`);
+assert.equal(run('messages.get(selected)[0].read'), true);
+element('#messageInput').value = '失败重试';
+run("sendScenario='failed'; sendMessage()");
+const failedId = run('messages.get(selected)[1].id');
+run(`sendScenario='unread'; changeMessageState('${failedId}','retry')`);
+assert.equal(run('messages.get(selected).length'), 2);
+assert.equal(run('messages.get(selected)[1].id'), failedId);
+assert.equal(run('messages.get(selected)[1].attempts'), 2);
+assert.equal(run('messages.get(selected)[1].state'), 'sent');
+run("pendingProducts.set(composeKey(),'AIR-DEMO'); productCatalog[0].available=false");
+element('#messageInput').value = '下架时保留草稿';
+run('sendMessage()');
+assert.equal(run('messages.get(selected).length'), 2);
+assert.equal(element('#messageInput').value, '下架时保留草稿');
+assert.equal(run('pendingProducts.get(composeKey())'), 'AIR-DEMO');
+assert.match(element('#composerNote').textContent, /下架/);
+run("productCatalog[0].available=true; sendScenario='failed'; sendMessage()");
+const failedProductId = run('messages.get(selected)[2].id');
+run(`productCatalog[0].available=false; changeMessageState('${failedProductId}','retry')`);
+assert.equal(run('messages.get(selected)[2].state'), 'failed');
+assert.equal(run('messages.get(selected)[2].attempts'), 1);
+assert.equal(run('messages.get(selected).length'), 3);
+run('productCatalog[0].available=true');
+run("role='admin'; openTimeout()");
+assert.match(element('#dialogBody').innerHTML, /新会话段/);
+assert.match(element('#dialogBody').innerHTML, /失败或结果未知/);
+for (const [remind, end, reason] of [['0','5','阈值调整演示'],['1','1','阈值调整演示'],['31','60','阈值调整演示'],['1','121','阈值调整演示'],['1.5','5','阈值调整演示'],['','5','阈值调整演示'],['1','5','不足']]) {
+  element('#timeoutRemind').value = remind;
+  element('#timeoutEnd').value = end;
+  element('#timeoutReason').value = reason;
+  run('previewTimeout()');
+  assert.match(element('#timeoutError').textContent, /整数/);
+}
+element('#timeoutRemind').value = '2'; element('#timeoutEnd').value = '8'; element('#timeoutReason').value = '调整本地演示阈值';
+run('previewTimeout()');
+assert.match(element('#dialogBody').innerHTML, /原值[\s\S]*1分钟提醒[\s\S]*新值[\s\S]*2分钟提醒/);
+run('openTimeout()');
+assert.match(element('#dialogBody').innerHTML, /id="timeoutRemind"[^>]+value="2"/);
+assert.match(element('#dialogBody').innerHTML, /id="timeoutEnd"[^>]+value="8"/);
+assert.match(element('#dialogBody').innerHTML, /调整本地演示阈值<\/textarea>/);
+run('previewTimeout()');
+element('#timeoutConfirm').checked = false; run('saveTimeout()');
+assert.equal(localStore.has('uvel-support-design-timeout-v1'), false);
+element('#timeoutConfirm').checked = true; run('saveTimeout()');
+assert.equal(run('loadTimeout().end'), 8, 'Timeout design survives a fresh storage load');
+run("role='supervisor'; openTimeout()");
+assert.match(element('#dialogBody').innerHTML, /id="timeoutRemind"[^>]+disabled/);
+assert.doesNotMatch(element('#dialogBody').innerHTML, /id="timeoutReason"/);
+run('closeDialog()');
+assert.equal(run('timeoutDraft'), null, 'Closing the strategy dialog cancels its edit draft');
+assert.equal(run('customers.every(c=>Boolean(avatarFile(c)))'), true);
+assert.equal(run('staff.every(r=>Boolean(avatarFile({name:r[0]})))'), true);
+for (const file of JSON.parse(run('JSON.stringify(allAvatarFiles)'))) assert.ok(existsSync(new URL('./assets/avatars/' + file, import.meta.url)));
+assert.match(run("avatar({name:'Mia'})"), /women-39.jpg/);
+assert.match(run("avatar({name:'林海'})"), /men-75.jpg/);
+assert.match(run("avatar({name:'林海'})"), /avatar-fallback[^>]*>林/);
+const brokenPhoto = { tagName: 'IMG', hidden: false, closest() { return { setAttribute() {} }; } };
+for (const listener of documentEvents.get('error')) listener({ target: brokenPhoto });
+assert.equal(brokenPhoto.hidden, true, 'Broken photo reveals the stable text fallback');
+assert.equal(run("Array.from({length:50},()=>randomAvatar('male')).every(file=>avatarPools.male.includes(file))"), true);
+assert.equal(run("Array.from({length:50},()=>randomAvatar('female')).every(file=>avatarPools.female.includes(file))"), true);
+run("role='admin'; openStaffForm()");
+assert.match(element('#dialogBody').innerHTML, /aria-label="选择男头像 1"/);
+assert.doesNotMatch(element('#dialogBody').innerHTML, /aria-label="[^"]*\.jpg/);
+element('#staffSampleName').value = '演示客服'; element('#staffSampleGender').value = 'female';
+run("staffDraft.avatar='women-7.jpg'; saveStaffSample()");
+assert.equal(run('loadDesignAccounts().items.length'), 1);
+assert.equal(run("loadDesignAccounts().items[0].avatar"), 'women-7.jpg');
+assert.equal(run('groupTotals(groups).members'), 24, 'Local account examples never change operational totals');
+run("openStaffForm(designAccounts.items[0].id)");
+assert.equal(run('staffDraft.manual'), true, 'Saved avatar is not rerandomized when editing gender');
+run("role='supervisor'; openStaffAccounts()");
+assert.equal(element('#dialogTitle').textContent, '无客服账号管理权限');
+const css = html.match(/<style>([\s\S]*?)<\/style>/)?.[1] || '';
+const allowedFontSizes = new Set([0, 10, 10.5, 11, 11.5, 12, 12.5, 13.5, 14, 15, 18, 20, 26, 28, 30, 48]);
+const typeScale = new Map([...css.matchAll(/(--type-[\w-]+):([\d.]+)px/g)].map(match => [match[1], Number(match[2])]));
+assert.ok(typeScale.size >= 10, 'Typography uses a shared semantic size scale');
+for (const [name, size] of typeScale) assert.ok(allowedFontSizes.has(size), name + ' uses an approved size');
+for (const declaration of html.matchAll(/font-size\s*:\s*([^;}"\n]+)/g)) {
+  const value = declaration[1].trim();
+  const variable = value.match(/^var\((--type-[\w-]+)\)$/)?.[1];
+  const size = variable ? typeScale.get(variable) : Number(value.replace(/px$/, ''));
+  assert.ok(allowedFontSizes.has(size), 'Unapproved font size: ' + value);
+  if (size === 0) assert.match(css, /\.control-label\{font-size:0\}/, 'Zero size is reserved for the narrow hidden label');
+}
+for (const match of html.matchAll(/font-weight\s*:\s*([^;}"\n]+)/g)) {
+  assert.ok(/^\d+$/.test(match[1]) && Number(match[1]) >= 100 && Number(match[1]) <= 600, 'All explicit weights are at most 600');
+}
+assert.match(css, /h1,h2,h3\{font-weight:600\}/, 'Every native heading overrides the browser default bold weight');
+assert.match(css, /--font-display:"Manrope",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif/);
+assert.match(css, /font-family:var\(--font-v5\)/);
+assert.match(css, /button\{font-size:var\(--type-control\);font-weight:500/);
+assert.match(css, /\.metric-value,[^}]+font-variant-numeric:tabular-nums/);
+assert.doesNotMatch(css, /font-family:[^;}]*monospace/);
+assert.match(css, /input::placeholder,textarea::placeholder\{color:var\(--v5-ink3\);opacity:1\}/);
+console.log('PASS: role/currency isolation, metric drills, composer popover bounds, draft/product isolation, delivery/read states, same-ID retry, unknown query, timeout validation/local persistence, explicit photo mappings/account sample persistence, no real API calls.');
