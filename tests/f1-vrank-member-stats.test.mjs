@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { nexGridBrandText } from "../lib/admin/brand-copy.ts";
 
 const source = readFileSync(new URL("../app/components/domain-views/f-tabs/f1-vrank.tsx", import.meta.url), "utf8");
 
@@ -14,6 +15,7 @@ function renderF1(ctx) {
   new Function("require", "exports", "module", output)((name) => {
     if (name === "react") return { useState: (value) => [value, () => undefined] };
     if (name === "react/jsx-runtime") return { jsx: tree, jsxs: tree, Fragment: Symbol("Fragment") };
+    if (name.endsWith("brand-copy")) return { nexGridBrandText };
     if (name.endsWith("design-kit")) return { CodeTag: () => null };
     if (name.endsWith("published-content-editor")) return { PublishedContentEditor: () => null };
     return {};

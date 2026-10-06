@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
+import ts from "typescript";
 import test from "node:test";
 
 import { F1OutcomeUncertainError, f1StableWrite } from "../lib/admin/f1-stable-write.ts";
@@ -126,8 +129,8 @@ test("f1Request:写路径无稳定号直接拒绝,四类结果未知保号,4xx/4
   assert.match(code, /X-Nexion-Upstream-Outcome"\)\?\.trim\(\)\.toLowerCase\(\) === "unknown"/);
   assert.match(code, /includes\("UPSTREAM_OUTCOME_UNKNOWN"\)/,
     "除响应头外还要认 message 里的上游未知标记(teams proxy 目前不透传该头)");
-  assert.match(code, /if \(outcomeStaysUnknown\(response\.status, result\?\.code\)\) \{\s*throw new F1OutcomeUncertainError\(/,
-    "5xx 必须归「结果未知」保号 —— 归确定性失败会让重试铸新号 → 重复打款");
+  assert.match(code, /if \(\(!response\.ok \|\| !result \|\| result\.code !== 0\)\s*&& outcomeStaysUnknown\(response\.status, result\?\.code\)\) \{\s*throw new F1OutcomeUncertainError\(/,
+    "只在失败分支分类；5xx 必须未知保号，完整 200/code0 成功不得误抛未知");
   // 「200 + 业务码 0 但 data 缺失」= 回包被截断,后端可能已执行 → 保号。
   // 但只对**要读返回值**的调用开:F5 四个 void 写若后端本就返 data:null,无条件启用会每次抛未知
   // 且不弃号 → 重试原样重放、再抛,操作面永久卡死而钱其实已经打了。
@@ -321,4 +324,188 @@ test("刷新后仍认得在途命令号:换 store 读面(模拟刷新)原样重�
   });
   assert.equal(second, first, "命令号必须落 sessionStorage 跨刷新存活 —— 组件态/内存态正是本轮迁移根除的缺陷");
   assert.deepEqual(survived.storedKeys(), [], "成功后必须清槽");
+});
+
+// Actual client runtime: reuse the repository TS loader, with only browser/fetch boundaries replaced.
+const runtimeRoot = path.resolve(import.meta.dirname, "..");
+const nodeRequire = createRequire(import.meta.url);
+
+function loadF1ClientRuntime() {
+  const cache = new Map();
+  function load(filename) {
+    if (cache.has(filename)) return cache.get(filename).exports;
+    const module = { exports: {} };
+    cache.set(filename, module);
+    const output = ts.transpileModule(readFileSync(filename, "utf8"), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    new Function("require", "exports", "module", output)((name) => {
+      if (!name.startsWith("@/") && !name.startsWith(".")) return nodeRequire(name);
+      const base = name.startsWith("@/") ? path.join(runtimeRoot, name.slice(2)) : path.resolve(path.dirname(filename), name);
+      const resolved = [base, `${base}.ts`, `${base}.tsx`].find((candidate) => existsSync(candidate));
+      assert.ok(resolved, `local dependency missing: ${name}`);
+      return load(resolved);
+    }, module.exports, module);
+    return module.exports;
+  }
+  return load(path.join(runtimeRoot, "lib/admin/f1-client.ts"));
+}
+
+function completeF1Overview() {
+  const rewards = [
+    { id: "r-usdt", type: "usdt", amount: 100 },
+    { id: "r-nex", type: "nex", amount: 50 },
+    { id: "r-voucher", type: "voucher", voucherId: "voucher-real-test" },
+    { id: "r-sku", type: "sku", skuId: "sku-real-test" },
+    { id: "r-custom", type: "custom", custom: "Fixture reward" },
+  ];
+  return {
+    domain: "F1", rankLadder: [],
+    vrankRows: [{ v: "V1", label: "V1", unilevelDepth: "0", peerBonusRate: 0, votes: 0, visible: true, pop: 0, rewards }],
+    rewards: { V1: rewards }, voucherOptions: ["voucher-real-test"], voucherLabels: { "voucher-real-test": "Real voucher" },
+    skuOptions: ["sku-real-test"], skuLabels: { "sku-real-test": "Real SKU" },
+    leadership: { ranks: [], totalMembers: 0, qualifiers: 0 }, configValues: {}, sources: [],
+    updated: { rank: "V1", rewardId: "r-voucher" },
+  };
+}
+
+const f1Ok = () => new Response(JSON.stringify({ code: 0, message: "success", data: completeF1Overview() }), { status: 200 });
+
+function actualF1(t, replies, persisted) {
+  const previousWindow = globalThis.window;
+  const env = installStorage();
+  if (persisted) window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
+  let reloads = 0;
+  const removedAuth = [];
+  window.localStorage = { removeItem: (key) => removedAuth.push(key) };
+  window.location = { reload: () => { reloads += 1; } };
+  t.after(() => { globalThis.window = previousWindow; });
+  const sent = [];
+  const logout = [];
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    if (url === "/api/admin/auth/logout") {
+      logout.push(options);
+      return new Response(null, { status: 200 });
+    }
+    assert.ok(String(url).startsWith("/api/admin/teams/"), "fixture permits only the actual teams client route");
+    const key = new Headers(options.headers).get("Idempotency-Key");
+    assert.ok(key, "actual write must carry a stable command key");
+    assert.ok(env.storedKeys().includes(key), "sent key must equal the persisted in-flight key");
+    sent.push({ url, method: options.method, key, body: JSON.parse(options.body) });
+    const reply = replies.shift();
+    assert.ok(reply, "unexpected extra request; fixtures never reach a network");
+    return reply();
+  });
+  const client = loadF1ClientRuntime();
+  return {
+    client, env, sent, logout, removedAuth, reloads: () => reloads,
+    update: () => client.updateF1VRankReward("V1", "r-voucher", { type: "voucher", voucherId: "voucher-real-test" }, "Fixture reason", "ops-test"),
+  };
+}
+
+test("actualF1: readable 200/code0 overview returns and retires the exact stable key", async (t) => {
+  const run = actualF1(t, [f1Ok, f1Ok]);
+  const overview = await run.update();
+  assert.equal(run.sent.length, 1, "one explicit call sends one request");
+  assert.equal(run.sent[0].url, "/api/admin/teams/ranks/V1/rewards/r-voucher");
+  assert.equal(run.sent[0].method, "PUT");
+  assert.equal(run.sent[0].body.voucherId, "voucher-real-test");
+  assert.equal(overview.rewards.V1.length, 5);
+  assert.equal(overview.rewards.V1.find((row) => row.id === "r-voucher").voucherId, "voucher-real-test");
+  assert.equal(overview.rows[0].rewards.length, 5);
+  assert.deepEqual(run.env.storedKeys(), [], "readable success must retire the command");
+  await run.update();
+  assert.notEqual(run.sent[1].key, run.sent[0].key, "later genuine intent gets a new key");
+  assert.deepEqual(run.env.storedKeys(), []);
+});
+
+for (const [name, call] of [
+  ["reverse", (c) => c.reverseF5Commission("C-test", "REF-test", "Fixture reason", "ops-test")],
+  ["reissue", (c) => c.reissueF5Commissions(["C-test"], "Fixture reason", "ops-test")],
+  ["suspend", (c) => c.suspendF5UserCommissions(7001, ["REFERRAL"], true, "Fixture reason", "ops-test")],
+  ["anomaly-config", (c) => c.updateF5AnomalyConfig(2, 5, "Fixture reason", "ops-test")],
+]) {
+  test(`actualF1: void ${name} 200/code0/data null succeeds and retires its key`, async (t) => {
+    const run = actualF1(t, [() => new Response(JSON.stringify({ code: 0, data: null }), { status: 200 })]);
+    assert.equal(await call(run.client), null);
+    assert.equal(run.sent.length, 1);
+    assert.deepEqual(run.env.storedKeys(), []);
+  });
+}
+
+for (const [name, reply] of [
+  ["network rejection", () => { throw new TypeError("fixture network failure"); }],
+  ["unreadable body", () => new Response("not-json", { status: 200 })],
+  ["explicit unknown header", () => new Response(JSON.stringify({ code: 0, data: completeF1Overview() }), { status: 200, headers: { "X-Nexion-Upstream-Outcome": "unknown" } })],
+  ["explicit unknown message", () => new Response(JSON.stringify({ code: 1201, message: "UPSTREAM_OUTCOME_UNKNOWN", data: null }), { status: 200 })],
+  ["HTTP500", () => new Response(JSON.stringify({ code: 500, message: "fixture" }), { status: 500 })],
+  ["HTTP502", () => new Response(JSON.stringify({ code: 502, message: "fixture" }), { status: 502 })],
+  ["HTTP503", () => new Response(JSON.stringify({ code: 503, message: "fixture" }), { status: 503 })],
+  ["HTTP504", () => new Response(JSON.stringify({ code: 504, message: "fixture" }), { status: 504 })],
+  ["required data null", () => new Response(JSON.stringify({ code: 0, data: null }), { status: 200 })],
+]) {
+  test(`actualF1: ${name} stays unknown and reuses the persisted key`, async (t) => {
+    const run = actualF1(t, [reply, reply]);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await assert.rejects(run.update(), (error) => {
+        assert.equal(error.name, "F1OutcomeUncertainError");
+        assert.equal(error.commandKey, run.sent[attempt].key);
+        return true;
+      });
+      assert.deepEqual(run.env.storedKeys(), [run.sent[0].key]);
+      assert.equal(run.sent.length, attempt + 1, "no automatic retry");
+    }
+    assert.equal(run.sent[1].key, run.sent[0].key);
+  });
+}
+
+for (const [name, reply] of [
+  ["HTTP400", () => new Response(JSON.stringify({ code: 400, message: "fixture rejected" }), { status: 400 })],
+  ["HTTP409", () => new Response(JSON.stringify({ code: 409, message: "fixture rejected" }), { status: 409 })],
+  ["HTTP200 business rejection", () => new Response(JSON.stringify({ code: 1202, message: "fixture rejected" }), { status: 200 })],
+]) {
+  test(`actualF1: fresh ${name} is deterministic and retires its key`, async (t) => {
+    const run = actualF1(t, [reply, reply]);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await assert.rejects(run.update(), (error) => error.name !== "F1OutcomeUncertainError");
+      assert.deepEqual(run.env.storedKeys(), []);
+    }
+    assert.notEqual(run.sent[1].key, run.sent[0].key);
+  });
+}
+
+for (const [name, body] of [["JSON", JSON.stringify({ code: 401, message: "ADMIN_AUTH_REQUIRED" })], ["unreadable", "<html>unauthorized</html>"]]) {
+  test(`actualF1: fresh 401 ${name} resets actual auth before returning deterministic failure`, async (t) => {
+    const run = actualF1(t, [() => new Response(body, { status: 401 })]);
+    await assert.rejects(run.update(), (error) => error.name !== "F1OutcomeUncertainError");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(run.env.storedKeys(), []);
+    assert.deepEqual(run.removedAuth, ["nexion-admin-auth-v2"]);
+    assert.equal(run.logout.length, 1);
+    assert.equal(run.reloads(), 1);
+  });
+}
+
+test("actualF1: unknown survives refresh and deterministic rejection until readable success", async (t) => {
+  const run = actualF1(t, [
+    () => { throw new TypeError("fixture network failure"); },
+    () => new Response(JSON.stringify({ code: 409, message: "fixture rejected" }), { status: 409 }),
+    () => new Response("<html>unauthorized</html>", { status: 401 }), f1Ok, f1Ok,
+  ]);
+  await assert.rejects(run.update(), (error) => error.name === "F1OutcomeUncertainError");
+  const key = run.sent[0].key;
+  const persisted = run.env.raw();
+  window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
+  const refreshed = loadF1ClientRuntime();
+  const update = () => refreshed.updateF1VRankReward("V1", "r-voucher", { type: "voucher", voucherId: "voucher-real-test" }, "Fixture reason", "ops-test");
+  await assert.rejects(update(), (error) => error.name !== "F1OutcomeUncertainError");
+  assert.deepEqual(run.env.storedKeys(), [key], "409 cannot disprove the earlier unknown attempt");
+  await assert.rejects(update(), (error) => error.name !== "F1OutcomeUncertainError");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(run.env.storedKeys(), [key], "401 reset must preserve this user's unknown key");
+  await update();
+  assert.deepEqual(run.env.storedKeys(), []);
+  assert.deepEqual(run.sent.slice(0, 4).map((row) => row.key), [key, key, key, key]);
+  await update();
+  assert.notEqual(run.sent[4].key, key);
 });
