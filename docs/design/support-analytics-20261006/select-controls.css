@@ -1,0 +1,145 @@
+/* Shared native selects: dynamic page and dialog markup keep their existing values and events.
+   Older browsers keep their OS picker; the closed control still gets the same inset arrow. */
+:root {
+  --select-icon-size: 16px;
+  --select-icon-inset: 14px;
+  --select-icon-gap: 12px;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%238A95A8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* This specificity also covers the existing compact and narrow-screen padding rules. */
+:root body select {
+  position: relative;
+  appearance: none;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  min-block-size: 40px;
+  padding: 9px 12px;
+  padding-inline-end: calc(var(--select-icon-inset) + var(--select-icon-size) + var(--select-icon-gap));
+  border: 1px solid var(--v5-border-strong);
+  border-radius: 7px;
+  background-color: var(--v5-surface);
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right var(--select-icon-inset) center;
+  background-size: var(--select-icon-size);
+  color: var(--v5-ink);
+  line-height: 1.5;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+:root .control-label select,
+:root .send-demo select {
+  min-block-size: 36px;
+  padding-block: 7px;
+}
+
+:root .dialog-body select,
+:root .form-row select {
+  inline-size: 100%;
+}
+
+:root body select:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
+
+:root body select:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+@supports (appearance: base-select) and selector(select::picker(select)) {
+  :root body select,
+  :root body select::picker(select) {
+    appearance: base-select;
+  }
+
+  :root body select {
+    background-image: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  :root body select::picker-icon {
+    content: "";
+    position: absolute;
+    inset-inline-end: var(--select-icon-inset);
+    top: 50%;
+    inline-size: var(--select-icon-size);
+    block-size: var(--select-icon-size);
+    margin: 0;
+    background: var(--select-chevron) center / contain no-repeat;
+    pointer-events: none;
+    transform: translateY(-50%);
+    transition: transform .12s;
+  }
+
+  :root body select:open::picker-icon {
+    transform: translateY(-50%) rotate(180deg);
+  }
+
+  /* The native picker occupies the top layer, including when invoked inside a modal. */
+  :root body select::picker(select) {
+    min-inline-size: min(anchor-size(self-inline), calc(100vw - 24px));
+    inline-size: max-content;
+    max-inline-size: calc(100vw - 24px);
+    max-block-size: min(320px, calc(100dvh - 24px));
+    margin-block: 6px;
+    padding: 5px;
+    overflow: auto;
+    border: 1px solid var(--v5-border-strong);
+    border-radius: 8px;
+    background: var(--v5-surface);
+    color: var(--v5-ink);
+    box-shadow: 0 12px 32px #0008;
+    font: inherit;
+    position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+  }
+
+  :root body select option {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-block-size: 36px;
+    padding: 8px 10px;
+    border-radius: 5px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+  }
+
+  :root body select option:checked {
+    background: color-mix(in srgb, var(--blue) 16%, var(--v5-surface));
+  }
+
+  :root body select option:not(:disabled):hover {
+    background: var(--v5-surface3);
+  }
+
+  :root body select option:focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: -2px;
+  }
+
+  :root body select option::checkmark {
+    order: 1;
+    margin-inline-start: auto;
+    color: var(--blue);
+  }
+
+  :root body select option:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root body select::picker-icon {
+    transition: none;
+  }
+}

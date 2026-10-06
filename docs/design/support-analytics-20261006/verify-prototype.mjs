@@ -35,6 +35,7 @@ const context = vm.createContext({ localStorage: {
   },
   activeElement: element('opener')
 } });
+vm.runInContext(readFileSync(new URL('./leaderboard.js', import.meta.url), 'utf8'), context);
 vm.runInContext(script, context);
 const run = source => vm.runInContext(source, context);
 assert.equal(run("groups.some(group=>Object.hasOwn(group,'idle'))"), false, 'Unused device-idle sample fields are removed');
@@ -413,7 +414,7 @@ for (const scope of ['all', 'star', 'dawn']) {
 
   }
 }
-documentEvents.get('change')[0]({ target: { id: 'supervisorIdentity', value: '许安' } });
+for (const listener of documentEvents.get('change')) listener({ target: { id: 'supervisorIdentity', value: '许安' } });
 assert.equal(run('selectedGroup'), 'all');
 assert.equal(run('groupAgentFilter'), 'all');
 assert.match(element('#app').innerHTML, /海岚组/);
@@ -454,7 +455,7 @@ for (const state of ['empty','loading','error']) {
   assert.doesNotMatch(element('#app').innerHTML, /data-group="dawn"|data-main-list=|class="metrics"|period-panel/, 'State pages contain no stale group business rows');
 }
 const retryStateButton = { disabled: false, dataset: { action: 'retry' }, hasAttribute: () => false };
-documentEvents.get('click')[0]({ target: { closest: () => retryStateButton } });
+for (const listener of documentEvents.get('click')) listener({ target: { closest: () => retryStateButton } });
 assert.equal(run('viewState'), 'default');
 assert.equal(run('selectedGroup'), 'star');
 assert.equal(run('groupTab'), '客户');

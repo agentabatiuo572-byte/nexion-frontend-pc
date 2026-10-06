@@ -4,15 +4,17 @@
 
 ## 先看这三份
 
-1. [可点击设计稿](../../design/support-analytics-20261006/prototype.html)：三角色首页、客户列表、即时会话、分组看板、服务规则；支持两名主管范围切换、数字下钻及设计四态演示。
+1. [可点击设计稿](../../design/support-analytics-20261006/prototype.html)：三角色首页、客户列表、即时会话、业绩榜、分组看板、服务规则；支持两名主管范围切换、数字下钻及设计四态演示。业绩榜位于即时会话之后、分组看板之前，三角色可见，个人首页保留短入口。
 2. [详细交互设计](../../design/support-analytics-20261006/DESIGN.md)：布局、动效、旧资料保留与新统计位置。
 3. [功能契约](CONTRACTS.md)：首充、金额、邀请、历史归属、权限和无限继承规则。
 
 实施入口：[详细实施方案](IMPLEMENTATION.md)，包含I0–I7及I5R排行榜的依赖、现有能力与缺口、接口交接、迁移/恢复、具体检查和112项主责映射。
 
-配套：[七项功能规格](SPEC.md)、[分组与多角度看板契约](GROUPS.md)、[旧能力覆盖清单](LEGACY-COVERAGE.md)、[基础及统一服务/IDC验收](ACCEPTANCE.md)、[设计审查及证据](REVIEW.md)。原69项基础+25项分组+4项统一服务+2项IDC+12项排行榜，共112项产品验收，均待实施。排行榜当前只有[业务提案](LEADERBOARD.md)和交互说明，尚未加入可点稿。
+配套：[七项功能规格](SPEC.md)、[分组与多角度看板契约](GROUPS.md)、[旧能力覆盖清单](LEGACY-COVERAGE.md)、[基础及统一服务/IDC验收](ACCEPTANCE.md)、[设计审查及证据](REVIEW.md)、[业绩榜设计与待评审口径](LEADERBOARD.md)。原69项基础+25项分组+4项统一服务+2项IDC+12项排行榜，共112项产品验收，全部为NOT-RUN。业绩榜已加入静态可点稿，以单个主排名表演示查询、公开摘要与返回；每日变化比较昨日末固定基线，缺基线显示不可比，新入榜不当作0位变化。视觉仍在调整，产品尚未实现。
 
 视觉以当前后台黑灰令牌为准，五张采用稿为 `concept-*-black.png`，主管追加数据优先修订稿。此前偏蓝稿停止采用。最新会话实景：[专属客服与IDC托管](../../design/support-analytics-20261006/assets/verified-dedicated-support-idc.png)、[窄屏资料](../../design/support-analytics-20261006/assets/verified-idc-profile-1000.png)。上一轮布局/字号证据：[主管总览](../../design/support-analytics-20261006/assets/verified-supervisor-overview-data.jpg)、[按组客服](../../design/support-analytics-20261006/assets/verified-supervisor-staff-data.jpg)、[总管理员字号](../../design/support-analytics-20261006/assets/verified-admin-readable.jpg)。
+
+业绩榜当前为[成绩领奖台探索稿](../../design/support-analytics-20261006/assets/concept-leaderboard-performance-podium.png)，尚未定稿或还原；此前解构金属、精修表格与大幅人像方向停止采用。可点稿仅用于功能交互验证，不是最终视觉验收证据。
 
 ## 主人裁决与方案细化
 
@@ -60,4 +62,12 @@
 
 可直接打开 HTML；或在 `docs/design/support-analytics-20261006` 运行 `python -m http.server 33106 --bind 127.0.0.1` 后访问 `http://127.0.0.1:33106/prototype.html`。此为设计专用服务，不替换33041。
 
-规格检查：`node C:/Users/jason/.agents/skills/nexion-spec/spec-lint.mjs docs/specs/support-analytics-20261006/SPEC.md --strict`。设计原型静态检查与实际浏览器证据见 REVIEW；全部112项产品用例保持待实施状态。
+在本仓根目录运行以下三个设计检查入口：
+
+```text
+node docs/design/support-analytics-20261006/verify-prototype.mjs
+node docs/design/support-analytics-20261006/verify-select-controls.mjs
+node docs/design/support-analytics-20261006/verify-leaderboard.mjs
+```
+
+三项仅验证静态设计稿的结构、下拉样式约束和模拟交互/榜单计算，不验证真实API、产品持久化、浏览器布局或生产权限；通过不能转记产品PASS。规格检查：`node C:/Users/jason/.agents/skills/nexion-spec/spec-lint.mjs docs/specs/support-analytics-20261006/SPEC.md --strict`。设计原型静态检查与实际浏览器证据见 REVIEW；产品实施继续暂停，全部112项产品用例保持NOT-RUN。

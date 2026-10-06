@@ -1,0 +1,3898 @@
+{
+  "scope": "Static interaction prototype only; current visual rejected; new performance podium image not implemented.",
+  "rankRuntimeChecks": [
+    {
+      "role": "agent",
+      "tab": "首充人数",
+      "state": "default",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "首充人数",
+      "tables": 1
+    },
+    {
+      "role": "agent",
+      "tab": "首充人数",
+      "state": "empty",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "首充人数",
+      "tables": 0
+    },
+    {
+      "role": "agent",
+      "tab": "首充人数",
+      "state": "loading",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "首充人数",
+      "tables": 0
+    },
+    {
+      "role": "agent",
+      "tab": "首充人数",
+      "state": "error",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "首充人数",
+      "tables": 0
+    },
+    {
+      "role": "agent",
+      "tab": "充值贡献",
+      "state": "default",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "充值贡献",
+      "tables": 1
+    },
+    {
+      "role": "agent",
+      "tab": "充值贡献",
+      "state": "empty",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "充值贡献",
+      "tables": 0
+    },
+    {
+      "role": "agent",
+      "tab": "充值贡献",
+      "state": "loading",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "充值贡献",
+      "tables": 0
+    },
+    {
+      "role": "agent",
+      "tab": "充值贡献",
+      "state": "error",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "充值贡献",
+      "tables": 0
+    },
+    {
+      "role": "agent",
+      "tab": "购机贡献",
+      "state": "default",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "购机贡献",
+      "tables": 1
+    },
+    {
+      "role": "agent",
+      "tab": "购机贡献",
+      "state": "empty",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "购机贡献",
+      "tables": 0
+    },
+    {
+      "role": "agent",
+      "tab": "购机贡献",
+      "state": "loading",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "购机贡献",
+      "tables": 0
+    },
+    {
+      "role": "agent",
+      "tab": "购机贡献",
+      "state": "error",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "购机贡献",
+      "tables": 0
+    },
+    {
+      "role": "agent",
+      "tab": "客户规模",
+      "state": "default",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "客户规模",
+      "tables": 1
+    },
+    {
+      "role": "agent",
+      "tab": "客户规模",
+      "state": "empty",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "客户规模",
+      "tables": 0
+    },
+    {
+      "role": "agent",
+      "tab": "客户规模",
+      "state": "loading",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "客户规模",
+      "tables": 0
+    },
+    {
+      "role": "agent",
+      "tab": "客户规模",
+      "state": "error",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "客户规模",
+      "tables": 0
+    },
+    {
+      "role": "supervisor",
+      "tab": "首充人数",
+      "state": "default",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "首充人数",
+      "tables": 1
+    },
+    {
+      "role": "supervisor",
+      "tab": "首充人数",
+      "state": "empty",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "首充人数",
+      "tables": 0
+    },
+    {
+      "role": "supervisor",
+      "tab": "首充人数",
+      "state": "loading",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "首充人数",
+      "tables": 0
+    },
+    {
+      "role": "supervisor",
+      "tab": "首充人数",
+      "state": "error",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "首充人数",
+      "tables": 0
+    },
+    {
+      "role": "supervisor",
+      "tab": "充值贡献",
+      "state": "default",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "充值贡献",
+      "tables": 1
+    },
+    {
+      "role": "supervisor",
+      "tab": "充值贡献",
+      "state": "empty",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "充值贡献",
+      "tables": 0
+    },
+    {
+      "role": "supervisor",
+      "tab": "充值贡献",
+      "state": "loading",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "充值贡献",
+      "tables": 0
+    },
+    {
+      "role": "supervisor",
+      "tab": "充值贡献",
+      "state": "error",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "充值贡献",
+      "tables": 0
+    },
+    {
+      "role": "supervisor",
+      "tab": "购机贡献",
+      "state": "default",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "购机贡献",
+      "tables": 1
+    },
+    {
+      "role": "supervisor",
+      "tab": "购机贡献",
+      "state": "empty",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "购机贡献",
+      "tables": 0
+    },
+    {
+      "role": "supervisor",
+      "tab": "购机贡献",
+      "state": "loading",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "购机贡献",
+      "tables": 0
+    },
+    {
+      "role": "supervisor",
+      "tab": "购机贡献",
+      "state": "error",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "购机贡献",
+      "tables": 0
+    },
+    {
+      "role": "supervisor",
+      "tab": "客户规模",
+      "state": "default",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "客户规模",
+      "tables": 1
+    },
+    {
+      "role": "supervisor",
+      "tab": "客户规模",
+      "state": "empty",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "客户规模",
+      "tables": 0
+    },
+    {
+      "role": "supervisor",
+      "tab": "客户规模",
+      "state": "loading",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "客户规模",
+      "tables": 0
+    },
+    {
+      "role": "supervisor",
+      "tab": "客户规模",
+      "state": "error",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "客户规模",
+      "tables": 0
+    },
+    {
+      "role": "admin",
+      "tab": "首充人数",
+      "state": "default",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "首充人数",
+      "tables": 1
+    },
+    {
+      "role": "admin",
+      "tab": "首充人数",
+      "state": "empty",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "首充人数",
+      "tables": 0
+    },
+    {
+      "role": "admin",
+      "tab": "首充人数",
+      "state": "loading",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "首充人数",
+      "tables": 0
+    },
+    {
+      "role": "admin",
+      "tab": "首充人数",
+      "state": "error",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "首充人数",
+      "tables": 0
+    },
+    {
+      "role": "admin",
+      "tab": "充值贡献",
+      "state": "default",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "充值贡献",
+      "tables": 1
+    },
+    {
+      "role": "admin",
+      "tab": "充值贡献",
+      "state": "empty",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "充值贡献",
+      "tables": 0
+    },
+    {
+      "role": "admin",
+      "tab": "充值贡献",
+      "state": "loading",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "充值贡献",
+      "tables": 0
+    },
+    {
+      "role": "admin",
+      "tab": "充值贡献",
+      "state": "error",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "充值贡献",
+      "tables": 0
+    },
+    {
+      "role": "admin",
+      "tab": "购机贡献",
+      "state": "default",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "购机贡献",
+      "tables": 1
+    },
+    {
+      "role": "admin",
+      "tab": "购机贡献",
+      "state": "empty",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "购机贡献",
+      "tables": 0
+    },
+    {
+      "role": "admin",
+      "tab": "购机贡献",
+      "state": "loading",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "购机贡献",
+      "tables": 0
+    },
+    {
+      "role": "admin",
+      "tab": "购机贡献",
+      "state": "error",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "购机贡献",
+      "tables": 0
+    },
+    {
+      "role": "admin",
+      "tab": "客户规模",
+      "state": "default",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "客户规模",
+      "tables": 1
+    },
+    {
+      "role": "admin",
+      "tab": "客户规模",
+      "state": "empty",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "客户规模",
+      "tables": 0
+    },
+    {
+      "role": "admin",
+      "tab": "客户规模",
+      "state": "loading",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "客户规模",
+      "tables": 0
+    },
+    {
+      "role": "admin",
+      "tab": "客户规模",
+      "state": "error",
+      "h1": "36px",
+      "overflow": false,
+      "selected": "客户规模",
+      "tables": 0
+    }
+  ],
+  "dropdownChecks": [
+    {
+      "label": "agent/home",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "role",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1141.15625,
+            "right": 1277.5520935058594,
+            "top": 69.33333587646484,
+            "width": 136.39584350585938,
+            "x": 1141.15625,
+            "y": 69.33333587646484
+          },
+          "text": "专属客服 · Mia"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1141.15625,
+            "right": 1277.5520935058594,
+            "top": 105.33333587646484,
+            "width": 136.39584350585938,
+            "x": 1141.15625,
+            "y": 105.33333587646484
+          },
+          "text": "主管"
+        },
+        {
+          "rect": {
+            "bottom": 177.33334350585938,
+            "height": 36,
+            "left": 1141.15625,
+            "right": 1277.5520935058594,
+            "top": 141.33334350585938,
+            "width": 136.39584350585938,
+            "x": 1141.15625,
+            "y": 141.33334350585938
+          },
+          "text": "总管理员 · Admin"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "agent"
+    },
+    {
+      "label": "agent/home",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "viewState",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 69.33333587646484,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 69.33333587646484
+          },
+          "text": "默认"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 105.33333587646484,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 105.33333587646484
+          },
+          "text": "空"
+        },
+        {
+          "rect": {
+            "bottom": 177.33334350585938,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 141.33334350585938,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 141.33334350585938
+          },
+          "text": "加载"
+        },
+        {
+          "rect": {
+            "bottom": 213.33334350585935,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 177.33334350585938,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 177.33334350585938
+          },
+          "text": "失败"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "default"
+    },
+    {
+      "label": "agent/home",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "期间",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 194,
+            "height": 37,
+            "left": 1109.479248046875,
+            "right": 1194.135498046875,
+            "top": 157,
+            "width": 84.65625,
+            "x": 1109.479248046875,
+            "y": 157
+          },
+          "text": "本月"
+        },
+        {
+          "rect": {
+            "bottom": 231,
+            "height": 37,
+            "left": 1109.479248046875,
+            "right": 1194.135498046875,
+            "top": 194,
+            "width": 84.65625,
+            "x": 1109.479248046875,
+            "y": 194
+          },
+          "text": "今日"
+        },
+        {
+          "rect": {
+            "bottom": 268,
+            "height": 37,
+            "left": 1109.479248046875,
+            "right": 1194.135498046875,
+            "top": 231,
+            "width": 84.65625,
+            "x": 1109.479248046875,
+            "y": 231
+          },
+          "text": "昨日"
+        },
+        {
+          "rect": {
+            "bottom": 305,
+            "height": 37,
+            "left": 1109.479248046875,
+            "right": 1194.135498046875,
+            "top": 268,
+            "width": 84.65625,
+            "x": 1109.479248046875,
+            "y": 268
+          },
+          "text": "近7天"
+        },
+        {
+          "rect": {
+            "bottom": 342,
+            "height": 37,
+            "left": 1109.479248046875,
+            "right": 1194.135498046875,
+            "top": 305,
+            "width": 84.65625,
+            "x": 1109.479248046875,
+            "y": 305
+          },
+          "text": "近30天"
+        },
+        {
+          "rect": {
+            "bottom": 379,
+            "height": 37,
+            "left": 1109.479248046875,
+            "right": 1194.135498046875,
+            "top": 342,
+            "width": 84.65625,
+            "x": 1109.479248046875,
+            "y": 342
+          },
+          "text": "自定义"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "本月"
+    },
+    {
+      "label": "agent/home",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "统计币种",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 194,
+            "height": 37,
+            "left": 1201.8125,
+            "right": 1279.3958358764648,
+            "top": 157,
+            "width": 77.58333587646484,
+            "x": 1201.8125,
+            "y": 157
+          },
+          "text": "USDT"
+        },
+        {
+          "rect": {
+            "bottom": 231,
+            "height": 37,
+            "left": 1201.8125,
+            "right": 1279.3958358764648,
+            "top": 194,
+            "width": 77.58333587646484,
+            "x": 1201.8125,
+            "y": 194
+          },
+          "text": "NEX"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "USDT"
+    },
+    {
+      "label": "agent/clients",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "role",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1141.15625,
+            "right": 1277.5520935058594,
+            "top": 69.33333587646484,
+            "width": 136.39584350585938,
+            "x": 1141.15625,
+            "y": 69.33333587646484
+          },
+          "text": "专属客服 · Mia"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1141.15625,
+            "right": 1277.5520935058594,
+            "top": 105.33333587646484,
+            "width": 136.39584350585938,
+            "x": 1141.15625,
+            "y": 105.33333587646484
+          },
+          "text": "主管"
+        },
+        {
+          "rect": {
+            "bottom": 177.33334350585938,
+            "height": 36,
+            "left": 1141.15625,
+            "right": 1277.5520935058594,
+            "top": 141.33334350585938,
+            "width": 136.39584350585938,
+            "x": 1141.15625,
+            "y": 141.33334350585938
+          },
+          "text": "总管理员 · Admin"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "agent"
+    },
+    {
+      "label": "agent/clients",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "viewState",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 69.33333587646484,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 69.33333587646484
+          },
+          "text": "默认"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 105.33333587646484,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 105.33333587646484
+          },
+          "text": "空"
+        },
+        {
+          "rect": {
+            "bottom": 177.33334350585938,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 141.33334350585938,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 141.33334350585938
+          },
+          "text": "加载"
+        },
+        {
+          "rect": {
+            "bottom": 213.33334350585935,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 177.33334350585938,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 177.33334350585938
+          },
+          "text": "失败"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "default"
+    },
+    {
+      "label": "agent/clients",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "期间",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 194,
+            "height": 37,
+            "left": 1109.479248046875,
+            "right": 1194.135498046875,
+            "top": 157,
+            "width": 84.65625,
+            "x": 1109.479248046875,
+            "y": 157
+          },
+          "text": "本月"
+        },
+        {
+          "rect": {
+            "bottom": 231,
+            "height": 37,
+            "left": 1109.479248046875,
+            "right": 1194.135498046875,
+            "top": 194,
+            "width": 84.65625,
+            "x": 1109.479248046875,
+            "y": 194
+          },
+          "text": "今日"
+        },
+        {
+          "rect": {
+            "bottom": 268,
+            "height": 37,
+            "left": 1109.479248046875,
+            "right": 1194.135498046875,
+            "top": 231,
+            "width": 84.65625,
+            "x": 1109.479248046875,
+            "y": 231
+          },
+          "text": "昨日"
+        },
+        {
+          "rect": {
+            "bottom": 305,
+            "height": 37,
+            "left": 1109.479248046875,
+            "right": 1194.135498046875,
+            "top": 268,
+            "width": 84.65625,
+            "x": 1109.479248046875,
+            "y": 268
+          },
+          "text": "近7天"
+        },
+        {
+          "rect": {
+            "bottom": 342,
+            "height": 37,
+            "left": 1109.479248046875,
+            "right": 1194.135498046875,
+            "top": 305,
+            "width": 84.65625,
+            "x": 1109.479248046875,
+            "y": 305
+          },
+          "text": "近30天"
+        },
+        {
+          "rect": {
+            "bottom": 379,
+            "height": 37,
+            "left": 1109.479248046875,
+            "right": 1194.135498046875,
+            "top": 342,
+            "width": 84.65625,
+            "x": 1109.479248046875,
+            "y": 342
+          },
+          "text": "自定义"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "本月"
+    },
+    {
+      "label": "agent/clients",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "统计币种",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 194,
+            "height": 37,
+            "left": 1201.8125,
+            "right": 1279.3958358764648,
+            "top": 157,
+            "width": 77.58333587646484,
+            "x": 1201.8125,
+            "y": 157
+          },
+          "text": "USDT"
+        },
+        {
+          "rect": {
+            "bottom": 231,
+            "height": 37,
+            "left": 1201.8125,
+            "right": 1279.3958358764648,
+            "top": 194,
+            "width": 77.58333587646484,
+            "x": 1201.8125,
+            "y": 194
+          },
+          "text": "NEX"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "USDT"
+    },
+    {
+      "label": "agent/clients",
+      "appearance": "base-select",
+      "height": 40,
+      "iconRight": "14px",
+      "id": "firstFilter",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 389.9583435058594,
+            "height": 36,
+            "left": 283.3333435058594,
+            "right": 423.87501525878906,
+            "top": 353.9583435058594,
+            "width": 140.5416717529297,
+            "x": 283.3333435058594,
+            "y": 353.9583435058594
+          },
+          "text": "全部首充状态"
+        },
+        {
+          "rect": {
+            "bottom": 425.9583435058594,
+            "height": 36,
+            "left": 283.3333435058594,
+            "right": 423.87501525878906,
+            "top": 389.9583435058594,
+            "width": 140.5416717529297,
+            "x": 283.3333435058594,
+            "y": 389.9583435058594
+          },
+          "text": "已首充（含购机）"
+        },
+        {
+          "rect": {
+            "bottom": 461.9583435058594,
+            "height": 36,
+            "left": 283.3333435058594,
+            "right": 423.87501525878906,
+            "top": 425.9583435058594,
+            "width": 140.5416717529297,
+            "x": 283.3333435058594,
+            "y": 425.9583435058594
+          },
+          "text": "未首充"
+        },
+        {
+          "rect": {
+            "bottom": 497.9583435058594,
+            "height": 36,
+            "left": 283.3333435058594,
+            "right": 423.87501525878906,
+            "top": 461.9583435058594,
+            "width": 140.5416717529297,
+            "x": 283.3333435058594,
+            "y": 461.9583435058594
+          },
+          "text": "历史待核实"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "all"
+    },
+    {
+      "label": "agent/sessions",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "role",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1141.15625,
+            "right": 1277.5520935058594,
+            "top": 69.33333587646484,
+            "width": 136.39584350585938,
+            "x": 1141.15625,
+            "y": 69.33333587646484
+          },
+          "text": "专属客服 · Mia"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1141.15625,
+            "right": 1277.5520935058594,
+            "top": 105.33333587646484,
+            "width": 136.39584350585938,
+            "x": 1141.15625,
+            "y": 105.33333587646484
+          },
+          "text": "主管"
+        },
+        {
+          "rect": {
+            "bottom": 177.33334350585938,
+            "height": 36,
+            "left": 1141.15625,
+            "right": 1277.5520935058594,
+            "top": 141.33334350585938,
+            "width": 136.39584350585938,
+            "x": 1141.15625,
+            "y": 141.33334350585938
+          },
+          "text": "总管理员 · Admin"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "agent"
+    },
+    {
+      "label": "agent/sessions",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "viewState",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 69.33333587646484,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 69.33333587646484
+          },
+          "text": "默认"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 105.33333587646484,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 105.33333587646484
+          },
+          "text": "空"
+        },
+        {
+          "rect": {
+            "bottom": 177.33334350585938,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 141.33334350585938,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 141.33334350585938
+          },
+          "text": "加载"
+        },
+        {
+          "rect": {
+            "bottom": 213.33334350585935,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 177.33334350585938,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 177.33334350585938
+          },
+          "text": "失败"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "default"
+    },
+    {
+      "label": "agent/sessions",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "sendScenario",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 901.2916870117188,
+            "height": 36,
+            "left": 413.3333435058594,
+            "right": 516.8958435058594,
+            "top": 865.2916870117188,
+            "width": 103.5625,
+            "x": 413.3333435058594,
+            "y": 865.2916870117188
+          },
+          "text": "成功 · 未读"
+        },
+        {
+          "rect": {
+            "bottom": 937.2916870117188,
+            "height": 36,
+            "left": 413.3333435058594,
+            "right": 516.8958435058594,
+            "top": 901.2916870117188,
+            "width": 103.5625,
+            "x": 413.3333435058594,
+            "y": 901.2916870117188
+          },
+          "text": "成功 · 已读"
+        },
+        {
+          "rect": {
+            "bottom": 973.2916870117188,
+            "height": 36,
+            "left": 413.3333435058594,
+            "right": 516.8958435058594,
+            "top": 937.2916870117188,
+            "width": 103.5625,
+            "x": 413.3333435058594,
+            "y": 937.2916870117188
+          },
+          "text": "失败"
+        },
+        {
+          "rect": {
+            "bottom": 1009.2916870117188,
+            "height": 36,
+            "left": 413.3333435058594,
+            "right": 516.8958435058594,
+            "top": 973.2916870117188,
+            "width": 103.5625,
+            "x": 413.3333435058594,
+            "y": 973.2916870117188
+          },
+          "text": "结果未知"
+        },
+        {
+          "rect": {
+            "bottom": 1045.2916870117188,
+            "height": 36,
+            "left": 413.3333435058594,
+            "right": 516.8958435058594,
+            "top": 1009.2916870117188,
+            "width": 103.5625,
+            "x": 413.3333435058594,
+            "y": 1009.2916870117188
+          },
+          "text": "发送中"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "unread"
+    },
+    {
+      "label": "agent/ticket-dialog/modal-scope",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "ticketType",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 613.5729370117188,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 576.5729370117188,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 576.5729370117188
+          },
+          "text": "托管设备查询"
+        },
+        {
+          "rect": {
+            "bottom": 650.5729370117188,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 613.5729370117188,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 613.5729370117188
+          },
+          "text": "账户咨询"
+        },
+        {
+          "rect": {
+            "bottom": 687.5729370117188,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 650.5729370117188,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 650.5729370117188
+          },
+          "text": "资金查询"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "托管设备查询"
+    },
+    {
+      "label": "agent/audience",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "groupPurpose",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 494.5416870117187,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 457.5416870117187,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 457.5416870117187
+          },
+          "text": "普通联系"
+        },
+        {
+          "rect": {
+            "bottom": 531.5416870117188,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 494.5416870117187,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 494.5416870117187
+          },
+          "text": "维护联系"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "普通联系"
+    },
+    {
+      "label": "agent/audience",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "groupCondition",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 574.25,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 537.25,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 537.25
+          },
+          "text": "IDC 部署进度待确认"
+        },
+        {
+          "rect": {
+            "bottom": 611.25,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 574.25,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 574.25
+          },
+          "text": "维护到期"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "IDC 部署进度待确认"
+    },
+    {
+      "label": "agent/rules",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "role",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1141.15625,
+            "right": 1277.5520935058594,
+            "top": 69.33333587646484,
+            "width": 136.39584350585938,
+            "x": 1141.15625,
+            "y": 69.33333587646484
+          },
+          "text": "专属客服 · Mia"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1141.15625,
+            "right": 1277.5520935058594,
+            "top": 105.33333587646484,
+            "width": 136.39584350585938,
+            "x": 1141.15625,
+            "y": 105.33333587646484
+          },
+          "text": "主管"
+        },
+        {
+          "rect": {
+            "bottom": 177.33334350585938,
+            "height": 36,
+            "left": 1141.15625,
+            "right": 1277.5520935058594,
+            "top": 141.33334350585938,
+            "width": 136.39584350585938,
+            "x": 1141.15625,
+            "y": 141.33334350585938
+          },
+          "text": "总管理员 · Admin"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "agent"
+    },
+    {
+      "label": "agent/rules",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "viewState",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 69.33333587646484,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 69.33333587646484
+          },
+          "text": "默认"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 105.33333587646484,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 105.33333587646484
+          },
+          "text": "空"
+        },
+        {
+          "rect": {
+            "bottom": 177.33334350585938,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 141.33334350585938,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 141.33334350585938
+          },
+          "text": "加载"
+        },
+        {
+          "rect": {
+            "bottom": 213.33334350585935,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 177.33334350585938,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 177.33334350585938
+          },
+          "text": "失败"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "default"
+    },
+    {
+      "label": "agent/rules",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "期间",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 194,
+            "height": 37,
+            "left": 1109.479248046875,
+            "right": 1194.135498046875,
+            "top": 157,
+            "width": 84.65625,
+            "x": 1109.479248046875,
+            "y": 157
+          },
+          "text": "本月"
+        },
+        {
+          "rect": {
+            "bottom": 231,
+            "height": 37,
+            "left": 1109.479248046875,
+            "right": 1194.135498046875,
+            "top": 194,
+            "width": 84.65625,
+            "x": 1109.479248046875,
+            "y": 194
+          },
+          "text": "今日"
+        },
+        {
+          "rect": {
+            "bottom": 268,
+            "height": 37,
+            "left": 1109.479248046875,
+            "right": 1194.135498046875,
+            "top": 231,
+            "width": 84.65625,
+            "x": 1109.479248046875,
+            "y": 231
+          },
+          "text": "昨日"
+        },
+        {
+          "rect": {
+            "bottom": 305,
+            "height": 37,
+            "left": 1109.479248046875,
+            "right": 1194.135498046875,
+            "top": 268,
+            "width": 84.65625,
+            "x": 1109.479248046875,
+            "y": 268
+          },
+          "text": "近7天"
+        },
+        {
+          "rect": {
+            "bottom": 342,
+            "height": 37,
+            "left": 1109.479248046875,
+            "right": 1194.135498046875,
+            "top": 305,
+            "width": 84.65625,
+            "x": 1109.479248046875,
+            "y": 305
+          },
+          "text": "近30天"
+        },
+        {
+          "rect": {
+            "bottom": 379,
+            "height": 37,
+            "left": 1109.479248046875,
+            "right": 1194.135498046875,
+            "top": 342,
+            "width": 84.65625,
+            "x": 1109.479248046875,
+            "y": 342
+          },
+          "text": "自定义"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "本月"
+    },
+    {
+      "label": "agent/rules",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "统计币种",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 194,
+            "height": 37,
+            "left": 1201.8125,
+            "right": 1279.3958358764648,
+            "top": 157,
+            "width": 77.58333587646484,
+            "x": 1201.8125,
+            "y": 157
+          },
+          "text": "USDT"
+        },
+        {
+          "rect": {
+            "bottom": 231,
+            "height": 37,
+            "left": 1201.8125,
+            "right": 1279.3958358764648,
+            "top": 194,
+            "width": 77.58333587646484,
+            "x": 1201.8125,
+            "y": 194
+          },
+          "text": "NEX"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "USDT"
+    },
+    {
+      "label": "supervisor/home",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "role",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1063.5,
+            "right": 1199.8958435058594,
+            "top": 69.33333587646484,
+            "width": 136.39584350585938,
+            "x": 1063.5,
+            "y": 69.33333587646484
+          },
+          "text": "专属客服 · Mia"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1063.5,
+            "right": 1199.8958435058594,
+            "top": 105.33333587646484,
+            "width": 136.39584350585938,
+            "x": 1063.5,
+            "y": 105.33333587646484
+          },
+          "text": "主管"
+        },
+        {
+          "rect": {
+            "bottom": 177.33334350585938,
+            "height": 36,
+            "left": 1063.5,
+            "right": 1199.8958435058594,
+            "top": 141.33334350585938,
+            "width": 136.39584350585938,
+            "x": 1063.5,
+            "y": 141.33334350585938
+          },
+          "text": "总管理员 · Admin"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "supervisor"
+    },
+    {
+      "label": "supervisor/home",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "supervisorIdentity",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1183.8333740234375,
+            "right": 1265.3333740234375,
+            "top": 69.33333587646484,
+            "width": 81.5,
+            "x": 1183.8333740234375,
+            "y": 69.33333587646484
+          },
+          "text": "林思远"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1183.8333740234375,
+            "right": 1265.3333740234375,
+            "top": 105.33333587646484,
+            "width": 81.5,
+            "x": 1183.8333740234375,
+            "y": 105.33333587646484
+          },
+          "text": "许安"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "林思远"
+    },
+    {
+      "label": "supervisor/home",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "viewState",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 69.33333587646484,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 69.33333587646484
+          },
+          "text": "默认"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 105.33333587646484,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 105.33333587646484
+          },
+          "text": "空"
+        },
+        {
+          "rect": {
+            "bottom": 177.33334350585938,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 141.33334350585938,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 141.33334350585938
+          },
+          "text": "加载"
+        },
+        {
+          "rect": {
+            "bottom": 213.33334350585935,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 177.33334350585938,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 177.33334350585938
+          },
+          "text": "失败"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "default"
+    },
+    {
+      "label": "supervisor/home",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "期间",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 194,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 157,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 157
+          },
+          "text": "本月"
+        },
+        {
+          "rect": {
+            "bottom": 231,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 194,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 194
+          },
+          "text": "今日"
+        },
+        {
+          "rect": {
+            "bottom": 268,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 231,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 231
+          },
+          "text": "昨日"
+        },
+        {
+          "rect": {
+            "bottom": 305,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 268,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 268
+          },
+          "text": "近7天"
+        },
+        {
+          "rect": {
+            "bottom": 342,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 305,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 305
+          },
+          "text": "近30天"
+        },
+        {
+          "rect": {
+            "bottom": 379,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 342,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 342
+          },
+          "text": "自定义"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "本月"
+    },
+    {
+      "label": "supervisor/home",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "统计币种",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 194,
+            "height": 37,
+            "left": 1186.479248046875,
+            "right": 1264.0625839233398,
+            "top": 157,
+            "width": 77.58333587646484,
+            "x": 1186.479248046875,
+            "y": 157
+          },
+          "text": "USDT"
+        },
+        {
+          "rect": {
+            "bottom": 231,
+            "height": 37,
+            "left": 1186.479248046875,
+            "right": 1264.0625839233398,
+            "top": 194,
+            "width": 77.58333587646484,
+            "x": 1186.479248046875,
+            "y": 194
+          },
+          "text": "NEX"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "USDT"
+    },
+    {
+      "label": "supervisor/customer-view",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "role",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1063.5,
+            "right": 1199.8958435058594,
+            "top": 69.33333587646484,
+            "width": 136.39584350585938,
+            "x": 1063.5,
+            "y": 69.33333587646484
+          },
+          "text": "专属客服 · Mia"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1063.5,
+            "right": 1199.8958435058594,
+            "top": 105.33333587646484,
+            "width": 136.39584350585938,
+            "x": 1063.5,
+            "y": 105.33333587646484
+          },
+          "text": "主管"
+        },
+        {
+          "rect": {
+            "bottom": 177.33334350585938,
+            "height": 36,
+            "left": 1063.5,
+            "right": 1199.8958435058594,
+            "top": 141.33334350585938,
+            "width": 136.39584350585938,
+            "x": 1063.5,
+            "y": 141.33334350585938
+          },
+          "text": "总管理员 · Admin"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "supervisor"
+    },
+    {
+      "label": "supervisor/customer-view",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "supervisorIdentity",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1183.8333740234375,
+            "right": 1265.3333740234375,
+            "top": 69.33333587646484,
+            "width": 81.5,
+            "x": 1183.8333740234375,
+            "y": 69.33333587646484
+          },
+          "text": "林思远"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1183.8333740234375,
+            "right": 1265.3333740234375,
+            "top": 105.33333587646484,
+            "width": 81.5,
+            "x": 1183.8333740234375,
+            "y": 105.33333587646484
+          },
+          "text": "许安"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "林思远"
+    },
+    {
+      "label": "supervisor/customer-view",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "viewState",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 69.33333587646484,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 69.33333587646484
+          },
+          "text": "默认"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 105.33333587646484,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 105.33333587646484
+          },
+          "text": "空"
+        },
+        {
+          "rect": {
+            "bottom": 177.33334350585938,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 141.33334350585938,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 141.33334350585938
+          },
+          "text": "加载"
+        },
+        {
+          "rect": {
+            "bottom": 213.33334350585935,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 177.33334350585938,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 177.33334350585938
+          },
+          "text": "失败"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "default"
+    },
+    {
+      "label": "supervisor/customer-view",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "期间",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 194,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 157,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 157
+          },
+          "text": "本月"
+        },
+        {
+          "rect": {
+            "bottom": 231,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 194,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 194
+          },
+          "text": "今日"
+        },
+        {
+          "rect": {
+            "bottom": 268,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 231,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 231
+          },
+          "text": "昨日"
+        },
+        {
+          "rect": {
+            "bottom": 305,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 268,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 268
+          },
+          "text": "近7天"
+        },
+        {
+          "rect": {
+            "bottom": 342,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 305,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 305
+          },
+          "text": "近30天"
+        },
+        {
+          "rect": {
+            "bottom": 379,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 342,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 342
+          },
+          "text": "自定义"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "本月"
+    },
+    {
+      "label": "supervisor/customer-view",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "统计币种",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 194,
+            "height": 37,
+            "left": 1186.479248046875,
+            "right": 1264.0625839233398,
+            "top": 157,
+            "width": 77.58333587646484,
+            "x": 1186.479248046875,
+            "y": 157
+          },
+          "text": "USDT"
+        },
+        {
+          "rect": {
+            "bottom": 231,
+            "height": 37,
+            "left": 1186.479248046875,
+            "right": 1264.0625839233398,
+            "top": 194,
+            "width": 77.58333587646484,
+            "x": 1186.479248046875,
+            "y": 194
+          },
+          "text": "NEX"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "USDT"
+    },
+    {
+      "label": "supervisor/customer-view",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "groupAgentSelection",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 547.9270935058594,
+            "height": 36,
+            "left": 109.33333587646484,
+            "right": 234.43750762939453,
+            "top": 511.9270935058594,
+            "width": 125.10417175292967,
+            "x": 109.33333587646484,
+            "y": 511.9270935058594
+          },
+          "text": "全部专属客服"
+        },
+        {
+          "rect": {
+            "bottom": 583.9271240234375,
+            "height": 36,
+            "left": 109.33333587646484,
+            "right": 234.43750762939453,
+            "top": 547.9271240234375,
+            "width": 125.10417175292967,
+            "x": 109.33333587646484,
+            "y": 547.9271240234375
+          },
+          "text": "张晓雨 · 星河组"
+        },
+        {
+          "rect": {
+            "bottom": 619.9271240234375,
+            "height": 36,
+            "left": 109.33333587646484,
+            "right": 234.43750762939453,
+            "top": 583.9271240234375,
+            "width": 125.10417175292967,
+            "x": 109.33333587646484,
+            "y": 583.9271240234375
+          },
+          "text": "王浩然 · 晨光组"
+        },
+        {
+          "rect": {
+            "bottom": 655.9271240234375,
+            "height": 36,
+            "left": 109.33333587646484,
+            "right": 234.43750762939453,
+            "top": 619.9271240234375,
+            "width": 125.10417175292967,
+            "x": 109.33333587646484,
+            "y": 619.9271240234375
+          },
+          "text": "李思琪 · 晨光组"
+        },
+        {
+          "rect": {
+            "bottom": 691.9271240234375,
+            "height": 36,
+            "left": 109.33333587646484,
+            "right": 234.43750762939453,
+            "top": 655.9271240234375,
+            "width": 125.10417175292967,
+            "x": 109.33333587646484,
+            "y": 655.9271240234375
+          },
+          "text": "陈子航 · 晨光组"
+        },
+        {
+          "rect": {
+            "bottom": 727.9271240234375,
+            "height": 36,
+            "left": 109.33333587646484,
+            "right": 234.43750762939453,
+            "top": 691.9271240234375,
+            "width": 125.10417175292967,
+            "x": 109.33333587646484,
+            "y": 691.9271240234375
+          },
+          "text": "Mia · 星河组"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "all"
+    },
+    {
+      "label": "supervisor/clients",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "role",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1063.5,
+            "right": 1199.8958435058594,
+            "top": 69.33333587646484,
+            "width": 136.39584350585938,
+            "x": 1063.5,
+            "y": 69.33333587646484
+          },
+          "text": "专属客服 · Mia"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1063.5,
+            "right": 1199.8958435058594,
+            "top": 105.33333587646484,
+            "width": 136.39584350585938,
+            "x": 1063.5,
+            "y": 105.33333587646484
+          },
+          "text": "主管"
+        },
+        {
+          "rect": {
+            "bottom": 177.33334350585938,
+            "height": 36,
+            "left": 1063.5,
+            "right": 1199.8958435058594,
+            "top": 141.33334350585938,
+            "width": 136.39584350585938,
+            "x": 1063.5,
+            "y": 141.33334350585938
+          },
+          "text": "总管理员 · Admin"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "supervisor"
+    },
+    {
+      "label": "supervisor/clients",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "supervisorIdentity",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1183.8333740234375,
+            "right": 1265.3333740234375,
+            "top": 69.33333587646484,
+            "width": 81.5,
+            "x": 1183.8333740234375,
+            "y": 69.33333587646484
+          },
+          "text": "林思远"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1183.8333740234375,
+            "right": 1265.3333740234375,
+            "top": 105.33333587646484,
+            "width": 81.5,
+            "x": 1183.8333740234375,
+            "y": 105.33333587646484
+          },
+          "text": "许安"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "林思远"
+    },
+    {
+      "label": "supervisor/clients",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "viewState",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 69.33333587646484,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 69.33333587646484
+          },
+          "text": "默认"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 105.33333587646484,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 105.33333587646484
+          },
+          "text": "空"
+        },
+        {
+          "rect": {
+            "bottom": 177.33334350585938,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 141.33334350585938,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 141.33334350585938
+          },
+          "text": "加载"
+        },
+        {
+          "rect": {
+            "bottom": 213.33334350585935,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 177.33334350585938,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 177.33334350585938
+          },
+          "text": "失败"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "default"
+    },
+    {
+      "label": "supervisor/clients",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "期间",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 194,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 157,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 157
+          },
+          "text": "本月"
+        },
+        {
+          "rect": {
+            "bottom": 231,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 194,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 194
+          },
+          "text": "今日"
+        },
+        {
+          "rect": {
+            "bottom": 268,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 231,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 231
+          },
+          "text": "昨日"
+        },
+        {
+          "rect": {
+            "bottom": 305,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 268,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 268
+          },
+          "text": "近7天"
+        },
+        {
+          "rect": {
+            "bottom": 342,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 305,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 305
+          },
+          "text": "近30天"
+        },
+        {
+          "rect": {
+            "bottom": 379,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 342,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 342
+          },
+          "text": "自定义"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "本月"
+    },
+    {
+      "label": "supervisor/clients",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "统计币种",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 194,
+            "height": 37,
+            "left": 1186.479248046875,
+            "right": 1264.0625839233398,
+            "top": 157,
+            "width": 77.58333587646484,
+            "x": 1186.479248046875,
+            "y": 157
+          },
+          "text": "USDT"
+        },
+        {
+          "rect": {
+            "bottom": 231,
+            "height": 37,
+            "left": 1186.479248046875,
+            "right": 1264.0625839233398,
+            "top": 194,
+            "width": 77.58333587646484,
+            "x": 1186.479248046875,
+            "y": 194
+          },
+          "text": "NEX"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "USDT"
+    },
+    {
+      "label": "supervisor/clients",
+      "appearance": "base-select",
+      "height": 40,
+      "iconRight": "14px",
+      "id": "firstFilter",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 389.9583435058594,
+            "height": 36,
+            "left": 283.3333435058594,
+            "right": 423.87501525878906,
+            "top": 353.9583435058594,
+            "width": 140.5416717529297,
+            "x": 283.3333435058594,
+            "y": 353.9583435058594
+          },
+          "text": "全部首充状态"
+        },
+        {
+          "rect": {
+            "bottom": 425.9583435058594,
+            "height": 36,
+            "left": 283.3333435058594,
+            "right": 423.87501525878906,
+            "top": 389.9583435058594,
+            "width": 140.5416717529297,
+            "x": 283.3333435058594,
+            "y": 389.9583435058594
+          },
+          "text": "已首充（含购机）"
+        },
+        {
+          "rect": {
+            "bottom": 461.9583435058594,
+            "height": 36,
+            "left": 283.3333435058594,
+            "right": 423.87501525878906,
+            "top": 425.9583435058594,
+            "width": 140.5416717529297,
+            "x": 283.3333435058594,
+            "y": 425.9583435058594
+          },
+          "text": "未首充"
+        },
+        {
+          "rect": {
+            "bottom": 497.9583435058594,
+            "height": 36,
+            "left": 283.3333435058594,
+            "right": 423.87501525878906,
+            "top": 461.9583435058594,
+            "width": 140.5416717529297,
+            "x": 283.3333435058594,
+            "y": 461.9583435058594
+          },
+          "text": "历史待核实"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "all"
+    },
+    {
+      "label": "supervisor/clients",
+      "appearance": "base-select",
+      "height": 40,
+      "iconRight": "14px",
+      "id": "客服范围",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 389.9583435058594,
+            "height": 36,
+            "left": 423.6666870117187,
+            "right": 567.6666870117188,
+            "top": 353.9583435058594,
+            "width": 144,
+            "x": 423.6666870117187,
+            "y": 353.9583435058594
+          },
+          "text": "当前授权范围客服"
+        },
+        {
+          "rect": {
+            "bottom": 425.9583435058594,
+            "height": 36,
+            "left": 423.6666870117187,
+            "right": 567.6666870117188,
+            "top": 389.9583435058594,
+            "width": 144,
+            "x": 423.6666870117187,
+            "y": 389.9583435058594
+          },
+          "text": "张晓雨"
+        },
+        {
+          "rect": {
+            "bottom": 461.9583435058594,
+            "height": 36,
+            "left": 423.6666870117187,
+            "right": 567.6666870117188,
+            "top": 425.9583435058594,
+            "width": 144,
+            "x": 423.6666870117187,
+            "y": 425.9583435058594
+          },
+          "text": "王浩然"
+        },
+        {
+          "rect": {
+            "bottom": 497.9583435058594,
+            "height": 36,
+            "left": 423.6666870117187,
+            "right": 567.6666870117188,
+            "top": 461.9583435058594,
+            "width": 144,
+            "x": 423.6666870117187,
+            "y": 461.9583435058594
+          },
+          "text": "李思琪"
+        },
+        {
+          "rect": {
+            "bottom": 533.9583435058594,
+            "height": 36,
+            "left": 423.6666870117187,
+            "right": 567.6666870117188,
+            "top": 497.9583435058594,
+            "width": 144,
+            "x": 423.6666870117187,
+            "y": 497.9583435058594
+          },
+          "text": "陈子航"
+        },
+        {
+          "rect": {
+            "bottom": 569.9583740234375,
+            "height": 36,
+            "left": 423.6666870117187,
+            "right": 567.6666870117188,
+            "top": 533.9583740234375,
+            "width": 144,
+            "x": 423.6666870117187,
+            "y": 533.9583740234375
+          },
+          "text": "Mia"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "all"
+    },
+    {
+      "label": "supervisor/member-move",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "moveMember",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 552.8021240234375,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 515.8021240234375,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 515.8021240234375
+          },
+          "text": "张晓雨"
+        },
+        {
+          "rect": {
+            "bottom": 589.8021240234375,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 552.8021240234375,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 552.8021240234375
+          },
+          "text": "Mia"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "张晓雨"
+    },
+    {
+      "label": "supervisor/member-move",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "moveTarget",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 632.5104370117188,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 595.5104370117188,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 595.5104370117188
+          },
+          "text": "星河组"
+        },
+        {
+          "rect": {
+            "bottom": 669.5104370117188,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 632.5104370117188,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 632.5104370117188
+          },
+          "text": "晨光组"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "star"
+    },
+    {
+      "label": "admin/new-group",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "groupOwner",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 643.3125,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 606.3125,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 606.3125
+          },
+          "text": "林思远"
+        },
+        {
+          "rect": {
+            "bottom": 680.3125,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 643.3125,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 643.3125
+          },
+          "text": "许安"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "林思远"
+    },
+    {
+      "label": "admin/home",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "role",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1125.479248046875,
+            "right": 1265.3334197998047,
+            "top": 69.33333587646484,
+            "width": 139.8541717529297,
+            "x": 1125.479248046875,
+            "y": 69.33333587646484
+          },
+          "text": "专属客服 · Mia"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1125.479248046875,
+            "right": 1265.3334197998047,
+            "top": 105.33333587646484,
+            "width": 139.8541717529297,
+            "x": 1125.479248046875,
+            "y": 105.33333587646484
+          },
+          "text": "主管"
+        },
+        {
+          "rect": {
+            "bottom": 177.33334350585938,
+            "height": 36,
+            "left": 1125.479248046875,
+            "right": 1265.3334197998047,
+            "top": 141.33334350585938,
+            "width": 139.8541717529297,
+            "x": 1125.479248046875,
+            "y": 141.33334350585938
+          },
+          "text": "总管理员 · Admin"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "admin"
+    },
+    {
+      "label": "admin/home",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "viewState",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 69.33333587646484,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 69.33333587646484
+          },
+          "text": "默认"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 105.33333587646484,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 105.33333587646484
+          },
+          "text": "空"
+        },
+        {
+          "rect": {
+            "bottom": 177.33334350585938,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 141.33334350585938,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 141.33334350585938
+          },
+          "text": "加载"
+        },
+        {
+          "rect": {
+            "bottom": 213.33334350585935,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 177.33334350585938,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 177.33334350585938
+          },
+          "text": "失败"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "default"
+    },
+    {
+      "label": "admin/home",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "期间",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 194,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 157,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 157
+          },
+          "text": "本月"
+        },
+        {
+          "rect": {
+            "bottom": 231,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 194,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 194
+          },
+          "text": "今日"
+        },
+        {
+          "rect": {
+            "bottom": 268,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 231,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 231
+          },
+          "text": "昨日"
+        },
+        {
+          "rect": {
+            "bottom": 305,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 268,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 268
+          },
+          "text": "近7天"
+        },
+        {
+          "rect": {
+            "bottom": 342,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 305,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 305
+          },
+          "text": "近30天"
+        },
+        {
+          "rect": {
+            "bottom": 379,
+            "height": 37,
+            "left": 1094.1458740234375,
+            "right": 1178.8021240234375,
+            "top": 342,
+            "width": 84.65625,
+            "x": 1094.1458740234375,
+            "y": 342
+          },
+          "text": "自定义"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "本月"
+    },
+    {
+      "label": "admin/home",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "统计币种",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 194,
+            "height": 37,
+            "left": 1186.479248046875,
+            "right": 1264.0625839233398,
+            "top": 157,
+            "width": 77.58333587646484,
+            "x": 1186.479248046875,
+            "y": 157
+          },
+          "text": "USDT"
+        },
+        {
+          "rect": {
+            "bottom": 231,
+            "height": 37,
+            "left": 1186.479248046875,
+            "right": 1264.0625839233398,
+            "top": 194,
+            "width": 77.58333587646484,
+            "x": 1186.479248046875,
+            "y": 194
+          },
+          "text": "NEX"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "USDT"
+    },
+    {
+      "label": "admin/assignment",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "assignTarget",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 642.75,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 605.75,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 605.75
+          },
+          "text": "张晓雨 · 星河组 · 启用"
+        },
+        {
+          "rect": {
+            "bottom": 679.75,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 642.75,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 642.75
+          },
+          "text": "王浩然 · 晨光组 · 启用"
+        },
+        {
+          "rect": {
+            "bottom": 716.75,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 679.75,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 679.75
+          },
+          "text": "李思琪 · 晨光组 · 启用"
+        },
+        {
+          "rect": {
+            "bottom": 753.75,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 716.75,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 716.75
+          },
+          "text": "陈子航 · 晨光组 · 启用"
+        },
+        {
+          "rect": {
+            "bottom": 790.75,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 753.75,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 753.75
+          },
+          "text": "Mia · 星河组 · 启用"
+        },
+        {
+          "rect": {
+            "bottom": 827.75,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 790.75,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 790.75
+          },
+          "text": "周芷宁 · 海岚组 · 启用"
+        },
+        {
+          "rect": {
+            "bottom": 864.75,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 827.75,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 827.75
+          },
+          "text": "杨帆 · 海岚组 · 启用"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "张晓雨 · 星河组 · 启用"
+    },
+    {
+      "label": "admin/supervisor-qualification",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "groupActor",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 573.71875,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 536.71875,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 536.71875
+          },
+          "text": "林思远 · 已有主管资格"
+        },
+        {
+          "rect": {
+            "bottom": 610.71875,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 573.71875,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 573.71875
+          },
+          "text": "许安 · 已有主管资格"
+        },
+        {
+          "rect": {
+            "bottom": 647.71875,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 610.71875,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 610.71875
+          },
+          "text": "陈予 · 候选现有账号（演示）"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "林思远 · 已有主管资格"
+    },
+    {
+      "label": "admin/supervisor-qualification",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "groupOperation",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 653.4271240234375,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 616.4271240234375,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 616.4271240234375
+          },
+          "text": "授予主管资格"
+        },
+        {
+          "rect": {
+            "bottom": 690.4271240234375,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 653.4271240234375,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 653.4271240234375
+          },
+          "text": "撤销主管资格（须先处理负责组）"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "授予主管资格"
+    },
+    {
+      "label": "admin/staff-create",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "staffSampleGender",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 533.0625,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 496.0625,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 496.0625
+          },
+          "text": "未指定"
+        },
+        {
+          "rect": {
+            "bottom": 570.0625,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 533.0625,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 533.0625
+          },
+          "text": "男"
+        },
+        {
+          "rect": {
+            "bottom": 607.0625,
+            "height": 37,
+            "left": 407,
+            "right": 1008.3333740234376,
+            "top": 570.0625,
+            "width": 601.3333740234375,
+            "x": 407,
+            "y": 570.0625
+          },
+          "text": "女"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "unspecified"
+    },
+    {
+      "label": "leaderboard/first",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "role",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1141.15625,
+            "right": 1277.5520935058594,
+            "top": 69.33333587646484,
+            "width": 136.39584350585938,
+            "x": 1141.15625,
+            "y": 69.33333587646484
+          },
+          "text": "专属客服 · Mia"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1141.15625,
+            "right": 1277.5520935058594,
+            "top": 105.33333587646484,
+            "width": 136.39584350585938,
+            "x": 1141.15625,
+            "y": 105.33333587646484
+          },
+          "text": "主管"
+        },
+        {
+          "rect": {
+            "bottom": 177.33334350585938,
+            "height": 36,
+            "left": 1141.15625,
+            "right": 1277.5520935058594,
+            "top": 141.33334350585938,
+            "width": 136.39584350585938,
+            "x": 1141.15625,
+            "y": 141.33334350585938
+          },
+          "text": "总管理员 · Admin"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "agent"
+    },
+    {
+      "label": "leaderboard/first",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "viewState",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 69.33333587646484,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 69.33333587646484
+          },
+          "text": "默认"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 105.33333587646484,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 105.33333587646484
+          },
+          "text": "空"
+        },
+        {
+          "rect": {
+            "bottom": 177.33334350585938,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 141.33334350585938,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 141.33334350585938
+          },
+          "text": "加载"
+        },
+        {
+          "rect": {
+            "bottom": 213.33334350585935,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 177.33334350585938,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 177.33334350585938
+          },
+          "text": "失败"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "default"
+    },
+    {
+      "label": "leaderboard/first",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "lbMonth",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 222.28125,
+            "height": 37,
+            "left": 1154.3333740234375,
+            "right": 1304.6042175292969,
+            "top": 185.28125,
+            "width": 150.27084350585938,
+            "x": 1154.3333740234375,
+            "y": 185.28125
+          },
+          "text": "本月"
+        },
+        {
+          "rect": {
+            "bottom": 259.28125,
+            "height": 37,
+            "left": 1154.3333740234375,
+            "right": 1304.6042175292969,
+            "top": 222.28125,
+            "width": 150.27084350585938,
+            "x": 1154.3333740234375,
+            "y": 222.28125
+          },
+          "text": "上月 · 样例未提供"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "2026-10"
+    },
+    {
+      "label": "leaderboard/first",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "lbScope",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 222.28125,
+            "height": 37,
+            "left": 1215.3958740234375,
+            "right": 1379.6667175292969,
+            "top": 185.28125,
+            "width": 164.27084350585938,
+            "x": 1215.3958740234375,
+            "y": 185.28125
+          },
+          "text": "全员"
+        },
+        {
+          "rect": {
+            "bottom": 259.28125,
+            "height": 37,
+            "left": 1215.3958740234375,
+            "right": 1379.6667175292969,
+            "top": 222.28125,
+            "width": 164.27084350585938,
+            "x": 1215.3958740234375,
+            "y": 222.28125
+          },
+          "text": "本人所在组 · 星河组"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "all"
+    },
+    {
+      "label": "leaderboard/recharge",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "role",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1141.15625,
+            "right": 1277.5520935058594,
+            "top": 69.33333587646484,
+            "width": 136.39584350585938,
+            "x": 1141.15625,
+            "y": 69.33333587646484
+          },
+          "text": "专属客服 · Mia"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1141.15625,
+            "right": 1277.5520935058594,
+            "top": 105.33333587646484,
+            "width": 136.39584350585938,
+            "x": 1141.15625,
+            "y": 105.33333587646484
+          },
+          "text": "主管"
+        },
+        {
+          "rect": {
+            "bottom": 177.33334350585938,
+            "height": 36,
+            "left": 1141.15625,
+            "right": 1277.5520935058594,
+            "top": 141.33334350585938,
+            "width": 136.39584350585938,
+            "x": 1141.15625,
+            "y": 141.33334350585938
+          },
+          "text": "总管理员 · Admin"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "agent"
+    },
+    {
+      "label": "leaderboard/recharge",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "viewState",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 69.33333587646484,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 69.33333587646484
+          },
+          "text": "默认"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 105.33333587646484,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 105.33333587646484
+          },
+          "text": "空"
+        },
+        {
+          "rect": {
+            "bottom": 177.33334350585938,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 141.33334350585938,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 141.33334350585938
+          },
+          "text": "加载"
+        },
+        {
+          "rect": {
+            "bottom": 213.33334350585935,
+            "height": 36,
+            "left": 1316.666748046875,
+            "right": 1385.666748046875,
+            "top": 177.33334350585938,
+            "width": 69,
+            "x": 1316.666748046875,
+            "y": 177.33334350585938
+          },
+          "text": "失败"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "default"
+    },
+    {
+      "label": "leaderboard/recharge",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "lbMonth",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 222.28125,
+            "height": 37,
+            "left": 1020.4166870117188,
+            "right": 1170.687530517578,
+            "top": 185.28125,
+            "width": 150.27084350585938,
+            "x": 1020.4166870117188,
+            "y": 185.28125
+          },
+          "text": "本月"
+        },
+        {
+          "rect": {
+            "bottom": 259.28125,
+            "height": 37,
+            "left": 1020.4166870117188,
+            "right": 1170.687530517578,
+            "top": 222.28125,
+            "width": 150.27084350585938,
+            "x": 1020.4166870117188,
+            "y": 222.28125
+          },
+          "text": "上月 · 样例未提供"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "2026-10"
+    },
+    {
+      "label": "leaderboard/recharge",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "lbCoin",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 222.28125,
+            "height": 37,
+            "left": 1148.75,
+            "right": 1226.3333358764648,
+            "top": 185.28125,
+            "width": 77.58333587646484,
+            "x": 1148.75,
+            "y": 185.28125
+          },
+          "text": "USDT"
+        },
+        {
+          "rect": {
+            "bottom": 259.28125,
+            "height": 37,
+            "left": 1148.75,
+            "right": 1226.3333358764648,
+            "top": 222.28125,
+            "width": 77.58333587646484,
+            "x": 1148.75,
+            "y": 222.28125
+          },
+          "text": "NEX"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "USDT"
+    },
+    {
+      "label": "leaderboard/recharge",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "lbScope",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 222.28125,
+            "height": 37,
+            "left": 1215.3958740234375,
+            "right": 1379.6667175292969,
+            "top": 185.28125,
+            "width": 164.27084350585938,
+            "x": 1215.3958740234375,
+            "y": 185.28125
+          },
+          "text": "全员"
+        },
+        {
+          "rect": {
+            "bottom": 259.28125,
+            "height": 37,
+            "left": 1215.3958740234375,
+            "right": 1379.6667175292969,
+            "top": 222.28125,
+            "width": 164.27084350585938,
+            "x": 1215.3958740234375,
+            "y": 222.28125
+          },
+          "text": "本人所在组 · 星河组"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "all"
+    },
+    {
+      "label": "leaderboard/narrow1000",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "role",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 735.8229370117188,
+            "right": 872.2187805175781,
+            "top": 69.33333587646484,
+            "width": 136.39584350585938,
+            "x": 735.8229370117188,
+            "y": 69.33333587646484
+          },
+          "text": "专属客服 · Mia"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 735.8229370117188,
+            "right": 872.2187805175781,
+            "top": 105.33333587646484,
+            "width": 136.39584350585938,
+            "x": 735.8229370117188,
+            "y": 105.33333587646484
+          },
+          "text": "主管"
+        },
+        {
+          "rect": {
+            "bottom": 177.33334350585938,
+            "height": 36,
+            "left": 735.8229370117188,
+            "right": 872.2187805175781,
+            "top": 141.33334350585938,
+            "width": 136.39584350585938,
+            "x": 735.8229370117188,
+            "y": 141.33334350585938
+          },
+          "text": "总管理员 · Admin"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "agent"
+    },
+    {
+      "label": "leaderboard/narrow1000",
+      "appearance": "base-select",
+      "height": 36,
+      "iconRight": "14px",
+      "id": "viewState",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 105.33333587646484,
+            "height": 36,
+            "left": 909.3333740234376,
+            "right": 978.3333740234376,
+            "top": 69.33333587646484,
+            "width": 69,
+            "x": 909.3333740234376,
+            "y": 69.33333587646484
+          },
+          "text": "默认"
+        },
+        {
+          "rect": {
+            "bottom": 141.33333587646484,
+            "height": 36,
+            "left": 909.3333740234376,
+            "right": 978.3333740234376,
+            "top": 105.33333587646484,
+            "width": 69,
+            "x": 909.3333740234376,
+            "y": 105.33333587646484
+          },
+          "text": "空"
+        },
+        {
+          "rect": {
+            "bottom": 177.33334350585938,
+            "height": 36,
+            "left": 909.3333740234376,
+            "right": 978.3333740234376,
+            "top": 141.33334350585938,
+            "width": 69,
+            "x": 909.3333740234376,
+            "y": 141.33334350585938
+          },
+          "text": "加载"
+        },
+        {
+          "rect": {
+            "bottom": 213.33334350585935,
+            "height": 36,
+            "left": 909.3333740234376,
+            "right": 978.3333740234376,
+            "top": 177.33334350585938,
+            "width": 69,
+            "x": 909.3333740234376,
+            "y": 177.33334350585938
+          },
+          "text": "失败"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "default"
+    },
+    {
+      "label": "leaderboard/narrow1000",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "lbMonth",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 233.96875,
+            "height": 37,
+            "left": 696.75,
+            "right": 847.0208435058594,
+            "top": 196.96875,
+            "width": 150.27084350585938,
+            "x": 696.75,
+            "y": 196.96875
+          },
+          "text": "本月"
+        },
+        {
+          "rect": {
+            "bottom": 270.96875,
+            "height": 37,
+            "left": 696.75,
+            "right": 847.0208435058594,
+            "top": 233.96875,
+            "width": 150.27084350585938,
+            "x": 696.75,
+            "y": 233.96875
+          },
+          "text": "上月 · 样例未提供"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "2026-10"
+    },
+    {
+      "label": "leaderboard/narrow1000",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "lbCoin",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 233.96875,
+            "height": 37,
+            "left": 788.0833740234375,
+            "right": 865.6667098999023,
+            "top": 196.96875,
+            "width": 77.58333587646484,
+            "x": 788.0833740234375,
+            "y": 196.96875
+          },
+          "text": "USDT"
+        },
+        {
+          "rect": {
+            "bottom": 270.96875,
+            "height": 37,
+            "left": 788.0833740234375,
+            "right": 865.6667098999023,
+            "top": 233.96875,
+            "width": 77.58333587646484,
+            "x": 788.0833740234375,
+            "y": 233.96875
+          },
+          "text": "NEX"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "USDT"
+    },
+    {
+      "label": "leaderboard/narrow1000",
+      "appearance": "base-select",
+      "height": 40.33333587646485,
+      "iconRight": "14px",
+      "id": "lbScope",
+      "opened": true,
+      "options": [
+        {
+          "rect": {
+            "bottom": 233.96875,
+            "height": 37,
+            "left": 792.7291870117188,
+            "right": 957.000030517578,
+            "top": 196.96875,
+            "width": 164.27084350585938,
+            "x": 792.7291870117188,
+            "y": 196.96875
+          },
+          "text": "全员"
+        },
+        {
+          "rect": {
+            "bottom": 270.96875,
+            "height": 37,
+            "left": 792.7291870117188,
+            "right": 957.000030517578,
+            "top": 233.96875,
+            "width": 164.27084350585938,
+            "x": 792.7291870117188,
+            "y": 233.96875
+          },
+          "text": "本人所在组 · 星河组"
+        }
+      ],
+      "paddingRight": "42px",
+      "value": "all"
+    }
+  ],
+  "excludedToolAttempt": "agent/ticket-dialog first attempt targeted an inert background select; successful modal-scoped retest recorded.",
+  "keyboard": {
+    "arrowDownFocused": "NEX",
+    "enterCommitted": "NEX",
+    "escapePreserved": "NEX"
+  },
+  "dialogHonor": {
+    "fill": "rgb(212, 183, 128)",
+    "ring": "rgb(212, 183, 128)"
+  },
+  "console": []
+}
