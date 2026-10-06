@@ -124,6 +124,50 @@
 .fdom .gov-list .it::before { content: '·'; position: absolute; left: 1px; top: 0; color: var(--cyan); font-weight: 700; font-size: 15px; line-height: 1.55; }
 
 /* ===== F2 · 网络版税 cascade + tier + 参数卡 ===== */
+.fdom .f-section-stack { display: grid; gap: 24px; min-width: 0; font-size: 14px; line-height: 1.6; }
+.fdom .f-section-stack > * { min-width: 0; margin-block: 0; }
+.fdom .f-section-stack .pane-h { flex-wrap: wrap; }
+.fdom .f-section-stack .pane-h .ph-ttl { font-size: 16px; line-height: 1.5; }
+.fdom .f-section-stack .pane-h .ph-sub { min-width: 0; white-space: normal; }
+.fdom .f-section-stack .fbtn { min-height: 32px; font-size: 12px; line-height: 1.6; }
+.fdom .f-section-stack .filter-bar :is(input, select) { font: inherit; }
+.fdom .f2-layout .pane-h { padding: 20px 18px 12px; flex-wrap: wrap; }
+.fdom .f2-layout .pane-h .ph-ttl { font-size: 16px; line-height: 1.5; }
+.fdom .f2-layout .pane-h .ph-sub { white-space: normal; }
+.fdom .f2-layout .param .pk,
+.fdom .f2-layout .param .psub,
+.fdom .f2-layout .casc-foot,
+.fdom .f2-layout .tier .nm .req,
+.fdom .f2-layout .f-foot,
+.fdom .f2-layout .lchip,
+.fdom .f2-layout .f-stat .k,
+.fdom .f2-help { font-size: 12px; line-height: 1.6; }
+.fdom .f2-help { color: var(--ink-3); }
+.fdom .f2-layout .param .pv,
+.fdom .f2-layout .f-stat .v { font-size: 20px; line-height: 1.5; }
+.fdom .f2-layout .f2-legacy-values .param .pv { font-size: 14px; }
+.fdom .f2-layout .f-foot { margin: 0; }
+.fdom .f2-policy-body { padding: 8px 18px 20px; display: grid; gap: 16px; }
+.fdom .f2-policy-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.fdom .f2-policy-fields fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.fdom .f2-policy-fields fieldset + fieldset { padding-left: 24px; border-left: 1px solid var(--border); }
+.fdom .f2-policy-fields legend { margin-bottom: 12px; font-size: 14px; font-weight: 600; line-height: 1.6; }
+.fdom .f2-policy-fields fieldset > p { margin: 0; }
+.fdom .f2-policy-fields fieldset > :not(legend) + * { margin-top: 12px; }
+.fdom .f2-policy-fields input,
+.fdom .f2-policy-fields select { font: inherit; }
+.fdom .f2-layout .tier .nm,
+.fdom .f2-layout .tier-rate,
+.fdom .f2-layout .casc-row,
+.fdom .f2-layout .f2-cooling > p { font-size: 14px; }
+.fdom .f2-layout .f2-top { gap: 24px; }
+.fdom .f2-layout .f2-cooling > p { margin: 0 0 16px; }
+.fdom .f2-layout .f2-legacy > p { margin: 12px 0; }
+@media (max-width: 1080px) {
+  .fdom .f2-policy-fields { grid-template-columns: minmax(0, 1fr); }
+  .fdom .f2-policy-fields fieldset + fieldset { padding-left: 0; padding-top: 16px; border-left: 0; border-top: 1px solid var(--border); }
+}
+@media (max-width: 600px) { .fdom .f-section-stack, .fdom .f2-layout .f2-top { gap: 20px; } }
 .fdom .f2-top { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 .fdom .f2-top > .pane { min-width: 0; }
 .fdom .f2-direct-policy .pane-h { flex-wrap: wrap; gap: 6px 12px; }

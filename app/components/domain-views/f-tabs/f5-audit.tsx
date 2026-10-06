@@ -216,7 +216,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   }
 
   return (
-    <>
+    <div className="f-section-stack">
       <section className="pane">
         <div className="pane-h">
           <span className="ph-ttl">F5 佣金事件审计</span>
@@ -316,7 +316,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                 </tbody>
               </table>
             </div>
-            <p style={{ padding: "0 18px", color: "var(--ink-4)" }}>待计算列表最多展示 100 组，可按奖种缩小范围；不混入已计佣账项或到账汇总，不提供改状态及资金处置。历史已形成金额的账项继续在下方核对。</p>
+            <p style={{ padding: "12px 18px 16px", fontSize: 12, color: "var(--ink-3)" }}>待计算列表最多展示 100 组，可按奖种缩小范围；不混入已计佣账项或到账汇总，不提供改状态及资金处置。历史已形成金额的账项继续在下方核对。</p>
           </section>
 
           <section className="pane">
@@ -430,6 +430,6 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           </section>
         </>
       )}
-    </>
+    </div>
   );
 }

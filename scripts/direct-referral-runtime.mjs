@@ -110,16 +110,40 @@ try {
   const shot = async name => { const file = path.join(dir, `${name}.png`); await page.screenshot({ path: file, fullPage: true }); report.screenshots.push(file); return file; };
   const paneShot = async (name, locator) => { const file = path.join(dir, `${name}.png`); await locator.screenshot({ path: file }); report.screenshots.push(file); return file; };
   const open = route => page.goto(report.source.url + route, { waitUntil: "domcontentloaded", timeout: 120000 });
+  const measureRhythm = () => page.evaluate(() => {
+    const blocks = [...document.querySelectorAll(".f2-layout > *")].map(el => el.getBoundingClientRect());
+    const fieldGaps = [...document.querySelectorAll(".f2-policy-fields fieldset")].flatMap(el => {
+      const parts = [...el.children].filter(child => child.tagName !== "LEGEND").map(child => child.getBoundingClientRect());
+      return parts.slice(1).map((part, i) => part.top - parts[i].bottom);
+    });
+    const roles = { ".ph-ttl": 16, ".f2-policy-fields legend": 14, ".f2-policy-fields label": 14, ".f2-policy-fields input, .f2-policy-fields select": 14, ".f2-help, .psub, .pk, .fbtn, .f-foot, .tier .nm .req": 12, ".f2-rule-params .pv, .f2-cooling .pv": 20, ".casc-row": 14 };
+    const fonts = Object.entries(roles).flatMap(([selector, expected]) => [...document.querySelectorAll(`.f2-layout :is(${selector})`)].filter(el => el.getBoundingClientRect().height > 0).map(el => ({ role: selector, expected, actual: Number.parseFloat(getComputedStyle(el).fontSize) })));
+    return { gaps: blocks.slice(1).map((block, i) => block.top - blocks[i].bottom), fieldGaps, fonts };
+  });
+  const assertRhythm = (rhythm, width) => {
+    assert.ok(rhythm.gaps.length > 0, "F2 major sections are present");
+    for (const gap of rhythm.gaps) assert.ok(gap >= (width <= 600 ? 20 : 24) - 0.5, `F2 panels touch: ${gap}px at ${width}`);
+    for (const gap of rhythm.fieldGaps) assert.ok(gap >= 11.5, `F2 field paragraphs touch: ${gap}px`);
+    for (const font of rhythm.fonts) assert.equal(font.actual, font.expected, `F2 ${font.role} typography at ${width}`);
+  };
+  report.rhythmStates = [];
+  const checkRhythmState = async state => {
+    const rhythm = await measureRhythm();
+    assertRhythm(rhythm, page.viewportSize().width);
+    report.rhythmStates.push({ state, ...rhythm });
+  };
 
   slowPolicy = true;
   await open("/network/royalty");
   await expect(page.getByLabel("直属分成配置加载中")).toBeVisible({ timeout: 60000 });
+  await checkRhythmState("loading");
   releaseInitialPolicy();
   await expect(page.getByText("未配置，尚未启用。", { exact: false })).toBeVisible();
   await expect(page.getByLabel("直属购买奖励拆分启用状态")).toBeDisabled();
   check("F2-cutover-not-active", [await shot("f2-before-cutover"), "v2 reads current DIRECT_ONLY_V1 generation; policy is read-only until explicit cutover"]);
   const sevenPane = page.locator("section.pane").filter({ has: page.locator(".ph-ttl", { hasText: "七层购买奖励" }) });
   await expect(sevenPane).toContainText("七层购买奖励尚未配置");
+  await checkRhythmState("empty");
   await expect(sevenPane.locator(".rate-bar")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "配置权益门槛", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "配置冷却期", exact: true })).toBeVisible();
@@ -154,9 +178,11 @@ try {
   legacyError = true; await page.reload();
   await expect(page.getByRole("alert").filter({ hasText: "七层购买奖励与独立参数加载失败" })).toBeVisible();
   await expect(page.getByLabel("直属购买奖励拆分启用状态")).toBeEnabled();
+  await checkRhythmState("seven-layer-error");
   legacyError = false; await page.reload();
   policyError = true; await page.getByRole("button", { name: "重新读取", exact: true }).click();
   await expect(page.getByRole("alert").filter({ hasText: "草稿已保留" })).toBeVisible();
+  await checkRhythmState("policy-error");
   await expect(page.getByRole("button", { name: "提交审批", exact: true })).toBeDisabled();
   policyError = false; await page.getByRole("button", { name: "重新读取", exact: true }).click();
   await expect(page.getByLabel("直属购买奖励拆分启用状态")).toBeEnabled();
@@ -248,6 +274,28 @@ try {
   check("F2-readonly", [await shot("f2-readonly"), "read-only session has no money-policy write controls"]);
   readonly = false; coverage = 150; await open("/network/commissions");
   await expect(page.getByRole("region", { name: "八类佣金支出与状态分布" })).toBeVisible();
+  report.auditSectionGaps = [];
+  for (const width of [390, 1440]) {
+    await page.setViewportSize({ width, height: 1100 });
+    await expect.poll(() => page.locator("aside").first().evaluate(el => Math.round(el.getBoundingClientRect().width))).toBe(width <= 640 ? 64 : 252);
+    const gaps = await page.locator(".f-section-stack").evaluate(el => {
+      const blocks = [...el.children].map(child => child.getBoundingClientRect());
+      return blocks.slice(1).map((block, i) => block.top - blocks[i].bottom);
+    });
+    assert.ok(gaps.length >= 6, "All F5 major sections are present");
+    for (const gap of gaps) assert.ok(gap >= (width <= 600 ? 20 : 24) - 0.5, `F5 panels touch at ${width}: ${gap}px`);
+    const fonts = await page.evaluate(() => {
+      const roles = { ".pane-h .ph-ttl": 16, ".filter-bar input, .filter-bar select": 14, '.fbtn, [aria-label="待计算奖励"] > p': 12 };
+      return Object.entries(roles).flatMap(([selector, expected]) => [...document.querySelectorAll(`.f-section-stack :is(${selector})`)].map(el => ({ role: selector, expected, actual: Number.parseFloat(getComputedStyle(el).fontSize) })));
+    });
+    for (const font of fonts) assert.equal(font.actual, font.expected, `F5 ${font.role} typography at ${width}`);
+    const headings = await page.locator(".f-section-stack .pane-h > *").evaluateAll(els => els.map(el => {
+      const rect = el.getBoundingClientRect(), parent = el.parentElement.getBoundingClientRect();
+      return { text: el.textContent, x: rect.x, right: rect.right, parentRight: parent.right, overflow: el.scrollWidth > el.clientWidth + 1 };
+    }));
+    for (const heading of headings) assert.ok(!heading.overflow && heading.x >= -1 && heading.right <= Math.min(width, heading.parentRight) + 1, `F5 heading clips at ${width}: ${heading.text}`);
+    report.auditSectionGaps.push({ width, gaps, fonts, headings });
+  }
   const pending = page.getByRole("region", { name: "待计算奖励" });
   await expect(pending).toContainText("ORDER-WAIT-1");
   await expect(pending).toContainText("USDT 待计算 · NEX 待计算");
@@ -327,7 +375,9 @@ try {
         return { viewport: innerWidth, pageWidth: document.documentElement.scrollWidth, bars: [...document.querySelectorAll(".rate-bar")].map(rect), rows, panels, header: rect(header), headerContent, titles };
       });
       const screenshot = await shot(`f2-layout-${theme}-${width}`);
-      report.layouts.push({ theme, width, ...layout, screenshot });
+      const rhythm = await measureRhythm();
+      assertRhythm(rhythm, width);
+      report.layouts.push({ theme, width, ...layout, rhythm, screenshot });
       assert.ok(layout.pageWidth <= width + 1, `F2 page overflows at ${theme}/${width}`);
       assert.equal(layout.rows.length, 7);
       assert.equal(layout.bars.length, 7);
@@ -353,7 +403,7 @@ try {
   await expect(page.locator(".f2-legacy")).toHaveAttribute("open", "");
   await expect(page.locator(".f2-legacy p")).toBeVisible();
   await shot("f2-legacy-expanded");
-  check("F2-whole-page-layout", ["six widths in both themes: all seven rows, bounded thin bars, no cell overlap or squeezed content, both split forms, six active settings, Partner and cooling; unknown rates have no fabricated full bars; legacy disclosure remains operable", ...report.layouts.map(item => item.screenshot)]);
+  check("F2-whole-page-layout", ["six widths in both themes: all seven rows, bounded thin bars, no overlap or squeezed content; major sections have 24px desktop/20px narrow gaps, field paragraphs >=12px; titles/body/help/values use 16/14/12/20px; loading, empty and both API failure states checked; legacy disclosure remains operable", ...report.layouts.map(item => item.screenshot)]);
   await page.setViewportSize({ width: 1440, height: 1100 });
   for (const [route, text] of [["/network/v-rank", "V-Rank"], ["/network/binary", "双轨"], ["/network/leadership-pool", "领导"]]) {
     await open(route); await expect(page).toHaveURL(report.source.url + route); await expect(page.locator("body")).toContainText(text); check(`preserved-${route}`, [await shot(route.split("/").pop()), "existing independent team route remains rendered"]);

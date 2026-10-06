@@ -57,27 +57,27 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
 
   if (ctx.f2Loading) {
     return (
-      <><F2DirectPolicy key="direct-policy" ctx={ctx} /><section className="pane">
+      <div className="f-section-stack f2-layout"><F2DirectPolicy key="direct-policy" ctx={ctx} /><section className="pane">
         <div className="pane-h"><span className="ph-ttl">网络版税与分成</span><span className="ph-sub">数据加载中</span></div>
-        <div style={{ padding: 18, color: "var(--ink-4)", fontSize: 13 }}>七层购买奖励与独立参数加载中...</div>
-      </section></>
+        <div style={{ padding: 18, color: "var(--ink-3)" }}>七层购买奖励与独立参数加载中...</div>
+      </section></div>
     );
   }
 
   if (ctx.f2Error) {
     return (
-      <><F2DirectPolicy key="direct-policy" ctx={ctx} /><section className="pane">
+      <div className="f-section-stack f2-layout"><F2DirectPolicy key="direct-policy" ctx={ctx} /><section className="pane">
         <div className="pane-h"><span className="ph-ttl">网络版税与分成</span><span className="ph-sub">数据加载失败</span></div>
-        <div role="alert" style={{ padding: 18, color: "var(--ink-3)", fontSize: 13 }}>七层购买奖励与独立参数加载失败 · {ctx.f2Error}</div>
+        <div role="alert" style={{ padding: 18, color: "var(--ink-3)" }}>七层购买奖励与独立参数加载失败 · {ctx.f2Error}</div>
         <div style={{ padding: "0 18px 18px" }}>
           <button className="fbtn primary" onClick={() => void ctx.refreshF2()}>重试</button>
         </div>
-      </section></>
+      </section></div>
     );
   }
 
   return (
-    <>
+    <div className="f-section-stack f2-layout">
       <section className="pane">
         <div className="pane-h"><span className="ph-ttl">七层购买奖励</span><span className="ph-sub">L1–L7 原网络版税</span></div>
         <div style={{ padding: "14px 18px", fontSize: 12, color: "var(--ink-4)" }}>B 购买时，直属上级 A 获得原 L1 预算；C 及后续下级购买时，A 按所在 L2–L7 层级与原门槛获得奖励。下方购买拆分只改变 L1 的发放构成；L2–L7 的 NEX 仍按原系数计算，设备收益分成独立配置。</div>
@@ -86,7 +86,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
             <div className="k">{metric.name}</div><div className="v">{metric.value}</div>
           </div>)}
         </div>}
-        {ctx.f2Unilevel.length === 0 && <div style={{ padding: "0 18px 14px", color: "var(--ink-4)", fontSize: 13 }}>七层购买奖励尚未配置；以下当前值均为未配置，提交时仍由服务端核验规则。</div>}
+        {ctx.f2Unilevel.length === 0 && <div style={{ padding: "0 18px 14px", color: "var(--ink-3)" }}>七层购买奖励尚未配置；以下当前值均为未配置，提交时仍由服务端核验规则。</div>}
         <div className="casc" role="table" aria-label="七层购买奖励费率">
           <div className="casc-head" role="row">
             {["层级", "购买基础费率", "NEX 奖励系数", "派发状态", "操作"].map(label => <span key={label} role="columnheader">{label}</span>)}
@@ -202,8 +202,8 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
               </div>
             ))}
           </div>
-          <div style={{ padding: "0 18px 14px", fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.55 }}>按月度网络活跃度判定并解锁权益；Partner Status 不改变直属分成政策。</div>
-          <div className="casc-foot" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", fontSize: 11.5, color: "var(--ink-4)", padding: "10px 18px 14px", borderTop: "1px solid var(--border)" }}>
+          <div className="f2-help" style={{ padding: "0 18px 14px" }}>按月度网络活跃度判定并解锁权益；Partner Status 不改变直属分成政策。</div>
+          <div className="casc-foot" style={{ borderTop: "1px solid var(--border)" }}>
             <span>门槛 · <b style={{ color: "var(--ink-2)" }}>{partnerState}</b>(Standard/Verified/Premium/Diamond)</span>
             {canPolicyAmplify && <button className="fbtn primary" style={{ marginLeft: "auto" }} onClick={() => ctx.openActionConfirm({
               name: "Partner Status 4 档权益门槛调整", amplify: false,
@@ -258,6 +258,6 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
 
 
       <p className="f-foot">原七层购买奖励保留；设备收益分成独立设置。Partner Status 只决定权益，不叠加购买奖励费率；参数修改须确认、填写理由并经 A2 执行。</p>
-    </>
+    </div>
   );
 }
