@@ -1,7 +1,7 @@
 "use client";
 
 /** F2 · 原七层购买奖励、直属分成与独立权益/冷却配置。 */
-import { CodeTag } from "../design-kit";
+import { useState } from "react";
 import { F2DirectPolicy } from "./f2-direct-policy";
 import { F2_DEPTH_GATE_LAYERS, f2EnumGateSpec, parseF2DepthGateLayer, parseF2DepthGateRank } from "@/lib/admin/f2-depth-gate";
 import type { FViewCtx } from "./types";
@@ -30,6 +30,8 @@ function configuredValue(raw: string | undefined) {
 }
 
 export function F2Rates({ ctx }: { ctx: FViewCtx }) {
+  const [selectedTier, setSelectedTier] = useState(0);
+  const [showTierDetails, setShowTierDetails] = useState(false);
   const canRoyaltyRate = ctx.can("network_f2_royalty_rate");
   const canPolicyAmplify = ctx.can("network_f2_policy_amplify");
   const l1NexReadonly = !ctx.f2DirectPolicy || !!ctx.f2DirectPolicyError || ctx.f2DirectPolicyLoading || (ctx.f2DirectPolicy.sevenLayerEnabled && ctx.f2DirectPolicy.purchaseSplit.enabled);
@@ -54,6 +56,12 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
   const partnerConfigured = thresholds.every((value) => value !== "");
   const partnerState = partnerConfigured ? `当前 $${thresholds.join("/$")}` : partnerTiersRaw ? "配置无效，请重新配置" : "未配置";
   const coolingState = coolingDays !== "" ? `${coolingDays} 天` : coolingRaw ? "配置无效，请重新配置" : "未配置";
+  const partnerTiers = [
+    { name: "Standard", threshold: ptStandard, perk: "基础权益", cls: "" },
+    { name: "Verified", threshold: ptVerified, perk: "优先客服支持", cls: "t1" },
+    { name: "Premium", threshold: ptPremium, perk: "新品优先", cls: "t2" },
+    { name: "Diamond", threshold: ptDiamond, perk: "AMA + VIP", cls: "t3" },
+  ];
 
   if (ctx.f2Loading) {
     return (
@@ -79,14 +87,12 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
   return (
     <div className="f-section-stack f2-layout">
       <section className="pane">
-        <div className="pane-h"><span className="ph-ttl">七层购买奖励</span><span className="ph-sub">L1–L7 原网络版税</span></div>
-        <div style={{ padding: "14px 18px", fontSize: 12, color: "var(--ink-4)" }}>B 购买时，直属上级 A 获得原 L1 预算；C 及后续下级购买时，A 按所在 L2–L7 层级与原门槛获得奖励。下方购买拆分只改变 L1 的发放构成；L2–L7 的 NEX 仍按原系数计算，设备收益分成独立配置。</div>
+        <div className="pane-h"><div><span className="ph-ttl">七层购买奖励</span><span className="ph-sub">设置各层级的购买基础费率与 NEX 奖励系数。{ctx.f2Unilevel.length === 0 && "当前尚未配置。"}</span></div><button className="f2-history-link" aria-controls="royalty-history" onClick={() => { const history = document.getElementById("royalty-history"); if (history instanceof HTMLDetailsElement) { history.open = true; history.scrollIntoView({ block: "nearest" }); } }}>查看历史设置 <span aria-hidden="true">⌄</span></button></div>
         {ctx.f2Metrics.length > 0 && <div className="f-stats">
           {ctx.f2Metrics.map((metric) => <div key={metric.id} className={`f-stat${metric.tone ? " " + metric.tone : ""}`}>
             <div className="k">{metric.name}</div><div className="v">{metric.value}</div>
           </div>)}
         </div>}
-        {ctx.f2Unilevel.length === 0 && <div style={{ padding: "0 18px 14px", color: "var(--ink-3)" }}>七层购买奖励尚未配置；以下当前值均为未配置，提交时仍由服务端核验规则。</div>}
         <div className="casc" role="table" aria-label="七层购买奖励费率">
           <div className="casc-head" role="row">
             {["层级", "购买基础费率", "NEX 奖励系数", "派发状态", "操作"].map(label => <span key={label} role="columnheader">{label}</span>)}
@@ -98,7 +104,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
             const paused = configuredValue(ctx.f2ConfigValues[`F.unilevel.${level}.paused`]);
             const direct = level === "L1";
             return <div key={level} className="casc-row" role="row">
-              <div role="rowheader" className="casc-level"><span className={`lchip${direct ? "" : " ext"}`}>{level}</span><small>{direct ? "直属购买" : "下级购买"}</small></div>
+              <div role="rowheader" className="casc-level" title={direct ? "直属购买" : "下级购买"}><span className={`lchip${direct ? "" : " ext"}`}>{level}</span></div>
               <div role="cell" className="casc-rate"><span className="casc-mobile-label">购买基础费率</span><strong>{rate ? `${currentRate}%` : "未配置"}</strong>{rate && <div className="rate-bar" aria-hidden="true"><div className={`f${direct ? "" : " ext"}`} style={{ width: `${Math.max(0, Math.min(100, rate.usdt))}%` }} /></div>}</div>
               <div role="cell" className="casc-nex"><span className="casc-mobile-label">NEX 奖励系数</span>
               {canRoyaltyRate && (!direct || !l1NexReadonly) ? <button className="nex-val" title={`调整 ${level} NEX 奖励系数`} style={{ background: "none", border: 0, padding: 0, cursor: "pointer" }} onClick={() => ctx.openActionConfirm({
@@ -107,7 +113,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
                 detail: `${level} 每 1 USDT 版税的 NEX 奖励 · 当前 ${currentNex || "未配置"}；上调须核验 B1 覆盖率，批准后用于后续结算，不回溯。`,
               })}>{currentNex || "未配置"}<small>NEX/USDT版税</small></button> : <span className="nex-val">{currentNex || "未配置"}<small>{direct && l1NexReadonly ? "旧系数只读 · 拆分启用时不适用" : "NEX/USDT版税"}</small></span>}
               </div>
-              <div role="cell" className="casc-status"><span className="casc-mobile-label">派发状态</span><span>{paused === "on" ? "已暂停" : paused === "off" ? "未暂停" : paused ? "配置无效" : "未配置"}</span></div>
+              <div role="cell" className="casc-status"><span className="casc-mobile-label">派发状态</span><span className="f2-status" data-state={paused}>{paused === "on" ? "已暂停" : paused === "off" ? "未暂停" : paused ? "配置无效" : "未配置"}</span></div>
               <div role="cell" className="casc-action">{direct ? <span className="casc-fixed">{rate ? "L1 费率固定" : "L1 待配置"}<small>{rate ? "由服务端管理" : "不可手动调整"}</small></span> : canRoyaltyRate ? <button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({
                 name: `${level} 购买奖励费率调整`, amplify: true, op: "param", paramKey: `F.unilevel.${level}`,
                 edit: { kind: "number", current: currentRate, min: 0, unit: "%", amplifiesWhen: "increase" },
@@ -116,9 +122,8 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
             </div>;
           })}
         </div>
-        {ctx.f2Unilevel.length > 0 && <div className="casc-foot">当前七层名义费率合计 {ctx.f2Unilevel.reduce((sum, rate) => sum + rate.usdt, 0)}% · 实际奖励仍按各层门槛、暂停状态与出口上限核验</div>}
-        <div className="casc-foot" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <span>单层暂停 · 各层独立控制购买奖励派发</span>
+        <div className="casc-foot">
+          <span>{ctx.f2Unilevel.length > 0 ? `七层名义费率合计 ${ctx.f2Unilevel.reduce((sum, rate) => sum + rate.usdt, 0)}% · ` : ""}各层门槛、暂停状态与出口上限独立核验</span>
           {canPolicyAmplify && <button className="fbtn" style={{ marginLeft: "auto" }} onClick={() => ctx.openActionConfirm({
             name: "单层暂停管理(L1–L7)",
             businessForm: {
@@ -143,6 +148,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
             <div className="nm">历史档位 · {tier.nm}<span className="req">{tier.req}</span></div><span className="tier-rate">{tier.rate}</span><span className="dist">{tier.dist}</span>
           </div>)}
         </div>}
+        <h2 className="f2-parameters-title">全局参数设置</h2>
         <div className="params f2-rule-params">
           {[...F2_VISIBLE_PARAM_KEYS].filter((key) => key !== "F.cooldown").map((key) => {
             const param = ctx.f2Params.find((row) => row.key === key);
@@ -154,10 +160,9 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
             const promo = key === "F.promo.weekMultiplier";
             const merge = key === "F.unilevel.mergeExitMaxPct";
             const allowed = promo ? canRoyaltyRate : canPolicyAmplify;
-            return <div key={key} className="param">
+            return <div key={key} className="param" title={enumSpec ? "层级与等级须为有效选项；缺值或非法值会阻断结算。" : promo ? "活动周购买奖励倍率，允许 1–3 倍；上调须核验 B1 覆盖率。" : merge ? "购买奖励出口占订单小计比例上限，允许 0–100%。" : "影响分边界作用于 L2–L7，不改变 L1 费率。"}>
               <div className="pk">{name}</div>
               <div className={`pv${param?.vcls ? " " + param.vcls : ""}`}>{parsed && !parsed.legal ? `${value}（配置无效）` : value || "未配置"}</div>
-              <div className="psub">{enumSpec ? "层级与等级门槛须为有效选项；缺值或非法值时服务端会阻断结算。" : promo ? "活动周购买奖励倍率，允许 1–3 倍；上调须核验 B1 覆盖率。" : merge ? "整条购买奖励出口占订单小计的比例上限，允许 0–100%。" : "原购买奖励的影响分边界，作用于 L2–L7；不改变 L1 费率。"}</div>
               {parsed && !parsed.legal && <div className="psub" role="alert" style={{ color: "var(--danger)" }}>{enumSpec?.illegalCopy}</div>}
               {allowed && <button className={`fbtn primary${promo ? " amp" : ""}`} onClick={() => ctx.openActionConfirm({
                 name: `${name}调整`, amplify: promo, op: "param", paramKey: key,
@@ -168,8 +173,8 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
             </div>;
           })}
         </div>
-        <details className="f2-legacy">
-          <summary>未接入的旧参数 · 仅供核查</summary>
+        <details className="f2-legacy" id="royalty-history">
+          <summary>历史设置（旧参数）· 仅供核查</summary>
           <p>版税支付阈值、平级奖励比例、日封顶与回溯窗口等未接入实际结算，不可调整。</p>
           <div className="f2-legacy-values">
           {ctx.f2Params.filter((param) => Object.hasOwn(F2_HISTORICAL_PARAM_NAMES, param.key) && !F2_VISIBLE_PARAM_KEYS.has(param.key)).map((param) => {
@@ -186,25 +191,20 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
 
       <F2DirectPolicy key="direct-policy" ctx={ctx} />
       <div className="f2-top">
-        <section className="pane">
-          <div className="pane-h"><span className="ph-ttl">Partner Status 权益档</span><span className="ph-sub">不改变版税费率</span><span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag>非资金倍率</CodeTag></span></div>
-          <div className="tier-list">
-            {[
-              { name: "Standard", threshold: ptStandard, perk: "基础权益", cls: "" },
-              { name: "Verified", threshold: ptVerified, perk: "优先客服支持", cls: "t1" },
-              { name: "Premium", threshold: ptPremium, perk: "新品优先", cls: "t2" },
-              { name: "Diamond", threshold: ptDiamond, perk: "AMA + VIP", cls: "t3" },
-            ].map((tier) => (
+        <section className="pane f2-partner">
+          <div className="pane-h"><div><span className="ph-ttl">Partner Status 权益档</span><span className="ph-sub">按月度网络活跃度解锁权益，不改变版税费率。</span></div></div>
+          <div className="f2-partner-picker"><label htmlFor="royalty-partner-tier">查看权益档</label><select id="royalty-partner-tier" value={selectedTier} onChange={e => setSelectedTier(Number(e.target.value))}>{partnerTiers.map((tier, index) => <option key={tier.name} value={index}>{tier.name} · {tier.threshold === "" ? "未配置" : `$${tier.threshold}+`}</option>)}</select><button className="fbtn" aria-expanded={showTierDetails} aria-controls="royalty-partner-details" onClick={() => setShowTierDetails(!showTierDetails)}>{showTierDetails ? "收起权益详情" : "查看权益详情"}</button></div>
+          {showTierDetails && <div className="tier-list" id="royalty-partner-details">
+            {partnerTiers.filter((_, index) => index === selectedTier).map((tier) => (
               <div key={tier.name} className={`tier ${tier.cls}`}>
                 <div className="nm">{tier.name}<span className="req">{tier.threshold === "" ? "未配置" : `$${tier.threshold}+`}</span></div>
                 <span className="tier-rate">权益</span>
                 <span className="dist">{tier.perk}</span>
               </div>
             ))}
-          </div>
-          <div className="f2-help" style={{ padding: "0 18px 14px" }}>按月度网络活跃度判定并解锁权益；Partner Status 不改变直属分成政策。</div>
-          <div className="casc-foot" style={{ borderTop: "1px solid var(--border)" }}>
-            <span>门槛 · <b style={{ color: "var(--ink-2)" }}>{partnerState}</b>(Standard/Verified/Premium/Diamond)</span>
+          </div>}
+          <div className="casc-foot">
+            <span>{partnerConfigured ? "四档门槛已配置" : partnerState} · 仅决定权益</span>
             {canPolicyAmplify && <button className="fbtn primary" style={{ marginLeft: "auto" }} onClick={() => ctx.openActionConfirm({
               name: "Partner Status 4 档权益门槛调整", amplify: false,
               businessForm: {
@@ -239,12 +239,13 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
           </div>
         </section>
         <section className="pane f2-cooling">
-          <div className="pane-h"><span className="ph-ttl">购买与其他奖励冷却</span></div>
-          <p>购买奖励沿用原七层冷却；直属设备收益使用独立冷却，二者不混用。</p>
-        <div key={coolingParam?.id ?? "cool"} className="param">
-          <div className="pk">购买与其他奖励冷却期</div>
-          <div className={`pv${coolingParam?.vcls ? " " + coolingParam.vcls : ""}`}>{coolingState}</div>
-          <div className="psub">0–90 天整数；用于七层购买及原有其他奖励；不影响直属设备收益的独立冷却期。</div>
+          <div className="pane-h"><div><span className="ph-ttl">购买与其他奖励冷却</span><span className="ph-sub">购买与原有奖励共用冷却；直属设备收益独立设置。</span></div></div>
+        <div className="f2-cooling-body">
+          <label className="f2-cooling-row">购买与其他奖励<span className="f2-readonly-value"><input aria-label="购买与其他奖励当前冷却天数" readOnly value={coolingDays || coolingState} /><span>天</span></span></label>
+          <label className="f2-cooling-row">直属设备收益<span className="f2-readonly-value"><input aria-label="直属设备收益当前冷却天数" readOnly value={ctx.f2DirectPolicy?.configured ? ctx.f2DirectPolicy.deviceEarning.coolingDays : "未配置"} /><span>天</span></span></label>
+        </div>
+        <div key={coolingParam?.id ?? "cool"} className="casc-foot">
+          <span>购买冷却 0–90 天；设备冷却在上方配置。</span>
           {canPolicyAmplify && <button className={`fbtn primary${coolingParam?.vamp ? " amp" : ""}`} onClick={() => ctx.openActionConfirm({
             name: "购买与其他奖励冷却期调整", amplify: true, op: "param", paramKey: "F.cooldown",
             edit: { kind: "number", current: coolingDays, unit: "天", min: 0, max: 90, step: 1,

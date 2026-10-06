@@ -1,0 +1,117 @@
+/* UVEL F2: confirmed v4 design. Route scope preserves the other console pages. */
+[data-royalty-shell] { --admin-sidebar-w: 168px; --admin-topbar-h: 40px; --admin-gutter: 16px; }
+html[data-theme="dark"] [data-royalty-shell] .fdom { --surface: #101115; --surface-2: #16181e; --border: #292c35; --border-strong: #383d4b; --ink-3: #a5aabb; --cyan: #b799ff; --brand: #b5ef62; }
+[data-royalty-shell] .content-shell { max-width: none; margin: 0; }
+[data-royalty-shell] header button[aria-label^="告警与待办"] > span { top: 0; }
+[data-royalty-shell] aside > a[aria-label="UVEL 运营控制台"] > :first-child:not(:only-child) { display: none; }
+[data-royalty-shell] aside > a[aria-label="UVEL 运营控制台"] .font-display { font-size: 23px; font-weight: 750; letter-spacing: .02em; }
+[data-royalty-shell] aside > a[aria-label="UVEL 运营控制台"] .font-display::after { content: '•'; color: var(--cyan); }
+[data-royalty-shell] aside > a[aria-label="UVEL 运营控制台"] .text-\[10px\],
+[data-royalty-shell] aside > a[aria-label="UVEL 运营控制台"] > .font-mono-tabular,
+[data-royalty-shell] aside nav .font-mono-tabular { display: none; }
+[data-royalty-shell] aside nav button { gap: 7px; padding-inline: 8px; }
+[data-royalty-shell] aside nav button > .flex-1 { font-size: 12px; }
+[data-royalty-shell] aside nav a { border-radius: 4px; }
+.fdom .f2-page-header { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin: 0 0 18px; }
+.fdom .f2-page-header h1 { margin: 6px 0 0; font-size: 28px; font-weight: 650; line-height: 1.35; }
+.fdom .f2-breadcrumb { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--ink-3); }
+.fdom .f2-page-meta { font-size: 12px; color: var(--ink-3); text-align: right; }
+.fdom .f2-layout { gap: 20px; font-size: 13px; line-height: 1.6; }
+.fdom .f2-layout .pane { border-color: var(--border-strong); border-radius: 6px; }
+.fdom .f2-layout .pane-h { align-items: start; gap: 12px; padding: 16px 20px 14px; }
+.fdom .f2-layout .pane-h > * { min-width: 0; }
+.fdom .f2-layout .ph-ttl { display: block; position: relative; font-size: 16px; font-weight: 600; line-height: 1.5; white-space: normal; }
+.fdom .f2-layout .ph-ttl::before { content: ''; position: absolute; left: -10px; top: 2px; width: 3px; height: 21px; border-radius: 2px; background: var(--cyan); }
+.fdom .f2-layout .ph-sub { display: block; margin-top: 4px; font-size: 12px; line-height: 1.6; color: var(--ink-3); white-space: normal; }
+.fdom .f2-history-link { margin-left: auto; padding: 0; border: 0; background: transparent; color: var(--cyan); font: inherit; font-size: 12px; text-decoration: none; cursor: pointer; }
+.fdom .f2-history-link:hover { text-decoration: underline; }
+.fdom .f2-help, .fdom .f2-layout .f-foot { font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+.fdom .f2-layout .fbtn { min-height: 32px; padding: 5px 12px; border-radius: 4px; font-size: 12px; line-height: 1.6; }
+.fdom .f2-layout .fbtn.amp::after { content: none; }
+.fdom .f2-layout :is(button, a, summary, select, input):focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+.fdom .f2-unconfigured { margin: -5px 16px 12px; }
+.fdom .f2-layout .f-stats { margin: 0 16px 12px; }
+.fdom .f2-layout .casc { margin: 0 16px; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
+.fdom .f2-layout .casc-head,
+.fdom .f2-layout .casc-row { display: grid; grid-template-columns: .65fr 1.35fr 1.65fr 1.05fr 1fr; align-items: stretch; gap: 0; font-size: 13px; line-height: 1.5; }
+.fdom .f2-layout .casc-head { background: var(--surface-2); color: var(--ink-2); font-size: 12px; }
+.fdom .f2-layout .casc-head > *,
+.fdom .f2-layout .casc-row > * { display: flex; min-width: 0; justify-content: center; align-items: center; gap: 8px; padding: 3px 10px; border-right: 1px solid var(--border); text-align: center; }
+.fdom .f2-layout .casc-head { min-height: 30px; }
+.fdom .f2-layout .casc-row { min-height: 31px; border-top: 1px solid var(--border); }
+.fdom .f2-layout .casc-row > :last-child,
+.fdom .f2-layout .casc-head > :last-child { border-right: 0; }
+.fdom .f2-layout .casc-rate strong { font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.fdom .f2-layout .casc-rate { flex-direction: row-reverse; }
+.fdom .f2-layout .rate-bar { width: 72px; max-width: 34%; height: 3px; border-radius: 2px; background: var(--surface-3); overflow: hidden; flex-shrink: 0; }
+.fdom .f2-layout .rate-bar .f { height: 100%; background: var(--cyan); }
+.fdom .f2-layout .lchip { font-size: 13px; font-weight: 400; }
+.fdom .f2-layout .nex-val { color: var(--ink-2); font-size: 13px; font-weight: 400; text-align: center; line-height: 1.5; }
+.fdom .f2-layout button.nex-val { color: var(--brand); min-height: 24px; }
+.fdom .f2-layout .nex-val small { display: inline; font-size: 11px; color: var(--ink-3); margin-left: 6px; }
+.fdom .f2-layout .casc-fixed { font-size: 12px; color: var(--ink-3); }
+.fdom .f2-layout .casc-fixed small { display: none; }
+.fdom .f2-layout .casc-action .fbtn { color: var(--brand); background: transparent; border-color: transparent; min-height: 24px; padding: 0 6px; }
+.fdom .f2-layout .casc-action .fbtn:hover { background: var(--brand-soft); }
+.fdom .f2-layout .casc-mobile-label { display: none; }
+.fdom .f2-status { display: inline-flex; align-items: center; gap: 7px; }
+.fdom .f2-status::before { content: ''; width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: var(--ink-3); }
+.fdom .f2-status[data-state="off"]::before { background: var(--success); }
+.fdom .f2-status[data-state="on"]::before { background: var(--warning); }
+.fdom .f2-layout .casc-foot { margin: 0; padding: 6px 16px; gap: 8px; font-size: 12px; color: var(--ink-3); }
+.fdom .f2-layout > .pane > .casc-foot .fbtn { min-height: 24px; padding-block: 2px; }
+.fdom .f2-parameters-title { margin: 2px 16px 10px; font-size: 14px; font-weight: 600; }
+.fdom .f2-layout .params.f2-rule-params { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 0 16px; margin: 0; }
+.fdom .f2-rule-params .param { position: relative; min-width: 0; min-height: 64px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 5px; background: transparent; }
+.fdom .f2-rule-params .pk { font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+.fdom .f2-layout .f2-rule-params .pv { margin: 4px 46px 0 0; font-family: inherit; font-size: 16px; font-weight: 600; line-height: 1.5; color: var(--ink); overflow-wrap: anywhere; }
+.fdom .f2-rule-params .fbtn { position: absolute; right: 8px; bottom: 6px; padding-inline: 6px; background: transparent; border-color: transparent; color: var(--brand); }
+.fdom .f2-layout .param .psub { font-size: 12px; }
+.fdom .f2-legacy { margin: 10px 16px 12px; font-size: 12px; color: var(--ink-3); }
+.fdom .f2-legacy summary { cursor: pointer; padding: 0; }
+.fdom .f2-legacy > p { margin: 12px 0; }
+.fdom .f2-legacy-values { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.fdom .f2-legacy-values .param { background: transparent; padding: 10px; }
+.fdom .f2-legacy-values .pv { font-size: 14px; }
+.fdom .f2-top { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.fdom .f2-top > .pane { min-width: 0; }
+.fdom .f2-partner-picker { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 0 16px; }
+.fdom .f2-partner-picker label { font-size: 12px; color: var(--ink-2); }
+.fdom .f2-partner-picker select,
+.fdom .f2-readonly-value { min-width: 0; min-height: 32px; border: 1px solid var(--border-strong); border-radius: 4px; background: var(--surface-2); color: var(--ink-2); font: inherit; }
+.fdom .f2-partner-picker select { padding: 4px 8px; width: 100%; font-size: 13px; }
+.fdom .f2-top .casc-foot { padding-block: 12px; }
+.fdom .f2-top .casc-foot > .fbtn { margin-left: auto; }
+.fdom .f2-top .tier { grid-template-columns: minmax(0, 1fr) auto auto; }
+.fdom .f2-top .tier .nm { font-size: 14px; }
+.fdom .f2-top .tier .nm .req { font-size: 12px; }
+.fdom .f2-cooling-body { display: grid; gap: 12px; padding: 0 16px; }
+.fdom .f2-cooling-row { display: grid; grid-template-columns: 128px minmax(0, 1fr); align-items: center; gap: 12px; font-size: 12px; color: var(--ink-2); }
+.fdom .f2-readonly-value { display: flex; align-items: center; padding: 0 10px; gap: 8px; }
+.fdom .f2-readonly-value input { min-width: 0; width: 100%; padding: 5px 0; color: var(--ink-3); font: inherit; font-size: 13px; background: none; border: 0; }
+.fdom .f2-readonly-value > span { color: var(--ink-3); font-size: 12px; }
+.fdom .f2-layout .f-foot { margin: 0; }
+@media (max-width: 850px) {
+  .fdom .f2-top { grid-template-columns: minmax(0, 1fr); }
+  .fdom .f2-page-header { flex-wrap: wrap; }
+  .fdom .f2-layout .casc-head { display: none; }
+  .fdom .f2-layout .casc-row { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 8px; gap: 10px; }
+  .fdom .f2-layout .casc-row > * { border: 0; padding: 0; justify-content: start; text-align: left; }
+  .fdom .f2-layout .casc-level { grid-column: 1; grid-row: 1; }
+  .fdom .f2-layout .casc-action { grid-column: 2; grid-row: 1; justify-content: end; }
+  .fdom .f2-layout .casc-rate, .fdom .f2-layout .casc-nex { flex-wrap: wrap; flex-direction: row; }
+  .fdom .f2-layout .casc-mobile-label { display: block; flex-basis: 100%; color: var(--ink-3); font-size: 12px; }
+  .fdom .f2-layout .casc-status { grid-column: 1 / -1; }
+  .fdom .f2-layout .casc-status .casc-mobile-label { flex-basis: auto; }
+  .fdom .f2-layout .nex-val { text-align: left; }
+  .fdom .f2-layout .params.f2-rule-params { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  [data-royalty-shell] { --admin-gutter: 12px; }
+  [data-royalty-shell] aside > a[aria-label="UVEL 运营控制台"] > :first-child { display: block; }
+  .fdom .f2-page-header h1 { font-size: 24px; }
+  .fdom .f2-layout .pane-h { padding-inline: 18px; }
+  .fdom .f2-layout .params.f2-rule-params, .fdom .f2-legacy-values { grid-template-columns: minmax(0, 1fr); }
+  .fdom .f2-partner-picker { grid-template-columns: minmax(0, 1fr); }
+  .fdom .f2-cooling-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+}

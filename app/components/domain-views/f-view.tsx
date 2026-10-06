@@ -62,6 +62,7 @@ import { F5Audit } from "./f-tabs/f5-audit";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import { directReferralAmplifies, directReferralSummary, validateDirectReferralUpdate, type DirectReferralPolicy } from "@/lib/admin/direct-referral-policy";
 import "./f-domain.css";
+import "./f-tabs/f2-design.css";
 
 const FOLD: Record<string, string> = { F1: "F1", F2: "F2", F3: "F3", F4: "F4", F5: "F5" };
 const ADMIN_OPERATOR = currentAdminOperator;
@@ -723,7 +724,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
 
   return (
     <div className="dkpage fdom">
-      <DomainHeader {...meta} right={cta ? <button className="f-cta" onClick={cta.onClick}>{cta.label}</button> : undefined} />
+      {tab === "F2" ? <div className="f2-page-header"><div><div className="f2-breadcrumb">网络 <span aria-hidden="true">›</span> 网络版税与分成</div><h1>网络版税与分成</h1></div><span className="f2-page-meta">{f2DirectPolicy?.effectiveAt ? `当前政策生效于 ${new Date(f2DirectPolicy.effectiveAt).toLocaleString()}` : "配置尚未生效"}</span></div> : <DomainHeader {...meta} right={cta ? <button className="f-cta" onClick={cta.onClick}>{cta.label}</button> : undefined} />}
 
       {tab === "F1" && <F1Vrank ctx={ctx} />}
       {tab === "F2" && <F2Rates ctx={ctx} />}

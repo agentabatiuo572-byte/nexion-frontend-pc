@@ -14,6 +14,8 @@
 
 ## 设计转换与实景
 
+当前视觉以 [F2 设计稿还原验收](./DESIGN-FIDELITY-ACCEPTANCE.md) 为准：整页依据 `admin-royalty-v4.png` 重构，22 场景、14 组布局与真实 3002 Chrome 对照已核验。下文保留资金实施阶段的证据，不作为最新布局尺寸的判据。
+
 已先生成并查看 UVEL 设计图，再转换业务组件。F2 横条布局依据 `admin-royalty-v3.png`，间距及字号依据 `admin-royalty-v4.png`；F5 依据 `admin-audit-v1.png` 并复用相同板块留白与文字角色。`interaction.html` 保留配置交互原型。七层数字与辅助横条分开，横条限宽 96px、高 3px，未配置不画满条；窄屏按字段分行。生效参数、折叠的未接入旧参数、权益和冷却保持完整。公共顶栏保持单行，较窄宽度优先保留关键动作，搜索可通过 Ctrl+K 打开。设计图中的示例费率和额外字段不替代批准业务契约。
 
 最终证据根目录：`C:/Users/jason/.codex/workflow-runs/seven-layer-direct-split-20261006/`。`pc-layout-runtime-final/report.json` 有 22 个通过步骤、65 张截图、0 page error。按暗色/亮色 × 2560、1920、1440、1024、768、390px 共 12 组，滚动页面主体覆盖全部内容；检测七行单元格、短横条、六项生效参数、两币表单、权益/冷却和顶栏的边界及重叠。设计图随本仓提交，体量较大的运行证据留在该外部目录。
