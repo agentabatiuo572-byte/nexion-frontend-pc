@@ -4,12 +4,12 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
-import { sha256, repositoryDigest as digestRepository, businessData, conversationFeatures, businessRoots, assertUiBinding, assertRequestSeeds, validateMutation, validateReadback, verifyRuntimeOwnership } from "./lib/support-analytics-evidence.mjs";
+import { sha256, repositoryDigest as digestRepository, businessData, conversationFeatures, businessRoots, assertUiBinding, assertRequestSeeds, assertAvatarPolicy, assertAvatarProposal, avatarProposalPath, avatarApprovePath, validateMutation, validateReadback, verifyRuntimeOwnership } from "./lib/support-analytics-evidence.mjs";
 
 const features = ["avatar", "sku", "attachment", "bulk", "random", "cookie", "unknown-main", "unknown-dock"];
 const usedTotpSteps = new Map();
 const mutationTargets = {
-  avatar: /^\/api\/admin\/platform\/accounts\/[^/]+\/profile$/,
+  avatar: /^\/api\/admin\/platform\/audit\/operations$/,
   sku: /^\/api\/admin\/content\/conversations\/[^/]+\/replies$/,
   attachment: /^\/api\/admin\/content\/conversations\/[^/]+\/replies$/,
   bulk: /^\/api\/admin\/content\/support-workbench\/bulk$/,
@@ -72,7 +72,7 @@ async function getData(context, path) {
 async function beforeWrite(context, scenario) {
   if (conversationFeatures.has(scenario.id)) return getData(context, scenario.mutation.path.slice(0, -"/replies".length));
   if (scenario.id === "avatar") {
-    const id = decodeURIComponent(scenario.mutation.path.split("/")[5]);
+    const id = String(scenario.accountId);
     const row = (await getData(context, "/api/admin/platform/accounts/overview")).operators.find(operator => String(operator.id) === id);
     assert.ok(row, "Authorized avatar account was not found in the actual current overview");
     return row;
@@ -86,7 +86,7 @@ async function beforeWrite(context, scenario) {
 async function currentBusinessState(context, scenario, mutation) {
   const data = businessData(mutation.output);
   if (conversationFeatures.has(scenario.id)) return getData(context, `/api/admin/content/conversations/${encodeURIComponent(data.conversationNo)}`);
-  if (scenario.id === "avatar") return (await getData(context, "/api/admin/platform/accounts/overview")).operators.find(row => String(row.id) === String(data.id));
+  if (scenario.id === "avatar") return (await getData(context, "/api/admin/platform/accounts/overview")).operators.find(row => String(row.id) === String(mutation.proposal.input.command.params.accountId));
   if (scenario.id === "bulk") return getData(context, `/api/admin/content/support-workbench/bulk/${encodeURIComponent(data.batchId)}`);
   const rows = {};
   for (const row of data.customers) rows[String(row.customerId)] = (await getData(context, `/api/admin/content/support-workbench/customers/${encodeURIComponent(row.customerId)}`)).customer;
@@ -113,10 +113,10 @@ async function requireBusinessUi(page, scenario, mutation, state, before) {
     } else await root.getByText(message.content, { exact: true }).waitFor({ state: "visible" });
     if (scenario.id === "sku") await root.getByText(`商品编号：${message.skuId}`, { exact: true }).waitFor({ state: "visible" });
   } else if (scenario.id === "avatar") {
-    const response = await page.request.get(`/api/admin/platform/accounts/${encodeURIComponent(output.id)}/avatar`);
+    const response = await page.request.get(`/api/admin/platform/accounts/${encodeURIComponent(state.id)}/avatar`);
     assert.equal(response.status(), 200);
     const expectedHash = hash(await response.body());
-    const image = page.getByAltText(`${output.name}头像`, { exact: true });
+    const image = page.getByAltText(`${state.name}头像`, { exact: true });
     await image.waitFor({ state: "visible" });
     assert.ok(await image.evaluate(async element => { try { await element.decode(); return element.naturalWidth > 0; } catch { return false; } }), "Avatar image was not actually decoded");
     const actualHash = await image.evaluate(async element => { const bytes = await (await fetch(element.currentSrc)).arrayBuffer(); return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), byte => byte.toString(16).padStart(2, "0")).join(""); });
@@ -237,13 +237,18 @@ try {
   const operationKeys = new Set();
   for (const scenario of config.scenarios) {
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, baseURL: origin });
-    const page = await context.newPage();
+    let page = await context.newPage(), approvalContext;
     try {
       assert.ok(runtimeReceipt.allowedSeedObjects.usernames.includes(config.accounts[scenario.account]?.username), "This login is not an authorized isolated seed");
       await verifyRuntimeOwnership(runtimeReceipt, runtimeTarget);
-      await login(context, page, origin, config.accounts[scenario.account]);
+      const makerSession = businessData(await login(context, page, origin, config.accounts[scenario.account])).session;
+      let checkerSession, priorState;
+      if (scenario.id === "avatar") {
+        assertAvatarPolicy(runtimeReceipt.avatarApproval, makerSession);
+        assert.equal(String(scenario.accountId), String(runtimeReceipt.avatarApproval.accountId));
+      }
       assert.ok(scenario.path.startsWith("/") && !scenario.path.startsWith("//"));
-      const uploads = [], previews = [], uploadCaptures = [], uploadErrors = [];
+      const uploads = [], previews = [], avatarProposals = [], uploadCaptures = [], uploadErrors = [];
       page.on("response", response => {
         const path = new URL(response.url()).pathname;
         if (response.request().method() === "POST" && ["/api/admin/platform/accounts/avatar-assets", "/api/admin/content/conversations/attachments"].includes(path)) uploadCaptures.push((async () => {
@@ -257,10 +262,18 @@ try {
           const output = await response.json(); businessData(output);
           previews.push({ path, output });
         })().catch(error => uploadErrors.push(error)));
+        if (scenario.id === "avatar" && path === avatarProposalPath && response.request().method() === "POST") uploadCaptures.push((async () => {
+          assert.equal(response.status(), 200);
+          const proposal = { path, input: response.request().postDataJSON(), key: response.request().headers()["idempotency-key"], output: await response.json() };
+          assertAvatarProposal(proposal.input, priorState, uploads, runtimeReceipt.allowedSeedObjects, runtimeReceipt.avatarApproval);
+          avatarApprovePath(proposal);
+          avatarProposals.push(proposal);
+        })().catch(error => uploadErrors.push(error)));
       });
       const authorizeRequest = async request => {
         const path = new URL(request.url()).pathname;
-        assert.ok(runtimeReceipt.authorizedMutationPaths.includes(path), "The UI attempted a mutation outside the root-authorized seed paths");
+        const currentAvatarApproval = scenario.id === "avatar" && avatarProposals.length === 1 && path === avatarApprovePath(avatarProposals[0]);
+        assert.ok(currentAvatarApproval || runtimeReceipt.authorizedMutationPaths.includes(path), "The UI attempted a mutation outside the root-authorized seed paths");
         await verifyRuntimeOwnership(runtimeReceipt, runtimeTarget);
         // Drain actual server receipts before allowing a write that references them.
         await Promise.all(uploadCaptures);
@@ -272,6 +285,19 @@ try {
           assert.equal(ids.length, 1, "Attachment request must have exactly one actual customer field");
           input.customerId = ids[0][1];
         }
+        if (scenario.id === "avatar" && path === avatarProposalPath) {
+          assert.ok(!checkerSession && avatarProposals.length === 0, "Avatar checker cannot create another proposal");
+          assertAvatarPolicy(runtimeReceipt.avatarApproval, makerSession);
+          assertAvatarProposal(input, priorState, uploads, runtimeReceipt.allowedSeedObjects, runtimeReceipt.avatarApproval);
+        }
+        if (currentAvatarApproval) {
+          assert.ok(checkerSession, "The avatar must be approved through a different real checker session");
+          assertAvatarPolicy(runtimeReceipt.avatarApproval, makerSession, checkerSession);
+          assertAvatarProposal(avatarProposals[0].input, priorState, uploads, runtimeReceipt.allowedSeedObjects, runtimeReceipt.avatarApproval);
+          const queue = (await getData(approvalContext, "/api/admin/platform/audit/overview")).operationQueue;
+          const ticket = queue.find(row => String(row.id) === String(businessData(avatarProposals[0].output).id));
+          assert.ok(ticket && String(ticket.status).toUpperCase() === "PENDING" && String(ticket.obj) === String(runtimeReceipt.avatarApproval.accountId), "The current avatar proposal is missing, final or belongs to another account");
+        }
         let completeScopeIds;
         if (path.endsWith("/bulk/preview") && input.selectionMode === "ALL_FILTERED") {
           const scope = (await getData(context, "/api/admin/content/support-workbench/customers?pageNum=1&pageSize=200")).customers;
@@ -280,26 +306,45 @@ try {
         }
         assertRequestSeeds(path, input, previews, uploads, runtimeReceipt.allowedSeedObjects, scenario.customerIds ?? [], completeScopeIds);
       };
-      await page.route("**/api/admin/**", async route => {
+      const guard = async route => {
         if (["GET", "HEAD"].includes(route.request().method())) return route.continue();
         try {
           await authorizeRequest(route.request());
           await route.continue();
         } catch (error) { uploadErrors.push(error); await route.abort("blockedbyclient"); }
-      });
+      };
+      await page.route("**/api/admin/**", guard);
       await page.goto(`${origin}${scenario.path}`, { waitUntil: "domcontentloaded" });
-      let priorState;
       if (scenario.id !== "cookie") {
         assert.ok(mutationTargets[scenario.id].test(scenario.mutation.path));
         assert.ok(runtimeReceipt.authorizedMutationPaths.includes(scenario.mutation.path));
         if (conversationFeatures.has(scenario.id)) assert.ok(runtimeReceipt.allowedSeedObjects.conversationNos.includes(decodeURIComponent(scenario.mutation.path.split("/")[5])));
-        if (scenario.id === "avatar") assert.ok(runtimeReceipt.allowedSeedObjects.accountIds.includes(decodeURIComponent(scenario.mutation.path.split("/")[5])));
+        if (scenario.id === "avatar") assert.ok(runtimeReceipt.allowedSeedObjects.accountIds.includes(String(scenario.accountId)));
         if (["random", "bulk"].includes(scenario.id)) assert.ok(scenario.customerIds?.length && scenario.customerIds.every(id => runtimeReceipt.allowedSeedObjects.customerIds.includes(String(id))));
         priorState = await beforeWrite(context, scenario);
       }
       await actions(page, scenario.prepare);
       await Promise.all(uploadCaptures);
       if (uploadErrors.length) throw uploadErrors[0];
+      if (scenario.id === "avatar") {
+        assert.equal(avatarProposals.length, 1, "Only one actual avatar proposal from this run may be approved");
+        assert.ok(!operationKeys.has(avatarProposals[0].key)); operationKeys.add(avatarProposals[0].key);
+        const checker = config.accounts[scenario.checkerAccount];
+        assert.ok(checker && runtimeReceipt.allowedSeedObjects.usernames.includes(checker.username));
+        assert.equal(checker.username, runtimeReceipt.avatarApproval.checkerUsername);
+        assert.notEqual(checker.username, makerSession.username);
+        await page.close();
+        approvalContext = await browser.newContext({ viewport: { width: 1440, height: 1000 }, baseURL: origin });
+        page = await approvalContext.newPage();
+        await verifyRuntimeOwnership(runtimeReceipt, runtimeTarget);
+        checkerSession = businessData(await login(approvalContext, page, origin, checker)).session;
+        assertAvatarPolicy(runtimeReceipt.avatarApproval, makerSession, checkerSession);
+        await page.route("**/api/admin/**", guard);
+        assert.ok(scenario.approvalPath?.startsWith("/") && !scenario.approvalPath.startsWith("//"));
+        await page.goto(`${origin}${scenario.approvalPath}`, { waitUntil: "domcontentloaded" });
+        await actions(page, scenario.approvalPrepare);
+      }
+      const actualMutationPath = scenario.id === "avatar" ? avatarApprovePath(avatarProposals[0]) : scenario.mutation?.path;
       const mutations = [], requests = [], reads = [], commandReads = [], captures = [], captureErrors = [];
       page.on("request", request => { if (new URL(request.url()).origin === origin) requests.push({ path: new URL(request.url()).pathname, method: request.method() }); });
       if (scenario.id === "cookie") {
@@ -335,12 +380,12 @@ try {
             const body = await response.json(); businessData(body);
             commandReads.push({ path: new URL(response.url()).pathname, body });
           }
-          if (new URL(response.url()).pathname === scenario.mutation.path && request.method() === scenario.mutation.method) {
+          if (new URL(response.url()).pathname === actualMutationPath && request.method() === scenario.mutation.method) {
             assert.ok(response.status() >= 200 && response.status() < 300, "Actual mutation failed");
             const input = request.postDataJSON();
             verifyFields(input, scenario.mutation.expectedInput);
             const output = await response.json(); businessData(output);
-            mutations.push({ path: scenario.mutation.path, status: response.status(), input, key: request.headers()["idempotency-key"], output });
+            mutations.push({ path: actualMutationPath, status: response.status(), input, key: request.headers()["idempotency-key"], output, ...(scenario.id === "avatar" ? { proposal: avatarProposals[0], avatarPolicy: runtimeReceipt.avatarApproval } : {}) });
           }
         };
         const unknown = scenario.id.startsWith("unknown-");
@@ -375,7 +420,7 @@ try {
           const recovered = page.waitForResponse(response => new URL(response.url()).pathname === `/api/admin/content/support-workbench/commands/${encodeURIComponent(mutations[0]?.key)}`, { timeout: 15000 });
           await Promise.all([recovered, actions(page, scenario.recovery)]);
         } else {
-          const received = page.waitForResponse(response => new URL(response.url()).pathname === scenario.mutation.path && response.request().method() === scenario.mutation.method, { timeout: 15000 });
+          const received = page.waitForResponse(response => new URL(response.url()).pathname === actualMutationPath && response.request().method() === scenario.mutation.method, { timeout: 15000 });
           await Promise.all([received, actions(page, scenario.submit)]);
         }
         await Promise.all(captures);
@@ -404,6 +449,7 @@ try {
           while (state.counts.pending > 0 && Date.now() < deadline) { await new Promise(resolve => setTimeout(resolve, 500)); state = await currentBusinessState(context, scenario, mutation); }
         }
         validateReadback(scenario.id, state, mutation, priorState);
+        if (scenario.id === "avatar") mutation.firstAvatarRead = { id: state.id, avatarAssetId: state.avatarAssetId, avatarVersion: state.avatarVersion };
         if (scenario.id === "bulk") {
           const recipients = await getData(context, `/api/admin/content/support-workbench/bulk/${encodeURIComponent(state.batchId)}/recipients?pageNum=1&pageSize=100`);
           assert.deepEqual(recipients.records.map(row => String(row.customerId)).toSorted(), scenario.customerIds.map(String).toSorted());
@@ -430,7 +476,7 @@ try {
       if (uploadErrors.length) throw uploadErrors[0];
       await verifyRuntimeOwnership(runtimeReceipt, runtimeTarget);
       observations.push({ id: scenario.id, role: scenario.account, priorState, uploads, previews, mutations, commandReads, reads, screenshot: evidence(file), persistedAfterReload: true });
-    } finally { await context.close(); }
+    } finally { await approvalContext?.close(); await context.close(); }
   }
   Object.assign(steps[3], { status: "pass", reason: undefined, evidence: [evidence(runtimeReceiptPath), save("baseline-observations.json", { runtimeKind: "real-http-and-browser", baseUrl: origin, runtimeReceiptSha256: runtimeTarget.receiptSha256, observations })] });
 } catch (error) {

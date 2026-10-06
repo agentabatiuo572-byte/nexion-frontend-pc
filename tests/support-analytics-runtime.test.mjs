@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { businessData, assertUiBinding, assertRequestSeeds, assertResourceBindings, validateMutation, validateReadback, assertRuntimeReceipt, assertLiveFingerprint, assertBoundFile, sha256 } from "../scripts/lib/support-analytics-evidence.mjs";
+import { businessData, assertUiBinding, assertRequestSeeds, assertResourceBindings, assertAvatarPolicy, assertAvatarProposal, avatarApprovePath, validateMutation, validateReadback, assertRuntimeReceipt, assertLiveFingerprint, assertBoundFile, sha256 } from "../scripts/lib/support-analytics-evidence.mjs";
 
 const repo = resolve(import.meta.dirname, "..");
 function run(config, options = {}) {
@@ -70,13 +70,41 @@ test("shell-only evidence and copied main flow cannot sign the dock scenario", (
   assert.throws(() => assertUiBinding("unknown-dock", { root: '[data-proof="session-dock-panel"]', visible: true, submitInside: false }), /submit control/);
 });
 
-test("avatar must use this run's uploaded asset and a new persisted avatar version", () => {
-  const mutation = { path: "/api/admin/platform/accounts/7/profile", key: "avatar-key", input: { avatarAssetId: "new-avatar" }, output: { code: 0, data: { id: "7", avatarAssetId: "new-avatar", avatarVersion: 2 } } };
-  const before = { id: "7", avatarAssetId: "old-avatar", avatarVersion: 1 };
-  assert.throws(() => validateMutation("avatar", mutation, before, [], { accountIds: ["7"] }), /uploaded material/);
-  const upload = { path: "/api/admin/platform/accounts/avatar-assets", output: { code: 0, data: { assetId: "new-avatar", status: "READY" } } };
-  validateMutation("avatar", mutation, before, [upload], { accountIds: ["7"] });
-  assert.throws(() => validateReadback("avatar", before, mutation, before), /Expected values/);
+const avatarBefore = { id: "7", username: "agentb", name: "Agent B", email: "", version: "1", avatarAssetId: "old-avatar", avatarVersion: 1 };
+const avatarUpload = { path: "/api/admin/platform/accounts/avatar-assets", output: { code: 0, data: { assetId: "new-avatar", status: "READY" } } };
+const avatarPolicy = { operation: "a1_account_update_profile", accountId: "7", makerAdminId: "100", makerUsername: "maker", checkerAdminId: "101", checkerUsername: "checker", approvalPathTemplate: "/api/admin/platform/audit/operations/{currentProposalId}/approve" };
+function avatarProposal() { return { path: "/api/admin/platform/audit/operations", key: "new-proposal-key", input: { sourceDomain: "A1", type: "acct", amplifies: false, sos: false, obj: "7", command: { domain: "A", op: "a1_account_update_profile", params: { accountId: "7", username: "agentb", displayName: "Agent B", email: null, expectedVersion: "1", avatarAssetId: "new-avatar" } }, target: { domain: "A", type: "account", id: "7" } }, output: { code: 0, data: { id: "NEW-A2", obj: "7", status: "PENDING" } } }; }
+function avatarMutation() { return { path: "/api/admin/platform/audit/operations/NEW-A2/approve", key: "new-approval-key", input: { reason: "本期头像实景独立审批" }, output: { code: 0, data: { id: "NEW-A2", obj: "7", status: "APPROVED" } }, proposal: avatarProposal(), avatarPolicy }; }
+test("avatar must use actual A2 approval, this run's READY upload and a new persisted version", () => {
+  const mutation = avatarMutation();
+  assert.throws(() => validateMutation("avatar", mutation, avatarBefore, [], { accountIds: ["7"] }), /this run's READY upload/);
+  validateMutation("avatar", mutation, avatarBefore, [avatarUpload], { accountIds: ["7"] });
+  assert.throws(() => validateReadback("avatar", avatarBefore, mutation, avatarBefore));
+  validateReadback("avatar", { ...avatarBefore, avatarAssetId: "new-avatar", avatarVersion: 2 }, mutation, avatarBefore);
+  const direct = { ...mutation, proposal: undefined, path: "/api/admin/platform/accounts/7/profile" };
+  assert.throws(() => validateMutation("avatar", direct, avatarBefore, [avatarUpload], { accountIds: ["7"] }), /direct profile PATCH/);
+});
+test("avatar maker/checker must match measured sessions and actual checker authorities", () => {
+  const maker = { username: "maker", adminId: 100 }, checker = { username: "checker", adminId: 101, authorities: ["platform_a1_write", "platform_a2_operation_approve"] };
+  assertAvatarPolicy(avatarPolicy, maker, checker);
+  assert.throws(() => assertAvatarPolicy({ ...avatarPolicy, checkerAdminId: "100" }, maker, checker), /different real admins/);
+  assert.throws(() => assertAvatarPolicy(avatarPolicy, maker, { ...checker, username: "old-admin" }));
+  assert.throws(() => assertAvatarPolicy(avatarPolicy, maker, { ...checker, adminId: 102 }));
+  for (const authority of checker.authorities) assert.throws(() => assertAvatarPolicy(avatarPolicy, maker, { ...checker, authorities: [authority] }), /lacks/);
+});
+test("avatar proposal rejects unrelated operations, accounts, targets, fields and versions before creation", () => {
+  const check = proposal => assertAvatarProposal(proposal.input, avatarBefore, [avatarUpload], { accountIds: ["7"] }, avatarPolicy);
+  check(avatarProposal());
+  for (const alter of [p => p.input.command.op = "a1_account_change_role", p => p.input.command.params.accountId = "8", p => p.input.target.id = "8", p => p.input.targets = [{ domain: "A", type: "account", id: "8" }], p => p.input.command.params.role = "super", p => p.input.command.params.expectedVersion = "0", p => p.input.command.params.avatarAssetId = "old-avatar", p => p.input.command.params.username = "different-login"]) { const p = avatarProposal(); alter(p); assert.throws(() => check(p)); }
+});
+test("avatar approval cannot select an old, final, wrong-account or failed proposal", () => {
+  assert.equal(avatarApprovePath(avatarProposal()), "/api/admin/platform/audit/operations/NEW-A2/approve");
+  const final = avatarProposal(); final.output.data.status = "APPROVED"; assert.throws(() => avatarApprovePath(final));
+  const wrong = avatarProposal(); wrong.output.data.obj = "8"; assert.throws(() => avatarApprovePath(wrong));
+  for (const alter of [m => m.path = "/api/admin/platform/audit/operations/OLD-A2/approve", m => m.output.data.id = "OLD-A2", m => m.output.data.status = "REJECTED", m => m.key = m.proposal.key]) { const m = avatarMutation(); alter(m); assert.throws(() => validateMutation("avatar", m, avatarBefore, [avatarUpload], { accountIds: ["7"] })); }
+  const source = readFileSync(join(repo, "scripts/support-analytics-runtime.mjs"), "utf8");
+  assert.match(source, /currentAvatarApproval \|\| runtimeReceipt\.authorizedMutationPaths\.includes\(path\)/);
+  assert.match(source, /assertAvatarPolicy\(runtimeReceipt\.avatarApproval, makerSession, checkerSession\)/);
 });
 
 function receipt() {

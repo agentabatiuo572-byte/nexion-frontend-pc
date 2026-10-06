@@ -29,6 +29,48 @@ export function assertUiBinding(id, observed) {
   assert.equal(observed.visible, true, "The actual business surface is not visible");
   assert.equal(observed.submitInside, true, "A shell/other surface cannot stand in for this feature's submit control");
 }
+export const avatarProposalPath = "/api/admin/platform/audit/operations";
+export const avatarApprovalTemplate = `${avatarProposalPath}/{currentProposalId}/approve`;
+export function assertAvatarPolicy(policy, maker, checker) {
+  assert.ok(policy, "Root-measured avatar maker/checker authorization is required");
+  assert.equal(policy.operation, "a1_account_update_profile");
+  assert.equal(policy.approvalPathTemplate, avatarApprovalTemplate);
+  assert.ok(policy.accountId && policy.makerAdminId && policy.checkerAdminId);
+  assert.notEqual(String(policy.makerAdminId), String(policy.checkerAdminId), "Avatar maker and checker must be different real admins");
+  assert.notEqual(policy.makerUsername, policy.checkerUsername);
+  assert.equal(maker.username, policy.makerUsername); assert.equal(String(maker.adminId), String(policy.makerAdminId));
+  if (checker) {
+    assert.equal(checker.username, policy.checkerUsername); assert.equal(String(checker.adminId), String(policy.checkerAdminId));
+    for (const authority of ["platform_a1_write", "platform_a2_operation_approve"]) assert.ok(checker.authorities?.includes(authority), "Actual avatar checker lacks the real approval/business authority");
+  }
+}
+export function assertAvatarProposal(input, before, uploads, allowed, policy) {
+  assert.equal(input.sourceDomain, "A1"); assert.equal(input.type, "acct");
+  assert.equal(input.amplifies, false); assert.equal(input.sos, false);
+  assert.equal(input.command?.domain, "A"); assert.equal(input.command?.op, "a1_account_update_profile");
+  const params = input.command.params;
+  assert.equal(String(params.accountId), String(policy.accountId));
+  assert.equal(String(before.id), String(policy.accountId));
+  assert.ok(allowed.accountIds.includes(String(policy.accountId)));
+  assert.equal(String(input.obj), String(policy.accountId));
+  assert.deepEqual(input.target, { domain: "A", type: "account", id: String(policy.accountId) });
+  assert.ok(!input.targets || input.targets.length === 0, "Avatar proposal cannot contain additional targets");
+  assert.deepEqual(Object.keys(params).toSorted(), ["accountId", "avatarAssetId", "displayName", "email", "expectedVersion", "username"].toSorted(), "Avatar proposal cannot carry unrelated business fields");
+  assert.equal(String(params.expectedVersion), String(before.version));
+  assert.equal(params.username, before.username); assert.equal(params.displayName, before.name);
+  assert.equal(params.email ?? "", before.email ?? "");
+  assert.ok(params.avatarAssetId && params.avatarAssetId !== before.avatarAssetId);
+  assert.ok(uploads.some(row => row.path.endsWith("/accounts/avatar-assets") && businessData(row.output).assetId === params.avatarAssetId && businessData(row.output).status === "READY"), "Avatar proposal is not bound to this run's READY upload");
+  return params;
+}
+export function avatarApprovePath(proposal) {
+  const data = businessData(proposal.output);
+  assert.ok(typeof data.id === "string" && data.id);
+  assert.equal(String(data.status).toUpperCase(), "PENDING");
+  assert.equal(String(data.obj), String(proposal.input.command.params.accountId));
+  assert.ok(proposal.key, "Avatar proposal requires its original real command key");
+  return `${avatarProposalPath}/${encodeURIComponent(data.id)}/approve`;
+}
 export function assertRequestSeeds(path, input, previews, uploads, allowed, targetIds, completeScopeIds) {
   const permitted = ids => assert.ok(ids.every(id => allowed.customerIds.includes(String(id))), "Actual request/preview contains a customer outside the root seed");
   const exactTargets = ids => { permitted(ids); assert.deepEqual(ids.map(String).toSorted(), targetIds.map(String).toSorted(), "Actual request/preview differs from this scenario's exact targets"); };
@@ -70,13 +112,13 @@ export function validateMutation(id, mutation, before, uploads, allowed, preview
       assert.ok(uploads.some(upload => upload.path === "/api/admin/content/conversations/attachments" && businessData(upload.output).id === input.attachmentId && businessData(upload.output).state === "READY"), "Image did not use the asset uploaded in this run");
     } else assert.equal(input.kind, "TEXT");
   } else if (id === "avatar") {
-    assert.ok(allowed.accountIds.includes(String(data.id)));
-    assert.equal(String(before.id), String(data.id));
-    assert.ok(mutation.path.endsWith(`/${encodeURIComponent(String(data.id))}/profile`));
-    assert.ok(input.avatarAssetId && input.avatarAssetId !== before.avatarAssetId);
-    assert.equal(data.avatarAssetId, input.avatarAssetId);
-    assert.ok(Number(data.avatarVersion) > Number(before.avatarVersion ?? 0));
-    assert.ok(uploads.some(upload => upload.path === "/api/admin/platform/accounts/avatar-assets" && businessData(upload.output).assetId === input.avatarAssetId && businessData(upload.output).status === "READY"), "Avatar did not use this run's uploaded material");
+    assert.ok(mutation.proposal, "A direct profile PATCH cannot stand in for the real avatar A2 approval");
+    const params = assertAvatarProposal(mutation.proposal.input, before, uploads, allowed, mutation.avatarPolicy);
+    assert.equal(mutation.path, avatarApprovePath(mutation.proposal));
+    assert.equal(String(data.id), String(businessData(mutation.proposal.output).id));
+    assert.equal(String(data.status).toUpperCase(), "APPROVED");
+    assert.equal(String(data.obj), String(params.accountId));
+    assert.notEqual(mutation.key, mutation.proposal.key);
   } else if (id === "bulk") {
     assert.ok(data.batchId && !before.records.some(row => row.batchId === data.batchId));
     assert.equal(data.key, mutation.key);
@@ -120,10 +162,11 @@ export function validateReadback(id, data, mutation, before) {
     return message;
   }
   if (id === "avatar") {
-    assert.equal(String(data.id), String(output.id));
-    assert.equal(data.avatarAssetId, input.avatarAssetId);
-    assert.equal(data.avatarVersion, output.avatarVersion);
+    const params = mutation.proposal.input.command.params;
+    assert.equal(String(data.id), String(params.accountId));
+    assert.equal(data.avatarAssetId, params.avatarAssetId);
     assert.ok(Number(data.avatarVersion) > Number(before.avatarVersion ?? 0));
+    if (mutation.firstAvatarRead) assert.equal(data.avatarVersion, mutation.firstAvatarRead.avatarVersion);
   } else if (id === "bulk") {
     assert.equal(data.batchId, output.batchId);
     assert.equal(data.key, mutation.key);
