@@ -34,7 +34,7 @@ vm.runInContext(script, context);
 const run = source => vm.runInContext(source, context);
 assert.match(element('#app').innerHTML, /我的工作台/);
 run("role='supervisor'; render()");
-assert.match(element('#app').innerHTML, /客服管理台/);
+assert.match(element('#app').innerHTML, /我的分组数据/);
 assert.doesNotMatch(element('#app').innerHTML, /P90/);
 run("role='admin'; render()");
 assert.match(element('#app').innerHTML, /8,420/);
@@ -148,9 +148,12 @@ for (const count of ['326', '218', '108']) {
 run("role='supervisor'; supervisorName='林思远'; modalCustomer=null");
 assert.match(run('supervisorHome()'), /待回复客户/);
 assert.doesNotMatch(run('supervisorHome()'), /待回复会话/);
-const attention = run('supervisorHome()').split('<h2>需要关注</h2>')[1];
-const expectedWaiting = JSON.parse(run('JSON.stringify(visibleCustomers().filter(c=>c.wait>0).sort((a,b)=>b.wait-a.wait||a.uid.localeCompare(b.uid)).slice(0,3).map(c=>c.name))'));
-assert.ok(expectedWaiting.every((name, index) => index === 0 || attention.indexOf(name) > attention.indexOf(expectedWaiting[index - 1])));
+const supervisorMarkup = run('supervisorHome()');
+assert.ok(supervisorMarkup.indexOf('snapshot-heading') < supervisorMarkup.indexOf('period-panel'));
+assert.ok(supervisorMarkup.indexOf('group-scope-toolbar') < supervisorMarkup.indexOf('group-view-tabs'));
+assert.ok(supervisorMarkup.indexOf('group-view-tabs') < supervisorMarkup.indexOf('snapshot-heading'), 'View tabs are reachable before the full KPI area');
+assert.ok(supervisorMarkup.indexOf('group-view-tabs') < supervisorMarkup.indexOf('service-followup'));
+assert.match(supervisorMarkup, /data-kind="waiting" data-group="all"/);
 for (const call of ["openMetricDrill('待回复 · 等待最久优先')", "openGroupDrill('waiting','all')"]) {
   run(call);
   const body = element('#dialogBody').innerHTML;
@@ -324,6 +327,125 @@ run("openStaffForm(designAccounts.items[0].id)");
 assert.equal(run('staffDraft.manual'), true, 'Saved avatar is not rerandomized when editing gender');
 run("role='supervisor'; openStaffAccounts()");
 assert.equal(element('#dialogTitle').textContent, '无客服账号管理权限');
+
+// Data-first supervisor workspace shares scope and views with the expanded group page.
+run("role='supervisor'; supervisorName='林思远'; page='home'; currency='USDT'; selectedGroup='all'; groupTab='总览'; groupAgentFilter='all'; render()");
+assert.match(element('#app').innerHTML, /组1 · 星河组/);
+assert.match(element('#app').innerHTML, /组2 · 晨光组/);
+assert.doesNotMatch(element('#app').innerHTML, /海岚组/);
+const groupedStaffMarkup = run('groupStaffTable(selectedGroups())');
+const groupedStaffNames = [...new Set([...groupedStaffMarkup.matchAll(/data-action="staffCustomers" data-staff="([^"]+)"/g)].map(match => match[1]))];
+assert.deepEqual(groupedStaffNames, ['张晓雨', 'Mia', '王浩然', '李思琪', '陈子航'], 'Default staff order groups members by visible group order while preserving in-group order');
+assert.equal(run("openStaffCustomers('Mia')"), true);
+assert.equal(run('selectedGroup'), 'all', 'Staff to customers adds an advisor filter without changing the selected group scope');
+assert.match(element('#app').innerHTML, /顾问：Mia · 所属组：星河组/);
+run("groupTab='总览';groupAgentFilter='all';render()");
+
+assert.equal((element('#app').innerHTML.match(/<table/g) || []).length, 1, 'Overview has only the short group comparison');
+assert.doesNotMatch(element('#app').innerHTML, /data-main-list=/, 'Overview does not stack a long staff or customer list');
+assert.match(element('#app').innerHTML, /data-kind="customers" data-group="all"[^>]*>1,170/);
+run("openGroupDrill('customers','all'); setGroupScope('star')");
+assert.equal(element('#detailDialog').open, false, 'Changing group closes the old scope dialog');
+assert.match(element('#app').innerHTML, /data-kind="customers" data-group="star"[^>]*>440/);
+assert.match(element('#app').innerHTML, /data-kind="waiting" data-group="star"[^>]*>14/);
+assert.doesNotMatch(element('#app').innerHTML, /data-group="dawn"|data-group="ocean"/);
+run("groupTab='客服'; render()");
+assert.match(element('#app').innerHTML, /Mia|张晓雨/);
+assert.doesNotMatch(element('#app').innerHTML, /王浩然|周芷宁/);
+assert.equal((element('#app').innerHTML.match(/data-main-list=/g) || []).length, 1);
+assert.equal(run("openStaffCustomers('Mia')"), true);
+assert.equal(run('selectedGroup'), 'star');
+assert.equal(run('groupAgentFilter'), 'Mia');
+assert.match(element('#app').innerHTML, /data-main-list="customers"/);
+assert.doesNotMatch(element('#app').innerHTML, /data-main-list="staff"/);
+assert.match(element('#app').innerHTML, /林海/);
+assert.doesNotMatch(element('#app').innerHTML, /安宁|胡宁|何青/);
+run("groupTab='客服'; render()");
+assert.equal(run('selectedGroup'), 'star', 'Returning to staff preserves the selected group');
+assert.equal(run('groupAgentFilter'), 'Mia', 'Returning preserves the previous customer filter');
+run("setGroupScope('dawn'); groupTab='客户'; render()");
+assert.equal(run('groupAgentFilter'), 'all', 'Changing group clears a now-inapplicable advisor');
+assert.match(element('#app').innerHTML, /胡宁|何青/);
+assert.doesNotMatch(element('#app').innerHTML, /林海|Mia/);
+run("setGroupScope('all'); groupTab='总览'; render()");
+assert.match(element('#app').innerHTML, /data-kind="customers" data-group="all"[^>]*>1,170/);
+for (const scope of ['all', 'star', 'dawn']) {
+  run("setGroupScope('" + scope + "')");
+  for (const view of ['总览', '客服', '客户', '资金', '设备', '活跃']) {
+    run("groupTab='" + view + "';render()");
+    const homeBody = run('groupDataView(selectedGroups(),groupTotals(selectedGroups()))');
+    assert.ok((homeBody.match(/<table/g) || []).length <= 1, scope + '/' + view + ': at most one primary table');
+    assert.ok(run('supervisorHome()').includes(homeBody));
+    assert.ok(run('groupsHTML()').includes(homeBody), 'Home and group page reuse the same data renderer');
+    const workspace = run('supervisorHome()');
+    if (view === '总览') {
+      assert.match(workspace, /snapshot-heading/);
+      assert.match(workspace, /period-panel/);
+      if (scope !== 'all') {
+        assert.doesNotMatch(workspace, /<table/, 'A single-group overview does not repeat its KPIs as a one-row table');
+        assert.match(workspace, /查看该组客服/);
+        assert.match(workspace, /查看该组客户/);
+      }
+    } else {
+      assert.match(workspace, /group-scope-summary/);
+      assert.doesNotMatch(workspace, /class="metrics"|snapshot-heading|period-panel/, 'Detail views avoid repeating the full KPI area');
+      assert.ok(workspace.indexOf('group-view-tabs') < workspace.indexOf('group-scope-summary'));
+      assert.ok(workspace.indexOf('group-scope-summary') < workspace.indexOf(homeBody));
+    }
+
+  }
+}
+documentEvents.get('change')[0]({ target: { id: 'supervisorIdentity', value: '许安' } });
+assert.equal(run('selectedGroup'), 'all');
+assert.equal(run('groupAgentFilter'), 'all');
+assert.match(element('#app').innerHTML, /海岚组/);
+assert.doesNotMatch(element('#app').innerHTML, /星河组|晨光组|Mia|张晓雨|王浩然/);
+assert.equal(run("setGroupScope('star')"), false, 'Foreign supervisor group cannot be selected');
+assert.equal(run("openStaffCustomers('Mia')"), false);
+run("currency='NEX';groupTab='总览';render()");
+assert.match(element('#app').innerHTML, /data-kind="customers" data-group="all"[^>]*>6,790/);
+assert.match(element('#app').innerHTML, /data-kind="recharge" data-group="all"[^>]*>未提供/);
+assert.doesNotMatch(element('#app').innerHTML, /219,220|254 <span/);
+
+// Returning from a conversation preserves the data page position and filters.
+run("role='supervisor';supervisorName='林思远';selectedGroup='star';groupTab='客户';groupAgentFilter='Mia';currency='USDT';page='home';render();app.scrollTop=540;navigate('sessions','林海')");
+assert.equal(element('#app').scrollTop, 0, 'New conversation page does not inherit the data-page offset');
+run("app.scrollTop=180;navigate('home')");
+assert.equal(element('#app').scrollTop, 540, 'Returning restores the original data-page position');
+assert.equal(run('selectedGroup'), 'star');
+assert.equal(run('groupAgentFilter'), 'Mia');
+assert.equal(run('groupTab'), '客户');
+run("navigate('sessions','陈默')");
+assert.equal(element('#app').scrollTop, 0, 'A different conversation starts without restoring the prior conversation offset');
+run("navigate('home');groupCustomerPage=2;groupStaffPage=2;setDisplayCurrency('NEX')");
+assert.equal(run('groupCustomerPage'), 1, 'Changing currency returns customer results to page one');
+assert.equal(run('groupStaffPage'), 1, 'Changing currency returns staff results to page one');
+assert.equal(run('pageScrollPositions.size'), 0, 'Changing currency clears stale page positions');
+assert.equal(element('#app').scrollTop, 0);
+run("pageScrollPositions.set('home',700);setGroupScope('dawn')");
+assert.equal(run('pageScrollPositions.size'), 0, 'Changing group clears previous-scope positions');
+assert.equal(element('#app').scrollTop, 0);
+
+// Empty/loading/error retain the selected group and view without leaking stale rows.
+run("role='supervisor';supervisorName='林思远';page='home';selectedGroup='star';groupTab='客户';groupAgentFilter='all';currency='USDT'");
+for (const state of ['empty','loading','error']) {
+  run("viewState='" + state + "';render()");
+  assert.match(element('#app').innerHTML, /当前选择：星河组 · 客户/);
+  assert.match(element('#app').innerHTML, /data-group-tab="客户" class="active"/);
+  assert.match(element('#app').innerHTML, /data-group-scope="star" aria-pressed="true"/);
+  assert.doesNotMatch(element('#app').innerHTML, /data-group="dawn"|data-main-list=|class="metrics"|period-panel/, 'State pages contain no stale group business rows');
+}
+const retryStateButton = { disabled: false, dataset: { action: 'retry' }, hasAttribute: () => false };
+documentEvents.get('click')[0]({ target: { closest: () => retryStateButton } });
+assert.equal(run('viewState'), 'default');
+assert.equal(run('selectedGroup'), 'star');
+assert.equal(run('groupTab'), '客户');
+assert.match(element('#app').innerHTML, /data-main-list="customers"/);
+assert.doesNotMatch(element('#app').innerHTML, /胡宁|何青/);
+run("role='agent';page='home';viewState='error';render()");
+assert.doesNotMatch(element('#app').innerHTML, /group-scope-toolbar|group-view-tabs/, 'Unrelated state pages keep their existing layout');
+run("viewState='default';render()");
+
 const css = html.match(/<style>([\s\S]*?)<\/style>/)?.[1] || '';
 const allowedFontSizes = new Set([0, 10, 10.5, 11, 11.5, 12, 12.5, 13.5, 14, 15, 18, 20, 26, 28, 30, 48]);
 const typeScale = new Map([...css.matchAll(/(--type-[\w-]+):([\d.]+)px/g)].map(match => [match[1], Number(match[2])]));
@@ -345,5 +467,78 @@ assert.match(css, /font-family:var\(--font-v5\)/);
 assert.match(css, /button\{font-size:var\(--type-control\);font-weight:500/);
 assert.match(css, /\.metric-value,[^}]+font-variant-numeric:tabular-nums/);
 assert.doesNotMatch(css, /font-family:[^;}]*monospace/);
+assert.match(css, /\.text-button\{font:inherit;font-variant-numeric:tabular-nums;/, 'Every drill button inherits its metric, table or row typography');
+assert.match(css, /table\{[^}]*font-size:var\(--type-body\)/, 'Business table values use the 14px body size');
+assert.match(css, /\.coverage i\{[^}]*font-size:var\(--type-body-compact\)/, 'Coverage percentage is readable business data');
+assert.match(css, /\.chart-legend\{font-size:var\(--type-body-compact\)\}/, 'Chart legend uses the 13.5px business label scale');
+assert.equal(typeScale.get('--type-note'), 12.5, 'Normal notes must not use UID/time size');
+assert.equal(typeScale.get('--type-value'), 30);
+assert.equal(typeScale.get('--type-display'), 48);
+assert.match(run("groupNumber(24,'members')"), /class="text-button"/, 'Group values share the inherited drill style');
+
 assert.match(css, /input::placeholder,textarea::placeholder\{color:var\(--v5-ink3\);opacity:1\}/);
 console.log('PASS: role/currency isolation, metric drills, composer popover bounds, draft/product isolation, delivery/read states, same-ID retry, unknown query, timeout validation/local persistence, explicit photo mappings/account sample persistence, no real API calls.');
+
+// Optional browser gate: checks the actual cascade through normal role/page controls.
+if (process.argv.includes('--typography-browser')) {
+  const { chromium } = await import('@playwright/test');
+  const browser = await chromium.launch({ headless: true });
+  const browserPage = await browser.newPage();
+  const errors = [];
+  browserPage.on('pageerror', error => errors.push(error.message));
+  const reports = [];
+  try {
+    await browserPage.goto(new URL('./prototype.html', import.meta.url).href);
+    const inspect = async label => {
+      const result = await browserPage.evaluate(() => {
+        const visible = node => node.getClientRects().length > 0 && getComputedStyle(node).visibility !== 'hidden';
+        const values = (selector, expected) => [...document.querySelectorAll(selector)].filter(visible).map(node => ({
+          selector, text: node.textContent.trim().slice(0, 45), expected,
+          size: parseFloat(getComputedStyle(node).fontSize), weight: parseInt(getComputedStyle(node).fontWeight, 10)
+        }));
+        return [
+          ...values('.metric-value > .text-button,.source-card strong', 30),
+          ...values('.admin-stat > .text-button', 48),
+          ...values('table td .text-button,.detail-row > span:last-child', 14),
+          ...values('.coverage i,.chart-legend small,.trend-labels', 13.5),
+          ...values('.metric-top,.metric-foot,.note,.info-strip,.table-bottom,.rail-heading,.field-label,.sort-status,.story-caption', 12.5)
+        ];
+      });
+      for (const value of result) {
+        if (value.expected === 12.5) assert.ok(value.size >= 12.5, label + ': label too small ' + JSON.stringify(value));
+        else assert.equal(value.size, value.expected, label + ': ' + JSON.stringify(value));
+        assert.ok(value.weight <= 600, label + ': excessive weight ' + JSON.stringify(value));
+      }
+      reports.push({ label, checked: result.length });
+    };
+    const identities = [{ role: 'agent' }, { role: 'supervisor', supervisor: '林思远' }, { role: 'supervisor', supervisor: '许安' }, { role: 'admin' }];
+    const openOnly = new Set(['drill','groupDrill','profile','funds','devices','accounts','coverage','supervisors','first','invites','maintenance','tickets','history','risk','timeout','staffAccounts','manageGroups','groupExport','export','attribution','note','tags','password','account']);
+    for (const width of [1920, 1440, 1000]) {
+      await browserPage.setViewportSize({ width, height: 1000 });
+      for (const identity of identities) {
+        await browserPage.locator('#role').selectOption(identity.role);
+        if (identity.supervisor) await browserPage.locator('#supervisorIdentity').selectOption(identity.supervisor);
+        for (const destination of ['home','clients','sessions','groups','rules'].filter(value => value !== 'groups' || identity.role !== 'agent')) {
+          await browserPage.locator('.primary-nav [data-page="' + destination + '"]').click();
+          const label = width + '/' + identity.role + '/' + (identity.supervisor || '') + '/' + destination;
+          await inspect(label);
+          if (width !== 1440) continue;
+          const buttons = browserPage.locator('#app [data-action]');
+          const seen = new Set();
+          for (let i = 0; i < await buttons.count(); i++) {
+            const button = buttons.nth(i), action = await button.getAttribute('data-action');
+            if (!openOnly.has(action) || seen.has(action) || !await button.isVisible() || !await button.isEnabled()) continue;
+            seen.add(action);
+            await button.click();
+            if (await browserPage.locator('#detailDialog').isVisible()) {
+              await inspect(label + '/dialog:' + action);
+              await browserPage.keyboard.press('Escape');
+            }
+          }
+        }
+      }
+    }
+    assert.deepEqual(errors, [], 'No browser errors during typography traversal');
+    console.log('PASS browser typography: ' + reports.length + ' page/dialog views, ' + reports.reduce((sum, report) => sum + report.checked, 0) + ' actual computed sizes checked.');
+  } finally { await browser.close(); }
+}

@@ -1,0 +1,512 @@
+{
+  "prototypeSha256": "E3852BFD0478E14D13E2886B8BB22EA2990F196260336EB393F1955627FCE19C",
+  "viewports": [
+    {
+      "width": 1415,
+      "height": 1220
+    },
+    {
+      "width": 1000,
+      "height": 900
+    }
+  ],
+  "pages": [
+    {
+      "label": "普通客服 · Mia/工作台",
+      "heading": "我的工作台",
+      "maxWeight": 600,
+      "metrics": [],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [
+        "14px"
+      ],
+      "tables": 1
+    },
+    {
+      "label": "普通客服 · Mia/客户列表",
+      "heading": "我的客户",
+      "maxWeight": 600,
+      "metrics": [],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [
+        "14px"
+      ],
+      "tables": 1
+    },
+    {
+      "label": "普通客服 · Mia/即时会话 ·",
+      "heading": "即时会话台",
+      "maxWeight": 600,
+      "metrics": [],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [],
+      "tables": 0
+    },
+    {
+      "label": "普通客服 · Mia/服务规则",
+      "heading": "服务规则",
+      "maxWeight": 600,
+      "metrics": [],
+      "notes": [],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [],
+      "tables": 0
+    },
+    {
+      "label": "主管/工作台",
+      "heading": "我的分组数据",
+      "maxWeight": 600,
+      "metrics": [
+        "30px",
+        "30px",
+        "30px",
+        "30px",
+        "30px",
+        "30px",
+        "30px"
+      ],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [
+        "14px"
+      ],
+      "tables": 1
+    },
+    {
+      "label": "主管/客户列表",
+      "heading": "客户列表",
+      "maxWeight": 600,
+      "metrics": [],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [
+        "14px"
+      ],
+      "tables": 1
+    },
+    {
+      "label": "主管/即时会话 ·",
+      "heading": "即时会话台",
+      "maxWeight": 600,
+      "metrics": [],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [],
+      "tables": 0
+    },
+    {
+      "label": "主管/服务规则",
+      "heading": "服务规则",
+      "maxWeight": 600,
+      "metrics": [],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [],
+      "tables": 0
+    },
+    {
+      "label": "总管理员 · Admin/工作台",
+      "heading": "全平台运营总览",
+      "maxWeight": 600,
+      "metrics": [
+        "30px",
+        "30px"
+      ],
+      "notes": [
+        "12.5px",
+        "13.5px"
+      ],
+      "overflow": false,
+      "stats": [
+        "48px",
+        "48px"
+      ],
+      "tableFonts": [
+        "14px"
+      ],
+      "tables": 1
+    },
+    {
+      "label": "总管理员 · Admin/客户列表",
+      "heading": "客户列表",
+      "maxWeight": 600,
+      "metrics": [],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [
+        "14px"
+      ],
+      "tables": 1
+    },
+    {
+      "label": "总管理员 · Admin/即时会话 ·",
+      "heading": "即时会话台",
+      "maxWeight": 600,
+      "metrics": [],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [],
+      "tables": 0
+    },
+    {
+      "label": "总管理员 · Admin/服务规则",
+      "heading": "服务规则",
+      "maxWeight": 600,
+      "metrics": [],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [],
+      "tables": 0
+    },
+    {
+      "label": "林思远/总览",
+      "heading": "我的分组数据",
+      "maxWeight": 600,
+      "metrics": [
+        "30px",
+        "30px",
+        "30px",
+        "30px",
+        "30px",
+        "30px",
+        "30px"
+      ],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [
+        "14px"
+      ],
+      "tables": 1
+    },
+    {
+      "label": "林思远/客服",
+      "heading": "我的分组数据",
+      "maxWeight": 600,
+      "metrics": [],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [
+        "14px"
+      ],
+      "tables": 1
+    },
+    {
+      "label": "林思远/客户",
+      "heading": "我的分组数据",
+      "maxWeight": 600,
+      "metrics": [],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [
+        "14px"
+      ],
+      "tables": 1
+    },
+    {
+      "label": "林思远/资金",
+      "heading": "我的分组数据",
+      "maxWeight": 600,
+      "metrics": [],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [
+        "14px"
+      ],
+      "tables": 1
+    },
+    {
+      "label": "林思远/设备",
+      "heading": "我的分组数据",
+      "maxWeight": 600,
+      "metrics": [],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [],
+      "tables": 0
+    },
+    {
+      "label": "林思远/活跃",
+      "heading": "我的分组数据",
+      "maxWeight": 600,
+      "metrics": [],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [],
+      "tables": 0
+    },
+    {
+      "label": "许安/总览",
+      "heading": "我的分组数据",
+      "maxWeight": 600,
+      "metrics": [
+        "30px",
+        "30px",
+        "30px",
+        "30px",
+        "30px",
+        "30px",
+        "30px"
+      ],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [
+        "14px"
+      ],
+      "tables": 1
+    },
+    {
+      "label": "许安/客服",
+      "heading": "我的分组数据",
+      "maxWeight": 600,
+      "metrics": [],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [
+        "14px"
+      ],
+      "tables": 1
+    },
+    {
+      "label": "许安/客户",
+      "heading": "我的分组数据",
+      "maxWeight": 600,
+      "metrics": [],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [
+        "14px"
+      ],
+      "tables": 1
+    },
+    {
+      "label": "许安/资金",
+      "heading": "我的分组数据",
+      "maxWeight": 600,
+      "metrics": [],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [
+        "14px"
+      ],
+      "tables": 1
+    },
+    {
+      "label": "许安/设备",
+      "heading": "我的分组数据",
+      "maxWeight": 600,
+      "metrics": [],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [],
+      "tables": 0
+    },
+    {
+      "label": "许安/活跃",
+      "heading": "我的分组数据",
+      "maxWeight": 600,
+      "metrics": [],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [],
+      "tables": 0
+    },
+    {
+      "label": "林思远/星河总览",
+      "heading": "我的分组数据",
+      "maxWeight": 600,
+      "metrics": [
+        "30px",
+        "30px",
+        "30px",
+        "30px",
+        "30px",
+        "30px",
+        "30px"
+      ],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [],
+      "tables": 0
+    },
+    {
+      "label": "林思远/分组看板",
+      "heading": "我的客服分组",
+      "maxWeight": 600,
+      "metrics": [
+        "30px",
+        "30px",
+        "30px",
+        "30px",
+        "30px",
+        "30px",
+        "30px"
+      ],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [],
+      "tables": 0
+    },
+    {
+      "label": "总管/分组看板",
+      "heading": "全部分组数据",
+      "maxWeight": 600,
+      "metrics": [
+        "30px",
+        "30px",
+        "30px",
+        "30px",
+        "30px",
+        "30px",
+        "30px"
+      ],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [
+        "14px"
+      ],
+      "tables": 1
+    },
+    {
+      "label": "1000/主管客服",
+      "heading": "我的分组数据",
+      "maxWeight": 600,
+      "metrics": [],
+      "notes": [
+        "12.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [
+        "14px"
+      ],
+      "tables": 1
+    },
+    {
+      "label": "1000/M3推荐商品",
+      "heading": "即时会话台",
+      "maxWeight": 600,
+      "metrics": [],
+      "notes": [
+        "12.5px",
+        "13.5px"
+      ],
+      "overflow": false,
+      "stats": [],
+      "tableFonts": [],
+      "tables": 0
+    }
+  ],
+  "scopedStates": [
+    {
+      "state": "空",
+      "scope": "true",
+      "text": "SUPPORT CENTER / SUPERVISOR\n我的分组数据\n\n当前选择：星河组 · 客户 · 林思远负责的组 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n全部\n组1 · 星河组\n组2 · 晨光组\n管理分组\n导出预览\n总览\n客服\n客户\n资金\n设备\n活跃\n○\n当前范围暂无记录\n\n已保留角色与筛选范围。没有记录不代表其他范围也为空。\n\n返回默认演示"
+    },
+    {
+      "state": "加载",
+      "scope": "true",
+      "text": "SUPPORT CENTER / SUPERVISOR\n我的分组数据\n\n当前选择：星河组 · 客户 · 林思远负责的组 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n全部\n组1 · 星河组\n组2 · 晨光组\n管理分组\n导出预览\n总览\n客服\n客户\n资金\n设备\n活跃\n◌\n正在读取当前范围\n\n加载演示：数值保持占位，未知数据不会显示成 0。\n\n返回默认演示"
+    },
+    {
+      "state": "失败",
+      "scope": "true",
+      "text": "SUPPORT CENTER / SUPERVISOR\n我的分组数据\n\n当前选择：星河组 · 客户 · 林思远负责的组 · 设计状态演示\n\n截至 2026-10-06 10:30 · Asia/Tokyo\n本月\n今日\n昨日\n近7天\n近30天\n自定义\nUSDT\nNEX\n口径说明 ⓘ\n全部\n组1 · 星河组\n组2 · 晨光组\n管理分组\n导出预览\n总览\n客服\n客户\n资金\n设备\n活跃\n!\n暂时无法读取数据\n\n失败演示：此处不是无客户或未首充。重试保留当前角色、页面及筛选。\n\n重试读取"
+    }
+  ],
+  "interactions": {
+    "currencyPageBeforeFix": "2 / 2",
+    "currencyPageAfterFix": "1 / 2",
+    "scrollReturn": {
+      "before": 114,
+      "after": 114
+    },
+    "staffFilterKeepsAll": true,
+    "scopeClearsInvalidStaff": true,
+    "profileEscFocus": "资料",
+    "templateSearchEnterDoesNotSend": true,
+    "templateAppendsDraft": true,
+    "m3PhotoCount": 12,
+    "m3BrokenPhotos": 0
+  },
+  "logs": [],
+  "limits": "Static design only; no product API, authorization or persistence acceptance."
+}
