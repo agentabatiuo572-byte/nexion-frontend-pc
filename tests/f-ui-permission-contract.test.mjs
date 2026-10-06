@@ -72,6 +72,6 @@ test("F5 异常阈值、补发、冲正与暂停使用对应后端 authority", (
 
 test("F5 单笔冻结/提前解锁/解冻按状态渲染且全部挂处置 authority(合并底账 §二#4 恢复)", () => {
   assert.match(f5, /\{canDispose && row\.status === "cooling" && <button[^>]+onClick=\{\(\) => dispose\("freeze", row\)\}/);
-  assert.match(f5, /\{canDispose && row\.status === "cooling" && <button[^>]+onClick=\{\(\) => dispose\("unlock", row\)\}/);
+  assert.match(f5, /\{canDispose && row\.status === "cooling" && !directGroup\(row\) && <button[^>]+onClick=\{\(\) => dispose\("unlock", row\)\}/);
   assert.match(f5, /\{canDispose && row\.status === "frozen" && <button[^>]+onClick=\{\(\) => dispose\("unfreeze", row\)\}/);
 });

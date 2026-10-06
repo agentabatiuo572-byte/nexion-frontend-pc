@@ -150,12 +150,55 @@ export function assertF1Overview(value: unknown): asserts value is JsonRecord {
 export function assertF2Overview(value: unknown): asserts value is JsonRecord {
   const row = record(value, "F2");
   domain(row, "F2");
-  array(row, "metrics", "F2");
+  const stringFields = (item: JsonRecord, fields: string[], path: string) => {
+    for (const field of fields) {
+      if (item[field] !== undefined && typeof item[field] !== "string") invalid("F2", `${path}.${field}`);
+    }
+  };
+  const booleanFields = (item: JsonRecord, fields: string[], path: string) => {
+    for (const field of fields) {
+      const value = item[field];
+      if (value !== undefined && typeof value !== "boolean"
+          && !(typeof value === "string" && ["true", "false", "1", "0", "on", "off"].includes(value.trim().toLowerCase()))) invalid("F2", `${path}.${field}`);
+    }
+  };
+  array(row, "metrics", "F2").forEach((value, index) => {
+    const path = `metrics[${index}]`;
+    const metric = record(value, "F2", path);
+    for (const field of ["id", "label", "value"]) text(metric[field], "F2", `${path}.${field}`);
+    stringFields(metric, ["sub", "tone", "configKey"], path);
+  });
   const rates = array(row, "unilevelRates", "F2");
-  uniqueCodes(rates, "F2", "unilevelRates", Array.from({ length: 7 }, (_, index) => `L${index + 1}`), "level");
-  array(row, "rateTiers", "F2");
-  array(row, "policyParams", "F2");
+  // 退役后允许显式空历史；有历史时仍须完整，不能把缺失费率归零。
+  if (rates.length) uniqueCodes(rates, "F2", "unilevelRates", Array.from({ length: 7 }, (_, index) => `L${index + 1}`), "level");
+  rates.forEach((value, index) => {
+    const path = `unilevelRates[${index}]`;
+    const rate = record(value, "F2", path);
+    nonNegative(rate.usdtPct, "F2", `${path}.usdtPct`);
+    nonNegative(rate.nexReward, "F2", `${path}.nexReward`);
+    stringFields(rate, ["label", "configKey", "nexConfigKey"], path);
+    booleanFields(rate, ["direct"], path);
+  });
+  array(row, "rateTiers", "F2").forEach((value, index) => {
+    const path = `rateTiers[${index}]`;
+    const tier = record(value, "F2", path);
+    for (const field of ["name", "requirement", "distribution"]) text(tier[field], "F2", `${path}.${field}`);
+    if (typeof tier.rate !== "string" || !tier.rate.trim()) nonNegative(tier.ratePct, "F2", `${path}.ratePct`);
+    stringFields(tier, ["rate", "className", "configKey"], path);
+  });
+  array(row, "policyParams", "F2").forEach((value, index) => {
+    const path = `policyParams[${index}]`;
+    const param = record(value, "F2", path);
+    for (const field of ["id", "name", "key"]) text(param[field], "F2", `${path}.${field}`);
+    if (typeof param.value !== "string") invalid("F2", `${path}.value`);
+    stringFields(param, ["defaultValue", "viewClass", "sub", "unit"], path);
+    booleanFields(param, ["amplifies", "visualAmplify"], path);
+  });
   common(row, "F2");
+  Object.entries(row.configValues as JsonRecord).forEach(([key, value]) => {
+    if (typeof value !== "string") invalid("F2", `configValues.${key}`);
+  });
+  (row.guardrails as unknown[]).forEach((value, index) => text(value, "F2", `guardrails[${index}]`));
 }
 
 export function assertF3Overview(value: unknown): asserts value is JsonRecord {

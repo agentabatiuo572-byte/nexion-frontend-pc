@@ -13,7 +13,7 @@ export const DOMAIN_F: ModuleEntry[] = [
   },
   {
     path: "/network/royalty",
-    summary: "分别设置直属购买与直属设备收益分成的总比例、USDT/NEX 拆分与冷却期，两组规则一次提交审批。平台额外支付，成员原收益不减少；其他独立奖励保持各自规则。",
+    summary: "配置直属购买与直属设备收益双币分成，管理独立权益档门槛及其他奖励冷却期，并查看旧网络版税配置。直属两组规则一次提交审批；平台额外支付，成员原收益不减少。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

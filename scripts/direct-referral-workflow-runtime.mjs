@@ -28,6 +28,7 @@ const groups = {
   'pc-ledger': ['F5-new-groups-and-history'],
   'pc-legacy': ['preserved-/network/v-rank', 'preserved-/network/binary', 'preserved-/network/leadership-pool'],
   'pc-usability': ['F2-readonly', 'F2-keyboard-accessibility'],
+  'pc-history': ['F2-legacy-empty-independent', 'F2-legacy-readonly-isolated'],
 };
 const steps = Object.entries(groups).map(([id, required]) => {
   const found = required.map(name => { const step = proof.steps.find(item => item.id === name); assert(step, `Missing ${name}`); return step; });

@@ -17,7 +17,7 @@ const check = (id, evidence) => report.steps.push({ id, status: "passed", eviden
 const copy = value => structuredClone(value);
 const disabled = () => ({ enabled: false, totalRatePct: 0, usdtSharePct: 50, coolingDays: 0 });
 let policy = { source: "server", serverCanonical: true, sourceEnvironment: "SANDBOX", runId: "direct-referral-runtime", configured: false, policyVersion: 0, effectiveAt: null, nexUsdtPrice: 0.01, purchase: disabled(), deviceEarning: disabled() };
-let policyError = false, slowPolicy = false, readonly = false, reviewer = false, coverage = 150;
+let policyError = false, slowPolicy = false, readonly = false, reviewer = false, coverage = 150, emptyLegacy = true, legacyError = false;
 const proposals = [], histories = [];
 const common = () => ({ commissionPolicy: {}, guardrails: [], configValues: {}, sources: ["server"], coverage: { coverageRatio: coverage, redlinePct: 100 } });
 const kinds = ["network", "binary", "peer", "cultivation", "leadership", "genesis", "direct_purchase", "direct_device_earning"];
@@ -47,7 +47,7 @@ async function install(context) {
       if (slowPolicy) await new Promise(resolve => setTimeout(resolve, 800));
       return policyError ? error(503, "TEAMS_BACKEND_UNAVAILABLE") : ok(policy);
     }
-    if (p.endsWith("/teams/rates")) return ok({ domain: "F2", ...common(), metrics: [], unilevelRates: Array.from({ length: 7 }, (_, i) => ({ level: `L${i + 1}`, usdtRatePct: i ? 0 : 10, nexPerUsd: 0 })), rateTiers: [], policyParams: [{ id: "cool", key: "F.cooldown", name: "其他奖励冷却", value: "30", defaultValue: "30", unit: "天", amplifies: true }], configValues: { "F.cooldown": "30", "F.partner.tiers": '{"standard":0,"verified":5000,"premium":50000,"diamond":500000}' } });
+    if (p.endsWith("/teams/rates")) return legacyError ? error(503, "TEAMS_BACKEND_UNAVAILABLE") : ok({ domain: "F2", ...common(), metrics: [], unilevelRates: emptyLegacy ? [] : Array.from({ length: 7 }, (_, i) => ({ level: `L${i + 1}`, usdtPct: 7 - i, nexReward: i + 1 })), rateTiers: [], policyParams: [{ id: "cool", key: "F.cooldown", name: "其他奖励冷却", value: emptyLegacy ? "" : "30", defaultValue: "30", unit: "天", amplifies: true }], configValues: emptyLegacy ? {} : { "F.cooldown": "30", "F.partner.tiers": '{"standard":0,"verified":5000,"premium":50000,"diamond":500000}' } });
     if (p.endsWith("/teams/commissions")) return ok(f5(url));
     if (p.endsWith("/platform/audit/reason-policy")) return ok({ minChars: 8, maxChars: 200, sourceKey: "admin.a2.reason_min_chars" });
     if (p.endsWith("/platform/audit/overview")) return ok(a2());
@@ -69,7 +69,7 @@ async function install(context) {
       policy = { ...policy, configured: true, policyVersion: policy.policyVersion + 1, effectiveAt: new Date().toISOString(), purchase: copy(params.purchase), deviceEarning: copy(params.deviceEarning) };
       ticket.status = "approved"; histories.push({ id: ticket.id, action: ticket.action, st: "approved", chain: "隔离审批", t: "10-05 12:00", note: body.reason }); return ok(ticket);
     }
-    if (p.endsWith("/teams/ranks")) return ok({ domain: "F1", ...common(), vrankRows: Array.from({ length: 13 }, (_, i) => ({ v: `V${i}`, label: `等级 ${i}`, pop: 0, rewards: [] })), rewards: {}, voucherOptions: [], voucherLabels: {}, skuOptions: [], skuLabels: {}, leadership: {} });
+    if (p.endsWith("/teams/ranks")) return ok({ domain: "F1", ...common(), vrankRows: Array.from({ length: 13 }, (_, i) => ({ v: `V${i}`, label: `等级 ${i}`, pop: 0, rewards: [] })), rewards: {}, voucherOptions: [], voucherLabels: {}, skuOptions: [], skuLabels: {}, leadership: { ranks: [] } });
     if (p.endsWith("/teams/binary")) return ok({ domain: "F3", ...common(), metrics: [], formula: {}, settlements: [], dailyCap: {}, config: {}, maxTrackGmv: 0, participantCount: 0, blockedCount: 0, monthlyMatchedUsd: 0, autoPlacement7dCount: 0, dailyMatchUsd: 0 });
     if (p.endsWith("/teams/leadership-pool")) return ok({ domain: "F4", ...common(), metrics: [], quotaRows: [], ambassadorBands: [], podium: [], voteWeights: [{ v: "V3", votes: 1 }], config: {} });
     if (p.endsWith("/promotion-log") || p.endsWith("/reward-payouts")) return ok({ items: [], total: 0, nextCursor: "", limit: 100 });
@@ -84,7 +84,7 @@ await new Promise(resolve => probe.close(resolve));
 report.source.url = `http://127.0.0.1:${port}`;
 const log = fs.createWriteStream(path.join(dir, "next-runtime.log"));
 try {
-  app = spawn(process.execPath, [path.join(root, "node_modules/next/dist/bin/next"), "dev", "--hostname", "127.0.0.1", "--port", String(port)], { cwd: root, windowsHide: true, env: { ...process.env, NEXT_DIST_DIR: ".next", NEXION_BACKEND_URL: "http://127.0.0.1:1" }, stdio: ["ignore", "pipe", "pipe"] });
+  app = spawn(process.execPath, [path.join(root, "node_modules/next/dist/bin/next"), "dev", "--hostname", "127.0.0.1", "--port", String(port)], { cwd: root, windowsHide: true, env: { ...process.env, NEXT_DIST_DIR: process.env.NEXT_DIST_DIR || ".next", NEXION_BACKEND_URL: "http://127.0.0.1:1" }, stdio: ["ignore", "pipe", "pipe"] });
   app.stdout.pipe(log); app.stderr.pipe(log);
   await new Promise((resolve, reject) => { const timer = setTimeout(() => reject(new Error("Next startup timeout")), 120000); const listen = data => { if (data.toString().includes("Ready")) { clearTimeout(timer); resolve(); } }; app.stdout.on("data", listen); app.on("exit", code => { clearTimeout(timer); reject(new Error(`Next exited ${code}`)); }); });
   browser = await chromium.launch({ headless: true });
@@ -100,6 +100,37 @@ try {
   await expect(page.getByLabel("直属分成配置加载中")).toBeVisible();
   await expect(page.getByText("未配置，尚未启用。", { exact: false })).toBeVisible();
   check("F2-loading-empty", [await shot("f2-empty"), "disabled canonical placeholder was read over fixture HTTP"]);
+  const historyPane = page.locator("section.pane").filter({ hasText: "历史网络版税" });
+  await expect(historyPane).toContainText("暂无历史 L1–L7 费率数据");
+  await expect(historyPane.getByRole("button")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "配置权益门槛", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "配置冷却期", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "配置权益门槛", exact: true }).click();
+  const emptyPartnerDialog = page.getByRole("dialog");
+  for (const label of ["Standard", "Verified", "Premium", "Diamond"]) await expect(emptyPartnerDialog.getByLabel(label + " 门槛(USD)", { exact: false })).toHaveValue("");
+  await emptyPartnerDialog.getByLabel(/操作理由/).fill("验证未配置门槛不误提交零值");
+  await expect(emptyPartnerDialog.getByRole("button", { name: "确认提交", exact: true })).toBeDisabled();
+  await emptyPartnerDialog.getByRole("button", { name: "取消", exact: true }).click();
+  await page.getByRole("button", { name: "配置冷却期", exact: false }).click();
+  const emptyCoolingDialog = page.getByRole("dialog");
+  await expect(emptyCoolingDialog.getByLabel("目标新值", { exact: false })).toHaveValue("");
+  await emptyCoolingDialog.getByLabel(/操作理由/).fill("验证未配置冷却不误提交零天");
+  await expect(emptyCoolingDialog.getByRole("button", { name: "确认提交", exact: true })).toBeDisabled();
+  await emptyCoolingDialog.getByLabel("目标新值", { exact: false }).fill("0");
+  await expect(emptyCoolingDialog.getByRole("button", { name: "确认提交", exact: true })).toBeEnabled();
+  await emptyCoolingDialog.getByRole("button", { name: "取消", exact: true }).click();
+  assert.equal(proposals.length, 0);
+  check("F2-legacy-empty-independent", [await shot("f2-history-empty"), "empty seven-layer history renders as empty; independent configuration is available with blank values, no fabricated thresholds or cooling period; cancelled without mutation"]);
+  legacyError = true; await page.reload();
+  await expect(page.getByRole("alert").filter({ hasText: "历史网络版税快照加载失败" })).toBeVisible();
+  await expect(page.getByLabel("直属购买分成启用状态")).toBeEnabled();
+  legacyError = false; emptyLegacy = false; await page.reload();
+  await expect(historyPane.locator(".casc-row")).toHaveCount(7);
+  await expect(historyPane.locator(".casc-row").first()).toContainText("7% USDT");
+  await expect(historyPane.getByRole("button")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "调整权益门槛", exact: true })).toBeVisible();
+  await page.reload(); await expect(historyPane.locator(".casc-row")).toHaveCount(7);
+  check("F2-legacy-readonly-isolated", [await shot("f2-history-readonly"), "real contract field names usdtPct/nexReward render all seven rows after reload; L1 is read from snapshot rather than fixed 10%; no historical write controls; legacy read failure leaves direct form usable"]);
   slowPolicy = false; policyError = true;
   await page.getByRole("button", { name: "重新读取", exact: true }).click();
   await expect(page.getByRole("alert").filter({ hasText: "草稿已保留" })).toBeVisible();
@@ -196,14 +227,13 @@ try {
   await expect(directRow).toContainText("60 USDT + 4000 NEX");
   await shot("f5-direct-group");
   await expect(directRow.getByRole("checkbox")).toBeDisabled();
-  await directRow.getByRole("button", { name: "提前解锁", exact: true }).click();
-  dialog = page.getByRole("dialog"); await expect(dialog).toContainText("整组处理"); await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(directRow.getByRole("button", { name: "提前解锁", exact: true })).toHaveCount(0);
   await page.getByLabel("佣金类型").selectOption("direct_device_earning");
   await page.getByRole("button", { name: "服务端筛选", exact: true }).click();
   await expect(page.locator("tr").filter({ hasText: "CM-103" })).toBeVisible();
   await page.getByLabel("佣金类型").selectOption("network"); await page.getByRole("button", { name: "服务端筛选", exact: true }).click();
   await expect(page.locator("tr").filter({ hasText: "CM-101" })).toBeVisible();
-  check("F5-new-groups-and-history", [await shot("f5-history"), "eight filters, two direct kinds, group snapshot, legacy history, single-coin action presents entire group, reissue disabled"]);
+  check("F5-new-groups-and-history", [await shot("f5-history"), "eight filters, two direct kinds, group snapshot, legacy history, direct cooling cannot be unlocked early or reissued"]);
   for (const [route, text] of [["/network/v-rank", "V-Rank"], ["/network/binary", "双轨"], ["/network/leadership-pool", "领导"]]) {
     await open(route); await expect(page).toHaveURL(report.source.url + route); await expect(page.locator("body")).toContainText(text); check(`preserved-${route}`, [await shot(route.split("/").pop()), "existing route remains rendered and reachable"]);
   }

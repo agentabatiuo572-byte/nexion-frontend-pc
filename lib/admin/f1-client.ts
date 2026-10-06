@@ -1169,7 +1169,7 @@ function normalizeF2Overview(data: BackendF2Overview | null | undefined): F2Rate
       id: asText(item.id, "param"),
       name: asText(item.name, "参数"),
       key: asText(item.key, ""),
-      value: asText(item.value, fallback),
+      value: asText(item.value, ""),
       def: fallback,
       vcls: asText(item.viewClass, ""),
       sub: asText(item.sub, ""),

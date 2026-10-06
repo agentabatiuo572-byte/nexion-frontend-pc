@@ -1,5 +1,7 @@
 # Nexion 运营控制后台 — 开发落地规格(Dev-Ready Spec)
 
+**最后更新：2026-10-06**
+
 > **2026-08-07 后发裁定**：全项目已取消 KYC 与钱包配对。C4、K5、相关 API、字段、参数、菜单、权限和资金门禁均退出当前规格；提现改为用户按网络直管收款地址。历史 PRD 中的相关描述仅作归档，不得实现或恢复。具体以 `specs-snapshot-20260807/FEAT-KYC-RM01-remove-kyc-and-pairing.md` 为准。
 
 > **本文件是什么**:从 4 卷需求 PRD(`Nexion_运营控制后台PRD_v1~v4.md`,共 17 章 70 个核心子模块 7000+ 行)提炼，并持续吸收已验收高保真增量的**开发落地契约速查**。需求 PRD 回答「为什么做、业务背景」;本文件回答「建什么表、实现什么接口、配什么参数、状态怎么流转、谁能操作」——开发按本文件即可落地,业务背景再查原 PRD 对应 §锚点。
@@ -85,7 +87,7 @@
 - 业务规则前置失败 → **400 / 422**;状态机非法转移 → **409**。
 - 高敏写 `reason` 缺失 → **400 `REASON_REQUIRED`**(确认弹窗理由必填,server 强制非空,8–200 字)。
 - **放大资金流出方向**(上调 APY/费率/奖励/排放率/匹配比/cap、下调罚款/冷却/积分门、kill 恢复)提交时 server 前置核 **B1 覆盖率红线**,低于 `coverageRedLine`(默认 100%)**统一拒绝返 422**(✅ PM 2026-06-02;旧文 403 已废)。
-- 互锁校验:覆盖率 `yellow>red` / 挤兑 `bankrunRed>bankrunYellow` / K4 六维权重和=1 / staking APY 跨档保序 / E3 产能分段保序与换新阶梯严格保序 / V_RANKS 门槛保序 / Lucky 概率和≤100% / 转盘各档 weight 和=100 且档位∈[2,12] / 里程碑阈值保序 / UNILEVEL_USDT 各层和≤25%。
+- 互锁校验:覆盖率 `yellow>red` / 挤兑 `bankrunRed>bankrunYellow` / K4 六维权重和=1 / staking APY 跨档保序 / E3 产能分段保序与换新阶梯严格保序 / V_RANKS 门槛保序 / Lucky 概率和≤100% / 转盘各档 weight 和=100 且档位∈[2,12] / 里程碑阈值保序。旧 UNILEVEL_USDT 各层和护栏仅属历史契约，不应用于新直属政策。
 
 ### 0.6 ID 全 server mint
 `withdrawalNo / topupId / orderId / billId / commissionId / 通知 id / Genesis tokenId` 全部 server 单源生成,client 不可 mint / 枚举 / 撞 ID(§9.11d.2)。
@@ -97,7 +99,7 @@
 `chargeFailRate`(H2)server-only,前端永不可知;所有 RNG(签到 Lucky 倍率 / Spin 转盘 / 分红概率)一律 **server 裁决 + NODE_ENV guard**(生产剥离 client `Math.random`)。
 
 ### 0.9 同名不同域参数辨析(易混淆,严禁混用)
-- **提现冷却** `withdrawCooldownDays`(D5 生效面,权威 H1 Phase 派发,30/35/45d)≠ **试用再次冷却** H2 `cooldownDays`(30d 固定)≠ **佣金冷却** `commission/cooling-days`(F2,30d,权威归属待定见第7章 #5)。
+- **提现冷却** `withdrawCooldownDays`(D5 生效面,权威 H1 Phase 派发,30/35/45d)≠ **试用再次冷却** H2 `cooldownDays`(30d 固定)≠ **其他奖励冷却** `commission/cooling-days` / `F.cooldown`(F2 既有配置,最终域归属见第7章 #5)≠ **直属两类冷却**(F2 `purchase.coolingDays` / `deviceEarning.coolingDays`)；不可共享默认或覆盖旧快照。
 - **大额 $1,000** 两处独立、权威分属、可独立调:**D2** 大额人工审核触发线(后台静态,执行门槛升为财务 lead/超管)/ **K3** `largeAmountUsdt`(提现路由结论)。
 - **拐点**:`binaryDailyCap` 在月 **7**(非月 6);`withdrawCooldownDays` 月 **8=35d** 中间档(前端缺,须新增)。
 
@@ -153,7 +155,7 @@
 | E5 | 设备运维 | fleet heartbeat 监控/批量操作/库存激活/强制激活解绑 | E 设备 | V2·Ch10 | §6.1 / §11.1 / §9.11d.2 |
 | E6 | 算力与设备配置 | PC 算力备用模块入口开关、在线系数、显卡档位映射、下载内容配置 | E 设备 | V2·Ch10 | 三端改造 SPEC-0~2 |
 | F1 | V-Rank 晋升管理 | 13 阶 V 级门槛/server 晋升判定/实物奖发货/培育奖 | F 分销 | V2·Ch11 | §8.2 / §13.2 / 节奏表§6.3 |
-| F2 | 网络版税费率 | L1–L7 费率/Partner Status 权益/InfluenceScore/佣金冷却 | F 分销 | V2·Ch11 | §8.3 / §13.3 / §9.11c.1 |
+| F2 | 网络版税与分成 | 两类直属双币政策整组审批；独立 Partner Status 权益/其他奖励冷却；旧 L1–L7 历史只读，空历史合法 | F 分销 | V2·Ch11 | v2 F2 / F5 / A2 / B1 |
 | F3 | 双轨结算引擎 | 较小侧匹配比例/两轨门槛/自动分配/月度 GV 归零(日封顶只读) | F 分销 | V2·Ch11 | §8.4 / §13.4.1 / 节奏表§6.4 |
 | F4 | 领导奖池 | 周注入比例/V_VOTES 票数权重/周结算(V3+ 头部分享) | F 分销 | V2·Ch11 | §8.5 |
 | F5 | 佣金事件审计 | 六类佣金统一流水/异常预警/冷却/撤销补发(资金出口审计中枢) | F 分销 | V2·Ch11 | §8.6 |
@@ -262,8 +264,10 @@
 
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
-| **V_RANKS**(F1 13阶) | v:enum{V0…V12} · 头衔 · 晋升条件{selfBuyUSD?,directRefs?,teamVolumeUSD?,vDownlines?}(AND 复合,各阶组合不一) · unilevelDepth · peerBonus[V](V0–V2=0/V3+=5%) · leadershipVotes · prizeName(全局唯一) · cultivationBonus(NEX) · 可见性解锁 · vRankPermanent=true | SC | §17.1 / Ch11 F1 |
-| **佣金费率**(F2) | UNILEVEL_USDT[L1..L7]=[10%,5%,3%,2%,1%,0.5%,0.5%](和≤25%) · UNILEVEL_NEX[L1..L7]=[50,20,10,5,2.5,1,1] · Partner Status{Standard/Verified/Premium/Diamond,仅门槛+非现金权益,不改费率;直推费率恒取 UNILEVEL_USDT[1] 默认 10%、运营全局可配} · InfluenceScore clamp(1.0,5.0) · coolingDays(30,域独立) | SC | §17.1 / Ch11 F2 |
+| **V_RANKS**(F1 13阶) | v:enum{V0…V12} · 头衔 · 晋升条件{selfBuyUSD?,directRefs?,teamVolumeUSD?,vDownlines?}(AND 复合,各阶组合不一) · unilevelDepth(旧扩展版税历史，不作用于新直属) · peerBonus[V](V0–V2=0/V3+=5%) · leadershipVotes · prizeName(全局唯一) · cultivationBonus(NEX) · 可见性解锁 · vRankPermanent=true；本人权益、培育与领导票权保持原规则 | SC | §17.1 / Ch11 F1 |
+| **直属分成政策**(F2) | policyVersion / expectedVersion · effectiveAt(服务端批准时间) · purchase / deviceEarning{enabled,totalRatePct,usdtSharePct,coolingDays} · nexUsdtPrice(现有行情只读)；未配置禁用占位，不继承固定 10% 或旧层级；两规则整组审批与原子版本，平台额外支付、只给直接邀请人 | SC | Ch11 F2 |
+| **独立权益与冷却**(F2) | `F.partner.tiers`{standard,verified,premium,diamond} 非负保序，只决定非现金权益；`F.cooldown` 整数 0–90 天，仅用于其他奖励；当前值取服务端，缺值不填默认 | SC | Ch11 F2 |
+| **旧网络版税历史**(F2) | 当前 PC historicalOnly：unilevelRates 为空或完整 L1–L7 实值快照；NEX 系数按每 1 USDT 版税计，不按订单额；旧出口合并上限只读实值、缺值未配置；新购 checkout.completed 不再调用旧结算。后端 Unilevel 引擎及旧参数写入/A2重放仍保留，并非全局禁用；旧账查询、释放及处置保留 | SC | Ch11 F2 / F5 |
 | **双轨**(F3) | binaryDailyCap(月1-6=$5000/月7+=$2000,权威 H1) · balanceMatchRate(10%) · binaryTrackMinUsd($1000) · spillover · gvResetCron | SC | §17.1 / Ch11 F3 |
 | **Commission Event**(F5,§12.5) | commissionId · userId · kind:enum{network\|binary\|peer\|cultivation\|leadership\|genesis} · currency:enum{USDT\|NEX} · amount · sourceUserId · layer(L1–L7,仅network) · settledAt:ms-epoch · coolingDaysLeft · status:enum{cooling\|unlocked\|withdrawn\|reversed};**F5 仅审计消费,落 D4 commission bill** | SC | §17.1 / Ch11 F5 |
 | 领导池(F4) | leadershipPoolInjectRate(5%,3–10%) · V_VOTES{V3:1…V12:512} · poolSettleCron(周日23:59 UTC) · poolUnlockVRank(V3+) | SC | Ch11 F4 |
@@ -460,9 +464,9 @@
 | `/api/admin/config/v-ranks` · `/v-ranks` | GET / PUT | 13 阶 V 级配置(门槛保序 Vn≥Vn-1 违反 400) | F1-MD2(高敏) | F1 |
 | `/api/admin/users/:userId/vrank/override` | POST | 手动晋升/回滚 V 级(携 Key;执行=增长 lead/超管) | F1-MD1 | F1 |
 | `/api/admin/team/prize-queue` · `/prize-queue/:id/ship` | GET/POST | 实物奖发货队列 / 标发货(须 kycAddressVerified 否则 409) | F1-MD3(ship) | F1 |
-| `/api/admin/config/commission/rates` | GET / PUT | 佣金费率/Partner Status 门槛权益/InfluenceScore/promo(高敏+B1 前置) | F2-MD1~MD3(高敏) | F2 |
-| `/api/admin/config/commission/cooling-days` | GET / PUT | 佣金冷却(authorityOwner **TBD**:F2/commission/D5) | F2-MD5(PUT) | F2 |
-| `/api/admin/config/commission/layer/:layer/pause` | POST | 暂停/恢复某层结算 | F2-MD4 | F2 |
+| `/api/admin/teams/direct-referral-policy` · `/api/config/commission/direct-referral` | GET；admin PUT | 同一当前生效政策；PUT 携 expectedVersion、完整 purchase/deviceEarning、reason、Idempotency-Key，仅 A2 批准后生效；不接受客户端生效时间/行情 | f_direct_referral_policy，target=direct_referral_policy/current | F2 |
+| `/api/admin/teams/rates` | GET | 独立权益/其他奖励冷却与历史概览；unilevelRates=[] 合法，不补七层或业务默认；与直属政策读取独立处理成功/空/失败 | — | F2 |
+| `/api/admin/teams/commissions/config/:key` | PATCH，既有 A2 写入 | 当前 `F.partner.tiers` / `F.cooldown` 独立配置，reason + Idempotency-Key；冷却初始化/缩短前置 B1。后端旧层级写入仍保留权限与校验，当前 PC 不提供旧层写入口 | f_ui_config；旧层级 A2 f_unilevel_rule 重放仍保留 | F2 |
 | `/api/admin/config/binary` | GET / PUT | 双轨配置(binaryDailyCapUSD 不可写返 422;高敏+B1 前置) | F3-MD1/MD3(高敏) | F3 |
 | `/api/admin/team/binary/:userId/adjust` | POST | 补发/纠错 Balance Match(携 Key;原子+D4 bill) | F3-MD2 | F3 |
 | `/api/admin/config/leadership-pool` | GET / PUT | 领导池配置(注入比例/票权/头部集中度阈值;高敏+B1) | F4-MD3(高敏) | F4 |
@@ -780,13 +784,13 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 |---|---|---|---|---|
 | V_RANKS 各阶门槛 | V1 自买≥$299 AND 直推≥3 / V2 团队≥$5K / V3 ≥$20K AND vDownlines … V12 $500M(AND 复合) | 各≥0 保序 | 仅新判定(不回溯) | F1 |
 | 培育奖 NEX `cultivationBonus[V]` | V1 500 / V2 2,000 / V3 10,000 / V4 50,000 / V5 200,000 / V6 800,000 / V7 320万 / V8 1000万 / V9+ 0 | 各 ≥ 0 | 实时(下次跨阶) | F1 |
-| 平级奖 `peerBonus[V]` | V0–V2=0 / V3+=5% | 0–100% | 仅新结算周期(月结) | F1 |
+| 平级奖 `peerBonus[V]` | V0–V2=0 / V3+=5%，仅保留参数 | 0–100% | 能力位尚未开放、无发奖程序；本轮不启用 | F1 |
 | `vRankPermanent` | true(不降级) | true/false | 实时 | F1 |
-| `UNILEVEL_USDT[L1..L7]` | [10%,5%,3%,2%,1%,0.5%,0.5%] | 各 0–100%,**和 ≤25%** | 仅新结算 | F2 |
-| `UNILEVEL_NEX[L1..L7]`(per $1) | [50,20,10,5,2.5,1,1] NEX | 各 ≥ 0 | 仅新结算 | F2 |
-| Partner Status 门槛+权益 | Standard $0 / Verified $5K / Premium $50K / Diamond $500K(仅门槛+非现金权益,不改费率;直推费率恒取 UNILEVEL_USDT[1] 默认 10%、运营全局可配) | 门槛≥0 保序 | 仅新评定周期(过去30天活跃) | F2 |
-| InfluenceScore clamp | clamp(1.0, 5.0) | 下限≥0;上限≤10 | 仅新结算 | F2 |
-| `commission/cooling-days` | 30d(域独立,≠提现冷却) | 0–90 天 | 见第7章 #5 | F2(待定) |
+| `purchase` / `deviceEarning` | 未配置均禁用；totalRatePct=0、usdtSharePct=50、coolingDays=0 仅占位 | enabled boolean；总比例0–100，启用大于0；USDT占比0–100，启用严格介于0与100；NEX占比自动为100减USDT；冷却整数0–365 | A2 批准后立即用于新来源；同一 policyVersion，不回算旧账 | F2 |
+| `UNILEVEL_USDT[L1..L7]` / `UNILEVEL_NEX[L1..L7]` | 无当前默认；只读服务端历史快照 | 空历史合法；非空完整七层且不重复、实值有限非负；缺值拒绝使用，不补默认 | historicalOnly，不参与新购买或直属收益计提 | F2 |
+| Partner Status 门槛+权益 | 当前值取服务端，不套本地门槛默认；仅门槛+非现金权益，不改分成费率 | 四档非负非递减；缺值显示未配置，有权限者可输入完整有效值配置 | 仅新评定周期(过去30天活跃) | F2 |
+| InfluenceScore / promotion | 如有历史快照只读，不设新默认或编辑入口 | 历史说明 | historicalOnly，不叠加新直属分成 | F2 |
+| `commission/cooling-days` / `F.cooldown` | 当前值取服务端，与直属两类及提现冷却独立 | 0–90 天整数；缺值不套30d默认 | 新奖励计提快照，旧事件不重算；最终域归属见第7章 #5 | F2 既有控制 |
 | `balanceMatchRate`(双轨匹配) | 10%(min(A,B)×10%) | 0–20% | 仅新结算(日结) | F3 |
 | `binaryDailyCapUSD` | 月1–6=$5,000 / 月7+=$2,000 | H1 控制 | Phase 派发 | **H1**(F3 只读) |
 | `binaryTrackMinUsd`(两轨门槛) | $1,000/轨 | $0–$5,000 | 仅新结算周期 | F3 |
@@ -914,7 +918,7 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 
 1. **同名不同域参数严格区分**(详见第 0 章 §0.9):提现冷却 `withdrawCooldownDays`(D5,权威 H1)≠ 试用冷却 H2 `cooldownDays` ≠ 佣金冷却 `commission/cooling-days`(F2);大额 $1,000 两处独立(D2 人工审核 / K3 `largeAmountUsdt`)。
 2. **Phase 派发参数权威唯一性**(详见 §0.10):10 dial 全归 H1,生效面 PUT 收到返 422 `PHASE_PARAM_READONLY`。
-3. **接口侧硬校验**(详见 §0.5):覆盖率/挤兑红黄线互锁、K4 六维和=1、staking APY 保序、E3 分段与换新阶梯严格保序、V_RANKS 保序、Lucky 概率和≤100%、转盘 weight 和=100、里程碑保序、UNILEVEL_USDT 和≤25%。
+3. **接口侧硬校验**(详见 §0.5):覆盖率/挤兑红黄线互锁、K4 六维和=1、staking APY 保序、E3 分段与换新阶梯严格保序、V_RANKS 保序、Lucky 概率和≤100%、转盘 weight 和=100、里程碑保序。新直属按 F2 整组版本、比例、双币拆分与冷却约束校验，不套旧七层和护栏。
 4. **server-only**:`chargeFailRate`;所有 RNG(Lucky/转盘/分红)server 裁决 + NODE_ENV guard。
 
 ## 第 5 章 状态机集(合法转移 + 守卫)
@@ -962,7 +966,7 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 ### 5.7 F1 V-Rank 晋升(Ch11 F1,13 阶 V0–V12)
 - **状态集**:`V0 … V12`
 - **合法转移**:晋升 `V(n) → V(n+1)`(server 在被动评估触发点 re-check;条件 **AND 复合**,各阶组合不一)/ 手动晋升回滚 `V(x) → V(y)`(确认弹窗 F1-MD1,理由必填;执行=增长运营(lead)/超管)/ **不降级**(vRankPermanent=true,唯一例外账户注销)
-- **约束**:`/vrank/override` 携 Key + MC 两步,server 原子置 V 级并联动版税/票数/可见性;client 显示对但 server 可 reject(anti-abuse/race)是产品契约;改门槛不回溯已晋升者。
+- **约束**:`/vrank/override` 携 Key + MC 两步,server 原子置 V 级并联动本人权益/平级奖/票数/可见性；旧扩展版税覆盖仅历史说明，不作用于新直属;client 显示对但 server 可 reject(anti-abuse/race)是产品契约;改门槛不回溯已晋升者。
 
 ### 5.8 G1 Staking position(Ch12 G1,对齐 §9.6)
 - **状态集**:`pending_lock / active / mature_unclaimed / claimed`;旁路 `early_withdrawn / slashed / refunded`
@@ -1051,7 +1055,7 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | Staking APY/罚款/单档 kill | ✅ | ✅(lead,kill 止血) | ✅(lead,参数) | — | — | — | 是(理由必填;APY 调升 B1 预检;单档 disable 归 G1,不入 J1) | G1 |
 | Genesis 经济(单价/排放率/pause/geo) | ✅(排放率仅超管) | ✅(lead,pause/geo) | ✅(lead,其余参数) | — | — | — | 是(理由必填;排放率放大负债前置 B1) | G4 |
 | 佣金事件撤销/补发/暂停 | ✅ | ✅(lead) | ✅(lead,联动 D 退回) | — | — | — | 是(理由必填;补发方向 B1 预检) | F5 |
-| 网络版税费率 / Partner Status | ✅ | ✅(lead) | ✅(lead) | ✅(增长侧) | — | — | 是(理由必填;调升 B1 预检,应付负债来源) | F2 |
+| 直属分成 / Partner Status / 其他奖励冷却 | ✅ | ✅(lead) | ✅(lead) | ✅(增长侧) | — | — | 是(A2、理由、24h幂等；资金放大 B1；具体权威权限沿用 v2 F2⑥；旧层级只读) | F2 |
 | 风险披露版本切换 + 强制 re-ack | ✅ | ✅(lead,合规) | — | — | — | — | 是(I5-MD1,理由必填;合规关键,非熔断闸) | I5 |
 | 监管点名应急 SOP 编排执行 | ✅ | ✅(lead) | — | — | — | — | 是(J4-MD3,理由必填+触发事由;逐步经各域弹窗,串联 J1/J2/I5/C2/K1/D2/I3) | J4 |
 | **数据导出/监管报告(含敏感)** | ✅(超限/解密仅超管) | ✅(lead,风控域) | ✅(lead,资金域) | — | — | ✅(全量脱敏) | 是(理由必填;数据出境=敏感,脱敏+审计) | L5 |
@@ -1228,11 +1232,11 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | F1-MD2 | 编辑 V 级阶梯配置确认 | 是 | v2 F1④a |
 | F1-MD3 | 实物奖品发货审核确认 | — | v2 F1④a |
 | F1-MD4 | 补发 / 撤销培育奖 NEX 确认 | 是 | v2 F1④a |
-| F2-MD1 | 调 L1–L7 费率 / NEX 系数确认 | 是 | v2 F2④a |
+| F2-MD1 | 直属购买与设备收益两规则整组审批确认；旧 L1–L7 调费不作当前入口 | 放大方向 | v2 F2④a |
 | F2-MD2 | 调 Partner Status 门槛 / 权益确认 | — | v2 F2④a |
-| F2-MD3 | 设 / 撤 promotion 周倍率确认 | 是 | v2 F2④a |
-| F2-MD4 | 暂停 / 恢复某层结算确认 | — | v2 F2④a |
-| F2-MD5 | 调佣金冷却天数确认 | 是 | v2 F2④a |
+| F2-MD3 | 历史 promotion 确认契约；当前不提供设/撤入口 | 历史契约 | v2 F2 历史边界 |
+| F2-MD4 | 历史层结算处置契约；当前 F2 只读，事件处置进入 F5 | 历史契约 | v2 F2 / F5 |
+| F2-MD5 | 配置/调整其他奖励冷却；不影响直属或提现冷却 | 初始化/缩短方向 | v2 F2④a |
 | F3-MD1 | 调匹配比例确认 | 是 | v2 F3④a |
 | F3-MD2 | 补发 / 纠错 Balance Match 确认 | 是 | v2 F3④a |
 | F3-MD3 | 调两轨门槛 / 自动分配规则确认 | 是 | v2 F3④a |

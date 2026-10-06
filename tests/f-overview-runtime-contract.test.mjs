@@ -16,12 +16,60 @@ const common = {
   sources: ["server"],
 };
 
+const f2Snapshot = () => ({
+  domain: "F2",
+  metrics: [],
+  unilevelRates: [],
+  rateTiers: [],
+  policyParams: [{ id: "cool", name: "其他奖励冷却期", key: "F.cooldown", value: "", defaultValue: "" }],
+  ...common,
+});
+
+const historicalRates = () => Array.from({ length: 7 }, (_, index) => ({
+  level: `L${index + 1}`, usdtPct: index + 1, nexReward: index,
+}));
+
 test("F1 rejects an incomplete successful payload", () => {
   assert.throws(() => assertF1Overview({}), /F1_OVERVIEW_RESPONSE_INVALID/);
 });
 
 test("F2 rejects an incomplete successful payload", () => {
   assert.throws(() => assertF2Overview({}), /F2_OVERVIEW_RESPONSE_INVALID/);
+});
+
+test("F2 accepts explicit empty retired history without losing independent parameters", () => {
+  assert.doesNotThrow(() => assertF2Overview(f2Snapshot()));
+});
+
+test("F2 still requires historical arrays and the correct domain", () => {
+  for (const key of ["metrics", "unilevelRates", "rateTiers", "policyParams", "configValues", "commissionPolicy", "guardrails", "sources"]) {
+    const payload = f2Snapshot();
+    delete payload[key];
+    assert.throws(() => assertF2Overview(payload), /F2_OVERVIEW_RESPONSE_INVALID/, key);
+  }
+  assert.throws(() => assertF2Overview({ ...f2Snapshot(), domain: "F3" }), /F2_OVERVIEW_RESPONSE_INVALID:domain/);
+});
+
+test("F2 nonempty history requires unique complete L1-L7 and real numeric values", () => {
+  assert.doesNotThrow(() => assertF2Overview({ ...f2Snapshot(), unilevelRates: historicalRates() }));
+  for (const rates of [historicalRates().slice(1), [...historicalRates().slice(1), historicalRates()[1]],
+    historicalRates().map((rate, index) => index ? rate : { level: rate.level }),
+    historicalRates().map((rate, index) => index ? rate : { ...rate, usdtPct: "" }),
+    historicalRates().map((rate, index) => index ? rate : { ...rate, nexReward: "invalid" }),
+    historicalRates().map((rate, index) => index ? rate : { ...rate, direct: 1 }),
+    historicalRates().map((rate, index) => index ? rate : { ...rate, usdtPct: -1 })]) {
+    assert.throws(() => assertF2Overview({ ...f2Snapshot(), unilevelRates: rates }), /F2_OVERVIEW_RESPONSE_INVALID/);
+  }
+});
+
+test("F2 rejects malformed records instead of fabricating normalized display values", () => {
+  for (const [key, value] of [["metrics", [null]], ["metrics", [{ id: "metric" }]],
+    ["rateTiers", [null]], ["rateTiers", [{ name: "Tier" }]], ["policyParams", [null]],
+    ["policyParams", [{ id: "cool", name: "冷却期", key: "F.cooldown", value: {} }]],
+    ["policyParams", [{ id: "cool", name: "冷却期", key: "F.cooldown", value: "", amplifies: "invalid" }]],
+    ["configValues", { "F.cooldown": 30 }], ["guardrails", [{}]]]) {
+    assert.throws(() => assertF2Overview({ ...f2Snapshot(), [key]: value }), /F2_OVERVIEW_RESPONSE_INVALID/, key);
+  }
 });
 
 test("F3 rejects an incomplete successful payload", () => {
@@ -81,7 +129,7 @@ test("F2-F5 accept their minimum complete contracts", () => {
   assert.doesNotThrow(() => assertF2Overview({
     domain: "F2",
     metrics: [],
-    unilevelRates: Array.from({ length: 7 }, (_, index) => ({ level: `L${index + 1}` })),
+    unilevelRates: historicalRates(),
     rateTiers: [],
     policyParams: [],
     ...common,
