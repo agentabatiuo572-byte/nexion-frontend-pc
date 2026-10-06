@@ -14,7 +14,7 @@
 
 视觉以当前后台黑灰令牌为准，五张采用稿为 `concept-*-black.png`，主管追加数据优先修订稿。此前偏蓝稿停止采用。最新会话实景：[专属客服与IDC托管](../../design/support-analytics-20261006/assets/verified-dedicated-support-idc.png)、[窄屏资料](../../design/support-analytics-20261006/assets/verified-idc-profile-1000.png)。上一轮布局/字号证据：[主管总览](../../design/support-analytics-20261006/assets/verified-supervisor-overview-data.jpg)、[按组客服](../../design/support-analytics-20261006/assets/verified-supervisor-staff-data.jpg)、[总管理员字号](../../design/support-analytics-20261006/assets/verified-admin-readable.jpg)。
 
-业绩榜当前为[成绩领奖台探索稿](../../design/support-analytics-20261006/assets/concept-leaderboard-performance-podium.png)，尚未定稿或还原；此前解构金属、精修表格与大幅人像方向停止采用。可点稿仅用于功能交互验证，不是最终视觉验收证据。
+业绩榜当前为[成绩领奖台探索稿](../../design/support-analytics-20261006/assets/concept-leaderboard-performance-podium-v2.png)，尚未定稿或还原；此前解构金属、精修表格与大幅人像方向停止采用。可点稿仅用于功能交互验证，不是最终视觉验收证据。
 
 ## 主人裁决与方案细化
 
