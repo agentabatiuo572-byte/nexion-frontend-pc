@@ -1,0 +1,160 @@
+# 客服中心详细实施方案
+
+状态：方案已按当前设计重排，产品代码、合并冲突、数据库和服务仍保持暂停。本文件不授权生产迁移或发布，也不把已通过的设计检查当作产品验收。恢复实施后按 I0→依赖步骤→I7 执行。
+
+功能真源：[CONTRACTS](CONTRACTS.md)、[GROUPS](GROUPS.md)、[SPEC](SPEC.md)；视觉与操作：[DESIGN](../../design/support-analytics-20261006/DESIGN.md)、[可点稿](../../design/support-analytics-20261006/prototype.html)；验收：[基础69项](ACCEPTANCE.md)、[分组25项](GROUPS.md#8-验收用例)、[旧能力覆盖](LEGACY-COVERAGE.md)。本文件只写实现边界、依赖、交接物与检查，不重复业务规则和像素规格。
+
+## 1. 基本事实与最小验证
+
+真正不变的约束：主管范围来自服务端；当前资产与事件归属分开；资金来自真实成功事实；旧能力不能在迁移中丢失；新默认不重写已有关系。当前最高风险是原主管全量授权、历史归属被当前组覆盖、邀请统计沿用7级截断、每段超时误读最新全局配置。
+
+最小验证先于页面建设：用普通客服、两名各管不同组的主管、无组主管、总管理员，在隔离环境读取同一客户/附件/消息；调组后重试旧请求必须拒绝。再用“充值100→余额购机80”、纯付费购机、免费试用和付费转购核对首充与两类金额。授权或事实不成立，不继续开放新看板。
+
+| 来源 | 已核定快照 / 使用方式 |
+|---|---|
+| 当前设计及计划仓 | `cs-analytics-preview-20261006`，`9399568`，上游 `nexion-frontend-pc.git` 的 `test`；只提交设计/方案 |
+| 前端暂停实施树 | `cs-analytics-design-20261006`，起点`582f27b`；增强应用WIP及4处冲突仍在，不直接reset或整树覆盖 |
+| 增强前端源 | `cs-enhance-ui-20261001-admin`，`03c078fc + WIP`；只读提取必要差异。上轮与33041运行目录`cs-click-m3-20261005`的89文件一致；恢复时重新核验 |
+| 后端暂停实施树 | `cs-analytics-backend-20261006`，HEAD`fab5a1f84a`，MERGE_HEAD`946317ed`；1处正式冲突及重复`creation-policy`路径待处理 |
+| 只读增强后端参考 | `cs-e3-publication-fix-20261006-r2@8fa8fc6d`；只选择客服依赖，不夹带无关E3/risk工作 |
+| 运行参照 | 33041为新版业务参照；33106是静态设计；3012仅核对旧交互。三者不能混当发布目标 |
+
+恢复前fetch两仓`test`，重读源WIP/构建/工作树状态；旧提交号不当永久基线。原机器计划和暂停记录保留在`C:/Users/jason/.codex/workflow-runs/support-analytics-20261006/`，不得把旧`in_progress`或原型PASS改成产品PASS。
+
+## 2. 复用与真实缺口
+
+下列路径分别相对前端增强源或后端暂停树，均为只读核对所得；“建议新增”尚不存在。
+
+| 面 | 已有资产 | 必须补齐的差距 |
+|---|---|---|
+| 角色与范围 | BE `content/application/SupportOwnershipService.java`、`SupportWorkbenchService.java` | 主管仍全局通读；群发和工单Mapper另有全通SQL。新增独立主管资格、负责组、统一scope，不能只改首页筛选 |
+| 客服与组历史 | BE `content/mapper/SupportBindingMapper.java`，`nx_support_agent_user_assignment`已有有效区间/版本 | 新建组/成员/负责人有效历史及可信组队列；主管资格与客服资格可兼任，不把`seat_type=MANAGER`当唯一身份 |
+| 首充与资金 | BE `finance/mapper/SupportFinanceSql.java`；购机、试用、置换原结算Mapper | 复用成功账本匹配；补全历史唯一首事件、成功时间、事件时顾问/组归属。流水`createdAt`不是统一成功时间 |
+| 余额与退款 | BE `FinanceSupportReadService`当前余额和可用余额均取available，退款源标UNKNOWN | 核定总余额组成与独立退款事实，不能把available改名成完整总余额或用0补缺源 |
+| 邀请 | BE `team/mapper/AppTeamNetworkMapper.java`已有查询固定`level<7`且过滤ACTIVE | 客服全部后代专用查询沿`sponsor_user_id`去重并检测环/孤儿；不沿用层数截断、不按组叠加后代金额 |
+| 设备/活动 | BE `DeviceOpsMapper`有心跳；`SupportActivityService`有已验证活动和coverage | 设备持有量不同于所有未删除设备；已付费试用仍可能标TRIAL。用购机事实分类，心跳缺失不算离线，活动不等于阅读/客服发送 |
+| 工作台/客户端 | FE `m-view.tsx`仍各角色共用`M1PersonalWorkbench`；`m-support-client.ts`已有请求/解析/幂等/取消 | 新增主管/总管视图；请求需组、币种、排序、授权/数据版本；当前snapshotId不能承担跨请求一致性 |
+| M3与浮窗 | FE `m3-dedicated-chat.tsx`、`m-view.tsx` SessionDock已有稳定ID、草稿与撤权 | 主窗/浮窗一起补发送未知、读覆盖、组撤权；现资料折叠区中的旧快捷入口需恢复可达 |
+| 工具与头像 | FE `support-content-tools.tsx`、`account-avatar-picker.tsx`；BE已有受控assetId/avatarVersion | 双details改互斥弹层，编号/分组/正文搜索，选中只追加草稿；补明确性别/审核池/手动换像，不替换现上传链 |
+| 静默与继承 | BE已有1/5默认、LIMITED/UNLIMITED、版本与待回复检查 | scheduler目前每轮读最新全局策略；新增段级快照。写权改总管且原能力、理由按本契约6字；无限只迁明确UNCONFIGURED |
+
+BE路径根为`src/main/java/ffdd/opsconsole/`。源码行号会在整合后变化，实施以类/方法与合同定位，不依靠旧行号盲改。
+
+## 3. 数据与接口交接契约
+
+以下是实施提案，不宣称接口或表已存在。I1–I3在后端先形成可执行合同，前端沿现有请求封装适配，不另建请求框架。
+
+| 交接物 | 最少内容与边界 |
+|---|---|
+| 当前授权范围 | 认证账号、可用角色/原动作能力、有效负责组集合、当前客服资格、scopeVersion；无组是空集合，读取失败不得回退全部 |
+| 组写模型 | 平级组ID/状态/负责人、成员唯一有效组、成员/负责人有效区间、可信客户路由；预期版本、原操作ID、理由、审计。停用、归档、撤资格前检查成员/队列/路由与交接 |
+| 查询条件 | groupId或获准全部、agentId、数据视角、当前/事件时间基准、日期及业务时区、currency、服务/首充状态、关键词、sortKey/direction、分页。参数名最终与既有API统一 |
+| 查询响应 | scopeVersion、queryVersion、sourceVersion/统计时刻、分页总数、完整性/覆盖及分区状态；金额为十进制字符串+币种，整数人数独立，未知为明确状态+null而非0 |
+| 一致性 | 最小方案使用可证明的数据版本；后续页/下钻版本变化要求重新查询。版本必须覆盖所有影响筛选/总数/排序/权限的写源，不能用当前时间戳冒充快照；无法完整覆盖则采用稳定结果快照后才开放跨页 |
+| 统计事实 | 规范源ID、客户ID、类型、成功时间、金额/币种、原交易关系、事件时绑定/成员/组版本和证据状态；源ID去重，原账本不改。建议一个可重放事实/归因投影及coverage记录，不再另建首充缓存系统 |
+| 首充计算 | 在完整合格事实中按成功时间、同刻来源规则和稳定ID确定每客最早事件，再套期间/币种；历史缺源/缺归属分别表达。不得把客户端排序当首充计算 |
+| 下钻 | 指标标识与同条件列表/事实共享服务端谓词、版本与权限；可读明细、受限汇总和未知分开，不用当前页长度推总数；历史业绩权不开放已转走客户正文 |
+| 导出 | 复用统计查询；若客服域无现成导出链，新增最小私有任务。请求/执行/下载均重验权限与版本，记录操作者和查询，失权拒绝未下载产物；不做通用报表平台 |
+| 会话交接 | 保留消息ID/原命令ID，服务端接受状态与读游标/覆盖分开；段ID及策略版本/阈值快照，人工成功活动时间、待回复游标、归属版本。作者始终取认证身份 |
+| 头像 | 显式性别含未指定、审核素材池类别、持久化assetId/version；创建首次取样，普通修改不重抽；更换沿原账号能力和受控上传，设计样例不充当正式素材 |
+
+接口优先扩展现`/api/admin/content/support-workbench/overview`、`/customers`和`support-agents`下资源。分组/主管名册、统计明细与导出确需新端点时，在I3同一次交付OpenAPI/请求响应样本、错误与版本冲突语义及BFF白名单；不先写一批虚构URL供前端调用。
+
+事件归因不能在异步消费时读取现在的组：源事务中捕获可证明的绑定/成员版本，或引用持久事务顺序证据；采用既有outbox。支付与调组同刻必须有确定证据，无法还原归未知。历史补录可重放、去重、审计并更新数据版本，不搬移已经确认的原事件归属。
+
+## 4. 分步实施与出口
+
+FE/BE是文件责任角色，恢复实施时绑定具体agent；主线管理共享契约和I7，审查者不得是对应实现者。每步先写反例再做最小改动，未过出口不得消费为已验收依赖。
+
+| 步骤 | 依赖 / 责任 | 文件范围与交付 | 出口证据 |
+|---|---|---|---|
+| I0 基线恢复 | 恢复实施授权；主线 | 重新固定设计/两仓base与源WIP清单；处理前端4冲突和后端测试冲突/重复creation-policy；保留增强头像、SKU、群发、随机分配、共享cookie与原测试，排除无关变更 | 干净可构建候选、差异来源及旧能力清单；既有客服定向回归。不把当前冲突树直接作为新开发基线 |
+| I1 分组与统一授权 | I0；BE，FE只接管理合同 | 建议新增`SupportGroupService/Mapper`与增量迁移；改Ownership/Binding/Workbench、Bulk/Ticket独立SQL及所有对象读取。组/主管/成员/路由历史，兼任资格、移交/停用/归档、幂等审计 | 两主管互隔离、普通客服本人、空组不扩大；共享范围服务及现存旧URL、列表计数、池、工单、头像、360、附件、socket、群发、命令回查、导出入口全覆盖；尚未实现的新导出保持关闭，由I3验收。同客服并发入两组只一次成功 |
+| I2 权威事实与聚合 | I0可做源映射，落地归因依赖I1；BE | 建议新增`SupportAnalyticsService/Mapper`，复用财务/购机/试用/置换/设备/活动源；专用邀请后代查询、coverage、规范事实去重与事件归属投影 | 全历史首付、充值/购机分开、零额/赠送/试用边界、退款、多币、重放、同刻调组；集合SQL独立对账，不逐客调用360拼总数 |
+| I3 只读API与查询版本 | I1+I2；BE→FE交接 | 扩展工作台/客户API、组/主管统计、同谓词下钻和服务端排序分页；新端点仅按第3节必要资源。FE在现请求封装上增加薄层解析 | 正/反授权接口样本、完整错误与未知语义；跨页变更重载；金额无浮点；导出同范围、失权下载拒绝。新API通过前不接真实看板 |
+| I4 继承配置延续 | I1；BE规则owner+FE规则owner | 原Binding/规则服务及`m5-service-rules.tsx`原位扩展，新默认无限、明确UNCONFIGURED版本迁移；组候选和队列路由受限 | 迁移两次不重复；有限0/明确存量不变；失败不假默认；只影响新注册，旧绑定/旧池不重排 |
+| I5 三角色与分组数据UI | I3；FE看板owner | M1角色分流，组/主管管理，当前/期间总览；范围与视角独立、一个主要长列表、客服按组可辨；M1客户统计与服务端Tab排序；全部数字真实下钻，M2工单不替换 | 逐页人工操作审查；范围→汇总→客服→客户/事件→返回；筛选/页码/位置恢复，查询变化回首、无组/错误/未知正确；数字字体实测、窄屏不缩字 |
+| I6 M3及账号补齐 | I1授权、I3画像合同；BE会话owner+FE会话owner | 共享资料、真实头像及A1表单、主窗/SessionDock同发送与回执语义；旧式互斥工具弹层、紧凑气泡；段级静默策略、配置权与理由校验 | LC/NA/MV清单双向逐项；文字/图片/商品同ID回查重试、读游标单调、切人/撤权不串草稿；新段策略生效、旧段不提前结束、未回复保护和关闭竞态 |
+| I7 集成签收 | I1–I6通过；主线+独立审查 | 同一源码/服务/数据库版本重跑94项，全量工程门；操作/钱/权限/状态/旧能力对抗审查，实际写入→读回→刷新 | 必测无FAIL/NOT-RUN/跳过，P0/P1全部回源复验关闭，P2明确裁定；区分本地通过、test同步、生产发布。生产不在本次实施默认范围 |
+
+可并行：I1期间只做I2源适配与测试设计；I4与I3在规则/统计文件所有权不重叠时并行；I5/I6在共享接口稳定后并行。不能并行争写`m-view.tsx`、共享客户端、Ownership或同一迁移；共享文件由指定整合owner串行接入，变更公共合同后重开下游检查。
+
+### 前端最小文件组织
+
+保留`lib/nav/console-nav.ts`现M1/M2/M3/M5路由；复用`design-kit.tsx`的Modal/Drawer、M域样式、`m-support-client.ts`的严格解析/AbortSignal/no-store/幂等，以及`m-support-enhancements.ts`的分区数据状态。
+
+建议新增：`lib/admin/m-support-analytics.ts`（薄层类型/解析/查询）、`lib/admin/m-support-query.ts`（纯查询序列化/恢复）；`m-tabs/m1-management-workbench.tsx`、`support-group-manager.tsx`、`support-metric-detail.tsx`。若恢复后的树已有等价模块直接扩展，不为凑文件名创建。M1个人台、M3客户资料/主会话/内容工具、M5规则、A1头像继续原位修改。
+
+查询状态分为身份与scopeVersion、范围、数据视角、筛选/期间/币种/排序、结果版本、分页/滚动。URL只存可重建且获准的查询参数，阅读位置按账号和查询指纹短期保存；正文/敏感草稿不放URL。返回先重验权限，`returnTo`限制站内合法路由。请求取消之外再核对身份/范围/查询代次，禁止旧响应覆盖。切组关闭或重验旧详情，撤权同时清主窗和浮窗。
+
+### 后端迁移与性能
+
+新增SQL沿仓内`scripts/migrations/YYYYMMDD_<purpose>.sql`日期命名，I0恢复后核对占用情况；兼容结构迁移加入正式安装入口`scripts/apply_startup_schema_migrations.ps1`的显式有序清单，不引入新迁移框架。先出只读preflight：重复有效成员/绑定、无资格顾问、孤儿、池路由、规则值、历史区间和源覆盖；需要裁定存量的数据迁移另行受控执行，不塞入启动安装器自动归类。没有组织历史的账号进待分组，没可信路由的池保留未路由；不影响普通客服已有本人服务，不自动猜分组。隔离环境分别验证全新安装、已有库升级、重复执行及安装器`-WhatIf`预演；每次绑定明确的目标库与证据目录。
+
+新增表/列为兼容性扩展，约束确保一个客服最多一个有效组、一个客户一个当前绑定、池/绑定互斥。锁顺序须与现“先锁客户”的链路统一，专测付款/消息/调组/转绑并发；写入与审计原子提交。事实投影可中断续跑、重放不重复，旧源不被统计迁移修改。
+
+先用集合SQL与现数据库能力；按真实查询的组/人员/成功时间/来源唯一键/有效区间建必要索引。I3用生产形态的脱敏规模数据记录查询计划、响应分位和最大查询成本，与既有SLA比较；没有已定SLA先记录基线和容量边界，不捏造“达标毫秒数”。禁止全表拉到浏览器和逐客N+1；超大邀请树触及资源上限要返回覆盖不足，不能静默7级截断。分页结果快照由第3节的一致性缺口触发；预聚合或额外任务化只在测出性能瓶颈后增加。
+
+## 5. 94项验收责任与具体检查
+
+“主责”用于不漏项分配，不表示由单端独自证明；需UI/后端/账本共同证明的用例在依赖阶段积累证据，到相关页面及I7才签收。
+
+| 主责步骤 | 验收ID | 数量 |
+|---|---|---|
+| I0 | DES-01–03 | 3 |
+| I1 | G05–09、G21、G23–24 | 8 |
+| I2 | FST-01–12、AGG-01–09、G13–20 | 29 |
+| I4 | CFG-01–06、G10 | 7 |
+| I5 | ACL-01–07、SRT-01–06、G01–04、G11–12、G22、G25 | 21 |
+| I6 | M3-01–21 | 21 |
+| I7 | UX-01–05；最终重跑全部94项 | 5 |
+
+I3为以上多组用例的共同API出口，不能因没有新增用例编号而省略。`3+8+29+7+21+21+5=94`，每个原ID有唯一主责；LC/NA/MV是M3-11完整性证据，不能只验证新增字段。
+
+### 已存在的命令（恢复实施后执行，本轮均未运行产品检查）
+
+前端在整合候选树中执行：
+
+```text
+npx tsc --noEmit
+npm run verify
+node --experimental-strip-types --test tests/s5a-support-client.test.mjs tests/s5a-support-proxy.test.mjs tests/s5a-dedicated-chat.test.mjs tests/support-enhancements-client.test.mjs tests/support-enhancements-dock.test.mjs tests/support-enhancements-layout.test.mjs tests/m3-manager-race-end-wire.test.mjs tests/m3-pending-command-recovery.test.mjs
+```
+
+`node scripts/s5a-support-fixture-runtime.mjs`是隔离fixture浏览器检查，只证明其拦截数据流程。`scripts/support-enhancements-runtime.mjs`只核验已有证据记录，不是实景执行器，不单独冒称浏览器通过。
+
+后端在独立候选树、已验证JDK17与Maven环境执行；当前机器已有工具路径可用，恢复时先检查存在性：
+
+```powershell
+$env:JAVA_HOME = 'D:/WORKS/PLAN/.local-runtime/phone-calibration-tools/jdk-17.0.20.1+1'
+& 'D:/WORKS/PLAN/.local-runtime/phone-calibration-tools/apache-maven-3.9.9/bin/mvn.cmd' '-B' '-Dstyle.color=never' '-Dtest=SupportWorkbenchServiceTest,OpsSupportAgentServiceTest,ConversationTimeoutPolicyServiceTest,ConversationIdleTimeoutSchedulerTest,OpsConversationTimeoutPolicyControllerTest,AppConversationReceiptControllerTest,AppOrderCommandServiceTest,TrialConvertAndDeferredDeactivateTest,AppTradeinServiceTest,E4OrderRefundSettlementFacadeAdapterTest,DeviceOpsMapperSqlTest' test
+pwsh -NoProfile -File scripts/support-avatar-a2-unit-check.ps1 -EvidenceRoot '<本次独立证据目录>'
+```
+
+后端全量门沿根`pom.xml`与README指定的Maven测试入口，使用上述JDK环境，不带`-Dtest`：
+
+```powershell
+& 'D:/WORKS/PLAN/.local-runtime/phone-calibration-tools/apache-maven-3.9.9/bin/mvn.cmd' '-B' '-Dstyle.color=never' test
+```
+
+定向测试不替代全量门；保存本轮Surefire XML、实际用例数、失败和跳过清单。默认Maven测试不会自动启用所有条件runtime套件，退出码0不等于实景全跑；本需求必测用例必须配齐环境执行，未执行保留NOT-RUN。`support-enhancements-check.ps1`、`support-enhancements-bulk-check.ps1`、`support-avatar-read-check.ps1`绑定旧任务/库/端口，I0先适配本次隔离环境和证据绑定后才执行，保留原完整套件，不能直接对旧共享库运行。现有旧e2e中转接/负载策略已退役的部分以新用例替代，不能删门不补。
+
+### 必须新增的验证产物（当前未实现）
+
+- BE分组/资格/授权/撤权测试、事件源适配与首付对账、历史区间/重放/迁移二跑、排序分页版本及导出下载权限、段策略竞态测试；正例与拒绝路径同时覆盖。
+- FE统计解析与query恢复单测，互斥主表/数字继承字体/组切换/旧响应与草稿隔离回归；真实后台三角色及两主管双会话e2e，不只fixture。
+- 隔离种子覆盖充值后购机、纯购机、零额/赠送、试用付费转购、组合单/置换、多币、多次退款、调组同刻、缺历史/心跳/活动覆盖、邀请环/孤儿/深链、主管无组/撤资格。未知源按未知签收相应状态，完整统计不可虚报已接齐。
+- M3阅读必须用真实客户端接收/阅读推进游标证明。先复用正式App/H5已有链；如缺读源，仅补本需求必要的消息契约并单独固定客户端仓版本，未验证时保持该用例NOT-RUN，不顺带重构其它客户端页面。
+- UI实景按当前支持主题/语言/端、1440及1920桌面、1000窄屏、键盘和减少动态执行。对照采用稿逐状态走查，读最终子元素字号；图例/金额/表格/弹层都覆盖。截图关联角色、查询、源码、API及数据版本。
+
+恢复后修订两仓schemaVersion2机器计划，用新任务ID保留旧未完成记录；各步填写真实scope、依赖、原94项映射、已存在或本步产出的可执行check、runtime报告与独立review。未实现的执行器不能写恒成功占位，不启动run伪造方案验收。I7覆盖全计划，绑定同一候选快照。
+
+## 6. 发布、恢复与签收边界
+
+仅在授权隔离环境建新库/测试账号，端口先查占用，不覆盖33041或旧测试库；记录种子与清理范围。迁移先在副本做备份/恢复演练、二次执行与差异核对，再考虑后续环境。
+
+发布顺序：兼容schema和服务端范围→验证拒绝路径→事实/查询API→页面。组权限未收紧前不开放新主管入口。关闭新统计/导出只能停止新增能力，不能回滚到“主管全局通读”；旧应用不兼容新权限时仅保留安全本人服务。保留组历史/审计和事实源，投影可重建；不倒退批量修改迁移后的合法新绑定。
+
+退出条件：94项逐项有实际结论和证据、必要旧能力齐全、机器全量门及独立审查通过，主线完成done-review。缺退款/设备分类/活动覆盖等事实源时可以如实显示未知，但缺失完整统计的验收不能标PASS；缺批准头像池时不拿设计头像上线。需要补外部资料时在对应阶段提出具体缺口，不重复要求已经确认的业务口径。
+
+只把已通过且属于本任务的变更commit/push到当前指定`test`，推送前fetch比较、不强推、不夹带旧WIP。生产数据库变更、生产发布及真实账号业务操作另按明确授权执行。本方案本轮只做文件/源映射/覆盖和独立审查，不执行以上产品命令。
