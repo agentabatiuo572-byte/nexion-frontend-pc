@@ -131,7 +131,7 @@ export function PublishedHowContentEditor() {
           <label className="tiny">发布状态<select value={document.status === "UNPUBLISHED" ? "DRAFT" : document.status} disabled={locked} onChange={e => setDocument({ ...document, status: e.target.value as PublishedHowContentDocument["status"] })}><option>DRAFT</option><option>PUBLISHED</option></select></label>
         </div>
         <div className="two-col" style={{ marginTop: 10 }}>
-          <label className="tiny">当前页面（{key}）的发布修订<input value={text(row(row(document.contents[key]).version))} maxLength={64} disabled={locked} placeholder="例如 2026.09.01-genesis-guide" onChange={e => patchEntryVersion(e.target.value)} /></label>
+          <label className="tiny">当前页面（{key}）的发布修订<input value={text(row(document.contents[key]).version)} maxLength={64} disabled={locked} placeholder="例如 2026.09.01-genesis-guide" onChange={e => patchEntryVersion(e.target.value)} /></label>
           <div className="tiny">页脚显示本页自己的修订；留空则退回上面的文档版本。发布态必须逐页填写。</div>
         </div>
         <div className="r" style={{ marginTop: 10 }}>

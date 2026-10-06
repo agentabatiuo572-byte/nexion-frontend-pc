@@ -199,3 +199,56 @@ test("the editor no longer claims a single shared version document", async () =>
   assert.doesNotMatch(ui.text(), /6 个页面共用一个版本化文档/);
   assert.match(ui.text(), /每个页面各自声明发布修订/);
 });
+
+test("saved per-page revisions remain visible across page selection and refresh", async () => {
+  const doc = document();
+  doc.contents["team-binary-how"].version = "2026.09.11-binary-guide";
+  doc.contents["team-commissions-how"] = { version: "2026.10.05-direct-referral", locales: { en: locale() } };
+  doc.contents["team-unilevel-how"] = { locales: { en: locale() } };
+  const ui = await mount(doc);
+  assert.equal(ui.field("当前页面（team-binary-how）的发布修订").props.value, doc.contents["team-binary-how"].version);
+  await ui.change("How content key", "team-commissions-how");
+  assert.equal(ui.field("当前页面（team-commissions-how）的发布修订").props.value, doc.contents["team-commissions-how"].version);
+  await ui.click("刷新");
+  assert.equal(ui.field("当前页面（team-commissions-how）的发布修订").props.value, doc.contents["team-commissions-how"].version);
+  await ui.change("How content key", "team-unilevel-how");
+  assert.equal(ui.field("当前页面（team-unilevel-how）的发布修订").props.value, "");
+  await ui.change("How content key", "team-binary-how");
+  assert.equal(ui.field("当前页面（team-binary-how）的发布修订").props.value, doc.contents["team-binary-how"].version);
+  assert.equal(ui.field("版本").props.value, doc.version);
+  assert.equal(ui.writes.length, 0);
+});
+
+test("typing a page revision stays visible through save readback and refresh without changing other entries", async () => {
+  const doc = document();
+  doc.contents["team-commissions-how"] = { version: "2026.10.05-direct-referral", locales: { en: locale() } };
+  doc.contents["team-unilevel-how"] = { locales: { en: locale() } };
+  const ui = await mount(doc);
+  const entryLabel = "当前页面（team-binary-how）的发布修订";
+  let typed = "";
+  for (const character of "2026.10.06-binary-guide") {
+    typed += character;
+    await ui.change(entryLabel, ui.field(entryLabel).props.value + character);
+    assert.equal(ui.field(entryLabel).props.value, typed);
+  }
+  await ui.change("变更理由（必填）", "Verify visible per-page revision readback");
+  await ui.click("保存并回读");
+  assert.equal(ui.writes.length, 1);
+  assert.deepEqual(ui.writes[0].payload.contents, {
+    ...doc.contents,
+    "team-binary-how": { ...doc.contents["team-binary-how"], version: typed },
+  });
+  assert.equal(ui.writes[0].payload.version, doc.version);
+  assert.equal(ui.writes[0].payload.revision, doc.revision);
+  assert.equal(ui.field(entryLabel).props.value, typed);
+  await ui.click("刷新");
+  assert.equal(ui.field(entryLabel).props.value, typed);
+  await ui.change("How content key", "team-commissions-how");
+  assert.equal(ui.field("当前页面（team-commissions-how）的发布修订").props.value, doc.contents["team-commissions-how"].version);
+  await ui.change("How content key", "team-unilevel-how");
+  assert.equal(ui.field("当前页面（team-unilevel-how）的发布修订").props.value, "");
+  await ui.change("How content key", "team-binary-how");
+  assert.equal(ui.field(entryLabel).props.value, typed);
+  assert.equal(ui.field("版本").props.value, doc.version);
+  assert.equal(ui.writes.length, 1);
+});
