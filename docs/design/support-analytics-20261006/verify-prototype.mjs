@@ -6,6 +6,11 @@ import vm from 'node:vm';
 const html = readFileSync(new URL('./prototype.html', import.meta.url), 'utf8');
 const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1];
 assert.ok(script, 'Prototype has a script');
+assert.doesNotMatch(html, /普通客服|顾问|专属专属/, 'There is only one service identity: dedicated support');
+assert.match(html, /<option value="agent">专属客服 · Mia<\/option>/);
+assert.match(html, /<option value="supervisor">主管<\/option>/);
+assert.match(html, /<option value="admin">总管理员 · Admin<\/option>/);
+assert.doesNotMatch(html, /闲置|物流|到货|收货|寄送|配送|发货|快递|签收|邮寄|运单|运输中|设备.{0,6}收到|设备已发出|设备使用|使用过程中/, 'Hosted-device samples never imply inactivity or customer delivery');
 const elements = new Map();
 const element = selector => {
   if (!elements.has(selector)) elements.set(selector, {
@@ -32,6 +37,12 @@ const context = vm.createContext({ localStorage: {
 } });
 vm.runInContext(script, context);
 const run = source => vm.runInContext(source, context);
+assert.equal(run("groups.some(group=>Object.hasOwn(group,'idle'))"), false, 'Unused device-idle sample fields are removed');
+assert.match(run("railHTML(customers.find(c=>c.name==='林海'))"), /持有设备<\/span><span>2 台 UVEL Air/);
+assert.match(run("railHTML(customers.find(c=>c.name==='林海'))"), /在网 \/ 算力<\/span><span>2 台 \/ 6.4 TH\/s/);
+assert.match(run("railHTML(customers.find(c=>c.name==='陈默'))"), /在网 \/ 算力<\/span><span>未采集/);
+assert.match(run("railHTML(customers.find(c=>c.name==='林海'))"), /托管方式<\/span><span>IDC托管/);
+assert.match(run("threadHTML(customers.find(c=>c.name==='林海'))"), /已部署至 IDC（设计示例）/);
 assert.match(element('#app').innerHTML, /我的工作台/);
 run("role='supervisor'; render()");
 assert.match(element('#app').innerHTML, /我的分组数据/);
@@ -54,9 +65,16 @@ run("openAction('tickets')");
 assert.match(element('#dialogBody').innerHTML, /0张/);
 assert.doesNotMatch(element('#dialogBody').innerHTML, /TK-DEMO-0928/);
 run("openAction('historicalThread','CS-DEMO-0921')");
-assert.match(element('#dialogBody').innerHTML, /Chen · 历史顾问/);
-assert.doesNotMatch(element('#dialogBody').innerHTML, /Mia · 专属顾问/);
+assert.match(element('#dialogBody').innerHTML, /Chen · 历史专属客服/);
+assert.doesNotMatch(element('#dialogBody').innerHTML, /Mia · 专属客服/);
 run("role='agent'; selected='林海'; page='sessions'; render()");
+run("openAction('ticketDetail')");
+assert.match(element('#dialogBody').innerHTML, /<button[^>]+data-action="order"[^>]*>查看设备订单<\/button>/, 'The ticket next step is an actionable device-order entry');
+assert.match(element('#dialogBody').innerHTML, /<button[^>]+data-action="tickets"[^>]*>返回关联工单<\/button>/, 'The ticket retains its return path');
+run("openAction('order')");
+assert.equal(element('#dialogTitle').textContent, '设备订单 · DG20260928001');
+assert.match(element('#dialogBody').innerHTML, /已部署至 IDC（设计示例）/);
+run('closeDialog()');
 element('#messageInput').value = '林海独立草稿';
 run("navigate('sessions','小雨儿')");
 assert.equal(element('#detailDialog').open, false, 'Conversation navigation closes the old dialog');
@@ -175,7 +193,7 @@ assert.match(element('#dialogBody').innerHTML, /顾星/);
 run("role='supervisor'; supervisorName='许安'; modalCustomer=null");
 for (const [name, agent] of [['顾明','周芷宁'], ['顾晓','周芷宁'], ['顾星','杨帆']]) {
   run(`openCustomerMetric('${name}','first')`);
-  assert.match(element('#dialogBody').innerHTML, new RegExp('发生时顾问</span><span>' + agent));
+  assert.match(element('#dialogBody').innerHTML, new RegExp('发生时专属客服</span><span>' + agent));
   assert.match(element('#dialogBody').innerHTML, /data-action="eventSource" data-event="FIRST-DEMO-/);
 }
 run("openGroupDrill('balance','ocean')");
@@ -338,7 +356,7 @@ const groupedStaffNames = [...new Set([...groupedStaffMarkup.matchAll(/data-acti
 assert.deepEqual(groupedStaffNames, ['张晓雨', 'Mia', '王浩然', '李思琪', '陈子航'], 'Default staff order groups members by visible group order while preserving in-group order');
 assert.equal(run("openStaffCustomers('Mia')"), true);
 assert.equal(run('selectedGroup'), 'all', 'Staff to customers adds an advisor filter without changing the selected group scope');
-assert.match(element('#app').innerHTML, /顾问：Mia · 所属组：星河组/);
+assert.match(element('#app').innerHTML, /专属客服：Mia · 所属组：星河组/);
 run("groupTab='总览';groupAgentFilter='all';render()");
 
 assert.equal((element('#app').innerHTML.match(/<table/g) || []).length, 1, 'Overview has only the short group comparison');

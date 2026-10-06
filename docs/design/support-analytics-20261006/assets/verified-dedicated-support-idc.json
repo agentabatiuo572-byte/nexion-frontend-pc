@@ -1,0 +1,274 @@
+{
+  "source": "33106 static prototype; no product API validation",
+  "htmlSha256": "3CF856D550A2C306FF3BB10145D879667A167475E3B53859D9914E624F902D43",
+  "records": [
+    {
+      "label": "会话更新",
+      "heading": "即时会话台",
+      "modal": "",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "agent"
+    },
+    {
+      "label": "agent/工作台",
+      "heading": "我的工作台",
+      "modal": "",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "agent"
+    },
+    {
+      "label": "agent/客户列表",
+      "heading": "我的客户",
+      "modal": "",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "agent"
+    },
+    {
+      "label": "agent/即时会话 ·",
+      "heading": "即时会话台",
+      "modal": "",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "agent"
+    },
+    {
+      "label": "agent/服务规则",
+      "heading": "服务规则",
+      "modal": "",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "agent"
+    },
+    {
+      "label": "supervisor/工作台",
+      "heading": "我的分组数据",
+      "modal": "",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "supervisor"
+    },
+    {
+      "label": "supervisor/客户列表",
+      "heading": "客户列表",
+      "modal": "",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "supervisor"
+    },
+    {
+      "label": "supervisor/即时会话 ·",
+      "heading": "即时会话台",
+      "modal": "",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "supervisor"
+    },
+    {
+      "label": "supervisor/分组看板",
+      "heading": "我的客服分组",
+      "modal": "",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "supervisor"
+    },
+    {
+      "label": "supervisor/服务规则",
+      "heading": "服务规则",
+      "modal": "",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "supervisor"
+    },
+    {
+      "label": "admin/工作台",
+      "heading": "全平台运营总览",
+      "modal": "",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "admin"
+    },
+    {
+      "label": "admin/客户列表",
+      "heading": "客户列表",
+      "modal": "",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "admin"
+    },
+    {
+      "label": "admin/即时会话 ·",
+      "heading": "即时会话台",
+      "modal": "",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "admin"
+    },
+    {
+      "label": "admin/分组看板",
+      "heading": "全部分组数据",
+      "modal": "",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "admin"
+    },
+    {
+      "label": "admin/服务规则",
+      "heading": "服务规则",
+      "modal": "",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "admin"
+    },
+    {
+      "label": "关联工单详情",
+      "heading": "即时会话台",
+      "modal": "工单 TK-DEMO-0928",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "agent"
+    },
+    {
+      "label": "工单→IDC设备订单",
+      "heading": "即时会话台",
+      "modal": "设备订单 · DG20260928001",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "agent"
+    },
+    {
+      "label": "设备明细",
+      "heading": "即时会话台",
+      "modal": "账户设备",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "agent"
+    },
+    {
+      "label": "快捷回复IDC话术",
+      "heading": "即时会话台",
+      "modal": "账户设备",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "agent"
+    },
+    {
+      "label": "静默策略保留",
+      "heading": "即时会话台",
+      "modal": "会话超时策略",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "agent"
+    },
+    {
+      "label": "主动人群联系",
+      "heading": "即时会话台",
+      "modal": "人群圈选与名单预览",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "agent"
+    },
+    {
+      "label": "陈默设备未知保留",
+      "heading": "即时会话台",
+      "modal": "人群圈选与名单预览",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "agent"
+    },
+    {
+      "label": "客服账号名册",
+      "heading": "全平台运营总览",
+      "modal": "客服账号 · 全部",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "admin"
+    },
+    {
+      "label": "主管视角/总览",
+      "heading": "我的分组数据",
+      "modal": "客服账号 · 全部",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "supervisor"
+    },
+    {
+      "label": "主管视角/客服",
+      "heading": "我的分组数据",
+      "modal": "客服账号 · 全部",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "supervisor"
+    },
+    {
+      "label": "主管视角/客户",
+      "heading": "我的分组数据",
+      "modal": "客服账号 · 全部",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "supervisor"
+    },
+    {
+      "label": "主管视角/资金",
+      "heading": "我的分组数据",
+      "modal": "客服账号 · 全部",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "supervisor"
+    },
+    {
+      "label": "主管视角/设备",
+      "heading": "我的分组数据",
+      "modal": "客服账号 · 全部",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "supervisor"
+    },
+    {
+      "label": "主管视角/活跃",
+      "heading": "我的分组数据",
+      "modal": "客服账号 · 全部",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "supervisor"
+    },
+    {
+      "label": "1000宽主管客户筛选",
+      "heading": "我的分组数据",
+      "modal": "客服账号 · 全部",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "supervisor"
+    },
+    {
+      "label": "1000宽完整资料",
+      "heading": "即时会话台",
+      "modal": "客户资料",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "agent"
+    },
+    {
+      "label": "恢复桌面会话",
+      "heading": "即时会话台",
+      "modal": "客户资料",
+      "oldTerms": [],
+      "overflow": false,
+      "role": "agent"
+    }
+  ],
+  "logCheck": [],
+  "viewports": [
+    [
+      1415,
+      1220
+    ],
+    [
+      1000,
+      900
+    ]
+  ],
+  "note": "modal field records last dialog title, not open state"
+}
