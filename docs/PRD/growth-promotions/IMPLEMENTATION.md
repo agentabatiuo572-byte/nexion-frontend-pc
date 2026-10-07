@@ -1,0 +1,163 @@
+# 促销与成交裂变：Codex 分步落地方案
+
+状态：设计评审稿，尚未启动产品开发。业务依据为 [PRODUCT-PRD](PRODUCT-PRD.md)，页面契约为 [后台](ADMIN-PRD.md) 与 [APP/H5](APP-H5-PRD.md)。本方案是后续实施的执行顺序、责任边界和验收门；表中的任务与新增脚本不是已经存在或已经通过的功能。
+
+## 1. 实施原则与最小闭环
+
+不可改变的事实：订单实付、活动承诺、资产到账是三个不同事实；前端广告不能发奖，充值回调不是购机成交；离开结账不等于取消订单；赠品设备必须能在设备账中回读；一次支付及重复通知最多发一组相应奖励；旧版本已承诺订单不随新活动改版改变。
+
+先做一条可证明的垂直链：运营配置 A→B → 发布 → 首页广告 → 商城 A 的赠品摘要 → 原结账报价并锁定 → 原钱包支付 → B 作为真实赠品设备出现 → 整单退款及赠品处理可核对。然后在同一奖励执行结构上增加 USDT、NEX、D→C、多SKU数量和直接邀请双向礼。避免先铺大量模板、最后才验证资产链。
+
+R1包含SKU买赠、首购礼、直接邀请成交礼、多设备独立赠礼、老客复购礼；R2/R3按主文D07单独选定后排期。当前不新建购物车体系、支付系统、邀请关系树或通用规则语言；优先复用已有订单、活动导航、权限、账本、outbox和APP组件。
+
+## 2. 仓库及开发责任
+
+| 交付面 | 当前来源 | 本功能责任 |
+|---|---|---|
+| 服务端 | nexion-backend / test | 活动版本、资格、报价、原子预留、订单快照、赠奖义务、资产发放与追回、指标 |
+| PC | nexion-frontend-pc / test | H4扩展入口、配置与模拟、审批发布、台账恢复、报表；本功能包PRD唯一业务源 |
+| APP | nexion-frontend-uniapp / test | 首页推广、商城/详情、原结账、逐项奖励、返回挽留、Liquid Glass按钮 |
+| H5 | nexion-frontend-prototype / H5 | 从正式APP共享来源同步，保留原生能力边界，独立运行验收 |
+
+阅读 [当前页面分析](../../design/growth-promotions/CURRENT-PAGES.md) 后再改APP。不使用已退役 Nexion-prototype、旧 Nexion-uniapp 原型来代替正式实现。各仓固定提交见主文附录；开工重新fetch并比较，记录新增提交对契约的影响。目录名、package名称和旧CLAUDE描述不能代替remote、分支、环境与门链的确认。
+
+APP按当前AGENTS在获准的隔离detached工作树实施，不自动创建分支；PC/服务端按各仓现行规则处理。每仓独立维护暂存区和提交，不在PLAN根仓提交子仓内容。既有未知WIP不动。
+
+## 3. 阶段、依赖与退出条件
+
+| 阶段 | 前置 | 实际工作与产物 | 通过条件 |
+|---|---|---|---|
+| S0 事实与决策冻结 | 本PRD进入实施范围 | 读取各仓AGENTS；刷新基线；确认D01–D11中R1所需项；固定赠品权益、资产政策、权限和叠加；核工具链、隔离数据库、端口；把设计稿收敛为可测量画板 | 未知政策对应执行分支关闭；工具/资源确实可用；版本和业务决定可定位；两名视觉审查员可访问同一稿 |
+| S1 合同与迁移 | S0 | 精确OpenAPI、实体/索引/状态迁移、请求响应fixture、兼容字段、错误映射、事件payload和稳定ID；迁移前后备份/回滚演练方案 | 新旧订单兼容；服务端与两端对fixture一致；唯一键和精度经独立审查；发布不完整配置必拒绝 |
+| S2 配置、资格、报价和预留 | S1 | 草稿→批准→发布；人群快照；按SKU计算；原子占预算/库存/名额；旧单锁版；暂停只停新预留；明确未付取消/过期释放 | A→B与D→C同时命中；不足/版本变更无半写；并发最后一份只有一单成功；刷新查到相同预留 |
+| S3 支付、发奖与售后垂直链 | S2 | 接现有钱包支付事务及outbox；生成义务；真实赠品设备/USDT/NEX账本；结果未知核账；整单退款串行仲裁；监控 | 支付重放不多扣；事件重放不多发；设备/钱包真实回读；退款与发奖并发正确；既有邀请佣金不被改写 |
+| S4 后台操作面 | S1合同稳定，可与S2/S3并行 | ADM01–09；四步配置；试算→审批→发布；逐项恢复和权限；运营可读反馈 | 真实API写后刷新仍在；无单框多值输入；失败不丢输入；无权限拒绝；表单与APP展示字段对应 |
+| S5 APP原流程接入 | S1合同与设计冻结；联调需S2/S3 | APP01–09；首页推广投影、卡片、详情/组合、quantity贯通、原checkout赠品；订单/奖励/邀请页；统一离页意图 | 首页至到账可操作；所有相关按钮按稿用Liquid Glass；退出不取消；支付未知查询原单；无活动路径仍可购买 |
+| S6 H5同步及跨端合同 | S4/S5联调完成 | 用现行plan/apply同步共享文件；核H5原生边界；zh/en/vi、不同视口与恢复；APP提交后repin | 源提交pin一致；APP/H5各自full verify和真实交互通过；无仅APP提交就宣布跨端完成 |
+| S7 双独立像素审查与返修 | S4/S5/S6可运行且冻结快照 | 至少2名未参与该页面实现的agent，逐页逐态独立对照批准设计与实景；差异清单、叠图、复验 | 两份独立报告均通过且对应最终同一快照；任何未达效果项返修，修改后两名重新审查；详见第5节 |
+| S8 总集成与交付 | S2–S7全过 | 并发/故障/退款/跨端/视觉全部证据闭合；done-review与独立审计；按各仓门禁提交推送；交付运行手册和关闭开关 | 不以unit绿替代真实资产，不以截图替代持久化；远端提交可查；生产启用按获准发布范围独立执行 |
+
+S0/S1先串行，避免三个工程各自发明字段。S4/S5可用清楚标注的fixture开发，但只能记“原型/隔离联调通过”；S2/S3真实闭环通过后才做资金相关集成验收。
+
+## 4. 代码落点与需要一起检查的调用链
+
+### 4.1 服务端
+
+Java路径前缀：`src/main/java/ffdd/opsconsole/`，类名以开工固定提交核实。
+
+| 现有落点 | 接入/复用及边界 |
+|---|---|
+| `growth/web/OpsGrowthController.java`、`growth/application/AppGrowthEngagementService.java` | 保留旧单奖励任务；新增购机促销域合同，不能用旧EVENT:code:user键代表逐订单奖励 |
+| `growth/application/OpsReferralRewardService.java` | 复用真实sponsor、版本和核账模式；不覆盖H8或重算旧邀请 |
+| `shared/canonical/AppCanonicalBoundaryController.java` / Service | 接商品/报价/订单读模型；资格与金额由后端权威计算 |
+| `shared/canonical/AppBundleOrderService.java` | 现有productNos兼容；新items数量必须贯通创建、快照、支付、取消、退款，不仅改DTO |
+| `commerce/application/AppOrderCommandService.java` | 钱包扣款、设备创建、checkout.completed；扩展同事务快照及义务交接；取消/过期释放对应预留 |
+| `device/application/OpsDeviceService.java` 与 `finance/application/E4OrderRefundSettlementFacadeAdapter.java` | 沿现有整单钱包退款；同步撤奖及未知结果，不擅加部分退款或原支付通道承诺 |
+| `team/application/VRankSkuFulfillmentService.java` | SKU权益记录不等于已创建设备；可复用验证/映射，不能直接当赠机完成 |
+| `team/application/DirectReferralConsumer.java`、现有outbox/消费者恢复 | 兼容旧购买/收益/退款事件；新赠品不递归触发购买佣金或再次买赠 |
+| `finance/hdpay/HdPayCallbackSettlementService.java` | 现行充值到账不能作为购机成交；购机仍以订单钱包pay事实触发 |
+
+数据库约束应直接防住同一奖励重复落账；事务边界与索引经database-reviewer审查。金额沿项目BigDecimal/定点规则，API用十进制字符串，不新引入浮点货币。先扩表/新字段、再开新能力；回滚代码不删除已发奖励账。
+
+### 4.2 后台与APP/H5
+
+后台优先沿 `app/components/domain-views/h-tabs/h3-quest-events.tsx`、`lib/admin/h-client.ts` 和当前H4入口扩展；新增活动列表/编辑器与台账可按现行模块拆分，不改全站导航体系。接口联调失败必须报错，不落mock成功。
+
+APP接入路径：
+
+- `src/pages/index/index.vue` 与 `src/lib/home-task-carousel.ts`：复用轮播位置；新增 `home.purchase-promotion` 活动服务投影。现有 `home.conversion-banner` 属于周任务，不用旧countdownDays/Hours推算真实结束时间。
+- `src/components/store/product-card.vue` 与 `src/pages/store/{store,detail,bundle}.vue`：逐SKU奖励摘要、详情规则、购买数量一路传递。点击卡体与点击购买保持原目标。
+- `src/pages/store/checkout.vue`：在已有确认区放赠品，支付仍走原订单；一次页面级requestLeave统一顶栏、显式返回及可拦截路由退出。`onUnload`不能作为确认时机。系统关闭无法保证弹窗，恢复靠原单读取。
+- `src/components/app-chassis.vue`、`global-ui.vue`、`src/styles/glass-surfaces.css`：复用真实LiquidGlass装饰和现有对话框可访问性；不能仅增加同名CSS类便宣称材质完成；保持减少动效/透明、强对比回退。
+- `src/api/{events-api,order-api,bundle-order-api}.ts`、`src/lib/order-line-items.ts`：新接口/订单逐项合同、兼容旧订单、错误恢复。按项目惯例加入promotion client，不引入另一套请求栈。
+- 订单、设备、钱包与邀请入口：只追加本次奖励来源和查询链，不复制余额、邀请关系或订单状态真源；文案同步zh/en/vi。
+
+## 5. 像素还原硬门：至少两名独立agent
+
+这是必须执行的交付门，不是可选抽查，也不能由实现者自测或一份综合评分替代。设计讨论阶段的生图、演示HTML和正式产品运行通过是三种不同产物。
+
+### 5.1 冻结可比较基准
+
+1. 主人批准业务和视觉方向后，把APP新版四屏稿及后台稿收敛到精确画板。当前生成图只定方向，图中文字、示例产品及价格不是政策值；正式像素基准须有真实SKU素材、字体、CSS尺寸和状态截图。
+2. 保存设计版本/文件hash、视口CSS尺寸、DPR、缩放100%、字体、语言、主题、数据fixture、滚动位置。APP主画板390px，补320/430px；后台主画板1440px，补1280px及现行支持视口。若获批设计尺寸不同，以记录的新尺寸替换，不拉伸截图假匹配。
+3. 涵盖首页广告、商城/详情/组合卡、结账赠品、退出弹窗、支付结果、订单/奖励/邀请，及后台列表、配置各步、发布、台账、指标；还要有加载/空/错/禁用/长文案/减少透明效果。只比较一个成功首屏不满足交付。
+4. 运行截图必须来自此次提交启动的服务，记录URL、服务源目录/commit、资源hash、截图时刻与测试账号类型；真机APP另记系统/设备型号。H5截图不能冒充原生包验收。
+
+### 5.2 独立职责与证据
+
+| 审查员 | 主要镜头 | 每页必交 |
+|---|---|---|
+| Visual-A（未参与该页面实现） | 几何与排版：位置、间距、尺寸、圆角、字号/字重/行高、图片裁切、对齐 | 设计/实景并排、50%叠图或差分、定位到元素的差值、PASS/FAIL与证据 |
+| Visual-B（另一独立agent，未参与该页面实现） | 材质与状态：Liquid Glass边缘/高光/透射/按压/禁用/弹层，颜色层级，所有交互态、窄屏和可访问回退 | 独立打开运行页面操作；同样对照完整页面，列材质和状态差异、截图/短录屏、PASS/FAIL |
+
+两者都检查完整还原，镜头侧重不能成为漏查理由。二者不能互相复制报告，先各自完成再由主线合并。不得把作者改名为reviewer，也不得用“两个agent看过”替代两份可定位的独立结论。
+
+### 5.3 达标与返修循环
+
+- 确认基准中的区域位置、可见组件、文案及换行、图片比例、按钮尺寸、弹层层级必须一致。关键几何边缘目标误差不超过1 CSS px；字体/圆角/配色使用批准token精确值。字体抗锯齿和系统渲染差异单列并证明来源，不能掩盖布局或玻璃材质误差。
+- 图像差分作为定位工具，不用一个相似度分数掩盖关键按钮或赠品缺失。可控动态数据固定fixture；允许的时间/头像区域需事先列明遮罩及理由，禁止遮挡本功能。
+- 任一审查发现未达设计效果、P0/P1或影响还原的P2：登记元素、设计目标、实景值、复现步骤、负责人；实现者修正，主线回源确认后重跑相关功能与截图。**至少两名审查员重新审查同一新快照，直到两份报告均通过。**不能设置“两轮后默认放行”、取平均分或仅重审其中一份。
+- 改动共享按钮/弹层/字体会重开所有受影响页面；不得只截被指出的一页。修改设计基准需有明确的设计决定和新版hash，不能为了通过把基准改成当前实现截图。
+- 无真机、字体或实际稿导致无法比较时明确记“未验收”，保持交付门未过。不能以编译成功或肉眼大致相似宣布像素级还原。
+
+最终Visual Gate报告包含：设计hash、代码snapshot、两份独立报告位置、全部差异闭合表、覆盖矩阵、无未决差异结论。主线负责核实报告绑定的确是待交付快照。
+
+## 6. 适合Codex的任务拆分与运行方法
+
+最多4个并行槽：主线负责契约/集成；开发阶段余下3槽按服务端、PC、APP分工（H5由APP同一owner同步）。共享合同在主线冻结后才并行。审查阶段释放开发槽，安排Visual-A、Visual-B及资金/回归审查；必要镜头分轮运行，不为并行数量创建互相争写的agent。
+
+每次spawn都显式 `fork_turns="none"`，消息写清：repo绝对路径与base、只拥有的文件、输入PRD和设计版本、该阶段AC、禁止改动面、执行命令、提交结果格式；说明并非独占仓库，不得回滚其他改动。子agent不得再依靠继承历史补上下文。已有agent可复用相关任务，独立视觉审查身份必须满足上节要求。
+
+实施时各仓各建一个 `schemaVersion: 2` 的任务计划，而不是把四仓塞成一个Git根。计划绑定真实base和绝对repo、风险high、PRD/设计/API等inputs，steps写真实scope和依赖，integration依赖所有必要步骤并设reviewRequired=true。跨仓输入记录确切提交及可读文件，变更会触发重开下游验收。当前设计包不放伪造的可执行计划或预填PASS报告。
+
+使用现有 `D:/WORKS/PLAN/scripts/codex-workflow/workflow.mjs`，顺序是 init → start对应步骤 → 实施 → run → 独立review → status；返修用reopen，再验收；所有步骤和integration通过才finish。用真实argv数组调用，不拼shell命令。UI验收绑定带runtime能力的record检查及本轮截图/操作证据，不能用exit=0充当UI通过。
+
+报告必须绑定taskId/stepId/checkId/runId/repo/snapshotHash，来自本轮运行。输出awaiting_review不等于passed；中断后先读取status，确认旧进程退出再recover；不重做已有有效证据，也不复用代码已变化的旧绿报告。
+
+## 7. 测试与审查清单
+
+### 7.1 已存在的工程命令与边界
+
+| 工程 | 开工核实过后使用的现有命令/资源 | 说明 |
+|---|---|---|
+| PC | `npm run verify`；`npm run test:e2e:full-flow` | verify必须全量；新活动还需自己的真实API场景，旧全流程不会自动覆盖新增功能 |
+| APP/H5 | `npm run type-check`；`npm run verify`；`npm run sync:h5:check`；`scripts/app-h5-sync.mjs plan/apply/repin` | 最终提交前与推送前遵守各仓full门；同步参数按现行docs/app-h5-sync.md，不凭记忆猜 |
+| 后端 | Maven项目根pom及现有JUnit/MySQL集成资源 | 当前会话未验证可用java/mvn工具链；S0先找到已安装JDK17/Maven并实际运行，再固定命令；不写“已通过” |
+| 设计包 | `node docs/design/growth-promotions/prototype-check.mjs`；nexion-spec的strict lint | 只证明设计演示和规格结构，不证明生产发奖或正式APP像素还原 |
+
+后端扩展现有 `AppCanonicalBoundaryServiceTest`、`AppBundleOrderServiceTest`、`AppOrderCommandServiceTest`、`E4OrderRefundSettlementFacadeAdapterTest`、`OpsGrowthServiceTest`、`AppGrowthEngagementServiceTest`、`OpsReferralRewardServiceTest`、`DirectReferralConsumerTest`、`VRankSkuFulfillmentServiceTest`，先核当前类名与实际包。MySQL测试必须使用隔离库；现行 `NEXION_F1_SKU_MYSQL_IT`、`NEXION_EVENT_CLAIM_IT` 和 `NEXION_TEST_DB_*` 配置不能指向真实客户账。
+
+PC全量门需显式绑定 `NEXION_APP_ROOT` 与 `NEXION_UNIAPP_ROOT` 到同一正式APP快照，`NEXION_BACKEND_ROOT` 到相容的固定后端版本，`NEXION_JANUS_ROOT` 到正式Janus验证依赖，`NEXION_PRD_ROOT` 到当前PC的docs/PRD；Janus只作为既有全量门的只读依赖，不纳入本活动开发面。APP自身跨仓门使用其现有 `NEXGRID_BACKEND_ROOT`、`NEXGRID_PC_ROOT`，不能混淆两仓变量。依赖版本须匹配lock；当前Next构建拒绝指向工程外的node_modules链接，使用本地实际依赖目录，不修改构建配置绕过。
+
+### 7.2 新增验收（S1起编写，当前尚不存在）
+
+为AC01–25写最少足够的行为测试：资格重算/首购争用；报价改版/最后一份库存/预算/过期；重复pay/outbox/worker重启；多SKU quantity的付款取消退款一致性；三类奖励成功、明确失败和未知；赠机真实deviceId；退款申请冻结/撤回恢复及执行与发奖并发；越权/篡改/自邀请；旧活动与佣金无回归。资金核心优先写能复现失败的测试再实现。
+
+浏览器/真机矩阵至少包括：zh/en/vi、APP/H5、320/390/430、后台1440；新客/无设备/老客/等级不符；无活动/正常/不足/到期；未建单退出/已有单退出/明确取消/支付未知/重复点击/刷新回读；两台设备各自不同奖励；减少动效/透明、键盘焦点与屏幕阅读提示。完整矩阵可用数据驱动复用，不做组合爆炸，但每条不同业务分支有证据。
+
+### 7.3 墨菲预演与独立审查
+
+| 最可能失败处 | 证伪方法 |
+|---|---|
+| 看见赠品但没真正到账 | API、数据库、设备/钱包页面三方回读同一义务，重启刷新后仍一致 |
+| 同一首购/最后一份被两次领取 | 两客户端同步建单/支付，核事务结果及资产总额 |
+| 订单过期与支付到达同时发生 | 控制服务端边界时间并查原单，不按客户端计时释放未知支付 |
+| 退款成功后又发奖 | 并发及乱序事件，最终订单/义务/账本闭合，原始流水可追溯 |
+| 新审批版本把旧活动或旧单弄失效 | ACTIVE下编辑/批准/发布/暂停，核旧预留按快照履约 |
+| UI像稿但返回丢单/重复扣款 | 实际操作所有离页出口和恢复入口，不只截图 |
+| 只把按钮涂半透明就算玻璃 | Visual-A/B逐态对照边缘、高光、背景采样、按压和回退，均须通过 |
+| 收入看板重复计算充值与购买 | 独立订单/入金/奖励账核算，币种分列，退款冲正后重算 |
+
+实施代码需按语言派Java reviewer、TypeScript reviewer；钱/权限派安全和数据库镜头；nexion-audit覆盖事实、回归、一致性、产品目标及人工操作友好。审查只给findings，主线对P0/P1回源和实景复验，再修复。
+
+## 8. 发布、回滚和交付定义
+
+先迁移并兼容旧客户端，再上线关闭的新接口/消费能力，联调完成后部署PC/APP/H5，最后按批准活动开启投放。使用既有能力开关；若现有开关表达不了“停止新预留但继续旧义务”，只新增所需最小开关。推广停投、活动暂停、发奖暂停是不同动作，不能用关闭页面冒充停止资金风险。
+
+故障时优先停止新报价/预留和广告投放，保留原订单查询、已承诺支付与核账；必要停止执行的义务保留可恢复状态和审计。发布版本只回退新订单入口，不改历史承诺；撤回数据库必须先证明无已发生义务，禁止以删表回滚已发资产。每次恢复从原命令和唯一键继续。
+
+正式交付分别报告：业务实现、像素还原、隔离联调、全量集成、远端同步、生产启用六项状态。全部必要验收通过后按指定分支或现有upstream提交推送；fetch比较远端，保留新提交，不强推、不绕过hooks。APP/H5遵守先暂存full verify→commit→干净树full verify→push及来源repin门。
+
+done-review六维检查：事实与持久化、必要内容是否齐全、全链覆盖、同类回归、平台不变量、回源/实景证据。最终再问：截图是否冒充资产、现有是否掩盖缺项、抽查是否冒充遍历、是否只修一页、三奖励/三语言/双端是否漏面、agent结论是否对应当前树。任一未过明确列阻断与证据，不能称产品完成。
+
+本轮仅交付PRD、设计方向与可点击演示及此实施计划；不替主人批准D01–D11，不启动真实资金活动。实施开工时只需要一次确定范围和必要业务政策，已授权范围内按以上门自动连续推进，不逐步骤重复索要确认。
