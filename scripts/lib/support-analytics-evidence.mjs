@@ -42,7 +42,7 @@ export function assertAvatarPolicy(policy, maker, checker) {
   assert.equal(maker.username, policy.makerUsername); assert.equal(String(maker.adminId), String(policy.makerAdminId));
   if (checker) {
     assert.equal(checker.username, policy.checkerUsername); assert.equal(String(checker.adminId), String(policy.checkerAdminId));
-    for (const authority of ["platform_a1_write", "platform_a2_operation_approve"]) assert.ok(checker.authorities?.includes(authority), "Actual avatar checker lacks the real approval/business authority");
+    for (const authority of ["platform_a1_write", "platform_a2_operation_approve"]) assert.ok(checker.authorities?.includes(authority), "Actual avatar checker lacks the real A2/business authority");
   }
 }
 export function assertAvatarProposal(input, before, uploads, allowed, policy) {
@@ -113,7 +113,7 @@ export function validateMutation(id, mutation, before, uploads, allowed, preview
       assert.ok(uploads.some(upload => upload.path === "/api/admin/content/conversations/attachments" && businessData(upload.output).id === input.attachmentId && businessData(upload.output).state === "READY"), "Image did not use the asset uploaded in this run");
     } else assert.equal(input.kind, "TEXT");
   } else if (id === "avatar") {
-    assert.ok(mutation.proposal, "A direct profile PATCH cannot stand in for the real avatar A2 approval");
+    assert.ok(mutation.proposal, "A direct profile PATCH cannot stand in for the real avatar A2 execution");
     const params = assertAvatarProposal(mutation.proposal.input, before, uploads, allowed, mutation.avatarPolicy);
     assert.equal(mutation.path, avatarApprovePath(mutation.proposal));
     assert.equal(String(data.id), String(businessData(mutation.proposal.output).id));
@@ -183,11 +183,11 @@ export function assertRuntimeReceipt(receipt, target, now = Date.now()) {
   assert.equal(receipt.taskId, target.taskId);
   const age = now - Date.parse(receipt.recordedAt);
   assert.ok(age >= 0 && age <= 15 * 60000, "Runtime startup receipt is missing or stale");
-  assert.equal(receipt.fe.repo, target.repo);
+  assert.equal(resolve(receipt.fe.repo), resolve(target.repo));
   assert.equal(receipt.fe.origin, "http://127.0.0.1:33107");
   assert.equal(target.origin, receipt.fe.origin);
   assert.equal(receipt.fe.backendUrl, "http://127.0.0.1:18161");
-  assert.equal(receipt.be.repo, "D:/WORKS/PLAN/.wt/cs-analytics-api-20261007");
+  assert.equal(resolve(receipt.be.repo), resolve("D:/WORKS/PLAN/.wt/cs-analytics-api-20261007"));
   assert.equal(receipt.be.origin, receipt.fe.backendUrl);
   assert.equal(receipt.fe.cookieNamespace, "cs_analytics_20261007");
   assert.equal(receipt.resources.db.port, 33337);
@@ -274,9 +274,9 @@ export function assertManualFeProof(receipt, target, proof, actual, now = Date.n
   const recorded = Date.parse(proof.recordedAt);
   assert.ok(recorded <= Date.parse(receipt.recordedAt) && now - recorded >= 0 && now - recorded <= 15 * 60000, "Manual FE proof is stale or outside this receipt");
   assert.equal(proof.fe.commandLine, null); assert.equal(proof.fe.name, "node.exe");
-  assert.equal(proof.fe.repo, target.repo); assert.equal(proof.fe.origin, receipt.fe.origin);
+  assert.equal(resolve(proof.fe.repo), resolve(target.repo)); assert.equal(proof.fe.origin, receipt.fe.origin);
   assert.equal(proof.fe.candidateDigest, target.candidateDigest);
-  assert.equal(proof.be.repo, receipt.be.repo); assert.equal(proof.be.candidateDigest, receipt.be.candidateDigest);
+  assert.equal(resolve(proof.be.repo), resolve(receipt.be.repo)); assert.equal(proof.be.candidateDigest, receipt.be.candidateDigest);
   assertLiveFingerprint(receipt.be, proof.be);
   assert.equal(resolve(receipt.fe.buildIdPath), resolve(target.repo, serviceDistDir, "BUILD_ID"), "FE build belongs to a different serving directory");
   assert.equal(proof.build.buildIdPath, receipt.fe.buildIdPath);

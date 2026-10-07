@@ -13,6 +13,7 @@ function run(config, options = {}) {
   const report = join(dir, "report.json");
   const env = { ...process.env, WORKFLOW_TASK_ID: "negative-test", WORKFLOW_STEP_ID: "I0-F", WORKFLOW_CHECK_ID: "runtime", WORKFLOW_RUN_ID: "negative-test", WORKFLOW_REPO: repo, WORKFLOW_SNAPSHOT_HASH: "negative-only" };
   delete env.SUPPORT_ACCEPTANCE_CONFIG;
+  if (options.omitReceipt) delete env.SUPPORT_RUNTIME_RECEIPT;
   if (config) {
     env.SUPPORT_ACCEPTANCE_CONFIG = join(dir, "config.json");
     writeFileSync(env.SUPPORT_ACCEPTANCE_CONFIG, JSON.stringify({ taskId: "negative-test", repo, isolatedDatabase: true, ...config }));
@@ -249,6 +250,18 @@ test("public preload binds the serving fixture separately from verify builds", (
   assertFePreload(backendCookie + "\nprocess.env.NEXT_DIST_DIR = '.next-seven-fixture';\n");
   assert.throws(() => assertFePreload(backendCookie), /serving-build binding/);
   for (const directory of [".next", ".next-seven-verify"]) assert.throws(() => assertFePreload(backendCookie + `\nprocess.env.NEXT_DIST_DIR = '${directory}';`), /serving-build binding/);
+});
+test("equivalent Windows repository spellings retain ownership while another tree is rejected", () => {
+  const { r, actual, proof, now } = manualFeFixture();
+  r.fe.repo = repo.replaceAll("\\", "/");
+  proof.fe.repo = repo;
+  assertRuntimeReceipt(r, target, now);
+  assertManualFeProof(r, target, proof, actual, now);
+  const wrong = structuredClone(r); wrong.fe.repo = resolve(repo, "../other-worktree");
+  assert.throws(() => assertRuntimeReceipt(wrong, target, now));
+  const result = run({ repo: repo.replaceAll("\\", "/"), baseUrl: "http://127.0.0.1:33107" }, { omitReceipt: true });
+  assert.equal(result.status, 1);
+  assert.match(result.report.steps[0].reason, /receipt is required before login or writes/);
 });
 test("the real sidebar remains unique when M3 also mounts a customer-profile aside", async () => {
   const browser = await chromium.launch({ headless: true });
