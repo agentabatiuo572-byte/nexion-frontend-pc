@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
-import { sha256, repositoryDigest as digestRepository, businessData, unboundCustomerSnapshot, conversationFeatures, consoleSidebarRoot, businessRoots, assertUiBinding, assertRequestSeeds, assertAvatarPolicy, assertAvatarProposal, avatarProposalPath, avatarApprovePath, validateMutation, validateReadback, verifyRuntimeOwnership, installRenderedBlobObserver, waitForRenderedImageMatch } from "./lib/support-analytics-evidence.mjs";
+import { sha256, findPagedAccount, repositoryDigest as digestRepository, businessData, unboundCustomerSnapshot, conversationFeatures, consoleSidebarRoot, businessRoots, assertUiBinding, assertRequestSeeds, assertAvatarPolicy, assertAvatarProposal, avatarProposalPath, avatarApprovePath, validateMutation, validateReadback, verifyRuntimeOwnership, installRenderedBlobObserver, waitForRenderedImageMatch } from "./lib/support-analytics-evidence.mjs";
 
 const features = ["avatar", "sku", "attachment", "bulk", "random", "cookie", "unknown-main", "unknown-dock"];
 const usedTotpSteps = new Map();
@@ -58,6 +58,7 @@ async function actions(page, sequence) {
     else if (action.kind === "file") await locator.setInputFiles(action.path);
     else if (action.kind === "press") await locator.press(action.value);
     else if (action.kind === "visible") await locator.waitFor({ state: "visible" });
+    else if (action.kind === "find-account") save(`account-location-${Date.now()}.json`, await findPagedAccount(locator, action.value));
     else if (action.kind === "text") {
       await locator.filter({ hasText: action.value }).waitFor({ state: "visible" });
       assert.ok((await locator.innerText()).includes(action.value));

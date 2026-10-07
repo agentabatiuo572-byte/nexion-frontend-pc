@@ -5,6 +5,34 @@ import { join, resolve, relative } from "node:path";
 import { spawnSync, execFile } from "node:child_process";
 
 export const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
+export async function findPagedAccount(card, targetSelector, timeoutMs = 30000) {
+  assert.ok(Number.isSafeInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= 30000);
+  const deadline = Date.now() + timeoutMs;
+  const remaining = () => { const ms = deadline - Date.now(); assert.ok(ms > 0, "Account pagination deadline expired"); return ms; };
+  const info = card.locator(".pager-info"), pager = card.locator(".pager-num");
+  const match = (await info.innerText({ timeout: remaining() })).match(/\/\s*(\d+)\s*$/);
+  assert.ok(match, "Invalid account pagination total");
+  const total = Number(match[1]); assert.ok(Number.isSafeInteger(total) && total >= 0);
+  await card.locator("select.pager-size").selectOption("50", { timeout: remaining() });
+  const pages = Math.max(1, Math.ceil(total / 50)), visited = [];
+  for (let page = 1; page <= pages; page++) {
+    await pager.filter({ hasText: new RegExp(`^\\s*${page}\\s*/\\s*${pages}\\s*$`) }).waitFor({ state: "visible", timeout: remaining() });
+    const currentTotal = (await info.innerText({ timeout: remaining() })).match(/\/\s*(\d+)\s*$/);
+    assert.ok(currentTotal && Number(currentTotal[1]) === total, "Account list changed during pagination");
+    visited.push(page);
+    const target = card.locator(targetSelector), count = await target.count();
+    assert.ok(count <= 1, "The authorized account selector is ambiguous");
+    if (count === 1) {
+      assert.equal(await target.isVisible(), true, "The authorized account is not visible");
+      remaining();
+      return { total, pages, visited, targetSelector };
+    }
+    assert.ok(page < pages, "The authorized account was not found in the actual account list");
+    const next = card.getByRole("button", { name: "›", exact: true });
+    assert.equal(await next.isEnabled({ timeout: remaining() }), true, "Account pagination stopped before the final page");
+    await next.click({ timeout: remaining() });
+  }
+}
 export function repositoryDigest(repo) {
   const git = args => {
     const result = spawnSync("git", ["-C", repo, ...args], { windowsHide: true, maxBuffer: 32 * 1024 * 1024 });

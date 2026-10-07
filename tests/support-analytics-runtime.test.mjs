@@ -6,9 +6,58 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { createServer } from "node:net";
 import { chromium } from "playwright";
-import { businessData, unboundCustomerSnapshot, consoleSidebarRoot, assertUiBinding, assertRequestSeeds, assertResourceBindings, assertManualFeProof, assertFePreload, assertAvatarPolicy, assertAvatarProposal, avatarApprovePath, validateMutation, validateReadback, assertRuntimeReceipt, assertLiveFingerprint, assertBoundFile, sha256, installRenderedBlobObserver, renderedBlobObservation, renderedBlobSha256, waitForRenderedImageMatch, windowsFingerprint, windowsFingerprintBatch } from "../scripts/lib/support-analytics-evidence.mjs";
+import { businessData, findPagedAccount, unboundCustomerSnapshot, consoleSidebarRoot, assertUiBinding, assertRequestSeeds, assertResourceBindings, assertManualFeProof, assertFePreload, assertAvatarPolicy, assertAvatarProposal, avatarApprovePath, validateMutation, validateReadback, assertRuntimeReceipt, assertLiveFingerprint, assertBoundFile, sha256, installRenderedBlobObserver, renderedBlobObservation, renderedBlobSha256, waitForRenderedImageMatch, windowsFingerprint, windowsFingerprintBatch } from "../scripts/lib/support-analytics-evidence.mjs";
 
 const repo = resolve(import.meta.dirname, "..");
+test("account location uses actual pagination and rejects missing, ambiguous or stalled targets", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage(), target = 'button[aria-label="edit seeded account"]';
+    const fixture = async (total, position, mode = "normal") => {
+      await page.setContent(`<section><span class="pager-info"></span><span class="pager-num"></span><select class="pager-size"><option>10</option><option>50</option></select><div id="rows"></div><button id="next">›</button></section>`);
+      await page.evaluate(({ total, position, mode }) => {
+        let index = 0, size = 10;
+        const render = () => {
+          document.querySelector('.pager-info').textContent = `显示 ${total ? index * size + 1 : 0}–${Math.min((index + 1) * size, total)} / ${total}`;
+          document.querySelector('.pager-num').textContent = `${index + 1} / ${Math.max(1, Math.ceil(total / size))}`;
+          const rows = document.querySelector('#rows'); rows.replaceChildren();
+          if (position >= index * size && position < Math.min((index + 1) * size, total)) {
+            for (let n = 0; n < (mode === 'duplicate' ? 2 : 1); n++) {
+              const button = document.createElement('button'); button.setAttribute('aria-label', 'edit seeded account'); button.textContent = 'Edit'; rows.append(button);
+              if (mode === 'hidden') button.style.display = 'none';
+            }
+          }
+          document.querySelector('#next').disabled = mode === 'disabled' || index >= Math.ceil(total / size) - 1;
+        };
+        document.querySelector('select').onchange = event => { size = Number(event.target.value); index = 0; render(); };
+        document.querySelector('#next').onclick = () => { if (mode === 'stalled') return; index++; if (mode === 'drift') total++; render(); };
+        render();
+      }, { total, position, mode });
+      return page.locator('section');
+    };
+    for (const [total, position, expectedPage] of [[7, 2, 1], [77, 76, 2], [151, 120, 3]]) {
+      const result = await findPagedAccount(await fixture(total, position), target);
+      assert.equal(result.total, total); assert.equal(result.pages, Math.ceil(total / 50)); assert.equal(result.visited.at(-1), expectedPage);
+      assert.equal(await page.locator(target).count(), 1);
+    }
+    await assert.rejects(findPagedAccount(await fixture(0, -1), target), /not found/);
+    await assert.rejects(findPagedAccount(await fixture(77, -1), target), /not found/);
+    await assert.rejects(findPagedAccount(await fixture(10, 1, 'duplicate'), target), /ambiguous/);
+    await assert.rejects(findPagedAccount(await fixture(10, 1, 'hidden'), target), /not visible/);
+    await assert.rejects(findPagedAccount(await fixture(102, 101, 'disabled'), target), /stopped before/);
+    await assert.rejects(findPagedAccount(await fixture(102, 101, 'drift'), target), /list changed/);
+    await assert.rejects(findPagedAccount(await fixture(77, 76, 'stalled'), target, 300), /Timeout|deadline/);
+    const missingNext = await fixture(77, 76);
+    await missingNext.getByRole('button', { name: '›', exact: true }).evaluate(element => element.remove());
+    page.setDefaultTimeout(5000);
+    const started = Date.now();
+    await assert.rejects(findPagedAccount(missingNext, target, 300), /Timeout|deadline/);
+    assert.ok(Date.now() - started < 2000, 'Missing pagination control escaped the action deadline');
+    const card = await fixture(10, 1);
+    await card.locator('.pager-info').evaluate(element => { element.textContent = 'unknown'; });
+    await assert.rejects(findPagedAccount(card, target), /Invalid account pagination/);
+  } finally { await browser.close(); }
+});
 function run(config, options = {}) {
   const dir = mkdtempSync(join(tmpdir(), "support-i0-negative-"));
   const report = join(dir, "report.json");
