@@ -323,7 +323,10 @@ try {
         if (["random", "bulk"].includes(scenario.id)) assert.ok(scenario.customerIds?.length && scenario.customerIds.every(id => runtimeReceipt.allowedSeedObjects.customerIds.includes(String(id))));
         priorState = await beforeWrite(context, scenario);
       }
-      await actions(page, scenario.prepare);
+      if (scenario.id === "avatar") {
+        const proposed = page.waitForResponse(response => new URL(response.url()).pathname === avatarProposalPath && response.request().method() === "POST", { timeout: 30000 });
+        await Promise.all([proposed, actions(page, scenario.prepare)]);
+      } else await actions(page, scenario.prepare);
       await Promise.all(uploadCaptures);
       if (uploadErrors.length) throw uploadErrors[0];
       if (scenario.id === "avatar") {
