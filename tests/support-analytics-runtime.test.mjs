@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { createServer } from "node:net";
 import { chromium } from "playwright";
-import { businessData, consoleSidebarRoot, assertUiBinding, assertRequestSeeds, assertResourceBindings, assertManualFeProof, assertFePreload, assertAvatarPolicy, assertAvatarProposal, avatarApprovePath, validateMutation, validateReadback, assertRuntimeReceipt, assertLiveFingerprint, assertBoundFile, sha256, installRenderedBlobObserver, renderedBlobSha256, windowsFingerprint, windowsFingerprintBatch } from "../scripts/lib/support-analytics-evidence.mjs";
+import { businessData, unboundCustomerSnapshot, consoleSidebarRoot, assertUiBinding, assertRequestSeeds, assertResourceBindings, assertManualFeProof, assertFePreload, assertAvatarPolicy, assertAvatarProposal, avatarApprovePath, validateMutation, validateReadback, assertRuntimeReceipt, assertLiveFingerprint, assertBoundFile, sha256, installRenderedBlobObserver, renderedBlobSha256, windowsFingerprint, windowsFingerprintBatch } from "../scripts/lib/support-analytics-evidence.mjs";
 
 const repo = resolve(import.meta.dirname, "..");
 function run(config, options = {}) {
@@ -161,6 +161,33 @@ test("bulk and random commits require this run's exact frozen server preview bef
   assert.throws(() => check("/api/admin/content/support-workbench/bulk", { selectionId: "current-selection" }, [bulkPreview(["11", "13"])]), /exact targets/);
   assert.throws(() => check("/api/admin/content/support-agents/assignments/random", { previewId: "current-preview", expectedRulesVersion: 1 }, [randomPreview(["11", "12"])]));
   check("/api/admin/content/support-agents/assignments/random", { previewId: "current-preview", expectedRulesVersion: 2 }, [randomPreview(["11", "12"])]);
+});
+test("random baseline requires an exact pool row and complete active bindings, including orphaned advisors", () => {
+  const pool = { total: 1, records: [{ customerId: 11, nickname: "Pool customer", version: 1 }] };
+  const empty = [{ total: 0, pageNum: 1, pageSize: 100, records: [] }];
+  const snapshot = unboundCustomerSnapshot("11", pool, empty);
+  assert.deepEqual(snapshot, { ...pool.records[0], agentAdminId: null });
+  assert.throws(() => unboundCustomerSnapshot("12", pool, empty), /missing or duplicated/);
+  assert.throws(() => unboundCustomerSnapshot("11", { total: 2, records: [...pool.records, ...pool.records] }, empty), /missing or duplicated/);
+  assert.throws(() => unboundCustomerSnapshot("11", { ...pool, total: 2 }, empty), /incomplete/);
+  assert.throws(() => unboundCustomerSnapshot("11", { ...pool, records: [{ customerId: 11 }] }, empty), /version/);
+  const orphan = [{ total: 1, pageNum: 1, pageSize: 100, records: [{ assignmentId: 91, customerId: 11, agentAdminId: 999999 }] }];
+  assert.throws(() => unboundCustomerSnapshot("11", pool, orphan), /already has an active binding/);
+  assert.throws(() => unboundCustomerSnapshot("11", pool, [{ ...empty[0], total: 1 }]), /incomplete/);
+  const first = { total: 101, pageNum: 1, pageSize: 100, records: Array.from({ length: 100 }, (_, i) => ({ assignmentId: i + 1, customerId: i + 100 })) };
+  assert.throws(() => unboundCustomerSnapshot("11", pool, [first]), /incomplete/);
+  const second = { total: 101, pageNum: 2, pageSize: 100, records: [{ assignmentId: 101, customerId: 200 }] };
+  assert.equal(unboundCustomerSnapshot("11", pool, [first, second]).agentAdminId, null);
+  assert.throws(() => unboundCustomerSnapshot("11", pool, [first, { ...second, total: 102 }]), /changed/);
+  assert.throws(() => unboundCustomerSnapshot("11", pool, [first, { ...second, records: [first.records[0]] }]), /duplicated across pages/);
+  assert.throws(() => unboundCustomerSnapshot("11", { ...pool, available: false }, empty));
+  assert.throws(() => unboundCustomerSnapshot("11", pool, [{ ...empty[0], available: false }]));
+
+  const preview = { path: "/api/admin/content/support-agents/assignments/random-preview", output: { code: 0, data: { id: "preview", rulesVersion: 2, customers: [{ id: 11, poolVersion: 1 }] } } };
+  const mutation = { key: "current-key", input: { previewId: "preview", expectedRulesVersion: 2 }, output: { code: 0, data: { operationId: "operation", customers: [{ customerId: 11, agentAdminId: 7, status: "ASSIGNED" }] } } };
+  const permitted = { customerIds: ["11"], eligibleAssignmentAgentIds: ["7"] };
+  validateMutation("random", mutation, { "11": snapshot }, [], permitted, [preview], ["11"]);
+  assert.throws(() => validateMutation("random", mutation, { "11": { ...snapshot, version: 2 } }, [], permitted, [preview], ["11"]), /measured pool version/);
 });
 test("all asset/profile/reply writes refuse non-seed targets and unrelated uploaded assets", () => {
   const check = (path, body) => assertRequestSeeds(path, body, [], [], allowed, []);

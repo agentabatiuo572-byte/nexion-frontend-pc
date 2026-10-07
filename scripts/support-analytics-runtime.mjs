@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
-import { sha256, repositoryDigest as digestRepository, businessData, conversationFeatures, consoleSidebarRoot, businessRoots, assertUiBinding, assertRequestSeeds, assertAvatarPolicy, assertAvatarProposal, avatarProposalPath, avatarApprovePath, validateMutation, validateReadback, verifyRuntimeOwnership, installRenderedBlobObserver, renderedBlobSha256 } from "./lib/support-analytics-evidence.mjs";
+import { sha256, repositoryDigest as digestRepository, businessData, unboundCustomerSnapshot, conversationFeatures, consoleSidebarRoot, businessRoots, assertUiBinding, assertRequestSeeds, assertAvatarPolicy, assertAvatarProposal, avatarProposalPath, avatarApprovePath, validateMutation, validateReadback, verifyRuntimeOwnership, installRenderedBlobObserver, renderedBlobSha256 } from "./lib/support-analytics-evidence.mjs";
 
 const features = ["avatar", "sku", "attachment", "bulk", "random", "cookie", "unknown-main", "unknown-dock"];
 const usedTotpSteps = new Map();
@@ -80,7 +80,17 @@ async function beforeWrite(context, scenario) {
   if (scenario.id === "bulk") return getData(context, "/api/admin/content/support-workbench/bulk?pageNum=1&pageSize=100");
   const rows = {};
   assert.ok(scenario.customerIds?.length, "Random scenario must identify the exact isolated pool customers");
-  for (const id of scenario.customerIds) rows[id] = (await getData(context, `/api/admin/content/support-workbench/customers/${encodeURIComponent(id)}`)).customer;
+  const bindingsPath = "/api/admin/content/support-agents/handover-customers?unavailableOnly=false&pageSize=100&pageNum=";
+  const bindingPages = [await getData(context, bindingsPath + "1")];
+  assert.ok(Number.isSafeInteger(bindingPages[0].total) && bindingPages[0].total >= 0);
+  for (let pageNum = 2; pageNum <= Math.ceil(bindingPages[0].total / 100); pageNum++) bindingPages.push(await getData(context, bindingsPath + pageNum));
+  rows.activeBindingPages = bindingPages;
+  rows.poolReads = {};
+  for (const id of scenario.customerIds) {
+    const pool = await getData(context, `/api/admin/content/support-agents/binding-pool?keyword=${encodeURIComponent(id)}&pageNum=1&pageSize=100`);
+    rows.poolReads[id] = pool;
+    rows[id] = unboundCustomerSnapshot(id, pool, bindingPages);
+  }
   return rows;
 }
 async function currentBusinessState(context, scenario, mutation) {
@@ -128,7 +138,7 @@ async function requireBusinessUi(page, scenario, mutation, state, before) {
   } else {
     const pool = page.locator('section[aria-label="待绑定客户池"]');
     await pool.waitFor({ state: "visible" });
-    for (const row of output.customers) assert.equal(await pool.getByText(before[String(row.customerId)].displayName, { exact: true }).count(), 0, "Assigned customer still appears in the reloaded unbound pool");
+    for (const row of output.customers) assert.equal(await pool.getByRole("checkbox", { name: `选择客户 ${row.customerId}`, exact: true }).count(), 0, "Assigned customer still appears in the reloaded unbound pool");
   }
 }
 async function login(context, page, origin, account) {
@@ -476,6 +486,10 @@ try {
       }
       await page.reload({ waitUntil: "domcontentloaded" });
       await actions(page, scenario.afterReload);
+      if (scenario.id === "bulk") {
+        const batchId = businessData(mutations[0].output).batchId;
+        await page.getByRole("dialog", { name: "圈选客户群发", exact: true }).getByRole("button", { name: new RegExp("^" + batchId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + " · ") }).click();
+      }
       if (scenario.id !== "cookie") {
         const state = await currentBusinessState(context, scenario, mutations[0]);
         validateReadback(scenario.id, state, mutations[0], priorState);
@@ -487,6 +501,7 @@ try {
       if (uploadErrors.length) throw uploadErrors[0];
       await verifyRuntimeOwnership(runtimeReceipt, runtimeTarget);
       observations.push({ id: scenario.id, role: scenario.account, priorState, uploads, previews, mutations, commandReads, reads, screenshot: evidence(file), persistedAfterReload: true });
+      save("baseline-observations.partial.json", { runtimeKind: "real-http-and-browser", baseUrl: origin, runtimeReceiptSha256: runtimeTarget.receiptSha256, complete: false, observations });
     } finally { await approvalContext?.close(); await context.close(); }
   }
   Object.assign(steps[3], { status: "pass", reason: undefined, evidence: [evidence(runtimeReceiptPath), save("baseline-observations.json", { runtimeKind: "real-http-and-browser", baseUrl: origin, runtimeReceiptSha256: runtimeTarget.receiptSha256, observations })] });

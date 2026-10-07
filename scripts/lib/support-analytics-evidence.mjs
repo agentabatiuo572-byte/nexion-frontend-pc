@@ -18,6 +18,31 @@ export function businessData(body) {
   assert.ok(body && body.code === 0 && body.data && typeof body.data === "object" && !Array.isArray(body.data), "HTTP success is not a successful business envelope");
   return body.data;
 }
+export function unboundCustomerSnapshot(customerId, pool, bindingPages) {
+  const total = bindingPages[0]?.total;
+  assert.ok(Number.isSafeInteger(total) && total >= 0, "Active binding total is unavailable");
+  assert.equal(bindingPages.length, Math.max(1, Math.ceil(total / 100)), "Active binding pages are incomplete");
+  const bindings = bindingPages.flatMap((page, index) => {
+    assert.equal(page.total, total, "Active binding total changed during readback");
+    assert.equal(page.pageNum, index + 1);
+    assert.equal(page.pageSize, 100);
+    assert.notEqual(page.available, false);
+    assert.ok(Array.isArray(page.records));
+    assert.equal(page.records.length, Math.min(100, Math.max(0, total - index * 100)), "Active binding page is incomplete");
+    return page.records;
+  });
+  assert.ok(bindings.every(row => row.assignmentId != null && row.customerId != null));
+  assert.equal(new Set(bindings.map(row => String(row.assignmentId))).size, total, "Active bindings were duplicated across pages");
+  assert.ok(!bindings.some(row => String(row.customerId) === String(customerId)), "Pool customer already has an active binding");
+  assert.ok(pool && Array.isArray(pool.records) && Number.isSafeInteger(pool.total));
+  assert.notEqual(pool.available, false);
+  assert.equal(pool.total, pool.records.length, "Pool query is incomplete");
+  const matches = pool.records.filter(row => String(row.customerId) === String(customerId));
+  assert.equal(matches.length, 1, "Exact pool customer is missing or duplicated");
+  const customer = matches[0];
+  assert.ok(Number.isSafeInteger(customer.version) && customer.version > 0, "Pool version is unavailable");
+  return { ...customer, agentAdminId: null };
+}
 export const conversationFeatures = new Set(["sku", "attachment", "unknown-main", "unknown-dock"]);
 export const consoleSidebarRoot = 'aside:has(a[aria-label="UVEL 运营控制台"])';
 export const businessRoots = {
@@ -143,6 +168,8 @@ export function validateMutation(id, mutation, before, uploads, allowed, preview
       assert.ok(customer.agentAdminId);
       assert.ok(allowed.eligibleAssignmentAgentIds?.includes(String(customer.agentAdminId)), "Assignment returned an agent outside the measured actual global eligibility set");
       assert.equal(before[String(customer.customerId)].agentAdminId, null);
+      assert.equal(String(before[String(customer.customerId)].customerId), String(customer.customerId));
+      assert.equal(before[String(customer.customerId)].version, businessData(preview.output).customers.find(row => String(row.id) === String(customer.customerId)).poolVersion, "Random preview changed the measured pool version");
     }
   }
   return data;
