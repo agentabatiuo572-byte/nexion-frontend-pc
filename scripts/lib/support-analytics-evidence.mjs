@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync, existsSync, realpathSync } from "node:fs";
+import { readFileSync, existsSync, realpathSync, statSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -19,6 +19,7 @@ export function businessData(body) {
   return body.data;
 }
 export const conversationFeatures = new Set(["sku", "attachment", "unknown-main", "unknown-dock"]);
+export const consoleSidebarRoot = 'aside:has(a[aria-label="UVEL 运营控制台"])';
 export const businessRoots = {
   sku: '.m3-stage .m3-col-chat', attachment: '.m3-stage .m3-col-chat',
   "unknown-main": '.m3-stage .m3-col-chat', "unknown-dock": '[data-proof="session-dock-panel"]',
@@ -193,7 +194,14 @@ export function assertRuntimeReceipt(receipt, target, now = Date.now()) {
   assert.equal(receipt.resources.db.schema, "cs_analytics_20261007");
   assert.equal(receipt.fe.candidateDigest, target.candidateDigest, "FE source changed after the startup receipt");
   assert.ok(receipt.allowedSeedObjects && receipt.authorizedMutationPaths?.length, "Only root-provisioned seed objects may be mutated");
-  for (const resource of [receipt.fe, receipt.be, ...["db", "redis", "s3"].map(kind => receipt.resources[kind])]) {
+  const manualFe = receipt.fe.proofMode === "manual-os-limited";
+  assert.ok(Number.isInteger(receipt.fe.pid) && receipt.fe.pid > 0 && receipt.fe.processStartTime);
+  if (manualFe) {
+    assert.equal(receipt.fe.commandLineHash, null, "Manual FE must not invent a command hash");
+    assert.ok(receipt.fe.manualProofPath && /^[a-f0-9]{64}$/i.test(receipt.fe.manualProofSha256 ?? ""), "Unreadable FE command requires complete bound alternative proof");
+  }
+  else assert.ok(receipt.fe.commandLineHash, "FE requires its command fingerprint or complete manual proof");
+  for (const resource of [receipt.be, ...["db", "redis", "s3"].map(kind => receipt.resources[kind])]) {
     assert.ok(resource && Number.isInteger(resource.pid) && resource.pid > 0 && resource.processStartTime && resource.commandLineHash, "Each live service needs a process fingerprint");
   }
 }
@@ -228,13 +236,14 @@ export function assertResourceBindings(text, ownership, receipt) {
 export function assertLiveFingerprint(expected, actual) {
   assert.equal(actual.pid, expected.pid, "The port is served by a different process");
   assert.equal(Date.parse(actual.processStartTime), Date.parse(expected.processStartTime), "The service process restarted");
+  assert.ok(typeof actual.commandLineHash === "string" && typeof expected.commandLineHash === "string", "Readable command identity is required for this service");
   assert.equal(actual.commandLineHash.toLowerCase(), expected.commandLineHash.toLowerCase(), "Service command changed");
-  assert.ok(actual.references.every(Boolean), "The live command does not reference the recorded candidate/configuration");
+  assert.ok(Array.isArray(actual.references) && actual.references.length > 0 && actual.references.every(Boolean), "The live command does not reference the recorded candidate/configuration");
 }
 export function windowsFingerprint(port, paths) {
   assert.ok(Number.isInteger(port) && port > 0 && port <= 65535);
   const literal = value => `'${value.replace(/'/g, "''")}'`;
-  const code = `$ErrorActionPreference='Stop'; $owners=@(Get-NetTCPConnection -State Listen -LocalPort ${port} | Select-Object -ExpandProperty OwningProcess -Unique); if($owners.Count -ne 1){throw 'Listener ownership is ambiguous'}; $proc=Get-CimInstance Win32_Process -Filter ('ProcessId='+$owners[0]); $cmd=$proc.CommandLine; $hash=[System.Security.Cryptography.SHA256]::Create(); $bytes=[System.Text.Encoding]::UTF8.GetBytes($cmd); $digest=([BitConverter]::ToString($hash.ComputeHash($bytes))).Replace('-','').ToLowerInvariant(); $refs=@(${paths.map(literal).join(",")}) | ForEach-Object {$cmd.Replace([char]92,[char]47).ToLowerInvariant().Contains($_.Replace([char]92,[char]47).ToLowerInvariant())}; [pscustomobject]@{pid=[int]$proc.ProcessId;processStartTime=$proc.CreationDate.ToUniversalTime().ToString('o');commandLineHash=$digest;references=@($refs)} | ConvertTo-Json -Compress`;
+  const code = `$ErrorActionPreference='Stop'; $owners=@(Get-NetTCPConnection -State Listen -LocalPort ${port} | Select-Object -ExpandProperty OwningProcess -Unique); if($owners.Count -ne 1){throw 'Listener ownership is ambiguous'}; $proc=Get-CimInstance Win32_Process -Filter ('ProcessId='+$owners[0]); if(!$proc){throw 'Listener process disappeared'}; $cmd=$proc.CommandLine; $digest=$null; $refs=$null; if($null -ne $cmd){$hash=[System.Security.Cryptography.SHA256]::Create(); $bytes=[System.Text.Encoding]::UTF8.GetBytes($cmd); $digest=([BitConverter]::ToString($hash.ComputeHash($bytes))).Replace('-','').ToLowerInvariant(); $refs=@(@(${paths.map(literal).join(",")}) | ForEach-Object {$cmd.Replace([char]92,[char]47).ToLowerInvariant().Contains($_.Replace([char]92,[char]47).ToLowerInvariant())})}; [pscustomobject]@{pid=[int]$proc.ProcessId;processStartTime=$proc.CreationDate.ToUniversalTime().ToString('o');commandLineHash=$digest;references=$refs;commandLineReadable=($null -ne $cmd);executablePathReadable=($null -ne $proc.ExecutablePath)} | ConvertTo-Json -Compress`;
   const result = spawnSync("powershell.exe", ["-NoProfile", "-Command", code], { windowsHide: true, encoding: "utf8", timeout: 15000 });
   assert.equal(result.status, 0, "Cannot establish live listener/process ownership");
   return JSON.parse(result.stdout);
@@ -244,6 +253,86 @@ function boundFile(file, digest) {
   assert.equal(sha256(readFileSync(file)), digest.toLowerCase(), "A recorded runtime file changed");
 }
 export { boundFile as assertBoundFile };
+export function assertManualFeProof(receipt, target, proof, actual, now = Date.now()) {
+  assert.equal(receipt.fe.proofMode, "manual-os-limited");
+  assert.equal(receipt.fe.commandLineHash, null);
+  assert.equal(actual.commandLineReadable, false, "Manual proof is only for a successfully observed unreadable FE command");
+  assert.equal(actual.executablePathReadable, false);
+  assert.equal(actual.commandLineHash, null); assert.equal(actual.references, null);
+  const sameProcess = (expected, observed) => {
+    assert.equal(observed.pid, expected.pid, "Manual proof process changed");
+    const started = Date.parse(observed.processStartTime);
+    assert.ok(Number.isFinite(started)); assert.equal(started, Date.parse(expected.processStartTime), "Manual proof process restarted");
+  };
+  sameProcess(receipt.fe, actual); sameProcess(receipt.fe, proof.fe); sameProcess(receipt.be, proof.be);
+  assert.equal(proof.kind, "MANUAL_FE_RUNTIME_BINDING_V1"); assert.equal(proof.complete, true);
+  assert.equal(proof.taskId, receipt.taskId);
+  const recorded = Date.parse(proof.recordedAt);
+  assert.ok(recorded <= Date.parse(receipt.recordedAt) && now - recorded >= 0 && now - recorded <= 15 * 60000, "Manual FE proof is stale or outside this receipt");
+  assert.equal(proof.fe.commandLine, null); assert.equal(proof.fe.name, "node.exe");
+  assert.equal(proof.fe.repo, target.repo); assert.equal(proof.fe.origin, receipt.fe.origin);
+  assert.equal(proof.fe.candidateDigest, target.candidateDigest);
+  assert.equal(proof.be.repo, receipt.be.repo); assert.equal(proof.be.candidateDigest, receipt.be.candidateDigest);
+  assertLiveFingerprint(receipt.be, proof.be);
+  assert.equal(proof.build.buildIdPath, receipt.fe.buildIdPath);
+  assert.equal(proof.build.buildIdSha256, receipt.fe.buildIdSha256);
+  assert.ok(/^[a-f0-9]{40}$/i.test(proof.build.buildSourceHead));
+  assert.ok(Date.parse(proof.build.buildLogCompletedAt) < Date.parse(actual.processStartTime), "Successful build evidence must precede the live FE process");
+  const approvedScriptPaths = ["scripts/support-analytics-runtime.mjs", "scripts/lib/support-analytics-evidence.mjs", "tests/support-analytics-runtime.test.mjs"];
+  assert.ok(Array.isArray(proof.build.changedSinceBuild) && proof.build.changedSinceBuild.every(path => approvedScriptPaths.includes(path)), "Product sources differ from the actual build");
+  assert.ok(Array.isArray(proof.assets) && proof.assets.some(asset => asset.urlPath?.startsWith("/_next/static/chunks/") && asset.urlPath.endsWith(".js")), "A build-manifest shell is not a rendered application chunk");
+  for (const asset of proof.assets) assert.ok(asset.urlPath?.startsWith("/_next/static/") && asset.localPath && /^[a-f0-9]{64}$/i.test(asset.sha256) && asset.bytes > 0);
+  assert.equal(proof.auth.via, receipt.fe.origin); assert.equal(proof.auth.mfaMode, "VERIFY");
+  assert.equal(proof.auth.username, receipt.avatarApproval.makerUsername);
+  assert.equal(String(proof.auth.adminId), String(receipt.avatarApproval.makerAdminId));
+  assert.equal(proof.auth.roleCode, "SUPER_ADMIN"); assert.equal(proof.auth.passwordChangeRequired, false);
+  assert.equal(proof.auth.cookieName, `nexion_admin_token__${receipt.fe.cookieNamespace}`);
+  assert.equal(proof.auth.httpOnly, true); assert.equal(proof.auth.sameSite, "strict");
+  assert.equal(proof.loggedOut, true); assert.equal(proof.loggedOutSessionStatus, 401);
+  for (const timestamp of [proof.auth.verifiedAt, proof.connection.observedAt]) {
+    const observed = Date.parse(timestamp);
+    assert.ok(observed >= Math.max(Date.parse(receipt.fe.processStartTime), Date.parse(receipt.be.processStartTime)) && observed <= recorded, "Auth/TCP evidence is outside these process lifetimes");
+  }
+  const outgoing = proof.connection.fe, incoming = proof.connection.be;
+  assert.equal(outgoing.OwningProcess, receipt.fe.pid); assert.equal(incoming.OwningProcess, receipt.be.pid);
+  assert.ok([5, "Established"].includes(outgoing.State) && [5, "Established"].includes(incoming.State));
+  assert.equal(outgoing.LocalAddress, "127.0.0.1"); assert.equal(outgoing.RemoteAddress, "127.0.0.1"); assert.equal(outgoing.RemotePort, 18161);
+  assert.ok(Number.isInteger(outgoing.LocalPort) && outgoing.LocalPort > 0 && outgoing.LocalPort <= 65535);
+  assert.equal(incoming.LocalAddress, outgoing.RemoteAddress); assert.equal(incoming.LocalPort, outgoing.RemotePort);
+  assert.equal(incoming.RemoteAddress, outgoing.LocalAddress); assert.equal(incoming.RemotePort, outgoing.LocalPort);
+}
+async function verifyManualFeProof(receipt, target, actual) {
+  boundFile(receipt.fe.manualProofPath, receipt.fe.manualProofSha256);
+  const proof = JSON.parse(readFileSync(receipt.fe.manualProofPath, "utf8"));
+  assertManualFeProof(receipt, target, proof, actual);
+  boundFile(proof.seedManifestPath, proof.seedManifestSha256);
+  assert.equal(resolve(proof.seedManifestPath), resolve(receipt.seedManifest.path));
+  assert.equal(proof.seedManifestSha256, receipt.seedManifest.sha256);
+  const seed = JSON.parse(readFileSync(proof.seedManifestPath, "utf8"));
+  assert.equal(seed.seedId, proof.seedId); assert.equal(seed.authenticationReady, true);
+  assert.deepEqual(seed.avatarApproval, receipt.avatarApproval);
+  boundFile(proof.build.buildLogPath, proof.build.buildLogSha256);
+  const buildLog = readFileSync(proof.build.buildLogPath, "utf8");
+  assert.ok(buildLog.includes("Compiled successfully") && buildLog.includes("(21/21)") && buildLog.includes("Finalizing page optimization") && buildLog.includes("Route (app)") && buildLog.includes("server-rendered on demand"), "The original full successful production build record is missing");
+  assert.equal(statSync(proof.build.buildLogPath).mtime.toISOString(), proof.build.buildLogCompletedAt);
+  const git = args => { const result = spawnSync("git", ["-C", target.repo, ...args], { encoding: "utf8", windowsHide: true }); assert.equal(result.status, 0); return result.stdout.trim(); };
+  assert.equal(git(["status", "--porcelain"]), "", "Manual source proof requires the fixed clean candidate");
+  assert.deepEqual(git(["diff", "--name-only", proof.build.buildSourceHead]).split(/\r?\n/).filter(Boolean), proof.build.changedSinceBuild);
+  assert.equal(readFileSync(receipt.fe.buildIdPath, "utf8").trim(), proof.build.buildId);
+  const htmlResponse = await fetch(receipt.fe.origin, { redirect: "error", signal: AbortSignal.timeout(15000) }); assert.equal(htmlResponse.status, 200);
+  const html = await htmlResponse.text();
+  const rendered = [...new Set([...html.matchAll(/(?:src|href)="([^"<>]+)"/g)].map(match => match[1]).filter(path => path.startsWith("/_next/static/") && /\.(?:js|css)(?:\?|$)/.test(path)).map(path => new URL(path, receipt.fe.origin).pathname))];
+  const expectedPaths = [...new Set([...rendered, `/_next/static/${proof.build.buildId}/_buildManifest.js`])].toSorted();
+  assert.deepEqual(proof.assets.map(asset => asset.urlPath).toSorted(), expectedPaths, "Manual proof does not cover the current rendered JS/CSS reference set");
+  for (const asset of proof.assets) {
+    const file = realpathSync(resolve(target.repo, ".next", asset.urlPath.slice("/_next/".length)));
+    assert.ok(!relative(realpathSync(join(target.repo, ".next/static")), file).startsWith(".."));
+    assert.equal(resolve(asset.localPath).toLowerCase(), file.toLowerCase()); boundFile(file, asset.sha256);
+    assert.equal(statSync(file).size, asset.bytes);
+    const response = await fetch(`${receipt.fe.origin}${asset.urlPath}`, { redirect: "error", signal: AbortSignal.timeout(15000) }); assert.equal(response.status, 200);
+    assert.equal(sha256(Buffer.from(await response.arrayBuffer())), asset.sha256, "Rendered application asset changed or belongs to another build");
+  }
+}
 export async function verifyRuntimeOwnership(receipt, target) {
   boundFile(target.receiptPath, target.receiptSha256);
   assertRuntimeReceipt(receipt, target);
@@ -256,7 +345,9 @@ export async function verifyRuntimeOwnership(receipt, target) {
   boundFile(receipt.be.artifactPath, receipt.be.artifactSha256);
   boundFile(receipt.be.configPath, receipt.be.configSha256);
   assertResourceBindings(readFileSync(receipt.be.configPath, "utf8"), JSON.parse(readFileSync(receipt.resources.resourceOwnershipPath, "utf8")), receipt);
-  assertLiveFingerprint(receipt.fe, windowsFingerprint(33107, [target.repo, receipt.fe.envBindingPath]));
+  const liveFe = windowsFingerprint(33107, [target.repo, receipt.fe.envBindingPath]);
+  if (receipt.fe.proofMode === "manual-os-limited") await verifyManualFeProof(receipt, target, liveFe);
+  else assertLiveFingerprint(receipt.fe, liveFe);
   assertLiveFingerprint(receipt.be, windowsFingerprint(18161, [receipt.be.artifactPath, receipt.be.configPath]));
   for (const kind of ["db", "redis", "s3"]) {
     const resource = receipt.resources[kind];

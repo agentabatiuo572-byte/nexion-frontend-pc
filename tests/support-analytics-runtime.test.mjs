@@ -4,7 +4,8 @@ import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { businessData, assertUiBinding, assertRequestSeeds, assertResourceBindings, assertAvatarPolicy, assertAvatarProposal, avatarApprovePath, validateMutation, validateReadback, assertRuntimeReceipt, assertLiveFingerprint, assertBoundFile, sha256 } from "../scripts/lib/support-analytics-evidence.mjs";
+import { chromium } from "playwright";
+import { businessData, consoleSidebarRoot, assertUiBinding, assertRequestSeeds, assertResourceBindings, assertManualFeProof, assertAvatarPolicy, assertAvatarProposal, avatarApprovePath, validateMutation, validateReadback, assertRuntimeReceipt, assertLiveFingerprint, assertBoundFile, sha256 } from "../scripts/lib/support-analytics-evidence.mjs";
 
 const repo = resolve(import.meta.dirname, "..");
 function run(config, options = {}) {
@@ -200,4 +201,42 @@ test("Java alternative property separators, escaped keys and continuation overri
   assert.throws(() => assertResourceBindings(connectionProperties.replace("spring.data.redis.port=", "\u00a0spring.data.redis.port="), ownership, receipt), /single-line unescaped/);
   // Colons and equals in values are legal and must not expose or restrict secrets.
   assertResourceBindings(`${connectionProperties}\n# comment\n\nprivate.secret = value:with=delimiters`, ownership, receipt);
+});
+function manualFeFixture() {
+  const now = Date.now(), iso = offset => new Date(now + offset).toISOString(), r = receipt();
+  Object.assign(r.fe, { proofMode: "manual-os-limited", commandLineHash: null, processStartTime: iso(-60000), manualProofPath: "root-measured-proof.json", manualProofSha256: "a".repeat(64), buildIdPath: join(repo, ".next/BUILD_ID"), buildIdSha256: "b".repeat(64) });
+  Object.assign(r.be, { pid: 8, processStartTime: iso(-50000), candidateDigest: "be-source" }); r.avatarApproval = avatarPolicy;
+  const actual = { pid: 7, processStartTime: r.fe.processStartTime, commandLineHash: null, references: null, commandLineReadable: false, executablePathReadable: false };
+  const proof = { kind: "MANUAL_FE_RUNTIME_BINDING_V1", complete: true, taskId: r.taskId, recordedAt: iso(-100), fe: { ...r.fe, commandLine: null, name: "node.exe" }, be: { ...r.be, references: [true, true] }, build: { buildId: "real-build", buildIdPath: r.fe.buildIdPath, buildIdSha256: r.fe.buildIdSha256, buildSourceHead: "59eadb2195942375bdb5628e0f6ddcb91861de29", buildLogCompletedAt: iso(-120000), changedSinceBuild: ["scripts/lib/support-analytics-evidence.mjs"] }, assets: [{ urlPath: "/_next/static/chunks/login.js", localPath: join(repo, ".next/static/chunks/login.js"), sha256: "c".repeat(64), bytes: 100 }], auth: { via: r.fe.origin, mfaMode: "VERIFY", adminId: avatarPolicy.makerAdminId, username: avatarPolicy.makerUsername, roleCode: "SUPER_ADMIN", passwordChangeRequired: false, cookieName: "nexion_admin_token__cs_analytics_20261007", httpOnly: true, sameSite: "strict", verifiedAt: iso(-1000) }, connection: { observedAt: iso(-1100), fe: { OwningProcess: 7, LocalAddress: "127.0.0.1", LocalPort: 50123, RemoteAddress: "127.0.0.1", RemotePort: 18161, State: 5 }, be: { OwningProcess: 8, LocalAddress: "127.0.0.1", LocalPort: 18161, RemoteAddress: "127.0.0.1", RemotePort: 50123, State: 5 } }, loggedOut: true, loggedOutSessionStatus: 401 };
+  return { r, actual, proof, now };
+}
+test("unreadable command cannot downgrade without complete bound FE proof or affect other services", () => {
+  const missing = receipt(); missing.fe.commandLineHash = null; assert.throws(() => assertRuntimeReceipt(missing, target));
+  missing.fe.proofMode = "manual-os-limited"; assert.throws(() => assertRuntimeReceipt(missing, target), /alternative proof/);
+  const { r, actual, proof, now } = manualFeFixture();
+  assertRuntimeReceipt(r, target, now); assertManualFeProof(r, target, proof, actual, now);
+  const wrongBe = structuredClone(r); wrongBe.be.commandLineHash = null; assert.throws(() => assertRuntimeReceipt(wrongBe, target, now));
+  for (const kind of ["db", "redis", "s3"]) { const wrong = structuredClone(r); wrong.resources[kind].commandLineHash = null; assert.throws(() => assertRuntimeReceipt(wrong, target, now)); }
+  assert.throws(() => assertLiveFingerprint(r.be, { ...actual, pid: 8, processStartTime: r.be.processStartTime }), /Readable command/);
+  assert.throws(() => assertLiveFingerprint(r.be, { ...r.be, references: [] }), /does not reference/);
+});
+test("complete manual FE evidence only accepts actual OS null command and the same source/process", () => {
+  const { r, actual, proof, now } = manualFeFixture();
+  assertManualFeProof(r, target, proof, actual, now);
+  for (const alter of [a => a.pid = 9, a => a.processStartTime = new Date(now - 30000).toISOString(), a => a.commandLineReadable = true, a => a.commandLineHash = "a".repeat(64), a => a.references = []]) { const a = structuredClone(actual); alter(a); assert.throws(() => assertManualFeProof(r, target, proof, a, now)); }
+  for (const alter of [p => p.fe.candidateDigest = "old", p => p.be.candidateDigest = "old", p => p.be.pid = 9, p => p.recordedAt = new Date(now - 16 * 60000).toISOString(), p => p.build.changedSinceBuild = ["app/page.tsx"], p => p.build.buildLogCompletedAt = new Date(now).toISOString()]) { const p = structuredClone(proof); alter(p); assert.throws(() => assertManualFeProof(r, target, p, actual, now)); }
+});
+test("manual FE evidence rejects manifest-only, wrong MFA/seed/cookie, tuple or logout claims", () => {
+  const { r, actual, proof, now } = manualFeFixture();
+  for (const alter of [p => p.assets[0].urlPath = "/_next/static/real-build/_buildManifest.js", p => p.auth.adminId = "999", p => p.auth.roleCode = "SUPPORT", p => p.auth.mfaMode = "ENROLL", p => p.auth.cookieName = "nexion_admin_token", p => p.auth.httpOnly = false, p => p.connection.fe.RemotePort = 18160, p => p.connection.be.OwningProcess = 9, p => p.connection.be.RemotePort = 50124, p => p.connection.fe.State = 4, p => p.loggedOut = false, p => p.loggedOutSessionStatus = 200]) { const p = structuredClone(proof); alter(p); assert.throws(() => assertManualFeProof(r, target, p, actual, now)); }
+});
+test("the real sidebar remains unique when M3 also mounts a customer-profile aside", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent('<aside><a aria-label="UVEL 运营控制台" href="/">控制台</a><nav>菜单</nav></aside><aside class="cv-profile" aria-label="客户资料">客户资料</aside>');
+    assert.equal(await page.locator("aside").count(), 2);
+    assert.equal(await page.locator(consoleSidebarRoot).count(), 1);
+    await page.locator(consoleSidebarRoot).waitFor({ state: "visible" });
+  } finally { await browser.close(); }
 });

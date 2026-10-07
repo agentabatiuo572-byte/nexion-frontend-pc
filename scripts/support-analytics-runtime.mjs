@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
-import { sha256, repositoryDigest as digestRepository, businessData, conversationFeatures, businessRoots, assertUiBinding, assertRequestSeeds, assertAvatarPolicy, assertAvatarProposal, avatarProposalPath, avatarApprovePath, validateMutation, validateReadback, verifyRuntimeOwnership } from "./lib/support-analytics-evidence.mjs";
+import { sha256, repositoryDigest as digestRepository, businessData, conversationFeatures, consoleSidebarRoot, businessRoots, assertUiBinding, assertRequestSeeds, assertAvatarPolicy, assertAvatarProposal, avatarProposalPath, avatarApprovePath, validateMutation, validateReadback, verifyRuntimeOwnership } from "./lib/support-analytics-evidence.mjs";
 
 const features = ["avatar", "sku", "attachment", "bulk", "random", "cookie", "unknown-main", "unknown-dock"];
 const usedTotpSteps = new Map();
@@ -153,7 +153,7 @@ async function login(context, page, origin, account) {
     await page.getByRole("button", { name: "验证并进入", exact: true }).click();
     assert.equal((await verified).status(), 200, "MFA verification failed");
   }
-  await page.locator("aside").waitFor({ state: "visible" });
+  await page.locator(consoleSidebarRoot).waitFor({ state: "visible" });
   const session = await context.request.get(`${origin}/api/admin/auth/session`);
   assert.equal(session.status(), 200);
   const body = await session.json();
@@ -352,7 +352,7 @@ try {
         assert.ok((await context.cookies()).some(cookie => cookie.name === expected && cookie.httpOnly));
         for (const path of ["/service/overview", "/service/sessions", "/platform/rbac"]) {
           await page.goto(`${origin}${path}`);
-          await page.locator("aside").waitFor({ state: "visible" });
+          await page.locator(consoleSidebarRoot).waitFor({ state: "visible" });
           assert.equal(await page.getByText("404", { exact: true }).count(), 0);
         }
         const anonymous = await browser.newContext();
