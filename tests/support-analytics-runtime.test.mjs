@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { chromium } from "playwright";
-import { businessData, consoleSidebarRoot, assertUiBinding, assertRequestSeeds, assertResourceBindings, assertManualFeProof, assertAvatarPolicy, assertAvatarProposal, avatarApprovePath, validateMutation, validateReadback, assertRuntimeReceipt, assertLiveFingerprint, assertBoundFile, sha256 } from "../scripts/lib/support-analytics-evidence.mjs";
+import { businessData, consoleSidebarRoot, assertUiBinding, assertRequestSeeds, assertResourceBindings, assertManualFeProof, assertFePreload, assertAvatarPolicy, assertAvatarProposal, avatarApprovePath, validateMutation, validateReadback, assertRuntimeReceipt, assertLiveFingerprint, assertBoundFile, sha256 } from "../scripts/lib/support-analytics-evidence.mjs";
 
 const repo = resolve(import.meta.dirname, "..");
 function run(config, options = {}) {
@@ -204,10 +204,10 @@ test("Java alternative property separators, escaped keys and continuation overri
 });
 function manualFeFixture() {
   const now = Date.now(), iso = offset => new Date(now + offset).toISOString(), r = receipt();
-  Object.assign(r.fe, { proofMode: "manual-os-limited", commandLineHash: null, processStartTime: iso(-60000), manualProofPath: "root-measured-proof.json", manualProofSha256: "a".repeat(64), buildIdPath: join(repo, ".next/BUILD_ID"), buildIdSha256: "b".repeat(64) });
+  Object.assign(r.fe, { proofMode: "manual-os-limited", commandLineHash: null, processStartTime: iso(-60000), manualProofPath: "root-measured-proof.json", manualProofSha256: "a".repeat(64), buildIdPath: join(repo, ".next-seven-fixture/BUILD_ID"), buildIdSha256: "b".repeat(64) });
   Object.assign(r.be, { pid: 8, processStartTime: iso(-50000), candidateDigest: "be-source" }); r.avatarApproval = avatarPolicy;
   const actual = { pid: 7, processStartTime: r.fe.processStartTime, commandLineHash: null, references: null, commandLineReadable: false, executablePathReadable: false };
-  const proof = { kind: "MANUAL_FE_RUNTIME_BINDING_V1", complete: true, taskId: r.taskId, recordedAt: iso(-100), fe: { ...r.fe, commandLine: null, name: "node.exe" }, be: { ...r.be, references: [true, true] }, build: { buildId: "real-build", buildIdPath: r.fe.buildIdPath, buildIdSha256: r.fe.buildIdSha256, buildSourceHead: "59eadb2195942375bdb5628e0f6ddcb91861de29", buildLogCompletedAt: iso(-120000), changedSinceBuild: ["scripts/lib/support-analytics-evidence.mjs"] }, assets: [{ urlPath: "/_next/static/chunks/login.js", localPath: join(repo, ".next/static/chunks/login.js"), sha256: "c".repeat(64), bytes: 100 }], auth: { via: r.fe.origin, mfaMode: "VERIFY", adminId: avatarPolicy.makerAdminId, username: avatarPolicy.makerUsername, roleCode: "SUPER_ADMIN", passwordChangeRequired: false, cookieName: "nexion_admin_token__cs_analytics_20261007", httpOnly: true, sameSite: "strict", verifiedAt: iso(-1000) }, connection: { observedAt: iso(-1100), fe: { OwningProcess: 7, LocalAddress: "127.0.0.1", LocalPort: 50123, RemoteAddress: "127.0.0.1", RemotePort: 18161, State: 5 }, be: { OwningProcess: 8, LocalAddress: "127.0.0.1", LocalPort: 18161, RemoteAddress: "127.0.0.1", RemotePort: 50123, State: 5 } }, loggedOut: true, loggedOutSessionStatus: 401 };
+  const proof = { kind: "MANUAL_FE_RUNTIME_BINDING_V1", complete: true, taskId: r.taskId, recordedAt: iso(-100), fe: { ...r.fe, commandLine: null, name: "node.exe" }, be: { ...r.be, references: [true, true] }, build: { buildId: "real-build", buildIdPath: r.fe.buildIdPath, buildIdSha256: r.fe.buildIdSha256, buildSourceHead: "59eadb2195942375bdb5628e0f6ddcb91861de29", buildLogCompletedAt: iso(-120000), changedSinceBuild: ["scripts/lib/support-analytics-evidence.mjs"] }, assets: [{ urlPath: "/_next/static/chunks/login.js", localPath: join(repo, ".next-seven-fixture/static/chunks/login.js"), sha256: "c".repeat(64), bytes: 100 }], auth: { via: r.fe.origin, mfaMode: "VERIFY", adminId: avatarPolicy.makerAdminId, username: avatarPolicy.makerUsername, roleCode: "SUPER_ADMIN", passwordChangeRequired: false, cookieName: "nexion_admin_token__cs_analytics_20261007", httpOnly: true, sameSite: "strict", verifiedAt: iso(-1000) }, connection: { observedAt: iso(-1100), fe: { OwningProcess: 7, LocalAddress: "127.0.0.1", LocalPort: 50123, RemoteAddress: "127.0.0.1", RemotePort: 18161, State: 5 }, be: { OwningProcess: 8, LocalAddress: "127.0.0.1", LocalPort: 18161, RemoteAddress: "127.0.0.1", RemotePort: 50123, State: 5 } }, loggedOut: true, loggedOutSessionStatus: 401 };
   return { r, actual, proof, now };
 }
 test("unreadable command cannot downgrade without complete bound FE proof or affect other services", () => {
@@ -229,6 +229,26 @@ test("complete manual FE evidence only accepts actual OS null command and the sa
 test("manual FE evidence rejects manifest-only, wrong MFA/seed/cookie, tuple or logout claims", () => {
   const { r, actual, proof, now } = manualFeFixture();
   for (const alter of [p => p.assets[0].urlPath = "/_next/static/real-build/_buildManifest.js", p => p.auth.adminId = "999", p => p.auth.roleCode = "SUPPORT", p => p.auth.mfaMode = "ENROLL", p => p.auth.cookieName = "nexion_admin_token", p => p.auth.httpOnly = false, p => p.connection.fe.RemotePort = 18160, p => p.connection.be.OwningProcess = 9, p => p.connection.be.RemotePort = 50124, p => p.connection.fe.State = 4, p => p.loggedOut = false, p => p.loggedOutSessionStatus = 200]) { const p = structuredClone(proof); alter(p); assert.throws(() => assertManualFeProof(r, target, p, actual, now)); }
+});
+test("manual FE proof rejects the old build or verify output even when both declarations agree", () => {
+  const { r, actual, proof, now } = manualFeFixture();
+  assertManualFeProof(r, target, proof, actual, now);
+  for (const directory of [".next", ".next-seven-verify"]) {
+    const wrongReceipt = structuredClone(r), wrongProof = structuredClone(proof);
+    wrongReceipt.fe.buildIdPath = join(repo, directory, "BUILD_ID");
+    wrongProof.build.buildIdPath = wrongReceipt.fe.buildIdPath;
+    wrongProof.assets[0].localPath = join(repo, directory, "static/chunks/login.js");
+    assert.throws(() => assertManualFeProof(wrongReceipt, target, wrongProof, actual, now), /different serving directory/);
+    const wrongAsset = structuredClone(proof);
+    wrongAsset.assets[0].localPath = join(repo, directory, "static/chunks/login.js");
+    assert.throws(() => assertManualFeProof(r, target, wrongAsset, actual, now), /different serving directory/);
+  }
+});
+test("public preload binds the serving fixture separately from verify builds", () => {
+  const backendCookie = "process.env.NEXION_BACKEND_URL = 'http://127.0.0.1:18161';\nprocess.env.NEXION_ADMIN_COOKIE_NAMESPACE = 'cs_analytics_20261007';";
+  assertFePreload(backendCookie + "\nprocess.env.NEXT_DIST_DIR = '.next-seven-fixture';\n");
+  assert.throws(() => assertFePreload(backendCookie), /serving-build binding/);
+  for (const directory of [".next", ".next-seven-verify"]) assert.throws(() => assertFePreload(backendCookie + `\nprocess.env.NEXT_DIST_DIR = '${directory}';`), /serving-build binding/);
 });
 test("the real sidebar remains unique when M3 also mounts a customer-profile aside", async () => {
   const browser = await chromium.launch({ headless: true });

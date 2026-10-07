@@ -253,6 +253,10 @@ function boundFile(file, digest) {
   assert.equal(sha256(readFileSync(file)), digest.toLowerCase(), "A recorded runtime file changed");
 }
 export { boundFile as assertBoundFile };
+const serviceDistDir = ".next-seven-fixture";
+export function assertFePreload(preload) {
+  assert.equal(preload.trim().split(/\r?\n/).map(line => line.trim()).join("\n"), "process.env.NEXION_BACKEND_URL = 'http://127.0.0.1:18161';\nprocess.env.NEXION_ADMIN_COOKIE_NAMESPACE = 'cs_analytics_20261007';\nprocess.env.NEXT_DIST_DIR = '.next-seven-fixture';", "FE preload does not enforce this period's backend/cookie/serving-build binding");
+}
 export function assertManualFeProof(receipt, target, proof, actual, now = Date.now()) {
   assert.equal(receipt.fe.proofMode, "manual-os-limited");
   assert.equal(receipt.fe.commandLineHash, null);
@@ -274,6 +278,7 @@ export function assertManualFeProof(receipt, target, proof, actual, now = Date.n
   assert.equal(proof.fe.candidateDigest, target.candidateDigest);
   assert.equal(proof.be.repo, receipt.be.repo); assert.equal(proof.be.candidateDigest, receipt.be.candidateDigest);
   assertLiveFingerprint(receipt.be, proof.be);
+  assert.equal(resolve(receipt.fe.buildIdPath), resolve(target.repo, serviceDistDir, "BUILD_ID"), "FE build belongs to a different serving directory");
   assert.equal(proof.build.buildIdPath, receipt.fe.buildIdPath);
   assert.equal(proof.build.buildIdSha256, receipt.fe.buildIdSha256);
   assert.ok(/^[a-f0-9]{40}$/i.test(proof.build.buildSourceHead));
@@ -281,7 +286,10 @@ export function assertManualFeProof(receipt, target, proof, actual, now = Date.n
   const approvedScriptPaths = ["scripts/support-analytics-runtime.mjs", "scripts/lib/support-analytics-evidence.mjs", "tests/support-analytics-runtime.test.mjs"];
   assert.ok(Array.isArray(proof.build.changedSinceBuild) && proof.build.changedSinceBuild.every(path => approvedScriptPaths.includes(path)), "Product sources differ from the actual build");
   assert.ok(Array.isArray(proof.assets) && proof.assets.some(asset => asset.urlPath?.startsWith("/_next/static/chunks/") && asset.urlPath.endsWith(".js")), "A build-manifest shell is not a rendered application chunk");
-  for (const asset of proof.assets) assert.ok(asset.urlPath?.startsWith("/_next/static/") && asset.localPath && /^[a-f0-9]{64}$/i.test(asset.sha256) && asset.bytes > 0);
+  for (const asset of proof.assets) {
+    assert.ok(asset.urlPath?.startsWith("/_next/static/") && asset.localPath && /^[a-f0-9]{64}$/i.test(asset.sha256) && asset.bytes > 0);
+    assert.equal(resolve(asset.localPath).toLowerCase(), resolve(target.repo, serviceDistDir, asset.urlPath.slice("/_next/".length)).toLowerCase(), "Rendered asset belongs to a different serving directory");
+  }
   assert.equal(proof.auth.via, receipt.fe.origin); assert.equal(proof.auth.mfaMode, "VERIFY");
   assert.equal(proof.auth.username, receipt.avatarApproval.makerUsername);
   assert.equal(String(proof.auth.adminId), String(receipt.avatarApproval.makerAdminId));
@@ -325,8 +333,8 @@ async function verifyManualFeProof(receipt, target, actual) {
   const expectedPaths = [...new Set([...rendered, `/_next/static/${proof.build.buildId}/_buildManifest.js`])].toSorted();
   assert.deepEqual(proof.assets.map(asset => asset.urlPath).toSorted(), expectedPaths, "Manual proof does not cover the current rendered JS/CSS reference set");
   for (const asset of proof.assets) {
-    const file = realpathSync(resolve(target.repo, ".next", asset.urlPath.slice("/_next/".length)));
-    assert.ok(!relative(realpathSync(join(target.repo, ".next/static")), file).startsWith(".."));
+    const file = realpathSync(resolve(target.repo, serviceDistDir, asset.urlPath.slice("/_next/".length)));
+    assert.ok(!relative(realpathSync(join(target.repo, serviceDistDir, "static")), file).startsWith(".."));
     assert.equal(resolve(asset.localPath).toLowerCase(), file.toLowerCase()); boundFile(file, asset.sha256);
     assert.equal(statSync(file).size, asset.bytes);
     const response = await fetch(`${receipt.fe.origin}${asset.urlPath}`, { redirect: "error", signal: AbortSignal.timeout(15000) }); assert.equal(response.status, 200);
@@ -340,8 +348,8 @@ export async function verifyRuntimeOwnership(receipt, target) {
   boundFile(receipt.resources.resourceOwnershipPath, receipt.resources.sha256);
   boundFile(receipt.fe.buildIdPath, receipt.fe.buildIdSha256);
   boundFile(receipt.fe.envBindingPath, receipt.fe.envBindingSha256);
-  assert.equal(readFileSync(receipt.fe.envBindingPath, "utf8").trim().split(/\r?\n/).map(line => line.trim()).join("\n"), "process.env.NEXION_BACKEND_URL = 'http://127.0.0.1:18161';\nprocess.env.NEXION_ADMIN_COOKIE_NAMESPACE = 'cs_analytics_20261007';", "FE preload does not enforce this period's backend/cookie binding");
-  assert.equal(resolve(receipt.fe.buildIdPath), resolve(target.repo, ".next/BUILD_ID"));
+  assertFePreload(readFileSync(receipt.fe.envBindingPath, "utf8"));
+  assert.equal(resolve(receipt.fe.buildIdPath), resolve(target.repo, serviceDistDir, "BUILD_ID"));
   boundFile(receipt.be.artifactPath, receipt.be.artifactSha256);
   boundFile(receipt.be.configPath, receipt.be.configSha256);
   assertResourceBindings(readFileSync(receipt.be.configPath, "utf8"), JSON.parse(readFileSync(receipt.resources.resourceOwnershipPath, "utf8")), receipt);
@@ -356,8 +364,8 @@ export async function verifyRuntimeOwnership(receipt, target) {
   }
   const buildId = readFileSync(receipt.fe.buildIdPath, "utf8").trim();
   const urlPath = `/_next/static/${buildId}/_buildManifest.js`;
-  const file = realpathSync(join(target.repo, ".next/static", buildId, "_buildManifest.js"));
-  assert.ok(!relative(realpathSync(join(target.repo, ".next/static")), file).startsWith(".."));
+  const file = realpathSync(join(target.repo, serviceDistDir, "static", buildId, "_buildManifest.js"));
+  assert.ok(!relative(realpathSync(join(target.repo, serviceDistDir, "static")), file).startsWith(".."));
   assert.equal(resolve(receipt.fe.assetPath).toLowerCase(), file.toLowerCase());
   boundFile(file, receipt.fe.assetSha256);
   const response = await fetch(`${receipt.fe.origin}${urlPath}`, { signal: AbortSignal.timeout(15000), redirect: "error" });
