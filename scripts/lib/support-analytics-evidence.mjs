@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync, existsSync, realpathSync, statSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawnSync, execFile } from "node:child_process";
 
 export const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
 export function repositoryDigest(repo) {
@@ -240,13 +240,34 @@ export function assertLiveFingerprint(expected, actual) {
   assert.equal(actual.commandLineHash.toLowerCase(), expected.commandLineHash.toLowerCase(), "Service command changed");
   assert.ok(Array.isArray(actual.references) && actual.references.length > 0 && actual.references.every(Boolean), "The live command does not reference the recorded candidate/configuration");
 }
+function fingerprintCode(bindings) {
+  assert.ok(Array.isArray(bindings) && bindings.length > 0);
+  assert.equal(new Set(bindings.map(row => row.port)).size, bindings.length, "Duplicate listener bindings");
+  for (const { port, paths } of bindings) {
+    assert.ok(Number.isInteger(port) && port > 0 && port <= 65535);
+    assert.ok(Array.isArray(paths) && paths.length > 0 && paths.every(path => typeof path === "string" && path.length > 0));
+  }
+  const literal = JSON.stringify(bindings).replaceAll("'", "''");
+  return `$ErrorActionPreference='Stop'; $bindings=ConvertFrom-Json '${literal}'; $bindings=@($bindings); $listeners=@(Get-NetTCPConnection -State Listen); $rows=@(foreach($binding in $bindings){ $owners=@($listeners | Where-Object {$_.LocalPort -eq $binding.port} | Select-Object -ExpandProperty OwningProcess -Unique); if($owners.Count -ne 1){throw ('Listener ownership is ambiguous for port '+$binding.port+'; bindings='+$bindings.Count+'; owners='+$owners.Count)}; $proc=Get-CimInstance Win32_Process -Filter ('ProcessId='+$owners[0]); if(!$proc){throw 'Listener process disappeared'}; $cmd=$proc.CommandLine; $digest=$null; $refs=$null; if($null -ne $cmd){$hash=[System.Security.Cryptography.SHA256]::Create(); $bytes=[System.Text.Encoding]::UTF8.GetBytes($cmd); $digest=([BitConverter]::ToString($hash.ComputeHash($bytes))).Replace('-','').ToLowerInvariant(); $refs=@($binding.paths | ForEach-Object {$cmd.Replace([char]92,[char]47).ToLowerInvariant().Contains($_.Replace([char]92,[char]47).ToLowerInvariant())})}; [pscustomobject]@{pid=[int]$proc.ProcessId;processStartTime=$proc.CreationDate.ToUniversalTime().ToString('o');commandLineHash=$digest;references=$refs;commandLineReadable=($null -ne $cmd);executablePathReadable=($null -ne $proc.ExecutablePath)} }); $final=@(Get-NetTCPConnection -State Listen); for($i=0;$i -lt $bindings.Count;$i++){ $owners=@($final | Where-Object {$_.LocalPort -eq $bindings[$i].port} | Select-Object -ExpandProperty OwningProcess -Unique); if($owners.Count -ne 1 -or $owners[0] -ne $rows[$i].pid){throw 'Listener changed during ownership collection'}; $nowProc=Get-CimInstance Win32_Process -Filter ('ProcessId='+$owners[0]); if(!$nowProc -or $nowProc.CreationDate.ToUniversalTime().ToString('o') -ne $rows[$i].processStartTime){throw 'Listener process changed during ownership collection'} }; ConvertTo-Json -InputObject $rows -Compress`;
+}
+function fingerprintRows(stdout, count) {
+  const rows = JSON.parse(stdout);
+  assert.ok(Array.isArray(rows) && rows.length === count, "Incomplete live process ownership collection");
+  return rows;
+}
 export function windowsFingerprint(port, paths) {
-  assert.ok(Number.isInteger(port) && port > 0 && port <= 65535);
-  const literal = value => `'${value.replace(/'/g, "''")}'`;
-  const code = `$ErrorActionPreference='Stop'; $owners=@(Get-NetTCPConnection -State Listen -LocalPort ${port} | Select-Object -ExpandProperty OwningProcess -Unique); if($owners.Count -ne 1){throw 'Listener ownership is ambiguous'}; $proc=Get-CimInstance Win32_Process -Filter ('ProcessId='+$owners[0]); if(!$proc){throw 'Listener process disappeared'}; $cmd=$proc.CommandLine; $digest=$null; $refs=$null; if($null -ne $cmd){$hash=[System.Security.Cryptography.SHA256]::Create(); $bytes=[System.Text.Encoding]::UTF8.GetBytes($cmd); $digest=([BitConverter]::ToString($hash.ComputeHash($bytes))).Replace('-','').ToLowerInvariant(); $refs=@(@(${paths.map(literal).join(",")}) | ForEach-Object {$cmd.Replace([char]92,[char]47).ToLowerInvariant().Contains($_.Replace([char]92,[char]47).ToLowerInvariant())})}; [pscustomobject]@{pid=[int]$proc.ProcessId;processStartTime=$proc.CreationDate.ToUniversalTime().ToString('o');commandLineHash=$digest;references=$refs;commandLineReadable=($null -ne $cmd);executablePathReadable=($null -ne $proc.ExecutablePath)} | ConvertTo-Json -Compress`;
-  const result = spawnSync("powershell.exe", ["-NoProfile", "-Command", code], { windowsHide: true, encoding: "utf8", timeout: 15000 });
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-Command", fingerprintCode([{ port, paths }])], { windowsHide: true, encoding: "utf8", timeout: 15000 });
   assert.equal(result.status, 0, "Cannot establish live listener/process ownership");
-  return JSON.parse(result.stdout);
+  return fingerprintRows(result.stdout, 1)[0];
+}
+export function windowsFingerprintBatch(bindings) {
+  const code = fingerprintCode(bindings);
+  return new Promise((resolve, reject) => {
+    execFile("powershell.exe", ["-NoProfile", "-Command", code], { windowsHide: true, encoding: "utf8", timeout: 15000, maxBuffer: 1024 * 1024 }, (error, stdout) => {
+      if (error) { reject(new Error("Cannot establish live listener/process ownership", { cause: error })); return; }
+      try { resolve(fingerprintRows(stdout, bindings.length)); } catch (failure) { reject(failure); }
+    });
+  });
 }
 function boundFile(file, digest) {
   assert.ok(file && /^[a-f0-9]{64}$/i.test(digest ?? ""), "Missing file identity");
@@ -353,14 +374,18 @@ export async function verifyRuntimeOwnership(receipt, target) {
   boundFile(receipt.be.artifactPath, receipt.be.artifactSha256);
   boundFile(receipt.be.configPath, receipt.be.configSha256);
   assertResourceBindings(readFileSync(receipt.be.configPath, "utf8"), JSON.parse(readFileSync(receipt.resources.resourceOwnershipPath, "utf8")), receipt);
-  const liveFe = windowsFingerprint(33107, [target.repo, receipt.fe.envBindingPath]);
+  const [liveFe, liveBe, ...liveResources] = await windowsFingerprintBatch([
+    { port: 33107, paths: [target.repo, receipt.fe.envBindingPath] },
+    { port: 18161, paths: [receipt.be.artifactPath, receipt.be.configPath] },
+    ...["db", "redis", "s3"].map(kind => ({ port: receipt.resources[kind].port, paths: [receipt.resources[kind].configPath] })),
+  ]);
   if (receipt.fe.proofMode === "manual-os-limited") await verifyManualFeProof(receipt, target, liveFe);
   else assertLiveFingerprint(receipt.fe, liveFe);
-  assertLiveFingerprint(receipt.be, windowsFingerprint(18161, [receipt.be.artifactPath, receipt.be.configPath]));
+  assertLiveFingerprint(receipt.be, liveBe);
   for (const kind of ["db", "redis", "s3"]) {
     const resource = receipt.resources[kind];
     boundFile(resource.configPath, resource.configSha256);
-    assertLiveFingerprint(resource, windowsFingerprint(resource.port, [resource.configPath]));
+    assertLiveFingerprint(resource, liveResources[["db", "redis", "s3"].indexOf(kind)]);
   }
   const buildId = readFileSync(receipt.fe.buildIdPath, "utf8").trim();
   const urlPath = `/_next/static/${buildId}/_buildManifest.js`;

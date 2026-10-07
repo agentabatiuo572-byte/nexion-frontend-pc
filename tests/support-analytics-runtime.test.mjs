@@ -4,8 +4,9 @@ import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
+import { createServer } from "node:net";
 import { chromium } from "playwright";
-import { businessData, consoleSidebarRoot, assertUiBinding, assertRequestSeeds, assertResourceBindings, assertManualFeProof, assertFePreload, assertAvatarPolicy, assertAvatarProposal, avatarApprovePath, validateMutation, validateReadback, assertRuntimeReceipt, assertLiveFingerprint, assertBoundFile, sha256, installRenderedBlobObserver, renderedBlobSha256 } from "../scripts/lib/support-analytics-evidence.mjs";
+import { businessData, consoleSidebarRoot, assertUiBinding, assertRequestSeeds, assertResourceBindings, assertManualFeProof, assertFePreload, assertAvatarPolicy, assertAvatarProposal, avatarApprovePath, validateMutation, validateReadback, assertRuntimeReceipt, assertLiveFingerprint, assertBoundFile, sha256, installRenderedBlobObserver, renderedBlobSha256, windowsFingerprint, windowsFingerprintBatch } from "../scripts/lib/support-analytics-evidence.mjs";
 
 const repo = resolve(import.meta.dirname, "..");
 function run(config, options = {}) {
@@ -301,4 +302,26 @@ test("actual rendered Blob bytes remain verifiable under CSP without fetching or
     await unobserved.goto("http://127.0.0.1:33299/blob-csp");
     await assert.rejects(renderedBlobSha256(unobserved.getByAltText("unobserved")), /not observed or was revoked/);
   } finally { await browser.close(); }
+});
+test("fresh asynchronous OS collection preserves real process fields without blocking and rejects a closed listener", async () => {
+  const servers = [createServer(), createServer()];
+  try {
+    await Promise.all(servers.map(server => new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); })));
+    const bindings = servers.map(server => ({ port: server.address().port, paths: [process.execPath] }));
+    let beats = 0;
+    const heartbeat = setInterval(() => beats++, 1);
+    let batch;
+    try { batch = await windowsFingerprintBatch(bindings); } finally { clearInterval(heartbeat); }
+    assert.ok(beats > 0, "OS ownership collection blocked the Node event loop");
+    assert.equal(batch.length, 2);
+    for (const [index, actual] of batch.entries()) {
+      assert.equal(actual.pid, process.pid);
+      assert.deepEqual(Object.keys(actual).toSorted(), ["pid", "processStartTime", "commandLineHash", "references", "commandLineReadable", "executablePathReadable"].toSorted());
+      assert.deepEqual(actual, windowsFingerprint(bindings[index].port, bindings[index].paths), "Asynchronous and compatible synchronous fingerprints disagree");
+    }
+    await new Promise(resolve => servers[1].close(resolve));
+    await assert.rejects(windowsFingerprintBatch(bindings), /Cannot establish live listener\/process ownership/);
+    assert.throws(() => windowsFingerprintBatch([{port:0,paths:[process.execPath]}]));
+    assert.throws(() => windowsFingerprintBatch([bindings[0], bindings[0]]), /Duplicate listener/);
+  } finally { await Promise.all(servers.filter(server => server.listening).map(server => new Promise(resolve => server.close(resolve)))); }
 });
