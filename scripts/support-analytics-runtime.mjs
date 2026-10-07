@@ -325,8 +325,14 @@ try {
         priorState = await beforeWrite(context, scenario);
       }
       if (scenario.id === "avatar") {
+        assert.ok(Array.isArray(scenario.prepare) && scenario.prepare.length > 1, "Avatar preparation and its final confirmation must be explicit");
+        const confirmation = scenario.prepare.at(-1);
+        assert.equal(confirmation.kind, "click", "The final avatar proposal action must be a confirmation click");
+        await actions(page, scenario.prepare.slice(0, -1));
+        await Promise.all(uploadCaptures);
+        if (uploadErrors.length) throw uploadErrors[0];
         const proposed = page.waitForResponse(response => new URL(response.url()).pathname === avatarProposalPath && response.request().method() === "POST", { timeout: 30000 });
-        await Promise.all([proposed, actions(page, scenario.prepare)]);
+        await Promise.all([proposed, actions(page, [confirmation])]);
       } else await actions(page, scenario.prepare);
       await Promise.all(uploadCaptures);
       if (uploadErrors.length) throw uploadErrors[0];
