@@ -301,7 +301,7 @@ try {
         }
         let completeScopeIds;
         if (path.endsWith("/bulk/preview") && input.selectionMode === "ALL_FILTERED") {
-          const scope = (await getData(context, "/api/admin/content/support-workbench/customers?pageNum=1&pageSize=200")).customers;
+          const scope = (await getData(context, "/api/admin/content/support-workbench/customers?pageNum=1&pageSize=100")).customers;
           assert.ok(scope.available && Array.isArray(scope.records) && Number(scope.total) === scope.records.length, "Filtered preview owner scope is incomplete");
           completeScopeIds = scope.records.map(row => String(row.customerId));
         }
