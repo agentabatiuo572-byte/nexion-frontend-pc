@@ -301,6 +301,7 @@ test("Java alternative property separators, escaped keys and continuation overri
 });
 function manualFeFixture() {
   const now = Date.now(), iso = offset => new Date(now + offset).toISOString(), r = receipt();
+  r.recordedAt = iso(0);
   Object.assign(r.fe, { proofMode: "manual-os-limited", commandLineHash: null, processStartTime: iso(-60000), manualProofPath: "root-measured-proof.json", manualProofSha256: "a".repeat(64), buildIdPath: join(repo, ".next-seven-fixture/BUILD_ID"), buildIdSha256: "b".repeat(64) });
   Object.assign(r.be, { pid: 8, processStartTime: iso(-50000), candidateDigest: "be-source" }); r.avatarApproval = avatarPolicy;
   const actual = { pid: 7, processStartTime: r.fe.processStartTime, commandLineHash: null, references: null, commandLineReadable: false, executablePathReadable: false };
