@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { createServer } from "node:net";
 import { chromium } from "playwright";
-import { businessData, unboundCustomerSnapshot, consoleSidebarRoot, assertUiBinding, assertRequestSeeds, assertResourceBindings, assertManualFeProof, assertFePreload, assertAvatarPolicy, assertAvatarProposal, avatarApprovePath, validateMutation, validateReadback, assertRuntimeReceipt, assertLiveFingerprint, assertBoundFile, sha256, installRenderedBlobObserver, renderedBlobSha256, windowsFingerprint, windowsFingerprintBatch } from "../scripts/lib/support-analytics-evidence.mjs";
+import { businessData, unboundCustomerSnapshot, consoleSidebarRoot, assertUiBinding, assertRequestSeeds, assertResourceBindings, assertManualFeProof, assertFePreload, assertAvatarPolicy, assertAvatarProposal, avatarApprovePath, validateMutation, validateReadback, assertRuntimeReceipt, assertLiveFingerprint, assertBoundFile, sha256, installRenderedBlobObserver, renderedBlobObservation, renderedBlobSha256, waitForRenderedImageMatch, windowsFingerprint, windowsFingerprintBatch } from "../scripts/lib/support-analytics-evidence.mjs";
 
 const repo = resolve(import.meta.dirname, "..");
 function run(config, options = {}) {
@@ -332,21 +332,102 @@ test("actual rendered Blob bytes remain verifiable under CSP without fetching or
       body: `<img alt="actual fixture"><script>const bytes=Uint8Array.from(atob('${bytes.toString("base64")}'), c=>c.charCodeAt(0));document.querySelector('img').src=URL.createObjectURL(new Blob([bytes],{type:'image/png'}));</script>`,
     }));
     await page.goto("http://127.0.0.1:33299/blob-csp");
+    const undecoded = await page.evaluate(`(async () => {
+      const observe = ${renderedBlobObservation.toString()};
+      const element = document.createElement('img'); document.body.append(element);
+      element.style.maxWidth = '320px'; element.style.maxHeight = '260px';
+      const content = Uint8Array.from(atob('${bytes.toString("base64")}'), c => c.charCodeAt(0));
+      element.src = URL.createObjectURL(new Blob([content], { type: 'image/png' }));
+      const before = { connected: element.isConnected, width: element.naturalWidth, height: element.naturalHeight, rectWidth: element.getBoundingClientRect().width, rectHeight: element.getBoundingClientRect().height };
+      const observation = await observe(element); URL.revokeObjectURL(element.currentSrc); element.remove();
+      return { before, observation };
+    })()`);
+    assert.deepEqual(undecoded.before, { connected: true, width: 0, height: 0, rectWidth: 0, rectHeight: 0 });
+    assert.equal(undecoded.observation.sha256, expected); assert.equal(undecoded.observation.visible, true); assert.equal(undecoded.observation.decoded, true);
     const image = page.getByAltText("actual fixture");
     await image.waitFor({ state: "visible" });
     assert.equal(await image.evaluate(async element => { try { await fetch(element.currentSrc); return false; } catch { return true; } }), true, "The real CSP must reject the original Blob fetch");
     assert.equal(await renderedBlobSha256(image), expected);
+    const initialMatch = await waitForRenderedImageMatch(image, expected);
+    assert.equal(initialMatch.matched.visible, true); assert.equal(initialMatch.matched.connected, true); assert.equal(initialMatch.matched.decoded, true); assert.equal(initialMatch.matched.sha256, expected);
     await page.reload();
     await image.waitFor({ state: "visible" });
     assert.equal(await renderedBlobSha256(image), expected, "The observer must initialize on reload");
     await image.evaluate(element => { const blob=window.__supportAcceptanceImageBlobs.get(element.currentSrc);element.src=URL.createObjectURL(new Blob([blob,new Uint8Array([1])],{type:'image/png'})); });
     assert.notEqual(await renderedBlobSha256(image), expected, "Identical decoded pixels cannot stand in for the original bytes");
+    await assert.rejects(waitForRenderedImageMatch(image, expected), error => {
+      assert.match(error.message, /bytes do not match/); assert.equal(error.imageObservations.length, 1);
+      assert.equal(error.imageObservations[0].visibleCount, 1); assert.notEqual(error.imageObservations[0].images[0].sha256, expected); return true;
+    });
     await image.evaluate(element => URL.revokeObjectURL(element.currentSrc));
     await assert.rejects(renderedBlobSha256(image), /not observed or was revoked/);
+    await assert.rejects(waitForRenderedImageMatch(image, expected), /not observed or was revoked/);
+    await page.reload(); await image.waitFor({ state: "visible" });
+    await image.evaluate(element => {
+      const blob = window.__supportAcceptanceImageBlobs.get(element.currentSrc); element.remove();
+      setTimeout(() => { const next = document.createElement("img"); next.alt = "actual fixture"; next.src = URL.createObjectURL(blob); document.body.append(next); }, 100);
+    });
+    const delayed = await waitForRenderedImageMatch(image, expected, { timeoutMs: 2000, pollMs: 25 });
+    assert.equal(delayed.observations[0].count, 0); assert.equal(delayed.matched.sha256, expected);
+    const oldSource = delayed.matched.src;
+    await page.evaluate(() => {
+      const original = crypto.subtle.digest.bind(crypto.subtle); let once = false;
+      crypto.subtle.digest = async (...args) => {
+        if (!once) {
+          once = true; const element = document.querySelector('img'), blob = window.__supportAcceptanceImageBlobs.get(element.currentSrc); element.remove();
+          setTimeout(() => { const next = document.createElement("img"); next.alt = "actual fixture"; next.src = URL.createObjectURL(blob); document.body.append(next); }, 50);
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        return original(...args);
+      };
+    });
+    const reattached = await waitForRenderedImageMatch(image, expected, { timeoutMs: 2000, pollMs: 25 });
+    assert.ok(reattached.observations.some(row => row.images.some(image => image.reason === "detached" && image.sha256 === expected)), "The old detached image's correct hash must not pass");
+    assert.notEqual(reattached.matched.src, oldSource); assert.equal(reattached.matched.connected, true); assert.equal(reattached.matched.visible, true);
+    for (const mode of ["late", "never"]) {
+      await page.reload(); await image.waitFor({ state: "visible" });
+      await image.evaluate(element => element.decode());
+      await page.evaluate(mode => {
+        const original = crypto.subtle.digest.bind(crypto.subtle);
+        crypto.subtle.digest = mode === "never" ? () => new Promise(() => {}) : async (...args) => { await new Promise(resolve => setTimeout(resolve, 120)); return original(...args); };
+      }, mode);
+      const started = Date.now();
+      await assert.rejects(waitForRenderedImageMatch(image, expected, { timeoutMs: 30, pollMs: 5 }), error => {
+        assert.match(error.message, /observation deadline/); assert.ok(error.imageObservations.some(row => row.reason === "observation-deadline")); return true;
+      });
+      assert.ok(Date.now() - started < 1000, "A pending observation escaped its bounded deadline");
+    }
+    for (const change of ["source", "visibility"]) {
+      await page.reload(); await image.waitFor({ state: "visible" });
+      await page.evaluate(change => {
+        const original = crypto.subtle.digest.bind(crypto.subtle); let once = false;
+        crypto.subtle.digest = async (...args) => {
+          if (!once) {
+            once = true; const element = document.querySelector("img");
+            if (change === "source") element.src = URL.createObjectURL(window.__supportAcceptanceImageBlobs.get(element.currentSrc));
+            else element.style.display = "none";
+            await new Promise(resolve => setTimeout(resolve, 80));
+          }
+          return original(...args);
+        };
+      }, change);
+      await assert.rejects(waitForRenderedImageMatch(image, expected), change === "source" ? /source-changed/ : /not visible/);
+    }
+    await page.reload(); await image.waitFor({ state: "visible" });
+    await image.evaluate(element => element.remove());
+    await assert.rejects(waitForRenderedImageMatch(image, expected, { timeoutMs: 150, pollMs: 25 }), error => {
+      assert.match(error.message, /observation deadline/); assert.ok(error.imageObservations.length > 1); assert.ok(error.imageObservations.every(row => row.count === 0)); return true;
+    });
+    await page.reload(); await image.waitFor({ state: "visible" });
+    await image.evaluate(element => { element.width = 200; element.height = 200; element.src = URL.createObjectURL(new Blob(["not an image"], { type: "image/png" })); });
+    await assert.rejects(waitForRenderedImageMatch(image, expected), error => {
+      assert.match(error.message, /decode-error/); assert.equal(error.imageObservations.length, 1); return true;
+    });
     const unobserved = await browser.newPage();
     await unobserved.route("http://127.0.0.1:33299/blob-csp", route => route.fulfill({status:200,contentType:"text/html",body:`<img alt="unobserved"><script>document.querySelector('img').src=URL.createObjectURL(new Blob([Uint8Array.from(atob('${bytes.toString("base64")}'),c=>c.charCodeAt(0))],{type:'image/png'}));</script>`}));
     await unobserved.goto("http://127.0.0.1:33299/blob-csp");
     await assert.rejects(renderedBlobSha256(unobserved.getByAltText("unobserved")), /not observed or was revoked/);
+    await assert.rejects(waitForRenderedImageMatch(unobserved.getByAltText("unobserved"), expected), /not observed or was revoked/);
   } finally { await browser.close(); }
 });
 test("fresh asynchronous OS collection preserves real process fields without blocking and rejects a closed listener", async () => {

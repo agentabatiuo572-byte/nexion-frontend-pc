@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
-import { sha256, repositoryDigest as digestRepository, businessData, unboundCustomerSnapshot, conversationFeatures, consoleSidebarRoot, businessRoots, assertUiBinding, assertRequestSeeds, assertAvatarPolicy, assertAvatarProposal, avatarProposalPath, avatarApprovePath, validateMutation, validateReadback, verifyRuntimeOwnership, installRenderedBlobObserver, renderedBlobSha256 } from "./lib/support-analytics-evidence.mjs";
+import { sha256, repositoryDigest as digestRepository, businessData, unboundCustomerSnapshot, conversationFeatures, consoleSidebarRoot, businessRoots, assertUiBinding, assertRequestSeeds, assertAvatarPolicy, assertAvatarProposal, avatarProposalPath, avatarApprovePath, validateMutation, validateReadback, verifyRuntimeOwnership, installRenderedBlobObserver, waitForRenderedImageMatch } from "./lib/support-analytics-evidence.mjs";
 
 const features = ["avatar", "sku", "attachment", "bulk", "random", "cookie", "unknown-main", "unknown-dock"];
 const usedTotpSteps = new Map();
@@ -102,6 +102,22 @@ async function currentBusinessState(context, scenario, mutation) {
   for (const row of data.customers) rows[String(row.customerId)] = (await getData(context, `/api/admin/content/support-workbench/customers/${encodeURIComponent(row.customerId)}`)).customer;
   return rows;
 }
+async function requireRenderedAsset(page, feature, images, path, binding) {
+  const expected = { path, binding };
+  try {
+    const response = await page.request.get(path);
+    expected.status = response.status(); expected.contentType = response.headers()["content-type"];
+    assert.equal(expected.status, 200);
+    assert.ok(["image/png", "image/jpeg"].includes(expected.contentType?.split(";")[0].toLowerCase()), "The committed asset did not return image bytes");
+    const bytes = await response.body(); expected.bytes = bytes.length; expected.sha256 = hash(bytes);
+    assert.ok(expected.bytes > 0, "The committed asset returned no bytes");
+    const match = await waitForRenderedImageMatch(images, expected.sha256);
+    return save(`${feature}-rendered-image-match.json`, { feature, expected, match });
+  } catch (error) {
+    save(`${feature}-rendered-image-failure.json`, { feature, expected, error: { name: error.name, message: error.message }, observations: error.imageObservations ?? [] });
+    throw error;
+  }
+}
 async function requireBusinessUi(page, scenario, mutation, state, before) {
   const output = businessData(mutation.output);
   if (conversationFeatures.has(scenario.id)) {
@@ -109,28 +125,11 @@ async function requireBusinessUi(page, scenario, mutation, state, before) {
     await root.waitFor({ state: "visible" });
     const message = state.messages.find(row => row.clientMessageId === mutation.input.clientMessageId);
     if (scenario.id === "attachment") {
-      const expected = await page.request.get(`/api/admin/content/conversations/attachments/${encodeURIComponent(message.attachmentId)}/content`);
-      assert.equal(expected.status(), 200);
-      const expectedHash = hash(await expected.body());
-      const images = root.locator('img[alt="会话图片"]');
-      let matched = false;
-      for (const image of await images.all()) if (await image.isVisible()) {
-        const actualHash = await renderedBlobSha256(image);
-        assert.ok(await image.evaluate(async element => { try { await element.decode(); return element.naturalWidth > 0; } catch { return false; } }), "Attachment image was not actually decoded");
-        matched ||= actualHash === expectedHash;
-      }
-      assert.ok(matched, "The reloaded business UI did not render this attachment's bytes");
+      return requireRenderedAsset(page, scenario.id, root.locator('img[alt="会话图片"]'), `/api/admin/content/conversations/attachments/${encodeURIComponent(message.attachmentId)}/content`, { attachmentId: message.attachmentId, messageId: message.id, clientMessageId: message.clientMessageId, conversationNo: state.conversation.conversationNo });
     } else await root.getByText(message.content, { exact: true }).waitFor({ state: "visible" });
     if (scenario.id === "sku") await root.getByText(`商品编号：${message.skuId}`, { exact: true }).waitFor({ state: "visible" });
   } else if (scenario.id === "avatar") {
-    const response = await page.request.get(`/api/admin/platform/accounts/${encodeURIComponent(state.id)}/avatar`);
-    assert.equal(response.status(), 200);
-    const expectedHash = hash(await response.body());
-    const image = page.getByAltText(`${state.name}头像`, { exact: true });
-    await image.waitFor({ state: "visible" });
-    assert.ok(await image.evaluate(async element => { try { await element.decode(); return element.naturalWidth > 0; } catch { return false; } }), "Avatar image was not actually decoded");
-    const actualHash = await renderedBlobSha256(image);
-    assert.equal(actualHash, expectedHash, "The reloaded UI is showing a different avatar");
+    return requireRenderedAsset(page, scenario.id, page.getByAltText(`${state.name}头像`, { exact: true }), `/api/admin/platform/accounts/${encodeURIComponent(state.id)}/avatar`, { accountId: state.id, avatarAssetId: state.avatarAssetId, avatarVersion: state.avatarVersion });
   } else if (scenario.id === "bulk") {
     const dialog = page.getByRole("dialog", { name: "圈选客户群发", exact: true });
     await dialog.getByText(new RegExp(output.batchId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))).first().waitFor({ state: "visible" });
@@ -493,7 +492,8 @@ try {
       if (scenario.id !== "cookie") {
         const state = await currentBusinessState(context, scenario, mutations[0]);
         validateReadback(scenario.id, state, mutations[0], priorState);
-        await requireBusinessUi(page, scenario, mutations[0], state, priorState);
+        const imageEvidence = await requireBusinessUi(page, scenario, mutations[0], state, priorState);
+        if (imageEvidence) reads.push({ renderedImageEvidence: imageEvidence });
         reads.push(state);
       }
       const file = join(evidenceDir, `${scenario.id}.png`);

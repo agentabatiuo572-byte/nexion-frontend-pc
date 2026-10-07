@@ -452,13 +452,70 @@ export async function installRenderedBlobObserver(page) {
     URL.revokeObjectURL = url => { revoke(url); blobs.delete(String(url)); };
   });
 }
+export async function renderedBlobObservation(element) {
+  const visible = () => { const rect = element.getBoundingClientRect(), style = getComputedStyle(element); return rect.width > 0 && rect.height > 0 && style.visibility === "visible" && style.display !== "none"; };
+  const source = element.currentSrc || element.src, evidence = { src: source.startsWith("blob:") ? source : "non-blob", width: element.naturalWidth, height: element.naturalHeight, visible: visible(), connected: element.isConnected };
+  if (!element.isConnected) return { ...evidence, reason: "detached" };
+  try { await element.decode(); } catch (error) {
+    if (!element.isConnected) return { ...evidence, connected: false, visible: false, reason: "detached" };
+    return { ...evidence, reason: "decode-error", message: error.message };
+  }
+  if (!element.isConnected) return { ...evidence, connected: false, visible: false, reason: "detached" };
+  if (element.currentSrc !== source) return { ...evidence, reason: "source-changed" };
+  if (!visible()) return { ...evidence, visible: false, reason: "not-visible" };
+  if (!element.naturalWidth || !source.startsWith("blob:")) return { ...evidence, reason: "not-blob", message: "The actual decoded image is not an observed Blob" };
+  const blob = window.__supportAcceptanceImageBlobs?.get(source);
+  if (!blob || !blob.size) return { ...evidence, reason: "unobserved-blob", message: "The current image Blob was not observed or was revoked" };
+  const bytes = await blob.arrayBuffer(), digest = await crypto.subtle.digest("SHA-256", bytes);
+  const sha256 = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+  if (!element.isConnected) return { ...evidence, sha256, connected: false, visible: false, reason: "detached" };
+  if (element.currentSrc !== source) return { ...evidence, sha256, reason: "source-changed" };
+  if (!visible()) return { ...evidence, sha256, visible: false, reason: "not-visible" };
+  if (window.__supportAcceptanceImageBlobs?.get(source) !== blob) return { ...evidence, sha256, reason: "unobserved-blob", message: "The current image Blob was not observed or was revoked" };
+  return { ...evidence, width: element.naturalWidth, height: element.naturalHeight, sha256, bytes: bytes.byteLength, decoded: true, connected: true, visible: true };
+}
 export async function renderedBlobSha256(image) {
-  return image.evaluate(async element => {
-    await element.decode();
-    if (!element.naturalWidth || !element.currentSrc.startsWith("blob:")) throw new Error("The actual decoded image is not an observed Blob");
-    const blob = window.__supportAcceptanceImageBlobs?.get(element.currentSrc);
-    if (!blob || !blob.size) throw new Error("The current image Blob was not observed or was revoked");
-    const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
-    return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
-  });
+  const observation = await image.evaluate(renderedBlobObservation);
+  assert.ok(!observation.reason, observation.message ?? `Image observation failed: ${observation.reason}`);
+  return observation.sha256;
+}
+export async function waitForRenderedImageMatch(images, expectedHash, { timeoutMs = 15000, pollMs = 50 } = {}) {
+  assert.match(expectedHash, /^[a-f0-9]{64}$/);
+  assert.ok(Number.isSafeInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= 15000);
+  assert.ok(Number.isSafeInteger(pollMs) && pollMs > 0);
+  const started = Date.now(), observations = [];
+  const fail = reason => { const error = new Error(reason); error.imageObservations = observations; throw error; };
+  try {
+    while (true) {
+      const remaining = timeoutMs - (Date.now() - started);
+      if (remaining <= 0) fail("The image observation deadline expired");
+      const sample = { at: new Date().toISOString(), elapsedMs: Date.now() - started, count: null, visibleCount: 0, images: [] };
+      observations.push(sample);
+      let timer, result;
+      try {
+        result = await Promise.race([(async () => {
+          const handles = await images.elementHandles(); sample.count = handles.length;
+          let detached = handles.length === 0;
+          try {
+            for (const handle of handles) {
+              const image = await handle.evaluate(renderedBlobObservation); sample.images.push(image);
+              if (image.visible) sample.visibleCount++;
+              if (image.reason === "detached") { detached = true; continue; }
+              if (image.reason === "not-visible") continue;
+              if (image.reason) fail(`Image observation failed: ${image.reason}${image.message ? ": " + image.message : ""}`);
+              if (image.sha256 === expectedHash) return { matched: image };
+            }
+            return { detached };
+          } finally { await Promise.all(handles.map(handle => handle.dispose())); }
+        })(), new Promise((_, reject) => {
+          timer = setTimeout(() => { sample.reason = "observation-deadline"; reject(new Error("The image observation deadline expired")); }, remaining);
+        })]);
+      } finally { clearTimeout(timer); }
+      if (Date.now() - started >= timeoutMs) fail("The image observation deadline expired");
+      if (result.matched) return { expectedHash, matched: result.matched, observations };
+      if (!result.detached) fail(sample.visibleCount ? "Visible image bytes do not match the committed asset" : "The current images are not visible");
+      if (Date.now() - started >= timeoutMs) fail("The committed image remained absent or detached until the observation deadline");
+      await new Promise(resolve => setTimeout(resolve, Math.min(pollMs, timeoutMs - (Date.now() - started))));
+    }
+  } catch (error) { error.imageObservations ??= observations; throw error; }
 }
