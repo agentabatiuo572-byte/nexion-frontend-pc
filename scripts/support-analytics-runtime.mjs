@@ -379,8 +379,8 @@ try {
         const rootSelector = businessRoots[scenario.id];
         const businessRoot = page.locator(rootSelector);
         await businessRoot.waitFor({ state: "visible" });
-        if (scenario.id === "bulk") await businessRoot.getByRole("heading", { name: "圈选客户群发", exact: true }).waitFor({ state: "visible" });
-        if (scenario.id === "random") await businessRoot.getByRole("heading", { name: "明确处理历史待绑定客户", exact: true }).waitFor({ state: "visible" });
+        if (scenario.id === "bulk") await page.getByRole("dialog", { name: "圈选客户群发", exact: true }).waitFor({ state: "visible" });
+        if (scenario.id === "random") await page.getByRole("dialog", { name: "明确处理历史待绑定客户", exact: true }).waitFor({ state: "visible" });
         const submitControl = scenario.submit.findLast(action => action.kind === "click" || action.kind === "press");
         assert.ok(submitControl, "A real business submit control is required");
         assertUiBinding(scenario.id, { root: rootSelector, visible: await businessRoot.isVisible(), submitInside: await page.locator(submitControl.selector).evaluate((element, selector) => Boolean(element.closest(selector)), rootSelector) });
