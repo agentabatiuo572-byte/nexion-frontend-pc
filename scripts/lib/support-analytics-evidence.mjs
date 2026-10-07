@@ -248,12 +248,17 @@ export function validateReadback(id, data, mutation, before) {
   }
   return data;
 }
+const legacyFeRuntime = Object.freeze({ origin: "http://127.0.0.1:33107", port: 33107, distDir: ".next-seven-fixture" });
+const r4FeRuntime = Object.freeze({ origin: "http://127.0.0.1:33108", port: 33108, distDir: ".next-seven-r4" });
+// Earlier task identities and standalone legacy checks retain the original fixed profile.
+const feRuntime = taskId => taskId === "support-analytics-frontend-20261007-r4" ? r4FeRuntime : legacyFeRuntime;
+
 export function assertRuntimeReceipt(receipt, target, now = Date.now()) {
   assert.equal(receipt.taskId, target.taskId);
   const age = now - Date.parse(receipt.recordedAt);
   assert.ok(age >= 0 && age <= 15 * 60000, "Runtime startup receipt is missing or stale");
   assert.equal(resolve(receipt.fe.repo), resolve(target.repo));
-  assert.equal(receipt.fe.origin, "http://127.0.0.1:33107");
+  assert.equal(receipt.fe.origin, feRuntime(target.taskId).origin);
   assert.equal(target.origin, receipt.fe.origin);
   assert.equal(receipt.fe.backendUrl, "http://127.0.0.1:18161");
   assert.equal(resolve(receipt.be.repo), resolve("D:/WORKS/PLAN/.wt/cs-analytics-api-20261007"));
@@ -343,11 +348,13 @@ function boundFile(file, digest) {
   assert.equal(sha256(readFileSync(file)), digest.toLowerCase(), "A recorded runtime file changed");
 }
 export { boundFile as assertBoundFile };
-const serviceDistDir = ".next-seven-fixture";
-export function assertFePreload(preload) {
-  assert.equal(preload.trim().split(/\r?\n/).map(line => line.trim()).join("\n"), "process.env.NEXION_BACKEND_URL = 'http://127.0.0.1:18161';\nprocess.env.NEXION_ADMIN_COOKIE_NAMESPACE = 'cs_analytics_20261007';\nprocess.env.NEXT_DIST_DIR = '.next-seven-fixture';", "FE preload does not enforce this period's backend/cookie/serving-build binding");
+export function assertFePreload(preload, taskId) {
+  assert.equal(preload.trim().split(/\r?\n/).map(line => line.trim()).join("\n"), `process.env.NEXION_BACKEND_URL = 'http://127.0.0.1:18161';\nprocess.env.NEXION_ADMIN_COOKIE_NAMESPACE = 'cs_analytics_20261007';\nprocess.env.NEXT_DIST_DIR = '${feRuntime(taskId).distDir}';`, "FE preload does not enforce this period's backend/cookie/serving-build binding");
 }
 export function assertManualFeProof(receipt, target, proof, actual, now = Date.now()) {
+  const profile = feRuntime(target.taskId), serviceDistDir = profile.distDir;
+  assert.equal(receipt.taskId, target.taskId);
+  assert.equal(receipt.fe.origin, profile.origin); assert.equal(target.origin, receipt.fe.origin);
   assert.equal(receipt.fe.proofMode, "manual-os-limited");
   assert.equal(receipt.fe.commandLineHash, null);
   assert.equal(actual.commandLineReadable, false, "Manual proof is only for a successfully observed unreadable FE command");
@@ -400,6 +407,7 @@ export function assertManualFeProof(receipt, target, proof, actual, now = Date.n
   assert.equal(incoming.RemoteAddress, outgoing.LocalAddress); assert.equal(incoming.RemotePort, outgoing.LocalPort);
 }
 async function verifyManualFeProof(receipt, target, actual) {
+  const serviceDistDir = feRuntime(target.taskId).distDir;
   boundFile(receipt.fe.manualProofPath, receipt.fe.manualProofSha256);
   const proof = JSON.parse(readFileSync(receipt.fe.manualProofPath, "utf8"));
   assertManualFeProof(receipt, target, proof, actual);
@@ -432,19 +440,20 @@ async function verifyManualFeProof(receipt, target, actual) {
   }
 }
 export async function verifyRuntimeOwnership(receipt, target) {
+  const profile = feRuntime(target.taskId), serviceDistDir = profile.distDir;
   boundFile(target.receiptPath, target.receiptSha256);
   assertRuntimeReceipt(receipt, target);
   assert.equal(repositoryDigest(receipt.be.repo), receipt.be.candidateDigest, "BE candidate changed after startup");
   boundFile(receipt.resources.resourceOwnershipPath, receipt.resources.sha256);
   boundFile(receipt.fe.buildIdPath, receipt.fe.buildIdSha256);
   boundFile(receipt.fe.envBindingPath, receipt.fe.envBindingSha256);
-  assertFePreload(readFileSync(receipt.fe.envBindingPath, "utf8"));
+  assertFePreload(readFileSync(receipt.fe.envBindingPath, "utf8"), target.taskId);
   assert.equal(resolve(receipt.fe.buildIdPath), resolve(target.repo, serviceDistDir, "BUILD_ID"));
   boundFile(receipt.be.artifactPath, receipt.be.artifactSha256);
   boundFile(receipt.be.configPath, receipt.be.configSha256);
   assertResourceBindings(readFileSync(receipt.be.configPath, "utf8"), JSON.parse(readFileSync(receipt.resources.resourceOwnershipPath, "utf8")), receipt);
   const [liveFe, liveBe, ...liveResources] = await windowsFingerprintBatch([
-    { port: 33107, paths: [target.repo, receipt.fe.envBindingPath] },
+    { port: profile.port, paths: [target.repo, receipt.fe.envBindingPath] },
     { port: 18161, paths: [receipt.be.artifactPath, receipt.be.configPath] },
     ...["db", "redis", "s3"].map(kind => ({ port: receipt.resources[kind].port, paths: [receipt.resources[kind].configPath] })),
   ]);

@@ -347,6 +347,48 @@ test("public preload binds the serving fixture separately from verify builds", (
   assert.throws(() => assertFePreload(backendCookie), /serving-build binding/);
   for (const directory of [".next", ".next-seven-verify"]) assert.throws(() => assertFePreload(backendCookie + `\nprocess.env.NEXT_DIST_DIR = '${directory}';`), /serving-build binding/);
 });
+
+test("r4 runtime profile binds its fixed origin and preload while preserving r3", () => {
+  const r3Task = "support-analytics-frontend-20261007-r3", r4Task = "support-analytics-frontend-20261007-r4";
+  const backendCookie = "process.env.NEXION_BACKEND_URL = 'http://127.0.0.1:18161';\nprocess.env.NEXION_ADMIN_COOKIE_NAMESPACE = 'cs_analytics_20261007';";
+  const preload = directory => backendCookie + `\nprocess.env.NEXT_DIST_DIR = '${directory}';`;
+  for (const [taskId, origin, directory] of [[r3Task, "http://127.0.0.1:33107", ".next-seven-fixture"], [r4Task, "http://127.0.0.1:33108", ".next-seven-r4"]]) {
+    const r = receipt(); r.taskId = taskId; r.fe.origin = origin;
+    const t = { ...target, taskId, origin };
+    assertRuntimeReceipt(r, t);
+    assertFePreload(preload(directory), taskId);
+    for (const wrongOrigin of ["http://127.0.0.1:33041", "http://127.0.0.1:33109", origin.endsWith("33108") ? "http://127.0.0.1:33107" : "http://127.0.0.1:33108"]) {
+      const wrong = structuredClone(r); wrong.fe.origin = wrongOrigin;
+      assert.throws(() => assertRuntimeReceipt(wrong, { ...t, origin: wrongOrigin }));
+    }
+    for (const wrongDirectory of [".next", ".next-seven-verify-r4", directory === ".next-seven-r4" ? ".next-seven-fixture" : ".next-seven-r4"]) assert.throws(() => assertFePreload(preload(wrongDirectory), taskId), /serving-build binding/);
+  }
+  assert.throws(() => assertFePreload(preload(".next-seven-r4")), /serving-build binding/);
+  assert.throws(() => assertFePreload(preload(".next-seven-r4"), r4Task + "-copy"), /serving-build binding/);
+});
+
+test("r4 manual runtime profile accepts its build and rejects cross-generation receipt or asset paths", () => {
+  const { r, actual, proof, now } = manualFeFixture(), taskId = "support-analytics-frontend-20261007-r4";
+  r.taskId = proof.taskId = taskId;
+  r.fe.origin = proof.fe.origin = proof.auth.via = "http://127.0.0.1:33108";
+  r.fe.buildIdPath = proof.build.buildIdPath = join(repo, ".next-seven-r4/BUILD_ID");
+  proof.assets[0].localPath = join(repo, ".next-seven-r4/static/chunks/login.js");
+  const t = { ...target, taskId, origin: r.fe.origin };
+  assertRuntimeReceipt(r, t, now); assertManualFeProof(r, t, proof, actual, now);
+  for (const directory of [".next-seven-fixture", ".next-seven-verify", ".next-seven-verify-r4", ".next"]) {
+    const wrongReceipt = structuredClone(r), wrongProof = structuredClone(proof);
+    wrongReceipt.fe.buildIdPath = wrongProof.build.buildIdPath = join(repo, directory, "BUILD_ID");
+    wrongProof.assets[0].localPath = join(repo, directory, "static/chunks/login.js");
+    assert.throws(() => assertManualFeProof(wrongReceipt, t, wrongProof, actual, now), /different serving directory/);
+    const wrongAsset = structuredClone(proof); wrongAsset.assets[0].localPath = join(repo, directory, "static/chunks/login.js");
+    assert.throws(() => assertManualFeProof(r, t, wrongAsset, actual, now), /different serving directory/);
+  }
+  const wrongOrigin = structuredClone(r), wrongProof = structuredClone(proof);
+  wrongOrigin.fe.origin = wrongProof.fe.origin = wrongProof.auth.via = "http://127.0.0.1:33107";
+  assert.throws(() => assertManualFeProof(wrongOrigin, { ...t, origin: wrongOrigin.fe.origin }, wrongProof, actual, now));
+  const oldTask = { ...t, taskId: "support-analytics-frontend-20261007-r3" };
+  assert.throws(() => assertManualFeProof(r, oldTask, proof, actual, now));
+});
 test("equivalent Windows repository spellings retain ownership while another tree is rejected", () => {
   const { r, actual, proof, now } = manualFeFixture();
   r.fe.repo = repo.replaceAll("\\", "/");
