@@ -102,7 +102,21 @@ export function assertRequestSeeds(path, input, previews, uploads, allowed, targ
   const exactTargets = ids => { permitted(ids); assert.deepEqual(ids.map(String).toSorted(), targetIds.map(String).toSorted(), "Actual request/preview differs from this scenario's exact targets"); };
   if (path.endsWith("/bulk/preview")) {
     permitted(input.customerIds ?? []); permitted(input.excludedIds ?? []);
-    if (input.selectionMode === "ALL_FILTERED") { assert.ok(completeScopeIds, "Filtered preview needs a complete real current owner scope"); permitted(completeScopeIds); }
+    if (input.selectionMode === "ALL_FILTERED") {
+      assert.ok(completeScopeIds, "Filtered preview needs a complete real current owner scope");
+      if (allowed.bulkDiscoveryCustomerIds) {
+        assert.deepEqual(input.customerIds ?? [], [], "Discovery cannot explicitly select previous fixtures");
+        assert.deepEqual(input.excludedIds ?? [], [], "Discovery cannot change the frozen owner scope");
+        const filters = input.filters;
+        assert.ok(filters && typeof filters === "object" && !Array.isArray(filters), "Discovery filters must be an object");
+        if (Object.keys(filters).length) {
+          assert.ok(typeof allowed.bulkDiscoveryKeyword === "string" && allowed.bulkDiscoveryKeyword.trim(), "The current fixture discovery keyword is required");
+          assert.deepEqual(filters, { keyword: allowed.bulkDiscoveryKeyword }, "Only the exact current fixture keyword is authorized");
+        } else assert.deepEqual(filters, {}, "Discovery filters must be an object");
+        assert.ok(Array.isArray(allowed.bulkDiscoveryCustomerIds));
+        assert.ok(completeScopeIds.every(id => allowed.bulkDiscoveryCustomerIds.includes(String(id))), "Discovery contains a customer outside the measured owned fixture scope");
+      } else permitted(completeScopeIds);
+    }
     else { assert.ok(["EXPLICIT", "CROSS_PAGE"].includes(input.selectionMode), "Unsupported real bulk selection mode"); exactTargets(input.customerIds); }
   } else if (path.endsWith("/assignments/random-preview")) exactTargets(input.customers.map(row => row.id));
   else if (path.endsWith("/support-workbench/bulk") || path.endsWith("/assignments/random")) {

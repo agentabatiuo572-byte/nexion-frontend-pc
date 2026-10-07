@@ -154,6 +154,25 @@ test("actual preview bodies reject non-seed and substituted selection before sub
   assert.throws(() => check(bulkPreview([]).path, { selectionMode: "CROSS_PAGE", customerIds: ["11", "13"] }), /exact targets/);
   assert.throws(() => check(randomPreview([]).path, { customers: [{ id: "99" }] }), /outside/);
 });
+test("previous owned fixtures are allowed only for bulk discovery, never message targets", () => {
+  const current = { ...allowed, bulkDiscoveryCustomerIds: ["11", "12", "13", "21"], bulkDiscoveryKeyword: "fixture-current" };
+  const check = (path, body, previews = [], scope) => assertRequestSeeds(path, body, previews, [], current, ["11", "12"], scope);
+  const discovery = { selectionMode: "ALL_FILTERED", customerIds: [], excludedIds: [], filters: {} };
+  check(bulkPreview([]).path, discovery, [], ["11", "12", "13", "21"]);
+  check(bulkPreview([]).path, { ...discovery, filters: { keyword: "fixture-current" } }, [], ["11", "12", "13", "21"]);
+  assert.throws(() => check(bulkPreview([]).path, discovery, [], ["11", "99"]), /outside/);
+  for (const changed of [{ customerIds: ["21"] }, { excludedIds: ["11"] }, { filters: { includeUnknown: true } }, { filters: { keyword: "fixture-previous" } }, { filters: { keyword: "fixture-current", includeUnknown: true } }]) {
+    assert.throws(() => check(bulkPreview([]).path, { ...discovery, ...changed }, [], ["11", "21"]));
+  }
+  for (const filters of [null, undefined, [], "", 0, false]) assert.throws(() => check(bulkPreview([]).path, { ...discovery, filters }, [], ["11", "21"]), /must be an object/);
+  for (const selectionMode of ["EXPLICIT", "CROSS_PAGE"]) assert.throws(() => check(bulkPreview([]).path, { selectionMode, customerIds: ["11", "21"] }), /outside/);
+  assert.throws(() => check("/api/admin/content/support-workbench/bulk", { selectionId: "current-selection" }, [bulkPreview(["11", "21"])]), /outside/);
+  assert.throws(() => check("/api/admin/content/support-agents/assignments/random-preview", { customers: [{ id: "11" }, { id: "21" }] }), /outside/);
+  assert.throws(() => check("/api/admin/content/support-agents/assignments/random", { previewId: "current-preview", expectedRulesVersion: 2 }, [randomPreview(["11", "21"])]), /outside/);
+  assert.throws(() => check("/api/admin/content/conversations/attachments", { customerId: "21" }), /outside/);
+  assert.throws(() => check("/api/admin/content/conversations/CV-OLD/replies", { kind: "TEXT" }));
+  check("/api/admin/content/support-workbench/bulk", { selectionId: "current-selection" }, [bulkPreview(["11", "12"])]);
+});
 test("bulk and random commits require this run's exact frozen server preview before transmission", () => {
   const check = (path, body, previews) => assertRequestSeeds(path, body, previews, [], allowed, ["11", "12"]);
   assert.throws(() => check("/api/admin/content/support-workbench/bulk", { selectionId: "old" }, [bulkPreview(["11", "12"])]), /this run/);
