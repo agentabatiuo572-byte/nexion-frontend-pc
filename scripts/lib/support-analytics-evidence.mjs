@@ -372,3 +372,27 @@ export async function verifyRuntimeOwnership(receipt, target) {
   assert.equal(response.status, 200, "The expected current Next build is not served");
   assert.equal(sha256(Buffer.from(await response.arrayBuffer())), receipt.fe.assetSha256, "HTTP asset is from a different FE build");
 }
+
+export async function installRenderedBlobObserver(page) {
+  await page.addInitScript(() => {
+    const create = URL.createObjectURL.bind(URL), revoke = URL.revokeObjectURL.bind(URL);
+    const blobs = new Map();
+    Object.defineProperty(window, "__supportAcceptanceImageBlobs", { value: blobs });
+    URL.createObjectURL = blob => {
+      const url = create(blob);
+      if (blob instanceof Blob && blob.type.startsWith("image/")) blobs.set(url, blob);
+      return url;
+    };
+    URL.revokeObjectURL = url => { revoke(url); blobs.delete(String(url)); };
+  });
+}
+export async function renderedBlobSha256(image) {
+  return image.evaluate(async element => {
+    await element.decode();
+    if (!element.naturalWidth || !element.currentSrc.startsWith("blob:")) throw new Error("The actual decoded image is not an observed Blob");
+    const blob = window.__supportAcceptanceImageBlobs?.get(element.currentSrc);
+    if (!blob || !blob.size) throw new Error("The current image Blob was not observed or was revoked");
+    const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+    return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+  });
+}

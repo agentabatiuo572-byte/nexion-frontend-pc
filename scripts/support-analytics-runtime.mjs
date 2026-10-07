@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
-import { sha256, repositoryDigest as digestRepository, businessData, conversationFeatures, consoleSidebarRoot, businessRoots, assertUiBinding, assertRequestSeeds, assertAvatarPolicy, assertAvatarProposal, avatarProposalPath, avatarApprovePath, validateMutation, validateReadback, verifyRuntimeOwnership } from "./lib/support-analytics-evidence.mjs";
+import { sha256, repositoryDigest as digestRepository, businessData, conversationFeatures, consoleSidebarRoot, businessRoots, assertUiBinding, assertRequestSeeds, assertAvatarPolicy, assertAvatarProposal, avatarProposalPath, avatarApprovePath, validateMutation, validateReadback, verifyRuntimeOwnership, installRenderedBlobObserver, renderedBlobSha256 } from "./lib/support-analytics-evidence.mjs";
 
 const features = ["avatar", "sku", "attachment", "bulk", "random", "cookie", "unknown-main", "unknown-dock"];
 const usedTotpSteps = new Map();
@@ -105,7 +105,7 @@ async function requireBusinessUi(page, scenario, mutation, state, before) {
       const images = root.locator('img[alt="会话图片"]');
       let matched = false;
       for (const image of await images.all()) if (await image.isVisible()) {
-        const actualHash = await image.evaluate(async element => { const bytes = await (await fetch(element.currentSrc)).arrayBuffer(); return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), byte => byte.toString(16).padStart(2, "0")).join(""); });
+        const actualHash = await renderedBlobSha256(image);
         assert.ok(await image.evaluate(async element => { try { await element.decode(); return element.naturalWidth > 0; } catch { return false; } }), "Attachment image was not actually decoded");
         matched ||= actualHash === expectedHash;
       }
@@ -119,7 +119,7 @@ async function requireBusinessUi(page, scenario, mutation, state, before) {
     const image = page.getByAltText(`${state.name}头像`, { exact: true });
     await image.waitFor({ state: "visible" });
     assert.ok(await image.evaluate(async element => { try { await element.decode(); return element.naturalWidth > 0; } catch { return false; } }), "Avatar image was not actually decoded");
-    const actualHash = await image.evaluate(async element => { const bytes = await (await fetch(element.currentSrc)).arrayBuffer(); return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), byte => byte.toString(16).padStart(2, "0")).join(""); });
+    const actualHash = await renderedBlobSha256(image);
     assert.equal(actualHash, expectedHash, "The reloaded UI is showing a different avatar");
   } else if (scenario.id === "bulk") {
     const dialog = page.getByRole("dialog", { name: "圈选客户群发", exact: true });
@@ -238,6 +238,7 @@ try {
   for (const scenario of config.scenarios) {
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, baseURL: origin });
     let page = await context.newPage(), approvalContext;
+    await installRenderedBlobObserver(page);
     try {
       assert.ok(runtimeReceipt.allowedSeedObjects.usernames.includes(config.accounts[scenario.account]?.username), "This login is not an authorized isolated seed");
       await verifyRuntimeOwnership(runtimeReceipt, runtimeTarget);
@@ -339,6 +340,7 @@ try {
         await page.close();
         approvalContext = await browser.newContext({ viewport: { width: 1440, height: 1000 }, baseURL: origin });
         page = await approvalContext.newPage();
+        await installRenderedBlobObserver(page);
         await verifyRuntimeOwnership(runtimeReceipt, runtimeTarget);
         checkerSession = businessData(await login(approvalContext, page, origin, checker)).session;
         assertAvatarPolicy(runtimeReceipt.avatarApproval, makerSession, checkerSession);

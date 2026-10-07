@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { chromium } from "playwright";
-import { businessData, consoleSidebarRoot, assertUiBinding, assertRequestSeeds, assertResourceBindings, assertManualFeProof, assertFePreload, assertAvatarPolicy, assertAvatarProposal, avatarApprovePath, validateMutation, validateReadback, assertRuntimeReceipt, assertLiveFingerprint, assertBoundFile, sha256 } from "../scripts/lib/support-analytics-evidence.mjs";
+import { businessData, consoleSidebarRoot, assertUiBinding, assertRequestSeeds, assertResourceBindings, assertManualFeProof, assertFePreload, assertAvatarPolicy, assertAvatarProposal, avatarApprovePath, validateMutation, validateReadback, assertRuntimeReceipt, assertLiveFingerprint, assertBoundFile, sha256, installRenderedBlobObserver, renderedBlobSha256 } from "../scripts/lib/support-analytics-evidence.mjs";
 
 const repo = resolve(import.meta.dirname, "..");
 function run(config, options = {}) {
@@ -271,5 +271,34 @@ test("the real sidebar remains unique when M3 also mounts a customer-profile asi
     assert.equal(await page.locator("aside").count(), 2);
     assert.equal(await page.locator(consoleSidebarRoot).count(), 1);
     await page.locator(consoleSidebarRoot).waitFor({ state: "visible" });
+  } finally { await browser.close(); }
+});
+
+test("actual rendered Blob bytes remain verifiable under CSP without fetching or reusing revoked URLs", async () => {
+  const bytes = readFileSync(join(repo, "node_modules/playwright-core/lib/server/chromium/appIcon.png"));
+  const expected = sha256(bytes), browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await installRenderedBlobObserver(page);
+    await page.route("http://127.0.0.1:33299/blob-csp", route => route.fulfill({
+      status: 200, contentType: "text/html", headers: { "content-security-policy": "connect-src 'none'; img-src blob:; script-src 'unsafe-inline'" },
+      body: `<img alt="actual fixture"><script>const bytes=Uint8Array.from(atob('${bytes.toString("base64")}'), c=>c.charCodeAt(0));document.querySelector('img').src=URL.createObjectURL(new Blob([bytes],{type:'image/png'}));</script>`,
+    }));
+    await page.goto("http://127.0.0.1:33299/blob-csp");
+    const image = page.getByAltText("actual fixture");
+    await image.waitFor({ state: "visible" });
+    assert.equal(await image.evaluate(async element => { try { await fetch(element.currentSrc); return false; } catch { return true; } }), true, "The real CSP must reject the original Blob fetch");
+    assert.equal(await renderedBlobSha256(image), expected);
+    await page.reload();
+    await image.waitFor({ state: "visible" });
+    assert.equal(await renderedBlobSha256(image), expected, "The observer must initialize on reload");
+    await image.evaluate(element => { const blob=window.__supportAcceptanceImageBlobs.get(element.currentSrc);element.src=URL.createObjectURL(new Blob([blob,new Uint8Array([1])],{type:'image/png'})); });
+    assert.notEqual(await renderedBlobSha256(image), expected, "Identical decoded pixels cannot stand in for the original bytes");
+    await image.evaluate(element => URL.revokeObjectURL(element.currentSrc));
+    await assert.rejects(renderedBlobSha256(image), /not observed or was revoked/);
+    const unobserved = await browser.newPage();
+    await unobserved.route("http://127.0.0.1:33299/blob-csp", route => route.fulfill({status:200,contentType:"text/html",body:`<img alt="unobserved"><script>document.querySelector('img').src=URL.createObjectURL(new Blob([Uint8Array.from(atob('${bytes.toString("base64")}'),c=>c.charCodeAt(0))],{type:'image/png'}));</script>`}));
+    await unobserved.goto("http://127.0.0.1:33299/blob-csp");
+    await assert.rejects(renderedBlobSha256(unobserved.getByAltText("unobserved")), /not observed or was revoked/);
   } finally { await browser.close(); }
 });
