@@ -327,7 +327,7 @@ async function verifyManualFeProof(receipt, target, actual) {
   assert.equal(git(["status", "--porcelain"]), "", "Manual source proof requires the fixed clean candidate");
   assert.deepEqual(git(["diff", "--name-only", proof.build.buildSourceHead]).split(/\r?\n/).filter(Boolean), proof.build.changedSinceBuild);
   assert.equal(readFileSync(receipt.fe.buildIdPath, "utf8").trim(), proof.build.buildId);
-  const htmlResponse = await fetch(receipt.fe.origin, { redirect: "error", signal: AbortSignal.timeout(15000) }); assert.equal(htmlResponse.status, 200);
+  const htmlResponse = await fetch(receipt.fe.origin, { headers: { connection: "close" }, redirect: "error", signal: AbortSignal.timeout(15000) }); assert.equal(htmlResponse.status, 200);
   const html = await htmlResponse.text();
   const rendered = [...new Set([...html.matchAll(/(?:src|href)="([^"<>]+)"/g)].map(match => match[1]).filter(path => path.startsWith("/_next/static/") && /\.(?:js|css)(?:\?|$)/.test(path)).map(path => new URL(path, receipt.fe.origin).pathname))];
   const expectedPaths = [...new Set([...rendered, `/_next/static/${proof.build.buildId}/_buildManifest.js`])].toSorted();
@@ -337,7 +337,7 @@ async function verifyManualFeProof(receipt, target, actual) {
     assert.ok(!relative(realpathSync(join(target.repo, serviceDistDir, "static")), file).startsWith(".."));
     assert.equal(resolve(asset.localPath).toLowerCase(), file.toLowerCase()); boundFile(file, asset.sha256);
     assert.equal(statSync(file).size, asset.bytes);
-    const response = await fetch(`${receipt.fe.origin}${asset.urlPath}`, { redirect: "error", signal: AbortSignal.timeout(15000) }); assert.equal(response.status, 200);
+    const response = await fetch(`${receipt.fe.origin}${asset.urlPath}`, { headers: { connection: "close" }, redirect: "error", signal: AbortSignal.timeout(15000) }); assert.equal(response.status, 200);
     assert.equal(sha256(Buffer.from(await response.arrayBuffer())), asset.sha256, "Rendered application asset changed or belongs to another build");
   }
 }
@@ -368,7 +368,7 @@ export async function verifyRuntimeOwnership(receipt, target) {
   assert.ok(!relative(realpathSync(join(target.repo, serviceDistDir, "static")), file).startsWith(".."));
   assert.equal(resolve(receipt.fe.assetPath).toLowerCase(), file.toLowerCase());
   boundFile(file, receipt.fe.assetSha256);
-  const response = await fetch(`${receipt.fe.origin}${urlPath}`, { signal: AbortSignal.timeout(15000), redirect: "error" });
+  const response = await fetch(`${receipt.fe.origin}${urlPath}`, { headers: { connection: "close" }, signal: AbortSignal.timeout(15000), redirect: "error" });
   assert.equal(response.status, 200, "The expected current Next build is not served");
   assert.equal(sha256(Buffer.from(await response.arrayBuffer())), receipt.fe.assetSha256, "HTTP asset is from a different FE build");
 }
