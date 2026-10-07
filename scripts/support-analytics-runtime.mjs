@@ -23,6 +23,10 @@ const argument = name => {
   return process.argv[index + 1];
 };
 const phase = argument("--phase"), reportPath = resolve(argument("--report"));
+if (phase === "I5R-V") {
+  await import("../tests/support-leaderboard-runtime.mjs");
+  process.exit(process.exitCode ?? 0);
+}
 assert.equal(phase, "I0-F", "Only the restored I0 baseline is implemented; later acceptance needs its own producer");
 const identity = Object.fromEntries(["taskId", "stepId", "checkId", "runId", "repo", "snapshotHash"].map(key => [key, process.env[`WORKFLOW_${key.replace(/[A-Z]/g, letter => `_${letter}`).toUpperCase()}`]]));
 const evidenceDir = join(dirname(reportPath), `I0-${identity.runId ?? "manual"}`);
