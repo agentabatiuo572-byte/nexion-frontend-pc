@@ -1,0 +1,115 @@
+{
+  "kind": "throwaway-design-prototype-v2-only",
+  "testedAt": "2026-10-07T08:22:19.219Z",
+  "sourceSha256": "ebac063b6d025bf4df56337ba922364e56f61f57a3bee3911b0eb3bb51c4c7bd",
+  "checkerSha256": "abf10d1da4be1bf3cedf40066880d75176afe927d6be94fb3af35c7fceea3c06",
+  "treeMoved": false,
+  "browser": "149.0.7827.55",
+  "passed": 24,
+  "checks": [
+    {
+      "name": "V2 默认首页保留任务区且仅样例内存数据",
+      "result": "PASS"
+    },
+    {
+      "name": "后台四步、日期拒绝、组合条件同时满足",
+      "result": "PASS"
+    },
+    {
+      "name": "编辑、删除、重复拒绝与新增设备规则",
+      "result": "PASS"
+    },
+    {
+      "name": "草稿恢复、试算、审核只演示待审核",
+      "result": "PASS"
+    },
+    {
+      "name": "后台非法试算值不阻断单独购买，APP 自身非法数量仍拒绝",
+      "result": "PASS"
+    },
+    {
+      "name": "首页广告→活动商城→全部商品→规则与商品详情",
+      "result": "PASS"
+    },
+    {
+      "name": "详情入口退出挽留、Escape 保留、一次展示并返回原入口",
+      "result": "PASS"
+    },
+    {
+      "name": "多型号独立奖励、付款方式和内部返回保留选择",
+      "result": "PASS"
+    },
+    {
+      "name": "未建单挽留确认继续保留，固定截止不循环重置",
+      "result": "PASS"
+    },
+    {
+      "name": "建单后离开保留订单、从原单继续支付",
+      "result": "PASS"
+    },
+    {
+      "name": "APP 只读失败状态，后台模拟恢复后回读且不重复",
+      "result": "PASS"
+    },
+    {
+      "name": "活动结束仍可看既有奖励；新购展示普通订单无紧迫挽留",
+      "result": "PASS"
+    },
+    {
+      "name": "明确取消失败保留订单，确认成功才撤预留",
+      "result": "PASS"
+    },
+    {
+      "name": "支付结果未知先查原单，离开无营销拦截，未创建重复订单",
+      "result": "PASS"
+    },
+    {
+      "name": "无奖励商品、无期限、无资格与预算耗尽不触发挽留",
+      "result": "PASS"
+    },
+    {
+      "name": "空态、加载、错误状态均可恢复",
+      "result": "PASS"
+    },
+    {
+      "name": "邀请复制失败可见、迟到的失败不丢失页面",
+      "result": "PASS"
+    },
+    {
+      "name": "APP 交互层玻璃样式，静态商品卡为 flat",
+      "result": "PASS"
+    },
+    {
+      "name": "减少动态与透明度偏好都有可见回退",
+      "result": "PASS"
+    },
+    {
+      "name": "320、390、430 APP 主链与弹窗、后台无横溢出",
+      "result": "PASS"
+    },
+    {
+      "name": "刷新后内存订单、草稿和配置恢复样例",
+      "result": "PASS"
+    },
+    {
+      "name": "无外部请求与脚本错误；文件不超过 400 行",
+      "result": "PASS"
+    },
+    {
+      "name": "顶栏返回与订单入口共享挽留，确认后抵达实际目标",
+      "result": "PASS"
+    },
+    {
+      "name": "测试开始和结束 HTML 与检查脚本快照一致",
+      "result": "PASS"
+    }
+  ],
+  "pageErrors": [],
+  "externalRequests": [],
+  "limitations": [
+    "只验证本页内存与固定样例时间；没有真实 API、钱包、库存、预算、审批、支付或奖励发放",
+    "仅中文 Chromium；无原生 APP、真实浏览器返回/关闭拦截、持久化与服务端到期执行",
+    "未执行两名独立像素审查；不是生产验收或像素通过结论",
+    "固定奖励与组合购物单仅为设计演示；真实多型号订单须另作协议扩展"
+  ]
+}
