@@ -1,7 +1,7 @@
 {
   "kind": "offline-design-render-verification",
   "capability": "runtime",
-  "testedAt": "2026-10-07T15:46:27.897Z",
+  "testedAt": "2026-10-08T16:47:38.415Z",
   "designHash": "cb708656e143d3583f59e35372cfa2423470668ef1f7dc9d6d31892dd6240943",
   "checkerHash": "562b7199b5c3cd675a0e67b05687122b3dc031969f4fa0a9993258439e70426b",
   "browser": "149.0.7827.55",
@@ -17160,7 +17160,7 @@
     },
     {
       "file": "ADM04-modal-rule-light-1440-bottom.png",
-      "sha256": "44c9ca192a09676f5115d846d193c6da8d9a791b154a5cb2f2b4768d40a2f96a",
+      "sha256": "d0a9b0a805453854f2d4cc7f7e84add5787694711d7db70cff6ebcb178743a91",
       "url": "file:///D:/WORKS/PLAN/.wt/growth-promotions-prd-20261007-admin/docs/design/growth-promotions/admin-r1-baseline.html?screen=ADM04&state=normal&theme=light&export=1&modal=rule",
       "captureMode": "viewport-modal-bottom",
       "screen": "ADM04",
@@ -20400,7 +20400,7 @@
     },
     {
       "file": "ADM04-modal-rule-error-light-1440-bottom.png",
-      "sha256": "0bbd9e18591eeb676368c300590ded71a1433365ab633e4eacf6d120c47b9bd8",
+      "sha256": "8e60d8aa93e602eb45a50ac7309539386273c6b787a8338b96f4d5656fcb7797",
       "url": "file:///D:/WORKS/PLAN/.wt/growth-promotions-prd-20261007-admin/docs/design/growth-promotions/admin-r1-baseline.html?screen=ADM04&state=normal&theme=light&export=1&modal=rule&modalState=error",
       "captureMode": "viewport-modal-bottom",
       "screen": "ADM04",
@@ -26887,7 +26887,7 @@
     },
     {
       "file": "ADM04-modal-dual-dark-1280.png",
-      "sha256": "c7d63ee00042488607cb2d6f43fa161a590370e6cadc6f7b2f18c9385e1eb201",
+      "sha256": "45235ff487045ab7f5684de9665506869a2babcadc605730118cac0e34201b3a",
       "url": "file:///D:/WORKS/PLAN/.wt/growth-promotions-prd-20261007-admin/docs/design/growth-promotions/admin-r1-baseline.html?screen=ADM04&state=normal&theme=dark&export=1&modal=dual",
       "captureMode": "viewport",
       "screen": "ADM04",
@@ -28362,7 +28362,7 @@
     },
     {
       "file": "ADM04-modal-rule-light-1280-bottom.png",
-      "sha256": "fed28c889a063edee350057c94505f9a954d03f2ec11ea96a4cd2a0fac44e372",
+      "sha256": "783e00c5ca43096b79d8125fcf4fb69765b50fc7dc0e363dbc21af137ad4834a",
       "url": "file:///D:/WORKS/PLAN/.wt/growth-promotions-prd-20261007-admin/docs/design/growth-promotions/admin-r1-baseline.html?screen=ADM04&state=normal&theme=light&export=1&modal=rule",
       "captureMode": "viewport-modal-bottom",
       "screen": "ADM04",

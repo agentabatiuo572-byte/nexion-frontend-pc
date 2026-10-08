@@ -1,5 +1,7 @@
 # PC R1 design baseline self-review
 
+> Historical v3 author review. The current v4 design manifest is `../../admin-r1-baseline.json`; current design captures and export report are in [v4-purchase-interval](v4-purchase-interval/index.html). The root-level v3 export report and statements below remain historical evidence. Current contract binding is checked by the original design exporter; product screenshots never replace the design baseline.
+
 Owner: `growth_pc_design`. Scope: standalone PC design artifacts only. This is the author's self-check, not an independent review or product acceptance.
 
 Design source: `../../admin-r1-baseline.html`. Frozen manifest: `../../admin-r1-baseline.json`. Reproduction: `node docs/design/growth-promotions/admin-r1-baseline-check.mjs --export` from the owning repository. `--freeze` is reserved for an intentional design revision; ordinary verification rejects source, token, font or design drift.
