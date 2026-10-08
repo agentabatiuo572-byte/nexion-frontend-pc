@@ -42,11 +42,16 @@ await new Promise(resolve => portLease.once('listening', resolve));
 const nextPort = portLease.address().port;
 await new Promise(resolve => portLease.close(resolve));
 const base = `http://127.0.0.1:${nextPort}/api/admin/media/uploads/`;
+const cookieNamespace = process.env.NEXION_ADMIN_COOKIE_NAMESPACE;
+const cookieName = `nexion_admin_token${cookieNamespace === undefined ? '' : `__${cookieNamespace}`}`;
 const next = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'dev', '--webpack', '-H', '127.0.0.1', '-p', String(nextPort)], {
   cwd: process.cwd(),
-  env: { ...process.env, NEXION_BACKEND_URL: `http://127.0.0.1:${backendPort}`, NEXION_MEDIA_INTERNAL_ORIGIN: `http://127.0.0.1:${storagePort}` },
-  stdio: 'ignore',
+  env: { ...process.env, NEXT_DIST_DIR: `${process.env.NEXT_DIST_DIR || '.next'}-private-media`, NEXION_BACKEND_URL: `http://127.0.0.1:${backendPort}`, NEXION_MEDIA_INTERNAL_ORIGIN: `http://127.0.0.1:${storagePort}` },
+  windowsHide: true,
+  stdio: ['ignore', 'pipe', 'pipe'],
 });
+let serverLog = '';
+for (const stream of [next.stdout, next.stderr]) stream.on('data', chunk => { serverLog = `${serverLog}${chunk}`.slice(-12000); });
 
 try {
   let ready = false;
@@ -57,7 +62,7 @@ try {
   assert(ready, 'Next dev did not start');
   const unauth = await fetch(base + 'asset/content');
   assert.equal(unauth.status, 401);
-  const headers = { Cookie: 'nexion_admin_token=test-token' };
+  const headers = { Cookie: `${cookieName}=test-token` };
   const preview = await fetch(base + 'asset/preview-url', { headers });
   const previewText = await preview.text();
   assert.equal(preview.status, 200);
@@ -89,6 +94,9 @@ try {
   assert.equal(post.status, 405);
   assert(sawAuthorization, 'admin token was not forwarded to backend');
   console.log('PASS unauthorized, sanitized metadata and SKU, image, range, scope, untrusted origin, method, backend auth');
+} catch (error) {
+  console.error(serverLog);
+  throw error;
 } finally {
   next.kill();
   backend.close();

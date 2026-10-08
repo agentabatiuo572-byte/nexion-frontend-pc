@@ -10,7 +10,7 @@ import { chromium } from "@playwright/test";
 import { repositoryDigest } from "../scripts/lib/support-analytics-evidence.mjs";
 
 const require = createRequire(import.meta.url), { webpack } = require("next/dist/compiled/webpack/webpack");
-const repo = path.resolve(import.meta.dirname, ".."), runRoot = "C:/Users/jason/.codex/workflow-runs/support-analytics-20261007-r2";
+const repo = path.resolve(import.meta.dirname, ".."), runRoot = "D:/CodexData/test-environments/workflow-runs/support-analytics-20261007-r2";
 const runId = process.env.WORKFLOW_RUN_ID || `manual-${Date.now()}`, checkId = process.env.WORKFLOW_CHECK_ID || "manual";
 const acceptance = !process.env.WORKFLOW_RUN_ID ? "VISUAL-BASELINE"
   : process.env.WORKFLOW_STEP_ID === "I5R-V" && checkId === "runtime" ? "VISUAL-BASELINE"
@@ -207,7 +207,47 @@ for(const width of [1346,1000])for(const board of ["首充人数","充值贡献"
     return {money,reference,onlySelf,headers:unit,currency,scenario,fonts,screenshot:id+".png"};
   });
 }
-await page.evaluate(()=>window.fixtureTransform=undefined);await page.setViewportSize({width:1346,height:1169});await mode("baseline");
+await page.evaluate(()=>window.fixtureTransform=undefined);
+for (const width of [1346, 1000]) for (const scenario of ["baseline", "reference-unknown", "period-partial", "counts-partial"]) for (const board of ["首充人数", "充值贡献", "购机贡献", "客户规模"]) for (const currency of ["USDT", "NEX"]) {
+  await page.setViewportSize({ width, height: width === 1346 ? 1169 : 900 });
+  await mode(scenario);
+  await page.getByRole("tab", { name: board, exact: true }).click();
+  await page.getByRole("combobox", { name: "币种" }).selectOption(currency);
+  await settle();
+  await check(`numeric-baseline-${width}-${scenario}-${board}-${currency}`, async () => {
+    const rows = await page.locator(".sl-table tbody tr").evaluateAll(rows => rows.map(row => ({
+      bottom: row.getBoundingClientRect().bottom,
+      metrics: [...row.querySelectorAll("td[data-metric]")].map(td => {
+        const value = td.querySelector("strong button") || td.querySelector("strong"), rect = value.getBoundingClientRect(), style = getComputedStyle(value);
+        return {
+          metric: td.dataset.metric, y: rect.y, bottom: rect.bottom,
+          style: [style.fontSize, style.fontWeight, style.lineHeight],
+          notes: [...td.querySelectorAll(".sl-amount-note summary,.sl-count>small")].map(note => {
+            const text = note.querySelector("small") || note, range = document.createRange(), rect = note.getBoundingClientRect(), style = getComputedStyle(text);
+            range.selectNodeContents(text);
+            return { y: rect.y, bottom: rect.bottom, textBottom: range.getBoundingClientRect().bottom, style: [style.fontSize, style.lineHeight] };
+          })
+        };
+      })
+    })));
+    assert.equal(rows.length, 7);
+    for (const row of rows) {
+      assert.deepEqual(row.metrics.map(metric => metric.metric), ["amount", "firstPayment", "customers"]);
+      assert.equal(row.metrics.reduce((sum, metric) => sum + metric.notes.length, 0), scenario === "baseline" ? 0 : scenario === "counts-partial" ? 2 : 1);
+      const positions = row.metrics.map(metric => metric.y);
+      assert(Math.max(...positions) - Math.min(...positions) <= 0.01, JSON.stringify(row));
+      for (const metric of row.metrics) {
+        assert.deepEqual(metric.style, ["30px", "600", "40px"]);
+        for (const note of metric.notes) {
+          assert(note.y >= metric.bottom && note.bottom <= row.bottom + 0.01 && note.textBottom <= row.bottom + 0.01, JSON.stringify({ row, metric, note }));
+          assert.deepEqual(note.style, ["13px", "18px"]);
+        }
+      }
+    }
+    return rows;
+  });
+}
+await page.setViewportSize({width:1346,height:1169});await mode("baseline");
 await check("common-units-normal-labels-and-exact-values",async()=>{assert.equal(await page.locator(".sl-amount>span,.sl-count>span,.sl-self-score>span").count(),0);assert.deepEqual(await page.locator(".sl-table th small").allTextContents(),["USDT · 2026.10","人 · 2026.10","人 · 截至现在"]);assert.equal(await page.locator(".sl-self h2 small").innerText(),"人");for(const selector of [".sl-amount .sl-number-detail summary",'td[data-metric="firstPayment"] summary']){const trigger=page.locator(selector).first();await trigger.focus();await trigger.press("Enter");const popup=page.locator(".sl-movement-explanation:popover-open");await popup.waitFor({state:"visible"});const text=await popup.innerText();assert(text.includes("2026.10"));assert(text.includes(selector.includes("amount")?"20000 USDT":"20 人"));await trigger.press("Escape");await popup.waitFor({state:"hidden"});}return "Normal row/self units absent; header/self labels and keyboard exact units/period retained";});
 
 await check("reduced-motion",async()=>{await page.emulateMedia({reducedMotion:"reduce"});await mode("baseline");assert.equal(await page.locator(".sl-locate").evaluate(el=>getComputedStyle(el).animationName),"none");await page.getByRole("button",{name:"定位我",exact:true}).click();return "Reduced motion and locate callback verified";});

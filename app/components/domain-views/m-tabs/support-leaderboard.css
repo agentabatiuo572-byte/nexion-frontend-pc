@@ -23,3 +23,4 @@
 .sl-brand>span[data-artwork]{width:100px;height:50px;flex-shrink:0;position:relative;top:.5px;background-image:var(--sl-sprite);background-size:1346px 1169px;background-position:-72px -13px;background-repeat:no-repeat}
 .sl-amount-note summary{list-style:none;cursor:pointer;line-height:18px}.sl-amount-note summary::-webkit-details-marker{display:none}.sl-amount-note small{font-size:13px;line-height:18px;color:#d7b66e}.sl-self-score .sl-amount-note{flex-basis:100%}
 .sl-self h2 small{font-size:13px;line-height:18px;color:var(--sl-muted);margin-left:5px}
+.sl-table .sl-amount,.sl-table .sl-count{position:relative;min-height:40px;gap:0}.sl-table .sl-amount-note,.sl-table .sl-count>small{position:absolute;left:12px;right:8px;top:100%;margin-top:0}
