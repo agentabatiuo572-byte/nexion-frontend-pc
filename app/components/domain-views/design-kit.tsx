@@ -1604,7 +1604,7 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
   return undefined;
 }
 
-function BusinessFormBlock({ spec, value, onChange, onSelectionChange, onUploadStateChange }: { spec: BusinessFormSpec; value: BusinessFormValue; onChange: (next: BusinessFormValue) => void; onSelectionChange?: (next: BusinessFormValue) => void; onUploadStateChange: (key: string, state: "uploading" | "failed" | undefined) => void }) {
+export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, onUploadStateChange }: { spec: BusinessFormSpec; value: BusinessFormValue; onChange: (next: BusinessFormValue) => void; onSelectionChange?: (next: BusinessFormValue) => void; onUploadStateChange: (key: string, state: "uploading" | "failed" | undefined) => void }) {
   const [multiSelectSearch, setMultiSelectSearch] = useState<Record<string, string>>({});
   const [assetUploading, setAssetUploading] = useState<Record<string, boolean>>({});
   const [assetNames, setAssetNames] = useState<Record<string, string>>({});

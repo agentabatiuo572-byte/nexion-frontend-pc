@@ -1,0 +1,580 @@
+{
+  "schemaVersion": 1,
+  "baselineId": "app-r1-20261007-v2",
+  "status": "design-candidate-for-independent-review",
+  "authority": "Independent artboard before product implementation. Changes require an explicit recorded design decision; product screenshots cannot replace this source.",
+  "entry": "app-r1-baseline.html",
+  "checker": "app-r1-baseline-check.mjs",
+  "evidence": "evidence/app-r1-design/report.json",
+  "basis": {
+    "concept": "assets/concept-app-flow-v2.png",
+    "design": "DESIGN.md",
+    "requirements": [
+      "../../PRD/growth-promotions/PRODUCT-PRD.md",
+      "../../PRD/growth-promotions/APP-H5-PRD.md"
+    ],
+    "appSourceCommit": "a3e0a4169126ed75e0559f644fee0b00d8e26a8f",
+    "h5SourceCommit": "c745cd3bc12e97de0ce4420b2dd136b2a41bc8e2",
+    "sourceGeometry": [
+      "src/components/app-chassis.vue",
+      "src/components/home/greeting-header.vue",
+      "src/components/home/tech-money-card.vue",
+      "src/components/store/product-render.vue",
+      "src/styles/tokens.css",
+      "src/styles/fonts.css"
+    ],
+    "runtimeProductScreenshotsUsed": false,
+    "externalNetworkAllowed": false
+  },
+  "query": {
+    "screen": [
+      "home",
+      "events",
+      "rules",
+      "store",
+      "detail",
+      "bundle",
+      "checkout",
+      "order",
+      "order-paid",
+      "order-refund",
+      "order-unknown",
+      "order-confirmed",
+      "payment-unknown",
+      "rewards",
+      "reward-detail",
+      "invite",
+      "leave",
+      "leave-reserved",
+      "cancel"
+    ],
+    "state": [
+      "normal",
+      "empty",
+      "loading",
+      "error",
+      "disabled",
+      "long",
+      "reduced-transparency"
+    ],
+    "locale": [
+      "zh",
+      "en",
+      "vi"
+    ],
+    "theme": [
+      "dark",
+      "light"
+    ],
+    "width": [
+      320,
+      390,
+      430
+    ]
+  },
+  "coverage": {
+    "APP01": [
+      "home",
+      "events"
+    ],
+    "APP02": [
+      "rules"
+    ],
+    "APP03": [
+      "store",
+      "detail",
+      "bundle"
+    ],
+    "APP04": [
+      "checkout"
+    ],
+    "APP05": [
+      "order",
+      "order-paid",
+      "payment-unknown",
+      "order-unknown",
+      "order-confirmed"
+    ],
+    "APP06": [
+      "rewards",
+      "reward-detail"
+    ],
+    "APP07": [
+      "order",
+      "order-paid",
+      "order-refund",
+      "reward-detail",
+      "cancel"
+    ],
+    "APP08": [
+      "invite"
+    ],
+    "APP09": [
+      "leave",
+      "leave-reserved",
+      "checkout"
+    ]
+  },
+  "geometry": {
+    "unit": "CSS px",
+    "primaryViewport": {
+      "width": 390,
+      "height": 844,
+      "deviceScaleFactor": 1
+    },
+    "supplementaryWidths": [
+      320,
+      430
+    ],
+    "safeTopIllustration": 24,
+    "safeBottomIllustration": 26,
+    "osStatusBarIllustrated": false,
+    "phoneFrame": false,
+    "demoToolbar": false,
+    "pageInlinePadding": 16,
+    "tabHeaderHeight": 52,
+    "brandLockup": {
+      "slotWidth": 132,
+      "width": 120,
+      "height": 41,
+      "source": "APP approved header-logo-dark/light.png"
+    },
+    "subHeaderHeight": 44,
+    "tabbarMinHeight": 68,
+    "tabbarInlineMargin": 12,
+    "sectionGap": 20,
+    "contentRadius": 20,
+    "promoRadius": 24,
+    "promoMinHeight": 184,
+    "productImageAspectRatio": 1,
+    "productImageCrop": "cover; centered; source image unmodified",
+    "modalMaxWidth": 358,
+    "modalRadius": 28,
+    "modalViewportInset": 16,
+    "modalInnerPadding": [
+      24,
+      22
+    ],
+    "actionMinHeight": 48,
+    "touchTargetMin": 44,
+    "buttonRadius": 999,
+    "narrowBehavior": "Wrap prose and controls; preserve 16px side gutters and minimum touch targets. Modals scroll inside viewport without hiding actions.",
+    "platformInsets": {
+      "nativeIllustration": {
+        "parameter": "native-illustration",
+        "top": 24,
+        "bottom": 26,
+        "measuredOnDevice": false,
+        "homeIndicatorIllustrated": true
+      },
+      "h5": {
+        "parameter": "h5",
+        "top": 0,
+        "bottom": 0,
+        "homeIndicatorIllustrated": false,
+        "purpose": "Browser layout comparison with nx_device=off; product safe area must come from its actual environment."
+      }
+    }
+  },
+  "typography": {
+    "fontFamily": "General Sans, Manrope, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif",
+    "embeddedWeights": [
+      400,
+      500,
+      600
+    ],
+    "maxWeight": 600,
+    "body": {
+      "size": 14,
+      "lineHeight": 1.5
+    },
+    "pageHeading": {
+      "size": 20,
+      "weight": 600,
+      "lineHeight": 1.25
+    },
+    "sectionHeading": {
+      "size": 17,
+      "weight": 600,
+      "lineHeight": 1.35
+    },
+    "itemHeading": {
+      "size": 15,
+      "weight": 600,
+      "lineHeight": 1.4
+    },
+    "headerTitle": {
+      "size": 15,
+      "weight": 600
+    },
+    "metadata": {
+      "size": 12,
+      "lineHeight": 1.5
+    },
+    "fixtureDisclosure": {
+      "size": 11,
+      "notProductionCopy": true
+    },
+    "price": {
+      "size": 25,
+      "weight": 600
+    },
+    "homeEarnings": {
+      "size": 56,
+      "weight": 600
+    },
+    "digits": "tabular-nums",
+    "cjkFallback": "Installed Windows sans-serif fallback, recorded by browser environment. CJK glyphs are not included in General Sans."
+  },
+  "colors": {
+    "dark": {
+      "bg": "#000000",
+      "surface": "#141414",
+      "surface2": "#1c1c1c",
+      "ink": "#f5f7fa",
+      "ink2": "#d1d5db",
+      "muted": "#9ba3b5",
+      "brand": "#9edc1d",
+      "onBrand": "#0a0a0a",
+      "line": "rgba(255,255,255,0.06)"
+    },
+    "light": {
+      "bg": "#f4f1e9",
+      "surface": "#ffffff",
+      "surface2": "#faf7f0",
+      "ink": "#13141a",
+      "ink2": "#3c3f47",
+      "muted": "#6a6e77",
+      "brand": "#0e48e6",
+      "onBrand": "#ffffff",
+      "line": "#e5dfd0"
+    }
+  },
+  "glass": {
+    "surfaces": [
+      "navigation",
+      "purchase/continue/back controls",
+      "leave/cancel modal"
+    ],
+    "staticContent": "Flat neutral content; no nested glass reward cards.",
+    "baselineTechnique": "Independent CSS optical target: backdrop blur, saturation, translucent tint, inner rim/highlight and pressed scale. Product implementation must use existing LiquidGlass renderer and be compared to this target; the design is not a claim of WebGL parity.",
+    "controlBlurPx": 12,
+    "modalBlurPx": 20,
+    "saturationPercent": 118,
+    "pressedScale": 0.975,
+    "transitionMs": 100,
+    "reducedTransparency": "Opaque surface and opaque brand action, backdrop-filter none",
+    "reducedMotion": "No animation, transition or pressed transform",
+    "forcedColors": "CanvasText 1px border"
+  },
+  "fixtures": {
+    "onlyDesignSamples": true,
+    "serverTime": "2026-10-07T06:00:00Z",
+    "endsAt": "2026-10-31T14:59:00Z",
+    "payBy": "2026-10-07T06:30:00Z",
+    "displayTimeZone": "UTC+09:00",
+    "orderNo": "DESIGN-ORDER-001",
+    "settledOrderNo": "DESIGN-ORDER-002",
+    "refundedOrderNo": "DESIGN-ORDER-003",
+    "purchaseItems": [
+      {
+        "sku": "stellarbox-pro-v2",
+        "quantity": 1,
+        "unitPriceUsdt": 1299,
+        "reward": "stellarbox-s1 x1"
+      },
+      {
+        "sku": "stellarbox-s1",
+        "quantity": 2,
+        "unitPriceUsdt": 249,
+        "reward": "20 USDT"
+      }
+    ],
+    "subtotalUsdt": 1797,
+    "discountUsdt": 0,
+    "amountUsdt": 1797,
+    "thirdRewardSample": {
+      "sku": "stellarrack-p1",
+      "quantity": 1,
+      "unitPriceUsdt": 2499,
+      "reward": "120 NEX",
+      "pendingOrder": "DESIGN-ORDER-004",
+      "paidOrder": "DESIGN-ORDER-005"
+    },
+    "productionDefaults": false,
+    "persistedOrdersOrAssets": false,
+    "walletBalanceUsdt": 5000,
+    "rewardRecords": {
+      "device": {
+        "type": "DEVICE",
+        "status": "granted",
+        "order": "DESIGN-ORDER-002",
+        "asset": "device",
+        "receipt": "DESIGN-DEVICE-DEVICE"
+      },
+      "usdt": {
+        "type": "USDT",
+        "status": "pending",
+        "order": "DESIGN-ORDER-002",
+        "asset": "wallet",
+        "receipt": null
+      },
+      "nex": {
+        "type": "NEX",
+        "status": "hold",
+        "order": "DESIGN-ORDER-005",
+        "asset": "wallet",
+        "receipt": null
+      }
+    },
+    "entitlements": {
+      "namespace": "DESIGN-TERMS-ONLY",
+      "productionPolicy": false,
+      "source": "artboard-runtime.js entitlementSamples",
+      "deviceRequired": [
+        "activation",
+        "effective",
+        "tasks",
+        "earnings",
+        "capacity",
+        "transfer",
+        "aftercare"
+      ],
+      "fundsRequired": [
+        "availability",
+        "withdrawal",
+        "fees",
+        "restrictions"
+      ],
+      "display": "Every group carries explicit design-only disclosure. Values are isolated sample fields, never operational defaults.",
+      "onMissing": "Disable all purchase confirmation actions; retain readable failure and return controls."
+    }
+  },
+  "assets": {
+    "sourceRepositoryPath": "src/static",
+    "localCopies": [
+      "stellarbox-s1.png",
+      "stellarbox-pro-v2.png",
+      "stellarrack-p1.png",
+      "header-logo-dark.png",
+      "header-logo-light.png",
+      "GeneralSans-400.woff2",
+      "GeneralSans-500.woff2",
+      "GeneralSans-600.woff2",
+      "GENERAL-SANS-ITF-FFL.txt"
+    ],
+    "directory": "evidence/app-r1-design/assets",
+    "hashes": "Recorded in report.json; original source image pixels copied without editing."
+  },
+  "interactionContract": {
+    "advert": "Home to existing Store, no required marketing detail interstitial",
+    "skuCard": "Card image to product details; buy CTA to existing checkout",
+    "leave": "One prompt per unchanged fixture scope. Close/Escape/backdrop restore focus; second leave exits directly. Session marker, selection and original order survive navigation/reload. Draft return requires new quote; reserved return retains payBy.",
+    "cancel": "Separate transaction consequence; illustrative control cannot write an order",
+    "unknownPayment": "Unknown context remains tied to original order, selection and query-only actions. Explicit queryResult=unpaid fixture is required to demonstrate confirmed original-order retry.",
+    "rewardPages": "Selected type/status/source propagate to details; only granted specimen has a receipt and enabled asset entry. Device entry differs from currency wallet entry.",
+    "quantityControls": "Any change marks quote stale; removes prior line prices, totals and estimated rewards; disables confirmation, including after rules round-trip. No quote engine.",
+    "modal": "Two discoverable 48px actions; Tab contained, Escape continues purchase",
+    "missingLeaveFacts": "Empty/loading/error/disabled artboards do not show a marketing leave dialog; explicit leave returns to Store.",
+    "aftercare": "Paid order and fully refunded order are separate samples. Individual rewards retain their own status; no row-level refund control.",
+    "unimplementedExistingDestinations": [
+      "wallet ledger",
+      "device details",
+      "native sharing",
+      "existing non-promotion Home feed"
+    ],
+    "rules": "Remember source screen, selection, state and scroll; back restores the same position."
+  },
+  "notFrozenFacts": [
+    "Operational decisions D01-D11 and publication approval remain in PRODUCT-PRD; samples provide no defaults.",
+    "Reward maturity, device rights/activation, withdrawal eligibility, expiry and recovery policy need approved policy references; layout holds readable terms without asserting values.",
+    "Backend OpenAPI names, decimal representation, pagination and error codes are not defined by this visual artifact.",
+    "Live product prices, stock, purchase eligibility, activity dates and actual localized campaign copy remain server-owned.",
+    "Trial-conversion and trade-in applicability must be explicitly supported by the frozen contract; this artboard does not enable it.",
+    "Safe-area illustration is not a physical device measurement; native status bar, gesture areas and compositor behavior require real-device validation.",
+    "CJK fallback rasterization and GPU optical rendering can differ outside the recorded environment.",
+    "This is a design candidate; product runtime, asset persistence, production enablement and two independent pixel reviews are not passed by this check."
+  ],
+  "verification": {
+    "entryMode": "Playwright file URL only; no HTTP server or external requests",
+    "fullMatrix": "19 screens x 7 states x 3 locales x 2 themes x 3 widths; plus 9 semantic variants x 3 locales x 2 themes x 3 widths; 4 additional H5 zero-inset comparisons at zh/dark/390",
+    "screenshots": "Viewport captures: all states at zh/dark/390 including main-scroll continuation; normal state at every locale/theme/width. Header and tabbar remain pinned.",
+    "checks": [
+      "query state identity",
+      "font and image loads",
+      "no horizontal overflow",
+      "touch target geometry",
+      "theme tokens",
+      "fixture disclosure",
+      "no runtime console/page errors",
+      "no external network",
+      "modal focus/Escape/Tab",
+      "leave without cancellation",
+      "quantity bounded demonstration",
+      "input hash unchanged during run",
+      "six independent review click chains",
+      "missing named terms block confirmation",
+      "original unknown order cannot gain payment through navigation",
+      "single prompt per scope across return/reload",
+      "selected reward status/source/asset",
+      "NEX purchase chain",
+      "stale quantity invalidates old quote"
+    ],
+    "productVerification": false,
+    "independentPixelReview": false
+  },
+  "runtime": "evidence/app-r1-design/artboard-runtime.js",
+  "designDecisions": [
+    {
+      "id": "APP-S0-R2",
+      "previousHtmlSha256": "0eef3dd2c6e1bb0529bd25d49928cce3f654fc3ccc1b13f7f20e29e1b2b64187",
+      "basis": "Six independent review findings against APP01-09 and PRODUCT P5; no product runtime screenshot used.",
+      "changes": [
+        "Reward selection retains type, status, source and receipt-dependent asset entry. NEX has a full store/order specimen.",
+        "Unknown order remains query-only across linked order and return paths. Only explicit queryResult=unpaid specimen can enable original-order retry.",
+        "Checkout scope and leavePromptShown survive close, navigation and reload. Reserved deadline remains payBy.",
+        "Named isolated design-only device/funds terms; missing terms prohibit confirmation.",
+        "Rules return to source selection, state and scroll position.",
+        "Quantity edits invalidate amounts and rewards, disable confirmation and persist stale quote across navigation.",
+        "Native illustration keeps explicit 24/26 sample insets; platform=h5 exports the same layout at zero system insets, without simulated home indicator. Native hardware not verified."
+      ]
+    }
+  ],
+  "variantQuery": {
+    "selection": [
+      "bundle",
+      "pro",
+      "s1",
+      "nex"
+    ],
+    "reward": [
+      "device",
+      "usdt",
+      "nex"
+    ],
+    "terms": [
+      "complete",
+      "missing"
+    ],
+    "quote": [
+      "fresh",
+      "stale"
+    ],
+    "queryResult": [
+      "unknown",
+      "unpaid"
+    ],
+    "platform": [
+      "native-illustration",
+      "h5"
+    ]
+  },
+  "variantScenarios": [
+    {
+      "id": "usdt-detail",
+      "screen": "reward-detail",
+      "params": {
+        "reward": "usdt"
+      }
+    },
+    {
+      "id": "nex-detail",
+      "screen": "reward-detail",
+      "params": {
+        "reward": "nex"
+      }
+    },
+    {
+      "id": "nex-checkout",
+      "screen": "checkout",
+      "params": {
+        "selection": "nex"
+      }
+    },
+    {
+      "id": "nex-paid-order",
+      "screen": "order-paid",
+      "params": {
+        "selection": "nex"
+      }
+    },
+    {
+      "id": "nex-unknown-order",
+      "screen": "order-unknown",
+      "params": {
+        "selection": "nex"
+      }
+    },
+    {
+      "id": "missing-checkout-terms",
+      "screen": "checkout",
+      "params": {
+        "terms": "missing"
+      }
+    },
+    {
+      "id": "missing-rule-terms",
+      "screen": "rules",
+      "params": {
+        "terms": "missing"
+      }
+    },
+    {
+      "id": "stale-bundle-quote",
+      "screen": "bundle",
+      "params": {
+        "quote": "stale"
+      }
+    },
+    {
+      "id": "missing-nex-detail-terms",
+      "screen": "detail",
+      "params": {
+        "selection": "nex",
+        "terms": "missing"
+      }
+    }
+  ],
+  "platformComparisons": [
+    {
+      "id": "H5-zero-insets",
+      "screen": "home",
+      "locale": "zh",
+      "theme": "dark",
+      "width": 390,
+      "params": {
+        "platform": "h5"
+      }
+    },
+    {
+      "id": "H5-zero-insets",
+      "screen": "store",
+      "locale": "zh",
+      "theme": "dark",
+      "width": 390,
+      "params": {
+        "platform": "h5"
+      }
+    },
+    {
+      "id": "H5-zero-insets",
+      "screen": "checkout",
+      "locale": "zh",
+      "theme": "dark",
+      "width": 390,
+      "params": {
+        "platform": "h5"
+      }
+    },
+    {
+      "id": "H5-zero-insets",
+      "screen": "leave-reserved",
+      "locale": "zh",
+      "theme": "dark",
+      "width": 390,
+      "params": {
+        "platform": "h5"
+      }
+    }
+  ]
+}

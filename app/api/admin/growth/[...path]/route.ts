@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { requirePasswordChangeCleared } from "@/lib/admin/require-password-change-cleared";
+import { allowedPromotionRoute, isPromotionHead } from "@/lib/admin/promotion-routes";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
@@ -17,8 +18,9 @@ function isNonEmpty(value: string | undefined) {
   return !!value && value.trim().length > 0;
 }
 
-function backendPath(parts: string[]) {
+function backendPath(parts: string[], method: string) {
   if (!parts.length) return null;
+  if (isPromotionHead(parts[0])) return allowedPromotionRoute(parts, method) ? `/api/admin/growth/${parts.map(encodeURIComponent).join("/")}` : null;
   const allowedHeads = new Set([
     "phases",
     "rhythm",
@@ -44,7 +46,7 @@ async function proxy(request: Request, context: RouteContext) {
   if (path[0] === "referral-rewards" && path[1] === "acceptance") {
     return jsonError(410, "SANDBOX_RUNTIME_RETIRED");
   }
-  const targetPath = backendPath(path);
+  const targetPath = backendPath(path, request.method);
 
   if (!targetPath) {
     return jsonError(404, "GROWTH_ROUTE_NOT_FOUND");
@@ -96,6 +98,10 @@ export async function GET(request: Request, context: RouteContext) {
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
+  return proxy(request, context);
+}
+
+export async function PUT(request: Request, context: RouteContext) {
   return proxy(request, context);
 }
 

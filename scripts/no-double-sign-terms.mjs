@@ -7,6 +7,17 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import assert from "node:assert/strict";
+
+// Approved R1 protocol identifiers at exact ownership locations; every other legacy term is still scanned.
+function promotionContractTerms(relativePath, line) {
+  const file = relativePath.replaceAll('\\', '/');
+  if (file === 'lib/admin/promotion-types.ts') return line.replaceAll('"separateMakerChecker"', '"separateReviewActors"');
+  if (file === 'lib/admin/promotion-form.ts') return line.replace(/\bc\.separateMakerChecker\b/g, 'c.separateReviewActors');
+  if (file === 'app/components/domain-views/h-tabs/h4-promotion-policies.tsx') return line.replace(/\bseparateMakerChecker(?=:)/g, 'separateReviewActors').replaceAll("'separateMakerChecker'", "'separateReviewActors'");
+  if (['scripts/growth-promotions-runtime.mjs', 'scripts/growth-promotions-workflow-runtime.mjs'].includes(file)) return line.replaceAll("'approval-publish-dual-lifecycle'", "'promotion-version-lifecycle'");
+  return line;
+}
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // docs/ 为内部 PRD/SPEC/Checklist/审计文档(非用户可见文案/代码):其中合法记述「取消双签」改写决议、
@@ -52,6 +63,22 @@ const banned = [
   /复核原因/,
 ];
 
+// Run against the actual scanner patterns: protocol tokens cannot admit a legacy mechanism beside them.
+const protocolCases = [
+  ['lib/admin/promotion-types.ts', '"separateMakerChecker": boolean'],
+  ['lib/admin/promotion-form.ts', 'c.separateMakerChecker'],
+  ['app/components/domain-views/h-tabs/h4-promotion-policies.tsx', "separateMakerChecker: '审核与发布分人执行'; choice('separateMakerChecker')"],
+  ['scripts/growth-promotions-runtime.mjs', "record('approval-publish-dual-lifecycle', evidence)"],
+  ['scripts/growth-promotions-workflow-runtime.mjs', "['approval-publish-dual-lifecycle']"],
+];
+const rejects = (file, line) => banned.some(pattern => pattern.test(promotionContractTerms(file, line)));
+for (const [file, line] of protocolCases) {
+  assert.equal(rejects(file, line), false);
+  assert.equal(rejects('app/unrelated.tsx', line), true);
+  for (const term of ['MakerCheckerModal', 'MakerChecker', '双签', '双人审批', 'approval']) assert.equal(rejects(file, line + ' ' + term), true);
+}
+assert.equal(rejects('lib/admin/promotion-types.ts', '"separateMakerCheckerModal"'), true);
+
 function walk(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const fp = path.join(dir, e.name);
@@ -85,7 +112,7 @@ for (const file of SCAN_ROOTS.flatMap((d) => walk(d))) {
   const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
   lines.forEach((line, i) => {
     for (const re of banned) {
-      if (re.test(line)) hits.push(`${rel}:${i + 1}: ${line.trim()}`);
+      if (re.test(promotionContractTerms(rel, line))) hits.push(`${rel}:${i + 1}: ${line.trim()}`);
     }
   });
 }

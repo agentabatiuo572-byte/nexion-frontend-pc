@@ -1,6 +1,6 @@
 # 促销与裂变活动后台 PRD
 
-> 文档状态：详细评审稿，未批准实施。本文只定义后台功能契约与操作说明；业务裁决以同目录 `PRODUCT-PRD.md` 为唯一公共契约。未配置参数、待决策权益、尚未映射的权限均不得以示例或前端默认值代替。本文不证明功能已经实现或上线。
+> 文档状态：R1 实施依据。本文定义后台功能契约与操作说明；业务裁决以同目录 `PRODUCT-PRD.md` 为唯一公共契约。未配置参数、待决策权益、尚未映射的权限均不得以示例或前端默认值代替。本文不证明功能已经通过验收或在生产启用。
 
 ## A0 范围、权威与共用规则
 
@@ -70,11 +70,12 @@
 
 | 字段 | 类型/必填 | 默认 | 约束与生效 |
 |---|---|---|---|
-| query/category/template/status | 查询条件/否 | 无筛选 | 不写活动配置；服务端白名单校验 |
-| period/from/to/timezone | 查询条件/否 | 未配置 | 页面显示所选时区，提交转 UTC；区间含义与报表一致 |
+| query/name/category/template/state | 查询条件/否 | 无筛选 | query 查询内部名称、活动 ID 或事件编号，name 仅查询内部名；服务端白名单校验，state 是活动状态 |
+| from/to/timezone | 查询条件/否 | 未配置 | 三项同时提供；页面按所选时区提交 UTC，匹配活动窗口与 [from,to) 相交，无日期草稿不匹配 |
 | activityId/version/status | 只读/是 | 服务端生成 | ID 稳定；status 按 §P9 显示活动生命周期，不拿新草稿审批状态覆盖 |
 | name/activeVersion/draftVersion/draftVersionState | 只读摘要/是 | 服务端返回 | 同时存在新草稿和已发布版本时分别展示版本、审批状态与活动状态 |
 | reserved/issued/unresolved/asOf | 只读汇总/是 | 无伪造默认 | 区分预留、已发与未解决；缺数据为未知 |
+| total/querySnapshot/query/expiresAt/summary | 只读查询快照/是 | 服务端生成 | 总数、全部匹配活动汇总与跨页行来自同一快照；每页携同原筛选及快照，30 分钟过期需重新查询；权限撤销立即生效 |
 
 **④ 状态机与禁止动作**
 
@@ -145,7 +146,8 @@
 |---|---|---|---|
 | category | 促销/裂变枚举/是 | 未配置 | 首期两类，合法模板组合由 §P1 决定 |
 | template | 五种模板枚举/是 | 未配置 | 首购、直邀首购双向、单 SKU、多型号组合、复购召回 |
-| name/localizedTitle/localizedRules | 文本及多语言对象/是 | 未配置 | 中/英/越支持范围依 §P10；公开规则完整且不承诺未配置奖励 |
+| name | 内部活动名/提交前必填 | 未配置 | 独立于公开标题，1–200 字且不能全空白；草稿可暂缺，改草稿不改变旧发布版本名称 |
+| title/terms | 多语言标题与规则/提交前必填 | 未配置 | API 字段分别映射公开标题与规则；中/英/越支持范围依 §P10，内容不承诺未配置奖励 |
 | startsAt/endsAt/displayTimezone | 时间与时区/是 | 未配置 | 存 UTC 瞬时，表单展示明确时区；结束晚于开始 |
 | placement | 首页投放标识/选择首页投放时必填 | 未配置 | 首期仅 home.purchase-promotion；随活动版本审核发布，不另存活动时间或奖励副本 |
 | CTA | 固定导航/只读 | 由 placement 确定 | 进入商城并携 activityId 筛选适用商品；不可输入任意链接或直接跳过原有结账 |
@@ -221,7 +223,7 @@
 | deviceCondition | §P2 设备条件枚举/是 | 未配置 | “无设备”是否排除试用/赠品/历史设备严格按公共契约 |
 | rankConditions | 等级集合或区间/按模板 | 未配置 | 读取 F 域现有等级目录，不能手写不存在等级 |
 | conditionLogic | 结构化逻辑/是 | 未配置 | 仅支持 §P2 明确组合；表单显示完整自然语言摘要 |
-| recallCondition | 复购/召回条件/按模板 | 未配置 | 观察周期及订单口径由运营显式输入且符合 §P2 |
+| recallCondition | 复购/召回条件/按模板 | 未配置 | 最短购机间隔及可选最长间隔均绑定 lastValidPurchaseAge；可只设下限，上限不得小于下限；按最近一次有效购机计算，不设独立登录沉默字段；参数无默认且符合 §P2 |
 | audiencePreview | 只读对象/预览时 | 服务端生成 | 条件摘要、样本来源、命中/拒绝/未知数、asOf；不是资格凭证 |
 
 **④ 状态机与禁止动作**
@@ -253,6 +255,8 @@
 ##### 接口
 
 提案：草稿 PATCH 同 ADM02；`POST /api/admin/growth/promotions/{activityId}/audience-preview`，输入草稿版本和条件摘要，返回只读预览；字段由 §P8 统一。样本字段最小化，默认不导出联系方式。
+
+预览请求 draft 只校验类别、模板、人群及解释这些条件所需的政策，不要求先填奖励、预算、活动时窗或结算政策。响应含 conditionSummary、source、matched/rejected/unknown/total、reasonCounts、最多 20 个仅含账户 ID 的 samples，以及各受益角色的 audiences。未知依赖不计拒绝，源不可读时计数为 null；estimatedAccounts 仅在无未知时提供，qualificationCredential 固定 false。
 
 ##### 权限与审计
 
@@ -289,7 +293,7 @@
 
 | 字段 | 类型/必填 | 默认 | 约束与生效 |
 |---|---|---|---|
-| ruleId/rewardRuleId | 稳定配置标识/是 | 服务端生成 | ruleId 标识购买规则，rewardRuleId 标识其受益人奖励配置；不作为台账命令目标，成交后另生成 obligationId |
+| ruleId/rewardRuleId | 稳定配置标识/是 | 草稿编辑端生成无业务含义的 UUID | ruleId 标识购买规则，rewardRuleId 标识其受益人奖励配置；服务端校验活动内唯一、归属及既有身份不可串改；不作为台账命令目标，成交后另生成 obligationId |
 | productNo | 购买商品目录引用/是 | 未配置 | 只选可用商品，保存 ID、预览名称；名称不作身份 |
 | minBuyQty/repeatMode/maxGroups/maxGroupsPerPerson | 正整数、PER_GROUP/ONCE_PER_ORDER、组数上限/是 | 未配置 | 门槛按 §P3；maxGroups是每单规则组数，maxGroupsPerPerson是活动内按账号/受益角色累计组数，见 §P6；可不限时必须显式选择 |
 | combinationItems | SKU 条件数组/组合模板 | 未配置 | 首期多型号与同型号数量边界显式校验 |
@@ -299,6 +303,8 @@
 | amount/assetPolicyRef | 精确十进制字符串、资产政策引用/资金项必填 | 未配置 | 资产由 type 明确，精度依 §P8；不接受隐式换币或浮点累计 |
 
 仅作结构示例：购买设备 A 的一台行→设备 B×q；购买设备 C 的一台行→USDT×u；购买设备 D 的一台行→NEX×n。A/B/C/D、q/u/n 是占位符，不是默认配置或经营建议。同一条 A 规则不能向同一受益人同时赠 B 和 USDT。
+
+新增购买规则和首次配置受益人奖励时分别生成新标识；编辑、切换奖励类型和同活动创建改版草稿保留原标识。复制活动由服务端生成新的 activityId，并保留复制配置内的局部规则标识；其身份作用域是新活动，不带入原活动参与量或奖励义务。禁止在同活动中用新 ruleId 替换已发布的同一 SKU 以重置历史上限，禁止将已有 rewardRuleId 改绑到其他规则或受益角色。
 
 **④ 状态机与禁止动作**
 
@@ -501,6 +507,10 @@ flowchart LR
 
 新增提案：`POST /api/admin/growth/promotions/{activityId}/simulate`、`/submit`、`/withdraw`、`/approve`、`/reject`、`/publish`，写操作携 expectedRevision/reason/Idempotency-Key；读取试算、审核和命令结果的响应归 §P8。APP `POST /api/orders/quote` 与运营试算共同消费同一规则求值逻辑，但运营试算没有真实参与身份或预留权。approve 和 publish 的权限、幂等命令及审计分别校验，不以一个 approve 响应模拟两次动作成功。
 
+withdraw 使用 growth_promotion_submit，输入当前候选 version、expectedRevision 和 reason，只接受 PENDING_APPROVAL/APPROVED。撤回清除原批准与解析快照并回 DRAFT，不修改 activeVersion；重新编辑后须重新提交。审核者 reject 是另一独立动作，不能代替提交者撤回。
+
+simulate 使用独立 AdminSimulation 响应：pricing、ruleResults、rewardUnits、resources、quotaImpact、publicPreview、blockers 与 configHash/asOf。ruleResults 列出每条规则的双方结果和可读原因，rewardUnits 指向购买组范围与受益人；resources 分资产/设备 SKU 表示预算和库存需求、可用量、短缺或未知。quotaImpact 读取活动和受益人累计计数，列出限额、已用加预留、预计本笔消耗及剩余，覆盖活动订单、人员订单和规则组数。缺账户样本、可执行政策或事实源时标未知；成本无来源为 null，不拿售价当成本。公开 Quote 不承载运营诊断，试算不保存真实报价、不预留、不执行资产动作。
+
 ##### 权限与审计
 
 能力分别为试算活动、提交审核、审核活动、发布活动；全部待映射 RBAC/A2。审计保留操作者、审批人与操作关系、版本/hash、样本类型、检查结果、原因、命令号和执行结果。最终发布需后端授权复核，不能接受客户端 `approved=true`。
@@ -587,6 +597,8 @@ flowchart LR
 ##### 接口
 
 提案：`GET /api/admin/growth/promotions/{activityId}`、`/versions`；`POST .../draft-versions`、`/pause`、`/resume`、`/end`、`/archive`。动作是带版本的服务端命令，不使用通用字段 PATCH 跳状态；路径最终由 §P8 确认。
+
+详情 impact 返回该活动全部版本的真实责任：reserved、unpaidOrders、reservedOrders 的 version/payBy、issued、pendingRewards、failedRewards、unknownRewards、reversingRewards、manualReviewRewards、unfulfilledRewards 及分资产/设备 SKU 预算。issued 由钱包或设备回执确认，冲正后保留历史累计；unresolved 汇总失败、结果未知、冲正中和人工处理，待履约另列。asOf/source/completeness 标明读取时间与来源；暂停和结束确认按当前 revision 提交，旧快照不能覆盖新增预留。
 
 ##### 权限与审计
 
@@ -690,6 +702,8 @@ flowchart LR
 
 提案：`GET /api/admin/growth/promotion-rewards`、`GET /api/admin/growth/promotion-rewards/{obligationId}`、`POST /api/admin/growth/promotion-rewards/{obligationId}/retry`、`/reconcile`；单项取消、冲正、异常裁决分别为同一义务资源下的 `/cancel`、`/reverse`、`/resolve` 扩展提案，须在 §P8 的 OpenAPI 固定后实现。所有命令目标均为 obligationId，不接受 rewardRuleId 代替，不接受自由新金额或新受益人；写入包含 expectedRevision/reason/evidenceRefs/Idempotency-Key。整单退款仍走已有订单退款入口，新促销消费同源订单退款事实并执行奖励联动，不另造订单退款 API。
 
+列表查询支持 activityId/state/orderNo/beneficiaryId/type；type 固定 DEVICE/USDT/NEX。响应 total、query、asOf 和当前页来自同一次数据库读取；total 为全部匹配义务，不能由本页合计。翻页是标注新 asOf 的实时读取，保留原筛选；APP 个人奖励接口不接受跨账户筛选。
+
 ##### 权限与审计
 
 能力：查看奖励、重试发奖、发起奖励冲正、处置异常；资金/资产动作按 A2 映射，默认无权。审计包括原义务、原回执、动作、处置依据、审批、金额/数量、前后状态、执行人、命令结果及关联售后。只读人员不能通过改请求直接执行。
@@ -771,6 +785,8 @@ flowchart LR
 ##### 接口
 
 提案：`GET /api/admin/growth/promotions/{activityId}/metrics`；导出任务为该 metrics 查询快照的扩展提案，精确创建/状态/下载协议在 §P8 的 OpenAPI 固定后实现，不另设第二个 report 查询口径。复用既有事件流与订单、D4、设备事实聚合，不建立可手改“成交数/实收数”的配置接口。
+
+orders 按 created_at 窗口去重统计建单（包含未支付）；paidOrders 与实收按 paid_at 窗口统计，refundedOrders 与退款金额为该已付款批次截至 asOf 的真实退款。orderWindowBasis/paidWindowBasis 明示口径，固定快照保存对应清单；不得跨批次相除，conversionRate、acquisitionCostUsdt、roi 在资料不足时为 null。聚合金额保持定点十进制字符串、按资产分列，可超过单笔金额上限；单笔输入及资金数据库精度不放宽。
 
 ##### 权限与审计
 

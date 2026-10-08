@@ -22,6 +22,7 @@ import H5DailyMilestones from "./h-tabs/h5-daily-milestones";
 import H7VoucherConfig from "./h-tabs/h7-voucher-config";
 import H8ReferralRewards from "./h-tabs/h8-referral-rewards";
 import H9PublicStats from "./h-tabs/h9-public-stats";
+import H4Promotions from "./h-tabs/h4-promotions";
 import type { ConfirmReq, HCtx, ActionConfirmReq } from "./h-tabs/types";
 import { fetchH1Rhythm, describeH1Schedule, type H1RhythmOverview } from "@/lib/admin/h-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -90,13 +91,13 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
   );
 
   return (
-    <div className="dkpage hdom">
-      <DomainHeader {...meta} right={right} />
+    <div className={tab === "H4" ? "hdom" : "dkpage hdom"}>
+      {tab !== "H4" && <DomainHeader {...meta} right={right} />}
 
       {tab === "H1" && <H1Phase ctx={ctx} />}
       {tab === "H2" && <H2Trial ctx={ctx} />}
       {tab === "H3" && <H3QuestEvents ctx={ctx} />}
-      {tab === "H4" && <H4ActivityCenter ctx={ctx} />}
+      {tab === "H4" && <H4Promotions ctx={ctx} legacy={<><DomainHeader {...meta} right={right} /><H4ActivityCenter ctx={ctx} /></>} />}
       {tab === "H5" && <H5DailyMilestones ctx={ctx} />}
       {tab === "H7" && <H7VoucherConfig ctx={ctx} />}
       {tab === "H8" && <H8ReferralRewards ctx={ctx} />}

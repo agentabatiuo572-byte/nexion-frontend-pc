@@ -1,0 +1,8 @@
+{
+  "status": "FAIL",
+  "designHash": "84a172957ff8e5279cddcb6d53cade1fffb7e441fa0ba62e8c0665fa0b2444ad",
+  "checkerHash": "8b78a4567f5d5566ab5be0cfa98e18ccf098e17fb664bfe3f3adeb4c88595933",
+  "checkedBoards": 216,
+  "error": "Error: locator.isEnabled: Error: strict mode violation: getByRole('button', { name: '暂停新预留', exact: true }) resolved to 2 elements:\n    1) <button class=\"btn \" data-phase=\"paused\">暂停新预留</button> aka getByRole('button', { name: '暂停新预留' }).first()\n    2) <button class=\"btn \" data-modal=\"pause\">暂停新预留</button> aka getByRole('button', { name: '暂停新预留' }).nth(1)\n\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: '暂停新预留', exact: true })\u001b[22m\n",
+  "pageErrors": []
+}

@@ -1,0 +1,441 @@
+{
+  "schemaVersion": 1,
+  "kind": "design-baseline-only",
+  "designVersion": "admin-r1-20261007-v3",
+  "frozenAt": "2026-10-07T09:57:54.567Z",
+  "sourceCommit": "230ecccbe0cc87f7135856f1a1d7c68a09bb4cb0",
+  "designFile": "admin-r1-baseline.html",
+  "designHash": "900f5336c19b4fa5830591e4c4ad220d0f9980516c56b06d510609693b809596",
+  "checkerHash": "bb7ec537bb764e6e393b95532b17ee93c8af19c27457af008d4010920445be03",
+  "sourceHashes": {
+    "app/globals.css": "37b6846cc9e4f48dd2b093e6ca134706f6cc125339a723aaf8a86d94b6d039b7",
+    "app/components/domain-views/h-domain.css": "1819c845b126fa3f5c2a60242e591d9d87c7bc2c4bcf7edaa2feaba01652c5a8",
+    "app/components/shell/console-shell.tsx": "9d554edd8f23fa2c9149dc3078967b767c7bf40bbf7a33ca4544dfbe16ab8837",
+    "app/components/shell/sidebar.tsx": "9106dbededd13e38603b88d796020d05e88982fc4287fc3c87e0a53df815dbaa",
+    "lib/admin/registry/f.ts": "772fa25e8939898adbe8163d3a57f97a9c4a9bae1c4355ae9d4dbaa5c859b36c",
+    "app/components/domain-views/f-tabs/f1-vrank.tsx": "48d36021415456261e3bff48d2050629caceb4e3866753c3b885b1a9e9ba78cb",
+    "docs/PRD/growth-promotions/PRODUCT-PRD.md": "de1b4bc86eeec1c9bb6b1746204eb1a861fe1fafa1a97d8d551bfb632af46015",
+    "docs/PRD/growth-promotions/ADMIN-PRD.md": "00a73f033306ea52603152861143db0161d3c49c3e997b2996488daad2308acd",
+    "docs/PRD/growth-promotions/IMPLEMENTATION.md": "baaa50352354811ad113b3c320a9385afa9c58bbb82e1818b5279f343a8a4df6",
+    "docs/design/growth-promotions/assets/concept-admin-app.png": "bc3e7d499b52ea8027f194af2fa18df79dad4219d11922de9594fabced885aa0",
+    "public/uvel-mark-dark.png": "af094b551aa23b8067033e5c40cb8d925e4e8a5f65f78f2fbd071acdf06d774b",
+    "public/uvel-mark-light.png": "db4b06d8bf6e50e38ddf12d0ccd902dfc15d34b45f2a421c69c01a95ab4c59c7"
+  },
+  "authority": "docs/PRD/growth-promotions/PRODUCT-PRD.md is the sole business contract. This fixture does not approve production policies.",
+  "designDecision": "Refine the existing concept and H4 V5 shell. Preserve H-domain orange, flat surfaces, real shell geometry and local font fallback. Never backfill this baseline from product runtime screenshots.",
+  "tokens": {
+    "dark": {
+      "--v5-bg": "#0A0A0A",
+      "--v5-surface": "#121214",
+      "--v5-surface-2": "#17171B",
+      "--v5-surface-3": "#202027",
+      "--v5-border": "rgba(255,255,255,.07)",
+      "--v5-border-strong": "rgba(255,255,255,.13)",
+      "--v5-ink": "#FFFFFF",
+      "--v5-ink-2": "#C8CDD6",
+      "--v5-ink-3": "#8A95A8",
+      "--v5-ink-4": "#5F6A7E",
+      "--v5-brand": "#9EDC1D",
+      "--v5-on-brand": "#0A0A0A",
+      "--v5-on-brand-2": "#FFFFFF",
+      "--v5-success": "#29D27F",
+      "--v5-success-soft": "rgba(41,210,127,.13)",
+      "--v5-warning": "#FFBE3D",
+      "--v5-warning-soft": "rgba(255,190,61,.13)",
+      "--v5-danger": "#FF6B35",
+      "--v5-danger-soft": "rgba(255,107,53,.13)",
+      "--admin-domain-h": "#FF7A3D",
+      "--admin-blue": "#4D9FFF",
+      "--admin-violet": "#A78BFA",
+      "--admin-teal": "#2DD4BF",
+      "--admin-sidebar-w": "252px",
+      "--admin-topbar-h": "56px",
+      "--admin-gutter": "22px",
+      "--r-card": "16px",
+      "--font-display": "\"Manrope\",-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,\"Helvetica Neue\",Arial,sans-serif",
+      "--font-jet-mono": "\"JetBrains Mono\",ui-monospace,\"SFMono-Regular\",Menlo,Consolas,monospace",
+      "--font-v5": "\"Manrope\",-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,\"Helvetica Neue\",Arial,sans-serif,\"Manrope\",-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,\"Helvetica Neue\",Arial,sans-serif"
+    },
+    "light": {
+      "--v5-bg": "#F4F1E9",
+      "--v5-surface": "#FFFFFF",
+      "--v5-surface-2": "#FAF7F0",
+      "--v5-surface-3": "#F0EBE0",
+      "--v5-border": "#E5DFD0",
+      "--v5-border-strong": "#D5CDB8",
+      "--v5-ink": "#13141A",
+      "--v5-ink-2": "#3C3F47",
+      "--v5-ink-3": "#6A6F78",
+      "--v5-ink-4": "#A4A8B0",
+      "--v5-brand": "#0E48E6",
+      "--v5-on-brand": "#FFFFFF",
+      "--v5-on-brand-2": "#0A0A0A",
+      "--v5-success": "#0E8E4A",
+      "--v5-success-soft": "#DFF5E8",
+      "--v5-warning": "#C68316",
+      "--v5-warning-soft": "#FBF1D9",
+      "--v5-danger": "#B9554A",
+      "--v5-danger-soft": "#F8E1DC",
+      "--admin-domain-h": "#EA580C",
+      "--admin-blue": "#2563EB",
+      "--admin-violet": "#7C3AED",
+      "--admin-teal": "#0D9488",
+      "--admin-sidebar-w": "252px",
+      "--admin-topbar-h": "56px",
+      "--admin-gutter": "22px",
+      "--r-card": "16px",
+      "--font-display": "\"Manrope\",-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,\"Helvetica Neue\",Arial,sans-serif",
+      "--font-jet-mono": "\"JetBrains Mono\",ui-monospace,\"SFMono-Regular\",Menlo,Consolas,monospace",
+      "--font-v5": "\"Manrope\",-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,\"Helvetica Neue\",Arial,sans-serif,\"Manrope\",-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,\"Helvetica Neue\",Arial,sans-serif"
+    }
+  },
+  "fonts": {
+    "declared": "\"Manrope\",-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,\"Helvetica Neue\",Arial,sans-serif,\"Manrope\",-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,\"Helvetica Neue\",Arial,sans-serif",
+    "actualPlatformFonts": {
+      "h1": [
+        {
+          "familyName": "Microsoft YaHei",
+          "postScriptName": "MicrosoftYaHei-Bold",
+          "isCustomFont": false,
+          "glyphCount": 4
+        }
+      ],
+      ".logo b": [
+        {
+          "familyName": "Segoe UI Semibold",
+          "postScriptName": "SegoeUI-Semibold",
+          "isCustomFont": false,
+          "glyphCount": 4
+        }
+      ],
+      ".stat .value": [
+        {
+          "familyName": "Segoe UI Semibold",
+          "postScriptName": "SegoeUI-Semibold",
+          "isCustomFont": false,
+          "glyphCount": 1
+        }
+      ],
+      ".pagehead p": [
+        {
+          "familyName": "Microsoft YaHei",
+          "postScriptName": "MicrosoftYaHei",
+          "isCustomFont": false,
+          "glyphCount": 24
+        }
+      ],
+      "tbody td": [
+        {
+          "familyName": "Segoe UI",
+          "postScriptName": "SegoeUI",
+          "isCustomFont": false,
+          "glyphCount": 3
+        },
+        {
+          "familyName": "Microsoft YaHei",
+          "postScriptName": "MicrosoftYaHei",
+          "isCustomFont": false,
+          "glyphCount": 13
+        }
+      ]
+    },
+    "externalFonts": false
+  },
+  "renderer": {
+    "browser": "Chromium",
+    "version": "149.0.7827.55",
+    "os": "win32",
+    "viewportUnit": "CSS px",
+    "viewports": [
+      {
+        "width": 1440,
+        "height": 1000
+      },
+      {
+        "width": 1280,
+        "height": 1000
+      }
+    ],
+    "deviceScaleFactor": 1,
+    "zoom": "100%",
+    "locale": "zh-CN",
+    "timezone": "Asia/Tokyo",
+    "reducedMotion": "reduce",
+    "scroll": "document x=0 y=0; normal boards full-page, modals viewport-only so native backdrop exactly covers the capture",
+    "network": "file-only; no HTTP preview or API calls"
+  },
+  "coverage": {
+    "screens": [
+      "ADM01",
+      "ADM02",
+      "ADM03",
+      "ADM04",
+      "ADM05",
+      "ADM06",
+      "ADM07",
+      "ADM08",
+      "ADM09"
+    ],
+    "states": [
+      "normal",
+      "empty",
+      "loading",
+      "error",
+      "disabled",
+      "long"
+    ],
+    "themes": [
+      "dark",
+      "light"
+    ],
+    "baseBoards": 216,
+    "modalScenes": [
+      [
+        "ADM02",
+        "templates"
+      ],
+      [
+        "ADM04",
+        "rule"
+      ],
+      [
+        "ADM04",
+        "rule-usdt"
+      ],
+      [
+        "ADM04",
+        "rule-nex"
+      ],
+      [
+        "ADM04",
+        "dual"
+      ],
+      [
+        "ADM04",
+        "combination"
+      ],
+      [
+        "ADM04",
+        "rights"
+      ],
+      [
+        "ADM05",
+        "budget"
+      ],
+      [
+        "ADM06",
+        "submit"
+      ],
+      [
+        "ADM06",
+        "withdraw"
+      ],
+      [
+        "ADM06",
+        "reject"
+      ],
+      [
+        "ADM06",
+        "approve"
+      ],
+      [
+        "ADM06",
+        "publish"
+      ],
+      [
+        "ADM06",
+        "unknown"
+      ],
+      [
+        "ADM07",
+        "pause"
+      ],
+      [
+        "ADM07",
+        "resume"
+      ],
+      [
+        "ADM07",
+        "end"
+      ],
+      [
+        "ADM07",
+        "archive"
+      ],
+      [
+        "ADM08",
+        "retry"
+      ],
+      [
+        "ADM08",
+        "reconcile"
+      ],
+      [
+        "ADM08",
+        "reversal"
+      ],
+      [
+        "ADM08",
+        "cancel-reward"
+      ],
+      [
+        "ADM08",
+        "reverse-reward"
+      ],
+      [
+        "ADM08",
+        "adjudicate"
+      ]
+    ],
+    "modalBoards": 96,
+    "phaseScenes": [
+      [
+        "ADM06",
+        "draft"
+      ],
+      [
+        "ADM06",
+        "pending"
+      ],
+      [
+        "ADM06",
+        "approved"
+      ],
+      [
+        "ADM07",
+        "active"
+      ],
+      [
+        "ADM07",
+        "paused"
+      ],
+      [
+        "ADM07",
+        "ended"
+      ],
+      [
+        "ADM07",
+        "archived"
+      ]
+    ],
+    "failureScenes": [
+      [
+        "ADM04",
+        "rule"
+      ],
+      [
+        "ADM05",
+        "budget"
+      ],
+      [
+        "ADM06",
+        "submit"
+      ],
+      [
+        "ADM06",
+        "withdraw"
+      ],
+      [
+        "ADM06",
+        "reject"
+      ],
+      [
+        "ADM06",
+        "publish"
+      ],
+      [
+        "ADM07",
+        "resume"
+      ],
+      [
+        "ADM07",
+        "archive"
+      ],
+      [
+        "ADM08",
+        "cancel-reward"
+      ],
+      [
+        "ADM08",
+        "reverse-reward"
+      ],
+      [
+        "ADM08",
+        "adjudicate"
+      ]
+    ],
+    "revisionFindings": [
+      "complete reward editor",
+      "budget inputs and field errors",
+      "state-bound lifecycle and evidence-bound recovery",
+      "disabled write controls",
+      "repurchase and rank conditions",
+      "actual row edit fixture binding"
+    ],
+    "reducedTransparency": [
+      "ADM06/publish/dark/1440",
+      "ADM08/reconcile/dark/1280"
+    ]
+  },
+  "fixture": {
+    "id": "admin-r1-approved-test-only",
+    "asOf": "2026-10-07T03:00:00Z",
+    "activeVersion": 1,
+    "draftVersion": 2,
+    "activityId": "DEMO-PROMOTION-01",
+    "scope": "isolated synthetic design data, never production",
+    "approvedTestRefs": [
+      "TEST-APPROVED-R1-20261007",
+      "TEST-RIGHTS-DEVICE-01",
+      "TEST-ASSET-USDT-01",
+      "TEST-ASSET-NEX-01",
+      "TEST-RBAC-01"
+    ],
+    "amountExamples": {
+      "USDT": "20.000000",
+      "NEX": "1000.000000"
+    },
+    "disabled": "missing policy references and RBAC mapping; publish disabled",
+    "assetImages": [
+      "public/uvel-mark-dark.png",
+      "public/uvel-mark-light.png"
+    ],
+    "productImagery": "No invented device photo used in PC tables. Product names are fixtures, not catalog assertions."
+  },
+  "states": {
+    "normal": "approved test fixture only",
+    "empty": "no matching facts or unconfigured draft; no fake zero",
+    "loading": "skeleton and busy semantics; repeated actions disabled",
+    "error": "read failure with preserved scope and original-command recovery specimen",
+    "disabled": "read-only capability or policy gap; actions disabled with visible reason",
+    "long": "long activity and public copy, large exact decimal amount; wraps rather than shrinks"
+  },
+  "dimensions": {
+    "sidebar": 252,
+    "topbar": 56,
+    "gutter": 22,
+    "cardRadius": 16,
+    "inputRadius": 8,
+    "buttonMinHeight": 40,
+    "headingPx": 23,
+    "headingWeight": 600,
+    "bodyPx": 13,
+    "tableBodyPx": 12.5,
+    "cardPadding": "18px 20px 20px",
+    "spacing": "14px stats; 16px cards; 18/22px form grid"
+  },
+  "limitations": [
+    "Only a fixed design HTML is exported, not product implementation.",
+    "No API, database, financial execution, business persistence, production approval or production deployment is verified.",
+    "No two independent product-vs-design pixel review has run.",
+    "PC board language is zh-CN; English and Vietnamese copy approvals remain product acceptance work.",
+    "Fonts use the existing local fallback chain; compare only after matching recorded actual platform fonts.",
+    "Existing V5/H source tokens are preserved; this exporter is not a WCAG certification."
+  ],
+  "commands": {
+    "freeze": "node docs/design/growth-promotions/admin-r1-baseline-check.mjs --freeze",
+    "verify": "node docs/design/growth-promotions/admin-r1-baseline-check.mjs",
+    "export": "node docs/design/growth-promotions/admin-r1-baseline-check.mjs --export"
+  },
+  "refreezeRule": "Any visual change must be an explicit design revision with a new hash and recaptured design boards before product comparison. Ordinary verification never changes frozen hashes."
+}
