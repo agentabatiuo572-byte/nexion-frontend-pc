@@ -374,6 +374,11 @@
 .mdom .tk-pageno { min-width: 30px; height: 30px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2); font-family: var(--m-mono); font-size: 12.5px; cursor: pointer; transition: background .12s, color .12s, border-color .12s; }
 .mdom .tk-pageno:hover { background: var(--surface-3); color: var(--ink); }
 .mdom .tk-pageno.on { background: var(--m-hd); border-color: transparent; color: var(--v5-bg); }
+.mdom .tk-ticket-pager { flex-wrap: wrap; gap: 12px; }
+.mdom .tk-ticket-pager > span { flex-shrink: 0; white-space: nowrap; }
+.mdom .tk-ticket-page-size { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.mdom .tk-ticket-page-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.mdom .tk-ticket-page-controls button { min-width: 44px; min-height: 44px; }
 
 /* ---- session inbox (M3 left) + 三栏 stage ---- */
 .mdom .m3-stage { position: relative; height: var(--m-stage-h); display: grid; grid-template-columns: 440px minmax(0, 1fr) 296px; min-height: 0; border: 1px solid var(--border); border-radius: var(--m-r-card); overflow: hidden; background: var(--surface); }
@@ -413,6 +418,10 @@
 .mdom .cv-origin.support { color: var(--m-ok); background: var(--m-ok-soft); }
 .mdom .cv-origin.advisor { color: var(--m-wait); background: var(--m-wait-soft); }
 .mdom .cv-tag { font-size: 11.5px; color: var(--ink-4); }
+.mdom .m3-stage .cv-meta { flex-wrap: wrap; row-gap: 3px; }
+.mdom .m3-stage .cv-stat { display: block; }
+.mdom .m3-stage .cv-stat > span, .mdom .m3-stage .cv-tag { white-space: nowrap; }
+.mdom .m3-stage .cv-tag { flex: none; }
 .mdom .cv-arch { margin-left: auto; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; color: var(--ink-4); opacity: 0; border: none; background: transparent; cursor: pointer; transition: opacity .12s, background .12s, color .12s; flex: none; }
 .mdom .cv-item:hover .cv-arch, .mdom .cv-item.on .cv-arch { opacity: 1; }
 .mdom .cv-arch:hover { background: var(--surface-3); color: var(--ink); }
@@ -570,6 +579,7 @@
 .mdom .msg-vlevel { font-size: 11.5px; font-weight: 500; color: var(--m-wait); background: var(--m-wait-soft); padding: 1px 5px; border-radius: 4px; white-space: nowrap; flex: none; }
 .mdom .msg-script { font-family: var(--m-mono); font-size: 11px; color: var(--m-wait); background: var(--m-wait-soft); padding: 1px 6px; border-radius: 5px; }
 .mdom .msg-bubble { position: relative; font-size: 14px; line-height: 1.5; padding: 8px 56px 8px 13px; border-radius: 14px; word-break: break-word; max-width: 100%; }
+.mdom .msg-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .mdom .msg-bubble.agent { background: var(--m-hd-soft); color: var(--ink); border-bottom-right-radius: 5px; }
 .mdom .msg-bubble.user { background: var(--surface-2); color: var(--ink); border-bottom-left-radius: 5px; }
 .mdom .msg-time { position: absolute; right: 11px; bottom: 6px; font-size: 10.5px; line-height: 1; color: var(--ink-4); white-space: nowrap; }
@@ -595,7 +605,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .mdom .stat.active .dot, .mdom .stat.proc .dot, .mdom .cv-stat.active .live,
-  .mdom .chat-send.sending, .mdom .msg-in, .mdom .tk-drawer, .mdom .sku-pop, .mdom .hd-select-pop,
+  .mdom .chat-send.sending, .mdom .chat-send.sending .ic, .mdom .chat-send.sending svg, .mdom .msg-in, .mdom .tk-drawer, .mdom .sku-pop, .mdom .hd-select-pop,
   .mdom .msg-typing-dots span { animation: none !important; }
 }
 

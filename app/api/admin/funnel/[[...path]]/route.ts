@@ -1,8 +1,7 @@
 import { cookies } from "next/headers";
-import { requirePasswordChangeCleared } from "@/lib/admin/require-password-change-cleared";
+import { ADMIN_TOKEN_COOKIE, requirePasswordChangeCleared } from "@/lib/admin/require-password-change-cleared";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
-const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
 const UNKNOWN_OUTCOME_HEADER = "X-Nexion-Upstream-Outcome";
 
 type RouteContext = {

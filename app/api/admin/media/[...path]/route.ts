@@ -1,8 +1,7 @@
 import { cookies } from "next/headers";
-import { requirePasswordChangeCleared } from "@/lib/admin/require-password-change-cleared";
+import { ADMIN_TOKEN_COOKIE, requirePasswordChangeCleared } from "@/lib/admin/require-password-change-cleared";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
-const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
 const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 const MEDIA_ORIGIN = process.env.NEXION_MEDIA_INTERNAL_ORIGIN || "http://127.0.0.1:9000";
 const MEDIA_TYPES = new Set([

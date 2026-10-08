@@ -316,7 +316,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
                 <div className={`vbadge v-${i}`}>{r.v}</div>
                 <div className="lcell">
                   <div className="l1">{r.label || r.v} · {composeTh(r)}</div>
-                  <div className="l2">F.vrank.{r.v} · 网络 {r.unilevelDepth || "—"} 层 · 同级奖 {r.peerBonusRate}% · {r.votes} 票 · {r.visible ? "客户端可见" : "客户端隐藏"}</div>
+                  <div className="l2">F.vrank.{r.v} · 网络 {r.unilevelDepth || "—"} 层 · 同级奖 {(r.peerBonusRate * 100).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}% · {r.votes} 票 · {r.visible ? "客户端可见" : "客户端隐藏"}</div>
                 </div>
                 <div className="lcell">
                   <div className="rwd-list">

@@ -30,6 +30,11 @@ import {
 import { fetchA6RoleDetail, fetchA6RolesOverview } from "@/lib/admin/a6-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import type { ACtx } from "./types";
+import { AccountAvatarPicker } from "./account-avatar-picker";
+import { SupportAvatar } from "../m-tabs/support-avatar";
+import {createPendingMutationStore,type PendingMutationRecord} from "@/lib/admin/pending-mutation-store";
+type CreationPending=PendingMutationRecord&{actorId:number;form:A1CreateAccountInput&{reason:string};reason:string;operator:string};
+const creationCommands=createPendingMutationStore<CreationPending>({storageKey:"nexion-a1-support-avatar-account-create",isValidRecord:r=>Number.isSafeInteger(r.actorId)&&Boolean(r.form?.username&&r.reason)});
 
 type SecurityBaselineMeta = {
   key: string;
@@ -136,6 +141,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const [page, setPage] = useState(0);
   const [perPage, setPerPage] = useState(10);
   const [naOpen, setNaOpen] = useState(false);
+  const [creationPending,setCreationPending]=useState<CreationPending|null>(null);
+  useEffect(()=>{setCreationPending(creationCommands.list().find(r=>r.actorId===currentAdminId)??null);},[currentAdminId]);
   const [detailAccount, setDetailAccount] = useState<A1Operator | null>(null);
   const [editAccountTarget, setEditAccountTarget] = useState<A1Operator | null>(null);
   const [passwordReset, setPasswordReset] = useState<A1PasswordResetResult | null>(null);
@@ -188,12 +195,14 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         await work();
         await refreshOverview(true);
         toast(success);
+        return true;
       } catch (error) {
         if (isA1OutcomeUncertainError(error)) {
           toast(`提交结果未知（命令号 ${error.commandKey}）；请先刷新并核对 A2 审计，禁止重复提交。`);
         } else {
           toast(`提交失败:${errorMessage(error)}`);
         }
+        return false;
       } finally {
         setMutatingAction(null);
       }
@@ -452,10 +461,10 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         </>
       ),
       amplifies: false,
-      run: (reason) => {
+      run: async (reason) => {
         const finalReason = `${form.reason}；${reason}`;
         const def = findHighOp("a1_account_update_profile")!;
-        void propose(toast, {
+        const outcome = await propose(toast, {
           action: `编辑账号 · ${operatorDisplayName(op)}`,
           obj: String(op.id),
           before: op.username || "—",
@@ -471,11 +480,13 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
             username: form.username,
             displayName: form.displayName,
             email: form.email,
+            avatarAssetId: form.avatarAssetId,
             expectedVersion: op.version,
           }),
           target: def.buildTarget({ accountId: op.id }),
         });
         setEditAccountTarget(null);
+        return outcome === "proposed";
       },
     });
   };
@@ -678,26 +689,31 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         </>
       ),
       amplifies: false,
-      run: (reason) => {
+      run: async (reason) => {
         const finalReason = `${form.reason}；${reason}`;
-        void runMutation(
+        if(!currentAdminId)return false;
+        const command=creationPending??{fingerprint:`${currentAdminId}:create`,commandKey:crypto.randomUUID(),createdAt:Date.now(),expiresAt:Date.now()+86400000,actorId:currentAdminId,form,reason:finalReason,operator};
+        creationCommands.remember(command.fingerprint,command.commandKey,{actorId:command.actorId,form:command.form,reason:command.reason,operator:command.operator});setCreationPending(command);
+        if(!creationCommands.isDurablyStored(command.fingerprint,command.commandKey)){toast("原账号创建命令暂不能持久保存，尚未提交；请恢复浏览器存储后重试。");return false;}
+        const ok = await runMutation(
           `新建账号 ${form.username}`,
           async () => {
-            const created = await createA1Account({
-            username: form.username,
-            displayName: form.displayName,
-            email: form.email,
-            role: form.role,
-            }, finalReason, operator);
+            let created:A1Operator;
+            try{created=await createA1Account({
+              username: command.form.username,displayName: command.form.displayName,email: command.form.email,avatarAssetId: command.form.avatarAssetId,role: command.form.role,
+            },command.reason,command.operator,command.commandKey);}catch(e){if(!isA1OutcomeUncertainError(e)){creationCommands.forget(command.fingerprint);setCreationPending(null);}throw e;}
+            if(useAdminAuth.getState().session?.adminId!==command.actorId)return created;
             if (!created.temporaryPassword) {
               throw new Error("A1_CREATE_TEMPORARY_PASSWORD_MISSING");
             }
+            creationCommands.forget(command.fingerprint);setCreationPending(null);
             setPasswordReset({ account: created, temporaryPassword: created.temporaryPassword });
             return created;
           },
           `${form.displayName} 已创建，首次登录需绑定 2FA 并修改密码`,
         );
-        setNaOpen(false);
+        if (ok) setNaOpen(false);
+        return ok;
       },
     });
   };
@@ -837,6 +853,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
                     style={{ cursor: "pointer" }}
                   >
                     <td>
+                      <span onClick={event=>event.stopPropagation()}><SupportAvatar name={operatorDisplayName(op)} path={op.avatarAssetId?`/api/admin/platform/accounts/${op.id}/avatar`:undefined} version={op.avatarVersion??undefined}/></span>
                       <div style={{ fontWeight: 700, color: "var(--ink)" }}>{operatorDisplayName(op)}</div>
                       <div style={{ fontSize: 12, color: "var(--ink-4)", marginTop: 2 }}>
                         登录名: {op.username || "未返回"}{op.email ? ` · ${op.email}` : ""}
@@ -948,11 +965,13 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         <NewAccountDrawer
           roles={roles}
           recoveryMode={governanceFrozen}
-          disabled={!!mutatingAction}
+          disabled={!!mutatingAction||Boolean(creationPending)}
+          initialForm={creationPending?.form}
           onClose={() => setNaOpen(false)}
           onSubmit={createAccount}
         />
       )}
+      {creationPending&&<div className="atint" role="alert"><p>原账号创建结果待确认：{creationPending.form.username} · {creationPending.form.displayName} · {creationPending.form.email||"未填邮箱"}。原资料、头像素材和命令号已保留。</p><button className="l-btn primary" disabled={Boolean(mutatingAction)} onClick={()=>createAccount(creationPending.form)}>使用原资料与命令查询重试</button></div>}
       {detailAccount && (
         <AccountDetailDrawer
           account={detailAccount}
@@ -1025,21 +1044,24 @@ function NewAccountDrawer({
   roles,
   recoveryMode,
   disabled,
+  initialForm,
   onClose,
   onSubmit,
 }: {
   roles: A1RoleDefinition[];
   recoveryMode: boolean;
   disabled?: boolean;
+  initialForm?:NaForm;
   onClose: () => void;
   onSubmit: (form: NaForm) => void;
 }) {
   const defaultRole = "";
-  const [username, setUsername] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState(defaultRole);
-  const [reason, setReason] = useState("");
+  const [username, setUsername] = useState(initialForm?.username??"");
+  const [displayName, setDisplayName] = useState(initialForm?.displayName??"");
+  const [email, setEmail] = useState(initialForm?.email??"");
+  const [role, setRole] = useState(initialForm?.role??defaultRole);
+  const [reason, setReason] = useState(initialForm?.reason??"");
+  const [avatarAssetId,setAvatarAssetId]=useState<string|undefined>(),[avatarBlocking,setAvatarBlocking]=useState(false);
 
   useEffect(() => {
     if (recoveryMode && roles.some((item) => item.key === "super")) {
@@ -1060,7 +1082,7 @@ function NewAccountDrawer({
   ].filter(Boolean);
   const disabledReason = disabled ? "权限或数据仍在加载,暂不能创建" : "";
   const submitBlockers = [disabledReason, ...missingItems].filter(Boolean);
-  const canSubmit = !disabled && missingItems.length === 0;
+  const canSubmit = !disabled && !avatarBlocking && missingItems.length === 0;
 
   return (
     <Drawer
@@ -1086,6 +1108,7 @@ function NewAccountDrawer({
                 displayName: displayName.trim(),
                 email: email.trim() || undefined,
                 role,
+                avatarAssetId,
                 reason: reason.trim(),
               })}
             >确认创建账号</button>
@@ -1093,6 +1116,7 @@ function NewAccountDrawer({
         </div>
       }
     >
+      <fieldset disabled={disabled} style={{border:0,padding:0,margin:0}}>
       <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 8 }}>① 登录资料</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
         <label style={{ fontSize: 12, color: "var(--ink-3)" }}>
@@ -1136,6 +1160,8 @@ function NewAccountDrawer({
         </label>
       </div>
 
+      <AccountAvatarPicker name={displayName} disabled={disabled} onChange={setAvatarAssetId} onBlocking={setAvatarBlocking}/>
+      {avatarBlocking&&<p role="status">新头像尚未上传成功；上传或取消新头像后可继续创建。</p>}
       <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 8 }}>② 初始角色(可暂不分配)</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
         <label className="l-btn" style={{ justifyContent: "flex-start", padding: "10px 12px", background: role === "" ? "var(--a-ac-soft)" : "var(--surface-2)", color: role === "" ? "var(--a-ac)" : "var(--ink-2)", cursor: recoveryMode ? "not-allowed" : "pointer" }}>
@@ -1189,6 +1215,7 @@ function NewAccountDrawer({
           style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "inherit", fontSize: 13, resize: "vertical" }}
         />
       </label>
+      </fieldset>
     </Drawer>
   );
 }
@@ -1246,6 +1273,7 @@ function AccountDetailDrawer({
         </div>
       </div>
       <table className="l-tbl">
+        <caption style={{textAlign:"left",paddingBottom:12}}><SupportAvatar name={operatorDisplayName(account)} path={account.avatarAssetId?`/api/admin/platform/accounts/${account.id}/avatar`:undefined} version={account.avatarVersion??undefined} size={64}/></caption>
         <tbody>
           {rows.map(([label, value]) => (
             <tr key={label}>
@@ -1312,12 +1340,14 @@ function EditAccountDrawer({
   const [displayName, setDisplayName] = useState(operatorDisplayName(account));
   const [email, setEmail] = useState(account.email || "");
   const [reason, setReason] = useState("");
+  const [avatarAssetId,setAvatarAssetId]=useState<string|undefined>(),[avatarBlocking,setAvatarBlocking]=useState(false);
   const usernameOk = isValidUsername(username);
   const emailOk = isValidEmail(email);
   const changed =
     username.trim().toLowerCase() !== (account.username || "").trim().toLowerCase()
     || displayName.trim() !== operatorDisplayName(account)
-    || email.trim().toLowerCase() !== (account.email || "").trim().toLowerCase();
+    || email.trim().toLowerCase() !== (account.email || "").trim().toLowerCase()
+    || Boolean(avatarAssetId && avatarAssetId !== account.avatarAssetId);
   const missingItems = [
     !username.trim() ? "登录名未填写" : !usernameOk ? "登录名格式不正确" : "",
     !displayName.trim() ? "显示名未填写" : "",
@@ -1327,7 +1357,7 @@ function EditAccountDrawer({
   ].filter(Boolean);
   const disabledReason = disabled ? "账号操作仍在提交,暂不能编辑" : "";
   const submitBlockers = [disabledReason, ...missingItems].filter(Boolean);
-  const canSubmit = !disabled && missingItems.length === 0;
+  const canSubmit = !disabled && !avatarBlocking && missingItems.length === 0;
 
   return (
     <Drawer
@@ -1352,6 +1382,7 @@ function EditAccountDrawer({
                 username: username.trim().toLowerCase(),
                 displayName: displayName.trim(),
                 email: email.trim() || undefined,
+                avatarAssetId,
                 reason: reason.trim(),
               })}
             >保存账号资料</button>
@@ -1397,6 +1428,9 @@ function EditAccountDrawer({
           )}
         </label>
       </div>
+      <AccountAvatarPicker account={account} name={displayName} disabled={disabled} onChange={setAvatarAssetId} onBlocking={setAvatarBlocking}/>
+      {avatarBlocking&&<p role="status">新头像尚未上传成功；上传或取消新头像后可提交。</p>}
+      <p>提交后仍需在操作确认中心执行，账号资料与头像以执行后刷新读回为准。</p>
       <label style={{ fontSize: 12, color: "var(--ink-3)" }}>
         操作理由 *(必填 · 写入审计)
         <textarea

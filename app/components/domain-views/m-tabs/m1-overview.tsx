@@ -654,7 +654,7 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
   );
 }
 
-function SupportSeatRoleModal({
+export function SupportSeatRoleModal({
   ctx,
   operatorName,
   currentRole,
@@ -684,6 +684,8 @@ function SupportSeatRoleModal({
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [saving, setSaving] = useState(false);
   const [userError, setUserError] = useState("");
+  const commandInFlightRef = useRef(false);
+  const mountedRef = useRef(true);
   const canAssignSupervisor = currentRole === "superadmin" || currentRole === "super";
   const currentAgent = agents.find((agent) => agent.adminId === currentAdminId) ?? null;
   const canAssignSupportStaff = canManage && (canAssignSupervisor || isSupportSupervisor(currentAgent));
@@ -733,6 +735,11 @@ function SupportSeatRoleModal({
   const assigningDedicated = targetPosition === "专属客服";
   const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
   const canSave = Boolean(canAssignSupportStaff && operatorReady && selected && reasonOk && !saving && (!assigningDedicated || bindableSelectedUsers.length > 0));
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   useEffect(() => {
     setSelectedId((current) => current || (candidates[0] ? String(candidates[0].adminId) : ""));
@@ -812,8 +819,13 @@ function SupportSeatRoleModal({
     });
   };
 
+  const close = () => {
+    if (mountedRef.current && !commandInFlightRef.current) onClose();
+  };
+
   const save = async () => {
-    if (!canSave || !selected) return;
+    if (!canSave || !selected || commandInFlightRef.current || !mountedRef.current) return;
+    commandInFlightRef.current = true;
     setSaving(true);
     try {
       const userIds = assigningDedicated
@@ -828,13 +840,14 @@ function SupportSeatRoleModal({
         action: "M1 分配客服坐席",
         reason: reason.trim(),
       });
-      if (!ok) return;
+      if (!mountedRef.current || !ok) return;
       ctx.toast(`${selected.name} 已提交分配为 ${seatLabel(targetPosition)}${userIds.length ? `,绑定 ${userIds.length} 个用户` : ""}`);
       onClose();
     } catch (err) {
-      ctx.toast(`分配失败:${displayAdminError(err)}`);
+      if (mountedRef.current) ctx.toast(`分配失败:${displayAdminError(err)}`);
     } finally {
-      setSaving(false);
+      commandInFlightRef.current = false;
+      if (mountedRef.current) setSaving(false);
     }
   };
 
@@ -843,8 +856,9 @@ function SupportSeatRoleModal({
       title="分配客服坐席"
       icon="users"
       wide
-      onClose={onClose}
-      footer={<><span className="sub">{!canAssignSupportStaff ? "只有超管或客服主管可以分配客服坐席" : !operatorReady ? "正在读取当前管理员身份" : assigningDedicated ? `专属客服必须同时绑定用户 · 已选 ${bindableSelectedUsers.length} 人` : canAssignSupervisor ? "超管可分配客服主管 / 专属客服 / 通用客服" : "客服主管只能分配专属客服 / 通用客服"}</span><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose}>取消</button><button type="button" data-proof="m1-seat-role-save" className="btn btn-pri btn-sm" disabled={!canSave} onClick={save}>{saving ? "提交中..." : canSave ? "确认分配" : !canAssignSupportStaff || !operatorReady ? "无权限" : assigningDedicated && bindableSelectedUsers.length === 0 ? "需绑定用户" : "需选择并填写理由"}</button></>}
+      busy={saving}
+      onClose={close}
+      footer={<><span className="sub">{!canAssignSupportStaff ? "只有超管或客服主管可以分配客服坐席" : !operatorReady ? "正在读取当前管理员身份" : assigningDedicated ? `专属客服必须同时绑定用户 · 已选 ${bindableSelectedUsers.length} 人` : canAssignSupervisor ? "超管可分配客服主管 / 专属客服 / 通用客服" : "客服主管只能分配专属客服 / 通用客服"}</span><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={close} disabled={saving}>取消</button><button type="button" data-proof="m1-seat-role-save" className="btn btn-pri btn-sm" disabled={!canSave} onClick={save}>{saving ? "提交中..." : canSave ? "确认分配" : !canAssignSupportStaff || !operatorReady ? "无权限" : assigningDedicated && bindableSelectedUsers.length === 0 ? "需绑定用户" : "需选择并填写理由"}</button></>}
     >
       <div className="mcol" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>

@@ -143,10 +143,10 @@ export type SegField = { id: string; label: string; ops: string[]; vals?: string
 export type SegCond = { field: string; op: string; value: string };
 
 // 坐席会话(字段镜像前端 Conversation/ConvMessage + 后台 owner/status)
-export type SessionStatus = "open" | "resolved" | "closed";
+export type SessionStatus = "open" | "resolved" | "closed" | "transferred";
 /** 坐席消息回执:sent=已送达用户未读,read=用户已读(仅 sender==="agent" 有意义;镜像前端 ConvMessageStatus) */
 export type SessionMsgStatus = "sent" | "read";
-export type SessionMsg = { id?: number; ts: number; sender: "user" | "agent"; sourceSenderType?: "USER" | "AGENT" | "SYSTEM" | "INTERNAL"; agentName?: string; status?: SessionMsgStatus; text: string; ctaHref?: string; kind?: "TEXT" | "IMAGE"; attachmentId?: string; intent?: "SERVICE" | "MAINTENANCE"; clientMessageId?: string; replyTargets?: Array<{ conversationNo: string; throughMessageId: number }> };
+export type SessionMsg = { id?: number; ts: number; sender: "user" | "agent"; sourceSenderType?: "USER" | "AGENT" | "SYSTEM" | "INTERNAL"; senderId?: number; authorConfidence?: "VERIFIED" | "UNKNOWN"; senderAvatar?: { assetId: string; version: number }; agentName?: string; status?: SessionMsgStatus; text: string; ctaHref?: string; kind?: "TEXT" | "IMAGE" | "SKU" | "LINK"; skuId?: string; skuName?: string; linkTarget?: { type: "HOME" | "WALLET" | "SUPPORT"; params: Record<string, never> }; targetAvailability?: "AVAILABLE" | "UNAVAILABLE"; attachmentId?: string; intent?: "SERVICE" | "MAINTENANCE"; clientMessageId?: string; replyTargets?: Array<{ conversationNo: string; throughMessageId: number }> };
 
 /* 完整客户档案(设计稿 CustomerProfile 合并）—— 坐席接待时一眼看清价值 / 风险。只读快照,
  * 客户侧真实账户操作回 C/D 域;systemTags 派生只读,customTags / notes 持久化于后端(nx_customer_tag / nx_customer_note)。 */
@@ -216,11 +216,11 @@ export type SessionConvo = {
   messages: SessionMsg[]; // 镜像前端 messages{sender,text,ctaHref,ts}
   detailReady?: boolean; // false means messages are a list summary, never a complete thread
   lastPreview?: string;
-  lastMessageKind?: "TEXT" | "IMAGE";
+  lastMessageKind?: SessionMsg["kind"];
   customer?: string;   // 接待的终端用户昵称(对话主角;agentName 为坐席)
   profile?: CustomerProfile; // 完整客户档案(只读快照 + 客服备注)
   archived?: boolean;  // 归档态(已解决会话可单条 / 批量归档,默认 false)
-  origin?: "user" | "support" | "advisor"; // 发起来源:用户咨询 / 客服主动 / 顾问主动(旧 persist 缺则按 user 兜底)
+  origin?: "user" | "support" | "advisor"; // 未采集发起来源时保留未知，不由接待身份推断。
   batchInfo?: { audienceDesc: string; identity: string; script: string }; // 人群群发会话上下文(无单一客户档案,右栏显批次信息)
   transfer?: SessionTransfer; // 跨坐席转交态;存在即「转入待处理」(挂目标坐席 B/队列/备勤池,待接收/退回)
 };

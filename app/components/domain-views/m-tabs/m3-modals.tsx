@@ -34,6 +34,7 @@ function Field({ label, required, children }: { label: string; required?: boolea
 
 export function IdlePolicyModal({
   policy,
+  initialInput,
   canSave,
   saving,
   error,
@@ -41,15 +42,16 @@ export function IdlePolicyModal({
   onSave,
 }: {
   policy: ConversationTimeoutPolicy;
+  initialInput?: {warnMinutes:number;closeMinutes:number;reason:string};
   canSave: boolean;
   saving: boolean;
   error: string;
   onClose: () => void;
   onSave: (input: { warnMinutes: number; closeMinutes: number; reason: string }) => Promise<boolean>;
 }) {
-  const [warn, setWarn] = useState(String(policy.warnMinutes));
-  const [close, setClose] = useState(String(policy.closeMinutes));
-  const [reason, setReason] = useState("");
+  const [warn, setWarn] = useState(String(initialInput?.warnMinutes??policy.warnMinutes));
+  const [close, setClose] = useState(String(initialInput?.closeMinutes??policy.closeMinutes));
+  const [reason, setReason] = useState(initialInput?.reason??"");
   const warnN = Number(warn);
   const closeN = Number(close);
   const warnOk = Number.isInteger(warnN) && warnN >= 1 && warnN <= 30;
@@ -100,6 +102,7 @@ export function IdlePolicyModal({
     <Modal
       title="会话超时策略"
       icon="clock"
+      busy={saving}
       onClose={onClose}
       footer={(
         <div className="row" style={{ gap: 10, alignItems: "center", width: "100%" }}>

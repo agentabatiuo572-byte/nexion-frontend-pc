@@ -274,7 +274,7 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
               <div key={r.category} data-proof="support-sla-row" data-sla-category={r.category} style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 30px", gap: 8, alignItems: "center", padding: "10px 12px", borderTop: "1px solid var(--border)" }}>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>
-                    {catCN(r.category)} <span className="dim2 mono" style={{ fontWeight: 400, fontSize: 11 }}>{r.category}</span>
+                    {catCN(r.category)}
                   </div>
                   <div className="dim2" style={{ fontSize: 11 }}>{r.queue} · 升级 {r.escalation}</div>
                 </div>
@@ -403,7 +403,7 @@ function EditSlaModal({
     >
       <div className="field" style={{ marginBottom: 12 }} data-proof="support-sla-category">
         <span className="bf-legend">分类</span>
-        <div className="chip" style={{ width: "fit-content", border: "none" }}>{catCN(category)} · {category}</div>
+        <div className="chip" style={{ width: "fit-content", border: "none" }}>{catCN(category)}</div>
       </div>
       <div className="grid g-2" style={{ gap: 12 }}>
         <label className="field"><span className="bf-legend">首响(分钟)</span><input className="fld mono" type="number" value={firstResponseMins} onChange={(e) => setFirst(e.target.value)} /></label>

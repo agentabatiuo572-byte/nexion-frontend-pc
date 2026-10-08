@@ -9,6 +9,8 @@ import { adminShellSessionKey } from "../../../../lib/admin/shell-authorities";
 import { useAdminAuth } from "../../../../lib/store/admin-auth";
 import type { MSupportPermission } from "./m5-service-rules";
 import "./m-support-admin.css";
+import { SupportRandomAssignment, hasPendingRandomAssignment } from "./support-random-assignment";
+import { SupportAvatar, advisorAvatarPath } from "./support-avatar";
 
 const PAGE_SIZE = 8;
 const actorStamp = () => { const auth = useAdminAuth.getState(); return adminShellSessionKey(auth.session, auth.authEpoch); };
@@ -54,6 +56,7 @@ export function M1SupervisorPool({ permission }: { permission: MSupportPermissio
   const [selected, setSelected] = useState<Map<string, SupportBindingPoolItem>>(() => new Map());
   const [staleIds, setStaleIds] = useState<Set<string>>(() => new Set());
   const [confirm, setConfirm] = useState(false);
+  const [randomCustomers,setRandomCustomers]=useState<SupportBindingPoolItem[]|null>(null);
   const [target, setTarget] = useState<SupportAgentCandidate | null>(null);
   const [assignmentReason, setAssignmentReason] = useState("");
   const [pending, setPending] = useState<{ key: string; payload: Parameters<typeof supportClient.transfer>[0] } | null>(null);
@@ -191,6 +194,7 @@ export function M1SupervisorPool({ permission }: { permission: MSupportPermissio
   return <section className="m-admin-grid" aria-label="待绑定客户池">
     <div className="m-admin-panel">
       <h2>待绑定客户池</h2>
+      {adminId&&hasPendingRandomAssignment(adminId)&&<button className="btn btn-sec btn-sm" onClick={()=>setRandomCustomers([])}>查询上次随机分配结果</button>}
       <div className="m-admin-muted">选择明确的客户后分配给一位专属顾问。未选客户保持原状。</div>
       <div className="m-admin-toolbar">
         <form onSubmit={(event) => { event.preventDefault(); setPage(1); setKeyword(keywordInput.trim()); }}><input aria-label="搜索客户 ID 或留言关键词" value={keywordInput} disabled={Boolean(pending)} onChange={(event) => setKeywordInput(event.target.value)} placeholder="搜索客户 ID 或留言关键词" /><button type="submit" className="btn btn-sec btn-sm" disabled={Boolean(pending)}>搜索</button></form>
@@ -204,14 +208,15 @@ export function M1SupervisorPool({ permission }: { permission: MSupportPermissio
         {records.length === 0 ? <div className="m-admin-muted">当前没有匹配的待分配客户。可清除筛选查看全部。</div> : <div className="m-admin-table-wrap"><table className="m-admin-table"><thead><tr><th><input ref={selectAllRef} type="checkbox" checked={wholePageSelected} disabled={Boolean(pending)} onChange={toggleVisible} aria-label="选择或取消当前页客户" /></th><th>客户</th><th>入池原因</th><th>等待起点</th><th>客户留言</th><th>操作</th></tr></thead><tbody>{records.map((item) => <tr key={item.customerId}>
           <td><input type="checkbox" checked={selected.has(item.customerId)} disabled={Boolean(pending)} onChange={() => toggle(item)} aria-label={`选择客户 ${item.customerNo || item.customerId}`} /></td>
           <td data-label="客户"><strong>{item.displayName || item.customerNo || item.customerId}</strong><div className="m-admin-muted">ID {item.customerId}</div></td>
-          <td data-label="入池原因">{POOL_REASONS[item.reason]}</td><td data-label="等待起点">{item.enteredAt ? new Date(parseBusinessTime(item.enteredAt)).toLocaleString("zh-CN") : "待核对"}</td><td data-label="客户留言">{item.pendingMessageCount == null ? "信息不可用" : `${item.pendingMessageCount} 条`}</td>
+          <td data-label="入池原因">{POOL_REASONS[item.reason]}<div className="m-admin-muted">{item.autoEligible==null?"自动处理资格未知":item.autoEligible?"当前可自动重试":"需主管处理"} · 尝试 {item.attempts??"未知"} 次</div><div className="m-admin-muted">最近尝试：{item.lastAttemptAt?new Date(parseBusinessTime(item.lastAttemptAt)).toLocaleString("zh-CN"):"尚无记录"} · {item.autoAttemptState==="ASSIGNED"?"已分配":item.autoAttemptState==="WAITING_CANDIDATE"?"等待合格候选，将按规则重试":item.autoAttemptState==="PAUSED"?"已暂停，需核对分配模式":item.autoAttemptState==="NONE"?"历史记录需明确处理":"状态待核对"}</div><div className="m-admin-muted">最近结果：{item.lastOutcome==="NO_CANDIDATE"?"暂无合格候选":item.lastOutcome==="ASSIGNED"?"已成功分配":item.lastOutcome==="SUPERVISOR_MODE"?"当前由主管处理":item.lastOutcome?"需刷新资料后核对":"尚无结果"}</div></td><td data-label="等待起点">{item.enteredAt ? new Date(parseBusinessTime(item.enteredAt)).toLocaleString("zh-CN") : "待核对"}</td><td data-label="客户留言">{item.pendingMessageCount == null ? "信息不可用" : `${item.pendingMessageCount} 条`}</td>
           <td data-label="操作"><button type="button" className="btn btn-sec btn-sm" disabled={Boolean(pending)} onClick={() => openFor(item)}>分配此客户</button></td>
         </tr>)}</tbody></table></div>}
         <div className="m-admin-toolbar"><span className="m-admin-muted">已明确选择 {selected.size} 位客户；本页 {visibleSelected}/{records.length} 位 · 共 {pool.total} 位待分配</span><button type="button" className="btn btn-pri btn-sm" disabled={selected.size === 0 || selected.size > 100 || (staleIds.size > 0 && !pending)} onClick={() => openFor()}>{pending ? "继续确认上次分配" : `批量分配已选 ${selected.size} 位`}</button></div>
         <div className="m-admin-toolbar"><button type="button" className="btn btn-sec btn-sm" disabled={page <= 1 || Boolean(pending)} onClick={() => setPage((n) => n - 1)}>上一页</button><span className="m-admin-muted">第 {page} / {Math.max(1, Math.ceil(pool.total / PAGE_SIZE))} 页</span><button type="button" className="btn btn-sec btn-sm" disabled={page >= Math.ceil(pool.total / PAGE_SIZE) || Boolean(pending)} onClick={() => setPage((n) => n + 1)}>下一页</button></div>
       </>}
     </div>
-    <aside className="m-admin-panel"><h2>分配范围</h2><div className="m-admin-muted">只操作逐项勾选的客户；每位成功分配的客户成为新继承段 0 层起点。</div><div className="m-admin-stats"><div className="m-admin-stat">已选客户<strong>{selected.size}</strong></div><div className="m-admin-stat">本页选择<strong>{visibleSelected}</strong></div><div className="m-admin-stat">单次上限<strong>100</strong></div></div><div className="m-admin-muted">每次最多分配 100 位客户；顾问绑定总人数不受此限制。顾问忙碌或离线时不会自动改派。</div></aside>
+    <aside className="m-admin-panel"><h2>分配范围</h2><div className="m-admin-muted">只操作逐项勾选的客户；每位成功分配的客户成为新继承段 0 层起点。</div><div className="m-admin-stats"><div className="m-admin-stat">已选客户<strong>{selected.size}</strong></div><div className="m-admin-stat">本页选择<strong>{visibleSelected}</strong></div><div className="m-admin-stat">单次上限<strong>100</strong></div></div><div className="m-admin-muted">每次最多分配 100 位客户；顾问绑定总人数不受此限制。顾问忙碌或离线时不会自动改派。</div><button className="btn btn-pri btn-sm" disabled={!selected.size||selected.size>100||Boolean(pending)||staleIds.size>0} onClick={()=>setRandomCustomers([...selected.values()])}>预览已选客户随机分配</button><p className="m-admin-muted">明确确认后才处理历史池，不影响未选客户或已有下级。</p></aside>
+    {randomCustomers&&<SupportRandomAssignment customers={randomCustomers} onClose={()=>setRandomCustomers(null)} onDone={()=>{setSelected(new Map());setReload(n=>n+1);window.dispatchEvent(new Event("support-todo-changed"));}}/>}
     {confirm && <Modal title="确认分配客户" icon="users" wide busy={saving} onClose={() => { if (!saving) setConfirm(false); }} footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => setConfirm(false)}>返回</button><button type="button" className="btn btn-pri btn-sm" disabled={(!canSubmit && !pending) || saving} onClick={() => void assign()}>{saving ? "分配中…" : pending ? "使用同一命令重试" : `确认分配 ${selected.size} 位`}</button></>}>
       <div className="m-admin-muted">本次只分配下列实际选中客户；每位客户开启新的 0 层继承段，其他客户不变。</div>
       <div className="m-admin-list">{[...selected.values()].map((item) => <div key={item.customerId}>客户 ID {item.customerId}{item.customerNo ? ` · ${item.customerNo}` : ""} · {POOL_REASONS[item.reason]}</div>)}</div>
@@ -221,7 +226,7 @@ export function M1SupervisorPool({ permission }: { permission: MSupportPermissio
       {agentsError && <div className="m-admin-error" role="alert">顾问列表不可用。<button type="button" className="btn btn-sec btn-sm" onClick={() => setAgentsReload((n) => n + 1)}>重试</button></div>}
       {!agentsLoading && !agentsError && candidates.length === 0 && <div className="m-admin-error">本页没有可分配的专属顾问，请翻页或先配置顾问资格。</div>}
       {agents && agents.total > 100 && <div className="m-admin-toolbar"><button type="button" className="btn btn-sec btn-sm" disabled={agentPage <= 1 || Boolean(pending)} onClick={() => setAgentPage((n) => n - 1)}>上一页顾问</button><span className="m-admin-muted">顾问第 {agentPage} / {Math.ceil(agents.total / 100)} 页</span><button type="button" className="btn btn-sec btn-sm" disabled={agentPage >= Math.ceil(agents.total / 100) || Boolean(pending)} onClick={() => setAgentPage((n) => n + 1)}>下一页顾问</button></div>}
-      {target && <div className="m-admin-stats"><div className="m-admin-stat">已绑定客户<strong>{target.assignedUserCount}</strong></div><div className="m-admin-stat">当前会话负载<strong>{target.currentActiveSessions ?? "不可用"}</strong></div><div className="m-admin-stat">会话并发上限<strong>{target.maxConcurrent}</strong></div></div>}
+      {target && <><SupportAvatar name={target.name} path={target.avatarAssetId?advisorAvatarPath(target.adminId):undefined} version={target.avatarVersion}/><div className="m-admin-stats"><div className="m-admin-stat">已绑定客户<strong>{target.assignedUserCount}</strong></div><div className="m-admin-stat">当前会话负载<strong>{target.currentActiveSessions ?? "不可用"}</strong></div><div className="m-admin-stat">会话并发上限<strong>{target.maxConcurrent}</strong></div></div></>}
       {target && !targetFresh && <div className="m-admin-error" role="alert">已选顾问不在当前有效名单或资料已变化，请返回相应页重新选择。</div>}
       {target && <div className="m-admin-muted">顾问当前{target.busy ? "忙碌" : "可接待"}；忙碌或离线不会自动改派。绑定人数没有额外上限。</div>}
       <label className="field"><span>分配原因（8–200 字）</span><textarea value={assignmentReason} maxLength={200} disabled={saving || Boolean(pending)} onChange={(event) => setAssignmentReason(event.target.value)} placeholder="说明本次分配的原因" /></label><div className="m-admin-muted">已输入 {assignmentReason.trim().length}/200 字</div>

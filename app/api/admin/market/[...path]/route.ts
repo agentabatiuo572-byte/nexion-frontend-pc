@@ -1,8 +1,7 @@
 import { cookies } from "next/headers";
-import { requirePasswordChangeCleared } from "@/lib/admin/require-password-change-cleared";
+import { ADMIN_TOKEN_COOKIE, requirePasswordChangeCleared } from "@/lib/admin/require-password-change-cleared";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
-const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
 const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 // G4 概览是纯读取页。这里的 deadline 覆盖 upstream 的响应头和 body 卡死，
 // 让前端回到可重试的 503；不把写命令的「结果未知」语义混进这个读取修复。

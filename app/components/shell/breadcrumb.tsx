@@ -35,11 +35,11 @@ export function Breadcrumb() {
   }
 
   return (
-    <nav aria-label="面包屑" className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[12.5px]">
+    <nav aria-label="面包屑" className="admin-topbar-breadcrumb flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-[12.5px]">
       {crumbs.map((c, i) => {
         const last = i === crumbs.length - 1;
         return (
-          <span key={i} className={last ? "flex min-w-0 items-center gap-1.5" : "hidden shrink-0 items-center gap-1.5 xl:flex"}>
+          <span key={i} className={`admin-topbar-crumb ${last ? "admin-topbar-crumb-current flex min-w-0" : "admin-topbar-crumb-ancestor hidden shrink-0 xl:flex"} items-center gap-1.5`}>
             {i > 0 && (
               <ChevronRight size={13} className="shrink-0" style={{ color: "var(--v5-ink-4)" }} aria-hidden />
             )}
@@ -53,13 +53,14 @@ export function Breadcrumb() {
               <Link
                 href="/"
                 prefetch={false}
-                className="transition-colors hover:opacity-80"
+                className="admin-topbar-crumb-label transition-colors hover:opacity-80"
+                title={c.label}
                 style={{ color: last ? "var(--v5-ink)" : "var(--v5-ink-3)", fontWeight: last ? 600 : 400 }}
               >
                 {c.label}
               </Link>
             ) : (
-              <span className="truncate" title={c.label} style={{ color: last ? "var(--v5-ink)" : "var(--v5-ink-3)", fontWeight: last ? 600 : 400 }}>
+              <span className="admin-topbar-crumb-label truncate" title={c.label} aria-current={last ? "page" : undefined} style={{ color: last ? "var(--v5-ink)" : "var(--v5-ink-3)", fontWeight: last ? 600 : 400 }}>
                 {c.label}
               </span>
             )}

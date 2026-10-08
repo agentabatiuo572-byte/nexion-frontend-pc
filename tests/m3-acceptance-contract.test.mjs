@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { runInNewContext } from "node:vm";
+import ts from "typescript";
 import { parseBusinessTime } from "../lib/admin/business-time.ts";
 
 const root = process.cwd();
@@ -34,10 +36,118 @@ test("M3 shared profile drawer fits within its actual conversation container", (
   const shell = read("app/components/shell/console-shell.tsx");
   assert.match(shell, /className="grid h-screen w-screen overflow-clip"/);
   const topbar = read("app/components/shell/topbar.tsx");
-  assert.match(topbar, /className="hidden text-\[12\.5px\] sm:inline"[^>]*>[\s\S]*?\{operator\}/);
+  assert.match(topbar, /className="admin-topbar-operator hidden text-\[12\.5px\] sm:inline"[^>]*>[\s\S]*?\{operator\}/);
   assert.match(topbar, /justify-between gap-4 px-3 sm:px-5/);
-  assert.match(topbar, /className="flex shrink-0 items-center gap-2 whitespace-nowrap sm:gap-3"/);
-  assert.match(topbar, /className="hidden min-w-0 flex-1 items-center gap-4 sm:flex"/);
+  assert.match(topbar, /className="admin-topbar-actions flex shrink-0 items-center gap-2 whitespace-nowrap sm:gap-3"/);
+  assert.match(topbar, /className="admin-topbar-location flex min-w-0 flex-1 items-center gap-4"/);
+  const topbarCss = read("app/components/shell/topbar.css");
+  assert.match(topbarCss, /container: admin-topbar \/ inline-size/);
+  assert.match(topbarCss, /\.admin-topbar-actions\s*\{[^}]*flex: 0 0 auto;/);
+  assert.doesNotMatch(topbarCss, /\.admin-topbar-actions\s*\{[^}]*white-space: nowrap;/);
+  assert.match(topbarCss, /@container admin-topbar \(max-width: 1200px\)/);
+  assert.match(topbarCss, /\.admin-topbar-crumb-label\s*\{[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/);
+  assert.match(topbarCss, /\.admin-topbar-operator\s*\{[^}]*max-width: 140px;[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;/);
+});
+
+test("M2 pagination stays bounded while preserving first, last and neighboring pages", () => {
+  const source = read("app/components/domain-views/m-tabs/m2-tickets.tsx");
+  const productionFunction = source.match(/function visibleTicketPages[^\n]*\{[\s\S]*?\n\}/)?.[0];
+  assert.ok(productionFunction);
+  const visibleTicketPages = runInNewContext(ts.transpileModule(`${productionFunction}\nvisibleTicketPages;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText);
+  for (const count of [1, 2, 5, 6, 29, 225, 1000]) {
+    for (let page = 1; page <= count; page += 1) {
+      const tokens = Array.from(visibleTicketPages(count, page));
+      const numbers = tokens.filter((token) => typeof token === "number");
+      assert.ok(tokens.length <= 7);
+      assert.equal(numbers[0], 1);
+      assert.equal(numbers.at(-1), count);
+      assert.ok(numbers.includes(page));
+      if (page > 1) assert.ok(numbers.includes(page - 1));
+      if (page < count) assert.ok(numbers.includes(page + 1));
+      assert.equal(new Set(tokens).size, tokens.length);
+      tokens.forEach((token, index) => {
+        if (typeof token === "string") assert.ok(tokens[index + 1] - tokens[index - 1] > 1);
+      });
+    }
+  }
+  assert.match(source, /filtered\.slice\(start, start \+ pageSize\)/);
+  assert.match(source, /setPage\(curPage - 1\)/);
+  assert.match(source, /setPage\(curPage \+ 1\)/);
+  assert.match(source, /aria-current=\{p === curPage \? "page" : undefined\}/);
+});
+
+function conversationReadFixture() {
+  const source = read("lib/admin/m-client.ts");
+  const extract = (name) => {
+    const match = source.match(new RegExp(`(?:export )?(?:async )?function ${name}[^\\n]*\\{[\\s\\S]*?\\n\\}`));
+    assert.ok(match, `production function ${name} exists`);
+    return match[0].replace(/^export /, "");
+  };
+  const parts = ["upper", "str", "num", "asArray", "asTs", "conversationStatus", "conversationType", "roleKey", "toBackendConversationStatus", "assertConversationRow", "assertConversationPage", "assertConversationDetail", "fetchAllSupportConversations", "parseSupportMessageKind", "adaptConversation"].map(extract).join("\n");
+  const chat = read("app/components/domain-views/m-tabs/m3-dedicated-chat.tsx");
+  const canSend = chat.match(/const canSendTo = [\s\S]*?;/)?.[0];
+  assert.ok(canSend);
+  const state = {
+    pages: [], requested: [], parseBusinessTime,
+    adaptCustomerProfile: () => ({ nickname: "历史客户" }),
+    apiRequest: async (path) => { state.requested.push(path); return state.pages.shift(); },
+  };
+  runInNewContext(ts.transpileModule(`${parts}\n${canSend}\nglobalThis.reads = {assertConversationRow, assertConversationDetail, fetchAllSupportConversations, adaptConversation, canSendTo, toBackendConversationStatus};`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, state);
+  return state;
+}
+
+const transferredHistory = () => ({
+  id: 5954, conversationNo: "HISTORICAL-SEGMENT", conversationType: "advisor", status: "TRANSFERRED",
+  ownerAgentId: "3792", unreadCount: 0, version: 0, updatedAt: "2026-10-03T00:00:00Z",
+  transferToType: null, transferToId: null,
+});
+
+test("M3 reads transferred history without inventing a pending transfer or dropping the page", async () => {
+  const f = conversationReadFixture();
+  const historical = transferredHistory();
+  const ordinary = { ...historical, id: 5955, conversationNo: "OPEN-SEGMENT", status: "OPEN" };
+  f.pages = [
+    { total: 2, pageNum: 1, pageSize: 100, records: [historical] },
+    { total: 2, pageNum: 2, pageSize: 100, records: [ordinary] },
+  ];
+  const page = await f.reads.fetchAllSupportConversations();
+  assert.equal(page.records.length, 2);
+  assert.equal(page.records[0], historical);
+  assert.equal(historical.status, "TRANSFERRED");
+  assert.equal(historical.transferToType, null);
+  assert.equal(historical.ownerAgentId, "3792");
+  assert.equal(f.requested.length, 2);
+  const detail = { conversation: historical, messages: [] };
+  assert.equal(f.reads.assertConversationDetail(detail), detail);
+  const missingProjection = { ...historical };
+  delete missingProjection.transferToType;
+  assert.equal(f.reads.assertConversationRow(missingProjection), missingProjection);
+  const adapted = f.reads.adaptConversation(detail);
+  assert.equal(adapted.status, "transferred");
+  assert.equal(adapted.version, 0);
+  assert.equal(adapted.ownerAdminId, 3792);
+  assert.equal(adapted.transfer, undefined);
+  assert.equal(f.reads.canSendTo(adapted, 3792), false);
+  assert.equal(f.reads.toBackendConversationStatus(adapted.status), "TRANSFERRED");
+  assert.equal(f.reads.canSendTo({ ...adapted, status: "open" }, 3792), true);
+});
+
+test("M3 still rejects malformed conversation fields and unsupported present transfer targets", () => {
+  const f = conversationReadFixture();
+  for (const patch of [
+    { id: "5954" }, { status: "UNKNOWN" }, { version: -1 }, { unreadCount: -1 },
+    { updatedAt: "not-a-date" }, { conversationType: "unknown" },
+    { transferToType: "" }, { transferToType: "unknown" }, { transferToType: 42 }, { transferToType: {} },
+  ]) {
+    assert.throws(() => f.reads.assertConversationRow({ ...transferredHistory(), ...patch }), /M3_CONVERSATION_DETAIL_INVALID/);
+  }
+  for (const type of ["agent", "queue", "standby"]) {
+    const row = { ...transferredHistory(), transferToType: type, transferToId: "42", transferToName: "真实目标" };
+    assert.equal(f.reads.assertConversationRow(row), row);
+    assert.equal(f.reads.adaptConversation(row).transfer.to.kind, type);
+    assert.equal(f.reads.adaptConversation({ ...row, transferToType: type.toUpperCase() }).transfer.to.kind, type);
+  }
+  assert.throws(() => f.reads.assertConversationDetail({ conversation: transferredHistory(), messages: [{ id: "bad" }] }), /M3_CONVERSATION_DETAIL_INVALID/);
 });
 
 test("M3 roster failure exposes qualification retry instead of claiming an empty inbox", () => {
@@ -133,7 +243,7 @@ test("M3 waits for backend truth before clearing forms, closing dialogs, or show
   assert.match(sessions, /const succeeded = await commitM3Write/);
   assert.match(sessions, /if \(succeeded\) setReplyDraft\(\(current\)=>m3ClearDeliveredDraft\(current,recipient,body\)\)/);
   assert.match(view, /const succeeded = await mc\.run/);
-  assert.match(view, /if \(succeeded !== false\) setActionConfirm\(null\)/);
+  assert.match(view, /if \(succeeded !== false\) setActionConfirm\(\(current\) => current === confirming \? null : current\)/);
   assert.match(types, /addCustomerTag: .*Promise<boolean>/);
   assert.match(types, /addCustomerNote: .*Promise<boolean>/);
 });
@@ -160,7 +270,8 @@ test("M3 retries an unknown-result write with the same payload and idempotency k
   assert.match(view, /mCommands = createPendingMutationStore<MCommandRecord>\(\{/);
   assert.doesNotMatch(view, /pendingMCommandAttempts/);
   assert.match(view, /mCommands\.remember\(commandSlot\(commandFingerprint\), idempotencyKey, \{ value: stableValue/);
-  assert.match(view, /const commandFingerprint = meta\?\.commandKey/);
+  assert.match(view, /const requestedFingerprint = meta\?\.commandKey/);
+  assert.match(view, /const commandFingerprint = attempt\?\.fingerprint\.slice\("cmd\|"\.length\) \?\? requestedFingerprint/);
   assert.match(view, /const stableValue = attempt\?\.value \?\? value/);
   assert.match(view, /pendingMCommandBaselines/);
   assert.match(view, /applyMBackendWrite\(key, stableValue, stableBaseline\.legacyParams, stableBaseline\.data/);
@@ -307,8 +418,8 @@ test("M2 recognizes the canonical M3 transcript header and links back to the sou
   const tickets = read("app/components/domain-views/m-tabs/m2-tickets.tsx");
 
   assert.match(tickets, /会话号\[:：\]/);
-  assert.match(tickets, /seg=archived/);
-  assert.match(tickets, /\/service\/sessions\?q=/);
+  assert.match(tickets, /sourceConversationNo/);
+  assert.match(tickets, /\/service\/sessions\?conversationNo=/);
 });
 
 test("M3 idle timeout policy is loaded and saved through a real CAS backend contract", () => {

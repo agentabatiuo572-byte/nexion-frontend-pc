@@ -48,7 +48,7 @@ if (a1 == null) failures.push(`${A1} 未找到`);
 else {
   if (!a1.includes("fetchA1Overview")) failures.push(`${A1}: 未读取真实后端账号总览`);
   if (!a1.includes("usePropose")) failures.push(`${A1}: 高敏账号动作未接统一执行入口`);
-  const proposalCalls = count(a1, "void propose(toast, {");
+  const proposalCalls = [...a1.matchAll(/\b(?:void|await) propose\(toast, \{/g)].length;
   const proposalSources = count(a1, 'sourceDomain: "A1"');
   if (proposalCalls < 7 || proposalCalls !== proposalSources) {
     failures.push(`${A1}: A1 高敏动作数 ${proposalCalls} 与来源标记数 ${proposalSources} 不一致或少于 7,账号动作可能绕过 A2`);

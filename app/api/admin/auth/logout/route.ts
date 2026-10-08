@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { ADMIN_PASSWORD_CHANGE_COOKIE, readAdminAccessToken } from "@/lib/admin/require-password-change-cleared";
+import { ADMIN_TOKEN_COOKIE, ADMIN_PASSWORD_CHANGE_COOKIE, readAdminAccessToken } from "@/lib/admin/require-password-change-cleared";
 
-const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 
 function isSecureRequest(request: Request) {

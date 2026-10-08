@@ -91,7 +91,9 @@
     ".next-seven-fixture/types/**/*.ts",
     ".next-seven-fixture/dev/types/**/*.ts",
     ".next-seven-verify/types/**/*.ts",
-    ".next-seven-verify/dev/types/**/*.ts"
+    ".next-seven-verify/dev/types/**/*.ts",
+    ".next-seven-r4/types/**/*.ts",
+    ".next-seven-r4/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

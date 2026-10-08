@@ -4,7 +4,7 @@
  * 顶栏 — 面包屑 + 服务端权威状态徽标 + UTC 时钟 + 当前登录账号菜单。
  */
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Headset, LogOut, Search } from "lucide-react";
+import { ChevronDown, Gauge, Headset, LogOut, Search, UserRound } from "lucide-react";
 import type { AdminRole, NavDomain } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Breadcrumb } from "./breadcrumb";
@@ -21,6 +21,7 @@ import { useServicePendingCount } from "./use-service-badges";
 import { B_DASHBOARD_READ_AUTHORITIES, M_CONTENT_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
 import { requestAdminLogout } from "@/lib/admin/logout-request";
 import { currentAdminSession } from "@/lib/admin/auth-client";
+import "./topbar.css";
 
 function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string }) {
   const [open, setOpen] = useState(false);
@@ -70,12 +71,14 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
         onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex items-center gap-2 whitespace-nowrap rounded-[9px] py-1 pl-2 pr-1.5 transition-colors hover:bg-[var(--v5-surface-2)]"
+        aria-label={`当前登录账号 ${operator}，打开账号菜单`}
+        className="admin-topbar-account flex items-center gap-2 whitespace-nowrap rounded-[9px] py-1 pl-2 pr-1.5 transition-colors hover:bg-[var(--v5-surface-2)]"
       >
-        <span className="hidden text-[12.5px] sm:inline" style={{ color: "var(--v5-ink-2)" }}>
+        <span className="admin-topbar-operator hidden text-[12.5px] sm:inline" title={operator} style={{ color: "var(--v5-ink-2)" }}>
           {operator}
         </span>
-        <RoleBadge role={role} size="sm" />
+        <UserRound className="admin-topbar-account-icon" size={17} aria-hidden />
+        <span className="admin-topbar-account-role"><RoleBadge role={role} size="sm" /></span>
         <ChevronDown size={13} style={{ color: "var(--v5-ink-4)" }} aria-hidden />
       </button>
 
@@ -104,7 +107,7 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
               当前登录账号
             </p>
             <div className="px-3 py-2">
-              <div className="truncate text-[13px] font-medium" style={{ color: "var(--v5-ink)" }}>
+              <div className="whitespace-normal break-words text-[13px] font-medium" style={{ color: "var(--v5-ink)" }}>
                 {operator}
               </div>
               <div className="mt-1">
@@ -156,11 +159,13 @@ function CoveragePill({ enabled }: { enabled: boolean }) {
       href="/overview/dual-ledger"
       prefetch={false}
       title={unavailable ? "B 域聚合接口暂不可用 · 点击进双账本" : "兑付覆盖率 = 储备 ÷ 应付负债 · 点击进双账本"}
-      className="hidden shrink-0 items-center gap-2 whitespace-nowrap rounded-[9px] px-3 py-1.5 text-[12px] transition-opacity hover:opacity-90 sm:inline-flex"
+      aria-label={`兑付覆盖率：${label}，查看双账本`}
+      className="admin-topbar-coverage inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-[9px] px-3 py-1.5 text-[12px] transition-opacity hover:opacity-90"
       style={{ background: `color-mix(in srgb, ${zoneVar} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${zoneVar} 35%, transparent)` }}
     >
-      <span className="hidden xl:inline" style={{ color: "var(--v5-ink-3)" }}>兑付覆盖率</span>
-      <span className="font-mono-tabular" style={{ color: zoneVar, fontWeight: 600 }}>{label}</span>
+      <span className="admin-topbar-coverage-label hidden xl:inline" style={{ color: "var(--v5-ink-3)" }}>兑付覆盖率</span>
+      <Gauge className="admin-topbar-coverage-icon" size={17} style={{ color: zoneVar }} aria-hidden />
+      <span className="admin-topbar-coverage-value font-mono-tabular" style={{ color: zoneVar, fontWeight: 600 }}>{label}</span>
     </Link>
   );
 }
@@ -186,15 +191,15 @@ function SearchBox({ domains }: { domains: NavDomain[] }) {
         onClick={() => setOpen(true)}
         aria-label="打开全局命令面板"
         aria-keyshortcuts="Meta+K Control+K"
-        className="hidden shrink-0 items-center gap-2 rounded-[9px] px-3 py-1.5 text-left transition-opacity hover:opacity-90 2xl:flex"
-        style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)", width: 240 }}
+        className="admin-topbar-search inline-flex shrink-0 items-center gap-2 rounded-[9px] px-3 py-1.5 text-left transition-opacity hover:opacity-90"
+        style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)" }}
       >
         <Search size={15} style={{ color: "var(--v5-ink-4)" }} aria-hidden />
-        <span className="min-w-0 flex-1 truncate text-[12.5px]" style={{ color: "var(--v5-ink-4)" }}>
+        <span className="admin-topbar-search-label min-w-0 flex-1 truncate text-[12.5px]" style={{ color: "var(--v5-ink-4)" }}>
           搜索 userId / 工单 / 交易…
         </span>
         <kbd
-          className="font-mono-tabular rounded-[5px] px-1.5 py-0.5 text-[10px]"
+          className="admin-topbar-search-shortcut font-mono-tabular rounded-[5px] px-1.5 py-0.5 text-[10px]"
           style={{ border: "1px solid var(--v5-border-strong)", color: "var(--v5-ink-4)" }}
         >
           ⌘K
@@ -205,15 +210,16 @@ function SearchBox({ domains }: { domains: NavDomain[] }) {
   );
 }
 
-// 客服中心快捷入口 — 坐席切到别的页面时仍能看到「有客户在等回复」并一键回即时会话台。
-// 待回复数直接来自 M 域后端会话快照;未加载时为 0,不使用静态会话或本地 persist 兜底。
+// 客服中心快捷入口 — 显示待办客户数，一键返回会话台。
+// 计数来自 M1 TODO 分页的服务端 total，按客户去重；未加载时为 0。
 function SupportInboxPill({ pending }: { pending: number }) {
   return (
     <Link
       href="/service/sessions"
       prefetch={false}
-      title="客服中心 · 待坐席回复的即时会话"
-      className="relative inline-flex items-center gap-1.5 rounded-[9px] px-2.5 py-1.5 text-[12px] transition-opacity hover:opacity-90"
+      title="客服中心 · 待办客户"
+      aria-label={pending > 0 ? `客服中心，${pending} 位待办客户` : "客服中心"}
+      className="admin-topbar-support relative inline-flex items-center gap-1.5 rounded-[9px] px-2.5 py-1.5 text-[12px] transition-opacity hover:opacity-90"
       style={{
         background: "color-mix(in srgb, var(--admin-domain-m) 12%, transparent)",
         border: "1px solid color-mix(in srgb, var(--admin-domain-m) 32%, transparent)",
@@ -223,7 +229,7 @@ function SupportInboxPill({ pending }: { pending: number }) {
       <span className="hidden md:inline" style={{ color: "var(--v5-ink-3)" }}>客服</span>
       {pending > 0 && (
         <span
-          className="font-mono-tabular inline-flex items-center justify-center rounded-full px-1.5 text-[10.5px] font-semibold"
+          className="admin-topbar-support-count font-mono-tabular inline-flex items-center justify-center rounded-full px-1.5 text-[10.5px] font-semibold"
           style={{ minWidth: 16, height: 16, background: "var(--admin-domain-m)", color: "#0A0A0A" }}
         >
           {pending}
@@ -251,22 +257,22 @@ export function TopBar({
   const canReadMContent = M_CONTENT_READ_AUTHORITIES.every((authority) => authorities.includes(authority));
   return (
     <header
-      className="flex items-center justify-between gap-4 px-3 sm:px-5"
+      className="admin-topbar flex items-center justify-between gap-4 px-3 sm:px-5"
       style={{
         height: "var(--admin-topbar-h)",
         background: "var(--v5-surface)",
         borderBottom: "1px solid var(--v5-border)",
       }}
     >
-      <div className="hidden min-w-0 flex-1 items-center gap-4 sm:flex">
+      <div className="admin-topbar-location flex min-w-0 flex-1 items-center gap-4">
         <Breadcrumb />
         <SearchBox domains={domains} />
       </div>
-      <div className="flex shrink-0 items-center gap-2 whitespace-nowrap sm:gap-3">
+      <div className="admin-topbar-actions flex shrink-0 items-center gap-2 whitespace-nowrap sm:gap-3">
         {!supportOnly && canReadBDomain && <CoveragePill enabled />}
         {!supportOnly && <span className="hidden h-4 w-px sm:block" style={{ background: "var(--v5-border)" }} />}
-        {!supportOnly && <span className="hidden xl:block"><SyncChip /></span>}
-        <span className="hidden 2xl:block"><UtcClock /></span>
+        {!supportOnly && <span className="admin-topbar-sync hidden xl:block"><SyncChip /></span>}
+        <span className="admin-topbar-clock hidden 2xl:block"><UtcClock /></span>
         <span className="h-4 w-px" style={{ background: "var(--v5-border)" }} />
         {canReadMContent && <SupportInboxPill pending={servicePending} />}
         {!supportOnly && <NotificationBell />}

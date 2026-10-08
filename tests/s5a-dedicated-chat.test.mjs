@@ -16,6 +16,6 @@ const { validCustomerId } = await import(`data:text/javascript,${encodeURICompon
 test("invalid customer links stop before requesting customer detail", () => {
   for (const value of ["1", "0001", "9223372036854775807"]) assert.equal(validCustomerId(value), true);
   for (const value of [null, "", "0", "000", "abc", "12x", "-1", "1.5", " 1 "]) assert.equal(validCustomerId(value), false);
-  assert.match(source, /if \(!validCustomerId\(requestedCustomerId\) \|\| requestedConvo \|\| !conversationsAvailable\)/);
+  assert.match(source, /if \(!validCustomerId\(requestedCustomerId\) \|\| requestedConvo \|\| !conversationsAvailable \|\| qualificationUnknown\)/);
   assert.match(source, /all\.filter\(\(convo\) => validCustomerId\(customerIdOf\(convo\)\)/);
 });

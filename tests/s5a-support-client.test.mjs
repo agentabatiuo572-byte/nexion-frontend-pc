@@ -149,7 +149,8 @@ test("content proxy keeps auth, multipart bytes, private range and byte response
   assert.match(source, /ADMIN_TOKEN_COOKIE/);
   assert.match(source, /attachmentUpload \? uploadBody : await request\.text\(\)/);
   assert.match(source, /reader\.read\(\)/);
-  assert.match(source, /size > maxBytes/);
+  assert.match(source, /await boundedUpload\(request, maxBytes\)/);
+  assert.match(readFileSync(new URL("../lib/admin/support-image-proxy.ts", import.meta.url), "utf8"), /size > maxBytes/);
   assert.match(source, /CONTENT_ATTACHMENT_TOO_LARGE/);
   assert.match(source, /if \(attachmentContent\) \{[\s\S]*?headers\.set\("Range", range\)/);
   assert.match(source, /if \(!upstream\.ok\) return jsonError\(upstream\.status, "CONTENT_ATTACHMENT_READ_FAILED"\)/);

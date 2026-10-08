@@ -19,7 +19,8 @@ test("A1 login keeps MFA as the default and permits only the explicit temporary 
   assert.match(gate, /一次性验证码/);
   assert.match(gate, /catch \(err\)/);
   assert.doesNotMatch(gate, /catch \{\s*setError\("账号或密码不正确"\)/);
-  assert.match(loginRoute, /nexion_admin_token/);
+  assert.match(loginRoute, /import \{[^}]*ADMIN_TOKEN_COOKIE[^}]*\} from "@\/lib\/admin\/require-password-change-cleared"/);
+  assert.match(loginRoute, /response\.cookies\.set\(ADMIN_TOKEN_COOKIE,/);
   assert.match(loginRoute, /httpOnly:\s*true/);
   assert.match(loginRoute, /sameSite:\s*"strict"/);
 });
@@ -129,7 +130,7 @@ test("A1 single-session revocation is mapped through the platform BFF", () => {
 test("A1 empty mutation bodies are not forwarded as text/plain commands", () => {
   const platformRoute = read("app/api/admin/platform/[...path]/route.ts");
 
-  assert.match(platformRoute, /const rawBody = hasBody \? await request\.text\(\) : undefined/);
+  assert.match(platformRoute, /rawBody = hasBody \? await request\.text\(\) : undefined/);
   assert.match(platformRoute, /body: rawBody \? rawBody : undefined/);
 });
 

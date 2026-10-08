@@ -1,8 +1,8 @@
 import { cookies } from "next/headers";
-import { requirePasswordChangeCleared } from "@/lib/admin/require-password-change-cleared";
+import { ADMIN_TOKEN_COOKIE, requirePasswordChangeCleared } from "@/lib/admin/require-password-change-cleared";
+import { boundedUpload } from "@/lib/admin/support-image-proxy";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
-const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
 const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 const UPSTREAM_TIMEOUT_MS = Math.min(30_000, Math.max(1_000, Number(process.env.NEXION_BACKEND_TIMEOUT_MS) || 10_000));
 
@@ -19,6 +19,13 @@ function isNonEmpty(value: string | undefined) {
 }
 
 function backendPath(parts: string[]) {
+  if (parts[0] === "accounts" && parts[1] === "avatar-assets" && (parts.length === 2 || parts.length === 3)
+      && parts.every((part) => isNonEmpty(part) && !/[\\/]/.test(part) && !part.includes(".."))) {
+    return `/api/admin/platform/${parts.map(encodeURIComponent).join("/")}`;
+  }
+  if (parts.length === 3 && parts[0] === "accounts" && /^[1-9]\d*$/.test(parts[1]) && parts[2] === "avatar") {
+    return `/api/admin/platform/accounts/${parts[1]}/avatar`;
+  }
   if (parts.length === 2 && parts[0] === "ops-dashboard" && parts[1] === "summary") {
     return "/api/admin/ops-dashboard/summary";
   }
@@ -204,8 +211,20 @@ async function proxy(request: Request, context: RouteContext) {
   }
 
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
-  const rawBody = hasBody ? await request.text() : undefined;
+  const avatarUpload = request.method === "POST" && path.length === 2 && path[0] === "accounts" && path[1] === "avatar-assets";
+  const avatarRead = request.method === "GET" && path[0] === "accounts" && path.length === 3 && (path[1] === "avatar-assets" || path[2] === "avatar");
+  const maxBytes = process.env.NEXION_SUPPORT_ATTACHMENT_PROXY_MAX_BYTES === undefined ? 32 * 1024 * 1024 : Number(process.env.NEXION_SUPPORT_ATTACHMENT_PROXY_MAX_BYTES);
+  if ((avatarUpload || avatarRead) && (!Number.isSafeInteger(maxBytes) || maxBytes <= 0)) return jsonError(503, "PLATFORM_AVATAR_LIMIT_UNCONFIGURED");
+  let rawBody: string | ArrayBuffer | undefined;
   try {
+    if (avatarUpload) {
+      const body = await boundedUpload(request, maxBytes);
+      if (body === null) return jsonError(413, "PLATFORM_AVATAR_TOO_LARGE");
+      rawBody = body;
+    } else rawBody = hasBody ? await request.text() : undefined;
+  } catch { return jsonError(503, "PLATFORM_AVATAR_UPLOAD_INTERRUPTED"); }
+  try {
+    request.signal.throwIfAborted();
     const upstream = await fetch(targetUrl, {
       method: request.method,
       headers,
@@ -213,8 +232,18 @@ async function proxy(request: Request, context: RouteContext) {
       // command as absent so Spring can apply its required=false/validation path.
       body: rawBody ? rawBody : undefined,
       cache: "no-store",
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+      redirect: "manual",
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)]),
     });
+    if (upstream.status >= 300 && upstream.status < 400) return jsonError(502, "PLATFORM_BACKEND_REDIRECT_BLOCKED");
+    if (avatarRead) {
+      if (!upstream.ok) return jsonError(upstream.status, "PLATFORM_AVATAR_READ_FAILED");
+      const mime = upstream.headers.get("Content-Type")?.split(";")[0].toLowerCase();
+      if (!mime || !["image/jpeg", "image/png"].includes(mime)) return jsonError(502, "PLATFORM_AVATAR_TYPE_INVALID");
+      const body = await boundedUpload(upstream, maxBytes);
+      if (!body || !body.byteLength) return jsonError(502, "PLATFORM_AVATAR_CONTENT_INVALID");
+      return new Response(body, { status: upstream.status, headers: { "Content-Type": mime, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
+    }
     const responseHeaders = new Headers({
       "Content-Type": upstream.headers.get("Content-Type") || "application/json",
       "Cache-Control": "no-store",

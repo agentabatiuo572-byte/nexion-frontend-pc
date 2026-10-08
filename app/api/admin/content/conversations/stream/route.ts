@@ -1,12 +1,11 @@
 import { cookies } from "next/headers";
-import { requirePasswordChangeCleared } from "@/lib/admin/require-password-change-cleared";
+import { ADMIN_TOKEN_COOKIE, requirePasswordChangeCleared } from "@/lib/admin/require-password-change-cleared";
 
 // SSE 流式透传路由:GET /api/admin/content/conversations/stream
 // 静态路径优先于 content/[...path] catch-all,仅服务这一条流。
 // 关键:不 await upstream.text()(那会把 SseEmitter 30 分钟的流攒到超时),
 // 而是直接把 upstream.body(ReadableStream)交给 Response,后端每个 chunk 立即透传给浏览器。
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
-const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
 
 // SSE 必须动态渲染,禁用 Next 静态化/缓存。
 export const dynamic = "force-dynamic";

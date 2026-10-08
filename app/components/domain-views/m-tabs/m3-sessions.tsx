@@ -111,7 +111,7 @@ function cloneConvos(rows: SessionConvo[]): SessionConvo[] {
   return rows.map((c) => ({ ...c, messages: c.messages.map((m) => ({ ...m })) }));
 }
 function statusLabel(status: SessionStatus): string {
-  return status === "open" ? "进行中" : status === "resolved" ? "已解决" : "已关闭";
+  return status === "open" ? "进行中" : status === "resolved" ? "已解决" : status === "transferred" ? "已转出" : "已关闭";
 }
 const HREF_CN: Record<string, string> = { "/store": "商城", "/staking": "锁仓", "/genesis": "创世节点" };
 function hrefLabel(href: string): string {
@@ -1086,7 +1086,7 @@ function ChatHeader({
 }) {
   const name = convo.profile?.nickname ?? convo.customer ?? convo.agentName;
   const active = convo.status === "open";
-  const closed = convo.status === "closed" || convo.archived;
+  const closed = convo.status === "closed" || convo.status === "transferred" || convo.archived;
   const incoming = !!convo.transfer; // 转入待处理:常规动作收起,改由转交横幅处置
   return (
     <div style={{ padding: "13px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", rowGap: 8 }}>

@@ -39,7 +39,8 @@ test("A9 is registered in navigation, the port registry and the real Next proxy"
   assert.match(view, /A9DeveloperAccess/);
   assert.match(ported, /A9/);
   assert.match(proxy, /Idempotency-Key/);
-  assert.match(proxy, /nexion_admin_token/);
+  assert.match(proxy, /import \{[^}]*ADMIN_TOKEN_COOKIE[^}]*\} from "@\/lib\/admin\/require-password-change-cleared"/);
+  assert.match(proxy, /\.get\(ADMIN_TOKEN_COOKIE\)\?\.value/);
 });
 
 test("PC review retries keep a stable key per request/action across refresh", () => {

@@ -28,8 +28,14 @@ let failNextRules = false;
 let failNextRules400 = false;
 let failNextReply = false;
 let rejectNextReply = false;
+let commandQueryStatus = 404;
+let commandQueryResult = null;
+const commandQueries = [];
+let richProfile = false, realtimeFixture = false, failTargetContext = false;
+const realtimeSockets = [], realtimeFrames = [], targetContextReads = [];
 let holdCustomerDetail = false;
 let releaseCustomerDetail = null;
+let holdFirstDetail = false, releaseFirstDetail = null, firstAdvisorId = 7, firstProfileReads = 0;
 let failNextCreate = false;
 let failNextTicketDetail = false;
 let restrictNextTicketDetail = false;
@@ -54,12 +60,12 @@ const extraMessages = [];
 const templateOverview = { categories: ["advisor", "support", "ai"].map((type) => ({ type, name: type, roleKey: type, managedBy: "客服", enabled: true, readOnly: type === "ai" })), advisorPolicy: { enabled: false, delayMs: 0, cooldownHours: 24, maxPerSession: 1, audience: "全部" }, workbenchPolicy: { timeoutFallback: false }, audienceOptions: ["全部"], segmentFields: [], scripts: [{ id: "quick-1", scriptGroup: "开场", text: "快捷话术只填稿", ctaPath: "", status: "published", audience: "全部" }], replyTemplates: [] };
 const envelope = (data, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify({ code: status === 200 ? 0 : status, message: status === 200 ? "OK" : "FIXTURE_UNAVAILABLE", data }) });
 const pageResult = (records, url) => ({ records, total: records.length, pageNum: Number(url.searchParams.get("pageNum") || 1), pageSize: Number(url.searchParams.get("pageSize") || 10) });
-const session = { tokenType: "Bearer", session: { adminId: 7, username: "s5a-fixture", operator: "顾问甲", role: "superadmin", authorities: ["service_m1_read", "service_m1_write", "service_m2_read", "service_m3_read", "service_m3_write", "service_m4_read", "service_m5_read", "service_m5_write"], menuCodes: ["M", "M1", "M2", "M3", "M4", "M5"] } };
+const session = { tokenType: "Bearer", session: { adminId: 7, username: "s5a-fixture", operator: "顾问甲", role: "superadmin", authorities: ["service_m1_read", "service_m1_write", "service_m2_read", "service_m3_read", "service_m3_write", "service_m4_read", "service_m5_read", "service_m5_write", "user_c1hub_read", "user_c3_read", "user_c3_adjust_create"], menuCodes: ["M", "M1", "M2", "M3", "M4", "M5", "C", "C1", "C3"] } };
 const check = async (id, page, act) => {
   const screenshot = `${reportPath ? dirname(reportPath) : process.cwd()}/${id}.png`;
   await mkdir(dirname(screenshot), { recursive: true });
   try { await act(); }
-  catch (error) { await page.screenshot({ path: screenshot, fullPage: true }); throw error; }
+  catch (error) { await page.screenshot({ path: screenshot, fullPage: true }); console.error("Fixture failure",id,JSON.stringify({lastMutations:mutations.slice(-4).map(row=>({path:row.path,key:row.key,version:row.body?.expectedVersion})),scopeEvents:await page.evaluate(()=>window.__fixtureScopeEvents??[]),alerts:await page.getByRole("alert").allTextContents()})); throw error; }
   await page.screenshot({ path: screenshot, fullPage: true });
   checks.push({ id, status: "pass", evidence: [`Playwright browser assertion on ${page.url()}`, screenshot] });
 };
@@ -75,6 +81,16 @@ try {
   browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, timezoneId: "America/Los_Angeles" });
   const page = await context.newPage();
+  await page.addInitScript(()=>{window.__fixtureScopeEvents=[];window.addEventListener("support-scope-invalidated",event=>window.__fixtureScopeEvents.push(event.detail));});
+  await context.routeWebSocket("**/ws/conversations", socket => {
+    realtimeSockets.push(socket);
+    socket.onMessage(raw => {
+      const frame=JSON.parse(String(raw)); realtimeFrames.push(frame);
+      if(frame.type==="auth")socket.send(JSON.stringify({type:"ready"}));
+      if(frame.type==="ping")socket.send(JSON.stringify({type:"pong"}));
+      if(frame.type==="watch"&&frame.conversationNo)socket.send(JSON.stringify({type:"presence",conversationNo:frame.conversationNo,online:true,typing:false}));
+    });
+  });
   page.on("pageerror", (error) => errors.push(error.message));
   await context.route("**/*", async (route) => {
     const request = route.request();
@@ -83,9 +99,34 @@ try {
     if (!url.pathname.startsWith("/api/")) return route.continue();
     const path = url.pathname;
     const method = request.method();
+    if (path === "/api/admin/content/support-workbench/customers/102") {
+      const allowed = activeAdminId === firstAdvisorId || activeRole === "superadmin" || activeRole === "supervisor";
+      const response = allowed ? envelope({ customer: { ...wireCustomer(), customerId: 102, assignmentId: 502, agentAdminId: firstAdvisorId, nickname: "首次联系客户", firstContact: true, waitingReply: false, pendingReplyCount: 0, pendingConversationNo: null, pendingThroughMessageId: null } }) : envelope(null,403);
+      if (holdFirstDetail) await new Promise(resolve => { releaseFirstDetail = resolve; });
+      return route.fulfill(response);
+    }
+    if (path === "/api/admin/content/support-workbench/customers/102/360") {
+      firstProfileReads++;
+      const group = data => ({ status: "READY", data, evaluatedAt: stamp });
+      return route.fulfill(envelope({ profile: { identity: group({ customerId: 102, nickname: "首次联系客户", userNo: "C-102" }), finance: group({ byCurrency: [] }), devices: group({ records: [] }), risk: { status: "UNKNOWN", data: null, evaluatedAt: stamp }, annotations: group({ systemTags: [], customTags: [], notes: [] }), service: group({ agentAdminId: firstAdvisorId, agentName: firstAdvisorId===7?"顾问甲":"顾问乙", assignmentState: "BOUND", conversationCount: 0, ticketCount: 0, maintenanceEnabled: true, firstContact: true }), actions: {} } }));
+    }
+    if (/\/customers\/102\/(devices|flows)$/.test(path)) return route.fulfill(envelope({ status: "READY", data: { records: [], total: 0 }, evaluatedAt: stamp }));
+    if (path === "/api/admin/content/support-workbench/customers/102/maintenance/history") return route.fulfill(envelope({ customerId: 102, cycles: [], executions: [], totalCycles: 0, totalExecutions: 0, pageNum: 1, pageSize: 10 }));
     if (path === "/api/admin/auth/session") return route.fulfill(envelope({ ...session, session: { ...session.session, adminId: activeAdminId, username: `s5a-fixture-${activeAdminId}`, operator: activeAdminId === 7 ? "顾问甲" : "顾问乙", role: activeRole, authorities: activeRole === "support" ? ["service_m1_read", "service_m3_read", "service_m5_read"] : activeRole === "supervisor" ? [...session.session.authorities, "service_m1_write"] : session.session.authorities } }));
     if (path === "/api/admin/platform/flags") return route.fulfill(envelope({}));
     if (path === "/api/admin/platform/audit/reason-policy") return route.fulfill(envelope({ minChars: 8, maxChars: 200, sourceKey: "admin.a2.reason_min_chars" }));
+    if (path === "/api/admin/content/conversations/realtime-ticket" && realtimeFixture) return route.fulfill(envelope({ticket:"fixture-native-websocket"}));
+    if (richProfile && path === "/api/admin/content/support-workbench/customers/101/360") {
+      const group=data=>({status:"READY",data,evaluatedAt:stamp});
+      return route.fulfill(envelope({profile:{identity:group({nickname:"测试客户甲",userNo:"C-101"}),finance:group({byCurrency:[]}),devices:group({records:[]}),risk:{status:"UNKNOWN",data:null,evaluatedAt:stamp},annotations:group({systemTags:[],customTags:[],notes:[]}),service:group({lastServiceAt:stamp,conversationCount:2,ticketCount:0}),actions:{adjustBalance:{allowed:true},resetPassword:{allowed:false},freeze:{allowed:false},unfreeze:{allowed:false}}}}));
+    }
+    if (richProfile && /\/customers\/101\/(devices|flows)$/.test(path)) return route.fulfill(envelope({status:"READY",data:{records:[],total:0},evaluatedAt:stamp}));
+    if (richProfile && path === "/api/admin/users/profiles/101/asset-adjustment-context") {
+      targetContextReads.push(path);if(failTargetContext){failTargetContext=false;return route.fulfill(envelope(null,503));}
+      return route.fulfill(envelope({account:{userId:101,userNo:"C-101",nickname:"测试客户甲",walletUsdt:"2",walletNex:"0"},coverage:{reliable:true,coverageRatio:1.2,redlinePct:1},nexUsdRate:1,largeThresholdUsd:500,maxAdjustmentAmount:1000,pendingWithdraw:0}));
+    }
+    if (richProfile && path === "/api/admin/users/asset-adjustments/overview") return route.fulfill(envelope({coverage:{reliable:true,coverageRatio:1.2,redlinePct:1,reserveUsd:1200,liabilitiesUsd:1000},sources:[],sunsetCompatibility:[],pending:0,approved:0,rejected:0,suspended:0,singleCreditReviewCapUsd:500,maxAdjustmentAmount:1000,nexUsdRate:1,redline:false}));
+    if (richProfile && ["/api/admin/users/asset-adjustments","/api/admin/users/asset-adjustments/accounts"].includes(path)) return route.fulfill(envelope(pageResult([],url)));
     if (path === "/api/admin/content/support-workbench/customers") {
       const bound = activeAdminId === 7 ? 1 : 0;
       return route.fulfill(envelope({ snapshotId: "fixture-snapshot", evaluatedAt: stamp, rulesVersion: rules.version, scope: { actorId: activeAdminId, agentAdminId: activeAdminId, mode: "AGENT" }, rules: { dormantDays: rules.dormantDays, maintenanceDays: rules.maintenanceDays, activityWindowDays: rules.activityWindowDays }, overview: { boundTotal: bound, activeTotal: null, dormantTotal: null, dueTotal: bound && customer.maintenanceEnabled ? 1 : 0, waitingReplyTotal: bound && customer.waitingReply ? 1 : 0, firstContactTotal: 0, stoppedTotal: bound && !customer.maintenanceEnabled ? 1 : 0, knownActiveCount: 0, unknownWindowCount: bound, unknownCount: bound, todoTotal: bound }, customers: { ...pageResult(bound ? [wireCustomer()] : [], url), filter: url.searchParams.get("filter") || "ALL", available: true }, performance: { executionCount: bound ? 6 : 0, successfulCycleCount: bound ? 3 : 0, successfulCustomerCount: bound ? 1 : 0, from: "2026-09-23T00:00:00Z", to: stamp, timeZone: "Asia/Shanghai", days: ["2026-09-23", "2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27", "2026-09-28", "2026-09-29"].map((day, index) => ({ day, executionCount: bound ? index % 3 : 0, successfulCycleCount: bound ? index % 2 : 0 })) }, completeness: { unknownCount: bound, unknownWindowCount: bound, coverageStartAt: stamp, observedThroughAt: stamp, observationLagMillis: 0, activitySource: "INTERACTIVE_LOGIN" } }));
@@ -124,6 +165,7 @@ try {
       if (failNextRules) { failNextRules = false; rules = { ...rules, activityWindowDays: 4, version: rules.version + 1 }; return route.fulfill(envelope(null, 409)); }
       rules = { ...rules, ...body, version: rules.version + 1 }; return route.fulfill(envelope(rules));
     }
+    if (method === "GET" && /^\/api\/admin\/content\/(?:support-agents\/\d+|support-workbench\/customers\/\d+)\/avatar$/.test(path)) return route.fulfill(envelope(null, 404));
     if (path === "/api/admin/content/session-templates/overview") return route.fulfill(envelope(templateOverview));
     if (path === "/api/admin/content/conversations/attachments/policy") return route.fulfill(envelope({ available: true, allowedMimeTypes: ["image/png", "image/jpeg"], maxBytes: 5000000, maxPixels: 10000000, ttlSeconds: 86400, unavailableReason: null }));
     if (path === "/api/admin/content/conversations" && method === "GET") return route.fulfill(envelope(pageResult(activeAdminId === 7 ? [convo, ...(extraConvo ? [extraConvo] : []), ...bulkConvos] : [], url)));
@@ -138,7 +180,7 @@ try {
     if (path === "/api/admin/content/conversations/CV-101") { conversationDetailReads.push(path); return route.fulfill(blockedConversationDetailNo === "CV-101" ? envelope(null, 503) : activeAdminId === 7 ? envelope({ conversation: convo, messages }) : envelope(null, 403)); }
     if (path === "/api/admin/content/conversations/CV-102") { conversationDetailReads.push(path); return route.fulfill(path.endsWith(blockedConversationDetailNo) && blockedConversationDetailNo ? envelope(null, 503) : activeAdminId === 7 && extraConvo ? envelope({ conversation: extraConvo, messages: extraMessages }) : envelope(null, 403)); }
     if (/^\/api\/admin\/content\/conversations\/CV-BULK-\d+$/.test(path)) { conversationDetailReads.push(path); const row = bulkConvos.find((item) => path.endsWith(item.conversationNo)); return route.fulfill(row && activeAdminId === 7 ? envelope({ conversation: row, messages: [] }) : envelope(null, 403)); }
-    if (path.startsWith("/api/admin/content/support-workbench/commands/") && method === "GET") return route.fulfill(envelope(null, 404));
+    if (path.startsWith("/api/admin/content/support-workbench/commands/") && method === "GET") { commandQueries.push(decodeURIComponent(path.split("/").at(-1))); return route.fulfill(envelope(commandQueryResult, commandQueryStatus)); }
     if (path === "/api/admin/content/conversations/CV-101/replies" && method === "POST") {
       const body = request.postDataJSON(); mutations.push({ path, body, key: request.headers()["idempotency-key"] });
       assert.equal(body.expectedAssignmentId, 501);
@@ -198,7 +240,7 @@ try {
   await check("s5a-customers", page, async () => {
     assert.equal(await page.locator('[data-proof="s5a-workbench"]').count(), 1);
     await page.getByRole("navigation", { name: "客服工作区" }).getByRole("button", { name: "我的客户" }).click();
-    await page.getByRole("button", { name: "测试客户甲" }).click();
+    await page.getByRole("button", { name: "测试客户甲", exact: true }).click();
     await page.getByRole("dialog", { name: "客户详情" }).waitFor();
     await page.getByRole("dialog", { name: "客户详情" }).getByText("未知", { exact: true }).waitFor();
     await page.getByRole("button", { name: /查看维护记录/ }).click();
@@ -214,8 +256,8 @@ try {
     assert.equal(customer.maintenanceEnabled, false);
     assert.ok(mutations.some((item) => item.path.endsWith("/maintenance") && item.key));
     await page.getByRole("button", { name: "关闭客户详情" }).click();
-    await page.getByRole("button", { name: "测试客户甲" }).waitFor();
-    const rowText = await page.getByRole("row").filter({ has: page.getByRole("button", { name: "测试客户甲" }) }).innerText();
+    await page.getByRole("button", { name: "测试客户甲", exact: true }).waitFor();
+    const rowText = await page.getByRole("row").filter({ has: page.getByRole("button", { name: "测试客户甲", exact: true }) }).innerText();
     assert.match(rowText, /暂停主动维护/);
     assert.doesNotMatch(rowText, /待维护/);
   });
@@ -234,6 +276,8 @@ try {
     await page.getByRole("region", { name: "专属客服会话" }).waitFor();
     assert.equal(await page.getByRole("region", { name: "专属客服会话" }).count(), 1);
     await page.getByText("请协助处理").first().waitFor();
+    const titleBox = await page.locator(".m3-chat-identity h2").boundingBox();
+    assert.ok(titleBox && titleBox.width >= 160 && titleBox.height < 60, "desktop customer identity must remain readable beside conversation actions");
     await page.getByRole("textbox", { name: "输入会话消息" }).fill("已收到，正在处理");
     const reply = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/conversations/CV-101/replies"));
     await page.getByRole("button", { name: /发送文字/ }).click();
@@ -310,6 +354,14 @@ try {
     await page.getByRole("alert").filter({ hasText: "发送失败或结果待确认" }).waitFor();
     const first = mutations.filter((item) => item.path.endsWith("/replies") && item.body.body === "结果未知后同键重试").at(-1);
     assert.ok(first?.key);
+    await page.addInitScript(() => {
+      const NativeDate = Date;
+      window.Date = class extends NativeDate {
+        constructor(...args) { super(...(args.length ? args : [NativeDate.now() + Number(sessionStorage.getItem("s5a-time-offset") || "0")])); }
+        static now() { return NativeDate.now() + Number(sessionStorage.getItem("s5a-time-offset") || "0"); }
+      };
+    });
+    await page.evaluate(() => sessionStorage.setItem("s5a-time-offset", String(25 * 60 * 60 * 1000)));
     messages.push({ id: 20, senderType: "USER", senderName: "测试客户甲", content: "失败期间新到的消息", createdAt: stamp });
     unrepliedMessageIds.add(20); convo.version += 1;
     blockedConversationDetailNo = "CV-101";
@@ -328,6 +380,7 @@ try {
     assert.equal(attempts[1].key, first.key);
     assert.deepEqual(attempts[1].body, first.body);
     assert.deepEqual([...unrepliedMessageIds], [20]);
+    await page.evaluate(() => sessionStorage.removeItem("s5a-time-offset"));
   });
   await check("s5a-definitive-rejection", page, async () => {
     await page.goto(`${origin}/service/sessions`);
@@ -335,9 +388,8 @@ try {
     rejectNextReply = true;
     await page.getByRole("button", { name: "发送文字" }).click();
     await page.getByRole("alert").filter({ hasText: "服务端已拒绝本次发送" }).waitFor();
-    await page.waitForFunction(() => !document.querySelector('textarea[aria-label="输入会话消息"]')?.disabled);
-    assert.equal(await page.getByRole("textbox", { name: "输入会话消息" }).isEnabled(), true);
     await page.getByRole("textbox", { name: "输入会话消息" }).fill("根据新版本修改后重发");
+    assert.equal(await page.getByRole("textbox", { name: "输入会话消息" }).isEnabled(), true);
     assert.equal(await page.getByRole("button", { name: "查询结果并重试" }).count(), 0);
     assert.equal(await page.evaluate(() => (sessionStorage.getItem("nexion-admin-m3-private-pending-v1") || "").includes("旧版本明确被拒绝")), false);
   });
@@ -355,6 +407,10 @@ try {
     const reply = mutations.filter((item) => item.path.endsWith("/replies") && item.body.body === "收到实时新消息后回复").at(-1);
     assert.deepEqual(reply?.body.replyTargets, [{ conversationNo: "CV-101", throughMessageId: 21 }]);
     assert.equal(unrepliedMessageIds.has(21), false);
+    await page.waitForFunction(() => {
+      const input = document.querySelector('textarea[aria-label="输入会话消息"]');
+      return input && input.value === "" && !input.disabled;
+    });
   });
   await check("s5b-preflight-new-message", page, async () => {
     await page.goto(`${origin}/service/sessions`);
@@ -474,7 +530,7 @@ try {
   await check("s5a-drawer-identity", page, async () => {
     await page.goto(`${origin}/service/overview`);
     await page.getByRole("navigation", { name: "客服工作区" }).getByRole("button", { name: "我的客户" }).click();
-    await page.getByRole("button", { name: "测试客户甲" }).click();
+    await page.getByRole("button", { name: "测试客户甲", exact: true }).click();
     await page.getByRole("dialog", { name: "客户详情" }).getByText("未知", { exact: true }).waitFor();
     await page.getByRole("button", { name: "恢复维护" }).click();
     await page.getByRole("textbox", { name: /操作理由/ }).fill("测试旧账号的未提交维护理由");
@@ -494,8 +550,9 @@ try {
     await page.getByRole("heading", { name: "我的工作台" }).waitFor();
     assert.equal(await page.locator('[data-proof="s5a-workbench"]').count(), 1);
     await page.getByRole("navigation", { name: "客服工作区" }).getByRole("button", { name: "我的客户" }).click();
-    await page.getByRole("button", { name: "测试客户甲" }).waitFor();
+    await page.getByRole("button", { name: "测试客户甲", exact: true }).waitFor();
     assert.ok(await page.locator("main").evaluate((main) => main.scrollWidth <= main.clientWidth + 2));
+    const dockClose=page.locator('[data-proof="session-dock-panel"]').getByRole("button",{name:"关闭",exact:true});if(await dockClose.isVisible())await dockClose.click();
     await page.getByRole("button", { name: "M 客服中心" }).click();
     await page.getByRole("link", { name: /专属会话/ }).waitFor();
     await page.getByRole("button", { name: "关闭侧栏" }).click({ position: { x: 340, y: 300 } });
@@ -509,7 +566,7 @@ try {
     await page.setViewportSize({ width: 1440, height: 960 });
     await page.goto(`${origin}/service/overview`);
     await page.getByRole("navigation", { name: "客服工作区" }).getByRole("button", { name: "我的客户" }).click();
-    await page.getByRole("button", { name: "测试客户甲" }).click();
+    await page.getByRole("button", { name: "测试客户甲", exact: true }).click();
     await page.getByRole("button", { name: "恢复维护" }).click();
     const reason = "测试请求失败后保持人工理由";
     await page.getByRole("textbox", { name: /操作理由/ }).fill(reason);
@@ -602,9 +659,11 @@ try {
     await page.goto(`${origin}/service/sessions`);
     assert.ok(await page.locator(".m3-col-chat").evaluate((node) => node.getBoundingClientRect().width > 500), "桌面聊天栏必须是主区域");
     assert.equal(await page.getByRole("link", { name: "工单详情" }).count(), 0, "没有权威工单前不显示详情入口");
-    await page.getByText("快捷话术", { exact: true }).click();
+    await page.getByRole("textbox", { name: "输入会话消息" }).fill("已有草稿：");
+    await page.getByText("回复模板与顾问话术", { exact: true }).click();
+    await page.getByLabel("模板类型").selectOption("script");
     await page.getByRole("button", { name: /快捷话术只填稿/ }).click();
-    assert.equal(await page.getByRole("textbox", { name: "输入会话消息" }).inputValue(), "快捷话术只填稿");
+    assert.equal(await page.getByRole("textbox", { name: "输入会话消息" }).inputValue(), "已有草稿：快捷话术只填稿");
     assert.equal(mutations.filter((item) => item.path.endsWith("/replies") && item.body.body === "快捷话术只填稿").length, 0);
     await page.getByLabel("本条消息用途").selectOption("MAINTENANCE");
     await page.getByRole("textbox", { name: "输入会话消息" }).fill("人工维护消息不清待回复");
@@ -723,7 +782,13 @@ try {
     conversationDetailReads.length = 0;
     await page.goto(`${origin}/service/sessions`);
     await page.getByRole("region", { name: "专属客服会话" }).waitFor();
-    await page.getByRole("button", { name: /历史摘要 60/ }).waitFor();
+    const historyRow = page.getByRole("button", { name: /历史摘要 60/ });
+    const nextHistoryPage = page.locator(".m3-col-list").getByRole("button", { name: "下一页", exact: true });
+    for (let index = 0; index < 7 && !(await historyRow.isVisible()); index += 1) {
+      assert.equal(await nextHistoryPage.isEnabled(), true, "historical summaries must remain reachable through pagination");
+      await nextHistoryPage.click();
+    }
+    await historyRow.waitFor();
     await page.getByText("请协助处理").first().waitFor();
     m3HistoryDetailReads = conversationDetailReads.length;
     assert.ok(conversationDetailReads.length < 10, `60 historical rows must not fan out details: ${conversationDetailReads.length}`);
@@ -746,11 +811,11 @@ try {
     await page.goto(`${origin}/service/overview`);
     await page.locator(".s5a-recent").getByRole("button", { name: /客户 101/ }).first().waitFor();
     await page.getByRole("navigation", { name: "客服工作区" }).getByRole("button", { name: "我的客户" }).click();
-    await page.getByRole("button", { name: "测试客户甲" }).waitFor();
+    await page.getByRole("button", { name: "测试客户甲", exact: true }).waitFor();
     activeAdminId = 8;
-    await page.getByRole("button", { name: "测试客户甲" }).click();
+    await page.getByRole("button", { name: "测试客户甲", exact: true }).click();
     await page.getByRole("dialog", { name: "客户详情" }).waitFor({ state: "hidden" });
-    await page.getByRole("button", { name: "测试客户甲" }).waitFor({ state: "hidden" });
+    await page.getByRole("button", { name: "测试客户甲", exact: true }).waitFor({ state: "hidden" });
     assert.equal(await page.locator(".s5a-recent").getByRole("button", { name: /客户 101/ }).count(), 0);
     activeAdminId = 7;
     await page.goto(`${origin}/service/overview?customerId=101`);
@@ -758,7 +823,7 @@ try {
     activeAdminId = 8;
     await page.getByRole("dialog", { name: "客户详情" }).getByRole("button", { name: /查看维护记录/ }).click();
     await page.getByRole("dialog", { name: "客户详情" }).waitFor({ state: "hidden" });
-    await page.getByRole("button", { name: "测试客户甲" }).waitFor({ state: "hidden" });
+    await page.getByRole("button", { name: "测试客户甲", exact: true }).waitFor({ state: "hidden" });
     activeAdminId = 7;
   });
   await check("s5b-rules-readonly-pending", page, async () => {
@@ -778,6 +843,167 @@ try {
     assert.equal(await page.getByRole("button", { name: "预览并保存" }).isDisabled(), true);
     agent.seatType = "DEDICATED";
     activeRole = "superadmin";
+  });
+  await check("s5b-message-storage-quota", page, async () => {
+    for (const firstContact of [false, true]) {
+      convo.status = firstContact ? "CLOSED" : "OPEN"; convo.version += 1; extraConvo = null;
+      const content = firstContact ? "存储失败不得提交首次联系" : "存储失败不得提交消息";
+      const writePath = firstContact ? "/api/admin/content/conversations" : "/api/admin/content/conversations/CV-101/replies";
+      await page.goto(`${origin}/service/sessions${firstContact ? "?customerId=101" : "?conversationNo=CV-101"}`);
+      if (firstContact) await page.getByRole("checkbox", { name: /处理旧会话 CV-101/ }).uncheck();
+      await page.getByRole("textbox", { name: "输入会话消息" }).fill(content);
+      await page.evaluate(() => {
+        window.__fixtureStorageSetItem = Storage.prototype.setItem;
+        Storage.prototype.setItem = function(key, value) {
+          if (key === "nexion-admin-m3-private-pending-v1") throw new DOMException("Quota exceeded", "QuotaExceededError");
+          return window.__fixtureStorageSetItem.call(this, key, value);
+        };
+      });
+      const writesBefore = mutations.filter(item => item.path === writePath).length;
+      await page.getByRole("button", { name: "发送文字", exact: true }).click();
+      await page.getByRole("alert").filter({ hasText: "原消息命令暂不能持久保存" }).waitFor();
+      assert.equal(mutations.filter(item => item.path === writePath).length, writesBefore, "storage quota must block either message POST");
+      await page.evaluate(() => { Storage.prototype.setItem = window.__fixtureStorageSetItem; delete window.__fixtureStorageSetItem; });
+      await page.getByRole("button", { name: "查询结果并重试", exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('textarea[aria-label="输入会话消息"]')?.value === "");
+      await page.getByRole("button", { name: "查询结果并重试", exact: true }).waitFor({state:"hidden"});
+      assert.equal(mutations.filter(item => item.path === writePath && (item.body.body ?? item.body.openingText) === content).length, 1);
+    }
+  });
+  await check("s5b-private-query-rejection", page, async () => {
+    for (const firstContact of [false, true]) {
+      convo.status = firstContact ? "CLOSED" : "OPEN"; convo.version += 1; extraConvo = null;
+      const content = firstContact ? "查询拒绝不得丢首次消息编号" : "查询拒绝不得丢原私聊编号";
+      const writePath = firstContact ? "/api/admin/content/conversations" : "/api/admin/content/conversations/CV-101/replies";
+      commandQueryStatus = 404; commandQueryResult = null;
+      await page.goto(`${origin}/service/sessions${firstContact ? "?customerId=101" : ""}`);
+      if (firstContact) await page.getByRole("checkbox", { name: /处理旧会话 CV-101/ }).uncheck();
+      await page.getByRole("textbox", { name: "输入会话消息" }).fill(content);
+      if (firstContact) failNextCreate = true; else failNextReply = true;
+      await page.getByRole("button", { name: "发送文字", exact: true }).click();
+      await page.getByRole("alert").filter({ hasText: /发送失败或结果待确认/ }).waitFor();
+      const original = mutations.filter(item => item.path === writePath && (item.body.body ?? item.body.openingText) === content).at(-1);
+      assert.ok(original?.key);
+      commandQueryStatus = 409;
+      await page.getByRole("button", { name: "查询结果并重试", exact: true }).click();
+      await page.getByRole("button", { name: "查询结果并重试", exact: true }).waitFor();
+      assert.ok((await page.evaluate(() => sessionStorage.getItem("nexion-admin-m3-private-pending-v1") || "")).includes(original.key), "a GET 409 cannot retire the original command");
+      commandQueryStatus = 403;
+      await page.getByRole("button", { name: "查询结果并重试", exact: true }).click();
+      await page.getByRole("button", { name: "查询原消息 1", exact: true }).waitFor();
+      const saved = await page.evaluate(() => sessionStorage.getItem("nexion-admin-m3-private-pending-v1") || "");
+      assert.ok(saved.includes(original.key)); assert.ok(saved.includes(original.body.clientMessageId)); assert.ok(!saved.includes(content));
+      assert.equal(await page.getByText(content, { exact: true }).count(), 0);
+      await page.reload();
+      const recovery = page.getByRole("button", { name: "查询原消息 1", exact: true });
+      await recovery.waitFor();
+      for (const status of [403, 404, 200]) {
+        commandQueryStatus = status; commandQueryResult = status === 200 ? { status: "UNKNOWN" } : null;
+        const before = commandQueries.length;
+        await recovery.click();
+        await page.waitForFunction(() => document.querySelector('button') !== null);
+        for (let n = 0; n < 30 && commandQueries.length === before; n++) await page.waitForTimeout(50);
+        assert.equal(commandQueries.at(-1), original.key); await recovery.waitFor({state:"visible"});
+        assert.ok((await page.evaluate(() => sessionStorage.getItem("nexion-admin-m3-private-pending-v1") || "")).includes(original.key));
+      }
+      assert.equal(mutations.filter(item => item.path === writePath && (item.body.body ?? item.body.openingText) === content).length, 1, "recovery is GET-only after scope revocation");
+      if (firstContact) for (const width of [375, 1440]) {
+        await page.setViewportSize({width,height:960});
+        await page.getByRole("button", {name:"返回会话列表"}).click();
+        assert.ok(await page.locator(".m3-stage .cv-tag").evaluateAll(nodes=>nodes.length>0&&nodes.every(node=>node.getBoundingClientRect().height>0&&node.getBoundingClientRect().height<=parseFloat(getComputedStyle(node).fontSize)*1.6)), "会话状态不得被挤成逐字竖排");
+      }
+      const screenshot = `${dirname(reportPath)}/s5b-private-query-${firstContact?"first":"existing"}-redacted.png`;
+      await page.screenshot({path:screenshot,fullPage:true});
+      commandQueryStatus = 200; commandQueryResult = { status: firstContact ? "FAILED" : "SUCCEEDED" };
+      await recovery.click(); await recovery.waitFor({state:"hidden"});
+      assert.ok(!(await page.evaluate(() => sessionStorage.getItem("nexion-admin-m3-private-pending-v1") || "")).includes(original.key));
+    }
+    commandQueryStatus = 404; commandQueryResult = null;
+  });
+  await check("s5b-legacy-capabilities", page, async () => {
+    richProfile=true;convo.status="OPEN";extraConvo={...convo,id:2,conversationNo:"CV-102",status:"OPEN",lastMessage:"保留最近服务摘要"};extraMessages.push({id:10001,senderType:"AGENT",senderName:"顾问甲",content:"保留最近服务摘要",createdAt:stamp});
+    await page.goto(`${origin}/service/sessions?conversationNo=CV-102`);
+    await page.getByLabel("会话消息",{exact:true}).getByText("保留最近服务摘要",{exact:true}).waitFor();
+    await page.waitForFunction(()=>JSON.parse(sessionStorage.getItem("nexion-admin-m-dock-ui-v1:7")||"{}")["I.session.ui.lastConvo"]==="CV-102");
+    await page.goto(`${origin}/service/sessions`);
+    await page.waitForFunction(()=>document.querySelector(".cv-item.on")?.textContent.includes("保留最近服务摘要"));
+    await page.getByText("发起来源：来源未记录",{exact:false}).first().waitFor();
+    const recent=page.locator(".m3-profile-group").filter({has:page.locator("summary",{hasText:"最近服务记录"})});
+    await recent.getByText("保留最近服务摘要",{exact:true}).waitFor();
+    const accountActions=page.locator(".m3-profile-group").filter({has:page.locator("summary",{hasText:"账户操作"})});await accountActions.locator("summary").click();
+    assert.equal(await accountActions.getByRole("link",{name:"提现记录",exact:true}).getAttribute("href"),"/users/search/101#hub-withdrawal");
+    assert.equal(await accountActions.getByRole("link",{name:"设备明细",exact:true}).getAttribute("href"),"/users/search/101#hub-devices");
+    assert.ok((await accountActions.getByRole("link",{name:"资金调整",exact:true}).getAttribute("href")).includes("userId=101"));
+    await page.emulateMedia({reducedMotion:"reduce"});
+    assert.equal(await page.locator(".chat-send").evaluate(node=>{node.classList.add("sending");return [getComputedStyle(node).animationName,getComputedStyle(node.querySelector(".ic")).animationName].join(",");}),"none,none");
+    await page.emulateMedia({reducedMotion:"no-preference"});
+  });
+  await check("s5b-native-presence-and-typing", page, async () => {
+    realtimeFixture=true;extraConvo=null;convo.status="OPEN";
+    await page.goto(`${origin}/service/sessions?conversationNo=CV-101`);
+    await page.locator(".m3-chat-signal").getByText("客户在线",{exact:false}).waitFor();
+    const socket=realtimeSockets.at(-1);socket.send(JSON.stringify({type:"presence",conversationNo:"CV-101",online:true,typing:true,expiresIn:5000}));
+    await page.locator(".m3-chat-signal").getByText("对方正在输入",{exact:false}).waitFor();
+    await page.getByRole("textbox",{name:"输入会话消息"}).fill("真实桥协议输入通知");
+    for(let n=0;n<40&&!realtimeFrames.some(frame=>frame.type==="typing"&&frame.active===true);n++)await page.waitForTimeout(50);
+    assert.ok(realtimeFrames.some(frame=>frame.type==="typing"&&frame.conversationNo==="CV-101"&&frame.active===true));
+    await page.getByRole("button",{name:"客户资料",exact:true}).click();
+    assert.ok(realtimeFrames.some(frame=>frame.type==="typing"&&frame.active===false));
+    socket.send(JSON.stringify({type:"presence",conversationNo:"CV-101",online:false,typing:false}));
+    await page.locator(".m3-chat-signal").getByText("客户离线",{exact:false}).waitFor();
+    realtimeFixture=false;await socket.close();
+    await page.locator(".m3-chat-signal").getByText("暂无可信实时信号",{exact:false}).waitFor();
+  });
+  await check("s5b-c3-original-customer-retry", page, async () => {
+    failTargetContext=true;await page.goto(`${origin}/users/assets?userId=101&userCode=C-101`);
+    await page.getByRole("button",{name:"重试客户定位",exact:true}).waitFor();
+    const before=targetContextReads.length;await page.getByRole("button",{name:"重试客户定位",exact:true}).click();
+    await page.locator('[data-proof="c3-target-card"]').getByText("C-101",{exact:false}).waitFor();
+    assert.equal(targetContextReads.length,before+1);assert.equal(await page.getByRole("button",{name:"重试客户定位",exact:true}).count(),0);
+    assert.ok((await page.locator('[data-proof="c3-target-card"]').innerText()).includes("101"));
+  });
+  await check("s5b-first-contact-profile", page, async () => {
+    const writesBefore = mutations.length, savedRole = activeRole, savedAdmin = activeAdminId;
+    try {
+      activeAdminId=7; activeRole="support"; firstAdvisorId=7;
+      await page.goto(`${origin}/service/sessions?customerId=102`);
+      const profile=page.locator(".m3-service-profile");
+      await profile.getByText("C-102",{exact:true}).waitFor();
+      assert.match(await profile.innerText(),/顾问甲/);
+      assert.match(await profile.innerText(),/暂无会话/);
+      assert.match(await profile.innerText(),/暂无服务记录/);
+      assert.equal(await profile.getByRole("button",{name:"添加标签",exact:true}).isDisabled(),true);
+      assert.equal(await profile.getByRole("button",{name:"保存备注",exact:true}).isDisabled(),true);
+      await page.getByRole("button",{name:"打开服务 360",exact:true}).click();
+      await page.getByRole("dialog",{name:"客户服务 360"}).getByText("C-102",{exact:true}).waitFor();
+      await page.getByRole("dialog",{name:"客户服务 360"}).getByRole("button",{name:"返回会话",exact:true}).click();
+      await page.screenshot({path:`${dirname(reportPath)}/s5b-first-contact-profile-desktop.png`,fullPage:true});
+      await page.setViewportSize({width:375,height:960});
+      await page.getByRole("button",{name:"客户资料",exact:true}).click();
+      await profile.getByText("C-102",{exact:true}).waitFor({state:"visible"});
+      await page.screenshot({path:`${dirname(reportPath)}/s5b-first-contact-profile-narrow.png`,fullPage:true});
+      await page.setViewportSize({width:1440,height:960});
+      activeRole="supervisor"; firstAdvisorId=8;
+      await page.reload(); await profile.getByText("C-102",{exact:true}).waitFor();
+      assert.match(await profile.innerText(),/顾问乙/);
+      assert.equal(await page.getByRole("textbox",{name:"输入会话消息"}).isDisabled(),true);
+      await page.getByText("该客户由当前顾问服务，本账号仅可审阅。",{exact:true}).waitFor();
+      activeRole="support"; activeAdminId=9;
+      const readsBefore=firstProfileReads;
+      const deniedDetail=page.waitForResponse(r=>r.url().endsWith("/customers/102")&&r.request().method()==="GET");
+      await page.reload(); assert.equal((await deniedDetail).status(),403);
+      await page.locator(".m3-chat-identity h2").getByText("会话消息",{exact:true}).waitFor();
+      assert.equal(await profile.count(),0); assert.equal(firstProfileReads,readsBefore);
+      activeAdminId=7; firstAdvisorId=7; holdFirstDetail=true;
+      await page.goto(`${origin}/service/sessions?customerId=102`);
+      for(let attempt=0;attempt<30&&!releaseFirstDetail;attempt++)await page.waitForTimeout(50);
+      assert.ok(releaseFirstDetail); assert.equal(await profile.count(),0);
+      await page.evaluate(()=>window.dispatchEvent(new CustomEvent("support-scope-invalidated",{detail:{customerId:"102"}})));
+      holdFirstDetail=false; releaseFirstDetail(); releaseFirstDetail=null;
+      await profile.getByText("C-101",{exact:true}).waitFor();
+      assert.equal(await page.getByText("C-102",{exact:true}).count(),0);
+      assert.equal(mutations.length,writesBefore,"viewing first-contact data must never create a conversation or mutate annotations");
+    } finally { activeRole=savedRole; activeAdminId=savedAdmin; firstAdvisorId=7; holdFirstDetail=false; releaseFirstDetail?.(); releaseFirstDetail=null; }
   });
   assert.deepEqual(errors, [], `Unhandled fixture routes: ${[...unhandled].join(", ")}`);
   const required = ["WORKFLOW_TASK_ID", "WORKFLOW_STEP_ID", "WORKFLOW_CHECK_ID", "WORKFLOW_RUN_ID", "WORKFLOW_REPO", "WORKFLOW_SNAPSHOT_HASH"];

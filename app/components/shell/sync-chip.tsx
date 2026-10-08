@@ -5,7 +5,8 @@
 export function SyncChip() {
   return (
     <span
-      className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-medium"
+      className="admin-topbar-sync-chip inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-medium"
+      title="服务端权威 · 已同步"
       style={{
         background: "color-mix(in srgb, var(--v5-success) 12%, transparent)",
         color: "var(--v5-ink-2)",
@@ -22,7 +23,7 @@ export function SyncChip() {
           style={{ background: "var(--v5-success)" }}
         />
       </span>
-      服务端权威 · 已同步
+      <span className="admin-topbar-sync-label">服务端权威 · 已同步</span>
     </span>
   );
 }
