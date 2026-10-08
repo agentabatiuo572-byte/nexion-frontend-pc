@@ -16,7 +16,7 @@ export function readBackendSource(external){
 export async function capturePromotionPage(page,file){
   await page.evaluate(()=>document.fonts.ready);
   await page.evaluate(()=>{window.scrollTo(0,0);for(const element of document.querySelectorAll('main,dialog[open] .dialog-body'))element.scrollTop=0;});
-  const geometry=()=>page.evaluate(()=>{const main=document.querySelector('main'),dialog=document.querySelector('dialog[open]'),body=dialog?.querySelector('.dialog-body');const box=e=>{if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};const scrollBox=e=>e?{...box(e),scrollTop:e.scrollTop,scrollHeight:e.scrollHeight,clientHeight:e.clientHeight}:null;return {main:scrollBox(main),dialog:box(dialog),dialogBody:scrollBox(body),document:{height:document.documentElement.scrollHeight,width:document.documentElement.scrollWidth},viewport:{width:innerWidth,height:innerHeight}};});
+  const geometry=()=>page.evaluate(()=>{const main=document.querySelector('main'),dialog=[...document.querySelectorAll('dialog[open]')].at(-1),body=dialog?.querySelector('.dialog-body');const box=e=>{if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};const scrollBox=e=>e?{...box(e),scrollTop:e.scrollTop,scrollHeight:e.scrollHeight,clientHeight:e.clientHeight}:null;return {main:scrollBox(main),dialog:box(dialog),dialogBody:scrollBox(body),document:{height:document.documentElement.scrollHeight,width:document.documentElement.scrollWidth},viewport:{width:innerWidth,height:innerHeight}};});
   const first=await geometry(),main=first.main;
   if(first.dialog){assert.ok(Math.abs(first.dialog.x-(first.viewport.width-first.dialog.width)/2)<=1,'Dialog must be horizontally centered');assert.ok(Math.abs(first.dialog.y-(first.viewport.height-first.dialog.height)/2)<=1,'Dialog must be vertically centered');}
   const max=main?Math.max(0,main.scrollHeight-main.clientHeight):0,offsets=[0];
@@ -43,7 +43,7 @@ export async function capturePromotionPage(page,file){
     for(let offset=Math.max(1,body.clientHeight-80);offset<max;offset+=Math.max(1,body.clientHeight-80))offsets.push(offset);
     offsets.push(max);
     for(const [index,offset]of offsets.entries()){
-      await page.evaluate(value=>{document.querySelector('dialog[open] .dialog-body').scrollTop=value;},offset);
+      await page.evaluate(value=>{[...document.querySelectorAll('dialog[open]')].at(-1).querySelector('.dialog-body').scrollTop=value;},offset);
       await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
       const output=file.replace(/\.png$/,`-dialog-${index+1}.png`),actual=await geometry();
       await page.screenshot({path:output,fullPage:true,animations:'disabled'});

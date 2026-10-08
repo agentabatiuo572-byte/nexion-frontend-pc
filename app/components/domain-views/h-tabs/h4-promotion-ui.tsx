@@ -3,7 +3,7 @@ import { cloneElement, isValidElement, useEffect, useId, useRef, useState, type 
 import { displayAdminError } from '@/lib/admin/error-messages';
 import { fetchA2ReasonPolicy } from '@/lib/admin/a2-client';
 import { PromotionApiError, promotionFieldLabel, acknowledgePromotionCommand, pendingPromotionCommands, promotionCommand, recoverPromotionCommand, type PromotionCommandIntent } from '@/lib/admin/promotion-client';
-import type { CommandReceipt, DraftRewardSpec, LocalizedText, RewardSpec } from '@/lib/admin/promotion-types';
+import type { CommandReceipt, DraftRewardSpec, LocalizedText, RewardDisclosure, RewardSpec } from '@/lib/admin/promotion-types';
 import { BusinessFormBlock } from '../design-kit';
 export const text = (v: Partial<LocalizedText> | null | undefined) => v?.zh || v?.en || v?.vi || '未提供';
 export const formatTime = (v: string | null | undefined, zone = 'Asia/Tokyo') => { if (!v)
@@ -59,6 +59,17 @@ export function Summary({ rows }: {
         ReactNode
     ]>;
 }) { return <>{rows.map(([label, value]) => <div className="summary" key={label}><span>{label}</span><b>{value}</b></div>)}</>; }
+export function DeviceRightsSummary({ rights }: {rights: RewardDisclosure['deviceRights']}) {
+    const yesNo = (value: unknown) => value === true ? '是' : value === false ? '否' : '未确认';
+    return <Summary rows={[
+        ['激活方式', rights?.activationMode === 'AUTO' ? '自动激活' : rights?.activationMode === 'MANUAL' ? '手动激活' : '未确认'],
+        ['生效起点', rights?.effectiveOn === 'ISSUED' ? '发放时' : rights?.effectiveOn === 'ACTIVATED' ? '激活时' : '未确认'],
+        ['有效天数', rights?.durationDays === null ? '原合同未限定' : typeof rights?.durationDays === 'number' && Number.isFinite(rights.durationDays) ? rights.durationDays : '未确认'],
+        ['参与任务', yesNo(rights?.taskEnabled)], ['计入设备持有', yesNo(rights?.countsAsDeviceHolding)],
+        ['计入等级', yesNo(rights?.countsForRank)], ['可转让', yesNo(rights?.transferable)], ['可兑换', yesNo(rights?.exchangeable)],
+        ['收回方式', rights?.revocationMode === 'REVOKE_IF_UNUSED' ? '未使用可收回' : rights?.revocationMode === 'MANUAL_IF_USED' ? '使用后人工处理' : '未确认']
+    ]}/>;
+}
 export function Tag({ value }: {
     value: string;
 }) { const kind = ['ACTIVE', 'ISSUED', 'SUCCEEDED', 'COMPLETE'].includes(value) ? 'ok' : ['OUTCOME_UNKNOWN', 'PAUSED', 'MANUAL_REVIEW', 'REVERSAL_PENDING'].includes(value) ? 'warn' : ['RETRYABLE_FAILED', 'FAILED'].includes(value) ? 'bad' : 'blue'; return <span className={`tag ${kind}`}>{labelState(value)}</span>; }
@@ -67,11 +78,20 @@ export function Empty({ title, children, action }: {
     children?: ReactNode;
     action?: ReactNode;
 }) { return <div className="blank"><div className="emptyicon" aria-hidden>◇</div><h2>{title}</h2><p>{children}</p>{action}</div>; }
-export function Loading() { return <div role="status" aria-live="polite"><div className="loading-label">正在读取，请稍候…</div>{[0, 1, 2].map(i => <div className="skeleton-row" key={i}>{[0, 1, 2, 3, 4].map(j => <span className="skeleton" key={j}/>)}</div>)}</div>; }
-export function ReadError({ error, retry }: {
+export const PROMOTION_STEPS = ['基本信息', '参与资格', '购机赠奖', '预算与叠加'];
+export function PromotionSteps({ step, onStep, disabled = false }: { step: number; onStep: (step: number) => void; disabled?: boolean }) {
+    return <div className="steps">{PROMOTION_STEPS.map((name, i) => <button key={name} className={`step ${step === i ? 'active' : ''}`} disabled={disabled} onClick={() => onStep(i)}><i>{i + 1}</i><span>{name}<small>{['类别、时间与公开说明', '人群、设备与等级', '逐设备、逐受益人', '限额、预算与冲突'][i]}</small></span></button>)}</div>;
+}
+export function Loading() { return <div role="status" aria-live="polite" aria-busy="true"><div className="loading-label">正在读取当前版本与授权数据，请稍候。未知数据不显示为 0。</div>{Array.from({length: 6}, (_, i) => <div className="skeleton-row" key={i}>{[0, 1, 2, 3, 4].map(j => <span className="skeleton" key={j}/>)}</div>)}</div>; }
+export function ReadError({ error, retry, target, retryLabel = '重试读取' }: {
     error: unknown;
     retry: () => void;
-}) { return <Notice title="读取未完成" kind="bad">{displayAdminError(error)}<div><Button onClick={retry}>重试读取</Button></div></Notice>; }
+    target: string;
+    retryLabel?: string;
+}) { return <Notice title="读取未完成" kind="bad"><p>{target}：{displayAdminError(error)}</p><div><Button onClick={retry}>{retryLabel}</Button><small className="read-target">{target}</small></div></Notice>; }
+export function PromotionReadPanel({ title, loading, errors = [] }: { title: string; loading: boolean; errors?: Array<{target: string; error: unknown; retry: () => void}> }) {
+    return <Card title={`${loading ? '正在读取' : '暂时无法确认'}${title}`}>{loading ? <><Loading/><div className="card-body"><Button disabled>处理进行中</Button><p className="help">读取结束前不允许提交或重复操作。</p></div></> : <><Empty title="读取失败，内容已保留" action={<div className="actions">{errors.map(item => <Button key={item.target} kind="primary" onClick={item.retry}>重试读取<span> · {item.target}</span></Button>)}</div>}>当前读取未成功，不代表没有记录。依赖最新数据的动作已停用；重试不会再次创建活动或奖励。{errors.map(item => <span className="read-failure" key={item.target}>{item.target}：{displayAdminError(item.error)}</span>)}</Empty><div className="card-body"><Notice title="写入结果未知时" kind="warn">保留填写内容与原命令。先查原命令结果，再决定是否重试；不能重新创建一条命令。</Notice></div></>}</Card>;
+}
 export function useRead<T>(loader: () => Promise<T>, deps: DependencyList) {
     const ref = useRef(loader);
     ref.current = loader;
@@ -93,13 +113,15 @@ export function Dialog({ title, children, onClose, footer, wide = false }: {
     useEffect(() => { const node = ref.current; const previous = document.activeElement as HTMLElement | null; node?.showModal(); return () => { node?.close(); previous?.focus(); }; }, []);
     return <dialog ref={ref} className={wide ? 'wide-dialog' : ''} aria-labelledby={id} onCancel={e => { e.preventDefault(); onClose(); }}><div className="dialog-head"><h2 id={id}>{title}</h2><button className="close" aria-label="关闭弹窗" onClick={onClose}>×</button></div><div className="dialog-body">{children}</div><div className="dialog-foot">{footer || <Button onClick={onClose}>返回</Button>}</div></dialog>;
 }
-export function ConfirmCommand({ title, intent, body, children, onClose, onSuccess, evidenceOptions = [], requireEvidence = false, evidenceMode = 'upload' }: {
+export const PROMOTION_COMMAND_PERMISSIONS: Record<string, string> = {createPromotion: 'edit', saveDraft: 'edit', copyPromotion: 'edit', createDraftVersion: 'edit', submitPromotion: 'submit', withdrawPromotion: 'submit', approvePromotion: 'approve', rejectPromotion: 'approve', publishPromotion: 'publish', pausePromotion: 'pause', resumePromotion: 'pause', endPromotion: 'end', archivePromotion: 'archive', retryReward: 'reward_retry', reconcileReward: 'reward_reconcile', cancelReward: 'reward_cancel', reverseReward: 'reward_reverse', resolveReward: 'reward_resolve', createExport: 'metrics_export', createPolicy: 'policy_write', approvePolicy: 'policy_approve', revokePolicy: 'policy_approve'};
+export function ConfirmCommand({ title, intent, body, children, onClose, onSuccess, writeAllowed, evidenceOptions = [], requireEvidence = false, evidenceMode = 'upload' }: {
     title: string;
     intent: Omit<PromotionCommandIntent, 'body'>;
     body: Record<string, unknown>;
     children?: ReactNode;
     onClose: () => void;
     onSuccess: (result: CommandReceipt) => void | Promise<void>;
+    writeAllowed: boolean;
     evidenceOptions?: Array<{
         value: string;
         label: string;
@@ -111,7 +133,7 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
     const policy = useRead(fetchA2ReasonPolicy, []), [reason, setReason] = useState(String(initial?.reason || '')), [evidence, setEvidence] = useState<string[]>(Array.isArray(initial?.evidenceRefs) ? initial.evidenceRefs : []), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null), [note, setNote] = useState(''), [version, setVersion] = useState(0), [upload, setUpload] = useState<Record<string, string>>({}), [uploadState, setUploadState] = useState<string>();
     const record = pendingPromotionCommands().find(p => p.operation === intent.operation && p.targetId === intent.targetId);
     const payload = { ...body, reason, ...('evidenceRefs' in body ? { evidenceRefs: evidence } : {}) };
-    const submit = async (retry = false) => { setBusy(true); setError(null); try {
+    const submit = async (retry = false) => { if (!writeAllowed) return; setBusy(true); setError(null); try {
         const result = record?.receipt || await promotionCommand(record && retry ? record : { ...intent, body: payload }, retry);
         await onSuccess(result);
         acknowledgePromotionCommand(result);
@@ -140,10 +162,10 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
         setBusy(false);
         setVersion(v => v + 1);
     } };
-    const invalid = !policy.data || reason.trim().length < policy.data.minChars || reason.trim().length > policy.data.maxChars || (requireEvidence && !evidence.length) || !!uploadState;
-    return <Dialog title={title} onClose={onClose} wide={requireEvidence} footer={<><Button onClick={onClose} disabled={busy}>取消</Button>{record ? <><Button onClick={recover} disabled={busy}>{record.receipt ? '读取已成功的结果' : '核查原命令'}</Button>{record.recoveryState === 'NOT_FOUND' && <Button kind="primary" onClick={() => submit(true)} disabled={busy}>原样重试</Button>}</> : <Button kind="primary" onClick={() => submit()} disabled={busy || invalid}>{busy ? '正在提交…' : '确认操作'}</Button>}</>}>
-    <fieldset disabled={busy || !!record}>{children}</fieldset><fieldset disabled={busy || !!record}><Field label="操作理由 *" hint={policy.data ? `至少 ${policy.data.minChars} 字，最多 ${policy.data.maxChars} 字；与操作一起留痕。` : '正在读取理由要求'}><textarea value={reason} onChange={e => setReason(e.target.value)} maxLength={policy.data?.maxChars}/></Field>{evidenceOptions.length > 0 && <fieldset className="form-section"><legend>关联证据{requireEvidence ? ' *' : ''}</legend>{evidenceOptions.map(option => <label className="evidence-choice" key={option.value}><input type="checkbox" checked={evidence.includes(option.value)} onChange={e => setEvidence(e.target.checked ? [...evidence, option.value] : evidence.filter(x => x !== option.value))}/>{option.label}</label>)}</fieldset>}</fieldset>
-    {requireEvidence && evidenceMode === 'upload' && <fieldset disabled={busy || !!record}><BusinessFormBlock spec={{ kind: 'multi-field', title: '上传处置证据', fields: [{ key: 'evidenceAssetId', label: '关联证据图片', inputKind: 'asset-upload', required: true, wide: true, uploadDomain: 'growth', uploadUsage: 'promotion-evidence', help: '上传可核验的关联凭据，上传成功后才允许提交。' }] }} value={upload} onChange={v => { setUpload(v); setEvidence(v.evidenceAssetId ? [v.evidenceAssetId] : []); }} onUploadStateChange={(_, state) => setUploadState(state)}/></fieldset>}
-    {!!policy.error && <ReadError error={policy.error} retry={policy.reload}/>}{!!error && <Notice title="操作尚未完成" kind="bad">{displayAdminError(error)}{error instanceof PromotionApiError&&error.fieldErrors.map((f,i)=><p key={i} className="input-error">{promotionFieldLabel(f.field)}：未填写完整或不符合当前约束。</p>)}</Notice>}{record && <Notice title="原命令待核实" kind="warn">{record.receipt ? '原操作已经成功，当前只重读结果；不会再次提交。' : '原参数已锁定；核查前不会创建第二次操作。关闭后仍可在活动中心恢复。'}</Notice>}{note && <Notice title="核查结果">{note}</Notice>}<span hidden>{version}</span>
+    const invalid = !policy.data || policy.loading || !!policy.error || reason.trim().length < policy.data.minChars || reason.trim().length > policy.data.maxChars || (requireEvidence && !evidence.length) || !!uploadState;
+    return <Dialog title={title} onClose={onClose} wide={requireEvidence} footer={<><Button onClick={onClose} disabled={busy}>取消</Button>{record ? <><Button onClick={recover} disabled={busy}>{record.receipt ? '读取已成功的结果' : '核查原命令'}</Button>{record.recoveryState === 'NOT_FOUND' && <Button kind="primary" onClick={() => submit(true)} disabled={busy || !writeAllowed || policy.loading || !!policy.error}>原样重试</Button>}</> : <Button kind="primary" onClick={() => submit()} disabled={busy || invalid || !writeAllowed}>{busy ? '正在提交…' : '确认操作'}</Button>}</>}>
+    <fieldset disabled={busy || !!record || !writeAllowed}>{children}</fieldset><fieldset disabled={busy || !!record || !writeAllowed}><Field label="操作理由 *" hint={policy.data ? `至少 ${policy.data.minChars} 字，最多 ${policy.data.maxChars} 字；与操作一起留痕。` : '正在读取理由要求'}><textarea value={reason} onChange={e => setReason(e.target.value)} maxLength={policy.data?.maxChars}/></Field>{evidenceOptions.length > 0 && <fieldset className="form-section"><legend>关联证据{requireEvidence ? ' *' : ''}</legend>{evidenceOptions.map(option => <label className="evidence-choice" key={option.value}><input type="checkbox" checked={evidence.includes(option.value)} onChange={e => setEvidence(e.target.checked ? [...evidence, option.value] : evidence.filter(x => x !== option.value))}/>{option.label}</label>)}</fieldset>}</fieldset>
+    {requireEvidence && evidenceMode === 'upload' && <fieldset disabled={busy || !!record || !writeAllowed}><BusinessFormBlock spec={{ kind: 'multi-field', title: '上传处置证据', fields: [{ key: 'evidenceAssetId', label: '关联证据图片', inputKind: 'asset-upload', required: true, wide: true, uploadDomain: 'growth', uploadUsage: 'promotion-evidence', help: '上传可核验的关联凭据，上传成功后才允许提交。' }] }} value={upload} onChange={v => { setUpload(v); setEvidence(v.evidenceAssetId ? [v.evidenceAssetId] : []); }} onUploadStateChange={(_, state) => setUploadState(state)}/></fieldset>}
+    {!writeAllowed && <Notice title="当前操作已停用" kind="warn">授权或依赖数据当前无法支持此操作。原输入与命令继续保留，可读取核查原结果。</Notice>}{!!policy.error && <ReadError target="操作理由要求" error={policy.error} retry={policy.reload}/>}{!!error && <Notice title="操作尚未完成" kind="bad">{displayAdminError(error)}{error instanceof PromotionApiError&&error.fieldErrors.map((f,i)=><p key={i} className="input-error">{promotionFieldLabel(f.field)}：未填写完整或不符合当前约束。</p>)}</Notice>}{record && <Notice title="原命令待核实" kind="warn">{record.receipt ? '原操作已经成功，当前只重读结果；不会再次提交。' : '原参数已锁定；核查前不会创建第二次操作。关闭后仍可在活动中心恢复。'}</Notice>}{note && <Notice title="核查结果">{note}</Notice>}<span hidden>{version}</span>
   </Dialog>;
 }

@@ -1,4 +1,45 @@
 import type { Catalog, Draft, DraftPurchaseRule, DraftRewardSpec, Limit, Policy, PolicyRef, Template } from './promotion-types.ts';
+import { parseStrictFiniteNumber } from './strict-number.ts';
+
+export type PromotionNumericKind = 'quantity' | 'limit' | 'priority' | 'device-budget' | 'amount';
+export const promotionInputText = (value: string | number | null | undefined) => value == null ? '' : String(value);
+const AMOUNT = /^(0|[1-9][0-9]{0,11})(\.[0-9]{1,6})?$/;
+const SCALE = BigInt(1000000), ZERO = BigInt(0);
+function fixedAmount(value: unknown): bigint | null {
+  if (typeof value !== 'string' || !AMOUNT.test(value)) return null;
+  const [integer, fraction = ''] = value.split('.');
+  return BigInt(integer) * SCALE + BigInt(fraction.padEnd(6, '0'));
+}
+export function parsePromotionNumericInput(raw: string, kind: PromotionNumericKind): {value: string | number | null; error: string | null} {
+  if (raw === '') return {value: null, error: null};
+  if (kind === 'amount') {
+    const value = fixedAmount(raw);
+    return value !== null && value > ZERO ? {value: raw, error: null} : {value: null, error: '请输入大于 0 的金额，整数最多 12 位，小数最多 6 位。'};
+  }
+  const value = parseStrictFiniteNumber(raw), min = kind === 'priority' ? 0 : 1;
+  const max = kind === 'quantity' ? 100 : kind === 'limit' ? 2147483647 : Number.MAX_SAFE_INTEGER;
+  const valid = /^\d+$/.test(raw) && value !== null && Number.isSafeInteger(value) && value >= min && value <= max;
+  const error = kind === 'quantity' ? '请输入 1–100 之间的整数。' : kind === 'limit' ? '请输入 1–2147483647 之间的整数。' : kind === 'priority' ? '请输入可准确保存的非负整数。' : '请输入可准确保存的正整数。';
+  return valid ? {value, error: null} : {value: null, error};
+}
+export function promotionChoiceError(value: string | null | undefined, choices: readonly string[]): string | null {
+  return value && !choices.includes(value) ? '该选项当前不可用，请重新选择；也可保留未配置草稿。' : null;
+}
+/** Same four stock terms used by publication; no missing term is treated as zero. */
+export function promotionBudgetComparison(total: string, kind: 'amount' | 'device-budget', occupied: unknown): {status: 'unknown' | 'below' | 'sufficient'; minimum: string | null} {
+  const unavailable = {status: 'unknown' as const, minimum: null};
+  if (!occupied || typeof occupied !== 'object') return unavailable;
+  const row = occupied as Record<string, unknown>, terms = ['reserved', 'committed', 'issued', 'reversed'].map(key => fixedAmount(row[key]));
+  if (terms.some(term => term === null) || kind === 'device-budget' && terms.some(term => term! % SCALE !== ZERO)) return unavailable;
+  const [reserved, committed, issued, reversed] = terms as bigint[];
+  const minimum = reserved + committed + issued - reversed;
+  if (minimum < ZERO) return unavailable;
+  const text = kind === 'device-budget' ? String(minimum / SCALE) : `${minimum / SCALE}.${String(minimum % SCALE).padStart(6, '0')}`;
+  const parsed = parsePromotionNumericInput(total, kind);
+  if (parsed.error || parsed.value === null) return {status: 'unknown', minimum: text};
+  const proposed = kind === 'amount' ? fixedAmount(total)! : BigInt(parsed.value) * SCALE;
+  return {status: proposed < minimum ? 'below' : 'sufficient', minimum: text};
+}
 
 export const policyRef=(p:Policy):PolicyRef=>({policyId:p.policyId,version:p.version,contentHash:p.contentHash});
 export const policyKey=(p:PolicyRef|null|undefined)=>p?`${p.policyId}:${p.version}`:'';
