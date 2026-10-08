@@ -42,6 +42,7 @@ function gateway(path, namespace, entries = {}, upstream = async () => Response.
     "@/lib/admin/require-password-change-cleared": guard,
     "@/lib/admin/auth-deadline": load("lib/admin/auth-deadline.ts", { fetchImpl }),
     "@/lib/admin/support-image-proxy": load("lib/admin/support-image-proxy.ts"),
+    "@/lib/admin/promotion-routes": load("lib/admin/promotion-routes.ts"),
   } });
   return { route, guard, calls };
 }
@@ -145,6 +146,34 @@ test("every real business handler rejects foreign cookies, preserves its guard, 
         const fixture = gateway(path, namespace, { [own.ADMIN_TOKEN_COOKIE]: "own-full-fixture" }, async () => Response.json({ code: status }, { status }));
         assert.equal((await fixture.route[method](request(method), context)).status, status, `${path} upstream status must survive`);
       }
+    }
+  }
+});
+
+test("promotion handlers preserve namespace isolation and method-specific route boundaries", async () => {
+  for (const namespace of NAMESPACES) {
+    const own = names(namespace), foreign = foreignEntries(own);
+    for (const [method, parts] of [["GET", ["promotion-catalog"]], ["POST", ["promotions"]],
+      ["PUT", ["promotions", "fixture", "draft"]]]) {
+      for (const [entries, status] of [[foreign, 401],
+        [{ ...foreign, [own.ADMIN_TOKEN_COOKIE]: "own-full-fixture" }, 200],
+        [{ [own.ADMIN_TOKEN_COOKIE]: "own-full-fixture", [own.ADMIN_PASSWORD_CHANGE_COOKIE]: "own-restricted-fixture" }, 403]]) {
+        const fixture = gateway("growth/[...path]/route.ts", namespace, entries);
+        const response = await fixture.route[method](request(method, method === "GET" ? undefined : { reason: "fixture" },
+          undefined, { "Idempotency-Key": "original-promotion-key" }), { params: Promise.resolve({ path: parts }) });
+        assert.equal(response.status, status);
+        assert.equal(fixture.calls.length, status === 200 ? 1 : 0);
+        if (status === 200) {
+          assert.equal(new Headers(fixture.calls[0].init.headers).get("Authorization"), "Bearer own-full-fixture");
+          assert.equal(new Headers(fixture.calls[0].init.headers).get("Idempotency-Key"), "original-promotion-key");
+        }
+      }
+    }
+    for (const [method, parts] of [["PUT", ["promotion-catalog"]], ["POST", ["promotion-commands", "fixture"]],
+      ["GET", ["promotions", ".."]]]) {
+      const fixture = gateway("growth/[...path]/route.ts", namespace, { [own.ADMIN_TOKEN_COOKIE]: "own-full-fixture" });
+      assert.equal((await fixture.route[method](request(method), { params: Promise.resolve({ path: parts }) })).status, 404);
+      assert.equal(fixture.calls.length, 0);
     }
   }
 });
