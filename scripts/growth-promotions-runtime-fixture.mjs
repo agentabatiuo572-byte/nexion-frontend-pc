@@ -28,7 +28,8 @@ try{
  sql(`DELIMITER $$\nCREATE TRIGGER ${trigger} BEFORE INSERT ON nx_wallet_ledger FOR EACH ROW BEGIN IF NEW.biz_type='PROMOTION_REWARD' AND EXISTS(SELECT 1 FROM nx_promotion_reward r WHERE r.order_no='${order.orderNo}' AND r.beneficiary_id=${member.id} AND NEW.biz_no=CONCAT('PROMOTION-ISSUE-',r.obligation_id)) THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='PC_ISOLATED_REWARD_POSTING_FAULT'; END IF; END$$\nDELIMITER ;`);installed=true;
  const beforeWallet=sql(`SELECT usdt_available,nex_available FROM nx_user_wallet WHERE user_id=${member.id};`);
  await api('member','POST',`/api/orders/${order.orderNo}/pay`);
- let rewards;for(let i=0;i<30;i++){rewards=await api('member','GET','/api/promotion-rewards?orderNo='+order.orderNo);if(rewards.items?.length&&rewards.items.every(r=>r.state==='RETRYABLE_FAILED'))break;await new Promise(resolve=>setTimeout(resolve,2000));}
+ // Shared isolated reversal fixtures take about 100s per dispatch cycle; keep the fault installed until this order is attempted.
+ let rewards;for(let i=0;i<150;i++){rewards=await api('member','GET','/api/promotion-rewards?orderNo='+order.orderNo);if(rewards.items?.length&&rewards.items.every(r=>r.state==='RETRYABLE_FAILED'))break;await new Promise(resolve=>setTimeout(resolve,2000));}
  assert.equal(rewards.items.length,1);const reward=rewards.items[0];assert.equal(reward.state,'RETRYABLE_FAILED');assert.equal(reward.assetReceipt,null);assert.match(reward.obligationId,/^[A-Za-z0-9_-]+$/);
  assert.equal(sql(`SELECT COUNT(*) FROM nx_wallet_ledger WHERE biz_no='PROMOTION-ISSUE-${reward.obligationId}';`),'0');
  assert.equal(sql(`SELECT COUNT(*) FROM nx_earnings_release_entry WHERE source_type='PROMOTION_REWARD' AND source_ref='${reward.obligationId}';`),'0');
