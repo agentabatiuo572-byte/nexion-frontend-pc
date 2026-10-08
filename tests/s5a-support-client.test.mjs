@@ -7,12 +7,29 @@ const envelope = (data, status = 200) => new Response(JSON.stringify({ code: sta
 const originalFetch = globalThis.fetch;
 const snapshot = (overview = {}) => ({
   snapshotId: "test-snapshot", evaluatedAt: "2026-09-29T00:00:00Z", rulesVersion: 1,
-  scope: { actorId: 12, agentAdminId: 12, mode: "AGENT" },
+  scope: { actorId: 12, agentAdminId: 12, groupId: null, mode: "PERSONAL" },
   rules: { dormantDays: null, maintenanceDays: 7, activityWindowDays: null },
   overview: { boundTotal: 5, activeTotal: null, dormantTotal: null, dueTotal: null, waitingReplyTotal: 2, firstContactTotal: 1, stoppedTotal: 0, knownActiveCount: 3, unknownWindowCount: 2, ...overview },
   customers: { records: [], total: 0, pageNum: 1, pageSize: 1, filter: "ALL", available: true },
   performance: { executionCount: 0, successfulCycleCount: 0, successfulCustomerCount: 0, days: [], from: "2026-09-01T00:00:00Z", to: "2026-09-29T00:00:00Z", timeZone: "Asia/Shanghai" },
   completeness: { unknownCount: 2, unknownWindowCount: 2, coverageStartAt: "2026-09-01T00:00:00Z", observedThroughAt: "2026-09-29T00:00:00Z", observationLagMillis: 0, activitySource: "INTERACTIVE_LOGIN" },
+});
+
+test("workbench preserves the server-authorized role and group scope without falling back to all customers", async () => {
+  try {
+    for (const mode of ["PERSONAL", "MANAGED", "ALL"]) {
+      const scope = { actorId: 12, agentAdminId: mode === "PERSONAL" ? 12 : null, groupId: mode === "PERSONAL" ? null : 8, mode };
+      let seen;
+      globalThis.fetch = async (url) => { seen = new URL(url, "http://localhost"); return envelope({ ...snapshot(), scope }); };
+      const result = await supportClient.snapshot({ pageNum: 1, pageSize: 20, mode, ...(scope.groupId === null ? {} : { groupId: scope.groupId }) });
+      assert.deepEqual(result.overview.scope, scope);
+      assert.equal(seen.searchParams.get("mode"), mode);
+      assert.equal(seen.searchParams.get("groupId"), scope.groupId === null ? null : "8");
+    }
+    globalThis.fetch = async () => envelope({ ...snapshot(), scope: { actorId: 12, agentAdminId: null, groupId: null, mode: "UNRECOGNIZED" } });
+    await assert.rejects(supportClient.snapshot({ pageNum: 1, pageSize: 20 }), /SUPPORT_CONTRACT_MALFORMED/);
+    await assert.rejects(supportClient.customers({ pageNum: 1, pageSize: 20, groupId: 0 }), /SUPPORT_CONTRACT_MALFORMED/);
+  } finally { globalThis.fetch = originalFetch; }
 });
 
 test("overview preserves unknown counts and rejects a fabricated zero", async () => {
