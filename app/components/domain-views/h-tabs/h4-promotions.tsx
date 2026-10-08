@@ -40,8 +40,8 @@ export default function H4Promotions({ ctx, legacy }: {
         setActivityError(e); }).finally(() => { if (current)
         setActivityBusy(false); }); return () => { current = false; }; }, [id]);
     const changeStep=useCallback((step:number)=>{setEditStep(step);const url=new URL(location.href);url.searchParams.set('step',String(step));history.replaceState({},'',url);},[]);
-    const refresh = async () => { if (!id)
-        return; const latest = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(id)}`); setActivity(latest); list.reload(); };
+    const refresh = async (nextStep?: number) => { if (!id)
+        return; const latest = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(id)}`); if(nextStep!==undefined)changeStep(nextStep); setActivity(latest); list.reload(); };
     const afterCreate = async (result: CommandReceipt) => { if (!result.resource)
         throw new Error('创建回执暂不完整，请核查原命令。'); const target = result.resource.type === 'VERSION' ? result.resource.id.slice(0, result.resource.id.lastIndexOf(':')) : result.resource.id; const saved = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(target)}`); setActivity(saved); setTemplate(null); setCreating(false); setCopy(null); list.reload(); navigate('edit', target); };
     const pendingItems = pendingPromotionCommands();

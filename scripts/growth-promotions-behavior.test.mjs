@@ -1,8 +1,56 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import ts from 'typescript';
 import { allowedPromotionRoute } from '../lib/admin/promotion-routes.ts';
 import { acknowledgePromotionCommand, promotionCommand, recoverPromotionCommand, pendingPromotionCommands, promotionVersions, promotionFieldLabel } from '../lib/admin/promotion-client.ts';
 import { changeRewardType, changeTemplate, dateInput, utcInput, newPurchaseRule } from '../lib/admin/promotion-form.ts';
+import * as promotionForm from '../lib/admin/promotion-form.ts';
+
+// Execute the real editor and its handlers; state doubles avoid a test-owned navigation implementation.
+function editorHarness({writable=true,invalid=false,onSaved=async()=>{}}={}) {
+  const states=[],components=new Map(),require=createRequire(import.meta.url);let index=0;
+  const ui=new Proxy({text:v=>typeof v==='string'?v:'',TEMPLATE_LABELS:{SKU_GIFT:'单设备赠礼'}},{get:(object,key)=>{if(key in object)return object[key];if(!components.has(key))components.set(key,()=>null);return components.get(key);}});
+  const code=ts.transpileModule(readFileSync(new URL('../app/components/domain-views/h-tabs/h4-promotion-editor.tsx',import.meta.url),'utf8'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+  const module={exports:{}};
+  new Function('require','exports','module',code)(name=>{
+    if(name==='react')return {useState:initial=>{const key=index++;if(!(key in states))states[key]=typeof initial==='function'?initial():initial;return [states[key],value=>{states[key]=typeof value==='function'?value(states[key]):value;}];},useEffect:()=>{}};
+    if(name==='react/jsx-runtime')return require(name);
+    if(name.endsWith('promotion-form'))return promotionForm;
+    if(name.endsWith('promotion-client'))return {promotionRead:()=>assert.fail('unexpected read')};
+    if(name.endsWith('h4-promotion-ui'))return ui;
+    assert.fail('unexpected import '+name);
+  },module.exports,module);
+  const activity={activityId:'A1',state:'DRAFT',current:{revision:1,version:1,state:'DRAFT',draft:{...promotionForm.emptyDraft('SKU_GIFT'),name:'Original'}},impact:{budgets:[]}};
+  const props={activity,catalog:{policies:[],ranks:[],markets:[],skus:[]},can:()=>writable,onSaved,onBack:()=>{},onReview:()=>{}};
+  const render=()=>{index=0;const nodes=[];const walk=node=>{if(Array.isArray(node))return node.forEach(walk);if(!node||typeof node!=='object')return;nodes.push(node);walk(node.props?.children);};walk(module.exports.default(props));return nodes;};
+  const text=node=>Array.isArray(node)?node.map(text).join(''):node?.props?text(node.props.children):String(node??'');
+  const button=label=>render().find(node=>node.type===ui.Button&&text(node)===label);
+  const step=target=>render().find(node=>node.type==='button'&&node.props.className?.startsWith('step')&&text(node).startsWith(String(target+1)));
+  const command=()=>render().find(node=>node.type===ui.ConfirmCommand);
+  const edit=()=>render().find(node=>node.type==='input'&&node.props.maxLength===200).props.onChange({target:{value:'Changed'}});
+  const previousDocument=globalThis.document,reports=[];
+  globalThis.document={querySelectorAll:()=>invalid?[{disabled:false,checkValidity:()=>false,reportValidity:()=>reports.push('invalid')}]:[]};
+  return {render,button,step,command,edit,reports,restore:()=>{globalThis.document=previousDocument;}};
+}
+
+test('Next saves dirty input and advances only after successful server readback',async()=>{
+  const saved=[];const editor=editorHarness({onSaved:async step=>saved.push(step)});
+  try{editor.edit();editor.button('下一步').props.onClick();assert.equal(editor.step(0).props.className,'step active');assert.equal(editor.command().props.body.draft.name,'Changed');await editor.command().props.onSuccess();assert.deepEqual(saved,[1]);assert.equal(editor.step(1).props.className,'step active');assert.equal(editor.command(),undefined);}finally{editor.restore();}
+});
+test('top step navigation uses the same save confirmation and cancellation keeps inputs',()=>{
+  const editor=editorHarness();try{editor.edit();editor.step(2).props.onClick();assert(editor.command());editor.command().props.onClose();assert.equal(editor.step(0).props.className,'step active');assert.equal(editor.render().find(node=>node.type==='input'&&node.props.maxLength===200).props.value,'Changed');assert.equal(editor.command(),undefined);}finally{editor.restore();}
+});
+test('failed readback never advances and keeps the original command available',async()=>{
+  const editor=editorHarness({onSaved:async()=>{throw Error('read unavailable');}});try{editor.edit();editor.button('下一步').props.onClick();await assert.rejects(editor.command().props.onSuccess(),/read unavailable/);assert.equal(editor.step(0).props.className,'step active');assert(editor.command());}finally{editor.restore();}
+});
+test('invalid current inputs prevent step change before saving',()=>{
+  const editor=editorHarness({invalid:true});try{editor.edit();editor.button('下一步').props.onClick();assert.deepEqual(editor.reports,['invalid']);assert.equal(editor.step(0).props.className,'step active');assert.equal(editor.command(),undefined);}finally{editor.restore();}
+});
+test('clean and read-only editors can navigate without a write',()=>{
+  for(const writable of [true,false]){const editor=editorHarness({writable});try{editor.button('下一步').props.onClick();assert.equal(editor.step(1).props.className,'step active');assert.equal(editor.command(),undefined);}finally{editor.restore();}}
+});
 
 test('proxy accepts only contract methods and paths, including partial draft PUT', () => {
   assert.equal(allowedPromotionRoute(['promotions','a','draft'],'PUT'),true);
