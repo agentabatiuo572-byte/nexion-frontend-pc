@@ -334,7 +334,11 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
         const payload=JSON.parse(record.payload);
         if (!customerId || payload.customerId===customerId || affected.includes(payload.conversationId)) {
           const locator=privateMessageRecovery(payload);
-          if (!locator) { pendingMessages.forget(record.fingerprint, record.commandKey); continue; }
+          if (!locator) {
+            pendingMessages.forget(record.fingerprint, record.commandKey);
+            if (JSON.parse(sessionStorage.getItem("nexion-admin-m3-private-pending-v1") || "{}")[record.commandKey]) throw new Error("Private body not removed");
+            continue;
+          }
           const slot=recoveryKey(adminId, record.commandKey);
           pendingMessages.forget(record.fingerprint, record.commandKey);
           rememberPending(slot, record.commandKey, locator);
@@ -382,7 +386,14 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
           }
           if (!pendingMessages.isDurablyStored(slot, record.commandKey)) setRecoveryError("原消息编号仅保留在本页；恢复浏览器存储前请勿刷新或关闭页面，再重试查询。");
         }
-      } catch { setRecoveryError("原恢复记录尚未核实，已关闭对应会话操作；请保留本页并恢复浏览器存储后重试清理。"); }
+      } catch {
+        try {
+          sessionStorage.removeItem("nexion-admin-m3-private-pending-v1");
+          setRecoveryError("旧消息正文已清除，但恢复记录仅保留在本页；恢复浏览器存储前请勿刷新或关闭页面。");
+        } catch {
+          setRecoveryError("本地私聊缓存清理失败，旧消息正文可能仍留在本机；已关闭对应会话操作，请恢复浏览器存储后重试清理。");
+        }
+      }
     }
     readRecoveries();
     setRevokedIds((old) => new Set([...old, ...affected]));

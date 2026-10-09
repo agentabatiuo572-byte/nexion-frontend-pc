@@ -20,11 +20,12 @@ const plain = value => JSON.parse(JSON.stringify(value));
 
 async function fixture(run) {
   const previous = globalThis.window, values = new Map(), calls = [];
-  let quota = false, failedWrites = 0, unreadable = false, commandStatus = 'UNKNOWN';
+  let quota = false, failedWrites = 0, unreadable = false, removalDenied = false, commandStatus = 'UNKNOWN';
+  const removals = [];
   const window = { sessionStorage: {
     getItem(key) { if (unreadable) throw new Error('storage read denied'); return values.get(key) ?? null; },
     setItem(key, value) { if (quota || failedWrites-- > 0) throw new Error('quota'); values.set(key, value); },
-    removeItem(key) { values.delete(key); },
+    removeItem(key) { removals.push(key); if (removalDenied) throw new Error('storage removal denied'); values.delete(key); },
   } };
   globalThis.window = window;
   const context = {
@@ -49,7 +50,7 @@ async function fixture(run) {
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
   }).outputText, context);
   const seed = (store, command = original, fingerprint = slot) => store.remember(fingerprint, command.key, { payload: JSON.stringify(command) });
-  try { await run({ context, actions: context.actions, legacy: context.stores.legacy, current: context.stores.current, seed, values, calls, failNextWrites: value => { failedWrites = value; }, setQuota: value => { quota = value; }, setUnreadable: value => { unreadable = value; }, setStatus: value => { commandStatus = value; } }); }
+  try { await run({ context, actions: context.actions, legacy: context.stores.legacy, current: context.stores.current, seed, values, calls, removals, failNextWrites: value => { failedWrites = value; }, setQuota: value => { quota = value; }, setUnreadable: value => { unreadable = value; }, setRemovalDenied: value => { removalDenied = value; }, setStatus: value => { commandStatus = value; } }); }
   finally { if (previous === undefined) delete globalThis.window; else globalThis.window = previous; }
 }
 
@@ -246,4 +247,54 @@ test('malformed legacy payload remains fenced when the private store is read dur
   assert.equal(h.calls.filter(x => x[0] === 'PUT' || x[0] === 'MINT' || x[0] === 'COMMAND').length, 0);
   assert.equal(h.context.timeoutPending, null);
   assert.equal(JSON.parse(JSON.parse(h.values.get(legacyKey))['private-12'].payload).body, undefined);
+}));
+
+test('read-denied quota revocation uses available privacy erase and keeps original timeout fenced in memory', async () => fixture(async h => {
+  const before = seedRevoke(h); h.setUnreadable(true); h.setQuota(true);
+  assert.doesNotThrow(() => h.context.revoke('7', true));
+  assert.ok(h.removals.includes(legacyKey)); assert.equal(h.values.has(legacyKey), false);
+  assert.match(h.context.recoveryError, /旧消息正文已清除/); assert.match(h.context.recoveryError, /仅保留在本页/);
+  assert.equal(await h.actions.saveTimeout(input), false);
+  h.setUnreadable(false); await h.actions.openTimeout(); await h.actions.checkTimeoutPending();
+  assert.deepEqual(plain(h.context.timeoutPending), original); assert.equal(h.legacy.isDurablyStored(slot, original.key), false);
+  assert.equal(h.calls.filter(x => x[0] === 'PUT' || x[0] === 'MINT').length, 0);
+  assert.deepEqual(h.calls.filter(x => x[0] === 'COMMAND'), [['COMMAND', original.key]]);
+  h.setQuota(false); await h.actions.checkTimeoutPending();
+  const after = JSON.parse(h.values.get(legacyKey));
+  assert.deepEqual(after[original.key], before[original.key]);
+  assert.equal(JSON.parse(after['private-12'].payload).body, undefined);
+}));
+
+test('failed privacy erase is contained and warns truthfully while preserving original timeout', async () => fixture(async h => {
+  const before = seedRevoke(h); h.setUnreadable(true); h.setQuota(true); h.setRemovalDenied(true);
+  assert.doesNotThrow(() => h.context.revoke('7', true));
+  assert.ok(h.removals.includes(legacyKey)); assert.equal(h.values.get(legacyKey), JSON.stringify(before));
+  assert.match(h.context.recoveryError, /清理失败/); assert.doesNotMatch(h.context.recoveryError, /已清除/);
+  assert.equal(await h.actions.saveTimeout(input), false);
+  h.setUnreadable(false); await h.actions.openTimeout(); await h.actions.checkTimeoutPending();
+  assert.deepEqual(plain(h.context.timeoutPending), original);
+  assert.equal(h.calls.filter(x => x[0] === 'PUT' || x[0] === 'MINT').length, 0);
+}));
+
+test('missing private locator with quota failure erases retained body without replacing legacy timeout', async () => fixture(async h => {
+  h.seed(h.legacy); h.seed(h.legacy, { key: 'private-without-locator', conversationId: 'CV-7', body: '定位信息缺失的撤权正文' }, 'nexion-m3-dedicated-pending:12');
+  actualRevoke(h); h.setQuota(true); assert.doesNotThrow(() => h.context.revoke('7', true));
+  assert.equal(h.values.has(legacyKey), false); assert.ok(h.removals.includes(legacyKey));
+  assert.match(h.context.recoveryError, /旧消息正文已清除/); assert.match(h.context.recoveryError, /仅保留在本页/);
+  await h.actions.openTimeout(); await h.actions.checkTimeoutPending();
+  assert.deepEqual(plain(h.context.timeoutPending), original); assert.equal(await h.actions.saveTimeout(input), false);
+  assert.equal(h.legacy.isDurablyStored(slot, original.key), false);
+  assert.equal(h.calls.filter(x => x[0] === 'PUT' || x[0] === 'MINT').length, 0);
+}));
+
+test('durable missing-locator cleanup preserves unrelated private messages and exact timeout metadata', async () => fixture(async h => {
+  h.seed(h.legacy); h.seed(h.legacy, { key: 'private-without-locator', conversationId: 'CV-7', body: '定位信息缺失的撤权正文' }, 'nexion-m3-dedicated-pending:12');
+  h.seed(h.legacy, { key: 'private-other-actor', clientMessageId: 'client-13', conversationId: 'CV-8', body: '另一账号的草稿' }, 'nexion-m3-dedicated-pending:13');
+  const before = JSON.parse(h.values.get(legacyKey)); actualRevoke(h); h.context.revoke('7', true);
+  const after = JSON.parse(h.values.get(legacyKey)); assert.equal(after['private-without-locator'], undefined);
+  assert.deepEqual(after[original.key], before[original.key]); assert.deepEqual(after['private-other-actor'], before['private-other-actor']);
+  assert.equal(h.removals.includes(legacyKey), false);
+  await h.actions.openTimeout(); await h.actions.checkTimeoutPending();
+  assert.deepEqual(plain(h.context.timeoutPending), original); assert.equal(await h.actions.saveTimeout(input), false);
+  assert.equal(h.calls.filter(x => x[0] === 'PUT' || x[0] === 'MINT').length, 0);
 }));
