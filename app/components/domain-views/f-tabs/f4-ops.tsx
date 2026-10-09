@@ -124,7 +124,8 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
       ? "权威配置刷新失败，为避免使用旧配置，提前结算保持禁用。请重新读取配置；恢复后会按最新配置自动开放。"
       : `领导奖池结算配置不可用：${settlementConfig.issues.map((issue) => issue.label).join("、")} 缺失或格式错误。配置入口就在本卡片下方，请依次补齐后重新读取配置。`;
   const lbMinUsd = data.configValues["F.leaderboard.minUsd"] ?? "1";
-  const lbPaused = (data.configValues["F.leaderboard.paused"] ?? "off") === "on";
+  const lbPaused = data.leaderboardPaused ?? (data.configValues["F.leaderboard.paused"] ?? "off") === "on";
+  const lbDataAvailable = !lbPaused || (data.leaderboardSnapshotState === "FROZEN" && data.leaderboardDataAvailable === true);
   const top1MaxPct = data.configValues["F.pool.top1MaxPct"] ?? "25";
   const top5MaxPct = data.configValues["F.pool.top5MaxPct"] ?? "60";
   // 4 周期榜单奖池(JSON today/week/month/allTime)回填解析 · 无记录用默认 5K/50K/250K/1M。
@@ -327,8 +328,9 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
             <div className="t"><div className="nm">排行榜 · 反欺诈</div><div className="s">4 周期奖池 · Podium · K2 联动</div></div>
             <span className="tag">F4d · F.leaderboard.*</span>
           </div>
+          {lbPaused && <div className="f4-warn" role="status"><b>排行榜已暂停</b> · {lbDataAvailable ? `快照已冻结 · ${data.leaderboardSnapshotAt}` : "冻结快照未确认；名次及金额暂不显示。"} · 派奖已挂起。</div>}
           <div className="podium">
-            {data.podium.length ? data.podium.map((row) => (
+            {!lbDataAvailable ? <div className="empty">冻结快照未确认</div> : data.podium.length ? data.podium.map((row) => (
               <div key={row.userId} className={`pod ${row.className}`}><span className="rank">{row.rank}</span><div className="uid">{row.userId}</div><div className="gv">{row.gmvLabel}<small>{row.tip}</small></div>
                 {canControlLeaderboard && row.memberUserId > 0 && !row.className.includes("dq") && <button className="danger" aria-label={`取消 ${row.userId} 的榜单资格`} onClick={() => ctx.openActionConfirm({
                   name: `取消 ${row.userId} 本周榜单资格`, op: "dispose",
@@ -338,19 +340,20 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
               </div>
             )) : <div className="empty">暂无榜单样本</div>}
           </div>
-          <div className="kv-row"><span className="k">本期奖池</span><span className="v">{lbPool}</span></div>
-          <div className="kv-row"><span className="k">参赛人数</span><span className="v">{data.leaderboardParticipantCount.toLocaleString("en-US")}</span></div>
+          <div className="kv-row"><span className="k">{lbPaused ? "冻结时奖池" : "本期奖池"}</span><span className="v">{lbDataAvailable ? lbPool : "—"}</span></div>
+          <div className="kv-row"><span className="k">{lbPaused ? "冻结时参赛人数" : "参赛人数"}</span><span className="v">{lbDataAvailable ? data.leaderboardParticipantCount.toLocaleString("en-US") : "—"}</span></div>
           <div className="kv-row"><span className="k">刷榜命中 · K2</span><span className="v" style={{ color: "var(--danger)" }}>{`${data.leaderboardFraudHitCount} 账户${lbDq ? " · 含已处置" : ""}`}</span></div>
           <div className="sect-foot">
             {canFund && <button className="primary amp" onClick={() => ctx.openActionConfirm({ name: "本期榜单奖池调整", amplify: true, op: "param", paramKey: "F.leaderboard.poolUsd", edit: { kind: "text", current: data.leaderboardPoolLabel }, detail: `本期榜单奖池总额 · 当前 ${lbPool} · 放大奖池流出,受 B1 约束。` })}>调整奖池</button>}
             {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "榜单最小额调整", op: "param", paramKey: "F.leaderboard.minUsd", edit: { kind: "number", current: lbMinUsd, unit: "USD" }, detail: `上榜最低佣金门槛 · 当前 $${lbMinUsd} · 低于此额不计入榜单排名。` })}>榜单最小额</button>}
-            {canControlLeaderboard && <button className={lbPaused ? "primary" : "danger"} onClick={() => ctx.openActionConfirm({ name: lbPaused ? "恢复排行榜派发" : "暂停排行榜派发", op: "dispose", paramKey: "F.leaderboard.paused", fixedVal: lbPaused ? "off" : "on", detail: lbPaused ? "恢复排行榜 · 下期起正常结算榜单奖池与名次,写 A2 审计。" : "暂停排行榜 · 本期榜单冻结,不派发奖池,已计名次保留,写 A2 审计。" })}>{lbPaused ? "恢复榜单" : "暂停榜单"}</button>}
-            {canFund && <button className="primary amp" onClick={() => ctx.openActionConfirm({
+            {canControlLeaderboard && <button className={lbPaused ? "primary" : "danger"} onClick={() => ctx.openActionConfirm({ name: lbPaused ? "恢复排行榜展示" : "暂停排行榜派发", op: "dispose", paramKey: "F.leaderboard.paused", fixedVal: lbPaused ? "off" : "on", detail: lbPaused ? "恢复当前榜单展示，继续读取有效配置；写 A2 审计。" : "暂停排行榜 · 保存当前榜单快照，派奖挂起，写 A2 审计。" })}>{lbPaused ? "恢复榜单" : "暂停榜单"}</button>}
+            {canFund && <button className="primary amp" disabled={lbPaused} onClick={() => ctx.openActionConfirm({
               name: "派发总榜奖池",
               amplify: true,
               detail: `总榜无自动 reset；按真实累计佣金、Top100 与当前 $${ppAllTime} 配置发放，A2 审批且 lifetime 幂等。`,
               run: (reason) => ctx.proposeF4LeaderboardPayout("allTime", reason),
             })}>派发总榜</button>}
+            {canFund && lbPaused && <span className="muted">排行榜已暂停，派奖已挂起。</span>}
             {canFund && <button className="primary amp" onClick={() => ctx.openActionConfirm({
               name: "4 周期榜单奖池调整", amplify: true,
               businessForm: {

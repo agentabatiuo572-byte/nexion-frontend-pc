@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import { ADMIN_TOKEN_COOKIE, ADMIN_PASSWORD_CHANGE_COOKIE, sessionRequiresPasswordChange } from "@/lib/admin/require-password-change-cleared";
+import { ADMIN_TOKEN_COOKIE, ADMIN_PASSWORD_CHANGE_COOKIE, ADMIN_TOKEN_MAX_AGE_SECONDS, sessionRequiresPasswordChange } from "@/lib/admin/require-password-change-cleared";
 import { ADMIN_AUTH_UPSTREAM_TIMEOUT_MS, fetchAdminAuthBffResponse } from "@/lib/admin/auth-deadline";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
-const ADMIN_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 8;
 
 interface BackendVerifyResult {
   code?: number;
@@ -56,7 +55,7 @@ export async function POST(request: Request) {
       message: parsed.message,
       data: { tokenType: typeof parsed.data.tokenType === "string" ? parsed.data.tokenType : "Bearer", session: parsed.data.session },
     });
-    // 强制改密未完成:只种受限 cookie(仅够走改密/登出),不下发 8 小时全权 cookie。
+    // 强制改密未完成:只种受限 cookie(仅够走改密/登出)。
     const passwordChangeRequired = sessionRequiresPasswordChange(parsed.data.session);
     const secure = isSecureRequest(request);
     response.cookies.set(ADMIN_TOKEN_COOKIE, passwordChangeRequired ? "" : accessToken, {

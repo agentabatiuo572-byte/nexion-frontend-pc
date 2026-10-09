@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
 import Link from "next/link";
+import { readAdminSessionBaseline } from "@/lib/admin/session-baseline";
 import { Drawer } from "../design-kit";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { usePropose } from "@/lib/admin/use-propose";
@@ -52,8 +53,8 @@ type SecurityBaselineRow = SecurityBaselineMeta & {
 };
 
 const SECURITY_BASELINE_META: Record<string, SecurityBaselineMeta> = {
-  session_idle: { key: "session_idle", name: "session 滑动过期", sub: "无操作多久自动登出", unit: "分钟", min: 15, max: 60 },
-  session_abs: { key: "session_abs", name: "session 绝对上限", sub: "一次登录最长存活多久", unit: "小时", min: 4, max: 12 },
+  session_idle: { key: "session_idle", name: "会话空闲时限", sub: "无有效操作多久自动登出；有效操作续期", unit: "分钟" },
+  session_abs: { key: "session_abs", name: "会话最长时限", sub: "持续有效操作不会因固定时长登出", unit: "小时" },
   lock_short_cnt: { key: "lock_short_cnt", name: "登录失败短锁 · 触发次数", sub: "连错几次触发短锁", unit: "次", min: 3, max: 10 },
   lock_short_min: { key: "lock_short_min", name: "登录失败短锁 · 锁定时长", sub: "触发短锁后锁定多久", unit: "分钟", min: 5, max: 60 },
   lock_long_cnt: { key: "lock_long_cnt", name: "24 小时累计长锁 · 触发次数", sub: "一天内累计失败几次触发长锁", unit: "次" },
@@ -237,10 +238,11 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   ), [permissionActions, permissionCodesByRole]);
   const supersTone = effectiveSupers <= 1 ? "danger" : effectiveSupers === 2 ? "warn" : "ok";
   const backendSessionBaseline = securityBaselines.find((b) => b.key === "session")?.value;
+  const parsedSessionBaseline = readAdminSessionBaseline(backendSessionBaseline);
   const backendLockBaseline = securityBaselines.find((b) => b.key === "lock")?.value;
   const baselineCurrent = (key: string) => {
-    if (key === "session_idle") return firstMatch(backendSessionBaseline, /(\d+(?:\.\d+)?)\s*min/i) ?? null;
-    if (key === "session_abs") return firstMatch(backendSessionBaseline, /\/\s*(\d+(?:\.\d+)?)\s*h/i) ?? null;
+    if (key === "session_idle") return parsedSessionBaseline.idleMinutes;
+    if (key === "session_abs") return parsedSessionBaseline.unlimited ? "无固定上限" : parsedSessionBaseline.absoluteHours;
     if (key === "lock_short_cnt") return firstMatch(backendLockBaseline, /(\d+(?:\.\d+)?)\s*(?:times|次)/i) ?? null;
     if (key === "lock_short_min") return firstMatch(backendLockBaseline, /\/\s*(\d+(?:\.\d+)?)\s*min/i) ?? null;
     if (key === "lock_long_cnt") return firstMatch(backendLockBaseline, /\+\s*(\d+(?:\.\d+)?)\s*(?:times|次)/i) ?? null;
@@ -252,8 +254,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const securityBaselineRows: SecurityBaselineRow[] = [];
   if (registeredBaseline("session")) {
     securityBaselineRows.push(
-      { ...SECURITY_BASELINE_META.session_idle, sourceKey: "session", current: baselineCurrent("session_idle"), locked: registeredBaseline("session")?.locked ?? false },
-      { ...SECURITY_BASELINE_META.session_abs, sourceKey: "session", current: baselineCurrent("session_abs"), locked: registeredBaseline("session")?.locked ?? false },
+      { ...SECURITY_BASELINE_META.session_idle, sourceKey: "session", current: baselineCurrent("session_idle"), locked: true },
+      { ...SECURITY_BASELINE_META.session_abs, sourceKey: "session", current: baselineCurrent("session_abs"), unit: parsedSessionBaseline.unlimited ? undefined : "小时", locked: true },
     );
   }
   if (registeredBaseline("lock")) {
@@ -595,6 +597,10 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   };
 
   const adjustBaseline = (baseline: SecurityBaselineRow) => {
+    if (baseline.sourceKey === "session") {
+      toast("会话策略固定为无有效操作60分钟登出、有效操作续期，无固定登录上限");
+      return;
+    }
     if (baseline.locked) {
       toast("该安全基线由后端锁定,不可在前端调整");
       return;
@@ -632,16 +638,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         }
         let backendKey: "session" | "lock";
         let backendValue: string;
-        if (baseline.key === "session_idle" || baseline.key === "session_abs") {
-          const idle = baseline.key === "session_idle" ? n : siblingNumber("session_idle");
-          const absolute = baseline.key === "session_abs" ? n : siblingNumber("session_abs");
-          if (idle == null || absolute == null) {
-            toast("后端会话基线不完整,拒绝用前端默认值补齐");
-            return;
-          }
-          backendKey = "session";
-          backendValue = `${idle}min / ${absolute}h`;
-        } else if (baseline.key === "lock_short_cnt" || baseline.key === "lock_short_min") {
+        if (baseline.key === "lock_short_cnt" || baseline.key === "lock_short_min") {
           const count = baseline.key === "lock_short_cnt" ? n : siblingNumber("lock_short_cnt");
           const minutes = baseline.key === "lock_short_min" ? n : siblingNumber("lock_short_min");
           if (count == null || minutes == null) {
