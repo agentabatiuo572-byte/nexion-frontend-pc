@@ -1,6 +1,162 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import path from "node:path";
+import { createRequire } from "node:module";
+import { after } from "node:test";
+
+// Actual D2 React/DOM lifecycle, offline. No server, real session or business API.
+const require = createRequire(import.meta.url);
+const ts = require("typescript"), { chromium } = require("@playwright/test");
+const modules = Object.fromEntries([
+  ["react", "react", "react.development.js"],
+  ["react/jsx-runtime", "react", "react-jsx-runtime.development.js"],
+  ["react-dom", "react-dom", "react-dom.development.js"],
+  ["react-dom/client", "react-dom", "react-dom-client.development.js"],
+  ["scheduler", "scheduler", "scheduler.development.js"],
+].map(([id, pkg, file]) => [id, fs.readFileSync(path.join(path.dirname(require.resolve(`${pkg}/package.json`)), "cjs", file), "utf8")]));
+for (const [id, file] of [
+  ["d2", process.env.D2_FOCUS_SOURCE_FILE || "app/components/domain-views/d-tabs/d2-withdrawals.tsx"],
+  ["@/app/components/kit/tab-group", "app/components/kit/tab-group.tsx"],
+  ["./tab-group-keyboard", "app/components/kit/tab-group-keyboard.ts"],
+  ["@/lib/admin/pending-mutation-store", "lib/admin/pending-mutation-store.ts"],
+  ["@/lib/admin/bank-payout-evidence", "lib/admin/bank-payout-evidence.ts"],
+  ["./strict-number.ts", "lib/admin/strict-number.ts"],
+]) modules[id] = ts.transpileModule(fs.readFileSync(file, "utf8"), {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
+}).outputText;
+modules["@/lib/store/admin-auth"] = `exports.useAdminAuth=selector=>selector({session:{authorities:["finance_d2_withdrawal_batch","finance_d2_withdrawal_approve","finance_d2_withdrawal_delay","finance_d2_withdrawal_freeze","finance_d2_withdrawal_reject"]}});`;
+modules["@/lib/admin/current-operator"] = `exports.currentAdminOperator=()=>window.__d2.forbid("operator");`;
+modules["@/lib/admin/error-messages"] = `exports.displayAdminError=error=>error.message;`;
+modules["../design-kit"] = `exports.Drawer=()=>window.__d2.forbid("drawer");exports.KV=()=>window.__d2.forbid("detail");`;
+modules["@/lib/admin/d-client"] = `
+  exports.fetchD2Withdrawals=params=>new Promise((resolve,reject)=>window.__d2.rows.push({params,resolve,reject}));
+  exports.fetchD5WithdrawalParams=()=>new Promise((resolve,reject)=>window.__d2.limits.push({resolve,reject}));
+  for(const name of ["fetchD2DevelopmentCapabilities","fetchD2WithdrawalDetail","fetchD2BankPayout","requeryD2BankPayout","reviewD2Withdrawal","reviewD2WithdrawalsBatch","simulateD2CooldownExpiry"])
+    exports[name]=()=>window.__d2.forbid(name);
+  exports.isDOutcomeUnknownError=()=>false;
+`;
+let browser;
+after(async () => { await browser?.close(); });
+async function offlineD2() {
+  browser ??= await chromium.launch({ headless: true });
+  const page = await browser.newPage();
+  page.setDefaultTimeout(5000);
+  page.on("pageerror", error => console.error("Offline D2 fixture error:", error.message));
+  let networkRequests = 0;
+  await page.route("**/*", route => { networkRequests++; return route.abort(); });
+  await page.setContent('<main></main>');
+  await page.addScriptTag({ content: `
+    const sources=${JSON.stringify(modules)},cache={};
+    function load(id){if(cache[id])return cache[id].exports;if(!sources[id])throw Error("Unexpected offline module: "+id);const module={exports:{}};cache[id]=module;new Function("module","exports","require","process",sources[id])(module,module.exports,load,{env:{NODE_ENV:"development"}});return module.exports;}
+    window.__d2={rows:[],limits:[],forbidden:[],nodes:{},forbid(name){this.forbidden.push(name);throw Error("Offline fixture forbids "+name);}};
+    const React=load("react"),D2=load("d2").D2Withdrawals;
+    load("react-dom/client").createRoot(document.querySelector("main")).render(React.createElement(D2,{ctx:{toast:()=>window.__d2.forbid("toast"),openActionConfirm:()=>window.__d2.forbid("confirmation")}}));
+  ` });
+  await requests(page, 1);
+  return { page, async close() {
+    assert.equal(networkRequests, 0, "Offline D2 attempted a network request");
+    assert.deepEqual(await page.evaluate(() => window.__d2.forbidden), [], "Unexpected detail/financial command");
+    await page.close();
+  } };
+}
+async function requests(page, count) {
+  await page.waitForFunction(n => window.__d2.rows.length === n && window.__d2.limits.length === n, count);
+  await page.waitForFunction(() => document.querySelector("main").textContent.includes("D2 数据加载中..."));
+}
+async function settle(page, index, records = [], rejectLimits = false) {
+  await page.evaluate(({ index, records, rejectLimits }) => {
+    window.__d2.rows[index].resolve({ total: records.length, pageNum: 1, pageSize: 10, records });
+    if (rejectLimits) window.__d2.limits[index].reject(new Error("Offline D5 fixture failure"));
+    else window.__d2.limits[index].resolve({ dailyLimitCount: 3 });
+  }, { index, records, rejectLimits });
+  await page.waitForFunction(() => !document.querySelector("main").textContent.includes("D2 数据加载中..."));
+}
+async function remember(page, key, locator) {
+  await locator.evaluate((element, key) => { window.__d2.nodes[key] = element; }, key);
+  await locator.focus();
+}
+async function retained(page, key, phase, t) {
+  const state = await page.evaluate(key => {
+    const node = window.__d2.nodes[key];
+    return { connected: node.isConnected, focused: document.activeElement === node,
+      sameNode: node === (key === "status" ? document.querySelector(".d2-search-toolbar select") : [...document.querySelectorAll("button")].find(b => b.textContent === "查询")),
+      activeTag: document.activeElement.tagName };
+  }, key);
+  t.diagnostic(JSON.stringify({ phase, control: key, ...state }));
+  assert.equal(state.connected, true, `${phase}: original ${key} was unmounted`);
+  assert.equal(state.sameNode, true, `${phase}: ${key} was replaced`);
+  assert.equal(state.focused, true, `${phase}: ${key} lost focus`);
+}
+const fixtureRow = { withdrawalNo: "OFFLINE-WD-1", userNo: "OFFLINE-U-1", nickname: "合成用户", asset: "USDT", chain: "BEP20", amount: 10, netReceive: 9, actualFee: 1, status: "REVIEW_PENDING", riskScore: 10, routingPriority: "LOW", k3RiskRoute: "pass", userStatus: "active", withdrawalCount24h: 1, previousStatus: "SUBMITTED", createdAt: "2026-10-09T00:00:00" };
+
+test("D2 empty status reload retains the same native select and focus through pending and settled", { timeout: 30000 }, async t => {
+  const fixture = await offlineD2(), { page } = fixture;
+  try {
+    await settle(page, 0);
+    const status = page.locator(".d2-search-toolbar select");
+    await remember(page, "status", status);
+    await page.keyboard.press("ArrowDown");
+    await requests(page, 2);
+    await retained(page, "status", "empty-to-pending", t);
+    assert.deepEqual(await page.locator(".f-stats .v").allTextContents(), ["—", "—", "—", "—"]);
+    await settle(page, 1);
+    await retained(page, "status", "empty-settled", t);
+    assert.equal(await status.inputValue(), "SUBMITTED");
+    await page.keyboard.press("Home");
+    await requests(page, 3);
+    await retained(page, "status", "home-all-pending", t);
+    await settle(page, 2, [fixtureRow]);
+    await retained(page, "status", "all-nonempty-settled", t);
+    assert.equal(await status.inputValue(), "");
+    assert.equal(await page.getByRole("button", { name: "打开提现单 OFFLINE-WD-1 的详情", exact: true }).count(), 1);
+  } finally { await fixture.close(); }
+});
+
+test("D2 Query Enter from an empty result keeps its DOM node and focus after success and failure", { timeout: 30000 }, async t => {
+  const fixture = await offlineD2(), { page } = fixture;
+  try {
+    await settle(page, 0);
+    const query = page.getByRole("button", { name: "查询", exact: true });
+    await remember(page, "query", query);
+    await page.keyboard.press("Enter");
+    await requests(page, 2);
+    await retained(page, "query", "query-enter-pending", t);
+    await settle(page, 1);
+    await retained(page, "query", "query-enter-settled", t);
+    await page.keyboard.press("Enter");
+    await requests(page, 3);
+    await settle(page, 2, [], true);
+    await retained(page, "query", "query-d5-failure", t);
+    assert.match(await page.locator("main").textContent(), /D2 数据加载失败.*写操作已关闭/);
+    assert.equal(await page.getByRole("button", { name: "批量执行", exact: true }).isDisabled(), true);
+    assert.deepEqual(await page.locator(".f-stats .v").allTextContents(), ["—", "—", "—", "—"]);
+    await page.keyboard.press("Enter");
+    await requests(page, 4);
+    await settle(page, 3);
+    await retained(page, "query", "query-retry-settled", t);
+  } finally { await fixture.close(); }
+});
+
+test("D2 pending reads do not publish zero statistics or enable writes, and stale responses cannot replace latest rows", { timeout: 30000 }, async () => {
+  const fixture = await offlineD2(), { page } = fixture;
+  try {
+    assert.deepEqual(await page.locator(".f-stats .v").allTextContents(), ["—", "—", "—", "—"]);
+    assert.doesNotMatch(await page.locator("main").textContent(), /共 0 条|暂无提现记录/);
+    await page.evaluate(record => window.__d2.rows[0].resolve({ total: 1, pageNum: 1, pageSize: 10, records: [record] }), fixtureRow);
+    assert.equal(await page.getByRole("button", { name: "批量执行", exact: true }).isDisabled(), true);
+    assert.deepEqual(await page.locator(".f-stats .v").allTextContents(), ["—", "—", "—", "—"]);
+    await settle(page, 0, [fixtureRow]);
+    const query = page.getByRole("button", { name: "查询", exact: true });
+    await query.press("Enter"); await requests(page, 2);
+    await page.locator(".d2-search-toolbar select").press("ArrowDown"); await requests(page, 3);
+    await settle(page, 2);
+    await settle(page, 1, [fixtureRow], true);
+    assert.equal(await page.getByRole("button", { name: "打开提现单 OFFLINE-WD-1 的详情", exact: true }).count(), 0);
+    assert.equal(await page.locator(".f-stat").first().locator(".v").textContent(), "0");
+    assert.doesNotMatch(await page.locator("main").textContent(), /D2 数据加载失败/);
+  } finally { await fixture.close(); }
+});
 
 const page = fs.readFileSync("app/components/domain-views/d-tabs/d2-withdrawals.tsx", "utf8");
 const d5Page = fs.readFileSync("app/components/domain-views/d-tabs/d5-params.tsx", "utf8");

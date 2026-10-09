@@ -2526,18 +2526,18 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           目标 <span className="mono">{spec.subject}</span> · 未完成全部核验项前,确认按钮保持禁用。
         </div>
         {verified ? (
-          <div className="tint ok tiny" style={{ marginBottom: 10 }} data-proof="server-sensitive-action-verification">
-            <b>服务端高敏操作校验已通过</b> · 工单 <span className="mono">{verified.ticket}</span><br />
-            复审人 {verified.verifiedBy || "—"} · 通过时间 {verified.verifiedAt} · 有效至 {verified.expiresAt || "—"}
+          <div className="tint tiny" style={{ marginBottom: 10 }} data-proof="server-sensitive-action-verification">
+            <b>本次操作的服务端校验将在提交时执行</b> · 校验上下文 <span className="mono">{verified.ticket}</span><br />
+            操作人 {verified.verifiedBy || "—"} · 校验时点 {verified.verifiedAt} · 适用范围 {verified.expiresAt || "—"}
           </div>
         ) : null}
         {verified ? <>
           <div className="grid g-2" style={{ gap: 10 }}>
-            <label className="field"><span>核验来源</span><input className="fld" value={value.channel ?? ""} readOnly aria-readonly="true" /></label>
-            <label className="field"><span>核验时间</span><input className="fld" value={value.verifiedAt ?? ""} readOnly aria-readonly="true" /></label>
+            <label className="field"><span>校验方式</span><input className="fld" value={value.channel ?? ""} readOnly aria-readonly="true" /></label>
+            <label className="field"><span>校验时点</span><input className="fld" value={value.verifiedAt ?? ""} readOnly aria-readonly="true" /></label>
           </div>
           <div style={{ marginTop: 10 }}>
-            <label className="field"><span>来源工单号</span><input className="fld" value={value.ticket ?? ""} readOnly aria-readonly="true" /></label>
+            <label className="field"><span>校验上下文</span><input className="fld" value={value.ticket ?? ""} readOnly aria-readonly="true" /></label>
           </div>
         </> : <>
           <div className="grid g-2" style={{ gap: 10 }}>

@@ -23,6 +23,7 @@ if (cookieNamespace !== undefined && !/^[a-z0-9][a-z0-9_-]{0,31}$/.test(cookieNa
 const cookieSuffix = cookieNamespace === undefined ? "" : `__${cookieNamespace}`;
 export const ADMIN_TOKEN_COOKIE = `nexion_admin_token${cookieSuffix}`;
 export const ADMIN_PASSWORD_CHANGE_COOKIE = `nexion_admin_pwd_change_token${cookieSuffix}`;
+export const ADMIN_TOKEN_MAX_AGE_SECONDS = 60 * 60;
 /** 用户可见文案在 lib/admin/error-messages.ts 单源维护,此处只出 code。 */
 export const ADMIN_PASSWORD_CHANGE_REQUIRED_CODE = "ADMIN_PASSWORD_CHANGE_REQUIRED";
 

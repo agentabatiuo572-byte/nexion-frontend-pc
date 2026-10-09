@@ -3,8 +3,9 @@ import type { AdminRole } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
 import { normalizeEffectiveMenuNodes, normalizeEffectiveMenus, normalizeSessionRole } from "@/lib/admin/session-role";
 import { authoritativeAdminSessionPayload } from "@/lib/admin/session-response";
-import { AdminAuthEpochChangedError, adminAuthLifecycleEpoch } from "@/lib/admin/auth-lifecycle";
+import { AdminAuthEpochChangedError, adminAuthLifecycleEpoch, adminAuthActivityAllowed } from "@/lib/admin/auth-lifecycle";
 import { withAdminAuthDeadline } from "@/lib/admin/auth-deadline";
+import { withAdminAuthCookieWrite } from "@/lib/admin/auth-cookie-lane";
 
 interface ApiResult<T> {
   code: number;
@@ -54,24 +55,32 @@ export function normalizeAdminRole(role: string | undefined): AdminRole {
 async function requestAdminAuthJson(
   input: RequestInfo | URL,
   init: RequestInit,
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; activityEpoch?: number } = {},
 ): Promise<{ response: Response; result: ApiResult<LoginPayload> | null }> {
   try {
     return await withAdminAuthDeadline(async (signal) => {
-      const response = await guardedFetch(input, { ...init, signal });
-      try {
-        return { response, result: await response.json() as ApiResult<LoginPayload> };
-      } catch (error) {
-        // A deadline can interrupt body consumption after headers arrived. It is
-        // a recoverable transport error, never an invalid-credentials result.
-        if (signal.aborted) throw error;
-        return { response, result: null };
-      }
+      const read = async () => {
+        if (signal.aborted) throw signal.reason;
+        if (options.activityEpoch !== undefined && (
+          options.activityEpoch !== adminAuthLifecycleEpoch() || !adminAuthActivityAllowed()
+        )) throw new AdminAuthEpochChangedError();
+        const response = await guardedFetch(input, { ...init, signal });
+        try {
+          return { response, result: await response.json() as ApiResult<LoginPayload> };
+        } catch (error) {
+          if (signal.aborted) throw error;
+          return { response, result: null };
+        }
+      };
+      // The lane owns the actual HTTP/body promise. A UI deadline must not let
+      // another credential write overtake a still-settling Cookie response.
+      return init.method === "POST" ? withAdminAuthCookieWrite(read) : read();
     }, options);
   } catch (error) {
     // Session bootstrap owns cancellation during navigation/logout. Preserve
     // its AbortError identity so callers can distinguish it from recovery UI.
     if (options.signal?.aborted) throw options.signal.reason;
+    if (error instanceof AdminAuthEpochChangedError) throw error;
     const original = error instanceof Error ? error.message : String(error);
     const translated = formatAdminApiError(original, "NETWORK_FAILURE");
     throw new Error(translated);
@@ -122,6 +131,31 @@ export async function currentAdminSession(options: { signal?: AbortSignal } = {}
   if (requestEpoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
   const payload = authoritativeAdminSessionPayload(response.status, response.ok, result);
   return payload ? normalizeLoginPayload(payload) : null;
+}
+
+export class AdminActivityIdentityChangedError extends Error {
+  constructor() {
+    super("ADMIN_ACTIVITY_IDENTITY_CHANGED");
+    this.name = "AdminActivityIdentityChangedError";
+  }
+}
+
+export async function recordAdminActivity(expectedAdminId: number): Promise<LoginResult | null> {
+  if (!Number.isSafeInteger(expectedAdminId) || expectedAdminId <= 0) throw new AdminActivityIdentityChangedError();
+  const requestEpoch = adminAuthLifecycleEpoch();
+  const { response, result } = await requestAdminAuthJson("/api/admin/auth/activity", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expectedAdminId }),
+    cache: "no-store",
+  }, { activityEpoch: requestEpoch });
+  if (requestEpoch !== adminAuthLifecycleEpoch() || !adminAuthActivityAllowed()) throw new AdminAuthEpochChangedError();
+  if (response.status === 409) throw new AdminActivityIdentityChangedError();
+  const payload = authoritativeAdminSessionPayload(response.status, response.ok, result);
+  if (!payload) return null;
+  const auth = normalizeLoginPayload(payload);
+  if (auth.session.adminId !== expectedAdminId) throw new AdminActivityIdentityChangedError();
+  return auth;
 }
 
 export async function changeAdminPassword(currentPassword: string, newPassword: string): Promise<LoginResult> {

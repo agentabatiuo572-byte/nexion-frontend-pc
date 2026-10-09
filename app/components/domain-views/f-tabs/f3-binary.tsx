@@ -288,7 +288,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             op: "param",
             paramKey: "F.binary.matchRate",
             edit: { kind: "text", current: rateEff, unit: "%" },
-            detail: `min(A,B) × 该比例日结算 · 当前 ${text(rateEff)} · 放大佣金流出,受 B1 覆盖率约束。改后对下一周期结算生效,不回溯已计提。`,
+            detail: `min(A,B) × 该比例，按当前配置周期结算 · 当前 ${text(rateEff)} · 放大佣金流出,受 B1 覆盖率约束。改后对下一周期结算生效,不回溯已计提。`,
             completionCopy: "保存后只影响下一周期结算，不回溯已计提。",
           })}>调整比例</button></div>}
         </div>

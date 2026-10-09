@@ -101,7 +101,7 @@ export type L6BehaviorHeatmapData = {
   dailyTrend: { bucket: string; pv: number; clicks: number }[];
   weeklyTrend: { bucket: string; pv: number; clicks: number }[];
   businessTimeZone: "UTC+08:00";
-  lateArrivalPolicy: "included_on_next_query";
+  lateArrivalPolicy: "rejected_retry_in_order";
   deduplication: "clientEventId";
 };
 
@@ -115,7 +115,7 @@ export function normalizeL6BehaviorHeatmap(raw: unknown): L6BehaviorHeatmapData 
   const status = text(data.status);
   if (!available) return emptyL6(status, optionalText(data.message));
   if (status !== "AVAILABLE" || data.businessTimeZone !== "UTC+08:00"
-      || data.lateArrivalPolicy !== "included_on_next_query") invalid();
+      || data.lateArrivalPolicy !== "rejected_retry_in_order") invalid();
   const quality = rec(data.quality);
   if (quality.clientEventIdDeduplicated !== true || quality.outOfOrderRejected !== true
       || quality.ctrDenominator !== "page_viewed_pv") invalid();
@@ -152,7 +152,7 @@ export function normalizeL6BehaviorHeatmap(raw: unknown): L6BehaviorHeatmapData 
     dailyTrend: normalizeTrend(data.dailyTrend),
     weeklyTrend: normalizeTrend(data.weeklyTrend),
     businessTimeZone: "UTC+08:00",
-    lateArrivalPolicy: "included_on_next_query",
+    lateArrivalPolicy: "rejected_retry_in_order",
     deduplication: "clientEventId",
   };
 }
@@ -170,7 +170,7 @@ function emptyL6(status: string, message: string): L6BehaviorHeatmapData {
     pageTree: [], excludedPages: [],
     activityByWindow: { "24h": [], "7d": [], "30d": [] },
     clickHeatByRoute: {}, dailyTrend: [], weeklyTrend: [],
-    businessTimeZone: "UTC+08:00", lateArrivalPolicy: "included_on_next_query",
+    businessTimeZone: "UTC+08:00", lateArrivalPolicy: "rejected_retry_in_order",
     deduplication: "clientEventId",
   };
 }

@@ -41,7 +41,7 @@ test("L6 normalizes canonical server aggregates without exposing raw identities"
     available: true,
     status: "AVAILABLE",
     businessTimeZone: "UTC+08:00",
-    lateArrivalPolicy: "included_on_next_query",
+    lateArrivalPolicy: "rejected_retry_in_order",
     quality: { clientEventIdDeduplicated: true, outOfOrderRejected: true, ctrDenominator: "page_viewed_pv" },
     totalPages: 1,
     trackedCount: 1,
@@ -54,6 +54,7 @@ test("L6 normalizes canonical server aggregates without exposing raw identities"
   });
 
   assert.equal(data.available, true);
+  assert.equal(data.lateArrivalPolicy, "rejected_retry_in_order");
   assert.equal(data.pageTree[0].level, 1);
   assert.equal(data.activityByWindow["7d"][0].uv, 3);
   assert.equal(data.activityByWindow["7d"][0].pageCount, 1);
@@ -67,7 +68,7 @@ test("L6 rejects dirty HTTP 200 aggregates as a whole instead of manufacturing z
     status: "AVAILABLE",
     window: "7d",
     businessTimeZone: "UTC+08:00",
-    lateArrivalPolicy: "included_on_next_query",
+    lateArrivalPolicy: "rejected_retry_in_order",
     quality: { clientEventIdDeduplicated: true, outOfOrderRejected: true, ctrDenominator: "page_viewed_pv" },
     totalPages: 1,
     trackedCount: 1,
@@ -80,6 +81,8 @@ test("L6 rejects dirty HTTP 200 aggregates as a whole instead of manufacturing z
   };
   assert.equal(normalizeL6BehaviorHeatmap(valid).activityByWindow["7d"][0].pv, 4);
   for (const dirty of [
+    { ...valid, lateArrivalPolicy: "included_on_next_query" },
+    { ...valid, lateArrivalPolicy: undefined },
     { ...valid, available: "yes" },
     { ...valid, trackedCount: 2 },
     { ...valid, activityByWindow: { ...valid.activityByWindow, "7d": [{ ...valid.activityByWindow["7d"][0], pv: -1 }] } },
@@ -132,7 +135,12 @@ test("L5 exposes only implemented actions and L6 uses canonical filtered endpoin
   assert.match(l5, /已就绪（含历史）/);
   assert.match(l5, /历史无快照/);
   assert.match(l5, /当前版本已关闭此历史类型/);
-  assert.match(l5, /七类账单/);
+  assert.match(l5, /八类账单/);
+  const d4Client = await readFile(new URL("../lib/admin/d-client.ts", import.meta.url), "utf8");
+  const canonicalTypes = d4Client.match(/const D4_BILL_TYPES = new Set<D4BillType>\(\[([^\]]+)\]\)/)?.[1];
+  const displayedTypes = l5.match(/<span className="nm">(swap \/[^<]+)<\/span>/)?.[1];
+  assert.ok(canonicalTypes && displayedTypes, "L5 must disclose the canonical D4 categories");
+  assert.deepEqual(displayedTypes.split(" / "), Array.from(canonicalTypes.matchAll(/"([^"]+)"/g), match => match[1]));
   assert.match(l5, /生成监管报告/);
   assert.match(l5, /I5 当前法域 × 披露版本/);
   assert.doesNotMatch(l5, /调整排程/);
