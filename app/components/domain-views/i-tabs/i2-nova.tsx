@@ -745,7 +745,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             label: "推送模板池(b)",
             kind: "sample-ledger",
             maxRows: 7,
-            reason: "模板池当前七条种子样本,发布和归档走操作确认",
+            reason: `模板池当前展示 ${NOVA_TPLS.length} 条服务端目录记录,发布和归档走操作确认`,
           },
         ]}
       />
