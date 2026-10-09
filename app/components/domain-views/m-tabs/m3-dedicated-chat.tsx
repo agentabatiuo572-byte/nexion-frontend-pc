@@ -33,7 +33,8 @@ const recoveryKey = (adminId: number, key: string) => `${pendingKey(adminId)}:re
 const ticketLinksKey = (adminId: number) => `nexion-m3-converted-tickets-v1:${adminId}`;
 const firstPendingKey = (adminId: number, customerId: string) => `nexion-m3-first-pending:${adminId}:${customerId}`;
 type StoredMessage = PendingMutationRecord & { payload: string };
-const pendingMessages = createPendingMutationStore<StoredMessage>({ storageKey: "nexion-admin-m3-private-pending-v1", ttlMs: Number.MAX_SAFE_INTEGER-Date.now(), isValidRecord: (row) => typeof row.payload === "string" });
+// Legacy timeout rows must survive private-message housekeeping even when their payload cannot be recovered.
+const pendingMessages = createPendingMutationStore<StoredMessage>({ storageKey: "nexion-admin-m3-private-pending-v1", ttlMs: Number.MAX_SAFE_INTEGER-Date.now(), isValidRecord: (row) => typeof row.payload === "string" || /^nexion-m3-timeout:[1-9]\d*$/.test(row.fingerprint) });
 const pendingTimeoutPolicies = createPendingMutationStore<StoredMessage>({ storageKey: "nexion-admin-m3-timeout-pending-v1", ttlMs: Number.MAX_SAFE_INTEGER-Date.now(), isValidRecord: (row) => typeof row.payload === "string" });
 const readPending = (slot: string) => pendingMessages.list().find((row) => row.fingerprint === slot)?.payload;
 const rememberPending = (slot: string, commandKey: string, value: object) => {
@@ -337,14 +338,51 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
           const slot=recoveryKey(adminId, record.commandKey);
           pendingMessages.forget(record.fingerprint, record.commandKey);
           rememberPending(slot, record.commandKey, locator);
-          // A failed quota write must not leave the previous private body on disk.
+          // Retry the smaller persisted row without deleting unrelated messages or legacy timeout commands.
           if (JSON.parse(sessionStorage.getItem("nexion-admin-m3-private-pending-v1") || "{}")[record.commandKey]?.payload !== JSON.stringify(locator)) {
-            sessionStorage.removeItem("nexion-admin-m3-private-pending-v1");
-            rememberPending(slot, record.commandKey, locator);
+            const persisted = JSON.parse(sessionStorage.getItem("nexion-admin-m3-private-pending-v1") || "{}");
+            const original = persisted[record.commandKey];
+            if (!original || original.commandKey !== record.commandKey) throw new Error("Private recovery row unavailable");
+            persisted[record.commandKey] = { ...original, fingerprint: slot, payload: JSON.stringify(locator) };
+            try { sessionStorage.setItem("nexion-admin-m3-private-pending-v1", JSON.stringify(persisted)); }
+            catch {
+              // If even a smaller replacement is refused, erase private bodies and retain timeout lineage only.
+              let durable = false;
+              try {
+                const timeouts: Record<string, StoredMessage> = {};
+                for (const [key, value] of Object.entries(persisted)) {
+                  const row = value as StoredMessage;
+                  if (!/^nexion-m3-timeout:[1-9]\d*$/.test(row.fingerprint)) continue;
+                  const saved = JSON.parse(row.payload) as TimeoutCommand;
+                  parseMConversationTimeoutPolicy(saved.policy);
+                  if (saved.key !== key || row.commandKey !== key || !Number.isFinite(row.createdAt) || !Number.isFinite(row.expiresAt) || row.expiresAt <= Date.now() || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(key) || typeof saved.operator !== "string" || !saved.input || !Number.isInteger(saved.input.warnMinutes) || saved.input.warnMinutes < 1 || saved.input.warnMinutes > 30 || !Number.isInteger(saved.input.closeMinutes) || saved.input.closeMinutes <= saved.input.warnMinutes || saved.input.closeMinutes > 120 || typeof saved.input.reason !== "string" || saved.input.reason.trim().length < 6 || saved.input.reason.trim().length > 200) throw new Error("Timeout recovery row invalid");
+                  timeouts[key] = row;
+                }
+                const preserveTimeouts = () => {
+                  const target = JSON.parse(sessionStorage.getItem("nexion-admin-m3-timeout-pending-v1") || "{}");
+                  for (const [key, row] of Object.entries(timeouts)) {
+                    if (target[key] && JSON.stringify(target[key]) !== JSON.stringify(row)) throw new Error("Timeout recovery row conflict");
+                    target[key] = row;
+                  }
+                  if (Object.keys(timeouts).length) sessionStorage.setItem("nexion-admin-m3-timeout-pending-v1", JSON.stringify(target));
+                  const stored = JSON.parse(sessionStorage.getItem("nexion-admin-m3-timeout-pending-v1") || "{}");
+                  return Object.keys(timeouts).length > 0 && Object.entries(timeouts).every(([key, row]) => JSON.stringify(stored[key]) === JSON.stringify(row));
+                };
+                try { preserveTimeouts(); } catch { /* Retry after privacy erasure frees quota. */ }
+                sessionStorage.removeItem("nexion-admin-m3-private-pending-v1");
+                durable = preserveTimeouts();
+              } catch {
+                // Invalid metadata or blocked migration must never retain revoked private bodies.
+                sessionStorage.removeItem("nexion-admin-m3-private-pending-v1");
+              }
+              setRecoveryError(durable ? "旧消息正文已清除；原策略命令已保留。原消息编号仅在本页可查，请勿刷新或关闭页面。" : "旧消息正文已清除，但恢复记录尚未持久确认；原消息与策略命令仅保留在本页，恢复存储前请勿刷新或关闭页面。");
+              continue;
+            }
+            if (JSON.parse(sessionStorage.getItem("nexion-admin-m3-private-pending-v1") || "{}")[record.commandKey]?.payload !== JSON.stringify(locator)) throw new Error("Private recovery row not stored");
           }
           if (!pendingMessages.isDurablyStored(slot, record.commandKey)) setRecoveryError("原消息编号仅保留在本页；恢复浏览器存储前请勿刷新或关闭页面，再重试查询。");
         }
-      } catch { setRecoveryError("原消息编号暂不能持久保存，请保留本页并恢复浏览器存储后重试查询。"); }
+      } catch { setRecoveryError("原恢复记录尚未核实，已关闭对应会话操作；请保留本页并恢复浏览器存储后重试清理。"); }
     }
     readRecoveries();
     setRevokedIds((old) => new Set([...old, ...affected]));
@@ -842,12 +880,31 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   }, [canReadTimeout, canTimeout]);
   const timeoutSlot = `nexion-m3-timeout:${adminId}`;
   const readTimeoutCommand = (): TimeoutCommand | null => {
-    const raw = pendingTimeoutPolicies.list().find((row) => row.fingerprint === timeoutSlot)?.payload;
-    if (!raw) return null;
-    const saved = JSON.parse(raw) as TimeoutCommand;
-    parseMConversationTimeoutPolicy(saved.policy);
-    if (typeof saved.key !== "string" || !saved.key || typeof saved.operator !== "string" || !saved.input || !Number.isInteger(saved.input.warnMinutes) || saved.input.warnMinutes < 1 || saved.input.warnMinutes > 30 || !Number.isInteger(saved.input.closeMinutes) || saved.input.closeMinutes <= saved.input.warnMinutes || saved.input.closeMinutes > 120 || typeof saved.input.reason !== "string" || saved.input.reason.trim().length < 6 || saved.input.reason.trim().length > 200) throw new Error("原策略记录无法读取，暂不能另发变更。");
-    return saved;
+    // Check persisted rows before the shared store can prune malformed records or fall back to memory.
+    if (typeof window !== "undefined") for (const key of ["nexion-admin-m3-private-pending-v1", "nexion-admin-m3-timeout-pending-v1"]) {
+      const table = JSON.parse(window.sessionStorage.getItem(key) ?? "{}");
+      if (!table || typeof table !== "object" || Array.isArray(table)) throw new Error("原策略记录无法读取，暂不能另发变更。");
+      for (const [commandKey, row] of Object.entries(table)) {
+        const record = row as Partial<StoredMessage> | null;
+        if (record?.fingerprint === timeoutSlot && (record.commandKey !== commandKey || typeof record.payload !== "string" || !Number.isFinite(record.createdAt) || !Number.isFinite(record.expiresAt) || Number(record.expiresAt) <= Date.now())) throw new Error("原策略记录无法读取，暂不能另发变更。");
+      }
+    }
+    const rows = [...pendingTimeoutPolicies.list(), ...pendingMessages.list()].filter((row) => row.fingerprint === timeoutSlot);
+    const commands = rows.map((row) => {
+      const saved = JSON.parse(row.payload) as TimeoutCommand;
+      parseMConversationTimeoutPolicy(saved.policy);
+      if (typeof saved.key !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(saved.key) || saved.key !== row.commandKey || typeof saved.operator !== "string" || !saved.input || !Number.isInteger(saved.input.warnMinutes) || saved.input.warnMinutes < 1 || saved.input.warnMinutes > 30 || !Number.isInteger(saved.input.closeMinutes) || saved.input.closeMinutes <= saved.input.warnMinutes || saved.input.closeMinutes > 120 || typeof saved.input.reason !== "string" || saved.input.reason.trim().length < 6 || saved.input.reason.trim().length > 200) throw new Error("原策略记录无法读取，暂不能另发变更。");
+      return saved;
+    });
+    if (commands.some((saved) => JSON.stringify(saved) !== JSON.stringify(commands[0]))) throw new Error("存在不同的原策略记录，暂不能另发变更。");
+    return commands[0] ?? null;
+  };
+  const forgetTimeoutCommand = (command: TimeoutCommand) => {
+    const saved = readTimeoutCommand();
+    if (!saved || JSON.stringify(saved) !== JSON.stringify(command)) throw new Error("原策略记录已变化，请重新读取后查询。");
+    pendingTimeoutPolicies.forget(timeoutSlot, command.key);
+    pendingMessages.forget(timeoutSlot, command.key);
+    if (readTimeoutCommand()) throw new Error("原策略结果已确认，但记录尚未持久清理，请恢复浏览器存储后再次查询。");
   };
   const openTimeout = async () => {
     if (!canReadTimeout || timeoutSaving) return;
@@ -922,14 +979,16 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     const stamp = timeoutIdentityRef.current, command = timeoutPending;
     setTimeoutSaving(true);
     try {
+      const saved = readTimeoutCommand();
+      if (!saved || JSON.stringify(saved) !== JSON.stringify(command)) throw new Error("原策略记录已变化，请重新读取后查询。");
       const result = await supportClient.command(command.key);
       if (stamp !== timeoutIdentityRef.current) return;
       if (result.status === "SUCCEEDED") {
         const policy = await fetchMConversationTimeoutPolicy();
         if (stamp !== timeoutIdentityRef.current) return;
-        pendingTimeoutPolicies.forget(timeoutSlot); setTimeoutPending(null); setTimeoutPolicy(policy); setTimeoutInput(undefined); setTimeoutError(""); setTimeoutOpen(false);
+        forgetTimeoutCommand(command); setTimeoutPending(null); setTimeoutPolicy(policy); setTimeoutInput(undefined); setTimeoutError(""); setTimeoutOpen(false);
       } else if (result.status === "FAILED") {
-        pendingTimeoutPolicies.forget(timeoutSlot); setTimeoutPending(null); setTimeoutPolicy(command.policy); setTimeoutConflict(true); setTimeoutError("原操作已失败，草稿已保留；请读取最新策略再确认。"); await refreshTimeoutLatest();
+        forgetTimeoutCommand(command); setTimeoutPending(null); setTimeoutPolicy(command.policy); setTimeoutConflict(true); setTimeoutError("原操作已失败，草稿已保留；请读取最新策略再确认。"); await refreshTimeoutLatest();
       } else setTimeoutError("原操作仍待确认，请稍后查询；原命令与输入已保留。");
     } catch (cause) {
       if (stamp !== timeoutIdentityRef.current) return;
