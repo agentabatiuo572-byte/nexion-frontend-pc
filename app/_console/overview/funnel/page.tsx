@@ -138,6 +138,9 @@ export default function FunnelPage() {
               onChange={(event) => setFilters((current) => ({ ...current, phase: event.target.value }))}
             >
               <option value={ALL}>全部 Phase</option>
+              {/^P[1-6]$/.test(filters.phase) && !options.phases.includes(filters.phase) && (
+                <option value={filters.phase}>{filters.phase}</option>
+              )}
               {options.phases.map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
           </label>

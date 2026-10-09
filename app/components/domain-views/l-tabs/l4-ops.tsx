@@ -23,39 +23,49 @@ const PERIODS: ReadonlyArray<[L4OperationsQuery["period"], string]> = [
 
 export function L4HeaderActions({ ctx }: { ctx: LCtx }) {
   const exportingRef = useRef(false);
-  const intentKeyRef = useRef("");
+  const intentKeyRef = useRef({ fingerprint: "", key: "" });
   const lastSuccessAtRef = useRef(0);
   const [exporting, setExporting] = useState(false);
   const data = readL4Operations(ctx.biData?.l4);
   const query = ctx.l4Query ?? { period: "week", phase: "ALL" };
+  const queryMatchesData = data?.period.key === query.period && data.phaseFilter === query.phase
+    && (query.period !== "custom" || Boolean(query.from && query.to
+      && data.period.from.slice(0, 10) === query.from && data.period.to.slice(0, 10) === query.to));
+  const canExportCurrent = ctx.canExport && data?.available && queryMatchesData
+    && !ctx.biLoading && !ctx.biError;
 
   const exportCurrent = async () => {
-    if (exportingRef.current || !data?.available) return;
+    if (exportingRef.current || !canExportCurrent || !data) return;
     const now = Date.now();
     if (lastSuccessAtRef.current && now - lastSuccessAtRef.current < 2_000) return;
     if (lastSuccessAtRef.current) {
-      intentKeyRef.current = "";
+      intentKeyRef.current = { fingerprint: "", key: "" };
       lastSuccessAtRef.current = 0;
     }
-    if (!intentKeyRef.current) intentKeyRef.current = `l4-ops-${now}-${Math.random().toString(36).slice(2, 10)}`;
-    exportingRef.current = true;
-    setExporting(true);
     const range = [
       `period=${query.period}`,
       `phase=${query.phase}`,
       query.from ? `from=${query.from}` : "",
       query.to ? `to=${query.to}` : "",
     ].filter(Boolean).join(";");
+    const input = {
+      exportType: "运营报表",
+      timeRange: range,
+      fields: "设备/任务/网络/Phase 历史聚合指标",
+      piiLevel: "NONE",
+      maskPolicy: "NONE",
+      recipient: "运营管理员",
+      ticket: "L4-OPERATIONS",
+    };
+    const reason = `导出 L4 ${data.period.label} ${data.phaseFilter} 聚合运营报表`;
+    const fingerprint = JSON.stringify([input, reason]);
+    if (intentKeyRef.current.fingerprint !== fingerprint) {
+      intentKeyRef.current = { fingerprint, key: `l4-ops-${now}-${Math.random().toString(36).slice(2, 10)}` };
+    }
+    exportingRef.current = true;
+    setExporting(true);
     try {
-      await ctx.biActions?.createReport({
-        exportType: "运营报表",
-        timeRange: range,
-        fields: "设备/任务/网络/Phase 历史聚合指标",
-        piiLevel: "NONE",
-        maskPolicy: "NONE",
-        recipient: "运营管理员",
-        ticket: "L4-OPERATIONS",
-      }, `导出 L4 ${data.period.label} ${data.phaseFilter} 聚合运营报表`, intentKeyRef.current);
+      await ctx.biActions?.createReport(input, reason, intentKeyRef.current.key);
       lastSuccessAtRef.current = Date.now();
       ctx.toast("运营报表 CSV 已生成 · 已固化当前周期与阶段并记录审计");
     } catch (error) {
@@ -73,9 +83,9 @@ export function L4HeaderActions({ ctx }: { ctx: LCtx }) {
       <button
         className="f-cta"
         onClick={exportCurrent}
-        disabled={exporting || !ctx.canExport || !data?.available || ctx.biLoading || Boolean(ctx.biError)}
+        disabled={exporting || !canExportCurrent}
         aria-busy={exporting}
-        title={!data?.available ? "所选周期没有可导出的运营事实" : undefined}
+        title={!queryMatchesData ? "请先应用有效周期，再导出对应报表" : !data?.available ? "所选周期没有可导出的运营事实" : undefined}
       >
         {exporting ? "正在生成运营报表..." : "导出运营报表 CSV"}
       </button>
@@ -125,8 +135,6 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
     }
   }, [ctx.setL4Query]);
 
-  if (!data) return <LDataState ctx={ctx} label="L4" />;
-
   const updateQuery = (next: Partial<L4OperationsQuery>) => {
     ctx.setL4Query?.({ ...query, ...next });
   };
@@ -156,7 +164,7 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
         <div className="l-h">
           <span className="ttl">历史运营报表</span>
           <span className="sub">· 设备、任务、网络与 Phase 同读 A4 服务端事件</span>
-          <div className="r"><span className="lcode electric">{data.period.label} · {data.phaseFilter}</span></div>
+          <div className="r"><span className="lcode electric">{data ? `${data.period.label} · ${data.phaseFilter}` : "等待所选周期数据"}</span></div>
         </div>
         <div className="l-b" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <span id={periodLabelId} style={{ fontSize: 12, color: "var(--ink-3)" }}>报表周期</span>
@@ -192,6 +200,7 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
         </div>
       </section>
 
+      {!data ? <LDataState ctx={ctx} label="L4" /> : <>
       <TabGroup<ReportTab>
         style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}
         label="L4 四类运营报表"
@@ -220,6 +229,7 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
       <HistoryTable data={data} />
 
       <p className="f-foot"><b>L4 只读、不另立账本</b>：历史效果来自 A4 schema-accepted 事件；设备/任务参数归 E 域，团队关系归 F 域，Phase dial 归 H1。缺分母或窗口数据时显示“—”，不推算。</p>
+      </>}
     </div>
   );
 }

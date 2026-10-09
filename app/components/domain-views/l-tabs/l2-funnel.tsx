@@ -5,7 +5,7 @@
  * 漏斗各级 users/cvr/色 join 自 FUNNEL(与 B3 驾驶舱同口径单一源);复投级挂「V1 降级口径」badge。
  * 全页只读下钻;导出为聚合序列(仍需操作确认 落审计)。
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { TabGroup } from "@/app/components/kit/tab-group";
@@ -112,6 +112,8 @@ export function isStrictL2Dashboard(raw: unknown): boolean {
     || (monthly.length > 0 && !validateCohorts(monthly, /^\d{4}-(?:0[1-9]|1[0-2])$/))) return false;
   const curves = rec(data.curves);
   if (cohorts.some((item) => !validCurve(curves[str(item.w || item.cohort)]))) return false;
+  const monthlyCurves = rec(data.monthlyCurves);
+  if (monthly.some((item) => !validCurve(monthlyCurves[str(item.w || item.cohort)]))) return false;
   const cross = rec(data.crossAnalysis);
   for (const key of ["cvr", "ret", "trial"]) {
     const metric = rec(cross[key]);
@@ -228,6 +230,14 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
   const [queryLoading, setQueryLoading] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
   const [crossOverride, setCrossOverride] = useState<Record<string, unknown> | null>(null);
+  const queryGeneration = useRef(0);
+
+  useEffect(() => () => { queryGeneration.current += 1; }, []);
+
+  const cancelQuery = () => {
+    queryGeneration.current += 1;
+    setQueryLoading(false);
+  };
 
   useEffect(() => {
     try {
@@ -290,12 +300,15 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
       return;
     }
     const query: L2FunnelQuery = { stage, cohort, phase: draftPhase, locale, ref };
+    const generation = ++queryGeneration.current;
     setQueryLoading(true);
     setQueryError(null);
     setQueryData({});
+    setCrossOverride(null);
     ctx.setL2SliceExportable?.(false);
     try {
       const response = await fetchL2FunnelDrilldown(query);
+      if (generation !== queryGeneration.current) return;
       if (response.available === false) {
         setQueryData(response);
         ctx.setL2Query?.({ cohort, phase: draftPhase, locale, ref });
@@ -310,9 +323,9 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
       ctx.setL2SliceExportable?.(true);
       ctx.toast(stage ? "已按当前切片完成真实漏斗下钻" : "切片已从服务端重新计算");
     } catch (error) {
-      setQueryError(error instanceof Error ? displayAdminError(error) : "L2 查询失败");
+      if (generation === queryGeneration.current) setQueryError(error instanceof Error ? displayAdminError(error) : "L2 查询失败");
     } finally {
-      setQueryLoading(false);
+      if (generation === queryGeneration.current) setQueryLoading(false);
     }
   };
 
@@ -324,8 +337,9 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
   const TRIAL_STEPS = rows<TrialStep>(data?.trialSteps);
   const WEEKLY_COHORTS = rows<CohortRow>(data?.cohorts);
   const MONTHLY_COHORTS = rows<CohortRow>(data?.monthlyCohorts);
-  const COHORTS = gran === 1 && MONTHLY_COHORTS.length ? MONTHLY_COHORTS : WEEKLY_COHORTS;
-  const CURVES = rec<[number, number][]>(gran === 1 && MONTHLY_COHORTS.length ? data?.monthlyCurves : data?.curves);
+  const cohortKind = gran === 1 && MONTHLY_COHORTS.length ? "月" : "周";
+  const COHORTS = cohortKind === "月" ? MONTHLY_COHORTS : WEEKLY_COHORTS;
+  const CURVES = rec<[number, number][]>(cohortKind === "月" ? data?.monthlyCurves : data?.curves);
   const XD = crossOverride ?? rec(data?.crossAnalysis);
   const STAGE_EV = strings(data?.stageEvents);
   const day7 = (data?.day7Kpi ?? {}) as Partial<KpiRow>;
@@ -335,6 +349,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
       <div className="l-b">
         <div className="ltint warn" role="alert"><b>L2 查询未采用</b> · {queryError}。页面已关闭旧切片导出，不会用部分或脏响应拼接分析结论。</div>
         <button className="l-btn sm" style={{ marginTop: 12 }} onClick={() => {
+          cancelQuery();
           setQueryData(null);
           setQueryError(null);
           setCrossOverride(null);
@@ -365,17 +380,14 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
     .map((day) => ({ day, key: `d${day}` as keyof CohortRow }));
 
   const cohortCurveKeys = COHORTS.map((cohort) => cohort.w).filter((key) => Array.isArray(CURVES[key]));
-  const activeQuery: L2FunnelQuery = {
-    cohort: draftCohort.trim(),
-    phase: draftPhase,
-    locale: draftLocale.trim(),
-    ref: draftRef.trim(),
-  };
+  const activeQuery: L2FunnelQuery = ctx.l2Query ?? {};
 
   const loadRetentionWindows = async (nextWins: string[]) => {
+    const generation = ++queryGeneration.current;
     setQueryLoading(true);
     try {
       const response = await fetchL2RetentionMatrix(activeQuery, nextWins);
+      if (generation !== queryGeneration.current) return;
       const merged = { ...rec(data), cohorts: response.cohorts };
       if (!isStrictL2Dashboard(merged)) throw new Error("L2_RETENTION_PROTOCOL_ERROR");
       setQueryData(merged);
@@ -383,17 +395,20 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
       ctx.setL2Query?.(activeQuery);
       ctx.setL2SliceExportable?.(true);
     } catch (error) {
+      if (generation !== queryGeneration.current) return;
       ctx.setL2SliceExportable?.(false);
       setQueryError(error instanceof Error ? displayAdminError(error) : "留存矩阵查询失败");
     } finally {
-      setQueryLoading(false);
+      if (generation === queryGeneration.current) setQueryLoading(false);
     }
   };
 
   const loadCrossMetric = async (nextMetric: "cvr" | "ret" | "trial") => {
+    const generation = ++queryGeneration.current;
     setQueryLoading(true);
     try {
       const response = await fetchL2Cross(nextMetric === "ret" ? "retention" : nextMetric, activeQuery);
+      if (generation !== queryGeneration.current) return;
       const nextCross = rec(response.crossAnalysis);
       const merged = { ...rec(data), crossAnalysis: nextCross };
       if (!isStrictL2Dashboard(merged)) throw new Error("L2_CROSS_PROTOCOL_ERROR");
@@ -402,21 +417,24 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
       ctx.setL2Query?.(activeQuery);
       ctx.setL2SliceExportable?.(true);
     } catch (error) {
+      if (generation !== queryGeneration.current) return;
       ctx.setL2SliceExportable?.(false);
       setQueryError(error instanceof Error ? displayAdminError(error) : "交叉分析查询失败");
     } finally {
-      setQueryLoading(false);
+      if (generation === queryGeneration.current) setQueryLoading(false);
     }
   };
 
   const loadCurve = async (cohortIndex: number) => {
     const cohort = COHORTS[cohortIndex]?.w;
     if (!cohort) return;
+    const generation = ++queryGeneration.current;
     setQueryLoading(true);
     try {
       const response = await fetchL2RetentionCurve(cohort, activeQuery);
+      if (generation !== queryGeneration.current) return;
       if (!validCurve(response.curve)) throw new Error("L2_RETENTION_CURVE_PROTOCOL_ERROR");
-      const curveKey = gran === 1 ? "monthlyCurves" : "curves";
+      const curveKey = cohortKind === "月" ? "monthlyCurves" : "curves";
       const merged = {
         ...rec(data),
         [curveKey]: { ...rec(data?.[curveKey]), [cohort]: response.curve },
@@ -427,10 +445,11 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
       ctx.setL2Query?.(activeQuery);
       ctx.setL2SliceExportable?.(true);
     } catch (error) {
+      if (generation !== queryGeneration.current) return;
       ctx.setL2SliceExportable?.(false);
       setQueryError(error instanceof Error ? displayAdminError(error) : "留存曲线查询失败");
     } finally {
-      setQueryLoading(false);
+      if (generation === queryGeneration.current) setQueryLoading(false);
     }
   };
 
@@ -441,7 +460,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
     const scaled = CURVES[selectedKey] ?? [];
     const maxCurveDay = Math.max(30, ...scaled.map(([day]) => day));
     const X = (d: number) => P + (d / maxCurveDay) * (W - P - 14);
-    const Y = (v: number) => H - 24 - ((v - 30) / 70) * (H - 44);
+    const Y = (v: number) => H - 24 - (v / 100) * (H - 44);
     const mp = scaled.map(([d, v], i) => `${i ? "L" : "M"}${X(d).toFixed(1)} ${Y(v).toFixed(1)}`).join(" ");
     const cp = cmp !== "none" ? (CURVES[cmp] ?? []).map(([d, v], i) => `${i ? "L" : "M"}${X(d).toFixed(1)} ${Y(v).toFixed(1)}`).join(" ") : null;
     return (
@@ -471,7 +490,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
     <div>
       {/* stat strip */}
       <div className="f-stats">
-        <div className="f-stat cyan"><div className="k">本周注册 cohort</div><div className="v">{COHORTS[COHORTS.length - 1].w}</div><div className="sub">{COHORTS[COHORTS.length - 1].size.toLocaleString("en-US")} 新注册 · 按注册周分组</div></div>
+        <div className="f-stat cyan"><div className="k">本{cohortKind}注册 cohort</div><div className="v">{COHORTS[COHORTS.length - 1].w}</div><div className="sub">{COHORTS[COHORTS.length - 1].size.toLocaleString("en-US")} 新注册 · 按注册{cohortKind}分组</div></div>
         <div className="f-stat"><div className="k">全漏斗转化(注册→提现)</div><div className="v">{fullCvr}%</div><div className="sub">注册 cohort 中最终发起提现的比例</div></div>
         <div className="f-stat warn"><div className="k">最近成熟 cohort · Day7 留存</div><div className="v">{day7.value == null ? "—" : `${day7.value}%`}</div><div className="sub">目标 &gt; {day7.target ?? 60}% · 未成熟窗口不推算</div></div>
         <div className="f-stat ok"><div className="k">trial→购买率</div><div className="v">{trialBuy == null ? "—" : `${trialBuy}%`}</div><div className="sub">L3→L4 子路径 · 并列独立计量</div></div>
@@ -491,6 +510,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
             {queryLoading ? "查询中…" : "应用切片"}
           </button>
           <button className="l-btn sm" disabled={queryLoading} onClick={() => {
+            cancelQuery();
             setDraftCohort("");
             setDraftPhase("");
             setDraftLocale("");
@@ -509,7 +529,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
           labelClassName="lb"
           value={gran}
           items={[0, 1] as const}
-          onSelect={(i) => { setGran(i); ctx.toast(`切片已切换:${i === 0 ? "注册周 YYYY-Www" : "注册月"} · 仅视图,实时生效`); }}
+          onSelect={(i) => { cancelQuery(); setGran(i); ctx.toast(`切片已切换:${i === 0 ? "注册周 YYYY-Www" : "注册月"} · 仅视图,实时生效`); }}
           itemClassName={(_i, selected) => `chip${selected ? " sel" : ""}`}
         >{(i) => (i === 0 ? "注册周 YYYY-Www" : "注册月")}</TabGroup>
         <div className="sep" />
@@ -602,7 +622,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">Cohort 留存矩阵</span>
-          <span className="sub">· <AutoGloss>注册周分组 × 留存窗 · 每格 = 该批用户到那天还有多少在用 app · 点格子换右侧曲线</AutoGloss></span>
+          <span className="sub">· <AutoGloss>注册{cohortKind}分组 × 留存窗 · 每格 = 该批用户到那天还有多少在用 app · 点格子换右侧曲线</AutoGloss></span>
           <div className="r"><div className="ret-legend">
             <span>低</span>
             {[10, 25, 45, 70].map((a) => <i key={a} style={{ background: `color-mix(in srgb, var(--cyan) ${a}%, transparent)` }} />)}
