@@ -55,7 +55,7 @@ export interface PendingMutationStore<T extends PendingMutationRecord> {
   list(): T[];
 }
 
-function isBaseRecord(value: unknown, commandKey: string, now: number): value is PendingMutationRecord {
+function isBaseRecord(value: unknown, commandKey: string, now: number, retainExpiredRecords = false): value is PendingMutationRecord {
   if (typeof value !== "object" || value === null) return false;
   const record = value as PendingMutationRecord;
   return record.commandKey === commandKey
@@ -65,7 +65,10 @@ function isBaseRecord(value: unknown, commandKey: string, now: number): value is
     && record.commandKey.length > 0
     && Number.isFinite(record.createdAt)
     && Number.isFinite(record.expiresAt)
-    && record.expiresAt > now;
+    && (retainExpiredRecords
+      ? Number.isSafeInteger(record.createdAt) && record.createdAt >= 0
+        && Number.isSafeInteger(record.expiresAt) && record.expiresAt > record.createdAt
+      : record.expiresAt > now);
 }
 
 /**
@@ -203,10 +206,12 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
   /** sessionStorage 键名。同一动作族共用一个键,靠 fingerprint 前缀分命名空间。 */
   storageKey: string;
   ttlMs?: number;
+  /** Keep valid expired evidence for query-only recovery; never authorizes replay. */
+  retainExpiredRecords?: boolean;
   /** 公共字段之外的结构校验(元数据字段)。返回 false 的记录读取时即被剔除。 */
   isValidRecord?: (value: T) => boolean;
 }): PendingMutationStore<T> {
-  const { storageKey, ttlMs = PENDING_MUTATION_TTL_MS, isValidRecord } = options;
+  const { storageKey, ttlMs = PENDING_MUTATION_TTL_MS, isValidRecord, retainExpiredRecords = false } = options;
   // 空 storageKey 会静默退化成「只有内存、刷新即丢」—— 正是本模块要根治的缺陷。
   // 类型层挡不住 .mjs 调用方,所以在运行时也焊一道。
   if (typeof storageKey !== "string" || !storageKey) {
@@ -244,7 +249,7 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
   }
 
   function usable(value: unknown, commandKey: string, now: number): value is T {
-    return isBaseRecord(value, commandKey, now) && (!isValidRecord || isValidRecord(value as T));
+    return isBaseRecord(value, commandKey, now, retainExpiredRecords) && (!isValidRecord || isValidRecord(value as T));
   }
 
   function syncMemory(value: Record<string, T>) {

@@ -1,4 +1,12 @@
 const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+  SUPPORT_RECOVERY_FACTS_UNAVAILABLE: "当前授权范围内暂时无法读取用于核对的客户资料，原操作结果仍待确认；请保留原命令并查询结果，不要重复提交。",
+  SUPPORT_RECOVERY_FACTS_CHANGED: "客户绑定或版本已变化，原操作结果尚未完成核对；请保留原命令，重新读取当前获准资料后继续查询。",
+  READ_IDENTITY_CHANGED: "本次读取已取消，或账号及查看范围已变化，旧资料不能用于确认结果；请返回当前获准范围重新读取，已提交的操作仍须查询原结果。",
+  MAINTENANCE_READBACK_MISMATCH: "维护调整后的资料与本次操作不一致，结果尚未确认；请保留原命令并查询原操作，不要重复提交。",
+  MAINTENANCE_RECOVERY_FACTS_CHANGED: "客户归属或维护状态已变化，原维护结果尚未核对；请保留原命令，重新读取当前资料后继续查询。",
+  TARGET_UNAVAILABLE: "目标客服组当前不可用，请重新读取获准组范围并选择可用组。",
+  SUPPORT_ROUTE_RECOVERY_FACTS_CHANGED: "客户当前组范围与原调整资料不一致，结果尚未完成核对；请保留原命令，重新读取当前获准组资料后继续查询。",
+  MANAGEMENT_SCOPE_REQUIRED: "当前账号没有客服组管理范围；请返回本人工作台，或联系总管理员核对主管资格及负责组。",
   SUPPORT_CONTRACT_MALFORMED: "客服数据格式暂不匹配，请刷新后重试；若持续出现，请联系技术人员核对接口。",
   A1_AVATAR_ID_INVALID: "头像素材标识无效，请重新选择并上传图片。",
   M3_MESSAGE_PAYLOAD_INVALID: "会话消息资料不完整，已停止展示；请重新读取详情。",

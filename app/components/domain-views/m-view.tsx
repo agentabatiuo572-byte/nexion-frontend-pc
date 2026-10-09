@@ -28,7 +28,7 @@ import { failClosedSupportAgentsAfterReload, preserveVerifiedSupportAgentsDuring
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useConversationStream, type ConversationStreamEvent } from "@/lib/admin/use-conversation-stream";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
-import { M1PersonalWorkbench } from "./m-tabs/m1-personal-workbench";
+import { M1AnalyticsWorkbench } from "./m-tabs/m1-analytics-workbench";
 import { M2Tickets } from "./m-tabs/m2-tickets";
 import { M3DedicatedChat } from "./m-tabs/m3-dedicated-chat";
 import { M4KbSla } from "./m-tabs/m4-kb-sla";
@@ -125,7 +125,7 @@ const FOLD: Record<string, string> = {
 };
 
 const RO_LIVE: Record<string, [ro: string, live: string]> = {
-  M1: ["本人客户与待办 · 主管可处理待绑定客户", "待办按客户去重"],
+  M1: ["按当前授权范围查看客户与分组数据", "统计数据与服务待办"],
   M2: ["回复 / 关单自动留痕 · 资金处置请到提现管理", "处理中工单实时计数"],
   M3: ["本人专属会话 · 主管只读审阅", "会话按当前归属显示"],
   M4: ["改常见问答 / 响应时限要填理由留痕", "帮助内容 + 各类响应时限"],
@@ -603,7 +603,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         <span className="sr-only" aria-live="polite">{conversationStreamReady ? "实时会话已连接" : "实时会话正在重连"}</span>
       )}
 
-      {tab === "M1" && <M1PersonalWorkbench key={authEpoch} permission={permission} ctx={ctx} />}
+      {tab === "M1" && <M1AnalyticsWorkbench key={authEpoch} permission={permission} ctx={ctx} />}
       {tab === "M5" && permission !== "agent" && <nav className="s5a-nav" aria-label="服务配置"><button type="button" className={m5Pane === "rules" ? "active" : ""} onClick={() => setM5Pane("rules")}>服务规则</button><button type="button" className={m5Pane === "templates" ? "active" : ""} onClick={() => setM5Pane("templates")}>话术与模板</button></nav>}
       {tab === "M5" && effectiveM5Pane === "rules" && <M5ServiceRules key={authEpoch} permission={permission} />}
       {tab !== "M1" && !(tab === "M5" && effectiveM5Pane === "rules") && !safeMData ? (

@@ -1,0 +1,6 @@
+.m6-public-leaderboard .m6-leaderboard-search { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:12px 24px; }
+.m6-public-leaderboard .m6-leaderboard-search .fld { width:min(260px, 100%); }
+.m6-public-leaderboard .m6-leaderboard-notice { margin:12px 24px; color:var(--ink-2); }
+.m6-public-leaderboard .m6-leaderboard-notice button { margin-left:10px; }
+.m6-leaderboard-summary dt { margin-top:14px; color:var(--ink-3); }
+.m6-leaderboard-summary dd { margin:4px 0 0; overflow-wrap:anywhere; }

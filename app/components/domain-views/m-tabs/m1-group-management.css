@@ -1,0 +1,5 @@
+.m1-group-management { font-family:inherit; color:var(--ink); }
+.m1-group-management .m-admin-toolbar { flex-wrap:wrap; }
+.m1-group-management h2 { margin:0; flex:1; }
+.m1-group-management .field { display:block; margin:14px 0; }
+.m1-group-management .m-admin-table-wrap { margin-top:14px; }
