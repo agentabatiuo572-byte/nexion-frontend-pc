@@ -468,7 +468,7 @@ test("a real opened end confirmation expires when qualification becomes unknown 
     const recoveredResult = await confirmation.run(reason);
     assert.equal(unknownResult, false); assert.equal(unknownWrites, before);
     assert.equal(recoveredResult, false); assert.equal(writes, before);
-    assert.ok(pendingText.includes("坐席身份待核对"));
+    assert.ok(pendingText.includes("专属客服身份待核对"));
     assert.ok(!pendingText.includes("权限已变化"));
   } finally { probe.unmount(); }
 });

@@ -85,6 +85,8 @@ export type SupportAgentCandidate = {
   seatType: "MANAGER" | "DEDICATED" | "GENERAL";
   serviceTypes: Array<"support" | "advisor">;
   enabled: boolean;
+  status: "enabled" | "disabled";
+  assignmentEligible: boolean;
   busy: boolean;
   assignedUserCount: number;
   maxConcurrent: number;
@@ -416,7 +418,11 @@ export const supportClient = {
     request(`/support-agents/page${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize"), groupId: options.groupId === undefined ? undefined : positive(options.groupId, "groupId") })}`, (value) => page(value, (entry): SupportAgentCandidate => {
       const row = object(entry, "agent");
       if (!Array.isArray(row.serviceTypes)) malformed("agent.serviceTypes");
-      return { adminId: positive(row.adminId, "agent.adminId"), name: nonempty(row.name, "agent.name"), seatType: enumValue(row.seatType, ["MANAGER", "DEDICATED", "GENERAL"] as const, "agent.seatType"), serviceTypes: row.serviceTypes.map((type) => enumValue(type, ["support", "advisor"] as const, "agent.serviceTypes")), enabled: bool(row.enabled, "agent.enabled"), busy: bool(row.busy, "agent.busy"), assignedUserCount: count(row.assignedUserCount, "agent.assignedUserCount"), maxConcurrent: count(row.maxConcurrent, "agent.maxConcurrent"), currentActiveSessions: row.currentActiveSessions === undefined ? undefined : count(row.currentActiveSessions, "agent.currentActiveSessions"), avatarAssetId: row.avatarAssetId==null?undefined:nonempty(row.avatarAssetId,"agent.avatar"), avatarVersion: row.avatarVersion==null?undefined:count(row.avatarVersion,"agent.avatarVersion"), version: count(row.version, "agent.version") };
+      const status = enumValue(row.status, ["enabled", "disabled"] as const, "agent.status");
+      const assignmentEligible = bool(row.assignmentEligible, "agent.assignmentEligible");
+      const enabled = bool(row.enabled, "agent.enabled");
+      if (assignmentEligible && (status !== "enabled" || !enabled)) malformed("agent.assignmentEligible");
+      return { status, assignmentEligible, adminId: positive(row.adminId, "agent.adminId"), name: nonempty(row.name, "agent.name"), seatType: enumValue(row.seatType, ["MANAGER", "DEDICATED", "GENERAL"] as const, "agent.seatType"), serviceTypes: row.serviceTypes.map((type) => enumValue(type, ["support", "advisor"] as const, "agent.serviceTypes")), enabled, busy: bool(row.busy, "agent.busy"), assignedUserCount: count(row.assignedUserCount, "agent.assignedUserCount"), maxConcurrent: count(row.maxConcurrent, "agent.maxConcurrent"), currentActiveSessions: row.currentActiveSessions === undefined ? undefined : count(row.currentActiveSessions, "agent.currentActiveSessions"), avatarAssetId: row.avatarAssetId==null?undefined:nonempty(row.avatarAssetId,"agent.avatar"), avatarVersion: row.avatarVersion==null?undefined:count(row.avatarVersion,"agent.avatarVersion"), version: count(row.version, "agent.version") };
     }), { signal: options.signal }),
   transfer: (input: { targetAgentAdminId: number; customers: Array<{ id: string; expectedAssignmentId: string | null; expectedVersion: number }>; reason: string }, idempotencyKey: string, signal?: AbortSignal) =>
     request("/support-agents/assignments/transfer", (value): SupportTransferResult => {

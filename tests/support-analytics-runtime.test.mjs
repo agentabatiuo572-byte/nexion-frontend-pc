@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { runInNewContext } from "node:vm";
+import { randomUUID } from "node:crypto";
+import { assertRuntimeIdentity, assertActiveRuntimeState, feOwnershipReferences } from "../scripts/lib/support-analytics-evidence.mjs";
+import { assertReadOnlyRequest, assertAnalyticsScope, assertHandoffConfig, assertBackendEvidence, assertNumericDom, enterGroupDirectory } from "./support-analytics-handoff-runtime.mjs";
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -61,12 +66,12 @@ test("account location uses actual pagination and rejects missing, ambiguous or 
 function run(config, options = {}) {
   const dir = mkdtempSync(join(tmpdir(), "support-i0-negative-"));
   const report = join(dir, "report.json");
-  const env = { ...process.env, WORKFLOW_TASK_ID: "negative-test", WORKFLOW_STEP_ID: "I0-F", WORKFLOW_CHECK_ID: "runtime", WORKFLOW_RUN_ID: "negative-test", WORKFLOW_REPO: repo, WORKFLOW_SNAPSHOT_HASH: "negative-only" };
+  const env = { ...process.env, WORKFLOW_TASK_ID: "support-analytics-frontend-20261007-r5", WORKFLOW_STEP_ID: "I0-F", WORKFLOW_CHECK_ID: "runtime", WORKFLOW_RUN_ID: randomUUID(), WORKFLOW_REPO: repo, WORKFLOW_SNAPSHOT_HASH: "a".repeat(64) };
   delete env.SUPPORT_ACCEPTANCE_CONFIG;
   if (options.omitReceipt) delete env.SUPPORT_RUNTIME_RECEIPT;
   if (config) {
     env.SUPPORT_ACCEPTANCE_CONFIG = join(dir, "config.json");
-    writeFileSync(env.SUPPORT_ACCEPTANCE_CONFIG, JSON.stringify({ taskId: "negative-test", repo, isolatedDatabase: true, ...config }));
+    writeFileSync(env.SUPPORT_ACCEPTANCE_CONFIG, JSON.stringify({ taskId: env.WORKFLOW_TASK_ID, repo, isolatedDatabase: true, ...config }));
   }
   const result = spawnSync(process.execPath, ["scripts/support-analytics-runtime.mjs", "--phase", "I0-F", ...(!options.omitReport ? ["--report", report] : [])], { cwd: repo, env, encoding: "utf8", windowsHide: true, timeout: 20000 });
   return { ...result, report: existsSync(report) ? JSON.parse(readFileSync(report, "utf8")) : undefined };
@@ -543,4 +548,196 @@ test("fresh asynchronous OS collection preserves real process fields without blo
     assert.throws(() => windowsFingerprintBatch([{port:0,paths:[process.execPath]}]));
     assert.throws(() => windowsFingerprintBatch([bindings[0], bindings[0]]), /Duplicate listener/);
   } finally { await Promise.all(servers.filter(server => server.listening).map(server => new Promise(resolve => server.close(resolve)))); }
+});
+
+test("r5 production profile preserves r3/r4 and rejects dev, manual, stale and cross-generation resources", () => {
+  const taskId = "support-analytics-frontend-20261007-r5", r = receipt(), t = { ...target, taskId, origin: "http://127.0.0.1:33108" };
+  r.taskId = taskId; r.fe.origin = t.origin;
+  r.fe.buildSourceDigest = t.candidateDigest; r.fe.buildSourceHead = "a".repeat(40); r.fe.buildLogPath = join(repo, "fixture-production-build.log"); r.fe.buildLogSha256 = "a".repeat(64); r.fe.envBindingPath = join(repo, "fixture-preload.cjs");
+  assertRuntimeReceipt(r, t);
+  const references = feOwnershipReferences(t, r), productionCommand = `${process.execPath} --require ${r.fe.envBindingPath} ${join(repo, "node_modules/next/dist/bin/next")} start --hostname 127.0.0.1 --port 33108`;
+  assert.ok(references.every(path => productionCommand.includes(path)));
+  for (const wrong of [productionCommand.replace("start --", "dev --"), productionCommand.replace("33108", "33107"), productionCommand.replace(join(repo, "node_modules/next/dist/bin/next"), join(repo, "custom-server.mjs"))]) assert.ok(!references.every(path => wrong.includes(path)));
+  for (const change of [{ buildSourceDigest: "old-source" }, { buildSourceHead: "old-head" }, { buildLogPath: undefined }, { buildLogSha256: "old-log" }]) assert.throws(() => assertRuntimeReceipt({ ...r, fe: { ...r.fe, ...change } }, t));
+  const preload = directory => `process.env.NEXION_BACKEND_URL = 'http://127.0.0.1:18161';\nprocess.env.NEXION_ADMIN_COOKIE_NAMESPACE = 'cs_analytics_20261007';\nprocess.env.NEXT_DIST_DIR = '${directory}';`;
+  assertFePreload(preload(".next-seven-r5"), taskId);
+  for (const directory of [".next", ".next-seven-r4", ".next-seven-fixture", ".next-verify-r11-current", ".next-seven-verify-r5"]) assert.throws(() => assertFePreload(preload(directory), taskId));
+  for (const port of [33107, 33109]) { const wrong = structuredClone(r); wrong.fe.origin = `http://127.0.0.1:${port}`; assert.throws(() => assertRuntimeReceipt(wrong, { ...t, origin: wrong.fe.origin })); }
+  for (const proofMode of ["DEV_SOURCE_BOUND", "manual-os-limited"]) { const wrong = structuredClone(r); wrong.fe.proofMode = proofMode; assert.throws(() => assertRuntimeReceipt(wrong, t), /production process/); }
+  assert.throws(() => assertRuntimeReceipt({ ...r, recordedAt: new Date(Date.now() - 16 * 60000).toISOString() }, t), /stale/);
+  const { proof, actual, now } = manualFeFixture(); assert.throws(() => assertManualFeProof(r, t, proof, actual, now), /MANUAL_FE/);
+});
+
+test("formal runtime binds all direct and integration sources without relabelling current identity", () => {
+  const identity = { taskId: "support-analytics-frontend-20261007-r5", stepId: "I0-F", checkId: "runtime", runId: randomUUID(), repo, snapshotHash: "a".repeat(64) };
+  for (const phase of ["I0-F", "I3-F", "I5R-V"]) assertRuntimeIdentity({ ...identity, stepId: phase }, phase, repo);
+  for (const [phase, checkId] of [["I0-F", "step-0-check-3"], ["I3-F", "step-1-check-1"], ["I5R-V", "step-4-check-1"]]) {
+    const current = { ...identity, stepId: "integration", checkId }, before = structuredClone(current);
+    assertRuntimeIdentity(current, phase, repo); assert.deepEqual(current, before);
+    assert.throws(() => assertRuntimeIdentity({ ...current, checkId: "step-3-check-1" }, phase, repo), /mismatch/);
+  }
+  for (const [phase, checkId] of [["I4-F", "step-2-check-1"], ["I5-F", "step-3-check-1"], ["I5R-F", "step-5-check-1"], ["I6-F", "step-6-check-2"], ["integration", "integration-check-3"]]) assert.throws(() => assertRuntimeIdentity({ ...identity, stepId: "integration", checkId }, phase, repo), /no implemented/);
+  for (const change of [{ taskId: identity.taskId + "copy" }, { taskId: "negative-test" }, { runId: "manual" }, { runId: undefined }, { snapshotHash: "old" }, { repo: undefined }, { repo: resolve(repo, "../wrong") }, { stepId: "I3-F" }, { checkId: "manual" }]) assert.throws(() => assertRuntimeIdentity({ ...identity, ...change }, "I0-F", repo));
+  assert.throws(() => assertRuntimeIdentity(identity, "invented", repo), /Unknown source/);
+  const state = { id: identity.taskId, repo, steps: { "I0-F": { status: "running", activePid: process.pid, runs: [{ id: identity.runId, status: "running", snapshot: { hash: identity.snapshotHash } }] } } };
+  assertActiveRuntimeState(identity, state);
+  for (const alter of [s => s.steps["I0-F"].activePid++, s => s.steps["I0-F"].status = "passed", s => s.steps["I0-F"].runs[0].id = randomUUID(), s => s.steps["I0-F"].runs[0].snapshot.hash = "b".repeat(64)]) { const wrong = structuredClone(state); alter(wrong); assert.throws(() => assertActiveRuntimeState(identity, wrong)); }
+});
+
+test("unknown formal task and integration positions are rejected by the real child-process entry before config or browser", () => {
+  const dir = mkdtempSync(join(tmpdir(), "support-formal-negative-"));
+  const env = { ...process.env, WORKFLOW_TASK_ID: "support-analytics-frontend-20261007-r5", WORKFLOW_STEP_ID: "integration", WORKFLOW_CHECK_ID: "step-1-check-1", WORKFLOW_RUN_ID: randomUUID(), WORKFLOW_REPO: repo, WORKFLOW_SNAPSHOT_HASH: "a".repeat(64) };
+  for (const [change, phase, reason] of [[{ WORKFLOW_TASK_ID: env.WORKFLOW_TASK_ID + "-copy" }, "I3-F", /Unknown formal/], [{ WORKFLOW_CHECK_ID: "step-0-check-3" }, "I3-F", /mismatch/], [{ WORKFLOW_CHECK_ID: "integration-check-3" }, "integration", /no implemented/]]) {
+    const report = join(dir, randomUUID() + ".json"), result = spawnSync(process.execPath, ["scripts/support-analytics-runtime.mjs", "--phase", phase, "--report", report], { cwd: repo, env: { ...env, ...change }, encoding: "utf8", windowsHide: true });
+    assert.equal(result.status, 1); const record = JSON.parse(readFileSync(report, "utf8")); assert.equal(record.verdict, "unverified"); assert.match(record.steps[0].reason, reason); assert.deepEqual(record.steps[0].evidence, []); assert.equal(record.stepId, "integration");
+  }
+});
+
+test("I3 read-only boundary permits existing auth and denies every business mutation before dispatch", async () => {
+  for (const path of ["/api/admin/auth/login", "/api/admin/auth/mfa/verify", "/api/admin/auth/logout", "/api/admin/content/conversations/realtime-ticket"]) assert.equal(assertReadOnlyRequest("POST", path), "readAuth");
+  assert.equal(assertReadOnlyRequest("GET", "/api/admin/content/support-workbench/analytics"), "read");
+  for (const method of ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) for (const path of ["/api/admin/content/support-agents/groups", "/api/admin/content/conversations/1/replies", "/unknown"]) assert.throws(() => assertReadOnlyRequest(method, path), /prohibits/);
+  const { parseMContentApiEnvelope } = await import("../lib/admin/m-support-read-contract.ts"), { parseSupportGroup } = await import("../lib/admin/support-group-client.ts");
+  const realShape = { id: "4", name: "Controlled group", supervisorAdminId: "2", status: "ENABLED", version: 1 };
+  assert.deepEqual(parseMContentApiEnvelope(200, JSON.stringify({ code: 0, data: [realShape] }), true).map(parseSupportGroup), [realShape]);
+  for (const body of [{ code: 403, data: [realShape] }, { code: 0 }, { code: 0, data: [{ ...realShape, private: "unknown-field" }] }]) assert.throws(() => parseMContentApiEnvelope(200, JSON.stringify(body), true).map(parseSupportGroup));
+});
+
+test("I3 current scope rejects stale version, foreign people/groups and fabricated UNKNOWN totals", () => {
+  const accountCase = { mode: "PERSONAL", adminId: "12", groupIds: ["4"] }, now = Date.now(), data = { view: "CUSTOMERS", businessZone: "Asia/Shanghai", asOf: new Date(now).toISOString(), versionState: "READY", queryVersion: `saq-v1:${"b".repeat(64)}`, total: 1, canContinue: false, scopeSummary: { mode: "PERSONAL", groups: [{ groupId: "4" }] }, records: [{ owner: { agentId: "12", groupId: "4" } }] };
+  assertAnalyticsScope(data, {}, accountCase, now);
+  for (const alter of [d => d.scopeSummary.mode = "ALL", d => d.scopeSummary.groups.push({ groupId: "5" }), d => d.records[0].owner.agentId = "99", d => d.asOf = new Date(now - 16 * 60000).toISOString(), d => d.queryVersion = "old", d => d.versionState = "UNKNOWN"]) { const wrong = structuredClone(data); alter(wrong); assert.throws(() => assertAnalyticsScope(wrong, {}, accountCase, now)); }
+  assert.throws(() => assertAnalyticsScope(data, { expectedVersion: `saq-v1:${"c".repeat(64)}` }, accountCase, now));
+  const unknown = { ...data, versionState: "UNKNOWN", queryVersion: null, total: null }; assertAnalyticsScope(unknown, {}, accountCase, now);
+  const managed = structuredClone(data); managed.scopeSummary.mode = "MANAGED";
+  assertAnalyticsScope(managed, {}, { ...accountCase, mode: "MANAGED" }, now); managed.records[0].owner.groupId = "5"; assert.throws(() => assertAnalyticsScope(managed, {}, { ...accountCase, mode: "MANAGED" }, now), /foreign/);
+});
+
+test("I3 configuration requires three real seeds and explicit denial authorization without inventing a supervisor", () => {
+  const modes = ["PERSONAL", "MANAGED", "ALL"], config = { baseUrl: "http://127.0.0.1:33108", accounts: Object.fromEntries(modes.map(mode => [mode, { username: mode, passwordEnv: "PASSWORD", totpSecretEnv: "TOTP" }])) };
+  const receipt = { allowedSeedObjects: { usernames: modes, accountIds: ["1", "2", "3"] }, authorizedReadPaths: ["/api/admin/content/support-agents/groups/999"] };
+  const handoff = { backend: {}, cases: modes.map((mode, index) => ({ mode, account: mode, adminId: String(index + 1), groupIds: ["4"], menuCodes: ["service_m1"], authorities: ["service_m1_read"], emptyKeyword: "authorized-empty-query", negativeReads: [{ path: receipt.authorizedReadPaths[0], status: 403 }] })) };
+  assertHandoffConfig(handoff, config, receipt);
+  for (const alter of [h => h.cases.pop(), h => h.cases[1].account = "missing-supervisor", h => h.cases[1].adminId = "99", h => h.cases[0].groupIds.push("4"), h => h.cases[0].negativeReads[0].path = "/api/admin/content/unprovisioned", h => h.cases[0].negativeReads[0].status = 200, h => h.cases[0].negativeReads = [], h => h.cases[1].account = "PERSONAL", h => h.cases[2].adminId = "1"]) { const wrong = structuredClone(handoff); alter(wrong); assert.throws(() => assertHandoffConfig(wrong, config, receipt)); }
+});
+
+test("I3 backend handoff checks every required phase's current evidence and scope rather than an old PASS summary", () => {
+  const ids = ["I1-A", "I1-B", "I2-A", "I2-B", "I3-B"], ctx = { plan: { steps: ids.map(id => ({ id })), inputs: [] } }, state = { steps: Object.fromEntries(ids.map(id => [id, { status: "passed", receipt: { scopeHash: "current-scope", scopePaths: [] } }])) }, observed = [];
+  const evidence = (_ctx, _state, { only }) => { observed.push(only); return []; };
+  assertBackendEvidence(ctx, state, {}, evidence, () => "current-scope"); assert.deepEqual(observed, ids);
+  for (const id of ids) { const wrong = structuredClone(state); wrong.steps[id].status = "awaiting_review"; assert.throws(() => assertBackendEvidence(ctx, wrong, {}, evidence, () => "current-scope")); }
+  assert.throws(() => assertBackendEvidence(ctx, state, {}, () => ["record/stream/review changed"], () => "current-scope"));
+  assert.throws(() => assertBackendEvidence(ctx, state, {}, evidence, () => "drifted-scope"), /scope changed/);
+  assert.throws(() => assertBackendEvidence({ plan: { ...ctx.plan, steps: ctx.plan.steps.slice(1) } }, state, {}, evidence, () => "current-scope"), /lost a required/);
+});
+
+test("handoff numeric proof uses the actual Numeric renderer and rejects 1/10, currency and UNKNOWN substitutions", async () => {
+  const require = createRequire(join(repo, "package.json")), ts = require("typescript"), React = require("react"), jsx = require("react/jsx-runtime");
+  const source = readFileSync(join(repo, "app/components/domain-views/m-tabs/m1-analytics-workbench.tsx"), "utf8");
+  const ast = ts.createSourceFile("workbench.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const numeric = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "Numeric");
+  const formatterSource = readFileSync(join(repo, "app/components/domain-views/m-tabs/support-leaderboard.tsx"), "utf8"), formatterAst = ts.createSourceFile("formatter.tsx", formatterSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const formatter = formatterAst.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "compactSupportBoardValue");
+  const code = ts.transpileModule(`${formatter.getText(formatterAst)}\n${numeric.getText(ast)}\nexports.Numeric=Numeric;`, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const exports = {}; runInNewContext(code, { exports, require: id => { assert.equal(id, "react/jsx-runtime"); return jsx; } });
+  const render = require("react-dom/server").renderToStaticMarkup, browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    for (const currency of ["USDT", "NEX"]) for (const value of ["1", "10", "1.00", "1000.123456", null]) for (const observed of [value, "10", null]) {
+      const label = `本人累充 ${currency}`;
+      await page.setContent(render(React.createElement(exports.Numeric, { value, observed, label, kind: "amount", onClick() {} })));
+      const numeric = page.locator(".sa-number");
+      await assertNumericDom(numeric, { confirmed: value, observed }, label);
+      if (value === "1" || value === "10") await assert.rejects(assertNumericDom(numeric, { confirmed: value === "1" ? "10" : "1", observed }, label), /exact numeric/);
+      await assert.rejects(assertNumericDom(numeric, { confirmed: value, observed }, `本人累充 ${currency === "USDT" ? "NEX" : "USDT"}`), /identity\/currency/);
+      if (value === null) await assert.rejects(assertNumericDom(numeric, { confirmed: "0", observed }, label), /exact numeric/);
+    }
+    await page.setContent(render(React.createElement(exports.Numeric, { value: "10", observed: "10", label: "专属客服", onClick() {} })));
+    await assert.rejects(assertNumericDom(page.locator(".sa-number"), { confirmed: "1", observed: "1" }, "专属客服"), /exact numeric/);
+  } finally { await browser.close(); }
+});
+
+test("handoff directory behavior executes the real group component for directory and initial member-detail entries", async () => {
+  // The existing source harness runs the actual container's hooks/effects/events.
+  // Render that real tree into a controlled browser; only transport promises and auth are fixtures.
+  const { harness, group, detail } = await import("./helpers.mjs");
+  const require = createRequire(join(repo, "package.json")), React = require("react"), render = require("react-dom/server").renderToStaticMarkup;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    for (const initialGroupId of [undefined, "5"]) {
+      const groups = [group("5"), group("6")], initialDetail = detail("5");
+      const h = harness({ props: { initialGroupId }, implementations: { groups: () => groups, detail: id => detail(id) } });
+      const page = await browser.newPage(); let actions = [];
+      function dom(node) {
+        if (Array.isArray(node)) return node.map((child, index) => { const rendered = dom(child); return React.isValidElement(rendered) ? React.cloneElement(rendered, { key: child.key ?? index }) : rendered; });
+        if (!React.isValidElement(node)) return node;
+        const props = { ...node.props, key: node.key }, type = typeof node.type === "function" && node.type.name === "Btn" ? "button" : node.type;
+        if (props.onClick) { const index = actions.push(props.onClick) - 1; props["data-fixture-action"] = index; delete props.onClick; }
+        delete props.variant; return React.createElement(type, props, dom(props.children));
+      }
+      const update = async () => { await h.flush(); actions = []; await page.setContent(render(dom(h.tree))); await page.evaluate(backs => { window.handoffFixtureFinished = backs === 1; document.querySelectorAll("[data-fixture-action]").forEach(button => button.addEventListener("click", () => void window.handoffFixtureClick(Number(button.dataset.fixtureAction)))); }, h.backs); };
+      await page.exposeFunction("handoffFixtureClick", async index => { actions[index](); h.commit(); await update(); });
+      try {
+        await update(); const root = page.getByRole("region", { name: "客服组管理" });
+        if (initialGroupId) { assert.equal(await root.getByRole("button", { name: "管理成员与组资料", exact: true }).count(), 0); assert.equal(h.calls.some(call => call.name === "detail" && call.args[0] === "5"), true); }
+        const rows = await enterGroupDirectory(root, groups, initialGroupId ? initialDetail : undefined);
+        await rows.first().getByRole("button", { name: "管理成员与组资料", exact: true }).click();
+        await root.getByRole("button", { name: "返回组目录", exact: true }).waitFor({ state: "visible" });
+        await enterGroupDirectory(root, groups, initialDetail);
+        await root.getByRole("button", { name: "返回统计工作台", exact: true }).click();
+        await page.waitForFunction(() => window.handoffFixtureFinished === true);
+        assert.equal(h.backs, 1); assert.ok(h.calls.every(call => ["groups", "detail", "member"].includes(call.name)), "Directory read-only traversal attempted a business mutation");
+      } finally { h.unmount(); await page.close(); }
+    }
+  } finally { await browser.close(); }
+});
+
+test("the actual statistics scope-return effect restores the selected group, dataset, basis and currency", async () => {
+  const require = createRequire(join(repo, "package.json")), ts = require("typescript");
+  const source = readFileSync(join(repo, "app/components/domain-views/m-tabs/m1-analytics-workbench.tsx"), "utf8"), ast = ts.createSourceFile("workbench.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const resolved = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "ResolvedAnalyticsWorkbench");
+  const effect = resolved.body.statements.find(node => ts.isExpressionStatement(node) && ts.isCallExpression(node.expression) && node.expression.expression.getText(ast) === "useEffect" && node.expression.arguments[1]?.getText(ast) === "[scopeRetry]").expression.arguments[0];
+  const helperNames = ["changeAnalyticsQuery", "initialAnalyticsQuery", "analyticsBusinessMonth", "analyticsEntryAgent"];
+  const helpers = ast.statements.filter(node => ts.isFunctionDeclaration(node) && helperNames.includes(node.name?.text)).map(node => node.getText(ast)).join("\n");
+  for (const selectedGroup of [undefined, "5"]) {
+    const remembered = { groupId: selectedGroup, view: "CUSTOMERS", basis: "PERIOD_EVENT", currency: "NEX", month: "2026-10", pageNum: 2, expectedVersion: `saq-v1:${"a".repeat(64)}`, category: "ALL", firstState: "ALL", filter: "ALL" };
+    const managementReturnQuery = { current: remembered }, queries = []; let restored;
+    const noop = () => {}, globals = { exports: {}, AbortController, Date, Intl, URLSearchParams, window: { location: { search: "" } }, managementReturnQuery, supportAnalyticsClient: { query: async query => { queries.push(query); return { scopeSummary: { mode: "MANAGED", groups: [{ groupId: "5" }] } }; } }, setScope: noop, setScopeError: noop, setData: noop, setProfileId: noop, setOperations: noop, setGroupManagement: noop, setPersonalAnalytics: noop, analyticsErrorText: cause => { throw cause; }, setQueryState: value => { restored = value; } };
+    const code = ts.transpileModule(`${helpers}\n(${effect.getText(ast)})();`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+    runInNewContext(code, globals); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(queries[0].view, "OVERVIEW"); assert.equal(restored.groupId, selectedGroup); assert.equal(restored.view, "CUSTOMERS"); assert.equal(restored.basis, "PERIOD_EVENT"); assert.equal(restored.currency, "NEX"); assert.equal(restored.month, "2026-10"); assert.equal(restored.pageNum, 1); assert.equal(restored.expectedVersion, undefined); assert.equal(managementReturnQuery.current, null);
+  }
+});
+
+test("actual handoff login prelude waits for the TOTP window before arming the default session response timeout", async () => {
+  const require = createRequire(join(repo, "package.json")), ts = require("typescript");
+  const source = readFileSync(join(repo, "tests/support-analytics-handoff-runtime.mjs"), "utf8"), ast = ts.createSourceFile("handoff.mjs", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  let statements;
+  function visit(node) {
+    if (ts.isBlock(node) && node.statements.some(statement => statement.getText(ast).startsWith("const initialSession ="))) statements = node.statements;
+    ts.forEachChild(node, visit);
+  }
+  visit(ast); assert.ok(statements, "The actual produceHandoff login sequence disappeared");
+  const wait = statements.findIndex(statement => statement.getText(ast).startsWith("await new Promise(resolve => setTimeout(resolve, 30000 - Date.now() % 30000 + 250))"));
+  const listener = statements.findIndex(statement => statement.getText(ast).startsWith("const initialSession ="));
+  const request = statements.findIndex(statement => statement.getText(ast).startsWith("const sessionBody = await login("));
+  const status = statements.findIndex(statement => statement.getText(ast).startsWith("assert.equal((await initialSession).status(), 401"));
+  assert.ok([wait, listener, request, status].every(index => index >= 0));
+  const productionPrelude = statements.slice(Math.min(wait, listener, request, status), Math.max(wait, listener, request, status) + 1).map(statement => statement.getText(ast)).join("\n");
+  async function execute(initialClock, initialStatus = 401) {
+    let now = initialClock, deadline, predicate, resolveResponse; const events = [];
+    const response = { url: () => "http://127.0.0.1:33108/api/admin/auth/session", request: () => ({ method: () => "GET" }), status: () => initialStatus };
+    const page = { waitForResponse(condition, options) { assert.equal(options, undefined, "Production must retain the default response timeout"); events.push({ kind: "listener", at: now }); deadline = now + 30000; predicate = condition; return new Promise(resolve => { resolveResponse = resolve; }); } };
+    const globals = { assert, Promise, URL, Date: { now: () => now }, context: {}, page, config: { baseUrl: "http://127.0.0.1:33108", accounts: { personal: {} } }, accountCase: { account: "personal" }, setTimeout(callback, delay) { events.push({ kind: "sleep", at: now, delay }); now += delay; callback(); }, login: async () => {
+      events.push({ kind: "first-request", at: now }); assert.ok(predicate, "First login/goto request escaped before the session listener"); assert.ok(now < deadline, "TOTP sleep consumed the default response timeout before the first request");
+      assert.equal(predicate({ ...response, url: () => "http://127.0.0.1:33108/api/admin/auth/login" }), false); assert.equal(predicate({ ...response, request: () => ({ method: () => "POST" }) }), false); assert.equal(predicate(response), true); resolveResponse(response); return {};
+    } };
+    await runInNewContext(`(async () => { ${productionPrelude} })()`, globals);
+    assert.deepEqual(events.map(event => event.kind), ["sleep", "listener", "first-request"]);
+    assert.equal(events[0].delay, 30000 - initialClock % 30000 + 250); assert.equal(events[1].at, events[2].at); assert.equal(deadline - events[2].at, 30000);
+    return events;
+  }
+  const opening = await execute(0); assert.equal(opening[0].delay, 30250, "The longest window-opening delay must be exercised");
+  await execute(15000); await execute(29999);
+  await assert.rejects(execute(0, 200), /unauthenticated initial session/, "A logged-in initial session must still fail the production 401 check");
 });

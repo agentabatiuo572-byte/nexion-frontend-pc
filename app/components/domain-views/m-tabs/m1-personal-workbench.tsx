@@ -93,7 +93,7 @@ export function M1PersonalWorkbench({ permission, ctx }: { permission: Permissio
   const seatAssignmentAgents = useMemo(() => {
     try {
       const agents = JSON.parse(ctx.pget("I.support.agents") ?? "[]") as MSupportAgent[];
-      return Array.isArray(agents) ? agents.filter((agent) => agent.adminId > 0 && agent.enabled) : [];
+      return Array.isArray(agents) ? agents.filter((agent) => agent.adminId > 0 && agent.assignmentEligible === true) : [];
     } catch { return []; }
   }, [ctx.params, ctx.pget]);
   const canBulk = useAdminAuth(state => state.session?.role==="super"||state.session?.role==="superadmin"||Boolean(state.session?.authorities.includes("service_m3_write")));
@@ -313,7 +313,7 @@ export function M1PersonalWorkbench({ permission, ctx }: { permission: Permissio
   const submitTransfer = async () => {
     if (!detail || !detail.assignmentId || !adminId || permission === "agent" || transferSaving || transferPending) return;
     const actor = actorStamp();
-    const target = transferAgents.find((agent) => agent.adminId === transferTarget && agent.enabled);
+    const target = transferAgents.find((agent) => agent.adminId === transferTarget && agent.assignmentEligible === true);
     if (!transferPending && (!target || transferReason.trim().length < 8 || transferReason.trim().length > 200)) return;
     const payload: TransferPayload = { targetAgentAdminId: target!.adminId, customers: [{ id: detail.customerId, expectedAssignmentId: detail.assignmentId, expectedVersion: detail.assignmentVersion }], reason: transferReason.trim() };
     const fingerprint = `bound-transfer:${detail.customerId}:${detail.assignmentId}:${detail.assignmentVersion}`;
@@ -434,10 +434,10 @@ export function M1PersonalWorkbench({ permission, ctx }: { permission: Permissio
         {canMaintain ? <button type="button" className="s5a-secondary" disabled={Boolean(maintenancePending)} onClick={() => { setMaintenanceAction(detail.maintenanceEnabled ? "stop" : "resume"); setReason(""); setSaveError(null); }}>{detail.maintenanceEnabled ? "不再维护" : "恢复维护"}</button> : <p className="s5a-note">仅当前专属客服可调整主动维护；主管可审阅并办理正式转绑。</p>}
         {permission !== "agent" && detail.assignmentId && <button type="button" className="s5a-secondary" onClick={() => void openTransfer()}>正式转绑客户</button>}
         {transferOpen && <div className="s5a-confirm"><h3>正式转绑此客户</h3><p>仅变更当前客户的专属客服；提交后原专属客服立即失去私聊与图片权限。</p>
-          {transferLoading ? <p role="status">正在读取可接待专属客服…</p> : <label>目标专属客服<select value={transferTarget ?? ""} disabled={transferSaving || Boolean(transferPending)} onChange={(event) => setTransferTarget(Number(event.target.value) || null)}><option value="">请选择专属客服</option>{transferAgents.filter((agent) => agent.enabled && agent.adminId !== detail.agentAdminId).map((agent) => <option key={agent.adminId} value={agent.adminId}>{agent.name}{agent.busy ? " · 忙碌" : ""}</option>)}</select></label>}
+          {transferLoading ? <p role="status">正在读取可接待专属客服…</p> : <label>目标专属客服<select value={transferTarget ?? ""} disabled={transferSaving || Boolean(transferPending)} onChange={(event) => setTransferTarget(Number(event.target.value) || null)}><option value="">请选择专属客服</option>{transferAgents.filter((agent) => agent.assignmentEligible === true && agent.adminId !== detail.agentAdminId).map((agent) => <option key={agent.adminId} value={agent.adminId}>{agent.name}{agent.busy ? " · 忙碌" : ""}</option>)}</select></label>}
           {transferTarget&&<SupportAvatar name={transferAgents.find(a=>a.adminId===transferTarget)?.name??"目标专属客服"} path={transferAgents.find(a=>a.adminId===transferTarget)?.avatarAssetId?advisorAvatarPath(transferTarget):undefined} version={transferAgents.find(a=>a.adminId===transferTarget)?.avatarVersion??undefined}/>}
           {!transferLoading && transferAgentsError && <button type="button" onClick={() => void loadTransferAgents()}>重试读取专属客服名单</button>}
-          {!transferLoading && !transferAgentsError && !transferAgents.some((agent) => agent.enabled && agent.adminId !== detail.agentAdminId) && <p className="s5a-note">暂无可接待的其他专属客服。请到 A1 账号管理核对接待资格。</p>}
+          {!transferLoading && !transferAgentsError && !transferAgents.some((agent) => agent.assignmentEligible === true && agent.adminId !== detail.agentAdminId) && <p className="s5a-note">暂无可接待的其他专属客服。请到 A1 账号管理核对接待资格。</p>}
           <label>转绑理由（8–200 字）<textarea value={transferReason} maxLength={200} disabled={transferSaving || Boolean(transferPending)} onChange={(event) => setTransferReason(event.target.value)} /></label><small>{transferReason.trim().length}/200 字</small>
           {transferPending && <p role="alert">上次转绑结果未确认，原客户范围和命令已锁定。<button type="button" onClick={() => void checkTransfer()} disabled={transferSaving}>查询原命令</button></p>}
           {transferError && <p role="alert">{transferError}</p>}

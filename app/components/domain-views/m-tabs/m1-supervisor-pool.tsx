@@ -29,7 +29,7 @@ type RoutePending = { fingerprint: string; commandKey: string; createdAt: number
 const routeCommands = createPendingMutationStore<RoutePending>({ storageKey: "nexion-admin-support-pool-route-v1", ttlMs: Math.floor(Number.MAX_SAFE_INTEGER / 2), retainExpiredRecords: true, isValidRecord: row => Boolean(Number.isSafeInteger(row.actorId) && row.item?.customerId && row.payload && typeof row.payload.reason === "string") });
 
 export function isAssignable(agent: SupportAgentCandidate): boolean {
-  return agent.enabled;
+  return agent.assignmentEligible === true;
 }
 
 export function PoolRouteModal({ item, groups, onClose, onDone }: { item: SupportBindingPoolItem; groups: SupportGroup[]; onClose: () => void; onDone: () => void }) {

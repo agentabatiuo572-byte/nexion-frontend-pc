@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
+import { assertRuntimeIdentity, assertCurrentRuntimeRun } from "./lib/support-analytics-evidence.mjs";
 import { sha256, findPagedAccount, repositoryDigest as digestRepository, businessData, unboundCustomerSnapshot, conversationFeatures, consoleSidebarRoot, businessRoots, assertUiBinding, assertRequestSeeds, assertAvatarPolicy, assertAvatarProposal, avatarProposalPath, avatarApprovePath, validateMutation, validateReadback, verifyRuntimeOwnership, installRenderedBlobObserver, waitForRenderedImageMatch } from "./lib/support-analytics-evidence.mjs";
 
 const features = ["avatar", "sku", "attachment", "bulk", "random", "cookie", "unknown-main", "unknown-dock"];
@@ -23,12 +24,17 @@ const argument = name => {
   return process.argv[index + 1];
 };
 const phase = argument("--phase"), reportPath = resolve(argument("--report"));
+const identity = Object.fromEntries(["taskId", "stepId", "checkId", "runId", "repo", "snapshotHash"].map(key => [key, process.env[`WORKFLOW_${key.replace(/[A-Z]/g, letter => `_${letter}`).toUpperCase()}`]]));
+try { assertRuntimeIdentity(identity, phase, resolve(import.meta.dirname, "..")); if (phase === "I5R-V") await assertCurrentRuntimeRun(identity, phase); }
+catch (error) {
+  mkdirSync(dirname(reportPath), { recursive: true });
+  writeFileSync(reportPath, JSON.stringify({ ...identity, sourcePhase: phase, verdict: "unverified", mode: "full", capability: "runtime", treeMoved: true, innerSkipped: 0, steps: [{ id: phase === "I3-F" ? "FE-API-HANDOFF" : phase, status: "unverified", evidence: [], reason: error.message }] }, null, 2));
+  console.error(error.message); process.exit(1);
+}
 if (phase === "I5R-V") {
   await import("../tests/support-leaderboard-runtime.mjs");
   process.exit(process.exitCode ?? 0);
 }
-assert.equal(phase, "I0-F", "Only the restored I0 baseline is implemented; later acceptance needs its own producer");
-const identity = Object.fromEntries(["taskId", "stepId", "checkId", "runId", "repo", "snapshotHash"].map(key => [key, process.env[`WORKFLOW_${key.replace(/[A-Z]/g, letter => `_${letter}`).toUpperCase()}`]]));
 const evidenceDir = join(dirname(reportPath), `I0-${identity.runId ?? "manual"}`);
 mkdirSync(evidenceDir, { recursive: true });
 const steps = ["DES-01", "DES-02", "DES-03", "FE-BASELINE"].map(id => ({ id, status: "unverified", evidence: [], reason: "Not observed in this run" }));
@@ -190,10 +196,14 @@ function totp(secret) {
   const offset = digest[digest.length - 1] & 15;
   return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1000000).padStart(6, "0");
 }
+if (phase === "I3-F") {
+  const { produceHandoff } = await import("../tests/support-analytics-handoff-runtime.mjs");
+  await produceHandoff({ identity, sourcePhase: phase, reportPath, login });
+  process.exit(process.exitCode ?? 0);
+}
 let browser, before;
 try {
   assert.ok(Object.values(identity).every(Boolean), "Run through the workflow CLI so task/run/snapshot identities are supplied");
-  assert.equal(identity.stepId, phase);
   before = repositoryDigest();
   assert.ok(process.env.SUPPORT_ACCEPTANCE_CONFIG, "SUPPORT_ACCEPTANCE_CONFIG must name the isolated seed and explicit authorized UI flows");
   const config = JSON.parse(readFileSync(process.env.SUPPORT_ACCEPTANCE_CONFIG, "utf8").replaceAll("{{runId}}", identity.runId));
@@ -204,6 +214,7 @@ try {
   assert.ok(process.env.SUPPORT_RUNTIME_RECEIPT, "A root-measured startup/resource receipt is required before login or writes");
   const runtimeReceiptPath = process.env.SUPPORT_RUNTIME_RECEIPT;
   const runtimeReceipt = JSON.parse(readFileSync(runtimeReceiptPath, "utf8"));
+  await assertCurrentRuntimeRun(identity, phase);
   const runtimeTarget = { taskId: identity.taskId, repo: identity.repo, origin, candidateDigest: before, receiptPath: runtimeReceiptPath, receiptSha256: hash(readFileSync(runtimeReceiptPath)) };
   await verifyRuntimeOwnership(runtimeReceipt, runtimeTarget);
   browser = await chromium.launch({ headless: true });
@@ -521,6 +532,6 @@ try {
   if (before) try { treeMoved = before !== repositoryDigest(); } catch { /* An unreadable snapshot cannot pass. */ }
   const pass = steps.every(step => step.status === "pass") && !treeMoved;
   if (!pass) process.exitCode = 1;
-  writeFileSync(reportPath, JSON.stringify({ ...identity, at: new Date().toISOString(), verdict: pass ? "pass" : "unverified", mode: "full", capability: "runtime", treeMoved, innerSkipped: 0, steps }, null, 2));
+  writeFileSync(reportPath, JSON.stringify({ ...identity, sourcePhase: phase, at: new Date().toISOString(), verdict: pass ? "pass" : "unverified", mode: "full", capability: "runtime", treeMoved, innerSkipped: 0, steps }, null, 2));
   console.log(`I0 real runtime ${steps.filter(step => step.status === "pass").length}/${steps.length}; missing or failed observations never pass`);
 }

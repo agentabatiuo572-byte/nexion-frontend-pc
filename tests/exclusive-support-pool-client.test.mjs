@@ -5,6 +5,22 @@ const envelope = (data, status = 200) => new Response(JSON.stringify({code: stat
 const original = globalThis.fetch;
 const row = {customerId: 71, reason: 'NO_INVITER', enteredAt: '2026-10-09T00:00:00Z', version: 4};
 const page = records => ({records, total: records.length, pageNum: 1, pageSize: 8});
+test('candidate page preserves historical roster and rejects unknown or contradictory assignment authority', async () => {
+  const agent = {adminId: 7, name: '专属客服', seatType: 'MANAGER', serviceTypes: ['support'], status: 'enabled', enabled: true, assignmentEligible: true, busy: true, assignedUserCount: 4, maxConcurrent: 10, version: 1};
+  try {
+    for (const changes of [{}, {status:'disabled',assignmentEligible:false}, {assignmentEligible:false}]) {
+      globalThis.fetch=async()=>envelope(page([{...agent,...changes}]));
+      const result=(await supportClient.agents({pageNum:1,pageSize:8})).records[0];
+      assert.equal(result.assignmentEligible, changes.assignmentEligible ?? true);
+      assert.equal(result.status, changes.status ?? 'enabled');
+      assert.equal(result.enabled, true); assert.equal(result.busy, true); assert.equal(result.assignedUserCount, 4);
+    }
+    for (const changes of [{assignmentEligible:undefined},{assignmentEligible:null},{assignmentEligible:'true'},{status:'UNKNOWN'},{status:'disabled'},{enabled:false}]) {
+      globalThis.fetch=async()=>envelope(page([{...agent,...changes}]));
+      await assert.rejects(supportClient.agents({pageNum:1,pageSize:8}), /SUPPORT_CONTRACT_MALFORMED/);
+    }
+  } finally {globalThis.fetch=original;}
+});
 test('pool route observations preserve nonzero unassigned facts, confirmed absence and unknown', async () => {
   try {
     for (const fact of [{routeState:'AVAILABLE',routeId:'91',routeGroupId:null,routeVersion:7}, {routeState:'ABSENT',routeId:null,routeGroupId:null,routeVersion:null}, {routeState:'UNKNOWN',routeId:null,routeGroupId:null,routeVersion:null}]) {

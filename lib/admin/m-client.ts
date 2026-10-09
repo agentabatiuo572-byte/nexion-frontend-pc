@@ -425,6 +425,7 @@ export type MSupportAgent = {
   tags: string[];
   maxConcurrent: number;
   enabled: boolean;
+  assignmentEligible: boolean;
   transferable: boolean;
   busy: boolean;
   assignedUserCount: number;
@@ -1367,6 +1368,15 @@ function supportServiceType(value: string): MSupportServiceType | null {
 }
 
 function adaptSupportAgent(row: Record<string, unknown>): MSupportAgent {
+  if (!Number.isSafeInteger(row.adminId) || Number(row.adminId) <= 0
+    || row.id !== String(row.adminId)
+    || typeof row.name !== "string" || !row.name.trim()
+    || typeof row.assignmentEligible !== "boolean"
+    || (row.status !== "enabled" && row.status !== "disabled")
+    || typeof row.enabled !== "boolean"
+    || (row.assignmentEligible && (row.status !== "enabled" || !row.enabled))) {
+    throw new Error("M1_SUPPORT_AGENT_OVERVIEW_MALFORMED");
+  }
   const serviceTypes = asStringArray(row.serviceTypes)
     .map(supportServiceType)
     .filter((item): item is MSupportServiceType => item != null);
@@ -1394,6 +1404,7 @@ function adaptSupportAgent(row: Record<string, unknown>): MSupportAgent {
     tags: asStringArray(row.tags),
     maxConcurrent: num(row.maxConcurrent, 0),
     enabled: bool(row.enabled, true),
+    assignmentEligible: row.assignmentEligible,
     transferable: bool(row.transferable, true),
     busy: bool(row.busy, false),
     assignedUserCount: num(row.assignedUserCount, 0),

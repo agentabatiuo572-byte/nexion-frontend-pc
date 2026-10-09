@@ -42,8 +42,10 @@ test('pool group selection loads pool and candidates in the same authorized grou
   assert.equal(button(tree,'调整组范围'),undefined);
   nodes(tree).find(n=>n.props?.['aria-label']==='选择客服组').props.onChange({target:{value:'9'}});mounted.render();await flush();tree=mounted.render();
   for(const kind of ['pool','agents'])assert.equal(h.calls.filter(c=>c[0]===kind).at(-1)[1].groupId,9);
-  assert.equal(h.isAssignable({enabled:true,seatType:'GENERAL',serviceTypes:['support']}),true);
-  assert.equal(h.isAssignable({enabled:false,seatType:'DEDICATED',serviceTypes:['advisor']}),false);
+  assert.equal(h.isAssignable({enabled:true,assignmentEligible:true,seatType:'GENERAL',serviceTypes:['support']}),true);
+  assert.equal(h.isAssignable({enabled:false,assignmentEligible:false,seatType:'DEDICATED',serviceTypes:['advisor']}),false);
+  for (const assignmentEligible of [false, undefined, null]) assert.equal(h.isAssignable({enabled:true,assignmentEligible,seatType:'DEDICATED',serviceTypes:['support']}), false);
+  assert.equal(h.isAssignable({enabled:true,assignmentEligible:true,busy:true}),true);
 });
 test('route unknown stays blocked; known route preserves its exact version and unknown commands cannot replay even via stale handler',async()=>{
   const unknown=harness(),u=unknown.mount(unknown.PoolRouteModal,{item:{...item,routeState:'UNKNOWN',routeId:null,routeGroupId:null,routeVersion:null},groups,onClose(){},onDone(){}});u.render();await flush();assert.equal(button(u.render(),'确认调整').props.disabled,true);

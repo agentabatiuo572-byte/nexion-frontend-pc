@@ -14,7 +14,7 @@ function load(file, dependencies={}, globals={}) {
 function storage() {const rows=new Map();return {rows,quota:false,getItem:key=>rows.get(key)??null,setItem(key,value){if(this.quota)throw Error('quota');rows.set(key,value);},removeItem:key=>rows.delete(key),get length(){return rows.size;},key:i=>[...rows.keys()][i]??null};}
 const item={customerId:'71',version:4,reason:'NO_INVITER',routeState:'AVAILABLE',routeId:'91',routeGroupId:'8',routeVersion:7};
 const groups=[{id:'8',name:'来源组',status:'ENABLED',version:11},{id:'9',name:'目标组',status:'ENABLED',version:12}];
-const candidate={adminId:21,name:'专属客服甲',version:4,enabled:true,serviceTypes:['advisor'],seatType:'DEDICATED',assignedUserCount:0,maxConcurrent:5,busy:false};
+const candidate={adminId:21,name:'专属客服甲',version:4,enabled:true,assignmentEligible:true,serviceTypes:['advisor'],seatType:'DEDICATED',assignedUserCount:0,maxConcurrent:5,busy:false};
 const reason='独立审查真实操作理由';
 function nodes(value){if(Array.isArray(value))return value.flatMap(nodes);if(!value||typeof value!=='object')return [];return [value,...nodes(value.props?.children),...nodes(value.props?.footer)];}
 function text(value){if(Array.isArray(value))return value.map(text).join('');return value&&typeof value==='object'?text(value.props?.children):value??'';}
