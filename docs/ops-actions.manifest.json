@@ -91,9 +91,20 @@
     "M2": ["OPS-M-04", "OPS-M-21", "OPS-M-26"],
     "M3": ["OPS-M-07", "OPS-M-16", "OPS-M-20", "OPS-M-22", "OPS-M-25", "OPS-M-27"],
     "M4": ["OPS-M-11", "OPS-M-12", "OPS-M-23", "OPS-M-28"],
-    "M5": ["OPS-M-13", "OPS-M-14", "OPS-M-15", "OPS-M-17", "OPS-M-19"]
+    "M5": ["OPS-M-13", "OPS-M-14", "OPS-M-15", "OPS-M-17", "OPS-M-19"],
+    "M6": ["OPS-M-31"]
   },
   "rows": [
+    {
+      "id": "OPS-M-31",
+      "domain": "M",
+      "object": "公开专属客服业绩榜",
+      "action": "按完整发布版本读取榜单、本人位置和公开成绩",
+      "status": "readonly",
+      "view": "m-tabs/m6-leaderboard.tsx",
+      "reason": "公开聚合只读；客户下钻另受原 M1 权限和服务器对象范围约束，不授予私有客户权限。",
+      "note": "四榜、双币、分页、搜索和昨日变化消费真实接口字段；PARTIAL/UNKNOWN 不授予名次。源码及隔离检查已接线，真实 HTTP、浏览器与自动采样验收仍待主线，不据此声明整体完成。"
+    },
     {
       "id": "OPS-A-01",
       "domain": "A",

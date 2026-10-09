@@ -260,10 +260,10 @@ test("remaining-development ledger has unique claims and preserves semantic cons
   const counts = Object.groupBy(manifest.rows, (item) => item.status);
 
   assert.equal(new Set(ids).size, ids.length, "action IDs must be unique");
-  assert.equal(manifest.rows.length, 262);
+  assert.equal(manifest.rows.length, 263);
   assert.deepEqual(
     { built: counts.built?.length, readonly: counts.readonly?.length, pending: counts.pending?.length ?? 0, missing: counts.missing?.length ?? 0 },
-    { built: 230, readonly: 29, pending: 3, missing: 0 },
+    { built: 230, readonly: 30, pending: 3, missing: 0 },
   );
   for (const id of expectedBuiltClosures) assert.equal(row(id)?.status, "built", id + " must stay built");
 
@@ -272,7 +272,10 @@ test("remaining-development ledger has unique claims and preserves semantic cons
   assert.deepEqual(ledgerDomains.toSorted(), activeDomains.toSorted(), "every active navigation domain must be represented in the action ledger");
 
   const activeLeaves = collectActiveNavLeaves(read("lib/nav/console-nav.ts")).map((leaf) => leaf.id);
-  assert.equal(activeLeaves.length, 76, "navigation baseline changed; re-audit every active leaf");
+  assert.equal(activeLeaves.length, 77, "navigation baseline changed; re-audit every active leaf");
+  assert.deepEqual(manifest.activeLeafCoverage.M6, ["OPS-M-31"]);
+  assert.equal(row("OPS-M-31")?.status, "readonly");
+  assert.equal(row("OPS-M-31")?.view, "m-tabs/m6-leaderboard.tsx");
   assert.deepEqual(Object.keys(manifest.activeLeafCoverage).toSorted(), activeLeaves.toSorted(), "every active flagship leaf needs an explicit capability claim");
   for (const [leaf, claims] of Object.entries(manifest.activeLeafCoverage)) {
     assert.ok(claims.length > 0, `${leaf} must reference at least one ledger row`);

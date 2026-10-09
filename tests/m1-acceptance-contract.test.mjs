@@ -52,7 +52,8 @@ test("M1 live workbench reaches the original seat form without widening its auth
   imports["./m1-overview"] = overview;
   const { M1PersonalWorkbench } = load("app/components/domain-views/m-tabs/m1-personal-workbench.tsx");
   const view = read("app/components/domain-views/m-view.tsx");
-  assert.match(view, /tab === "M1" && <M1PersonalWorkbench[^>]*permission=\{permission\}[^>]*ctx=\{ctx\}/);
+  assert.match(view, /tab === "M1" && <M1AnalyticsWorkbench[^>]*permission=\{permission\}[^>]*ctx=\{ctx\}/);
+  assert.match(read("app/components/domain-views/m-tabs/m1-analytics-workbench.tsx"), /<M1PersonalWorkbench[^>]*permission=\{permission\}[^>]*ctx=\{ctx\}/);
   assert.match(view, /setParam: runMWrite/);
   function mount(Component, props, { runEffects = false } = {}) {
     const values = [];
@@ -253,7 +254,7 @@ test("M1 explains its read and write boundary and deep-links KPI cards to matchi
 
   assert.doesNotMatch(overview, /只看不改/);
   assert.doesNotMatch(registry, /只看不改/);
-  assert.match(view, /本人客户与待办 · 主管可处理待绑定客户/);
+  assert.match(view, /按当前授权范围查看客户与分组数据/);
   assert.match(overview, /\/service\/tickets\?scope=active&status=pending_user/);
   assert.match(overview, /\/service\/sessions\?seg=unread/);
   assert.match(overview, /只有总管理员或客服主管能调整坐席与负载策略/);
