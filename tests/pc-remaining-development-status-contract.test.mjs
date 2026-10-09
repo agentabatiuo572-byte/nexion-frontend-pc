@@ -631,8 +631,13 @@ test("built rows have real PC callers, including active L3/L4 and C1 detail acti
     assert.ok(manifestMCommands.has(action), `${action} is called by an active M page but missing from the action ledger`);
   }
   assert.match(read("app/components/domain-views/m-tabs/m3-sessions.tsx"), /await updateMConversationTimeoutPolicy\(/);
+  assert.match(read("app/components/domain-views/m-tabs/m3-dedicated-chat.tsx"), /await updateMConversationTimeoutPolicy\(/);
   assert.match(readBackend("src/main/java/ffdd/opsconsole/content/application/ConversationTimeoutPolicyService.java"), /public ApiResult<ConversationTimeoutPolicy> update\(/);
-  assert.match(readBackend("src/main/java/ffdd/opsconsole/content/application/ConversationIdleTimeoutScheduler.java"), /ConversationTimeoutPolicy policy = mapper\.selectPolicy\(\)/);
+  const timeoutScheduler = readBackend("src/main/java/ffdd/opsconsole/content/application/ConversationIdleTimeoutScheduler.java");
+  assert.match(timeoutScheduler, /mapper\.selectDueWarningCandidates\(now, BATCH_SIZE\)/);
+  assert.match(timeoutScheduler, /mapper\.selectDueCloseCandidates\(now, BATCH_SIZE\)/);
+  assert.match(timeoutScheduler, /mapper\.pendingRepliesCurrent\(candidate\.conversationNo\(\)\)/);
+  assert.doesNotMatch(timeoutScheduler, /mapper\.selectPolicy\(/);
 
   const f5Commission = readBackend("src/main/java/ffdd/opsconsole/team/application/F5CommissionService.java");
   const idempotencyExecutor = readBackend("src/main/java/ffdd/opsconsole/shared/idempotency/AdminIdempotencyTransactionExecutor.java");

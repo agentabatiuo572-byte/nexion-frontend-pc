@@ -40,7 +40,7 @@ function renderBit(markup, declarations) {
 }
 const radioMarkup = renderBit(jsx(ruleSource, "fieldset", "无顾问客户分配方式"), 'const editable=true,draft={unboundAssignmentMode:"SUPERVISOR"},setField=()=>{}');
 const headerMarkup = renderBit(jsx(chatSource, "header", "我的会话"), `
-  const query="",listTab="all",canWriteM3=true,canTimeout=true,actionChecking=false,qualificationUnknown=false;
+  const query="",listTab="all",canWriteM3=true,canReadTimeout=true,canTimeout=true,actionChecking=false,qualificationUnknown=false;
   const archiveIds=new Set(["picked"]),setQuery=()=>{},setListTab=()=>{},setContactOpen=()=>{},setBulkOpen=()=>{},archiveBatch=()=>{},openTimeout=()=>{};
   const visible=Array.from({length:12005},(_,i)=>({status:i%3===0?"open":i%3===1?"closed":"transferred",unread:i%2,archived:i%5===0}));
   ${declaration(chatSource, "tabMatch")}

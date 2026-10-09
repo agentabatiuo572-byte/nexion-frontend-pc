@@ -193,7 +193,6 @@ type ConversationCustomerProfile = {
   tickets?: number;
   device?: string;
   hashrate?: string;
-  idle?: string | null;
   region?: string;
   joined?: string;
   lastActive?: string;
@@ -578,8 +577,14 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   }
 }
 
+export function parseMConversationTimeoutPolicy(value: unknown): ConversationTimeoutPolicy {
+  const row = supportObject(value, "timeout.policy"), warnMinutes = parseSupportCount(row.warnMinutes, "warn"), closeMinutes = parseSupportCount(row.closeMinutes, "close");
+  if (typeof row.policyKey !== "string" || !row.policyKey.trim() || warnMinutes < 1 || warnMinutes > 30 || closeMinutes <= warnMinutes || closeMinutes > 120) throw new Error("SUPPORT_CONTRACT_MALFORMED");
+  return { policyKey: row.policyKey, warnMinutes, closeMinutes, version: parseSupportCount(row.version, "version"), updatedBy: typeof row.updatedBy === "string" ? row.updatedBy : undefined, reason: typeof row.reason === "string" ? row.reason : undefined, updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : undefined };
+}
+
 export function fetchMConversationTimeoutPolicy() {
-  return apiRequest<ConversationTimeoutPolicy>("/conversations/timeout-policy");
+  return supportRequest("/conversations/timeout-policy", parseMConversationTimeoutPolicy);
 }
 
 export function updateMConversationTimeoutPolicy(
@@ -588,11 +593,7 @@ export function updateMConversationTimeoutPolicy(
   stableIdempotencyKey?: string,
   operator = currentAdminOperator(),
 ) {
-  return supportRequest("/conversations/timeout-policy", value => {
-    const row=supportObject(value,"timeout.policy"),warnMinutes=parseSupportCount(row.warnMinutes,"warn"),closeMinutes=parseSupportCount(row.closeMinutes,"close");
-    if(typeof row.policyKey!=="string"||warnMinutes<1||warnMinutes>30||closeMinutes<=warnMinutes||closeMinutes>120)throw new Error("SUPPORT_CONTRACT_MALFORMED");
-    return {policyKey:row.policyKey,warnMinutes,closeMinutes,version:parseSupportCount(row.version,"version"),updatedBy:typeof row.updatedBy==="string"?row.updatedBy:undefined,reason:typeof row.reason==="string"?row.reason:undefined,updatedAt:typeof row.updatedAt==="string"?row.updatedAt:undefined};
-  }, {
+  return supportRequest("/conversations/timeout-policy", parseMConversationTimeoutPolicy, {
     method: "PUT",
     headers: stableIdempotencyKey ? { "Idempotency-Key": stableIdempotencyKey } : undefined,
     body: JSON.stringify({
@@ -949,7 +950,6 @@ function adaptCustomerProfile(
     tickets: num(backend.tickets, 0),
     device: str(backend.device, "—"),
     hashrate: str(backend.hashrate, "—"),
-    idle: backend.idle ? str(backend.idle) : undefined,
     region: str(backend.region, "—"),
     joined: str(backend.joined, "—"),
     lastActive: str(backend.lastActive, "—") || "—",
