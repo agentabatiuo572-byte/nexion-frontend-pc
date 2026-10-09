@@ -32,6 +32,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import type { ACtx } from "./types";
 import { AccountAvatarPicker } from "./account-avatar-picker";
 import { SupportAvatar } from "../m-tabs/support-avatar";
+import { SupportQualificationEditor, canManageSupportQualifications } from "../m-tabs/m1-group-management";
 import {createPendingMutationStore,type PendingMutationRecord} from "@/lib/admin/pending-mutation-store";
 type CreationPending=PendingMutationRecord&{actorId:number;form:A1CreateAccountInput&{reason:string};reason:string;operator:string};
 const creationCommands=createPendingMutationStore<CreationPending>({storageKey:"nexion-a1-support-avatar-account-create",isValidRecord:r=>Number.isSafeInteger(r.actorId)&&Boolean(r.form?.username&&r.reason)});
@@ -144,6 +145,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const [creationPending,setCreationPending]=useState<CreationPending|null>(null);
   useEffect(()=>{setCreationPending(creationCommands.list().find(r=>r.actorId===currentAdminId)??null);},[currentAdminId]);
   const [detailAccount, setDetailAccount] = useState<A1Operator | null>(null);
+  const canManageQualifications = useAdminAuth(s => canManageSupportQualifications(s.session));
+  const [qualificationTarget, setQualificationTarget] = useState<{ id: string; kind: "SERVICE" | "SUPERVISOR" } | null>(null);
   const [editAccountTarget, setEditAccountTarget] = useState<A1Operator | null>(null);
   const [passwordReset, setPasswordReset] = useState<A1PasswordResetResult | null>(null);
   const [permissionDraft, setPermissionDraft] = useState({ code: "", name: "", path: "", type: "WRITE" as "READ" | "WRITE", amplifies: false });
@@ -869,6 +872,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
                     <td style={{ textAlign: "right" }}>
                       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
                         <button className="l-btn sm" aria-label={`编辑 ${operatorDisplayLabel(op)}`} onClick={(event) => stopRowAction(event, () => setEditAccountTarget(op))} disabled={!!mutatingAction || governanceFrozen}>编辑</button>
+                        {canManageQualifications && <><button className="l-btn sm" aria-label={`管理 ${operatorDisplayLabel(op)} 的专属客服资格`} onClick={event => stopRowAction(event, () => setQualificationTarget({ id: op.id, kind: "SERVICE" }))} disabled={!!mutatingAction}>专属客服资格</button><button className="l-btn sm" aria-label={`管理 ${operatorDisplayLabel(op)} 的主管资格`} onClick={event => stopRowAction(event, () => setQualificationTarget({ id: op.id, kind: "SUPERVISOR" }))} disabled={!!mutatingAction}>主管资格</button></>}
                         <button className="l-btn sm" aria-label={`修改 ${operatorDisplayLabel(op)} 的角色`} title={changeRoleBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => changeRole(op))} disabled={!!mutatingAction || !roles.length || !!changeRoleBlockReason(op)}>改角色</button>
                         <button className="l-btn sm" aria-label={`重置 ${operatorDisplayLabel(op)} 的两步验证`} title={reset2faBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => reset2fa(op))} disabled={!!mutatingAction || !!reset2faBlockReason(op)}>重置 2FA</button>
                         <button className="l-btn sm" aria-label={`重置 ${operatorDisplayLabel(op)} 的密码`} onClick={(event) => stopRowAction(event, () => resetPassword(op))} disabled={!!mutatingAction || governanceFrozen}>重置密码</button>
@@ -972,6 +976,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         />
       )}
       {creationPending&&<div className="atint" role="alert"><p>原账号创建结果待确认：{creationPending.form.username} · {creationPending.form.displayName} · {creationPending.form.email||"未填邮箱"}。原资料、头像素材和命令号已保留。</p><button className="l-btn primary" disabled={Boolean(mutatingAction)} onClick={()=>createAccount(creationPending.form)}>使用原资料与命令查询重试</button></div>}
+      {qualificationTarget && canManageQualifications && <SupportQualificationEditor adminId={qualificationTarget.id} kind={qualificationTarget.kind} onClose={() => setQualificationTarget(null)} onChanged={() => void refreshOverview(true)} />}
       {detailAccount && (
         <AccountDetailDrawer
           account={detailAccount}

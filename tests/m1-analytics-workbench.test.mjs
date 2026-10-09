@@ -44,6 +44,7 @@ const mocks = {
   "../design-kit": { Modal: props => React.createElement("aside", { role: "dialog" }, props.children) },
   "./hd-ui": { HDSelect: props => React.createElement("div", { "data-house-select": props.value }, props.options.map(o => React.createElement("span", { key: o.value }, o.label))) },
   "./m1-personal-workbench": { M1PersonalWorkbench: () => React.createElement("section", { "data-personal-workbench": true }, "原服务待办") },
+  "./m1-group-management": { M1GroupManagement: props => React.createElement("section", { "data-group-management": props.mode }, "分组管理") },
   "./m3-customer-profile": { M3CustomerProfile: props => React.createElement("section", { "data-profile": props.customerId }, "原客户资料权限") },
   "./support-avatar": { SupportAvatar: props => React.createElement("span", { "data-avatar-path": props.path }, props.name) },
   "./support-leaderboard": { compactSupportBoardValue: formatterModule.namespace.compactSupportBoardValue },
@@ -149,6 +150,32 @@ test("managed view queries AGENTS despite legacy permission=agent; group change 
   button(d.tree, "乙组").props.onClick(); d.render(); const selected = requests.at(-1); assert.equal(selected.options.groupId, "5"); assert.equal(selected.options.pageNum, 1); assert.equal(selected.options.expectedVersion, undefined); assert.equal(selected.options.mode, undefined); assert.equal(older.options.signal.aborted, true);
   older.resolve(fixture("AGENTS")); await d.settle(); assert.equal(elements(d.tree).filter(x => x.type === AnalyticsTable).length, 0);
   selected.resolve(fixture("AGENTS")); await d.settle(); assert.equal(elements(d.tree).filter(x => x.type === AnalyticsTable).length, 1); d.unmount();
+});
+test("group management replaces the statistics list and rechecks scope before returning", async () => {
+  const d = await resolveScope();
+  button(d.tree, "乙组").props.onClick(); d.render();
+  const stale = requests.at(-1);
+  button(d.tree, "分组管理").props.onClick(); d.render();
+  assert.equal(stale.options.signal.aborted, true);
+  const editor = elements(d.tree).find(x => x.type === mocks["./m1-group-management"].M1GroupManagement);
+  assert.equal(editor.props.mode, "MANAGED"); assert.equal(editor.props.initialGroupId, "5");
+  assert.equal(elements(d.tree).filter(x => x.type === AnalyticsTable).length, 0);
+  editor.props.onChanged(); editor.props.onBack(); d.render();
+  const refreshed = requests.at(-1); assert.equal(refreshed.options.view, "OVERVIEW");
+  stale.resolve(fixture("AGENTS")); await d.settle(); assert.equal(elements(d.tree).filter(x => x.type === AnalyticsTable).length, 0);
+  const freshScope = fixture(); freshScope.scopeSummary.groups = freshScope.scopeSummary.groups.filter(g => g.groupId !== "5");
+  refreshed.resolve(freshScope); await d.settle();
+  assert.equal(requests.at(-1).options.pageNum, 1); assert.equal(requests.at(-1).options.groupId, undefined);
+  assert.equal(requests.at(-1).options.agentId, undefined); assert.equal(requests.at(-1).options.expectedVersion, undefined);
+  d.unmount();
+});
+test("managed service operations use the actual scope despite an obsolete agent role hint", async () => {
+  const d = await resolveScope();
+  button(d.tree, "分配与服务").props.onClick(); d.render();
+  const service = elements(d.tree).find(x => x.type === mocks["./m1-personal-workbench"].M1PersonalWorkbench);
+  assert.equal(service.props.permission, "supervisor");
+  assert.equal(elements(d.tree).filter(x => x.type === AnalyticsTable).length, 0);
+  d.unmount();
 });
 test("cancelled reads ignore late responses and expose retry with preserved conditions", async () => {
   const d = await resolveScope(), pending = requests.at(-1); button(d.tree, "取消读取").props.onClick(); d.render(); assert.equal(pending.options.signal.aborted, true);

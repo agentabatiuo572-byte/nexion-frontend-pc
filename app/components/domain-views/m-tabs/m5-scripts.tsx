@@ -19,6 +19,8 @@ import {
   type MSupportServiceType,
 } from "@/lib/admin/m-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { supportAnalyticsClient } from "@/lib/admin/support-analytics-client";
+import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import {
   type AdvisorScript,
   type SessionCategory,
@@ -48,8 +50,8 @@ const DEFAULT_ADVISOR_POLICY = { enabled: "off", delayMs: 1500, cooldownHours: 2
 const ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE = false;
 
 const CAT_ICON: Record<SessionType, IconName> = { advisor: "users", support: "bell", ai: "power" };
-const SEAT_LABEL: Record<string, string> = { MANAGER: "客服主管", DEDICATED: "专属客服", GENERAL: "通用客服" };
-const seatLabel = (position: string) => Object.hasOwn(SEAT_LABEL, position) ? SEAT_LABEL[position] : (position || "通用客服");
+const SEAT_LABEL: Record<string, string> = { MANAGER: "客服主管（管理资格）", DEDICATED: "专属客服", GENERAL: "专属客服", SUPERVISOR: "客服主管（管理资格）" };
+const seatLabel = (position: string) => Object.hasOwn(SEAT_LABEL, position) ? SEAT_LABEL[position] : position.includes("主管") ? "客服主管（管理资格）" : "专属客服";
 
 function SensTag() {
   return (
@@ -83,7 +85,7 @@ function pageSlice<T>(rows: T[], page: number, pageSize: number): T[] {
 }
 
 function isDedicatedSupportAgent(agent: MSupportAgent): boolean {
-  return agent.seatType === "DEDICATED" || agent.position.includes("专属");
+  return agent.enabled;
 }
 
 /**
@@ -98,8 +100,8 @@ function isAutoAcceptancePlaceholder(text: string): boolean {
   return AUTO_ACCEPTANCE_PLACEHOLDER.test(text.trim());
 }
 
-function isSupportSupervisor(agent: MSupportAgent | null | undefined): boolean {
-  return Boolean(agent?.seatType === "MANAGER" || agent?.position.includes("主管"));
+function isSupportSupervisor(mode: string | null): boolean {
+  return mode === "MANAGED";
 }
 
 function Pager({
@@ -140,6 +142,8 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
   const currentRole = useAdminAuth((s) => s.session?.role ?? s.role);
   const currentAdminId = useAdminAuth((s) => s.session?.adminId ?? 0);
   const authorities = useAdminAuth((s) => s.session?.authorities);
+  const actorStamp = useAdminAuth((state) => `${adminShellSessionKey(state.session)}:${state.authEpoch}`);
+  const [managementScope, setManagementScope] = useState<{ actorStamp: string; mode: string } | null>(null);
   const currentRoleKey = String(currentRole);
   const categories = parseParamArray<SessionCategory>(pget(CATEGORY_LIST_KEY), []);
   const scripts = parseParamArray<AdvisorScript>(pget(SCRIPT_LIST_KEY), []);
@@ -184,19 +188,28 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
     [agentPageData, supportAgents, agentPage],
   );
   const visibleAdvisorAssignments = agentPageData?.advisorAssignments ?? advisorAssignments;
-  const currentSupportAgent = useMemo(
-    () => supportAgents.find((agent) => agent.adminId === currentAdminId) ?? null,
-    [currentAdminId, supportAgents],
-  );
   const isSuperAdmin = currentRoleKey === "superadmin" || currentRoleKey === "super";
   const hasM1ReadAuthority = isSuperAdmin || Boolean(authorities?.includes("service_m1_read"));
   const hasM5WriteAuthority = isSuperAdmin || Boolean(authorities?.includes("service_m5_write"));
   const isContentOperator = currentRoleKey === "content";
-  const isSupportM5Supervisor = currentRoleKey === "support" && isSupportSupervisor(currentSupportAgent);
+  const isSupportM5Supervisor = currentRoleKey === "support" && isSupportSupervisor(managementScope?.actorStamp === actorStamp ? managementScope.mode : null);
   const canManageM5Content = hasM5WriteAuthority && (isSuperAdmin || isContentOperator || isSupportM5Supervisor);
   const canManageM5Operations = hasM5WriteAuthority && (isSuperAdmin || isSupportM5Supervisor);
   const canManageSupportSeats = (isSuperAdmin || Boolean(authorities?.includes("service_m1_write")))
-    && (isSuperAdmin || isSupportSupervisor(currentSupportAgent));
+    && (isSuperAdmin || isSupportM5Supervisor);
+  useEffect(() => {
+    setManagementScope(null);
+    if (!hasM1ReadAuthority || currentRoleKey !== "support" || !currentAdminId) return;
+    const controller = new AbortController();
+    supportAnalyticsClient.query({ view: "OVERVIEW", pageSize: 1, signal: controller.signal })
+      .then((result) => {
+        const current = useAdminAuth.getState();
+        if (!controller.signal.aborted && actorStamp === `${adminShellSessionKey(current.session)}:${current.authEpoch}`)
+          setManagementScope({ actorStamp, mode: result.scopeSummary.mode });
+      })
+      .catch(() => { /* A denied or unavailable scope grants no management qualification. */ });
+    return () => controller.abort();
+  }, [actorStamp, hasM1ReadAuthority, currentRoleKey, currentAdminId]);
   const sessionTemplatesAvailable = pget("I.session.templatesAvailable") === "1";
   // 自动验收占位记录默认从列表主体筛除,避免运营把编号化占位文案当成真实配置(简报 #77);
   // 记录本身仍可一键显示出来走归档清理 —— 不伪造「已删除」,也不让分页数与可见行脱节。
@@ -492,7 +505,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
             </div>
           ) : visibleSupportAgents.map((agent) => {
             const assignments = visibleAdvisorAssignments.filter((row) => row.agentAdminId === agent.adminId && row.status === "ACTIVE");
-            const advisorEnabled = agent.serviceTypes.includes("advisor");
+            const advisorEnabled = agent.enabled;
             return (
               <div key={agent.id} className="m5-seat-row" style={{ gap: 12, alignItems: "center", padding: "12px", borderTop: "1px solid var(--border)" }}>
                 <div style={{ minWidth: 0 }}>
@@ -506,9 +519,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
                 <div>
                   <div data-proof="m5-seat-position-label" style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{seatLabel(agent.position)}</div>
                   <div className="row wrap" style={{ gap: 5, marginTop: 5 }}>
-                    {agent.serviceTypes.map((type) => (
-                      <span key={type} className="chip" style={{ height: 18, fontSize: 11, border: "none" }}>{type === "advisor" ? "专属客服服务" : "普通客服"}</span>
-                    ))}
+                    <span className="chip" style={{ height: 18, fontSize: 11, border: "none" }}>专属客服接待</span>
                   </div>
                 </div>
                 <div style={{ minWidth: 0 }}>
@@ -538,9 +549,9 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
                     <>
                       <button type="button" className="btn btn-sec btn-sm" disabled={writePending} onClick={() => setProfileAgent(agent)}>
                         <Icon name="gauge" size={15} />
-                        配置岗位
+                        配置接待
                       </button>
-                      {showSeatOperations && <button type="button" className="btn btn-pri btn-sm" disabled={writePending || !advisorEnabled || !isDedicatedSupportAgent(agent)} onClick={() => setAssignAgent(agent)} title={advisorEnabled && isDedicatedSupportAgent(agent) ? "绑定服务用户" : "先在 M1 分配为专属客服并开启专属客服服务"}>
+                      {showSeatOperations && <button type="button" className="btn btn-pri btn-sm" disabled={writePending || !advisorEnabled || !isDedicatedSupportAgent(agent)} onClick={() => setAssignAgent(agent)} title={advisorEnabled && isDedicatedSupportAgent(agent) ? "绑定服务用户" : "先在 A1 核对接待资格"}>
                         <Icon name="users" size={15} />
                         绑定用户
                       </button>}
@@ -755,7 +766,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
             return (
               <div key={t.id} className="m5-template-row" style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderTop: "1px solid var(--border)" }}>
                 <span className="idtag" style={{ fontSize: 11.5, minWidth: 48 }}>{t.id}</span>
-                <span className="chip" style={{ height: 20, border: "none" }}>{t.type === "advisor" ? "专属客服" : "普通客服"}</span>
+                <span className="chip" style={{ height: 20, border: "none" }}>{t.type === "advisor" ? "专属客服" : "专属客服"}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="dim" style={{ fontSize: 12.5 }}>{t.text}</div>
                   <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -796,11 +807,8 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
     () => Array.from(new Set(agents.flatMap((item) => item.tags ?? []).filter(Boolean))),
     [agents],
   );
-  const position = agent.position || "通用客服";
-  const dedicatedSeat = agent.seatType === "DEDICATED" || position.includes("专属");
-  const [serviceTypes, setServiceTypes] = useState<MSupportServiceType[]>(
-    dedicatedSeat ? (agent.serviceTypes.length ? agent.serviceTypes : ["advisor"]) : ["support"],
-  );
+  const position = agent.position;
+  const serviceTypes = agent.serviceTypes;
   const [tags, setTags] = useState<string[]>(agent.tags ?? []);
   const [maxConcurrent, setMaxConcurrent] = useState(String(agent.maxConcurrent || 10));
   const [enabled, setEnabled] = useState(agent.enabled);
@@ -809,7 +817,7 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
-  const canSave = !saving && reasonOk && serviceTypes.length > 0 && Number(maxConcurrent) >= 0;
+  const canSave = !saving && reasonOk && Number(maxConcurrent) >= 0;
 
   const save = async () => {
     if (!canSave) return;
@@ -839,7 +847,7 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
 
   return (
     <Modal
-      title="配置客服岗位"
+      title="配置客服接待"
       icon="gauge"
       wide
       onClose={onClose}
@@ -854,7 +862,7 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
           <label className="field" style={{ marginBottom: 0 }}>
             <span>坐席类型</span>
             <input data-proof="m5-seat-position-field" className="fld" value={seatLabel(position)} readOnly disabled />
-            <span className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>客服主管 / 专属客服 / 通用客服由 M1「分配坐席」维护。</span>
+            <span className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>接待资格与主管管理资格分别由 A1 账号管理维护。</span>
           </label>
           <label className="field" style={{ marginBottom: 0 }}>
             <span>接派单上限</span>
@@ -868,27 +876,7 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div>
-            <div className="sub" style={{ fontWeight: 600, marginBottom: 8 }}>服务类型</div>
-            <div className="row wrap" style={{ gap: 8 }}>
-              {(["support", "advisor"] as MSupportServiceType[]).map((type) => {
-                const disabled = type === "advisor" && !dedicatedSeat;
-                return (
-                  <button
-                    key={type}
-                    type="button"
-                    className={`chip${serviceTypes.includes(type) ? " sel" : ""}`}
-                    disabled={disabled}
-                    onClick={() => {
-                      if (!disabled) setServiceTypes((rows) => toggleList(rows, type));
-                    }}
-                    style={disabled ? { opacity: 0.55, cursor: "not-allowed" } : undefined}
-                  >
-                    {type === "advisor" ? "专属客服服务" : "普通客服"}
-                  </button>
-                );
-              })}
-            </div>
-            {!dedicatedSeat && <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 6 }}>只有 M1 分配为专属客服后才能开启专属客服服务。</div>}
+            <div className="sub">人工接待统一为专属客服，接待资格与主管管理资格在 A1 账号管理维护。</div>
           </div>
           <div>
             <div className="sub" style={{ fontWeight: 600, marginBottom: 8 }}>岗位标签</div>
@@ -903,7 +891,7 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <label className="row" style={{ justifyContent: "space-between", gap: 12, alignItems: "center" }}>
-              <span><span style={{ fontSize: 13 }}>启用客服</span><span className="sub" style={{ display: "block" }}>关闭后不参与新派单</span></span>
+              <span><span style={{ fontSize: 13 }}>开放接待</span><span className="sub" style={{ display: "block" }}>关闭后不参与新派单</span></span>
               <Toggle on={enabled} onClick={() => setEnabled((v) => !v)} />
             </label>
             <label className="row" style={{ justifyContent: "space-between", gap: 12, alignItems: "center" }}>

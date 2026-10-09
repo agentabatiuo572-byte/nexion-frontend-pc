@@ -121,7 +121,9 @@ export function M6Leaderboard() {
     </form>
     {notice && <p className="m6-leaderboard-notice" role="status">{notice}</p>}
     {data?.stale && <p className="m6-leaderboard-notice" role="status">当前显示上次发布的榜单。{data.refreshFailed ? "本次来源刷新失败，数据截至时间保留原值。" : "数据已超过刷新间隔。"}<Btn onClick={() => resetFirstPage("正在重新读取第一页…")}>重新读取</Btn></p>}
-    {data && data.rows.length === 0 && <p className="m6-leaderboard-notice" role="status">{query.keyword ? "没有匹配的客服；本人定位会清除搜索条件。" : "当前范围暂无参榜客服。"}</p>}
+    {data && data.rows.length === 0 && <p className="m6-leaderboard-notice" role="status">{data.state === "PROVISIONAL"
+      ? query.keyword ? "已核实范围暂无匹配；参榜资料尚未完整，不能认定没有客服或业绩。" : "参榜资料尚未完整，暂不能显示榜单；这不代表客服或业绩为零。"
+      : query.keyword ? "没有匹配的客服；本人定位会清除搜索条件。" : "当前范围暂无参榜客服。"}</p>}
     <SupportLeaderboard query={currentQuery} onQueryChange={changeQuery}
       monthOptions={(data?.selectableMonths ?? []).map(value => ({ value, label: value.replace("-", ".") }))}
       currencyOptions={(data?.currencies ?? []).map(value => ({ value, label: value }))}

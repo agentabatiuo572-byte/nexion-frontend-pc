@@ -91,3 +91,13 @@ test("unmount aborts late avatar and revokes every created Blob; stale timestamp
   const h = harness(); h.pages[0].resolve(page("17", { stale: true, refreshFailed: true })); await h.flush(); assert.match(h.board().updatedAt, /2026\/10\/9/); assert.doesNotMatch(h.board().updatedAt, /正在/); h.avatars[0].resolve(new Blob(["png"])); await h.flush(); h.unmount(); assert.equal(h.avatars[0].signal.aborted, true); assert.deepEqual(h.revoked, ["blob:test-1"]);
   const late = harness(); late.pages[0].resolve(page()); await late.flush(); late.unmount(); late.avatars[0].resolve(new Blob(["png"])); await tick(); assert.equal(late.created.length, 0);
 });
+test("uncertified empty publication stays ready with incomplete-data explanation rather than certified zero", async () => {
+  for (const candidateCoverage of ["PARTIAL", "UNKNOWN"]) {
+    const h = harness(); h.pages[0].resolve(page("17", { state: "PROVISIONAL", candidateCoverage, rows: [], self: { row: null, gap: null, reason: "资料待核实", pageNum: null }, total: 0, matched: 0 })); await h.flush();
+    assert.equal(h.board().status, "ready"); assert.equal(h.board().rows.length, 0); assert.match(h.board().candidateReason, /尚未完整核实/);
+    const notice = find(h.tree, node => node.type === "p" && node.props.children?.includes?.("这不代表客服或业绩为零"));
+    assert.ok(notice); assert.equal(h.avatars.length, 0); h.unmount();
+  }
+  const h = harness(); h.pages[0].resolve(page("17", { rows: [], self: { row: null, gap: null, reason: "未参榜", pageNum: null }, total: 0, matched: 0 })); await h.flush();
+  assert.equal(h.board().candidateReason, undefined); assert.ok(find(h.tree, node => node.type === "p" && node.props.children === "当前范围暂无参榜客服。")); h.unmount();
+});

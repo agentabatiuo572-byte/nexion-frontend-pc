@@ -16,7 +16,7 @@
     "m-view.tsx": 0
   },
   "activeLeafCoverage": {
-    "A1": ["OPS-A-01", "OPS-A-22"],
+    "A1": ["OPS-A-01", "OPS-A-22", "OPS-A-33"],
     "A2": ["OPS-A-14", "OPS-A-15", "OPS-A-27", "OPS-A-28", "OPS-A-29"],
     "A3": ["OPS-A-07", "OPS-A-07a", "OPS-A-07b"],
     "A4": ["OPS-A-08", "OPS-A-09", "OPS-A-20", "OPS-A-30", "OPS-A-31"],
@@ -87,7 +87,7 @@
     "L4": ["OPS-L-01", "OPS-L-05"],
     "L5": ["OPS-L-02", "OPS-L-04"],
     "L6": ["OPS-L-10", "OPS-L-11"],
-    "M1": ["OPS-M-01", "OPS-M-17", "OPS-M-19"],
+    "M1": ["OPS-M-01", "OPS-M-17", "OPS-M-19", "OPS-M-32", "OPS-M-33", "OPS-M-34", "OPS-M-35", "OPS-M-36", "OPS-M-37"],
     "M2": ["OPS-M-04", "OPS-M-21", "OPS-M-26"],
     "M3": ["OPS-M-07", "OPS-M-16", "OPS-M-20", "OPS-M-22", "OPS-M-25", "OPS-M-27"],
     "M4": ["OPS-M-11", "OPS-M-12", "OPS-M-23", "OPS-M-28"],
@@ -3919,6 +3919,83 @@
         }
       ],
       "note": "权威事实由 nx_admin_operation_mutex 的 G2_EXCHANGE_EXECUTION 行锁、App/批次共同消费及真实 MySQL 并发测试证明；逐项 kill/cap 复核仅在当前服务端批处理器执行，旧 Acceptance Sandbox 清理入口已删除。"
+    },
+    {
+      "id": "OPS-M-32",
+      "domain": "M",
+      "object": "客服分组创建(M1)",
+      "action": "按当前授权创建负责组并指定有效主管",
+      "status": "built",
+      "view": "m-tabs/m1-group-management.tsx",
+      "batch": "done",
+      "restAction": "createSupportGroup",
+      "note": "POST /support-agents/groups；主管仅能创建归本人组，总管可指定有效主管；理由、原命令号持久记录及成功权威回读。 结果未知保留原证据，只查询回执；终态与当前授权事实读回后才解除保护。本行登记当前源码已接入真实REST的操作边界，不代表全任务或生产验收完成。"
+    },
+    {
+      "id": "OPS-M-33",
+      "domain": "M",
+      "object": "客服分组名称(M1)",
+      "action": "按当前组版本及理由重命名负责组",
+      "status": "built",
+      "view": "m-tabs/m1-group-management.tsx",
+      "batch": "done",
+      "restAction": "renameSupportGroup",
+      "note": "PATCH /support-agents/groups/{groupId}/name；MANAGED限负责组，ALL覆盖全组；保持expectedVersion与原幂等键。 结果未知保留原证据，只查询回执；终态与当前授权事实读回后才解除保护。本行登记当前源码已接入真实REST的操作边界，不代表全任务或生产验收完成。"
+    },
+    {
+      "id": "OPS-M-34",
+      "domain": "M",
+      "object": "客服分组启停与归档(M1)",
+      "action": "按当前组版本启用、停用或归档组",
+      "status": "built",
+      "view": "m-tabs/m1-group-management.tsx",
+      "batch": "done",
+      "restAction": "setSupportGroupStatus",
+      "note": "PATCH /support-agents/groups/{groupId}/status；停用或归档以服务端成员、路由客户及未结任务阻塞为准，保留理由与当前版本。 结果未知保留原证据，只查询回执；终态与当前授权事实读回后才解除保护。本行登记当前源码已接入真实REST的操作边界，不代表全任务或生产验收完成。"
+    },
+    {
+      "id": "OPS-M-35",
+      "domain": "M",
+      "object": "客服分组主管交接(M1)",
+      "action": "总管按当前组版本将组转交有效主管",
+      "status": "built",
+      "view": "m-tabs/m1-group-management.tsx",
+      "batch": "done",
+      "restAction": "transferSupportGroupOwner",
+      "note": "PATCH /support-agents/groups/{groupId}/owner；仅ALL总管允许交接，服务端校验主管资格与组版本，不改变SERVICE资格。 结果未知保留原证据，只查询回执；终态与当前授权事实读回后才解除保护。本行登记当前源码已接入真实REST的操作边界，不代表全任务或生产验收完成。"
+    },
+    {
+      "id": "OPS-M-36",
+      "domain": "M",
+      "object": "专属客服入组与调组(M1)",
+      "action": "按成员和来源目标组版本调入、调出或跨组调整成员",
+      "status": "built",
+      "view": "m-tabs/m1-group-management.tsx",
+      "batch": "done",
+      "restAction": "moveSupportGroupMember",
+      "note": "PATCH /support-agents/groups/members/{adminId}；MANAGED只在负责组范围查询和操作，ALL可调出至未入组；窄成员读确认ABSENT/AVAILABLE/UNKNOWN与版本。 结果未知保留原证据，只查询回执；终态与当前授权事实读回后才解除保护。本行登记当前源码已接入真实REST的操作边界，不代表全任务或生产验收完成。"
+    },
+    {
+      "id": "OPS-M-37",
+      "domain": "M",
+      "object": "待绑定客户池组路由(M1)",
+      "action": "总管按当前客户池路由版本设置或解除目标组",
+      "status": "built",
+      "view": "m-tabs/m1-supervisor-pool.tsx",
+      "batch": "done",
+      "restAction": "setSupportPoolRoute",
+      "note": "PATCH /support-agents/groups/customer-routes/{customerId}；ALL且当前真实总管及M1写权限，AVAILABLE/ABSENT/UNKNOWN窄读版本，目标组版本权威读回。 结果未知保留原证据，只查询回执；终态与当前授权事实读回后才解除保护。本行登记当前源码已接入真实REST的操作边界，不代表全任务或生产验收完成。"
+    },
+    {
+      "id": "OPS-A-33",
+      "domain": "A",
+      "object": "独立专属客服与主管资格(A1)",
+      "action": "总管分别启停或移除SERVICE及SUPERVISOR资格",
+      "status": "built",
+      "view": "a-tabs/a1-accounts.tsx + m-tabs/m1-group-management.tsx",
+      "batch": "done",
+      "restAction": "setSupportQualification",
+      "note": "PATCH /support-agents/{adminId}/qualification；入口仅真实总管+A1精确读写权限，独立两资格，不覆盖原账号编辑/角色/头像；账号及资格版本由窄读确认。 结果未知保留原证据，只查询回执；终态与当前授权事实读回后才解除保护。本行登记当前源码已接入真实REST的操作边界，不代表全任务或生产验收完成。"
     }
   ]
 }

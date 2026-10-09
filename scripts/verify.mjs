@@ -9,7 +9,7 @@
  *
  * 档位(默认 full):
  *   · `--static` / `VERIFY_MODE=static` —— 只跳「重齿」(生产构建;以及任何起 dev server / Playwright
- *     的齿,当前一个都没有),记 SCOPED-SKIP。**scoped 绿 ≠ 全量绿**,合并守卫只认 mode=full。
+ *     的齿),记 SCOPED-SKIP。**scoped 绿 ≠ 全量绿**,合并守卫只认 mode=full。
  *   · `--only <齿名子串>` —— 调试用,未命中的齿记 NOT-RUN(所以 --only 必然非零退出,不会被误当成绿)。
  *
  * 落盘(三份,给不同读者):
@@ -152,12 +152,11 @@ function run(label, command, args, gearName) {
 
 /**
  * `--static` 档跳过的「重齿」判据:① 生产构建(next build,本机 1-2 分钟,占全链大头);
- * ② 任何起 dev server / Playwright 的齿 —— 当前 GEARS 里**一条都没有**(2026-08-17 逐条核过),
- * 判据仍留着:将来真加进来时自动归到 SCOPED-SKIP,不靠人记得回来改这个函数。
+ * ② 起 dev server / Playwright 的齿，包括共享下拉组件的真实 Chromium 行为检查。
  */
 function isHeavyGear([, cmd, args]) {
   const line = [cmd, ...args].join(" ");
-  return /\brun\s+(build|dev|start)\b/.test(line) || /\bnext\s+(build|dev|start)\b/.test(line) || /playwright/i.test(line);
+  return /\brun\s+(build|dev|start)\b/.test(line) || /\bnext\s+(build|dev|start)\b/.test(line) || /playwright|tests\/support-select-keyboard\.test\.mjs/i.test(line);
 }
 
 /** git 读命令(只读,失败返回 null —— 拿不到就把记录里的对应字段留空,不编)。 */
@@ -248,6 +247,9 @@ const GEARS = [
   ["M1 pending/failure state contract", "node", ["--test", "tests/m1-acceptance-contract.test.mjs"]],
   ["M3 App support authority contract", "node", ["--test", "tests/m3-acceptance-contract.test.mjs"]],
   ["Support enhancements exact amounts, payloads, binary ceiling and dock scope", "node", ["--experimental-strip-types", "--experimental-vm-modules", "--test", "tests/support-enhancements-client.test.mjs", "tests/support-enhancements-dock.test.mjs", "tests/support-enhancements-layout.test.mjs", "tests/shared-shell-authority-prefetch-contract.test.mjs", "tests/support-analytics-runtime.test.mjs", "tests/support-analytics-client.test.mjs", "tests/m1-analytics-workbench.test.mjs", "tests/public-leaderboard-client.test.mjs", "tests/public-leaderboard-container.test.mjs"]],
+  ["Support group management and qualification boundaries", "node", ["--experimental-strip-types", "--experimental-vm-modules", "--test", "tests/support-group-client.test.mjs", "tests/group-management-container.test.mjs", "tests/group-management-v2-boundary.test.mjs", "tests/group-management-v3-boundary.test.mjs", "tests/independent-boundary.test.mjs", "tests/reviewer-v2.test.mjs"]],
+  ["Exclusive support scope and durable command recovery", "node", ["--experimental-strip-types", "--test", "tests/exclusive-support-pool-client.test.mjs", "tests/exclusive-support-pool-component.test.mjs", "tests/exclusive-support-recovery-v2.test.mjs", "tests/exclusive-support-m5-qualification-v2.test.mjs", "tests/reviewer-g3.test.mjs"]],
+  ["Support shared select real keyboard behavior", "node", ["--test", "tests/support-select-keyboard.test.mjs"]],
   ["CGM field coverage", "node", ["scripts/cgm-coverage.mjs"]],
   ["no-double-sign residue", "node", ["scripts/no-double-sign-terms.mjs"]],
   ["ops-actions integrity", "node", ["scripts/ops-actions-audit.mjs"]],
@@ -330,7 +332,7 @@ const GEARS = [
   // d-client.ts 派生,整棵 PRD 树逐处核;判别力由 scripts/_redtest-withdrawal-key-parity.mjs 证明。
   ["withdrawal key-name parity", "node", ["scripts/withdrawal-key-parity.mjs"]],
   ["error-copy throat sentinel", "node", ["--experimental-strip-types", "scripts/error-copy-throat-sentinel.mjs"]],
-  ["error-copy throat contract", "node", ["--experimental-strip-types", "--test", "tests/error-messages-backend-unavailable.test.mjs", "tests/fetch-guard.test.mjs"]],
+  ["error-copy throat contract", "node", ["--experimental-strip-types", "--test", "tests/error-messages-backend-unavailable.test.mjs", "tests/fetch-guard.test.mjs", "tests/full-gates-support-error-copy.test.mjs", "tests/full-gates-support-pending-registration.test.mjs"]],
   // 生产构建必须排在依赖兄弟仓 nexion-backend 的齿**之前**:它是最贵也最有价值的本地齿,
   // 排在后面等于在缺仓机器上永远跑不到,完成门要求的「verify 全绿(含 production build)」会结构性不可达。
   ["production build", npmCmd, ["run", "build"]],
