@@ -9,12 +9,18 @@ import {promotionVisualCases,promotionVisualSources,validatePromotionVisualBoard
 
 const external=process.env.PROMOTION_EVIDENCE_DIR||'D:/CodexData/test-environments/workflow-runs/growth-promotions-20261007';
 const base='http://127.0.0.1:3039';
+const {createNativeGuard}=await import('file:///D:/CodexData/test-environments/workflow-runs/growth-promotions-20261007/pc-remote-merge-minimal-r1/pc-native-preparation-r2/pc-native-runtime-guard.mjs');
+const guard=createNativeGuard({phase:'visual'});
 const sessions=JSON.parse(fs.readFileSync(process.env.PROMOTION_VISUAL_SESSION_FILE||path.join(external,'sessions-owned-v2.private.json')));
+const accounts=JSON.parse(fs.readFileSync(path.join(external,'accounts-owned-v2.private.json')));
+const adminActor=name=>{const account=accounts.admins.find(a=>a.username===name);assert(account&&Number.isSafeInteger(account.id),'Missing owned admin '+name);return{id:account.id,kind:'admin',username:name};};
 const activities=JSON.parse(fs.readFileSync(path.join(external,'pc-runtime-activities.json')));
+assert.deepEqual(activities.nativeGuard.binding,guard.binding,'Visual activities must belong to this native run');
 const manifest=JSON.parse(fs.readFileSync('docs/design/growth-promotions/admin-r1-baseline.json'));
 const runId=randomUUID(),dir=path.join(external,'pc-visual-evidence',runId);fs.mkdirSync(dir,{recursive:true});
 const argument=name=>{const index=process.argv.indexOf(name);return index>=0?process.argv[index+1]:undefined;};
 const report=path.resolve(argument('--report')||path.join(dir,'candidate.json'));
+assert(report.toLowerCase().startsWith(path.resolve(external).toLowerCase()+path.sep),'Visual report cannot overwrite another task input');
 assert(!fs.existsSync(report),'Capture reports are immutable; select a fresh --report path');
 const hash=x=>createHash('sha256').update(x).digest('hex');
 const baselineRaw=fs.readFileSync('docs/design/growth-promotions/evidence/admin-r1-design/v4-purchase-interval/export-report.json'),baseline=JSON.parse(baselineRaw),requiredCases=promotionVisualCases(manifest,baseline);
@@ -35,8 +41,8 @@ if(special){
 }
 const browser=await chromium.launch({headless:true});
 let current;
-async function context(role,theme,viewport){const ctx=await browser.newContext({viewport,deviceScaleFactor:1,locale:'zh-CN',timezoneId:'Asia/Tokyo',reducedMotion:'reduce'});await ctx.addCookies([{name:'nexion_admin_token',value:sessions.admins[role].accessToken,url:base,httpOnly:true,sameSite:'Lax'}]);await ctx.addInitScript(theme=>localStorage.setItem('nexion-admin-theme-v1',JSON.stringify({state:{mode:theme},version:1})),theme);return ctx;}
-async function api(ctx,url,method='GET',data){const r=await ctx.request.fetch(base+'/api/admin/growth'+url,{method,headers:method==='GET'?{}:{'Idempotency-Key':'pc-visual-'+randomUUID()},data});const b=await r.json();assert.equal(r.status(),200,`${url}: ${b.message}`);assert.equal(b.code,0);return b.data;}
+async function context(role,theme,viewport){const ctx=await browser.newContext({viewport,deviceScaleFactor:1,locale:'zh-CN',timezoneId:'Asia/Tokyo',reducedMotion:'reduce',serviceWorkers:'block'});await guard.installContext(ctx,adminActor(role));await ctx.addCookies([{name:'nexion_admin_token',value:sessions.admins[role].accessToken,url:base,httpOnly:true,sameSite:'Lax'}]);await ctx.addInitScript(theme=>localStorage.setItem('nexion-admin-theme-v1',JSON.stringify({state:{mode:theme},version:1})),theme);return ctx;}
+async function api(ctx,url,method='GET',data){const scope={channel:'api',actor:adminActor('growth_author'),method,url:base+'/api/admin/growth'+url,body:data};await guard.beforeRequest(scope);const r=await ctx.request.fetch(scope.url,{method,maxRedirects:0,headers:method==='GET'?{}:{'Idempotency-Key':'pc-visual-'+randomUUID()},data}),responseText=await r.text();await guard.observeResponse({...scope,responseText,status:r.status()});const b=JSON.parse(responseText);assert.equal(r.status(),200,`${url}: ${b.message}`);assert.equal(b.code,0);return b.data;}
 try{
   const setup=await context('growth_author','dark',manifest.renderer.viewports[0]);
   const detail=await api(setup,`/promotions/${activities.activityId}`);
@@ -49,7 +55,7 @@ try{
     for(const screen of manifest.coverage.screens){
       current=await ctx.newPage();current.setDefaultTimeout(12000);current.on('pageerror',e=>proof.pageErrors.push({screen,state,message:e.message}));
       const clicks=[],network=[],delays=[];current.on('response',r=>{if(new URL(r.url()).pathname.startsWith('/api/admin/growth/promotion'))network.push({path:new URL(r.url()).pathname,method:r.request().method(),status:r.status()});});
-      if(['loading','error'].includes(state))await current.route('**/api/admin/growth/promotion**',async route=>{if(route.request().method()!=='GET')return route.continue();if(state==='error')return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({code:503,message:'PROMOTION_SOURCE_UNAVAILABLE',data:null})});await new Promise(resolve=>delays.push(resolve));await route.abort().catch(()=>{});});
+      if(['loading','error'].includes(state))await current.route('**/api/admin/growth/promotion**',async route=>{if(route.request().method()!=='GET')return route.fallback();if(state==='error')return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({code:503,message:'PROMOTION_SOURCE_UNAVAILABLE',data:null})});await new Promise(resolve=>delays.push(resolve));await route.abort().catch(()=>{});});
       const n=Number(screen.slice(-2)),route=n===1?'list':n<=5?'edit':n===6?'review':n===7?'detail':n===8?'rewards':'metrics';
       const id=state==='empty'?empty.resource.id:state==='long'?long.resource.id:n===8?activities.sourceActivityId:activities.activityId;
       const url=`${base}/growth/events?promotion=${route}&activity=${id}${n>=2&&n<=5?`&step=${n-2}`:''}`;
@@ -82,7 +88,7 @@ try{
       const response=scene.responses?.find(item=>item.path===url.pathname&&(!item.query||item.query===url.search)&&item.method===method);
       if(response){assert(response.inputPath&&scene.actualDtoInputs.includes(response.inputPath),'Response fixture lacks an actual DTO input');interceptions.push({path:url.pathname,method,kind:'explicit-ui-response-fixture'});return route.fulfill({status:response.status||200,contentType:'application/json',body:JSON.stringify(response.body)});}
       if(method!=='GET'){interceptions.push({path:url.pathname,method,kind:scene.failure?.kind||'blocked-write'});if(scene.failure?.kind==='transport-unknown')return route.abort();return route.fulfill({status:scene.failure?.status||503,contentType:'application/json',body:JSON.stringify(scene.failure?.body||{code:503,message:'PROMOTION_SOURCE_UNAVAILABLE',data:null})});}
-      return route.continue();
+      return route.fallback();
     });
     const url=new URL(scene.route,base).href;assert.equal(new URL(url).origin,base,'Special scenes must stay on the isolated PC service');await current.goto(url);await expect(current.locator('.prm')).toBeVisible();await current.waitForLoadState('networkidle');
     if(reduced){const cdp=await ctx.newCDPSession(current);await cdp.send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-transparency',value:'reduce'},{name:'prefers-reduced-motion',value:'reduce'}]});}
@@ -103,4 +109,4 @@ try{
   }
   assert.equal(readBackendSource(external).serviceSourceHash,proof.source.serviceSourceHash,'Backend runtime changed while capturing');assert.deepEqual(proof.pageErrors,[]);assert.equal(hash(JSON.stringify(hashes())),sourceHash,'Product files changed while capturing');proof.status=baseOnly?'partial-awaiting-independent-review':'captured-awaiting-independent-review';if(!baseOnly)validatePromotionVisualBoards(proof,requiredCases);
 }catch(e){proof.status='failed';proof.failure=String(e.stack||e);if(current)await current.screenshot({path:path.join(dir,'failure.png'),fullPage:true}).catch(()=>{});process.exitCode=1;}
-finally{proof.finishedAt=new Date().toISOString();fs.mkdirSync(path.dirname(report),{recursive:true});fs.writeFileSync(report,JSON.stringify(proof,null,2));fs.writeFileSync(path.join(dir,'index.html'),`<!doctype html><meta charset="utf-8"><title>PC candidate</title><h1>实际产品候选，待独立审查</h1><p>${proof.source.dirtySourceHash}</p>`+proof.boards.flatMap(b=>b.segments.map((s,i)=>`<a style="display:block" href="${path.basename(s.file)}">${b.caseId} · ${s.kind} ${i}</a>`)).join(''));await browser.close();console.log(JSON.stringify({status:proof.status,boards:proof.boards.length,dir,report,failure:proof.failure?.split('\n').slice(0,2)}));}
+finally{try{await guard.verifyEnd();}catch(error){proof.status='failed';proof.failure=String(error.stack||error);process.exitCode=1;}proof.nativeGuard=guard.evidence();proof.finishedAt=new Date().toISOString();fs.mkdirSync(path.dirname(report),{recursive:true});fs.writeFileSync(report,JSON.stringify(proof,null,2));fs.writeFileSync(path.join(dir,'index.html'),`<!doctype html><meta charset="utf-8"><title>PC candidate</title><h1>实际产品候选，待独立审查</h1><p>${proof.source.dirtySourceHash}</p>`+proof.boards.flatMap(b=>b.segments.map((s,i)=>`<a style="display:block" href="${path.basename(s.file)}">${b.caseId} · ${s.kind} ${i}</a>`)).join(''));await browser.close();console.log(JSON.stringify({status:proof.status,boards:proof.boards.length,dir,report,failure:proof.failure?.split('\n').slice(0,2)}));}

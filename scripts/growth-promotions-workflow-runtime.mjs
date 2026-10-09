@@ -53,20 +53,44 @@ export function validatePromotionVisualReviews(review,proof,candidateHash,images
   }
 }
 
-function main(){
+export function validatePromotionNativeGuard(proof,binding,readFile=fs.readFileSync){
+  const evidence=proof.nativeGuard;assert(evidence,'Native guard evidence is missing');assert.deepEqual(evidence.binding,binding,'Native guard binding changed');assert(evidence.guardsFile&&evidence.guardsSHA,'Native guard log binding is missing');assert(path.isAbsolute(binding.manifestFile),'Native manifest path must be absolute');
+  const ordinary=file=>{
+    assert(path.isAbsolute(file),'Native evidence path must be absolute');const resolved=path.resolve(file);
+    if(readFile===fs.readFileSync){let cursor=resolved;while(cursor!==path.dirname(cursor)){const stat=fs.lstatSync(cursor);assert(!stat.isSymbolicLink(),'Native evidence alias forbidden');if(cursor===resolved)assert(stat.isFile(),'Native evidence must be a file');cursor=path.dirname(cursor);}assert.equal(fs.realpathSync(resolved).toLowerCase(),resolved.toLowerCase(),'Native evidence alias forbidden');}
+    return resolved;
+  };
+  const directory=path.dirname(path.resolve(binding.manifestFile)),logFile=ordinary(evidence.guardsFile);assert.equal(path.dirname(logFile).toLowerCase(),directory.toLowerCase(),'Native guard log must share the manifest directory');
+  const raw=readFile(logFile);assert.equal(digest(raw),evidence.guardsSHA,'Native guard log changed');assert(raw.toString().trim(),'Native guard log is empty');const rows=raw.toString().trim().split(/\r?\n/).map(line=>JSON.parse(line));
+  assert.equal(rows[0].kind,'entry','Native guard entry is missing');assert.equal(rows.at(-1).kind,'end','Native guard end is missing');
+  assert.match(binding.actualSourceFilesSHA,/^[a-f0-9]{64}$/);assert.match(binding.actualCompiledFilesSHA,/^[a-f0-9]{64}$/);
+  const actual=value=>{assert.equal(value.ok,true);assert.equal(value.actualSourceFiles,3602);assert.equal(value.actualCompiledFiles,3345);assert.equal(value.actualSourceFilesSHA,binding.actualSourceFilesSHA);assert.equal(value.actualCompiledFilesSHA,binding.actualCompiledFilesSHA);};
+  for(const row of rows){assert.deepEqual(row.binding,binding,'Native log row binding changed');if(row.kind==='entry'||row.kind==='end')actual(row.actual);}
+  const mutations=rows.filter(row=>row.kind==='mutation');assert(mutations.length,'Native candidate has no guarded mutation');
+  for(const row of mutations){
+    const receipt=row.receipt;assert.equal(receipt.goSHA,binding.goSHA);assert.equal(receipt.runId,binding.runId);actual(receipt);assert(receipt.guardReceipt?.path&&receipt.guardReceipt.sha256,'Native mutation receipt file is missing');
+    const receiptFile=ordinary(receipt.guardReceipt.path);assert(receiptFile.toLowerCase().startsWith(directory.toLowerCase()+path.sep),'Native mutation receipt is outside the manifest directory');const bytes=readFile(receiptFile);assert.equal(digest(bytes),receipt.guardReceipt.sha256,'Native mutation receipt changed');const saved=JSON.parse(bytes.toString());assert.equal(saved.goSHA,binding.goSHA);actual(saved.actual);assert.deepEqual(Object.fromEntries(Object.keys(row.scope).map(key=>[key,saved.operation[key]])),row.scope,'Native mutation receipt operation changed');
+  }
+}
+
+async function main(){
 const env=process.env,startedAt=new Date().toISOString();
 const argument=name=>{const i=process.argv.indexOf(name);assert(i>=0&&process.argv[i+1],`Missing ${name}`);return process.argv[i+1];};
 const suite=argument('--suite'),report=path.resolve(argument('--report')),external=path.dirname(report);
+assert.equal(path.resolve(process.env.PROMOTION_EVIDENCE_DIR||'').toLowerCase(),external.toLowerCase(),'Record output must stay in the exclusive fixture directory');
 for(const key of ['WORKFLOW_TASK_ID','WORKFLOW_STEP_ID','WORKFLOW_CHECK_ID','WORKFLOW_RUN_ID','WORKFLOW_REPO','WORKFLOW_SNAPSHOT_HASH'])assert(env[key],`Missing ${key}; use the workflow CLI`);
 assert.equal(path.resolve(env.WORKFLOW_REPO).toLowerCase(),process.cwd().toLowerCase());
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
-const steps=[];let failure;
+const steps=[];let failure,nativeGuard;
 try{
+  const {createNativeGuard}=await import('file:///D:/CodexData/test-environments/workflow-runs/growth-promotions-20261007/pc-remote-merge-minimal-r1/pc-native-preparation-r2/pc-native-runtime-guard.mjs');
+  const guard=createNativeGuard({phase:'record'});await guard.verifyEnd();nativeGuard=guard.evidence();
   if(suite==='runtime'){
     const file=path.join(external,`pc-browser-${env.WORKFLOW_RUN_ID}.json`),before=Date.now();
     const child=spawnSync(process.execPath,['scripts/growth-promotions-runtime.mjs','--report',file],{stdio:'inherit',env,windowsHide:true,timeout:540000});
-    assert.equal(child.status,0,'Actual browser flow failed');assert(fs.statSync(file).mtimeMs>=before);
+    assert.equal(child.status,0,'Actual browser flow failed');await guard.verifyEnd();assert(fs.statSync(file).mtimeMs>=before);
     const proof=JSON.parse(fs.readFileSync(file));assert.equal(proof.status,'passed');assert.equal(proof.mode,'full');assert.deepEqual(proof.pageErrors,[]);
+    validatePromotionNativeGuard(proof,guard.binding);
     const coverage={
       'pc-flow':['partial-save-reload','four-step-save-reload','simulation-readonly','approval-publish-dual-lifecycle','metrics-real-snapshot','metrics-export','reward-original-receipt','five-templates','reward-retry-reconcile'],
       'pc-edge':['real-reader-readonly','real-permission-denial','unknown-original-key-recovery','resource-shortage','qualification-expired'],
@@ -80,6 +104,7 @@ try{
     // This verifies current product captures and the independent review records, never the old design-only export.
     const file=env.PROMOTION_VISUAL_CANDIDATE||path.join(external,'pc-visual-candidate.json'),proof=JSON.parse(fs.readFileSync(file));
     assert.equal(proof.status,'captured-awaiting-independent-review');assert.deepEqual(proof.pageErrors,[]);
+    validatePromotionNativeGuard(proof,guard.binding);
     const design=JSON.parse(fs.readFileSync('docs/design/growth-promotions/admin-r1-baseline.json'));
     const baselineRaw=fs.readFileSync('docs/design/growth-promotions/evidence/admin-r1-design/v4-purchase-interval/export-report.json'),baseline=JSON.parse(baselineRaw);
     assert.equal(hash(fs.readFileSync(path.join('docs/design/growth-promotions',design.designFile))),design.designHash,'Approved design changed');assert.equal(proof.source.baselineManifestHash,hash(baselineRaw));
@@ -93,8 +118,9 @@ try{
     validatePromotionVisualReviews(review,proof,hash(fs.readFileSync(file)),images);
     steps.push({id:'pc-pixels',status:'pass',innerSkipped:0,evidence:[file,reviewFile,...review.reviews.map(r=>r.report)]},{id:'pc-states',status:'pass',innerSkipped:0,evidence:[file,...images.map(i=>i.path)]});
   }else throw new Error('Unknown suite');
+  await guard.verifyEnd();nativeGuard=guard.evidence();
 }catch(error){failure=String(error.stack||error);process.exitCode=1;}
-fs.writeFileSync(report,JSON.stringify({taskId:env.WORKFLOW_TASK_ID,stepId:env.WORKFLOW_STEP_ID,checkId:env.WORKFLOW_CHECK_ID,runId:env.WORKFLOW_RUN_ID,repo:env.WORKFLOW_REPO,snapshotHash:env.WORKFLOW_SNAPSHOT_HASH,startedAt,at:new Date().toISOString(),verdict:failure?'fail':'pass',mode:'full',treeMoved:false,capability:'runtime',steps,failure},null,2));
+fs.writeFileSync(report,JSON.stringify({taskId:env.WORKFLOW_TASK_ID,stepId:env.WORKFLOW_STEP_ID,checkId:env.WORKFLOW_CHECK_ID,runId:env.WORKFLOW_RUN_ID,repo:env.WORKFLOW_REPO,snapshotHash:env.WORKFLOW_SNAPSHOT_HASH,startedAt,at:new Date().toISOString(),verdict:failure?'fail':'pass',mode:'full',treeMoved:false,capability:'runtime',steps,failure,nativeGuard},null,2));
 console.log(JSON.stringify({suite,verdict:failure?'fail':'pass',report,failure:failure?.split('\n')[0]}));
 }
-if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url))main();
+if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url))await main();
