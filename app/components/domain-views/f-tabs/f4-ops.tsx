@@ -292,7 +292,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
                 ],
               },
               detail: "此处直接维护正式 App 提交时强制校验的 nx_team_ambassador_policy；不是展示镜像。",
-              completionCopy: "政策已按 revision 原子更新；App 下一次打开/刷新申请页即读取新政策。",
+              completionCopy: "政策成功更新后，App 下一次打开/刷新申请页读取新政策。",
               run: async (reason, values) => {
                 if (!values) throw new Error("请填写完整政策");
                 const defaultBudgetUsdt = Number(values.defaultBudgetUsdt);

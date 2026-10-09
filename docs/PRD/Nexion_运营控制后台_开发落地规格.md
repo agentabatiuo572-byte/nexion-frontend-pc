@@ -242,11 +242,13 @@
 |---|---|---|---|
 | **Withdrawal 扩展态**(本体属 §12) | state:enum{正常5态 submitted\|review-passed\|processing\|sent\|confirmed · 异常6态 review-rejected\|address-invalid\|tx-failed\|tx-orphaned\|refunded\|frozen · 后台扩展 review-pending} · withdrawalNo(server mint) · userId · amountUsdt · address(hash)+chain · riskScore(K4) · pointsOk · count24h · hitRules(K3);**共12态;非法转移 409**;**单笔主键线上真名 = `withdrawalNo`,不是 `withdrawalId`**(权威契约 `PRD/specs/FEAT-WD01-trust-payout-rails.md` §4.2 响应表) | SC | §9.1 / Ch6 D2 / §9.3.6 / §9.11f |
 | **WithdrawConfig**(Phase 派发) | withdrawCooldownDays(月8=35d/月9=45d) · withdrawPointsRatio(月9=20) · 日限/上限/fee(source:'d5' 可写) · complianceHold(只读 source:'phase-h1') | SC | §17.1 / Ch6 D5 |
-| **Bill / BillType**(§12/§9.7) | type:enum{swap\|topup\|withdraw\|earning\|commission\|refund\|bonus}(**7类**) · billId(server mint) · userId · amount · currency · ts:ms-epoch;**server 唯一账本;积分调整不落 bill** | SC | §9.1 / Ch6 D4 |
+| **Bill / BillType**(§12/§9.7) | type:enum{swap\|topup\|withdraw\|earning\|commission\|refund\|bonus\|purchase}(**8类**) · billId(server mint) · userId · amount · currency · ts:ms-epoch;**server 唯一账本;积分调整不落 bill** | SC | §9.1 / Ch6 D4；2026-10-09 用户裁定 #488 |
 | **VietQrBankAccount / VietQrReconciliation / VietQrConfig** | 银行账户仅持久化 AES-GCM 密文，读接口只回传尾号；对账动作 enum{match\|writeoff\|return} 携 expectedVersion、reason、evidence 与 Idempotency-Key。match/writeoff 原子更新钱包、`cumulativeDepositUsdt`、D4 与 D3；return 不入钱包 | SC | 2026-07-25 D1 高保真落地 |
 | **FxQuoteConfig / FxQuoteHistory** | baseVndPerUsdt · spreadPct · lockMinutes · version；服务端派生 effectiveVndPerUsdt，更新使用 CAS + Idempotency-Key，历史 append-only | SC | 2026-07-25 D6 高保真落地 |
 | **TreasuryLedger·D3 储备账本** | usdtReserveUsdt · otherLiquidUsdt · injectedCumulativeUsdt · reserveTotalUsdt;**储备=topup累计+注入−withdraw.confirmed−未到期 USDT staking 本金;唯一储备源;日批 UTC00:00** | SC | §9.1 / Ch6 D3 |
 | 充值流水/对账(D1) | topupId(server mint) · channel · psp · bin · status · chargeback · reconcile;**cumulativeDepositUsdt 正向 recordDeposit/负向 chargeback** | SC | Ch6 D1 |
+
+**2026-10-09 #488 用户裁定**：D4 新增第八类 `purchase`（商品购买），提供独立筛选和分类汇总。仅精确 `ORDER_PURCHASE` 且方向为 `OUT/DEBIT` 的已知购买扣款纳入该类，标准账单 CSV 与 BI 资金明细同源；原七类、未知业务与购买入账方向保持原分类规则。该更新只改变账单读投影，不改原账本、金额、钱包余额、结算或 Running Balance。
 
 ### 域 E — 设备商城
 
@@ -681,7 +683,7 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 | `withdrawCooldownDays` | 月1–7=30 / 月8=35 / 月9+=45 | 7–90d | Phase 派发 | **H1**(D5 只读) | D5 |
 | `withdrawPointsRatio` | 月1–8=10 / 月9–12=20(每$100) | 0–100 | Phase 派发 | **H1**(D5 只读) | D5 |
 | `complianceHoldEnabled` | 月8+=true | 是/否 | Phase 派发 | **H1**(D5 只读) | D5 |
-| BillType 口径 | 7 类(swap/topup/withdraw/earning/commission/refund/bonus) | schema 治理 | 配置即生效 | D4 | D4 |
+| BillType 口径 | 8 类(swap/topup/withdraw/earning/commission/refund/bonus/purchase) | 固定读分类；后续新增仍需 schema 治理 | 读投影生效；不回写历史账本 | D4 | D4；2026-10-09 用户裁定 #488 |
 
 ### 4.5 域 H1 — 12 月节奏 Phase 调度器(全平台 10-dial 唯一权威;逐月矩阵,触发口径=月份数)
 
