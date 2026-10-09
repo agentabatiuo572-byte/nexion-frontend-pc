@@ -303,6 +303,12 @@ interface BackendF4LeadershipPoolOverview {
   leaderboardParticipantCount?: number | string | null;
   leaderboardFraudHitCount?: number | string | null;
   leaderboardDisqualified?: boolean | string | null;
+  leaderboardPaused?: boolean | null;
+  leaderboardSnapshotState?: string | null;
+  leaderboardDataAvailable?: boolean | null;
+  leaderboardSnapshotId?: string | null;
+  leaderboardSnapshotAt?: string | null;
+  leaderboardSnapshotUnavailableReason?: string | null;
   leaderboardPeriodStatus?: string | null;
   podium?: BackendF4Podium[] | null;
   voteWeights?: BackendF4VoteWeight[] | null;
@@ -783,6 +789,12 @@ export interface F4LeadershipPoolOverview {
   leaderboardParticipantCount: number;
   leaderboardFraudHitCount: number;
   leaderboardDisqualified: boolean;
+  leaderboardPaused?: boolean;
+  leaderboardSnapshotState?: "LIVE" | "FROZEN" | "UNAVAILABLE";
+  leaderboardDataAvailable?: boolean;
+  leaderboardSnapshotId?: string;
+  leaderboardSnapshotAt?: string;
+  leaderboardSnapshotUnavailableReason?: string;
   leaderboardPeriodStatus: string;
   podium: F4Podium[];
   voteWeights: F4VoteWeight[];
@@ -1306,6 +1318,18 @@ function quotaCriteriaKnown(row: BackendF4QuotaRow): boolean {
 }
 
 function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | undefined): F4LeadershipPoolOverview {
+  const paused = toBoolean(data?.leaderboardPaused, toBoolean(data?.configValues?.["F.leaderboard.paused"]));
+  const integer = (value: unknown, minimum = 0): value is number => typeof value === "number"
+    && Number.isSafeInteger(value) && value >= minimum;
+  const label = (value: unknown): boolean => typeof value === "string"
+    && /^\$-?\d[\d,]*(?:\.\d+)?$/.test(value);
+  const frozen = paused && data?.leaderboardSnapshotState === "FROZEN" && data.leaderboardDataAvailable === true
+    && typeof data.leaderboardSnapshotId === "string" && !!data.leaderboardSnapshotId.trim()
+    && typeof data.leaderboardSnapshotAt === "string" && Number.isFinite(Date.parse(data.leaderboardSnapshotAt))
+    && integer(data.leaderboardParticipantCount) && label(data.leaderboardPoolLabel)
+    && Array.isArray(data.podium) && data.podium.every((row) => row && integer(row.rank, 1) && row.rank <= 3
+      && integer(row.memberUserId, 1) && typeof row.userId === "string" && !!row.userId.trim()
+      && label(row.gmvLabel) && typeof row.tip === "string" && typeof row.className === "string");
   const metrics = (data?.metrics ?? []).map((item) => ({
     id: asText(item.id, "metric"),
     name: asText(item.label, "指标"),
@@ -1342,7 +1366,7 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     requestedBudgetUsd: toNumber(row.requestedBudgetUsd), kolBudgetPct: toNumber(row.kolBudgetPct),
     status: asText(row.status), eventDate: asText(row.eventDate), createdAt: asText(row.createdAt),
   }));
-  const podium = (data?.podium ?? []).map((row) => ({
+  const podium = (paused && !frozen ? [] : data?.podium ?? []).map((row) => ({
     rank: toNumber(row.rank),
     userId: asText(row.userId, "usr_unknown"),
     gmvLabel: asText(row.gmvLabel, "-"),
@@ -1358,6 +1382,11 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
   const config = data?.config ?? {};
   return {
     configVersion: asText(data?.configVersion),
+    leaderboardSnapshotState: !paused ? "LIVE" : frozen ? "FROZEN" : "UNAVAILABLE",
+    leaderboardDataAvailable: !paused || frozen,
+    leaderboardSnapshotId: asText(data?.leaderboardSnapshotId),
+    leaderboardSnapshotAt: asText(data?.leaderboardSnapshotAt),
+    leaderboardSnapshotUnavailableReason: asText(data?.leaderboardSnapshotUnavailableReason),
     settlementConfigStatus: asText(data?.settlementConfigStatus) === "READY" ? "READY" : "HOLD",
     settlementConfigUnavailableKey: asText(data?.settlementConfigUnavailableKey),
     settlementConfigUnavailableReason: asText(data?.settlementConfigUnavailableReason),
@@ -1398,6 +1427,7 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     leaderboardParticipantCount: toNumber(data?.leaderboardParticipantCount),
     leaderboardFraudHitCount: toNumber(data?.leaderboardFraudHitCount),
     leaderboardDisqualified: toBoolean(data?.leaderboardDisqualified),
+    leaderboardPaused: toBoolean(data?.leaderboardPaused, toBoolean(data?.configValues?.["F.leaderboard.paused"])),
     leaderboardPeriodStatus: asText(data?.leaderboardPeriodStatus, asText(config.leaderboardPeriodStatus)),
     podium,
     voteWeights,

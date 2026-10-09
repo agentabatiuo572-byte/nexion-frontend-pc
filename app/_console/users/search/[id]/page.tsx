@@ -58,7 +58,7 @@ const paymentSlot = (action: "unbind" | "rebind", userId: string | number, metho
 const deviceSlot = (action: "replace" | "recycle", userId: string | number, deviceId: number) =>
   `device-${action}|${userId}|${deviceId}`;
 
-/** C1 画像「安全 & 会话」默认每页条数:后端一次下发全部会话,首屏只渲染最近一页。 */
+/** C1 画像「安全 & 会话」默认每页条数:后端下发最近最多50条会话,首屏只渲染最近一页。 */
 const C1_SESSION_PAGE_SIZE = 5;
 /** 会话状态筛选的取值域 —— 组件的泛型参数与常量表共用同一份声明。 */
 type SessionStatusFilter = "ALL" | "ACTIVE" | "REVOKED" | "EXPIRED";
@@ -405,6 +405,7 @@ export default function UserDetailPage() {
   const profile: User360Profile | null = detail?.profile ?? null;
   const summary: User360Summary = detail?.summary ?? {};
   const userId = profile?.id ?? summary.userId;
+  const c3UserId = typeof userId === "string" || (typeof userId === "number" && Number.isSafeInteger(userId)) ? String(userId) : "";
   const userNo = asText(profile?.userNo ?? summary.userNo, "-");
   const nickname = asText(profile?.nickname, "用户详情");
   const status = asText(profile?.status ?? summary.status, "UNKNOWN").toUpperCase();
@@ -440,7 +441,7 @@ export default function UserDetailPage() {
   }, [detail, paymentMethods]);
 
   const sessions = useMemo(() => asArray(detail?.sessions), [detail?.sessions]);
-  // 后端一次下发全部会话(含大量 REVOKED),画像首屏会被长列表拉长。默认只渲染最近一页,
+  // 后端下发最近最多50条会话样本(含 REVOKED)。默认只渲染最近一页,
   // 并提供状态筛选;筛选或换页时回到第 1 页。
   const filteredSessions = useMemo(() => {
     if (sessionStatusFilter === "ALL") return sessions;
@@ -597,7 +598,7 @@ export default function UserDetailPage() {
                 </Link>
               )}
               {[
-                canReadC3 && ["C3 余额与资产", "/users/assets"],
+                canReadC3 && /^[1-9]\d*$/.test(c3UserId) && ["C3 余额与资产", "/users/assets"],
                 canReadC6 && ["C6 注册登录风控", "/users/reg-risk"],
                 canReadD2 && ["D2 提现队列", "/finance/withdrawals"],
                 canReadD4 && ["D4 全账本", "/finance/ledger"],
@@ -606,7 +607,7 @@ export default function UserDetailPage() {
               ].filter((item): item is [string, string] => Array.isArray(item)).map(([label, pathname]) => (
                 <Link
                   key={pathname}
-                  href={{ pathname, query: { userCode: userNo, returnTo } }}
+                  href={{ pathname, query: { userCode: userNo, ...(pathname === "/users/assets" ? { userId: c3UserId } : {}), returnTo } }}
                   className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px]"
                   style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}
                 >
@@ -671,7 +672,7 @@ export default function UserDetailPage() {
                 })}
               >{(value) => C1_SESSION_STATUS_FILTERS.find(([v]) => v === value)?.[1] ?? value}</TabGroup>
               <span className="text-[11.5px]" style={{ color: "var(--v5-ink-4)" }}>
-                共 {filteredSessions.length} 条 · 第 {sessionPage}/{sessionPageCount} 页
+                最近最多50条会话样本 · 筛选后 {filteredSessions.length} 条 · 第 {sessionPage}/{sessionPageCount} 页
               </span>
             </div>
             <DataTable
@@ -773,12 +774,13 @@ export default function UserDetailPage() {
             { key: "productTier", label: "规格", render: formatC1DeviceTier },
             { key: "status", label: "状态", render: formatC1DeviceStatus },
             { key: "runtimeStatus", label: "运行态", render: formatC1RuntimeStatus },
-            { key: "dailyUsdt", label: "日 USDT", numeric: true },
-            { key: "dailyNex", label: "日 NEX", numeric: true },
+            { key: "dailyUsdt", label: "配置日产基准 USDT", numeric: true },
+            { key: "dailyNex", label: "配置日产基准 NEX", numeric: true },
           ]}
         >
           <Row label="在线 / 活跃">{numberLabel(detail.devices?.onlineCount)} / {numberLabel(detail.devices?.activeCount)}</Row>
-          <Row label="日产出">{money(detail.devices?.dailyUsdt)} · {fmtNum(asNumber(detail.devices?.dailyNex))} NEX</Row>
+          <Row label="设备配置日产基准（所列记录合计）">{money(detail.devices?.dailyUsdt)} · {fmtNum(asNumber(detail.devices?.dailyNex))} NEX</Row>
+          <p className="mt-2 text-[12px]" style={{ color: "var(--v5-ink-4)" }}>含已停用历史记录的配置值，不代表今日实际收益或钱包入账</p>
           {canWriteC2 && asArray(detail.devices?.records).map((device) => {
             const deviceId = asNumber(device.id);
             const deviceStatus = asText(device.status).toUpperCase();
@@ -825,7 +827,8 @@ export default function UserDetailPage() {
           ]}
         >
           <Row label="收益合计">{money(detail.earnings?.totalUsdt)} · {fmtNum(asNumber(detail.earnings?.totalNex))} NEX</Row>
-          <Row label="设备日产出">{money(detail.earnings?.deviceDailyUsdt)} · {fmtNum(asNumber(detail.earnings?.deviceDailyNex))} NEX</Row>
+          <Row label="设备配置日产基准（所列记录合计）">{money(detail.earnings?.deviceDailyUsdt)} · {fmtNum(asNumber(detail.earnings?.deviceDailyNex))} NEX</Row>
+          <p className="mt-2 text-[12px]" style={{ color: "var(--v5-ink-4)" }}>含已停用历史记录的配置值，不代表今日实际收益或钱包入账</p>
         </HubSection>
 
         <HubSection

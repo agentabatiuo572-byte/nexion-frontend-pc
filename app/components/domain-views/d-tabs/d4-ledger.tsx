@@ -30,6 +30,7 @@ const BILL_TYPES: ReadonlyArray<readonly [D4BillType | "", string]> = [
   ["commission", "佣金"],
   ["refund", "退款"],
   ["bonus", "奖励"],
+  ["purchase", "商品购买"],
 ];
 
 const BILL_TYPE_LABELS: Record<D4BillType, string> = Object.fromEntries(BILL_TYPES.slice(1)) as Record<D4BillType, string>;
@@ -217,8 +218,8 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
     }
   };
   const requestExport = () => ctx.openActionConfirm({
-    action: "导出七类账单脱敏明细",
-    detail: <>导出沿用当前七类账单、用户、时间和状态筛选；用户编码由服务端强制脱敏，最多 10 万行，理由与范围写入统一导出审计。</>,
+    action: "导出八类账单脱敏明细",
+    detail: <>导出沿用当前八类账单、用户、时间和状态筛选；用户编码由服务端强制脱敏，最多 10 万行，理由与范围写入统一导出审计。</>,
     reasonMin: 8,
     reasonMax: 200,
     run: (reason) => exportCsv(reason),
@@ -232,7 +233,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
           <button className="l-btn sm" onClick={() => setReloadKey((value) => value + 1)}>重试</button>
         </div>
       )}
-      {deepBizNo && <div className="dtint cyan" data-proof="d4-deep-link" style={{ marginBottom: 12 }}>正在精确定位 C3 余额调整关联账单 · <b className="mono">{deepBizNo}</b>{!loading && bills.records.length === 0 ? " · 未找到匹配账单" : ""}</div>}
+      {deepBizNo && <div className="dtint cyan" data-proof="d4-deep-link" style={{ marginBottom: 12 }}>正在精确定位业务关联账单 · <b className="mono">{deepBizNo}</b>{!loading && bills.records.length === 0 ? " · 未找到匹配账单" : ""}</div>}
 
       <div className="f-stats">
         <div className="f-stat"><div className="k">账单总数</div><div className="v">{bills.total}</div><div className="sub">服务端当前筛选总数</div></div>
@@ -242,7 +243,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
       </div>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">全平台账单流水</span><span className="sub">· 服务端分页 · 精确七类</span></div>
+        <div className="l-h"><span className="ttl">全平台账单流水</span><span className="sub">· 服务端分页 · 精确八类</span></div>
         {!canGlobalRead ? <div className="l-b"><div className="dtint">当前角色仅可按用户核对，不可浏览全平台流水。</div></div> : (
           <>
             <div className="l-b" style={{ display: "grid", gap: 10 }}>
@@ -264,7 +265,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
             </div>
             <div style={{ overflowX: "auto" }}>
               <table className="l-tbl" style={{ minWidth: 1120 }}>
-                <thead><tr><th>账单</th><th>账户</th><th>七类科目</th><th>业务子类</th><th className="num">金额</th><th className="num">滚动余额</th><th>状态</th><th>备注</th><th>时间</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
+                <thead><tr><th>账单</th><th>账户</th><th>八类科目</th><th>业务子类</th><th className="num">金额</th><th className="num">滚动余额</th><th>状态</th><th>备注</th><th>时间</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
                 <tbody>
                   {loading ? <tr><td colSpan={10} style={{ textAlign: "center", padding: 28 }}>资金账本数据加载中...</td></tr> : bills.records.length === 0 ? <tr><td colSpan={10} style={{ textAlign: "center", color: "var(--ink-4)", padding: 28 }}>暂无匹配账单流水；空数据不代表已经对平</td></tr> : bills.records.map((row) => (
                     <tr key={row.id} style={deepBizNo && row.bizNo === deepBizNo ? { background: "color-mix(in srgb, var(--c-ac) 12%, transparent)" } : undefined}>
@@ -304,7 +305,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
               {Object.entries(userLedger.categoryTotals).map(([key, value]) => { const [kind, asset] = key.split(":"); return <div className="s" key={key}><div className="k">{BILL_TYPE_LABELS[kind as D4BillType] ?? kind} · {asset}</div><div className="v">{assetAmount(value, asset)}</div></div>; })}
             </div>
             {userLedger.rows.length === 0 ? <div className="dtint">该用户暂无资金账单；当前余额仍以钱包记录为准。</div> : userLedger.rows.map((row) => <div className="rb-row" key={row.id}><span className="mono" style={{ color: "var(--ink-4)" }}>{timeText(row.createdAt)}</span><span>{BILL_TYPE_LABELS[row.billType]} · {row.bizNo}</span><span className="mono" style={{ fontWeight: 700 }}>{signed(row)}</span><span className="mono">余 {assetAmount(row.balanceAfter, row.asset)} {row.asset}</span></div>)}
-          </> : <div className="dtint">输入用户 ID 后加载该用户全部账单、七类汇总与当前钱包余额。</div>}
+          </> : <div className="dtint">输入用户 ID 后加载该用户全部账单、八类汇总与当前钱包余额。</div>}
         </div>
       </section>
 
@@ -329,7 +330,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
       </section>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">脱敏对账导出</span><span className="sub">· 沿用当前七类 / 用户 / 时间 / 状态筛选</span><div className="r"><button className="l-btn primary" disabled={!canExport || loading || Boolean(error)} title={error ? "账单事实加载失败，恢复前禁止导出" : undefined} onClick={requestExport}>{canExport ? "导出脱敏 CSV" : "当前角色不可导出"}</button></div></div>
+        <div className="l-h"><span className="ttl">脱敏对账导出</span><span className="sub">· 沿用当前八类 / 用户 / 时间 / 状态筛选</span><div className="r"><button className="l-btn primary" disabled={!canExport || loading || Boolean(error)} title={error ? "账单事实加载失败，恢复前禁止导出" : undefined} onClick={requestExport}>{canExport ? "导出脱敏 CSV" : "当前角色不可导出"}</button></div></div>
         <div className="l-b"><div className="dtint">固定隐藏昵称等个人信息，用户编码仅保留首尾；导出动作写审计。需要纠正余额时唯一入口为 C3。</div><div className="chips" style={{ marginTop: 10 }}><Link className="chip" href="/users/assets" prefetch={false}>C3 余额调整</Link><Link className="chip" href="/finance/recon" prefetch={false}>D1 充值对账</Link><Link className="chip" href="/finance/withdrawals" prefetch={false}>D2 提现审核</Link><Link className="chip" href="/finance/pool" prefetch={false}>D3 资金池</Link><Link className="chip" href="/platform/audit" prefetch={false}>A2 操作审计</Link><Link className="chip" href="/platform/events" prefetch={false}>A4 资金事件</Link><Link className="chip" href="/analytics/export" prefetch={false}>L5 监管导出</Link></div></div>
       </section>
     </>

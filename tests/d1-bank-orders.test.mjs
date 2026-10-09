@@ -10,6 +10,11 @@ const parse = (path, kind = ts.ScriptKind.TS) => ts.createSourceFile(path,
 const execute = (code, scope) => vm.runInNewContext(ts.transpileModule(code,
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS,
     jsx: ts.JsxEmit.React, jsxFactory: "jsx" } }).outputText, scope);
+const authModuleCode = (path) => {
+  const source = parse(path);
+  return source.statements.filter((node) => !ts.isImportDeclaration(node))
+    .map((node) => node.getFullText(source)).join("\n").replace(/^export\s+/gm, "");
+};
 const client = parse("lib/admin/d-client.ts");
 const helperNames = new Set(["d1Invalid", "d1Object", "d1String", "d1Number", "d1Array", "d1Boolean",
   "d1OptionalText", "d1NullableNumber", "requireD1BankOrdersPage"]);
@@ -529,8 +534,8 @@ for (const stage of ["post-401-response", "post-401-json", "post-200-response", 
       } };
     // Exercise the existing lifecycle, auth reset and owner-clearing store, not a
     // new owner/epoch implementation or a second pending store.
-    for (const path of ["lib/admin/auth-lifecycle.ts", "lib/admin/auth-session.ts", "lib/admin/pending-mutation-store.ts"]) {
-      execute(parse(path).text.replace(/^export\s+/gm, "")
+    for (const path of ["lib/admin/auth-lifecycle.ts", "lib/admin/auth-cookie-lane.ts", "lib/admin/logout-request.ts", "lib/admin/auth-session.ts", "lib/admin/pending-mutation-store.ts"]) {
+      execute(authModuleCode(path)
         + (path.endsWith("auth-lifecycle.ts") ? "\nvar epochChangedClass = AdminAuthEpochChangedError;" : ""), runtime);
     }
     runtime.AdminAuthEpochChangedError = runtime.epochChangedClass;
@@ -599,7 +604,7 @@ function findTopbarSignOut(node) {
 }
 findTopbarSignOut(topbarSource); assert.ok(topbarSignOut);
 
-function cookieAuthFixture(financeTransport = async () => { throw new Error("unexpected finance transport"); }) {
+function cookieAuthFixture(financeTransport = async () => { throw new Error("unexpected finance transport"); }, holdLogout = false) {
   const storage = new Map(), cookieJar = new Map(), logoutCalls = [], cookieEffects = new WeakMap();
   const lateLogout = deferred(), lateEnvelope = deferred();
   let reloads = 0;
@@ -617,9 +622,7 @@ function cookieAuthFixture(financeTransport = async () => { throw new Error("une
       response.cookies = { set: (name, value, options) => effects.push({ name, value, options }) };
       return response;
     } } };
-  execute(cookieTokenSource.statements.filter(node => (ts.isFunctionDeclaration(node) && node.name?.text === "readAdminAccessToken")
-      || (ts.isVariableStatement(node) && node.declarationList.declarations.some(item => item.name.getText(cookieTokenSource) === "ADMIN_PASSWORD_CHANGE_COOKIE")))
-    .map(node => node.getText(cookieTokenSource).replace(/^export\s+/, "")).join("\n"), logoutRoute);
+  execute(authModuleCode("lib/admin/require-password-change-cleared.ts"), logoutRoute);
   execute(logoutRouteSource.statements.filter(node => ts.isFunctionDeclaration(node)
       || (ts.isVariableStatement(node) && node.declarationList.declarations.some(item => ["ADMIN_TOKEN_COOKIE", "BACKEND_BASE_URL"].includes(item.name.getText(logoutRouteSource)))))
     .map(node => node.getText(logoutRouteSource).replace(/^export\s+/, "")).join("\n") + "\nvar passwordCookieName = ADMIN_PASSWORD_CHANGE_COOKIE;", logoutRoute);
@@ -629,7 +632,7 @@ function cookieAuthFixture(financeTransport = async () => { throw new Error("une
     logoutCalls.push(call);
     call.promise = (async () => {
       const response = await logoutRoute.POST(new Request("https://admin.example.test/api/admin/auth/logout", { method: "POST" }));
-      if (!call.coordinated) { lateEnvelope.resolve(); await lateLogout.promise; }
+      if (holdLogout || !call.coordinated) { lateEnvelope.resolve(); await lateLogout.promise; }
       for (const effect of cookieEffects.get(response) ?? []) {
         if (effect.options.maxAge === 0) cookieJar.delete(effect.name);
         else cookieJar.set(effect.name, effect.value);
@@ -649,8 +652,8 @@ function cookieAuthFixture(financeTransport = async () => { throw new Error("une
       state = initializer(set); return { getState: () => state };
     }, logoutAttemptRef: { current: false }, setLoggingOut: () => {},
     currentAdminSession: async () => { throw new Error("logout fixture must complete its real envelope"); } };
-  for (const path of ["lib/admin/auth-lifecycle.ts", "lib/admin/auth-session.ts", "lib/admin/pending-mutation-store.ts", "lib/admin/logout-request.ts"]) {
-    execute(parse(path).text.replace(/^export\s+/gm, "")
+  for (const path of ["lib/admin/auth-lifecycle.ts", "lib/admin/auth-cookie-lane.ts", "lib/admin/logout-request.ts", "lib/admin/auth-session.ts", "lib/admin/pending-mutation-store.ts"]) {
+    execute(authModuleCode(path)
       + (path.endsWith("auth-lifecycle.ts") ? "\nvar epochChangedClass = AdminAuthEpochChangedError;" : ""), runtime);
   }
   runtime.AdminAuthEpochChangedError = runtime.epochChangedClass;
@@ -678,18 +681,24 @@ function cookieAuthFixture(financeTransport = async () => { throw new Error("une
   return { runtime, cookieJar, passwordCookieName: logoutRoute.passwordCookieName, logoutCalls, lateEnvelope, signIn, drainLogout, get reloads() { return reloads; } };
 }
 
-test("actual legacy reset and Topbar logout demonstrate late logout cookies clearing the later login", async () => {
-  const fixture = cookieAuthFixture(), { runtime, cookieJar, logoutCalls } = fixture;
+test("actual reset and Topbar logout share one coordinated revocation before the later login", async () => {
+  const fixture = cookieAuthFixture(undefined, true), { runtime, cookieJar, logoutCalls } = fixture;
   fixture.signIn(101, "operator-A");
   runtime.resetAdminSession(); await fixture.lateEnvelope.promise;
-  await runtime.actualTopbarSignOut();
-  assert.equal(runtime.actualAuthStore.getState().sessionResolution, "anonymous");
-  fixture.signIn(202, "operator-B");
-  assert.equal(cookieJar.get("nexion_admin_token"), "fixture-cookie-202");
+  const topbarLogout = runtime.actualTopbarSignOut();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(logoutCalls.length, 1);
+  assert.equal(cookieJar.get("nexion_admin_token"), "fixture-cookie-101", "the response Cookie envelope is still in flight");
   await fixture.drainLogout();
-  assert.equal(logoutCalls.length, 2); assert.equal(logoutCalls[0].coordinated, false); assert.equal(logoutCalls[1].coordinated, true);
-  assert.equal(logoutCalls[0].token, "fixture-cookie-101"); assert.equal(logoutCalls[1].token, "fixture-cookie-101");
+  await topbarLogout;
+  assert.equal(runtime.actualAuthStore.getState().sessionResolution, "anonymous");
+  assert.equal(logoutCalls.length, 1); assert.equal(logoutCalls[0].coordinated, true);
+  assert.equal(logoutCalls[0].token, "fixture-cookie-101");
   assert.equal(cookieJar.has("nexion_admin_token"), false); assert.equal(cookieJar.has(fixture.passwordCookieName), false);
+  fixture.signIn(202, "operator-B");
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(cookieJar.get("nexion_admin_token"), "fixture-cookie-202");
+  assert.equal(cookieJar.get(fixture.passwordCookieName), "fixture-password-cookie-202");
   assert.equal(runtime.actualAuthStore.getState().session.adminId, 202); assert.equal(fixture.reloads, 1);
 });
 

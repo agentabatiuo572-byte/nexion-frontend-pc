@@ -126,8 +126,11 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           {!ctx.e4Loading && !ctx.e4Error && rows.map((o) => {
             const st = ctx.orderState(o);
             return (
-              <div className="q-row" key={o.id} onClick={() => ctx.openOrder(o)}>
-                <div className="oid">{o.id}</div>
+              <div className="q-row" key={o.id} onClick={(event) => {
+                event.currentTarget.querySelector<HTMLButtonElement>("[data-e4-order-trigger]")?.focus();
+                ctx.openOrder(o);
+              }}>
+                <button type="button" className="oid" data-e4-order-trigger aria-label={`查看订单 ${o.id}`} aria-haspopup="dialog" style={{ border: 0, background: "transparent", padding: 0, color: "inherit", textAlign: "left" }}>{o.id}</button>
                 <div className="uid">{o.user}</div>
                 <div className="sku">{o.sku}</div>
                 <div className="amt">${o.amt.toLocaleString()}</div>
