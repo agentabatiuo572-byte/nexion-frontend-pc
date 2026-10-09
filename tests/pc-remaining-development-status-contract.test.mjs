@@ -260,10 +260,10 @@ test("remaining-development ledger has unique claims and preserves semantic cons
   const counts = Object.groupBy(manifest.rows, (item) => item.status);
 
   assert.equal(new Set(ids).size, ids.length, "action IDs must be unique");
-  assert.equal(manifest.rows.length, 262);
+  assert.equal(manifest.rows.length, 270);
   assert.deepEqual(
     { built: counts.built?.length, readonly: counts.readonly?.length, pending: counts.pending?.length ?? 0, missing: counts.missing?.length ?? 0 },
-    { built: 230, readonly: 29, pending: 3, missing: 0 },
+    { built: 237, readonly: 30, pending: 3, missing: 0 },
   );
   for (const id of expectedBuiltClosures) assert.equal(row(id)?.status, "built", id + " must stay built");
 
@@ -272,7 +272,10 @@ test("remaining-development ledger has unique claims and preserves semantic cons
   assert.deepEqual(ledgerDomains.toSorted(), activeDomains.toSorted(), "every active navigation domain must be represented in the action ledger");
 
   const activeLeaves = collectActiveNavLeaves(read("lib/nav/console-nav.ts")).map((leaf) => leaf.id);
-  assert.equal(activeLeaves.length, 76, "navigation baseline changed; re-audit every active leaf");
+  assert.equal(activeLeaves.length, 77, "navigation baseline changed; re-audit every active leaf");
+  assert.deepEqual(manifest.activeLeafCoverage.M6, ["OPS-M-31"]);
+  assert.equal(row("OPS-M-31")?.status, "readonly");
+  assert.equal(row("OPS-M-31")?.view, "m-tabs/m6-leaderboard.tsx");
   assert.deepEqual(Object.keys(manifest.activeLeafCoverage).toSorted(), activeLeaves.toSorted(), "every active flagship leaf needs an explicit capability claim");
   for (const [leaf, claims] of Object.entries(manifest.activeLeafCoverage)) {
     assert.ok(claims.length > 0, `${leaf} must reference at least one ledger row`);
@@ -688,4 +691,68 @@ test("historical selected-evidence SHA256 receipt retains its inventory without 
     paths.add(key);
     assert.match(expected, /^[0-9a-f]{64}$/);
   }
+});
+
+
+test("support group writes and independent A1 qualifications have seven exact unique action claims", () => {
+  const expected = [
+  {
+    "id": "OPS-M-32",
+    "leaf": "M1",
+    "action": "createSupportGroup",
+    "view": "m-tabs/m1-group-management.tsx"
+  },
+  {
+    "id": "OPS-M-33",
+    "leaf": "M1",
+    "action": "renameSupportGroup",
+    "view": "m-tabs/m1-group-management.tsx"
+  },
+  {
+    "id": "OPS-M-34",
+    "leaf": "M1",
+    "action": "setSupportGroupStatus",
+    "view": "m-tabs/m1-group-management.tsx"
+  },
+  {
+    "id": "OPS-M-35",
+    "leaf": "M1",
+    "action": "transferSupportGroupOwner",
+    "view": "m-tabs/m1-group-management.tsx"
+  },
+  {
+    "id": "OPS-M-36",
+    "leaf": "M1",
+    "action": "moveSupportGroupMember",
+    "view": "m-tabs/m1-group-management.tsx"
+  },
+  {
+    "id": "OPS-M-37",
+    "leaf": "M1",
+    "action": "setSupportPoolRoute",
+    "view": "m-tabs/m1-supervisor-pool.tsx"
+  },
+  {
+    "id": "OPS-A-33",
+    "leaf": "A1",
+    "action": "setSupportQualification",
+    "view": "a-tabs/a1-accounts.tsx + m-tabs/m1-group-management.tsx"
+  }
+];
+  const symbols = collectClientWriteSymbols(read("lib/admin/support-group-client.ts"), "lib/admin/support-group-client.ts");
+  assert.deepEqual([...symbols].toSorted(), expected.filter(item => item.leaf === "A1" || item.id !== "OPS-M-37").map(item => item.action).toSorted());
+  assert.ok(collectClientWriteSymbols(read("lib/admin/m-support-client.ts"), "lib/admin/m-support-client.ts").has("setSupportPoolRoute"));
+  for (const item of expected) {
+    const claims = manifest.rows.filter(candidate => [candidate.restAction, ...(candidate.restActions ?? [])].includes(item.action));
+    assert.deepEqual(claims.map(candidate => candidate.id), [item.id]);
+    assert.equal(claims[0].status, "built");
+    assert.equal(claims[0].view, item.view);
+    assert.ok(manifest.activeLeafCoverage[item.leaf].includes(item.id));
+    assert.equal(Object.entries(manifest.activeLeafCoverage).filter(([, ids]) => ids.includes(item.id)).length, 1);
+    const consumer = item.id === "OPS-M-37" ? "app/components/domain-views/m-tabs/m1-supervisor-pool.tsx" : "app/components/domain-views/m-tabs/m1-group-management.tsx";
+    assert.ok(read(consumer).includes(item.action + "("), item.action + " must have a real PC call");
+  }
+  assert.match(read("app/components/domain-views/a-tabs/a1-accounts.tsx"), /canManageQualifications && <SupportQualificationEditor/);
+  assert.match(read("app/components/domain-views/m-tabs/m1-group-management.tsx"), /canManageSupportQualifications/);
+  assert.deepEqual(manifest.rows.filter(item => item.status === "pending").map(item => item.id).toSorted(), SEMANTIC_PENDING_IDS.toSorted());
 });

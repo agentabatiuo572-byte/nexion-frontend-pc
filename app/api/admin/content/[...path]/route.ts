@@ -51,8 +51,11 @@ async function proxy(request: Request, context: RouteContext) {
   const attachmentUpload = request.method === "POST"
     && (path.length === 2 && path[0] === "conversations" && path[1] === "attachments"
       || path.length === 3 && path[0] === "support-workbench" && path[1] === "bulk" && path[2] === "attachments");
+  const publicLeaderboardAvatar = request.method === "GET" && path.length === 4 && path[0] === "support-workbench"
+    && path[1] === "leaderboard" && /^[1-9]\d*$/.test(path[2]) && path[3] === "avatar";
   const avatarContent = request.method === "GET" && (path.length === 3 && path[0] === "support-agents" && path[2] === "avatar"
-    || path.length === 4 && path[0] === "support-workbench" && path[1] === "customers" && path[3] === "avatar");
+    || path.length === 4 && path[0] === "support-workbench" && path[1] === "customers" && path[3] === "avatar"
+    || publicLeaderboardAvatar);
   const attachmentContent = request.method === "GET"
     && (path.length === 4 && path[0] === "conversations" && path[1] === "attachments" && path[3] === "content"
       || avatarContent);
@@ -121,7 +124,7 @@ async function proxy(request: Request, context: RouteContext) {
       if (avatarContent) {
         const limit = Number(process.env.NEXION_SUPPORT_ATTACHMENT_PROXY_MAX_BYTES ?? DEFAULT_UPLOAD_TRANSPORT_MAX_BYTES);
         if (!Number.isSafeInteger(limit) || limit <= 0) return jsonError(503, "CONTENT_ATTACHMENT_LIMIT_UNCONFIGURED");
-        if (!(path[0]==="support-workbench"?["image/jpeg","image/png","image/webp"]:["image/jpeg","image/png"]).includes(upstreamType.split(";")[0].toLowerCase())) return jsonError(502, "CONTENT_ATTACHMENT_TYPE_INVALID");
+        if (!(path[0]==="support-workbench" && !publicLeaderboardAvatar?["image/jpeg","image/png","image/webp"]:["image/jpeg","image/png"]).includes(upstreamType.split(";")[0].toLowerCase())) return jsonError(502, "CONTENT_ATTACHMENT_TYPE_INVALID");
         const bytes = await boundedUpload(upstream, limit);
         if (!bytes || !bytes.byteLength) return jsonError(502, "CONTENT_ATTACHMENT_EMPTY");
         return new Response(bytes, { status: upstream.status, headers: { "Content-Type": upstreamType, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });

@@ -203,8 +203,8 @@ test("transferred history stays read-only and current-conversation navigation ne
 });
 
 test("historical read-only hints refer to current-conversation navigation only when its real button is visible", async () => {
-  const action = find(chatSource, n => ts.isJsxElement(n) && n.openingElement.tagName.getText() === "button" && n.getText().includes('title="重新核对当前顾问归属，前往当前会话；不会恢复历史段"'));
-  const warning = find(chatSource, n => ts.isJsxElement(n) && n.openingElement.tagName.getText() === "div" && n.getText().includes("仅当前顾问可发送消息；主管审阅不能代发。"));
+  const action = find(chatSource, n => ts.isJsxElement(n) && n.openingElement.tagName.getText() === "button" && n.getText().includes('title="重新核对当前专属客服归属，前往当前会话；不会恢复历史段"'));
+  const warning = find(chatSource, n => ts.isJsxElement(n) && n.openingElement.tagName.getText() === "div" && n.getText().includes("仅当前专属客服可发送消息；主管审阅不能代发。"));
   const enclosingExpression = node => {
     while (node && !ts.isJsxExpression(node)) node = node.parent;
     assert.ok(node, "Actual action/warning lost its JSX visibility condition");

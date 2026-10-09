@@ -250,8 +250,49 @@ export function validateReadback(id, data, mutation, before) {
 }
 const legacyFeRuntime = Object.freeze({ origin: "http://127.0.0.1:33107", port: 33107, distDir: ".next-seven-fixture" });
 const r4FeRuntime = Object.freeze({ origin: "http://127.0.0.1:33108", port: 33108, distDir: ".next-seven-r4" });
+const r5FeRuntime = Object.freeze({ origin: "http://127.0.0.1:33108", port: 33108, distDir: ".next-seven-r5" });
 // Earlier task identities and standalone legacy checks retain the original fixed profile.
-const feRuntime = taskId => taskId === "support-analytics-frontend-20261007-r4" ? r4FeRuntime : legacyFeRuntime;
+const feRuntime = taskId => taskId === "support-analytics-frontend-20261007-r5" ? r5FeRuntime : taskId === "support-analytics-frontend-20261007-r4" ? r4FeRuntime : legacyFeRuntime;
+
+export function feOwnershipReferences(target, receipt) {
+  const paths = [target.repo, receipt.fe.envBindingPath];
+  if (target.taskId === "support-analytics-frontend-20261007-r5") paths.push(join(target.repo, "node_modules/next/dist/bin/next"), "start --hostname 127.0.0.1 --port 33108");
+  return paths;
+}
+
+export function assertRuntimeIdentity(identity, sourcePhase, repo) {
+  assert.ok(["r3", "r4", "r5"].some(version => identity.taskId === `support-analytics-frontend-20261007-${version}`), "Unknown formal runtime task identity");
+  assert.ok(identity.repo && resolve(identity.repo) === resolve(repo), "Runtime belongs to another repository");
+  assert.ok(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(identity.runId ?? ""), "Current workflow run UUID is required");
+  assert.ok(/^[a-f0-9]{64}$/i.test(identity.snapshotHash ?? ""), "Current workflow snapshot hash is required");
+  const positions = { "I0-F": "step-0-check-3", "I3-F": "step-1-check-1", "I4-F": "step-2-check-1", "I5-F": "step-3-check-1", "I5R-V": "step-4-check-1", "I5R-F": "step-5-check-1", "I6-F": "step-6-check-2", integration: "integration-check-3" };
+  assert.ok(Object.hasOwn(positions, sourcePhase), "Unknown source phase");
+  assert.ok(identity.stepId === sourcePhase && identity.checkId === "runtime" && sourcePhase !== "integration" || identity.stepId === "integration" && identity.checkId === positions[sourcePhase], "Workflow step/check/source phase mismatch");
+  assert.ok(["I0-F", "I3-F", "I5R-V"].includes(sourcePhase), "This phase has no implemented runtime producer");
+}
+
+export function assertActiveRuntimeState(identity, state) {
+  assert.equal(state.id, identity.taskId); assert.equal(resolve(state.repo), resolve(identity.repo));
+  const step = state.steps?.[identity.stepId], run = step?.runs?.at(-1);
+  assert.equal(step?.status, "running", "Runtime must belong to the currently running workflow step");
+  assert.equal(step.activePid, process.pid, "Runtime is not the workflow's current owned check process");
+  assert.equal(run?.status, "running"); assert.equal(run?.id, identity.runId, "Runtime reused an old workflow run");
+  assert.equal(run?.snapshot?.hash, identity.snapshotHash, "Runtime reused a different workflow snapshot");
+}
+
+export async function assertCurrentRuntimeRun(identity, sourcePhase) {
+  if (identity.taskId !== "support-analytics-frontend-20261007-r5") return;
+  const root = "D:/WORKS/PLAN/scripts/codex-workflow/lib/";
+  const [{ context, readState }, { checksFor }, { snapshot }] = await Promise.all(["state.mjs", "contract.mjs", "repository.mjs"].map(file => import(new URL(`file:///${root}${file}`).href)));
+  const version = identity.taskId.slice(-2), planFile = `D:/CodexData/test-environments/workflow-runs/support-analytics-20261007-r2/frontend-plan-${version}.json`;
+  const ctx = context(planFile, "D:/CodexData/workflow-state"), state = readState(ctx);
+  assert.equal(ctx.plan.id, identity.taskId); assert.equal(resolve(ctx.plan.repo), resolve(identity.repo));
+  assertActiveRuntimeState(identity, state);
+  const check = checksFor(ctx.plan, identity.stepId).find(row => row.id === identity.checkId);
+  assert.ok(check && check.kind === "record" && check.capability === "runtime", "The current plan does not authorize this runtime check");
+  assert.ok(check.argv.includes("--phase")); assert.equal(check.argv[check.argv.indexOf("--phase") + 1], sourcePhase, "Current plan/check does not authorize this source phase");
+  assert.equal(snapshot(ctx.plan.repo, { inputs: ctx.plan.inputs }).hash, identity.snapshotHash, "Current workflow source/input snapshot changed");
+}
 
 export function assertRuntimeReceipt(receipt, target, now = Date.now()) {
   assert.equal(receipt.taskId, target.taskId);
@@ -269,6 +310,11 @@ export function assertRuntimeReceipt(receipt, target, now = Date.now()) {
   assert.equal(receipt.fe.candidateDigest, target.candidateDigest, "FE source changed after the startup receipt");
   assert.ok(receipt.allowedSeedObjects && receipt.authorizedMutationPaths?.length, "Only root-provisioned seed objects may be mutated");
   const manualFe = receipt.fe.proofMode === "manual-os-limited";
+  if (target.taskId === "support-analytics-frontend-20261007-r5") {
+    assert.ok(!manualFe && receipt.fe.proofMode !== "DEV_SOURCE_BOUND", "r5 requires a measured production process; manual/dev proof is forbidden");
+    assert.equal(receipt.fe.buildSourceDigest, target.candidateDigest, "r5 production build must bind the current source digest");
+    assert.ok(/^[a-f0-9]{40}$/i.test(receipt.fe.buildSourceHead ?? "") && receipt.fe.buildLogPath && /^[a-f0-9]{64}$/i.test(receipt.fe.buildLogSha256 ?? ""), "r5 requires original production build evidence");
+  }
   assert.ok(Number.isInteger(receipt.fe.pid) && receipt.fe.pid > 0 && receipt.fe.processStartTime);
   if (manualFe) {
     assert.equal(receipt.fe.commandLineHash, null, "Manual FE must not invent a command hash");
@@ -352,6 +398,7 @@ export function assertFePreload(preload, taskId) {
   assert.equal(preload.trim().split(/\r?\n/).map(line => line.trim()).join("\n"), `process.env.NEXION_BACKEND_URL = 'http://127.0.0.1:18161';\nprocess.env.NEXION_ADMIN_COOKIE_NAMESPACE = 'cs_analytics_20261007';\nprocess.env.NEXT_DIST_DIR = '${feRuntime(taskId).distDir}';`, "FE preload does not enforce this period's backend/cookie/serving-build binding");
 }
 export function assertManualFeProof(receipt, target, proof, actual, now = Date.now()) {
+  assert.notEqual(target.taskId, "support-analytics-frontend-20261007-r5", "r5 cannot use MANUAL_FE proof");
   const profile = feRuntime(target.taskId), serviceDistDir = profile.distDir;
   assert.equal(receipt.taskId, target.taskId);
   assert.equal(receipt.fe.origin, profile.origin); assert.equal(target.origin, receipt.fe.origin);
@@ -447,13 +494,21 @@ export async function verifyRuntimeOwnership(receipt, target) {
   boundFile(receipt.resources.resourceOwnershipPath, receipt.resources.sha256);
   boundFile(receipt.fe.buildIdPath, receipt.fe.buildIdSha256);
   boundFile(receipt.fe.envBindingPath, receipt.fe.envBindingSha256);
+  if (target.taskId === "support-analytics-frontend-20261007-r5") {
+    boundFile(receipt.fe.buildLogPath, receipt.fe.buildLogSha256);
+    const log = readFileSync(receipt.fe.buildLogPath, "utf8");
+    assert.ok(log.includes("Compiled successfully") && log.includes("Finalizing page optimization") && log.includes("Route (app)") && log.includes("server-rendered on demand"), "Original successful production build output is missing");
+    assert.ok(statSync(receipt.fe.buildLogPath).mtimeMs < Date.parse(receipt.fe.processStartTime), "Production build must precede the live startup process");
+    const head = spawnSync("git", ["-C", target.repo, "rev-parse", "HEAD"], { encoding: "utf8", windowsHide: true });
+    assert.equal(head.status, 0); assert.equal(head.stdout.trim(), receipt.fe.buildSourceHead, "Production build belongs to a different source HEAD");
+  }
   assertFePreload(readFileSync(receipt.fe.envBindingPath, "utf8"), target.taskId);
   assert.equal(resolve(receipt.fe.buildIdPath), resolve(target.repo, serviceDistDir, "BUILD_ID"));
   boundFile(receipt.be.artifactPath, receipt.be.artifactSha256);
   boundFile(receipt.be.configPath, receipt.be.configSha256);
   assertResourceBindings(readFileSync(receipt.be.configPath, "utf8"), JSON.parse(readFileSync(receipt.resources.resourceOwnershipPath, "utf8")), receipt);
   const [liveFe, liveBe, ...liveResources] = await windowsFingerprintBatch([
-    { port: profile.port, paths: [target.repo, receipt.fe.envBindingPath] },
+    { port: profile.port, paths: feOwnershipReferences(target, receipt) },
     { port: 18161, paths: [receipt.be.artifactPath, receipt.be.configPath] },
     ...["db", "redis", "s3"].map(kind => ({ port: receipt.resources[kind].port, paths: [receipt.resources[kind].configPath] })),
   ]);

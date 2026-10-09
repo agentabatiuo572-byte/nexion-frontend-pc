@@ -5,7 +5,8 @@
  * 头像无外链(首字母 + token 色,守隐私);状态/优先级运营可读中文 + .stat/.prio 分类。
  * M2/M3/M4/M5/dock 复用。
  */
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import "./hd-select.css";
 import { Icon, type IconName } from "../design-kit";
 import type { SupportTicketStatus, SupportTicketPriority } from "./data";
 export { MAvatar, avInitials } from "./m-avatar";
@@ -122,9 +123,45 @@ export function HDSelect({
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
+  function keyboard(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.defaultPrevented) return;
+    const trigger = ref.current?.querySelector<HTMLButtonElement>("button[aria-haspopup]");
+    if (!trigger || trigger.disabled || trigger.matches(":disabled")) return;
+    const expanded = trigger.getAttribute("aria-expanded") === "true";
+    if (event.key === "Escape" && expanded) {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      trigger.focus();
+      return;
+    }
+    if (event.key === "Tab") {
+      if (expanded) setOpen(false);
+      return;
+    }
+    if ((event.key === "Enter" || event.key === " ") && expanded) {
+      const option = (event.target as HTMLElement).closest<HTMLButtonElement>("button[role=option]");
+      if (option && ref.current?.contains(option)) {
+        event.preventDefault();
+        option.click();
+      }
+      return;
+    }
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    if (!expanded) setOpen(true);
+    const key = event.key;
+    queueMicrotask(() => {
+      const choices = [...(ref.current?.querySelectorAll<HTMLButtonElement>("button[role=option]") ?? [])];
+      if (!choices.length) return;
+      const selected = choices.findIndex((choice) => choice === document.activeElement);
+      const index = key === "Home" ? 0 : key === "End" ? choices.length - 1 : key === "ArrowUp" ? (selected < 0 ? choices.length - 1 : (selected - 1 + choices.length) % choices.length) : (selected + 1) % choices.length;
+      choices[index]?.focus();
+    });
+  }
   const cur = options.find((o) => o.value === value);
   return (
-    <div ref={ref} style={{ position: "relative", width: width ?? "100%" }}>
+    <div ref={ref} onKeyDownCapture={keyboard} style={{ position: "relative", width: width ?? "100%" }}>
       <button type="button" className="hd-select" onClick={() => setOpen((v) => !v)} aria-haspopup="listbox" aria-expanded={open}>
         <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cur ? cur.label : placeholder ?? "请选择"}</span>
         <Caret />
@@ -141,6 +178,7 @@ export function HDSelect({
               onClick={() => {
                 onChange(o.value);
                 setOpen(false);
+                queueMicrotask(() => ref.current?.querySelector<HTMLButtonElement>("button[aria-haspopup]")?.focus());
               }}
             >
               <span style={{ flex: 1 }}>{o.label}</span>

@@ -5,7 +5,7 @@ import ts from "typescript";
 
 const source = readFileSync(new URL("../lib/admin/m-client.ts", import.meta.url), "utf8");
 const ast = ts.createSourceFile("m-client.ts", source, ts.ScriptTarget.Latest, true);
-const names = ["num", "str", "bool", "requireLoadRaw", "loadNumber", "loadBoolean", "loadText", "adaptLoadConfig"];
+const names = ["num", "str", "bool", "requireLoadRaw", "loadNumber", "loadBoolean", "loadText", "adaptLoadConfig", "asArray", "asStringArray", "supportServiceType", "adaptSupportAgent"];
 const functions = names.map(name => {
   const node = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === name);
   assert.ok(node, `Missing real function ${name}`);
@@ -13,8 +13,19 @@ const functions = names.map(name => {
 }).join("\n");
 const js = ts.transpileModule(functions, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 const adapt = new Function(`${js}; return adaptLoadConfig;`)();
+const adaptAgent = new Function(`${js}; return adaptSupportAgent;`)();
 const loadConfig = { version: 5, autoBalance: false, defaultCap: 8, burstCap: 12, warnPct: 80,
   quietHourBalance: false, overflowQueue: "standby" };
+
+test("M1 page adapter keeps the account and assignment facts exact, including unavailable asset owners", () => {
+  const agent = {id:"7",adminId:7,name:"专属客服",status:"enabled",enabled:true,assignmentEligible:true,busy:true};
+  assert.equal(adaptAgent(agent).assignmentEligible, true);
+  const disabled = adaptAgent({...agent,status:"disabled",assignmentEligible:false});
+  assert.equal(disabled.status, "disabled"); assert.equal(disabled.enabled, true); assert.equal(disabled.assignmentEligible, false);
+  for (const changes of [{adminId:undefined},{adminId:0},{id:undefined},{assignmentEligible:undefined},{assignmentEligible:null},{status:undefined},{status:"disabled"},{enabled:false}]) {
+    assert.throws(() => adaptAgent({...agent,...changes}), /MALFORMED/);
+  }
+});
 
 test("M1 legacy load busy cannot pause a resumed profile or resume a paused profile", () => {
   for (const busy of [true, false]) {

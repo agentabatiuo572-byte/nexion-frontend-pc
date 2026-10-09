@@ -77,13 +77,15 @@ export function parseM1SupportAgentOverview(value: unknown): M1SupportAgentOverv
       && isNonEmptyString(agentValue.name)
       && typeof agentValue.email === "string"
       && isNonEmptyString(agentValue.adminRole)
-      && isNonEmptyString(agentValue.status)
+      && (agentValue.status === "enabled" || agentValue.status === "disabled")
       && (agentValue.seatType === "MANAGER" || agentValue.seatType === "DEDICATED" || agentValue.seatType === "GENERAL")
       && isNonEmptyString(agentValue.position)
       && isM1ServiceTypes(agentValue.serviceTypes)
       && isStringArray(agentValue.tags, true)
       && isNonNegativeSafeInteger(agentValue.maxConcurrent)
       && typeof agentValue.enabled === "boolean"
+      && typeof agentValue.assignmentEligible === "boolean"
+      && (!agentValue.assignmentEligible || (agentValue.status === "enabled" && agentValue.enabled))
       && typeof agentValue.transferable === "boolean"
       && typeof agentValue.busy === "boolean"
       && isNonNegativeSafeInteger(agentValue.assignedUserCount)
@@ -122,6 +124,7 @@ export function parseM1SupportAgentOverview(value: unknown): M1SupportAgentOverv
     const agent = agentsById.get(Number(target.targetId));
     return Boolean(agent)
       && agent!.enabled === true
+      && agent!.assignmentEligible === true
       && agent!.transferable === true
       && agent!.busy === false
       && target.targetName === agent!.name
@@ -129,7 +132,7 @@ export function parseM1SupportAgentOverview(value: unknown): M1SupportAgentOverv
       && JSON.stringify(target.serviceTypes) === JSON.stringify(agent!.serviceTypes);
   })) return m1OverviewMalformed();
   const expectedTargetIds = agents
-    .filter((agent) => agent.enabled === true && agent.transferable === true && agent.busy === false)
+    .filter((agent) => agent.assignmentEligible === true && agent.transferable === true && agent.busy === false)
     .map((agent) => String(agent.adminId));
   const targetIds = targets.map((target) => String(target.targetId));
   if (new Set(targetIds).size !== targets.length

@@ -143,7 +143,7 @@ test("M5 hides every mutation control without effective M5 management authority"
   assert.match(page, /canManageM5Content \? \(\s*<span data-proof=\{`session-tpl-publish-/s);
   assert.match(page, /const hasM5WriteAuthority = isSuperAdmin \|\| Boolean\(authorities\?\.includes\("service_m5_write"\)\)/);
   assert.match(page, /const isContentOperator = currentRoleKey === "content"/);
-  assert.match(page, /const isSupportM5Supervisor = currentRoleKey === "support" && isSupportSupervisor\(currentSupportAgent\)/);
+  assert.match(page, /const isSupportM5Supervisor = currentRoleKey === "support" && isSupportSupervisor\(managementScope/);
 });
 
 test("M5 fails closed when the proactive advisor executor is not connected", () => {

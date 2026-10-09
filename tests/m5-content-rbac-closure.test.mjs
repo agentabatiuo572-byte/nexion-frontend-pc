@@ -24,7 +24,7 @@ test("M5 keeps support supervisor and unknown-role failure closed", () => {
   const page = read("app/components/domain-views/m-tabs/m5-scripts.tsx");
   const controller = read("../nexion-backend/src/main/java/ffdd/opsconsole/content/web/OpsSessionTemplateController.java");
 
-  assert.match(page, /const isSupportM5Supervisor = currentRoleKey === "support" && isSupportSupervisor\(currentSupportAgent\)/);
+  assert.match(page, /const isSupportM5Supervisor = currentRoleKey === "support" && isSupportSupervisor\(managementScope/);
   assert.match(page, /canManageM5Operations \? \(/);
   assert.match(page, /canManageM5Content \? \(/);
   assert.match(controller, /executeContentCommand\(/);

@@ -28,6 +28,7 @@
  * 要么在 KNOWN 里补一行并说清为什么不需要持久化。
  */
 import fs from "node:fs";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "./lib/strip-comments.mjs";
@@ -41,6 +42,8 @@ const EXECUTOR_MODULE = "lib/admin/stable-mutation.ts";
 const MIGRATED = [
   // Promotions retain the original command payload and key until authoritative resource readback.
   "lib/admin/promotion-client.ts",
+  // Exported group store is consumed by the actual M1 container; the bound behavior guard verifies persisted query-only CREATE recovery.
+  "lib/admin/support-group-client.ts",
   // C1 single-notification time correction retains the immutable command across unknown outcomes.
   "app/_console/users/search/[id]/notification-time-evidence.tsx",
   "lib/admin/a4-redrive-command.ts",
@@ -132,6 +135,25 @@ const KNOWN = {
  *   3. **模块路径精确解析到目标文件** —— 子串判据会放行自造的
  *      `probe-pending-mutation-store.ts` / `fake/pending-mutation-store.ts`。
  */
+const EXPORTED_PENDING_STORES = {
+  "lib/admin/support-group-client.ts#groupPendingCommands": {
+    consumer: "app/components/domain-views/m-tabs/m1-group-management.tsx",
+    behaviorTest: "tests/support-group-client.test.mjs",
+    behaviorName: "unresolved original CREATE survives module reload beyond 24h but cannot replay",
+  },
+};
+function pendingStoreCallCode(rel, ident, producerCode) {
+  const binding = EXPORTED_PENDING_STORES[`${rel}#${ident}`];
+  if (!binding) return producerCode;
+  const escaped = ident.replace(/\$/g, "\\$");
+  if (!new RegExp(`export\\s+const\\s+${escaped}\\s*=\\s*createPendingMutationStore\\b`).test(producerCode)) return "";
+  const consumer = path.join(ROOT, binding.consumer);
+  if (!fs.existsSync(consumer)) return "";
+  const consumerCode = stripComments(fs.readFileSync(consumer, "utf8"));
+  if (!runtimeBindings(consumerCode, consumer, rel).has(ident)) return "";
+  return consumerCode;
+}
+
 function runtimeBindings(code, fromFile, targetRel) {
   const target = path.join(ROOT, targetRel).replace(/\.tsx?$/, "");
   const bindings = new Set();
@@ -361,14 +383,20 @@ for (const rel of MIGRATED) {
     const ident = match[1];
     const escaped = ident.replace(/\$/g, "\\$");
     storeIdents += 1;
+    const callCode = pendingStoreCallCode(rel, ident, code);
+    if (EXPORTED_PENDING_STORES[`${rel}#${ident}`]) {
+      if (!callCode) failures.push(`${rel} 的导出存储 ${ident} 缺少真实消费方的精确运行期绑定`);
+      for (const method of ["remember", "forget", "isDurablyStored"])
+        if (!new RegExp(`${escaped}\\.${method}\\s*\\(`).test(callCode)) failures.push(`${rel} 的导出存储 ${ident} 消费方缺少 .${method}( 调用`);
+    }
     // 🔴 必须**取号**(get / list),不是「调过任意一个方法」(2026-08-06 第四轮验收 P1-E)。
     //   只要求「有方法调用」时,把所有 .get( 删光、只留 remember/forget,门照样绿 ——
     //   而没有取号就等于每次提交现铸新号,整套持久化被一行改动废掉,零红灯。
-    if (!new RegExp(`${escaped}\\.(?:get|list)\\s*\\(`).test(code)) {
+    if (!new RegExp(`${escaped}\\.(?:get|list)\\s*\\(`).test(callCode)) {
       failures.push(`${rel} 的命令号存储 ${ident} 没有任何 .get( / .list( 取号调用`
         + ` → 每次提交都现铸新号,持久化形同虚设(只写不读等于没迁)`);
     }
-    if (!new RegExp(`${escaped}\\.(?:remember|forget)\\s*\\(`).test(code)) {
+    if (!new RegExp(`${escaped}\\.(?:remember|forget)\\s*\\(`).test(callCode)) {
       failures.push(`${rel} 的命令号存储 ${ident} 既不 remember 也不 forget → 号永远不落库或永不收敛`);
     }
   }
@@ -421,6 +449,24 @@ else {
   }
 }
 
+// Run the registered exported store's real behavior, so a dangling declaration cannot pass by registration alone.
+if (!failures.length) for (const binding of Object.values(EXPORTED_PENDING_STORES)) {
+  const testFile = path.join(ROOT, binding.behaviorTest);
+  if (!fs.existsSync(testFile) || !stripComments(fs.readFileSync(testFile, "utf8")).includes(`test("${binding.behaviorName}"`)) {
+    failures.push(`导出存储行为保护缺失:${binding.behaviorTest}#${binding.behaviorName}`); continue;
+  }
+  const behaviorEnv = { ...process.env };
+  delete behaviorEnv.NODE_TEST_CONTEXT;
+  behaviorEnv.GROUP_FE_ROOT = ROOT;
+  const result = spawnSync(process.execPath, ["--experimental-strip-types", "--test", "--test-reporter=tap", "--test-name-pattern", "^" + binding.behaviorName + "$", testFile], { cwd: ROOT, env: behaviorEnv, encoding: "utf8", timeout: 30000 });
+  const requiredCounters = { tests: 1, pass: 1, fail: 0, cancelled: 0, skipped: 0, todo: 0 };
+  const behaviorPassed = Object.entries(requiredCounters).every(([counter, expected]) => {
+    const lines = [...(result.stdout ?? "").matchAll(new RegExp(`^# ${counter} (\\d+)\\r?$`, "gm"))];
+    return lines.length === 1 && lines[0][1] === String(expected);
+  });
+  if (result.error !== undefined || result.status !== 0 || !behaviorPassed)
+    failures.push(`导出存储行为保护失败:${binding.behaviorTest}#${binding.behaviorName}\n${(result.stdout ?? "").slice(-1200)}${result.error?.message ?? ""}`);
+}
 const debt = Object.values(KNOWN).filter((entry) => entry.verdict === "debt").length;
 if (failures.length) {
   console.error("pending-idempotency-key sentinel FAIL");

@@ -22,6 +22,11 @@ export const DOMAIN_M: ModuleEntry[] = [
     content: PORTED_EMPTY_CONTENT,
   },
   {
+    path: "/service/leaderboard",
+    summary: "查看公开客服业绩与完整榜单名次；客户明细仍按原有权限开放。",
+    content: PORTED_EMPTY_CONTENT,
+  },
+  {
     path: "/service/kb-sla",
     summary: "维护帮助中心的常见问答,设定每类工单多久要首次响应、多久要解决。改动要确认并填理由。",
     content: PORTED_EMPTY_CONTENT,

@@ -64,6 +64,10 @@ export type SupportBindingPoolItem = {
   reason: SupportPoolReason;
   enteredAt: string;
   version: number;
+  routeState: "AVAILABLE" | "ABSENT" | "UNKNOWN";
+  routeId: string | null;
+  routeGroupId: string | null;
+  routeVersion: number | null;
   customerNo?: string;
   displayName?: string;
   inviterCustomerId?: string | null;
@@ -81,6 +85,8 @@ export type SupportAgentCandidate = {
   seatType: "MANAGER" | "DEDICATED" | "GENERAL";
   serviceTypes: Array<"support" | "advisor">;
   enabled: boolean;
+  status: "enabled" | "disabled";
+  assignmentEligible: boolean;
   busy: boolean;
   assignedUserCount: number;
   maxConcurrent: number;
@@ -353,6 +359,31 @@ function json(method: "POST" | "PUT" | "PATCH", body: object, key: string, signa
 function customerPath(customerId: string): string { return `/support-workbench/customers/${encodeURIComponent(id(customerId, "customerId"))}`; }
 function attachmentPath(attachmentId: string): string { return `/conversations/attachments/${encodeURIComponent(opaqueId(attachmentId, "attachmentId"))}`; }
 
+function parsePoolRoute(row: Record<string, unknown>): Pick<SupportBindingPoolItem, "routeState" | "routeId" | "routeGroupId" | "routeVersion"> {
+  if (row.routeState === undefined && row.routeId === undefined && row.routeGroupId === undefined && row.routeVersion === undefined) return { routeState: "UNKNOWN", routeId: null, routeGroupId: null, routeVersion: null };
+  const routeState = enumValue(row.routeState, ["AVAILABLE", "ABSENT", "UNKNOWN"] as const, "pool.routeState");
+  const routeId = row.routeId === null ? null : id(row.routeId, "pool.routeId");
+  const routeGroupId = row.routeGroupId === null ? null : id(row.routeGroupId, "pool.routeGroupId");
+  const routeVersion = row.routeVersion === null ? null : positive(row.routeVersion, "pool.routeVersion");
+  if (routeState === "AVAILABLE" ? routeId === null || routeVersion === null : routeId !== null || routeGroupId !== null || routeVersion !== null) malformed("pool.routeObservation");
+  return { routeState, routeId, routeGroupId, routeVersion };
+}
+
+export type SupportRouteInput = { targetGroupId: string | null; expectedRouteVersion: number; sourceGroupVersion: number | null; targetGroupVersion: number | null; reason: string };
+export function setSupportPoolRoute(customerId: string, input: SupportRouteInput, key: string, signal?: AbortSignal) {
+  if (input.reason.trim().length < 8 || input.reason.trim().length > 200) malformed("route.reason");
+  const targetGroupId = input.targetGroupId === null ? null : wireId(input.targetGroupId, "route.targetGroupId");
+  if (targetGroupId === null ? input.targetGroupVersion !== null : input.targetGroupVersion === null) malformed("route.targetVersion");
+  const body = { ...input, targetGroupId, expectedRouteVersion: count(input.expectedRouteVersion, "route.expectedVersion"), sourceGroupVersion: nullablePositive(input.sourceGroupVersion, "route.sourceVersion"), targetGroupVersion: nullablePositive(input.targetGroupVersion, "route.targetVersion") };
+  return request(`/support-agents/groups/customer-routes/${id(customerId, "route.customerId")}`, value => {
+    const row = object(value, "route.result");
+    const groupId = row.groupId === null ? null : id(row.groupId, "route.groupId");
+    const version = positive(row.version, "route.version");
+    if (id(row.customerId, "route.customerId") !== id(customerId, "route.expectedCustomerId") || groupId !== input.targetGroupId || version <= input.expectedRouteVersion) malformed("route.acknowledgement");
+    return { id: id(row.id, "route.id"), customerId, groupId, version };
+  }, json("PATCH", body, key, signal));
+}
+
 export const supportClient = {
   snapshot: (options: { pageNum: number; pageSize: number; keyword?: string; filter?: SupportCustomerFilter; agentId?: number; mode?: SupportReadMode; groupId?: number; from?: string; to?: string; signal?: AbortSignal }) =>
     request(`/support-workbench/customers${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize"), keyword: options.keyword, filter: options.filter, agentId: options.agentId, mode: options.mode === undefined ? undefined : enumValue(options.mode, ["PERSONAL", "MANAGED", "ALL"] as const, "mode"), groupId: options.groupId === undefined ? undefined : positive(options.groupId, "groupId"), from: options.from, to: options.to })}`, workbenchSnapshot, { signal: options.signal }),
@@ -378,16 +409,20 @@ export const supportClient = {
     }, { signal: options.signal }),
   setMaintenance: (customerId: string, input: { enabled: boolean; reason: string; expectedVersion: number; expectedAssignmentId: string }, idempotencyKey: string, signal?: AbortSignal) =>
     request(`${customerPath(customerId)}/maintenance`, (value) => { const row = object(value, "maintenance.result"); return { customerId: id(row.customerId, "maintenance.customerId"), assignmentId: id(row.assignmentId, "maintenance.assignmentId"), enabled: bool(row.enabled, "maintenance.enabled"), version: positive(row.version, "maintenance.version") }; }, json("PATCH", { ...input, expectedVersion: positive(input.expectedVersion, "maintenance.expectedVersion"), expectedAssignmentId: wireId(input.expectedAssignmentId, "maintenance.expectedAssignmentId") }, idempotencyKey, signal)),
-  bindingPool: (options: { pageNum: number; pageSize: number; keyword?: string; reason?: SupportPoolReason; signal?: AbortSignal }) =>
-    request(`/support-agents/binding-pool${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize"), keyword: options.keyword, reason: options.reason })}`, (value) => page(value, (entry): SupportBindingPoolItem => {
+  bindingPool: (options: { pageNum: number; pageSize: number; keyword?: string; reason?: SupportPoolReason; groupId?: number; signal?: AbortSignal }) =>
+    request(`/support-agents/binding-pool${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize"), keyword: options.keyword, reason: options.reason, groupId: options.groupId === undefined ? undefined : positive(options.groupId, "groupId") })}`, (value) => page(value, (entry): SupportBindingPoolItem => {
       const row = object(entry, "bindingPool.item");
-      return { customerId: id(row.customerId, "bindingPool.customerId"), reason: enumValue(row.reason, POOL_REASONS, "bindingPool.reason"), enteredAt: timestamp(row.enteredAt, "bindingPool.enteredAt"), version: count(row.version, "bindingPool.version"), customerNo: optionalString(row.customerNo, "bindingPool.customerNo"), displayName: optionalString(row.displayName, "bindingPool.displayName"), inviterCustomerId: row.inviterCustomerId === null ? null : row.inviterCustomerId === undefined ? undefined : id(row.inviterCustomerId, "bindingPool.inviterCustomerId"), pendingMessageCount: row.pendingMessageCount === undefined ? undefined : count(row.pendingMessageCount, "bindingPool.pendingMessageCount"), autoEligible: row.autoEligible==null?undefined:row.autoEligible===0?false:row.autoEligible===1?true:bool(row.autoEligible,"pool.autoEligible"), autoAttemptState: optionalString(row.autoAttemptState,"pool.autoAttemptState"), attempts: row.attempts==null?undefined:count(row.attempts,"pool.attempts"), lastAttemptAt: nullableTimestamp(row.lastAttemptAt,"pool.lastAttemptAt"), lastOutcome: row.lastOutcome==null?row.lastOutcome:nullableString(row.lastOutcome,"pool.lastOutcome"), lastMessageAt: nullableTimestamp(row.lastMessageAt, "bindingPool.lastMessageAt") };
+      return { ...parsePoolRoute(row), customerId: id(row.customerId, "bindingPool.customerId"), reason: enumValue(row.reason, POOL_REASONS, "bindingPool.reason"), enteredAt: timestamp(row.enteredAt, "bindingPool.enteredAt"), version: count(row.version, "bindingPool.version"), customerNo: optionalString(row.customerNo, "bindingPool.customerNo"), displayName: optionalString(row.displayName, "bindingPool.displayName"), inviterCustomerId: row.inviterCustomerId === null ? null : row.inviterCustomerId === undefined ? undefined : id(row.inviterCustomerId, "bindingPool.inviterCustomerId"), pendingMessageCount: row.pendingMessageCount === undefined ? undefined : count(row.pendingMessageCount, "bindingPool.pendingMessageCount"), autoEligible: row.autoEligible==null?undefined:row.autoEligible===0?false:row.autoEligible===1?true:bool(row.autoEligible,"pool.autoEligible"), autoAttemptState: optionalString(row.autoAttemptState,"pool.autoAttemptState"), attempts: row.attempts==null?undefined:count(row.attempts,"pool.attempts"), lastAttemptAt: nullableTimestamp(row.lastAttemptAt,"pool.lastAttemptAt"), lastOutcome: row.lastOutcome==null?row.lastOutcome:nullableString(row.lastOutcome,"pool.lastOutcome"), lastMessageAt: nullableTimestamp(row.lastMessageAt, "bindingPool.lastMessageAt") };
     }), { signal: options.signal }),
-  agents: (options: { pageNum: number; pageSize: number; signal?: AbortSignal }) =>
-    request(`/support-agents/page${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize") })}`, (value) => page(value, (entry): SupportAgentCandidate => {
+  agents: (options: { pageNum: number; pageSize: number; groupId?: number; signal?: AbortSignal }) =>
+    request(`/support-agents/page${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize"), groupId: options.groupId === undefined ? undefined : positive(options.groupId, "groupId") })}`, (value) => page(value, (entry): SupportAgentCandidate => {
       const row = object(entry, "agent");
       if (!Array.isArray(row.serviceTypes)) malformed("agent.serviceTypes");
-      return { adminId: positive(row.adminId, "agent.adminId"), name: nonempty(row.name, "agent.name"), seatType: enumValue(row.seatType, ["MANAGER", "DEDICATED", "GENERAL"] as const, "agent.seatType"), serviceTypes: row.serviceTypes.map((type) => enumValue(type, ["support", "advisor"] as const, "agent.serviceTypes")), enabled: bool(row.enabled, "agent.enabled"), busy: bool(row.busy, "agent.busy"), assignedUserCount: count(row.assignedUserCount, "agent.assignedUserCount"), maxConcurrent: count(row.maxConcurrent, "agent.maxConcurrent"), currentActiveSessions: row.currentActiveSessions === undefined ? undefined : count(row.currentActiveSessions, "agent.currentActiveSessions"), avatarAssetId: row.avatarAssetId==null?undefined:nonempty(row.avatarAssetId,"agent.avatar"), avatarVersion: row.avatarVersion==null?undefined:count(row.avatarVersion,"agent.avatarVersion"), version: count(row.version, "agent.version") };
+      const status = enumValue(row.status, ["enabled", "disabled"] as const, "agent.status");
+      const assignmentEligible = bool(row.assignmentEligible, "agent.assignmentEligible");
+      const enabled = bool(row.enabled, "agent.enabled");
+      if (assignmentEligible && (status !== "enabled" || !enabled)) malformed("agent.assignmentEligible");
+      return { status, assignmentEligible, adminId: positive(row.adminId, "agent.adminId"), name: nonempty(row.name, "agent.name"), seatType: enumValue(row.seatType, ["MANAGER", "DEDICATED", "GENERAL"] as const, "agent.seatType"), serviceTypes: row.serviceTypes.map((type) => enumValue(type, ["support", "advisor"] as const, "agent.serviceTypes")), enabled, busy: bool(row.busy, "agent.busy"), assignedUserCount: count(row.assignedUserCount, "agent.assignedUserCount"), maxConcurrent: count(row.maxConcurrent, "agent.maxConcurrent"), currentActiveSessions: row.currentActiveSessions === undefined ? undefined : count(row.currentActiveSessions, "agent.currentActiveSessions"), avatarAssetId: row.avatarAssetId==null?undefined:nonempty(row.avatarAssetId,"agent.avatar"), avatarVersion: row.avatarVersion==null?undefined:count(row.avatarVersion,"agent.avatarVersion"), version: count(row.version, "agent.version") };
     }), { signal: options.signal }),
   transfer: (input: { targetAgentAdminId: number; customers: Array<{ id: string; expectedAssignmentId: string | null; expectedVersion: number }>; reason: string }, idempotencyKey: string, signal?: AbortSignal) =>
     request("/support-agents/assignments/transfer", (value): SupportTransferResult => {
@@ -449,6 +484,30 @@ export const supportClient = {
   startConversation: (input: SupportStartConversationInput, idempotencyKey: string, signal?: AbortSignal) =>
     request("/conversations", messageResult, json("POST", { conversationType: "ADVISOR", userId: wireId(input.customerId, "conversation.customerId"), openingText: input.openingText, kind: "TEXT", intent: input.intent, clientMessageId: input.clientMessageId, expectedAssignmentId: wireId(input.expectedAssignmentId, "conversation.expectedAssignmentId"), replyTargets: input.replyTargets?.map((target) => ({ ...target, throughMessageId: positive(target.throughMessageId, "conversation.throughMessageId") })) }, idempotencyKey, signal)),
 };
+
+export async function readSupportPoolCustomer(customerId: string, groupId?: number): Promise<SupportBindingPoolItem> {
+  for (let pageNum = 1; ; pageNum++) {
+    const result = await supportClient.bindingPool({ pageNum, pageSize: 100, keyword: customerId, groupId });
+    const found = result.records.find(row => row.customerId === customerId);
+    if (found) return found;
+    if (!result.records.length || pageNum * result.pageSize >= result.total) throw new Error("SUPPORT_RECOVERY_FACTS_UNAVAILABLE");
+  }
+}
+
+export async function verifySupportTransfer(input: Parameters<typeof supportClient.transfer>[0], status: "SUCCEEDED" | "FAILED", groupId?: number): Promise<void> {
+  for (const expected of input.customers) {
+    if (status === "FAILED" && expected.expectedAssignmentId === null) {
+      const current = await readSupportPoolCustomer(expected.id, groupId);
+      if (current.version !== expected.expectedVersion) throw new Error("SUPPORT_RECOVERY_FACTS_CHANGED");
+    } else {
+      const current = await supportClient.customerDetail(expected.id);
+      const matches = status === "SUCCEEDED"
+        ? current.customerId === expected.id && current.agentAdminId === input.targetAgentAdminId && current.assignmentId !== null && current.assignmentId !== expected.expectedAssignmentId
+        : current.customerId === expected.id && current.assignmentId === expected.expectedAssignmentId && current.assignmentVersion === expected.expectedVersion;
+      if (!matches) throw new Error("SUPPORT_RECOVERY_FACTS_CHANGED");
+    }
+  }
+}
 
 function messageResult(value: unknown): SupportMessageResult {
   const row = object(value, "messageResult");

@@ -57,6 +57,8 @@ assertContains("lib/nav/console-nav.ts", [
   'path: "/service/tickets"',
   'id: "M3"',
   'path: "/service/sessions"',
+  'id: "M6"',
+  'path: "/service/leaderboard"',
 ]);
 assertAbsent("lib/nav/console-nav.ts", 'path: "/content/support"', "I8 应已迁出至域 M");
 assertAbsent("lib/nav/console-nav.ts", 'path: "/content/conversation-center"', "I9 应已迁出至域 M");
@@ -65,6 +67,7 @@ assertAbsent("lib/nav/console-nav.ts", 'path: "/content/conversation-center"', "
 assertContains("lib/admin/registry/m.ts", [
   'path: "/service/tickets"',
   'path: "/service/sessions"',
+  'path: "/service/leaderboard"',
 ]);
 
 // 域 M 视图接线
@@ -75,6 +78,7 @@ assertContains("app/components/domain-views/m-view.tsx", [
 ]);
 assertContains("app/components/domain-views/ported.ts", ['"M"']);
 assertContains("app/components/domain-views/registry.tsx", ["MDomainView", "M: MDomainView"]);
+assertContains("app/components/domain-views/registry.tsx", ['if (code === "M" && meta.l2Id === "M6") return <M6Leaderboard />;']);
 
 // 数据模型(类型契约仍在 m-tabs/data.ts;工单/转交种子数组 2026-08 起服务端化,经 lib/admin/m-client 取数)
 assertContains("app/components/domain-views/m-tabs/data.ts", [
@@ -181,9 +185,9 @@ assertAbsent(uniTicketStore, "@/mock/tickets", "生产工单不得回退本地 m
 assertAbsent(uniTicketStore, "lastReplyAt: raw.lastReplyAt ?? ticket.updatedAt", "不得用旧本地字段回退服务端时间");
 assertAbsent(uniTicketStore, "lastReplyAt: now", "不得用客户端当前时间伪造服务端回复时间");
 
-// 路由计数:本门只辖 M 面 —— /service 客服路由 = 5;全站 L2 总数随 IA 演进,不在本门硬编码(2026-08-03 去除 72 断言)
+// This gate covers the six service routes, including the separate public leaderboard.
 const serviceRouteCount = (read("lib/nav/console-nav.ts").match(/path:\s*"\/service\//g) || []).length;
-if (serviceRouteCount !== 5) failures.push(`/service routes ${serviceRouteCount}, expected 5`);
+if (serviceRouteCount !== 6) failures.push(`/service routes ${serviceRouteCount}, expected 6`);
 
 if (failures.length) {
   console.error("admin-support-surface-audit (domain M) failed");

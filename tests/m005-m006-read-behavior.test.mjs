@@ -24,6 +24,7 @@ const validM1Overview = {
     tags: ["账户"],
     maxConcurrent: 12,
     enabled: true,
+    assignmentEligible: true,
     transferable: true,
     busy: false,
     assignedUserCount: 0,
@@ -124,6 +125,21 @@ test("M1 keeps legal busy seats readable but excludes them from transfer targets
     [{ ...overview.transferTargets[0], targetId: "999" }],
   ]) {
     assert.throws(() => parseM1SupportAgentOverview({ ...overview, transferTargets }), /M1_SUPPORT_AGENT_OVERVIEW_MALFORMED/);
+  }
+});
+
+test("M1 keeps disabled and disqualified assets while accepting the authoritative reduced target set", () => {
+  for (const overrides of [{ status: "disabled" }, { seatType: "MANAGER" }, {}]) {
+    const agent = { ...validM1Overview.agents[0], ...overrides, enabled: true, assignmentEligible: false };
+    const overview = { agents: [agent], advisorAssignments: [{ id: 1, agentAdminId: 7, userId: 2, status: "ACTIVE" }], transferTargets: [] };
+    assert.deepEqual(parseM1SupportAgentOverview(overview), overview);
+    assert.throws(() => parseM1SupportAgentOverview({ ...overview, transferTargets: validM1Overview.transferTargets }), /MALFORMED/);
+  }
+});
+
+test("M1 cannot infer unknown account or qualification authority from profile flags", () => {
+  for (const overrides of [{ assignmentEligible: undefined }, { assignmentEligible: null }, { assignmentEligible: "true" }, { status: "UNKNOWN" }, { status: "disabled", assignmentEligible: true }, { enabled: false, assignmentEligible: true }]) {
+    assert.throws(() => parseM1SupportAgentOverview({ ...validM1Overview, agents: [{ ...validM1Overview.agents[0], ...overrides }] }), /MALFORMED/);
   }
 });
 

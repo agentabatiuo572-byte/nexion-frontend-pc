@@ -18,6 +18,7 @@ import { Icon, type IconName, Modal, Toggle } from "../design-kit";
 import { catCN, MAvatar } from "./hd-ui";
 import type { MCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { fetchMAdvisorBindingUsers, type MAdvisorAssignment, type MAdvisorBindingUser, type MSupportAgent } from "@/lib/admin/m-client";
 import { commandForM1Retry, createM1PendingCommand, type M1PendingCommand } from "@/lib/admin/m1-pending-command";
 
@@ -30,11 +31,6 @@ const LOAD_WARNINGS_KEY = "I.support.loadWarnings";
 const LOAD_KEY = (f: string) => `I.support.load.${f}`;
 const AGENT_CAP_KEY = (name: string) => `I.support.agent.${name}.cap`;
 
-const SUPPORT_SEAT_TYPES = [
-  { position: "客服主管", label: "客服主管", hint: "由超管分配;可分配专属/通用客服坐席" },
-  { position: "专属客服", label: "专属客服", hint: "由超管/客服主管绑定服务用户" },
-  { position: "通用客服", label: "通用客服", hint: "接普通工单与即时会话" },
-];
 const BOUND_ASSIGNMENT_PAGE_SIZE = 8;
 const SUPPORT_USER_PAGE_SIZE = 8;
 const ACTIVE_TICKET_STATUSES = new Set<SupportTicket["status"]>(["open", "in_progress", "pending_user"]);
@@ -135,7 +131,7 @@ function userNoOf(profile: MAdvisorBindingUser): string {
 }
 
 function isDedicatedSupportAgent(agent: MSupportAgent): boolean {
-  return agent.seatType === "DEDICATED" || agent.position.includes("专属");
+  return agent.assignmentEligible === true;
 }
 
 function isSupportSupervisor(agent: MSupportAgent | null | undefined): boolean {
@@ -143,7 +139,7 @@ function isSupportSupervisor(agent: MSupportAgent | null | undefined): boolean {
 }
 
 function seatLabel(position: string): string {
-  return SUPPORT_SEAT_TYPES.find((item) => item.position === position)?.label ?? position;
+  return position.includes("主管") || position === "MANAGER" || position === "SUPERVISOR" ? "客服主管（管理资格）" : "专属客服";
 }
 
 export function M1Overview({ ctx }: { ctx: MCtx }) {
@@ -177,7 +173,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
   const canWriteM1 = isSuperAdmin || Boolean(authorities?.includes("service_m1_write"));
   const canManageSupportSeats = canWriteM1 && (isSuperAdmin || isSupportSupervisor(currentSupportAgent));
   const seatAssignmentAgents = useMemo(
-    () => supportAgents.filter((agent) => agent.adminId > 0 && agent.enabled),
+    () => supportAgents.filter((agent) => agent.adminId > 0 && agent.assignmentEligible === true),
     [supportAgents],
   );
   const assignableAgents = useMemo(
@@ -204,7 +200,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
     const cap = numOr(pget(AGENT_CAP_KEY(a.name)), a.maxConcurrent || loadCfg?.defaultCap || 0);
     const busy = Boolean(a.busy);
     const util = Math.round((total / Math.max(1, cap)) * 100);
-    return { id: a.id, agent: a, name: a.name, role: a.position, enabled: a.enabled, openTk, openCv, total, cap, busy, util, assignments };
+    return { id: a.id, agent: a, name: a.name, role: seatLabel(a.position), enabled: a.enabled, openTk, openCv, total, cap, busy, util, assignments };
   }).sort((x, y) => y.util - x.util);
   const busyCount = loadRows.filter((r) => r.busy).length;
   const maxLoad = Math.max(1, ...loadRows.map((l) => Math.max(l.total, l.cap)));
@@ -234,12 +230,12 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
               : !supportAgentsAvailable
                 ? "坐席数据暂不可用,请刷新后重试"
               : canManageSupportSeats
-                ? "从客服管理员里分配客服主管 / 专属客服 / 通用客服坐席"
+                ? "接待资格与主管管理资格在 A1 账号管理分别维护"
                 : "只有总管理员或客服主管可以分配坐席"}
             onClick={() => setShowSeatRoles(true)}
           >
             <Icon name="users" size={16} />
-            分配坐席
+            客服资格
           </button>
         )}
         <Link href="/service/tickets" className="btn btn-sec btn-sm">
@@ -402,7 +398,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
                       <button
                         type="button"
                         className="btn btn-sec btn-sm"
-                        disabled={!l.agent.enabled || l.agent.adminId <= 0 || !isDedicatedSupportAgent(l.agent)}
+                        disabled={!l.agent.assignmentEligible || l.agent.adminId <= 0 || !isDedicatedSupportAgent(l.agent)}
                         title={isDedicatedSupportAgent(l.agent) ? "给此专属客服绑定服务用户" : "只有专属客服可以绑定服务用户"}
                         onClick={() => {
                           setAssignAgent(l.agent);
@@ -654,340 +650,13 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
   );
 }
 
-export function SupportSeatRoleModal({
-  ctx,
-  operatorName,
-  currentRole,
-  currentAdminId,
-  agents,
-  canManage,
-  onClose,
-}: {
-  ctx: MCtx;
-  operatorName: string;
-  currentRole: string;
-  currentAdminId: number;
-  agents: MSupportAgent[];
-  canManage: boolean;
-  onClose: () => void;
-}) {
-  const [keyword, setKeyword] = useState("");
-  const [selectedId, setSelectedId] = useState("");
-  const [targetPosition, setTargetPosition] = useState("通用客服");
-  const [userKeyword, setUserKeyword] = useState("");
-  const [userPage, setUserPage] = useState(1);
-  const [userTotal, setUserTotal] = useState(0);
-  const [userReload, setUserReload] = useState(0);
-  const [users, setUsers] = useState<MAdvisorBindingUser[]>([]);
-  const [selectedUsers, setSelectedUsers] = useState<MAdvisorBindingUser[]>([]);
-  const [reason, setReason] = useState("");
-  const [loadingUsers, setLoadingUsers] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [userError, setUserError] = useState("");
-  const commandInFlightRef = useRef(false);
-  const mountedRef = useRef(true);
-  const canAssignSupervisor = currentRole === "superadmin" || currentRole === "super";
-  const currentAgent = agents.find((agent) => agent.adminId === currentAdminId) ?? null;
-  const canAssignSupportStaff = canManage && (canAssignSupervisor || isSupportSupervisor(currentAgent));
-  const seatOptions = canAssignSupportStaff ? SUPPORT_SEAT_TYPES.filter((seat) => canAssignSupervisor || seat.position !== "客服主管") : [];
-  const operatorReady = operatorName.trim().length > 0;
-  const normalizedKeyword = keyword.trim().toLowerCase();
-  const candidates = useMemo(
-    () => agents
-      .filter((agent) => agent.status === "enabled" && agent.adminId > 0)
-      .filter((agent) => canAssignSupervisor || agent.adminId !== currentAdminId)
-      .filter((agent) => {
-        if (!normalizedKeyword) return true;
-        return [agent.name, agent.email, String(agent.adminId), agent.position]
-          .join(" ")
-          .toLowerCase()
-          .includes(normalizedKeyword);
-      }),
-    [agents, canAssignSupervisor, currentAdminId, normalizedKeyword],
-  );
-  const selected = candidates.find((agent) => String(agent.adminId) === selectedId) ?? candidates[0] ?? null;
-  const allActiveAssignments = useMemo(
-    () => parseParamArray<MAdvisorAssignment>(ctx.pget(ASSIGNMENT_LIST_KEY), [])
-      .filter((row) => row.status === "ACTIVE"),
-    [ctx.params, ctx],
-  );
-  const activeAssignmentByUserId = useMemo(() => {
-    const map = new Map<number, MAdvisorAssignment>();
-    allActiveAssignments.forEach((row) => {
-      if (Number.isFinite(Number(row.userId)) && !map.has(row.userId)) {
-        map.set(row.userId, row);
-      }
-    });
-    return map;
-  }, [allActiveAssignments]);
-  const boundUserIds = useMemo(
-    () => new Set(activeAssignmentByUserId.keys()),
-    [activeAssignmentByUserId],
-  );
-  const selectedUserIds = useMemo(
-    () => new Set(selectedUsers.map(userIdOf).filter((userId) => userId > 0)),
-    [selectedUsers],
-  );
-  const bindableSelectedUsers = selectedUsers.filter((user) => {
-    const userId = userIdOf(user);
-    return userId > 0 && !boundUserIds.has(userId);
-  });
-  const assigningDedicated = targetPosition === "专属客服";
-  const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
-  const canSave = Boolean(canAssignSupportStaff && operatorReady && selected && reasonOk && !saving && (!assigningDedicated || bindableSelectedUsers.length > 0));
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
-
-  useEffect(() => {
-    setSelectedId((current) => current || (candidates[0] ? String(candidates[0].adminId) : ""));
-  }, [candidates]);
-
-  useEffect(() => {
-    if (!canAssignSupervisor && targetPosition === "客服主管") {
-      setTargetPosition("通用客服");
-    }
-  }, [canAssignSupervisor, targetPosition]);
-
-  useEffect(() => {
-    if (selected && !candidates.some((agent) => agent.adminId === selected.adminId)) {
-      setSelectedId(candidates[0] ? String(candidates[0].adminId) : "");
-    }
-  }, [candidates, selected]);
-
-  useEffect(() => {
-    setUserPage(1);
-  }, [assigningDedicated, userKeyword]);
-
-  useEffect(() => {
-    if (!assigningDedicated || !canAssignSupportStaff) {
-      setUsers([]);
-      setUserTotal(0);
-      setLoadingUsers(false);
-      setUserError("");
-      return;
-    }
-    let alive = true;
-    let pageRedirected = false;
-    setLoadingUsers(true);
-    setUserError("");
-    setUsers([]);
-    setUserTotal(0);
-    const timer = window.setTimeout(() => {
-      fetchMAdvisorBindingUsers({ keyword: userKeyword.trim(), pageNum: userPage, pageSize: SUPPORT_USER_PAGE_SIZE })
-        .then((page) => {
-          if (!alive) return;
-          const safePage = clampPage(userPage, page.total, SUPPORT_USER_PAGE_SIZE);
-          if (safePage !== userPage) {
-            setUsers([]);
-            setUserTotal(page.total);
-            pageRedirected = true;
-            setUserPage(safePage);
-            return;
-          }
-          setUsers(page.records);
-          setUserTotal(page.total);
-        })
-        .catch((err) => {
-          if (!alive) return;
-          setUsers([]);
-          setUserTotal(0);
-          setUserError(displayAdminError(err));
-        })
-        .finally(() => {
-          if (alive && !pageRedirected) setLoadingUsers(false);
-        });
-    }, 250);
-    return () => {
-      alive = false;
-      window.clearTimeout(timer);
-    };
-  }, [assigningDedicated, canAssignSupportStaff, userKeyword, userPage, userReload]);
-
-  useEffect(() => {
-    setSelectedUsers([]);
-  }, [targetPosition, selected?.adminId]);
-
-  const toggleUser = (user: MAdvisorBindingUser) => {
-    const userId = userIdOf(user);
-    if (!userId || boundUserIds.has(userId)) return;
-    setSelectedUsers((prev) => {
-      const exists = prev.some((row) => userIdOf(row) === userId);
-      return exists ? prev.filter((row) => userIdOf(row) !== userId) : [...prev, user];
-    });
-  };
-
-  const close = () => {
-    if (mountedRef.current && !commandInFlightRef.current) onClose();
-  };
-
-  const save = async () => {
-    if (!canSave || !selected || commandInFlightRef.current || !mountedRef.current) return;
-    commandInFlightRef.current = true;
-    setSaving(true);
-    try {
-      const userIds = assigningDedicated
-        ? Array.from(new Set(bindableSelectedUsers.map(userIdOf).filter((userId) => userId > 0)))
-        : [];
-      const ok = await ctx.setParam("I.support.seatAssignment.__update", JSON.stringify({
-        adminId: selected.adminId,
-        position: targetPosition,
-        expectedVersion: selected.version,
-        userIds,
-      }), {
-        action: "M1 分配客服坐席",
-        reason: reason.trim(),
-      });
-      if (!mountedRef.current || !ok) return;
-      ctx.toast(`${selected.name} 已提交分配为 ${seatLabel(targetPosition)}${userIds.length ? `,绑定 ${userIds.length} 个用户` : ""}`);
-      onClose();
-    } catch (err) {
-      if (mountedRef.current) ctx.toast(`分配失败:${displayAdminError(err)}`);
-    } finally {
-      commandInFlightRef.current = false;
-      if (mountedRef.current) setSaving(false);
-    }
-  };
-
-  return (
-    <Modal
-      title="分配客服坐席"
-      icon="users"
-      wide
-      busy={saving}
-      onClose={close}
-      footer={<><span className="sub">{!canAssignSupportStaff ? "只有超管或客服主管可以分配客服坐席" : !operatorReady ? "正在读取当前管理员身份" : assigningDedicated ? `专属客服必须同时绑定用户 · 已选 ${bindableSelectedUsers.length} 人` : canAssignSupervisor ? "超管可分配客服主管 / 专属客服 / 通用客服" : "客服主管只能分配专属客服 / 通用客服"}</span><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={close} disabled={saving}>取消</button><button type="button" data-proof="m1-seat-role-save" className="btn btn-pri btn-sm" disabled={!canSave} onClick={save}>{saving ? "提交中..." : canSave ? "确认分配" : !canAssignSupportStaff || !operatorReady ? "无权限" : assigningDedicated && bindableSelectedUsers.length === 0 ? "需绑定用户" : "需选择并填写理由"}</button></>}
-    >
-      <div className="mcol" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <label className="field" style={{ marginBottom: 0 }}>
-            <span>搜索客服管理员</span>
-            <div className="inp">
-              <Icon name="search" size={15} />
-              <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="管理员姓名 / 邮箱 / 当前坐席" />
-            </div>
-          </label>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 300, overflow: "auto", paddingRight: 2 }}>
-            {candidates.length === 0 && (
-              <div className="itint">
-                <div style={{ fontSize: 13 }}>暂无可分配管理员</div>
-                <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>搜索源是 A1 里全局角色为「客服」的管理员;请先在 A1 创建客服管理员。</div>
-              </div>
-            )}
-            {candidates.map((agent) => {
-              const selectedRow = selected?.adminId === agent.adminId;
-              return (
-                <button
-                  key={agent.adminId}
-                  type="button"
-                  data-proof="m1-seat-admin-option"
-                  onClick={() => setSelectedId(String(agent.adminId))}
-                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 10, border: `1px solid ${selectedRow ? "var(--m-hd-border)" : "var(--border)"}`, background: selectedRow ? "var(--m-hd-soft)" : "transparent", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}
-                >
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: "block", fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{agent.name || agent.email || `管理员 ${agent.adminId}`}</span>
-                    <span className="mono dim2" style={{ fontSize: 11.5 }}>{agent.email || "未配置邮箱"} · {agent.position || "通用客服"}</span>
-                  </span>
-                  <span className="chip" style={{ height: 20, fontSize: 11, border: "none" }}>客服</span>
-                  {selectedRow && <Icon name="check" size={15} />}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
-          <label className="field" style={{ marginBottom: 0 }}>
-            <span>目标客服坐席</span>
-            <div style={{ display: "grid", gap: 8 }}>
-              {seatOptions.map((option) => (
-                <button
-                  key={option.position}
-                  type="button"
-                  className="btn btn-sec btn-sm"
-                  onClick={() => setTargetPosition(option.position)}
-                  style={{ justifyContent: "flex-start", height: "auto", padding: "9px 10px", borderColor: targetPosition === option.position ? "var(--m-hd-border)" : undefined, background: targetPosition === option.position ? "var(--m-hd-soft)" : undefined }}
-                >
-                  <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
-                    <span style={{ color: "var(--ink)" }}>{option.label}</span>
-                    <span className="dim2" style={{ fontSize: 11.5 }}>{option.hint}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </label>
-          {selected && (
-            <div className="itint" style={{ padding: "10px 12px" }}>
-              <div style={{ fontSize: 13 }}>当前选择: {selected.name || selected.email}</div>
-              <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>当前坐席 {seatLabel(selected.position)} → 目标坐席 {seatLabel(targetPosition)}</div>
-            </div>
-          )}
-          {assigningDedicated && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <label className="field" style={{ marginBottom: 0 }}>
-                <span>绑定服务用户 <b style={{ color: "var(--danger)" }}>*</b></span>
-                <div className="inp">
-                  <Icon name="search" size={15} />
-                  <input value={userKeyword} onChange={(e) => setUserKeyword(e.target.value)} placeholder="昵称 / 用户 ID / 用户编码 / 手机号（尾号后 4 位）" />
-                </div>
-              </label>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {bindableSelectedUsers.length === 0 ? (
-                  <div className="itint" style={{ padding: "10px 12px", width: "100%" }}>专属客服必须同时绑定至少 1 个真实用户。</div>
-                ) : bindableSelectedUsers.map((user) => (
-                  <button
-                    key={`seat-selected-${userNoOf(user)}-${userIdOf(user)}`}
-                    type="button"
-                    className="chip"
-                    onClick={() => toggleUser(user)}
-                    title="移除已选用户"
-                    style={{ height: 24, fontSize: 11.5 }}
-                  >
-                    {userNoOf(user)} · {user.nickname || "未命名用户"}
-                    <Icon name="x" size={12} />
-                  </button>
-                ))}
-              </div>
-              {loadingUsers && <div className="itint">正在查询用户...</div>}
-              {!loadingUsers && userError && <div className="itint">用户加载失败 · {userError} <button type="button" className="btn btn-sec btn-sm" onClick={() => setUserReload((value) => value + 1)}>重试</button></div>}
-              {!loadingUsers && !userError && users.length === 0 && <div className="itint">暂无匹配用户</div>}
-              {!loadingUsers && !userError && users.map((user) => {
-                const id = userIdOf(user);
-                const checked = selectedUserIds.has(id);
-                const boundAssignment = activeAssignmentByUserId.get(id);
-                const alreadyBound = Boolean(boundAssignment);
-                const boundToSelected = boundAssignment?.agentAdminId === selected?.adminId;
-                return (
-                  <button
-                    key={`seat-user-${userNoOf(user)}-${id}`}
-                    type="button"
-                    data-proof="m1-seat-bound-user-option"
-                    disabled={alreadyBound}
-                    onClick={() => toggleUser(user)}
-                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 10, border: `1px solid ${checked ? "var(--m-hd-border)" : "var(--border)"}`, background: checked ? "var(--m-hd-soft)" : alreadyBound ? "var(--bg-2)" : "transparent", cursor: alreadyBound ? "not-allowed" : "pointer", textAlign: "left", fontFamily: "inherit", opacity: alreadyBound ? 0.62 : 1 }}
-                  >
-                    <span style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ display: "block", fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{user.nickname || "未命名用户"}</span>
-                      <span className="mono dim2" style={{ fontSize: 11.5 }}>{userNoOf(user)} · {user.phoneMasked || "未留手机号"}</span>
-                    </span>
-                    {alreadyBound && <span className="chip" style={{ height: 20, fontSize: 11, border: "none" }}>{boundToSelected ? "已绑定" : "已绑定其他坐席"}</span>}
-                    {checked && <Icon name="check" size={15} />}
-                  </button>
-                );
-              })}
-              {!loadingUsers && !userError && <Pager page={userPage} total={userTotal} pageSize={SUPPORT_USER_PAGE_SIZE} onPage={setUserPage} />}
-            </div>
-          )}
-          <label className="field" style={{ marginBottom: 0 }}>
-            <span>分配理由 <b style={{ color: "var(--danger)" }}>*</b></span>
-            <textarea className="fld" rows={4} maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:客服主管排班调整,将该管理员分配为通用客服承接实时会话。" style={{ resize: "vertical" }} />
-          </label>
-        </div>
-      </div>
-    </Modal>
-  );
+export function SupportSeatRoleModal({ canManage, onClose }: { ctx: MCtx; operatorName: string; currentRole: string; currentAdminId: number; agents: MSupportAgent[]; canManage: boolean; onClose: () => void }) {
+  const canManageQualifications = useAdminAuth(state => Boolean(canManage && state.session && ["super", "superadmin"].includes(state.session.role) && state.session.authorities.includes("platform_a1_read") && canAccessResolvedPath(resolveVisibleDomains(state.session), "/platform/rbac")));
+  return <Modal title="客服资格管理" icon="users" onClose={onClose} footer={<button type="button" className="btn btn-sec btn-sm" onClick={onClose}>关闭</button>}>
+    <p>人工接待统一为专属客服。接待资格与主管管理资格分别由总管理员在 A1 账号管理维护。</p>
+    {canManageQualifications && <Link className="btn btn-pri btn-sm" href="/platform/rbac">前往账号管理</Link>}
+    <p className="sub">当前页仍可调整会话承载量与在线状态；已有会话、客户资料和绑定关系保留。</p>
+  </Modal>;
 }
 
 function SeatAssignmentModal({
@@ -1018,7 +687,7 @@ function SeatAssignmentModal({
   const [error, setError] = useState("");
   const [reason, setReason] = useState("");
   const agent = agents.find((row) => String(row.adminId) === agentAdminId) ?? agents[0] ?? null;
-  const agentCanAssign = Boolean(agent?.enabled && agent.serviceTypes.includes("advisor"));
+  const agentCanAssign = agent?.assignmentEligible === true;
   const allActiveAssignments = useMemo(
     () => parseParamArray<MAdvisorAssignment>(ctx.pget(ASSIGNMENT_LIST_KEY), [])
       .filter((row) => row.status === "ACTIVE"),
@@ -1183,7 +852,7 @@ function SeatAssignmentModal({
       icon="users"
       wide
       onClose={onClose}
-      footer={<><span className="sub">{agents.length === 0 ? "暂无专属客服,请先在 M1 分配专属客服坐席" : agentCanAssign ? `用户来自客服工作台查询 · 已选 ${bindableSelectedUsers.length} 人 · 已绑定 ${activeAssignments.length} 人` : `当前坐席未开启专属客服服务 · 可解绑已绑定 ${activeAssignments.length} 人`}</span><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose} disabled={saving || unbindingId !== null}>取消</button><button type="button" data-proof="m1-seat-assignment-save" className="btn btn-pri btn-sm" disabled={!canSave} onClick={save}>{saving ? "提交中..." : `绑定${canSave ? ` ${bindableSelectedUsers.length} 人` : agents.length === 0 ? " · 无专属客服" : agentCanAssign ? " · 待补全" : " · 需开启服务类型"}`}</button></>}
+      footer={<><span className="sub">{agents.length === 0 ? "暂无可接待的专属客服，请先在 A1 核对接待资格" : agentCanAssign ? `用户来自客服工作台查询 · 已选 ${bindableSelectedUsers.length} 人 · 已绑定 ${activeAssignments.length} 人` : `当前坐席未开启专属客服服务 · 可解绑已绑定 ${activeAssignments.length} 人`}</span><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose} disabled={saving || unbindingId !== null}>取消</button><button type="button" data-proof="m1-seat-assignment-save" className="btn btn-pri btn-sm" disabled={!canSave} onClick={save}>{saving ? "提交中..." : `绑定${canSave ? ` ${bindableSelectedUsers.length} 人` : agents.length === 0 ? " · 无专属客服" : agentCanAssign ? " · 待补全" : " · 需开启接待"}`}</button></>}
     >
       <div className="mcol" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1192,13 +861,13 @@ function SeatAssignmentModal({
             {agents.length === 0 ? (
               <div className="itint" style={{ padding: "10px 12px" }}>
                 <div style={{ fontSize: 13 }}>暂无专属客服坐席</div>
-                <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>坐席名单来自 M1 客服业务坐席配置。先把客服管理员分配为专属客服并绑定用户后,这里会出现可选坐席。</div>
+                <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>名单来自后端授权的接待账号；接待资格在 A1 账号管理维护。</div>
               </div>
             ) : (
               <select className="fld" value={agentAdminId || String(agent?.adminId ?? "")} onChange={(e) => { setAgentAdminId(e.target.value); setSelectedUsers([]); }}>
                 {agents.map((row) => (
                   <option key={row.adminId} value={String(row.adminId)}>
-                    {row.name} · {row.position} · 已服务 {row.assignedUserCount} 人{row.serviceTypes.includes("advisor") ? "" : " · 需开启专属客服服务"}
+                    {row.name} · {seatLabel(row.position)} · 已服务 {row.assignedUserCount} 人
                   </option>
                 ))}
               </select>
@@ -1207,7 +876,7 @@ function SeatAssignmentModal({
           {agents.length > 0 && !agentCanAssign && (
             <div className="itint" style={{ padding: "10px 12px" }}>
               <div style={{ fontSize: 13 }}>该坐席当前不能接收专属服务用户分配</div>
-              <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>到 M5「客服岗位与专属客服」把该坐席服务类型勾选为专属客服服务后,这里即可提交绑定;当前已绑定用户仍可在下方解绑。</div>
+              <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>到 A1 账号管理核对接待资格；当前已绑定客户仍可在下方解绑。</div>
             </div>
           )}
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>

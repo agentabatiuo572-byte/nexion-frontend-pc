@@ -130,7 +130,7 @@ test("conversation data arriving before manager qualification stays pending, the
     assert.ok(probe.text().includes("44 段"));
     assert.ok(!probe.text().includes("当前已无权"));
     assert.equal(probe.profileRequests.length, 1);
-    assert.ok(pendingText.includes("坐席身份待核对"));
+    assert.ok(pendingText.includes("专属客服身份待核对"));
     assert.ok(!pendingText.includes("当前已无权"));
     assert.equal(pendingRequests, 0);
     for (const button of pendingButtons) assert.equal(button.disabled, true);
