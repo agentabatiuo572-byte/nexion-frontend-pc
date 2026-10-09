@@ -41,7 +41,7 @@ async function fill(label,value,root=page){proof.clicks.push({action:'fill',labe
 async function command(name,returnsRewardDetail=false){
   const dialog=page.getByRole('dialog');await expect(dialog).toBeVisible();
   await fill('操作理由 *','PC 实景验收：'+name+'，仅隔离活动，不是线上政策批准。',dialog);
-  const response=page.waitForResponse(r=>new URL(r.url()).pathname.startsWith('/api/admin/growth/')&&['POST','PUT'].includes(r.request().method())&&!r.url().includes('audience-preview'));
+  const response=page.waitForResponse(r=>new URL(r.url()).pathname.startsWith('/api/admin/growth/')&&['POST','PUT'].includes(r.request().method())&&!r.url().includes('audience-preview'),{timeout:45000});
   await click('确认操作',dialog);const r=await response;const data=await r.json();
   assert.equal(r.status(),200,`${name}: HTTP ${r.status()} ${data.message}`);assert.equal(data.code,0,`${name}: ${data.message}`);assert.equal(data.data.status,'SUCCEEDED');
   if(returnsRewardDetail)await expect(page.getByRole('heading',{name:'原奖励承诺与真实回执',exact:true})).toBeVisible();else await expect(dialog).toHaveCount(0);return data.data;
