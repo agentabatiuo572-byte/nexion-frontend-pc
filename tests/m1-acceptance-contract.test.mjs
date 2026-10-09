@@ -38,6 +38,8 @@ test("M1 live workbench reaches the original seat form without widening its auth
     "../design-kit": { Icon: no, Modal: no, Toggle: no }, "./hd-ui": { MAvatar: no, catCN: no },
     "./m1-supervisor-pool": { M1SupervisorPool: no }, "./support-bulk-composer": { SupportBulkComposer: no },
     "./support-avatar": { SupportAvatar: no, advisorAvatarPath: no, customerAvatarPath: no },
+    // Seat-form boundaries remain under test here; the avatar child has its own real producer/recovery tests.
+    "./self-avatar-editor": { SelfAvatarEditor: no },
   };
   function load(file) {
     const module = { exports: {} };

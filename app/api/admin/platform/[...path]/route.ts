@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { ADMIN_TOKEN_COOKIE, requirePasswordChangeCleared } from "@/lib/admin/require-password-change-cleared";
 import { boundedUpload } from "@/lib/admin/support-image-proxy";
+import { avatarProxyRoute, avatarGender, avatarKey, selfAvatarSaveInput } from "@/lib/admin/account-avatar-contract";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
@@ -19,13 +20,8 @@ function isNonEmpty(value: string | undefined) {
 }
 
 function backendPath(parts: string[]) {
-  if (parts[0] === "accounts" && parts[1] === "avatar-assets" && (parts.length === 2 || parts.length === 3)
-      && parts.every((part) => isNonEmpty(part) && !/[\\/]/.test(part) && !part.includes(".."))) {
-    return `/api/admin/platform/${parts.map(encodeURIComponent).join("/")}`;
-  }
-  if (parts.length === 3 && parts[0] === "accounts" && /^[1-9]\d*$/.test(parts[1]) && parts[2] === "avatar") {
-    return `/api/admin/platform/accounts/${parts[1]}/avatar`;
-  }
+  // Avatar methods and the reserved self namespace are handled before generic A1 routes.
+  if (parts[0] === "accounts" && (parts[1] === "self" || parts[1] === "avatar-assets" || parts[2] === "avatar")) return null;
   if (parts.length === 2 && parts[0] === "ops-dashboard" && parts[1] === "summary") {
     return "/api/admin/ops-dashboard/summary";
   }
@@ -183,7 +179,8 @@ async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
   const diagnostics = path.length === 2 && path[0] === "events" && path[1] === "outbox-diagnostics";
   if (diagnostics && request.method !== "GET") return jsonError(405, "METHOD_NOT_ALLOWED");
-  const targetPath = diagnostics ? "/api/admin/platform/events/outbox-diagnostics" : backendPath(path);
+  const avatarRoute = avatarProxyRoute(path, request.method);
+  const targetPath = diagnostics ? "/api/admin/platform/events/outbox-diagnostics" : avatarRoute?.targetPath ?? backendPath(path);
 
   if (!targetPath) {
     return jsonError(404, "PLATFORM_ROUTE_NOT_FOUND");
@@ -197,6 +194,7 @@ async function proxy(request: Request, context: RouteContext) {
   }
 
   const sourceUrl = new URL(request.url);
+  if (avatarRoute && sourceUrl.search) return jsonError(422, "AVATAR_COMMAND_INVALID");
   const targetUrl = `${BACKEND_BASE_URL}${targetPath}${sourceUrl.search}`;
   const headers = new Headers({
     Authorization: `Bearer ${token}`,
@@ -211,8 +209,11 @@ async function proxy(request: Request, context: RouteContext) {
   }
 
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
-  const avatarUpload = request.method === "POST" && path.length === 2 && path[0] === "accounts" && path[1] === "avatar-assets";
-  const avatarRead = request.method === "GET" && path[0] === "accounts" && path.length === 3 && (path[1] === "avatar-assets" || path[2] === "avatar");
+  if (avatarRoute && hasBody) {
+    try { avatarKey(idempotencyKey ?? ""); } catch { return jsonError(422, "AVATAR_COMMAND_INVALID"); }
+  }
+  const avatarUpload = avatarRoute?.upload === true;
+  const avatarRead = avatarRoute?.read === true;
   const maxBytes = process.env.NEXION_SUPPORT_ATTACHMENT_PROXY_MAX_BYTES === undefined ? 32 * 1024 * 1024 : Number(process.env.NEXION_SUPPORT_ATTACHMENT_PROXY_MAX_BYTES);
   if ((avatarUpload || avatarRead) && (!Number.isSafeInteger(maxBytes) || maxBytes <= 0)) return jsonError(503, "PLATFORM_AVATAR_LIMIT_UNCONFIGURED");
   let rawBody: string | ArrayBuffer | undefined;
@@ -221,7 +222,20 @@ async function proxy(request: Request, context: RouteContext) {
       const body = await boundedUpload(request, maxBytes);
       if (body === null) return jsonError(413, "PLATFORM_AVATAR_TOO_LARGE");
       rawBody = body;
-    } else rawBody = hasBody ? await request.text() : undefined;
+    } else {
+      rawBody = hasBody ? await request.text() : undefined;
+      if (avatarRoute && hasBody) {
+        try {
+          avatarKey(idempotencyKey ?? "");
+          if (request.method === "POST" && path.at(-1) === "default") {
+            const input = JSON.parse(rawBody as string);
+            if (!input || Object.keys(input).length !== 2 || !Object.keys(input).every(key => ["avatarGender", "clientUploadId"].includes(key))) throw new Error();
+            avatarGender(input.avatarGender); avatarKey(input.clientUploadId);
+          } else if (avatarRoute.self && request.method === "PATCH") selfAvatarSaveInput(JSON.parse(rawBody as string));
+          else if (request.method === "DELETE" && rawBody?.trim()) throw new Error();
+        } catch { return jsonError(422, "AVATAR_COMMAND_INVALID"); }
+      }
+    }
   } catch { return jsonError(503, "PLATFORM_AVATAR_UPLOAD_INTERRUPTED"); }
   try {
     request.signal.throwIfAborted();

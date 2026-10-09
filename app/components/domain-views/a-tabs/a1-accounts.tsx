@@ -31,11 +31,14 @@ import { fetchA6RoleDetail, fetchA6RolesOverview } from "@/lib/admin/a6-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import type { ACtx } from "./types";
 import { AccountAvatarPicker } from "./account-avatar-picker";
+import { HDSelect } from "../m-tabs/hd-ui";
+import { AVATAR_GENDER_OPTIONS, type AvatarGender } from "@/lib/admin/account-avatar-contract";
+import { avatarDrafts, avatarDraftFingerprint } from "@/lib/admin/account-avatar-pending";
 import { SupportAvatar } from "../m-tabs/support-avatar";
 import { SupportQualificationEditor, canManageSupportQualifications } from "../m-tabs/m1-group-management";
 import {createPendingMutationStore,type PendingMutationRecord} from "@/lib/admin/pending-mutation-store";
 type CreationPending=PendingMutationRecord&{actorId:number;form:A1CreateAccountInput&{reason:string};reason:string;operator:string};
-const creationCommands=createPendingMutationStore<CreationPending>({storageKey:"nexion-a1-support-avatar-account-create",isValidRecord:r=>Number.isSafeInteger(r.actorId)&&Boolean(r.form?.username&&r.reason)});
+const creationCommands=createPendingMutationStore<CreationPending>({storageKey:"nexion-a1-support-avatar-account-create",retainExpiredRecords:true,isValidRecord:r=>Number.isSafeInteger(r.actorId)&&Boolean(r.form?.username&&r.reason)});
 
 type SecurityBaselineMeta = {
   key: string;
@@ -484,11 +487,13 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
             displayName: form.displayName,
             email: form.email,
             avatarAssetId: form.avatarAssetId,
+            avatarGender: form.avatarGender,
             expectedVersion: op.version,
           }),
           target: def.buildTarget({ accountId: op.id }),
         });
-        setEditAccountTarget(null);
+        if (outcome === "proposed" && currentAdminId) avatarDrafts.forget(avatarDraftFingerprint(currentAdminId, "admin", op.id));
+        if (outcome === "proposed") setEditAccountTarget(null);
         return outcome === "proposed";
       },
     });
@@ -696,26 +701,30 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         const finalReason = `${form.reason}；${reason}`;
         if(!currentAdminId)return false;
         const command=creationPending??{fingerprint:`${currentAdminId}:create`,commandKey:crypto.randomUUID(),createdAt:Date.now(),expiresAt:Date.now()+86400000,actorId:currentAdminId,form,reason:finalReason,operator};
+        if (Date.now() >= command.expiresAt) { toast("原账号创建命令已超过安全重试窗口，请先核对账号名单或联系管理员，不要重复创建。"); return false; }
         creationCommands.remember(command.fingerprint,command.commandKey,{actorId:command.actorId,form:command.form,reason:command.reason,operator:command.operator});setCreationPending(command);
         if(!creationCommands.isDurablyStored(command.fingerprint,command.commandKey)){toast("原账号创建命令暂不能持久保存，尚未提交；请恢复浏览器存储后重试。");return false;}
+        let defaultAvatarMissing = false;
         const ok = await runMutation(
           `新建账号 ${form.username}`,
           async () => {
             let created:A1Operator;
             try{created=await createA1Account({
-              username: command.form.username,displayName: command.form.displayName,email: command.form.email,avatarAssetId: command.form.avatarAssetId,role: command.form.role,
+              username: command.form.username,displayName: command.form.displayName,email: command.form.email,avatarAssetId: command.form.avatarAssetId,avatarGender: command.form.avatarGender,useDefaultAvatar: command.form.useDefaultAvatar,role: command.form.role,
             },command.reason,command.operator,command.commandKey);}catch(e){if(!isA1OutcomeUncertainError(e)){creationCommands.forget(command.fingerprint);setCreationPending(null);}throw e;}
             if(useAdminAuth.getState().session?.adminId!==command.actorId)return created;
             if (!created.temporaryPassword) {
               throw new Error("A1_CREATE_TEMPORARY_PASSWORD_MISSING");
             }
             creationCommands.forget(command.fingerprint);setCreationPending(null);
+            avatarDrafts.forget(avatarDraftFingerprint(command.actorId, "admin", "new"));
             setPasswordReset({ account: created, temporaryPassword: created.temporaryPassword });
+            defaultAvatarMissing = Boolean(command.form.useDefaultAvatar && !created.avatarAssetId);
             return created;
           },
           `${form.displayName} 已创建，首次登录需绑定 2FA 并修改密码`,
         );
-        if (ok) setNaOpen(false);
+        if (ok) { setNaOpen(false); if (defaultAvatarMissing) toast("账号已创建，默认头像暂缺；请在账号资料中准备并提交新头像。请勿再次创建账号。"); }
         return ok;
       },
     });
@@ -1061,12 +1070,17 @@ function NewAccountDrawer({
   onSubmit: (form: NaForm) => void;
 }) {
   const defaultRole = "";
+  const actorId = useAdminAuth(state => state.session?.adminId);
   const [username, setUsername] = useState(initialForm?.username??"");
   const [displayName, setDisplayName] = useState(initialForm?.displayName??"");
   const [email, setEmail] = useState(initialForm?.email??"");
   const [role, setRole] = useState(initialForm?.role??defaultRole);
   const [reason, setReason] = useState(initialForm?.reason??"");
+  const [avatarGenderValue, setAvatarGenderValue] = useState<AvatarGender>(initialForm?.avatarGender ?? "UNSPECIFIED");
+  const [avatarMode, setAvatarMode] = useState<"default" | "manual">(initialForm?.avatarAssetId || initialForm?.useDefaultAvatar === false || actorId && avatarDrafts.list().some(row => row.fingerprint === avatarDraftFingerprint(actorId, "admin", "new")) ? "manual" : "default");
   const [avatarAssetId,setAvatarAssetId]=useState<string|undefined>(),[avatarBlocking,setAvatarBlocking]=useState(false);
+  const useDefaultAvatar = role === "support" && avatarMode === "default";
+  useEffect(() => { if (avatarBlocking || avatarAssetId) setAvatarMode("manual"); }, [avatarBlocking, avatarAssetId]);
 
   useEffect(() => {
     if (recoveryMode && roles.some((item) => item.key === "super")) {
@@ -1113,7 +1127,7 @@ function NewAccountDrawer({
                 displayName: displayName.trim(),
                 email: email.trim() || undefined,
                 role,
-                avatarAssetId,
+                ...(useDefaultAvatar ? { useDefaultAvatar: true, avatarGender: avatarGenderValue } : { avatarAssetId, ...(role === "support" ? { useDefaultAvatar: false, avatarGender: avatarGenderValue } : {}) }),
                 reason: reason.trim(),
               })}
             >确认创建账号</button>
@@ -1165,7 +1179,8 @@ function NewAccountDrawer({
         </label>
       </div>
 
-      <AccountAvatarPicker name={displayName} disabled={disabled} onChange={setAvatarAssetId} onBlocking={setAvatarBlocking}/>
+      {role === "support" && <fieldset className="account-avatar-controls" disabled={disabled || avatarBlocking || Boolean(avatarAssetId)} style={{ border: 0, padding: 0 }}><legend>客服默认头像</legend><label>头像分类<HDSelect value={avatarGenderValue} options={AVATAR_GENDER_OPTIONS} onChange={value => setAvatarGenderValue(value as AvatarGender)} /></label><label><input type="radio" name="avatar-mode" checked={avatarMode === "default"} onChange={() => setAvatarMode("default")} />创建时随机使用默认头像</label><label><input type="radio" name="avatar-mode" checked={avatarMode === "manual"} onChange={() => setAvatarMode("manual")} />自行上传头像</label><p>默认图来自合成成年肖像，未指定时从全部默认图中随机选择。客服账号角色不代表接待资格。</p></fieldset>}
+      {!useDefaultAvatar && <AccountAvatarPicker name={displayName} disabled={disabled} onChange={setAvatarAssetId} onBlocking={setAvatarBlocking}/>}
       {avatarBlocking&&<p role="status">新头像尚未上传成功；上传或取消新头像后可继续创建。</p>}
       <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 8 }}>② 初始角色(可暂不分配)</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
@@ -1346,13 +1361,15 @@ function EditAccountDrawer({
   const [email, setEmail] = useState(account.email || "");
   const [reason, setReason] = useState("");
   const [avatarAssetId,setAvatarAssetId]=useState<string|undefined>(),[avatarBlocking,setAvatarBlocking]=useState(false);
+  const [avatarGenderValue, setAvatarGenderValue] = useState<AvatarGender>(account.avatarGender ?? "UNSPECIFIED");
   const usernameOk = isValidUsername(username);
   const emailOk = isValidEmail(email);
   const changed =
     username.trim().toLowerCase() !== (account.username || "").trim().toLowerCase()
     || displayName.trim() !== operatorDisplayName(account)
     || email.trim().toLowerCase() !== (account.email || "").trim().toLowerCase()
-    || Boolean(avatarAssetId && avatarAssetId !== account.avatarAssetId);
+    || Boolean(avatarAssetId && avatarAssetId !== account.avatarAssetId)
+    || avatarGenderValue !== (account.avatarGender ?? "UNSPECIFIED");
   const missingItems = [
     !username.trim() ? "登录名未填写" : !usernameOk ? "登录名格式不正确" : "",
     !displayName.trim() ? "显示名未填写" : "",
@@ -1388,6 +1405,7 @@ function EditAccountDrawer({
                 displayName: displayName.trim(),
                 email: email.trim() || undefined,
                 avatarAssetId,
+                ...(avatarGenderValue !== (account.avatarGender ?? "UNSPECIFIED") ? { avatarGender: avatarGenderValue } : {}),
                 reason: reason.trim(),
               })}
             >保存账号资料</button>
@@ -1433,7 +1451,8 @@ function EditAccountDrawer({
           )}
         </label>
       </div>
-      <AccountAvatarPicker account={account} name={displayName} disabled={disabled} onChange={setAvatarAssetId} onBlocking={setAvatarBlocking}/>
+      <fieldset className="account-avatar-controls" disabled={disabled || avatarBlocking} style={{ border: 0, padding: 0 }}><legend>头像分类</legend><HDSelect value={avatarGenderValue} options={AVATAR_GENDER_OPTIONS} onChange={value => setAvatarGenderValue(value as AvatarGender)} /><p>修改分类不会替换当前头像；只有明确准备新头像后提交才会更换。</p></fieldset>
+      <AccountAvatarPicker account={account} name={displayName} gender={avatarGenderValue} allowDefault={account.role === "support"} disabled={disabled} onChange={setAvatarAssetId} onBlocking={setAvatarBlocking}/>
       {avatarBlocking&&<p role="status">新头像尚未上传成功；上传或取消新头像后可提交。</p>}
       <p>提交后仍需在操作确认中心执行，账号资料与头像以执行后刷新读回为准。</p>
       <label style={{ fontSize: 12, color: "var(--ink-3)" }}>

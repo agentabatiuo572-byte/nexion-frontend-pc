@@ -42,6 +42,7 @@ function gateway(path, namespace, entries = {}, upstream = async () => Response.
     "@/lib/admin/require-password-change-cleared": guard,
     "@/lib/admin/auth-deadline": load("lib/admin/auth-deadline.ts", { fetchImpl }),
     "@/lib/admin/support-image-proxy": load("lib/admin/support-image-proxy.ts"),
+    "@/lib/admin/account-avatar-contract": load("lib/admin/account-avatar-contract.ts"),
   } });
   return { route, guard, calls };
 }

@@ -1,3 +1,4 @@
+import { accountAvatarFields } from "./account-avatar-contract.ts";
 export type DomainCode = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M";
 
 export interface ReplayCommand {
@@ -146,7 +147,7 @@ export const HIGH_OPS: HighOpDef[] = [
         username: ctx.username,
         displayName: ctx.displayName,
         email: ctx.email ?? null,
-        ...(ctx.avatarAssetId ? { avatarAssetId: ctx.avatarAssetId } : {}),
+        ...accountAvatarFields(ctx, true),
         role: ctx.role,
         initialPassword: ctx.initialPassword,
       },
@@ -229,7 +230,7 @@ export const HIGH_OPS: HighOpDef[] = [
         username: ctx.username,
         displayName: ctx.displayName,
         email: ctx.email ?? null,
-        ...(ctx.avatarAssetId ? { avatarAssetId: ctx.avatarAssetId } : {}),
+        ...accountAvatarFields(ctx, false),
         expectedVersion: ctx.expectedVersion,
       },
     }),

@@ -7,6 +7,7 @@ import {createRequire} from "node:module";
 import {parseBulkJob,parseBulkPreview,parseRandomPreview,parseSupportProfile,supportEnhancements,legacySupportDestination,privateMessageRecovery} from "../lib/admin/m-support-enhancements.ts";
 import {supportClient,supportObject} from "../lib/admin/m-support-client.ts";
 import {boundedUpload} from "../lib/admin/support-image-proxy.ts";
+import * as avatarContract from "../lib/admin/account-avatar-contract.ts";
 import {createPendingMutationStore} from "../lib/admin/pending-mutation-store.ts";
 const now="2026-10-01T01:00:00Z",later="2026-10-01T02:00:00Z";
 const group=(data,status="READY")=>({data,status,evaluatedAt:now});
@@ -478,17 +479,21 @@ test("image proxies preserve binary bounds, cancellation, MIME rejection and unk
       fetch:async(url,init)=>{seen.push({url,init});return fetchStub(url,init);},require:name=>{
         if(name==="next/headers")return {cookies:async()=>({get:name=>name==="unit-admin-cookie"?{value:"unit-token"}:undefined})};
         if(name==="@/lib/admin/require-password-change-cleared")return {ADMIN_TOKEN_COOKIE:"unit-admin-cookie",requirePasswordChangeCleared:()=>null};
-        if(name==="@/lib/admin/support-image-proxy")return {boundedUpload};throw new Error(`Unexpected dependency ${name}`);
+        if(name==="@/lib/admin/support-image-proxy")return {boundedUpload};if(name==="@/lib/admin/account-avatar-contract")return avatarContract;throw new Error(`Unexpected dependency ${name}`);
       }};
     runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,context);
     return {seen,handlers:context.exports};
   };
-  const invoke=(proxy,kind,{signal,method="GET",parts=kind==="content"?["support-agents","7","avatar"]:["accounts","7","avatar"]}={})=>proxy.handlers[method](new Request(`http://localhost/api/admin/${kind}/${parts.join("/")}?customerId=23`,{method,signal,...(method==="POST"?{headers:{"Content-Type":"application/json"},body:"{}"}:{})}),{params:Promise.resolve({path:parts})});
+  const invoke=(proxy,kind,{signal,method="GET",parts=kind==="content"?["support-agents","7","avatar"]:["accounts","7","avatar"],query=kind==="content"?"?customerId=23":""}={})=>proxy.handlers[method](new Request(`http://localhost/api/admin/${kind}/${parts.join("/")}${query}`,{method,signal,...(method==="POST"?{headers:{"Content-Type":"application/json"},body:"{}"}:{})}),{params:Promise.resolve({path:parts})});
   const bytes=new Uint8Array([137,80,78,71,1,2,3,4]);
   for(const kind of ["content","platform"]){
     const upstream=new Response(bytes,{headers:{"Content-Type":"image/png"}});upstream.text=()=>{throw new Error("Binary converted to text");};
     const valid=load(kind,async()=>upstream),binary=await invoke(valid,kind);assert.equal(binary.status,200);assert.deepEqual([...new Uint8Array(await binary.arrayBuffer())],[...bytes]);
-    assert.equal(binary.headers.get("Cache-Control"),"no-store");assert.equal(binary.headers.get("X-Content-Type-Options"),"nosniff");assert.equal(valid.seen[0].init.redirect,"manual");assert.equal(valid.seen[0].init.headers.get("Authorization"),"Bearer unit-token");assert.ok(valid.seen[0].url.endsWith("?customerId=23"));
+    assert.equal(binary.headers.get("Cache-Control"),"no-store");assert.equal(binary.headers.get("X-Content-Type-Options"),"nosniff");assert.equal(valid.seen[0].init.redirect,"manual");assert.equal(valid.seen[0].init.headers.get("Authorization"),"Bearer unit-token");if(kind==="content")assert.ok(valid.seen[0].url.endsWith("?customerId=23"));else {
+      assert.ok(valid.seen[0].url.endsWith("/accounts/7/avatar"));
+      const forbidden=load(kind,async()=>{throw new Error("A platform avatar query must never reach upstream");});
+      assert.equal((await invoke(forbidden,kind,{query:"?customerId=23"})).status,422);assert.equal(forbidden.seen.length,0);
+    }
     let cancelled=false;const oversized=new Response(new ReadableStream({start(c){c.enqueue(new Uint8Array(5));c.enqueue(new Uint8Array(5));},cancel(){cancelled=true;}}),{headers:{"Content-Type":"image/png"}});
     assert.equal((await invoke(load(kind,async()=>oversized),kind)).status,502);assert.equal(cancelled,true);
     const stopped=new AbortController();stopped.abort();const preAborted=load(kind,async()=>new Response(bytes));assert.equal((await invoke(preAborted,kind,{signal:stopped.signal})).status,503);assert.equal(preAborted.seen.length,0);

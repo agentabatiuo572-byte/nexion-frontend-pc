@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { guardedFetch } from "@/lib/admin/error-messages";
+import { avatarProxyRoute } from "@/lib/admin/account-avatar-contract";
 export const advisorAvatarPath = (adminId: number, customerId?: string) => `/api/admin/content/support-agents/${adminId}/avatar${customerId ? "?customerId="+encodeURIComponent(customerId) : ""}`;
 export const customerAvatarPath = (customerId: string) => `/api/admin/content/support-workbench/customers/${encodeURIComponent(customerId)}/avatar`;
 export function SupportAvatar({ name, path, version, size = 34 }: { name: string; path?: string; version?: number; size?: number }) {
@@ -10,7 +11,8 @@ export function SupportAvatar({ name, path, version, size = 34 }: { name: string
   useEffect(()=>{
     const controller = new AbortController(); let objectUrl = ""; setUrl(""); setFailed(false);
     if (!path) return;
-    if (!/^\/api\/admin\/(content\/(support-agents\/\d+\/avatar(?:\?customerId=\d+)?|support-workbench\/customers\/\d+\/avatar)|platform\/accounts\/(\d+\/avatar|avatar-assets\/[^/?#]+))$/.test(path)) { setFailed(true); return; }
+    const platform = path.startsWith("/api/admin/platform/") && !/[?#]/.test(path) ? avatarProxyRoute(path.slice("/api/admin/platform/".length).split("/"), "GET") : null;
+    if (!platform?.read && !/^\/api\/admin\/content\/(support-agents\/\d+\/avatar(?:\?customerId=\d+)?|support-workbench\/customers\/\d+\/avatar)$/.test(path)) { setFailed(true); return; }
     guardedFetch(path, { credentials:"same-origin", cache:"no-store", signal:controller.signal }).then(async r=>{
       if(r.status===404)return;
       if(!r.ok||!(path.includes("/support-workbench/customers/")?["image/jpeg","image/png","image/webp"]:["image/jpeg","image/png"]).includes((r.headers.get("Content-Type")??"").split(";")[0].toLowerCase()))throw new Error("avatar unavailable");

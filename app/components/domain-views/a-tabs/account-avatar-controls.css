@@ -1,0 +1,14 @@
+/* Only avatar controls and their own confirmation use these typography overrides. */
+.dkpage .account-avatar-controls,
+.dkpage .account-avatar-controls p,
+.dkpage .self-avatar-confirm-detail { font-size: 16px; }
+.dkpage .account-avatar-controls legend,
+.dkpage .account-avatar-controls label,
+.dkpage .account-avatar-controls input,
+.dkpage .account-avatar-controls small,
+.dkpage .account-avatar-controls .l-btn,
+.dkpage .l-btn.avatar-control-button { font-size: 14px; }
+.dkpage .modal:has(.self-avatar-confirm-detail) .field label,
+.dkpage .modal:has(.self-avatar-confirm-detail) .field textarea,
+.dkpage .modal:has(.self-avatar-confirm-detail) .btn,
+.dkpage .modal:has(.self-avatar-confirm-detail) .tiny { font-size: 14px; }

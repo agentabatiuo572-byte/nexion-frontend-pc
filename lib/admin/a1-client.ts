@@ -1,5 +1,7 @@
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { accountAvatarFields, avatarBase, avatarGender, avatarId, avatarKey, parsePreparedAvatar, parseSelfAvatarSnapshot, selfAvatarSaveInput, type AvatarGender, type AvatarScope, type SelfAvatarSave } from "@/lib/admin/account-avatar-contract";
+export type { AvatarGender, SelfAvatarSnapshot, SelfAvatarSave } from "@/lib/admin/account-avatar-contract";
 
 export type GrantCell = "-" | "R" | "M" | "C";
 
@@ -45,6 +47,7 @@ export interface A1Operator {
   temporaryPassword?: string | null;
   avatarAssetId?: string | null;
   avatarVersion?: number | null;
+  avatarGender?: AvatarGender | null;
 }
 
 export interface A1SessionDetail {
@@ -92,6 +95,8 @@ export interface A1CreateAccountInput {
   role: string;
   email?: string;
   avatarAssetId?: string;
+  avatarGender?: AvatarGender;
+  useDefaultAvatar?: boolean;
 }
 
 export interface A1UpdateAccountInput {
@@ -99,6 +104,7 @@ export interface A1UpdateAccountInput {
   displayName: string;
   email?: string;
   avatarAssetId?: string;
+  avatarGender?: AvatarGender;
 }
 
 export interface A1PasswordResetResult {
@@ -133,7 +139,7 @@ export function isA1OutcomeUncertainError(error: unknown): error is A1OutcomeUnc
   return error instanceof A1OutcomeUncertainError;
 }
 
-async function a1Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
+async function a1Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; retryTransport?: boolean }) {
   const headers = new Headers(init?.headers);
   let commandKey = headers.get("Idempotency-Key") ?? "";
   if (init?.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
@@ -154,6 +160,7 @@ async function a1Request<T>(path: string, init?: RequestInit & { idempotencyPref
     response = await request();
   } catch (error) {
     if (!init?.idempotencyPrefix) throw error;
+    if (init.retryTransport === false) throw new A1OutcomeUncertainError("A1_MUTATION_OUTCOME_UNCERTAIN", commandKey, { cause: error });
     try {
       response = await request();
     } catch (retryError) {
@@ -174,6 +181,9 @@ async function a1Request<T>(path: string, init?: RequestInit & { idempotencyPref
     if (init?.idempotencyPrefix && outcomeStaysUnknown(response.status, result?.code)) {
       throw new A1OutcomeUncertainError(`A1_MUTATION_OUTCOME_UNCERTAIN_${response.status}`, commandKey);
     }
+    if (init?.idempotencyPrefix && ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH", "AVATAR_STATE_CONFLICT"].includes(result?.message ?? "")) {
+      throw new A1OutcomeUncertainError("A1_MUTATION_OUTCOME_UNCERTAIN", commandKey);
+    }
     throw new Error(formatAdminApiError(result?.message, `A1_REQUEST_FAILED_${response.status}`));
   }
 
@@ -187,21 +197,43 @@ export function fetchA1Overview() {
 export function createA1Account(input: A1CreateAccountInput, reason: string, operator: string, stableKey?: string) {
   return a1Request<A1Operator>("/accounts", {
     method: "POST",
-    body: JSON.stringify({ ...input, reason, operator }),
+    body: JSON.stringify({ ...input, ...accountAvatarFields(input, true), reason, operator }),
     idempotencyPrefix: "a1-account-create",
     headers: stableKey ? { "Idempotency-Key": stableKey } : undefined,
   });
 }
 
 export async function uploadA1Avatar(file: File, clientUploadId: string, key: string, signal?: AbortSignal) {
-  const body=new FormData();body.set("file",file);body.set("clientUploadId",clientUploadId);
-  const asset=await a1Request<{assetId:string;status:string;expiresAt:string;previewRef:string}>("/accounts/avatar-assets",{method:"POST",body,headers:{"Idempotency-Key":key},idempotencyPrefix:"a1-avatar-upload",signal});
-  if(!asset||typeof asset.assetId!=="string"||asset.status!=="READY"||asset.previewRef!==`/api/admin/platform/accounts/avatar-assets/${asset.assetId}`||!Number.isFinite(Date.parse(asset.expiresAt)))throw new A1OutcomeUncertainError("A1_AVATAR_RESPONSE_UNREADABLE",key);
-  return asset;
+  return uploadAccountAvatar("admin", file, clientUploadId, key, signal);
 }
 export function cancelA1Avatar(assetId:string,key:string) {
-  if(!/^[A-Za-z0-9_-]+$/.test(assetId))throw new Error("A1_AVATAR_ID_INVALID");
-  return a1Request<void>(`/accounts/avatar-assets/${assetId}`,{method:"DELETE",headers:{"Idempotency-Key":key},idempotencyPrefix:"a1-avatar-cancel"});
+  return cancelAccountAvatar("admin", assetId, key);
+}
+
+export async function uploadAccountAvatar(scope: AvatarScope, file: File, clientUploadId: string, key: string, signal?: AbortSignal) {
+  const body = new FormData(); body.set("file", file); body.set("clientUploadId", avatarKey(clientUploadId)); avatarKey(key);
+  const result = await a1Request<unknown>(avatarBase(scope), { method: "POST", body, headers: { "Idempotency-Key": key }, idempotencyPrefix: "avatar-upload", retryTransport: false, signal });
+  try { return parsePreparedAvatar(result, scope); } catch (cause) { throw new A1OutcomeUncertainError("A1_AVATAR_RESPONSE_UNREADABLE", key, { cause }); }
+}
+export async function prepareDefaultAccountAvatar(scope: AvatarScope, gender: AvatarGender, clientUploadId: string, key: string, signal?: AbortSignal) {
+  const body = JSON.stringify({ avatarGender: avatarGender(gender), clientUploadId: avatarKey(clientUploadId) }); avatarKey(key);
+  const result = await a1Request<unknown>(`${avatarBase(scope)}/default`, { method: "POST", body, headers: { "Idempotency-Key": key }, idempotencyPrefix: "avatar-default", retryTransport: false, signal });
+  try { return parsePreparedAvatar(result, scope); } catch (cause) { throw new A1OutcomeUncertainError("A1_AVATAR_RESPONSE_UNREADABLE", key, { cause }); }
+}
+export async function cancelAccountAvatar(scope: AvatarScope, assetId: string, key: string) {
+  const result = await a1Request<unknown>(`${avatarBase(scope)}/${avatarId(assetId)}`, { method: "DELETE", headers: { "Idempotency-Key": avatarKey(key) }, idempotencyPrefix: "avatar-cancel", retryTransport: false });
+  try { return parsePreparedAvatar(result, scope, "CANCELLED"); } catch (cause) { throw new A1OutcomeUncertainError("A1_AVATAR_RESPONSE_UNREADABLE", key, { cause }); }
+}
+export async function fetchSelfAvatar(signal?: AbortSignal) {
+  return parseSelfAvatarSnapshot(await a1Request<unknown>("/accounts/self/avatar", { signal }));
+}
+export async function saveSelfAvatar(input: SelfAvatarSave, key: string, signal?: AbortSignal) {
+  const result = await a1Request<unknown>("/accounts/self/avatar", { method: "PATCH", body: JSON.stringify(selfAvatarSaveInput(input)), headers: { "Idempotency-Key": avatarKey(key) }, idempotencyPrefix: "avatar-self-save", retryTransport: false, signal });
+  try {
+    const snapshot = parseSelfAvatarSnapshot(result);
+    if (snapshot.assetId !== input.assetId) throw new Error("AVATAR_SAVE_READBACK_MISMATCH");
+    return snapshot;
+  } catch (cause) { throw new A1OutcomeUncertainError("A1_MUTATION_RESPONSE_UNREADABLE", key, { cause }); }
 }
 
 export function changeA1AccountRole(
@@ -227,7 +259,7 @@ export function updateA1AccountProfile(
 ) {
   return a1Request<A1Operator>(`/accounts/${encodeURIComponent(accountId)}/profile`, {
     method: "PATCH",
-    body: JSON.stringify({ ...input, reason, operator, expectedVersion }),
+    body: JSON.stringify({ ...input, ...accountAvatarFields(input, false), reason, operator, expectedVersion }),
     idempotencyPrefix: "a1-account-profile",
   });
 }
