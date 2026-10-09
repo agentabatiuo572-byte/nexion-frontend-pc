@@ -41,7 +41,7 @@ test("L6 normalizes canonical server aggregates without exposing raw identities"
     available: true,
     status: "AVAILABLE",
     businessTimeZone: "UTC+08:00",
-    lateArrivalPolicy: "included_on_next_query",
+    lateArrivalPolicy: "rejected_retry_in_order",
     quality: { clientEventIdDeduplicated: true, outOfOrderRejected: true, ctrDenominator: "page_viewed_pv" },
     totalPages: 1,
     trackedCount: 1,
@@ -54,6 +54,7 @@ test("L6 normalizes canonical server aggregates without exposing raw identities"
   });
 
   assert.equal(data.available, true);
+  assert.equal(data.lateArrivalPolicy, "rejected_retry_in_order");
   assert.equal(data.pageTree[0].level, 1);
   assert.equal(data.activityByWindow["7d"][0].uv, 3);
   assert.equal(data.activityByWindow["7d"][0].pageCount, 1);
@@ -67,7 +68,7 @@ test("L6 rejects dirty HTTP 200 aggregates as a whole instead of manufacturing z
     status: "AVAILABLE",
     window: "7d",
     businessTimeZone: "UTC+08:00",
-    lateArrivalPolicy: "included_on_next_query",
+    lateArrivalPolicy: "rejected_retry_in_order",
     quality: { clientEventIdDeduplicated: true, outOfOrderRejected: true, ctrDenominator: "page_viewed_pv" },
     totalPages: 1,
     trackedCount: 1,
@@ -80,6 +81,8 @@ test("L6 rejects dirty HTTP 200 aggregates as a whole instead of manufacturing z
   };
   assert.equal(normalizeL6BehaviorHeatmap(valid).activityByWindow["7d"][0].pv, 4);
   for (const dirty of [
+    { ...valid, lateArrivalPolicy: "included_on_next_query" },
+    { ...valid, lateArrivalPolicy: undefined },
     { ...valid, available: "yes" },
     { ...valid, trackedCount: 2 },
     { ...valid, activityByWindow: { ...valid.activityByWindow, "7d": [{ ...valid.activityByWindow["7d"][0], pv: -1 }] } },
