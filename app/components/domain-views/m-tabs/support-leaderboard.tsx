@@ -68,7 +68,7 @@ const boards: { key: SupportBoardKey; label: string }[] = [
 ];
 function BoardSelect({ label, value, options, onChange }: { label: string; value: string; options: SupportBoardOption[]; onChange: (value: string) => void }) {
   const selected = options.find(option => option.value === value)?.label;
-  return <label className="sl-select"><span className="sl-sr-only">{label}</span><select aria-label={label} title={selected} value={value} onChange={event => onChange(event.target.value)}>{options.map(option => <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>)}</select><span className="sl-selected-value" aria-hidden="true">{selected}</span><ChevronDown size={20} aria-hidden="true" /></label>;
+  return <label className="sl-select"><span className="sl-sr-only">{label}</span><select aria-label={label} title={selected || "暂无可用筛选项"} disabled={options.length === 0} value={value} onChange={event => onChange(event.target.value)}>{options.map(option => <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>)}</select><span className="sl-selected-value" aria-hidden="true">{selected}</span><ChevronDown size={20} aria-hidden="true" /></label>;
 }
 function mainMetric(row: SupportBoardRow, board: SupportBoardKey): SupportBoardCount {
   return board === "firstPayment" ? row.firstPayment : board === "customers" ? row.customers : row.amount;
@@ -156,6 +156,7 @@ export function SupportLeaderboard(props: SupportLeaderboardProps) {
   const { query, status } = props;
   const self = props.self;
   const ready = status === "ready";
+  const disabledReason = status === "loading" ? "请加载完成后切换榜单。" : status === "error" ? "请重试后切换榜单。" : "当前没有可用榜单，暂不能切换。";
   const reference = query.board === "customers";
   const moneyBoard = query.board === "deposit" || query.board === "purchase";
   const statisticsPeriod = reference ? props.currentMonth : props.periodLabel;
@@ -169,7 +170,7 @@ export function SupportLeaderboard(props: SupportLeaderboardProps) {
   return <div className="support-leaderboard" data-board={query.board}>
     {props.navigation}
     <div className="sl-heading"><div className="sl-title"><h1><span className="sl-sr-only">业绩榜</span></h1><p>PERFORMANCE<br /><span>{props.periodLabel}</span></p></div>
-      <div className="sl-tabs" role="tablist" aria-label="榜单类型">{boards.map((board, index) => <button key={board.key} type="button" role="tab" aria-selected={query.board === board.key} tabIndex={query.board === board.key ? 0 : -1} onClick={() => changeBoard(board.key)} onKeyDown={event => {
+      <div className="sl-tabs" role="tablist" aria-label="榜单类型">{boards.map((board, index) => <button key={board.key} type="button" role="tab" aria-selected={query.board === board.key} disabled={!ready} title={ready ? undefined : disabledReason} tabIndex={query.board === board.key ? 0 : -1} onClick={() => changeBoard(board.key)} onKeyDown={event => {
         const offset = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
         if (offset || event.key === "Home" || event.key === "End") { event.preventDefault(); const next = event.key === "Home" ? 0 : event.key === "End" ? boards.length - 1 : (index + offset + boards.length) % boards.length; changeBoard(boards[next].key); (event.currentTarget.parentElement?.children[next] as HTMLElement)?.focus(); }
       }}>{board.label}</button>)}</div>
@@ -187,7 +188,7 @@ export function SupportLeaderboard(props: SupportLeaderboardProps) {
           <td className="sl-person-cell"><div className="sl-person"><button type="button" className="sl-avatar-button" aria-label={`查看${row.name}成绩`} onClick={() => props.onViewPerformance(row.id)}><Avatar row={row} award={award} large={champion} /></button><div className="sl-person-text"><div className="sl-person-name"><button type="button" title={`${row.name} · ${row.groupName || "待分组"}`} onClick={() => props.onViewPerformance(row.id)}>{row.name}</button><Movement row={row} comparable={comparable} /></div><small className="sl-group" title={row.groupName || "待分组"}>{row.groupName || "待分组"}</small>{champion && <span className="sl-rank-badge">{row.isTied ? "并列第1" : "本榜第1"}</span>}</div></div></td>
           <td data-metric="amount" data-primary={query.board === "deposit" || query.board === "purchase" || undefined}><Amount row={row} expectedPeriod={statisticsPeriod} expectedCurrency={query.currency} /></td><td data-metric="firstPayment" data-primary={query.board === "firstPayment" || undefined}><Count metric={row.firstPayment} label={`${row.name} · ${statisticsPeriod}首充人数`} /></td><td data-metric="customers" data-primary={query.board === "customers" || undefined}><Count metric={row.customers} onView={row.canViewCustomers && props.onViewCustomers ? () => props.onViewCustomers?.(row.id) : undefined} label={`${row.name}当前绑定客户数`} detailLabel={`查看${row.name}的当前绑定客户明细`} /></td><td><button type="button" className="sl-view" onClick={() => props.onViewPerformance(row.id)}>查看成绩<ArrowRight size={18} aria-hidden="true" /><span className="sl-sr-only">：{row.name}</span></button></td>
         </tr>;
-      })}</tbody></table></div> : <div className="sl-status" role={status === "error" ? "alert" : "status"}><p>{props.statusMessage || (status === "loading" ? "正在加载榜单…" : status === "empty" ? "暂无符合参榜资格的客服" : "榜单加载失败")}</p>{status === "error" && <button type="button" onClick={props.onRetry}>重试</button>}</div>}
+      })}</tbody></table></div> : <div className="sl-status" role={status === "error" ? "alert" : "status"}><p>{props.statusMessage || (status === "loading" ? "正在加载榜单…" : status === "empty" ? "暂无符合参榜资格的客服" : "榜单加载失败")} {disabledReason}</p>{status === "error" && <button type="button" onClick={props.onRetry}>重试</button>}</div>}
       {ready && props.page && props.page.total > 1 && <nav className="sl-pagination" aria-label="榜单分页"><button type="button" disabled={props.page.current === 1} onClick={() => props.page?.onChange(props.page.current - 1)}>上一页</button><span>第 {props.page.current} / {props.page.total} 页</span><button type="button" disabled={props.page.current === props.page.total} onClick={() => props.page?.onChange(props.page.current + 1)}>下一页</button></nav>}
       <footer className="sl-footer"><span><Info size={19} aria-hidden="true" />{props.disclosure}</span><time>数据截至 {props.updatedAt}</time></footer>
     </main>

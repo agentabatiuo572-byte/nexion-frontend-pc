@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import vm from "node:vm";
@@ -11,7 +11,7 @@ const require = createRequire(path.join(frontend, "package.json")), ts = require
 const { renderToStaticMarkup } = require("react-dom/server");
 const jsxRuntime = require("react/jsx-runtime");
 const stage = fileURLToPath(new URL("../", import.meta.url));
-const componentPath = path.join(stage, "app/components/domain-views/m-tabs/m1-analytics-workbench.tsx");
+const componentPath = path.join(existsSync(path.join(stage, "app/components/domain-views/m-tabs/m1-analytics-workbench.tsx")) ? stage : frontend, "app/components/domain-views/m-tabs/m1-analytics-workbench.tsx");
 const baseView = path.join(frontend, "app/components/domain-views/m-view.tsx");
 const clientPath = path.join(frontend, "lib/admin/support-analytics-client.ts");
 const { SupportClientError } = await import(pathToFileURL(path.join(frontend, "lib/admin/m-support-client.ts")).href);
@@ -29,7 +29,7 @@ const synthetic = (values) => new vm.SyntheticModule(Object.keys(values), functi
 const validatorModule = new vm.SourceTextModule(`${clientSource}\nexport { query as validateQuery };`, { context });
 await validatorModule.link(name => synthetic(name === "./business-time.ts" ? businessTime : { supportRequest() { throw new Error("validator must not perform transport"); } }));
 await validatorModule.evaluate();
-const formatterSource = ts.transpileModule(readFileSync(path.join(frontend, "app/components/domain-views/m-tabs/support-leaderboard.tsx"), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2017 } }).outputText;
+const formatterSource = ts.transpileModule(readFileSync(path.join(existsSync(path.join(stage, "app/components/domain-views/m-tabs/support-leaderboard.tsx")) ? stage : frontend, "app/components/domain-views/m-tabs/support-leaderboard.tsx"), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2017 } }).outputText;
 const formatterModule = new vm.SourceTextModule(formatterSource, { context });
 await formatterModule.link(name => synthetic(name === "react" ? React : name === "react/jsx-runtime" ? jsxRuntime : name === "lucide-react" ? Object.fromEntries(["ArrowRight", "ChevronDown", "Info", "MapPin"].map(key => [key, require("lucide-react")[key]])) : {}));
 await formatterModule.evaluate();
@@ -80,6 +80,36 @@ function elements(node, result = []) {
 }
 function content(node) { return typeof node === "string" || typeof node === "number" ? String(node) : Array.isArray(node) ? node.map(content).join("") : node?.props ? content(node.props.children) : ""; }
 function button(tree, label) { const matches = elements(tree).filter(x => x.type === "button" && content(x) === label); assert.equal(matches.length, 1, label); return matches[0]; }
+test("support leaderboard loading controls lock every tab and empty filter until ready", () => {
+  const option = [{ value: "USDT", label: "USDT" }];
+  for (const status of ["loading", "error", "empty", "ready"]) {
+    for (const board of ["firstPayment", "deposit", "purchase", "customers"]) {
+      const html = renderToStaticMarkup(React.createElement(formatterModule.namespace.SupportLeaderboard, {
+        query: { board, month: "2026-10", scope: "all", currency: "USDT" }, status,
+        monthOptions: status === "ready" ? [{ value: "2026-10", label: "2026.10" }] : [],
+        scopeOptions: status === "ready" ? [{ value: "all", label: "全员榜" }] : [],
+        currencyOptions: status === "ready" ? option : [], rows: [],
+        currentMonth: "2026-10", periodLabel: "2026-10", updatedAt: "尚未读取", disclosure: "公开成绩",
+        onQueryChange() {}, onRetry() {}, onLocateSelf() {}, onViewPerformance() {},
+      }));
+      const tabs = [...html.matchAll(/<button\b[^>]*role="tab"[^>]*>/g)].map(match => match[0]);
+      assert.equal(tabs.length, 4);
+      assert.equal(tabs.filter(tab => /aria-selected="true"/.test(tab)).length, 1);
+      assert.equal(tabs.filter(tab => /tabindex="0"/.test(tab)).length, 1);
+      for (const tab of tabs) {
+        assert.equal(/\bdisabled=""/.test(tab), status !== "ready", `${status}/${board}: tab availability`);
+        if (status !== "ready") assert.match(tab, /title="[^"]+(切换|不可用)/);
+      }
+      const filters = [...html.matchAll(/<select\b[^>]*>/g)].map(match => match[0]);
+      assert.equal(filters.length, board === "customers" ? 2 : 3);
+      for (const select of filters) assert.equal(/\bdisabled=""/.test(select), status !== "ready", `${status}/${board}: empty filter availability`);
+      if (status === "loading") assert.match(html, /加载完成后切换榜单/);
+      if (status === "error") { assert.match(html, /重试后切换榜单/); assert.match(html, />重试<\/button>/); }
+      if (status === "empty") assert.match(html, /暂不能切换/);
+      if (status === "ready") { assert.match(html, /<table/); assert.doesNotMatch(html, /加载完成后切换榜单|重试后切换榜单|暂不能切换/); }
+    }
+  }
+});
 const version = `saq-v1:${"a".repeat(64)}`;
 const count = (n = 1) => ({ observed: n, confirmed: n, status: "AVAILABLE" });
 const unknown = () => ({ observed: null, confirmed: null, status: "UNKNOWN" });
