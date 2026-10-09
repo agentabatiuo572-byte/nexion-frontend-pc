@@ -1,20 +1,20 @@
 /* Shared fallback styles; the original M-domain rules below retain their priority and tokens. */
-.hd-select { position: relative; width: 100%; height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px; padding-right: 12px; background: var(--surface-2, var(--v5-surface-2)); border: 1px solid var(--border-strong, var(--v5-border-strong)); border-radius: var(--m-r-ctl, var(--admin-radius-sm, 9px)); color: var(--ink, var(--v5-ink)); font-size: 13.5px; cursor: pointer; font-family: inherit; transition: border-color .12s; }
+.hd-select { position: relative; width: 100%; height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px; padding-right: 12px; background: var(--surface-2, var(--v5-surface-2)); border: 1px solid var(--border-strong, var(--v5-border-strong)); border-radius: var(--m-r-ctl, var(--admin-radius-sm, 9px)); color: var(--ink, var(--v5-ink)); font-size: 14px; cursor: pointer; font-family: inherit; transition: border-color .12s; }
 .hd-select:hover { border-color: var(--border-strong, var(--v5-border-strong)); }
 .hd-select:focus-visible { border-color: var(--m-hd-border, var(--v5-brand-border)); box-shadow: 0 0 0 3px var(--m-hd-softer, color-mix(in srgb, var(--v5-brand) 8%, transparent)); }
 .hd-select .ic, .hd-select svg { width: 15px; height: 15px; color: var(--ink-3, var(--v5-ink-3)); flex: none; }
 .hd-select-pop { position: absolute; top: 38px; left: 0; right: 0; z-index: 90; background: var(--surface, var(--v5-surface)); border: 1px solid var(--border-strong, var(--v5-border-strong)); border-radius: var(--m-r-ctl, var(--admin-radius-sm, 9px)); box-shadow: var(--m-sh-pop, var(--v5-card-shadow-lift-strong)); padding: 5px; max-height: 264px; overflow: auto; animation: m-pop .14s cubic-bezier(.16,1,.3,1); }
-.hd-select-opt { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 8px 9px; border: none; background: transparent; color: var(--ink-2, var(--v5-ink-2)); font-size: 13px; border-radius: 7px; cursor: pointer; font-family: inherit; }
+.hd-select-opt { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 8px 9px; border: none; background: transparent; color: var(--ink-2, var(--v5-ink-2)); font-size: 14px; border-radius: 7px; cursor: pointer; font-family: inherit; }
 .hd-select-opt:hover, .hd-select-opt:focus-visible { background: var(--m-hover, color-mix(in srgb, var(--v5-ink) 4%, transparent)); color: var(--ink, var(--v5-ink)); }
 .hd-select-opt.on { background: var(--m-hd-soft, var(--v5-brand-soft)); color: var(--ink, var(--v5-ink)); }
 .hd-select-opt .ic, .hd-select-opt svg { width: 15px; height: 15px; color: var(--m-hd-2, var(--v5-brand)); flex: none; }
 /* Original M declarations and selectors are retained; trigger right padding is explicitly 12px. */
-.mdom .hd-select { position: relative; width: 100%; height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px; padding-right: 12px; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--m-r-ctl); color: var(--ink); font-size: 13.5px; cursor: pointer; font-family: inherit; transition: border-color .12s; }
+.mdom .hd-select { position: relative; width: 100%; height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px; padding-right: 12px; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--m-r-ctl); color: var(--ink); font-size: 14px; cursor: pointer; font-family: inherit; transition: border-color .12s; }
 .mdom .hd-select:hover { border-color: var(--border-strong); }
 .mdom .hd-select:focus-visible { border-color: var(--m-hd-border); box-shadow: 0 0 0 3px var(--m-hd-softer); }
 .mdom .hd-select .ic, .mdom .hd-select svg { width: 15px; height: 15px; color: var(--ink-3); flex: none; }
 .mdom .hd-select-pop { position: absolute; top: 38px; left: 0; right: 0; z-index: 90; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--m-r-ctl); box-shadow: var(--m-sh-pop); padding: 5px; max-height: 264px; overflow: auto; animation: m-pop .14s cubic-bezier(.16,1,.3,1); }
-.mdom .hd-select-opt { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 8px 9px; border: none; background: transparent; color: var(--ink-2); font-size: 13px; border-radius: 7px; cursor: pointer; font-family: inherit; }
+.mdom .hd-select-opt { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 8px 9px; border: none; background: transparent; color: var(--ink-2); font-size: 14px; border-radius: 7px; cursor: pointer; font-family: inherit; }
 .mdom .hd-select-opt:hover { background: var(--m-hover); color: var(--ink); }
 .mdom .hd-select-opt.on { background: var(--m-hd-soft); color: var(--ink); }
 .mdom .hd-select-opt .ic, .mdom .hd-select-opt svg { width: 15px; height: 15px; color: var(--m-hd-2); flex: none; }

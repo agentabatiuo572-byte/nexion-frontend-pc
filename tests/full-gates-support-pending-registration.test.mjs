@@ -25,7 +25,7 @@ function isolatedBehaviorFixture(option) {
   const fixture = fs.mkdtempSync(path.join(artifacts, `${option}-`));
   assert.ok(!fixture.startsWith(root + path.sep), 'mutants must never alter the source checkout');
   for (const dir of ['app', 'lib']) fs.cpSync(path.join(root, dir), path.join(fixture, dir), {recursive:true});
-  for (const file of ['package.json', 'scripts/pending-idempotency-key-sentinel.mjs', 'scripts/lib/strip-comments.mjs', behaviorFile, 'tests/helpers.mjs']) {
+  for (const file of ['package.json', 'scripts/pending-idempotency-key-sentinel.mjs', 'scripts/lib/strip-comments.mjs', behaviorFile, 'tests/default-avatar-client-forms.test.mjs', 'tests/helpers.mjs']) {
     fs.mkdirSync(path.dirname(path.join(fixture, file)), {recursive:true});
     fs.copyFileSync(path.join(root, file), path.join(fixture, file));
   }
@@ -77,5 +77,47 @@ test('behavior TAP requires exactly one passing test with no missing duplicate o
     const outcome = execute({}, {spawnSync:()=>result});
     assert.equal(outcome.exit, 1);
     assert.match(outcome.errors, /导出存储行为保护失败/);
+  }
+});
+
+const avatarProducer = 'lib/admin/account-avatar-pending.ts', avatarConsumer = 'app/components/domain-views/m-tabs/self-avatar-editor.tsx';
+const avatarBehaviorFile = 'tests/default-avatar-client-forms.test.mjs', avatarBehaviorName = 'expired original self avatar command survives reload but is query-only';
+test('avatar exported store binds the real self consumer and runs the durable query-only recovery behavior', () => {
+  const outcome = execute(); assert.equal(outcome.exit, 0, outcome.errors);
+  assert.match(source, /lib\/admin\/account-avatar-pending.ts#selfAvatarCommands/);
+  assert.match(source, /consumer: "app\/components\/domain-views\/m-tabs\/self-avatar-editor.tsx"/);
+  assert.match(source, /expired original self avatar command survives reload but is query-only/);
+});
+test('avatar registration rejects a removed export, wrong binding and every missing read/write/durability consumer call', () => {
+  const producerCode = fs.readFileSync(path.join(root, avatarProducer), 'utf8'), consumerCode = fs.readFileSync(path.join(root, avatarConsumer), 'utf8');
+  const mutants = [{ [avatarProducer]: producerCode.replace('export const selfAvatarCommands', 'const selfAvatarCommands') },
+    { [avatarConsumer]: consumerCode.replace('selfAvatarCommands, type', 'selfAvatarCommands as unusedAvatarCommands, type') },
+    { [avatarConsumer]: consumerCode.replace('@/lib/admin/account-avatar-pending', '@/lib/admin/fake-account-avatar-pending') },
+    ...['list', 'remember', 'forget', 'isDurablyStored'].map(method => ({ [avatarConsumer]: consumerCode.replaceAll(`selfAvatarCommands.${method}`, `obsoleteAvatarCommands.${method}`) }))];
+  for (const mutant of mutants) { const outcome = execute(mutant); assert.equal(outcome.exit, 1); assert.match(outcome.errors, /account-avatar-pending.ts.*selfAvatarCommands/); }
+});
+test('avatar registration rejects a removed durable query-only behavior', () => {
+  const outcome = execute({ [avatarBehaviorFile]: fs.readFileSync(path.join(root, avatarBehaviorFile), 'utf8').replace(avatarBehaviorName, 'removed avatar behavior') });
+  assert.equal(outcome.exit, 1); assert.match(outcome.errors, /行为保护缺失/);
+});
+for (const option of ['skip', 'todo']) test(`real avatar registered behavior marked ${option} is rejected and copied sources restore`, () => {
+  const fixture = isolatedBehaviorFixture(`avatar-${option}`), target = path.join(fixture, avatarBehaviorFile), before = sourceHashes(fixture), original = fs.readFileSync(target, 'utf8');
+  const mutant = original.replace(`test("${avatarBehaviorName}", async () => {`, `test("${avatarBehaviorName}", { ${option}: true }, async () => {`);
+  assert.notEqual(mutant, original, 'Must mutate the real registered avatar test');
+  const env = { ...process.env, GROUP_FE_ROOT: fixture }; delete env.NODE_TEST_CONTEXT;
+  try {
+    fs.writeFileSync(target, mutant);
+    const behavior = spawnSync(process.execPath, ['--experimental-strip-types', '--test', '--test-reporter=tap', '--test-name-pattern', `^${avatarBehaviorName}$`, target], { cwd: fixture, env, encoding: 'utf8', timeout: 30000 });
+    fs.writeFileSync(path.join(fixture, 'evidence', `avatar-behavior-${option}.log`), (behavior.stdout ?? '') + (behavior.stderr ?? ''));
+    assert.equal(behavior.error, undefined); assert.equal(behavior.status, 0, behavior.stderr);
+    assert.match(behavior.stdout, /^# tests 1$/m); assert.match(behavior.stdout, /^# pass 0$/m);
+    assert.match(behavior.stdout, new RegExp(`^# ${option === 'skip' ? 'skipped' : 'todo'} 1$`, 'm'));
+    const gate = spawnSync(process.execPath, [path.join(fixture, 'scripts/pending-idempotency-key-sentinel.mjs')], { cwd: fixture, env, encoding: 'utf8', timeout: 30000 });
+    fs.writeFileSync(path.join(fixture, 'evidence', `avatar-sentinel-${option}.log`), (gate.stdout ?? '') + (gate.stderr ?? ''));
+    assert.equal(gate.error, undefined); assert.equal(gate.status, 1); assert.match(gate.stderr, /导出存储行为保护失败/);
+  } finally {
+    fs.writeFileSync(target, original); const after = sourceHashes(fixture);
+    fs.writeFileSync(path.join(fixture, 'evidence', 'source-readback.json'), JSON.stringify({ before, after, mutantSha256: digest(mutant), restoredSha256: digest(fs.readFileSync(target)) }, null, 2) + '\n');
+    assert.deepEqual(after, before, 'Every isolated source restores after the avatar mutant');
   }
 });

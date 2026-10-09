@@ -42,6 +42,8 @@ const EXECUTOR_MODULE = "lib/admin/stable-mutation.ts";
 const MIGRATED = [
   // Promotions retain the original command payload and key until authoritative resource readback.
   "lib/admin/promotion-client.ts",
+  // Avatar drafts and self saves use durable stores; the actual self consumer and expired query-only behavior are bound below.
+  "lib/admin/account-avatar-pending.ts",
   // Exported group store is consumed by the actual M1 container; the bound behavior guard verifies persisted query-only CREATE recovery.
   "lib/admin/support-group-client.ts",
   // C1 single-notification time correction retains the immutable command across unknown outcomes.
@@ -136,6 +138,11 @@ const KNOWN = {
  *      `probe-pending-mutation-store.ts` / `fake/pending-mutation-store.ts`。
  */
 const EXPORTED_PENDING_STORES = {
+  "lib/admin/account-avatar-pending.ts#selfAvatarCommands": {
+    consumer: "app/components/domain-views/m-tabs/self-avatar-editor.tsx",
+    behaviorTest: "tests/default-avatar-client-forms.test.mjs",
+    behaviorName: "expired original self avatar command survives reload but is query-only",
+  },
   "lib/admin/support-group-client.ts#groupPendingCommands": {
     consumer: "app/components/domain-views/m-tabs/m1-group-management.tsx",
     behaviorTest: "tests/support-group-client.test.mjs",

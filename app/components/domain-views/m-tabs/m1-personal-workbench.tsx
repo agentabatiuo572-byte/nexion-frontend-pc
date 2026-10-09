@@ -14,6 +14,8 @@ import { SupportSeatRoleModal } from "./m1-overview";
 import "./m-support-workbench.css";
 import { SupportBulkComposer } from "./support-bulk-composer";
 import { SupportAvatar, advisorAvatarPath, customerAvatarPath } from "./support-avatar";
+import { SelfAvatarEditor } from "./self-avatar-editor";
+import type { SelfAvatarSnapshot } from "@/lib/admin/a1-client";
 import type { MCtx } from "./types";
 
 type Permission = "agent" | "supervisor" | "superadmin";
@@ -98,6 +100,7 @@ export function M1PersonalWorkbench({ permission, ctx }: { permission: Permissio
   }, [ctx.params, ctx.pget]);
   const canBulk = useAdminAuth(state => state.session?.role==="super"||state.session?.role==="superadmin"||Boolean(state.session?.authorities.includes("service_m3_write")));
   const selfAgent = (() => { try { return (JSON.parse(ctx.pget("I.support.agents")??"[]") as SupportAgentCandidate[]).find(a=>a.adminId===adminId); } catch { return undefined; } })();
+  const [selfAvatarSnapshot, setSelfAvatarSnapshot] = useState<SelfAvatarSnapshot | null>(null);
   const [view, setView] = useState<View>("dashboard");
   const [bulkOpen,setBulkOpen]=useState(false);
   const [showSeatRoles, setShowSeatRoles] = useState(false);
@@ -145,6 +148,7 @@ export function M1PersonalWorkbench({ permission, ctx }: { permission: Permissio
   const drawerCloseRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
+    setSelfAvatarSnapshot(null);
     setDetailId(null); setDetail(null); setSnapshot(null);
   }, [authEpoch]);
   useEffect(() => { if (permission !== "agent" && new URLSearchParams(window.location.search).get("view") === "pool") setView("pool"); }, [permission]);
@@ -376,7 +380,7 @@ export function M1PersonalWorkbench({ permission, ctx }: { permission: Permissio
 
     {view === "pool" ? <M1SupervisorPool permission={permission} /> : <>
       {view === "dashboard" && <>
-        <div className="s5a-intro"><div><div style={{display:"flex",gap:10,alignItems:"center"}}><SupportAvatar name={selfAgent?.name??"本人专属客服"} path={selfAgent?.avatarAssetId&&adminId?advisorAvatarPath(adminId):undefined} version={selfAgent?.avatarVersion??undefined}/><h2>我的工作台</h2></div><p>当前归属客户与可执行待办</p></div><span className="s5a-stamp">统计于 {overview ? formatTime(overview.evaluatedAt) : "待同步"}</span></div>
+        <div className="s5a-intro"><div><div style={{display:"flex",gap:10,alignItems:"center"}}><SupportAvatar name={selfAgent?.name??"本人专属客服"} path={selfAvatarSnapshot ? selfAvatarSnapshot.assetId ? "/api/admin/platform/accounts/self/avatar/content" : undefined : selfAgent?.avatarAssetId&&adminId?advisorAvatarPath(adminId):undefined} version={selfAvatarSnapshot?.avatarVersion??selfAgent?.avatarVersion??undefined}/><h2>我的工作台</h2><SelfAvatarEditor name={selfAgent?.name??(operatorName||"本人账号")} ctx={ctx} onChanged={setSelfAvatarSnapshot}/></div><p>当前归属客户与可执行待办</p></div><span className="s5a-stamp">统计于 {overview ? formatTime(overview.evaluatedAt) : "待同步"}</span></div>
         {overviewError && <div className="s5a-alert" role="alert">{overviewError}<button type="button" onClick={() => setRowsRefresh((value) => value + 1)}><RefreshCw size={15} />重试</button></div>}
         <div className="s5a-metrics">
           {metrics.map(({ key, label, filter: metricFilter, icon: Icon, hint, count }) => <button type="button" key={key} className="s5a-metric" onClick={() => showCustomers(metricFilter)} aria-label={`${key === "windowActiveCustomers" ? overview?.activityWindowDays ? `近 ${overview.activityWindowDays} 天活跃` : "活跃客户，窗口待同步" : label}，${overviewLoading ? "加载中" : count === null ? "未配置或数据待核对" : `${count} 位`}，查看名单`}>

@@ -19,3 +19,23 @@ test("invalid customer links stop before requesting customer detail", () => {
   assert.match(source, /if \(!validCustomerId\(requestedCustomerId\) \|\| requestedConvo \|\| !conversationsAvailable \|\| qualificationUnknown\)/);
   assert.match(source, /all\.filter\(\(convo\) => validCustomerId\(customerIdOf\(convo\)\)/);
 });
+
+test("verified customer messages use their scoped image without requiring an agent avatar asset", () => {
+  const component = file.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "SupportMessage");
+  const path = component?.body?.statements.flatMap((node) => ts.isVariableStatement(node) ? [...node.declarationList.declarations] : [])
+    .find((node) => node.name.getText(file) === "path");
+  assert.ok(path?.initializer);
+  const expression = ts.transpileModule(`const result = ${path.initializer.getText(file)};`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+  }).outputText;
+  const resolve = new Function("message", "customerId", "advisorAvatarPath", "customerAvatarPath", `${expression}; return result;`);
+  const advisor = (id, customer) => `/agents/${id}?customer=${customer}`;
+  const customer = (id) => `/customers/${id}/avatar`;
+  const verified = { authorConfidence: "VERIFIED", sender: "user", senderId: 42, senderAvatar: null };
+  assert.equal(resolve(verified, "42", advisor, customer), "/customers/42/avatar");
+  assert.equal(resolve({ ...verified, senderId: 43 }, "42", advisor, customer), undefined);
+  assert.equal(resolve({ ...verified, authorConfidence: "UNKNOWN" }, "42", advisor, customer), undefined);
+  assert.equal(resolve({ ...verified, senderId: null }, "42", advisor, customer), undefined);
+  assert.equal(resolve({ ...verified, sender: "agent", senderId: 8 }, "42", advisor, customer), undefined);
+  assert.equal(resolve({ ...verified, sender: "agent", senderId: 8, senderAvatar: { assetId: "owned", version: 2 } }, "42", advisor, customer), "/agents/8?customer=42");
+});
