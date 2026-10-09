@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import vm from "node:vm";
+import ts from "typescript";
 
 import {
   claimPendingCommandOwner,
@@ -430,17 +432,82 @@ test("⑤ 清扫不得被存活实例的内存镜像复活(同步序列,不是�
   assert.equal(store.get("fp-B"), undefined, "存活实例的内存镜像必须随清扫一起作废");
 });
 
-test("⑤ 认领必须早于任何一次写请求(reload 后 signIn 先跑,命令号才有主)", () => {
-  // 认领点在 signIn,而 401 重置会 reload → 重新走 console-shell 的会话恢复 → signIn。
-  // 这里钉住那条链没有被绕开:恢复会话的地方必须调 signIn(而不是自己塞状态)。
-  const shell = read("app/components/shell/console-shell.tsx")
-    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
-  // 🔴 钉**数量**不钉存在:会话恢复有两处(首次恢复 + 定时续期),只用 /signIn\(auth\)/
-  //   的写法在改坏其中一处时仍然匹配得上 → 门放行(本轮红测 R3② 实测抓到)。
-  const calls = shell.match(/signIn\(auth\)/g) ?? [];
-  assert.equal(calls.length, 2,
-    `会话恢复的两处(首次恢复 / 定时续期)都必须经 signIn,实测 ${calls.length} 处`
-    + " —— 绕过它就绕过了身份认领,换人后命令号没人清");
+function recoveryCallbacks(source) {
+  const parsed = ts.createSourceFile("console-shell.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const callbacks = new Map();
+  const walk = (node, callback) => {
+    if (ts.isFunctionLike(node) && node.body) callback = node;
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)
+      && ["currentAdminSession", "recordAdminActivity"].includes(node.expression.text)) {
+      assert.ok(callback, "权威会话读取必须属于可验证的恢复分支");
+      let parent = callback.parent;
+      while (parent && !ts.isVariableDeclaration(parent) && !ts.isPropertyAssignment(parent)) parent = parent.parent;
+      const name = parent?.name.getText(parsed);
+      assert.ok(!callbacks.has(name) || callbacks.get(name) === callback, "同名恢复 callback 不得互相覆盖而漏验");
+      callbacks.set(name, callback);
+    }
+    ts.forEachChild(node, child => walk(child, callback));
+  };
+  walk(parsed);
+  assert.deepEqual([...callbacks.keys()].sort(), ["refreshSession", "restoreAdminSession", "touch"],
+    "每个权威会话恢复入口都必须有独立切片,不能用另一个分支的 signIn 数量补齐");
+  return new Map([...callbacks].map(([name, callback]) => [name, callback.getText(parsed)]));
+}
+
+async function assertRecoveryClaimsBeforeWrite(callback) {
+  const storage = installOwnerStorage();
+  claimPendingCommandOwner("101");
+  const commands = createPendingMutationStore({ storageKey: "nexion-admin-r55-recovery-commands-v1" });
+  commands.remember("old-owner", "command-A");
+  const auth = { tokenType: "Bearer", session: { adminId: 202, username: "operator-B", operator: "B", role: "auditor", authorities: [] } };
+  let state = { session: null, logoutPending: false, authEpoch: 0, isAuthenticated: false };
+  const events = [];
+  const writeProbe = () => {
+    assert.equal(storage.getItem("nexion-admin-command-owner"), "202", "写请求前必须完成当前身份认领");
+    assert.equal(commands.get("old-owner"), undefined, "前任的持久命令不得到达新身份的写请求");
+    events.push("write");
+  };
+  const scope = {
+    bootstrapAttemptRef: { current: 0 }, disposed: false, refreshing: false, session: auth.session,
+    currentAdminSession: async () => auth, recordAdminActivity: async () => auth,
+    renewAdminAuthLifecycle: () => {}, activity: { stop() {} }, restoreAdminSession: async () => {},
+    AdminActivityIdentityChangedError: class extends Error {},
+    signOut: () => { throw new Error("valid recovery must not sign out"); }, writeProbe,
+    claimPendingCommandOwner: owner => { const result = claimPendingCommandOwner(owner); events.push("claim"); return result; },
+    set: update => {
+      state = { ...state, ...update(state) };
+      if (state.isAuthenticated) { writeProbe(); events.push("ready"); }
+    },
+    setBootstrapState: value => { if (value === "authenticated") assert.equal(state.isAuthenticated, true, "恢复可用态必须晚于 signIn 的认领"); },
+  };
+  const evaluate = text => vm.runInNewContext(ts.transpileModule(`var subject = ${text};\nsubject;`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText, scope);
+  const authSource = ts.createSourceFile("admin-auth.ts", read("lib/store/admin-auth.ts"), ts.ScriptTarget.Latest, true);
+  let actualSignIn;
+  const findSignIn = node => {
+    if (ts.isPropertyAssignment(node) && node.name.getText(authSource) === "signIn") actualSignIn = node.initializer.getText(authSource);
+    ts.forEachChild(node, findSignIn);
+  };
+  findSignIn(authSource); assert.ok(actualSignIn, "必须装配真实 store signIn,不能镜像其认领实现");
+  scope.signIn = evaluate(actualSignIn);
+  await evaluate(callback)();
+  assert.equal(state.isAuthenticated, true, "该恢复分支必须真正经 signIn 认领并开放当前会话");
+  writeProbe();
+  assert.ok(events.indexOf("claim") < events.indexOf("write"), "认领必须早于恢复后的第一笔写请求");
+}
+
+test("⑤ 认领必须早于任何一次写请求(reload 后 signIn 先跑,命令号才有主)", async (t) => {
+  // 执行三个真实恢复 callback 和真实 store signIn,验证换人认领早于可用态/写请求。
+  // 每个分支有独立反例;全文件补一处无关 signIn 不能替代漏掉的入口。
+  for (const [name, callback] of recoveryCallbacks(read("app/components/shell/console-shell.tsx"))) {
+    await t.test(`${name}:真实恢复认领后才能写`, () => assertRecoveryClaimsBeforeWrite(callback));
+    assert.ok(callback.includes("signIn(auth)"), `${name} 的反例切片必须命中实际调用`);
+    await t.test(`${name}:漏掉认领的反例必须红`, () => assert.rejects(
+      () => assertRecoveryClaimsBeforeWrite(callback.replace("signIn(auth)", "void auth")), error => error.code === "ERR_ASSERTION"));
+    await t.test(`${name}:认领前写的反例必须红`, () => assert.rejects(
+      () => assertRecoveryClaimsBeforeWrite(callback.replace("signIn(auth)", "(writeProbe(), signIn(auth))")), error => error.code === "ERR_ASSERTION"));
+  }
 });
 
 /**

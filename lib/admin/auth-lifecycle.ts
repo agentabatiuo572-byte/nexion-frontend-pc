@@ -134,6 +134,11 @@ export function adminAuthLifecycleEpoch() {
   return lifecycleState().epoch;
 }
 
+export function adminAuthActivityAllowed() {
+  const state = lifecycleState();
+  return !state.logoutPending && !state.readsBlocked;
+}
+
 export function cancelAdminLogout() {
   const state = lifecycleState();
   state.logoutPending = false;

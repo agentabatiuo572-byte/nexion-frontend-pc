@@ -7,8 +7,8 @@ const client = readFileSync(new URL("../lib/admin/d-client.ts", import.meta.url)
 const proxy = readFileSync(new URL("../app/api/admin/bills/[[...path]]/route.ts", import.meta.url), "utf8");
 const l5 = readFileSync(new URL("../app/components/domain-views/l-tabs/l5-export.tsx", import.meta.url), "utf8");
 
-test("D4 exposes the exact seven canonical BillTypes and all four filters", () => {
-  for (const type of ["swap", "topup", "withdraw", "earning", "commission", "refund", "bonus"]) {
+test("D4 exposes the exact eight canonical BillTypes and all four filters", () => {
+  for (const type of ["swap", "topup", "withdraw", "earning", "commission", "refund", "bonus", "purchase"]) {
     assert.match(page, new RegExp(`\\[\\"${type}\\"`));
   }
   for (const field of ["userId", "status", "from", "to"]) assert.match(page, new RegExp(field));
@@ -55,8 +55,8 @@ test("D4 client rejects malformed financial facts and uses the canonical read-on
   assert.doesNotMatch(proxy, /export async function (POST|PUT|PATCH|DELETE)/);
 });
 
-test("D4 masked seven-type export is available from the L5 regulatory export surface", () => {
+test("D4 masked eight-type export is available from the L5 regulatory export surface", () => {
   assert.match(l5, /downloadD4BillsCsv/);
-  assert.match(l5, /导出七类账单明细/);
-  assert.doesNotMatch(l5, /D4 的七类账单明细.*留到跨模块验收/);
+  assert.match(l5, /导出八类账单明细/);
+  assert.doesNotMatch(l5, /D4 的八类账单明细.*留到跨模块验收/);
 });

@@ -706,15 +706,15 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     });
   };
 
-  if (loading && rows.records.length === 0) return <section className="l-card"><div className="l-b">D2 数据加载中...</div></section>;
+  const resultsUnavailable = loading || !writesEnabled;
 
   return <>
     {error && <div className="dtint warn" style={{ marginBottom: 12 }}>D2 数据加载失败 · {error} · 写操作已关闭，请重试。 <button className="l-btn sm" onClick={() => void load(1)}>重试</button></div>}
     <div className="f-stats">
-      <div className="f-stat"><div className="k">当前筛选</div><div className="v">{rows.total}</div><div className="sub">服务端分页总数</div></div>
-      <div className="f-stat cyan"><div className="k">本页金额</div><div className="v">{money(visibleRows.reduce((sum, row) => sum + row.amount, 0))}</div><div className="sub">{visibleRows.length} 笔</div></div>
-      <div className="f-stat warn"><div className="k">高优先队列</div><div className="v">{visibleRows.filter((row) => ["HIGH", "ESCALATED"].includes(routingPriority(row))).length}</div><div className="sub">按当前生效 K4 模型动态路由</div></div>
-      <div className="f-stat danger"><div className="k">D5 日限</div><div className="v">{dailyLimit || "—"}</div><div className="sub">依赖事实读取失败时关闭写操作</div></div>
+      <div className="f-stat"><div className="k">当前筛选</div><div className="v">{resultsUnavailable ? "—" : rows.total}</div><div className="sub">服务端分页总数</div></div>
+      <div className="f-stat cyan"><div className="k">本页金额</div><div className="v">{resultsUnavailable ? "—" : money(visibleRows.reduce((sum, row) => sum + row.amount, 0))}</div><div className="sub">{resultsUnavailable ? "待确认" : `${visibleRows.length} 笔`}</div></div>
+      <div className="f-stat warn"><div className="k">高优先队列</div><div className="v">{resultsUnavailable ? "—" : visibleRows.filter((row) => ["HIGH", "ESCALATED"].includes(routingPriority(row))).length}</div><div className="sub">按当前生效 K4 模型动态路由</div></div>
+      <div className="f-stat danger"><div className="k">D5 日限</div><div className="v">{resultsUnavailable ? "—" : dailyLimit || "—"}</div><div className="sub">依赖事实读取失败时关闭写操作</div></div>
     </div>
 
     <D2StatusFlow />
@@ -749,9 +749,9 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         <button className="l-btn primary" disabled={!writesEnabled || !batchAction || submittableRows.length === 0 || !!submitting} onClick={confirmBatch}>批量执行</button>
         <span className="sub">{!batchAction ? "可先勾选提现单，再选择批量动作；提交前会按权限和状态再次校验" : "不适用当前动作的勾选会保留但不会提交；服务端仍会逐笔校验"}</span>
       </div>}
-      <div className="d2-table-wrap"><table className="l-tbl d2-table">
+      <div className="d2-table-wrap" aria-busy={loading}><table className="l-tbl d2-table">
         <thead><tr><th><label className="d2-check"><input aria-label="全选本页可批量处理的提现单" type="checkbox" disabled={selectableVisibleRows.length === 0} checked={allVisibleSelected} onChange={(event) => toggleVisibleSelection(event.target.checked)} /><span>选择</span></label></th><th>提现单</th><th>用户</th><th>资产 / 链</th><th className="num">金额 / 到账</th><th>审核依据</th><th>状态</th><th>生命周期 / 异常</th><th>提交时间</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
-        <tbody>{visibleRows.length === 0 ? <tr><td colSpan={10} style={{ textAlign: "center", padding: 28 }}>暂无提现记录</td></tr> : visibleRows.map((row) => {
+        <tbody>{loading ? <tr><td colSpan={10} style={{ textAlign: "center", padding: 28 }}>D2 数据加载中...</td></tr> : resultsUnavailable ? <tr><td colSpan={10} style={{ textAlign: "center", padding: 28 }}>提现数据暂不可用，请重试</td></tr> : visibleRows.length === 0 ? <tr><td colSpan={10} style={{ textAlign: "center", padding: 28 }}>暂无提现记录</td></tr> : visibleRows.map((row) => {
           const selectedNow = selected.has(row.withdrawalNo);
           const anyBatchAction = batchSelectable(row, "", availableBatchActions);
           const selectable = batchSelectable(row, batchAction, availableBatchActions);
@@ -777,7 +777,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           </tr>;
         })}</tbody>
       </table></div>
-      <div className="l-b" style={{ display: "flex", justifyContent: "space-between" }}><span>共 {rows.total} 条 · 第 {rows.pageNum}/{pages} 页</span><div className="chips"><TabGroup label="提现队列每页条数" value={pageSize} items={[10, 20, 50]} onSelect={(size) => { setPageSize(size); setPage(1); }} className="chips" itemClassName={(_size, selected) => `chip${selected ? " sel" : ""}`}>{(size) => `${size}/页`}</TabGroup><button className="chip" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button><button className="chip" disabled={page >= pages} onClick={() => setPage((value) => value + 1)}>下一页</button></div></div>
+      <div className="l-b" style={{ display: "flex", justifyContent: "space-between" }}><span>{resultsUnavailable ? "提现记录统计待确认" : `共 ${rows.total} 条 · 第 ${rows.pageNum}/${pages} 页`}</span><div className="chips"><TabGroup label="提现队列每页条数" value={pageSize} items={[10, 20, 50]} onSelect={(size) => { setPageSize(size); setPage(1); }} className="chips" itemClassName={(_size, selected) => `chip${selected ? " sel" : ""}`}>{(size) => `${size}/页`}</TabGroup><button className="chip" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button><button className="chip" disabled={page >= pages} onClick={() => setPage((value) => value + 1)}>下一页</button></div></div>
     </section>
 
     {detail && <Drawer title={`单笔详情 · ${detail.withdrawalNo}`} sub={`${detail.userNo} · ${bankStatusLabel(detail)}`} wide onClose={closeDetail} footer={<>
