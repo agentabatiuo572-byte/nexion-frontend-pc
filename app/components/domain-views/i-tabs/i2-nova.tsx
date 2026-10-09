@@ -8,7 +8,7 @@
  * amplifies = false(I2 不碰 B1 红线 —— 只动推送节奏与文案出口,不动费率/奖励/价格)。
  */
 import { useEffect, useState } from "react";
-import { Drawer, PaginationExemptionList } from "../design-kit";
+import { DataListPager, Drawer, PaginationExemptionList, useDataListPager } from "../design-kit";
 import {
   formatNovaDuration,
   NOVA_TIME_UNITS,
@@ -86,6 +86,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     titleZh: t.titleZh, bodyZh: t.bodyZh, titleVi: t.titleVi, bodyVi: t.bodyVi,
     titleEn: t.titleEn, bodyEn: t.bodyEn,
   }));
+  const templatePager = useDataListPager(NOVA_TPLS, { initialPageSize: 7 });
   const CTA_OPTIONS = data?.templateCtaOptions ?? [];
   const RUNTIME_SOURCE_OPTIONS = data?.runtimeSourceOptions ?? [];
   const SOCIAL_DIST = data?.socialDistribution ?? [];
@@ -575,7 +576,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                 </tr>
               </thead>
               <tbody>
-                {NOVA_TPLS.map((t) => {
+                {templatePager.pageRows.map((t) => {
                   const st = tplStatus(t.ch);
                   const canPublish = st !== "published";
                   const canArchive = st !== "archived";
@@ -606,12 +607,24 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                     </tr>
                   );
                 })}
+                {templatePager.total === 0 && (
+                  <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-3)" }}>暂无推送模板</td></tr>
+                )}
               </tbody>
             </table>
           </div>
+          <DataListPager
+            label="推送模板池(b)"
+            page={templatePager.page}
+            pageSize={templatePager.pageSize}
+            total={templatePager.total}
+            onPageChange={templatePager.setPage}
+            onPageSizeChange={templatePager.setPageSize}
+            pageSizeOptions={[7]}
+          />
           <div className="l-b" style={{ paddingTop: 8 }}>
             <div className="itint">
-              <b>文案来源</b> · 模板中的中文、越南语和可选英语正文就是通道实际推送内容；通道、CTA 均从后端配置目录选择。状态机：草稿 → 已发布 → 已归档。
+              <b>文案来源</b> · 模板池当前共 {templatePager.total} 条服务端目录记录，每页最多 {templatePager.pageSize} 条；发布和归档走操作确认。 模板中的中文、越南语和可选英语正文就是通道实际推送内容；通道、CTA 均从后端配置目录选择。状态机：草稿 → 已发布 → 已归档。
             </div>
           </div>
         </section>
@@ -740,12 +753,6 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             reason: offTableChannels.length
               ? "剩余不可调频道只做口径闭合说明"
               : "服务端目录里已无不可调频道,本区只留口径闭合结论",
-          },
-          {
-            label: "推送模板池(b)",
-            kind: "sample-ledger",
-            maxRows: 7,
-            reason: `模板池当前展示 ${NOVA_TPLS.length} 条服务端目录记录,发布和归档走操作确认`,
           },
         ]}
       />
