@@ -99,7 +99,7 @@ function SupportMessage({message,previous,customerId,customerName,onRevoked,newl
   const system=message.sourceSenderType==="SYSTEM"||message.sourceSenderType==="INTERNAL";
   const name=system?"系统":message.sender==="agent"?message.agentName||"历史专属客服":customerName;
   const grouped=!system&&previous?.sourceSenderType===message.sourceSenderType&&previous?.sender===message.sender&&message.authorConfidence==="VERIFIED"&&previous.authorConfidence==="VERIFIED"&&previous.senderId===message.senderId&&message.ts-previous.ts<300000;
-  const path=message.authorConfidence==="VERIFIED"&&message.senderId&&message.senderAvatar?(message.sender==="agent"?advisorAvatarPath(message.senderId,customerId):String(message.senderId)===customerId?customerAvatarPath(customerId):undefined):undefined;
+  const path=message.authorConfidence==="VERIFIED"&&message.senderId?(message.sender==="agent"?message.senderAvatar?advisorAvatarPath(message.senderId,customerId):undefined:String(message.senderId)===customerId?customerAvatarPath(customerId):undefined):undefined;
   const safeLegacy=message.kind==="TEXT"||!message.kind?legacySupportDestination(message.text):undefined;
   return <div className={newlyArrived&&!system?"m3-new-message":undefined} style={{alignSelf:system?"center":message.sender==="agent"?"flex-end":"flex-start",maxWidth:"88%",display:"flex",flexDirection:message.sender==="agent"?"row-reverse":"row",gap:8}}>
     {!system&&(grouped?<span style={{width:34,flexShrink:0}}/>:<SupportAvatar name={name} path={path} version={message.senderAvatar?.version}/>)}
