@@ -281,6 +281,7 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "M1", name: "客服工作台", path: "/service/overview", prdAnchor: "M1", batch: "V4", status: "flagship" },
       { id: "M2", name: "工单台", path: "/service/tickets", prdAnchor: "M2", batch: "V4", status: "flagship" },
       { id: "M3", name: "专属会话", path: "/service/sessions", prdAnchor: "M3", batch: "V4", status: "flagship" },
+      { id: "M6", name: "业绩榜", path: "/service/leaderboard", prdAnchor: "M6", batch: "V4", status: "flagship" },
       { id: "M4", name: "知识库与 SLA", path: "/service/kb-sla", prdAnchor: "M4", batch: "V4", status: "flagship" },
       { id: "M5", name: "服务规则与话术", path: "/service/scripts", prdAnchor: "M5", batch: "V4", status: "flagship" },
     ],
@@ -360,7 +361,7 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
     : [];
   const effectiveCodes = explicit ?? (inferred.length > 0 ? inferred : undefined);
 
-  if (effectiveCodes === undefined) return visibleDomains(snapshot.role);
+  if (effectiveCodes === undefined) return visibleDomains(snapshot.role).map(domain => domain.code === "M" ? { ...domain, l2: domain.l2.filter(item => item.id !== "M6") } : domain);
   const allowed = new Set(effectiveCodes
     .map((code) => code.trim().toUpperCase())
     .filter(Boolean)
@@ -389,7 +390,7 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
   return CONSOLE_NAV.flatMap((domain, domainIndex) => {
     const staticOrder = new Map(domain.l2.map((item, index) => [item.id, index]));
     const l2 = domain.l2
-      .filter((item) => allowed.has(item.id.toUpperCase()))
+      .filter((item) => item.id !== "M6" && allowed.has(item.id.toUpperCase()))
       .flatMap((item) => {
         const node = findNode(item.id.toUpperCase(), (candidate) =>
           candidate.routePath === item.path
@@ -402,6 +403,11 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
       })
       .sort((a, b) => order(a.node, staticOrder.get(a.item.id) ?? 0) - order(b.node, staticOrder.get(b.item.id) ?? 0))
       .map(({ item }) => item);
+    if (domain.code === "M" && snapshot.authorities?.some(code => code === "service_m1_read" || code === "service_m3_read")
+      && l2.some(item => item.id === "M1" || item.id === "M3")) {
+      const leaderboard = domain.l2.find(item => item.id === "M6");
+      if (leaderboard) { const after = l2.findIndex(item => item.id === "M3"); l2.splice(after < 0 ? l2.findIndex(item => item.id === "M1") + 1 : after + 1, 0, leaderboard); }
+    }
     if (l2.length === 0) return [];
     const domainNode = findNode(domain.code, (node) =>
       !node.parentCode && node.routePath === `/${domain.slug}`)

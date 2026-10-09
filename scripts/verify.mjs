@@ -247,7 +247,7 @@ const GEARS = [
   ["keyboard submit contract", "node", ["--experimental-strip-types", "--test", "tests/keyboard-submit-contract.test.mjs"]],
   ["M1 pending/failure state contract", "node", ["--test", "tests/m1-acceptance-contract.test.mjs"]],
   ["M3 App support authority contract", "node", ["--test", "tests/m3-acceptance-contract.test.mjs"]],
-  ["Support enhancements exact amounts, payloads, binary ceiling and dock scope", "node", ["--experimental-strip-types", "--test", "tests/support-enhancements-client.test.mjs", "tests/support-enhancements-dock.test.mjs", "tests/support-enhancements-layout.test.mjs", "tests/shared-shell-authority-prefetch-contract.test.mjs", "tests/support-analytics-runtime.test.mjs"]],
+  ["Support enhancements exact amounts, payloads, binary ceiling and dock scope", "node", ["--experimental-strip-types", "--experimental-vm-modules", "--test", "tests/support-enhancements-client.test.mjs", "tests/support-enhancements-dock.test.mjs", "tests/support-enhancements-layout.test.mjs", "tests/shared-shell-authority-prefetch-contract.test.mjs", "tests/support-analytics-runtime.test.mjs", "tests/support-analytics-client.test.mjs", "tests/m1-analytics-workbench.test.mjs", "tests/public-leaderboard-client.test.mjs", "tests/public-leaderboard-container.test.mjs"]],
   ["CGM field coverage", "node", ["scripts/cgm-coverage.mjs"]],
   ["no-double-sign residue", "node", ["scripts/no-double-sign-terms.mjs"]],
   ["ops-actions integrity", "node", ["scripts/ops-actions-audit.mjs"]],

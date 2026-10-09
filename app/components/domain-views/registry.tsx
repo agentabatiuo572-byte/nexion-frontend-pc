@@ -18,6 +18,7 @@ import { JDomainView } from "./j-view";
 import { KDomainView } from "./k-view";
 import { LDomainView } from "./l-view";
 import { MDomainView } from "./m-view";
+import { M6Leaderboard } from "./m-tabs/m6-leaderboard";
 
 const VIEWS: Record<string, ComponentType<{ meta: DomainViewMeta }>> = {
   A: ADomainView,
@@ -35,6 +36,7 @@ const VIEWS: Record<string, ComponentType<{ meta: DomainViewMeta }>> = {
 };
 
 export function DomainViewSwitch({ code, meta }: { code: string; meta: DomainViewMeta }) {
+  if (code === "M" && meta.l2Id === "M6") return <M6Leaderboard />;
   const View = VIEWS[code];
   if (!View) return null;
   return <View meta={meta} />;
