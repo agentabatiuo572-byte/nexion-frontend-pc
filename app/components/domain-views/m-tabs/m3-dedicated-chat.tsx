@@ -5,7 +5,7 @@ import { subscribeAdminRealtime, getAdminRealtimeSnapshot, watchAdminConversatio
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { supportClient, SupportClientError, isIndeterminateSupportError, type SupportAttachmentPolicy, type SupportCustomerDetail } from "@/lib/admin/m-support-client";
-import { markMConversationRead, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
+import { markMConversationRead, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, parseMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
 import { parseBusinessTime } from "@/lib/admin/business-time";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
@@ -23,6 +23,8 @@ import "./m3-conversation-list.css";
 type Intent = "SERVICE" | "MAINTENANCE";
 type Attachment = { file: File; url: string; uploadId: string; key: string; id?: string; state: "selected" | "uploading" | "ready" | "error"; error?: string };
 type Pending = { conversationId: string; key: string; body: string; intent: Intent; kind: "TEXT" | "IMAGE" | "SKU" | "LINK"; attachmentId?: string; message: SessionMsg; expectedAssignmentId: string; expectedVersion: number };
+type TimeoutInput = { warnMinutes: number; closeMinutes: number; reason: string };
+type TimeoutCommand = { key: string; input: TimeoutInput; policy: ConversationTimeoutPolicy; operator: string };
 
 const CONVO_KEY = "I.session.convos";
 const newKey = () => `m3-${crypto.randomUUID()}`;
@@ -32,6 +34,7 @@ const ticketLinksKey = (adminId: number) => `nexion-m3-converted-tickets-v1:${ad
 const firstPendingKey = (adminId: number, customerId: string) => `nexion-m3-first-pending:${adminId}:${customerId}`;
 type StoredMessage = PendingMutationRecord & { payload: string };
 const pendingMessages = createPendingMutationStore<StoredMessage>({ storageKey: "nexion-admin-m3-private-pending-v1", ttlMs: Number.MAX_SAFE_INTEGER-Date.now(), isValidRecord: (row) => typeof row.payload === "string" });
+const pendingTimeoutPolicies = createPendingMutationStore<StoredMessage>({ storageKey: "nexion-admin-m3-timeout-pending-v1", ttlMs: Number.MAX_SAFE_INTEGER-Date.now(), isValidRecord: (row) => typeof row.payload === "string" });
 const readPending = (slot: string) => pendingMessages.list().find((row) => row.fingerprint === slot)?.payload;
 const rememberPending = (slot: string, commandKey: string, value: object) => {
   pendingMessages.remember(slot, commandKey, { payload: JSON.stringify(value) });
@@ -136,6 +139,9 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   const [bulkOpen, setBulkOpen] = useState(false), [contactOpen, setContactOpen] = useState(false);
   const [timeoutOpen, setTimeoutOpen] = useState(false), [timeoutPolicy, setTimeoutPolicy] = useState<ConversationTimeoutPolicy | null>(null), [timeoutError, setTimeoutError] = useState(""), [timeoutSaving, setTimeoutSaving] = useState(false);
   const [timeoutInput,setTimeoutInput]=useState<{warnMinutes:number;closeMinutes:number;reason:string}|undefined>(undefined);
+  const [timeoutPending, setTimeoutPending] = useState<TimeoutCommand | null>(null), [timeoutConflict, setTimeoutConflict] = useState(false), [timeoutLatest, setTimeoutLatest] = useState<ConversationTimeoutPolicy | null>(null), [timeoutReadOnly, setTimeoutReadOnly] = useState(false);
+  const timeoutIdentityRef = useRef("");
+  timeoutIdentityRef.current = `${authEpoch}:${adminId}:${session?.role === "super" || session?.role === "superadmin"}:${Boolean(session?.authorities?.includes("service_m3_read"))}:${Boolean(session?.authorities?.includes("service_m3_timeout_manage"))}`;
   const scopeGeneration = useRef(0);
   const [draftOwner, setDraftOwner] = useState(0), [metaTarget, setMetaTarget] = useState("");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -361,7 +367,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     if (!customerId || selected?.customerId === customerId || requestedCustomerId === customerId) {
       sendAdminTyping(false); watchAdminConversation(null);
       setFirstDetail(null); setProfileDetail(null); setDetailError(""); setProfileError(""); setRequestedCustomerId(null); setSelectedId("");
-      clearAttachment(pending?.kind !== "IMAGE"); setPending(null); setFirstPending(null); setBusy(false); setMetaTarget(""); setScreen("list"); setContentChoice(null); setBulkOpen(false); setContactOpen(false); setTimeoutOpen(false); setSelectedClosedIds(new Set()); setIncludeCurrentReply(false); setArchiveIds(new Set());
+      clearAttachment(pending?.kind !== "IMAGE"); setPending(null); setFirstPending(null); setBusy(false); setMetaTarget(""); setScreen("list"); setContentChoice(null); setBulkOpen(false); setContactOpen(false); setSelectedClosedIds(new Set()); setIncludeCurrentReply(false); setArchiveIds(new Set());
     }
   }, [all, selected?.customerId, requestedCustomerId, clearAttachment, adminId, authEpoch, pending, firstPending, readRecoveries, qualificationUnknown]);
   useEffect(() => { setRecoveryError(""); setRecoveryBusy(""); readRecoveries(); }, [readRecoveries, authEpoch]);
@@ -398,6 +404,9 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   useEffect(() => {
     setDrafts({}); setDraftOwner(0); setPending(null); setFirstPending(null); setSendError(""); setIntent("SERVICE"); setBusy(false); setActionChecking(false); setRevokedIds(new Set()); setTicketLinks({}); setContentChoice(null); setBulkOpen(false); setContactOpen(false); setTimeoutOpen(false); seenMessages.current=null; setNewMessageIds(new Set()); clearAttachment();
   }, [authEpoch, clearAttachment]);
+  useEffect(() => {
+    setTimeoutOpen(false); setTimeoutPolicy(null); setTimeoutInput(undefined); setTimeoutPending(null); setTimeoutLatest(null); setTimeoutConflict(false); setTimeoutReadOnly(false); setTimeoutError(""); setTimeoutSaving(false);
+  }, [authEpoch, adminId]);
   useEffect(() => {
     if (!adminId || !conversationsAvailable || qualificationUnknown) return;
     try {
@@ -825,18 +834,108 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     const requestStamp=identityRef.current;
     ctx.openActionConfirm({action:"批量归档",detail:`确认归档 ${chosen.length} 段：${chosen.map(c=>c.id).join("、")}。未处理客户消息不能归档。`,reasonMin:8,reasonMax:200,run:async reason=>{if(requestStamp!==identityRef.current)return false;const ok=await ctx.setParam("I.session.archiveBatch.__create",JSON.stringify(payload),{action:"批量归档已选会话",reason,commandKey:key});if(requestStamp!==identityRef.current)return false;if(ok)setArchiveIds(new Set());return ok;}});
   };
-  const canTimeout = session?.role==="super"||session?.role==="superadmin"||Boolean(session?.authorities.includes("service_m3_timeout_manage"));
-  const openTimeout = async () => { if(!canTimeout)return;setTimeoutOpen(true);setTimeoutPolicy(null);setTimeoutError("");setTimeoutInput(undefined);const stamp=identityRef.current;try{const p=await fetchMConversationTimeoutPolicy();if(stamp!==identityRef.current)return;const raw=readPending(`nexion-m3-timeout:${adminId}`),saved=raw?JSON.parse(raw):null;setTimeoutPolicy(saved?.policy??p);setTimeoutInput(saved?.input);}catch(e){if(stamp===identityRef.current)setTimeoutError(displayAdminError(e));} };
-  const saveTimeout = async (input: {warnMinutes:number;closeMinutes:number;reason:string}) => {
-    if(!timeoutPolicy||!canTimeout||timeoutSaving)return false;
-    const slot=`nexion-m3-timeout:${adminId}`,raw=readPending(slot);let previous;try{previous=raw?JSON.parse(raw):null;}catch{setTimeoutError("原策略记录无法读取，请先核对当前策略，暂不重复提交。");return false;}
-    if(previous&&JSON.stringify(previous.input)!==JSON.stringify(input)){setTimeoutError("上一条变更结果待确认，请保留原输入重试。");return false;}
-    const command=previous??{key:newKey(),input,policy:timeoutPolicy,operator:session?.operator||session?.username||"unknown-admin"};rememberPending(slot,command.key,command);
-    if(!pendingMessages.isDurablyStored(slot,command.key)){setTimeoutError("原策略命令暂不能持久保存，尚未提交，请恢复浏览器存储后重试。");return false;}setTimeoutSaving(true);setTimeoutError("");
-    const stamp=identityRef.current;
-    try{const next=await updateMConversationTimeoutPolicy(command.policy,command.input,command.key,command.operator);if(stamp!==identityRef.current)return false;setTimeoutPolicy(next);pendingMessages.forget(slot);return true;}
-    catch(e){if(stamp===identityRef.current){setTimeoutError(displayAdminError(e));if(e&&typeof e==="object"&&"status" in e&&[400,403,404,409,422].includes(Number(e.status))&&!isIndeterminateSupportError(e))pendingMessages.forget(slot);}return false;}
-    finally{if(stamp===identityRef.current)setTimeoutSaving(false);}
+  const canReadTimeout = Boolean(session?.authorities?.includes("service_m3_read"));
+  const canTimeout = (session?.role === "super" || session?.role === "superadmin") && Boolean(session?.authorities?.includes("service_m3_timeout_manage")) && !timeoutReadOnly;
+  useEffect(() => {
+    if (!canReadTimeout) { setTimeoutOpen(false); setTimeoutPolicy(null); }
+    if (!canReadTimeout || !canTimeout) { setTimeoutInput(undefined); setTimeoutPending(null); setTimeoutLatest(null); setTimeoutConflict(false); setTimeoutSaving(false); }
+  }, [canReadTimeout, canTimeout]);
+  const timeoutSlot = `nexion-m3-timeout:${adminId}`;
+  const readTimeoutCommand = (): TimeoutCommand | null => {
+    const raw = pendingTimeoutPolicies.list().find((row) => row.fingerprint === timeoutSlot)?.payload;
+    if (!raw) return null;
+    const saved = JSON.parse(raw) as TimeoutCommand;
+    parseMConversationTimeoutPolicy(saved.policy);
+    if (typeof saved.key !== "string" || !saved.key || typeof saved.operator !== "string" || !saved.input || !Number.isInteger(saved.input.warnMinutes) || saved.input.warnMinutes < 1 || saved.input.warnMinutes > 30 || !Number.isInteger(saved.input.closeMinutes) || saved.input.closeMinutes <= saved.input.warnMinutes || saved.input.closeMinutes > 120 || typeof saved.input.reason !== "string" || saved.input.reason.trim().length < 6 || saved.input.reason.trim().length > 200) throw new Error("原策略记录无法读取，暂不能另发变更。");
+    return saved;
+  };
+  const openTimeout = async () => {
+    if (!canReadTimeout || timeoutSaving) return;
+    const conflictBaseline = timeoutConflict ? timeoutPolicy : null;
+    setTimeoutOpen(true); setTimeoutPolicy(null); setTimeoutError(""); setTimeoutLatest(null);
+    const stamp = timeoutIdentityRef.current;
+    try {
+      const policy = await fetchMConversationTimeoutPolicy();
+      if (stamp !== timeoutIdentityRef.current) return;
+      const saved = canTimeout ? readTimeoutCommand() : null;
+      setTimeoutPolicy(saved?.policy ?? conflictBaseline ?? policy);
+      setTimeoutPending(saved);
+      if (saved) { setTimeoutLatest(policy); setTimeoutInput(saved.input); setTimeoutError("原操作结果待确认，请先查询原操作。"); }
+      else if (timeoutConflict) { setTimeoutLatest(policy); }
+    } catch (cause) {
+      if (stamp === timeoutIdentityRef.current) {
+        setTimeoutPolicy(null); setTimeoutError(displayAdminError(cause));
+        if (cause && typeof cause === "object" && "status" in cause && cause.status === 403) { setTimeoutReadOnly(true); setTimeoutInput(undefined); setTimeoutPending(null); setTimeoutLatest(null); setTimeoutConflict(false); }
+      }
+    }
+  };
+  const refreshTimeoutLatest = async () => {
+    const stamp = timeoutIdentityRef.current;
+    try { const latest = await fetchMConversationTimeoutPolicy(); if (stamp === timeoutIdentityRef.current) setTimeoutLatest(latest); }
+    catch (cause) {
+      if (stamp !== timeoutIdentityRef.current) return;
+      if (cause && typeof cause === "object" && "status" in cause && cause.status === 403) await revokeTimeoutWrite(stamp);
+      else setTimeoutError(displayAdminError(cause));
+    }
+  };
+  const revokeTimeoutWrite = async (stamp: string) => {
+    setTimeoutReadOnly(true); setTimeoutInput(undefined); setTimeoutPending(null); setTimeoutPolicy(null); setTimeoutLatest(null); setTimeoutConflict(false);
+    setTimeoutError("当前账号已无权修改，已清除变更内容；下方仅显示重新读取的策略。");
+    try { const policy = await fetchMConversationTimeoutPolicy(); if (stamp === timeoutIdentityRef.current) setTimeoutPolicy(policy); }
+    catch (cause) { if (stamp === timeoutIdentityRef.current) setTimeoutError(displayAdminError(cause)); }
+  };
+  const saveTimeout = async (input: TimeoutInput) => {
+    if (!timeoutPolicy || !canTimeout || !canReadTimeout || timeoutSaving || timeoutConflict || timeoutPending) return false;
+    try { if (readTimeoutCommand()) { setTimeoutError("原操作结果待确认，请先查询原操作。"); return false; } }
+    catch { setTimeoutError("原策略记录无法读取，暂不能另发变更。"); return false; }
+    const command = { key: newKey(), input, policy: timeoutPolicy, operator: session?.operator || session?.username || "unknown-admin" };
+    pendingTimeoutPolicies.remember(timeoutSlot, command.key, { payload: JSON.stringify(command) });
+    if (!pendingTimeoutPolicies.isDurablyStored(timeoutSlot, command.key)) { pendingTimeoutPolicies.forget(timeoutSlot, command.key); setTimeoutInput(input); setTimeoutError("原策略命令暂不能持久保存，尚未提交，请恢复浏览器存储后重试。"); return false; }
+    setTimeoutInput(input); setTimeoutSaving(true); setTimeoutError("");
+    const stamp = timeoutIdentityRef.current;
+    let submitted = false;
+    try {
+      await updateMConversationTimeoutPolicy(command.policy, command.input, command.key, command.operator);
+      submitted = true;
+      if (stamp !== timeoutIdentityRef.current) return false;
+      const next = await fetchMConversationTimeoutPolicy();
+      if (stamp !== timeoutIdentityRef.current) return false;
+      setTimeoutPolicy(next); setTimeoutInput(undefined); pendingTimeoutPolicies.forget(timeoutSlot); return true;
+    } catch (cause) {
+      if (stamp !== timeoutIdentityRef.current) return false;
+      const status = cause && typeof cause === "object" && "status" in cause ? Number(cause.status) : 0;
+      if (submitted) {
+        setTimeoutPending(command);
+        if (status === 403) await revokeTimeoutWrite(stamp);
+        else setTimeoutError("变更已提交，但策略读回未成功；请查询原操作并重新读取。");
+      } else if ([400, 401, 403, 404, 409, 422].includes(status) && !isIndeterminateSupportError(cause)) {
+        pendingTimeoutPolicies.forget(timeoutSlot);
+        if (status === 403) await revokeTimeoutWrite(stamp);
+        else if (status === 409) { setTimeoutConflict(true); setTimeoutError("配置已被其他管理员修改，请读取最新策略并重新确认；草稿已保留。"); await refreshTimeoutLatest(); }
+        else setTimeoutError(displayAdminError(cause));
+      } else { setTimeoutPending(command); setTimeoutError("原操作结果待确认，请查询原操作；不会重复提交。"); }
+      return false;
+    } finally { if (stamp === timeoutIdentityRef.current) setTimeoutSaving(false); }
+  };
+  const checkTimeoutPending = async () => {
+    if (!timeoutPending || timeoutSaving || !canTimeout || !canReadTimeout) return;
+    const stamp = timeoutIdentityRef.current, command = timeoutPending;
+    setTimeoutSaving(true);
+    try {
+      const result = await supportClient.command(command.key);
+      if (stamp !== timeoutIdentityRef.current) return;
+      if (result.status === "SUCCEEDED") {
+        const policy = await fetchMConversationTimeoutPolicy();
+        if (stamp !== timeoutIdentityRef.current) return;
+        pendingTimeoutPolicies.forget(timeoutSlot); setTimeoutPending(null); setTimeoutPolicy(policy); setTimeoutInput(undefined); setTimeoutError(""); setTimeoutOpen(false);
+      } else if (result.status === "FAILED") {
+        pendingTimeoutPolicies.forget(timeoutSlot); setTimeoutPending(null); setTimeoutPolicy(command.policy); setTimeoutConflict(true); setTimeoutError("原操作已失败，草稿已保留；请读取最新策略再确认。"); await refreshTimeoutLatest();
+      } else setTimeoutError("原操作仍待确认，请稍后查询；原命令与输入已保留。");
+    } catch (cause) {
+      if (stamp !== timeoutIdentityRef.current) return;
+      if (cause && typeof cause === "object" && "status" in cause && cause.status === 403) await revokeTimeoutWrite(stamp);
+      else setTimeoutError("暂时无法确认原操作结果；原命令与输入已保留。");
+    } finally { if (stamp === timeoutIdentityRef.current) setTimeoutSaving(false); }
   };
 
   return <section className="m3-stage" aria-label="专属客服会话" style={{ height: "min(760px, calc(100dvh - 220px))", minHeight: 540 }}>
@@ -855,7 +954,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
         </div>
         <div className="m3-list-secondary-actions" role="group" aria-label="会话列表管理">
           <button type="button" className="l-btn sm" disabled={!archiveIds.size||actionChecking} onClick={()=>void archiveBatch()}>归档已选 {archiveIds.size} 段</button>
-          <button type="button" className="l-btn sm" disabled={!canTimeout} title={canTimeout?"查看会话超时策略":"需要会话超时策略管理权限"} onClick={()=>void openTimeout()}>超时策略</button>
+          <button type="button" className="l-btn sm" disabled={!canReadTimeout} title={canReadTimeout?"查看会话超时策略":"需要会话读取权限"} onClick={()=>void openTimeout()}>超时策略</button>
         </div>
       </header>
       <div className="cv-list">
@@ -898,7 +997,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     <aside className={`cv-profile ${screen === "profile" ? "open" : ""}`} aria-label="客户资料"><div className="cvp-scroll"><button type="button" className="l-btn sm" onClick={()=>setScreen("chat")}>返回会话</button><h2>客户资料</h2>{selectedUnbound ? <div className="itint">待分配顾问，尚无绑定客户的维护状态。</div> : profileCustomerId ? <M3CustomerProfile key={`${authEpoch}:${profileCustomerId}`} ctx={ctx} customerId={profileCustomerId} conversation={selected??undefined} scopeVersion={selected?.version??firstProfileCustomer?.version} messageError={conversationError} onRetryMessages={()=>{setConversationError("");setConversationRetry(n=>n+1);}} onHistory={no=>{const convo=visible.find(c=>c.id===no);if(convo)select(convo);}}/> : <div className="itint">{requestedCustomerId?"客户归属尚未核对，资料暂不可读取。":"选择客户后查看资料。"}</div>}</div></aside>
     {bulkOpen&&<SupportBulkComposer ctx={ctx} onClose={()=>setBulkOpen(false)}/>}
     {contactOpen&&<SupportContactPicker onClose={()=>setContactOpen(false)} onSelect={customerId=>{setRequestedCustomerId(customerId);setScreen("chat");setContactOpen(false);const url=new URL(window.location.href);url.searchParams.delete("conversationNo");url.searchParams.set("customerId",customerId);window.history.replaceState(null,"",url);}}/>}
-    {timeoutOpen&&timeoutPolicy&&<IdlePolicyModal policy={timeoutPolicy} initialInput={timeoutInput} canSave={canTimeout} saving={timeoutSaving} error={timeoutError} onClose={()=>setTimeoutOpen(false)} onSave={saveTimeout}/>}
+    {timeoutOpen&&timeoutPolicy&&<IdlePolicyModal policy={timeoutPolicy} initialInput={timeoutInput} canSave={canTimeout} saving={timeoutSaving} error={timeoutError} pending={Boolean(timeoutPending)} conflict={timeoutConflict} latest={timeoutLatest} onDraftChange={setTimeoutInput} onCheckPending={checkTimeoutPending} onRefreshLatest={refreshTimeoutLatest} onReviewLatest={()=>{if(timeoutLatest){setTimeoutPolicy(timeoutLatest);setTimeoutLatest(null);setTimeoutConflict(false);setTimeoutError("");}}} onClose={()=>{if(!timeoutSaving)setTimeoutOpen(false);}} onSave={saveTimeout}/>}
     {timeoutOpen&&!timeoutPolicy&&<Modal title="会话超时策略" icon="clock" onClose={()=>setTimeoutOpen(false)}><p role={timeoutError?"alert":"status"}>{timeoutError||"正在读取策略…"}</p>{timeoutError&&<button className="l-btn sm" onClick={()=>void openTimeout()}>重新读取</button>}</Modal>}
   </section>;
 }

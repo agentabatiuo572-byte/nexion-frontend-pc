@@ -97,7 +97,11 @@
     ".next-verify-r11-current-private-media/types/**/*.ts",
     ".next-verify-r11-current-private-media/dev/types/**/*.ts",
     ".next-verify-r11-current/types/**/*.ts",
-    ".next-verify-r11-current/dev/types/**/*.ts"
+    ".next-verify-r11-current/dev/types/**/*.ts",
+    ".next-verify-r11-timeout-v4-private-media/types/**/*.ts",
+    ".next-verify-r11-timeout-v4-private-media/dev/types/**/*.ts",
+    ".next-verify-r11-timeout-v4/types/**/*.ts",
+    ".next-verify-r11-timeout-v4/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

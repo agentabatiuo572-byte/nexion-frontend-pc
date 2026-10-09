@@ -167,7 +167,6 @@ export type CustomerProfile = {
   tickets: number;       // 关联工单
   device: string;
   hashrate: string;
-  idle?: string;
   region: string;
   joined: string;        // 账龄
   lastActive: string;

@@ -199,7 +199,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const currentRole = useAdminAuth((state) => state.session?.role ?? state.role);
   const isSuperAdmin = currentRole === "super" || currentRole === "superadmin";
   const canWriteM3 = isSuperAdmin || Boolean(authorities?.includes("service_m3_write"));
-  const canManageTimeoutPolicy = isSuperAdmin || Boolean(authorities?.includes("service_m3_timeout_manage"));
+  const canManageTimeoutPolicy = isSuperAdmin && Boolean(authorities?.includes("service_m3_timeout_manage"));
   const conversationsAvailable = pget("I.session.conversationsAvailable") === "1";
 
   const convos = useMemo(() => cloneConvos(parseParamArray<SessionConvo>(pget(CONVO_KEY), [])), [ctx.params, pget]);
@@ -324,7 +324,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     try {
       const updated = await updateMConversationTimeoutPolicy(idlePolicy, input, commandKey);
       setIdlePolicy(updated);
-      toast("会话超时策略已更新,服务端调度立即按新版本执行");
+      toast("会话超时策略已更新，仅之后新建会话段生效；待回复不会自动结束，专属归属保持不变。");
       return true;
     } catch (error) {
       setIdlePolicyError(displayAdminError(error));
@@ -1438,7 +1438,6 @@ function UserPanel({
   const rows: Array<[string, string, boolean]> = [
     ["持有设备", p.device, false],
     ["算力", p.hashrate, false],
-    ...(p.idle ? ([["闲置情况", p.idle, false]] as Array<[string, string, boolean]>) : []),
     ["地区", p.region, false],
     ["手机号", p.phone, true],
     ["账龄", p.joined, false],
