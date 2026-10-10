@@ -78,7 +78,7 @@ export function M3CustomerProfile({ ctx, customerId, conversation, scopeVersion,
   const currencies = asRows(finance?.byCurrency), devices = asRows(deviceGroup?.data?.records), flows = asRows(flowGroup?.data?.records);
   const history = (() => { try { return (JSON.parse(ctx.pget("I.session.convos") ?? "[]") as SessionConvo[]).filter(c => c.customerId === customerId).sort((a,b)=>b.lastTs-a.lastTs); } catch { return []; } })();
   const tickets = (() => { try { return (JSON.parse(ctx.pget("I.support.tickets") ?? "[]") as SupportTicket[]).filter(t => String(t.userId) === customerId); } catch { return []; } })();
-  const financeLabels: Record<string,string> = { creditedDepositTotal: "累计成功充值实际入账", depositRefundTotal: "充值退款", successfulWithdrawalPrincipalTotal: "累计成功提现本金", successfulWithdrawalFeeTotal: "累计提现手续费", successfulWithdrawalNetTotal: "累计提现实际到账", processingWithdrawalPrincipalTotal: "处理中提现本金", balance: "余额", availableBalance: "可用余额" };
+  const financeLabels: Record<string,string> = { creditedDepositTotal: "累计成功充值实际入账", successfulWithdrawalPrincipalTotal: "累计成功提现本金", successfulWithdrawalFeeTotal: "累计提现手续费", successfulWithdrawalNetTotal: "累计提现实际到账", processingWithdrawalPrincipalTotal: "处理中提现本金", balance: "余额", availableBalance: "可用余额" };
   const pager = (page: number, total: unknown, set: (n:number)=>void) => <div className="m-admin-toolbar"><button className="l-btn sm" disabled={page<=1} onClick={()=>set(page-1)}>上一页</button><span>第 {page} 页 · {show(total)} 条</span><button className="l-btn sm" disabled={typeof total !== "number" || page*10>=total} onClick={()=>set(page+1)}>下一页</button></div>;
   const body = <div className="m3-service-profile">
     {error && <div className="itint danger" role="alert">{error}<button className="l-btn sm" onClick={()=>setReload(n=>n+1)}>重新读取资料</button></div>}
@@ -89,7 +89,7 @@ export function M3CustomerProfile({ ctx, customerId, conversation, scopeVersion,
     <Group title="账户资金（全历史）" group={profile?.finance} retry={()=>void retryGroup("finance")}>
       {!currencies.length && <div className="itint">尚无可信币种资金资料，累计未知。</div>}
       {currencies.map((row,i)=><div key={String(row.currency??i)}><h4>{show(row.currency)}</h4>{Object.entries(financeLabels).map(([key,label])=>{const state=(row.fieldStatuses as Record<string,string>|undefined)?.[key];return <Row key={key} label={label} value={state&&state!=="READY"?statusText[state as keyof typeof statusText]??"待核对":row[key] == null ? "未知" : `${show(row[key])} ${show(row.currency)}`}/>;})}</div>)}
-      <p className="m-admin-muted">累计来自全历史实际入账，退款独立；以下流水分页不改变累计。</p>
+      <p className="m-admin-muted">累计来自全历史实际入账；成功充值不支持退款，流水分页不改变累计。</p>
     </Group>
     <details open className="m3-profile-group"><summary>资金流水</summary>
       <div className="m-admin-toolbar"><label>币种<select className="fld" value={currency} onChange={e=>{setCurrency(e.target.value);setFlowPage(1);}}><option value="">全部币种</option>{currencies.map(r=><option key={String(r.currency)}>{show(r.currency)}</option>)}</select></label><label>状态<select className="fld" value={flowStatus} onChange={e=>{setFlowStatus(e.target.value);setFlowPage(1);}}><option value="">全部状态</option>{Object.entries(flowStatusLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label><label>起始日期（UTC）<input type="date" value={from} onChange={e=>{setFrom(e.target.value);setFlowPage(1);}}/></label><label>结束日期（UTC，不含）<input type="date" value={to} onChange={e=>{setTo(e.target.value);setFlowPage(1);}}/></label></div>

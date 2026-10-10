@@ -130,7 +130,7 @@ export function M6Leaderboard() {
       scopeOptions={(data?.scopeOptions ?? []).flatMap(option => [{ value: option.scope, label: scopeLabels[option.scope] }, ...(option.scope === "managedGroups" ? option.groups.map(group => ({ value: scopeValue(option.scope, group.id), label: group.name })) : [])])}
       rows={data?.rows.map(withPhoto) ?? []} self={data?.self.row ? { row: withPhoto(data.self.row), gap: data.self.gap, reason: data.self.reason } : undefined}
       currentMonth={data?.referenceMonth ?? ""} periodLabel={period} updatedAt={data ? asOf(data) : "尚未读取"}
-      disclosure="名次以服务器完整发布结果为准；并列保留同一名次。客户明细需另有可见权限。"
+      disclosure="充值贡献按成功充值额，成功充值不支持退款；购机贡献扣除原单成功退款，两者不相加。名次以完整发布结果为准；客户明细需另有权限。"
       candidateReason={data?.state === "PROVISIONAL" ? data.candidateCoverage !== "COMPLETE" ? "参榜人员尚未完整核实，当前不授予名次" : "主指标尚未完整核实，当前不授予名次" : undefined}
       status={data ? "ready" : !enabled || error ? "error" : "loading"} statusMessage={!enabled ? "当前账号不能查看此榜单，请确认登录和客服权限。" : error}
       onRetry={() => { if (allowed) { setDeniedIdentity(undefined); resetFirstPage("正在重新读取第一页…"); } }}
