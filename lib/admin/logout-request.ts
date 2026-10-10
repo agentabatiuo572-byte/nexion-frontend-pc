@@ -1,3 +1,6 @@
+import { beginAdminLogout } from "./auth-lifecycle.ts";
+import { withAdminAuthCookieWrite } from "./auth-cookie-lane.ts";
+
 type LogoutFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 type LogoutRequestOptions = {
@@ -36,15 +39,17 @@ async function performAdminLogout({
   const signals = signal ? [signal, timeoutController.signal] : [timeoutController.signal];
 
   try {
-    const response = await fetchImpl("/api/admin/auth/logout", {
-      method: "POST",
-      cache: "no-store",
-      signal: signals.length === 1 ? signals[0] : AbortSignal.any(signals),
+    await withAdminAuthCookieWrite(async () => {
+      const combinedSignal = signals.length === 1 ? signals[0] : AbortSignal.any(signals);
+      if (combinedSignal.aborted) throw combinedSignal.reason;
+      const response = await fetchImpl("/api/admin/auth/logout", {
+        method: "POST",
+        cache: "no-store",
+        signal: combinedSignal,
+      });
+      const envelope = await response.json().catch(() => null) as LogoutEnvelope | null;
+      if (!response.ok || !isConfirmedLogoutEnvelope(envelope)) throw new AdminLogoutConfirmationError();
     });
-    const envelope = await response.json().catch(() => null) as LogoutEnvelope | null;
-    if (!response.ok || !isConfirmedLogoutEnvelope(envelope)) {
-      throw new AdminLogoutConfirmationError();
-    }
   } catch (error) {
     if (error instanceof AdminLogoutConfirmationError) throw error;
     throw new AdminLogoutConfirmationError();
@@ -58,6 +63,7 @@ async function performAdminLogout({
  * local auth generation. Concurrent clicks share the same server command.
  */
 export function requestAdminLogout(options: LogoutRequestOptions = {}): Promise<void> {
+  beginAdminLogout();
   if (pendingLogout) return pendingLogout;
   const request = performAdminLogout(options);
   pendingLogout = request;

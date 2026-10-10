@@ -525,7 +525,7 @@ test("D4 默认账单类型与每页条数在真实组件 DOM 中各有唯一选
   const html = renderToHtml("app/components/domain-views/d-tabs/d4-ledger.tsx", "D4Ledger", {
     ctx: { toast: () => {}, openActionConfirm: () => {} },
   });
-  assertSingleSelection(html, "账单类型", 0, ["全部", "兑换", "充值", "提现", "收益", "佣金", "退款", "奖励"]);
+  assertSingleSelection(html, "账单类型", 0, ["全部", "兑换", "充值", "提现", "收益", "佣金", "退款", "奖励", "商品购买"]);
   assertSingleSelection(html, "每页条数", 0, ["10/页", "20/页", "50/页"]);
 });
 

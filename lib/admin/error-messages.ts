@@ -188,6 +188,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   DIRECT_REFERRAL_L1_NEX_READONLY: "直属购买拆分生效期间，旧 L1 额外 NEX 系数仅供查看，不能调整。",
   DIRECT_REFERRAL_REISSUE_REQUIRES_SOURCE_RECONCILIATION: "直属分成需按原来源核对，不能重复补发。",
   A2_CONFIRMATION_REQUIRED: "此项配置须先提交审批，批准后才会生效。",
+  F4_LEADERBOARD_PAUSED: "排行榜已暂停，未执行派奖；恢复后请重新确认。",
   F5_EXPORT_ROW_LIMIT_EXCEEDED: "当前筛选结果超过 5 万行，请缩小类型、币种、用户群或状态范围后重新导出。",
   F5_EXPORT_SIZE_LIMIT_EXCEEDED: "当前筛选生成的文件超过 10 MB，请缩小筛选范围后重新导出。",
   F5_EXPORT_SOURCE_CHANGED_RETRY: "导出期间佣金数据发生变化，本次未提供不完整文件；请保持筛选条件并重新导出。",

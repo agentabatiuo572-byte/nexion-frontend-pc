@@ -58,6 +58,7 @@ test("repeated clicks share one server revocation and allow retry after settleme
 
   const first = requestAdminLogout({ fetchImpl, timeoutMs: 100 });
   const second = requestAdminLogout({ fetchImpl, timeoutMs: 100 });
+  await new Promise(setImmediate);
   assert.equal(calls, 1);
   release({ code: 0, message: "OK", data: null });
   await Promise.all([first, second]);

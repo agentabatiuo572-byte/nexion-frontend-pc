@@ -513,7 +513,12 @@ test("actual rendered Blob bytes remain verifiable under CSP without fetching or
     await page.reload(); await image.waitFor({ state: "visible" });
     await image.evaluate(element => element.remove());
     await assert.rejects(waitForRenderedImageMatch(image, expected, { timeoutMs: 150, pollMs: 25 }), error => {
-      assert.match(error.message, /observation deadline/); assert.ok(error.imageObservations.length > 1); assert.ok(error.imageObservations.every(row => row.count === 0)); return true;
+      assert.match(error.message, /observation deadline/);
+      const observations = error.imageObservations;
+      assert.ok(observations.length > 1);
+      assert.ok(observations.some(row => row.count === 0), "At least one completed query must prove the image is absent");
+      assert.ok(observations.every((row, index) => row.count === 0 || (index === observations.length - 1 && row.count === null && row.reason === "observation-deadline" && row.visibleCount === 0 && row.images.length === 0)), "Only the final query may remain unobserved at its explicit deadline");
+      return true;
     });
     await page.reload(); await image.waitFor({ state: "visible" });
     await image.evaluate(element => { element.width = 200; element.height = 200; element.src = URL.createObjectURL(new Blob(["not an image"], { type: "image/png" })); });

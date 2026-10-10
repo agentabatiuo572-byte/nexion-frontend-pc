@@ -105,7 +105,9 @@
     ".next-verify-r12-v1-private-media/types/**/*.ts",
     ".next-verify-r12-v1-private-media/dev/types/**/*.ts",
     ".next-verify-r12-v1/types/**/*.ts",
-    ".next-verify-r12-v1/dev/types/**/*.ts"
+    ".next-verify-r12-v1/dev/types/**/*.ts",
+    ".next-private-media/types/**/*.ts",
+    ".next-private-media/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

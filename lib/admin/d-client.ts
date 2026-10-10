@@ -484,7 +484,7 @@ export interface D4UserLedger {
   sources: string[];
 }
 
-export type D4BillType = "swap" | "topup" | "withdraw" | "earning" | "commission" | "refund" | "bonus";
+export type D4BillType = "swap" | "topup" | "withdraw" | "earning" | "commission" | "refund" | "bonus" | "purchase";
 
 export interface D4RunningBalanceRow {
   bill: D4Bill;
@@ -1658,7 +1658,7 @@ function normalizeD3ForecastConfig(raw: Record<string, unknown>): D3ForecastConf
   };
 }
 
-const D4_BILL_TYPES = new Set<D4BillType>(["swap", "topup", "withdraw", "earning", "commission", "refund", "bonus"]);
+const D4_BILL_TYPES = new Set<D4BillType>(["swap", "topup", "withdraw", "earning", "commission", "refund", "bonus", "purchase"]);
 
 function d4Invalid(field: string): never {
   throw new Error(formatAdminApiError("D4_RESPONSE_INVALID", `D4_RESPONSE_INVALID:${field}`));
@@ -1708,6 +1708,10 @@ function normalizeBill(value: unknown): D4Bill {
   if (!["USDT", "NEX"].includes(asset)) d4Invalid("bill.asset");
   const direction = d4String(row.direction, "bill.direction").toUpperCase();
   if (!["IN", "OUT", "CREDIT", "DEBIT"].includes(direction)) d4Invalid("bill.direction");
+  const bizType = d4String(row.bizType, "bill.bizType");
+  if (billType === "purchase" && (bizType.trim().toUpperCase() !== "ORDER_PURCHASE" || !["OUT", "DEBIT"].includes(direction))) {
+    d4Invalid("bill.purchase");
+  }
   const amount = d4Number(row.amount, "bill.amount");
   if (amount < 0) d4Invalid("bill.amount");
   return {
@@ -1716,7 +1720,7 @@ function normalizeBill(value: unknown): D4Bill {
     userNo: d4String(row.userNo, "bill.userNo"),
     nickname: d4OptionalString(row.nickname, "bill.nickname"),
     bizNo: d4String(row.bizNo, "bill.bizNo"),
-    bizType: d4String(row.bizType, "bill.bizType"),
+    bizType,
     billType,
     subtype: d4String(row.subtype, "bill.subtype"),
     asset,

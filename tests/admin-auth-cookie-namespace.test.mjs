@@ -51,7 +51,7 @@ function request(method = "GET", body, url = "http://127.0.0.1:33041/api/admin/f
   return new Request(url, { method, headers: { "Content-Type": "application/json", ...headers },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
 }
-const AUTH = ["login", "mfa/verify", "password/change", "logout", "session"];
+const AUTH = ["login", "mfa/verify", "password/change", "logout", "session", "activity"];
 const BUSINESS = {
   "bi/[...path]/route.ts": ["overview"],
   "bills/[[...path]]/route.ts": [],
@@ -193,7 +193,7 @@ test("real auth issuers, session, password change and logout keep names, privile
       for (const [name, active] of [[own.ADMIN_TOKEN_COOKIE, !restricted], [own.ADMIN_PASSWORD_CHANGE_COOKIE, restricted]]) {
         const cookie = response.cookies.get(name);
         assert.equal(cookie.value, active ? "issued-fixture" : "");
-        assert.equal(cookie.maxAge, active ? 8 * 60 * 60 : 0);
+        assert.equal(cookie.maxAge, active ? 60 * 60 : 0);
         assert.equal(cookie.httpOnly, true); assert.equal(cookie.sameSite, "strict"); assert.equal(cookie.path, "/"); assert.equal(cookie.secure, secure);
       }
       if (path === "password/change") assert.equal(new Headers(fixture.calls[0].init.headers).get("Authorization"), "Bearer own-restricted-fixture");

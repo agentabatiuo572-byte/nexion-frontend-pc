@@ -25,15 +25,18 @@ test("A1 login keeps MFA as the default and permits only the explicit temporary 
   assert.match(loginRoute, /sameSite:\s*"strict"/);
 });
 
-test("logout revokes the server session and cookies never outlive eight hours", () => {
+test("logout revokes the server session and credential issuers use the shared sixty-minute Cookie lifetime", () => {
   const logout = read("app/api/admin/auth/logout/route.ts");
   const login = read("app/api/admin/auth/login/route.ts");
   const verify = read("app/api/admin/auth/mfa/verify/route.ts");
+  const change = read("app/api/admin/auth/password/change/route.ts");
+  const cookiePolicy = read("lib/admin/require-password-change-cleared.ts");
 
   assert.match(logout, /Authorization/);
   assert.match(logout, /\/auth\/logout/);
-  assert.doesNotMatch(login + verify, /60 \* 60 \* 12/);
-  assert.match(verify, /60 \* 60 \* 8/);
+  assert.doesNotMatch(login + verify + change, /60 \* 60 \* (?:8|12)/);
+  assert.match(cookiePolicy, /ADMIN_TOKEN_MAX_AGE_SECONDS\s*=\s*60 \* 60/);
+  for (const issuer of [login, verify, change]) assert.match(issuer, /maxAge:[^\n]*ADMIN_TOKEN_MAX_AGE_SECONDS/);
 });
 
 test("logout fails closed and preserves the retry token when server revocation is unavailable", () => {

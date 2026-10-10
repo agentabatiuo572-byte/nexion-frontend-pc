@@ -9,7 +9,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { currentAdminSession } from "@/lib/admin/auth-client";
+import { currentAdminSession, recordAdminActivity, AdminActivityIdentityChangedError } from "@/lib/admin/auth-client";
+import { createAdminActivityTracker } from "@/lib/admin/admin-activity";
 import { fetchA3RuntimeFlags } from "@/lib/admin/a3-client";
 import { installAdminAuthFetchLifecycle } from "@/lib/admin/auth-lifecycle";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
@@ -213,6 +214,42 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
       window.clearInterval(timer);
     };
   }, [bootstrapState, isAuthenticated, mounted, signIn, signOut]);
+
+  useEffect(() => {
+    if (!mounted || bootstrapState !== "authenticated" || !isAuthenticated || logoutPending || logoutUnknown || !session) return;
+    let disposed = false;
+    const activity = createAdminActivityTracker({
+      eligible: () => !disposed && document.visibilityState === "visible",
+      touch: async () => {
+        try {
+          const auth = await recordAdminActivity(session.adminId);
+          if (disposed) return false;
+          if (!auth) {
+            activity.stop();
+            signOut();
+            setBootstrapState("anonymous");
+            return false;
+          }
+          signIn(auth);
+          return true;
+        } catch (error) {
+          if (!disposed && error instanceof AdminActivityIdentityChangedError) {
+            activity.stop();
+            void restoreAdminSession();
+          }
+          return false;
+        }
+      },
+    });
+    const onInput = (event: Event) => void activity.input(event);
+    const events = ["pointerdown", "keydown", "wheel", "touchstart"] as const;
+    for (const event of events) window.addEventListener(event, onInput, { passive: true });
+    return () => {
+      disposed = true;
+      activity.stop();
+      for (const event of events) window.removeEventListener(event, onInput);
+    };
+  }, [authEpoch, bootstrapState, isAuthenticated, logoutPending, logoutUnknown, mounted, session?.adminId, signIn, signOut, restoreAdminSession]);
 
   useEffect(() => {
     if (!mounted || bootstrapState !== "authenticated" || !isAuthenticated || !canReadA3) {

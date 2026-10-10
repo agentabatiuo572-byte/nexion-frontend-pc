@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
-import {assertNativeGuard} from 'file:///D:/CodexData/test-environments/workflow-runs/growth-promotions-20261007/pc-remote-merge-minimal-r1/pc-native-preparation-r2/pc-native-runtime-guard.mjs';
+import {assertNativeGuard} from 'file:///D:/CodexData/test-environments/workflow-runs/growth-promotions-20261007/pc-native-current-minimal-fix-r5/pc-native-runtime-guard.mjs';
 export async function prepareRewardFailure(root,activityId,guard){
 assertNativeGuard(guard);
 assert(guard&&guard.binding&&typeof guard.beforeMutation==='function'&&typeof guard.observeResponse==='function'&&typeof guard.evidence==='function','Mandatory native guard adapter is required');

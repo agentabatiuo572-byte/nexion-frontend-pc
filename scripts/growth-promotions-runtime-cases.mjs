@@ -3,7 +3,7 @@ import {randomUUID} from 'node:crypto';
 import {expect} from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import {assertNativeGuard} from 'file:///D:/CodexData/test-environments/workflow-runs/growth-promotions-20261007/pc-remote-merge-minimal-r1/pc-native-preparation-r2/pc-native-runtime-guard.mjs';
+import {assertNativeGuard} from 'file:///D:/CodexData/test-environments/workflow-runs/growth-promotions-20261007/pc-native-current-minimal-fix-r5/pc-native-runtime-guard.mjs';
 
 /** Controlled setup uses real approved policies and HTTP; all assertions inspect rendered product and real readback. */
 export async function runTemplateCases({page,base,source,click,fill,command,open,snap,record,runId,guard,actor}){

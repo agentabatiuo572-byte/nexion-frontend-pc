@@ -64,7 +64,10 @@ export function validatePromotionNativeGuard(proof,binding,readFile=fs.readFileS
   const raw=readFile(logFile);assert.equal(digest(raw),evidence.guardsSHA,'Native guard log changed');assert(raw.toString().trim(),'Native guard log is empty');const rows=raw.toString().trim().split(/\r?\n/).map(line=>JSON.parse(line));
   assert.equal(rows[0].kind,'entry','Native guard entry is missing');assert.equal(rows.at(-1).kind,'end','Native guard end is missing');
   assert.match(binding.actualSourceFilesSHA,/^[a-f0-9]{64}$/);assert.match(binding.actualCompiledFilesSHA,/^[a-f0-9]{64}$/);
-  const actual=value=>{assert.equal(value.ok,true);assert.equal(value.actualSourceFiles,3602);assert.equal(value.actualCompiledFiles,3345);assert.equal(value.actualSourceFilesSHA,binding.actualSourceFilesSHA);assert.equal(value.actualCompiledFilesSHA,binding.actualCompiledFilesSHA);};
+  const leaseRaw=readFile(ordinary(binding.leaseFile));assert.equal(digest(leaseRaw),binding.leaseSHA,'Native Main lease changed');const lease=JSON.parse(leaseRaw.toString());
+  const sourceRaw=readFile(ordinary(lease.sourceManifest)),compiledRaw=readFile(ordinary(lease.compiledManifest));assert.equal(digest(sourceRaw),lease.sourceManifestSHA,'Native source manifest changed');assert.equal(digest(compiledRaw),lease.compiledManifestSHA,'Native compiled manifest changed');const source=JSON.parse(sourceRaw.toString()),compiled=JSON.parse(compiledRaw.toString());
+  assert(Array.isArray(source.files)&&source.files.length>0);assert(Array.isArray(compiled)&&compiled.length>0);assert.equal(source.head,lease.head);assert.equal(source.sourceHash,lease.sourceHash);assert.equal(source.fileCount,source.files.length);assert.equal(lease.sourceCount,source.files.length);assert.equal(lease.compiledCount,compiled.length);assert.equal(binding.sourceCount,lease.sourceCount);assert.equal(binding.compiledCount,lease.compiledCount);
+  const actual=value=>{assert.equal(value.ok,true);assert.equal(value.actualSourceFiles,binding.sourceCount);assert.equal(value.actualCompiledFiles,binding.compiledCount);assert.equal(value.sourceManifestSHA,lease.sourceManifestSHA);assert.equal(value.compiledManifestSHA,lease.compiledManifestSHA);assert.equal(value.actualSourceFilesSHA,binding.actualSourceFilesSHA);assert.equal(value.actualCompiledFilesSHA,binding.actualCompiledFilesSHA);};
   for(const row of rows){assert.deepEqual(row.binding,binding,'Native log row binding changed');if(row.kind==='entry'||row.kind==='end')actual(row.actual);}
   const mutations=rows.filter(row=>row.kind==='mutation');assert(mutations.length,'Native candidate has no guarded mutation');
   for(const row of mutations){
@@ -77,13 +80,14 @@ async function main(){
 const env=process.env,startedAt=new Date().toISOString();
 const argument=name=>{const i=process.argv.indexOf(name);assert(i>=0&&process.argv[i+1],`Missing ${name}`);return process.argv[i+1];};
 const suite=argument('--suite'),report=path.resolve(argument('--report')),external=path.dirname(report);
+assert(!fs.existsSync(report),'Workflow runtime reports are immutable; select a fresh --report path');
 assert.equal(path.resolve(process.env.PROMOTION_EVIDENCE_DIR||'').toLowerCase(),external.toLowerCase(),'Record output must stay in the exclusive fixture directory');
 for(const key of ['WORKFLOW_TASK_ID','WORKFLOW_STEP_ID','WORKFLOW_CHECK_ID','WORKFLOW_RUN_ID','WORKFLOW_REPO','WORKFLOW_SNAPSHOT_HASH'])assert(env[key],`Missing ${key}; use the workflow CLI`);
 assert.equal(path.resolve(env.WORKFLOW_REPO).toLowerCase(),process.cwd().toLowerCase());
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const steps=[];let failure,nativeGuard;
 try{
-  const {createNativeGuard}=await import('file:///D:/CodexData/test-environments/workflow-runs/growth-promotions-20261007/pc-remote-merge-minimal-r1/pc-native-preparation-r2/pc-native-runtime-guard.mjs');
+  const {createNativeGuard}=await import('file:///D:/CodexData/test-environments/workflow-runs/growth-promotions-20261007/pc-native-current-minimal-fix-r5/pc-native-runtime-guard.mjs');
   const guard=createNativeGuard({phase:'record'});await guard.verifyEnd();nativeGuard=guard.evidence();
   if(suite==='runtime'){
     const file=path.join(external,`pc-browser-${env.WORKFLOW_RUN_ID}.json`),before=Date.now();
@@ -120,7 +124,7 @@ try{
   }else throw new Error('Unknown suite');
   await guard.verifyEnd();nativeGuard=guard.evidence();
 }catch(error){failure=String(error.stack||error);process.exitCode=1;}
-fs.writeFileSync(report,JSON.stringify({taskId:env.WORKFLOW_TASK_ID,stepId:env.WORKFLOW_STEP_ID,checkId:env.WORKFLOW_CHECK_ID,runId:env.WORKFLOW_RUN_ID,repo:env.WORKFLOW_REPO,snapshotHash:env.WORKFLOW_SNAPSHOT_HASH,startedAt,at:new Date().toISOString(),verdict:failure?'fail':'pass',mode:'full',treeMoved:false,capability:'runtime',steps,failure,nativeGuard},null,2));
+fs.writeFileSync(report,JSON.stringify({taskId:env.WORKFLOW_TASK_ID,stepId:env.WORKFLOW_STEP_ID,checkId:env.WORKFLOW_CHECK_ID,runId:env.WORKFLOW_RUN_ID,repo:env.WORKFLOW_REPO,snapshotHash:env.WORKFLOW_SNAPSHOT_HASH,startedAt,at:new Date().toISOString(),verdict:failure?'fail':'pass',mode:'full',treeMoved:false,capability:'runtime',steps,failure,nativeGuard},null,2),{flag:'wx'});
 console.log(JSON.stringify({suite,verdict:failure?'fail':'pass',report,failure:failure?.split('\n')[0]}));
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url))await main();

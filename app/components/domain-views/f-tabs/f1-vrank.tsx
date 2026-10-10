@@ -465,7 +465,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
           </div>
           <div className="f1-filter">
             <input aria-label="晋升用户ID" value={promotionFilters.userId} onChange={(event) => setPromotionFilter("userId", event.target.value)} placeholder="用户 ID" inputMode="numeric" />
-            <select aria-label="晋升目标等级" value={promotionFilters.v} onChange={(event) => setPromotionFilter("v", event.target.value)}>
+            <select aria-label="晋升涉及等级" value={promotionFilters.v} onChange={(event) => setPromotionFilter("v", event.target.value)}>
               <option value="">全部等级</option>
               {rows.map((row) => <option key={row.v} value={row.v}>{row.v}</option>)}
             </select>

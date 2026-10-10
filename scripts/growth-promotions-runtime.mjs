@@ -13,7 +13,7 @@ import {prepareRewardFailure} from './growth-promotions-runtime-fixture.mjs';
 const external=process.env.PROMOTION_EVIDENCE_DIR||'C:/Users/jason/.codex/workflow-runs/growth-promotions-20261007';
 const base=process.env.PROMOTION_PC_URL||'http://127.0.0.1:3039';
 assert.equal(new URL(base).port,'3039','Only the isolated PC service is authorized');
-const {createNativeGuard}=await import('file:///D:/CodexData/test-environments/workflow-runs/growth-promotions-20261007/pc-remote-merge-minimal-r1/pc-native-preparation-r2/pc-native-runtime-guard.mjs');
+const {createNativeGuard}=await import('file:///D:/CodexData/test-environments/workflow-runs/growth-promotions-20261007/pc-native-current-minimal-fix-r5/pc-native-runtime-guard.mjs');
 const guard=createNativeGuard({phase:'runtime'});
 const sessions=JSON.parse(fs.readFileSync(path.join(external,'sessions-owned-v2.private.json'),'utf8'));
 const accounts=JSON.parse(fs.readFileSync(path.join(external,'accounts-owned-v2.private.json'),'utf8'));
@@ -22,6 +22,7 @@ const source=JSON.parse(fs.readFileSync(path.join(external,'pc-source-fixture.js
 const reportArg=process.argv.indexOf('--report');
 const report=reportArg>=0?path.resolve(process.argv[reportArg+1]):path.join(external,'pc-runtime-browser.json');
 assert.equal(path.dirname(report).toLowerCase(),path.resolve(external).toLowerCase(),'Runtime report cannot overwrite another task input');
+assert(!fs.existsSync(report),'Runtime reports are immutable; select a fresh --report path');
 const runId=randomUUID(),dir=path.join(external,'pc-runtime-evidence',runId);
 fs.mkdirSync(dir,{recursive:true});
 const proof={status:'running',capability:'runtime',startedAt:new Date().toISOString(),source:{repo:process.cwd(),commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),transport:base,...readBackendSource(external),designHash:JSON.parse(fs.readFileSync('docs/design/growth-promotions/admin-r1-baseline.json')).designHash},steps:[],network:[],pageErrors:[],clicks:[],screenshots:[]};
@@ -113,8 +114,8 @@ try{
   await runQualificationChange({page,base,external,source,click,open,snap,record,runId,guard});
   page=await actor('growth_reader');await open('edit');await expect(page.getByLabel('活动名称 *',{exact:true})).toBeDisabled();await click('下一步');await expect(page.getByLabel('参与人群 *',{exact:true})).toBeDisabled();await click('下一步');await expect(page.getByRole('button',{name:'编辑',exact:true}).first()).toBeDisabled();record('real-reader-readonly',[await snap('ADM04-reader-disabled')]);
   const deniedUrl=`${base}/api/admin/growth/promotions/${activityId}/pause`,deniedBody={expectedRevision:dual.revision,reason:'仅验证真实只读账户拒绝权限',evidenceRefs:[]},deniedScope={channel:'api',actor:adminActor('growth_reader'),method:'POST',url:deniedUrl,body:deniedBody};await guard.beforeMutation(deniedScope);const denied=await page.request.post(deniedUrl,{headers:{'Idempotency-Key':'deny-'+runId},data:deniedBody,maxRedirects:0});await guard.observeResponse({...deniedScope,responseText:await denied.text(),status:denied.status()});assert.equal(denied.status(),403);record('real-permission-denial',[`${base}/api/admin/growth/promotions/${activityId}/pause → HTTP 403`]);
-  fs.writeFileSync(path.join(external,'pc-runtime-activities.json'),JSON.stringify({activityId,sourceActivityId:source.activityId,runId,name,createdAt:proof.startedAt,nativeGuard:guard.evidence()},null,2));
+  fs.writeFileSync(path.join(external,'pc-runtime-activities.json'),JSON.stringify({activityId,sourceActivityId:source.activityId,runId,name,createdAt:proof.startedAt,nativeGuard:guard.evidence()},null,2),{flag:'wx'});
   assert.deepEqual(proof.pageErrors,[]);proof.status='passed';
   }
 }catch(error){proof.status='failed';proof.failure=String(error.stack||error);if(page)try{await snap('failure');proof.lastVisibleText=(await page.locator('body').innerText()).slice(-14000);}catch{}process.exitCode=1;}
-finally{try{await guard.verifyEnd();if(JSON.stringify(sourceHashes())!==JSON.stringify(proof.source.files)||readBackendSource(external).serviceSourceHash!==proof.source.serviceSourceHash)throw Error('Product or backend source changed during runtime verification');}catch(error){proof.status='failed';proof.failure=String(error.stack||error);process.exitCode=1;}proof.nativeGuard=guard.evidence();proof.finishedAt=new Date().toISOString();proof.activityId=activityId;fs.writeFileSync(report,JSON.stringify(proof,null,2));await browser.close();console.log(JSON.stringify({status:proof.status,steps:proof.steps.map(s=>s.id),report,failure:proof.failure?.split('\n').slice(0,2)}));}
+finally{try{await guard.verifyEnd();if(JSON.stringify(sourceHashes())!==JSON.stringify(proof.source.files)||readBackendSource(external).serviceSourceHash!==proof.source.serviceSourceHash)throw Error('Product or backend source changed during runtime verification');}catch(error){proof.status='failed';proof.failure=String(error.stack||error);process.exitCode=1;}proof.nativeGuard=guard.evidence();proof.finishedAt=new Date().toISOString();proof.activityId=activityId;fs.writeFileSync(report,JSON.stringify(proof,null,2),{flag:'wx'});await browser.close();console.log(JSON.stringify({status:proof.status,steps:proof.steps.map(s=>s.id),report,failure:proof.failure?.split('\n').slice(0,2)}));}
