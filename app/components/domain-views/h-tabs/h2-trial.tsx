@@ -21,6 +21,7 @@ type TrialParam = {
   section?: "newonly" | "live";
   serverOnly?: boolean;
   readOnly?: boolean;
+  businessDate?: string;
 };
 
 type TrialSession = {
@@ -111,12 +112,13 @@ function ParamRow({
   const isDay = isTrialDayParam(param.key);
   const isInteger = isTrialIntegerParam(param.key);
   const isQuota = param.key === "seatsLeftToday";
+  const isActualQuota = param.key === "actualSeatsLeftToday";
   const isProduct = param.key === "trialProductId";
   const currentProduct = isProduct ? trialProducts.find((product) => product.productNo === current) : undefined;
   const displayCurrent = isDay ? `${current} 天`
-    : isQuota ? `${current} 张`
+    : isQuota || isActualQuota ? (current === "UNKNOWN" ? "UNKNOWN（暂不可用）" : `${current} 张`)
       : currentProduct ? `${currentProduct.name} · ${current}` : current;
-  const readOnly = ["phaseOpen", "trialPriceUSD"].includes(param.key);
+  const readOnly = !!param.readOnly || isActualQuota || ["phaseOpen", "trialPriceUSD"].includes(param.key);
   const productOptions = trialProducts.map((product) => product.productNo);
   const disabledProductOptions = trialProducts
     .filter((product) => !product.selectable)
@@ -125,7 +127,6 @@ function ParamRow({
     product.productNo,
     `${product.name} · ${product.productNo} · 库存 ${product.stock ?? 0} · $${text(product.priceUsdt, "-")}${product.selectable ? "" : ` · 不可选：${trialProductReason(product.unavailableReason)}`}`,
   ]));
-  // FEAT-TRIAL02 无卡化后自动扣款整链下线,后端不再下发 autoChargeAtEnd,该键的渲染分支随之移除。
   const options = ["autoPushEnabled"].includes(param.key)
     ? ["开", "关"]
     : param.key === "phaseOpen" ? ["开放", "关闭"]
@@ -146,6 +147,7 @@ function ParamRow({
   );
 
   const submit = async (reason: string, value?: string) => {
+    if (readOnly || !canWrite || param.key === "autoChargeAtEnd") return;
     if (!value || value.trim().length === 0) return;
     const normalizedValue = value.trim();
     if (isInteger && !/^\d+$/.test(normalizedValue)) {
@@ -161,11 +163,14 @@ function ParamRow({
     toast(`H2 ${param.name} 已更新`);
   };
 
+  if (param.key === "autoChargeAtEnd") return null;
+
   return (
     <div className="p-row" key={param.key}>
       <div className="k">
         {param.name}
         {param.sub && <small>{param.sub}</small>}
+        {isActualQuota && param.businessDate && param.businessDate !== "UNKNOWN" && <small>业务日期 {param.businessDate}</small>}
       </div>
       <span className="v">{displayCurrent}</span>
       {isProduct ? <a className="l-btn sm" href={`/devices/pricing?sku=${encodeURIComponent(current)}`}>去 E1 查看商品</a> : null}
@@ -173,8 +178,10 @@ function ParamRow({
         className={`l-btn sm${param.hot ? " mc" : ""}`}
         disabled={readOnly || !canWrite}
         aria-label={readOnly ? `只读 · ${param.name}` : canWrite ? `调整 ${param.name}` : `无写权限 · ${param.name}`}
-        title={readOnly ? (param.key === "phaseOpen" ? "由 H1 当前阶段派发，只读" : "由 E1 目标商品售价同步，只读") : undefined}
+        title={readOnly ? (param.sub || (param.key === "phaseOpen" ? "由 H1 当前阶段派发，只读"
+          : param.key === "trialPriceUSD" ? "由 E1 目标商品售价同步，只读" : "服务端只读参数")) : undefined}
         onClick={() => {
+          if (readOnly || !canWrite) return;
           if (param.hot || isInteger || isProduct) {
             openActionConfirm({
               action: `${param.hot ? "试用敏感参数" : "试用参数"} · ${param.name}`,
@@ -243,8 +250,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   }, [reload]);
 
   const states = useMemo(() => stateMap(model?.states ?? []), [model?.states]);
-  const newOnlyParams = (model?.params ?? []).filter((param) => param.section === "newonly");
-  const liveParams = (model?.params ?? []).filter((param) => param.section !== "newonly");
+  const newOnlyParams = (model?.params ?? []).filter((param) => param.key !== "autoChargeAtEnd" && param.section === "newonly");
+  const liveParams = (model?.params ?? []).filter((param) => param.key !== "autoChargeAtEnd" && param.section !== "newonly");
   const stats = model?.stats ?? {};
 
   const openSessionCancel = (session: TrialSession) => {
