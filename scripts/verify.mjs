@@ -275,7 +275,7 @@ const GEARS = [
   ["A2 coverage sentinel", "node", ["scripts/a2-audit-coverage-sentinel.mjs"]],
   // 全链唯一一道 a2-outcome-uncertain 门(原第 44 齿是同一条命令的重复挂载,2026-08-17 去重:
   // 同命令跑两遍不多买一分判别力,只多花一份时间,还让「N 个齿」这个数虚高)。
-  ["A2 outcome-uncertain contract", "node", ["--test", "tests/a2-outcome-uncertain-contract.test.mjs"]],
+  ["A2 outcome-uncertain contract", "node", ["--experimental-strip-types", "--test", "tests/a2-outcome-uncertain-contract.test.mjs", "tests/a2-frontend-contract.test.mjs"]],
   // A2 的每条客户端路径都必须被 platform BFF 放行。缺这道门时「客户端请求了一条
   // 代理没放行的子路径」两侧各自自洽、tsc/build 全绿,页面却把 404 显示成服务端故障
   // (zentao #201 的 retention-preview 就是这么漏掉的)。

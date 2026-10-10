@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripTypeScriptTypes } from "node:module";
 import { join } from "node:path";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 
 import {
   A2_AUDIT_DOMAINS,
@@ -20,6 +22,24 @@ import {
 
 const root = process.cwd();
 const read = (path) => readFileSync(join(root, path), "utf8");
+
+function productionAuditLogMapper() {
+  const client = read("lib/admin/a2-client.ts");
+  const between = (start, end) => {
+    const from = client.indexOf(start), to = client.indexOf(end, from);
+    assert.ok(from >= 0 && to > from, `missing production ${start}`);
+    return client.slice(from, to);
+  };
+  const source = [
+    between("function asText(", "function normalizeType("),
+    between("function formatTime(", "function fromTicket("),
+    between("function fromLog(", "function normalizeOverview("),
+    "globalThis.mapAuditLog = fromLog;",
+  ].join("\n");
+  const context = { Date, resolveA2AuditObject, resolveA2AuditDomain };
+  runInNewContext(stripTypeScriptTypes(source), context);
+  return context.mapAuditLog;
+}
 
 test("A2 exposes every real A-M domain and serializes one shared filter contract", () => {
   assert.deepEqual(A2_AUDIT_DOMAINS, [..."ABCDEFGHIJKLM"]);
@@ -62,6 +82,66 @@ test("A2 authority helpers fail closed for read-only sessions", () => {
   assert.equal(canAccessA2Export(["platform_a2_export"]), true);
   assert.equal(canAccessA2Export(["platform_a2_write"]), false);
   assert.equal(canAccessA2Write(["platform_a2_write"]), true);
+});
+
+test("A2 returned WO audit logs retain object indices without changing the display name", () => {
+  const mapLog = productionAuditLogMapper();
+  const object = "WO-261008092315825-42";
+  const rows = [
+    { id: 72132, action: "A2_OPERATION_REJECTED", actorUsername: "suadmin", createdAt: "2026-10-08 17:28:59" },
+    { id: 72112, action: "A2_OPERATION_PROPOSED", actorUsername: "superadmin", createdAt: "2026-10-08 17:23:15" },
+  ].map(log => mapLog({
+    ...log, resourceType: "A2_OPERATION", resourceId: object, bizNo: object,
+    detailJson: JSON.stringify({ resource: "phone-calibration" }),
+  }));
+  assert.deepEqual(rows.filter(row => matchesA2AuditFilter(row, { object })).map(row => row.id), ["72132", "72112"]);
+  for (const row of rows) {
+    assert.equal(row.obj, "phone-calibration");
+    assert.equal(row.resourceType, "A2_OPERATION");
+    assert.equal(row.resourceId, object);
+    assert.equal(row.bizNo, object);
+    assert.equal(matchesA2AuditFilter(row, { object: "PHONE-CALIBRATION" }), true);
+    assert.equal(matchesA2AuditFilter(row, { object: "a2_operation" }), true);
+    assert.equal(matchesA2AuditFilter({ ...row, bizNo: "unrelated" }, { object }), true);
+    assert.equal(matchesA2AuditFilter({ ...row, resourceId: "unrelated" }, { object }), true);
+  }
+  assert.deepEqual(rows.filter(row => matchesA2AuditFilter(row, {
+    object, domain: "A", operator: "superadmin", action: "proposed",
+    startTime: "2026-10-08T17:23", endTime: "2026-10-08T17:23",
+  })).map(row => row.id), ["72112"]);
+});
+
+test("A2 object aliases are OR within the object condition and preserve every other AND filter", () => {
+  const row = {
+    domain: "A", actor: "superadmin", action: "A2_OPERATION_PROPOSED",
+    obj: "phone-calibration", resourceType: "A2_OPERATION", resourceId: "WO-42", bizNo: "BIZ-42",
+    createdAt: "2026-10-08T17:23:15.000Z",
+  };
+  const filter = { object: "BIZ-42", domain: "A", operator: "superadmin", action: "proposed",
+    startTime: "2026-10-08T17:23:00.000Z", endTime: "2026-10-08T17:23:59.999Z" };
+  assert.equal(matchesA2AuditFilter(row, filter), true);
+  for (const mismatch of [
+    { object: "missing" }, { domain: "D" }, { operator: "other-admin" }, { action: "executed" },
+    { startTime: "2026-10-08T17:24:00.000Z" }, { endTime: "2026-10-08T17:22:59.999Z" },
+  ]) assert.equal(matchesA2AuditFilter(row, { ...filter, ...mismatch }), false);
+  assert.equal(matchesA2AuditFilter({ ...row, createdAt: "invalid" }, filter), false);
+  assert.equal(matchesA2AuditFilter({ ...row, resourceType: "prefix", resourceId: "suffix" }, { object: "prefixsuffix" }), false);
+});
+
+test("A2 object indices ignore empty placeholders and non-string values without coercion", () => {
+  const mapLog = productionAuditLogMapper();
+  const row = { domain: "A", actor: "superadmin", action: "A2_OPERATION_PROPOSED", obj: "—", createdAt: "" };
+  for (const value of [undefined, null, "", "  ", "—", 42, true, ["WO-42"], { toString() { throw new Error("must not coerce"); } }]) {
+    for (const key of ["obj", "resourceType", "resourceId", "bizNo"]) {
+      assert.equal(matchesA2AuditFilter({ ...row, [key]: value }, { object: "WO-42" }), false);
+    }
+    const mapped = mapLog({ action: row.action, resourceType: value, resourceId: value, bizNo: value });
+    assert.equal(matchesA2AuditFilter(mapped, { object: "WO-42" }), false);
+  }
+  assert.equal(matchesA2AuditFilter(row, { object: "—" }), false);
+  assert.equal(matchesA2AuditFilter({ ...row, resourceId: " WO-42 " }, { object: " wo-42 " }), true);
+  assert.equal(matchesA2AuditFilter({ ...row, obj: "legacy-object" }, { object: "legacy" }), true);
+  assert.equal(matchesA2AuditFilter(row, { object: " " }), true);
 });
 
 test("A2 mechanism boundaries and dynamic reason minimum reject malformed values", () => {
