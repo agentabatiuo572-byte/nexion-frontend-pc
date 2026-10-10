@@ -361,7 +361,6 @@ test("topbar keeps permitted touch entrances visible within 56px at narrow and d
     "next/link": { default: ({ children, prefetch: _prefetch, ...props }) => React.createElement("a", props, children) },
     "@/lib/store/admin-auth": { useAdminAuth: pick => pick({ logoutError: "" }) },
     "./breadcrumb": { Breadcrumb: () => React.createElement("nav", { className: "admin-topbar-breadcrumb flex min-w-0 items-center gap-2" }, React.createElement("span", { className: "admin-topbar-crumb-label" }, "客服中心 · 长名称服务会话页面")) },
-    "./sync-chip": { SyncChip: () => React.createElement("span", { className: "admin-topbar-sync-chip" }, React.createElement("span", { className: "admin-topbar-sync-label" }, "同步失败")) },
     "./utc-clock": { UtcClock: () => React.createElement("span", null, "UTC 08:01:00") },
     "@/app/components/kit/role-badge": { RoleBadge: () => React.createElement("span", null, "总管理员") },
     "@/lib/format": { fmtPct: value => String(value * 100) + "%" },

@@ -100,6 +100,7 @@ interface BackendAuditLog {
   action?: string | null;
   resourceType?: string | null;
   resourceId?: string | null;
+  bizNo?: string | null;
   actorType?: string | null;
   actorUsername?: string | null;
   clientIp?: string | null;
@@ -193,6 +194,9 @@ export interface A2AuditLogRow {
   role: string;
   action: string;
   obj: string;
+  resourceType?: string;
+  resourceId?: string;
+  bizNo?: string;
   delta: string;
   domain: A2AuditDomain;
   ip: string;
@@ -312,6 +316,7 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
 function fromLog(log: BackendAuditLog): A2AuditLogRow {
   const detail = parseDetail(log.detailJson);
   const action = asText(log.action, "UNKNOWN");
+  const resourceType = asText(log.resourceType, "");
   const obj = resolveA2AuditObject(detail.obj, detail.resource, log.resourceType, log.resourceId);
   const beforeVal = detail.before ?? detail.oldValue ?? detail.beforePrice ?? detail.fromStatus ?? detail.from;
   const afterVal = detail.after ?? detail.newValue ?? detail.afterPrice ?? detail.toStatus ?? detail.to;
@@ -324,8 +329,11 @@ function fromLog(log: BackendAuditLog): A2AuditLogRow {
     role: asText(detail.role ?? log.actorType, "ADMIN"),
     action,
     obj,
+    resourceType,
+    resourceId: asText(log.resourceId, ""),
+    bizNo: asText(log.bizNo, ""),
     delta,
-    domain: resolveA2AuditDomain(detail.sourceDomain, detail.domain, action, log.resourceType?.trim() || ""),
+    domain: resolveA2AuditDomain(detail.sourceDomain, detail.domain, action, resourceType),
     ip: log.clientIp?.trim() || "—",
     result: log.result?.trim() || "SUCCESS",
     riskLevel: log.riskLevel?.trim() || "INFO",

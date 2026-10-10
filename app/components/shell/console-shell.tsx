@@ -77,7 +77,7 @@ function AdminSessionRecoveryGate({ onRetry }: { onRetry: () => void }) {
       style={{ background: "var(--v5-bg)", color: "var(--v5-ink-3)" }}
     >
       <strong style={{ color: "var(--v5-ink)" }}>登录状态校验失败</strong>
-      <span className="text-[13px]">服务端会话暂时无法确认，已停止进入后台。</span>
+      <span className="text-[13px]">暂时无法确认登录状态，请重试。</span>
       <button
         type="button"
         className="rounded-[8px] px-4 py-2 text-[13px] font-medium"

@@ -11,6 +11,7 @@
  * 单源:后端 /api/admin/growth/* 读模型。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import "./h-domain.css";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
@@ -37,7 +38,7 @@ const RO_COPY: Record<string, [ro: string, live: string]> = {
   H1: ["阶段流转只能服务器推进 · 客户端不能改", ""],
   H2: ["扣款失败概率只在服务器 · 永不下发前端", "自动推送 1.5 秒即时急停 · 进行中的按开始时锁定值结算"],
   H3: ["任务完成态和奖励结算由服务器裁决", "进行中的按入窗/入周/跨档快照结算 · 不追溯"],
-  H4: ["转盘抽奖在服务器跑 · 概率公开,但中没中不由前端定", "主推唯一性、活动状态、转盘护栏均由后端校验"],
+  H4: ["同时只能有一个进行中的主推活动", "配置活动、奖池与领取限制"],
   H5: ["签到/转盘的结果由服务器定 · 客户端只显示", "幸运两档概率之和 ≤100% · 里程碑阈值严格从低到高"],
   H7: ["代金券领取/核销在服务器裁决 · 客户端只展示与跳转", "改参即时对前端领券弹窗 + banner 生效 · 促销折扣非负债不走 B1"],
   H8: ["邀请关系和是否已结算由服务器裁决", "真实钱包 + 资金台账 · 同一新人唯一结算"],
@@ -46,16 +47,14 @@ const RO_COPY: Record<string, [ro: string, live: string]> = {
 
 export function HDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
-  const session = useAdminAuth((state) => state.session);
+  const access = useAdminAuth(useShallow((state) => [state.authEpoch, state.session?.role, ...(state.session?.authorities ?? [])]));
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "H1", [meta.l2Id]);
   const [rhythm, setRhythm] = useState<H1RhythmOverview | null>(null);
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
   const can = useCallback((authority: string) => {
-    const role = session?.role;
-    const authorities = session?.authorities ?? [];
-    return role === "superadmin" || role === "super" || authorities.includes(authority);
-  }, [session]);
+    return access[1] === "superadmin" || access[1] === "super" || access.slice(2).includes(authority);
+  }, [access]);
 
   const ctx: HCtx = {
     toast: setToast,

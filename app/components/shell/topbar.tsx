@@ -1,14 +1,13 @@
 "use client";
 
 /**
- * 顶栏 — 面包屑 + 服务端权威状态徽标 + UTC 时钟 + 当前登录账号菜单。
+ * 顶栏 — 面包屑 + UTC 时钟 + 当前登录账号菜单。
  */
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Gauge, Headset, LogOut, Search, UserRound } from "lucide-react";
 import type { AdminRole, NavDomain } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Breadcrumb } from "./breadcrumb";
-import { SyncChip } from "./sync-chip";
 import { UtcClock } from "./utc-clock";
 import { RoleBadge } from "@/app/components/kit/role-badge";
 import Link from "next/link";
@@ -50,12 +49,12 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
       beginLogoutVerification();
       try {
         const auth = await currentAdminSession();
-        if (auth) cancelLogout("服务端会话仍有效，退出未完成，请重试");
+        if (auth) cancelLogout("退出未完成，请重试");
         else {
           signOut();
         }
       } catch {
-        failLogoutUnknown("服务端会话状态无法确认，已停止进入后台");
+        failLogoutUnknown("退出结果暂无法确认，已停止进入后台");
       }
     } finally {
       logoutAttemptRef.current = false;
@@ -153,13 +152,14 @@ function CoveragePill({ enabled }: { enabled: boolean }) {
       : cov < healthy
         ? "var(--v5-warning)"
         : "var(--v5-success)";
-  const label = bDomain.loading && !bDomain.hasData ? "同步中" : bDomain.error ? "同步失败" : unavailable ? "无数据" : fmtPct(cov);
+  const label = unavailable ? "-" : fmtPct(cov);
+  const statusLabel = bDomain.loading && !bDomain.hasData ? "正在读取" : unavailable ? "暂不可用" : label;
   return (
     <Link
       href="/overview/dual-ledger"
       prefetch={false}
-      title={unavailable ? "B 域聚合接口暂不可用 · 点击进双账本" : "兑付覆盖率 = 储备 ÷ 应付负债 · 点击进双账本"}
-      aria-label={`兑付覆盖率：${label}，查看双账本`}
+      title={unavailable ? "兑付覆盖率暂不可用 · 查看双账本" : "兑付覆盖率 = 储备 ÷ 应付负债 · 点击进双账本"}
+      aria-label={`兑付覆盖率：${statusLabel}，查看双账本`}
       className="admin-topbar-coverage inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-[9px] px-3 py-1.5 text-[12px] transition-opacity hover:opacity-90"
       style={{ background: `color-mix(in srgb, ${zoneVar} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${zoneVar} 35%, transparent)` }}
     >
@@ -196,7 +196,7 @@ function SearchBox({ domains }: { domains: NavDomain[] }) {
       >
         <Search size={15} style={{ color: "var(--v5-ink-4)" }} aria-hidden />
         <span className="admin-topbar-search-label min-w-0 flex-1 truncate text-[12.5px]" style={{ color: "var(--v5-ink-4)" }}>
-          搜索 userId / 工单 / 交易…
+          搜索账户 / 工单 / 交易…
         </span>
         <kbd
           className="admin-topbar-search-shortcut font-mono-tabular rounded-[5px] px-1.5 py-0.5 text-[10px]"
@@ -271,7 +271,6 @@ export function TopBar({
       <div className="admin-topbar-actions flex shrink-0 items-center gap-2 whitespace-nowrap sm:gap-3">
         {!supportOnly && canReadBDomain && <CoveragePill enabled />}
         {!supportOnly && <span className="hidden h-4 w-px sm:block" style={{ background: "var(--v5-border)" }} />}
-        {!supportOnly && <span className="admin-topbar-sync hidden xl:block"><SyncChip /></span>}
         <span className="admin-topbar-clock hidden 2xl:block"><UtcClock /></span>
         <span className="h-4 w-px" style={{ background: "var(--v5-border)" }} />
         {canReadMContent && <SupportInboxPill pending={servicePending} />}

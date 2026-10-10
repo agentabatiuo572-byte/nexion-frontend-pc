@@ -156,7 +156,7 @@ function run(label, command, args, gearName) {
  */
 function isHeavyGear([, cmd, args]) {
   const line = [cmd, ...args].join(" ");
-  return /\brun\s+(build|dev|start)\b/.test(line) || /\bnext\s+(build|dev|start)\b/.test(line) || /playwright|tests\/support-select-keyboard\.test\.mjs/i.test(line);
+  return /\brun\s+(build|dev|start)\b/.test(line) || /\bnext\s+(build|dev|start)\b/.test(line) || /playwright|tests\/support-select-keyboard\.test\.mjs|scripts\/growth-promotions-capture\.test\.mjs/i.test(line);
 }
 
 /** git 读命令(只读,失败返回 null —— 拿不到就把记录里的对应字段留空,不编)。 */
@@ -230,6 +230,9 @@ writeRecord({
 // 齿轮表:序号自动派生(新增/重排齿轮不再手工改 [x/N])。本机注意:channel-parity 起的后端依赖齿轮
 // 硬读兄弟仓 nexion-backend,缺仓环境链在该齿断(memory: nexion-backend-not-in-workspace)。
 const GEARS = [
+  ["promotion generated API contract", "node", ["scripts/generate-promotion-types.mjs", "--check"]],
+  ["promotion interactions and public copy", "node", ["--unhandled-rejections=strict", "--experimental-strip-types", "--test", "scripts/growth-promotions-behavior.test.mjs", "scripts/growth-promotions-read-state.test.mjs", "scripts/growth-promotions-visual-gate.test.mjs", "scripts/growth-promotions-runtime-waits.test.mjs", "scripts/growth-promotions-public-copy.test.mjs"]],
+  ["promotion dialog capture", "node", ["--test", "scripts/growth-promotions-capture.test.mjs"]],
   ["direct referral policy contract", "node", ["--experimental-strip-types", "--test", "tests/direct-referral-policy.test.mjs", "tests/f5-event-runtime-contract.test.mjs"]],
   ["E6 phone binding policy contract", "node", ["--experimental-strip-types", "--test", "tests/e6-phone-binding-contract.test.mjs"]],
   ["E2/E6 phone calibration contract", "node", ["--test", "tests/phone-calibration-contract.test.mjs", "tests/phone-calibration-proxy.test.mjs"]],
@@ -246,7 +249,7 @@ const GEARS = [
   ["keyboard submit contract", "node", ["--experimental-strip-types", "--test", "tests/keyboard-submit-contract.test.mjs"]],
   ["M1 pending/failure state contract", "node", ["--test", "tests/m1-acceptance-contract.test.mjs"]],
   ["M3 App support authority contract", "node", ["--test", "tests/m3-acceptance-contract.test.mjs"]],
-  ["Support enhancements exact amounts, payloads, binary ceiling and dock scope", "node", ["--experimental-strip-types", "--experimental-vm-modules", "--test", "tests/support-enhancements-client.test.mjs", "tests/support-enhancements-dock.test.mjs", "tests/support-enhancements-layout.test.mjs", "tests/shared-shell-authority-prefetch-contract.test.mjs", "tests/support-analytics-runtime.test.mjs", "tests/support-analytics-client.test.mjs", "tests/m1-analytics-workbench.test.mjs", "tests/public-leaderboard-client.test.mjs", "tests/public-leaderboard-container.test.mjs"]],
+  ["Support enhancements exact amounts, payloads, binary ceiling and dock scope", "node", ["--experimental-strip-types", "--experimental-vm-modules", "--test", "tests/support-enhancements-client.test.mjs", "tests/support-enhancements-dock.test.mjs", "tests/support-enhancements-layout.test.mjs", "tests/shared-shell-authority-prefetch-contract.test.mjs", "tests/support-analytics-runtime.test.mjs", "tests/support-analytics-client.test.mjs", "tests/m1-analytics-workbench.test.mjs", "tests/public-leaderboard-client.test.mjs", "tests/public-leaderboard-container.test.mjs", "tests/m3-profile-read-recovery.test.mjs"]],
   ["Support group management and qualification boundaries", "node", ["--experimental-strip-types", "--experimental-vm-modules", "--test", "tests/support-group-client.test.mjs", "tests/group-management-container.test.mjs", "tests/group-management-v2-boundary.test.mjs", "tests/group-management-v3-boundary.test.mjs", "tests/independent-boundary.test.mjs", "tests/reviewer-v2.test.mjs"]],
   ["Exclusive support scope and durable command recovery", "node", ["--experimental-strip-types", "--test", "tests/exclusive-support-pool-client.test.mjs", "tests/exclusive-support-pool-component.test.mjs", "tests/exclusive-support-recovery-v2.test.mjs", "tests/exclusive-support-m5-qualification-v2.test.mjs", "tests/reviewer-g3.test.mjs"]],
   ["Support shared select real keyboard behavior", "node", ["--test", "tests/support-select-keyboard.test.mjs"]],
@@ -275,7 +278,7 @@ const GEARS = [
   ["A2 coverage sentinel", "node", ["scripts/a2-audit-coverage-sentinel.mjs"]],
   // 全链唯一一道 a2-outcome-uncertain 门(原第 44 齿是同一条命令的重复挂载,2026-08-17 去重:
   // 同命令跑两遍不多买一分判别力,只多花一份时间,还让「N 个齿」这个数虚高)。
-  ["A2 outcome-uncertain contract", "node", ["--test", "tests/a2-outcome-uncertain-contract.test.mjs"]],
+  ["A2 outcome-uncertain contract", "node", ["--experimental-strip-types", "--test", "tests/a2-outcome-uncertain-contract.test.mjs", "tests/a2-frontend-contract.test.mjs"]],
   // A2 的每条客户端路径都必须被 platform BFF 放行。缺这道门时「客户端请求了一条
   // 代理没放行的子路径」两侧各自自洽、tsc/build 全绿,页面却把 404 显示成服务端故障
   // (zentao #201 的 retention-preview 就是这么漏掉的)。

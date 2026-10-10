@@ -16,6 +16,9 @@ type FilterableAuditRow = {
   actor: string;
   action: string;
   obj: string;
+  resourceType?: string;
+  resourceId?: string;
+  bizNo?: string;
   createdAt: string;
 };
 
@@ -73,7 +76,11 @@ export function matchesA2AuditFilter(row: FilterableAuditRow, filter: A2AuditFil
   if (normalized.domain && row.domain !== normalized.domain) return false;
   if (normalized.operator && !row.actor.toLocaleLowerCase().includes(normalized.operator.toLocaleLowerCase())) return false;
   if (normalized.action && !row.action.toLocaleLowerCase().includes(normalized.action.toLocaleLowerCase())) return false;
-  if (normalized.object && !row.obj.toLocaleLowerCase().includes(normalized.object.toLocaleLowerCase())) return false;
+  const object = normalized.object?.toLocaleLowerCase();
+  if (object && ![row.obj, row.resourceType, row.resourceId, row.bizNo].some(value =>
+    typeof value === "string" && !!value.trim() && value.trim() !== "—"
+    && value.trim().toLocaleLowerCase().includes(object)
+  )) return false;
 
   const rowTime = Date.parse(row.createdAt);
   if (normalized.startTime) {

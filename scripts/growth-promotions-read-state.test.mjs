@@ -9,6 +9,36 @@ import path from 'node:path';
 import * as promotionForm from '../lib/admin/promotion-form.ts';
 
 const require=createRequire(import.meta.url);
+test('session renewal keeps promotion reads stable while permission and identity changes revalidate',()=>{
+  let state,hook=0;const slots=[];
+  const hooks={useEffect(){},useState:()=>[null,()=>{}],useMemo:fn=>fn(),
+    useRef:initial=>slots[hook++]??=( {current:initial} ),
+    useCallback:(fn,deps)=>{const i=hook++,old=slots[i];if(old&&deps.every((v,n)=>Object.is(v,old.deps[n])))return old.fn;slots[i]={fn,deps};return fn;}};
+  const shallowExports={};
+  new Function('require','exports',fs.readFileSync(require.resolve('zustand/react/shallow'),'utf8'))(name=>name==='react'?hooks:require(name),shallowExports);
+  const H4=()=>null,empty=()=>null;
+  const imports=name=>{
+    if(name==='react')return hooks;
+    if(name==='react/jsx-runtime')return require(name);
+    if(name==='zustand/react/shallow')return shallowExports;
+    if(name.endsWith('/admin-auth'))return {useAdminAuth:selector=>selector(state)};
+    if(name.endsWith('/design-kit'))return {useToast:()=>[null,()=>{}]};
+    if(name.endsWith('/h4-promotions'))return {__esModule:true,default:H4};
+    return new Proxy({__esModule:true,default:empty},{get:(target,key)=>key in target?target[key]:empty});
+  };
+  const code=ts.transpileModule(fs.readFileSync(new URL('../app/components/domain-views/h-view.tsx',import.meta.url),'utf8'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+  const module={exports:{}};new Function('require','exports','module',code)(imports,module.exports,module);
+  const find=node=>{if(!node||typeof node!=='object')return;if(node.type===H4)return node.props.ctx.can;for(const child of [].concat(node.props?.children??[])){const result=find(child);if(result)return result;}};
+  const render=value=>{state=value;hook=0;const can=find(module.exports.HDomainView({meta:{l2Id:'H4'}}));assert.equal(typeof can,'function');return can;};
+  const initial={authEpoch:1,session:{role:'auditor',authorities:['growth_promotion_read','growth_promotion_edit']}};
+  const first=render(initial);assert(first('growth_promotion_edit'));assert(!first('growth_promotion_approve'));
+  const renewed=render({...initial,session:{...initial.session,authorities:[...initial.session.authorities]}});assert.strictEqual(renewed,first);
+  const revoked=render({...initial,session:{role:'auditor',authorities:['growth_promotion_read']}});assert.notStrictEqual(revoked,first);assert(!revoked('growth_promotion_edit'));
+  const restored=render(initial);assert.notStrictEqual(restored,revoked);assert(restored('growth_promotion_edit'));
+  const nextIdentity=render({...initial,authEpoch:2});assert.notStrictEqual(nextIdentity,restored);
+  const superAdmin=render({authEpoch:2,session:{role:'superadmin',authorities:[]}});assert(superAdmin('growth_promotion_edit'));
+  const signedOut=render({authEpoch:3,session:null});assert.notStrictEqual(signedOut,superAdmin);assert(!signedOut('growth_promotion_read'));
+});
 function component(file,imports,privateExport=''){
   const code=ts.transpileModule(fs.readFileSync(new URL('../app/components/domain-views/h-tabs/'+file,import.meta.url),'utf8'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
   const module={exports:{}};new Function('require','exports','module',code+(privateExport?'\nmodule.exports.'+privateExport+'='+privateExport+';':''))(imports,module.exports,module);return module.exports;
@@ -92,7 +122,7 @@ test('blocked command dialogs deny new writes and original retries while retaini
   render();states[0]={minChars:1,maxChars:100};states[2]=false;states[4]='retained original reason';
   let button=render().find(node=>node.type===gateUi.Button&&node.props.children==='确认操作');assert.equal(button.props.disabled,true);await button.props.onClick();assert.equal(writes,0,'Handler must deny dispatch even if a stale callback is invoked');
   records=[{operation:'saveDraft',targetId:'A1',body:{reason:'retained original reason'},recoveryState:'NOT_FOUND'}];button=render().find(node=>node.type===gateUi.Button&&node.props.children==='原样重试');assert.equal(button.props.disabled,true);await button.props.onClick();assert.equal(writes,0);
-  button=render().find(node=>node.type===gateUi.Button&&node.props.children==='核查原命令');assert.equal(button.props.disabled,false);await button.props.onClick();assert.equal(reads,1);assert.equal(writes,0);assert.equal(states[4],'retained original reason');
+  button=render().find(node=>node.type===gateUi.Button&&node.props.children==='核查原操作');assert.equal(button.props.disabled,false);await button.props.onClick();assert.equal(reads,1);assert.equal(writes,0);assert.equal(states[4],'retained original reason');
 });
 
 function simulation(read){

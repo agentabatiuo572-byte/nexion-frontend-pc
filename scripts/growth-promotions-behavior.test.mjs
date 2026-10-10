@@ -139,7 +139,7 @@ test('a bound success remains recoverable until the view has read back the resou
 test('unavailable persistent storage refuses dispatch rather than losing the original command',async()=>{
   let writes=0;globalThis.fetch=async()=>{writes++;throw Error('Must not dispatch');};
   globalThis.window={sessionStorage:{getItem(){throw Error('denied');},setItem(){throw Error('denied');},removeItem(){throw Error('denied');}}};
-  try{await assert.rejects(promotionCommand({operation:'saveDraft',targetId:'storage-test',path:'/promotions/storage-test/draft',method:'PUT',body:{draft:{name:'不能丢失'},reason:'验证存储拒绝'}}),/无法保留原命令/);assert.equal(writes,0);}finally{delete globalThis.window;}
+  try{await assert.rejects(promotionCommand({operation:'saveDraft',targetId:'storage-test',path:'/promotions/storage-test/draft',method:'PUT',body:{draft:{name:'不能丢失'},reason:'验证存储拒绝'}}),/无法保留本次操作记录，尚未提交/);assert.equal(writes,0);}finally{delete globalThis.window;}
 });
 
 test('version selection reads every page and field errors never expose internal paths',async()=>{
