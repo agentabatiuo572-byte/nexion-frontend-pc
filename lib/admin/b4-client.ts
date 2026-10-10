@@ -102,9 +102,10 @@ export async function recordB4H1Jump(dial: string, phase: string) {
 
 export async function exportB4Distribution(filters: B4Filters) {
   const response = await guardedFetch(`/api/admin/phase/distribution/export${query(filters)}`, { cache: "no-store" });
-  if (!response.ok) {
+  const contentType = response.headers.get("Content-Type")?.split(";", 1)[0].trim().toLowerCase();
+  if (!response.ok || contentType !== "text/csv") {
     const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
-    if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
+    if (isAdminAuthFailure(response.status, result?.message) || isAdminAuthFailure(result?.code ?? response.status, result?.message)) resetAdminSession();
     throw new Error(formatAdminApiError(result?.message, "B4_EXPORT_FAILED"));
   }
   const blob = await response.blob();

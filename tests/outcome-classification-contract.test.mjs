@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 
 import { isDeterministicRejection, outcomeStaysUnknown } from "../lib/admin/outcome-classification.ts";
 
@@ -237,3 +240,241 @@ test("带命令号的写请求,传输层失败必须有兜底(裸 TypeError 冒�
       `${name} 的写请求没有任何 try 包裹 → 断网时抛裸错误,调用方判不出「结果未知」`);
   }
 });
+
+// Execute the real D3 download and its page confirmation callback with synthetic
+// Responses and an in-memory command slot. No browser, storage or HTTP is used.
+const ts = createRequire(import.meta.url)("typescript");
+function d3Declarations(relative, names) {
+  const source = ts.createSourceFile(relative, read(relative), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const selected = new Map();
+  const visit = (node) => {
+    if ((ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) && names.includes(node.name?.text)) {
+      selected.set(node.name.text, node.getText(source));
+    }
+    if (ts.isVariableDeclaration(node) && names.includes(node.name.getText(source))) {
+      selected.set(node.name.getText(source), `const ${node.getText(source)};`);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  for (const name of names) assert.ok(selected.has(name), `missing ${relative}:${name}`);
+  return names.map((name) => selected.get(name)).join("\n");
+}
+const d3Modules = [
+  read("lib/admin/error-messages.ts"),
+  d3Declarations("lib/admin/auth-session.ts", ["AUTH_REQUIRED_MESSAGES", "isAdminAuthFailure"]),
+  read("lib/admin/outcome-classification.ts"),
+  d3Declarations("lib/admin/d-client.ts", ["DOutcomeUnknownError", "isDOutcomeUnknownError", "downloadD3Csv"]),
+  d3Declarations("app/components/domain-views/d-tabs/d3-treasury.tsx", ["reasonValid", "exportScope", "operationKey", "exportCsv"])
+    + "\nmodule.exports = { exportCsv };",
+].map((source) => {
+  const result = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }, reportDiagnostics: true,
+  });
+  assert.equal(result.diagnostics?.length ?? 0, 0);
+  return result.outputText;
+});
+
+function d3DownloadFixture(respond) {
+  const calls = { requests: [], downloads: [], revoked: [], resets: 0, toasts: [], errors: [], forgotten: [], confirmations: [] };
+  const slots = new Map();
+  const context = {
+    module: { exports: {} }, exports: {}, Error,
+    fetch: async (url, init) => {
+      calls.requests.push({ url, init });
+      return respond(calls.requests.length);
+    },
+    resetAdminSession: () => calls.resets++,
+    URL: {
+      createObjectURL: (blob) => { calls.downloads.push({ blob }); return "blob:offline-d3"; },
+      revokeObjectURL: (url) => calls.revoked.push(url),
+    },
+    document: { createElement: (tag) => {
+      assert.equal(tag, "a");
+      return { click() { Object.assign(calls.downloads.at(-1), { href: this.href, fileName: this.download, clicked: true }); } };
+    } },
+    pendingKeys: {
+      get: (scope) => slots.get(scope), remember: (scope, key) => slots.set(scope, key),
+      forget: (scope) => { slots.delete(scope); calls.forgotten.push(scope); },
+    },
+    openConfirm: (request) => calls.confirmations.push(request), OPERATOR: () => "offline-maker",
+    toast: (message) => calls.toasts.push(message), setError: (message) => calls.errors.push(message),
+    globalThis: { crypto: { randomUUID } },
+  };
+  for (const compiled of d3Modules) {
+    runInNewContext(compiled, context);
+    Object.assign(context, context.exports);
+  }
+  const actions = context.module.exports;
+  return {
+    calls, slots,
+    async finish(kind = "reconciliation", reason = "offline export reason") {
+      actions.exportCsv(kind);
+      return calls.confirmations.at(-1).run(reason);
+    },
+  };
+}
+
+const d3Csv = (disposition = 'attachment; filename="treasury.csv"') => new Response("subject,amount\nreserve,12.50\n", {
+  headers: { "Content-Type": "text/csv;charset=UTF-8", "Content-Disposition": disposition },
+});
+const d3RequestKey = (fixture, index = 0) => fixture.calls.requests[index].init.headers["Idempotency-Key"];
+
+test("D3 HTTP 200 business-error JSON never downloads or reports CSV success", async () => {
+  for (const code of [403, 500]) {
+    const fixture = d3DownloadFixture(() => Response.json({ code, message: "无权限访问", data: null }));
+    assert.equal(await fixture.finish(), false);
+    assert.equal(fixture.calls.requests.length, 1);
+    assert.equal(fixture.calls.downloads.length, 0);
+    assert.equal(fixture.calls.toasts.length, 0);
+    assert.equal(fixture.slots.size, 0, "an explicit business rejection closes this first attempt");
+    assert.equal(fixture.calls.resets, 0, "permission failure must not log out the operator");
+  }
+});
+
+test("D3 HTTP/ApiResult 401 preserves the normal auth reset and never downloads", async () => {
+  const responses = [
+    () => Response.json({ code: 401, message: "session expired", data: null }),
+    () => Response.json({ code: 401, message: "UNAUTHORIZED", data: null }, { status: 401 }),
+    () => new Response("unreadable authentication response", { status: 401 }),
+  ];
+  for (const respond of responses) {
+    const fixture = d3DownloadFixture(respond);
+    assert.equal(await fixture.finish(), false);
+    assert.equal(fixture.calls.resets, 1);
+    assert.equal(fixture.calls.downloads.length, 0);
+    assert.equal(fixture.slots.size, 0);
+  }
+});
+
+test("D3 unknown outcomes retain the original page key until an explicit CSV retry succeeds", async () => {
+  const responses = [
+    () => Response.json({ code: 503, message: "TREASURY_BACKEND_UNAVAILABLE" }, { status: 503, headers: { "X-Nexion-Upstream-Outcome": "unknown" } }),
+    () => Response.json({ code: 500, message: "internal failure" }, { status: 500 }),
+    () => new Response("<html>proxy failure</html>", { headers: { "Content-Type": "text/html" } }),
+    () => Response.json({ code: 0, data: null }),
+    () => Response.json({ code: "403", message: "invalid envelope" }),
+    () => new Response("not a CSV result", { headers: { "Content-Type": "text/csv", "X-Nexion-Upstream-Outcome": "UNKNOWN" } }),
+  ];
+  for (const respond of responses) {
+    const fixture = d3DownloadFixture((attempt) => attempt === 1 ? respond() : d3Csv());
+    assert.equal(await fixture.finish(), false);
+    const originalKey = d3RequestKey(fixture);
+    assert.equal(fixture.slots.get("sensitive-export|reconciliation"), originalKey);
+    assert.equal(fixture.calls.requests.length, 1, "no automatic retry");
+    assert.equal(fixture.calls.downloads.length, 0);
+    assert.equal(fixture.calls.forgotten.length, 0);
+    assert.match(fixture.calls.errors.at(-1), /结果未知，可能已经生效/);
+    assert.equal(await fixture.finish(), true, "next explicit confirmation can recover with CSV");
+    assert.equal(d3RequestKey(fixture, 1), originalKey);
+    assert.equal(fixture.slots.size, 0);
+    assert.equal(fixture.calls.downloads.length, 1);
+  }
+});
+
+test("D3 known HTTP rejection releases the first key and a new explicit attempt gets a new key", async () => {
+  for (const status of [403, 422, 429]) {
+    const fixture = d3DownloadFixture((attempt) => attempt === 1
+      ? Response.json({ code: status, message: "明确拒绝", data: null }, { status }) : d3Csv());
+    assert.equal(await fixture.finish(), false);
+    assert.equal(fixture.slots.size, 0);
+    assert.equal(fixture.calls.downloads.length, 0);
+    assert.equal(await fixture.finish(), true);
+    assert.notEqual(d3RequestKey(fixture, 1), d3RequestKey(fixture), "use actual UUID entropy before the page's truncation");
+  }
+});
+
+test("D3 successful CSV keeps both routes, request fields, bytes, filenames and one download", async () => {
+  for (const kind of ["reconciliation", "liabilities"]) {
+    const fixture = d3DownloadFixture(() => d3Csv(kind === "liabilities" ? "" : undefined));
+    assert.equal(await fixture.finish(kind, "  offline export reason  "), true);
+    assert.equal(fixture.calls.requests.length, 1);
+    const request = fixture.calls.requests[0];
+    assert.equal(request.url, `/api/admin/treasury/${kind}/export`);
+    assert.equal(request.init.method, "POST");
+    assert.equal(request.init.cache, "no-store");
+    assert.equal(request.init.headers["Content-Type"], "application/json");
+    assert.deepEqual(JSON.parse(request.init.body), { reason: "offline export reason", operator: "offline-maker" });
+    assert.equal(fixture.calls.downloads.length, 1);
+    const downloaded = fixture.calls.downloads[0];
+    assert.equal(await downloaded.blob.text(), "subject,amount\nreserve,12.50\n");
+    assert.equal(downloaded.fileName, kind === "liabilities" ? "d3-liabilities.csv" : "treasury.csv");
+    assert.equal(downloaded.clicked, true);
+    assert.deepEqual(fixture.calls.revoked, ["blob:offline-d3"]);
+    assert.equal(fixture.slots.size, 0);
+    assert.equal(fixture.calls.toasts.length, 1);
+    assert.equal(fixture.calls.errors.length, 0);
+  }
+});
+
+test("D3 network and CSV-body read failures retain the same key without an automatic retry", async () => {
+  for (const respond of [
+    () => { throw new TypeError("offline transport failure"); },
+    () => { const response = d3Csv(); response.blob = async () => { throw new TypeError("offline body interrupted"); }; return response; },
+  ]) {
+    const fixture = d3DownloadFixture((attempt) => attempt === 1 ? respond() : d3Csv());
+    assert.equal(await fixture.finish(), false);
+    assert.equal(fixture.calls.requests.length, 1);
+    assert.equal(fixture.calls.downloads.length, 0);
+    assert.equal(fixture.slots.get("sensitive-export|reconciliation"), d3RequestKey(fixture));
+    assert.equal(await fixture.finish(), true);
+    assert.equal(d3RequestKey(fixture, 1), d3RequestKey(fixture));
+  }
+});
+
+test("D3 page's existing reason validation prevents invalid confirmation from sending a request", async () => {
+  for (const reason of ["short", "x".repeat(201)]) {
+    const fixture = d3DownloadFixture(() => { throw new Error("must not send"); });
+    assert.equal(await fixture.finish("reconciliation", reason), false);
+    assert.equal(fixture.calls.requests.length, 0);
+    assert.equal(fixture.slots.size, 0);
+  }
+});
+
+const d3CrossAttemptRejections = [
+  { name: "HTTP401", status: 401, code: 401, message: "session expired", resets: 1 },
+  { name: "ApiResult401", status: 200, code: 401, message: "session expired", resets: 1 },
+  { name: "HTTP403", status: 403, code: 403, message: "无权限访问", resets: 0 },
+  { name: "ApiResult403", status: 200, code: 403, message: "无权限访问", resets: 0 },
+];
+for (const rejection of d3CrossAttemptRejections) {
+  test(`D3 earlier unknown survives ${rejection.name} until the next explicit same-command CSV succeeds`, async () => {
+    const fixture = d3DownloadFixture((attempt) => {
+      if (attempt === 1) return Response.json({ code: 503, message: "TREASURY_BACKEND_UNAVAILABLE", data: null },
+        { status: 503, headers: { "X-Nexion-Upstream-Outcome": "unknown" } });
+      if (attempt === 2) return Response.json({ code: rejection.code, message: rejection.message, data: null }, { status: rejection.status });
+      if (attempt === 3) return d3Csv();
+      throw new Error("must not automatically retry");
+    });
+    const scope = "sensitive-export|reconciliation";
+    assert.equal(await fixture.finish(), false);
+    const originalKey = d3RequestKey(fixture);
+    assert.equal(fixture.slots.get(scope), originalKey);
+    assert.equal(fixture.calls.requests.length, 1);
+    const secondReturned = await fixture.finish();
+    const secondSlot = fixture.slots.get(scope) ?? null;
+    const forgottenAfterSecond = fixture.calls.forgotten.length;
+    const downloadsAfterSecond = fixture.calls.downloads.length;
+    const thirdReturned = await fixture.finish();
+    const requestKeys = fixture.calls.requests.map((request) => request.init.headers["Idempotency-Key"]);
+    console.log("D3_CROSS_ATTEMPT " + JSON.stringify({
+      variant: rejection.name, requestKeys, secondSlot, forgottenAfterSecond, downloadsAfterSecond,
+      returned: [false, secondReturned, thirdReturned], resetCount: fixture.calls.resets,
+      finalDownloads: fixture.calls.downloads.length, finalSlot: fixture.slots.get(scope) ?? null,
+    }));
+    assert.equal(secondReturned, false, "the current request remains a rejection");
+    assert.equal(thirdReturned, true);
+    assert.equal(requestKeys.length, 3, "three explicit confirmations, no automatic request");
+    assert.equal(requestKeys[1], originalKey);
+    assert.equal(secondSlot, originalKey, "rejecting a later attempt cannot settle the earlier unknown command");
+    assert.equal(forgottenAfterSecond, 0);
+    assert.equal(requestKeys[2], originalKey);
+    assert.equal(downloadsAfterSecond, 0);
+    assert.equal(fixture.calls.resets, rejection.resets, "normal auth reset is preserved");
+    assert.equal(fixture.calls.downloads.length, 1);
+    assert.equal(fixture.slots.size, 0, "CSV success still releases the command key");
+    const bodies = fixture.calls.requests.map((request) => JSON.parse(request.init.body));
+    assert.deepEqual(bodies[1], bodies[0]);
+    assert.deepEqual(bodies[2], bodies[0], "same kind, reason and operator only");
+  });
+}

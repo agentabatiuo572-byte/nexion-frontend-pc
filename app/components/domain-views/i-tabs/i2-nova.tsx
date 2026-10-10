@@ -294,10 +294,23 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const [SOCIAL_EVENTS, setSocialEvents] = useState(INITIAL_SOCIAL_EVENTS);
   const [eventTotal, setEventTotal] = useState(INITIAL_SOCIAL_EVENTS.length);
   const [eventLoading, setEventLoading] = useState(false);
+  const [eventRead, setEventRead] = useState<{
+    source: typeof data; type: string; status: string; page: number; error: string | null;
+  } | null>(null);
   const EVENT_PAGE_SIZE = 20;
-  const eventPageCount = Math.max(1, Math.ceil(eventTotal / EVENT_PAGE_SIZE));
-  const visibleSocialEvents = SOCIAL_EVENTS;
+  const eventReadMatches = eventRead?.source === data && eventRead?.type === eventTypeFilter
+    && eventRead?.status === eventStatusFilter && eventRead?.page === eventPage;
+  const eventError = eventReadMatches ? eventRead?.error : null;
+  const eventReadable = eventReadMatches && !eventError;
+  const visibleEventTotal = eventReadable ? eventTotal : 0;
+  const eventPageCount = Math.max(1, Math.ceil(visibleEventTotal / EVENT_PAGE_SIZE));
+  const visibleSocialEvents = eventReadable ? SOCIAL_EVENTS : [];
   useEffect(() => {
+    setEventRead(null);
+    if (!data) {
+      setEventLoading(false);
+      return;
+    }
     let active = true;
     setEventLoading(true);
     actions.listI2SocialEvents(eventTypeFilter, eventStatusFilter, eventPage, EVENT_PAGE_SIZE)
@@ -310,11 +323,17 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         }
         setSocialEvents(result.items);
         setEventTotal(result.total);
+        setEventRead({ source: data, type: eventTypeFilter, status: eventStatusFilter, page: eventPage, error: null });
       })
-      .catch((error) => active && toast(`事件列表加载失败:${displayAdminError(error)}`))
+      .catch((error) => {
+        if (!active) return;
+        const message = `事件列表加载失败:${displayAdminError(error)}`;
+        setEventRead({ source: data, type: eventTypeFilter, status: eventStatusFilter, page: eventPage, error: message });
+        toast(message);
+      })
       .finally(() => active && setEventLoading(false));
     return () => { active = false; };
-  }, [actions.listI2SocialEvents, eventPage, eventRefreshKey, eventStatusFilter, eventTypeFilter, toast]);
+  }, [actions.listI2SocialEvents, data, eventPage, eventRefreshKey, eventStatusFilter, eventTypeFilter, toast]);
   const optionLabel = (options: { value: string; label: string }[], value: string) =>
     options.find((option) => option.value === value)?.label ?? value;
   const statusLabel = (value: string) => SOCIAL_EVENT_STATUS_OPTIONS.find((option) => option.value === value)?.label
@@ -685,11 +704,15 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             </div>
 
             <div className="k" style={{ marginBottom: 8 }}>真实事件明细</div>
-            {eventLoading ? (
+            {eventError ? (
+              <div className="itint warn" role="alert">
+                {eventError} <button className="l-btn sm" onClick={() => setEventRefreshKey((key) => key + 1)}>重新读取事件</button>
+              </div>
+            ) : eventLoading || !eventReadable ? (
               <div className="itint">正在读取真实事件...</div>
-            ) : eventTotal === 0 && !eventTypeFilter && !eventStatusFilter ? (
+            ) : visibleEventTotal === 0 && !eventTypeFilter && !eventStatusFilter ? (
               <div className="itint warn"><b>当前没有可投放的真实事件</b> · social 通道不会发送，系统不会生成虚假占位内容。等待真实业务数据产生后点击“同步真实事件”。</div>
-            ) : eventTotal === 0 ? (
+            ) : visibleEventTotal === 0 ? (
               <div className="itint">当前筛选条件下没有事件，请清除筛选后重试。</div>
             ) : (
               <div style={{ overflowX: "auto" }}>
@@ -719,10 +742,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                 </table>
               </div>
             )}
-            {eventTotal > EVENT_PAGE_SIZE && (
+            {eventReadable && !eventLoading && visibleEventTotal > EVENT_PAGE_SIZE && (
               <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, marginTop: 10 }}>
                 <button className="l-btn sm" disabled={eventPage <= 1} onClick={() => setEventPage((page) => Math.max(1, page - 1))}>上一页</button>
-                <span className="muted tiny">第 {eventPage} / {eventPageCount} 页 · 共 {eventTotal} 条</span>
+                <span className="muted tiny">第 {eventPage} / {eventPageCount} 页 · 共 {visibleEventTotal} 条</span>
                 <button className="l-btn sm" disabled={eventPage >= eventPageCount} onClick={() => setEventPage((page) => Math.min(eventPageCount, page + 1))}>下一页</button>
               </div>
             )}

@@ -2286,12 +2286,17 @@ export async function downloadD3Csv(
     body: JSON.stringify({ reason: reason.trim(), operator }),
     cache: "no-store",
   }).catch(() => { throw new DOutcomeUnknownError(idempotencyKey); });
-  if (!response.ok) {
+  const outcomeUnknown = response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown";
+  const contentType = response.headers.get("Content-Type")?.split(";", 1)[0].trim().toLowerCase();
+  if (!response.ok || contentType !== "text/csv" || outcomeUnknown) {
     const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
-    if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
+    if (isAdminAuthFailure(result?.code === 401 ? 401 : response.status, result?.message)) resetAdminSession();
+    if (outcomeUnknown || outcomeStaysUnknown(response.status, result?.code)) {
+      throw new DOutcomeUnknownError(idempotencyKey);
+    }
     throw new Error(formatAdminApiError(result?.message, `D3_EXPORT_FAILED_${response.status}`));
   }
-  const blob = await response.blob();
+  const blob = await response.blob().catch(() => { throw new DOutcomeUnknownError(idempotencyKey); });
   const disposition = response.headers.get("Content-Disposition") || "";
   const fileName = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `d3-${kind}.csv`;
   const url = URL.createObjectURL(blob);

@@ -341,7 +341,7 @@ const GEARS = [
   //     2026-08-06 前它们散在中段,导致其后 21 道本可运行的门在本机从未跑过。
   ["real recharge-channel parity", "node", ["scripts/channel-parity-sentinel.mjs"]],
   ["D1 channel contract", "node", ["--test", "tests/d1-channel-parity-contract.test.mjs"]],
-  ["B4 cross-repository contract", "node", ["--test", "tests/b4-cross-repo-sentinel-contract.test.mjs"]],
+  ["B4 cross-repository contract", "node", ["--test", "tests/b4-cross-repo-sentinel-contract.test.mjs", "tests/b4-export-client.test.mjs"]],
   ["F domain A2 proposal contract", "node", ["--test", "tests/f-domain-contract.test.mjs"]],
   ["FE/BE mapping closure ratchet", "node", ["scripts/fe-be-mapping-coverage.mjs"]],
   ["J1 contract", "node", ["--test", "tests/j1-killswitch-contract.test.mjs"]],
@@ -389,6 +389,7 @@ const GEARS = [
     ["--experimental-strip-types", "--test", "tests/a5-params-registry-contract.test.mjs"]],
   ["I1/I6 published copy quality", "node",
     ["--experimental-strip-types", "--test", "tests/i6-copy-quality.test.mjs", "tests/i-overview-runtime-contract.test.mjs"]],
+  ["I7 course-version read selection recovery", "node", ["--max-old-space-size=128", "--test", "tests/i7-course-version-read-race.test.mjs"]],
 ];
 // 🔴 run-all:每个齿都跑到,逐齿记状态与耗时。红齿不再中断链条(理由见文件抬头)。
 const results = [];
