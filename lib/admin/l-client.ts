@@ -613,7 +613,8 @@ async function fetchL3FinanceOverview(query?: L3FinanceQuery): Promise<LBiData> 
       frozen: num(redemption.frozen),
       avgLatency: redemption.averageLatencyHours === null || redemption.averageLatencyHours === undefined
         ? "—" : `${num(redemption.averageLatencyHours).toFixed(2)} 小时`,
-      prevRate: num(redemption.previousRate),
+      rate: redemption.redemptionRate === null ? null : num(redemption.redemptionRate),
+      prevRate: redemption.previousRate === null ? null : num(redemption.previousRate),
       prevLabel: str(redemption.previousLabel, "上期"),
     },
     coverage12w: coverageSeries.map((row) => num(row.coverageRatio)),

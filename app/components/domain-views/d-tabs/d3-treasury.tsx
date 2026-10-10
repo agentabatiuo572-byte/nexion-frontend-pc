@@ -219,6 +219,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
       run: async (reason) => {
         if (!reasonValid(reason, toast)) return false;
         const scope = exportScope(kind);
+        const pendingKeyBeforeRequest = pendingKeys.get(scope);
         const commandKey = operationKey(scope);
         try {
           await downloadD3Csv(kind, reason.trim(), OPERATOR(), commandKey);
@@ -226,7 +227,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
           toast(kind === "reconciliation" ? "储备负债对账 CSV 已导出" : "负债明细 CSV 已导出");
           return true;
         } catch (err) {
-          if (!isDOutcomeUnknownError(err)) pendingKeys.forget(scope);
+          if (!pendingKeyBeforeRequest && !isDOutcomeUnknownError(err)) pendingKeys.forget(scope);
           setError(err instanceof Error ? displayAdminError(err) : "CSV 导出失败");
           return false;
         }

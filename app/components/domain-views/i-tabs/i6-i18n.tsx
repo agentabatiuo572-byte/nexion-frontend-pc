@@ -80,12 +80,20 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const [versionsLoading, setVersionsLoading] = useState(false);
   const data = content.i18nLearning;
   useEffect(() => {
-    if (!versionCourseId) { setCourseVersions([]); return; }
+    setCourseVersions([]);
+    if (!versionCourseId) { setVersionsLoading(false); return; }
+    let active = true;
     setVersionsLoading(true);
     actions.fetchI7CourseVersions(versionCourseId)
-      .then(setCourseVersions)
-      .catch((error) => toast(`版本加载失败:${displayAdminError(error)}`))
-      .finally(() => setVersionsLoading(false));
+      .then((versions) => { if (active) setCourseVersions(versions); })
+      .catch((error) => {
+        if (active) {
+          setCourseVersions([]);
+          toast(`版本加载失败:${displayAdminError(error)}`);
+        }
+      })
+      .finally(() => { if (active) setVersionsLoading(false); });
+    return () => { active = false; };
   }, [actions, toast, versionCourseId, content.i18nLearning]);
   const I6_STATS = data?.stats ?? { managedKeys: 0, totalKeys: 0, integrityIssues: 0, coursesOnline: 0, weeklyNexPayout: "—" };
   const NAMESPACES: Namespace[] = data?.namespaces ?? [];
