@@ -213,8 +213,10 @@ export type SessionConvo = {
   ownerAdminId?: number | null;
   owner: string;       // 后台分配坐席
   messages: SessionMsg[]; // 镜像前端 messages{sender,text,ctaHref,ts}
-  detailReady?: boolean; // false means messages are a list summary, never a complete thread
+  detailReady?: boolean; // True means detail loaded; history completeness is separate.
+  historyTruncated?: boolean; // Only false confirms a loaded detail covers the complete history.
   lastPreview?: string;
+  lastPublicMessageId?: number | null; // Positive = public message exists; zero = empty; missing/null = unknown.
   lastMessageKind?: SessionMsg["kind"];
   customer?: string;   // 接待的终端用户昵称(对话主角;agentName 为坐席)
   profile?: CustomerProfile; // 完整客户档案(只读快照 + 客服备注)
