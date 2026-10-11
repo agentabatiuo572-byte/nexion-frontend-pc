@@ -46,7 +46,7 @@
 .fdom .lrow { display: grid; grid-template-columns: 64px 1.3fr 1.7fr 200px 248px; align-items: center; gap: 16px; padding: 13px 20px; border-top: 1px solid var(--border); }
 /* 防 grid item 默认 min-width:auto 让宽奖励 chip 撑爆 1.7fr 轨道、挤动后面各列;chip 超宽时 .rwd-list flex-wrap 换行 */
 .fdom .lrow > * { min-width: 0; }
-.fdom .lrow:hover { background: var(--surface-2); }
+@media (hover: hover) and (pointer: fine) { .fdom .lrow:hover { background: var(--surface-2); } }
 .fdom .lrow.empty { opacity: .58; }
 .fdom .lrow.last { border-bottom: 1px solid var(--border); }
 .fdom .vbadge { width: 48px; height: 48px; border-radius: 12px; display: grid; place-items: center; font-family: var(--mono); font-size: 18px; font-weight: 600; letter-spacing: -.02em; }
@@ -70,9 +70,9 @@
 /* min-height 抬高命中区(admin 密集态下尽量贴近 tap 目标);chip 整体 soft tint = rest 态可点 affordance */
 .fdom .rwd-chip { display: inline-flex; align-items: stretch; min-height: 34px; border-radius: 7px; overflow: hidden; background: var(--surface-3); }
 .fdom .rwd-chip .rwd-edit { display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; padding: 0 11px; color: var(--ink-2); background: transparent; border: 0; cursor: pointer; font-family: var(--mono); }
-.fdom .rwd-chip .rwd-edit:hover { color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .fdom .rwd-chip .rwd-edit:hover { color: var(--ink); } }
 .fdom .rwd-chip .rwd-del { display: inline-flex; align-items: center; justify-content: center; font-size: 14px; line-height: 1; min-width: 30px; padding: 0 8px; color: var(--ink-3); background: transparent; border: 0; border-left: 1px solid var(--border); cursor: pointer; }
-.fdom .rwd-chip .rwd-del:hover { color: var(--danger); background: var(--danger-soft); }
+@media (hover: hover) and (pointer: fine) { .fdom .rwd-chip .rwd-del:hover { color: var(--danger); background: var(--danger-soft); } }
 /* 类型语义 tint(soft bg,无描边;文字用内容色)*/
 .fdom .rwd-chip.rw-usdt { background: var(--success-soft); } .fdom .rwd-chip.rw-usdt .rwd-edit { color: var(--success); }
 .fdom .rwd-chip.rw-nex { background: var(--brand-soft); } .fdom .rwd-chip.rw-nex .rwd-edit { color: var(--brand); }
@@ -80,7 +80,7 @@
 .fdom .rwd-chip.rw-sku { background: var(--warning-soft); } .fdom .rwd-chip.rw-sku .rwd-edit { color: var(--warning); }
 .fdom .rwd-chip.rw-custom { background: var(--surface-3); } .fdom .rwd-chip.rw-custom .rwd-edit { color: var(--ink-2); font-family: var(--font-v5); }
 .fdom .rwd-add { font-size: 12px; font-weight: 500; padding: 5px 12px; min-height: 34px; border-radius: 7px; color: var(--ink-3); background: transparent; border: 1px dashed var(--border); cursor: pointer; }
-.fdom .rwd-add:hover { color: var(--brand); border-color: var(--brand-border); background: var(--brand-soft); }
+@media (hover: hover) and (pointer: fine) { .fdom .rwd-add:hover { color: var(--brand); border-color: var(--brand-border); background: var(--brand-soft); } }
 .fdom .pop { display: flex; align-items: center; gap: 10px; }
 .fdom .pop .bar { flex: 1; height: 8px; background: var(--surface-3); border-radius: 999px; overflow: hidden; }
 .fdom .pop .bar .f { height: 100%; border-radius: 999px; }
@@ -164,18 +164,18 @@
 
 /* ===== 共享小按钮(F1 ladder / F2 cascade·param / F3 cfg)===== */
 .fdom .fbtn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2); font-size: 11.5px; font-weight: 500; cursor: pointer; white-space: nowrap; }
-.fdom .fbtn:hover { background: var(--surface-3); color: var(--ink); border-color: var(--ink-4); }
+@media (hover: hover) and (pointer: fine) { .fdom .fbtn:hover { background: var(--surface-3); color: var(--ink); border-color: var(--ink-4); } }
 .fdom .fbtn.primary { border-color: var(--brand-border); background: var(--brand-soft); color: var(--brand); font-weight: 600; }
-.fdom .fbtn.primary:hover { background: var(--brand); color: #0A0A0A; }
+@media (hover: hover) and (pointer: fine) { .fdom .fbtn.primary:hover { background: var(--brand); color: #0A0A0A; } }
 /* F1 门槛按钮语义分色:业绩/金额=lemon green(t-vol)· 人数/分支=cyan(t-count)· 等级=橙(t-rank) */
 .fdom .fbtn.t-vol { border-color: var(--brand-border); background: var(--brand-soft); color: var(--brand); font-weight: 600; }
-.fdom .fbtn.t-vol:hover { background: color-mix(in srgb, var(--brand) 24%, transparent); border-color: var(--brand); }
+@media (hover: hover) and (pointer: fine) { .fdom .fbtn.t-vol:hover { background: color-mix(in srgb, var(--brand) 24%, transparent); border-color: var(--brand); } }
 .fdom .fbtn.t-count { border-color: var(--cyan-border); background: var(--cyan-soft); color: var(--cyan); font-weight: 600; }
-.fdom .fbtn.t-count:hover { background: color-mix(in srgb, var(--cyan) 24%, transparent); border-color: var(--cyan); }
+@media (hover: hover) and (pointer: fine) { .fdom .fbtn.t-count:hover { background: color-mix(in srgb, var(--cyan) 24%, transparent); border-color: var(--cyan); } }
 .fdom .fbtn.t-rank { border-color: var(--brand-2-border); background: var(--brand-2-soft); color: var(--brand-2); font-weight: 600; }
-.fdom .fbtn.t-rank:hover { background: color-mix(in srgb, var(--brand-2) 24%, transparent); border-color: var(--brand-2); }
+@media (hover: hover) and (pointer: fine) { .fdom .fbtn.t-rank:hover { background: color-mix(in srgb, var(--brand-2) 24%, transparent); border-color: var(--brand-2); } }
 .fdom .fbtn.danger { border-color: var(--danger-border); background: var(--danger-soft); color: var(--danger); font-weight: 600; }
-.fdom .fbtn.danger:hover { background: var(--danger); color: #fff; }
+@media (hover: hover) and (pointer: fine) { .fdom .fbtn.danger:hover { background: var(--danger); color: #fff; } }
 .fdom .fbtn:disabled { opacity: .45; cursor: not-allowed; }
 .fdom .fbtn.amp::after { content: ' ⚡'; font-size: 10.5px; }
 
@@ -211,7 +211,7 @@
 .fdom .next-step b { color: var(--warning); font-weight: 600; }
 .fdom .cap-action { padding: 12px 20px 18px; }
 .fdom .cap-action button { width: 100%; padding: 9px 14px; border-radius: 9px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink); font-size: 13px; font-weight: 500; cursor: pointer; }
-.fdom .cap-action button:hover { background: var(--surface-3); }
+@media (hover: hover) and (pointer: fine) { .fdom .cap-action button:hover { background: var(--surface-3); } }
 .fdom .bin-table { padding: 0; overflow: hidden; }
 .fdom .bin-search { display: flex; align-items: center; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--border); }
 .fdom .bin-search .fld { max-width: 300px; }
@@ -219,8 +219,8 @@
 .fdom .bin-user-select .fld { width: 100%; max-width: none; }
 .fdom .bin-user-pop { position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; right: 0; max-height: 272px; overflow: auto; padding: 4px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); box-shadow: 0 18px 40px rgba(0,0,0,.22); }
 .fdom .bin-user-option { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--ink-2); text-align: left; cursor: pointer; }
-.fdom .bin-user-option:hover,
 .fdom .bin-user-option[aria-selected="true"] { background: var(--surface-2); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .fdom .bin-user-option:hover { background: var(--surface-2); color: var(--ink); } }
 .fdom .bin-user-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .fdom .bin-user-main b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 12px; color: var(--ink); }
 .fdom .bin-user-main span { font-size: 11px; color: var(--ink-4); }
@@ -286,11 +286,11 @@
 .fdom .kv-row .v.dim { font-size: 11.5px; color: var(--ink-3); font-family: var(--font-v5); font-weight: 500; }
 .fdom .sect-foot { margin-top: 14px; display: flex; gap: 8px; }
 .fdom .sect-foot button { flex: 1; padding: 9px 14px; border-radius: 9px; font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink); }
-.fdom .sect-foot button:hover { background: var(--surface-3); }
+@media (hover: hover) and (pointer: fine) { .fdom .sect-foot button:hover { background: var(--surface-3); } }
 .fdom .sect-foot button.primary { border-color: var(--brand-border); background: var(--brand-soft); color: var(--brand); font-weight: 600; }
-.fdom .sect-foot button.primary:hover { background: var(--brand); color: #0A0A0A; }
+@media (hover: hover) and (pointer: fine) { .fdom .sect-foot button.primary:hover { background: var(--brand); color: #0A0A0A; } }
 .fdom .sect-foot button.danger { border-color: var(--danger-border); background: var(--danger-soft); color: var(--danger); font-weight: 600; }
-.fdom .sect-foot button.danger:hover { background: var(--danger); color: #fff; }
+@media (hover: hover) and (pointer: fine) { .fdom .sect-foot button.danger:hover { background: var(--danger); color: #fff; } }
 .fdom .sect-foot button.amp::after { content: ' ⚡'; }
 .fdom .sect-foot button:disabled { opacity: .45; cursor: not-allowed; }
 .fdom .stock-meter { display: grid; grid-template-columns: 90px 1fr 50px; align-items: center; gap: 12px; padding: 8px 0; }
@@ -327,7 +327,7 @@
 .fdom .vote-col .l { font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); }
 .fdom .vote-table { display: grid; grid-template-columns: repeat(10,1fr); gap: 8px; padding: 4px 4px 14px; }
 .fdom .vote-cell { padding: 6px 4px; text-align: center; background: var(--surface-2); border-radius: 7px; border: 1px solid var(--border); cursor: pointer; transition: all .14s; }
-.fdom .vote-cell:hover { background: var(--surface-3); border-color: var(--brand-border); }
+@media (hover: hover) and (pointer: fine) { .fdom .vote-cell:hover { background: var(--surface-3); border-color: var(--brand-border); } }
 .fdom .vote-cell .vlb { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); }
 .fdom .vote-cell .vct { font-family: var(--mono); font-size: 12.5px; font-weight: 600; color: var(--ink); }
 .fdom .f4-warn { margin-top: 6px; padding: 11px 13px; border-radius: 10px; background: var(--warning-soft); border: 1px solid var(--warning-border); font-size: 11.5px; line-height: 1.55; color: var(--ink-2); }
@@ -345,7 +345,7 @@
 .fdom .kind.k-leadership::before { background: var(--warning); }
 .fdom .kind.k-genesis::before { background: var(--brand-2); }
 .fdom .kind.k-peer::before { background: var(--success); }
-.fdom .kind:hover { background: var(--surface-2); }
+@media (hover: hover) and (pointer: fine) { .fdom .kind:hover { background: var(--surface-2); } }
 .fdom .kind.active { border-color: var(--brand); background: var(--brand-soft); }
 .fdom .kind .nm { font-family: var(--mono); font-size: 10px; color: var(--ink-4); font-weight: 600; letter-spacing: .08em; }
 .fdom .kind .lbl { font-size: 12px; color: var(--ink-2); margin-top: 3px; font-weight: 500; }
@@ -360,14 +360,14 @@
 .fdom .audit-h .ph-r { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .fdom .filter-bar { padding: 0 18px 12px; display: flex; gap: 6px; flex-wrap: wrap; }
 .fdom .fchip { font-family: var(--mono); font-size: 11px; font-weight: 500; padding: 4px 10px; border-radius: 7px; background: var(--surface-2); border: 1px solid var(--border); color: var(--ink-3); cursor: pointer; user-select: none; }
-.fdom .fchip:hover { background: var(--surface-3); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .fdom .fchip:hover { background: var(--surface-3); color: var(--ink); } }
 .fdom .fchip.on { background: var(--brand); color: #0A0A0A; border-color: var(--brand); }
 .fdom .ctbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .fdom .ctbl thead th { text-align: left; font-size: 10.5px; font-weight: 600; color: var(--ink-4); letter-spacing: .04em; padding: 10px 14px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--surface-2); white-space: nowrap; }
 .fdom .ctbl thead th.num { text-align: right; }
 .fdom .ctbl tbody td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 .fdom .ctbl tbody tr:last-child td { border-bottom: 0; }
-.fdom .ctbl tbody tr:hover { background: var(--surface-2); }
+@media (hover: hover) and (pointer: fine) { .fdom .ctbl tbody tr:hover { background: var(--surface-2); } }
 .fdom .ctbl tr.rejected td { opacity: .55; }
 .fdom .ctbl tr.rejected td .amt { text-decoration: line-through; }
 .fdom .cid { font-family: var(--mono); font-size: 12px; font-weight: 600; }
@@ -400,13 +400,13 @@
 .fdom .cool.rev .bar .f { background: var(--danger); width: 100% !important; opacity: .35; }
 .fdom .row-acts { display: flex; gap: 6px; justify-content: flex-end; }
 .fdom .row-acts button { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2); cursor: pointer; white-space: nowrap; }
-.fdom .row-acts button:hover { background: var(--surface-3); }
+@media (hover: hover) and (pointer: fine) { .fdom .row-acts button:hover { background: var(--surface-3); } }
 .fdom .row-acts button.freeze { color: var(--warning); border-color: var(--warning-border); background: var(--warning-soft); }
-.fdom .row-acts button.freeze:hover { background: var(--warning); color: #2A1505; }
+@media (hover: hover) and (pointer: fine) { .fdom .row-acts button.freeze:hover { background: var(--warning); color: #2A1505; } }
 .fdom .row-acts button.unlock { color: var(--brand); border-color: var(--brand-border); background: var(--brand-soft); }
-.fdom .row-acts button.unlock:hover { background: var(--brand); color: #0A0A0A; }
+@media (hover: hover) and (pointer: fine) { .fdom .row-acts button.unlock:hover { background: var(--brand); color: #0A0A0A; } }
 .fdom .row-acts button.reject { color: var(--danger); border-color: var(--danger-border); background: var(--danger-soft); }
-.fdom .row-acts button.reject:hover { background: var(--danger); color: #fff; }
+@media (hover: hover) and (pointer: fine) { .fdom .row-acts button.reject:hover { background: var(--danger); color: #fff; } }
 .fdom .row-acts .none { color: var(--ink-4); font-size: 11px; }
 .fdom .empty-row td { text-align: center; color: var(--ink-4); padding: 22px; font-size: 12.5px; }
 .fdom .stbar { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
@@ -431,7 +431,7 @@
 .fdom .f-titlerow .f-desc code { font-family: var(--mono); color: var(--brand); font-size: 11.5px; }
 .fdom .f-titlerow .f-desc b { color: var(--ink-2); font-weight: 600; }
 .fdom .f-cta { display: inline-flex; align-items: center; gap: 5px; padding: 7px 13px; border-radius: 9px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2); font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap; }
-.fdom .f-cta:hover { background: var(--surface-3); color: var(--ink); border-color: var(--ink-4); }
+@media (hover: hover) and (pointer: fine) { .fdom .f-cta:hover { background: var(--surface-3); color: var(--ink); border-color: var(--ink-4); } }
 
 /* ===== F1 · 晋升 / 派发闭环 ===== */
 .fdom .f1-flow-grid { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 16px; }

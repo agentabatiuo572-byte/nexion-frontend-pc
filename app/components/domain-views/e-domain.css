@@ -9,10 +9,10 @@
 
 /* ===== 共享:页头 / 卡头 CTA(新增 SKU / 新增任务 / 新增评价)— 严格对齐设计稿 f-chrome .f-cta(brand ghost,hover 实底)===== */
 .edom .f-cta { display: inline-flex; align-items: center; gap: 7px; padding: 8px 15px; border-radius: 9px; border: 1px solid var(--brand-border); background: var(--brand-soft); color: var(--brand); font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; }
-.edom .f-cta:hover { background: var(--brand); color: #0A0A0A; }
+@media (hover: hover) and (pointer: fine) { .edom .f-cta:hover { background: var(--brand); color: #0A0A0A; } }
 /* 操作说明手册:中性 ghost 按钮(不与主 CTA 抢视觉权重) */
 .edom .f-cta.manual { border-color: var(--border-strong); background: var(--surface-2); color: var(--ink-2); font-weight: 500; }
-.edom .f-cta.manual:hover { background: var(--surface-3); color: var(--ink); border-color: var(--ink-4); }
+@media (hover: hover) and (pointer: fine) { .edom .f-cta.manual:hover { background: var(--surface-3); color: var(--ink); border-color: var(--ink-4); } }
 
 /* ===== 页面级业务提示收尾段(对齐设计稿 f-chrome .f-foot · 与 F 域港口同款值)===== */
 .edom .f-foot { margin-top: 16px; font-size: 11.5px; color: var(--ink-3); line-height: 1.6; }
@@ -24,15 +24,15 @@
 .edom .l-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border-radius: 8px;
   border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2);
   font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit; white-space: nowrap; text-decoration: none; }
-.edom .l-btn:hover { background: var(--surface-3); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .edom .l-btn:hover { background: var(--surface-3); color: var(--ink); } }
 .edom .l-btn.primary { background: var(--brand); border-color: var(--brand); color: var(--v5-on-brand); font-weight: 600; }
-.edom .l-btn.primary:hover { filter: brightness(1.07); }
+@media (hover: hover) and (pointer: fine) { .edom .l-btn.primary:hover { filter: brightness(1.07); } }
 .edom .l-btn.mc { color: var(--warning); border-color: var(--warning-border); background: color-mix(in srgb, var(--warning) 8%, transparent); font-weight: 600; }
-.edom .l-btn.mc:hover { background: color-mix(in srgb, var(--warning) 18%, transparent); }
+@media (hover: hover) and (pointer: fine) { .edom .l-btn.mc:hover { background: color-mix(in srgb, var(--warning) 18%, transparent); } }
 .edom .l-btn.dgr { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); background: transparent; }
-.edom .l-btn.dgr:hover { background: var(--danger-soft); color: var(--danger); }
+@media (hover: hover) and (pointer: fine) { .edom .l-btn.dgr:hover { background: var(--danger-soft); color: var(--danger); } }
 .edom .l-btn.okk { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, transparent); background: transparent; }
-.edom .l-btn.okk:hover { background: var(--success-soft); color: var(--success); }
+@media (hover: hover) and (pointer: fine) { .edom .l-btn.okk:hover { background: var(--success-soft); color: var(--success); } }
 .edom .l-btn.sm { padding: 4px 9px; font-size: 11.5px; border-radius: 6px; min-height: 24px; }
 
 /* ##################### E1 商品目录 & 代际门 ##################### */
@@ -88,9 +88,9 @@
 .edom .genrel-table .acts { display: flex; gap: 5px; justify-content: flex-end; flex-wrap: wrap; }
 .edom .genrel-table .acts button { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2); font-size: 11px; cursor: pointer; white-space: nowrap; }
 .edom .genrel-table .acts button.warn { color: var(--warning); border-color: rgba(255,190,61,.32); background: rgba(255,190,61,.08); }
-.edom .genrel-table .acts button.warn:hover { background: rgba(255,190,61,.16); }
+@media (hover: hover) and (pointer: fine) { .edom .genrel-table .acts button.warn:hover { background: rgba(255,190,61,.16); } }
 .edom .genrel-table .acts button.brand { color: var(--brand); border-color: var(--brand-border); background: var(--brand-soft); font-weight: 600; }
-.edom .genrel-table .acts button.brand:hover { background: var(--brand); color: #0A0A0A; }
+@media (hover: hover) and (pointer: fine) { .edom .genrel-table .acts button.brand:hover { background: var(--brand); color: #0A0A0A; } }
 .edom .genrel-foot { padding: 10px 20px; border-top: 1px dashed var(--border); background: var(--surface-2); display: flex; gap: 14px; align-items: center; font-size: 11.5px; color: var(--ink-3); flex-wrap: wrap; }
 .edom .genrel-foot b { color: var(--ink-2); font-weight: 600; } .edom .genrel-foot .sep { color: var(--ink-4); }
 .edom .phasecfg-table { display: grid; grid-template-columns: minmax(160px, 1.15fr) 92px 1fr 1fr 80px 90px 210px; font-size: 12.5px; }
@@ -114,7 +114,7 @@
 .edom .sku-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 16px; }
 @media (max-width: 1100px) { .edom .sku-grid { grid-template-columns: 1fr; } }
 .edom .sku-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); overflow: hidden; display: grid; grid-template-columns: 200px 1fr; min-height: 220px; transition: border-color .14s; }
-.edom .sku-card:hover { border-color: var(--border-strong); }
+@media (hover: hover) and (pointer: fine) { .edom .sku-card:hover { border-color: var(--border-strong); } }
 .edom .sku-card.off { opacity: .5; }
 .edom .sku-card .img { background: linear-gradient(135deg, var(--surface-2), var(--surface-3)); position: relative; display: grid; place-items: center; padding: 22px; }
 .edom .sku-card .img .ph { width: 100%; aspect-ratio: 1; background: var(--surface-3); border: 1px dashed var(--border-strong); border-radius: 11px; display: grid; place-items: center; color: var(--ink-4); overflow: hidden; }
@@ -146,11 +146,11 @@
 .edom .sku-card .gate.gated { background: var(--surface-3); color: var(--ink-3); }
 .edom .sku-card .acts { display: flex; gap: 6px; margin-top: auto; padding-top: 6px; }
 .edom .sku-card .acts button { padding: 6px 11px; border-radius: 7px; font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2); }
-.edom .sku-card .acts button:hover { background: var(--surface-3); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .edom .sku-card .acts button:hover { background: var(--surface-3); color: var(--ink); } }
 .edom .sku-card .acts button.primary { border-color: var(--brand-border); background: var(--brand-soft); color: var(--brand); font-weight: 600; }
-.edom .sku-card .acts button.primary:hover { background: var(--brand); color: #0A0A0A; }
+@media (hover: hover) and (pointer: fine) { .edom .sku-card .acts button.primary:hover { background: var(--brand); color: #0A0A0A; } }
 .edom .sku-card .acts button.danger { border-color: var(--danger-border); color: var(--danger); }
-.edom .sku-card .acts button.danger:hover { background: var(--danger); color: #fff; }
+@media (hover: hover) and (pointer: fine) { .edom .sku-card .acts button.danger:hover { background: var(--danger); color: #fff; } }
 
 /* ===== Reviews table — 7 列 grid ===== */
 .edom .rv { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); }
@@ -167,11 +167,11 @@
 .edom .rv-row .date { font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
 .edom .rv-row .acts { display: flex; gap: 5px; justify-content: flex-end; }
 .edom .rv-row .acts button { padding: 3px 8px; border-radius: 6px; font-size: 11px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2); cursor: pointer; }
-.edom .rv-row .acts button:hover { background: var(--surface-3); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .edom .rv-row .acts button:hover { background: var(--surface-3); color: var(--ink); } }
 .edom .rv-empty { padding: 26px 20px; text-align: center; color: var(--ink-4); font-size: 12.5px; border-top: 1px solid var(--border); }
 .edom .rv-pager { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 13px 20px; border-top: 1px solid var(--border); }
 .edom .rv-pager .step { padding: 6px 13px; border-radius: 7px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2); white-space: nowrap; }
-.edom .rv-pager .step:hover:not(:disabled) { background: var(--surface-3); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .edom .rv-pager .step:hover:not(:disabled) { background: var(--surface-3); color: var(--ink); } }
 .edom .rv-pager .step:disabled { opacity: .4; cursor: not-allowed; }
 .edom .rv-pager .ind { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .edom .rv-pager .ind b { color: var(--ink); font-weight: 600; font-family: var(--mono); }
@@ -189,7 +189,7 @@
 /* ===== Task card row(6 列 grid)===== */
 .edom .task-list { padding: 4px 0 16px; }
 .edom .task { display: grid; grid-template-columns: 36px 1fr 110px 160px 220px 170px; align-items: center; gap: 14px; padding: 14px 18px; border-top: 1px solid var(--border); transition: background .14s; }
-.edom .task:hover { background: var(--surface-2); }
+@media (hover: hover) and (pointer: fine) { .edom .task:hover { background: var(--surface-2); } }
 .edom .task .ic { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; flex-shrink: 0; }
 .edom .task .ic.llm { background: rgba(155,137,224,.13); color: var(--cyan); }
 .edom .task .ic.img { background: var(--brand-soft); color: var(--brand); }
@@ -209,9 +209,9 @@
 .edom .task .sat .pct { font-family: var(--mono); font-size: 11.5px; font-weight: 600; min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
 .edom .task .acts { display: flex; gap: 5px; justify-content: flex-end; }
 .edom .task .acts button { padding: 5px 10px; border-radius: 7px; font-size: 11.5px; font-weight: 500; cursor: pointer; white-space: nowrap; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2); }
-.edom .task .acts button:hover { background: var(--surface-3); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .edom .task .acts button:hover { background: var(--surface-3); color: var(--ink); } }
 .edom .task .acts button.primary { border-color: var(--brand-border); background: var(--brand-soft); color: var(--brand); font-weight: 600; }
-.edom .task .acts button.primary:hover { background: var(--brand); color: #0A0A0A; }
+@media (hover: hover) and (pointer: fine) { .edom .task .acts button.primary:hover { background: var(--brand); color: #0A0A0A; } }
 
 /* ===== Saturation donut(right rail)===== */
 .edom .rail { display: flex; flex-direction: column; gap: 14px; }
@@ -261,7 +261,7 @@
 .edom .heat-grid .lbl { font-family: var(--mono); font-size: 10.5px; color: var(--ink-2); padding-right: 10px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .edom .heat-row { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 2px; }
 .edom .heat-cell { width: 100%; aspect-ratio: 1 / 1; border-radius: 2px; background: var(--surface-3); position: relative; cursor: help; transition: transform .12s; }
-.edom .heat-cell:hover { transform: scale(1.6); z-index: 2; box-shadow: 0 4px 12px rgba(0,0,0,.4); }
+@media (hover: hover) and (pointer: fine) { .edom .heat-cell:hover { transform: scale(1.6); z-index: 2; box-shadow: 0 4px 12px rgba(0,0,0,.4); } }
 .edom .heat-axis-wrap { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 2px; margin-top: 5px; }
 .edom .heat-axis { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 2px; font-family: var(--mono); font-size: 9px; color: var(--ink-4); text-align: center; }
 .edom .heat-legend { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 11px; color: var(--ink-4); }
@@ -326,7 +326,7 @@
 .edom .pkv .v.danger { color: var(--danger); }
 .edom .pkv .v.ok { color: var(--success); }
 .edom .pkv .adj { padding: 5px 11px; border-radius: 7px; font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap; border: 1px solid var(--brand-border); background: var(--brand-soft); color: var(--brand); }
-.edom .pkv .adj:hover { background: var(--brand); color: #0A0A0A; }
+@media (hover: hover) and (pointer: fine) { .edom .pkv .adj:hover { background: var(--brand); color: #0A0A0A; } }
 .edom .pkv .adj.amp::after { content: ' ⚡'; }
 /* 高敏行不再整行琥珀高亮(读着像"可选中态");改用行内「高敏」badge 标记(见 .pkv .lhs .hot)。 */
 .edom .param-foot { padding: 12px 18px 14px; display: flex; align-items: flex-start; gap: 9px; font-size: 11.5px; color: var(--ink-2); line-height: 1.55; }
@@ -416,13 +416,13 @@
 .edom .q-h .r { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .edom .filter-bar { padding: 0 18px 12px; display: flex; gap: 6px; flex-wrap: wrap; }
 .edom .fchip { font-family: var(--mono); font-size: 11px; font-weight: 500; padding: 4px 10px; border-radius: 7px; background: var(--surface-2); border: 1px solid var(--border); color: var(--ink-3); cursor: pointer; user-select: none; }
-.edom .fchip:hover { background: var(--surface-3); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .edom .fchip:hover { background: var(--surface-3); color: var(--ink); } }
 .edom .fchip.on { background: var(--brand); color: #0A0A0A; border-color: var(--brand); font-weight: 600; }
 .edom .filter-bar .fdiv { width: 1px; align-self: stretch; min-height: 18px; background: var(--border); margin: 0 5px; }
 .edom .q-scroll { overflow-x: auto; overscroll-behavior-inline: contain; }
 .edom .q-row { display: grid; grid-template-columns: 110px 110px minmax(160px, 1fr) 110px 130px 110px 70px 60px; min-width: 984px; align-items: center; gap: 12px; padding: 13px 20px; border-top: 1px solid var(--border); font-size: 13px; cursor: pointer; transition: background .12s; }
 .edom .q-row.head { padding: 11px 20px; background: var(--surface-2); border-top: 0; cursor: default; font-size: 10.5px; font-weight: 600; color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }
-.edom .q-row:hover:not(.head) { background: var(--surface-2); }
+@media (hover: hover) and (pointer: fine) { .edom .q-row:hover:not(.head) { background: var(--surface-2); } }
 .edom .q-row .oid { font-family: var(--mono); font-size: 12.5px; font-weight: 600; }
 .edom .q-row .uid { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
 .edom .q-row .oid, .edom .q-row .uid { overflow-wrap: anywhere; }
@@ -503,13 +503,13 @@
 .edom .dc-spark { height: 36px; margin-top: 10px; }
 .edom .dc-foot { padding: 12px 18px 14px; display: flex; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--border); }
 .edom .dc-foot button { flex: 1 1 calc(50% - 8px); min-width: 112px; padding: 9px 12px; border-radius: 8px; font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2); display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
-.edom .dc-foot button:hover { background: var(--surface-3); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .edom .dc-foot button:hover { background: var(--surface-3); color: var(--ink); } }
 .edom .dc-foot button.dgr { border-color: var(--danger-border); background: var(--danger-soft); color: var(--danger); }
-.edom .dc-foot button.dgr:hover { background: var(--danger); color: #fff; }
+@media (hover: hover) and (pointer: fine) { .edom .dc-foot button.dgr:hover { background: var(--danger); color: #fff; } }
 .edom .dc-foot button.pause { border-color: var(--warning-border); background: var(--warning-soft); color: var(--warning); font-weight: 600; }
-.edom .dc-foot button.pause:hover { background: var(--warning); color: #2A1505; }
+@media (hover: hover) and (pointer: fine) { .edom .dc-foot button.pause:hover { background: var(--warning); color: #2A1505; } }
 .edom .dc-foot button.resume { border-color: var(--success-border); background: var(--success-soft); color: var(--success); font-weight: 600; }
-.edom .dc-foot button.resume:hover { background: var(--success); color: #0A0A0A; }
+@media (hover: hover) and (pointer: fine) { .edom .dc-foot button.resume:hover { background: var(--success); color: #0A0A0A; } }
 
 /* ===== Activity feed ===== */
 .edom .feed-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); }
@@ -594,10 +594,10 @@
 .edom .e6-keyword-chip { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; max-width: 100%; padding: 0 5px 0 9px; border-radius: 8px; background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--border); font-size: 11.5px; }
 .edom .e6-keyword-chip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .edom .e6-keyword-chip button { border: 0; border-radius: 6px; min-height: 22px; padding: 0 6px; background: var(--surface-3); color: var(--ink-3); font-size: 10.5px; font-weight: 600; cursor: pointer; }
-.edom .e6-keyword-chip button:hover { color: var(--ink); background: var(--border); }
+@media (hover: hover) and (pointer: fine) { .edom .e6-keyword-chip button:hover { color: var(--ink); background: var(--border); } }
 .edom .e6-keyword-chip button.danger { color: var(--danger); background: var(--danger-soft); }
 .edom .e6-inline-add { min-height: 28px; border-radius: 8px; padding: 0 10px; border: 1px dashed var(--border-strong); background: var(--surface); color: var(--brand); font-size: 11.5px; font-weight: 700; cursor: pointer; }
-.edom .e6-inline-add:hover { background: var(--brand-soft); border-color: var(--brand); }
+@media (hover: hover) and (pointer: fine) { .edom .e6-inline-add:hover { background: var(--brand-soft); border-color: var(--brand); } }
 .edom .e6-slot-full { min-height: 28px; display: inline-flex; align-items: center; border-radius: 8px; padding: 0 9px; background: var(--surface-2); color: var(--ink-4); font-size: 11.5px; }
 .edom .e6-row-actions { display: flex; justify-content: flex-end; }
 .edom .e6-download-box { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 14px; }

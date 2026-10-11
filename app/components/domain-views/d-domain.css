@@ -23,7 +23,7 @@
 .ddom .f-cta { display: inline-flex; align-items: center; gap: 7px; padding: 8px 15px; border-radius: 9px;
   border: 1px solid var(--success-border); background: var(--success-soft); color: var(--success);
   font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; font-family: inherit; }
-.ddom .f-cta:hover { background: var(--success); color: #0A0A0A; }
+@media (hover: hover) and (pointer: fine) { .ddom .f-cta:hover { background: var(--success); color: #0A0A0A; } }
 .ddom .f-ro { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
   background: var(--surface-2); color: var(--ink-3); font-size: 12px; font-weight: 600; white-space: nowrap; }
 .ddom .f-ro .d { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-4); }
@@ -92,19 +92,19 @@
 .ddom .chips { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .ddom .chip { padding: 5px 11px; border-radius: 999px; background: var(--surface-2); color: var(--ink-3);
   font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; border: none; font-family: inherit; transition: background .12s, color .12s; }
-.ddom .chip:hover { background: var(--surface-3); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .ddom .chip:hover { background: var(--surface-3); color: var(--ink); } }
 .ddom .chip.sel { background: var(--success); color: #0A0A0A; font-weight: 600; }
 
 .ddom .l-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border-radius: 8px;
   border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2);
   font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit; white-space: nowrap; text-decoration: none; }
-.ddom .l-btn:hover { background: var(--surface-3); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .ddom .l-btn:hover { background: var(--surface-3); color: var(--ink); } }
 .ddom .l-btn:disabled { cursor: not-allowed; opacity: .5; filter: grayscale(.25); }
-.ddom .l-btn:disabled:hover { background: var(--surface-2); color: var(--ink-2); }
+@media (hover: hover) and (pointer: fine) { .ddom .l-btn:disabled:hover { background: var(--surface-2); color: var(--ink-2); } }
 .ddom .l-btn.primary { background: var(--success); border-color: var(--success); color: #0A0A0A; font-weight: 600; }
-.ddom .l-btn.primary:hover { filter: brightness(1.07); }
+@media (hover: hover) and (pointer: fine) { .ddom .l-btn.primary:hover { filter: brightness(1.07); } }
 .ddom .l-btn.mc { color: var(--success); border-color: var(--success-border); background: color-mix(in srgb, var(--success) 8%, transparent); font-weight: 600; }
-.ddom .l-btn.mc:hover { background: color-mix(in srgb, var(--success) 18%, transparent); }
+@media (hover: hover) and (pointer: fine) { .ddom .l-btn.mc:hover { background: color-mix(in srgb, var(--success) 18%, transparent); } }
 .ddom .l-btn.sm { padding: 4px 9px; font-size: 11.5px; border-radius: 6px; min-height: 24px; }
 
 .ddom .l-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
@@ -114,7 +114,7 @@
 .ddom .l-tbl td { padding: 11px 12px; border-bottom: 1px solid var(--border); color: var(--ink-2); vertical-align: middle; }
 .ddom .l-tbl tr:last-child td { border-bottom: none; }
 .ddom .l-tbl tr.click { cursor: pointer; }
-.ddom .l-tbl tr.click:hover td { background: var(--surface-2); }
+@media (hover: hover) and (pointer: fine) { .ddom .l-tbl tr.click:hover td { background: var(--surface-2); } }
 .ddom .l-tbl .num, .ddom .l-tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .ddom .l-tbl .mono { font-family: var(--mono); font-size: 12px; }
 

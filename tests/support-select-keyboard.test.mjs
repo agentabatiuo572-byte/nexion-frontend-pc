@@ -502,3 +502,32 @@ for (const theme of ["dark", "light"]) {
     } finally { await style.evaluate(element => element.remove()); }
   });
 }
+
+for (const theme of ["dark", "light"]) {
+  test(`operator brief ${theme}: native disclosure, keyboard focus and close target`, async () => {
+    await mount({ domain: "m", theme, modal: true, avatarConfirmation: "other" });
+    const details = page.locator("details.operator-brief");
+    const summary = details.locator("summary");
+    assert.equal(await details.getAttribute("open"), null);
+    await summary.focus();
+    assert.equal(await summary.evaluate(el => getComputedStyle(el).outlineStyle), "solid");
+    for (const key of ["Enter", "Space", "Enter", "Space"]) {
+      const wasOpen = await details.evaluate(el => el.open);
+      await page.keyboard.press(key);
+      await page.waitForFunction(wasOpen => document.querySelector("details.operator-brief").open !== wasOpen, wasOpen);
+    }
+    assert.equal(await details.getAttribute("open"), null);
+    const close = page.locator(".modal button.icon-btn");
+    const rect = await close.boundingBox();
+    assert.ok(rect.width >= 44 && rect.height >= 44);
+    await page.locator("#root").evaluate(root => {
+      const span = document.createElement("span"); span.className = "icon-btn"; span.id = "decorative-icon"; root.append(span);
+    });
+    const decorative = await page.locator("#decorative-icon").boundingBox();
+    assert.equal(decorative.width, 34); assert.equal(decorative.height, 34);
+    await summary.focus();
+    await page.keyboard.press("Escape");
+    await page.locator("#closed").waitFor();
+    assert.equal(await page.evaluate(() => window.trace.escapes), 1);
+  });
+}

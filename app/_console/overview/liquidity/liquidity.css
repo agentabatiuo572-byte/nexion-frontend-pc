@@ -155,7 +155,7 @@
   font-size: 12px;
   font-weight: 600;
 }
-.liqpage .b2-button:hover { border-color: var(--brand-2-border); color: var(--brand-2); }
+@media (hover: hover) and (pointer: fine) { .liqpage .b2-button:hover { border-color: var(--brand-2-border); color: var(--brand-2); } }
 .liqpage .b2-button.primary {
   border-color: var(--brand-2);
   background: var(--brand-2);
@@ -337,7 +337,7 @@
   font-size: 12px;
   text-decoration: none;
 }
-.liqpage .b2-cross-links a:hover { border-color: var(--cyan); }
+@media (hover: hover) and (pointer: fine) { .liqpage .b2-cross-links a:hover { border-color: var(--cyan); } }
 
 .liqpage .b2-liabilities { margin-top: 14px; }
 .liqpage .b2-table-wrap { margin: 0 -18px; overflow-x: auto; }
