@@ -1763,6 +1763,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
                 className="fld"
                 type="file"
                 accept={f.accept ?? "image/jpeg,image/png,image/webp"}
+                aria-label={f.label}
                 required={f.required !== false}
                 aria-required={f.required !== false}
                 disabled={assetUploading[f.key]}

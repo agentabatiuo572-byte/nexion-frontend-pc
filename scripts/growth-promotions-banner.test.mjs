@@ -27,7 +27,7 @@ function nodes(tree) {
 }
 const text = node => Array.isArray(node) ? node.map(text).join('') : node?.props ? text(node.props.children) : String(node ?? '');
 const settle = () => new Promise(resolve => setImmediate(resolve));
-function uploader(upload) {
+function uploader(upload, field = {}) {
   const hooks = stateHooks(); let value = { bannerAssetId: 'original' }; const calls = [], changes = [], states = [];
   const { BusinessFormBlock } = load('app/components/domain-views/design-kit.tsx', name => {
     if (name === 'react') return hooks;
@@ -36,11 +36,22 @@ function uploader(upload) {
     if (name.endsWith('error-messages')) return { displayAdminError: () => '图片上传未完成，请重试。' };
     return {};
   });
-  const props = { spec: { kind: 'multi-field', fields: [{ key: 'bannerAssetId', label: '宣传图', inputKind: 'asset-upload', required: false, uploadDomain: 'growth', uploadUsage: 'promotion-banner', accept: 'image/jpeg,image/png' }] }, onChange: next => { value = next; changes.push(next.bannerAssetId); }, onUploadStateChange: (_, state) => states.push(state) };
+  const props = { spec: { kind: 'multi-field', fields: [{ key: 'bannerAssetId', label: '宣传图', inputKind: 'asset-upload', required: false, uploadDomain: 'growth', uploadUsage: 'promotion-banner', accept: 'image/jpeg,image/png', ...field }] }, onChange: next => { value = next; changes.push(next.bannerAssetId); }, onUploadStateChange: (_, state) => states.push(state) };
   const render = () => { hooks.reset(); return nodes(BusinessFormBlock({ ...props, value })); };
   const choose = file => render().find(node => node.type === 'input').props.onChange({ target: { files: file ? [file] : [], value: file?.name || '' } });
   return { render, choose, calls, changes, states, value: () => value.bannerAssetId };
 }
+test('shared image upload names identify the field separately from help and removal', () => {
+  for (const field of [{ label: '上传宣传图', required: false }, { label: '替换宣传图', required: false }, { label: '关联证据图片', required: true }, { label: '银行回单图片', required: true }, { label: '银行回单图片（选填）', required: false }]) {
+    const form = uploader(() => assert.fail('naming check must not upload'), { ...field, help: 'JPEG 或 PNG，最大 10 MB。' });
+    const rendered = form.render(), input = rendered.find(node => node.type === 'input' && node.props.type === 'file');
+    assert.equal(input.props['aria-label'], field.label);
+    assert.equal(input.props['aria-required'], field.required);
+    assert(rendered.some(node => node.type === 'button' && text(node) === (field.required ? '清除图片并重新上传' : '移除图片')));
+    assert(rendered.some(node => node.type === 'span' && text(node) === 'JPEG 或 PNG，最大 10 MB。'));
+  }
+});
+
 test('failed image replacement keeps the original; the same file can retry and explicit removal clears', async () => {
   let succeed = false;
   const form = uploader(() => succeed ? Promise.resolve({ assetId: 'replacement' }) : Promise.reject(Error('MEDIA_STORAGE_UNAVAILABLE')));
