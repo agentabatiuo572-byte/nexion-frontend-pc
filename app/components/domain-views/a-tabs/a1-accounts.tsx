@@ -247,7 +247,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const parsedSessionBaseline = readAdminSessionBaseline(backendSessionBaseline);
   const backendLockBaseline = securityBaselines.find((b) => b.key === "lock")?.value;
   const baselineCurrent = (key: string) => {
-    if (key === "session_idle") return parsedSessionBaseline.idleMinutes;
+    if (key === "session_idle") return parsedSessionBaseline.idleDisabled ? "已停用" : parsedSessionBaseline.idleMinutes;
     if (key === "session_abs") return parsedSessionBaseline.unlimited ? "无固定上限" : parsedSessionBaseline.absoluteHours;
     if (key === "lock_short_cnt") return firstMatch(backendLockBaseline, /(\d+(?:\.\d+)?)\s*(?:times|次)/i) ?? null;
     if (key === "lock_short_min") return firstMatch(backendLockBaseline, /\/\s*(\d+(?:\.\d+)?)\s*min/i) ?? null;
@@ -260,7 +260,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const securityBaselineRows: SecurityBaselineRow[] = [];
   if (registeredBaseline("session")) {
     securityBaselineRows.push(
-      { ...SECURITY_BASELINE_META.session_idle, sourceKey: "session", current: baselineCurrent("session_idle"), locked: true },
+      { ...SECURITY_BASELINE_META.session_idle, sourceKey: "session", current: baselineCurrent("session_idle"),
+        unit: parsedSessionBaseline.idleDisabled ? undefined : "分钟",
+        sub: parsedSessionBaseline.idleDisabled ? "闲置自动登出已停用；可主动登出或撤销会话" : SECURITY_BASELINE_META.session_idle.sub, locked: true },
       { ...SECURITY_BASELINE_META.session_abs, sourceKey: "session", current: baselineCurrent("session_abs"), unit: parsedSessionBaseline.unlimited ? undefined : "小时", locked: true },
     );
   }
@@ -275,7 +277,10 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const baselineDisplay = (baseline: SecurityBaselineRow) => (
     baseline.current == null ? "—" : `${baseline.current} ${baseline.unit ?? ""}`.trim()
   );
-  const sessionBaseline = backendSessionBaseline || "后端未返回会话基线";
+  const sessionBaseline = parsedSessionBaseline.idleDisabled
+    ? `闲置自动登出已停用 / ${parsedSessionBaseline.unlimited ? "无固定登录上限"
+      : parsedSessionBaseline.absoluteHours ? `${parsedSessionBaseline.absoluteHours}小时登录上限` : "登录上限未确认"}`
+    : backendSessionBaseline || "后端未返回会话基线";
   const lockBaseline = backendLockBaseline || "后端未返回登录锁定基线";
 
   const totalPages = Math.max(1, Math.ceil(operators.length / perPage));
@@ -606,7 +611,11 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
 
   const adjustBaseline = (baseline: SecurityBaselineRow) => {
     if (baseline.sourceKey === "session") {
-      toast("会话策略固定为无有效操作60分钟登出、有效操作续期，无固定登录上限");
+      const idlePolicy = parsedSessionBaseline.idleDisabled ? "闲置自动登出已停用"
+        : parsedSessionBaseline.idleMinutes ? `无有效操作${parsedSessionBaseline.idleMinutes}分钟登出、有效操作续期` : "闲置策略未确认";
+      const absolutePolicy = parsedSessionBaseline.unlimited ? "无固定登录上限"
+        : parsedSessionBaseline.absoluteHours ? `${parsedSessionBaseline.absoluteHours}小时登录上限` : "登录上限未确认";
+      toast(`会话策略由后端锁定：${idlePolicy}，${absolutePolicy}`);
       return;
     }
     if (baseline.locked) {

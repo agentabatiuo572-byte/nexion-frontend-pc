@@ -7,11 +7,29 @@ import { readAdminSessionBaseline } from "../lib/admin/session-baseline.ts";
 
 const source = ts.createSourceFile("a1-accounts.tsx", readFileSync(new URL("../app/components/domain-views/a-tabs/a1-accounts.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 let adjust;
-function visit(node) { if (ts.isVariableDeclaration(node) && node.name.getText(source) === "adjustBaseline") adjust = node.initializer; ts.forEachChild(node, visit); }
+const declarations = new Map(); let sessionRows;
+function visit(node) {
+  if (ts.isVariableDeclaration(node)) {
+    declarations.set(node.name.getText(source), node.getText(source));
+    if (node.name.getText(source) === "adjustBaseline") adjust = node.initializer;
+  }
+  if (ts.isIfStatement(node) && node.expression.getText(source) === 'registeredBaseline("session")') sessionRows = node.getText(source);
+  ts.forEachChild(node, visit);
+}
 visit(source);
-function loadAction() {
+function loadRows(value, summary = false) {
+  const scope = { securityBaselines: [{ key: "session", value }], readAdminSessionBaseline };
+  const keys = ["SECURITY_BASELINE_META", "backendSessionBaseline", "parsedSessionBaseline", "baselineCurrent", "registeredBaseline", "securityBaselineRows", "baselineDisplay", "sessionBaseline"];
+  vm.runInNewContext(ts.transpileModule(keys.map((key) => `var ${declarations.get(key)};`).join("\n")
+    + `\n${sessionRows}\nvar result = securityBaselineRows.map(row => ({ key: row.key, current: row.current, unit: row.unit, locked: row.locked, display: baselineDisplay(row) }));`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText, scope);
+  return summary ? scope.sessionBaseline : JSON.parse(JSON.stringify(scope.result));
+}
+function loadAction(value = "60min / unlimited") {
   const messages = [], commands = []; let confirmation;
   const scope = { toast: (text) => messages.push(text), jsx: () => null, Fragment: "fragment",
+    parsedSessionBaseline: readAdminSessionBaseline(value),
     openActionConfirm: (spec) => { confirmation = spec; },
     baselineCurrent: (key) => key === "lock_short_min" ? "15" : null,
     baselineDisplay: () => "5 次", registeredBaseline: () => ({ value: "5 次 / 15min" }),
@@ -25,9 +43,9 @@ function loadAction() {
 }
 
 test("A1 displays server 60min/unlimited facts while retaining unknown and legacy evidence", () => {
-  assert.deepEqual(readAdminSessionBaseline("60min / unlimited"), { idleMinutes: "60", absoluteHours: null, unlimited: true });
-  assert.deepEqual(readAdminSessionBaseline("30min / 8h"), { idleMinutes: "30", absoluteHours: "8", unlimited: false });
-  for (const unknown of [undefined, "", "unknown"]) assert.deepEqual(readAdminSessionBaseline(unknown), { idleMinutes: null, absoluteHours: null, unlimited: false });
+  assert.deepEqual(readAdminSessionBaseline("60min / unlimited"), { idleDisabled: false, idleMinutes: "60", absoluteHours: null, unlimited: true });
+  assert.deepEqual(readAdminSessionBaseline("30min / 8h"), { idleDisabled: false, idleMinutes: "30", absoluteHours: "8", unlimited: false });
+  for (const unknown of [undefined, "", "unknown"]) assert.deepEqual(readAdminSessionBaseline(unknown), { idleDisabled: false, idleMinutes: null, absoluteHours: null, unlimited: false });
 });
 
 test("actual A1 action refuses both session edits even if a stale backend reports unlocked", () => {
@@ -44,4 +62,36 @@ test("actual A1 lock-baseline edit still emits its original lock contract and ex
   assert.equal(fixture.messages.length, 0); assert.equal(fixture.commands.length, 1);
   assert.equal(fixture.commands[0].baselineKey, "lock"); assert.equal(fixture.commands[0].value, "6 次 / 15min");
   assert.equal(fixture.commands[0].expectedValue, "5 次 / 15min");
+});
+
+test("A1 explicitly renders disabled idle as 已停用 without a minute unit and keeps the session rows locked", () => {
+  assert.deepEqual(readAdminSessionBaseline("disabled / unlimited"), { idleDisabled: true, idleMinutes: null, absoluteHours: null, unlimited: true });
+  assert.deepEqual(loadRows("disabled / unlimited"), [
+    { key: "session_idle", current: "已停用", locked: true, display: "已停用" },
+    { key: "session_abs", current: "无固定上限", locked: true, display: "无固定上限" },
+  ]);
+  assert.deepEqual(loadRows("60min / unlimited"), [
+    { key: "session_idle", current: "60", unit: "分钟", locked: true, display: "60 分钟" },
+    { key: "session_abs", current: "无固定上限", locked: true, display: "无固定上限" },
+  ]);
+  assert.deepEqual(loadRows("30min / 8h"), [
+    { key: "session_idle", current: "30", unit: "分钟", locked: true, display: "30 分钟" },
+    { key: "session_abs", current: "8", unit: "小时", locked: true, display: "8 小时" },
+  ]);
+  assert.ok(loadRows(undefined).every((row) => row.current === null && row.display === "—" && row.locked));
+  assert.equal(loadRows("disabled / unlimited", true), "闲置自动登出已停用 / 无固定登录上限");
+  assert.equal(loadRows("disabled / 8h", true), "闲置自动登出已停用 / 8小时登录上限");
+  assert.equal(loadRows("disabled / unknown", true), "闲置自动登出已停用 / 登录上限未确认");
+});
+
+test("actual A1 session adjustment copy follows disabled, legacy and unknown server facts without opening an edit", () => {
+  for (const [value, expected] of [["disabled / unlimited", ["闲置自动登出已停用", "无固定登录上限"]],
+    ["30min / 8h", ["30分钟", "8小时登录上限"]], ["unknown", ["闲置策略未确认", "登录上限未确认"]]]) {
+    const fixture = loadAction(value);
+    for (const key of ["session_idle", "session_abs"]) fixture.run({ key, sourceKey: "session", locked: false, current: "8" });
+    assert.equal(fixture.confirmation(), undefined); assert.equal(fixture.commands.length, 0);
+    assert.equal(fixture.messages.length, 2);
+    assert.ok(fixture.messages.every((message) => expected.every((text) => message.includes(text))));
+    assert.ok(fixture.messages.every((message) => !message.includes("60分钟")));
+  }
 });
