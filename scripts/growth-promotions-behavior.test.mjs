@@ -20,6 +20,7 @@ const promotionUi = loadComponent('../app/components/domain-views/h-tabs/h4-prom
 // Execute the real editor and its handlers; state doubles avoid a test-owned navigation implementation.
 function editorHarness({writable=true,invalid=false,onSaved=async()=>{}}={}) {
   const states=[],components=new Map(),require=createRequire(import.meta.url);let index=0,permission=writable;
+  const PromotionBanner=()=>null;
   const ui=new Proxy({text:v=>typeof v==='string'?v:'',TEMPLATE_LABELS:{SKU_GIFT:'单设备赠礼'},PromotionSteps:promotionUi.PromotionSteps},{get:(object,key)=>{if(key in object)return object[key];if(!components.has(key))components.set(key,()=>null);return components.get(key);}});
   const code=ts.transpileModule(readFileSync(new URL('../app/components/domain-views/h-tabs/h4-promotion-editor.tsx',import.meta.url),'utf8'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
   const module={exports:{}};
@@ -30,9 +31,10 @@ function editorHarness({writable=true,invalid=false,onSaved=async()=>{}}={}) {
     if(name.endsWith('promotion-client'))return {promotionRead:()=>assert.fail('unexpected read')};
     if(name.endsWith('h4-promotion-ui'))return ui;
     if(name.endsWith('h4-promotion-policies'))return {PromotionRightsDialog:()=>null};
+    if(name.endsWith('h4-promotion-banner'))return {PromotionBanner};
     assert.fail('unexpected import '+name);
   },module.exports,module);
-  const activity={activityId:'A1',state:'DRAFT',current:{revision:1,version:1,state:'DRAFT',draft:{...promotionForm.emptyDraft('SKU_GIFT'),name:'Original'}},impact:{budgets:[]}};
+  const activity={activityId:'A1',state:'DRAFT',current:{revision:1,version:1,state:'DRAFT',draft:{...promotionForm.emptyDraft('SKU_GIFT'),name:'Original',bannerAssetId:'saved'}},impact:{budgets:[]}};
   const props={activity,catalog:{policies:[],ranks:[],markets:[],skus:[]},can:()=>permission,onSaved,onBack:()=>{},onReview:()=>{}};
   const render=()=>{index=0;const nodes=[];const walk=node=>{if(Array.isArray(node))return node.forEach(walk);if(!node||typeof node!=='object')return;nodes.push(node);walk(node.type===ui.PromotionSteps?node.type(node.props):node.props?.children);};walk(module.exports.default(props));return nodes;};
   const text=node=>Array.isArray(node)?node.map(text).join(''):node?.props?text(node.props.children):String(node??'');
@@ -42,8 +44,26 @@ function editorHarness({writable=true,invalid=false,onSaved=async()=>{}}={}) {
   const edit=()=>render().find(node=>node.type==='input'&&node.props.maxLength===200).props.onChange({target:{value:'Changed'}});
   const previousDocument=globalThis.document,reports=[];
   globalThis.document={querySelectorAll:()=>invalid?[{disabled:false,checkValidity:()=>false,reportValidity:()=>reports.push('invalid')}]:[]};
-  return {render,button,step,command,edit,reports,setPermission:value=>{permission=value;},restore:()=>{globalThis.document=previousDocument;}};
+  return {render,button,step,command,edit,reports,activity,banner:()=>render().find(node=>node.type===PromotionBanner),setPermission:value=>{permission=value;},restore:()=>{globalThis.document=previousDocument;}};
 }
+
+test('banner upload blocks saving and navigation; completion keeps intervening edits and only changes the draft',()=>{
+  const editor=editorHarness();
+  try {
+    const banner=editor.banner().props; banner.onUploading(true);
+    assert.equal(editor.button('保存草稿').props.disabled,true); assert.equal(editor.button('下一步').props.disabled,true); assert.equal(editor.button('返回活动').props.disabled,true); assert.equal(editor.step(1).props.disabled,true);
+    editor.button('保存草稿').props.onClick(); editor.step(1).props.onClick(); assert.equal(editor.command(),undefined);
+    editor.edit(); banner.onChange('replacement'); banner.onUploading(false);
+    editor.button('保存草稿').props.onClick(); assert.equal(editor.command().props.body.draft.bannerAssetId,'replacement'); assert.equal(editor.command().props.body.draft.name,'Changed'); assert.equal(editor.activity.current.draft.bannerAssetId,'saved');
+  } finally { editor.restore(); }
+});
+test('banner removal submits null while read-only mode keeps preview without allowing save',()=>{
+  const editor=editorHarness();
+  try {
+    editor.banner().props.onChange(null); editor.button('保存草稿').props.onClick(); assert.equal(editor.command().props.body.draft.bannerAssetId,null);
+    editor.command().props.onClose(); editor.setPermission(false); assert.equal(editor.banner().props.readOnly,true); assert.equal(editor.button('保存草稿').props.disabled,true); editor.button('保存草稿').props.onClick(); assert.equal(editor.command(),undefined);
+  } finally { editor.restore(); }
+});
 
 test('Next saves dirty input and advances only after successful server readback',async()=>{
   const saved=[];const editor=editorHarness({onSaved:async step=>saved.push(step)});

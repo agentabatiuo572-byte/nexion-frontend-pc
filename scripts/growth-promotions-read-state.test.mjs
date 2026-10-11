@@ -205,6 +205,7 @@ function editingDialog(name,props){
     if(dependency.endsWith('promotion-form'))return promotionForm;
     if(dependency.endsWith('promotion-client'))return {promotionRead:()=>assert.fail('No service reads in offline editor regression')};
     if(dependency.endsWith('h4-promotion-policies'))return {PromotionRightsDialog:()=>null};
+    if(dependency.endsWith('h4-promotion-banner'))return {PromotionBanner:()=>null};
     assert.fail('Unknown editor dependency '+dependency);
   },name==='default'?'':name);
   const local=new Set(['NumericField','RewardFields','LimitField','PolicySelect','CombinationEditor','AudienceFields']);

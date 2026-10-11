@@ -36,7 +36,7 @@ function domain(file,hook,readState,privateNames=[],extras={}){
     if(name.endsWith('promotion-client'))return {...client,pendingPromotionCommands:()=>[]};
     if(name.endsWith('error-messages'))return {displayAdminError};
     if(name in extras)return extras[name];
-    return {__esModule:true,default:noop,PromotionRightsDialog:noop,PaginationExemptionList:noop};
+    return {__esModule:true,default:noop,PromotionRightsDialog:noop,PromotionBanner:noop,PromotionBannerPreview:noop,PaginationExemptionList:noop};
   },privateNames);
 }
 const markup=element=>renderToStaticMarkup(element);
@@ -201,7 +201,7 @@ test('PCOPY-10: actual H4 existing-events branch renders business state labels a
 });
 
 test('all ten groups: exact public-source guard covers normal/empty/error/title and accessible consumers without renaming data',()=>{
-  const files=['h4-promotion-ui.tsx','h4-promotion-editor.tsx','h4-promotion-review.tsx','h4-promotion-rewards.tsx','h4-promotion-policies.tsx','h4-promotion-metrics.tsx','h4-promotions.tsx'];
+  const files=['h4-promotion-ui.tsx','h4-promotion-editor.tsx','h4-promotion-banner.tsx','h4-promotion-review.tsx','h4-promotion-rewards.tsx','h4-promotion-policies.tsx','h4-promotion-metrics.tsx','h4-promotions.tsx'];
   for(const file of files){const source=read(h+file);assert.doesNotMatch(source,forbidden,file);assert.doesNotMatch(source,/不由浏览器重算|目录自动绑定当前版本|版本和内容摘要由目录绑定|不能由同一响应|读取服务端结果|以服务端发布复核|曝光与成本缺失时保持未提供|来源：订单、退款与奖励确认事实/);}
   const legacy=read(h+'h3-quest-events.tsx');for(const retained of ['至少保留 2 个档位','概率调为 0%','100%','B1 红线'])assert(legacy.includes(retained));
   assert(read('lib/admin/promotion-client.ts').includes("'Idempotency-Key':key"));assert(read(h+'h4-promotions.tsx').includes('p.name ||'));
