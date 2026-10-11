@@ -240,7 +240,7 @@ const GEARS = [
   ["typecheck", npxCmd, ["--no-install", "tsc", "--noEmit"]],
   ["runtime mock import guard", "node", ["scripts/check-runtime-mock-imports.mjs"]],
   ["admin auth gate sentinel", "node", ["scripts/admin-auth-gate-sentinel.mjs"]],
-  ["admin auth gate contract", "node", ["--test", "--test-concurrency=1", "tests/admin-auth-password-change-gate.test.mjs", "tests/admin-auth-cookie-namespace.test.mjs"]],
+  ["admin auth gate contract", "node", ["--test", "--test-concurrency=1", "tests/admin-auth-password-change-gate.test.mjs", "tests/admin-auth-cookie-namespace.test.mjs", "tests/admin-idle-disabled-behavior.test.mjs", "tests/admin-session-baseline-behavior.test.mjs"]],
   ["workspace path resolver", "node", ["--test", "scripts/nexion-workspace-paths.test.mjs"]],
   ["canon sentinel", "node", ["scripts/canon-sentinel.mjs"]],
   ["canon royalty projection regression", "node", ["--test", "tests/canon-royalty-projection-contract.test.mjs"]],
