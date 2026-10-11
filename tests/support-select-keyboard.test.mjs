@@ -348,7 +348,19 @@ test("shared CSS preserves original M declarations and every DOM/keyboard/callba
   assert.equal(currentCss.split("padding: 0 10px; padding-right: 12px;").length - 1, 2, "Exactly global and scoped triggers carry the spacing correction");
   assert.equal(currentCss.match(/font-size: 14px;/g)?.length, 4, "Exactly global/scoped trigger and option fonts become 14px");
   const originalFontsCss = currentCss.replace(/^(\.hd-select|\.mdom \.hd-select) \{([^\n]+)\}/gm, rule => rule.replace("font-size: 14px;", "font-size: 13.5px;")).replace(/^(\.hd-select-opt|\.mdom \.hd-select-opt) \{([^\n]+)\}/gm, rule => rule.replace("font-size: 14px;", "font-size: 13px;"));
-  assert.equal(originalFontsCss.replaceAll("padding: 0 10px; padding-right: 12px;", "padding: 0 10px;").replace("/* Original M declarations and selectors are retained; trigger right padding is explicitly 12px. */", "/* M declarations are copied verbatim from m-domain.css, including their selectors. */"), baselineSharedCss, "Only the two exact right-padding additions, four exact 14px font corrections and original explanatory comment differ from frozen v3 CSS");
+  // The reviewed touch fix gates only hover. Keep the frozen baseline and
+  // allow exactly these four transformations; focus and declarations stay exact.
+  let reviewedBaselineCss = baselineSharedCss;
+  for (const selector of [".hd-select:hover", ".mdom .hd-select:hover", ".mdom .hd-select-opt:hover"]) {
+    const rules = baselineSharedCss.split("\n").filter(line => line.startsWith(`${selector} {`));
+    assert.equal(rules.length, 1, `Exactly one frozen hover rule for ${selector}`);
+    reviewedBaselineCss = reviewedBaselineCss.replace(rules[0], `@media (hover: hover) and (pointer: fine) { ${rules[0]} }`);
+  }
+  const mixedRules = baselineSharedCss.split("\n").filter(line => line.startsWith(".hd-select-opt:hover, .hd-select-opt:focus-visible {"));
+  assert.equal(mixedRules.length, 1, "Exactly one frozen mixed hover/focus rule");
+  const declarations = mixedRules[0].slice(mixedRules[0].indexOf("{"));
+  reviewedBaselineCss = reviewedBaselineCss.replace(mixedRules[0], `.hd-select-opt:focus-visible ${declarations}\n@media (hover: hover) and (pointer: fine) { .hd-select-opt:hover ${declarations} }`);
+  assert.equal(originalFontsCss.replaceAll("padding: 0 10px; padding-right: 12px;", "padding: 0 10px;").replace("/* Original M declarations and selectors are retained; trigger right padding is explicitly 12px. */", "/* M declarations are copied verbatim from m-domain.css, including their selectors. */"), reviewedBaselineCss, "Only the exact reviewed spacing, fonts, comment and hover guards differ from frozen v3 CSS; focus remains unconditional");
   assert.equal(importedCss.map(css => css.content.match(/!important/g)?.length ?? 0).reduce((a, b) => a + b, 0), 1, "Only the existing reduced-motion priority remains");
 });
 
