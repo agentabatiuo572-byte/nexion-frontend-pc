@@ -316,7 +316,7 @@ test("bulk preview displays the actual structured actor-qualification error with
   const clientSource = source("lib/admin/m-support-client.ts");
   const clientError = find(clientSource, n => ts.isClassDeclaration(n) && n.name?.getText() === "SupportClientError").getText();
   const errorsSource = source("lib/admin/error-messages.ts");
-  const helper = bulkSource.includes("const bulkPreviewError =") ? declaration(bulkSource, "bulkPreviewError") : "const bulkPreviewError=displayAdminError;";
+  const helper = declaration(bulkSource, "isBulkPreviewDenied") + "\n" + declaration(bulkSource, "bulkPreviewError");
   const preview = find(bulkSource, n => ts.isCallExpression(n) && n.expression.getText() === "useEffect" && n.getText().includes('bulkPreview({filters,customerIds:[],excludedIds:[],selectionMode:"ALL_FILTERED"}')).getText();
   const freeze = find(bulkSource, n => ts.isFunctionDeclaration(n) && n.name?.getText() === "freeze").getText();
   const cases = [
@@ -332,8 +332,8 @@ test("bulk preview displays the actual structured actor-qualification error with
     let effect, context;
     const shown = [], steps = [], busyStates = [];
     ({ context } = evaluate(`${errorsSource}\n${clientError}\n${helper}\n${preview};\n${freeze}`, {}, {
-      AbortController, filters: {}, retry: 0, epoch: 0, actorId: 1, selected: new Set(["42"]), busy: false, stamp: { current: "original" },
-      useEffect(run) { effect = run; }, setQuery() {}, setError(text) { shown.push(text); }, setBusy(value) { busyStates.push(value); }, setStep(value) { steps.push(value); },
+      AbortController, filters: {}, retry: 0, epoch: 0, actorId: 1, selected: new Set(["42"]), busy: false, previewDenied: false, stamp: { current: "original" },
+      useEffect(run) { effect = run; }, setQuery() {}, setSelected() {}, setPreviewDenied() {}, setError(text) { shown.push(text); }, setBusy(value) { busyStates.push(value); }, setStep(value) { steps.push(value); },
       supportEnhancements: { bulkPreview() { return Promise.reject(context.cause); } },
     }));
     context.cause = vm.runInContext(row.plainError
