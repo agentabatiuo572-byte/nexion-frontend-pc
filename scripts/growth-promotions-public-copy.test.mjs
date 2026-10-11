@@ -47,7 +47,7 @@ const draft={...form.emptyDraft('SKU_GIFT'),name:'PCGP preserved activity',title
 const activity={activityId:'A1',name:'PCGP preserved activity',state:'ACTIVE',revision:3,activeVersion:1,draftVersion:2,impact,current:{version:2,revision:2,state:'DRAFT',draft,policyResolutionErrors:[]},startsAt:'2026-10-08T00:00:00Z',endsAt:'2026-10-12T00:00:00Z',displayTimezone:'UTC'};
 const catalog={policies:[],nativeContracts:[],skus:[],ranks:[],markets:[]};
 const editorProps={activity,catalog,can:()=>true,onSaved:async()=>{},onBack(){},onReview(){}};
-const forbidden=/服务端权威|未知数据不显示为 0|真实资金或设备回执|资金或设备真实回执|真实追回凭证|隔离测试政策|原命令|v1·console|数据库查询失败|D:\/CodexData\/private/;
+const forbidden=/保存为 UTC|事实读取|服务端权威|未知数据不显示为 0|真实资金或设备回执|资金或设备真实回执|真实追回凭证|隔离测试政策|原命令|v1·console|数据库查询失败|D:\/CodexData\/private/;
 
 function shell(hook,coverage={ledger:{coverageRatio:0,redlinePct:0.8,healthyPct:1},hasData:false,loading:false,error:null}){
   const imports=name=>{
@@ -123,6 +123,17 @@ test('PCOPY-05: actual audience counters distinguish unknown from actual zero',(
     const hook=hooks({6:1,11:{matched:value,rejected:value,unknown:value,reasonCounts:[{message:{zh:'条件未确认'},count:value}],samples:[],asOf:impact.asOf}}),Editor=domain('h4-promotion-editor.tsx',hook,fresh).default;hook.reset();const html=markup(Editor(editorProps));
     const cells=(html.match(/<td>[^<]*<\/td>/g)||[]).join('');assert(cells.includes(value===null?'<td>-</td>':'<td>0</td>'));assert(!cells.includes('<td>未知</td>'));
   }
+});
+
+test('PCOPY-05/06: actual date hints hide storage details while retaining local values and all-version scope',()=>{
+  for(const populated of [false,true]){
+    const row=structuredClone(activity);row.current.draft={...row.current.draft,displayTimezone:'Asia/Tokyo',startsAt:populated?activity.startsAt:null,endsAt:populated?activity.endsAt:null};
+    const hook=hooks(),Editor=domain('h4-promotion-editor.tsx',hook,fresh).default;hook.reset();const element=Editor({...editorProps,activity:row}),html=markup(element);
+    assert.doesNotMatch(html,forbidden);assert.equal(html.includes('先选择时区，再填写日期'),!populated);
+    assert.deepEqual(nodes(element).filter(n=>n.type==='input'&&n.props.type==='datetime-local').map(n=>n.props.value),populated?['2026-10-08T09:00','2026-10-12T09:00']:['','']);
+  }
+  const hook=hooks(),Review=domain('h4-promotion-review.tsx',hook,fresh).default;hook.reset();const html=markup(Review({activity,catalog,can:()=>true,review:false,onBack(){}}));
+  assert(html.includes('更新时间：'+ui.formatTime(impact.asOf)+'；包含活动所有版本。'));assert.doesNotMatch(html,forbidden);
 });
 
 test('PCOPY-05/06: actual review and policy dialogs preserve review, publication, contract and refund restrictions',()=>{
