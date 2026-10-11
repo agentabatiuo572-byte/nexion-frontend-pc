@@ -143,7 +143,8 @@ type ContentConversationView = {
   ownerAgentName?: string;
   unreadCount?: number;
   lastMessage?: string;
-  lastMessageKind?: string;
+  lastPublicMessageId?: number | null;
+  lastMessageKind?: string | null;
   lastMessageAt?: string;
   transferFromAgentId?: string;
   transferFromAgentName?: string;
@@ -203,6 +204,7 @@ type ConversationCustomerProfile = {
 type ContentConversationDetail = {
   conversation?: ContentConversationView;
   messages?: ContentConversationMessageView[];
+  historyTruncated?: boolean;
   customerProfile?: ConversationCustomerProfile;
 };
 
@@ -1122,6 +1124,7 @@ function assertConversationRow(value: unknown): ContentConversationView {
     || Number(row.unreadCount) < 0
     || !Number.isSafeInteger(row.version)
     || Number(row.version) < 0
+    || (row.lastPublicMessageId != null && (!Number.isSafeInteger(row.lastPublicMessageId) || row.lastPublicMessageId < 0))
     || typeof row.updatedAt !== "string"
     || Number.isNaN(Date.parse(row.updatedAt))
     // This is an optional projection of the current PENDING transfer, not
@@ -1155,7 +1158,8 @@ function assertConversationDetail(value: unknown): ContentConversationDetail {
   if (!value || typeof value !== "object") throw new Error("M3_CONVERSATION_DETAIL_INVALID");
   const detail = value as ContentConversationDetail;
   assertConversationRow(detail.conversation);
-  if (!Array.isArray(detail.messages) || !detail.messages.every((message) =>
+  if ((detail.historyTruncated !== undefined && typeof detail.historyTruncated !== "boolean")
+    || !Array.isArray(detail.messages) || !detail.messages.every((message) =>
     message
     && typeof message === "object"
     && Number.isSafeInteger(message.id)
@@ -1288,8 +1292,10 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
     owner: str(base.ownerAgentName, "Unassigned"),
     messages,
     detailReady,
+    historyTruncated: "historyTruncated" in detail ? detail.historyTruncated : undefined,
     lastPreview: str(base.lastMessage),
-    lastMessageKind: base.lastMessageKind === "IDLE_TIMEOUT_CLOSE" ? "TEXT" : parseSupportMessageKind({ kind: base.lastMessageKind }, false),
+    lastPublicMessageId: base.lastPublicMessageId,
+    lastMessageKind: base.lastMessageKind == null ? undefined : base.lastMessageKind === "IDLE_TIMEOUT_CLOSE" ? "TEXT" : parseSupportMessageKind({ kind: base.lastMessageKind }, false),
     customer: profile.nickname,
     profile,
     archived: base.archived === true,

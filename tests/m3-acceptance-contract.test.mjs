@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { parseBusinessTime } from "../lib/admin/business-time.ts";
+import { MDomainLoadCoordinator } from "../lib/admin/m-content-load-coordinator.ts";
 
 const root = process.cwd();
 const read = (path) => readFileSync(resolve(root, path), "utf8");
@@ -147,6 +148,7 @@ test("M3 still rejects malformed conversation fields and unsupported present tra
   const f = conversationReadFixture();
   for (const patch of [
     { id: "5954" }, { status: "UNKNOWN" }, { version: -1 }, { unreadCount: -1 },
+    { lastPublicMessageId: -1 }, { lastPublicMessageId: "3719" }, { lastPublicMessageId: NaN },
     { updatedAt: "not-a-date" }, { conversationType: "unknown" },
     { transferToType: "" }, { transferToType: "unknown" }, { transferToType: 42 }, { transferToType: {} },
   ]) {
@@ -513,11 +515,120 @@ test("M3 human reception and origin branches use one exclusive support identity 
   const f = m3VisibleTextFixture();
   for (const type of ["advisor", "support", "ai"]) assert.equal(f.evaluate(f.conditional('convo.type==="advisor"'), { convo: { type } }), "专属客服接待");
   for (const [origin, expected] of [["user", "客户发起"], ["advisor", "客服主动"], ["support", "客服主动"], [undefined, "来源未记录"]]) assert.equal(f.evaluate(f.conditional("convo.origin"), { convo: { origin } }), expected);
-  for (const [hasMessage, knownReplyState, expected] of [[false, true, "待首次联系"], [true, true, "待专属客服回复"], [true, false, "已处理"], [true, null, "查看待回复状态"]]) assert.equal(f.evaluate(f.conditional("!hasMessage"), { hasMessage, knownReplyState }), expected);
+  const reception = f.one(node => ts.isConditionalExpression(node) && node.condition.getText(f.file) === "hasMessage===false" && ts.isStringLiteral(node.whenTrue) && node.whenTrue.text === "待首次联系");
+  for (const [hasMessage, knownReplyState, expected] of [[false, true, "待首次联系"], [true, true, "待专属客服回复"], [true, false, "已处理"], [true, null, "查看待回复状态"], [null, null, "查看待回复状态"]]) assert.equal(f.evaluate(reception, { hasMessage, knownReplyState }), expected);
   const source = read("lib/admin/m-client.ts");
   const definition = source.match(/function conversationType[^\n]*\{[\s\S]*?\n\}/)?.[0]; assert.ok(definition);
   const parse = runInNewContext(ts.transpileModule(`${definition}\nconversationType;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText);
   for (const [wire, expected] of [["ADVISOR", "advisor"], ["SUPPORT", "support"], ["AI", "support"]]) assert.equal(parse(wire), expected);
+});
+
+function m3ListRenderingFixture() {
+  const adapter = conversationReadFixture().reads;
+  const f = m3VisibleTextFixture();
+  const list = f.one(node => ts.isCallExpression(node) && node.expression.getText(f.file) === "listRows.map");
+  const lastMessage = f.evaluate(f.one(node => ts.isFunctionDeclaration(node) && node.name?.text === "lastMessage"));
+  const row = { ...transferredHistory(), conversationNo: "CV-PREVIEW", status: "OPEN", customerId: 7, ownerAdminId: 12, assignmentId: "9", lastMessage: "", lastMessageKind: null, unreadCount: 2 };
+  const render = (conversation, waitingReply = null) => f.text(f.evaluate(list, {
+    listRows: [conversation], selected: null, currentProfileDetail: waitingReply === null ? null : { customerId: "7", waitingReply },
+    lastMessage, canWriteM3: false, adminId: 12, archiveIds: new Set(), setArchiveIds() {}, select() {},
+    SupportAvatar: "avatar", customerAvatarPath: () => undefined, messageTime: () => "", conversationStateLabel: () => "进行中",
+  }));
+  return { adapter, row, render };
+}
+
+test("M3 production adapter and list rendering distinguish public messages, explicit empty and unknown summaries", () => {
+  const { adapter, row, render } = m3ListRenderingFixture();
+  const positive = adapter.adaptConversation(adapter.assertConversationRow({ ...row, lastPublicMessageId: 3719 }));
+  assert.equal(positive.lastPublicMessageId, 3719);
+  assert.equal(positive.lastMessageKind, undefined, "missing kind must remain unknown rather than a fabricated TEXT preview");
+  assert.equal(positive.messages.length, 0, "list summaries must not fabricate a detail message");
+  assert.match(render(positive), /消息摘要暂不可用.*查看待回复状态.*2 条未读/);
+  assert.doesNotMatch(render(positive), /尚无人工消息|待首次联系|待专属客服回复|\[图片\]/);
+  assert.match(render(positive, true), /待专属客服回复/, "only an actual customer profile may confirm waiting reply");
+  assert.match(render(positive, false), /已处理/);
+  const detail = adapter.adaptConversation(adapter.assertConversationDetail({
+    conversation: { ...row, lastPublicMessageId: 3719 },
+    messages: [{ id: 3719, senderType: "AGENT", content: "", kind: "IMAGE", attachmentId: "local-fixture-image", createdAt: row.updatedAt, authorConfidence: "UNKNOWN", senderAvatar: { assetId: "unverified", version: 1 } }],
+  }));
+  assert.match(render(detail), /\[图片\]/);
+  assert.equal(detail.messages[0].authorConfidence, "UNKNOWN");
+  assert.equal(detail.messages[0].senderAvatar, undefined);
+  assert.doesNotMatch(render(detail), /尚无人工消息|待首次联系/);
+  const empty = adapter.adaptConversation(adapter.assertConversationRow({ ...row, lastPublicMessageId: 0, unreadCount: 0 }));
+  assert.equal(empty.lastPublicMessageId, 0);
+  assert.match(render(empty, true), /尚无人工消息.*待首次联系.*无未读/);
+  for (const lastPublicMessageId of [undefined, null]) {
+    const unknown = adapter.adaptConversation(adapter.assertConversationRow({ ...row, lastPublicMessageId }));
+    assert.equal(unknown.lastPublicMessageId, lastPublicMessageId);
+    assert.match(render(unknown), /消息摘要暂不可用.*查看待回复状态/);
+    assert.doesNotMatch(render(unknown), /尚无人工消息|待首次联系|待专属客服回复/);
+    const completeEmpty = adapter.adaptConversation(adapter.assertConversationDetail({ conversation: { ...row, lastPublicMessageId, unreadCount: 0 }, messages: [], historyTruncated: false }));
+    assert.match(render(completeEmpty), /尚无人工消息.*待首次联系/, "a complete empty public thread is authoritative");
+  }
+  assert.doesNotMatch(render({ ...positive, messages: [{ sender: "user", text: "OLD_SCOPED_PRIVATE_DETAIL" }] }), /OLD_SCOPED_PRIVATE_DETAIL/, "summary rendering must never read stale private detail");
+});
+
+test("M3 truncated or unknown history remains neutral without a public message marker", () => {
+  const { adapter, row, render } = m3ListRenderingFixture();
+  const system = { id: 4000, senderType: "SYSTEM", content: "Fixture system event", kind: "TEXT", createdAt: row.updatedAt };
+  for (const lastPublicMessageId of [undefined, null, 3719]) {
+    for (const messages of [[], [system]]) {
+      const detail = adapter.adaptConversation(adapter.assertConversationDetail({
+        conversation: { ...row, lastPublicMessageId, lastMessage: messages.length ? system.content : "" },
+        messages, historyTruncated: true,
+      }));
+      const visible = render(detail);
+      assert.match(visible, /查看待回复状态.*2 条未读/, "a truncated page cannot prove the public history empty");
+      assert.doesNotMatch(visible, /尚无人工消息|待首次联系|待专属客服回复/);
+      assert.match(visible, messages.length ? /Fixture system event/ : /消息摘要暂不可用/);
+      assert.equal(detail.historyTruncated, true, "retain the backend completeness signal");
+      assert.equal(detail.detailReady, true, "loaded detail remains ready without requesting old private history");
+    }
+  }
+  for (const historyTruncated of [undefined, false]) {
+    const detail = adapter.adaptConversation(adapter.assertConversationDetail({ conversation: row, messages: [], historyTruncated }));
+    assert.equal(detail.historyTruncated, historyTruncated);
+    assert.match(render(detail), historyTruncated === false ? /尚无人工消息.*待首次联系/ : /消息摘要暂不可用.*查看待回复状态/);
+  }
+  assert.throws(() => adapter.assertConversationDetail({ conversation: row, messages: [], historyTruncated: "false" }), /M3_CONVERSATION_DETAIL_INVALID/);
+});
+
+test("M3 authoritative snapshot after switching selection clears old scoped detail and restores only the selected thread", async () => {
+  const adapter = conversationReadFixture().reads;
+  const source = read("app/components/domain-views/m-view.tsx");
+  const file = ts.createSourceFile("m-view.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const callbacks = {};
+  const visit = node => {
+    if (ts.isVariableDeclaration(node) && ["reconcileConversationSnapshot", "loadConversationDetail"].includes(node.name.getText(file)) && node.initializer && ts.isCallExpression(node.initializer) && node.initializer.expression.getText(file) === "useCallback") callbacks[node.name.getText(file)] = node.initializer.getText(file);
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  assert.equal(Object.keys(callbacks).length, 2, "execute the actual M view snapshot and detail callbacks");
+  const row = { ...transferredHistory(), customerId: 7, ownerAdminId: 12, assignmentId: "9", lastMessage: "", lastMessageKind: null, lastPublicMessageId: 3719 };
+  const summaries = [adapter.adaptConversation({ ...row, conversationNo: "CV-IMAGE", status: "OPEN" }), adapter.adaptConversation({ ...row, conversationNo: "CV-HISTORY" })];
+  const oldDetail = { ...summaries[0], detailReady: true, messages: [{ id: 3719, sender: "user", kind: "IMAGE", text: "OLD_SCOPED_PRIVATE_DETAIL" }], profile: { nickname: "OLD_SCOPED_PRIVATE_PROFILE" } };
+  const selectedDetail = { ...summaries[1], detailReady: true, messages: [{ id: 3687, sender: "user", text: "SELECTED_HISTORY_DETAIL" }] };
+  const mDataRef = { current: { conversations: [oldDetail, selectedDetail], conversationsAvailable: true } };
+  const requested = [];
+  const state = {
+    authEpoch: 1, mDataAuthEpoch: { current: 1 }, mLoadCoordinator: { current: new MDomainLoadCoordinator() }, mDataRef,
+    useCallback: callback => callback, fetchMConversationSnapshot: async () => summaries,
+    fetchMConversationDetail: async no => { requested.push(no); return selectedDetail; },
+    setMData: update => { mDataRef.current = update(mDataRef.current); },
+  };
+  const code = Object.entries(callbacks).map(([name, callback]) => `const ${name} = ${callback};`).join("\n") + "\nglobalThis.callbacks = {reconcileConversationSnapshot, loadConversationDetail};";
+  runInNewContext(ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, state);
+  await state.callbacks.reconcileConversationSnapshot(new AbortController().signal);
+  assert.equal(mDataRef.current.conversations, summaries, "replace the scoped snapshot rather than merge prior details");
+  assert.doesNotMatch(JSON.stringify(mDataRef.current), /OLD_SCOPED_PRIVATE/);
+  assert.equal(mDataRef.current.conversations[0].detailReady, false);
+  await state.callbacks.loadConversationDetail("CV-HISTORY");
+  assert.deepEqual(requested, ["CV-HISTORY"]);
+  assert.equal(mDataRef.current.conversations[1], selectedDetail);
+  assert.equal(mDataRef.current.conversations[0], summaries[0]);
+  assert.equal(mDataRef.current.conversations[0].messages.length, 0);
+  assert.equal(mDataRef.current.conversations[0].lastPublicMessageId, 3719);
 });
 
 test("M3 owner headers and author fallbacks preserve history and named actors with exclusive support copy", () => {
