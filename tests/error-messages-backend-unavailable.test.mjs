@@ -48,6 +48,13 @@ test("ordinary unknown machine codes still get the neutral unmapped fallback", (
   assert.equal(formatAdminApiError("F5_REQUEST_FAILED_404", "X"), GENERIC_UNMAPPED_FALLBACK);
 });
 
+test("account deletion detail mismatch explains the required reread before review", async () => {
+  const { displayAdminError } = await import("../lib/admin/error-messages.ts");
+  const copy = "账号注销申请详情与当前记录不一致，请重新读取详情后再审核。";
+  assert.equal(formatAdminApiError("ACCOUNT_DELETION_DETAIL_MISMATCH", ""), copy);
+  assert.equal(displayAdminError(new Error("ACCOUNT_DELETION_DETAIL_MISMATCH")), copy);
+});
+
 test("A2、E5 与 G2 的当前协议错误给运营可操作的中文指引", () => {
   assert.match(formatAdminApiError("A2_REASON_POLICY_INVALID", ""), /理由/);
   assert.match(formatAdminApiError("A2_RETENTION_RUN_INVALID:retentionMonths", ""), /留存/);

@@ -9,7 +9,8 @@ export function syncSelectedAccountDeletion(
   records: readonly AccountDeletionRequest[],
 ): AccountDeletionRequest | null {
   if (!selected) return null;
-  return records.find((item) => item.requestNo === selected.requestNo) ?? selected;
+  const next = records.find((item) => item.requestNo === selected.requestNo && item.userId === selected.userId);
+  return next && next.version > selected.version ? next : selected;
 }
 
 /** A late read/write result must not replace a newer selection or reopen a closed drawer. */
