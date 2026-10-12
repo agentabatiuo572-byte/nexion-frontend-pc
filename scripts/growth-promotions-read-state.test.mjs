@@ -9,6 +9,18 @@ import path from 'node:path';
 import * as promotionForm from '../lib/admin/promotion-form.ts';
 
 const require=createRequire(import.meta.url);
+test('shared blank states retain the frozen design icon and paragraph geometry',()=>{
+  const baseline=fs.readFileSync(new URL('../docs/design/growth-promotions/admin-r1-baseline.html',import.meta.url),'utf8');
+  const actual=fs.readFileSync(new URL('../app/components/domain-views/h-tabs/h4-promotions.css',import.meta.url),'utf8');
+  const declarations=(source,selector)=>{
+    const start=source.indexOf(selector+'{');assert(start>=0,selector);
+    return Object.fromEntries(source.slice(start+selector.length+1,source.indexOf('}',start)).split(';').filter(Boolean).map(rule=>rule.split(':')));
+  };
+  for(const [selector,properties] of [['.blank .emptyicon',['width','height','display','place-items','background','border-radius','font-size']],['.blank p',['line-height']]]){
+    const expected=declarations(baseline,selector),rendered=declarations(actual,'.prm '+selector);
+    for(const property of properties)assert.equal(rendered[property],expected[property],`${selector} ${property}`);
+  }
+});
 test('session renewal keeps promotion reads stable while permission and identity changes revalidate',()=>{
   let state,hook=0;const slots=[];
   const hooks={useEffect(){},useState:()=>[null,()=>{}],useMemo:fn=>fn(),
@@ -45,13 +57,14 @@ function component(file,imports,privateExport=''){
 }
 const ui=component('h4-promotion-ui.tsx',name=>name.startsWith('react')?require(name):name.endsWith('error-messages')?{displayAdminError:e=>e.message}:{});
 const activity={activityId:'A1',name:'原活动',state:'DRAFT',current:{revision:1,draft:{}},impact:{}};
-function page({catalog={data:{},loading:false,error:null},list={data:{},loading:false,error:null},current=activity,error=null,busy=false,screen='edit',query={limit:20},previous=[],pending=null}={}){
-  const states={1:2,3:screen,4:'A1',5:current,6:error,7:busy,11:pending,15:query,16:previous};let stateIndex=0,readIndex=0;const calls=[];
-  const fakeUi=new Proxy({...ui,useRead:()=>{const i=readIndex++;return {...[catalog,list][i],reload:()=>calls.push(i===0?'catalog':'list')};}},{get:(obj,key)=>key in obj?obj[key]:()=>null});
+function page({catalog={data:{},loading:false,error:null},list={data:{},loading:false,error:null},current=activity,error=null,busy=false,screen='edit',query={limit:20},previous=[],pending=null,routeReady=true,old=false}={}){
+  const states={1:2,2:old,3:screen,4:'A1',5:current,6:error,7:busy,11:pending,15:query,16:previous,17:routeReady};let stateIndex=0,readIndex=0;const calls=[],readGates=[],effects=[];
+  const fakeUi=new Proxy({...ui,useRead:(_loader,_deps,enabled=true)=>{const i=readIndex++;readGates.push(enabled);return {...[catalog,list][i],reload:()=>calls.push(i===0?'catalog':'list')};}},{get:(obj,key)=>key in obj?obj[key]:()=>null});
   const Editor=()=>null;
   const H4=component('h4-promotions.tsx',name=>{
-    if(name==='react')return {useState:initial=>{const i=stateIndex++;if(!(i in states))states[i]=typeof initial==='function'?initial():initial;return [states[i],next=>states[i]=typeof next==='function'?next(states[i]):next];},useEffect:()=>{},useCallback:fn=>fn};
+    if(name==='react')return {useState:initial=>{const i=stateIndex++;if(!(i in states))states[i]=typeof initial==='function'?initial():initial;return [states[i],next=>states[i]=typeof next==='function'?next(states[i]):next];},useEffect:effect=>effects.push(effect),useCallback:fn=>fn};
     if(name==='react/jsx-runtime')return require(name);
+    if(name==='next/navigation')return {useSearchParams:()=>new URLSearchParams()};
     if(name.endsWith('h4-promotion-ui'))return fakeUi;
     if(name.endsWith('h4-promotion-editor'))return {__esModule:true,default:Editor};
     if(name.endsWith('promotion-client'))return {pendingPromotionCommands:()=>[],promotionRead:async()=>{calls.push('activity');return activity;}};
@@ -61,8 +74,28 @@ function page({catalog={data:{},loading:false,error:null},list={data:{},loading:
   }).default;
   const tree=H4({ctx:{can:()=>true},legacy:null}),nodes=[];
   const walk=node=>{if(Array.isArray(node))return node.forEach(walk);if(!node||typeof node!=='object')return;nodes.push(node);walk(node.props?.children);walk(node.props?.action);walk(node.props?.footer);};walk(tree);
-  return {nodes,Editor,calls,states};
+  return {nodes,Editor,calls,states,readGates,effects};
 }
+
+test('only the visible restored activity list may create a list query',()=>{
+  for(const screen of ['edit','review','detail','rewards','metrics'])assert.equal(page({screen}).readGates[1],false,screen);
+  assert.equal(page({screen:'list',routeReady:false,list:{data:null,loading:true,error:null}}).readGates[1],false,'deep links resolve before any list request');
+  assert.equal(page({screen:'list',old:true}).readGates[1],false,'legacy activities do not read promotions');
+  assert.equal(page({screen:'list',list:{data:null,loading:true,error:null}}).readGates[1],true);
+});
+
+test('disabled reads defer refresh until enabled and discard late hidden responses',async()=>{
+  let cursor=0,effectDeps,cleanup,pendingEffect,ref,calls=0,resolve;
+  const states=[];
+  const react={useRef:initial=>ref??={current:initial},useState:initial=>{const i=cursor++;if(!(i in states))states[i]=initial;return [states[i],value=>states[i]=typeof value==='function'?value(states[i]):value];},useEffect:(effect,deps)=>{if(!effectDeps||deps.some((v,i)=>!Object.is(v,effectDeps[i]))){effectDeps=deps;pendingEffect=effect;}}};
+  const {useRead}=component('h4-promotion-ui.tsx',name=>name==='react'?react:name==='react/jsx-runtime'?require(name):{});
+  const loader=()=>{calls++;return new Promise(done=>{resolve=done;});};
+  const render=enabled=>{cursor=0;const result=useRead(loader,[],enabled);if(pendingEffect){cleanup?.();const effect=pendingEffect;pendingEffect=null;cleanup=effect();}return result;};
+  let read=render(false);read.reload();render(false);assert.equal(calls,0);
+  render(true);assert.equal(calls,1);render(false);resolve('late');await new Promise(done=>setImmediate(done));assert.equal(render(false).data,null);
+  render(true);assert.equal(calls,2);resolve('current');await new Promise(done=>setImmediate(done));assert.equal(render(true).data,'current');
+  render(undefined);assert.equal(calls,2,'omitted flag retains the enabled default');
+});
 
 test('reclaimed or expired list retry discards pagination history while preserving filters',()=>{
   for(const data of [null,{items:[],summary:{},total:0}]){
@@ -90,6 +123,52 @@ test('initial catalog and activity failures form one card with distinct recovery
 test('catalog delay is loading instead of an empty or editable form',()=>{
   const pending=page({catalog:{data:null,loading:true,error:null}});assert(pending.nodes.some(n=>n.type===ui.PromotionReadPanel&&n.props.loading));assert(!pending.nodes.some(n=>n.type===pending.Editor));
 });
+
+test('an unreadable editor has a direct list exit without bypassing mounted unsaved changes',()=>{
+  const originalLocation=globalThis.location,originalHistory=globalThis.history;
+  try{
+    for(const state of [{current:null,error:Error('not found')},{current:null,busy:true},{catalog:{data:null,loading:false,error:Error('catalog unavailable')}}]){
+      let nextUrl;globalThis.location={href:'https://local.test/growth/events?promotion=edit&activity=A1'};globalThis.history={pushState:(_state,_title,url)=>{nextUrl=url;}};
+      const failed=page(state),back=failed.nodes.find(node=>node.type===ui.Button&&node.props.children==='返回活动列表');
+      assert(back,'Unloaded editor must retain an explicit exit');assert(!back.props.disabled);back.props.onClick();
+      assert.equal(failed.states[3],'list');assert.equal(nextUrl.searchParams.get('promotion'),null);assert.equal(nextUrl.searchParams.get('activity'),null);
+    }
+    assert(!page().nodes.some(node=>node.type===ui.Button&&node.props.children==='返回活动列表'),'A mounted editor must keep its original unsaved-change guard');
+  }finally{globalThis.location=originalLocation;globalThis.history=originalHistory;}
+});
+
+test('same-path navigation restores the activity screen when only Next search parameters change',()=>{
+  const originalWindow=globalThis.window,originalLocation=globalThis.location;
+  const states=[],effects=[],params=new Map();let cursor=0,pending=[],query='';
+  const hooks={useState:initial=>{const i=cursor++;if(!(i in states))states[i]=typeof initial==='function'?initial():initial;return [states[i],value=>states[i]=typeof value==='function'?value(states[i]):value];},useCallback:fn=>fn,useEffect:(effect,deps)=>{const i=cursor++;if(!effects[i]||deps.some((value,j)=>!Object.is(value,effects[i][j]))){effects[i]=deps;pending.push(effect);}}};
+  const H4=component('h4-promotions.tsx',name=>{
+    if(name==='react')return hooks;
+    if(name==='react/jsx-runtime')return require(name);
+    if(name==='next/navigation')return {useSearchParams:()=>{if(!params.has(query))params.set(query,new URLSearchParams(query));return params.get(query);}};
+    if(name.endsWith('h4-promotion-ui'))return {...ui,useRead:()=>({data:null,loading:true,error:null,reload(){}})};
+    if(name.endsWith('promotion-client'))return {pendingPromotionCommands:()=>[],promotionRead:()=>new Promise(()=>{})};
+    if(name.endsWith('promotion-form'))return promotionForm;
+    if(name.endsWith('.css'))return {};
+    return {__esModule:true,default:()=>null};
+  }).default;
+  const render=search=>{query=search;globalThis.location={search};cursor=0;pending=[];const tree=H4({ctx:{can:()=>true},legacy:null});for(const effect of pending)effect();return tree.props['data-promotion-screen'];};
+  try{
+    globalThis.window={addEventListener(){},removeEventListener(){}};
+    render('?promotion=edit&activity=missing&step=2');assert.equal(render(query),'edit');
+    render('');assert.equal(render(''),'list','Sidebar navigation must work without reload or popstate');
+    render('?promotion=rewards&activity=A1');assert.equal(render(query),'rewards');
+  }finally{globalThis.window=originalWindow;globalThis.location=originalLocation;}
+});
+
+test('query-only navigation cannot bypass the mounted editor and its existing unsaved-change controls',()=>{
+  const originalWindow=globalThis.window,originalLocation=globalThis.location;
+  try{
+    globalThis.window={addEventListener(){},removeEventListener(){}};globalThis.location={search:''};
+    const mounted=page();assert(mounted.nodes.some(node=>node.type===mounted.Editor));
+    for(const effect of mounted.effects)effect();
+    assert.equal(mounted.states[3],'edit');assert.equal(mounted.states[4],'A1');assert.strictEqual(mounted.states[5],activity);assert.equal(mounted.readGates[1],false);
+  }finally{globalThis.window=originalWindow;globalThis.location=originalLocation;}
+});
 test('refresh failure or delay preserves the mounted editor and blocks writes',()=>{
   const good=page().nodes.find(n=>n.type.name==='Editor');assert(good.props.can('growth_promotion_edit'));
   for(const catalog of [{data:{},loading:false,error:Error('刷新失败')},{data:{},loading:true,error:null}]){
@@ -106,14 +185,14 @@ test('failure panel discloses both objects and invokes only the selected recover
   const buttons=[];const walk=node=>{if(Array.isArray(node))return node.forEach(walk);if(!node||typeof node!=='object')return;if(node.type===ui.Button)buttons.push(node);walk(node.props?.children);walk(node.props?.action);};walk(panel);buttons[1].props.onClick();assert.deepEqual(calls,['活动列表']);
 });
 test('failed first export read retries its original task and later metric errors restart their own filtered query',async()=>{
-  const states=[],refs=[],calls=[],queries=[];let stateIndex=0,refIndex=0;
+  const states=[],refs=[],calls=[],queries=[],responses={};let stateIndex=0,refIndex=0;
   const metricUi={...ui,useRead:()=>({data:{items:[]},loading:false,error:null})};
   const Metrics=component('h4-promotion-metrics.tsx',name=>{
     if(name==='react')return {useState:initial=>{const i=stateIndex++;if(!(i in states))states[i]=typeof initial==='function'?initial():initial;return [states[i],next=>states[i]=typeof next==='function'?next(states[i]):next];},useRef:initial=>{const i=refIndex++;return refs[i]||(refs[i]={current:initial});}};
     if(name==='react/jsx-runtime')return require(name);
     if(name.endsWith('h4-promotion-ui'))return metricUi;
     if(name.endsWith('promotion-form'))return promotionForm;
-    if(name.endsWith('promotion-client'))return {promotionRead:async (route,query)=>{calls.push(route);queries.push(query);throw Error('read unavailable');},promotionVersions:async()=>({items:[]})};
+    if(name.endsWith('promotion-client'))return {promotionRead:async (route,query)=>{calls.push(route);queries.push(query);if(route in responses)return responses[route];throw Error('read unavailable');},promotionVersions:async()=>({items:[]})};
     return {};
   }).default;
   const props={activity:{activityId:'A1',name:'activity',startsAt:'2026-10-08T00:00:00Z',endsAt:'2026-10-09T00:00:00Z'},catalog:{},can:()=>true,onBack:()=>{}};
@@ -123,13 +202,21 @@ test('failed first export read retries its original task and later metric errors
   const confirm=render().find(node=>node.type===ui.ConfirmCommand);assert(confirm);await assert.rejects(confirm.props.onSuccess({resource:{type:'EXPORT',id:'E1'}}),/read unavailable/);
   let failure=render().find(node=>node.type===ui.ReadError);assert.equal(failure.props.target,'原导出任务');failure.props.retry();await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(calls,['/promotion-exports/E1','/promotion-exports/E1']);
   const form=render().find(node=>node.type==='form');form.props.onSubmit({preventDefault(){}});await new Promise(resolve=>setImmediate(resolve));failure=render().find(node=>node.type===ui.ReadError);assert.equal(failure.props.target,'活动效果查询');failure.props.retry();await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(calls.slice(-2),['/promotions/A1/metrics','/promotions/A1/metrics']);
-  states[1]=true;states[5]=null;states[3]={from:'2026-10-08T00:00:00Z',to:'2026-10-09T00:00:00Z',timezone:'UTC',querySnapshot:'old',limit:20};states[4].breakdown={rows:[],total:40,hasMore:true,nextCursor:'20'};
+  responses['/promotions/A1/metrics']=states[4];form.props.onSubmit({preventDefault(){}});await new Promise(resolve=>setImmediate(resolve));delete responses['/promotions/A1/metrics'];
+  states[1]=true;states[3]={from:'2026-10-08T00:00:00Z',to:'2026-10-09T00:00:00Z',timezone:'UTC',querySnapshot:'old',limit:20};states[4].breakdown={rows:[],total:40,hasMore:true,nextCursor:'20'};states[8]={exportId:'E1',state:'READY',rowCount:0};
   render().find(node=>node.type===ui.Button&&node.props.children==='下一页').props.onClick();await new Promise(resolve=>setImmediate(resolve));
   assert.equal(queries.at(-1).cursor,'20');assert.equal(queries.at(-1).querySnapshot,'Q1');
   const failedNodes=render(),failedDialog=failedNodes.find(node=>node.type===ui.Dialog&&node.props.title==='奖励分组明细');
   assert(failedDialog.props.children.flat(Infinity).some(node=>node?.type===ui.ReadError),'A modal paging failure must expose its retry inside that modal');
   assert.equal(failedNodes.filter(node=>node.type===ui.ReadError).length,1);
-  for(const label of ['上一页','下一页'])assert.equal(failedNodes.find(node=>node.type===ui.Button&&node.props.children===label).props.disabled,true);
+  for(const label of ['上一页','下一页'])assert(!failedNodes.some(node=>node.type===ui.Button&&node.props.children===label));
+  failedDialog.props.onClose();responses['/promotion-exports/E1']=states[8];
+  render().find(node=>node.type===ui.Button&&node.props.children==='查询原任务').props.onClick();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(render().find(node=>node.type===ui.ReadError).props.target,'活动效果查询','reading an old export cannot clear a failed metrics query');
+  assert.equal(render().find(node=>node.type===ui.Button&&node.props.children==='导出当前报表').props.disabled,true);
+  assert.equal(render().find(node=>node.type===ui.ConfirmCommand).props.writeAllowed,false);
+  render().find(node=>node.type===ui.Button&&node.props.children==='奖励分组明细').props.onClick();
+  assert(!render().some(node=>node.type===ui.Empty&&node.props.title==='当前窗口没有分组记录'));
   render().find(node=>node.type===ui.ReadError).props.retry();await new Promise(resolve=>setImmediate(resolve));
   assert.deepEqual(queries.at(-1),{from:'2026-10-08T00:00:00Z',to:'2026-10-09T00:00:00Z',timezone:'UTC',limit:20});assert.deepEqual(states[10],[]);assert.equal(states[8],null);
 });

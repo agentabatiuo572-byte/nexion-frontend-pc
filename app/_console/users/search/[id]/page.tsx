@@ -23,7 +23,7 @@ import {
   type User360Section,
   type User360Summary,
 } from "@/lib/admin/user360-client";
-import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
+import { DataListPager, OperationConfirmModal, useDataListPager } from "@/app/components/domain-views/design-kit";
 import { fmtNum, fmtUsd } from "@/lib/format";
 import { toast } from "@/lib/store/ui";
 import { KpiStatCard } from "@/app/components/kit/kpi-stat-card";
@@ -453,6 +453,8 @@ export default function UserDetailPage() {
     [filteredSessions, sessionPage],
   );
   useEffect(() => { setSessionPage(1); }, [sessionStatusFilter, userKey]);
+  const earningsRecords = useMemo(() => asArray(detail?.earnings?.records), [detail?.earnings?.records]);
+  const earningsPager = useDataListPager(earningsRecords, { initialPageSize: 20, resetKey: userKey });
   const auditEntries = useMemo(() => toAuditEntries(detail?.audit), [detail?.audit]);
 
   function scrollToHub(id: string) {
@@ -815,7 +817,7 @@ export default function UserDetailPage() {
 
         <HubSection
           title="收益明细"
-          section={detail.earnings ? { records: asArray(detail.earnings.records), sourceStatus: asText(detail.earnings.sourceStatus, "READY") } : undefined}
+          section={detail.earnings ? { records: earningsPager.pageRows, sourceStatus: asText(detail.earnings.sourceStatus, "READY") } : undefined}
           columns={[
             { key: "bizNo", label: "业务单号" },
             { key: "bizType", label: "类型" },
@@ -829,6 +831,7 @@ export default function UserDetailPage() {
           <Row label="收益合计">{money(detail.earnings?.totalUsdt)} · {fmtNum(asNumber(detail.earnings?.totalNex))} NEX</Row>
           <Row label="设备配置日产基准（所列记录合计）">{money(detail.earnings?.deviceDailyUsdt)} · {fmtNum(asNumber(detail.earnings?.deviceDailyNex))} NEX</Row>
           <p className="mt-2 text-[12px]" style={{ color: "var(--v5-ink-4)" }}>含已停用历史记录的配置值，不代表今日实际收益或钱包入账</p>
+          <DataListPager label="收益明细" page={earningsPager.page} pageSize={earningsPager.pageSize} total={earningsPager.total} onPageChange={earningsPager.setPage} onPageSizeChange={earningsPager.setPageSize} />
         </HubSection>
 
         <HubSection

@@ -10,6 +10,12 @@ import * as client from '../lib/admin/promotion-client.ts';
 import {displayAdminError} from '../lib/admin/error-messages.ts';
 
 const require=createRequire(import.meta.url), base=new URL('../',import.meta.url);
+test('unavailable promotion reads do not assert a submission outcome',()=>{
+  for(const code of ['SERVICE_UNAVAILABLE','BACKEND_UNAVAILABLE',undefined]){
+    const message=client.promotionErrorMessage(code,503);
+    assert.match(message,/暂时不可用/);assert.match(message,/重试/);assert.doesNotMatch(message,/提交|未生效|成功|已保存/);
+  }
+});
 globalThis.fetch=async()=>{throw new Error('This regression must not contact a live API');};
 const read=file=>fs.readFileSync(new URL(file,base),'utf8');
 const h='app/components/domain-views/h-tabs/';
@@ -31,6 +37,7 @@ function domain(file,hook,readState,privateNames=[],extras={}){
   return evaluate(h+file,name=>{
     if(name==='react')return hook.react;
     if(name==='react/jsx-runtime')return require(name);
+    if(name==='next/navigation')return {useSearchParams:()=>new URLSearchParams()};
     if(name.endsWith('h4-promotion-ui'))return {...ui,useRead:typeof readState==='function'?readState:()=>readState??{loading:false,error:null,data:null,reload(){}}};
     if(name.endsWith('promotion-form'))return form;
     if(name.endsWith('promotion-client'))return {...client,pendingPromotionCommands:()=>[]};
@@ -158,10 +165,33 @@ function metrics(data,states={}){
 }
 function metricData(value=null){return {querySnapshot:'Q1',asOf:impact.asOf,from:activity.startsAt,to:activity.endsAt,timezone:'UTC',completeness:'DELAYED',netReceivedUsdt:'0.000000',paidOrders:0,refundUsdt:'0.000000',conversionRate:value,impressions:value,quotes:0,orders:0,giftDevices:0,giftCostUsdt:null,assets:[{asset:'USDT',issued:value,pending:value,reversed:value,unrecoverable:value},{asset:'NEX',issued:value,pending:value,reversed:value,unrecoverable:value}],salesBySku:null,effectiveFirstPurchasePeople:{value},directInvitedQualifiedPurchasers:{value},rewardFailureMetrics:{value},recoveryDuration:{value},externalInflowUsdt:value,externalOutflowUsdt:value,breakdown:{rows:[],total:0,hasMore:false}};}
 
+test('PCOPY-07: report, group and export times use the same selected timezone',()=>{
+  for(const timezone of ['UTC','Asia/Tokyo','Asia/Ho_Chi_Minh']){
+    const data={...metricData(0),timezone},expiresAt='2026-10-12T03:24:00Z';
+    const element=metrics(data,{1:true,7:true,8:{state:'READY',rowCount:0,expiresAt}}),all=nodes(element);
+    const dialog=all.find(n=>n.type===ui.Dialog&&n.props.title==='奖励分组明细');
+    assert(markup(dialog).includes(`统计截止 ${ui.formatTime(data.asOf,timezone)} · ${timezone}`));
+    const command=all.find(n=>n.type===ui.ConfirmCommand);
+    const summary=nodes(command).find(n=>n.type===ui.Summary);
+    assert.equal(summary.props.rows.find(row=>row[0]==='统计时刻')[1],`${ui.formatTime(data.asOf,timezone)} · ${timezone}`);
+    const job=all.find(n=>n.type===ui.Card&&n.props.title==='导出任务');
+    assert.equal(nodes(job).find(n=>n.type===ui.Summary).props.rows.find(row=>row[0]==='有效截止')[1],`${ui.formatTime(expiresAt,timezone)} · ${timezone}`);
+  }
+});
+
+test('PCOPY-07: missing report inputs do not mark real transaction counts unavailable',()=>{
+  const data={...metricData(null),completeness:'UNAVAILABLE',quotes:0,orders:3,paidOrders:2};
+  const element=metrics(data),table=nodes(element).find(n=>n.type===ui.Table&&n.props.headers[0]==='事实');
+  assert.deepEqual(table.props.rows.map(row=>row[1]),['-',0,3,2]);
+  assert.deepEqual(table.props.rows.map(row=>row[2].props.value),['UNAVAILABLE','COMPLETE','COMPLETE','COMPLETE']);
+  assert(markup(element).includes('部分统计资料暂不可用'));
+  assert.doesNotMatch(markup(element),/当前数据延迟或不可用/);
+});
+
 test('PCOPY-07: actual metrics empty, failure and delayed result states explain result and retain query/export binding',()=>{
   const empty=markup(metrics(null));assert(empty.includes('请选择统计范围后查询。'));assert.doesNotMatch(empty,/服务端查询快照/);
   const failure=markup(metrics(null,{5:Error('活动效果暂不可用')}));assert(failure.includes('role="alert"')&&failure.includes('活动效果暂不可用')&&failure.includes('继续修改'));
-  const element=metrics(metricData()),html=markup(element);for(const value of ['当前数据延迟或不可用','设备成交明细暂不可用','请重新查询','双币独立列示，不自动折算','跨设备订单数不直接相加','统计截止','UTC','导出当前报表'])assert(html.includes(value),value);
+  const element=metrics(metricData()),html=markup(element);for(const value of ['部分统计资料延迟','设备成交明细暂不可用','请重新查询','双币独立列示，不自动折算','跨设备订单数不直接相加','统计截止','UTC','导出当前报表'])assert(html.includes(value),value);
   assert.doesNotMatch(html,/服务端|来源：|不含测试与重复事件|不推算获客成本/);
   const exporting=nodes(metrics(metricData(),{7:true})).find(n=>n.type===ui.ConfirmCommand);assert.deepEqual(exporting.props.body,{querySnapshot:'Q1'});assert.equal(exporting.props.title,'导出当前报表');
 });
@@ -172,6 +202,21 @@ test('PCOPY-07: actual metrics summary, group and asset values render missing da
     assert(html.includes(value===null?'<td>-</td>':'<td>0</td>'));assert(html.includes('0.000000')&&html.includes('0 台'));
     if(states[0])assert(html.includes(value===null?'<b>-</b>':'<b>0</b>'));
   }
+});
+
+test('PCOPY-07: loading or failed group queries never show the previous empty result as current',()=>{
+  for(const state of [{6:true},{5:Error('查询结果已失效，请重新查询。')}]){
+    const element=metrics(metricData(0),{1:true,...state});
+    const dialog=nodes(element).find(n=>n.type===ui.Dialog&&n.props.title==='奖励分组明细');
+    const html=markup(dialog);assert.doesNotMatch(html,/当前窗口没有分组记录|共 0 组|<td>0<\/td>/);
+    if(state[5]){
+      assert(html.includes('role="alert"')&&html.includes('查询结果已失效'));
+      const exporting=nodes(element).find(n=>n.type===ui.Button&&n.props.children==='导出当前报表');
+      assert.equal(exporting.props.disabled,true);
+    }
+  }
+  const ready=nodes(metrics(metricData(0),{1:true})).find(n=>n.type===ui.Dialog&&n.props.title==='奖励分组明细');
+  assert(markup(ready).includes('当前窗口没有分组记录'));
 });
 
 test('PCOPY-08: actual recovery dialog reads original result with revoked write permission and keeps original parameters',async()=>{
@@ -192,6 +237,11 @@ test('PCOPY-C2: actual H4 error mapping never passes unknown Chinese SQL/path di
   const cases=[['PROMOTION_VERSION_CONFLICT',409,'最新版本'],['PROMOTION_MAKER_CHECKER',422,'另一名'],['PROMOTION_FIELD_INVALID',422,'下方字段'],['PROMOTION_POLICY_NOT_APPROVED',422,'批准状态'],['PROMOTION_BUDGET_EXHAUSTED',422,'预算或设备额度'],['AUTHORITATIVE_PAGE_INVALID',500,'相关操作已停用']];
   for(const [code,status,expected] of cases)assert(client.promotionErrorMessage(code,status).includes(expected));assert(client.promotionErrorMessage('AUTHORITATIVE_PAGE_INVALID',403).includes('没有此操作权限'));
   assert.doesNotMatch(client.promotionErrorMessage('AUTHORITATIVE_PAGE_INVALID',500),/服务端权威/);
+  for(const code of ['PROMOTION_LIST_SNAPSHOT_EXPIRED','PROMOTION_QUERY_SNAPSHOT_EXPIRED']){
+    const message=client.promotionErrorMessage(code,409);
+    assert(message.includes('重新查询')&&message.includes('筛选条件已保留'));
+    assert.doesNotMatch(message,/快照|接口|服务端/);
+  }
 });
 
 test('PCOPY-09: actual coverage tooltip/a11y shows unavailable status without zero and preserves reserve/liability definition',()=>{

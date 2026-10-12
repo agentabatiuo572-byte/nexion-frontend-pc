@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'next/navigation';
 import type { HCtx } from './types';
 import type { Catalog, CommandReceipt, Promotion, PromotionListItem, PromotionPage, Template } from '@/lib/admin/promotion-types';
 import { pendingPromotionCommands, promotionRead, type PendingPromotion } from '@/lib/admin/promotion-client';
@@ -17,19 +18,21 @@ export default function H4Promotions({ ctx, legacy }: {
     ctx: HCtx;
     legacy: ReactNode;
 }) {
+    const routeSearch = useSearchParams().toString();
     const [,pendingChanged]=useState(0);
     useEffect(()=>{const refreshPending=()=>pendingChanged(v=>v+1);window.addEventListener('admin-promotion-pending-changed',refreshPending);return()=>window.removeEventListener('admin-promotion-pending-changed',refreshPending);},[]);
     const [editStep, setEditStep] = useState(0), [old, setOld] = useState(false), [screen, setScreen] = useState<Screen>('list'), [id, setId] = useState(''), [activity, setActivity] = useState<Promotion | null>(null), [activityError, setActivityError] = useState<unknown>(null), [activityBusy, setActivityBusy] = useState(false), [creating, setCreating] = useState(false), [template, setTemplate] = useState<Template | null>(null), [copy, setCopy] = useState<PromotionListItem | null>(null), [pending, setPending] = useState<PendingPromotion | null>(null), [notice, setNotice] = useState(''), [policiesOpen, setPoliciesOpen] = useState(false);
     const [filters, setFilters] = useState({ query: '', category: '', template: '', state: '', from: '', to: '', timezone: 'Asia/Tokyo', sort: 'UPDATED_DESC' }), [query, setQuery] = useState<Record<string, string | number>>({ limit: 20 }), [previous, setPrevious] = useState<Array<Record<string, string | number>>>([]);
+    const [routeReady, setRouteReady] = useState(false);
     const catalog = useRead(() => ctx.can('growth_promotion_read') ? promotionRead<Catalog>('/promotion-catalog') : Promise.reject(new Error('当前账户没有查看促销活动的权限。')), [ctx.can]);
-    const list = useRead(() => ctx.can('growth_promotion_read') ? promotionRead<PromotionPage>('/promotions', query) : Promise.reject(new Error('当前账户没有查看促销活动的权限。')), [JSON.stringify(query), ctx.can]);
+    const list = useRead(() => ctx.can('growth_promotion_read') ? promotionRead<PromotionPage>('/promotions', query) : Promise.reject(new Error('当前账户没有查看促销活动的权限。')), [JSON.stringify(query), ctx.can], routeReady && screen === 'list' && !old);
     const reloadList = () => {
         setPrevious([]);
         setQuery(current => { const next = { ...current }; delete next.querySnapshot; delete next.cursor; return next; });
         list.reload();
     };
     const pageReady = screen === 'list' ? !!list.data && !!catalog.data : !!catalog.data && activity?.activityId === id;
-    const pageLoading = !pageReady && (catalog.loading || (screen === 'list' ? list.loading : activityBusy));
+    const pageLoading = !routeReady || (!pageReady && (catalog.loading || (screen === 'list' ? list.loading : activityBusy)));
     const retryActivity = () => { setActivityBusy(true); setActivityError(null); void refresh().catch(setActivityError).finally(() => setActivityBusy(false)); };
     const readErrors = [catalog.error ? { target: '活动目录与批准政策', error: catalog.error, retry: catalog.reload } : null,
         screen === 'list' && list.error ? { target: '活动列表', error: list.error, retry: reloadList } : null,
@@ -43,7 +46,7 @@ export default function H4Promotions({ ctx, legacy }: {
         url.searchParams.set('promotion', next);
         url.searchParams.set('activity', target);
     } history.pushState({}, '', url); };
-    useEffect(() => { const restore = () => { const p = new URLSearchParams(location.search), s = p.get('promotion'); setScreen(SCREENS.includes(s as Screen) ? s as Screen : 'list'); setId(p.get('activity') || '');setEditStep(Math.max(0,Math.min(3,Number(p.get('step'))||0)));  }; restore(); window.addEventListener('popstate', restore); return () => window.removeEventListener('popstate', restore); }, []);
+    useEffect(() => { const restore = () => { const p = new URLSearchParams(location.search), s = p.get('promotion'); setScreen(SCREENS.includes(s as Screen) ? s as Screen : 'list'); setId(p.get('activity') || '');setEditStep(Math.max(0,Math.min(3,Number(p.get('step'))||0)));setRouteReady(true);  }; if (screen !== 'edit' || !pageReady) restore(); window.addEventListener('popstate', restore); return () => window.removeEventListener('popstate', restore); }, [routeSearch]);
     useEffect(() => { if (!id) {
         setActivity(null);
         return;
@@ -60,7 +63,7 @@ export default function H4Promotions({ ctx, legacy }: {
     const heading = screen === 'list' ? ['活动中心', '管理促销与裂变活动，跟进配置、投放及未完成奖励。'] : screen === 'edit' ? [`配置活动 · ${['基本信息', '参与资格', '购机赠奖', '预算与叠加'][editStep]}`, '设置参与条件、逐设备奖励与预算政策。'] : screen === 'review' ? ['试算、审核与发布', '先确认样本和阻断项，再分别审核与发布。'] : screen === 'detail' ? [activity?.name || '活动详情', '已发布规则与改版草稿分开呈现，旧订单继续按原版本履行。'] : screen === 'rewards' ? ['奖励台账', '逐项核对奖励承诺与发放凭证；结果未知时先核账。'] : ['活动效果', '查看同一统计快照的成交、退款与奖励成本。'];
     if (old)
         return <><div className="prm"><div className="tabs"><button onClick={() => setOld(false)}>促销与裂变</button><button className="active">既有活动</button></div></div><div className="dkpage">{legacy}</div></>;
-    return <div className="prm" data-promotion-screen={screen}><div className="pagehead"><div><h1>{heading[0]}</h1><p>{heading[1]}</p></div>{can('growth_promotion_policy_read') && catalog.data && <Button onClick={() => setPoliciesOpen(true)}>政策与原合同</Button>}{screen !== 'list' && screen !== 'edit' && <div className="actions"><Button onClick={() => navigate('list')}>返回活动列表</Button></div>}</div>
+    return <div className="prm" data-promotion-screen={screen}><div className="pagehead"><div><h1>{heading[0]}</h1><p>{heading[1]}</p></div>{can('growth_promotion_policy_read') && catalog.data && <Button onClick={() => setPoliciesOpen(true)}>政策与原合同</Button>}{screen !== 'list' && (screen !== 'edit' || !pageReady) && <div className="actions"><Button onClick={() => navigate('list')}>返回活动列表</Button></div>}</div>
     {screen === 'list' && <div className="tabs"><button className="active">促销与裂变</button><button onClick={() => setOld(true)}>既有活动</button></div>}
     {pendingItems.length > 0 && <Notice title="有操作结果尚未核实" kind="warn">关闭或刷新不会重新提交。{pendingItems.map(p => <Button key={p.commandKey} kind="link" onClick={() => setPending(p)}>核查原操作</Button>)}</Notice>}{notice && <Notice title="操作反馈">{notice}</Notice>}
     {!pageReady && (pageLoading || readErrors.length > 0) ? <>{screen === 'edit' && <PromotionSteps step={editStep} onStep={changeStep} disabled/>}<PromotionReadPanel title={screen === 'list' ? '活动中心' : screen === 'edit' ? ['基本信息', '参与资格', '购机赠奖', '预算与叠加'][editStep] : heading[0]} loading={readErrors.length === 0} errors={readErrors}/></> : <>

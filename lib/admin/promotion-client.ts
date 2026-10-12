@@ -23,8 +23,9 @@ export class PromotionApiError extends Error {
 export function promotionErrorMessage(code: string | undefined, status = 0): string {
   const key = code && /^[A-Z][A-Z0-9_]*$/.test(code) ? code : undefined;
   if (status === 403) return '当前账户没有此操作权限，请返回或联系有权限的审核人员。';
+  if (status === 503) return '活动服务暂时不可用，请稍后重试。';
   if (key === 'AUTHORITATIVE_PAGE_INVALID') return '当前资料暂无法确认，相关操作已停用；请刷新后重试。';
-  if (key?.includes('SNAPSHOT')) return '查询快照已过期或条件发生变化，请重新查询；原输入仍保留。';
+  if (key?.includes('SNAPSHOT')) return '查询结果已失效，请重新查询。筛选条件已保留。';
   if (key?.includes('REVISION') || key?.includes('VERSION_CONFLICT')) return '内容已被其他操作修改，请读取最新版本并核对差异后再确认。';
   if (key?.includes('MAKER_CHECKER') || key?.includes('SAME_ACTOR')) return '此版本需要由另一名有权限的人员审核。';
   if (key?.includes('FIELD_INVALID')) return '部分配置尚未填写完整或格式不正确，请检查下方字段说明。';

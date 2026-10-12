@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
 import ts from "typescript";
+import { createElement, useEffect, useMemo, useState } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 const search = readFileSync(new URL("../app/components/domain-views/c-tabs/c1-search.tsx", import.meta.url), "utf8");
@@ -89,17 +90,26 @@ new Function("exports", compile(readFileSync(new URL("../lib/format.ts", import.
 new Function("exports", compile(readFileSync(new URL("../lib/admin/c1-detail-display.ts", import.meta.url), "utf8")))(labels);
 const helpers = ["asText", "asNumber", "asArray", "rows", "money", "numberLabel", "formatDate", "displayValue",
   "sectionStatus", "sectionFailed", "Section", "Row", "DataTable", "HubSection"];
+const designKit = ts.createSourceFile("design-kit.tsx", readFileSync(new URL("../app/components/domain-views/design-kit.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const pagerSource = designKit.statements.filter(node =>
+  (ts.isFunctionDeclaration(node) && ["useDataListPager", "DataListPager"].includes(node.name?.text))
+  || (ts.isVariableStatement(node) && node.declarationList.declarations.some(declaration => declaration.name.getText(designKit) === "DEFAULT_PAGE_SIZE_OPTIONS")))
+  .map(node => node.getText(designKit)).join("\n");
+const page = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "UserDetailPage");
+const earningsDeclarations = page.body.statements.filter(node => ts.isVariableStatement(node)
+  && node.declarationList.declarations.some(declaration => ["earningsRecords", "earningsPager"].includes(declaration.name.getText(ast))))
+  .map(node => node.getText(ast)).join("\n");
 const fixtureSource = ast.statements.filter(node => ts.isFunctionDeclaration(node) && helpers.includes(node.name?.text))
   .map(node => node.getText(ast)).join("\n")
-  + `\nexport function Fixture({ detail }) { const canWriteC2 = false; return (<>{${sections.join("}{")}}</>); }`;
+  + `\n${pagerSource}\nexport function Fixture({ detail, userKey = "fixture-user" }) { const canWriteC2 = false; ${earningsDeclarations} return (<>{${sections.join("}{")}}</>); }`;
 const fixture = {};
-const scope = { ...format, ...labels };
+const scope = { ...format, ...labels, useEffect, useMemo, useState };
 new Function("require", "exports", ...Object.keys(scope), compile(fixtureSource))(
   createRequire(import.meta.url), fixture, ...Object.values(scope));
 const historicalDevice = { id: 1158, instanceNo: "fixture-history", name: "S1", productTier: "S1",
   status: "DEACTIVATED", runtimeStatus: "OFFLINE", dailyUsdt: 1, dailyNex: 1 };
 function renderDaily(records, overrides = {}) {
-  return renderToStaticMarkup(fixture.Fixture({ detail: {
+  return renderToStaticMarkup(createElement(fixture.Fixture, { detail: {
     devices: { sourceStatus: "READY", records, onlineCount: 0, activeCount: 0, dailyUsdt: 1, dailyNex: 1 },
     earnings: { sourceStatus: "READY", records: [], totalUsdt: 0, totalNex: 10, deviceDailyUsdt: 1, deviceDailyNex: 1 },
     ...overrides,
@@ -138,4 +148,106 @@ test("C1 retains missing-section and source-error behavior alongside the configu
   assert.match(text, /暂无记录/);
   assert.match(text, /设备配置日产基准（所列记录合计）\$0\.00 · 0 NEX/);
   assert.match(text, /含已停用历史记录的配置值，不代表今日实际收益或钱包入账/);
+});
+
+// Exercise the actual earnings JSX and shared pager without a browser or network.
+const element = (type, props) => ({ type, props });
+const expand = node => node == null || typeof node === "boolean" ? null : Array.isArray(node) ? node.map(expand)
+  : typeof node !== "object" ? node : typeof node.type === "function" ? expand(node.type(node.props))
+    : { ...node, props: { ...node.props, children: expand(node.props.children) } };
+const text = node => node == null ? "" : Array.isArray(node) ? node.map(text).join("")
+  : typeof node === "object" ? text(node.props.children) : String(node);
+const nodes = tree => tree == null || typeof tree !== "object" ? [] : Array.isArray(tree) ? tree.flatMap(nodes)
+  : [tree, ...nodes(tree.props.children)];
+const earningsSample = count => Array.from({ length: count }, (_, i) => ({ id: i + 1, bizNo: `earning-${i + 1}`, asset: "USDT", amount: 1 }));
+function earningsHarness(records) {
+  const state = [], previousEffects = [];
+  let cursor, effectCursor, changed, effects, tree, userKey = "fixture-user";
+  const exports = {};
+  const hooks = {
+    useState(initial) {
+      const i = cursor++;
+      if (!(i in state)) state[i] = initial;
+      return [state[i], value => { const next = typeof value === "function" ? value(state[i]) : value;
+        changed ||= next !== state[i]; state[i] = next; }];
+    },
+    useMemo: fn => fn(),
+    useEffect(fn, deps) {
+      const i = effectCursor++, before = previousEffects[i];
+      if (!before || deps.some((value, j) => value !== before[j])) effects.push(fn);
+      previousEffects[i] = deps;
+    },
+  };
+  const harnessScope = { ...scope, ...hooks };
+  new Function("require", "exports", ...Object.keys(harnessScope), compile(fixtureSource))(
+    id => { assert.equal(id, "react/jsx-runtime"); return { jsx: element, jsxs: element }; }, exports, ...Object.values(harnessScope));
+  function render() {
+    let attempts = 0;
+    do {
+      assert.ok(++attempts < 4, "earnings pagination settles after records or user changes");
+      cursor = effectCursor = 0; changed = false; effects = [];
+      tree = expand(exports.Fixture({ userKey, detail: { earnings: { sourceStatus: "READY", records, totalUsdt: 12345.67, totalNex: 98 } } }));
+      for (const effect of effects) effect();
+    } while (changed);
+  }
+  render();
+  return {
+    text: () => text(tree),
+    button: label => nodes(tree).find(node => node.type === "button" && node.props["aria-label"] === `收益明细 ${label}`),
+    rows: () => nodes(tree).filter(node => node.type === "tbody").flatMap(node => nodes(node)
+      .filter(child => child.type === "tr").map(row => text(nodes(row).find(child => child.type === "td")))),
+    click(label) { const button = this.button(label); assert.ok(button, label); assert.ok(!button.props.disabled, label); button.props.onClick(); render(); },
+    resize(size) { nodes(tree).find(node => node.type === "select").props.onChange({ target: { value: String(size) } }); render(); },
+    refresh(next) { records = next; render(); },
+    changeUser(next) { userKey = next; render(); },
+  };
+}
+
+test("C1 earnings renders twenty of 10,385 records while preserving backend totals and record order", () => {
+  const records = earningsSample(10385);
+  const page = earningsHarness(records);
+  assert.deepEqual(page.rows(), records.slice(0, 20).map(row => row.bizNo));
+  assert.match(page.text(), /筛选后 10385 条/);
+  assert.match(page.text(), /第 1 \/ 520 页/);
+  assert.match(page.text(), /收益合计\$12,345\.67 · 98 NEX/);
+  assert.equal(page.button("上一页").props.disabled, true);
+  page.click("下一页");
+  assert.deepEqual(page.rows(), records.slice(20, 40).map(row => row.bizNo));
+  page.click("上一页");
+  assert.equal(page.rows()[0], "earning-1");
+  const visited = [...page.rows()];
+  while (!page.button("下一页").props.disabled) {
+    page.click("下一页");
+    assert.ok(page.rows().length <= 20);
+    visited.push(...page.rows());
+  }
+  assert.deepEqual(visited, records.map(row => row.bizNo));
+  assert.match(page.text(), /第 520 \/ 520 页/);
+  assert.equal(page.rows().length, 5);
+  assert.match(page.text(), /收益合计\$12,345\.67 · 98 NEX/);
+  assert.equal(records.length, 10385);
+});
+
+test("C1 earnings keeps the final page, page sizes, empty refresh and user switch reachable", () => {
+  const page = earningsHarness(earningsSample(45));
+  page.click("下一页"); page.click("下一页");
+  assert.deepEqual(page.rows(), ["earning-41", "earning-42", "earning-43", "earning-44", "earning-45"]);
+  assert.equal(page.button("下一页").props.disabled, true);
+  page.refresh(earningsSample(3));
+  assert.equal(page.rows().length, 3);
+  assert.match(page.text(), /第 1 \/ 1 页/);
+  page.refresh(earningsSample(45)); page.click("下一页");
+  page.changeUser("next-user");
+  assert.equal(page.rows()[0], "earning-1");
+  page.resize(10);
+  assert.equal(page.rows().length, 10);
+  page.click("下一页"); page.resize(50);
+  assert.equal(page.rows().length, 45);
+  assert.equal(page.rows()[0], "earning-1");
+  page.refresh([]);
+  assert.equal(page.rows().length, 0);
+  assert.match(page.text(), /暂无记录/);
+  assert.match(page.text(), /显示 0-0/);
+  assert.equal(page.button("上一页").props.disabled, true);
+  assert.equal(page.button("下一页").props.disabled, true);
 });

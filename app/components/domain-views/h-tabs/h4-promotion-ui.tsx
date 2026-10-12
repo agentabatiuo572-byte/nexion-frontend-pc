@@ -92,14 +92,14 @@ export function ReadError({ error, retry, target, retryLabel = '重试读取' }:
 export function PromotionReadPanel({ title, loading, errors = [] }: { title: string; loading: boolean; errors?: Array<{target: string; error: unknown; retry: () => void}> }) {
     return <Card title={`${loading ? '正在读取' : '暂时无法确认'}${title}`}>{loading ? <><Loading/><div className="card-body"><Button disabled>处理进行中</Button><p className="help">读取结束前不允许提交或重复操作。</p></div></> : <><Empty title="读取失败，内容已保留" action={<div className="actions">{errors.map(item => <Button key={item.target} kind="primary" onClick={item.retry}>重试读取<span> · {item.target}</span></Button>)}</div>}>当前读取未成功，不代表没有记录。依赖最新数据的动作已停用；重试不会再次创建活动或奖励。{errors.map(item => <span className="read-failure" key={item.target}>{item.target}：{displayAdminError(item.error)}</span>)}</Empty><div className="card-body"><Notice title="写入结果未知时" kind="warn">保留填写内容与原操作记录。先核查原操作结果，再决定是否重试；不要重复提交。</Notice></div></>}</Card>;
 }
-export function useRead<T>(loader: () => Promise<T>, deps: DependencyList) {
+export function useRead<T>(loader: () => Promise<T>, deps: DependencyList, enabled = true) {
     const ref = useRef(loader);
     ref.current = loader;
     const [data, setData] = useState<T | null>(null), [error, setError] = useState<unknown>(null), [loading, setLoading] = useState(true), [tick, setTick] = useState(0);
-    useEffect(() => { let current = true; setLoading(true); setError(null); ref.current().then(v => { if (current)
+    useEffect(() => { if (!enabled) { setLoading(false); return; } let current = true; setLoading(true); setError(null); ref.current().then(v => { if (current)
         setData(v); }).catch(e => { if (current)
         setError(e); }).finally(() => { if (current)
-        setLoading(false); }); return () => { current = false; }; }, [...deps, tick]);
+        setLoading(false); }); return () => { current = false; }; }, [...deps, tick, enabled]);
     return { data, error, loading, reload: () => setTick(v => v + 1) };
 }
 export function Dialog({ title, children, onClose, footer, wide = false }: {
