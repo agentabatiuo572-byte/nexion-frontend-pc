@@ -1,5 +1,5 @@
 // Generated from the reviewed promotion OpenAPI; run scripts/generate-promotion-types.mjs.
-// Source SHA256: a1f7a741541c9e5ac5a66f9aee094d99f3e0abe359270188b8bbaeba35847850
+// Source SHA256: b43348cd1eab223c432a04bb9d5d6ef0c982ce736a8d6a251e719bb874bde4f2
 export type Id = string;
 export type Hash = string;
 export type Amount = string;
@@ -63,7 +63,7 @@ export type AudiencePreviewInput = { "draft": Draft };
 export type AudiencePreview = { "asOf": Time; "estimatedAccounts": (number) | (null); "matched": (number) | (null); "rejected": (number) | (null); "unknown": (number) | (null); "total": (number) | (null); "completeness": "COMPLETE" | "UNAVAILABLE"; "conditionSummary": AudienceConditionSummary; "source": Array<string>; "reasonCounts": Array<AdminDiagnosticCount>; "samples": Array<{ "accountId": Id; "status": "MATCHED" | "REJECTED" | "UNKNOWN"; "reasons": Array<AdminDiagnostic> }>; "audiences": Array<AudienceRolePreview>; "matchedConditionIds": Array<Id>; "warnings": Array<LocalizedText>; "qualificationCredential": false };
 export type SimulateInput = { "draft": Draft; "items": Array<Item>; "sampleAccountId": (Id) | (null) };
 export type Catalog = { "assets": Array<{ "asset": "USDT" | "NEX"; "scale": 6; "minimumUnit": PositiveAmount }>; "skus": Array<{ "productNo": Id; "productRevision": Revision; "giftEligible": boolean; "giftUnavailabilityReason": (LocalizedText) | (null); "name": LocalizedText; "available": boolean; "inventoryMode": "FINITE" | "UNLIMITED"; "availableQuantity": (number) | (null) }>; "ranks": Array<{ "id": Id; "name": LocalizedText }>; "markets": Array<{ "id": Id; "name": LocalizedText }>; "policies": Array<Policy>; "capabilities": Array<string>; "serverTime": Time; "nativeContracts": Array<NativeContractOption> };
-export type PromotionPage = { "items": Array<Promotion>; "nextCursor": (string) | (null); "hasMore": boolean; "total": number; "query": PromotionListQuery; "querySnapshot": Id; "asOf": Time; "expiresAt": Time; "summary": PromotionListSummary };
+export type PromotionPage = { "items": Array<PromotionListItem>; "nextCursor": (string) | (null); "hasMore": boolean; "total": number; "query": PromotionListQuery; "querySnapshot": Id; "asOf": Time; "expiresAt": Time; "summary": PromotionListSummary };
 export type VersionPage = { "items": Array<Version>; "nextCursor": (string) | (null); "hasMore": boolean };
 export type PublicPromotionPage = { "items": Array<PublicPromotion>; "nextCursor": (string) | (null); "hasMore": boolean };
 export type RewardPage = { "items": Array<Reward>; "nextCursor": (string) | (null); "hasMore": boolean };
@@ -116,3 +116,5 @@ export type RewardDisclosure = { "title": LocalizedText; "terms": LocalizedText;
 export type DispositionOption = { "action": "CANCEL" | "REVERSE"; "basis": DispositionBasis; "label": LocalizedText };
 export type OrderReceiptItem = { "lineId": Id; "productNo": Id; "quantity": Quantity; "productName": string };
 export type MetricSkuSales = { "purchaseProductNo": Id; "productName": string; "paidOrders": number; "grossPaidUsdt": AggregateAmount; "refundUsdt": AggregateAmount; "netReceivedUsdt": AggregateAmount };
+export type PromotionListItem = { "activityId": Id; "eventCode": Id; "revision": Revision; "state": ActivityState; "activeVersion": (Revision) | (null); "draftVersion": (Revision) | (null); "serverTime": Time; "fixture": boolean; "name": (string) | (null); "category": "PROMOTION" | "REFERRAL"; "template": Template; "startsAt": (Time) | (null); "endsAt": (Time) | (null); "displayTimezone": string | null; "updatedAt": Time; "draftVersionState": (VersionState) | (null); "impact": PromotionListImpact; "reserved": number; "issued": number; "unresolved": number; "asOf": Time };
+export type PromotionListImpact = { "reserved": number; "issued": number; "unresolved": number; "unpaidOrders": number; "pendingRewards": number; "failedRewards": number; "unknownRewards": number; "reversingRewards": number; "manualReviewRewards": number; "unfulfilledRewards": number; "obligations": number; "budgets": Array<Budget>; "asOf": Time; "completeness": "COMPLETE"; "source": Array<string> };

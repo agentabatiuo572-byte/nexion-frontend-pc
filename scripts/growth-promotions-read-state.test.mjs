@@ -45,12 +45,12 @@ function component(file,imports,privateExport=''){
 }
 const ui=component('h4-promotion-ui.tsx',name=>name.startsWith('react')?require(name):name.endsWith('error-messages')?{displayAdminError:e=>e.message}:{});
 const activity={activityId:'A1',name:'原活动',state:'DRAFT',current:{revision:1,draft:{}},impact:{}};
-function page({catalog={data:{},loading:false,error:null},list={data:{},loading:false,error:null},current=activity,error=null,busy=false,screen='edit'}={}){
-  const states={1:2,3:screen,4:'A1',5:current,6:error,7:busy};let stateIndex=0,readIndex=0;const calls=[];
+function page({catalog={data:{},loading:false,error:null},list={data:{},loading:false,error:null},current=activity,error=null,busy=false,screen='edit',query={limit:20},previous=[],pending=null}={}){
+  const states={1:2,3:screen,4:'A1',5:current,6:error,7:busy,11:pending,15:query,16:previous};let stateIndex=0,readIndex=0;const calls=[];
   const fakeUi=new Proxy({...ui,useRead:()=>{const i=readIndex++;return {...[catalog,list][i],reload:()=>calls.push(i===0?'catalog':'list')};}},{get:(obj,key)=>key in obj?obj[key]:()=>null});
   const Editor=()=>null;
   const H4=component('h4-promotions.tsx',name=>{
-    if(name==='react')return {useState:initial=>{const i=stateIndex++;return [i in states?states[i]:typeof initial==='function'?initial():initial,()=>{}];},useEffect:()=>{},useCallback:fn=>fn};
+    if(name==='react')return {useState:initial=>{const i=stateIndex++;if(!(i in states))states[i]=typeof initial==='function'?initial():initial;return [states[i],next=>states[i]=typeof next==='function'?next(states[i]):next];},useEffect:()=>{},useCallback:fn=>fn};
     if(name==='react/jsx-runtime')return require(name);
     if(name.endsWith('h4-promotion-ui'))return fakeUi;
     if(name.endsWith('h4-promotion-editor'))return {__esModule:true,default:Editor};
@@ -61,8 +61,23 @@ function page({catalog={data:{},loading:false,error:null},list={data:{},loading:
   }).default;
   const tree=H4({ctx:{can:()=>true},legacy:null}),nodes=[];
   const walk=node=>{if(Array.isArray(node))return node.forEach(walk);if(!node||typeof node!=='object')return;nodes.push(node);walk(node.props?.children);walk(node.props?.action);walk(node.props?.footer);};walk(tree);
-  return {nodes,Editor,calls};
+  return {nodes,Editor,calls,states};
 }
+
+test('reclaimed or expired list retry discards pagination history while preserving filters',()=>{
+  for(const data of [null,{items:[],summary:{},total:0}]){
+    const failed=page({screen:'list',list:{data,loading:false,error:Error('list no longer available')},query:{limit:20,state:'ACTIVE',querySnapshot:'old',cursor:'20'},previous:[{limit:20,querySnapshot:'old'}]});
+    const retry=failed.nodes.find(node=>node.type===ui.ReadError)?.props.retry??failed.nodes.find(node=>node.type===ui.PromotionReadPanel).props.errors.find(error=>error.target==='活动列表').retry;
+    retry();assert.deepEqual(failed.states[15],{limit:20,state:'ACTIVE'});assert.deepEqual(failed.states[16],[]);assert.deepEqual(failed.calls,['list']);
+  }
+});
+
+test('recovering an existing activity command refreshes its list exactly once',async()=>{
+  const restored=page({pending:{operation:'saveDraft',body:{},path:'/promotions/A1/draft',targetId:'A1'},query:{limit:20,querySnapshot:'old',cursor:'20'},previous:[{limit:20,querySnapshot:'old'}]});
+  const dialog=restored.nodes.find(node=>node.type===ui.ConfirmCommand&&node.props.title==='核查原操作结果');
+  await dialog.props.onSuccess({resource:{type:'VERSION',id:'A1:1'}});
+  assert.deepEqual(restored.calls,['activity','list']);assert.deepEqual(restored.states[15],{limit:20});assert.deepEqual(restored.states[16],[]);
+});
 test('initial read state keeps the approved six-row card and four steps',()=>{
   const html=renderToStaticMarkup(ui.PromotionReadPanel({title:'购机赠奖',loading:true}));
   assert.equal((html.match(/class="skeleton-row"/g)||[]).length,6);assert.match(html,/正在读取购机赠奖/);assert.match(html,/读取结束前不允许提交/);
@@ -90,15 +105,15 @@ test('failure panel discloses both objects and invokes only the selected recover
   const panel=ui.PromotionReadPanel({title:'活动中心',loading:false,errors});const html=renderToStaticMarkup(panel);assert.match(html,/活动目录/);assert.match(html,/活动列表/);
   const buttons=[];const walk=node=>{if(Array.isArray(node))return node.forEach(walk);if(!node||typeof node!=='object')return;if(node.type===ui.Button)buttons.push(node);walk(node.props?.children);walk(node.props?.action);};walk(panel);buttons[1].props.onClick();assert.deepEqual(calls,['活动列表']);
 });
-test('failed first export read retries its original task and later metric errors retry their own query',async()=>{
-  const states=[],refs=[],calls=[];let stateIndex=0,refIndex=0;
+test('failed first export read retries its original task and later metric errors restart their own filtered query',async()=>{
+  const states=[],refs=[],calls=[],queries=[];let stateIndex=0,refIndex=0;
   const metricUi={...ui,useRead:()=>({data:{items:[]},loading:false,error:null})};
   const Metrics=component('h4-promotion-metrics.tsx',name=>{
     if(name==='react')return {useState:initial=>{const i=stateIndex++;if(!(i in states))states[i]=typeof initial==='function'?initial():initial;return [states[i],next=>states[i]=typeof next==='function'?next(states[i]):next];},useRef:initial=>{const i=refIndex++;return refs[i]||(refs[i]={current:initial});}};
     if(name==='react/jsx-runtime')return require(name);
     if(name.endsWith('h4-promotion-ui'))return metricUi;
     if(name.endsWith('promotion-form'))return promotionForm;
-    if(name.endsWith('promotion-client'))return {promotionRead:async route=>{calls.push(route);throw Error('read unavailable');},promotionVersions:async()=>({items:[]})};
+    if(name.endsWith('promotion-client'))return {promotionRead:async (route,query)=>{calls.push(route);queries.push(query);throw Error('read unavailable');},promotionVersions:async()=>({items:[]})};
     return {};
   }).default;
   const props={activity:{activityId:'A1',name:'activity',startsAt:'2026-10-08T00:00:00Z',endsAt:'2026-10-09T00:00:00Z'},catalog:{},can:()=>true,onBack:()=>{}};
@@ -108,6 +123,15 @@ test('failed first export read retries its original task and later metric errors
   const confirm=render().find(node=>node.type===ui.ConfirmCommand);assert(confirm);await assert.rejects(confirm.props.onSuccess({resource:{type:'EXPORT',id:'E1'}}),/read unavailable/);
   let failure=render().find(node=>node.type===ui.ReadError);assert.equal(failure.props.target,'原导出任务');failure.props.retry();await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(calls,['/promotion-exports/E1','/promotion-exports/E1']);
   const form=render().find(node=>node.type==='form');form.props.onSubmit({preventDefault(){}});await new Promise(resolve=>setImmediate(resolve));failure=render().find(node=>node.type===ui.ReadError);assert.equal(failure.props.target,'活动效果查询');failure.props.retry();await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(calls.slice(-2),['/promotions/A1/metrics','/promotions/A1/metrics']);
+  states[1]=true;states[5]=null;states[3]={from:'2026-10-08T00:00:00Z',to:'2026-10-09T00:00:00Z',timezone:'UTC',querySnapshot:'old',limit:20};states[4].breakdown={rows:[],total:40,hasMore:true,nextCursor:'20'};
+  render().find(node=>node.type===ui.Button&&node.props.children==='下一页').props.onClick();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(queries.at(-1).cursor,'20');assert.equal(queries.at(-1).querySnapshot,'Q1');
+  const failedNodes=render(),failedDialog=failedNodes.find(node=>node.type===ui.Dialog&&node.props.title==='奖励分组明细');
+  assert(failedDialog.props.children.flat(Infinity).some(node=>node?.type===ui.ReadError),'A modal paging failure must expose its retry inside that modal');
+  assert.equal(failedNodes.filter(node=>node.type===ui.ReadError).length,1);
+  for(const label of ['上一页','下一页'])assert.equal(failedNodes.find(node=>node.type===ui.Button&&node.props.children===label).props.disabled,true);
+  render().find(node=>node.type===ui.ReadError).props.retry();await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(queries.at(-1),{from:'2026-10-08T00:00:00Z',to:'2026-10-09T00:00:00Z',timezone:'UTC',limit:20});assert.deepEqual(states[10],[]);assert.equal(states[8],null);
 });
 test('blocked command dialogs deny new writes and original retries while retaining original-result reads',async()=>{
   const states=[],refs=[];let stateIndex=0,refIndex=0,writes=0,reads=0,records=[];
