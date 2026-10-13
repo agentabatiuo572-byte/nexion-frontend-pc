@@ -54,7 +54,8 @@ function harness(props = {}, detail = true) {
     "@/lib/admin/m-support-enhancements": { supportEnhancements: { profile: transport("profile"), devices: transport("devices"), flows: transport("flows") } },
     "@/lib/admin/m-support-client": { SupportClientError, supportClient: { maintenanceHistory: transport("maintenance") } },
     "@/lib/admin/error-messages": { displayAdminError },
-    "../design-kit": { Modal: props => React.createElement("aside", {}, props.children) },
+    "../design-kit": { Modal: props => React.createElement("aside", {}, props.children), Icon: props => React.createElement("svg", {"data-icon":props.name,width:props.size,height:props.size}) },
+    "./hd-ui": { HDSelect: () => null },
     "./support-avatar": { SupportAvatar: () => null, customerAvatarPath: id => id, advisorAvatarPath: id => id },
     "./support-leaderboard": leaderboardExports,
     "./m3-customer-profile.css": {},
@@ -104,7 +105,13 @@ test("actual sidebar restores bounded identity, two-currency 2x2 funds and short
   assert.match(sidebar, /最新备注/); assert.doesNotMatch(sidebar, /较旧备注|<textarea|type="date"|设备记录（含历史）|KYC|闲置/);
   const grid = elements(h.render()).find(node => node.props?.className === "m3-profile-funds");
   assert.equal(elements(grid).filter(node => node.type === "button").length, 4);
-  elements(h.render()).find(node => node.props?.["aria-label"] === "资金摘要币种").props.onChange({ target: { value: "NEX" } });
+  const currency = elements(h.render()).find(node => node.props?.className === "m3-profile-currency");
+  assert.equal(currency.props["aria-label"], "资金摘要币种");
+  const selector = elements(currency).find(node => typeof node.props?.onChange === "function");
+  assert.equal(selector.props.width, 92); assert.deepEqual(Array.from(selector.props.options, option => option.value), ["USDT", "NEX"]);
+  selector.props.onChange("NEX");
+  const shortcuts = elements(h.render()).find(node => node.props?.className === "m3-profile-shortcuts");
+  assert.deepEqual(elements(shortcuts).filter(node => node.props?.size === 15).map(node => node.props.name), ["clock", "doc", "lock", "wallet", "doc"]);
   const nex = h.html(); assert.match(nex, />0<small>NEX/); assert.match(nex, /9007199254740993\.12345678 NEX/); assert.match(nex, /部分统计/); assert.doesNotMatch(nex, /12400 USDT/);
   assert.equal(h.requests.length, 4, "currency summary uses already loaded facts without another read");
   elements(h.render()).find(node => node.props?.className === "m3-profile-open").props.onClick(); h.render();

@@ -36,7 +36,7 @@ const modules = {
   "./hd-ui": compile(read(tabs + "hd-ui.tsx")),
   "./m-avatar": "exports.MAvatar=()=>null;exports.avInitials=()=>'';",
   "@/lib/admin/error-messages": "exports.displayAdminError=e=>e.message;",
-  "@/lib/admin/m-support-enhancements": `const group=data=>({status:"READY",data,evaluatedAt:null});exports.supportEnhancements={profile:async()=>({identity:group({nickname:"测试客户"}),finance:group({byCurrency:[]}),risk:group({}),annotations:group({}),service:group({}),actions:{}}),devices:async()=>group({records:[],total:0}),flows:async()=>group({records:[],total:0}),skus:(page,query,signal)=>{window.trace.requests.push({page,query,signal});return new Promise((resolve,reject)=>window.trace.pending.push({resolve,reject,signal}));}};`,
+  "@/lib/admin/m-support-enhancements": `const group=data=>({status:"READY",data,evaluatedAt:null});exports.supportEnhancements={profile:async()=>({identity:group({nickname:"测试客户"}),finance:group({byCurrency:[{currency:"USDT",balance:"12",fieldStatuses:{balance:"READY"}},{currency:"NEX",balance:"24",fieldStatuses:{balance:"READY"}}]}),risk:group({}),annotations:group({}),service:group({}),actions:{}}),devices:async()=>group({records:[],total:0}),flows:async()=>group({records:[],total:0}),skus:(page,query,signal)=>{window.trace.requests.push({page,query,signal});return new Promise((resolve,reject)=>window.trace.pending.push({resolve,reject,signal}));}};`,
   "@/lib/store/admin-auth": "exports.useAdminAuth=selector=>selector({authEpoch:1,session:{adminId:12,role:'support',authorities:[]}});",
   "@/lib/admin/m-support-client": "exports.SupportClientError=class extends Error{};exports.supportClient={maintenanceHistory:async()=>({cycles:[],executions:[],totalCycles:0,totalExecutions:0})};",
   "./support-avatar": compile(read(tabs + "support-avatar.tsx")),
@@ -54,7 +54,7 @@ let browser, page, browserTemp;
 const errors = [];
 before(async () => {
   browserTemp = fs.mkdtempSync(path.join(os.tmpdir(), "support-picker-"));
-  browser = await chromium.launch({ headless: true, args: ["--log-file=" + path.join(browserTemp, "browser.log")] }); page = await browser.newPage({ viewport: { width: 1000, height: 800 } }); page.setDefaultTimeout(4000);
+  browser = await chromium.launch({ headless: true, env: { ...process.env, CHROME_LOG_FILE: path.join(browserTemp, "browser.log") }, args: ["--log-file=" + path.join(browserTemp, "browser.log")] }); page = await browser.newPage({ viewport: { width: 1000, height: 800 } }); page.setDefaultTimeout(4000);
   page.on("pageerror", error => errors.push(error.message));
   page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
   await page.route("**/*", route => { throw Error("Offline picker made an external request: " + route.request().url()); });
@@ -138,6 +138,14 @@ test("template revalidation retains dialog/search, blocks selection and recovers
 });
 test("actual profile 360 keeps its trigger mounted and Escape restores focus; revocation closes private detail", async () => {
   await mount({profile:true}); const trigger = page.getByRole("button", {name:"查看完整客户档案 / 360",exact:true});
+  const currency = page.getByRole("group", {name:"资金摘要币种",exact:true}); await currency.waitFor();
+  const currencyTrigger = currency.getByRole("button",{name:"USDT",exact:true}), currencyBounds = await currencyTrigger.boundingBox();
+  assert.equal(currencyBounds.width, 92); assert.equal(currencyBounds.height, 32);
+  assert.deepEqual(await currencyTrigger.evaluate(element => { const style = getComputedStyle(element); return [style.paddingLeft, style.paddingRight]; }), ["10px", "12px"]);
+  assert.equal(await page.locator(".m3-profile-shortcuts svg[width='15']").count(), 5);
+  await currencyTrigger.focus(); await page.keyboard.press("ArrowDown"); await page.keyboard.press("End"); await page.keyboard.press("Enter");
+  await currency.getByRole("button",{name:"NEX",exact:true}).waitFor();
+  assert.match(await page.locator(".m3-profile-funds").innerText(), /24\s*NEX/);
   await open("查看完整客户档案 / 360", "客户服务 360");
   assert.equal(await trigger.count(), 1); assert.equal(await trigger.evaluate(el => el.isConnected), true);
   await page.keyboard.press("Escape"); await page.waitForFunction(() => document.activeElement?.textContent.includes("查看完整客户档案 / 360"));

@@ -165,7 +165,8 @@ test("funds-flow options use source statuses and reset the exact filter request 
     if(name==="@/lib/admin/m-support-enhancements")return {supportEnhancements};
     if(name==="@/lib/admin/m-support-client")return {supportClient:{},SupportClientError:class extends Error{}};
     if(name==="@/lib/admin/error-messages")return {displayAdminError:()=>"读取失败"};
-    if(name==="../design-kit")return {Modal:props=>jsx.jsx("div",{children:props.children})};
+    if(name==="../design-kit")return {Modal:props=>jsx.jsx("div",{children:props.children}),Icon:()=>null};
+    if(name==="./hd-ui")return {HDSelect:()=>null};
     if(name==="./support-leaderboard")return {compactSupportBoardValue};
     if(name==="./m3-customer-profile.css")return {};
     if(name==="./support-avatar")return {SupportAvatar:props=>jsx.jsx("span",{children:props.name}),customerAvatarPath:id=>`customer/${id}`,advisorAvatarPath:id=>`advisor/${id}`};
@@ -330,7 +331,8 @@ test("first-contact customer profiles require verified scope without inventing a
       if(name==="@/lib/admin/m-support-enhancements")return {supportEnhancements:{profile:async()=>profile}};
       if(name==="@/lib/admin/m-support-client")return {supportClient:{},SupportClientError:class extends Error{}};
       if(name==="@/lib/admin/error-messages")return {displayAdminError:()=>"读取失败"};
-      if(name==="../design-kit")return {Modal:props=>jsx.jsx("div",{children:props.children})};
+      if(name==="../design-kit")return {Modal:props=>jsx.jsx("div",{children:props.children}),Icon:()=>null};
+    if(name==="./hd-ui")return {HDSelect:()=>null};
       if(name==="./support-leaderboard")return {compactSupportBoardValue};
       if(name==="./m3-customer-profile.css")return {};
     if(name==="./support-avatar")return {SupportAvatar:props=>jsx.jsx("span",{children:props.name}),customerAvatarPath:id=>`customer/${id}`,advisorAvatarPath:id=>`advisor/${id}`};

@@ -32,7 +32,7 @@ html[data-theme="dark"] .m3-dedicated-stage { --m3-bubble-agent: #114361; --m3-b
 .mdom .m3-composer-tools .support-content-trigger svg { order: -1; }
 .mdom .m3-composer-tools > .support-content-tools > .support-content-state { display: none; }
 .mdom .m3-composer-intent { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 0; margin: 0; border: 0; font-size: 12.5px; color: var(--v5-ink-3); }
-.mdom .m3-composer-intent .hd-select { min-height: 30px; height: 30px; padding: 4px 10px; font-size: 12.5px; }
+.mdom .m3-composer-intent .hd-select { min-height: 30px; height: 30px; padding: 4px 12px 4px 10px; font-size: 12.5px; }
 .mdom .m3-composer-intent .hd-select-pop { top: calc(100% + 4px); bottom: auto; }
 .mdom .m3-composer-input { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 9px; align-items: stretch; }
 .mdom .m3-composer-input textarea.fld { width: 100%; height: 68px; min-height: 68px; max-height: 150px; resize: vertical; padding: 11px 12px; border-radius: 7px; font-size: 14px; line-height: 1.6; }

@@ -12,7 +12,7 @@
 .m3-profile-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px}
 .m3-profile-heading h4{margin:0;font-size:12.5px;font-weight:550;color:var(--v5-ink-2)}
 .m3-profile-heading>div{display:flex;align-items:center;gap:6px;font-size:12.5px}
-.m3-profile-heading select{min-height:32px;max-width:86px;padding:4px 20px 4px 6px;border:1px solid var(--v5-border);border-radius:4px;background:var(--v5-surface);color:var(--v5-ink);font-size:12.5px}
+.mdom .m3-profile-currency .hd-select{height:32px;min-height:32px;padding:4px 12px 4px 10px;font-size:12.5px}
 .m3-profile-link{border:0;padding:0;background:transparent;color:var(--m-hd,var(--admin-cyan));font-size:12.5px;line-height:1.5;cursor:pointer}
 .m3-profile-risk{display:flex;gap:10px;align-items:center;padding:10px;border:1px solid var(--v5-border);border-radius:7px;background:var(--v5-surface-2)}
 .m3-profile-risk>span{flex-shrink:0;font-size:12.5px;color:var(--v5-ink-2)}

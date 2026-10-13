@@ -41,7 +41,8 @@ function profileHarness(initial = profile()) {
     react: h.react, "@/lib/store/admin-auth": { useAdminAuth: selector => selector({ authEpoch: 1, session: { adminId: 12, role: "super", authorities: ["service_m3_write"] } }) },
     "@/lib/admin/m-support-enhancements": { supportEnhancements: { profile() { const request = deferred(); requests.push(request); return request.promise; }, devices: async () => group({ total: 0, heldCount: 0, fieldStatuses: { heldCount: "READY" }, onlineCount: 0, records: [] }), flows: async () => group({ total: 0, records: [] }) } },
     "@/lib/admin/m-support-client": { supportClient: { maintenanceHistory: async () => ({ totalExecutions: 0, totalCycles: 0, cycles: [], executions: [] }) }, SupportClientError: class extends Error {} },
-    "@/lib/admin/error-messages": { displayAdminError: () => "读取失败" }, "../design-kit": { Modal: props => React.createElement("div", {}, props.children) },
+    "@/lib/admin/error-messages": { displayAdminError: () => "读取失败" }, "../design-kit": { Modal: props => React.createElement("div", {}, props.children), Icon: () => null },
+    "./hd-ui": { HDSelect: () => null },
     "./support-avatar": { SupportAvatar: () => null, customerAvatarPath: () => "", advisorAvatarPath: () => "" }, "./support-leaderboard": { compactSupportBoardValue },
   });
   const render = (detail = true) => { h.reset(); let tree = exports.M3CustomerProfile(props); if (detail && !nodes(tree).some(node => node.props?.title === "客户服务 360")) { nodes(tree).find(node => node.props?.className === "m3-profile-open").props.onClick(); h.reset(); tree = exports.M3CustomerProfile(props); } return tree; };
