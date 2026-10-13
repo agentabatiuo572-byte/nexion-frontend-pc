@@ -167,11 +167,13 @@ test("funds-flow options use source statuses and reset the exact filter request 
     if(name==="@/lib/admin/error-messages")return {displayAdminError:()=>"读取失败"};
     if(name==="../design-kit")return {Modal:props=>jsx.jsx("div",{children:props.children})};
     if(name==="./support-leaderboard")return {compactSupportBoardValue};
+    if(name==="./m3-customer-profile.css")return {};
     if(name==="./support-avatar")return {SupportAvatar:props=>jsx.jsx("span",{children:props.name}),customerAvatarPath:id=>`customer/${id}`,advisorAvatarPath:id=>`advisor/${id}`};
     throw new Error(`Unexpected funds-flow dependency ${name}`);
   }};
   runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,context);
   const render=()=>{cursor=0;effects.length=0;return context.exports.M3CustomerProfile({ctx:{pget:()=>"[]"},customerId:"7",onHistory(){},onRetryMessages(){}});};
+  walk(render()).find(node=>node.props?.className==="m3-profile-open").props.onClick();
   const tree=render(),select=walk(tree).find(node=>node.type==="select"&&walk(node).some(child=>child.type==="option"&&child.props.children==="全部状态")),options=walk(select).filter(node=>node.type==="option");
   assert.ok(select);assert.deepEqual(options.map(node=>node.props.value).filter(Boolean).sort(),expected.toSorted());
   const labels=Object.fromEntries(options.map(node=>[node.props.value,node.props.children]));assert.equal(labels.CONFIRMED,"已确认");assert.equal(labels.CREDITED,"已入账");assert.equal(labels.REVIEW_PENDING,"待审核");assert.equal(labels.REFUNDED,"已退款");assert.notEqual(labels.CONFIRMED,labels.SUCCESS);
@@ -322,7 +324,7 @@ test("first-contact customer profiles require verified scope without inventing a
     const calls=[],profile={identity:group({nickname:"已核客户",userNo:"U-7"}),finance:group({byCurrency:[]}),devices:group({}),risk:group(null,"UNKNOWN"),annotations:group({systemTags:[],customTags:[],notes:[]}),service:group({agentAdminId:12,agentName:"当前顾问",conversationCount:mode==="first"?0:1,assignmentState:"BOUND"}),actions:{}};
     let state=0;const session={adminId:12,role:"support",authorities:mode==="read-only"?[]:["service_m3_write"]};
     const context={exports:{},AbortController,Date,Intl,JSON,require:name=>{
-      if(name==="react")return {useEffect(){},useRef:value=>({current:value}),useState:initial=>{const index=state++;return [index===0?profile:index===14?"新标签":index===15?"新备注":initial,()=>{}];}};
+      if(name==="react")return {useEffect(){},useRef:value=>({current:value}),useState:initial=>{const index=state++;return [index===0?profile:index===3?true:index===14?"新标签":index===15?"新备注":initial,()=>{}];}};
       if(name==="react/jsx-runtime")return jsx;
       if(name==="@/lib/store/admin-auth")return {useAdminAuth:selector=>selector({session,authEpoch:1})};
       if(name==="@/lib/admin/m-support-enhancements")return {supportEnhancements:{profile:async()=>profile}};
@@ -330,6 +332,7 @@ test("first-contact customer profiles require verified scope without inventing a
       if(name==="@/lib/admin/error-messages")return {displayAdminError:()=>"读取失败"};
       if(name==="../design-kit")return {Modal:props=>jsx.jsx("div",{children:props.children})};
       if(name==="./support-leaderboard")return {compactSupportBoardValue};
+      if(name==="./m3-customer-profile.css")return {};
     if(name==="./support-avatar")return {SupportAvatar:props=>jsx.jsx("span",{children:props.name}),customerAvatarPath:id=>`customer/${id}`,advisorAvatarPath:id=>`advisor/${id}`};
       throw new Error(`Unexpected profile dependency ${name}`);
     }};

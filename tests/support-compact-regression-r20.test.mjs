@@ -44,9 +44,9 @@ function profileHarness(initial = profile()) {
     "@/lib/admin/error-messages": { displayAdminError: () => "读取失败" }, "../design-kit": { Modal: props => React.createElement("div", {}, props.children) },
     "./support-avatar": { SupportAvatar: () => null, customerAvatarPath: () => "", advisorAvatarPath: () => "" }, "./support-leaderboard": { compactSupportBoardValue },
   });
-  const render = () => { h.reset(); return exports.M3CustomerProfile(props); };
-  render(); h.runEffects(); h.states[0] = initial;
-  return { ...h, h, props, requests, render, html: () => renderToStaticMarkup(render()), seed: value => { h.states[0] = value; } };
+  const render = (detail = true) => { h.reset(); let tree = exports.M3CustomerProfile(props); if (detail && !nodes(tree).some(node => node.props?.title === "客户服务 360")) { nodes(tree).find(node => node.props?.className === "m3-profile-open").props.onClick(); h.reset(); tree = exports.M3CustomerProfile(props); } return tree; };
+  render(false); h.runEffects(); h.states[0] = initial;
+  return { ...h, h, props, requests, render, html: (detail = true) => renderToStaticMarkup(render(detail)), seed: value => { h.states[0] = value; } };
 }
 test("R20CE-01 actual finance retry clears 42.5 before request and after rejection", async () => {
   const h = profileHarness(); assert.match(h.html(), /42\.5 USDT/);
@@ -98,9 +98,10 @@ test("R20CE-DEVICE actual current holding stays separate from refund history in 
     records: [{ id: "93", name: "S1", instanceNo: "refunded-history", status: "DEACTIVATED" }] });
   for (const full of [false, true]) {
     h.h.states[3] = full;
-    const html = h.html();
+    const html = h.html(full);
     assert.match(html,/持有设备<\/span><span class="v">0<\/span>/);
-    assert.match(html,/设备记录（含历史）/);assert.match(html,/refunded-history/);assert.match(html,/1 条/);
+    if (full) { assert.match(html,/设备记录（含历史）/);assert.match(html,/refunded-history/);assert.match(html,/1 条/); }
+    else assert.doesNotMatch(html,/refunded-history|设备记录（含历史）/);
     assert.doesNotMatch(html,/没有设备记录|当前没有持有设备/);
   }
   for (const status of ["UNKNOWN", "ERROR", undefined]) {

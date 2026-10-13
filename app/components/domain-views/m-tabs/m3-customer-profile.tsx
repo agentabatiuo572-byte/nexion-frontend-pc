@@ -9,6 +9,7 @@ import type { MCtx } from "./types";
 import type { SessionConvo, SupportTicket } from "./data";
 import { SupportAvatar, customerAvatarPath, advisorAvatarPath } from "./support-avatar";
 import { compactSupportBoardValue } from "./support-leaderboard";
+import "./m3-customer-profile.css";
 
 const statusText = { READY: "已读取", UNKNOWN: "未知", FORBIDDEN: "无权限", ERROR: "读取失败" };
 const asRows = (value: unknown): Record<string, unknown>[] => Array.isArray(value) ? value.filter(v => v && typeof v === "object") : [];
@@ -38,6 +39,14 @@ export function M3CustomerProfile({ ctx, customerId, conversation, scopeVersion,
   const [tag, setTag] = useState(""), [note, setNote] = useState(""), [writing, setWriting] = useState(false), [writeError, setWriteError] = useState("");
   const [historyPage, setHistoryPage] = useState(1), [ticketPage, setTicketPage] = useState(1);
   const [maintenance, setMaintenance] = useState<SupportMaintenanceHistory | null>(null), [maintenanceError, setMaintenanceError] = useState(""), [maintenancePage, setMaintenancePage] = useState(1);
+  const [summaryCurrency, setSummaryCurrency] = useState("USDT");
+  const [detailSection, setDetailSection] = useState("");
+  const open360 = (section = "") => { setDetailSection(section); setView360(true); };
+  useEffect(() => {
+    if (!view360 || !detailSection) return;
+    const target = [...document.querySelectorAll<HTMLElement>(".m3-service-profile details")].find(element => element.querySelector("summary")?.textContent?.startsWith(detailSection));
+    target?.setAttribute("open", ""); target?.scrollIntoView({ block: "nearest" }); target?.querySelector<HTMLElement>("summary")?.focus();
+  }, [view360, detailSection]);
   const scopeKey = `${epoch}:${customerId}`, revokedScope = useRef("");
   const scopeDenied = revokedScope.current === scopeKey;
   const annotationWrite = useRef<object | null>(null);
@@ -47,7 +56,7 @@ export function M3CustomerProfile({ ctx, customerId, conversation, scopeVersion,
   const revokeScope = () => {
     if (revokedScope.current === scopeKey) return;
     revokedScope.current = scopeKey; stamp.current += ":revoked";
-    setProfile(null); setDeviceGroup(null); setFlowGroup(null); setMaintenance(null);
+    setProfile(null); setDeviceGroup(null); setFlowGroup(null); setMaintenance(null); setView360(false);
     setTag(""); setNote(""); annotationWrite.current = null; setWriting(false); setWriteError("");
     setError("客户资料暂时无法读取，归属或访问范围可能已变化。请重新读取资料或返回列表核对。");
   };
@@ -117,7 +126,6 @@ export function M3CustomerProfile({ ctx, customerId, conversation, scopeVersion,
     {error && <div className="itint danger" role="alert">{error}<button className="l-btn sm" onClick={retryProfile}>重新读取资料</button></div>}
     {!scopeDenied && <>
     <Group title="基本信息" group={profile?.identity} failed={Boolean(error)} retry={()=>void retryGroup("identity")}>
-      <SupportAvatar name={String(identity?.nickname??"客户")} path={identity?.avatar?customerAvatarPath(customerId):undefined} size={48}/>
       <Row label="客户姓名" value={identity?.nickname}/><Row label="客户编码" value={identity?.userNo}/><Row label="客户 ID" value={customerId}/><Row label="客户等级" value={identity?.level}/><Row label="手机" value={identity?.phoneMasked}/><Row label="地区" value={identity?.region}/><Row label="注册时间" value={dates(identity?.registeredAt)}/><Row label="最近登录" value={dates(identity?.lastLoginAt)}/>
     </Group>
     <Group title="账户资金（全历史）" group={profile?.finance} failed={Boolean(error)} retry={()=>void retryGroup("finance")}>
@@ -152,5 +160,30 @@ export function M3CustomerProfile({ ctx, customerId, conversation, scopeVersion,
     <small>资料读取时间：{dates(profile?.identity.evaluatedAt)}</small>
     </>}
   </div>;
-  return view360 ? <Modal title="客户服务 360" icon="users" wide onClose={()=>setView360(false)} footer={<button className="btn btn-sec btn-sm" onClick={()=>setView360(false)}>返回会话</button>}>{body}</Modal> : <><button className="l-btn sm" onClick={()=>setView360(true)}>打开服务 360</button>{body}</>;
+  const summaryFinance = currencies.find(row => row.currency === summaryCurrency) ?? currencies[0];
+  const summaryStatuses = summaryFinance?.fieldStatuses as Record<string, SupportFinanceFieldStatus> | undefined;
+  const summaryMoney = (key: string) => profile?.finance.status === "READY" && ["READY", "PARTIAL"].includes(summaryStatuses?.[key] ?? "") ? compactSupportBoardValue(summaryFinance?.[key]) : "-";
+  const risk = profile?.risk.data;
+  const riskLevel = ({ LOW: "低风险", MEDIUM: "中风险", HIGH: "高风险", CRITICAL: "高风险", 低风险: "低风险", 中风险: "中风险", 高风险: "高风险" } as Record<string, string>)[String(risk?.level)] ?? "待核实";
+  const tags = [...(Array.isArray(annotations?.systemTags) ? annotations.systemTags : []), ...(Array.isArray(annotations?.customTags) ? annotations.customTags : [])].filter((value): value is string => typeof value === "string");
+  const latestNote = asRows(annotations?.notes).toSorted((a, b) => (Date.parse(String(b.createdAt)) || 0) - (Date.parse(String(a.createdAt)) || 0))[0];
+  const summaryState = (key: keyof Omit<SupportProfile, "actions">) => {
+    const group = profile?.[key];
+    return group?.status === "READY" ? null : <p className="m3-profile-state" role={group?.status === "ERROR" || error ? "alert" : "status"}>{group ? statusText[group.status] : error ? "读取失败" : "正在读取…"}{group?.status === "ERROR" && <button type="button" className="m3-profile-link" onClick={()=>void retryGroup(key)}>重新读取</button>}</p>;
+  };
+  return <div className="m3-customer-sidebar">
+    <header className="m3-profile-identity"><SupportAvatar name={String(identity?.nickname ?? "客户")} path={identity?.avatar ? customerAvatarPath(customerId) : undefined} size={48}/><div><div className="m3-profile-name"><h3 title={show(identity?.nickname)}>{identity?.nickname == null ? "客户资料待核实" : show(identity.nickname)}</h3>{identity?.level != null && <span className="m3-profile-level">{show(identity.level)}</span>}</div><p className="m3-profile-uid">UID {identity?.userNo == null ? "-" : show(identity.userNo)}</p>{advisorName && <p className="m3-profile-owner">当前专属客服 {String(advisorName)}</p>}</div></header>
+    <button type="button" className="m3-profile-open" onClick={()=>open360()}>查看完整客户档案 / 360 <span aria-hidden="true">→</span></button>
+    {view360 ? <Modal title="客户服务 360" icon="users" wide onClose={()=>setView360(false)} footer={<button className="btn btn-sec btn-sm" onClick={()=>setView360(false)}>返回会话</button>}>{body}</Modal> : <>
+      {error && <div className="m3-profile-state" role="alert">{error}<button type="button" className="m3-profile-link" onClick={retryProfile}>重新读取资料</button></div>}
+      {!scopeDenied && <>
+        {summaryState("identity")}
+        <section className="m3-profile-section"><div className="m3-profile-heading"><h4>风险研判</h4><button type="button" className="m3-profile-link" onClick={()=>open360("风险信息")}>说明</button></div>{summaryState("risk") ?? <div className="m3-profile-risk" data-tone={riskLevel === "低风险" ? "low" : riskLevel === "中风险" ? "medium" : riskLevel === "高风险" ? "high" : "unknown"}><span>{riskLevel}</span><p>{typeof risk?.serviceExplanation === "string" && risk.serviceExplanation ? risk.serviceExplanation : "风险说明暂未核实。"}</p></div>}</section>
+        <section className="m3-profile-section"><div className="m3-profile-heading"><h4>资金概览</h4><div>{currencies.length > 1 ? <select aria-label="资金摘要币种" value={String(summaryFinance?.currency)} onChange={event=>setSummaryCurrency(event.target.value)}>{currencies.map(row=><option key={String(row.currency)} value={String(row.currency)}>{String(row.currency)}</option>)}</select> : <span>{summaryFinance?.currency == null ? "币种待核实" : String(summaryFinance.currency)}</span>}<button type="button" className="m3-profile-link" onClick={()=>open360("账户资金")}>明细 →</button></div></div>{summaryState("finance")}<div className="m3-profile-funds">{[["creditedDepositTotal", "累计成功充值"], ["successfulWithdrawalPrincipalTotal", "累计成功提现本金"], ["balance", "当前余额"]].map(([key,label])=><button type="button" key={key} onClick={()=>open360("账户资金")} title={summaryMoney(key) === "-" ? `${label}暂无法确认` : `${label} ${String(summaryFinance?.[key])} ${String(summaryFinance?.currency)}`}><span>{label}</span><strong>{summaryMoney(key)}{summaryMoney(key) !== "-" && <small>{String(summaryFinance?.currency)}</small>}</strong>{summaryStatuses?.[key] === "PARTIAL" && summaryMoney(key) !== "-" && <small>部分统计</small>}</button>)}<button type="button" onClick={()=>open360("关联工单")}><span>关联工单</span><strong>{profile?.service.status === "READY" ? compactSupportBoardValue(service?.ticketCount, "count") : "-"}<small>张</small></strong></button></div>{summaryStatuses && Object.values(summaryStatuses).some(status=>status === "ERROR" || status === "UNKNOWN" || status === "FORBIDDEN") && <p className="m3-profile-state">部分资金资料暂时无法确认。<button type="button" className="m3-profile-link" onClick={()=>void retryGroup("finance")}>重新读取资金</button></p>}</section>
+        <section className="m3-profile-section"><div className="m3-profile-heading"><h4>账户与设备</h4><button type="button" className="m3-profile-link" onClick={()=>open360("设备信息")}>设备明细 →</button></div>{pageError.devices ? <p className="m3-profile-state" role="alert">{pageError.devices}<button type="button" className="m3-profile-link" onClick={()=>setPageRetry(n=>n+1)}>重试设备</button></p> : !deviceGroup || deviceGroup.status !== "READY" ? <p className="m3-profile-state">{deviceGroup ? statusText[deviceGroup.status] : "正在读取设备…"}<button type="button" className="m3-profile-link" onClick={()=>setPageRetry(n=>n+1)}>重新读取</button></p> : <><Row label="持有设备" value={compactSupportBoardValue(deviceStatuses?.heldCount === "READY" ? deviceGroup.data?.heldCount : null, "count")}/><Row label="在网设备" value={compactSupportBoardValue(deviceGroup.data?.onlineCount, "count")}/><Row label="实际总算力" value={compactSupportBoardValue(deviceGroup.data?.hashrateTotal)}/></>}<Row label="地区" value={identity?.region}/><Row label="脱敏手机号" value={identity?.phoneMasked}/><Row label="注册时间" value={dates(identity?.registeredAt)}/><Row label="最近登录" value={dates(identity?.lastLoginAt)}/><Row label="最近有效活动" value={dates(service?.lastEffectiveAt)}/></section>
+        <section className="m3-profile-section"><div className="m3-profile-heading"><h4>客户标签</h4><button type="button" className="m3-profile-link" onClick={()=>open360("标签与内部备注")}>管理</button></div>{summaryState("annotations") ?? <><div className="m3-profile-tags">{tags.length ? tags.map((tag,index)=><span key={`${tag}:${index}`}>{tag}</span>) : <p className="m3-profile-state">暂无标签。</p>}</div><div className="m3-profile-heading"><h4>最新内部备注</h4><button type="button" className="m3-profile-link" onClick={()=>open360("标签与内部备注")}>查看与编辑</button></div>{latestNote ? <p className="m3-profile-note" title={show(latestNote.text)}>{show(latestNote.text)}</p> : <p className="m3-profile-state">暂无内部备注。</p>}</>}</section>
+        <section className="m3-profile-section"><div className="m3-profile-heading"><h4>快捷操作</h4></div><nav className="m3-profile-shortcuts" aria-label="客户快捷入口">{[["历史会话","历史会话","◷"],["关联工单","关联工单","▤"],["重置密码","账户操作","♙"],["账户操作","账户操作","▣"],["添加备注","标签与内部备注","▧"]].map(([label,section,icon])=><button type="button" key={label} aria-label={`打开完整档案查看${label}`} onClick={()=>open360(section)}><span aria-hidden="true">{icon}</span>{label}</button>)}</nav></section>
+      </>}
+    </>}
+  </div>;
 }

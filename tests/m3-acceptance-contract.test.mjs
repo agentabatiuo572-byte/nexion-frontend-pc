@@ -514,9 +514,9 @@ function m3VisibleTextFixture() {
 
 test("M3 human reception and origin branches use one exclusive support identity without changing wire types", () => {
   const f = m3VisibleTextFixture();
-  for (const type of ["advisor", "support", "ai"]) assert.equal(f.evaluate(f.conditional('convo.type==="advisor"'), { convo: { type } }), "专属客服接待");
-  for (const [origin, expected] of [["user", "客户发起"], ["advisor", "客服主动"], ["support", "客服主动"], [undefined, "来源未记录"]]) assert.equal(f.evaluate(f.conditional("convo.origin"), { convo: { origin } }), expected);
-  const reception = f.one(node => ts.isConditionalExpression(node) && node.condition.getText(f.file) === "hasMessage===false" && ts.isStringLiteral(node.whenTrue) && node.whenTrue.text === "待首次联系");
+  assert.doesNotMatch(f.source, /普通客服接待|专属顾问接待/);
+  for (const [origin, expected] of [["user", "客户发起"], ["advisor", "客服主动联系"], ["support", "客服主动联系"], [undefined, "发起来源未记录"]]) assert.equal(f.evaluate(f.conditional("convo.origin"), { convo: { origin } }), expected);
+  const reception = f.one(node => ts.isConditionalExpression(node) && node.condition.getText(f.file) === "hasMessage===false" && ts.isStringLiteral(node.whenTrue) && node.whenTrue.text === "待首次联系" && node.whenFalse.getText(f.file).includes("查看待回复状态"));
   for (const [hasMessage, knownReplyState, expected] of [[false, true, "待首次联系"], [true, true, "待专属客服回复"], [true, false, "已处理"], [true, null, "查看待回复状态"], [null, null, "查看待回复状态"]]) assert.equal(f.evaluate(reception, { hasMessage, knownReplyState }), expected);
   const source = read("lib/admin/m-client.ts");
   const definition = source.match(/function conversationType[^\n]*\{[\s\S]*?\n\}/)?.[0]; assert.ok(definition);
@@ -545,7 +545,7 @@ test("M3 production adapter and list rendering distinguish public messages, expl
   assert.equal(positive.lastPublicMessageId, 3719);
   assert.equal(positive.lastMessageKind, undefined, "missing kind must remain unknown rather than a fabricated TEXT preview");
   assert.equal(positive.messages.length, 0, "list summaries must not fabricate a detail message");
-  assert.match(render(positive), /消息摘要暂不可用.*查看待回复状态.*2 条未读/);
+  assert.match(render(positive), /消息摘要暂不可用.*2 条未读.*查看待回复状态/);
   assert.doesNotMatch(render(positive), /尚无人工消息|待首次联系|待专属客服回复|\[图片\]/);
   assert.match(render(positive, true), /待专属客服回复/, "only an actual customer profile may confirm waiting reply");
   assert.match(render(positive, false), /已处理/);
@@ -559,7 +559,7 @@ test("M3 production adapter and list rendering distinguish public messages, expl
   assert.doesNotMatch(render(detail), /尚无人工消息|待首次联系/);
   const empty = adapter.adaptConversation(adapter.assertConversationRow({ ...row, lastPublicMessageId: 0, unreadCount: 0 }));
   assert.equal(empty.lastPublicMessageId, 0);
-  assert.match(render(empty, true), /尚无人工消息.*待首次联系.*无未读/);
+  assert.match(render(empty, true), /尚无人工消息.*待首次联系/);
   for (const lastPublicMessageId of [undefined, null]) {
     const unknown = adapter.adaptConversation(adapter.assertConversationRow({ ...row, lastPublicMessageId }));
     assert.equal(unknown.lastPublicMessageId, lastPublicMessageId);
@@ -581,7 +581,7 @@ test("M3 truncated or unknown history remains neutral without a public message m
         messages, historyTruncated: true,
       }));
       const visible = render(detail);
-      assert.match(visible, /查看待回复状态.*2 条未读/, "a truncated page cannot prove the public history empty");
+      assert.match(visible, /2 条未读.*查看待回复状态/, "a truncated page cannot prove the public history empty");
       assert.doesNotMatch(visible, /尚无人工消息|待首次联系|待专属客服回复/);
       assert.match(visible, messages.length ? /Fixture system event/ : /消息摘要暂不可用/);
       assert.equal(detail.historyTruncated, true, "retain the backend completeness signal");

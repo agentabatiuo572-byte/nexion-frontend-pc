@@ -28,7 +28,7 @@ const maintenance = { cycles: [], executions: [], totalCycles: 0, totalExecution
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 // Execute the real component with deferred reads. No server or browser transport is used.
-function harness(props = {}) {
+function harness(props = {}, detail = true) {
   const slots = [], requests = [], invalidations = [], writes = [], listeners = new Set();
   let cursor = 0, pending = true, effects = [], tree;
   let auth = { authEpoch: 1, session: { adminId: 12, role: "support", authorities: ["service_m3_write"] } };
@@ -57,6 +57,7 @@ function harness(props = {}) {
     "../design-kit": { Modal: props => React.createElement("aside", {}, props.children) },
     "./support-avatar": { SupportAvatar: () => null, customerAvatarPath: id => id, advisorAvatarPath: id => id },
     "./support-leaderboard": leaderboardExports,
+    "./m3-customer-profile.css": {},
   };
   const context = { exports: {}, AbortController, Date, Intl, JSON, window, require: name => { assert.ok(Object.hasOwn(modules, name), name); return modules[name]; } };
   vm.runInNewContext(compiled, context);
@@ -66,6 +67,7 @@ function harness(props = {}) {
       assert.ok(++count < 20, "profile render/effect loop"); pending = false; cursor = 0;
       tree = context.exports.M3CustomerProfile(currentProps);
       effects.splice(0).forEach(run => run());
+      if (detail && !elements(tree).some(node => node.type === modules["../design-kit"].Modal)) elements(tree).find(node => node.props?.className === "m3-profile-open").props.onClick();
     }
     return tree;
   };
@@ -89,6 +91,27 @@ const content = node => typeof node === "string" || typeof node === "number" ? S
 function button(tree, text) { const matches = elements(tree).filter(node => node.type === "button" && content(node) === text); assert.equal(matches.length, 1, text); return matches[0]; }
 function succeed(requests, name = "当前客户") { requests.forEach(request => request.resolve(request.kind === "profile" ? profile(name) : request.kind === "maintenance" ? maintenance : group({ records: [], total: 0 }))); }
 const deleteTag = h => elements(h.render()).find(node => node.type === "button" && node.props["aria-label"]?.startsWith("删除标签 "));
+
+test("actual sidebar restores bounded identity, two-currency 2x2 funds and shortcuts while full editing remains in 360", async () => {
+  const h = harness({}, false); h.render(); const initial = profile("当前客户");
+  Object.assign(initial.identity.data, { level: "V3", phoneMasked: "138****0000", region: "已记录地区" });
+  initial.risk = group({ level: "LOW", serviceExplanation: "已核实风险说明" });
+  initial.service.data.ticketCount = 1;
+  initial.annotations.data.notes = [{ text: "较旧备注", createdAt: "2026-10-11T01:00:00Z" }, { text: "最新备注", createdAt: "2026-10-12T01:00:00Z" }];
+  initial.finance.data.byCurrency = [{ currency: "USDT", creditedDepositTotal: "12400", successfulWithdrawalPrincipalTotal: "6200", balance: "4820", fieldStatuses: { creditedDepositTotal: "READY", successfulWithdrawalPrincipalTotal: "READY", balance: "READY" } }, { currency: "NEX", creditedDepositTotal: "0", successfulWithdrawalPrincipalTotal: null, balance: "9007199254740993.12345678", fieldStatuses: { creditedDepositTotal: "READY", successfulWithdrawalPrincipalTotal: "UNKNOWN", balance: "PARTIAL" } }];
+  h.requests[0].resolve(initial); succeed(h.requests.slice(1)); await h.settle();
+  const sidebar = h.html(); assert.match(sidebar, /UID U-7/); assert.match(sidebar, /V3/); assert.match(sidebar, /低风险/);
+  assert.match(sidebar, /最新备注/); assert.doesNotMatch(sidebar, /较旧备注|<textarea|type="date"|设备记录（含历史）|KYC|闲置/);
+  const grid = elements(h.render()).find(node => node.props?.className === "m3-profile-funds");
+  assert.equal(elements(grid).filter(node => node.type === "button").length, 4);
+  elements(h.render()).find(node => node.props?.["aria-label"] === "资金摘要币种").props.onChange({ target: { value: "NEX" } });
+  const nex = h.html(); assert.match(nex, />0<small>NEX/); assert.match(nex, /9007199254740993\.12345678 NEX/); assert.match(nex, /部分统计/); assert.doesNotMatch(nex, /12400 USDT/);
+  assert.equal(h.requests.length, 4, "currency summary uses already loaded facts without another read");
+  elements(h.render()).find(node => node.props?.className === "m3-profile-open").props.onClick(); h.render();
+  const detail = h.html(); assert.match(detail, /资金流水/); assert.match(detail, /type="date"/); assert.match(detail, /新标签/); assert.match(detail, /新内部备注/); assert.match(detail, /历史会话/); assert.match(detail, /关联工单/); assert.match(detail, /账户操作/);
+  assert.equal(elements(h.render()).filter(node => node.props?.className === "m3-profile-open").length, 1, "the opener survives the modal render");
+  assert.equal(h.requests.length, 4, "360 reuses the same body and data"); h.unmount();
+});
 
 test("403/404 from each profile read settles once, clears siblings and only retries explicitly", async () => {
   for (const status of [403, 404]) for (const kind of ["profile", "devices", "flows", "maintenance"]) {
