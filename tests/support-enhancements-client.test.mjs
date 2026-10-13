@@ -175,15 +175,15 @@ test("funds-flow options use source statuses and reset the exact filter request 
   runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,context);
   const render=()=>{cursor=0;effects.length=0;return context.exports.M3CustomerProfile({ctx:{pget:()=>"[]"},customerId:"7",onHistory(){},onRetryMessages(){}});};
   walk(render()).find(node=>node.props?.className==="m3-profile-open").props.onClick();
-  const tree=render(),select=walk(tree).find(node=>node.type==="select"&&walk(node).some(child=>child.type==="option"&&child.props.children==="全部状态")),options=walk(select).filter(node=>node.type==="option");
-  assert.ok(select);assert.deepEqual(options.map(node=>node.props.value).filter(Boolean).sort(),expected.toSorted());
-  const labels=Object.fromEntries(options.map(node=>[node.props.value,node.props.children]));assert.equal(labels.CONFIRMED,"已确认");assert.equal(labels.CREDITED,"已入账");assert.equal(labels.REVIEW_PENDING,"待审核");assert.equal(labels.REFUNDED,"已退款");assert.notEqual(labels.CONFIRMED,labels.SUCCESS);
+  const tree=render(),filter=walk(tree).find(node=>node.props?.["aria-label"]==="流水状态"),select=walk(filter).find(node=>Array.isArray(node.props?.options)),options=Array.from(select?.props.options??[]);
+  assert.ok(select);assert.deepEqual(options.map(option=>option.value).filter(Boolean).sort(),expected.toSorted());
+  const labels=Object.fromEntries(options.map(option=>[option.value,option.label]));assert.equal(labels.CONFIRMED,"已确认");assert.equal(labels.CREDITED,"已入账");assert.equal(labels.REVIEW_PENDING,"待审核");assert.equal(labels.REFUNDED,"已退款");assert.notEqual(labels.CONFIRMED,labels.SUCCESS);
   const summaries=walk(tree).filter(node=>node.type==="summary"&&Array.isArray(node.props.children)&&node.props.children.some(value=>typeof value==="string"&&value.startsWith("流水")));
   assert.equal(summaries.length,records.length);for(let i=0;i<records.length;i++)assert.equal(summaries[i].props.children.at(-1),i<expected.length?labels[records[i].status]:"待核对");
   const original=globalThis.fetch;
   try{globalThis.fetch=async url=>{seen.push(new URL(String(url),"http://local.invalid"));return new Response(JSON.stringify({code:0,data:group({records:[],total:0})}),{headers:{"Content-Type":"application/json"}});};
     for(const [status,currency] of [["CONFIRMED","USDT"],["CREDITED","NEX"],["REVIEW_PENDING","USDT"],["REFUNDED","NEX"],["",""]]){
-      state[5]=3;state[10]=currency;select.props.onChange({target:{value:status}});render();
+      state[5]=3;state[10]=currency;select.props.onChange(status);render();
       const flowEffects=effects.filter(effect=>effect.toString().includes("supportEnhancements.flows("));assert.equal(flowEffects.length,1);flowEffects[0]();await new Promise(resolve=>setImmediate(resolve));
       const query=seen.at(-1).searchParams;assert.equal(query.get("status"),status||null);assert.equal(query.get("currency"),currency||null);assert.equal(query.get("pageNum"),"1");assert.equal(query.get("pageSize"),"10");
     }
