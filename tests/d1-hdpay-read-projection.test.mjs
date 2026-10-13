@@ -254,8 +254,8 @@ var confirmationReady = (spec, values, uploadStates) => {
   return ${canConfirmExpression};
 };`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
 
-function sharedUploadFixture(confirmation) {
-  const values = { intentNo: "VQR-1" }, states = {}, names = {}, errors = {}, uploading = {}, pending = [];
+function sharedUploadFixture(confirmation, evidenceAssetId = "") {
+  const values = { intentNo: "VQR-1", evidenceAssetId }, states = {}, names = {}, errors = {}, uploading = {}, pending = [];
   const field = confirmation.businessForm.fields.find(candidate => candidate.key === "evidenceAssetId");
   const update = target => updater => Object.assign(target, updater(target));
   const scope = {
@@ -264,6 +264,7 @@ function sharedUploadFixture(confirmation) {
     onUploadStateChange: (key, value) => { states[key] = value; },
     uploadD1VietQrReceiptEvidence: file => new Promise((resolve, reject) => pending.push({ file, resolve, reject })),
     uploadAdminMedia: () => { throw new Error("VietQR must not use the generic upload route"); },
+    displayAdminError: () => "图片上传失败，请重试。",
   };
   vm.runInNewContext(sharedUploadCode, scope);
   return { values, states, names, errors, uploading, pending,
@@ -277,7 +278,7 @@ test("real upload callback enables a bank action only after the finance upload r
     const { confirmation, calls } = openedBankAction(changes);
     const upload = sharedUploadFixture(confirmation);
     assert.equal(upload.ready(), false);
-    const file = { name: "isolated-bank-receipt.png" };
+    const file = { name: "isolated-bank-receipt.png", type: "image/png", size: 128 };
     upload.select(file);
     assert.equal(upload.pending[0].file, file);
     assert.equal(upload.states.evidenceAssetId, "uploading");
@@ -297,7 +298,7 @@ test("real upload callback enables a bank action only after the finance upload r
 test("real upload failure blocks confirmation and a successful retry restores it", async () => {
   const { confirmation, calls } = openedBankAction(actionCases[0]);
   const upload = sharedUploadFixture(confirmation);
-  upload.select({ name: "bad.png" });
+  upload.select({ name: "bad.png", type: "image/png", size: 128 });
   upload.pending[0].reject(new Error("VIETQR_RECEIPT_IMAGE_TYPE_MISMATCH"));
   await flushUpload();
   assert.equal(upload.values.evidenceAssetId, "");
@@ -307,10 +308,24 @@ test("real upload failure blocks confirmation and a successful retry restores it
   assert.equal(calls.length, 0);
   upload.select(undefined);
   assert.equal(upload.ready(), false); // required action images cannot use registration's no-image path
-  upload.select({ name: "correct-bank-receipt.png" });
+  upload.select({ name: "correct-bank-receipt.png", type: "image/png", size: 128 });
   assert.equal(upload.ready(), false);
   upload.pending[1].resolve({ assetId: fixtureAssetId });
   await flushUpload();
   assert.equal(upload.errors.evidenceAssetId, "");
   assert.equal(upload.ready(), true);
+});
+
+test("failed receipt replacement retains the original image but cannot authorize a bank action", async () => {
+  const { confirmation, calls } = openedBankAction(actionCases[0]);
+  const upload = sharedUploadFixture(confirmation, fixtureAssetId);
+  upload.select({ name: "replacement.png", type: "image/png", size: 128 });
+  assert.equal(upload.values.evidenceAssetId, fixtureAssetId);
+  assert.equal(upload.ready(), false);
+  upload.pending[0].reject(new Error("VIETQR_RECEIPT_IMAGE_TYPE_MISMATCH"));
+  await flushUpload();
+  assert.equal(upload.values.evidenceAssetId, fixtureAssetId);
+  assert.equal(upload.states.evidenceAssetId, "failed");
+  assert.equal(upload.ready(), false);
+  assert.equal(calls.length, 0);
 });

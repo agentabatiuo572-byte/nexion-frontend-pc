@@ -40,6 +40,8 @@ const EXECUTOR_MODULE = "lib/admin/stable-mutation.ts";
 
 /** 已迁到共享 store 的文件:必须仍 import 它,且不得再出现裸内存态幂等键。 */
 const MIGRATED = [
+  // Promotions retain the original command payload and key until authoritative resource readback.
+  "lib/admin/promotion-client.ts",
   // Avatar drafts and self saves use durable stores; the actual self consumer and expired query-only behavior are bound below.
   "lib/admin/account-avatar-pending.ts",
   // Exported group store is consumed by the actual M1 container; the bound behavior guard verifies persisted query-only CREATE recovery.

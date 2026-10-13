@@ -1,0 +1,120 @@
+{
+  "artifactKind": "preserved-historical-design-source",
+  "baselineId": "app-r1-20261007-v2",
+  "capturedBeforeScopeRevision": "app-existing-style-20261008-r1",
+  "historicalReportSha256": "7f1162f880a7174cd76f5e106abd79c33c5b9cd825b778ececd6f48b4d0001fc",
+  "historicalReportVerdict": "pass",
+  "historicalCounts": {
+    "cases": 2560,
+    "failures": 0,
+    "screenshots": 827,
+    "interactions": 10
+  },
+  "inputHashMatches": 15,
+  "sourceFiles": 17,
+  "productRuntimeVerified": false,
+  "files": [
+    {
+      "path": "app-r1-baseline.html",
+      "sha256": "65530c78bc53c928d2f9c9a85cb6d6341f5b74602e85d28366144fd4c51865f7",
+      "recordedInputSha256": "65530c78bc53c928d2f9c9a85cb6d6341f5b74602e85d28366144fd4c51865f7",
+      "matchesRecordedInput": true
+    },
+    {
+      "path": "app-r1-baseline.json",
+      "sha256": "7f0e380de6b31f4f5db9610edc9ed17dca3452d5a7b2f2d1f5cd76f41b6fe72b",
+      "recordedInputSha256": "7f0e380de6b31f4f5db9610edc9ed17dca3452d5a7b2f2d1f5cd76f41b6fe72b",
+      "matchesRecordedInput": true
+    },
+    {
+      "path": "app-r1-baseline-check.mjs",
+      "sha256": "fff9449ecc88cb624235e097e82f0ec6d8d14d55f5f66207ba3861bdc64dc9a3",
+      "recordedInputSha256": "fff9449ecc88cb624235e097e82f0ec6d8d14d55f5f66207ba3861bdc64dc9a3",
+      "matchesRecordedInput": true
+    },
+    {
+      "path": "evidence/app-r1-design/artboard-runtime.js",
+      "sha256": "6d4089a64dfc94b48a4af9c6982edc2f7f6e1252a3281d6a0f970797a69400e2",
+      "recordedInputSha256": "6d4089a64dfc94b48a4af9c6982edc2f7f6e1252a3281d6a0f970797a69400e2",
+      "matchesRecordedInput": true
+    },
+    {
+      "path": "evidence/app-r1-design/interaction-checks.mjs",
+      "sha256": "21f705fdf7c49a9bb04ac8e5e6e7a9b3fc3288d088d7f24063a114cb4ad44a2a",
+      "recordedInputSha256": "21f705fdf7c49a9bb04ac8e5e6e7a9b3fc3288d088d7f24063a114cb4ad44a2a",
+      "matchesRecordedInput": true
+    },
+    {
+      "path": "assets/concept-app-flow-v2.png",
+      "sha256": "c9a28a13210eaa980602de4746b82645ba88f6dce456b9665f81d57e1899c51d",
+      "recordedInputSha256": "c9a28a13210eaa980602de4746b82645ba88f6dce456b9665f81d57e1899c51d",
+      "matchesRecordedInput": true
+    },
+    {
+      "path": "evidence/app-r1-design/assets/stellarbox-s1.png",
+      "sha256": "247322fe2330c20e12268298a89afc0bcca995872896aad7a8afbda0bf57e178",
+      "recordedInputSha256": "247322fe2330c20e12268298a89afc0bcca995872896aad7a8afbda0bf57e178",
+      "matchesRecordedInput": true
+    },
+    {
+      "path": "evidence/app-r1-design/assets/stellarbox-pro-v2.png",
+      "sha256": "5eb63d326764fda7c8bb3d96082ef7852ca625133e9cb2df0a8ade78439bab80",
+      "recordedInputSha256": "5eb63d326764fda7c8bb3d96082ef7852ca625133e9cb2df0a8ade78439bab80",
+      "matchesRecordedInput": true
+    },
+    {
+      "path": "evidence/app-r1-design/assets/stellarrack-p1.png",
+      "sha256": "43427d42556d714bc7fa5273f43f3d974c3e62f2e3e1e66e5b9159047d4c9fa8",
+      "recordedInputSha256": "43427d42556d714bc7fa5273f43f3d974c3e62f2e3e1e66e5b9159047d4c9fa8",
+      "matchesRecordedInput": true
+    },
+    {
+      "path": "evidence/app-r1-design/assets/header-logo-dark.png",
+      "sha256": "5f438d45f8cbb9cc9d93a3f43b1dde2894120ff4bc33d78e687cc553c0499cd8",
+      "recordedInputSha256": "5f438d45f8cbb9cc9d93a3f43b1dde2894120ff4bc33d78e687cc553c0499cd8",
+      "matchesRecordedInput": true
+    },
+    {
+      "path": "evidence/app-r1-design/assets/header-logo-light.png",
+      "sha256": "228e45f0eb9afd51e160c685f85f7f967a94ea26d1986d5ad43ee8aa15f896a6",
+      "recordedInputSha256": "228e45f0eb9afd51e160c685f85f7f967a94ea26d1986d5ad43ee8aa15f896a6",
+      "matchesRecordedInput": true
+    },
+    {
+      "path": "evidence/app-r1-design/assets/GeneralSans-400.woff2",
+      "sha256": "3ec2be771caf168b077ca05af4df1dace77088e2b3a27da570036e61be58a039",
+      "recordedInputSha256": "3ec2be771caf168b077ca05af4df1dace77088e2b3a27da570036e61be58a039",
+      "matchesRecordedInput": true
+    },
+    {
+      "path": "evidence/app-r1-design/assets/GeneralSans-500.woff2",
+      "sha256": "c30377df1de8444d07161725c751f458beec07c28034df2fd275d1aa587a239f",
+      "recordedInputSha256": "c30377df1de8444d07161725c751f458beec07c28034df2fd275d1aa587a239f",
+      "matchesRecordedInput": true
+    },
+    {
+      "path": "evidence/app-r1-design/assets/GeneralSans-600.woff2",
+      "sha256": "94a2a0e1ef59728eb65498ed7fe26e5af7e2858a3a4a278a89ac1f83a0544945",
+      "recordedInputSha256": "94a2a0e1ef59728eb65498ed7fe26e5af7e2858a3a4a278a89ac1f83a0544945",
+      "matchesRecordedInput": true
+    },
+    {
+      "path": "evidence/app-r1-design/assets/GENERAL-SANS-ITF-FFL.txt",
+      "sha256": "13e2455e56d55998bc83cca90fa68c990a1c97f4f649cb050d8ae95178c8ee02",
+      "recordedInputSha256": "13e2455e56d55998bc83cca90fa68c990a1c97f4f649cb050d8ae95178c8ee02",
+      "matchesRecordedInput": true
+    },
+    {
+      "path": "evidence/app-r1-design/report.json",
+      "sha256": "7f1162f880a7174cd76f5e106abd79c33c5b9cd825b778ececd6f48b4d0001fc",
+      "recordedInputSha256": null,
+      "matchesRecordedInput": null
+    },
+    {
+      "path": "evidence/app-r1-design/README.md",
+      "sha256": "62614501ecc93739df4ba89e220f92f3113d65911dbc6810a9b552df4634f629",
+      "recordedInputSha256": null,
+      "matchesRecordedInput": null
+    }
+  ]
+}

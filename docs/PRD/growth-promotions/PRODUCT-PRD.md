@@ -1,6 +1,6 @@
 # 购机促销与成交裂变产品 PRD
 
-版本：评审稿 1.0。范围：运营后台、正式 APP、H5、服务端、订单、钱包与设备履约。状态：产品设计可评审；不代表已批准业务政策、已开发或已开启活动。
+版本：R1 实施契约 1.0。范围：运营后台、正式 APP、H5、服务端、订单、钱包与设备履约。状态：已获准按 R1 范围实施；不代表空缺业务政策已获批准、功能已通过验收或活动已在生产启用。
 
 本文是该跨端功能包的唯一业务契约。后台操作见 [ADMIN-PRD](ADMIN-PRD.md)，移动端见 [APP-H5-PRD](APP-H5-PRD.md)，执行步骤见 [IMPLEMENTATION](IMPLEMENTATION.md)，关键交互见 [设计原型](../../design/growth-promotions/index.html)。功能包归活动中心所属 PC 仓；APP/H5 接入时引用同一契约，不另复制金额、人群和结算规则。
 
@@ -19,10 +19,10 @@
 | REQ-06 | 同一活动多个购买型号逐项设置不同赠送类型 | P3.2–3.3 |
 | REQ-07 | 补充获客、裂变、提高成交与复购的玩法 | P3.1 |
 | REQ-08 | 详细后台与 APP 产品设计及适合 Codex 的实施步骤 | 两端配套 PRD、IMPLEMENTATION |
-| REQ-09 | APP交互按钮采用Liquid Glass，沿用当前APP风格 | 配套设计说明；APP规格 |
+| REQ-09 | APP复用当前组件、样式和交互元素，保持现有页面风格一致 | APP规格；当前样式接入决定 |
 | REQ-10 | 先分析现有首页、商城和下单页面，再设计；首页广告进入商城、商品卡体现活动、下单展示赠品 | APP既有链路、设计CURRENT-PAGES |
 | REQ-11 | 取消/返回离开时提供真实活动信息的挽留弹窗，并可确认退出 | P4.3；APP APP09 |
-| REQ-12 | 至少两名独立agent对设计稿作像素级还原审查，不达标持续修改复审 | IMPLEMENTATION视觉硬门 |
+| REQ-12 | APP/H5每页截图验证，至少两名独立agent审查功能、UX和现有风格一致性；PC保留像素审查；不达标持续返修复审 | IMPLEMENTATION页面验收硬门 |
 
 上述为主人已确认的需求。其余标为“建议基线”的口径尚待产品确认；P11 未确认项不得被开发者自行变成生产默认值。
 
@@ -81,7 +81,7 @@
 | FIRST_PURCHASE 首购礼（R1） | 首笔合格支付订单，购买者获奖 | NEVER_PAID + 可选注册天数 | 并发仅一笔占首购；取消未付不消耗资格；付后退款是否恢复按 D01 |
 | DIRECT_REFERRAL 双向礼（R1） | 直接邀请者带来的合格首购；双方独立获奖 | 双方人群、各自奖励、被邀者首购一次、邀请者上限 | 每个受益人单独义务；一方失败不重复发另一方；无 sponsor 不能临时填入抢归属 |
 | MULTI_PRODUCT 多设备组合（R1） | 同单多个指定型号；各行独立赠奖 | 指定集合及各型号最低数量；满足全部/任一显式选择 | 组合资格按完整订单判，赠奖按行记；与组合折扣是否同享必须选择 |
-| REPURCHASE 复购/召回（R1） | 有有效购机历史，再买指定型号 | 最短购机间隔、沉默天数、人群、每人次数 | 时间参数无默认；取消/退款订单不算有效历史；不能拆同一单重复计次数 |
+| REPURCHASE 复购/召回（R1） | 有有效购机历史，再买指定型号 | 最短购机间隔、最长购机间隔（可不设）、人群、每人次数 | 时间参数无默认；间隔上下限都按最近一次有效购机计算，可仅设下限，上限不能小于下限；不另取登录沉默事实；取消/退款订单不算有效历史；不能拆同一单重复计次数 |
 | SPEND_TIER 满额阶梯（R2） | 单笔符合条件的净实付达档；购买者获奖 | 门槛升序、档位奖励、最高档模式、可计金额来源 | 默认只取最高档；整单退款全部撤销；部分退款能力未交付前不开放部分退款入口 |
 | REFERRAL_TIER 直邀阶梯（R2） | 活动期若干不同直接好友完成合格首购；邀请者获奖 | 唯一好友计数、档位奖励、每档仅一次/最高档补差二选一 | 退款回退有效计数；未兑现高档取消，已发低档不得重复；跨币种/设备档位不得自动“补差”，只能明确逐档一次或同资产补差 |
 | UPGRADE_ADDON 升级加购（R2） | 已持指定设备，再支付购买指定型号 | 持有条件、目标型号、符合条件新增实付、奖励 | 引用既有置换合同；抵扣额不算新增实付；不在活动内发明设备回购价 |
@@ -125,6 +125,8 @@
 
 暂停/人工结束不再接受新的预留；已有预留可在原 payBy 前履行。异常风控导致已有订单必须停止支付时，须通过既有订单安全处置、原因及通知完成，不靠改活动状态暗中撤销。
 
+未发布、未到开始时间、暂停、结束及归档活动不显示新增广告、商品赠礼标识或参与入口；前端进入、返回及重读后按服务端有效状态清除旧宣传，历史订单与奖励不随停投隐藏。宣传图由后台上传并随活动版本保存、审核、发布，缺图或加载失败使用本地化文字卡片，不写死图片。
+
 ### P4.2 预览与正式预留的区别
 
 | 阶段 | 内容 | 是否占用/是否承诺 |
@@ -147,8 +149,8 @@
 
 | 离开场景 | 行为与文案基线 |
 |---|---|
-| 未建单、有合格选购项，主动离开结账 | 单次Liquid Glass确认：“本次选购预计可获赠「{奖励摘要}」。活动将于{结束时间及其时区}结束。是否离开下单页？”按钮“继续购买 / 确认退出”；取消/ESC/遮罩关闭弹窗并留在原页 |
-| 已建单未支付，主动离开页面 | “本单奖励已预留至{payBy}。退出后可在订单中继续支付，逾期订单将关闭。”按钮同上；离页不等于取消订单，不提前释放预留 |
+| 未建单、有合格选购项，主动离开结账 | 单次确认，五秒内可读懂；仅标题、一句真实限时赠礼提示和“继续购买 / 退出”。赠礼明细及截止时间保留在下单页；ESC/遮罩关闭弹窗并留在原页 |
+| 已建单未支付，主动离开页面 | 一句说明赠礼仍限时预留及退出不取消订单，按钮同上；真实付款截止留在下单页，不提前释放预留 |
 | 明确点击取消待支付订单 | 合并到既有取消确认：“取消后将释放本单预留的「{奖励摘要}」，此订单将无法继续支付。是否取消订单？”按钮“保留订单 / 取消订单”；仅服务端确认取消后回退 |
 | 确认步骤返回上一结账步骤 | 原地回退且保留选择，不触发营销挽留 |
 | 支付处理中/结果未知/已有票据 | 既有支付安全与票据恢复优先，不用营销弹窗遮盖；离页后仍可查询原单 |
@@ -257,7 +259,7 @@ RETRYABLE_FAILED 可重试原义务；OUTCOME_UNKNOWN 必须先查原命令和�
 | 对象 | 关键字段/类型 | 生成规则与约束 |
 |---|---|---|
 | Promotion | activityId:string、category:PROMOTION/REFERRAL、template:string、status、activeVersion:int、startsAt/endsAt:UTC、displayTimezone、localizedContent、placement、minimumClientCapabilities | ID服务端生成；activityId跨改版稳定；旧H4 eventCode唯一关联；首页投放home.purchase-promotion固定导向现有商城，响应另含权威serverTime |
-| PromotionVersion | version:int、draftVersionState、audience、rules[]、limits、budgets[]、shortagePolicy、stackingPolicy、settlementPolicyRef、asset/devicePolicyRefs、decisionRefs、revision、approvedBy/At、publishedBy/At | 发布版本不可编辑；原始合同可审计；决策缺失不可发布；草稿审批状态独立于已生效活动 |
+| PromotionVersion | version:int、draftVersionState、bannerAssetId:string?、audience、rules[]、limits、budgets[]、shortagePolicy、stackingPolicy、settlementPolicyRef、asset/devicePolicyRefs、decisionRefs、revision、approvedBy/At、publishedBy/At | 宣传图为受管图片引用，公开返回版本绑定的bannerImageUrl；发布版本不可编辑；原始合同可审计；决策缺失不可发布；草稿审批状态独立于已生效活动 |
 | AudienceSnapshot | accountId、registeredAt、purchaseFactVersion、deviceFactVersion、rank、sponsorId、evaluatedAt、matchedConditionIds | 不向购买者暴露内部风控算法；后台仅授权角色可查 |
 | PurchaseRule | ruleId、productNo、minBuyQty:int、repeatMode、maxGroups、maxGroupsPerPerson、buyerReward、inviterReward?、priority | 稳定ID；购买与赠送SKU不同字段；上限单位按P6；活动内冲突必须可裁决 |
 | RewardSpec | rewardRuleId、beneficiaryRole、type、amount:string?、giftProductNo?、quantity:int?、policyRef | type决定必填字段；无隐式汇率；金额正数，DEVICE必须rightsProfile |
@@ -351,7 +353,7 @@ ARCHIVED不删除账本或阻止既有义务处理。拒绝：未审核/未发�
 | AC-21 | 首页具有有效促销推广且已有新人/每周任务 | 点击推广进入商城 | 保留原任务，携活动范围；商品卡奖励与结账快照一致，不新增营销结账页 |
 | AC-22 | 合格未支付结账、有真实奖励/截止 | 点击顶部返回/取消离页 | 只出现一次挽留；继续购买保留输入，确认退出回原目标；无虚假倒计时 |
 | AC-23 | 待支付订单已有奖励预留（异常） | 离页，再进入订单；另执行明确取消 | 离页不撤订单；取消成功才释放；未知结果先核账，不因挽留增加重复支付 |
-| AC-24 | 固定设计稿与运行截图 | 至少两名未参与该页面实现的独立agent分别审查 | 各自提交像素差异及操作验收；任一未通过即返修，修改后两名重新审查同一新快照 |
+| AC-24 | APP/H5当前组件与逐页运行截图；PC固定稿与运行截图 | 至少两名未参与该页面实现的独立agent分别审查 | APP/H5各自检查功能、UX和风格一致性，PC提交像素差异及操作验收；任一未通过即返修，两名重新审查同一新快照 |
 | AC-25 | 退款申请受理后被拒绝/撤回（异常） | 清除原申请hold并到达成熟条件 | 从保留状态重校验恢复；不产生CANCELLED复活或重复到账；预算只作合法状态转换 |
 
 异常验收必须在隔离资源执行，不用真实客户资产制造退款或并发。R2/R3上线前为各模板新增同等级验收，不复用R1绿灯。

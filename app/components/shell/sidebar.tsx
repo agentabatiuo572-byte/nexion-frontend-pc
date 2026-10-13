@@ -125,9 +125,6 @@ export function Sidebar({
                 运营控制台
               </span>
             </span>
-            <span className="font-mono-tabular ml-auto self-start text-[9px]" style={{ color: "var(--v5-ink-4)" }}>
-              v1·console
-            </span>
           </>
         )}
       </Link>

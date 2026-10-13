@@ -2,7 +2,7 @@
 
 /**
  * L5 · 导出 & 监管报告 — 全平台数据出口的唯一管控面。
- * 当前闭环开放四类聚合快照、D4 七类账单脱敏明细与 I5 当前披露版本监管报告。
+ * 当前闭环开放四类聚合快照、D4 八类账单脱敏明细与 I5 当前披露版本监管报告。
  * 明文敏感字段导出保持服务端阻断。
  */
 import { useEffect, useState } from "react";
@@ -96,7 +96,9 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
   const { toast } = ctx;
   const [filter, setFilter] = useState(0);
   const [taskPageNum, setTaskPageNum] = useState(1);
-  const [taskPage, setTaskPage] = useState<AdminPage<LExportTask> | null>(null);
+  const [taskPageResult, setTaskPage] = useState<{
+    source: unknown; status: string; pageNum: number; page: AdminPage<LExportTask>;
+  } | null>(null);
   const [taskLoading, setTaskLoading] = useState(false);
   const [taskError, setTaskError] = useState<string | null>(null);
   const [ledgerExporting, setLedgerExporting] = useState(false);
@@ -113,6 +115,9 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
     : filter === 2 ? "GENERATING"
     : filter === 3 ? "READY"
     : "";
+  const taskPage = taskPageResult && taskPageResult.source === data
+    && taskPageResult.status === filterStatus && taskPageResult.pageNum === taskPageNum
+    ? taskPageResult.page : null;
   useEffect(() => {
     if (!data) {
       setTaskPage(null);
@@ -120,6 +125,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
       return;
     }
     let alive = true;
+    setTaskPage(null);
     setTaskLoading(true);
     setTaskError(null);
     fetchL5ExportTasks(filterStatus, taskPageNum, 8)
@@ -131,7 +137,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
           setTaskPageNum(clampedPage);
           return;
         }
-        setTaskPage(page);
+        setTaskPage({ source: data, status: filterStatus, pageNum: taskPageNum, page });
       })
       .catch((error) => {
         if (alive) setTaskError(error instanceof Error ? displayAdminError(error) : "导出任务加载失败");
@@ -174,8 +180,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
     legacyReadyWithoutSnapshot: num(summaryRaw.legacyReadyWithoutSnapshot),
   };
   const ST_LABEL = rec(data.statusLabels);
-  const fallbackTasks = rows<LExportTask>(data.exportTasks);
-  const EXPORT_TASKS = taskPage?.records ?? fallbackTasks;
+  const EXPORT_TASKS = taskPage?.records ?? [];
   const MASK_RULES = rows<MaskRule>(data.maskRules);
   const EXPORT_PARAMS = rows<ExportParam>(data.exportParams);
   const AUDIT_ROWS = auditRows.length > 0 ? auditRows : rows<LExportAuditRow>(data.auditRows);
@@ -227,14 +232,14 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
     setLedgerExporting(true);
     try {
       await downloadD4BillsCsv({}, reason);
-      toast("七类账单脱敏明细已下载 · 后端已限制 10 万行并记录强制审计");
+      toast("八类账单脱敏明细已下载 · 后端已限制 10 万行并记录强制审计");
     } finally {
       setLedgerExporting(false);
     }
   };
   const requestLedgerDownload = () => ctx.openActionConfirm({
-    action: "导出七类账单脱敏明细",
-    detail: <>导出 D4 七类真实账单；用户编号由服务端强制脱敏，最多 10 万行，用途理由、范围、字段和行数进入统一导出审计。</>,
+    action: "导出八类账单脱敏明细",
+    detail: <>导出 D4 八类真实账单；用户编号由服务端强制脱敏，最多 10 万行，用途理由、范围、字段和行数进入统一导出审计。</>,
     reasonMin: 8,
     reasonMax: 200,
     run: (reason) => downloadLedger(reason),
@@ -372,7 +377,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
               {visibleTasks.length === 0 && (
                 <tr>
                   <td colSpan={9} style={{ textAlign: "center", color: "var(--ink-4)", padding: 24 }}>
-                    {taskLoading ? "导出任务加载中..." : "当前筛选暂无导出任务"}
+                    {taskLoading ? "导出任务加载中..." : taskError ? "导出任务读取失败，请重新选择筛选或刷新数据" : taskPage ? "当前筛选暂无导出任务" : "等待导出任务读取"}
                   </td>
                 </tr>
               )}
@@ -383,10 +388,10 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
           {taskError && <div className="ltint warn" style={{ fontSize: 12, marginBottom: 10 }}>导出任务加载失败 · {taskError}</div>}
           <div className="row" data-list-pager="true" data-list-label="L5 导出任务管理" style={{ justifyContent: "flex-end", gap: 8 }}>
             <span className="mono" style={{ color: "var(--ink-4)", fontSize: 11.5 }}>
-              第 {taskPageNum} / {taskPages} 页 · 共 {taskTotal} 条
+              {taskPage ? `第 ${taskPageNum} / ${taskPages} 页 · 共 ${taskTotal} 条` : taskError ? "任务分页读取失败" : "任务分页等待读取"}
             </span>
-            <button className="l-btn sm" disabled={taskPageNum <= 1 || taskLoading} onClick={() => setTaskPageNum((p) => Math.max(1, p - 1))}>上一页</button>
-            <button className="l-btn sm" disabled={taskPageNum >= taskPages || taskLoading} onClick={() => setTaskPageNum((p) => Math.min(taskPages, p + 1))}>下一页</button>
+            <button className="l-btn sm" disabled={!taskPage || taskPageNum <= 1 || taskLoading} onClick={() => setTaskPageNum((p) => Math.max(1, p - 1))}>上一页</button>
+            <button className="l-btn sm" disabled={!taskPage || taskPageNum >= taskPages || taskLoading} onClick={() => setTaskPageNum((p) => Math.min(taskPages, p + 1))}>下一页</button>
           </div>
         </div>
       </section>
@@ -423,19 +428,19 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         </div>
       </section>
 
-      {/* (c) D4 七类账单监管导出 */}
+      {/* (c) D4 八类账单监管导出 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">七类账单明细导出</span>
+          <span className="ttl">八类账单明细导出</span>
           <span className="sub">· <AutoGloss>D4 真实账本 · 服务端强制脱敏 · 最多 10 万行 · 导出必留审计</AutoGloss></span>
           <div className="r"><span className="lcode electric">D4 → L5 已闭环</span></div>
         </div>
         <div className="l-b">
           <div className="rev-row" style={{ gridTemplateColumns: "minmax(220px, 1fr) minmax(320px, 2fr) auto" }}>
-            <span className="nm">swap / topup / withdraw / earning / commission / refund / bonus</span>
+            <span className="nm">swap / topup / withdraw / earning / commission / refund / bonus / purchase</span>
             <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>用户编号只保留首尾字符，不导出昵称、备注或其他明文隐私；CSV 公式注入由服务端消毒。</span>
             <button className="l-btn sm" disabled={ledgerExporting} onClick={requestLedgerDownload}>
-              {ledgerExporting ? "正在导出..." : "导出七类账单明细"}
+              {ledgerExporting ? "正在导出..." : "导出八类账单明细"}
             </button>
           </div>
         </div>
@@ -524,7 +529,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         </section>
       </div>
 
-      <p className="f-foot"><b>本页只产出只读快照、脱敏账单和聚合监管报告，不修改业务状态。</b><AutoGloss>当前闭环覆盖 KPI、漏斗、财务、运营四类聚合、D4 七类账单明细与 I5 当前披露版本监管报告。快照创建时固化，下载令牌 24 小时失效；账单导出最多 10 万行，所有出口强制留痕，明文敏感字段由服务端阻断。</AutoGloss></p>
+      <p className="f-foot"><b>本页只产出只读快照、脱敏账单和聚合监管报告，不修改业务状态。</b><AutoGloss>当前闭环覆盖 KPI、漏斗、财务、运营四类聚合、D4 八类账单明细与 I5 当前披露版本监管报告。快照创建时固化，下载令牌 24 小时失效；账单导出最多 10 万行，所有出口强制留痕，明文敏感字段由服务端阻断。</AutoGloss></p>
     </div>
   );
 }

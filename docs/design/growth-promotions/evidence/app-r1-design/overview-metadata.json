@@ -1,0 +1,41 @@
+{
+  "kind": "contact-sheet-of-independent-design-screenshots",
+  "baselineId": "app-r1-20261007-v2",
+  "sourceReportSha256": "e07e0f27f5448ac6706633619106291bbfd61a9e4e2f1208d4863b7c04f8675e",
+  "htmlSha256": "e3c53133860ab4060407c3f1752e51e9df74dc4b93e3a19f666768f7eef936f3",
+  "imageSha256": "f894db94499156f0a94ed248aced29e72b341145d7fd0becbaf50bb62e782785",
+  "panels": [
+    [
+      "Home",
+      "screenshots/home-normal-zh-dark-390.png"
+    ],
+    [
+      "NEX purchase",
+      "screenshots/nex-checkout-checkout-normal-zh-dark-390.png"
+    ],
+    [
+      "USDT · pending",
+      "screenshots/usdt-detail-reward-detail-normal-zh-dark-390.png"
+    ],
+    [
+      "NEX · review hold",
+      "screenshots/nex-detail-reward-detail-normal-zh-dark-390.png"
+    ],
+    [
+      "Reserved order · payBy",
+      "screenshots/leave-reserved-normal-zh-dark-390.png"
+    ],
+    [
+      "Missing terms · disabled",
+      "screenshots/missing-checkout-terms-checkout-normal-zh-dark-390-scroll-2.png"
+    ],
+    [
+      "Changed selection · stale quote",
+      "screenshots/stale-bundle-quote-bundle-normal-zh-dark-390.png"
+    ],
+    [
+      "H5 · zero system insets",
+      "screenshots/H5-zero-insets-checkout-normal-zh-dark-390.png"
+    ]
+  ]
+}

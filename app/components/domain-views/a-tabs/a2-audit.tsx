@@ -163,6 +163,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const canApprove = canApprovePending(principal);
   const canExport = canAccessA2Export(principal.authorities);
   const canWrite = canAccessA2Write(principal.authorities);
+  const canWithdraw = principal.authorities.includes("platform_a2_proposal_create");
   const [overview, setOverview] = useState<A2Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -379,6 +380,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   };
 
   const withdrawWo = (w: A2OperationRow) => {
+    if (!canWithdraw) { toast("当前账号没有撤回本人提案权限"); return; }
     const commandKey = createA2CommandKey(`a2-withdraw-${w.id}`);
     openActionConfirm({
       action: <>撤回本人提案 · {w.id}</>,
@@ -688,7 +690,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                       {isFinal ? (
                         <span className={`bdg ${HIST_TONE[status] ?? "dim"}`}>{HIST_LABEL[status] ?? status}</span>
                       ) : isCurrentOperator(w, principal) ? (
-                        <button className="l-btn sm" onClick={(e) => { e.stopPropagation(); withdrawWo(w); }}>撤回本人提案</button>
+                        <button className="l-btn sm" disabled={!canWithdraw} onClick={(e) => { e.stopPropagation(); withdrawWo(w); }}>撤回本人提案</button>
                       ) : canApprove ? (
                         <>
                           <button

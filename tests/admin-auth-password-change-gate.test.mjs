@@ -62,7 +62,7 @@ test("改密态登录只种受限 cookie，全权 cookie 被显式清空", () =>
     );
     assert.match(
       source,
-      /maxAge: passwordChangeRequired \? 0 : ADMIN_TOKEN_MAX_AGE_SECONDS/,
+      /maxAge: passwordChangeRequired \? 0 : adminSessionCookieMaxAge\(parsed\.data\.session\)/,
       `${rel} 改密态全权 cookie 必须立即过期`,
     );
     assert.match(

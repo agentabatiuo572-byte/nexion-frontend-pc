@@ -34,6 +34,9 @@ next-env.d.ts
 /playwright-report/
 /test-results/
 *.png
+!app/components/domain-views/m-tabs/support-leaderboard-assets/*.png
+!tests/fixtures/support-leaderboard/approved-avatars/*.png
+!docs/design/support-analytics-20261006/leaderboard-orbit-20261010/approved-design.png
 
 # scratch / exploration / temp (非产品代码,勿托管)
 /_overview-variants/

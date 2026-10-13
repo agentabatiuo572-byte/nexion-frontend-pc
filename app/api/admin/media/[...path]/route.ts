@@ -81,7 +81,8 @@ async function proxy(request: Request, context: RouteContext) {
       if (!upstream.ok) return jsonError(upstream.status, "MEDIA_PREVIEW_UNAVAILABLE");
       const result = await upstream.json() as { code?: number; data?: { objectKey?: string; previewUrl?: string } };
       if (result.code !== 0 || !result.data?.previewUrl) return jsonError(502, "MEDIA_PREVIEW_UNAVAILABLE");
-      if (!/^admin\/e\/sku-(?:image|video)\//.test(result.data.objectKey || "")) {
+      const banner = /^admin\/growth\/promotion-banner\/\d{8}\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:jpg|png)$/.test(result.data.objectKey || "");
+      if (!banner && !/^admin\/e\/sku-(?:image|video)\//.test(result.data.objectKey || "")) {
         return jsonError(403, "MEDIA_PREVIEW_SCOPE_DENIED");
       }
 
@@ -103,7 +104,7 @@ async function proxy(request: Request, context: RouteContext) {
       }
       if (media.status !== 200 && media.status !== 206) return jsonError(502, "MEDIA_STORAGE_UNAVAILABLE");
       const contentType = media.headers.get("Content-Type")?.split(";", 1)[0].trim().toLowerCase();
-      if (!contentType || !MEDIA_TYPES.has(contentType)) return jsonError(502, "MEDIA_CONTENT_TYPE_INVALID");
+      if (!contentType || !MEDIA_TYPES.has(contentType) || banner && !["image/jpeg", "image/png"].includes(contentType)) return jsonError(502, "MEDIA_CONTENT_TYPE_INVALID");
       const responseHeaders = new Headers({
         "Content-Type": contentType,
         "Cache-Control": "private, no-store",

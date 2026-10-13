@@ -223,7 +223,8 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
     rejected: num(redemptionRaw.rejected),
     delayed: num(redemptionRaw.delayed),
     frozen: num(redemptionRaw.frozen),
-    prevRate: num(redemptionRaw.prevRate),
+    rate: typeof redemptionRaw.rate === "number" ? redemptionRaw.rate : null,
+    prevRate: typeof redemptionRaw.prevRate === "number" ? redemptionRaw.prevRate : null,
     prevLabel: String(redemptionRaw.prevLabel ?? "上期"),
   };
   const COVERAGE_12W = rows<number>(data.coverage12w);
@@ -246,10 +247,14 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
     ? "不计算"
     : reserveCoverDaysCopy.replace("可覆盖 ", "");
   const revTotal = REV_EXT.reduce((sum, row) => sum + row.amt, 0);
-  const redRate = REDEMPTION.submitted ? ((REDEMPTION.confirmed / REDEMPTION.submitted) * 100).toFixed(1) : "0.0";
+  const redRate = REDEMPTION.rate === null ? "—" : `${REDEMPTION.rate.toFixed(1)}%`;
+  const redRateDelta = REDEMPTION.rate === null || REDEMPTION.prevRate === null
+    ? null : REDEMPTION.rate - REDEMPTION.prevRate;
   const liabTotal = LIABILITIES.reduce((sum, row) => sum + row.amount, 0);
   const validBreaches = BREACHES.filter((item) => Number.isInteger(item.i) && item.i >= 0 && item.i < COVERAGE_12W.length);
   const hasNumber = (record: Record<string, unknown>, key: string) => Object.prototype.hasOwnProperty.call(record, key) && Number.isFinite(Number(record[key]));
+  const hasNullableNumber = (record: Record<string, unknown>, key: string) => Object.prototype.hasOwnProperty.call(record, key)
+    && (record[key] === null || (typeof record[key] === "number" && Number.isFinite(record[key])));
   const fullContractReady = REV_EXT.length > 0
     && REV_EXT.every((row) => Number.isFinite(row.amt) && row.amt >= 0)
     && LIABILITIES.length > 0
@@ -259,7 +264,8 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
     && COVERAGE_12W.every(Number.isFinite)
     && ["reserveUsd", "liabilitiesUsd"].every((key) => hasNumber(ledgerRaw, key))
     && ["coverageRatio", "redLine", "yellowLine", "netExposure"].every((key) => hasNumber(treasuryRaw, key))
-    && ["submitted", "confirmed", "rejected", "delayed", "frozen", "prevRate"].every((key) => hasNumber(redemptionRaw, key))
+    && ["submitted", "confirmed", "rejected", "delayed", "frozen"].every((key) => hasNumber(redemptionRaw, key))
+    && ["rate", "prevRate"].every((key) => hasNullableNumber(redemptionRaw, key))
     && [maturity7Raw, maturity30Raw].every((window) => ["withdraw", "interest", "genesis"].every((key) => hasNumber(window, key)))
     && MAT_SCHEDULE.weeks.length > 0
     && MAT_SCHEDULE.weeks.length === MAT_SCHEDULE.data.length
@@ -270,6 +276,8 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
     return liveFacts.length > 0 || financeSnapshot ? <L3LiveFacts facts={liveFacts} snapshot={financeSnapshot} /> : <LDataState ctx={ctx} label="L3" />;
   }
   const revenueDivisor = revTotal > 0 ? revTotal : 1;
+  const maxLiability = Math.max(...LIABILITIES.map((row) => row.amount));
+  const liabilityDivisor = maxLiability > 0 ? maxLiability : 1;
   const selectPeriod = (period: "day" | "week" | "month" | "quarter" | "custom") => {
     if (!ctx.setL3Query) return;
     ctx.setL3Query(period === "custom"
@@ -329,7 +337,8 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
     const W = 560, H = 180, P = 34;
     const colors = ["var(--cyan)", "var(--brand)", "var(--warning)"];
     const values = MAT_SCHEDULE.data.flat();
-    const max = Math.max(...(values.length ? values : [1])) * 1.15;
+    const max = Math.max(...values, 0);
+    const divisor = max > 0 ? max : 1;
     const bw = 18, gap = 5;
     return (
       <svg className="mat-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="负债到期 30 天排程">
@@ -339,7 +348,7 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
           return (
             <g key={wk}>
               {group.map((v, s) => {
-                const bh = (v / max) * (H - 50);
+                const bh = (v / divisor) / 1.15 * (H - 50);
                 return <rect key={s} x={gx + s * (bw + gap) - (bw * 3 + gap * 2) / 2} y={H - 26 - bh} width={bw} height={bh} rx={3} fill={colors[s]} opacity={0.85}><title>{`${wk} · ${fmtM(v)}`}</title></rect>;
               })}
               <text x={gx} y={H - 8} fontSize={11} fill="var(--ink-4)" textAnchor="middle">{wk}</text>
@@ -355,7 +364,7 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
       {/* stat strip */}
       <div className="f-stats">
         <div className="f-stat"><div className="k">本期总收入</div><div className="v">{fmtM(revTotal)}</div><div className="sub">按服务器当前报表周期汇总</div></div>
-        <div className="f-stat ok"><div className="k">兑付率(本期)</div><div className="v">{redRate}%</div><div className="sub">已兑付 ÷ 已提交 · 慢性核账指标</div></div>
+        <div className="f-stat ok"><div className="k">兑付率(本期)</div><div className="v">{redRate}</div><div className="sub">已兑付 ÷ 已提交 · 慢性核账指标</div></div>
         <div className="f-stat ok"><div className="k">兑付覆盖率(来自权威账本)</div><div className="v">{TREASURY.coverageRatio}%</div><div className="sub">红线 {TREASURY.redLine} / 黄线 {TREASURY.yellowLine} · 只读展示</div></div>
         <div className="f-stat cyan"><div className="k">储备可覆盖到期</div><div className="v">{reserveCoverDaysValue}</div><div className="sub">{reserveCoverDaysCopy} · 来自资金池水位</div></div>
       </div>
@@ -430,12 +439,12 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
             <div className="red-tiles">
                <div className="t"><div className="k">提现申请</div><div className="v">{REDEMPTION.submitted.toLocaleString("zh-CN")}</div><div className="s">本期已提交申请</div></div>
                <div className="t"><div className="k">已兑付</div><div className="v" style={{ color: "var(--success)" }}>{REDEMPTION.confirmed.toLocaleString("zh-CN")}</div><div className="s">本期已完成兑付</div></div>
-               <div className="t"><div className="k">兑付率</div><div className="v" style={{ color: "var(--success)" }}>{redRate}%</div><div className="s">已兑付占提现申请的比例</div></div>
+               <div className="t"><div className="k">兑付率</div><div className="v" style={{ color: "var(--success)" }}>{redRate}</div><div className="s">已兑付占提现申请的比例</div></div>
                <div className="t"><div className="k">平均兑付时延</div><div className="v">{REDEMPTION.avgLatency}</div><div className="s">从申请到完成的平均耗时</div></div>
                <div className="t"><div className="k">驳回</div><div className="v">{REDEMPTION.rejected}</div><div className="s">本期已驳回申请（结果分类）</div></div>
                <div className="t"><div className="k">延迟</div><div className="v" style={{ color: "var(--warning)" }}>{REDEMPTION.delayed}</div><div className="s">本期曾延迟 · 过程事件，可与最终兑付重叠</div></div>
                <div className="t"><div className="k">冻结</div><div className="v" style={{ color: "var(--danger)" }}>{REDEMPTION.frozen}</div><div className="s">本期曾冻结 · 过程事件，可与最终兑付重叠</div></div>
-               <div className="t"><div className="k">较上期变化</div><div className="v" style={{ color: "var(--success)" }}>+{(parseFloat(redRate) - REDEMPTION.prevRate).toFixed(1)} 个百分点</div><div className="s">{REDEMPTION.prevLabel}为 {REDEMPTION.prevRate}%</div></div>
+               <div className="t"><div className="k">较上期变化</div><div className="v" style={{ color: "var(--success)" }}>{redRateDelta === null ? "—" : `${redRateDelta > 0 ? "+" : ""}${redRateDelta.toFixed(1)} 个百分点`}</div><div className="s">{REDEMPTION.prevLabel}为 {REDEMPTION.prevRate === null ? "—" : `${REDEMPTION.prevRate}%`}</div></div>
             </div>
             <div className="ltint" style={{ fontSize: 12, marginBottom: 8 }}><b>比率与余额不可混用</b> · <AutoGloss>兑付率衡量本期申请完成比例；在途余额衡量尚未完成的应付款。两者同源但含义不同。</AutoGloss></div>
             <div className="ltint" style={{ fontSize: 12, marginBottom: 8 }}><b>口径说明</b> · <AutoGloss>提现申请、已兑付、驳回是互斥的结果分类；延迟与冻结是过程中的生命周期事件，一笔提现可能先延迟或冻结、之后仍完成兑付，因此二者可与已兑付重叠，不与申请总数相加等于分母。兑付率固定按 已兑付 ÷ 本期申请总数 计算，不把延迟/冻结计入分子或分母。</AutoGloss></div>
@@ -452,7 +461,7 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
           <div className="r">
              <span className="lcode">真实储备 {fmtM(LEDGER.reserveUsd)}</span>
              <span className="lcode">应付负债 {fmtM(LEDGER.liabilitiesUsd)}</span>
-             <span className="lcode electric">净敞口 +{fmtM(TREASURY.netExposure)}</span>
+             <span className="lcode electric">净敞口 {TREASURY.netExposure > 0 ? "+" : ""}{fmtM(TREASURY.netExposure)}</span>
           </div>
         </div>
         <div className="l-b">
@@ -492,7 +501,7 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
               {LIABILITIES.map((l) => (
                 <div key={l.id} className="liab-row">
                   <span className="nm"><i style={{ background: l.color }} /><AutoGloss>{l.name}</AutoGloss></span>
-                  <span className="track"><i style={{ width: `${(l.amount / Math.max(...LIABILITIES.map((x) => x.amount))) * 100}%`, background: l.color }} /></span>
+                  <span className="track"><i style={{ width: `${(l.amount / liabilityDivisor) * 100}%`, background: l.color }} /></span>
                   <span className="amt">{fmtM(l.amount)}</span>
                 </div>
               ))}

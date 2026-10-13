@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, win32 } from "node:path";
 import test from "node:test";
+import ts from "typescript";
 import {
   auditRepositoryReverseCoverage,
   collectActiveNavLeaves,
@@ -159,7 +160,36 @@ test("final accepted semantic closures are built while K17 production native-dev
   assert.equal(k17?.status, "pending");
   assert.equal(k17?.batch, "P1");
   assert.ok(k17?.runtimeEvidence?.some((item) => item.type === "janus-runtime"));
-  assert.match(`${k17?.action ?? ""} ${k17?.note ?? ""}`, /源码[\s\S]*UTS[\s\S]*Sandbox[\s\S]*fail-closed[\s\S]*Production[\s\S]*(?:真机|原生)[\s\S]*HOLD/i);
+  assert.match(k17?.action ?? "", /已提交[\s\S]*UTS[\s\S]*fail-closed[\s\S]*Sandbox runtime 未接入[\s\S]*Production[\s\S]*原生真机[\s\S]*HOLD/);
+  assert.match(k17?.note ?? "", /Janus 开发暂停[\s\S]*pending\/HOLD/);
+  assert.doesNotMatch(row("OPS-K-15")?.note ?? "", /OPS-K-17 完成/);
+});
+
+test("K17 committed native guards reject disabled/bridge removal, Sandbox fallback and comment-only evidence", () => {
+  const k17 = row("OPS-K-17");
+  const runtime = k17.runtimeEvidence.find((item) => item.file === "src/lib/janus/executor-runtime.ts");
+  const source = readFileSync(join(JANUS_ROOT, runtime.file), "utf8");
+  const problems = (candidate) => validateRuntimeEvidence({ rows: [k17] }, (type, relative) => {
+    if (relative !== runtime.file) return readFileSync(join(JANUS_ROOT, relative), "utf8");
+    const file = ts.createSourceFile(relative, candidate, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    assert.equal(file.parseDiagnostics.length, 0, "Janus runtime evidence must parse as executable TypeScript");
+    const configured = file.statements.find((statement) => ts.isFunctionDeclaration(statement)
+      && statement.name?.text === "configuredRuntime");
+    return configured?.body?.statements.map((statement) => statement.getText(file)).join("\n") ?? "";
+  });
+  assert.deepEqual(problems(source), [], "committed native guards are source evidence, not completed runtime delivery");
+  for (const guard of [
+    'if (mode === "disabled") return null;',
+    'if (!bridge) throw new Error("JANUS_NATIVE_EXECUTOR_REQUIRED");',
+  ]) {
+    assert.ok(source.includes(guard), `missing actual guard: ${guard}`);
+    assert.ok(problems(source.replace(guard, "")).length > 0, `removing ${guard} must fail`);
+    assert.ok(problems(source.replace(guard, `/* ${guard} */`)).length > 0, `commented ${guard} must fail`);
+  }
+  assert.ok(problems(`/*\n${source}\n*/`).length > 0, "copied source comments cannot attest native guards");
+  assert.ok(problems(source.replace(
+    "createProductionJanusExecutor({ bridge })", "createSandboxJanusExecutor()",
+  )).length > 0, "Sandbox fallback cannot attest the committed native runtime");
 });
 
 test("unknown OPS_BATCH values fail closed", () => {

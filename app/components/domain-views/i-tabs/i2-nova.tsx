@@ -8,7 +8,7 @@
  * amplifies = false(I2 不碰 B1 红线 —— 只动推送节奏与文案出口,不动费率/奖励/价格)。
  */
 import { useEffect, useState } from "react";
-import { Drawer, PaginationExemptionList } from "../design-kit";
+import { DataListPager, Drawer, PaginationExemptionList, useDataListPager } from "../design-kit";
 import {
   formatNovaDuration,
   NOVA_TIME_UNITS,
@@ -86,6 +86,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     titleZh: t.titleZh, bodyZh: t.bodyZh, titleVi: t.titleVi, bodyVi: t.bodyVi,
     titleEn: t.titleEn, bodyEn: t.bodyEn,
   }));
+  const templatePager = useDataListPager(NOVA_TPLS, { initialPageSize: 7 });
   const CTA_OPTIONS = data?.templateCtaOptions ?? [];
   const RUNTIME_SOURCE_OPTIONS = data?.runtimeSourceOptions ?? [];
   const SOCIAL_DIST = data?.socialDistribution ?? [];
@@ -293,10 +294,23 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const [SOCIAL_EVENTS, setSocialEvents] = useState(INITIAL_SOCIAL_EVENTS);
   const [eventTotal, setEventTotal] = useState(INITIAL_SOCIAL_EVENTS.length);
   const [eventLoading, setEventLoading] = useState(false);
+  const [eventRead, setEventRead] = useState<{
+    source: typeof data; type: string; status: string; page: number; error: string | null;
+  } | null>(null);
   const EVENT_PAGE_SIZE = 20;
-  const eventPageCount = Math.max(1, Math.ceil(eventTotal / EVENT_PAGE_SIZE));
-  const visibleSocialEvents = SOCIAL_EVENTS;
+  const eventReadMatches = eventRead?.source === data && eventRead?.type === eventTypeFilter
+    && eventRead?.status === eventStatusFilter && eventRead?.page === eventPage;
+  const eventError = eventReadMatches ? eventRead?.error : null;
+  const eventReadable = eventReadMatches && !eventError;
+  const visibleEventTotal = eventReadable ? eventTotal : 0;
+  const eventPageCount = Math.max(1, Math.ceil(visibleEventTotal / EVENT_PAGE_SIZE));
+  const visibleSocialEvents = eventReadable ? SOCIAL_EVENTS : [];
   useEffect(() => {
+    setEventRead(null);
+    if (!data) {
+      setEventLoading(false);
+      return;
+    }
     let active = true;
     setEventLoading(true);
     actions.listI2SocialEvents(eventTypeFilter, eventStatusFilter, eventPage, EVENT_PAGE_SIZE)
@@ -309,11 +323,17 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         }
         setSocialEvents(result.items);
         setEventTotal(result.total);
+        setEventRead({ source: data, type: eventTypeFilter, status: eventStatusFilter, page: eventPage, error: null });
       })
-      .catch((error) => active && toast(`事件列表加载失败:${displayAdminError(error)}`))
+      .catch((error) => {
+        if (!active) return;
+        const message = `事件列表加载失败:${displayAdminError(error)}`;
+        setEventRead({ source: data, type: eventTypeFilter, status: eventStatusFilter, page: eventPage, error: message });
+        toast(message);
+      })
       .finally(() => active && setEventLoading(false));
     return () => { active = false; };
-  }, [actions.listI2SocialEvents, eventPage, eventRefreshKey, eventStatusFilter, eventTypeFilter, toast]);
+  }, [actions.listI2SocialEvents, data, eventPage, eventRefreshKey, eventStatusFilter, eventTypeFilter, toast]);
   const optionLabel = (options: { value: string; label: string }[], value: string) =>
     options.find((option) => option.value === value)?.label ?? value;
   const statusLabel = (value: string) => SOCIAL_EVENT_STATUS_OPTIONS.find((option) => option.value === value)?.label
@@ -575,7 +595,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                 </tr>
               </thead>
               <tbody>
-                {NOVA_TPLS.map((t) => {
+                {templatePager.pageRows.map((t) => {
                   const st = tplStatus(t.ch);
                   const canPublish = st !== "published";
                   const canArchive = st !== "archived";
@@ -606,12 +626,24 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                     </tr>
                   );
                 })}
+                {templatePager.total === 0 && (
+                  <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-3)" }}>暂无推送模板</td></tr>
+                )}
               </tbody>
             </table>
           </div>
+          <DataListPager
+            label="推送模板池(b)"
+            page={templatePager.page}
+            pageSize={templatePager.pageSize}
+            total={templatePager.total}
+            onPageChange={templatePager.setPage}
+            onPageSizeChange={templatePager.setPageSize}
+            pageSizeOptions={[7]}
+          />
           <div className="l-b" style={{ paddingTop: 8 }}>
             <div className="itint">
-              <b>文案来源</b> · 模板中的中文、越南语和可选英语正文就是通道实际推送内容；通道、CTA 均从后端配置目录选择。状态机：草稿 → 已发布 → 已归档。
+              <b>文案来源</b> · 模板池当前共 {templatePager.total} 条服务端目录记录，每页最多 {templatePager.pageSize} 条；发布和归档走操作确认。 模板中的中文、越南语和可选英语正文就是通道实际推送内容；通道、CTA 均从后端配置目录选择。状态机：草稿 → 已发布 → 已归档。
             </div>
           </div>
         </section>
@@ -672,11 +704,15 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             </div>
 
             <div className="k" style={{ marginBottom: 8 }}>真实事件明细</div>
-            {eventLoading ? (
+            {eventError ? (
+              <div className="itint warn" role="alert">
+                {eventError} <button className="l-btn sm" onClick={() => setEventRefreshKey((key) => key + 1)}>重新读取事件</button>
+              </div>
+            ) : eventLoading || !eventReadable ? (
               <div className="itint">正在读取真实事件...</div>
-            ) : eventTotal === 0 && !eventTypeFilter && !eventStatusFilter ? (
+            ) : visibleEventTotal === 0 && !eventTypeFilter && !eventStatusFilter ? (
               <div className="itint warn"><b>当前没有可投放的真实事件</b> · social 通道不会发送，系统不会生成虚假占位内容。等待真实业务数据产生后点击“同步真实事件”。</div>
-            ) : eventTotal === 0 ? (
+            ) : visibleEventTotal === 0 ? (
               <div className="itint">当前筛选条件下没有事件，请清除筛选后重试。</div>
             ) : (
               <div style={{ overflowX: "auto" }}>
@@ -706,10 +742,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                 </table>
               </div>
             )}
-            {eventTotal > EVENT_PAGE_SIZE && (
+            {eventReadable && !eventLoading && visibleEventTotal > EVENT_PAGE_SIZE && (
               <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, marginTop: 10 }}>
                 <button className="l-btn sm" disabled={eventPage <= 1} onClick={() => setEventPage((page) => Math.max(1, page - 1))}>上一页</button>
-                <span className="muted tiny">第 {eventPage} / {eventPageCount} 页 · 共 {eventTotal} 条</span>
+                <span className="muted tiny">第 {eventPage} / {eventPageCount} 页 · 共 {visibleEventTotal} 条</span>
                 <button className="l-btn sm" disabled={eventPage >= eventPageCount} onClick={() => setEventPage((page) => Math.min(eventPageCount, page + 1))}>下一页</button>
               </div>
             )}
@@ -740,12 +776,6 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             reason: offTableChannels.length
               ? "剩余不可调频道只做口径闭合说明"
               : "服务端目录里已无不可调频道,本区只留口径闭合结论",
-          },
-          {
-            label: "推送模板池(b)",
-            kind: "sample-ledger",
-            maxRows: 7,
-            reason: "模板池当前七条种子样本,发布和归档走操作确认",
           },
         ]}
       />

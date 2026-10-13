@@ -110,6 +110,13 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
       toast("排序值必须是 0–999999 的整数");
       return false;
     }
+    if (editFaq) {
+      const currentFaq = faqs.find((faq) => faq.id === editFaq.id);
+      if (!currentFaq || currentFaq.version !== editFaq.version || currentFaq.status !== editFaq.status) {
+        toast("FAQ 已更新或不可用，请保留当前输入，重新核对最新内容后再编辑。");
+        return false;
+      }
+    }
     const row: SupportFaq = {
       id: editFaq?.id ?? createFaqTempId.current ?? (createFaqTempId.current = nextFaqId()),
       category: form.category,

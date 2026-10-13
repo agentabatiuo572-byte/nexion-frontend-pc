@@ -1,0 +1,1029 @@
+{
+  "baselineId": "app-r1-20261007-v2",
+  "artifactKind": "independent-design-artboard",
+  "startedAt": "2026-10-07T09:44:57.098Z",
+  "finishedAt": "2026-10-07T09:45:03.429Z",
+  "mode": "smoke",
+  "verdict": "pass",
+  "treeMoved": false,
+  "productRuntimeVerified": false,
+  "independentPixelReviewPassed": false,
+  "environment": {
+    "os": "win32",
+    "release": "10.0.26300",
+    "arch": "x64",
+    "node": "v24.15.0",
+    "playwright": "1.61.1",
+    "chromium": "149.0.7827.55",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/149.0.7827.55 Safari/537.36",
+    "deviceScaleFactor": 1,
+    "timezone": "Asia/Tokyo",
+    "reducedMotion": "reduce",
+    "entryProtocol": "file:"
+  },
+  "inputHashes": {
+    "app-r1-baseline.html": "d3f1a3e7d1b3bce02bc24018f5c4893489bdb346b1ae9dea3c7c12687c41146b",
+    "app-r1-baseline.json": "e318b5b3096d00ebf207c05d719c3e5e1b503b1454c125c78b29389a3ae8de65",
+    "app-r1-baseline-check.mjs": "07d3b0aab842668028816996c5e13c2f859da19b2949f5549475b25a8a98daa1",
+    "evidence/app-r1-design/artboard-runtime.js": "1609a00e36cbf2baf3fe2cd754a7a7120b82207543a81717a0aaf08f71cbbd50",
+    "evidence/app-r1-design/interaction-checks.mjs": "c015f36325c8132c14d1bc34d62c9b6e15ff54dc9404ef8e08351c2fdfa3402f",
+    "assets/concept-app-flow-v2.png": "c9a28a13210eaa980602de4746b82645ba88f6dce456b9665f81d57e1899c51d",
+    "evidence/app-r1-design/assets/stellarbox-s1.png": "247322fe2330c20e12268298a89afc0bcca995872896aad7a8afbda0bf57e178",
+    "evidence/app-r1-design/assets/stellarbox-pro-v2.png": "5eb63d326764fda7c8bb3d96082ef7852ca625133e9cb2df0a8ade78439bab80",
+    "evidence/app-r1-design/assets/stellarrack-p1.png": "43427d42556d714bc7fa5273f43f3d974c3e62f2e3e1e66e5b9159047d4c9fa8",
+    "evidence/app-r1-design/assets/header-logo-dark.png": "5f438d45f8cbb9cc9d93a3f43b1dde2894120ff4bc33d78e687cc553c0499cd8",
+    "evidence/app-r1-design/assets/header-logo-light.png": "228e45f0eb9afd51e160c685f85f7f967a94ea26d1986d5ad43ee8aa15f896a6",
+    "evidence/app-r1-design/assets/GeneralSans-400.woff2": "3ec2be771caf168b077ca05af4df1dace77088e2b3a27da570036e61be58a039",
+    "evidence/app-r1-design/assets/GeneralSans-500.woff2": "c30377df1de8444d07161725c751f458beec07c28034df2fd275d1aa587a239f",
+    "evidence/app-r1-design/assets/GeneralSans-600.woff2": "94a2a0e1ef59728eb65498ed7fe26e5af7e2858a3a4a278a89ac1f83a0544945",
+    "evidence/app-r1-design/assets/GENERAL-SANS-ITF-FFL.txt": "13e2455e56d55998bc83cca90fa68c990a1c97f4f649cb050d8ae95178c8ee02"
+  },
+  "counts": {
+    "cases": 28,
+    "failures": 0,
+    "screenshots": 70,
+    "interactions": 9
+  },
+  "errors": [],
+  "externalRequests": [],
+  "interactions": [
+    {
+      "id": "R1-selected-device-usdt-nex-reward-detail-source-and-asset",
+      "pass": true
+    },
+    {
+      "id": "R1-nex-store-checkout-original-order",
+      "pass": true
+    },
+    {
+      "id": "R2-unknown-original-order-query-only-until-explicit-confirmation",
+      "pass": true
+    },
+    {
+      "id": "R3-single-leave-prompt-scope-reserved-payby-focus-and-reload",
+      "pass": true
+    },
+    {
+      "id": "R4-named-design-only-device-funds-terms-missing-blocks-confirmation",
+      "pass": true
+    },
+    {
+      "id": "R5-rule-roundtrip-restores-checkout-selection-and-scroll",
+      "pass": true
+    },
+    {
+      "id": "R6-quantity-invalidates-quote-and-remains-stale-after-navigation",
+      "pass": true
+    },
+    {
+      "id": "rewards-remain-read-only",
+      "pass": true
+    },
+    {
+      "id": "paid-refunded-order-retain-independent-reward-statuses",
+      "pass": true
+    }
+  ],
+  "cases": [
+    {
+      "id": "home-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "events-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "rules-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "store-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "detail-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "bundle-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "checkout-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "order-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "order-paid-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "order-refund-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "order-unknown-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "order-confirmed-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "payment-unknown-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "rewards-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "reward-detail-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "invite-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "leave-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "leave-reserved-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "cancel-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "usdt-detail-reward-detail-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "nex-detail-reward-detail-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "nex-checkout-checkout-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "nex-paid-order-order-paid-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "nex-unknown-order-order-unknown-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "missing-checkout-terms-checkout-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "missing-rule-terms-rules-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "stale-bundle-quote-bundle-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    },
+    {
+      "id": "missing-nex-detail-terms-detail-normal-zh-dark-390",
+      "pass": true,
+      "failures": [],
+      "canvasWidth": 390
+    }
+  ],
+  "screenshots": [
+    {
+      "id": "home-normal-zh-dark-390",
+      "path": "screenshots/home-normal-zh-dark-390.png",
+      "sha256": "11c6cec6b7f2fc7d332ef143937ebc33ac86f95555bea761feb634c1a89f4966",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "home-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/home-normal-zh-dark-390-scroll-1.png",
+      "sha256": "97c0f7e5272b472a2daac3f31d368edc16db32d03a636dc85ea2fbcb73958d5f",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 142,
+      "fullPage": false
+    },
+    {
+      "id": "events-normal-zh-dark-390",
+      "path": "screenshots/events-normal-zh-dark-390.png",
+      "sha256": "a523739a85d6cf383b2d27fbe1666a0a5a98febbef254fc1325344697f133144",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "rules-normal-zh-dark-390",
+      "path": "screenshots/rules-normal-zh-dark-390.png",
+      "sha256": "fdef0943ac21a027e740030148fc00394e67c485dfb71cad0242635be377d8a5",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "rules-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/rules-normal-zh-dark-390-scroll-1.png",
+      "sha256": "eb248562f6925551a139b000f7557e256e8683578709f23377fbed4be7bb5dae",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 600,
+      "fullPage": false
+    },
+    {
+      "id": "rules-normal-zh-dark-390-scroll-2",
+      "path": "screenshots/rules-normal-zh-dark-390-scroll-2.png",
+      "sha256": "28476bc0494dd2165d123fed85f5631f6e0853f733e13f6005e4ad8ba0487b69",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 1013,
+      "fullPage": false
+    },
+    {
+      "id": "store-normal-zh-dark-390",
+      "path": "screenshots/store-normal-zh-dark-390.png",
+      "sha256": "4bda7b92a9a81ebea5f5faa7b4fe0ebf8e61d68c24c52d06c24aea803ee6811c",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "store-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/store-normal-zh-dark-390-scroll-1.png",
+      "sha256": "d5e8c86b0ea5d8255ab8e0118a1a4a249f81fbebdffd79865631bf81a31fba2f",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 593,
+      "fullPage": false
+    },
+    {
+      "id": "store-normal-zh-dark-390-scroll-2",
+      "path": "screenshots/store-normal-zh-dark-390-scroll-2.png",
+      "sha256": "42bbbe4d3248a1177d96c98c5ca5ff898d3cbca7d28575e718ed07f67a1b988c",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 1186,
+      "fullPage": false
+    },
+    {
+      "id": "store-normal-zh-dark-390-scroll-3",
+      "path": "screenshots/store-normal-zh-dark-390-scroll-3.png",
+      "sha256": "132bbbf53e938329c72ca36dae7359ad375e008ca2e30f52d31d8f803ee2bef4",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 1746,
+      "fullPage": false
+    },
+    {
+      "id": "detail-normal-zh-dark-390",
+      "path": "screenshots/detail-normal-zh-dark-390.png",
+      "sha256": "5fd5f91c2abd11ba5f98d275ab6c8bb4bb31ea598c521ebb6aabc9d48646d3ac",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "detail-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/detail-normal-zh-dark-390-scroll-1.png",
+      "sha256": "b8e4badb6c55b7b3b7501b1f58cc427758b0b76e98a38c4fdfbd985cb49c21e8",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 600,
+      "fullPage": false
+    },
+    {
+      "id": "detail-normal-zh-dark-390-scroll-2",
+      "path": "screenshots/detail-normal-zh-dark-390-scroll-2.png",
+      "sha256": "481b1b5a14443b410efb9b55fd92fa46cf455c7fa47d789ecbc36f695013adf5",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 911,
+      "fullPage": false
+    },
+    {
+      "id": "bundle-normal-zh-dark-390",
+      "path": "screenshots/bundle-normal-zh-dark-390.png",
+      "sha256": "91a6c65f2c7a62e55aef75eb3230be1cc2b153a06d6b92678383b305d1a1bb0a",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "bundle-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/bundle-normal-zh-dark-390-scroll-1.png",
+      "sha256": "5ca18572e437287c56a4f297c38636d17c9f293af4bac3ec7bc4d856e4e2cca3",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 600,
+      "fullPage": false
+    },
+    {
+      "id": "bundle-normal-zh-dark-390-scroll-2",
+      "path": "screenshots/bundle-normal-zh-dark-390-scroll-2.png",
+      "sha256": "8a32c5784c4502e1e2d869c8d450b39f744754a93114d7da44cc55688c7113ac",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 1200,
+      "fullPage": false
+    },
+    {
+      "id": "bundle-normal-zh-dark-390-scroll-3",
+      "path": "screenshots/bundle-normal-zh-dark-390-scroll-3.png",
+      "sha256": "a9a17127c9993f30d3fdf640d45c8d9984140a5d201561648f15bd72757a3d03",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 1235,
+      "fullPage": false
+    },
+    {
+      "id": "checkout-normal-zh-dark-390",
+      "path": "screenshots/checkout-normal-zh-dark-390.png",
+      "sha256": "1e11c0b064d1a751dc19fab0f2d664b7416236661bc19576ffc29ce9ee4e1564",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "checkout-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/checkout-normal-zh-dark-390-scroll-1.png",
+      "sha256": "b185db70d7ebb1d366f98d40863a4866393e8be96388aa0c86b993cc3caaa60c",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 600,
+      "fullPage": false
+    },
+    {
+      "id": "checkout-normal-zh-dark-390-scroll-2",
+      "path": "screenshots/checkout-normal-zh-dark-390-scroll-2.png",
+      "sha256": "061553e7061907c0d9c3b3b0f424924312a18d3c35959fe222d531a47d6bcef5",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 1200,
+      "fullPage": false
+    },
+    {
+      "id": "checkout-normal-zh-dark-390-scroll-3",
+      "path": "screenshots/checkout-normal-zh-dark-390-scroll-3.png",
+      "sha256": "0f4e2e412b1560366423576ec50db3f6603e229fe3f78c9425e38523fed0ae97",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 1446,
+      "fullPage": false
+    },
+    {
+      "id": "order-normal-zh-dark-390",
+      "path": "screenshots/order-normal-zh-dark-390.png",
+      "sha256": "4696b8af50be02e7c28e82c74e78d5584c983b3fa7dc2e8299f4bdb02634372c",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "order-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/order-normal-zh-dark-390-scroll-1.png",
+      "sha256": "311de744319ea11d52e03aaa70c623ecefa26d5706b2097be498d8aa9d8534ee",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 600,
+      "fullPage": false
+    },
+    {
+      "id": "order-normal-zh-dark-390-scroll-2",
+      "path": "screenshots/order-normal-zh-dark-390-scroll-2.png",
+      "sha256": "d370a6b70caf8f564329d08d90f07cec0a8e334bde1812dfb4a4ecc212139970",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 1200,
+      "fullPage": false
+    },
+    {
+      "id": "order-normal-zh-dark-390-scroll-3",
+      "path": "screenshots/order-normal-zh-dark-390-scroll-3.png",
+      "sha256": "aab5cb2dc5fe011cb7a9e4441522a3fa34365a63ea5602dd803b4fdaf0557fae",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 1391,
+      "fullPage": false
+    },
+    {
+      "id": "order-paid-normal-zh-dark-390",
+      "path": "screenshots/order-paid-normal-zh-dark-390.png",
+      "sha256": "9f185bc669dbeab3dd58d36d00fd4c139052b76807954d716f9f6c05ec29d5c1",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "order-paid-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/order-paid-normal-zh-dark-390-scroll-1.png",
+      "sha256": "b48ae74be7ded4382687be7acf5dee7c6e8b03f1a54dc8686ab344a020e006b6",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 600,
+      "fullPage": false
+    },
+    {
+      "id": "order-paid-normal-zh-dark-390-scroll-2",
+      "path": "screenshots/order-paid-normal-zh-dark-390-scroll-2.png",
+      "sha256": "c2b0a6a45ba337b07a540d9bb128e512b323c350782d66f50dea9a17bdb67282",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 1200,
+      "fullPage": false
+    },
+    {
+      "id": "order-paid-normal-zh-dark-390-scroll-3",
+      "path": "screenshots/order-paid-normal-zh-dark-390-scroll-3.png",
+      "sha256": "802d399ff78e53988356fc9d6c81da3db79d520e1e74d993c3e6f5cb7040d816",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 1252,
+      "fullPage": false
+    },
+    {
+      "id": "order-refund-normal-zh-dark-390",
+      "path": "screenshots/order-refund-normal-zh-dark-390.png",
+      "sha256": "8639dac68faf8810e0200a04e1d36d046d6515c39281e1f2d49e808b955e7850",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "order-refund-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/order-refund-normal-zh-dark-390-scroll-1.png",
+      "sha256": "b69a6240c52a10ecdb962b47f66640e9faabf27653c10a391bd3db896ac694a6",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 600,
+      "fullPage": false
+    },
+    {
+      "id": "order-refund-normal-zh-dark-390-scroll-2",
+      "path": "screenshots/order-refund-normal-zh-dark-390-scroll-2.png",
+      "sha256": "22eefb81bf9178cefd86ccf4a2d4356fc8c188d5761a6b58a529cb0c46dc8ac5",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 1200,
+      "fullPage": false
+    },
+    {
+      "id": "order-refund-normal-zh-dark-390-scroll-3",
+      "path": "screenshots/order-refund-normal-zh-dark-390-scroll-3.png",
+      "sha256": "d20d3f58976dd0154306033cdba2ecbb3fd1583a1c7b2144015b448548d29865",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 1240,
+      "fullPage": false
+    },
+    {
+      "id": "order-unknown-normal-zh-dark-390",
+      "path": "screenshots/order-unknown-normal-zh-dark-390.png",
+      "sha256": "57c99cb4f2ca75eafc29a8ec59ca5a41bbaa039c5cfe2e4cae740ffdbf782872",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "order-unknown-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/order-unknown-normal-zh-dark-390-scroll-1.png",
+      "sha256": "de2d99f7f652c2f9da566595b8a49eeae990139162c1d7e5431d46af6259ea7e",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 295,
+      "fullPage": false
+    },
+    {
+      "id": "order-confirmed-normal-zh-dark-390",
+      "path": "screenshots/order-confirmed-normal-zh-dark-390.png",
+      "sha256": "a416e5a71b08e0c1a689552cdb8ccf1267696251b6dfddac30af6450036687c6",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "order-confirmed-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/order-confirmed-normal-zh-dark-390-scroll-1.png",
+      "sha256": "fbce5b5ce1c2f2aff9027d88bc4cc511cc64b79c479462aadf892bf049311a83",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 600,
+      "fullPage": false
+    },
+    {
+      "id": "order-confirmed-normal-zh-dark-390-scroll-2",
+      "path": "screenshots/order-confirmed-normal-zh-dark-390-scroll-2.png",
+      "sha256": "b93b4e64c812917706cfb80ec05d57be20089ef8f180b2c868888c2494ac6bab",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 1200,
+      "fullPage": false
+    },
+    {
+      "id": "order-confirmed-normal-zh-dark-390-scroll-3",
+      "path": "screenshots/order-confirmed-normal-zh-dark-390-scroll-3.png",
+      "sha256": "746a03b8e80dabb80a8f4c5a823933b37d44dd8bc4f4baf7c02b30d60138cc60",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 1438,
+      "fullPage": false
+    },
+    {
+      "id": "payment-unknown-normal-zh-dark-390",
+      "path": "screenshots/payment-unknown-normal-zh-dark-390.png",
+      "sha256": "87ff7125a0b762286f4fb19d288314f5c3fb4f0d7e6cd841c8e834ef5bf346cb",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "payment-unknown-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/payment-unknown-normal-zh-dark-390-scroll-1.png",
+      "sha256": "4281f61d384d9835d077a4dc948ffce557dfc07c9744cf03d1d23bd02096cac8",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 363,
+      "fullPage": false
+    },
+    {
+      "id": "rewards-normal-zh-dark-390",
+      "path": "screenshots/rewards-normal-zh-dark-390.png",
+      "sha256": "fbbde58198a1513fb211f7931364bf931da84c8be525ddc974301c2e5931d713",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "reward-detail-normal-zh-dark-390",
+      "path": "screenshots/reward-detail-normal-zh-dark-390.png",
+      "sha256": "9dc8cf40e3c3e68c214a4d3eb1089cf609f695459a90a2afbe3c5f96f9bfb430",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "reward-detail-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/reward-detail-normal-zh-dark-390-scroll-1.png",
+      "sha256": "a5fada33c7d8aa886e9faaf39442f4ab1ebd88c207b17b5d480f9ec2a3f8edc9",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 339,
+      "fullPage": false
+    },
+    {
+      "id": "invite-normal-zh-dark-390",
+      "path": "screenshots/invite-normal-zh-dark-390.png",
+      "sha256": "dabaab7c6157d5985c5fa5301dec682154f5e940f0431c5f0260dca1b3b31118",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "invite-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/invite-normal-zh-dark-390-scroll-1.png",
+      "sha256": "95e374122d3eb9e94ed87e951a04fa4bf38ff8fe52e7e1d09a033be4f15c4a8f",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 287,
+      "fullPage": false
+    },
+    {
+      "id": "leave-normal-zh-dark-390",
+      "path": "screenshots/leave-normal-zh-dark-390.png",
+      "sha256": "752e3b7ab7c897d28d5f927ff8c6bd0153e27476b18ebe22a8b43e9f2c2d7319",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "leave-reserved-normal-zh-dark-390",
+      "path": "screenshots/leave-reserved-normal-zh-dark-390.png",
+      "sha256": "2872b46997300559917e1aeb6e007f5b97aeca8a36bb4d82cdad007178be6b86",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "cancel-normal-zh-dark-390",
+      "path": "screenshots/cancel-normal-zh-dark-390.png",
+      "sha256": "de474824f7e7fe6affd2549616687205489dc203b78390315aed97edcd6b5ebc",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "usdt-detail-reward-detail-normal-zh-dark-390",
+      "path": "screenshots/usdt-detail-reward-detail-normal-zh-dark-390.png",
+      "sha256": "1a67c4e8efbe86095fd777675d39e1c2a0ca066a044d74ef3b90c7e0ed749400",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "usdt-detail-reward-detail-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/usdt-detail-reward-detail-normal-zh-dark-390-scroll-1.png",
+      "sha256": "b2eee9da780ab958f19f133c61e146c6607fa117366307c013ea236ff748d33c",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 172,
+      "fullPage": false
+    },
+    {
+      "id": "nex-detail-reward-detail-normal-zh-dark-390",
+      "path": "screenshots/nex-detail-reward-detail-normal-zh-dark-390.png",
+      "sha256": "fcf4e23a58af936fd0ec2ac3da51e25a7af5933bd1ecbb5f4c0208eb42dc92cf",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "nex-detail-reward-detail-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/nex-detail-reward-detail-normal-zh-dark-390-scroll-1.png",
+      "sha256": "23fa6f23c86496f63e5aba0c17e37c10f5db69fa6a3ec8bcd3e9728828843336",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 172,
+      "fullPage": false
+    },
+    {
+      "id": "nex-checkout-checkout-normal-zh-dark-390",
+      "path": "screenshots/nex-checkout-checkout-normal-zh-dark-390.png",
+      "sha256": "cc9ef4f10d17f900eb6fde63958525605744e0913d0ee3cafce787b3c9adc0b0",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "nex-checkout-checkout-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/nex-checkout-checkout-normal-zh-dark-390-scroll-1.png",
+      "sha256": "417fb703fdb7f6d6d99d8ed375e90956fe692a1df7688206ff69bf536161e871",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 600,
+      "fullPage": false
+    },
+    {
+      "id": "nex-checkout-checkout-normal-zh-dark-390-scroll-2",
+      "path": "screenshots/nex-checkout-checkout-normal-zh-dark-390-scroll-2.png",
+      "sha256": "f5392ed013bf03130ad890375afe575425cf55ad75f63787d7df78db0c92e063",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 698,
+      "fullPage": false
+    },
+    {
+      "id": "nex-paid-order-order-paid-normal-zh-dark-390",
+      "path": "screenshots/nex-paid-order-order-paid-normal-zh-dark-390.png",
+      "sha256": "f2e9194b802779fff493069c321bc5d1873fc973fd1c0669b9342f1de6173b33",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "nex-paid-order-order-paid-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/nex-paid-order-order-paid-normal-zh-dark-390-scroll-1.png",
+      "sha256": "a2228bd536904c771b12e969f4dd59d2121eeb369eb2026deb88f1f2ea84eaa3",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 504,
+      "fullPage": false
+    },
+    {
+      "id": "nex-unknown-order-order-unknown-normal-zh-dark-390",
+      "path": "screenshots/nex-unknown-order-order-unknown-normal-zh-dark-390.png",
+      "sha256": "232d4d9dfecf75cada800970c045646ed95a3883bdf9dc8fced81061823b0912",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "nex-unknown-order-order-unknown-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/nex-unknown-order-order-unknown-normal-zh-dark-390-scroll-1.png",
+      "sha256": "7fa33a46fc66502612e4986d841f8093b4daa86328370419209a0d0118f11b9e",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 74,
+      "fullPage": false
+    },
+    {
+      "id": "missing-checkout-terms-checkout-normal-zh-dark-390",
+      "path": "screenshots/missing-checkout-terms-checkout-normal-zh-dark-390.png",
+      "sha256": "1e11c0b064d1a751dc19fab0f2d664b7416236661bc19576ffc29ce9ee4e1564",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "missing-checkout-terms-checkout-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/missing-checkout-terms-checkout-normal-zh-dark-390-scroll-1.png",
+      "sha256": "1b43b65e3adea2badd400d9e79d92425de7695dac2769fcd4ab07bf1eee65023",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 600,
+      "fullPage": false
+    },
+    {
+      "id": "missing-checkout-terms-checkout-normal-zh-dark-390-scroll-2",
+      "path": "screenshots/missing-checkout-terms-checkout-normal-zh-dark-390-scroll-2.png",
+      "sha256": "8b232041396684c99aab725e2b6cda590b47c1d707b787ab163c94f246515a69",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 807,
+      "fullPage": false
+    },
+    {
+      "id": "missing-rule-terms-rules-normal-zh-dark-390",
+      "path": "screenshots/missing-rule-terms-rules-normal-zh-dark-390.png",
+      "sha256": "82b414c1a140fbf148ae5e4356a42f88a6b310e437c904def1341b073ca1e7e9",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "missing-rule-terms-rules-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/missing-rule-terms-rules-normal-zh-dark-390-scroll-1.png",
+      "sha256": "1bb7390903faaae3d5f7403d598de05ac609839d82dca1cfd0e51db5c7cde801",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 374,
+      "fullPage": false
+    },
+    {
+      "id": "stale-bundle-quote-bundle-normal-zh-dark-390",
+      "path": "screenshots/stale-bundle-quote-bundle-normal-zh-dark-390.png",
+      "sha256": "f5c1d36b0dcefc9ddf0588d5888e7b3989d8e6384cddc8308f28df19f18a6040",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "stale-bundle-quote-bundle-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/stale-bundle-quote-bundle-normal-zh-dark-390-scroll-1.png",
+      "sha256": "463c34bff3579ba0260e41e2d46e9a41d5bf0504dbf1c6a86d720bb1de8fb736",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 600,
+      "fullPage": false
+    },
+    {
+      "id": "stale-bundle-quote-bundle-normal-zh-dark-390-scroll-2",
+      "path": "screenshots/stale-bundle-quote-bundle-normal-zh-dark-390-scroll-2.png",
+      "sha256": "e5f8e9546bb500d8761cad9ad77d2969ee4b9680c29cdcf0d294b9a74b038617",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 1065,
+      "fullPage": false
+    },
+    {
+      "id": "missing-nex-detail-terms-detail-normal-zh-dark-390",
+      "path": "screenshots/missing-nex-detail-terms-detail-normal-zh-dark-390.png",
+      "sha256": "5f7d609ba6893f98a2aaa2bf2b198a720e10da77fde3cffd6fd192f3717fef30",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 0,
+      "fullPage": false
+    },
+    {
+      "id": "missing-nex-detail-terms-detail-normal-zh-dark-390-scroll-1",
+      "path": "screenshots/missing-nex-detail-terms-detail-normal-zh-dark-390-scroll-1.png",
+      "sha256": "1ec638cf64806f75c0b332564d4c8aa63f3815867874836f305501951efcf853",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "scrollTop": 503,
+      "fullPage": false
+    }
+  ]
+}

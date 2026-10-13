@@ -1,0 +1,254 @@
+"use client";
+import { useEffect, useId, useState, type ReactNode } from 'react';
+import type { AudiencePreview, Catalog, Draft, DraftAudience, DraftPurchaseRule, DraftRewardSpec, Limit, PolicyRef, Promotion, Template } from '@/lib/admin/promotion-types';
+import { promotionRead } from '@/lib/admin/promotion-client';
+import { PromotionRightsDialog } from './h4-promotion-policies';
+import { PromotionBanner } from './h4-promotion-banner';
+import { newPurchaseRule, changeRewardType, changeTemplate, dateInput, limitText, policyKey, policyLabel, policyRef, utcInput, parsePromotionNumericInput, promotionInputText, promotionChoiceError, promotionBudgetComparison, type PromotionNumericKind } from '@/lib/admin/promotion-form';
+import { Button, Card, ConfirmCommand, Dialog, Field, Notice, PromotionSteps, ReadError, Summary, Table, TEMPLATE_LABELS, text, rewardText, formatTime } from './h4-promotion-ui';
+type NumericInputs = Record<string, string>;
+type NumericBinding = {raw?: string; onRaw: (raw: string) => void};
+function NumericField({label, kind, value, binding, onChange, hint, inline = false}: {
+    label: string; kind: PromotionNumericKind; value: string | number | null | undefined;
+    binding: NumericBinding; onChange: (value: string | number | null) => void; hint?: ReactNode; inline?: boolean;
+}) {
+    const id = useId(), raw = binding.raw ?? promotionInputText(value), result = parsePromotionNumericInput(raw, kind);
+    const help = result.error ? <span className="input-error" role="alert">{result.error}</span> : hint;
+    const input = <input type="text" inputMode={kind === 'amount' ? 'decimal' : 'numeric'} value={raw} aria-label={inline ? label : undefined} aria-describedby={inline && help ? id : undefined} aria-invalid={!!result.error} onChange={e => { const next = e.target.value; binding.onRaw(next); const parsed = parsePromotionNumericInput(next, kind); if (!parsed.error) onChange(parsed.value); }}/>;
+    return inline ? <>{input}{help && <small id={id}>{help}</small>}</> : <Field label={label} hint={help}>{input}</Field>;
+}
+function focusFormatError() {
+    if (typeof document !== 'undefined') [...document.querySelectorAll('dialog[open]')].at(-1)?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+}
+function invalidNumbers(fields: Array<[string, PromotionNumericKind, string | number | null | undefined]>, inputs: NumericInputs) {
+    return fields.some(([key, kind, value]) => !!parsePromotionNumericInput(inputs[key] ?? promotionInputText(value), kind).error);
+}
+export function LimitField({ label, value, onChange, numeric }: {
+    label: string;
+    value: Limit | null | undefined;
+    onChange: (v: Limit | null) => void;
+    numeric: NumericBinding;
+}) {
+    const [mode, setMode] = useState(value?.mode || (numeric.raw ? 'LIMITED' : '')), modeHint = useId();
+    const choiceError = promotionChoiceError(mode, ['LIMITED', 'UNLIMITED']);
+    useEffect(() => { if (value)
+        setMode(value.mode); }, [value]);
+    return <div className="field"><span>{label}</span><select aria-label={label + '设置方式'} aria-invalid={!!choiceError} aria-describedby={choiceError ? modeHint : undefined} value={mode} onChange={e => { setMode(e.target.value); numeric.onRaw(''); onChange(e.target.value === 'UNLIMITED' ? { mode: 'UNLIMITED' } : null); }}><option value="">未配置</option><option value="LIMITED">设置上限</option><option value="UNLIMITED">无限制</option></select>{choiceError && <small id={modeHint} className="input-error" role="alert">{choiceError}</small>}{mode === 'LIMITED' && <NumericField inline label={label} kind="limit" value={value?.mode === 'LIMITED' ? value.value : null} binding={numeric} onChange={v => onChange(v === null ? null : {mode: 'LIMITED', value: v as number})}/>}</div>;
+}
+export function PolicySelect({ label, kind, value, catalog, onChange, asset, productNo }: {
+    label: string;
+    kind: string;
+    value: PolicyRef | null | undefined;
+    catalog: Catalog;
+    onChange: (v: PolicyRef | null) => void;
+    asset?: string;
+    productNo?: string | null;
+}) {
+    const [rightsOpen, setRightsOpen] = useState(false);
+    const options = catalog.policies.filter(p => p.content.kind === kind && (!asset || ('asset' in p.content && p.content.asset === asset)) && (!productNo || ('productNo' in p.content && p.content.productNo === productNo)));
+    const selected = options.find(p => policyKey(p) === policyKey(value));
+    return <><Field label={label} hint={selected ? <><span>{selected.fixture ? '仅限隔离范围使用 · ' : ''}版本 {selected.version} · {selected.state === 'APPROVED' ? '已批准' : '当前不可用'}</span><span title={selected.policyId}> · 引用尾号 {selected.policyId.slice(-8)}</span>{kind === 'DEVICE_RIGHTS' && <a className="btn link" href="#" aria-haspopup="dialog" onClick={e => {e.preventDefault(); setRightsOpen(true);}}>查看权益详情</a>}</> : '从已批准政策选择；未配置会阻止提交审核。'}><select value={policyKey(value)} onChange={e => { const p = options.find(p => policyKey(p) === e.target.value); onChange(p ? policyRef(p) : null); }}><option value="">请选择已批准政策</option>{value && !selected && <option value={policyKey(value)} disabled>原引用当前不可用</option>}{options.map(p => <option key={policyKey(p)} value={policyKey(p)} disabled={p.state !== 'APPROVED'}>{policyLabel(p,catalog)} · v{p.version}{p.state === 'APPROVED' ? ' · 已批准' : ' · 不可用'}</option>)}</select></Field>{rightsOpen && selected && <PromotionRightsDialog policy={selected} catalog={catalog} onClose={() => setRightsOpen(false)}/>}</>;
+}
+function RewardFields({ role, value, onChange, catalog, inputs, onInput, prefix }: {
+    role: 'BUYER' | 'DIRECT_INVITER';
+    value: DraftRewardSpec | null | undefined;
+    onChange: (v: DraftRewardSpec | null) => void;
+    catalog: Catalog;
+    inputs: NumericInputs;
+    onInput: (key: string, raw: string) => void;
+    prefix: string;
+}) {
+    const [typeChange, setTypeChange] = useState<DraftRewardSpec['type'] | null>(null);
+    const binding = (field: string): NumericBinding => ({raw: inputs[`${prefix}.${field}`], onRaw: raw => onInput(`${prefix}.${field}`, raw)});
+    return <fieldset className="form-section"><legend>{role === 'BUYER' ? '购买者奖励' : '直接邀请人奖励'}</legend><Field label="奖励类型 *" hint={promotionChoiceError(value?.type, ['DEVICE', 'USDT', 'NEX']) || undefined}><select aria-invalid={!!promotionChoiceError(value?.type, ['DEVICE', 'USDT', 'NEX'])} value={value?.type || ''} onChange={e => { if (!e.target.value) {
+        onChange(null);
+        return;
+    } const next = e.target.value as DraftRewardSpec['type']; if (value && value.type !== next)
+        setTypeChange(next);
+    else
+        onChange(changeRewardType(value, next, role)); }}><option value="">未配置</option><option value="DEVICE">设备赠礼</option><option value="USDT">USDT</option><option value="NEX">NEX</option></select></Field>
+    {typeChange && <Notice title="切换奖励类型" kind="warn">原金额、赠品和对应政策会清空，奖励身份保留。<div className="actions"><Button onClick={() => setTypeChange(null)}>保留原类型</Button><Button onClick={() => { onChange(changeRewardType(value, typeChange, role)); setTypeChange(null); }}>确认切换</Button></div></Notice>}
+    {value?.type === 'DEVICE' && <div className="grid2"><Field label="赠送设备 *" hint={promotionChoiceError(value.giftProductNo, catalog.skus.map(s => s.productNo)) || undefined}><select aria-invalid={!!promotionChoiceError(value.giftProductNo, catalog.skus.map(s => s.productNo))} value={value.giftProductNo || ''} onChange={e => onChange({ ...value, giftProductNo: e.target.value || null, deviceRightsProfile: null })}><option value="">请选择赠送设备</option>{catalog.skus.map(s => <option key={s.productNo} value={s.productNo} disabled={!s.available || !s.giftEligible}>{text(s.name)}{!s.available || !s.giftEligible ? ' · 不可赠送' : ''}</option>)}</select></Field><NumericField label="每组赠送数量 *" kind="quantity" value={value.quantity} binding={binding('quantity')} onChange={v => onChange({...value, quantity: v as number | null})}/><PolicySelect label="设备权益引用 *" kind="DEVICE_RIGHTS" value={value.deviceRightsProfile} catalog={catalog} productNo={value.giftProductNo} onChange={p => onChange({ ...value, deviceRightsProfile: p })}/></div>}
+    {value && ['USDT', 'NEX'].includes(value.type) && value.type !== 'DEVICE' && <div className="grid2"><NumericField label={`每组 ${value.type} 奖励金额 *`} kind="amount" value={value.amount} binding={binding('amount')} hint="固定精确金额，最多 6 位小数。" onChange={v => onChange({...value, amount: v as string | null})}/><PolicySelect label={`${value.type} 资产政策 *`} kind="ASSET" value={value.assetPolicy} catalog={catalog} asset={value.type} onChange={p => onChange({ ...value, assetPolicy: p })}/></div>}
+  </fieldset>;
+}
+function RuleEditor({ initial, catalog, dual, readOnly, onClose, onSave }: {
+    initial: DraftPurchaseRule;
+    catalog: Catalog;
+    dual: boolean;
+    readOnly: boolean;
+    onClose: () => void;
+    onSave: (r: DraftPurchaseRule) => void;
+}) {
+    const [rule, setRule] = useState(() => structuredClone(initial));
+    const [inputs, setInputs] = useState<NumericInputs>({});
+    const patch = (value: Partial<DraftPurchaseRule>) => setRule({ ...rule, ...value });
+    const onInput = (key: string, raw: string) => setInputs(current => ({...current, [key]: raw}));
+    const binding = (key: string): NumericBinding => ({raw: inputs[key], onRaw: raw => onInput(key, raw)});
+    const rewardFields = (prefix: string, reward: DraftRewardSpec | null | undefined): Array<[string, PromotionNumericKind, string | number | null | undefined]> => reward?.type === 'DEVICE' ? [[prefix+'.quantity', 'quantity', reward.quantity]] : reward ? [[prefix+'.amount', 'amount', reward.amount]] : [];
+    const formatInvalid = invalidNumbers([['minBuyQty', 'quantity', rule.minBuyQty], ['priority', 'priority', rule.priority], ['maxGroups', 'limit', rule.maxGroups?.mode === 'LIMITED' ? rule.maxGroups.value : null], ['maxGroupsPerPerson', 'limit', rule.maxGroupsPerPerson?.mode === 'LIMITED' ? rule.maxGroupsPerPerson.value : null], ...rewardFields('buyer', rule.buyerReward), ...(dual ? rewardFields('inviter', rule.inviterReward) : [])], inputs);
+    const choicesInvalid = !!promotionChoiceError(rule.productNo, catalog.skus.map(s => s.productNo)) || !!promotionChoiceError(rule.repeatMode, ['PER_GROUP', 'ONCE_PER_ORDER']) || [rule.maxGroups, rule.maxGroupsPerPerson].some(limit => !!promotionChoiceError(limit?.mode, ['LIMITED', 'UNLIMITED'])) || [rule.buyerReward, dual ? rule.inviterReward : null].some(reward => !!promotionChoiceError(reward?.type, ['DEVICE', 'USDT', 'NEX']) || reward?.type === 'DEVICE' && !!promotionChoiceError(reward.giftProductNo, catalog.skus.map(s => s.productNo)));
+    const changeReward = (prefix: 'buyer' | 'inviter', reward: DraftRewardSpec | null) => {
+        const key = prefix === 'buyer' ? 'buyerReward' : 'inviterReward';
+        if (reward?.type !== rule[key]?.type) setInputs(current => Object.fromEntries(Object.entries(current).filter(([name]) => !name.startsWith(prefix+'.'))));
+        patch({[key]: reward});
+    };
+    return <Dialog title="编辑购买规则" wide onClose={onClose} footer={<><Button onClick={onClose}>取消</Button><Button kind="primary" disabled={readOnly} onClick={() => { if (formatInvalid || choicesInvalid) { focusFormatError(); return; } onSave({ ...rule, ...(!dual ? { inviterReward: null } : {}) }); }}>保留到草稿</Button></>}><p>购买者和直接邀请人分别形成独立奖励义务；提交审核前须填写完整配置。</p><fieldset disabled={readOnly}><div className="grid2"><Field label="购买设备 *" hint={promotionChoiceError(rule.productNo, catalog.skus.map(s => s.productNo)) || undefined}><select aria-invalid={!!promotionChoiceError(rule.productNo, catalog.skus.map(s => s.productNo))} value={rule.productNo || ''} onChange={e => patch({ productNo: e.target.value || null })}><option value="">请选择购买设备</option>{catalog.skus.map(s => <option key={s.productNo} value={s.productNo} disabled={!s.available}>{text(s.name)}{!s.available ? ' · 暂不可用' : ''}</option>)}</select></Field><NumericField label="每组购买数量 *" kind="quantity" value={rule.minBuyQty} binding={binding('minBuyQty')} onChange={v => patch({minBuyQty: v as number | null})}/></div><fieldset className="form-section"><legend>计奖方式与组数上限</legend><div className="form-grid"><Field label="计奖方式 *" hint={promotionChoiceError(rule.repeatMode, ['PER_GROUP', 'ONCE_PER_ORDER']) || undefined}><select aria-invalid={!!promotionChoiceError(rule.repeatMode, ['PER_GROUP', 'ONCE_PER_ORDER'])} value={rule.repeatMode || ''} onChange={e => patch({ repeatMode: e.target.value as DraftPurchaseRule['repeatMode'] || null })}><option value="">请选择</option><option value="PER_GROUP">每满一组发放</option><option value="ONCE_PER_ORDER">每笔订单仅一次</option></select></Field><LimitField label="每单最大计奖组数" numeric={binding('maxGroups')} value={rule.maxGroups} onChange={v => patch({ maxGroups: v })}/><LimitField label="活动内每人最大计奖组数" numeric={binding('maxGroupsPerPerson')} value={rule.maxGroupsPerPerson} onChange={v => patch({ maxGroupsPerPerson: v })}/><NumericField label="规则优先级 *" kind="priority" value={rule.priority} binding={binding('priority')} onChange={v => patch({priority: v as number | null})}/></div><p className="help">按账户与受益角色累计，改版不重置；未配置不等于无限制。</p></fieldset><div className={dual ? 'beneficiaries' : ''}><RewardFields role="BUYER" value={rule.buyerReward} onChange={v => changeReward('buyer', v)} catalog={catalog} inputs={inputs} onInput={onInput} prefix="buyer"/>{dual && <RewardFields role="DIRECT_INVITER" value={rule.inviterReward} onChange={v => changeReward('inviter', v)} catalog={catalog} inputs={inputs} onInput={onInput} prefix="inviter"/>}</div></fieldset></Dialog>;
+}
+function CombinationEditor({draft, catalog, readOnly, onChange, onClose}: {
+    draft: Draft; catalog: Catalog; readOnly: boolean; onChange: (value: Partial<Draft>) => void; onClose: () => void;
+}) {
+    const [inputs, setInputs] = useState<NumericInputs>({}), rules = draft.rules || [];
+    const skuChoices = catalog.skus.map(s => s.productNo);
+    const choiceError = promotionChoiceError(draft.combinationMatch, ['ALL', 'ANY']);
+    const formatInvalid = invalidNumbers(rules.map(r => [r.ruleId, 'quantity', r.minBuyQty]), inputs);
+    const choicesInvalid = !!choiceError || rules.some(r => !!promotionChoiceError(r.productNo, skuChoices));
+    const name = (productNo: string | null | undefined) => text(catalog.skus.find(s => s.productNo === productNo)?.name) || '未配置';
+    const reward = (value: DraftRewardSpec | null | undefined) => {
+        const ref = value?.type === 'DEVICE' ? value.deviceRightsProfile : value ? value.assetPolicy : null;
+        const policy = catalog.policies.find(p => p.policyId === ref?.policyId && p.version === ref.version && p.contentHash === ref.contentHash);
+        return <>{rewardText(value, value?.type === 'DEVICE' ? name(value.giftProductNo) : undefined)}<small>{policy ? policyLabel(policy, catalog) : '政策尚未确认'}</small></>;
+    };
+    return <Dialog title="编辑组合购买条件" wide onClose={onClose} footer={<Button disabled={readOnly} onClick={() => { if (readOnly) return; if (formatInvalid || choicesInvalid) { focusFormatError(); return; } onClose(); }}>保留到草稿</Button>}><p>每个购买设备仍按对应规则分别计奖；组合匹配随当前草稿一起保存。</p><fieldset disabled={readOnly} className="form-section"><legend>组合购买项</legend>{rules.map((item, i) => <div className="grid2" key={item.ruleId}><Field label={'购买设备 ' + (i + 1)} hint={promotionChoiceError(item.productNo, skuChoices) || undefined}><select aria-invalid={!!promotionChoiceError(item.productNo, skuChoices)} value={item.productNo || ''} onChange={e => onChange({rules: rules.map(r => r.ruleId === item.ruleId ? {...r, productNo: e.target.value || null} : r)})}><option value="">请选择购买设备</option>{catalog.skus.map(s => <option key={s.productNo} value={s.productNo} disabled={!s.available}>{text(s.name)}</option>)}</select></Field><NumericField label={'最低数量 ' + (i + 1)} kind="quantity" value={item.minBuyQty} binding={{raw: inputs[item.ruleId], onRaw: raw => setInputs(current => ({...current, [item.ruleId]: raw}))}} onChange={value => onChange({rules: rules.map(r => r.ruleId === item.ruleId ? {...r, minBuyQty: value as number | null} : r)})}/></div>)}<Field label="组合购买匹配 *" hint={choiceError || '多型号组合至少添加两种购买设备。'}><select aria-invalid={!!choiceError} value={draft.combinationMatch || ''} onChange={e => onChange({combinationMatch: (e.target.value || null) as Draft['combinationMatch']})}><option value="">请选择</option><option value="ALL">同时满足全部购买项</option><option value="ANY">满足任一购买项</option></select></Field><p className="help">至少配置两种购买设备；未填写完整仍可保留草稿，不能提交审核或发布。</p></fieldset><Summary rows={rules.flatMap((r, i) => [
+        [`购买设备 ${i + 1} · ${name(r.productNo)}`, `每组 ${r.minBuyQty ?? '未配置'} 台 · ${r.repeatMode === 'PER_GROUP' ? '每满一组发放' : r.repeatMode === 'ONCE_PER_ORDER' ? '每笔订单仅一次' : '计奖方式未配置'} · 每单 ${limitText(r.maxGroups)} 组 · 每人累计 ${limitText(r.maxGroupsPerPerson)} 组`],
+        [`购买者奖励 ${i + 1}`, reward(r.buyerReward)],
+        ...(r.inviterReward ? [[`直接邀请人奖励 ${i + 1}`, reward(r.inviterReward)] as [string, ReactNode]] : [])
+    ] as Array<[string, ReactNode]>)}/></Dialog>;
+}
+function AudienceFields({ label, value, onChange, catalog, readOnly, firstPurchase, onFirstPurchase, primary = false }: {
+    label: string;
+    value: DraftAudience | null | undefined;
+    onChange: (v: DraftAudience) => void;
+    catalog: Catalog;
+    readOnly: boolean;
+    firstPurchase?: PolicyRef | null;
+    onFirstPurchase?: (value: PolicyRef | null) => void;
+    primary?: boolean;
+}) {
+    const audience = value || { registrationAge: { minDays: null, maxDays: null }, lastValidPurchaseAge: { minDays: null, maxDays: null }, rankIds: [], markets: [], deviceAudiencePolicy: null }, [rankMode, setRankMode] = useState('set'), [rankMin, setRankMin] = useState(''), [rankMax, setRankMax] = useState(''), [extraOpen,setExtraOpen]=useState(false);
+    const patch = (p: Partial<DraftAudience>) => onChange({ ...audience, ...p });
+    const range = (lo: string, hi: string) => { setRankMin(lo); setRankMax(hi); const from = catalog.ranks.findIndex(r => r.id === lo), to = catalog.ranks.findIndex(r => r.id === hi); if (from >= 0 && to >= from)
+        patch({ rankIds: catalog.ranks.slice(from, to + 1).map(r => r.id) }); };
+    const dayFields=(key:'registrationAge'|'lastValidPurchaseAge')=><div className="grid2"><Field label={key==='registrationAge'?'注册至少（天）':'最短购机间隔（天）'} hint={key==='lastValidPurchaseAge'?'按最近一次有效购机计；取消和退款订单不计入。':undefined}><input type="number" min={0} step={1} value={audience[key]?.minDays??''} onChange={e=>patch({[key]:{maxDays:audience[key]?.maxDays??null,minDays:e.target.value?Number(e.target.value):null}})}/></Field><Field label={key==='registrationAge'?'注册最多（天）':'最长购机间隔（天，可不设）'} hint={key==='lastValidPurchaseAge'?'可不设上限；上限不能小于最短间隔。':undefined}><input type="number" min={0} step={1} value={audience[key]?.maxDays??''} onChange={e=>patch({[key]:{minDays:audience[key]?.minDays??null,maxDays:e.target.value?Number(e.target.value):null}})}/></Field></div>;
+    const extraSummary=`${audience.sponsor===undefined||audience.neverPurchased===undefined?'邀请 / 历史排除待配置':audience.sponsor==='ANY'?'不限邀请关系':audience.sponsor==='REQUIRED'?'须有直接邀请人':'无直接邀请人'} · ${audience.markets?.length?audience.markets.map(id=>text(catalog.markets.find(m=>m.id===id)?.name)).join('、'):'不限市场'}${audience.registrationAge?.minDays!=null||audience.registrationAge?.maxDays!=null?' · 已设注册时长':''}${audience.devicePresence&&audience.devicePresence!=='ANY'&&!audience.deviceAudiencePolicy?' · 缺设备政策':''}${onFirstPurchase&&!firstPurchase?' · 首购政策未配置':''}`;
+    return <><fieldset disabled={readOnly} className={primary?'':'form-section'}>{!primary&&<legend>{label}</legend>}<div className="grid2"><Field label="参与人群 *"><select value={audience.purchaseHistory||''} onChange={e=>patch({purchaseHistory:(e.target.value||undefined) as DraftAudience['purchaseHistory']})}><option value="">未配置</option><option value="ANY">全部账户</option><option value="NEVER_PAID">首次合格购机</option><option value="HAS_VALID_PURCHASE">复购账户</option></select></Field><Field label="设备条件 *"><select value={audience.devicePresence||''} onChange={e=>patch({devicePresence:(e.target.value||undefined) as DraftAudience['devicePresence']})}><option value="">未配置</option><option value="ANY">不限持有情况</option><option value="NONE">当前无符合条件的设备</option><option value="HAS_QUALIFYING_DEVICE">持有符合条件的设备</option></select></Field><Field label="条件组合 *"><select value="ALL" onChange={()=>undefined}><option value="ALL">同时满足以上条件</option></select></Field><Field label="等级选择方式"><select value={rankMode} onChange={e=>{setRankMode(e.target.value);if(e.target.value==='all')patch({rankIds:[]});}}><option value="set" disabled={!catalog.ranks.length}>选择等级集合</option><option value="range" disabled={!catalog.ranks.length}>选择等级区间</option><option value="all">全部现有等级</option></select></Field></div>
+    <fieldset className="form-section"><legend>账户等级 · 现有等级目录</legend>{rankMode==='set'&&<div className="rank-options">{catalog.ranks.map(r=><label key={r.id} title={text(r.name)}><input type="checkbox" checked={audience.rankIds?.includes(r.id)||false} onChange={e=>patch({rankIds:e.target.checked?[...(audience.rankIds||[]),r.id]:(audience.rankIds||[]).filter(v=>v!==r.id)})}/>{text(r.name)}</label>)}</div>}{rankMode==='range'&&<div className="grid2"><Field label="最低等级"><select value={rankMin} onChange={e=>range(e.target.value,rankMax)}><option value="">请选择</option>{catalog.ranks.map(r=><option key={r.id} value={r.id}>{text(r.name)}</option>)}</select></Field><Field label="最高等级"><select value={rankMax} onChange={e=>range(rankMin,e.target.value)}><option value="">请选择</option>{catalog.ranks.map(r=><option key={r.id} value={r.id}>{text(r.name)}</option>)}</select></Field></div>}<p className="help">{!catalog.ranks.length?'当前目录无可选等级，可保留不限等级。':'只能选择现有等级；不勾选表示不限等级。区间完整且最高不低于最低才应用。'}</p></fieldset><fieldset className="form-section"><legend>复购 / 召回专属条件</legend>{dayFields('lastValidPurchaseAge')}</fieldset></fieldset>
+    <div className="help extra-settings"><span title={extraSummary}>{extraSummary}</span><Button kind="link" onClick={()=>setExtraOpen(true)}>补充条件与政策</Button></div>
+    {extraOpen&&<Dialog title={`${label} · 补充条件与政策`} wide onClose={()=>setExtraOpen(false)} footer={<Button onClick={()=>setExtraOpen(false)}>返回参与资格</Button>}><Notice title="当前草稿设置">{extraSummary}。此处变更随活动草稿一起保存。</Notice><fieldset disabled={readOnly}><div className="grid2"><Field label="邀请关系 *"><select value={audience.sponsor||''} onChange={e=>patch({sponsor:(e.target.value||undefined) as DraftAudience['sponsor']})}><option value="">未配置</option><option value="ANY">不限邀请关系</option><option value="REQUIRED">须有直接邀请人</option><option value="ABSENT">没有直接邀请人</option></select></Field><Field label="历史购机排除 *"><select value={audience.neverPurchased===undefined?'':String(audience.neverPurchased)} onChange={e=>patch({neverPurchased:e.target.value?e.target.value==='true':undefined})}><option value="">未配置</option><option value="false">不额外排除历史购机</option><option value="true">仅从未有效购机</option></select></Field></div><fieldset className="form-section"><legend>注册时长</legend>{dayFields('registrationAge')}</fieldset><fieldset className="form-section"><legend>适用市场 · 不勾选表示不限</legend><div className="rank-options">{catalog.markets.map(m=><label key={m.id}><input type="checkbox" checked={audience.markets?.includes(m.id)||false} onChange={e=>patch({markets:e.target.checked?[...(audience.markets||[]),m.id]:(audience.markets||[]).filter(v=>v!==m.id)})}/>{text(m.name)}</label>)}</div></fieldset>{audience.devicePresence&&audience.devicePresence!=='ANY'&&<PolicySelect label="设备判断政策" kind="DEVICE_AUDIENCE" value={audience.deviceAudiencePolicy} onChange={v=>patch({deviceAudiencePolicy:v})} catalog={catalog}/>} {onFirstPurchase&&<PolicySelect label="首购认定政策" kind="FIRST_PURCHASE" value={firstPurchase} catalog={catalog} onChange={onFirstPurchase}/>}</fieldset></Dialog>}</>;
+}
+export default function PromotionEditor({ activity, catalog, can, onSaved, onBack, onReview, onStep, initialStep=0 }: {
+    activity: Promotion;
+    catalog: Catalog;
+    can: (v: string) => boolean;
+    onSaved: (nextStep?: number) => Promise<void>;
+    onBack: () => void;
+    onReview: () => void;
+    onStep?: (step: number) => void;
+    initialStep?:number;
+}) {
+    const [removeRule,setRemoveRule]=useState<DraftPurchaseRule|null>(null), [limitsOpen,setLimitsOpen]=useState(false), [combinationOpen,setCombinationOpen]=useState(false), [policiesOpen,setPoliciesOpen]=useState(false), [nextStep,setNextStep]=useState<number|null>(null);
+    const version = activity.current!, [draft, setDraft] = useState<Draft>(() => structuredClone(version.draft)), [step, setStep] = useState(initialStep), [language, setLanguage] = useState<'zh' | 'en' | 'vi'>('zh'), [rule, setRule] = useState<DraftPurchaseRule | null>(null), [saving, setSaving] = useState(false), [template, setTemplate] = useState<Template | null>(null), [preview, setPreview] = useState<AudiencePreview | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null), [budgetOpen, setBudgetOpen] = useState(false), [publicOpen, setPublicOpen] = useState(false), [exitTarget, setExitTarget] = useState<'detail' | 'review' | null>(null);
+    const [buyerLimit, setBuyerLimit] = useState<Limit | null>(version.draft.perPersonLimit?.buyer || null), [inviterLimit, setInviterLimit] = useState<Limit | null>(version.draft.perPersonLimit?.directInviter || null);
+    const [templatePickerOpen, setTemplatePickerOpen] = useState(false), [limitInputs, setLimitInputs] = useState<NumericInputs>({});
+    const [bannerUploading, setBannerUploading] = useState(false);
+    const limitBinding = (key: string): NumericBinding => ({raw: limitInputs[key], onRaw: raw => setLimitInputs(current => ({...current, [key]: raw}))});
+    const limitFields: Array<[string, string, Limit | null | undefined]> = [['buyer', '购买者活动参与上限', buyerLimit], ['inviter', '直接邀请人活动参与上限', inviterLimit], ['activity', '全活动参与订单上限', draft.activityLimit], ['order', '每单奖励义务上限', draft.maxRewardUnitsPerOrder]];
+    const limitErrors = limitFields.flatMap(([key, label, value]) => {
+        const error = promotionChoiceError(value?.mode, ['LIMITED', 'UNLIMITED']) || parsePromotionNumericInput(limitInputs[key] ?? (value?.mode === 'LIMITED' ? promotionInputText(value.value) : ''), 'limit').error;
+        return error ? [label + '：' + error] : [];
+    });
+    const limitsFormatInvalid = limitErrors.length > 0;
+    const limitsIncomplete = !!buyerLimit !== !!inviterLimit;
+    const dirty = bannerUploading || limitsFormatInvalid || JSON.stringify(draft) !== JSON.stringify(version.draft);
+    useEffect(() => { onStep?.(step); }, [step, onStep]);
+    useEffect(() => { if (limitsOpen && limitsFormatInvalid) focusFormatError(); }, [limitsOpen, limitsFormatInvalid]);
+    useEffect(() => { const warn = (e: BeforeUnloadEvent) => { if (dirty) {
+        e.preventDefault();
+    } }; window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn); }, [dirty]);
+    const leave = (target: 'detail' | 'review') => { if (bannerUploading) return; if (dirty)
+        setExitTarget(target);
+    else
+        target === 'detail' ? onBack() : onReview(); };
+    const readOnly = !can('growth_promotion_edit') || version.state !== 'DRAFT' || ['ENDED', 'ARCHIVED'].includes(activity.state);
+    const requestSave = () => { if (readOnly || bannerUploading) return; if (limitsFormatInvalid || limitsIncomplete) { setLimitsOpen(true); focusFormatError(); return; } setSaving(true); };
+    const limitFormatNotice = limitsFormatInvalid && <Notice title="上限格式尚未通过" kind="bad"><p>{limitErrors.join('；')}</p><Button onClick={() => setLimitsOpen(true)}>定位上限输入</Button></Notice>;
+    const moveStep = (target: number) => {
+        if (saving || bannerUploading || target === step) return;
+        if (readOnly) { setStep(target); return; }
+        if (limitsFormatInvalid || limitsIncomplete) { setLimitsOpen(true); focusFormatError(); return; }
+        if (!dirty) { setStep(target); return; }
+        const invalid = Array.from(document.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('.prm fieldset input, .prm fieldset select, .prm fieldset textarea')).find(field => !field.disabled && !field.checkValidity());
+        if (invalid) { invalid.reportValidity(); return; }
+        setNextStep(target); requestSave();
+    };
+    const patch = (p: Partial<Draft>) => { setDraft(current => ({ ...current, ...p, ...(p.policies ? { policies: { firstPurchase: null, ...p.policies } } : {}) })); setPreview(null); };
+    const previewAudience = async () => { setBusy(true); setError(null); try {
+        setPreview(await promotionRead<AudiencePreview>(`/promotions/${activity.activityId}/audience-preview`, undefined, { method: 'POST', body: JSON.stringify({ draft }) }));
+    }
+    catch (e) {
+        setError(e);
+    }
+    finally {
+        setBusy(false);
+    } };
+    const zone = draft.displayTimezone || 'UTC', sku = (id: string | null | undefined) => text(catalog.skus.find(s => s.productNo === id)?.name);
+    const budgetRows = draft.budgets || [];
+    const selectedStacking=catalog.policies.find(p=>policyKey(p)===policyKey(draft.policies?.stacking))?.content;
+    const stacking=selectedStacking?.kind==='STACKING'?selectedStacking:null;
+    const permitted=(value:string|undefined)=>!value?'政策未配置':value==='ALLOW'?'允许叠加':'不允许叠加';
+    const stackingFields=[['同类促销',stacking?'同一购买台互斥':'政策未配置'],['优惠券',permitted(stacking?.voucher)],['组合折扣',permitted(stacking?.bundleDiscount)],['试用优惠','当前政策未定义'],['现有邀请奖励',permitted(stacking?.existingReferral)],['H8 新人礼',permitted(stacking?.existingH8)]];
+    const selectedPolicies=[draft.policies?.settlement,draft.policies?.stacking,draft.policies?.refund,draft.policies?.quote,draft.policies?.authorization];
+    const approvedCount=selectedPolicies.filter(ref=>catalog.policies.some(p=>policyKey(p)===policyKey(ref)&&p.state==='APPROVED')).length;
+    const policySummary='所需政策已批准 '+approvedCount+' / 5'+(approvedCount<5?' · 缺项不可提交审核':'')+' · 每单奖励义务上限 '+limitText(draft.maxRewardUnitsPerOrder);
+
+    return <><PromotionSteps step={step ?? 0} onStep={moveStep} disabled={saving || bannerUploading}/>{readOnly && <Notice title="当前为只读" kind="warn">权限、候选状态或依赖数据当前不满足编辑条件。只读查看，原填写内容继续保留。</Notice>}
+    {step === 0 && <><Card title="活动信息" body><fieldset disabled={readOnly}><div className="grid2"><Field label="活动名称 *" wide hint="仅用于后台识别，不改变活动身份。"><input maxLength={200} value={draft.name || ''} onChange={e => patch({ name: e.target.value || null })}/></Field><Field label="活动类别 *"><select value={draft.category} onChange={e => patch({ category: e.target.value as Draft['category'] })}><option value="PROMOTION">促销</option><option value="REFERRAL">裂变</option></select></Field><Field label="活动模板 *" hint={<button type="button" className="inline-setting" aria-haspopup="dialog" onClick={() => setTemplatePickerOpen(true)}>选择活动模板</button>}><select value={draft.template} onChange={e => setTemplate(e.target.value as Template)}>{Object.entries(TEMPLATE_LABELS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}</select></Field><Field label="显示时区 *"><select value={draft.displayTimezone || ''} onChange={e => patch({ displayTimezone: e.target.value || null })}><option value="">请选择时区</option><option value="Asia/Tokyo">日本时间 · UTC+9</option><option value="UTC">协调世界时 · UTC</option><option value="Asia/Ho_Chi_Minh">越南时间 · UTC+7</option>{draft.displayTimezone && !['Asia/Tokyo', 'UTC', 'Asia/Ho_Chi_Minh'].includes(draft.displayTimezone) && <option>{draft.displayTimezone}</option>}</select></Field><Field label="投放位置"><select value={draft.placement || ''} onChange={e => patch({ placement: e.target.value ? 'home.purchase-promotion' : null })}><option value="">不投放首页</option><option value="home.purchase-promotion">首页购机推广</option></select></Field>{(['startsAt', 'endsAt'] as const).map((key, i) => <Field key={key} label={`${i ? '结束' : '开始'}时间 *`} hint={draft[key] ? undefined : '先选择时区，再填写日期'}><input type="datetime-local" disabled={!draft.displayTimezone || readOnly} value={dateInput(draft[key], zone)} onChange={e => { try {
+        patch({ [key]: utcInput(e.target.value, zone) });
+        setError(null);
+    }
+    catch (f) {
+        setError(f);
+    } }}/></Field>)}</div></fieldset></Card><Card title="公开说明" body action={<Button onClick={() => setPublicOpen(true)}>公开说明预览</Button>}><PromotionBanner assetId={draft.bannerAssetId} readOnly={readOnly} onChange={bannerAssetId => patch({ bannerAssetId })} onUploading={setBannerUploading}/><div className="tabs">{(['zh', 'en', 'vi'] as const).map((l, i) => <button key={l} className={language === l ? 'active' : ''} onClick={() => setLanguage(l)}>{['中文', 'English', 'Tiếng Việt'][i]}</button>)}</div><fieldset disabled={readOnly}><div className="grid2"><Field label="展示标题 *" wide><input value={draft.title?.[language] || ''} onChange={e => patch({ title: { ...draft.title, [language]: e.target.value } })}/></Field><Field label="活动规则 *" wide><textarea value={draft.terms?.[language] || ''} onChange={e => patch({ terms: { ...draft.terms, [language]: e.target.value } })}/></Field></div><p className="help">三种语言均需完整。首页推广固定进入商城并筛选适用商品。</p><label className="evidence-choice"><input type="checkbox" checked={!!draft.minimumClientCapabilities} onChange={e => patch({ minimumClientCapabilities: e.target.checked ? ['PROMOTION_QUOTE_V1', 'ORDER_ITEM_QUANTITIES_V1', 'PROMOTION_REWARDS_V1'] : null })}/>仅向支持促销报价、购买数量及奖励清单的客户端开放</label></fieldset></Card></>}
+    {step === 1 && <><Card title="参与资格" body><AudienceFields primary label="购买者条件" readOnly={readOnly} value={draft.buyerAudience} onChange={v => patch({ buyerAudience: v })} catalog={catalog} firstPurchase={draft.policies?.firstPurchase} onFirstPurchase={v=>patch({policies:{...draft.policies,firstPurchase:v}})}/>{draft.template === 'DIRECT_REFERRAL' && <AudienceFields label="直接邀请人条件" readOnly={readOnly} value={draft.inviterAudience} onChange={v => patch({ inviterAudience: v })} catalog={catalog}/>}</Card><Card title="人群预览" body action={<Button kind="primary" disabled={busy || !can('growth_promotion_simulate')} onClick={previewAudience}>{busy ? '正在预览…' : '重新预览'}</Button>}>{preview ? <><Table headers={['样本分组', '数量', '依据']} rows={[['符合条件', preview.matched ?? '-', '当前条件命中'], ['不符合条件', preview.rejected ?? '-', '已确认事实未满足'], ['事实未知', preview.unknown ?? '-', '当前资料尚未确认']]}/>{preview.reasonCounts.map((r, i) => <p className="help" key={i}>{text(r.message)} · {r.count ?? '-'}</p>)}<p className="help">统计时刻：{formatTime(preview.asOf)}。条件变更后须重新预览；此结果不占资格或预算。</p>{can('user_c1_read') && preview.samples.length > 0 && <details><summary>查看授权样本</summary>{preview.samples.map(s => <p key={s.accountId}>{s.accountId} · {s.reasons.map(r => text(r.message)).join('；')}</p>)}</details>}</> : <Notice title="预览尚未生成">填写参与条件后可预览；修改条件会清除旧结果。</Notice>}</Card></>}
+    {step === 2 && <><Card title="购买条件与赠奖" action={<div className="actions"><Button kind="primary" disabled={readOnly} onClick={() => setRule(newPurchaseRule())}>添加购买设备</Button>{draft.template === 'MULTI_PRODUCT' && <Button disabled={readOnly} onClick={() => setCombinationOpen(true)}>编辑组合</Button>}</div>}><Table headers={['购买设备', '计算方式', '受益人', '每组奖励', '规则组数上限', '操作']} rows={(draft.rules || []).map(r => [<><b>{sku(r.productNo)}</b><small>购买 {r.minBuyQty ?? '未配置'} 台为一组</small></>, r.repeatMode === 'PER_GROUP' ? '每组发放' : r.repeatMode === 'ONCE_PER_ORDER' ? '每单一次' : '未配置', r.inviterReward ? '购买者与直接邀请人' : '购买者', <>{rewardText(r.buyerReward)}{r.inviterReward && <small>{rewardText(r.inviterReward)}</small>}</>, <>每单 {limitText(r.maxGroups)} 组<small>每人累计 {limitText(r.maxGroupsPerPerson)} 组</small></>, <div className="actions"><Button kind="link" disabled={readOnly} onClick={() => setRule(r)}>编辑</Button><Button kind="link" disabled={readOnly} onClick={()=>setRemoveRule(r)}>移除</Button></div>])}/>{!draft.rules?.length && <div className="blank"><h2>还没有购买规则</h2><p>从可用商品目录选择购买设备，再为每名受益人配置一种固定奖励。</p></div>}<div className="card-body"><Notice title="按每个设备单独计奖">每个设备与受益人的奖励分别计奖。</Notice>{draft.template === 'MULTI_PRODUCT' && <Summary rows={[['组合购买匹配', draft.combinationMatch === 'ALL' ? '同时满足全部购买项' : draft.combinationMatch === 'ANY' ? '满足任一购买项' : '未配置']]}/>}</div></Card><Card title="权益与资产政策" body><Summary rows={(draft.rules || []).flatMap(r => [r.buyerReward, r.inviterReward].filter((v): v is DraftRewardSpec => !!v).map(v => [`${sku(r.productNo)} · ${v.beneficiaryRole === 'BUYER' ? '购买者' : '直接邀请人'}`, <>{rewardText(v)}<small> · {policyKey(v.type === 'DEVICE' ? v.deviceRightsProfile : v.assetPolicy) || '政策尚未选择'}</small></>] as [
+        string,
+        React.ReactNode
+    ]))}/></Card></>}
+    {step === 3 && <><Card title="参与和规则上限" body><div className="grid2"><Field label="每人活动参与上限 *" hint={<span className="setting-hint">购买者 {limitText(buyerLimit)} · 直接邀请人 {limitText(inviterLimit)}<button type="button" className="inline-setting" onClick={()=>setLimitsOpen(true)}>角色与每单设置</button></span>}><input readOnly value={limitText(buyerLimit)} onClick={()=>setLimitsOpen(true)} aria-haspopup="dialog"/></Field><Field label="全活动参与上限 *" hint="按合格参与订单累计；无限制须显式选择。"><input readOnly value={limitText(draft.activityLimit)} onClick={()=>setLimitsOpen(true)} aria-haspopup="dialog"/></Field></div></Card>{limitsIncomplete&&<Notice title="参与上限尚未成组" kind="warn">两个受益角色须分别明确上限或无限制；点“角色与每单设置”补齐后才能保存。</Notice>}<Card title="预算与赠品额度" action={<Button disabled={readOnly} onClick={() => setBudgetOpen(true)}>编辑预算</Button>}><Table headers={['资产 / 赠品', '总额度', '已成交义务', '待支付预留', '可用']} rows={budgetRows.map(b => { const current = activity.impact.budgets.find(v => v.asset === b.asset && (b.asset !== 'DEVICE' || v.productNo === b.productNo)); return [b.asset === 'DEVICE' ? sku(b.productNo) : b.asset, b.total ?? '未配置', current?.committed ?? '-', current?.reserved ?? '-', current?.available ?? '-']; })}/><div className="card-body"><small>两个资产与每种赠品分别核算。发放失败的原义务继续占用，实际追回前不恢复额度。</small></div></Card><Card title="叠加与额度不足处理" body><div className="grid2">{stackingFields.map(([label,value])=><Field key={label} label={label}><select value={value} onChange={()=>undefined} onClick={()=>setPoliciesOpen(true)} aria-describedby="stacking-source"><option value={value}>{value}</option></select></Field>)}<Field label="额度不足后 *" hint="不能静默换奖；已成立承诺继续履行。"><select disabled={readOnly} value={draft.shortagePolicy||''} onChange={e=>patch({shortagePolicy:(e.target.value||null) as Draft['shortagePolicy']})}><option value="">请选择处理方式</option><option value="RULE_STOP">停止该规则新增预留</option><option value="ACTIVITY_PAUSE">暂停整个活动</option></select></Field><Field label="互斥组与优先级"><input readOnly value={stacking ? '同一购买台互斥 · 规则优先级 '+(draft.rules||[]).map(r=>r.priority??'未配置').join(' / ') : '政策未配置'} onClick={()=>setPoliciesOpen(true)} aria-haspopup="dialog"/></Field></div><div id="stacking-source" className="help extra-settings"><span>{policySummary}</span><Button kind="link" onClick={()=>setPoliciesOpen(true)}>设置批准政策</Button></div></Card></>}
+    {combinationOpen && <CombinationEditor draft={draft} catalog={catalog} readOnly={readOnly} onChange={patch} onClose={() => setCombinationOpen(false)}/>}
+    {limitsOpen&&<Dialog title="参与角色与每单上限" wide onClose={()=>setLimitsOpen(false)} footer={<Button onClick={()=>setLimitsOpen(false)}>返回预算与叠加</Button>}><Notice title="当前草稿设置">按账户与受益角色独立累计，改版不重置；每单义务上限 {limitText(draft.maxRewardUnitsPerOrder)}。此处变更随活动草稿一起保存。</Notice><fieldset disabled={readOnly}><div className="grid2"><LimitField label="购买者活动参与上限" numeric={limitBinding('buyer')} value={buyerLimit} onChange={v => { setBuyerLimit(v); patch({ perPersonLimit: v && inviterLimit ? { buyer: v, directInviter: inviterLimit } : null }); }}/><LimitField label="直接邀请人活动参与上限" numeric={limitBinding('inviter')} value={inviterLimit} onChange={v => { setInviterLimit(v); patch({ perPersonLimit: v && buyerLimit ? { directInviter: v, buyer: buyerLimit } : null }); }}/><LimitField label="全活动参与订单上限" numeric={limitBinding('activity')} value={draft.activityLimit} onChange={v => patch({ activityLimit: v })}/><LimitField label="每单奖励义务上限" numeric={limitBinding('order')} value={draft.maxRewardUnitsPerOrder} onChange={v => patch({ maxRewardUnitsPerOrder: v })}/></div></fieldset></Dialog>}
+    {policiesOpen&&<Dialog title="批准政策" wide onClose={()=>setPoliciesOpen(false)} footer={<Button onClick={()=>setPoliciesOpen(false)}>返回预算与叠加</Button>}><Notice title="当前草稿设置">{policySummary}。主页面叠加选项只展示所选批准政策事实，修改需切换已批准政策。</Notice><fieldset disabled={readOnly}><div className="grid2"><PolicySelect label="结算与成熟政策 *" kind="SETTLEMENT" value={draft.policies?.settlement} catalog={catalog} onChange={v => patch({ policies: { ...draft.policies, settlement: v } })}/><PolicySelect label="优惠叠加政策 *" kind="STACKING" value={draft.policies?.stacking} catalog={catalog} onChange={v => patch({ policies: { ...draft.policies, stacking: v } })}/><PolicySelect label="售后追回政策 *" kind="REFUND" value={draft.policies?.refund} catalog={catalog} onChange={v => patch({ policies: { ...draft.policies, refund: v } })}/><PolicySelect label="报价与付款期限政策 *" kind="QUOTE" value={draft.policies?.quote} catalog={catalog} onChange={v => patch({ policies: { ...draft.policies, quote: v } })}/><PolicySelect label="审核发布授权政策 *" kind="AUTHORIZATION" value={draft.policies?.authorization} catalog={catalog} onChange={v => patch({ policies: { ...draft.policies, authorization: v } })}/><Field label="额度不足后 *"><select value={draft.shortagePolicy || ''} onChange={e => patch({ shortagePolicy: (e.target.value || null) as Draft['shortagePolicy'] })}><option value="">请选择处理方式</option><option value="RULE_STOP">停止该规则新增预留</option><option value="ACTIVITY_PAUSE">暂停整个活动</option></select></Field></div></fieldset></Dialog>}
+    {limitFormatNotice}{!!error && <ReadError target="当前草稿输入或人群预览" retryLabel="继续修改" error={error} retry={() => setError(null)}/>}<div className="footerbar"><small>草稿尚未提交的输入会保留；保存成功后显示已保存版本。</small><div className="actions"><Button disabled={bannerUploading} onClick={() => leave('detail')}>返回活动</Button>{step > 0 && <Button disabled={bannerUploading} onClick={() => moveStep(step - 1)}>上一步</Button>}<Button disabled={readOnly || bannerUploading || limitsIncomplete || limitsFormatInvalid} onClick={requestSave}>保存草稿</Button>{step < 3 ? <Button kind="primary" disabled={bannerUploading} onClick={() => moveStep(step + 1)}>下一步</Button> : <Button kind="primary" disabled={bannerUploading} onClick={() => leave('review')}>试算与审核</Button>}</div></div>
+    {removeRule&&<Dialog title="移除草稿购买规则" onClose={()=>setRemoveRule(null)} footer={<><Button onClick={()=>setRemoveRule(null)}>取消</Button><Button kind="danger" onClick={()=>{patch({rules:(draft.rules||[]).filter(r=>r.ruleId!==removeRule.ruleId)});setRemoveRule(null);}}>确认移除</Button></>}><Summary rows={[['购买设备',sku(removeRule.productNo)],['受益人',removeRule.inviterReward?'购买者与直接邀请人':'购买者'],['影响','仅从当前草稿移除；已发布规则与历史奖励不改变。']]}/></Dialog>}
+    {rule && <RuleEditor initial={rule} catalog={catalog} dual={draft.template === 'DIRECT_REFERRAL'} readOnly={readOnly} onClose={() => setRule(null)} onSave={r => { const list = draft.rules || [], exists = list.some(v => v.ruleId === r.ruleId); patch({ rules: exists ? list.map(v => v.ruleId === r.ruleId ? r : v) : [...list, r] }); setRule(null); }}/>}
+    {saving && !limitsFormatInvalid && <ConfirmCommand writeAllowed={!readOnly && !bannerUploading && !limitsIncomplete} title="保存活动草稿" intent={{ operation: 'saveDraft', targetId: activity.activityId, path: `/promotions/${activity.activityId}/draft`, method: 'PUT' }} body={{ expectedRevision: version.revision, draft }} onClose={() => { setSaving(false); setNextStep(null); }} onSuccess={async () => { await onSaved(nextStep??undefined); if(nextStep!==null)setStep(nextStep); setNextStep(null); setSaving(false); if (exitTarget === 'review')
+        onReview();
+    else if (exitTarget === 'detail')
+        onBack(); }}><Summary rows={[['活动', draft.name || '未命名草稿'], ['候选版本', `v${version.version}`], ['影响', '仅保存候选配置，已发布规则不变']]}/></ConfirmCommand>}
+    {templatePickerOpen && <Dialog title="选择活动模板" onClose={() => setTemplatePickerOpen(false)}><p>模板只创建配置结构，业务金额、资格、预算与政策均由运营明确填写。</p><div className="actions" style={{marginTop: 18}}>{Object.entries(TEMPLATE_LABELS).map(([value, label]) => <Button key={value} disabled={readOnly} onClick={() => { setTemplatePickerOpen(false); if (value !== draft.template) setTemplate(value as Template); }}>{label}</Button>)}</div></Dialog>}
+    {template && <Dialog title="切换活动模板" onClose={() => setTemplate(null)} footer={<><Button onClick={() => setTemplate(null)}>取消</Button><Button kind="primary" onClick={() => { setDraft(changeTemplate(draft, template)); setBuyerLimit(null); setInviterLimit(null); setLimitInputs({}); setPreview(null); setTemplate(null); }}>确认清空并切换</Button></>}><Notice title="不兼容配置将清空" kind="warn">人群、购买规则、奖励、限额、预算与政策需重新选择。名称、时间和公开说明保留。</Notice></Dialog>}
+    {exitTarget && !saving && !limitsOpen && <Dialog title="配置尚未保存" onClose={() => setExitTarget(null)} footer={<><Button onClick={() => setExitTarget(null)}>继续编辑</Button><Button onClick={() => { const target = exitTarget; setExitTarget(null); target === 'review' ? onReview() : onBack(); }}>放弃改动并返回</Button><Button kind="primary" disabled={readOnly||bannerUploading||limitsIncomplete||limitsFormatInvalid} onClick={requestSave}>保存后继续</Button></>}><Notice title="输入已保留">先保存草稿再进入下一页；试算和审核始终使用已保存版本。</Notice>{limitFormatNotice}</Dialog>}
+    {publicOpen && <Dialog title="公开说明预览" onClose={() => setPublicOpen(false)}><h2>{draft.title?.[language] || '尚未填写标题'}</h2><p style={{ whiteSpace: 'pre-wrap', marginTop: 16 }}>{draft.terms?.[language] || '尚未填写规则'}</p></Dialog>}
+    {budgetOpen && <BudgetEditor draft={draft} catalog={catalog} activity={activity} onClose={() => setBudgetOpen(false)} onSave={budgets => { patch({ budgets }); setBudgetOpen(false); }}/>}
+  </>;
+}
+function BudgetEditor({ draft, catalog, activity, onClose, onSave }: {
+    draft: Draft;
+    catalog: Catalog;
+    activity: Promotion;
+    onClose: () => void;
+    onSave: (v: Draft['budgets']) => void;
+}) {
+    const gifts = [...new Set((draft.rules || []).flatMap(r => [r.buyerReward, r.inviterReward]).filter((v): v is Extract<DraftRewardSpec, {
+            type: 'DEVICE';
+        }> => v?.type === 'DEVICE').map(r => r.giftProductNo).filter((v): v is string => !!v))];
+    const [budgets, setBudgets] = useState<NonNullable<Draft['budgets']>>(() => [...(['USDT', 'NEX'] as const).map(asset => draft.budgets?.find(v => v.asset === asset) || { asset, total: null }), ...gifts.map(productNo => draft.budgets?.find(v => v.asset === 'DEVICE' && v.productNo === productNo) || { asset: 'DEVICE' as const, productNo, total: null })]);
+    const [inputs, setInputs] = useState<NumericInputs>({});
+    const formatInvalid = invalidNumbers(budgets.map((b, i) => [String(i), b.asset === 'DEVICE' ? 'device-budget' : 'amount', b.total]), inputs);
+    return <Dialog title="编辑预算" wide onClose={onClose} footer={<><Button onClick={onClose}>取消</Button><Button kind="primary" onClick={() => { if (formatInvalid) { focusFormatError(); return; } onSave(budgets.filter(b => b.total !== null && b.total !== undefined)); }}>保留到草稿</Button></>}><Notice title="资产与赠品分别填写">空值不设置该资产额度；有对应奖励时必须填写。保存草稿不会释放既有义务；发布时额度须覆盖实际占用。</Notice><div className="grid2">{budgets.map((b, i) => {
+        const occupied = activity.impact.budgets.find(v => v.asset === b.asset && (b.asset !== 'DEVICE' || v.productNo === b.productNo)), kind = b.asset === 'DEVICE' ? 'device-budget' : 'amount';
+        const comparison = promotionBudgetComparison(inputs[i] ?? promotionInputText(b.total), kind, occupied);
+        const hint = comparison.minimum === null ? '当前占用尚未确认；草稿可保留，发布前须确认当前占用。' : comparison.status === 'below' ? <span className="input-error" role="status">低于当前已用和有效预留合计 {comparison.minimum} {b.asset === 'DEVICE' ? '台' : b.asset}；可保留草稿，发布时需重新核验。</span> : `当前已用和有效预留合计 ${comparison.minimum} ${b.asset === 'DEVICE' ? '台' : b.asset}；发布前须再次核对占用。`;
+        return <NumericField key={i} label={`${b.asset === 'DEVICE' ? text(catalog.skus.find(s => s.productNo === b.productNo)?.name) : b.asset} 总额度`} kind={kind} value={b.total} hint={hint} binding={{raw: inputs[i], onRaw: raw => setInputs(current => ({...current, [i]: raw}))}} onChange={value => setBudgets(current => current.map((v, j) => i !== j ? v : v.asset === 'DEVICE' ? {...v, total: value as number | null} : {...v, total: value as string | null}))}/>;
+    })}</div></Dialog>;
+}

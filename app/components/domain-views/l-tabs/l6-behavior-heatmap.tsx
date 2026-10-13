@@ -287,7 +287,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
   }
 
   if (!heatmapData.pageTree.length) {
-    return <div><LDataState ctx={ctx} label="L6" /></div>;
+    return <div><LDataState ctx={{ ...ctx, biLoading: refreshing || ctx.biLoading, biError: liveError || ctx.biError }} label="L6" /></div>;
   }
 
   const selectRow = (key: string) => {

@@ -12,7 +12,7 @@ const require = createRequire(path.join(frontend, "package.json")), ts = require
 const { renderToStaticMarkup } = require("react-dom/server");
 const jsxRuntime = require("react/jsx-runtime");
 const stage = fileURLToPath(new URL("../", import.meta.url));
-const componentPath = path.join(existsSync(path.join(stage, "app/components/domain-views/m-tabs/m1-analytics-workbench.tsx")) ? stage : frontend, "app/components/domain-views/m-tabs/m1-analytics-workbench.tsx");
+const componentPath = path.join(process.env.SUPPORT_ANALYTICS_SOURCE_ROOT || (existsSync(path.join(stage, "app/components/domain-views/m-tabs/m1-analytics-workbench.tsx")) ? stage : frontend), "app/components/domain-views/m-tabs/m1-analytics-workbench.tsx");
 const baseView = path.join(frontend, "app/components/domain-views/m-view.tsx");
 const clientPath = path.join(frontend, "lib/admin/support-analytics-client.ts");
 const { SupportClientError } = await import(pathToFileURL(path.join(frontend, "lib/admin/m-support-client.ts")).href);
@@ -115,7 +115,7 @@ const version = `saq-v1:${"a".repeat(64)}`;
 const count = (n = 1) => ({ observed: n, confirmed: n, status: "AVAILABLE" });
 const unknown = () => ({ observed: null, confirmed: null, status: "UNKNOWN" });
 const money = () => ({ observed: "999999999999.123456", confirmed: null, status: "PARTIAL" });
-const current = () => ({ firstConfirmed: count(), firstNone: count(0), firstUnknown: count(0), ownLifetime: [{ currency: "USDT", deposits: money() }], devices: { held: count() }, activity: { active: count() } });
+const current = () => ({ firstConfirmed: count(), firstNone: count(0), firstUnknown: count(0), ownLifetime: [{ currency: "USDT", deposits: money() }], devices: { held: count() }, activity: { active: count(), status: "AVAILABLE", window: { days: 7, from: "2026-10-02T00:00:00Z", through: "2026-10-09T00:00:00Z", status: "AVAILABLE" } } });
 const personnel = () => ({ serviceAccounts: count(), supervisors: unknown(), groups: count() });
 const funds = () => ({ balanceStatus: "UNAVAILABLE", withdrawalStatus: "UNAVAILABLE" });
 function fixture(view = "OVERVIEW", mode = "MANAGED") {
@@ -141,6 +141,42 @@ test("actual finance table labels general paid consumption without calling it a 
   const data=fixture("FINANCE");data.records[0].kind="CONSUMPTION";
   const html=renderToStaticMarkup(React.createElement(AnalyticsTable,{data,currency:"USDT",drill(){},openProfile(){}}));
   assert.match(html,/付费消费/);assert.doesNotMatch(html,/购机退款/);
+});
+
+test("activity coverage preserves observed zero, unavailable state and trustworthy zero in summary and agents", async () => {
+  // Bug527's natural selectedCurrent.activity (PARTIAL + UNKNOWN window).
+  const naturalActivity = { active: { observed: 0, confirmed: 0, status: "PARTIAL" }, inactive: { observed: 0, confirmed: 0, status: "PARTIAL" }, unknown: { observed: 0, confirmed: 0, status: "AVAILABLE" }, status: "PARTIAL", window: { days: null, from: null, through: "2026-10-11T06:23:01.011944Z", status: "UNKNOWN" } };
+  const naturalFirstConfirmed = count(0);
+  if (process.env.SUPPORT_ACTIVITY_NATURAL_EVIDENCE) {
+    const live = JSON.parse(readFileSync(process.env.SUPPORT_ACTIVITY_NATURAL_EVIDENCE, "utf8")).body.data;
+    assert.deepEqual(live.selectedCurrent.activity, naturalActivity, "the regression must use the current natural DTO");
+    assert.deepEqual(live.selectedCurrent.firstConfirmed, naturalFirstConfirmed, "preserve the natural AVAILABLE zero from another count in the same response");
+    assert.equal(live.versionState, "UNKNOWN"); assert.equal(live.total, null);
+  }
+  const cases = [
+    [naturalActivity, /已观测 0，完整数值待核实/, /已核实 0|资料暂不可用/],
+    [{ ...naturalActivity, active: count(0) }, /已观测 0，完整数值待核实/, /已核实 0/],
+    [{ ...current().activity, status: "PARTIAL", active: count(0) }, /已观测 0，完整数值待核实/, /已核实 0/],
+    [{ ...naturalActivity, active: unknown(), status: "UNKNOWN" }, /资料待核实/, /已核实 0|已观测 0|资料暂不可用/],
+    [{ ...current().activity, active: { observed: null, confirmed: null, status: "UNAVAILABLE" }, status: "UNAVAILABLE" }, /资料暂不可用/, /已核实 0|已观测 0/],
+    [{ ...current().activity, status: "FAILED", active: count(0) }, /资料暂不可用/, /已核实 0/],
+    [{ ...current().activity, active: count(0), window: { ...current().activity.window, status: "UNAVAILABLE" } }, /资料暂不可用/, /已核实 0/],
+    [{ ...current().activity, active: count(0) }, /已核实 0/, /待核实|资料暂不可用/],
+  ];
+  for (const [activity, expected, forbidden] of cases) {
+    const data = fixture("AGENTS"); data.selectedCurrent.activity = activity; data.selectedCurrent.firstConfirmed = naturalFirstConfirmed; data.records[0].current.activity = activity;
+    const d = await resolveScope();
+    try {
+      requests.at(-1).resolve(data); await d.settle();
+      const html = renderToStaticMarkup(React.createElement("div", null, elements(d.tree).find(x => x.props?.["aria-label"] === "所选范围汇总")));
+      assert.match(html, /aria-label="当前客户已首充：已核实 0；查看明细"/);
+      const labels = [...html.matchAll(/aria-label="窗口活跃：([^"]+)"/g)].map(match => match[1]);
+      const table = renderToStaticMarkup(React.createElement(AnalyticsTable, { data, currency: "USDT", drill() {}, openProfile() {} }));
+      labels.push(...[...table.matchAll(/aria-label="窗口活跃：([^"]+)"/g)].map(match => match[1]));
+      assert.equal(labels.length, 2, "both activity count surfaces must be checked");
+      for (const label of labels) { assert.match(label, expected); assert.doesNotMatch(label, forbidden); }
+    } finally { d.unmount(); }
+  }
 });
 
 test("stage strict TS checks candidate and exact m-view delta against actual installed modules", () => {

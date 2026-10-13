@@ -17,6 +17,13 @@ describe("account-deletion queue selection lifecycle", () => {
     expect(syncSelectedAccountDeletion(selected, [row("DEL-B", 2)])).toBe(selected);
   });
 
+  it("retains confirmed detail against older/equal summaries and mismatched owners", () => {
+    const selected = row("DEL-A", 3);
+    expect(syncSelectedAccountDeletion(selected, [row("DEL-A", 2)])).toBe(selected);
+    expect(syncSelectedAccountDeletion(selected, [row("DEL-A", 3)])).toBe(selected);
+    expect(syncSelectedAccountDeletion(selected, [{ ...row("DEL-A", 4), userId: 2 }])).toBe(selected);
+  });
+
   it("rejects a late A detail after B becomes the active selection", () => {
     expect(isCurrentAccountDeletionSelection("DEL-B", "DEL-A", 2, 1)).toBe(false);
     expect(isCurrentAccountDeletionSelection("DEL-B", "DEL-B", 2, 2)).toBe(true);
@@ -37,7 +44,7 @@ describe("account-deletion queue selection lifecycle", () => {
 
   it("uses a stable list refresh callback and the extracted selection transitions", () => {
     const source = readFileSync(new URL("../app/components/domain-views/c-tabs/account-deletion-queue.tsx", import.meta.url), "utf8");
-    expect(source).toContain("}, [canRead, page, status]);");
+    expect(source).toContain("}, [canRead, page, status, sessionKey]);");
     expect(source).toContain("syncSelectedAccountDeletion");
     expect(source).toContain("isCurrentAccountDeletionSelection");
     expect(source).toContain("isCurrentAccountDeletionListRead");

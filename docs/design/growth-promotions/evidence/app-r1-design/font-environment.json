@@ -1,0 +1,21 @@
+{
+  "artifact": "independent-design-font-sample",
+  "baselineId": "app-r1-20261007-v2",
+  "baselineSha256": "9dde79db3e9bd08c19365f79cbee2d52776e282a9c89d7ca98f4411a02dcfe2f",
+  "runtimeSha256": "6c82b6b6040f035f953a268cc5631c0648df1ee31b977847d3e3398167981eff",
+  "chromium": "149.0.7827.55",
+  "fonts": [
+    {
+      "familyName": "General Sans Semibold",
+      "postScriptName": "false",
+      "isCustomFont": true,
+      "glyphCount": 4
+    },
+    {
+      "familyName": "Microsoft YaHei",
+      "postScriptName": "MicrosoftYaHei-Bold",
+      "isCustomFont": false,
+      "glyphCount": 4
+    }
+  ]
+}

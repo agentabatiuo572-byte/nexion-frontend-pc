@@ -1,3 +1,6 @@
+import { beginAdminLogout } from "./auth-lifecycle.ts";
+import { requestAdminLogout } from "./logout-request.ts";
+
 const ADMIN_AUTH_STORAGE_KEY = "nexion-admin-auth-v2";
 const AUTH_REQUIRED_MESSAGES = new Set(["ADMIN_AUTH_REQUIRED", "UNAUTHORIZED"]);
 
@@ -10,6 +13,7 @@ export function isAdminAuthFailure(status: number, message?: string) {
 export function resetAdminSession() {
   if (typeof window === "undefined" || authResetScheduled) return;
   authResetScheduled = true;
+  beginAdminLogout();
 
   try {
     window.localStorage.removeItem(ADMIN_AUTH_STORAGE_KEY);
@@ -22,7 +26,7 @@ export function resetAdminSession() {
   // 身份认领统一负责(claimPendingCommandOwner:比对持久化的 adminId,换人才清)。
   // 早期版本在这里无条件清,会误伤同一个人的在途命令号 —— 第三轮独立验收 P0-2。
 
-  void fetch("/api/admin/auth/logout", { method: "POST", cache: "no-store" })
+  void requestAdminLogout()
     .catch(() => undefined)
     .finally(() => window.location.reload());
 }

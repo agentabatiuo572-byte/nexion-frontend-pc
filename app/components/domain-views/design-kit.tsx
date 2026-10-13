@@ -13,6 +13,7 @@ import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-erro
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
 import { fetchA2ReasonPolicy } from "@/lib/admin/a2-client";
 import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "@/lib/admin/trust-section-validation";
 import { isL5KpiExport, l5KpiRange, L5_KPI_WINDOWS, l5BusinessToday } from "./l-tabs/l5-kpi-range";
 
@@ -1615,7 +1616,7 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
   return undefined;
 }
 
-function BusinessFormBlock({ spec, value, onChange, onSelectionChange, onUploadStateChange }: { spec: BusinessFormSpec; value: BusinessFormValue; onChange: (next: BusinessFormValue) => void; onSelectionChange?: (next: BusinessFormValue) => void; onUploadStateChange: (key: string, state: "uploading" | "failed" | undefined) => void }) {
+export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, onUploadStateChange }: { spec: BusinessFormSpec; value: BusinessFormValue; onChange: (next: BusinessFormValue) => void; onSelectionChange?: (next: BusinessFormValue) => void; onUploadStateChange: (key: string, state: "uploading" | "failed" | undefined) => void }) {
   const [multiSelectSearch, setMultiSelectSearch] = useState<Record<string, string>>({});
   const [assetUploading, setAssetUploading] = useState<Record<string, boolean>>({});
   const [assetNames, setAssetNames] = useState<Record<string, string>>({});
@@ -1762,17 +1763,22 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange, onUploadS
                 className="fld"
                 type="file"
                 accept={f.accept ?? "image/jpeg,image/png,image/webp"}
+                aria-label={f.label}
                 required={f.required !== false}
                 aria-required={f.required !== false}
                 disabled={assetUploading[f.key]}
                 ref={(input) => { assetInputs.current[f.key] = input; }}
                 onChange={(event) => {
                   const file = event.target.files?.[0];
-                  set(f.key, "");
-                  setAssetNames((current) => ({ ...current, [f.key]: "" }));
+                  event.target.value = "";
                   setAssetErrors((current) => ({ ...current, [f.key]: "" }));
                   if (!file) {
                     onUploadStateChange(f.key, undefined);
+                    return;
+                  }
+                  if (!(f.accept ?? "image/jpeg,image/png,image/webp").split(",").includes(file.type) || file.size > 10 * 1024 * 1024) {
+                    onUploadStateChange(f.key, "failed");
+                    setAssetErrors((current) => ({ ...current, [f.key]: "请选择允许的图片格式，大小不超过 10 MB。" }));
                     return;
                   }
                   onUploadStateChange(f.key, "uploading");
@@ -1793,7 +1799,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange, onUploadS
                     onUploadStateChange(f.key, "failed");
                     setAssetErrors((current) => ({
                       ...current,
-                      [f.key]: error instanceof Error ? error.message : "凭证上传失败，请重试",
+                      [f.key]: displayAdminError(error),
                     }));
                   }).finally(() => {
                     setAssetUploading((current) => ({ ...current, [f.key]: false }));
@@ -1801,10 +1807,10 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange, onUploadS
                 }}
               />
               <span className="tiny muted">
-                {assetUploading[f.key] ? "正在上传并校验凭证…" : assetNames[f.key] ? `已上传：${assetNames[f.key]}` : (f.help ?? "请上传清晰的银行回单截图")}
+                {assetUploading[f.key] ? "正在上传并校验图片…" : assetNames[f.key] ? `已上传：${assetNames[f.key]}` : (f.help ?? "请上传清晰的银行回单截图")}
               </span>
               {assetErrors[f.key] && <span role="alert" className="tiny" style={{ color: "var(--v5-danger)" }}>{assetErrors[f.key]}</span>}
-              {!assetUploading[f.key] && (assetNames[f.key] || assetErrors[f.key]) && (
+              {!assetUploading[f.key] && (value[f.key] || assetNames[f.key] || assetErrors[f.key]) && (
                 <button type="button" className="l-btn sm" onClick={(event) => {
                   event.preventDefault();
                   set(f.key, "");
@@ -1812,7 +1818,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange, onUploadS
                   setAssetErrors((current) => ({ ...current, [f.key]: "" }));
                   if (assetInputs.current[f.key]) assetInputs.current[f.key]!.value = "";
                   onUploadStateChange(f.key, undefined);
-                }}>{f.required === false ? "不附图片" : "清除图片并重新上传"}</button>
+                }}>{f.required === false ? "移除图片" : "清除图片并重新上传"}</button>
               )}
             </label>
           ) : (
@@ -2526,18 +2532,18 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange, onUploadS
           目标 <span className="mono">{spec.subject}</span> · 未完成全部核验项前,确认按钮保持禁用。
         </div>
         {verified ? (
-          <div className="tint ok tiny" style={{ marginBottom: 10 }} data-proof="server-sensitive-action-verification">
-            <b>服务端高敏操作校验已通过</b> · 工单 <span className="mono">{verified.ticket}</span><br />
-            复审人 {verified.verifiedBy || "—"} · 通过时间 {verified.verifiedAt} · 有效至 {verified.expiresAt || "—"}
+          <div className="tint tiny" style={{ marginBottom: 10 }} data-proof="server-sensitive-action-verification">
+            <b>本次操作的服务端校验将在提交时执行</b> · 校验上下文 <span className="mono">{verified.ticket}</span><br />
+            操作人 {verified.verifiedBy || "—"} · 校验时点 {verified.verifiedAt} · 适用范围 {verified.expiresAt || "—"}
           </div>
         ) : null}
         {verified ? <>
           <div className="grid g-2" style={{ gap: 10 }}>
-            <label className="field"><span>核验来源</span><input className="fld" value={value.channel ?? ""} readOnly aria-readonly="true" /></label>
-            <label className="field"><span>核验时间</span><input className="fld" value={value.verifiedAt ?? ""} readOnly aria-readonly="true" /></label>
+            <label className="field"><span>校验方式</span><input className="fld" value={value.channel ?? ""} readOnly aria-readonly="true" /></label>
+            <label className="field"><span>校验时点</span><input className="fld" value={value.verifiedAt ?? ""} readOnly aria-readonly="true" /></label>
           </div>
           <div style={{ marginTop: 10 }}>
-            <label className="field"><span>来源工单号</span><input className="fld" value={value.ticket ?? ""} readOnly aria-readonly="true" /></label>
+            <label className="field"><span>校验上下文</span><input className="fld" value={value.ticket ?? ""} readOnly aria-readonly="true" /></label>
           </div>
         </> : <>
           <div className="grid g-2" style={{ gap: 10 }}>

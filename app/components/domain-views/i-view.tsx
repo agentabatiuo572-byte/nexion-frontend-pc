@@ -239,6 +239,7 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
           amplifies={mc.amplifies}
           edit={mc.edit}
           businessForm={mc.businessForm}
+          completionCopy={mc.completionCopy}
           reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}
           onBusinessSelectionChange={mc.onBusinessSelectionChange}

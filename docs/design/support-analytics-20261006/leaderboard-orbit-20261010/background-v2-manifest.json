@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "assetsBasis": "assets/reconstruction/verification retain frozen v2 evidence; currentRevision is frozen v3 fallback; currentSurfaceRevision identifies the r117 desktop surface candidate",
+  "assetsBasis": "assets/reconstruction/verification describe frozen v2; currentRevision describes frozen v3; currentSurfaceRevision points to the current shipping surfaces.",
   "approvedSource": {
     "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\design\\leaderboard-orbit-20261010\\approved-design.png",
     "sha256": "E3B92E2FBB593171A4658E058C562EC4DBC9403FECAFDF8DD85A719BA71F6C3A",
@@ -863,16 +863,13 @@
     "limitation": "Occluded texture and compatibility extensions retain v2 mixed or generated material. They are still checked by the full-page fidelity gate and are not approved-source-identical."
   },
   "currentSurfaceRevision": {
-    "id": "r118-local-seam-repair",
+    "id": "approved-source-polish-20261013",
     "manifest": "background-surfaces-r117-manifest.json",
-    "manifestSHA256": "30d5e4af824a342335a29b652107c39399943d4a5525bf171fd02d98d084b3fe",
-    "previousManifestSHA256": "7f112d527d7d4fd4d5cb785fdd53c4d74c17d25804a7040f97f5bbf3b45c8603",
-    "desktopMainCanvasSHA256": "c2aaaa1dde999098408ff66fec6435cdeeb7d2a61a92fe4952ca6c14e0bf0415",
-    "previousDesktopMainCanvasSHA256": "3aa8b6677891414aa1ab5c5dc63c236af0be904b105a93a286df0ec0113210cf",
-    "narrowFallbackSceneSHA256": "f5f5e7c933f71761bdfa23da6c4a9d47375eb008e86a7d94d60da5be1c07a135",
-    "previousNarrowFallbackSceneSHA256": "d956c0ab4921d309227e28cefaff9e4543c80372fae48dcb88cf22edbb21fe72",
-    "seamRepair": {"canvasNativeRectangles": [[112,487,42,45],[1063,466,42,57]],"changedPixelsPerAsset":3284,"changedOutsideRectangles":0,"method":"One built-in local crop edit; both source supports match exactly; normalized edit and8px inward feather only within fixed support. Reconstructed, not source-exact. Old encoded sources and source/candidate ROIs retained in task evidence."},
-    "sourceForeground": "All source identity/data/text/control contents removed from new surfaces; live DOM owns all values and states",
-    "acceptance": "Single candidate checked in1536px baseline/no-podium and1415px no-podium browser scenes; CSS14px labels/original rank anchors preserved. Small left material transition remains explicit. Independent review and root browser whole-page PASS remain unproven; approved source, masks and thresholds unchanged."
+    "manifestSHA256": "0332c1089bc11b854a51cf7c1ebbe300a7add3da11a622a3c0fbf69f8d47af69",
+    "previousManifestSHA256": "30d5e4af824a342335a29b652107c39399943d4a5525bf171fd02d98d084b3fe",
+    "desktopMainCanvasSHA256": "cd7a1661f62c92d1c30787e48c1ccc4ac99ffec016e26ae3f84f678f75ec7ca5",
+    "narrowFallbackSceneSHA256": "484c0f1bf7b5762d9cb9d061a7b7f9e5ef3e470716e4daaa31f7c11f72e75ea4",
+    "provenance": "background-source-polish-20261013.json",
+    "acceptance": "Independent 1536px visual review found no P0/P1/P2; this is not a whole-page pixel-identity claim."
   }
 }
