@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import vm from "node:vm";
 import assert from "node:assert/strict";
 import test, { after } from "node:test";
@@ -39,12 +40,14 @@ function renderBit(markup, declarations) {
   return renderToStaticMarkup(React.createElement(exports.Fixture));
 }
 const radioMarkup = renderBit(jsx(ruleSource, "fieldset", "无专属客服客户分配方式"), 'const editable=true,draft={unboundAssignmentMode:"SUPERVISOR"},setField=()=>{}');
-const headerMarkup = renderBit(jsx(chatSource, "header", "我的会话"), `
+const headerMarkup = renderBit(jsx(chatSource, "header", 'className="m3-list-header"'), `
+  const Icon=()=>null;
   const conversationsAvailable=true,query="",listTab="all",canWriteM3=true,canReadTimeout=true,canTimeout=true,actionChecking=false,qualificationUnknown=false;
   const archiveIds=new Set(["picked"]),setQuery=()=>{},setListTab=()=>{},setContactOpen=()=>{},setBulkOpen=()=>{},archiveBatch=()=>{},openTimeout=()=>{};
   const visible=Array.from({length:12005},(_,i)=>({status:i%3===0?"open":i%3===1?"closed":"transferred",unread:i%2,archived:i%5===0}));
   ${declaration(chatSource, "tabMatch")}
 `);
+const footerMarkup = renderBit(jsx(chatSource, "div", 'className="m3-list-footer"'), 'const listPage=2,setListPage=()=>{},conversationsAvailable=true,filtered=Array.from({length:100});');
 const templates = [
   { id: "short", group: "客服", text: "已发布的回复内容", status: "published" },
   { id: "long", group: "客服", text: "长文案和编号需要换行".repeat(20) + "SKU_WITHOUT_SPACES_".repeat(20), status: "published" },
@@ -64,23 +67,26 @@ function localCss(text) {
 }
 const globals = postcss.parse(fs.readFileSync(path.join(repo, "app/globals.css"), "utf8"));
 globals.walkAtRules(rule => { if (["import", "font-face"].includes(rule.name)) rule.remove(); });
-const inlineStyle = find(chatSource, n => ts.isJsxElement(n) && n.openingElement.tagName.getText() === "style").children.find(ts.isJsxExpression).expression.text;
-const css = globals.toString() + fs.readFileSync(path.join(repo, "app/components/domain-views/m-domain.css"), "utf8") + localCss(ruleSource) + localCss(chatSource) + localCss(toolsSource) + inlineStyle;
-let browser;
-after(async () => { await browser?.close(); });
-async function pageFor(markup, width, theme = "dark", inDomain = true, height = 1100) {
-  browser ??= await chromium.launch({ headless: true });
-  const page = await browser.newPage({ viewport: { width: Math.max(width + 32, 480), height } });
+const css = globals.toString() + fs.readFileSync(path.join(repo, "app/components/domain-views/m-domain.css"), "utf8") + localCss(ruleSource) + localCss(chatSource) + localCss(toolsSource);
+let browser, browserTemp;
+after(async () => { try { await browser?.close(); } finally { if (browserTemp) fs.rmSync(browserTemp, {recursive:true,force:true}); } });
+async function pageFor(markup, width, theme = "dark", inDomain = true, height = 1100, coarse = false) {
+  if (!browser) {
+    browserTemp = fs.mkdtempSync(path.join(os.tmpdir(), "support-layout-"));
+    const log = path.join(browserTemp, "browser.log");
+    browser = await chromium.launch({ headless: true, args: ["--log-file=" + log], env: {...process.env,CHROME_LOG_FILE:log} });
+  }
+  const page = await browser.newPage({ viewport: { width: Math.max(width + 32, 480), height }, hasTouch:coarse });
   let requests = 0;
   await page.route("**/*", route => { requests++; return route.abort(); });
   await page.setContent(`<html data-theme="${theme}"><head><style>${css}\n*{box-sizing:border-box}body{margin:0}.fixture{width:${width}px}</style></head><body><main class="dkpage ${inDomain ? "mdom" : ""} fixture">${markup}</main></body></html>`);
   return { page, async close() { assert.equal(requests, 0, "Offline regression attempted an external resource"); await page.close(); } };
 }
-async function within(locator, container) {
+async function within(locator, container, minimumHeight = 44) {
   const bounds = await container.boundingBox(), children = await locator.all();
   for (const child of children) {
     const box = await child.boundingBox();
-    assert.ok(box && box.width > 0 && box.height >= 44, "Control is hidden or smaller than a 44px target");
+    assert.ok(box && box.width > 0 && box.height >= minimumHeight, `Control is hidden or smaller than a ${minimumHeight}px target`);
     assert.ok(box.x >= bounds.x - 1 && box.x + box.width <= bounds.x + bounds.width + 1, "Control overflows its actual container");
   }
 }
@@ -111,39 +117,44 @@ test("M5 radios retain native size, aligned labels and an entire-row description
     } finally { await fixture.close(); }
   }
 });
-test("M3 five filters follow stable columns, preserve large counts and keep actions reachable", async () => {
-  for (const width of [280, 300, 360]) {
-    const fixture = await pageFor(`<section class="m3-stage" style="display:block"><div class="m3-col-list">${headerMarkup}</div></section>`, width);
+test("M3 five filters wrap without overlap, preserve large counts and retain 32px desktop / 44px coarse targets", async () => {
+  for (const coarse of [false,true]) for (const width of [280, 300, 360]) {
+    const fixture = await pageFor(`<section class="m3-stage m3-dedicated-stage" style="display:block"><div class="m3-col-list">${headerMarkup}</div></section>`, width, "dark", true, 1100, coarse);
     try {
       const header = fixture.page.locator("header"), buttons = header.locator("button[aria-pressed]");
       assert.equal(await buttons.count(), 5);
       const boxes = await Promise.all((await buttons.all()).map(button => button.boundingBox()));
-      assert.ok(Math.abs(boxes[0].x - boxes[3].x) < 1 && Math.abs(boxes[1].x - boxes[4].x) < 1, "Wrapped filter rows scatter across the toolbar");
-      assert.ok(boxes.every(box => Math.abs(box.width - boxes[0].width) < 1), "Filters have inconsistent columns");
-      await within(header.locator("button"), header);
+      for (let i=0;i<boxes.length;i++) for (let j=i+1;j<boxes.length;j++) {
+        const a=boxes[i],b=boxes[j];
+        assert.ok(a.x+a.width<=b.x+1||b.x+b.width<=a.x+1||a.y+a.height<=b.y+1||b.y+b.height<=a.y+1,"Wrapped filters overlap");
+      }
+      assert.equal(await fixture.page.evaluate(() => matchMedia("(pointer: coarse)").matches),coarse);
+      await within(header.locator(".m3-list-heading button,.m3-list-statuses button"), header, coarse ? 44 : 32);
+      await within(header.locator(".m3-list-secondary-actions button"), header, coarse ? 44 : 28);
       assert.match(await buttons.first().innerText(), /9604/);
       assert.equal(await header.getByRole("button", { name: "主动联系", exact: true }).count(), 1);
       assert.equal(await header.getByRole("button", { name: "圈选群发", exact: true }).count(), 1);
       assert.equal(await header.getByRole("button", { name: "超时策略", exact: true }).count(), 1);
-      await screenshot(fixture.page, `M3-list-${width}`);
+      await screenshot(fixture.page, `M3-list-${width}-${coarse?"coarse":"fine"}`);
     } finally { await fixture.close(); }
   }
 });
-test("short M3 windows scroll the entire inbox without collapsing the list or clipping its pager", async () => {
+test("short M3 windows scroll conversations without collapsing the list or clipping the persistent pager", async () => {
   const rows = Array.from({ length: 10 }, (_, n) => `<button type="button" class="l-btn sm">测试会话 ${n + 1}</button>`).join("");
-  const markup = `<section class="m3-stage" style="height:min(760px,calc(100dvh - 220px));min-height:540px"><div class="m3-col-list">${headerMarkup}<div class="cv-list">${rows}<button type="button" class="l-btn sm">末页入口</button></div></div></section>`;
-  for (const [width, height] of [[360, 600], [1180, 900]]) {
-    const fixture = await pageFor(markup, width, "dark", true, height);
+  const markup = `<section class="m3-stage m3-dedicated-stage" style="display:block;height:min(760px,calc(100dvh - 220px));min-height:540px"><div class="m3-col-list" style="height:100%">${headerMarkup}<div class="cv-list">${rows}</div>${footerMarkup}</div></section>`;
+  for (const [width, height, coarse] of [[360, 600, false], [360, 600, true], [1180, 900, false]]) {
+    const fixture = await pageFor(markup, width, "dark", true, height, coarse);
     try {
       const column = fixture.page.locator(".m3-col-list"), list = column.locator(".cv-list");
       assert.ok((await list.boundingBox()).height >= 160, "Header collapses the conversation list");
-      const scroll = await column.evaluate(el => ({ height: el.clientHeight, total: el.scrollHeight, overflow: getComputedStyle(el).overflowY }));
+      const scroll = await list.evaluate(el => ({ height: el.clientHeight, total: el.scrollHeight, overflow: getComputedStyle(el).overflowY }));
       if (height === 600) {
         assert.equal(scroll.overflow, "auto");
-        assert.ok(scroll.total > scroll.height, "Short inbox has no usable scroll boundary");
-      } else assert.ok(scroll.total <= scroll.height + 1, "Desktop gets an unnecessary outer inbox scrollbar");
-      const pager = list.getByRole("button", { name: "末页入口", exact: true });
-      await pager.scrollIntoViewIfNeeded();
+        assert.ok(scroll.total > scroll.height, "Short conversation list has no usable scroll boundary");
+      } else assert.ok(scroll.total <= scroll.height + 1, "Desktop gets an unnecessary conversation scrollbar");
+      await list.evaluate(el=>{el.scrollTop=el.scrollHeight;});
+      const pager = column.getByRole("button", { name: "下一页", exact: true });
+      await within(column.locator(".m3-list-footer button"), column, coarse ? 44 : 28);
       const outer = await column.boundingBox(), end = await pager.boundingBox();
       assert.ok(end.y >= outer.y - 1 && end.y + end.height <= outer.y + outer.height + 1, "Inbox pager is clipped outside the scroll viewport");
       await screenshot(fixture.page, `M3-inbox-${width}-${height}`);

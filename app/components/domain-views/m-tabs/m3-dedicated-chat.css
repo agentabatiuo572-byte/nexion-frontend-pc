@@ -64,5 +64,10 @@ html[data-theme="dark"] .m3-dedicated-stage { --m3-bubble-agent: #114361; --m3-b
   .mdom .m3-stage .ChatComposer { padding: 10px 12px; }
 }
 @container mdom (min-width: 1700px) { .mdom .m3-stage.m3-dedicated-stage { grid-template-columns: 330px minmax(330px, 1fr) 362px; } }
-@media (pointer: coarse) { .mdom .m3-stage .l-btn.sm, .mdom .m3-composer-tools .support-content-trigger { min-height: 44px; } }
+@media (pointer: coarse) {
+  .mdom .m3-stage .l-btn.sm, .mdom .m3-composer-tools .support-content-trigger,
+  .mdom .m3-stage .m3-list-header .l-btn.sm, .mdom .m3-stage .m3-list-footer .l-btn.sm { min-height: 44px; }
+  .mdom .m3-stage .m3-list-select { width: 44px; height: 44px; }
+  .mdom .m3-stage .cv-meta, .mdom .m3-stage .cv-origin-copy { padding-right: 40px; }
+}
 @media (prefers-reduced-motion: reduce) { .m3-new-message { animation: none; } }
