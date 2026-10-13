@@ -67,7 +67,6 @@ const nextConfig: NextConfig = {
     return { beforeFiles: [{ source: '/ws/conversations', destination: `${process.env.NEXION_BACKEND_URL || 'http://127.0.0.1:8110'}/ws/conversations` }] };
   },
   distDir: process.env.NEXT_DIST_DIR || ".next",
-  typescript: { tsconfigPath: process.env.NEXION_TSCONFIG_PATH || "tsconfig.json" },
   devIndicators: false,
   allowedDevOrigins: ["127.0.0.1", "localhost", "192.168.8.*"],
   async headers() {
