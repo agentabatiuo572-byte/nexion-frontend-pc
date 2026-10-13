@@ -1,7 +1,8 @@
 import { supportRequest, supportObject as obj, parseSupportId as id, parseSupportCount as count, parseSupportPage as page, supportJson as json, supportQuery as query, parseSupportTime as time, supportWireId } from "./m-support-client.ts";
+import { parseSupportCustomerStatistics, type SupportCustomerStatistics } from "./support-analytics-client.ts";
 export type SupportGroup = { status: "READY" | "UNKNOWN" | "FORBIDDEN" | "ERROR"; data: Record<string, unknown> | null; evaluatedAt: string };
 export type SupportFinanceFieldStatus = SupportGroup["status"] | "PARTIAL";
-export type SupportProfile = Record<"identity" | "finance" | "devices" | "risk" | "annotations" | "service", SupportGroup> & { actions: Record<string, { allowed: boolean }> };
+export type SupportProfile = Record<"identity" | "finance" | "devices" | "risk" | "annotations" | "service", SupportGroup> & { statistics: Omit<SupportGroup, "data"> & { data: SupportCustomerStatistics | null }; actions: Record<string, { allowed: boolean }> };
 export type SupportKind = "TEXT" | "IMAGE" | "SKU" | "LINK";
 export type SupportLink = { type: "HOME" | "WALLET" | "SUPPORT"; params: Record<string, never> };
 export type BulkFilters = { accountState?: string; maintenanceState?: string; level?: string; tagIds?: string[]; registeredFrom?: string; registeredTo?: string; activityFrom?: string; activityTo?: string; depositMin?: string; depositMax?: string; withdrawalMin?: string; withdrawalMax?: string; currency?: string; includeUnknown?: boolean; keyword?: string };
@@ -33,7 +34,8 @@ export function parseSupportGroup(v: unknown): SupportGroup {
 }
 export function parseSupportProfile(v: unknown): SupportProfile {
   const r = obj(obj(v, "detail").profile, "profile");
-  const groups = Object.fromEntries(["identity", "finance", "devices", "risk", "annotations", "service"].map(k => [k, parseSupportGroup(r[k])])) as Omit<SupportProfile, "actions">;
+  const groups = Object.fromEntries(["identity", "finance", "devices", "risk", "annotations", "service"].map(k => [k, parseSupportGroup(r[k])])) as Omit<SupportProfile, "actions" | "statistics">;
+  const statistics = r.statistics === undefined ? { status: "UNKNOWN" as const, data: null, evaluatedAt: groups.identity.evaluatedAt } : parseSupportGroup(r.statistics);
   const actions = Object.fromEntries(Object.entries(obj(r.actions, "actions")).map(([k, v]) => [k, { allowed: bool(obj(v, "action").allowed) }]));
   if (groups.finance.data) for (const value of rows(groups.finance.data.byCurrency)) {
     const currency = obj(value, "currency"); text(currency.currency); const statuses = obj(currency.fieldStatuses, "fieldStatuses");
@@ -51,7 +53,7 @@ export function parseSupportProfile(v: unknown): SupportProfile {
     if (netStatus === "READY" && (typeof currency.netContributionTotal !== "string" || !/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(currency.netContributionTotal))) throw new Error("SUPPORT_DECIMAL_INVALID");
     if (netStatus !== "READY" && currency.netContributionTotal !== null) throw new Error("SUPPORT_NET_COVERAGE_INVALID");
   }
-  return { ...groups, actions };
+  return { ...groups, statistics: { ...statistics, data: statistics.data === null ? null : parseSupportCustomerStatistics(statistics.data) }, actions };
 }
 export function parseBulkPreview(v: unknown): BulkPreview {
   const r = obj(v, "bulk.preview");
