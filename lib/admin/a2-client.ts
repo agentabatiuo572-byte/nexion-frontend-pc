@@ -247,6 +247,12 @@ function asText(value: unknown, fallback = "—") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
+function asAuditValue(value: unknown) {
+  return typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))
+    ? String(value)
+    : asText(value);
+}
+
 function parseDetail(detailJson: string | null | undefined): Record<string, unknown> {
   if (!detailJson) return {};
   try {
@@ -320,7 +326,7 @@ function fromLog(log: BackendAuditLog): A2AuditLogRow {
   const obj = resolveA2AuditObject(detail.obj, detail.resource, log.resourceType, log.resourceId);
   const beforeVal = detail.before ?? detail.oldValue ?? detail.beforePrice ?? detail.fromStatus ?? detail.from;
   const afterVal = detail.after ?? detail.newValue ?? detail.afterPrice ?? detail.toStatus ?? detail.to;
-  const delta = asText(detail.delta, beforeVal != null || afterVal != null ? `${asText(beforeVal)} → ${asText(afterVal)}` : "—");
+  const delta = asText(detail.delta, beforeVal != null || afterVal != null ? `${asAuditValue(beforeVal)} → ${asAuditValue(afterVal)}` : "—");
   return {
     id: String(log.id ?? `${action}-${log.createdAt ?? Date.now()}`),
     ts: asText(detail.tsLabel, formatTime(log.createdAt)),

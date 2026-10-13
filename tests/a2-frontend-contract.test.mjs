@@ -84,6 +84,58 @@ test("A2 authority helpers fail closed for read-only sessions", () => {
   assert.equal(canAccessA2Write(["platform_a2_write"]), true);
 });
 
+test("A2 J1 exchange audit logs retain the original boolean transitions", () => {
+  const mapLog = productionAuditLogMapper();
+  // R549 natural overview response: the original R516 logs, without a new toggle.
+  for (const [id, before, after, expected] of [
+    [93336, false, true, "false → true"],
+    [93343, true, false, "true → false"],
+  ]) {
+    const log = {
+      id, action: "J1_KILLSWITCH_TOGGLED", resourceType: "KILL_SWITCH",
+      resourceId: "exchange", bizNo: "exchange", detailJson: JSON.stringify({ after, before }),
+    };
+    const original = JSON.stringify(log);
+    const row = mapLog(log);
+    assert.equal(row.delta, expected);
+    assert.equal(row.obj, "KILL_SWITCH · exchange");
+    assert.equal(matchesA2AuditFilter(row, { action: log.action, object: "exchange" }), true);
+    assert.equal(JSON.stringify(log), original);
+  }
+});
+
+test("A2 audit values preserve scalar, missing and explicit-delta semantics", () => {
+  const mapLog = productionAuditLogMapper();
+  const delta = detail => mapLog({ detailJson: JSON.stringify(detail) }).delta;
+  for (const [beforeKey, afterKey] of [
+    ["before", "after"], ["oldValue", "newValue"], ["beforePrice", "afterPrice"],
+    ["fromStatus", "toStatus"], ["from", "to"],
+  ]) assert.equal(delta({ [beforeKey]: 0, [afterKey]: 1.5 }), "0 → 1.5");
+  assert.equal(delta({ before: false, oldValue: "old", after: 0, newValue: "new" }), "false → 0");
+  assert.equal(delta({ before: " old ", after: " new " }), "old → new");
+  assert.equal(delta({ before: null, oldValue: "old", after: null, newValue: "new" }), "old → new");
+  assert.equal(delta({}), "—");
+  assert.equal(delta({ before: null, after: null }), "—");
+  for (const before of [undefined, null, "", "  ", [], {}, [false]]) {
+    assert.equal(delta({ before, after: true }), "— → true");
+  }
+  assert.equal(mapLog({ detailJson: '{"before":1e400,"after":-1e400}' }).delta, "— → —");
+  assert.equal(mapLog({ detailJson: "invalid" }).delta, "—");
+  assert.equal(delta({ before: false, after: true, delta: " explicit " }), "explicit");
+  assert.equal(delta({ before: false, after: true, delta: false }), "false → true");
+  const row = mapLog({
+    action: true, resourceType: 0, resourceId: false, bizNo: 0,
+    detailJson: JSON.stringify({ before: false, after: true, actor: true, role: 0, reason: false }),
+  });
+  assert.equal(row.action, "UNKNOWN");
+  assert.equal(row.actor, "系统");
+  assert.equal(row.role, "ADMIN");
+  assert.equal(row.resourceType, "");
+  assert.equal(row.resourceId, "");
+  assert.equal(row.bizNo, "");
+  assert.equal(row.reason, "—");
+});
+
 test("A2 returned WO audit logs retain object indices without changing the display name", () => {
   const mapLog = productionAuditLogMapper();
   const object = "WO-261008092315825-42";
