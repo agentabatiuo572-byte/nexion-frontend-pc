@@ -160,12 +160,13 @@ test("final accepted semantic closures are built while K17 production native-dev
   assert.equal(k17?.status, "pending");
   assert.equal(k17?.batch, "P1");
   assert.ok(k17?.runtimeEvidence?.some((item) => item.type === "janus-runtime"));
-  assert.match(k17?.action ?? "", /已提交[\s\S]*UTS[\s\S]*fail-closed[\s\S]*Sandbox runtime 未接入[\s\S]*Production[\s\S]*原生真机[\s\S]*HOLD/);
+  assert.match(k17?.action ?? "", /已提交[\s\S]*Sandbox\/native 分支[\s\S]*UTS[\s\S]*fail-closed[\s\S]*Production[\s\S]*原生真机[\s\S]*HOLD/);
+  assert.match(k17?.note ?? "", /分支源码不替代真实环境验收[\s\S]*Production 原生真机[\s\S]*仍未验收/);
   assert.match(k17?.note ?? "", /Janus 开发暂停[\s\S]*pending\/HOLD/);
   assert.doesNotMatch(row("OPS-K-15")?.note ?? "", /OPS-K-17 完成/);
 });
 
-test("K17 committed native guards reject disabled/bridge removal, Sandbox fallback and comment-only evidence", () => {
+test("K17 committed Sandbox/native branches reject disabled/bridge removal, production Sandbox fallback and comment-only evidence", () => {
   const k17 = row("OPS-K-17");
   const runtime = k17.runtimeEvidence.find((item) => item.file === "src/lib/janus/executor-runtime.ts");
   const source = readFileSync(join(JANUS_ROOT, runtime.file), "utf8");
@@ -175,9 +176,23 @@ test("K17 committed native guards reject disabled/bridge removal, Sandbox fallba
     assert.equal(file.parseDiagnostics.length, 0, "Janus runtime evidence must parse as executable TypeScript");
     const configured = file.statements.find((statement) => ts.isFunctionDeclaration(statement)
       && statement.name?.text === "configuredRuntime");
+    const executor = configured?.body?.statements.filter(ts.isVariableStatement)
+      .flatMap(statement => [...statement.declarationList.declarations]).find(declaration => declaration.name.getText(file) === "executor");
+    const selection = executor?.initializer;
+    const armBody = (arm) => {
+      const call = ts.isAwaitExpression(arm) ? arm.expression : arm;
+      const fn = ts.isCallExpression(call) && ts.isParenthesizedExpression(call.expression) ? call.expression.expression : undefined;
+      return fn && ts.isArrowFunction(fn) && ts.isBlock(fn.body) ? fn.body : undefined;
+    };
+    const returnsFactory = (body, name) => body?.statements.some(statement => ts.isReturnStatement(statement)
+      && statement.expression && ts.isCallExpression(statement.expression)
+      && ts.isIdentifier(statement.expression.expression) && statement.expression.expression.text === name);
+    if (!selection || !ts.isConditionalExpression(selection)
+      || !returnsFactory(armBody(selection.whenTrue), "createSandboxJanusExecutor")
+      || !returnsFactory(armBody(selection.whenFalse), "createProductionJanusExecutor")) return "";
     return configured?.body?.statements.map((statement) => statement.getText(file)).join("\n") ?? "";
   });
-  assert.deepEqual(problems(source), [], "committed native guards are source evidence, not completed runtime delivery");
+  assert.deepEqual(problems(source), [], "committed Sandbox/native branches are source evidence, not completed native-device delivery");
   for (const guard of [
     'if (mode === "disabled") return null;',
     'if (!bridge) throw new Error("JANUS_NATIVE_EXECUTOR_REQUIRED");',
@@ -189,7 +204,13 @@ test("K17 committed native guards reject disabled/bridge removal, Sandbox fallba
   assert.ok(problems(`/*\n${source}\n*/`).length > 0, "copied source comments cannot attest native guards");
   assert.ok(problems(source.replace(
     "createProductionJanusExecutor({ bridge })", "createSandboxJanusExecutor()",
-  )).length > 0, "Sandbox fallback cannot attest the committed native runtime");
+  )).length > 0, "the native branch cannot fall back to the Sandbox executor");
+  assert.ok(problems(source.replace(
+    'mode === "sandbox"', 'mode === "production"',
+  )).length > 0, "the Sandbox executor must be restricted to the explicit Sandbox branch");
+  assert.ok(problems(source.replace(
+    "return createSandboxJanusExecutor({", "/* return createSandboxJanusExecutor({}); */ return Object.assign({",
+  )).length > 0, "a factory name copied into a branch comment cannot attest an actual executor call");
 });
 
 test("unknown OPS_BATCH values fail closed", () => {

@@ -36,7 +36,8 @@ function hooks() {
 }
 function profileHarness(initial = profile()) {
   const h = hooks(), requests = [], props = { customerId: "101", scopeVersion: 1, conversation: { id: "CV-101", ownerAdminId: 12 }, onHistory() {}, onRetryMessages() {}, ctx: { pget: () => "[]", invalidateScope() {}, addCustomerTag: async () => true } };
-  const exports = evaluate(component("m3-customer-profile"), {}, {
+  const listeners = new Set(), window = { addEventListener: (_type, listener) => listeners.add(listener), removeEventListener: (_type, listener) => listeners.delete(listener) };
+  const exports = evaluate(component("m3-customer-profile"), { window }, {
     react: h.react, "@/lib/store/admin-auth": { useAdminAuth: selector => selector({ authEpoch: 1, session: { adminId: 12, role: "super", authorities: ["service_m3_write"] } }) },
     "@/lib/admin/m-support-enhancements": { supportEnhancements: { profile() { const request = deferred(); requests.push(request); return request.promise; }, devices: async () => group({ total: 0, heldCount: 0, fieldStatuses: { heldCount: "READY" }, onlineCount: 0, records: [] }), flows: async () => group({ total: 0, records: [] }) } },
     "@/lib/admin/m-support-client": { supportClient: { maintenanceHistory: async () => ({ totalExecutions: 0, totalCycles: 0, cycles: [], executions: [] }) }, SupportClientError: class extends Error {} },
@@ -117,9 +118,21 @@ for (const action of ["retry", "annotate"]) for (const lifecycle of ["scope", "u
     assert.equal(h.requests.length, 2, `${action}: actual read started`);
     if (lifecycle === "scope") { h.props.scopeVersion = 2; h.render(); h.h.runEffects(); assert.equal(h.h.states[0], null); }
     else h.h.unmount();
+    const annotationScope = action === "annotate" && lifecycle === "scope";
+    const tagInput = () => nodes(nodes(h.render()).find(node => node.type === "label" && text(node).startsWith("新标签"))).find(node => node.type === "input");
+    if (annotationScope) {
+      const current = profile(); current.identity.data.nickname = "当前范围资料";
+      h.requests.at(-1).resolve(current); await flush();
+      assert.equal(tagInput().props.disabled, true, "scope refresh must retain the in-flight annotation lock");
+    }
     await flush(); const writes = h.h.writes; old.resolve(profile()); await flush();
-    assert.equal(h.h.writes, writes, `${action}/${lifecycle}: no stale state setter`);
-    if (lifecycle === "scope") assert.equal(h.h.states[0], null);
+    if (annotationScope) {
+      assert.match(h.html(), /当前范围资料/); assert.doesNotMatch(h.html(), /私有旧资料/);
+      assert.equal(tagInput().props.disabled, false, "the settled annotation must release its own lock");
+    } else {
+      assert.equal(h.h.writes, writes, `${action}/${lifecycle}: no stale state setter`);
+      if (lifecycle === "scope") assert.equal(h.h.states[0], null);
+    }
 });
 function declarations(source, names) {
   return ts.createSourceFile("source.ts", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX).statements.filter(node => ts.isFunctionDeclaration(node) && names.includes(node.name?.text)).map(node => node.getText()).join("\n");

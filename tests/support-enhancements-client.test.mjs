@@ -180,7 +180,8 @@ test("funds-flow options use source statuses and reset the exact filter request 
   const original=globalThis.fetch;
   try{globalThis.fetch=async url=>{seen.push(new URL(String(url),"http://local.invalid"));return new Response(JSON.stringify({code:0,data:group({records:[],total:0})}),{headers:{"Content-Type":"application/json"}});};
     for(const [status,currency] of [["CONFIRMED","USDT"],["CREDITED","NEX"],["REVIEW_PENDING","USDT"],["REFUNDED","NEX"],["",""]]){
-      state[5]=3;state[10]=currency;select.props.onChange({target:{value:status}});render();effects[2]();await new Promise(resolve=>setImmediate(resolve));
+      state[5]=3;state[10]=currency;select.props.onChange({target:{value:status}});render();
+      const flowEffects=effects.filter(effect=>effect.toString().includes("supportEnhancements.flows("));assert.equal(flowEffects.length,1);flowEffects[0]();await new Promise(resolve=>setImmediate(resolve));
       const query=seen.at(-1).searchParams;assert.equal(query.get("status"),status||null);assert.equal(query.get("currency"),currency||null);assert.equal(query.get("pageNum"),"1");assert.equal(query.get("pageSize"),"10");
     }
   }finally{globalThis.fetch=original;}

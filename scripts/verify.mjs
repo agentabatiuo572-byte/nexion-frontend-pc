@@ -230,7 +230,7 @@ writeRecord({
 // 齿轮表:序号自动派生(新增/重排齿轮不再手工改 [x/N])。本机注意:channel-parity 起的后端依赖齿轮
 // 硬读兄弟仓 nexion-backend,缺仓环境链在该齿断(memory: nexion-backend-not-in-workspace)。
 const GEARS = [
-  ["promotion generated API contract", "node", ["scripts/generate-promotion-types.mjs", "--check"]],
+  ["promotion generated API contract", "node", ["--test", "tests/promotion-generated-types-eol.test.mjs"]],
   ["promotion interactions and public copy", "node", ["--unhandled-rejections=strict", "--experimental-strip-types", "--test", "scripts/growth-promotions-behavior.test.mjs", "scripts/growth-promotions-read-state.test.mjs", "scripts/growth-promotions-visual-gate.test.mjs", "scripts/growth-promotions-runtime-waits.test.mjs", "scripts/growth-promotions-public-copy.test.mjs", "scripts/growth-promotions-banner.test.mjs"]],
   ["promotion dialog capture", "node", ["--test", "scripts/growth-promotions-capture.test.mjs"]],
   ["direct referral policy contract", "node", ["--experimental-strip-types", "--test", "tests/direct-referral-policy.test.mjs", "tests/f5-event-runtime-contract.test.mjs"]],

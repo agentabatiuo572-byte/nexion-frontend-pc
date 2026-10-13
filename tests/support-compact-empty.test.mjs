@@ -98,7 +98,7 @@ test("actual profile numeric fields use dash while exact values, financial statu
   const actual = evaluate(functions(source,["Row"]) + "\nexport {Row};", { compactSupportBoardValue, show: value => value == null ? "未知" : String(value) });
   for (const value of [undefined,null,"",NaN,Infinity,"abc"]) assert.match(renderToStaticMarkup(React.createElement(actual.Row,{label:"余额",value,numeric:true})),/<span class="v">-<\/span>/);
   for (const value of [0,"0","9007199254740993.12345678"]) assert.ok(renderToStaticMarkup(React.createElement(actual.Row,{label:"余额",value,numeric:true})).includes(`>${value}</span>`));
-  assert.match(source,/state!=="READY"\|\|compactSupportBoardValue\(row\[key\]\)==="-"\?"-"/);
+  assert.match(source,/!\(state==="READY"\|\|state==="PARTIAL"\)\|\|compactSupportBoardValue\(row\[key\]\)==="-"\?"-"/);
   assert.match(source,/重新读取资金/); assert.match(source,/retryGroup\("finance"\)/);
   for (const label of ["本金","费用","实际到账","实际总算力","实际算力","实际收益"]) assert.ok(source.includes(`<Row numeric label="${label}"`));
   for (const label of ["持有设备","在网设备","维护执行次数","维护周期总数"]) assert.ok(source.includes(`<Row numeric="count" label="${label}"`));

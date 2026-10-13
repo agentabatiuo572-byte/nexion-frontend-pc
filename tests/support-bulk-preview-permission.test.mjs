@@ -97,7 +97,7 @@ test("freezing a stale selected scope rejects without advancing or retaining a r
     assert.equal(button(tree, "下一步：编写内容").props.disabled, false);
     button(tree, "下一步：编写内容").props.onClick(); tree = await h.settle();
     const html = renderToStaticMarkup(tree);
-    assert.match(html, /第 1 步：圈选客户/); assert.match(html, /无权读取.*顾问客户范围/);
+    assert.match(html, /第 1 步：圈选客户/); assert.match(html, /无权读取.*专属客服客户范围/);
     assert.doesNotMatch(html, /重新读取名单|选择当前全部筛选结果|当前本人归属（已核对）/);
     assert.equal(button(tree, "下一步：编写内容").props.disabled, true);
     assert.equal(h.previews[1].input.selectionMode, "CROSS_PAGE");
