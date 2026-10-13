@@ -1,11 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
+import sharp from "sharp";
 import { assertApprovedStaticPixels, approvedStaticRegions, approvedDynamicMasks, createApprovedDynamicMask, measureApprovedFullStaticPixels, assertApprovedFullStaticPixels } from "./support-leaderboard-fidelity.mjs";
 
 function image(width = 8, height = 8) {
   return { info: { width, height, channels: 4 }, data: Buffer.from(Array.from({ length: width * height * 4 }, (_, i) => i % 4 === 3 ? 255 : (i * 17 + Math.floor(i / 32) * 23) % 251)) };
 }
 const region = [{ id: "material", rect: [2, 2, 4, 4] }];
+test("the exposed canvas top strip retains the approved source pixels", async () => {
+  const root = new URL("../", import.meta.url);
+  const reference = await sharp(readFileSync(new URL("docs/design/support-analytics-20261006/leaderboard-orbit-20261010/approved-design.png", root))).extract({ left: 181, top: 0, width: 1355, height: 20 }).ensureAlpha().raw().toBuffer();
+  const canvas = await sharp(readFileSync(new URL("app/components/domain-views/m-tabs/support-leaderboard-assets/orbit-surface-main-canvas.png", root))).extract({ left: 0, top: 0, width: 1355, height: 20 }).ensureAlpha().raw().toBuffer();
+  assert.deepEqual(canvas, reference);
+});
 test("approved material accepts exact bytes and one channel of screenshot rounding", () => {
   const reference = image(), actual = { info: { ...reference.info }, data: Buffer.from(reference.data) };
   actual.data[(3 * 8 + 3) * 4]++;

@@ -868,7 +868,7 @@
     },
     {
       "file": "orbit-surface-main-canvas.png",
-      "sha256": "cd7a1661f62c92d1c30787e48c1ccc4ac99ffec016e26ae3f84f678f75ec7ca5",
+      "sha256": "119010f2a15272c4f2d19a55b1e115cb8d81303a6ec3aa44cc82db587322def1",
       "previousSHA256": "3aa8b6677891414aa1ab5c5dc63c236af0be904b105a93a286df0ec0113210cf",
       "width": 1355,
       "height": 1024,
@@ -876,7 +876,13 @@
       "restoration": {
         "provenance": "background-source-polish-20261013.json",
         "scope": "Restore clean approved source outside frozen foreground holes; reconstruct the caption and fourth-rank holes from nearest clean source rows.",
-        "limitation": "Occluded textures are reconstructed and are not original source pixels."
+        "limitation": "Occluded textures are reconstructed and are not original source pixels.",
+        "exactTopStrip": [
+          181,
+          0,
+          1355,
+          20
+        ]
       }
     }
   ],

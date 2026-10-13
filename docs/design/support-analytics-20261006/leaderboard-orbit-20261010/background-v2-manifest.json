@@ -865,9 +865,9 @@
   "currentSurfaceRevision": {
     "id": "approved-source-polish-20261013",
     "manifest": "background-surfaces-r117-manifest.json",
-    "manifestSHA256": "0332c1089bc11b854a51cf7c1ebbe300a7add3da11a622a3c0fbf69f8d47af69",
-    "previousManifestSHA256": "30d5e4af824a342335a29b652107c39399943d4a5525bf171fd02d98d084b3fe",
-    "desktopMainCanvasSHA256": "cd7a1661f62c92d1c30787e48c1ccc4ac99ffec016e26ae3f84f678f75ec7ca5",
+    "manifestSHA256": "c3120043ecfdc61df062c623c17a9be7395fa17085337c67a1764d248f873d77",
+    "previousManifestSHA256": "0332c1089bc11b854a51cf7c1ebbe300a7add3da11a622a3c0fbf69f8d47af69",
+    "desktopMainCanvasSHA256": "119010f2a15272c4f2d19a55b1e115cb8d81303a6ec3aa44cc82db587322def1",
     "narrowFallbackSceneSHA256": "484c0f1bf7b5762d9cb9d061a7b7f9e5ef3e470716e4daaa31f7c11f72e75ea4",
     "provenance": "background-source-polish-20261013.json",
     "acceptance": "Independent 1536px visual review found no P0/P1/P2; this is not a whole-page pixel-identity claim."

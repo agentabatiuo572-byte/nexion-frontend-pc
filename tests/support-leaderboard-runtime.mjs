@@ -77,7 +77,7 @@ await check("approved-layout-geometry",async()=>{
     matches(await box(".sl-pedestal",i),{x:[300,579,848,1116][i],y:296,width:i>1?151:164,height:59},"pedestal");
     matches(await box(".sl-podium-identity",i),{x:centers[i]-85,y:355,width:170},"identity");
     matches(await box(".sl-podium-metrics",i),{x:centers[i]-120,y:432,width:240,height:48},"metrics");
-    matches(await box(".sl-podium-view",i),{x:centers[i]-73,y:488,width:146,height:32},"podium action");
+    matches(await box(".sl-podium-view",i),{x:centers[i]-(i?79:70),y:488,width:146,height:32},"podium action");
     matches(await box(".sl-podium-rank",i),{x:[262.94,548.25,805.86,1071.78][i],y:198,height:74},"rank anchor");
     const portrait=boxes[`.sl-podium-portrait[${i}]`];matches(await box(".sl-podium-portrait .sl-avatar-frame",i),{x:portrait.x-3,y:portrait.y-3,width:portrait.width+6,height:portrait.height+6},"portrait frame and flow ring anchor");
     for(const selector of [".sl-podium-rank",".sl-podium-name",".sl-podium-identity>small"]){const b=await box(selector,i);assert(b.width>0&&b.height>0&&b.x>=202&&b.x+b.width<=1320,JSON.stringify({selector,b}));}

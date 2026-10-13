@@ -785,11 +785,24 @@
     "person-4-podium-floor"
   ],
   "holeRepair": "Caption uses clean source rows137/174 interpolated vertically. Fourth rank/portrait/pedestal holes interpolate nearest clean horizontal source donors outside every declared foreground support. Only declared supports plus8px, excluding any other foreground support. No source text/portrait donor.",
-  "note": "Source-derived restoration; occluded texture remains declared reconstruction, not exact original. Candidate not yet adopted; no acceptance masks or tolerances changed.",
+  "note": "Source-derived restoration adopted; outputs retain the prior stage hashes, while exactTopStrip records the current canvas. Occluded texture remains declared reconstruction, not exact original. No acceptance masks or tolerances changed; full-page pixel identity remains unproven.",
   "acceptance": {
     "independentVisual": "PASS_1536_NORMAL_STATE",
     "fullPagePixelIdentity": "NOT_PROVEN",
     "fonts": "Generated glyphs and browser anti-aliasing are not byte-identical.",
     "cssSHA256": "b8ddbdfe9b3349dc3fff8ac31db843ce691c62e36f6f8d763e5bac0032e2dfd4"
+  },
+  "exactTopStrip": {
+    "sourceRegion": [
+      181,
+      0,
+      1355,
+      20
+    ],
+    "previousCanvasSHA256": "cd7a1661f62c92d1c30787e48c1ccc4ac99ffec016e26ae3f84f678f75ec7ca5",
+    "canvasSHA256": "119010f2a15272c4f2d19a55b1e115cb8d81303a6ec3aa44cc82db587322def1",
+    "changedPixels": 2270,
+    "outsideChangedPixels": 0,
+    "maximumSourceDifference": 0
   }
 }
