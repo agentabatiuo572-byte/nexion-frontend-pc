@@ -1,0 +1,47 @@
+{
+  "source": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\design\\leaderboard-orbit-20261010\\approved-design.png",
+  "sourceSHA256": "e3b92e2fbb593171a4658e058c562ec4dbc9403fecafdf8dd85a719ba71f6c3a",
+  "purpose": "Fixture-only approved portrait crops; no production avatar substitution",
+  "files": [
+    {
+      "name": "approved-avatar-1.png",
+      "rect": [
+        331,
+        199,
+        104,
+        104
+      ],
+      "sha256": "39b70080e909b6a4db05fa397705503638c2bd62baa99e27d7a573cdd01ca448"
+    },
+    {
+      "name": "approved-avatar-2.png",
+      "rect": [
+        615,
+        206,
+        92,
+        92
+      ],
+      "sha256": "f87f245ec63714d751e70c3f16ecc6ec5ec72fd510f44f89c19fc6c1d6d9dcef"
+    },
+    {
+      "name": "approved-avatar-3.png",
+      "rect": [
+        879,
+        205,
+        92,
+        92
+      ],
+      "sha256": "ece018fb276a3316843643aad875950b1a706b6a97383f2169953dd65fa931e5"
+    },
+    {
+      "name": "approved-avatar-4.png",
+      "rect": [
+        1146,
+        206,
+        92,
+        92
+      ],
+      "sha256": "23c3a7bfd68fae5bfa9f638ad7e2dc23d6e7154c160efd05699c89befbf7dbfb"
+    }
+  ]
+}

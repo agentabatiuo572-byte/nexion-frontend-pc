@@ -1,6 +1,6 @@
 # Nexion 运营控制后台 — 开发落地规格(Dev-Ready Spec)
 
-**最后更新：2026-10-06**
+**最后更新：2026-10-09**
 
 > **2026-08-07 后发裁定**：全项目已取消 KYC 与钱包配对。C4、K5、相关 API、字段、参数、菜单、权限和资金门禁均退出当前规格；提现改为用户按网络直管收款地址。历史 PRD 中的相关描述仅作归档，不得实现或恢复。具体以 `specs-snapshot-20260807/FEAT-KYC-RM01-remove-kyc-and-pairing.md` 为准。
 
@@ -207,7 +207,7 @@
 
 | 实体 | 关键字段(名:类型) | 权威源 | 出处§ |
 |---|---|---|---|
-| **OperatorAccount** | accountId:string · username:string · displayName:string · email?:string · roleCode?:string(A6 启用角色，空=暂不分配) · roleHistory[]{fromRole,toRole,changedAt,operator}(A2 审计派生) · tfaSecretEncrypted?:string · tfaBoundAt?:datetime · status:enum{enabled\|disabled} · lastLoginAt?:datetime · activeSessions[]{sessionId,device,ipAddress,issuedAt,lastSeenAt} | SC | §9.1 / Ch2 A1 |
+| **OperatorAccount** | accountId:string · username:string · displayName:string · email?:string · avatarGender?:enum{MALE\|FEMALE\|UNSPECIFIED} · avatarAssetId?:string · avatarVersion?:number · roleCode?:string(A6 启用角色，空=暂不分配) · roleHistory[]{fromRole,toRole,changedAt,operator}(A2 审计派生) · tfaSecretEncrypted?:string · tfaBoundAt?:datetime · status:enum{enabled\|disabled} · lastLoginAt?:datetime · activeSessions[]{sessionId,device,ipAddress,issuedAt,lastSeenAt} | SC | §9.1 / Ch2 A1 |
 | **AuditLog** | operator · role · action · object{domain,objectId} · before · after · reason · ip · ts:ms-epoch · (可选)Idempotency-Key;**append-only,保留 ≥13 月;高敏写与审计记录同事务落库** | SC | §9.1 / Ch2 A2 |
 | **SystemConfig** | 运营托管:featureFlags[]{key,state:enum{on\|off\|灰度%},scope:enum{all\|cohort\|phase}} · health{pipeline,ledger,ntp,endpoints}。**固定后端不变量(运营不可调、无配置面)**:serverTime{ntpSource,currentTs:ms-epoch,driftMs} 单源 · idempotency{ttlHours(24),dedupHitCount24h} Idempotency-Key 去重 | SC | §9.1 / Ch2 A3 |
 | **KillSwitchConfig** | key:enum{withdraw\|staking\|genesis\|exchange\|trial\|geo-block} · enabled:bool(geo-block=activeCountries.length>0) · activeCountries:数组(仅 geo-block) · lastChangedAt:ms-epoch · operator · reason;**6 闸(5 功能闸+geo-block);A3 子对象非独立表;V1 A3 托管→V4 J1/J2** | SC | §9.1 / Ch2 A3 / §9.11d.1 |
@@ -591,14 +591,26 @@
 
 ### 域 M — 客服中心
 
+功能口径、三资格范围、四榜及原 M3 能力见 [M 专属客服中心功能契约](M-专属客服中心功能契约.md)。
+
+当前端点补充（统一前缀 /api/admin/content）：
+
 | Endpoint | Method | 用途 | 确认 | 模块 |
 |---|---|---|---|---|
-| `/api/admin/content/support-workbench/customers` · `/customers/{id}` | GET | 同一 `snapshotId` 返回本人或主管范围的统计、客户页、绩效、完整性与规则；详情携当前归属和维护版本。活跃、沉睡、到期不可判定时为 `null`，待办按客户去重 | — | M1 |
-| `/api/admin/content/support-workbench/customers/{id}/maintenance` · `/maintenance/history` | PATCH / GET | 当前顾问按归属 ID、偏好版本、理由和 Key 暂停或恢复主动维护；周期和人工执行分别分页，成功周期由后续真实活动确认 | 是 | M1 |
+| /support-workbench/analytics | GET | 授权范围内六视角；全量筛选排序分页，查询版本约束后页及下钻，未知不造0 | — | M1 |
+| /support-agents/groups · /{id} · /members/{adminId} · /supervisors | GET | 当前负责组或总管理员获准范围；主管目录须原账号读权及总管理员资格 | — | M1 |
+| /support-agents/groups · /{id}/name · /{id}/status · /{id}/owner · /members/{adminId} · /customer-routes/{customerId} | POST / PATCH | 组/成员/路由治理；跨主管和全局动作仅总管理员，理由、版本、Key、影响确认与原子审计 | 是 | M1 |
+| /support-agents/{adminId}/qualification | PATCH | 服务/主管资格独立，沿原账号治理权；退出前交接负责组及个人绑定 | 是 | A1/M1 |
+| /support-workbench/leaderboard · /{agentId} · /{agentId}/avatar | GET | 四榜公开白名单，不授客户明细权；同版分页及真实日末基线，缺付款/退款覆盖不排完整金额名次 | — | M6 |
+
+| Endpoint | Method | 用途 | 确认 | 模块 |
+|---|---|---|---|---|
+| `/api/admin/content/support-workbench/customers` · `/customers/{id}` | GET | 同一 `snapshotId` 返回本人或主管当前负责组范围的统计、客户页、绩效、完整性与规则；详情携当前归属和维护版本。活跃、沉睡、到期不可判定时为 `null`，待办按客户去重 | — | M1 |
+| `/api/admin/content/support-workbench/customers/{id}/maintenance` · `/maintenance/history` | PATCH / GET | 当前专属客服按归属 ID、偏好版本、理由和 Key 暂停或恢复主动维护；周期和人工执行分别分页，成功周期由后续真实活动确认 | 是 | M1 |
 | `/api/admin/content/support-agents/assignments/transfer` · `/rules` | POST / GET / PUT | 主管正式转绑；超管配置可空沉睡、维护、活跃天数及继承模式，`LIMITED` 深度 0 合法；写入均用版本、理由和 Key | 是 | M1/M5 |
-| `/api/admin/content/conversations` · `/{no}/replies` · `/attachments/policy` · `/attachments` | GET / POST | 本人当前归属下发起/回复顾问会话，明确指定 `replyTargets`；图片按服务端策略上传，经授权读取并在撤权时清理 | 按动作 | M3 |
+| `/api/admin/content/conversations` · `/{no}/replies` · `/attachments/policy` · `/attachments` | GET / POST | 本人当前归属下发起/回复专属客服会话，明确指定 `replyTargets`；图片按服务端策略上传，经授权读取并在撤权时清理 | 按动作 | M3 |
 | `/api/admin/content/support-workbench/commands/{key}` | GET | 结果未知时查询原命令；`PROCESSING`/`UNKNOWN` 不铸新 Key，成功或明确失败后才解除锁定 | — | M1/M3/M5 |
-| `/api/admin/content/tickets` · `/{no}` | GET | 私聊转工单副本正文、摘要、搜索只供当前顾问和审阅主管；其他工单角色仍可协作指派、状态和内部备注 | — | M2 |
+| `/api/admin/content/tickets` · `/{no}` | GET | 私聊转工单副本正文、摘要、搜索只供当前专属客服、负责组审阅主管及获准总管理员；其他工单角色仍可协作指派、状态和内部备注 | — | M2 |
 | `/api/admin/content/conversations/timeout-policy` | GET / PUT | 读取/更新全局会话空闲提醒与自动关闭时长；PUT 携 Key + expectedVersion，定时器先提醒后自动关闭，并写审计 | 是(写仅超管) | M3 |
 
 ### 域 C6/K1 用户侧 server-enforce 端点(配置阈值,写权非 admin)
@@ -1349,10 +1361,11 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 
 ### 9.9a 客服后台(/service/* · 域 M;原 /content/support 已退役)
 
-- M1 的统计、列表、绩效及完整性来自同一服务端快照；筛选不可用应明确提示，未知数量不填 0。主管可看全局范围并正式转绑，当前顾问可暂停或恢复主动维护；停用不解除归属、私聊或求助。
-- M3 只由当前专属顾问发送服务或维护消息；主管可审阅，不能代发。维护执行与服务回复分开计数；已读不清待回复，新到消息不被旧 `replyTargets` 清除。图片仅接受服务端允许的 PNG/JPEG、大小和像素范围，撤权后旧字节与本地预览不可继续访问。
-- M2 工单支持分页、搜索、状态、负责人及优先级操作；私聊来源正文受当前顾问/主管权限约束，受限者仍能协作工单指派、状态和内部备注。FAQ、分类和 SLA 按既有功能契约管理。
-- M5 的沉睡 D、维护 M、活跃窗口 W 独立可空；写规则须有理由、版本和原命令号，冲突须读回比较。所有高敏写入以服务端结果及刷新后状态为准；结果未知时保留原输入、范围和 Key，查询或同键重试。
+- M1 的统计、列表、绩效及完整性来自同一服务端快照；筛选不可用应明确提示，未知数量不填 0。主管只看当前负责组并在该范围正式转绑，总管理员看全部获准客服域；当前专属客服可暂停或恢复主动维护；停用不解除归属、私聊或求助。
+- M3 只由当前专属客服发送服务或维护消息；主管可审阅，不能代发。维护执行与服务回复分开计数；已读不清待回复，新到消息不被旧 `replyTargets` 清除。图片仅接受服务端允许的 PNG/JPEG、大小和像素范围，撤权后旧字节与本地预览不可继续访问。
+- M2 工单支持分页、搜索、状态、负责人及优先级操作；私聊来源正文受当前专属客服/负责组主管权限约束，受限者仍能协作工单指派、状态和内部备注。FAQ、分类和 SLA 按既有功能契约管理。
+- M1/M6 数据与验收见 [M 专属客服中心功能契约](M-专属客服中心功能契约.md)；公开榜与私有对象授权分离，当前资产、期间事件、邀请聚合和原单有效额各保持口径。
+- M5 新配置继承默认无限，可显式有限；既有配置及绑定不追溯，未知配置不自动兜底。沉睡 D、维护 M、活跃窗口 W 独立可空；写规则须有理由、版本和原命令号，冲突须读回比较。所有高敏写入以服务端结果及刷新后状态为准；结果未知时保留原输入、范围和 Key，查询或同键重试。
 
 ### 9.10 J 紧急与合规控制
 

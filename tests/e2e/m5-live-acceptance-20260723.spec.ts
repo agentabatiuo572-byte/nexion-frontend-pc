@@ -169,7 +169,7 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
     expect([rootSession.role, rootSession.roleCode].some((role) => /super/i.test(role ?? "")) || ["service_m5_read", "service_m5_write"].every((code) => (rootSession.authorities ?? []).includes(code))).toBeTruthy();
     await openModule(page, "/service/scripts");
     await expect(page.getByText("会话类别", { exact: true })).toBeVisible();
-    await expect(page.getByText("顾问主动推送策略", { exact: true })).toBeVisible();
+    await expect(page.getByText("专属客服主动推送策略", { exact: true })).toBeVisible();
     await expect(page.getByText(/mock|localStorage|模拟话术/i)).toHaveCount(0);
 
     const overview = await getOverview(page);
@@ -390,8 +390,8 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
     scriptId = script.id;
     expect(script.status).toBe("draft");
     expect(((await getOverview(page)).scripts ?? []).filter((row) => row.text === SCRIPT_TEXT)).toHaveLength(1);
-    await goToLastPage(cardByHeading(page, "顾问主动话术"));
-    await expect(cardByHeading(page, "顾问主动话术").getByText(SCRIPT_TEXT, { exact: true })).toBeVisible();
+    await goToLastPage(cardByHeading(page, "专属客服主动话术"));
+    await expect(cardByHeading(page, "专属客服主动话术").getByText(SCRIPT_TEXT, { exact: true })).toBeVisible();
 
     const scriptMirror = await publishI18nMirrorAsRoot(browser, "script", scriptId, SCRIPT_TEXT);
     scriptI18nKey = scriptMirror.messageKey;
@@ -455,8 +455,8 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
     expect((await findReplyTemplate(page, templateId)).status).toBe("published");
 
     await page.reload({ waitUntil: "domcontentloaded" });
-    await goToLastPage(cardByHeading(page, "顾问主动话术"));
-    await expect(cardByHeading(page, "顾问主动话术").getByText(SCRIPT_TEXT, { exact: true })).toBeVisible();
+    await goToLastPage(cardByHeading(page, "专属客服主动话术"));
+    await expect(cardByHeading(page, "专属客服主动话术").getByText(SCRIPT_TEXT, { exact: true })).toBeVisible();
     await goToLastPage(cardByHeading(page, "即时回复模板库"));
     await expect(cardByHeading(page, "即时回复模板库").getByText(TEMPLATE_TEXT, { exact: true })).toBeVisible();
     await logout(page);
@@ -510,7 +510,7 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
       await login(page, TEMP_USERNAME, TEMP_FINAL_PASSWORD);
     }
     await openModule(page, "/service/scripts");
-    await goToLastPage(cardByHeading(page, "顾问主动话术"));
+    await goToLastPage(cardByHeading(page, "专属客服主动话术"));
     await page.locator(`[data-proof="session-script-publish-${scriptId}"] button`).click();
     await submitDialog(page, `${PREFIX}-归档话术验证终态`);
     expect((await findScript(page, scriptId)).status).toBe("archived");

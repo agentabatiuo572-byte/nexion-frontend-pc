@@ -6,14 +6,15 @@ const BASES = ["CURRENT_CUSTOMER_HISTORY", "PERIOD_EVENT", "CURRENT_ASSET"] as c
 const CATEGORIES = ["ALL", "BOUND", "PENDING", "ANOMALY"] as const;
 const FIRST = ["ALL", "CONFIRMED", "NONE", "UNKNOWN"] as const;
 const FILTERS = ["ALL", "WINDOW_ACTIVE", "ACTIVE", "DORMANT", "UNKNOWN", "DUE", "WAITING_REPLY", "FIRST_CONTACT", "STOPPED", "TODO"] as const;
-const SORTS = ["REGISTERED_AT", "ASSIGNED_AT", "LAST_ACTIVE_AT", "FIRST_SUCCEEDED_AT", "DIRECT_INVITATION_COUNT", "TEAM_CUSTOMER_COUNT", "PERSONAL_DEPOSIT", "TEAM_DEPOSIT", "BOUND_CUSTOMER_COUNT", "ACTIVE_CUSTOMER_COUNT", "FIRST_CONFIRMED_CUSTOMER_COUNT", "DEVICE_COUNT", "HASHRATE", "NEXT_DUE_AT", "WAITING_SINCE_AT", "STATE_CHANGED_AT", "POOL_ENTERED_AT", "SUCCEEDED_AT", "AMOUNT"] as const;
+const SORTS = ["REGISTERED_AT", "ASSIGNED_AT", "LAST_ACTIVE_AT", "FIRST_SUCCEEDED_AT", "DIRECT_INVITATION_COUNT", "TEAM_CUSTOMER_COUNT", "PERSONAL_DEPOSIT", "TEAM_DEPOSIT", "NET_CONTRIBUTION", "BOUND_CUSTOMER_COUNT", "ACTIVE_CUSTOMER_COUNT", "FIRST_CONFIRMED_CUSTOMER_COUNT", "DEVICE_COUNT", "HASHRATE", "NEXT_DUE_AT", "WAITING_SINCE_AT", "STATE_CHANGED_AT", "POOL_ENTERED_AT", "SUCCEEDED_AT", "AMOUNT"] as const;
 const STATUS = ["AVAILABLE", "PARTIAL", "UNKNOWN", "FAILED", "UNAVAILABLE"] as const;
 const CURRENCIES = ["USDT", "NEX"] as const;
 const READS = ["COMPLETE", "UNKNOWN", "FAILED", "NOT_REQUESTED"] as const;
 const FUND_READS = ["READY", "PARTIAL", "UNKNOWN", "FAILED"] as const;
 const FUND_STATUS = ["READY", "PARTIAL", "UNKNOWN", "UNAVAILABLE"] as const;
 const FUND_REASONS = ["WALLET_MISSING", "WALLET_READ_FAILED", "WALLET_IDENTITY_UNVERIFIED", "USDT_BALANCE_UNVERIFIED", "NEX_BALANCE_UNVERIFIED", "SOURCE_OBSERVATION_UNVERIFIED", "WITHDRAWAL_READ_FAILED", "UNKNOWN_WITHDRAWAL_STATUS", "WITHDRAWAL_PRINCIPAL_UNVERIFIED", "WITHDRAWAL_SETTLEMENT_UNVERIFIED", "WITHDRAWAL_TIME_UNVERIFIED"] as const;
-const KINDS = ["DEPOSIT", "DEVICE_PURCHASE", "DEVICE_PURCHASE_REFUND"] as const;
+const KINDS = ["DEPOSIT", "DEVICE_PURCHASE", "DEVICE_PURCHASE_REFUND", "CONSUMPTION"] as const;
+const FIRST_KINDS = ["DEPOSIT", "DEVICE_PURCHASE"] as const;
 const PARAMETERS = ["view", "category", "firstState", "filter", "keyword", "basis", "from", "to", "businessZone", "groupId", "agentId", "currency", "sortKey", "direction", "pageNum", "pageSize", "expectedVersion"];
 
 export type SupportAnalyticsView = typeof VIEWS[number];
@@ -76,6 +77,15 @@ function money(value: unknown) {
   return result;
 }
 function customerMoney(value: unknown) {
+  const r = object(value, "currency deposits purchases net");
+  return { currency: enumeration(r.currency, CURRENCIES), deposits: money(r.deposits), purchases: money(r.purchases), net: r.net === undefined ? netMoney({ observed: null, confirmed: null, observedEvents: null, confirmedEvents: null, observedCustomers: null, status: "UNKNOWN" }) : netMoney(r.net) };
+}
+function netMoney(value: unknown) {
+  const result = money(value);
+  if (result.status === "AVAILABLE" ? result.confirmed === null || result.observed !== result.confirmed : result.confirmed !== null || result.observed !== null) malformed("netCoverage");
+  return result;
+}
+function firstSourceMoney(value: unknown) {
   const r = object(value, "currency deposits purchases");
   return { currency: enumeration(r.currency, CURRENCIES), deposits: money(r.deposits), purchases: money(r.purchases) };
 }
@@ -109,8 +119,8 @@ function financial(value: unknown) {
   const r = object(value, "status firstCandidates currencies firstSources");
   return { status: enumeration(r.status, STATUS), firstCandidates: count(r.firstCandidates), currencies: unique(array(r.currencies, value => {
     const p = object(value, "currency deposits purchases purchaseRefunds net");
-    return { currency: enumeration(p.currency, CURRENCIES), deposits: money(p.deposits), purchases: money(p.purchases), purchaseRefunds: money(p.purchaseRefunds), net: money(p.net) };
-  }), x => x.currency), firstSources: unique(array(r.firstSources, customerMoney), x => x.currency) };
+    return { currency: enumeration(p.currency, CURRENCIES), deposits: money(p.deposits), purchases: money(p.purchases), purchaseRefunds: money(p.purchaseRefunds), net: netMoney(p.net) };
+  }), x => x.currency), firstSources: unique(array(r.firstSources, firstSourceMoney), x => x.currency) };
 }
 function scopeSummary(value: unknown) {
   const r = object(value, "mode total bound pending anomaly status current financial restrictedSummary personnel groups");
@@ -171,7 +181,7 @@ function customer(value: unknown) {
   const a = object(r.activity, "state status lastEffectiveAt");
   const t = object(r.task, "status enabled due waitingReply firstContact nextDueAt waitingSinceAt");
   const task = t.status === "UNAVAILABLE" ? (Object.keys(t).length === 1 ? { status: "UNAVAILABLE" as const } : malformed("taskUnavailable")) : { status: enumeration(t.status, READS), enabled: t.enabled === null ? null : boolean(t.enabled), due: t.due === null ? null : boolean(t.due), waitingReply: t.waitingReply === null ? null : boolean(t.waitingReply), firstContact: t.firstContact === null ? null : boolean(t.firstContact), nextDueAt: nullableInstant(t.nextDueAt), waitingSinceAt: nullableInstant(t.waitingSinceAt) };
-  return { customerId, customerNo: nullableText(r.customerNo), nickname: nullableText(r.nickname), avatar: avatarRef, level: nullableText(r.level), customTags: array(r.customTags, text), systemTags: array(r.systemTags, text), systemTagsStatus: enumeration(r.systemTagsStatus, ["PARTIAL"]), profileRef, registeredAt: nullableInstant(r.registeredAt), assignedAt: nullableInstant(r.assignedAt), category: enumeration(r.category, ["BOUND", "PENDING", "ANOMALY"]), placement: enumeration(r.placement, ["GROUPED", "UNGROUPED", "GROUP_QUEUE", "GLOBAL_QUEUE", "UNKNOWN"]), handoverRequired: boolean(r.handoverRequired), owner: { agentId, groupId: nullableId(o.groupId), agentName: nullableText(o.agentName), advisorAvatar: avatar(o.advisorAvatar), advisorAvatarRef }, first: { state: enumeration(f.state, ["CONFIRMED", "NONE", "UNKNOWN"]), status: enumeration(f.status, STATUS), kind: f.kind === null ? null : enumeration(f.kind, KINDS), currency: f.currency === null ? null : enumeration(f.currency, CURRENCIES), amount: decimal(f.amount), succeededAt: nullableInstant(f.succeededAt) }, lifetime: unique(array(r.lifetime, customerMoney), x => x.currency), lifetimeStatus: enumeration(r.lifetimeStatus, STATUS), invitations: { direct: count(i.direct), descendants: count(i.descendants), status: enumeration(i.status, STATUS), deposits: unique(array(i.deposits, value => { const p = object(value, "currency deposits"); return { currency: enumeration(p.currency, CURRENCIES), deposits: money(p.deposits) }; }), x => x.currency) }, devices: devices(r.devices), activity: { state: enumeration(a.state, ["ACTIVE", "INACTIVE", "UNKNOWN"]), status: enumeration(a.status, STATUS), lastEffectiveAt: nullableInstant(a.lastEffectiveAt) }, task, funds: funds(r.funds) };
+  return { customerId, customerNo: nullableText(r.customerNo), nickname: nullableText(r.nickname), avatar: avatarRef, level: nullableText(r.level), customTags: array(r.customTags, text), systemTags: array(r.systemTags, text), systemTagsStatus: enumeration(r.systemTagsStatus, ["PARTIAL"]), profileRef, registeredAt: nullableInstant(r.registeredAt), assignedAt: nullableInstant(r.assignedAt), category: enumeration(r.category, ["BOUND", "PENDING", "ANOMALY"]), placement: enumeration(r.placement, ["GROUPED", "UNGROUPED", "GROUP_QUEUE", "GLOBAL_QUEUE", "UNKNOWN"]), handoverRequired: boolean(r.handoverRequired), owner: { agentId, groupId: nullableId(o.groupId), agentName: nullableText(o.agentName), advisorAvatar: avatar(o.advisorAvatar), advisorAvatarRef }, first: { state: enumeration(f.state, ["CONFIRMED", "NONE", "UNKNOWN"]), status: enumeration(f.status, STATUS), kind: f.kind === null ? null : enumeration(f.kind, FIRST_KINDS), currency: f.currency === null ? null : enumeration(f.currency, CURRENCIES), amount: decimal(f.amount), succeededAt: nullableInstant(f.succeededAt) }, lifetime: unique(array(r.lifetime, customerMoney), x => x.currency), lifetimeStatus: enumeration(r.lifetimeStatus, STATUS), invitations: { direct: count(i.direct), descendants: count(i.descendants), status: enumeration(i.status, STATUS), deposits: unique(array(i.deposits, value => { const p = object(value, "currency deposits"); return { currency: enumeration(p.currency, CURRENCIES), deposits: money(p.deposits) }; }), x => x.currency) }, devices: devices(r.devices), activity: { state: enumeration(a.state, ["ACTIVE", "INACTIVE", "UNKNOWN"]), status: enumeration(a.status, STATUS), lastEffectiveAt: nullableInstant(a.lastEffectiveAt) }, task, funds: funds(r.funds) };
 }
 function agent(value: unknown) {
   const r = object(value, "accountId displayName avatar avatarRef account current funds");
@@ -232,9 +242,10 @@ function query(options: SupportAnalyticsQuery) {
   const sortKey = enumeration(options.sortKey ?? (view === "AGENTS" ? "BOUND_CUSTOMER_COUNT" : view === "FINANCE" ? "SUCCEEDED_AT" : defaultSort), SORTS);
   const direction = enumeration(options.direction ?? (category === "PENDING" || firstState === "NONE" || ["WAITING_REPLY", "FIRST_CONTACT", "DUE", "DORMANT"].includes(filter) ? "ASC" : "DESC"), ["ASC", "DESC"]);
   const allowed = view === "AGENTS" ? ["BOUND_CUSTOMER_COUNT", "ACTIVE_CUSTOMER_COUNT", "FIRST_CONFIRMED_CUSTOMER_COUNT", "DEVICE_COUNT", "PERSONAL_DEPOSIT"] : view === "FINANCE" ? ["SUCCEEDED_AT", "AMOUNT"] : view === "DEVICES" ? ["HASHRATE", "LAST_ACTIVE_AT", "REGISTERED_AT", "DEVICE_COUNT"] : SORTS.filter(x => !["BOUND_CUSTOMER_COUNT", "ACTIVE_CUSTOMER_COUNT", "FIRST_CONFIRMED_CUSTOMER_COUNT", "HASHRATE", "SUCCEEDED_AT", "AMOUNT"].includes(x));
+  if (sortKey === "NET_CONTRIBUTION" && basis !== "CURRENT_CUSTOMER_HISTORY") malformed("querySort");
   if (!allowed.includes(sortKey) || sortKey === "NEXT_DUE_AT" && filter !== "DUE" || sortKey === "WAITING_SINCE_AT" && filter !== "WAITING_REPLY" || sortKey === "STATE_CHANGED_AT" && filter !== "STOPPED" || sortKey === "POOL_ENTERED_AT" && category !== "PENDING" || basis === "CURRENT_ASSET" && (view === "FINANCE" || firstState !== "ALL" || ["PERSONAL_DEPOSIT", "TEAM_DEPOSIT", "FIRST_SUCCEEDED_AT"].includes(sortKey))) malformed("querySort");
   const currency = options.currency === undefined ? undefined : enumeration(options.currency, CURRENCIES);
-  if (["PERSONAL_DEPOSIT", "TEAM_DEPOSIT", "AMOUNT"].includes(sortKey) && currency === undefined) malformed("queryCurrency");
+  if (["PERSONAL_DEPOSIT", "TEAM_DEPOSIT", "NET_CONTRIBUTION", "AMOUNT"].includes(sortKey) && currency === undefined) malformed("queryCurrency");
   const pageNum = integer(options.pageNum ?? 1, 1), pageSize = integer(options.pageSize ?? 20, 1);
   if (pageSize > 100 || BigInt(pageNum) * BigInt(pageSize) > BigInt("9223372036854775807")) malformed("queryPage");
   if (options.expectedVersion !== undefined && !/^saq-v1:[0-9a-f]{64}$/.test(text(options.expectedVersion)) || pageNum > 1 && options.expectedVersion === undefined) malformed("queryVersion");

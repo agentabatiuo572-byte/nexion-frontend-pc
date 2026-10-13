@@ -200,7 +200,7 @@ export function transferTargetLabel(t: TransferTarget): string {
 export type SessionConvo = {
   id: string;          // 镜像前端 Conversation.id
   version: number;     // 后端会话头版本,所有核心写入必须携带 CAS
-  type: "advisor" | "support";
+  type: "advisor" | "support" | "ai";
   agentName: string;   // 镜像前端 agentName
   roleKey: string;     // 镜像前端 roleKey
   unread: number;      // 镜像前端 unread

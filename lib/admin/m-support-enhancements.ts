@@ -1,5 +1,6 @@
 import { supportRequest, supportObject as obj, parseSupportId as id, parseSupportCount as count, parseSupportPage as page, supportJson as json, supportQuery as query, parseSupportTime as time, supportWireId } from "./m-support-client.ts";
 export type SupportGroup = { status: "READY" | "UNKNOWN" | "FORBIDDEN" | "ERROR"; data: Record<string, unknown> | null; evaluatedAt: string };
+export type SupportFinanceFieldStatus = SupportGroup["status"] | "PARTIAL";
 export type SupportProfile = Record<"identity" | "finance" | "devices" | "risk" | "annotations" | "service", SupportGroup> & { actions: Record<string, { allowed: boolean }> };
 export type SupportKind = "TEXT" | "IMAGE" | "SKU" | "LINK";
 export type SupportLink = { type: "HOME" | "WALLET" | "SUPPORT"; params: Record<string, never> };
@@ -38,10 +39,17 @@ export function parseSupportProfile(v: unknown): SupportProfile {
     const currency = obj(value, "currency"); text(currency.currency); const statuses = obj(currency.fieldStatuses, "fieldStatuses");
     for (const field of ["creditedDepositTotal", "depositRefundTotal", "successfulWithdrawalPrincipalTotal", "successfulWithdrawalFeeTotal", "successfulWithdrawalNetTotal", "processingWithdrawalPrincipalTotal", "balance", "availableBalance"]) {
       const status = statuses[field];
-      enumOf(status, ["READY", "UNKNOWN", "FORBIDDEN", "ERROR"] as const);
-      if (status === "READY" && (typeof currency[field] !== "string" || !/^-?\d+(\.\d+)?$/.test(currency[field] as string))) throw new Error("SUPPORT_DECIMAL_INVALID");
-      if (status !== "READY") currency[field] = null;
+      enumOf(status, ["READY", "PARTIAL", "UNKNOWN", "FORBIDDEN", "ERROR"] as const);
+      const readable = status === "READY" || status === "PARTIAL";
+      if (readable && (typeof currency[field] !== "string" || !/^-?\d+(\.\d+)?$/.test(currency[field] as string))) throw new Error("SUPPORT_DECIMAL_INVALID");
+      if (!readable) currency[field] = null;
     }
+    if (currency.netContributionTotal === undefined && statuses.netContributionTotal === undefined) {
+      currency.netContributionTotal = null; statuses.netContributionTotal = "UNKNOWN";
+    }
+    const netStatus = enumOf(statuses.netContributionTotal, ["READY", "UNKNOWN", "FORBIDDEN", "ERROR"] as const);
+    if (netStatus === "READY" && (typeof currency.netContributionTotal !== "string" || !/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(currency.netContributionTotal))) throw new Error("SUPPORT_DECIMAL_INVALID");
+    if (netStatus !== "READY" && currency.netContributionTotal !== null) throw new Error("SUPPORT_NET_COVERAGE_INVALID");
   }
   return { ...groups, actions };
 }

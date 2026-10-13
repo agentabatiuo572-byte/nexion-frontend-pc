@@ -129,7 +129,7 @@ export function IdlePolicyModal({
         <div className="row" style={{ gap: 10, alignItems: "center", width: "100%" }}>
           <span className="sub" style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <Icon name="shield" size={13} />
-            作用于真实会话 · 版本 {policy.version} · 变更记入审计
+            静默提醒与自动结束设置
           </span>
           <div className="spacer" style={{ flex: 1 }} />
           <button type="button" className="btn btn-sec btn-sm" onClick={onClose} disabled={saving}>取消</button>
@@ -316,10 +316,9 @@ export function QuickActionModal({
   if (kind === "history") {
     return (
       <Modal title="历史会话" icon="clock" onClose={onClose} footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose}>关闭</button></>}>
-        <div className="sub" style={{ marginBottom: 8 }}>{profile.nickname} · 后端会话记录</div>
+        <div className="sub" style={{ marginBottom: 8 }}>{profile.nickname}</div>
         <div className="itint">
-          <div style={{ fontSize: 13 }}>请在 M3 会话列表使用用户昵称 / 用户编码搜索查看该用户的真实历史会话。</div>
-          <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>本弹窗不再展示静态历史预览。</div>
+          <div style={{ fontSize: 13 }}>在会话列表按昵称或客户编号搜索，可查看历史会话。</div>
         </div>
       </Modal>
     );

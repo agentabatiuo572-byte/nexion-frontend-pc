@@ -15,7 +15,7 @@ test("M4 fails closed when knowledge data is unavailable and respects write perm
   assert.match(page, /pget\("I\.support\.knowledgeAvailable"\) === "1"/);
   assert.doesNotMatch(page, /pget\("I\.support\.knowledgeAvailable"\) !== "0"/);
   assert.match(page, /service_m4_write/);
-  assert.match(page, /知识库后端当前不可用/);
+  assert.match(page, /知识库当前不可用/);
   assert.match(page, /当前账号只有查看权限/);
 });
 

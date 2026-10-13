@@ -1,0 +1,885 @@
+{
+  "revision": "r117-static-surface-candidate",
+  "approvedSourceSHA256": "e3b92e2fbb593171a4658e058c562ec4dbc9403fecafdf8dd85a719ba71f6c3a",
+  "approvedSourceSize": [
+    1536,
+    1024
+  ],
+  "previousSceneSHA256": "d956c0ab4921d309227e28cefaff9e4543c80372fae48dcb88cf22edbb21fe72",
+  "currentSceneSHA256": "f5f5e7c933f71761bdfa23da6c4a9d47375eb008e86a7d94d60da5be1c07a135",
+  "assets": [
+    {
+      "file": "orbit-surface-navigation.png",
+      "sha256": "5e870a84a9acd6fae1cc460351d29412fca5509cbc62572fb649d9c1026129f5",
+      "sourceCrop": {
+        "id": "nav",
+        "x": 0,
+        "y": 0,
+        "width": 181,
+        "height": 1024
+      },
+      "width": 181,
+      "height": 1024,
+      "sourceExact": 127260,
+      "reconstructed": 58084,
+      "foregroundRemoval": [
+        {
+          "id": "brand-and-role",
+          "x": 20,
+          "y": 18,
+          "width": 122,
+          "height": 70
+        },
+        {
+          "id": "nav-content-0",
+          "x": 22,
+          "y": 120,
+          "width": 137,
+          "height": 43
+        },
+        {
+          "id": "nav-content-1",
+          "x": 22,
+          "y": 182,
+          "width": 137,
+          "height": 43
+        },
+        {
+          "id": "nav-content-2",
+          "x": 22,
+          "y": 244,
+          "width": 137,
+          "height": 43
+        },
+        {
+          "id": "nav-content-3",
+          "x": 22,
+          "y": 306,
+          "width": 137,
+          "height": 43
+        },
+        {
+          "id": "nav-content-4",
+          "x": 22,
+          "y": 368,
+          "width": 137,
+          "height": 43
+        },
+        {
+          "id": "nav-content-5",
+          "x": 22,
+          "y": 430,
+          "width": 137,
+          "height": 43
+        },
+        {
+          "id": "account-avatar-name-role",
+          "x": 20,
+          "y": 910,
+          "width": 135,
+          "height": 63
+        },
+        {
+          "id": "source-active-row",
+          "x": 0,
+          "y": 295,
+          "width": 181,
+          "height": 64
+        }
+      ],
+      "method": "Fixed foreground holes: nearest clean horizontal donors interpolated from the source crop. Whole-width holes use nearest clean source row. Original pixels outside declared support are byte-exact; holes are sampled reconstruction, not original texture."
+    },
+    {
+      "file": "orbit-surface-nav-active.png",
+      "sha256": "1dcc108341ec67f5d37cf43a1c28d98610b60dea211b58d67c2476aa397ed39f",
+      "sourceCrop": {
+        "id": "active",
+        "x": 0,
+        "y": 297,
+        "width": 181,
+        "height": 60
+      },
+      "width": 181,
+      "height": 60,
+      "sourceExact": 5517,
+      "reconstructed": 5343,
+      "foregroundRemoval": [
+        {
+          "id": "active-icon-and-copy",
+          "x": 22,
+          "y": 309,
+          "width": 137,
+          "height": 39
+        }
+      ],
+      "method": "Fixed foreground holes: nearest clean horizontal donors interpolated from the source crop. Whole-width holes use nearest clean source row. Original pixels outside declared support are byte-exact; holes are sampled reconstruction, not original texture."
+    },
+    {
+      "file": "orbit-surface-self.png",
+      "sha256": "f99ee7626d359ea8c9027ac185c3694df25312d66833331863fd67fa4959af4d",
+      "sourceCrop": {
+        "id": "self",
+        "x": 1338,
+        "y": 61,
+        "width": 188,
+        "height": 484
+      },
+      "width": 188,
+      "height": 484,
+      "sourceExact": 39181,
+      "reconstructed": 51811,
+      "foregroundRemoval": [
+        {
+          "id": "heading",
+          "x": 1354,
+          "y": 80,
+          "width": 150,
+          "height": 32
+        },
+        {
+          "id": "portrait-frame",
+          "x": 1374,
+          "y": 121,
+          "width": 116,
+          "height": 113
+        },
+        {
+          "id": "identity",
+          "x": 1388,
+          "y": 237,
+          "width": 99,
+          "height": 51
+        },
+        {
+          "id": "ranking-and-change",
+          "x": 1362,
+          "y": 307,
+          "width": 123,
+          "height": 79
+        },
+        {
+          "id": "score-label",
+          "x": 1363,
+          "y": 403,
+          "width": 148,
+          "height": 28
+        },
+        {
+          "id": "score",
+          "x": 1362,
+          "y": 433,
+          "width": 128,
+          "height": 44
+        },
+        {
+          "id": "locate-control",
+          "x": 1351,
+          "y": 482,
+          "width": 162,
+          "height": 51
+        },
+        {
+          "id": "old-standing-divider-top",
+          "x": 1354,
+          "y": 295,
+          "width": 157,
+          "height": 3
+        },
+        {
+          "id": "old-standing-divider-bottom",
+          "x": 1354,
+          "y": 390,
+          "width": 157,
+          "height": 4
+        }
+      ],
+      "method": "Fixed foreground holes: nearest clean horizontal donors interpolated from the source crop. Whole-width holes use nearest clean source row. Original pixels outside declared support are byte-exact; holes are sampled reconstruction, not original texture."
+    },
+    {
+      "file": "orbit-surface-locate.png",
+      "sha256": "0a657468d98e2cc55014e5dcf01c941f93d93d096f2518bfe8037bd31c4f12b3",
+      "sourceCrop": {
+        "id": "locate",
+        "x": 1352,
+        "y": 484,
+        "width": 160,
+        "height": 46
+      },
+      "width": 160,
+      "height": 46,
+      "sourceExact": 5392,
+      "reconstructed": 1968,
+      "foregroundRemoval": [
+        {
+          "id": "pin-and-copy",
+          "x": 1390,
+          "y": 495,
+          "width": 82,
+          "height": 24
+        }
+      ],
+      "method": "Fixed foreground holes: nearest clean horizontal donors interpolated from the source crop. Whole-width holes use nearest clean source row. Original pixels outside declared support are byte-exact; holes are sampled reconstruction, not original texture."
+    },
+    {
+      "file": "orbit-surface-table.png",
+      "sha256": "4315cc92df43a6ae27cdb85e128ed0991c23c186f72a3bf5e5cce3887c1bab79",
+      "sourceCrop": {
+        "id": "table",
+        "x": 202,
+        "y": 592,
+        "width": 1314,
+        "height": 288
+      },
+      "width": 1314,
+      "height": 288,
+      "sourceExact": 184420,
+      "reconstructed": 194012,
+      "foregroundRemoval": [
+        {
+          "id": "rank-title",
+          "x": 222,
+          "y": 599,
+          "width": 50,
+          "height": 30
+        },
+        {
+          "id": "identity-title",
+          "x": 367,
+          "y": 599,
+          "width": 90,
+          "height": 31
+        },
+        {
+          "id": "retired-movement-title",
+          "x": 572,
+          "y": 599,
+          "width": 70,
+          "height": 31
+        },
+        {
+          "id": "amount-title-and-unit",
+          "x": 728,
+          "y": 595,
+          "width": 129,
+          "height": 41
+        },
+        {
+          "id": "first-pay-title-and-unit",
+          "x": 938,
+          "y": 595,
+          "width": 117,
+          "height": 41
+        },
+        {
+          "id": "bindings-title-and-unit",
+          "x": 1157,
+          "y": 595,
+          "width": 112,
+          "height": 41
+        },
+        {
+          "id": "action-title",
+          "x": 1380,
+          "y": 599,
+          "width": 59,
+          "height": 31
+        },
+        {
+          "id": "rank-0",
+          "x": 223,
+          "y": 646,
+          "width": 79,
+          "height": 32
+        },
+        {
+          "id": "portrait-0",
+          "x": 312,
+          "y": 636,
+          "width": 60,
+          "height": 53
+        },
+        {
+          "id": "identity-and-self-badge-0",
+          "x": 378,
+          "y": 640,
+          "width": 105,
+          "height": 42
+        },
+        {
+          "id": "retired-movement-0",
+          "x": 577,
+          "y": 646,
+          "width": 57,
+          "height": 32
+        },
+        {
+          "id": "amount-0",
+          "x": 764,
+          "y": 646,
+          "width": 67,
+          "height": 32
+        },
+        {
+          "id": "first-payment-0",
+          "x": 975,
+          "y": 646,
+          "width": 45,
+          "height": 32
+        },
+        {
+          "id": "bindings-0",
+          "x": 1180,
+          "y": 646,
+          "width": 57,
+          "height": 32
+        },
+        {
+          "id": "action-0",
+          "x": 1359,
+          "y": 646,
+          "width": 100,
+          "height": 32
+        },
+        {
+          "id": "rank-1",
+          "x": 223,
+          "y": 694,
+          "width": 79,
+          "height": 32
+        },
+        {
+          "id": "portrait-1",
+          "x": 312,
+          "y": 683,
+          "width": 60,
+          "height": 53
+        },
+        {
+          "id": "identity-and-self-badge-1",
+          "x": 378,
+          "y": 688,
+          "width": 105,
+          "height": 42
+        },
+        {
+          "id": "retired-movement-1",
+          "x": 577,
+          "y": 694,
+          "width": 57,
+          "height": 32
+        },
+        {
+          "id": "amount-1",
+          "x": 764,
+          "y": 694,
+          "width": 67,
+          "height": 32
+        },
+        {
+          "id": "first-payment-1",
+          "x": 975,
+          "y": 694,
+          "width": 45,
+          "height": 32
+        },
+        {
+          "id": "bindings-1",
+          "x": 1180,
+          "y": 694,
+          "width": 57,
+          "height": 32
+        },
+        {
+          "id": "action-1",
+          "x": 1359,
+          "y": 694,
+          "width": 100,
+          "height": 32
+        },
+        {
+          "id": "rank-2",
+          "x": 223,
+          "y": 742,
+          "width": 79,
+          "height": 32
+        },
+        {
+          "id": "portrait-2",
+          "x": 312,
+          "y": 730,
+          "width": 60,
+          "height": 53
+        },
+        {
+          "id": "identity-and-self-badge-2",
+          "x": 378,
+          "y": 736,
+          "width": 105,
+          "height": 42
+        },
+        {
+          "id": "retired-movement-2",
+          "x": 577,
+          "y": 742,
+          "width": 57,
+          "height": 32
+        },
+        {
+          "id": "amount-2",
+          "x": 764,
+          "y": 742,
+          "width": 67,
+          "height": 32
+        },
+        {
+          "id": "first-payment-2",
+          "x": 975,
+          "y": 742,
+          "width": 45,
+          "height": 32
+        },
+        {
+          "id": "bindings-2",
+          "x": 1180,
+          "y": 742,
+          "width": 57,
+          "height": 32
+        },
+        {
+          "id": "action-2",
+          "x": 1359,
+          "y": 742,
+          "width": 100,
+          "height": 32
+        },
+        {
+          "id": "rank-3",
+          "x": 223,
+          "y": 790,
+          "width": 79,
+          "height": 32
+        },
+        {
+          "id": "portrait-3",
+          "x": 312,
+          "y": 775,
+          "width": 60,
+          "height": 53
+        },
+        {
+          "id": "identity-and-self-badge-3",
+          "x": 378,
+          "y": 784,
+          "width": 105,
+          "height": 42
+        },
+        {
+          "id": "retired-movement-3",
+          "x": 577,
+          "y": 790,
+          "width": 57,
+          "height": 32
+        },
+        {
+          "id": "amount-3",
+          "x": 764,
+          "y": 790,
+          "width": 67,
+          "height": 32
+        },
+        {
+          "id": "first-payment-3",
+          "x": 975,
+          "y": 790,
+          "width": 45,
+          "height": 32
+        },
+        {
+          "id": "bindings-3",
+          "x": 1180,
+          "y": 790,
+          "width": 57,
+          "height": 32
+        },
+        {
+          "id": "action-3",
+          "x": 1359,
+          "y": 790,
+          "width": 100,
+          "height": 32
+        },
+        {
+          "id": "rank-4",
+          "x": 223,
+          "y": 838,
+          "width": 79,
+          "height": 32
+        },
+        {
+          "id": "portrait-4",
+          "x": 312,
+          "y": 827,
+          "width": 60,
+          "height": 53
+        },
+        {
+          "id": "identity-and-self-badge-4",
+          "x": 378,
+          "y": 832,
+          "width": 105,
+          "height": 42
+        },
+        {
+          "id": "retired-movement-4",
+          "x": 577,
+          "y": 838,
+          "width": 57,
+          "height": 32
+        },
+        {
+          "id": "amount-4",
+          "x": 764,
+          "y": 838,
+          "width": 67,
+          "height": 32
+        },
+        {
+          "id": "first-payment-4",
+          "x": 975,
+          "y": 838,
+          "width": 45,
+          "height": 32
+        },
+        {
+          "id": "bindings-4",
+          "x": 1180,
+          "y": 838,
+          "width": 57,
+          "height": 32
+        },
+        {
+          "id": "action-4",
+          "x": 1359,
+          "y": 838,
+          "width": 100,
+          "height": 32
+        },
+        {
+          "id": "retired-grid-x525",
+          "x": 523,
+          "y": 593,
+          "width": 5,
+          "height": 285
+        },
+        {
+          "id": "retired-grid-x688",
+          "x": 686,
+          "y": 593,
+          "width": 5,
+          "height": 285
+        },
+        {
+          "id": "retired-grid-x896",
+          "x": 894,
+          "y": 593,
+          "width": 5,
+          "height": 285
+        },
+        {
+          "id": "retired-grid-x1100",
+          "x": 1098,
+          "y": 593,
+          "width": 5,
+          "height": 285
+        },
+        {
+          "id": "retired-grid-x1300",
+          "x": 1298,
+          "y": 593,
+          "width": 5,
+          "height": 285
+        },
+        {
+          "id": "old-row-y638",
+          "x": 203,
+          "y": 637,
+          "width": 1312,
+          "height": 3
+        },
+        {
+          "id": "old-row-y684",
+          "x": 203,
+          "y": 683,
+          "width": 1312,
+          "height": 3
+        },
+        {
+          "id": "old-row-y732",
+          "x": 203,
+          "y": 731,
+          "width": 1312,
+          "height": 3
+        },
+        {
+          "id": "old-row-y778",
+          "x": 203,
+          "y": 777,
+          "width": 1312,
+          "height": 3
+        },
+        {
+          "id": "old-row-y828",
+          "x": 203,
+          "y": 827,
+          "width": 1312,
+          "height": 3
+        },
+        {
+          "id": "old-row-y878",
+          "x": 203,
+          "y": 877,
+          "width": 1312,
+          "height": 3
+        },
+        {
+          "id": "old-fixed-self-highlight",
+          "x": 202,
+          "y": 778,
+          "width": 1314,
+          "height": 50
+        }
+      ],
+      "method": "Fixed foreground holes: nearest clean horizontal donors interpolated from the source crop. Whole-width holes use nearest clean source row. Original pixels outside declared support are byte-exact; holes are sampled reconstruction, not original texture. The fixed old self-row y778..827 is replaced with a cleaned ordinary-row donor y688..735, cyclic over48px. Retired horizontal separators average cleaned source rows3px above/below; no old separate movement-column grid remains."
+    },
+    {
+      "file": "orbit-surface-self-row.png",
+      "sha256": "ce58ec60e39db690a27fc8e14a3d1e5c6811efbb5faa1a7db66fdc42e066555d",
+      "sourceCrop": {
+        "id": "selected-row",
+        "x": 202,
+        "y": 778,
+        "width": 1314,
+        "height": 50
+      },
+      "width": 1314,
+      "height": 50,
+      "sourceExact": 39172,
+      "reconstructed": 26528,
+      "foregroundRemoval": [
+        {
+          "id": "rank-3",
+          "x": 223,
+          "y": 790,
+          "width": 79,
+          "height": 32
+        },
+        {
+          "id": "portrait-3",
+          "x": 312,
+          "y": 778,
+          "width": 60,
+          "height": 50
+        },
+        {
+          "id": "identity-and-self-badge-3",
+          "x": 378,
+          "y": 784,
+          "width": 105,
+          "height": 42
+        },
+        {
+          "id": "retired-movement-3",
+          "x": 577,
+          "y": 790,
+          "width": 57,
+          "height": 32
+        },
+        {
+          "id": "amount-3",
+          "x": 764,
+          "y": 790,
+          "width": 67,
+          "height": 32
+        },
+        {
+          "id": "first-payment-3",
+          "x": 975,
+          "y": 790,
+          "width": 45,
+          "height": 32
+        },
+        {
+          "id": "bindings-3",
+          "x": 1180,
+          "y": 790,
+          "width": 57,
+          "height": 32
+        },
+        {
+          "id": "action-3",
+          "x": 1359,
+          "y": 790,
+          "width": 100,
+          "height": 32
+        },
+        {
+          "id": "retired-grid-x525",
+          "x": 523,
+          "y": 778,
+          "width": 5,
+          "height": 50
+        },
+        {
+          "id": "retired-grid-x688",
+          "x": 686,
+          "y": 778,
+          "width": 5,
+          "height": 50
+        },
+        {
+          "id": "retired-grid-x896",
+          "x": 894,
+          "y": 778,
+          "width": 5,
+          "height": 50
+        },
+        {
+          "id": "retired-grid-x1100",
+          "x": 1098,
+          "y": 778,
+          "width": 5,
+          "height": 50
+        },
+        {
+          "id": "retired-grid-x1300",
+          "x": 1298,
+          "y": 778,
+          "width": 5,
+          "height": 50
+        },
+        {
+          "id": "row-top",
+          "x": 203,
+          "y": 778,
+          "width": 1312,
+          "height": 2
+        },
+        {
+          "id": "row-bottom",
+          "x": 203,
+          "y": 826,
+          "width": 1312,
+          "height": 2
+        }
+      ],
+      "method": "Fixed foreground holes: nearest clean horizontal donors interpolated from the source crop. Whole-width holes use nearest clean source row. Original pixels outside declared support are byte-exact; holes are sampled reconstruction, not original texture. Old source row border samples use cleaned interior rows y781 and824; this material is applied only to the actual HTML tr[data-self]."
+    },
+    {
+      "file": "orbit-surface-pagination.png",
+      "sha256": "0fdcaef232eb7e384387d0fbe32124648510c9d90eec32ecc564020a7222d7cf",
+      "sourceCrop": {
+        "id": "pagination",
+        "x": 202,
+        "y": 878,
+        "width": 1314,
+        "height": 66
+      },
+      "width": 1314,
+      "height": 66,
+      "sourceExact": 52474,
+      "reconstructed": 34250,
+      "foregroundRemoval": [
+        {
+          "id": "summary",
+          "x": 220,
+          "y": 899,
+          "width": 190,
+          "height": 28
+        },
+        {
+          "id": "page-size-control",
+          "x": 591,
+          "y": 889,
+          "width": 159,
+          "height": 46
+        },
+        {
+          "id": "page-button-controls",
+          "x": 1166,
+          "y": 888,
+          "width": 341,
+          "height": 48
+        },
+        {
+          "id": "old-pagination-bottom-edge",
+          "x": 203,
+          "y": 938,
+          "width": 1312,
+          "height": 4
+        }
+      ],
+      "method": "Fixed foreground holes: nearest clean horizontal donors interpolated from the source crop. Whole-width holes use nearest clean source row. Original pixels outside declared support are byte-exact; holes are sampled reconstruction, not original texture."
+    },
+    {
+      "file": "orbit-surface-lower-canvas.png",
+      "sha256": "802fe3c7864e8e277ca2521f189b9dff5469edeec1e291610e53609fc824c2b8",
+      "sourceCrop": {
+        "id": "lower",
+        "x": 181,
+        "y": 556,
+        "width": 1355,
+        "height": 468
+      },
+      "width": 1355,
+      "height": 468,
+      "sourceExact": 148928,
+      "reconstructed": 485212,
+      "foregroundRemoval": [
+        {
+          "id": "rankings-title",
+          "x": 199,
+          "y": 556,
+          "width": 129,
+          "height": 36
+        },
+        {
+          "id": "occluded-table-panel-and-halo",
+          "x": 199,
+          "y": 590,
+          "width": 1321,
+          "height": 354
+        },
+        {
+          "id": "footer-copy",
+          "x": 202,
+          "y": 965,
+          "width": 380,
+          "height": 28
+        },
+        {
+          "id": "fixture-disclosure",
+          "x": 1440,
+          "y": 966,
+          "width": 88,
+          "height": 29
+        }
+      ],
+      "method": "Fixed foreground holes: nearest clean horizontal donors interpolated from the source crop. Whole-width holes use nearest clean source row. Original pixels outside declared support are byte-exact; holes are sampled reconstruction, not original texture."
+    },
+    {
+      "file": "orbit-surface-main-canvas.png",
+      "sha256": "c2aaaa1dde999098408ff66fec6435cdeeb7d2a61a92fe4952ca6c14e0bf0415",
+      "previousSHA256": "3aa8b6677891414aa1ab5c5dc63c236af0be904b105a93a286df0ec0113210cf",
+      "width": 1355,
+      "height": 1024,
+      "method": "Frozen r117 composition, with the same two local seam repairs applied to currentSceneSHA256: canvas-native rectangles [112,487,42,45] and [1063,466,42,57]. One built-in image edit of the two source crops, resampled back to crop coordinates and blended inside fixed supports over8px.3284 decoded pixels change; all pixels outside those rectangles remain byte-identical. Repair is reconstructed material, not exact approved-source pixels. Previous SHA preserves r117 provenance; source/candidate ROI and original encoded backups are in the existing task visual-current-20261012 directory. No approved comparison mask or tolerance changes."
+    }
+  ],
+  "limitations": [
+    "Occluded source texture cannot be recovered exactly; donor interpolation and retained v3 reconstruction are explicit.",
+    "Old table grid and fixed identity highlight are intentionally removed. Current HTML controls, merged grid, true selected row and text remain live.",
+    "No original brand/name/date/metric/portrait is intended in any new background asset.",
+    "Native background dimensions at1536 avoid scaling; responsive layouts and new browser composition require root acceptance.",
+    "The full-static gate and fixed dynamic masks are unchanged; known-source patches are not a full-page PASS."
+  ]
+}

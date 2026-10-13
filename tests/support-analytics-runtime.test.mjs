@@ -512,8 +512,12 @@ test("actual rendered Blob bytes remain verifiable under CSP without fetching or
     }
     await page.reload(); await image.waitFor({ state: "visible" });
     await image.evaluate(element => element.remove());
-    await assert.rejects(waitForRenderedImageMatch(image, expected, { timeoutMs: 150, pollMs: 25 }), error => {
+    await assert.rejects(waitForRenderedImageMatch(image, expected, { timeoutMs: 1000, pollMs: 100 }), error => {
       assert.match(error.message, /observation deadline/); assert.ok(error.imageObservations.length > 1); assert.ok(error.imageObservations.every(row => row.count === 0)); return true;
+    });
+    await assert.rejects(waitForRenderedImageMatch(image, expected, { timeoutMs: 100, pollMs: 1000 }), error => {
+      assert.match(error.message, /observation deadline/); assert.equal(error.imageObservations.length, 1);
+      assert.equal(error.imageObservations[0].count, 0); return true;
     });
     await page.reload(); await image.waitFor({ state: "visible" });
     await image.evaluate(element => { element.width = 200; element.height = 200; element.src = URL.createObjectURL(new Blob(["not an image"], { type: "image/png" })); });

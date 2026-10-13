@@ -1,0 +1,878 @@
+{
+  "schemaVersion": 2,
+  "assetsBasis": "assets/reconstruction/verification retain frozen v2 evidence; currentRevision is frozen v3 fallback; currentSurfaceRevision identifies the r117 desktop surface candidate",
+  "approvedSource": {
+    "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\design\\leaderboard-orbit-20261010\\approved-design.png",
+    "sha256": "E3B92E2FBB593171A4658E058C562EC4DBC9403FECAFDF8DD85A719BA71F6C3A",
+    "width": 1536,
+    "height": 1024
+  },
+  "sourceCrop": {
+    "x": 181,
+    "y": 0,
+    "width": 1157,
+    "height": 556
+  },
+  "output": {
+    "width": 1355,
+    "height": 580
+  },
+  "generation": {
+    "tool": "image_gen built-in edit",
+    "attempts": 2,
+    "first": "C:/Users/jason/.codex/generated_images/01a12464-7d59-7772-8caf-3521496aa41c/exec-bb56371a-9284-4338-85f6-678c08451e38.png",
+    "second": "C:/Users/jason/.codex/generated_images/01a12464-7d59-7772-8caf-3521496aa41c/exec-bfacda82-d11b-4532-908f-c152770ef0ee.png",
+    "intent": "Remove avatar and podium dark silhouettes plus rectangular label artifacts; reconstruct occluded texture; extend right edge seamlessly."
+  },
+  "reuse": "All v1 podium, lower orbit and star assets are unchanged and remain at v1 paths.",
+  "assets": [
+    {
+      "file": "scene-main-clean.png",
+      "sha256": "863f0e65e91d22f3fbbf4c4ca48d9ef99f45e65b136212881e7401858174f490"
+    },
+    {
+      "file": "normal-layout-preview.png",
+      "sha256": "03df0354c9c722f01d59809a0eeff44784a77a8c49e6ff3eaa2a80984696b6f9"
+    },
+    {
+      "file": "reconstruction-mask.png",
+      "sha256": "bd1b20fbc6378074901a0aaca3950bb412c85547f13634b4c7308fe82ea2c33d"
+    },
+    {
+      "file": "generated-crop-repair.png",
+      "sha256": "0b5e20d22b9171c73914da217d17abacb19783e972b891a8b43f0ffb98ef4f1c"
+    },
+    {
+      "file": "generated-full-repair.png",
+      "sha256": "d228eb7c62cf95e633d599f3f8805444ffd07656b0a7cc4f3619d424c429bd8a"
+    }
+  ],
+  "reconstruction": {
+    "mask": "reconstruction-mask.png",
+    "meaning": "0 is exact original RGB; 255 is reconstructed; 1..254 are a smooth mixture. Right 198px and bottom 24px are generated compatibility extension.",
+    "pixels": {
+      "total": 785900,
+      "exactOriginal": 228450,
+      "featherMixture": 190325,
+      "reconstructed": 367125
+    },
+    "foregroundMasks": [
+      {
+        "id": "title",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 206,
+        "y": 18,
+        "width": 120,
+        "height": 43
+      },
+      {
+        "id": "currency-control",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 355,
+        "y": 22,
+        "width": 102,
+        "height": 44
+      },
+      {
+        "id": "period-control",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 465,
+        "y": 22,
+        "width": 103,
+        "height": 44
+      },
+      {
+        "id": "scope-control",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 576,
+        "y": 22,
+        "width": 104,
+        "height": 44
+      },
+      {
+        "id": "metric-tabs-control",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 205,
+        "y": 75,
+        "width": 519,
+        "height": 45
+      },
+      {
+        "id": "hero-heading",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 208,
+        "y": 139,
+        "width": 80,
+        "height": 27
+      },
+      {
+        "id": "hero-heading-divider",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 296,
+        "y": 140,
+        "width": 6,
+        "height": 26
+      },
+      {
+        "id": "hero-period-unit-copy",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 313,
+        "y": 145,
+        "width": 348,
+        "height": 22
+      },
+      {
+        "id": "person-1-rank-label",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 266,
+        "y": 199,
+        "width": 48,
+        "height": 23
+      },
+      {
+        "id": "person-1-rank-number",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 260,
+        "y": 220,
+        "width": 56,
+        "height": 50
+      },
+      {
+        "id": "person-1-avatar",
+        "category": "dynamic-data",
+        "shape": "ellipse",
+        "cx": 382,
+        "cy": 248,
+        "rx": 63,
+        "ry": 63
+      },
+      {
+        "id": "person-1-name",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 355,
+        "y": 355,
+        "width": 58,
+        "height": 23
+      },
+      {
+        "id": "person-1-group",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 359,
+        "y": 378,
+        "width": 47,
+        "height": 19
+      },
+      {
+        "id": "person-1-change",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 367,
+        "y": 398,
+        "width": 33,
+        "height": 28
+      },
+      {
+        "id": "person-1-metric-1",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 282,
+        "y": 431,
+        "width": 46,
+        "height": 25
+      },
+      {
+        "id": "person-1-metric-2",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 368,
+        "y": 431,
+        "width": 32,
+        "height": 25
+      },
+      {
+        "id": "person-1-metric-3",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 449,
+        "y": 431,
+        "width": 32,
+        "height": 25
+      },
+      {
+        "id": "person-1-metric-label-1",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 281,
+        "y": 458,
+        "width": 44,
+        "height": 20
+      },
+      {
+        "id": "person-1-metric-label-2",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 354,
+        "y": 458,
+        "width": 59,
+        "height": 20
+      },
+      {
+        "id": "person-1-metric-label-3",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 426,
+        "y": 458,
+        "width": 77,
+        "height": 20
+      },
+      {
+        "id": "person-1-metric-divider-1",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 340,
+        "y": 431,
+        "width": 4,
+        "height": 45
+      },
+      {
+        "id": "person-1-metric-divider-2",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 421,
+        "y": 431,
+        "width": 4,
+        "height": 45
+      },
+      {
+        "id": "person-1-button",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 310,
+        "y": 485,
+        "width": 149,
+        "height": 36
+      },
+      {
+        "id": "person-1-podium-top",
+        "category": "extracted-decoration",
+        "shape": "ellipse",
+        "cx": 382,
+        "cy": 312,
+        "rx": 66,
+        "ry": 17
+      },
+      {
+        "id": "person-1-podium-side",
+        "category": "extracted-decoration",
+        "shape": "rectangle",
+        "x": 317,
+        "y": 312,
+        "width": 130,
+        "height": 22
+      },
+      {
+        "id": "person-1-podium-floor",
+        "category": "extracted-decoration",
+        "shape": "ellipse",
+        "cx": 382,
+        "cy": 333,
+        "rx": 83,
+        "ry": 20
+      },
+      {
+        "id": "person-2-rank-label",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 553,
+        "y": 199,
+        "width": 50,
+        "height": 23
+      },
+      {
+        "id": "person-2-rank-number",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 547,
+        "y": 220,
+        "width": 56,
+        "height": 50
+      },
+      {
+        "id": "person-2-avatar",
+        "category": "dynamic-data",
+        "shape": "ellipse",
+        "cx": 662,
+        "cy": 251,
+        "rx": 58,
+        "ry": 58
+      },
+      {
+        "id": "person-2-name",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 635,
+        "y": 355,
+        "width": 45,
+        "height": 23
+      },
+      {
+        "id": "person-2-group",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 635,
+        "y": 378,
+        "width": 46,
+        "height": 19
+      },
+      {
+        "id": "person-2-change",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 639,
+        "y": 398,
+        "width": 33,
+        "height": 28
+      },
+      {
+        "id": "person-2-metric-1",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 555,
+        "y": 431,
+        "width": 46,
+        "height": 25
+      },
+      {
+        "id": "person-2-metric-2",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 640,
+        "y": 431,
+        "width": 33,
+        "height": 25
+      },
+      {
+        "id": "person-2-metric-3",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 720,
+        "y": 431,
+        "width": 33,
+        "height": 25
+      },
+      {
+        "id": "person-2-metric-label-1",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 554,
+        "y": 458,
+        "width": 45,
+        "height": 20
+      },
+      {
+        "id": "person-2-metric-label-2",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 627,
+        "y": 458,
+        "width": 61,
+        "height": 20
+      },
+      {
+        "id": "person-2-metric-label-3",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 701,
+        "y": 458,
+        "width": 77,
+        "height": 20
+      },
+      {
+        "id": "person-2-metric-divider-1",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 613,
+        "y": 431,
+        "width": 4,
+        "height": 45
+      },
+      {
+        "id": "person-2-metric-divider-2",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 695,
+        "y": 431,
+        "width": 4,
+        "height": 45
+      },
+      {
+        "id": "person-2-button",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 580,
+        "y": 485,
+        "width": 151,
+        "height": 36
+      },
+      {
+        "id": "person-2-podium-top",
+        "category": "extracted-decoration",
+        "shape": "ellipse",
+        "cx": 659,
+        "cy": 312,
+        "rx": 60,
+        "ry": 17
+      },
+      {
+        "id": "person-2-podium-side",
+        "category": "extracted-decoration",
+        "shape": "rectangle",
+        "x": 600,
+        "y": 312,
+        "width": 118,
+        "height": 22
+      },
+      {
+        "id": "person-2-podium-floor",
+        "category": "extracted-decoration",
+        "shape": "ellipse",
+        "cx": 659,
+        "cy": 333,
+        "rx": 79,
+        "ry": 20
+      },
+      {
+        "id": "person-3-rank-label",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 807,
+        "y": 199,
+        "width": 78,
+        "height": 23
+      },
+      {
+        "id": "person-3-rank-number",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 808,
+        "y": 220,
+        "width": 56,
+        "height": 50
+      },
+      {
+        "id": "person-3-avatar",
+        "category": "dynamic-data",
+        "shape": "ellipse",
+        "cx": 925,
+        "cy": 251,
+        "rx": 58,
+        "ry": 58
+      },
+      {
+        "id": "person-3-name",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 892,
+        "y": 355,
+        "width": 60,
+        "height": 23
+      },
+      {
+        "id": "person-3-group",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 896,
+        "y": 378,
+        "width": 47,
+        "height": 19
+      },
+      {
+        "id": "person-3-change",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 912,
+        "y": 403,
+        "width": 29,
+        "height": 16
+      },
+      {
+        "id": "person-3-metric-1",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 817,
+        "y": 431,
+        "width": 45,
+        "height": 25
+      },
+      {
+        "id": "person-3-metric-2",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 902,
+        "y": 431,
+        "width": 33,
+        "height": 25
+      },
+      {
+        "id": "person-3-metric-3",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 983,
+        "y": 431,
+        "width": 33,
+        "height": 25
+      },
+      {
+        "id": "person-3-metric-label-1",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 816,
+        "y": 458,
+        "width": 45,
+        "height": 20
+      },
+      {
+        "id": "person-3-metric-label-2",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 889,
+        "y": 458,
+        "width": 61,
+        "height": 20
+      },
+      {
+        "id": "person-3-metric-label-3",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 963,
+        "y": 458,
+        "width": 79,
+        "height": 20
+      },
+      {
+        "id": "person-3-metric-divider-1",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 874,
+        "y": 431,
+        "width": 4,
+        "height": 45
+      },
+      {
+        "id": "person-3-metric-divider-2",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 956,
+        "y": 431,
+        "width": 4,
+        "height": 45
+      },
+      {
+        "id": "person-3-button",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 842,
+        "y": 485,
+        "width": 151,
+        "height": 36
+      },
+      {
+        "id": "person-3-podium-top",
+        "category": "extracted-decoration",
+        "shape": "ellipse",
+        "cx": 923,
+        "cy": 312,
+        "rx": 56,
+        "ry": 17
+      },
+      {
+        "id": "person-3-podium-side",
+        "category": "extracted-decoration",
+        "shape": "rectangle",
+        "x": 868,
+        "y": 312,
+        "width": 110,
+        "height": 22
+      },
+      {
+        "id": "person-3-podium-floor",
+        "category": "extracted-decoration",
+        "shape": "ellipse",
+        "cx": 923,
+        "cy": 333,
+        "rx": 74,
+        "ry": 20
+      },
+      {
+        "id": "person-4-rank-label",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 1072,
+        "y": 199,
+        "width": 80,
+        "height": 23
+      },
+      {
+        "id": "person-4-rank-number",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 1071,
+        "y": 220,
+        "width": 56,
+        "height": 50
+      },
+      {
+        "id": "person-4-avatar",
+        "category": "dynamic-data",
+        "shape": "ellipse",
+        "cx": 1192,
+        "cy": 251,
+        "rx": 58,
+        "ry": 58
+      },
+      {
+        "id": "person-4-name",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 1169,
+        "y": 355,
+        "width": 50,
+        "height": 23
+      },
+      {
+        "id": "person-4-group",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 1167,
+        "y": 378,
+        "width": 47,
+        "height": 19
+      },
+      {
+        "id": "person-4-change",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 1172,
+        "y": 398,
+        "width": 36,
+        "height": 28
+      },
+      {
+        "id": "person-4-metric-1",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 1081,
+        "y": 431,
+        "width": 46,
+        "height": 25
+      },
+      {
+        "id": "person-4-metric-2",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 1166,
+        "y": 431,
+        "width": 34,
+        "height": 25
+      },
+      {
+        "id": "person-4-metric-3",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 1247,
+        "y": 431,
+        "width": 34,
+        "height": 25
+      },
+      {
+        "id": "person-4-metric-label-1",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 1080,
+        "y": 458,
+        "width": 45,
+        "height": 20
+      },
+      {
+        "id": "person-4-metric-label-2",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 1153,
+        "y": 458,
+        "width": 61,
+        "height": 20
+      },
+      {
+        "id": "person-4-metric-label-3",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 1228,
+        "y": 458,
+        "width": 78,
+        "height": 20
+      },
+      {
+        "id": "person-4-metric-divider-1",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 1139,
+        "y": 431,
+        "width": 4,
+        "height": 45
+      },
+      {
+        "id": "person-4-metric-divider-2",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 1221,
+        "y": 431,
+        "width": 4,
+        "height": 45
+      },
+      {
+        "id": "person-4-button",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 1108,
+        "y": 485,
+        "width": 152,
+        "height": 36
+      },
+      {
+        "id": "person-4-podium-top",
+        "category": "extracted-decoration",
+        "shape": "ellipse",
+        "cx": 1191,
+        "cy": 312,
+        "rx": 57,
+        "ry": 17
+      },
+      {
+        "id": "person-4-podium-side",
+        "category": "extracted-decoration",
+        "shape": "rectangle",
+        "x": 1135,
+        "y": 312,
+        "width": 112,
+        "height": 22
+      },
+      {
+        "id": "person-4-podium-floor",
+        "category": "extracted-decoration",
+        "shape": "ellipse",
+        "cx": 1191,
+        "cy": 333,
+        "rx": 73,
+        "ry": 20
+      }
+    ],
+    "feather": {
+      "outward": 26,
+      "smoothstep": true,
+      "rightSeam": {
+        "startX": 1125,
+        "endX": 1157
+      },
+      "bottomExtension": {
+        "startY": 556,
+        "endY": 580
+      }
+    },
+    "originalGeometry": "Main source coordinates use x minus 181. Original pixels outside reconstruction support remain exact; no whole-image exemption or whole-image scaling.",
+    "limitations": "Occluded texture cannot be source-identical. Preview foreground is approved raster only for layout comparison; ship only scene-main-clean.png and unchanged v1 decorative assets."
+  },
+  "verification": {
+    "sourceHashMatched": true,
+    "undeclaredSourceRgbChanges": 0,
+    "assetSelfCheck": "Passed decoded exact-pixel assertion and full pixel partition.",
+    "fullImageVisualReview": "Actual view_image inspection of full 1355x580 clean candidate, normal layout evidence and reconstruction mask: four circular holes, rectangular label patches and full-height right seam not visible; product browser acceptance remains pending.",
+    "productRuntime": "Pending independent main-thread browser validation; no completion claim."
+  },
+  "currentRevision": {
+    "id": "v3-known-source-restoration-r116",
+    "previousAssetSHA256": "863f0e65e91d22f3fbbf4c4ca48d9ef99f45e65b136212881e7401858174f490",
+    "assetSHA256": "d956c0ab4921d309227e28cefaff9e4543c80372fae48dcb88cf22edbb21fe72",
+    "algorithm": "Within two fixed complete ellipse corridors (abs(normalized ellipse radius - 1)*ry<=26), original lime contour seeds have G>=80, G-B>=35 and G>=R-10, outside foregroundMasks. Exclude seeds within 26px of avatar, rank, movement or extracted-pedestal holes to avoid restoring foreground glow. Restore original RGBA within 14px Euclidean distance of every seed and throughout three fixed unobstructed outer perimeter strips; blend back to frozen v2 over 8px outward; keep foregroundMasks untouched. Selection uses fixed source geometry/material, never actual screenshot differences. No generation or source scaling.",
+    "scope": "Both complete large orbit contours and halo edges, not just the reported two ROIs. Upper thin arc remains frozen v2 outside these corridors.",
+    "contourBands": [
+      {
+        "cx": 765,
+        "cy": 344,
+        "rx": 564,
+        "ry": 110
+      },
+      {
+        "cx": 765,
+        "cy": 441,
+        "rx": 560,
+        "ry": 107
+      }
+    ],
+    "perimeter": [
+      {
+        "shape": "rectangle",
+        "x": 181,
+        "y": 523,
+        "width": 1157,
+        "height": 33
+      },
+      {
+        "shape": "rectangle",
+        "x": 1282,
+        "y": 270,
+        "width": 56,
+        "height": 150
+      },
+      {
+        "shape": "rectangle",
+        "x": 181,
+        "y": 270,
+        "width": 79,
+        "height": 150
+      }
+    ],
+    "seeds": 9781,
+    "exactDistance": 14,
+    "transitionDistance": 22,
+    "provenance": {
+      "total": 785900,
+      "restoredSourceExact": 74728,
+      "transitionMixture": 14588,
+      "retainedV2Source": 553976,
+      "retainedV2Extension": 142608,
+      "changedFromV2": 30499
+    },
+    "previousMask": "background-v2-reconstruction-mask.png describes frozen v2. Current exact corridor pixels are defined by contourBands and exactDistance outside foregroundMasks; outer transition remains mixture.",
+    "validation": {
+      "allRestoredSourcePixelsEqual": true,
+      "undeclaredPixelChanges": 0,
+      "runtime": "Pending root browser run; no whole-page fidelity claim"
+    },
+    "limitation": "Occluded texture and compatibility extensions retain v2 mixed or generated material. They are still checked by the full-page fidelity gate and are not approved-source-identical."
+  },
+  "currentSurfaceRevision": {
+    "id": "r118-local-seam-repair",
+    "manifest": "background-surfaces-r117-manifest.json",
+    "manifestSHA256": "30d5e4af824a342335a29b652107c39399943d4a5525bf171fd02d98d084b3fe",
+    "previousManifestSHA256": "7f112d527d7d4fd4d5cb785fdd53c4d74c17d25804a7040f97f5bbf3b45c8603",
+    "desktopMainCanvasSHA256": "c2aaaa1dde999098408ff66fec6435cdeeb7d2a61a92fe4952ca6c14e0bf0415",
+    "previousDesktopMainCanvasSHA256": "3aa8b6677891414aa1ab5c5dc63c236af0be904b105a93a286df0ec0113210cf",
+    "narrowFallbackSceneSHA256": "f5f5e7c933f71761bdfa23da6c4a9d47375eb008e86a7d94d60da5be1c07a135",
+    "previousNarrowFallbackSceneSHA256": "d956c0ab4921d309227e28cefaff9e4543c80372fae48dcb88cf22edbb21fe72",
+    "seamRepair": {"canvasNativeRectangles": [[112,487,42,45],[1063,466,42,57]],"changedPixelsPerAsset":3284,"changedOutsideRectangles":0,"method":"One built-in local crop edit; both source supports match exactly; normalized edit and8px inward feather only within fixed support. Reconstructed, not source-exact. Old encoded sources and source/candidate ROIs retained in task evidence."},
+    "sourceForeground": "All source identity/data/text/control contents removed from new surfaces; live DOM owns all values and states",
+    "acceptance": "Single candidate checked in1536px baseline/no-podium and1415px no-podium browser scenes; CSS14px labels/original rank anchors preserved. Small left material transition remains explicit. Independent review and root browser whole-page PASS remain unproven; approved source, masks and thresholds unchanged."
+  }
+}

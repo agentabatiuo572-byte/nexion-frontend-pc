@@ -1,13 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { parseBusinessTime } from "../lib/admin/business-time.ts";
 
 const root = process.cwd();
-const read = (path) => readFileSync(resolve(root, path), "utf8");
+const read = (path) => readFileSync(resolve(process.env.SUPPORT_GATE_SOURCE_ROOT && existsSync(resolve(process.env.SUPPORT_GATE_SOURCE_ROOT, path)) ? process.env.SUPPORT_GATE_SOURCE_ROOT : root, path), "utf8");
 
 test("M5 cards follow content width while tabular scripts retain their own scroller", () => {
   const view = read("app/components/domain-views/m-tabs/m5-scripts.tsx");
@@ -15,7 +15,8 @@ test("M5 cards follow content width while tabular scripts retain their own scrol
   assert.match(view, /<div className="m5">/);
   assert.doesNotMatch(view, /gridTemplateColumns:/);
   assert.doesNotMatch(view, /<span className="mono">\{c\.type\}<\/span>/);
-  assert.match(view, /managed \? "由 AI 平台统一管理" : c\.managedBy/);
+  assert.match(view, /managed && <div[^>]*>由 AI 平台统一管理<\/div>/);
+  assert.doesNotMatch(view, /\{c\.managedBy\}|:\s*c\.managedBy/, "Human session cards do not expose the internal management source");
   const labelLiteral = view.match(/const SEAT_LABEL[^=]*=\s*(\{[^\n]+?\});/);
   assert.ok(labelLiteral, "Human seat labels remain defined separately from wire enums");
   const labels = runInNewContext(`(${labelLiteral[1]})`);
@@ -173,7 +174,7 @@ test("M3 roster failure exposes qualification retry instead of claiming an empty
 test("M2 customer replies require a verified advisor while internal work stays available", () => {
   const view = read("app/components/domain-views/m-view.tsx");
   const tickets = read("app/components/domain-views/m-tabs/m2-tickets.tsx");
-  assert.match(view, /advisorQualified=\{Boolean\(safeMData\.supportAgentsAvailable && currentAgent\?\.enabled && currentAgent\.seatType === "DEDICATED" && currentAgent\.serviceTypes\.includes\("advisor"\)\)\}/);
+  assert.match(view, /advisorQualified=\{Boolean\(safeMData\.supportAgentsAvailable && currentAgent\?\.enabled && currentAgent\.assignmentEligible\)\}/);
   assert.match(tickets, /const canRespondToCustomers = canWriteM2 && advisorQualified/);
   assert.match(tickets, /canReply=\{canReplyToSelected\}/);
   assert.match(tickets, /ticketDetail\.replyAgentAdminId === adminId/);
@@ -191,7 +192,7 @@ test("M2 customer replies require a verified advisor while internal work stays a
   assert.match(tickets, /overflowWrap: "anywhere".*查看会话/);
   assert.match(tickets, /data-proof="support-ticket-reply"[\s\S]*?disabled=\{submitting \|\| !canReply\}/);
   assert.match(tickets, /data-proof="support-ticket-reply-save"[^>]*disabled=\{submitting \|\| !canReply\}/);
-  assert.match(tickets, /仅当前专属顾问可以回复客户/);
+  assert.match(tickets, /仅当前专属客服可以回复客户/);
   assert.match(tickets, /canWrite=\{canWriteM2 && ticketsAvailable\}/);
   assert.match(tickets, /const createTicket = [\s\S]*?if \(!canRespondToCustomers/);
   assert.match(tickets, /const sendReply = [\s\S]*?!canReplyToSelected[^\n]*selected\.contentRestricted/);
@@ -517,7 +518,8 @@ test("M3 human reception and origin branches use one exclusive support identity 
   const source = read("lib/admin/m-client.ts");
   const definition = source.match(/function conversationType[^\n]*\{[\s\S]*?\n\}/)?.[0]; assert.ok(definition);
   const parse = runInNewContext(ts.transpileModule(`${definition}\nconversationType;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText);
-  for (const [wire, expected] of [["ADVISOR", "advisor"], ["SUPPORT", "support"], ["AI", "support"]]) assert.equal(parse(wire), expected);
+  for (const [wire, expected] of [["ADVISOR", "advisor"], ["SUPPORT", "support"], ["AI", "ai"]]) assert.equal(parse(wire), expected);
+  assert.match(f.source, /const canSendTo = \(convo: SessionConvo, adminId: number\) => convo.status === "open" && convo.type !== "ai"/);
 });
 
 test("M3 owner headers and author fallbacks preserve history and named actors with exclusive support copy", () => {

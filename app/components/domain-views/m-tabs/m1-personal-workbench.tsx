@@ -384,8 +384,8 @@ export function M1PersonalWorkbench({ permission, ctx }: { permission: Permissio
         {overviewError && <div className="s5a-alert" role="alert">{overviewError}<button type="button" onClick={() => setRowsRefresh((value) => value + 1)}><RefreshCw size={15} />重试</button></div>}
         <div className="s5a-metrics">
           {metrics.map(({ key, label, filter: metricFilter, icon: Icon, hint, count }) => <button type="button" key={key} className="s5a-metric" onClick={() => showCustomers(metricFilter)} aria-label={`${key === "windowActiveCustomers" ? overview?.activityWindowDays ? `近 ${overview.activityWindowDays} 天活跃` : "活跃客户，窗口待同步" : label}，${overviewLoading ? "加载中" : count === null ? "未配置或数据待核对" : `${count} 位`}，查看名单`}>
-            <Icon size={21} aria-hidden="true" /><span>{key === "windowActiveCustomers" && overview?.activityWindowDays ? `近 ${overview.activityWindowDays} 天活跃` : label}</span><strong>{overviewLoading ? "···" : count === null ? "—" : count.toLocaleString("zh-CN")}</strong>
-            <small>{count === null && !overviewLoading ? "未配置或数据待核对" : key === "windowActiveCustomers" && !overview?.activityWindowDays ? "统计窗口待同步" : hint}</small>
+            <Icon size={21} aria-hidden="true" /><span>{key === "windowActiveCustomers" && overview?.activityWindowDays ? `近 ${overview.activityWindowDays} 天活跃` : label}</span><strong>{overviewLoading || count === null ? "-" : count.toLocaleString("zh-CN")}</strong>
+            <small>{hint}</small>
           </button>)}
         </div>
         {overview && overview.unknownWindowCount > 0 && <p className="s5a-note">窗口活跃已确认 {overview.knownActiveCount} 位，另有 {overview.unknownWindowCount} 位活动数据待确认；名单只列已确认客户。</p>}
@@ -398,13 +398,13 @@ export function M1PersonalWorkbench({ permission, ctx }: { permission: Permissio
           </section>
         </div>
         <div className="s5a-progress-grid"><section className="s5a-panel s5a-progress"><header><div><h3>维护进展</h3><p>{overview?.performance ? `${formatTime(overview.performance.from)} 至 ${formatTime(overview.performance.to)}` : "统计区间待同步"}</p></div></header>
-          <div className="s5a-performance"><div><span>已执行维护</span><strong>{overview?.performance?.executionCount ?? "—"}</strong><small>成功提交的人工维护消息次数</small></div><div><span>成功周期</span><strong>{overview?.performance?.successfulCycleCount ?? "—"}</strong><small>由后续真实活动完成</small></div><div><span>成功客户</span><strong>{overview?.performance?.successfulCustomerCount ?? "—"}</strong><small>统计期间去重人数</small></div><div><span>暂停主动维护</span><strong>{overview?.counts.stoppedMaintenanceCustomers ?? "—"}</strong><small>当前仍归属本人</small></div></div>
+          <div className="s5a-performance"><div><span>已执行维护</span><strong>{overview?.performance?.executionCount ?? "-"}</strong><small>成功提交的人工维护消息次数</small></div><div><span>成功周期</span><strong>{overview?.performance?.successfulCycleCount ?? "-"}</strong><small>由后续真实活动完成</small></div><div><span>成功客户</span><strong>{overview?.performance?.successfulCustomerCount ?? "-"}</strong><small>统计期间去重人数</small></div><div><span>暂停主动维护</span><strong>{overview?.counts.stoppedMaintenanceCustomers ?? "-"}</strong><small>当前仍归属本人</small></div></div>
           <p className="s5a-note">执行后仍须出现新的真实账户活动才计成功。暂停主动维护不会解除专属客服归属或屏蔽求助。</p>
         </section><section className="s5a-panel"><header><div><h3>维护趋势</h3><p>逐日执行与成功周期</p></div></header>{trend?.length ? <figure className="s5a-trend" aria-label="维护执行与成功趋势"><div className="s5a-trend-bars">{trend.map((point) => <div key={point.day} className="s5a-trend-day"><div className="s5a-trend-pair" aria-label={`${point.day} 执行 ${point.executionCount} 次，成功 ${point.successfulCycleCount} 个周期`}><i style={{ height: `${point.executionCount ? Math.max(3, point.executionCount / trendMax * 100) : 0}%` }} /><i style={{ height: `${point.successfulCycleCount ? Math.max(3, point.successfulCycleCount / trendMax * 100) : 0}%` }} /></div><small>{point.day.slice(5)}</small><span>{point.executionCount} / {point.successfulCycleCount}</span></div>)}</div><p>紫色：执行次数　绿色：成功周期；每组数字为执行 / 成功。</p></figure> : <p className="s5a-note">趋势数据待同步，当前只展示已核实的汇总。</p>}</section></div>
       </>}
 
       {view === "customers" && <>
-        <div className="s5a-intro"><div><h2>我的客户</h2><p>账户状态与维护状态分开查看</p></div><span className="s5a-stamp">{rows ? `共 ${rows.total} 位` : "待同步"}</span></div>
+        <div className="s5a-intro"><div><h2>我的客户</h2><p>账户状态与维护状态分开查看</p></div><span className="s5a-stamp">{`共 ${rows ? rows.total : "-"} 位`}</span></div>
         <section className="s5a-panel"><form className="s5a-controls" onSubmit={(event) => { event.preventDefault(); setPage(1); setKeyword(keywordDraft.trim()); }}>
           <label><Search size={17} /><span className="sr-only">搜索客户名称或 ID</span><input value={keywordDraft} onChange={(event) => setKeywordDraft(event.target.value)} placeholder="搜索客户名称或 ID" /></label>
           <button type="submit">搜索</button>

@@ -9,8 +9,30 @@ import {supportClient,supportObject} from "../lib/admin/m-support-client.ts";
 import {boundedUpload} from "../lib/admin/support-image-proxy.ts";
 import * as avatarContract from "../lib/admin/account-avatar-contract.ts";
 import {createPendingMutationStore} from "../lib/admin/pending-mutation-store.ts";
+import {compactSupportBoardValue} from "./support-compact-empty.test.mjs";
 const now="2026-10-01T01:00:00Z",later="2026-10-01T02:00:00Z";
 const group=(data,status="READY")=>({data,status,evaluatedAt:now});
+test("profile PARTIAL finance preserves observed subtotals without promoting NET coverage",()=>{
+  const fields=["creditedDepositTotal","depositRefundTotal","successfulWithdrawalPrincipalTotal","successfulWithdrawalFeeTotal","successfulWithdrawalNetTotal","processingWithdrawalPrincipalTotal","balance","availableBalance"];
+  const row={currency:"USDT",creditedDepositTotal:"749.000001",successfulWithdrawalPrincipalTotal:"100",netContributionTotal:"849",balance:"200",fieldStatuses:{...Object.fromEntries(fields.map(f=>[f,"UNKNOWN"])),creditedDepositTotal:"PARTIAL",successfulWithdrawalPrincipalTotal:"PARTIAL",balance:"READY",netContributionTotal:"READY"}};
+  const parse=value=>parseSupportProfile({profile:{identity:group({}),finance:group({byCurrency:[value]}),devices:group({}),risk:group({}),annotations:group({}),service:group({}),actions:{}}}).finance.data.byCurrency[0];
+  for(const currency of ["USDT","NEX"]){const result=parse({...structuredClone(row),currency});assert.equal(result.creditedDepositTotal,"749.000001");assert.equal(result.fieldStatuses.creditedDepositTotal,"PARTIAL");assert.equal(result.successfulWithdrawalPrincipalTotal,"100");assert.equal(result.netContributionTotal,"849");assert.equal(result.balance,"200");}
+  for(const value of [null,0.1,"1e3","invalid"])assert.throws(()=>parse({...structuredClone(row),creditedDepositTotal:value}),/DECIMAL_INVALID/);
+  assert.throws(()=>parse({...structuredClone(row),fieldStatuses:{...row.fieldStatuses,netContributionTotal:"PARTIAL"}}),/ENUM_INVALID/);
+  for(const status of ["UNKNOWN","ERROR","FORBIDDEN"]){const result=parse({...structuredClone(row),fieldStatuses:{...row.fieldStatuses,creditedDepositTotal:status}});assert.equal(result.creditedDepositTotal,null);assert.equal(result.fieldStatuses.creditedDepositTotal,status);}
+});
+test("profile NET preserves signed exact totals, original balances and explicit unknown coverage",()=>{
+  const fields=["creditedDepositTotal","depositRefundTotal","successfulWithdrawalPrincipalTotal","successfulWithdrawalFeeTotal","successfulWithdrawalNetTotal","processingWithdrawalPrincipalTotal","balance","availableBalance"];
+  const row={currency:"USDT",balance:"77",netContributionTotal:"-12.000001",fieldStatuses:{...Object.fromEntries(fields.map(f=>[f,"UNKNOWN"])),balance:"READY",netContributionTotal:"READY"}};
+  const parse=value=>parseSupportProfile({profile:{identity:group({}),finance:group({byCurrency:[value]}),devices:group({}),risk:group({}),annotations:group({}),service:group({}),actions:{}}}).finance.data.byCurrency[0];
+  assert.equal(parse(structuredClone(row)).netContributionTotal,"-12.000001");assert.equal(parse(structuredClone(row)).balance,"77");
+  const partial={...structuredClone(row),...Object.fromEntries(fields.map(field=>[field,null])),fieldStatuses:{...Object.fromEntries(fields.map(field=>[field,"ERROR"])),netContributionTotal:"READY"}};
+  assert.equal(parse(partial).netContributionTotal,"-12.000001");assert.equal(parse(partial).balance,null);assert.equal(parse(partial).fieldStatuses.balance,"ERROR");
+  const legacy=structuredClone(row);delete legacy.netContributionTotal;delete legacy.fieldStatuses.netContributionTotal;
+  assert.equal(parse(legacy).netContributionTotal,null);assert.equal(legacy.fieldStatuses.netContributionTotal,"UNKNOWN");
+  for(const status of ["UNKNOWN","ERROR","FORBIDDEN"])assert.throws(()=>parse({...structuredClone(row),fieldStatuses:{...row.fieldStatuses,netContributionTotal:status}}),/NET_COVERAGE/);
+  assert.throws(()=>parse({...structuredClone(row),netContributionTotal:0.1}),/DECIMAL_INVALID/);
+});
 test("timeout GET and PUT share strict parsing without inventing fallback minutes",()=>{
   const source=readFileSync(new URL("../lib/admin/m-client.ts",import.meta.url),"utf8"),parser=source.slice(source.indexOf("export function parseMConversationTimeoutPolicy("),source.indexOf("\nfunction withReason",source.indexOf("export function parseMConversationTimeoutPolicy(")));
   const requests=[],context={supportObject,parseSupportCount:(value)=>{if(!Number.isSafeInteger(value)||value<0)throw new Error("bad count");return value;},currentAdminOperator:()=>"总管",supportRequest:(path,parse,options)=>{requests.push({path,parse,options});return parse(context.response);}};
@@ -144,6 +166,7 @@ test("funds-flow options use source statuses and reset the exact filter request 
     if(name==="@/lib/admin/m-support-client")return {supportClient:{},SupportClientError:class extends Error{}};
     if(name==="@/lib/admin/error-messages")return {displayAdminError:()=>"读取失败"};
     if(name==="../design-kit")return {Modal:props=>jsx.jsx("div",{children:props.children})};
+    if(name==="./support-leaderboard")return {compactSupportBoardValue};
     if(name==="./support-avatar")return {SupportAvatar:props=>jsx.jsx("span",{children:props.name}),customerAvatarPath:id=>`customer/${id}`,advisorAvatarPath:id=>`advisor/${id}`};
     throw new Error(`Unexpected funds-flow dependency ${name}`);
   }};
@@ -305,7 +328,8 @@ test("first-contact customer profiles require verified scope without inventing a
       if(name==="@/lib/admin/m-support-client")return {supportClient:{},SupportClientError:class extends Error{}};
       if(name==="@/lib/admin/error-messages")return {displayAdminError:()=>"读取失败"};
       if(name==="../design-kit")return {Modal:props=>jsx.jsx("div",{children:props.children})};
-      if(name==="./support-avatar")return {SupportAvatar:props=>jsx.jsx("span",{children:props.name}),customerAvatarPath:id=>`customer/${id}`,advisorAvatarPath:id=>`advisor/${id}`};
+      if(name==="./support-leaderboard")return {compactSupportBoardValue};
+    if(name==="./support-avatar")return {SupportAvatar:props=>jsx.jsx("span",{children:props.name}),customerAvatarPath:id=>`customer/${id}`,advisorAvatarPath:id=>`advisor/${id}`};
       throw new Error(`Unexpected profile dependency ${name}`);
     }};
     runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,context);
@@ -313,7 +337,7 @@ test("first-contact customer profiles require verified scope without inventing a
     const tree=context.exports.M3CustomerProfile({ctx,customerId:"7",conversation:mode==="first"?undefined:{id:"CV-7",customerId:"7",ownerAdminId:12,owner:"历史显示名",detailReady:true,messages:[]},onHistory(){},onRetryMessages(){}});
     const buttons=walk(tree).filter(node=>node.type==="button"),add=buttons.find(node=>node.props.children==="添加标签"),save=buttons.find(node=>node.props.children==="保存备注");
     assert.equal(add.props.disabled,mode!=="write");assert.equal(save.props.disabled,mode!=="write");
-    const html=render(tree);assert.match(html,/已核客户/);assert.match(html,/当前顾问/);
+    const html=render(tree);assert.match(html,/已核客户/);assert.match(html,/当前专属客服/);
     if(mode==="first"){assert.match(html,/暂无会话/);assert.match(html,/尚未建立服务会话/);assert.match(html,/暂无服务记录/);}
     add.props.onClick();await Promise.resolve();assert.deepEqual(calls,mode==="write"?[{id:"CV-7",tag:"新标签"}]:[]);
   }

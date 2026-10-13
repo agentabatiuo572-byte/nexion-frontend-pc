@@ -770,7 +770,7 @@ function requireSessionTemplateOverview(value: unknown): SessionTemplateOverview
       || !row.managedBy?.trim()
       || typeof row.enabled !== "boolean"
       || typeof row.readOnly !== "boolean")
-    || categories.some((row) => row.type === "ai" ? row.readOnly !== true : row.readOnly !== false)) {
+    || categories.some((row) => row.type === "ai" || row.type === "support" ? row.readOnly !== true : row.readOnly !== false)) {
     invalid();
   }
 
@@ -891,11 +891,12 @@ export function toBackendConversationStatus(value: ConversationExpectedStatus) {
 }
 
 function conversationType(value: string | undefined): SessionConvo["type"] {
-  return (value || "").toLowerCase() === "advisor" ? "advisor" : "support";
+  const type = (value || "").toLowerCase();
+  return type === "ai" ? "ai" : type === "advisor" ? "advisor" : "support";
 }
 
 function roleKey(type: SessionConvo["type"]) {
-  return type === "advisor" ? "conversations.roleAdvisor" : "conversations.roleSupport";
+  return type === "ai" ? "conversations.roleAi" : "conversations.roleAdvisor";
 }
 
 // 客户档案适配:detail 场景用后端跨域聚合的真实档案;列表行(只有 ContentConversationView,
@@ -1002,7 +1003,7 @@ function adaptTicket(detail: SupportTicketDetail | SupportTicketView): SupportTi
     contentRestricted,
     userId: base.userId,
     userVerified: Boolean(base.userExists),
-    subject: contentRestricted ? "私聊内容仅当前顾问和主管可阅" : str(base.title, "未命名工单"),
+    subject: contentRestricted ? "私聊内容仅当前专属客服和客服主管可阅" : str(base.title, "未命名工单"),
     category: ticketCategory(base.category),
     status: ticketStatus(base.status),
     priority: ticketPriority(base.priority),
@@ -1407,7 +1408,7 @@ function adaptSupportAgent(row: Record<string, unknown>): MSupportAgent {
     assignmentEligible: row.assignmentEligible,
     transferable: bool(row.transferable, true),
     busy: bool(row.busy, false),
-    assignedUserCount: num(row.assignedUserCount, 0),
+    assignedUserCount: parseSupportCount(row.assignedUserCount, "assignedUserCount"),
     avatarAssetId: typeof row.avatarAssetId === "string" ? row.avatarAssetId : undefined,
     avatarVersion: typeof row.avatarVersion === "number" ? row.avatarVersion : undefined,
     version: num(row.version, 1),
@@ -1759,8 +1760,9 @@ export async function fetchMServicePendingConversations(): Promise<SessionConvo[
 /** First page uses the server's most-recent ordering and current assignment filter. */
 export async function fetchMRecentAdvisorConversations(ownerAdminId: number, signal?: AbortSignal) {
   const owner = supportWireId(ownerAdminId, "recent.ownerAdminId");
-  const page = assertConversationPage(await apiRequest<unknown>(`/conversations?conversationType=ADVISOR&ownerAgentId=${owner}&pageNum=1&pageSize=5`, { signal }));
+  const page = assertConversationPage(await apiRequest<unknown>(`/conversations?type=HUMAN&ownerAgentId=${owner}&pageNum=1&pageSize=5`, { signal }));
   return page.records.flatMap((row) => {
+    if (!["ADVISOR", "SUPPORT"].includes(upper(row.conversationType, ""))) return [];
     const customerId = row.customerId ?? row.userId;
     if (!Number.isSafeInteger(customerId) || Number(customerId) <= 0 || !row.conversationNo) return [];
     return [{ conversationNo: row.conversationNo, customerId: String(customerId), lastMessage: str(row.lastMessage), lastMessageKind: str(row.lastMessageKind), lastTs: asTs(row.lastMessageAt ?? row.updatedAt), unreadCount: num(row.unreadCount, 0) }];
@@ -1799,8 +1801,9 @@ export async function fetchMConversationDetail(no: string, signal?: AbortSignal)
 
 export async function fetchMSupportAgentsPage(pageNum = 1, pageSize = 5): Promise<MSupportAgentPage> {
   const page = await apiRequest<SupportAgentPageView>(`/support-agents/page?pageNum=${encodeURIComponent(String(pageNum))}&pageSize=${encodeURIComponent(String(pageSize))}`);
+  if (!Array.isArray(page.records) || !Array.isArray(page.advisorAssignments)) throw new Error("M1_SUPPORT_AGENT_PAGE_MALFORMED");
   return {
-    total: num(page.total, 0),
+    total: parseSupportCount(page.total, "total"),
     pageNum: num(page.pageNum, pageNum),
     pageSize: num(page.pageSize, pageSize),
     records: asArray<Record<string, unknown>>(page.records).map(adaptSupportAgent),

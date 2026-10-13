@@ -8,13 +8,13 @@ import { fileURLToPath } from "node:url";
 
 // Offline native-layout regression from the actual JSX and styles. No app server,
 // session, business API, or live acceptance result is used by this test.
-const repo = fileURLToPath(new URL("..", import.meta.url));
+const repo = process.env.SUPPORT_ANALYTICS_FE_ROOT || fileURLToPath(new URL("..", import.meta.url));
 const require = createRequire(path.join(repo, "package.json"));
 const ts = require("typescript"), React = require("react"), { renderToStaticMarkup } = require("react-dom/server");
 const { chromium } = require("@playwright/test"), postcss = require("postcss");
 const tabs = "app/components/domain-views/m-tabs/";
 const sourceRoot = process.env.SUPPORT_LAYOUT_SOURCE_ROOT || repo;
-const source = relative => fs.readFileSync(path.join(sourceRoot, relative), "utf8");
+const source = relative => fs.readFileSync(path.join(fs.existsSync(path.join(sourceRoot, relative)) ? sourceRoot : repo, relative), "utf8");
 const ruleSource = source(tabs + "m5-service-rules.tsx"), chatSource = source(tabs + "m3-dedicated-chat.tsx"), toolsSource = source(tabs + "support-content-tools.tsx");
 const parse = text => ts.createSourceFile("fixture.tsx", text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 function find(text, predicate) {
@@ -38,9 +38,9 @@ function renderBit(markup, declarations) {
   const { exports } = evaluate(`export function Fixture(){${declarations};return (${markup});}`);
   return renderToStaticMarkup(React.createElement(exports.Fixture));
 }
-const radioMarkup = renderBit(jsx(ruleSource, "fieldset", "无顾问客户分配方式"), 'const editable=true,draft={unboundAssignmentMode:"SUPERVISOR"},setField=()=>{}');
+const radioMarkup = renderBit(jsx(ruleSource, "fieldset", "无专属客服客户分配方式"), 'const editable=true,draft={unboundAssignmentMode:"SUPERVISOR"},setField=()=>{}');
 const headerMarkup = renderBit(jsx(chatSource, "header", "我的会话"), `
-  const query="",listTab="all",canWriteM3=true,canReadTimeout=true,canTimeout=true,actionChecking=false,qualificationUnknown=false;
+  const conversationsAvailable=true,query="",listTab="all",canWriteM3=true,canReadTimeout=true,canTimeout=true,actionChecking=false,qualificationUnknown=false;
   const archiveIds=new Set(["picked"]),setQuery=()=>{},setListTab=()=>{},setContactOpen=()=>{},setBulkOpen=()=>{},archiveBatch=()=>{},openTimeout=()=>{};
   const visible=Array.from({length:12005},(_,i)=>({status:i%3===0?"open":i%3===1?"closed":"transferred",unread:i%2,archived:i%5===0}));
   ${declaration(chatSource, "tabMatch")}
@@ -53,6 +53,8 @@ const templates = [
 const { exports: tools } = evaluate(toolsSource, {
   "@/lib/admin/m-support-enhancements": { supportEnhancements: { skus: () => { throw new Error("Offline test forbids API calls"); } } },
   "@/lib/admin/error-messages": { displayAdminError: () => "读取失败" },
+  "../design-kit": { Icon: () => null, Modal: () => null },
+  "./hd-ui": { HDSelect: () => null },
 });
 const ctx = { pget: key => key === "I.session.templatesAvailable" ? "1" : JSON.stringify(templates) };
 const toolsMarkup = renderToStaticMarkup(React.createElement(tools.SupportContentTools, { ctx, disabled: false, onInsert() {}, onSelect() {} }));
@@ -100,11 +102,11 @@ test("M5 radios retain native size, aligned labels and an entire-row description
         assert.ok(label.height >= 44, "Radio label is not a usable touch target");
         assert.ok(Math.abs(box.y + box.height / 2 - label.y - label.height / 2) <= 2, "Radio and label do not share a row");
       }
-      const group = fixture.page.getByRole("group", { name: "无顾问客户分配方式" });
+      const group = fixture.page.getByRole("group", { name: "无专属客服客户分配方式" });
       const fieldset = await group.boundingBox(), help = await group.locator("p").boundingBox();
       assert.ok(help.width >= fieldset.width - 4, "Business explanation is trapped in one option's column");
-      await fixture.page.getByRole("radio", { name: "主管分配" }).focus();
-      assert.equal(await fixture.page.getByRole("radio", { name: "主管分配" }).evaluate(el => getComputedStyle(el.closest("label")).outlineStyle), "solid");
+      await fixture.page.getByRole("radio", { name: "客服主管分配" }).focus();
+      assert.equal(await fixture.page.getByRole("radio", { name: "客服主管分配" }).evaluate(el => getComputedStyle(el.closest("label")).outlineStyle), "solid");
       await screenshot(fixture.page, `M5-${width}-${theme}`);
     } finally { await fixture.close(); }
   }
@@ -148,26 +150,18 @@ test("short M3 windows scroll the entire inbox without collapsing the list or cl
     } finally { await fixture.close(); }
   }
 });
-test("shared private/bulk content tools have keyboard triggers, stacked fields and wrapping results", async () => {
+test("shared private/bulk content tools keep three reachable picker triggers in narrow containers", async () => {
   for (const [width, theme, inDomain] of [[420, "dark", true], [280, "light", false]]) {
     const fixture = await pageFor(toolsMarkup, width, theme, inDomain);
     try {
       const root = fixture.page.locator(".support-content-tools");
-      await within(root.locator("summary"), root);
-      const summary = root.locator("summary").first();
-      await summary.focus(); await fixture.page.keyboard.press("Enter");
-      assert.equal(await root.locator("details").first().evaluate(el => el.open), true);
-      await within(root.locator("details").first().locator("input,select,button"), root);
+      await within(root.locator("button"), root);
+      assert.equal(await root.getByRole("button").count(), 3);
+      await root.getByRole("button", { name: "回复模板与专属客服话术" }).focus();
+      assert.equal(await fixture.page.evaluate(() => document.activeElement?.tagName), "BUTTON");
+      assert.equal(await root.locator("details,select").count(), 0);
       assert.doesNotMatch(await root.innerText(), /DRAFT_SHOULD_NOT_APPEAR/);
-      for (const field of await root.locator("details").first().locator("label").all()) {
-        const labelText = await field.locator("span").first().boundingBox(), control = await field.locator("input,select").boundingBox();
-        assert.ok(control.y >= labelText.y + labelText.height + 5, "Field label collides with its control");
-      }
-      const link = root.getByRole("combobox", { name: "发送页面链接" });
-      assert.deepEqual(await link.locator("option").evaluateAll(items => items.map(item => item.value)), ["", "HOME", "WALLET", "SUPPORT"]);
       await screenshot(fixture.page, `content-${width}-${theme}`);
-      await summary.focus(); await fixture.page.keyboard.press("Enter");
-      assert.equal(await root.locator("details").first().evaluate(el => el.open), false);
     } finally { await fixture.close(); }
   }
 });
@@ -245,71 +239,7 @@ test("historical read-only hints refer to current-conversation navigation only w
   }
 });
 
-test("shared SKU loading follows a real request, stays honest while disabled, and resumes for private/bulk use", async () => {
-  // Mount the actual React component offline. Only the read API is stubbed;
-  // React effects, native details toggles, cancellation and disabled controls run.
-  const modules = Object.fromEntries([
-    ["react", "react", "react.development.js"],
-    ["react/jsx-runtime", "react", "react-jsx-runtime.development.js"],
-    ["react-dom", "react-dom", "react-dom.development.js"],
-    ["react-dom/client", "react-dom", "react-dom-client.development.js"],
-    ["scheduler", "scheduler", "scheduler.development.js"],
-  ].map(([id, pkg, file]) => [id, fs.readFileSync(path.join(path.dirname(require.resolve(`${pkg}/package.json`)), "cjs", file), "utf8")]));
-  modules["content-tools"] = ts.transpileModule(toolsSource, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  modules["@/lib/admin/m-support-enhancements"] = `exports.supportEnhancements={skus(page,query,signal){return new Promise((resolve,reject)=>window.__skuHarness.requests.push({page,query,signal,resolve,reject}));}};`;
-  modules["@/lib/admin/error-messages"] = 'exports.displayAdminError=()=>"读取失败";';
-  for (const [scope, inDomain, theme] of [["private", true, "dark"], ["bulk", false, "light"]]) {
-    const fixture = await pageFor("", 680, theme, inDomain);
-    try {
-      await fixture.page.addScriptTag({ content: `
-        const sources=${JSON.stringify(modules)},cache={};
-        function load(id){if(id.endsWith(".css"))return {};if(cache[id])return cache[id].exports;if(!sources[id])throw new Error("Unexpected offline module: "+id);const module={exports:{}};cache[id]=module;new Function("module","exports","require","process",sources[id])(module,module.exports,load,{env:{NODE_ENV:"development"}});return module.exports;}
-        const React=load("react"),Tools=load("content-tools").SupportContentTools;
-        window.__skuHarness={requests:[],selected:[]};
-        function Harness(){const [disabled,setDisabled]=React.useState(true);window.__skuHarness.setDisabled=setDisabled;return React.createElement(Tools,{ctx:{pget:key=>key==="I.session.templatesAvailable"?"1":"[]"},disabled,onInsert(){},onSelect:value=>window.__skuHarness.selected.push(value)});}
-        load("react-dom/client").createRoot(document.querySelector("main")).render(React.createElement(Harness));
-      ` });
-      const section = fixture.page.locator("details").nth(1);
-      const summary = section.locator("summary");
-      await summary.focus(); await fixture.page.keyboard.press("Enter");
-      await fixture.page.waitForFunction(() => document.querySelectorAll("details")[1]?.open);
-      const initial = await section.textContent();
-      assert.doesNotMatch(initial, /正在读取在售商品/, `${scope}: disabled guard made no request`);
-      assert.match(initial, /当前暂不能推荐商品.*当前状态不可发送.*操作尚未结束/, `${scope}: reason must cover read-only and busy/pending`);
-      assert.equal(await fixture.page.evaluate(() => window.__skuHarness.requests.length), 0);
-
-      await fixture.page.evaluate(() => window.__skuHarness.setDisabled(false));
-      await fixture.page.waitForFunction(() => window.__skuHarness.requests.length === 1 && document.querySelectorAll("details")[1].textContent.includes("正在读取在售商品"));
-      await fixture.page.evaluate(() => window.__skuHarness.requests[0].resolve({ records: [{ id: "FIXTURE-SKU", name: "离线在售样本" }], total: 21 }));
-      const result = section.getByRole("button", { name: "离线在售样本 · FIXTURE-SKU", exact: true });
-      await result.waitFor(); await result.click();
-      assert.deepEqual(await fixture.page.evaluate(() => window.__skuHarness.selected), [{ kind: "SKU", skuId: "FIXTURE-SKU", name: "离线在售样本" }]);
-      assert.doesNotMatch(await section.textContent(), /正在读取在售商品/);
-
-      await section.getByRole("button", { name: "下一页", exact: true }).click();
-      await fixture.page.waitForFunction(() => window.__skuHarness.requests.length === 2);
-      assert.equal(await fixture.page.evaluate(() => window.__skuHarness.requests[1].page), 2);
-      await fixture.page.evaluate(() => window.__skuHarness.setDisabled(true));
-      await fixture.page.waitForFunction(() => window.__skuHarness.requests[1].signal.aborted);
-      assert.doesNotMatch(await section.textContent(), /正在读取在售商品/);
-      await fixture.page.evaluate(() => window.__skuHarness.requests[1].resolve({ records: [{ id: "STALE", name: "被取消的结果" }], total: 21 }));
-
-      await fixture.page.evaluate(() => window.__skuHarness.setDisabled(false));
-      await fixture.page.waitForFunction(() => window.__skuHarness.requests.length === 3);
-      assert.equal(await fixture.page.evaluate(() => window.__skuHarness.requests[2].page), 2);
-      await fixture.page.evaluate(() => window.__skuHarness.requests[2].reject(new Error("offline failure")));
-      const retry = section.getByRole("button", { name: "重试商品", exact: true });
-      await retry.waitFor(); assert.match(await section.textContent(), /读取失败/);
-      assert.equal(await section.getByText("被取消的结果 · STALE", { exact: true }).count(), 0);
-      await retry.click();
-      await fixture.page.waitForFunction(() => window.__skuHarness.requests.length === 4);
-      await fixture.page.evaluate(() => window.__skuHarness.requests[3].resolve({ records: [], total: 0 }));
-      await section.getByText("没有匹配的在售商品。", { exact: true }).waitFor();
-      assert.doesNotMatch(await section.textContent(), /正在读取在售商品/);
-      await screenshot(fixture.page, `sku-state-${scope}`);
-    } finally { await fixture.close(); }
-  }
-});
+// Actual picker loading, cancellation, disabled and retry behavior lives in support-content-tools-picker.test.mjs.
 
 test("bulk preview displays the actual structured actor-qualification error without exposing unknown backend text", async () => {
   const bulkSource = source(tabs + "support-bulk-composer.tsx");
@@ -342,7 +272,7 @@ test("bulk preview displays the actual structured actor-qualification error with
     const fallback = vm.runInContext("displayAdminError(cause)", context);
     const cleanup = effect(); await new Promise(resolve => setImmediate(resolve)); cleanup();
     const previewMessage = shown.at(-1);
-    if (row.known) assert.match(previewMessage, /当前账号.*顾问坐席.*群发.*主管/, "The real SupportClientError must reach the preview display boundary");
+    if (row.known) assert.match(previewMessage, /当前账号.*专属客服资格.*群发.*客服主管/, "The real SupportClientError must reach the preview display boundary");
     else assert.equal(previewMessage, fallback, "Other statuses, unknown codes and forged errors keep the original safe fallback");
     assert.doesNotMatch(previewMessage, /SUPPORT_AGENT_UNAVAILABLE|UNKNOWN_PRIVATE_BACKEND_TEXT|未知原因/);
     await vm.runInContext("freeze()", context);

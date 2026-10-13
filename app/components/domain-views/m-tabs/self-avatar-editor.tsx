@@ -86,7 +86,7 @@ export function SelfAvatarEditor({ name, ctx, onChanged }: { name: string; ctx: 
   }
   return <><button type="button" className="l-btn avatar-control-button" disabled={!actorId || busy} onClick={() => { setOpen(true); void read(); }}>更换本人头像</button>
     {open && <Drawer title="更换本人头像" sub={name} onClose={() => { if (!busy) setOpen(false); }} footer={<div className="account-avatar-controls" style={{ display: "flex", gap: 8, padding: 14 }}><button type="button" className="l-btn" disabled={busy} onClick={() => setOpen(false)}>返回工作台</button><button type="button" className="l-btn primary" disabled={!allowed || !assetId || blocking || busy || Boolean(pending)} onClick={confirm}>确认保存本人头像</button></div>}>
-      <div className="account-avatar-controls"><p>仅本人可更换；有效客服或主管资格由服务端核对，不需要开放账号管理权限。</p>
+      <div className="account-avatar-controls"><p>仅具备有效客服或主管资格的本人可更换，不需要账号管理权限。</p>
       {busy && <p role="status">正在核对头像资料…</p>}{error && <p role="alert">{error}</p>}
       {!allowed && !busy && <button type="button" className="l-btn" onClick={() => void read()}>重新核对本人资格与头像</button>}
       {pending && <div role="status"><p>原头像保存结果待确认，原图片、版本、理由和命令号已保留。请先查询原结果。</p><button type="button" className="l-btn" disabled={busy} onClick={() => void read()}>查询原保存结果</button><button type="button" className="l-btn" disabled={busy || !allowed || Date.now() >= pending.expiresAt} onClick={() => void submit(pending)}>使用原资料与命令重试</button>{Date.now() >= pending.expiresAt && <p>原命令已超过安全重试窗口，只能查询结果；请联系管理员核对。</p>}</div>}

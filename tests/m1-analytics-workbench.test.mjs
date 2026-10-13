@@ -5,6 +5,7 @@ import path from "node:path";
 import vm from "node:vm";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
+import "./support-compact-empty.test.mjs";
 
 const frontend = process.env.SUPPORT_ANALYTICS_FE_ROOT || fileURLToPath(new URL("../", import.meta.url));
 const require = createRequire(path.join(frontend, "package.json")), ts = require("typescript"), React = require("react");
@@ -31,7 +32,7 @@ await validatorModule.link(name => synthetic(name === "./business-time.ts" ? bus
 await validatorModule.evaluate();
 const formatterSource = ts.transpileModule(readFileSync(path.join(existsSync(path.join(stage, "app/components/domain-views/m-tabs/support-leaderboard.tsx")) ? stage : frontend, "app/components/domain-views/m-tabs/support-leaderboard.tsx"), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2017 } }).outputText;
 const formatterModule = new vm.SourceTextModule(formatterSource, { context });
-await formatterModule.link(name => synthetic(name === "react" ? React : name === "react/jsx-runtime" ? jsxRuntime : name === "lucide-react" ? Object.fromEntries(["ArrowRight", "ChevronDown", "Info", "MapPin"].map(key => [key, require("lucide-react")[key]])) : {}));
+await formatterModule.link(name => synthetic(name === "react" ? React : name === "react/jsx-runtime" ? jsxRuntime : name === "lucide-react" ? Object.fromEntries(["ArrowRight", "ChevronDown", "Home", "Users", "MessageSquare", "ChartNoAxesColumn", "LayoutGrid", "FileText", "MapPin"].map(key => [key, require("lucide-react")[key]])) : {}));
 await formatterModule.evaluate();
 const mocks = {
   react: { ...React, useState: (...args) => driver.useState(...args), useRef: (...args) => driver.useRef(...args), useEffect: (...args) => driver.useEffect(...args) },
@@ -83,7 +84,7 @@ function button(tree, label) { const matches = elements(tree).filter(x => x.type
 test("support leaderboard loading controls lock every tab and empty filter until ready", () => {
   const option = [{ value: "USDT", label: "USDT" }];
   for (const status of ["loading", "error", "empty", "ready"]) {
-    for (const board of ["firstPayment", "deposit", "purchase", "customers"]) {
+    for (const board of ["netContribution", "firstPayment", "customers"]) {
       const html = renderToStaticMarkup(React.createElement(formatterModule.namespace.SupportLeaderboard, {
         query: { board, month: "2026-10", scope: "all", currency: "USDT" }, status,
         monthOptions: status === "ready" ? [{ value: "2026-10", label: "2026.10" }] : [],
@@ -93,7 +94,7 @@ test("support leaderboard loading controls lock every tab and empty filter until
         onQueryChange() {}, onRetry() {}, onLocateSelf() {}, onViewPerformance() {},
       }));
       const tabs = [...html.matchAll(/<button\b[^>]*role="tab"[^>]*>/g)].map(match => match[0]);
-      assert.equal(tabs.length, 4);
+      assert.equal(tabs.length, 3);
       assert.equal(tabs.filter(tab => /aria-selected="true"/.test(tab)).length, 1);
       assert.equal(tabs.filter(tab => /tabindex="0"/.test(tab)).length, 1);
       for (const tab of tabs) {
@@ -125,6 +126,23 @@ function fixture(view = "OVERVIEW", mode = "MANAGED") {
 }
 async function resolveScope(mode = "MANAGED") { const d = new HookDriver(); d.render(); requests.at(-1).resolve(fixture("OVERVIEW", mode)); await d.settle(); return d; }
 
+test("actual customer and advisor tables display signed NET while keeping recharge and first-payment columns",()=>{
+  for(const view of ["CUSTOMERS","AGENTS"]) {
+    const data=fixture(view), totals=view==="CUSTOMERS"?data.records[0].lifetime:data.records[0].current.ownLifetime;
+    totals[0].net={observed:"-123456.000001",confirmed:"-123456.000001",status:"AVAILABLE"};
+    const html=renderToStaticMarkup(React.createElement(AnalyticsTable,{data,currency:"USDT",drill(){},openProfile(){}}));
+    assert.match(html,/累计净贡献/);assert.match(html,/-123456\.000001/);assert.match(html,view==="CUSTOMERS"?/本人累充/:/客户累计充值/);assert.match(html,/首充/);
+    totals[0].net={observed:null,confirmed:null,status:"UNKNOWN"};
+    const missing=renderToStaticMarkup(React.createElement(AnalyticsTable,{data,currency:"USDT",drill(){},openProfile(){}}));
+    assert.doesNotMatch(missing,/-123456\.000001/);assert.match(missing,/累计净贡献[^>]*：资料待核实/);
+  }
+});
+test("actual finance table labels general paid consumption without calling it a refund",()=>{
+  const data=fixture("FINANCE");data.records[0].kind="CONSUMPTION";
+  const html=renderToStaticMarkup(React.createElement(AnalyticsTable,{data,currency:"USDT",drill(){},openProfile(){}}));
+  assert.match(html,/付费消费/);assert.doesNotMatch(html,/购机退款/);
+});
+
 test("stage strict TS checks candidate and exact m-view delta against actual installed modules", () => {
   const config = ts.readConfigFile(path.join(frontend, "tsconfig.json"), ts.sys.readFile);
   const options = { ...ts.parseJsonConfigFileContent(config.config, ts.sys, frontend).options, incremental: false, noEmit: true, baseUrl: frontend, paths: { "@/*": ["./*"] } };
@@ -152,6 +170,24 @@ test("every query edit clears page/version; group edits additionally clear old a
   for (const change of [{ groupId: "5" }, { groupId: undefined }, { month: "2026-09" }, { currency: "NEX" }, { sortKey: "DEVICE_COUNT" }, { direction: "ASC" }, { basis: "PERIOD_EVENT" }, { view: "CUSTOMERS" }, { keyword: "test" }, { filter: "DUE" }]) { const next = changeAnalyticsQuery(state, change); assert.equal(next.pageNum, 1); assert.equal(next.expectedVersion, undefined); }
   assert.equal(changeAnalyticsQuery(state, { groupId: "5" }).agentId, undefined);
   assert.equal(changeAnalyticsQuery(state, { currency: "NEX" }).agentId, "7");
+});
+test("NET sort uses the current-customer selector and clears when switching basis", async () => {
+  const d = await resolveScope("ALL");
+  try {
+    button(d.tree, "客户").props.onClick(); d.render();
+    const select = () => elements(d.tree).find(x => x.props?.label === "排序");
+    assert.ok(select().props.options.some(x => x.value === "NET_CONTRIBUTION" && x.label === "净贡献额"));
+    select().props.onChange("NET_CONTRIBUTION"); d.render();
+    assert.equal(requests.at(-1).options.sortKey, "NET_CONTRIBUTION");
+    assert.equal(requests.at(-1).options.currency, "USDT");
+    assert.equal(requests.at(-1).options.pageNum, 1);
+    assert.equal(requests.at(-1).options.expectedVersion, undefined);
+    for (const basis of ["PERIOD_EVENT", "CURRENT_ASSET"]) {
+      elements(d.tree).find(x => x.props?.label === "统计口径").props.onChange(basis); d.render();
+      assert.equal(requests.at(-1).options.sortKey, undefined);
+      assert.ok(!select().props.options.some(x => x.value === "NET_CONTRIBUTION"));
+    }
+  } finally { d.unmount(); }
 });
 test("paging uses only READY signed version and never fabricates continuation", () => {
   const state = initialAnalyticsQuery("MANAGED"), data = fixture("AGENTS");
@@ -282,14 +318,14 @@ test("synchronous and asynchronous failures render retry instead of escaping eff
   forcedQueryError = new Error("unexpected synchronous client failure");
   const scopeDriver = new HookDriver();
   try {
-    assert.doesNotThrow(() => scopeDriver.render()); await scopeDriver.settle(); assert.match(content(scopeDriver.tree), /暂无法核对/);
+    assert.doesNotThrow(() => scopeDriver.render()); await scopeDriver.settle(); assert.match(content(scopeDriver.tree), /统计资料暂时无法确认，请重试。/);
     forcedQueryError = undefined; button(scopeDriver.tree, "重新核对范围").props.onClick(); scopeDriver.render();
     requests.at(-1).resolve(fixture("OVERVIEW", "MANAGED")); await scopeDriver.settle();
     forcedQueryError = new Error("unexpected synchronous query failure");
     const countBefore = requests.length; button(scopeDriver.tree, "设备").props.onClick(); assert.doesNotThrow(() => scopeDriver.render()); await scopeDriver.settle();
-    assert.equal(requests.length, countBefore); assert.match(content(scopeDriver.tree), /暂无法核对/); assert.equal(elements(scopeDriver.tree).filter(x => x.type === AnalyticsTable).length, 0);
+    assert.equal(requests.length, countBefore); assert.match(content(scopeDriver.tree), /统计资料暂时无法确认，请重试。/); assert.equal(elements(scopeDriver.tree).filter(x => x.type === AnalyticsTable).length, 0);
     forcedQueryError = undefined; button(scopeDriver.tree, "重试读取").props.onClick(); scopeDriver.render();
-    requests.at(-1).reject(new Error("unexpected asynchronous transport failure")); await scopeDriver.settle(); assert.match(content(scopeDriver.tree), /暂无法核对/);
+    requests.at(-1).reject(new Error("unexpected asynchronous transport failure")); await scopeDriver.settle(); assert.match(content(scopeDriver.tree), /统计资料暂时无法确认，请重试。/);
     button(scopeDriver.tree, "重试读取").props.onClick(); scopeDriver.render(); assert.equal(requests.at(-1).options.view, "DEVICES");
   } finally { forcedQueryError = undefined; scopeDriver.unmount(); }
 });
@@ -299,7 +335,7 @@ test("wire projection throws inside the protected effect and cannot reach transp
   try {
     const select = elements(d.tree).find(x => x.props?.label === "统计口径"); select.props.onChange("PERIOD_EVENT"); d.render();
     const monthSelect = elements(d.tree).find(x => x.props?.label === "自然月"); monthSelect.props.onChange("2026-13");
-    const before = requests.length; assert.doesNotThrow(() => d.render()); await d.settle(); assert.equal(requests.length, before); assert.match(content(d.tree), /暂无法核对/);
+    const before = requests.length; assert.doesNotThrow(() => d.render()); await d.settle(); assert.equal(requests.length, before); assert.match(content(d.tree), /统计资料暂时无法确认，请重试。/);
   } finally { d.unmount(); }
 });
 
