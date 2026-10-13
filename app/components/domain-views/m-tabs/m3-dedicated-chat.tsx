@@ -191,7 +191,8 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
 
   const conversationsAvailable = ctx.pget("I.session.conversationsAvailable") === "1";
   const requestedCustomerIdValid = requestedCustomerId === null || validCustomerId(requestedCustomerId);
-  const all = useMemo(() => parseConversations(ctx.pget(CONVO_KEY)), [ctx.params, ctx]);
+  const conversationSource = ctx.pget(CONVO_KEY);
+  const all = useMemo(() => parseConversations(conversationSource), [conversationSource]);
   const agents = useMemo(() => {
     try { return JSON.parse(ctx.pget("I.support.agents") ?? "[]") as Array<{ adminId: number; seatType?: string; position?: string }>; }
     catch { return []; }
