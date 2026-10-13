@@ -25,18 +25,18 @@ html[data-theme="dark"] .m3-dedicated-stage { --m3-bubble-agent: #114361; --m3-b
 .mdom .m3-message .msg-bubble.agent { background: var(--m3-bubble-agent, var(--m-hd-soft)); border-color: var(--m3-bubble-agent-border, var(--m-hd-border)); }
 .mdom .m3-message .msg-bubble.user { background: var(--v5-surface-3); border-color: var(--v5-border-strong); }
 .mdom .m3-message:not(.agent) .msg-bubble { border-top-left-radius: 4px; }
-.mdom .m3-stage .ChatComposer { flex: none; min-height: 0; max-height: 46%; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 9px; }
+.mdom .m3-stage .ChatComposer { flex: none; min-height: 0; max-height: 46%; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 9px; container: m3-composer / inline-size; }
 .mdom .m3-composer-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .mdom .m3-composer-tools > .support-content-tools { display: flex; flex-wrap: wrap; gap: 7px; container-type: normal; }
 .mdom .m3-composer-tools .support-content-trigger { width: auto; min-height: 32px; padding: 5px 9px; justify-content: flex-start; gap: 6px; font-size: 12.5px; border-radius: 7px; background: var(--v5-surface-2); }
 .mdom .m3-composer-tools .support-content-trigger svg { order: -1; }
 .mdom .m3-composer-tools > .support-content-tools > .support-content-state { display: none; }
-.mdom .m3-composer-intent { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 0; margin: 0; border: 0; font-size: 12.5px; color: var(--v5-ink-3); }
-.mdom .m3-composer-intent .hd-select { min-height: 30px; height: 30px; padding: 4px 12px 4px 10px; font-size: 12.5px; }
+.mdom .m3-composer-intent { display: flex; align-items: center; flex-shrink: 0; gap: 8px; padding: 0; margin: 0 0 0 auto; border: 0; white-space: nowrap; font-size: 12.5px; color: var(--v5-ink-3); }
+.mdom .m3-composer-intent .hd-select { min-height: 32px; height: 32px; padding: 4px 12px 4px 10px; font-size: 12.5px; }
 .mdom .m3-composer-intent .hd-select-pop { top: calc(100% + 4px); bottom: auto; }
 .mdom .m3-composer-input { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 9px; align-items: stretch; }
 .mdom .m3-composer-input textarea.fld { width: 100%; height: 68px; min-height: 68px; max-height: 150px; resize: vertical; padding: 11px 12px; border-radius: 7px; border-color: var(--v5-border); background: var(--v5-surface); color: var(--v5-ink); font-size: 14px; line-height: 1.6; }
-.mdom .m3-composer-input .chat-send { width: 84px; height: auto; min-height: 68px; padding: 8px; border-radius: 8px; justify-content: center; background: var(--v5-brand); font-size: 13.5px; color: var(--v5-bg); box-shadow: none; gap: 5px; }
+.mdom .m3-composer-input .chat-send { width: 84px; height: auto; min-height: 68px; padding: 8px 5px; border-radius: 8px; justify-content: center; background: var(--v5-brand); font-size: 13.5px; color: var(--v5-bg); box-shadow: none; gap: 5px; white-space: nowrap; }
 .mdom .m3-composer-note { font-size: 12px; color: var(--v5-ink-3); }
 .mdom .m3-stage .ChatComposer .itint { margin: 0; padding: 9px 11px; font-size: 12.5px; line-height: 1.6; }
 .mdom .m3-previous-replies > summary { cursor: pointer; display: flex; align-items: center; gap: 7px; min-height: 28px; font-size: 12.5px; color: var(--v5-ink-3); }
@@ -48,6 +48,7 @@ html[data-theme="dark"] .m3-dedicated-stage { --m3-bubble-agent: #114361; --m3-b
 .mdom .m3-stage .cvp-scroll { padding: 17px 16px 25px; }
 .m3-new-message { animation: m3-message-arrive 140ms ease-out; }
 @keyframes m3-message-arrive { from { opacity: .65; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@container m3-composer (max-width: 560px) { .mdom .m3-composer-intent > span { display: none; } }
 @container mdom (max-width: 1060px) {
   .mdom .m3-stage.m3-dedicated-stage { grid-template-columns: 294px minmax(0, 1fr); }
   .mdom .m3-profile-toggle { display: inline-flex; }
@@ -66,6 +67,7 @@ html[data-theme="dark"] .m3-dedicated-stage { --m3-bubble-agent: #114361; --m3-b
 @container mdom (min-width: 1700px) { .mdom .m3-stage.m3-dedicated-stage { grid-template-columns: 330px minmax(330px, 1fr) 362px; } }
 @media (pointer: coarse) {
   .mdom .m3-stage .l-btn.sm, .mdom .m3-composer-tools .support-content-trigger,
+  .mdom .m3-composer-intent .hd-select,
   .mdom .m3-stage .m3-list-header .l-btn.sm, .mdom .m3-stage .m3-list-footer .l-btn.sm { min-height: 44px; }
   .mdom .m3-stage .m3-list-select { width: 44px; height: 44px; }
   .mdom .m3-stage .cv-meta, .mdom .m3-stage .cv-origin-copy { padding-right: 40px; }
