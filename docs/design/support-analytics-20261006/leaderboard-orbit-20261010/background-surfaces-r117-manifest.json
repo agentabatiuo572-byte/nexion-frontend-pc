@@ -1,12 +1,12 @@
 {
-  "revision": "approved-source-polish-20261013",
+  "revision": "imagegen-continuous-main-canvas-20261014",
   "approvedSourceSHA256": "e3b92e2fbb593171a4658e058c562ec4dbc9403fecafdf8dd85a719ba71f6c3a",
   "approvedSourceSize": [
     1536,
     1024
   ],
-  "previousSceneSHA256": "f5f5e7c933f71761bdfa23da6c4a9d47375eb008e86a7d94d60da5be1c07a135",
-  "currentSceneSHA256": "484c0f1bf7b5762d9cb9d061a7b7f9e5ef3e470716e4daaa31f7c11f72e75ea4",
+  "previousSceneSHA256": "92241c54e64b331720d83b9f897c7694dd45b6671f3466abedcc539e662c55fd",
+  "currentSceneSHA256": "067b6f9cf5c8dfd08127f06675f3bcc546e25548b2216636bd07452a6b8c01bf",
   "assets": [
     {
       "file": "orbit-surface-navigation.png",
@@ -868,21 +868,15 @@
     },
     {
       "file": "orbit-surface-main-canvas.png",
-      "sha256": "119010f2a15272c4f2d19a55b1e115cb8d81303a6ec3aa44cc82db587322def1",
+      "sha256": "924f3ef0c1f12370a1eaaaf09b99ac9004b964f75336e707cdc01be48cf9052c",
       "previousSHA256": "3aa8b6677891414aa1ab5c5dc63c236af0be904b105a93a286df0ec0113210cf",
       "width": 1355,
       "height": 1024,
-      "method": "Frozen r117 composition, with the same two local seam repairs applied to currentSceneSHA256: canvas-native rectangles [112,487,42,45] and [1063,466,42,57]. One built-in image edit of the two source crops, resampled back to crop coordinates and blended inside fixed supports over8px.3284 decoded pixels change; all pixels outside those rectangles remain byte-identical. Repair is reconstructed material, not exact approved-source pixels. Previous SHA preserves r117 provenance; source/candidate ROI and original encoded backups are in the existing task visual-current-20261012 directory. No approved comparison mask or tolerance changes.",
+      "method": "Continuous imagegen main artwork copied from source x181..1535 without scaling, recoloring or local masking; not original approved source pixels. Top 20px preserve the approved source strip.",
       "restoration": {
-        "provenance": "background-source-polish-20261013.json",
-        "scope": "Restore clean approved source outside frozen foreground holes; reconstruct the caption and fourth-rank holes from nearest clean source rows.",
-        "limitation": "Occluded textures are reconstructed and are not original source pixels.",
-        "exactTopStrip": [
-          181,
-          0,
-          1355,
-          20
-        ]
+        "provenance": "background-imagegen-repair-20261014.json",
+        "scope": "Continuous source-coordinate main canvas avoids visible local patch boundaries; no resizing or recoloring.",
+        "limitation": "Generated reconstruction; original approved design remains unchanged. Runtime and independent review pending."
       }
     }
   ],

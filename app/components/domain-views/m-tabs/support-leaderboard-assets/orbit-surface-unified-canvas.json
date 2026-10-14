@@ -16,7 +16,7 @@
     },
     {
       "file": "orbit-surface-main-canvas.png",
-      "sha256": "119010f2a15272c4f2d19a55b1e115cb8d81303a6ec3aa44cc82db587322def1",
+      "sha256": "924f3ef0c1f12370a1eaaaf09b99ac9004b964f75336e707cdc01be48cf9052c",
       "size": [
         1355,
         1024
@@ -41,11 +41,16 @@
   ],
   "output": {
     "file": "orbit-surface-unified-canvas.png",
-    "sha256": "6b83df105dcf34257e34929e46f15d6150fc85bef4f00caf88f433c54f86bb67",
+    "sha256": "c73257bb66938af69f15d4e95313611320666a212ee4ed1cbcc4df1f4838107c",
     "size": [
       1536,
       1024
     ]
   },
-  "acceptance": "Source-byte preservation only. Runtime seam and full-page fidelity remain unverified."
+  "acceptance": "Source-byte preservation only. Runtime seam and full-page fidelity remain unverified.",
+  "reconstruction": {
+    "provenance": "docs/design/support-analytics-20261006/leaderboard-orbit-20261010/background-imagegen-repair-20261014.json",
+    "scope": "Continuous generated main canvas, copied at source coordinates without resizing. Original navigation remains exact. Top 20px retain the approved source strip.",
+    "limitation": "Generated background texture is not original approved source pixels. Runtime and independent review pending."
+  }
 }

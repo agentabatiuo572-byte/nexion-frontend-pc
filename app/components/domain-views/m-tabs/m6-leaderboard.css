@@ -1,4 +1,8 @@
 .m6-public-leaderboard .sl-heading { padding-right:203px; flex-wrap:wrap; }
+.m6-public-leaderboard .sl-filters { flex-wrap:wrap; max-width:100%; }
+/* Real month and scope labels need a safe text area beyond the preview's short labels. */
+.m6-public-leaderboard .sl-filters .sl-select:has(select[aria-label="月份"]),
+.m6-public-leaderboard .sl-filters .sl-select:has(select[aria-label="榜单范围"]) { width:120px; min-width:120px; max-width:120px; }
 .m6-public-leaderboard .m6-leaderboard-search { display:flex; align-items:center; gap:8px; margin-left:auto; min-height:40px; font-size:12.5px; }
 .m6-public-leaderboard .m6-leaderboard-search .fld { width:130px; min-width:0; font-size:14px; }
 .m6-public-leaderboard .m6-leaderboard-search button { min-height:40px; padding:0 12px; border:1px solid var(--sl-border); border-radius:8px; font-size:14px; }

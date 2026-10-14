@@ -81,6 +81,19 @@ test("real M6 keeps its search inside the shared heading without preview navigat
   h.unmount();
 });
 
+test("real M6 filters retain complete month, scope and long-group accessible labels", async () => {
+  const h = harness(), groupName = "华东区域专属客服服务第一组";
+  h.pages[0].resolve(page("17", { scopeOptions: [{ scope: "all", groups: [] }, { scope: "managedGroups", groups: [{ id: "5", name: groupName }] }] })); await h.flush();
+  for (const [scope, label] of [["all", "全员榜"], ["managedGroups", "负责组榜"], ["managedGroups:5", groupName]]) {
+    const props = h.board(), markup = renderToStaticMarkup(createElement(display.SupportLeaderboard, { ...props, query: { ...props.query, scope } }));
+    assert.match(markup, /<select aria-label="币种" title="USDT"/);
+    assert.match(markup, /<select aria-label="月份" title="2026\.10"/);
+    assert.ok(markup.includes(`<select aria-label="榜单范围" title="${label}"`));
+    assert.ok(markup.includes(`>${label}</option>`));
+  }
+  h.unmount();
+});
+
 test("actual self panel respects an unknown self reason even on a complete publication", async () => {
   for (const [state, reason, expected] of [["PROVISIONAL", "本人成绩暂不可用", "本人成绩暂不可用"], ["COMPLETE", "本人成绩暂不可用", "本人成绩暂不可用"], ["COMPLETE", "当前账号未参榜", "当前账号未参榜"]]) {
     const h = harness(); h.pages[0].resolve(page("17", { state, candidateCoverage: state === "PROVISIONAL" ? "UNKNOWN" : "COMPLETE", rows: [], self: { row: null, gap: null, reason, pageNum: null }, total: 0, matched: 0 })); await h.flush();
