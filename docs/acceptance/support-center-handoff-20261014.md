@@ -1,6 +1,6 @@
 # 客服中心验收交接
 
-更新日期：2026-10-15。状态：**PC、后端、APP、H5 均已交付 test，部分验收；整体 NOT_COMPLETE**。
+更新日期：2026-10-15。状态：**PC、后端、APP 已交付 test，原型镜像已交付 H5 分支；部分验收，整体 NOT_COMPLETE**。
 仅真实客户消息链暂缓，由同事接续；详见[消息待测说明](support-customer-message-pending-20261014.md)。榜单及其它未完成验收仍由当前任务继续处理，不转交同事。交接不等于通过，不宣称原112项全部PASS、生产上线或整幅像素PASS。
 
 ## 1. 契约与证明层
@@ -19,7 +19,7 @@
 | FE既有真实业务验收 | `5dd76706c085b2a37c7298ee43acdbb69bb8ef7c`；tree `09c4a366e2939e179bb852c4c33d267d746a1c09`；BUILD_ID `dobwn_bfm58zZ71Z8_RBJ`。其后样式和目录未知计数补验分别留证，不把旧真实场景改写为最新版本重跑 |
 | BE当前 test交付 | [PR7](https://github.com/agentabatiuo572-byte/nexion-backend/pull/7)合并 `e22f64f4fbc5fd9abe8a473cd7debd8eb956a4f7`，仅校正交接中的初始化与迁移边界；[PR6](https://github.com/agentabatiuo572-byte/nexion-backend/pull/6)测试断言交付及生产业务验收源码`c37c582e6acec2547fd11c8a5d37737bb02775a5`不变，native未运行仍未运行 |
 | APP | [PR2](https://github.com/agentabatiuo572-byte/nexion-frontend-uniapp/pull/2)已合入test，`1ed9d845865d23050fcfab39d0bfaa107a573252`；完整门23/23（22 PASS、1有效缓存），无失败或跳过；[APP交接](https://github.com/agentabatiuo572-byte/nexion-frontend-uniapp/blob/test/docs/acceptance/support-center-handoff-20261014.md)保留较早候选失败的边界 |
-| H5 | [PR3](https://github.com/agentabatiuo572-byte/nexion-frontend-prototype/pull/3)已合入test，`049a1835f79ce7cb2e0d4c8ebf578d87b88baedb`；完整门23/23（22 PASS、1有效缓存）；官方同步核对2426个共享文件一致 |
+| H5 | [PR3](https://github.com/agentabatiuo572-byte/nexion-frontend-prototype/pull/3)已合入`H5`分支，`049a1835f79ce7cb2e0d4c8ebf578d87b88baedb`；完整门23/23（22 PASS、1有效缓存）；官方同步核对2426个共享文件一致 |
 | 前端/后端 | 既有真实验收使用本机`127.0.0.1:33108` / `127.0.0.1:18162`；验收窗口结束已正常停止，接续时先核验，不把历史地址当作当前存活证明 |
 | 隔离数据库 | `127.0.0.1:33338/cs_analytics_20261007`；UUID `abe359c0-c621-11f1-97ea-a40c6626953d` |
 | 角色与对象 | 5518纯SERVICE；1456主管兼SERVICE；1454总管；组410/411；客户2005及既有合法会话 |

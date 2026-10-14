@@ -2,6 +2,7 @@
   "recordedAt": "2026-10-14T19:10:18.1088681Z",
   "scope": "Existing acceptance receipts and verified GitHub merge state; no tests rerun",
   "pc": {
+    "baseBranch": "test",
     "testedHead": "2757d0c8eb2a803285a82d9b87714dbc787c9b8d",
     "tree": "bfc3091ca9b7f65199734878ca0d4feb2bd92cd8",
     "testMerge": "d27d8b283e30327e1d5f612bb1b28fa7e668427c",
@@ -15,6 +16,7 @@
     "treeMoved": false
   },
   "backend": {
+    "baseBranch": "test",
     "testMerge": "e0c04f3945c0cd9206922cd71f6df1b59347bf52",
     "pr": "https://github.com/agentabatiuo572-byte/nexion-backend/pull/6",
     "mergeVerified": "MERGED",
@@ -22,6 +24,7 @@
     "nativeExecution": "NOT_RUN"
   },
   "app": {
+    "baseBranch": "test",
     "repository": "app",
     "head": "1ed9d845865d23050fcfab39d0bfaa107a573252",
     "tree": "ea8fbc420df212a3e7109956022279c2e8639446",
@@ -34,6 +37,7 @@
     "logSHA256": "0516c5a33832b53c0ca885f563ab7e00ef4de452dcb07929a5140158af31da9f"
   },
   "h5": {
+    "baseBranch": "H5",
     "repository": "h5",
     "head": "049a1835f79ce7cb2e0d4c8ebf578d87b88baedb",
     "tree": "f4c950c43f1185422afb0fe4e97585dfb68bddf8",
