@@ -222,7 +222,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       const customerGroup = managementCustomerGroup.current;
       managementCustomerGroup.current = null;
       const groupId = remembered && next.scopeSummary.mode !== "PERSONAL" && next.scopeSummary.groups.some(group => group.groupId === String(remembered.groupId)) ? remembered.groupId : undefined;
-      if (customerGroup && String(groupId) !== customerGroup) throw new SupportClientError(403);
+      if (customerGroup && String(groupId) !== customerGroup) throw new SupportClientError(403, undefined, undefined);
       const restored: AnalyticsQueryState = remembered ? { ...changeAnalyticsQuery(remembered, { groupId, view: next.scopeSummary.mode === "PERSONAL" && ["OVERVIEW", "AGENTS"].includes(remembered.view) ? "CUSTOMERS" : remembered.view }), agentId: groupId === remembered.groupId ? remembered.agentId : undefined } : { ...initialAnalyticsQuery(next.scopeSummary.mode), ...(agentId === undefined ? {} : { view: "CUSTOMERS" as const, category: "BOUND" as const, agentId }) };
       if (remembered && remembered.view === restored.view) restored.sortKey = remembered.sortKey;
       setScope(next); setQueryState(restored);

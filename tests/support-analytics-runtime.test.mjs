@@ -713,7 +713,7 @@ test("the actual statistics scope-return effect restores the selected group, dat
     const managementReturnQuery = { current: remembered }, personalViewBeforeScopeRefresh = { current: false }, queries = []; let restored;
     const noop = () => {}, globals = { exports: {}, AbortController, Date, Intl, URLSearchParams, window: { location: { search: "" } }, scopeControllerRef: { current: null }, managementReturnQuery, supportAnalyticsClient: { query: async query => { queries.push(query); return { scopeSummary: { mode: "MANAGED", groups: [{ groupId: "5" }] } }; } }, setScope: noop, setScopeError: noop, setData: noop, setProfileId: noop, setOperations: noop, setGroupManagement: noop, setPersonalAnalytics: noop, analyticsErrorText: cause => { throw cause; }, setQueryState: value => { restored = value; } };
     const code = ts.transpileModule(`${helpers}\n(${effect.getText(ast)})();`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-    runInNewContext(code, { ...globals, personalViewBeforeScopeRefresh }); await new Promise(resolve => setImmediate(resolve));
+    runInNewContext(code, { ...globals, personalViewBeforeScopeRefresh, managementCustomerGroup: { current: null } }); await new Promise(resolve => setImmediate(resolve));
     assert.equal(queries[0].view, "OVERVIEW"); assert.equal(restored.groupId, selectedGroup); assert.equal(restored.view, "CUSTOMERS"); assert.equal(restored.basis, "PERIOD_EVENT"); assert.equal(restored.currency, "NEX"); assert.equal(restored.month, "2026-10"); assert.equal(restored.pageNum, 1); assert.equal(restored.expectedVersion, undefined); assert.equal(managementReturnQuery.current, null);
   }
 });

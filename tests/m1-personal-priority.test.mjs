@@ -44,7 +44,7 @@ test("personal period uses explicit month/currency, clears missing data and reje
 
 test("scope refresh and failed-period retry retain the personal dashboard or the open customer view", async () => {
   for (const visible of [false, true]) {
-    const context = { personalAnalytics: visible, personalViewBeforeScopeRefresh: { current: false }, managementReturnQuery: { current: null }, queryState: { view: "CUSTOMERS", month: "2026-10", filter: "ALL", sortKey: "TEAM_DEPOSIT" },
+    const context = { personalAnalytics: visible, personalViewBeforeScopeRefresh: { current: false }, managementReturnQuery: { current: null }, managementCustomerGroup: { current: null }, queryState: { view: "CUSTOMERS", month: "2026-10", filter: "ALL", sortKey: "TEAM_DEPOSIT" },
       scopeControllerRef: { current: null }, controllerRef: { current: null }, generation: { current: 1 }, AbortController, scopeRetry: 0,
       changeAnalyticsQuery: (state, changes) => ({ ...state, ...changes }),
       supportAnalyticsClient: { query: async () => ({ scopeSummary: { mode: "PERSONAL", groups: [] } }) },
