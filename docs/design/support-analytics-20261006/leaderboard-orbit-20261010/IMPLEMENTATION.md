@@ -12,9 +12,15 @@ The scene keeps approved source coordinates in x181,y0,w1157,h556. V2 retains de
 
 ## Static and live regions
 
+### Approved grid and ring amendments — 2026-10-15
+
+The original image and raw comparison remain unchanged. The later approved six-column grid and green rings are checked separately: fixed three-pixel interior line bands and six bounded annuli, plus mandatory checks for all 36 cell boxes/borders and six ring boxes/borders/shadows. Every cell/ring and its ancestors must be fully visible. The table bottom edge and panel surfaces remain in the original pixel comparison. The partition is 281,918 original dynamic pixels, 65,484 amended pixels and 1,225,462 strictly compared pixels; bounds never grow from a diff.
+
+The current screenshot still fails: raw 244,995 changed pixels; after these two explicit amendments, 190,593. These figures do not certify the remaining approved control changes, generated glyphs or reconstructed texture. Independent review closed two checker gaps, not whole-page fidelity. The six desktop navigation labels now start at x69.667 (icons x25.667); the 1415/390px layouts retain their previous padding and have no page overflow. Evidence: [current capture and checks](../../../acceptance/support-rank-controls-20261014.md).
+
 ### Current readable typography and account geometry
 
-The current CSS SHA is `7b5890b8e953f480bafc7c29b9880d4fac04ac70ff6d91d243c3047d475bd707`. Desktop preview account portraits are52×52 at(23,912) in the1536×1024 target, with the name at x87; the390px layout retains36px portraits. Table headings, shared units, group labels and footer are14px, names/actions16px, while all parallel podium metrics remain22px/550/28px. The font family and data semantics are unchanged.
+The earlier typography repair CSS SHA was `7b5890b8e953f480bafc7c29b9880d4fac04ac70ff6d91d243c3047d475bd707`. Desktop preview account portraits are52×52 at(23,912) in the1536×1024 target, with the name at x87; the390px layout retains36px portraits. Table headings, shared units, group labels and footer are14px, names/actions16px, while all parallel podium metrics remain22px/550/28px. The font family and data semantics are unchanged.
 
 `visual-current-20261012/leaderboard-account-*` and `leaderboard-type-*` contain current-source browser screenshots and DOM readback for1536/1415/390px, long names, large values, both currencies, truncation titles and no whole-page horizontal overflow. An independent agent accepted these two narrow repairs without new P0/P1/P2 findings. The type screenshot SHA is `928178247f118ff22b9cb9b2f311c6855fdd157bc56f6ee13c725082bd402140`.
 

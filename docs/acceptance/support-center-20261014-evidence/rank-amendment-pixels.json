@@ -1,0 +1,1086 @@
+{
+  "at": "2026-10-14T16:03:00.751Z",
+  "scope": "source plus fixed approved grid and green rings; remaining approved controls and source font are not yet closed",
+  "verdict": "FAIL",
+  "raw": {
+    "total": 1572864,
+    "masked": 281918,
+    "static": 1290946,
+    "checked": 1290946,
+    "uncovered": 0,
+    "maximum": 255,
+    "changedPixels": 244995,
+    "changedChannels": 617603,
+    "firstDifferences": [
+      [
+        25,
+        18
+      ],
+      [
+        26,
+        18
+      ],
+      [
+        27,
+        18
+      ],
+      [
+        28,
+        18
+      ],
+      [
+        29,
+        18
+      ],
+      [
+        30,
+        18
+      ],
+      [
+        31,
+        18
+      ],
+      [
+        37,
+        18
+      ],
+      [
+        38,
+        18
+      ],
+      [
+        39,
+        18
+      ],
+      [
+        40,
+        18
+      ],
+      [
+        41,
+        18
+      ],
+      [
+        42,
+        18
+      ],
+      [
+        43,
+        18
+      ],
+      [
+        44,
+        18
+      ],
+      [
+        45,
+        18
+      ],
+      [
+        46,
+        18
+      ],
+      [
+        47,
+        18
+      ],
+      [
+        48,
+        18
+      ],
+      [
+        49,
+        18
+      ]
+    ]
+  },
+  "amended": {
+    "total": 1572864,
+    "masked": 347402,
+    "static": 1225462,
+    "checked": 1225462,
+    "uncovered": 0,
+    "maximum": 255,
+    "changedPixels": 190593,
+    "changedChannels": 469020,
+    "firstDifferences": [
+      [
+        25,
+        18
+      ],
+      [
+        26,
+        18
+      ],
+      [
+        27,
+        18
+      ],
+      [
+        28,
+        18
+      ],
+      [
+        29,
+        18
+      ],
+      [
+        30,
+        18
+      ],
+      [
+        31,
+        18
+      ],
+      [
+        37,
+        18
+      ],
+      [
+        38,
+        18
+      ],
+      [
+        39,
+        18
+      ],
+      [
+        40,
+        18
+      ],
+      [
+        41,
+        18
+      ],
+      [
+        42,
+        18
+      ],
+      [
+        43,
+        18
+      ],
+      [
+        44,
+        18
+      ],
+      [
+        45,
+        18
+      ],
+      [
+        46,
+        18
+      ],
+      [
+        47,
+        18
+      ],
+      [
+        48,
+        18
+      ],
+      [
+        49,
+        18
+      ]
+    ],
+    "dynamic": 281918,
+    "amended": 65484,
+    "geometryChecked": true
+  },
+  "geometry": {
+    "cells": [
+      {
+        "height": 46,
+        "left": {
+          "color": "rgb(212, 220, 230)",
+          "style": "none",
+          "width": 0
+        },
+        "top": {
+          "color": "rgb(212, 220, 230)",
+          "style": "none",
+          "width": 0
+        },
+        "visible": true,
+        "width": 105.01042175292967,
+        "x": 202.6666717529297,
+        "y": 592.6666870117188
+      },
+      {
+        "height": 46,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgb(212, 220, 230)",
+          "style": "none",
+          "width": 0
+        },
+        "visible": true,
+        "width": 367.5416870117187,
+        "x": 307.6770935058594,
+        "y": 592.6666870117188
+      },
+      {
+        "height": 46,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgb(212, 220, 230)",
+          "style": "none",
+          "width": 0
+        },
+        "visible": true,
+        "width": 223.14584350585935,
+        "x": 675.21875,
+        "y": 592.6666870117188
+      },
+      {
+        "height": 46,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgb(212, 220, 230)",
+          "style": "none",
+          "width": 0
+        },
+        "visible": true,
+        "width": 210.02084350585935,
+        "x": 898.3646240234375,
+        "y": 592.6666870117188
+      },
+      {
+        "height": 46,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgb(212, 220, 230)",
+          "style": "none",
+          "width": 0
+        },
+        "visible": true,
+        "width": 210.02084350585935,
+        "x": 1108.385498046875,
+        "y": 592.6666870117188
+      },
+      {
+        "height": 46,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgb(212, 220, 230)",
+          "style": "none",
+          "width": 0
+        },
+        "visible": true,
+        "width": 196.92709350585935,
+        "x": 1318.40625,
+        "y": 592.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgb(242, 243, 239)",
+          "style": "none",
+          "width": 0
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 105.01042175292967,
+        "x": 202.6666717529297,
+        "y": 638.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 367.5416870117187,
+        "x": 307.6770935058594,
+        "y": 638.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 223.14584350585935,
+        "x": 675.21875,
+        "y": 638.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 210.02084350585935,
+        "x": 898.3646240234375,
+        "y": 638.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 210.02084350585935,
+        "x": 1108.385498046875,
+        "y": 638.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 196.92709350585935,
+        "x": 1318.40625,
+        "y": 638.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgb(242, 243, 239)",
+          "style": "none",
+          "width": 0
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 105.01042175292967,
+        "x": 202.6666717529297,
+        "y": 686.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 367.5416870117187,
+        "x": 307.6770935058594,
+        "y": 686.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 223.14584350585935,
+        "x": 675.21875,
+        "y": 686.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 210.02084350585935,
+        "x": 898.3646240234375,
+        "y": 686.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 210.02084350585935,
+        "x": 1108.385498046875,
+        "y": 686.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 196.92709350585935,
+        "x": 1318.40625,
+        "y": 686.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgb(242, 243, 239)",
+          "style": "none",
+          "width": 0
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 105.01042175292967,
+        "x": 202.6666717529297,
+        "y": 734.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 367.5416870117187,
+        "x": 307.6770935058594,
+        "y": 734.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 223.14584350585935,
+        "x": 675.21875,
+        "y": 734.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 210.02084350585935,
+        "x": 898.3646240234375,
+        "y": 734.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 210.02084350585935,
+        "x": 1108.385498046875,
+        "y": 734.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 196.92709350585935,
+        "x": 1318.40625,
+        "y": 734.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgb(242, 243, 239)",
+          "style": "none",
+          "width": 0
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 105.01042175292967,
+        "x": 202.6666717529297,
+        "y": 782.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 367.5416870117187,
+        "x": 307.6770935058594,
+        "y": 782.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 223.14584350585935,
+        "x": 675.21875,
+        "y": 782.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 210.02084350585935,
+        "x": 898.3646240234375,
+        "y": 782.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 210.02084350585935,
+        "x": 1108.385498046875,
+        "y": 782.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 196.92709350585935,
+        "x": 1318.40625,
+        "y": 782.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgb(242, 243, 239)",
+          "style": "none",
+          "width": 0
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 105.01042175292967,
+        "x": 202.6666717529297,
+        "y": 830.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 367.5416870117187,
+        "x": 307.6770935058594,
+        "y": 830.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 223.14584350585935,
+        "x": 675.21875,
+        "y": 830.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 210.02084350585935,
+        "x": 898.3646240234375,
+        "y": 830.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 210.02084350585935,
+        "x": 1108.385498046875,
+        "y": 830.6666870117188
+      },
+      {
+        "height": 48,
+        "left": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "top": {
+          "color": "rgba(39, 50, 54, 0.5)",
+          "style": "solid",
+          "width": 0.666667
+        },
+        "visible": true,
+        "width": 196.92709350585935,
+        "x": 1318.40625,
+        "y": 830.6666870117188
+      }
+    ],
+    "columns": [
+      {
+        "height": 46,
+        "label": "排名",
+        "width": 105.01042175292967,
+        "x": 202.6666717529297,
+        "y": 592.6666870117188
+      },
+      {
+        "height": 46,
+        "label": "姓名、组名 / 排名变化",
+        "width": 367.5416870117187,
+        "x": 307.6770935058594,
+        "y": 592.6666870117188
+      },
+      {
+        "height": 46,
+        "label": "业绩额USDT · 2026.10",
+        "width": 223.14584350585935,
+        "x": 675.21875,
+        "y": 592.6666870117188
+      },
+      {
+        "height": 46,
+        "label": "首充人数人 · 2026.10",
+        "width": 210.02084350585935,
+        "x": 898.3646240234375,
+        "y": 592.6666870117188
+      },
+      {
+        "height": 46,
+        "label": "绑定客户数人 · 截至现在",
+        "width": 210.02084350585935,
+        "x": 1108.385498046875,
+        "y": 592.6666870117188
+      },
+      {
+        "height": 46,
+        "label": "操作",
+        "width": 196.92709350585935,
+        "x": 1318.40625,
+        "y": 592.6666870117188
+      }
+    ],
+    "frames": [
+      {
+        "borderColor": "rgb(196, 255, 54)",
+        "borderRadius": "50%",
+        "borderStyle": "solid",
+        "borderWidth": 2,
+        "height": 118,
+        "shadow": "rgba(196, 255, 54, 0.35) 0px 0px 8px 0px",
+        "visible": true,
+        "width": 118,
+        "x": 323.04168701171875,
+        "y": 189
+      },
+      {
+        "borderColor": "rgb(196, 255, 54)",
+        "borderRadius": "50%",
+        "borderStyle": "solid",
+        "borderWidth": 2,
+        "height": 108,
+        "shadow": "rgba(196, 255, 54, 0.35) 0px 0px 8px 0px",
+        "visible": true,
+        "width": 108,
+        "x": 607.8125,
+        "y": 198
+      },
+      {
+        "borderColor": "rgb(196, 255, 54)",
+        "borderRadius": "50%",
+        "borderStyle": "solid",
+        "borderWidth": 2,
+        "height": 108,
+        "shadow": "rgba(196, 255, 54, 0.35) 0px 0px 8px 0px",
+        "visible": true,
+        "width": 108,
+        "x": 870.96875,
+        "y": 198
+      },
+      {
+        "borderColor": "rgb(196, 255, 54)",
+        "borderRadius": "50%",
+        "borderStyle": "solid",
+        "borderWidth": 2,
+        "height": 108,
+        "shadow": "rgba(196, 255, 54, 0.35) 0px 0px 8px 0px",
+        "visible": true,
+        "width": 108,
+        "x": 1136.885498046875,
+        "y": 198
+      },
+      {
+        "borderColor": "rgb(196, 255, 54)",
+        "borderRadius": "50%",
+        "borderStyle": "solid",
+        "borderWidth": 2,
+        "height": 106,
+        "shadow": "rgba(196, 255, 54, 0.35) 0px 0px 8px 0px",
+        "visible": true,
+        "width": 106,
+        "x": 1379,
+        "y": 125.66667175292967
+      },
+      {
+        "borderColor": "rgb(196, 255, 54)",
+        "borderRadius": "50%",
+        "borderStyle": "solid",
+        "borderWidth": 2,
+        "height": 50,
+        "shadow": "rgba(196, 255, 54, 0.35) 0px 0px 8px 0px",
+        "visible": true,
+        "width": 50,
+        "x": 316.01043701171875,
+        "y": 781.6666870117188
+      }
+    ],
+    "nav": [
+      {
+        "icon": {
+          "height": 24,
+          "width": 24,
+          "x": 25.666667938232425,
+          "y": 128.5
+        },
+        "label": "工作台",
+        "text": {
+          "height": 22,
+          "width": 48,
+          "x": 69.66667175292969,
+          "y": 129.1666717529297
+        }
+      },
+      {
+        "icon": {
+          "height": 24,
+          "width": 24,
+          "x": 25.666667938232425,
+          "y": 190.5
+        },
+        "label": "客户列表",
+        "text": {
+          "height": 22,
+          "width": 64,
+          "x": 69.66667175292969,
+          "y": 191.1666717529297
+        }
+      },
+      {
+        "icon": {
+          "height": 24,
+          "width": 24,
+          "x": 25.666667938232425,
+          "y": 252.5
+        },
+        "label": "即时会话",
+        "text": {
+          "height": 22.000015258789062,
+          "width": 64,
+          "x": 69.66667175292969,
+          "y": 253.1666717529297
+        }
+      },
+      {
+        "icon": {
+          "height": 24,
+          "width": 24,
+          "x": 25.666667938232425,
+          "y": 314.5
+        },
+        "label": "业绩榜",
+        "text": {
+          "height": 22,
+          "width": 48,
+          "x": 69.66667175292969,
+          "y": 315.16668701171875
+        }
+      },
+      {
+        "icon": {
+          "height": 24,
+          "width": 24,
+          "x": 25.666667938232425,
+          "y": 376.5
+        },
+        "label": "分组看板",
+        "text": {
+          "height": 22,
+          "width": 64,
+          "x": 69.66667175292969,
+          "y": 377.1666870117187
+        }
+      },
+      {
+        "icon": {
+          "height": 24,
+          "width": 24,
+          "x": 25.666667938232425,
+          "y": 438.5
+        },
+        "label": "服务规则",
+        "text": {
+          "height": 22,
+          "width": 64,
+          "x": 69.66667175292969,
+          "y": 439.1666870117187
+        }
+      }
+    ],
+    "pageButtons": {
+      "height": 42,
+      "width": 310,
+      "x": 1185.3333740234375,
+      "y": 889.3333740234375
+    },
+    "pageSize": {
+      "height": 41,
+      "width": 154,
+      "x": 1011.3333740234376,
+      "y": 889.8333740234375
+    },
+    "pagination": {
+      "height": 62.66666793823242,
+      "width": 1314,
+      "x": 202,
+      "y": 879.3333740234375
+    },
+    "reduceMotion": true,
+    "rows": [
+      {
+        "height": 48,
+        "width": 1312.666748046875,
+        "x": 202.6666717529297,
+        "y": 638.6666870117188
+      },
+      {
+        "height": 48,
+        "width": 1312.666748046875,
+        "x": 202.6666717529297,
+        "y": 686.6666870117188
+      },
+      {
+        "height": 48,
+        "width": 1312.666748046875,
+        "x": 202.6666717529297,
+        "y": 734.6666870117188
+      },
+      {
+        "height": 48,
+        "width": 1312.666748046875,
+        "x": 202.6666717529297,
+        "y": 782.6666870117188
+      },
+      {
+        "height": 48,
+        "width": 1312.666748046875,
+        "x": 202.6666717529297,
+        "y": 830.6666870117188
+      }
+    ],
+    "table": {
+      "height": 286,
+      "width": 1312.666748046875,
+      "x": 202.6666717529297,
+      "y": 592.6666870117188
+    },
+    "viewport": {
+      "dpr": 1.0000000298023224,
+      "height": 1024,
+      "width": 1536
+    }
+  },
+  "snapshot": {
+    "app/components/domain-views/m-tabs/support-leaderboard.css": "34d39a9fa63b95077260708c58fa2b8e1b3b85c1a9be0d3a30f925dd4b06b009",
+    "tests/support-leaderboard-fidelity.mjs": "a2ad978530c70b54777f69ecf8a8b340e9064d8c20e2f2cfe714036eaf58035b",
+    "tests/support-leaderboard-fidelity.test.mjs": "a37e2249b9fb9f366e17017c4470a7b0a4a939472e31591c875f47e87f917d44",
+    "tests/support-leaderboard-runtime.mjs": "e8393097d2166cb327ec6c63d76511d3f79aa38a12dcc15e7a42e80ba2ef93ce"
+  }
+}

@@ -3,11 +3,35 @@ import { test } from "node:test";
 import { readFileSync } from "node:fs";
 import sharp from "sharp";
 import { decodeLosslessScreenshot, assertApprovedStaticPixels, approvedStaticRegions, approvedDynamicMasks, createApprovedDynamicMask, measureApprovedFullStaticPixels, assertApprovedFullStaticPixels } from "./support-leaderboard-fidelity.mjs";
+import { assertApprovedAmendmentGeometry, createApprovedAmendmentMask, measureApprovedAmendedPixels } from "./support-leaderboard-fidelity.mjs";
 
 function image(width = 8, height = 8) {
   return { info: { width, height, channels: 4 }, data: Buffer.from(Array.from({ length: width * height * 4 }, (_, i) => i % 4 === 3 ? 255 : (i * 17 + Math.floor(i / 32) * 23) % 251)) };
 }
 const region = [{ id: "material", rect: [2, 2, 4, 4] }];
+function amendedGeometry() {
+  const table={x:203,y:593,width:1312,height:286};let x=table.x;
+  const columns=[.08,.28,.17,.16,.16,.15].map((fraction,i)=>{const column={x,y:593,width:1312*fraction,height:46,label:["排名","姓名、组名 / 排名变化","业绩额","首充人数","绑定客户数","操作"][i]};x+=column.width;return column;});
+  const border=drawn=>({width:drawn?1:0,style:drawn?"solid":"none",color:"rgba(39, 50, 54, 0.5)"});
+  return {table,columns,rows:Array.from({length:5},(_,i)=>({...table,y:639+48*i,height:48})),cells:Array.from({length:36},(_,i)=>({...columns[i%6],y:i<6?593:639+Math.floor((i-6)/6)*48,height:i<6?46:48,left:border(i%6>0),top:border(i>=6),visible:true})),frames:[[323,189,118],[608,198,108],[871,198,108],[1137,198,108],[1379,126,106],[316,782,50]].map(([x,y,width])=>({x,y,width,height:width,borderWidth:2,borderStyle:"solid",borderColor:"rgb(196, 255, 54)",borderRadius:"50%",shadow:"rgba(196, 255, 54, 0.35) 0px 0px 8px 0px",visible:true}))};
+}
+test("approved grid and ring changes retain the raw failure and require independent geometry",()=>{
+  const reference={info:{width:1536,height:1024,channels:4},data:Buffer.alloc(1536*1024*4,128)};
+  const actual={info:reference.info,data:Buffer.from(reference.data)};
+  for(const [x,y] of [[525,700],[675,700],[662,198]])actual.data[(y*1536+x)*4]=0;
+  assert(measureApprovedFullStaticPixels(reference,actual).changedPixels>0);
+  const report=measureApprovedAmendedPixels(reference,actual,amendedGeometry());
+  assert.equal(report.changedPixels,0);assert.equal(report.total,report.static+report.dynamic+report.amended);
+  assert.equal(report.amended,65484);assert(report.static>1200000);
+  assert.throws(()=>measureApprovedAmendedPixels(reference,actual),/geometry is required/);
+  for(const mutate of [g=>g.columns.splice(1,0,g.columns[1]),g=>g.columns[1].x+=8,g=>g.columns[1].label="当前组",g=>g.cells[7].x+=8,g=>g.cells[7].left.width=0,g=>g.cells[7].left.color="rgb(0, 0, 0)",g=>g.cells[7].top.style="none",g=>g.cells[7].visible=false,g=>g.frames[1].borderColor="rgb(180, 190, 170)",g=>g.frames[1].width+=6,g=>g.frames[1].borderWidth=0,g=>g.frames[1].shadow="none",g=>g.frames[1].visible=false]){const geometry=amendedGeometry();mutate(geometry);assert.throws(()=>assertApprovedAmendmentGeometry(geometry));}
+});
+test("amended regions cannot hide a bad background pixel, an outer edge, or the whole table",()=>{
+  const mask=createApprovedAmendmentMask(1536,1024);
+  for(const [x,y] of [[230,620],[720,720],[210,700],[202,593],[1515,700],[500,878],[500,879],[1338,61],[240,523],[382,172]])assert.notEqual(mask[y*1536+x],2,`${x},${y} remains outside approved changes`);
+  const reference={info:{width:1536,height:1024,channels:4},data:Buffer.alloc(1536*1024*4,128)};
+  for(const [x,y] of [[720,720],[202,593],[1515,700],[500,878],[500,879],[1338,61],[240,523],[382,172]]){const actual={info:reference.info,data:Buffer.from(reference.data)};actual.data[(y*1536+x)*4]=0;assert.equal(measureApprovedAmendedPixels(reference,actual,amendedGeometry()).changedPixels,1,`${x},${y} corruption must remain visible`);}
+});
 test("pixel input rejects a JPEG saved with a PNG filename before comparing colors", async () => {
   const original = image();
   const png = await sharp(original.data, { raw: original.info }).png().toBuffer();
