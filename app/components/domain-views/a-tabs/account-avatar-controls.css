@@ -16,8 +16,11 @@
 .dkpage .account-avatar-modes label { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; cursor: pointer; }
 .dkpage .account-avatar-modes input { width: 16px; height: 16px; margin: 0; flex: none; accent-color: var(--brand); }
 .dkpage .account-avatar-controls:disabled .account-avatar-modes label { cursor: default; }
-.dkpage .account-avatar-preview { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px 24px; }
-.dkpage .account-avatar-preview > div { min-width: 0; display: grid; gap: 8px; }
+.dkpage .account-avatar-summary { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px 24px; }
+.dkpage .account-avatar-summary > p { flex: 1 1 150px; min-width: 0; }
+.dkpage .account-avatar-preview { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: flex-start; gap: 16px; max-width: 100%; min-width: 0; margin-left: auto; }
+.dkpage .account-avatar-preview > div { width: 64px; max-width: 100%; min-width: 0; display: grid; gap: 8px; }
+.dkpage .account-avatar-preview .support-avatar { flex-wrap: wrap; max-width: 100%; justify-content: center; }
 .dkpage .account-avatar-controls input[type="file"] { width: 100%; min-width: 0; max-width: 100%; min-height: 40px; font: inherit; }
 .dkpage .account-avatar-controls input[type="file"]::file-selector-button { min-height: 40px; margin-right: 8px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface-2); color: var(--ink); font: inherit; cursor: pointer; }
 .dkpage .account-avatar-controls .l-btn,

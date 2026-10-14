@@ -172,10 +172,16 @@ test("real picker persists default intent and retries original gender/key after 
   const changed = [], blocked = [], props = { name: "客服", gender: "FEMALE", allowDefault: true, onChange: value => changed.push(value), onBlocking: value => blocked.push(value) };
   const first = f.component(picker, props); let tree = first.render(); tree = first.render();
   assert.equal(tree.props.className, "account-avatar-controls", "The real picker root owns the local typography scope");
+  const summary = nodes(tree, node => node.props?.className === "account-avatar-summary")[0];
+  assert.equal(summary.props.children[0].type, "p", "Explanation precedes the same-level preview group");
+  assert.equal(nodes(summary, node => node.type === "input").length, 0, "Upload remains outside the summary row");
   f.queue.push(new Error("unknown")); button(tree, "按所选性别准备默认头像").props.onClick(); await flush();
   assert.equal(f.requests.length, 1); const original = f.requests[0]; first.dispose();
   const second = f.component(picker, { ...props, gender: "MALE" }); second.render(); tree = second.render(); f.queue.push(json(prepared())); button(tree, "重试获取默认头像").props.onClick(); await flush();
   assert.equal(f.requests[1].init.body, original.init.body); assert.equal(new Headers(f.requests[1].init.headers).get("Idempotency-Key"), new Headers(original.init.headers).get("Idempotency-Key")); assert.equal(changed.at(-1), ID);
+  const previews = nodes(second.render(), node => node.props?.className === "account-avatar-preview")[0];
+  assert.equal(nodes(previews, node => node.type === "SupportAvatar" && node.props.size === 64).length, 2, "Prepared state preserves both current and new 64px previews");
+  assert.deepEqual(nodes(previews, node => node.type === "p").map(node => node.props.children), ["当前头像", "新头像"]);
   tree = second.render(); f.queue.push(new Error("cancel unknown")); button(tree, "取消新头像").props.onClick(); await flush(); tree = second.render(); f.queue.push(json(prepared("admin", "CANCELLED"))); button(tree, "重试取消头像").props.onClick(); await flush();
   assert.equal(new Headers(f.requests[2].init.headers).get("Idempotency-Key"), new Headers(f.requests[3].init.headers).get("Idempotency-Key")); assert.equal(changed.at(-1), undefined); assert.equal(blocked.at(-1), false); second.dispose();
 });

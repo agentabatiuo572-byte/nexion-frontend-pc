@@ -13,6 +13,7 @@ const require = createRequire(path.join(fe, "package.json"));
 const ts = require("typescript");
 const { chromium } = require("@playwright/test");
 const relative = "app/components/domain-views/m-tabs/hd-ui.tsx";
+const avatarRelative = "app/components/domain-views/m-tabs/support-avatar.tsx";
 const hdSourcePath = path.join(fs.existsSync(path.join(sourceRoot, relative)) ? sourceRoot : fe, relative);
 const hdSource = fs.readFileSync(hdSourcePath, "utf8");
 const analyticsSource = fs.readFileSync(path.join(fe, "app/components/domain-views/m-tabs/m1-analytics-workbench.tsx"), "utf8");
@@ -65,12 +66,16 @@ const modules = {
   "@/lib/admin/glossary-match": compile(fs.readFileSync(path.join(fe, "lib/admin/glossary-match.ts"), "utf8")),
   "./actual-gloss": compile(fs.readFileSync(path.join(fe, "app/components/kit/gloss.tsx"), "utf8")),
   "./actual-brief": compile('import {useState,useId,isValidElement} from "react";import {AutoGloss} from "./actual-gloss";\n' + declarations(designSource, ["plainText", "compactText", "buildOperatorBrief", "OperatorBriefBlock"])),
-  "./actual-modal": compile('import {useRef,useEffect,useId} from "react";import {Icon} from "../design-kit";\n' + declarations(designSource, ["Modal"])),
+  "./actual-modal": compile('import {useRef,useEffect,useId} from "react";import {Icon} from "../design-kit";\n' + declarations(designSource, ["Modal", "Drawer"])),
+  "./actual-support-avatar": compile(fs.readFileSync(path.join(fs.existsSync(path.join(sourceRoot, avatarRelative)) ? sourceRoot : fe, avatarRelative), "utf8")),
+  "@/lib/admin/account-avatar-contract": compile(fs.readFileSync(path.join(fe, "lib/admin/account-avatar-contract.ts"), "utf8")),
+  "@/lib/store/admin-auth": "exports.useAdminAuth=select=>select({authEpoch:1});",
+  "@/lib/admin/error-messages": "exports.guardedFetch=async path=>{window.avatarFetches.push(path);return new Response(null,{status:503});};",
   ...Object.fromEntries(importedCss.map(css => [css.name, "module.exports={};"])),
 };
 const entry = `
 const React=require("react"), {createRoot}=require("react-dom/client"), {flushSync}=require("react-dom");
-const {HDSelect}=require("./hd-ui"), {AnalyticsSelect}=require("./actual-wrapper"), {Modal}=require("./actual-modal"), {OperatorBriefBlock}=require("./actual-brief");
+const {HDSelect}=require("./hd-ui"), {AnalyticsSelect}=require("./actual-wrapper"), {Modal,Drawer}=require("./actual-modal"), {OperatorBriefBlock}=require("./actual-brief"), {SupportAvatar}=require("./actual-support-avatar");
 let root;
 document.addEventListener("keydown",event=>{if(event.key==="Tab")queueMicrotask(()=>window.trace.keys.push({key:event.key,prevented:event.defaultPrevented}));},true);
 window.mount=(config={})=>{
@@ -78,9 +83,16 @@ window.mount=(config={})=>{
   document.documentElement.dataset.theme=config.theme||"dark";
   document.getElementById("root").className=config.domain==="m"?"dkpage mdom sa-workbench":config.domain==="m2"?"dkpage mdom":config.domain==="fallback"?"":"dkpage adom";
   window.trace={changes:[],escapes:0,keys:[],captures:0};
+  window.avatarFetches=[];
   function App(){
     const [value,setValue]=React.useState(config.value||"b");
     const [show,setShow]=React.useState(true);
+    if(config.avatarPreview){
+      const preview=(title,name,path)=>React.createElement("div",null,React.createElement("p",null,title),React.createElement(SupportAvatar,{name,path,size:64}),title==="新头像"?React.createElement("small",null,"尚未保存到账号"):null);
+      return React.createElement(Drawer,{title:"账号头像",onClose:()=>{}},React.createElement("fieldset",{className:"account-avatar-controls"},React.createElement("legend",null,"账号头像"),
+        React.createElement("div",{className:"account-avatar-summary"},React.createElement("p",null,"新头像随账号资料提交后生效。未保存前，原头像保持不变。"),React.createElement("div",{className:"account-avatar-preview"},preview("当前头像","当前客服","/api/admin/platform/accounts/99/avatar"),preview("新头像","新客服","/api/admin/platform/accounts/avatar-assets/12345678-1234-1234-1234-123456789012"))),
+        React.createElement("label",{className:"account-avatar-field"},"选择 JPG / PNG 头像",React.createElement("input",{type:"file",accept:"image/jpeg,image/png"}))));
+    }
     const Select=config.wrapper?AnalyticsSelect:HDSelect;
     const select=React.createElement(Select,{label:"原统计筛选",value,placeholder:"请选择",width:config.width||200,options:config.empty?[]:config.options||[{value:"a",label:"第一项"},{value:"b",label:"第二项"},{value:"c",label:"第三项"}],onChange:v=>{window.trace.changes.push(v);setValue(v);}});
     const content=React.createElement("div",{style:{minHeight:360},onKeyDownCapture:e=>{if(config.prevent&&e.key===config.prevent){window.trace.captures++;e.preventDefault();}},onKeyDown:e=>window.trace.keys.push({key:e.key,prevented:e.defaultPrevented})},
@@ -476,7 +488,36 @@ for (const theme of ["dark", "light"]) for (const [scene, config] of [["A1", { d
   });
 }
 
-// Typography fixture only: real house Modal/OperatorBriefBlock/AutoGloss, no login or HTTP.
+// Account UI fixtures: real house components, no login or external HTTP.
+test("avatar preview failures keep both 64px placeholders and reachable retries inside 320/390 drawers", async () => {
+  const relative = "app/components/domain-views/a-tabs/account-avatar-controls.css";
+  const css = fs.readFileSync(path.join(fs.existsSync(path.join(sourceRoot, relative)) ? sourceRoot : fe, relative), "utf8");
+  const style = await page.addStyleTag({ content: css });
+  try {
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.evaluate(() => window.mount({ domain: "a", avatarPreview: true }));
+      await page.waitForFunction(() => document.querySelectorAll(".account-avatar-preview .support-avatar button").length === 2);
+      const geometry = await page.locator(".drawer-b").evaluate(body => {
+        const parent = body.getBoundingClientRect();
+        return { client: body.clientWidth, scroll: body.scrollWidth, controls: [...body.querySelectorAll(".account-avatar-preview > div,.support-avatar,.support-avatar > span,.support-avatar button,input[type=file]")].map(element => {
+          const rect = element.getBoundingClientRect();
+          return { tag: element.tagName, width: rect.width, inside: rect.left >= parent.left - 1 && rect.right <= parent.right + 1, clip: element.scrollWidth > element.clientWidth + 1 };
+        }) };
+      });
+      assert.ok(geometry.scroll <= geometry.client + 1, `${width}px drawer must not scroll horizontally`);
+      assert.ok(geometry.controls.every(control => control.inside && !control.clip), JSON.stringify({ width, geometry }));
+      assert.equal(geometry.controls.filter(control => control.tag === "SPAN" && Math.abs(control.width - 64) < 1).length, 4, JSON.stringify({ width, geometry }));
+      for (const name of ["重试当前客服头像", "重试新客服头像"]) {
+        const button = page.getByRole("button", { name, exact: true }), requests = await page.evaluate(() => window.avatarFetches.length);
+        await button.click();
+        await page.waitForFunction(previous => window.avatarFetches.length === previous + 1, requests);
+        await page.waitForFunction(() => document.querySelectorAll(".account-avatar-preview .support-avatar button").length === 2);
+      }
+    }
+  } finally { await style.evaluate(element => element.remove()); await page.setViewportSize({ width: 1280, height: 720 }); }
+});
+
 for (const theme of ["dark", "light"]) {
   test(`avatar typography ${theme}: unique actual brief marker, scoped reason fonts and unrelated-confirm counterexamples`, async () => {
     const relative = "app/components/domain-views/a-tabs/account-avatar-controls.css";
@@ -494,7 +535,7 @@ for (const theme of ["dark", "light"]) {
       assert.equal(await page.locator(".modal:has(.self-avatar-confirm-detail)").count(), 1);
       assert.deepEqual(await sample(), { reason: "14px", "reason-hint": "14px", "confirm-submit": "14px" });
       assert.equal(await page.locator('label[for="reason"]').evaluate(element => getComputedStyle(element).fontSize), "14px");
-      assert.deepEqual(await page.evaluate(() => Object.fromEntries(["avatar-body", "avatar-expiry", "avatar-file", "avatar-prepare"].map(id => [id, getComputedStyle(document.getElementById(id)).fontSize]))), { "avatar-body": "16px", "avatar-expiry": "14px", "avatar-file": "14px", "avatar-prepare": "14px" });
+      assert.deepEqual(await page.evaluate(() => Object.fromEntries(["avatar-body", "avatar-expiry", "avatar-file", "avatar-prepare"].map(id => [id, getComputedStyle(document.getElementById(id)).fontSize]))), { "avatar-body": "13px", "avatar-expiry": "13px", "avatar-file": "14px", "avatar-prepare": "14px" });
       await mount({ domain: "a", theme, modal: true, avatarConfirmation: "other" });
       const otherA = await sample();
       await style.evaluate(element => element.textContent = "");
