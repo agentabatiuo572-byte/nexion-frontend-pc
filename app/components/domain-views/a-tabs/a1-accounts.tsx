@@ -1113,7 +1113,7 @@ function NewAccountDrawer({
   return (
     <Drawer
       title="新建运营账号"
-      sub="① 登录资料 → ② 初始角色 → ③ 首次登录 → 操作理由"
+      sub={<ol className="account-profile-steps" aria-label="账号创建步骤">{["登录资料", "初始角色", "首次登录", "操作理由"].map((title, index) => <li key={title}><span className="account-profile-step-number" aria-hidden="true">{index + 1}</span>{title}</li>)}</ol>}
       onClose={onClose}
       footer={
         <div style={{ padding: "10px 16px 12px", borderTop: "1px solid var(--border)" }}>
@@ -1143,7 +1143,7 @@ function NewAccountDrawer({
       }
     >
       <fieldset className="account-profile-form" disabled={disabled} style={{border:0,padding:0,margin:0}}>
-      <div style={{ fontSize: 14, fontWeight: 500, color: "var(--ink-2)", marginBottom: 8 }}>① 登录资料</div>
+      <h3 className="account-profile-section-title"><span className="account-profile-step-number" aria-hidden="true">1</span>登录资料</h3>
       <div className="account-profile-fields">
         <label style={{ fontSize: 14, color: "var(--ink-3)" }}>
           登录名 *
@@ -1196,7 +1196,7 @@ function NewAccountDrawer({
       </fieldset>}
       {!useDefaultAvatar && <AccountAvatarPicker name={displayName} disabled={disabled} onChange={setAvatarAssetId} onBlocking={setAvatarBlocking}/>}
       {avatarBlocking&&<p className="account-avatar-feedback" role="status">新头像尚未上传成功；上传或取消新头像后可继续创建。</p>}
-      <div style={{ fontSize: 14, fontWeight: 500, color: "var(--ink-2)", marginBottom: 8 }}>② 初始角色(可暂不分配)</div>
+      <h3 className="account-profile-section-title"><span className="account-profile-step-number" aria-hidden="true">2</span>初始角色(可暂不分配)</h3>
       <div className="account-initial-roles">
         <label className="l-btn" style={{ justifyContent: "flex-start", padding: "10px 12px", background: role === "" ? "var(--a-ac-soft)" : "var(--surface-2)", color: role === "" ? "var(--a-ac)" : "var(--ink-2)", cursor: recoveryMode ? "not-allowed" : "pointer" }}>
           <input type="radio" name="operator-role" value="" checked={role === ""} disabled={recoveryMode} onChange={() => setRole("")} style={{ accentColor: "var(--a-ac)" }} />
@@ -1231,7 +1231,7 @@ function NewAccountDrawer({
       </div>
 
       {role === "support" && <p className="account-profile-note">仅服务本人绑定客户，主管资格需另行授予。</p>}
-      <div style={{ fontSize: 14, fontWeight: 500, color: "var(--ink-2)", marginBottom: 8 }}>③ 首次登录</div>
+      <h3 className="account-profile-section-title"><span className="account-profile-step-number" aria-hidden="true">3</span>首次登录</h3>
       <div className="atint" style={{ marginBottom: 10, fontSize: 13, lineHeight: 1.5 }}>
         创建后将显示一次 20 位临时密码，请妥善交给账号持有人。
       </div>
@@ -1240,16 +1240,18 @@ function NewAccountDrawer({
         按所选角色开通权限；首次登录须修改密码。
       </div>
 
-      <label style={{ fontSize: 14, color: "var(--ink-3)" }}>
-        操作理由 *(必填 · 写入审计)
+      <h3 id="account-create-reason-title" className="account-profile-section-title"><span className="account-profile-step-number" aria-hidden="true">4</span>操作理由（必填 · 写入审计）</h3>
+      <div>
         <textarea
+          aria-labelledby="account-create-reason-title"
+          aria-required="true"
           rows={2}
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           placeholder="为什么开这个账号(入职 / 换岗 / 外审…)"
           style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "inherit", fontSize: 14, resize: "vertical" }}
         />
-      </label>
+      </div>
       </fieldset>
     </Drawer>
   );

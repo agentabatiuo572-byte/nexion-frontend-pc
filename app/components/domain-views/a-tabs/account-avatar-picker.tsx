@@ -100,14 +100,14 @@ export function AccountAvatarPicker({ account, name, disabled, scope = "admin", 
     finally { if (active(token)) setBusy(false); }
   }
   return <fieldset className="account-avatar-controls" disabled={disabled || busy}><legend>账号头像</legend>
-    <div className="account-avatar-summary">
-      <p>{scope === "self" ? "保存本人头像需确认并填写理由。" : "新头像随账号资料提交后生效。"}未保存前，原头像保持不变。</p>
+    <p>{scope === "self" ? "保存本人头像需确认并填写理由。" : "新头像随账号资料提交后生效。"}未保存前，原头像保持不变。</p>
+    <div className="account-avatar-row">
+      {canUpload ? <label className="account-avatar-field">选择 JPG / PNG 头像<input type="file" accept="image/jpeg,image/png" title={file?.name} disabled={Boolean(draft?.asset || draft?.kind === "DEFAULT" || draft?.cancelKey || expired)} onChange={e => { void choose(e.target.files?.[0]); e.target.value = ""; }} />{file && <small title={file.name}>{file.name}</small>}</label> : <p>需要超管权限，现有头像只读。</p>}
       <div className="account-avatar-preview"><div><p>当前头像</p><SupportAvatar name={name || "运营账号"} path={currentPath ?? (account?.avatarAssetId ? `/api/admin/platform/accounts/${account.id}/avatar` : undefined)} version={currentVersion ?? account?.avatarVersion ?? undefined} size={64} /></div>
         {(draft?.asset || url) && <div><p>新头像</p>{draft?.asset ? <SupportAvatar name={name || "运营账号"} path={draft.asset.previewRef} size={64} /> : <img src={url} alt="待上传账号头像" width={64} height={64} style={{ objectFit: "cover", borderRadius: "50%" }} />}<small>尚未保存到账号</small></div>}
       </div>
     </div>
-    {canUpload ? <><label className="account-avatar-field">选择 JPG / PNG 头像<input type="file" accept="image/jpeg,image/png" disabled={Boolean(draft?.asset || draft?.kind === "DEFAULT" || draft?.cancelKey || expired)} onChange={e => { void choose(e.target.files?.[0]); e.target.value = ""; }} /></label>
-      {allowDefault && !draft && !invalidSelection && <button type="button" className="l-btn" onClick={() => void prepare(true)}>按所选性别准备默认头像</button>}</> : <p>需要超管权限，现有头像只读。</p>}
+    {canUpload && allowDefault && !draft && !invalidSelection && <button type="button" className="l-btn" onClick={() => void prepare(true)}>按所选性别准备默认头像</button>}
     {draft && <div className="account-avatar-actions">{!draft.asset && <button type="button" className="l-btn" disabled={expired || draft.kind === "UPLOAD" && !file} onClick={() => void prepare()}>{busy ? "正在准备…" : draft.kind === "DEFAULT" ? "重试获取默认头像" : "上传或重试"}</button>}
       <button type="button" className="l-btn" disabled={expired || Boolean(!draft.asset && avatarDrafts.list().some(row => row.commandKey === draft.commandKey))} onClick={() => void clear()}>{draft.cancelKey ? "重试取消头像" : "取消新头像"}</button>
       {draft.kind === "UPLOAD" && !file && !draft.asset && <p>上传结果尚未确认，请选择首次上传的同一张图片后重试。</p>}
