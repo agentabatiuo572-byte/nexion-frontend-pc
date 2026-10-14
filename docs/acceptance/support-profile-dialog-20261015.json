@@ -1,0 +1,216 @@
+{
+  "scope": "Profile tag/note layout and nested dialog Escape ownership; existing account and customer, no message/tag/note mutations",
+  "testedHead": "41629931a466cbafbdfba2c9811a314f0f6f9d2f",
+  "tree": "440335e9e18be0d422596ca90415aa8677f1509b",
+  "sourceSHA256": {
+    "app/components/domain-views/design-kit.tsx": "b223cd28e27ec03eb7db3bc8dcd4b836e047a96a3d07dd15424e389cdb432648",
+    "app/components/domain-views/m-tabs/m3-customer-profile.tsx": "33ba21e0b87506371d49d969998d750013193239f7cd89f282f79c2d621624ce",
+    "app/components/domain-views/m-tabs/m3-customer-profile.css": "ef0f5fe04cf715d93c78b79d21e05173e503bb85e62216186b30ed06f3eca86b",
+    "tests/support-content-tools-picker.test.mjs": "ae28232b041a88712c43b186075270d753f3aaabb2c231c7b386051277f6247e"
+  },
+  "targeted": {
+    "seconds": 2.5835548,
+    "passed": 10,
+    "includes": [
+      "Desktop/narrow editor separation under actual chat CSS",
+      "Modal/Drawer four nested combinations, stable parent callbacks, focus/draft retention",
+      "Busy inner Modal blocks Escape for both layers"
+    ],
+    "failed": 0,
+    "command": "node --test tests/support-content-tools-picker.test.mjs"
+  },
+  "full": {
+    "exitCode": 0,
+    "passed": 98,
+    "clean": true,
+    "productionBuild": "PASS",
+    "unchanged": true,
+    "resultSHA256": "97e3913c2b10b19c3f3c3976fe215256e2fa0a1b670ef5b97b9f2e27ea6ed627",
+    "treeMoved": false,
+    "seconds": 121.8797289
+  },
+  "regressions": [
+    {
+      "seconds": 0.892188,
+      "baseline": "f0bcfde",
+      "independentOldSourceRun": "FAIL as expected",
+      "failure": "note label does not start below add-tag row"
+    },
+    {
+      "resolvedAt": "00ecf758",
+      "baseline": "1c6fcff",
+      "buttonHeightPx": 44,
+      "failure": "chat-specific CSS reduced narrow buttons to 32px"
+    },
+    {
+      "resolvedAt": "41629931a466cbafbdfba2c9811a314f0f6f9d2f",
+      "baseline": "00ecf758",
+      "originalFailurePreserved": true,
+      "failure": "one Escape closed both real M1 dialogs; stable-callback Modal/Modal regression also failed"
+    }
+  ],
+  "runtime": {
+    "actorId": 1456,
+    "role": "SUPERVISOR plus SERVICE",
+    "customerId": 2005,
+    "groupId": 410,
+    "singleDialog": {
+      "dialogsAfterEscape": 0,
+      "focus": "管理",
+      "customerLink": "/service/customers/2005?conversationNo=CV-OUT-20261013145107836",
+      "geometry": {
+        "dialog": {
+          "bottom": 676.7916679382324,
+          "height": 633.59375,
+          "right": 980,
+          "width": 680,
+          "x": 300,
+          "y": 43.19791793823242
+        },
+        "noteGap": 16.00000762939453,
+        "overflow": false,
+        "rows": [
+          {
+            "button": {
+              "bottom": 467.0416793823242,
+              "height": 32.708335876464844,
+              "right": 949.3333358764648,
+              "width": 71.33333587646484,
+              "x": 878,
+              "y": 434.3333435058594
+            },
+            "input": {
+              "bottom": 467.0416679382324,
+              "height": 39.47916793823242,
+              "right": 866.0000610351562,
+              "width": 545.3333740234375,
+              "x": 320.66668701171875,
+              "y": 427.5625
+            },
+            "label": {
+              "bottom": 467.0416793823242,
+              "height": 69.17708587646484,
+              "right": 866.0000610351562,
+              "width": 545.3333740234375,
+              "x": 320.66668701171875,
+              "y": 397.8645935058594
+            }
+          },
+          {
+            "button": {
+              "bottom": 592.7395858764648,
+              "height": 32.708335876464844,
+              "right": 949.3333358764648,
+              "width": 71.33333587646484,
+              "x": 878,
+              "y": 560.03125
+            },
+            "input": {
+              "bottom": 592.7396240234375,
+              "height": 80,
+              "right": 866.0000610351562,
+              "width": 545.3333740234375,
+              "x": 320.66668701171875,
+              "y": 512.7396240234375
+            },
+            "label": {
+              "bottom": 592.7396087646484,
+              "height": 109.69792175292967,
+              "right": 866.0000610351562,
+              "width": 545.3333740234375,
+              "x": 320.66668701171875,
+              "y": 483.0416870117187
+            }
+          }
+        ],
+        "viewport": {
+          "height": 720,
+          "width": 1280
+        }
+      }
+    },
+    "doubleDialog": {
+      "before": 2,
+      "afterFirst": {
+        "dialogs": 1,
+        "outerVisible": true,
+        "innerHidden": true,
+        "focus": "管理",
+        "customerLink": "/service/customers/2005"
+      },
+      "afterSecond": {
+        "dialogs": 0,
+        "focus": "客户资料与记录",
+        "search": "U00002005",
+        "customerRowCount": 1
+      }
+    },
+    "narrowLayout": {
+      "viewport": {
+        "height": 844,
+        "width": 390
+      },
+      "overflow": false,
+      "testedHead": "00ecf758389ab3b8a07b67d991405386837f41e4",
+      "noteGapPx": 16.000030517578125,
+      "buttonHeightsPx": [
+        44,
+        44
+      ],
+      "sourceUnchangedAtFinal": true
+    },
+    "priorReadOnlySteps": [
+      {
+        "step": "close",
+        "focus": "管理",
+        "customer": true,
+        "href": "/service/customers/2005?conversationNo=CV-OUT-20261013145107836"
+      },
+      {
+        "step": "escape",
+        "focus": "管理",
+        "customer": true,
+        "editorHidden": true
+      },
+      {
+        "step": "reload-and-reopen",
+        "customer": true,
+        "focus": "标签与内部备注",
+        "systemTagsReadOnly": true,
+        "emptyTag": true,
+        "emptyNote": true,
+        "addDisabled": true,
+        "saveDisabled": true
+      }
+    ],
+    "console": {
+      "from": "2026-10-14T19:47:22.36Z",
+      "to": "2026-10-14T19:48:40.345Z",
+      "errors": [],
+      "limit": 100
+    }
+  },
+  "independentReview": {
+    "findings": [],
+    "scope": "Source review, old-source red regression, desktop/narrow screenshots and final M1/M3 interaction evidence",
+    "agent": "rank_amendment_review_1014"
+  },
+  "resources": {
+    "newEnvironment": false,
+    "financialActions": false,
+    "newAccounts": false,
+    "afterBytes": 1600619695,
+    "seconds": 80.526344,
+    "beforeBytes": 1600569593,
+    "growthBytes": 50102,
+    "newGrants": false,
+    "status": "REQUESTED_STOP"
+  },
+  "limits": [
+    "This is scoped UI acceptance, not whole-task acceptance.",
+    "No tag/note save or real customer message-chain test was performed in this window.",
+    "390px layout is from 00ecf758; the final source changes only Escape ownership and keeps the layout source identical.",
+    "Global complete ranking coverage, canonical fresh initialization and whole-image pixel comparison remain unverified or failed."
+  ],
+  "wholeTask": "NOT_COMPLETE"
+}
