@@ -15,6 +15,7 @@ import { SupportAvatar } from "./support-avatar";
 import { compactSupportBoardValue } from "./support-leaderboard";
 import type { MCtx } from "./types";
 import "./m1-analytics-workbench.css";
+import "./m1-personal-priority.css";
 
 type Permission = "agent" | "supervisor" | "superadmin";
 type Count = SupportAnalyticsResponse["selectedCurrent"]["firstConfirmed"];
@@ -26,6 +27,7 @@ const DATASETS: Array<{ value: SupportAnalyticsView; label: string }> = [{ value
 const BASIS_OPTIONS: Array<{ value: Basis; label: string }> = [{ value: "CURRENT_CUSTOMER_HISTORY", label: "当前客户" }, { value: "PERIOD_EVENT", label: "期间业绩" }, { value: "CURRENT_ASSET", label: "当前设备" }];
 const FIRST_OPTIONS: Array<{ value: NonNullable<SupportAnalyticsQuery["firstState"]>; label: string }> = [{ value: "ALL", label: "全部首充状态" }, { value: "CONFIRMED", label: "已首充" }, { value: "NONE", label: "未首充" }, { value: "UNKNOWN", label: "历史待核实" }];
 const FILTER_OPTIONS: Array<{ value: NonNullable<SupportAnalyticsQuery["filter"]>; label: string }> = [{ value: "ALL", label: "全部服务状态" }, { value: "WINDOW_ACTIVE", label: "窗口活跃" }, { value: "WAITING_REPLY", label: "待回复" }, { value: "DUE", label: "待维护" }, { value: "FIRST_CONTACT", label: "首次待联系" }, { value: "DORMANT", label: "沉睡" }, { value: "UNKNOWN", label: "状态待核实" }, { value: "STOPPED", label: "暂停维护" }];
+const PERSONAL_FILTER_OPTIONS = [...FILTER_OPTIONS, { value: "ACTIVE" as const, label: "当前活跃" }, { value: "TODO" as const, label: "全部待办" }];
 const SORT_OPTIONS: Record<SupportAnalyticsView, Array<{ value: NonNullable<SupportAnalyticsQuery["sortKey"]>; label: string }>> = {
   OVERVIEW: [{ value: "LAST_ACTIVE_AT", label: "最近活动" }],
   AGENTS: [{ value: "BOUND_CUSTOMER_COUNT", label: "当前客户" }, { value: "ACTIVE_CUSTOMER_COUNT", label: "窗口活跃" }, { value: "FIRST_CONFIRMED_CUSTOMER_COUNT", label: "已首充客户" }, { value: "DEVICE_COUNT", label: "当前设备" }, { value: "PERSONAL_DEPOSIT", label: "客户累计充值" }],
@@ -89,12 +91,12 @@ export function nextAnalyticsPage(state: AnalyticsQueryState, data: SupportAnaly
   if (!Number.isSafeInteger(pageNum) || pageNum < 1 || Math.abs(pageNum - state.pageNum) !== 1 || data.versionState !== "READY" || !data.queryVersion || pageNum > state.pageNum && !data.canContinue) return null;
   return { ...state, pageNum, expectedVersion: data.queryVersion };
 }
-function activeAnalyticsConditions(state: AnalyticsQueryState, groups: SupportAnalyticsResponse["scopeSummary"]["groups"]) {
+function activeAnalyticsConditions(state: AnalyticsQueryState, groups: SupportAnalyticsResponse["scopeSummary"]["groups"], personal = false) {
   const conditions: Array<{ key: string; label: string; remove: Partial<AnalyticsQueryState> }> = [];
   if (state.groupId !== undefined) conditions.push({ key: "group", label: `负责组：${groups.find(group => group.groupId === String(state.groupId))?.name || "组名待核实"}`, remove: { groupId: undefined } });
   if (state.category && state.category !== "ALL") conditions.push({ key: "category", label: `客户类别：${({ BOUND: "已绑定", PENDING: "待分配", ANOMALY: "归属异常" })[state.category]}`, remove: { category: "ALL" } });
   if (state.firstState && state.firstState !== "ALL") conditions.push({ key: "firstState", label: `首充：${FIRST_OPTIONS.find(option => option.value === state.firstState)?.label || "状态待核实"}`, remove: { firstState: "ALL" } });
-  if (state.filter && state.filter !== "ALL") conditions.push({ key: "filter", label: `服务：${FILTER_OPTIONS.find(option => option.value === state.filter)?.label || "状态待核实"}`, remove: { filter: "ALL" } });
+  if (state.filter && state.filter !== "ALL") conditions.push({ key: "filter", label: `服务：${(personal ? PERSONAL_FILTER_OPTIONS : FILTER_OPTIONS).find(option => option.value === state.filter)?.label || "状态待核实"}`, remove: { filter: "ALL" } });
   if (state.agentId !== undefined) conditions.push({ key: "agent", label: `当前客服：账号 ${state.agentId}`, remove: { agentId: undefined } });
   if (state.keyword) conditions.push({ key: "keyword", label: `搜索：${state.keyword}`, remove: { keyword: undefined } });
   if (state.direction !== undefined) conditions.push({ key: "direction", label: `顺序：${state.direction === "ASC" ? "从低到高 / 从早到晚" : "从高到低 / 从近到远"}`, remove: { direction: undefined } });
@@ -189,12 +191,23 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const [data, setData] = useState<SupportAnalyticsResponse | null>(null), [error, setError] = useState("");
   const [loading, setLoading] = useState(false), [retry, setRetry] = useState(0), [cancelled, setCancelled] = useState(false);
   const [operations, setOperations] = useState(false), [personalAnalytics, setPersonalAnalytics] = useState(false), [profileId, setProfileId] = useState<string | null>(null);
+  const [personalPeriod, setPersonalPeriod] = useState<SupportAnalyticsResponse | null>(null), [personalPeriodError, setPersonalPeriodError] = useState("");
   const [groupManagement, setGroupManagement] = useState(false);
   const managementReturnQuery = useRef<AnalyticsQueryState | null>(null);
+  const personalViewBeforeScopeRefresh = useRef(false);
   const [keyword, setKeyword] = useState("");
   const controllerRef = useRef<AbortController | null>(null), scopeControllerRef = useRef<AbortController | null>(null), generation = useRef(0);
   const isPersonal = scope?.scopeSummary.mode === "PERSONAL";
   const showStatistics = Boolean(scope && (!isPersonal || personalAnalytics) && !operations && !groupManagement);
+  useEffect(() => {
+    const controller = new AbortController();
+    setPersonalPeriod(null); setPersonalPeriodError("");
+    if (scope?.scopeSummary.mode !== "PERSONAL") return () => controller.abort();
+    void supportAnalyticsClient.query({ view: "OVERVIEW", basis: "PERIOD_EVENT", ...analyticsMonthWindow(queryState.month), currency: queryState.currency ?? "USDT", pageSize: 1, signal: controller.signal })
+      .then(next => { if (!controller.signal.aborted && next.scopeSummary.mode === "PERSONAL") setPersonalPeriod(next); })
+      .catch(cause => { if (!controller.signal.aborted) setPersonalPeriodError(analyticsErrorText(cause)); });
+    return () => controller.abort();
+  }, [scope, queryState.month, queryState.currency]);
   useEffect(() => {
     const controller = new AbortController(); scopeControllerRef.current = controller; setScope(null); setScopeError(""); setData(null); setProfileId(null); setOperations(false); setGroupManagement(false); setPersonalAnalytics(false);
     (async () => {
@@ -209,7 +222,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       const restored: AnalyticsQueryState = remembered ? { ...changeAnalyticsQuery(remembered, { groupId, view: next.scopeSummary.mode === "PERSONAL" && ["OVERVIEW", "AGENTS"].includes(remembered.view) ? "CUSTOMERS" : remembered.view }), agentId: groupId === remembered.groupId ? remembered.agentId : undefined } : { ...initialAnalyticsQuery(next.scopeSummary.mode), ...(agentId === undefined ? {} : { view: "CUSTOMERS" as const, category: "BOUND" as const, agentId }) };
       if (remembered && remembered.view === restored.view) restored.sortKey = remembered.sortKey;
       setScope(next); setQueryState(restored);
-      if (remembered || agentId !== undefined) setPersonalAnalytics(true);
+      if (remembered && personalViewBeforeScopeRefresh.current || agentId !== undefined) setPersonalAnalytics(true);
       if (!remembered && agentId === undefined && next.scopeSummary.mode !== "PERSONAL" && new URLSearchParams(window.location.search).get("view") === "pool") setOperations(true);
     }).catch(cause => { if (!controller.signal.aborted) setScopeError(analyticsErrorText(cause)); });
     return () => controller.abort();
@@ -236,6 +249,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   }, [showStatistics, queryState, retry, scope?.scopeSummary.mode]);
   const change: Drill = changes => { controllerRef.current?.abort(); generation.current++; setData(null); setProfileId(null); setError(""); setQueryState(previous => changeAnalyticsQuery(previous, changes)); };
   function refreshScope(invalidated = false) {
+    personalViewBeforeScopeRefresh.current = personalAnalytics;
     scopeControllerRef.current?.abort(); controllerRef.current?.abort(); generation.current++;
     managementReturnQuery.current = invalidated ? changeAnalyticsQuery(queryState, { groupId: undefined, keyword: undefined }) : { ...queryState, pageNum: 1, expectedVersion: undefined };
     if (invalidated) setKeyword("");
@@ -254,20 +268,33 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
 if (!scope) return <section className="sa-workbench" aria-label="客服范围核对"><div className="sa-state" role={scopeError ? "alert" : "status"}>{scopeError || "正在核对当前可见范围…"}{scopeError && <button type="button" onClick={() => setScopeRetry(n => n + 1)}>重新核对范围</button>}{scopeError && <button type="button" onClick={() => router.push("/service/leaderboard")}>查看业绩榜</button>}</div></section>;
   const mode = scope.scopeSummary.mode, currency = queryState.currency ?? "USDT";
   if (groupManagement && mode !== "PERSONAL") return <M1GroupManagement mode={mode} initialGroupId={queryState.groupId === undefined ? undefined : String(queryState.groupId)} onChanged={() => { controllerRef.current?.abort(); generation.current++; setData(null); setProfileId(null); }} onBack={() => { setScope(null); setScopeRetry(n => n + 1); }} />;
-  const ownDeposit = scope.selectedCurrent.ownLifetime.find(x => x.currency === currency)?.deposits;
+  const personalFinancial = personalPeriod?.scopeSummary.financial;
   const selectedGroup = queryState.groupId === undefined ? undefined : scope.scopeSummary.groups.find(g => g.groupId === String(queryState.groupId));
   const groups = scope.scopeSummary.groups;
-  const activeConditions = activeAnalyticsConditions(queryState, groups);
+  const activeConditions = activeAnalyticsConditions(queryState, groups, isPersonal);
   const monthOptions = analyticsMonths();
-  const drill: Drill = changes => { setPersonalAnalytics(true); change(changes); };
+  const drill: Drill = changes => { setPersonalAnalytics(true); setKeyword(""); change({ groupId: undefined, agentId: undefined, category: "ALL", keyword: undefined, firstState: "ALL", filter: "ALL", sortKey: undefined, direction: undefined, ...changes }); };
   const current = data?.selectedCurrent, personnel = data?.scopeSummary.personnel;
   const deposits = queryState.basis === "PERIOD_EVENT" ? data?.scopeSummary.financial.currencies.find(x => x.currency === currency)?.deposits : current?.ownLifetime.find(x => x.currency === currency)?.deposits;
   const caption = queryState.basis === "PERIOD_EVENT" ? `${queryState.month}自然月期间事件 · Asia/Shanghai；当前绑定与设备仍按当前快照` : queryState.basis === "CURRENT_ASSET" ? "当前设备与活动快照；首充和累计资金未在此口径读取" : "当前客户终身画像；不代表期间新增贡献";
   return <section className="sa-workbench">
-{isPersonal && <><div hidden={personalAnalytics}><div className="sa-actions"><button type="button" onClick={() => router.push("/service/leaderboard")}>查看业绩榜</button></div><M1PersonalWorkbench permission="agent" ctx={ctx} /></div>{!personalAnalytics && <section className="sa-personal-additions" aria-label="本人客户画像补充"><h3>本人客户画像</h3><div className="sa-inline-metrics"><div><span>已首充客户</span><CountValue count={scope.selectedCurrent.firstConfirmed} label="本人已首充客户" onClick={() => drill({ view: "CUSTOMERS", firstState: "CONFIRMED" })} /></div><div><span>历史待核实</span><CountValue count={scope.selectedCurrent.firstUnknown} label="首充历史待核实" onClick={() => drill({ view: "CUSTOMERS", firstState: "UNKNOWN" })} /></div><div><span>累计充值 / {currency}</span><MoneyValue money={ownDeposit} label={`本人客户累计充值 ${currency}`} onClick={() => drill({ view: "FINANCE" })} /></div><button type="button" onClick={() => drill({ view: "CUSTOMERS" })}>查看首充、邀请与充值画像</button></div><p>截至 {dateText(scope.asOf)} · 只读取当前本人客户，累计充值与购机分别统计。</p></section>}</>}
+{isPersonal && <div hidden={personalAnalytics}><M1PersonalWorkbench permission="agent" ctx={ctx}
+  onBrowseCustomers={filter => { if (queryState.view === "CUSTOMERS" && queryState.basis === "CURRENT_CUSTOMER_HISTORY" && queryState.filter === filter) { setPersonalAnalytics(true); return; } drill({ view: "CUSTOMERS", category: "BOUND", basis: "CURRENT_CUSTOMER_HISTORY", filter, firstState: "ALL", keyword: undefined }); }}
+  primarySummary={<section className="sa-personal-summary" aria-label="本人客户与期间业绩">
+    <div className="sa-personal-period-controls"><AnalyticsSelect label="业绩自然月" value={queryState.month} options={monthOptions} onChange={month => change({ month })} /><AnalyticsSelect label="业绩币种" value={currency} options={[{ value: "USDT", label: "USDT" }, { value: "NEX", label: "NEX" }]} onChange={value => { if (value === "USDT" || value === "NEX") change({ currency: value }); }} /><button type="button" onClick={() => refreshScope()}>刷新数据</button><button type="button" onClick={() => router.push("/service/leaderboard")}>查看业绩榜</button></div>
+    <div className="sa-personal-primary-metrics">
+      <div><span>当前本人绑定</span><Numeric value={scope.scopeSummary.bound === null ? null : String(scope.scopeSummary.bound)} label="当前本人绑定客户" onClick={() => drill({ view: "CUSTOMERS", category: "BOUND", basis: "CURRENT_CUSTOMER_HISTORY", filter: "ALL", firstState: "ALL" })} /></div>
+      <div><span>{scope.selectedCurrent.activity.window.days ? `近 ${scope.selectedCurrent.activity.window.days} 天活跃` : "窗口活跃"}</span><CountValue count={scope.selectedCurrent.activity.active} coverage={[scope.selectedCurrent.activity.status, scope.selectedCurrent.activity.window.status]} label="窗口活跃客户" onClick={() => drill({ view: "ACTIVITY", category: "BOUND", basis: "CURRENT_ASSET", filter: "WINDOW_ACTIVE" })} /></div>
+      <div><span>期间首充（含付费购机）</span><CountValue count={personalFinancial?.firstCandidates ?? { observed: null, confirmed: null, status: "UNKNOWN" }} label="期间首充客户" onClick={() => drill({ view: "CUSTOMERS", basis: "PERIOD_EVENT", firstState: "CONFIRMED", filter: "ALL" })} /></div>
+      <div><span>期间净贡献 / {currency}</span><MoneyValue money={personalFinancial?.currencies.find(row => row.currency === currency)?.net} label={`期间净贡献 ${currency}`} onClick={() => drill({ view: "FINANCE", basis: "PERIOD_EVENT", filter: "ALL" })} /></div>
+    </div>
+    <p>{queryState.month} · {currency} · Asia/Shanghai · 业绩统计于 {personalPeriod ? dateText(personalPeriod.asOf) : "读取中"}；绑定与活跃按当前客户统计。</p>
+    {personalPeriodError && <p role="alert">{personalPeriodError}<button type="button" onClick={() => refreshScope()}>重新读取期间业绩</button></p>}
+    <div className="sa-personal-first-sources" aria-label="期间首充金额来源">{(["deposits", "purchases"] as const).map(source => <div key={source}><span>{source === "deposits" ? "充值首充" : "付费购机首充"} / {currency}</span><MoneyValue money={personalFinancial?.firstSources.find(row => row.currency === currency)?.[source]} label={source === "deposits" ? `充值首充金额 ${currency}` : `付费购机首充金额 ${currency}`} onClick={() => drill({ view: "FINANCE", basis: "PERIOD_EVENT" })} /></div>)}</div>
+  </section>} /></div>}
     {operations && <><button type="button" onClick={() => setOperations(false)}>返回{mode === "ALL" ? "平台数据" : "分组数据"}</button><M1PersonalWorkbench permission={mode === "ALL" ? "superadmin" : "supervisor"} ctx={ctx} /></>}
     {showStatistics && <>
-      <header className="sa-header"><div><h2>{isPersonal ? "本人客户画像" : mode === "ALL" ? "平台运营总览" : "我的分组数据"}</h2><p>{selectedGroup?.name || (queryState.groupId ? "组名待核实" : isPersonal ? "本人当前客户" : mode === "ALL" ? "全部获准客服范围" : "全部负责组")} · 截至 {data ? dateText(data.asOf) : "读取中"} · Asia/Shanghai</p></div><div className="sa-actions">{isPersonal ? <button type="button" onClick={() => setPersonalAnalytics(false)}>返回服务待办</button> : <><button type="button" onClick={() => { managementReturnQuery.current = queryState; controllerRef.current?.abort(); generation.current++; setData(null); setProfileId(null); setGroupManagement(true); }}>分组管理</button><a href="/service/sessions">会话审阅</a><button type="button" onClick={() => setOperations(true)}>分配与服务</button></>}<button type="button" onClick={() => router.push("/service/leaderboard")}>查看业绩榜</button><button type="button" onClick={() => refreshScope()}>刷新数据</button></div></header>
+      <header className="sa-header"><div><h2>{isPersonal ? "本人客户画像" : mode === "ALL" ? "平台运营总览" : "我的分组数据"}</h2><p>{selectedGroup?.name || (queryState.groupId ? "组名待核实" : isPersonal ? "本人当前客户" : mode === "ALL" ? "全部获准客服范围" : "全部负责组")} · 截至 {data ? dateText(data.asOf) : "读取中"} · Asia/Shanghai</p></div><div className="sa-actions">{isPersonal ? <button type="button" onClick={() => setPersonalAnalytics(false)}>返回我的工作台</button> : <><button type="button" onClick={() => { managementReturnQuery.current = queryState; controllerRef.current?.abort(); generation.current++; setData(null); setProfileId(null); setGroupManagement(true); }}>分组管理</button><a href="/service/sessions">会话审阅</a><button type="button" onClick={() => setOperations(true)}>分配与服务</button></>}<button type="button" onClick={() => router.push("/service/leaderboard")}>查看业绩榜</button><button type="button" onClick={() => refreshScope()}>刷新数据</button></div></header>
 {!isPersonal && <nav className="sa-group-tabs" aria-label="负责组范围"><button type="button" aria-pressed={queryState.groupId === undefined} onClick={() => change({ groupId: undefined })}>全部</button>{groups.map(group => <button type="button" key={group.groupId} title={group.name || "组名待核实"} aria-label={group.name || "组名待核实"} aria-pressed={String(queryState.groupId) === group.groupId} onClick={() => change({ groupId: group.groupId })}>{group.name || "组名待核实"}</button>)}</nav>}
       <nav className="sa-datasets" aria-label="数据视角">{DATASETS.filter(x => !isPersonal || !["OVERVIEW", "AGENTS"].includes(x.value)).map(item => <button type="button" key={item.value} aria-pressed={queryState.view === item.value} onClick={() => change({ view: item.value, ...(item.value === "DEVICES" ? { basis: "CURRENT_ASSET" as const } : {}) })}>{item.label}</button>)}</nav>
       <form className="sa-controls" onSubmit={event => { event.preventDefault(); change({ keyword: keyword.trim() || undefined }); }}>
@@ -275,7 +302,7 @@ if (!scope) return <section className="sa-workbench" aria-label="客服范围核
         {queryState.basis === "PERIOD_EVENT" && <AnalyticsSelect label="自然月" value={queryState.month} options={monthOptions} onChange={month => change({ month })} />}
         <AnalyticsSelect label="币种" value={currency} options={[{ value: "USDT", label: "USDT" }, { value: "NEX", label: "NEX" }]} onChange={value => { if (value === "USDT" || value === "NEX") change({ currency: value }); }} />
         {queryState.view !== "OVERVIEW" && <><AnalyticsSelect label="排序" value={queryState.sortKey ?? ""} options={[{ value: "", label: "按当前筛选默认排序" }, ...SORT_OPTIONS[queryState.view].filter(x => (x.value !== "NET_CONTRIBUTION" || queryState.basis === "CURRENT_CUSTOMER_HISTORY") && (queryState.basis !== "CURRENT_ASSET" || !["PERSONAL_DEPOSIT", "TEAM_DEPOSIT"].includes(x.value)))]} onChange={value => { const found = SORT_OPTIONS[queryState.view].find(x => x.value === value); change({ sortKey: found?.value }); }} /><AnalyticsSelect label="顺序" value={queryState.direction ?? ""} options={[{ value: "", label: "默认顺序" }, { value: "DESC", label: "从高到低 / 从近到远" }, { value: "ASC", label: "从低到高 / 从早到晚" }]} onChange={value => change({ direction: value === "DESC" || value === "ASC" ? value : undefined })} /></>}
-        {["CUSTOMERS", "ACTIVITY"].includes(queryState.view) && <><AnalyticsSelect label="首充状态" value={queryState.firstState ?? "ALL"} options={queryState.basis === "CURRENT_ASSET" ? [FIRST_OPTIONS[0]] : FIRST_OPTIONS} onChange={value => { const found = FIRST_OPTIONS.find(x => x.value === value); if (found) change({ firstState: found.value }); }} /><AnalyticsSelect label="服务状态" value={queryState.filter ?? "ALL"} options={FILTER_OPTIONS} onChange={value => { const found = FILTER_OPTIONS.find(x => x.value === value); if (found) change({ filter: found.value }); }} /></>}
+        {["CUSTOMERS", "ACTIVITY"].includes(queryState.view) && <><AnalyticsSelect label="首充状态" value={queryState.firstState ?? "ALL"} options={queryState.basis === "CURRENT_ASSET" ? [FIRST_OPTIONS[0]] : FIRST_OPTIONS} onChange={value => { const found = FIRST_OPTIONS.find(x => x.value === value); if (found) change({ firstState: found.value }); }} /><AnalyticsSelect label="服务状态" value={queryState.filter ?? "ALL"} options={isPersonal ? PERSONAL_FILTER_OPTIONS : FILTER_OPTIONS} onChange={value => { const found = (isPersonal ? PERSONAL_FILTER_OPTIONS : FILTER_OPTIONS).find(x => x.value === value); if (found) change({ filter: found.value }); }} /></>}
         {queryState.view !== "OVERVIEW" && <label className="sa-search"><span className="sa-control-label">搜索客户名称或编码</span><input value={keyword} maxLength={200} onChange={event => setKeyword(event.target.value)} placeholder="客户名称或编码" /></label>}{queryState.view !== "OVERVIEW" && <button type="submit">搜索</button>}
         {(queryState.agentId !== undefined || queryState.keyword || queryState.firstState !== "ALL" || queryState.filter !== "ALL" || queryState.category !== "ALL") && <button type="button" onClick={() => { setKeyword(""); change({ agentId: undefined, keyword: undefined, firstState: "ALL", filter: "ALL", category: "ALL" }); }}>清除客服与客户筛选</button>}
       </form>
