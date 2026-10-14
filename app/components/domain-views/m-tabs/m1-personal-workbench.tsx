@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Activity, ArrowRight, ChevronLeft, ChevronRight, Clock3, MessageSquare, Moon, RefreshCw, Search, Users, UserRoundPlus, X } from "lucide-react";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -12,6 +12,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { M1SupervisorPool } from "./m1-supervisor-pool";
 import { SupportSeatRoleModal } from "./m1-overview";
 import "./m-support-workbench.css";
+import "./m1-personal-workbench.css";
 import { SupportBulkComposer } from "./support-bulk-composer";
 import { SupportAvatar, advisorAvatarPath, customerAvatarPath } from "./support-avatar";
 import { SelfAvatarEditor } from "./self-avatar-editor";
@@ -83,7 +84,7 @@ function invalidateCustomerOnDenied(customerId: string, error: unknown): boolean
   return true;
 }
 
-export function M1PersonalWorkbench({ permission, ctx }: { permission: Permission; ctx: MCtx }) {
+export function M1PersonalWorkbench({ permission, ctx, primarySummary, onBrowseCustomers }: { permission: Permission; ctx: MCtx; primarySummary?: ReactNode; onBrowseCustomers?: (filter: SupportCustomerFilter) => void }) {
   const router = useRouter();
   const authEpoch = useAdminAuth((state) => state.authEpoch);
   const adminId = useAdminAuth((state) => state.session?.adminId);
@@ -223,7 +224,7 @@ export function M1PersonalWorkbench({ permission, ctx }: { permission: Permissio
     return () => { document.removeEventListener("keydown", onKeyDown); previousFocus?.focus(); };
   }, [detailId, closeDetail]);
 
-  const showCustomers = (next: SupportCustomerFilter) => { setFilter(next); setPage(1); setView("customers"); };
+  const showCustomers = (next: SupportCustomerFilter) => { if (onBrowseCustomers) { onBrowseCustomers(next); return; } setFilter(next); setPage(1); setView("customers"); };
   const openChat = (customerId: string) => router.push(`/service/sessions?customerId=${encodeURIComponent(customerId)}`);
   const loadHistory = async (pageNum = 1) => {
     if (!detailId) return;
@@ -353,14 +354,18 @@ export function M1PersonalWorkbench({ permission, ctx }: { permission: Permissio
     } catch { if (actor === actorStamp()) { closeDetail(); setSnapshot(null); setNotice("结果暂时无法核对，原命令和客户范围已保留。"); } }
     finally { setTransferSaving(false); }
   };
-  const metrics = useMemo(() => metricDefs.map((item) => ({ ...item, count: overview?.counts[item.key] ?? null })), [overview]);
+  const metrics = useMemo(() => {
+    const items = metricDefs.map((item) => ({ ...item, count: overview?.counts[item.key] ?? null }));
+    const priority = ["waitingReplyCustomers", "firstContactCustomers", "dueMaintenanceCustomers", "boundCustomers", "windowActiveCustomers", "dormantCustomers"];
+    return primarySummary ? items.sort((a, b) => priority.indexOf(a.key) - priority.indexOf(b.key)) : items;
+  }, [overview, primarySummary]);
   const listRecords = rows?.records ?? [];
   const totalPages = rows ? Math.max(1, Math.ceil(rows.total / rows.pageSize)) : 1;
   const canMaintain = Boolean(detail && detail.assignmentId && detail.agentAdminId === adminId);
   const trend = overview?.performance?.trend;
   const trendMax = trend?.reduce((max, point) => Math.max(max, point.executionCount, point.successfulCycleCount), 1) ?? 1;
 
-  return <section className="s5a" data-proof="s5a-workbench">
+  return <section className={primarySummary ? "s5a s5a-personal-priority" : "s5a"} data-proof="s5a-workbench">
     {maintenanceCommands.list().filter(record => record.actorId === adminId).map((record, index) => <p className="s5a-note" key={record.commandKey}>存在未核对的维护操作。<button type="button" disabled={saving} onClick={() => void checkMaintenance(record)}>查询维护结果 {index + 1}</button></p>)}
     {transferCommands.list().filter(record => record.actorId === adminId).map((record, index) => <p className="s5a-note" key={record.commandKey}>存在未核对的转绑操作。<button type="button" disabled={transferSaving} onClick={() => void checkTransfer(record)}>查询转绑结果 {index + 1}</button></p>)}
     {notice && <div className="s5a-alert" role="alert">{notice}<button type="button" onClick={() => setNotice(null)}>关闭提示</button></div>}
@@ -380,7 +385,18 @@ export function M1PersonalWorkbench({ permission, ctx }: { permission: Permissio
 
     {view === "pool" ? <M1SupervisorPool permission={permission} /> : <>
       {view === "dashboard" && <>
-        <div className="s5a-intro"><div><div style={{display:"flex",gap:10,alignItems:"center"}}><SupportAvatar name={selfAgent?.name??"本人专属客服"} path={selfAvatarSnapshot ? selfAvatarSnapshot.assetId ? "/api/admin/platform/accounts/self/avatar/content" : undefined : selfAgent?.avatarAssetId&&adminId?advisorAvatarPath(adminId):undefined} version={selfAvatarSnapshot?.avatarVersion??selfAgent?.avatarVersion??undefined}/><h2>我的工作台</h2><SelfAvatarEditor name={selfAgent?.name??(operatorName||"本人账号")} ctx={ctx} onChanged={setSelfAvatarSnapshot}/></div><p>当前归属客户与可执行待办</p></div><span className="s5a-stamp">统计于 {overview ? formatTime(overview.evaluatedAt) : "待同步"}</span></div>
+        <div className="s5a-intro s5a-personal-header">
+          <div className="s5a-personal-identity">
+            <SupportAvatar name={selfAgent?.name??"本人专属客服"} path={selfAvatarSnapshot ? selfAvatarSnapshot.assetId ? "/api/admin/platform/accounts/self/avatar/content" : undefined : selfAgent?.avatarAssetId&&adminId?advisorAvatarPath(adminId):undefined} version={selfAvatarSnapshot?.avatarVersion??selfAgent?.avatarVersion??undefined} size={56}/>
+            <div><h2>我的工作台</h2><p>当前归属客户与可执行待办</p></div>
+          </div>
+          <div className="s5a-personal-header-actions">
+            <SelfAvatarEditor name={selfAgent?.name??(operatorName||"本人账号")} ctx={ctx} onChanged={setSelfAvatarSnapshot}/>
+            <span className="s5a-stamp">统计于 {overview ? formatTime(overview.evaluatedAt) : "待同步"}</span>
+          </div>
+        </div>
+        {primarySummary}
+        {primarySummary && <h3 className="sa-personal-tasks-title">今日服务待办</h3>}
         {overviewError && <div className="s5a-alert" role="alert">{overviewError}<button type="button" onClick={() => setRowsRefresh((value) => value + 1)}><RefreshCw size={15} />重试</button></div>}
         <div className="s5a-metrics">
           {metrics.map(({ key, label, filter: metricFilter, icon: Icon, hint, count }) => <button type="button" key={key} className="s5a-metric" onClick={() => showCustomers(metricFilter)} aria-label={`${key === "windowActiveCustomers" ? overview?.activityWindowDays ? `近 ${overview.activityWindowDays} 天活跃` : "活跃客户，窗口待同步" : label}，${overviewLoading ? "加载中" : count === null ? "未配置或数据待核对" : `${count} 位`}，查看名单`}>
