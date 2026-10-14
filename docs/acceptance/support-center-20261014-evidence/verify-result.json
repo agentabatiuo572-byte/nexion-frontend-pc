@@ -1,0 +1,516 @@
+{
+  "status": "PASS",
+  "head": "321bb71ca5dddc030dec0e3507f9545e428d4926",
+  "tree": "27d0f2191170d36772edd160cab22ac3b220e851",
+  "exitCode": 0,
+  "failure": null,
+  "clean": true,
+  "unchanged": true,
+  "seconds": 115.369736,
+  "buildBefore": 95272219,
+  "buildAfter": 95279081,
+  "logBytes": 240589,
+  "receipt": {
+    "mode": "full",
+    "verdict": "pass",
+    "treeMoved": false,
+    "tree": "27d0f2191170d36772edd160cab22ac3b220e851",
+    "headTree": "27d0f2191170d36772edd160cab22ac3b220e851",
+    "dirty": false,
+    "head": "321bb71ca5dddc030dec0e3507f9545e428d4926",
+    "at": "2026-10-14T12:27:14.457Z",
+    "totalMs": 115113,
+    "steps": [
+      {
+        "step": "promotion generated API contract",
+        "status": "pass",
+        "ms": 160
+      },
+      {
+        "step": "promotion interactions and public copy",
+        "status": "pass",
+        "ms": 1918
+      },
+      {
+        "step": "promotion dialog capture",
+        "status": "pass",
+        "ms": 1100
+      },
+      {
+        "step": "direct referral policy contract",
+        "status": "pass",
+        "ms": 140
+      },
+      {
+        "step": "E6 phone binding policy contract",
+        "status": "pass",
+        "ms": 315
+      },
+      {
+        "step": "E2/E6 phone calibration contract",
+        "status": "pass",
+        "ms": 371
+      },
+      {
+        "step": "L1 selected-source export contract",
+        "status": "pass",
+        "ms": 529
+      },
+      {
+        "step": "typecheck",
+        "status": "pass",
+        "ms": 2974
+      },
+      {
+        "step": "runtime mock import guard",
+        "status": "pass",
+        "ms": 2083
+      },
+      {
+        "step": "admin auth gate sentinel",
+        "status": "pass",
+        "ms": 55
+      },
+      {
+        "step": "admin auth gate contract",
+        "status": "pass",
+        "ms": 3269
+      },
+      {
+        "step": "workspace path resolver",
+        "status": "pass",
+        "ms": 93
+      },
+      {
+        "step": "canon sentinel",
+        "status": "pass",
+        "ms": 159
+      },
+      {
+        "step": "canon royalty projection regression",
+        "status": "pass",
+        "ms": 1626
+      },
+      {
+        "step": "interaction audit",
+        "status": "pass",
+        "ms": 87
+      },
+      {
+        "step": "M support surface audit",
+        "status": "pass",
+        "ms": 47
+      },
+      {
+        "step": "Support profile static filled-block border contract",
+        "status": "pass",
+        "ms": 658
+      },
+      {
+        "step": "keyboard submit contract",
+        "status": "pass",
+        "ms": 122
+      },
+      {
+        "step": "M1 pending/failure state contract",
+        "status": "pass",
+        "ms": 364
+      },
+      {
+        "step": "M3 App support authority contract",
+        "status": "pass",
+        "ms": 825
+      },
+      {
+        "step": "Support enhancements exact amounts, payloads, binary ceiling and dock scope",
+        "status": "pass",
+        "ms": 12990
+      },
+      {
+        "step": "Support group management and qualification boundaries",
+        "status": "pass",
+        "ms": 2224
+      },
+      {
+        "step": "Exclusive support scope and durable command recovery",
+        "status": "pass",
+        "ms": 1294
+      },
+      {
+        "step": "Support shared select real keyboard behavior",
+        "status": "pass",
+        "ms": 4145
+      },
+      {
+        "step": "CGM field coverage",
+        "status": "pass",
+        "ms": 59
+      },
+      {
+        "step": "no-double-sign residue",
+        "status": "pass",
+        "ms": 1139
+      },
+      {
+        "step": "ops-actions integrity",
+        "status": "pass",
+        "ms": 1561
+      },
+      {
+        "step": "PC remaining-development status contract",
+        "status": "pass",
+        "ms": 3276
+      },
+      {
+        "step": "modal contract",
+        "status": "pass",
+        "ms": 43
+      },
+      {
+        "step": "list capability",
+        "status": "pass",
+        "ms": 42
+      },
+      {
+        "step": "App storage-key parity",
+        "status": "pass",
+        "ms": 521
+      },
+      {
+        "step": "H9 public-stats cross-repo parity",
+        "status": "pass",
+        "ms": 59
+      },
+      {
+        "step": "H9 percentile-table behavior contract",
+        "status": "pass",
+        "ms": 133
+      },
+      {
+        "step": "kill-switch sentinel",
+        "status": "pass",
+        "ms": 186
+      },
+      {
+        "step": "rhythm sentinel",
+        "status": "pass",
+        "ms": 73
+      },
+      {
+        "step": "K3 contract",
+        "status": "pass",
+        "ms": 101
+      },
+      {
+        "step": "K4 contract",
+        "status": "pass",
+        "ms": 99
+      },
+      {
+        "step": "D2 withdrawal operations UX contract",
+        "status": "pass",
+        "ms": 1470
+      },
+      {
+        "step": "PC full-menu health gate contract",
+        "status": "pass",
+        "ms": 114
+      },
+      {
+        "step": "KYC removal contract",
+        "status": "pass",
+        "ms": 244
+      },
+      {
+        "step": "A2 coverage sentinel",
+        "status": "pass",
+        "ms": 39
+      },
+      {
+        "step": "A2 outcome-uncertain contract",
+        "status": "pass",
+        "ms": 434
+      },
+      {
+        "step": "A2 audit BFF allowlist contract",
+        "status": "pass",
+        "ms": 95
+      },
+      {
+        "step": "E1 acceptance contract",
+        "status": "pass",
+        "ms": 136
+      },
+      {
+        "step": "E1 private media proxy",
+        "status": "pass",
+        "ms": 3646
+      },
+      {
+        "step": "deployed sandbox retirement contract",
+        "status": "pass",
+        "ms": 48
+      },
+      {
+        "step": "operation-confirm error copy",
+        "status": "pass",
+        "ms": 136
+      },
+      {
+        "step": "G4 market-open-state contract",
+        "status": "pass",
+        "ms": 160
+      },
+      {
+        "step": "G4 market-open-state cross-repo parity",
+        "status": "pass",
+        "ms": 97
+      },
+      {
+        "step": "G4 tier-pricing contract",
+        "status": "pass",
+        "ms": 98
+      },
+      {
+        "step": "F5 commission-hold contract",
+        "status": "pass",
+        "ms": 362
+      },
+      {
+        "step": "F4 quota criteria and policy behavior",
+        "status": "pass",
+        "ms": 1528
+      },
+      {
+        "step": "H2 quota and retired charge behavior",
+        "status": "pass",
+        "ms": 391
+      },
+      {
+        "step": "H3 task identity and event binding behavior",
+        "status": "pass",
+        "ms": 414
+      },
+      {
+        "step": "A4 redrive and M1 versioned retry behavior",
+        "status": "pass",
+        "ms": 395
+      },
+      {
+        "step": "F pending-store contract",
+        "status": "pass",
+        "ms": 121
+      },
+      {
+        "step": "K1 release-params contract",
+        "status": "pass",
+        "ms": 99
+      },
+      {
+        "step": "D7 payout-vnd local contract",
+        "status": "pass",
+        "ms": 96
+      },
+      {
+        "step": "Bank payout evidence behavior",
+        "status": "pass",
+        "ms": 144
+      },
+      {
+        "step": "K1 release-guard contract",
+        "status": "pass",
+        "ms": 98
+      },
+      {
+        "step": "K6 takeover observability contract",
+        "status": "pass",
+        "ms": 138
+      },
+      {
+        "step": "in-memory idempotency-key sentinel",
+        "status": "pass",
+        "ms": 1181
+      },
+      {
+        "step": "pending mutation store contract",
+        "status": "pass",
+        "ms": 253
+      },
+      {
+        "step": "outcome classification contract",
+        "status": "pass",
+        "ms": 493
+      },
+      {
+        "step": "b2/b3 outcome-unknown contract",
+        "status": "pass",
+        "ms": 94
+      },
+      {
+        "step": "i4 A2 pending visibility contract",
+        "status": "pass",
+        "ms": 121
+      },
+      {
+        "step": "redtest harness self-check",
+        "status": "pass",
+        "ms": 163
+      },
+      {
+        "step": "pending mutation migration contract",
+        "status": "pass",
+        "ms": 406
+      },
+      {
+        "step": "F1 direct-write pending-store contract",
+        "status": "pass",
+        "ms": 1521
+      },
+      {
+        "step": "E domain pending-store contract",
+        "status": "pass",
+        "ms": 131
+      },
+      {
+        "step": "E2 task status preservation contract",
+        "status": "pass",
+        "ms": 95
+      },
+      {
+        "step": "H8 pending-store contract",
+        "status": "pass",
+        "ms": 125
+      },
+      {
+        "step": "J emergency pending-store contract",
+        "status": "pass",
+        "ms": 167
+      },
+      {
+        "step": "endpoint citation ledger",
+        "status": "pass",
+        "ms": 205
+      },
+      {
+        "step": "withdrawal key-name parity",
+        "status": "pass",
+        "ms": 77
+      },
+      {
+        "step": "error-copy throat sentinel",
+        "status": "pass",
+        "ms": 277
+      },
+      {
+        "step": "error-copy throat contract",
+        "status": "pass",
+        "ms": 22912
+      },
+      {
+        "step": "production build",
+        "status": "pass",
+        "ms": 26489
+      },
+      {
+        "step": "real recharge-channel parity",
+        "status": "pass",
+        "ms": 43
+      },
+      {
+        "step": "D1 channel contract",
+        "status": "pass",
+        "ms": 100
+      },
+      {
+        "step": "B4 cross-repository contract",
+        "status": "pass",
+        "ms": 386
+      },
+      {
+        "step": "F domain A2 proposal contract",
+        "status": "pass",
+        "ms": 157
+      },
+      {
+        "step": "FE/BE mapping closure ratchet",
+        "status": "pass",
+        "ms": 49
+      },
+      {
+        "step": "J1 contract",
+        "status": "pass",
+        "ms": 104
+      },
+      {
+        "step": "J2 contract",
+        "status": "pass",
+        "ms": 109
+      },
+      {
+        "step": "K2 contract",
+        "status": "pass",
+        "ms": 104
+      },
+      {
+        "step": "E3 acceptance contract",
+        "status": "pass",
+        "ms": 141
+      },
+      {
+        "step": "PC a11y selected-state + KPI three-state rollup",
+        "status": "pass",
+        "ms": 1257
+      },
+      {
+        "step": "E2 acceptance contract",
+        "status": "pass",
+        "ms": 184
+      },
+      {
+        "step": "audit actor mask contract",
+        "status": "pass",
+        "ms": 120
+      },
+      {
+        "step": "C3 adjustment closure + runtime",
+        "status": "pass",
+        "ms": 139
+      },
+      {
+        "step": "A4 extension batch identity contract",
+        "status": "pass",
+        "ms": 95
+      },
+      {
+        "step": "F1 reward label internal identifier contract",
+        "status": "pass",
+        "ms": 258
+      },
+      {
+        "step": "E5 per-face error contract",
+        "status": "pass",
+        "ms": 98
+      },
+      {
+        "step": "Published how-content editor contract",
+        "status": "pass",
+        "ms": 413
+      },
+      {
+        "step": "A5 params-registry contract",
+        "status": "pass",
+        "ms": 133
+      },
+      {
+        "step": "I1/I6 published copy quality",
+        "status": "pass",
+        "ms": 122
+      },
+      {
+        "step": "I7 course-version read selection recovery",
+        "status": "pass",
+        "ms": 1045
+      }
+    ]
+  }
+}
