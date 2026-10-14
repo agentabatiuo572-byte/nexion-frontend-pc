@@ -56,7 +56,8 @@
 @media(min-width:1451px){
  .sl-filters{transform:translate(3px,3.5px)}
  .sl-content::before{height:1024px;aspect-ratio:auto;background-image:url("./support-leaderboard-assets/orbit-surface-main-canvas.png");background-size:100% 1024px;mask-image:none;image-rendering:pixelated}
- .sl-pedestal{image-rendering:pixelated}
+ .sl-pedestal,.sl-navigation,.sl-self,.sl-table-wrap,.sl-pagination{image-rendering:pixelated}
+ .sl-avatar-photo,.sl-account-avatar{image-rendering:auto}
  .sl-navigation{background-image:url("./support-leaderboard-assets/orbit-surface-navigation.png");background-size:181px 1024px;background-repeat:no-repeat;background-origin:border-box;border-right-color:transparent}
  .sl-navigation nav button[aria-current]{background-image:url("./support-leaderboard-assets/orbit-surface-nav-active.png");background-size:100% 100%;background-origin:border-box;border-left-color:transparent}
  .sl-self{background-color:transparent;background-image:url("./support-leaderboard-assets/orbit-surface-self.png");background-size:100% 100%;background-origin:border-box;border-color:transparent}
