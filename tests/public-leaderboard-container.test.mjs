@@ -70,6 +70,27 @@ test("M6 starts on net contribution and offers three distinct metric tabs", asyn
   h.unmount();
 });
 
+test("locate self waits for the accepted page before scrolling and focusing its row", async () => {
+  const h = harness(), actions = [];
+  h.tree.props.ref.current = { querySelector: () => ({ scrollIntoView: () => actions.push("scroll"), querySelector: () => ({ focus: () => actions.push("focus") }) }) };
+  h.pages[0].resolve(page()); await h.flush();
+  h.board().onLocateSelf(); h.commit(); assert.deepEqual(actions, []);
+  assert.equal(h.pages.at(-1).query.pageNum, 3);
+  h.pages.at(-1).resolve(page("17", { pageNum: 3 })); await h.flush();
+  assert.deepEqual(actions, ["scroll", "focus"]); h.commit(); assert.equal(actions.length, 2); h.unmount();
+});
+
+test("an abandoned self lookup cannot steal focus after query change or denied read", async () => {
+  for (const change of ["query", "denied"]) {
+    const h = harness(), actions = [];
+    h.tree.props.ref.current = { querySelector: () => ({ scrollIntoView: () => actions.push("scroll"), querySelector: () => ({ focus: () => actions.push("focus") }) }) };
+    h.pages[0].resolve(page()); await h.flush(); h.board().onLocateSelf(); h.commit(); const old = h.pages.at(-1);
+    if (change === "query") { h.setKeyword("另一位客服"); h.search(); old.resolve(page("17", { pageNum: 3 })); h.pages.at(-1).resolve(page("17", { matched: 0, rows: [] })); }
+    else old.reject({ status: 403 });
+    await h.flush(); assert.deepEqual(actions, []); h.unmount();
+  }
+});
+
 test("real M6 keeps its search inside the shared heading without preview navigation", async () => {
   const h = harness(); h.pages[0].resolve(page()); await h.flush();
   assert.equal(h.board().navigation, undefined);
