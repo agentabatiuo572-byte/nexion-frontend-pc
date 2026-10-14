@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { subscribeAdminRealtime, getAdminRealtimeSnapshot, watchAdminConversation, sendAdminTyping } from "@/lib/admin/admin-conversation-realtime";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { supportClient, SupportClientError, isIndeterminateSupportError, type SupportAttachmentPolicy, type SupportCustomerDetail } from "@/lib/admin/m-support-client";
+import { supportClient, SupportClientError, isIndeterminateSupportError, type SupportAttachmentPolicy, type SupportCustomerDetail, type SupportReadMode } from "@/lib/admin/m-support-client";
 import { markMConversationRead, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, parseMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
 import { parseBusinessTime } from "@/lib/admin/business-time";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -130,6 +130,22 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   const session = useAdminAuth((state) => state.session);
   const authEpoch = useAdminAuth((state) => state.authEpoch);
   const adminId = session?.adminId ?? 0;
+  const scopeIdentity = `${authEpoch}:${adminId}`;
+  const [reviewScope, setReviewScope] = useState<{ identity: string; mode: SupportReadMode } | null>(null);
+  const [reviewScopeError, setReviewScopeError] = useState("");
+  const [scopeRetry, setScopeRetry] = useState(0);
+  const reviewGeneration = useRef(0);
+  useEffect(() => {
+    const controller = new AbortController(), generation = ++reviewGeneration.current;
+    setReviewScope(null); setReviewScopeError("");
+    if (adminId) void supportClient.overview({ signal: controller.signal }).then(({ scope }) => {
+      if (controller.signal.aborted || generation !== reviewGeneration.current || scope.actorId !== adminId) return;
+      setReviewScope({ identity: scopeIdentity, mode: scope.mode });
+    }).catch(() => { if (!controller.signal.aborted && generation === reviewGeneration.current) { setReviewScope(null); setReviewScopeError("当前会话范围暂时无法核对。请重试。"); } });
+    const invalidate = () => { controller.abort(); reviewGeneration.current++; setReviewScope(null); setScopeRetry(value => value + 1); };
+    window.addEventListener("support-scope-invalidated", invalidate);
+    return () => { controller.abort(); reviewGeneration.current++; window.removeEventListener("support-scope-invalidated", invalidate); };
+  }, [adminId, scopeIdentity, scopeRetry]);
   const canWriteM3 = session?.role === "super" || session?.role === "superadmin" || Boolean(session?.authorities?.includes("service_m3_write"));
   const [requestedCustomerId, setRequestedCustomerId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState("");
@@ -198,8 +214,9 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     catch { return []; }
   }, [ctx.params, ctx]);
   const myAgent = agents.find((agent) => agent.adminId === adminId);
-  const canReviewAll = session?.role === "superadmin" || session?.role === "super" || myAgent?.seatType === "MANAGER" || Boolean(myAgent?.position?.includes("主管"));
-  const qualificationUnknown = session?.role !== "superadmin" && session?.role !== "super"
+  const scopeMode = reviewScope?.identity === scopeIdentity ? reviewScope.mode : undefined;
+  const canReviewAll = scopeMode === "MANAGED" || scopeMode === "ALL";
+  const qualificationUnknown = scopeMode === undefined || session?.role !== "superadmin" && session?.role !== "super"
     && Boolean(session?.authorities?.includes("service_m1_read")) && ctx.pget("I.support.agentsAvailable") !== "1";
   const qualificationRef = useRef(qualificationUnknown);
   if (qualificationRef.current !== qualificationUnknown) {
@@ -1029,7 +1046,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
       <div className="cv-list">
         {(recoveries.length > 0 || recoveryError) && <div className="itint warn" role="alert">{recoveryError || "原消息结果待确认；私聊正文与图片已清除，只保留原编号供查询。"}{recoveries.map(({ slot, locator }, index) => <button className="l-btn sm" type="button" key={slot} disabled={Boolean(recoveryBusy)} onClick={() => void queryRecovery(slot, locator)}>查询原消息 {index + 1}</button>)}</div>}
         {!conversationsAvailable && <div className="itint danger" role="alert">{serviceStatus} <button className="l-btn sm" type="button" onClick={() => void ctx.refreshConversations()}>重新连接</button></div>}
-        {conversationsAvailable && filtered.length === 0 && <div className="itint">{qualificationUnknown ? "专属客服身份待核对，暂时无法确认可审阅的会话范围。" : query ? "没有匹配的会话，请清除搜索。" : "暂无会话。可从“我的客户”发起首次联系。"}</div>}
+        {conversationsAvailable && filtered.length === 0 && <div className="itint" role={reviewScopeError ? "alert" : undefined}>{reviewScopeError ? <>{reviewScopeError}<button type="button" className="l-btn sm" onClick={() => setScopeRetry(value => value + 1)}>重新核对范围</button></> : qualificationUnknown ? "专属客服身份待核对，暂时无法确认可审阅的会话范围。" : query ? "没有匹配的会话，请清除搜索。" : "暂无会话。可从“我的客户”发起首次联系。"}</div>}
         {listRows.map(convo=>{const active=selected?.id===convo.id;const message=convo.detailReady?lastMessage(convo):undefined;const kind=convo.detailReady?message?.kind:convo.lastMessageKind;const knownReplyState=currentProfileDetail&&currentProfileDetail.customerId===convo.customerId?currentProfileDetail.waitingReply:null;const hasMessage=Boolean(message)||Number.isSafeInteger(convo.lastPublicMessageId)&&Number(convo.lastPublicMessageId)>0?true:convo.detailReady&&convo.historyTruncated===false||convo.lastPublicMessageId===0?false:null;return <div key={convo.id} className="m3-list-row"><label className="m3-list-select" title={`选择会话 ${convo.id}`}><input type="checkbox" aria-label={`选择会话 ${convo.id}`} checked={archiveIds.has(convo.id)} disabled={!canWriteM3||convo.ownerAdminId!==adminId||convo.archived} onChange={e=>setArchiveIds(old=>{const next=new Set(old);if(e.target.checked)next.add(convo.id);else next.delete(convo.id);return next;})}/></label><button type="button" className={`cv-item ${active?"on":""}`} style={{flex:1,minWidth:0}} onClick={()=>select(convo)} aria-current={active?"true":undefined}><span className="cv-r1"><SupportAvatar name={convo.customer||convo.profile?.nickname||"客户"} path={customerAvatarPath(String(convo.customerId))} size={38}/><strong className="cv-name" title={convo.customer||convo.profile?.nickname||`客户 ${convo.customerId}`}>{convo.customer||convo.profile?.nickname||`客户 ${convo.customerId}`}</strong><time className="cv-time">{messageTime(convo.lastTs)}</time></span><span className="cv-prev">{kind==="IMAGE"?"[图片]":kind==="SKU"?"[商品推荐]":kind==="LINK"?"[页面链接]":message?.text||convo.lastPreview||(hasMessage===false?"尚无人工消息":"消息摘要暂不可用")}</span><span className="cv-meta"><span className={`cv-stat ${convo.status==="open"?"active":""}`} title={`${hasMessage===false?"待首次联系":knownReplyState===true?"待专属客服回复":knownReplyState===false?"已处理":"待回复状态待核对"} · 当前专属客服：${convo.owner}`}>{convo.archived?"已归档":conversationStateLabel(convo.status)} · {convo.owner}</span>{convo.unread>0&&<span className="cv-unread" aria-label={`${convo.unread} 条未读`}>{convo.unread}<span className="sr-only"> 条未读</span></span>}</span><span className="cv-origin-copy" title={convo.id}>{convo.origin ? {user:"客户发起",advisor:"客服主动联系",support:"客服主动联系"}[convo.origin] : "发起来源未记录"}{" · "}{hasMessage===false?"待首次联系":knownReplyState===true?"待专属客服回复":knownReplyState===false?"已处理":"查看待回复状态"}</span></button></div>;})}
       </div>
         <div className="m3-list-footer"><button className="l-btn sm" disabled={listPage<=1} onClick={()=>setListPage(n=>n-1)}>上一页</button><span>第 {listPage} 页 · {conversationsAvailable ? filtered.length : "-"} 段</span><button className="l-btn sm" disabled={listPage*10>=filtered.length} onClick={()=>setListPage(n=>n+1)}>下一页</button></div>

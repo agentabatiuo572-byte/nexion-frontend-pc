@@ -7,7 +7,7 @@ const envelope = (data, status = 200) => new Response(JSON.stringify({ code: sta
 const originalFetch = globalThis.fetch;
 const snapshot = (overview = {}) => ({
   snapshotId: "test-snapshot", evaluatedAt: "2026-09-29T00:00:00Z", rulesVersion: 1,
-  scope: { actorId: 12, agentAdminId: 12, groupId: null, mode: "PERSONAL" },
+  scope: { actorId: 12, agentAdminId: 12, groupId: null, mode: "PERSONAL", availableModes: ["PERSONAL"] },
   rules: { dormantDays: null, maintenanceDays: 7, activityWindowDays: null },
   overview: { boundTotal: 5, activeTotal: null, dormantTotal: null, dueTotal: null, waitingReplyTotal: 2, firstContactTotal: 1, stoppedTotal: 0, knownActiveCount: 3, unknownWindowCount: 2, ...overview },
   customers: { records: [], total: 0, pageNum: 1, pageSize: 1, filter: "ALL", available: true },
@@ -18,7 +18,7 @@ const snapshot = (overview = {}) => ({
 test("workbench preserves the server-authorized role and group scope without falling back to all customers", async () => {
   try {
     for (const mode of ["PERSONAL", "MANAGED", "ALL"]) {
-      const scope = { actorId: 12, agentAdminId: mode === "PERSONAL" ? 12 : null, groupId: mode === "PERSONAL" ? null : 8, mode };
+      const scope = { actorId: 12, agentAdminId: mode === "PERSONAL" ? 12 : null, groupId: mode === "PERSONAL" ? null : 8, mode, availableModes: [mode] };
       let seen;
       globalThis.fetch = async (url) => { seen = new URL(url, "http://localhost"); return envelope({ ...snapshot(), scope }); };
       const result = await supportClient.snapshot({ pageNum: 1, pageSize: 20, mode, ...(scope.groupId === null ? {} : { groupId: scope.groupId }) });
@@ -29,6 +29,17 @@ test("workbench preserves the server-authorized role and group scope without fal
     globalThis.fetch = async () => envelope({ ...snapshot(), scope: { actorId: 12, agentAdminId: null, groupId: null, mode: "UNRECOGNIZED" } });
     await assert.rejects(supportClient.snapshot({ pageNum: 1, pageSize: 20 }), /SUPPORT_CONTRACT_MALFORMED/);
     await assert.rejects(supportClient.customers({ pageNum: 1, pageSize: 20, groupId: 0 }), /SUPPORT_CONTRACT_MALFORMED/);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("available read modes are explicit, unique and include the selected server scope", async () => {
+  try {
+    for (const availableModes of [undefined, [], ["ALL"], ["PERSONAL", "PERSONAL"], ["PERSONAL", "UNKNOWN"]]) {
+      globalThis.fetch = async () => envelope({ ...snapshot(), scope: { ...snapshot().scope, availableModes } });
+      await assert.rejects(supportClient.overview(), /SUPPORT_CONTRACT_MALFORMED/);
+    }
+    globalThis.fetch = async () => envelope({ ...snapshot(), scope: { ...snapshot().scope, mode: "MANAGED", availableModes: ["PERSONAL", "MANAGED"] } });
+    assert.deepEqual((await supportClient.overview()).scope.availableModes, ["PERSONAL", "MANAGED"]);
   } finally { globalThis.fetch = originalFetch; }
 });
 

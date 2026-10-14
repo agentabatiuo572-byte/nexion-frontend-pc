@@ -19,8 +19,8 @@ const session = (adminId = 4283, authorities = ["service_m1_read", "service_m3_r
 
 // Run the actual production component with isolated React lifecycle and virtual JSX.
 // There is no listener, real network, DOM, browser, timer or service in this harness.
-function harness({ auth = session(), search = "?conversationNo=CV-1", drafts = {} } = {}) {
-  const slots = [], effects = [], listeners = new Map(), profileRequests = [];
+function harness({ auth = session(), search = "?conversationNo=CV-1", drafts = {}, scopeMode = "MANAGED", deferredScope = false } = {}) {
+  const slots = [], effects = [], listeners = new Map(), profileRequests = [], scopeRequests = [];
   const storage = {};
   Object.defineProperties(storage, {
     getItem: { value: key => storage[key] ?? null },
@@ -65,6 +65,13 @@ function harness({ auth = session(), search = "?conversationNo=CV-1", drafts = {
   };
   const realtime = { ready: false, presence: null };
   const supportClient = {
+    overview({ signal }) {
+      if (!deferredScope) return Promise.resolve({ scope: { actorId: auth.adminId, mode: scopeMode } });
+      let resolve, reject;
+      const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+      scopeRequests.push({ signal, resolve, reject });
+      return promise;
+    },
     customerDetail(customerId, signal) {
       let resolve, reject;
       const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
@@ -107,11 +114,11 @@ function harness({ auth = session(), search = "?conversationNo=CV-1", drafts = {
   }
   render();
   return {
-    storage, profileRequests, ctx, render, emit, text: () => text(tree),
+    storage, profileRequests, scopeRequests, ctx, render, emit, text: () => text(tree),
     publish(values) { ctx.params = { ...ctx.params, ...values }; render(); },
     buttons() {
       const found = [];
-      function walk(node) { if (Array.isArray(node)) { node.forEach(walk); return; } if (!node || typeof node !== "object") return; if (node.type === "button") found.push({ label: text(node), disabled: node.props.disabled }); walk(node.props?.children); }
+      function walk(node) { if (Array.isArray(node)) { node.forEach(walk); return; } if (!node || typeof node !== "object") return; if (node.type === "button") found.push({ label: text(node), disabled: node.props.disabled, onClick: node.props.onClick }); walk(node.props?.children); }
       walk(tree); return found;
     },
     unmount() { for (const slot of slots) slot?.cleanup?.(); },
@@ -153,6 +160,7 @@ test("unknown qualification preserves private drafts; a real shared 403 revoke c
 test("an actual 403 from the production customer read invalidates the exact customer and its draft", async () => {
   const probe = harness({ drafts: { "CV-1": "private draft" } });
   try {
+    await flush(); probe.render();
     probe.publish({ ...conversations([row("CV-1", "1")]), ...roster() });
     assert.equal(probe.profileRequests.length, 1);
     probe.profileRequests[0].reject({ status: 403 }); await flush(); probe.render();
@@ -163,9 +171,10 @@ test("an actual 403 from the production customer read invalidates the exact cust
 
 test("a read-only manager can review while a normal agent and M3-only reader do not gain another owner's scope", async () => {
   const manager = harness({ auth: session(4283, ["service_m1_read", "service_m3_read"]) });
-  const agent = harness();
-  const m3Only = harness({ auth: session(4283, ["service_m3_read"]), search: "" });
+  const agent = harness({ scopeMode: "PERSONAL" });
+  const m3Only = harness({ auth: session(4283, ["service_m3_read"]), search: "", scopeMode: "PERSONAL" });
   try {
+    await flush(); manager.render();
     manager.publish({ ...conversations([row("CV-1", "1")]), ...roster() });
     assert.ok(manager.text().includes("1 段"));
     assert.equal(manager.buttons().find(button => button.label === "主动联系").disabled, true);
@@ -176,6 +185,53 @@ test("a read-only manager can review while a normal agent and M3-only reader do 
     assert.ok(!m3Only.text().includes("客户1"));
     assert.ok(m3Only.text().includes("客户2"));
   } finally { manager.unmount(); agent.unmount(); m3Only.unmount(); }
+});
+
+test("SUPPORT with independent supervisor scope can review while keeping another owner's composer read-only", async () => {
+  const probe = harness();
+  try {
+    await flush(); probe.render();
+    probe.publish({ ...conversations([row("CV-1", "1")]), ...roster("DEDICATED") });
+    assert.ok(probe.text().includes("1 段"));
+    assert.ok(!probe.text().includes("当前已无权"));
+    assert.equal(probe.profileRequests.length, 1);
+    assert.ok(!probe.buttons().some(button => button.label === "标记已解决"));
+  } finally { probe.unmount(); }
+});
+
+test("scope invalidation aborts an old supervisor response and PERSONAL revalidation cannot expose another owner's conversation", async () => {
+  const probe = harness({ deferredScope: true });
+  try {
+    probe.publish({ ...conversations([row("CV-1", "1")]), ...roster("DEDICATED") });
+    const old = probe.scopeRequests[0];
+    probe.emit({});
+    assert.equal(old.signal.aborted, true);
+    old.resolve({ scope: { actorId: 4283, mode: "MANAGED" } });
+    await flush(); probe.render();
+    assert.ok(!probe.text().includes("客户1"));
+    probe.scopeRequests.at(-1).resolve({ scope: { actorId: 4283, mode: "PERSONAL" } });
+    await flush(); probe.render();
+    assert.ok(!probe.text().includes("客户1"));
+    assert.equal(probe.profileRequests.length, 0);
+  } finally { probe.unmount(); }
+});
+
+test("a failed scope read remains closed and the existing-style retry restores an authorized supervisor view", async () => {
+  const probe = harness({ deferredScope: true });
+  try {
+    probe.publish({ ...conversations([row("CV-1", "1")]), ...roster("DEDICATED") });
+    probe.scopeRequests[0].reject({ status: 503 });
+    await flush(); probe.render();
+    assert.ok(probe.text().includes("当前会话范围暂时无法核对"));
+    assert.ok(!probe.text().includes("客户1"));
+    assert.equal(probe.profileRequests.length, 0);
+    probe.buttons().find(button => button.label === "重新核对范围").onClick(); probe.render();
+    probe.scopeRequests.at(-1).resolve({ scope: { actorId: 4283, mode: "MANAGED" } });
+    await flush(); probe.render();
+    assert.ok(probe.text().includes("客户1"));
+    assert.ok(!probe.text().includes("当前会话范围暂时无法核对"));
+    assert.equal(probe.profileRequests.length, 1);
+  } finally { probe.unmount(); }
 });
 
 function productionFunction(source, name) {

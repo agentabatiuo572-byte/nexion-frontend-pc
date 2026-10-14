@@ -23,7 +23,8 @@ const { supportAnalyticsClient: nativeClient } = await import(`data:text/javascr
 let driver, auth = { session: { adminId: 12, authorities: ["service_m1_read"], menuCodes: [], role: "support" }, authEpoch: 1 };
 const requests = [], navigations = [];
 let forcedQueryError;
-const context = vm.createContext({ console, AbortController, URLSearchParams, Date, Intl, Number, Object, Math, queueMicrotask, window: { location: { search: "" } } });
+const scopeEvents = new EventTarget();
+const context = vm.createContext({ console, AbortController, URLSearchParams, Date, Intl, Number, Object, Math, queueMicrotask, window: { location: { search: "" }, addEventListener: scopeEvents.addEventListener.bind(scopeEvents), removeEventListener: scopeEvents.removeEventListener.bind(scopeEvents) } });
 const synthetic = (values) => new vm.SyntheticModule(Object.keys(values), function () { for (const [key, value] of Object.entries(values)) this.setExport(key, value); }, { context });
 // Execute the actual client's sanitizer before every component fixture transport call.
 // No hand-copied enum/default validation can mask an invalid UI-generated payload.
@@ -125,6 +126,54 @@ function fixture(view = "OVERVIEW", mode = "MANAGED") {
   return { view, basis: "CURRENT_CUSTOMER_HISTORY", asOf: "2026-10-09T00:00:00Z", selectedCurrent: current(), selectedCustomerCount: 1, scopeSummary: { mode, bound: 1, pending: 0, anomaly: 0, current: current(), financial, personnel: personnel(), groups: [{ groupId: "4", name: "甲组", total: 1, current: current(), personnel: personnel() }, { groupId: "5", name: "乙组", total: 1, current: current(), personnel: personnel() }] }, funds: { ...funds(), groups: [] }, records: [view === "AGENTS" ? agent : view === "FINANCE" ? { customerId: "12", nickname: "客户", customerNo: "C012", kind: "DEPOSIT", currency: "USDT", amount: "3.123456", succeededAt: "2026-10-09T00:00:00Z", historyStatus: "UNKNOWN", orderNo: null } : view === "DEVICES" ? { deviceId: "9", customerId: "12", deviceType: null, hashrate: null, holdingStatus: "UNKNOWN", connectionStatus: "NOT_APPLICABLE", acquisition: "UNKNOWN" } : customer], versionState: "READY", queryVersion: version, canContinue: false, pageNum: 1, pageSize: 20, total: 1, observedTotal: 1, recordsStatus: "READY" };
 }
 async function resolveScope(mode = "MANAGED") { const d = new HookDriver(); d.render(); requests.at(-1).resolve(fixture("OVERVIEW", mode)); await d.settle(); return d; }
+
+test("scope invalidation closes group management and rechecks permitted groups", async () => {
+  const d = await resolveScope();
+  try {
+    button(d.tree, "甲组").props.onClick(); d.render();
+    const stale = requests.at(-1);
+    button(d.tree, "分组管理").props.onClick(); d.render();
+    assert.ok(elements(d.tree).some(x => x.type === mocks["./m1-group-management"].M1GroupManagement));
+    scopeEvents.dispatchEvent(new Event("support-scope-invalidated")); d.render();
+    assert.equal(stale.options.signal.aborted, true);
+    assert.ok(!elements(d.tree).some(x => x.type === mocks["./m1-group-management"].M1GroupManagement));
+    assert.match(content(d.tree), /正在核对当前可见范围/);
+    const fresh = requests.at(-1), next = fixture(); next.scopeSummary.groups = next.scopeSummary.groups.slice(1);
+    stale.resolve(fixture("AGENTS")); await d.settle();
+    assert.match(content(d.tree), /正在核对当前可见范围/);
+    fresh.resolve(next); await d.settle();
+    assert.doesNotMatch(content(d.tree), /甲组/); button(d.tree, "乙组");
+    assert.equal(requests.at(-1).options.groupId, undefined);
+    assert.equal(requests.at(-1).options.agentId, undefined);
+  } finally { d.unmount(); }
+});
+
+test("scope invalidation rejects a late initial scope response", async () => {
+  const d = new HookDriver(); d.render();
+  try {
+    const stale = requests.at(-1);
+    scopeEvents.dispatchEvent(new Event("support-scope-invalidated")); d.render();
+    const fresh = requests.at(-1); assert.notEqual(fresh, stale); assert.equal(stale.options.signal.aborted, true);
+    fresh.resolve(fixture("OVERVIEW", "PERSONAL")); await d.settle();
+    stale.resolve(fixture("OVERVIEW", "ALL")); await d.settle();
+    assert.doesNotMatch(content(d.tree), /平台运营总览|我的分组数据|分组管理/);
+  } finally { d.unmount(); }
+});
+
+test("manual scope refresh updates group tabs as well as table data", async () => {
+  const d = await resolveScope();
+  try {
+    elements(d.tree).find(x => x.props?.label === "排序").props.onChange("BOUND_CUSTOMER_COUNT"); d.render();
+    elements(d.tree).find(x => x.props?.label === "顺序").props.onChange("ASC"); d.render();
+    button(d.tree, "刷新数据").props.onClick(); d.render();
+    assert.equal(requests.at(-1).options.view, "OVERVIEW");
+    const next = fixture(); next.scopeSummary.groups[0].name = "接管的新组";
+    requests.at(-1).resolve(next); await d.settle();
+    button(d.tree, "接管的新组"); assert.doesNotMatch(content(d.tree), /甲组/);
+    assert.equal(requests.at(-1).options.sortKey, "BOUND_CUSTOMER_COUNT");
+    assert.equal(requests.at(-1).options.direction, "ASC");
+  } finally { d.unmount(); }
+});
 
 test("actual customer and advisor tables display signed NET while keeping recharge and first-payment columns",()=>{
   for(const view of ["CUSTOMERS","AGENTS"]) {

@@ -102,6 +102,9 @@ function conversationReadFixture() {
   assert.ok(canSend);
   const state = {
     pages: [], requested: [], parseBusinessTime,
+    useAdminAuth: { getState: () => ({ session: { adminId: 12 }, authEpoch: 1 }) },
+    adminShellSessionKey: (session, epoch) => `${session.adminId}:${epoch}`,
+    supportClient: { overview: async () => ({ scope: { actorId: 12, mode: "PERSONAL", availableModes: ["PERSONAL"] } }) },
     adaptCustomerProfile: () => ({ nickname: "历史客户" }),
     apiRequest: async (path) => { state.requested.push(path); return state.pages.shift(); },
   };
@@ -113,6 +116,78 @@ const transferredHistory = () => ({
   id: 5954, conversationNo: "HISTORICAL-SEGMENT", conversationType: "advisor", status: "TRANSFERRED",
   ownerAgentId: "3792", unreadCount: 0, version: 0, updatedAt: "2026-10-03T00:00:00Z",
   transferToType: null, transferToId: null,
+});
+
+test("M3 authorized conversation collections preserve pure supervisor scope and merge a cross-group personal scope once", async () => {
+  const history = transferredHistory(), own = { ...history, id: 5955, conversationNo: "OWN-CROSS-GROUP", userId: 2005, ownerAgentId: "12" };
+  for (const mode of ["PERSONAL", "MANAGED", "ALL"]) {
+    const f = conversationReadFixture();
+    f.supportClient.overview = async () => ({ scope: { actorId: 12, mode, availableModes: [mode] } });
+    f.pages = [{ total: 1, pageNum: 1, pageSize: 100, records: [history] }];
+    assert.equal((await f.reads.fetchAllSupportConversations()).total, 1);
+    assert.ok(f.requested.every(path => path.includes(`readMode=${mode}`)));
+  }
+  const f = conversationReadFixture();
+  f.supportClient.overview = async () => ({ scope: { actorId: 12, mode: "MANAGED", availableModes: ["MANAGED", "PERSONAL"] } });
+  f.pages = [
+    { total: 1, pageNum: 1, pageSize: 100, records: [history] },
+    { total: 2, pageNum: 1, pageSize: 100, records: [history, own] },
+  ];
+  const result = await f.reads.fetchAllSupportConversations();
+  assert.deepEqual(Array.from(result.records, row => row.conversationNo), [history.conversationNo, own.conversationNo]);
+  assert.equal(result.total, 2);
+  assert.equal(f.requested.length, 2);
+  assert.ok(f.requested[0].includes("readMode=MANAGED"));
+  assert.ok(f.requested[1].includes("readMode=PERSONAL"));
+});
+
+test("M3 authorized union never publishes a partial result after a second-scope denial or cancellation", async () => {
+  for (const status of [403, 404]) {
+    const f = conversationReadFixture(), rejection = { status };
+    f.supportClient.overview = async () => ({ scope: { actorId: 12, mode: "MANAGED", availableModes: ["MANAGED", "PERSONAL"] } });
+    f.apiRequest = async path => {
+      if (path.includes("readMode=PERSONAL")) throw rejection;
+      return { total: 1, pageNum: 1, pageSize: 100, records: [transferredHistory()] };
+    };
+    await assert.rejects(f.reads.fetchAllSupportConversations(), error => error === rejection);
+  }
+  const f = conversationReadFixture(), controller = new AbortController();
+  controller.abort();
+  await assert.rejects(f.reads.fetchAllSupportConversations(controller.signal), error => error.name === "AbortError");
+  assert.equal(f.requested.length, 0);
+});
+
+test("M3 authorized union rejects scope revocation, changed overlapping rows and account changes during its read", async () => {
+  const f = conversationReadFixture(), history = transferredHistory();
+  let calls = 0;
+  f.supportClient.overview = async () => ({ scope: { actorId: 12, mode: "MANAGED", availableModes: ++calls === 1 ? ["MANAGED", "PERSONAL"] : ["MANAGED"] } });
+  f.pages = [
+    { total: 1, pageNum: 1, pageSize: 100, records: [history] },
+    { total: 1, pageNum: 1, pageSize: 100, records: [history] },
+  ];
+  await assert.rejects(f.reads.fetchAllSupportConversations(), /M3_CONVERSATION_SCOPE_CHANGED/);
+  calls = 0;
+  f.supportClient.overview = async () => ({ scope: { actorId: 12, mode: "MANAGED", availableModes: ["MANAGED", "PERSONAL"] } });
+  f.pages = [
+    { total: 1, pageNum: 1, pageSize: 100, records: [history] },
+    { total: 1, pageNum: 1, pageSize: 100, records: [{ ...history, version: history.version + 1 }] },
+  ];
+  await assert.rejects(f.reads.fetchAllSupportConversations(), /M3_CONVERSATION_SNAPSHOT_UNSTABLE/);
+  f.supportClient.overview = async () => {
+    if (++calls === 2) f.useAdminAuth.getState = () => ({ session: { adminId: 13 }, authEpoch: 2 });
+    return { scope: { actorId: 12, mode: "PERSONAL", availableModes: ["PERSONAL"] } };
+  };
+  f.pages = [{ total: 1, pageNum: 1, pageSize: 100, records: [history] }];
+  await assert.rejects(f.reads.fetchAllSupportConversations(), /M3_CONVERSATION_IDENTITY_CHANGED/);
+});
+
+test("M3 authorized mode pagination rejects changing totals rather than losing a boundary row", async () => {
+  const f = conversationReadFixture(), history = transferredHistory();
+  f.pages = [
+    { total: 2, pageNum: 1, pageSize: 100, records: [history] },
+    { total: 3, pageNum: 2, pageSize: 100, records: [{ ...history, id: 5955, conversationNo: "SECOND" }] },
+  ];
+  await assert.rejects(f.reads.fetchAllSupportConversations(), /M3_CONVERSATION_PAGE_INCOMPLETE/);
 });
 
 test("M3 reads transferred history without inventing a pending transfer or dropping the page", async () => {

@@ -2,7 +2,7 @@ import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { parseBusinessTime } from "@/lib/admin/business-time";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
-import { supportWireId, supportRequest, supportObject, parseSupportCount } from "@/lib/admin/m-support-client";
+import { supportWireId, supportRequest, supportObject, parseSupportCount, supportClient } from "@/lib/admin/m-support-client";
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { User360Profile, UserProfileQuery } from "@/lib/admin/user360-client";
@@ -1201,22 +1201,38 @@ async function fetchAllSupportTickets(): Promise<AdminPage<SupportTicketView>> {
 }
 
 async function fetchAllSupportConversations(signal?: AbortSignal): Promise<AdminPage<ContentConversationView>> {
+  signal?.throwIfAborted();
+  const auth = useAdminAuth.getState(), identity = adminShellSessionKey(auth.session, auth.authEpoch);
+  const { scope } = await supportClient.overview({ signal });
+  if (scope.actorId !== auth.session?.adminId) throw new Error("M3_CONVERSATION_IDENTITY_CHANGED");
+  const modes = scope.mode === "MANAGED" && scope.availableModes.includes("PERSONAL") ? ["MANAGED", "PERSONAL"] : [scope.mode];
   const pageSize = 100;
-  const first = assertConversationPage(await apiRequest<unknown>(`/conversations?pageNum=1&pageSize=${pageSize}`, { signal }));
-  const records = [...first.records];
-  const total = first.total;
-  let pageNum = 2;
-  while (records.length < total) {
-    const page = assertConversationPage(await apiRequest<unknown>(`/conversations?pageNum=${pageNum}&pageSize=${pageSize}`, { signal }));
-    const next = page.records;
-    if (next.length === 0) throw new Error("M3_CONVERSATION_PAGE_INCOMPLETE");
-    records.push(...next);
-    pageNum += 1;
+  const merged = new Map<string, ContentConversationView>();
+  for (const readMode of modes) {
+    const first = assertConversationPage(await apiRequest<unknown>(`/conversations?readMode=${readMode}&pageNum=1&pageSize=${pageSize}`, { signal }));
+    if (first.pageNum !== 1 || first.pageSize !== pageSize) throw new Error("M3_CONVERSATION_PAGE_INCOMPLETE");
+    const records = [...first.records], total = first.total;
+    let pageNum = 2;
+    while (records.length < total) {
+      const page = assertConversationPage(await apiRequest<unknown>(`/conversations?readMode=${readMode}&pageNum=${pageNum}&pageSize=${pageSize}`, { signal }));
+      if (page.pageNum !== pageNum || page.pageSize !== pageSize || page.total !== total || page.records.length === 0) throw new Error("M3_CONVERSATION_PAGE_INCOMPLETE");
+      records.push(...page.records); pageNum += 1;
+    }
+    if (records.length !== total || new Set(records.map(row => row.conversationNo)).size !== records.length) throw new Error("M3_CONVERSATION_PAGE_INCOMPLETE");
+    for (const row of records) {
+      const no = row.conversationNo;
+      if (!no) throw new Error("M3_CONVERSATION_PAGE_MALFORMED");
+      const previous = merged.get(no);
+      if (previous && JSON.stringify(previous) !== JSON.stringify(row)) throw new Error("M3_CONVERSATION_SNAPSHOT_UNSTABLE");
+      merged.set(no, row);
+    }
   }
-  if (records.length !== total || new Set(records.map((row) => row.conversationNo)).size !== records.length) {
-    throw new Error("M3_CONVERSATION_PAGE_INCOMPLETE");
-  }
-  return { total, pageNum: 1, pageSize: Math.max(records.length, pageSize), records };
+  const { scope: after } = await supportClient.overview({ signal }), current = useAdminAuth.getState();
+  signal?.throwIfAborted();
+  if (identity !== adminShellSessionKey(current.session, current.authEpoch) || after.actorId !== scope.actorId) throw new Error("M3_CONVERSATION_IDENTITY_CHANGED");
+  if (after.mode !== scope.mode || JSON.stringify([...after.availableModes].sort()) !== JSON.stringify([...scope.availableModes].sort())) throw new Error("M3_CONVERSATION_SCOPE_CHANGED");
+  const records = [...merged.values()];
+  return { total: records.length, pageNum: 1, pageSize: Math.max(records.length, pageSize), records };
 }
 
 function parseSupportMessageKind(message: ContentConversationMessageView, payloadRequired = true): NonNullable<SessionMsg["kind"]> {

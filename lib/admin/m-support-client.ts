@@ -25,7 +25,7 @@ export type SupportOverview = {
   snapshotId: string;
   evaluatedAt: string;
   rulesVersion: number;
-  scope: { actorId: number; agentAdminId: number | null; groupId: number | null; mode: SupportReadMode };
+  scope: { actorId: number; agentAdminId: number | null; groupId: number | null; mode: SupportReadMode; availableModes: SupportReadMode[] };
   counts: SupportCounts;
   knownActiveCount: number;
   unknownWindowCount: number;
@@ -265,6 +265,10 @@ function detail(value: unknown): SupportCustomerDetail {
 function workbenchSnapshot(value: unknown): SupportWorkbenchSnapshot {
   const row = object(value, "workbench");
   const scope = object(row.scope, "workbench.scope");
+  const mode = enumValue(scope.mode, ["PERSONAL", "MANAGED", "ALL"] as const, "workbench.scope.mode");
+  if (!Array.isArray(scope.availableModes)) malformed("workbench.scope.availableModes");
+  const availableModes = scope.availableModes.map(value => enumValue(value, ["PERSONAL", "MANAGED", "ALL"] as const, "workbench.scope.availableModes"));
+  if (!availableModes.includes(mode) || new Set(availableModes).size !== availableModes.length) malformed("workbench.scope.availableModes");
   const rules = object(row.rules, "workbench.rules");
   const totals = object(row.overview, "workbench.overview");
   const performance = object(row.performance, "workbench.performance");
@@ -292,7 +296,7 @@ function workbenchSnapshot(value: unknown): SupportWorkbenchSnapshot {
     snapshotId: nonempty(row.snapshotId, "workbench.snapshotId"),
     evaluatedAt: timestamp(row.evaluatedAt, "workbench.evaluatedAt"),
     rulesVersion: count(row.rulesVersion, "workbench.rulesVersion"),
-    scope: { actorId: positive(scope.actorId, "workbench.scope.actorId"), agentAdminId: scope.agentAdminId === null ? null : positive(scope.agentAdminId, "workbench.scope.agentAdminId"), groupId: scope.groupId === null ? null : positive(scope.groupId, "workbench.scope.groupId"), mode: enumValue(scope.mode, ["PERSONAL", "MANAGED", "ALL"] as const, "workbench.scope.mode") },
+    scope: { actorId: positive(scope.actorId, "workbench.scope.actorId"), agentAdminId: scope.agentAdminId === null ? null : positive(scope.agentAdminId, "workbench.scope.agentAdminId"), groupId: scope.groupId === null ? null : positive(scope.groupId, "workbench.scope.groupId"), mode, availableModes },
     counts,
     knownActiveCount: count(totals.knownActiveCount, "workbench.knownActiveCount"),
     unknownWindowCount,
