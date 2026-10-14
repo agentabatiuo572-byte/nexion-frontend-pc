@@ -863,13 +863,13 @@
     "limitation": "Occluded texture and compatibility extensions retain v2 mixed or generated material. They are still checked by the full-page fidelity gate and are not approved-source-identical."
   },
   "currentSurfaceRevision": {
-    "id": "imagegen-continuous-main-canvas-20261014",
+    "id": "approved-source-foreground-only-20261014",
     "manifest": "background-surfaces-r117-manifest.json",
-    "manifestSHA256": "a751532be7efaecb01743f33181fa6faf2e277e6271fff51d049af1ba2d56e33",
-    "previousManifestSHA256": "f56fcb8fdbdd41c3e9c085f184b9fb7c587469c56894885efd6992148b0ec9b6",
-    "desktopMainCanvasSHA256": "924f3ef0c1f12370a1eaaaf09b99ac9004b964f75336e707cdc01be48cf9052c",
-    "narrowFallbackSceneSHA256": "067b6f9cf5c8dfd08127f06675f3bcc546e25548b2216636bd07452a6b8c01bf",
-    "provenance": "background-imagegen-repair-20261014.json",
-    "acceptance": "Continuous generated background adopted; runtime and independent review pending. No original-pixel identity claim."
+    "manifestSHA256": "cc7a7572464926312aaa78739acda673338e3ecab950bcb16e0fb068fe129a7a",
+    "previousManifestSHA256": "a751532be7efaecb01743f33181fa6faf2e277e6271fff51d049af1ba2d56e33",
+    "desktopMainCanvasSHA256": "395f7e289e43f6e2f2e9b80ccfeee343fedc13069e985dc560f682eee5f0a5b0",
+    "narrowFallbackSceneSHA256": "0266171f97945c77e35ff68250db13476778a31bdac0284944f623b4b5383d64",
+    "provenance": "background-approved-source-restoration-20261014.json",
+    "acceptance": "All main-region pixels outside declared foreground supports byte-exact; original five background regions PASS. Reconstructed foreground is not source recovery; runtime and independent acceptance pending."
   }
 }

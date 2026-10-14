@@ -1,12 +1,12 @@
 {
-  "revision": "imagegen-continuous-main-canvas-20261014",
+  "revision": "approved-source-foreground-only-20261014",
   "approvedSourceSHA256": "e3b92e2fbb593171a4658e058c562ec4dbc9403fecafdf8dd85a719ba71f6c3a",
   "approvedSourceSize": [
     1536,
     1024
   ],
-  "previousSceneSHA256": "92241c54e64b331720d83b9f897c7694dd45b6671f3466abedcc539e662c55fd",
-  "currentSceneSHA256": "067b6f9cf5c8dfd08127f06675f3bcc546e25548b2216636bd07452a6b8c01bf",
+  "previousSceneSHA256": "067b6f9cf5c8dfd08127f06675f3bcc546e25548b2216636bd07452a6b8c01bf",
+  "currentSceneSHA256": "0266171f97945c77e35ff68250db13476778a31bdac0284944f623b4b5383d64",
   "assets": [
     {
       "file": "orbit-surface-navigation.png",
@@ -222,7 +222,7 @@
     },
     {
       "file": "orbit-surface-table.png",
-      "sha256": "4315cc92df43a6ae27cdb85e128ed0991c23c186f72a3bf5e5cce3887c1bab79",
+      "sha256": "b5c0cabccf16199913bf4df6e6c05625fb432001a06c14677f3fa2ca452c830d",
       "sourceCrop": {
         "id": "table",
         "x": 202,
@@ -649,7 +649,20 @@
           "height": 50
         }
       ],
-      "method": "Fixed foreground holes: nearest clean horizontal donors interpolated from the source crop. Whole-width holes use nearest clean source row. Original pixels outside declared support are byte-exact; holes are sampled reconstruction, not original texture. The fixed old self-row y778..827 is replaced with a cleaned ordinary-row donor y688..735, cyclic over48px. Retired horizontal separators average cleaned source rows3px above/below; no old separate movement-column grid remains."
+      "method": "Fixed foreground holes: nearest clean horizontal donors interpolated from the source crop. Whole-width holes use nearest clean source row. Original pixels outside declared support are byte-exact; holes are sampled reconstruction, not original texture. The fixed old self-row y778..827 is replaced with a cleaned ordinary-row donor y688..735, cyclic over48px. Retired horizontal separators average cleaned source rows3px above/below; no old separate movement-column grid remains. Subsequent local header residue cleanup is separately recorded in background-table-header-clean-20261014.json; the original extraction basis and mask records are preserved.",
+      "previousSHA256": "4315cc92df43a6ae27cdb85e128ed0991c23c186f72a3bf5e5cce3887c1bab79",
+      "localHeaderResidueRepair": {
+        "provenance": "background-table-header-clean-20261014.json",
+        "rect": {
+          "x": 952,
+          "y": 28,
+          "width": 108,
+          "height": 14
+        },
+        "changedPixels": 1296,
+        "outsideRepairChangedPixels": 0,
+        "limitation": "This small formerly text-occluded header support is reconstructed from neighbouring native material; not a recovery of originally hidden source pixels. Browser acceptance pending."
+      }
     },
     {
       "file": "orbit-surface-self-row.png",
@@ -868,16 +881,21 @@
     },
     {
       "file": "orbit-surface-main-canvas.png",
-      "sha256": "924f3ef0c1f12370a1eaaaf09b99ac9004b964f75336e707cdc01be48cf9052c",
-      "previousSHA256": "3aa8b6677891414aa1ab5c5dc63c236af0be904b105a93a286df0ec0113210cf",
+      "sha256": "395f7e289e43f6e2f2e9b80ccfeee343fedc13069e985dc560f682eee5f0a5b0",
+      "previousSHA256": "924f3ef0c1f12370a1eaaaf09b99ac9004b964f75336e707cdc01be48cf9052c",
       "width": 1355,
       "height": 1024,
-      "method": "Continuous imagegen main artwork copied from source x181..1535 without scaling, recoloring or local masking; not original approved source pixels. Top 20px preserve the approved source strip.",
+      "method": "Native approved RGBA main crop; no resize. All pixels outside the declared foreground union are byte-exact. Existing generated guide and source-boundary/contour interpolation are confined to foreground reconstruction supports.",
       "restoration": {
-        "provenance": "background-imagegen-repair-20261014.json",
-        "scope": "Continuous source-coordinate main canvas avoids visible local patch boundaries; no resizing or recoloring.",
-        "limitation": "Generated reconstruction; original approved design remains unchanged. Runtime and independent review pending."
-      }
+        "provenance": "background-approved-source-restoration-20261014.json",
+        "mask": "background-approved-source-foreground-mask-20261014.png",
+        "outsideMaskChangedPixels": 0,
+        "maximumOutsideDifference": 0,
+        "scope": "Original 80 foreground supports, explicitly measured portrait/pedestal bloom and glyph/divider fringes, independent self/table foreground layers. Visible original contour pixels retained.",
+        "limitation": "Behind original opaque foreground, reconstructed texture is not original source recovery. Final browser and independent acceptance pending."
+      },
+      "sourceExact": 561214,
+      "reconstructed": 826306
     }
   ],
   "limitations": [

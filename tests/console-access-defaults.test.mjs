@@ -10,6 +10,15 @@ import * as nav from "../lib/nav/console-nav.ts";
 const require = createRequire(import.meta.url);
 const shell = readFileSync(new URL("../app/components/shell/console-shell.tsx", import.meta.url), "utf8");
 
+test("customer full profile uses M1 or M3 menus without granting global C1 search", () => {
+  for (const code of ["M1", "M3", "M2", "M4", "M5"]) {
+    const domains = nav.resolveVisibleDomains({ role: "support", menuCodes: [code], authorities: [`service_${code.toLowerCase()}_read`], supportReadModes: ["PERSONAL"] });
+    assert.equal(nav.canAccessResolvedPath(domains, "/service/customers/7"), code === "M1" || code === "M3");
+    assert.equal(nav.canAccessResolvedPath(domains, "/users/search/7"), false);
+  }
+  assert.equal(nav.canAccessResolvedPath([], "/service/customers/7"), false);
+});
+
 test("missing or empty grants never recover static pages for builtin or custom accounts", () => {
   for (const role of ["superadmin", "support", "finance", "config", "risk", "content", "growth", "auditor", "PARTNER_REVIEWER"]) {
     for (const grants of [{}, { authorities: [] }, { menuCodes: [] }, { menuCodes: [], authorities: ["platform_a6_read"] }]) {

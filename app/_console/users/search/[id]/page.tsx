@@ -3,13 +3,14 @@
 /**
  * C1 用户详情(L3 · 画像全景)。页面只消费后端聚合的 360 画像和操作接口。
  */
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { NotificationTimeEvidenceDrawer } from "./notification-time-evidence";
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, usePathname, useSearchParams } from "next/navigation";
 import { ArrowLeft, Bell, CreditCard, RefreshCcw, ShieldAlert, Snowflake, UserCog } from "lucide-react";
 import {
   fetchUser360,
+  fetchSupportCustomerFullProfile,
   fetchUserPaymentMethods,
   executeUserDeviceTradein,
   notifyUserPaymentMethodRebind,
@@ -34,6 +35,7 @@ import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import type { AdminRole } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import {
   formatC1DeviceStatus,
   formatC1DeviceTier,
@@ -114,11 +116,13 @@ function rows(section: User360Section | null | undefined) {
 }
 
 function money(value: unknown, digits = 2) {
-  return fmtUsd(asNumber(value), digits);
+  const amount = asNumber(value, NaN);
+  return Number.isFinite(amount) ? fmtUsd(amount, digits) : "-";
 }
 
 function numberLabel(value: unknown) {
-  return fmtNum(asNumber(value));
+  const number = asNumber(value, NaN);
+  return Number.isFinite(number) ? fmtNum(number) : "-";
 }
 
 function statusLabel(value: unknown) {
@@ -167,15 +171,8 @@ function errorMessage(error: unknown) {
   return displayAdminError(error);
 }
 
-function sectionStatus(section: User360Section | null | undefined) {
-  const status = asText(section?.sourceStatus, "READY").toUpperCase();
-  if (status === "READY") return "数据正常";
-  if (status === "ERROR") return "数据读取失败";
-  return "数据状态待确认";
-}
-
 function sectionFailed(section: User360Section | null | undefined) {
-  return asText(section?.sourceStatus, "READY").toUpperCase() === "ERROR";
+  return ["ERROR", "UNKNOWN", "UNAVAILABLE"].includes(asText(section?.sourceStatus, "READY").toUpperCase());
 }
 
 function auditDetail(row: JsonRecord) {
@@ -223,7 +220,7 @@ function toAuditEntries(rowsValue: unknown): AuditEntry[] {
 
 function Section({ title, tag, children }: { title: string; tag?: string; children: ReactNode }) {
   return (
-    <div className="rounded-[12px] p-4" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}>
+    <div className="min-w-0 rounded-[12px] p-4" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}>
       <div className="mb-2.5 flex items-center gap-2">
         <span className="font-display text-[14px]" style={{ color: "var(--v5-ink)" }}>{title}</span>
         {tag && <span className="font-mono-tabular text-[10px]" style={{ color: "var(--v5-ink-4)" }}>{tag}</span>}
@@ -235,9 +232,9 @@ function Section({ title, tag, children }: { title: string; tag?: string; childr
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-1.5" style={{ borderBottom: "1px solid var(--v5-border)" }}>
+    <div className="flex min-w-0 items-center justify-between gap-3 py-1.5" style={{ borderBottom: "1px solid var(--v5-border)", overflowWrap: "anywhere" }}>
       <span className="text-[12px]" style={{ color: "var(--v5-ink-4)" }}>{label}</span>
-      <span className="text-right text-[12.5px]" style={{ color: "var(--v5-ink)" }}>{children}</span>
+      <span className="min-w-0 text-right text-[12.5px]" style={{ color: "var(--v5-ink)" }}>{children}</span>
     </div>
   );
 }
@@ -247,7 +244,7 @@ function DataTable({ rows, columns, emptyText = "暂无记录" }: { rows: JsonRe
     return <p className="rounded-[8px] px-3 py-3 text-[12px]" style={{ background: "var(--v5-surface-2)", color: "var(--v5-ink-4)" }}>{emptyText}</p>;
   }
   return (
-    <div style={{ overflowX: "auto" }}>
+    <div style={{ overflowX: "auto", maxWidth: "100%" }}>
       <table className="w-full text-left text-[12px]" style={{ minWidth: 760, borderCollapse: "separate", borderSpacing: 0 }}>
         <thead>
           <tr>
@@ -291,15 +288,15 @@ function HubSection({
   const dataRows = rows(section);
   return (
     <div id={id} style={{ scrollMarginTop: 76 }}>
-      <Section title={title} tag={`数据源 · ${sectionStatus(section)}`}>
+      <Section title={title}>
         {sectionFailed(section) && (
           <div className="ctint warn mb-3 flex flex-wrap items-center justify-between gap-2">
-            <span>本卡片数据读取失败，其他画像卡片不受影响。请稍后刷新；若持续失败，请联系值班人员并说明卡片名称。</span>
+            <span>此项资料暂时无法读取，请刷新重试。</span>
             <button className="btn btn-sec btn-sm" onClick={() => window.location.reload()}>刷新页面重试</button>
           </div>
         )}
-        {children}
-        {columns && (
+        {!sectionFailed(section) && children}
+        {!sectionFailed(section) && columns && (
           <div className={children ? "mt-3" : ""}>
             <DataTable rows={dataRows} columns={columns} emptyText={emptyText} />
           </div>
@@ -334,13 +331,14 @@ function ActionButton({
 export default function UserDetailPage() {
   const session = useAdminAuth((state) => state.session);
   const authEpoch = useAdminAuth((state) => state.authEpoch);
-  const canReadNotificationEvidence = session?.role === "superadmin"
-    || (!!session?.authorities.includes("user_c1hub_read") && !!session?.authorities.includes("platform_a4_read"));
+  const supportScope = usePathname()?.startsWith("/service/customers/") === true;
+  const canReadNotificationEvidence = !supportScope && (session?.role === "superadmin"
+    || (!!session?.authorities.includes("user_c1hub_read") && !!session?.authorities.includes("platform_a4_read")));
   const [notificationEvidence, setNotificationEvidence] = useState<{ userKey: string; authEpoch: number; id: number } | null>(null);
-  const canWriteC1 = session?.role === "superadmin" || !!session?.authorities.includes("user_c1hub_write");
+  const canWriteC1 = !supportScope && (session?.role === "superadmin" || !!session?.authorities.includes("user_c1hub_write"));
   const canCorrectNotificationTime = canReadNotificationEvidence && canWriteC1
     && (session?.role === "superadmin" || !!session?.authorities.includes("platform_a4_write"));
-  const canWriteC2 = session?.role === "superadmin" || !!session?.authorities.includes("user_c2_write");
+  const canWriteC2 = !supportScope && (session?.role === "superadmin" || !!session?.authorities.includes("user_c2_write"));
   const canReadC2 = session?.role === "superadmin" || !!session?.authorities.includes("user_c2_read");
   const canReadC3 = session?.role === "superadmin" || !!session?.authorities.includes("user_c3_read");
   const canReadC5 = session?.role === "superadmin" || !!session?.authorities.includes("user_c5_read");
@@ -353,9 +351,15 @@ export default function UserDetailPage() {
   const searchParams = useSearchParams();
   const userKey = params?.id?.trim() ?? "";
   const requestedReturnTo = searchParams?.get("returnTo") ?? "";
-  const returnTo = requestedReturnTo.startsWith("/users/search") && !requestedReturnTo.startsWith("//")
+  const conversationNo = searchParams?.get("conversationNo")?.trim() ?? "";
+  const returnTo = supportScope ? conversationNo ? `/service/sessions?conversationNo=${encodeURIComponent(conversationNo)}` : "/service/overview" : requestedReturnTo.startsWith("/users/search") && !requestedReturnTo.startsWith("//")
     ? requestedReturnTo
     : "/users/search";
+  const returnLabel = supportScope ? conversationNo ? "返回原会话" : "返回工作台" : "返回检索";
+  const readKey = `${adminShellSessionKey(session, authEpoch)}|${supportScope}|${userKey}`;
+  const currentReadKey = useRef(readKey), requestGeneration = useRef(0);
+  currentReadKey.current = readKey;
+  const [detailKey, setDetailKey] = useState("");
   const [detail, setDetail] = useState<User360Detail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -380,9 +384,13 @@ export default function UserDetailPage() {
     run: (reason: string) => Promise<boolean | void> | boolean | void;
   }) => setActionConfirm(req);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
+    if (currentReadKey.current !== readKey) return;
+    const generation = ++requestGeneration.current;
+    const active = () => generation === requestGeneration.current && currentReadKey.current === readKey && !signal?.aborted;
     setLoading(true);
     setError(null);
+    setDetail(null); setPaymentMethods(null); setActionConfirm(null); setNotificationEvidence(null); setDetailKey(readKey);
     if (!userKey) {
       setDetail(null);
       setError("用户标识缺失，已停止加载");
@@ -390,17 +398,32 @@ export default function UserDetailPage() {
       return;
     }
     try {
-      setDetail(await fetchUser360(userKey));
+      const next = supportScope ? await fetchSupportCustomerFullProfile(userKey, signal) : await fetchUser360(userKey);
+      if (active()) setDetail(next);
     } catch (err) {
-      setError(errorMessage(err));
+      if (active()) setError(errorMessage(err));
     } finally {
-      setLoading(false);
+      if (active()) setLoading(false);
     }
-  }, [userKey]);
+  }, [userKey, supportScope, readKey]);
 
   useEffect(() => {
-    void load();
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => { controller.abort(); requestGeneration.current++; };
   }, [load]);
+
+  useEffect(() => {
+    if (!supportScope) return;
+    const revoke = (event: Event) => {
+      const detail = (event as CustomEvent<{ customerId?: string; conversationNo?: string }>).detail ?? {};
+      if (detail.customerId && detail.customerId !== userKey || !detail.customerId && detail.conversationNo && detail.conversationNo !== conversationNo) return;
+      requestGeneration.current++; setDetail(null); setPaymentMethods(null); setLoading(false);
+      setError("客户资料暂时无法读取。请重新读取资料或返回列表核对。");
+    };
+    window.addEventListener("support-scope-invalidated", revoke);
+    return () => window.removeEventListener("support-scope-invalidated", revoke);
+  }, [supportScope, userKey, conversationNo]);
 
   const profile: User360Profile | null = detail?.profile ?? null;
   const summary: User360Summary = detail?.summary ?? {};
@@ -420,14 +443,14 @@ export default function UserDetailPage() {
   const actionDisabled = !!actionPending || !userId;
 
   const loadPaymentMethods = useCallback(async () => {
-    if (!userId) return;
+    if (supportScope || !userId) return;
     try {
       setPaymentMethods(await fetchUserPaymentMethods(userId, includeUnbound, paymentPage, 10));
       setPaymentError(null);
     } catch (err) {
       setPaymentError(errorMessage(err));
     }
-  }, [includeUnbound, paymentPage, userId]);
+  }, [includeUnbound, paymentPage, userId, supportScope]);
 
   useEffect(() => { void loadPaymentMethods(); }, [loadPaymentMethods]);
   useEffect(() => { setPaymentPage(1); }, [userId]);
@@ -469,11 +492,11 @@ export default function UserDetailPage() {
     detail?.devices && { label: "设备数", value: `${numberLabel(summary.deviceCount)} 台`, accent: "var(--admin-domain-e)", anchor: "hub-devices" },
   ].filter((value): value is { label: string; value: string; accent: string; anchor: string } => Boolean(value));
 
-  if (loading && !detail) {
+  if (detailKey !== readKey || loading && !detail) {
     return (
       <div className="w-full">
         <Link href={returnTo} prefetch={false} className="inline-flex items-center gap-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
-          <ArrowLeft size={14} /> 返回检索
+          <ArrowLeft size={14} /> {returnLabel}
         </Link>
         <p className="mt-6 text-[14px]" style={{ color: "var(--v5-ink-3)" }}>正在加载用户详情...</p>
       </div>
@@ -484,7 +507,7 @@ export default function UserDetailPage() {
     return (
       <div className="w-full">
         <Link href={returnTo} prefetch={false} className="inline-flex items-center gap-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
-          <ArrowLeft size={14} /> 返回检索
+          <ArrowLeft size={14} /> {returnLabel}
         </Link>
         <div className="mt-6 rounded-[12px] p-4" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}>
           <p className="text-[14px]" style={{ color: "var(--v5-danger)" }}>用户详情加载失败: {error}</p>
@@ -500,17 +523,17 @@ export default function UserDetailPage() {
     return (
       <div className="w-full">
         <Link href={returnTo} prefetch={false} className="inline-flex items-center gap-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
-          <ArrowLeft size={14} /> 返回检索
+          <ArrowLeft size={14} /> {returnLabel}
         </Link>
-        <p className="mt-6 text-[14px]" style={{ color: "var(--v5-ink-3)" }}>后端未返回用户详情。</p>
+        <p className="mt-6 text-[14px]" style={{ color: "var(--v5-ink-3)" }}>暂时无法读取客户资料，请重新加载。</p>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1100px]">
+    <div className="mx-auto w-full min-w-0 max-w-[1100px]" style={{ overflowWrap: "anywhere" }}>
       <Link href={returnTo} prefetch={false} className="inline-flex items-center gap-1 text-[12.5px] transition-colors hover:opacity-80" style={{ color: "var(--v5-ink-3)" }}>
-        <ArrowLeft size={14} /> 返回检索
+        <ArrowLeft size={14} /> {returnLabel}
       </Link>
 
       <header className="mt-3 flex flex-wrap items-start justify-between gap-3">
@@ -556,7 +579,7 @@ export default function UserDetailPage() {
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <div className="flex flex-col gap-4">
-          {detail.risk && <Section title="风险画像" tag="K4 风险评分">
+          {detail.risk && <Section title="风险画像" tag={supportScope ? undefined : "K4 风险评分"}>
             <div className="flex items-center gap-4">
               <div>
                 <p className="font-mono-tabular text-[32px] leading-none" style={{ color: hasRiskScore ? riskColor(riskScore) : "var(--v5-ink-3)" }}>{hasRiskScore ? riskScore : "不可用"}</p>
@@ -569,9 +592,9 @@ export default function UserDetailPage() {
             </div>
           </Section>}
 
-          {detail.financial && <Section title="资产 & 账户" tag="C3 余额资产 · 双币 USDT/NEX">
+          {detail.financial && <Section title="资产 & 账户" tag={supportScope ? undefined : "C3 余额资产 · 双币 USDT/NEX"}>
             <Row label="可提余额 · USDT"><span className="font-mono-tabular">{money(summary.walletUsdt ?? profile.walletUsdt)}</span></Row>
-            <Row label="NEX 余额"><span className="font-mono-tabular">{fmtNum(asNumber(summary.walletNex ?? profile.walletNex))} NEX</span></Row>
+            <Row label="NEX 余额"><span className="font-mono-tabular">{numberLabel(summary.walletNex ?? profile.walletNex)} NEX</span></Row>
             <Row label="累计充值"><span className="font-mono-tabular">{money(summary.depositedUsd)}</span></Row>
             <Row label="累计提现"><span className="font-mono-tabular">{money(summary.withdrawnUsd)}</span></Row>
             <Row label="提现申请额"><span className="font-mono-tabular">{money(summary.withdrawRequestedUsd)}</span></Row>
@@ -579,7 +602,7 @@ export default function UserDetailPage() {
         </div>
 
         <div className="flex flex-col gap-4">
-          <Section title="关联处置入口" tag="C1 只读 · 到业务页处理">
+          {!supportScope && <Section title="关联处置入口" tag="C1 只读 · 到业务页处理">
             <div className="flex flex-wrap gap-2">
               {canReadC2 && (
                 <Link
@@ -651,13 +674,13 @@ export default function UserDetailPage() {
             <p className="mt-2.5 flex items-center gap-1 text-[11px]" style={{ color: "var(--v5-ink-4)" }}>
               <ShieldAlert size={12} /> C1 仅保留产品更新日志明确批准的昵称与支付方式操作；其他处置在 C2/C5 完成。{actionPending ? ` 当前执行: ${actionPending}` : ""}
             </p>
-          </Section>
+          </Section>}
 
-          {detail.sessions && <Section title="安全 & 会话" tag="C5 安全会话">
+          {detail.sessions && <Section title="安全 & 会话" tag={supportScope ? undefined : "C5 安全会话"}>
             <div className="mb-2 grid grid-cols-3 gap-2">
               <KpiStatCard label="活跃会话" value={numberLabel(summary.activeSessionCount)} accent="var(--admin-domain-c)" />
-              <KpiStatCard label="2FA" value={summary.twoFactorEnabled ? "开启" : "关闭"} accent="var(--admin-domain-e)" />
-              <KpiStatCard label="锁定" value={summary.locked ? "是" : "否"} accent="var(--v5-warning)" />
+              <KpiStatCard label="2FA" value={summary.twoFactorEnabled == null ? "-" : summary.twoFactorEnabled ? "开启" : "关闭"} accent="var(--admin-domain-e)" />
+              <KpiStatCard label="锁定" value={summary.locked == null ? "-" : summary.locked ? "是" : "否"} accent="var(--v5-warning)" />
             </div>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <TabGroup<SessionStatusFilter>
@@ -699,7 +722,7 @@ export default function UserDetailPage() {
       </div>
 
       <div className="mt-4 flex flex-col gap-4">
-        <HubSection id="hub-payment-methods" title="支付方式" section={{ sourceStatus: paymentError ? "ERROR" : "READY" }}>
+        {!supportScope && <HubSection id="hub-payment-methods" title="支付方式" section={{ sourceStatus: paymentError ? "ERROR" : "READY" }}>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <label className="inline-flex items-center gap-2 text-[12px]" style={{ color: "var(--v5-ink-3)" }}>
               <input type="checkbox" checked={includeUnbound} onChange={(event) => { setIncludeUnbound(event.target.checked); setPaymentPage(1); }} /> 显示已解绑
@@ -730,7 +753,7 @@ export default function UserDetailPage() {
           </div>
           {!paymentError && !(paymentMethods?.items ?? []).length && <p className="rounded-[8px] px-3 py-3 text-[12px]" style={{ background: "var(--v5-surface-2)", color: "var(--v5-ink-4)" }}>该用户暂无支付方式</p>}
           {!!paymentMethods?.total && <div className="mt-3 flex items-center justify-between gap-3 text-[12px]" style={{ color: "var(--v5-ink-4)" }}><span>共 {paymentMethods.total} 条 · 第 {paymentMethods.page}/{Math.max(1, Math.ceil(paymentMethods.total / paymentMethods.pageSize))} 页</span><div className="flex gap-2"><button type="button" className="rounded-[8px] px-2.5 py-1.5 disabled:opacity-40" style={{ border: "1px solid var(--v5-border)" }} disabled={paymentPage <= 1} onClick={() => setPaymentPage((page) => Math.max(1, page - 1))}>上一页</button><button type="button" className="rounded-[8px] px-2.5 py-1.5 disabled:opacity-40" style={{ border: "1px solid var(--v5-border)" }} disabled={paymentPage >= Math.ceil(paymentMethods.total / paymentMethods.pageSize)} onClick={() => setPaymentPage((page) => page + 1)}>下一页</button></div></div>}
-        </HubSection>
+        </HubSection>}
 
         <HubSection
           id="hub-deposit"
@@ -781,7 +804,7 @@ export default function UserDetailPage() {
           ]}
         >
           <Row label="在线 / 活跃">{numberLabel(detail.devices?.onlineCount)} / {numberLabel(detail.devices?.activeCount)}</Row>
-          <Row label="设备配置日产基准（所列记录合计）">{money(detail.devices?.dailyUsdt)} · {fmtNum(asNumber(detail.devices?.dailyNex))} NEX</Row>
+          <Row label="设备配置日产基准（所列记录合计）">{money(detail.devices?.dailyUsdt)} · {numberLabel(detail.devices?.dailyNex)} NEX</Row>
           <p className="mt-2 text-[12px]" style={{ color: "var(--v5-ink-4)" }}>含已停用历史记录的配置值，不代表今日实际收益或钱包入账</p>
           {canWriteC2 && asArray(detail.devices?.records).map((device) => {
             const deviceId = asNumber(device.id);
@@ -828,8 +851,8 @@ export default function UserDetailPage() {
             { key: "createdAt", label: "时间", render: formatDate },
           ]}
         >
-          <Row label="收益合计">{money(detail.earnings?.totalUsdt)} · {fmtNum(asNumber(detail.earnings?.totalNex))} NEX</Row>
-          <Row label="设备配置日产基准（所列记录合计）">{money(detail.earnings?.deviceDailyUsdt)} · {fmtNum(asNumber(detail.earnings?.deviceDailyNex))} NEX</Row>
+          <Row label="收益合计">{money(detail.earnings?.totalUsdt)} · {numberLabel(detail.earnings?.totalNex)} NEX</Row>
+          <Row label="设备配置日产基准（所列记录合计）">{money(detail.earnings?.deviceDailyUsdt)} · {numberLabel(detail.earnings?.deviceDailyNex)} NEX</Row>
           <p className="mt-2 text-[12px]" style={{ color: "var(--v5-ink-4)" }}>含已停用历史记录的配置值，不代表今日实际收益或钱包入账</p>
           <DataListPager label="收益明细" page={earningsPager.page} pageSize={earningsPager.pageSize} total={earningsPager.total} onPageChange={earningsPager.setPage} onPageSizeChange={earningsPager.setPageSize} />
         </HubSection>
@@ -874,7 +897,7 @@ export default function UserDetailPage() {
         )}
 
         <div className="grid gap-4 lg:grid-cols-2">
-          {detail.vrank && <Section title="V-Rank" tag={`数据源 · ${sectionStatus(detail.vrank)}`}>
+          {detail.vrank && <Section title="V-Rank">
             <Row label="当前等级">{asText(detail.vrank?.currentRank)}</Row>
             <Row label="用户层级">{asText(detail.vrank?.userLevel)}</Row>
             <Row label="团队规模">{numberLabel(detail.vrank?.teamSize)} 人</Row>
@@ -882,11 +905,11 @@ export default function UserDetailPage() {
             <Row label="团队业绩">{money(detail.vrank?.teamVolumeUsd)}</Row>
           </Section>}
 
-          {detail.account && <Section title="账户合规" tag={`数据源 · ${sectionStatus(detail.account)}`}>
+          {detail.account && <Section title="账户合规">
             <Row label="用户编码">{userNo}</Row>
             <Row label="账户状态"><StatusPill label={statusLabel(status)} tone={statusTone(status)} size="sm" /></Row>
-            <Row label="2FA">{summary.twoFactorEnabled ? "已开启" : "未开启"}</Row>
-            <Row label="需重置密码">{summary.passwordResetRequired ? "是" : "否"}</Row>
+            <Row label="2FA">{summary.twoFactorEnabled == null ? "-" : summary.twoFactorEnabled ? "已开启" : "未开启"}</Row>
+            <Row label="需重置密码">{summary.passwordResetRequired == null ? "-" : summary.passwordResetRequired ? "是" : "否"}</Row>
           </Section>}
         </div>
 
@@ -904,8 +927,8 @@ export default function UserDetailPage() {
           emptyText="暂无兑换/转换账单"
         >
           <Row label="钱包 USDT">{money((detail.financial?.wallet as JsonRecord | undefined)?.usdt)}</Row>
-          <Row label="钱包 NEX">{fmtNum(asNumber((detail.financial?.wallet as JsonRecord | undefined)?.nex))} NEX</Row>
-          <Row label="质押记录">{numberLabel(asArray(detail.financial?.stakingLedgerRows).length)} 条</Row>
+          <Row label="钱包 NEX">{numberLabel((detail.financial?.wallet as JsonRecord | undefined)?.nex)} NEX</Row>
+          <Row label="质押记录">{Array.isArray(detail.financial?.stakingLedgerRows) ? numberLabel(detail.financial.stakingLedgerRows.length) : "-"} 条</Row>
         </HubSection>
 
         <HubSection
@@ -948,7 +971,7 @@ export default function UserDetailPage() {
       </div>
 
       {detail.audit && <div className="mt-4">
-        <Section title="审计时间线" tag="A2 全程留痕">
+        <Section title="审计时间线" tag={supportScope ? undefined : "A2 全程留痕"}>
           <AuditTimeline entries={auditEntries} />
         </Section>
       </div>}

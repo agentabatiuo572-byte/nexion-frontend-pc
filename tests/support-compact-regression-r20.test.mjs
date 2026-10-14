@@ -37,7 +37,7 @@ function hooks() {
 function profileHarness(initial = profile()) {
   const h = hooks(), requests = [], props = { customerId: "101", scopeVersion: 1, conversation: { id: "CV-101", ownerAdminId: 12 }, onHistory() {}, onRetryMessages() {}, ctx: { pget: () => "[]", invalidateScope() {}, addCustomerTag: async () => true } };
   const listeners = new Set(), window = { addEventListener: (_type, listener) => listeners.add(listener), removeEventListener: (_type, listener) => listeners.delete(listener) };
-  const exports = evaluate(component("m3-customer-profile"), { window }, {
+  const exports = evaluate(component("m3-customer-profile"), { window, document: { querySelectorAll: () => [] } }, {
     react: h.react, "@/lib/store/admin-auth": { useAdminAuth: selector => selector({ authEpoch: 1, session: { adminId: 12, role: "super", authorities: ["service_m3_write"] } }) },
     "@/lib/admin/m-support-enhancements": { supportEnhancements: { profile() { const request = deferred(); requests.push(request); return request.promise; }, devices: async () => group({ total: 0, heldCount: 0, fieldStatuses: { heldCount: "READY" }, onlineCount: 0, records: [] }), flows: async () => group({ total: 0, records: [] }) } },
     "@/lib/admin/m-support-client": { supportClient: { maintenanceHistory: async () => ({ totalExecutions: 0, totalCycles: 0, cycles: [], executions: [] }) }, SupportClientError: class extends Error {} },
@@ -45,7 +45,7 @@ function profileHarness(initial = profile()) {
     "./hd-ui": { HDSelect: () => null },
     "./support-avatar": { SupportAvatar: () => null, customerAvatarPath: () => "", advisorAvatarPath: () => "" }, "./support-leaderboard": { compactSupportBoardValue },
   });
-  const render = (detail = true) => { h.reset(); let tree = exports.M3CustomerProfile(props); if (detail && !nodes(tree).some(node => node.props?.title === "客户服务 360")) { nodes(tree).find(node => node.props?.className === "m3-profile-open").props.onClick(); h.reset(); tree = exports.M3CustomerProfile(props); } return tree; };
+  const render = (detail = true) => { h.reset(); let tree = exports.M3CustomerProfile(props); if (detail && !nodes(tree).some(node => node.props?.title === "客户服务 360")) { nodes(tree).find(node => node.type === "button" && node.props.children === "说明").props.onClick(); h.reset(); tree = exports.M3CustomerProfile(props); } return tree; };
   render(false); h.runEffects(); h.states[0] = initial;
   return { ...h, h, props, requests, render, html: (detail = true) => renderToStaticMarkup(render(detail)), seed: value => { h.states[0] = value; } };
 }

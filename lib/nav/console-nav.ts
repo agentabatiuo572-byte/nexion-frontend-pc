@@ -429,6 +429,7 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
 export function canAccessResolvedPath(domains: NavDomain[], pathname: string | null): boolean {
   const path = (pathname || "/").replace(/\/+$/, "") || "/";
   if (path === "/") return domains.some(domain => domain.l2.length > 0);
+  if (/^\/service\/customers\/[^/]+$/.test(path)) return domains.find(domain => domain.code === "M")?.l2.some(item => item.id === "M1" || item.id === "M3") ?? false;
   const knownDomain = CONSOLE_NAV.find((domain) => path === `/${domain.slug}` || path.startsWith(`/${domain.slug}/`));
   if (!knownDomain) return true;
   const grantedDomain = domains.find((domain) => domain.code === knownDomain.code);

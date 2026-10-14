@@ -158,7 +158,7 @@ test("funds-flow options use source statuses and reset the exact filter request 
   const records=[...expected,"UNRECOGNIZED","constructor","toString",null].map((status,i)=>({sourceId:`flow-${i}`,bizNo:`流水${i}`,kind:"DEPOSIT",currency:i%2?"NEX":"USDT",status})),state=[],effects=[],seen=[];
   const walk=node=>!node||typeof node!=="object"?[]:[node,...[node.props?.children].flat(Infinity).flatMap(walk)];
   const profile={identity:group({}),finance:group({byCurrency:[{currency:"USDT"},{currency:"NEX"}]}),devices:group({}),risk:group({}),annotations:group({}),service:group({}),actions:{}};
-  let cursor=0;const context={exports:{},AbortController,Date,Intl,JSON,require:name=>{
+  let cursor=0;const context={exports:{},AbortController,Date,Intl,JSON,document:{querySelectorAll:()=>[]},require:name=>{
     if(name==="react")return {useEffect:fn=>effects.push(fn),useRef:value=>({current:value}),useState:initial=>{const index=cursor++;if(!(index in state))state[index]=index===0?profile:index===5?3:index===7?group({records,total:records.length}):initial;return [state[index],value=>{state[index]=typeof value==="function"?value(state[index]):value;}];}};
     if(name==="react/jsx-runtime")return jsx;
     if(name==="@/lib/store/admin-auth")return {useAdminAuth:selector=>selector({session:{adminId:12,authorities:[]},authEpoch:1})};
@@ -174,7 +174,7 @@ test("funds-flow options use source statuses and reset the exact filter request 
   }};
   runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,context);
   const render=()=>{cursor=0;effects.length=0;return context.exports.M3CustomerProfile({ctx:{pget:()=>"[]"},customerId:"7",onHistory(){},onRetryMessages(){}});};
-  walk(render()).find(node=>node.props?.className==="m3-profile-open").props.onClick();
+  walk(render()).find(node=>node.type==="button"&&node.props.children==="说明").props.onClick();
   const tree=render(),filter=walk(tree).find(node=>node.props?.["aria-label"]==="流水状态"),select=walk(filter).find(node=>Array.isArray(node.props?.options)),options=Array.from(select?.props.options??[]);
   assert.ok(select);assert.deepEqual(options.map(option=>option.value).filter(Boolean).sort(),expected.toSorted());
   const labels=Object.fromEntries(options.map(option=>[option.value,option.label]));assert.equal(labels.CONFIRMED,"已确认");assert.equal(labels.CREDITED,"已入账");assert.equal(labels.REVIEW_PENDING,"待审核");assert.equal(labels.REFUNDED,"已退款");assert.notEqual(labels.CONFIRMED,labels.SUCCESS);

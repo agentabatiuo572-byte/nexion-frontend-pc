@@ -16,7 +16,7 @@
     },
     {
       "file": "orbit-surface-main-canvas.png",
-      "sha256": "924f3ef0c1f12370a1eaaaf09b99ac9004b964f75336e707cdc01be48cf9052c",
+      "sha256": "395f7e289e43f6e2f2e9b80ccfeee343fedc13069e985dc560f682eee5f0a5b0",
       "size": [
         1355,
         1024
@@ -41,16 +41,16 @@
   ],
   "output": {
     "file": "orbit-surface-unified-canvas.png",
-    "sha256": "c73257bb66938af69f15d4e95313611320666a212ee4ed1cbcc4df1f4838107c",
+    "sha256": "0caeb1c017810cdcbc44e1a9a751b873a88cdb6a1c30bbb46f8688ab337b2da4",
     "size": [
       1536,
       1024
     ]
   },
-  "acceptance": "Source-byte preservation only. Runtime seam and full-page fidelity remain unverified.",
+  "acceptance": "Main-region approved source byte identity outside declared foreground supports and original five static regions PASS. Runtime seam and full-page fidelity remain pending.",
   "reconstruction": {
-    "provenance": "docs/design/support-analytics-20261006/leaderboard-orbit-20261010/background-imagegen-repair-20261014.json",
-    "scope": "Continuous generated main canvas, copied at source coordinates without resizing. Original navigation remains exact. Top 20px retain the approved source strip.",
-    "limitation": "Generated background texture is not original approved source pixels. Runtime and independent review pending."
+    "provenance": "docs/design/support-analytics-20261006/leaderboard-orbit-20261010/background-approved-source-restoration-20261014.json",
+    "scope": "Native approved main pixels preserved outside the declared foreground union; only originally occluded foreground supports reconstructed. Unchanged navigation and active surface copied as raw rows.",
+    "limitation": "Reconstructed occluded texture is not original source recovery; this is not 100% source pixels and does not prove the final HTML composition."
   }
 }

@@ -20,6 +20,7 @@ function findSection(node) {
 findSection(page); assert.ok(section, "actual C1 related-action links");
 const asText = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "asText").getText(ast);
 const compiled = ts.transpileModule(`${asText}\nexport function Fixture({detail,session,searchParams}) {
+  const supportScope=false, conversationNo="";
   const canReadC2=false, canReadC6=false, canReadD2=false, canReadD4=false, canReadK4=false, canReadA2=false, canWriteC1=false;
   const actionPending=null; ${code.join("\n")} return (${section.getText(ast)}); }`, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },

@@ -5,6 +5,7 @@ import test from "node:test";
 import ts from "typescript";
 import { createElement, useEffect, useMemo, useState } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { supportObject, parseSupportId } from "../lib/admin/m-support-client.ts";
 
 const search = readFileSync(new URL("../app/components/domain-views/c-tabs/c1-search.tsx", import.meta.url), "utf8");
 const detail = readFileSync(new URL("../app/_console/users/search/[id]/page.tsx", import.meta.url), "utf8");
@@ -33,7 +34,7 @@ test("C1 is read-only outside the explicitly approved payment and nickname actio
   assert.match(detail, /pathname: "\/users\/actions"/);
   assert.match(detail, /pathname: "\/users\/security"/);
   assert.match(detail, /reasonMax=\{200\}/);
-  assert.match(detail, /本卡片数据读取失败，其他画像卡片不受影响/);
+  assert.match(detail, /此项资料暂时无法读取，请刷新重试/);
   assert.match(detail, /刷新页面重试/);
 });
 
@@ -89,7 +90,7 @@ const format = {}, labels = {};
 new Function("exports", compile(readFileSync(new URL("../lib/format.ts", import.meta.url), "utf8")))(format);
 new Function("exports", compile(readFileSync(new URL("../lib/admin/c1-detail-display.ts", import.meta.url), "utf8")))(labels);
 const helpers = ["asText", "asNumber", "asArray", "rows", "money", "numberLabel", "formatDate", "displayValue",
-  "sectionStatus", "sectionFailed", "Section", "Row", "DataTable", "HubSection"];
+  "sectionFailed", "Section", "Row", "DataTable", "HubSection"];
 const designKit = ts.createSourceFile("design-kit.tsx", readFileSync(new URL("../app/components/domain-views/design-kit.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const pagerSource = designKit.statements.filter(node =>
   (ts.isFunctionDeclaration(node) && ["useDataListPager", "DataListPager"].includes(node.name?.text))
@@ -101,11 +102,92 @@ const earningsDeclarations = page.body.statements.filter(node => ts.isVariableSt
   .map(node => node.getText(ast)).join("\n");
 const fixtureSource = ast.statements.filter(node => ts.isFunctionDeclaration(node) && helpers.includes(node.name?.text))
   .map(node => node.getText(ast)).join("\n")
-  + `\n${pagerSource}\nexport function Fixture({ detail, userKey = "fixture-user" }) { const canWriteC2 = false; ${earningsDeclarations} return (<>{${sections.join("}{")}}</>); }`;
+  + `\nexport {money,numberLabel,HubSection};\n${pagerSource}\nexport function Fixture({ detail, userKey = "fixture-user" }) { const canWriteC2 = false; ${earningsDeclarations} return (<>{${sections.join("}{")}}</>); }`;
 const fixture = {};
 const scope = { ...format, ...labels, useEffect, useMemo, useState };
 new Function("require", "exports", ...Object.keys(scope), compile(fixtureSource))(
   createRequire(import.meta.url), fixture, ...Object.values(scope));
+
+test("shared full-profile numbers preserve unknown values and confirmed zero", () => {
+  for (const value of [null, undefined, "", "invalid", NaN, Infinity, true, []]) {
+    assert.equal(fixture.money(value), "-"); assert.equal(fixture.numberLabel(value), "-");
+  }
+  assert.equal(fixture.money("0"), "$0.00"); assert.equal(fixture.numberLabel(0), "0");
+});
+
+test("full-profile unavailable sections offer retry without empty or stale records", () => {
+  for (const sourceStatus of ["ERROR", "UNKNOWN", "UNAVAILABLE"]) {
+    const html = renderToStaticMarkup(createElement(fixture.HubSection, {
+      title: "充值记录", section: { sourceStatus, records: [{ id: "STALE_PRIVATE" }] },
+      columns: [{ key: "id", label: "订单" }], children: "STALE_SUMMARY",
+    }));
+    assert.match(html, /此项资料暂时无法读取/); assert.match(html, /刷新页面重试/);
+    assert.doesNotMatch(html, /暂无记录|STALE_PRIVATE|STALE_SUMMARY/);
+  }
+  const empty = renderToStaticMarkup(createElement(fixture.HubSection, { title: "充值记录", section: { sourceStatus: "READY", records: [] }, columns: [{ key: "id", label: "订单" }] }));
+  assert.match(empty, /暂无记录/); assert.doesNotMatch(empty, /刷新页面重试/);
+});
+
+test("support full-profile client uses only the scoped endpoint, validates identity and removes HIDDEN or failed data", async () => {
+  const clientAst = ts.createSourceFile("client.ts", client, ts.ScriptTarget.Latest, true);
+  const source = clientAst.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "fetchSupportCustomerFullProfile").getText(clientAst);
+  const exports = {}, requests = []; let response = { profile: { id: 7 }, devices: { sourceStatus: "READY", records: [{ id: 8 }] }, risk: { sourceStatus: "HIDDEN", records: [{ secret: true }] }, financial: { sourceStatus: "ERROR", wallet: { usdt: "123" } } };
+  const supportRequest = async (url, parse, init) => { requests.push({ url, init }); return parse(response); };
+  new Function("exports", "supportRequest", "supportObject", "parseSupportId", compile(source))(exports, supportRequest, supportObject, parseSupportId);
+  const controller = new AbortController(), result = await exports.fetchSupportCustomerFullProfile("7", controller.signal);
+  assert.equal(requests[0].url, "/support-workbench/customers/7/full-profile"); assert.equal(requests[0].init.signal, controller.signal);
+  assert.equal(result.risk, null); assert.deepEqual(result.financial, { sourceStatus: "ERROR" }); assert.equal(result.devices.records[0].id, 8);
+  response = { profile: { id: 8 } }; await assert.rejects(exports.fetchSupportCustomerFullProfile("7"), /CUSTOMER_MISMATCH/);
+  const count = requests.length; await assert.rejects(exports.fetchSupportCustomerFullProfile("../8")); assert.equal(requests.length, count);
+});
+
+function fullProfileLoadFixture(supportScope = true, readKey = "fixture", existing) {
+  const state = existing?.state ?? { detail: "OLD_PRIVATE", paymentMethods: "OLD_PRIVATE", error: "OLD_ERROR" }, requests = existing?.requests ?? [];
+  const currentReadKey = existing?.currentReadKey ?? { current: readKey }, requestGeneration = existing?.requestGeneration ?? { current: 0 };
+  const declaration = page.body.statements.find(node => ts.isVariableStatement(node) && node.declarationList.declarations.some(item => item.name.getText(ast) === "load"));
+  const context = { useCallback: fn => fn, supportScope, readKey, currentReadKey, requestGeneration, userKey: "7", errorMessage: error => error.message };
+  for (const field of ["Loading", "Error", "Detail", "PaymentMethods", "ActionConfirm", "NotificationEvidence", "DetailKey"]) context[`set${field}`] = value => { state[field[0].toLowerCase() + field.slice(1)] = value; };
+  for (const [name, scope] of [["fetchUser360", "c1"], ["fetchSupportCustomerFullProfile", "support"]]) context[name] = (...args) => new Promise((resolve, reject) => requests.push({ scope, args, resolve, reject }));
+  const load = new Function(...Object.keys(context), compile(declaration.getText(ast)) + "\nreturn load;")(...Object.values(context));
+  return { state, requests, load, currentReadKey, requestGeneration };
+}
+
+test("support full-profile clears old data while loading and after 403, retries only the scoped read", async () => {
+  const h = fullProfileLoadFixture(), first = h.load();
+  assert.equal(h.state.detail, null); assert.equal(h.state.paymentMethods, null); assert.equal(h.state.loading, true);
+  h.requests[0].reject(Object.assign(new Error("denied"), { status: 403 })); await first;
+  assert.equal(h.state.detail, null); assert.equal(h.state.loading, false); assert.equal(h.state.error, "denied");
+  const retry = h.load(); h.requests[1].resolve({ profile: { id: 7 } }); await retry;
+  assert.equal(h.state.detail.profile.id, 7); assert.ok(h.requests.every(request => request.scope === "support"));
+});
+
+test("full-profile ignores prior identity reads and invalidated in-flight results, while C1 keeps its original loader", async () => {
+  const h = fullProfileLoadFixture(), old = h.load(); h.currentReadKey.current = "new-actor";
+  const next = fullProfileLoadFixture(true, "new-actor", h), current = next.load();
+  h.requests[0].resolve({ profile: { id: 7 }, private: "OLD" }); await old; assert.equal(h.state.detail, null);
+  h.requestGeneration.current++; h.requests[1].resolve({ profile: { id: 7 }, private: "REVOKED" }); await current; assert.equal(h.state.detail, null);
+  const c1 = fullProfileLoadFixture(false), original = c1.load(); assert.equal(c1.requests[0].scope, "c1"); c1.requests[0].resolve({ profile: { id: 7 } }); await original;
+});
+
+test("support scope suppresses writes and extra C1 reads even for superadmin", async () => {
+  const declarations = page.body.statements.filter(ts.isVariableStatement).flatMap(node => [...node.declarationList.declarations]);
+  const declared = name => `const ${declarations.find(node => node.name.getText(ast) === name).getText(ast)};`;
+  const allowed = new Function("supportScope", "session", compile(["canWriteC1", "canWriteC2", "canReadNotificationEvidence"].map(declared).join("\n")) + "\nreturn [canWriteC1,canWriteC2,canReadNotificationEvidence];");
+  assert.deepEqual(allowed(true, { role: "superadmin", authorities: [] }), [false, false, false]);
+  let requests = 0;
+  const load = new Function("useCallback", "supportScope", "userId", "includeUnbound", "paymentPage", "fetchUserPaymentMethods", compile(declared("loadPaymentMethods")) + "\nreturn loadPaymentMethods;")(fn => fn, true, 7, false, 1, () => { requests++; });
+  await load(); assert.equal(requests, 0);
+});
+
+test("support full-profile return uses the encoded original conversation or workbench and ignores supplied returnTo", () => {
+  const declarations = page.body.statements.filter(ts.isVariableStatement).flatMap(node => [...node.declarationList.declarations]);
+  const source = ["requestedReturnTo", "conversationNo", "returnTo", "returnLabel"].map(name => `const ${declarations.find(node => node.name.getText(ast) === name).getText(ast)};`).join("\n");
+  const destination = new Function("supportScope", "searchParams", compile(source) + "\nreturn [returnTo,returnLabel];");
+  for (const conversationNo of ["", "C-7 &next=https://other.invalid"]) {
+    const result = destination(true, { get: key => key === "conversationNo" ? conversationNo : "//other.invalid" });
+    assert.deepEqual(result, conversationNo ? [`/service/sessions?conversationNo=${encodeURIComponent(conversationNo)}`, "返回原会话"] : ["/service/overview", "返回工作台"]);
+  }
+});
 const historicalDevice = { id: 1158, instanceNo: "fixture-history", name: "S1", productTier: "S1",
   status: "DEACTIVATED", runtimeStatus: "OFFLINE", dailyUsdt: 1, dailyNex: 1 };
 function renderDaily(records, overrides = {}) {

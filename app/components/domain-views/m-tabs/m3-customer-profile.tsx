@@ -192,7 +192,7 @@ export function M3CustomerProfile({ ctx, customerId, conversation, scopeVersion,
   };
   return <div className="m3-customer-sidebar">
     <header className="m3-profile-identity"><SupportAvatar name={String(identity?.nickname ?? "客户")} path={identity?.avatar ? customerAvatarPath(customerId) : undefined} size={48}/><div><div className="m3-profile-name"><h3 title={show(identity?.nickname)}>{identity?.nickname == null ? "客户资料待核实" : show(identity.nickname)}</h3>{identity?.level != null && <span className="m3-profile-level">{show(identity.level)}</span>}</div><p className="m3-profile-uid">UID {identity?.userNo == null ? "-" : show(identity.userNo)}</p>{advisorName && <p className="m3-profile-owner">当前专属客服 {String(advisorName)}</p>}</div></header>
-    <button type="button" className="m3-profile-open" onClick={()=>open360()}>查看完整客户档案 / 360 <span aria-hidden="true">→</span></button>
+    {!scopeDenied && <a className="m3-profile-open" href={`/service/customers/${encodeURIComponent(customerId)}${conversation?.id ? `?conversationNo=${encodeURIComponent(conversation.id)}` : ""}`}>查看完整客户档案 / 360 <span aria-hidden="true">→</span></a>}
     {view360 ? <Modal title="客户服务 360" icon="users" wide onClose={()=>setView360(false)} footer={<button className="btn btn-sec btn-sm" onClick={()=>setView360(false)}>返回会话</button>}>{body}</Modal> : <>
       {error && <div className="m3-profile-state" role="alert">{error}<button type="button" className="m3-profile-link" onClick={retryProfile}>重新读取资料</button></div>}
       {!scopeDenied && <>

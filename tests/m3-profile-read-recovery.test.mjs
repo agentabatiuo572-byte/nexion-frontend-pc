@@ -65,7 +65,7 @@ function harness(props = {}, detail = true) {
     "./support-leaderboard": leaderboardExports,
     "./m3-customer-profile.css": {},
   };
-  const context = { exports: {}, AbortController, Date, Intl, JSON, window, require: name => { assert.ok(Object.hasOwn(modules, name), name); return modules[name]; } };
+  const context = { exports: {}, AbortController, Date, Intl, JSON, window, document: { querySelectorAll: () => [] }, require: name => { assert.ok(Object.hasOwn(modules, name), name); return modules[name]; } };
   vm.runInNewContext(compiled, context);
   const render = () => {
     let count = 0;
@@ -73,7 +73,7 @@ function harness(props = {}, detail = true) {
       assert.ok(++count < 20, "profile render/effect loop"); pending = false; cursor = 0;
       tree = context.exports.M3CustomerProfile(currentProps);
       effects.splice(0).forEach(run => run());
-      if (detail && !elements(tree).some(node => node.type === modules["../design-kit"].Modal)) elements(tree).find(node => node.props?.className === "m3-profile-open").props.onClick();
+      if (detail && !elements(tree).some(node => node.type === modules["../design-kit"].Modal)) elements(tree).find(node => node.type === "button" && node.props.children === "说明")?.props.onClick();
     }
     return tree;
   };
@@ -98,6 +98,19 @@ function button(tree, text) { const matches = elements(tree).filter(node => node
 function succeed(requests, name = "当前客户") { requests.forEach(request => request.resolve(request.kind === "profile" ? profile(name) : request.kind === "maintenance" ? maintenance : group({ records: [], total: 0 }))); }
 const deleteTag = h => elements(h.render()).find(node => node.type === "button" && node.props["aria-label"]?.startsWith("删除标签 "));
 
+test("full-profile navigation carries the current customer and encoded original conversation without opening another modal", () => {
+  for (const conversation of [undefined, { id: "C-7 &next=/users/search" }]) {
+    const h = harness({ conversation }, false), tree = h.render();
+    const link = elements(tree).find(node => node.props?.className === "m3-profile-open");
+    assert.equal(link.type, "a");
+    assert.equal(link.props.href, `/service/customers/7${conversation ? `?conversationNo=${encodeURIComponent(conversation.id)}` : ""}`);
+    assert.equal(link.props.onClick, undefined);
+    h.invalidate({ customerId: "7" });
+    assert.equal(elements(h.render()).some(node => node.props?.className === "m3-profile-open"), false);
+    h.unmount();
+  }
+});
+
 test("360 statistics shares strict M1 parsing and never upgrades unknown observations", () => {
   const input = profile(); input.statistics = group(statistics());
   const result = parseSupportProfile({profile:input});
@@ -119,7 +132,7 @@ test("sidebar keeps original sections and opens exact first-payment plus invitat
   h.requests[0].resolve(initial); succeed(h.requests.slice(1)); await h.settle();
   const sidebar = h.html(); assert.match(sidebar,/已首充/); assert.match(sidebar,/直属邀请（人）/); assert.match(sidebar,/全部邀请后代（人）/); assert.match(sidebar,/邀请累充（USDT）/); assert.match(sidebar,/2K（部分统计）/);
   assert.ok(sidebar.indexOf("快捷操作") < sidebar.indexOf("首充与邀请"), "new statistics follow the preserved original sections");
-  elements(h.render()).find(node=>node.props?.className === "m3-profile-open").props.onClick(); h.render();
+  button(h.render(), "统计明细 →").props.onClick(); h.render();
   const detail=h.html(); assert.match(detail,/首充来源<\/span><span class="v">购机/); assert.match(detail,/649\.123456 USDT/); assert.match(detail,/NEX · 累计/); assert.match(detail,/邀请后代包含直属邀请/);
   assert.match(detail,/data-exact="2000（部分统计） USDT" aria-label="2000（部分统计） USDT" tabindex="0"/);
   assert.equal(h.requests.length,4); h.invalidate({customerId:"7"}); assert.doesNotMatch(h.html(),/649\.123456|邀请后代充值/); h.unmount();
@@ -157,7 +170,7 @@ test("actual sidebar restores bounded identity, two-currency 2x2 funds and short
   assert.deepEqual(elements(shortcuts).filter(node => node.props?.size === 15).map(node => node.props.name), ["clock", "doc", "lock", "wallet", "doc"]);
   const nex = h.html(); assert.match(nex, />0<small>NEX/); assert.match(nex, /9007199254740993\.12345678 NEX/); assert.match(nex, /部分统计/); assert.doesNotMatch(nex, /12400 USDT/);
   assert.equal(h.requests.length, 4, "currency summary uses already loaded facts without another read");
-  elements(h.render()).find(node => node.props?.className === "m3-profile-open").props.onClick(); h.render();
+  button(h.render(), "明细 →").props.onClick(); h.render();
   const detail = h.html(); assert.match(detail, /资金流水/); assert.match(detail, /type="date"/); assert.match(detail, /新标签/); assert.match(detail, /新内部备注/); assert.match(detail, /历史会话/); assert.match(detail, /关联工单/); assert.match(detail, /账户操作/);
   assert.equal(elements(h.render()).filter(node => node.props?.className === "m3-profile-open").length, 1, "the opener survives the modal render");
   assert.equal(h.requests.length, 4, "360 reuses the same body and data"); h.unmount();
