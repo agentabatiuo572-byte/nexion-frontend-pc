@@ -1782,7 +1782,7 @@ export async function fetchMServicePendingConversations(): Promise<SessionConvo[
 /** First page uses the server's most-recent ordering and current assignment filter. */
 export async function fetchMRecentAdvisorConversations(ownerAdminId: number, signal?: AbortSignal) {
   const owner = supportWireId(ownerAdminId, "recent.ownerAdminId");
-  const page = assertConversationPage(await apiRequest<unknown>(`/conversations?type=HUMAN&ownerAgentId=${owner}&pageNum=1&pageSize=5`, { signal }));
+  const page = assertConversationPage(await apiRequest<unknown>(`/conversations?readMode=PERSONAL&type=HUMAN&ownerAgentId=${owner}&pageNum=1&pageSize=5`, { signal }));
   return page.records.flatMap((row) => {
     if (!["ADVISOR", "SUPPORT"].includes(upper(row.conversationType, ""))) return [];
     const customerId = row.customerId ?? row.userId;

@@ -39,7 +39,22 @@ test("recent human caller requests server filtering before paging and retains ol
     upper: (x, fallback) => typeof x === "string" ? x.toUpperCase() : fallback, str: x => x ?? "", asTs: () => 0, num: (x, fallback) => x ?? fallback,
   });
   const result = await fetch(7);
-  assert.equal(calls[0], "/conversations?type=HUMAN&ownerAgentId=7&pageNum=1&pageSize=5");
+  assert.equal(calls[0], "/conversations?readMode=PERSONAL&type=HUMAN&ownerAgentId=7&pageNum=1&pageSize=5");
   assert.deepEqual(Array.from(result, x => x.conversationNo), ["CV-old", "CV-new"]);
   assert.equal(result[0].unreadCount, 2);
+});
+
+test("recent personal messages preserve denial and cancellation instead of reporting an empty inbox", async () => {
+  for (const failure of [Object.assign(new Error("Forbidden"), { status: 403 }), new DOMException("Cancelled", "AbortError")]) {
+    const controller = new AbortController();
+    const fetch = load(client, "fetchMRecentAdvisorConversations", {
+      supportWireId: x => x, assertConversationPage: x => x,
+      apiRequest: async (path, { signal }) => {
+        assert.equal(signal, controller.signal);
+        assert.match(path, /readMode=PERSONAL.*ownerAgentId=7/);
+        throw failure;
+      },
+    });
+    await assert.rejects(fetch(7, controller.signal), error => error === failure);
+  }
 });

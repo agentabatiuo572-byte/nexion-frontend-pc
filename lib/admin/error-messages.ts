@@ -746,6 +746,8 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   M3_CONVERSATION_DETAILS_UNAVAILABLE: "客服会话详情暂时读取不到，请刷新重试；持续失败请联系值班人员。",
   M3_CONVERSATION_SNAPSHOT_UNSTABLE: "客服会话更新暂时中断，连接将自动重连；若连接停止，请点击“重新连接”或刷新页面。",
   M3_CONVERSATION_SNAPSHOT_SUPERSEDED: "客服会话更新暂时中断，连接将自动重连；若连接停止，请点击“重新连接”或刷新页面。",
+  M3_CONVERSATION_IDENTITY_CHANGED: "登录账号已变化，请刷新后重新打开会话。",
+  M3_CONVERSATION_SCOPE_CHANGED: "会话查看范围已变化，请点击“重新连接”读取当前会话。",
   M_CONTENT_AUTH_EPOCH_CHANGED: "登录状态已更新，本次读取已中止；页面将按新的登录身份重新加载。",
   M1_SUPPORT_AGENT_OVERVIEW_MALFORMED: "客服坐席总览返回的数据不完整或格式异常，页面已停止展示推测值；请重试读取或联系值班人员。",
   M1_SUPPORT_AGENT_PAGE_MALFORMED: "客服名单读取失败，请重试。持续失败时请联系值班人员。",
