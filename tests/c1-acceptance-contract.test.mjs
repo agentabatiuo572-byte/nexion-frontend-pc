@@ -73,6 +73,19 @@ test("C1 overview request is explicitly forwarded to the authoritative backend r
 
 // Render the production device/earnings JSX and helpers; no page fetch or write action runs.
 const ast = ts.createSourceFile("page.tsx", detail, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+test("support customer breadcrumbs name the business page instead of exposing raw route segments", () => {
+  const source = ts.createSourceFile("breadcrumb.tsx", readFileSync(new URL("../app/components/shell/breadcrumb.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const fn = source.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "Breadcrumb");
+  const body = fn.body.statements.filter(node => !ts.isReturnStatement(node)).map(node => node.getText(source)).join("\n");
+  const executable = ts.transpileModule(`${body}\nreturn crumbs;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const crumbsFor = new Function("usePathname", "findByPath", executable);
+  const parent = { domain: { code: "M", name: "客服中心", accentVar: "--admin-domain-m" }, l2: { id: "M1", name: "客服总览" } };
+  for (const pathname of ["/service/customers/2005", "/service/customers/2005/"]) {
+    assert.deepEqual(crumbsFor(() => pathname, path => path === "/service/overview" ? parent : null).map(crumb => crumb.label), ["UVEL 运营控制台", "M 客服中心", "客户全景档案"]);
+  }
+  assert.equal(crumbsFor(() => "/service/overview", () => parent).at(-1).label, "M1 客服总览");
+  assert.equal(crumbsFor(() => null, () => null).at(-1).label, "总览驾驶舱");
+});
 const sections = [];
 function collectSections(node) {
   if (ts.isJsxElement(node) && node.openingElement.tagName.getText(ast) === "HubSection"

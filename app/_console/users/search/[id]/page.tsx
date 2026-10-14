@@ -583,8 +583,8 @@ export default function UserDetailPage() {
           {detail.risk && <Section title="风险画像" tag={supportScope ? undefined : "K4 风险评分"}>
             <div className="flex items-center gap-4">
               <div>
-                <p className="font-mono-tabular text-[32px] leading-none" style={{ color: hasRiskScore ? riskColor(riskScore) : "var(--v5-ink-3)" }}>{hasRiskScore ? riskScore : "-"}</p>
-                <p className="mt-2 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>{riskBand}</p>
+                {hasRiskScore && <p className="font-mono-tabular text-[32px] leading-none" style={{ color: riskColor(riskScore) }}>{riskScore}</p>}
+                <p className={hasRiskScore ? "mt-2 text-[12.5px]" : "text-[18px]"} style={{ color: "var(--v5-ink-3)" }}>{riskBand}</p>
               </div>
               <div className="flex-1">
                 {detail.risk?.flags !== undefined && <Row label="风险标记">{asList(detail.risk.flags).map(displayValue).join(" · ") || "无"}</Row>}
@@ -678,7 +678,7 @@ export default function UserDetailPage() {
           </Section>}
 
           {detail.sessions && <Section title="安全 & 会话" tag={supportScope ? undefined : "C5 安全会话"}>
-            <div className="mb-2 grid grid-cols-3 gap-2">
+            <div className="customer-panorama-security-kpis mb-2 grid grid-cols-3 gap-2">
               <KpiStatCard label="活跃会话" value={numberLabel(summary.activeSessionCount)} accent="var(--admin-domain-c)" />
               <KpiStatCard label="2FA" value={summary.twoFactorEnabled == null ? "-" : summary.twoFactorEnabled ? "开启" : "关闭"} accent="var(--admin-domain-e)" />
               <KpiStatCard label="锁定" value={summary.locked == null ? "-" : summary.locked ? "是" : "否"} accent="var(--v5-warning)" />
