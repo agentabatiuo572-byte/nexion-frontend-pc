@@ -122,3 +122,12 @@
 .sl-page-summary{min-width:0}
 .sl-pagination .sl-select{margin-left:auto}
 .sl-page-buttons{margin-left:0}
+/* Restore source halo only with a populated podium; its portrait and text remain live. */
+.sl-pedestal{--sl-core-width:164;--sl-halo-width:214;--sl-halo-anchor:107;--sl-pedestal-height:59px;--sl-halo-image:url("./support-leaderboard-assets/orbit-pedestal-halo-1.png")}
+.sl-podium-person:nth-child(2) .sl-pedestal{--sl-halo-width:206;--sl-halo-anchor:105;--sl-halo-image:url("./support-leaderboard-assets/orbit-pedestal-halo-2.png")}
+.sl-podium-person:nth-child(3) .sl-pedestal{--sl-core-width:151;--sl-halo-width:196;--sl-halo-anchor:98.5;--sl-halo-image:url("./support-leaderboard-assets/orbit-pedestal-halo-3.png")}
+.sl-podium-person:nth-child(4) .sl-pedestal{--sl-core-width:151;--sl-halo-width:194;--sl-halo-anchor:97.5;--sl-halo-image:url("./support-leaderboard-assets/orbit-pedestal-halo-4.png")}
+.sl-pedestal::after{content:"";position:absolute;left:50%;top:50%;width:min(calc(100% * var(--sl-halo-width) / var(--sl-core-width)),calc(var(--sl-pedestal-height) * var(--sl-halo-width) / 59));aspect-ratio:var(--sl-halo-width) / 76;transform:translate(calc(-100% * var(--sl-halo-anchor) / var(--sl-halo-width)),calc(-100% * 30.5 / 76));background:var(--sl-halo-image) center/contain no-repeat;pointer-events:none;image-rendering:inherit}
+/* At responsive anchors, fade before the source name holes become exposed. */
+@container sl-board (max-width:1269px){.sl-pedestal::after{mask-image:linear-gradient(#000 50%,transparent 75%)}}
+@container sl-board (max-width:760px){.sl-pedestal{--sl-pedestal-height:50px}}

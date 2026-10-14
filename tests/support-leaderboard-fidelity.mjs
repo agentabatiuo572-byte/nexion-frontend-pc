@@ -18,6 +18,10 @@ export const approvedStaticRegions = [
   { id: "second-pedestal", rect: [609, 316, 105, 13] },
   { id: "third-pedestal", rect: [878, 316, 90, 13] },
   { id: "fourth-pedestal", rect: [1146, 316, 90, 13] },
+  { id: "first-pedestal-halo", rect: [305, 330, 160, 23] },
+  { id: "second-pedestal-halo", rect: [584, 330, 160, 23] },
+  { id: "third-pedestal-halo", rect: [856, 330, 150, 23] },
+  { id: "fourth-pedestal-halo", rect: [1122, 330, 150, 23] },
 ];
 
 function errorAt(reference, actual, rect, dx, dy) {
