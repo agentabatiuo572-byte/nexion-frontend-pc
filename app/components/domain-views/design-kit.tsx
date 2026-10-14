@@ -337,7 +337,7 @@ export function Modal({ title, icon, onClose, children, footer, wide, busy = fal
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy && ref.current?.contains(document.activeElement)) onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy && e.target instanceof Element && e.target.closest('[role="dialog"]') === ref.current) onClose(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [busy, onClose]);
@@ -376,7 +376,7 @@ export function Drawer({ title, sub, onClose, children, footer, wide }: { title:
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && ref.current?.contains(document.activeElement)) onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && e.target instanceof Element && e.target.closest('[role="dialog"]') === ref.current) onClose(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);

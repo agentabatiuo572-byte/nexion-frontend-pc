@@ -32,7 +32,7 @@ const modules = {
   "react-dom": production("react-dom", "react-dom.production.js"),
   "react-dom/client": production("react-dom/client", "react-dom-client.production.js"),
   scheduler: production("scheduler", "scheduler.production.js"),
-  "../design-kit": compile('import {useRef,useEffect,useId} from "react";\n' + declarations(design, ["Icon", "Modal"])),
+  "../design-kit": compile('import {useRef,useEffect,useId} from "react";\n' + declarations(design, ["Icon", "Modal", "Drawer"])),
   "./hd-ui": compile(read(tabs + "hd-ui.tsx")),
   "./m-avatar": "exports.MAvatar=()=>null;exports.avInitials=()=>'';",
   "@/lib/admin/error-messages": "exports.displayAdminError=e=>e.message;",
@@ -49,7 +49,16 @@ const modules = {
 };
 const entry = `const React=require("react"),{createRoot}=require("react-dom/client"),{flushSync}=require("react-dom"),{SupportContentTools}=require("./tools"),{M3CustomerProfile}=require("./profile"),{Modal}=require("../design-kit");let root;
 window.mount=(options={})=>{if(root)flushSync(()=>root.unmount());window.trace={inserted:[],selected:[],requests:[],pending:[],refresh:0,outerClosed:0};const templates=[{id:"pub",group:"通用",text:"已发布回复",status:"published"},{id:"draft",text:"草稿不能发送",status:"draft"},{id:"script",group:"维护",type:"advisor",text:"已发布话术",status:"published"}];function App(){const [disabled,setDisabled]=React.useState(!!options.disabled),[scope,setScope]=React.useState({identity:"actor-1",target:"CV-7",owner:12,assignment:"A1",status:"open",canWrite:true});window.disable=()=>setDisabled(true);window.enable=()=>setDisabled(false);window.changeScope=patch=>setScope(old=>({...old,...patch}));const identityRef={current:scope.identity},targetKey=scope.target,selected={ownerAdminId:scope.owner,assignmentId:scope.assignment,status:scope.status},adminId=12,canWriteM3=scope.canWrite;const tools=React.createElement(SupportContentTools,{key:${pickerKey},disabled,popover:options.popover,ctx:{pget:key=>key==="I.session.templatesAvailable"?options.unavailable?"0":"1":options.unavailable?"[]":JSON.stringify(key==="I.session.scripts"?templates.filter(x=>x.type):templates.filter(x=>!x.type)),refreshContent:async()=>{window.trace.refresh++;throw Error("模板读取失败");}},onInsert:text=>window.trace.inserted.push(text),onSelect:content=>window.trace.selected.push(content)});if(options.profile)return React.createElement(M3CustomerProfile,{ctx:{pget:()=>"[]"},customerId:"7",onHistory(){},onRetryMessages(){}});return options.nested?React.createElement(Modal,{title:"圈选客户群发",onClose:()=>window.trace.outerClosed++},tools):tools;}root=createRoot(document.getElementById("root"));flushSync(()=>root.render(React.createElement(App)));};`;
-const bundle = `(function(){const process={env:{NODE_ENV:"production"}},cache={},factories={${Object.entries(modules).map(([id, code]) => `${JSON.stringify(id)}:function(require,module,exports){${code}\n}`).join(",")}};function require(id){if(cache[id])return cache[id].exports;if(!factories[id])throw Error("Unbundled "+id);const module=cache[id]={exports:{}};factories[id](require,module,module.exports);return module.exports;}${entry}})();`;
+const modalPairEntry = `window.mountModalPair=(outerKind,innerKind,busy)=>{
+  if(root)flushSync(()=>root.unmount());window.trace={outerClosed:0};
+  const kit=require("../design-kit"),Outer=kit[outerKind],Inner=kit[innerKind],closeOuter=()=>window.trace.outerClosed++;
+  function Pair(){const [open,setOpen]=React.useState(false);return React.createElement(Outer,{title:"外层资料",onClose:closeOuter},
+    React.createElement("input",{"aria-label":"外层草稿",defaultValue:"保留输入"}),
+    React.createElement("button",{onClick:()=>setOpen(true)},"打开内层"),
+    open&&React.createElement(Inner,{title:"内层资料",busy,onClose:()=>setOpen(false)},React.createElement("input",{"aria-label":"内层输入"})));}
+  root=createRoot(document.getElementById("root"));flushSync(()=>root.render(React.createElement(Pair)));
+};`;
+const bundle = `(function(){const process={env:{NODE_ENV:"production"}},cache={},factories={${Object.entries(modules).map(([id, code]) => `${JSON.stringify(id)}:function(require,module,exports){${code}\n}`).join(",")}};function require(id){if(cache[id])return cache[id].exports;if(!factories[id])throw Error("Unbundled "+id);const module=cache[id]={exports:{}};factories[id](require,module,module.exports);return module.exports;}${entry}${modalPairEntry}})();`;
 let browser, page, browserTemp;
 const errors = [];
 before(async () => {
@@ -173,6 +182,24 @@ test("profile tag and note editors remain separated and inside the dialog at des
       await page.keyboard.press("Escape");
     }
   } finally { await page.setViewportSize({width:1000,height:800}); }
+});
+test("nested Modal and Drawer Escape closes only the inner layer and preserves the outer draft", async () => {
+  for (const outer of ["Modal", "Drawer"]) for (const inner of ["Modal", "Drawer"]) {
+    await page.evaluate(({outer,inner})=>window.mountModalPair(outer,inner,false),{outer,inner});
+    await page.getByRole("button",{name:"打开内层",exact:true}).click();
+    assert.equal(await page.getByRole("dialog").count(),2);
+    await page.keyboard.press("Escape");
+    assert.equal(await page.evaluate(()=>window.trace.outerClosed),0,`${outer}/${inner}: outer close must not receive the inner Escape`);
+    assert.equal(await page.getByRole("dialog").count(),1);
+    assert.equal(await page.getByLabel("外层草稿").inputValue(),"保留输入");
+    assert.equal(await page.getByRole("button",{name:"打开内层",exact:true}).evaluate(e=>e===document.activeElement),true);
+    await page.keyboard.press("Escape");
+    assert.equal(await page.evaluate(()=>window.trace.outerClosed),1,"a second Escape may close the outer layer");
+  }
+  await page.evaluate(()=>window.mountModalPair("Modal","Modal",true));
+  await page.getByRole("button",{name:"打开内层",exact:true}).click(); await page.keyboard.press("Escape");
+  assert.equal(await page.getByRole("dialog").count(),2,"busy inner dialog must keep both layers open");
+  assert.equal(await page.evaluate(()=>window.trace.outerClosed),0);
 });
 test("M3 popover stays above its trigger, survives temporary disable and Escape restores trigger focus", async () => {
   await page.locator("#root").evaluate(element => { element.style.marginTop = "500px"; });
