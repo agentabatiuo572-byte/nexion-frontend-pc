@@ -64,6 +64,24 @@ function nodes(tree, predicate, found = []) {
 const button = (tree, label) => nodes(tree, node => node.type === "button" && node.props.children === label)[0];
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
+test("new account form defaults to dedicated support, preserves explicit roles, and confines recovery to super", () => {
+  const roles = [{ key: "support", name: "客服" }, { key: "finance", name: "财务" }, { key: "super", name: "超管" }];
+  for (const [initialRole, recoveryMode, available, expected] of [
+    [undefined, false, roles, "support"], ["", false, roles, ""], ["finance", false, roles, "finance"],
+    [undefined, true, roles, "super"], [undefined, false, roles.filter(role => role.key !== "support"), ""],
+  ]) {
+    const f = fixture(), forms = f.load("app/components/domain-views/a-tabs/a1-accounts.tsx").testForms, results = [];
+    const form = f.component(forms.NewAccountDrawer, { roles: available, recoveryMode, onClose() {}, onSubmit: value => results.push(value), initialForm: { username: "support.new", displayName: "新客服", reason: "新入职", ...(initialRole !== undefined ? { role: initialRole } : {}) } });
+    form.render(); const tree = form.render();
+    const selected = nodes(tree, node => node.type === "input" && node.props.name === "operator-role" && node.props.checked);
+    assert.equal(selected.length, 1); assert.equal(selected[0].props.value, expected);
+    button(tree, "确认创建账号").props.onClick();
+    assert.equal(results.length, 1); assert.equal(results[0].role, expected);
+    assert.equal(results[0].useDefaultAvatar === true, expected === "support");
+    assert.equal("qualifications" in results[0], false, "Creating a default account cannot request supervisor qualification");
+  }
+});
+
 test("create and A2 frozen command preserve old fields and explicit gender/default intent; invalid mixed intent cannot send", async () => {
   const f = fixture(), client = f.load("lib/admin/a1-client.ts"), registry = f.load("lib/admin/high-ops-registry.ts");
   const legacy = { username: "support.jane", displayName: "专属客服", email: "a@example.com", role: "support" };

@@ -213,7 +213,7 @@ test("shell and B aggregate data are partitioned by authenticated identity and p
   assert.match(authorities, /authorities[\s\S]{0,220}\.sort\(\)/);
   assert.match(authorities, /menuCodes[\s\S]{0,220}\.sort\(\)/);
   assert.match(auth, /authEpoch: number/);
-  assert.match(auth, /authEpoch: identityChanged \? state\.authEpoch \+ 1 : state\.authEpoch/);
+  assert.match(auth, /authEpoch: identityChanged \|\| accessChanged \? state\.authEpoch \+ 1 : state\.authEpoch/);
   assert.match(auth, /authEpoch: state\.authEpoch \+ 1/);
   assert.match(shell, /const authEpoch = useAdminAuth/);
   assert.match(shell, /const sessionKey = adminShellSessionKey\(session, authEpoch\)/);

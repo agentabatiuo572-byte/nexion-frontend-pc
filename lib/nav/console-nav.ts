@@ -328,6 +328,7 @@ export interface NavAccessSnapshot {
   menuNodes?: EffectiveMenuNode[];
   /** session 的数据库权限码；旧后端没有 menuCodes 时用于校准静态角色表。 */
   authorities?: string[];
+  supportReadModes?: Array<"ALL" | "MANAGED" | "PERSONAL">;
 }
 
 export interface EffectiveMenuNode {
@@ -351,8 +352,8 @@ export function menuCodesFromAuthorities(authorities: string[]): string[] {
 
 /**
  * Navigation authorization single consumer:
- * DB role-menu grant > DB permission codes > static IA fallback.
- * Static IA never overrides an explicit empty backend grant set.
+ * DB role-menu grant > DB permission codes; missing grants expose no pages.
+ * Role labels never manufacture menu authorization.
  */
 export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] {
   const explicit = snapshot.menuCodes;
@@ -361,7 +362,8 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
     : [];
   const effectiveCodes = explicit ?? (inferred.length > 0 ? inferred : undefined);
 
-  if (effectiveCodes === undefined) return visibleDomains(snapshot.role).map(domain => domain.code === "M" ? { ...domain, l2: domain.l2.filter(item => item.id !== "M6") } : domain);
+  if (effectiveCodes === undefined) return [];
+  const supportScopeUnknown = snapshot.role === "support" && !snapshot.supportReadModes?.length;
   const allowed = new Set(effectiveCodes
     .map((code) => code.trim().toUpperCase())
     .filter(Boolean)
@@ -390,7 +392,7 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
   return CONSOLE_NAV.flatMap((domain, domainIndex) => {
     const staticOrder = new Map(domain.l2.map((item, index) => [item.id, index]));
     const l2 = domain.l2
-      .filter((item) => item.id !== "M6" && allowed.has(item.id.toUpperCase()))
+      .filter((item) => item.id !== "M6" && allowed.has(item.id.toUpperCase()) && (!supportScopeUnknown || !["M1", "M2", "M3"].includes(item.id)))
       .flatMap((item) => {
         const node = findNode(item.id.toUpperCase(), (candidate) =>
           candidate.routePath === item.path
@@ -403,7 +405,7 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
       })
       .sort((a, b) => order(a.node, staticOrder.get(a.item.id) ?? 0) - order(b.node, staticOrder.get(b.item.id) ?? 0))
       .map(({ item }) => item);
-    if (domain.code === "M" && snapshot.authorities?.some(code => code === "service_m1_read" || code === "service_m3_read")
+    if (domain.code === "M" && !supportScopeUnknown && snapshot.authorities?.some(code => code === "service_m1_read" || code === "service_m3_read")
       && l2.some(item => item.id === "M1" || item.id === "M3")) {
       const leaderboard = domain.l2.find(item => item.id === "M6");
       if (leaderboard) { const after = l2.findIndex(item => item.id === "M3"); l2.splice(after < 0 ? l2.findIndex(item => item.id === "M1") + 1 : after + 1, 0, leaderboard); }
@@ -426,11 +428,25 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
 /** Enforce the resolved menu grant on every known console-domain URL. */
 export function canAccessResolvedPath(domains: NavDomain[], pathname: string | null): boolean {
   const path = (pathname || "/").replace(/\/+$/, "") || "/";
-  if (path === "/") return true;
+  if (path === "/") return domains.some(domain => domain.l2.length > 0);
   const knownDomain = CONSOLE_NAV.find((domain) => path === `/${domain.slug}` || path.startsWith(`/${domain.slug}/`));
   if (!knownDomain) return true;
   const grantedDomain = domains.find((domain) => domain.code === knownDomain.code);
   return grantedDomain?.l2.some((item) => path === item.path || path.startsWith(`${item.path}/`)) ?? false;
+}
+
+export function defaultConsolePath(role: AdminRole, domains: NavDomain[]): string | null {
+  const first = domains.find(domain => domain.l2.length > 0)?.l2[0]?.path;
+  if (!first) return null;
+  if (role === "superadmin") return "/";
+  if (role === "support") {
+    const servicePages = domains.find(domain => domain.code === "M")?.l2 ?? [];
+    for (const id of ["M1", "M3", "M2", "M4", "M5", "M6"]) {
+      const page = servicePages.find(item => item.id === id);
+      if (page) return page.path;
+    }
+  }
+  return first;
 }
 
 export const DOMAIN_COUNT = CONSOLE_NAV.length; // 13

@@ -34,6 +34,8 @@ export function canReadC2HighRiskAlerts(session: AdminSession | null): boolean {
 export function adminShellSessionKey(session: AdminSession | null, authEpoch = 0): string {
   if (!session) return `anonymous|${authEpoch}`;
   const authorities = [...session.authorities].sort().join(",");
-  const menuCodes = [...(session.menuCodes ?? [])].sort().join(",");
-  return `${authEpoch}|${session.adminId}|${authorities}|${menuCodes}`;
+  const menuCodes = session.menuCodes === undefined ? "unknown" : [...session.menuCodes].sort().join(",");
+  const supportModes = session.supportReadModes === undefined ? "unknown" : [...session.supportReadModes].sort().join(",");
+  const menuNodes = session.menuNodes === undefined ? "unknown" : JSON.stringify(session.menuNodes);
+  return `${authEpoch}|${session.adminId}|${session.role}|${authorities}|${menuCodes}|${supportModes}|${menuNodes}`;
 }

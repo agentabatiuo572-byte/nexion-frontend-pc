@@ -81,3 +81,8 @@
 @media(min-width:761px){.sl-navigation nav{gap:2px;margin-top:2px}.sl-person{padding:0 2px;gap:19px}}
 /* Preserve native table material only at the approved viewport, without widening the page. */
 @media(min-width:1536px) and (max-width:1536px){.sl-rankings h2{margin-bottom:3px}.sl-table-wrap{background-size:1314px 288px}}
+/* Paint the approved preview seam inside one bitmap, rather than between adjacent background layers. */
+@media(min-width:1536px) and (max-width:1536px){
+ .support-leaderboard[data-preview]::before{content:"";position:absolute;inset:0 0 auto;height:1024px;background:url("./support-leaderboard-assets/orbit-surface-unified-canvas.png") left top/1536px 1024px no-repeat;image-rendering:pixelated;pointer-events:none;z-index:-2}
+ .support-leaderboard[data-preview]>.sl-navigation,.support-leaderboard[data-preview]>.sl-navigation nav button[aria-current],.support-leaderboard[data-preview]>.sl-content::before{background-image:none}
+}

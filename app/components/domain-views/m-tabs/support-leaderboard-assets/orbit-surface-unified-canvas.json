@@ -1,0 +1,51 @@
+{
+  "method": "Raw RGBA row copies in listed order; no resizing, filtering, feathering or recoloring.",
+  "scope": "Fixed 1536px preview only; navigation active surface remains at its approved x0/y297 anchor. All identity, text, data and controls remain DOM.",
+  "sources": [
+    {
+      "file": "orbit-surface-navigation.png",
+      "sha256": "5e870a84a9acd6fae1cc460351d29412fca5509cbc62572fb649d9c1026129f5",
+      "size": [
+        181,
+        1024
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "file": "orbit-surface-main-canvas.png",
+      "sha256": "119010f2a15272c4f2d19a55b1e115cb8d81303a6ec3aa44cc82db587322def1",
+      "size": [
+        1355,
+        1024
+      ],
+      "offset": [
+        181,
+        0
+      ]
+    },
+    {
+      "file": "orbit-surface-nav-active.png",
+      "sha256": "1dcc108341ec67f5d37cf43a1c28d98610b60dea211b58d67c2476aa397ed39f",
+      "size": [
+        181,
+        60
+      ],
+      "offset": [
+        0,
+        297
+      ]
+    }
+  ],
+  "output": {
+    "file": "orbit-surface-unified-canvas.png",
+    "sha256": "6b83df105dcf34257e34929e46f15d6150fc85bef4f00caf88f433c54f86bb67",
+    "size": [
+      1536,
+      1024
+    ]
+  },
+  "acceptance": "Source-byte preservation only. Runtime seam and full-page fidelity remain unverified."
+}

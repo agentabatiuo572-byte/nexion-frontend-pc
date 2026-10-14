@@ -159,7 +159,7 @@ export function M1PersonalWorkbench({ permission, ctx }: { permission: Permissio
     const controller = new AbortController();
     snapshotController.current = controller;
     setSnapshot(null); setRowsLoading(true); setOverviewLoading(true); setRowsError(null); setOverviewError(null);
-    void supportClient.snapshot({ pageNum: view === "dashboard" ? 1 : page, pageSize: view === "dashboard" ? 6 : PAGE_SIZE, keyword: view === "dashboard" ? undefined : keyword || undefined, filter: activeFilter, signal: controller.signal })
+    void supportClient.snapshot({ mode: "PERSONAL", pageNum: view === "dashboard" ? 1 : page, pageSize: view === "dashboard" ? 6 : PAGE_SIZE, keyword: view === "dashboard" ? undefined : keyword || undefined, filter: activeFilter, signal: controller.signal })
       .then((next) => { if (!controller.signal.aborted) { setSnapshot(next); if (!next.customers.available) setRowsError("当前筛选条件暂不可用，请调整服务规则后重试。"); } })
       .catch((error) => { if (!controller.signal.aborted) { setSnapshot(null); setRowsError(errorText(error)); setOverviewError(errorText(error)); } })
       .finally(() => { if (!controller.signal.aborted) { setRowsLoading(false); setOverviewLoading(false); } });

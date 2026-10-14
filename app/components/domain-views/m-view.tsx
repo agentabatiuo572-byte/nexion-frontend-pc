@@ -539,12 +539,11 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     openConfirm: setCf,
   };
 
-  const currentAgent = safeMData?.supportAgents.find((agent) => agent.adminId === session?.adminId);
   const permissionUnknown = session?.role !== "superadmin" && session?.role !== "super"
-    && Boolean(session?.authorities.includes("service_m1_write")) && !safeMData?.supportAgentsAvailable;
+    && session?.role === "support" && session.supportReadModes === undefined;
   const permission = session?.role === "superadmin" || session?.role === "super"
     ? "superadmin"
-    : session?.authorities.includes("service_m1_write") && (currentAgent?.seatType === "MANAGER" || currentAgent?.position.includes("主管"))
+    : session?.supportReadModes?.includes("MANAGED")
       ? "supervisor" : "agent";
   const effectiveM5Pane = permission === "agent" ? "templates" : m5Pane;
 
@@ -614,7 +613,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         </div>
       ) : safeMData && (
         <>
-          {tab === "M2" && <M2Tickets ctx={ctx} advisorQualified={Boolean(safeMData.supportAgentsAvailable && currentAgent?.enabled && currentAgent.assignmentEligible)} />}
+          {tab === "M2" && <M2Tickets ctx={ctx} advisorQualified={Boolean(session?.supportReadModes?.includes("PERSONAL"))} />}
           {tab === "M3" && <M3DedicatedChat ctx={ctx} />}
           {tab === "M4" && <M4KbSla ctx={ctx} />}
           {tab === "M5" && effectiveM5Pane === "templates" && <M5Scripts ctx={ctx} showSeatOperations={false} showSeatProfiles={permission !== "agent"} />}
@@ -1226,6 +1225,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
   const sendInFlight = useRef(false);
   const identityGeneration = useRef(0);
   const authorities = useAdminAuth((state) => state.session?.authorities);
+  const supportReadModes = useAdminAuth((state) => state.session?.supportReadModes);
   const currentRole = useAdminAuth((state) => state.session?.role ?? state.role);
   const currentAdminId = useAdminAuth((state) => state.session?.adminId);
   const authEpoch = useAdminAuth((state) => state.authEpoch);
@@ -1239,12 +1239,8 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
   const canWriteM3 = isSuperAdmin || Boolean(authorities?.includes("service_m3_write"));
   const conversationsAvailable = ctx.pget("I.session.conversationsAvailable") === "1";
   const owned = Boolean(conv?.customerId && currentAdminId && conv.ownerAdminId === currentAdminId && conv.type !== "ai" && conv.status === "open");
-  const canWrite = canWriteM3 && conversationsAvailable && owned && conv?.detailReady === true;
-  let canReviewAll = isSuperAdmin;
-  try {
-    const seat = (JSON.parse(ctx.pget("I.support.agents") ?? "[]") as Array<{ adminId: number; seatType?: string; position?: string }>).find((agent) => agent.adminId === currentAdminId);
-    canReviewAll ||= seat?.seatType === "MANAGER" || Boolean(seat?.position?.includes("主管"));
-  } catch { /* Unknown seat cannot widen private-message access. */ }
+  const canWrite = canWriteM3 && Boolean(supportReadModes?.includes("PERSONAL")) && conversationsAvailable && owned && conv?.detailReady === true;
+  const canReviewAll = isSuperAdmin || Boolean(supportReadModes?.includes("MANAGED"));
   const privateScopeLost = conversationsAvailable && (!conv || conv.ownerAdminId !== currentAdminId && !canReviewAll);
   const dockSlot = pendingForAdmin?.fingerprint ?? `dock|${currentAdminId}|${conv?.id ?? ""}`;
   const pendingDock = dockCommands.list().find((row) => row.fingerprint === dockSlot && row.conversationNo === conv?.id);

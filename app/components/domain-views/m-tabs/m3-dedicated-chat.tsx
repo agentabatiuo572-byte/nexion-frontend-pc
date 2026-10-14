@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { subscribeAdminRealtime, getAdminRealtimeSnapshot, watchAdminConversation, sendAdminTyping } from "@/lib/admin/admin-conversation-realtime";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { supportClient, SupportClientError, isIndeterminateSupportError, type SupportAttachmentPolicy, type SupportCustomerDetail, type SupportReadMode } from "@/lib/admin/m-support-client";
 import { markMConversationRead, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, parseMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
@@ -99,20 +100,24 @@ function PrivateImage({ id, onRevoked }: { id: string; onRevoked: () => void }) 
 }
 
 function SupportMessage({message,previous,customerId,customerName,onRevoked,newlyArrived}:{message:SessionMsg;previous?:SessionMsg;customerId:string;customerName:string;onRevoked:()=>void;newlyArrived?:boolean}) {
+  const session=useAdminAuth(state=>state.session);
+  const domains=session?resolveVisibleDomains(session):[];
+  const canCheckSku=Boolean(session?.authorities.includes("device_e1_read")&&canAccessResolvedPath(domains,"/devices/pricing"));
   const system=message.sourceSenderType==="SYSTEM"||message.sourceSenderType==="INTERNAL";
   const name=system?"系统":message.sender==="agent"?message.agentName||"历史专属客服":customerName;
   const grouped=!system&&previous?.sourceSenderType===message.sourceSenderType&&previous?.sender===message.sender&&message.authorConfidence==="VERIFIED"&&previous.authorConfidence==="VERIFIED"&&previous.senderId===message.senderId&&message.ts-previous.ts<300000;
   const path=message.authorConfidence==="VERIFIED"&&message.senderId?(message.sender==="agent"?message.senderAvatar?advisorAvatarPath(message.senderId,customerId):undefined:String(message.senderId)===customerId?customerAvatarPath(customerId):undefined):undefined;
   const safeLegacy=message.kind==="TEXT"||!message.kind?legacySupportDestination(message.text):undefined;
+  const canCheckLegacy=Boolean(safeLegacy&&canAccessResolvedPath(domains,safeLegacy)&&(safeLegacy!=="/devices/pricing"||canCheckSku));
   return <div className={`m3-message ${system?"system":message.sender==="agent"?"agent":""}${newlyArrived&&!system?" m3-new-message":""}`}>
     {!system&&(grouped?<span style={{width:28,flexShrink:0}}/>:<SupportAvatar name={name} path={path} version={message.senderAvatar?.version} size={28}/>)}
     <div className="m3-message-copy">
       {!grouped&&<span className="m3-message-author">{name}{!system&&message.authorConfidence!=="VERIFIED"?" · 作者身份未确认":""} · {messageTime(message.ts)}</span>}
       <div className={`msg-bubble ${message.sender==="agent"?"agent":"user"}`}>
         {message.kind==="IMAGE"?message.attachmentId?<PrivateImage id={message.attachmentId} onRevoked={onRevoked}/>:"图片暂不可用":<span style={{whiteSpace:"pre-wrap"}}>{message.text}</span>}
-        {message.kind==="SKU"&&<div><strong>{message.skuName}</strong><p>商品编号：{message.skuId}</p>{message.targetAvailability==="UNAVAILABLE"?<span>商品已不可用；原推荐保留。</span>:<a href={`/devices/pricing?query=${encodeURIComponent(message.skuId??"")}`}>核对商城商品</a>}</div>}
+        {message.kind==="SKU"&&<div><strong>{message.skuName}</strong><p>商品编号：{message.skuId}</p>{message.targetAvailability==="UNAVAILABLE"?<span>商品已不可用；原推荐保留。</span>:canCheckSku?<a href={`/devices/pricing?query=${encodeURIComponent(message.skuId??"")}`}>核对商城商品</a>:<span aria-disabled="true">核对商城商品（无访问权限）</span>}</div>}
         {message.kind==="LINK"&&<p>{message.targetAvailability==="UNAVAILABLE"?"目标页面已不可用":`客户端目标：${{HOME:"首页",WALLET:"钱包",SUPPORT:"在线客服"}[message.linkTarget?.type??"HOME"]}`}</p>}
-        {safeLegacy&&<a href={safeLegacy}>核对原推荐页面</a>}
+        {safeLegacy&&(canCheckLegacy?<a href={safeLegacy}>核对原推荐页面</a>:<span aria-disabled="true">核对原推荐页面（无访问权限）</span>)}
       </div>
       {!system&&message.sender==="agent"&&<small className="m3-message-receipt">{message.status==="read"?"已读":message.id?"已提交 · 阅读状态未知":"提交状态未知"}</small>}
     </div>
@@ -122,7 +127,7 @@ function SupportMessage({message,previous,customerId,customerName,onRevoked,newl
 function SupportContactPicker({onClose,onSelect}:{onClose:()=>void;onSelect:(id:string)=>void}) {
   const adminId=useAdminAuth(s=>s.session?.adminId),epoch=useAdminAuth(s=>s.authEpoch);
   const [keyword,setKeyword]=useState(""),[page,setPage]=useState(1),[retry,setRetry]=useState(0),[rows,setRows]=useState<Awaited<ReturnType<typeof supportClient.customers>>|null>(null),[error,setError]=useState("");
-  useEffect(()=>{const controller=new AbortController();setRows(null);setError("");supportClient.customers({pageNum:page,pageSize:10,filter:"ALL",keyword,signal:controller.signal}).then(p=>{if(!controller.signal.aborted)setRows(p);}).catch(e=>{if(!controller.signal.aborted)setError(displayAdminError(e));});return()=>controller.abort();},[keyword,page,retry,epoch]);
+  useEffect(()=>{const controller=new AbortController();setRows(null);setError("");supportClient.customers({mode:"PERSONAL",pageNum:page,pageSize:10,filter:"ALL",keyword,signal:controller.signal}).then(p=>{if(!controller.signal.aborted)setRows(p);}).catch(e=>{if(!controller.signal.aborted)setError(displayAdminError(e));});return()=>controller.abort();},[keyword,page,retry,epoch]);
   return <Modal title="主动联系本人客户" icon="users" onClose={onClose} footer={<button className="btn btn-sec btn-sm" onClick={onClose}>取消</button>}><label>搜索客户姓名或编码<input className="fld" value={keyword} onChange={e=>{setKeyword(e.target.value);setPage(1);}}/></label><p>只可向当前本人客户发送；不再维护客户可在原求助会话中继续普通服务回复。</p>{error?<p role="alert">{error}<button className="l-btn sm" onClick={()=>setRetry(n=>n+1)}>重试客户列表</button></p>:!rows?<p role="status">正在读取客户…</p>:<>{!rows.records.length&&<p>暂无匹配的客户。</p>}{rows.records.map(c=><button className="l-btn sm" key={c.customerId} disabled={c.agentAdminId!==adminId||!c.maintenanceEnabled} onClick={()=>onSelect(c.customerId)}>{c.displayName||c.customerNo||c.customerId} · {c.customerNo||"编码未知"}{!c.maintenanceEnabled?" · 不再维护":c.agentAdminId!==adminId?" · 当前归属其他专属客服":""}</button>)}<div className="m-admin-toolbar"><button className="l-btn sm" disabled={page<=1} onClick={()=>setPage(n=>n-1)}>上一页</button><span>第 {page} 页 · {rows.total} 位</span><button className="l-btn sm" disabled={page*10>=rows.total} onClick={()=>setPage(n=>n+1)}>下一页</button></div></>}</Modal>;
 }
 

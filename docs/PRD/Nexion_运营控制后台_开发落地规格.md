@@ -349,7 +349,7 @@
 | Endpoint | Method | 用途 | 确认 | 模块 |
 |---|---|---|---|---|
 | `/api/admin/auth/login` / `/api/admin/auth/mfa/verify` / `/api/admin/auth/logout` | POST | 密码阶段只发 MFA challenge；challenge 与 TOTP 时间步均防并发/跨 challenge 重放；TOTP 通过后发 JWT/session；登出确认撤销服务端 session 后才清 cookie，撤销不可用则保留凭据并失败重试 | — | A1 |
-| `/api/admin/platform/accounts/overview` / `/api/admin/platform/accounts` | GET / POST | 账号、安全基线与会话总览 / 创建(默认不分配角色) | A1-MD1(POST) | A1 |
+| `/api/admin/platform/accounts/overview` / `/api/admin/platform/accounts` | GET / POST | 账号、安全基线与会话总览 / 创建(默认专属客服；显式空角色仍不分配；客服个人资格与档案原子创建) | A1-MD1(POST) | A1 |
 | `/api/admin/platform/accounts/:id/profile\|role\|status` | PATCH | 资料/角色/启停；角色来自 A6 | A1-MD2~MD4 | A1 |
 | `/api/admin/platform/accounts/:id/reset-2fa\|password/reset` | POST | 重置 MFA/密码并吊销旧会话；MFA 重置先校验有效超管下限 | A1-MD5 | A1 |
 | `/api/admin/platform/accounts/:id/sessions/revoke` / `.../sessions/:sessionId/revoke` | POST | 吊销全部/单条运营 session(仅超管、非自己、非超管目标) | A1-MD6 | A1 |

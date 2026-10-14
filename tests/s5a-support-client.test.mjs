@@ -43,6 +43,16 @@ test("available read modes are explicit, unique and include the selected server 
   } finally { globalThis.fetch = originalFetch; }
 });
 
+test("an explicit personal request rejects a managed response while a default scope read preserves it", async () => {
+  try {
+    globalThis.fetch = async () => envelope({ ...snapshot(), scope: { ...snapshot().scope, mode: "MANAGED", availableModes: ["MANAGED", "PERSONAL"] } });
+    await assert.rejects(supportClient.snapshot({ mode: "PERSONAL", pageNum: 1, pageSize: 1 }), /SUPPORT_CONTRACT_MALFORMED.*modeMismatch/);
+    assert.equal((await supportClient.overview()).scope.mode, "MANAGED");
+    globalThis.fetch = async () => envelope(snapshot());
+    await assert.rejects(supportClient.snapshot({ mode: "MANAGED", pageNum: 1, pageSize: 1 }), /SUPPORT_CONTRACT_MALFORMED.*modeMismatch/);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test("overview preserves unknown counts and rejects a fabricated zero", async () => {
   try {
     globalThis.fetch = async () => envelope(snapshot());

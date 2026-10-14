@@ -698,7 +698,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         <>
           <b>{form.displayName}</b> · 登录名 <span className="acode">{form.username}</span> · 角色 <b>{roleName(roles, form.role)}</b>。
           <div style={{ marginTop: 8 }}>
-            <b>新账号默认零写权,只有所选角色授权</b> · 初始密码只用于首次登录 · 首次登录必须修改密码。
+            按所选角色开通权限；首次登录须修改密码。
+            {form.role === "support" && <> 专属客服仅服务本人绑定客户，主管资格需另行授予。</>}
           </div>
         </>
       ),
@@ -1075,7 +1076,7 @@ function NewAccountDrawer({
   onClose: () => void;
   onSubmit: (form: NaForm) => void;
 }) {
-  const defaultRole = "";
+  const defaultRole = "support";
   const actorId = useAdminAuth(state => state.session?.adminId);
   const [username, setUsername] = useState(initialForm?.username??"");
   const [displayName, setDisplayName] = useState(initialForm?.displayName??"");
@@ -1112,7 +1113,7 @@ function NewAccountDrawer({
   return (
     <Drawer
       title="新建运营账号"
-      sub="① 登录资料 → ② 初始角色(可暂不分配) → ③ 服务端临时凭据 → 操作理由"
+      sub="① 登录资料 → ② 初始角色 → ③ 首次登录 → 操作理由"
       onClose={onClose}
       footer={
         <div style={{ padding: "10px 16px 12px", borderTop: "1px solid var(--border)" }}>
@@ -1185,7 +1186,7 @@ function NewAccountDrawer({
         </label>
       </div>
 
-      {role === "support" && <fieldset className="account-avatar-controls" disabled={disabled || avatarBlocking || Boolean(avatarAssetId)} style={{ border: 0, padding: 0 }}><legend>客服默认头像</legend><label>头像分类<HDSelect value={avatarGenderValue} options={AVATAR_GENDER_OPTIONS} onChange={value => setAvatarGenderValue(value as AvatarGender)} /></label><label><input type="radio" name="avatar-mode" checked={avatarMode === "default"} onChange={() => setAvatarMode("default")} />创建时随机使用默认头像</label><label><input type="radio" name="avatar-mode" checked={avatarMode === "manual"} onChange={() => setAvatarMode("manual")} />自行上传头像</label><p>默认图来自合成成年肖像，未指定时从全部默认图中随机选择。客服账号角色不代表接待资格。</p></fieldset>}
+      {role === "support" && <fieldset className="account-avatar-controls" disabled={disabled || avatarBlocking || Boolean(avatarAssetId)} style={{ border: 0, padding: 0 }}><legend>客服默认头像</legend><label>头像分类<HDSelect value={avatarGenderValue} options={AVATAR_GENDER_OPTIONS} onChange={value => setAvatarGenderValue(value as AvatarGender)} /></label><label><input type="radio" name="avatar-mode" checked={avatarMode === "default"} onChange={() => setAvatarMode("default")} />创建时随机使用默认头像</label><label><input type="radio" name="avatar-mode" checked={avatarMode === "manual"} onChange={() => setAvatarMode("manual")} />自行上传头像</label><p>创建后可更换头像。专属客服仅服务本人绑定客户，主管资格需另行授予。</p></fieldset>}
       {!useDefaultAvatar && <AccountAvatarPicker name={displayName} disabled={disabled} onChange={setAvatarAssetId} onBlocking={setAvatarBlocking}/>}
       {avatarBlocking&&<p role="status">新头像尚未上传成功；上传或取消新头像后可继续创建。</p>}
       <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 8 }}>② 初始角色(可暂不分配)</div>
@@ -1193,7 +1194,7 @@ function NewAccountDrawer({
         <label className="l-btn" style={{ justifyContent: "flex-start", padding: "10px 12px", background: role === "" ? "var(--a-ac-soft)" : "var(--surface-2)", color: role === "" ? "var(--a-ac)" : "var(--ink-2)", cursor: recoveryMode ? "not-allowed" : "pointer" }}>
           <input type="radio" name="operator-role" value="" checked={role === ""} disabled={recoveryMode} onChange={() => setRole("")} style={{ accentColor: "var(--a-ac)" }} />
           <span style={{ fontSize: 13 }}>暂不分配</span>
-          <span style={{ fontSize: 11, color: "var(--ink-4)", marginLeft: 8 }}>默认零权限、零菜单</span>
+          <span style={{ fontSize: 11, color: "var(--ink-4)", marginLeft: 8 }}>无业务权限</span>
         </label>
         {roles.map((item) => (
           <label
@@ -1222,13 +1223,13 @@ function NewAccountDrawer({
         ))}
       </div>
 
-      <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 8 }}>③ 服务端临时凭据</div>
+      <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 8 }}>③ 首次登录</div>
       <div className="atint" style={{ marginBottom: 10 }}>
-        账号创建成功后由服务端生成 20 位四类强临时密码，并且只展示一次；浏览器不会生成、编辑或提前持有账号密码。
+        创建后将显示一次 20 位临时密码，请妥善交给账号持有人。
       </div>
 
       <div className="atint" style={{ marginBottom: 14 }}>
-        <b>开通即生效的三条底线</b> · 默认零写权 · 首次登录强制改密 · 账号创建写入后端审计。
+        按所选角色开通权限；首次登录须修改密码。
       </div>
 
       <label style={{ fontSize: 12, color: "var(--ink-3)" }}>

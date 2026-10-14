@@ -187,11 +187,16 @@ test("public avatar path is query/version/agent bound; bad input makes zero requ
 });
 test("M6 compatibility preserves explicit menu denials and private M1/M3 rights", () => {
   const nav = load("lib/nav/console-nav.ts", { "lucide-react": new Proxy({}, { get: () => () => null }) });
-  const allowed = session => nav.resolveVisibleDomains({ role: "support", ...session }); const access = (session, target = "/service/leaderboard") => nav.canAccessResolvedPath(allowed(session), target);
+  const allowed = session => nav.resolveVisibleDomains({ role: "support", supportReadModes: ["PERSONAL"], ...session }); const access = (session, target = "/service/leaderboard") => nav.canAccessResolvedPath(allowed(session), target);
   for (const code of ["m1", "m3"]) { const session = { authorities: [`service_${code}_read`], menuCodes: [code.toUpperCase()] }; assert.equal(access(session), true); assert.equal(access(session, code === "m3" ? "/service/overview" : "/service/sessions"), false); }
   for (const session of [{ authorities: [], menuCodes: ["M1", "M6"] }, { authorities: ["service_m1_read"], menuCodes: [] }, { authorities: ["service_m3_read"], menuCodes: ["M6"] }, { authorities: ["service_m1_read"], menuCodes: ["M1"], menuNodes: [] }, { authorities: ["service_m1_read"], menuCodes: ["M1"], menuNodes: [{ menuCode: "M1", routePath: "/wrong", parentCode: "M" }] }]) assert.equal(access(session), false);
   assert.equal(access({ authorities: ["service_m3_read"] }), true); assert.equal(nav.canAccessResolvedPath(nav.resolveVisibleDomains({ role: "superadmin" }), "/service/leaderboard"), false);
   const valid = { authorities: ["service_m3_read"], menuCodes: ["M3"], menuNodes: [{ menuCode: "M3", routePath: "/service/sessions", parentCode: "M" }] }; assert.equal(access(valid), true);
+  for (const supportReadModes of [undefined, []]) {
+    const unresolved = { ...valid, supportReadModes };
+    assert.equal(access(unresolved), false);
+    assert.equal(access(unresolved, "/service/sessions"), false);
+  }
 });
 test("binary BFF returns exact public PNG bytes, denies MIME and HTTP errors; old avatars retain policy", async () => {
   let upstream; const originalFetch = globalThis.fetch;

@@ -19,9 +19,11 @@ const ROLE_ACCENT: Record<BuiltinAdminRole, string> = {
 export function RoleBadge({
   role,
   size = "md",
+  label,
 }: {
   role: AdminRole;
   size?: "sm" | "md";
+  label?: string;
 }) {
   const accent = `var(${ROLE_ACCENT[role as BuiltinAdminRole] ?? "--admin-domain-a"})`;
   const pad = size === "sm" ? "px-1.5 py-0.5 text-[10.5px]" : "px-2 py-1 text-[11.5px]";
@@ -38,7 +40,7 @@ export function RoleBadge({
         className="inline-block rounded-full"
         style={{ width: 6, height: 6, background: accent }}
       />
-      {roleLabel(role)}
+      {label ?? roleLabel(role)}
     </span>
   );
 }

@@ -390,7 +390,11 @@ export function setSupportPoolRoute(customerId: string, input: SupportRouteInput
 
 export const supportClient = {
   snapshot: (options: { pageNum: number; pageSize: number; keyword?: string; filter?: SupportCustomerFilter; agentId?: number; mode?: SupportReadMode; groupId?: number; from?: string; to?: string; signal?: AbortSignal }) =>
-    request(`/support-workbench/customers${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize"), keyword: options.keyword, filter: options.filter, agentId: options.agentId, mode: options.mode === undefined ? undefined : enumValue(options.mode, ["PERSONAL", "MANAGED", "ALL"] as const, "mode"), groupId: options.groupId === undefined ? undefined : positive(options.groupId, "groupId"), from: options.from, to: options.to })}`, workbenchSnapshot, { signal: options.signal }),
+    request(`/support-workbench/customers${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize"), keyword: options.keyword, filter: options.filter, agentId: options.agentId, mode: options.mode === undefined ? undefined : enumValue(options.mode, ["PERSONAL", "MANAGED", "ALL"] as const, "mode"), groupId: options.groupId === undefined ? undefined : positive(options.groupId, "groupId"), from: options.from, to: options.to })}`, value => {
+      const result = workbenchSnapshot(value);
+      if (options.mode !== undefined && result.overview.scope.mode !== options.mode) malformed("workbench.scope.modeMismatch");
+      return result;
+    }, { signal: options.signal }),
   overview: async (options: { from?: string; to?: string; mode?: SupportReadMode; groupId?: number; agentId?: number; signal?: AbortSignal } = {}) =>
     (await supportClient.snapshot({ pageNum: 1, pageSize: 1, filter: "ALL", ...options })).overview,
   customers: async (options: { pageNum: number; pageSize: number; keyword?: string; filter?: SupportCustomerFilter; mode?: SupportReadMode; groupId?: number; agentId?: number; signal?: AbortSignal }) =>

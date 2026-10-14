@@ -5,7 +5,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Gauge, Headset, LogOut, Search, UserRound } from "lucide-react";
-import type { AdminRole, NavDomain } from "@/lib/nav/console-nav";
+import { roleLabel, type AdminRole, type NavDomain } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Breadcrumb } from "./breadcrumb";
 import { UtcClock } from "./utc-clock";
@@ -20,9 +20,13 @@ import { useServicePendingCount } from "./use-service-badges";
 import { B_DASHBOARD_READ_AUTHORITIES, M_CONTENT_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
 import { requestAdminLogout } from "@/lib/admin/logout-request";
 import { currentAdminSession } from "@/lib/admin/auth-client";
+import { supportIdentityLabel } from "@/lib/admin/session-role";
 import "./topbar.css";
 
 function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string }) {
+  const supportReadModes = useAdminAuth((s) => s.session?.supportReadModes);
+  const supportLabel = supportIdentityLabel(role, supportReadModes);
+  const identityLabel = supportLabel && role !== "support" ? `${roleLabel(role)} · ${supportLabel}` : supportLabel;
   const [open, setOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const logoutAttemptRef = useRef(false);
@@ -77,7 +81,7 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
           {operator}
         </span>
         <UserRound className="admin-topbar-account-icon" size={17} aria-hidden />
-        <span className="admin-topbar-account-role"><RoleBadge role={role} size="sm" /></span>
+        <span className="admin-topbar-account-role"><RoleBadge role={role} label={identityLabel} size="sm" /></span>
         <ChevronDown size={13} style={{ color: "var(--v5-ink-4)" }} aria-hidden />
       </button>
 
@@ -110,7 +114,7 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
                 {operator}
               </div>
               <div className="mt-1">
-                <RoleBadge role={role} size="sm" />
+                <RoleBadge role={role} label={identityLabel} size="sm" />
               </div>
             </div>
             <div className="my-1 h-px" style={{ background: "var(--v5-border)" }} />
