@@ -136,8 +136,9 @@ test("template revalidation retains dialog/search, blocks selection and recovers
   await page.evaluate(() => window.dispatchEvent(new CustomEvent("support-scope-invalidated"))); await page.waitForFunction(() => !document.querySelector('[role="dialog"]'));
   await open("回复模板与专属客服话术"); assert.equal(await dialog.getByLabel("搜索模板").inputValue(), "");
 });
-test("actual profile 360 keeps its trigger mounted and Escape restores focus; revocation closes private detail", async () => {
-  await mount({profile:true}); const trigger = page.getByRole("button", {name:"查看完整客户档案 / 360",exact:true});
+test("profile quick detail keeps its trigger mounted and Escape restores focus; revocation closes private detail", async () => {
+  await mount({profile:true}); const trigger = page.getByRole("button", {name:"说明",exact:true,includeHidden:true});
+  assert.match(await page.getByRole("link", {name:"查看完整客户档案 / 360",exact:false}).getAttribute("href"), /^\/service\/customers\/7(?:\?|$)/);
   const currency = page.getByRole("group", {name:"资金摘要币种",exact:true}); await currency.waitFor();
   const currencyTrigger = currency.getByRole("button",{name:"USDT",exact:true}), currencyBounds = await currencyTrigger.boundingBox();
   assert.equal(currencyBounds.width, 92); assert.equal(currencyBounds.height, 32);
@@ -146,11 +147,11 @@ test("actual profile 360 keeps its trigger mounted and Escape restores focus; re
   await currencyTrigger.focus(); await page.keyboard.press("ArrowDown"); await page.keyboard.press("End"); await page.keyboard.press("Enter");
   await currency.getByRole("button",{name:"NEX",exact:true}).waitFor();
   assert.match(await page.locator(".m3-profile-funds").innerText(), /24\s*NEX/);
-  await open("查看完整客户档案 / 360", "客户服务 360");
+  await open("说明", "客户服务 360");
   assert.equal(await trigger.count(), 1); assert.equal(await trigger.evaluate(el => el.isConnected), true);
-  await page.keyboard.press("Escape"); await page.waitForFunction(() => document.activeElement?.textContent.includes("查看完整客户档案 / 360"));
+  await page.keyboard.press("Escape"); await page.waitForFunction(() => document.activeElement?.textContent === "说明");
   assert.equal(await page.getByRole("dialog").count(), 0);
-  await open("查看完整客户档案 / 360", "客户服务 360"); await page.evaluate(() => window.dispatchEvent(new CustomEvent("support-scope-invalidated",{detail:{customerId:"7"}})));
+  await open("说明", "客户服务 360"); await page.evaluate(() => window.dispatchEvent(new CustomEvent("support-scope-invalidated",{detail:{customerId:"7"}})));
   await page.waitForFunction(() => !document.querySelector('[role="dialog"]')); assert.equal(await page.getByText("测试客户",{exact:true}).count(), 0);
 });
 test("M3 popover stays above its trigger, survives temporary disable and Escape restores trigger focus", async () => {

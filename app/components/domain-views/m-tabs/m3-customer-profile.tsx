@@ -193,7 +193,8 @@ export function M3CustomerProfile({ ctx, customerId, conversation, scopeVersion,
   return <div className="m3-customer-sidebar">
     <header className="m3-profile-identity"><SupportAvatar name={String(identity?.nickname ?? "客户")} path={identity?.avatar ? customerAvatarPath(customerId) : undefined} size={48}/><div><div className="m3-profile-name"><h3 title={show(identity?.nickname)}>{identity?.nickname == null ? "客户资料待核实" : show(identity.nickname)}</h3>{identity?.level != null && <span className="m3-profile-level">{show(identity.level)}</span>}</div><p className="m3-profile-uid">UID {identity?.userNo == null ? "-" : show(identity.userNo)}</p>{advisorName && <p className="m3-profile-owner">当前专属客服 {String(advisorName)}</p>}</div></header>
     {!scopeDenied && <a className="m3-profile-open" href={`/service/customers/${encodeURIComponent(customerId)}${conversation?.id ? `?conversationNo=${encodeURIComponent(conversation.id)}` : ""}`}>查看完整客户档案 / 360 <span aria-hidden="true">→</span></a>}
-    {view360 ? <Modal title="客户服务 360" icon="users" wide onClose={()=>setView360(false)} footer={<button className="btn btn-sec btn-sm" onClick={()=>setView360(false)}>返回会话</button>}>{body}</Modal> : <>
+    {view360 && <Modal title="客户服务 360" icon="users" wide onClose={()=>setView360(false)} footer={<button className="btn btn-sec btn-sm" onClick={()=>setView360(false)}>返回会话</button>}>{body}</Modal>}
+    <div hidden={view360}>
       {error && <div className="m3-profile-state" role="alert">{error}<button type="button" className="m3-profile-link" onClick={retryProfile}>重新读取资料</button></div>}
       {!scopeDenied && <>
         {summaryState("identity")}
@@ -204,6 +205,6 @@ export function M3CustomerProfile({ ctx, customerId, conversation, scopeVersion,
         <section className="m3-profile-section"><div className="m3-profile-heading"><h4>快捷操作</h4></div><nav className="m3-profile-shortcuts" aria-label="客户快捷入口">{([["历史会话","历史会话","clock"],["关联工单","关联工单","doc"],["重置密码","账户操作","lock"],["账户操作","账户操作","wallet"],["添加备注","标签与内部备注","doc"]] as const).map(([label,section,icon])=><button type="button" key={label} aria-label={`打开完整档案查看${label}`} onClick={()=>open360(section)}><span aria-hidden="true"><Icon name={icon} size={15}/></span>{label}</button>)}</nav></section>
         <section className="m3-profile-section"><div className="m3-profile-heading"><h4>首充与邀请</h4><button type="button" className="m3-profile-link" onClick={()=>open360("首充与邀请统计")}>统计明细 →</button></div>{summaryState("statistics")}<Row label="首充状态" value={firstState}/><Row label="直属邀请（人）" value={statisticCount(statistics?.invitations.direct)}/><Row label="全部邀请后代（人）" value={statisticCount(statistics?.invitations.descendants)}/><Row label={`邀请累充（${summaryCurrency}）`} value={statisticMoney(statistics?.invitations.deposits.find(row=>row.currency===summaryCurrency)?.deposits)}/><Row label="账户活跃" value={statistics?.activity.status === "AVAILABLE" ? statistics.activity.state === "ACTIVE" ? "活跃" : statistics.activity.state === "INACTIVE" ? "近期未活跃" : "-" : "-"}/></section>
       </>}
-    </>}
+    </div>
   </div>;
 }

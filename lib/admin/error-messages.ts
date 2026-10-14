@@ -8,6 +8,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   SUPPORT_ROUTE_RECOVERY_FACTS_CHANGED: "客户当前组范围与原调整资料不一致，结果尚未完成核对；请保留原命令，重新读取当前获准组资料后继续查询。",
   MANAGEMENT_SCOPE_REQUIRED: "当前账号没有客服组管理范围；请返回本人工作台，或联系总管理员核对主管资格及负责组。",
   SUPPORT_CONTRACT_MALFORMED: "客服资料暂时无法读取，请刷新后重试；若持续出现，请联系值班人员。",
+  SUPPORT_PROFILE_CUSTOMER_MISMATCH: "客户资料与当前选择不一致，请返回客户列表重新打开。",
   A1_AVATAR_ID_INVALID: "头像素材标识无效，请重新选择并上传图片。",
   AVATAR_GENDER_INVALID: "请选择有效的头像分类。",
   AVATAR_DEFAULT_INTENT_INVALID: "客服默认头像与自行上传只能选择一种，请核对当前选择。",
