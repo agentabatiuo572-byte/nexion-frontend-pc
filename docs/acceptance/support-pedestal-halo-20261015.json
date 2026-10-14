@@ -1,0 +1,395 @@
+{
+  "scope": "Four missing pedestal halos; original source, existing masks and one-channel tolerance retained",
+  "sourceSHA256": "e3b92e2fbb593171a4658e058c562ec4dbc9403fecafdf8dd85a719ba71f6c3a",
+  "cssSHA256": "6e789db2a9d62972a8d414fbd0cc5a431af9024d116e256f9f31fdda8b364563",
+  "nativeScreenshotSHA256": "22817245be42268566fd4399118f1ad9ab2f9d3d5dbe23fda84b876c92bcfc33",
+  "native": {
+    "viewport": [
+      1536,
+      1024
+    ],
+    "regions": [
+      {
+        "id": "planet-upper",
+        "rect": [
+          1000,
+          5,
+          100,
+          15
+        ],
+        "dx": 0,
+        "dy": 0,
+        "maximum": 0,
+        "mean": 0,
+        "changedChannels": 0
+      },
+      {
+        "id": "planet-surface",
+        "rect": [
+          780,
+          120,
+          60,
+          40
+        ],
+        "dx": 0,
+        "dy": 0,
+        "maximum": 0,
+        "mean": 0,
+        "changedChannels": 0
+      },
+      {
+        "id": "upper-orbit",
+        "rect": [
+          1180,
+          127,
+          40,
+          12
+        ],
+        "dx": 0,
+        "dy": 0,
+        "maximum": 0,
+        "mean": 0,
+        "changedChannels": 0
+      },
+      {
+        "id": "left-orbit",
+        "rect": [
+          208,
+          324,
+          28,
+          28
+        ],
+        "dx": 0,
+        "dy": 0,
+        "maximum": 0,
+        "mean": 0,
+        "changedChannels": 0
+      },
+      {
+        "id": "lower-orbit",
+        "rect": [
+          700,
+          546,
+          40,
+          5
+        ],
+        "dx": 0,
+        "dy": 0,
+        "maximum": 0,
+        "mean": 0,
+        "changedChannels": 0
+      },
+      {
+        "id": "first-pedestal",
+        "rect": [
+          330,
+          316,
+          105,
+          13
+        ],
+        "dx": 0,
+        "dy": 0,
+        "maximum": 0,
+        "mean": 0,
+        "changedChannels": 0
+      },
+      {
+        "id": "second-pedestal",
+        "rect": [
+          609,
+          316,
+          105,
+          13
+        ],
+        "dx": 0,
+        "dy": 0,
+        "maximum": 0,
+        "mean": 0,
+        "changedChannels": 0
+      },
+      {
+        "id": "third-pedestal",
+        "rect": [
+          878,
+          316,
+          90,
+          13
+        ],
+        "dx": 0,
+        "dy": 0,
+        "maximum": 0,
+        "mean": 0,
+        "changedChannels": 0
+      },
+      {
+        "id": "fourth-pedestal",
+        "rect": [
+          1146,
+          316,
+          90,
+          13
+        ],
+        "dx": 0,
+        "dy": 0,
+        "maximum": 0,
+        "mean": 0,
+        "changedChannels": 0
+      },
+      {
+        "id": "first-pedestal-halo",
+        "rect": [
+          305,
+          330,
+          160,
+          23
+        ],
+        "dx": 0,
+        "dy": 0,
+        "maximum": 0,
+        "mean": 0,
+        "changedChannels": 0
+      },
+      {
+        "id": "second-pedestal-halo",
+        "rect": [
+          584,
+          330,
+          160,
+          23
+        ],
+        "dx": 0,
+        "dy": 0,
+        "maximum": 0,
+        "mean": 0,
+        "changedChannels": 0
+      },
+      {
+        "id": "third-pedestal-halo",
+        "rect": [
+          856,
+          330,
+          150,
+          23
+        ],
+        "dx": 0,
+        "dy": 0,
+        "maximum": 0,
+        "mean": 0,
+        "changedChannels": 0
+      },
+      {
+        "id": "fourth-pedestal-halo",
+        "rect": [
+          1122,
+          330,
+          150,
+          23
+        ],
+        "dx": 0,
+        "dy": 0,
+        "maximum": 0,
+        "mean": 0,
+        "changedChannels": 0
+      }
+    ]
+  },
+  "responsive": {
+    "widths": [
+      1415,
+      390
+    ],
+    "overflow": false,
+    "haloMask": "linear-gradient(#000 50%,transparent 75%) below the 1270px container breakpoint",
+    "reason": "Fade before the original text exclusion at source y353; retain untouched central pedestal"
+  },
+  "original": {
+    "verdict": "FAIL",
+    "total": 1572864,
+    "masked": 281918,
+    "static": 1290946,
+    "checked": 1290946,
+    "uncovered": 0,
+    "maximum": 255,
+    "changedPixels": 229317,
+    "changedChannels": 576225,
+    "firstDifferences": [
+      [
+        25,
+        18
+      ],
+      [
+        26,
+        18
+      ],
+      [
+        27,
+        18
+      ],
+      [
+        28,
+        18
+      ],
+      [
+        29,
+        18
+      ],
+      [
+        30,
+        18
+      ],
+      [
+        31,
+        18
+      ],
+      [
+        37,
+        18
+      ],
+      [
+        38,
+        18
+      ],
+      [
+        39,
+        18
+      ],
+      [
+        40,
+        18
+      ],
+      [
+        41,
+        18
+      ],
+      [
+        42,
+        18
+      ],
+      [
+        43,
+        18
+      ],
+      [
+        44,
+        18
+      ],
+      [
+        45,
+        18
+      ],
+      [
+        46,
+        18
+      ],
+      [
+        47,
+        18
+      ],
+      [
+        48,
+        18
+      ],
+      [
+        49,
+        18
+      ]
+    ]
+  },
+  "amended": {
+    "verdict": "FAIL",
+    "total": 1572864,
+    "masked": 347402,
+    "static": 1225462,
+    "checked": 1225462,
+    "uncovered": 0,
+    "maximum": 255,
+    "changedPixels": 174915,
+    "changedChannels": 427641,
+    "firstDifferences": [
+      [
+        25,
+        18
+      ],
+      [
+        26,
+        18
+      ],
+      [
+        27,
+        18
+      ],
+      [
+        28,
+        18
+      ],
+      [
+        29,
+        18
+      ],
+      [
+        30,
+        18
+      ],
+      [
+        31,
+        18
+      ],
+      [
+        37,
+        18
+      ],
+      [
+        38,
+        18
+      ],
+      [
+        39,
+        18
+      ],
+      [
+        40,
+        18
+      ],
+      [
+        41,
+        18
+      ],
+      [
+        42,
+        18
+      ],
+      [
+        43,
+        18
+      ],
+      [
+        44,
+        18
+      ],
+      [
+        45,
+        18
+      ],
+      [
+        46,
+        18
+      ],
+      [
+        47,
+        18
+      ],
+      [
+        48,
+        18
+      ],
+      [
+        49,
+        18
+      ]
+    ],
+    "dynamic": 281918,
+    "amended": 65484,
+    "geometryChecked": true
+  },
+  "limits": "Material regions pass; whole-page pixel equality remains unclosed. No customer-message or financial tests were rerun."
+}

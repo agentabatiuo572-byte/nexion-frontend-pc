@@ -99,6 +99,7 @@ test("orbit coverage includes planet, upper and lower rings and local pedestal m
   assert(approvedStaticRegions.some(region => region.id === "lower-orbit"));
   assert(approvedStaticRegions.some(region => region.id === "first-pedestal"));
   assert.deepEqual(approvedStaticRegions.filter(region=>region.id.endsWith("pedestal")).map(region=>region.id),["first-pedestal","second-pedestal","third-pedestal","fourth-pedestal"]);
-  assert(approvedStaticRegions.every(region => region.rect[2] * region.rect[3] <= 2400));
+  assert.deepEqual(approvedStaticRegions.filter(region=>region.id.endsWith("pedestal-halo")).map(region=>region.rect),[[305,330,160,23],[584,330,160,23],[856,330,150,23],[1122,330,150,23]]);
+  assert(approvedStaticRegions.every(region => region.rect[2] * region.rect[3] <= 4000));
   assert.throws(() => assertApprovedStaticPixels(image(), image(), []), /coverage must not be empty/);
 });

@@ -94,6 +94,7 @@
 | `rank-container-interactions.json`及manifest、`rank-locate-before.json` | 实际M6与受控API响应的12条操作及定位红绿证据；前视觉版本hash单列，不与后续头像资源包混签 |
 | `rank-algorithm-tests.json` | 16个精确算法/服务方法、当前源码/类hash和新类在运行classpath优先的证明摘要，原路径校验假红与仅重读修正保留 |
 | `rank-ring-motion.json`及manifest、`rank-ring-preview.png` | 当前CSS/资源hash、6个绿色圈、5处旋转两帧、减弱动态、离屏暂停/恢复及实景；不代真实数据发布 |
+| `../support-pedestal-halo-20261015.json`、`rank-halo-current.png`、`rank-halo-390.png` | 四个底座外沿光晕取自原稿；13处材料区域逐像素一致，1415/390宽度无页面溢出，窄屏渐隐避免旧姓名抠图缺口。独立审查本补丁无P0/P1/P2；原整图229317、已批准修订后174915个差异像素仍为FAIL |
 | `rank-native.json`、`rank-native-return.png`、`group-return.json` | 正式Next现有账号登录后的11个榜单响应摘要、三个完整查询、同版跨页/搜索/定位、公开成绩返回与正式流光两帧；410客服切片资料返回。只保留必要测试账号及公开榜数据，不含凭据/客户详情全文 |
 | `verify-rank-fix.json`、`rank-native-stop.json`、`rank-fix-review.md` | 5dd76706完整98门与独立审查摘要；14分钟验收窗口正常停止，任务目录增长246,902字节，无新库/账号/授权或资金交易 |
 | `runtime-stop.json`及独立审查摘要 | REQUESTED_STOP/资源after、证明层及剩余原ID，不带凭据或完整私有日志 |
