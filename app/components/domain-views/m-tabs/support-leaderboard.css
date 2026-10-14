@@ -84,11 +84,13 @@
 @container sl-board (min-width:1270px){
  .sl-filters{transform:translate(3px,3.5px)}
  .sl-self{background-color:transparent;background-image:url("./support-leaderboard-assets/orbit-surface-self.png");background-size:100% 100%;background-origin:border-box;border-color:transparent;border-radius:0}
+ @media(pointer:fine){
  .sl-table-wrap{background-image:url("./support-leaderboard-assets/orbit-surface-table.png");background-size:100% 288px;background-repeat:no-repeat;background-origin:border-box}
  /* The five-row source surface already paints its outer edge and rounded corners. */
  .sl-table-wrap:has(tbody tr:nth-child(5):last-child){border-color:transparent;border-radius:0}
  .sl-table th,.sl-table td,.sl-table tr[data-self] td{background:transparent}
  .sl-table tr[data-self]{background-image:url("./support-leaderboard-assets/orbit-surface-self-row.png");background-size:100% 50px;background-position:-1px 0;background-repeat:no-repeat}
+ }
  .sl-pagination{background-color:transparent;background-image:url("./support-leaderboard-assets/orbit-surface-pagination.png");background-size:100% 66px;background-repeat:no-repeat;background-origin:border-box}
  .sl-podium-person:nth-child(2) .sl-podium-rank{left:calc(25% - 2px)}
  .sl-podium-person:nth-child(3) .sl-podium-rank{left:18%}
@@ -126,7 +128,14 @@
 .sl-locate>svg{width:16px;height:16px;stroke-width:1.75}
 .sl-self .sl-locate:hover{background:#ccff49!important;box-shadow:inset 0 1px 0 #ffffff50,0 0 0 3px #c4ff3614}
 .sl-self .sl-locate:active{background:#a9db2c!important;box-shadow:inset 0 1px 2px #0002}
-@media(pointer:coarse){.sl-self .sl-locate{min-height:44px}}
+@media(pointer:coarse){
+ .support-leaderboard :is(button,summary,select){min-width:44px;min-height:44px}
+ .support-leaderboard summary{display:inline-flex;align-items:center;justify-content:center}
+ .sl-select{min-height:44px}.sl-tabs{min-height:46px}.sl-select option{min-height:44px}
+ .sl-podium-view{border:1px solid #7a8790!important;background:#090f1080!important}
+ .sl-podium-view::before{content:none}
+ .sl-table-wrap{background:#060b0b}
+}
 .sl-page-summary{min-width:0}
 .sl-pagination .sl-select{margin-left:auto}
 .sl-page-buttons{margin-left:0}

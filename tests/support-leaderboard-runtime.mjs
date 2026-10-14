@@ -204,6 +204,25 @@ for(const width of [1536,1415,1201,1000,390])for(const state of ["baseline","per
   assert.equal(evidence.length,4);assert(evidence.every(row=>row.gap>=7.9),JSON.stringify({width,state,evidence}));
   await page.screenshot({path:path.join(output,`${width}-podium-caption-${state}.png`),fullPage:true});return evidence;
 });
+await check("coarse-controls-touch-targets",async()=>{
+  const cdp=await context.newCDPSession(page),evidence=[];
+  try {
+    await cdp.send("Emulation.setTouchEmulationEnabled",{enabled:true,maxTouchPoints:1});
+    for(const width of [390,1536]){
+      await page.setViewportSize({width,height:1024});await mode("baseline");
+      assert(await page.evaluate(()=>matchMedia("(pointer:coarse)").matches));
+      const controls=await page.locator('.support-leaderboard button,.support-leaderboard summary,.support-leaderboard select').evaluateAll(els=>els.map(el=>{const r=el.getBoundingClientRect();return {label:el.getAttribute("aria-label")||el.textContent,width:r.width,height:r.height};}).filter(r=>r.width&&r.height));
+      assert(controls.length>60);assert(controls.every(r=>r.width>=44&&r.height>=44),JSON.stringify({width,controls}));
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+      const surface=await page.evaluate(()=>({table:getComputedStyle(document.querySelector('.sl-table-wrap')).backgroundImage,self:getComputedStyle(document.querySelector('tr[data-self]')).backgroundImage,cells:[...document.querySelectorAll('tr[data-self] td')].map(el=>getComputedStyle(el).backgroundColor)}));
+      assert.equal(surface.table,'none');assert.equal(surface.self,'none');assert(surface.cells.length===6&&surface.cells.every(color=>color==='rgba(20, 32, 22, 0.66)'),JSON.stringify(surface));
+      await page.locator('.sl-podium-view').first().click();assert((await events()).includes("view:zhou"));
+      await page.getByRole("button",{name:"定位我",exact:true}).click();assert((await events()).includes("locate:mia"));
+      evidence.push({width,controls,surface});
+    }
+  } finally {await cdp.send("Emulation.setTouchEmulationEnabled",{enabled:false});await cdp.detach();}
+  return evidence;
+});
 for(const width of [390,760,761,800,877,960,1000,1001,1200,1201,1415,1536])await check(`primary-controls-unobstructed-${width}`,async()=>{
   await page.setViewportSize({width,height:1172});const evidence=[];
   for(const scope of ["all","long"]){
