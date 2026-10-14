@@ -196,7 +196,7 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <p className="dim" style={{ margin: 0, fontSize: 13 }}>维护帮助中心问答,设定每类工单多久要首次响应、多久要解决。</p>
 
-      {!knowledgeAvailable && <div className="callout warn" data-module-health-state="error">知识库后端当前不可用,页面已停止写入,避免显示未落库的成功状态。</div>}
+      {!knowledgeAvailable && <div className="callout warn" data-module-health-state="error">知识库当前不可用，暂时无法修改。请稍后刷新重试。</div>}
       {knowledgeAvailable && !canWriteM4 && <div className="callout">当前账号只有查看权限;编辑 FAQ、发布状态与 SLA 需要 service_m4_write 权限。</div>}
 
       <div className="m4-cols">
@@ -204,7 +204,7 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
           <div className="card-pad" style={{ paddingBottom: 10, display: "flex", alignItems: "center" }}>
             <div className="sec-h" style={{ margin: 0 }}>
               <span className="t">Help/FAQ 内容管理</span>
-              <span className="n">{faqs.length} 篇</span>
+              <span className="n">{knowledgeAvailable ? faqs.length : "-"} 篇</span>
             </div>
             {canWriteM4 && knowledgeAvailable && <button type="button" className="btn btn-pri btn-sm" style={{ marginLeft: "auto" }} disabled={writePending} onClick={() => { createFaqTempId.current = nextFaqId(); setEditFaq(null); setShowAddFaq(true); }}>
               <Icon name="plus" size={16} />

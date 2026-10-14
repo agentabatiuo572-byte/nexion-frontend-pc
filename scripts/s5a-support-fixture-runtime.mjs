@@ -681,7 +681,7 @@ try {
     assert.ok(await page.locator(".m3-col-chat").evaluate((node) => node.getBoundingClientRect().width > 500), "桌面聊天栏必须是主区域");
     assert.equal(await page.getByRole("link", { name: "工单详情" }).count(), 0, "没有权威工单前不显示详情入口");
     await page.getByRole("textbox", { name: "输入会话消息" }).fill("已有草稿：");
-    await page.getByText("回复模板与顾问话术", { exact: true }).click();
+    await page.getByText("回复模板与专属客服话术", { exact: true }).click();
     await page.getByLabel("模板类型").selectOption("script");
     await page.getByRole("button", { name: /快捷话术只填稿/ }).click();
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -802,7 +802,7 @@ try {
     await page.locator("tr").filter({ hasText: "T-101" }).waitFor();
     restrictNextTicketDetail = true;
     await page.locator("tr").filter({ hasText: "T-101" }).getByRole("button", { name: "处理" }).click();
-    await page.getByText("私聊内容仅当前顾问和主管可阅").first().waitFor();
+    await page.getByText("私聊内容仅当前专属客服和客服主管可阅").first().waitFor();
     assert.equal(await page.getByText(/由会话 CV-101 转入/).count(), 0);
   });
   let m3HistoryDetailReads = 0;

@@ -3045,7 +3045,7 @@
       "id": "OPS-K-17",
       "domain": "K",
       "object": "Janus C2 生产执行(K6)",
-      "action": "已提交 Janus native runtime、UTS fail-closed 源码；Sandbox runtime 未接入，Production 原生真机 enrollment/handoff 验收 HOLD（开发暂停）",
+      "action": "已提交 Janus Sandbox/native 分支接线、UTS fail-closed 源码；Production 原生真机 enrollment/handoff 验收 HOLD（开发暂停）",
       "status": "pending",
       "view": "k-tabs/k6-janus-c2.tsx",
       "batch": "P1",
@@ -3053,8 +3053,8 @@
         {
           "type": "janus-runtime",
           "file": "src/lib/janus/executor-runtime.ts",
-          "positivePatterns": ["^[ \\t]*if \\(mode === \"disabled\"\\) return null;\\s+const bridge = installNativeJanusExecutorBridge\\(\\);\\s+if \\(!bridge\\) throw new Error\\(\"JANUS_NATIVE_EXECUTOR_REQUIRED\"\\);\\s+const executor = createProductionJanusExecutor\\(\\{ bridge \\}\\);", "^[ \\t]*const api = createJanusBackendCommandApi\\(", "^[ \\t]*return createJanusCommandCoordinator\\(\\{ api, executor, storage \\}\\);"],
-          "negativePatterns": ["mode === .production.[\\s\\S]{0,300}createSandboxJanusExecutor", "bridge \\? createProductionJanusExecutor", "createSandboxJanusExecutor\\("]
+          "positivePatterns": ["^[ \\t]*if \\(mode === \"disabled\"\\) return null;", "^[ \\t]*const executor: JanusExecutor = mode === \"sandbox\"\\s+\\? await \\(async \\(\\) => \\{[\\s\\S]{0,1800}return createSandboxJanusExecutor\\(", "^[ \\t]*: \\(\\(\\) => \\{\\s+const bridge = installNativeJanusExecutorBridge\\(\\);\\s+if \\(!bridge\\) throw new Error\\(\"JANUS_NATIVE_EXECUTOR_REQUIRED\"\\);\\s+return createProductionJanusExecutor\\(\\{ bridge \\}\\);\\s+\\}\\)\\(\\);", "^[ \\t]*const api = createJanusBackendCommandApi\\(", "^[ \\t]*return createJanusCommandCoordinator\\(\\{ api, executor, storage \\}\\);"],
+          "negativePatterns": ["mode === \"production\"\\s+\\? await", "bridge \\? createProductionJanusExecutor", "^[ \\t]*: \\(\\(\\) => \\{[^}]*createSandboxJanusExecutor\\("]
         },
         {
           "type": "janus-runtime",
@@ -3076,7 +3076,7 @@
         "successOutcome": "Janus claims the command and returns non-replayable ACK and applied proof",
         "failureOutcome": "missing executor, invalid proof or profile mismatch leaves the command unapplied"
       },
-      "note": "已提交源码仅证明 disabled 早退、native bridge 缺失时 fail-closed、native executor/coordinator 接线与 Android UTS 拒绝守卫；Sandbox helper 有隔离守卫但未接入 executor-runtime，Sandbox runtime 与 Production 原生真机 enrollment/handoff 均未验收。Janus 开发暂停，保持 pending/HOLD，不以源码或未提交 WIP 代替交付证据。"
+      "note": "已提交源码证明 disabled 早退、显式 Sandbox 分支接入及其登记来源隔离、native 分支 bridge 缺失时 fail-closed、executor/coordinator 接线与 Android UTS 拒绝守卫；分支源码不替代真实环境验收，Production 原生真机 enrollment/handoff 仍未验收。Janus 开发暂停，保持 pending/HOLD，不以源码或未提交 WIP 代替交付证据。"
     },
     {
       "id": "OPS-M-18",

@@ -15,7 +15,7 @@ type RulePayload = Parameters<typeof supportClient.updateRules>[0];
 type RulePendingRecord = { fingerprint: string; commandKey: string; createdAt: number; expiresAt: number; actorId: number; payload: RulePayload };
 const ruleCommands = createPendingMutationStore<RulePendingRecord>({ storageKey: "nexion-admin-m-support-rules-v1", isValidRecord: (row) => Boolean(Number.isSafeInteger(row.actorId) && row.payload && Number.isSafeInteger(row.payload.expectedVersion)) });
 const LABELS: Record<Field, string> = {
-  unboundAssignmentMode: "无顾问客户分配方式",
+  unboundAssignmentMode: "无专属客服客户分配方式",
   dormantDays: "沉睡判定天数", maintenanceDays: "主动维护间隔天数", activityWindowDays: "活跃统计窗口天数", inheritanceMode: "自动继承方式", maxInheritanceDepth: "最大自动继承层数",
 };
 const dayFields = ["dormantDays", "maintenanceDays", "activityWindowDays"] as const;
@@ -54,7 +54,7 @@ function changedFields(before: SupportRules, after: Omit<SupportRules, "version"
 }
 
 function labelValue(key: Field, value: SupportRules[Field]): string {
-  if (key === "unboundAssignmentMode") return value === "AUTO_RANDOM" ? "自动随机分配" : "主管分配";
+  if (key === "unboundAssignmentMode") return value === "AUTO_RANDOM" ? "自动随机分配" : "客服主管分配";
   if (key === "inheritanceMode") return value === "LIMITED" ? "有限层数" : value === "UNLIMITED" ? "不限制" : "未配置";
   return value == null ? "未配置" : `${value}${key === "maxInheritanceDepth" ? " 层" : " 天"}`;
 }
@@ -179,18 +179,18 @@ export function M5ServiceRules({ permission }: { permission: MSupportPermission 
         <h2>服务规则</h2>
         <div className="m-admin-muted">沉睡、维护与活跃统计分别配置。未配置的能力会显示不可用，不影响其他已配置规则。</div>
         {permission === "supervisor" && <div className="m-admin-error">仅超管可修改服务规则；当前为只读视图。</div>}
-        {readOnlyPending && <div className="m-admin-error" role="status">此账号有一笔规则提交结果尚未确认；下方仅显示服务端已保存的规则。请恢复超管权限后查询原命令。</div>}
+        {readOnlyPending && <div className="m-admin-error" role="status">此账号有一笔规则提交结果尚未确认；下方显示最近已保存的规则。请恢复超管权限后查询原命令。</div>}
         {loading && <div className="m-admin-muted" role="status">正在读取规则…</div>}
         {error && <div className="m-admin-error" role="alert">{error} {readUnavailable && <button type="button" className="btn btn-sec btn-sm" disabled={Boolean(retry)} onClick={() => setReload((n) => n + 1)}>重试读取</button>}</div>}
         {!loading && !current && <div className="m-admin-muted">规则暂不可用，无法保存。</div>}
         {draft && current && <>
           <fieldset disabled={!editable} className="m-assignment-mode" aria-describedby="m-assignment-help">
-            <legend>无顾问客户分配方式</legend>
+            <legend>无专属客服客户分配方式</legend>
             <div className="m-assignment-options">
               <label className="m-assignment-option"><input type="radio" name="unbound-mode" value="AUTO_RANDOM" checked={draft.unboundAssignmentMode === "AUTO_RANDOM"} onChange={() => setField("unboundAssignmentMode", "AUTO_RANDOM")} /><span>自动随机分配</span></label>
-              <label className="m-assignment-option"><input type="radio" name="unbound-mode" value="SUPERVISOR" checked={draft.unboundAssignmentMode === "SUPERVISOR"} onChange={() => setField("unboundAssignmentMode", "SUPERVISOR")} /><span>主管分配</span></label>
+              <label className="m-assignment-option"><input type="radio" name="unbound-mode" value="SUPERVISOR" checked={draft.unboundAssignmentMode === "SUPERVISOR"} onChange={() => setField("unboundAssignmentMode", "SUPERVISOR")} /><span>客服主管分配</span></label>
             </div>
-            <p id="m-assignment-help" className="m-assignment-help">有效邀请继承优先。只影响保存后新进入的无顾问客户；历史池须单独预览确认。已绑定顾问离线或忙碌不会重新分配。</p>
+            <p id="m-assignment-help" className="m-assignment-help">有效邀请继承优先。只影响保存后新进入的无专属客服客户；历史池须单独预览确认。已绑定专属客服离线或忙碌不会重新分配。</p>
           </fieldset>
           {dayFields.map((field) => <div className="m-admin-row" key={field}>
             <div><label htmlFor={`m-rule-${field}`}>{LABELS[field]}</label><p>{field === "dormantDays" ? "有效账户活动超出设定天数且记录完整，才可判定沉睡。" : field === "maintenanceDays" ? "已到维护时间的客户会进入主动维护待办。" : "用于活跃客户统计，与当前沉睡状态分别计算。"}</p></div>
@@ -203,7 +203,7 @@ export function M5ServiceRules({ permission }: { permission: MSupportPermission 
             </select>
           </div>
           {draft.inheritanceMode === "LIMITED" && <div className="m-admin-row">
-            <div><label htmlFor="m-rule-maxInheritanceDepth">最大自动继承层数</label><p>0 层有效，表示仅人工分配的起点客户归属顾问。</p></div>
+            <div><label htmlFor="m-rule-maxInheritanceDepth">最大自动继承层数</label><p>0 层有效，表示仅人工分配的起点客户归属专属客服。</p></div>
             <input id="m-rule-maxInheritanceDepth" type="number" min="0" step="1" placeholder="请输入层数" value={draft.maxInheritanceDepth} disabled={!editable} onChange={(event) => setField("maxInheritanceDepth", event.target.value)} />
           </div>}
           {!parsed && <div className="m-admin-error" role="alert">天数须为正整数，有限层数须为非负整数；同时设置沉睡与活跃天数时，活跃窗口不得大于沉睡天数。</div>}

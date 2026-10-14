@@ -14,7 +14,8 @@ import { createAdminActivityTracker } from "@/lib/admin/admin-activity";
 import { fetchA3RuntimeFlags } from "@/lib/admin/a3-client";
 import { installAdminAuthFetchLifecycle } from "@/lib/admin/auth-lifecycle";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
-import { canAccessResolvedPath, resolveVisibleDomains, type NavDomain } from "@/lib/nav/console-nav";
+import { requestAdminLogout } from "@/lib/admin/logout-request";
+import { canAccessResolvedPath, defaultConsolePath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { DEFAULT_EXPANDED_GROUPS, useAdminUi } from "@/lib/store/admin-ui";
 import { Sidebar } from "./sidebar";
@@ -23,15 +24,10 @@ import { PageTransition } from "./page-transition";
 import { LoginGate } from "./login-gate";
 import { useServicePendingCount } from "./use-service-badges";
 
-const SUPPORT_HOME_PATH = "/service/overview";
 const SESSION_REFRESH_MS = 60_000;
 type AdminBootstrapState = "checking" | "authenticated" | "anonymous" | "error";
 
 installAdminAuthFetchLifecycle();
-
-function defaultPathForDomains(domains: NavDomain[]) {
-  return domains[0]?.l2[0]?.path ?? "/";
-}
 
 function AdminLogoutGate() {
   return (
@@ -69,23 +65,24 @@ function AdminSessionBootstrapGate() {
   );
 }
 
-function AdminSessionRecoveryGate({ onRetry }: { onRetry: () => void }) {
+function AdminSessionRecoveryGate({ onRetry, onLogout, noAccess = false, error }: { onRetry: () => void; onLogout?: () => void; noAccess?: boolean; error?: string }) {
   return (
     <div
       role="alert"
       className="flex h-screen w-screen flex-col items-center justify-center gap-4"
       style={{ background: "var(--v5-bg)", color: "var(--v5-ink-3)" }}
     >
-      <strong style={{ color: "var(--v5-ink)" }}>登录状态校验失败</strong>
-      <span className="text-[13px]">暂时无法确认登录状态，请重试。</span>
+      <strong style={{ color: "var(--v5-ink)" }}>{noAccess ? "当前账号没有可访问的后台页面" : "登录状态校验失败"}</strong>
+      <span className="text-[13px]">{error || (noAccess ? "请重新读取权限，或退出后切换账号。" : "暂时无法确认登录状态，请重试。")}</span>
       <button
         type="button"
         className="rounded-[8px] px-4 py-2 text-[13px] font-medium"
         style={{ background: "var(--v5-brand)", color: "var(--v5-on-brand)" }}
         onClick={onRetry}
       >
-        重新校验
+        {noAccess ? "重新读取权限" : "重新校验"}
       </button>
+      {onLogout && <button type="button" className="rounded-[8px] px-4 py-2 text-[13px] font-medium" style={{ color: "var(--v5-ink)" }} onClick={onLogout}>退出登录</button>}
     </div>
   );
 }
@@ -115,6 +112,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const authEpoch = useAdminAuth((s) => s.authEpoch);
   const logoutPending = useAdminAuth((s) => s.logoutPending);
   const logoutUnknown = useAdminAuth((s) => s.logoutUnknown);
+  const logoutError = useAdminAuth((s) => s.logoutError);
   const operatorRaw = useAdminAuth((s) => s.operator);
   const signIn = useAdminAuth((s) => s.signIn);
   const signOut = useAdminAuth((s) => s.signOut);
@@ -147,6 +145,31 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
       setBootstrapState("error");
     }
   }, [signIn, signOut]);
+
+  async function logoutWithoutAccess(): Promise<void> {
+    const auth = useAdminAuth.getState();
+    if (auth.logoutPending) return;
+    auth.beginLogout();
+    try {
+      await requestAdminLogout();
+      signOut();
+    } catch {
+      auth.beginLogoutVerification();
+      try {
+        if (await currentAdminSession()) auth.cancelLogout("退出未完成，请重试。");
+        else signOut();
+      } catch {
+        auth.failLogoutUnknown("退出结果暂无法确认，请重新校验登录状态。");
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (!mounted) return;
+    const invalidate = () => void restoreAdminSession();
+    window.addEventListener("support-scope-invalidated", invalidate);
+    return () => window.removeEventListener("support-scope-invalidated", invalidate);
+  }, [mounted, restoreAdminSession]);
 
   useEffect(() => {
     if (observedAuthEpochRef.current === authEpoch) return;
@@ -283,25 +306,22 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
     menuCodes: session?.menuCodes,
     menuNodes: session?.menuNodes,
     authorities: session?.authorities ?? [],
-  }), [role, session?.authorities, session?.menuCodes, session?.menuNodes]);
-  const shouldRedirectHome = role === "support" && pathname === "/";
+    supportReadModes: session?.supportReadModes,
+  }), [role, session?.authorities, session?.menuCodes, session?.menuNodes, session?.supportReadModes]);
+  const landingPath = defaultConsolePath(role, domains);
+  const shouldRedirectHome = pathname === "/" && landingPath !== null && landingPath !== "/";
   const shouldRedirectForbidden = !canAccessResolvedPath(domains, pathname);
-  const redirecting = isAuthenticated && (shouldRedirectHome || shouldRedirectForbidden);
+  const redirecting = isAuthenticated && landingPath !== null && (shouldRedirectHome || shouldRedirectForbidden);
 
   useEffect(() => {
-    if (!mounted || bootstrapState !== "authenticated" || !isAuthenticated) return;
-    if (shouldRedirectHome) {
-      router.replace(SUPPORT_HOME_PATH);
-      return;
-    }
-    if (shouldRedirectForbidden) {
-      router.replace(defaultPathForDomains(domains));
-    }
+    if (!mounted || bootstrapState !== "authenticated" || !isAuthenticated || landingPath === null) return;
+    if (shouldRedirectHome || shouldRedirectForbidden) router.replace(landingPath);
   }, [
     isAuthenticated,
     mounted,
     bootstrapState,
     domains,
+    landingPath,
     router,
     shouldRedirectForbidden,
     shouldRedirectHome,
@@ -311,9 +331,10 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   if (logoutUnknown) return <AdminSessionRecoveryGate onRetry={() => void restoreAdminSession()} />;
   if (sessionResolution === "anonymous") return <LoginGate onAuthenticated={() => setBootstrapState("authenticated")} />;
   if (!mounted || bootstrapState === "checking") return <AdminSessionBootstrapGate />;
-  if (bootstrapState === "error") return <AdminSessionRecoveryGate onRetry={() => void restoreAdminSession()} />;
+  if (bootstrapState === "error") return <AdminSessionRecoveryGate onRetry={() => void restoreAdminSession()} onLogout={session ? () => void logoutWithoutAccess() : undefined} />;
   if (bootstrapState === "anonymous") return <LoginGate onAuthenticated={() => setBootstrapState("authenticated")} />;
   if (!isAuthenticated) return <LoginGate onAuthenticated={() => setBootstrapState("authenticated")} />;
+  if (landingPath === null) return <AdminSessionRecoveryGate noAccess error={logoutError ?? undefined} onRetry={() => void restoreAdminSession()} onLogout={() => void logoutWithoutAccess()} />;
   if (redirecting) return <AdminRouteRedirectGate />;
 
   return (
@@ -355,7 +376,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
           gridRow: 2,
           minWidth: 0,
           overflowY: "auto",
-          padding: "var(--admin-gutter)",
+          padding: pathname === "/service/leaderboard" ? 0 : "var(--admin-gutter)",
         }}
       >
         <div className="content-shell">

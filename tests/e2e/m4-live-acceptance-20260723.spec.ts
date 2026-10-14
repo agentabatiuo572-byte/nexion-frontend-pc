@@ -274,7 +274,7 @@ test("M4 FAQ/SLA 真实闭环、并发唯一性与失败关闭", async ({ page }
       body: JSON.stringify({ code: 503, message: "M4_ACCEPTANCE_KNOWLEDGE_UNAVAILABLE" }),
     }));
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByText(/知识库后端当前不可用/)).toBeVisible();
+    await expect(page.getByText(/知识库当前不可用/)).toBeVisible();
     await expect(page.getByRole("button", { name: "新增文章", exact: true })).toHaveCount(0);
     await page.screenshot({ path: path.join(EVIDENCE_DIR, "05-knowledge-500-fails-closed.png"), fullPage: true });
     await page.unroute(KNOWLEDGE_OVERVIEW_API);

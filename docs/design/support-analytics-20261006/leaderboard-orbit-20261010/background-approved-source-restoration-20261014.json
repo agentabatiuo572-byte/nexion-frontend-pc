@@ -1,0 +1,1236 @@
+{
+  "revision": "approved-source-foreground-only-20261014",
+  "status": "SHIPPING_ASSETS_ADOPTED_RUNTIME_AND_INDEPENDENT_ACCEPTANCE_PENDING",
+  "tool": "sharp raw RGBA extraction/compositing",
+  "source": {
+    "file": "approved-design.png",
+    "sha256": "e3b92e2fbb593171a4658e058c562ec4dbc9403fecafdf8dd85a719ba71f6c3a",
+    "size": [
+      1536,
+      1024
+    ]
+  },
+  "donor": {
+    "file": "background-imagegen-repair-source-20261014.png",
+    "sha256": "ab1330f1ad4383f4f8b5b62aa2b560bb8417b92b6f03666c4c5910ea0908cb16",
+    "role": "Existing imagegen material only inside declared foreground supports; never the whole background."
+  },
+  "mask": {
+    "source": "background-v2-manifest.json reconstruction.foregroundMasks (80) with explicit portrait/pedestal bloom expansions, plus original lower-canvas foregroundRemoval (4) and independently rendered self panel (1)",
+    "holes": [
+      {
+        "id": "title",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 204,
+        "y": 16,
+        "width": 124,
+        "height": 47,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "currency-control",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 353,
+        "y": 20,
+        "width": 106,
+        "height": 48,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "period-control",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 463,
+        "y": 20,
+        "width": 107,
+        "height": 48,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "scope-control",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 574,
+        "y": 20,
+        "width": 108,
+        "height": 48,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "metric-tabs-control",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 203,
+        "y": 73,
+        "width": 523,
+        "height": 49,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "hero-heading",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 206,
+        "y": 137,
+        "width": 84,
+        "height": 31,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "hero-heading-divider",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 294,
+        "y": 138,
+        "width": 10,
+        "height": 30,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "hero-period-unit-copy",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 311,
+        "y": 143,
+        "width": 352,
+        "height": 26,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-1-rank-label",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 264,
+        "y": 197,
+        "width": 52,
+        "height": 27,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-1-rank-number",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 258,
+        "y": 218,
+        "width": 60,
+        "height": 54,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-1-avatar",
+        "category": "dynamic-data",
+        "shape": "ellipse",
+        "cx": 382,
+        "cy": 248,
+        "rx": 75,
+        "ry": 75,
+        "expansion": "Source portrait/frame bloom extends beyond the old portrait-only primitive; add 12px to radii."
+      },
+      {
+        "id": "person-1-name",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 353,
+        "y": 353,
+        "width": 62,
+        "height": 27,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-1-group",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 357,
+        "y": 376,
+        "width": 51,
+        "height": 23,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-1-change",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 365,
+        "y": 396,
+        "width": 37,
+        "height": 32,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-1-metric-1",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 280,
+        "y": 429,
+        "width": 50,
+        "height": 29,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-1-metric-2",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 366,
+        "y": 429,
+        "width": 36,
+        "height": 29,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-1-metric-3",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 447,
+        "y": 429,
+        "width": 36,
+        "height": 29,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-1-metric-label-1",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 279,
+        "y": 456,
+        "width": 48,
+        "height": 24,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-1-metric-label-2",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 352,
+        "y": 456,
+        "width": 63,
+        "height": 24,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-1-metric-label-3",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 424,
+        "y": 456,
+        "width": 81,
+        "height": 24,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-1-metric-divider-1",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 339,
+        "y": 429,
+        "width": 6,
+        "height": 49,
+        "expansion": "Native source calibration: 2px gray divider peaks plus their two-pixel antialias/shadow support. Old recorded x could miss the actual painted divider."
+      },
+      {
+        "id": "person-1-metric-divider-2",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 420,
+        "y": 429,
+        "width": 6,
+        "height": 49,
+        "expansion": "Native source calibration: 2px gray divider peaks plus their two-pixel antialias/shadow support. Old recorded x could miss the actual painted divider."
+      },
+      {
+        "id": "person-1-button",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 308,
+        "y": 483,
+        "width": 153,
+        "height": 40,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-1-podium-top",
+        "category": "extracted-decoration",
+        "shape": "ellipse",
+        "cx": 382,
+        "cy": 312,
+        "rx": 66,
+        "ry": 17
+      },
+      {
+        "id": "person-1-podium-side",
+        "category": "extracted-decoration",
+        "shape": "rectangle",
+        "x": 315,
+        "y": 310,
+        "width": 134,
+        "height": 26,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-1-podium-floor",
+        "category": "extracted-decoration",
+        "shape": "ellipse",
+        "cx": 382,
+        "cy": 333,
+        "rx": 107,
+        "ry": 38,
+        "expansion": "Source pedestal floor/shadow halo extends beyond the old core ellipse; include its 24px horizontal/18px vertical support."
+      },
+      {
+        "id": "person-2-rank-label",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 551,
+        "y": 197,
+        "width": 54,
+        "height": 27,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-2-rank-number",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 545,
+        "y": 218,
+        "width": 60,
+        "height": 54,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-2-avatar",
+        "category": "dynamic-data",
+        "shape": "ellipse",
+        "cx": 662,
+        "cy": 251,
+        "rx": 70,
+        "ry": 70,
+        "expansion": "Source portrait/frame bloom extends beyond the old portrait-only primitive; add 12px to radii."
+      },
+      {
+        "id": "person-2-name",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 633,
+        "y": 353,
+        "width": 49,
+        "height": 27,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-2-group",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 633,
+        "y": 376,
+        "width": 50,
+        "height": 23,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-2-change",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 637,
+        "y": 396,
+        "width": 37,
+        "height": 32,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-2-metric-1",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 553,
+        "y": 429,
+        "width": 50,
+        "height": 29,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-2-metric-2",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 638,
+        "y": 429,
+        "width": 37,
+        "height": 29,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-2-metric-3",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 718,
+        "y": 429,
+        "width": 37,
+        "height": 29,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-2-metric-label-1",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 552,
+        "y": 456,
+        "width": 49,
+        "height": 24,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-2-metric-label-2",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 625,
+        "y": 456,
+        "width": 65,
+        "height": 24,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-2-metric-label-3",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 699,
+        "y": 456,
+        "width": 81,
+        "height": 24,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-2-metric-divider-1",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 611,
+        "y": 429,
+        "width": 6,
+        "height": 49,
+        "expansion": "Native source calibration: 2px gray divider peaks plus their two-pixel antialias/shadow support. Old recorded x could miss the actual painted divider."
+      },
+      {
+        "id": "person-2-metric-divider-2",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 690,
+        "y": 429,
+        "width": 6,
+        "height": 49,
+        "expansion": "Native source calibration: 2px gray divider peaks plus their two-pixel antialias/shadow support. Old recorded x could miss the actual painted divider."
+      },
+      {
+        "id": "person-2-button",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 578,
+        "y": 483,
+        "width": 155,
+        "height": 40,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-2-podium-top",
+        "category": "extracted-decoration",
+        "shape": "ellipse",
+        "cx": 659,
+        "cy": 312,
+        "rx": 60,
+        "ry": 17
+      },
+      {
+        "id": "person-2-podium-side",
+        "category": "extracted-decoration",
+        "shape": "rectangle",
+        "x": 598,
+        "y": 310,
+        "width": 122,
+        "height": 26,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-2-podium-floor",
+        "category": "extracted-decoration",
+        "shape": "ellipse",
+        "cx": 659,
+        "cy": 333,
+        "rx": 103,
+        "ry": 38,
+        "expansion": "Source pedestal floor/shadow halo extends beyond the old core ellipse; include its 24px horizontal/18px vertical support."
+      },
+      {
+        "id": "person-3-rank-label",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 805,
+        "y": 197,
+        "width": 82,
+        "height": 27,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-3-rank-number",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 806,
+        "y": 218,
+        "width": 60,
+        "height": 54,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-3-avatar",
+        "category": "dynamic-data",
+        "shape": "ellipse",
+        "cx": 925,
+        "cy": 251,
+        "rx": 70,
+        "ry": 70,
+        "expansion": "Source portrait/frame bloom extends beyond the old portrait-only primitive; add 12px to radii."
+      },
+      {
+        "id": "person-3-name",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 890,
+        "y": 353,
+        "width": 64,
+        "height": 27,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-3-group",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 894,
+        "y": 376,
+        "width": 51,
+        "height": 23,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-3-change",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 910,
+        "y": 401,
+        "width": 33,
+        "height": 20,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-3-metric-1",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 815,
+        "y": 429,
+        "width": 49,
+        "height": 29,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-3-metric-2",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 900,
+        "y": 429,
+        "width": 37,
+        "height": 29,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-3-metric-3",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 981,
+        "y": 429,
+        "width": 37,
+        "height": 29,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-3-metric-label-1",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 814,
+        "y": 456,
+        "width": 49,
+        "height": 24,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-3-metric-label-2",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 887,
+        "y": 456,
+        "width": 65,
+        "height": 24,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-3-metric-label-3",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 961,
+        "y": 456,
+        "width": 83,
+        "height": 24,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-3-metric-divider-1",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 873,
+        "y": 429,
+        "width": 6,
+        "height": 49,
+        "expansion": "Native source calibration: 2px gray divider peaks plus their two-pixel antialias/shadow support. Old recorded x could miss the actual painted divider."
+      },
+      {
+        "id": "person-3-metric-divider-2",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 953,
+        "y": 429,
+        "width": 6,
+        "height": 49,
+        "expansion": "Native source calibration: 2px gray divider peaks plus their two-pixel antialias/shadow support. Old recorded x could miss the actual painted divider."
+      },
+      {
+        "id": "person-3-button",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 840,
+        "y": 483,
+        "width": 155,
+        "height": 40,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-3-podium-top",
+        "category": "extracted-decoration",
+        "shape": "ellipse",
+        "cx": 923,
+        "cy": 312,
+        "rx": 56,
+        "ry": 17
+      },
+      {
+        "id": "person-3-podium-side",
+        "category": "extracted-decoration",
+        "shape": "rectangle",
+        "x": 866,
+        "y": 310,
+        "width": 114,
+        "height": 26,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-3-podium-floor",
+        "category": "extracted-decoration",
+        "shape": "ellipse",
+        "cx": 923,
+        "cy": 333,
+        "rx": 98,
+        "ry": 38,
+        "expansion": "Source pedestal floor/shadow halo extends beyond the old core ellipse; include its 24px horizontal/18px vertical support."
+      },
+      {
+        "id": "person-4-rank-label",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 1070,
+        "y": 197,
+        "width": 84,
+        "height": 27,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-4-rank-number",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 1069,
+        "y": 218,
+        "width": 60,
+        "height": 54,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-4-avatar",
+        "category": "dynamic-data",
+        "shape": "ellipse",
+        "cx": 1192,
+        "cy": 251,
+        "rx": 70,
+        "ry": 70,
+        "expansion": "Source portrait/frame bloom extends beyond the old portrait-only primitive; add 12px to radii."
+      },
+      {
+        "id": "person-4-name",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 1167,
+        "y": 353,
+        "width": 54,
+        "height": 27,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-4-group",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 1165,
+        "y": 376,
+        "width": 51,
+        "height": 23,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-4-change",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 1170,
+        "y": 396,
+        "width": 40,
+        "height": 32,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-4-metric-1",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 1079,
+        "y": 429,
+        "width": 50,
+        "height": 29,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-4-metric-2",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 1164,
+        "y": 429,
+        "width": 38,
+        "height": 29,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-4-metric-3",
+        "category": "dynamic-data",
+        "shape": "rectangle",
+        "x": 1245,
+        "y": 429,
+        "width": 38,
+        "height": 29,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-4-metric-label-1",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 1078,
+        "y": 456,
+        "width": 49,
+        "height": 24,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-4-metric-label-2",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 1151,
+        "y": 456,
+        "width": 65,
+        "height": 24,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-4-metric-label-3",
+        "category": "dynamic-copy",
+        "shape": "rectangle",
+        "x": 1226,
+        "y": 456,
+        "width": 82,
+        "height": 24,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-4-metric-divider-1",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 1140,
+        "y": 429,
+        "width": 6,
+        "height": 49,
+        "expansion": "Native source calibration: 2px gray divider peaks plus their two-pixel antialias/shadow support. Old recorded x could miss the actual painted divider."
+      },
+      {
+        "id": "person-4-metric-divider-2",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 1221,
+        "y": 429,
+        "width": 6,
+        "height": 49,
+        "expansion": "Native source calibration: 2px gray divider peaks plus their two-pixel antialias/shadow support. Old recorded x could miss the actual painted divider."
+      },
+      {
+        "id": "person-4-button",
+        "category": "control",
+        "shape": "rectangle",
+        "x": 1106,
+        "y": 483,
+        "width": 156,
+        "height": 40,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-4-podium-top",
+        "category": "extracted-decoration",
+        "shape": "ellipse",
+        "cx": 1191,
+        "cy": 312,
+        "rx": 57,
+        "ry": 17
+      },
+      {
+        "id": "person-4-podium-side",
+        "category": "extracted-decoration",
+        "shape": "rectangle",
+        "x": 1133,
+        "y": 310,
+        "width": 116,
+        "height": 26,
+        "expansion": "2px source foreground antialias/shadow fringe, including glyph and divider edges outside the old tight primitive."
+      },
+      {
+        "id": "person-4-podium-floor",
+        "category": "extracted-decoration",
+        "shape": "ellipse",
+        "cx": 1191,
+        "cy": 333,
+        "rx": 97,
+        "ry": 38,
+        "expansion": "Source pedestal floor/shadow halo extends beyond the old core ellipse; include its 24px horizontal/18px vertical support."
+      },
+      {
+        "id": "rankings-title",
+        "x": 199,
+        "y": 556,
+        "width": 129,
+        "height": 36,
+        "shape": "rectangle",
+        "category": "foreground-layer"
+      },
+      {
+        "id": "occluded-table-panel-and-halo",
+        "x": 199,
+        "y": 590,
+        "width": 1321,
+        "height": 354,
+        "shape": "rectangle",
+        "category": "foreground-layer"
+      },
+      {
+        "id": "footer-copy",
+        "x": 202,
+        "y": 965,
+        "width": 380,
+        "height": 28,
+        "shape": "rectangle",
+        "category": "foreground-layer"
+      },
+      {
+        "id": "fixture-disclosure",
+        "x": 1440,
+        "y": 966,
+        "width": 88,
+        "height": 29,
+        "shape": "rectangle",
+        "category": "foreground-layer"
+      },
+      {
+        "id": "self-dom-layer",
+        "shape": "rectangle",
+        "category": "foreground-layer",
+        "x": 1336,
+        "y": 59,
+        "width": 192,
+        "height": 488
+      }
+    ],
+    "feather": "No original painted foreground retained. Donor receives a harmonic RGB correction whose clean boundary equals approved-source minus donor. Red-black SOR (omega1.85), max360 iterations, stops at update<0.04 RGB unit. Large independently rendered widget interiors retain donor; their first32px match the source boundary. No exterior feather or changes outside the union. Top20px byte-exact.",
+    "boundaryBlend": {
+      "iterations": 202,
+      "maximumUpdate": 0.0398334264755249,
+      "activePixels": 404400
+    },
+    "file": "background-approved-source-foreground-mask-20261014.png",
+    "sha256": "0535a8d8d19af17ae16914c787180a745275bba2dd669d6155caebcaf8c60203",
+    "maskedPixels": 826306,
+    "sourceExactPixels": 561214,
+    "mixedPixels": 0,
+    "protectedOriginalOrbit": {
+      "contourBands": [
+        {
+          "cx": 765,
+          "cy": 344,
+          "rx": 564,
+          "ry": 110
+        },
+        {
+          "cx": 765,
+          "cy": 441,
+          "rx": 560,
+          "ry": 107
+        }
+      ],
+      "corridorPixels": 24,
+      "minimumG": 30,
+      "minimumGminusB": 15,
+      "minimumGminusR": 8,
+      "excluded": "Actual portrait/pedestal/rank/movement and independent widget foreground supports, plus the original button painted border/support",
+      "buttonBorders": [
+        [
+          312,
+          488,
+          146,
+          31
+        ],
+        [
+          583,
+          488,
+          147,
+          31
+        ],
+        [
+          846,
+          488,
+          146,
+          31
+        ],
+        [
+          1109,
+          488,
+          147,
+          31
+        ]
+      ],
+      "buttonStrokeSupport": 2.5,
+      "sourceExactProtectedPixels": 1120,
+      "reason": "Original orbit material remains visible through transparent original button regions; those pixels are not foreground and must remain byte-exact. The painted button outline itself is foreground and cannot be protected as if it were background."
+    },
+    "sourceHarmonicTextFill": "Within explicit removed metric/name/group/change/button supports, solve source-boundary Laplace fill rather than copy unrelated donor texture. Protected original contour samples remain fixed boundary data. No pixels outside those existing local supports change.",
+    "nativeOccludedContourRepair": {
+      "lowerOrbit": {
+        "cx": 765,
+        "cy": 441,
+        "rx": 560,
+        "ry": 107
+      },
+      "radialSupport": 16,
+      "angularStep": 0.002,
+      "pixels": 8799,
+      "method": "Only inside the original button foreground supports where the original lower orbit is actually occluded: sample native approved-source pixels at the same normalized radial offset in each angular direction until an unmasked source donor is reached, interpolate by angular distance. Exact visible original contour pixels remain unchanged. Hidden material is reconstruction, not source recovery."
+    },
+    "dividerSourceCalibration": {
+      "source": "Approved native RGB peaks and adjacent dark fringe, measured y434..450 without candidate diffs",
+      "lefts": [
+        339,
+        420,
+        611,
+        690,
+        873,
+        953,
+        1140,
+        1221
+      ],
+      "width": 6,
+      "sourceGrayPeakPairs": [
+        [
+          341,
+          342
+        ],
+        [
+          422,
+          423
+        ],
+        [
+          613,
+          614
+        ],
+        [
+          692,
+          693
+        ],
+        [
+          875,
+          876
+        ],
+        [
+          955,
+          956
+        ],
+        [
+          1142,
+          1143
+        ],
+        [
+          1223,
+          1224
+        ]
+      ]
+    },
+    "reconstructionSources": {
+      "existingGeneratedGuidePixels": 760456,
+      "approvedBoundaryHarmonicPixels": 57051,
+      "nativeSourceContourInterpolationPixels": 8799
+    },
+    "meaning": "1536x1024 native coordinates: 0 is approved-source byte-exact in the main region x181..1535; 255 is explicitly declared foreground reconstruction. Navigation is separately composited from unchanged source surfaces and is outside this main-region assertion."
+  },
+  "outputs": [
+    {
+      "file": "orbit-surface-main-canvas.png",
+      "width": 1355,
+      "height": 1024,
+      "offset": [
+        181,
+        0
+      ],
+      "sha256": "395f7e289e43f6e2f2e9b80ccfeee343fedc13069e985dc560f682eee5f0a5b0",
+      "previousSHA256": "924f3ef0c1f12370a1eaaaf09b99ac9004b964f75336e707cdc01be48cf9052c",
+      "bytes": 1373711,
+      "approvedSourceExactPixels": 561214,
+      "changedInsideDeclaredForeground": 820043,
+      "outsideMaskChangedPixels": 0,
+      "maximumOutsideDifference": 0
+    },
+    {
+      "file": "orbit-scene-main-clean.png",
+      "width": 1355,
+      "height": 580,
+      "offset": [
+        181,
+        0
+      ],
+      "sha256": "0266171f97945c77e35ff68250db13476778a31bdac0284944f623b4b5383d64",
+      "previousSHA256": "067b6f9cf5c8dfd08127f06675f3bcc546e25548b2216636bd07452a6b8c01bf",
+      "bytes": 1044762,
+      "approvedSourceExactPixels": 441710,
+      "changedInsideDeclaredForeground": 340028,
+      "outsideMaskChangedPixels": 0,
+      "maximumOutsideDifference": 0
+    },
+    {
+      "file": "orbit-surface-unified-canvas.png",
+      "width": 1536,
+      "height": 1024,
+      "sha256": "0caeb1c017810cdcbc44e1a9a751b873a88cdb6a1c30bbb46f8688ab337b2da4",
+      "previousSHA256": "c73257bb66938af69f15d4e95313611320666a212ee4ed1cbcc4df1f4838107c",
+      "bytes": 1504070,
+      "mainRegionOutsideMaskChangedPixels": 0,
+      "composition": "Unchanged navigation and active navigation raw rows; candidate main region copied at [181,0]."
+    }
+  ],
+  "geometry": "All original unoccluded main pixels copied at native coordinates. No resize or ROI-selected repair. Colour correction is confined to the explicit foreground reconstruction supports. Independent original pedestal assets remain untouched and used only by ready-state DOM.",
+  "previousFailedCandidate": {
+    "reason": "Original primitive masks plus 2px inward original/donor mixture left photographic frame/pedestal bloom and retained glyph-edge pixels. A four-ray boundary correction subsequently showed axial texture bands and was rejected; neither was adopted.",
+    "adopted": false
+  },
+  "limitations": [
+    "Foreground support boxes are conservative source records plus explicit visible bloom bounds; texture behind opaque glyphs/avatars/widgets is unrecoverable and reconstructed from the previously recorded donor.",
+    "Asset exactness outside declared foreground is proven; browser and independent visual acceptance pending.",
+    "Whole-page UI and pedestal-overlay composition cannot be proven by base-canvas exactness alone."
+  ],
+  "acceptance": {
+    "outsideMaskApprovedByteIdentity": "PASS",
+    "pngRoundtrip": "PASS",
+    "runtime": "PENDING",
+    "independentVisual": "PENDING",
+    "unchangedOriginalFiveBackgroundRegions": {
+      "status": "PASS",
+      "basis": "Existing unmodified assertApprovedStaticPixels; whole mask-external byte check remains primary",
+      "results": [
+        {
+          "id": "planet-upper",
+          "rect": [
+            1000,
+            5,
+            100,
+            15
+          ],
+          "dx": 0,
+          "dy": 0,
+          "maximum": 0,
+          "mean": 0,
+          "changedChannels": 0
+        },
+        {
+          "id": "planet-surface",
+          "rect": [
+            780,
+            120,
+            60,
+            40
+          ],
+          "dx": 0,
+          "dy": 0,
+          "maximum": 0,
+          "mean": 0,
+          "changedChannels": 0
+        },
+        {
+          "id": "upper-orbit",
+          "rect": [
+            1180,
+            127,
+            40,
+            12
+          ],
+          "dx": 0,
+          "dy": 0,
+          "maximum": 0,
+          "mean": 0,
+          "changedChannels": 0
+        },
+        {
+          "id": "left-orbit",
+          "rect": [
+            208,
+            324,
+            28,
+            28
+          ],
+          "dx": 0,
+          "dy": 0,
+          "maximum": 0,
+          "mean": 0,
+          "changedChannels": 0
+        },
+        {
+          "id": "lower-orbit",
+          "rect": [
+            700,
+            546,
+            40,
+            5
+          ],
+          "dx": 0,
+          "dy": 0,
+          "maximum": 0,
+          "mean": 0,
+          "changedChannels": 0
+        }
+      ]
+    },
+    "assetVisual": "Candidate viewed by main before adoption: prior black blocks and narrow divider remnants removed. Independent browser acceptance remains pending.",
+    "adoptedAssetRecheck": {
+      "status": "PASS",
+      "bytes": 3942389,
+      "assets": [
+        {
+          "file": "orbit-surface-main-canvas.png",
+          "sourceExactPixels": 561214,
+          "outsideMaskChangedPixels": 0,
+          "maximumOutsideDifference": 0
+        },
+        {
+          "file": "orbit-scene-main-clean.png",
+          "sourceExactPixels": 441710,
+          "outsideMaskChangedPixels": 0,
+          "maximumOutsideDifference": 0
+        },
+        {
+          "file": "orbit-surface-unified-canvas.png",
+          "sourceExactPixels": 561214,
+          "outsideMaskChangedPixels": 0,
+          "maximumOutsideDifference": 0
+        }
+      ],
+      "originalFiveBackgroundRegions": [
+        {
+          "id": "planet-upper",
+          "rect": [
+            1000,
+            5,
+            100,
+            15
+          ],
+          "dx": 0,
+          "dy": 0,
+          "maximum": 0,
+          "mean": 0,
+          "changedChannels": 0
+        },
+        {
+          "id": "planet-surface",
+          "rect": [
+            780,
+            120,
+            60,
+            40
+          ],
+          "dx": 0,
+          "dy": 0,
+          "maximum": 0,
+          "mean": 0,
+          "changedChannels": 0
+        },
+        {
+          "id": "upper-orbit",
+          "rect": [
+            1180,
+            127,
+            40,
+            12
+          ],
+          "dx": 0,
+          "dy": 0,
+          "maximum": 0,
+          "mean": 0,
+          "changedChannels": 0
+        },
+        {
+          "id": "left-orbit",
+          "rect": [
+            208,
+            324,
+            28,
+            28
+          ],
+          "dx": 0,
+          "dy": 0,
+          "maximum": 0,
+          "mean": 0,
+          "changedChannels": 0
+        },
+        {
+          "id": "lower-orbit",
+          "rect": [
+            700,
+            546,
+            40,
+            5
+          ],
+          "dx": 0,
+          "dy": 0,
+          "maximum": 0,
+          "mean": 0,
+          "changedChannels": 0
+        }
+      ],
+      "manifests": "PASS",
+      "approvedSourceHashUnchanged": "PASS",
+      "runtime": "PENDING",
+      "independentVisual": "PENDING"
+    }
+  },
+  "previousFailedShippingRevision": {
+    "provenance": "background-imagegen-repair-20261014.json",
+    "reason": "Whole generated main canvas failed four of five unchanged original background regions; no source identity claim applies to that previous revision.",
+    "evidence": "D:/CodexData/test-environments/workflow-runs/support-analytics-20261007-r2/runtime/support-minimal-20261012/visual-pixel-current-20261014.json",
+    "preserved": true
+  },
+  "reproductionScript": "D:/WORKS/PLAN/output/support-resume-r21/restore-approved-source-pixels-20261014.cjs"
+}

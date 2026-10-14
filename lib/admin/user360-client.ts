@@ -6,6 +6,7 @@ import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { normalizeAuthoritativePage } from "@/lib/admin/authoritative-page-contract";
 import { normalizeC3Adjustment } from "@/lib/admin/c3-adjustment-contract";
 import { parseStrictFiniteNumber } from "@/lib/admin/strict-number";
+import { supportRequest, supportObject, parseSupportId } from "./m-support-client.ts";
 
 interface ApiResult<T> {
   code: number;
@@ -690,6 +691,23 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
 
 export async function fetchUser360(userKey: string) {
   return usersRequest<User360Detail>(`/profiles/${encodeURIComponent(userKey)}/360`);
+}
+
+export async function fetchSupportCustomerFullProfile(customerId: string, signal?: AbortSignal): Promise<User360Detail> {
+  const id = parseSupportId(customerId, "customerId");
+  return supportRequest(`/support-workbench/customers/${encodeURIComponent(id)}/full-profile`, value => {
+    const detail = { ...supportObject(value, "full-profile") } as User360Detail;
+    const profile = supportObject(detail.profile, "full-profile.profile");
+    if (parseSupportId(profile.id ?? profile.userId, "full-profile.customerId") !== id) throw new Error("SUPPORT_PROFILE_CUSTOMER_MISMATCH");
+    for (const [key, section] of Object.entries(detail)) {
+      if (section && typeof section === "object" && !Array.isArray(section)) {
+        const status = String((section as JsonRecord).sourceStatus ?? "READY").toUpperCase();
+        if (status === "HIDDEN" || status === "FORBIDDEN") detail[key] = null;
+        else if (status !== "READY") detail[key] = { sourceStatus: status === "ERROR" ? "ERROR" : "UNKNOWN" };
+      }
+    }
+    return detail;
+  }, { signal });
 }
 
 export type NotificationTimeEvidence = {

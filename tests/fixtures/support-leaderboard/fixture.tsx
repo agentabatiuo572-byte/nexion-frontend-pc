@@ -15,8 +15,10 @@ const baseRows: SupportBoardRow[] = people.map(([id, name, groupName, rank, scor
   movement: id === "zhou" ? { kind: "up", places: 1, explanation: "昨日第2名，当前第1名；基线10-06 23:50，均为已完整发布" } : id === "mia" ? { kind: "up", places: 2, explanation: "昨日第5名，当前并列第3名；同分占位按真实竞争名次" } : id === "yang" || id === "wang" ? { kind: "down", places: 1, explanation: "较昨日末下降1位；以该指标完整昨日基线比较" } : id === "li" ? { kind: "new", explanation: "上一完整发布后取得参榜资格，不虚构此前名次" } : id === "chen" ? { kind: "unavailable", explanation: "缺少完整昨日末比较基线，请等待下一次完整发布" } : { kind: "same", explanation: "与昨日完整发布的竞争名次一致" },
 }));
 function Fixture({ mode }: { mode: string }) {
+  const [currentPage, setCurrentPage] = useState(mode === "page" ? 2 : 1);
+  const [pageSize, setPageSize] = useState(5);
   const moneyMode = mode === "long" || mode.startsWith("money-") || mode === "big-gap" || mode === "compact-ranking" || mode === "tiny-amount";
-  const [query, setQuery] = useState<SupportBoardQuery>({ board: moneyMode ? "deposit" : "firstPayment", month: "2026-10", scope: "all", currency: mode === "currency-query-missing" ? undefined : "USDT" });
+  const [query, setQuery] = useState<SupportBoardQuery>({ board: moneyMode ? "netContribution" : "firstPayment", month: "2026-10", scope: "all", currency: mode === "currency-query-missing" ? undefined : "USDT" });
   const amountMonth = query.board === "customers" ? "2026.10" : query.month === "2026-09" ? "2026.09" : "2026.10";
   let rows: SupportBoardRow[] = baseRows.map(row => ({ ...row, avatarUrl: window.fixtureAvatars[row.id], amount: { ...row.amount, currency: query.currency || "USDT", periodLabel: amountMonth } }));
   if (mode.startsWith("currency-")) rows = rows.map(row => ({ ...row, amount: { ...row.amount, currency: mode === "currency-row-missing" ? "" : mode === "currency-wrong" || mode === "currency-self-wrong" && row.id === "mia" ? query.currency === "NEX" ? "USDT" : "NEX" : row.amount.currency } }));
@@ -26,7 +28,7 @@ function Fixture({ mode }: { mode: string }) {
     value: mode === "period-null" ? null : row.amount.value,
   } }));
   if (mode === "long") rows = rows.map((row, i) => ({ ...row, name: row.name + " · Alexander-William-Montgomery", groupName: row.groupName + " · 客户运营与维护团队的长名称", amount: { ...row.amount, value: ["987654321012345.99", "987654321010000.01", "987654321000000.01", "987654321000000.01", "987654320000000.01", "987650000000000.01", "987650000000000.01"][i] } }));
-  if (mode.startsWith("money-")) rows = rows.map((row, index) => ({ ...row, amount: { ...row.amount, value: mode === "money-decimal" ? String(Number(row.firstPayment.value)).concat(".00") : String(Number(row.firstPayment.value) * 10 ** (Number(mode.slice(6)) - 2)) } }));
+  if (mode.startsWith("money-")) rows = rows.map(row => ({ ...row, amount: { ...row.amount, value: mode === "money-negative" ? String(-row.rank! * 1000) : mode === "money-decimal" ? String(Number(row.firstPayment.value)).concat(".00") : String(Number(row.firstPayment.value) * 10 ** (Number(mode.slice(6)) - 2)) } }));
   if (mode === "compact-ranking") rows = rows.map((row, i) => ({ ...row, amount: { ...row.amount, value: ["1240", "1239.99", "1230", "1230", "1000", "999.99", "999.99"][i] } }));
   if (mode === "tiny-amount") rows = rows.map((row, i) => ({ ...row, amount: { ...row.amount, value: ["0.009", "0.008", "0.007", "0.007", "0.006", "0", "0"][i] } }));
   if (mode === "ties") rows = [{ ...rows[0], isTied: true }, ...Array.from({ length: 8 }, (_, i) => ({ ...rows[0], id: `tie-${i}`, name: `并列客服${i + 1}`, isTied: true })), ...rows.slice(1).map(row => ({ ...row, rank: ({ 2: 10, 3: 11, 5: 13, 6: 14 } as Record<number, number>)[row.rank!] }))];
@@ -53,17 +55,20 @@ function Fixture({ mode }: { mode: string }) {
   if (window.fixtureTransform) rows = window.fixtureTransform(rows);
   const onEvent = (event: string) => window.fixtureEvents.push(event);
   const self = offPageSelf || rows.find(row => row.id === (mode === "cross-page-tie" ? "li" : "mia"));
-  return <SupportLeaderboard query={query} onQueryChange={next => { setQuery(next); onEvent(`query:${JSON.stringify(next)}`); }}
+  const podium = mode === "no-podium" ? undefined : { rows: rows.filter(row => row.rankStatus === "confirmed" && row.rank !== null && row.rank <= 3).slice(0, 4), total: rows.filter(row => row.rankStatus === "confirmed" && row.rank !== null && row.rank <= 3).length };
+  const total = Math.max(1, Math.ceil(rows.length / pageSize));
+  const pagedRows = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  return <SupportLeaderboard query={query} onQueryChange={next => { setQuery(next); setCurrentPage(1); onEvent(`query:${JSON.stringify(next)}`); }}
     monthOptions={[{ value: "2026-10", label: "本月" }, { value: "2026-09", label: "上月" }, { value: "disabled", label: "未覆盖月份", disabled: true }, { value: "long", label: "2026年10月 · 完整发布后的历史月份长选项" }]}
     scopeOptions={[{ value: "all", label: "全员" }, { value: "mine", label: "本人所在组" }, { value: "long", label: "负责组 · 星河客户运营与维护团队长名称" }]}
     currencyOptions={[{ value: "USDT", label: "USDT" }, { value: "NEX", label: "NEX" }]}
-    rows={rows} self={self ? { row: self, gap: mode === "big-gap" ? "987654321012345.99" : "6" } : undefined}
+    rows={pagedRows} podium={podium} onViewAllRankings={() => { setCurrentPage(1); onEvent("all-rankings"); }} self={self ? { row: self, gap: mode === "big-gap" ? "987654321012345.99" : "6" } : undefined}
     currentMonth={mode === "period-header-missing" ? "" : "2026.10"} periodLabel={mode === "period-header-missing" ? "" : query.board === "customers" ? "截至现在" : amountMonth} updatedAt="10-07 13:00（模拟）" disclosure="排名公开，客户明细仍按权限查看"
     status={mode === "empty" ? "empty" : mode === "loading" ? "loading" : mode === "error" ? "error" : "ready"}
     candidateReason={mode === "unknown" ? "主指标覆盖不足" : undefined}
     onRetry={() => onEvent("retry")} onLocateSelf={() => onEvent(`locate:${self?.id}`)} onViewPerformance={id => onEvent(`view:${id}`)} onViewCustomers={id => onEvent(`customers:${id}`)}
-    page={mode === "page" ? { current: 2, total: 3, onChange: page => onEvent(`page:${page}`) } : undefined}
-    navigation={<SupportLeaderboardNavigation brand={mode === "brand-other" ? "Other Brand" : "UVEL"} identity={mode === "identity-change" ? "专属客服：替换身份mia" : "专属客服：Mia"} roleLabel="角色" demoLabel="设计演示 · 无真实数据" items={["工作台", "客户列表", "即时会话", "业绩榜", "分组看板", "服务规则"].map(label => ({ label, active: label === "业绩榜", onClick: () => onEvent(`nav:${label}`) }))} onSettings={() => onEvent("settings")} />}
+    page={{ current: currentPage, total, totalEntries: rows.length, pageSize, onPageSizeChange: size => { setPageSize(size); setCurrentPage(1); onEvent(`page-size:${size}`); }, onChange: page => { setCurrentPage(page); onEvent(`page:${page}`); } }}
+    navigation={<SupportLeaderboardNavigation brand={mode === "brand-other" ? "Other Brand" : "UVEL"} identity={mode === "identity-change" ? "替换身份mia" : "Mia"} avatarUrl={rows.find(row => row.id === "mia")?.avatarUrl} roleLabel="专属客服" demoLabel="演示数据" items={["工作台", "客户列表", "即时会话", "业绩榜", "分组看板", "服务规则"].map(label => ({ label, active: label === "业绩榜", onClick: () => onEvent(`nav:${label}`) }))} onSettings={() => onEvent("settings")} />}
   />;
 }
 const root = createRoot(document.getElementById("root")!);

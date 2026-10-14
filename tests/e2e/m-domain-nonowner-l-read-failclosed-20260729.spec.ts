@@ -204,7 +204,7 @@ test("M1-M5 对 401/403/404/409/422/500、超时、畸形 200 与读取结果未
     moduleHref: "/service/kb-sla",
     fault: { kind: "malformed" },
     failClosed: async () => {
-      await expect(page.getByText(/知识库后端当前不可用/)).toBeVisible();
+      await expect(page.getByText(/知识库当前不可用/)).toBeVisible();
       await expect(page.getByRole("button", { name: "新增文章", exact: true })).toHaveCount(0);
     },
     recoveredText: "Help/FAQ 内容管理",
@@ -217,7 +217,7 @@ test("M1-M5 对 401/403/404/409/422/500、超时、畸形 200 与读取结果未
     moduleHref: "/service/scripts",
     fault: { kind: "status", status: 500 },
     failClosed: async () => {
-      await expect(page.getByText(/话术与模板后端当前不可用/)).toBeVisible();
+      await expect(page.getByText(/话术与模板当前不可用/)).toBeVisible();
       await expect(page.locator('[data-proof="session-script-new"]')).toHaveCount(0);
       await expect(page.locator('[data-proof="session-tpl-new"]')).toHaveCount(0);
     },
@@ -449,7 +449,7 @@ async function readOutcomeUnknownAndRecover(page: Page) {
     }
     await intercepted;
     expect(injected).toBe(true);
-    await expect(page.getByText(/话术与模板后端当前不可用/)).toBeVisible();
+    await expect(page.getByText(/话术与模板当前不可用/)).toBeVisible();
     await expect(page.locator('[data-proof="session-script-new"]')).toHaveCount(0);
     checks.push("M5-read-result-unknown-fails-closed");
   } finally {

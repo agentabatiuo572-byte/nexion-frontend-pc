@@ -1,0 +1,47 @@
+{
+  "source": "docs/design/support-analytics-20261006/leaderboard-orbit-20261010/approved-design.png",
+  "sourceSHA256": "e3b92e2fbb593171a4658e058c562ec4dbc9403fecafdf8dd85a719ba71f6c3a",
+  "purpose": "Fixture-only native-size portrait interiors. Frames remain live CSS; production uses API avatars.",
+  "files": [
+    {
+      "name": "approved-avatar-1.png",
+      "rect": [
+        328,
+        194,
+        108,
+        108
+      ],
+      "sha256": "f7a0f99b076856bd6bc644f2c5d0b29025ee3af34277a453170bb0241e908676"
+    },
+    {
+      "name": "approved-avatar-2.png",
+      "rect": [
+        613,
+        202,
+        98,
+        98
+      ],
+      "sha256": "962203494704e11e868b31072af90a96f8d47d8753a8ce6fbda207fcb201e916"
+    },
+    {
+      "name": "approved-avatar-3.png",
+      "rect": [
+        876,
+        202,
+        98,
+        98
+      ],
+      "sha256": "7ad790758a290fe304e8e57be88d5285e6d91a612ad68f92b9c0bb8b711c3085"
+    },
+    {
+      "name": "approved-avatar-4.png",
+      "rect": [
+        1143,
+        202,
+        98,
+        98
+      ],
+      "sha256": "de78bf0c6aa00fb74014298b29357000727dbf73b353265856f7bb3851078dad"
+    }
+  ]
+}

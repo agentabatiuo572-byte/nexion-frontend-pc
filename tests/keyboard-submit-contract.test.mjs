@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 
 import { shouldSendOnEnter } from "../lib/keyboard-submit.ts";
 
@@ -29,7 +30,7 @@ test("persistent session dock preserves the M3 production authority and single-f
   const dock = read("app/components/domain-views/m-view.tsx");
   assert.doesNotMatch(dock, /acceptanceMode|support-acceptance-sandbox/i,
     "M3 必须只保留开发/生产共用的服务端权威链，退役 Sandbox 模式不得回潮");
-  assert.match(dock, /canWriteM3 && conversationsAvailable/);
+  assert.match(dock, /canWriteM3 && Boolean\(supportReadModes\?\.includes\("PERSONAL"\)\) && conversationsAvailable && owned && conv\?\.detailReady === true/);
   assert.match(dock, /sendInFlight\.current/);
   assert.match(dock, /dockCommands\.remember\(dockSlot, key/);
   assert.match(dock, /supportClient\.command\(key\)/);
@@ -38,6 +39,17 @@ test("persistent session dock preserves the M3 production authority and single-f
   assert.match(dock, /readOnly=\{Boolean\(pendingDock\)\}/, "Pending original must remain selectable without allowing edits");
   assert.match(dock, /disabled=\{!pendingDock && \(!canWrite \|\| sending\)\}/, "Ordinary draft must stay disabled without authority or during send");
   assert.match(dock, /if \(pendingDock\) return;/, "Enter must not resend a pending original");
+});
+
+test("dock sending requires personal qualification plus every existing authority and ownership gate", () => {
+  const dock = read("app/components/domain-views/m-view.tsx");
+  const expression = dock.match(/const canWrite = (canWriteM3[^;]+);/)?.[1];
+  assert.ok(expression, "Execute the actual dock write gate");
+  const state = { canWriteM3: true, supportReadModes: ["PERSONAL"], conversationsAvailable: true, owned: true, conv: { detailReady: true } };
+  assert.equal(runInNewContext(expression, state), true);
+  for (const change of [{ supportReadModes: undefined }, { supportReadModes: [] }, { supportReadModes: ["MANAGED"] }, { supportReadModes: ["ALL"] }, { canWriteM3: false }, { conversationsAvailable: false }, { owned: false }, { conv: { detailReady: false } }, { conv: undefined }]) {
+    assert.equal(runInNewContext(expression, { ...state, ...change }), false, JSON.stringify(change));
+  }
 });
 
 test("all PC support composers use Enter to send and Shift+Enter to add a line", () => {

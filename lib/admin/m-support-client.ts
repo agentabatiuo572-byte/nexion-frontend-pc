@@ -25,7 +25,7 @@ export type SupportOverview = {
   snapshotId: string;
   evaluatedAt: string;
   rulesVersion: number;
-  scope: { actorId: number; agentAdminId: number | null; groupId: number | null; mode: SupportReadMode };
+  scope: { actorId: number; agentAdminId: number | null; groupId: number | null; mode: SupportReadMode; availableModes: SupportReadMode[] };
   counts: SupportCounts;
   knownActiveCount: number;
   unknownWindowCount: number;
@@ -265,6 +265,10 @@ function detail(value: unknown): SupportCustomerDetail {
 function workbenchSnapshot(value: unknown): SupportWorkbenchSnapshot {
   const row = object(value, "workbench");
   const scope = object(row.scope, "workbench.scope");
+  const mode = enumValue(scope.mode, ["PERSONAL", "MANAGED", "ALL"] as const, "workbench.scope.mode");
+  if (!Array.isArray(scope.availableModes)) malformed("workbench.scope.availableModes");
+  const availableModes = scope.availableModes.map(value => enumValue(value, ["PERSONAL", "MANAGED", "ALL"] as const, "workbench.scope.availableModes"));
+  if (!availableModes.includes(mode) || new Set(availableModes).size !== availableModes.length) malformed("workbench.scope.availableModes");
   const rules = object(row.rules, "workbench.rules");
   const totals = object(row.overview, "workbench.overview");
   const performance = object(row.performance, "workbench.performance");
@@ -292,7 +296,7 @@ function workbenchSnapshot(value: unknown): SupportWorkbenchSnapshot {
     snapshotId: nonempty(row.snapshotId, "workbench.snapshotId"),
     evaluatedAt: timestamp(row.evaluatedAt, "workbench.evaluatedAt"),
     rulesVersion: count(row.rulesVersion, "workbench.rulesVersion"),
-    scope: { actorId: positive(scope.actorId, "workbench.scope.actorId"), agentAdminId: scope.agentAdminId === null ? null : positive(scope.agentAdminId, "workbench.scope.agentAdminId"), groupId: scope.groupId === null ? null : positive(scope.groupId, "workbench.scope.groupId"), mode: enumValue(scope.mode, ["PERSONAL", "MANAGED", "ALL"] as const, "workbench.scope.mode") },
+    scope: { actorId: positive(scope.actorId, "workbench.scope.actorId"), agentAdminId: scope.agentAdminId === null ? null : positive(scope.agentAdminId, "workbench.scope.agentAdminId"), groupId: scope.groupId === null ? null : positive(scope.groupId, "workbench.scope.groupId"), mode, availableModes },
     counts,
     knownActiveCount: count(totals.knownActiveCount, "workbench.knownActiveCount"),
     unknownWindowCount,
@@ -386,7 +390,11 @@ export function setSupportPoolRoute(customerId: string, input: SupportRouteInput
 
 export const supportClient = {
   snapshot: (options: { pageNum: number; pageSize: number; keyword?: string; filter?: SupportCustomerFilter; agentId?: number; mode?: SupportReadMode; groupId?: number; from?: string; to?: string; signal?: AbortSignal }) =>
-    request(`/support-workbench/customers${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize"), keyword: options.keyword, filter: options.filter, agentId: options.agentId, mode: options.mode === undefined ? undefined : enumValue(options.mode, ["PERSONAL", "MANAGED", "ALL"] as const, "mode"), groupId: options.groupId === undefined ? undefined : positive(options.groupId, "groupId"), from: options.from, to: options.to })}`, workbenchSnapshot, { signal: options.signal }),
+    request(`/support-workbench/customers${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize"), keyword: options.keyword, filter: options.filter, agentId: options.agentId, mode: options.mode === undefined ? undefined : enumValue(options.mode, ["PERSONAL", "MANAGED", "ALL"] as const, "mode"), groupId: options.groupId === undefined ? undefined : positive(options.groupId, "groupId"), from: options.from, to: options.to })}`, value => {
+      const result = workbenchSnapshot(value);
+      if (options.mode !== undefined && result.overview.scope.mode !== options.mode) malformed("workbench.scope.modeMismatch");
+      return result;
+    }, { signal: options.signal }),
   overview: async (options: { from?: string; to?: string; mode?: SupportReadMode; groupId?: number; agentId?: number; signal?: AbortSignal } = {}) =>
     (await supportClient.snapshot({ pageNum: 1, pageSize: 1, filter: "ALL", ...options })).overview,
   customers: async (options: { pageNum: number; pageSize: number; keyword?: string; filter?: SupportCustomerFilter; mode?: SupportReadMode; groupId?: number; agentId?: number; signal?: AbortSignal }) =>

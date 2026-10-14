@@ -1,15 +1,30 @@
-.mdom .m3-col-list { overflow-y: auto; overscroll-behavior-y: contain; }
-.mdom .m3-col-list > .cv-list { flex: 1 0 160px; min-height: 160px; }
-.mdom .m3-list-header { flex: 0 0 auto; min-width: 0; padding: 16px; border-bottom: 1px solid var(--v5-border); }
-.mdom .m3-list-header h2 { margin: 0; font-size: 18px; font-weight: 600; color: var(--v5-ink); }
-.mdom .m3-list-description { margin: 5px 0 14px; color: var(--v5-ink-3); font-size: 12.5px; line-height: 1.6; }
-.mdom .m3-list-search { width: 100%; min-width: 0; min-height: 44px; }
-.mdom .m3-list-primary-actions, .mdom .m3-list-secondary-actions, .mdom .m3-list-statuses { display: grid; align-items: stretch; gap: 8px; }
-.mdom .m3-list-primary-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 12px; }
-.mdom .m3-list-statuses { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 12px 0; }
-.mdom .m3-list-secondary-actions { grid-template-columns: minmax(0, 1fr) auto; padding-top: 12px; border-top: 1px solid var(--v5-border); }
-.mdom .m3-list-header .l-btn.sm { min-width: 0; min-height: 44px; justify-content: center; padding: 8px; white-space: normal; overflow-wrap: anywhere; line-height: 1.4; }
-.mdom .m3-list-statuses .l-btn.sm { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 5px; font-size: 12.5px; }
-.mdom .m3-list-count { min-width: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.mdom .m3-list-header .l-btn:not(:disabled):active { background: var(--v5-surface-3); }
-.mdom .m3-list-header button:focus-visible, .mdom .m3-list-search:focus-visible { outline: 2px solid var(--v5-brand); outline-offset: 2px; }
+.mdom .m3-col-list { overflow: hidden; }
+.mdom .m3-col-list > .cv-list { flex: 1; min-height: 0; padding: 7px; gap: 3px; overscroll-behavior-y: contain; }
+.mdom .m3-list-header { flex: none; min-width: 0; padding: 17px 14px 12px; border-bottom: 1px solid var(--v5-border); }
+.mdom .m3-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 13px; }
+.mdom .m3-list-header h2 { margin: 0; font-size: 15px; font-weight: 600; color: var(--v5-ink); white-space: nowrap; }
+.mdom .m3-list-header h2 small { color: var(--v5-ink-3); font-size: 12px; font-weight: 400; margin-left: 4px; }
+.mdom .m3-list-heading .l-btn.primary { background: var(--v5-brand); color: var(--v5-bg); border-color: var(--v5-brand); font-weight: 600; }
+.mdom .m3-list-search { width: 100%; min-width: 0; height: 38px; min-height: 38px; padding: 8px 11px; font-size: 12.5px; background: var(--v5-surface); }
+.mdom .m3-list-statuses { display: flex; flex-wrap: wrap; align-items: center; gap: 1px; margin: 8px 0 10px; }
+.mdom .m3-list-statuses .l-btn.sm { min-width: 0; min-height: 32px; padding: 6px 8px; border: 0; background: transparent; color: var(--v5-ink-3); font-weight: 400; font-size: 12.5px; gap: 5px; }
+.mdom .m3-list-statuses .l-btn.sm.primary { background: var(--m-hd-soft); color: var(--m-hd-2); }
+.mdom .m3-list-count { min-width: 16px; padding: 0 4px; border-radius: 10px; background: var(--v5-surface-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+.mdom .m3-list-secondary-actions { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+.mdom .m3-list-secondary-actions .l-btn.sm { min-height: 28px; padding: 3px 0; border: 0; background: none; color: var(--m-hd); font-size: 12.5px; }
+.mdom .m3-list-row { position: relative; min-width: 0; flex-shrink: 0; }
+.mdom .m3-list-row .cv-item { padding: 14px 10px; gap: 7px; border-radius: 7px; }
+.mdom .m3-list-row .cv-r1 { gap: 9px; }
+.mdom .m3-list-row .support-avatar img, .mdom .m3-list-row .support-avatar > span { border-radius: 10px !important; }
+.mdom .m3-list-row .cv-name { flex: 1; font-size: 14px; font-weight: 600; color: var(--v5-ink); }
+.mdom .m3-list-row .cv-time { margin-left: auto; font-family: var(--font-v5); font-size: 11px; color: var(--v5-ink-3); }
+.mdom .m3-list-row .cv-prev { padding-left: 0; font-size: 13.5px; color: var(--v5-ink-2); }
+.mdom .m3-list-row .cv-meta { padding-left: 0; padding-right: 24px; flex-wrap: nowrap; gap: 6px; }
+.mdom .m3-list-row .cv-stat { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--v5-ink-3); }
+.mdom .m3-list-row .cv-stat.active { color: var(--m-ok); }
+.mdom .m3-list-row .cv-origin-copy { max-width: 100%; padding-right: 25px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--v5-ink-3); font-size: 12px; }
+.mdom .m3-list-select { position: absolute; right: 3px; bottom: 6px; width: 32px; height: 32px; display: grid; place-items: center; z-index: 1; cursor: pointer; }
+.mdom .m3-list-select:has(input:disabled) { cursor: not-allowed; }
+.mdom .m3-list-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; min-height: 45px; padding: 7px 12px; border-top: 1px solid var(--v5-border); color: var(--v5-ink-3); font-size: 12px; }
+.mdom .m3-list-footer .l-btn.sm { padding: 4px 7px; min-height: 28px; }
+.mdom .m3-list-header button:focus-visible, .mdom .m3-list-search:focus-visible { outline: 2px solid var(--m-hd); outline-offset: 2px; }

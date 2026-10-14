@@ -43,6 +43,63 @@ const mock = async (data, action, status = 200) => {
   try { return await action(() => seen); } finally { globalThis.fetch = originalFetch; }
 };
 
+test("NET sort sends explicit currency and rejects incompatible query contexts before transport", async () => {
+  for (const currency of ["USDT", "NEX"]) await mock(payload(), async seen => {
+    await query({ sortKey: "NET_CONTRIBUTION", currency });
+    assert.equal(seen().url.searchParams.get("sortKey"), "NET_CONTRIBUTION");
+    assert.equal(seen().url.searchParams.get("currency"), currency);
+  });
+  await mock(payload(), async seen => {
+    for (const invalid of [
+      {}, { basis: "CURRENT_ASSET", currency: "USDT" },
+      { basis: "PERIOD_EVENT", currency: "USDT", from: "2026-10-01T00:00:00Z", to: "2026-11-01T00:00:00Z" },
+      ...["AGENTS", "FINANCE", "DEVICES"].map(view => ({ view, currency: "USDT" })),
+    ]) assert.throws(() => query({ sortKey: "NET_CONTRIBUTION", ...invalid }), /CONTRACT_MALFORMED/);
+    assert.equal(seen(), undefined);
+  });
+});
+
+test("NET lifetime preserves exact signed totals in customer, advisor, current and group consumers", async () => {
+  for (const view of ["CUSTOMERS", "AGENTS"]) {
+    const data = payload(view);
+    const net = { observed: "-123456789.000001", confirmed: "-123456789.000001", observedEvents: null, confirmedEvents: null, observedCustomers: null, status: "AVAILABLE" };
+    const lists = [data.selectedCurrent.ownLifetime, data.scopeSummary.current.ownLifetime, data.scopeSummary.groups[0].current.ownLifetime,
+      view === "CUSTOMERS" ? data.records[0].lifetime : data.records[0].current.ownLifetime];
+    lists.forEach(rows => rows[0].net = net);
+    await mock(data, async () => {
+      const r = await query({ view });
+      assert.equal(r.selectedCurrent.ownLifetime[0].net.confirmed, net.confirmed);
+      assert.equal(r.scopeSummary.groups[0].current.ownLifetime[0].net.confirmed, net.confirmed);
+      assert.equal(r.scopeSummary.financial.firstSources[0].deposits.observed, money().observed);
+    });
+  }
+});
+
+test("missing lifetime NET stays unknown while original first-payment sources remain compatible", async () => {
+  await mock(payload(), async () => {
+    const r = await query();
+    assert.equal(r.records[0].lifetime[0].net.confirmed, null);
+    assert.equal(r.records[0].lifetime[0].net.status, "UNKNOWN");
+    assert.equal(r.records[0].first.state, "UNKNOWN");
+  });
+});
+
+test("NET unknown cannot expose an unbounded known subset as observed money", async () => {
+  const data = payload();
+  data.scopeSummary.financial.currencies[0].net.observed = "100";
+  await mock(data, async () => assert.rejects(query(), /SUPPORT_CONTRACT_MALFORMED/));
+});
+test("actual paid general consumption is an existing finance event without becoming first payment",async()=>{
+  const data=payload("FINANCE");data.records[0].kind="CONSUMPTION";
+  await mock(data,async()=>{const r=await query({view:"FINANCE"});assert.equal(r.records[0].kind,"CONSUMPTION");assert.equal(r.scopeSummary.financial.firstSources[0].deposits.observed,money().observed);});
+});
+test("first payment v1 rejects consumption and refunds even when finance accepts their event types",async()=>{
+  for(const kind of ["CONSUMPTION","DEVICE_PURCHASE_REFUND"]) {
+    const data=payload();data.records[0].first={state:"CONFIRMED",status:"AVAILABLE",kind,currency:"USDT",amount:"1",succeededAt:at};
+    await mock(data,async()=>assert.rejects(query(),/SUPPORT_CONTRACT_MALFORMED/));
+  }
+});
+
 test("staged candidate passes strict TypeScript against read-only existing imports", () => {
   const options = { target: ts.ScriptTarget.ES2017, lib: ["lib.esnext.d.ts", "lib.dom.d.ts", "lib.dom.iterable.d.ts"], module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, strict: true, noEmit: true, skipLibCheck: true, allowImportingTsExtensions: true };
   const host = ts.createCompilerHost(options);

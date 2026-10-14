@@ -39,3 +39,31 @@ test("verified customer messages use their scoped image without requiring an age
   assert.equal(resolve({ ...verified, sender: "agent", senderId: 8 }, "42", advisor, customer), undefined);
   assert.equal(resolve({ ...verified, sender: "agent", senderId: 8, senderAvatar: { assetId: "owned", version: 2 } }, "42", advisor, customer), "/agents/8?customer=42");
 });
+
+test("unchanged conversation data preserves first-contact profile across parent refreshes", () => {
+  const chat = file.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "M3DedicatedChat");
+  const declarations = chat.body.statements.filter(node => ts.isVariableStatement(node));
+  const selected = declarations.filter(node => node.declarationList.declarations.some(item => ["conversationSource", "all"].includes(item.name.getText(file))));
+  const code = ts.transpileModule(selected.map(node => node.getText(file)).join("\n"), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+  }).outputText;
+  const read = new Function("ctx", "useMemo", "parseConversations", "CONVO_KEY", `${code}; return all;`);
+  let cached, dependencies, reads = 0;
+  const memo = (fn, next) => {
+    if (!dependencies || next.some((value, i) => !Object.is(value, dependencies[i]))) {
+      cached = fn(); dependencies = next;
+    }
+    return cached;
+  };
+  const parse = value => { reads += 1; return JSON.parse(value); };
+  const snapshot = JSON.stringify([{ id: "other", customerId: "9", ownerAdminId: 7, status: "open" }]);
+  const context = value => ({ params: {}, pget: key => key === "I.session.convos" ? value : null });
+  const initial = read(context(snapshot), memo, parse, "I.session.convos");
+  assert.equal(read(context(snapshot), memo, parse, "I.session.convos"), initial,
+    "an unrelated parent refresh must not restart ownership reads and unmount the open profile");
+  assert.equal(reads, 1);
+  const changed = read(context(snapshot.replace('"ownerAdminId":7', '"ownerAdminId":8')), memo, parse, "I.session.convos");
+  assert.notEqual(changed, initial, "real ownership changes still invalidate the original authorization effects");
+  assert.equal(changed[0].ownerAdminId, 8);
+  assert.equal(reads, 2);
+});

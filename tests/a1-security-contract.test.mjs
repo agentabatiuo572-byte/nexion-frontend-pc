@@ -55,20 +55,21 @@ test("logout fails closed and preserves the retry token when server revocation i
   assert.match(logoutRequest, /ADMIN_LOGOUT_CONFIRMATION_FAILED/);
   assert.match(topbar, /await requestAdminLogout\(\)/);
   assert.match(topbar, /beginLogoutVerification\(\)/);
-  assert.match(topbar, /if \(auth\) cancelLogout\("服务端会话仍有效，退出未完成，请重试"\)/);
-  assert.match(topbar, /failLogoutUnknown\("服务端会话状态无法确认，已停止进入后台"\)/);
+  assert.match(topbar, /if \(auth\) cancelLogout\("退出未完成，请重试"\)/);
+  assert.match(topbar, /failLogoutUnknown\("退出结果暂无法确认，已停止进入后台"\)/);
   assert.doesNotMatch(topbar, /finally\s*\{\s*signOut\(\)/);
 });
 
-test("A1 creation defaults to no role and destructive delete is absent", () => {
+test("A1 creation defaults to dedicated support while unassigned remains explicit and destructive delete is absent", () => {
   const page = read("app/components/domain-views/a-tabs/a1-accounts.tsx");
   const client = read("lib/admin/a1-client.ts");
 
   assert.match(page, /暂不分配/);
-  assert.match(page, /const defaultRole\s*=\s*""/);
+  assert.match(page, /const defaultRole\s*=\s*"support"/);
   assert.doesNotMatch(page, /generateDefaultInitialPassword/);
   assert.doesNotMatch(page, /setInitialPassword/);
-  assert.match(page, /服务端生成 20 位四类强临时密码/);
+  assert.match(page, /20 位临时密码/);
+  assert.doesNotMatch(page, /默认零写权|新账号默认零权限/);
   assert.match(client, /A1OutcomeUncertainError/);
   assert.match(client, /X-Nexion-Upstream-Outcome/);
   assert.doesNotMatch(page, /deleteAccount\(/);

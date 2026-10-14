@@ -245,6 +245,10 @@ V1 聚焦"看得见资金与用户态势、管得住资金流出、调得动运�
 
 #### [A1] 运营账号 & RBAC
 
+最后更新：2026-10-09
+
+客服性别、头像及资格职责引用 [M 专属客服中心功能契约](M-专属客服中心功能契约.md#6-继承头像与-m3-保留能力)；主管资格不自动取得账号管理权。新建客服明确男/女/未指定，从许可且已审核的对应默认人像池随机一次，持久化 avatarGender、avatarAssetId、avatarVersion；未指定用混合池。刷新、改名/性别、调组不重抽，历史头像不自动替换。本人或原账号管理范围内有权人员可明确更换，成功保存后替换，失败保留旧像、未知先回查；池失败不造假照片。
+
 **① 目的 & 对齐**
 A1 是后台的**运营账号、登录安全与会话治理地基**。A1 负责账号创建/启停/资料/角色分配、强制 MFA、登录锁定、会话与安全基线；**A6 是角色定义及角色授权的唯一权威，A8 是权限码字典的唯一权威，A7 管理菜单节点**。A1 只读取 A6/A8 的实时结果做角色变更影响预览，不再维护第二份权限矩阵或 `member/lead` 层级。A2(§2.2)记录所有账号治理写操作，服务端在每次请求上按真实权限码判权，客户端角色只用于展示。
 
@@ -264,7 +268,7 @@ A1 是后台的**运营账号、登录安全与会话治理地基**。A1 负责�
 | 后台强制 2FA | 强制开启(全角色) | 固定开启(不可关) | 实时(登录时校验) | 后台账号安全基线,§1.8 原则二;无 2FA 不得完成登录 |
 | 运营账号 session 时限 | 无操作 30min / 绝对上限 8h | 滑动 15–60min / 绝对 4–12h | 每次请求实时校验 | Redis 保存 `issuedAt / lastSeen / IP / User-Agent`；首次强制改密换发 session 时继承本次请求真实 IP/User-Agent；调整后按新基线校验现有与后续会话，超过任一上限立即失效 |
 | 登录失败锁定 | 5 次失败锁定 15min；24h 累计 15 次锁定 24h | 固定安全基线 | 密码与 MFA 失败均计数 | 用户名哈希后写 Redis；错误文案不区分账号、密码或锁定态 |
-| 最小权限默认 | 新账号默认“暂不分配” | 固定默认拒绝 | 创建即生效 | 无角色关系、权限码为空、菜单为空；后续必须由超管显式分配 A6 角色 |
+| 最小权限默认 | 新账号默认“专属客服” | 可显式选择 A6 启用角色或暂不分配；恢复模式仅超管 | 创建即生效 | 客服默认 8 项客服权限、M/M1–M5 菜单及个人服务资格，不授主管资格；暂不分配时权限和菜单为空 |
 | 最少有效超管数 | ≥ 2 | 固定下限 2 | 每次账号治理写操作前 | “有效超管”=账号启用 + 超管角色 + MFA 已真实绑定；不足 2 时进入治理恢复模式 |
 
 > **MFA 登录闭环**:密码校验成功只签发一次性 MFA challenge，绝不签发 JWT/session。challenge 在正确验证码路径中以 Redis 原子删除裁决，只允许一个并发请求消费；同一账号已接受的 TOTP 时间步以原子 `SET NX` 标记，换新 challenge 也不得在有效窗口内重放同一验证码。首次登录展示 TOTP 绑定信息，密钥经 AES-GCM 加密落库；完成正确 TOTP 后才建立 Redis session 并签发 8h 上限的 JWT/cookie。重置 MFA 会先校验双超管下限，再清除绑定并吊销该账号全部 session，下一次登录重新绑定。登出只有在服务端确认撤销 session(或确认 token 已无效)后才清除浏览器 HttpOnly cookie；后端/Redis 不可用时返回失败、保留凭据并提示重试，不得伪报成功。
@@ -304,14 +308,16 @@ A1 是后台的**运营账号、登录安全与会话治理地基**。A1 负责�
 
 ##### [A1-MD1] 创建运营账号
 - **功能**:开通一个新的后台运营账号(开通后台访问权 = 权限边界写操作),确认即创建并落审计。
-- **布局结构**:1. **信息区**:提示行「新账号默认零权限;首次登录强制绑定 MFA 并修改初始密码」。2. **输入区**:见下表。3. **按钮区**:取消 / 确认创建。
+- **权限与登录**:默认创建专属客服，按所选角色的当前授权开通权限。客服的个人服务资格、待分组成员及有效档案与账号在同一事务创建，失败一并回滚；不自动授主管资格。首次登录须绑定 MFA 并修改初始密码。
 - **输入与选择控件**:
 
 | 字段 | 控件类型 | 必填 | 校验 | 默认值 |
 |---|---|---|---|---|
 | 账号 ID(登录名) | 单行文本 | 是 | 3–32 字符,字母数字与 `.`/`_`;server 唯一性校验(重复返 409) | 空 |
 | 显示名 | 单行文本 | 是 | 2–32 字符 | 空 |
-| 初始角色 | A6 启用角色 + 「暂不分配」 | 否 | 恢复模式下只能选择超管；普通模式允许空角色 | 暂不分配 |
+| 初始角色 | A6 启用角色 + 「暂不分配」 | 否 | 恢复模式下只能选择超管；省略为客服，显式空或暂不分配不授角色 | 专属客服 |
+| 客服性别 | 男 / 女 / 未指定 | 否 | 有权操作者明确选择，不由姓名或照片推断 | 未指定 |
+| 客服头像 | 默认池预览或原受控上传 | 否 | 新建随机一次持久化，失败保留缺失态；旧像不自动替换 | 对应许可且审核通过的池 |
 | 初始密码 | 密码输入 + 安全随机生成 | 是 | ≥16 位，至少含大小写字母、数字、特殊字符；默认生成 20 位 | 随机强密码 |
 | reason(创建理由) | 多行文本 | 是 | server 空值返回 `REASON_REQUIRED`；初始密码不得进入审计/提案 payload | 空 |
 
@@ -382,7 +388,7 @@ A1 是后台的**运营账号、登录安全与会话治理地基**。A1 负责�
 审计记录字段:`操作者 / 角色 / 动作(operator_account_created|operator_account_disabled|operator_account_enabled|operator_role_changed|operator_2fa_reset|logout_session) / 目标账号 ID / 前角色 / 后角色(角色变更时)/ reason / 时间(ms)`。**运营账号体系的所有写操作落 A2 审计**(§2.2),只读审计角色可全量追溯谁在何时创建 / 禁用了运营账号、变更了谁的角色——这是后台内部权限滥用的取证地基。
 
 **⑦ 风控 & 联动**
-- **后台账号强制 MFA + 最小权限**:全角色强制 MFA；新建账号默认无角色、无权限、无菜单。A6 角色授权负责跨域最小权限约束，A1 只消费其结果。
+- **后台账号强制 MFA + 最小权限**:全角色强制 MFA；新建账号默认专属客服及个人服务资格，不自动授主管资格；显式暂不分配时无业务权限。A6 角色授权负责跨域最小权限约束，A1 只消费其结果。
 - **运营账号 ≠ 用户账户(防混淆)**:A1 运营账号与 C 域用户账户是两套实体;后台对用户的处置(冻结 / impersonate / 调资产)的操作者是运营账号、对象是用户账户,二者绝不互通(运营账号不持用户资产、不入 A4 用户事件流)。
 - **角色变更经 A2 审计 + 操作确认**:角色授予/撤销仅超管可执行，理由必填、即时生效、清权限缓存并留痕；同角色操作在前后端均拒绝。
 - **双超管按“有效”而非账号行数计算**:只有启用、超管角色且 MFA 已绑定的账号计入；不足 2 即进入治理恢复模式，避免“账面双超管、实际单点”。
@@ -4365,7 +4371,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 | 实体 | 关键字段 | 来源章 / § 锚点 | 说明 |
 |---|---|---|---|
-| **OperatorAccount**(运营账号) | `accountId / username / displayName / email? / roleCode?(A6 启用角色；空=暂未分配) / roleHistory[]{fromRole,toRole,changedAt,operator} / tfaSecretEncrypted? / tfaBoundAt? / status(enabled\|disabled) / lastLoginAt? / activeSessions[]{sessionId,device,ipAddress,issuedAt,lastSeenAt}` | Ch2 A1(§2.1) | 平台运营方内部员工后台登录账号,**与 C 域用户账户(`User`)是两套独立实体**;不持用户资产、不入 A4 用户事件流。新建默认无角色、零权限；角色及授权权威在 A6，A1 不再维护固定七角色或 `member/lead` 第二套身份模型。角色历史由 A2 审计事实派生，不维护可篡改副本。MFA 必须真实绑定后才计入有效超管；密码/MFA 双档失败锁由服务端独立状态记录；系统始终保持 ≥ 2 个“启用 + 超管角色 + MFA 已绑定”的有效超管。 |
+| **OperatorAccount**(运营账号) | `accountId / username / displayName / email? / avatarGender? / avatarAssetId? / avatarVersion? / roleCode?(A6 启用角色；省略=专属客服，显式空=暂未分配) / roleHistory[]{fromRole,toRole,changedAt,operator} / tfaSecretEncrypted? / tfaBoundAt? / status(enabled\|disabled) / lastLoginAt? / activeSessions[]{sessionId,device,ipAddress,issuedAt,lastSeenAt}` | Ch2 A1(§2.1) | 平台运营方内部员工后台登录账号,**与 C 域用户账户(`User`)是两套独立实体**;不持用户资产、不入 A4 用户事件流。新建默认专属客服及个人服务资格，不授主管资格；角色及授权权威在 A6，A1 不再维护固定七角色或 `member/lead` 第二套身份模型。角色历史由 A2 审计事实派生，不维护可篡改副本。MFA 必须真实绑定后才计入有效超管；密码/MFA 双档失败锁由服务端独立状态记录；系统始终保持 ≥ 2 个“启用 + 超管角色 + MFA 已绑定”的有效超管。 |
 | **AuditLog**(审计日志) | `operator / role / action / object{domain,objectId} / before / after / reason / ip / ts(ms)` | Ch2 A2(§2.2) | **append-only,不可删改**(无更新 / 删除 endpoint);全域所有高敏写操作的统一留痕地基(§3.14:审计权威归 A2)。各章「⑥ 权限 & 审计」段的审计字段均为本统一 schema 的实例化。高敏动作记录(按 A2③ 高敏动作清单过滤)构成 A2②b 高敏操作流水视图并触发实时告警。`Idempotency-Key`(资金 / 资产类动作,可选字段)按 A2⑥ 源章 schema 一并留痕,与 endpoint 层 `Idempotency-Key` header 同源、非独立核心字段。保留期 ≥ 13 个月(对齐 §2.4.9) |
 | **SystemConfig**(系统配置) | 运营托管:`featureFlags[]{key,state(on\|off\|灰度%),scope(all\|cohort\|phase)} / health{pipeline,ledger,ntp,endpoints}`;**固定后端不变量(运营不可调、无配置面)**:`serverTime{ntpSource,currentTs,driftMs}` 单源 / `idempotency{ttlHours(24),dedupHitCount24h}` Idempotency-Key 去重 | Ch2 A3(§2.3) | 平台级横切配置托管模型;**运营面仅 feature flag 平台 + 系统健康**(kill-switch 子配置见 KillSwitchConfig)。server time 单源、Idempotency-Key 为**固定后端不变量**(约束见 A3⑦,运营无配置卡)。`featureFlags` 仅承接无明确业务域归属的横切 flag(PHASES 全表归 H1、chargeFailRate 归 H2) |
 | **KillSwitchConfig**(熔断闸配置) | `key(withdraw\|staking\|genesis\|exchange\|trial\|geo-block)/ enabled(bool;geo-block 为 activeCountries.length>0)/ activeCountries[](仅 geo-block)/ lastChangedAt / operator / reason` | Ch2 A3(§2.3,§9.11d.1 + 后台应急新增 withdraw) | **6 闸**(5 个二元功能闸〔4 源自前端 §9.11d.1 + 后台应急新增 withdraw〕 + 1 个 geo-block 国家列表闸);5 个功能闸默认 `enabled=true`、geo-block 默认 `activeCountries` 空。本实体为 A3 SystemConfig 下的子配置对象(A3 config store 的 kill-switch 子域,A3④d),**非独立 DB 表**。**每次闸切换(PUT)经确认弹窗 + 理由必填 + 幂等执行**(熔断方向执行=风控/财务/超管;恢复方向执行=仅超管 + B1 红线前置 422;与 §9.2 API 总表确认弹窗=是 及 A3④、§2.2 高敏动作清单一致;切换 `Idempotency-Key` 由 A3⑤ 正文明确,§1.8 原则二.3)。V1 由 A3 config store 托管为存储端权威,V4 切换面归 J1(功能闸)/ J2(geo-block);B5 风险雷达只读其状态灯 |
@@ -4396,8 +4402,8 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | 域 | endpoint | method | 用途 | 来源章 | 确认弹窗 | 幂等 |
 |---|---|---|---|---|---|---|
 | A1 | `/api/admin/platform/accounts/overview` | GET | 运营账号列表、角色引用、安全基线与逐条活跃 session 详情 | Ch2 A1 | — | — |
-| A1 | `/api/admin/platform/accounts` | POST | 创建运营账号；角色可空，默认暂未分配、零权限 | Ch2 A1 | 是 | 是 |
-| A1 | `/api/admin/platform/accounts/:id/profile` | PATCH | 编辑登录名、显示名和邮箱 | Ch2 A1 | 是 | 是 |
+| A1 | `/api/admin/platform/accounts` | POST | 创建运营账号；省略角色默认专属客服，显式空角色为暂不分配；客服原子建立个人服务资格与档案 | Ch2 A1 | 是 | 是 |
+| A1 | `/api/admin/platform/accounts/:id/profile` | PATCH | 编辑登录名、显示名、邮箱及客服性别/头像；沿原授权、版本与审计 | Ch2 A1 | 是 | 是 |
 | A1 | `/api/admin/platform/accounts/:id/role` | PATCH | 从 A6 启用角色中变更或清空角色；提交前展示权限差异 | Ch2 A1 / A6 | 是 | 是 |
 | A1 | `/api/admin/platform/accounts/:id/status` | PATCH | 禁用或重新启用；不得破坏有效双超管下限 | Ch2 A1 | 是 | 是 |
 | A1 | `/api/admin/platform/accounts/:id/reset-2fa` | POST | 身份核验后重置 MFA；未绑定账号不可执行 | Ch2 A1 | 是 | 是 |

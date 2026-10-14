@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
@@ -8,7 +8,7 @@ import { parseBusinessTime } from "../lib/admin/business-time.ts";
 import { MDomainLoadCoordinator } from "../lib/admin/m-content-load-coordinator.ts";
 
 const root = process.cwd();
-const read = (path) => readFileSync(resolve(root, path), "utf8");
+const read = (path) => readFileSync(resolve(process.env.SUPPORT_GATE_SOURCE_ROOT && existsSync(resolve(process.env.SUPPORT_GATE_SOURCE_ROOT, path)) ? process.env.SUPPORT_GATE_SOURCE_ROOT : root, path), "utf8");
 
 test("M5 cards follow content width while tabular scripts retain their own scroller", () => {
   const view = read("app/components/domain-views/m-tabs/m5-scripts.tsx");
@@ -16,7 +16,8 @@ test("M5 cards follow content width while tabular scripts retain their own scrol
   assert.match(view, /<div className="m5">/);
   assert.doesNotMatch(view, /gridTemplateColumns:/);
   assert.doesNotMatch(view, /<span className="mono">\{c\.type\}<\/span>/);
-  assert.match(view, /managed \? "由 AI 平台统一管理" : c\.managedBy/);
+  assert.match(view, /managed && <div[^>]*>由 AI 平台统一管理<\/div>/);
+  assert.doesNotMatch(view, /\{c\.managedBy\}|:\s*c\.managedBy/, "Human session cards do not expose the internal management source");
   const labelLiteral = view.match(/const SEAT_LABEL[^=]*=\s*(\{[^\n]+?\});/);
   assert.ok(labelLiteral, "Human seat labels remain defined separately from wire enums");
   const labels = runInNewContext(`(${labelLiteral[1]})`);
@@ -101,6 +102,9 @@ function conversationReadFixture() {
   assert.ok(canSend);
   const state = {
     pages: [], requested: [], parseBusinessTime,
+    useAdminAuth: { getState: () => ({ session: { adminId: 12 }, authEpoch: 1 }) },
+    adminShellSessionKey: (session, epoch) => `${session.adminId}:${epoch}`,
+    supportClient: { overview: async () => ({ scope: { actorId: 12, mode: "PERSONAL", availableModes: ["PERSONAL"] } }) },
     adaptCustomerProfile: () => ({ nickname: "历史客户" }),
     apiRequest: async (path) => { state.requested.push(path); return state.pages.shift(); },
   };
@@ -112,6 +116,78 @@ const transferredHistory = () => ({
   id: 5954, conversationNo: "HISTORICAL-SEGMENT", conversationType: "advisor", status: "TRANSFERRED",
   ownerAgentId: "3792", unreadCount: 0, version: 0, updatedAt: "2026-10-03T00:00:00Z",
   transferToType: null, transferToId: null,
+});
+
+test("M3 authorized conversation collections preserve pure supervisor scope and merge a cross-group personal scope once", async () => {
+  const history = transferredHistory(), own = { ...history, id: 5955, conversationNo: "OWN-CROSS-GROUP", userId: 2005, ownerAgentId: "12" };
+  for (const mode of ["PERSONAL", "MANAGED", "ALL"]) {
+    const f = conversationReadFixture();
+    f.supportClient.overview = async () => ({ scope: { actorId: 12, mode, availableModes: [mode] } });
+    f.pages = [{ total: 1, pageNum: 1, pageSize: 100, records: [history] }];
+    assert.equal((await f.reads.fetchAllSupportConversations()).total, 1);
+    assert.ok(f.requested.every(path => path.includes(`readMode=${mode}`)));
+  }
+  const f = conversationReadFixture();
+  f.supportClient.overview = async () => ({ scope: { actorId: 12, mode: "MANAGED", availableModes: ["MANAGED", "PERSONAL"] } });
+  f.pages = [
+    { total: 1, pageNum: 1, pageSize: 100, records: [history] },
+    { total: 2, pageNum: 1, pageSize: 100, records: [history, own] },
+  ];
+  const result = await f.reads.fetchAllSupportConversations();
+  assert.deepEqual(Array.from(result.records, row => row.conversationNo), [history.conversationNo, own.conversationNo]);
+  assert.equal(result.total, 2);
+  assert.equal(f.requested.length, 2);
+  assert.ok(f.requested[0].includes("readMode=MANAGED"));
+  assert.ok(f.requested[1].includes("readMode=PERSONAL"));
+});
+
+test("M3 authorized union never publishes a partial result after a second-scope denial or cancellation", async () => {
+  for (const status of [403, 404]) {
+    const f = conversationReadFixture(), rejection = { status };
+    f.supportClient.overview = async () => ({ scope: { actorId: 12, mode: "MANAGED", availableModes: ["MANAGED", "PERSONAL"] } });
+    f.apiRequest = async path => {
+      if (path.includes("readMode=PERSONAL")) throw rejection;
+      return { total: 1, pageNum: 1, pageSize: 100, records: [transferredHistory()] };
+    };
+    await assert.rejects(f.reads.fetchAllSupportConversations(), error => error === rejection);
+  }
+  const f = conversationReadFixture(), controller = new AbortController();
+  controller.abort();
+  await assert.rejects(f.reads.fetchAllSupportConversations(controller.signal), error => error.name === "AbortError");
+  assert.equal(f.requested.length, 0);
+});
+
+test("M3 authorized union rejects scope revocation, changed overlapping rows and account changes during its read", async () => {
+  const f = conversationReadFixture(), history = transferredHistory();
+  let calls = 0;
+  f.supportClient.overview = async () => ({ scope: { actorId: 12, mode: "MANAGED", availableModes: ++calls === 1 ? ["MANAGED", "PERSONAL"] : ["MANAGED"] } });
+  f.pages = [
+    { total: 1, pageNum: 1, pageSize: 100, records: [history] },
+    { total: 1, pageNum: 1, pageSize: 100, records: [history] },
+  ];
+  await assert.rejects(f.reads.fetchAllSupportConversations(), /M3_CONVERSATION_SCOPE_CHANGED/);
+  calls = 0;
+  f.supportClient.overview = async () => ({ scope: { actorId: 12, mode: "MANAGED", availableModes: ["MANAGED", "PERSONAL"] } });
+  f.pages = [
+    { total: 1, pageNum: 1, pageSize: 100, records: [history] },
+    { total: 1, pageNum: 1, pageSize: 100, records: [{ ...history, version: history.version + 1 }] },
+  ];
+  await assert.rejects(f.reads.fetchAllSupportConversations(), /M3_CONVERSATION_SNAPSHOT_UNSTABLE/);
+  f.supportClient.overview = async () => {
+    if (++calls === 2) f.useAdminAuth.getState = () => ({ session: { adminId: 13 }, authEpoch: 2 });
+    return { scope: { actorId: 12, mode: "PERSONAL", availableModes: ["PERSONAL"] } };
+  };
+  f.pages = [{ total: 1, pageNum: 1, pageSize: 100, records: [history] }];
+  await assert.rejects(f.reads.fetchAllSupportConversations(), /M3_CONVERSATION_IDENTITY_CHANGED/);
+});
+
+test("M3 authorized mode pagination rejects changing totals rather than losing a boundary row", async () => {
+  const f = conversationReadFixture(), history = transferredHistory();
+  f.pages = [
+    { total: 2, pageNum: 1, pageSize: 100, records: [history] },
+    { total: 3, pageNum: 2, pageSize: 100, records: [{ ...history, id: 5955, conversationNo: "SECOND" }] },
+  ];
+  await assert.rejects(f.reads.fetchAllSupportConversations(), /M3_CONVERSATION_PAGE_INCOMPLETE/);
 });
 
 test("M3 reads transferred history without inventing a pending transfer or dropping the page", async () => {
@@ -175,7 +251,18 @@ test("M3 roster failure exposes qualification retry instead of claiming an empty
 test("M2 customer replies require a verified advisor while internal work stays available", () => {
   const view = read("app/components/domain-views/m-view.tsx");
   const tickets = read("app/components/domain-views/m-tabs/m2-tickets.tsx");
-  assert.match(view, /advisorQualified=\{Boolean\(safeMData\.supportAgentsAvailable && currentAgent\?\.enabled && currentAgent\.seatType === "DEDICATED" && currentAgent\.serviceTypes\.includes\("advisor"\)\)\}/);
+  assert.match(view, /advisorQualified=\{Boolean\(session\?\.supportReadModes\?\.includes\("PERSONAL"\)\)\}/);
+  const file = ts.createSourceFile("m-view.tsx", view, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const qualification = [];
+  const walk = node => {
+    if (ts.isJsxAttribute(node) && node.name.getText(file) === "advisorQualified") qualification.push(node.initializer.expression.getText(file));
+    ts.forEachChild(node, walk);
+  };
+  walk(file); assert.equal(qualification.length, 1, "Execute the actual M2 qualification prop");
+  for (const [session, expected] of [[undefined, false], [{}, false], [{ supportReadModes: [] }, false], [{ supportReadModes: ["MANAGED"] }, false], [{ supportReadModes: ["ALL"] }, false], [{ supportReadModes: ["PERSONAL"] }, true], [{ supportReadModes: ["MANAGED", "PERSONAL"] }, true]]) {
+    const code = ts.transpileModule(`globalThis.result = ${qualification[0]};`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+    const state = { session }; runInNewContext(code, state); assert.equal(state.result, expected, JSON.stringify(session));
+  }
   assert.match(tickets, /const canRespondToCustomers = canWriteM2 && advisorQualified/);
   assert.match(tickets, /canReply=\{canReplyToSelected\}/);
   assert.match(tickets, /ticketDetail\.replyAgentAdminId === adminId/);
@@ -193,7 +280,7 @@ test("M2 customer replies require a verified advisor while internal work stays a
   assert.match(tickets, /overflowWrap: "anywhere".*查看会话/);
   assert.match(tickets, /data-proof="support-ticket-reply"[\s\S]*?disabled=\{submitting \|\| !canReply\}/);
   assert.match(tickets, /data-proof="support-ticket-reply-save"[^>]*disabled=\{submitting \|\| !canReply\}/);
-  assert.match(tickets, /仅当前专属顾问可以回复客户/);
+  assert.match(tickets, /仅当前专属客服可以回复客户/);
   assert.match(tickets, /canWrite=\{canWriteM2 && ticketsAvailable\}/);
   assert.match(tickets, /const createTicket = [\s\S]*?if \(!canRespondToCustomers/);
   assert.match(tickets, /const sendReply = [\s\S]*?!canReplyToSelected[^\n]*selected\.contentRestricted/);
@@ -513,14 +600,15 @@ function m3VisibleTextFixture() {
 
 test("M3 human reception and origin branches use one exclusive support identity without changing wire types", () => {
   const f = m3VisibleTextFixture();
-  for (const type of ["advisor", "support", "ai"]) assert.equal(f.evaluate(f.conditional('convo.type==="advisor"'), { convo: { type } }), "专属客服接待");
-  for (const [origin, expected] of [["user", "客户发起"], ["advisor", "客服主动"], ["support", "客服主动"], [undefined, "来源未记录"]]) assert.equal(f.evaluate(f.conditional("convo.origin"), { convo: { origin } }), expected);
-  const reception = f.one(node => ts.isConditionalExpression(node) && node.condition.getText(f.file) === "hasMessage===false" && ts.isStringLiteral(node.whenTrue) && node.whenTrue.text === "待首次联系");
+  assert.doesNotMatch(f.source, /普通客服接待|专属顾问接待/);
+  for (const [origin, expected] of [["user", "客户发起"], ["advisor", "客服主动联系"], ["support", "客服主动联系"], [undefined, "发起来源未记录"]]) assert.equal(f.evaluate(f.conditional("convo.origin"), { convo: { origin } }), expected);
+  const reception = f.one(node => ts.isConditionalExpression(node) && node.condition.getText(f.file) === "hasMessage===false" && ts.isStringLiteral(node.whenTrue) && node.whenTrue.text === "待首次联系" && node.whenFalse.getText(f.file).includes("查看待回复状态"));
   for (const [hasMessage, knownReplyState, expected] of [[false, true, "待首次联系"], [true, true, "待专属客服回复"], [true, false, "已处理"], [true, null, "查看待回复状态"], [null, null, "查看待回复状态"]]) assert.equal(f.evaluate(reception, { hasMessage, knownReplyState }), expected);
   const source = read("lib/admin/m-client.ts");
   const definition = source.match(/function conversationType[^\n]*\{[\s\S]*?\n\}/)?.[0]; assert.ok(definition);
   const parse = runInNewContext(ts.transpileModule(`${definition}\nconversationType;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText);
-  for (const [wire, expected] of [["ADVISOR", "advisor"], ["SUPPORT", "support"], ["AI", "support"]]) assert.equal(parse(wire), expected);
+  for (const [wire, expected] of [["ADVISOR", "advisor"], ["SUPPORT", "support"], ["AI", "ai"]]) assert.equal(parse(wire), expected);
+  assert.match(f.source, /const canSendTo = \(convo: SessionConvo, adminId: number\) => convo.status === "open" && convo.type !== "ai"/);
 });
 
 function m3ListRenderingFixture() {
@@ -543,7 +631,7 @@ test("M3 production adapter and list rendering distinguish public messages, expl
   assert.equal(positive.lastPublicMessageId, 3719);
   assert.equal(positive.lastMessageKind, undefined, "missing kind must remain unknown rather than a fabricated TEXT preview");
   assert.equal(positive.messages.length, 0, "list summaries must not fabricate a detail message");
-  assert.match(render(positive), /消息摘要暂不可用.*查看待回复状态.*2 条未读/);
+  assert.match(render(positive), /消息摘要暂不可用.*2 条未读.*查看待回复状态/);
   assert.doesNotMatch(render(positive), /尚无人工消息|待首次联系|待专属客服回复|\[图片\]/);
   assert.match(render(positive, true), /待专属客服回复/, "only an actual customer profile may confirm waiting reply");
   assert.match(render(positive, false), /已处理/);
@@ -557,7 +645,7 @@ test("M3 production adapter and list rendering distinguish public messages, expl
   assert.doesNotMatch(render(detail), /尚无人工消息|待首次联系/);
   const empty = adapter.adaptConversation(adapter.assertConversationRow({ ...row, lastPublicMessageId: 0, unreadCount: 0 }));
   assert.equal(empty.lastPublicMessageId, 0);
-  assert.match(render(empty, true), /尚无人工消息.*待首次联系.*无未读/);
+  assert.match(render(empty, true), /尚无人工消息.*待首次联系/);
   for (const lastPublicMessageId of [undefined, null]) {
     const unknown = adapter.adaptConversation(adapter.assertConversationRow({ ...row, lastPublicMessageId }));
     assert.equal(unknown.lastPublicMessageId, lastPublicMessageId);
@@ -579,7 +667,7 @@ test("M3 truncated or unknown history remains neutral without a public message m
         messages, historyTruncated: true,
       }));
       const visible = render(detail);
-      assert.match(visible, /查看待回复状态.*2 条未读/, "a truncated page cannot prove the public history empty");
+      assert.match(visible, /2 条未读.*查看待回复状态/, "a truncated page cannot prove the public history empty");
       assert.doesNotMatch(visible, /尚无人工消息|待首次联系|待专属客服回复/);
       assert.match(visible, messages.length ? /Fixture system event/ : /消息摘要暂不可用/);
       assert.equal(detail.historyTruncated, true, "retain the backend completeness signal");

@@ -19,26 +19,37 @@
  * 仅作 border-top/right/bottom/left 的(行/段分隔线、accent 左条)不计;dashed(空态占位)不计;
  * 透明背景的描边 chip 不计(单一视觉差异的合法选项)。
  *
- * 局限:本门覆盖 CSS class 层(主战场)。inline style 走一个 best-effort 单行 grep(见末尾)。
+ * --support-profile:客服资料 CSS + 页面 JSX + 共享 StatusPill 的严格门，接入 verify。
+ * 无参数:递归扫描域 CSS 的审计模式；历史命中须核对真实控件角色，不自动豁免。
+ * shortcut: CSS 只匹配同一规则的填充和描边，跨规则继承与运行时计算值交给实景验收；需要全站强制时升级为 computed-style 检查。
  */
 import { readFileSync, readdirSync, existsSync } from "node:fs";
-import { join, dirname, basename } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
 
 // ── 扫描目标 CSS ──
+export function cssFilesUnder(dir) {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const file = join(dir, entry.name);
+    return entry.isDirectory() ? cssFilesUnder(file) : entry.name.endsWith(".css") ? [file] : [];
+  });
+}
 const cssFiles = [];
 const dvDir = join(ROOT, "app/components/domain-views");
 if (existsSync(dvDir)) {
-  for (const f of readdirSync(dvDir)) if (f.endsWith(".css")) cssFiles.push(join(dvDir, f));
+  cssFiles.push(...cssFilesUnder(dvDir));
 }
 cssFiles.push(join(ROOT, "app/globals.css"));
 const ovDir = join(ROOT, "app/(console)/overview");
 if (existsSync(ovDir)) {
-  for (const f of readdirSync(ovDir)) if (f.endsWith(".css")) cssFiles.push(join(ovDir, f));
+  cssFiles.push(...cssFilesUnder(ovDir));
 }
+cssFiles.push(...cssFilesUnder(join(ROOT, "app/_console/users/search/[id]")));
 
 // ── 豁免选择器(这些类「filled + border」是合法的,不算违规)──
 // 角色:按钮/交互控件 · 输入框 · callout/通知 · 流程图/状态机/时间线节点 · 聊天气泡 · 内联 code/kbd · 外层卡 · meter/track/cell 等图元
@@ -48,9 +59,9 @@ const EXEMPT = /(button|btn|\bcta\b|f-cta|\bfchip\b|\bchip\b|\btab\b|\bstep\b|\b
 const PSEUDO_STATE = /:(hover|active|focus|focus-within|focus-visible|disabled|checked|not\()/i;
 
 // ── 颜色判定 ──
-const FILL_RE = /background(?:-color)?\s*:\s*[^;]*?(--[a-z0-9-]*-soft|--surface-[23]|rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+)/i;
+const FILL_RE = /background(?:-color)?\s*:\s*[^;]*?(--[a-z0-9-]*-soft|--(?:v5-)?surface(?:-[23])?\b|color-mix\(|rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+)/i;
 // 四边 border(非 dashed / 非 0 / 非 none / 非 transparent)
-const BORDER_FULL_RE = /(?:^|;|\{)\s*border\s*:\s*[0-9.]+px\s+solid\s+(?!transparent)[^;]+/i;
+const BORDER_FULL_RE = /(?:^|;|\{)\s*border\s*:\s*(?!0(?:\.0+)?px\b)[0-9.]+px\s+solid\s+(?!transparent)[^;]+/i;
 // border-color 指向真实颜色(排除 transparent / currentColor)
 const BORDER_COLOR_RE = /border-color\s*:\s*(?!transparent|currentcolor)(var\(--[a-z0-9-]*(?:border|brand|cyan|warning|success|danger)[a-z0-9-]*\)|rgba\(\s*\d+|color-mix\()/i;
 
@@ -65,27 +76,63 @@ function splitRules(css) {
   for (const chunk of css.split("}")) {
     const i = chunk.lastIndexOf("{");
     if (i < 0) continue;
-    const selector = chunk.slice(0, i).replace(/\/\*[\s\S]*?\*\//g, "").trim().split("\n").pop().trim();
+    const selector = chunk.slice(0, i).replace(/\/\*[\s\S]*?\*\//g, "").trim();
     const body = chunk.slice(i + 1);
     if (selector && body) rules.push({ selector, body });
   }
   return rules;
 }
 
-const violations = [];
-for (const file of cssFiles) {
-  if (!existsSync(file)) continue;
-  const raw = readFileSync(file, "utf8");
+export function scanCss(raw, strict = false) {
+  const hits = [];
   const css = flattenMedia(raw.replace(/\/\*[\s\S]*?\*\//g, "")); // 去注释再展平
   for (const { selector, body } of splitRules(css)) {
-    if (PSEUDO_STATE.test(selector)) continue;
-    if (EXEMPT.test(selector)) continue;
+    // strict 仅豁免实际控件选择器和 M3 中已核对的按钮类，不沿用 card/note/item 等语义猜测。
+    const controls = /(?:^|[\s>+~,])(?:button|input|select|textarea|a)(?=[.#:[\s>+~,]|$)|\.m3-profile-(?:open|link)\b/i;
+    const selectors = selector.split(/,(?![^()]*\))/);
+    if (strict ? selectors.every((part) => controls.test(part) || /:(hover|active|focus|focus-within|focus-visible|disabled|checked)\b/i.test(part)) : PSEUDO_STATE.test(selector) || selectors.every((part) => EXEMPT.test(part))) continue;
     const hasFill = FILL_RE.test(body);
     if (!hasFill) continue;
     const hasBorder = BORDER_FULL_RE.test(body) || BORDER_COLOR_RE.test(body);
     if (!hasBorder) continue;
-    violations.push({ file: file.replace(ROOT + "/", "").replace(ROOT + "\\", ""), selector, body: body.replace(/\s+/g, " ").trim().slice(0, 120) });
+    hits.push({ selector, body: body.replace(/\s+/g, " ").trim().slice(0, 120) });
   }
+  return hits;
+}
+
+export function scanProfileTsx(content) {
+  const source = ts.createSourceFile("profile.tsx", content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const hits = [];
+  function visit(node) {
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      const tag = node.tagName.getText(source);
+      const attrs = node.attributes.properties.filter(ts.isJsxAttribute);
+      const control = /^(button|a|input|select|textarea)$/.test(tag) || attrs.some((a) => /^(onClick|onKeyDown)$/.test(a.name.getText(source)) || a.name.getText(source) === "role" && /["'](button|link|checkbox|switch|tab)["']/.test(a.initializer?.getText(source) ?? ""));
+      const style = attrs.find((a) => a.name.getText(source) === "style");
+      const obj = style?.initializer && ts.isJsxExpression(style.initializer) ? style.initializer.expression : null;
+      if (!control && obj && ts.isObjectLiteralExpression(obj)) {
+        const properties = obj.properties.filter(ts.isPropertyAssignment);
+        const fill = properties.find((p) => /^(background|backgroundColor)$/.test(p.name.getText(source)));
+        const border = properties.find((p) => /^(border|borderColor)$/.test(p.name.getText(source)));
+        if (fill && border && FILL_RE.test(`background:${fill.initializer.getText(source)}`) && /["'`]\s*(?:(?!0(?:\.0+)?px\b)[0-9.]+px\s+solid\s+(?!transparent|none)|(?:var\(|color-mix\(|#|rgba?\())/.test(border.initializer.getText(source))) {
+          hits.push({ line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1, text: obj.getText(source).replace(/\s+/g, " ").slice(0, 140) });
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  return hits;
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+const supportProfileOnly = process.argv.includes("--support-profile");
+const violations = [];
+for (const file of cssFiles) {
+  if (!existsSync(file)) continue;
+  const strict = /(?:m3-customer-profile|customer-panorama)\.css$/.test(file);
+  if (supportProfileOnly && !strict) continue;
+  violations.push(...scanCss(readFileSync(file, "utf8"), strict).map((hit) => ({ file: file.replace(ROOT + "/", "").replace(ROOT + "\\", ""), ...hit })));
 }
 
 // ── best-effort inline 单行检测(domain-views + overview 的 tsx)──
@@ -116,11 +163,15 @@ function walkTsx(dir) {
     }
   }
 }
-tsxDirs.forEach(walkTsx);
+if (!supportProfileOnly) tsxDirs.forEach(walkTsx);
+const profileFile = join(ROOT, "app/_console/users/search/[id]/page.tsx");
+if (existsSync(profileFile)) inlineHits.push(...scanProfileTsx(readFileSync(profileFile, "utf8")).map((hit) => ({ file: "app/_console/users/search/[id]/page.tsx", ...hit })));
+const pillFile = join(ROOT, "app/components/kit/status-pill.tsx");
+if (existsSync(pillFile)) inlineHits.push(...scanProfileTsx(readFileSync(pillFile, "utf8")).map((hit) => ({ file: "app/components/kit/status-pill.tsx", ...hit })));
 
 const total = violations.length + inlineHits.length;
 if (total === 0) {
-  console.log(`  ✓ inner-block-no-border: ${cssFiles.length} CSS 文件 0 处「非按钮 filled chip + border」违规`);
+  console.log(`  ✓ inner-block-no-border: ${supportProfileOnly ? "客服资料 strict CSS + page JSX + StatusPill（全仓历史规则未验）" : `${cssFiles.length} CSS 文件`} 0 处「非按钮 filled chip + border」违规`);
   process.exit(0);
 }
 
@@ -128,5 +179,6 @@ console.error(`  ✗ inner-block-no-border: 发现 ${total} 处「非按钮 fill
 for (const v of violations) console.error(`    [css] ${v.file}  «${v.selector}»  → ${v.body}`);
 for (const h of inlineHits) console.error(`    [inline] ${h.file}:${h.line}  → ${h.text}`);
 console.error(`  修法:删掉这些规则的 border/border-color,保留 background + color(参照 .badge-s)。`);
-console.error(`  若确为合法 keep(callout/流程图节点/按钮/输入/内联code),把选择器加进哨兵 EXEMPT 名单。`);
+console.error(`  客服资料 strict 仅豁免真实控件；其它区域的合法角色须先核对 DOM，勿按类名扩大豁免。`);
 process.exit(1);
+}

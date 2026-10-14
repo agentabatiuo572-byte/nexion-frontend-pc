@@ -300,7 +300,7 @@ async function supportUserShift(page: Page, account: ShiftAccount, report: Shift
 
   await recordOptionalStep(report, "M5 专属顾问到 M3/M2 兜底链路操作", ["M5", "M3", "M2", "A2", "L4"], async (evidence) => {
     await openAndAssertModule(page, "M5", evidence);
-    const m5 = await tryPerformDialogAction(page, [/绑定用户/, /配置岗位/, /新增顾问话术|新增即时回复模板/], evidence, { inputValue: "U00000001", chooseChip: true });
+    const m5 = await tryPerformDialogAction(page, [/绑定用户/, /配置岗位/, /新增专属客服话术|新增即时回复模板/], evidence, { inputValue: "U00000001", chooseChip: true });
     await openAndAssertModule(page, "M3", evidence);
     const m3 = await tryPerformDialogAction(page, [/主动发起|转交|转工单|归档|退回|接收/], evidence, { chooseChip: true });
     await openAndAssertModule(page, "M2", evidence);

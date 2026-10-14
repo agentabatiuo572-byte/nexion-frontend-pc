@@ -1,0 +1,24 @@
+.customer-panorama{font-size:14px;line-height:1.55}
+.customer-panorama-name{min-width:0;max-width:min(100%,32ch);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.customer-panorama .font-mono-tabular{font-family:inherit;font-variant-numeric:tabular-nums}
+.customer-panorama header .rounded-full{font-size:12.5px}
+.customer-panorama-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:12px}
+.customer-panorama-kpis>button{min-width:0}
+.customer-panorama-kpis>button>div{height:100%}
+.customer-panorama-kpis>button>div>div:first-child span{font-size:12.5px}
+.customer-panorama-kpis>button>div>p{font-size:30px;font-weight:600;line-height:1.2;overflow-wrap:anywhere}
+.customer-panorama-primary{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:16px;align-items:start}
+.customer-panorama-section h2{font-weight:600;line-height:1.4}
+.customer-panorama-row:last-child{border-bottom:0!important}
+.customer-panorama-summary{display:flex;flex-wrap:wrap;gap:10px}
+.customer-panorama-summary>.customer-panorama-row{flex:1 1 190px;align-items:flex-start;justify-content:center;flex-direction:column;gap:5px;padding:12px;border-bottom:0!important;border-radius:8px;background:var(--v5-surface-2)}
+.customer-panorama-summary>.customer-panorama-row>span:last-child{font-size:18px;font-weight:550;text-align:left;font-variant-numeric:tabular-nums}
+.customer-panorama-summary>:not(.customer-panorama-row){flex-basis:100%;min-width:0}
+.customer-panorama-security-kpis>div{min-width:0;border:0!important;background:var(--v5-surface-2)!important}
+.customer-panorama-security-kpis>div>div:first-child span{font-size:12.5px}
+.customer-panorama-security-kpis>div>p{font-size:18px}
+.customer-panorama table{font-size:14px}
+.customer-panorama th{font-size:12.5px;white-space:nowrap}
+.customer-panorama td{vertical-align:middle}
+.customer-panorama button:focus-visible,.customer-panorama a:focus-visible{outline:2px solid var(--v5-brand);outline-offset:3px}
+@media(max-width:560px){.customer-panorama-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}

@@ -97,7 +97,7 @@ test("freezing a stale selected scope rejects without advancing or retaining a r
     assert.equal(button(tree, "下一步：编写内容").props.disabled, false);
     button(tree, "下一步：编写内容").props.onClick(); tree = await h.settle();
     const html = renderToStaticMarkup(tree);
-    assert.match(html, /第 1 步：圈选客户/); assert.match(html, /无权读取.*顾问客户范围/);
+    assert.match(html, /第 1 步：圈选客户/); assert.match(html, /无权读取.*专属客服客户范围/);
     assert.doesNotMatch(html, /重新读取名单|选择当前全部筛选结果|当前本人归属（已核对）/);
     assert.equal(button(tree, "下一步：编写内容").props.disabled, true);
     assert.equal(h.previews[1].input.selectionMode, "CROSS_PAGE");
@@ -113,7 +113,7 @@ test("known advisor-unavailable denial keeps qualification guidance and unknown 
       h.render(); const tree = await h.settle(), html = renderToStaticMarkup(tree);
       assert.equal(Boolean(button(tree, "重新读取名单")), !blocked);
       assert.equal(button(tree, "查询筛选结果").props.disabled, blocked);
-      if (blocked) assert.match(html, /当前账号.*顾问坐席.*群发.*主管/);
+      if (blocked) assert.match(html, /当前账号.*专属客服资格.*群发.*主管/);
       assert.doesNotMatch(html, /SUPPORT_SCOPE_FORBIDDEN|SUPPORT_AGENT_UNAVAILABLE|UNKNOWN_PRIVATE_TEXT/);
     } finally { h.unmount(); }
   }

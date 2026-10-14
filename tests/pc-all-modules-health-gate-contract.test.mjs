@@ -150,8 +150,8 @@ test("actual terminal UI branches remain bound to the semantic gate", () => {
     ["../app/components/domain-views/k-tabs/k4-scoring.tsx", "告警读取失败"],
     ["../app/components/domain-views/m-tabs/m2-tickets.tsx", "工单数据暂时无法同步,当前不展示空队列,也不会开放写操作。"],
     ["../app/components/domain-views/m-tabs/m3-sessions.tsx", "会话数据暂时无法同步,当前不会把空列表当作真实结果,写操作也已关闭。"],
-    ["../app/components/domain-views/m-tabs/m4-kb-sla.tsx", "知识库后端当前不可用,页面已停止写入,避免显示未落库的成功状态。"],
-    ["../app/components/domain-views/m-tabs/m5-scripts.tsx", "话术与模板后端当前不可用，页面已进入只读保护；恢复同步后才能修改。"],
+    ["../app/components/domain-views/m-tabs/m4-kb-sla.tsx", "知识库当前不可用，暂时无法修改。请稍后刷新重试。"],
+    ["../app/components/domain-views/m-tabs/m5-scripts.tsx", "话术与模板当前不可用，暂时无法修改。请稍后刷新重试。"],
     ["../app/components/domain-views/l-tabs/l1-kpi.tsx", "L1 权威响应协议校验失败"],
     ["../app/components/domain-views/l-tabs/l1-kpi.tsx", "KPI 刷新未成功"],
     ["../app/components/dashboard/restored-b-insights.tsx", "资金流历史暂不可用："],
@@ -168,8 +168,8 @@ test("actual terminal UI branches remain bound to the semantic gate", () => {
 
 test("unmarked terminal renderers expose a structural error marker", () => {
   const markedBranches = [
-    ["../app/components/domain-views/m-tabs/m4-kb-sla.tsx", /data-module-health-state="error"[^>]*>知识库后端当前不可用/],
-    ["../app/components/domain-views/m-tabs/m5-scripts.tsx", /data-module-health-state="error"[^>]*>话术与模板后端当前不可用/],
+    ["../app/components/domain-views/m-tabs/m4-kb-sla.tsx", /data-module-health-state="error"[^>]*>知识库当前不可用/],
+    ["../app/components/domain-views/m-tabs/m5-scripts.tsx", /data-module-health-state="error"[^>]*>话术与模板当前不可用/],
     ["../app/components/domain-views/l-tabs/l1-kpi.tsx", /data-module-health-state="error"[^>]*>[\s\S]{0,100}<b>L1 权威响应协议校验失败/],
     ["../app/components/domain-views/a-tabs/a2-audit.tsx", /data-module-health-state=\{loadError \? "error" : undefined\}[\s\S]{0,200}审计中心读取失败/],
     ["../app/components/domain-views/d-tabs/d5-params.tsx", /data-module-health-state="error">[\s\S]{0,160}D5 权威配置不可用/],

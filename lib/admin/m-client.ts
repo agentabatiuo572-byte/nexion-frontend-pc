@@ -2,7 +2,7 @@ import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { parseBusinessTime } from "@/lib/admin/business-time";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
-import { supportWireId, supportRequest, supportObject, parseSupportCount } from "@/lib/admin/m-support-client";
+import { supportWireId, supportRequest, supportObject, parseSupportCount, supportClient } from "@/lib/admin/m-support-client";
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { User360Profile, UserProfileQuery } from "@/lib/admin/user360-client";
@@ -772,7 +772,7 @@ function requireSessionTemplateOverview(value: unknown): SessionTemplateOverview
       || !row.managedBy?.trim()
       || typeof row.enabled !== "boolean"
       || typeof row.readOnly !== "boolean")
-    || categories.some((row) => row.type === "ai" ? row.readOnly !== true : row.readOnly !== false)) {
+    || categories.some((row) => row.type === "ai" || row.type === "support" ? row.readOnly !== true : row.readOnly !== false)) {
     invalid();
   }
 
@@ -893,11 +893,12 @@ export function toBackendConversationStatus(value: ConversationExpectedStatus) {
 }
 
 function conversationType(value: string | undefined): SessionConvo["type"] {
-  return (value || "").toLowerCase() === "advisor" ? "advisor" : "support";
+  const type = (value || "").toLowerCase();
+  return type === "ai" ? "ai" : type === "advisor" ? "advisor" : "support";
 }
 
 function roleKey(type: SessionConvo["type"]) {
-  return type === "advisor" ? "conversations.roleAdvisor" : "conversations.roleSupport";
+  return type === "ai" ? "conversations.roleAi" : "conversations.roleAdvisor";
 }
 
 // 客户档案适配:detail 场景用后端跨域聚合的真实档案;列表行(只有 ContentConversationView,
@@ -1004,7 +1005,7 @@ function adaptTicket(detail: SupportTicketDetail | SupportTicketView): SupportTi
     contentRestricted,
     userId: base.userId,
     userVerified: Boolean(base.userExists),
-    subject: contentRestricted ? "私聊内容仅当前顾问和主管可阅" : str(base.title, "未命名工单"),
+    subject: contentRestricted ? "私聊内容仅当前专属客服和客服主管可阅" : str(base.title, "未命名工单"),
     category: ticketCategory(base.category),
     status: ticketStatus(base.status),
     priority: ticketPriority(base.priority),
@@ -1200,22 +1201,38 @@ async function fetchAllSupportTickets(): Promise<AdminPage<SupportTicketView>> {
 }
 
 async function fetchAllSupportConversations(signal?: AbortSignal): Promise<AdminPage<ContentConversationView>> {
+  signal?.throwIfAborted();
+  const auth = useAdminAuth.getState(), identity = adminShellSessionKey(auth.session, auth.authEpoch);
+  const { scope } = await supportClient.overview({ signal });
+  if (scope.actorId !== auth.session?.adminId) throw new Error("M3_CONVERSATION_IDENTITY_CHANGED");
+  const modes = scope.mode === "MANAGED" && scope.availableModes.includes("PERSONAL") ? ["MANAGED", "PERSONAL"] : [scope.mode];
   const pageSize = 100;
-  const first = assertConversationPage(await apiRequest<unknown>(`/conversations?pageNum=1&pageSize=${pageSize}`, { signal }));
-  const records = [...first.records];
-  const total = first.total;
-  let pageNum = 2;
-  while (records.length < total) {
-    const page = assertConversationPage(await apiRequest<unknown>(`/conversations?pageNum=${pageNum}&pageSize=${pageSize}`, { signal }));
-    const next = page.records;
-    if (next.length === 0) throw new Error("M3_CONVERSATION_PAGE_INCOMPLETE");
-    records.push(...next);
-    pageNum += 1;
+  const merged = new Map<string, ContentConversationView>();
+  for (const readMode of modes) {
+    const first = assertConversationPage(await apiRequest<unknown>(`/conversations?readMode=${readMode}&pageNum=1&pageSize=${pageSize}`, { signal }));
+    if (first.pageNum !== 1 || first.pageSize !== pageSize) throw new Error("M3_CONVERSATION_PAGE_INCOMPLETE");
+    const records = [...first.records], total = first.total;
+    let pageNum = 2;
+    while (records.length < total) {
+      const page = assertConversationPage(await apiRequest<unknown>(`/conversations?readMode=${readMode}&pageNum=${pageNum}&pageSize=${pageSize}`, { signal }));
+      if (page.pageNum !== pageNum || page.pageSize !== pageSize || page.total !== total || page.records.length === 0) throw new Error("M3_CONVERSATION_PAGE_INCOMPLETE");
+      records.push(...page.records); pageNum += 1;
+    }
+    if (records.length !== total || new Set(records.map(row => row.conversationNo)).size !== records.length) throw new Error("M3_CONVERSATION_PAGE_INCOMPLETE");
+    for (const row of records) {
+      const no = row.conversationNo;
+      if (!no) throw new Error("M3_CONVERSATION_PAGE_MALFORMED");
+      const previous = merged.get(no);
+      if (previous && JSON.stringify(previous) !== JSON.stringify(row)) throw new Error("M3_CONVERSATION_SNAPSHOT_UNSTABLE");
+      merged.set(no, row);
+    }
   }
-  if (records.length !== total || new Set(records.map((row) => row.conversationNo)).size !== records.length) {
-    throw new Error("M3_CONVERSATION_PAGE_INCOMPLETE");
-  }
-  return { total, pageNum: 1, pageSize: Math.max(records.length, pageSize), records };
+  const { scope: after } = await supportClient.overview({ signal }), current = useAdminAuth.getState();
+  signal?.throwIfAborted();
+  if (identity !== adminShellSessionKey(current.session, current.authEpoch) || after.actorId !== scope.actorId) throw new Error("M3_CONVERSATION_IDENTITY_CHANGED");
+  if (after.mode !== scope.mode || JSON.stringify([...after.availableModes].sort()) !== JSON.stringify([...scope.availableModes].sort())) throw new Error("M3_CONVERSATION_SCOPE_CHANGED");
+  const records = [...merged.values()];
+  return { total: records.length, pageNum: 1, pageSize: Math.max(records.length, pageSize), records };
 }
 
 function parseSupportMessageKind(message: ContentConversationMessageView, payloadRequired = true): NonNullable<SessionMsg["kind"]> {
@@ -1413,7 +1430,7 @@ function adaptSupportAgent(row: Record<string, unknown>): MSupportAgent {
     assignmentEligible: row.assignmentEligible,
     transferable: bool(row.transferable, true),
     busy: bool(row.busy, false),
-    assignedUserCount: num(row.assignedUserCount, 0),
+    assignedUserCount: parseSupportCount(row.assignedUserCount, "assignedUserCount"),
     avatarAssetId: typeof row.avatarAssetId === "string" ? row.avatarAssetId : undefined,
     avatarVersion: typeof row.avatarVersion === "number" ? row.avatarVersion : undefined,
     version: num(row.version, 1),
@@ -1765,8 +1782,9 @@ export async function fetchMServicePendingConversations(): Promise<SessionConvo[
 /** First page uses the server's most-recent ordering and current assignment filter. */
 export async function fetchMRecentAdvisorConversations(ownerAdminId: number, signal?: AbortSignal) {
   const owner = supportWireId(ownerAdminId, "recent.ownerAdminId");
-  const page = assertConversationPage(await apiRequest<unknown>(`/conversations?conversationType=ADVISOR&ownerAgentId=${owner}&pageNum=1&pageSize=5`, { signal }));
+  const page = assertConversationPage(await apiRequest<unknown>(`/conversations?readMode=PERSONAL&type=HUMAN&ownerAgentId=${owner}&pageNum=1&pageSize=5`, { signal }));
   return page.records.flatMap((row) => {
+    if (!["ADVISOR", "SUPPORT"].includes(upper(row.conversationType, ""))) return [];
     const customerId = row.customerId ?? row.userId;
     if (!Number.isSafeInteger(customerId) || Number(customerId) <= 0 || !row.conversationNo) return [];
     return [{ conversationNo: row.conversationNo, customerId: String(customerId), lastMessage: str(row.lastMessage), lastMessageKind: str(row.lastMessageKind), lastTs: asTs(row.lastMessageAt ?? row.updatedAt), unreadCount: num(row.unreadCount, 0) }];
@@ -1805,8 +1823,9 @@ export async function fetchMConversationDetail(no: string, signal?: AbortSignal)
 
 export async function fetchMSupportAgentsPage(pageNum = 1, pageSize = 5): Promise<MSupportAgentPage> {
   const page = await apiRequest<SupportAgentPageView>(`/support-agents/page?pageNum=${encodeURIComponent(String(pageNum))}&pageSize=${encodeURIComponent(String(pageSize))}`);
+  if (!Array.isArray(page.records) || !Array.isArray(page.advisorAssignments)) throw new Error("M1_SUPPORT_AGENT_PAGE_MALFORMED");
   return {
-    total: num(page.total, 0),
+    total: parseSupportCount(page.total, "total"),
     pageNum: num(page.pageNum, pageNum),
     pageSize: num(page.pageSize, pageSize),
     records: asArray<Record<string, unknown>>(page.records).map(adaptSupportAgent),

@@ -204,7 +204,6 @@ if (phase === "I3-F") {
 let browser, before;
 try {
   assert.ok(Object.values(identity).every(Boolean), "Run through the workflow CLI so task/run/snapshot identities are supplied");
-  before = repositoryDigest();
   assert.ok(process.env.SUPPORT_ACCEPTANCE_CONFIG, "SUPPORT_ACCEPTANCE_CONFIG must name the isolated seed and explicit authorized UI flows");
   const config = JSON.parse(readFileSync(process.env.SUPPORT_ACCEPTANCE_CONFIG, "utf8").replaceAll("{{runId}}", identity.runId));
   assert.equal(resolve(config.repo), resolve(identity.repo));
@@ -212,6 +211,7 @@ try {
   assert.equal(config.isolatedDatabase, true);
   const origin = localUrl(config.baseUrl);
   assert.ok(process.env.SUPPORT_RUNTIME_RECEIPT, "A root-measured startup/resource receipt is required before login or writes");
+  before = repositoryDigest();
   const runtimeReceiptPath = process.env.SUPPORT_RUNTIME_RECEIPT;
   const runtimeReceipt = JSON.parse(readFileSync(runtimeReceiptPath, "utf8"));
   await assertCurrentRuntimeRun(identity, phase);

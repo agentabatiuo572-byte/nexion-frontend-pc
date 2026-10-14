@@ -1,7 +1,7 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import type { AdminRole } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
-import { normalizeEffectiveMenuNodes, normalizeEffectiveMenus, normalizeSessionRole } from "@/lib/admin/session-role";
+import { normalizeEffectiveMenuNodes, normalizeEffectiveMenus, normalizeSessionRole, normalizeSupportReadModes } from "@/lib/admin/session-role";
 import { authoritativeAdminSessionPayload } from "@/lib/admin/session-response";
 import { AdminAuthEpochChangedError, adminAuthLifecycleEpoch, adminAuthActivityAllowed } from "@/lib/admin/auth-lifecycle";
 import { withAdminAuthDeadline } from "@/lib/admin/auth-deadline";
@@ -22,6 +22,7 @@ interface LoginPayload {
     role: string;
     roleCode?: string;
     authorities?: string[];
+    supportReadModes?: unknown;
     effectiveMenus?: string[];
     menuCodes?: string[];
     effectiveMenuNodes?: unknown[];
@@ -183,6 +184,7 @@ function normalizeLoginPayload(payload: LoginPayload): LoginResult {
       operator: payload.session.operator || payload.session.username,
       role: normalizeAdminRole(payload.session.roleCode || payload.session.role),
       authorities: payload.session.authorities ?? [],
+      supportReadModes: normalizeSupportReadModes(payload.session.supportReadModes),
       menuCodes: normalizeEffectiveMenus(payload.session),
       menuNodes: normalizeEffectiveMenuNodes(payload.session),
       passwordChangeRequired: Boolean(payload.session.passwordChangeRequired),

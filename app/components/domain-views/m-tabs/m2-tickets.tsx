@@ -377,7 +377,7 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
       const customer = await supportClient.customerDetail(String(userId));
       if (!stillAuthorized()) return false;
       if (customer.customerId !== String(userId) || customer.agentAdminId !== adminId) {
-        toast("仅当前专属顾问可以为该客户办理对客操作");
+        toast("仅当前专属客服可以为该客户办理对客操作");
         return false;
       }
       return true;
@@ -674,7 +674,7 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
           <>
             {k === "archived" && <Icon name="box" size={14} />}
             {SCOPES.find(([value]) => value === k)?.[1]}
-            {k === "resolved" ? ` ${resolvedCount}` : k === "archived" ? ` ${archivedCount}` : ""}
+            {k === "resolved" ? ` ${ticketsAvailable ? resolvedCount : "-"}` : k === "archived" ? ` ${ticketsAvailable ? archivedCount : "-"}` : ""}
           </>
         )}</TabGroup>
         <div style={{ width: 188 }}>
@@ -697,7 +697,7 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
             新建工单
           </button>
         )}
-        <span className="mono dim2" style={{ marginLeft: "auto", fontSize: 12.5 }}>共 {filtered.length} 条</span>
+        <span className="mono dim2" style={{ marginLeft: "auto", fontSize: 12.5 }}>共 {ticketsAvailable ? filtered.length : "-"} 条</span>
       </div>
 
       <div className="tk-scroll">
@@ -842,7 +842,7 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
           ownerOptions={ownerOptions}
           canWrite={canWriteM2 && ticketsAvailable}
           canReply={canReplyToSelected}
-          replyReadonlyReason={ticketDetail?.replyError || "仅当前专属顾问可以回复客户；内部备注、状态和指派仍可办理。"}
+          replyReadonlyReason={ticketDetail?.replyError || "仅当前专属客服可以回复客户；内部备注、状态和指派仍可办理。"}
           onRetryReply={() => setDetailRetry((value) => value + 1)}
           submitting={writePending}
         />
@@ -935,7 +935,7 @@ function TicketDrawer({
             </button>
           </div>
           <h2 style={{ fontSize: 18, margin: "11px 0 0", fontWeight: 500 }}>{ticket.subject}</h2>
-          {ticket.contentRestricted && <div className="callout warn" data-proof="support-ticket-content-restricted" style={{ marginTop: 10 }}>私聊内容仅当前顾问和主管可阅；工单状态、负责人及内部备注仍可办理。</div>}
+          {ticket.contentRestricted && <div className="callout warn" data-proof="support-ticket-content-restricted" style={{ marginTop: 10 }}>私聊内容仅当前专属客服和客服主管可阅；工单状态、负责人及内部备注仍可办理。</div>}
           <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 9, flexWrap: "wrap" }}>
             <span className="chip" style={{ border: "none" }}>{catCN(ticket.category)}</span>
             <span className="agent dim" style={{ fontSize: 12.5 }}>

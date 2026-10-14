@@ -581,6 +581,10 @@ export async function waitForRenderedImageMatch(images, expectedHash, { timeoutM
     while (true) {
       const remaining = timeoutMs - (Date.now() - started);
       if (remaining <= 0) fail("The image observation deadline expired");
+      if (observations.length && remaining < pollMs) {
+        await new Promise(resolve => setTimeout(resolve, remaining));
+        fail("The image observation deadline expired");
+      }
       const sample = { at: new Date().toISOString(), elapsedMs: Date.now() - started, count: null, visibleCount: 0, images: [] };
       observations.push(sample);
       let timer, result;

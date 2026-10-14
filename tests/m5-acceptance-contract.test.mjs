@@ -16,7 +16,7 @@ test("M5 fails closed when template data or the precise content/operations autho
   assert.match(page, /canManageM5Content/);
   assert.match(page, /canManageM5Operations/);
   assert.match(page, /isSupportSupervisor/);
-  assert.match(page, /话术与模板后端当前不可用/);
+  assert.match(page, /话术与模板当前不可用/);
   assert.match(page, /当前账号只有查看权限/);
 });
 
@@ -124,6 +124,12 @@ test("M5 publication is gated by published I6 locale mirrors and emits A4 govern
   assert.match(page, /conversation\.script\./);
   assert.match(page, /conversation\.template\./);
   assert.match(page, /href="\/content\/i18n"/);
+  assert.equal((page.match(/>维护翻译<\/a>/g) ?? []).length, 2);
+  assert.doesNotMatch(page, /\{(?:scriptI18nKey|templateI18nKey)\(/);
+  assert.equal((page.match(/中、英、越三语发布/g) ?? []).length, 2);
+  assert.match(page, /中文正文须与话术一致/);
+  assert.match(page, /中文正文须与模板一致/);
+  assert.equal((page.match(/三语需填写的字段须一致/g) ?? []).length, 2);
   assert.match(migration, /admin\.conversation_category_toggled/);
   assert.match(migration, /admin\.conversation_autopush_toggled/);
   assert.match(migration, /admin\.conversation_autopush_changed/);
@@ -152,6 +158,6 @@ test("M5 fails closed when the proactive advisor executor is not connected", () 
   assert.match(page, /const DEFAULT_ADVISOR_POLICY = \{ enabled: "off"/);
   assert.match(page, /const ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE = false/);
   assert.match(page, /\|\| \(!masterOn && !ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE\)\) return/);
-  assert.match(page, /执行器未接入 · 仅允许停用/);
+  assert.match(page, /主动推送当前不可用 · 仅允许停用/);
   assert.match(page, /disabled=\{!sessionTemplatesAvailable \|\| writePending \|\| \(!masterOn && !ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE\)\}/);
 });

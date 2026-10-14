@@ -84,8 +84,8 @@ await check("auth cleanup cancels old fresh preflight and leaves current draft/e
 });
 await check("partial empty is not scope loss; authoritative empty is scope loss; authorized CLOSED keeps raw body", async () => {
   const probe = harness();
-  const scopeSource = extract(sources.dock, "  let canReviewAll =", "  const dockSlot", dockStart);
-  probe.context.isSuperAdmin = false; probe.context.ctx.pget = () => "[]";
+  const scopeSource = extract(sources.dock, "  const canReviewAll =", "  const dockSlot", dockStart);
+  probe.context.isSuperAdmin = false; probe.context.supportReadModes = ["PERSONAL"]; probe.context.ctx.pget = () => "[]";
   probe.context.conv = null; probe.context.conversationsAvailable = false;
   probe.run(`function evaluateScope(){${scopeSource}; return privateScopeLost;}`);
   assert.equal(vm.runInContext("evaluateScope()", probe.context), false);

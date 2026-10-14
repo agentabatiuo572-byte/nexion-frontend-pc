@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
+import { adminShellSessionKey } from "../lib/admin/shell-authorities.ts";
 
 import {
   claimPendingCommandOwner,
@@ -442,15 +443,18 @@ function recoveryCallbacks(source) {
       assert.ok(callback, "权威会话读取必须属于可验证的恢复分支");
       let parent = callback.parent;
       while (parent && !ts.isVariableDeclaration(parent) && !ts.isPropertyAssignment(parent)) parent = parent.parent;
-      const name = parent?.name.getText(parsed);
+      const name = ts.isFunctionDeclaration(callback) ? callback.name?.getText(parsed) : parent?.name.getText(parsed);
       assert.ok(!callbacks.has(name) || callbacks.get(name) === callback, "同名恢复 callback 不得互相覆盖而漏验");
       callbacks.set(name, callback);
     }
     ts.forEachChild(node, child => walk(child, callback));
   };
   walk(parsed);
-  assert.deepEqual([...callbacks.keys()].sort(), ["refreshSession", "restoreAdminSession", "touch"],
+  assert.deepEqual([...callbacks.keys()].sort(), ["logoutWithoutAccess", "refreshSession", "restoreAdminSession", "touch"],
     "每个权威会话恢复入口都必须有独立切片,不能用另一个分支的 signIn 数量补齐");
+  assert.doesNotMatch(callbacks.get("logoutWithoutAccess").getText(parsed), /\bsignIn\s*\(/,
+    "退出校验不能恢复登录;其成功、失败和重复提交行为由 console-access-defaults.test.mjs 执行验证");
+  callbacks.delete("logoutWithoutAccess");
   return new Map([...callbacks].map(([name, callback]) => [name, callback.getText(parsed)]));
 }
 
@@ -470,7 +474,7 @@ async function assertRecoveryClaimsBeforeWrite(callback) {
   const scope = {
     bootstrapAttemptRef: { current: 0 }, disposed: false, refreshing: false, session: auth.session,
     currentAdminSession: async () => auth, recordAdminActivity: async () => auth,
-    renewAdminAuthLifecycle: () => {}, activity: { stop() {} }, restoreAdminSession: async () => {},
+    renewAdminAuthLifecycle: () => {}, activity: { stop() {} }, restoreAdminSession: async () => {}, adminShellSessionKey,
     AdminActivityIdentityChangedError: class extends Error {},
     signOut: () => { throw new Error("valid recovery must not sign out"); }, writeProbe,
     claimPendingCommandOwner: owner => { const result = claimPendingCommandOwner(owner); events.push("claim"); return result; },

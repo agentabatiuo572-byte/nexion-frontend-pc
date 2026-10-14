@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { parseSupportCount } from "../lib/admin/m-support-client.ts";
 
 const source = readFileSync(new URL("../lib/admin/m-client.ts", import.meta.url), "utf8");
 const ast = ts.createSourceFile("m-client.ts", source, ts.ScriptTarget.Latest, true);
@@ -13,12 +14,12 @@ const functions = names.map(name => {
 }).join("\n");
 const js = ts.transpileModule(functions, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 const adapt = new Function(`${js}; return adaptLoadConfig;`)();
-const adaptAgent = new Function(`${js}; return adaptSupportAgent;`)();
+const adaptAgent = new Function("parseSupportCount", `${js}; return adaptSupportAgent;`)(parseSupportCount);
 const loadConfig = { version: 5, autoBalance: false, defaultCap: 8, burstCap: 12, warnPct: 80,
   quietHourBalance: false, overflowQueue: "standby" };
 
 test("M1 page adapter keeps the account and assignment facts exact, including unavailable asset owners", () => {
-  const agent = {id:"7",adminId:7,name:"专属客服",status:"enabled",enabled:true,assignmentEligible:true,busy:true};
+  const agent = {id:"7",adminId:7,name:"专属客服",status:"enabled",enabled:true,assignmentEligible:true,busy:true,assignedUserCount:0};
   assert.equal(adaptAgent(agent).assignmentEligible, true);
   const disabled = adaptAgent({...agent,status:"disabled",assignmentEligible:false});
   assert.equal(disabled.status, "disabled"); assert.equal(disabled.enabled, true); assert.equal(disabled.assignmentEligible, false);

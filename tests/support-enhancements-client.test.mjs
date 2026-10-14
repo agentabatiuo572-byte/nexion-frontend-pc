@@ -9,8 +9,30 @@ import {supportClient,supportObject} from "../lib/admin/m-support-client.ts";
 import {boundedUpload} from "../lib/admin/support-image-proxy.ts";
 import * as avatarContract from "../lib/admin/account-avatar-contract.ts";
 import {createPendingMutationStore} from "../lib/admin/pending-mutation-store.ts";
+import {compactSupportBoardValue} from "./support-compact-empty.test.mjs";
 const now="2026-10-01T01:00:00Z",later="2026-10-01T02:00:00Z";
 const group=(data,status="READY")=>({data,status,evaluatedAt:now});
+test("profile PARTIAL finance preserves observed subtotals without promoting NET coverage",()=>{
+  const fields=["creditedDepositTotal","depositRefundTotal","successfulWithdrawalPrincipalTotal","successfulWithdrawalFeeTotal","successfulWithdrawalNetTotal","processingWithdrawalPrincipalTotal","balance","availableBalance"];
+  const row={currency:"USDT",creditedDepositTotal:"749.000001",successfulWithdrawalPrincipalTotal:"100",netContributionTotal:"849",balance:"200",fieldStatuses:{...Object.fromEntries(fields.map(f=>[f,"UNKNOWN"])),creditedDepositTotal:"PARTIAL",successfulWithdrawalPrincipalTotal:"PARTIAL",balance:"READY",netContributionTotal:"READY"}};
+  const parse=value=>parseSupportProfile({profile:{identity:group({}),finance:group({byCurrency:[value]}),devices:group({}),risk:group({}),annotations:group({}),service:group({}),actions:{}}}).finance.data.byCurrency[0];
+  for(const currency of ["USDT","NEX"]){const result=parse({...structuredClone(row),currency});assert.equal(result.creditedDepositTotal,"749.000001");assert.equal(result.fieldStatuses.creditedDepositTotal,"PARTIAL");assert.equal(result.successfulWithdrawalPrincipalTotal,"100");assert.equal(result.netContributionTotal,"849");assert.equal(result.balance,"200");}
+  for(const value of [null,0.1,"1e3","invalid"])assert.throws(()=>parse({...structuredClone(row),creditedDepositTotal:value}),/DECIMAL_INVALID/);
+  assert.throws(()=>parse({...structuredClone(row),fieldStatuses:{...row.fieldStatuses,netContributionTotal:"PARTIAL"}}),/ENUM_INVALID/);
+  for(const status of ["UNKNOWN","ERROR","FORBIDDEN"]){const result=parse({...structuredClone(row),fieldStatuses:{...row.fieldStatuses,creditedDepositTotal:status}});assert.equal(result.creditedDepositTotal,null);assert.equal(result.fieldStatuses.creditedDepositTotal,status);}
+});
+test("profile NET preserves signed exact totals, original balances and explicit unknown coverage",()=>{
+  const fields=["creditedDepositTotal","depositRefundTotal","successfulWithdrawalPrincipalTotal","successfulWithdrawalFeeTotal","successfulWithdrawalNetTotal","processingWithdrawalPrincipalTotal","balance","availableBalance"];
+  const row={currency:"USDT",balance:"77",netContributionTotal:"-12.000001",fieldStatuses:{...Object.fromEntries(fields.map(f=>[f,"UNKNOWN"])),balance:"READY",netContributionTotal:"READY"}};
+  const parse=value=>parseSupportProfile({profile:{identity:group({}),finance:group({byCurrency:[value]}),devices:group({}),risk:group({}),annotations:group({}),service:group({}),actions:{}}}).finance.data.byCurrency[0];
+  assert.equal(parse(structuredClone(row)).netContributionTotal,"-12.000001");assert.equal(parse(structuredClone(row)).balance,"77");
+  const partial={...structuredClone(row),...Object.fromEntries(fields.map(field=>[field,null])),fieldStatuses:{...Object.fromEntries(fields.map(field=>[field,"ERROR"])),netContributionTotal:"READY"}};
+  assert.equal(parse(partial).netContributionTotal,"-12.000001");assert.equal(parse(partial).balance,null);assert.equal(parse(partial).fieldStatuses.balance,"ERROR");
+  const legacy=structuredClone(row);delete legacy.netContributionTotal;delete legacy.fieldStatuses.netContributionTotal;
+  assert.equal(parse(legacy).netContributionTotal,null);assert.equal(legacy.fieldStatuses.netContributionTotal,"UNKNOWN");
+  for(const status of ["UNKNOWN","ERROR","FORBIDDEN"])assert.throws(()=>parse({...structuredClone(row),fieldStatuses:{...row.fieldStatuses,netContributionTotal:status}}),/NET_COVERAGE/);
+  assert.throws(()=>parse({...structuredClone(row),netContributionTotal:0.1}),/DECIMAL_INVALID/);
+});
 test("timeout GET and PUT share strict parsing without inventing fallback minutes",()=>{
   const source=readFileSync(new URL("../lib/admin/m-client.ts",import.meta.url),"utf8"),parser=source.slice(source.indexOf("export function parseMConversationTimeoutPolicy("),source.indexOf("\nfunction withReason",source.indexOf("export function parseMConversationTimeoutPolicy(")));
   const requests=[],context={supportObject,parseSupportCount:(value)=>{if(!Number.isSafeInteger(value)||value<0)throw new Error("bad count");return value;},currentAdminOperator:()=>"总管",supportRequest:(path,parse,options)=>{requests.push({path,parse,options});return parse(context.response);}};
@@ -136,28 +158,33 @@ test("funds-flow options use source statuses and reset the exact filter request 
   const records=[...expected,"UNRECOGNIZED","constructor","toString",null].map((status,i)=>({sourceId:`flow-${i}`,bizNo:`流水${i}`,kind:"DEPOSIT",currency:i%2?"NEX":"USDT",status})),state=[],effects=[],seen=[];
   const walk=node=>!node||typeof node!=="object"?[]:[node,...[node.props?.children].flat(Infinity).flatMap(walk)];
   const profile={identity:group({}),finance:group({byCurrency:[{currency:"USDT"},{currency:"NEX"}]}),devices:group({}),risk:group({}),annotations:group({}),service:group({}),actions:{}};
-  let cursor=0;const context={exports:{},AbortController,Date,Intl,JSON,require:name=>{
+  let cursor=0;const context={exports:{},AbortController,Date,Intl,JSON,document:{querySelectorAll:()=>[]},require:name=>{
     if(name==="react")return {useEffect:fn=>effects.push(fn),useRef:value=>({current:value}),useState:initial=>{const index=cursor++;if(!(index in state))state[index]=index===0?profile:index===5?3:index===7?group({records,total:records.length}):initial;return [state[index],value=>{state[index]=typeof value==="function"?value(state[index]):value;}];}};
     if(name==="react/jsx-runtime")return jsx;
     if(name==="@/lib/store/admin-auth")return {useAdminAuth:selector=>selector({session:{adminId:12,authorities:[]},authEpoch:1})};
     if(name==="@/lib/admin/m-support-enhancements")return {supportEnhancements};
     if(name==="@/lib/admin/m-support-client")return {supportClient:{},SupportClientError:class extends Error{}};
     if(name==="@/lib/admin/error-messages")return {displayAdminError:()=>"读取失败"};
-    if(name==="../design-kit")return {Modal:props=>jsx.jsx("div",{children:props.children})};
+    if(name==="../design-kit")return {Modal:props=>jsx.jsx("div",{children:props.children}),Icon:()=>null};
+    if(name==="./hd-ui")return {HDSelect:()=>null};
+    if(name==="./support-leaderboard")return {compactSupportBoardValue};
+    if(name==="./m3-customer-profile.css")return {};
     if(name==="./support-avatar")return {SupportAvatar:props=>jsx.jsx("span",{children:props.name}),customerAvatarPath:id=>`customer/${id}`,advisorAvatarPath:id=>`advisor/${id}`};
     throw new Error(`Unexpected funds-flow dependency ${name}`);
   }};
   runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,context);
   const render=()=>{cursor=0;effects.length=0;return context.exports.M3CustomerProfile({ctx:{pget:()=>"[]"},customerId:"7",onHistory(){},onRetryMessages(){}});};
-  const tree=render(),select=walk(tree).find(node=>node.type==="select"&&walk(node).some(child=>child.type==="option"&&child.props.children==="全部状态")),options=walk(select).filter(node=>node.type==="option");
-  assert.ok(select);assert.deepEqual(options.map(node=>node.props.value).filter(Boolean).sort(),expected.toSorted());
-  const labels=Object.fromEntries(options.map(node=>[node.props.value,node.props.children]));assert.equal(labels.CONFIRMED,"已确认");assert.equal(labels.CREDITED,"已入账");assert.equal(labels.REVIEW_PENDING,"待审核");assert.equal(labels.REFUNDED,"已退款");assert.notEqual(labels.CONFIRMED,labels.SUCCESS);
+  walk(render()).find(node=>node.type==="button"&&node.props.children==="说明").props.onClick();
+  const tree=render(),filter=walk(tree).find(node=>node.props?.["aria-label"]==="流水状态"),select=walk(filter).find(node=>Array.isArray(node.props?.options)),options=Array.from(select?.props.options??[]);
+  assert.ok(select);assert.deepEqual(options.map(option=>option.value).filter(Boolean).sort(),expected.toSorted());
+  const labels=Object.fromEntries(options.map(option=>[option.value,option.label]));assert.equal(labels.CONFIRMED,"已确认");assert.equal(labels.CREDITED,"已入账");assert.equal(labels.REVIEW_PENDING,"待审核");assert.equal(labels.REFUNDED,"已退款");assert.notEqual(labels.CONFIRMED,labels.SUCCESS);
   const summaries=walk(tree).filter(node=>node.type==="summary"&&Array.isArray(node.props.children)&&node.props.children.some(value=>typeof value==="string"&&value.startsWith("流水")));
   assert.equal(summaries.length,records.length);for(let i=0;i<records.length;i++)assert.equal(summaries[i].props.children.at(-1),i<expected.length?labels[records[i].status]:"待核对");
   const original=globalThis.fetch;
   try{globalThis.fetch=async url=>{seen.push(new URL(String(url),"http://local.invalid"));return new Response(JSON.stringify({code:0,data:group({records:[],total:0})}),{headers:{"Content-Type":"application/json"}});};
     for(const [status,currency] of [["CONFIRMED","USDT"],["CREDITED","NEX"],["REVIEW_PENDING","USDT"],["REFUNDED","NEX"],["",""]]){
-      state[5]=3;state[10]=currency;select.props.onChange({target:{value:status}});render();effects[2]();await new Promise(resolve=>setImmediate(resolve));
+      state[5]=3;state[10]=currency;select.props.onChange(status);render();
+      const flowEffects=effects.filter(effect=>effect.toString().includes("supportEnhancements.flows("));assert.equal(flowEffects.length,1);flowEffects[0]();await new Promise(resolve=>setImmediate(resolve));
       const query=seen.at(-1).searchParams;assert.equal(query.get("status"),status||null);assert.equal(query.get("currency"),currency||null);assert.equal(query.get("pageNum"),"1");assert.equal(query.get("pageSize"),"10");
     }
   }finally{globalThis.fetch=original;}
@@ -298,14 +325,17 @@ test("first-contact customer profiles require verified scope without inventing a
     const calls=[],profile={identity:group({nickname:"已核客户",userNo:"U-7"}),finance:group({byCurrency:[]}),devices:group({}),risk:group(null,"UNKNOWN"),annotations:group({systemTags:[],customTags:[],notes:[]}),service:group({agentAdminId:12,agentName:"当前顾问",conversationCount:mode==="first"?0:1,assignmentState:"BOUND"}),actions:{}};
     let state=0;const session={adminId:12,role:"support",authorities:mode==="read-only"?[]:["service_m3_write"]};
     const context={exports:{},AbortController,Date,Intl,JSON,require:name=>{
-      if(name==="react")return {useEffect(){},useRef:value=>({current:value}),useState:initial=>{const index=state++;return [index===0?profile:index===14?"新标签":index===15?"新备注":initial,()=>{}];}};
+      if(name==="react")return {useEffect(){},useRef:value=>({current:value}),useState:initial=>{const index=state++;return [index===0?profile:index===3?true:index===14?"新标签":index===15?"新备注":initial,()=>{}];}};
       if(name==="react/jsx-runtime")return jsx;
       if(name==="@/lib/store/admin-auth")return {useAdminAuth:selector=>selector({session,authEpoch:1})};
       if(name==="@/lib/admin/m-support-enhancements")return {supportEnhancements:{profile:async()=>profile}};
       if(name==="@/lib/admin/m-support-client")return {supportClient:{},SupportClientError:class extends Error{}};
       if(name==="@/lib/admin/error-messages")return {displayAdminError:()=>"读取失败"};
-      if(name==="../design-kit")return {Modal:props=>jsx.jsx("div",{children:props.children})};
-      if(name==="./support-avatar")return {SupportAvatar:props=>jsx.jsx("span",{children:props.name}),customerAvatarPath:id=>`customer/${id}`,advisorAvatarPath:id=>`advisor/${id}`};
+      if(name==="../design-kit")return {Modal:props=>jsx.jsx("div",{children:props.children}),Icon:()=>null};
+    if(name==="./hd-ui")return {HDSelect:()=>null};
+      if(name==="./support-leaderboard")return {compactSupportBoardValue};
+      if(name==="./m3-customer-profile.css")return {};
+    if(name==="./support-avatar")return {SupportAvatar:props=>jsx.jsx("span",{children:props.name}),customerAvatarPath:id=>`customer/${id}`,advisorAvatarPath:id=>`advisor/${id}`};
       throw new Error(`Unexpected profile dependency ${name}`);
     }};
     runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,context);
@@ -313,7 +343,7 @@ test("first-contact customer profiles require verified scope without inventing a
     const tree=context.exports.M3CustomerProfile({ctx,customerId:"7",conversation:mode==="first"?undefined:{id:"CV-7",customerId:"7",ownerAdminId:12,owner:"历史显示名",detailReady:true,messages:[]},onHistory(){},onRetryMessages(){}});
     const buttons=walk(tree).filter(node=>node.type==="button"),add=buttons.find(node=>node.props.children==="添加标签"),save=buttons.find(node=>node.props.children==="保存备注");
     assert.equal(add.props.disabled,mode!=="write");assert.equal(save.props.disabled,mode!=="write");
-    const html=render(tree);assert.match(html,/已核客户/);assert.match(html,/当前顾问/);
+    const html=render(tree);assert.match(html,/已核客户/);assert.match(html,/当前专属客服/);
     if(mode==="first"){assert.match(html,/暂无会话/);assert.match(html,/尚未建立服务会话/);assert.match(html,/暂无服务记录/);}
     add.props.onClick();await Promise.resolve();assert.deepEqual(calls,mode==="write"?[{id:"CV-7",tag:"新标签"}]:[]);
   }
