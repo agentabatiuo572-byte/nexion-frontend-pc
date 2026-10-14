@@ -12,6 +12,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { M1SupervisorPool } from "./m1-supervisor-pool";
 import { SupportSeatRoleModal } from "./m1-overview";
 import "./m-support-workbench.css";
+import "./m1-personal-workbench.css";
 import { SupportBulkComposer } from "./support-bulk-composer";
 import { SupportAvatar, advisorAvatarPath, customerAvatarPath } from "./support-avatar";
 import { SelfAvatarEditor } from "./self-avatar-editor";
@@ -384,7 +385,16 @@ export function M1PersonalWorkbench({ permission, ctx, primarySummary, onBrowseC
 
     {view === "pool" ? <M1SupervisorPool permission={permission} /> : <>
       {view === "dashboard" && <>
-        <div className="s5a-intro"><div><div style={{display:"flex",gap:10,alignItems:"center"}}><SupportAvatar name={selfAgent?.name??"本人专属客服"} path={selfAvatarSnapshot ? selfAvatarSnapshot.assetId ? "/api/admin/platform/accounts/self/avatar/content" : undefined : selfAgent?.avatarAssetId&&adminId?advisorAvatarPath(adminId):undefined} version={selfAvatarSnapshot?.avatarVersion??selfAgent?.avatarVersion??undefined}/><h2>我的工作台</h2><SelfAvatarEditor name={selfAgent?.name??(operatorName||"本人账号")} ctx={ctx} onChanged={setSelfAvatarSnapshot}/></div><p>当前归属客户与可执行待办</p></div><span className="s5a-stamp">统计于 {overview ? formatTime(overview.evaluatedAt) : "待同步"}</span></div>
+        <div className="s5a-intro s5a-personal-header">
+          <div className="s5a-personal-identity">
+            <SupportAvatar name={selfAgent?.name??"本人专属客服"} path={selfAvatarSnapshot ? selfAvatarSnapshot.assetId ? "/api/admin/platform/accounts/self/avatar/content" : undefined : selfAgent?.avatarAssetId&&adminId?advisorAvatarPath(adminId):undefined} version={selfAvatarSnapshot?.avatarVersion??selfAgent?.avatarVersion??undefined} size={56}/>
+            <div><h2>我的工作台</h2><p>当前归属客户与可执行待办</p></div>
+          </div>
+          <div className="s5a-personal-header-actions">
+            <SelfAvatarEditor name={selfAgent?.name??(operatorName||"本人账号")} ctx={ctx} onChanged={setSelfAvatarSnapshot}/>
+            <span className="s5a-stamp">统计于 {overview ? formatTime(overview.evaluatedAt) : "待同步"}</span>
+          </div>
+        </div>
         {primarySummary}
         {primarySummary && <h3 className="sa-personal-tasks-title">今日服务待办</h3>}
         {overviewError && <div className="s5a-alert" role="alert">{overviewError}<button type="button" onClick={() => setRowsRefresh((value) => value + 1)}><RefreshCw size={15} />重试</button></div>}
