@@ -1,4 +1,11 @@
 import assert from "node:assert/strict";
+import sharp from "sharp";
+
+export async function decodeLosslessScreenshot(bytes) {
+  // Browser screenshot APIs can return JPEG even when the caller saves a .png filename.
+  assert.equal(Buffer.from(bytes).subarray(0, 8).toString("hex"), "89504e470d0a1a0a", "Pixel comparison requires lossless PNG bytes");
+  return sharp(bytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+}
 
 // Fixed 1536x1024 orbit basis. Live controls, portraits, text and metric holes are excluded individually.
 export const approvedStaticRegions = [

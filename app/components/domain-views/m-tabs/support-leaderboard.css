@@ -19,6 +19,27 @@
 @container sl-board (min-width:1020px){.sl-self{transform:translateX(11px)}.sl-podium-person{--sl-portrait-position:65%;padding:240px 0 0}.sl-podium-person:nth-child(2){--sl-portrait-position:66%}.sl-podium-person:nth-child(3){--sl-portrait-position:61%}.sl-podium-person:nth-child(4){--sl-portrait-position:57%}.sl-podium-portrait{left:calc(var(--sl-portrait-position) - 55px)}.sl-pedestal{left:calc(var(--sl-portrait-position) - 82px)}.sl-podium-identity{position:absolute;margin:0;width:170px;left:calc(var(--sl-portrait-position) - 85px);top:162px}.sl-podium-metrics{position:relative;margin:0;width:240px;left:calc(var(--sl-portrait-position) - 120px)}.sl-podium-view{position:relative;margin:8px 0 0;left:calc(var(--sl-portrait-position) - 73px)}.sl-podium-person:nth-child(2) .sl-podium-rank{left:25%}.sl-podium-person:nth-child(3) .sl-podium-rank{left:18%}.sl-podium-person:nth-child(4) .sl-podium-rank{left:14%}}
 @container sl-board (max-width:760px){.sl-filters{flex-basis:100%}.sl-filters .sl-select{width:calc((100% - 16px)/3);max-width:none;min-width:0}}
 .sl-view,.sl-rank-cell{position:relative}
+/* Reserve the trailing columns for badges so neither identity line runs underneath them. */
+.sl-person-text{display:grid;grid-template-columns:minmax(0,1fr) auto auto;column-gap:12px;align-items:center;padding-right:12px}
+.sl-person-name{display:contents}
+.sl-person-name>button{grid-column:1;grid-row:1;text-align:left}
+.sl-person-text>.sl-group{grid-column:1;grid-row:2}
+.sl-person-name>.sl-me{grid-column:2;grid-row:1/3}
+.sl-person-name>.sl-movement{grid-column:3;grid-row:1/3}
+.sl-select select{height:100%;padding-right:42px;line-height:20px;color-scheme:dark}
+.sl-select>svg{right:14px;top:50%;transform:translateY(-50%)}
+/* Keep native selection semantics; supporting browsers also render the themed picker. */
+@supports(appearance:base-select){
+ .sl-select select,.sl-select select::picker(select){appearance:base-select}
+ .sl-select select{align-items:center}
+ .sl-select select::picker-icon{display:none}
+ .sl-select select::picker(select){inset:auto;top:calc(anchor(bottom) + 6px);left:anchor(left);position-try-fallbacks:flip-block,flip-inline,flip-block flip-inline;min-width:max(anchor-size(width),180px);max-width:min(320px,calc(100vw - 24px));max-height:264px;margin:0;padding:5px;background:#111719;border:1px solid var(--sl-border);border-radius:9px;color:var(--sl-ink);font:400 14px/20px var(--font-v5,inherit);box-shadow:0 12px 28px #0008;overflow-y:auto}
+ .sl-select option{display:flex;align-items:center;gap:12px;min-height:36px;padding:8px 10px;border:0;border-radius:5px;background:transparent;color:var(--sl-ink);font-size:14px;line-height:20px;white-space:normal;overflow-wrap:anywhere}
+ .sl-select option:hover,.sl-select option:focus-visible{background:#232d27;outline:none}
+ .sl-select option:checked{background:#c4ff361a;color:var(--sl-lime);font-weight:550}
+ .sl-select option:disabled{color:var(--sl-muted);opacity:.5}
+ .sl-select option::checkmark{order:1;margin-left:auto;color:var(--sl-lime)}
+}
 .sl-podium-metrics .sl-amount,.sl-podium-metrics .sl-count{width:100%}.sl-podium-metrics .sl-number-detail,.sl-podium-metrics .sl-count>strong{max-width:100%}.sl-podium-metrics .sl-number-detail summary strong,.sl-podium-metrics .sl-customer-link{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sl-footer-meta{display:flex;gap:20px;align-items:baseline;text-align:right}.sl-footer-meta time{max-width:none}@container sl-board (max-width:760px){.sl-footer-meta{flex-wrap:wrap;text-align:left;gap:8px}}
 @container sl-board (min-width:1020px){.sl-podium-portrait{top:4px}.sl-podium-person:first-child .sl-podium-portrait{top:-3px;left:calc(var(--sl-portrait-position) - 59px);width:118px;height:118px}.sl-podium-person:first-child .sl-podium-portrait .sl-avatar{width:118px;height:118px}.sl-pedestal{top:104px}}
 .sl-podium-portrait .sl-avatar-frame::after,.sl-self>.sl-avatar .sl-avatar-frame::after{content:"";position:absolute;inset:-2px;border-radius:50%;background:conic-gradient(from 0deg,transparent 0deg,#fff 18deg,#edffb5 38deg,#c4ff36b3 75deg,transparent 110deg,transparent 360deg);mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2px));animation:sl-ring-flow 8s linear infinite;opacity:1;pointer-events:none}
@@ -49,8 +70,6 @@
  .sl-podium-person:first-child .sl-podium-view{left:calc(var(--sl-portrait-position) - 70px)}
  .sl-podium-person:not(:first-child) .sl-podium-view{left:calc(var(--sl-portrait-position) - 79px)}
 }
-/* Approved desktop page-size anchor is x594; narrower layouts retain their existing reflow. */
-@container sl-board (min-width:1270px){.sl-page-summary{width:calc(351 / 1313 * 100%);min-width:235px}}
 /* Source-cropped static surfaces contain no identity/data; current HTML owns all text, states and grid lines. */
 .sl-podium-rank{padding-top:24px}.sl-podium-rank small{position:absolute;top:0;left:calc(50% - 2px);width:max-content;transform:translateX(-50%)}
 .sl-podium-rank strong{font-weight:700;transform:scaleX(.86);transform-origin:left center}
@@ -63,9 +82,10 @@
 }
 @container sl-board (min-width:1270px){
  .sl-filters{transform:translate(3px,3.5px)}
- .sl-self{background-color:transparent;background-image:url("./support-leaderboard-assets/orbit-surface-self.png");background-size:100% 100%;background-origin:border-box;border-color:transparent}
- .sl-self .sl-locate{background-image:url("./support-leaderboard-assets/orbit-surface-locate.png")!important;background-size:100% 100%}
+ .sl-self{background-color:transparent;background-image:url("./support-leaderboard-assets/orbit-surface-self.png");background-size:100% 100%;background-origin:border-box;border-color:transparent;border-radius:0}
  .sl-table-wrap{background-image:url("./support-leaderboard-assets/orbit-surface-table.png");background-size:100% 288px;background-repeat:no-repeat;background-origin:border-box}
+ /* The five-row source surface already paints its outer edge and rounded corners. */
+ .sl-table-wrap:has(tbody tr:nth-child(5):last-child){border-color:transparent;border-radius:0}
  .sl-table th,.sl-table td,.sl-table tr[data-self] td{background:transparent}
  .sl-table tr[data-self]{background-image:url("./support-leaderboard-assets/orbit-surface-self-row.png");background-size:100% 50px;background-position:-1px 0;background-repeat:no-repeat}
  .sl-pagination{background-color:transparent;background-image:url("./support-leaderboard-assets/orbit-surface-pagination.png");background-size:100% 66px;background-repeat:no-repeat;background-origin:border-box}
@@ -85,16 +105,19 @@
 @container sl-board (min-width:761px){.sl-person{padding:0 2px;gap:19px}}
 /* Preserve native table material only at the approved viewport, without widening the page. */
 @container sl-board (min-width:1355px) and (max-width:1355px){
+ .sl-content{padding-right:20px}.sl-self{transform:translateX(10px)}
  .sl-rankings h2{margin-bottom:3px}.sl-table-wrap{background-size:1314px 288px}
- /* The source control anchors use the inner pagination width, not the full table width. */
- .sl-page-summary{width:351px;flex-shrink:0}
- .sl-pagination{padding-right:11px}
- .sl-pagination .sl-select,.sl-page-buttons{transform:translateY(2px)}
- .sl-page-buttons .sl-page-number:nth-child(3){min-width:48px;margin-left:2px}
- .sl-page-buttons button:last-child{min-width:100px;margin-left:6px}
 }
 /* Paint the approved preview seam inside one bitmap, rather than between adjacent background layers. */
 @media(min-width:1536px) and (max-width:1536px){
  .support-leaderboard[data-preview]::before{content:"";position:absolute;inset:0 0 auto;height:1024px;background:url("./support-leaderboard-assets/orbit-surface-unified-canvas.png") left top/1536px 1024px no-repeat;image-rendering:pixelated;pointer-events:none;z-index:-2}
  .support-leaderboard[data-preview]>.sl-navigation,.support-leaderboard[data-preview]>.sl-navigation nav button[aria-current],.support-leaderboard[data-preview]>.sl-content::before{background-image:none}
 }
+.sl-self .sl-locate{width:112px;max-width:100%;height:36px;flex-shrink:0;align-self:center;justify-self:center;padding:0 14px;gap:6px;border:1px solid #d4ff6b!important;border-radius:7px;background:#b9ed33!important;color:#172100!important;font-size:14px!important;font-weight:550!important;line-height:20px;box-shadow:inset 0 1px 0 #ffffff35;transition:background-color .15s,box-shadow .15s}
+.sl-locate>svg{width:16px;height:16px;stroke-width:1.75}
+.sl-self .sl-locate:hover{background:#ccff49!important;box-shadow:inset 0 1px 0 #ffffff50,0 0 0 3px #c4ff3614}
+.sl-self .sl-locate:active{background:#a9db2c!important;box-shadow:inset 0 1px 2px #0002}
+@media(pointer:coarse){.sl-self .sl-locate{min-height:44px}}
+.sl-page-summary{min-width:0}
+.sl-pagination .sl-select{margin-left:auto}
+.sl-page-buttons{margin-left:0}

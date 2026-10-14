@@ -1,0 +1,18 @@
+{
+  "capability": "browser-fixture",
+  "format": "PNG",
+  "capture": {
+    "width": 1536,
+    "height": 1024,
+    "scale": 1
+  },
+  "cssSHA256": "14824ef61e4c4576e8fedd5b1a6319fb5101f0c55a23643d37327a93200376a8",
+  "state": {
+    "devicePixelRatio": 1.0000000298023224,
+    "fonts": "loaded",
+    "height": 1024,
+    "imagesReady": true,
+    "reducedMotion": true,
+    "width": 1536
+  }
+}
