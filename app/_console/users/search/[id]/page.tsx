@@ -4,6 +4,7 @@
  * C1 用户详情(L3 · 画像全景)。页面只消费后端聚合的 360 画像和操作接口。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import "./customer-panorama.css";
 import { NotificationTimeEvidenceDrawer } from "./notification-time-evidence";
 import Link from "next/link";
 import { useParams, usePathname, useSearchParams } from "next/navigation";
@@ -220,21 +221,21 @@ function toAuditEntries(rowsValue: unknown): AuditEntry[] {
 
 function Section({ title, tag, children }: { title: string; tag?: string; children: ReactNode }) {
   return (
-    <div className="min-w-0 rounded-[12px] p-4" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}>
-      <div className="mb-2.5 flex items-center gap-2">
-        <span className="font-display text-[14px]" style={{ color: "var(--v5-ink)" }}>{title}</span>
-        {tag && <span className="font-mono-tabular text-[10px]" style={{ color: "var(--v5-ink-4)" }}>{tag}</span>}
+    <section className="customer-panorama-section min-w-0 rounded-[12px] p-4" style={{ background: "var(--v5-surface)" }}>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <h2 className="font-display text-[18px]" style={{ color: "var(--v5-ink)" }}>{title}</h2>
+        {tag && <span className="text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>{tag}</span>}
       </div>
       {children}
-    </div>
+    </section>
   );
 }
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 py-1.5" style={{ borderBottom: "1px solid var(--v5-border)", overflowWrap: "anywhere" }}>
-      <span className="text-[12px]" style={{ color: "var(--v5-ink-4)" }}>{label}</span>
-      <span className="min-w-0 text-right text-[12.5px]" style={{ color: "var(--v5-ink)" }}>{children}</span>
+    <div className="customer-panorama-row flex min-w-0 items-center justify-between gap-3 py-1.5" style={{ borderBottom: "1px solid var(--v5-border)", overflowWrap: "anywhere" }}>
+      <span className="text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>{label}</span>
+      <span className="min-w-0 text-right text-[14px]" style={{ color: "var(--v5-ink)" }}>{children}</span>
     </div>
   );
 }
@@ -295,7 +296,7 @@ function HubSection({
             <button className="btn btn-sec btn-sm" onClick={() => window.location.reload()}>刷新页面重试</button>
           </div>
         )}
-        {!sectionFailed(section) && children}
+        {!sectionFailed(section) && children && <div className="customer-panorama-summary">{children}</div>}
         {!sectionFailed(section) && columns && (
           <div className={children ? "mt-3" : ""}>
             <DataTable rows={dataRows} columns={columns} emptyText={emptyText} />
@@ -509,7 +510,7 @@ export default function UserDetailPage() {
         <Link href={returnTo} prefetch={false} className="inline-flex items-center gap-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
           <ArrowLeft size={14} /> {returnLabel}
         </Link>
-        <div className="mt-6 rounded-[12px] p-4" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}>
+        <div className="mt-6 rounded-[12px] p-4" style={{ background: "var(--v5-surface)" }}>
           <p className="text-[14px]" style={{ color: "var(--v5-danger)" }}>用户详情加载失败: {error}</p>
           <button type="button" onClick={() => void load()} className="mt-3 inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px]" style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}>
             <RefreshCcw size={14} /> 重试
@@ -531,15 +532,15 @@ export default function UserDetailPage() {
   }
 
   return (
-    <div className="mx-auto w-full min-w-0 max-w-[1100px]" style={{ overflowWrap: "anywhere" }}>
+    <div className="customer-panorama mx-auto w-full min-w-0 max-w-[1100px]" style={{ overflowWrap: "anywhere" }}>
       <Link href={returnTo} prefetch={false} className="inline-flex items-center gap-1 text-[12.5px] transition-colors hover:opacity-80" style={{ color: "var(--v5-ink-3)" }}>
         <ArrowLeft size={14} /> {returnLabel}
       </Link>
 
       <header className="mt-3 flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="font-display text-[24px]" style={{ color: "var(--v5-ink)" }}>{nickname}</h1>
+            <h1 className="customer-panorama-name font-display text-[26px]" title={nickname} style={{ color: "var(--v5-ink)" }}>{nickname}</h1>
             <span className="font-mono-tabular text-[12px]" style={{ color: "var(--v5-ink-4)" }}>用户编码 {userNo}</span>
           </div>
           <p className="mt-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
@@ -564,12 +565,12 @@ export default function UserDetailPage() {
       </header>
 
       {nonActive && (
-        <div className="mt-3 flex items-center gap-2 rounded-[10px] px-3 py-2 text-[12.5px]" style={{ background: "color-mix(in srgb, var(--v5-danger) 12%, transparent)", color: "var(--v5-danger)", border: "1px solid color-mix(in srgb, var(--v5-danger) 30%, transparent)" }}>
+        <div className="mt-3 flex items-center gap-2 rounded-[10px] px-3 py-2 text-[12.5px]" style={{ background: "color-mix(in srgb, var(--v5-danger) 12%, transparent)", color: "var(--v5-danger)" }}>
           <Snowflake size={14} /> 当前账户状态: {statusLabel(status)}。提现与交易能力以服务端状态为准。
         </div>
       )}
 
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="customer-panorama-kpis mt-4">
         {kpis.map((kpi) => (
           <button key={kpi.label} type="button" onClick={() => scrollToHub(kpi.anchor)} title={`查看该用户 ${kpi.label} 明细`} className="block w-full text-left transition-transform hover:-translate-y-0.5">
             <KpiStatCard label={kpi.label} value={kpi.value} accent={kpi.accent} />
@@ -577,13 +578,13 @@ export default function UserDetailPage() {
         ))}
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <div className="flex flex-col gap-4">
+      <div className={`mt-4 grid gap-4 ${!supportScope || detail.sessions ? "lg:grid-cols-2" : ""}`}>
+        <div className={supportScope && !detail.sessions ? "customer-panorama-primary" : "flex flex-col gap-4"}>
           {detail.risk && <Section title="风险画像" tag={supportScope ? undefined : "K4 风险评分"}>
             <div className="flex items-center gap-4">
               <div>
-                <p className="font-mono-tabular text-[32px] leading-none" style={{ color: hasRiskScore ? riskColor(riskScore) : "var(--v5-ink-3)" }}>{hasRiskScore ? riskScore : "不可用"}</p>
-                <p className="text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}>{riskBand}</p>
+                <p className="font-mono-tabular text-[32px] leading-none" style={{ color: hasRiskScore ? riskColor(riskScore) : "var(--v5-ink-3)" }}>{hasRiskScore ? riskScore : "-"}</p>
+                <p className="mt-2 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>{riskBand}</p>
               </div>
               <div className="flex-1">
                 {detail.risk?.flags !== undefined && <Row label="风险标记">{asList(detail.risk.flags).map(displayValue).join(" · ") || "无"}</Row>}
@@ -601,7 +602,7 @@ export default function UserDetailPage() {
           </Section>}
         </div>
 
-        <div className="flex flex-col gap-4">
+        {(!supportScope || detail.sessions) && <div className="flex flex-col gap-4">
           {!supportScope && <Section title="关联处置入口" tag="C1 只读 · 到业务页处理">
             <div className="flex flex-wrap gap-2">
               {canReadC2 && (
@@ -718,7 +719,7 @@ export default function UserDetailPage() {
               </div>
             )}
           </Section>}
-        </div>
+        </div>}
       </div>
 
       <div className="mt-4 flex flex-col gap-4">
@@ -732,7 +733,7 @@ export default function UserDetailPage() {
           {paymentError && <p className="mb-3 rounded-[8px] px-3 py-2 text-[12px]" style={{ color: "var(--v5-danger)", background: "color-mix(in srgb, var(--v5-danger) 10%, transparent)" }}>支付方式读取失败：{paymentError}</p>}
           <div className="grid gap-3 md:grid-cols-2">
             {(paymentMethods?.items ?? []).map((method) => (
-              <div key={method.id} className="rounded-[10px] p-3" style={{ border: "1px solid var(--v5-border)", background: method.status === "BOUND" ? "var(--v5-surface-2)" : "color-mix(in srgb, var(--v5-surface-2) 70%, var(--v5-ink-4) 30%)", opacity: method.status === "BOUND" ? 1 : 0.68, filter: method.status === "BOUND" ? "none" : "grayscale(0.85)" }}>
+              <div key={method.id} className="rounded-[10px] p-3" style={{ background: method.status === "BOUND" ? "var(--v5-surface-2)" : "color-mix(in srgb, var(--v5-surface-2) 70%, var(--v5-ink-4) 30%)", opacity: method.status === "BOUND" ? 1 : 0.68, filter: method.status === "BOUND" ? "none" : "grayscale(0.85)" }}>
                 <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-2"><CreditCard size={17} /><div><p className="text-[13px]" style={{ color: "var(--v5-ink)" }}>{method.brand} ···· {method.last4}</p><p className="text-[11px]" style={{ color: "var(--v5-ink-4)" }}>{method.provider} · {method.expiryLabel || "无到期信息"}</p></div></div><StatusPill label={method.status === "BOUND" ? (method.isDefault ? "已绑定 · 默认" : "已绑定") : "已解绑"} tone={method.status === "BOUND" ? "success" : "neutral"} size="sm" dot={false} /></div>
                 {method.trialGuard && <p className="mt-2 text-[11px]" style={{ color: "var(--v5-warning)" }}>试用扣款占用中 · {method.trialRefId || "关联试用"}，禁止直接解绑</p>}
                 {method.status !== "BOUND" && method.unboundAt && <p className="mt-2 text-[11px]" style={{ color: "var(--v5-ink-4)" }}>解绑时间：{formatDate(method.unboundAt)}</p>}
@@ -896,7 +897,7 @@ export default function UserDetailPage() {
           />
         )}
 
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="customer-panorama-primary">
           {detail.vrank && <Section title="V-Rank">
             <Row label="当前等级">{asText(detail.vrank?.currentRank)}</Row>
             <Row label="用户层级">{asText(detail.vrank?.userLevel)}</Row>

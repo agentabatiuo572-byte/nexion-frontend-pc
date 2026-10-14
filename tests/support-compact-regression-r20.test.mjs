@@ -23,7 +23,7 @@ const financeKeys = ["netContributionTotal", "creditedDepositTotal", "successful
 const profile = (status = "UNKNOWN") => ({ identity: group({ nickname: "私有旧资料" }), finance: group({ byCurrency: [{ currency: "USDT", ...Object.fromEntries(financeKeys.map(key => [key, key === "balance" ? "42.5" : null])), fieldStatuses: Object.fromEntries(financeKeys.map(key => [key, key === "balance" ? "READY" : status])) }] }), devices: group({}), risk: group({}), annotations: group({ customTags: [], notes: [] }), service: group({}), actions: {} });
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
-const nodes = x => Array.isArray(x) ? x.flatMap(nodes) : x && typeof x === "object" ? [x, ...nodes(x.props?.children)] : [];
+const nodes = x => Array.isArray(x) ? x.flatMap(nodes) : x && typeof x === "object" && !x.props?.hidden ? [x, ...nodes(x.props?.children)] : [];
 const text = x => Array.isArray(x) ? x.map(text).join("") : x && typeof x === "object" ? text(x.props?.children) : x == null ? "" : String(x);
 function hooks() {
   const states = [], refs = [], effects = [], pending = [];
@@ -47,7 +47,7 @@ function profileHarness(initial = profile()) {
   });
   const render = (detail = true) => { h.reset(); let tree = exports.M3CustomerProfile(props); if (detail && !nodes(tree).some(node => node.props?.title === "客户服务 360")) { nodes(tree).find(node => node.type === "button" && node.props.children === "说明").props.onClick(); h.reset(); tree = exports.M3CustomerProfile(props); } return tree; };
   render(false); h.runEffects(); h.states[0] = initial;
-  return { ...h, h, props, requests, render, html: (detail = true) => renderToStaticMarkup(render(detail)), seed: value => { h.states[0] = value; } };
+  return { ...h, h, props, requests, render, html: (detail = true) => { const tree = render(detail); return renderToStaticMarkup(nodes(tree).find(node => node.props?.title === "客户服务 360") ?? tree); }, seed: value => { h.states[0] = value; } };
 }
 test("R20CE-01 actual finance retry clears 42.5 before request and after rejection", async () => {
   const h = profileHarness(); assert.match(h.html(), /42\.5 USDT/);

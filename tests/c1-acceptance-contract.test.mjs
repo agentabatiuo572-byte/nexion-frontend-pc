@@ -225,11 +225,10 @@ test("C1 keeps inactive history visible and renders backend totals without recal
 
 test("C1 retains missing-section and source-error behavior alongside the configuration explanation", () => {
   assert.doesNotMatch(plain(renderDaily([], { devices: undefined, earnings: undefined })), /设备明细|收益明细/);
-  const text = plain(renderDaily([], { devices: { sourceStatus: "ERROR", records: [], dailyUsdt: 0, dailyNex: 0 } }));
-  assert.match(text, /本卡片数据读取失败/);
-  assert.match(text, /暂无记录/);
-  assert.match(text, /设备配置日产基准（所列记录合计）\$0\.00 · 0 NEX/);
-  assert.match(text, /含已停用历史记录的配置值，不代表今日实际收益或钱包入账/);
+  const text = plain(renderDaily([], { devices: { sourceStatus: "ERROR", records: [], dailyUsdt: 0, dailyNex: 0 }, earnings: undefined }));
+  assert.match(text, /此项资料暂时无法读取/);
+  assert.match(text, /刷新页面重试/);
+  assert.doesNotMatch(text, /暂无记录|设备配置日产基准|\$0\.00/);
 });
 
 // Exercise the actual earnings JSX and shared pager without a browser or network.

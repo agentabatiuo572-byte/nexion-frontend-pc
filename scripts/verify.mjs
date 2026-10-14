@@ -246,6 +246,7 @@ const GEARS = [
   ["canon royalty projection regression", "node", ["--test", "tests/canon-royalty-projection-contract.test.mjs"]],
   ["interaction audit", "node", ["scripts/admin-interaction-audit.mjs"]],
   ["M support surface audit", "node", ["scripts/admin-support-surface-audit.mjs"]],
+  ["Support profile static filled-block border contract", "node", ["--experimental-strip-types", "--test", "tests/inner-block-no-border-sentinel.test.mjs", "tests/c1-acceptance-contract.test.mjs"]],
   ["keyboard submit contract", "node", ["--experimental-strip-types", "--test", "tests/keyboard-submit-contract.test.mjs"]],
   ["M1 pending/failure state contract", "node", ["--test", "tests/m1-acceptance-contract.test.mjs"]],
   ["M3 App support authority contract", "node", ["--test", "tests/m3-acceptance-contract.test.mjs"]],

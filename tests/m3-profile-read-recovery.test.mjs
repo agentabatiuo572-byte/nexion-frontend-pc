@@ -89,6 +89,7 @@ function harness(props = {}, detail = true) {
 }
 function elements(node, result = []) {
   if (!node || typeof node !== "object") return result;
+  if (node.props?.hidden) return result;
   if (Array.isArray(node)) { node.forEach(child => elements(child, result)); return result; }
   if (node.props) { result.push(node); elements(node.props.children, result); }
   return result;
