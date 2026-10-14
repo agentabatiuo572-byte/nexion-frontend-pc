@@ -606,10 +606,10 @@ test("I3 read-only boundary permits existing auth and denies every business muta
   for (const path of ["/api/admin/auth/login", "/api/admin/auth/mfa/verify", "/api/admin/auth/logout", "/api/admin/content/conversations/realtime-ticket"]) assert.equal(assertReadOnlyRequest("POST", path), "readAuth");
   assert.equal(assertReadOnlyRequest("GET", "/api/admin/content/support-workbench/analytics"), "read");
   for (const method of ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) for (const path of ["/api/admin/content/support-agents/groups", "/api/admin/content/conversations/1/replies", "/unknown"]) assert.throws(() => assertReadOnlyRequest(method, path), /prohibits/);
-  const { parseMContentApiEnvelope } = await import("../lib/admin/m-support-read-contract.ts"), { parseSupportGroup } = await import("../lib/admin/support-group-client.ts");
-  const realShape = { id: "4", name: "Controlled group", supervisorAdminId: "2", status: "ENABLED", version: 1 };
-  assert.deepEqual(parseMContentApiEnvelope(200, JSON.stringify({ code: 0, data: [realShape] }), true).map(parseSupportGroup), [realShape]);
-  for (const body of [{ code: 403, data: [realShape] }, { code: 0 }, { code: 0, data: [{ ...realShape, private: "unknown-field" }] }]) assert.throws(() => parseMContentApiEnvelope(200, JSON.stringify(body), true).map(parseSupportGroup));
+  const { parseMContentApiEnvelope } = await import("../lib/admin/m-support-read-contract.ts"), { parseGroupDirectory } = await import("../lib/admin/support-group-client.ts");
+  const realShape = { id: "4", name: "Controlled group", supervisorAdminId: "2", status: "ENABLED", version: 1, supervisorName: "Supervisor", memberCount: 2, boundCustomers: 24, pendingCustomers: 0 };
+  assert.deepEqual(parseMContentApiEnvelope(200, JSON.stringify({ code: 0, data: [realShape] }), true).map(parseGroupDirectory), [realShape]);
+  for (const body of [{ code: 403, data: [realShape] }, { code: 0 }, { code: 0, data: [{ ...realShape, private: "unknown-field" }] }]) assert.throws(() => parseMContentApiEnvelope(200, JSON.stringify(body), true).map(parseGroupDirectory));
 });
 
 test("I3 current scope rejects stale version, foreign people/groups and fabricated UNKNOWN totals", () => {

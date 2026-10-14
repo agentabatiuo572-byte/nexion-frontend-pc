@@ -194,6 +194,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const [personalPeriod, setPersonalPeriod] = useState<SupportAnalyticsResponse | null>(null), [personalPeriodError, setPersonalPeriodError] = useState("");
   const [groupManagement, setGroupManagement] = useState(false);
   const managementReturnQuery = useRef<AnalyticsQueryState | null>(null);
+  const managementCustomerGroup = useRef<string | null>(null);
   const personalViewBeforeScopeRefresh = useRef(false);
   const [keyword, setKeyword] = useState("");
   const controllerRef = useRef<AbortController | null>(null), scopeControllerRef = useRef<AbortController | null>(null), generation = useRef(0);
@@ -218,7 +219,10 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       if (controller.signal.aborted) return;
       const remembered = managementReturnQuery.current;
       managementReturnQuery.current = null;
+      const customerGroup = managementCustomerGroup.current;
+      managementCustomerGroup.current = null;
       const groupId = remembered && next.scopeSummary.mode !== "PERSONAL" && next.scopeSummary.groups.some(group => group.groupId === String(remembered.groupId)) ? remembered.groupId : undefined;
+      if (customerGroup && String(groupId) !== customerGroup) throw new SupportClientError(403);
       const restored: AnalyticsQueryState = remembered ? { ...changeAnalyticsQuery(remembered, { groupId, view: next.scopeSummary.mode === "PERSONAL" && ["OVERVIEW", "AGENTS"].includes(remembered.view) ? "CUSTOMERS" : remembered.view }), agentId: groupId === remembered.groupId ? remembered.agentId : undefined } : { ...initialAnalyticsQuery(next.scopeSummary.mode), ...(agentId === undefined ? {} : { view: "CUSTOMERS" as const, category: "BOUND" as const, agentId }) };
       if (remembered && remembered.view === restored.view) restored.sortKey = remembered.sortKey;
       setScope(next); setQueryState(restored);
@@ -267,7 +271,11 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   }
 if (!scope) return <section className="sa-workbench" aria-label="客服范围核对"><div className="sa-state" role={scopeError ? "alert" : "status"}>{scopeError || "正在核对当前可见范围…"}{scopeError && <button type="button" onClick={() => setScopeRetry(n => n + 1)}>重新核对范围</button>}{scopeError && <button type="button" onClick={() => router.push("/service/leaderboard")}>查看业绩榜</button>}</div></section>;
   const mode = scope.scopeSummary.mode, currency = queryState.currency ?? "USDT";
-  if (groupManagement && mode !== "PERSONAL") return <M1GroupManagement mode={mode} initialGroupId={queryState.groupId === undefined ? undefined : String(queryState.groupId)} onChanged={() => { controllerRef.current?.abort(); generation.current++; setData(null); setProfileId(null); }} onBack={() => { setScope(null); setScopeRetry(n => n + 1); }} />;
+  if (groupManagement && mode !== "PERSONAL") return <M1GroupManagement mode={mode} initialGroupId={queryState.groupId === undefined ? undefined : String(queryState.groupId)} onChanged={() => { controllerRef.current?.abort(); generation.current++; setData(null); setProfileId(null); }} onBack={() => { setScope(null); setScopeRetry(n => n + 1); }} onViewCustomers={(groupId, category) => {
+    managementCustomerGroup.current = groupId;
+    managementReturnQuery.current = changeAnalyticsQuery(queryState, { groupId, view: "CUSTOMERS", basis: "CURRENT_ASSET", category, agentId: undefined, keyword: undefined, firstState: "ALL", filter: "ALL" });
+    setKeyword(""); setScope(null); setScopeRetry(n => n + 1);
+  }} />;
   const personalFinancial = personalPeriod?.scopeSummary.financial;
   const selectedGroup = queryState.groupId === undefined ? undefined : scope.scopeSummary.groups.find(g => g.groupId === String(queryState.groupId));
   const groups = scope.scopeSummary.groups;

@@ -330,6 +330,23 @@ test("managed service operations use the actual scope despite an obsolete agent 
   assert.equal(elements(d.tree).filter(x => x.type === AnalyticsTable).length, 0);
   d.unmount();
 });
+test("directory customer counts reauthorize and open the selected group and category", async () => {
+  for (const category of ["BOUND", "PENDING"]) {
+    const d=await resolveScope(); button(d.tree,"分组管理").props.onClick(); d.render();
+    const editor=elements(d.tree).find(x=>x.type===mocks["./m1-group-management"].M1GroupManagement);
+    editor.props.onViewCustomers("5",category);d.render(); assert.equal(requests.at(-1).options.view,"OVERVIEW");
+    requests.at(-1).resolve(fixture());await d.settle();
+    const q=requests.at(-1).options;assert.equal(q.view,"CUSTOMERS");assert.equal(q.groupId,"5");assert.equal(q.category,category);
+    assert.equal(q.basis,"CURRENT_ASSET");assert.equal(q.agentId,undefined);assert.equal(q.filter,"ALL");assert.equal(q.pageNum,1);assert.equal(q.expectedVersion,undefined);d.unmount();
+  }
+});
+test("a directory customer drill loses access without silently opening every remaining group", async () => {
+  const d=await resolveScope();button(d.tree,"分组管理").props.onClick();d.render();
+  const editor=elements(d.tree).find(x=>x.type===mocks["./m1-group-management"].M1GroupManagement);
+  editor.props.onViewCustomers("5","BOUND");d.render();const reads=requests.length;
+  const next=fixture();next.scopeSummary.groups=next.scopeSummary.groups.filter(g=>g.groupId!=="5");requests.at(-1).resolve(next);await d.settle();
+  assert.match(content(d.tree),/无查看权限/);assert.equal(requests.length,reads);assert.equal(elements(d.tree).filter(x=>x.type===AnalyticsTable).length,0);d.unmount();
+});
 test("cancelled reads ignore late responses and expose retry with preserved conditions", async () => {
   const d = await resolveScope(), pending = requests.at(-1); button(d.tree, "取消读取").props.onClick(); d.render(); assert.equal(pending.options.signal.aborted, true);
   pending.resolve(fixture("AGENTS")); await d.settle(); assert.match(content(d.tree), /读取已取消/); assert.equal(elements(d.tree).filter(x => x.type === AnalyticsTable).length, 0);
