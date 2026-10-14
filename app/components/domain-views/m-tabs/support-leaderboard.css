@@ -84,7 +84,15 @@
 @media(min-width:761px){.sl-navigation nav{gap:2px;margin-top:2px}}
 @container sl-board (min-width:761px){.sl-person{padding:0 2px;gap:19px}}
 /* Preserve native table material only at the approved viewport, without widening the page. */
-@container sl-board (min-width:1355px) and (max-width:1355px){.sl-rankings h2{margin-bottom:3px}.sl-table-wrap{background-size:1314px 288px}}
+@container sl-board (min-width:1355px) and (max-width:1355px){
+ .sl-rankings h2{margin-bottom:3px}.sl-table-wrap{background-size:1314px 288px}
+ /* The source control anchors use the inner pagination width, not the full table width. */
+ .sl-page-summary{width:351px;flex-shrink:0}
+ .sl-pagination{padding-right:11px}
+ .sl-pagination .sl-select,.sl-page-buttons{transform:translateY(2px)}
+ .sl-page-buttons .sl-page-number:nth-child(3){min-width:48px;margin-left:2px}
+ .sl-page-buttons button:last-child{min-width:100px;margin-left:6px}
+}
 /* Paint the approved preview seam inside one bitmap, rather than between adjacent background layers. */
 @media(min-width:1536px) and (max-width:1536px){
  .support-leaderboard[data-preview]::before{content:"";position:absolute;inset:0 0 auto;height:1024px;background:url("./support-leaderboard-assets/orbit-surface-unified-canvas.png") left top/1536px 1024px no-repeat;image-rendering:pixelated;pointer-events:none;z-index:-2}

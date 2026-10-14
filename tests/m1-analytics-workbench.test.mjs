@@ -45,12 +45,13 @@ const mocks = {
   "@/lib/store/admin-auth": { useAdminAuth: selector => selector(auth) },
   "../design-kit": { Modal: props => React.createElement("aside", { role: "dialog" }, props.children) },
   "./hd-ui": { HDSelect: props => React.createElement("div", { "data-house-select": props.value }, props.options.map(o => React.createElement("span", { key: o.value }, o.label))) },
-  "./m1-personal-workbench": { M1PersonalWorkbench: () => React.createElement("section", { "data-personal-workbench": true }, "原服务待办") },
+  "./m1-personal-workbench": { M1PersonalWorkbench: props => React.createElement("section", { "data-personal-workbench": true }, props.primarySummary, "原服务待办", React.createElement("button", { type: "button", onClick: () => props.onBrowseCustomers?.("ALL") }, "我的客户")) },
   "./m1-group-management": { M1GroupManagement: props => React.createElement("section", { "data-group-management": props.mode }, "分组管理") },
   "./m3-customer-profile": { M3CustomerProfile: props => React.createElement("section", { "data-profile": props.customerId }, "原客户资料权限") },
   "./support-avatar": { SupportAvatar: props => React.createElement("span", { "data-avatar-path": props.path }, props.name) },
   "./support-leaderboard": { compactSupportBoardValue: formatterModule.namespace.compactSupportBoardValue },
   "./m1-analytics-workbench.css": {},
+  "./m1-personal-priority.css": {},
 };
 const compiled = ts.transpileModule(readFileSync(componentPath, "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2017 } }).outputText;
 const module = new vm.SourceTextModule(`${compiled}\nexport { ResolvedAnalyticsWorkbench };`, { context });
@@ -76,8 +77,9 @@ class HookDriver {
 }
 function elements(node, result = []) {
   if (!node || typeof node !== "object") return result;
+  if (node.props?.hidden) return result;
   if (Array.isArray(node)) { node.forEach(x => elements(x, result)); return result; }
-  if (node.props) { result.push(node); elements(node.props.children, result); }
+  if (node.props) { result.push(node); elements(node.props.children, result); if (node.type === mocks["./m1-personal-workbench"].M1PersonalWorkbench) elements(node.type(node.props), result); }
   return result;
 }
 function content(node) { return typeof node === "string" || typeof node === "number" ? String(node) : Array.isArray(node) ? node.map(content).join("") : node?.props ? content(node.props.children) : ""; }
@@ -542,7 +544,7 @@ test("invalid leaderboard entry is a readable zero-fetch failure, and both workb
     const personal = await resolveScope("PERSONAL");
     try {
       button(personal.tree, "查看业绩榜").props.onClick(); assert.equal(navigations.at(-1), "/service/leaderboard");
-      button(personal.tree, "查看首充、邀请与充值画像").props.onClick(); personal.render();
+      button(personal.tree, "我的客户").props.onClick(); personal.render();
       const visibleHeader = elements(personal.tree).find(x => x.type === "header" && x.props.className === "sa-header");
       button(visibleHeader, "查看业绩榜").props.onClick(); assert.equal(navigations.at(-1), "/service/leaderboard");
     } finally { personal.unmount(); }
