@@ -33,7 +33,7 @@ await validatorModule.link(name => synthetic(name === "./business-time.ts" ? bus
 await validatorModule.evaluate();
 const formatterSource = ts.transpileModule(readFileSync(path.join(existsSync(path.join(stage, "app/components/domain-views/m-tabs/support-leaderboard.tsx")) ? stage : frontend, "app/components/domain-views/m-tabs/support-leaderboard.tsx"), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2017 } }).outputText;
 const formatterModule = new vm.SourceTextModule(formatterSource, { context });
-await formatterModule.link(name => synthetic(name === "react" ? React : name === "react/jsx-runtime" ? jsxRuntime : name === "lucide-react" ? Object.fromEntries(["ArrowRight", "ChevronDown", "Home", "Users", "MessageSquare", "ChartNoAxesColumn", "LayoutGrid", "FileText", "MapPin"].map(key => [key, require("lucide-react")[key]])) : {}));
+await formatterModule.link(name => synthetic(name === "react" ? React : name === "react/jsx-runtime" ? jsxRuntime : name === "lucide-react" ? Object.fromEntries(["ArrowRight", "ChevronDown", "Home", "Users", "MessageSquareMore", "ChartNoAxesColumn", "LayoutGrid", "FileText", "MapPin"].map(key => [key, require("lucide-react")[key]])) : {}));
 await formatterModule.evaluate();
 const mocks = {
   react: { ...React, useState: (...args) => driver.useState(...args), useRef: (...args) => driver.useRef(...args), useEffect: (...args) => driver.useEffect(...args) },

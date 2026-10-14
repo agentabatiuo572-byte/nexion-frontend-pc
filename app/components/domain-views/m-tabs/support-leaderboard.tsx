@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowRight, ChevronDown, Home, Users, MessageSquare, ChartNoAxesColumn, LayoutGrid, FileText, MapPin } from "lucide-react";
+import { ArrowRight, ChevronDown, Home, Users, MessageSquareMore, ChartNoAxesColumn, LayoutGrid, FileText, MapPin } from "lucide-react";
 import "./support-leaderboard.css";
 
 export type SupportBoardKey = "netContribution" | "firstPayment" | "customers";
@@ -163,7 +163,7 @@ function Amount({ row, expectedPeriod, expectedCurrency }: { row: SupportBoardRo
 export function SupportLeaderboardNavigation({ brand, identity, avatarUrl, roleLabel, items, demoLabel, onSettings }: { brand: string; identity: string; avatarUrl?: string; roleLabel: string; items: { label: string; active?: boolean; onClick: () => void }[]; demoLabel?: string; onSettings: () => void }) {
   const [avatarFailed, setAvatarFailed] = useState(false);
   useEffect(() => { setAvatarFailed(false); }, [avatarUrl, identity]);
-  const icons = [Home, Users, MessageSquare, ChartNoAxesColumn, LayoutGrid, FileText];
+  const icons = [Home, Users, MessageSquareMore, ChartNoAxesColumn, LayoutGrid, FileText];
   return <header className="sl-navigation"><div className="sl-brand"><span>{brand}</span><small>客户服务工作台</small></div><nav aria-label="客服中心">{items.map((item, index) => { const Icon = icons[index] || LayoutGrid; return <button key={item.label} type="button" aria-current={item.active ? "page" : undefined} onClick={item.onClick}><Icon size={24} aria-hidden="true" />{item.label}</button>; })}</nav><div className="sl-account"><button type="button" onClick={onSettings}><span className="sl-account-avatar" role="img" aria-label={`${identity}头像`}>{avatarUrl && !avatarFailed ? <img src={avatarUrl} alt="" onError={() => setAvatarFailed(true)} /> : identity.slice(0, 1)}</span><span>{identity}</span><small>{roleLabel}</small></button>{demoLabel && <span className="sl-demo">{demoLabel}</span>}</div></header>;
 }
 export function SupportLeaderboard(props: SupportLeaderboardProps) {

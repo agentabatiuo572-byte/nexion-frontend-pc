@@ -1,0 +1,431 @@
+{
+  "scope": "Current preview navigation icon; offline readback of actual refreshed CUA screenshot",
+  "sourceSHA256": "d9110eaea8f512d0264093831afcffff61ce3889fe17e71ef494a61364862bd6",
+  "cssSHA256": "718ec77138968d13a34492a8ab4be65d03696c9ae44c5cb38df8359e36c6de35",
+  "referenceSHA256": "e3b92e2fbb593171a4658e058c562ec4dbc9403fecafdf8dd85a719ba71f6c3a",
+  "screenshotSHA256": "2e5d63ca605462dd0fe4c5fa798fcb464116a4be5e3f3173a19ef136e05ae791",
+  "beforeScreenshotSHA256": "2e0ff387ac3389334357acd6b1d30082c0641998abe946deb30b835d92e2d1d4",
+  "change": {
+    "region": [
+      25,
+      250,
+      27,
+      29
+    ],
+    "changedInIcon": 18,
+    "changedOutsideIcon": 0,
+    "maximumOutside": 0,
+    "existingChannelTolerance": 1
+  },
+  "raw": {
+    "total": 1572864,
+    "masked": 281918,
+    "static": 1290946,
+    "checked": 1290946,
+    "uncovered": 0,
+    "maximum": 255,
+    "changedPixels": 213565,
+    "changedChannels": 540521,
+    "firstDifferences": [
+      [
+        25,
+        18
+      ],
+      [
+        26,
+        18
+      ],
+      [
+        27,
+        18
+      ],
+      [
+        28,
+        18
+      ],
+      [
+        29,
+        18
+      ],
+      [
+        30,
+        18
+      ],
+      [
+        31,
+        18
+      ],
+      [
+        37,
+        18
+      ],
+      [
+        38,
+        18
+      ],
+      [
+        39,
+        18
+      ],
+      [
+        40,
+        18
+      ],
+      [
+        41,
+        18
+      ],
+      [
+        42,
+        18
+      ],
+      [
+        43,
+        18
+      ],
+      [
+        44,
+        18
+      ],
+      [
+        45,
+        18
+      ],
+      [
+        46,
+        18
+      ],
+      [
+        47,
+        18
+      ],
+      [
+        48,
+        18
+      ],
+      [
+        49,
+        18
+      ]
+    ]
+  },
+  "amended": {
+    "total": 1572864,
+    "masked": 347402,
+    "static": 1225462,
+    "checked": 1225462,
+    "uncovered": 0,
+    "maximum": 255,
+    "changedPixels": 159159,
+    "changedChannels": 391945,
+    "firstDifferences": [
+      [
+        25,
+        18
+      ],
+      [
+        26,
+        18
+      ],
+      [
+        27,
+        18
+      ],
+      [
+        28,
+        18
+      ],
+      [
+        29,
+        18
+      ],
+      [
+        30,
+        18
+      ],
+      [
+        31,
+        18
+      ],
+      [
+        37,
+        18
+      ],
+      [
+        38,
+        18
+      ],
+      [
+        39,
+        18
+      ],
+      [
+        40,
+        18
+      ],
+      [
+        41,
+        18
+      ],
+      [
+        42,
+        18
+      ],
+      [
+        43,
+        18
+      ],
+      [
+        44,
+        18
+      ],
+      [
+        45,
+        18
+      ],
+      [
+        46,
+        18
+      ],
+      [
+        47,
+        18
+      ],
+      [
+        48,
+        18
+      ],
+      [
+        49,
+        18
+      ]
+    ],
+    "dynamic": 281918,
+    "amended": 65484,
+    "geometryChecked": true
+  },
+  "material": [
+    {
+      "id": "planet-upper",
+      "rect": [
+        1000,
+        5,
+        100,
+        15
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "planet-surface",
+      "rect": [
+        780,
+        120,
+        60,
+        40
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "upper-orbit",
+      "rect": [
+        1180,
+        127,
+        40,
+        12
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "left-orbit",
+      "rect": [
+        208,
+        324,
+        28,
+        28
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "lower-orbit",
+      "rect": [
+        700,
+        546,
+        40,
+        5
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "first-pedestal",
+      "rect": [
+        330,
+        316,
+        105,
+        13
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "second-pedestal",
+      "rect": [
+        609,
+        316,
+        105,
+        13
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "third-pedestal",
+      "rect": [
+        878,
+        316,
+        90,
+        13
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "fourth-pedestal",
+      "rect": [
+        1146,
+        316,
+        90,
+        13
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "first-pedestal-halo",
+      "rect": [
+        305,
+        330,
+        160,
+        23
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "second-pedestal-halo",
+      "rect": [
+        584,
+        330,
+        160,
+        23
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "third-pedestal-halo",
+      "rect": [
+        856,
+        330,
+        150,
+        23
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "fourth-pedestal-halo",
+      "rect": [
+        1122,
+        330,
+        150,
+        23
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    }
+  ],
+  "runtime": {
+    "state": {
+      "button": {
+        "height": 60,
+        "width": 180.33334350585935,
+        "x": 0,
+        "y": 234.5
+      },
+      "fonts": "loaded",
+      "height": 1024,
+      "icon": {
+        "class": "lucide lucide-message-square-more",
+        "height": 24,
+        "paths": [
+          "M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z",
+          "M12 11h.01",
+          "M16 11h.01",
+          "M8 11h.01"
+        ],
+        "width": 24,
+        "x": 25.666667938232425,
+        "y": 252.5
+      },
+      "imagesReady": true,
+      "reduced": true,
+      "width": 1536
+    },
+    "events": {
+      "result": {
+        "type": "string",
+        "value": "[\"nav:即时会话\"]"
+      }
+    }
+  },
+  "wholePageVerdict": "FAIL",
+  "notes": [
+    "No pixel masks or tolerances changed",
+    "Preview navigation icon only; production authorised shell unchanged",
+    "Raw image differences include later approved amendments and unknown generated glyphs"
+  ]
+}
