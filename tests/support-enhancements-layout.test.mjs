@@ -295,10 +295,14 @@ test("bulk preview displays the actual structured actor-qualification error with
 test("topbar keeps permitted touch entrances visible within 56px at narrow and desktop widths", async () => {
   const topbarSource = source("app/components/shell/topbar.tsx");
   const { exports: authorities } = evaluate(source("lib/admin/shell-authorities.ts"));
+  const { exports: nav } = evaluate(source("lib/nav/console-nav.ts"), { "lucide-react": require("lucide-react") });
+  const { exports: sessionRole } = evaluate(source("lib/admin/session-role.ts"));
   const bRead = authorities.B_DASHBOARD_READ_AUTHORITIES, mRead = authorities.M_CONTENT_READ_AUTHORITIES;
   let bReads = [];
   const { exports: topbar } = evaluate(topbarSource, {
     "lucide-react": require("lucide-react"),
+    "@/lib/nav/console-nav": nav,
+    "@/lib/admin/session-role": sessionRole,
     "next/link": { default: ({ children, prefetch: _prefetch, ...props }) => React.createElement("a", props, children) },
     "@/lib/store/admin-auth": { useAdminAuth: pick => pick({ logoutError: "" }) },
     "./breadcrumb": { Breadcrumb: () => React.createElement("nav", { className: "admin-topbar-breadcrumb flex min-w-0 items-center gap-2" }, React.createElement("span", { className: "admin-topbar-crumb-label" }, "客服中心 · 长名称服务会话页面")) },

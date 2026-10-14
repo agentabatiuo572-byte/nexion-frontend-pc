@@ -13,6 +13,7 @@ function load(file, dependencies, globals = {}) {
   const module = { exports: {} }; vm.runInNewContext(code, { module, exports: module.exports, require: name => name in dependencies ? dependencies[name] : require(name), URL, URLSearchParams, AbortController, Intl, Date, console, ...globals }); return module.exports;
 }
 const nav = load("lib/nav/console-nav.ts", { "lucide-react": new Proxy({}, { get: () => () => null }) });
+const shellAuthorities = load("lib/admin/shell-authorities.ts", {});
 const SupportLeaderboard = () => null, Modal = () => null, Btn = () => null;
 const display = load("app/components/domain-views/m-tabs/support-leaderboard.tsx", { "./support-leaderboard.css": {}, "lucide-react": new Proxy({}, { get: () => () => null }) });
 const { renderToStaticMarkup } = require("react-dom/server"), { createElement } = require("react");
@@ -26,7 +27,7 @@ function find(tree, predicate) { if (!tree || typeof tree !== "object") return u
 // Runs this component's hook/effect and event code with controlled promises. This is not a browser or React DOM acceptance test.
 function harness(permission = "m3", options = {}) {
   const cells = []; let cursor = 0, dirty = true, effects = [], tree, component;
-  let auth = { isAuthenticated: true, authEpoch: 1, logoutPending: false, logoutUnknown: false, session: { adminId: 17, role: "support", authorities: [`service_${permission}_read`], menuCodes: [permission.toUpperCase()] } };
+  let auth = { isAuthenticated: true, authEpoch: 1, logoutPending: false, logoutUnknown: false, session: { adminId: 17, role: "support", authorities: [`service_${permission}_read`], menuCodes: [permission.toUpperCase()], supportReadModes: Object.hasOwn(options, "supportReadModes") ? options.supportReadModes : ["PERSONAL"] } };
   const pages = [], details = [], avatars = [], revoked = [], created = [], routes = [];
   const hooks = {
     useState(initial) { const i = cursor++; if (!(i in cells)) cells[i] = typeof initial === "function" ? initial() : initial; return [cells[i], next => { const value = typeof next === "function" ? next(cells[i]) : next; if (!Object.is(cells[i], value)) { cells[i] = value; dirty = true; } }]; },
@@ -35,7 +36,7 @@ function harness(permission = "m3", options = {}) {
   };
   const dependencies = {
     react: hooks, "next/navigation": { useRouter: () => ({ push: url => routes.push(url) }) }, "@/lib/store/admin-auth": { useAdminAuth: selector => selector(auth) },
-    "@/lib/admin/shell-authorities": { adminShellSessionKey: (session, epoch) => `${epoch}|${session?.adminId}|${[...(session?.authorities ?? [])].sort()}|${[...(session?.menuCodes ?? [])].sort()}` },
+    "@/lib/admin/shell-authorities": shellAuthorities,
     "@/lib/nav/console-nav": nav, "../design-kit": { Btn, Modal }, "./support-leaderboard": { SupportLeaderboard, NumberValue: display.NumberValue }, "./m6-leaderboard.css": {},
     "@/lib/admin/support-leaderboard-client": { supportLeaderboardClient: {
       page(query, signal) { const p = pending(); pages.push({ ...p, query, signal }); return p.promise; },
@@ -110,6 +111,22 @@ test("customer board requests omit month while search, paging and locate preserv
   h.board().onQueryChange({ ...h.board().query, board: "netContribution" }); h.commit(); assert.equal(h.pages.at(-1).query.month, "2026-10"); h.unmount();
 });
 test("explicit menu denial makes zero API calls", () => { const h = harness("m3", { denied: true }); assert.equal(h.pages.length, 0); assert.equal(h.board().status, "error"); h.unmount(); });
+test("unknown or empty support qualification makes zero public or private API calls", () => {
+  for (const supportReadModes of [undefined, []]) {
+    const h = harness("m3", { supportReadModes });
+    assert.equal(h.pages.length, 0); assert.equal(h.board().status, "error");
+    h.board().onViewPerformance("17"); h.board().onViewCustomers("17");
+    assert.equal(h.details.length, 0); assert.equal(h.avatars.length, 0); assert.equal(h.routes.length, 0);
+    h.unmount();
+  }
+});
+test("qualification revoked without an epoch change aborts the old page and rejects late data", async () => {
+  const h = harness(); const old = h.pages[0];
+  h.changeAuth({ session: { ...h.auth.session, supportReadModes: [] } });
+  assert.equal(old.signal.aborted, true); assert.equal(h.pages.length, 1); assert.equal(h.board().status, "error");
+  old.resolve(page()); await h.flush(); assert.equal(h.board().rows.length, 0); assert.equal(h.avatars.length, 0);
+  h.unmount();
+});
 
 test("off-page podium uses the same public avatar and detail lifecycle without private authority", async () => {
   const h = harness(); assert.equal(h.pages[0].query.pageSize, 5);

@@ -207,7 +207,10 @@ test("self qualification denial cannot send a save or discard a previously unkno
   assert.equal(button(tree, "使用原资料与命令重试").props.disabled, true); assert.equal(pendingApi.selfAvatarCommands.list().length, 1); assert.equal(f.requests.length, 1); assert.equal(f.requests[0].init.method, undefined); view.dispose();
 });
 
-test("proxy enforces self method/path/body boundaries and streams only allowed image types with no-store", async () => {
+test("proxy enforces self method/path/body boundaries and streams only allowed image types with no-store", async (t) => {
+  const previousBackend = process.env.NEXION_BACKEND_URL;
+  process.env.NEXION_BACKEND_URL = "http://avatar-backend.test:8110";
+  t.after(() => { if (previousBackend === undefined) delete process.env.NEXION_BACKEND_URL; else process.env.NEXION_BACKEND_URL = previousBackend; });
   const f = fixture(), route = f.load("app/api/admin/platform/[...path]/route.ts");
   const call = async (method, path, body, search = "") => route[method](new Request(`http://example.test/api/admin/platform/${path}${search}`, { method, headers: { "Content-Type": "application/json", "Idempotency-Key": KEY }, ...(body ? { body: JSON.stringify(body) } : {}) }), { params: Promise.resolve({ path: path.split("/") }) });
   for (const [method, path, body] of [["POST", "accounts/self/avatar"], ["PATCH", "accounts/self/profile", {}], ["GET", "accounts/self/role"], ["GET", "accounts/self/avatar-assets/default"], ["GET", `accounts/self/avatar-assets/${ID}/extra`], ["DELETE", "accounts/self/avatar/content"], ["GET", "accounts/avatar-assets/../secret"]]) assert.equal((await call(method, path, body)).status, 404);
@@ -215,7 +218,7 @@ test("proxy enforces self method/path/body boundaries and streams only allowed i
   assert.equal((await call("PATCH", "accounts/self/avatar", { ...input, accountId: 99 })).status, 422);
   assert.equal((await call("POST", "accounts/self/avatar-assets/default", { avatarGender: "FEMALE", clientUploadId: "original-upload-id", target: 99 })).status, 422);
   assert.equal((await call("GET", "accounts/self/avatar", undefined, "?target=99")).status, 422); assert.equal(f.requests.length, 0);
-  f.queue.push(json({ ...SNAP, assetId: ID })); assert.equal((await call("PATCH", "accounts/self/avatar", input)).status, 200); assert.equal(f.requests.at(-1).path, "http://127.0.0.1:8110/api/admin/platform/accounts/self/avatar");
+  f.queue.push(json({ ...SNAP, assetId: ID })); assert.equal((await call("PATCH", "accounts/self/avatar", input)).status, 200); assert.equal(f.requests.at(-1).path, "http://avatar-backend.test:8110/api/admin/platform/accounts/self/avatar");
   f.queue.push(new Response(new Uint8Array([1, 2, 3]), { headers: { "Content-Type": "image/jpeg" } })); const image = await call("GET", "accounts/self/avatar/content"); assert.equal(image.status, 200); assert.equal(image.headers.get("Cache-Control"), "no-store"); assert.equal(image.headers.get("X-Content-Type-Options"), "nosniff"); assert.equal((await image.arrayBuffer()).byteLength, 3);
   f.queue.push(new Response("<svg/>", { headers: { "Content-Type": "image/svg+xml" } })); assert.equal((await call("GET", `accounts/self/avatar-assets/${ID}`)).status, 502);
 });

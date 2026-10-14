@@ -251,7 +251,18 @@ test("M3 roster failure exposes qualification retry instead of claiming an empty
 test("M2 customer replies require a verified advisor while internal work stays available", () => {
   const view = read("app/components/domain-views/m-view.tsx");
   const tickets = read("app/components/domain-views/m-tabs/m2-tickets.tsx");
-  assert.match(view, /advisorQualified=\{Boolean\(safeMData\.supportAgentsAvailable && currentAgent\?\.enabled && currentAgent\.assignmentEligible\)\}/);
+  assert.match(view, /advisorQualified=\{Boolean\(session\?\.supportReadModes\?\.includes\("PERSONAL"\)\)\}/);
+  const file = ts.createSourceFile("m-view.tsx", view, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const qualification = [];
+  const walk = node => {
+    if (ts.isJsxAttribute(node) && node.name.getText(file) === "advisorQualified") qualification.push(node.initializer.expression.getText(file));
+    ts.forEachChild(node, walk);
+  };
+  walk(file); assert.equal(qualification.length, 1, "Execute the actual M2 qualification prop");
+  for (const [session, expected] of [[undefined, false], [{}, false], [{ supportReadModes: [] }, false], [{ supportReadModes: ["MANAGED"] }, false], [{ supportReadModes: ["ALL"] }, false], [{ supportReadModes: ["PERSONAL"] }, true], [{ supportReadModes: ["MANAGED", "PERSONAL"] }, true]]) {
+    const code = ts.transpileModule(`globalThis.result = ${qualification[0]};`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+    const state = { session }; runInNewContext(code, state); assert.equal(state.result, expected, JSON.stringify(session));
+  }
   assert.match(tickets, /const canRespondToCustomers = canWriteM2 && advisorQualified/);
   assert.match(tickets, /canReply=\{canReplyToSelected\}/);
   assert.match(tickets, /ticketDetail\.replyAgentAdminId === adminId/);
