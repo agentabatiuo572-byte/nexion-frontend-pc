@@ -35,6 +35,8 @@ export type SupportLeaderboardProps = {
   onViewCustomers?: (id: string) => void;
   page?: { current: number; total: number; onChange: (page: number) => void; totalEntries?: number; pageSize?: number; onPageSizeChange?: (size: number) => void };
   navigation?: ReactNode;
+  search?: ReactNode;
+  notice?: ReactNode;
 };
 /** Display only. Integer arithmetic preserves the source decimal; ranks never use this output. */
 export function compactSupportBoardValue(value: unknown, kind: "amount" | "count" = "amount"): string {
@@ -197,11 +199,12 @@ export function SupportLeaderboard(props: SupportLeaderboardProps) {
   return <div className="support-leaderboard" data-board={query.board} data-preview={Boolean(props.navigation) || undefined}>
     {props.navigation}
     <main className="sl-content" aria-busy={status === "loading"}>
-      <header className="sl-heading"><h1>业绩榜</h1><div className="sl-filters"><BoardSelect label="币种" value={query.currency ?? ""} options={props.currencyOptions} onChange={currency => props.onQueryChange({ ...query, currency })} />{!reference && <BoardSelect label="月份" value={query.month} options={props.monthOptions} onChange={month => props.onQueryChange({ ...query, month })} />}<BoardSelect label="榜单范围" value={query.scope} options={props.scopeOptions} onChange={scope => props.onQueryChange({ ...query, scope })} /></div></header>
+      <header className="sl-heading"><h1>业绩榜</h1><div className="sl-filters"><BoardSelect label="币种" value={query.currency ?? ""} options={props.currencyOptions} onChange={currency => props.onQueryChange({ ...query, currency })} />{!reference && <BoardSelect label="月份" value={query.month} options={props.monthOptions} onChange={month => props.onQueryChange({ ...query, month })} />}<BoardSelect label="榜单范围" value={query.scope} options={props.scopeOptions} onChange={scope => props.onQueryChange({ ...query, scope })} /></div>{props.search}</header>
       <div className="sl-tabs" role="tablist" aria-label="榜单类型">{boards.map((board, index) => <button key={board.key} type="button" role="tab" aria-selected={query.board === board.key} disabled={!ready} title={ready ? undefined : disabledReason} tabIndex={query.board === board.key ? 0 : -1} onClick={() => changeBoard(board.key)} onKeyDown={event => {
         const offset = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
         if (offset || event.key === "Home" || event.key === "End") { event.preventDefault(); const next = event.key === "Home" ? 0 : event.key === "End" ? boards.length - 1 : (index + offset + boards.length) % boards.length; changeBoard(boards[next].key); (event.currentTarget.parentElement?.children[next] as HTMLElement)?.focus(); }
       }}>{board.label}</button>)}</div>
+      {props.notice}
       <section className="sl-hero" ref={heroRef} data-motion={motionVisible ? "running" : "paused"} aria-label="前三名与我的进度">
         <div className="sl-orbit-art" aria-hidden="true"><i className="sl-orbit-accent" /><i className="sl-star sl-star-one" /><i className="sl-star sl-star-two" /><i className="sl-star sl-star-three" /></div>
         <div className="sl-podium"><div className="sl-podium-heading"><h2>前三名</h2><p>{commonPeriodLabel} · {query.currency || "币种待核实"} · 人数单位：人 · 绑定客户数截至现在</p></div>

@@ -10,6 +10,17 @@ const manifest = JSON.parse(readFileSync(new URL("orbit-surface-unified-canvas.j
 const hash = bytes => createHash("sha256").update(bytes).digest("hex");
 const decode = bytes => sharp(bytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
 
+test("real and preview leaderboard content share width-based canvas and pagination materials", () => {
+  const css = readFileSync(new URL("../app/components/domain-views/m-tabs/support-leaderboard.css", import.meta.url), "utf8");
+  assert.match(css, /container:sl-board \/ inline-size/);
+  assert.match(css, /@container sl-board \(min-width:1270px\)/);
+  assert.match(css, /\.sl-content::before\{[^}]*orbit-surface-unified-canvas\.png[^}]*background-size:calc\(100% \* 1536 \/ 1355\) 1024px[^}]*background-position:right top/);
+  assert.match(css, /\.sl-pagination\{[^}]*background-size:100% 66px/);
+  assert.doesNotMatch(css, /background-size:1314px 66px/);
+  const shell = readFileSync(new URL("../app/components/shell/console-shell.tsx", import.meta.url), "utf8");
+  assert.match(shell, /padding: pathname === "\/service\/leaderboard" \? 0 : "var\(--admin-gutter\)"/);
+});
+
 test("unified preview canvas preserves every source RGBA pixel without resampling", async () => {
   assert.deepEqual(manifest.sources.map(({ file, size, offset }) => [file, size, offset]), [
     ["orbit-surface-navigation.png", [181, 1024], [0, 0]],

@@ -22,7 +22,7 @@ function pending() { let resolve, reject; const promise = new Promise((yes, no) 
 const amount = { value: "123.456789", currency: "USDT", periodLabel: "2026-10", sourceVersion: "source", coverage: "complete", reason: "" };
 const row = id => ({ id, name: "真实客服" + id, groupName: "第一组", rank: 1, isTied: true, rankStatus: "confirmed", amount, firstPayment: { value: "2", coverage: "complete" }, customers: { value: "10", coverage: "complete" }, movement: { kind: "unavailable", explanation: "暂无基准" }, avatarUrl: `/api/admin/content/support-workbench/leaderboard/${id}/avatar`, canViewCustomers: false });
 function page(id = "17", extra = {}) { return { viewVersion: VERSION, queryVersion: VERSION, sourceVersion: "source", definitionVersion: "support-leaderboard-v1", board: "netContribution", rankMonth: "2026-10", referenceMonth: "2026-10", currency: "USDT", scope: "all", businessZone: "Asia/Shanghai", asOf: "2026-10-09T01:00:00Z", state: "COMPLETE", candidateCoverage: "COMPLETE", stale: false, refreshFailed: false, selectableMonths: ["2026-10", "2026-09"], currencies: ["USDT", "NEX"], scopeOptions: [{ scope: "all", groups: [] }, { scope: "ownGroup", groups: [{ id: "5", name: "第一组" }] }, { scope: "managedGroups", groups: [{ id: "5", name: "第一组" }] }], rows: [row(id)], self: { row: row(id), gap: "0", reason: "已达到榜首", pageNum: 3 }, total: 41, matched: 41, pageNum: 1, pageSize: 20, ...extra }; }
-function find(tree, predicate) { if (!tree || typeof tree !== "object") return undefined; if (predicate(tree)) return tree; for (const child of [tree.props?.children].flat(Infinity)) { const found = find(child, predicate); if (found) return found; } }
+function find(tree, predicate) { if (!tree || typeof tree !== "object") return undefined; if (predicate(tree)) return tree; for (const child of [tree.props?.children, tree.props?.search, tree.props?.notice].flat(Infinity)) { const found = find(child, predicate); if (found) return found; } }
 
 // Runs this component's hook/effect and event code with controlled promises. This is not a browser or React DOM acceptance test.
 function harness(permission = "m3", options = {}) {
@@ -67,6 +67,17 @@ test("M6 starts on net contribution and offers three distinct metric tabs", asyn
   assert.equal((markup.match(/role="tab"/g) || []).length, 3);
   assert.match(markup, /净贡献额/); assert.match(markup, /首充人数/); assert.match(markup, /客户规模/);
   assert.doesNotMatch(markup, /充值贡献|购机贡献/);
+  h.unmount();
+});
+
+test("real M6 keeps its search inside the shared heading without preview navigation", async () => {
+  const h = harness(); h.pages[0].resolve(page()); await h.flush();
+  assert.equal(h.board().navigation, undefined);
+  const markup = renderToStaticMarkup(createElement(display.SupportLeaderboard, h.board()));
+  assert.match(markup, /<header class="sl-heading">[\s\S]*<form class="m6-leaderboard-search"[\s\S]*<\/form><\/header>/);
+  assert.doesNotMatch(markup, /data-preview|sl-navigation|演示数据/);
+  h.setKeyword("客服姓名"); h.search();
+  assert.equal(h.pages.at(-1).query.keyword, "客服姓名");
   h.unmount();
 });
 

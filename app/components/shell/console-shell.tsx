@@ -376,7 +376,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
           gridRow: 2,
           minWidth: 0,
           overflowY: "auto",
-          padding: "var(--admin-gutter)",
+          padding: pathname === "/service/leaderboard" ? 0 : "var(--admin-gutter)",
         }}
       >
         <div className="content-shell">

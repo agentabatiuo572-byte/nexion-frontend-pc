@@ -118,16 +118,16 @@ export function M6Leaderboard() {
   const scopeLabels = { all: "全员榜", ownGroup: "本组榜", managedGroups: "负责组榜" };
   const detailRow = visibleDetail?.data?.row;
   return <div className="m6-public-leaderboard">
-    <form className="m6-leaderboard-search" onSubmit={event => { event.preventDefault(); if (!enabled || keyword.length > 200 || /[\x00-\x1f\x7f-\x9f]/.test(keyword)) return; closeDetail(); setNotice(undefined); setQuery(current => ({ ...current, keyword: keyword.trim() || undefined, pageNum: 1, expectedVersion: undefined })); }}>
+    <SupportLeaderboard query={currentQuery} onQueryChange={changeQuery}
+      search={<form className="m6-leaderboard-search" onSubmit={event => { event.preventDefault(); if (!enabled || keyword.length > 200 || /[\x00-\x1f\x7f-\x9f]/.test(keyword)) return; closeDetail(); setNotice(undefined); setQuery(current => ({ ...current, keyword: keyword.trim() || undefined, pageNum: 1, expectedVersion: undefined })); }}>
       <label htmlFor="m6-leaderboard-keyword">查找客服</label><input id="m6-leaderboard-keyword" className="fld" value={keyword} onChange={event => setKeyword(event.target.value)} maxLength={200} placeholder="客服姓名" disabled={!enabled} /><Btn disabled={!enabled} type="submit">搜索</Btn>
       {!!query.keyword && <Btn type="button" onClick={() => { setKeyword(""); setQuery(current => ({ ...current, keyword: undefined, pageNum: 1, expectedVersion: undefined })); }}>清除搜索</Btn>}
-    </form>
-    {notice && <p className="m6-leaderboard-notice" role="status">{notice}</p>}
+    </form>}
+      notice={<>{notice && <p className="m6-leaderboard-notice" role="status">{notice}</p>}
     {data?.stale && <p className="m6-leaderboard-notice" role="status">当前显示上次发布的榜单。{data.refreshFailed ? "榜单更新失败，请重试。" : "榜单尚未更新，可重新读取。"}<Btn onClick={() => resetFirstPage("正在重新读取第一页…")}>重新读取</Btn></p>}
     {data && data.rows.length === 0 && <p className="m6-leaderboard-notice" role="status">{data.state === "PROVISIONAL"
       ? query.keyword ? "参榜资料待核实，暂未找到匹配客服。请稍后重试。" : "参榜资料待核实，暂无法显示完整榜单。请稍后重试。"
-      : query.keyword ? "没有匹配的客服；本人定位会清除搜索条件。" : "当前范围暂无参榜客服。"}</p>}
-    <SupportLeaderboard query={currentQuery} onQueryChange={changeQuery}
+      : query.keyword ? "没有匹配的客服；本人定位会清除搜索条件。" : "当前范围暂无参榜客服。"}</p>}</>}
       monthOptions={(data?.selectableMonths ?? []).map(value => ({ value, label: value.replace("-", ".") }))}
       currencyOptions={(data?.currencies ?? []).map(value => ({ value, label: value }))}
       scopeOptions={(data?.scopeOptions ?? []).flatMap(option => [{ value: option.scope, label: scopeLabels[option.scope] }, ...(option.scope === "managedGroups" ? option.groups.map(group => ({ value: scopeValue(option.scope, group.id), label: group.name })) : [])])}
