@@ -337,7 +337,7 @@ test("directory customer counts reauthorize and open the selected group and cate
     editor.props.onViewCustomers("5",category);d.render(); assert.equal(requests.at(-1).options.view,"OVERVIEW");
     requests.at(-1).resolve(fixture());await d.settle();
     const q=requests.at(-1).options;assert.equal(q.view,"CUSTOMERS");assert.equal(q.groupId,"5");assert.equal(q.category,category);
-    assert.equal(q.basis,"CURRENT_ASSET");assert.equal(q.agentId,undefined);assert.equal(q.filter,"ALL");assert.equal(q.pageNum,1);assert.equal(q.expectedVersion,undefined);d.unmount();
+    assert.equal(q.basis,"CURRENT_CUSTOMER_HISTORY","customer drill must keep first-payment and lifetime-funds fields available");assert.equal(q.agentId,undefined);assert.equal(q.filter,"ALL");assert.equal(q.pageNum,1);assert.equal(q.expectedVersion,undefined);d.unmount();
   }
 });
 test("a directory customer drill loses access without silently opening every remaining group", async () => {

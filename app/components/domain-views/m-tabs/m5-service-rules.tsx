@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supportClient, isIndeterminateSupportError, type SupportRules } from "../../../../lib/admin/m-support-client";
 import { Modal } from "../design-kit";
+import { HDSelect } from "./hd-ui";
 import { createPendingMutationStore } from "../../../../lib/admin/pending-mutation-store";
 import { adminShellSessionKey } from "../../../../lib/admin/shell-authorities";
 import { useAdminAuth } from "../../../../lib/store/admin-auth";
@@ -174,7 +175,7 @@ export function M5ServiceRules({ permission }: { permission: MSupportPermission 
 
   if (permission === "agent") return <div className="m-admin-error">当前账号无权查看服务规则。</div>;
   return (
-    <section className="m-admin-grid" aria-label="服务规则">
+    <section className="m-admin-grid m5-service-rules" aria-label="服务规则">
       <div className="m-admin-panel">
         <h2>服务规则</h2>
         <div className="m-admin-muted">沉睡、维护与活跃统计分别配置。未配置的能力会显示不可用，不影响其他已配置规则。</div>
@@ -198,9 +199,7 @@ export function M5ServiceRules({ permission }: { permission: MSupportPermission 
           </div>)}
           <div className="m-admin-row">
             <div><label htmlFor="m-rule-inheritanceMode">自动继承方式</label><p>从人工分配的客户起点 0 层开始，其后续邀请注册可向下继承的最大层数。</p></div>
-            <select id="m-rule-inheritanceMode" value={draft.inheritanceMode} disabled={!editable} onChange={(event) => setDraft((old) => old ? { ...old, inheritanceMode: event.target.value as RuleDraft["inheritanceMode"], maxInheritanceDepth: event.target.value === "LIMITED" ? old.maxInheritanceDepth : "" } : old)}>
-              <option value="UNCONFIGURED">未配置</option><option value="LIMITED">有限层数</option><option value="UNLIMITED">不限制</option>
-            </select>
+            <HDSelect id="m-rule-inheritanceMode" value={draft.inheritanceMode} disabled={!editable} options={[{ value: "UNCONFIGURED", label: "未配置" }, { value: "LIMITED", label: "有限层数" }, { value: "UNLIMITED", label: "不限制" }]} onChange={(value) => { if (editable) setDraft((old) => old ? { ...old, inheritanceMode: value as RuleDraft["inheritanceMode"], maxInheritanceDepth: value === "LIMITED" ? old.maxInheritanceDepth : "" } : old); }} />
           </div>
           {draft.inheritanceMode === "LIMITED" && <div className="m-admin-row">
             <div><label htmlFor="m-rule-maxInheritanceDepth">最大自动继承层数</label><p>0 层有效，表示仅人工分配的起点客户归属专属客服。</p></div>
@@ -211,7 +210,7 @@ export function M5ServiceRules({ permission }: { permission: MSupportPermission 
           <div className="m-admin-toolbar"><span className="m-admin-muted">当前版本 {current.version} · {changed.length} 项变更</span><button type="button" className="btn btn-pri btn-sm" disabled={permission !== "superadmin" || (retry ? false : !editable || !parsed || changed.length === 0)} onClick={() => setConfirm(true)}>{retry ? "继续确认上次提交" : "预览并保存"}</button></div>
         </>}
       </div>
-      <aside className="m-admin-panel">
+      <aside className="m-admin-panel m5-impact-preview">
         <h2>影响预览</h2>
         <a className="btn btn-sec btn-sm" href="/service/overview?view=pool">核对历史池并明确分配</a>
         <div className="m-admin-muted">已配置的能力按新规则计算；未配置的能力保持不可用。</div>

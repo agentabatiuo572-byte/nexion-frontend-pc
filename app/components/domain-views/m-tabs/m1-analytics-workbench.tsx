@@ -273,7 +273,7 @@ if (!scope) return <section className="sa-workbench" aria-label="客服范围核
   const mode = scope.scopeSummary.mode, currency = queryState.currency ?? "USDT";
   if (groupManagement && mode !== "PERSONAL") return <M1GroupManagement mode={mode} initialGroupId={queryState.groupId === undefined ? undefined : String(queryState.groupId)} onChanged={() => { controllerRef.current?.abort(); generation.current++; setData(null); setProfileId(null); }} onBack={() => { setScope(null); setScopeRetry(n => n + 1); }} onViewCustomers={(groupId, category) => {
     managementCustomerGroup.current = groupId;
-    managementReturnQuery.current = changeAnalyticsQuery(queryState, { groupId, view: "CUSTOMERS", basis: "CURRENT_ASSET", category, agentId: undefined, keyword: undefined, firstState: "ALL", filter: "ALL" });
+    managementReturnQuery.current = changeAnalyticsQuery(queryState, { groupId, view: "CUSTOMERS", basis: "CURRENT_CUSTOMER_HISTORY", category, agentId: undefined, keyword: undefined, firstState: "ALL", filter: "ALL" });
     setKeyword(""); setScope(null); setScopeRetry(n => n + 1);
   }} />;
   const personalFinancial = personalPeriod?.scopeSummary.financial;

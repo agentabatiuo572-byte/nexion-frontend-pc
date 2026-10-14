@@ -40,6 +40,12 @@ function renderBit(markup, declarations) {
   return renderToStaticMarkup(React.createElement(exports.Fixture));
 }
 const radioMarkup = renderBit(jsx(ruleSource, "fieldset", "无专属客服客户分配方式"), 'const editable=true,draft={unboundAssignmentMode:"SUPERVISOR"},setField=()=>{}');
+const hdUiSource = source(tabs + "hd-ui.tsx");
+const { exports: designIcons } = evaluate(find(source("app/components/domain-views/design-kit.tsx"), node => ts.isFunctionDeclaration(node) && node.name?.text === "Icon").getText());
+const { exports: hdUi } = evaluate(hdUiSource, { "../design-kit": designIcons, "./m-avatar": {} });
+const { exports: rulePicker } = evaluate(`import {HDSelect} from "./hd-ui"; export function Fixture(){const editable=false,draft={inheritanceMode:"UNLIMITED"},setDraft=()=>{};return (${jsx(ruleSource, "div", '<HDSelect id="m-rule-inheritanceMode"')});}`, { "./hd-ui": hdUi });
+const rulePickerMarkup = renderToStaticMarkup(React.createElement(rulePicker.Fixture));
+const rulePreviewMarkup = renderBit(jsx(ruleSource, "aside", 'm5-impact-preview'), 'const parsed={dormantDays:null,maintenanceDays:2,activityWindowDays:null}');
 const headerMarkup = renderBit(jsx(chatSource, "header", 'className="m3-list-header"'), `
   const Icon=()=>null;
   const conversationsAvailable=true,query="",listTab="all",canWriteM3=true,canReadTimeout=true,canTimeout=true,actionChecking=false,qualificationUnknown=false;
@@ -67,7 +73,7 @@ function localCss(text) {
 }
 const globals = postcss.parse(fs.readFileSync(path.join(repo, "app/globals.css"), "utf8"));
 globals.walkAtRules(rule => { if (["import", "font-face"].includes(rule.name)) rule.remove(); });
-const css = globals.toString() + fs.readFileSync(path.join(repo, "app/components/domain-views/m-domain.css"), "utf8") + localCss(ruleSource) + localCss(chatSource) + localCss(toolsSource);
+const css = globals.toString() + fs.readFileSync(path.join(repo, "app/components/domain-views/m-domain.css"), "utf8") + localCss(ruleSource) + localCss(chatSource) + localCss(toolsSource) + localCss(hdUiSource);
 let browser, browserTemp;
 after(async () => { try { await browser?.close(); } finally { if (browserTemp) fs.rmSync(browserTemp, {recursive:true,force:true}); } });
 async function pageFor(markup, width, theme = "dark", inDomain = true, height = 1100, coarse = false) {
@@ -96,9 +102,36 @@ async function screenshot(page, name) {
   fs.mkdirSync(output, { recursive: true });
   await page.screenshot({ path: path.join(output, name + ".png"), fullPage: true });
 }
+test("shared action headers align with direct and grouped controls without moving data columns", async () => {
+  const cases = [
+    ['direct', '<button class="btn">调组</button>'],
+    ['grouped', '<div class="row"><button class="btn">查看</button><button class="btn">编辑</button></div>'],
+    ['switch', '<button class="sw">开关</button>'],
+    ['data', '24'],
+  ];
+  const markup = cases.map(([id, cell]) => `<table id="${id}" class="m-admin-table"><thead><tr><th>名称</th><th>操作</th></tr></thead><tbody><tr><td><button class="btn">名称</button></td><td>${cell}</td></tr></tbody></table>`).join('');
+  const fixture = await pageFor(markup, 1100);
+  try {
+    const alignments = await fixture.page.locator('table').evaluateAll(tables => tables.map(table => {
+      const header = table.querySelector('th:last-child'), cell = table.querySelector('td:last-child');
+      const lastControl = cell.querySelector('.row')?.lastElementChild ?? cell.querySelector('.btn, .sw');
+      const edge = element => element.getBoundingClientRect().right - parseFloat(getComputedStyle(element).paddingRight);
+      return { id: table.id, header: getComputedStyle(header).textAlign, cell: getComputedStyle(cell).textAlign,
+        firstHeader: getComputedStyle(table.querySelector('th')).textAlign,
+        delta: lastControl ? Math.abs(edge(header) - lastControl.getBoundingClientRect().right) : 0 };
+    }));
+    for (const row of alignments) {
+      assert.equal(row.header, row.id === 'data' ? 'left' : 'right', row.id);
+      assert.equal(row.header, row.cell, row.id + ' header and controls must share alignment');
+      assert.equal(row.firstHeader, 'left');
+      assert.ok(row.delta <= 1, row.id + ' controls must share the header content edge');
+    }
+  } finally { await fixture.close(); }
+});
+
 test("M5 radios retain native size, aligned labels and an entire-row description", async () => {
   for (const [width, theme] of [[760, "dark"], [320, "light"]]) {
-    const fixture = await pageFor(`<div class="m-admin-panel">${radioMarkup}</div>`, width, theme);
+    const fixture = await pageFor(`<section class="m5-service-rules"><div class="m-admin-panel">${radioMarkup}</div></section>`, width, theme);
     try {
       const radios = fixture.page.getByRole("radio");
       assert.equal(await radios.count(), 2);
@@ -114,6 +147,25 @@ test("M5 radios retain native size, aligned labels and an entire-row description
       await fixture.page.getByRole("radio", { name: "客服主管分配" }).focus();
       assert.equal(await fixture.page.getByRole("radio", { name: "客服主管分配" }).evaluate(el => getComputedStyle(el.closest("label")).outlineStyle), "solid");
       await screenshot(fixture.page, `M5-${width}-${theme}`);
+    } finally { await fixture.close(); }
+  }
+});
+
+test("M5 fields use matched typography, an inset house caret and flat preview rows", async () => {
+  for (const width of [1100, 320]) {
+    const fixture = await pageFor(`<section class="m-admin-grid m5-service-rules"><div class="m-admin-panel"><div class="m-admin-row"><label for="days">维护间隔</label><input id="days" type="number" value="2" disabled></div>${rulePickerMarkup}</div>${rulePreviewMarkup}</section>`, width);
+    try {
+      const actual = await fixture.page.evaluate(() => {
+        const field = document.querySelector('#days'), trigger = document.querySelector('#m-rule-inheritanceMode'), arrow = trigger.querySelector('svg');
+        return { fieldFont: getComputedStyle(field).fontSize, triggerFont: getComputedStyle(trigger).fontSize,
+          heights: [field,trigger].map(e=>e.getBoundingClientRect().height), inset: trigger.getBoundingClientRect().right-arrow.getBoundingClientRect().right,
+          nativeSelects: document.querySelectorAll('select').length, disabled: trigger.disabled,
+          overflow: document.querySelector('.fixture').scrollWidth > document.querySelector('.fixture').clientWidth,
+          preview: [...document.querySelectorAll('.m5-impact-preview .m-admin-stat')].map(e=>({font:getComputedStyle(e).fontSize,result:getComputedStyle(e.querySelector('strong')).fontSize,border:getComputedStyle(e).borderWidth,background:getComputedStyle(e).backgroundColor})) };
+      });
+      assert.equal(actual.fieldFont,'14px');assert.equal(actual.triggerFont,'14px');assert.ok(actual.heights.every(h=>h>=43.9), JSON.stringify(actual));
+      assert.ok(actual.inset>=14&&actual.inset<=16);assert.equal(actual.nativeSelects,0);assert.equal(actual.disabled,true);assert.equal(actual.overflow,false);
+      assert.equal(actual.preview.length,3);for(const row of actual.preview){assert.equal(row.font,'14px');assert.equal(row.result,'15px');assert.equal(row.border,'0px');assert.equal(row.background,'rgba(0, 0, 0, 0)');}
     } finally { await fixture.close(); }
   }
 });
