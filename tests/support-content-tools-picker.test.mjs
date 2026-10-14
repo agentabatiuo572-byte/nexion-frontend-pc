@@ -59,7 +59,7 @@ before(async () => {
   page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
   await page.route("**/*", route => { throw Error("Offline picker made an external request: " + route.request().url()); });
   await page.setContent('<html data-theme="dark"><body><div id="root" class="dkpage mdom" style="width:420px"></div></body></html>');
-  await page.addStyleTag({ content: read("app/globals.css").replace(/^@import "tailwindcss";\s*/, "") + read("app/components/domain-views/m-domain.css") + read(tabs + "hd-select.css") + read(tabs + "support-content-tools.css") + read(tabs + "m3-customer-profile.css") });
+  await page.addStyleTag({ content: read("app/globals.css").replace(/^@import "tailwindcss";\s*/, "") + read("app/components/domain-views/m-domain.css") + read(tabs + "hd-select.css") + read(tabs + "support-content-tools.css") + read(tabs + "m3-customer-profile.css") + read(tabs + "m3-dedicated-chat.css") });
   await page.addScriptTag({ content: bundle });
 });
 after(async () => { try { await browser?.close(); assert.deepEqual(errors, [], "No browser or React errors"); } finally { if (browserTemp) fs.rmSync(browserTemp, {recursive:true,force:true}); } });
@@ -160,6 +160,7 @@ test("profile tag and note editors remain separated and inside the dialog at des
       await page.setViewportSize({width,height:800});
       await mount({profile:true}); await open("管理", "客户服务 360");
       const dialog = page.getByRole("dialog", {name:"客户服务 360",exact:true});
+      await page.locator(".m3-customer-sidebar").evaluate(element => element.classList.add("m3-stage"));
       const tag = await dialog.getByLabel("新标签", {exact:true}).boundingBox();
       const add = await dialog.getByRole("button", {name:"添加标签",exact:true}).boundingBox();
       const note = await dialog.getByLabel("新内部备注", {exact:true}).locator("..").boundingBox();
@@ -168,6 +169,7 @@ test("profile tag and note editors remain separated and inside the dialog at des
       assert.ok(note.y >= add.y + add.height + 12, "the note label must start below the add-tag row");
       for (const control of [tag,add,note,save]) assert.ok(control.x >= bounds.x && control.x + control.width <= bounds.x + bounds.width + 1, "editors remain inside the dialog");
       assert.ok(width > 560 ? add.x >= tag.x + tag.width + 8 : add.y >= tag.y + tag.height + 8, "the tag action has its own spaced position");
+      if (width <= 560) for (const action of [add,save]) assert.ok(action.height >= 44, "narrow editor actions keep a 44px target despite shared chat styles");
       await page.keyboard.press("Escape");
     }
   } finally { await page.setViewportSize({width:1000,height:800}); }
