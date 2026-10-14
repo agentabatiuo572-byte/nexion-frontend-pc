@@ -49,6 +49,13 @@ html[data-theme="dark"] .m3-dedicated-stage { --m3-bubble-agent: #114361; --m3-b
 .m3-new-message { animation: m3-message-arrive 140ms ease-out; }
 @keyframes m3-message-arrive { from { opacity: .65; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 @container m3-composer (max-width: 560px) { .mdom .m3-composer-intent > span { display: none; } }
+@container m3-composer (max-width: 480px) {
+  .mdom .m3-composer-tools { position: relative; }
+  .mdom .m3-composer-tools > .support-content-tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .mdom .m3-composer-tools .support-content-trigger:first-child { grid-column: 1 / -1; justify-self: start; }
+  .mdom .m3-composer-intent { position: absolute; top: 0; right: 0; }
+}
+@container m3-composer (max-width: 220px) { .mdom .m3-composer-tools .support-content-trigger:first-child > span { display: none; } }
 @container mdom (max-width: 1060px) {
   .mdom .m3-stage.m3-dedicated-stage { grid-template-columns: 294px minmax(0, 1fr); }
   .mdom .m3-profile-toggle { display: inline-flex; }

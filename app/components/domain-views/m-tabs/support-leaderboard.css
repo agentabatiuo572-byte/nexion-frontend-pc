@@ -55,7 +55,8 @@
 .sl-avatar[data-award] .sl-avatar-photo{border:1px solid #d8ded2;padding:1px;background:#0a0f0d}.sl-avatar-frame{border:2px solid var(--sl-lime)}.sl-podium-person[data-rank="2"] .sl-avatar-frame{border-width:1px;border-color:#d7e8bf}
 @media(min-width:1451px){
  .sl-filters{transform:translate(3px,3.5px)}
- .sl-content::before{height:1024px;aspect-ratio:auto;background-image:url("./support-leaderboard-assets/orbit-surface-main-canvas.png");background-size:100% 1024px;mask-image:none}
+ .sl-content::before{height:1024px;aspect-ratio:auto;background-image:url("./support-leaderboard-assets/orbit-surface-main-canvas.png");background-size:100% 1024px;mask-image:none;image-rendering:pixelated}
+ .sl-pedestal{image-rendering:pixelated}
  .sl-navigation{background-image:url("./support-leaderboard-assets/orbit-surface-navigation.png");background-size:181px 1024px;background-repeat:no-repeat;background-origin:border-box;border-right-color:transparent}
  .sl-navigation nav button[aria-current]{background-image:url("./support-leaderboard-assets/orbit-surface-nav-active.png");background-size:100% 100%;background-origin:border-box;border-left-color:transparent}
  .sl-self{background-color:transparent;background-image:url("./support-leaderboard-assets/orbit-surface-self.png");background-size:100% 100%;background-origin:border-box;border-color:transparent}
