@@ -1,6 +1,6 @@
 # 客服中心验收交接
 
-日期：2026-10-14。状态：**已交付 test，部分验收；整体 NOT_COMPLETE**。
+更新日期：2026-10-15。状态：**PC、后端、APP、H5 均已交付 test，部分验收；整体 NOT_COMPLETE**。
 仅真实客户消息链暂缓，由同事接续；详见[消息待测说明](support-customer-message-pending-20261014.md)。榜单及其它未完成验收仍由当前任务继续处理，不转交同事。交接不等于通过，不宣称原112项全部PASS、生产上线或整幅像素PASS。
 
 ## 1. 契约与证明层
@@ -14,14 +14,17 @@
 
 | 对象 | 已验/已交付版本 |
 | --- | --- |
-| FE当前生产验收源码 | `5dd76706c085b2a37c7298ee43acdbb69bb8ef7c`；tree `09c4a366e2939e179bb852c4c33d267d746a1c09`；BUILD_ID `dobwn_bfm58zZ71Z8_RBJ`。此前321bb71证据保持原归属 |
-| FE既有 test交付 | [PR5](https://github.com/agentabatiuo572-byte/nexion-frontend-pc/pull/5)合并 `23180a33d1244fd90e649c6f0bb116a010af4af1`；目录未知计数后续修补见本页补验记录 |
-| BE生产验收源码 | `c37c582e6acec2547fd11c8a5d37737bb02775a5` |
-| BE test交付 | [PR4](https://github.com/agentabatiuo572-byte/nexion-backend/pull/4)合并 `e374f43f6c62c6c57eb55f085a9bf6a42a850492` |
-| APP | [独立交付分支](https://github.com/agentabatiuo572-byte/nexion-frontend-uniapp/tree/codex/cs-app-delivery-20261014)；源码及检查版本见[APP交接](https://github.com/agentabatiuo572-byte/nexion-frontend-uniapp/blob/codex/cs-app-delivery-20261014/docs/acceptance/support-center-handoff-20261014.md)。完整门因现行H5镜像不一致受阻，未合入test |
-| 前端/后端 | 本机 `127.0.0.1:33108` / `127.0.0.1:18162`，只使用本任务持有的服务 |
+| FE当前 test交付 | [PR12](https://github.com/agentabatiuo572-byte/nexion-frontend-pc/pull/12)合并 `d27d8b283e30327e1d5f612bb1b28fa7e668427c`；tree `bfc3091ca9b7f65199734878ca0d4feb2bd92cd8`，与98/98通过的`2757d0c`完全相同；含当前按钮、分页和头像圈修正 |
+| FE资料编辑及弹窗修正 | [PR13](https://github.com/agentabatiuo572-byte/nexion-frontend-pc/pull/13)对应已验源码 `41629931a466cbafbdfba2c9811a314f0f6f9d2f`；tree `440335e9e18be0d422596ca90415aa8677f1509b`。10项定向及98项完整检查通过，后续提交仅整理文档；合并状态以PR为准 |
+| FE既有真实业务验收 | `5dd76706c085b2a37c7298ee43acdbb69bb8ef7c`；tree `09c4a366e2939e179bb852c4c33d267d746a1c09`；BUILD_ID `dobwn_bfm58zZ71Z8_RBJ`。其后样式和目录未知计数补验分别留证，不把旧真实场景改写为最新版本重跑 |
+| BE当前 test交付 | [PR7](https://github.com/agentabatiuo572-byte/nexion-backend/pull/7)合并 `e22f64f4fbc5fd9abe8a473cd7debd8eb956a4f7`，仅校正交接中的初始化与迁移边界；[PR6](https://github.com/agentabatiuo572-byte/nexion-backend/pull/6)测试断言交付及生产业务验收源码`c37c582e6acec2547fd11c8a5d37737bb02775a5`不变，native未运行仍未运行 |
+| APP | [PR2](https://github.com/agentabatiuo572-byte/nexion-frontend-uniapp/pull/2)已合入test，`1ed9d845865d23050fcfab39d0bfaa107a573252`；完整门23/23（22 PASS、1有效缓存），无失败或跳过；[APP交接](https://github.com/agentabatiuo572-byte/nexion-frontend-uniapp/blob/test/docs/acceptance/support-center-handoff-20261014.md)保留较早候选失败的边界 |
+| H5 | [PR3](https://github.com/agentabatiuo572-byte/nexion-frontend-prototype/pull/3)已合入test，`049a1835f79ce7cb2e0d4c8ebf578d87b88baedb`；完整门23/23（22 PASS、1有效缓存）；官方同步核对2426个共享文件一致 |
+| 前端/后端 | 既有真实验收使用本机`127.0.0.1:33108` / `127.0.0.1:18162`；验收窗口结束已正常停止，接续时先核验，不把历史地址当作当前存活证明 |
 | 隔离数据库 | `127.0.0.1:33338/cs_analytics_20261007`；UUID `abe359c0-c621-11f1-97ea-a40c6626953d` |
 | 角色与对象 | 5518纯SERVICE；1456主管兼SERVICE；1454总管；组410/411；客户2005及既有合法会话 |
+
+四仓当前交付及机器门摘要见[交付证明](support-delivery-20261015.json)。纯文档后续提交不改上述已验实现版本，也不将旧场景重签为新运行结果。
 
 接续前重核实际版本、端口进程、DB身份与当前授权，冻结条件后再读取。旧33337来源库不属于本次修改范围；不复制大库、不新建账号/付款/昨日快照，也不扩权填满验收表。运行时配置与密码等经私密渠道提供，不进入仓库。
 
@@ -41,7 +44,8 @@
 | 分组目录/M5、UX相关 | 单批目录SQL真实GET200；负责人/客服/绑定/待分配/状态齐；同410绑定24、待分配0与analytics同源。M5主管禁用、管理员菜单/Esc、刷新、字号、平面预览、操作列表头对齐 |
 | ACL-03、SRT-04、G01/02/03/22/23/25空态子项 | 真实主管从410目录待分配0进入同组待分配列表，已观测0、无alert；清条件切411客户空态，绑定确认0、金额未知“-”，没有回退全域；点击未知充值仍在411资金视角，保持单主列表容器。未升级为统计READY |
 | M3/SUP/IDC/UX工具与返回子项 | 商品S1预览选择/取消、钱包LINK选择/取消，恢复空草稿且发送禁用；原资料区与快捷入口仍在；历史/工单入口打开关闭；完整档案2005打开并返回原会话，无alert/console错误。全程未提交消息或业务写动作 |
-| 当前机器门 | 同5dd76706快照完整98/98、exit0、clean/unchanged、treeMoved=false，140.50秒；生产构建通过。只跑一次完整门，之后仅补文档与证据；原类型/冻结测试/采样失败记录保留 |
+| 当前机器门 | FE实现快照`41629931`完整98/98、exit0、clean/unchanged、treeMoved=false，121.880秒；另有资料编辑及嵌套弹窗10项定向检查通过。此前`2757d0c`和`5dd76706`结果保留原归属；不为纯文档修订重复运行未变代码的完整门 |
+| M3-03、LC21资料标签只读子项 | 现有主管兼SERVICE账号1456、客户2005，M3打开/关闭/刷新标签管理，系统标签只读、空输入禁用；M1同客户资料内再开标签管理，Esc按2→1→0逐层关闭并恢复焦点，客户筛选保留。桌面与390px窄屏无重叠/溢出，窄屏两按钮44px；前一版嵌套关闭失败保留，修正后实景复验通过。未发送消息、增删标签或保存备注，不代签新增写场景；[脱敏证明](support-profile-dialog-20261015.json) |
 | RANK界面 | 当前组件READY夹具的7人并列序列、第二页、历史月无昨日升降及字体geometry；真实全员暂定、未知“-”、未颁前三。真实本组完整发布另列，不能将全员暂定推断为所有范围不可验 |
 | RANK-04/05/07/08/09算法与服务 | 增补16个精确方法：原精度/负数/零/并列、搜索保名次、前三并列、跨页同版、日末基线与不可比、范围/定义变化；2套用例、0失败/错误/跳过，17.662秒。7个当前源码及运行类顺序经独立Java agent复核，非真实数据库整榜证明；此前4个当前v3定义用例源码未变，沿用 |
 | RANK-07/09/10真实容器交互 | 实际M6容器注入受控API响应完成12条浏览器步骤：搜索保第6名、清搜、跨页/空搜索定位本人、公开成绩返回、409重试、403清空、迟到旧查询拦截、NEX/历史月/本组/客户规模切换。定位缺陷修复前后分别留证，独立TS agent确认；不替真实API |

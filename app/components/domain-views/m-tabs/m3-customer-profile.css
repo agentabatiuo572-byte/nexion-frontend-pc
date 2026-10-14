@@ -45,9 +45,14 @@
 .m3-service-profile{font-size:14px}
 .m3-service-profile .m3-profile-group{border-bottom:1px solid var(--v5-border);padding:10px 0}
 .m3-service-profile .m3-profile-group summary{font-size:14px;font-weight:600;cursor:pointer}
+.m3-profile-editor{display:flex;align-items:flex-end;gap:12px;margin:16px 0}
+.m3-profile-editor>label{display:flex;flex:1;flex-direction:column;gap:8px;min-width:0}
+.m3-profile-editor>.l-btn{flex-shrink:0}
+.m3-profile-editor textarea{min-height:80px;resize:vertical}
 .m3-service-profile .cvp-row .v{overflow-wrap:anywhere}
 .m3-service-profile [data-exact]{position:relative;cursor:help}
 .m3-service-profile [data-exact]:focus-visible{outline:2px solid var(--v5-brand);outline-offset:3px}
 .m3-service-profile [data-exact]:is(:hover,:focus-visible)::after{content:attr(data-exact);position:absolute;right:0;bottom:calc(100% + 6px);z-index:2;max-width:240px;width:max-content;padding:7px 9px;border-radius:6px;background:var(--v5-surface-2);color:var(--v5-ink);font-size:12.5px;white-space:normal;pointer-events:none}
 .m3-profile-flow-filters>div{display:flex;flex-direction:column;gap:6px}
 @media(max-width:760px){.m3-profile-open,.m3-profile-shortcuts button{min-height:44px}}
+@media(max-width:560px){.m3-profile-editor{flex-direction:column;align-items:stretch}.mdom .m3-service-profile .m3-profile-editor>.l-btn.sm{align-self:flex-end;min-height:44px}}
