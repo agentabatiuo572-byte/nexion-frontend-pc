@@ -113,7 +113,7 @@ export function createApprovedDynamicMask(width, height, masks = approvedDynamic
   return pixels;
 }
 
-export function measureApprovedFullStaticPixels(reference, actual, masks = approvedDynamicMasks) {
+function measureStaticPixels(reference, actual, mask) {
   const { width, height, channels } = reference.info;
   assert.equal(channels, 4, "Reference must be decoded RGBA");
   assert.equal(actual.info.channels, 4, "Screenshot must be decoded RGBA");
@@ -121,7 +121,7 @@ export function measureApprovedFullStaticPixels(reference, actual, masks = appro
   assert.equal(actual.info.height, height, "Same component viewport height required");
   assert.equal(reference.data.length, width * height * 4, "Reference RGBA byte coverage");
   assert.equal(actual.data.length, width * height * 4, "Screenshot RGBA byte coverage");
-  const mask = createApprovedDynamicMask(width, height, masks);
+  assert.equal(mask.length, width * height, "Pixel classification must cover the whole image");
   const result = { total: width * height, masked: 0, static: 0, checked: 0, uncovered: 0, maximum: 0, changedPixels: 0, changedChannels: 0, firstDifferences: [] };
   for (let p = 0; p < mask.length; p++) {
     if (mask[p]) { result.masked++; continue; }
@@ -138,6 +138,86 @@ export function measureApprovedFullStaticPixels(reference, actual, masks = appro
   assert(result.static > 0, "Static coverage must not be empty");
   assert.equal(result.checked, result.static);
   return result;
+}
+
+export function measureApprovedFullStaticPixels(reference, actual, masks = approvedDynamicMasks) {
+  return measureStaticPixels(reference, actual, createApprovedDynamicMask(reference.info.width, reference.info.height, masks));
+}
+
+// Approved six-column grid replaces the source seven-column grid; no table surface is exempt.
+// Bounds are fixed from the source and the approved 8/28/17/16/16/15 grid, not screenshot residuals.
+export function createApprovedAmendmentMask(width, height) {
+  assert.equal(width, 1536); assert.equal(height, 1024);
+  const mask = createApprovedDynamicMask(width, height);
+  const classify = (x, y) => { if (mask[y * width + x] === 0) mask[y * width + x] = 2; };
+  for (const x of [307, 525, 688, 896, 1100, 1300, 308, 675, 898, 1108, 1318]) {
+    for (let y = 594; y < 878; y++) for (let dx = -1; dx <= 1; dx++) classify(x + dx, y);
+  }
+  for (const y of [638, 684, 732, 778, 828, 639, 687, 735, 783, 831]) {
+    for (let x = 204; x < 1515; x++) for (let dy = -1; dy <= 1; dy++) classify(x, y + dy);
+  }
+  // Only the changed circular paint: approved portrait interior to frame + 8px shadow.
+  for (const [cx, cy, inner, outer] of [[382,248,53,67],[662,251,49,62],[925,251,49,62],[1192,251,49,62],[1432,179,45,62],[341,806,18,33]]) {
+    for (let y = cy - outer; y <= cy + outer; y++) for (let x = cx - outer; x <= cx + outer; x++) {
+      const distance = (x - cx) ** 2 + (y - cy) ** 2;
+      if (distance >= inner ** 2 && distance <= outer ** 2) classify(x, y);
+    }
+  }
+  return mask;
+}
+
+export function assertApprovedAmendmentGeometry(geometry) {
+  assert(geometry, "Approved-change geometry is required");
+  const { table, columns, rows, cells, frames } = geometry;
+  const matches = (actual, expected, label) => {
+    for (const [key, value] of Object.entries(expected)) assert(Number.isFinite(actual?.[key]) && Math.abs(actual[key] - value) <= 2, `${label}: ${key} must match ${value}`);
+  };
+  matches(table, { x: 203, y: 593, width: 1312, height: 286 }, "Table bounds");
+  assert.equal(columns?.length, 6, "Six approved columns required");
+  const labels = [/排名/, /姓名.*组名.*排名变化/, /业绩额/, /首充人数/, /绑定客户数/, /操作/];
+  let x = table.x;
+  for (const [i, fraction] of [.08, .28, .17, .16, .16, .15].entries()) {
+    matches(columns[i], { x, y: table.y, width: table.width * fraction, height: 46 }, `Column ${i}`);
+    assert.match(columns[i].label.replace(/\s+/g, " "), labels[i]);
+    x += table.width * fraction;
+  }
+  assert.equal(rows?.length, 5, "Approved baseline requires five rows");
+  rows.forEach((row, i) => matches(row, { x: table.x, y: table.y + 46 + i * 48, width: table.width, height: 48 }, `Row ${i}`));
+  assert.equal(cells?.length, 36, "All six header and thirty body cells required");
+  cells.forEach((cell, i) => {
+    assert.equal(cell.visible, true, `Cell ${i}: cell and ancestors must be fully visible`);
+    const column = columns[i % 6], row = Math.floor(i / 6) - 1;
+    matches(cell, { x: column.x, y: row < 0 ? table.y : rows[row].y, width: column.width, height: row < 0 ? 46 : 48 }, `Cell ${i}`);
+    for (const [edge, drawn] of [["left", i % 6 > 0], ["top", row >= 0]]) {
+      const border = cell[edge];
+      if (!drawn) { assert.equal(border?.width, 0); continue; }
+      // One CSS pixel is quantized to 2/3px by the desktop host at 150% display scaling.
+      assert([1, 2 / 3].some(width => Math.abs(border?.width - width) < .00001), `Cell ${i}: ${edge} border width`);
+      assert.equal(border.style, "solid"); assert.equal(border.color, "rgba(39, 50, 54, 0.5)");
+    }
+  });
+  assert.equal(frames?.length, 6, "Four podium, self and current-row rings required");
+  [[323,189,118],[608,198,108],[871,198,108],[1137,198,108],[1379,126,106],[316,782,50]].forEach(([x,y,width],i) => {
+    const frame = frames[i];
+    assert.equal(frame.visible, true, `Ring ${i}: frame and ancestors must be fully visible`);
+    matches(frame, { x, y, width, height: width }, `Ring ${i}`);
+    assert.equal(frame.borderWidth, 2, `Ring ${i}: 2px border`);
+    assert.equal(frame.borderStyle, "solid"); assert.equal(frame.borderColor, "rgb(196, 255, 54)");
+    assert.equal(frame.borderRadius, "50%");
+    assert.equal(frame.shadow, "rgba(196, 255, 54, 0.35) 0px 0px 8px 0px");
+  });
+}
+
+export function measureApprovedAmendedPixels(reference, actual, geometry) {
+  assertApprovedAmendmentGeometry(geometry);
+  const mask = createApprovedAmendmentMask(reference.info.width, reference.info.height);
+  const result = measureStaticPixels(reference, actual, mask);
+  let dynamic = 0, amended = 0;
+  for (const classification of mask) { if (classification === 1) dynamic++; else if (classification === 2) amended++; }
+  assert.equal(result.total, result.static + dynamic + amended);
+  assert.equal(amended, 65484, "The fixed line bands and annuli cannot expand to exempt table surfaces");
+  assert(result.static > 1200000, "Approved changes cannot exempt whole panels");
+  return { ...result, dynamic, amended, geometryChecked: true };
 }
 
 export function assertApprovedFullStaticPixels(reference, actual, masks = approvedDynamicMasks) {

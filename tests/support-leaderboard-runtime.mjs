@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
-import { decodeLosslessScreenshot, assertApprovedStaticPixels, approvedStaticRegions, approvedDynamicMasks, createApprovedDynamicMask, measureApprovedFullStaticPixels, assertApprovedFullStaticPixels } from "./support-leaderboard-fidelity.mjs";
+import { decodeLosslessScreenshot, assertApprovedStaticPixels, approvedStaticRegions, approvedDynamicMasks, createApprovedDynamicMask, measureApprovedFullStaticPixels, measureApprovedAmendedPixels } from "./support-leaderboard-fidelity.mjs";
 
 const inputRoot = path.resolve(import.meta.dirname, ".."), repo = path.resolve(process.env.SUPPORT_LEADERBOARD_SOURCE_ROOT || inputRoot);
 // Author-only overlay: compile candidate fixture/CSS against the actual component.
@@ -75,13 +75,26 @@ await check("table-identity-badge-spacing",async()=>{
 await check("critical-geometry",async()=>{const targets={".sl-navigation":{x:0,width:181},".sl-heading":{x:202,y:18},".sl-hero":{x:202,y:139},".sl-self":{x:1338,y:61,width:188},".sl-table-wrap":{x:202,y:593}};for(const [selector,target]of Object.entries(targets)){geometry[selector]=await page.locator(selector).evaluate(el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};});for(const [dimension,value]of Object.entries(target))assert(Math.abs(geometry[selector][dimension]-value)<=2,JSON.stringify({selector,target,actual:geometry[selector]}));}assert.equal(await page.locator(".sl-podium-person").count(),4);assert.equal(await page.locator("tbody tr").count(),5);return geometry;});
 const original=await decodeLosslessScreenshot(fs.readFileSync(reference)), actual=await decodeLosslessScreenshot(fs.readFileSync(path.join(output,"1536x1024-static.png")));
 const fullStaticCoverage=measureApprovedFullStaticPixels(original,actual),dynamicMask=createApprovedDynamicMask(original.info.width,original.info.height);
-fs.writeFileSync(path.join(output,"full-static-coverage.json"),JSON.stringify({basis:"approved-design.png; fixed 1536x1024 masks; no reconstruction exemption",masks:approvedDynamicMasks,...fullStaticCoverage},null,2));
+fs.writeFileSync(path.join(output,"full-static-coverage.json"),JSON.stringify({basis:"Original approved-design.png comparison; retained diagnosis before later grid/ring approvals",verdict:fullStaticCoverage.changedPixels===0?"PASS":"FAIL",masks:approvedDynamicMasks,...fullStaticCoverage},null,2));
 await sharp(Buffer.from(dynamicMask.map(v=>v?255:0)),{raw:{width:original.info.width,height:original.info.height,channels:1}}).png().toFile(path.join(output,"full-static-dynamic-mask.png"));
-await check("approved-full-static-pixels",()=>assertApprovedFullStaticPixels(original,actual));
+await check("approved-full-static-pixels",async()=>{
+  const amendmentGeometry=await page.evaluate(()=>{
+    const box=el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
+    const visible=el=>{let opacity=1;for(let n=el;n;n=n.parentElement){const s=getComputedStyle(n);opacity*=Number(s.opacity);if(s.display==="none"||s.visibility!=="visible")return false;}return opacity===1;};
+    return {table:box(document.querySelector(".sl-table")),columns:[...document.querySelectorAll(".sl-table th")].map(el=>({...box(el),label:el.textContent})),rows:[...document.querySelectorAll(".sl-table tbody tr")].map(box),cells:[...document.querySelectorAll(".sl-table th,.sl-table td")].map(el=>{const s=getComputedStyle(el);return {...box(el),left:{width:parseFloat(s.borderLeftWidth),style:s.borderLeftStyle,color:s.borderLeftColor},top:{width:parseFloat(s.borderTopWidth),style:s.borderTopStyle,color:s.borderTopColor},visible:visible(el)};}),frames:[...document.querySelectorAll(".sl-avatar-frame")].map(el=>{const s=getComputedStyle(el);return {...box(el),borderWidth:parseFloat(s.borderWidth),borderStyle:s.borderStyle,borderColor:s.borderColor,borderRadius:s.borderRadius,shadow:s.boxShadow,visible:visible(el)};})};
+  });
+  const amended=measureApprovedAmendedPixels(original,actual,amendmentGeometry);
+  const result={basis:"Original source pixels, except fixed approved grid-line and green-ring paint with mandatory DOM geometry/style checks",rawVerdict:fullStaticCoverage.changedPixels===0?"PASS":"FAIL",verdict:amended.changedPixels===0?"PASS":"FAIL",amendmentGeometry,...amended};
+  fs.writeFileSync(path.join(output,"amended-static-coverage.json"),JSON.stringify(result,null,2));
+  assert(amended.maximum<=1&&amended.changedPixels===0,"Unapproved static differences after explicit amendments "+JSON.stringify(amended));
+  return result;
+});
 await check("approved-layout-geometry",async()=>{
   const boxes={};
   async function box(selector,index=0){const b=await page.locator(selector).nth(index).evaluate(el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};});boxes[`${selector}[${index}]`]=b;return b;}
   function matches(b,expected,label){for(const [key,value]of Object.entries(expected))assert(Math.abs(b[key]-value)<=2,JSON.stringify({label,key,expected:value,actual:b[key]}));}
+  const navigation=await page.locator(".sl-navigation nav button").evaluateAll(buttons=>buttons.map(button=>{const text=[...button.childNodes].find(node=>node.nodeType===Node.TEXT_NODE&&node.textContent.trim());const range=document.createRange();range.selectNodeContents(text);return {textX:range.getBoundingClientRect().x,iconX:button.querySelector("svg").getBoundingClientRect().x};}));
+  assert.equal(navigation.length,6);for(const item of navigation)matches(item,{textX:70,iconX:26},"approved desktop navigation anchor");
   for(const [selector,expected]of Object.entries({".sl-tabs":{x:208,y:77,width:516,height:42},".sl-hero":{x:202,y:139,width:1313,height:422},".sl-podium-slots":{x:202,y:192,width:1108,height:328},".sl-self":{x:1338,y:61,width:188,height:484},".sl-table-wrap":{x:202,y:593,width:1313,height:288},".sl-pagination":{x:202,y:881,width:1313,height:63},".sl-footer":{x:202,y:970,width:1313}}))matches(await box(selector),expected,selector);
   const pagination=await box(".sl-pagination"),summary=await box(".sl-page-summary"),pageSize=await box(".sl-pagination .sl-select"),pageButtons=await box(".sl-page-buttons");
   matches(summary,{x:pagination.x+21},"summary aligned left");matches(pageButtons,{x:pageSize.x+pageSize.width+20},"page size grouped with page controls");
