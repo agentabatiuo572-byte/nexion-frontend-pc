@@ -78,3 +78,30 @@ test("pedestal halos retain original pixels without copying fixed identities or 
     assert.equal(painted, asset.restoredPixels); assert(painted>1000);
   }
 });
+
+test("podium button artwork preserves the source frame and removes every fixed label", async () => {
+  const design = new URL("../docs/design/support-analytics-20261006/leaderboard-orbit-20261010/", import.meta.url);
+  const record = JSON.parse(readFileSync(new URL("podium-button-restoration-20261015.json", design)));
+  const sourceBytes = readFileSync(new URL(record.source.file, design)), source = await decode(sourceBytes);
+  assert.equal(hash(sourceBytes), record.source.sha256);
+  assert.deepEqual(record.assets.map(a => a.bounds), [[308,483,153,40],[578,483,155,40],[840,483,155,40],[1106,483,156,40]]);
+  assert.deepEqual(record.assets.map(a => a.replacedCopy), [[347,494,77,18],[620,494,76,18],[884,494,75,18],[1149,494,75,18]]);
+  for (const asset of record.assets) {
+    const bytes = readFileSync(new URL(asset.file, assets)), actual = await decode(bytes);
+    assert.equal(hash(bytes), asset.sha256);
+    const [left, top, width, height] = asset.bounds, [cx, cy, cw, ch] = asset.replacedCopy;
+    assert.deepEqual([actual.info.width, actual.info.height], [width, height]);
+    let removed = 0;
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      const sx = x + left, sy = y + top, to = (y * width + x) * 4, from = (sy * source.info.width + sx) * 4;
+      const copy = sx >= cx && sx < cx + cw && sy >= cy && sy < cy + ch;
+      if (!copy) assert.deepEqual(actual.data.subarray(to,to+4), source.data.subarray(from,from+4));
+      else {
+        assert(Math.max(...actual.data.subarray(to,to+3)) < 80, `${asset.file}: source glyph remains`);
+        if (Math.min(...source.data.subarray(from,from+3)) > 90) removed++;
+      }
+      assert.equal(actual.data[to+3], 255);
+    }
+    assert(removed > 200, `${asset.file}: source label was not removed`);
+  }
+});

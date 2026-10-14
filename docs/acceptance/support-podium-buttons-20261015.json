@@ -1,0 +1,409 @@
+{
+  "scope": "Four podium button frames and native vertical alignment; no component/API changes",
+  "status": "IMPROVED_STRICT_PIXEL_COMPARISON_REMAINS_OPEN",
+  "sourceSHA256": "e3b92e2fbb593171a4658e058c562ec4dbc9403fecafdf8dd85a719ba71f6c3a",
+  "cssSHA256": "206c6fd8b71dabcc2444d0940ac0049e2a76946a3dc74f3c2c83b3339c0a592f",
+  "screenshotSHA256": "291ae60d9c52102e31e6581bbecf17b028680a7df287291605412ecee488c7b0",
+  "capture": {
+    "viewport": [
+      1536,
+      1024
+    ],
+    "deviceScaleFactor": 0.6666666666666666,
+    "method": "Page.captureScreenshot",
+    "params": {
+      "format": "png",
+      "fromSurface": true,
+      "captureBeyondViewport": true,
+      "clip": {
+        "x": 0,
+        "y": 0,
+        "width": 1536,
+        "height": 1024,
+        "scale": 1.5
+      }
+    },
+    "postProcessing": "none",
+    "reason": "Match the existing 150% host-scale calibration; captureBeyondViewport false resamples the image and is not valid pixel evidence."
+  },
+  "nativeButtons": {
+    "x": [
+      312,
+      583,
+      846,
+      1112
+    ],
+    "y": 487,
+    "width": 146,
+    "height": 32
+  },
+  "material": [
+    {
+      "file": "orbit-podium-button-1.png",
+      "checked": 4734,
+      "changed": 0,
+      "maximum": 1,
+      "differences": []
+    },
+    {
+      "file": "orbit-podium-button-2.png",
+      "checked": 4832,
+      "changed": 0,
+      "maximum": 1,
+      "differences": []
+    },
+    {
+      "file": "orbit-podium-button-3.png",
+      "checked": 4850,
+      "changed": 0,
+      "maximum": 1,
+      "differences": []
+    },
+    {
+      "file": "orbit-podium-button-4.png",
+      "checked": 4890,
+      "changed": 1,
+      "maximum": 2,
+      "differences": [
+        [
+          1255,
+          483
+        ]
+      ]
+    }
+  ],
+  "existingRegions": [
+    {
+      "id": "planet-upper",
+      "rect": [
+        1000,
+        5,
+        100,
+        15
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "planet-surface",
+      "rect": [
+        780,
+        120,
+        60,
+        40
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "upper-orbit",
+      "rect": [
+        1180,
+        127,
+        40,
+        12
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "left-orbit",
+      "rect": [
+        208,
+        324,
+        28,
+        28
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "lower-orbit",
+      "rect": [
+        700,
+        546,
+        40,
+        5
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "first-pedestal",
+      "rect": [
+        330,
+        316,
+        105,
+        13
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "second-pedestal",
+      "rect": [
+        609,
+        316,
+        105,
+        13
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "third-pedestal",
+      "rect": [
+        878,
+        316,
+        90,
+        13
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "fourth-pedestal",
+      "rect": [
+        1146,
+        316,
+        90,
+        13
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "first-pedestal-halo",
+      "rect": [
+        305,
+        330,
+        160,
+        23
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "second-pedestal-halo",
+      "rect": [
+        584,
+        330,
+        160,
+        23
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "third-pedestal-halo",
+      "rect": [
+        856,
+        330,
+        150,
+        23
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    },
+    {
+      "id": "fourth-pedestal-halo",
+      "rect": [
+        1122,
+        330,
+        150,
+        23
+      ],
+      "dx": 0,
+      "dy": 0,
+      "maximum": 0,
+      "mean": 0,
+      "changedChannels": 0
+    }
+  ],
+  "rawFull": {
+    "status": "FAIL",
+    "changedPixels": 213561
+  },
+  "amendedFull": {
+    "status": "FAIL",
+    "changedPixels": 159159,
+    "previousChangedPixels": 174915,
+    "maskAndToleranceUnchanged": true
+  },
+  "responsive": [
+    {
+      "buttons": [
+        {
+          "height": 32,
+          "pseudo": "none",
+          "right": 458.0416870117187,
+          "visible": true,
+          "width": 146,
+          "x": 312.04168701171875
+        },
+        {
+          "height": 32,
+          "pseudo": "none",
+          "right": 728.8125,
+          "visible": true,
+          "width": 146,
+          "x": 582.8125
+        },
+        {
+          "height": 32,
+          "pseudo": "none",
+          "right": 991.96875,
+          "visible": true,
+          "width": 146,
+          "x": 845.96875
+        },
+        {
+          "height": 32,
+          "pseudo": "none",
+          "right": 1257.885498046875,
+          "visible": true,
+          "width": 146,
+          "x": 1111.885498046875
+        }
+      ],
+      "overflow": false,
+      "width": 1535
+    },
+    {
+      "buttons": [
+        {
+          "height": 32,
+          "pseudo": "none",
+          "right": 435.7604370117187,
+          "visible": true,
+          "width": 146,
+          "x": 289.76043701171875
+        },
+        {
+          "height": 32,
+          "pseudo": "none",
+          "right": 685.5729370117188,
+          "visible": true,
+          "width": 146,
+          "x": 539.5729370117188
+        },
+        {
+          "height": 32,
+          "pseudo": "none",
+          "right": 920.53125,
+          "visible": true,
+          "width": 146,
+          "x": 774.53125
+        },
+        {
+          "height": 32,
+          "pseudo": "none",
+          "right": 1157.9791870117188,
+          "visible": true,
+          "width": 146,
+          "x": 1011.9791870117188
+        }
+      ],
+      "overflow": false,
+      "width": 1415
+    },
+    {
+      "buttons": [
+        {
+          "height": 32,
+          "pseudo": "none",
+          "right": 171.16666793823242,
+          "visible": true,
+          "width": 146,
+          "x": 25.166667938232425
+        },
+        {
+          "height": 32,
+          "pseudo": "none",
+          "right": 349.5,
+          "visible": true,
+          "width": 146,
+          "x": 203.5
+        },
+        {
+          "height": 32,
+          "pseudo": "none",
+          "right": 171.16666793823242,
+          "visible": true,
+          "width": 146,
+          "x": 25.166667938232425
+        },
+        {
+          "height": 32,
+          "pseudo": "none",
+          "right": 349.5,
+          "visible": true,
+          "width": 146,
+          "x": 203.5
+        }
+      ],
+      "overflow": false,
+      "width": 390
+    }
+  ],
+  "interaction": {
+    "proof": "component fixture only",
+    "click": [
+      "view:zhou",
+      "view:mia"
+    ],
+    "keyboardEnter": "view:yang",
+    "focusOutline": "solid",
+    "consoleErrors": 0
+  },
+  "limits": [
+    "Fourth original material retains one pixel differing by at most 2; strict threshold remains 1, so do not sign all four materials exact.",
+    "Only the 1355px content-width native canvas uses these pixel crops; other widths retain responsive CSS buttons.",
+    "Source label rectangles are reconstructed; original HTML labels and icons remain live. Whole-design fidelity and genuine complete global rankings remain open."
+  ],
+  "independentReview": {
+    "agent": "rank_amendment_review_1014",
+    "findings": {
+      "P0": 0,
+      "P1": 0,
+      "P2": 0
+    },
+    "scope": "Read-only source, all four material hashes/pixels, native PNG and responsive screenshots; exact all-material and whole-image completion not signed."
+  }
+}

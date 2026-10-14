@@ -108,6 +108,14 @@
 @container sl-board (min-width:1355px) and (max-width:1355px){
  .sl-content{padding-right:20px}.sl-self{transform:translateX(10px)}
  .sl-rankings h2{margin-bottom:3px}.sl-table-wrap{background-size:1314px 288px}
+ /* Original button surrounds include orbit pixels, so they share the native canvas coordinates. */
+ .sl-podium-view{--sl-button-inset:-4px;--sl-button-width:153px;--sl-button-art:url("./support-leaderboard-assets/orbit-podium-button-1.png");margin-top:7px;padding:0 0 0 6px;gap:6px;isolation:isolate;border:0!important;background:transparent!important}
+ .sl-podium-view::before{content:"";position:absolute;left:var(--sl-button-inset);top:-4px;width:var(--sl-button-width);height:40px;background:var(--sl-button-art) no-repeat;image-rendering:pixelated;pointer-events:none;z-index:-1}
+ .sl-podium-person:first-child .sl-podium-view{left:round(nearest,calc(var(--sl-portrait-position) - 70px),1px)}
+ .sl-podium-person:not(:first-child) .sl-podium-view{left:round(nearest,calc(var(--sl-portrait-position) - 79px),1px)}
+ .sl-podium-person:nth-child(2) .sl-podium-view{--sl-button-inset:-5px;--sl-button-width:155px;--sl-button-art:url("./support-leaderboard-assets/orbit-podium-button-2.png")}
+ .sl-podium-person:nth-child(3) .sl-podium-view{--sl-button-inset:-6px;--sl-button-width:155px;--sl-button-art:url("./support-leaderboard-assets/orbit-podium-button-3.png")}
+ .sl-podium-person:nth-child(4) .sl-podium-view{--sl-button-inset:-6px;--sl-button-width:156px;--sl-button-art:url("./support-leaderboard-assets/orbit-podium-button-4.png")}
 }
 /* Paint the approved preview seam inside one bitmap, rather than between adjacent background layers. */
 @media(min-width:1536px) and (max-width:1536px){
