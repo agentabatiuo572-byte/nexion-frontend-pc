@@ -1,0 +1,12 @@
+{
+  "frontendHead": "321bb71ca5dddc030dec0e3507f9545e428d4926",
+  "frontendVerifiedHead": "321bb71ca5dddc030dec0e3507f9545e428d4926",
+  "frontendVerifiedTree": "27d0f2191170d36772edd160cab22ac3b220e851",
+  "frontendClean": true,
+  "backendHead": "c37c582e6acec2547fd11c8a5d37737bb02775a5",
+  "backendClean": true,
+  "buildId": "VC6NNWPd0XQRyKeHDDmLI",
+  "verifiedSteps": 98,
+  "receipt": "verify-result.json",
+  "observedAt": "2026-10-14T20:36:43.5936823+08:00"
+}
