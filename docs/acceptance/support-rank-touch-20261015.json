@@ -1,0 +1,160 @@
+{
+  "scope": "Leaderboard coarse-pointer target sizes and responsive row surface; source component with READY visual fixture only",
+  "testedHead": "ab9f7ffffa6d08aa6d79a1510795146fc41be7fa",
+  "sourceSHA256": {
+    "app/components/domain-views/m-tabs/support-leaderboard.css": "718ec77138968d13a34492a8ab4be65d03696c9ae44c5cb38df8359e36c6de35",
+    "app/components/domain-views/m-tabs/support-leaderboard.tsx": "779de47e1820d3e9df88623aeba9f70b10a3f334f6b9777ca8e5db1290aac2f7",
+    "tests/support-leaderboard-runtime.mjs": "7d9d4f0d6555cfa3710bd57427ada13e62949e03299936ed6559b16546d5948d",
+    "tests/fixtures/support-leaderboard/fixture.tsx": "f2d629938150302d9717e9dfb29e96c79c93eb68e02c32f94073be2d6a25fa83"
+  },
+  "baseline": {
+    "head": "b19ffa52792480c417470bf4a49a4353dd17f7f3",
+    "undersizedControls": 73
+  },
+  "runtime": {
+    "coarse": [
+      {
+        "width": 390,
+        "controls": 84,
+        "minimumWidth": 44,
+        "minimumHeight": 44,
+        "pageOverflow": false,
+        "tableImage": "none",
+        "selfRowImage": "none",
+        "continuousSelfCells": 6
+      },
+      {
+        "width": 1536,
+        "controls": 84,
+        "minimumWidth": 44,
+        "minimumHeight": 44,
+        "pageOverflow": false,
+        "tableImage": "none",
+        "selfRowImage": "none",
+        "continuousSelfCells": 6
+      }
+    ],
+    "menu": {
+      "optionHeights": [
+        44,
+        44
+      ],
+      "escapeFocus": "币种"
+    },
+    "callbacks": {
+      "narrow": [
+        "view:zhou",
+        "locate:mia"
+      ],
+      "wide": [
+        "view:zhou",
+        "locate:mia",
+        "view:zhou",
+        "locate:mia"
+      ]
+    },
+    "fineGeometry": {
+      "actions": [
+        {
+          "height": 32,
+          "text": "查看成绩：周芷宁",
+          "width": 146
+        },
+        {
+          "height": 32,
+          "text": "查看成绩：杨帆",
+          "width": 146
+        },
+        {
+          "height": 32,
+          "text": "查看成绩：张晓雨",
+          "width": 146
+        },
+        {
+          "height": 32,
+          "text": "查看成绩：Mia",
+          "width": 146
+        },
+        {
+          "height": 36,
+          "text": "定位我",
+          "width": 112
+        }
+      ],
+      "coarse": false,
+      "horizontalOverflow": false,
+      "width": 1536
+    },
+    "desktopPixels": {
+      "scope": "Before/final desktop pixels, fine pointer, reduced motion, same1536x1024 capture",
+      "width": 1536,
+      "height": 1024,
+      "changedChannels": 1351,
+      "maximum": 1,
+      "beyondExistingTolerance1": 0
+    }
+  },
+  "independentReview": {
+    "agent": "rank_amendment_review_1014",
+    "closed": [
+      {
+        "severity": "P2",
+        "issue": "Fixed 50px self-row image clipped the 64.67px coarse row",
+        "resolution": "Fixed source table/row images use fine pointers only; coarse uses existing continuous cell colors",
+        "runtimeVerified": true
+      }
+    ],
+    "remainingFindings": []
+  },
+  "machineRegression": {
+    "file": "tests/support-leaderboard-runtime.mjs",
+    "case": "coarse-controls-touch-targets",
+    "syntax": "PASS",
+    "execution": "Equivalent geometry/surface assertions and UI actions executed through CUA; full visual runtime script not rerun"
+  },
+  "resources": {
+    "newEnvironment": false,
+    "databaseActions": false,
+    "previewStopped": true,
+    "temporaryBrowserOverridesRestored": true,
+    "localEvidenceBytes": 7068015
+  },
+  "doneReview": {
+    "implementation": "Current source CSS loaded after restart; refreshed page measured at 390 and1536",
+    "completeness": "All84 visible controls include navigation,filters,tabs,identities,metrics,actions,pagination",
+    "interactions": "View/locate callbacks and currency options/Escape verified; continuous self-row background checked",
+    "sameForm": "Shared leaderboard CSS covers all button/summary/select consumers",
+    "invariants": "Fine desktop material/dimensions preserved; no permissions,money,ownership,API or locale changes",
+    "runtime": "Two coarse sizes, source hashes, screenshots and independent review; strict whole-image task still open"
+  },
+  "limits": [
+    "Visual fixture is not a genuine complete-net or first-pay data baseline",
+    "Existing strict whole-image comparison remains FAIL; this desktop before/after check does not close it",
+    "Real customer message chain remains delegated to colleague"
+  ],
+  "tree": "c36dd68cd950e33039cda02cbdf742d53d757b81",
+  "full": {
+    "status": "PASS",
+    "seconds": 120.7662991,
+    "mode": "full",
+    "verdict": "pass",
+    "clean": true,
+    "unchanged": true,
+    "treeMoved": false,
+    "exitCode": 0,
+    "buildGrowthBytes": 396,
+    "logBytes": 241371,
+    "resultSHA256": "f83152ed83513b62a51ee5f80dc824cda2f93db0dbe430351f81a55c4534bfd1"
+  },
+  "proofSHA256": {
+    "before.json": "38dc33099f516c148b3c4d838ea9a53ef4896da508e11fade8da283e38b5534c",
+    "fixed-390.json": "b792de7182c41acd42600d51b01156626d20598517342721e001e21839028128",
+    "fixed-1536.json": "80e1fa6ec3c1b9ef583eccb017e8be096f7de0a25c7b313808fe325d50e6b5f8",
+    "fixed-1536.png": "72272a98718f28ef70c678086cbcf8ae5eb4884f8cf5b3da91134c3a8e39bcee",
+    "desktop-before.png": "01fff384a9aed671ce31b41ea35ed71d4b2ab19474a84b86f661ebe7d1a23705",
+    "desktop-final.png": "2e0ff387ac3389334357acd6b1d30082c0641998abe946deb30b835d92e2d1d4",
+    "desktop-final-comparison.json": "128dba548a663136c4b6496ae1eeb0d085c4e2834109389cfafecd1d9e268166",
+    "after-390.json": "6db2657a5deffebf27da3be97106116fb1b58cd16b87cc91c18b1398dbfe4da8",
+    "final-interactions.json": "7d8ca17ae2de3a6b6b060cb9a9dd8bd879a54a126ebd85c3a3565f10e8864e08"
+  }
+}
