@@ -1,9 +1,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { harness, storage, makeClient, group, detail, member, qualification, deferred, text, all, why } from "./helpers.mjs";
+import { harness, storage, makeClient, group, directoryGroup, detail, member, qualification, deferred, text, all, why } from "./helpers.mjs";
 const key="12345678-1234-1234-1234-123456789012";
 async function createDraft(h){await h.flush();h.click("创建组");h.input("本人的新组");h.reason();}
 const rawMember={adminId:"21",version:2,groupId:"5",accountStatus:1,handoverRequired:false,boundCustomers:4};
+test("directory exposes one scoped summary list and drills zero as well as nonzero counts without extra directory reads",async()=>{
+  const visits=[],h=harness({props:{onViewCustomers:(...args)=>visits.push(args)},implementations:{groups:()=>[directoryGroup()]}});await h.flush();
+  assert.match(text(h.tree),/负责人/);assert.match(text(h.tree),/主管甲/);assert.equal(all(h.tree,n=>n.type==="table").length,1);
+  const metrics=all(h.tree,n=>n.type==="button"&&n.props.className==="m-group-count"); assert.deepEqual(metrics.map(n=>text(n).trim()),["2","24","0"]);
+  assert.equal(metrics.some(n=>n.props.disabled),false); metrics[1].props.onClick();metrics[2].props.onClick();
+  assert.deepEqual(visits,[["5","BOUND"],["5","PENDING"]]);assert.equal(h.calls.filter(c=>c.name==="groups").length,1);
+  assert.equal(h.calls.some(c=>["detail","member","supervisors"].includes(c.name)),false);h.unmount();
+});
+test("unknown directory quantities stay unavailable and never become empty-list links",async()=>{
+  const h=harness({implementations:{groups:()=>[{...directoryGroup(),supervisorName:null,memberCount:null,boundCustomers:null,pendingCustomers:null}]}});await h.flush();
+  const metrics=all(h.tree,n=>n.type==="button"&&n.props.className==="m-group-count");assert.equal(metrics.length,3);
+  assert.equal(metrics.every(n=>n.props.disabled&&text(n).trim()==="-"),true);assert.doesNotMatch(text(h.tree),/主管甲/);h.unmount();
+});
 test("server-provided MANAGED allows a supervisor with no groups to create self-owned group without global/A1 reads",async()=>{
   const h=harness({implementations:{createSupportGroup:()=>{throw new Error("network unknown");}}});await createDraft(h);h.click("确认并提交");await h.flush();const call=h.calls.find(c=>c.name==="createSupportGroup");assert.equal(call.args[0].supervisorAdminId,"17");assert.equal(call.stored[0].commandKey,call.args[1]);assert.equal(call.stored[0].intent.payload.reason,why);assert.equal(h.calls.some(c=>["supervisors","qualifications","candidates"].includes(c.name)),false);assert.equal(h.store.list().length,1);h.unmount();
 });

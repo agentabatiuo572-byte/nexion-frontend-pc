@@ -535,8 +535,8 @@ select option:disabled { color: var(--v5-ink-3); }
 .dkpage .dotline { display: flex; gap: 4px; align-items: center; }
 
 .dkpage .row { display: flex; align-items: center; gap: 10px; }
-/* 操作列统一右对齐:表格末列含按钮/开关时,无论「td 直接放控件」还是「td>.row>控件」都靠右。
-   :has(.btn,.sw) 精准命中操作/开关列,纯数据·状态末列(无控件)不受影响。一处覆盖全站,根治操作列左对齐(DOM 写法无关)。 */
+/* 末列有操作控件时，表头与按钮共用右边缘；纯数据末列保留原对齐。 */
+.dkpage table:has(> tbody > tr > td:last-child :is(.btn, .sw)) > thead > tr > th:last-child { text-align: right; }
 .dkpage table td:last-child:has(.btn, .sw) { text-align: right; }
 .dkpage table td:last-child:has(.btn, .sw) > .row { justify-content: flex-end; }
 .dkpage .col { display: flex; flex-direction: column; }

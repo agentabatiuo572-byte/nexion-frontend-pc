@@ -40,3 +40,21 @@
 @container mdom (max-width: 900px) { .mdom .m-admin-grid { grid-template-columns: 1fr; } }
 @container mdom (max-width: 420px) { .mdom .m-assignment-options { grid-template-columns: 1fr; } }
 @container mdom (max-width: 620px) { .mdom .m-admin-stats { grid-template-columns: 1fr 1fr; } .mdom .m-admin-row { grid-template-columns: 1fr; } .mdom .m-admin-table, .mdom .m-admin-table tbody { display: block; } .mdom .m-admin-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); } .mdom .m-admin-table tr { display: grid; grid-template-columns: 32px 1fr; gap: 5px 8px; padding: 10px; border: 1px solid var(--v5-border); border-radius: 9px; margin-bottom: 8px; } .mdom .m-admin-table td { display: block; padding: 3px 0; border: 0; } .mdom .m-admin-table td:first-child { grid-row: span 6; } .mdom .m-admin-table td::before { content: attr(data-label); display: block; color: var(--v5-ink-3); font-size: 11px; } }
+
+/* Service rules retain one surface per section; preview results are flat rows. */
+.mdom .m5-service-rules { font-size: 14px; line-height: 1.55; }
+.mdom .m5-service-rules .m-admin-panel { border: 0; }
+.mdom .m5-service-rules .m-admin-row > div { min-width: 0; }
+.mdom .m5-service-rules .m-admin-row label,
+.mdom .m5-service-rules .m-assignment-mode legend,
+.mdom .m5-service-rules .m-assignment-option { font-size: 14px; }
+.mdom .m5-service-rules .m-admin-row p { font-size: 12.5px; line-height: 1.6; }
+.mdom .m5-service-rules .m-admin-row input[type="number"] { min-width: 0; min-height: 44px; font-size: 14px; line-height: 1.4; font-variant-numeric: tabular-nums; }
+.mdom .m5-service-rules .hd-select { min-width: 0; height: 44px; padding: 0 14px; font-size: 14px; line-height: 1.4; }
+.mdom .m5-service-rules .hd-select:disabled { cursor: default; opacity: .65; }
+.mdom .m5-service-rules .hd-select-pop { top: 48px; }
+.mdom .m5-service-rules .hd-select-opt { min-height: 44px; font-size: 14px; }
+.mdom .m5-impact-preview > .btn { min-height: 44px; max-width: 100%; margin-bottom: 12px; white-space: normal; }
+.mdom .m5-impact-preview .m-admin-stats { grid-template-columns: minmax(0, 1fr); gap: 0; }
+.mdom .m5-impact-preview .m-admin-stat { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; padding: 8px 0; background: transparent; border: 0; border-radius: 0; color: var(--v5-ink-2); font-size: 14px; }
+.mdom .m5-impact-preview .m-admin-stat strong { display: inline; margin-top: 0; font-size: 15px; line-height: 1.4; }
