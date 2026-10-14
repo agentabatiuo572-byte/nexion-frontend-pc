@@ -142,6 +142,30 @@ test("real create/edit form producers select explicit defaults, keep manual mutu
   form.dispose(); edit.dispose();
 });
 
+test("avatar mode labels remain clickable and failed preparation blocks create/edit until cleared", () => {
+  const f = fixture(), forms = f.load("app/components/domain-views/a-tabs/a1-accounts.tsx").testForms, results = [];
+  const create = f.component(forms.NewAccountDrawer, { roles: [{ key: "support", name: "客服" }], recoveryMode: false, onClose() {}, onSubmit: value => results.push(value), initialForm: { username: "jane", displayName: "专属客服", role: "support", reason: "新入职客服创建账号" } });
+  create.render(); let tree = create.render();
+  const modes = nodes(tree, node => node.props?.className === "account-avatar-modes")[0];
+  assert.equal(nodes(modes, node => node.type === "label" && nodes(node, child => child.type === "input" && child.props.name === "avatar-mode").length === 1).length, 2, "Each native radio remains inside its whole clickable label");
+  nodes(modes, node => node.type === "input")[1].props.onChange(); tree = create.render();
+  const picker = nodes(tree, node => typeof node.type === "function" && node.type.name === "AccountAvatarPicker")[0];
+  picker.props.onBlocking(true); tree = create.render();
+  assert.equal(button(tree, "确认创建账号").props.disabled, true);
+  assert.equal(nodes(tree, node => node.type === "fieldset" && node.props.className === "account-avatar-controls")[0].props.disabled, true);
+  button(tree, "确认创建账号").props.onClick(); assert.equal(results.length, 0);
+  picker.props.onBlocking(false); tree = create.render();
+  assert.equal(button(tree, "确认创建账号").props.disabled, false);
+  nodes(tree, node => node.type === "input" && node.props.name === "avatar-mode")[0].props.onChange(); tree = create.render();
+  button(tree, "确认创建账号").props.onClick(); assert.equal(results[0].role, "support"); assert.equal(results[0].useDefaultAvatar, true); assert.equal(results[0].avatarAssetId, undefined);
+  const edit = f.component(forms.EditAccountDrawer, { account: { id: "99", username: "jane", name: "客服", role: "support", version: "7", avatarAssetId: OLD }, onClose() {}, onSubmit: value => results.push(value) });
+  tree = edit.render(); nodes(tree, node => node.type === "input" && node.props.value === "客服")[0].props.onChange({ target: { value: "新客服" } }); nodes(tree, node => node.type === "textarea")[0].props.onChange({ target: { value: "修改客服显示名称" } }); tree = edit.render();
+  const editPicker = nodes(tree, node => typeof node.type === "function" && node.type.name === "AccountAvatarPicker")[0];
+  editPicker.props.onBlocking(true); tree = edit.render(); button(tree, "保存账号资料").props.onClick(); assert.equal(button(tree, "保存账号资料").props.disabled, true); assert.equal(results.length, 1);
+  editPicker.props.onBlocking(false); tree = edit.render(); button(tree, "保存账号资料").props.onClick(); assert.equal(results.length, 2); assert.equal(results[1].displayName, "新客服"); assert.equal(results[1].avatarAssetId, undefined); assert.equal(f.requests.length, 0);
+  create.dispose(); edit.dispose();
+});
+
 test("real picker persists default intent and retries original gender/key after reload; cancel retries original key", async () => {
   const f = fixture(); f.auth.session.role = "super";
   const picker = f.load("app/components/domain-views/a-tabs/account-avatar-picker.tsx").AccountAvatarPicker;
@@ -150,9 +174,9 @@ test("real picker persists default intent and retries original gender/key after 
   assert.equal(tree.props.className, "account-avatar-controls", "The real picker root owns the local typography scope");
   f.queue.push(new Error("unknown")); button(tree, "按所选性别准备默认头像").props.onClick(); await flush();
   assert.equal(f.requests.length, 1); const original = f.requests[0]; first.dispose();
-  const second = f.component(picker, { ...props, gender: "MALE" }); second.render(); tree = second.render(); f.queue.push(json(prepared())); button(tree, "上传或使用原命令重试").props.onClick(); await flush();
+  const second = f.component(picker, { ...props, gender: "MALE" }); second.render(); tree = second.render(); f.queue.push(json(prepared())); button(tree, "重试获取默认头像").props.onClick(); await flush();
   assert.equal(f.requests[1].init.body, original.init.body); assert.equal(new Headers(f.requests[1].init.headers).get("Idempotency-Key"), new Headers(original.init.headers).get("Idempotency-Key")); assert.equal(changed.at(-1), ID);
-  tree = second.render(); f.queue.push(new Error("cancel unknown")); button(tree, "取消新头像").props.onClick(); await flush(); tree = second.render(); f.queue.push(json(prepared("admin", "CANCELLED"))); button(tree, "重试原取消操作").props.onClick(); await flush();
+  tree = second.render(); f.queue.push(new Error("cancel unknown")); button(tree, "取消新头像").props.onClick(); await flush(); tree = second.render(); f.queue.push(json(prepared("admin", "CANCELLED"))); button(tree, "重试取消头像").props.onClick(); await flush();
   assert.equal(new Headers(f.requests[2].init.headers).get("Idempotency-Key"), new Headers(f.requests[3].init.headers).get("Idempotency-Key")); assert.equal(changed.at(-1), undefined); assert.equal(blocked.at(-1), false); second.dispose();
 });
 
@@ -179,14 +203,14 @@ test("manual upload reload only accepts the original image bytes and reuses the 
   const picker = f.load("app/components/domain-views/a-tabs/account-avatar-picker.tsx").AccountAvatarPicker;
   const props = { name: "客服", onChange() {}, onBlocking() {} }, file = new File(["original image bytes"], "portrait.jpg", { type: "image/jpeg" });
   const first = f.component(picker, props); first.render(); let tree = first.render(); nodes(tree, n => n.type === "input" && n.props.type === "file")[0].props.onChange({ target: { files: [file], value: "file" } });
-  for (let i = 0; i < 30 && !button(first.render(), "上传或使用原命令重试"); i++) await flush();
-  tree = first.render(); f.queue.push(new Error("upload unknown")); button(tree, "上传或使用原命令重试").props.onClick(); await flush(); const original = f.requests[0]; assert.equal(original.init.body.get("clientUploadId").length, 36); first.dispose();
+  for (let i = 0; i < 30 && !button(first.render(), "上传或重试"); i++) await flush();
+  tree = first.render(); f.queue.push(new Error("upload unknown")); button(tree, "上传或重试").props.onClick(); await flush(); const original = f.requests[0]; assert.equal(original.init.body.get("clientUploadId").length, 36); first.dispose();
   const second = f.component(picker, props); second.render(); tree = second.render(); const select = nodes(tree, n => n.type === "input" && n.props.type === "file")[0];
   select.props.onChange({ target: { files: [new File(["different image"], "other.jpg", { type: "image/jpeg" })], value: "file" } });
-  for (let i = 0; i < 30; i++) await flush(); tree = second.render(); assert.equal(button(tree, "上传或使用原命令重试").props.disabled, true); assert.equal(f.requests.length, 1);
+  for (let i = 0; i < 30; i++) await flush(); tree = second.render(); assert.equal(button(tree, "上传或重试").props.disabled, true); assert.equal(f.requests.length, 1);
   select.props.onChange({ target: { files: [new File(["original image bytes"], "renamed.jpg", { type: "image/jpeg" })], value: "file" } });
-  for (let i = 0; i < 30 && button(second.render(), "上传或使用原命令重试")?.props.disabled !== false; i++) await flush();
-  tree = second.render(); f.queue.push(json(prepared())); button(tree, "上传或使用原命令重试").props.onClick(); await flush();
+  for (let i = 0; i < 30 && button(second.render(), "上传或重试")?.props.disabled !== false; i++) await flush();
+  tree = second.render(); f.queue.push(json(prepared())); button(tree, "上传或重试").props.onClick(); await flush();
   assert.equal(f.requests[1].init.body.get("clientUploadId"), original.init.body.get("clientUploadId")); assert.equal(new Headers(f.requests[1].init.headers).get("Idempotency-Key"), new Headers(original.init.headers).get("Idempotency-Key")); assert.equal(await f.requests[1].init.body.get("file").text(), "original image bytes"); assert.equal(f.requests[1].init.body.get("file").name, "portrait.jpg"); assert.equal(f.requests[1].init.body.get("file").type, "image/jpeg"); second.dispose();
 });
 

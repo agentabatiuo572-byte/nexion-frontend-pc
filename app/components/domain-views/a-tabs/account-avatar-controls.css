@@ -1,14 +1,47 @@
-/* Only avatar controls and their own confirmation use these typography overrides. */
-.dkpage .account-avatar-controls,
+/* Drawer/Modal own .dkpage even when rendered outside the domain wrapper. */
+.dkpage .account-avatar-controls { min-width: 0; font-size: 14px; line-height: 1.5; }
+.dkpage fieldset.account-avatar-controls,
+.dkpage .account-avatar-controls fieldset { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin: 14px 0 20px; padding: 0; border: 0; }
+.dkpage .account-avatar-controls legend { margin-bottom: 12px; padding: 0; font-size: 14px; font-weight: 500; color: var(--ink); }
+.dkpage .account-avatar-controls label { min-width: 0; font-size: 14px; font-weight: 500; line-height: 1.5; }
 .dkpage .account-avatar-controls p,
-.dkpage .self-avatar-confirm-detail { font-size: 16px; }
-.dkpage .account-avatar-controls legend,
-.dkpage .account-avatar-controls label,
-.dkpage .account-avatar-controls input,
 .dkpage .account-avatar-controls small,
+.dkpage .account-avatar-feedback { margin: 0; font-size: 13px; font-weight: 400; line-height: 1.5; color: var(--ink-3); overflow-wrap: anywhere; }
+.dkpage .account-avatar-feedback { margin: 0 0 14px; color: var(--danger); }
+.dkpage .account-profile-note { margin: 0 0 14px; font-size: 13px; line-height: 1.5; color: var(--ink-3); overflow-wrap: anywhere; }
+.dkpage .account-avatar-field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.dkpage .account-avatar-controls .hd-select { min-width: 0; height: 40px; font-size: 14px; }
+.dkpage .account-avatar-controls .hd-select-pop { top: 44px; }
+.dkpage .account-avatar-modes { display: flex; flex-wrap: wrap; gap: 4px 20px; }
+.dkpage .account-avatar-modes label { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; cursor: pointer; }
+.dkpage .account-avatar-modes input { width: 16px; height: 16px; margin: 0; flex: none; accent-color: var(--brand); }
+.dkpage .account-avatar-controls:disabled .account-avatar-modes label { cursor: default; }
+.dkpage .account-avatar-preview { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px 24px; }
+.dkpage .account-avatar-preview > div { min-width: 0; display: grid; gap: 8px; }
+.dkpage .account-avatar-controls input[type="file"] { width: 100%; min-width: 0; max-width: 100%; min-height: 40px; font: inherit; }
+.dkpage .account-avatar-controls input[type="file"]::file-selector-button { min-height: 40px; margin-right: 8px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface-2); color: var(--ink); font: inherit; cursor: pointer; }
 .dkpage .account-avatar-controls .l-btn,
-.dkpage .l-btn.avatar-control-button { font-size: 14px; }
+.dkpage .l-btn.avatar-control-button { min-height: 40px; max-width: 100%; font-size: 14px; white-space: normal; overflow-wrap: anywhere; }
+.dkpage .account-avatar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.dkpage .account-avatar-actions :is(p, small) { flex-basis: 100%; }
+.dkpage .drawer-f > .account-avatar-controls { min-width: 0; flex-wrap: wrap; }
+.dkpage .drawer-f > .account-avatar-controls > button { min-width: 0; }
+.dkpage .account-profile-form { min-width: 0; }
+.dkpage .account-profile-fields,
+.dkpage .account-initial-roles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.dkpage .account-initial-roles { gap: 8px; }
+.dkpage .account-profile-fields label,
+.dkpage .account-initial-roles .l-btn { min-width: 0; overflow-wrap: anywhere; }
+.dkpage .account-profile-fields input { min-width: 0; max-width: 100%; }
+.dkpage .account-initial-roles .l-btn { flex-wrap: wrap; white-space: normal; }
+.dkpage .account-initial-roles input { flex: none; }
+.dkpage .account-avatar-controls p[role="alert"] { color: var(--danger); }
+.dkpage .self-avatar-confirm-detail { font-size: 14px; }
 .dkpage .modal:has(.self-avatar-confirm-detail) .field label,
 .dkpage .modal:has(.self-avatar-confirm-detail) .field textarea,
 .dkpage .modal:has(.self-avatar-confirm-detail) .btn,
 .dkpage .modal:has(.self-avatar-confirm-detail) .tiny { font-size: 14px; }
+@media (max-width: 480px) {
+  .dkpage .account-profile-fields,
+  .dkpage .account-initial-roles { grid-template-columns: minmax(0, 1fr); }
+}
