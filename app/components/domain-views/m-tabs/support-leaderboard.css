@@ -21,7 +21,7 @@
 .sl-view,.sl-rank-cell{position:relative}
 .sl-podium-metrics .sl-amount,.sl-podium-metrics .sl-count{width:100%}.sl-podium-metrics .sl-number-detail,.sl-podium-metrics .sl-count>strong{max-width:100%}.sl-podium-metrics .sl-number-detail summary strong,.sl-podium-metrics .sl-customer-link{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sl-footer-meta{display:flex;gap:20px;align-items:baseline;text-align:right}.sl-footer-meta time{max-width:none}@container sl-board (max-width:760px){.sl-footer-meta{flex-wrap:wrap;text-align:left;gap:8px}}
 @container sl-board (min-width:1020px){.sl-podium-portrait{top:4px}.sl-podium-person:first-child .sl-podium-portrait{top:-3px;left:calc(var(--sl-portrait-position) - 59px);width:118px;height:118px}.sl-podium-person:first-child .sl-podium-portrait .sl-avatar{width:118px;height:118px}.sl-pedestal{top:104px}}
-.sl-podium-portrait .sl-avatar-frame::after,.sl-self>.sl-avatar .sl-avatar-frame::after{content:"";position:absolute;inset:-2px;border-radius:50%;background:conic-gradient(from 0deg,transparent 0deg,#eaffad 36deg,#c4ff3670 60deg,transparent 88deg,transparent 360deg);mask:radial-gradient(farthest-side,transparent calc(100% - 2px),#000 calc(100% - 1px));animation:sl-ring-flow 12s linear infinite;opacity:.65;pointer-events:none}
+.sl-podium-portrait .sl-avatar-frame::after,.sl-self>.sl-avatar .sl-avatar-frame::after{content:"";position:absolute;inset:-2px;border-radius:50%;background:conic-gradient(from 0deg,transparent 0deg,#fff 18deg,#edffb5 38deg,#c4ff36b3 75deg,transparent 110deg,transparent 360deg);mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2px));animation:sl-ring-flow 8s linear infinite;opacity:1;pointer-events:none}
 @keyframes sl-ring-flow{to{transform:rotate(360deg)}}
 .sl-hero[data-motion="paused"] .sl-avatar-frame::after{animation-play-state:paused}
 @media(prefers-reduced-motion:reduce){.sl-avatar-frame::after{animation:none!important;opacity:0}}
@@ -54,7 +54,7 @@
 /* Source-cropped static surfaces contain no identity/data; current HTML owns all text, states and grid lines. */
 .sl-podium-rank{padding-top:24px}.sl-podium-rank small{position:absolute;top:0;left:calc(50% - 2px);width:max-content;transform:translateX(-50%)}
 .sl-podium-rank strong{font-weight:700;transform:scaleX(.86);transform-origin:left center}
-.sl-avatar[data-award] .sl-avatar-photo{border:1px solid #d8ded2;padding:1px;background:#0a0f0d}.sl-avatar-frame{border:2px solid var(--sl-lime)}.sl-podium-person[data-rank="2"] .sl-avatar-frame{border-width:1px;border-color:#d7e8bf}
+.sl-avatar[data-award] .sl-avatar-photo{border:1px solid #d8ded2;padding:1px;background:#0a0f0d}.sl-avatar-frame{border:2px solid var(--sl-lime);box-shadow:0 0 8px #c4ff3659}
 @media(min-width:1451px){
  .sl-pedestal,.sl-navigation,.sl-self,.sl-table-wrap,.sl-pagination{image-rendering:pixelated}
  .sl-avatar-photo,.sl-account-avatar{image-rendering:auto}

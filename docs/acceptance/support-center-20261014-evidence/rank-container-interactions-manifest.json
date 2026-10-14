@@ -1,0 +1,21 @@
+{
+  "purpose": "component fixture only; no real customer end-to-end or backend proof",
+  "repo": "D:/WORKS/PLAN/.wt/cs-analytics-ui-20261007",
+  "criticalSourceSHA256": {
+    "app/components/domain-views/m-tabs/m6-leaderboard.tsx": "051fcf9d20881cf8c6884712fe254fac7892326a90c5c1f034a50b696a8bab6c",
+    "app/components/domain-views/m-tabs/m6-leaderboard.css": "72a3c4c7f3994e78f307beeb12ab6b816f3ab7aad11a56ff96f67906ed638879",
+    "app/components/domain-views/m-tabs/support-leaderboard.tsx": "779de47e1820d3e9df88623aeba9f70b10a3f334f6b9777ca8e5db1290aac2f7",
+    "app/components/domain-views/m-tabs/support-leaderboard.css": "ba5a912bddb042918cd5b17ac9d7df3f754798d6ecd89c8217d32f9892a4c11c",
+    "app/components/domain-views/design-kit.tsx": "20863419922f4e1128adaf9ff51f19f7a96026717c42dbbc35714683fa6d7d7b",
+    "app/globals.css": "c224aa16702a14ca5948e5796965f0938e4c40b1869d42b6591e0497266c9cb9",
+    "lib/nav/console-nav.ts": "9abfdc2abe98b2957cc37fef5381d6ad7a2cffb7ee6b2edfe6715df3e64e615a",
+    "lib/store/admin-auth.ts": "34e28193b6b52c5ae6981a72fa5d8792332600948c41100f7717f9ec290a97c0",
+    "lib/admin/support-leaderboard-client.ts": "d833d9cd2cd86fd221d218e6e9c71b84e4c421514b000cf8071654cc36a4f7b3"
+  },
+  "fixtureSHA256": "7bea69ceb0d791c37ae2f3de7015fc703b157da9e811723625591c0c954242e5",
+  "bundleSHA256": "68d3d986043b2caabbcf0cfc52c1a7c1222b3b6c4594fe075a532eb5b68a167c",
+  "adapterSHA256": "be58dc9081df0f48d1b0db75a3b9e1bb2ab685314b92ec18bdc6cedbcab89291",
+  "loaderSHA256": "3e95684b5f15862e958bb5f5df922fcbcaff9f42f858de92b02e26d3fb88b401",
+  "bundleBytes": 2173868,
+  "css": "Actual imported CSS embedded; only Tailwind entry import omitted; no generated utility sheet required by this component"
+}

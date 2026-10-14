@@ -40,12 +40,25 @@ export function M6Leaderboard() {
   const liveKey = useRef(requestKey); liveKey.current = enabled ? requestKey : "";
   const [result, setResult] = useState<{ key: string; data: LeaderboardPage }>();
   const data = enabled && result?.key === requestKey ? result.data : undefined;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const pendingLocate = useRef<{ identity: string; query: string } | undefined>(undefined);
   const [photos, setPhotos] = useState<{ key: string; urls: Record<string, string> }>();
   const [detail, setDetail] = useState<{ key: string; agentId: string; data?: LeaderboardDetail; error?: string }>();
   const detailAbort = useRef<AbortController | null>(null), detailSequence = useRef(0);
   const closeDetail = () => { detailSequence.current++; detailAbort.current?.abort(); detailAbort.current = null; setDetail(undefined); };
   const resetFirstPage = (text: string) => { setResult(undefined); setPhotos(undefined); closeDetail(); setNotice(text); setQuery(current => ({ ...current, pageNum: 1, expectedVersion: undefined })); setRefresh(value => value + 1); };
   const deny = () => { setDeniedIdentity(identity); setResult(undefined); setPhotos(undefined); closeDetail(); setError("当前账号不能查看此榜单，请重新确认登录和客服权限。"); };
+
+  useEffect(() => {
+    const pending = pendingLocate.current;
+    if (!pending) return;
+    if (!enabled || error || pending.identity !== identity || pending.query !== JSON.stringify(query)) { pendingLocate.current = undefined; return; }
+    if (!data) return;
+    const row = containerRef.current?.querySelector<HTMLTableRowElement>('tr[data-self="true"]');
+    row?.scrollIntoView({ block: "center", behavior: "auto" });
+    row?.querySelector<HTMLButtonElement>(".sl-person-name button")?.focus({ preventScroll: true });
+    pendingLocate.current = undefined;
+  }, [data, enabled, error, identity, query]);
 
   useEffect(() => {
     setResult(undefined); setError(undefined); setNotice(undefined); setPhotos(undefined); closeDetail(); setKeyword("");
@@ -117,7 +130,7 @@ export function M6Leaderboard() {
   const currentQuery: SupportBoardQuery = { board: query.board, currency: data?.currency ?? query.currency, month: data?.rankMonth ?? query.month ?? selectedMonth.current ?? "", scope: scopeValue(query.scope, query.groupId) };
   const scopeLabels = { all: "全员榜", ownGroup: "本组榜", managedGroups: "负责组榜" };
   const detailRow = visibleDetail?.data?.row;
-  return <div className="m6-public-leaderboard">
+  return <div className="m6-public-leaderboard" ref={containerRef}>
     <SupportLeaderboard query={currentQuery} onQueryChange={changeQuery}
       search={<form className="m6-leaderboard-search" onSubmit={event => { event.preventDefault(); if (!enabled || keyword.length > 200 || /[\x00-\x1f\x7f-\x9f]/.test(keyword)) return; closeDetail(); setNotice(undefined); setQuery(current => ({ ...current, keyword: keyword.trim() || undefined, pageNum: 1, expectedVersion: undefined })); }}>
       <label htmlFor="m6-leaderboard-keyword">查找客服</label><input id="m6-leaderboard-keyword" className="fld" value={keyword} onChange={event => setKeyword(event.target.value)} maxLength={200} placeholder="客服姓名" disabled={!enabled} /><Btn disabled={!enabled} type="submit">搜索</Btn>
@@ -139,7 +152,7 @@ export function M6Leaderboard() {
       candidateReason={data?.state === "PROVISIONAL" ? data.candidateCoverage !== "COMPLETE" ? "参榜资料待核实，暂不显示名次" : "成绩待核实，暂不显示名次" : undefined}
       status={data ? "ready" : !enabled || error ? "error" : "loading"} statusMessage={!enabled ? "当前账号不能查看此榜单，请确认登录和客服权限。" : error}
       onRetry={() => { if (allowed) { setDeniedIdentity(undefined); resetFirstPage("正在重新读取第一页…"); } }}
-      onLocateSelf={() => { if (data) { const target = locateLeaderboardSelf(data, acceptedQuery(data, query)); if (target) { setKeyword(""); closeDetail(); setNotice("已清除搜索，按完整榜单定位本人。"); setQuery(target); setRefresh(value => value + 1); } } }}
+      onLocateSelf={() => { if (data) { const target = locateLeaderboardSelf(data, acceptedQuery(data, query)); if (target) { pendingLocate.current = { identity, query: JSON.stringify(target) }; setKeyword(""); closeDetail(); setNotice("已清除搜索，按完整榜单定位本人。"); setQuery(target); setRefresh(value => value + 1); } } }}
       onViewPerformance={openDetail} onViewCustomers={agentId => { const row = [...(data?.rows ?? []), ...(data?.podium?.rows ?? [])].find(row => row.id === agentId); if (row) customers(row); }}
       onViewAllRankings={() => { if (data) { setKeyword(""); closeDetail(); setQuery({ ...acceptedQuery(data, query), keyword: undefined, pageNum: 1 }); setRefresh(value => value + 1); } }}
       page={data ? { current: data.pageNum, total: Math.max(1, Math.ceil(data.matched / data.pageSize)), totalEntries: data.candidateCoverage === "COMPLETE" ? data.matched : undefined, pageSize: data.pageSize,

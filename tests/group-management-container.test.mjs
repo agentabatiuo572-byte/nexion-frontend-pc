@@ -12,10 +12,14 @@ test("directory exposes one scoped summary list and drills zero as well as nonze
   assert.deepEqual(visits,[["5","BOUND"],["5","PENDING"]]);assert.equal(h.calls.filter(c=>c.name==="groups").length,1);
   assert.equal(h.calls.some(c=>["detail","member","supervisors"].includes(c.name)),false);h.unmount();
 });
-test("unknown directory quantities stay unavailable and never become empty-list links",async()=>{
-  const h=harness({implementations:{groups:()=>[{...directoryGroup(),supervisorName:null,memberCount:null,boundCustomers:null,pendingCustomers:null}]}});await h.flush();
+test("unknown directory quantities retain unavailable labels and open the authorized group lists",async()=>{
+  const visits=[],h=harness({props:{onViewCustomers:(...args)=>visits.push(args)},implementations:{groups:()=>[{...directoryGroup(),supervisorName:null,memberCount:null,boundCustomers:null,pendingCustomers:null}],detail:()=>detail("5",[rawMember]),member:()=>member()}});await h.flush();
   const metrics=all(h.tree,n=>n.type==="button"&&n.props.className==="m-group-count");assert.equal(metrics.length,3);
-  assert.equal(metrics.every(n=>n.props.disabled&&text(n).trim()==="-"),true);assert.doesNotMatch(text(h.tree),/主管甲/);h.unmount();
+  for(const metric of metrics){assert.equal(text(metric).trim(),"-");assert.equal(metric.props.disabled,false);assert.match(metric.props.title,/数量暂不可用/);assert.match(metric.props["aria-label"],/数量暂不可用/);}
+  assert.doesNotMatch(text(h.tree),/主管甲/);metrics[1].props.onClick();metrics[2].props.onClick();assert.deepEqual(visits,[["5","BOUND"],["5","PENDING"]]);
+  assert.equal(h.calls.some(c=>c.name==="detail"),false);metrics[0].props.onClick();await h.flush();
+  assert.deepEqual(h.calls.filter(c=>c.name==="detail").map(c=>c.args[0]),["5"]);assert.match(text(h.tree),/专属客服21/);assert.equal(all(h.tree,n=>n.type==="table").length,1);
+  h.click("返回组目录");await h.flush();assert.deepEqual(all(h.tree,n=>n.type==="button"&&n.props.className==="m-group-count").map(n=>text(n).trim()),["-","-","-"]);h.unmount();
 });
 test("server-provided MANAGED allows a supervisor with no groups to create self-owned group without global/A1 reads",async()=>{
   const h=harness({implementations:{createSupportGroup:()=>{throw new Error("network unknown");}}});await createDraft(h);h.click("确认并提交");await h.flush();const call=h.calls.find(c=>c.name==="createSupportGroup");assert.equal(call.args[0].supervisorAdminId,"17");assert.equal(call.stored[0].commandKey,call.args[1]);assert.equal(call.stored[0].intent.payload.reason,why);assert.equal(h.calls.some(c=>["supervisors","qualifications","candidates"].includes(c.name)),false);assert.equal(h.store.list().length,1);h.unmount();
