@@ -214,6 +214,15 @@
         "sha256": "34a3acee230643ab95146c86f81f73fa91467932298591c6c9c4e98f681a3547"
       }
     ],
-    "execution": "Read-only source review; no database query, service start, new dataset, clock change, payment or repeated test run"
+    "execution": "Read-only source review; no database query, service start, new dataset, clock change, payment or repeated test run",
+    "supersededForFunctionalTesting": true
+  },
+  "functionalAcceptance": {
+    "status": "PASS_CONTROLLED_COMPLETE_INPUTS_REAL_MYSQL_PUBLICATION",
+    "report": "https://github.com/agentabatiuo572-byte/nexion-backend/blob/test/docs/support-rank-complete-20261015.md",
+    "legacyHistoryBlocksFunctionalAcceptance": false,
+    "ownerApprovedSimulation": true,
+    "date": "2026-10-15",
+    "legacyHistoryRestored": false
   }
 }
