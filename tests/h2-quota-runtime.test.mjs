@@ -89,7 +89,8 @@ test("H2 retains zero and UNKNOWN without replacing either with the configured l
   for (const cur of ["0", "UNKNOWN"]) {
     const h = harness(), row = h.row({ ...actual, cur, readOnly: false });
     const html = render(row);
-    assert.match(html, cur === "0" ? /0 张/ : /UNKNOWN（暂不可用）/);
+    assert.match(html, cur === "0" ? /0 张/ : /<span[^>]*>-<\/span>/);
+    assert.doesNotMatch(html, /UNKNOWN/);
     assert.doesNotMatch(html, /47 张/);
     const button = walk(row).find(node => node.type === "button");
     assert.equal(button.props.disabled, true);

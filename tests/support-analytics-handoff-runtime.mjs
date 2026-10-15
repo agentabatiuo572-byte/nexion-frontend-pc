@@ -195,7 +195,7 @@ export async function produceHandoff({ identity, sourcePhase, reportPath, login 
     await verifyRuntimeOwnership(runtimeReceipt, runtimeTarget);
     baselineBinding = await backendBinding(config.handoff.backend, runtimeReceipt);
     const parserFiles = ["lib/admin/support-analytics-client.ts", "lib/admin/support-group-client.ts", "lib/admin/m-support-enhancements.ts", "lib/admin/m-support-read-contract.ts"];
-    const [{ parseSupportAnalyticsResponse }, { parseSupportGroup, parseGroupDetail }, { parseSupportProfile }, { parseMContentApiEnvelope }] = await Promise.all(parserFiles.map(file => import(pathToFileURL(join(identity.repo, file)).href)));
+    const [{ parseSupportAnalyticsResponse }, { parseGroupDirectory, parseGroupDetail }, { parseSupportProfile }, { parseMContentApiEnvelope }] = await Promise.all(parserFiles.map(file => import(pathToFileURL(join(identity.repo, file)).href)));
     const parse = async (response, accountCase) => {
       assert.equal(response.status(), 200, "The real authorized GET failed");
       const url = new URL(response.url()), query = conditions(url), expected = expectedQuery(url);
@@ -295,9 +295,9 @@ export async function produceHandoff({ identity, sourcePhase, reportPath, login 
           await page.getByRole("button", { name: "分组管理", exact: true }).click();
           const directory = await directoryResponse; assert.equal(directory.status(), 200);
           const groupData = parseMContentApiEnvelope(directory.status(), await directory.text(), true); assert.ok(Array.isArray(groupData), "The real group directory is not an array");
-          const groups = groupData.map(parseSupportGroup);
+          const groups = groupData.map(parseGroupDirectory);
           const directDirectory = await context.request.get(`${config.baseUrl}${groupsPath}`); assert.equal(directDirectory.status(), 200);
-          const directGroupData = parseMContentApiEnvelope(directDirectory.status(), await directDirectory.text(), true); assert.ok(Array.isArray(directGroupData)); assert.deepEqual(directGroupData.map(parseSupportGroup), groups, "Page/direct directory reads differ");
+          const directGroupData = parseMContentApiEnvelope(directDirectory.status(), await directDirectory.text(), true); assert.ok(Array.isArray(directGroupData)); assert.deepEqual(directGroupData.map(parseGroupDirectory), groups, "Page/direct directory reads differ");
           assert.deepEqual(sortedIds(groups.map(group => group.id)), sortedIds(accountCase.groupIds));
           assert.ok(groups.length > 0, "A real managed directory/detail record is required");
           const group = groups[0]; if (accountCase.mode === "MANAGED") for (const row of groups) assert.equal(row.supervisorAdminId, accountCase.adminId);

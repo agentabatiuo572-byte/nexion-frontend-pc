@@ -125,6 +125,8 @@
 
 暂停/人工结束不再接受新的预留；已有预留可在原 payBy 前履行。异常风控导致已有订单必须停止支付时，须通过既有订单安全处置、原因及通知完成，不靠改活动状态暗中撤销。
 
+未发布、未到开始时间、暂停、结束及归档活动不显示新增广告、商品赠礼标识或参与入口；前端进入、返回及重读后按服务端有效状态清除旧宣传，历史订单与奖励不随停投隐藏。宣传图由后台上传并随活动版本保存、审核、发布，缺图或加载失败使用本地化文字卡片，不写死图片。
+
 ### P4.2 预览与正式预留的区别
 
 | 阶段 | 内容 | 是否占用/是否承诺 |
@@ -257,7 +259,7 @@ RETRYABLE_FAILED 可重试原义务；OUTCOME_UNKNOWN 必须先查原命令和�
 | 对象 | 关键字段/类型 | 生成规则与约束 |
 |---|---|---|
 | Promotion | activityId:string、category:PROMOTION/REFERRAL、template:string、status、activeVersion:int、startsAt/endsAt:UTC、displayTimezone、localizedContent、placement、minimumClientCapabilities | ID服务端生成；activityId跨改版稳定；旧H4 eventCode唯一关联；首页投放home.purchase-promotion固定导向现有商城，响应另含权威serverTime |
-| PromotionVersion | version:int、draftVersionState、audience、rules[]、limits、budgets[]、shortagePolicy、stackingPolicy、settlementPolicyRef、asset/devicePolicyRefs、decisionRefs、revision、approvedBy/At、publishedBy/At | 发布版本不可编辑；原始合同可审计；决策缺失不可发布；草稿审批状态独立于已生效活动 |
+| PromotionVersion | version:int、draftVersionState、bannerAssetId:string?、audience、rules[]、limits、budgets[]、shortagePolicy、stackingPolicy、settlementPolicyRef、asset/devicePolicyRefs、decisionRefs、revision、approvedBy/At、publishedBy/At | 宣传图为受管图片引用，公开返回版本绑定的bannerImageUrl；发布版本不可编辑；原始合同可审计；决策缺失不可发布；草稿审批状态独立于已生效活动 |
 | AudienceSnapshot | accountId、registeredAt、purchaseFactVersion、deviceFactVersion、rank、sponsorId、evaluatedAt、matchedConditionIds | 不向购买者暴露内部风控算法；后台仅授权角色可查 |
 | PurchaseRule | ruleId、productNo、minBuyQty:int、repeatMode、maxGroups、maxGroupsPerPerson、buyerReward、inviterReward?、priority | 稳定ID；购买与赠送SKU不同字段；上限单位按P6；活动内冲突必须可裁决 |
 | RewardSpec | rewardRuleId、beneficiaryRole、type、amount:string?、giftProductNo?、quantity:int?、policyRef | type决定必填字段；无隐式汇率；金额正数，DEVICE必须rightsProfile |

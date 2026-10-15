@@ -9,19 +9,62 @@ import path from 'node:path';
 import * as promotionForm from '../lib/admin/promotion-form.ts';
 
 const require=createRequire(import.meta.url);
+test('shared blank states retain the frozen design icon and paragraph geometry',()=>{
+  const baseline=fs.readFileSync(new URL('../docs/design/growth-promotions/admin-r1-baseline.html',import.meta.url),'utf8');
+  const actual=fs.readFileSync(new URL('../app/components/domain-views/h-tabs/h4-promotions.css',import.meta.url),'utf8');
+  const declarations=(source,selector)=>{
+    const start=source.indexOf(selector+'{');assert(start>=0,selector);
+    return Object.fromEntries(source.slice(start+selector.length+1,source.indexOf('}',start)).split(';').filter(Boolean).map(rule=>rule.split(':')));
+  };
+  for(const [selector,properties] of [['.blank .emptyicon',['width','height','display','place-items','background','border-radius','font-size']],['.blank p',['line-height']]]){
+    const expected=declarations(baseline,selector),rendered=declarations(actual,'.prm '+selector);
+    for(const property of properties)assert.equal(rendered[property],expected[property],`${selector} ${property}`);
+  }
+});
+test('session renewal keeps promotion reads stable while permission and identity changes revalidate',()=>{
+  let state,hook=0;const slots=[];
+  const hooks={useEffect(){},useState:()=>[null,()=>{}],useMemo:fn=>fn(),
+    useRef:initial=>slots[hook++]??=( {current:initial} ),
+    useCallback:(fn,deps)=>{const i=hook++,old=slots[i];if(old&&deps.every((v,n)=>Object.is(v,old.deps[n])))return old.fn;slots[i]={fn,deps};return fn;}};
+  const shallowExports={};
+  new Function('require','exports',fs.readFileSync(require.resolve('zustand/react/shallow'),'utf8'))(name=>name==='react'?hooks:require(name),shallowExports);
+  const H4=()=>null,empty=()=>null;
+  const imports=name=>{
+    if(name==='react')return hooks;
+    if(name==='react/jsx-runtime')return require(name);
+    if(name==='zustand/react/shallow')return shallowExports;
+    if(name.endsWith('/admin-auth'))return {useAdminAuth:selector=>selector(state)};
+    if(name.endsWith('/design-kit'))return {useToast:()=>[null,()=>{}]};
+    if(name.endsWith('/h4-promotions'))return {__esModule:true,default:H4};
+    return new Proxy({__esModule:true,default:empty},{get:(target,key)=>key in target?target[key]:empty});
+  };
+  const code=ts.transpileModule(fs.readFileSync(new URL('../app/components/domain-views/h-view.tsx',import.meta.url),'utf8'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+  const module={exports:{}};new Function('require','exports','module',code)(imports,module.exports,module);
+  const find=node=>{if(!node||typeof node!=='object')return;if(node.type===H4)return node.props.ctx.can;for(const child of [].concat(node.props?.children??[])){const result=find(child);if(result)return result;}};
+  const render=value=>{state=value;hook=0;const can=find(module.exports.HDomainView({meta:{l2Id:'H4'}}));assert.equal(typeof can,'function');return can;};
+  const initial={authEpoch:1,session:{role:'auditor',authorities:['growth_promotion_read','growth_promotion_edit']}};
+  const first=render(initial);assert(first('growth_promotion_edit'));assert(!first('growth_promotion_approve'));
+  const renewed=render({...initial,session:{...initial.session,authorities:[...initial.session.authorities]}});assert.strictEqual(renewed,first);
+  const revoked=render({...initial,session:{role:'auditor',authorities:['growth_promotion_read']}});assert.notStrictEqual(revoked,first);assert(!revoked('growth_promotion_edit'));
+  const restored=render(initial);assert.notStrictEqual(restored,revoked);assert(restored('growth_promotion_edit'));
+  const nextIdentity=render({...initial,authEpoch:2});assert.notStrictEqual(nextIdentity,restored);
+  const superAdmin=render({authEpoch:2,session:{role:'superadmin',authorities:[]}});assert(superAdmin('growth_promotion_edit'));
+  const signedOut=render({authEpoch:3,session:null});assert.notStrictEqual(signedOut,superAdmin);assert(!signedOut('growth_promotion_read'));
+});
 function component(file,imports,privateExport=''){
   const code=ts.transpileModule(fs.readFileSync(new URL('../app/components/domain-views/h-tabs/'+file,import.meta.url),'utf8'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
   const module={exports:{}};new Function('require','exports','module',code+(privateExport?'\nmodule.exports.'+privateExport+'='+privateExport+';':''))(imports,module.exports,module);return module.exports;
 }
 const ui=component('h4-promotion-ui.tsx',name=>name.startsWith('react')?require(name):name.endsWith('error-messages')?{displayAdminError:e=>e.message}:{});
 const activity={activityId:'A1',name:'原活动',state:'DRAFT',current:{revision:1,draft:{}},impact:{}};
-function page({catalog={data:{},loading:false,error:null},list={data:{},loading:false,error:null},current=activity,error=null,busy=false,screen='edit'}={}){
-  const states={1:2,3:screen,4:'A1',5:current,6:error,7:busy};let stateIndex=0,readIndex=0;const calls=[];
-  const fakeUi=new Proxy({...ui,useRead:()=>{const i=readIndex++;return {...[catalog,list][i],reload:()=>calls.push(i===0?'catalog':'list')};}},{get:(obj,key)=>key in obj?obj[key]:()=>null});
+function page({catalog={data:{},loading:false,error:null},list={data:{},loading:false,error:null},current=activity,error=null,busy=false,screen='edit',query={limit:20},previous=[],pending=null,routeReady=true,old=false}={}){
+  const states={1:2,2:old,3:screen,4:'A1',5:current,6:error,7:busy,11:pending,15:query,16:previous,17:routeReady};let stateIndex=0,readIndex=0;const calls=[],readGates=[],effects=[];
+  const fakeUi=new Proxy({...ui,useRead:(_loader,_deps,enabled=true)=>{const i=readIndex++;readGates.push(enabled);return {...[catalog,list][i],reload:()=>calls.push(i===0?'catalog':'list')};}},{get:(obj,key)=>key in obj?obj[key]:()=>null});
   const Editor=()=>null;
   const H4=component('h4-promotions.tsx',name=>{
-    if(name==='react')return {useState:initial=>{const i=stateIndex++;return [i in states?states[i]:typeof initial==='function'?initial():initial,()=>{}];},useEffect:()=>{},useCallback:fn=>fn};
+    if(name==='react')return {useState:initial=>{const i=stateIndex++;if(!(i in states))states[i]=typeof initial==='function'?initial():initial;return [states[i],next=>states[i]=typeof next==='function'?next(states[i]):next];},useEffect:effect=>effects.push(effect),useCallback:fn=>fn};
     if(name==='react/jsx-runtime')return require(name);
+    if(name==='next/navigation')return {useSearchParams:()=>new URLSearchParams()};
     if(name.endsWith('h4-promotion-ui'))return fakeUi;
     if(name.endsWith('h4-promotion-editor'))return {__esModule:true,default:Editor};
     if(name.endsWith('promotion-client'))return {pendingPromotionCommands:()=>[],promotionRead:async()=>{calls.push('activity');return activity;}};
@@ -31,8 +74,43 @@ function page({catalog={data:{},loading:false,error:null},list={data:{},loading:
   }).default;
   const tree=H4({ctx:{can:()=>true},legacy:null}),nodes=[];
   const walk=node=>{if(Array.isArray(node))return node.forEach(walk);if(!node||typeof node!=='object')return;nodes.push(node);walk(node.props?.children);walk(node.props?.action);walk(node.props?.footer);};walk(tree);
-  return {nodes,Editor,calls};
+  return {nodes,Editor,calls,states,readGates,effects};
 }
+
+test('only the visible restored activity list may create a list query',()=>{
+  for(const screen of ['edit','review','detail','rewards','metrics'])assert.equal(page({screen}).readGates[1],false,screen);
+  assert.equal(page({screen:'list',routeReady:false,list:{data:null,loading:true,error:null}}).readGates[1],false,'deep links resolve before any list request');
+  assert.equal(page({screen:'list',old:true}).readGates[1],false,'legacy activities do not read promotions');
+  assert.equal(page({screen:'list',list:{data:null,loading:true,error:null}}).readGates[1],true);
+});
+
+test('disabled reads defer refresh until enabled and discard late hidden responses',async()=>{
+  let cursor=0,effectDeps,cleanup,pendingEffect,ref,calls=0,resolve;
+  const states=[];
+  const react={useRef:initial=>ref??={current:initial},useState:initial=>{const i=cursor++;if(!(i in states))states[i]=initial;return [states[i],value=>states[i]=typeof value==='function'?value(states[i]):value];},useEffect:(effect,deps)=>{if(!effectDeps||deps.some((v,i)=>!Object.is(v,effectDeps[i]))){effectDeps=deps;pendingEffect=effect;}}};
+  const {useRead}=component('h4-promotion-ui.tsx',name=>name==='react'?react:name==='react/jsx-runtime'?require(name):{});
+  const loader=()=>{calls++;return new Promise(done=>{resolve=done;});};
+  const render=enabled=>{cursor=0;const result=useRead(loader,[],enabled);if(pendingEffect){cleanup?.();const effect=pendingEffect;pendingEffect=null;cleanup=effect();}return result;};
+  let read=render(false);read.reload();render(false);assert.equal(calls,0);
+  render(true);assert.equal(calls,1);render(false);resolve('late');await new Promise(done=>setImmediate(done));assert.equal(render(false).data,null);
+  render(true);assert.equal(calls,2);resolve('current');await new Promise(done=>setImmediate(done));assert.equal(render(true).data,'current');
+  render(undefined);assert.equal(calls,2,'omitted flag retains the enabled default');
+});
+
+test('reclaimed or expired list retry discards pagination history while preserving filters',()=>{
+  for(const data of [null,{items:[],summary:{},total:0}]){
+    const failed=page({screen:'list',list:{data,loading:false,error:Error('list no longer available')},query:{limit:20,state:'ACTIVE',querySnapshot:'old',cursor:'20'},previous:[{limit:20,querySnapshot:'old'}]});
+    const retry=failed.nodes.find(node=>node.type===ui.ReadError)?.props.retry??failed.nodes.find(node=>node.type===ui.PromotionReadPanel).props.errors.find(error=>error.target==='活动列表').retry;
+    retry();assert.deepEqual(failed.states[15],{limit:20,state:'ACTIVE'});assert.deepEqual(failed.states[16],[]);assert.deepEqual(failed.calls,['list']);
+  }
+});
+
+test('recovering an existing activity command refreshes its list exactly once',async()=>{
+  const restored=page({pending:{operation:'saveDraft',body:{},path:'/promotions/A1/draft',targetId:'A1'},query:{limit:20,querySnapshot:'old',cursor:'20'},previous:[{limit:20,querySnapshot:'old'}]});
+  const dialog=restored.nodes.find(node=>node.type===ui.ConfirmCommand&&node.props.title==='核查原操作结果');
+  await dialog.props.onSuccess({resource:{type:'VERSION',id:'A1:1'}});
+  assert.deepEqual(restored.calls,['activity','list']);assert.deepEqual(restored.states[15],{limit:20});assert.deepEqual(restored.states[16],[]);
+});
 test('initial read state keeps the approved six-row card and four steps',()=>{
   const html=renderToStaticMarkup(ui.PromotionReadPanel({title:'购机赠奖',loading:true}));
   assert.equal((html.match(/class="skeleton-row"/g)||[]).length,6);assert.match(html,/正在读取购机赠奖/);assert.match(html,/读取结束前不允许提交/);
@@ -44,6 +122,52 @@ test('initial catalog and activity failures form one card with distinct recovery
 });
 test('catalog delay is loading instead of an empty or editable form',()=>{
   const pending=page({catalog:{data:null,loading:true,error:null}});assert(pending.nodes.some(n=>n.type===ui.PromotionReadPanel&&n.props.loading));assert(!pending.nodes.some(n=>n.type===pending.Editor));
+});
+
+test('an unreadable editor has a direct list exit without bypassing mounted unsaved changes',()=>{
+  const originalLocation=globalThis.location,originalHistory=globalThis.history;
+  try{
+    for(const state of [{current:null,error:Error('not found')},{current:null,busy:true},{catalog:{data:null,loading:false,error:Error('catalog unavailable')}}]){
+      let nextUrl;globalThis.location={href:'https://local.test/growth/events?promotion=edit&activity=A1'};globalThis.history={pushState:(_state,_title,url)=>{nextUrl=url;}};
+      const failed=page(state),back=failed.nodes.find(node=>node.type===ui.Button&&node.props.children==='返回活动列表');
+      assert(back,'Unloaded editor must retain an explicit exit');assert(!back.props.disabled);back.props.onClick();
+      assert.equal(failed.states[3],'list');assert.equal(nextUrl.searchParams.get('promotion'),null);assert.equal(nextUrl.searchParams.get('activity'),null);
+    }
+    assert(!page().nodes.some(node=>node.type===ui.Button&&node.props.children==='返回活动列表'),'A mounted editor must keep its original unsaved-change guard');
+  }finally{globalThis.location=originalLocation;globalThis.history=originalHistory;}
+});
+
+test('same-path navigation restores the activity screen when only Next search parameters change',()=>{
+  const originalWindow=globalThis.window,originalLocation=globalThis.location;
+  const states=[],effects=[],params=new Map();let cursor=0,pending=[],query='';
+  const hooks={useState:initial=>{const i=cursor++;if(!(i in states))states[i]=typeof initial==='function'?initial():initial;return [states[i],value=>states[i]=typeof value==='function'?value(states[i]):value];},useCallback:fn=>fn,useEffect:(effect,deps)=>{const i=cursor++;if(!effects[i]||deps.some((value,j)=>!Object.is(value,effects[i][j]))){effects[i]=deps;pending.push(effect);}}};
+  const H4=component('h4-promotions.tsx',name=>{
+    if(name==='react')return hooks;
+    if(name==='react/jsx-runtime')return require(name);
+    if(name==='next/navigation')return {useSearchParams:()=>{if(!params.has(query))params.set(query,new URLSearchParams(query));return params.get(query);}};
+    if(name.endsWith('h4-promotion-ui'))return {...ui,useRead:()=>({data:null,loading:true,error:null,reload(){}})};
+    if(name.endsWith('promotion-client'))return {pendingPromotionCommands:()=>[],promotionRead:()=>new Promise(()=>{})};
+    if(name.endsWith('promotion-form'))return promotionForm;
+    if(name.endsWith('.css'))return {};
+    return {__esModule:true,default:()=>null};
+  }).default;
+  const render=search=>{query=search;globalThis.location={search};cursor=0;pending=[];const tree=H4({ctx:{can:()=>true},legacy:null});for(const effect of pending)effect();return tree.props['data-promotion-screen'];};
+  try{
+    globalThis.window={addEventListener(){},removeEventListener(){}};
+    render('?promotion=edit&activity=missing&step=2');assert.equal(render(query),'edit');
+    render('');assert.equal(render(''),'list','Sidebar navigation must work without reload or popstate');
+    render('?promotion=rewards&activity=A1');assert.equal(render(query),'rewards');
+  }finally{globalThis.window=originalWindow;globalThis.location=originalLocation;}
+});
+
+test('query-only navigation cannot bypass the mounted editor and its existing unsaved-change controls',()=>{
+  const originalWindow=globalThis.window,originalLocation=globalThis.location;
+  try{
+    globalThis.window={addEventListener(){},removeEventListener(){}};globalThis.location={search:''};
+    const mounted=page();assert(mounted.nodes.some(node=>node.type===mounted.Editor));
+    for(const effect of mounted.effects)effect();
+    assert.equal(mounted.states[3],'edit');assert.equal(mounted.states[4],'A1');assert.strictEqual(mounted.states[5],activity);assert.equal(mounted.readGates[1],false);
+  }finally{globalThis.window=originalWindow;globalThis.location=originalLocation;}
 });
 test('refresh failure or delay preserves the mounted editor and blocks writes',()=>{
   const good=page().nodes.find(n=>n.type.name==='Editor');assert(good.props.can('growth_promotion_edit'));
@@ -60,15 +184,15 @@ test('failure panel discloses both objects and invokes only the selected recover
   const panel=ui.PromotionReadPanel({title:'活动中心',loading:false,errors});const html=renderToStaticMarkup(panel);assert.match(html,/活动目录/);assert.match(html,/活动列表/);
   const buttons=[];const walk=node=>{if(Array.isArray(node))return node.forEach(walk);if(!node||typeof node!=='object')return;if(node.type===ui.Button)buttons.push(node);walk(node.props?.children);walk(node.props?.action);};walk(panel);buttons[1].props.onClick();assert.deepEqual(calls,['活动列表']);
 });
-test('failed first export read retries its original task and later metric errors retry their own query',async()=>{
-  const states=[],refs=[],calls=[];let stateIndex=0,refIndex=0;
+test('failed first export read retries its original task and later metric errors restart their own filtered query',async()=>{
+  const states=[],refs=[],calls=[],queries=[],responses={};let stateIndex=0,refIndex=0;
   const metricUi={...ui,useRead:()=>({data:{items:[]},loading:false,error:null})};
   const Metrics=component('h4-promotion-metrics.tsx',name=>{
     if(name==='react')return {useState:initial=>{const i=stateIndex++;if(!(i in states))states[i]=typeof initial==='function'?initial():initial;return [states[i],next=>states[i]=typeof next==='function'?next(states[i]):next];},useRef:initial=>{const i=refIndex++;return refs[i]||(refs[i]={current:initial});}};
     if(name==='react/jsx-runtime')return require(name);
     if(name.endsWith('h4-promotion-ui'))return metricUi;
     if(name.endsWith('promotion-form'))return promotionForm;
-    if(name.endsWith('promotion-client'))return {promotionRead:async route=>{calls.push(route);throw Error('read unavailable');},promotionVersions:async()=>({items:[]})};
+    if(name.endsWith('promotion-client'))return {promotionRead:async (route,query)=>{calls.push(route);queries.push(query);if(route in responses)return responses[route];throw Error('read unavailable');},promotionVersions:async()=>({items:[]})};
     return {};
   }).default;
   const props={activity:{activityId:'A1',name:'activity',startsAt:'2026-10-08T00:00:00Z',endsAt:'2026-10-09T00:00:00Z'},catalog:{},can:()=>true,onBack:()=>{}};
@@ -78,6 +202,23 @@ test('failed first export read retries its original task and later metric errors
   const confirm=render().find(node=>node.type===ui.ConfirmCommand);assert(confirm);await assert.rejects(confirm.props.onSuccess({resource:{type:'EXPORT',id:'E1'}}),/read unavailable/);
   let failure=render().find(node=>node.type===ui.ReadError);assert.equal(failure.props.target,'原导出任务');failure.props.retry();await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(calls,['/promotion-exports/E1','/promotion-exports/E1']);
   const form=render().find(node=>node.type==='form');form.props.onSubmit({preventDefault(){}});await new Promise(resolve=>setImmediate(resolve));failure=render().find(node=>node.type===ui.ReadError);assert.equal(failure.props.target,'活动效果查询');failure.props.retry();await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(calls.slice(-2),['/promotions/A1/metrics','/promotions/A1/metrics']);
+  responses['/promotions/A1/metrics']=states[4];form.props.onSubmit({preventDefault(){}});await new Promise(resolve=>setImmediate(resolve));delete responses['/promotions/A1/metrics'];
+  states[1]=true;states[3]={from:'2026-10-08T00:00:00Z',to:'2026-10-09T00:00:00Z',timezone:'UTC',querySnapshot:'old',limit:20};states[4].breakdown={rows:[],total:40,hasMore:true,nextCursor:'20'};states[8]={exportId:'E1',state:'READY',rowCount:0};
+  render().find(node=>node.type===ui.Button&&node.props.children==='下一页').props.onClick();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(queries.at(-1).cursor,'20');assert.equal(queries.at(-1).querySnapshot,'Q1');
+  const failedNodes=render(),failedDialog=failedNodes.find(node=>node.type===ui.Dialog&&node.props.title==='奖励分组明细');
+  assert(failedDialog.props.children.flat(Infinity).some(node=>node?.type===ui.ReadError),'A modal paging failure must expose its retry inside that modal');
+  assert.equal(failedNodes.filter(node=>node.type===ui.ReadError).length,1);
+  for(const label of ['上一页','下一页'])assert(!failedNodes.some(node=>node.type===ui.Button&&node.props.children===label));
+  failedDialog.props.onClose();responses['/promotion-exports/E1']=states[8];
+  render().find(node=>node.type===ui.Button&&node.props.children==='查询原任务').props.onClick();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(render().find(node=>node.type===ui.ReadError).props.target,'活动效果查询','reading an old export cannot clear a failed metrics query');
+  assert.equal(render().find(node=>node.type===ui.Button&&node.props.children==='导出当前报表').props.disabled,true);
+  assert.equal(render().find(node=>node.type===ui.ConfirmCommand).props.writeAllowed,false);
+  render().find(node=>node.type===ui.Button&&node.props.children==='奖励分组明细').props.onClick();
+  assert(!render().some(node=>node.type===ui.Empty&&node.props.title==='当前窗口没有分组记录'));
+  render().find(node=>node.type===ui.ReadError).props.retry();await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(queries.at(-1),{from:'2026-10-08T00:00:00Z',to:'2026-10-09T00:00:00Z',timezone:'UTC',limit:20});assert.deepEqual(states[10],[]);assert.equal(states[8],null);
 });
 test('blocked command dialogs deny new writes and original retries while retaining original-result reads',async()=>{
   const states=[],refs=[];let stateIndex=0,refIndex=0,writes=0,reads=0,records=[];
@@ -92,7 +233,7 @@ test('blocked command dialogs deny new writes and original retries while retaini
   render();states[0]={minChars:1,maxChars:100};states[2]=false;states[4]='retained original reason';
   let button=render().find(node=>node.type===gateUi.Button&&node.props.children==='确认操作');assert.equal(button.props.disabled,true);await button.props.onClick();assert.equal(writes,0,'Handler must deny dispatch even if a stale callback is invoked');
   records=[{operation:'saveDraft',targetId:'A1',body:{reason:'retained original reason'},recoveryState:'NOT_FOUND'}];button=render().find(node=>node.type===gateUi.Button&&node.props.children==='原样重试');assert.equal(button.props.disabled,true);await button.props.onClick();assert.equal(writes,0);
-  button=render().find(node=>node.type===gateUi.Button&&node.props.children==='核查原命令');assert.equal(button.props.disabled,false);await button.props.onClick();assert.equal(reads,1);assert.equal(writes,0);assert.equal(states[4],'retained original reason');
+  button=render().find(node=>node.type===gateUi.Button&&node.props.children==='核查原操作');assert.equal(button.props.disabled,false);await button.props.onClick();assert.equal(reads,1);assert.equal(writes,0);assert.equal(states[4],'retained original reason');
 });
 
 function simulation(read){
@@ -175,6 +316,7 @@ function editingDialog(name,props){
     if(dependency.endsWith('promotion-form'))return promotionForm;
     if(dependency.endsWith('promotion-client'))return {promotionRead:()=>assert.fail('No service reads in offline editor regression')};
     if(dependency.endsWith('h4-promotion-policies'))return {PromotionRightsDialog:()=>null};
+    if(dependency.endsWith('h4-promotion-banner'))return {PromotionBanner:()=>null};
     assert.fail('Unknown editor dependency '+dependency);
   },name==='default'?'':name);
   const local=new Set(['NumericField','RewardFields','LimitField','PolicySelect','CombinationEditor','AudienceFields']);

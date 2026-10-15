@@ -3,3 +3,24 @@
 .m1-group-management h2 { margin:0; flex:1; }
 .m1-group-management .field { display:block; margin:14px 0; }
 .m1-group-management .m-admin-table-wrap { margin-top:14px; }
+.mdom .m1-group-management .m-admin-table { font-size:14px; }
+.mdom .m1-group-management .m-admin-table th { font-size:12.5px; white-space:nowrap; }
+.m1-group-management .m-group-name { display:block; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mdom .m1-group-management .m-group-count { min-width:40px; min-height:40px; padding:4px 0; border:0; background:transparent; color:var(--admin-domain-m); font:inherit; font-variant-numeric:tabular-nums; cursor:pointer; }
+@media (hover: hover) and (pointer: fine) { .mdom .m1-group-management .m-group-count:hover:not(:disabled) { text-decoration:underline; } }
+.mdom .m1-group-management .m-group-count:disabled { color:var(--v5-ink-3); cursor:default; }
+.mdom .m1-group-management .m-group-count:focus-visible { outline:2px solid var(--v5-brand); outline-offset:2px; border-radius:4px; }
+@container mdom (max-width:900px) {
+  .mdom .m1-group-management .m-group-directory, .mdom .m1-group-management .m-group-directory tbody { display:block; }
+  .mdom .m1-group-management .m-group-directory thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+  .mdom .m1-group-management .m-group-directory tr { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px 16px; padding:16px; margin-bottom:12px; border:0; border-radius:10px; background:var(--v5-surface); }
+  .mdom .m1-group-management .m-group-directory td { display:block; min-width:0; padding:0; border:0; }
+  .mdom .m1-group-management .m-group-directory td:first-child { grid-row:auto; grid-column:1 / -1; font-weight:600; }
+  .mdom .m1-group-management .m-group-directory td:nth-child(2) { grid-column:1 / 3; }
+  .mdom .m1-group-management .m-group-directory td:nth-child(6) { grid-column:3; grid-row:2; }
+  .mdom .m1-group-management .m-group-directory td:last-child { grid-column:1 / -1; }
+  .mdom .m1-group-management .m-group-directory td::before { content:attr(data-label); display:block; margin-bottom:4px; color:var(--v5-ink-3); font-size:12.5px; font-weight:400; }
+  .mdom .m1-group-management .m-group-directory td:first-child::before, .mdom .m1-group-management .m-group-directory td:last-child::before { display:none; }
+  .m1-group-management .m-group-name { max-width:100%; }
+  .mdom .m1-group-management .m-group-count { min-width:44px; min-height:44px; text-align:left; }
+}

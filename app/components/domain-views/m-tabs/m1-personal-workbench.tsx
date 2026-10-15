@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Activity, ArrowRight, ChevronLeft, ChevronRight, Clock3, MessageSquare, Moon, RefreshCw, Search, Users, UserRoundPlus, X } from "lucide-react";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -12,6 +12,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { M1SupervisorPool } from "./m1-supervisor-pool";
 import { SupportSeatRoleModal } from "./m1-overview";
 import "./m-support-workbench.css";
+import "./m1-personal-workbench.css";
 import { SupportBulkComposer } from "./support-bulk-composer";
 import { SupportAvatar, advisorAvatarPath, customerAvatarPath } from "./support-avatar";
 import { SelfAvatarEditor } from "./self-avatar-editor";
@@ -83,7 +84,7 @@ function invalidateCustomerOnDenied(customerId: string, error: unknown): boolean
   return true;
 }
 
-export function M1PersonalWorkbench({ permission, ctx }: { permission: Permission; ctx: MCtx }) {
+export function M1PersonalWorkbench({ permission, ctx, primarySummary, onBrowseCustomers }: { permission: Permission; ctx: MCtx; primarySummary?: ReactNode; onBrowseCustomers?: (filter: SupportCustomerFilter) => void }) {
   const router = useRouter();
   const authEpoch = useAdminAuth((state) => state.authEpoch);
   const adminId = useAdminAuth((state) => state.session?.adminId);
@@ -159,7 +160,7 @@ export function M1PersonalWorkbench({ permission, ctx }: { permission: Permissio
     const controller = new AbortController();
     snapshotController.current = controller;
     setSnapshot(null); setRowsLoading(true); setOverviewLoading(true); setRowsError(null); setOverviewError(null);
-    void supportClient.snapshot({ pageNum: view === "dashboard" ? 1 : page, pageSize: view === "dashboard" ? 6 : PAGE_SIZE, keyword: view === "dashboard" ? undefined : keyword || undefined, filter: activeFilter, signal: controller.signal })
+    void supportClient.snapshot({ mode: "PERSONAL", pageNum: view === "dashboard" ? 1 : page, pageSize: view === "dashboard" ? 6 : PAGE_SIZE, keyword: view === "dashboard" ? undefined : keyword || undefined, filter: activeFilter, signal: controller.signal })
       .then((next) => { if (!controller.signal.aborted) { setSnapshot(next); if (!next.customers.available) setRowsError("当前筛选条件暂不可用，请调整服务规则后重试。"); } })
       .catch((error) => { if (!controller.signal.aborted) { setSnapshot(null); setRowsError(errorText(error)); setOverviewError(errorText(error)); } })
       .finally(() => { if (!controller.signal.aborted) { setRowsLoading(false); setOverviewLoading(false); } });
@@ -223,7 +224,7 @@ export function M1PersonalWorkbench({ permission, ctx }: { permission: Permissio
     return () => { document.removeEventListener("keydown", onKeyDown); previousFocus?.focus(); };
   }, [detailId, closeDetail]);
 
-  const showCustomers = (next: SupportCustomerFilter) => { setFilter(next); setPage(1); setView("customers"); };
+  const showCustomers = (next: SupportCustomerFilter) => { if (onBrowseCustomers) { onBrowseCustomers(next); return; } setFilter(next); setPage(1); setView("customers"); };
   const openChat = (customerId: string) => router.push(`/service/sessions?customerId=${encodeURIComponent(customerId)}`);
   const loadHistory = async (pageNum = 1) => {
     if (!detailId) return;
@@ -353,14 +354,18 @@ export function M1PersonalWorkbench({ permission, ctx }: { permission: Permissio
     } catch { if (actor === actorStamp()) { closeDetail(); setSnapshot(null); setNotice("结果暂时无法核对，原命令和客户范围已保留。"); } }
     finally { setTransferSaving(false); }
   };
-  const metrics = useMemo(() => metricDefs.map((item) => ({ ...item, count: overview?.counts[item.key] ?? null })), [overview]);
+  const metrics = useMemo(() => {
+    const items = metricDefs.map((item) => ({ ...item, count: overview?.counts[item.key] ?? null }));
+    const priority = ["waitingReplyCustomers", "firstContactCustomers", "dueMaintenanceCustomers", "boundCustomers", "windowActiveCustomers", "dormantCustomers"];
+    return primarySummary ? items.sort((a, b) => priority.indexOf(a.key) - priority.indexOf(b.key)) : items;
+  }, [overview, primarySummary]);
   const listRecords = rows?.records ?? [];
   const totalPages = rows ? Math.max(1, Math.ceil(rows.total / rows.pageSize)) : 1;
   const canMaintain = Boolean(detail && detail.assignmentId && detail.agentAdminId === adminId);
   const trend = overview?.performance?.trend;
   const trendMax = trend?.reduce((max, point) => Math.max(max, point.executionCount, point.successfulCycleCount), 1) ?? 1;
 
-  return <section className="s5a" data-proof="s5a-workbench">
+  return <section className={primarySummary ? "s5a s5a-personal-priority" : "s5a"} data-proof="s5a-workbench">
     {maintenanceCommands.list().filter(record => record.actorId === adminId).map((record, index) => <p className="s5a-note" key={record.commandKey}>存在未核对的维护操作。<button type="button" disabled={saving} onClick={() => void checkMaintenance(record)}>查询维护结果 {index + 1}</button></p>)}
     {transferCommands.list().filter(record => record.actorId === adminId).map((record, index) => <p className="s5a-note" key={record.commandKey}>存在未核对的转绑操作。<button type="button" disabled={transferSaving} onClick={() => void checkTransfer(record)}>查询转绑结果 {index + 1}</button></p>)}
     {notice && <div className="s5a-alert" role="alert">{notice}<button type="button" onClick={() => setNotice(null)}>关闭提示</button></div>}
@@ -380,12 +385,23 @@ export function M1PersonalWorkbench({ permission, ctx }: { permission: Permissio
 
     {view === "pool" ? <M1SupervisorPool permission={permission} /> : <>
       {view === "dashboard" && <>
-        <div className="s5a-intro"><div><div style={{display:"flex",gap:10,alignItems:"center"}}><SupportAvatar name={selfAgent?.name??"本人专属客服"} path={selfAvatarSnapshot ? selfAvatarSnapshot.assetId ? "/api/admin/platform/accounts/self/avatar/content" : undefined : selfAgent?.avatarAssetId&&adminId?advisorAvatarPath(adminId):undefined} version={selfAvatarSnapshot?.avatarVersion??selfAgent?.avatarVersion??undefined}/><h2>我的工作台</h2><SelfAvatarEditor name={selfAgent?.name??(operatorName||"本人账号")} ctx={ctx} onChanged={setSelfAvatarSnapshot}/></div><p>当前归属客户与可执行待办</p></div><span className="s5a-stamp">统计于 {overview ? formatTime(overview.evaluatedAt) : "待同步"}</span></div>
+        <div className="s5a-intro s5a-personal-header">
+          <div className="s5a-personal-identity">
+            <SupportAvatar name={selfAgent?.name??"本人专属客服"} path={selfAvatarSnapshot ? selfAvatarSnapshot.assetId ? "/api/admin/platform/accounts/self/avatar/content" : undefined : selfAgent?.avatarAssetId&&adminId?advisorAvatarPath(adminId):undefined} version={selfAvatarSnapshot?.avatarVersion??selfAgent?.avatarVersion??undefined} size={56}/>
+            <div><h2>我的工作台</h2><p>当前归属客户与可执行待办</p></div>
+          </div>
+          <div className="s5a-personal-header-actions">
+            <SelfAvatarEditor name={selfAgent?.name??(operatorName||"本人账号")} ctx={ctx} onChanged={setSelfAvatarSnapshot}/>
+            <span className="s5a-stamp">统计于 {overview ? formatTime(overview.evaluatedAt) : "待同步"}</span>
+          </div>
+        </div>
+        {primarySummary}
+        {primarySummary && <h3 className="sa-personal-tasks-title">今日服务待办</h3>}
         {overviewError && <div className="s5a-alert" role="alert">{overviewError}<button type="button" onClick={() => setRowsRefresh((value) => value + 1)}><RefreshCw size={15} />重试</button></div>}
         <div className="s5a-metrics">
           {metrics.map(({ key, label, filter: metricFilter, icon: Icon, hint, count }) => <button type="button" key={key} className="s5a-metric" onClick={() => showCustomers(metricFilter)} aria-label={`${key === "windowActiveCustomers" ? overview?.activityWindowDays ? `近 ${overview.activityWindowDays} 天活跃` : "活跃客户，窗口待同步" : label}，${overviewLoading ? "加载中" : count === null ? "未配置或数据待核对" : `${count} 位`}，查看名单`}>
-            <Icon size={21} aria-hidden="true" /><span>{key === "windowActiveCustomers" && overview?.activityWindowDays ? `近 ${overview.activityWindowDays} 天活跃` : label}</span><strong>{overviewLoading ? "···" : count === null ? "—" : count.toLocaleString("zh-CN")}</strong>
-            <small>{count === null && !overviewLoading ? "未配置或数据待核对" : key === "windowActiveCustomers" && !overview?.activityWindowDays ? "统计窗口待同步" : hint}</small>
+            <Icon size={21} aria-hidden="true" /><span>{key === "windowActiveCustomers" && overview?.activityWindowDays ? `近 ${overview.activityWindowDays} 天活跃` : label}</span><strong>{overviewLoading || count === null ? "-" : count.toLocaleString("zh-CN")}</strong>
+            <small>{hint}</small>
           </button>)}
         </div>
         {overview && overview.unknownWindowCount > 0 && <p className="s5a-note">窗口活跃已确认 {overview.knownActiveCount} 位，另有 {overview.unknownWindowCount} 位活动数据待确认；名单只列已确认客户。</p>}
@@ -398,13 +414,13 @@ export function M1PersonalWorkbench({ permission, ctx }: { permission: Permissio
           </section>
         </div>
         <div className="s5a-progress-grid"><section className="s5a-panel s5a-progress"><header><div><h3>维护进展</h3><p>{overview?.performance ? `${formatTime(overview.performance.from)} 至 ${formatTime(overview.performance.to)}` : "统计区间待同步"}</p></div></header>
-          <div className="s5a-performance"><div><span>已执行维护</span><strong>{overview?.performance?.executionCount ?? "—"}</strong><small>成功提交的人工维护消息次数</small></div><div><span>成功周期</span><strong>{overview?.performance?.successfulCycleCount ?? "—"}</strong><small>由后续真实活动完成</small></div><div><span>成功客户</span><strong>{overview?.performance?.successfulCustomerCount ?? "—"}</strong><small>统计期间去重人数</small></div><div><span>暂停主动维护</span><strong>{overview?.counts.stoppedMaintenanceCustomers ?? "—"}</strong><small>当前仍归属本人</small></div></div>
+          <div className="s5a-performance"><div><span>已执行维护</span><strong>{overview?.performance?.executionCount ?? "-"}</strong><small>成功提交的人工维护消息次数</small></div><div><span>成功周期</span><strong>{overview?.performance?.successfulCycleCount ?? "-"}</strong><small>由后续真实活动完成</small></div><div><span>成功客户</span><strong>{overview?.performance?.successfulCustomerCount ?? "-"}</strong><small>统计期间去重人数</small></div><div><span>暂停主动维护</span><strong>{overview?.counts.stoppedMaintenanceCustomers ?? "-"}</strong><small>当前仍归属本人</small></div></div>
           <p className="s5a-note">执行后仍须出现新的真实账户活动才计成功。暂停主动维护不会解除专属客服归属或屏蔽求助。</p>
         </section><section className="s5a-panel"><header><div><h3>维护趋势</h3><p>逐日执行与成功周期</p></div></header>{trend?.length ? <figure className="s5a-trend" aria-label="维护执行与成功趋势"><div className="s5a-trend-bars">{trend.map((point) => <div key={point.day} className="s5a-trend-day"><div className="s5a-trend-pair" aria-label={`${point.day} 执行 ${point.executionCount} 次，成功 ${point.successfulCycleCount} 个周期`}><i style={{ height: `${point.executionCount ? Math.max(3, point.executionCount / trendMax * 100) : 0}%` }} /><i style={{ height: `${point.successfulCycleCount ? Math.max(3, point.successfulCycleCount / trendMax * 100) : 0}%` }} /></div><small>{point.day.slice(5)}</small><span>{point.executionCount} / {point.successfulCycleCount}</span></div>)}</div><p>紫色：执行次数　绿色：成功周期；每组数字为执行 / 成功。</p></figure> : <p className="s5a-note">趋势数据待同步，当前只展示已核实的汇总。</p>}</section></div>
       </>}
 
       {view === "customers" && <>
-        <div className="s5a-intro"><div><h2>我的客户</h2><p>账户状态与维护状态分开查看</p></div><span className="s5a-stamp">{rows ? `共 ${rows.total} 位` : "待同步"}</span></div>
+        <div className="s5a-intro"><div><h2>我的客户</h2><p>账户状态与维护状态分开查看</p></div><span className="s5a-stamp">{`共 ${rows ? rows.total : "-"} 位`}</span></div>
         <section className="s5a-panel"><form className="s5a-controls" onSubmit={(event) => { event.preventDefault(); setPage(1); setKeyword(keywordDraft.trim()); }}>
           <label><Search size={17} /><span className="sr-only">搜索客户名称或 ID</span><input value={keywordDraft} onChange={(event) => setKeywordDraft(event.target.value)} placeholder="搜索客户名称或 ID" /></label>
           <button type="submit">搜索</button>

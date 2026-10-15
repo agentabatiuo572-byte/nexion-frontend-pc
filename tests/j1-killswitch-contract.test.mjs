@@ -31,7 +31,7 @@ const notificationBell = readFileSync(new URL("../app/components/shell/notificat
 const commandCenter = readFileSync(new URL("../app/_console/page.tsx", import.meta.url), "utf8");
 const bClient = readFileSync(new URL("../lib/admin/b-client.ts", import.meta.url), "utf8");
 const b5RiskRadar = readFileSync(new URL("../app/_console/overview/risk-radar/page.tsx", import.meta.url), "utf8");
-const syncChip = readFileSync(new URL("../app/components/shell/sync-chip.tsx", import.meta.url), "utf8");
+const topbar = readFileSync(new URL("../app/components/shell/topbar.tsx", import.meta.url), "utf8");
 const backendKillSwitch = optionalWorkspaceFile(
   backendRoot,
   "src/main/java/ffdd/opsconsole/emergency/application/OpsKillSwitchService.java",
@@ -228,6 +228,5 @@ test("J1 exposes actionable, localized control and error states", () => {
   assert.match(client, /无法连接应急控制服务，请检查网络后重试/);
   assert.match(client, /text = await res\.text\(\)/);
   assert.doesNotMatch(client, /Failed to fetch/);
-  assert.match(syncChip, /服务端权威 · 已同步/);
-  assert.doesNotMatch(syncChip, />\s*server-canonical · live\s*</);
+  assert.doesNotMatch(topbar, /SyncChip|服务端权威 · 已同步|server-canonical · live/);
 });

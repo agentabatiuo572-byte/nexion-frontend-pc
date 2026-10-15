@@ -1,0 +1,58 @@
+{
+  "recordedAt": "2026-10-14T19:10:18.1088681Z",
+  "scope": "Existing acceptance receipts and verified GitHub merge state; no tests rerun",
+  "pc": {
+    "baseBranch": "test",
+    "testedHead": "2757d0c8eb2a803285a82d9b87714dbc787c9b8d",
+    "tree": "bfc3091ca9b7f65199734878ca0d4feb2bd92cd8",
+    "testMerge": "d27d8b283e30327e1d5f612bb1b28fa7e668427c",
+    "pr": "https://github.com/agentabatiuo572-byte/nexion-frontend-pc/pull/12",
+    "mergeVerified": "MERGED",
+    "fullPassed": 98,
+    "exitCode": 0,
+    "seconds": 121.7552346,
+    "clean": true,
+    "unchanged": true,
+    "treeMoved": false
+  },
+  "backend": {
+    "baseBranch": "test",
+    "testMerge": "e0c04f3945c0cd9206922cd71f6df1b59347bf52",
+    "pr": "https://github.com/agentabatiuo572-byte/nexion-backend/pull/6",
+    "mergeVerified": "MERGED",
+    "scope": "Changed native test assertion compiled; independent Java review clear",
+    "nativeExecution": "NOT_RUN"
+  },
+  "app": {
+    "baseBranch": "test",
+    "repository": "app",
+    "head": "1ed9d845865d23050fcfab39d0bfaa107a573252",
+    "tree": "ea8fbc420df212a3e7109956022279c2e8639446",
+    "pr": "https://github.com/agentabatiuo572-byte/nexion-frontend-uniapp/pull/2",
+    "mergeVerified": "MERGED",
+    "exitCode": 0,
+    "summary": "PASS 22 · CACHED 1 · FAIL 0 · KNOWN-RED 0 · SCOPED-SKIP 0 · NOT-RUN 0 / 23 步",
+    "startedAt": "2026-10-14T17:54:11.2532484Z",
+    "finishedAt": "2026-10-14T18:07:19.5629022Z",
+    "logSHA256": "0516c5a33832b53c0ca885f563ab7e00ef4de452dcb07929a5140158af31da9f"
+  },
+  "h5": {
+    "baseBranch": "H5",
+    "repository": "h5",
+    "head": "049a1835f79ce7cb2e0d4c8ebf578d87b88baedb",
+    "tree": "f4c950c43f1185422afb0fe4e97585dfb68bddf8",
+    "pr": "https://github.com/agentabatiuo572-byte/nexion-frontend-prototype/pull/3",
+    "mergeVerified": "MERGED",
+    "exitCode": 0,
+    "summary": "PASS 22 · CACHED 1 · FAIL 0 · KNOWN-RED 0 · SCOPED-SKIP 0 · NOT-RUN 0 / 23 步",
+    "startedAt": "2026-10-14T17:54:11.2613969Z",
+    "finishedAt": "2026-10-14T18:07:46.2338405Z",
+    "logSHA256": "86d7dc891e678d8fa27fbc439f2e19dd02b3eb9c6204cd1a8bb519279e53993e"
+  },
+  "limits": [
+    "Documentation updates do not rerun unchanged runtime code or rewrite prior test results.",
+    "Only real customer message-chain tests are handed to colleagues.",
+    "Whole-image fidelity, missing genuine complete ranking coverage and fresh-rule initialization remain unverified."
+  ],
+  "wholeTask": "NOT_COMPLETE"
+}

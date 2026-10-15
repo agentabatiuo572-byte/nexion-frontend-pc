@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
+import { compactSupportBoardValue } from './support-compact-empty.test.mjs';
 const ts=createRequire(import.meta.url)('typescript');
 const source=readFileSync('app/components/domain-views/m-tabs/m1-supervisor-pool.tsx','utf8');
 const groups=[{id:'8',name:'一组',status:'ENABLED',version:11},{id:'9',name:'二组',status:'ENABLED',version:12}];
@@ -20,7 +21,7 @@ function harness({mode='ALL',groupRows=groups,scopeFailure=false,writeFailure=fa
   const imports={react:{useState:i=>hooks.state(i),useEffect:(e,d)=>hooks.effect(e,d),useRef:i=>hooks.ref(i)},'react/jsx-runtime':{jsx,jsxs:jsx,Fragment:'fragment'},'../design-kit':{Modal:'Modal'},'./support-random-assignment':{SupportRandomAssignment:no,hasPendingRandomAssignment:()=>false},'./support-avatar':{SupportAvatar:no,advisorAvatarPath:no}};
   const module={exports:{}};
   runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText,{module,exports:module.exports,AbortController,Map,Set,Date,crypto:{randomUUID:()=>`command-${calls.length}`},window:{dispatchEvent:no},require:id=>{
-    if(id.endsWith('.css'))return{};if(imports[id])return imports[id];
+    if(id.endsWith('.css'))return{};if(id==='./support-leaderboard')return{compactSupportBoardValue};if(imports[id])return imports[id];
     if(id.includes('m-support-client'))return{supportClient,isIndeterminateSupportError:()=>false,readSupportPoolCustomer:async()=>{calls.push(['pool-facts']);return item;},verifySupportTransfer:async()=>{},setSupportPoolRoute:async(...args)=>{calls.push(['write',...args]);if(writeFailure)throw Error('timeout');return{};}};
     if(id.includes('support-group-client'))return{supportGroupClient:groupClient};
     if(id.includes('pending-mutation-store'))return{createPendingMutationStore:createStore};

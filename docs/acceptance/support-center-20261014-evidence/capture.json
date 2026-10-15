@@ -1,0 +1,21 @@
+{
+  "file": "final-ready-css-viewport.png",
+  "sha256": "5846aa25a4c7daf5ab5f648b48c1cda0af0ae32fdddccf866e55acfae0c7d976",
+  "cssViewport": {
+    "width": 1536,
+    "height": 1024
+  },
+  "capture": {
+    "captureBeyondViewport": true,
+    "clip": {
+      "x": 0,
+      "y": 0,
+      "width": 1536,
+      "height": 1024,
+      "scale": 1
+    }
+  },
+  "postProcessing": false,
+  "independentScreenshotCompleteness": "PASS",
+  "wholePixel": "NOT_SIGNED"
+}

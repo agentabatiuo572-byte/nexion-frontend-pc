@@ -1,0 +1,73 @@
+{
+  "source": {
+    "file": "approved-design.png",
+    "sha256": "e3b92e2fbb593171a4658e058c562ec4dbc9403fecafdf8dd85a719ba71f6c3a"
+  },
+  "use": "Native desktop layout only. Original button frame and orbit material; source glyphs removed by vertical interpolation. HTML retains all labels, icons, focus and actions. Comparison masks and tolerance unchanged.",
+  "assets": [
+    {
+      "file": "orbit-podium-button-1.png",
+      "sha256": "67286593f96c69860a51f0ed607687ef633b6b0e2997b4ecb888fa17738614be",
+      "bounds": [
+        308,
+        483,
+        153,
+        40
+      ],
+      "replacedCopy": [
+        347,
+        494,
+        77,
+        18
+      ]
+    },
+    {
+      "file": "orbit-podium-button-2.png",
+      "sha256": "5ace175b4c845e5015c33266efd6e29ecb939b24c6206138666ab54a4e36d860",
+      "bounds": [
+        578,
+        483,
+        155,
+        40
+      ],
+      "replacedCopy": [
+        620,
+        494,
+        76,
+        18
+      ]
+    },
+    {
+      "file": "orbit-podium-button-3.png",
+      "sha256": "fdb7e18667f2b156dd3f6972c8fd30734d0fd21dbd36ebfe54e6071b57aa3287",
+      "bounds": [
+        840,
+        483,
+        155,
+        40
+      ],
+      "replacedCopy": [
+        884,
+        494,
+        75,
+        18
+      ]
+    },
+    {
+      "file": "orbit-podium-button-4.png",
+      "sha256": "ed74ee990eaed44958956ac0c2a0237e7bdf24cc1b295ea1d5c7237489b76c7d",
+      "bounds": [
+        1106,
+        483,
+        156,
+        40
+      ],
+      "replacedCopy": [
+        1149,
+        494,
+        75,
+        18
+      ]
+    }
+  ]
+}

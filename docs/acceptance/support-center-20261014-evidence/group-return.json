@@ -1,0 +1,49 @@
+{
+  "steps": [
+    {
+      "step": "agent-slice",
+      "groups": [
+        "组一·运营验收"
+      ],
+      "returnButtons": [
+        "清除客服与客户筛选"
+      ],
+      "rows": 20,
+      "tables": 1,
+      "views": [
+        "客户"
+      ]
+    },
+    {
+      "fundsUnknown": true,
+      "hasProfileLink": true,
+      "headings": [
+        "风险研判",
+        "资金概览",
+        "账户与设备",
+        "客户标签",
+        "最新内部备注",
+        "快捷操作",
+        "首充与邀请"
+      ],
+      "loaded": true,
+      "returnEnabled": true,
+      "step": "customer-detail"
+    },
+    {
+      "dialogCount": 0,
+      "focus": "客户资料与记录",
+      "focusVisible": true,
+      "groups": [
+        "组一·运营验收"
+      ],
+      "hasStaffFilter": true,
+      "rows": 20,
+      "step": "return-statistics",
+      "tables": 1,
+      "views": [
+        "客户"
+      ]
+    }
+  ]
+}

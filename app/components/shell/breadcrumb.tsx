@@ -15,6 +15,10 @@ export function Breadcrumb() {
 
   if (pathname === "/" || pathname === "") {
     crumbs.push({ label: "总览驾驶舱" });
+  } else if (/^\/service\/customers\/[1-9]\d*\/?$/.test(pathname)) {
+    const parent = findByPath("/service/overview");
+    if (parent) crumbs.push({ label: `${parent.domain.code} ${parent.domain.name}`, accent: `var(${parent.domain.accentVar})` });
+    crumbs.push({ label: "客户全景档案" });
   } else {
     const match = findByPath(pathname);
     if (match) {

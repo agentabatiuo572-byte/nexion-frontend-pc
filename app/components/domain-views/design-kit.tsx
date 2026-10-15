@@ -13,6 +13,7 @@ import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-erro
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
 import { fetchA2ReasonPolicy } from "@/lib/admin/a2-client";
 import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "@/lib/admin/trust-section-validation";
 import { isL5KpiExport, l5KpiRange, L5_KPI_WINDOWS, l5BusinessToday } from "./l-tabs/l5-kpi-range";
 
@@ -336,7 +337,7 @@ export function Modal({ title, icon, onClose, children, footer, wide, busy = fal
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy && ref.current?.contains(document.activeElement)) onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy && e.target instanceof Element && e.target.closest('[role="dialog"]') === ref.current) onClose(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [busy, onClose]);
@@ -375,7 +376,7 @@ export function Drawer({ title, sub, onClose, children, footer, wide }: { title:
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && ref.current?.contains(document.activeElement)) onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && e.target instanceof Element && e.target.closest('[role="dialog"]') === ref.current) onClose(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
@@ -1757,17 +1758,22 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
                 className="fld"
                 type="file"
                 accept={f.accept ?? "image/jpeg,image/png,image/webp"}
+                aria-label={f.label}
                 required={f.required !== false}
                 aria-required={f.required !== false}
                 disabled={assetUploading[f.key]}
                 ref={(input) => { assetInputs.current[f.key] = input; }}
                 onChange={(event) => {
                   const file = event.target.files?.[0];
-                  set(f.key, "");
-                  setAssetNames((current) => ({ ...current, [f.key]: "" }));
+                  event.target.value = "";
                   setAssetErrors((current) => ({ ...current, [f.key]: "" }));
                   if (!file) {
                     onUploadStateChange(f.key, undefined);
+                    return;
+                  }
+                  if (!(f.accept ?? "image/jpeg,image/png,image/webp").split(",").includes(file.type) || file.size > 10 * 1024 * 1024) {
+                    onUploadStateChange(f.key, "failed");
+                    setAssetErrors((current) => ({ ...current, [f.key]: "请选择允许的图片格式，大小不超过 10 MB。" }));
                     return;
                   }
                   onUploadStateChange(f.key, "uploading");
@@ -1788,7 +1794,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
                     onUploadStateChange(f.key, "failed");
                     setAssetErrors((current) => ({
                       ...current,
-                      [f.key]: error instanceof Error ? error.message : "凭证上传失败，请重试",
+                      [f.key]: displayAdminError(error),
                     }));
                   }).finally(() => {
                     setAssetUploading((current) => ({ ...current, [f.key]: false }));
@@ -1796,10 +1802,10 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
                 }}
               />
               <span className="tiny muted">
-                {assetUploading[f.key] ? "正在上传并校验凭证…" : assetNames[f.key] ? `已上传：${assetNames[f.key]}` : (f.help ?? "请上传清晰的银行回单截图")}
+                {assetUploading[f.key] ? "正在上传并校验图片…" : assetNames[f.key] ? `已上传：${assetNames[f.key]}` : (f.help ?? "请上传清晰的银行回单截图")}
               </span>
               {assetErrors[f.key] && <span role="alert" className="tiny" style={{ color: "var(--v5-danger)" }}>{assetErrors[f.key]}</span>}
-              {!assetUploading[f.key] && (assetNames[f.key] || assetErrors[f.key]) && (
+              {!assetUploading[f.key] && (value[f.key] || assetNames[f.key] || assetErrors[f.key]) && (
                 <button type="button" className="l-btn sm" onClick={(event) => {
                   event.preventDefault();
                   set(f.key, "");
@@ -1807,7 +1813,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
                   setAssetErrors((current) => ({ ...current, [f.key]: "" }));
                   if (assetInputs.current[f.key]) assetInputs.current[f.key]!.value = "";
                   onUploadStateChange(f.key, undefined);
-                }}>{f.required === false ? "不附图片" : "清除图片并重新上传"}</button>
+                }}>{f.required === false ? "移除图片" : "清除图片并重新上传"}</button>
               )}
             </label>
           ) : (

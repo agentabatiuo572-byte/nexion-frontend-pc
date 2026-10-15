@@ -23,6 +23,15 @@
 .support-content-tools .support-content-pager .l-btn, .support-content-tools .support-content-state .l-btn { min-height: 44px; }
 .support-content-tools .support-content-link { margin-top: 4px; }
 .support-content-tools summary:focus-visible, .support-content-tools button:focus-visible, .support-content-tools .fld:focus-visible { outline: 2px solid var(--v5-brand); outline-offset: 2px; }
+.support-composer-popover .modal-scrim { background: transparent; backdrop-filter: none; }
+.support-composer-popover .modal { position: fixed; left: var(--picker-left); bottom: var(--picker-bottom); width: var(--picker-width); max-width: calc(100vw - 24px); max-height: var(--picker-height); margin: 0; border-radius: 10px; }
+.support-composer-popover .modal-h { padding: 12px 14px; }
+.support-composer-popover .modal-h .ttl { font-size: 15px; }
+.support-composer-popover .modal-b { padding: 0 14px 12px; min-height: 0; overflow-y: auto; }
+.support-composer-popover .modal-f { padding: 8px 14px; }
+.support-composer-popover .support-content-body { padding-top: 8px; gap: 8px; }
+.support-composer-popover .support-content-field .fld { min-height: 36px; padding: 7px 10px; }
+.support-composer-popover .support-content-result.l-btn { padding: 10px; font-size: 13.5px; }
 @container support-content (max-width: 320px) {
   .support-content-tools .support-content-fields { grid-template-columns: 1fr; }
   .support-content-tools .support-content-pager { grid-template-columns: repeat(2, minmax(0, 1fr)); }

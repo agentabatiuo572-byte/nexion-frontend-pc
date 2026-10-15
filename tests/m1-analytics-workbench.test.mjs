@@ -5,13 +5,14 @@ import path from "node:path";
 import vm from "node:vm";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
+import "./support-compact-empty.test.mjs";
 
 const frontend = process.env.SUPPORT_ANALYTICS_FE_ROOT || fileURLToPath(new URL("../", import.meta.url));
 const require = createRequire(path.join(frontend, "package.json")), ts = require("typescript"), React = require("react");
 const { renderToStaticMarkup } = require("react-dom/server");
 const jsxRuntime = require("react/jsx-runtime");
 const stage = fileURLToPath(new URL("../", import.meta.url));
-const componentPath = path.join(existsSync(path.join(stage, "app/components/domain-views/m-tabs/m1-analytics-workbench.tsx")) ? stage : frontend, "app/components/domain-views/m-tabs/m1-analytics-workbench.tsx");
+const componentPath = path.join(process.env.SUPPORT_ANALYTICS_SOURCE_ROOT || (existsSync(path.join(stage, "app/components/domain-views/m-tabs/m1-analytics-workbench.tsx")) ? stage : frontend), "app/components/domain-views/m-tabs/m1-analytics-workbench.tsx");
 const baseView = path.join(frontend, "app/components/domain-views/m-view.tsx");
 const clientPath = path.join(frontend, "lib/admin/support-analytics-client.ts");
 const { SupportClientError } = await import(pathToFileURL(path.join(frontend, "lib/admin/m-support-client.ts")).href);
@@ -22,7 +23,8 @@ const { supportAnalyticsClient: nativeClient } = await import(`data:text/javascr
 let driver, auth = { session: { adminId: 12, authorities: ["service_m1_read"], menuCodes: [], role: "support" }, authEpoch: 1 };
 const requests = [], navigations = [];
 let forcedQueryError;
-const context = vm.createContext({ console, AbortController, URLSearchParams, Date, Intl, Number, Object, Math, queueMicrotask, window: { location: { search: "" } } });
+const scopeEvents = new EventTarget();
+const context = vm.createContext({ console, AbortController, URLSearchParams, Date, Intl, Number, Object, Math, queueMicrotask, window: { location: { search: "" }, addEventListener: scopeEvents.addEventListener.bind(scopeEvents), removeEventListener: scopeEvents.removeEventListener.bind(scopeEvents) } });
 const synthetic = (values) => new vm.SyntheticModule(Object.keys(values), function () { for (const [key, value] of Object.entries(values)) this.setExport(key, value); }, { context });
 // Execute the actual client's sanitizer before every component fixture transport call.
 // No hand-copied enum/default validation can mask an invalid UI-generated payload.
@@ -31,7 +33,7 @@ await validatorModule.link(name => synthetic(name === "./business-time.ts" ? bus
 await validatorModule.evaluate();
 const formatterSource = ts.transpileModule(readFileSync(path.join(existsSync(path.join(stage, "app/components/domain-views/m-tabs/support-leaderboard.tsx")) ? stage : frontend, "app/components/domain-views/m-tabs/support-leaderboard.tsx"), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2017 } }).outputText;
 const formatterModule = new vm.SourceTextModule(formatterSource, { context });
-await formatterModule.link(name => synthetic(name === "react" ? React : name === "react/jsx-runtime" ? jsxRuntime : name === "lucide-react" ? Object.fromEntries(["ArrowRight", "ChevronDown", "Info", "MapPin"].map(key => [key, require("lucide-react")[key]])) : {}));
+await formatterModule.link(name => synthetic(name === "react" ? React : name === "react/jsx-runtime" ? jsxRuntime : name === "lucide-react" ? Object.fromEntries(["ArrowRight", "ChevronDown", "Home", "Users", "MessageSquareMore", "ChartNoAxesColumn", "LayoutGrid", "FileText", "MapPin"].map(key => [key, require("lucide-react")[key]])) : {}));
 await formatterModule.evaluate();
 const mocks = {
   react: { ...React, useState: (...args) => driver.useState(...args), useRef: (...args) => driver.useRef(...args), useEffect: (...args) => driver.useEffect(...args) },
@@ -43,12 +45,13 @@ const mocks = {
   "@/lib/store/admin-auth": { useAdminAuth: selector => selector(auth) },
   "../design-kit": { Modal: props => React.createElement("aside", { role: "dialog" }, props.children) },
   "./hd-ui": { HDSelect: props => React.createElement("div", { "data-house-select": props.value }, props.options.map(o => React.createElement("span", { key: o.value }, o.label))) },
-  "./m1-personal-workbench": { M1PersonalWorkbench: () => React.createElement("section", { "data-personal-workbench": true }, "原服务待办") },
+  "./m1-personal-workbench": { M1PersonalWorkbench: props => React.createElement("section", { "data-personal-workbench": true }, props.primarySummary, "原服务待办", React.createElement("button", { type: "button", onClick: () => props.onBrowseCustomers?.("ALL") }, "我的客户")) },
   "./m1-group-management": { M1GroupManagement: props => React.createElement("section", { "data-group-management": props.mode }, "分组管理") },
   "./m3-customer-profile": { M3CustomerProfile: props => React.createElement("section", { "data-profile": props.customerId }, "原客户资料权限") },
   "./support-avatar": { SupportAvatar: props => React.createElement("span", { "data-avatar-path": props.path }, props.name) },
   "./support-leaderboard": { compactSupportBoardValue: formatterModule.namespace.compactSupportBoardValue },
   "./m1-analytics-workbench.css": {},
+  "./m1-personal-priority.css": {},
 };
 const compiled = ts.transpileModule(readFileSync(componentPath, "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2017 } }).outputText;
 const module = new vm.SourceTextModule(`${compiled}\nexport { ResolvedAnalyticsWorkbench };`, { context });
@@ -74,8 +77,9 @@ class HookDriver {
 }
 function elements(node, result = []) {
   if (!node || typeof node !== "object") return result;
+  if (node.props?.hidden) return result;
   if (Array.isArray(node)) { node.forEach(x => elements(x, result)); return result; }
-  if (node.props) { result.push(node); elements(node.props.children, result); }
+  if (node.props) { result.push(node); elements(node.props.children, result); if (node.type === mocks["./m1-personal-workbench"].M1PersonalWorkbench) elements(node.type(node.props), result); }
   return result;
 }
 function content(node) { return typeof node === "string" || typeof node === "number" ? String(node) : Array.isArray(node) ? node.map(content).join("") : node?.props ? content(node.props.children) : ""; }
@@ -83,7 +87,7 @@ function button(tree, label) { const matches = elements(tree).filter(x => x.type
 test("support leaderboard loading controls lock every tab and empty filter until ready", () => {
   const option = [{ value: "USDT", label: "USDT" }];
   for (const status of ["loading", "error", "empty", "ready"]) {
-    for (const board of ["firstPayment", "deposit", "purchase", "customers"]) {
+    for (const board of ["netContribution", "firstPayment", "customers"]) {
       const html = renderToStaticMarkup(React.createElement(formatterModule.namespace.SupportLeaderboard, {
         query: { board, month: "2026-10", scope: "all", currency: "USDT" }, status,
         monthOptions: status === "ready" ? [{ value: "2026-10", label: "2026.10" }] : [],
@@ -93,7 +97,7 @@ test("support leaderboard loading controls lock every tab and empty filter until
         onQueryChange() {}, onRetry() {}, onLocateSelf() {}, onViewPerformance() {},
       }));
       const tabs = [...html.matchAll(/<button\b[^>]*role="tab"[^>]*>/g)].map(match => match[0]);
-      assert.equal(tabs.length, 4);
+      assert.equal(tabs.length, 3);
       assert.equal(tabs.filter(tab => /aria-selected="true"/.test(tab)).length, 1);
       assert.equal(tabs.filter(tab => /tabindex="0"/.test(tab)).length, 1);
       for (const tab of tabs) {
@@ -114,7 +118,7 @@ const version = `saq-v1:${"a".repeat(64)}`;
 const count = (n = 1) => ({ observed: n, confirmed: n, status: "AVAILABLE" });
 const unknown = () => ({ observed: null, confirmed: null, status: "UNKNOWN" });
 const money = () => ({ observed: "999999999999.123456", confirmed: null, status: "PARTIAL" });
-const current = () => ({ firstConfirmed: count(), firstNone: count(0), firstUnknown: count(0), ownLifetime: [{ currency: "USDT", deposits: money() }], devices: { held: count() }, activity: { active: count() } });
+const current = () => ({ firstConfirmed: count(), firstNone: count(0), firstUnknown: count(0), ownLifetime: [{ currency: "USDT", deposits: money() }], devices: { held: count() }, activity: { active: count(), status: "AVAILABLE", window: { days: 7, from: "2026-10-02T00:00:00Z", through: "2026-10-09T00:00:00Z", status: "AVAILABLE" } } });
 const personnel = () => ({ serviceAccounts: count(), supervisors: unknown(), groups: count() });
 const funds = () => ({ balanceStatus: "UNAVAILABLE", withdrawalStatus: "UNAVAILABLE" });
 function fixture(view = "OVERVIEW", mode = "MANAGED") {
@@ -124,6 +128,107 @@ function fixture(view = "OVERVIEW", mode = "MANAGED") {
   return { view, basis: "CURRENT_CUSTOMER_HISTORY", asOf: "2026-10-09T00:00:00Z", selectedCurrent: current(), selectedCustomerCount: 1, scopeSummary: { mode, bound: 1, pending: 0, anomaly: 0, current: current(), financial, personnel: personnel(), groups: [{ groupId: "4", name: "甲组", total: 1, current: current(), personnel: personnel() }, { groupId: "5", name: "乙组", total: 1, current: current(), personnel: personnel() }] }, funds: { ...funds(), groups: [] }, records: [view === "AGENTS" ? agent : view === "FINANCE" ? { customerId: "12", nickname: "客户", customerNo: "C012", kind: "DEPOSIT", currency: "USDT", amount: "3.123456", succeededAt: "2026-10-09T00:00:00Z", historyStatus: "UNKNOWN", orderNo: null } : view === "DEVICES" ? { deviceId: "9", customerId: "12", deviceType: null, hashrate: null, holdingStatus: "UNKNOWN", connectionStatus: "NOT_APPLICABLE", acquisition: "UNKNOWN" } : customer], versionState: "READY", queryVersion: version, canContinue: false, pageNum: 1, pageSize: 20, total: 1, observedTotal: 1, recordsStatus: "READY" };
 }
 async function resolveScope(mode = "MANAGED") { const d = new HookDriver(); d.render(); requests.at(-1).resolve(fixture("OVERVIEW", mode)); await d.settle(); return d; }
+
+test("scope invalidation closes group management and rechecks permitted groups", async () => {
+  const d = await resolveScope();
+  try {
+    button(d.tree, "甲组").props.onClick(); d.render();
+    const stale = requests.at(-1);
+    button(d.tree, "分组管理").props.onClick(); d.render();
+    assert.ok(elements(d.tree).some(x => x.type === mocks["./m1-group-management"].M1GroupManagement));
+    scopeEvents.dispatchEvent(new Event("support-scope-invalidated")); d.render();
+    assert.equal(stale.options.signal.aborted, true);
+    assert.ok(!elements(d.tree).some(x => x.type === mocks["./m1-group-management"].M1GroupManagement));
+    assert.match(content(d.tree), /正在核对当前可见范围/);
+    const fresh = requests.at(-1), next = fixture(); next.scopeSummary.groups = next.scopeSummary.groups.slice(1);
+    stale.resolve(fixture("AGENTS")); await d.settle();
+    assert.match(content(d.tree), /正在核对当前可见范围/);
+    fresh.resolve(next); await d.settle();
+    assert.doesNotMatch(content(d.tree), /甲组/); button(d.tree, "乙组");
+    assert.equal(requests.at(-1).options.groupId, undefined);
+    assert.equal(requests.at(-1).options.agentId, undefined);
+  } finally { d.unmount(); }
+});
+
+test("scope invalidation rejects a late initial scope response", async () => {
+  const d = new HookDriver(); d.render();
+  try {
+    const stale = requests.at(-1);
+    scopeEvents.dispatchEvent(new Event("support-scope-invalidated")); d.render();
+    const fresh = requests.at(-1); assert.notEqual(fresh, stale); assert.equal(stale.options.signal.aborted, true);
+    fresh.resolve(fixture("OVERVIEW", "PERSONAL")); await d.settle();
+    stale.resolve(fixture("OVERVIEW", "ALL")); await d.settle();
+    assert.doesNotMatch(content(d.tree), /平台运营总览|我的分组数据|分组管理/);
+  } finally { d.unmount(); }
+});
+
+test("manual scope refresh updates group tabs as well as table data", async () => {
+  const d = await resolveScope();
+  try {
+    elements(d.tree).find(x => x.props?.label === "排序").props.onChange("BOUND_CUSTOMER_COUNT"); d.render();
+    elements(d.tree).find(x => x.props?.label === "顺序").props.onChange("ASC"); d.render();
+    button(d.tree, "刷新数据").props.onClick(); d.render();
+    assert.equal(requests.at(-1).options.view, "OVERVIEW");
+    const next = fixture(); next.scopeSummary.groups[0].name = "接管的新组";
+    requests.at(-1).resolve(next); await d.settle();
+    button(d.tree, "接管的新组"); assert.doesNotMatch(content(d.tree), /甲组/);
+    assert.equal(requests.at(-1).options.sortKey, "BOUND_CUSTOMER_COUNT");
+    assert.equal(requests.at(-1).options.direction, "ASC");
+  } finally { d.unmount(); }
+});
+
+test("actual customer and advisor tables display signed NET while keeping recharge and first-payment columns",()=>{
+  for(const view of ["CUSTOMERS","AGENTS"]) {
+    const data=fixture(view), totals=view==="CUSTOMERS"?data.records[0].lifetime:data.records[0].current.ownLifetime;
+    totals[0].net={observed:"-123456.000001",confirmed:"-123456.000001",status:"AVAILABLE"};
+    const html=renderToStaticMarkup(React.createElement(AnalyticsTable,{data,currency:"USDT",drill(){},openProfile(){}}));
+    assert.match(html,/累计净贡献/);assert.match(html,/-123456\.000001/);assert.match(html,view==="CUSTOMERS"?/本人累充/:/客户累计充值/);assert.match(html,/首充/);
+    totals[0].net={observed:null,confirmed:null,status:"UNKNOWN"};
+    const missing=renderToStaticMarkup(React.createElement(AnalyticsTable,{data,currency:"USDT",drill(){},openProfile(){}}));
+    assert.doesNotMatch(missing,/-123456\.000001/);assert.match(missing,/累计净贡献[^>]*：资料待核实/);
+  }
+});
+test("actual finance table labels general paid consumption without calling it a refund",()=>{
+  const data=fixture("FINANCE");data.records[0].kind="CONSUMPTION";
+  const html=renderToStaticMarkup(React.createElement(AnalyticsTable,{data,currency:"USDT",drill(){},openProfile(){}}));
+  assert.match(html,/付费消费/);assert.doesNotMatch(html,/购机退款/);
+});
+
+test("activity coverage preserves observed zero, unavailable state and trustworthy zero in summary and agents", async () => {
+  // Bug527's natural selectedCurrent.activity (PARTIAL + UNKNOWN window).
+  const naturalActivity = { active: { observed: 0, confirmed: 0, status: "PARTIAL" }, inactive: { observed: 0, confirmed: 0, status: "PARTIAL" }, unknown: { observed: 0, confirmed: 0, status: "AVAILABLE" }, status: "PARTIAL", window: { days: null, from: null, through: "2026-10-11T06:23:01.011944Z", status: "UNKNOWN" } };
+  const naturalFirstConfirmed = count(0);
+  if (process.env.SUPPORT_ACTIVITY_NATURAL_EVIDENCE) {
+    const live = JSON.parse(readFileSync(process.env.SUPPORT_ACTIVITY_NATURAL_EVIDENCE, "utf8")).body.data;
+    assert.deepEqual(live.selectedCurrent.activity, naturalActivity, "the regression must use the current natural DTO");
+    assert.deepEqual(live.selectedCurrent.firstConfirmed, naturalFirstConfirmed, "preserve the natural AVAILABLE zero from another count in the same response");
+    assert.equal(live.versionState, "UNKNOWN"); assert.equal(live.total, null);
+  }
+  const cases = [
+    [naturalActivity, /已观测 0，完整数值待核实/, /已核实 0|资料暂不可用/],
+    [{ ...naturalActivity, active: count(0) }, /已观测 0，完整数值待核实/, /已核实 0/],
+    [{ ...current().activity, status: "PARTIAL", active: count(0) }, /已观测 0，完整数值待核实/, /已核实 0/],
+    [{ ...naturalActivity, active: unknown(), status: "UNKNOWN" }, /资料待核实/, /已核实 0|已观测 0|资料暂不可用/],
+    [{ ...current().activity, active: { observed: null, confirmed: null, status: "UNAVAILABLE" }, status: "UNAVAILABLE" }, /资料暂不可用/, /已核实 0|已观测 0/],
+    [{ ...current().activity, status: "FAILED", active: count(0) }, /资料暂不可用/, /已核实 0/],
+    [{ ...current().activity, active: count(0), window: { ...current().activity.window, status: "UNAVAILABLE" } }, /资料暂不可用/, /已核实 0/],
+    [{ ...current().activity, active: count(0) }, /已核实 0/, /待核实|资料暂不可用/],
+  ];
+  for (const [activity, expected, forbidden] of cases) {
+    const data = fixture("AGENTS"); data.selectedCurrent.activity = activity; data.selectedCurrent.firstConfirmed = naturalFirstConfirmed; data.records[0].current.activity = activity;
+    const d = await resolveScope();
+    try {
+      requests.at(-1).resolve(data); await d.settle();
+      const html = renderToStaticMarkup(React.createElement("div", null, elements(d.tree).find(x => x.props?.["aria-label"] === "所选范围汇总")));
+      assert.match(html, /aria-label="当前客户已首充：已核实 0；查看明细"/);
+      const labels = [...html.matchAll(/aria-label="窗口活跃：([^"]+)"/g)].map(match => match[1]);
+      const table = renderToStaticMarkup(React.createElement(AnalyticsTable, { data, currency: "USDT", drill() {}, openProfile() {} }));
+      labels.push(...[...table.matchAll(/aria-label="窗口活跃：([^"]+)"/g)].map(match => match[1]));
+      assert.equal(labels.length, 2, "both activity count surfaces must be checked");
+      for (const label of labels) { assert.match(label, expected); assert.doesNotMatch(label, forbidden); }
+    } finally { d.unmount(); }
+  }
+});
 
 test("stage strict TS checks candidate and exact m-view delta against actual installed modules", () => {
   const config = ts.readConfigFile(path.join(frontend, "tsconfig.json"), ts.sys.readFile);
@@ -152,6 +257,24 @@ test("every query edit clears page/version; group edits additionally clear old a
   for (const change of [{ groupId: "5" }, { groupId: undefined }, { month: "2026-09" }, { currency: "NEX" }, { sortKey: "DEVICE_COUNT" }, { direction: "ASC" }, { basis: "PERIOD_EVENT" }, { view: "CUSTOMERS" }, { keyword: "test" }, { filter: "DUE" }]) { const next = changeAnalyticsQuery(state, change); assert.equal(next.pageNum, 1); assert.equal(next.expectedVersion, undefined); }
   assert.equal(changeAnalyticsQuery(state, { groupId: "5" }).agentId, undefined);
   assert.equal(changeAnalyticsQuery(state, { currency: "NEX" }).agentId, "7");
+});
+test("NET sort uses the current-customer selector and clears when switching basis", async () => {
+  const d = await resolveScope("ALL");
+  try {
+    button(d.tree, "客户").props.onClick(); d.render();
+    const select = () => elements(d.tree).find(x => x.props?.label === "排序");
+    assert.ok(select().props.options.some(x => x.value === "NET_CONTRIBUTION" && x.label === "净贡献额"));
+    select().props.onChange("NET_CONTRIBUTION"); d.render();
+    assert.equal(requests.at(-1).options.sortKey, "NET_CONTRIBUTION");
+    assert.equal(requests.at(-1).options.currency, "USDT");
+    assert.equal(requests.at(-1).options.pageNum, 1);
+    assert.equal(requests.at(-1).options.expectedVersion, undefined);
+    for (const basis of ["PERIOD_EVENT", "CURRENT_ASSET"]) {
+      elements(d.tree).find(x => x.props?.label === "统计口径").props.onChange(basis); d.render();
+      assert.equal(requests.at(-1).options.sortKey, undefined);
+      assert.ok(!select().props.options.some(x => x.value === "NET_CONTRIBUTION"));
+    }
+  } finally { d.unmount(); }
 });
 test("paging uses only READY signed version and never fabricates continuation", () => {
   const state = initialAnalyticsQuery("MANAGED"), data = fixture("AGENTS");
@@ -206,6 +329,23 @@ test("managed service operations use the actual scope despite an obsolete agent 
   assert.equal(service.props.permission, "supervisor");
   assert.equal(elements(d.tree).filter(x => x.type === AnalyticsTable).length, 0);
   d.unmount();
+});
+test("directory customer counts reauthorize and open the selected group and category", async () => {
+  for (const category of ["BOUND", "PENDING"]) {
+    const d=await resolveScope(); button(d.tree,"分组管理").props.onClick(); d.render();
+    const editor=elements(d.tree).find(x=>x.type===mocks["./m1-group-management"].M1GroupManagement);
+    editor.props.onViewCustomers("5",category);d.render(); assert.equal(requests.at(-1).options.view,"OVERVIEW");
+    requests.at(-1).resolve(fixture());await d.settle();
+    const q=requests.at(-1).options;assert.equal(q.view,"CUSTOMERS");assert.equal(q.groupId,"5");assert.equal(q.category,category);
+    assert.equal(q.basis,"CURRENT_CUSTOMER_HISTORY","customer drill must keep first-payment and lifetime-funds fields available");assert.equal(q.agentId,undefined);assert.equal(q.filter,"ALL");assert.equal(q.pageNum,1);assert.equal(q.expectedVersion,undefined);d.unmount();
+  }
+});
+test("a directory customer drill loses access without silently opening every remaining group", async () => {
+  const d=await resolveScope();button(d.tree,"分组管理").props.onClick();d.render();
+  const editor=elements(d.tree).find(x=>x.type===mocks["./m1-group-management"].M1GroupManagement);
+  editor.props.onViewCustomers("5","BOUND");d.render();const reads=requests.length;
+  const next=fixture();next.scopeSummary.groups=next.scopeSummary.groups.filter(g=>g.groupId!=="5");requests.at(-1).resolve(next);await d.settle();
+  assert.match(content(d.tree),/无查看权限/);assert.equal(requests.length,reads);assert.equal(elements(d.tree).filter(x=>x.type===AnalyticsTable).length,0);d.unmount();
 });
 test("cancelled reads ignore late responses and expose retry with preserved conditions", async () => {
   const d = await resolveScope(), pending = requests.at(-1); button(d.tree, "取消读取").props.onClick(); d.render(); assert.equal(pending.options.signal.aborted, true);
@@ -282,14 +422,14 @@ test("synchronous and asynchronous failures render retry instead of escaping eff
   forcedQueryError = new Error("unexpected synchronous client failure");
   const scopeDriver = new HookDriver();
   try {
-    assert.doesNotThrow(() => scopeDriver.render()); await scopeDriver.settle(); assert.match(content(scopeDriver.tree), /暂无法核对/);
+    assert.doesNotThrow(() => scopeDriver.render()); await scopeDriver.settle(); assert.match(content(scopeDriver.tree), /统计资料暂时无法确认，请重试。/);
     forcedQueryError = undefined; button(scopeDriver.tree, "重新核对范围").props.onClick(); scopeDriver.render();
     requests.at(-1).resolve(fixture("OVERVIEW", "MANAGED")); await scopeDriver.settle();
     forcedQueryError = new Error("unexpected synchronous query failure");
     const countBefore = requests.length; button(scopeDriver.tree, "设备").props.onClick(); assert.doesNotThrow(() => scopeDriver.render()); await scopeDriver.settle();
-    assert.equal(requests.length, countBefore); assert.match(content(scopeDriver.tree), /暂无法核对/); assert.equal(elements(scopeDriver.tree).filter(x => x.type === AnalyticsTable).length, 0);
+    assert.equal(requests.length, countBefore); assert.match(content(scopeDriver.tree), /统计资料暂时无法确认，请重试。/); assert.equal(elements(scopeDriver.tree).filter(x => x.type === AnalyticsTable).length, 0);
     forcedQueryError = undefined; button(scopeDriver.tree, "重试读取").props.onClick(); scopeDriver.render();
-    requests.at(-1).reject(new Error("unexpected asynchronous transport failure")); await scopeDriver.settle(); assert.match(content(scopeDriver.tree), /暂无法核对/);
+    requests.at(-1).reject(new Error("unexpected asynchronous transport failure")); await scopeDriver.settle(); assert.match(content(scopeDriver.tree), /统计资料暂时无法确认，请重试。/);
     button(scopeDriver.tree, "重试读取").props.onClick(); scopeDriver.render(); assert.equal(requests.at(-1).options.view, "DEVICES");
   } finally { forcedQueryError = undefined; scopeDriver.unmount(); }
 });
@@ -299,7 +439,7 @@ test("wire projection throws inside the protected effect and cannot reach transp
   try {
     const select = elements(d.tree).find(x => x.props?.label === "统计口径"); select.props.onChange("PERIOD_EVENT"); d.render();
     const monthSelect = elements(d.tree).find(x => x.props?.label === "自然月"); monthSelect.props.onChange("2026-13");
-    const before = requests.length; assert.doesNotThrow(() => d.render()); await d.settle(); assert.equal(requests.length, before); assert.match(content(d.tree), /暂无法核对/);
+    const before = requests.length; assert.doesNotThrow(() => d.render()); await d.settle(); assert.equal(requests.length, before); assert.match(content(d.tree), /统计资料暂时无法确认，请重试。/);
   } finally { d.unmount(); }
 });
 
@@ -421,7 +561,7 @@ test("invalid leaderboard entry is a readable zero-fetch failure, and both workb
     const personal = await resolveScope("PERSONAL");
     try {
       button(personal.tree, "查看业绩榜").props.onClick(); assert.equal(navigations.at(-1), "/service/leaderboard");
-      button(personal.tree, "查看首充、邀请与充值画像").props.onClick(); personal.render();
+      button(personal.tree, "我的客户").props.onClick(); personal.render();
       const visibleHeader = elements(personal.tree).find(x => x.type === "header" && x.props.className === "sa-header");
       button(visibleHeader, "查看业绩榜").props.onClick(); assert.equal(navigations.at(-1), "/service/leaderboard");
     } finally { personal.unmount(); }

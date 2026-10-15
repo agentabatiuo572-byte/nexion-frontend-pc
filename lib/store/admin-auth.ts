@@ -7,6 +7,8 @@ import {
 } from "@/lib/admin/auth-lifecycle";
 import { claimPendingCommandOwner } from "@/lib/admin/pending-mutation-store";
 import type { AdminRole, EffectiveMenuNode } from "@/lib/nav/console-nav";
+import type { SupportReadMode } from "@/lib/admin/session-role";
+import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 
 export interface AdminSession {
   adminId: number;
@@ -14,6 +16,7 @@ export interface AdminSession {
   operator: string;
   role: AdminRole;
   authorities: string[];
+  supportReadModes?: SupportReadMode[];
   /** Effective nx_admin_role_menu codes from the authenticated session. */
   menuCodes?: string[];
   menuNodes?: EffectiveMenuNode[];
@@ -73,7 +76,8 @@ export const useAdminAuth = create<AdminAuthState>()((set) => ({
         state.session == null
         || state.session.adminId !== session.adminId
         || state.session.username !== session.username;
-      if (identityChanged) renewAdminAuthLifecycle();
+      const accessChanged = adminShellSessionKey(state.session) !== adminShellSessionKey(session);
+      if (identityChanged || accessChanged) renewAdminAuthLifecycle();
       // merge 2026-08-06(幂等包):在途命令号按身份认领 —— 换人才清、同一人续用
       // (claim 内部按 owner 比对,同人重登不清,保住「会话过期重登后原样重试」的命令号)。
       // 🔴 只把可用的身份交出去(幂等包第四轮验收 P1-A):String(undefined) 会让两个人
@@ -86,7 +90,7 @@ export const useAdminAuth = create<AdminAuthState>()((set) => ({
         tokenType,
         session,
         sessionResolution: "authenticated",
-        authEpoch: identityChanged ? state.authEpoch + 1 : state.authEpoch,
+        authEpoch: identityChanged || accessChanged ? state.authEpoch + 1 : state.authEpoch,
         logoutPending: false,
         logoutUnknown: false,
         logoutError: null,

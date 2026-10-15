@@ -64,6 +64,24 @@ function nodes(tree, predicate, found = []) {
 const button = (tree, label) => nodes(tree, node => node.type === "button" && node.props.children === label)[0];
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
+test("new account form defaults to dedicated support, preserves explicit roles, and confines recovery to super", () => {
+  const roles = [{ key: "support", name: "客服" }, { key: "finance", name: "财务" }, { key: "super", name: "超管" }];
+  for (const [initialRole, recoveryMode, available, expected] of [
+    [undefined, false, roles, "support"], ["", false, roles, ""], ["finance", false, roles, "finance"],
+    [undefined, true, roles, "super"], [undefined, false, roles.filter(role => role.key !== "support"), ""],
+  ]) {
+    const f = fixture(), forms = f.load("app/components/domain-views/a-tabs/a1-accounts.tsx").testForms, results = [];
+    const form = f.component(forms.NewAccountDrawer, { roles: available, recoveryMode, onClose() {}, onSubmit: value => results.push(value), initialForm: { username: "support.new", displayName: "新客服", reason: "新入职", ...(initialRole !== undefined ? { role: initialRole } : {}) } });
+    form.render(); const tree = form.render();
+    const selected = nodes(tree, node => node.type === "input" && node.props.name === "operator-role" && node.props.checked);
+    assert.equal(selected.length, 1); assert.equal(selected[0].props.value, expected);
+    button(tree, "确认创建账号").props.onClick();
+    assert.equal(results.length, 1); assert.equal(results[0].role, expected);
+    assert.equal(results[0].useDefaultAvatar === true, expected === "support");
+    assert.equal("qualifications" in results[0], false, "Creating a default account cannot request supervisor qualification");
+  }
+});
+
 test("create and A2 frozen command preserve old fields and explicit gender/default intent; invalid mixed intent cannot send", async () => {
   const f = fixture(), client = f.load("lib/admin/a1-client.ts"), registry = f.load("lib/admin/high-ops-registry.ts");
   const legacy = { username: "support.jane", displayName: "专属客服", email: "a@example.com", role: "support" };
@@ -113,6 +131,15 @@ test("real create/edit form producers select explicit defaults, keep manual mutu
   let tree = form.render(); tree = form.render(); nodes(tree, n => n.type === "HDSelect")[0].props.onChange("FEMALE"); tree = form.render(); button(tree, "确认创建账号").props.onClick();
   assert.equal(results[0].useDefaultAvatar, true); assert.equal(results[0].avatarGender, "FEMALE"); assert.ok(!("avatarAssetId" in results[0]));
   assert.equal(nodes(tree, n => n.type === "fieldset" && n.props.className === "account-avatar-controls").length, 1, "Only the new avatar controls receive the typography scope");
+  const titles = nodes(tree, n => n.type === "h3" && n.props.className === "account-profile-section-title");
+  assert.deepEqual(titles.map(n => n.props.children[1]), ["登录资料", "初始角色(可暂不分配)", "首次登录", "操作理由（必填 · 写入审计）"]);
+  assert.deepEqual(titles.map(n => n.props.children[0].props.children), ["1", "2", "3", "4"]);
+  assert.ok(titles.every(n => n.props.children[0].props.className === "account-profile-step-number" && n.props.children[0].props["aria-hidden"] === "true"));
+  const reasonInput = nodes(tree, n => n.type === "textarea")[0];
+  assert.equal(reasonInput.props["aria-labelledby"], titles[3].props.id, "The single numbered reason title labels its input accessibly");
+  assert.equal(reasonInput.props["aria-required"], "true");
+  assert.equal(nodes(tree, n => n.type === "label" && nodes(n, child => child.type === "textarea").length > 0).length, 0, "No second reason label repeats the section title");
+  assert.deepEqual(nodes(tree.props.sub, n => n.type === "li").map(n => n.props.children[1]), ["登录资料", "初始角色", "首次登录", "操作理由"]);
   nodes(tree, n => n.type === "input" && n.props.name === "avatar-mode")[1].props.onChange(); tree = form.render();
   const picker = nodes(tree, n => typeof n.type === "function" && n.type.name === "AccountAvatarPicker")[0]; picker.props.onChange(ID); tree = form.render(); button(tree, "确认创建账号").props.onClick();
   assert.equal(results[1].avatarAssetId, ID); assert.equal(results[1].useDefaultAvatar, false);
@@ -124,17 +151,49 @@ test("real create/edit form producers select explicit defaults, keep manual mutu
   form.dispose(); edit.dispose();
 });
 
+test("avatar mode labels remain clickable and failed preparation blocks create/edit until cleared", () => {
+  const f = fixture(), forms = f.load("app/components/domain-views/a-tabs/a1-accounts.tsx").testForms, results = [];
+  const create = f.component(forms.NewAccountDrawer, { roles: [{ key: "support", name: "客服" }], recoveryMode: false, onClose() {}, onSubmit: value => results.push(value), initialForm: { username: "jane", displayName: "专属客服", role: "support", reason: "新入职客服创建账号" } });
+  create.render(); let tree = create.render();
+  const modes = nodes(tree, node => node.props?.className === "account-avatar-modes")[0];
+  assert.equal(nodes(modes, node => node.type === "label" && nodes(node, child => child.type === "input" && child.props.name === "avatar-mode").length === 1).length, 2, "Each native radio remains inside its whole clickable label");
+  nodes(modes, node => node.type === "input")[1].props.onChange(); tree = create.render();
+  const picker = nodes(tree, node => typeof node.type === "function" && node.type.name === "AccountAvatarPicker")[0];
+  picker.props.onBlocking(true); tree = create.render();
+  assert.equal(button(tree, "确认创建账号").props.disabled, true);
+  assert.equal(nodes(tree, node => node.type === "fieldset" && node.props.className === "account-avatar-controls")[0].props.disabled, true);
+  button(tree, "确认创建账号").props.onClick(); assert.equal(results.length, 0);
+  picker.props.onBlocking(false); tree = create.render();
+  assert.equal(button(tree, "确认创建账号").props.disabled, false);
+  nodes(tree, node => node.type === "input" && node.props.name === "avatar-mode")[0].props.onChange(); tree = create.render();
+  button(tree, "确认创建账号").props.onClick(); assert.equal(results[0].role, "support"); assert.equal(results[0].useDefaultAvatar, true); assert.equal(results[0].avatarAssetId, undefined);
+  const edit = f.component(forms.EditAccountDrawer, { account: { id: "99", username: "jane", name: "客服", role: "support", version: "7", avatarAssetId: OLD }, onClose() {}, onSubmit: value => results.push(value) });
+  tree = edit.render(); nodes(tree, node => node.type === "input" && node.props.value === "客服")[0].props.onChange({ target: { value: "新客服" } }); nodes(tree, node => node.type === "textarea")[0].props.onChange({ target: { value: "修改客服显示名称" } }); tree = edit.render();
+  const editPicker = nodes(tree, node => typeof node.type === "function" && node.type.name === "AccountAvatarPicker")[0];
+  editPicker.props.onBlocking(true); tree = edit.render(); button(tree, "保存账号资料").props.onClick(); assert.equal(button(tree, "保存账号资料").props.disabled, true); assert.equal(results.length, 1);
+  editPicker.props.onBlocking(false); tree = edit.render(); button(tree, "保存账号资料").props.onClick(); assert.equal(results.length, 2); assert.equal(results[1].displayName, "新客服"); assert.equal(results[1].avatarAssetId, undefined); assert.equal(f.requests.length, 0);
+  create.dispose(); edit.dispose();
+});
+
 test("real picker persists default intent and retries original gender/key after reload; cancel retries original key", async () => {
   const f = fixture(); f.auth.session.role = "super";
   const picker = f.load("app/components/domain-views/a-tabs/account-avatar-picker.tsx").AccountAvatarPicker;
   const changed = [], blocked = [], props = { name: "客服", gender: "FEMALE", allowDefault: true, onChange: value => changed.push(value), onBlocking: value => blocked.push(value) };
   const first = f.component(picker, props); let tree = first.render(); tree = first.render();
   assert.equal(tree.props.className, "account-avatar-controls", "The real picker root owns the local typography scope");
+  assert.equal(tree.props.children[1].type, "p", "Explanation precedes the entire upload/preview row");
+  const row = nodes(tree, node => node.props?.className === "account-avatar-row")[0];
+  assert.equal(row.props.children[0].type, "label", "Selection text and file control sit before the avatar group");
+  assert.equal(row.props.children[1].props.className, "account-avatar-preview");
+  assert.equal(nodes(row.props.children[0], node => node.type === "input" && node.props.type === "file").length, 1);
   f.queue.push(new Error("unknown")); button(tree, "按所选性别准备默认头像").props.onClick(); await flush();
   assert.equal(f.requests.length, 1); const original = f.requests[0]; first.dispose();
-  const second = f.component(picker, { ...props, gender: "MALE" }); second.render(); tree = second.render(); f.queue.push(json(prepared())); button(tree, "上传或使用原命令重试").props.onClick(); await flush();
+  const second = f.component(picker, { ...props, gender: "MALE" }); second.render(); tree = second.render(); f.queue.push(json(prepared())); button(tree, "重试获取默认头像").props.onClick(); await flush();
   assert.equal(f.requests[1].init.body, original.init.body); assert.equal(new Headers(f.requests[1].init.headers).get("Idempotency-Key"), new Headers(original.init.headers).get("Idempotency-Key")); assert.equal(changed.at(-1), ID);
-  tree = second.render(); f.queue.push(new Error("cancel unknown")); button(tree, "取消新头像").props.onClick(); await flush(); tree = second.render(); f.queue.push(json(prepared("admin", "CANCELLED"))); button(tree, "重试原取消操作").props.onClick(); await flush();
+  const previews = nodes(second.render(), node => node.props?.className === "account-avatar-preview")[0];
+  assert.equal(nodes(previews, node => node.type === "SupportAvatar" && node.props.size === 64).length, 2, "Prepared state preserves both current and new 64px previews");
+  assert.deepEqual(nodes(previews, node => node.type === "p").map(node => node.props.children), ["当前头像", "新头像"]);
+  tree = second.render(); f.queue.push(new Error("cancel unknown")); button(tree, "取消新头像").props.onClick(); await flush(); tree = second.render(); f.queue.push(json(prepared("admin", "CANCELLED"))); button(tree, "重试取消头像").props.onClick(); await flush();
   assert.equal(new Headers(f.requests[2].init.headers).get("Idempotency-Key"), new Headers(f.requests[3].init.headers).get("Idempotency-Key")); assert.equal(changed.at(-1), undefined); assert.equal(blocked.at(-1), false); second.dispose();
 });
 
@@ -161,14 +220,17 @@ test("manual upload reload only accepts the original image bytes and reuses the 
   const picker = f.load("app/components/domain-views/a-tabs/account-avatar-picker.tsx").AccountAvatarPicker;
   const props = { name: "客服", onChange() {}, onBlocking() {} }, file = new File(["original image bytes"], "portrait.jpg", { type: "image/jpeg" });
   const first = f.component(picker, props); first.render(); let tree = first.render(); nodes(tree, n => n.type === "input" && n.props.type === "file")[0].props.onChange({ target: { files: [file], value: "file" } });
-  for (let i = 0; i < 30 && !button(first.render(), "上传或使用原命令重试"); i++) await flush();
-  tree = first.render(); f.queue.push(new Error("upload unknown")); button(tree, "上传或使用原命令重试").props.onClick(); await flush(); const original = f.requests[0]; assert.equal(original.init.body.get("clientUploadId").length, 36); first.dispose();
+  for (let i = 0; i < 30 && !button(first.render(), "上传或重试"); i++) await flush();
+  const selected = first.render();
+  assert.equal(nodes(selected, n => n.type === "input" && n.props.type === "file")[0].props.title, file.name);
+  assert.equal(nodes(selected, n => n.type === "small" && n.props.title === file.name)[0].props.children, file.name, "The selected name remains visible after the native file input is reset");
+  tree = first.render(); f.queue.push(new Error("upload unknown")); button(tree, "上传或重试").props.onClick(); await flush(); const original = f.requests[0]; assert.equal(original.init.body.get("clientUploadId").length, 36); first.dispose();
   const second = f.component(picker, props); second.render(); tree = second.render(); const select = nodes(tree, n => n.type === "input" && n.props.type === "file")[0];
   select.props.onChange({ target: { files: [new File(["different image"], "other.jpg", { type: "image/jpeg" })], value: "file" } });
-  for (let i = 0; i < 30; i++) await flush(); tree = second.render(); assert.equal(button(tree, "上传或使用原命令重试").props.disabled, true); assert.equal(f.requests.length, 1);
+  for (let i = 0; i < 30; i++) await flush(); tree = second.render(); assert.equal(button(tree, "上传或重试").props.disabled, true); assert.equal(f.requests.length, 1);
   select.props.onChange({ target: { files: [new File(["original image bytes"], "renamed.jpg", { type: "image/jpeg" })], value: "file" } });
-  for (let i = 0; i < 30 && button(second.render(), "上传或使用原命令重试")?.props.disabled !== false; i++) await flush();
-  tree = second.render(); f.queue.push(json(prepared())); button(tree, "上传或使用原命令重试").props.onClick(); await flush();
+  for (let i = 0; i < 30 && button(second.render(), "上传或重试")?.props.disabled !== false; i++) await flush();
+  tree = second.render(); f.queue.push(json(prepared())); button(tree, "上传或重试").props.onClick(); await flush();
   assert.equal(f.requests[1].init.body.get("clientUploadId"), original.init.body.get("clientUploadId")); assert.equal(new Headers(f.requests[1].init.headers).get("Idempotency-Key"), new Headers(original.init.headers).get("Idempotency-Key")); assert.equal(await f.requests[1].init.body.get("file").text(), "original image bytes"); assert.equal(f.requests[1].init.body.get("file").name, "portrait.jpg"); assert.equal(f.requests[1].init.body.get("file").type, "image/jpeg"); second.dispose();
 });
 
@@ -189,7 +251,10 @@ test("self qualification denial cannot send a save or discard a previously unkno
   assert.equal(button(tree, "使用原资料与命令重试").props.disabled, true); assert.equal(pendingApi.selfAvatarCommands.list().length, 1); assert.equal(f.requests.length, 1); assert.equal(f.requests[0].init.method, undefined); view.dispose();
 });
 
-test("proxy enforces self method/path/body boundaries and streams only allowed image types with no-store", async () => {
+test("proxy enforces self method/path/body boundaries and streams only allowed image types with no-store", async (t) => {
+  const previousBackend = process.env.NEXION_BACKEND_URL;
+  process.env.NEXION_BACKEND_URL = "http://avatar-backend.test:8110";
+  t.after(() => { if (previousBackend === undefined) delete process.env.NEXION_BACKEND_URL; else process.env.NEXION_BACKEND_URL = previousBackend; });
   const f = fixture(), route = f.load("app/api/admin/platform/[...path]/route.ts");
   const call = async (method, path, body, search = "") => route[method](new Request(`http://example.test/api/admin/platform/${path}${search}`, { method, headers: { "Content-Type": "application/json", "Idempotency-Key": KEY }, ...(body ? { body: JSON.stringify(body) } : {}) }), { params: Promise.resolve({ path: path.split("/") }) });
   for (const [method, path, body] of [["POST", "accounts/self/avatar"], ["PATCH", "accounts/self/profile", {}], ["GET", "accounts/self/role"], ["GET", "accounts/self/avatar-assets/default"], ["GET", `accounts/self/avatar-assets/${ID}/extra`], ["DELETE", "accounts/self/avatar/content"], ["GET", "accounts/avatar-assets/../secret"]]) assert.equal((await call(method, path, body)).status, 404);
@@ -197,7 +262,7 @@ test("proxy enforces self method/path/body boundaries and streams only allowed i
   assert.equal((await call("PATCH", "accounts/self/avatar", { ...input, accountId: 99 })).status, 422);
   assert.equal((await call("POST", "accounts/self/avatar-assets/default", { avatarGender: "FEMALE", clientUploadId: "original-upload-id", target: 99 })).status, 422);
   assert.equal((await call("GET", "accounts/self/avatar", undefined, "?target=99")).status, 422); assert.equal(f.requests.length, 0);
-  f.queue.push(json({ ...SNAP, assetId: ID })); assert.equal((await call("PATCH", "accounts/self/avatar", input)).status, 200); assert.equal(f.requests.at(-1).path, "http://127.0.0.1:8110/api/admin/platform/accounts/self/avatar");
+  f.queue.push(json({ ...SNAP, assetId: ID })); assert.equal((await call("PATCH", "accounts/self/avatar", input)).status, 200); assert.equal(f.requests.at(-1).path, "http://avatar-backend.test:8110/api/admin/platform/accounts/self/avatar");
   f.queue.push(new Response(new Uint8Array([1, 2, 3]), { headers: { "Content-Type": "image/jpeg" } })); const image = await call("GET", "accounts/self/avatar/content"); assert.equal(image.status, 200); assert.equal(image.headers.get("Cache-Control"), "no-store"); assert.equal(image.headers.get("X-Content-Type-Options"), "nosniff"); assert.equal((await image.arrayBuffer()).byteLength, 3);
   f.queue.push(new Response("<svg/>", { headers: { "Content-Type": "image/svg+xml" } })); assert.equal((await call("GET", `accounts/self/avatar-assets/${ID}`)).status, 502);
 });

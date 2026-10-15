@@ -1,0 +1,34 @@
+{
+  "status": "REQUESTED_STOP",
+  "sourceSha256": "4a7fa933acbe19ce176a66fc97f23cf42236d270d2f26e0b993756ac057665e3",
+  "database": "127.0.0.1:33338/cs_analytics_20261007",
+  "serverUuid": "abe359c0-c621-11f1-97ea-a40c6626953d",
+  "frontend": "http://127.0.0.1:33108",
+  "backend": "http://127.0.0.1:18162",
+  "before": {
+    "bytes": 1579288020,
+    "files": 4734,
+    "freeBytes": 458826391552,
+    "scanDurationMs": 89.25580000000001
+  },
+  "pids": {
+    "backend": 20924,
+    "frontend": 4540
+  },
+  "elapsedSeconds": 840.9790101000001,
+  "wholeTask": "NOT_COMPLETE",
+  "frontendLogBytes": 118,
+  "backendLogBytes": 23147,
+  "current": {
+    "bytes": 1579534922,
+    "files": 4742,
+    "freeBytes": 458851274752,
+    "scanDurationMs": 71.87150000000838
+  },
+  "after": {
+    "bytes": 1579534922,
+    "files": 4742,
+    "freeBytes": 458851274752,
+    "scanDurationMs": 71.5219999999972
+  }
+}

@@ -1,0 +1,479 @@
+{
+  "status": "SHIPPING_ASSET_ADOPTED_BROWSER_ACCEPTANCE_PENDING",
+  "tool": "sharp raw RGBA source-neighbour interpolation",
+  "file": "orbit-surface-table.png",
+  "previousSHA256": "4315cc92df43a6ae27cdb85e128ed0991c23c186f72a3bf5e5cce3887c1bab79",
+  "sha256": "b5c0cabccf16199913bf4df6e6c05625fb432001a06c14677f3fa2ca452c830d",
+  "size": [
+    1314,
+    288
+  ],
+  "repairRectAsset": {
+    "x": 952,
+    "y": 28,
+    "width": 108,
+    "height": 14
+  },
+  "sourceCropOffset": {
+    "x": 202,
+    "y": 592
+  },
+  "repairRectApproved": {
+    "x": 1154,
+    "y": 620,
+    "width": 108,
+    "height": 14
+  },
+  "approvedSource": {
+    "file": "approved-design.png",
+    "sha256": "e3b92e2fbb593171a4658e058c562ec4dbc9403fecafdf8dd85a719ba71f6c3a"
+  },
+  "sourceDonors": [
+    {
+      "x": 1138,
+      "y": 620,
+      "width": 8,
+      "height": 14
+    },
+    {
+      "x": 1273,
+      "y": 620,
+      "width": 8,
+      "height": 14
+    }
+  ],
+  "method": "Each row uses the median RGB of the two clean original header donor strips and horizontal interpolation. Three-pixel interior feather; no changes outside the fixed residue rectangle, alpha unchanged. Grid and frame not touched.",
+  "changedPixels": 1296,
+  "outsideRepairChangedPixels": 0,
+  "limitation": "This small formerly text-occluded header support is reconstructed from neighbouring native material; not a recovery of originally hidden source pixels. Browser acceptance pending.",
+  "originalExtractionBasis": {
+    "sourceCrop": {
+      "id": "table",
+      "x": 202,
+      "y": 592,
+      "width": 1314,
+      "height": 288
+    },
+    "foregroundRemoval": [
+      {
+        "id": "rank-title",
+        "x": 222,
+        "y": 599,
+        "width": 50,
+        "height": 30
+      },
+      {
+        "id": "identity-title",
+        "x": 367,
+        "y": 599,
+        "width": 90,
+        "height": 31
+      },
+      {
+        "id": "retired-movement-title",
+        "x": 572,
+        "y": 599,
+        "width": 70,
+        "height": 31
+      },
+      {
+        "id": "amount-title-and-unit",
+        "x": 728,
+        "y": 595,
+        "width": 129,
+        "height": 41
+      },
+      {
+        "id": "first-pay-title-and-unit",
+        "x": 938,
+        "y": 595,
+        "width": 117,
+        "height": 41
+      },
+      {
+        "id": "bindings-title-and-unit",
+        "x": 1157,
+        "y": 595,
+        "width": 112,
+        "height": 41
+      },
+      {
+        "id": "action-title",
+        "x": 1380,
+        "y": 599,
+        "width": 59,
+        "height": 31
+      },
+      {
+        "id": "rank-0",
+        "x": 223,
+        "y": 646,
+        "width": 79,
+        "height": 32
+      },
+      {
+        "id": "portrait-0",
+        "x": 312,
+        "y": 636,
+        "width": 60,
+        "height": 53
+      },
+      {
+        "id": "identity-and-self-badge-0",
+        "x": 378,
+        "y": 640,
+        "width": 105,
+        "height": 42
+      },
+      {
+        "id": "retired-movement-0",
+        "x": 577,
+        "y": 646,
+        "width": 57,
+        "height": 32
+      },
+      {
+        "id": "amount-0",
+        "x": 764,
+        "y": 646,
+        "width": 67,
+        "height": 32
+      },
+      {
+        "id": "first-payment-0",
+        "x": 975,
+        "y": 646,
+        "width": 45,
+        "height": 32
+      },
+      {
+        "id": "bindings-0",
+        "x": 1180,
+        "y": 646,
+        "width": 57,
+        "height": 32
+      },
+      {
+        "id": "action-0",
+        "x": 1359,
+        "y": 646,
+        "width": 100,
+        "height": 32
+      },
+      {
+        "id": "rank-1",
+        "x": 223,
+        "y": 694,
+        "width": 79,
+        "height": 32
+      },
+      {
+        "id": "portrait-1",
+        "x": 312,
+        "y": 683,
+        "width": 60,
+        "height": 53
+      },
+      {
+        "id": "identity-and-self-badge-1",
+        "x": 378,
+        "y": 688,
+        "width": 105,
+        "height": 42
+      },
+      {
+        "id": "retired-movement-1",
+        "x": 577,
+        "y": 694,
+        "width": 57,
+        "height": 32
+      },
+      {
+        "id": "amount-1",
+        "x": 764,
+        "y": 694,
+        "width": 67,
+        "height": 32
+      },
+      {
+        "id": "first-payment-1",
+        "x": 975,
+        "y": 694,
+        "width": 45,
+        "height": 32
+      },
+      {
+        "id": "bindings-1",
+        "x": 1180,
+        "y": 694,
+        "width": 57,
+        "height": 32
+      },
+      {
+        "id": "action-1",
+        "x": 1359,
+        "y": 694,
+        "width": 100,
+        "height": 32
+      },
+      {
+        "id": "rank-2",
+        "x": 223,
+        "y": 742,
+        "width": 79,
+        "height": 32
+      },
+      {
+        "id": "portrait-2",
+        "x": 312,
+        "y": 730,
+        "width": 60,
+        "height": 53
+      },
+      {
+        "id": "identity-and-self-badge-2",
+        "x": 378,
+        "y": 736,
+        "width": 105,
+        "height": 42
+      },
+      {
+        "id": "retired-movement-2",
+        "x": 577,
+        "y": 742,
+        "width": 57,
+        "height": 32
+      },
+      {
+        "id": "amount-2",
+        "x": 764,
+        "y": 742,
+        "width": 67,
+        "height": 32
+      },
+      {
+        "id": "first-payment-2",
+        "x": 975,
+        "y": 742,
+        "width": 45,
+        "height": 32
+      },
+      {
+        "id": "bindings-2",
+        "x": 1180,
+        "y": 742,
+        "width": 57,
+        "height": 32
+      },
+      {
+        "id": "action-2",
+        "x": 1359,
+        "y": 742,
+        "width": 100,
+        "height": 32
+      },
+      {
+        "id": "rank-3",
+        "x": 223,
+        "y": 790,
+        "width": 79,
+        "height": 32
+      },
+      {
+        "id": "portrait-3",
+        "x": 312,
+        "y": 775,
+        "width": 60,
+        "height": 53
+      },
+      {
+        "id": "identity-and-self-badge-3",
+        "x": 378,
+        "y": 784,
+        "width": 105,
+        "height": 42
+      },
+      {
+        "id": "retired-movement-3",
+        "x": 577,
+        "y": 790,
+        "width": 57,
+        "height": 32
+      },
+      {
+        "id": "amount-3",
+        "x": 764,
+        "y": 790,
+        "width": 67,
+        "height": 32
+      },
+      {
+        "id": "first-payment-3",
+        "x": 975,
+        "y": 790,
+        "width": 45,
+        "height": 32
+      },
+      {
+        "id": "bindings-3",
+        "x": 1180,
+        "y": 790,
+        "width": 57,
+        "height": 32
+      },
+      {
+        "id": "action-3",
+        "x": 1359,
+        "y": 790,
+        "width": 100,
+        "height": 32
+      },
+      {
+        "id": "rank-4",
+        "x": 223,
+        "y": 838,
+        "width": 79,
+        "height": 32
+      },
+      {
+        "id": "portrait-4",
+        "x": 312,
+        "y": 827,
+        "width": 60,
+        "height": 53
+      },
+      {
+        "id": "identity-and-self-badge-4",
+        "x": 378,
+        "y": 832,
+        "width": 105,
+        "height": 42
+      },
+      {
+        "id": "retired-movement-4",
+        "x": 577,
+        "y": 838,
+        "width": 57,
+        "height": 32
+      },
+      {
+        "id": "amount-4",
+        "x": 764,
+        "y": 838,
+        "width": 67,
+        "height": 32
+      },
+      {
+        "id": "first-payment-4",
+        "x": 975,
+        "y": 838,
+        "width": 45,
+        "height": 32
+      },
+      {
+        "id": "bindings-4",
+        "x": 1180,
+        "y": 838,
+        "width": 57,
+        "height": 32
+      },
+      {
+        "id": "action-4",
+        "x": 1359,
+        "y": 838,
+        "width": 100,
+        "height": 32
+      },
+      {
+        "id": "retired-grid-x525",
+        "x": 523,
+        "y": 593,
+        "width": 5,
+        "height": 285
+      },
+      {
+        "id": "retired-grid-x688",
+        "x": 686,
+        "y": 593,
+        "width": 5,
+        "height": 285
+      },
+      {
+        "id": "retired-grid-x896",
+        "x": 894,
+        "y": 593,
+        "width": 5,
+        "height": 285
+      },
+      {
+        "id": "retired-grid-x1100",
+        "x": 1098,
+        "y": 593,
+        "width": 5,
+        "height": 285
+      },
+      {
+        "id": "retired-grid-x1300",
+        "x": 1298,
+        "y": 593,
+        "width": 5,
+        "height": 285
+      },
+      {
+        "id": "old-row-y638",
+        "x": 203,
+        "y": 637,
+        "width": 1312,
+        "height": 3
+      },
+      {
+        "id": "old-row-y684",
+        "x": 203,
+        "y": 683,
+        "width": 1312,
+        "height": 3
+      },
+      {
+        "id": "old-row-y732",
+        "x": 203,
+        "y": 731,
+        "width": 1312,
+        "height": 3
+      },
+      {
+        "id": "old-row-y778",
+        "x": 203,
+        "y": 777,
+        "width": 1312,
+        "height": 3
+      },
+      {
+        "id": "old-row-y828",
+        "x": 203,
+        "y": 827,
+        "width": 1312,
+        "height": 3
+      },
+      {
+        "id": "old-row-y878",
+        "x": 203,
+        "y": 877,
+        "width": 1312,
+        "height": 3
+      },
+      {
+        "id": "old-fixed-self-highlight",
+        "x": 202,
+        "y": 778,
+        "width": 1314,
+        "height": 50
+      }
+    ],
+    "method": "Fixed foreground holes: nearest clean horizontal donors interpolated from the source crop. Whole-width holes use nearest clean source row. Original pixels outside declared support are byte-exact; holes are sampled reconstruction, not original texture. The fixed old self-row y778..827 is replaced with a cleaned ordinary-row donor y688..735, cyclic over48px. Retired horizontal separators average cleaned source rows3px above/below; no old separate movement-column grid remains."
+  },
+  "acceptance": {
+    "candidateViewed": "PASS",
+    "rectangleExteriorRGBAUnchanged": "PASS",
+    "browser": "PENDING"
+  }
+}

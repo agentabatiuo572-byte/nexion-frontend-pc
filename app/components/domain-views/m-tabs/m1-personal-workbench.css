@@ -1,0 +1,12 @@
+.s5a-personal-header{--s5a-personal-avatar-size:56px;align-items:center;gap:16px}
+.s5a-personal-identity{display:flex;align-items:center;gap:14px;min-width:0}
+.s5a-personal-identity>div{min-width:0}
+.s5a-personal-header h2{font-size:26px;font-weight:600;line-height:1.25}
+.s5a-personal-header .s5a-stamp{font-size:12.5px}
+.s5a-personal-identity>.support-avatar>img,.s5a-personal-identity>.support-avatar>span{width:var(--s5a-personal-avatar-size)!important;height:var(--s5a-personal-avatar-size)!important}
+.s5a-personal-identity>.support-avatar>span{font-size:20px!important}
+.s5a-personal-header-actions{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.s5a .s5a-personal-header .s5a-personal-header-actions>.avatar-control-button{min-height:40px;padding:0 8px;border:0;border-radius:6px;background:transparent;color:var(--v5-ink-2);font-size:13.5px;font-weight:500;line-height:1.4}
+@media (hover: hover) and (pointer: fine) { .s5a .s5a-personal-header .s5a-personal-header-actions>.avatar-control-button:hover:not(:disabled){background:var(--v5-surface-2);color:var(--v5-ink)} }
+.s5a .s5a-personal-header .s5a-personal-header-actions>.avatar-control-button:focus-visible{outline:2px solid var(--v5-brand);outline-offset:2px}
+@media(max-width:700px){.s5a-personal-header{--s5a-personal-avatar-size:48px;align-items:flex-start;gap:8px}.s5a-personal-header-actions{width:100%;flex-direction:row;align-items:center;justify-content:space-between;gap:12px}.s5a .s5a-personal-header .s5a-personal-header-actions>.avatar-control-button{min-height:44px;padding-left:0}.s5a-personal-header-actions>.s5a-stamp{text-align:right}}

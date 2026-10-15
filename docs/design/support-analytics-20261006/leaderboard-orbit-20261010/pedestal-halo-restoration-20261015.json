@@ -1,0 +1,78 @@
+{
+  "source": {
+    "file": "approved-design.png",
+    "sha256": "e3b92e2fbb593171a4658e058c562ec4dbc9403fecafdf8dd85a719ba71f6c3a"
+  },
+  "support": "Original floor ellipses minus existing dynamic/control supports and opaque core pixels. Partial-alpha core pixels retain source underneath. No source portraits or text. Ready-state pedestal only.",
+  "maskSource": "background-approved-source-restoration-20261014.json",
+  "assets": [
+    {
+      "file": "orbit-pedestal-halo-1.png",
+      "sha256": "73ac97f5c4b600c8fe7837b16a1e873718e45172beee56877332251df830388e",
+      "bounds": {
+        "left": 275,
+        "top": 295,
+        "width": 214,
+        "height": 76
+      },
+      "core": {
+        "file": "orbit-pedestal-1.png",
+        "sha256": "8da5168aeaf335e21d1ce6b1f5785914fc7d5eacd6c073fccc03846955aa04aa",
+        "left": 300,
+        "top": 296
+      },
+      "restoredPixels": 5295
+    },
+    {
+      "file": "orbit-pedestal-halo-2.png",
+      "sha256": "63faaaf92da0a7242792b451a271b3b0c427404c716551aa011dd11087b0e88a",
+      "bounds": {
+        "left": 556,
+        "top": 295,
+        "width": 206,
+        "height": 76
+      },
+      "core": {
+        "file": "orbit-pedestal-2.png",
+        "sha256": "38cd69581986f33d45572cc8e45aef195dfc93488cd317190730c26f46f22a7f",
+        "left": 579,
+        "top": 296
+      },
+      "restoredPixels": 5436
+    },
+    {
+      "file": "orbit-pedestal-halo-3.png",
+      "sha256": "47e871e78f490d6200899f25924cdaf694cec51d84ee6b966da2dfea96aa7930",
+      "bounds": {
+        "left": 825,
+        "top": 295,
+        "width": 196,
+        "height": 76
+      },
+      "core": {
+        "file": "orbit-pedestal-3.png",
+        "sha256": "6ef35e3a714df92fa1ebd8335ab39052b8b191a385092be50ddb2fe16ebc9b86",
+        "left": 848,
+        "top": 296
+      },
+      "restoredPixels": 4963
+    },
+    {
+      "file": "orbit-pedestal-halo-4.png",
+      "sha256": "02beefe988a530af1acaa5f1176f52d0f77cc4391cb6da8e550d85966cc518dd",
+      "bounds": {
+        "left": 1094,
+        "top": 295,
+        "width": 194,
+        "height": 76
+      },
+      "core": {
+        "file": "orbit-pedestal-4.png",
+        "sha256": "dac5bad33352b3a8fd2ce340440417bdd1bdafcb79c7feda4c1197b681eade63",
+        "left": 1116,
+        "top": 296
+      },
+      "restoredPixels": 5045
+    }
+  ]
+}

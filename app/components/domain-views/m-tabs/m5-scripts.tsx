@@ -7,6 +7,7 @@
  * ai(Nova)类别推送/模板归 I2,本页只渲染只读「I2 管」。高敏配置:变更走确认 + 理由。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { compactSupportBoardValue } from "./support-leaderboard";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { Icon, Modal, Toggle, type IconName } from "../design-kit";
 import {
@@ -91,8 +92,7 @@ function isDedicatedSupportAgent(agent: MSupportAgent): boolean {
 /**
  * 自动验收占位内容识别。M5 的自动验收脚本会写入 `M5RA<时间戳> 顾问主动话术` /
  * `M5RA<时间戳> 即时回复模板` 这类编号化文案并归档;它们不是业务草稿也不是正式话术,
- * 混在列表里会让运营把列表主体误读成真实配置(简报 #77)。识别出来单独标记并可筛除,
- * 不用「隐藏」冒充「已清理」——记录仍在后端,运营能看到并决定是否走归档清理。
+ * 正式列表始终筛除这些记录；过滤不会删除或修改原记录。
  */
 const AUTO_ACCEPTANCE_PLACEHOLDER = /^M5RA\d{6,}\s*(?:顾问主动话术|即时回复模板)?$/;
 
@@ -109,11 +109,13 @@ function Pager({
   total,
   pageSize,
   onPage,
+  available = true,
 }: {
   page: number;
   total: number;
   pageSize: number;
   onPage: (page: number) => void;
+  available?: boolean;
 }) {
   const pages = totalPages(total, pageSize);
   const safePage = clampPage(page, total, pageSize);
@@ -122,13 +124,13 @@ function Pager({
   return (
     <div className="row m5-pager" style={{ justifyContent: "flex-end", gap: 8, padding: "10px 12px 4px", borderTop: total > 0 ? "1px solid var(--border)" : "none" }}>
       <span className="dim2" style={{ fontSize: 11.5, marginRight: "auto" }}>
-        {total === 0 ? "暂无记录" : `${start}-${end} / ${total}`}
+        {!available ? "-" : total === 0 ? "暂无记录" : `${start}-${end} / ${total}`}
       </span>
       <button type="button" className="btn btn-sec btn-sm" disabled={safePage <= 1} onClick={() => onPage(safePage - 1)}>
         <span style={{ display: "inline-flex", transform: "rotate(180deg)" }}><Icon name="chevron" size={14} /></span>
         上一页
       </button>
-      <span className="mono" style={{ minWidth: 54, textAlign: "center", fontSize: 12, color: "var(--ink-3)" }}>{safePage} / {pages}</span>
+      <span className="mono" style={{ minWidth: 54, textAlign: "center", fontSize: 12, color: "var(--ink-3)" }}>{available ? `${safePage} / ${pages}` : "-"}</span>
       <button type="button" className="btn btn-sec btn-sm" disabled={safePage >= pages} onClick={() => onPage(safePage + 1)}>
         下一页
         <Icon name="chevron" size={14} />
@@ -145,7 +147,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
   const actorStamp = useAdminAuth((state) => `${adminShellSessionKey(state.session)}:${state.authEpoch}`);
   const [managementScope, setManagementScope] = useState<{ actorStamp: string; mode: string } | null>(null);
   const currentRoleKey = String(currentRole);
-  const categories = parseParamArray<SessionCategory>(pget(CATEGORY_LIST_KEY), []);
+  const categories = parseParamArray<SessionCategory>(pget(CATEGORY_LIST_KEY), []).filter(category => category.type !== "support");
   const scripts = parseParamArray<AdvisorScript>(pget(SCRIPT_LIST_KEY), []);
   const replyTemplates = parseParamArray<SessionReplyTpl>(pget(REPLY_TEMPLATE_LIST_KEY), []);
   const supportAgents = useMemo(() => parseParamArray<MSupportAgent>(pget(AGENT_LIST_KEY), []), [ctx.params, pget]);
@@ -163,6 +165,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
   const [agentPageData, setAgentPageData] = useState<MSupportAgentPage | null>(null);
   const [agentPageLoading, setAgentPageLoading] = useState(false);
   const [agentPageError, setAgentPageError] = useState("");
+  const [agentPageRetry, setAgentPageRetry] = useState(0);
   const [writePending, setWritePending] = useState(false);
   const pendingReplyTemplateDraftIds = useRef(new Map<string, string>());
 
@@ -190,6 +193,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
   const visibleAdvisorAssignments = agentPageData?.advisorAssignments ?? advisorAssignments;
   const isSuperAdmin = currentRoleKey === "superadmin" || currentRoleKey === "super";
   const hasM1ReadAuthority = isSuperAdmin || Boolean(authorities?.includes("service_m1_read"));
+  const agentPageAvailable = Boolean(agentPageData) && !agentPageLoading && !agentPageError && hasM1ReadAuthority && pget("I.support.agentsAvailable") === "1";
   const hasM5WriteAuthority = isSuperAdmin || Boolean(authorities?.includes("service_m5_write"));
   const isContentOperator = currentRoleKey === "content";
   const isSupportM5Supervisor = currentRoleKey === "support" && isSupportSupervisor(managementScope?.actorStamp === actorStamp ? managementScope.mode : null);
@@ -211,13 +215,10 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
     return () => controller.abort();
   }, [actorStamp, hasM1ReadAuthority, currentRoleKey, currentAdminId]);
   const sessionTemplatesAvailable = pget("I.session.templatesAvailable") === "1";
-  // 自动验收占位记录默认从列表主体筛除,避免运营把编号化占位文案当成真实配置(简报 #77);
-  // 记录本身仍可一键显示出来走归档清理 —— 不伪造「已删除」,也不让分页数与可见行脱节。
-  const [showAutoAcceptance, setShowAutoAcceptance] = useState(false);
-  const scriptPlaceholderCount = scripts.filter((row) => isAutoAcceptancePlaceholder(row.text)).length;
-  const replyTemplatePlaceholderCount = replyTemplates.filter((row) => isAutoAcceptancePlaceholder(row.text)).length;
-  const keptScripts = showAutoAcceptance ? scripts : scripts.filter((row) => !isAutoAcceptancePlaceholder(row.text));
-  const keptReplyTemplates = showAutoAcceptance ? replyTemplates : replyTemplates.filter((row) => !isAutoAcceptancePlaceholder(row.text));
+  const policyDisplay = (field: string) => sessionTemplatesAvailable && compactSupportBoardValue(pget(POLICY_KEY(field)), "count") !== "-" ? pget(POLICY_KEY(field)) : "-";
+  // 正式列表与分页始终排除验收记录；不改变原记录。
+  const keptScripts = scripts.filter((row) => !isAutoAcceptancePlaceholder(row.text));
+  const keptReplyTemplates = replyTemplates.filter((row) => !isAutoAcceptancePlaceholder(row.text));
   // 分页与计数一律以「筛除占位后」的完整可见集为准:
   // ① 分页条不会声称有 N 条而列表只有几行;
   // ② 若某一服务端分页整页都是占位,真实业务行不会被卡在不可达的后续页。
@@ -252,6 +253,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
       return;
     }
     let alive = true;
+    setAgentPageData(null);
     setAgentPageLoading(true);
     setAgentPageError("");
     fetchMSupportAgentsPage(agentPage, SUPPORT_AGENT_PAGE_SIZE)
@@ -268,11 +270,11 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
     return () => {
       alive = false;
     };
-  }, [agentPage, agentSnapshot, assignmentSnapshot, hasM1ReadAuthority]);
+  }, [agentPage, agentSnapshot, assignmentSnapshot, hasM1ReadAuthority, actorStamp, agentPageRetry]);
 
   useEffect(() => {
-    setAgentPage((page) => clampPage(page, agentTotal, SUPPORT_AGENT_PAGE_SIZE));
-  }, [agentTotal]);
+    if (agentPageAvailable) setAgentPage((page) => clampPage(page, agentTotal, SUPPORT_AGENT_PAGE_SIZE));
+  }, [agentPageAvailable, agentTotal]);
   useEffect(() => {
     setScriptPage((page) => clampPage(page, scriptTotal, SCRIPT_PAGE_SIZE));
   }, [scriptTotal]);
@@ -297,11 +299,11 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
 
   // ── 类别启停:处置(不传 edit)──
   const toggleCat = (cat: { type: SessionType; name: string; enabled: boolean }) => {
-    if (!canManageM5Operations || !sessionTemplatesAvailable || writePending) return;
+    if (!canManageM5Operations || !sessionTemplatesAvailable || writePending || cat.type !== "advisor") return;
     const on = catEnabled(cat);
     openActionConfirm({
       action: <>{on ? "禁用" : "启用"}会话类别 · {cat.name}</>,
-      detail: on ? <>该类别从会话中心入口移除;<b>进行中会话保持 open,不强制关闭</b>。仅入口动作,不是 J1 熔断。</> : <>恢复后新用户可在会话中心选择该类别。</>,
+      detail: on ? <>该类别从会话中心入口移除;<b>进行中的会话保留,不会强制关闭</b>。此操作不影响全部客服能力。</> : <>恢复后新用户可在会话中心选择该类别。</>,
       amplifies: false,
       reasonMin: 8,
       reasonMax: 200,
@@ -318,16 +320,16 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
     if (!canManageM5Operations || !sessionTemplatesAvailable || writePending
       || (!masterOn && !ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE)) return;
     openActionConfirm({
-      action: <>{masterOn ? "停用" : "启用"}顾问主动推送</>,
-      detail: masterOn ? <>停用后顾问不再主动触达,只在用户发起时回复。引导转化触点暂停。</> : <>启用后顾问按下方 AutoPushPolicy 主动触达用户(引导购机 / 锁仓 / 复投)。</>,
+      action: <>{masterOn ? "停用" : "启用"}专属客服主动推送</>,
+      detail: masterOn ? <>停用后专属客服不再主动触达,只在用户发起时回复。引导转化触点暂停。</> : <>启用后专属客服按下方 AutoPushPolicy 主动触达用户(引导购机 / 锁仓 / 复投)。</>,
       amplifies: false,
       reasonMin: 8,
       reasonMax: 200,
       run: (reason: string) => commitM5Write(
         POLICY_KEY("enabled"),
         masterOn ? "off" : "on",
-        { action: `${masterOn ? "停用" : "启用"}顾问主动推送 · admin.conversation_autopush_toggled`, reason },
-        `顾问主动推送${masterOn ? "已停用" : "已启用"}`,
+        { action: `${masterOn ? "停用" : "启用"}专属客服主动推送 · admin.conversation_autopush_toggled`, reason },
+        `专属客服主动推送${masterOn ? "已停用" : "已启用"}`,
       ),
     });
   };
@@ -335,10 +337,10 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
   // ── AutoPushPolicy 调参:传 edit ──
   const editPolicy = (field: string, label: string, current: string, unit: string) =>
     canManageM5Operations && sessionTemplatesAvailable && !writePending && openActionConfirm({
-      action: <>调整顾问推送 · {label}</>,
+      action: <>调整专属客服推送 · {label}</>,
       detail: ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE
-        ? <>影响全体进入会话中心用户的顾问主动触达频率/时机。对新会话即时生效。</>
-        : <>执行器尚未接入；该值仅作为预配置保存，不会触发主动推送。</>,
+        ? <>影响全体进入会话中心用户的专属客服主动触达频率/时机。对新会话即时生效。</>
+        : <>主动推送当前不可用；保存该参数不会触发主动推送。</>,
       amplifies: false,
       edit: { kind: "text", current, unit },
       reasonMin: 8,
@@ -347,7 +349,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
         ? commitM5Write(
           POLICY_KEY(field),
           v,
-          { action: `调整顾问推送 ${label} · admin.conversation_autopush_changed`, reason },
+          { action: `调整专属客服推送 ${label} · admin.conversation_autopush_changed`, reason },
           `${label} 已更新 · ${v}${unit}`,
         )
         : false,
@@ -356,10 +358,10 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
   // ── 受众圈定:调参(select edit)──
   const editAudience = () =>
     canManageM5Operations && sessionTemplatesAvailable && !writePending && audienceOptions.length > 0 && openActionConfirm({
-      action: <>圈定顾问推送受众</>,
+      action: <>圈定专属客服推送受众</>,
       detail: ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE
-        ? <>限定顾问主动触达的人群范围;对新会话即时生效,已在会话中的用户不受影响。</>
-        : <>执行器尚未接入；受众仅作为预配置保存，不会触发主动推送。</>,
+        ? <>限定专属客服主动触达的人群范围;对新会话即时生效,已在会话中的用户不受影响。</>
+        : <>主动推送当前不可用；保存受众设置不会触发主动推送。</>,
       amplifies: false,
       edit: { kind: "select", current: currentAudience, options: audienceOptions },
       reasonMin: 8,
@@ -368,7 +370,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
         ? commitM5Write(
           POLICY_KEY("audience"),
           v,
-          { action: "圈定顾问推送受众 · admin.conversation_autopush_changed", reason },
+          { action: "圈定专属客服推送受众 · admin.conversation_autopush_changed", reason },
           `推送受众已更新 · ${v}`,
         )
         : false,
@@ -377,21 +379,21 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
   // ── 话术发布 / 下架 / 新增:处置(新增传 edit 录 key)──
   const publishScript = (id: string, currentStatus: AdvisorScript["status"]) =>
     canManageM5Content && sessionTemplatesAvailable && !writePending && currentStatus !== "archived" && openActionConfirm({
-      action: <>{currentStatus === "published" ? "归档" : "发布"}顾问话术 · {id}</>,
-      detail: currentStatus === "published" ? <>归档后从坐席可选话术池移除,归档为终态。</> : <>发布即对坐席快捷话术菜单生效;话术挂双语词条(I6),服务器校验中英镜像。</>,
+      action: <>{currentStatus === "published" ? "归档" : "发布"}专属客服话术 · {id}</>,
+      detail: currentStatus === "published" ? <>归档后从坐席可选话术池移除,归档为终态。</> : <>发布后可在坐席快捷话术菜单选用。发布前须完成中、英、越三语发布，中文正文须与话术一致，三语需填写的字段须一致。</>,
       amplifies: false,
       reasonMin: 8,
       reasonMax: 200,
       run: (reason: string) => commitM5Write(
         SCRIPT_KEY(id),
         currentStatus === "published" ? "archived" : "published",
-        { action: `${currentStatus === "published" ? "归档" : "发布"}顾问话术 ${id} · admin.conversation_script_published`, reason },
+        { action: `${currentStatus === "published" ? "归档" : "发布"}专属客服话术 ${id} · admin.conversation_script_published`, reason },
         `${id} ${currentStatus === "published" ? "已归档" : "发布已生效"}`,
       ),
     });
   const newScript = () =>
     canManageM5Content && sessionTemplatesAvailable && !writePending && audienceOptions.length > 0 && openActionConfirm({
-      action: <>新增顾问话术</>,
+      action: <>新增专属客服话术</>,
       detail: <>新建草稿后进入坐席可选话术库;发布走操作确认。</>,
       amplifies: false,
       edit: { kind: "text", current: "", unit: "话术文案" },
@@ -402,7 +404,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
         if (!text) return false;
         const audience = currentAudience || defaultAudience;
         const succeeded = await commitM5Write("I.session.script.__create", JSON.stringify({ scriptGroup: "开场", text, ctaPath: "—", audience, status: "draft" }), {
-          action: "新增顾问话术 · admin.conversation_script_created",
+          action: "新增专属客服话术 · admin.conversation_script_created",
           reason,
           commandKey: `m5:create-script:${text}:${audience}`,
         }, "话术已创建 · 待发布确认");
@@ -415,7 +417,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
   const toggleTpl = (id: string, currentStatus: SessionReplyTpl["status"]) =>
     canManageM5Content && sessionTemplatesAvailable && !writePending && currentStatus !== "archived" && openActionConfirm({
       action: <>{currentStatus === "published" ? "归档" : "发布"}回复模板 · {id}</>,
-      detail: currentStatus === "published" ? <>归档后从快捷回复池移除,归档为终态。</> : <>发布后进入坐席快捷回复池;服务器会校验对应 I6 中英越镜像已发布且中文正文一致。</>,
+      detail: currentStatus === "published" ? <>归档后从快捷回复池移除,归档为终态。</> : <>发布后进入坐席快捷回复池。发布前须完成中、英、越三语发布，中文正文须与模板一致，三语需填写的字段须一致。</>,
       amplifies: false,
       reasonMin: 8,
       reasonMax: 200,
@@ -472,38 +474,37 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
 
   return (
     <div className="m5">
-      <p className="dim" style={{ margin: 0, fontSize: 13 }}>管会话类别、顾问主动推送、话术和回复模板。改动要确认 + 填理由。</p>
+      <p className="dim" style={{ margin: 0, fontSize: 13 }}>管会话类别、专属客服主动推送、话术和回复模板。改动要确认 + 填理由。</p>
       {!sessionTemplatesAvailable && (
-        <div className="itint" data-module-health-state="error">话术与模板后端当前不可用，页面已进入只读保护；恢复同步后才能修改。</div>
+        <div className="itint" data-module-health-state="error">话术与模板当前不可用，暂时无法修改。请稍后刷新重试。</div>
       )}
       {sessionTemplatesAvailable && !canManageM5Content && (
-        <div className="itint">当前账号只有查看权限；仅超级管理员、内容运营或客服主管可维护 M5 内容。</div>
+        <div className="itint">当前账号只有查看权限；仅超级管理员、内容运营或客服主管可维护话术与模板。</div>
       )}
       {!hasM1ReadAuthority && (
-        <div className="itint">当前账号未获 M1 坐席名册权限；M5 内容维护仍可正常使用。</div>
+        <div className="itint">当前账号未获客服名册权限；话术与模板维护仍可正常使用。</div>
       )}
 
       {(showSeatOperations || showSeatProfiles) && hasM1ReadAuthority && <div className="card">
         <div className="card-pad m5-heading" style={{ paddingBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
           <div className="sec-h" style={{ margin: 0 }}>
             <span className="t">客服岗位与专属客服</span>
-            <span className="n">{agentTotal} 名客服</span>
+            <span className="n">{agentPageAvailable ? agentTotal : "-"} 名客服</span>
           </div>
-          <span className="dim2" style={{ fontSize: 11.5 }}>名单来自 A1 全局客服角色 · 坐席类型由 M1 分配,M5 维护接派单与专属关系</span>
           <span className="sp" style={{ flex: 1 }} />
           <SensTag />
         </div>
         <div style={{ padding: "0 8px 8px" }}>
-          {agentPageLoading && !agentPageData && <div className="itint" style={{ margin: "0 10px 8px" }}>正在加载客服分页...</div>}
+          {agentPageLoading && <div className="itint" style={{ margin: "0 10px 8px" }}>正在加载客服分页...</div>}
           {!agentPageLoading && agentPageError && (
-            <div className="itint" style={{ margin: "0 10px 8px" }}>客服分页加载失败 · {agentPageError}</div>
+            <div className="itint" role="alert" style={{ margin: "0 10px 8px" }}>客服分页加载失败 · {agentPageError}<button type="button" className="l-btn sm" onClick={()=>setAgentPageRetry(n=>n+1)}>重新读取客服</button></div>
           )}
-          {agentTotal === 0 ? (
+          {agentPageAvailable && agentTotal === 0 ? (
             <div className="itint" style={{ margin: 10 }}>
               <div style={{ fontSize: 13 }}>暂无客服管理员</div>
               <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>请先在平台管理员里给管理员分配客服角色。</div>
             </div>
-          ) : visibleSupportAgents.map((agent) => {
+          ) : (agentPageAvailable ? visibleSupportAgents : []).map((agent) => {
             const assignments = visibleAdvisorAssignments.filter((row) => row.agentAdminId === agent.adminId && row.status === "ACTIVE");
             const advisorEnabled = agent.enabled;
             return (
@@ -514,7 +515,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
                     <span className={`stat ${agent.enabled ? "active" : "closed"}`}>{agent.enabled ? "启用" : "停用"}</span>
                     {agent.busy && <span className="bdg warn">暂停接派单</span>}
                   </div>
-                  <div className="dim2" style={{ fontSize: 11.5, marginTop: 3 }}>{agent.email || agent.adminRole || "客服管理员"} · <span className="mono">A1#{agent.adminId}</span></div>
+                  <div className="dim2" style={{ fontSize: 11.5, marginTop: 3 }}>{agent.email || "-"} · <span className="mono">账号 #{agent.adminId}</span></div>
                 </div>
                 <div>
                   <div data-proof="m5-seat-position-label" style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{seatLabel(agent.position)}</div>
@@ -523,7 +524,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
                   </div>
                 </div>
                 <div style={{ minWidth: 0 }}>
-                  <div className="dim2" style={{ fontSize: 11.5 }}>服务用户 {assignments.length} / 接派单上限 {agent.maxConcurrent}</div>
+                  <div className="dim2" style={{ fontSize: 11.5 }}>服务用户 {compactSupportBoardValue(agent.assignedUserCount,"count")} / 接派单上限 {compactSupportBoardValue(agent.maxConcurrent,"count")}</div>
                   {assignments.length === 0 ? (
                     <div className="dim2" style={{ fontSize: 11.5, marginTop: 5 }}>{advisorEnabled ? "暂无专属客服绑定" : "未开启专属客服服务"}</div>
                   ) : (
@@ -551,7 +552,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
                         <Icon name="gauge" size={15} />
                         配置接待
                       </button>
-                      {showSeatOperations && <button type="button" className="btn btn-pri btn-sm" disabled={writePending || !advisorEnabled || !isDedicatedSupportAgent(agent)} onClick={() => setAssignAgent(agent)} title={advisorEnabled && isDedicatedSupportAgent(agent) ? "绑定服务用户" : "先在 A1 核对接待资格"}>
+                      {showSeatOperations && <button type="button" className="btn btn-pri btn-sm" disabled={writePending || !advisorEnabled || !isDedicatedSupportAgent(agent)} onClick={() => setAssignAgent(agent)} title={advisorEnabled && isDedicatedSupportAgent(agent) ? "绑定服务用户" : "先在账号管理核对接待资格"}>
                         <Icon name="users" size={15} />
                         绑定用户
                       </button>}
@@ -561,7 +562,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
               </div>
             );
           })}
-          <Pager page={agentPage} total={agentTotal} pageSize={SUPPORT_AGENT_PAGE_SIZE} onPage={setAgentPage} />
+          <Pager available={agentPageAvailable} page={agentPage} total={agentTotal} pageSize={SUPPORT_AGENT_PAGE_SIZE} onPage={setAgentPage} />
         </div>
       </div>}
 
@@ -591,7 +592,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
                         </span>
                       )}
                     </div>
-                    <div className="dim2" style={{ fontSize: 11.5, marginTop: 2 }}>{managed ? "由 AI 平台统一管理" : c.managedBy}</div>
+                    {managed && <div className="dim2" style={{ fontSize: 11.5, marginTop: 2 }}>由 AI 平台统一管理</div>}
                   </div>
                   {managed ? (
                     <span className="chip" style={{ color: on ? "var(--m-ok)" : "var(--ink-3)", border: "none" }}>{on ? "已启用(只读)" : "已停用(只读)"}</span>
@@ -610,7 +611,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
 
         <div className="card card-pad">
           <div className="sec-h">
-            <span className="t">顾问主动推送策略</span>
+            <span className="t">专属客服主动推送策略</span>
             <span className="sp" />
             {canManageM5Operations ? (
               <button type="button" data-proof="session-policy-enabled" className="btn btn-sec btn-sm" disabled={!sessionTemplatesAvailable || writePending || (!masterOn && !ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE)} onClick={toggleAdvisorPush}>
@@ -623,25 +624,25 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
             <span className="dim" style={{ fontSize: 13 }}>主动推送总开关</span>
             <SensTag />
             <span className="sp" style={{ flex: 1 }} />
-            <span className="dim" style={{ fontSize: 12 }}>执行器未接入 · 仅允许停用</span>
-            <span className={`stat ${masterOn ? "active" : "closed"}`}>{masterOn ? "配置 ON / 未执行" : "OFF"}</span>
+            <span className="dim" style={{ fontSize: 12 }}>主动推送当前不可用 · 仅允许停用</span>
+            <span className={`stat ${masterOn ? "active" : "closed"}`}>{masterOn ? "已保存启用设置 · 未推送" : "已停用"}</span>
           </div>
           <div className="m5-policy-grid" style={{ gap: 10 }}>
             {canManageM5Operations ? (
               <button type="button" data-proof="session-policy-delay" disabled={!sessionTemplatesAvailable || writePending} style={tileStyle} onClick={() => editPolicy("delayMs", "首推延迟", policyVal("delayMs", DEFAULT_ADVISOR_POLICY.delayMs), " ms")}>
-                {tileHead("首推延迟")}{tileVal(`${policyVal("delayMs", DEFAULT_ADVISOR_POLICY.delayMs)} ms`)}
+                {tileHead("首推延迟")}{tileVal(`${policyDisplay("delayMs")} ms`)}
               </button>
-            ) : <div style={tileStyle}>{tileHead("首推延迟")}{tileVal(`${policyVal("delayMs", DEFAULT_ADVISOR_POLICY.delayMs)} ms`)}</div>}
+            ) : <div style={tileStyle}>{tileHead("首推延迟")}{tileVal(`${policyDisplay("delayMs")} ms`)}</div>}
             {canManageM5Operations ? (
               <button type="button" data-proof="session-policy-cooldown" disabled={!sessionTemplatesAvailable || writePending} style={tileStyle} onClick={() => editPolicy("cooldownHours", "冷却", policyVal("cooldownHours", DEFAULT_ADVISOR_POLICY.cooldownHours), " h")}>
-                {tileHead("冷却时间")}{tileVal(`${policyVal("cooldownHours", DEFAULT_ADVISOR_POLICY.cooldownHours)} h`)}
+                {tileHead("冷却时间")}{tileVal(`${policyDisplay("cooldownHours")} h`)}
               </button>
-            ) : <div style={tileStyle}>{tileHead("冷却时间")}{tileVal(`${policyVal("cooldownHours", DEFAULT_ADVISOR_POLICY.cooldownHours)} h`)}</div>}
+            ) : <div style={tileStyle}>{tileHead("冷却时间")}{tileVal(`${policyDisplay("cooldownHours")} h`)}</div>}
             {canManageM5Operations ? (
               <button type="button" data-proof="session-policy-max" disabled={!sessionTemplatesAvailable || writePending} style={tileStyle} onClick={() => editPolicy("maxPerSession", "单会话上限", policyVal("maxPerSession", DEFAULT_ADVISOR_POLICY.maxPerSession), " 条")}>
-                {tileHead("单会话上限")}{tileVal(`${policyVal("maxPerSession", DEFAULT_ADVISOR_POLICY.maxPerSession)} 条`)}
+                {tileHead("单会话上限")}{tileVal(`${policyDisplay("maxPerSession")} 条`)}
               </button>
-            ) : <div style={tileStyle}>{tileHead("单会话上限")}{tileVal(`${policyVal("maxPerSession", DEFAULT_ADVISOR_POLICY.maxPerSession)} 条`)}</div>}
+            ) : <div style={tileStyle}>{tileHead("单会话上限")}{tileVal(`${policyDisplay("maxPerSession")} 条`)}</div>}
             {canManageM5Operations ? (
               <button type="button" data-proof="session-policy-audience" disabled={!sessionTemplatesAvailable || writePending || audienceOptions.length === 0} style={tileStyle} onClick={editAudience}>
                 {tileHead("受众圈定")}{tileVal(audienceOptions.length > 0 ? currentAudience : "暂无可用受众")}
@@ -654,16 +655,11 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
       <div className="card">
         <div className="card-pad m5-heading" style={{ paddingBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
           <div className="sec-h" style={{ margin: 0 }}>
-            <span className="t">顾问主动话术</span>
-              <span className="n">{scriptTotal} 条</span>
+            <span className="t">专属客服主动话术</span>
+              <span className="n">{sessionTemplatesAvailable ? scriptTotal : "-"} 条</span>
           </div>
           <SensTag />
           <span className="sp" style={{ flex: 1 }} />
-          {scriptPlaceholderCount > 0 && (
-            <button type="button" data-proof="session-script-placeholder-toggle" className="btn btn-sec btn-sm" onClick={() => setShowAutoAcceptance((v) => !v)}>
-              {showAutoAcceptance ? "隐藏自动验收占位" : `显示自动验收占位(${scriptPlaceholderCount})`}
-            </button>
-          )}
           {canManageM5Content && (
             <button type="button" data-proof="session-script-new" className="btn btn-pri btn-sm" disabled={!sessionTemplatesAvailable || writePending || audienceOptions.length === 0} onClick={newScript}>
               <Icon name="plus" size={16} />
@@ -671,13 +667,8 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
             </button>
           )}
         </div>
-        {scriptPlaceholderCount > 0 && !showAutoAcceptance && (
-          <div className="itint tiny" data-module-health-state="warn" style={{ margin: "0 12px 8px" }}>
-            已筛除 {scriptPlaceholderCount} 条自动验收占位话术(编号化 M5RA… 文案,非业务草稿);它们仍留在后端,可点上方按钮显示后归档清理。
-          </div>
-        )}
         <div style={{ padding: "0 8px 8px" }}>
-          <div className="m5-table-scroll" role="region" aria-label="顾问主动话术列表" tabIndex={0}>
+          <div className="m5-table-scroll" role="region" aria-label="专属客服主动话术列表" tabIndex={0}>
           <div className="m5-script-row" style={{ gap: 10, padding: "0 12px 8px", fontSize: 11.5, color: "var(--ink-4)" }}>
             <span>编号 · 分类</span>
             <span>文案</span>
@@ -687,8 +678,8 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
           </div>
           {scriptTotal === 0 && (
             <div className="itint" style={{ margin: "8px 12px 12px" }}>
-              <div style={{ fontSize: 13 }}>暂无顾问主动话术</div>
-              <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>{canManageM5Content ? "点击新增话术后会写入后端话术库。" : "当前账号可查看话术，但不能新增。"}</div>
+              <div style={{ fontSize: 13 }}>暂无专属客服主动话术</div>
+              <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>{canManageM5Content ? "点击“新增话术”添加话术。" : "当前账号可查看话术，但不能新增。"}</div>
             </div>
           )}
           {visibleScripts.map((a) => {
@@ -704,9 +695,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.5 }}>{a.text}</div>
                   <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis" }}>
-                    I6 · <span className="mono">{scriptI18nKey(a.id)}</span>
-                    {" · "}
-                    <a href="/content/i18n" style={{ color: "var(--m-hd-2)" }}>维护双语镜像</a>
+                    <a href="/content/i18n" style={{ color: "var(--m-hd-2)" }}>维护翻译</a>
                   </div>
                 </div>
                 <span className="dim" style={{ fontSize: 12 }}>{scriptAudience(a.id)}</span>
@@ -723,7 +712,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
             );
           })}
           </div>
-          <Pager page={scriptPage} total={scriptTotal} pageSize={SCRIPT_PAGE_SIZE} onPage={setScriptPage} />
+          <Pager available={sessionTemplatesAvailable} page={scriptPage} total={scriptTotal} pageSize={SCRIPT_PAGE_SIZE} onPage={setScriptPage} />
         </div>
       </div>
 
@@ -731,15 +720,10 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
         <div className="card-pad m5-heading" style={{ paddingBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
           <div className="sec-h" style={{ margin: 0 }}>
             <span className="t">即时回复模板库</span>
-              <span className="n">{replyTemplateTotal} 条</span>
+              <span className="n">{sessionTemplatesAvailable ? replyTemplateTotal : "-"} 条</span>
           </div>
           <span className="dim2" style={{ fontSize: 11.5 }}>坐席快捷回复 · 例行维护</span>
           <span className="sp" style={{ flex: 1 }} />
-          {replyTemplatePlaceholderCount > 0 && (
-            <button type="button" data-proof="session-tpl-placeholder-toggle" className="btn btn-sec btn-sm" onClick={() => setShowAutoAcceptance((v) => !v)}>
-              {showAutoAcceptance ? "隐藏自动验收占位" : `显示自动验收占位(${replyTemplatePlaceholderCount})`}
-            </button>
-          )}
           {canManageM5Content && (
             <button type="button" data-proof="session-tpl-new" className="btn btn-pri btn-sm" disabled={!sessionTemplatesAvailable || writePending} onClick={newReplyTemplate}>
               <Icon name="plus" size={16} />
@@ -747,11 +731,6 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
             </button>
           )}
         </div>
-        {replyTemplatePlaceholderCount > 0 && !showAutoAcceptance && (
-          <div className="itint tiny" data-module-health-state="warn" style={{ margin: "0 12px 8px" }}>
-            已筛除 {replyTemplatePlaceholderCount} 条自动验收占位模板(编号化 M5RA… 文案,非业务草稿);它们仍留在后端,可点上方按钮显示后归档清理。
-          </div>
-        )}
         <div style={{ padding: "0 8px 8px" }}>
           {replyTemplateTotal === 0 && (
             <div className="itint" style={{ margin: "8px 12px 12px" }}>
@@ -770,9 +749,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="dim" style={{ fontSize: 12.5 }}>{t.text}</div>
                   <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis" }}>
-                    I6 · <span className="mono">{templateI18nKey(t.id)}</span>
-                    {" · "}
-                    <a href="/content/i18n" style={{ color: "var(--m-hd-2)" }}>维护双语镜像</a>
+                    <a href="/content/i18n" style={{ color: "var(--m-hd-2)" }}>维护翻译</a>
                   </div>
                 </div>
                 <span className="dim2" style={{ fontSize: 11 }}>{archived ? "已归档" : published ? "已发布" : "草稿"}</span>
@@ -784,12 +761,12 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
               </div>
             );
           })}
-          <Pager page={replyTemplatePage} total={replyTemplateTotal} pageSize={REPLY_TEMPLATE_PAGE_SIZE} onPage={setReplyTemplatePage} />
+          <Pager available={sessionTemplatesAvailable} page={replyTemplatePage} total={replyTemplateTotal} pageSize={REPLY_TEMPLATE_PAGE_SIZE} onPage={setReplyTemplatePage} />
         </div>
       </div>
 
       <p className="dim2" style={{ fontSize: 12, lineHeight: 1.6, margin: 0 }}>
-        <b style={{ color: "var(--ink-3)", fontWeight: 500 }}>执行门槛</b>:类别启停 / 顾问推送策略 / 受众圈定 / 话术与模板发布走操作确认(理由必填);调参类(受众 / 延迟 / 冷却 / 上限)展示目标新值,处置类(启停 / 发布)只确认动作。<b style={{ color: "var(--ink-3)", fontWeight: 500 }}>边界</b>:AI 推送由 AI 平台统一管理;平台级停客服能力走 J1。话术挂双语词条(I6),发布前服务器校验中英镜像。
+        修改设置、发布或归档须确认操作并填写理由；修改参数时请核对目标新值。AI 推送由 AI 平台统一管理；停用全部客服能力请前往全局运营开关。
       </p>
 
       {canManageSupportSeats && profileAgent && <AgentProfileModal agent={profileAgent} agents={supportAgents} ctx={ctx} onClose={() => setProfileAgent(null)} />}
@@ -857,12 +834,12 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div>
             <div style={{ fontSize: 15, fontWeight: 600 }}>{agent.name}</div>
-            <div className="dim2" style={{ fontSize: 11.5, marginTop: 3 }}>{agent.email || agent.adminRole} · <span className="mono">A1#{agent.adminId}</span></div>
+            <div className="dim2" style={{ fontSize: 11.5, marginTop: 3 }}>{agent.email || "-"} · <span className="mono">账号 #{agent.adminId}</span></div>
           </div>
           <label className="field" style={{ marginBottom: 0 }}>
             <span>坐席类型</span>
             <input data-proof="m5-seat-position-field" className="fld" value={seatLabel(position)} readOnly disabled />
-            <span className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>接待资格与主管管理资格分别由 A1 账号管理维护。</span>
+            <span className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>接待资格与主管管理资格请在账号管理维护。</span>
           </label>
           <label className="field" style={{ marginBottom: 0 }}>
             <span>接派单上限</span>
@@ -876,12 +853,9 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div>
-            <div className="sub">人工接待统一为专属客服，接待资格与主管管理资格在 A1 账号管理维护。</div>
-          </div>
-          <div>
             <div className="sub" style={{ fontWeight: 600, marginBottom: 8 }}>岗位标签</div>
             <div className="row wrap" style={{ gap: 8 }}>
-              {tagOptions.length === 0 && <span className="sub">后端暂无可选标签</span>}
+              {tagOptions.length === 0 && <span className="sub">暂无可选标签</span>}
               {tagOptions.map((tag) => (
                 <button key={tag} type="button" className={`chip${tags.includes(tag) ? " sel" : ""}`} onClick={() => setTags((rows) => toggleList(rows, tag))}>
                   {tag}
@@ -1030,13 +1004,13 @@ function AdvisorAssignModal({ agent, ctx, onClose }: { agent: MSupportAgent; ctx
       icon="users"
       wide
       onClose={onClose}
-      footer={<><span className="sub">用户来自客服工作台查询 · 已选 {bindableSelectedUsers.length} 人</span><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={onClose}>取消</button><button type="button" data-proof="advisor-assignment-save" className="btn btn-pri btn-sm" disabled={!canSave} onClick={() => void save()}>{saving ? "绑定中..." : `绑定${canSave ? ` ${bindableSelectedUsers.length} 人` : " · 待补全"}`}</button></>}
+      footer={<><span className="sub">已选 {bindableSelectedUsers.length} 人</span><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={onClose}>取消</button><button type="button" data-proof="advisor-assignment-save" className="btn btn-pri btn-sm" disabled={!canSave} onClick={() => void save()}>{saving ? "绑定中..." : `绑定${canSave ? ` ${bindableSelectedUsers.length} 人` : " · 待补全"}`}</button></>}
     >
       <div className="mcol m5-modal-grid" style={{ gap: 22 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div>
             <div style={{ fontSize: 15, fontWeight: 600 }}>{agent.name}</div>
-            <div data-proof="m5-seat-position-label" className="dim2" style={{ fontSize: 11.5, marginTop: 3 }}>{seatLabel(agent.position)} · <span className="mono">A1#{agent.adminId}</span></div>
+            <div data-proof="m5-seat-position-label" className="dim2" style={{ fontSize: 11.5, marginTop: 3 }}>{seatLabel(agent.position)} · <span className="mono">账号 #{agent.adminId}</span></div>
           </div>
           <label className="field" style={{ marginBottom: 0 }}>
             <span>搜索用户</span>

@@ -101,12 +101,16 @@ function Caret({ size = 15 }: { size?: number }) {
 /* ---- 自定义下拉(贴合暗色主题) ---- */
 export type HDOption = { value: string; label: string };
 export function HDSelect({
+  id,
+  disabled = false,
   value,
   onChange,
   options,
   placeholder,
   width,
 }: {
+  id?: string;
+  disabled?: boolean;
   value: string;
   onChange: (v: string) => void;
   options: HDOption[];
@@ -115,6 +119,7 @@ export function HDSelect({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
@@ -162,11 +167,11 @@ export function HDSelect({
   const cur = options.find((o) => o.value === value);
   return (
     <div ref={ref} onKeyDownCapture={keyboard} style={{ position: "relative", width: width ?? "100%" }}>
-      <button type="button" className="hd-select" onClick={() => setOpen((v) => !v)} aria-haspopup="listbox" aria-expanded={open}>
+      <button id={id} disabled={disabled} type="button" className="hd-select" onClick={() => { if (!disabled) setOpen((v) => !v); }} aria-haspopup="listbox" aria-expanded={open && !disabled}>
         <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cur ? cur.label : placeholder ?? "请选择"}</span>
         <Caret />
       </button>
-      {open && (
+      {open && !disabled && (
         <div className="hd-select-pop" role="listbox">
           {options.map((o) => (
             <button
@@ -176,6 +181,7 @@ export function HDSelect({
               role="option"
               aria-selected={o.value === value}
               onClick={() => {
+                if (disabled) return;
                 onChange(o.value);
                 setOpen(false);
                 queueMicrotask(() => ref.current?.querySelector<HTMLButtonElement>("button[aria-haspopup]")?.focus());

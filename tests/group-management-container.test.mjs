@@ -1,9 +1,26 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { harness, storage, makeClient, group, detail, member, qualification, deferred, text, all, why } from "./helpers.mjs";
+import { harness, storage, makeClient, group, directoryGroup, detail, member, qualification, deferred, text, all, why } from "./helpers.mjs";
 const key="12345678-1234-1234-1234-123456789012";
 async function createDraft(h){await h.flush();h.click("创建组");h.input("本人的新组");h.reason();}
 const rawMember={adminId:"21",version:2,groupId:"5",accountStatus:1,handoverRequired:false,boundCustomers:4};
+test("directory exposes one scoped summary list and drills zero as well as nonzero counts without extra directory reads",async()=>{
+  const visits=[],h=harness({props:{onViewCustomers:(...args)=>visits.push(args)},implementations:{groups:()=>[directoryGroup()]}});await h.flush();
+  assert.match(text(h.tree),/负责人/);assert.match(text(h.tree),/主管甲/);assert.equal(all(h.tree,n=>n.type==="table").length,1);
+  const metrics=all(h.tree,n=>n.type==="button"&&n.props.className==="m-group-count"); assert.deepEqual(metrics.map(n=>text(n).trim()),["2","24","0"]);
+  assert.equal(metrics.some(n=>n.props.disabled),false); metrics[1].props.onClick();metrics[2].props.onClick();
+  assert.deepEqual(visits,[["5","BOUND"],["5","PENDING"]]);assert.equal(h.calls.filter(c=>c.name==="groups").length,1);
+  assert.equal(h.calls.some(c=>["detail","member","supervisors"].includes(c.name)),false);h.unmount();
+});
+test("unknown directory quantities retain unavailable labels and open the authorized group lists",async()=>{
+  const visits=[],h=harness({props:{onViewCustomers:(...args)=>visits.push(args)},implementations:{groups:()=>[{...directoryGroup(),supervisorName:null,memberCount:null,boundCustomers:null,pendingCustomers:null}],detail:()=>detail("5",[rawMember]),member:()=>member()}});await h.flush();
+  const metrics=all(h.tree,n=>n.type==="button"&&n.props.className==="m-group-count");assert.equal(metrics.length,3);
+  for(const metric of metrics){assert.equal(text(metric).trim(),"-");assert.equal(metric.props.disabled,false);assert.match(metric.props.title,/数量暂不可用/);assert.match(metric.props["aria-label"],/数量暂不可用/);}
+  assert.doesNotMatch(text(h.tree),/主管甲/);metrics[1].props.onClick();metrics[2].props.onClick();assert.deepEqual(visits,[["5","BOUND"],["5","PENDING"]]);
+  assert.equal(h.calls.some(c=>c.name==="detail"),false);metrics[0].props.onClick();await h.flush();
+  assert.deepEqual(h.calls.filter(c=>c.name==="detail").map(c=>c.args[0]),["5"]);assert.match(text(h.tree),/专属客服21/);assert.equal(all(h.tree,n=>n.type==="table").length,1);
+  h.click("返回组目录");await h.flush();assert.deepEqual(all(h.tree,n=>n.type==="button"&&n.props.className==="m-group-count").map(n=>text(n).trim()),["-","-","-"]);h.unmount();
+});
 test("server-provided MANAGED allows a supervisor with no groups to create self-owned group without global/A1 reads",async()=>{
   const h=harness({implementations:{createSupportGroup:()=>{throw new Error("network unknown");}}});await createDraft(h);h.click("确认并提交");await h.flush();const call=h.calls.find(c=>c.name==="createSupportGroup");assert.equal(call.args[0].supervisorAdminId,"17");assert.equal(call.stored[0].commandKey,call.args[1]);assert.equal(call.stored[0].intent.payload.reason,why);assert.equal(h.calls.some(c=>["supervisors","qualifications","candidates"].includes(c.name)),false);assert.equal(h.store.list().length,1);h.unmount();
 });
@@ -24,6 +41,22 @@ test("move loads latest member/source/target independently, not profile/list ver
 test("ALL unassignment cannot submit before source/member re-preview; MANAGED cannot choose unassigned target",async()=>{
   const h=harness({props:{mode:"ALL",initialGroupId:"5"},implementations:{groups:()=>[group()],detail:()=>detail("5",[rawMember]),member:()=>member(),moveSupportGroupMember:()=>({})}});await h.flush();h.click("调组");h.reason();assert.equal(h.button("确认并提交").props.disabled,true);h.click("重读预览");await h.flush();h.click("确认并提交");await h.flush();assert.equal(h.calls.find(c=>c.name==="moveSupportGroupMember").args[1].sourceGroupVersion,3);assert.equal(h.calls.find(c=>c.name==="moveSupportGroupMember").args[1].targetGroupId,null);h.unmount();
   const managed=harness({props:{initialGroupId:"5"},implementations:{groups:()=>[group()],detail:()=>detail("5",[rawMember]),member:()=>member()}});await managed.flush();managed.click("调组");assert.equal(managed.selects().at(-1).props.options.some(o=>o.value===""),false);managed.unmount();
+});
+test("member preview locks the reason until success or failure and preserves it through retry",async()=>{
+  let preview;
+  const h=harness({props:{initialGroupId:"5"},implementations:{groups:()=>[group(),group("6")],detail:id=>detail(id,id==="5"?[rawMember]:[]),member:()=>preview ? preview.promise : member()}});
+  const reason=()=>all(h.tree,n=>n.type==="textarea")[0].props;
+  await h.flush();h.click("调组");h.reason();
+  preview=deferred();h.selects().at(-1).props.onChange("6");h.commit();await h.flush();
+  assert.equal(reason().disabled,true);assert.equal(reason().value,why);assert.equal(h.button("确认并提交").props.disabled,true);
+  preview.reject(new Error("preview unavailable"));await h.flush();
+  assert.equal(reason().disabled,false);assert.equal(reason().value,why);assert.equal(h.button("确认并提交").props.disabled,true);
+  h.reason("保留补充的调组理由");preview=deferred();h.selects().at(-1).props.onChange("6");h.commit();await h.flush();
+  assert.equal(reason().disabled,true);assert.equal(reason().value,"保留补充的调组理由");
+  preview.resolve(member());await h.flush();
+  assert.equal(reason().disabled,false);assert.equal(reason().value,"保留补充的调组理由");assert.equal(h.button("确认并提交").props.disabled,false);
+  h.reason("预览完成后修改理由");assert.equal(reason().value,"预览完成后修改理由");
+  assert.equal(h.calls.some(c=>c.name==="moveSupportGroupMember"),false);h.unmount();
 });
 test("quota-before-dispatch stops CREATE and preserves original record in memory",async()=>{const persisted=storage(),h=harness({storage:persisted});await createDraft(h);persisted.quota=true;h.click("确认并提交");await h.flush();assert.equal(h.calls.some(c=>c.name==="createSupportGroup"),false);assert.equal(h.store.list().length,1);assert.match(text(h.tree),/未能持久保存/);h.unmount();});
 test("unknown retry and refresh reuse exact CREATE key/body/reason; status UNKNOWN or 404 cannot release it",async()=>{

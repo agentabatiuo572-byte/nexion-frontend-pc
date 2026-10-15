@@ -3021,7 +3021,7 @@
         "rollbackK6Strategy",
         "recordK6Export"
       ],
-      "note": "管理面持久化、命令受理与沙箱预演已完成；实体 executor、ACK、不可重放 applied proof 与收益隔离已由 OPS-K-17 完成"
+      "note": "管理面持久化、命令受理与沙箱预演已完成；实体 executor、ACK 与不可重放 applied proof 的生产真机交付仍属 OPS-K-17 pending/HOLD，收益隔离由 OPS-K-16 的服务端可信证明守卫约束。"
     },
     {
       "id": "OPS-K-16",
@@ -3045,7 +3045,7 @@
       "id": "OPS-K-17",
       "domain": "K",
       "object": "Janus C2 生产执行(K6)",
-      "action": "Janus 源码、UTS 桥与 Sandbox fail-closed 已完成；Production 原生真机 enrollment/handoff 验收 HOLD",
+      "action": "已提交 Janus Sandbox/native 分支接线、UTS fail-closed 源码；Production 原生真机 enrollment/handoff 验收 HOLD（开发暂停）",
       "status": "pending",
       "view": "k-tabs/k6-janus-c2.tsx",
       "batch": "P1",
@@ -3053,8 +3053,8 @@
         {
           "type": "janus-runtime",
           "file": "src/lib/janus/executor-runtime.ts",
-          "positivePatterns": ["installNativeJanusExecutorBridge\\(\\)", "JANUS_NATIVE_EXECUTOR_REQUIRED", "mode === .sandbox.[\\s\\S]{0,3000}createProductionJanusExecutor\\(\\{ bridge \\}\\)", "createJanusBackendCommandApi\\("],
-          "negativePatterns": ["mode === .production.[\\s\\S]{0,300}createSandboxJanusExecutor", "bridge \\? createProductionJanusExecutor"]
+          "positivePatterns": ["^[ \\t]*if \\(mode === \"disabled\"\\) return null;", "^[ \\t]*const executor: JanusExecutor = mode === \"sandbox\"\\s+\\? await \\(async \\(\\) => \\{[\\s\\S]{0,1800}return createSandboxJanusExecutor\\(", "^[ \\t]*: \\(\\(\\) => \\{\\s+const bridge = installNativeJanusExecutorBridge\\(\\);\\s+if \\(!bridge\\) throw new Error\\(\"JANUS_NATIVE_EXECUTOR_REQUIRED\"\\);\\s+return createProductionJanusExecutor\\(\\{ bridge \\}\\);\\s+\\}\\)\\(\\);", "^[ \\t]*const api = createJanusBackendCommandApi\\(", "^[ \\t]*return createJanusCommandCoordinator\\(\\{ api, executor, storage \\}\\);"],
+          "negativePatterns": ["mode === \"production\"\\s+\\? await", "bridge \\? createProductionJanusExecutor", "^[ \\t]*: \\(\\(\\) => \\{[^}]*createSandboxJanusExecutor\\("]
         },
         {
           "type": "janus-runtime",
@@ -3076,7 +3076,7 @@
         "successOutcome": "Janus claims the command and returns non-replayable ACK and applied proof",
         "failureOutcome": "missing executor, invalid proof or profile mismatch leaves the command unapplied"
       },
-      "note": "源码 executor、Android UTS 桥与 Sandbox fail-closed 边界已有证据；Production 原生真机 enrollment/handoff 尚未验收，保持 pending/HOLD，不以源码、UTS 或 Sandbox 完成假绿。"
+      "note": "已提交源码证明 disabled 早退、显式 Sandbox 分支接入及其登记来源隔离、native 分支 bridge 缺失时 fail-closed、executor/coordinator 接线与 Android UTS 拒绝守卫；分支源码不替代真实环境验收，Production 原生真机 enrollment/handoff 仍未验收。Janus 开发暂停，保持 pending/HOLD，不以源码或未提交 WIP 代替交付证据。"
     },
     {
       "id": "OPS-M-18",

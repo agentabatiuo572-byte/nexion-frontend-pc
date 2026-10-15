@@ -33,7 +33,6 @@ export function StatusPill({
       style={{
         background: `color-mix(in srgb, ${c} 15%, transparent)`,
         color: c,
-        border: `1px solid color-mix(in srgb, ${c} 30%, transparent)`,
       }}
     >
       {dot && (

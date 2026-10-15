@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import ts from "typescript";
+import { adminShellSessionKey } from "../lib/admin/shell-authorities";
 import {
   isCurrentAccountDeletionListRead,
   isCurrentAccountDeletionSelection,
@@ -9,6 +10,27 @@ import {
 
 type Request = { requestNo: string; userId: number; status: string; version: number; reason?: string };
 type Deferred<T> = { promise: Promise<T>; resolve(value: T): void; reject(error: unknown): void };
+type Session = { adminId: number; role: string; authorities: string[] };
+type Element = { type: unknown; props: Record<string, any> };
+
+function elements(value: unknown): Element[] {
+  if (Array.isArray(value)) return value.flatMap(elements);
+  if (!value || typeof value !== "object" || !("props" in value)) return [];
+  const element = value as Element;
+  return [element, ...elements(element.props.children)];
+}
+
+function textContent(value: unknown): string {
+  if (Array.isArray(value)) return value.map(textContent).join("");
+  if (value && typeof value === "object" && "props" in value) return textContent((value as Element).props.children);
+  return typeof value === "string" || typeof value === "number" ? String(value) : "";
+}
+
+function button(harness: ReturnType<typeof actualQueueHarness>, label: string): Element {
+  const found = elements(harness.current.ui).find((element) => element.type === "button" && textContent(element) === label);
+  if (!found) throw new Error(`Button not found: ${label}`);
+  return found;
+}
 
 function deferred<T>(): Deferred<T> {
   let resolve!: (value: T) => void;
@@ -26,12 +48,12 @@ function actualQueueHarness(deps: {
   toast: ReturnType<typeof vi.fn>;
 }) {
   const source = readFileSync(new URL("../app/components/domain-views/c-tabs/account-deletion-queue.tsx", import.meta.url), "utf8");
-  const start = source.indexOf("export function AccountDeletionQueue");
-  const end = source.indexOf("  if (!canRead) return null;", start);
-  if (start < 0 || end < 0) throw new Error("Actual queue lifecycle handlers not found");
-  const handlerSource = `${source.slice(start, end).replace("export function AccountDeletionQueue", "function AccountDeletionQueue")}\nreturn { selected, rows, total, loading, error, reason, refresh, openDetail, closeDetail, act, changeStatus, changePage, setReason };\n}`;
+  const checkpoint = "  if (!canRead) return null;";
+  if (!source.includes(checkpoint)) throw new Error("Actual queue lifecycle handlers not found");
+  const handlerSource = source.replace(checkpoint, `  capture({ selected, rows, total, loading, error, reason, refresh, openDetail, closeDetail, act, changeStatus, changePage, setReason,
+    detailRead: typeof detailRead === "undefined" ? undefined : detailRead });\n${checkpoint}`);
   const compiled = ts.transpileModule(handlerSource, {
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None, jsx: ts.JsxEmit.ReactJSX },
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
 
   const hooks: Array<{ value?: unknown; deps?: readonly unknown[] }> = [];
@@ -39,6 +61,7 @@ function actualQueueHarness(deps: {
   let rendering = false;
   let rerenderRequested = false;
   let current: Record<string, unknown>;
+  let auth: { session: Session | null; authEpoch: number } = { session: { adminId: 1, role: "superadmin", authorities: [] }, authEpoch: 1 };
   const sameDeps = (left?: readonly unknown[], right?: readonly unknown[]) => left !== undefined && right !== undefined && left.length === right.length && left.every((value, index) => Object.is(value, right[index]));
   const queuedEffects: Array<() => void> = [];
   const render = () => {
@@ -47,7 +70,8 @@ function actualQueueHarness(deps: {
       rerenderRequested = false;
       rendering = true;
       cursor = 0;
-      current = Queue({ toast: deps.toast });
+      const ui = Queue({ toast: deps.toast });
+      current.ui = ui;
       rendering = false;
       while (queuedEffects.length) queuedEffects.shift()!();
     } while (rerenderRequested);
@@ -81,19 +105,193 @@ function actualQueueHarness(deps: {
       queuedEffects.push(effect);
     }
   };
-  const Queue = new Function("useCallback", "useEffect", "useRef", "useState", "displayAdminError", "useAdminAuth", "fetchAccountDeletion", "fetchAccountDeletions", "updateAccountDeletion", "isCurrentAccountDeletionListRead", "isCurrentAccountDeletionSelection", "syncSelectedAccountDeletion", "ACTION_LABELS", `${compiled}; return AccountDeletionQueue;`)(
-    useCallback, useEffect, useRef, useState,
-    (cause: unknown) => cause instanceof Error ? cause.message : String(cause),
-    (selector: (state: { session: { role: string; authorities: string[] } }) => unknown) => selector({ session: { role: "superadmin", authorities: [] } }),
-    deps.detail, deps.list, deps.update,
-    isCurrentAccountDeletionListRead, isCurrentAccountDeletionSelection, syncSelectedAccountDeletion,
-    { review: "开始审核", block: "阻断申请", complete: "完成注销", cancel: "取消申请" },
-  ) as (props: { toast: ReturnType<typeof vi.fn> }) => Record<string, unknown>;
+  const useAdminAuth = Object.assign((selector: (state: typeof auth) => unknown) => selector(auth), { getState: () => auth });
+  const exports: Record<string, any> = {};
+  const jsx = (type: unknown, props: Record<string, any>) => ({ type, props });
+  new Function("require", "exports", "capture", compiled)((name: string) => {
+    if (name === "react") return { useCallback, useEffect, useRef, useState };
+    if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
+    if (name.endsWith("design-kit")) return { Drawer: "drawer" };
+    if (name.endsWith("error-messages")) return { displayAdminError: (cause: unknown) => cause instanceof Error ? cause.message : String(cause) };
+    if (name.endsWith("store/admin-auth")) return { useAdminAuth };
+    if (name.endsWith("shell-authorities")) return { adminShellSessionKey };
+    if (name.endsWith("account-deletion-client")) return { ACCOUNT_DELETION_STATUSES: ["REQUESTED", "IN_REVIEW", "BLOCKED", "COMPLETED", "CANCELLED"], fetchAccountDeletion: deps.detail, fetchAccountDeletions: deps.list, updateAccountDeletion: deps.update };
+    if (name.endsWith("account-deletion-queue-state")) return { isCurrentAccountDeletionListRead, isCurrentAccountDeletionSelection, syncSelectedAccountDeletion };
+    throw new Error(`Unexpected import ${name}`);
+  }, exports, (snapshot: Record<string, unknown>) => { current = snapshot; });
+  const Queue = exports.AccountDeletionQueue;
   render();
-  return { get current() { return current; } };
+  return {
+    get current() { return current; },
+    changeAuth(session: Session | null, authEpoch = auth.authEpoch, rerender = true) {
+      auth = { session, authEpoch };
+      if (rerender) render();
+    },
+  };
 }
 
 describe("actual account-deletion queue lifecycle handlers", () => {
+  it("blocks an in-flight detail even with a reason, then persists failure without showing cached detail", async () => {
+    const pending = deferred<Request>();
+    const update = vi.fn().mockResolvedValue(row("A", 2, "IN_REVIEW"));
+    const harness = actualQueueHarness({ list: vi.fn().mockResolvedValue({ records: [row("A", 1)], total: 1 }), detail: vi.fn(() => pending.promise), update, toast: vi.fn() });
+    await settle();
+    const reading = (harness.current.openDetail as (item: Request) => Promise<void>)(row("A", 1));
+    (harness.current.setReason as (reason: string) => void)("review evidence");
+    await (harness.current.act as (action: "review") => Promise<void>)("review");
+    expect(update).not.toHaveBeenCalled();
+    expect(button(harness, "开始审核").props.disabled).toBe(true);
+    expect(textContent(harness.current.ui)).toContain("正在读取申请详情");
+    pending.reject(new Error("INTERNAL_SERVER_ERROR"));
+    await reading;
+    expect(textContent(harness.current.ui)).toContain("详情读取失败");
+    expect(textContent(harness.current.ui)).not.toContain("INTERNAL_SERVER_ERROR");
+    expect(elements(harness.current.ui).some((element) => element.props.className === "kv" && textContent(element).includes("CAS 版本"))).toBe(false);
+    expect(button(harness, "重试").props.disabled).toBe(false);
+    await (harness.current.act as (action: "review") => Promise<void>)("review");
+    expect(update).not.toHaveBeenCalled();
+    expect(button(harness, "开始审核").props.disabled).toBe(true);
+  });
+
+  it("keeps failure locked after filling a reason and restores the valid CAS flow through retry", async () => {
+    const retry = deferred<Request>();
+    const detail = vi.fn().mockRejectedValueOnce(new Error("500")).mockReturnValueOnce(retry.promise);
+    const update = vi.fn().mockResolvedValue(row("A", 3, "IN_REVIEW"));
+    const list = vi.fn().mockResolvedValue({ records: [row("A", 1)], total: 1 });
+    const harness = actualQueueHarness({ list, detail, update, toast: vi.fn() });
+    await settle();
+    await (harness.current.openDetail as (item: Request) => Promise<void>)(row("A", 1));
+    (harness.current.setReason as (reason: string) => void)("  reviewed evidence  ");
+    await (harness.current.act as (action: "review") => Promise<void>)("review");
+    expect(update).not.toHaveBeenCalled();
+    expect(button(harness, "开始审核").props.disabled).toBe(true);
+    button(harness, "重试").props.onClick();
+    expect(detail).toHaveBeenLastCalledWith("A");
+    expect(harness.current.reason).toBe("  reviewed evidence  ");
+    expect(button(harness, "开始审核").props.disabled).toBe(true);
+    retry.resolve(row("A", 2));
+    await settle();
+    expect(button(harness, "开始审核").props.disabled).toBe(false);
+    await (harness.current.act as (action: "review") => Promise<void>)("review");
+    expect(update).toHaveBeenCalledExactlyOnceWith("A", "review", 2, "reviewed evidence");
+    expect((harness.current.selected as Request).version).toBe(3);
+    expect(harness.current.reason).toBe("");
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects a detail for the wrong request, user, or an older version", async () => {
+    for (const response of [row("B", 3), { ...row("A", 3), userId: 2 }, row("A", 1)]) {
+      const update = vi.fn();
+      const harness = actualQueueHarness({ list: vi.fn().mockResolvedValue({ records: [row("A", 2)], total: 1 }), detail: vi.fn().mockResolvedValue(response), update, toast: vi.fn() });
+      await settle();
+      await (harness.current.openDetail as (item: Request) => Promise<void>)(row("A", 2));
+      (harness.current.setReason as (reason: string) => void)("review evidence");
+      await (harness.current.act as (action: "review") => Promise<void>)("review");
+      expect(update).not.toHaveBeenCalled();
+      expect((harness.current.selected as Request).requestNo).toBe("A");
+      expect(textContent(harness.current.ui)).toContain("详情读取失败");
+    }
+  });
+
+  it("does not let a list response confirm detail, downgrade its version, or accept an older pending read", async () => {
+    const late = deferred<Request>();
+    const list = vi.fn().mockResolvedValueOnce({ records: [row("A", 1)], total: 1 }).mockResolvedValueOnce({ records: [row("A", 3)], total: 1 }).mockResolvedValueOnce({ records: [row("A", 2)], total: 1 });
+    const harness = actualQueueHarness({ list, detail: vi.fn(() => late.promise), update: vi.fn(), toast: vi.fn() });
+    await settle();
+    const reading = (harness.current.openDetail as (item: Request) => Promise<void>)(row("A", 1));
+    await (harness.current.refresh as () => Promise<void>)();
+    expect((harness.current.selected as Request).version).toBe(3);
+    (harness.current.setReason as (reason: string) => void)("review evidence");
+    expect(button(harness, "开始审核").props.disabled).toBe(true);
+    late.resolve(row("A", 2));
+    await reading;
+    expect((harness.current.selected as Request).version).toBe(3);
+    expect(button(harness, "开始审核").props.disabled).toBe(true);
+    await (harness.current.refresh as () => Promise<void>)();
+    expect((harness.current.selected as Request).version).toBe(3);
+  });
+
+  it("does not reopen a closed drawer on late success or let an old handler submit", async () => {
+    const late = deferred<Request>();
+    const update = vi.fn();
+    const harness = actualQueueHarness({ list: vi.fn().mockResolvedValue({ records: [row("A", 1)], total: 1 }), detail: vi.fn().mockResolvedValueOnce(row("A", 1)).mockReturnValueOnce(late.promise), update, toast: vi.fn() });
+    await settle();
+    await (harness.current.openDetail as (item: Request) => Promise<void>)(row("A", 1));
+    (harness.current.setReason as (reason: string) => void)("review evidence");
+    const oldAct = harness.current.act as (action: "review") => Promise<void>;
+    const reading = (harness.current.openDetail as (item: Request) => Promise<void>)(row("A", 1));
+    (harness.current.closeDetail as () => void)();
+    late.resolve(row("A", 2));
+    await reading;
+    await oldAct("review");
+    expect(harness.current.selected).toBeNull();
+    expect(elements(harness.current.ui).some((element) => element.type === "drawer")).toBe(false);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("keeps all review actions locked after failure and enforces a read-only session", async () => {
+    const update = vi.fn();
+    const harness = actualQueueHarness({ list: vi.fn().mockResolvedValue({ records: [row("A", 1, "IN_REVIEW")], total: 1 }), detail: vi.fn().mockRejectedValueOnce(new Error("500")).mockResolvedValue(row("A", 1, "IN_REVIEW")), update, toast: vi.fn() });
+    await settle();
+    await (harness.current.openDetail as (item: Request) => Promise<void>)(row("A", 1, "IN_REVIEW"));
+    (harness.current.setReason as (reason: string) => void)("review evidence");
+    for (const [action, label] of [["block", "阻断申请"], ["complete", "完成注销"], ["cancel", "取消申请"]] as const) {
+      expect(button(harness, label).props.disabled).toBe(true);
+      await (harness.current.act as (value: typeof action) => Promise<void>)(action);
+    }
+    expect(update).not.toHaveBeenCalled();
+    harness.changeAuth({ adminId: 1, role: "auditor", authorities: ["user_c1_read"] });
+    await (harness.current.openDetail as (item: Request) => Promise<void>)(row("A", 1, "IN_REVIEW"));
+    (harness.current.setReason as (reason: string) => void)("review evidence");
+    await (harness.current.act as (action: "complete") => Promise<void>)("complete");
+    expect(update).not.toHaveBeenCalled();
+    expect(elements(harness.current.ui).filter((element) => element.type === "button").map(textContent)).not.toContain("完成注销");
+  });
+
+  it("blocks duplicate commands while preserving a confirmed detail through an equal-version list refresh", async () => {
+    const command = deferred<Request>();
+    const update = vi.fn(() => command.promise);
+    const harness = actualQueueHarness({ list: vi.fn().mockResolvedValue({ records: [row("A", 1)], total: 1 }), detail: vi.fn().mockResolvedValue({ ...row("A", 1), reason: "server evidence" }), update, toast: vi.fn() });
+    await settle();
+    await (harness.current.openDetail as (item: Request) => Promise<void>)(row("A", 1));
+    await (harness.current.refresh as () => Promise<void>)();
+    expect((harness.current.selected as Request).reason).toBe("server evidence");
+    (harness.current.setReason as (reason: string) => void)("review evidence");
+    const act = harness.current.act as (action: "review") => Promise<void>;
+    const pending = act("review");
+    await act("review");
+    expect(update).toHaveBeenCalledExactlyOnceWith("A", "review", 1, "review evidence");
+    expect(button(harness, "开始审核").props.disabled).toBe(true);
+    command.resolve(row("A", 2, "IN_REVIEW"));
+    await pending;
+    expect((harness.current.selected as Request).version).toBe(2);
+  });
+
+  it("clears old identity or permission results and blocks handlers before the auth rerender", async () => {
+    const changes: Session[] = [{ adminId: 2, role: "superadmin", authorities: [] }, { adminId: 1, role: "auditor", authorities: ["user_c1_read"] }];
+    for (const session of changes) {
+      const oldList = deferred<{ records: Request[]; total: number }>();
+      const oldDetail = deferred<Request>();
+      const update = vi.fn().mockResolvedValue(row("A", 2));
+      const harness = actualQueueHarness({ list: vi.fn().mockReturnValueOnce(oldList.promise).mockResolvedValue({ records: [], total: 0 }), detail: vi.fn().mockReturnValueOnce(oldDetail.promise).mockResolvedValue(row("A", 1)), update, toast: vi.fn() });
+      const reading = (harness.current.openDetail as (item: Request) => Promise<void>)(row("A", 1));
+      harness.changeAuth(session);
+      oldDetail.resolve(row("A", 1));
+      oldList.resolve({ records: [row("A", 1)], total: 1 });
+      await reading;
+      await settle();
+      expect(harness.current.selected).toBeNull();
+      expect(harness.current.rows).toEqual([]);
+      harness.changeAuth({ adminId: 1, role: "superadmin", authorities: [] });
+      await (harness.current.openDetail as (item: Request) => Promise<void>)(row("A", 1));
+      (harness.current.setReason as (reason: string) => void)("review evidence");
+      const oldAct = harness.current.act as (action: "review") => Promise<void>;
+      harness.changeAuth(session, undefined, false);
+      await oldAct("review");
+      expect(update).not.toHaveBeenCalled();
+    }
+  });
+
   it("opening a current-page row does not start another list read and list refresh synchronizes its newer version", async () => {
     const firstList = deferred<{ records: Request[]; total: number }>();
     const refreshedList = deferred<{ records: Request[]; total: number }>();
@@ -205,7 +403,7 @@ describe("actual account-deletion queue lifecycle handlers", () => {
     (harness.current.openDetail as (item: Request) => Promise<void>)(row("CURRENT", 1, "IN_REVIEW"));
     await settle();
     (harness.current.setReason as (reason: string) => void)("review evidence");
-    const pendingAction = (harness.current.act as (action: "review") => Promise<void>)("review");
+    const pendingAction = (harness.current.act as (action: "block") => Promise<void>)("block");
     expect(update).toHaveBeenCalledOnce();
     (harness.current.changePage as (page: number) => void)(2);
     expect(list).toHaveBeenNthCalledWith(3, "IN_REVIEW", 2, 20);

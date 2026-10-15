@@ -1,0 +1,59 @@
+{
+  "sourceSHA256": "779de47e1820d3e9df88623aeba9f70b10a3f334f6b9777ca8e5db1290aac2f7",
+  "capability": "shared-product-component-fixture",
+  "realMessageChain": "DEFERRED_TO_COLLEAGUE",
+  "cssSHA256": "14824ef61e4c4576e8fedd5b1a6319fb5101f0c55a23643d37327a93200376a8",
+  "fullPagePixelAcceptance": "NOT_PASSED",
+  "files": [
+    {
+      "bytes": 388,
+      "sha256": "ae20a00cf186c6bf9c92044f4562f4507aed640cc4853cbe37ff9923f29bee63",
+      "file": "rank-controls-capture.json"
+    },
+    {
+      "bytes": 10533,
+      "sha256": "40b69759cd3e8722b50c187bb199ad25b1029ec17f1b3a2530b70240e5170b5b",
+      "file": "rank-controls-selects.json"
+    },
+    {
+      "bytes": 36,
+      "sha256": "0ce2a01b38f9fcd01add769a8770d52b44652234ed4d8427e818e4bb0d806561",
+      "file": "rank-controls-touch.json"
+    },
+    {
+      "bytes": 20185,
+      "sha256": "1806a7de2ede60607aec9920d630afe71c6c00e2aeee85a6dd0195185ce8ad90",
+      "file": "rank-controls-identities.json"
+    },
+    {
+      "bytes": 1349098,
+      "sha256": "87dfe72efbc4b4324d4c7dc9b2ff051411dd74f26c37db418cc6d4a7be380d04",
+      "file": "rank-controls-layout.png"
+    },
+    {
+      "bytes": 56323,
+      "sha256": "6a4bda484e4e387b33263c37d4adc7442b5cb374357890f7b9be11675061d203",
+      "file": "rank-controls-menu.png"
+    },
+    {
+      "bytes": 117365,
+      "sha256": "321d2afc13ec0be6a3ce55780c10b0c475b396dcafd2041a69a744dfa360e008",
+      "file": "rank-controls-long.png"
+    },
+    {
+      "bytes": 1225,
+      "sha256": "21bff523ad8796b493722dbb95589b80581397f6b8082f3006eeac1e2f37e4e6",
+      "file": "rank-controls-actions.json"
+    },
+    {
+      "bytes": 158,
+      "sha256": "c13e37ff3fb05695b5f257d506e56a90f78b88f33267e1a7a0e69015d88b9a21",
+      "file": "rank-controls-movement.json"
+    },
+    {
+      "file": "rank-controls-review.md",
+      "sha256": "1ed7147f6a24884cbd10b3a6163d0e4652c0274a87b5d31dc9db3146c6c26df3",
+      "bytes": 7122
+    }
+  ]
+}

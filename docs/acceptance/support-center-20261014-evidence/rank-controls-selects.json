@@ -1,0 +1,419 @@
+{
+  "capability": "browser-fixture",
+  "cssSHA256": "14824ef61e4c4576e8fedd5b1a6319fb5101f0c55a23643d37327a93200376a8",
+  "states": [
+    {
+      "appearance": "base-select",
+      "arrowCenterDelta": 0,
+      "arrowInset": 14,
+      "label": "币种",
+      "open": true,
+      "options": [
+        {
+          "bottom": 111.66667175292967,
+          "disabled": false,
+          "font": "14px",
+          "height": 36,
+          "right": 531.8333587646484,
+          "text": "USDT",
+          "value": "USDT",
+          "x": 363.1666870117187,
+          "y": 75.66667175292969
+        },
+        {
+          "bottom": 147.6666717529297,
+          "disabled": false,
+          "font": "14px",
+          "height": 36,
+          "right": 531.8333587646484,
+          "text": "NEX",
+          "value": "NEX",
+          "x": 363.1666870117187,
+          "y": 111.66667175292967
+        }
+      ],
+      "trigger": {
+        "bottom": 64,
+        "right": 455.5,
+        "x": 357.5,
+        "y": 24
+      },
+      "width": 1536
+    },
+    {
+      "appearance": "base-select",
+      "arrowCenterDelta": 0,
+      "arrowInset": 14,
+      "label": "月份",
+      "open": true,
+      "options": [
+        {
+          "bottom": 111.66667175292967,
+          "disabled": false,
+          "font": "14px",
+          "height": 36,
+          "right": 780.6875305175781,
+          "text": "本月",
+          "value": "2026-10",
+          "x": 473.1666870117187,
+          "y": 75.66667175292969
+        },
+        {
+          "bottom": 147.6666717529297,
+          "disabled": false,
+          "font": "14px",
+          "height": 36,
+          "right": 780.6875305175781,
+          "text": "上月",
+          "value": "2026-09",
+          "x": 473.1666870117187,
+          "y": 111.66667175292967
+        },
+        {
+          "bottom": 183.6666717529297,
+          "disabled": true,
+          "font": "14px",
+          "height": 36,
+          "right": 780.6875305175781,
+          "text": "未覆盖月份",
+          "value": "disabled",
+          "x": 473.1666870117187,
+          "y": 147.6666717529297
+        },
+        {
+          "bottom": 219.6666717529297,
+          "disabled": false,
+          "font": "14px",
+          "height": 36,
+          "right": 780.6875305175781,
+          "text": "2026年10月 · 完整发布后的历史月份长选项",
+          "value": "long",
+          "x": 473.1666870117187,
+          "y": 183.6666717529297
+        }
+      ],
+      "trigger": {
+        "bottom": 64,
+        "right": 565.5,
+        "x": 467.5,
+        "y": 24
+      },
+      "width": 1536
+    },
+    {
+      "appearance": "base-select",
+      "arrowCenterDelta": 0,
+      "arrowInset": 14,
+      "label": "榜单范围",
+      "open": true,
+      "options": [
+        {
+          "bottom": 111.66667175292967,
+          "disabled": false,
+          "font": "14px",
+          "height": 36,
+          "right": 871.5104370117188,
+          "text": "全员",
+          "value": "all",
+          "x": 583.1666870117188,
+          "y": 75.66667175292969
+        },
+        {
+          "bottom": 147.6666717529297,
+          "disabled": false,
+          "font": "14px",
+          "height": 36,
+          "right": 871.5104370117188,
+          "text": "本人所在组",
+          "value": "mine",
+          "x": 583.1666870117188,
+          "y": 111.66667175292967
+        },
+        {
+          "bottom": 183.6666717529297,
+          "disabled": false,
+          "font": "14px",
+          "height": 36,
+          "right": 871.5104370117188,
+          "text": "负责组 · 星河客户运营与维护团队长名称",
+          "value": "long",
+          "x": 583.1666870117188,
+          "y": 147.6666717529297
+        }
+      ],
+      "trigger": {
+        "bottom": 64,
+        "right": 675.5,
+        "x": 577.5,
+        "y": 24
+      },
+      "width": 1536
+    },
+    {
+      "appearance": "base-select",
+      "arrowCenterDelta": 0,
+      "arrowInset": 14,
+      "label": "每页条数",
+      "open": true,
+      "options": [
+        {
+          "bottom": 806.1666870117188,
+          "disabled": false,
+          "font": "14px",
+          "height": 36,
+          "right": 1185.6666717529297,
+          "text": "每页 5 条",
+          "value": "5",
+          "x": 1017,
+          "y": 770.1666870117188
+        },
+        {
+          "bottom": 842.1666870117188,
+          "disabled": false,
+          "font": "14px",
+          "height": 36,
+          "right": 1185.6666717529297,
+          "text": "每页 10 条",
+          "value": "10",
+          "x": 1017,
+          "y": 806.1666870117188
+        },
+        {
+          "bottom": 878.1666870117188,
+          "disabled": false,
+          "font": "14px",
+          "height": 36,
+          "right": 1185.6666717529297,
+          "text": "每页 20 条",
+          "value": "20",
+          "x": 1017,
+          "y": 842.1666870117188
+        }
+      ],
+      "trigger": {
+        "bottom": 930.8333740234376,
+        "right": 1165.3333740234375,
+        "x": 1011.3333740234376,
+        "y": 889.8333740234375
+      },
+      "width": 1536
+    },
+    {
+      "appearance": "base-select",
+      "arrowCenterDelta": 0,
+      "arrowInset": 14,
+      "label": "币种",
+      "open": true,
+      "options": [
+        {
+          "bottom": 324.91668701171875,
+          "disabled": false,
+          "font": "14px",
+          "height": 36,
+          "right": 186.3333396911621,
+          "text": "USDT",
+          "value": "USDT",
+          "x": 17.666667938232422,
+          "y": 288.91668701171875
+        },
+        {
+          "bottom": 360.9166870117187,
+          "disabled": false,
+          "font": "14px",
+          "height": 36,
+          "right": 186.3333396911621,
+          "text": "NEX",
+          "value": "NEX",
+          "x": 17.666667938232422,
+          "y": 324.91668701171875
+        }
+      ],
+      "trigger": {
+        "bottom": 277.25,
+        "right": 123.55208587646484,
+        "x": 12,
+        "y": 237.25
+      },
+      "width": 390
+    },
+    {
+      "appearance": "base-select",
+      "arrowCenterDelta": 0,
+      "arrowInset": 14.000007629394531,
+      "label": "月份",
+      "open": true,
+      "options": [
+        {
+          "bottom": 324.91668701171875,
+          "disabled": false,
+          "font": "14px",
+          "height": 36,
+          "right": 369,
+          "text": "本月",
+          "value": "2026-10",
+          "x": 137.21875,
+          "y": 288.91668701171875
+        },
+        {
+          "bottom": 360.9166870117187,
+          "disabled": false,
+          "font": "14px",
+          "height": 36,
+          "right": 369,
+          "text": "上月",
+          "value": "2026-09",
+          "x": 137.21875,
+          "y": 324.91668701171875
+        },
+        {
+          "bottom": 396.9166870117187,
+          "disabled": true,
+          "font": "14px",
+          "height": 36,
+          "right": 369,
+          "text": "未覆盖月份",
+          "value": "disabled",
+          "x": 137.21875,
+          "y": 360.9166870117187
+        },
+        {
+          "bottom": 452.9166870117187,
+          "disabled": false,
+          "font": "14px",
+          "height": 56,
+          "right": 369,
+          "text": "2026年10月 · 完整发布后的历史月份长选项",
+          "value": "long",
+          "x": 137.21875,
+          "y": 396.9166870117187
+        }
+      ],
+      "trigger": {
+        "bottom": 277.25,
+        "right": 243.10417938232425,
+        "x": 131.55209350585938,
+        "y": 237.25
+      },
+      "width": 390
+    },
+    {
+      "appearance": "base-select",
+      "arrowCenterDelta": 0,
+      "arrowInset": 14.000007629394531,
+      "label": "榜单范围",
+      "open": true,
+      "options": [
+        {
+          "bottom": 324.91668701171875,
+          "disabled": false,
+          "font": "14px",
+          "height": 36,
+          "right": 356.98958587646484,
+          "text": "全员",
+          "value": "all",
+          "x": 68.64583587646484,
+          "y": 288.91668701171875
+        },
+        {
+          "bottom": 360.9166870117187,
+          "disabled": false,
+          "font": "14px",
+          "height": 36,
+          "right": 356.98958587646484,
+          "text": "本人所在组",
+          "value": "mine",
+          "x": 68.64583587646484,
+          "y": 324.91668701171875
+        },
+        {
+          "bottom": 396.9166870117187,
+          "disabled": false,
+          "font": "14px",
+          "height": 36,
+          "right": 356.98958587646484,
+          "text": "负责组 · 星河客户运营与维护团队长名称",
+          "value": "long",
+          "x": 68.64583587646484,
+          "y": 360.9166870117187
+        }
+      ],
+      "trigger": {
+        "bottom": 277.25,
+        "right": 362.6562576293946,
+        "x": 251.1041717529297,
+        "y": 237.25
+      },
+      "width": 390
+    },
+    {
+      "appearance": "base-select",
+      "arrowCenterDelta": 0,
+      "arrowInset": 14,
+      "label": "每页条数",
+      "open": true,
+      "options": [
+        {
+          "bottom": 746.5833740234375,
+          "disabled": false,
+          "font": "14px",
+          "height": 36,
+          "right": 346.3333435058594,
+          "text": "每页 5 条",
+          "value": "5",
+          "x": 177.6666717529297,
+          "y": 710.5833740234375
+        },
+        {
+          "bottom": 782.5833740234375,
+          "disabled": false,
+          "font": "14px",
+          "height": 36,
+          "right": 346.3333435058594,
+          "text": "每页 10 条",
+          "value": "10",
+          "x": 177.6666717529297,
+          "y": 746.5833740234375
+        },
+        {
+          "bottom": 818.5833740234375,
+          "disabled": false,
+          "font": "14px",
+          "height": 36,
+          "right": 346.3333435058594,
+          "text": "每页 20 条",
+          "value": "20",
+          "x": 177.6666717529297,
+          "y": 782.5833740234375
+        }
+      ],
+      "trigger": {
+        "bottom": 871.25,
+        "right": 352,
+        "x": 230,
+        "y": 830.25
+      },
+      "width": 390
+    },
+    {
+      "label": "币种",
+      "keyboardSelected": "NEX"
+    },
+    {
+      "label": "月份",
+      "keyboardSelected": "2026-09"
+    },
+    {
+      "label": "榜单范围",
+      "keyboardSelected": "mine"
+    },
+    {
+      "label": "每页条数",
+      "keyboardSelected": "10"
+    },
+    {
+      "disabledOptionSkipped": true,
+      "text": "2026年10月 · 完整发布后的历史月份长选项",
+      "value": "long"
+    }
+  ]
+}

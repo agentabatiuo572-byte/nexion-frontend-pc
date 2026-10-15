@@ -1,0 +1,17 @@
+{
+  "status": "PASS_WITH_RECORDED_LIMITS",
+  "scope": "M5 font/select/preview and support operation-column alignment; group directory scoped count read",
+  "frontendHead": "321bb71ca5dddc030dec0e3507f9545e428d4926",
+  "backendHead": "c37c582e6acec2547fd11c8a5d37737bb02775a5",
+  "independentReview": "independent-review.md",
+  "frontendTestMerge": "9754152fa3184645a6a34686c2ff4778bbe39bc7",
+  "backendTestMerge": "e19e3ce1a7e471d6e994492f13724b9104a11055",
+  "wholeTask": "NOT_COMPLETE",
+  "fundWrites": 0,
+  "newPrivileges": 0,
+  "newDatabase": 0,
+  "limitations": [
+    "E2 action buttons absent; A9/I6/RBAC reads unavailable in isolated database",
+    "No new full historical completeness or client login proof"
+  ]
+}

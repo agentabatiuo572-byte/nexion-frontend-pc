@@ -137,6 +137,8 @@
 - 异常 ADM02-AC04：Given 保存回执未知，When 重试，Then 先按原命令查询结果，不生成第二个草稿；刷新/退出有未保存内容时提示保留或明确放弃。
 - 正例 ADM02-AC05：Given 配置首页投放且活动已发布并 ACTIVE，When APP/H5 读取首页广告，Then placement 为 home.purchase-promotion，CTA 固定进入携 activityId 的商城活动筛选，商城卡片与原有结账显示同版本奖励；倒计时仅按服务端 endsAt/serverTime 计算。
 - 异常 ADM02-AC06：Given 首次发布前仅有草稿或 APPROVED 版本，或已发布活动暂停/结束，When 读取首页投放，Then 不返回可参加的新投放；已有 ACTIVE 版本的新草稿待审/获批不影响旧版投放。不使用旧周任务倒计时伪装仍有效，已锁订单仍按原 payBy 履行。
+- 正例 ADM02-AC07：Given 有活动编辑权限，When 上传有效宣传图、保存草稿并刷新，Then 读回同一图片配置；替换或移除遵循活动版本审核发布，新草稿不提前改变 APP/H5 图片。
+- 异常 ADM02-AC08：Given 图片上传失败、超限、类型不符或资源用途不符，When 上传或保存，Then 保留原已保存图片并提供重试；上传中禁止提交尚未完成的新配置。无编辑权限只可查看，处置证据不得作为公开宣传图。
 
 **③ 数据字典与生成规则**
 
@@ -150,6 +152,7 @@
 | title/terms | 多语言标题与规则/提交前必填 | 未配置 | API 字段分别映射公开标题与规则；中/英/越支持范围依 §P10，内容不承诺未配置奖励 |
 | startsAt/endsAt/displayTimezone | 时间与时区/是 | 未配置 | 存 UTC 瞬时，表单展示明确时区；结束晚于开始 |
 | placement | 首页投放标识/选择首页投放时必填 | 未配置 | 首期仅 home.purchase-promotion；随活动版本审核发布，不另存活动时间或奖励副本 |
+| bannerAssetId | 上传所得图片引用/否 | null | 每活动版本一张受管宣传图；JPEG/PNG，最大10 MiB；上传、预览、替换及移除，不手输资源标识或外链；缺图使用文字广告 |
 | CTA | 固定导航/只读 | 由 placement 确定 | 进入商城并携 activityId 筛选适用商品；不可输入任意链接或直接跳过原有结账 |
 | endsAt/serverTime | 公开响应的活动截止与权威当前时刻/只读 | 服务端生成 | 同源于已发布活动；不继承旧周任务周期或设备本地时间 |
 | activityId/draftVersion/revision | 只读/是 | 服务端生成 | 稳定 ID、配置版本及并发序号分别保存，不由名称生成 |
@@ -178,6 +181,7 @@
 | 返回列表/关闭 | ADM01 | 未保存先提示保留或放弃 |
 | 查看公开规则预览 | 当前只读预览 | 明示草稿、不发往 APP/H5 |
 | 首页投放选择/预览 CTA | 当前草稿的首页广告与商城筛选预览 | 明示模拟，不打开真实下单；目标固定携 activityId |
+| 上传/替换/移除宣传图 | 当前草稿 | 上传成功再替换，失败保留原图；保存后刷新可读回；只读状态禁止写入 |
 | 重试/查看命令结果 | 当前表单 | 结果未知只查/重试原命令 |
 
 **⑦ 跨文档一致性**
@@ -185,6 +189,8 @@
 ##### 接口
 
 提案：`GET /api/admin/growth/promotions/{activityId}`；`PATCH /api/admin/growth/promotions/{activityId}/draft` 更新类别、模板、时窗、内容和 placement，携 expectedRevision。统一字段归 §P8；首页读取同一已发布活动投影中的 placement、endsAt/serverTime 与商城筛选目标，不新增独立广告时间/奖励真源，不复用旧 H4 文本条件或周任务倒计时存新配置。
+
+宣传图复用 `POST /api/admin/media/uploads`，用途为 growth/promotion-banner；草稿保存 bannerAssetId，省略保留、null 移除。受授权的后台预览沿现有媒体接口；公开读取 `GET /api/promotions/{activityId}/banner/{version}` 仅允许当前发布且有效 ACTIVE 版本的真实宣传图，草稿及奖励处置证据不公开。
 
 ##### 权限与审计
 

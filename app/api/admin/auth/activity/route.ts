@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { ADMIN_TOKEN_COOKIE, ADMIN_TOKEN_MAX_AGE_SECONDS, requirePasswordChangeCleared, sessionRequiresPasswordChange } from "@/lib/admin/require-password-change-cleared";
+import { ADMIN_TOKEN_COOKIE, adminSessionCookieMaxAge, requirePasswordChangeCleared, sessionRequiresPasswordChange } from "@/lib/admin/require-password-change-cleared";
 import { ADMIN_AUTH_UPSTREAM_TIMEOUT_MS, fetchAdminAuthBffResponse } from "@/lib/admin/auth-deadline";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
   response.cookies.set(ADMIN_TOKEN_COOKIE, accessToken, {
     httpOnly: true, sameSite: "strict", path: "/",
     secure: forwarded ? forwarded === "https" : new URL(request.url).protocol === "https:",
-    maxAge: ADMIN_TOKEN_MAX_AGE_SECONDS,
+    maxAge: adminSessionCookieMaxAge(session),
   });
   response.headers.set("Cache-Control", "no-store");
   return response;

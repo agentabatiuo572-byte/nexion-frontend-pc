@@ -21,11 +21,81 @@ const client = load("lib/admin/support-leaderboard-client.ts", {
   "./error-messages.ts": { guardedFetch: async (url, init) => { calls.push({ url, init }); return fetchResponse; } },
 });
 const VERSION = "slb-v1:" + "a".repeat(64);
-const q = { board: "deposit", month: "2026-10", currency: "USDT", scope: "all", pageNum: 1, pageSize: 20 };
+const q = { board: "netContribution", month: "2026-10", currency: "USDT", scope: "all", pageNum: 1, pageSize: 20 };
 const metric = (value, coverage = "COMPLETE", reason = "NONE") => ({ value, coverage, reason });
-function row(id = "17") { return { agentId: id, name: "真实客服", groupName: "第一组", qualification: "ACTIVE", avatarUrl: null, rank: 1, isTied: true, rankMetricCoverage: "COMPLETE", firstPayment: metric(9007199254740991), customers: metric(100), amount: { ...metric("9007199254740991.123456789"), currency: "USDT", month: "2026-10", kind: "DEPOSIT" }, movement: { kind: "UNAVAILABLE", places: null, previousRank: null, baselineAt: null, baselineVersion: null, reason: "NO_BASELINE" }, canViewCustomers: false }; }
-function page() { return { viewVersion: VERSION, queryVersion: VERSION, sourceVersion: "source-actual", definitionVersion: "support-leaderboard-v1", board: "deposit", rankMonth: "2026-10", referenceMonth: "2026-10", currency: "USDT", scope: "all", businessZone: "Asia/Shanghai", asOf: "2026-10-09T01:00:00Z", publishedAt: "2026-10-09T01:00:01Z", state: "COMPLETE", candidateCoverage: "COMPLETE", stale: false, refreshFailed: false, selectableMonths: ["2026-10", "2026-09"], currencies: ["NEX", "USDT"], scopeOptions: [{ scope: "all", groups: [] }, { scope: "ownGroup", groups: [{ id: "5", name: "第一组" }] }, { scope: "managedGroups", groups: [{ id: "5", name: "第一组" }, { id: "6", name: "第二组" }] }], total: 41, ranked: 41, unranked: 0, matched: 1, pageNum: 1, pageSize: 20, rows: [row()], self: { row: row(), gap: "0", reason: "LEADER", pageNum: 3 } }; }
+function row(id = "17") { return { agentId: id, name: "真实客服", groupName: "第一组", qualification: "ACTIVE", avatarUrl: null, rank: 1, isTied: true, rankMetricCoverage: "COMPLETE", firstPayment: metric(9007199254740991), customers: metric(100), amount: { ...metric("9007199254740991.123456789"), currency: "USDT", month: "2026-10", kind: "NET_CONTRIBUTION" }, movement: { kind: "UNAVAILABLE", places: null, previousRank: null, baselineAt: null, baselineVersion: null, reason: "NO_BASELINE" }, canViewCustomers: false }; }
+function page() { return { viewVersion: VERSION, queryVersion: VERSION, sourceVersion: "source-actual", definitionVersion: "support-leaderboard-v1", board: "netContribution", rankMonth: "2026-10", referenceMonth: "2026-10", currency: "USDT", scope: "all", businessZone: "Asia/Shanghai", asOf: "2026-10-09T01:00:00Z", publishedAt: "2026-10-09T01:00:01Z", state: "COMPLETE", candidateCoverage: "COMPLETE", stale: false, refreshFailed: false, selectableMonths: ["2026-10", "2026-09"], currencies: ["NEX", "USDT"], scopeOptions: [{ scope: "all", groups: [] }, { scope: "ownGroup", groups: [{ id: "5", name: "第一组" }] }, { scope: "managedGroups", groups: [{ id: "5", name: "第一组" }, { id: "6", name: "第二组" }] }], total: 41, ranked: 41, unranked: 0, matched: 1, pageNum: 1, pageSize: 20, rows: [row()], self: { row: row(), gap: "0", reason: "LEADER", pageNum: 3 } }; }
 const clone = value => structuredClone(value);
+
+test("net contribution uses signed exact amounts on all three boards without relaxing counts or gaps", () => {
+  for (const board of ["netContribution", "firstPayment", "customers"]) {
+    const input = page(), query = { ...q, board, month: board === "customers" ? undefined : q.month };
+    input.board = board; input.rankMonth = board === "customers" ? null : q.month;
+    for (const row of [input.rows[0], input.self.row]) {
+      row.amount.kind = "NET_CONTRIBUTION";
+      row.amount.value = "-1000.123456789";
+    }
+    assert.equal(client.parseLeaderboardPage(input, query).rows[0].amount.value, "-1000.123456789");
+    for (const invalidKind of ["DEPOSIT", "PURCHASE"]) {
+      const bad = clone(input); bad.rows[0].amount.kind = invalidKind;
+      assert.throws(() => client.parseLeaderboardPage(bad, query), /SUPPORT_CONTRACT_MALFORMED/);
+    }
+    const badGap = clone(input); badGap.self.gap = "-1";
+    assert.throws(() => client.parseLeaderboardPage(badGap, query), /SUPPORT_CONTRACT_MALFORMED/);
+    const badCount = clone(input); badCount.rows[0].customers.value = -1;
+    assert.throws(() => client.parseLeaderboardPage(badCount, query), /SUPPORT_CONTRACT_MALFORMED/);
+  }
+});
+
+test("the public client sends only the three current boards", () => {
+  assert.match(client.leaderboardQueryString({ ...q, board: "netContribution" }), /board=netContribution/);
+  for (const board of ["deposit", "purchase"]) assert.throws(() => client.leaderboardQueryString({ ...q, board }), /SUPPORT_CONTRACT_MALFORMED/);
+});
+
+test("global podium remains version-bound on later pages and rejects forged summary rows", () => {
+  const p = page(), winners = [17, 18, 19, 20].map((id, index) => ({ ...row(String(id)), rank: Math.min(index + 1, 3), isTied: index >= 2 }));
+  p.pageNum = 2; p.matched = 41; p.rows = [{ ...row("50"), rank: 6, isTied: false }]; p.self.row = clone(winners[0]);
+  p.podium = { total: 5, rows: winners };
+  const query = { ...q, pageNum: 2, expectedVersion: VERSION };
+  const parsed = client.parseLeaderboardPage(p, query);
+  assert.deepEqual(Array.from(parsed.podium.rows, r => r.id), ["17", "18", "19", "20"]);
+  assert.equal(parsed.podium.total, 5); assert.equal(parsed.rows[0].id, "50");
+  for (const mutate of [
+    v => { v.podium.rows[1].rank = 4; },
+    v => { v.podium.rows[1].agentId = "17"; },
+    v => { v.podium.rows[0].name = "另一个身份"; },
+    v => { v.podium.total = 42; },
+    v => { v.podium.rows.pop(); },
+    v => { v.podium.rows[1].avatarUrl = "/api/admin/content/support-agents/18/avatar"; },
+    v => { v.podium.rows[2].avatarUrl = "/api/admin/content/support-workbench/leaderboard/19/avatar?assetVersion=1&board=deposit&month=2026-10&currency=USDT&scope=all&expectedVersion=slb-v1:" + "b".repeat(64); },
+  ]) { const invalid = clone(p); mutate(invalid); assert.throws(() => client.parseLeaderboardPage(invalid, query), /SUPPORT_CONTRACT_MALFORMED/); }
+  const legacy = clone(p); delete legacy.podium;
+  assert.equal(client.parseLeaderboardPage(legacy, query).podium, undefined);
+});
+
+test("a bounded four-person podium counts all first-place ties and suppresses uncertified ranks", () => {
+  const p = page(); p.podium = { total: 9, rows: [17, 18, 19, 20].map(id => row(String(id))) };
+  assert.equal(client.parseLeaderboardPage(p, q).podium.total, 9);
+  p.state = "PROVISIONAL"; p.candidateCoverage = "PARTIAL"; p.ranked = 0; p.unranked = 41; p.matched = 0; p.rows = [];
+  p.self = { row: null, gap: null, reason: "NOT_A_CANDIDATE", pageNum: null };
+  assert.throws(() => client.parseLeaderboardPage(p, q), /SUPPORT_CONTRACT_MALFORMED/);
+  p.podium = { total: 0, rows: [] };
+  assert.equal(client.parseLeaderboardPage(p, q).podium.rows.length, 0);
+});
+test("podium counts and ordered prefix cannot omit certified page or self winners", () => {
+  const p = page();
+  p.podium = { total:1, rows:[row()] };
+  assert.throws(() => client.parseLeaderboardPage(p, q), /SUPPORT_CONTRACT_MALFORMED/);
+  const winners = [17,18,19].map((id,index)=>({...row(String(id)), rank:index+1, isTied:false}));
+  p.podium = { total:3, rows:winners };
+  p.rows = [{...row("20"),rank:3,isTied:true}];
+  assert.throws(() => client.parseLeaderboardPage(p, q), /SUPPORT_CONTRACT_MALFORMED/);
+  p.podium = { total:9, rows:[18,19,20,21].map(id=>row(String(id))) };
+  p.rows = [row("17")];
+  assert.throws(() => client.parseLeaderboardPage(p, q), /SUPPORT_CONTRACT_MALFORMED/);
+  p.rows = [row("50")]; p.self.row = row("50");
+  assert.equal(client.parseLeaderboardPage(p, q).podium.total, 9);
+});
 test("malformed queries and detail without version perform zero fetch", async () => {
   calls = [];
   for (const extra of [{ view: "CUSTOMERS" }, { board: "bogus" }, { scope: "mine" }, { month: "2026-13" }, { currency: "BTC" }, { groupId: "5" }, { keyword: "abc\n" }, { pageNum: 2 }, { pageSize: 101 }, { expectedVersion: "saq-v1:bad" }, { pageNum: Number.MAX_SAFE_INTEGER + 1 }]) assert.throws(() => client.supportLeaderboardClient.page({ ...q, ...extra }));
@@ -34,7 +104,17 @@ test("malformed queries and detail without version perform zero fetch", async ()
 test("whitelisted page transport preserves exact money, safe counts, server ties and self", async () => {
   responseBody = page(); calls = []; const result = await client.supportLeaderboardClient.page(q);
   assert.equal(result.rows[0].amount.value, "9007199254740991.123456789"); assert.equal(result.rows[0].firstPayment.value, "9007199254740991"); assert.equal(result.rows[0].rank, 1); assert.equal(result.rows[0].isTied, true); assert.equal(result.rows[0].rankStatus, "confirmed"); assert.equal(result.self.pageNum, 3); assert.equal(result.matched, 1);
-  assert.match(calls[0].url, /^\/support-workbench\/leaderboard\?board=deposit&scope=all&month=2026-10&currency=USDT&pageNum=1&pageSize=20$/);
+  assert.match(calls[0].url, /^\/support-workbench\/leaderboard\?board=netContribution&scope=all&month=2026-10&currency=USDT&pageNum=1&pageSize=20$/);
+});
+test("normal metrics expose no verification copy while exceptional reasons and strict wire validation remain", () => {
+  const parsed = client.parseLeaderboardPage(page(), q);
+  for (const metric of [parsed.rows[0].amount, parsed.rows[0].firstPayment, parsed.rows[0].customers]) assert.equal(metric.reason, "");
+  for (const [wireReason, words] of [["ATTRIBUTION_UNKNOWN", "贡献归属"], ["REFUNDS_UNKNOWN", "退款"], ["SOURCE_FAILED", "暂不可用"]]) {
+    const p = page(); p.rows[0].customers = metric(null, "UNKNOWN", wireReason); p.self.row.customers = clone(p.rows[0].customers);
+    assert.match(client.parseLeaderboardPage(p, q).rows[0].customers.reason, new RegExp(words));
+  }
+  const missing = page(); delete missing.rows[0].amount.reason; assert.throws(() => client.parseLeaderboardPage(missing, q));
+  const absent = page(); absent.self = { row: null, gap: null, reason: "NOT_A_CANDIDATE", pageNum: null }; assert.equal(client.parseLeaderboardPage(absent, q).self.reason, "当前账号未参榜");
 });
 test("real supportRequest/guardedFetch preserve envelope, same-origin credentials and HTTP 409/403", async () => {
   const actualSupport = await import(pathToFileURL(path.join(fe, "lib/admin/m-support-client.ts")).href);
@@ -57,11 +137,11 @@ test("incomplete candidates and metric states never award ranks or fabricate zer
 test("malformed output, identity, amount period, currency and versions fail closed", () => {
   for (const mutate of [p => p.privateCustomerId = "1", p => p.rows[0].contact = "secret", p => p.self.row.agentId = "0", p => p.rows[0].firstPayment.value = 9007199254740992, p => p.rows[0].amount.currency = "NEX", p => p.rows[0].amount.month = "2026-09", p => p.queryVersion = "slb-v1:" + "b".repeat(64), p => p.rows[0].rank = 0, p => p.rows[0].rank = 42, p => p.rows[0].amount.value = 1.23, p => p.rows[0].rankMetricCoverage = "UNKNOWN", p => p.asOf = "2026-02-31T01:00:00Z", p => p.pageNum = 2]) { const p = page(); mutate(p); assert.throws(() => client.parseLeaderboardPage(p, q)); }
 });
-test("all four boards, both currencies and only server scopes share legal contract", () => {
-  for (const board of ["firstPayment", "deposit", "purchase", "customers"]) for (const currency of ["USDT", "NEX"]) for (const scope of ["all", "ownGroup", "managedGroups"]) {
+test("all three boards, both currencies and only server scopes share legal contract", () => {
+  for (const board of ["netContribution", "firstPayment", "customers"]) for (const currency of ["USDT", "NEX"]) for (const scope of ["all", "ownGroup", "managedGroups"]) {
     const input = page(), query = { ...q, board, currency, scope, month: board === "customers" ? undefined : "2026-10", groupId: scope === "managedGroups" ? "6" : undefined };
     input.board = board; input.currency = currency; input.scope = scope; if (board === "customers") input.rankMonth = null;
-    for (const r of [input.rows[0], input.self.row]) { r.amount.currency = currency; r.amount.kind = board === "purchase" ? "PURCHASE" : "DEPOSIT"; }
+    for (const r of [input.rows[0], input.self.row]) { r.amount.currency = currency; r.amount.kind = "NET_CONTRIBUTION"; }
     assert.equal(client.parseLeaderboardPage(input, query).board, board); assert.match(client.leaderboardQueryString(query), new RegExp(`scope=${scope}`));
     if (board === "customers") assert.doesNotMatch(client.leaderboardQueryString(query), /month=/);
   }
@@ -107,11 +187,16 @@ test("public avatar path is query/version/agent bound; bad input makes zero requ
 });
 test("M6 compatibility preserves explicit menu denials and private M1/M3 rights", () => {
   const nav = load("lib/nav/console-nav.ts", { "lucide-react": new Proxy({}, { get: () => () => null }) });
-  const allowed = session => nav.resolveVisibleDomains({ role: "support", ...session }); const access = (session, target = "/service/leaderboard") => nav.canAccessResolvedPath(allowed(session), target);
+  const allowed = session => nav.resolveVisibleDomains({ role: "support", supportReadModes: ["PERSONAL"], ...session }); const access = (session, target = "/service/leaderboard") => nav.canAccessResolvedPath(allowed(session), target);
   for (const code of ["m1", "m3"]) { const session = { authorities: [`service_${code}_read`], menuCodes: [code.toUpperCase()] }; assert.equal(access(session), true); assert.equal(access(session, code === "m3" ? "/service/overview" : "/service/sessions"), false); }
   for (const session of [{ authorities: [], menuCodes: ["M1", "M6"] }, { authorities: ["service_m1_read"], menuCodes: [] }, { authorities: ["service_m3_read"], menuCodes: ["M6"] }, { authorities: ["service_m1_read"], menuCodes: ["M1"], menuNodes: [] }, { authorities: ["service_m1_read"], menuCodes: ["M1"], menuNodes: [{ menuCode: "M1", routePath: "/wrong", parentCode: "M" }] }]) assert.equal(access(session), false);
   assert.equal(access({ authorities: ["service_m3_read"] }), true); assert.equal(nav.canAccessResolvedPath(nav.resolveVisibleDomains({ role: "superadmin" }), "/service/leaderboard"), false);
   const valid = { authorities: ["service_m3_read"], menuCodes: ["M3"], menuNodes: [{ menuCode: "M3", routePath: "/service/sessions", parentCode: "M" }] }; assert.equal(access(valid), true);
+  for (const supportReadModes of [undefined, []]) {
+    const unresolved = { ...valid, supportReadModes };
+    assert.equal(access(unresolved), false);
+    assert.equal(access(unresolved, "/service/sessions"), false);
+  }
 });
 test("binary BFF returns exact public PNG bytes, denies MIME and HTTP errors; old avatars retain policy", async () => {
   let upstream; const originalFetch = globalThis.fetch;

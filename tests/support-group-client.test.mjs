@@ -1,9 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { actualSupport, makeClient, storage, group, detail, member, qualification, why } from "./helpers.mjs";
+import { actualSupport, makeClient, storage, group, directoryGroup, detail, member, qualification, why } from "./helpers.mjs";
 let calls=[], response;
 const module=makeClient({supportRequest:async (url,parse,init)=>{calls.push({url,init});return parse(response);}}), client=module.supportGroupClient;
 const key="12345678-1234-1234-1234-123456789012";
+test("directory summaries preserve zero and unknown without widening mutation acknowledgements", async () => {
+  response=[directoryGroup(), {...directoryGroup("6"), supervisorName:null, memberCount:null, boundCustomers:null, pendingCustomers:null}];
+  const rows=await client.groups(); assert.equal(rows[0].boundCustomers,24); assert.equal(rows[0].pendingCustomers,0);
+  for (const field of ["supervisorName","memberCount","boundCustomers","pendingCustomers"]) assert.equal(rows[1][field],null);
+  for (const mutate of [r=>delete r.pendingCustomers,r=>r.boundCustomers=-1,r=>r.memberCount="2",r=>r.privatePhone="secret",r=>r.supervisorName=""]) {
+    const row=directoryGroup(); mutate(row); assert.throws(()=>module.parseGroupDirectory(row));
+  }
+  assert.throws(()=>module.parseSupportGroup(directoryGroup())); assert.equal(module.parseSupportGroup(group()).id,"5");
+});
 test("illegal IDs, versions, extra fields, page/group parameters and reasons cause zero transport",()=>{
   calls=[]; for(const id of ["0","01","1/2","9007199254740992"]) assert.throws(()=>client.detail(id));
   for(const q of [{pageNum:0,pageSize:20},{pageNum:1,pageSize:101},{pageNum:1,pageSize:20,groupId:"01"},{pageNum:1,pageSize:20,scope:"all"}])assert.throws(()=>client.candidates(q));

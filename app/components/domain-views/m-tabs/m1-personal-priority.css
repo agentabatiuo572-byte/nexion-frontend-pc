@@ -1,0 +1,15 @@
+.sa-personal-summary{padding:4px 0 18px}
+.sa-personal-period-controls{display:flex;align-items:end;gap:12px;flex-wrap:wrap}
+.sa-personal-primary-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:18px 0 10px}
+.sa-personal-primary-metrics>div{min-width:0;padding:16px;background:var(--v5-surface);border-radius:10px}
+.sa-personal-primary-metrics>div>span{display:block;font-size:13.5px;color:var(--v5-ink-3);margin-bottom:8px}
+.sa-personal-primary-metrics .sa-number-wrap{font-size:30px;line-height:1.3}
+.sa-personal-summary>p{font-size:12.5px;color:var(--v5-ink-3)}
+.sa-personal-first-sources{display:flex;gap:24px;flex-wrap:wrap;font-size:13.5px}
+.sa-personal-first-sources>div{display:flex;align-items:center;gap:8px}
+.sa-personal-tasks-title{font-size:15px;font-weight:600;margin:0 0 10px}
+.s5a-personal-priority .s5a-metric{min-height:82px;gap:4px;padding:10px}
+.s5a-personal-priority .s5a-metric strong{font-size:22px}
+.s5a-personal-priority .s5a-metric svg,.s5a-personal-priority .s5a-metric small{display:none}
+@media(max-width:1000px){.sa-personal-primary-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:400px){.sa-personal-primary-metrics{grid-template-columns:1fr}}

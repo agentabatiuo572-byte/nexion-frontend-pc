@@ -19,6 +19,27 @@ const CLASSIC_MENU_ALIASES: Record<string, string> = {
   MENU_RISK_K6: "K6",
 };
 
+export type SupportReadMode = "ALL" | "MANAGED" | "PERSONAL";
+
+export function normalizeSupportReadModes(value: unknown): SupportReadMode[] | undefined {
+  if (value === undefined) return undefined;
+  const modes: SupportReadMode[] = ["ALL", "MANAGED", "PERSONAL"];
+  if (!Array.isArray(value) || value.some(mode => !modes.includes(mode)) || new Set(value).size !== value.length) {
+    throw new Error("ADMIN_SESSION_INVALID");
+  }
+  return modes.filter(mode => value.includes(mode));
+}
+
+export function supportIdentityLabel(role: string, modes?: readonly SupportReadMode[]): string | undefined {
+  if (role === "superadmin" || role === "super") return undefined;
+  const qualification = modes?.includes("MANAGED")
+    ? modes.includes("PERSONAL") ? "客服主管 · 兼专属客服" : "客服主管"
+    : modes?.includes("PERSONAL") ? "专属客服" : undefined;
+  if (role !== "support") return qualification ? `兼${qualification}` : undefined;
+  if (modes === undefined) return "客服账号";
+  return qualification ?? "客服账号 · 未启用服务";
+}
+
 function normalizeMenuCode(code: unknown): string {
   const value = String(code ?? "").trim().toUpperCase();
   return CLASSIC_MENU_ALIASES[value] ?? value;

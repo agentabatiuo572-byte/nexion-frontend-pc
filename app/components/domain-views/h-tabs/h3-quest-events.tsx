@@ -404,7 +404,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const current = text(event.reward);
     openActionConfirm({
       action: `活动奖励 · ${event.name}`,
-      detail: <>当前奖励 <b>{current}</b>,后端保存到活动配置。</>,
+      detail: <>当前奖励 <b>{current}</b>。确认后更新活动奖励。</>,
       amplifies: true,
       edit: { kind: "text", current },
       run: async (reason, value) => {
@@ -418,7 +418,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openEventStatus = (event: QuestEvent) => {
     openConfirm({
       action: `活动状态 · ${event.name}`,
-      detail: <>当前状态 <b>{EVENT_LABEL[event.state]?.[0] ?? event.state}</b>,状态变更由后端校验。</>,
+      detail: <>当前状态 <b>{EVENT_LABEL[event.state]?.[0] ?? event.state}</b>，请确认目标状态。</>,
       chips: [["写活动配置", "ready"], ["审计留痕", "done"]],
       reason: true,
       input: { label: "目标状态", options: statusOptions(event.state) },
@@ -434,8 +434,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openEventFeatured = (event: QuestEvent) => {
     openConfirm({
       action: `${event.featured ? "取消主推" : "设为主推"} · ${event.name}`,
-      detail: <>主推活动唯一性由后端校验;若已有进行中主推活动,接口会拒绝。</>,
-      chips: [["后端唯一校验", "ready"], ["审计留痕", "done"]],
+      detail: <>同时只能有一个进行中的主推活动。</>,
+      chips: [["主推唯一", "ready"], ["审计留痕", "done"]],
       reason: true,
       okLabel: event.featured ? "取消主推" : "设为主推",
       run: async (reason) => {
@@ -913,7 +913,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const current = text(guard.value);
     openActionConfirm({
       action: `转盘护栏 · ${guard.label}`,
-      detail: <>当前值 <b>{current}</b>；提交直接更新服务端抽奖裁决读取的 H4 护栏行，并做陈旧值比较。</>,
+      detail: <>当前值 <b>{current}</b>；确认后更新转盘护栏；内容已变化时须刷新后再确认。</>,
       amplifies: guard.key !== "kill",
       edit: { kind: "text", current },
       run: async (reason, value) => {
@@ -928,7 +928,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const tiers = model?.wheelTiers ?? [];
     openActionConfirm({
       action: "调整转盘档位概率",
-      detail: <>一次提交整张奖池概率,服务端锁定奖池并强制合计等于 100%;提高真实流出档概率需通过 B1 红线。</>,
+      detail: <>同时设置全部档位，概率合计须为 100%；提高资金奖励概率须通过 B1 红线。</>,
       amplifies: true,
       businessForm: {
         kind: "multi-field",
@@ -1043,7 +1043,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     openActionConfirm({
       action: `删除转盘档位 · ${tierName}`,
       detail: probability === 0
-        ? <>删除后仍至少保留 2 个档位；服务端在奖池互斥锁内复核。</>
+        ? <>删除后仍至少保留 2 个档位。</>
         : <>为避免概率总和失真，请先在“改奖池 / 概率”把该档概率调为 0%，再删除。</>,
       run: async (reason) => {
         if (probability !== 0) throw new Error("删除档位前必须先将概率调整为 0%");
@@ -1152,12 +1152,11 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           <div className="f-stat warn">
             <div className="k">今日转盘派彩</div>
             <div className="v">{text(h4Stats.wheelToday)}</div>
-            <div className="sub">预算护栏内 · 真实奖正常开放</div>
           </div>
           <div className="f-stat danger">
             <div className="k">地域屏蔽活动</div>
             <div className="v">{text(h4Stats.geoBlocked)}</div>
-            <div className="sub">边缘 IP 判定 · 应急编排归 J1</div>
+            <div className="sub">地域限制 · 应急处置见 J1</div>
           </div>
         </div>
       )}
@@ -1729,19 +1728,19 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                 { state: "ended" as EventState, label: "已结束", tone: "dim" },
               ]).map((state, index, states) => (
                 <span key={state.state} style={{ display: "contents" }}>
-                  <span className={`st ${state.tone}`}>{state.state} {state.label}</span>
+                  <span className={`st ${state.tone}`}>{state.label}</span>
                   {index < states.length - 1 && <span className="ar">→</span>}
                 </span>
               ))}
               <span className="ar" style={{ marginLeft: 10 }}>参与:</span>
-              <span className="st">joined</span>
+              <span className="st">已参与</span>
               <span className="ar">→</span>
-              <span className="st warn">done 达标</span>
+              <span className="st warn">已达标</span>
               <span className="ar">→</span>
-              <span className="st ok">claimed 已领</span>
+              <span className="st ok">已领取</span>
             </div>
             <div className="htint" style={{ marginTop: 8, fontSize: 12 }}>
-              <b>可追踪活动</b> · 进度按真实状态判定,状态在各业务域维护,这里做统一展示。
+              <b>可追踪活动</b> · 查看参与、达标与领取进度。
             </div>
           </div>
         </section>
@@ -1802,7 +1801,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                     )}
                   </span>
                   {guard.key === "cap" ? (
-                    <span className="bdg dim" title="真实上限由每个奖池档位的 dailyStock 执行">
+                    <span className="bdg dim" title="每日上限按各奖项的每日库存设置">
                       历史只读
                     </span>
                   ) : (
@@ -1818,7 +1817,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               <b>当前 EV ≈ ${text(model.wheelEvUsd)} / spin</b> · 真实流出期望由现金档贡献,奖池变更后重新计算。
             </div>
             <div className="htint ok" style={{ marginTop: 8, fontSize: 12 }}>
-              <b>第四道护栏(自动)</b> · 抽奖前查覆盖率,跌破 100% 真钱档暂停、只发 NEX/券,回升自动恢复。
+              <b>第四道护栏(自动)</b> · 抽奖前查覆盖率,跌破 100% 资金奖励暂停、只发 NEX/券,回升自动恢复。
             </div>
           </div>
         </section>
@@ -1826,8 +1825,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">Trackable 可追踪活动监控</span>
-          <span className="sub">· 只读 · 各域状态消费(E 设备 / F 团队 / G 金融)</span>
+          <span className="ttl">可追踪活动监控</span>
+          <span className="sub">· 只读 · 设备、团队与金融活动进度</span>
           <div className="r">
             <span className="bdg dim">参与 → 达标 → 领取漏斗</span>
           </div>
@@ -1837,7 +1836,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             <thead>
               <tr>
                 <th>活动</th>
-                <th>判定条件(只读消费各域)</th>
+                <th>判定条件</th>
                 <th className="num">参与</th>
                 <th className="num">达标</th>
                 <th className="num">已领</th>
@@ -1860,7 +1859,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="htint" style={{ fontSize: 12 }}>
-            <b>并发与时窗</b> · 活动结束/下架和领取赛跑时结束优先;一次性活动按「活动 × 用户」防重,日重置转盘按「活动 × 用户 × 日」防重。
+            <b>并发与时窗</b> · 活动结束或下架后不可领取；一次性活动仅可领取一次，日重置转盘每日仅可领取一次。
           </div>
         </div>
       </section>

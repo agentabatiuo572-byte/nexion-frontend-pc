@@ -7,7 +7,8 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   TARGET_UNAVAILABLE: "目标客服组当前不可用，请重新读取获准组范围并选择可用组。",
   SUPPORT_ROUTE_RECOVERY_FACTS_CHANGED: "客户当前组范围与原调整资料不一致，结果尚未完成核对；请保留原命令，重新读取当前获准组资料后继续查询。",
   MANAGEMENT_SCOPE_REQUIRED: "当前账号没有客服组管理范围；请返回本人工作台，或联系总管理员核对主管资格及负责组。",
-  SUPPORT_CONTRACT_MALFORMED: "客服数据格式暂不匹配，请刷新后重试；若持续出现，请联系技术人员核对接口。",
+  SUPPORT_CONTRACT_MALFORMED: "客服资料暂时无法读取，请刷新后重试；若持续出现，请联系值班人员。",
+  SUPPORT_PROFILE_CUSTOMER_MISMATCH: "客户资料与当前选择不一致，请返回客户列表重新打开。",
   A1_AVATAR_ID_INVALID: "头像素材标识无效，请重新选择并上传图片。",
   AVATAR_GENDER_INVALID: "请选择有效的头像分类。",
   AVATAR_DEFAULT_INTENT_INVALID: "客服默认头像与自行上传只能选择一种，请核对当前选择。",
@@ -37,7 +38,8 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   SUPPORT_ENHANCEMENT_ENUM_INVALID: "客服状态无法识别，已停止当前操作；请重新读取。",
   SUPPORT_ENHANCEMENT_LIST_INVALID: "客服名单资料不完整，请重新读取。",
   SUPPORT_ENHANCEMENT_BOOLEAN_INVALID: "客服资格状态无法核对，请重新读取。",
-  SUPPORT_DECIMAL_INVALID: "资金金额格式异常，已停止展示推测金额；请重新读取。",
+  SUPPORT_DECIMAL_INVALID: "资金金额暂时无法确认，请停止相关操作并重新读取。",
+  SUPPORT_NET_COVERAGE_INVALID: "净贡献金额暂时无法确认，请刷新后重试。",
   SUPPORT_SELECTION_COUNT_INVALID: "客户名单人数不一致，请重新核对原选择。",
   SUPPORT_BULK_COUNT_INVALID: "群发逐客计数不一致，请重新读取原批次结果。",
   SUPPORT_BULK_SCOPE_INVALID: "群发可见范围无法核对，请重新读取原批次。",
@@ -175,6 +177,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   C3_REQUEST_FAILED: "余额调整请求失败，请刷新账户资金信息后重试。",
   C3_RESPONSE_INVALID: "余额调整服务返回的数据不完整或不一致，页面已停止展示推测值；请刷新重试，持续出现时联系财务值班人员。",
   ACCOUNT_DELETION_RESPONSE_INVALID: "账号注销申请服务返回的数据不完整或不一致，页面已停止展示推测状态；请刷新重试或联系值班人员。",
+  ACCOUNT_DELETION_DETAIL_MISMATCH: "账号注销申请详情与当前记录不一致，请重新读取详情后再审核。",
   ACCOUNT_DELETION_COMMAND_INVALID: "账号注销操作缺少有效申请号、版本或理由，本次未执行；请刷新申请详情后重试。",
   AUTHORITATIVE_PAGE_INVALID: "服务端权威页面数据不完整或不一致，页面已停止展示旧数据与写操作；请刷新重试，持续出现时联系值班人员。",
   B_RESTORATION_RESPONSE_INVALID: "业务恢复服务返回的数据不完整或不一致，页面已停止展示推测状态；请刷新重试，持续出现时联系值班人员。",
@@ -280,7 +283,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   EXPECTED_VERSION_REQUIRED: "缺少页面读取到的版本号，本次未执行；请刷新后重试。",
   OPERATION_REASON_TOO_SHORT: "操作理由至少填写 8 个字符。",
   OPERATION_REASON_TOO_LONG: "操作理由不能超过 200 个字符。",
-  M3_TIMEOUT_POLICY_NOT_CONFIGURED: "会话超时策略尚未完成后端初始化，页面未使用本地默认值；请联系值班人员检查迁移。",
+  M3_TIMEOUT_POLICY_NOT_CONFIGURED: "会话超时设置当前不可用，暂时无法按该设置处理会话；请联系值班人员。",
   M3_TIMEOUT_POLICY_REQUIRED: "会话超时策略字段或版本缺失，请重新打开弹窗后提交。",
   M3_TIMEOUT_WARN_RANGE_INVALID: "闲置提醒时长须为 1-30 分钟的整数。",
   M3_TIMEOUT_CLOSE_RANGE_INVALID: "闲置自动结束时长须为 2-120 分钟的整数。",
@@ -502,9 +505,9 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   M5_SESSION_TEMPLATE_PROTOCOL_INVALID: "会话话术模板服务返回的数据不完整或不一致，页面已停止展示推测值；请重试读取或联系值班人员。",
   M2_TICKET_DETAIL_MALFORMED: "客服工单详情返回的数据不完整或格式异常，页面已停止展示推测值；请重试读取或联系值班人员。",
   M2_TICKET_PAGE_INCOMPLETE: "客服工单列表分页读取不完整，页面已停止展示部分数据；请重试读取或联系值班人员。",
-  M3_CONVERSATION_DETAIL_INVALID: "客服会话详情返回的数据不完整或格式异常，页面已停止展示推测值；请重试读取或联系值班人员。",
-  M3_CONVERSATION_PAGE_MALFORMED: "客服会话列表返回的数据不完整或格式异常，页面已停止展示推测值；请重试读取或联系值班人员。",
-  M3_CONVERSATION_PAGE_INCOMPLETE: "客服会话列表分页读取不完整或存在重复，页面已停止展示部分数据；请重试读取或联系值班人员。",
+  M3_CONVERSATION_DETAIL_INVALID: "客服会话详情不完整，暂时无法展示；请刷新重试或联系值班人员。",
+  M3_CONVERSATION_PAGE_MALFORMED: "客服会话列表不完整，暂时无法展示；请刷新重试或联系值班人员。",
+  M3_CONVERSATION_PAGE_INCOMPLETE: "客服会话列表暂时无法完整展示；请刷新重试或联系值班人员。",
   OPS_DASHBOARD_FIELD_REQUIRED: "运营看板服务返回的数据不完整，页面已停止展示推测值；请重试读取或联系值班人员。",
   OPS_DASHBOARD_FIELD_INVALID: "运营看板服务返回的数据不一致，页面已停止展示推测值；请重试读取或联系值班人员。",
   J1_ALERTS_FIELD_REQUIRED: "告警看板服务返回的数据不完整，页面已停止展示推测值；请重试读取或联系值班人员。",
@@ -742,10 +745,13 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   CONTENT_API_TIMEOUT: "客服内容服务响应超时，本次读取未完成；请稍后重试。",
   M2_TICKET_DETAILS_UNAVAILABLE: "客服工单详情暂时读取不到，请刷新重试；持续失败请联系值班人员。",
   M3_CONVERSATION_DETAILS_UNAVAILABLE: "客服会话详情暂时读取不到，请刷新重试；持续失败请联系值班人员。",
-  M3_CONVERSATION_SNAPSHOT_UNSTABLE: "客服会话在补拉期间仍持续变化，本次快照未采用，实时连接将自动重连；若连接停止，请点击“重新连接”或刷新页面。",
-  M3_CONVERSATION_SNAPSHOT_SUPERSEDED: "客服会话补拉已被更新的读取替代，本次快照未采用，实时连接将自动重连；若连接停止，请点击“重新连接”或刷新页面。",
+  M3_CONVERSATION_SNAPSHOT_UNSTABLE: "客服会话更新暂时中断，连接将自动重连；若连接停止，请点击“重新连接”或刷新页面。",
+  M3_CONVERSATION_SNAPSHOT_SUPERSEDED: "客服会话更新暂时中断，连接将自动重连；若连接停止，请点击“重新连接”或刷新页面。",
+  M3_CONVERSATION_IDENTITY_CHANGED: "登录账号已变化，请刷新后重新打开会话。",
+  M3_CONVERSATION_SCOPE_CHANGED: "会话查看范围已变化，请点击“重新连接”读取当前会话。",
   M_CONTENT_AUTH_EPOCH_CHANGED: "登录状态已更新，本次读取已中止；页面将按新的登录身份重新加载。",
   M1_SUPPORT_AGENT_OVERVIEW_MALFORMED: "客服坐席总览返回的数据不完整或格式异常，页面已停止展示推测值；请重试读取或联系值班人员。",
+  M1_SUPPORT_AGENT_PAGE_MALFORMED: "客服名单读取失败，请重试。持续失败时请联系值班人员。",
   M1_ADVISOR_BINDING_USER_MALFORMED: "专属客服候选用户数据格式异常，页面已停止展示不可靠数据；请刷新后重试，持续失败时请检查用户服务。",
   M1_ADVISOR_BINDING_USER_ID_MISSING: "专属客服候选用户缺少稳定用户编号，系统已阻止错误绑定；请刷新后重试，持续失败时请检查用户服务。",
   CONTENT_API_MALFORMED_RESPONSE: "客服内容服务返回的数据不完整或格式异常，页面已停止展示推测值；请重试读取或联系值班人员。",
@@ -814,7 +820,7 @@ export function formatAdminApiError(message: string | null | undefined, fallback
   // 判据按「机器码以 _5xx 结尾」而非某个命名前缀——曾只认 _REQUEST_FAILED_5xx,换个命名
   // (BI_API_503 / TREASURY_API_502)就绕过分层,5xx 落到「请检查输入内容」冤枉运营。
   if (/(BACKEND|SERVICE)_UNAVAILABLE|service unavailable/i.test(raw) || /^[A-Z][A-Z0-9_]*_503$/.test(raw)) {
-    return "后台服务暂时不可达，本次提交未生效；请稍后重试，持续失败时请联系值班人员。";
+    return "服务暂时不可用，当前结果尚未确认；请先查询原命令或核对原操作，不要重复提交。持续无法确认时请联系值班人员。";
   }
   // 502/504 是网关侧失败,后端可能已处理完请求——只说「结果尚未确认」,不得断言未生效
   if (/^[A-Z][A-Z0-9_]*_(502|504)$/.test(raw)) {

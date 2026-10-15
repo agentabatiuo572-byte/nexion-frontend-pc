@@ -24,6 +24,12 @@ function name(value: unknown): string { const result = nonempty(value).trim(); i
 export function accountVersion(value: unknown): number { const s = text(value); if (!/^(0|[1-9]\d*)$/.test(s) || BigInt(s) > BigInt(Number.MAX_SAFE_INTEGER)) bad("accountVersion"); return Number(s); }
 export function parseSupportGroup(value: unknown) { const r = object(value, "id name supervisorAdminId status version"); return { id: id(r.id), name: name(r.name), supervisorAdminId: id(r.supervisorAdminId), status: enumeration(r.status, GROUP_STATES), version: positive(r.version) }; }
 export type SupportGroup = ReturnType<typeof parseSupportGroup>;
+export function parseGroupDirectory(value: unknown) {
+  const r = object(value, "id name supervisorAdminId status version supervisorName memberCount boundCustomers pendingCustomers");
+  const group = parseSupportGroup({ id: r.id, name: r.name, supervisorAdminId: r.supervisorAdminId, status: r.status, version: r.version });
+  return { ...group, supervisorName: r.supervisorName === null ? null : nonempty(r.supervisorName), memberCount: r.memberCount === null ? null : count(r.memberCount), boundCustomers: r.boundCustomers === null ? null : count(r.boundCustomers), pendingCustomers: r.pendingCustomers === null ? null : count(r.pendingCustomers) };
+}
+export type SupportGroupDirectory = ReturnType<typeof parseGroupDirectory>;
 export function parseGroupDetail(value: unknown) {
   const r = object(value, "group members memberCount routedCustomers pendingOperations blockers"), group = parseSupportGroup(r.group);
   const members = unique(array(r.members, value => { const m = object(value, "adminId version groupId accountStatus handoverRequired boundCustomers"); const groupId = id(m.groupId); if (groupId !== group.id) bad("memberGroup"); const handover = m.handoverRequired; if (handover !== 0 && handover !== 1 && typeof handover !== "boolean") bad("handover"); return { adminId: id(m.adminId), version: positive(m.version), groupId, accountStatus: count(m.accountStatus), handoverRequired: handover === true || handover === 1, boundCustomers: count(m.boundCustomers) }; }), m => m.adminId);
@@ -63,7 +69,7 @@ function groupNameInput(input: RenameGroupInput) { object(input, "name expectedV
 function changedGroup(value: unknown, target: string, expectedVersion: number, matches: (group: SupportGroup) => boolean) { const result = parseSupportGroup(value); if (result.id !== target || result.version <= expectedVersion || !matches(result)) bad("writeAcknowledgement"); return result; }
 function parseQualificationWrites(value: unknown, target: string) { return unique(array(value, value => { const q = object(value, "id adminId qualificationKind state version startsAt"); if (id(q.adminId) !== target) bad("qualificationIdentity"); return { id: id(q.id), adminId: target, kind: enumeration(q.qualificationKind, ["SERVICE", "SUPERVISOR"] as const), state: enumeration(q.state, QUAL_STATES), version: positive(q.version), startsAt: text(q.startsAt) }; }), q => q.kind); }
 export const supportGroupClient = {
-  groups(signal?: AbortSignal): Promise<SupportGroup[]> { return supportRequest(BASE, value => unique(array(value, parseSupportGroup), g => g.id), { signal }); },
+  groups(signal?: AbortSignal): Promise<SupportGroupDirectory[]> { return supportRequest(BASE, value => unique(array(value, parseGroupDirectory), g => g.id), { signal }); },
   detail(groupId: string, signal?: AbortSignal): Promise<SupportGroupDetail> { const target = id(groupId); return supportRequest(`${BASE}/${target}`, value => { const result = parseGroupDetail(value); if (result.group.id !== target) bad("detailIdentity"); return result; }, { signal }); },
   member(adminId: string, signal?: AbortSignal): Promise<SupportGroupMember> { const target = id(adminId); return supportRequest(`${BASE}/members/${target}`, value => { const result = parseGroupMember(value); if (result.adminId !== target) bad("memberIdentity"); return result; }, { signal }); },
   qualifications(adminId: string, signal?: AbortSignal): Promise<SupportQualifications> { const target = id(adminId); return supportRequest(`/support-agents/${target}/qualifications`, value => { const result = parseQualifications(value); if (result.adminId !== target) bad("qualificationIdentity"); return result; }, { signal }); },

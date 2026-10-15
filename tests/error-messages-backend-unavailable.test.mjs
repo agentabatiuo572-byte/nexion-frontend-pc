@@ -1,12 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { formatAdminApiError } from "../lib/admin/error-messages.ts";
+import { displayAdminError, formatAdminApiError } from "../lib/admin/error-messages.ts";
 
-const UNAVAILABLE = "后台服务暂时不可达，本次提交未生效；请稍后重试，持续失败时请联系值班人员。";
+const UNAVAILABLE = "服务暂时不可用，当前结果尚未确认；请先查询原命令或核对原操作，不要重复提交。持续无法确认时请联系值班人员。";
 const NETWORK = "网络连接失败或后台服务不可达；请检查网络后重试，提交类操作请先刷新核对是否已生效。";
 // 表外机器码的中性兜底(2026-08-06 改:旧文案说「请检查输入内容」,把协议类失败冤枉成运营输错)
 const GENERIC_UNMAPPED_FALLBACK = "操作未完成,请刷新页面核对最新状态后重试;若仍未恢复请联系值班人员。";
+
+test("malformed support agent page explains the read failure and retry without internal diagnostics", () => {
+  const shown = displayAdminError(new Error("M1_SUPPORT_AGENT_PAGE_MALFORMED"));
+  assert.equal(shown, "客服名单读取失败，请重试。持续失败时请联系值班人员。");
+  assert.notEqual(shown, GENERIC_UNMAPPED_FALLBACK);
+  assert.doesNotMatch(shown, /M1_|API|接口|字段|数据库|推测|成功|暂无客服|0/);
+});
 
 test("unmapped *_BACKEND_UNAVAILABLE codes surface as backend outage, not user-input error", () => {
   // tB 实测:F5 冻结 503 携带 AUDIT_BACKEND_UNAVAILABLE,曾被兜成「检查输入」误导运营
@@ -21,9 +28,9 @@ test("empty-body 5xx falls back to client code and still reads as environment fa
   assert.match(formatAdminApiError(null, "B2_REQUEST_FAILED_500"), /服务暂时异常/);
 });
 
-test("502/504 gateway failures must not claim the submission did not take effect", () => {
+test("502/503/504 failures must not claim the submission did not take effect", () => {
   // 网关侧失败时后端可能已处理:只许「结果尚未确认」,禁止「未生效」断言
-  for (const code of ["G4_REQUEST_FAILED_502", "K1_REQUEST_FAILED_504"]) {
+  for (const code of ["G4_REQUEST_FAILED_502", "K1_REQUEST_FAILED_504", "SUPPORT_API_503", "BI_API_503"]) {
     const copy = formatAdminApiError(null, code);
     assert.match(copy, /结果尚未确认/);
     assert.doesNotMatch(copy, /未生效/);
@@ -46,6 +53,17 @@ test("existing domain-specific unavailable entries keep their bespoke copy", () 
 test("ordinary unknown machine codes still get the neutral unmapped fallback", () => {
   assert.equal(formatAdminApiError("SOME_UNKNOWN_VALIDATION_CODE", "X"), GENERIC_UNMAPPED_FALLBACK);
   assert.equal(formatAdminApiError("F5_REQUEST_FAILED_404", "X"), GENERIC_UNMAPPED_FALLBACK);
+});
+
+test("unavailable net contribution has a specific retry message", () => {
+  assert.equal(formatAdminApiError("SUPPORT_NET_COVERAGE_INVALID", "X"), "净贡献金额暂时无法确认，请刷新后重试。");
+});
+
+test("account deletion detail mismatch explains the required reread before review", async () => {
+  const { displayAdminError } = await import("../lib/admin/error-messages.ts");
+  const copy = "账号注销申请详情与当前记录不一致，请重新读取详情后再审核。";
+  assert.equal(formatAdminApiError("ACCOUNT_DELETION_DETAIL_MISMATCH", ""), copy);
+  assert.equal(displayAdminError(new Error("ACCOUNT_DELETION_DETAIL_MISMATCH")), copy);
 });
 
 test("A2、E5 与 G2 的当前协议错误给运营可操作的中文指引", () => {
@@ -72,9 +90,9 @@ test("M3 reconnect snapshot races explain automatic recovery and the manual fall
 test("already-formatted Chinese copy passes through unchanged (idempotent throat)", () => {
   // displayAdminError 会把 client 已格式化的 Error.message 再喂回咽喉,必须幂等
   for (const copy of [
-    "后台服务暂时不可达，本次提交未生效；请稍后重试，持续失败时请联系值班人员。",
+    "服务暂时不可用，当前结果尚未确认；请先查询原命令或核对原操作，不要重复提交。持续无法确认时请联系值班人员。",
     "操作理由需填写 8-200 个字符。",
-    "F 域数据提交失败 · 后台服务暂时不可达，本次提交未生效；请稍后重试，持续失败时请联系值班人员。",
+    "F 域数据提交失败 · 服务暂时不可用，当前结果尚未确认；请先查询原命令或核对原操作，不要重复提交。持续无法确认时请联系值班人员。",
   ]) {
     assert.equal(formatAdminApiError(copy, "X"), copy);
   }
@@ -154,7 +172,7 @@ test("unmapped machine codes must not blame the operator's input", () => {
 // 换个命名(BI_API_503 / TREASURY_API_502)就绕过分层。改判据为「机器码以 _5xx 结尾」,与命名前缀无关。
 test("any machine code ending in _5xx is attributed to the environment, not user input", () => {
   assert.notEqual(formatAdminApiError("BI_API_503", "X"), GENERIC_UNMAPPED_FALLBACK);
-  assert.match(formatAdminApiError("BI_API_503", "X"), /不可达|稍后重试/);
+  assert.match(formatAdminApiError("BI_API_503", "X"), /不可用|尚未确认/);
   // 502/504 是网关侧:后端可能已处理完,只说「结果尚未确认」,不得断言未生效
   assert.match(formatAdminApiError("TREASURY_API_502", "X"), /尚未确认/);
   assert.match(formatAdminApiError("TREASURY_API_504", "X"), /尚未确认/);

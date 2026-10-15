@@ -1,0 +1,228 @@
+{
+  "date": "2026-10-15",
+  "status": "REAL_HISTORY_PREREQUISITES_MISSING",
+  "wholeTask": "NOT_COMPLETE",
+  "sourceCommit": "d10d36bbb5045287834adf50ae9bfcfb6c2ba3ef",
+  "identity": {
+    "port": 33338,
+    "uuid": "abe359c0-c621-11f1-97ea-a40c6626953d",
+    "schema": "cs_analytics_20261007"
+  },
+  "method": "Two bounded READ ONLY transactions; aggregate counts only; no application/API start or writes",
+  "financial": {
+    "identity": {
+      "port": 33338,
+      "uuid": "abe359c0-c621-11f1-97ea-a40c6626953d",
+      "schema": "cs_analytics_20261007"
+    },
+    "readOnly": true,
+    "status": "READ_OK",
+    "rows": [
+      {
+        "type": "fund-schema",
+        "ready": 1
+      },
+      {
+        "type": "first-birth",
+        "customers": 3950,
+        "futureBirth": 0,
+        "invalidBirth": 0,
+        "missingBirth": 3921
+      },
+      {
+        "type": "wallet-journal",
+        "walletRows": 82,
+        "countMismatch": 61,
+        "missingRevision": 0,
+        "newZeroMismatch": 61,
+        "missingIncarnation": 0
+      },
+      {
+        "type": "auth-birth",
+        "customers": 3950,
+        "missingAuthReceipt": 3929,
+        "missingRegistrationEvent": 3890
+      },
+      {
+        "type": "first-attribution",
+        "facts": 11,
+        "source": "CARD_TOPUP",
+        "customers": 8,
+        "captureMode": "NEW_SUCCESS",
+        "missingCaptureTime": 0,
+        "missingSourceProof": 0
+      },
+      {
+        "type": "first-attribution",
+        "facts": 2,
+        "source": "ORDER_REFUND",
+        "customers": 2,
+        "captureMode": "NEW_SUCCESS",
+        "missingCaptureTime": 0,
+        "missingSourceProof": 0
+      },
+      {
+        "type": "first-attribution",
+        "facts": 7,
+        "source": "WALLET_ORDER",
+        "customers": 5,
+        "captureMode": "NEW_SUCCESS",
+        "missingCaptureTime": 0,
+        "missingSourceProof": 0
+      }
+    ],
+    "milliseconds": 109.60620000000002
+  },
+  "qualification": {
+    "identity": {
+      "port": 33338,
+      "uuid": "abe359c0-c621-11f1-97ea-a40c6626953d",
+      "schema": "cs_analytics_20261007"
+    },
+    "readOnly": true,
+    "rows": [
+      {
+        "type": "qualification-cutover",
+        "count": 0,
+        "committedAt": null
+      },
+      {
+        "type": "production-customers",
+        "count": 3950,
+        "deleted": 388
+      },
+      {
+        "type": "service-history",
+        "accounts": 74,
+        "firstStart": "2026-10-09 07:32:52.373273",
+        "latestStart": "2026-10-14 06:23:29.040835",
+        "intervalCount": 74
+      },
+      {
+        "type": "group-membership",
+        "accounts": 74,
+        "firstStart": "2026-10-09 07:32:52.373273",
+        "intervalCount": 144
+      },
+      {
+        "type": "rule-config",
+        "version": 1893,
+        "dormantDays": null,
+        "activityWindowDays": null
+      }
+    ]
+  },
+  "sources": [
+    {
+      "path": "src/main/java/ffdd/opsconsole/content/application/SupportLeaderboardSourceService.java",
+      "sha256": "7cb621719ebd9b76866e831ec983628c83a588853f433e3bb465ae72e3f32ae2"
+    },
+    {
+      "path": "src/main/java/ffdd/opsconsole/content/mapper/SupportLeaderboardMapper.java",
+      "sha256": "1af45c18c657cb94355214cd1eef317ed518e554189264f20f0f891ddf2cb0aa"
+    },
+    {
+      "path": "scripts/migrations/20261008_support_payment_history_birth.sql",
+      "sha256": "0314033339be7d5dc5ed5e555c70215aea663088e6a2c272705920a08785b697"
+    },
+    {
+      "path": "scripts/migrations/20261011_support_fund_journal.sql",
+      "sha256": "bd78b16a586887e02c7125918f950e80a99c33577c39b8e2c1ce825182574ec4"
+    },
+    {
+      "path": "scripts/manual_migrations/20261007_support_groups_qualification_cutover.sql",
+      "sha256": "34a3acee230643ab95146c86f81f73fa91467932298591c6c9c4e98f681a3547"
+    }
+  ],
+  "interpretation": {
+    "firstPayment": "3921 of 3950 production-scope customers lack payment-history birth records; valid existing rows do not establish missing customer history",
+    "netContribution": "61 of 82 wallet rows fail the journal-count/revision and exactly-one-NEW_ZERO checks; mismatch does not assert that every failing wallet has zero birth rows",
+    "qualification": "No cutover marker; SERVICE intervals for 74 accounts start no earlier than 2026-10-09, so month-start qualification is not proven",
+    "permissions": "All diagnostic queries succeeded and schema reader returned 1; this excludes permission errors for these queries only",
+    "capture": "20 capture rows have nonnull time/source-proof columns; content correctness and source completeness remain unproven",
+    "migration": "Existing birth/journal migrations explicitly do not backfill old accounts or wallets; current reviewed paths do not import verified old history"
+  },
+  "independentReview": {
+    "agent": "account_read_java_final_1014",
+    "findings": "No newly confirmed product defect; concrete missing history and no directly runnable historical import path in reviewed code",
+    "noGrantRequiredForDiagnosis": true
+  },
+  "nextAction": "No alternate historical source is available. Preserve SOURCE_INCOMPLETE/HISTORY_UNKNOWN and the existing metric contract; stop repeating the same completeness test. Historical reconstruction or a prospective-data scope requires a separately reviewed data-onboarding decision; neither is implemented or accepted by this report.",
+  "notProven": [
+    "complete real net-contribution or first-payment board",
+    "all financial-source permissions and capture semantics",
+    "current live publication after these read-only queries",
+    "historical imports or data reconstruction"
+  ],
+  "notPerformed": [
+    "new database or accounts",
+    "permission changes",
+    "financial operations",
+    "new publications",
+    "backfilled history",
+    "full-suite rerun",
+    "UI changes"
+  ],
+  "ownerConfirmation": {
+    "date": "2026-10-15",
+    "additionalHistoricalDatabaseOrBackupAvailable": false,
+    "reply": "没有",
+    "acceptanceWaiver": false
+  },
+  "freshDomainFeasibility": {
+    "reviewedAt": "2026-10-15",
+    "backendCommit": "d10d36bbb5045287834adf50ae9bfcfb6c2ba3ef",
+    "frontendCommit": "89b1ecb6ab6463cfdd0ba420f7cbc102d0e0a911",
+    "normalClockOnly": true,
+    "sourceScope": "Production customers are read as the financial source universe; search and group filters do not create a separate new-customer dataset",
+    "candidateGate": "Monthly start must be on or after the real qualification cutover, and cutoff must not precede it",
+    "freshDomainToday": "A real mid-month cutover cannot immediately make the current natural-month first-payment/net board COMPLETE, even if its metric rows are complete",
+    "earliestPossibleMonth": "First natural month starting after a legitimate mid-month cutover, provided every other source and candidate proof is complete; not a guarantee or approval",
+    "proofLimit": "A future clean-domain result proves the new complete-data path only, never restores current missing historical facts",
+    "dependencies": [
+      "approved isolated data domain and normal auth/RBAC/MFA",
+      "SERVICE qualification, membership and attribution histories",
+      "normal registration and wallet/payment births",
+      "payment and ledger/source writers, audit and idempotency",
+      "capture and formal leaderboard publication"
+    ],
+    "currentHarness": "Existing UI runtime and launcher are pinned to the existing schema; a fresh domain cannot reuse them unchanged",
+    "decision": "Do not create a new domain or backdate history merely to make acceptance green. A reviewed data-onboarding scope and trusted starting point are required first.",
+    "independentAgents": [
+      "account_read_java_final_1014",
+      "analytics_cleanup_rank_independent_r12"
+    ],
+    "evidence": [
+      {
+        "path": "src/main/java/ffdd/opsconsole/content/mapper/SupportLeaderboardMapper.java",
+        "lines": "52",
+        "sha256": "1af45c18c657cb94355214cd1eef317ed518e554189264f20f0f891ddf2cb0aa"
+      },
+      {
+        "path": "src/main/java/ffdd/opsconsole/content/application/SupportLeaderboardSourceService.java",
+        "lines": "112-128,197-200,507",
+        "sha256": "7cb621719ebd9b76866e831ec983628c83a588853f433e3bb465ae72e3f32ae2"
+      },
+      {
+        "path": "src/test/java/ffdd/opsconsole/content/application/SupportLeaderboardSourceServiceTest.java",
+        "lines": "39-54",
+        "sha256": "0e4bf8a314c11de46c2678c33c6a4243ae6414ec1496845fa6bb7d327c57fcbe"
+      },
+      {
+        "path": "scripts/manual_migrations/20261007_support_groups_qualification_cutover.sql",
+        "lines": "25-28",
+        "sha256": "34a3acee230643ab95146c86f81f73fa91467932298591c6c9c4e98f681a3547"
+      }
+    ],
+    "execution": "Read-only source review; no database query, service start, new dataset, clock change, payment or repeated test run",
+    "supersededForFunctionalTesting": true
+  },
+  "functionalAcceptance": {
+    "status": "PASS_CONTROLLED_COMPLETE_INPUTS_REAL_MYSQL_PUBLICATION",
+    "report": "https://github.com/agentabatiuo572-byte/nexion-backend/blob/test/docs/support-rank-complete-20261015.md",
+    "legacyHistoryBlocksFunctionalAcceptance": false,
+    "ownerApprovedSimulation": true,
+    "date": "2026-10-15",
+    "legacyHistoryRestored": false
+  }
+}

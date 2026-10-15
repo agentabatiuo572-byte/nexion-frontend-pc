@@ -1,0 +1,213 @@
+{
+  "verdict": "PASS",
+  "tests": 16,
+  "suites": 2,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "executionSeconds": 17.662,
+  "reports": [
+    {
+      "suite": "ffdd.opsconsole.content.application.SupportLeaderboardServiceTest",
+      "methods": [
+        "cacheKeepsVersionAcrossPageSelfAndDetailDespiteNewSourceClock",
+        "supervisorAndSuperGetOnlyCurrentManagedGroupsWhilePureSupervisorHasNoOwnGroup",
+        "unknownDuplicatesForeignGroupAndHistoricalMonthCannotOpenUnprovenSlices"
+      ],
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "newClassesIndex": 0,
+      "cachedClassDirectoryIndexes": [
+        8,
+        9,
+        10,
+        11
+      ]
+    },
+    {
+      "suite": "ffdd.opsconsole.content.domain.SupportLeaderboardTest",
+      "methods": [
+        "allZeroIsCompleteTieNotEmptyAndScaledEqualAmountsTie",
+        "crossPageAndPublicDetailRequireExpectedVersionAndChangedVersionConflicts",
+        "definitionChangeAndCompetitionRankMovementUseGenuineOldRanks",
+        "fullPrecisionCompetitionRanksAndNumericTieOrder",
+        "globalRegroupingKeepsMovementButGroupMembershipAndApprovedScopeChangesBlock",
+        "historicalMonthMonthStartMissingAndIncompleteBaselinesNeverInventMovement",
+        "newRequiresProvenInitialQualificationAfterBaselineNotRegrantOrBackfill",
+        "podiumUsesFullPublishedRanksAndCountsEveryTieWithoutGrowingTheSummary",
+        "previousDepositDefinitionCannotCreateRankMovementForNewNetDefinition",
+        "searchPaginationSummaryGapAndSelfPageUseSameFullSet",
+        "signedNetAmountsRankBelowZeroWithFullPrecisionAndUnknownNeverRanks",
+        "unknownReferenceAmountDoesNotInvalidateCountRankOrMovement",
+        "yesterdayUsesLastCompletePublicationInShanghaiAndDoesNotMutateBaseline"
+      ],
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "newClassesIndex": 0,
+      "cachedClassDirectoryIndexes": [
+        8,
+        9,
+        10,
+        11
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "path": "D:/WORKS/PLAN/.wt/cs-analytics-api-20261007/src/main/java/ffdd/opsconsole/content/domain/SupportLeaderboard.java",
+      "sha256": "ef5cd977a7cc1b0636e9cee2bc1642ed85f4118143974a61dbf9418ce809826b"
+    },
+    {
+      "path": "D:/WORKS/PLAN/.wt/cs-analytics-api-20261007/src/main/java/ffdd/opsconsole/content/application/SupportLeaderboardPolicy.java",
+      "sha256": "741f9b239f1e5f4b15aebfc17a00abf94df9bcc8b5b368c8484b6a32c7702852"
+    },
+    {
+      "path": "D:/WORKS/PLAN/.wt/cs-analytics-api-20261007/src/main/java/ffdd/opsconsole/content/application/SupportLeaderboardPublicationService.java",
+      "sha256": "b27912d85f1ef6c298eac8e97d7f5f8f1188f3bcf9fed33b3204d3b28075ace1"
+    },
+    {
+      "path": "D:/WORKS/PLAN/.wt/cs-analytics-api-20261007/src/main/java/ffdd/opsconsole/content/application/SupportLeaderboardService.java",
+      "sha256": "9e66334bb4d694a0fb49b20fd01d184090f3a03c88b17c9248aad6e73e46e5a3"
+    },
+    {
+      "path": "D:/WORKS/PLAN/.wt/cs-analytics-api-20261007/src/test/java/ffdd/opsconsole/content/domain/SupportLeaderboardTest.java",
+      "sha256": "15f3f4e62f0a2edb75f9011812eaeee7e949b461c98b757587407d25fbec7131"
+    },
+    {
+      "path": "D:/WORKS/PLAN/.wt/cs-analytics-api-20261007/src/test/java/ffdd/opsconsole/content/application/SupportLeaderboardServiceTest.java",
+      "sha256": "db65ac3b9f337be3c7f14db76a6ed1bb2c9f7f4148eec01c11a70343338aa8ae"
+    },
+    {
+      "path": "D:/WORKS/PLAN/.wt/cs-analytics-api-20261007/src/test/java/ffdd/opsconsole/content/application/SupportLeaderboardPublicationServiceTest.java",
+      "sha256": "d05c2fb26d2ba215f149071f1fff12086572c4da4517edbbdf70677ccc64fd4f"
+    }
+  ],
+  "classHashes": [
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\application\\SupportLeaderboardPolicy.class",
+      "sha256": "6a05ced46e65a0ee158f6ebcde70dcda79a5d345ef1f0216e83556248713b236"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\application\\SupportLeaderboardPublicationService.class",
+      "sha256": "87e1b16209598c74003c05ff5b014613b6b3576964208b5cf878e794431f5454"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\application\\SupportLeaderboardPublicationServiceTest.class",
+      "sha256": "a3d355e4882f5dbff8f4010132f6d149a09a938eff3aa7996d4a690dbfb4cbc5"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\application\\SupportLeaderboardService$Authorization.class",
+      "sha256": "5e8d18a014db7e20a3e893c8f3e05695f2f842704c7a42a4d45d901ad925f360"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\application\\SupportLeaderboardService$AvatarAuthorization.class",
+      "sha256": "d258e32c052089aec5775fc142e7d5959f4c9141c4bb44dc8920ad9addc6538f"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\application\\SupportLeaderboardService$Resolved.class",
+      "sha256": "bf553c9daa0b968723f5befd43ecd35c92c189f1e1c94070570cec66a1d211a3"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\application\\SupportLeaderboardService.class",
+      "sha256": "621dda3ee618039777cc09767ebf0dc4ad10693027884a6087ff1597e2117011"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\application\\SupportLeaderboardServiceTest$Harness.class",
+      "sha256": "6545347dd6515f3f9eed9e367bdb68ac58caf466c289e2929be8ed5c5b0a5f5e"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\application\\SupportLeaderboardServiceTest.class",
+      "sha256": "b73b4558ac7371b10406ea226de823c16a1997794332735b04740228a6b64143"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\domain\\SupportLeaderboard$Amount.class",
+      "sha256": "4da6f655ad1d8dacdc3e838576bd93dbf6da8e96b57e65c90fc32358abfa5ec3"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\domain\\SupportLeaderboard$AmountKind.class",
+      "sha256": "cb94bb3a1ce6ca12c070d6dcb4ba582483e9222a30c83bb39f3903dbdf3a9555"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\domain\\SupportLeaderboard$Board.class",
+      "sha256": "350e3cc1a4503505407ba8d83482005de5197b99027c3b8b10f7180188235261"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\domain\\SupportLeaderboard$Candidate.class",
+      "sha256": "1a1e390f92c49eaafaa116047183398ecd60a121c9f00b795280ee199df403a0"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\domain\\SupportLeaderboard$Context.class",
+      "sha256": "c7e1625b06999347fe629cae21c0dcc35df5bcfa7152e33c909d6e27b65248a4"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\domain\\SupportLeaderboard$Count.class",
+      "sha256": "8ecca23add6a9136e60f176a4559dced05e32ff8cd3f7cd4b97f945cf216db0d"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\domain\\SupportLeaderboard$Coverage.class",
+      "sha256": "0593a7f0770c44eff1a45a1fe0b08b706f8a59bfc72340465016e2dc9c6b086f"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\domain\\SupportLeaderboard$Movement.class",
+      "sha256": "0cf141c15e2d9b17e542471d264f24bcd08d24616c12c5e20b6a6ef82dcee569"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\domain\\SupportLeaderboard$MovementKind.class",
+      "sha256": "174a1b0a66cf0082ed6d87099a94e4482e8176c29356ece77d68827feebd5123"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\domain\\SupportLeaderboard$Page.class",
+      "sha256": "8ef1b9b5e434b8ed4b2d284a72936769e45d150dcbf3769450856cb99b2d6d71"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\domain\\SupportLeaderboard$Podium.class",
+      "sha256": "3cee8eee4c3ee18cc0bb643a9439b466a9edc24b90df5f3c6744b513750d7fc2"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\domain\\SupportLeaderboard$Publication.class",
+      "sha256": "26e7455e0222bac3340e8c6d4abc0d31627150bfd7617a93d02b3f6771e2192b"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\domain\\SupportLeaderboard$Qualification.class",
+      "sha256": "bb52e70d9187c245bd7e569aa89e636e65342abb96ddea826f76cac841c7a7bc"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\domain\\SupportLeaderboard$Reason.class",
+      "sha256": "f47309714d7ced6cc8ed6e628fa408679ba4f5f2bd1d220ed9c1d3d80a1cc6cb"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\domain\\SupportLeaderboard$Row.class",
+      "sha256": "987b69f8a215104c09863b80e918eb9e749c89a8b5317313b89f4384bce0af8c"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\domain\\SupportLeaderboard$Scope.class",
+      "sha256": "66f3210f764cc1ee42376044145dd0e7442c3a141adef04a4de16c80d86528e1"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\domain\\SupportLeaderboard$Self.class",
+      "sha256": "20b3adcaeee1fcbd41bb1016643112db0392b8c6b601a7ce786e7ce2d8e52506"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\domain\\SupportLeaderboard$Snapshot.class",
+      "sha256": "2d8b7b70decfee8915b5ae7b1184af0608ca9f515893a200873c5a1fdcbdc29d"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\domain\\SupportLeaderboard$State.class",
+      "sha256": "e80aedc524d888306c51f7095e4651bcd86a65eac89730e1683ff3d38e57ab60"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\domain\\SupportLeaderboard.class",
+      "sha256": "95ac68e87854347ae603b1e18c739750f7685198193857956139ded648a2067a"
+    },
+    {
+      "path": "D:\\CodexData\\test-environments\\workflow-runs\\support-analytics-20261007-r2\\runtime\\support-minimal-20261012\\rank-acceptance-20261014\\classes\\ffdd\\opsconsole\\content\\domain\\SupportLeaderboardTest.class",
+      "sha256": "c387053c04aa13783c5e47993d978b781f1ed433debfa2672c0922e46cd09238"
+    }
+  ],
+  "correction": "Original result.json retained: report validator failed solely on Windows path separator normalization; existing XML revalidated without rerunning tests",
+  "scope": "Pure Domain/Service fixtures; no HTTP/DB proof, no actual current COMPLETE or yesterday-publication claim"
+}

@@ -1,0 +1,22 @@
+{
+  "files": [
+    {
+      "name": "men-84.jpg",
+      "source": "D:/WORKS/PLAN/.wt/cs-analytics-preview-20261006/docs/design/support-analytics-20261006/assets/avatars/men-84.jpg",
+      "sha256": "0939e4e89294f566a05be48754bd62dab535e01a85e1f96b6bcc7b26a968f294",
+      "purpose": "fixture-only existing approved portrait; no production avatar dependency"
+    },
+    {
+      "name": "women-85.jpg",
+      "source": "D:/WORKS/PLAN/.wt/cs-analytics-preview-20261006/docs/design/support-analytics-20261006/assets/avatars/women-85.jpg",
+      "sha256": "aac75b47a57888f89ccce45eacdb050afb2863ceae6ed5da14217f23c7e5347b",
+      "purpose": "fixture-only existing approved portrait; no production avatar dependency"
+    },
+    {
+      "name": "men-75.jpg",
+      "source": "D:/WORKS/PLAN/.wt/cs-analytics-preview-20261006/docs/design/support-analytics-20261006/assets/avatars/men-75.jpg",
+      "sha256": "60c2053e9aa4900708d262ddb15313d1f5b9e5daad2c0f6ace8c41f4fd78a015",
+      "purpose": "fixture-only existing approved portrait; no production avatar dependency"
+    }
+  ]
+}

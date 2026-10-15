@@ -247,7 +247,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const parsedSessionBaseline = readAdminSessionBaseline(backendSessionBaseline);
   const backendLockBaseline = securityBaselines.find((b) => b.key === "lock")?.value;
   const baselineCurrent = (key: string) => {
-    if (key === "session_idle") return parsedSessionBaseline.idleMinutes;
+    if (key === "session_idle") return parsedSessionBaseline.idleDisabled ? "已停用" : parsedSessionBaseline.idleMinutes;
     if (key === "session_abs") return parsedSessionBaseline.unlimited ? "无固定上限" : parsedSessionBaseline.absoluteHours;
     if (key === "lock_short_cnt") return firstMatch(backendLockBaseline, /(\d+(?:\.\d+)?)\s*(?:times|次)/i) ?? null;
     if (key === "lock_short_min") return firstMatch(backendLockBaseline, /\/\s*(\d+(?:\.\d+)?)\s*min/i) ?? null;
@@ -260,7 +260,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const securityBaselineRows: SecurityBaselineRow[] = [];
   if (registeredBaseline("session")) {
     securityBaselineRows.push(
-      { ...SECURITY_BASELINE_META.session_idle, sourceKey: "session", current: baselineCurrent("session_idle"), locked: true },
+      { ...SECURITY_BASELINE_META.session_idle, sourceKey: "session", current: baselineCurrent("session_idle"),
+        unit: parsedSessionBaseline.idleDisabled ? undefined : "分钟",
+        sub: parsedSessionBaseline.idleDisabled ? "闲置自动登出已停用；可主动登出或撤销会话" : SECURITY_BASELINE_META.session_idle.sub, locked: true },
       { ...SECURITY_BASELINE_META.session_abs, sourceKey: "session", current: baselineCurrent("session_abs"), unit: parsedSessionBaseline.unlimited ? undefined : "小时", locked: true },
     );
   }
@@ -275,7 +277,10 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const baselineDisplay = (baseline: SecurityBaselineRow) => (
     baseline.current == null ? "—" : `${baseline.current} ${baseline.unit ?? ""}`.trim()
   );
-  const sessionBaseline = backendSessionBaseline || "后端未返回会话基线";
+  const sessionBaseline = parsedSessionBaseline.idleDisabled
+    ? `闲置自动登出已停用 / ${parsedSessionBaseline.unlimited ? "无固定登录上限"
+      : parsedSessionBaseline.absoluteHours ? `${parsedSessionBaseline.absoluteHours}小时登录上限` : "登录上限未确认"}`
+    : backendSessionBaseline || "后端未返回会话基线";
   const lockBaseline = backendLockBaseline || "后端未返回登录锁定基线";
 
   const totalPages = Math.max(1, Math.ceil(operators.length / perPage));
@@ -606,7 +611,11 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
 
   const adjustBaseline = (baseline: SecurityBaselineRow) => {
     if (baseline.sourceKey === "session") {
-      toast("会话策略固定为无有效操作60分钟登出、有效操作续期，无固定登录上限");
+      const idlePolicy = parsedSessionBaseline.idleDisabled ? "闲置自动登出已停用"
+        : parsedSessionBaseline.idleMinutes ? `无有效操作${parsedSessionBaseline.idleMinutes}分钟登出、有效操作续期` : "闲置策略未确认";
+      const absolutePolicy = parsedSessionBaseline.unlimited ? "无固定登录上限"
+        : parsedSessionBaseline.absoluteHours ? `${parsedSessionBaseline.absoluteHours}小时登录上限` : "登录上限未确认";
+      toast(`会话策略由后端锁定：${idlePolicy}，${absolutePolicy}`);
       return;
     }
     if (baseline.locked) {
@@ -689,7 +698,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         <>
           <b>{form.displayName}</b> · 登录名 <span className="acode">{form.username}</span> · 角色 <b>{roleName(roles, form.role)}</b>。
           <div style={{ marginTop: 8 }}>
-            <b>新账号默认零写权,只有所选角色授权</b> · 初始密码只用于首次登录 · 首次登录必须修改密码。
+            按所选角色开通权限；首次登录须修改密码。
+            {form.role === "support" && <> 专属客服仅服务本人绑定客户，主管资格需另行授予。</>}
           </div>
         </>
       ),
@@ -1066,7 +1076,7 @@ function NewAccountDrawer({
   onClose: () => void;
   onSubmit: (form: NaForm) => void;
 }) {
-  const defaultRole = "";
+  const defaultRole = "support";
   const actorId = useAdminAuth(state => state.session?.adminId);
   const [username, setUsername] = useState(initialForm?.username??"");
   const [displayName, setDisplayName] = useState(initialForm?.displayName??"");
@@ -1103,12 +1113,12 @@ function NewAccountDrawer({
   return (
     <Drawer
       title="新建运营账号"
-      sub="① 登录资料 → ② 初始角色(可暂不分配) → ③ 服务端临时凭据 → 操作理由"
+      sub={<ol className="account-profile-steps" aria-label="账号创建步骤">{["登录资料", "初始角色", "首次登录", "操作理由"].map((title, index) => <li key={title}><span className="account-profile-step-number" aria-hidden="true">{index + 1}</span>{title}</li>)}</ol>}
       onClose={onClose}
       footer={
         <div style={{ padding: "10px 16px 12px", borderTop: "1px solid var(--border)" }}>
           {submitBlockers.length > 0 && (
-            <div style={{ marginBottom: 8, fontSize: 12, color: "var(--danger)", lineHeight: 1.6 }}>
+            <div style={{ marginBottom: 8, fontSize: 13, color: "var(--danger)", lineHeight: 1.6 }}>
               不能创建: {submitBlockers.join("、")}
             </div>
           )}
@@ -1132,59 +1142,66 @@ function NewAccountDrawer({
         </div>
       }
     >
-      <fieldset disabled={disabled} style={{border:0,padding:0,margin:0}}>
-      <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 8 }}>① 登录资料</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
-        <label style={{ fontSize: 12, color: "var(--ink-3)" }}>
+      <fieldset className="account-profile-form" disabled={disabled} style={{border:0,padding:0,margin:0}}>
+      <h3 className="account-profile-section-title"><span className="account-profile-step-number" aria-hidden="true">1</span>登录资料</h3>
+      <div className="account-profile-fields">
+        <label style={{ fontSize: 14, color: "var(--ink-3)" }}>
           登录名 *
           <input
             value={username}
             onChange={(e) => setUsername(e.target.value.toLowerCase())}
             placeholder="risk.shift"
             autoComplete="username"
-            style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 13 }}
+            style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 14 }}
           />
           {username.trim() && !usernameOk && (
-            <span style={{ display: "block", marginTop: 4, color: "var(--danger)", fontSize: 11 }}>
+            <span style={{ display: "block", marginTop: 4, color: "var(--danger)", fontSize: 13 }}>
               3-32 位,仅小写字母、数字、点、下划线或短横线。
             </span>
           )}
         </label>
-        <label style={{ fontSize: 12, color: "var(--ink-3)" }}>
+        <label style={{ fontSize: 14, color: "var(--ink-3)" }}>
           显示名 *
           <input
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder="姓名,如:张三"
-            style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "inherit", fontSize: 13 }}
+            style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "inherit", fontSize: 14 }}
           />
         </label>
-        <label style={{ fontSize: 12, color: "var(--ink-3)" }}>
+        <label style={{ fontSize: 14, color: "var(--ink-3)" }}>
           工作邮箱
           <input
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="name@example.com"
             autoComplete="email"
-            style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 13 }}
+            style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 14 }}
           />
           {email.trim() && !emailOk && (
-            <span style={{ display: "block", marginTop: 4, color: "var(--danger)", fontSize: 11 }}>
+            <span style={{ display: "block", marginTop: 4, color: "var(--danger)", fontSize: 13 }}>
               请输入有效邮箱格式。
             </span>
           )}
         </label>
       </div>
 
-      {role === "support" && <fieldset className="account-avatar-controls" disabled={disabled || avatarBlocking || Boolean(avatarAssetId)} style={{ border: 0, padding: 0 }}><legend>客服默认头像</legend><label>头像分类<HDSelect value={avatarGenderValue} options={AVATAR_GENDER_OPTIONS} onChange={value => setAvatarGenderValue(value as AvatarGender)} /></label><label><input type="radio" name="avatar-mode" checked={avatarMode === "default"} onChange={() => setAvatarMode("default")} />创建时随机使用默认头像</label><label><input type="radio" name="avatar-mode" checked={avatarMode === "manual"} onChange={() => setAvatarMode("manual")} />自行上传头像</label><p>默认图来自合成成年肖像，未指定时从全部默认图中随机选择。客服账号角色不代表接待资格。</p></fieldset>}
+      {role === "support" && <fieldset className="account-avatar-controls" disabled={disabled || avatarBlocking || Boolean(avatarAssetId)}><legend>客服默认头像</legend>
+        <label className="account-avatar-field">头像分类<HDSelect value={avatarGenderValue} options={AVATAR_GENDER_OPTIONS} onChange={value => setAvatarGenderValue(value as AvatarGender)} /></label>
+        <div className="account-avatar-modes">
+          <label><input type="radio" name="avatar-mode" checked={avatarMode === "default"} onChange={() => setAvatarMode("default")} />创建时随机使用默认头像</label>
+          <label><input type="radio" name="avatar-mode" checked={avatarMode === "manual"} onChange={() => setAvatarMode("manual")} />自行上传头像</label>
+        </div>
+        <p>创建后可更换头像。</p>
+      </fieldset>}
       {!useDefaultAvatar && <AccountAvatarPicker name={displayName} disabled={disabled} onChange={setAvatarAssetId} onBlocking={setAvatarBlocking}/>}
-      {avatarBlocking&&<p role="status">新头像尚未上传成功；上传或取消新头像后可继续创建。</p>}
-      <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 8 }}>② 初始角色(可暂不分配)</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
+      {avatarBlocking&&<p className="account-avatar-feedback" role="status">新头像尚未上传成功；上传或取消新头像后可继续创建。</p>}
+      <h3 className="account-profile-section-title"><span className="account-profile-step-number" aria-hidden="true">2</span>初始角色(可暂不分配)</h3>
+      <div className="account-initial-roles">
         <label className="l-btn" style={{ justifyContent: "flex-start", padding: "10px 12px", background: role === "" ? "var(--a-ac-soft)" : "var(--surface-2)", color: role === "" ? "var(--a-ac)" : "var(--ink-2)", cursor: recoveryMode ? "not-allowed" : "pointer" }}>
           <input type="radio" name="operator-role" value="" checked={role === ""} disabled={recoveryMode} onChange={() => setRole("")} style={{ accentColor: "var(--a-ac)" }} />
-          <span style={{ fontSize: 13 }}>暂不分配</span>
-          <span style={{ fontSize: 11, color: "var(--ink-4)", marginLeft: 8 }}>默认零权限、零菜单</span>
+          <span style={{ fontSize: 14 }}>暂不分配</span>
+          <span style={{ fontSize: 13, color: "var(--ink-4)", marginLeft: 8 }}>无业务权限</span>
         </label>
         {roles.map((item) => (
           <label
@@ -1207,31 +1224,34 @@ function NewAccountDrawer({
               onChange={() => setRole(item.key)}
               style={{ accentColor: "var(--a-ac)" }}
             />
-            <span style={{ fontSize: 13 }}>{item.name}</span>
-            <span style={{ fontSize: 11, color: "var(--ink-4)", marginLeft: 8 }}>{item.scope}</span>
+            <span style={{ fontSize: 14 }}>{item.name}</span>
+            <span style={{ fontSize: 13, color: "var(--ink-4)", marginLeft: 8 }}>{item.scope}</span>
           </label>
         ))}
       </div>
 
-      <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 8 }}>③ 服务端临时凭据</div>
-      <div className="atint" style={{ marginBottom: 10 }}>
-        账号创建成功后由服务端生成 20 位四类强临时密码，并且只展示一次；浏览器不会生成、编辑或提前持有账号密码。
+      {role === "support" && <p className="account-profile-note">仅服务本人绑定客户，主管资格需另行授予。</p>}
+      <h3 className="account-profile-section-title"><span className="account-profile-step-number" aria-hidden="true">3</span>首次登录</h3>
+      <div className="atint" style={{ marginBottom: 10, fontSize: 13, lineHeight: 1.5 }}>
+        创建后将显示一次 20 位临时密码，请妥善交给账号持有人。
       </div>
 
-      <div className="atint" style={{ marginBottom: 14 }}>
-        <b>开通即生效的三条底线</b> · 默认零写权 · 首次登录强制改密 · 账号创建写入后端审计。
+      <div className="atint" style={{ marginBottom: 14, fontSize: 13, lineHeight: 1.5 }}>
+        按所选角色开通权限；首次登录须修改密码。
       </div>
 
-      <label style={{ fontSize: 12, color: "var(--ink-3)" }}>
-        操作理由 *(必填 · 写入审计)
+      <h3 id="account-create-reason-title" className="account-profile-section-title"><span className="account-profile-step-number" aria-hidden="true">4</span>操作理由（必填 · 写入审计）</h3>
+      <div>
         <textarea
+          aria-labelledby="account-create-reason-title"
+          aria-required="true"
           rows={2}
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           placeholder="为什么开这个账号(入职 / 换岗 / 外审…)"
-          style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "inherit", fontSize: 13, resize: "vertical" }}
+          style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "inherit", fontSize: 14, resize: "vertical" }}
         />
-      </label>
+      </div>
       </fieldset>
     </Drawer>
   );
@@ -1386,7 +1406,7 @@ function EditAccountDrawer({
       footer={
         <div style={{ padding: "10px 16px 12px", borderTop: "1px solid var(--border)" }}>
           {submitBlockers.length > 0 && (
-            <div style={{ marginBottom: 8, fontSize: 12, color: "var(--danger)", lineHeight: 1.6 }}>
+            <div style={{ marginBottom: 8, fontSize: 13, color: "var(--danger)", lineHeight: 1.6 }}>
               不能保存: {submitBlockers.join("、")}
             </div>
           )}
@@ -1410,56 +1430,56 @@ function EditAccountDrawer({
         </div>
       }
     >
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
-        <label style={{ fontSize: 12, color: "var(--ink-3)" }}>
+      <div className="account-profile-fields">
+        <label style={{ fontSize: 14, color: "var(--ink-3)" }}>
           登录名 *
           <input
             value={username}
             onChange={(e) => setUsername(e.target.value.toLowerCase())}
             autoComplete="username"
-            style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 13 }}
+            style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 14 }}
           />
           {username.trim() && !usernameOk && (
-            <span style={{ display: "block", marginTop: 4, color: "var(--danger)", fontSize: 11 }}>
+            <span style={{ display: "block", marginTop: 4, color: "var(--danger)", fontSize: 13 }}>
               3-32 位,仅小写字母、数字、点、下划线或短横线。
             </span>
           )}
         </label>
-        <label style={{ fontSize: 12, color: "var(--ink-3)" }}>
+        <label style={{ fontSize: 14, color: "var(--ink-3)" }}>
           显示名 *
           <input
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
-            style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "inherit", fontSize: 13 }}
+            style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "inherit", fontSize: 14 }}
           />
         </label>
-        <label style={{ fontSize: 12, color: "var(--ink-3)", gridColumn: "1 / -1" }}>
+        <label style={{ fontSize: 14, color: "var(--ink-3)", gridColumn: "1 / -1" }}>
           工作邮箱
           <input
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             autoComplete="email"
-            style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 13 }}
+            style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 14 }}
           />
           {email.trim() && !emailOk && (
-            <span style={{ display: "block", marginTop: 4, color: "var(--danger)", fontSize: 11 }}>
+            <span style={{ display: "block", marginTop: 4, color: "var(--danger)", fontSize: 13 }}>
               请输入有效邮箱格式。
             </span>
           )}
         </label>
       </div>
-      <fieldset className="account-avatar-controls" disabled={disabled || avatarBlocking} style={{ border: 0, padding: 0 }}><legend>头像分类</legend><HDSelect value={avatarGenderValue} options={AVATAR_GENDER_OPTIONS} onChange={value => setAvatarGenderValue(value as AvatarGender)} /><p>修改分类不会替换当前头像；只有明确准备新头像后提交才会更换。</p></fieldset>
+      <fieldset className="account-avatar-controls" disabled={disabled || avatarBlocking}><legend>头像分类</legend><HDSelect value={avatarGenderValue} options={AVATAR_GENDER_OPTIONS} onChange={value => setAvatarGenderValue(value as AvatarGender)} /><p>修改分类不换图；提交新头像后才会更换。</p></fieldset>
       <AccountAvatarPicker account={account} name={displayName} gender={avatarGenderValue} allowDefault={account.role === "support"} disabled={disabled} onChange={setAvatarAssetId} onBlocking={setAvatarBlocking}/>
-      {avatarBlocking&&<p role="status">新头像尚未上传成功；上传或取消新头像后可提交。</p>}
-      <p>提交后仍需在操作确认中心执行，账号资料与头像以执行后刷新读回为准。</p>
-      <label style={{ fontSize: 12, color: "var(--ink-3)" }}>
+      {avatarBlocking&&<p className="account-avatar-feedback" role="status">新头像尚未上传成功；上传或取消新头像后可提交。</p>}
+      <p className="account-profile-note">提交后仍需在操作确认中心执行，账号资料与头像以执行后刷新读回为准。</p>
+      <label style={{ fontSize: 14, color: "var(--ink-3)" }}>
         操作理由 *(必填 · 写入审计)
         <textarea
           rows={2}
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           placeholder="为什么修改这个账号资料"
-          style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "inherit", fontSize: 13, resize: "vertical" }}
+          style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "inherit", fontSize: 14, resize: "vertical" }}
         />
       </label>
     </Drawer>

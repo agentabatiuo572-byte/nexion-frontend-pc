@@ -32,7 +32,7 @@ const functions = ast.statements.filter(node => ts.isFunctionDeclaration(node) &
 const fixture = [
   ...functions,
   declaration(top, "C1_SESSION_PAGE_SIZE"), declaration(top, "C1_SESSION_STATUS_FILTERS"),
-  "export function Fixture({ detail, userKey }) { const summary = detail.summary;",
+  "export function Fixture({ detail, userKey }) { const summary = detail.summary, supportScope=false;",
   declaration(local, "[sessionPage, setSessionPage]"), declaration(local, "[sessionStatusFilter, setSessionStatusFilter]"),
   ...["sessions", "filteredSessions", "sessionPageCount", "visibleSessions"].map(name => declaration(local, name)),
   reset.getText(ast), `return (${section.getText(ast)}); }`,

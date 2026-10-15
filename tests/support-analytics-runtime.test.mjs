@@ -520,6 +520,10 @@ test("actual rendered Blob bytes remain verifiable under CSP without fetching or
       assert.ok(observations.every((row, index) => row.count === 0 || (index === observations.length - 1 && row.count === null && row.reason === "observation-deadline" && row.visibleCount === 0 && row.images.length === 0)), "Only the final query may remain unobserved at its explicit deadline");
       return true;
     });
+    await assert.rejects(waitForRenderedImageMatch(image, expected, { timeoutMs: 100, pollMs: 1000 }), error => {
+      assert.match(error.message, /observation deadline/); assert.equal(error.imageObservations.length, 1);
+      assert.equal(error.imageObservations[0].count, 0); return true;
+    });
     await page.reload(); await image.waitFor({ state: "visible" });
     await image.evaluate(element => { element.width = 200; element.height = 200; element.src = URL.createObjectURL(new Blob(["not an image"], { type: "image/png" })); });
     await assert.rejects(waitForRenderedImageMatch(image, expected), error => {
@@ -602,10 +606,10 @@ test("I3 read-only boundary permits existing auth and denies every business muta
   for (const path of ["/api/admin/auth/login", "/api/admin/auth/mfa/verify", "/api/admin/auth/logout", "/api/admin/content/conversations/realtime-ticket"]) assert.equal(assertReadOnlyRequest("POST", path), "readAuth");
   assert.equal(assertReadOnlyRequest("GET", "/api/admin/content/support-workbench/analytics"), "read");
   for (const method of ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) for (const path of ["/api/admin/content/support-agents/groups", "/api/admin/content/conversations/1/replies", "/unknown"]) assert.throws(() => assertReadOnlyRequest(method, path), /prohibits/);
-  const { parseMContentApiEnvelope } = await import("../lib/admin/m-support-read-contract.ts"), { parseSupportGroup } = await import("../lib/admin/support-group-client.ts");
-  const realShape = { id: "4", name: "Controlled group", supervisorAdminId: "2", status: "ENABLED", version: 1 };
-  assert.deepEqual(parseMContentApiEnvelope(200, JSON.stringify({ code: 0, data: [realShape] }), true).map(parseSupportGroup), [realShape]);
-  for (const body of [{ code: 403, data: [realShape] }, { code: 0 }, { code: 0, data: [{ ...realShape, private: "unknown-field" }] }]) assert.throws(() => parseMContentApiEnvelope(200, JSON.stringify(body), true).map(parseSupportGroup));
+  const { parseMContentApiEnvelope } = await import("../lib/admin/m-support-read-contract.ts"), { parseGroupDirectory } = await import("../lib/admin/support-group-client.ts");
+  const realShape = { id: "4", name: "Controlled group", supervisorAdminId: "2", status: "ENABLED", version: 1, supervisorName: "Supervisor", memberCount: 2, boundCustomers: 24, pendingCustomers: 0 };
+  assert.deepEqual(parseMContentApiEnvelope(200, JSON.stringify({ code: 0, data: [realShape] }), true).map(parseGroupDirectory), [realShape]);
+  for (const body of [{ code: 403, data: [realShape] }, { code: 0 }, { code: 0, data: [{ ...realShape, private: "unknown-field" }] }]) assert.throws(() => parseMContentApiEnvelope(200, JSON.stringify(body), true).map(parseGroupDirectory));
 });
 
 test("I3 current scope rejects stale version, foreign people/groups and fabricated UNKNOWN totals", () => {
@@ -706,10 +710,10 @@ test("the actual statistics scope-return effect restores the selected group, dat
   const helpers = ast.statements.filter(node => ts.isFunctionDeclaration(node) && helperNames.includes(node.name?.text)).map(node => node.getText(ast)).join("\n");
   for (const selectedGroup of [undefined, "5"]) {
     const remembered = { groupId: selectedGroup, view: "CUSTOMERS", basis: "PERIOD_EVENT", currency: "NEX", month: "2026-10", pageNum: 2, expectedVersion: `saq-v1:${"a".repeat(64)}`, category: "ALL", firstState: "ALL", filter: "ALL" };
-    const managementReturnQuery = { current: remembered }, queries = []; let restored;
-    const noop = () => {}, globals = { exports: {}, AbortController, Date, Intl, URLSearchParams, window: { location: { search: "" } }, managementReturnQuery, supportAnalyticsClient: { query: async query => { queries.push(query); return { scopeSummary: { mode: "MANAGED", groups: [{ groupId: "5" }] } }; } }, setScope: noop, setScopeError: noop, setData: noop, setProfileId: noop, setOperations: noop, setGroupManagement: noop, setPersonalAnalytics: noop, analyticsErrorText: cause => { throw cause; }, setQueryState: value => { restored = value; } };
+    const managementReturnQuery = { current: remembered }, personalViewBeforeScopeRefresh = { current: false }, queries = []; let restored;
+    const noop = () => {}, globals = { exports: {}, AbortController, Date, Intl, URLSearchParams, window: { location: { search: "" } }, scopeControllerRef: { current: null }, managementReturnQuery, supportAnalyticsClient: { query: async query => { queries.push(query); return { scopeSummary: { mode: "MANAGED", groups: [{ groupId: "5" }] } }; } }, setScope: noop, setScopeError: noop, setData: noop, setProfileId: noop, setOperations: noop, setGroupManagement: noop, setPersonalAnalytics: noop, analyticsErrorText: cause => { throw cause; }, setQueryState: value => { restored = value; } };
     const code = ts.transpileModule(`${helpers}\n(${effect.getText(ast)})();`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-    runInNewContext(code, globals); await new Promise(resolve => setImmediate(resolve));
+    runInNewContext(code, { ...globals, personalViewBeforeScopeRefresh, managementCustomerGroup: { current: null } }); await new Promise(resolve => setImmediate(resolve));
     assert.equal(queries[0].view, "OVERVIEW"); assert.equal(restored.groupId, selectedGroup); assert.equal(restored.view, "CUSTOMERS"); assert.equal(restored.basis, "PERIOD_EVENT"); assert.equal(restored.currency, "NEX"); assert.equal(restored.month, "2026-10"); assert.equal(restored.pageNum, 1); assert.equal(restored.expectedVersion, undefined); assert.equal(managementReturnQuery.current, null);
   }
 });

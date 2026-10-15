@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import vm from "node:vm";
 import assert from "node:assert/strict";
 import test, { after } from "node:test";
@@ -8,13 +9,13 @@ import { fileURLToPath } from "node:url";
 
 // Offline native-layout regression from the actual JSX and styles. No app server,
 // session, business API, or live acceptance result is used by this test.
-const repo = fileURLToPath(new URL("..", import.meta.url));
+const repo = process.env.SUPPORT_ANALYTICS_FE_ROOT || fileURLToPath(new URL("..", import.meta.url));
 const require = createRequire(path.join(repo, "package.json"));
 const ts = require("typescript"), React = require("react"), { renderToStaticMarkup } = require("react-dom/server");
 const { chromium } = require("@playwright/test"), postcss = require("postcss");
 const tabs = "app/components/domain-views/m-tabs/";
 const sourceRoot = process.env.SUPPORT_LAYOUT_SOURCE_ROOT || repo;
-const source = relative => fs.readFileSync(path.join(sourceRoot, relative), "utf8");
+const source = relative => fs.readFileSync(path.join(fs.existsSync(path.join(sourceRoot, relative)) ? sourceRoot : repo, relative), "utf8");
 const ruleSource = source(tabs + "m5-service-rules.tsx"), chatSource = source(tabs + "m3-dedicated-chat.tsx"), toolsSource = source(tabs + "support-content-tools.tsx");
 const parse = text => ts.createSourceFile("fixture.tsx", text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 function find(text, predicate) {
@@ -38,13 +39,21 @@ function renderBit(markup, declarations) {
   const { exports } = evaluate(`export function Fixture(){${declarations};return (${markup});}`);
   return renderToStaticMarkup(React.createElement(exports.Fixture));
 }
-const radioMarkup = renderBit(jsx(ruleSource, "fieldset", "无顾问客户分配方式"), 'const editable=true,draft={unboundAssignmentMode:"SUPERVISOR"},setField=()=>{}');
-const headerMarkup = renderBit(jsx(chatSource, "header", "我的会话"), `
-  const query="",listTab="all",canWriteM3=true,canReadTimeout=true,canTimeout=true,actionChecking=false,qualificationUnknown=false;
+const radioMarkup = renderBit(jsx(ruleSource, "fieldset", "无专属客服客户分配方式"), 'const editable=true,draft={unboundAssignmentMode:"SUPERVISOR"},setField=()=>{}');
+const hdUiSource = source(tabs + "hd-ui.tsx");
+const { exports: designIcons } = evaluate(find(source("app/components/domain-views/design-kit.tsx"), node => ts.isFunctionDeclaration(node) && node.name?.text === "Icon").getText());
+const { exports: hdUi } = evaluate(hdUiSource, { "../design-kit": designIcons, "./m-avatar": {} });
+const { exports: rulePicker } = evaluate(`import {HDSelect} from "./hd-ui"; export function Fixture(){const editable=false,draft={inheritanceMode:"UNLIMITED"},setDraft=()=>{};return (${jsx(ruleSource, "div", '<HDSelect id="m-rule-inheritanceMode"')});}`, { "./hd-ui": hdUi });
+const rulePickerMarkup = renderToStaticMarkup(React.createElement(rulePicker.Fixture));
+const rulePreviewMarkup = renderBit(jsx(ruleSource, "aside", 'm5-impact-preview'), 'const parsed={dormantDays:null,maintenanceDays:2,activityWindowDays:null}');
+const headerMarkup = renderBit(jsx(chatSource, "header", 'className="m3-list-header"'), `
+  const Icon=()=>null;
+  const conversationsAvailable=true,query="",listTab="all",canWriteM3=true,canReadTimeout=true,canTimeout=true,actionChecking=false,qualificationUnknown=false;
   const archiveIds=new Set(["picked"]),setQuery=()=>{},setListTab=()=>{},setContactOpen=()=>{},setBulkOpen=()=>{},archiveBatch=()=>{},openTimeout=()=>{};
   const visible=Array.from({length:12005},(_,i)=>({status:i%3===0?"open":i%3===1?"closed":"transferred",unread:i%2,archived:i%5===0}));
   ${declaration(chatSource, "tabMatch")}
 `);
+const footerMarkup = renderBit(jsx(chatSource, "div", 'className="m3-list-footer"'), 'const listPage=2,setListPage=()=>{},conversationsAvailable=true,filtered=Array.from({length:100});');
 const templates = [
   { id: "short", group: "客服", text: "已发布的回复内容", status: "published" },
   { id: "long", group: "客服", text: "长文案和编号需要换行".repeat(20) + "SKU_WITHOUT_SPACES_".repeat(20), status: "published" },
@@ -53,6 +62,8 @@ const templates = [
 const { exports: tools } = evaluate(toolsSource, {
   "@/lib/admin/m-support-enhancements": { supportEnhancements: { skus: () => { throw new Error("Offline test forbids API calls"); } } },
   "@/lib/admin/error-messages": { displayAdminError: () => "读取失败" },
+  "../design-kit": { Icon: () => null, Modal: () => null },
+  "./hd-ui": { HDSelect: () => null },
 });
 const ctx = { pget: key => key === "I.session.templatesAvailable" ? "1" : JSON.stringify(templates) };
 const toolsMarkup = renderToStaticMarkup(React.createElement(tools.SupportContentTools, { ctx, disabled: false, onInsert() {}, onSelect() {} }));
@@ -62,23 +73,26 @@ function localCss(text) {
 }
 const globals = postcss.parse(fs.readFileSync(path.join(repo, "app/globals.css"), "utf8"));
 globals.walkAtRules(rule => { if (["import", "font-face"].includes(rule.name)) rule.remove(); });
-const inlineStyle = find(chatSource, n => ts.isJsxElement(n) && n.openingElement.tagName.getText() === "style").children.find(ts.isJsxExpression).expression.text;
-const css = globals.toString() + fs.readFileSync(path.join(repo, "app/components/domain-views/m-domain.css"), "utf8") + localCss(ruleSource) + localCss(chatSource) + localCss(toolsSource) + inlineStyle;
-let browser;
-after(async () => { await browser?.close(); });
-async function pageFor(markup, width, theme = "dark", inDomain = true, height = 1100) {
-  browser ??= await chromium.launch({ headless: true });
-  const page = await browser.newPage({ viewport: { width: Math.max(width + 32, 480), height } });
+const css = globals.toString() + fs.readFileSync(path.join(repo, "app/components/domain-views/m-domain.css"), "utf8") + localCss(ruleSource) + localCss(chatSource) + localCss(toolsSource) + localCss(hdUiSource);
+let browser, browserTemp;
+after(async () => { try { await browser?.close(); } finally { if (browserTemp) fs.rmSync(browserTemp, {recursive:true,force:true}); } });
+async function pageFor(markup, width, theme = "dark", inDomain = true, height = 1100, coarse = false) {
+  if (!browser) {
+    browserTemp = fs.mkdtempSync(path.join(os.tmpdir(), "support-layout-"));
+    const log = path.join(browserTemp, "browser.log");
+    browser = await chromium.launch({ headless: true, args: ["--log-file=" + log], env: {...process.env,CHROME_LOG_FILE:log} });
+  }
+  const page = await browser.newPage({ viewport: { width: Math.max(width + 32, 480), height }, hasTouch:coarse });
   let requests = 0;
   await page.route("**/*", route => { requests++; return route.abort(); });
   await page.setContent(`<html data-theme="${theme}"><head><style>${css}\n*{box-sizing:border-box}body{margin:0}.fixture{width:${width}px}</style></head><body><main class="dkpage ${inDomain ? "mdom" : ""} fixture">${markup}</main></body></html>`);
   return { page, async close() { assert.equal(requests, 0, "Offline regression attempted an external resource"); await page.close(); } };
 }
-async function within(locator, container) {
+async function within(locator, container, minimumHeight = 44) {
   const bounds = await container.boundingBox(), children = await locator.all();
   for (const child of children) {
     const box = await child.boundingBox();
-    assert.ok(box && box.width > 0 && box.height >= 44, "Control is hidden or smaller than a 44px target");
+    assert.ok(box && box.width > 0 && box.height >= minimumHeight, `Control is hidden or smaller than a ${minimumHeight}px target`);
     assert.ok(box.x >= bounds.x - 1 && box.x + box.width <= bounds.x + bounds.width + 1, "Control overflows its actual container");
   }
 }
@@ -88,9 +102,36 @@ async function screenshot(page, name) {
   fs.mkdirSync(output, { recursive: true });
   await page.screenshot({ path: path.join(output, name + ".png"), fullPage: true });
 }
+test("shared action headers align with direct and grouped controls without moving data columns", async () => {
+  const cases = [
+    ['direct', '<button class="btn">调组</button>'],
+    ['grouped', '<div class="row"><button class="btn">查看</button><button class="btn">编辑</button></div>'],
+    ['switch', '<button class="sw">开关</button>'],
+    ['data', '24'],
+  ];
+  const markup = cases.map(([id, cell]) => `<table id="${id}" class="m-admin-table"><thead><tr><th>名称</th><th>操作</th></tr></thead><tbody><tr><td><button class="btn">名称</button></td><td>${cell}</td></tr></tbody></table>`).join('');
+  const fixture = await pageFor(markup, 1100);
+  try {
+    const alignments = await fixture.page.locator('table').evaluateAll(tables => tables.map(table => {
+      const header = table.querySelector('th:last-child'), cell = table.querySelector('td:last-child');
+      const lastControl = cell.querySelector('.row')?.lastElementChild ?? cell.querySelector('.btn, .sw');
+      const edge = element => element.getBoundingClientRect().right - parseFloat(getComputedStyle(element).paddingRight);
+      return { id: table.id, header: getComputedStyle(header).textAlign, cell: getComputedStyle(cell).textAlign,
+        firstHeader: getComputedStyle(table.querySelector('th')).textAlign,
+        delta: lastControl ? Math.abs(edge(header) - lastControl.getBoundingClientRect().right) : 0 };
+    }));
+    for (const row of alignments) {
+      assert.equal(row.header, row.id === 'data' ? 'left' : 'right', row.id);
+      assert.equal(row.header, row.cell, row.id + ' header and controls must share alignment');
+      assert.equal(row.firstHeader, 'left');
+      assert.ok(row.delta <= 1, row.id + ' controls must share the header content edge');
+    }
+  } finally { await fixture.close(); }
+});
+
 test("M5 radios retain native size, aligned labels and an entire-row description", async () => {
   for (const [width, theme] of [[760, "dark"], [320, "light"]]) {
-    const fixture = await pageFor(`<div class="m-admin-panel">${radioMarkup}</div>`, width, theme);
+    const fixture = await pageFor(`<section class="m5-service-rules"><div class="m-admin-panel">${radioMarkup}</div></section>`, width, theme);
     try {
       const radios = fixture.page.getByRole("radio");
       assert.equal(await radios.count(), 2);
@@ -100,74 +141,90 @@ test("M5 radios retain native size, aligned labels and an entire-row description
         assert.ok(label.height >= 44, "Radio label is not a usable touch target");
         assert.ok(Math.abs(box.y + box.height / 2 - label.y - label.height / 2) <= 2, "Radio and label do not share a row");
       }
-      const group = fixture.page.getByRole("group", { name: "无顾问客户分配方式" });
+      const group = fixture.page.getByRole("group", { name: "无专属客服客户分配方式" });
       const fieldset = await group.boundingBox(), help = await group.locator("p").boundingBox();
       assert.ok(help.width >= fieldset.width - 4, "Business explanation is trapped in one option's column");
-      await fixture.page.getByRole("radio", { name: "主管分配" }).focus();
-      assert.equal(await fixture.page.getByRole("radio", { name: "主管分配" }).evaluate(el => getComputedStyle(el.closest("label")).outlineStyle), "solid");
+      await fixture.page.getByRole("radio", { name: "客服主管分配" }).focus();
+      assert.equal(await fixture.page.getByRole("radio", { name: "客服主管分配" }).evaluate(el => getComputedStyle(el.closest("label")).outlineStyle), "solid");
       await screenshot(fixture.page, `M5-${width}-${theme}`);
     } finally { await fixture.close(); }
   }
 });
-test("M3 five filters follow stable columns, preserve large counts and keep actions reachable", async () => {
-  for (const width of [280, 300, 360]) {
-    const fixture = await pageFor(`<section class="m3-stage" style="display:block"><div class="m3-col-list">${headerMarkup}</div></section>`, width);
+
+test("M5 fields use matched typography, an inset house caret and flat preview rows", async () => {
+  for (const width of [1100, 320]) {
+    const fixture = await pageFor(`<section class="m-admin-grid m5-service-rules"><div class="m-admin-panel"><div class="m-admin-row"><label for="days">维护间隔</label><input id="days" type="number" value="2" disabled></div>${rulePickerMarkup}</div>${rulePreviewMarkup}</section>`, width);
+    try {
+      const actual = await fixture.page.evaluate(() => {
+        const field = document.querySelector('#days'), trigger = document.querySelector('#m-rule-inheritanceMode'), arrow = trigger.querySelector('svg');
+        return { fieldFont: getComputedStyle(field).fontSize, triggerFont: getComputedStyle(trigger).fontSize,
+          heights: [field,trigger].map(e=>e.getBoundingClientRect().height), inset: trigger.getBoundingClientRect().right-arrow.getBoundingClientRect().right,
+          nativeSelects: document.querySelectorAll('select').length, disabled: trigger.disabled,
+          overflow: document.querySelector('.fixture').scrollWidth > document.querySelector('.fixture').clientWidth,
+          preview: [...document.querySelectorAll('.m5-impact-preview .m-admin-stat')].map(e=>({font:getComputedStyle(e).fontSize,result:getComputedStyle(e.querySelector('strong')).fontSize,border:getComputedStyle(e).borderWidth,background:getComputedStyle(e).backgroundColor})) };
+      });
+      assert.equal(actual.fieldFont,'14px');assert.equal(actual.triggerFont,'14px');assert.ok(actual.heights.every(h=>h>=43.9), JSON.stringify(actual));
+      assert.ok(actual.inset>=14&&actual.inset<=16);assert.equal(actual.nativeSelects,0);assert.equal(actual.disabled,true);assert.equal(actual.overflow,false);
+      assert.equal(actual.preview.length,3);for(const row of actual.preview){assert.equal(row.font,'14px');assert.equal(row.result,'15px');assert.equal(row.border,'0px');assert.equal(row.background,'rgba(0, 0, 0, 0)');}
+    } finally { await fixture.close(); }
+  }
+});
+test("M3 five filters wrap without overlap, preserve large counts and retain 32px desktop / 44px coarse targets", async () => {
+  for (const coarse of [false,true]) for (const width of [280, 300, 360]) {
+    const fixture = await pageFor(`<section class="m3-stage m3-dedicated-stage" style="display:block"><div class="m3-col-list">${headerMarkup}</div></section>`, width, "dark", true, 1100, coarse);
     try {
       const header = fixture.page.locator("header"), buttons = header.locator("button[aria-pressed]");
       assert.equal(await buttons.count(), 5);
       const boxes = await Promise.all((await buttons.all()).map(button => button.boundingBox()));
-      assert.ok(Math.abs(boxes[0].x - boxes[3].x) < 1 && Math.abs(boxes[1].x - boxes[4].x) < 1, "Wrapped filter rows scatter across the toolbar");
-      assert.ok(boxes.every(box => Math.abs(box.width - boxes[0].width) < 1), "Filters have inconsistent columns");
-      await within(header.locator("button"), header);
+      for (let i=0;i<boxes.length;i++) for (let j=i+1;j<boxes.length;j++) {
+        const a=boxes[i],b=boxes[j];
+        assert.ok(a.x+a.width<=b.x+1||b.x+b.width<=a.x+1||a.y+a.height<=b.y+1||b.y+b.height<=a.y+1,"Wrapped filters overlap");
+      }
+      assert.equal(await fixture.page.evaluate(() => matchMedia("(pointer: coarse)").matches),coarse);
+      await within(header.locator(".m3-list-heading button,.m3-list-statuses button"), header, coarse ? 44 : 32);
+      await within(header.locator(".m3-list-secondary-actions button"), header, coarse ? 44 : 28);
       assert.match(await buttons.first().innerText(), /9604/);
       assert.equal(await header.getByRole("button", { name: "主动联系", exact: true }).count(), 1);
       assert.equal(await header.getByRole("button", { name: "圈选群发", exact: true }).count(), 1);
       assert.equal(await header.getByRole("button", { name: "超时策略", exact: true }).count(), 1);
-      await screenshot(fixture.page, `M3-list-${width}`);
+      await screenshot(fixture.page, `M3-list-${width}-${coarse?"coarse":"fine"}`);
     } finally { await fixture.close(); }
   }
 });
-test("short M3 windows scroll the entire inbox without collapsing the list or clipping its pager", async () => {
+test("short M3 windows scroll conversations without collapsing the list or clipping the persistent pager", async () => {
   const rows = Array.from({ length: 10 }, (_, n) => `<button type="button" class="l-btn sm">测试会话 ${n + 1}</button>`).join("");
-  const markup = `<section class="m3-stage" style="height:min(760px,calc(100dvh - 220px));min-height:540px"><div class="m3-col-list">${headerMarkup}<div class="cv-list">${rows}<button type="button" class="l-btn sm">末页入口</button></div></div></section>`;
-  for (const [width, height] of [[360, 600], [1180, 900]]) {
-    const fixture = await pageFor(markup, width, "dark", true, height);
+  const markup = `<section class="m3-stage m3-dedicated-stage" style="display:block;height:min(760px,calc(100dvh - 220px));min-height:540px"><div class="m3-col-list" style="height:100%">${headerMarkup}<div class="cv-list">${rows}</div>${footerMarkup}</div></section>`;
+  for (const [width, height, coarse] of [[360, 600, false], [360, 600, true], [1180, 900, false]]) {
+    const fixture = await pageFor(markup, width, "dark", true, height, coarse);
     try {
       const column = fixture.page.locator(".m3-col-list"), list = column.locator(".cv-list");
       assert.ok((await list.boundingBox()).height >= 160, "Header collapses the conversation list");
-      const scroll = await column.evaluate(el => ({ height: el.clientHeight, total: el.scrollHeight, overflow: getComputedStyle(el).overflowY }));
+      const scroll = await list.evaluate(el => ({ height: el.clientHeight, total: el.scrollHeight, overflow: getComputedStyle(el).overflowY }));
       if (height === 600) {
         assert.equal(scroll.overflow, "auto");
-        assert.ok(scroll.total > scroll.height, "Short inbox has no usable scroll boundary");
-      } else assert.ok(scroll.total <= scroll.height + 1, "Desktop gets an unnecessary outer inbox scrollbar");
-      const pager = list.getByRole("button", { name: "末页入口", exact: true });
-      await pager.scrollIntoViewIfNeeded();
+        assert.ok(scroll.total > scroll.height, "Short conversation list has no usable scroll boundary");
+      } else assert.ok(scroll.total <= scroll.height + 1, "Desktop gets an unnecessary conversation scrollbar");
+      await list.evaluate(el=>{el.scrollTop=el.scrollHeight;});
+      const pager = column.getByRole("button", { name: "下一页", exact: true });
+      await within(column.locator(".m3-list-footer button"), column, coarse ? 44 : 28);
       const outer = await column.boundingBox(), end = await pager.boundingBox();
       assert.ok(end.y >= outer.y - 1 && end.y + end.height <= outer.y + outer.height + 1, "Inbox pager is clipped outside the scroll viewport");
       await screenshot(fixture.page, `M3-inbox-${width}-${height}`);
     } finally { await fixture.close(); }
   }
 });
-test("shared private/bulk content tools have keyboard triggers, stacked fields and wrapping results", async () => {
+test("shared private/bulk content tools keep three reachable picker triggers in narrow containers", async () => {
   for (const [width, theme, inDomain] of [[420, "dark", true], [280, "light", false]]) {
     const fixture = await pageFor(toolsMarkup, width, theme, inDomain);
     try {
       const root = fixture.page.locator(".support-content-tools");
-      await within(root.locator("summary"), root);
-      const summary = root.locator("summary").first();
-      await summary.focus(); await fixture.page.keyboard.press("Enter");
-      assert.equal(await root.locator("details").first().evaluate(el => el.open), true);
-      await within(root.locator("details").first().locator("input,select,button"), root);
+      await within(root.locator("button"), root);
+      assert.equal(await root.getByRole("button").count(), 3);
+      await root.getByRole("button", { name: "回复模板与专属客服话术" }).focus();
+      assert.equal(await fixture.page.evaluate(() => document.activeElement?.tagName), "BUTTON");
+      assert.equal(await root.locator("details,select").count(), 0);
       assert.doesNotMatch(await root.innerText(), /DRAFT_SHOULD_NOT_APPEAR/);
-      for (const field of await root.locator("details").first().locator("label").all()) {
-        const labelText = await field.locator("span").first().boundingBox(), control = await field.locator("input,select").boundingBox();
-        assert.ok(control.y >= labelText.y + labelText.height + 5, "Field label collides with its control");
-      }
-      const link = root.getByRole("combobox", { name: "发送页面链接" });
-      assert.deepEqual(await link.locator("option").evaluateAll(items => items.map(item => item.value)), ["", "HOME", "WALLET", "SUPPORT"]);
       await screenshot(fixture.page, `content-${width}-${theme}`);
-      await summary.focus(); await fixture.page.keyboard.press("Enter");
-      assert.equal(await root.locator("details").first().evaluate(el => el.open), false);
     } finally { await fixture.close(); }
   }
 });
@@ -245,78 +302,14 @@ test("historical read-only hints refer to current-conversation navigation only w
   }
 });
 
-test("shared SKU loading follows a real request, stays honest while disabled, and resumes for private/bulk use", async () => {
-  // Mount the actual React component offline. Only the read API is stubbed;
-  // React effects, native details toggles, cancellation and disabled controls run.
-  const modules = Object.fromEntries([
-    ["react", "react", "react.development.js"],
-    ["react/jsx-runtime", "react", "react-jsx-runtime.development.js"],
-    ["react-dom", "react-dom", "react-dom.development.js"],
-    ["react-dom/client", "react-dom", "react-dom-client.development.js"],
-    ["scheduler", "scheduler", "scheduler.development.js"],
-  ].map(([id, pkg, file]) => [id, fs.readFileSync(path.join(path.dirname(require.resolve(`${pkg}/package.json`)), "cjs", file), "utf8")]));
-  modules["content-tools"] = ts.transpileModule(toolsSource, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  modules["@/lib/admin/m-support-enhancements"] = `exports.supportEnhancements={skus(page,query,signal){return new Promise((resolve,reject)=>window.__skuHarness.requests.push({page,query,signal,resolve,reject}));}};`;
-  modules["@/lib/admin/error-messages"] = 'exports.displayAdminError=()=>"读取失败";';
-  for (const [scope, inDomain, theme] of [["private", true, "dark"], ["bulk", false, "light"]]) {
-    const fixture = await pageFor("", 680, theme, inDomain);
-    try {
-      await fixture.page.addScriptTag({ content: `
-        const sources=${JSON.stringify(modules)},cache={};
-        function load(id){if(id.endsWith(".css"))return {};if(cache[id])return cache[id].exports;if(!sources[id])throw new Error("Unexpected offline module: "+id);const module={exports:{}};cache[id]=module;new Function("module","exports","require","process",sources[id])(module,module.exports,load,{env:{NODE_ENV:"development"}});return module.exports;}
-        const React=load("react"),Tools=load("content-tools").SupportContentTools;
-        window.__skuHarness={requests:[],selected:[]};
-        function Harness(){const [disabled,setDisabled]=React.useState(true);window.__skuHarness.setDisabled=setDisabled;return React.createElement(Tools,{ctx:{pget:key=>key==="I.session.templatesAvailable"?"1":"[]"},disabled,onInsert(){},onSelect:value=>window.__skuHarness.selected.push(value)});}
-        load("react-dom/client").createRoot(document.querySelector("main")).render(React.createElement(Harness));
-      ` });
-      const section = fixture.page.locator("details").nth(1);
-      const summary = section.locator("summary");
-      await summary.focus(); await fixture.page.keyboard.press("Enter");
-      await fixture.page.waitForFunction(() => document.querySelectorAll("details")[1]?.open);
-      const initial = await section.textContent();
-      assert.doesNotMatch(initial, /正在读取在售商品/, `${scope}: disabled guard made no request`);
-      assert.match(initial, /当前暂不能推荐商品.*当前状态不可发送.*操作尚未结束/, `${scope}: reason must cover read-only and busy/pending`);
-      assert.equal(await fixture.page.evaluate(() => window.__skuHarness.requests.length), 0);
-
-      await fixture.page.evaluate(() => window.__skuHarness.setDisabled(false));
-      await fixture.page.waitForFunction(() => window.__skuHarness.requests.length === 1 && document.querySelectorAll("details")[1].textContent.includes("正在读取在售商品"));
-      await fixture.page.evaluate(() => window.__skuHarness.requests[0].resolve({ records: [{ id: "FIXTURE-SKU", name: "离线在售样本" }], total: 21 }));
-      const result = section.getByRole("button", { name: "离线在售样本 · FIXTURE-SKU", exact: true });
-      await result.waitFor(); await result.click();
-      assert.deepEqual(await fixture.page.evaluate(() => window.__skuHarness.selected), [{ kind: "SKU", skuId: "FIXTURE-SKU", name: "离线在售样本" }]);
-      assert.doesNotMatch(await section.textContent(), /正在读取在售商品/);
-
-      await section.getByRole("button", { name: "下一页", exact: true }).click();
-      await fixture.page.waitForFunction(() => window.__skuHarness.requests.length === 2);
-      assert.equal(await fixture.page.evaluate(() => window.__skuHarness.requests[1].page), 2);
-      await fixture.page.evaluate(() => window.__skuHarness.setDisabled(true));
-      await fixture.page.waitForFunction(() => window.__skuHarness.requests[1].signal.aborted);
-      assert.doesNotMatch(await section.textContent(), /正在读取在售商品/);
-      await fixture.page.evaluate(() => window.__skuHarness.requests[1].resolve({ records: [{ id: "STALE", name: "被取消的结果" }], total: 21 }));
-
-      await fixture.page.evaluate(() => window.__skuHarness.setDisabled(false));
-      await fixture.page.waitForFunction(() => window.__skuHarness.requests.length === 3);
-      assert.equal(await fixture.page.evaluate(() => window.__skuHarness.requests[2].page), 2);
-      await fixture.page.evaluate(() => window.__skuHarness.requests[2].reject(new Error("offline failure")));
-      const retry = section.getByRole("button", { name: "重试商品", exact: true });
-      await retry.waitFor(); assert.match(await section.textContent(), /读取失败/);
-      assert.equal(await section.getByText("被取消的结果 · STALE", { exact: true }).count(), 0);
-      await retry.click();
-      await fixture.page.waitForFunction(() => window.__skuHarness.requests.length === 4);
-      await fixture.page.evaluate(() => window.__skuHarness.requests[3].resolve({ records: [], total: 0 }));
-      await section.getByText("没有匹配的在售商品。", { exact: true }).waitFor();
-      assert.doesNotMatch(await section.textContent(), /正在读取在售商品/);
-      await screenshot(fixture.page, `sku-state-${scope}`);
-    } finally { await fixture.close(); }
-  }
-});
+// Actual picker loading, cancellation, disabled and retry behavior lives in support-content-tools-picker.test.mjs.
 
 test("bulk preview displays the actual structured actor-qualification error without exposing unknown backend text", async () => {
   const bulkSource = source(tabs + "support-bulk-composer.tsx");
   const clientSource = source("lib/admin/m-support-client.ts");
   const clientError = find(clientSource, n => ts.isClassDeclaration(n) && n.name?.getText() === "SupportClientError").getText();
   const errorsSource = source("lib/admin/error-messages.ts");
-  const helper = bulkSource.includes("const bulkPreviewError =") ? declaration(bulkSource, "bulkPreviewError") : "const bulkPreviewError=displayAdminError;";
+  const helper = declaration(bulkSource, "isBulkPreviewDenied") + "\n" + declaration(bulkSource, "bulkPreviewError");
   const preview = find(bulkSource, n => ts.isCallExpression(n) && n.expression.getText() === "useEffect" && n.getText().includes('bulkPreview({filters,customerIds:[],excludedIds:[],selectionMode:"ALL_FILTERED"}')).getText();
   const freeze = find(bulkSource, n => ts.isFunctionDeclaration(n) && n.name?.getText() === "freeze").getText();
   const cases = [
@@ -332,8 +325,8 @@ test("bulk preview displays the actual structured actor-qualification error with
     let effect, context;
     const shown = [], steps = [], busyStates = [];
     ({ context } = evaluate(`${errorsSource}\n${clientError}\n${helper}\n${preview};\n${freeze}`, {}, {
-      AbortController, filters: {}, retry: 0, epoch: 0, actorId: 1, selected: new Set(["42"]), busy: false, stamp: { current: "original" },
-      useEffect(run) { effect = run; }, setQuery() {}, setError(text) { shown.push(text); }, setBusy(value) { busyStates.push(value); }, setStep(value) { steps.push(value); },
+      AbortController, filters: {}, retry: 0, epoch: 0, actorId: 1, selected: new Set(["42"]), busy: false, previewDenied: false, stamp: { current: "original" },
+      useEffect(run) { effect = run; }, setQuery() {}, setSelected() {}, setPreviewDenied() {}, setError(text) { shown.push(text); }, setBusy(value) { busyStates.push(value); }, setStep(value) { steps.push(value); },
       supportEnhancements: { bulkPreview() { return Promise.reject(context.cause); } },
     }));
     context.cause = vm.runInContext(row.plainError
@@ -342,7 +335,7 @@ test("bulk preview displays the actual structured actor-qualification error with
     const fallback = vm.runInContext("displayAdminError(cause)", context);
     const cleanup = effect(); await new Promise(resolve => setImmediate(resolve)); cleanup();
     const previewMessage = shown.at(-1);
-    if (row.known) assert.match(previewMessage, /当前账号.*顾问坐席.*群发.*主管/, "The real SupportClientError must reach the preview display boundary");
+    if (row.known) assert.match(previewMessage, /当前账号.*专属客服资格.*群发.*客服主管/, "The real SupportClientError must reach the preview display boundary");
     else assert.equal(previewMessage, fallback, "Other statuses, unknown codes and forged errors keep the original safe fallback");
     assert.doesNotMatch(previewMessage, /SUPPORT_AGENT_UNAVAILABLE|UNKNOWN_PRIVATE_BACKEND_TEXT|未知原因/);
     await vm.runInContext("freeze()", context);
@@ -354,14 +347,17 @@ test("bulk preview displays the actual structured actor-qualification error with
 test("topbar keeps permitted touch entrances visible within 56px at narrow and desktop widths", async () => {
   const topbarSource = source("app/components/shell/topbar.tsx");
   const { exports: authorities } = evaluate(source("lib/admin/shell-authorities.ts"));
+  const { exports: nav } = evaluate(source("lib/nav/console-nav.ts"), { "lucide-react": require("lucide-react") });
+  const { exports: sessionRole } = evaluate(source("lib/admin/session-role.ts"));
   const bRead = authorities.B_DASHBOARD_READ_AUTHORITIES, mRead = authorities.M_CONTENT_READ_AUTHORITIES;
   let bReads = [];
   const { exports: topbar } = evaluate(topbarSource, {
     "lucide-react": require("lucide-react"),
+    "@/lib/nav/console-nav": nav,
+    "@/lib/admin/session-role": sessionRole,
     "next/link": { default: ({ children, prefetch: _prefetch, ...props }) => React.createElement("a", props, children) },
     "@/lib/store/admin-auth": { useAdminAuth: pick => pick({ logoutError: "" }) },
     "./breadcrumb": { Breadcrumb: () => React.createElement("nav", { className: "admin-topbar-breadcrumb flex min-w-0 items-center gap-2" }, React.createElement("span", { className: "admin-topbar-crumb-label" }, "客服中心 · 长名称服务会话页面")) },
-    "./sync-chip": { SyncChip: () => React.createElement("span", { className: "admin-topbar-sync-chip" }, React.createElement("span", { className: "admin-topbar-sync-label" }, "同步失败")) },
     "./utc-clock": { UtcClock: () => React.createElement("span", null, "UTC 08:01:00") },
     "@/app/components/kit/role-badge": { RoleBadge: () => React.createElement("span", null, "总管理员") },
     "@/lib/format": { fmtPct: value => String(value * 100) + "%" },

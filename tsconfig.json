@@ -107,7 +107,11 @@
     ".next-verify-r12-v1/types/**/*.ts",
     ".next-verify-r12-v1/dev/types/**/*.ts",
     ".next-private-media/types/**/*.ts",
-    ".next-private-media/dev/types/**/*.ts"
+    ".next-private-media/dev/types/**/*.ts",
+    ".next-growth-promotions-r22-full-r1-private-media/types/**/*.ts",
+    ".next-growth-promotions-r22-full-r1-private-media/dev/types/**/*.ts",
+    ".next-growth-promotions-r22-full-r1/types/**/*.ts",
+    ".next-growth-promotions-r22-full-r1/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

@@ -1,0 +1,331 @@
+{
+  "revision": "imagegen-continuous-main-canvas-20261014",
+  "tool": "imagegen",
+  "generatedSource": {
+    "file": "background-imagegen-repair-source-20261014.png",
+    "sha256": "ab1330f1ad4383f4f8b5b62aa2b560bb8417b92b6f03666c4c5910ea0908cb16",
+    "size": [
+      1536,
+      1024
+    ],
+    "bytes": 1531010
+  },
+  "approvedSourceSHA256": "e3b92e2fbb593171a4658e058c562ec4dbc9403fecafdf8dd85a719ba71f6c3a",
+  "previousLocalRepair": {
+    "revision": "imagegen-local-hero-repair-20261014",
+    "tool": "imagegen",
+    "generatedSource": {
+      "file": "background-imagegen-repair-source-20261014.png",
+      "sha256": "ab1330f1ad4383f4f8b5b62aa2b560bb8417b92b6f03666c4c5910ea0908cb16",
+      "size": [
+        1536,
+        1024
+      ],
+      "bytes": 1531010
+    },
+    "maskSource": {
+      "file": "background-source-polish-20261013.json",
+      "sha256": "04d0774bfeb51cf44dd602410812044d34cd40ad6a42a04aabd308020269c59b"
+    },
+    "approvedSourceSHA256": "e3b92e2fbb593171a4658e058c562ec4dbc9403fecafdf8dd85a719ba71f6c3a",
+    "initialHoleIds": [
+      "person-1-rank-label",
+      "person-1-rank-number",
+      "person-1-avatar",
+      "person-1-podium-top",
+      "person-1-podium-side",
+      "person-1-podium-floor",
+      "person-2-rank-label",
+      "person-2-rank-number",
+      "person-2-avatar",
+      "person-2-podium-top",
+      "person-2-podium-side",
+      "person-2-podium-floor",
+      "person-3-rank-label",
+      "person-3-rank-number",
+      "person-3-avatar",
+      "person-3-podium-top",
+      "person-3-podium-side",
+      "person-3-podium-floor",
+      "person-4-rank-label",
+      "person-4-rank-number",
+      "person-4-avatar",
+      "person-4-podium-top",
+      "person-4-podium-side",
+      "person-4-podium-floor"
+    ],
+    "expandedRegion": {
+      "shape": "rectangle",
+      "x": 245,
+      "y": 170,
+      "width": 1055,
+      "height": 210
+    },
+    "expansionReason": "Initial 24-hole patch left dark circular reconstruction boundaries. Main agent authorized this single supplemental local hero rectangle, covering actual portrait/podium/rank damage and fourth-place horizontal stretching; sidebar, bottom, and all pixels outside the rectangle remain unchanged.",
+    "initialFailedPass": {
+      "outputs": [
+        {
+          "file": "orbit-surface-main-canvas.png",
+          "offset": [
+            181,
+            0
+          ],
+          "previousSHA256": "119010f2a15272c4f2d19a55b1e115cb8d81303a6ec3aa44cc82db587322def1",
+          "sha256": "7079cc9fe1e3208551af736075be5e63d1b705069635823aeeb7cb80ca5cf6b0",
+          "bytes": 1231101,
+          "changedPixels": 113425,
+          "outsideChangedPixels": 0,
+          "corePixels": 85197,
+          "featherPixels": 33940,
+          "changedWorldBounds": [
+            254,
+            178,
+            1035,
+            183
+          ]
+        },
+        {
+          "file": "orbit-scene-main-clean.png",
+          "offset": [
+            181,
+            0
+          ],
+          "previousSHA256": "484c0f1bf7b5762d9cb9d061a7b7f9e5ef3e470716e4daaa31f7c11f72e75ea4",
+          "sha256": "08de503667011e41f884eb296028f43feb1f89864206786672d4e12af5736977",
+          "bytes": 1140392,
+          "changedPixels": 113425,
+          "outsideChangedPixels": 0,
+          "corePixels": 85197,
+          "featherPixels": 33940,
+          "changedWorldBounds": [
+            254,
+            178,
+            1035,
+            183
+          ]
+        },
+        {
+          "file": "orbit-surface-unified-canvas.png",
+          "offset": [
+            0,
+            0
+          ],
+          "previousSHA256": "6b83df105dcf34257e34929e46f15d6150fc85bef4f00caf88f433c54f86bb67",
+          "sha256": "3e03e95359c8d0b3f892bba69cf97be94334097999f36156963ace32b11733b2",
+          "bytes": 1361455,
+          "changedPixels": 113425,
+          "outsideChangedPixels": 0,
+          "corePixels": 85197,
+          "featherPixels": 33940,
+          "changedWorldBounds": [
+            254,
+            178,
+            1035,
+            183
+          ]
+        }
+      ],
+      "featherPixels": 8,
+      "verdict": "PARTIAL: fourth-place horizontal stretching is removed; circular reconstruction boundaries remain visible in the first three portrait areas. Original hole supports do not guarantee seamless agreement with generated surrounding texture."
+    },
+    "featherPixels": 12,
+    "featherBoundary": "12px inward feather inside [245,170,1055,210]. Weight=smoothstep(clamp(nearest interior edge distance/12)); no exterior feather or change outside the declared rectangle.",
+    "outputs": [
+      {
+        "file": "orbit-surface-main-canvas.png",
+        "offset": [
+          181,
+          0
+        ],
+        "previousSHA256": "119010f2a15272c4f2d19a55b1e115cb8d81303a6ec3aa44cc82db587322def1",
+        "sha256": "b849f30f3a86d070fe61bb47f427bf5ddd4620f78665218d302e7c00026a6e7d",
+        "bytes": 1245805,
+        "changedPixels": 213676,
+        "outsideChangedPixels": 0,
+        "corePixels": 191766,
+        "featherPixels": 27258,
+        "changedWorldBounds": [
+          246,
+          171,
+          1053,
+          208
+        ]
+      },
+      {
+        "file": "orbit-scene-main-clean.png",
+        "offset": [
+          181,
+          0
+        ],
+        "previousSHA256": "484c0f1bf7b5762d9cb9d061a7b7f9e5ef3e470716e4daaa31f7c11f72e75ea4",
+        "sha256": "92e56e73194790cc20d6b14adf6d20010831bcf31f264f9fefb3e3c4c10a0e0c",
+        "bytes": 1153171,
+        "changedPixels": 213676,
+        "outsideChangedPixels": 0,
+        "corePixels": 191766,
+        "featherPixels": 27258,
+        "changedWorldBounds": [
+          246,
+          171,
+          1053,
+          208
+        ]
+      },
+      {
+        "file": "orbit-surface-unified-canvas.png",
+        "offset": [
+          0,
+          0
+        ],
+        "previousSHA256": "6b83df105dcf34257e34929e46f15d6150fc85bef4f00caf88f433c54f86bb67",
+        "sha256": "4fe8c493927da3f26ffa0f7106d08ebafdc95bef7eab98b3dc4250f8f1bdda64",
+        "bytes": 1374728,
+        "changedPixels": 213676,
+        "outsideChangedPixels": 0,
+        "corePixels": 191766,
+        "featherPixels": 27258,
+        "changedWorldBounds": [
+          246,
+          171,
+          1053,
+          208
+        ]
+      }
+    ],
+    "totalSourceAndCandidateBytes": 5304714,
+    "limitation": "Generated reconstruction of previously occluded texture, not recovery of original source pixels. Source-coordinate patching only; no resize, recoloring or global replacement. Candidate requires real-page and independent visual acceptance.",
+    "acceptance": {
+      "outsideMaskByteIdentity": "PASS",
+      "pngRoundTrip": "PASS",
+      "runtime": "PENDING",
+      "independentVisual": "PENDING",
+      "fullPagePixelIdentity": "NOT_PROVEN",
+      "localAssetVisual": "PASS: source-aligned expanded hero patch removes the four circular removal blocks and fourth-place horizontal stretching at native resolution. Remaining source reconstruction outside this scope is unchanged.",
+      "sourceCopySHA256": "PASS",
+      "productionAssets": "ASSET_BYTES_REPLACED; runtime and independent acceptance pending"
+    },
+    "candidateStatus": "ADOPTED_FOR_RUNTIME_ACCEPTANCE",
+    "review": "P2 remains: horizontal seam at y380 and lower reconstruction blocks. Not accepted as final."
+  },
+  "method": "Use continuous generated main artwork at x181..1535. Exact row copies, no scaling, masks, feathering, or recoloring; original sidebar and active marker preserved. Top 20px restored from approved source; no comparison threshold changes.",
+  "outputs": [
+    {
+      "file": "orbit-surface-main-canvas.png",
+      "offset": [
+        181,
+        0
+      ],
+      "size": [
+        1355,
+        1024
+      ],
+      "previousSHA256": "44e6b5da3c308371e75695119a9386a5c52b5767da60717671b29b973c13894c",
+      "sha256": "924f3ef0c1f12370a1eaaaf09b99ac9004b964f75336e707cdc01be48cf9052c",
+      "bytes": 1479259
+    },
+    {
+      "file": "orbit-scene-main-clean.png",
+      "offset": [
+        181,
+        0
+      ],
+      "size": [
+        1355,
+        580
+      ],
+      "previousSHA256": "92241c54e64b331720d83b9f897c7694dd45b6671f3466abedcc539e662c55fd",
+      "sha256": "067b6f9cf5c8dfd08127f06675f3bcc546e25548b2216636bd07452a6b8c01bf",
+      "bytes": 1155771
+    },
+    {
+      "file": "orbit-surface-unified-canvas.png",
+      "offset": [
+        0,
+        0
+      ],
+      "size": [
+        1536,
+        1024
+      ],
+      "previousSHA256": "b0d41cbc18cd3fc411f7be9c3edd81377fcc85ae917f2668e24d08d227d18c15",
+      "sha256": "c73257bb66938af69f15d4e95313611320666a212ee4ed1cbcc4df1f4838107c",
+      "bytes": 1612007
+    }
+  ],
+  "totalSourceAndCandidateBytes": 5778047,
+  "acceptance": {
+    "sourceRowIdentity": "PASS",
+    "navigationUnchanged": "PASS",
+    "pngRoundTrip": "PASS",
+    "runtime": "PENDING",
+    "independentVisual": "PENDING",
+    "fullPagePixelIdentity": "NOT_PROVEN"
+  },
+  "topStripCorrection": {
+    "reason": "Existing exact-source top-strip regression failed after continuous artwork adoption; its large Buffer diagnostic exhausted allocation after 99 seconds. Restored original 20px without relaxing the exact-byte assertion, and switched its diagnostic to a bounded boolean equality check.",
+    "previousOutputs": [
+      {
+        "file": "orbit-surface-main-canvas.png",
+        "offset": [
+          181,
+          0
+        ],
+        "size": [
+          1355,
+          1024
+        ],
+        "previousSHA256": "b849f30f3a86d070fe61bb47f427bf5ddd4620f78665218d302e7c00026a6e7d",
+        "sha256": "44e6b5da3c308371e75695119a9386a5c52b5767da60717671b29b973c13894c",
+        "bytes": 1481346
+      },
+      {
+        "file": "orbit-scene-main-clean.png",
+        "offset": [
+          181,
+          0
+        ],
+        "size": [
+          1355,
+          580
+        ],
+        "previousSHA256": "92e56e73194790cc20d6b14adf6d20010831bcf31f264f9fefb3e3c4c10a0e0c",
+        "sha256": "92241c54e64b331720d83b9f897c7694dd45b6671f3466abedcc539e662c55fd",
+        "bytes": 1157850
+      },
+      {
+        "file": "orbit-surface-unified-canvas.png",
+        "offset": [
+          0,
+          0
+        ],
+        "size": [
+          1536,
+          1024
+        ],
+        "previousSHA256": "4fe8c493927da3f26ffa0f7106d08ebafdc95bef7eab98b3dc4250f8f1bdda64",
+        "sha256": "b0d41cbc18cd3fc411f7be9c3edd81377fcc85ae917f2668e24d08d227d18c15",
+        "bytes": 1614258
+      }
+    ],
+    "rectangle": [
+      181,
+      0,
+      1355,
+      20
+    ],
+    "regression": {
+      "before": {
+        "tests": 10,
+        "passed": 9,
+        "failed": 1,
+        "seconds": 106.427
+      },
+      "after": {
+        "tests": 10,
+        "passed": 10,
+        "failed": 0,
+        "seconds": 0.216
+      }
+    }
+  }
+}

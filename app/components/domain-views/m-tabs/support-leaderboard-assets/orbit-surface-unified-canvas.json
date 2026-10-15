@@ -1,0 +1,56 @@
+{
+  "method": "Raw RGBA row copies in listed order; no resizing, filtering, feathering or recoloring.",
+  "scope": "Fixed 1536px preview only; navigation active surface remains at its approved x0/y297 anchor. All identity, text, data and controls remain DOM.",
+  "sources": [
+    {
+      "file": "orbit-surface-navigation.png",
+      "sha256": "5e870a84a9acd6fae1cc460351d29412fca5509cbc62572fb649d9c1026129f5",
+      "size": [
+        181,
+        1024
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    {
+      "file": "orbit-surface-main-canvas.png",
+      "sha256": "395f7e289e43f6e2f2e9b80ccfeee343fedc13069e985dc560f682eee5f0a5b0",
+      "size": [
+        1355,
+        1024
+      ],
+      "offset": [
+        181,
+        0
+      ]
+    },
+    {
+      "file": "orbit-surface-nav-active.png",
+      "sha256": "1dcc108341ec67f5d37cf43a1c28d98610b60dea211b58d67c2476aa397ed39f",
+      "size": [
+        181,
+        60
+      ],
+      "offset": [
+        0,
+        297
+      ]
+    }
+  ],
+  "output": {
+    "file": "orbit-surface-unified-canvas.png",
+    "sha256": "0caeb1c017810cdcbc44e1a9a751b873a88cdb6a1c30bbb46f8688ab337b2da4",
+    "size": [
+      1536,
+      1024
+    ]
+  },
+  "acceptance": "Main-region approved source byte identity outside declared foreground supports and original five static regions PASS. Runtime seam and full-page fidelity remain pending.",
+  "reconstruction": {
+    "provenance": "docs/design/support-analytics-20261006/leaderboard-orbit-20261010/background-approved-source-restoration-20261014.json",
+    "scope": "Native approved main pixels preserved outside the declared foreground union; only originally occluded foreground supports reconstructed. Unchanged navigation and active surface copied as raw rows.",
+    "limitation": "Reconstructed occluded texture is not original source recovery; this is not 100% source pixels and does not prove the final HTML composition."
+  }
+}

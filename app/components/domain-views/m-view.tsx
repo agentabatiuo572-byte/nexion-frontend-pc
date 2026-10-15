@@ -339,7 +339,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         !conversationNo && !customerId
           || Boolean(conversationNo && ticket.sourceConversationNo === conversationNo)
           || Boolean(customerId && ticket.sourceConversationNo !== "DIRECT" && String(ticket.userId) === customerId)
-          ? { ...ticket, contentRestricted: true, subject: "私聊内容仅当前顾问和主管可阅", messages: ticket.messages.filter((message) => message.author === "internal" || message.author === "system") }
+          ? { ...ticket, contentRestricted: true, subject: "私聊内容仅当前专属客服和客服主管可阅", messages: ticket.messages.filter((message) => message.author === "internal" || message.author === "system") }
           : ticket),
     } : previous);
     void reloadMContent();
@@ -355,7 +355,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     hasMContentSnapshot: Boolean(safeMData),
     isMContentLoading: mLoading,
   });
-  const { ready: conversationStreamReady, reconnectExhausted, reconnectReason, retry: retryConversationStream } = useConversationStream({
+  const { ready: conversationStreamReady, reconnectExhausted, retry: retryConversationStream } = useConversationStream({
     onEvent: handleStreamEvent,
     onReconnectSnapshot: reconcileConversationSnapshot,
     onScopeInvalidated: invalidateScope,
@@ -539,12 +539,11 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     openConfirm: setCf,
   };
 
-  const currentAgent = safeMData?.supportAgents.find((agent) => agent.adminId === session?.adminId);
   const permissionUnknown = session?.role !== "superadmin" && session?.role !== "super"
-    && Boolean(session?.authorities.includes("service_m1_write")) && !safeMData?.supportAgentsAvailable;
+    && session?.role === "support" && session.supportReadModes === undefined;
   const permission = session?.role === "superadmin" || session?.role === "super"
     ? "superadmin"
-    : session?.authorities.includes("service_m1_write") && (currentAgent?.seatType === "MANAGER" || currentAgent?.position.includes("主管"))
+    : session?.supportReadModes?.includes("MANAGED")
       ? "supervisor" : "agent";
   const effectiveM5Pane = permission === "agent" ? "templates" : m5Pane;
 
@@ -593,7 +592,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         <div className="card card-pad" role="alert" style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Icon name="bell" size={16} />
           <span className="dim" style={{ fontSize: 13 }}>
-            实时会话连接已停止自动重试{reconnectReason ? `（${reconnectReason}）` : ""}；当前页面数据可能不是最新状态，列表仍按服务端快照每 5 秒刷新。
+            会话更新已暂停，当前信息可能不是最新状态。请点击“重新连接”或刷新页面。
           </span>
           <span className="sp" />
           <button type="button" className="btn btn-sec btn-sm" onClick={retryConversationStream}>重新连接</button>
@@ -609,12 +608,12 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab !== "M1" && !(tab === "M5" && effectiveM5Pane === "rules") && !safeMData ? (
         <div className="card card-pad">
           <span className="dim" style={{ fontSize: 13 }}>
-            {mError ? "客服中心暂时无法同步数据,请稍后重试。" : mLoading ? "正在加载 M 客服中心真实数据..." : "暂无可展示的 M 客服中心真实数据"}
+            {mError ? "客服中心暂时无法同步数据,请稍后重试。" : mLoading ? "正在加载客服中心…" : "暂无可展示的客服信息"}
           </span>
         </div>
       ) : safeMData && (
         <>
-          {tab === "M2" && <M2Tickets ctx={ctx} advisorQualified={Boolean(safeMData.supportAgentsAvailable && currentAgent?.enabled && currentAgent.seatType === "DEDICATED" && currentAgent.serviceTypes.includes("advisor"))} />}
+          {tab === "M2" && <M2Tickets ctx={ctx} advisorQualified={Boolean(session?.supportReadModes?.includes("PERSONAL"))} />}
           {tab === "M3" && <M3DedicatedChat ctx={ctx} />}
           {tab === "M4" && <M4KbSla ctx={ctx} />}
           {tab === "M5" && effectiveM5Pane === "templates" && <M5Scripts ctx={ctx} showSeatOperations={false} showSeatProfiles={permission !== "agent"} />}
@@ -843,7 +842,7 @@ async function writeTicketRows(
 async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[], reason: string, action?: string, data?: MContentData | null, idempotencyKey?: string) {
   const added = addedRow(prev, next);
   if (added) {
-    throw new Error("请从本人客户详情发起新会话，当前入口不能指定顾问");
+    throw new Error("请从本人客户详情发起新会话，当前入口不能指定专属客服");
   }
 
   const row = changedRow(prev, next);
@@ -852,7 +851,7 @@ async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[],
   if (!before) return;
   const currentAdminId = useAdminAuth.getState().session?.adminId;
   if (!before.customerId || !currentAdminId || before.ownerAdminId !== currentAdminId) {
-    throw new Error("当前账号不是该客户的专属顾问，不能执行对客操作");
+    throw new Error("当前账号不是该客户的专属客服，不能执行对客操作");
   }
   const owner = await supportClient.customerDetail(before.customerId);
   if (owner.agentAdminId !== currentAdminId || !owner.assignmentId) throw new Error("客户归属已变化，请刷新后重试");
@@ -1145,6 +1144,7 @@ async function applyMBackendWrite(
   }
   const catMatch = key.match(/^I\.session\.cat\.(.+)\.enabled$/);
   if (catMatch) {
+    if (catMatch[1] === "support") throw new Error("历史兼容项不能单独启停，请使用专属客服开关");
     await mContentActions.updateCategory(catMatch[1] as SessionType, value === "on", legacyParams[key] === "on", reason, idempotencyKey);
     return;
   }
@@ -1163,7 +1163,7 @@ async function applyMBackendWrite(
     if (payload?.text) {
       const audience = payload.audience?.trim();
       if (!audience) {
-        throw new Error("请选择后端返回的受众");
+        throw new Error("请选择可用受众");
       }
       await mContentActions.createScript(
         {
@@ -1225,6 +1225,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
   const sendInFlight = useRef(false);
   const identityGeneration = useRef(0);
   const authorities = useAdminAuth((state) => state.session?.authorities);
+  const supportReadModes = useAdminAuth((state) => state.session?.supportReadModes);
   const currentRole = useAdminAuth((state) => state.session?.role ?? state.role);
   const currentAdminId = useAdminAuth((state) => state.session?.adminId);
   const authEpoch = useAdminAuth((state) => state.authEpoch);
@@ -1237,13 +1238,9 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
   const isSuperAdmin = currentRole === "super" || currentRole === "superadmin";
   const canWriteM3 = isSuperAdmin || Boolean(authorities?.includes("service_m3_write"));
   const conversationsAvailable = ctx.pget("I.session.conversationsAvailable") === "1";
-  const owned = Boolean(conv?.customerId && currentAdminId && conv.ownerAdminId === currentAdminId && conv.type === "advisor" && conv.status === "open");
-  const canWrite = canWriteM3 && conversationsAvailable && owned && conv?.detailReady === true;
-  let canReviewAll = isSuperAdmin;
-  try {
-    const seat = (JSON.parse(ctx.pget("I.support.agents") ?? "[]") as Array<{ adminId: number; seatType?: string; position?: string }>).find((agent) => agent.adminId === currentAdminId);
-    canReviewAll ||= seat?.seatType === "MANAGER" || Boolean(seat?.position?.includes("主管"));
-  } catch { /* Unknown seat cannot widen private-message access. */ }
+  const owned = Boolean(conv?.customerId && currentAdminId && conv.ownerAdminId === currentAdminId && conv.type !== "ai" && conv.status === "open");
+  const canWrite = canWriteM3 && Boolean(supportReadModes?.includes("PERSONAL")) && conversationsAvailable && owned && conv?.detailReady === true;
+  const canReviewAll = isSuperAdmin || Boolean(supportReadModes?.includes("MANAGED"));
   const privateScopeLost = conversationsAvailable && (!conv || conv.ownerAdminId !== currentAdminId && !canReviewAll);
   const dockSlot = pendingForAdmin?.fingerprint ?? `dock|${currentAdminId}|${conv?.id ?? ""}`;
   const pendingDock = dockCommands.list().find((row) => row.fingerprint === dockSlot && row.conversationNo === conv?.id);
@@ -1325,11 +1322,11 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
         if (generation !== identityGeneration.current) return;
         if (result.status === "SUCCEEDED") {
           dockCommands.forget(recovery.fingerprint, recovery.commandKey);
-          ctx.toast("服务端确认消息已发送。");
+          ctx.toast("消息已发送。");
           void ctx.refreshConversations();
         } else if (result.status === "FAILED") {
-          if (readOnlyRecovery) { dockCommands.forget(recovery.fingerprint, recovery.commandKey); ctx.toast("服务端确认原消息发送失败，待确认编号已清除。"); }
-          else { setCanAbandon(true); setSendError("服务端确认发送失败。请复制原文并清除待确认记录。"); }
+          if (readOnlyRecovery) { dockCommands.forget(recovery.fingerprint, recovery.commandKey); ctx.toast("原消息发送失败，待确认记录已清除。"); }
+          else { setCanAbandon(true); setSendError("消息发送失败。请复制原文并清除待确认记录。"); }
         } else setSendError("发送结果仍在确认，请稍后查询原命令。");
       } catch (cause) {
         if (generation !== identityGeneration.current) return;
@@ -1385,7 +1382,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
         });
         if (generation !== identityGeneration.current) return;
         if (result && result.status !== "SUCCEEDED" && result.status !== "FAILED") { setSendError("发送结果仍在确认，请稍后查询。"); return; }
-        if (result?.status === "FAILED") { setCanAbandon(true); setSendError("服务端确认发送失败。请复制原文并清除待确认记录。"); return; }
+        if (result?.status === "FAILED") { setCanAbandon(true); setSendError("消息发送失败。请复制原文并清除待确认记录。"); return; }
         if (!result) {
           if (!canWrite) { setCanAbandon(true); setSendError("原命令未找到，当前会话不可发送。可复制原文后放弃查询。"); return; }
           if (!dockCommands.isDurablyStored(dockSlot, key)) { setSendError("浏览器无法保存原消息编号，本次尚未发送。恢复存储后重试；请勿刷新或关闭页面。"); return; }
@@ -1410,7 +1407,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       const rejected = submitted && error instanceof SupportClientError && [400, 401, 403, 404, 409, 422].includes(error.status) && !isIndeterminateSupportError(error);
       if (rejected) {
         dockCommands.forget(dockSlot, key);
-        setSendError(`服务端已拒绝本次发送：${displayAdminError(error)}。原文已保留，可修改后重发。`);
+        setSendError(`本次发送已被拒绝：${displayAdminError(error)}。原文已保留，可修改后重发。`);
       } else setSendError(`发送失败或结果待确认：${displayAdminError(error)}。请查询结果并重试。`);
       if (error instanceof SupportClientError && [403, 404].includes(error.status)) onScopeInvalidated(conv.id, conv.customerId);
     } finally {
@@ -1472,7 +1469,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <b style={{ fontSize: 13, fontWeight: 500 }}>{customer}</b>
-            <span className="chip" style={{ height: 18, fontSize: 11 }}>{conv.type === "advisor" ? "专属客服" : "普通客服"}</span>
+            <span className="chip" style={{ height: 18, fontSize: 11 }}>{conv.type === "advisor" ? "专属客服" : "专属客服"}</span>
           </div>
           <div className="dim2" style={{ fontSize: 11, marginTop: 2 }}>接待 {ownerLabel(conv.owner)} · <span className="mono">{conv.id}</span> · {dockRelWhen(conv.lastTs)}</div>
         </div>

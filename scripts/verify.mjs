@@ -156,7 +156,7 @@ function run(label, command, args, gearName) {
  */
 function isHeavyGear([, cmd, args]) {
   const line = [cmd, ...args].join(" ");
-  return /\brun\s+(build|dev|start)\b/.test(line) || /\bnext\s+(build|dev|start)\b/.test(line) || /playwright|tests\/support-select-keyboard\.test\.mjs/i.test(line);
+  return /\brun\s+(build|dev|start)\b/.test(line) || /\bnext\s+(build|dev|start)\b/.test(line) || /playwright|tests\/support-select-keyboard\.test\.mjs|scripts\/growth-promotions-capture\.test\.mjs/i.test(line);
 }
 
 /** git 读命令(只读,失败返回 null —— 拿不到就把记录里的对应字段留空,不编)。 */
@@ -230,6 +230,9 @@ writeRecord({
 // 齿轮表:序号自动派生(新增/重排齿轮不再手工改 [x/N])。本机注意:channel-parity 起的后端依赖齿轮
 // 硬读兄弟仓 nexion-backend,缺仓环境链在该齿断(memory: nexion-backend-not-in-workspace)。
 const GEARS = [
+  ["promotion generated API contract", "node", ["--test", "tests/promotion-generated-types-eol.test.mjs"]],
+  ["promotion interactions and public copy", "node", ["--unhandled-rejections=strict", "--experimental-strip-types", "--test", "scripts/growth-promotions-behavior.test.mjs", "scripts/growth-promotions-read-state.test.mjs", "scripts/growth-promotions-visual-gate.test.mjs", "scripts/growth-promotions-runtime-waits.test.mjs", "scripts/growth-promotions-public-copy.test.mjs", "scripts/growth-promotions-banner.test.mjs"]],
+  ["promotion dialog capture", "node", ["--test", "scripts/growth-promotions-capture.test.mjs"]],
   ["direct referral policy contract", "node", ["--experimental-strip-types", "--test", "tests/direct-referral-policy.test.mjs", "tests/f5-event-runtime-contract.test.mjs"]],
   ["E6 phone binding policy contract", "node", ["--experimental-strip-types", "--test", "tests/e6-phone-binding-contract.test.mjs"]],
   ["E2/E6 phone calibration contract", "node", ["--test", "tests/phone-calibration-contract.test.mjs", "tests/phone-calibration-proxy.test.mjs"]],
@@ -238,16 +241,17 @@ const GEARS = [
   ["Good CSS interaction and layout contract", "node", ["--test", "tests/good-css-hover-contract.test.mjs", "tests/good-css-layout-contract.test.mjs"]],
   ["runtime mock import guard", "node", ["scripts/check-runtime-mock-imports.mjs"]],
   ["admin auth gate sentinel", "node", ["scripts/admin-auth-gate-sentinel.mjs"]],
-  ["admin auth gate contract", "node", ["--test", "--test-concurrency=1", "tests/admin-auth-password-change-gate.test.mjs", "tests/admin-auth-cookie-namespace.test.mjs"]],
+  ["admin auth gate contract", "node", ["--test", "--test-concurrency=1", "tests/admin-auth-password-change-gate.test.mjs", "tests/admin-auth-cookie-namespace.test.mjs", "tests/admin-idle-disabled-behavior.test.mjs", "tests/admin-session-baseline-behavior.test.mjs", "tests/a1-security-contract.test.mjs", "tests/default-avatar-client-forms.test.mjs"]],
   ["workspace path resolver", "node", ["--test", "scripts/nexion-workspace-paths.test.mjs"]],
   ["canon sentinel", "node", ["scripts/canon-sentinel.mjs"]],
   ["canon royalty projection regression", "node", ["--test", "tests/canon-royalty-projection-contract.test.mjs"]],
   ["interaction audit", "node", ["scripts/admin-interaction-audit.mjs"]],
   ["M support surface audit", "node", ["scripts/admin-support-surface-audit.mjs"]],
+  ["Support profile static filled-block border contract", "node", ["--experimental-strip-types", "--test", "tests/inner-block-no-border-sentinel.test.mjs", "tests/c1-acceptance-contract.test.mjs"]],
   ["keyboard submit contract", "node", ["--experimental-strip-types", "--test", "tests/keyboard-submit-contract.test.mjs"]],
   ["M1 pending/failure state contract", "node", ["--test", "tests/m1-acceptance-contract.test.mjs"]],
   ["M3 App support authority contract", "node", ["--test", "tests/m3-acceptance-contract.test.mjs"]],
-  ["Support enhancements exact amounts, payloads, binary ceiling and dock scope", "node", ["--experimental-strip-types", "--experimental-vm-modules", "--test", "tests/support-enhancements-client.test.mjs", "tests/support-enhancements-dock.test.mjs", "tests/support-enhancements-layout.test.mjs", "tests/shared-shell-authority-prefetch-contract.test.mjs", "tests/support-analytics-runtime.test.mjs", "tests/support-analytics-client.test.mjs", "tests/m1-analytics-workbench.test.mjs", "tests/public-leaderboard-client.test.mjs", "tests/public-leaderboard-container.test.mjs", "tests/m3-profile-read-recovery.test.mjs"]],
+  ["Support enhancements exact amounts, payloads, binary ceiling and dock scope", "node", ["--experimental-strip-types", "--experimental-vm-modules", "--test", "tests/support-enhancements-client.test.mjs", "tests/support-enhancements-dock.test.mjs", "tests/support-enhancements-layout.test.mjs", "tests/m5-service-rules-controls.test.mjs", "tests/support-content-tools-picker.test.mjs", "tests/shared-shell-authority-prefetch-contract.test.mjs", "tests/support-session-access.test.mjs", "tests/console-access-defaults.test.mjs", "tests/m3-support-message-links.test.mjs", "tests/support-leaderboard-unified-background.test.mjs", "tests/support-analytics-runtime.test.mjs", "tests/support-analytics-client.test.mjs", "tests/m1-analytics-workbench.test.mjs", "tests/m1-personal-scope.test.mjs", "tests/m1-personal-priority.test.mjs", "tests/s5a-support-client.test.mjs", "tests/m3-manager-race-end-wire.test.mjs", "tests/support-exclusive-identity-r15.test.mjs", "tests/public-leaderboard-client.test.mjs", "tests/public-leaderboard-container.test.mjs", "tests/m3-profile-read-recovery.test.mjs", "tests/support-bulk-preview-permission.test.mjs"]],
   ["Support group management and qualification boundaries", "node", ["--experimental-strip-types", "--experimental-vm-modules", "--test", "tests/support-group-client.test.mjs", "tests/group-management-container.test.mjs", "tests/group-management-v2-boundary.test.mjs", "tests/group-management-v3-boundary.test.mjs", "tests/independent-boundary.test.mjs", "tests/reviewer-v2.test.mjs"]],
   ["Exclusive support scope and durable command recovery", "node", ["--experimental-strip-types", "--test", "tests/exclusive-support-pool-client.test.mjs", "tests/exclusive-support-pool-component.test.mjs", "tests/exclusive-support-recovery-v2.test.mjs", "tests/exclusive-support-m5-qualification-v2.test.mjs", "tests/reviewer-g3.test.mjs"]],
   ["Support shared select real keyboard behavior", "node", ["--test", "tests/support-select-keyboard.test.mjs"]],
@@ -334,7 +338,7 @@ const GEARS = [
   // d-client.ts 派生,整棵 PRD 树逐处核;判别力由 scripts/_redtest-withdrawal-key-parity.mjs 证明。
   ["withdrawal key-name parity", "node", ["scripts/withdrawal-key-parity.mjs"]],
   ["error-copy throat sentinel", "node", ["--experimental-strip-types", "scripts/error-copy-throat-sentinel.mjs"]],
-  ["error-copy throat contract", "node", ["--experimental-strip-types", "--test", "tests/error-messages-backend-unavailable.test.mjs", "tests/fetch-guard.test.mjs", "tests/full-gates-support-error-copy.test.mjs", "tests/full-gates-support-pending-registration.test.mjs"]],
+  ["error-copy throat contract", "node", ["--experimental-strip-types", "--test", "tests/error-messages-backend-unavailable.test.mjs", "tests/support-product-copy.test.mjs", "tests/fetch-guard.test.mjs", "tests/full-gates-support-error-copy.test.mjs", "tests/full-gates-support-pending-registration.test.mjs"]],
   // 生产构建必须排在依赖兄弟仓 nexion-backend 的齿**之前**:它是最贵也最有价值的本地齿,
   // 排在后面等于在缺仓机器上永远跑不到,完成门要求的「verify 全绿(含 production build)」会结构性不可达。
   ["production build", npmCmd, ["run", "build"]],

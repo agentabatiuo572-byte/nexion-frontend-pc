@@ -235,7 +235,7 @@ test("H4 前端活动列表与转盘奖池治理走后端 quest-events 写接口
   assert.match(h3, /deleteH4WheelTier/);
   assert.match(h3, /createH4WheelGuard/);
   // 主推唯一性由后端校验。
-  assert.match(h3, /主推活动唯一性由后端校验/);
+  assert.match(h3, /同时只能有一个进行中的主推活动/);
   // 转盘概率合计必须等于 100(前端预校验,后端复核)。
   assert.match(h3, /转盘档位概率合计必须等于 100%/);
 });

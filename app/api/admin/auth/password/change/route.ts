@@ -4,6 +4,7 @@ import {
   ADMIN_TOKEN_COOKIE,
   ADMIN_PASSWORD_CHANGE_COOKIE,
   ADMIN_TOKEN_MAX_AGE_SECONDS,
+  adminSessionCookieMaxAge,
   readAdminAccessToken,
   sessionRequiresPasswordChange,
 } from "@/lib/admin/require-password-change-cleared";
@@ -112,7 +113,7 @@ export async function POST(request: Request) {
       sameSite: "strict",
       secure,
       path: "/",
-      maxAge: passwordChangeRequired ? 0 : ADMIN_TOKEN_MAX_AGE_SECONDS,
+      maxAge: passwordChangeRequired ? 0 : adminSessionCookieMaxAge(parsed.data.session),
     });
     response.cookies.set(ADMIN_PASSWORD_CHANGE_COOKIE, passwordChangeRequired ? accessToken : "", {
       httpOnly: true,

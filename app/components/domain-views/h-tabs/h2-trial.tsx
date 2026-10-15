@@ -116,7 +116,7 @@ function ParamRow({
   const isProduct = param.key === "trialProductId";
   const currentProduct = isProduct ? trialProducts.find((product) => product.productNo === current) : undefined;
   const displayCurrent = isDay ? `${current} 天`
-    : isQuota || isActualQuota ? (current === "UNKNOWN" ? "UNKNOWN（暂不可用）" : `${current} 张`)
+    : isQuota || isActualQuota ? (current === "UNKNOWN" ? "-" : `${current} 张`)
       : currentProduct ? `${currentProduct.name} · ${current}` : current;
   const readOnly = !!param.readOnly || isActualQuota || ["phaseOpen", "trialPriceUSD"].includes(param.key);
   const productOptions = trialProducts.map((product) => product.productNo);
