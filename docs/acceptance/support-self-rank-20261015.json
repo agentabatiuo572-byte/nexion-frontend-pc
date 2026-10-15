@@ -1,0 +1,107 @@
+{
+  "date": "2026-10-15",
+  "scope": "Only self-rank label/number style; tabs, table and business logic unchanged",
+  "source": {
+    "component": "app/components/domain-views/m-tabs/support-leaderboard.tsx",
+    "componentSha256": "d9110eaea8f512d0264093831afcffff61ce3889fe17e71ef494a61364862bd6",
+    "css": "app/components/domain-views/m-tabs/support-leaderboard.css",
+    "cssSha256": "e3dfb7eec3348de2b38aa784f922d9201db808bcbf4ef9adc535149f509473f8"
+  },
+  "fixture": {
+    "url": "http://127.0.0.1:33109/fixture.html",
+    "kind": "Shared production component, synthetic data, isolated preview shell",
+    "geometry": {
+      "desktop": {
+        "alignment": "center",
+        "columns": 6,
+        "font": "20px",
+        "gap": "8px",
+        "numberCenterDelta": 0,
+        "numberFont": "40px",
+        "pageOverflow": false,
+        "tabs": 3,
+        "viewport": 1536
+      },
+      "narrow": {
+        "alignment": "center",
+        "font": "18px",
+        "inside": true,
+        "numberCenterDelta": 0,
+        "numberFont": "28px",
+        "pageOverflow": false,
+        "viewport": 390
+      },
+      "excludedAttempt": "mobile:true produced layout viewport 980px; excluded from narrow acceptance",
+      "movementDisclosure": {
+        "expanded": true,
+        "escapeClosed": true
+      }
+    },
+    "screenshot": "support-center-20261014-evidence/self-rank-preview.png",
+    "screenshotSha256": "58df9de58d979cd10649bc7c4a4a046b3b67d454202aa648cfc0c36ee73aa592",
+    "result": "PASS"
+  },
+  "independentReview": {
+    "reviewer": "/root/rank_amendment_review_1014",
+    "findings": [],
+    "scope": "Preview tied-rank crop and authenticated backend rank crop plus shared source; no P0/P1/P2; no full-page certification"
+  },
+  "authenticatedBackend": {
+    "status": "PASS",
+    "route": "http://127.0.0.1:33108/service/leaderboard",
+    "actor": 1456,
+    "authentication": "Existing account password plus MFA; real API and database; no response substitution",
+    "scope": "customers / ownGroup",
+    "geometry": {
+      "align": "center",
+      "centerDelta": 0,
+      "crop": {
+        "height": 96,
+        "width": 161,
+        "x": 1423,
+        "y": 352
+      },
+      "font": "20px",
+      "gap": "8px",
+      "numberFont": "40px",
+      "preview": false,
+      "rank": "第 1",
+      "url": "http://127.0.0.1:33108/service/leaderboard",
+      "viewport": {
+        "height": 1244,
+        "width": 1617
+      }
+    },
+    "screenshot": "support-center-20261014-evidence/self-rank-backend.png",
+    "screenshotSha256": "577ab7bac9eb2d273d31955ed354c9c5b614ee4169b63ab5c029d3c06a0e3e9c",
+    "limits": "Actual current rank is 1, not a manufactured tie; tied rank 3 is covered by the shared-component fixture"
+  },
+  "strictPixelComparison": {
+    "status": "NOT_RERUN",
+    "previousRecord": "support-rank-current-fidelity-20261015.json",
+    "previousFailuresUnchanged": true
+  },
+  "limits": [
+    "No full-page visual certification",
+    "No financial, publication or customer-message acceptance"
+  ],
+  "mergeCheck": {
+    "status": "PASS",
+    "head": "8dda0608c8c4e33d1720c4432d5335fbbcb4665e",
+    "tree": "d9b240ca0d79b23f1f51a9065f594d9999ad2ab1",
+    "seconds": 141.2122952,
+    "total": 98,
+    "passed": 98,
+    "failed": 0,
+    "productionBuild": true,
+    "buildGrowthBytes": 30
+  },
+  "doneReview": {
+    "persistedSource": "Shared CSS committed; production build and actual browser match",
+    "requiredElements": "Rank label, numeric rank and next-line movement retained",
+    "interaction": "Existing disclosure opens and Escape closes",
+    "scope": "Owner narrowed to personal rank only; one shared component covers fixture and real page",
+    "invariants": "No currency, value, board, permission or data changes; desktop and 390px responsive states verified",
+    "runtime": "Independent fixture review plus normal authenticated backend crop; no whole-page claim"
+  }
+}

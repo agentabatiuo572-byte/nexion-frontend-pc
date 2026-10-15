@@ -30,6 +30,10 @@ The approved native materials are used at their measured desktop geometry. Four 
 
 ## Evidence and acceptance boundary
 
+On 2026-10-15 the owner explicitly replaced whole-raster pixel equality with independent acceptance of the original layout/materials, later approved amendments, project typography and interactions (decision `call_33a2cf4dd4f348d6ade66b52d59e2da2`). This acceptance is recorded separately from the unchanged strict pixel results. It does not waive real-data, authorization or complete-publication acceptance.
+
+The latest scope is only the self-rank label/number alignment: 20px/40px centered on desktop, existing 18px/28px narrow typography, movement on the following line. See [scoped acceptance](../../../acceptance/support-self-rank-20261015.json). The earlier full-image records below retain their original source hashes and fixture provenance; they are not authenticated-backend screenshots or fresh whole-page acceptance of this CSS correction.
+
 - [Controls and pagination](../../../acceptance/support-rank-controls-20261014.md)
 - [Podium buttons](../../../acceptance/support-podium-buttons-20261015.json)
 - [Touch targets and complete row highlight](../../../acceptance/support-rank-touch-20261015.json)
@@ -38,7 +42,7 @@ The approved native materials are used at their measured desktop geometry. Four 
 
 The latest lossless screenshot is tied to component/CSS hashes. All 13 fixed material regions pass, but the strict full-image comparison remains **FAIL**. The original dynamic masks and maximum channel tolerance of 1 are unchanged. The separate approved-amendment comparison covers only the fixed grid-line bands and green-ring supports with mandatory geometry/style checks; it is not a general waiver for other controls, typography or reconstructed texture. Raw and amended failures remain recorded separately.
 
-The current icon repair changes only the conversation-icon region; the comparison outside that region is byte-identical. The subsequent independent comparison of the two existing source-bound screenshots found no new actionable visual defect. This closes the known missing detail and the request for unavailable source material, not whole-image fidelity. Raster glyphs and additional approved control changes contribute to the old-raster comparison, but the remaining differences have not all been attributed to fonts and none are automatically marked as passed.
+The current icon repair changes only the conversation-icon region; the comparison outside that region is byte-identical. The subsequent independent comparison of the two existing source-bound screenshots found no new actionable visual defect. Raster glyphs and additional approved control changes contribute to the old-raster comparison, but the remaining differences have not all been attributed to fonts. The owner-approved visual acceptance uses the criteria above; no individual differing pixel or strict full-image result is relabeled as passed.
 
 ## Reproduction
 
