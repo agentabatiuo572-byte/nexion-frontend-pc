@@ -427,5 +427,15 @@
     "No pixel masks or tolerances changed",
     "Preview navigation icon only; production authorised shell unchanged",
     "Raw image differences include later approved amendments and unknown generated glyphs"
-  ]
+  ],
+  "manualReview": {
+    "ownerSourceConfirmation": "Only approved generated PNG exists; no font or layered source is pending",
+    "reviewer": "/root/rank_amendment_review_1014",
+    "findings": "No new actionable P0/P1/P2",
+    "method": "Inspected both existing source-bound images plus source and project typography tokens",
+    "limits": "Not all residual differences attributed to fonts; no full-image pass; no mask or tolerance changes",
+    "typography": "Use the existing project font stack and match layout and hierarchy; do not reproduce generated glyph defects",
+    "sourceHead": "f2ff37cc8a4d820f92ef2c4717e5d2dbd7476d7f",
+    "runtimeReexecuted": false
+  }
 }
