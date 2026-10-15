@@ -437,5 +437,21 @@
     "typography": "Use the existing project font stack and match layout and hierarchy; do not reproduce generated glyph defects",
     "sourceHead": "f2ff37cc8a4d820f92ef2c4717e5d2dbd7476d7f",
     "runtimeReexecuted": false
+  },
+  "ownerApprovedVisualAcceptance": {
+    "decision": "call_33a2cf4dd4f348d6ade66b52d59e2da2",
+    "decisionDate": "2026-10-15",
+    "criteria": "Original layout/materials plus approved amendments, project typography and interactions; independent acceptance instead of whole-raster pixel equality",
+    "status": "SCOPE_NARROWED_TO_SELF_RANK",
+    "evidenceReused": [
+      "support-rank-controls-20261014.md",
+      "support-podium-buttons-20261015.json",
+      "support-rank-touch-20261015.json",
+      "support-center-20261014-evidence/rank-ring-motion.json"
+    ],
+    "runtimeReexecutedForCriteriaChange": false,
+    "strictPixelResultsUnchanged": true,
+    "limits": "Does not certify complete real financial/first-payment publication, production deployment or true customer-message acceptance; historical full-image fixture only; current self-rank CSS has separate evidence",
+    "latestScopeRecord": "support-self-rank-20261015.json"
   }
 }

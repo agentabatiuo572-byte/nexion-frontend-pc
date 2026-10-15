@@ -1,0 +1,61 @@
+{
+  "date": "2026-10-15",
+  "scope": "Only self-rank label/number style; tabs, table and business logic unchanged",
+  "source": {
+    "component": "app/components/domain-views/m-tabs/support-leaderboard.tsx",
+    "componentSha256": "d9110eaea8f512d0264093831afcffff61ce3889fe17e71ef494a61364862bd6",
+    "css": "app/components/domain-views/m-tabs/support-leaderboard.css",
+    "cssSha256": "e3dfb7eec3348de2b38aa784f922d9201db808bcbf4ef9adc535149f509473f8"
+  },
+  "fixture": {
+    "url": "http://127.0.0.1:33109/fixture.html",
+    "kind": "Shared production component, synthetic data, isolated preview shell",
+    "geometry": {
+      "desktop": {
+        "alignment": "center",
+        "columns": 6,
+        "font": "20px",
+        "gap": "8px",
+        "numberCenterDelta": 0,
+        "numberFont": "40px",
+        "pageOverflow": false,
+        "tabs": 3,
+        "viewport": 1536
+      },
+      "narrow": {
+        "alignment": "center",
+        "font": "18px",
+        "inside": true,
+        "numberCenterDelta": 0,
+        "numberFont": "28px",
+        "pageOverflow": false,
+        "viewport": 390
+      },
+      "excludedAttempt": "mobile:true produced layout viewport 980px; excluded from narrow acceptance",
+      "movementDisclosure": {
+        "expanded": true,
+        "escapeClosed": true
+      }
+    },
+    "screenshot": "support-center-20261014-evidence/self-rank-preview.png",
+    "screenshotSha256": "58df9de58d979cd10649bc7c4a4a046b3b67d454202aa648cfc0c36ee73aa592",
+    "result": "PASS"
+  },
+  "independentReview": {
+    "reviewer": "/root/rank_amendment_review_1014",
+    "findings": [],
+    "scope": "Preview crop and source only; no authenticated full-page certification"
+  },
+  "authenticatedBackend": {
+    "status": "NOT_RUN"
+  },
+  "strictPixelComparison": {
+    "status": "NOT_RERUN",
+    "previousRecord": "support-rank-current-fidelity-20261015.json",
+    "previousFailuresUnchanged": true
+  },
+  "limits": [
+    "No full-page visual certification",
+    "No financial, publication or customer-message acceptance"
+  ]
+}
