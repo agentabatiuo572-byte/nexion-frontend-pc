@@ -168,5 +168,52 @@
     "additionalHistoricalDatabaseOrBackupAvailable": false,
     "reply": "没有",
     "acceptanceWaiver": false
+  },
+  "freshDomainFeasibility": {
+    "reviewedAt": "2026-10-15",
+    "backendCommit": "d10d36bbb5045287834adf50ae9bfcfb6c2ba3ef",
+    "frontendCommit": "89b1ecb6ab6463cfdd0ba420f7cbc102d0e0a911",
+    "normalClockOnly": true,
+    "sourceScope": "Production customers are read as the financial source universe; search and group filters do not create a separate new-customer dataset",
+    "candidateGate": "Monthly start must be on or after the real qualification cutover, and cutoff must not precede it",
+    "freshDomainToday": "A real mid-month cutover cannot immediately make the current natural-month first-payment/net board COMPLETE, even if its metric rows are complete",
+    "earliestPossibleMonth": "First natural month starting after a legitimate mid-month cutover, provided every other source and candidate proof is complete; not a guarantee or approval",
+    "proofLimit": "A future clean-domain result proves the new complete-data path only, never restores current missing historical facts",
+    "dependencies": [
+      "approved isolated data domain and normal auth/RBAC/MFA",
+      "SERVICE qualification, membership and attribution histories",
+      "normal registration and wallet/payment births",
+      "payment and ledger/source writers, audit and idempotency",
+      "capture and formal leaderboard publication"
+    ],
+    "currentHarness": "Existing UI runtime and launcher are pinned to the existing schema; a fresh domain cannot reuse them unchanged",
+    "decision": "Do not create a new domain or backdate history merely to make acceptance green. A reviewed data-onboarding scope and trusted starting point are required first.",
+    "independentAgents": [
+      "account_read_java_final_1014",
+      "analytics_cleanup_rank_independent_r12"
+    ],
+    "evidence": [
+      {
+        "path": "src/main/java/ffdd/opsconsole/content/mapper/SupportLeaderboardMapper.java",
+        "lines": "52",
+        "sha256": "1af45c18c657cb94355214cd1eef317ed518e554189264f20f0f891ddf2cb0aa"
+      },
+      {
+        "path": "src/main/java/ffdd/opsconsole/content/application/SupportLeaderboardSourceService.java",
+        "lines": "112-128,197-200,507",
+        "sha256": "7cb621719ebd9b76866e831ec983628c83a588853f433e3bb465ae72e3f32ae2"
+      },
+      {
+        "path": "src/test/java/ffdd/opsconsole/content/application/SupportLeaderboardSourceServiceTest.java",
+        "lines": "39-54",
+        "sha256": "0e4bf8a314c11de46c2678c33c6a4243ae6414ec1496845fa6bb7d327c57fcbe"
+      },
+      {
+        "path": "scripts/manual_migrations/20261007_support_groups_qualification_cutover.sql",
+        "lines": "25-28",
+        "sha256": "34a3acee230643ab95146c86f81f73fa91467932298591c6c9c4e98f681a3547"
+      }
+    ],
+    "execution": "Read-only source review; no database query, service start, new dataset, clock change, payment or repeated test run"
   }
 }
