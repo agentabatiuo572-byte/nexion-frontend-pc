@@ -13,7 +13,7 @@ The approved raster is [approved-design.png](approved-design.png), 1536×1024, S
 - The locate action is 112×36 on fine-pointer desktops. All coarse-pointer button, summary and select targets are at least 44×44. Touch rows use continuous cell colors so their highlight covers the entire row.
 - Preview navigation uses the three-dot conversation icon. Production continues supplying its existing authorized shell and identity; the optional preview shell does not grant route access.
 
-Typography follows the existing application font stack. Table headings, common units, groups and footer use 14px; names/actions use 16px; parallel podium metrics use 22px. Generated raster glyphs do not identify a reproducible font family, weight or hinting configuration, so this is not a claim of glyph-byte equality.
+Typography follows the existing application font stack. Table headings, common units, groups and footer use 14px; names/actions use 16px; parallel podium metrics use 22px. The owner confirmed that only the generated PNG exists; no font or layered source is pending. Use the project font stack and compare hierarchy, size, weight, spacing and layout against the raster. Do not trace generated glyph defects or replace live text with bitmap text. This is not a claim of glyph-byte equality.
 
 ## Original image assets and live content
 
@@ -38,7 +38,7 @@ The approved native materials are used at their measured desktop geometry. Four 
 
 The latest lossless screenshot is tied to component/CSS hashes. All 13 fixed material regions pass, but the strict full-image comparison remains **FAIL**. The original dynamic masks and maximum channel tolerance of 1 are unchanged. The separate approved-amendment comparison covers only the fixed grid-line bands and green-ring supports with mandatory geometry/style checks; it is not a general waiver for other controls, typography or reconstructed texture. Raw and amended failures remain recorded separately.
 
-The current icon repair changes only the conversation-icon region; the comparison outside that region is byte-identical. This closes a missing detail, not whole-image fidelity. The original generated font source is still unavailable. Additional approved control changes also contribute to the old-raster comparison; neither fact automatically marks those pixels as passed.
+The current icon repair changes only the conversation-icon region; the comparison outside that region is byte-identical. The subsequent independent comparison of the two existing source-bound screenshots found no new actionable visual defect. This closes the known missing detail and the request for unavailable source material, not whole-image fidelity. Raster glyphs and additional approved control changes contribute to the old-raster comparison, but the remaining differences have not all been attributed to fonts and none are automatically marked as passed.
 
 ## Reproduction
 
