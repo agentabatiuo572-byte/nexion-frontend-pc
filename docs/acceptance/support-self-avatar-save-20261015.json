@@ -1,0 +1,151 @@
+{
+  "date": "2026-10-15",
+  "status": "PASS_SCOPED_SELF_AVATAR_SAVE",
+  "wholeTask": "NOT_COMPLETE",
+  "scope": "Existing pure SERVICE account 5518 normal self-avatar upload, reason confirmation, save and reload; unchanged production code",
+  "frontendCommit": "ba11c66351084f465c18220d3d6545ade415c11c",
+  "backendCommit": "d10d36bbb5045287834adf50ae9bfcfb6c2ba3ef",
+  "database": {
+    "port": 33338,
+    "uuid": "abe359c0-c621-11f1-97ea-a40c6626953d",
+    "schema": "cs_analytics_20261007"
+  },
+  "browser": {
+    "route": "http://127.0.0.1:33108/service/overview",
+    "realBackend": true,
+    "actorAdminId": 5518,
+    "login": "existing password and MFA",
+    "actions": [
+      "download current visible avatar",
+      "select same image",
+      "upload",
+      "reason confirmation",
+      "save",
+      "readback toast",
+      "full reload",
+      "reopen self avatar"
+    ],
+    "afterReload": {
+      "images": [
+        {
+          "height": 512,
+          "loaded": true,
+          "width": 512
+        },
+        {
+          "height": 512,
+          "loaded": true,
+          "width": 512
+        }
+      ],
+      "noNewAvatarDraft": true,
+      "saveDisabled": true
+    },
+    "consoleErrors": [],
+    "sourceImageSha256": "0ca8522c693259dedeb36c830ad6c6a15eebaf48b0d1c564b1ab7fad2656a6f7",
+    "sourceImageBytes": 24090,
+    "toastObservedInSaveActionAx": "本人头像已读回确认。",
+    "toastVisibleAtLaterCheck": false,
+    "normalLogoutConfirmed": true
+  },
+  "before": {
+    "assetId": "173d1108-3e30-4753-900d-f61aed8a81e5",
+    "avatarVersion": 1,
+    "accountVersion": 0
+  },
+  "after": {
+    "assetId": "eafbc551-1e44-408f-85be-4fdfa87044bb",
+    "avatarVersion": 2,
+    "accountVersion": 1
+  },
+  "invariants": {
+    "identityStatusGenderUnchanged": true,
+    "rolesUnchanged": true,
+    "qualificationAndServiceProfileUnchanged": true,
+    "role": "SUPPORT",
+    "qualification": "SERVICE",
+    "newAssetAttachedToSelf": true,
+    "additionalSelfSaveSuccessAudits": 1
+  },
+  "databaseDetail": [
+    {
+      "mime": "image/jpeg",
+      "type": "asset",
+      "bytes": 24091,
+      "state": "ATTACHED",
+      "assetId": "eafbc551-1e44-408f-85be-4fdfa87044bb",
+      "uploaderId": 5518,
+      "attachedAdminId": 5518
+    },
+    {
+      "type": "audit",
+      "action": "SUPPORT_SELF_AVATAR_UPDATED",
+      "result": "SUCCESS",
+      "actorId": 5518,
+      "resourceId": "5518",
+      "resourceType": "A1_ADMIN_ACCOUNT"
+    }
+  ],
+  "source": [
+    {
+      "repo": "frontend",
+      "path": "app/components/domain-views/m-tabs/self-avatar-editor.tsx",
+      "sha256": "43a484c577c85e2873f3c885192c941f7daa338c622a355a8c20db166f7c3de1"
+    },
+    {
+      "repo": "frontend",
+      "path": "app/components/domain-views/a-tabs/account-avatar-picker.tsx",
+      "sha256": "a012e0d81726e9208858b1c1adb37673aa26fb55eceeb37c1b759bf1795d3205"
+    },
+    {
+      "repo": "backend",
+      "path": "src/main/java/ffdd/opsconsole/content/application/SupportSelfAvatarService.java",
+      "sha256": "26aa5adab6aa47e40f374d33dcc811862979a672f0f6ac3e6c7b60c9d8f7a798"
+    }
+  ],
+  "screenshot": {
+    "path": "support-center-20261014-evidence/self-avatar-refreshed.png",
+    "sha256": "4834eaa5b61754de5369068c378aa3717e0eef4f344d8412c3adc3a4eda12054"
+  },
+  "independentReview": {
+    "agent": "/root/account_runtime_preflight_1014",
+    "findings": [],
+    "checked": [
+      "prepared and refreshed screenshots",
+      "browser and database evidence",
+      "actual self-save source path"
+    ],
+    "limit": "Only this normal self-save path; independent reviewer did not inspect live ports"
+  },
+  "completionReview": {
+    "persistence": "Actual save, full reload, DB new asset and version increments",
+    "scope": "Existing self-editor contract only; no new functionality",
+    "interaction": "Normal MFA login, valid image, reason confirmation, refreshed current image and no pending draft",
+    "sharedSurface": "Existing shared picker; previous admin-avatar evidence retained, not rerun",
+    "invariants": "Identity, role and SERVICE qualification unchanged; no funds or customer binding",
+    "runtime": "Production Next and Java services; browser console errors empty; existing 98-check gate reused because product source unchanged"
+  },
+  "resources": {
+    "status": "REQUESTED_STOP",
+    "stopFailed": false,
+    "elapsedSeconds": 260.55637279999996,
+    "beforeBytes": 1609448808,
+    "afterBytes": 1610673150,
+    "growthBytes": 1224342,
+    "filesAdded": 12,
+    "ports18162And33108NotListeningAfterStop": true
+  },
+  "notPerformed": [
+    "new account/database/grants",
+    "fund operations",
+    "customer messaging",
+    "product-code or UI edits",
+    "full-suite rerun",
+    "failure/expiry/conflict/retry avatar paths",
+    "other accounts"
+  ],
+  "limits": [
+    "Same current image was re-uploaded; JPEG was re-encoded, not byte-identical.",
+    "No claim of whole support-center acceptance or production deployment."
+  ]
+}
