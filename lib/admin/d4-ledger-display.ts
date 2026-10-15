@@ -41,6 +41,8 @@ const SUBTYPE_LABELS: Record<string, string> = {
   withdraw_payout_nex_refund: "NEX 出款退回",
   withdraw_refund: "提现退款",
   withdraw_fee_offset_refund: "手续费抵扣退回",
+  staking_early_withdraw: "质押提前赎回",
+  repurchase_early_withdraw: "复投提前退出",
   exchange: "兑换",
   swap: "兑换",
   asset_adjustment: "人工调整",
@@ -49,6 +51,8 @@ const SUBTYPE_LABELS: Record<string, string> = {
 
 /** 后端写入的英文技术备注 → 运营可读说明。 */
 const REMARK_LABELS: Record<string, string> = {
+  "g1 early withdrawal net principal; unearned interest forfeited": "质押提前赎回 · 返还扣除罚金后的本金，未获得的利息作废",
+  "g7 early withdrawal net principal; interest and tickets forfeited": "复投提前退出 · 返还扣除罚金后的本金，利息与抽奖券作废",
   "bank payout net principal": "银行出款 · 净额本金",
   "d7 bank payout fee": "银行出款 · 手续费",
   "d2 withdrawal net principal": "提现 · 净额本金",
