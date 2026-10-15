@@ -1,15 +1,16 @@
 # 客户消息链待测说明
 
-日期：2026-10-14。状态：**明确暂缓，待同事验收，未PASS**。
+更新日期：2026-10-15。状态：**明确暂缓，待同事验收，未PASS**。
 对应原ID：M3-14/15/16；UX-05/RANK-12需要客户新回复的子项。其它非发送资料/工具仍按[总交接](support-center-handoff-20261014.md)验收。
 协议源：[M3实时通信契约](../PRD/M3-会话实时通信契约.md)；产品边界：[M功能契约](../PRD/M-专属客服中心功能契约.md)；[原验收](../specs/support-analytics-20261006/ACCEPTANCE.md)。不重复协议算法，不以交接替代执行。
 
 ## 1. 固定对象和版本
 
 - 客户2005、专属客服1456；会话`CV-OUT-20261013145107836`，原消息7675。后台身份不能代客户身份。
-- FE验收`321bb71ca5dddc030dec0e3507f9545e428d4926`，test合并`9754152fa3184645a6a34686c2ff4778bbe39bc7`。
-- BE验收`c37c582e6acec2547fd11c8a5d37737bb02775a5`，test合并`e19e3ce1a7e471d6e994492f13724b9104a11055`。
-- APP采用[独立交付分支及其交接记录](https://github.com/agentabatiuo572-byte/nexion-frontend-uniapp/blob/codex/cs-app-delivery-20261014/docs/acceptance/support-center-handoff-20261014.md)，完整门仍受H5镜像同步阻塞，未合test。接续前核该分支提交、`src/api/auth-api.ts`、`src/api/support-api.ts`及实际构建，不用历史WIP快照签最终运行。
+- 2026-10-15已对该会话完成后台归档及撤销的正常往返，最终OPEN、archived=0、version=2，新增2条系统记录和2条审计，原客服消息仍为1条。接续时重新读取版本，不能继续硬编码version=0；此操作不构成客户消息链通过。
+- FE当前交付为[PR17](https://github.com/agentabatiuo572-byte/nexion-frontend-pc/pull/17)，test合并`ad399277f65af936c1a12fa10c0941f765f21f63`；最近生产构建及98项检查见[局部验收记录](support-self-rank-20261015.json)。原消息证明仍保留当时源码归属，不重签为新版本消息链通过。
+- BE当前交付为[PR9](https://github.com/agentabatiuo572-byte/nexion-backend/pull/9)，test合并`d10d36bbb5045287834adf50ae9bfcfb6c2ba3ef`；原生产业务验收源码`c37c582e6acec2547fd11c8a5d37737bb02775a5`的证明继续沿用原边界。
+- APP已通过[PR2](https://github.com/agentabatiuo572-byte/nexion-frontend-uniapp/pull/2)合入test，`1ed9d845865d23050fcfab39d0bfaa107a573252`；H5镜像已通过[PR3](https://github.com/agentabatiuo572-byte/nexion-frontend-prototype/pull/3)合入H5，`049a1835f79ce7cb2e0d4c8ebf578d87b88baedb`。两工程均有23项完整门证明，镜像同步不再阻塞交付；见[APP交接](https://github.com/agentabatiuo572-byte/nexion-frontend-uniapp/blob/test/docs/acceptance/support-center-handoff-20261014.md)与[四仓交付快照](support-delivery-20261015.json)。接续前核当前提交、`src/api/auth-api.ts`、`src/api/support-api.ts`及实际构建，代码已交付不等于客户消息链已验。
 - 唯一隔离库`127.0.0.1:33338/cs_analytics_20261007`，UUID`abe359c0-c621-11f1-97ea-a40c6626953d`；FE33108/BE18162均只用任务专属服务。原33337来源库不修改。
 
 ## 2. 已证与仍缺

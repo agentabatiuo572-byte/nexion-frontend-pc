@@ -1,0 +1,142 @@
+{
+  "date": "2026-10-15",
+  "status": "PASS_SINGLE_CONVERSATION_ARCHIVE_ROUNDTRIP",
+  "wholeTask": "NOT_COMPLETE",
+  "scope": "Existing conversation archive and unarchive through the actual backend UI; no product code changes",
+  "source": {
+    "frontendCommit": "ad399277f65af936c1a12fa10c0941f765f21f63",
+    "productionCheckCommit": "8dda0608c8c4e33d1720c4432d5335fbbcb4665e",
+    "productionCheck": "98/98; reused unchanged product source",
+    "backendCommit": "d10d36bbb5045287834adf50ae9bfcfb6c2ba3ef",
+    "renderPath": "MDomainView -> M3DedicatedChat.archiveOne -> archiveConversation -> OpsConversationService.archive"
+  },
+  "environment": {
+    "frontend": "http://127.0.0.1:33108",
+    "database": {
+      "port": 33338,
+      "uuid": "abe359c0-c621-11f1-97ea-a40c6626953d",
+      "schema": "cs_analytics_20261007"
+    },
+    "account": 1456,
+    "authentication": "normal password and MFA"
+  },
+  "before": {
+    "owner": "1456",
+    "status": "OPEN",
+    "version": 0,
+    "archived": 0,
+    "conversation": "CV-OUT-20261013145107836"
+  },
+  "after": {
+    "owner": "1456",
+    "status": "OPEN",
+    "version": 2,
+    "archived": 0,
+    "conversation": "CV-OUT-20261013145107836"
+  },
+  "browser": {
+    "archiveAfterReload": {
+      "archivedCount": 1,
+      "allCount": 32,
+      "openCount": 4,
+      "selectedConversation": "archived"
+    },
+    "unarchiveAfterReload": {
+      "archivedCount": 0,
+      "allCount": 33,
+      "openCount": 5,
+      "selectedConversation": "open"
+    },
+    "normalLogout": true
+  },
+  "databaseReadback": [
+    {
+      "count": 1,
+      "senderType": "agent"
+    },
+    {
+      "count": 2,
+      "senderType": "system"
+    },
+    {
+      "actor": 1456,
+      "count": 1,
+      "action": "I9_CONVERSATION_ARCHIVED",
+      "result": "SUCCESS"
+    },
+    {
+      "actor": 1456,
+      "count": 1,
+      "action": "I9_CONVERSATION_UNARCHIVED",
+      "result": "SUCCESS"
+    }
+  ],
+  "sideEffects": {
+    "customerMessagesSent": 0,
+    "serviceMessagesSent": 0,
+    "systemMessagesAdded": 2,
+    "auditRowsAdded": 2,
+    "versionIncrement": 2,
+    "archiveFlagRestored": true,
+    "ownershipUnchanged": true,
+    "statusUnchanged": true,
+    "newPrivileges": false,
+    "newSchema": false,
+    "fundOperations": false
+  },
+  "independentReview": {
+    "agent": "account_runtime_preflight_1014",
+    "status": "NO_P0_P1_P2",
+    "reviewed": [
+      "browser-proof.json",
+      "archived.png",
+      "restored.png",
+      "live source path"
+    ],
+    "databaseReadback": "main verified with read-only transaction"
+  },
+  "evidence": [
+    {
+      "name": "archived.png",
+      "sha256": "8158d88ee4f88a300c57010f6a4bb074c188ffb60953f8455e9655b05b1e0cf8",
+      "bytes": 70526
+    },
+    {
+      "name": "restored.png",
+      "sha256": "f1aa25e535a58d9b204acd50c92b8dbab709e0b21b788710003c804529db0c2e",
+      "bytes": 80241
+    },
+    {
+      "name": "browser-proof.json",
+      "sha256": "cf89bb481236a624ccc99a747a80651f4e2f64ab2913d9d4ac75ac9fffdd49c1",
+      "bytes": 1953
+    },
+    {
+      "name": "db-readback.json",
+      "sha256": "6f25b99f9e86f5b9d6da833be57a1a7f4562998325c87f98e7422afc9fd735bc",
+      "bytes": 684
+    }
+  ],
+  "resources": {
+    "status": "REQUESTED_STOP",
+    "elapsedSeconds": 330.6662621,
+    "growthBytes": 180202,
+    "newFiles": 8,
+    "frontendLogBytes": 117,
+    "backendLogBytes": 25750
+  },
+  "doneReview": {
+    "persistentWrite": "archive and restore both survived reload, final DB readback matched",
+    "requiredActions": "existing single archive and inverse verified; no missing action in actual route",
+    "interaction": "reason, confirmation, current-owner check, two successful audits",
+    "sameShape": "no product changes; batch archive not re-signed",
+    "invariants": "owner and OPEN retained; no added customer/service message or financial change",
+    "runtime": "actual production build and existing isolated DB, independent review, controlled stop"
+  },
+  "notRun": [
+    "batch archive",
+    "customer-side message chain",
+    "tag writes without the required table permissions",
+    "full-site or full-suite rerun for this evidence-only update"
+  ]
+}
