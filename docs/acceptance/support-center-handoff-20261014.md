@@ -14,23 +14,25 @@
 
 | 对象 | 已验/已交付版本 |
 | --- | --- |
-| FE当前 test交付 | [PR15](https://github.com/agentabatiuo572-byte/nexion-frontend-pc/pull/15)合并 `f2ff37cc8a4d820f92ef2c4717e5d2dbd7476d7f`；tree `1bac359b852fcbdc205b1ddb49c49a6d3676598e`，与98/98通过的`cdf2a197`完全相同；含按钮、右侧分页组、触屏行高及会话图标修正；后续纯文档提交不重签运行结果 |
+| FE当前 test交付 | [PR17](https://github.com/agentabatiuo572-byte/nexion-frontend-pc/pull/17)合并 `ad399277f65af936c1a12fa10c0941f765f21f63`；生产代码与98/98通过的`8dda0608`相同，后续仅补文档与截图；本人排名局部及真实后台证明见[局部验收](support-self-rank-20261015.json)，不重签此前整页场景 |
 | FE资料编辑及弹窗修正 | [PR13](https://github.com/agentabatiuo572-byte/nexion-frontend-pc/pull/13)对应已验源码 `41629931a466cbafbdfba2c9811a314f0f6f9d2f`；tree `440335e9e18be0d422596ca90415aa8677f1509b`。10项定向及98项完整检查通过，后续提交仅整理文档；合并状态以PR为准 |
 | FE既有真实业务验收 | `5dd76706c085b2a37c7298ee43acdbb69bb8ef7c`；tree `09c4a366e2939e179bb852c4c33d267d746a1c09`；BUILD_ID `dobwn_bfm58zZ71Z8_RBJ`。其后样式和目录未知计数补验分别留证，不把旧真实场景改写为最新版本重跑 |
-| BE当前 test交付 | [PR8](https://github.com/agentabatiuo572-byte/nexion-backend/pull/8)合并 `7a7224f0d7cc9c8a0ffdcbc6c60f4f2c92b34df4`，新增单表首次初始化数据库证明；[PR6](https://github.com/agentabatiuo572-byte/nexion-backend/pull/6)测试断言交付及生产业务验收源码`c37c582e6acec2547fd11c8a5d37737bb02775a5`不变，未运行的Java runtime测试仍保持NOT_RUN |
+| BE当前 test交付 | [PR9](https://github.com/agentabatiuo572-byte/nexion-backend/pull/9)合并 `d10d36bbb5045287834adf50ae9bfcfb6c2ba3ef`，整理默认规则组合证据；[PR8](https://github.com/agentabatiuo572-byte/nexion-backend/pull/8)单表初始化及[PR6](https://github.com/agentabatiuo572-byte/nexion-backend/pull/6)测试断言证明保持原归属，生产业务验收源码`c37c582e6acec2547fd11c8a5d37737bb02775a5`不变，未运行的Java runtime测试仍保持NOT_RUN |
 | APP | [PR2](https://github.com/agentabatiuo572-byte/nexion-frontend-uniapp/pull/2)已合入test，`1ed9d845865d23050fcfab39d0bfaa107a573252`；完整门23/23（22 PASS、1有效缓存），无失败或跳过；[APP交接](https://github.com/agentabatiuo572-byte/nexion-frontend-uniapp/blob/test/docs/acceptance/support-center-handoff-20261014.md)保留较早候选失败的边界 |
 | H5 | [PR3](https://github.com/agentabatiuo572-byte/nexion-frontend-prototype/pull/3)已合入`H5`分支，`049a1835f79ce7cb2e0d4c8ebf578d87b88baedb`；完整门23/23（22 PASS、1有效缓存）；官方同步核对2426个共享文件一致 |
 | 前端/后端 | 既有真实验收使用本机`127.0.0.1:33108` / `127.0.0.1:18162`；验收窗口结束已正常停止，接续时先核验，不把历史地址当作当前存活证明 |
 | 隔离数据库 | `127.0.0.1:33338/cs_analytics_20261007`；UUID `abe359c0-c621-11f1-97ea-a40c6626953d` |
 | 角色与对象 | 5518纯SERVICE；1456主管兼SERVICE；1454总管；组410/411；客户2005及既有合法会话 |
 
-四仓当前交付及机器门摘要见[交付证明](support-delivery-20261015.json)。纯文档后续提交不改上述已验实现版本，也不将旧场景重签为新运行结果。
+原始四仓交付及机器门快照见[交付证明](support-delivery-20261015.json)，后续交付以本表为准。纯文档后续提交不改上述已验实现版本，也不将旧场景重签为新运行结果。
 
 接续前重核实际版本、端口进程、DB身份与当前授权，冻结条件后再读取。旧33337来源库不属于本次修改范围；不复制大库、不新建账号/付款/昨日快照，也不扩权填满验收表。运行时配置与密码等经私密渠道提供，不进入仓库。
 
 ## 3. 已证、无需重跑
 
 下表只签所列范围，不表示整组原ID全部通过；未变化的旧证据沿用。
+
+2026-10-15补验：已有客服1456通过正常密码与MFA登录真实后台，对既有会话执行归档→刷新→撤销归档→刷新。归档数0→1→0，全部会话33→32→33；最终仍为OPEN、原归属1456、archived=0、version=2。原客服消息仍为1条，仅新增2条系统记录及2条成功审计。独立agent核对真实入口与两张截图，无P0/P1/P2；只签单会话往返，不代签批量归档或客户消息链。见[归档往返证明](support-archive-roundtrip-20261015.json)。本轮未改产品代码、权限或资金，沿用已通过的98项检查；服务已停止，测试目录增长180,202字节。
 
 | 原ID/类别 | 已证范围与证据摘要 |
 | --- | --- |
@@ -87,7 +89,7 @@
 
 以下为复用证据和控制资源的方法；同事仅执行真实客户消息链，其他类别仍由当前任务负责。
 
-1. 读本交接、原ID及将要复用的证据；核实际版本和授权，只选择尚缺断言。
+1. 读本交接、原ID及将要复用的证据；核实际版本和授权，只选择尚缺断言。源码疑点先从实际路由追到当前渲染组件；未被页面加载的旧组件不能作为当前缺陷，本次旧M3归档条件误判已撤回。
 2. 检查已有窗口是否属于本任务、前后端是否存活且HTTP可达；`STARTED_RUNTIME_UNVERIFIED`和日志Ready不能单独作为就绪证明。
 3. 在冻结条件内执行一个最小流，保存原ID、请求条件、返回状态、步骤、刷新/回读及必要截图；UI、fixture、真实DB明确分层。
 4. 首次相同失败先查receipt/端口/进程与具体错误；连续同因失败停止重试。缺真实前提、权限变化、版本冲突或服务退出即停止对应分支，保留失败，不改数据凑通过。
