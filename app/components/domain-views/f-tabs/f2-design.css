@@ -24,7 +24,7 @@ html[data-theme="dark"] [data-royalty-shell] .fdom { --surface: #101115; --surfa
 .fdom .f2-layout .ph-ttl::before { content: ''; position: absolute; left: -10px; top: 2px; width: 3px; height: 21px; border-radius: 2px; background: var(--cyan); }
 .fdom .f2-layout .ph-sub { display: block; margin-top: 4px; font-size: 12px; line-height: 1.6; color: var(--ink-3); white-space: normal; }
 .fdom .f2-history-link { margin-left: auto; padding: 0; border: 0; background: transparent; color: var(--cyan); font: inherit; font-size: 12px; text-decoration: none; cursor: pointer; }
-.fdom .f2-history-link:hover { text-decoration: underline; }
+@media (hover: hover) and (pointer: fine) { .fdom .f2-history-link:hover { text-decoration: underline; } }
 .fdom .f2-help, .fdom .f2-layout .f-foot { font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 .fdom .f2-layout .fbtn { min-height: 32px; padding: 5px 12px; border-radius: 4px; font-size: 12px; line-height: 1.6; }
 .fdom .f2-layout .fbtn.amp::after { content: none; }
@@ -52,7 +52,7 @@ html[data-theme="dark"] [data-royalty-shell] .fdom { --surface: #101115; --surfa
 .fdom .f2-layout .casc-fixed { font-size: 12px; color: var(--ink-3); }
 .fdom .f2-layout .casc-fixed small { display: none; }
 .fdom .f2-layout .casc-action .fbtn { color: var(--brand); background: transparent; border-color: transparent; min-height: 24px; padding: 0 6px; }
-.fdom .f2-layout .casc-action .fbtn:hover { background: var(--brand-soft); }
+@media (hover: hover) and (pointer: fine) { .fdom .f2-layout .casc-action .fbtn:hover { background: var(--brand-soft); } }
 .fdom .f2-layout .casc-mobile-label { display: none; }
 .fdom .f2-status { display: inline-flex; align-items: center; gap: 7px; }
 .fdom .f2-status::before { content: ''; width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: var(--ink-3); }

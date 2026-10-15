@@ -26,7 +26,8 @@
 .mdom .m-assignment-option { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 44px; padding: 10px 8px; border-radius: 8px; color: var(--v5-ink); font-size: 13.5px; line-height: 1.5; cursor: pointer; }
 .mdom .m-assignment-option input { width: 18px; height: 18px; min-height: 18px; flex: 0 0 18px; margin: 0; padding: 0; accent-color: var(--admin-domain-m); }
 .mdom .m-assignment-option span { min-width: 0; overflow-wrap: anywhere; }
-.mdom .m-assignment-option:has(input:checked), .mdom .m-assignment-option:has(input:not(:disabled)):hover { background: var(--v5-surface-2); }
+.mdom .m-assignment-option:has(input:checked) { background: var(--v5-surface-2); }
+@media (hover: hover) and (pointer: fine) { .mdom .m-assignment-option:has(input:not(:disabled)):hover { background: var(--v5-surface-2); } }
 .mdom .m-assignment-option:has(input:not(:disabled)):active { background: var(--v5-surface-3); }
 .mdom .m-assignment-option:has(input:focus-visible) { outline: 2px solid var(--v5-brand); outline-offset: 2px; }
 .mdom .m-assignment-option:has(input:disabled) { cursor: default; color: var(--v5-ink-2); }

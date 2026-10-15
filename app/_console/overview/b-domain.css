@@ -28,7 +28,7 @@
 .bpage .b-cta { display: inline-flex; align-items: center; gap: 7px; padding: 8px 15px; border-radius: 9px;
   border: 1px solid var(--brand-border); background: var(--brand-soft); color: var(--brand);
   font-size: 13px; font-weight: 600; white-space: nowrap; transition: background .15s, color .15s; }
-.bpage .b-cta:hover { background: var(--brand); color: var(--v5-on-brand); }
+@media (hover: hover) and (pointer: fine) { .bpage .b-cta:hover { background: var(--brand); color: var(--v5-on-brand); } }
 
 /* ---- 卡片标题行 ---- */
 .bpage .ttl-row { display: flex; align-items: center; gap: 9px; margin-bottom: 16px; }

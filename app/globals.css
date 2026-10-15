@@ -301,12 +301,16 @@ body {
   opacity: 0.55;
   vertical-align: middle;
 }
-.has-tip:hover::after {
-  opacity: 1;
+@media (hover: hover) and (pointer: fine) {
+  .has-tip:hover::after {
+    opacity: 1;
+  }
 }
 /* .has-tip 的悬停浮层改由全局 TooltipLayer([data-tip] → .gloss-tip portal)渲染,逃出 overflow 裁切;此处仅保留上方 ⓘ 指示符。 */
-.has-tip:hover {
-  z-index: 201;
+@media (hover: hover) and (pointer: fine) {
+  .has-tip:hover {
+    z-index: 201;
+  }
 }
 @keyframes tipIn {
   from {
@@ -345,9 +349,11 @@ body {
   border: 2px solid transparent;
   background-clip: padding-box;
 }
-*::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--v5-ink-4) 64%, transparent);
-  background-clip: padding-box;
+@media (hover: hover) and (pointer: fine) {
+  *::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--v5-ink-4) 64%, transparent);
+    background-clip: padding-box;
+  }
 }
 
 /* 原生下拉弹层不继承页面底色，必须同时指定主题、文字和背景。 */
@@ -442,7 +448,7 @@ select option:disabled { color: var(--v5-ink-3); }
 .dkpage .card-h .ttl { font-size: 14.5px; font-weight: 600; color: var(--ink); }
 .dkpage .card-h .sub { font-size: 12px; color: var(--ink-3); }
 .dkpage .card-h .more { margin-left: auto; font-size: 12.5px; color: var(--brand); font-weight: 500; cursor: pointer; }
-.dkpage .card-h .more:hover { text-decoration: underline; }
+@media (hover: hover) and (pointer: fine) { .dkpage .card-h .more:hover { text-decoration: underline; } }
 .dkpage .section-divider { height: 1px; background: var(--border); margin: 16px 0; border: 0; }
 
 .dkpage .stat .k { font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
@@ -466,13 +472,14 @@ select option:disabled { color: var(--v5-ink-3); }
 .dkpage .fld::placeholder { color: var(--ink-4); }
 .dkpage select.fld { cursor: pointer; }
 .dkpage .sku-drop { display: block; cursor: pointer; border: 1.5px dashed var(--border-strong); border-radius: 10px; background: var(--surface-3); transition: border-color .15s, background .15s; overflow: hidden; }
-.dkpage .sku-drop:hover, .dkpage .sku-drop.drag { border-color: var(--brand); background: var(--brand-soft); }
+.dkpage .sku-drop.drag { border-color: var(--brand); background: var(--brand-soft); }
+@media (hover: hover) and (pointer: fine) { .dkpage .sku-drop:hover { border-color: var(--brand); background: var(--brand-soft); } }
 .dkpage .sku-drop.drag { border-style: solid; }
 
 .dkpage .chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; padding: 3px 10px; border-radius: var(--r-chip); background: var(--surface-3); color: var(--ink-2); border: 1px solid var(--border); }
 .dkpage .chip.sel { background: var(--brand); color: var(--v5-on-brand); border-color: var(--brand); font-weight: 600; }
 .dkpage .chip.tab { cursor: pointer; }
-.dkpage .chip.tab:hover:not(.sel) { background: var(--surface-2); border-color: var(--border-strong); }
+@media (hover: hover) and (pointer: fine) { .dkpage .chip.tab:hover:not(.sel) { background: var(--surface-2); border-color: var(--border-strong); } }
 
 .dkpage .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
 .dkpage .dot.green { background: var(--success); }
@@ -484,23 +491,23 @@ select option:disabled { color: var(--v5-ink-3); }
 @keyframes hb { 0% { box-shadow: 0 0 0 0 rgba(158, 220, 29, .45); } 70% { box-shadow: 0 0 0 7px rgba(158, 220, 29, 0); } 100% { box-shadow: 0 0 0 0 rgba(158, 220, 29, 0); } }
 
 .dkpage .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 14px; border-radius: 9px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--ink); font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit; white-space: nowrap; }
-.dkpage .btn:hover { background: var(--surface-2); }
+@media (hover: hover) and (pointer: fine) { .dkpage .btn:hover { background: var(--surface-2); } }
 .dkpage .btn.primary { background: var(--brand); border-color: var(--brand); color: var(--v5-on-brand); font-weight: 600; }
-.dkpage .btn.primary:hover { background: var(--brand-deep); }
+@media (hover: hover) and (pointer: fine) { .dkpage .btn.primary:hover { background: var(--brand-deep); } }
 .dkpage .btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
-.dkpage .btn.danger:hover { filter: brightness(.94); }
+@media (hover: hover) and (pointer: fine) { .dkpage .btn.danger:hover { filter: brightness(.94); } }
 .dkpage .btn.ghost { border-color: transparent; background: transparent; color: var(--brand); }
-.dkpage .btn.ghost:hover { background: var(--brand-soft); }
+@media (hover: hover) and (pointer: fine) { .dkpage .btn.ghost:hover { background: var(--brand-soft); } }
 .dkpage .btn.sm { padding: 5px 10px; font-size: 12px; border-radius: 7px; }
 .dkpage .btn:disabled { opacity: .5; cursor: not-allowed; }
 .dkpage .icon-btn { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface); display: grid; place-items: center; color: var(--ink-2); cursor: pointer; flex-shrink: 0; }
-.dkpage .icon-btn:hover { background: var(--surface-2); }
+@media (hover: hover) and (pointer: fine) { .dkpage .icon-btn:hover { background: var(--surface-2); } }
 
 .dkpage .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .dkpage .tbl th { text-align: left; font-size: 11.5px; font-weight: 600; color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; padding: 11px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; background: var(--surface-2); }
 .dkpage .tbl td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; color: var(--ink-2); }
 .dkpage .tbl tr:last-child td { border-bottom: 0; }
-.dkpage .tbl tbody tr:hover { background: var(--surface-2); }
+@media (hover: hover) and (pointer: fine) { .dkpage .tbl tbody tr:hover { background: var(--surface-2); } }
 .dkpage .tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
 .dkpage .tbl-wrap { overflow-x: auto; }
 .dkpage .t-strong { font-weight: 600; color: var(--ink); }
@@ -618,3 +625,21 @@ select option:disabled { color: var(--v5-ink-3); }
 .uvel-logo-mark__light { display: none; }
 html:not([data-theme="dark"]) .uvel-logo-mark__dark { display: none; }
 html:not([data-theme="dark"]) .uvel-logo-mark__light { display: block; }
+
+/* Keyboard focus remains visible, including forced-colors mode. */
+.login-field:focus-visible,
+.dkpage .pager-page-size:focus-visible,
+.dkpage .operator-brief > summary:focus-visible,
+.dkpage button.icon-btn:focus-visible {
+  outline: 2px solid var(--v5-ink);
+  outline-offset: 2px;
+}
+
+/* Keep decorative .icon-btn spans at 34px; only controls need a larger target. */
+.dkpage button.icon-btn { min-inline-size: 44px; min-block-size: 44px; }
+
+.dkpage .operator-brief > summary { list-style: none; }
+.dkpage .operator-brief > summary::-webkit-details-marker { display: none; }
+.dkpage .operator-brief .brief-open,
+.dkpage .operator-brief[open] .brief-closed { display: none; }
+.dkpage .operator-brief[open] .brief-open { display: inline; }

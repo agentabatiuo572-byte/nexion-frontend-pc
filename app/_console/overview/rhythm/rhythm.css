@@ -173,7 +173,7 @@
   background: var(--surface-2);
   text-decoration: none;
 }
-.rhythmpage .b4-link-card:hover { border-color: var(--brand); }
+@media (hover: hover) and (pointer: fine) { .rhythmpage .b4-link-card:hover { border-color: var(--brand); } }
 .rhythmpage .b4-link-card span { color: var(--ink-3); font-size: 11.5px; }
 
 @container bpage (max-width: 980px) {

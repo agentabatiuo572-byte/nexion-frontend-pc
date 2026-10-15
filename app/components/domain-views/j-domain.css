@@ -24,9 +24,9 @@
 .jdom .f-cta { display: inline-flex; align-items: center; gap: 7px; padding: 8px 15px; border-radius: 9px;
   border: 1px solid var(--danger-border); background: var(--danger-soft); color: var(--danger);
   font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; }
-.jdom .f-cta:hover { background: var(--danger); color: #fff; }
+@media (hover: hover) and (pointer: fine) { .jdom .f-cta:hover { background: var(--danger); color: #fff; } }
 .jdom .f-cta.neutral { border-color: var(--border-strong); background: var(--surface-2); color: var(--ink-2); }
-.jdom .f-cta.neutral:hover { background: var(--surface-3); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .jdom .f-cta.neutral:hover { background: var(--surface-3); color: var(--ink); } }
 
 .jdom .f-foot { margin-top: 18px; font-size: 12.5px; line-height: 1.6; color: var(--ink-4); }
 .jdom .f-foot b { color: var(--ink-3); font-weight: 600; }
@@ -36,7 +36,7 @@
 .jdom .seg button { padding: 5px 12px; border-radius: 7px; border: none; background: transparent; color: var(--ink-3);
   font-size: 11.5px; font-family: inherit; cursor: pointer; font-weight: 500; }
 .jdom .seg button.on { background: var(--danger); color: #fff; font-weight: 600; }
-.jdom .seg button:not(.on):hover { background: var(--surface-3); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .jdom .seg button:not(.on):hover { background: var(--surface-3); color: var(--ink); } }
 
 /* ============================ J1 ============================ */
 /* 5 闸 status cards(mini cockpit;5 闸 = 前端 4 + withdraw;Premium/NEXv2 已下线) */
@@ -99,13 +99,13 @@
 .jdom .matrix-tbl .acts { display: flex; gap: 5px; justify-content: flex-end; flex-wrap: wrap; }
 .jdom .matrix-tbl .acts button { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border-strong);
   background: var(--surface-2); color: var(--ink-2); font-size: 11px; cursor: pointer; font-family: inherit; white-space: nowrap; }
-.jdom .matrix-tbl .acts button:hover { background: var(--surface-3); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .jdom .matrix-tbl .acts button:hover { background: var(--surface-3); color: var(--ink); } }
 .jdom .matrix-tbl .acts button.kill { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 32%, transparent);
   background: color-mix(in srgb, var(--danger) 8%, transparent); font-weight: 600; }
-.jdom .matrix-tbl .acts button.kill:hover { background: var(--danger); color: #fff; }
+@media (hover: hover) and (pointer: fine) { .jdom .matrix-tbl .acts button.kill:hover { background: var(--danger); color: #fff; } }
 .jdom .matrix-tbl .acts button.resume { color: var(--success); border-color: color-mix(in srgb, var(--success) 32%, transparent);
   background: var(--success-soft); font-weight: 600; }
-.jdom .matrix-tbl .acts button.resume:hover { background: var(--success); color: #0A0A0A; }
+@media (hover: hover) and (pointer: fine) { .jdom .matrix-tbl .acts button.resume:hover { background: var(--success); color: #0A0A0A; } }
 
 /* 应急快速通道 + B1 备付金检查 双卡 */
 .jdom .j1-side { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
@@ -128,7 +128,7 @@
 .jdom .emer-row .v .u { font-size: 10.5px; color: var(--ink-3); margin-left: 2px; font-weight: 500; }
 .jdom .emer-row .adj { padding: 5px 11px; border-radius: 7px; font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap;
   border: 1px solid var(--warning-border); background: color-mix(in srgb, var(--warning) 10%, transparent); color: var(--warning); font-family: inherit; }
-.jdom .emer-row .adj:hover { background: color-mix(in srgb, var(--warning) 22%, transparent); }
+@media (hover: hover) and (pointer: fine) { .jdom .emer-row .adj:hover { background: color-mix(in srgb, var(--warning) 22%, transparent); } }
 /* recoverGate 只读引用 chip(跟随 B1 红线单源,J 域不持有) */
 .jdom .emer-row .gate-ref { padding: 5px 11px; border-radius: 7px; font-size: 10.5px; font-weight: 600; white-space: nowrap;
   background: var(--brand-soft); color: var(--brand); cursor: help; }
@@ -138,7 +138,7 @@
 .jdom .emer-launch .txt b { color: var(--danger); font-weight: 600; }
 .jdom .emer-launch button { padding: 9px 18px; border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer;
   border: 1px solid var(--danger); background: var(--danger); color: #fff; white-space: nowrap; font-family: inherit; }
-.jdom .emer-launch button:hover { background: #c9542a; }
+@media (hover: hover) and (pointer: fine) { .jdom .emer-launch button:hover { background: #c9542a; } }
 
 /* B1 备付金检查 */
 .jdom .b1cov-hero { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
@@ -189,7 +189,7 @@
 .jdom .rule .row .val { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); font-weight: 600; margin-left: auto; }
 .jdom .rule .row button { padding: 4px 9px; border-radius: 6px; border: 1px solid var(--border-strong);
   background: var(--surface-2); color: var(--ink-3); font-size: 10.5px; cursor: pointer; font-family: inherit; }
-.jdom .rule .row button:hover { background: var(--surface-3); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .jdom .rule .row button:hover { background: var(--surface-3); color: var(--ink); } }
 
 /* ============================ J2 ============================ */
 .jdom .geo-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; margin-bottom: 16px; }
@@ -206,20 +206,20 @@
 .jdom .country-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 7px; font-size: 11.5px;
   font-family: var(--mono); cursor: pointer; transition: background .12s; border: none; }
 .jdom .country-chip.banned { background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); }
-.jdom .country-chip.banned:hover { background: color-mix(in srgb, var(--danger) 22%, transparent); }
+@media (hover: hover) and (pointer: fine) { .jdom .country-chip.banned:hover { background: color-mix(in srgb, var(--danger) 22%, transparent); } }
 .jdom .country-chip.limited { background: color-mix(in srgb, var(--warning) 10%, transparent); color: var(--warning); }
-.jdom .country-chip.limited:hover { background: color-mix(in srgb, var(--warning) 22%, transparent); }
+@media (hover: hover) and (pointer: fine) { .jdom .country-chip.limited:hover { background: color-mix(in srgb, var(--warning) 22%, transparent); } }
 .jdom .country-chip .cc { font-weight: 700; letter-spacing: .04em; }
 .jdom .country-chip .x { opacity: .5; font-size: 12px; line-height: 1; }
-.jdom .country-chip:hover .x { opacity: 1; }
+@media (hover: hover) and (pointer: fine) { .jdom .country-chip:hover .x { opacity: 1; } }
 .jdom .geo-foot { padding: 11px 18px; border-top: 1px dashed var(--border); background: var(--surface-2);
   display: flex; gap: 10px; align-items: center; font-size: 11.5px; color: var(--ink-3); flex-wrap: wrap; }
 .jdom .geo-foot b { color: var(--ink-2); font-weight: 600; }
 .jdom .geo-foot button { padding: 6px 12px; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer;
   border: 1px solid var(--danger-border); background: var(--danger-soft); color: var(--danger); margin-left: auto; font-family: inherit; }
-.jdom .geo-foot button:hover { background: var(--danger); color: #fff; }
+@media (hover: hover) and (pointer: fine) { .jdom .geo-foot button:hover { background: var(--danger); color: #fff; } }
 .jdom .geo-foot button.warn { border-color: var(--warning-border); background: color-mix(in srgb, var(--warning) 12%, transparent); color: var(--warning); }
-.jdom .geo-foot button.warn:hover { background: var(--warning); color: #0A0A0A; }
+@media (hover: hover) and (pointer: fine) { .jdom .geo-foot button.warn:hover { background: var(--warning); color: #0A0A0A; } }
 
 /* per-endpoint 派生表 */
 .jdom .deriv-card { background: var(--surface); border-radius: var(--r-card); margin-bottom: 16px; overflow: hidden; }
@@ -251,7 +251,7 @@
 .jdom .deriv-tbl .acts { display: flex; gap: 5px; justify-content: flex-end; }
 .jdom .deriv-tbl .acts button { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border-strong);
   background: var(--surface-2); color: var(--ink-2); font-size: 11px; cursor: pointer; font-family: inherit; white-space: nowrap; }
-.jdom .deriv-tbl .acts button:hover { background: var(--surface-3); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .jdom .deriv-tbl .acts button:hover { background: var(--surface-3); color: var(--ink); } }
 
 /* Top 拦截 bar + 边缘 IP 判定 */
 .jdom .hits-card { background: var(--surface); border-radius: var(--r-card); padding: 16px 20px 20px; }
@@ -279,7 +279,7 @@
 .jdom .edge-kv .v.warn { color: var(--warning); }
 .jdom .edge-kv .v button { padding: 3px 9px; border-radius: 6px; border: 1px solid var(--border-strong);
   background: var(--surface-2); color: var(--ink-3); font-size: 10.5px; cursor: pointer; font-family: inherit; }
-.jdom .edge-kv .v button:hover { background: var(--surface-3); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .jdom .edge-kv .v button:hover { background: var(--surface-3); color: var(--ink); } }
 .jdom .edge-note { margin-top: 14px; padding: 11px 12px; background: var(--brand-soft); border-radius: 9px;
   font-size: 11.5px; color: var(--ink-2); line-height: 1.5; display: flex; align-items: flex-start; gap: 8px; }
 .jdom .edge-note .ic { color: var(--brand); flex-shrink: 0; margin-top: 1px; }
@@ -294,7 +294,7 @@
 .jdom .emer-strip .txt b { color: var(--danger); font-weight: 600; }
 .jdom .emer-strip button { padding: 9px 18px; border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer;
   border: 1px solid var(--danger); background: var(--danger); color: #fff; white-space: nowrap; font-family: inherit; }
-.jdom .emer-strip button:hover { background: #c9542a; }
+@media (hover: hover) and (pointer: fine) { .jdom .emer-strip button:hover { background: #c9542a; } }
 
 /* ============================ J3 ============================ */
 .jdom .trend-card { background: var(--surface); border-radius: var(--r-card); margin-bottom: 16px; padding: 18px 22px 20px; }
@@ -327,7 +327,7 @@
 .jdom .path-stack { display: flex; height: 26px; border-radius: 7px; overflow: hidden; margin-bottom: 14px; }
 .jdom .path-stack .pseg { display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 11px; color: #fff;
   font-weight: 600; cursor: default; transition: filter .12s; min-width: 0; overflow: hidden; white-space: nowrap; }
-.jdom .path-stack .pseg:hover { filter: brightness(1.18); }
+@media (hover: hover) and (pointer: fine) { .jdom .path-stack .pseg:hover { filter: brightness(1.18); } }
 .jdom .path-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 24px; font-size: 12px; }
 @container jdom (max-width: 760px) { .jdom .path-list { grid-template-columns: 1fr; } }
 .jdom .path-it { display: grid; grid-template-columns: 16px 1fr 60px 70px; gap: 10px; align-items: center; padding: 5px 0; border-bottom: 1px dashed var(--border); }
@@ -347,7 +347,7 @@
 .jdom .accts-page button { height: 26px; padding: 0 9px; border-radius: 6px; border: 1px solid var(--border-strong);
   background: var(--surface-2); color: var(--ink-2); font-size: 11px; font-family: inherit; cursor: pointer; white-space: nowrap; }
 .jdom .accts-page button:disabled { opacity: .45; cursor: not-allowed; }
-.jdom .accts-page button:not(:disabled):hover { background: var(--surface-3); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .jdom .accts-page button:not(:disabled):hover { background: var(--surface-3); color: var(--ink); } }
 .jdom .accts-tbl { display: grid; grid-template-columns: 110px 90px 110px minmax(220px, 1fr) 130px 100px 180px; min-width: 1020px; font-size: 12.5px; }
 .jdom .accts-tbl .hd, .jdom .accts-tbl .rw { display: contents; }
 .jdom .accts-tbl .c { padding: 11px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 7px; min-width: 0; }
@@ -369,7 +369,7 @@
 .jdom .accts-tbl .acts { display: flex; gap: 5px; justify-content: flex-end; }
 .jdom .accts-tbl .acts a { padding: 5px 9px; border-radius: 6px; border: 1px solid var(--border-strong);
   background: var(--surface-2); color: var(--ink-2); font-size: 11px; cursor: pointer; text-decoration: none; white-space: nowrap; }
-.jdom .accts-tbl .acts a:hover { background: var(--surface-3); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .jdom .accts-tbl .acts a:hover { background: var(--surface-3); color: var(--ink); } }
 .jdom .accts-tbl .acts a.k1 { color: var(--brand-2); border-color: var(--brand-2-border); background: var(--brand-2-soft); font-weight: 600; }
 .jdom .accts-tbl .acts a.c2 { color: var(--danger); border-color: var(--danger-border); background: var(--danger-soft); font-weight: 600; }
 .jdom .accts-tbl .acts a.off { opacity: .35; cursor: not-allowed; pointer-events: none; }
@@ -448,17 +448,17 @@
 .jdom .pb-ft .acts { display: flex; gap: 6px; }
 .jdom .pb-ft .acts button { padding: 6px 12px; border-radius: 7px; border: 1px solid var(--border-strong);
   background: var(--surface-2); color: var(--ink-2); font-size: 11.5px; cursor: pointer; font-family: inherit; white-space: nowrap; }
-.jdom .pb-ft .acts button:hover { background: var(--surface-3); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .jdom .pb-ft .acts button:hover { background: var(--surface-3); color: var(--ink); } }
 .jdom .pb-ft .acts button.edit { color: var(--ink-3); }
 .jdom .pb-ft .acts button.drill { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 32%, transparent);
   background: color-mix(in srgb, var(--warning) 10%, transparent); font-weight: 600; }
-.jdom .pb-ft .acts button.drill:hover { background: color-mix(in srgb, var(--warning) 22%, transparent); }
+@media (hover: hover) and (pointer: fine) { .jdom .pb-ft .acts button.drill:hover { background: color-mix(in srgb, var(--warning) 22%, transparent); } }
 .jdom .pb-ft .acts button.exec { color: var(--danger); border-color: var(--danger-border); background: var(--danger-soft); font-weight: 600; }
-.jdom .pb-ft .acts button.exec:hover { background: var(--danger); color: #fff; }
+@media (hover: hover) and (pointer: fine) { .jdom .pb-ft .acts button.exec:hover { background: var(--danger); color: #fff; } }
 .jdom .pb-ft .acts button.exec.emer { background: var(--danger); color: #fff; border-color: var(--danger); }
-.jdom .pb-ft .acts button.exec.emer:hover { background: #c9542a; }
+@media (hover: hover) and (pointer: fine) { .jdom .pb-ft .acts button.exec.emer:hover { background: #c9542a; } }
 .jdom .pb-ft .acts button:disabled { opacity: .35; filter: grayscale(.65); cursor: not-allowed; }
-.jdom .pb-ft .acts button:disabled:hover { color: inherit; filter: grayscale(.65); }
+@media (hover: hover) and (pointer: fine) { .jdom .pb-ft .acts button:disabled:hover { color: inherit; filter: grayscale(.65); } }
 
 /* SLA / 执行框架 双卡 */
 .jdom .top-side { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
@@ -508,4 +508,4 @@
 .jdom .exec-tbl .acts { display: flex; gap: 5px; justify-content: flex-end; }
 .jdom .exec-tbl .acts button { padding: 5px 9px; border-radius: 6px; border: 1px solid var(--border-strong);
   background: var(--surface-2); color: var(--ink-2); font-size: 11px; cursor: pointer; font-family: inherit; white-space: nowrap; }
-.jdom .exec-tbl .acts button:hover { background: var(--surface-3); color: var(--ink); }
+@media (hover: hover) and (pointer: fine) { .jdom .exec-tbl .acts button:hover { background: var(--surface-3); color: var(--ink); } }

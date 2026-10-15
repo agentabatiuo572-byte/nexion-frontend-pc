@@ -119,7 +119,7 @@
 .dlpage .thr { display: inline-flex; align-items: center; gap: 9px; padding: 9px 13px;
   border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2);
   cursor: pointer; font-family: inherit; transition: border-color .15s, background .15s; }
-.dlpage .thr:hover { border-color: var(--border-strong); background: var(--surface-3); }
+@media (hover: hover) and (pointer: fine) { .dlpage .thr:hover { border-color: var(--border-strong); background: var(--surface-3); } }
 .dlpage .thr .ic { color: var(--ink-3); display: grid; place-items: center; }
 .dlpage .thr .nm { font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
 .dlpage .thr .vl { font-family: var(--font-jet-mono), monospace; font-size: 13px; font-weight: 600;
@@ -141,7 +141,7 @@
 .dlpage .rt { border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-2);
   padding: 15px; cursor: pointer; transition: border-color .15s, transform .15s, background .15s;
   display: flex; flex-direction: column; }
-.dlpage .rt:hover { border-color: var(--border-strong); transform: translateY(-2px); background: var(--surface-3); }
+@media (hover: hover) and (pointer: fine) { .dlpage .rt:hover { border-color: var(--border-strong); transform: translateY(-2px); background: var(--surface-3); } }
 .dlpage .rt .rk { font-size: 11.5px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
 .dlpage .rt .rt-foot { margin-top: auto; }
 .dlpage .rt .rv { font-size: 28px; font-weight: 600; letter-spacing: -.02em; margin-top: 12px; color: var(--ink);

@@ -206,6 +206,7 @@ export function DataListPager({
       <label className="row" style={{ gap: 6, marginLeft: "auto", color: "var(--ink-3)", fontSize: 12 }}>
         每页
         <select
+          className="pager-page-size"
           aria-label={`${label} 每页条数`}
           value={pageSize}
           onChange={(e) => onPageSizeChange(Number(e.target.value))}
@@ -216,7 +217,6 @@ export function DataListPager({
             borderRadius: 8,
             padding: "5px 9px",
             fontSize: 12,
-            outline: "none",
           }}
         >
           {pageSizeOptions.map((size) => <option key={size} value={size}>{size}</option>)}
@@ -757,26 +757,21 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
 }
 
 export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, completionCopy, auditSink }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; hasEdit?: boolean; completionCopy?: string; auditSink?: "a2" | "local-history" }) {
-  const [open, setOpen] = useState(false);
-  const detailId = useId();
   const brief = buildOperatorBrief(action, detail, !!amplifies, !!hasEdit, auditSink === "local-history")
     .map((row) => row.label === "影响" && completionCopy ? { ...row, text: completionCopy } : row);
   const detailText = compactText(plainText(detail));
   return (
-    <div className="tint brand" style={{ marginBottom: 16, border: 0 }}>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        aria-controls={detailId}
+    <details className="tint brand operator-brief" style={{ marginBottom: 16, border: 0 }}>
+      <summary
         style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: "transparent", border: 0, padding: 0, cursor: "pointer", color: "var(--ink)", fontWeight: 600, fontSize: 13 }}
       >
         <span>执行摘要</span>
         <span className="tiny" style={{ color: "var(--brand)", fontWeight: 500 }}>
-          {open ? "收起 " : "查看详情 "}<span aria-hidden="true">{open ? "▲" : "▼"}</span>
+          <span className="brief-closed">查看详情 <span aria-hidden="true">▼</span></span>
+          <span className="brief-open">收起 <span aria-hidden="true">▲</span></span>
         </span>
-      </button>
-      <div id={detailId} hidden={!open}>
+      </summary>
+      <div>
         <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
           {brief.map((row) => (
             <div key={row.label} style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10, alignItems: "start" }}>
@@ -796,7 +791,7 @@ export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, complet
           )}
         </div>
       </div>
-    </div>
+    </details>
   );
 }
 

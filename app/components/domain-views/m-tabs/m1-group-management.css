@@ -7,7 +7,7 @@
 .mdom .m1-group-management .m-admin-table th { font-size:12.5px; white-space:nowrap; }
 .m1-group-management .m-group-name { display:block; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mdom .m1-group-management .m-group-count { min-width:40px; min-height:40px; padding:4px 0; border:0; background:transparent; color:var(--admin-domain-m); font:inherit; font-variant-numeric:tabular-nums; cursor:pointer; }
-.mdom .m1-group-management .m-group-count:hover:not(:disabled) { text-decoration:underline; }
+@media (hover: hover) and (pointer: fine) { .mdom .m1-group-management .m-group-count:hover:not(:disabled) { text-decoration:underline; } }
 .mdom .m1-group-management .m-group-count:disabled { color:var(--v5-ink-3); cursor:default; }
 .mdom .m1-group-management .m-group-count:focus-visible { outline:2px solid var(--v5-brand); outline-offset:2px; border-radius:4px; }
 @container mdom (max-width:900px) {

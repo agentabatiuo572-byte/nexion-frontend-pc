@@ -246,7 +246,7 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="username"
                 aria-label="账号"
-                className="min-w-0 flex-1 bg-transparent py-2 text-[13px] outline-none"
+                className="min-w-0 flex-1 bg-transparent py-2 text-[13px] login-field"
                 style={{ color: "var(--v5-ink)" }}
               />
             </div>
@@ -269,7 +269,7 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
                 aria-label="密码"
-                className="min-w-0 flex-1 bg-transparent py-2 text-[13px] outline-none"
+                className="min-w-0 flex-1 bg-transparent py-2 text-[13px] login-field"
                 style={{ color: "var(--v5-ink)" }}
               />
             </div>
@@ -315,7 +315,7 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
                     onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                     autoComplete="one-time-code"
                     aria-label="一次性验证码"
-                    className="min-w-0 flex-1 bg-transparent py-2 font-mono text-[15px] tracking-[0.25em] outline-none"
+                    className="min-w-0 flex-1 bg-transparent py-2 font-mono text-[15px] tracking-[0.25em] login-field"
                   />
                 </div>
               </>
@@ -341,7 +341,7 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
                 onChange={(e) => setNewPassword(e.target.value)}
                 autoComplete="new-password"
                 aria-label="新密码"
-                className="min-w-0 flex-1 bg-transparent py-2 text-[13px] outline-none"
+                className="min-w-0 flex-1 bg-transparent py-2 text-[13px] login-field"
                 style={{ color: "var(--v5-ink)" }}
               />
             </div>
@@ -363,7 +363,7 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 autoComplete="new-password"
                 aria-label="确认新密码"
-                className="min-w-0 flex-1 bg-transparent py-2 text-[13px] outline-none"
+                className="min-w-0 flex-1 bg-transparent py-2 text-[13px] login-field"
                 style={{ color: "var(--v5-ink)" }}
               />
             </div>

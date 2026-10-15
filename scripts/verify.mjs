@@ -238,6 +238,7 @@ const GEARS = [
   ["E2/E6 phone calibration contract", "node", ["--test", "tests/phone-calibration-contract.test.mjs", "tests/phone-calibration-proxy.test.mjs"]],
   ["L1 selected-source export contract", "node", ["--experimental-strip-types", "--test", "tests/l1-export-source-flow.test.mjs", "tests/l1-narrow-phase-readback.test.mjs", "tests/l-final10-protocol-repair-contract.test.mjs"]],
   ["typecheck", npxCmd, ["--no-install", "tsc", "--noEmit"]],
+  ["Good CSS interaction and layout contract", "node", ["--test", "tests/good-css-hover-contract.test.mjs", "tests/good-css-layout-contract.test.mjs"]],
   ["runtime mock import guard", "node", ["scripts/check-runtime-mock-imports.mjs"]],
   ["admin auth gate sentinel", "node", ["scripts/admin-auth-gate-sentinel.mjs"]],
   ["admin auth gate contract", "node", ["--test", "--test-concurrency=1", "tests/admin-auth-password-change-gate.test.mjs", "tests/admin-auth-cookie-namespace.test.mjs", "tests/admin-idle-disabled-behavior.test.mjs", "tests/admin-session-baseline-behavior.test.mjs", "tests/a1-security-contract.test.mjs", "tests/default-avatar-client-forms.test.mjs"]],

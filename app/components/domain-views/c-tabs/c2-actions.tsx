@@ -145,7 +145,7 @@ function formatCountdown(totalSeconds: number) {
   const safe = Math.max(0, Math.floor(totalSeconds));
   const minutes = Math.floor(safe / 60);
   const seconds = safe % 60;
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 function errorMessage(error: unknown) {
@@ -992,7 +992,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       {mirror && (
         <Drawer title={`用户 H5 只读镜像 · ${text(jsonRecord(mirror.user).userNo)}`} onClose={() => { setMirror(null); setMirrorToken(""); }}>
           <div className="ctint warn" style={{ marginBottom: 12 }}>
-            <b>模拟登录中 · 全程只读</b>　剩余 <b data-testid="impersonation-countdown">{formatCountdown(mirrorRemainingSeconds)}</b> · 到期 {formatDate(mirror.expiresAt)}
+            <b>模拟登录中 · 全程只读</b>　剩余 <b className="inline-block min-w-[5ch] tabular-nums" data-testid="impersonation-countdown">{formatCountdown(mirrorRemainingSeconds)}</b> · 到期 {formatDate(mirror.expiresAt)}
             <div style={{ marginTop: 6 }}>右上角关闭仅收起镜像，会话仍在服务端计时；完成排查请使用“退出并终止”。</div>
           </div>
           <ImpersonationUserScreen screen={jsonRecord(mirror.screen)} />

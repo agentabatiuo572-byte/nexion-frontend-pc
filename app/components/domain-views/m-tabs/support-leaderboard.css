@@ -35,7 +35,8 @@
  .sl-select select::picker-icon{display:none}
  .sl-select select::picker(select){inset:auto;top:calc(anchor(bottom) + 6px);left:anchor(left);position-try-fallbacks:flip-block,flip-inline,flip-block flip-inline;min-width:max(anchor-size(width),180px);max-width:min(320px,calc(100vw - 24px));max-height:264px;margin:0;padding:5px;background:#111719;border:1px solid var(--sl-border);border-radius:9px;color:var(--sl-ink);font:400 14px/20px var(--font-v5,inherit);box-shadow:0 12px 28px #0008;overflow-y:auto}
  .sl-select option{display:flex;align-items:center;gap:12px;min-height:36px;padding:8px 10px;border:0;border-radius:5px;background:transparent;color:var(--sl-ink);font-size:14px;line-height:20px;white-space:normal;overflow-wrap:anywhere}
- .sl-select option:hover,.sl-select option:focus-visible{background:#232d27;outline:none}
+ .sl-select option:focus-visible{background:#232d27;outline:none}
+@media (hover: hover) and (pointer: fine) { .sl-select option:hover{background:#232d27;outline:none} }
  .sl-select option:checked{background:#c4ff361a;color:var(--sl-lime);font-weight:550}
  .sl-select option:disabled{color:var(--sl-muted);opacity:.5}
  .sl-select option::checkmark{order:1;margin-left:auto;color:var(--sl-lime)}
@@ -126,7 +127,7 @@
 }
 .sl-self .sl-locate{width:112px;max-width:100%;height:36px;flex-shrink:0;align-self:center;justify-self:center;padding:0 14px;gap:6px;border:1px solid #d4ff6b!important;border-radius:7px;background:#b9ed33!important;color:#172100!important;font-size:14px!important;font-weight:550!important;line-height:20px;box-shadow:inset 0 1px 0 #ffffff35;transition:background-color .15s,box-shadow .15s}
 .sl-locate>svg{width:16px;height:16px;stroke-width:1.75}
-.sl-self .sl-locate:hover{background:#ccff49!important;box-shadow:inset 0 1px 0 #ffffff50,0 0 0 3px #c4ff3614}
+@media (hover: hover) and (pointer: fine) { .sl-self .sl-locate:hover{background:#ccff49!important;box-shadow:inset 0 1px 0 #ffffff50,0 0 0 3px #c4ff3614} }
 .sl-self .sl-locate:active{background:#a9db2c!important;box-shadow:inset 0 1px 2px #0002}
 @media(pointer:coarse){
  .support-leaderboard :is(button,summary,select){min-width:44px;min-height:44px}

@@ -357,7 +357,7 @@ export function C1Search({
             </TabGroup>
           </div>
         </div>
-        <div className="grid gap-2 px-3 pb-3 pt-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6" style={{ borderBottom: "1px solid var(--line)" }}>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] gap-2 px-3 pb-3 pt-2 [&>*]:min-w-0 [&>*]:w-full" style={{ borderBottom: "1px solid var(--line)" }}>
           <select aria-label="生命周期" value={filters.tier} onChange={(event) => changeFilter("tier", event.target.value)}>
             <option value="">全部生命周期</option>{[0, 1, 2, 3, 4, 5].map((value) => <option key={value} value={`L${value}`}>L{value}</option>)}
           </select>

@@ -366,7 +366,19 @@ test("shared CSS and unchanged select primitives preserve the original M baselin
   assert.equal(currentCss.split("padding: 0 10px; padding-right: 12px;").length - 1, 2, "Exactly global and scoped triggers carry the spacing correction");
   assert.equal(currentCss.match(/font-size: 14px;/g)?.length, 4, "Exactly global/scoped trigger and option fonts become 14px");
   const originalFontsCss = currentCss.replace(/^(\.hd-select|\.mdom \.hd-select) \{([^\n]+)\}/gm, rule => rule.replace("font-size: 14px;", "font-size: 13.5px;")).replace(/^(\.hd-select-opt|\.mdom \.hd-select-opt) \{([^\n]+)\}/gm, rule => rule.replace("font-size: 14px;", "font-size: 13px;"));
-  assert.equal(originalFontsCss.replaceAll("padding: 0 10px; padding-right: 12px;", "padding: 0 10px;").replace("/* Original M declarations and selectors are retained; trigger right padding is explicitly 12px. */", "/* M declarations are copied verbatim from m-domain.css, including their selectors. */"), baselineSharedCss, "Only the two exact right-padding additions, four exact 14px font corrections and original explanatory comment differ from frozen v3 CSS");
+  // The reviewed touch fix gates only hover. Keep the frozen baseline and
+  // allow exactly these four transformations; focus and declarations stay exact.
+  let reviewedBaselineCss = baselineSharedCss;
+  for (const selector of [".hd-select:hover", ".mdom .hd-select:hover", ".mdom .hd-select-opt:hover"]) {
+    const rules = baselineSharedCss.split("\n").filter(line => line.startsWith(`${selector} {`));
+    assert.equal(rules.length, 1, `Exactly one frozen hover rule for ${selector}`);
+    reviewedBaselineCss = reviewedBaselineCss.replace(rules[0], `@media (hover: hover) and (pointer: fine) { ${rules[0]} }`);
+  }
+  const mixedRules = baselineSharedCss.split("\n").filter(line => line.startsWith(".hd-select-opt:hover, .hd-select-opt:focus-visible {"));
+  assert.equal(mixedRules.length, 1, "Exactly one frozen mixed hover/focus rule");
+  const declarations = mixedRules[0].slice(mixedRules[0].indexOf("{"));
+  reviewedBaselineCss = reviewedBaselineCss.replace(mixedRules[0], `.hd-select-opt:focus-visible ${declarations}\n@media (hover: hover) and (pointer: fine) { .hd-select-opt:hover ${declarations} }`);
+  assert.equal(originalFontsCss.replaceAll("padding: 0 10px; padding-right: 12px;", "padding: 0 10px;").replace("/* Original M declarations and selectors are retained; trigger right padding is explicitly 12px. */", "/* M declarations are copied verbatim from m-domain.css, including their selectors. */"), reviewedBaselineCss, "Only the exact reviewed spacing, fonts, comment and hover guards differ from frozen v3 CSS; focus remains unconditional");
   assert.equal(importedCss.map(css => css.content.match(/!important/g)?.length ?? 0).reduce((a, b) => a + b, 0), 1, "Only the existing reduced-motion priority remains");
 });
 
@@ -555,5 +567,38 @@ for (const theme of ["dark", "light"]) {
       await style.evaluate(element => element.textContent = "");
       assert.deepEqual(await sample(), otherA, "A1 unrelated confirmation is unchanged by the local avatar stylesheet");
     } finally { await style.evaluate(element => element.remove()); }
+  });
+}
+
+for (const theme of ["dark", "light"]) {
+  test(`operator brief ${theme}: native disclosure, keyboard focus and close target`, async () => {
+    await mount({ domain: "m", theme, modal: true, avatarConfirmation: "other" });
+    const details = page.locator("details.operator-brief");
+    const summary = details.locator("summary");
+    assert.equal(await details.getAttribute("open"), null);
+    await summary.focus();
+    // Earlier avatar cases use a pointer; enter through Tab to exercise keyboard focus.
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Tab");
+    assert.equal(await summary.evaluate(el => el === document.activeElement), true);
+    assert.equal(await summary.evaluate(el => getComputedStyle(el).outlineStyle), "solid");
+    for (const key of ["Enter", "Space", "Enter", "Space"]) {
+      const wasOpen = await details.evaluate(el => el.open);
+      await page.keyboard.press(key);
+      await page.waitForFunction(wasOpen => document.querySelector("details.operator-brief").open !== wasOpen, wasOpen);
+    }
+    assert.equal(await details.getAttribute("open"), null);
+    const close = page.locator(".modal button.icon-btn");
+    const rect = await close.boundingBox();
+    assert.ok(rect.width >= 44 && rect.height >= 44);
+    await page.locator("#root").evaluate(root => {
+      const span = document.createElement("span"); span.className = "icon-btn"; span.id = "decorative-icon"; root.append(span);
+    });
+    const decorative = await page.locator("#decorative-icon").boundingBox();
+    assert.equal(decorative.width, 34); assert.equal(decorative.height, 34);
+    await summary.focus();
+    await page.keyboard.press("Escape");
+    await page.locator("#closed").waitFor();
+    assert.equal(await page.evaluate(() => window.trace.escapes), 1);
   });
 }
