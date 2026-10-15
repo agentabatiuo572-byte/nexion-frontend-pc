@@ -135,7 +135,7 @@ export function M1GroupManagement({ mode, initialGroupId, onBack, onChanged, onV
         <label className="field"><span>目标组</span>{saving || pending ? <p>{draft.target?.name ?? "待分组"}</p> : <HDSelect value={draft.targetGroupId} options={[...(mode === "ALL" ? [{ value: "", label: "待分组" }] : []), ...targetGroups.map(g => ({ value: g.id, label: g.name }))]} placeholder="选择启用的目标组" onChange={targetGroupId => { setDraft({ ...draft, targetGroupId, target: undefined, stale: true }); if (draft.member) void previewMove(draft.member.adminId, targetGroupId, draft); }} />}</label>
       </>}
       {draft.kind === "OWNER" && <p>移交负责人会更新本组管理范围，影响成员与待分配队列；个人绑定和历史事件保留。成员 {currentDetail?.memberCount ?? "-"} 人，待分配 {currentDetail?.routedCustomers ?? "-"} 人。</p>}
-      <label className="field"><span>操作理由（8–200 字）</span><textarea value={draft.reason} maxLength={200} disabled={saving || !!pending} onChange={e => setDraft({ ...draft, reason: e.target.value })} /></label>{previewBusy && <p role="status">正在读取最新成员与来源、目标组版本…</p>}{draft.stale && <p role="alert">预览尚未核实或版本已变化，请重读后再次确认。</p>}{error && <p role="alert" className="m-admin-error">{error}</p>}
+      <label className="field"><span>操作理由（8–200 字）</span><textarea value={draft.reason} maxLength={200} disabled={saving || !!pending || previewBusy} onChange={e => setDraft({ ...draft, reason: e.target.value })} /></label>{previewBusy && <p role="status">正在读取最新成员与来源、目标组版本…</p>}{draft.stale && <p role="alert">预览尚未核实或版本已变化，请重读后再次确认。</p>}{error && <p role="alert" className="m-admin-error">{error}</p>}
     </Modal>}
   </section>;
 }

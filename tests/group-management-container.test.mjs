@@ -42,6 +42,22 @@ test("ALL unassignment cannot submit before source/member re-preview; MANAGED ca
   const h=harness({props:{mode:"ALL",initialGroupId:"5"},implementations:{groups:()=>[group()],detail:()=>detail("5",[rawMember]),member:()=>member(),moveSupportGroupMember:()=>({})}});await h.flush();h.click("调组");h.reason();assert.equal(h.button("确认并提交").props.disabled,true);h.click("重读预览");await h.flush();h.click("确认并提交");await h.flush();assert.equal(h.calls.find(c=>c.name==="moveSupportGroupMember").args[1].sourceGroupVersion,3);assert.equal(h.calls.find(c=>c.name==="moveSupportGroupMember").args[1].targetGroupId,null);h.unmount();
   const managed=harness({props:{initialGroupId:"5"},implementations:{groups:()=>[group()],detail:()=>detail("5",[rawMember]),member:()=>member()}});await managed.flush();managed.click("调组");assert.equal(managed.selects().at(-1).props.options.some(o=>o.value===""),false);managed.unmount();
 });
+test("member preview locks the reason until success or failure and preserves it through retry",async()=>{
+  let preview;
+  const h=harness({props:{initialGroupId:"5"},implementations:{groups:()=>[group(),group("6")],detail:id=>detail(id,id==="5"?[rawMember]:[]),member:()=>preview ? preview.promise : member()}});
+  const reason=()=>all(h.tree,n=>n.type==="textarea")[0].props;
+  await h.flush();h.click("调组");h.reason();
+  preview=deferred();h.selects().at(-1).props.onChange("6");h.commit();await h.flush();
+  assert.equal(reason().disabled,true);assert.equal(reason().value,why);assert.equal(h.button("确认并提交").props.disabled,true);
+  preview.reject(new Error("preview unavailable"));await h.flush();
+  assert.equal(reason().disabled,false);assert.equal(reason().value,why);assert.equal(h.button("确认并提交").props.disabled,true);
+  h.reason("保留补充的调组理由");preview=deferred();h.selects().at(-1).props.onChange("6");h.commit();await h.flush();
+  assert.equal(reason().disabled,true);assert.equal(reason().value,"保留补充的调组理由");
+  preview.resolve(member());await h.flush();
+  assert.equal(reason().disabled,false);assert.equal(reason().value,"保留补充的调组理由");assert.equal(h.button("确认并提交").props.disabled,false);
+  h.reason("预览完成后修改理由");assert.equal(reason().value,"预览完成后修改理由");
+  assert.equal(h.calls.some(c=>c.name==="moveSupportGroupMember"),false);h.unmount();
+});
 test("quota-before-dispatch stops CREATE and preserves original record in memory",async()=>{const persisted=storage(),h=harness({storage:persisted});await createDraft(h);persisted.quota=true;h.click("确认并提交");await h.flush();assert.equal(h.calls.some(c=>c.name==="createSupportGroup"),false);assert.equal(h.store.list().length,1);assert.match(text(h.tree),/未能持久保存/);h.unmount();});
 test("unknown retry and refresh reuse exact CREATE key/body/reason; status UNKNOWN or 404 cannot release it",async()=>{
   const persisted=storage(), h=harness({storage:persisted,implementations:{createSupportGroup:()=>{throw new Error("timeout");},command:()=>({status:"UNKNOWN"})}});await createDraft(h);const staleConfirm=h.button("确认并提交").props.onClick;h.click("确认并提交");await h.flush();const original=h.calls.find(c=>c.name==="createSupportGroup");staleConfirm();h.commit();await h.flush();assert.equal(h.calls.filter(c=>c.name==="createSupportGroup").length,1);assert.doesNotMatch(text(h.tree),/使用原资料与命令重试/);const retried=h.calls.filter(c=>c.name==="createSupportGroup").at(-1);assert.equal(retried.args[1],original.args[1]);assert.deepEqual(retried.args[0],original.args[0]);assert.deepEqual(h.store.list()[0].intent.payload,original.args[0]);h.click("查询原操作");await h.flush();assert.equal(h.store.list().length,1);h.unmount();
