@@ -821,7 +821,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
 
   const serviceStatus = !conversationsAvailable ? "会话服务暂不可用。请检查连接后重试。" : lostAccess ? "当前会话权限已变化，请刷新列表。" : "";
   const title = selected?.customer || selected?.profile?.nickname || (selected?.customerId ? `客户 ${selected.customerId}` : firstDetail?.displayName || (requestedCustomerIdValid && requestedCustomerId ? `客户 ${requestedCustomerId}` : "会话消息"));
-  const checkActionReady = async (conversation: SessionConvo, requireHandled = true) => {
+  const checkActionReady = async (conversation: SessionConvo) => {
     if (!conversation.customerId || actionChecking) return false;
     const requestStamp=identityRef.current;
     setActionChecking(true); setActionError("");
@@ -830,9 +830,10 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
       if(requestStamp!==identityRef.current)return false;
       if (detail.agentAdminId !== adminId || !detail.assignmentId) { ctx.invalidateScope(conversation.id, String(conversation.customerId)); setActionError("客户归属已变化，请刷新会话后重试。"); return false; }
       if(conversation.id===activeConversationRef.current)setProfileDetail(detail);
-      if (requireHandled && detail.waitingReply) { setActionError("还有客户消息待回复，请先发送服务回复后再办理。"); return false; }
+      // waitingReply aggregates all customer history. The backend checks pending
+      // replies for each selected conversation together with its versioned write.
       return true;
-    } catch (cause) { if(requestStamp!==identityRef.current)return false; if (lostPermission(cause)) ctx.invalidateScope(conversation.id, String(conversation.customerId)); setActionError(`客户待回复状态暂时无法核对：${displayAdminError(cause)}。请重试。`); return false; }
+    } catch (cause) { if(requestStamp!==identityRef.current)return false; if (lostPermission(cause)) ctx.invalidateScope(conversation.id, String(conversation.customerId)); setActionError(`客户归属暂时无法核对：${displayAdminError(cause)}。请重试。`); return false; }
     finally { if(requestStamp===identityRef.current)setActionChecking(false); }
   };
   const closeConversation = async () => {
@@ -894,7 +895,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     requestAnimationFrame(()=>{composerRef.current?.focus();composerRef.current?.setSelectionRange(start+text.length,start+text.length);});
   };
   const archiveOne = async (conversation: SessionConvo) => {
-    if(!canWriteM3||conversation.ownerAdminId!==adminId||pending||firstPending||!await checkActionReady(conversation, !conversation.archived))return;
+    if(!canWriteM3||conversation.ownerAdminId!==adminId||pending||firstPending||!await checkActionReady(conversation))return;
     const requestStamp=identityRef.current;
     ctx.openActionConfirm({action:conversation.archived?"撤销归档":"归档会话",detail:`会话 ${conversation.id}；只改变列表归档状态，保留原会话状态、消息和归属。`,reasonMin:8,reasonMax:200,run:reason=>requestStamp===identityRef.current?ctx.setParam(CONVO_KEY,JSON.stringify(all.map(c=>c.id===conversation.id?{...c,archived:!conversation.archived}:c)),{action:"修改会话归档",reason,commandKey:`m3:archive:${conversation.id}:${conversation.version}:${!conversation.archived}`}):Promise.resolve(false)});
   };

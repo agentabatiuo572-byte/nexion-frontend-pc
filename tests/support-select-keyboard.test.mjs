@@ -530,7 +530,12 @@ test("avatar preview failures keep both 64px placeholders and reachable retries 
       assert.ok(geometry.explanation.bottom <= geometry.row.top, "Explanation stays above the whole selection and preview row");
       if (width === 1280) { assert.ok(Math.abs(geometry.preview.top - geometry.field.top) < 1); assert.ok(Math.abs(geometry.preview.left - geometry.field.right - 24) < 1, "Avatars follow upload controls, without an auto margin pushing them right"); }
       else { assert.ok(geometry.preview.top > geometry.field.top); assert.ok(Math.abs(geometry.preview.left - geometry.row.left) < 1, "Wrapped previews stay left aligned"); }
-      assert.deepEqual(await page.locator(".account-profile-section-title").evaluateAll(elements => elements.map(element => { const css = getComputedStyle(element), number = element.firstElementChild.getBoundingClientRect(); return [css.fontSize, css.fontWeight, css.gap, number.width, number.height]; })), Array.from({ length: 4 }, () => ["14px", "600", "8px", 20, 20]));
+      const sectionTypography = await page.locator(".account-profile-section-title").evaluateAll(elements => elements.map(element => { const css = getComputedStyle(element), number = element.firstElementChild.getBoundingClientRect(); return [css.fontSize, css.fontWeight, css.gap, number.width, number.height]; }));
+      assert.deepEqual(sectionTypography.map(row => row.slice(0, 3)), Array.from({ length: 4 }, () => ["14px", "600", "8px"]));
+      // DOMRect subtraction can yield 19.999996px for a CSS 20px badge.
+      for (const [, , , badgeWidth, badgeHeight] of sectionTypography) {
+        assert.ok(Math.abs(badgeWidth - 20) < 0.001 && Math.abs(badgeHeight - 20) < 0.001, `Expected 20px badge, got ${badgeWidth} x ${badgeHeight}`);
+      }
       assert.equal(await page.locator(".account-avatar-field").evaluate(element => getComputedStyle(element).fontSize), "14px");
       assert.equal(await page.locator(".account-avatar-field small").evaluate(element => getComputedStyle(element).fontSize), "13px");
       assert.equal(geometry.controls.filter(control => control.tag === "SPAN" && Math.abs(control.width - 64) < 1).length, 4, JSON.stringify({ width, geometry }));

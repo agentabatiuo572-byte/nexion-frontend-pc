@@ -189,19 +189,64 @@ test("funds-flow options use source statuses and reset the exact filter request 
     }
   }finally{globalThis.fetch=original;}
 });
-test("unarchive skips only pending replies while archive, close, ticket and batch keep the preflight",async()=>{
-  const source=readFileSync(new URL("../app/components/domain-views/m-tabs/m3-dedicated-chat.tsx",import.meta.url),"utf8"),ready=source.slice(source.indexOf("const checkActionReady = async"),source.indexOf("\n  const closeConversation =")),single=source.slice(source.indexOf("const archiveOne = async"),source.indexOf("\n  const canTimeout =")),others=source.slice(source.indexOf("const closeConversation = async"),source.indexOf("\n  const continueClosed ="));
-  for(const [action,archived,patch,allowed] of [["archiveOne",true,{},true],["archiveOne",false,{},false],["closeConversation",false,{},false],["convertToTicket",false,{},false],["archiveBatch",false,{},false],["archiveOne",true,{canWriteM3:false},false],["archiveOne",true,{ownerAdminId:13},false],["archiveOne",true,{agentAdminId:13},false],["archiveOne",true,{assignmentId:null},false],["archiveOne",true,{staleRead:true},false],["archiveOne",true,{actionChecking:true},false]]){
-    const conversation={id:"CV-7",customerId:"7",ownerAdminId:patch.ownerAdminId??12,version:9,status:archived?"closed":"open",archived,detailReady:true},confirms=[],writes=[],errors=[],invalid=[];
-    const context={canWriteM3:true,adminId:12,pending:null,firstPending:null,actionChecking:false,selected:conversation,writable:!archived,all:[conversation],visible:[conversation],archiveIds:new Set([conversation.id]),activeConversationRef:{current:conversation.id},identityRef:{current:"current"},CONVO_KEY:"I.session.convos",newKey:()=>"original-batch-key",session:{operator:"顾问A"},
-      setActionChecking(){},setActionError:value=>errors.push(value),setProfileDetail(){},setArchiveIds(){},lostPermission:()=>false,displayAdminError:()=>"读取失败",ctx:{invalidateScope:(...value)=>invalid.push(value),openActionConfirm:confirm=>confirms.push(confirm),setParam:async(...args)=>{writes.push(args);return true;}},...patch};
-    context.supportClient={customerDetail:async()=>{if(patch.staleRead)context.identityRef.current="revoked";return {agentAdminId:patch.agentAdminId??12,assignmentId:"assignment-original",waitingReply:true,...patch};}};
-    runInNewContext(ts.transpileModule(`${ready}\n${others}\n${single}\nglobalThis.actions={archiveOne,archiveBatch,closeConversation,convertToTicket};`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
-    await context.actions[action](conversation);assert.equal(confirms.length,allowed?1:0,`${action} ${JSON.stringify(patch)}`);
-    if(allowed){const confirm=confirms[0];assert.equal(confirm.action,"撤销归档");assert.equal(confirm.reasonMin,8);assert.equal(confirm.reasonMax,200);assert.equal(await confirm.run("核对历史归档记录后撤销"),true);assert.equal(JSON.parse(writes[0][1])[0].archived,false);assert.equal(JSON.parse(writes[0][1])[0].status,"closed");assert.equal(JSON.parse(writes[0][1])[0].version,9);assert.equal(writes[0][2].commandKey,"m3:archive:CV-7:9:false");assert.equal(writes[0][2].reason,"核对历史归档记录后撤销");context.identityRef.current="revoked";assert.equal(await confirm.run("核对历史归档记录后撤销"),false);assert.equal(writes.length,1);}
-    else assert.equal(writes.length,0);
+test("conversation actions keep ownership checks but leave per-conversation pending replies to the backend",async()=>{
+  const source=readFileSync(new URL("../app/components/domain-views/m-tabs/m3-dedicated-chat.tsx",import.meta.url),"utf8");
+  const ready=source.slice(source.indexOf("const checkActionReady = async"),source.indexOf("\n  const closeConversation ="));
+  const single=source.slice(source.indexOf("const archiveOne = async"),source.indexOf("\n  const canTimeout ="));
+  const others=source.slice(source.indexOf("const closeConversation = async"),source.indexOf("\n  const continueClosed ="));
+  for(const action of ["archiveOne","closeConversation","convertToTicket","archiveBatch"]){
+    for(const patch of [{},{backendPending:true},{agentAdminId:13},{assignmentId:null},{staleRead:true},{actionChecking:true}]){
+      const conversation={id:"CV-7",customerId:"7",ownerAdminId:12,version:9,status:"open",archived:false,detailReady:true};
+      const historical={...conversation,id:"CV-OLD",status:"closed",version:3};
+      const confirms=[],writes=[],errors=[],invalid=[];
+      // Only the selected current segment belongs to this action; old unanswered history is untouched.
+      const allowed=!patch.agentAdminId&&!Object.hasOwn(patch,"assignmentId")&&!patch.staleRead&&!patch.actionChecking;
+      const context={canWriteM3:true,adminId:12,pending:null,firstPending:null,actionChecking:false,selected:conversation,writable:true,all:[conversation,historical],visible:[conversation,historical],archiveIds:new Set([conversation.id]),activeConversationRef:{current:conversation.id},identityRef:{current:"current"},CONVO_KEY:"I.session.convos",newKey:()=>"original-batch-key",session:{operator:"顾问A"},
+        setActionChecking(){},setActionError:value=>errors.push(value),setProfileDetail(){},setArchiveIds(){},lostPermission:()=>false,displayAdminError:()=>"读取失败",
+        ctx:{invalidateScope:(...value)=>invalid.push(value),openActionConfirm:confirm=>confirms.push(confirm),setParam:async(...args)=>{writes.push(args);return !patch.backendPending;}},...patch};
+      context.supportClient={customerDetail:async()=>{if(patch.staleRead)context.identityRef.current="revoked";return {agentAdminId:12,assignmentId:"assignment-original",waitingReply:true,...patch};}};
+      runInNewContext(ts.transpileModule(`${ready}\n${others}\n${single}\nglobalThis.actions={archiveOne,archiveBatch,closeConversation,convertToTicket};`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
+      await context.actions[action](conversation);
+      assert.equal(confirms.length,allowed?1:0,`${action} ${JSON.stringify(patch)}`);
+      if(allowed){
+        const confirm=confirms[0]; assert.equal(confirm.reasonMin,8); assert.equal(confirm.reasonMax,200);
+        assert.equal(await confirm.run("核对当前会话后办理"),!patch.backendPending);
+        assert.equal(writes.length,1);
+        const payload=JSON.parse(writes[0][1]);
+        if(action==="closeConversation"||action==="archiveOne"){
+          assert.deepEqual(payload[1],historical);
+          assert.equal(payload[0].version,9);
+          assert.equal(payload[0].status,action==="closeConversation"?"resolved":"open");
+          assert.equal(payload[0].archived,action==="archiveOne");
+        }else if(action==="archiveBatch"){
+          assert.deepEqual(payload,{conversationNos:["CV-7"],expectedVersions:{"CV-7":9}});
+        }else{
+          assert.equal(payload.conversationNo,"CV-7");assert.equal(payload.expectedVersion,9);
+        }
+        context.identityRef.current="revoked";
+        assert.equal(await confirm.run("核对当前会话后办理"),false);
+        assert.equal(writes.length,1);
+      }else assert.equal(writes.length,0);
+      if(patch.agentAdminId||Object.hasOwn(patch,"assignmentId"))assert.equal(JSON.stringify(invalid),JSON.stringify([["CV-7","7"]]));
+    }
   }
 });
+
+test("unarchive retains the closed status, original CAS and latest ownership check",async()=>{
+  const source=readFileSync(new URL("../app/components/domain-views/m-tabs/m3-dedicated-chat.tsx",import.meta.url),"utf8");
+  const ready=source.slice(source.indexOf("const checkActionReady = async"),source.indexOf("\n  const closeConversation ="));
+  const archive=source.slice(source.indexOf("const archiveOne = async"),source.indexOf("\n  const archiveBatch ="));
+  for(const patch of [{},{canWriteM3:false},{ownerAdminId:13},{agentAdminId:13},{assignmentId:null}]){
+    const conversation={id:"CV-7",customerId:"7",ownerAdminId:patch.ownerAdminId??12,version:9,status:"closed",archived:true};
+    const writes=[],confirms=[],context={adminId:12,canWriteM3:true,pending:null,firstPending:null,actionChecking:false,identityRef:{current:"current"},activeConversationRef:{current:"CV-7"},all:[conversation],CONVO_KEY:"I.session.convos",setActionChecking(){},setActionError(){},setProfileDetail(){},lostPermission:()=>false,displayAdminError:()=>"",
+      supportClient:{customerDetail:async()=>({agentAdminId:12,assignmentId:"original",waitingReply:true,...patch})},ctx:{invalidateScope(){},openActionConfirm:confirm=>confirms.push(confirm),setParam:async(...args)=>{writes.push(args);return true;}},...patch};
+    runInNewContext(ts.transpileModule(`${ready}\n${archive}\nglobalThis.run=archiveOne;`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
+    await context.run(conversation);
+    assert.equal(confirms.length,Object.keys(patch).length?0:1);
+    if(confirms.length){assert.equal(await confirms[0].run("核对历史归档记录后撤销"),true);assert.deepEqual(JSON.parse(writes[0][1]),[{...conversation,archived:false}]);assert.equal(writes[0][2].commandKey,"m3:archive:CV-7:9:false");}
+  }
+});
+
 test("M3 and dock reply targets select real customer messages through later maintenance and internal messages",()=>{
   const chat=readFileSync(new URL("../app/components/domain-views/m-tabs/m3-dedicated-chat.tsx",import.meta.url),"utf8"),dock=readFileSync(new URL("../app/components/domain-views/m-view.tsx",import.meta.url),"utf8");
   const last=chat.slice(chat.indexOf("function lastMessage("),chat.indexOf("\nfunction PrivateImage")),record=chat.slice(chat.indexOf("const record = retry ??"),chat.indexOf("const stored = rememberPending(pendingKey(adminId)"));

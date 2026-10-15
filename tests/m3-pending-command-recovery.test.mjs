@@ -266,14 +266,13 @@ test("missing legacy reason remains blocked, and a reload read error cannot be m
   assert.ok(fresh.mCommands.get("cmd|m3:close:CV-1:7"));
 });
 
-// Reuse the proven isolated React lifecycle harness without changing its sealed source.
-// Only expose its virtual button callback; the actual M3 production component is unchanged.
+// Reuse the isolated React lifecycle harness, which already exposes real button callbacks.
 function modalHarness() {
   const testAst = ts.createSourceFile("harness.mjs", read("tests/m3-manager-race-end-wire.test.mjs"), ts.ScriptTarget.ES2022, true, ts.ScriptKind.JS);
   const harness = testAst.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "harness");
-  const marker = "found.push({ label: text(node), disabled: node.props.disabled })";
+  const marker = "onClick: node.props.onClick";
   const body = harness.getText(testAst); assert.ok(body.includes(marker));
-  return new Function("compile", "chatSource", "assert", "session", `${body.replace(marker, "found.push({ label: text(node), disabled: node.props.disabled, onClick: node.props.onClick })")}\nreturn harness;`)(
+  return new Function("compile", "chatSource", "assert", "session", `${body}\nreturn harness;`)(
     compile, chat, assert, () => ({ adminId: 4283, role: "agent", authorities: ["service_m1_read", "service_m3_write"] }),
   );
 }
@@ -302,7 +301,7 @@ function parentModalHarness() {
 
 async function openRealEnd(probe, detail) {
   probe.render();
-  const button = probe.buttons().find(button => button.label === "结束服务会话");
+  const button = probe.buttons().find(button => ["结束服务会话", "标记已解决"].includes(button.label));
   assert.ok(button, "Actual M3 end button must be present");
   const before = probe.profileRequests.length;
   const opening = button.onClick(); await flush();
@@ -324,14 +323,15 @@ async function currentEndPage() {
     "I.session.conversationsAvailable": "1", "I.session.convos": JSON.stringify([convo(9, "open", 4283)]),
     "I.support.agentsAvailable": "1", "I.support.agents": JSON.stringify([{ adminId: 4283, seatType: "DEDICATED", enabled: true }]),
   });
-  probe.profileRequests[0].resolve(detail); await flush(); probe.render();
+  await flush(); probe.render(); // Settle the current overview scope before its customer read.
+    probe.profileRequests[0].resolve(detail); await flush(); probe.render();
   await openRealEnd(probe, detail);
   assert.ok(parent.render(), "Actual M3 handler must open the actual parent's reason modal");
   return { transport, parent, page, probe, detail, outcomes, invalidations };
 }
 
-test("settling an earlier end removes the actual old parent modal; another end must reopen and check latest waitingReply and owner", async () => {
-  for (const denial of ["waitingReply", "owner"]) {
+test("settling an earlier end removes the actual old parent modal; another end must recheck owner and allow historical waitingReply", async () => {
+  for (const denial of ["historicalWaitingReply", "owner"]) {
     const { transport, parent, probe, detail, outcomes, invalidations } = await currentEndPage();
     try {
       transport.plans.push(response(200, "OK", { status: "RESOLVED", version: 8 }));
@@ -340,13 +340,14 @@ test("settling an earlier end removes the actual old parent modal; another end m
       assert.equal(outcomes.at(-1), false, "Earlier success must not pretend the requested version succeeded");
       assert.equal(parent.render(), null, "There must be no old modal available for a second click");
       const writes = transport.requests.length;
-      await openRealEnd(probe, denial === "waitingReply" ? { ...detail, waitingReply: true } : { ...detail, agentAdminId: 999 });
-      assert.equal(parent.render(), null);
-      assert.equal(transport.requests.length, writes);
-      if (denial === "waitingReply") assert.ok(probe.text().includes("还有客户消息待回复"));
-      else assert.deepEqual(invalidations, [["CV-1", "3562"]], "Latest owner mismatch must invalidate only this exact scope");
-      if (denial === "waitingReply") {
-        await openRealEnd(probe, detail);
+      await openRealEnd(probe, denial === "historicalWaitingReply" ? { ...detail, waitingReply: true } : { ...detail, agentAdminId: 999 });
+      assert.equal(transport.requests.length, writes, "Opening the confirmation does not write");
+      if (denial === "owner") {
+        assert.equal(parent.render(), null);
+        assert.deepEqual(invalidations, [["CV-1", "3562"]], "Latest owner mismatch must invalidate only this exact scope");
+      }
+      if (denial === "historicalWaitingReply") {
+        assert.ok(parent.render(), "Customer history must not veto the selected segment");
         transport.plans.push(response(200, "OK", { status: "RESOLVED", version: 10 }));
         await parent.render().props.onConfirm(changedReason);
         assert.equal(parent.render(), null);
@@ -378,8 +379,8 @@ test("a recovered old end cannot close a different confirmation opened while its
   } finally { probe.unmount(); }
 });
 
-test("an explicitly rejected close retires its receipt and removes its modal before any new latest-owner and waitingReply check", async () => {
-  for (const denial of ["waitingReply", "owner"]) {
+test("an explicitly rejected close retires its receipt and removes its modal before a new latest-owner check; historical waitingReply is not a segment veto", async () => {
+  for (const denial of ["historicalWaitingReply", "owner"]) {
     const { transport, parent, page, probe, detail, outcomes, invalidations } = await currentEndPage();
     try {
       transport.plans.push(response(409, "INVALID_STATE_TRANSITION"));
@@ -390,13 +391,13 @@ test("an explicitly rejected close retires its receipt and removes its modal bef
       assert.equal(page.mCommands.get("m3direct|m3:add-tag:OTHER:keep"), "unrelated-original-key");
       assert.equal(parent.render(), null, "A definite rejection must remove the old modal before a second click can mint a key");
       const writes = transport.requests.length;
-      await openRealEnd(probe, denial === "waitingReply" ? { ...detail, waitingReply: true } : { ...detail, agentAdminId: 999 });
-      assert.equal(parent.render(), null);
+      await openRealEnd(probe, denial === "historicalWaitingReply" ? { ...detail, waitingReply: true } : { ...detail, agentAdminId: 999 });
       assert.equal(transport.requests.length, writes);
-      if (denial === "owner") assert.deepEqual(invalidations, [["CV-1", "3562"]]);
-      else {
-        assert.ok(probe.text().includes("还有客户消息待回复"));
-        await openRealEnd(probe, detail);
+      if (denial === "owner") {
+        assert.equal(parent.render(), null);
+        assert.deepEqual(invalidations, [["CV-1", "3562"]]);
+      } else {
+        assert.ok(parent.render(), "Customer history must not veto the selected segment");
         transport.plans.push(response(200, "OK", { status: "RESOLVED", version: 10 }));
         await parent.render().props.onConfirm(changedReason);
         assert.equal(parent.render(), null);
@@ -455,8 +456,9 @@ test("a real opened end confirmation expires when qualification becomes unknown 
   const qualified = { "I.support.agentsAvailable": "1", "I.support.agents": JSON.stringify([{ adminId: 4283, seatType: "DEDICATED", enabled: true }]) };
   try {
     probe.publish({ "I.session.conversationsAvailable": "1", "I.session.convos": JSON.stringify([convo(7, "open", 4283)]), ...qualified });
+    await flush(); probe.render(); // Settle the current overview scope before its customer read.
     probe.profileRequests[0].resolve(detail); await flush(); probe.render();
-    const button = probe.buttons().find(button => ["结束服务会话", "关闭服务会话"].includes(button.label));
+    const button = probe.buttons().find(button => ["结束服务会话", "标记已解决"].includes(button.label));
     assert.ok(button, "The real component should expose the end action after verified ownership");
     const opening = button.onClick(); await flush();
     probe.profileRequests.at(-1).resolve(detail); await opening;
@@ -470,5 +472,30 @@ test("a real opened end confirmation expires when qualification becomes unknown 
     assert.equal(recoveredResult, false); assert.equal(writes, before);
     assert.ok(pendingText.includes("专属客服身份待核对"));
     assert.ok(!pendingText.includes("权限已变化"));
+  } finally { probe.unmount(); }
+});
+
+
+test("current-segment pending replies still receive the real HTTP 409 and never send a history-handling command", async () => {
+  const { transport, parent, probe, detail, outcomes, page } = await currentEndPage();
+  try {
+    // Resolve the harness's earlier unknown version first, exactly as the normal recovery does.
+    transport.plans.push(response(409, "INVALID_STATE_TRANSITION"));
+    await parent.render().props.onConfirm(changedReason);
+    const before = transport.requests.length;
+    await openRealEnd(probe, { ...detail, waitingReply: true });
+    assert.ok(parent.render());
+    transport.plans.push(response(409, "SUPPORT_REPLY_REQUIRED_BEFORE_CLOSE"));
+    await parent.render().props.onConfirm(changedReason);
+    assert.equal(outcomes.at(-1), false);
+    assert.equal(transport.requests.length, before + 1);
+    assert.equal(transport.requests.at(-1).url, "/api/admin/content/conversations/CV-1/status");
+    assert.equal(transport.requests.at(-1).method, "PATCH");
+    assert.deepEqual(transport.requests.at(-1).body, { status: "RESOLVED", expectedStatus: "OPEN", expectedVersion: 9, operator: "4283", reason: changedReason });
+    assert.equal(transport.requests.some(request => /replies|handled|archiveBatch/.test(request.url)), false);
+    assert.equal(page.mCommands.get("m3direct|m3:add-tag:OTHER:keep"), "unrelated-original-key");
+    assert.ok(parent.render(), "The existing failed-write UI stays open without claiming success");
+    assert.ok(page.mCommands.get("cmd|m3:close:CV-1:9"), "This change does not alter receipt classification or rotate the original key");
+    assert.ok(transport.toasts.some(text => text.includes("写入失败或结果未知")));
   } finally { probe.unmount(); }
 });
