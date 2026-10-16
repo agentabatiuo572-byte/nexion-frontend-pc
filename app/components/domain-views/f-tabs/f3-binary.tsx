@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Badge, CodeTag, DataListPager, useDataListPager } from "../design-kit";
 import { F3_GV_RESET_PARAM_KEY } from "@/lib/admin/f1-client";
 import type { FViewCtx } from "./types";
+import { F3Placements } from "./f3-placements";
 
 const usd = (n: number): string => "$" + n.toLocaleString();
 const text = (value?: string | null) => (value && value.trim() ? value.trim() : "—");
@@ -93,6 +94,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
 
   return (
     <>
+      <F3Placements />
       {ctx.f3Error && (
         <section className="pane">
           <div className="pane-h"><span className="ph-ttl">F3 数据刷新失败</span><span className="ph-sub">{ctx.f3Error}</span></div>

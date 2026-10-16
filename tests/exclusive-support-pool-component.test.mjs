@@ -4,15 +4,16 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import { compactSupportBoardValue } from './support-compact-empty.test.mjs';
+import { parseBusinessTime } from '../lib/admin/business-time.ts';
 const ts=createRequire(import.meta.url)('typescript');
 const source=readFileSync('app/components/domain-views/m-tabs/m1-supervisor-pool.tsx','utf8');
 const groups=[{id:'8',name:'一组',status:'ENABLED',version:11},{id:'9',name:'二组',status:'ENABLED',version:12}];
 const item={customerId:'71',version:4,reason:'NO_INVITER',routeState:'AVAILABLE',routeId:'91',routeGroupId:'8',routeVersion:7};
-function harness({mode='ALL',groupRows=groups,scopeFailure=false,writeFailure=false}={}){
+function harness({mode='ALL',groupRows=groups,scopeFailure=false,writeFailure=false,poolRows=[]}={}){
   const calls=[],tables=new Map();let hooks;
   const auth={session:{adminId:12},authEpoch:1};
   const useAdminAuth=selector=>selector(auth);useAdminAuth.getState=()=>auth;
-  const empty={records:[],total:0,pageNum:1,pageSize:8};
+  const empty={records:poolRows,total:poolRows.length,pageNum:1,pageSize:8};
   const supportClient={overview:async()=>{if(scopeFailure)throw{status:403};return{scope:{mode}};},bindingPool:async options=>{calls.push(['pool',options]);return empty;},agents:async options=>{calls.push(['agents',options]);return empty;},transfer:async()=>{},command:async()=>({status:'UNKNOWN'})};
   let receipt='UNKNOWN',commandGate;
   const groupClient={groups:async()=>groupRows,detail:async id=>{calls.push(['detail',id]);return{group:groups.find(g=>g.id===id)};},command:async key=>{calls.push(['command',key]);if(commandGate)await commandGate;return{status:receipt};}};
@@ -25,7 +26,7 @@ function harness({mode='ALL',groupRows=groups,scopeFailure=false,writeFailure=fa
     if(id.includes('m-support-client'))return{supportClient,isIndeterminateSupportError:()=>false,readSupportPoolCustomer:async()=>{calls.push(['pool-facts']);return item;},verifySupportTransfer:async()=>{},setSupportPoolRoute:async(...args)=>{calls.push(['write',...args]);if(writeFailure)throw Error('timeout');return{};}};
     if(id.includes('support-group-client'))return{supportGroupClient:groupClient};
     if(id.includes('pending-mutation-store'))return{createPendingMutationStore:createStore};
-    if(id.includes('admin-auth'))return{useAdminAuth};if(id.includes('shell-authorities'))return{adminShellSessionKey:()=>`${auth.session.adminId}:${auth.authEpoch}`};if(id.includes('business-time'))return{parseBusinessTime:Date.parse};throw Error(id);
+    if(id.includes('admin-auth'))return{useAdminAuth};if(id.includes('shell-authorities'))return{adminShellSessionKey:()=>`${auth.session.adminId}:${auth.authEpoch}`};if(id.includes('business-time'))return{parseBusinessTime};throw Error(id);
   }});
   function mount(component,props){const values=[],effects=[];let index=0;return{render(){for(let pass=0;pass<20;pass++){index=0;const pending=[];hooks={state(initial){const n=index++;if(!(n in values))values[n]=typeof initial==='function'?initial():initial;return[values[n],next=>values[n]=typeof next==='function'?next(values[n]):next];},ref(initial){const n=index++;return values[n]??(values[n]={current:initial});},effect(fn,deps){const n=index++;if(!effects[n]||deps.some((d,i)=>!Object.is(d,effects[n].deps[i]))){pending.push(()=>{effects[n]?.cleanup?.();effects[n]={deps,cleanup:fn()};});}}};const tree=component(props);if(!pending.length)return tree;pending.forEach(fn=>fn());}throw Error('effects loop');}};}
   return{...module.exports,mount,calls,tables,setReceipt:value=>receipt=value,setCommandGate:value=>commandGate=value,auth};
@@ -34,6 +35,22 @@ function nodes(value){if(Array.isArray(value))return value.flatMap(nodes);if(!va
 function text(value){if(Array.isArray(value))return value.map(text).join('');return value&&typeof value==='object'?text(value.props?.children):value??'';}
 const button=(tree,label)=>nodes(tree).find(node=>node.type==='button'&&text(node)===label);
 const flush=async()=>{for(let n=0;n<8;n++)await Promise.resolve();};
+test('pool UTC clocks render the same business time in Tokyo, UTC and Shanghai, including null attempts',async()=>{
+  const previousZone=process.env.TZ;
+  try {
+    for(const zone of ['Asia/Tokyo','UTC','Asia/Shanghai']){
+      process.env.TZ=zone;
+      const enteredAt='2026-10-16T09:21:25.219274Z';
+      assert.equal(parseBusinessTime(enteredAt),Date.parse('2026-10-16T17:21:25.219274+08:00'));
+      for(const lastAttemptAt of ['2026-10-16T09:22:35.654321Z',null]){
+        const h=harness({poolRows:[{...item,enteredAt,lastAttemptAt}]}),mounted=h.mount(h.M1SupervisorPool,{permission:'supervisor'});
+        mounted.render();await flush();mounted.render();await flush();const tree=mounted.render();
+        assert.equal(text(nodes(tree).find(n=>n.type==='td'&&n.props?.['data-label']==='等待起点')),'2026/10/16 17:21:25');
+        assert.ok(text(tree).includes(lastAttemptAt?'最近尝试：2026/10/16 17:22:35':'最近尝试：尚无记录'));
+      }
+    }
+  } finally {if(previousZone===undefined)delete process.env.TZ;else process.env.TZ=previousZone;}
+});
 test('managed empty scope and a denied read never query all pool/agents',async()=>{
   for(const options of [{mode:'MANAGED',groupRows:[]},{scopeFailure:true}]){const h=harness(options),mounted=h.mount(h.M1SupervisorPool,{permission:'supervisor'});mounted.render();await flush();const tree=mounted.render();assert.equal(h.calls.filter(c=>['pool','agents'].includes(c[0])).length,0);assert.match(text(tree),options.scopeFailure?/无权/:/没有可管理/);}
 });

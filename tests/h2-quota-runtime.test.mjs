@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
+import { findHighOp } from "../lib/admin/high-ops-registry.ts";
 import { runInNewContext } from "node:vm";
 
 const require = createRequire(import.meta.url);
@@ -11,7 +12,7 @@ const render = require("react-dom/server").renderToStaticMarkup;
 const source = readFileSync(new URL("../app/components/domain-views/h-tabs/h2-trial.tsx", import.meta.url), "utf8");
 
 function harness({ writable = true, model = null } = {}) {
-  const writes = [], dialogs = [], toasts = [];
+  const writes = [], dialogs = [], toasts = [], proposals = [];
   let reloads = 0, hook = 0;
   const context = {
     exports: {},
@@ -30,8 +31,8 @@ function harness({ writable = true, model = null } = {}) {
         fetchH2Trials: async () => { throw new Error("unexpected read"); },
         killH2AutoPush: async () => { throw new Error("unexpected command"); },
       };
-      if (name === "@/lib/admin/use-propose") return { usePropose: () => () => {} };
-      if (name === "@/lib/admin/high-ops-registry") return { findHighOp: () => null };
+      if (name === "@/lib/admin/use-propose") return { usePropose: () => async (_, proposal) => { proposals.push(proposal); } };
+      if (name === "@/lib/admin/high-ops-registry") return { findHighOp };
       if (name === "@/lib/admin/error-messages") return {
         displayAdminError: String,
         formatAdminApiError: (value, fallback) => value || fallback,
@@ -52,7 +53,7 @@ function harness({ writable = true, model = null } = {}) {
     openConfirm: dialog => dialogs.push(dialog),
   };
   return {
-    writes, dialogs, toasts,
+    writes, dialogs, toasts, proposals,
     get reloads() { return reloads; },
     row: param => context.exports.ParamRow({ ctx, param, trialProducts: [], onChanged: async () => { reloads++; } }),
     page: () => { hook = 0; return context.exports.H2Trial({ ctx }); },
@@ -143,4 +144,42 @@ test("H2 drops retired autocharge from both sections and defensively refuses a s
   assert.deepEqual(rows, ["seatsLeftToday", "actualSeatsLeftToday"]);
   assert.equal(h.dialogs.length, 0);
   assert.equal(h.writes.length, 0);
+});
+
+const trial = { sid: "trial-TRIAL-FIXTURE", cardTok: "TRIAL-FIXTURE", userId: 60723153007,
+  displayName: "Fixture owner", state: "grace", shadow: "1 + 2 NEX" };
+const withTrials = sessions => ({ params: [], gates: [], states: [], sessions, stats: {} });
+test("H2 displays actual owner and both intervention summaries retain owner plus exact trial command", async () => {
+  const h = harness({ model: withTrials([trial]) });
+  const page = h.page();
+  assert.match(render(page), /60723153007/); assert.match(render(page), /Fixture owner/);
+  for (const [label, op] of [["强制取消", "h2_trial_cancel"], ["强制扣款", "h2_trial_charge"]]) {
+    const button = walk(page).find(node => node.type === "button" && node.props.children === label);
+    assert.equal(button.props.disabled, false); button.props.onClick();
+    const dialog = h.dialogs.at(-1);
+    assert.match(render(dialog.detail), /60723153007/); assert.match(render(dialog.detail), /TRIAL-FIXTURE/);
+    await dialog.run("fixture intervention reason");
+    const proposal = h.proposals.at(-1);
+    assert.equal(proposal.command.op, op);
+    assert.deepEqual(JSON.parse(JSON.stringify(proposal.command.params)), { sid: trial.sid });
+    assert.equal(proposal.target.id, trial.sid);
+  }
+});
+test("unknown owner and denied permission cannot open intervention, while terminal rows retain identity", () => {
+  for (const userId of [undefined, null, 0, -1, "60723153007", NaN, Infinity]) {
+    const h = harness({ model: withTrials([{ ...trial, userId }]) });
+    const page = h.page(); assert.match(render(page), /用户信息暂不可用/);
+    for (const button of walk(page).filter(node => node.type === "button" && ["强制取消", "强制扣款"].includes(node.props.children))) {
+      assert.equal(button.props.disabled, true); button.props.onClick();
+    }
+    assert.equal(h.dialogs.length, 0);
+  }
+  const denied = harness({ writable: false, model: withTrials([trial]) });
+  for (const button of walk(denied.page()).filter(node => node.type === "button" && ["强制取消", "强制扣款"].includes(node.props.children))) {
+    assert.equal(button.props.disabled, true); button.props.onClick();
+  }
+  assert.equal(denied.dialogs.length, 0);
+  const terminal=harness({ model: withTrials([{ ...trial, state: "cancelled", displayName: null }]) });
+  assert.match(render(terminal.page()), /60723153007/);
+  assert.equal(walk(terminal.page()).filter(node => node.type === "button" && ["强制取消", "强制扣款"].includes(node.props.children)).length,0);
 });

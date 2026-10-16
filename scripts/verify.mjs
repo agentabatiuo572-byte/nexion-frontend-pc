@@ -230,6 +230,7 @@ writeRecord({
 // 齿轮表:序号自动派生(新增/重排齿轮不再手工改 [x/N])。本机注意:channel-parity 起的后端依赖齿轮
 // 硬读兄弟仓 nexion-backend,缺仓环境链在该齿断(memory: nexion-backend-not-in-workspace)。
 const GEARS = [
+  ["F3 real placement query and manual assignment", "node", ["--test", "tests/f3-placements-client.test.mjs", "tests/f3-placements-component.test.mjs"]],
   ["promotion generated API contract", "node", ["--test", "tests/promotion-generated-types-eol.test.mjs"]],
   ["promotion interactions and public copy", "node", ["--unhandled-rejections=strict", "--experimental-strip-types", "--test", "scripts/growth-promotions-behavior.test.mjs", "scripts/growth-promotions-read-state.test.mjs", "scripts/growth-promotions-visual-gate.test.mjs", "scripts/growth-promotions-runtime-waits.test.mjs", "scripts/growth-promotions-public-copy.test.mjs", "scripts/growth-promotions-banner.test.mjs"]],
   ["promotion dialog capture", "node", ["--test", "scripts/growth-promotions-capture.test.mjs"]],
@@ -247,7 +248,7 @@ const GEARS = [
   ["canon royalty projection regression", "node", ["--test", "tests/canon-royalty-projection-contract.test.mjs"]],
   ["interaction audit", "node", ["scripts/admin-interaction-audit.mjs"]],
   ["M support surface audit", "node", ["scripts/admin-support-surface-audit.mjs"]],
-  ["Support profile static filled-block border contract", "node", ["--experimental-strip-types", "--test", "tests/inner-block-no-border-sentinel.test.mjs", "tests/c1-acceptance-contract.test.mjs"]],
+  ["Support profile static filled-block border contract", "node", ["--experimental-strip-types", "--test", "tests/inner-block-no-border-sentinel.test.mjs", "tests/c1-acceptance-contract.test.mjs", "tests/customer-profile-time.test.mjs"]],
   ["keyboard submit contract", "node", ["--experimental-strip-types", "--test", "tests/keyboard-submit-contract.test.mjs"]],
   ["M1 pending/failure state contract", "node", ["--test", "tests/m1-acceptance-contract.test.mjs"]],
   ["M3 App support authority contract", "node", ["--test", "tests/m3-acceptance-contract.test.mjs"]],

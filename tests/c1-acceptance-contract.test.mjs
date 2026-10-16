@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
 import ts from "typescript";
+import { formatBusinessTime } from "../lib/admin/business-time.ts";
 import { createElement, useEffect, useMemo, useState } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { supportObject, parseSupportId } from "../lib/admin/m-support-client.ts";
@@ -117,7 +118,7 @@ const fixtureSource = ast.statements.filter(node => ts.isFunctionDeclaration(nod
   .map(node => node.getText(ast)).join("\n")
   + `\nexport {money,numberLabel,HubSection};\n${pagerSource}\nexport function Fixture({ detail, userKey = "fixture-user" }) { const canWriteC2 = false; ${earningsDeclarations} return (<>{${sections.join("}{")}}</>); }`;
 const fixture = {};
-const scope = { ...format, ...labels, useEffect, useMemo, useState };
+const scope = { ...format, ...labels, useEffect, useMemo, useState, formatBusinessTime };
 new Function("require", "exports", ...Object.keys(scope), compile(fixtureSource))(
   createRequire(import.meta.url), fixture, ...Object.values(scope));
 

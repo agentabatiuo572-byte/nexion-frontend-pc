@@ -127,6 +127,7 @@ test("quantity display does not relax product or user-name character rules", () 
 test("the real E4 list and detail clients preserve the observed SKU and unrelated order fields", async () => {
   const requests = [];
   let responseOrder = observedOrder;
+  const funding = [{ source: "D4_LEDGER", bizNo: "TRIAL-573:CHARGE", status: "POSTED", direction: "OUT", amount: "1246.000000", occurredAt: "2026-10-16T15:52:46" }];
   const module = { exports: {} };
   const compiled = ts.transpileModule(readFileSync(new URL("../lib/admin/e4-client.ts", import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -142,7 +143,7 @@ test("the real E4 list and detail clients preserve the observed SKU and unrelate
         assert.equal(options.cache, "no-store");
         const data = url.includes("?")
           ? { total: 1, pageNum: 1, pageSize: 10, records: [responseOrder] }
-          : { order: responseOrder, quantity: 1, history: [], funding: [], refundChannels: [] };
+          : { order: responseOrder, quantity: 1, history: [], funding, refundChannels: [] };
         return new Response(JSON.stringify({ code: 0, data }), { status: 200 });
       },
     };
@@ -155,6 +156,11 @@ test("the real E4 list and detail clients preserve the observed SKU and unrelate
   assert.deepEqual(page.records, [expected]);
   assert.deepEqual(detail.order, expected);
   assert.equal(detail.quantity, 1);
+  assert.deepEqual(detail.funding, [{ ...funding[0], amount: 1246 }]);
+  assert.equal(module.exports.e4FundingLedgerHref(detail.funding[0]), "/finance/ledger?bizNo=TRIAL-573%3ACHARGE");
+  assert.equal(module.exports.e4FundingLedgerHref({ ...detail.funding[0], bizNo: "ORD/&?" }), "/finance/ledger?bizNo=ORD%2F%26%3F");
+  for (const source of ["D1_PAYMENT", "D4_BILL", "UNKNOWN"]) assert.equal(module.exports.e4FundingLedgerHref({ ...detail.funding[0], source }), null);
+  for (const bizNo of ["", "   "]) assert.equal(module.exports.e4FundingLedgerHref({ ...detail.funding[0], bizNo }), null);
   assert.deepEqual(requests, ["/api/admin/devices/orders?pageNum=1&pageSize=10", "/api/admin/devices/orders/ORD-382"]);
   for (const rejectedOrder of [{ skuId: "1234", skuName: "12 34" },
     { skuId: "550e8400-e29b-41d4-a716-446655440000", skuName: "550e8400 e29b 41d4 a716 446655440000" },

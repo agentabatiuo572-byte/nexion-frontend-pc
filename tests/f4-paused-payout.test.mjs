@@ -14,6 +14,7 @@ const nodeRequire = createRequire(import.meta.url);
 
 async function fixture(paused, canFund = true, rejectPayout = false, facts = {}) {
   const cache = new Map();
+  let directRender = false, selectedPeriod = "week";
   const responseData = {
     domain: "F4", metrics: [], quotaRows: [], ambassadorBands: [], podium: [], voteWeights: [{ v: "V3", votes: 1 }],
     config: {}, commissionPolicy: {}, guardrails: [], sources: ["nx_team_member"],
@@ -30,6 +31,7 @@ async function fixture(paused, canFund = true, rejectPayout = false, facts = {})
       compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
     }).outputText;
     new Function("require", "exports", "module", output)((name) => {
+      if (name === "react") return { ...React, useState: value => directRender ? [selectedPeriod, next => { selectedPeriod = next; }] : React.useState(value) };
       if (name.endsWith("auth-session")) return { isAdminAuthFailure: () => false, resetAdminSession: () => assert.fail("unexpected auth mutation") };
       if (name.endsWith("error-messages")) return {
         guardedFetch: async (url, options) => {
@@ -61,7 +63,7 @@ async function fixture(paused, canFund = true, rejectPayout = false, facts = {})
   };
   const F4Ops = load(path.join(root, "app/components/domain-views/f-tabs/f4-ops.tsx")).F4Ops;
   return { ctx, library: (rel) => load(path.join(root, rel)),
-    tree: () => F4Ops({ ctx }), html: () => renderToStaticMarkup(React.createElement(F4Ops, { ctx })) };
+    tree: () => { directRender = true; try { return F4Ops({ ctx }); } finally { directRender = false; } }, html: () => renderToStaticMarkup(React.createElement(F4Ops, { ctx })) };
 }
 
 function text(node) {
@@ -104,6 +106,7 @@ test("a factual frozen projection shows its recorded ranks and time, while live 
     leaderboardSnapshotId: "pause-fixture", leaderboardSnapshotAt: "2026-10-08T12:30:00Z",
     leaderboardPoolLabel: "$900", podium: [{ rank: 1, memberUserId: 77, userId: "U00000077", gmvLabel: "$900", tip: "冻结时 · 本期 GV", className: "r-1" }],
   };
+  facts.leaderboardPeriods = { ...periodFacts(), week: { ...periodFacts().week, snapshotAt: facts.leaderboardSnapshotAt, podium: facts.podium } };
   const f = await fixture(true, true, false, facts);
   assert.match(f.html(), /U00000077/);
   assert.match(f.html(), /2026-10-08T12:30:00Z/);
@@ -130,6 +133,7 @@ test("frozen metadata cannot confirm missing or malformed podium and count facts
     leaderboardSnapshotId: "pause-fixture", leaderboardSnapshotAt: "2026-10-08T12:30:00Z",
     leaderboardPoolLabel: "$900", leaderboardParticipantCount: 1,
     podium: [{ rank: 1, memberUserId: 77, userId: "U00000077", gmvLabel: "$900", tip: "冻结时 · 本期 GV", className: "r-1" }] };
+  good.leaderboardPeriods = { ...periodFacts(), week: { ...periodFacts().week, snapshotAt: good.leaderboardSnapshotAt, podium: good.podium, participantCount: 1, topN: 1 } };
   for (const bad of [
     { leaderboardParticipantCount: undefined }, { leaderboardParticipantCount: "0" },
     { leaderboardParticipantCount: -1 }, { leaderboardPoolLabel: null },
@@ -143,7 +147,7 @@ test("frozen metadata cannot confirm missing or malformed podium and count facts
   }
   await assert.rejects(fixture(true, true, false, { ...good, podium: undefined }), /F4_OVERVIEW_RESPONSE_INVALID:podium/);
   const empty = await fixture(true, true, false, { ...good, leaderboardParticipantCount: 0,
-    leaderboardPoolLabel: "$0", podium: [] });
+    leaderboardPoolLabel: "$0", podium: [], leaderboardPeriods: { week: { ...good.leaderboardPeriods.week, poolUsd: 0, participantCount: 0, topN: 0, podium: [] } } });
   assert.equal(empty.ctx.f4Overview.leaderboardDataAvailable, true);
   assert.match(empty.html(), /冻结时参赛人数.*0/);
 });
@@ -179,4 +183,45 @@ test("a confirmation opened before pause propagates 409 as human failure, never 
   assert.match(toasts[0], /A2 提案提交失败:排行榜已暂停，未执行派奖/);
   assert.doesNotMatch(toasts[0], /已写入|已执行|已派发/);
   assert.equal(buttons(f.tree())[0].props.disabled, true);
+});
+
+function periodFacts() {
+  return Object.fromEntries(["today", "week", "month", "all"].map((period, index) => [period, {
+    poolUsd: [10, 1000, 30, 40][index], participantCount: index + 1, topN: index + 1,
+    timezone: "Asia/Shanghai", snapshotAt: "2026-10-16T07:00:00Z",
+    fromInclusive: null, toExclusive: null,
+    podium: [{ rank: 1, memberUserId: 700 + index, userId: `U${700 + index}`,
+      gmvLabel: `$${195 + index}.80`, tip: "本期已解锁 USDT 佣金", className: "r-1" }],
+  }]));
+}
+function matching(node, predicate, found = []) {
+  if (!node || typeof node !== "object") return found;
+  if (Array.isArray(node)) { node.forEach(child => matching(child, predicate, found)); return found; }
+  if (predicate(node)) found.push(node);
+  matching(node.props?.children, predicate, found);
+  return found;
+}
+test("four period controls use canonical commissions and keep weekly disposal out of other periods", async () => {
+  const f = await fixture(false, true, false, { leaderboardPeriods: periodFacts(),
+    leaderboardPoolLabel: "$999999", leaderboardParticipantCount: 888,
+    podium: [{ rank: 1, memberUserId: 88, userId: "OLD_GV", gmvLabel: "$999999", tip: "本期 GV", className: "r-1" }] });
+  for (const [index, label] of ["今日", "本周", "本月", "总榜"].entries()) {
+    const button = matching(f.tree(), node => node.type === "button" && text(node) === label)[0];
+    assert.ok(button, `period selector ${label}`); button.props.onClick();
+    const tree = f.tree();
+    assert.match(text(tree), new RegExp(`U${700 + index}`));
+    assert.doesNotMatch(text(tree), /OLD_GV|999999/);
+    assert.match(text(tree), /Asia\/Shanghai/);
+    const dispose = matching(tree, node => node.type === "button" && text(node) === "取消资格");
+    assert.equal(dispose.length, index === 1 ? 1 : 0);
+  }
+});
+test("missing or invalid canonical period cannot expose legacy GV as a ranking", async () => {
+  for (const leaderboardPeriods of [undefined, { week: { ...periodFacts().week, timezone: "UTC" } },
+    { week: { ...periodFacts().week, participantCount: -1 } }]) {
+    const f = await fixture(false, true, false, { leaderboardPeriods,
+      podium: [{ rank: 1, memberUserId: 88, userId: "OLD_GV", gmvLabel: "$999999", tip: "本期 GV", className: "r-1" }] });
+    assert.doesNotMatch(f.html(), /OLD_GV|999999/);
+    assert.match(f.html(), /周期榜单暂不可用/);
+  }
 });

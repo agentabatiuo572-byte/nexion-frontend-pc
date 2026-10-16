@@ -3,6 +3,7 @@ import test from "node:test";
 import {readFileSync} from "node:fs";
 import {runInNewContext} from "node:vm";
 import ts from "typescript";
+import {formatBusinessTime} from "../lib/admin/business-time.ts";
 import {createRequire} from "node:module";
 import {parseBulkJob,parseBulkPreview,parseRandomPreview,parseSupportProfile,supportEnhancements,legacySupportDestination,privateMessageRecovery} from "../lib/admin/m-support-enhancements.ts";
 import {supportClient,supportObject} from "../lib/admin/m-support-client.ts";
@@ -164,6 +165,7 @@ test("funds-flow options use source statuses and reset the exact filter request 
     if(name==="@/lib/store/admin-auth")return {useAdminAuth:selector=>selector({session:{adminId:12,authorities:[]},authEpoch:1})};
     if(name==="@/lib/admin/m-support-enhancements")return {supportEnhancements};
     if(name==="@/lib/admin/m-support-client")return {supportClient:{},SupportClientError:class extends Error{}};
+    if(name==="@/lib/admin/business-time")return {formatBusinessTime};
     if(name==="@/lib/admin/error-messages")return {displayAdminError:()=>"读取失败"};
     if(name==="../design-kit")return {Modal:props=>jsx.jsx("div",{children:props.children}),Icon:()=>null};
     if(name==="./hd-ui")return {HDSelect:()=>null};
@@ -323,14 +325,14 @@ test("note deletion transports the confirmation reason and retains its original 
   const handler=profile.match(/reasonMax:200,run:(.*?)\}\)\}>删除备注<\/button>/)?.[1];assert.ok(handler);
   const reason="本轮误填备注已核对，删除原记录",profileCalls=[],profileContext={r:{id:"19"},annotate:action=>action("CV-7"),ctx:{removeCustomerNote:async(conversationNo,noteId,reason)=>{profileCalls.push({conversationNo,noteId,reason});return true;}}};
   runInNewContext(ts.transpileModule(`globalThis.remove=${handler};`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,profileContext);assert.equal(await profileContext.remove(reason),true);assert.deepEqual(profileCalls,[{conversationNo:"CV-7",noteId:"19",reason}]);
-  const direct=view.slice(view.indexOf("  const runM3DirectWrite = "),view.indexOf("  // 客户标签(customTags)")),writes=view.slice(view.indexOf("  const addCustomerTag = "),view.indexOf("  const ctx: MCtx = "));
+  const direct=view.slice(view.indexOf("  const runM3DirectWrite = "),view.indexOf("  const addCustomerTag = ")),writes=view.slice(view.indexOf("  const addCustomerTag = "),view.indexOf("  const ctx: MCtx = "));
   const methods=client.slice(client.indexOf("  addCustomerTag(conversationNo:"),client.indexOf("  transferConversation(conversationNo:")),withReason=client.match(/function withReason[^\n]*\{[\s\S]*?\n\}/)?.[0];assert.ok(direct&&writes&&methods&&withReason);
   const previous=globalThis.window,disk=new Map(),sent=[],toasts=[];let unknowns=2,nonce=0;
   globalThis.window={sessionStorage:{getItem:k=>disk.get(k)??null,setItem:(k,v)=>disk.set(k,v),removeItem:k=>disk.delete(k)}};
   try {
     const wire={currentAdminOperator:()=>"P3A",apiRequest:async(path,init)=>{sent.push({path,key:init.headers["Idempotency-Key"],body:JSON.parse(init.body)});if(unknowns>0){unknowns--;throw new Error("original response unknown");}return null;}};
     runInNewContext(ts.transpileModule(`${withReason}\nglobalThis.client={${methods}};`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,wire);
-    const load=()=>{const context={Date,crypto:{randomUUID:()=>`original-key-${++nonce}`},mCommands:createPendingMutationStore({storageKey:"note-reason-check"}),directWriteSlot:fingerprint=>`m3direct|${fingerprint}`,useCallback:fn=>fn,mContentActions:wire.client,reloadMContent:async()=>{},setToast:message=>toasts.push(message),displayAdminError:()=>"offline unknown"};runInNewContext(ts.transpileModule(direct+writes+"\nglobalThis.remove=removeCustomerNote;globalThis.actions={addCustomerTag,removeCustomerTag,addCustomerNote};",{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);return context;};
+    const load=()=>{const context={Date,AbortController,authEpoch:1,currentAuthEpoch:{current:1},crypto:{randomUUID:()=>`original-key-${++nonce}`},mCommands:createPendingMutationStore({storageKey:"note-reason-check"}),directWriteSlot:fingerprint=>`m3direct|${fingerprint}`,useCallback:fn=>fn,mContentActions:wire.client,reconcileConversationSnapshot:async()=>{},invalidateScope:()=>{},setToast:message=>toasts.push(message),displayAdminError:()=>"offline unknown"};runInNewContext(ts.transpileModule(direct+writes+"\nglobalThis.remove=removeCustomerNote;globalThis.actions={addCustomerTag,removeCustomerTag,addCustomerNote};",{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);return context;};
     assert.equal(await load().remove("CV-7","19",reason),false);assert.deepEqual(sent[0].body,{operator:"P3A",reason});assert.equal(sent[0].path,"/conversations/CV-7/customer-notes/19");
     assert.equal(await load().remove("CV-7","19","改写理由也必须先核对原请求"),false);assert.deepEqual(sent[1],sent[0]);assert.match(toasts.at(-1),/继续使用原提交理由/);
     assert.equal(await load().remove("CV-7","19","继续核对原删除请求"),true);assert.deepEqual(sent[2],sent[0]);assert.equal(createPendingMutationStore({storageKey:"note-reason-check"}).list().length,0);
@@ -375,7 +377,8 @@ test("first-contact customer profiles require verified scope without inventing a
       if(name==="@/lib/store/admin-auth")return {useAdminAuth:selector=>selector({session,authEpoch:1})};
       if(name==="@/lib/admin/m-support-enhancements")return {supportEnhancements:{profile:async()=>profile}};
       if(name==="@/lib/admin/m-support-client")return {supportClient:{},SupportClientError:class extends Error{}};
-      if(name==="@/lib/admin/error-messages")return {displayAdminError:()=>"读取失败"};
+      if(name==="@/lib/admin/business-time")return {formatBusinessTime};
+    if(name==="@/lib/admin/error-messages")return {displayAdminError:()=>"读取失败"};
       if(name==="../design-kit")return {Modal:props=>jsx.jsx("div",{children:props.children}),Icon:()=>null};
     if(name==="./hd-ui")return {HDSelect:()=>null};
       if(name==="./support-leaderboard")return {compactSupportBoardValue};

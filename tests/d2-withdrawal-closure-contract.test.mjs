@@ -164,6 +164,35 @@ const client = fs.readFileSync("lib/admin/d-client.ts", "utf8");
 const dCss = fs.readFileSync("app/components/domain-views/d-domain.css", "utf8");
 const financeRoute = fs.readFileSync("app/api/admin/finance/[...path]/route.ts", "utf8");
 
+test("D2 displays current D5 payout SLA without hardcoded or historical promises", { timeout: 30000 }, async () => {
+  const h = await offlineD2();
+  try {
+    const text = () => h.page.locator("main").innerText();
+    assert.match(await text(), /当前到账时限：—/);
+    await h.page.evaluate(() => {
+      window.__d2.rows[0].resolve({ total: 0, pageNum: 1, pageSize: 10, records: [] });
+      window.__d2.limits[0].resolve({ dailyLimitCount: 3, payoutSlaHours: 24 });
+    });
+    await h.page.getByText("当前到账时限：24 小时", { exact: false }).waitFor();
+    assert.match(await text(), /历史订单以提交时约定为准/);
+    await h.page.getByRole("button", {name:"查询",exact:true}).click();
+    await requests(h.page, 2);
+    assert.match(await text(), /当前到账时限：—/);
+    await settle(h.page, 1, [], true);
+    assert.match(await text(), /当前到账时限：—/);
+    assert.doesNotMatch(await text(), /当前到账时限：24/);
+    await h.page.getByRole("button", {name:"查询",exact:true}).click();
+    await requests(h.page, 3);
+    await h.page.evaluate(() => {
+      window.__d2.rows[2].resolve({ total: 0, pageNum: 1, pageSize: 10, records: [] });
+      window.__d2.limits[2].resolve({ dailyLimitCount: 3, payoutSlaHours: 72 });
+    });
+    await h.page.getByText("当前到账时限：72 小时", {exact:false}).waitFor();
+    const header=fs.readFileSync("app/components/domain-views/d-view.tsx","utf8");
+    assert.doesNotMatch(header, /到账承诺 48 小时|审核 ≤ 2 个工作日/);
+  } finally { await h.close(); }
+});
+
 test("D2 uses direct business confirmation with exact authority rendering", () => {
   assert.doesNotMatch(page, /usePropose|进入 A2 待确认队列|findHighOp/);
   assert.match(page, /useAdminAuth/);

@@ -299,6 +299,7 @@ interface BackendF4LeadershipPoolOverview {
   ambassadorBudgetCapLabel?: string | null;
   ambassadorKolBudgetPct?: number | string | null;
   ambassadorNextQuotaReviewDate?: string | null;
+  leaderboardPeriods?: unknown;
   leaderboardPoolLabel?: string | null;
   leaderboardParticipantCount?: number | string | null;
   leaderboardFraudHitCount?: number | string | null;
@@ -713,6 +714,16 @@ export interface F4Podium {
   memberUserId: number;
 }
 
+export interface F4LeaderboardPeriod {
+  poolUsd: number;
+  participantCount: number;
+  topN: number;
+  timezone: "Asia/Shanghai";
+  snapshotAt: string;
+  podium: F4Podium[];
+}
+export type F4LeaderboardPeriods = Partial<Record<"today" | "week" | "month" | "all", F4LeaderboardPeriod>>;
+
 export interface F4QuotaUsage { id: number; quotaCode: string; productNo: string; userId: number; orderNo: string; quantity: number; status: string; occurredAt: string }
 export interface F4AmbassadorApplication { id: number; userId: number; applicantName: string; region: string; city: string; currentRank: string; requestedBudgetUsd: number; kolBudgetPct: number; status: string; eventDate: string; createdAt: string }
 
@@ -785,6 +796,7 @@ export interface F4LeadershipPoolOverview {
   ambassadorBudgetCapLabel: string;
   ambassadorKolBudgetPct: number;
   ambassadorNextQuotaReviewDate: string;
+  leaderboardPeriods?: F4LeaderboardPeriods;
   leaderboardPoolLabel: string;
   leaderboardParticipantCount: number;
   leaderboardFraudHitCount: number;
@@ -1330,6 +1342,27 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     && Array.isArray(data.podium) && data.podium.every((row) => row && integer(row.rank, 1) && row.rank <= 3
       && integer(row.memberUserId, 1) && typeof row.userId === "string" && !!row.userId.trim()
       && label(row.gmvLabel) && typeof row.tip === "string" && typeof row.className === "string");
+  const leaderboardPeriods: F4LeaderboardPeriods = {};
+  if ((!paused || frozen) && data?.leaderboardPeriods && typeof data.leaderboardPeriods === "object") {
+    const rawPeriods = data.leaderboardPeriods as Record<string, unknown>;
+    for (const period of ["today", "week", "month", "all"] as const) {
+      const raw = rawPeriods[period];
+      if (!raw || typeof raw !== "object") continue;
+      const row = raw as Record<string, unknown>;
+      const max = period === "today" ? 20 : period === "week" ? 50 : 100;
+      if (typeof row.poolUsd !== "number" || !Number.isFinite(row.poolUsd) || row.poolUsd < 0
+        || !integer(row.participantCount) || row.participantCount > max
+        || !integer(row.topN) || row.topN > row.participantCount
+        || row.timezone !== "Asia/Shanghai" || typeof row.snapshotAt !== "string" || !Number.isFinite(Date.parse(row.snapshotAt))
+        || (paused && row.snapshotAt !== data.leaderboardSnapshotAt)
+        || !Array.isArray(row.podium) || row.podium.length > Math.min(3, row.participantCount)
+        || !row.podium.every((item, index) => item && item.rank === index + 1
+          && integer(item.memberUserId, 1) && typeof item.userId === "string" && !!item.userId.trim()
+          && label(item.gmvLabel) && typeof item.tip === "string" && typeof item.className === "string")) continue;
+      leaderboardPeriods[period] = { poolUsd: row.poolUsd, participantCount: row.participantCount,
+        topN: row.topN, timezone: row.timezone, snapshotAt: row.snapshotAt, podium: row.podium as F4Podium[] };
+    }
+  }
   const metrics = (data?.metrics ?? []).map((item) => ({
     id: asText(item.id, "metric"),
     name: asText(item.label, "指标"),
@@ -1423,6 +1456,7 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     ambassadorBudgetCapLabel: asText(data?.ambassadorBudgetCapLabel),
     ambassadorKolBudgetPct: toNumber(data?.ambassadorKolBudgetPct),
     ambassadorNextQuotaReviewDate: asText(data?.ambassadorNextQuotaReviewDate),
+    leaderboardPeriods,
     leaderboardPoolLabel: asText(data?.leaderboardPoolLabel, asText(config.leaderboardPoolUsd)),
     leaderboardParticipantCount: toNumber(data?.leaderboardParticipantCount),
     leaderboardFraudHitCount: toNumber(data?.leaderboardFraudHitCount),

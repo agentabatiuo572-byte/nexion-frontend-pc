@@ -4,6 +4,17 @@ import { supportClient, setSupportPoolRoute, SupportClientError, readSupportPool
 const envelope = (data, status = 200) => new Response(JSON.stringify({code: status === 200 ? 0 : status, data, message: 'OK'}), {status});
 const original = globalThis.fetch;
 const row = {customerId: 71, reason: 'NO_INVITER', enteredAt: '2026-10-09T00:00:00Z', version: 4};
+test('pool API preserves explicit UTC microseconds and nullable last attempts', async () => {
+  try {
+    for (const lastAttemptAt of ['2026-10-16T09:22:35.654321Z', null]) {
+      const enteredAt = '2026-10-16T09:21:25.219274Z';
+      globalThis.fetch = async () => envelope(page([{...row, enteredAt, lastAttemptAt}]));
+      const result = (await supportClient.bindingPool({pageNum:1,pageSize:8})).records[0];
+      assert.equal(result.enteredAt, enteredAt);
+      assert.equal(result.lastAttemptAt, lastAttemptAt);
+    }
+  } finally { globalThis.fetch = original; }
+});
 const page = records => ({records, total: records.length, pageNum: 1, pageSize: 8});
 test('candidate page preserves historical roster and rejects unknown or contradictory assignment authority', async () => {
   const agent = {adminId: 7, name: '专属客服', seatType: 'MANAGER', serviceTypes: ['support'], status: 'enabled', enabled: true, assignmentEligible: true, busy: true, assignedUserCount: 4, maxConcurrent: 10, version: 1};

@@ -70,6 +70,12 @@ export interface E4OrderFunding {
   occurredAt: string;
 }
 
+/** Ledger references may be claim-based (trial conversion), not the order number. */
+export function e4FundingLedgerHref(item: E4OrderFunding): string | null {
+  return item.source === "D4_LEDGER" && item.bizNo.trim()
+    ? `/finance/ledger?bizNo=${encodeURIComponent(item.bizNo)}` : null;
+}
+
 export interface E4OrderDetail {
   order: E4Order;
   userId: number;

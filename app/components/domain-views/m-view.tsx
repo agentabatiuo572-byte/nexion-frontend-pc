@@ -468,6 +468,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     failureMessage: string,
     value?: string,
   ): Promise<boolean> => {
+    if (currentAuthEpoch.current !== authEpoch) return false;
     const slot = directWriteSlot(fingerprint);
     const original = mCommands.list().find((record) => record.fingerprint === slot);
     const idempotencyKey = original?.commandKey
@@ -478,16 +479,27 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     if (usingOriginalReason) setToast("正在核对原删除请求，继续使用原提交理由。");
     try {
       await write(idempotencyKey, originalValue);
-      await reloadMContent();
       mCommands.forget(slot);
+      if (currentAuthEpoch.current !== authEpoch) return false;
+      // A full progressive reload briefly publishes an empty conversation list,
+      // unmounting the open profile and discarding its other annotation draft.
+      // Reconcile one complete, epoch/generation-checked conversation snapshot.
+      try {
+        await reconcileConversationSnapshot(new AbortController().signal);
+      } catch (error) {
+        if (currentAuthEpoch.current !== authEpoch) return false;
+        if (error instanceof MContentReadError && [403, 404].includes(error.status)) invalidateScope();
+        setToast(`客户标注已保存，会话刷新失败，请重新读取 · ${displayAdminError(error)}`);
+      }
       return true;
     } catch (error) {
+      if (currentAuthEpoch.current !== authEpoch) return false;
       setToast(`${failureMessage}或结果未知,请重试 · ${displayAdminError(error)}${usingOriginalReason ? " · 继续使用原提交理由核对结果" : ""}`);
       return false;
     }
-  }, [reloadMContent, setToast]);
+  }, [authEpoch, reconcileConversationSnapshot, invalidateScope, setToast]);
 
-  // 客户标签(customTags)/备注(notes)走后端专用端点持久化,调完 reload 同步;失败 toast 报错。
+  // 客户标签/备注持久化后刷新完整会话快照；资料编辑器另行回读当前客户资料。
   // 即时标注使用描述性理由；备注删除透传确认理由，并随原命令保留以便未知结果重试。
   const addCustomerTag = useCallback(async (convoId: string, tag: string): Promise<boolean> => {
     return runM3DirectWrite(

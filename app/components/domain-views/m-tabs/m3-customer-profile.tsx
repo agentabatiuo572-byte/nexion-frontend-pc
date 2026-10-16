@@ -4,6 +4,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { supportEnhancements, type SupportProfile, type SupportGroup, type SupportFinanceFieldStatus } from "@/lib/admin/m-support-enhancements";
 import { supportClient, SupportClientError, type SupportMaintenanceHistory } from "@/lib/admin/m-support-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { formatBusinessTime } from "@/lib/admin/business-time";
 import { Icon, Modal } from "../design-kit";
 import { HDSelect } from "./hd-ui";
 import type { SupportCustomerStatistics } from "@/lib/admin/support-analytics-client";
@@ -16,7 +17,7 @@ import "./m3-customer-profile.css";
 const statusText = { READY: "已读取", UNKNOWN: "未知", FORBIDDEN: "无权限", ERROR: "读取失败" };
 const asRows = (value: unknown): Record<string, unknown>[] => Array.isArray(value) ? value.filter(v => v && typeof v === "object") : [];
 const show = (value: unknown): string => value == null || value === "" ? "未知" : typeof value === "boolean" ? value ? "是" : "否" : typeof value === "string" || typeof value === "number" ? String(value) : "待核对";
-const dates = (value: unknown) => typeof value === "string" && !Number.isNaN(Date.parse(value)) ? new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "未知";
+const dates = (value: unknown) => formatBusinessTime(value, { dateStyle: "medium", timeStyle: "short" }, "未知");
 const labelState = (value: unknown) => ({ ACTIVE: "活跃", DORMANT: "沉睡", UNKNOWN: "未知", OPEN: "进行中", CLOSED: "已结束", RESOLVED: "已解决", TRANSFERRED: "已转交", BOUND: "已绑定", UNBOUND: "未绑定", ONLINE: "在网", OFFLINE: "离线", online: "在网", offline: "离线", unknown: "未知" }[String(value)] ?? "待核对");
 const flowStatusLabels: Record<string, string> = {
   CREATED: "已创建", PENDING: "待处理", CONFIRMING: "确认中", WAITING_CONFIRMATION: "等待确认", OPEN: "待对账",
@@ -116,10 +117,30 @@ export function M3CustomerProfile({ ctx, customerId, conversation, scopeVersion,
   const conversationId = conversation?.id;
   const writable = Boolean(!scopeDenied && conversationId && conversation?.ownerAdminId === session?.adminId && (session?.role === "super" || session?.role === "superadmin" || session?.authorities.includes("service_m3_write")));
   const canReadAccount = session?.role === "super" || session?.role === "superadmin" || Boolean(session?.authorities.includes("user_c1hub_read"));
+  const annotationScope = `${scopeKey}:${conversationId ?? ""}:${conversation?.ownerAdminId ?? ""}:${conversation?.assignmentId ?? ""}:${writable}`;
+  const currentAnnotationScope = useRef(annotationScope); currentAnnotationScope.current = annotationScope;
   async function annotate(action: (id: string) => Promise<boolean>, clear: () => void) {
     if (revokedScope.current === scopeKey || stamp.current !== requestStamp || !conversationId || !writable || annotationWrite.current) return false; const saved = stamp.current, writeToken = {}; annotationWrite.current = writeToken; setWriting(true); setWriteError("");
-    try { const ok = await action(conversationId); if (!mounted.current || saved !== stamp.current) return false; if (!ok) setWriteError("未确认保存，原输入已保留，请核对归属后重试。"); else { clear(); const next = await supportEnhancements.profile(customerId); if (mounted.current && saved === stamp.current) setProfile(next); } return ok; }
-    catch(e) { if (mounted.current && saved === stamp.current && !denied(e)) setWriteError(displayAdminError(e)); return false; } finally { if (annotationWrite.current === writeToken) { annotationWrite.current = null; if (mounted.current) setWriting(false); } }
+    const sameWriteScope = () => mounted.current && annotationWrite.current === writeToken && revokedScope.current !== scopeKey && currentAnnotationScope.current === annotationScope;
+    let confirmed = false;
+    try {
+      const ok = await action(conversationId);
+      if (!sameWriteScope()) return false;
+      if (!ok) setWriteError("未确认保存，原输入已保留，请核对归属后重试。");
+      else {
+        confirmed = true; clear();
+        // A new message can advance the conversation version without changing
+        // annotation ownership. Settle the receipt, but let the newer read win.
+        if (saved === stamp.current) {
+          const next = await supportEnhancements.profile(customerId);
+          if (sameWriteScope() && saved === stamp.current) setProfile(next);
+        }
+      }
+      return ok;
+    } catch(e) {
+      if (sameWriteScope() && saved === stamp.current && !denied(e)) setWriteError(confirmed ? `已保存，资料刷新失败，请重新读取 · ${displayAdminError(e)}` : displayAdminError(e));
+      return confirmed;
+    } finally { if (annotationWrite.current === writeToken) { annotationWrite.current = null; if (mounted.current) setWriting(false); } }
   }
   const identity = profile?.identity.data, finance = profile?.finance.data, service = profile?.service.data, annotations = profile?.annotations.data;
   const statistics = profile?.statistics?.status === "READY" ? profile.statistics.data : null;

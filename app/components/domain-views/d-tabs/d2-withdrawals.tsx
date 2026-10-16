@@ -33,8 +33,8 @@ import type { DCtx } from "./types";
 const OPERATOR = currentAdminOperator;
 const STATUS_TABS = [
   ["", "全部"], ["SUBMITTED", "已提交"], ["REVIEW_PENDING", "待审核"], ["EXTENDED_HOLD", "冷却期等待复查"], ["FROZEN", "冻结"],
-  ["REVIEW_PASSED", "已放行"], ["PROCESSING", "处理中"], ["SENT", "已广播"], ["CONFIRMED", "已确认"],
-  ["REVIEW_REJECTED", "审核拒绝"], ["ADDRESS_INVALID", "地址无效"], ["TX_FAILED", "链上失败"], ["TX_ORPHANED", "孤块/死亡信件"], ["REFUNDED", "已退款"],
+  ["REVIEW_PASSED", "已放行"], ["PROCESSING", "处理中"], ["SENT", "银行处理中 / 链上已广播"], ["CONFIRMED", "已确认"],
+  ["REVIEW_REJECTED", "审核拒绝"], ["ADDRESS_INVALID", "地址无效"], ["TX_FAILED", "代付 / 链上失败"], ["TX_ORPHANED", "人工核对 / 链上异常"], ["REFUNDED", "已退款"],
 ] as const;
 
 const ACTION_AUTHORITY: Record<D2ReviewAction, string> = {
@@ -81,6 +81,49 @@ function bankStatusLabel(row: D2Withdrawal) {
   if (row.status === "TX_ORPHANED") return "人工核对 · 未解冻";
   if (["FAILED", "TX_FAILED"].includes(row.status)) return "代付失败 · 已退回";
   return statusLabel(row.status);
+}
+
+function historyStatusLabel(status: string, chain?: string) {
+  if (chain === "BANK-VND") {
+    if (["SENT", "CHAIN_SUBMITTED"].includes(status)) return "银行处理中";
+    if (["TX_ORPHANED", "DEAD"].includes(status)) return "人工核对";
+    if (["FAILED", "TX_FAILED"].includes(status)) return "代付失败";
+  }
+  // Older responses have no per-order channel; do not infer it from the open order.
+  if (!chain && ["SENT", "CHAIN_SUBMITTED"].includes(status)) return "已派发（渠道未提供）";
+  if (!chain && ["FAILED", "TX_FAILED"].includes(status)) return "处理失败（渠道未提供）";
+  if (!chain && ["TX_ORPHANED", "DEAD"].includes(status)) return "处理异常（渠道未提供）";
+  return statusLabel(status);
+}
+
+function withdrawalHistoryText(value?: string) {
+  if (!value?.trim()) return "—";
+  return value.split(" | ").map((entry) => {
+    const parts = entry.split("/");
+    if (parts.length === 4) {
+      const [order, chain, status, facts] = parts;
+      return `${order}/${chain}/${historyStatusLabel(status, chain)}/${facts}`;
+    }
+    if (parts.length === 3) {
+      const [order, status, facts] = parts;
+      return `${order}/${historyStatusLabel(status)}/${facts}`;
+    }
+    return entry;
+  }).join(" | ");
+}
+
+function statusHistoryText(value: string | undefined, chain: string) {
+  if (!value?.trim()) return "—";
+  return value.split("; ").map((entry) => {
+    const separator = entry.indexOf(":");
+    const key = entry.slice(0, separator), fact = entry.slice(separator + 1);
+    if (key === "status") return `状态：${historyStatusLabel(fact, chain)}`;
+    const labels: Record<string, string> = {
+      created: "提交时间", chain: chain === "BANK-VND" ? "银行派发时间" : "链上提交时间",
+      payout: "银行派发时间", completed: "完成时间", failed: "失败时间", updated: "更新时间",
+    };
+    return labels[key] ? `${labels[key]}：${fact}` : entry;
+  }).join("；");
 }
 
 const FAILURE_REASON_LABELS: Record<string, string> = {
@@ -205,10 +248,10 @@ const D2_TERMINAL = new Set(["CONFIRMED", "REFUNDED"]);
 const D2_BRANCHES: { from: string[]; trigger: string; to: string[]; note: string }[] = [
   { from: ["REVIEW_PENDING"], trigger: "点「延迟」", to: ["EXTENDED_HOLD"], note: "操作时要填复查时间" },
   { from: ["EXTENDED_HOLD"], trigger: "等到复查时间", to: ["REVIEW_PENDING"], note: "这一步本页没有按钮,到点由系统送回待审核" },
-  { from: ["REVIEW_PENDING", "REVIEW_PASSED", "PROCESSING"], trigger: "点「冻结」", to: ["FROZEN"], note: "广播上链之前都还拦得住" },
+  { from: ["REVIEW_PENDING", "REVIEW_PASSED", "PROCESSING"], trigger: "点「冻结」", to: ["FROZEN"], note: "派发前由服务端核验是否仍可冻结" },
   { from: ["FROZEN"], trigger: "点「解冻」", to: ["REVIEW_PENDING"], note: "回到待审核重新决定" },
   { from: ["REVIEW_PENDING"], trigger: "点「拒绝并退款」", to: ["REVIEW_REJECTED"], note: "要填拒绝原因码" },
-  { from: ["SENT"], trigger: "链上回执", to: ["ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], note: "由链上结果决定,不是人工动作" },
+  { from: ["SENT"], trigger: "渠道查询 / 回执", to: ["ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], note: "银行按代付查询结果处理；链上按回执处理，结果不明时继续核对" },
   { from: ["REVIEW_REJECTED", "ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], trigger: "手动退款", to: ["REFUNDED"], note: "提交前要先核实资金没离开平台" },
 ];
 
@@ -710,6 +753,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   return <>
     {error && <div className="dtint warn" style={{ marginBottom: 12 }}>D2 数据加载失败 · {error} · 写操作已关闭，请重试。 <button className="l-btn sm" onClick={() => void load(1)}>重试</button></div>}
+    <div className="dtint" style={{ marginBottom: 12 }}>当前到账时限：{resultsUnavailable || d5?.payoutSlaHours == null ? "—" : `${d5.payoutSlaHours} 小时`} · 历史订单以提交时约定为准</div>
     <div className="f-stats">
       <div className="f-stat"><div className="k">当前筛选</div><div className="v">{resultsUnavailable ? "—" : rows.total}</div><div className="sub">服务端分页总数</div></div>
       <div className="f-stat cyan"><div className="k">本页金额</div><div className="v">{resultsUnavailable ? "—" : money(visibleRows.reduce((sum, row) => sum + row.amount, 0))}</div><div className="sub">{resultsUnavailable ? "待确认" : `${visibleRows.length} 笔`}</div></div>
@@ -848,13 +892,13 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           <KV k="目标地址" v={<span className="mono d2-break-text">{detail.targetAddress}</span>} />
           <KV k="设备事实" v={operationalText(detail.deviceSummary)} />
           <KV k="推荐位置" v={operationalText(detail.referralPosition)} />
-          <KV k="全部提现历史" v={operationalText(detail.withdrawalHistory)} />
+          <KV k="全部提现历史" v={withdrawalHistoryText(detail.withdrawalHistory)} />
         </section>
         <section className="d2-detail-section">
           <h3>风控与审计</h3>
           <KV k="K4 评分明细" v={operationalText(detail.riskScoreBreakdown)} />
           <KV k="K3 风险原因" v={operationalText(detail.riskReason)} />
-          <KV k="状态历史" v={operationalText(detail.statusHistory)} />
+          <KV k="状态历史" v={statusHistoryText(detail.statusHistory, detail.chain)} />
           <KV k="审计轨迹" v={operationalText(detail.auditTrail)} />
         </section>
       </div>

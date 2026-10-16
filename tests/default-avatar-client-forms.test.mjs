@@ -296,3 +296,39 @@ test("expired original self avatar command survives reload but is query-only", a
   assert.equal(confirmed, 1); assert.equal(restored.selfAvatarCommands.list().length, 0);
   assert.ok(reloaded.requests.every(request => request.init.method === undefined)); view.dispose();
 });
+
+
+test("workbench self snapshot hydrates on mount and cancelled replacement never changes canonical avatar", async () => {
+  const f = fixture(), editor = f.load("app/components/domain-views/m-tabs/self-avatar-editor.tsx").SelfAvatarEditor;
+  const seen = [], changed = [], notices = [];
+  f.queue.push(json(SNAP));
+  const view = f.component(editor, { name: "本人客服", onSnapshot: x => seen.push(x), onChanged: x => changed.push(x), ctx: { toast: x => notices.push(x), refreshContent: async () => {}, openActionConfirm() { assert.fail("No save confirmation"); } } });
+  view.render(); await flush(); let tree = view.render();
+  assert.equal(f.requests.length, 1); assert.deepEqual(seen, [SNAP]); assert.equal(nodes(tree, n => n.type === "Drawer").length, 0);
+  f.queue.push(json(SNAP)); button(tree, "更换本人头像").props.onClick(); await flush(); tree = view.render();
+  nodes(tree, n => typeof n.type === "function" && n.type.name === "AccountAvatarPicker")[0].props.onChange(ID);
+  tree = view.render(); button(tree, "返回工作台").props.onClick(); tree = view.render();
+  assert.equal(seen.at(-1).assetId, OLD); assert.deepEqual(changed, []); assert.deepEqual(notices, []);
+  assert.ok(f.requests.every(r => r.init.method === undefined)); view.dispose();
+  f.queue.push(json(SNAP)); const reload = f.component(editor, view.props); reload.render(); await flush();
+  assert.equal(seen.at(-1).assetId, OLD); assert.equal(f.requests.length, 3); reload.dispose();
+  const parent = readFileSync(join(root, "app/components/domain-views/m-tabs/m1-personal-workbench.tsx"), "utf8");
+  assert.match(parent, /onSnapshot=\{setSelfAvatarSnapshot\}/);
+});
+
+test("automatic avatar read preserves unknown command and rejects denied or stale-account responses", async () => {
+  const f = fixture(), pending = f.load("lib/admin/account-avatar-pending.ts"), editor = f.load("app/components/domain-views/m-tabs/self-avatar-editor.tsx").SelfAvatarEditor;
+  pending.selfAvatarCommands.remember("41:self-avatar-save", KEY, { actorId: 41, input: { assetId: ID, expectedVersion: "7", reason: "原明确更换头像理由" } });
+  const original = pending.selfAvatarCommands.list(), seen = [];
+  const props = { name: "本人客服", onSnapshot: x => seen.push(x), onChanged() { assert.fail("Read hydration cannot announce save"); }, ctx: { toast() { assert.fail("No save toast"); }, refreshContent: async () => {}, openActionConfirm() {} } };
+  f.queue.push(json({ ...SNAP, assetId: ID })); const first = f.component(editor, props); first.render(); await flush();
+  assert.equal(seen.length, 1); assert.deepEqual(pending.selfAvatarCommands.list(), original); first.dispose();
+  f.queue.push(json(null, 403, "AVATAR_SELF_FORBIDDEN")); const denied = f.component(editor, props); denied.render(); await flush();
+  assert.equal(seen.length, 1); assert.deepEqual(pending.selfAvatarCommands.list(), original); denied.dispose();
+  for (const change of [() => { f.auth.authEpoch++; }, () => { f.auth.session.adminId++; }]) {
+    let finish; f.queue.push(new Promise(resolve => { finish = resolve; }));
+    const late = f.component(editor, props); late.render(); change(); finish(json(SNAP)); await flush();
+    assert.equal(seen.length, 1, "Old auth response cannot publish even before effect cleanup"); late.dispose();
+  }
+  assert.ok(f.requests.every(r => r.init.method === undefined));
+});

@@ -6,8 +6,11 @@ import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import test from "node:test";
 import { SupportClientError } from "../lib/admin/m-support-client.ts";
+import { formatBusinessTime } from "../lib/admin/business-time.ts";
 import { displayAdminError } from "../lib/admin/error-messages.ts";
 import { parseSupportProfile } from "../lib/admin/m-support-enhancements.ts";
+import { MDomainLoadCoordinator } from "../lib/admin/m-content-load-coordinator.ts";
+import { MContentReadError } from "../lib/admin/m-support-read-contract.ts";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const require = createRequire(path.join(process.env.SUPPORT_PROFILE_DEPENDENCY_ROOT || root, "package.json"));
@@ -63,6 +66,7 @@ function harness(props = {}, detail = true) {
     "./hd-ui": { HDSelect: () => null },
     "./support-avatar": { SupportAvatar: () => null, customerAvatarPath: id => id, advisorAvatarPath: id => id },
     "./support-leaderboard": leaderboardExports,
+    "@/lib/admin/business-time": { formatBusinessTime },
     "./m3-customer-profile.css": {},
   };
   const context = { exports: {}, AbortController, Date, Intl, JSON, window, document: { querySelectorAll: () => [] }, require: name => { assert.ok(Object.hasOwn(modules, name), name); return modules[name]; } };
@@ -98,6 +102,151 @@ const content = node => typeof node === "string" || typeof node === "number" ? S
 function button(tree, text) { const matches = elements(tree).filter(node => node.type === "button" && content(node) === text); assert.equal(matches.length, 1, text); return matches[0]; }
 function succeed(requests, name = "当前客户") { requests.forEach(request => request.resolve(request.kind === "profile" ? profile(name) : request.kind === "maintenance" ? maintenance : group({ records: [], total: 0 }))); }
 const deleteTag = h => elements(h.render()).find(node => node.type === "button" && node.props["aria-label"]?.startsWith("删除标签 "));
+
+// Execute the production write callbacks and snapshot coordinator together with
+// the actual profile component. Only transport and React scheduling are fake.
+function annotationWorkbench() {
+  const parentSource = readFileSync(path.join(root, "app/components/domain-views/m-view.tsx"), "utf8");
+  const ast = ts.createSourceFile("m-view.tsx", parentSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const names = ["reloadMContent", "reconcileConversationSnapshot", "runM3DirectWrite", "addCustomerTag", "removeCustomerTag", "addCustomerNote", "removeCustomerNote"];
+  const declarations = new Map(); let confirmHandler;
+  function visit(node) {
+    if (ts.isVariableDeclaration(node) && names.includes(node.name.getText(ast))) declarations.set(node.name.getText(ast), node.getText(ast));
+    if (ts.isJsxAttribute(node) && node.name.getText(ast) === "onConfirm" && node.initializer && ts.isJsxExpression(node.initializer) && node.initializer.expression?.getText(ast).includes("mc.run(reason")) confirmHandler = node.initializer.expression.getText(ast);
+    ts.forEachChild(node, visit);
+  }
+  visit(ast); names.forEach(name => assert.ok(declarations.has(name), name)); assert.ok(confirmHandler);
+  const requests = [], writes = [], receipts = new Map(), toasts = [];
+  const identity = { authEpoch: 1, session: { adminId: 12, role: "support", authorities: ["service_m3_write"] } };
+  let currentConversation = { id: "CV-7", customerId: "7", ownerAdminId: 12, assignmentId: "15", version: 1, messages: [], detailReady: true };
+  let h, fullLoads = 0, unmounts = 0, mc = null, data = { conversations: [currentConversation], conversationsAvailable: true };
+  const defer = (kind, args) => new Promise((resolve, reject) => requests.push({ kind, args, resolve, reject }));
+  const writesApi = Object.fromEntries(names.filter(name => /Customer/.test(name)).map(name => [name, (...args) => new Promise((resolve, reject) => writes.push({ name, args, resolve, reject }))]));
+  const context = {
+    exports: {}, AbortController, Date, Math, crypto: globalThis.crypto,
+    useCallback: callback => callback, authEpoch: 1, currentAuthEpoch: { current: 1 }, mDataAuthEpoch: { current: 1 },
+    mLoadCoordinator: { current: new MDomainLoadCoordinator() }, liveSnapshotController: { current: null },
+    setMError() {}, setMLoading() {}, setToast: message => toasts.push(message), displayAdminError, MContentReadError,
+    invalidateScope: () => { h?.invalidate({}); context.mLoadCoordinator.current.beginConversationSnapshot(); },
+    preserveVerifiedSupportAgentsDuringReload: (_old, next) => next, failClosedSupportAgentsAfterReload: old => old,
+    fetchMContentData: async progress => {
+      fullLoads++;
+      // The existing progressive transport publishes another group's result
+      // before conversations, including its initial empty conversations array.
+      progress({ conversations: [], conversationsAvailable: false });
+      return { conversations: [currentConversation], conversationsAvailable: true };
+    },
+    fetchMConversationSnapshot: signal => defer("snapshot", [signal]),
+    setMData: update => {
+      data = typeof update === "function" ? update(data) : update;
+      const selected = data?.conversations.find(row => row.id === currentConversation.id);
+      if (!selected) { h?.unmount(); h = null; unmounts++; }
+      else {
+        currentConversation = selected;
+        if (!h) mount();
+        else h.update({ conversation: selected, scopeVersion: selected.version });
+      }
+    },
+    directWriteSlot: value => value,
+    mCommands: { list: () => [...receipts.values()], remember: (fingerprint, commandKey, rest) => receipts.set(fingerprint, { fingerprint, commandKey, ...rest }), forget: slot => receipts.delete(slot) },
+    mContentActions: writesApi, actionConfirmRunRef: { current: null },
+    setActionConfirm: update => { mc = typeof update === "function" ? update(mc) : update; context.mc = mc; },
+  };
+  const code = names.map(name => `const ${declarations.get(name)};`).join("\n") + `\nexports.commands = {addCustomerTag, removeCustomerTag, addCustomerNote, removeCustomerNote}; exports.confirm = ${confirmHandler};`;
+  vm.runInNewContext(ts.transpileModule(code, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, context);
+  function mount() {
+    h = harness({ customerId: currentConversation.customerId, conversation: currentConversation, scopeVersion: currentConversation.version }, false);
+    Object.assign(h.ctx, context.exports.commands, { openActionConfirm: request => { mc = request; context.mc = mc; } });
+    h.render();
+    const initial = profile(); initial.annotations.data.notes = [{ id: "NOTE-1", text: "已保存备注" }];
+    h.requests[0].resolve(initial); succeed(h.requests.slice(1));
+  }
+  mount();
+  return {
+    requests, writes, receipts, toasts, get h() { return h; }, get fullLoads() { return fullLoads; }, get unmounts() { return unmounts; }, get confirmation() { return mc; },
+    async settle() { await tick(); h?.render(); },
+    async open() { await this.settle(); button(h.render(), "查看与编辑").props.onClick(); h.render(); },
+    confirm: () => context.exports.confirm("测试删除理由足够长度"),
+    snapshot(row = currentConversation) { const request = requests.find(r => r.kind === "snapshot" && !r.resolved); request.resolved = true; request.resolve(row ? [row] : []); },
+    change(patch) { currentConversation = { ...currentConversation, ...patch }; h.update({ customerId: currentConversation.customerId, conversation: currentConversation, scopeVersion: currentConversation.version }); },
+    epoch() { identity.authEpoch++; context.currentAuthEpoch.current = identity.authEpoch; context.mDataAuthEpoch.current = identity.authEpoch; h.auth(identity); },
+  };
+}
+const editor = (h, type) => elements(h.render()).find(node => node.type === type && node.props.maxLength === (type === "input" ? 30 : 1000));
+const setDraft = (h, type, value) => { editor(h, type).props.onChange({ target: { value } }); h.render(); };
+
+for (const [action, submitted, retained] of [["添加标签", "input", "textarea"], ["保存备注", "textarea", "input"]]) {
+  test(`annotation ${action} retains the other draft and 360 through slow snapshot/profile reads`, async () => {
+    const w = annotationWorkbench(); await w.open(); setDraft(w.h, "input", "新标签"); setDraft(w.h, "textarea", "未提交备注");
+    const other = editor(w.h, retained).props.value;
+    button(w.h.render(), action).props.onClick(); w.h.render(); w.writes[0].resolve({}); await w.settle();
+    assert.equal(w.fullLoads, 0, "annotation must not run the destructive progressive whole-domain reload");
+    assert.equal(editor(w.h, retained).props.value, other); assert.equal(button(w.h.render(), action).props.disabled, true);
+    w.snapshot(); await w.settle(); assert.equal(editor(w.h, submitted).props.value, ""); assert.equal(editor(w.h, retained).props.value, other);
+    succeed(w.h.requests.slice(4)); await w.settle(); assert.equal(w.unmounts, 0); assert.equal(editor(w.h, retained).props.value, other); assert.equal(w.receipts.size, 0); w.h.unmount();
+  });
+}
+
+test("annotation transport failure retains both drafts and original command key", async () => {
+  const w = annotationWorkbench(); await w.open(); setDraft(w.h, "input", "新标签"); setDraft(w.h, "textarea", "未提交备注");
+  button(w.h.render(), "添加标签").props.onClick(); w.writes[0].reject(new Error("network")); await w.settle();
+  assert.equal(editor(w.h, "input").props.value, "新标签"); assert.equal(editor(w.h, "textarea").props.value, "未提交备注");
+  assert.equal(w.requests.length, 0); assert.equal(w.receipts.size, 1);
+  button(w.h.render(), "添加标签").props.onClick(); assert.equal(w.writes[1].args.at(-1), w.writes[0].args.at(-1)); w.writes[1].reject(new Error("network")); await w.settle(); w.h.unmount();
+});
+
+test("successful delete closes the actual global confirmation even when ordinary conversation version advances", async () => {
+  const w = annotationWorkbench(); await w.open(); setDraft(w.h, "input", "保留标签"); setDraft(w.h, "textarea", "保留备注");
+  button(w.h.render(), "删除备注").props.onClick(); const completion = w.confirm(); w.writes[0].resolve({}); await w.settle();
+  assert.equal(w.fullLoads, 0); w.change({ version: 2 }); w.snapshot(); await w.settle();
+  succeed(w.h.requests.slice(4)); await completion; await w.settle(); assert.equal(w.confirmation, null);
+  assert.equal(editor(w.h, "input").props.value, "保留标签"); assert.equal(editor(w.h, "textarea").props.value, "保留备注"); w.h.unmount();
+});
+
+test("confirmed annotation with failed snapshot is not retained as an unknown write", async () => {
+  const w = annotationWorkbench(); await w.open(); setDraft(w.h, "input", "新标签"); setDraft(w.h, "textarea", "保留备注");
+  button(w.h.render(), "添加标签").props.onClick(); w.writes[0].resolve({}); await w.settle(); assert.equal(w.fullLoads, 0);
+  w.requests[0].reject(new Error("read failed")); await w.settle(); succeed(w.h.requests.slice(4)); await w.settle();
+  assert.equal(w.receipts.size, 0); assert.equal(editor(w.h, "input").props.value, ""); assert.equal(editor(w.h, "textarea").props.value, "保留备注");
+  assert.ok(w.toasts.some(message => message.includes("已保存"))); w.h.unmount();
+});
+
+test("delete receipt closes confirmation after its profile refresh fails, without resubmitting", async () => {
+  const w = annotationWorkbench(); await w.open(); setDraft(w.h, "textarea", "仍需保留的备注草稿");
+  button(w.h.render(), "删除备注").props.onClick(); const completion = w.confirm(); w.writes[0].resolve({}); await w.settle();
+  w.snapshot(); await w.settle(); w.h.requests[4].reject(new Error("profile unavailable")); await completion; await w.settle();
+  assert.equal(w.confirmation, null); assert.equal(w.receipts.size, 0); assert.equal(w.writes.length, 1);
+  assert.equal(editor(w.h, "textarea").props.value, "仍需保留的备注草稿"); assert.match(w.h.html(), /已保存，资料刷新失败/); w.h.unmount();
+});
+
+test("authoritative empty conversation snapshot still unmounts inaccessible customer", async () => {
+  const w = annotationWorkbench(); await w.open(); setDraft(w.h, "textarea", "不可留给其他客户");
+  button(w.h.render(), "删除备注").props.onClick(); const completion = w.confirm(); w.writes[0].resolve({}); await w.settle();
+  w.snapshot(null); await completion; await w.settle(); assert.equal(w.h, null); assert.equal(w.unmounts, 1); assert.equal(w.fullLoads, 0);
+});
+
+test("forbidden snapshot revokes the profile instead of keeping editable stale scope", async () => {
+  const w = annotationWorkbench(); await w.open(); setDraft(w.h, "input", "旧标签"); setDraft(w.h, "textarea", "旧备注");
+  button(w.h.render(), "添加标签").props.onClick(); w.writes[0].resolve({}); await w.settle();
+  w.requests[0].reject(new MContentReadError(403, 403, "SUPPORT_SCOPE_FORBIDDEN")); await w.settle();
+  assert.match(w.h.html(), /客户资料暂时无法读取/); assert.doesNotMatch(w.h.html(), /value="旧标签"|>旧备注<\/textarea>/); assert.equal(w.receipts.size, 0); w.h.unmount();
+});
+
+for (const change of ["customer", "epoch", "assignment", "revoke"]) {
+  test(`pending annotation cannot clear or refresh another ${change} scope`, async () => {
+    const w = annotationWorkbench(); await w.open(); setDraft(w.h, "input", "旧标签"); setDraft(w.h, "textarea", "旧备注");
+    button(w.h.render(), "添加标签").props.onClick();
+    if (change === "customer") w.change({ id: "CV-8", customerId: "8" });
+    else if (change === "epoch") w.epoch();
+    else if (change === "assignment") w.change({ assignmentId: "16", version: 2 });
+    else w.h.invalidate({ customerId: "7" });
+    const readCount = w.h.requests.length; w.writes[0].resolve({}); await w.settle();
+    if (w.requests.length) w.requests[0].reject(new Error("scope superseded")); await w.settle();
+    assert.equal(w.h.requests.length, readCount, "old write cannot issue a profile request in the new scope");
+    if (change === "customer" || change === "epoch" || change === "revoke") assert.doesNotMatch(w.h.html(), /value="旧标签"|>旧备注<\/textarea>/);
+    w.h.unmount();
+  });
+}
 
 test("full-profile navigation carries the current customer and encoded original conversation without opening another modal", () => {
   for (const conversation of [undefined, { id: "C-7 &next=/users/search" }]) {

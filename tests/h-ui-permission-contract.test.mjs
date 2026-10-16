@@ -15,8 +15,8 @@ const h7 = read("../app/components/domain-views/h-tabs/h7-voucher-config.tsx");
 test("H 域上下文从真实登录会话统一提供 authority 判断", () => {
   assert.match(view, /useAdminAuth/);
   assert.match(types, /can:\s*\(authority:\s*string\)\s*=>\s*boolean/);
-  assert.match(view, /role\s*===\s*"superadmin"/);
-  assert.match(view, /authorities\.includes\(authority\)/);
+  assert.match(view, /access\[1\]\s*===\s*"superadmin"/);
+  assert.match(view, /access\.slice\(2\)\.includes\(authority\)/);
 });
 
 test("H1 精确区分一般写、控制项写和覆盖撤销", () => {
@@ -33,8 +33,8 @@ test("H2 精确区分参数、会话取消和会话扣款权限", () => {
   assert.match(h2, /growth_h2_session_cancel/);
   assert.match(h2, /growth_h2_session_charge/);
   assert.match(h2, /disabled=\{readOnly\s*\|\|\s*!canWrite\}/);
-  assert.match(h2, /disabled=\{!canCancel\}/);
-  assert.match(h2, /disabled=\{!canCharge\}/);
+  assert.match(h2, /disabled=\{!canCancel \|\| !knownTrialOwner\(session\)\}/);
+  assert.match(h2, /disabled=\{!canCharge \|\| !knownTrialOwner\(session\)\}/);
 });
 
 test("H3、H4 与 H4 转盘奖池使用各自后端 authority", () => {

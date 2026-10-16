@@ -26,6 +26,8 @@ type TrialParam = {
 
 type TrialSession = {
   sid: string;
+  userId?: number;
+  displayName?: string | null;
   state: string;
   shadow: string;
   cardTok?: string;
@@ -64,6 +66,16 @@ type H2Model = {
 function text(value: unknown, fallback = "-") {
   if (value == null || value === "") return fallback;
   return String(value);
+}
+
+function knownTrialOwner(session: TrialSession): boolean {
+  return typeof session.userId === "number" && Number.isSafeInteger(session.userId) && session.userId > 0;
+}
+
+function trialOwnerLabel(session: TrialSession): string {
+  if (!knownTrialOwner(session)) return "用户信息暂不可用";
+  const name = typeof session.displayName === "string" ? session.displayName.trim() : "";
+  return `UID ${session.userId}${name ? ` · ${name}` : ""}`;
 }
 
 function stateMap(states: TrialState[]) {
@@ -255,15 +267,16 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const stats = model?.stats ?? {};
 
   const openSessionCancel = (session: TrialSession) => {
+    if (!canCancel || !knownTrialOwner(session)) return;
     openActionConfirm({
       action: `强制取消试用 · ${session.sid}`,
-      detail: <>会话会转为 <b>cancelled</b> 终态,由后端幂等处理并审计。</>,
+      detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。会话会转为 <b>cancelled</b> 终态,由后端幂等处理并审计。</>,
       amplifies: false,
       run: (reason) => {
         const def = findHighOp("h2_trial_cancel")!;
         void propose(ctx.toast, {
           action: `强制取消试用 · ${session.sid}`,
-          obj: session.sid,
+          obj: `${trialOwnerLabel(session)} · ${session.sid}`,
           before: session.state,
           after: "cancelled",
           type: "sos",
@@ -280,15 +293,16 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   };
 
   const openSessionCharge = (session: TrialSession) => {
+    if (!canCharge || !knownTrialOwner(session)) return;
     openActionConfirm({
       action: `强制触发扣款 · ${session.sid}`,
-      detail: <>后端会按当前试用结算规则重算,重复请求由 Idempotency-Key 去重。直接动 USDT 台账,入 A2 待门槛者执行。</>,
+      detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。后端会按当前试用结算规则重算,重复请求由 Idempotency-Key 去重。直接动 USDT 台账,入 A2 待门槛者执行。</>,
       amplifies: true,
       run: (reason) => {
         const def = findHighOp("h2_trial_charge")!;
         void propose(ctx.toast, {
           action: `强制触发扣款 · ${session.sid}`,
-          obj: session.sid,
+          obj: `${trialOwnerLabel(session)} · ${session.sid}`,
           before: session.state,
           after: "redeemed(扣款)",
           type: "fund",
@@ -452,7 +466,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                 const terminal = ["cancelled", "redeemed", "failed"].includes(session.state);
                 return (
                   <tr key={session.sid}>
-                    <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{session.sid}</td>
+                    <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{trialOwnerLabel(session)}</td>
                     <td><span className={`bdg ${tone}`}>{label}</span></td>
                     <td className="num mono">{text(session.shadow)}</td>
                     <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(session.cardTok ?? session.cardToken)}</td>
@@ -461,10 +475,10 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                         <span style={{ color: "var(--ink-4)" }}>-</span>
                       ) : (
                         <>
-                          <button className="l-btn sm mc" onClick={() => openSessionCancel(session)} disabled={!canCancel} style={{ marginRight: 6 }}>
+                          <button className="l-btn sm mc" onClick={() => openSessionCancel(session)} disabled={!canCancel || !knownTrialOwner(session)} style={{ marginRight: 6 }}>
                             强制取消
                           </button>
-                          <button className="l-btn sm mc" onClick={() => openSessionCharge(session)} disabled={!canCharge}>
+                          <button className="l-btn sm mc" onClick={() => openSessionCharge(session)} disabled={!canCharge || !knownTrialOwner(session)}>
                             强制扣款
                           </button>
                         </>

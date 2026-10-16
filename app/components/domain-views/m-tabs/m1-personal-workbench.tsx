@@ -391,7 +391,7 @@ export function M1PersonalWorkbench({ permission, ctx, primarySummary, onBrowseC
             <div><h2>我的工作台</h2><p>当前归属客户与可执行待办</p></div>
           </div>
           <div className="s5a-personal-header-actions">
-            <SelfAvatarEditor name={selfAgent?.name??(operatorName||"本人账号")} ctx={ctx} onChanged={setSelfAvatarSnapshot}/>
+            <SelfAvatarEditor name={selfAgent?.name??(operatorName||"本人账号")} ctx={ctx} onChanged={setSelfAvatarSnapshot} onSnapshot={setSelfAvatarSnapshot}/>
             <span className="s5a-stamp">统计于 {overview ? formatTime(overview.evaluatedAt) : "待同步"}</span>
           </div>
         </div>

@@ -10,16 +10,17 @@ import { Drawer } from "../design-kit";
 import { HDSelect } from "./hd-ui";
 import type { MCtx } from "./types";
 
-export function SelfAvatarEditor({ name, ctx, onChanged }: { name: string; ctx: MCtx; onChanged: (snapshot: SelfAvatarSnapshot) => void }) {
+export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot }: { name: string; ctx: MCtx; onChanged: (snapshot: SelfAvatarSnapshot) => void; onSnapshot?: (snapshot: SelfAvatarSnapshot) => void }) {
   const actorId = useAdminAuth(s => s.session?.adminId), epoch = useAdminAuth(s => s.authEpoch);
   const [open, setOpen] = useState(false), [snapshot, setSnapshot] = useState<SelfAvatarSnapshot | null>(null), [allowed, setAllowed] = useState(false);
   const [gender, setGender] = useState<AvatarGender>("UNSPECIFIED"), [assetId, setAssetId] = useState<string | undefined>(), [blocking, setBlocking] = useState(false);
   const [pending, setPending] = useState<SelfAvatarPending | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const generation = useRef(0), controller = useRef<AbortController | null>(null);
-  const active = (token: number) => generation.current === token && useAdminAuth.getState().session?.adminId === actorId;
+  const active = (token: number) => generation.current === token && useAdminAuth.getState().session?.adminId === actorId && useAdminAuth.getState().authEpoch === epoch;
   useEffect(() => {
     generation.current++; controller.current?.abort(); setOpen(false); setSnapshot(null); setAllowed(false); setAssetId(undefined); setBlocking(false); setBusy(false); setError("");
     setPending(selfAvatarCommands.list().find(row => row.actorId === actorId) ?? null);
+    if (onSnapshot) void read(true);
     return () => { generation.current++; controller.current?.abort(); };
   }, [actorId, epoch]);
   const complete = (record: SelfAvatarPending, current: SelfAvatarSnapshot) => {
@@ -29,14 +30,14 @@ export function SelfAvatarEditor({ name, ctx, onChanged }: { name: string; ctx: 
     ctx.toast("本人头像已读回确认。");
     void ctx.refreshContent().catch(() => ctx.toast("本人头像已保存，客服名单暂未同步，请重新读取名单。"));
   };
-  async function read() {
-    if (!actorId || busy) return;
+  async function read(hydrate = false) {
+    if (!actorId || (!hydrate && busy)) return;
     const token = generation.current, abort = new AbortController(); controller.current = abort; setBusy(true); setError(""); setAllowed(false);
     try {
       const current = await fetchSelfAvatar(abort.signal); if (!active(token)) return;
-      setSnapshot(current); setGender(current.avatarGender ?? "UNSPECIFIED"); setAllowed(true);
+      setSnapshot(current); setGender(current.avatarGender ?? "UNSPECIFIED"); setAllowed(true); onSnapshot?.(current);
       const record = selfAvatarCommands.list().find(row => row.actorId === actorId); setPending(record ?? null);
-      if (record && current.assetId === record.input.assetId) complete(record, current);
+      if (!hydrate && record && current.assetId === record.input.assetId) complete(record, current);
     } catch (e) { if (active(token)) setError(displayAdminError(e)); }
     finally { if (active(token)) setBusy(false); }
   }

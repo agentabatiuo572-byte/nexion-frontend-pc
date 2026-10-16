@@ -28,7 +28,7 @@ import {
 } from "@/lib/admin/e1-client";
 import { fetchE2PhoneTiers, fetchE2TaskPricing, fetchE2Tasks, type E2PhoneTier, type E2TaskPricingSnapshot, type E2YieldComparison } from "@/lib/admin/e2-client";
 import { fetchE3Snapshot, type E3OperationMetric, type E3Stats } from "@/lib/admin/e3-client";
-import { fetchE4OrderDetail, fetchE4OrderPage, type E4OrderDetail } from "@/lib/admin/e4-client";
+import { e4FundingLedgerHref, fetchE4OrderDetail, fetchE4OrderPage, type E4OrderDetail } from "@/lib/admin/e4-client";
 import {
   fetchE5Datacenters,
   fetchE5Devices,
@@ -1223,12 +1223,15 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               {isRefunded(o.id) && <div className="it warn"><span className="d warn" /><span className="nm">已退款 · 人工退款</span></div>}
             </div>
             {e4Detail && <><div style={{ fontSize: 12.5, fontWeight: 600, margin: "14px 0 8px", color: "var(--ink)" }}>资金证据</div>
-              {e4Detail.funding.length === 0 ? <div className="muted tiny">暂无支付 / D4 流水</div> : e4Detail.funding.map((item, index) => <KV key={`${item.source}-${item.bizNo}-${index}`} k={item.source} v={`${item.direction} ${item.amount.toLocaleString()} USDT · ${item.status} · ${item.bizNo}`} />)}
+              {e4Detail.funding.length === 0 ? <div className="muted tiny">暂无支付 / D4 流水</div> : e4Detail.funding.map((item, index) => {
+                const ledgerHref = e4FundingLedgerHref(item);
+                return <KV key={`${item.source}-${item.bizNo}-${index}`} k={item.source} v={<span>{`${item.direction} ${item.amount.toLocaleString()} USDT · ${item.status} · ${item.bizNo}`}{ledgerHref && <> · <Link href={ledgerHref}>查看 D4 流水</Link></>}</span>} />;
+              })}
             </>}
             <div className="chips" style={{ marginTop: 14 }}>
               <Link className="chip" href={`/platform/audit?domain=E&object=${encodeURIComponent(o.id)}`}>A2 审计追踪</Link>
               <Link className="chip" href="/platform/events">A4 订单事件</Link>
-              <Link className="chip" href={`/finance/ledger?bizNo=${encodeURIComponent(o.id)}`}>D4 资金流水</Link>
+              {!e4Detail?.funding.some((item) => e4FundingLedgerHref(item)) && <Link className="chip" href={`/finance/ledger?bizNo=${encodeURIComponent(o.id)}`}>按订单号查 D4</Link>}
             </div>
           </Drawer>
         );

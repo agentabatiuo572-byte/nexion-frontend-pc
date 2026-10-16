@@ -1,4 +1,5 @@
 "use client";
+import { formatBusinessTime } from "@/lib/admin/business-time";
 
 /**
  * C1 用户详情(L3 · 画像全景)。页面只消费后端聚合的 360 画像和操作接口。
@@ -148,11 +149,7 @@ function riskColor(score: number) {
 }
 
 function formatDate(value: unknown) {
-  const text = asText(value, "");
-  if (!text) return "-";
-  const date = new Date(text);
-  if (Number.isNaN(date.getTime())) return text;
-  return date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return formatBusinessTime(value, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 function displayValue(value: unknown) {
