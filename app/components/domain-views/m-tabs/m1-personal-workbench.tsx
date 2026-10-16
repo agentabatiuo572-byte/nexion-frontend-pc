@@ -107,7 +107,7 @@ export function M1PersonalWorkbench({ permission, ctx, primarySummary, onBrowseC
   const [showSeatRoles, setShowSeatRoles] = useState(false);
   const [snapshot, setSnapshot] = useState<SupportWorkbenchSnapshot | null>(null);
   const overview = snapshot?.overview ?? null;
-  const rows = snapshot?.customers ?? null;
+  const rows = snapshot?.customers.available ? snapshot.customers : null;
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [overviewError, setOverviewError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -420,7 +420,7 @@ export function M1PersonalWorkbench({ permission, ctx, primarySummary, onBrowseC
       </>}
 
       {view === "customers" && <>
-        <div className="s5a-intro"><div><h2>我的客户</h2><p>账户状态与维护状态分开查看</p></div><span className="s5a-stamp">{`共 ${rows ? rows.total : "-"} 位`}</span></div>
+        <div className="s5a-intro"><div><h2>我的客户</h2><p>账户状态与维护状态分开查看</p></div><span className="s5a-stamp">{rows ? `共 ${rows.total} 位` : "总数待确认"}</span></div>
         <section className="s5a-panel"><form className="s5a-controls" onSubmit={(event) => { event.preventDefault(); setPage(1); setKeyword(keywordDraft.trim()); }}>
           <label><Search size={17} /><span className="sr-only">搜索客户名称或 ID</span><input value={keywordDraft} onChange={(event) => setKeywordDraft(event.target.value)} placeholder="搜索客户名称或 ID" /></label>
           <button type="submit">搜索</button>
