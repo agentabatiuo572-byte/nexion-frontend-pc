@@ -109,12 +109,14 @@ function SupportMessage({message,previous,customerId,customerName,onRevoked,newl
   const path=message.authorConfidence==="VERIFIED"&&message.senderId?(message.sender==="agent"?message.senderAvatar?advisorAvatarPath(message.senderId,customerId):undefined:String(message.senderId)===customerId?customerAvatarPath(customerId):undefined):undefined;
   const safeLegacy=message.kind==="TEXT"||!message.kind?legacySupportDestination(message.text):undefined;
   const canCheckLegacy=Boolean(safeLegacy&&canAccessResolvedPath(domains,safeLegacy)&&(safeLegacy!=="/devices/pricing"||canCheckSku));
+  const imageCaption=message.kind==="IMAGE"?message.text.trim():"";
   return <div className={`m3-message ${system?"system":message.sender==="agent"?"agent":""}${newlyArrived&&!system?" m3-new-message":""}`}>
     {!system&&(grouped?<span style={{width:28,flexShrink:0}}/>:<SupportAvatar name={name} path={path} version={message.senderAvatar?.version} size={28}/>)}
     <div className="m3-message-copy">
       {!grouped&&<span className="m3-message-author">{name}{!system&&message.authorConfidence!=="VERIFIED"?" · 作者身份未确认":""} · {messageTime(message.ts)}</span>}
       <div className={`msg-bubble ${message.sender==="agent"?"agent":"user"}`}>
         {message.kind==="IMAGE"?message.attachmentId?<PrivateImage id={message.attachmentId} onRevoked={onRevoked}/>:"图片暂不可用":<span style={{whiteSpace:"pre-wrap"}}>{message.text}</span>}
+        {imageCaption&&imageCaption!=="[图片]"&&<div className="m3-image-caption" style={{whiteSpace:"pre-wrap",marginTop:8}}>{message.text}</div>}
         {message.kind==="SKU"&&<div><strong>{message.skuName}</strong><p>商品编号：{message.skuId}</p>{message.targetAvailability==="UNAVAILABLE"?<span>商品已不可用；原推荐保留。</span>:canCheckSku?<a href={`/devices/pricing?query=${encodeURIComponent(message.skuId??"")}`}>核对商城商品</a>:<span aria-disabled="true">核对商城商品（无访问权限）</span>}</div>}
         {message.kind==="LINK"&&<p>{message.targetAvailability==="UNAVAILABLE"?"目标页面已不可用":`客户端目标：${{HOME:"首页",WALLET:"钱包",SUPPORT:"在线客服"}[message.linkTarget?.type??"HOME"]}`}</p>}
         {safeLegacy&&(canCheckLegacy?<a href={safeLegacy}>核对原推荐页面</a>:<span aria-disabled="true">核对原推荐页面（无访问权限）</span>)}

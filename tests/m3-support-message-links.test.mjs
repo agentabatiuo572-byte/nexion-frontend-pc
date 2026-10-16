@@ -15,6 +15,41 @@ function declarations(path, names) {
   return ast.statements.filter(node => ts.isFunctionDeclaration(node) && names.includes(node.name?.text)).map(node => node.getText(ast)).join("\n");
 }
 
+test("image messages retain bidirectional captions through image states without rendering placeholders", () => {
+  let imageState = "ready", receivedRevoked;
+  const onRevoked = () => {};
+  const context = {
+    require, exports: {}, canAccessResolvedPath, resolveVisibleDomains,
+    useAdminAuth: selector => selector({ session: null }),
+    SupportAvatar: ({ name }) => React.createElement("span", null, name),
+    customerAvatarPath: () => undefined,
+    PrivateImage: ({ id, onRevoked }) => {
+      receivedRevoked = onRevoked;
+      return imageState === "ready" ? React.createElement("img", { src: `blob:${id}`, alt: "会话图片" })
+        : React.createElement("span", null, imageState === "loading" ? "图片加载中…" : "图片暂无法查看");
+    },
+  };
+  const production = declarations("lib/admin/m-support-enhancements.ts", ["legacySupportDestination"]) + "\n" + declarations("app/components/domain-views/m-tabs/m3-dedicated-chat.tsx", ["messageTime", "SupportMessage"]);
+  runInNewContext(ts.transpileModule(`${production}\nglobalThis.message = SupportMessage;`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText, context);
+  const render = message => renderToStaticMarkup(React.createElement(context.message, { message, customerId: "2005", customerName: "客户", onRevoked }));
+  for (const sender of ["agent", "user"]) {
+    const base = { sender, agentName: "客服A", authorConfidence: "VERIFIED", senderId: sender === "agent" ? 1456 : 2005, sourceSenderType: sender.toUpperCase(), ts: 1, id: 8, kind: "IMAGE", attachmentId: "private-1" };
+    for (imageState of ["ready", "loading", "error"]) {
+      const html = render({ ...base, text: "第一行截图说明\n第二行 <script>不是标签</script>" });
+      assert.match(html, /第一行截图说明\n第二行 &lt;script&gt;不是标签&lt;\/script&gt;/);
+      assert.match(html, /white-space:pre-wrap/);
+      assert.doesNotMatch(html, /<script>/);
+      assert.equal(receivedRevoked, onRevoked);
+    }
+    assert.match(render({ ...base, attachmentId: undefined, text: "附件暂不可用时仍保留说明" }), /图片暂不可用.*附件暂不可用时仍保留说明/);
+    for (const text of ["", "  \n ", "[图片]", "  [图片]  "]) {
+      const html = render({ ...base, text });
+      assert.doesNotMatch(html, /\[图片\]|m3-image-caption/);
+    }
+    assert.match(render({ ...base, text: "[图片] 后面的内容是实际说明" }), /\[图片\] 后面的内容是实际说明/);
+  }
+});
+
 test("actual support messages gate administrative destinations without removing recommendations or App targets", () => {
   const context = {
     require, exports: {}, session: null, canAccessResolvedPath, resolveVisibleDomains,
