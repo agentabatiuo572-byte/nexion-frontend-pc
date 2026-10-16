@@ -19,7 +19,7 @@ import type { GCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 const PARAM_COPY: Record<string, { name: string; sub: string }> = {
-  apy: { name: "年化 APY", sub: "90 天锁仓 · 只对新单生效" },
+  apy: { name: "年化 APY", sub: "只对新单生效" },
   lockDays: { name: "锁仓期限", sub: "整数天 · 只对新单生效" },
   nurture: { name: "培育奖倍率", sub: "复投者培育奖计算即用" },
   lottery: { name: "Genesis 抽奖券", sub: "每复投单发放 · 改规则核对 G4 奖池容量" },
@@ -92,7 +92,8 @@ function paramName(param: G7Param) {
   return PARAM_COPY[param.key]?.name || param.name;
 }
 
-function paramSub(param: G7Param) {
+function paramSub(param: G7Param, lockDays: number) {
+  if (param.key === "apy") return `${lockDays} 天锁仓 · ${PARAM_COPY.apy.sub}`;
   return PARAM_COPY[param.key]?.sub || param.sub;
 }
 
@@ -275,7 +276,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
         <div className="l-b" style={{ paddingTop: 4 }}>
           {overview.params.map((param) => (
             <div className="p-row" key={param.key}>
-              <div className="txt"><div className="k">{paramName(param)}</div><div className="s">{paramSub(param)}</div></div>
+              <div className="txt"><div className="k">{paramName(param)}</div><div className="s">{paramSub(param, stats.lockDays)}</div></div>
               <span className="v">{paramDisplayValue(param)}</span>
               {canEdit(param.key) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(param)}>编辑 {paramName(param)}</button>}
             </div>
