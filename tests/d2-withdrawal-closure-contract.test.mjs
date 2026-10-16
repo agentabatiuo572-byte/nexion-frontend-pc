@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import vm from "node:vm";
 import { createRequire } from "node:module";
 import { after } from "node:test";
 
@@ -158,7 +159,7 @@ test("D2 pending reads do not publish zero statistics or enable writes, and stal
   } finally { await fixture.close(); }
 });
 
-const page = fs.readFileSync("app/components/domain-views/d-tabs/d2-withdrawals.tsx", "utf8");
+const page = fs.readFileSync(process.env.D2_FOCUS_SOURCE_FILE || "app/components/domain-views/d-tabs/d2-withdrawals.tsx", "utf8");
 const d5Page = fs.readFileSync("app/components/domain-views/d-tabs/d5-params.tsx", "utf8");
 const client = fs.readFileSync("lib/admin/d-client.ts", "utf8");
 const dCss = fs.readFileSync("app/components/domain-views/d-domain.css", "utf8");
@@ -379,4 +380,60 @@ test("D2 probes development capability only in a private local dev detail", () =
   assert.match(page, /!detail \|\| developmentCapabilitiesProbed\.current\) return;/);
   assert.match(page, /\}, \[detail\]\);/);
   assert.match(page, /\.catch\(\(\) => \{ if \(active\) setDevelopmentCapabilities\(null\); \}\)/);
+});
+
+// Run the production formatters, including list/detail's shared lifecycle formatter.
+function lifecycleFormatters() {
+  const ast = ts.createSourceFile("d2.tsx", page, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const names = ["FAILURE_REASON_LABELS", "OPERATION_TEXT_LABELS", "operationalText", "lifecycleSummary", "freezePeriodLabel"];
+  const declarations = ast.statements.filter(node => ts.isFunctionDeclaration(node)
+    ? names.includes(node.name?.text)
+    : ts.isVariableStatement(node) && node.declarationList.declarations.some(d => names.includes(d.name.getText(ast))));
+  assert.equal(declarations.length, names.length);
+  const code = ts.transpileModule(declarations.map(n => n.getText(ast)).join("\n"), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  return vm.runInNewContext(`${code};({operationalText,lifecycleSummary,freezePeriodLabel})`);
+}
+
+test("D2 explains service-generated K4 review reasons without suggesting approval or payout", () => {
+  const f = lifecycleFormatters();
+  for (const [code, score, expected] of [
+    ["K4_MANUAL", 40, "K4 评分达到人工审核区间，等待人工复核（评分 40）"],
+    ["K4_HIGH_PRIORITY", 70, "K4 评分达到高优先审核区间，需优先人工复核（评分 70）"],
+    ["K4_ESCALATED", 91, "K4 评分达到升级审核门槛，需加强人工复核（评分 91）"],
+  ]) {
+    assert.equal(f.lifecycleSummary({ status: "REVIEW_PENDING", failureReason: `${code}:${score}` }), expected);
+    assert.equal(f.operationalText(`K3_ROUTE:manual:rule-1;${code}:${score}`), `K3 路由：人工复核:rule-1;${expected}`);
+  }
+  for (const unknown of ["K4_FUTURE:40", "K4_MANUAL:bad", "K4_MANUAL:40:extra"])
+    assert.match(f.operationalText(unknown), /未收录/);
+  assert.equal(f.operationalText(undefined), "—");
+  assert.equal(f.operationalText("人工核验中"), "人工核验中");
+  assert.match(f.operationalText("H1_COOLDOWN_FAST_TRACK"), /冷却中/);
+  assert.match(page, /lifecycleSummary\(row\)/);
+  assert.match(page, /v=\{lifecycleSummary\(detail\)\}/);
+});
+
+test("D2 renders H1 month/phase snapshots as snapshots, preserving explicit legacy periods and unknowns", () => {
+  const f = lifecycleFormatters();
+  for (let phase = 1; phase <= 6; phase++)
+    assert.equal(f.freezePeriodLabel(`H1:M12:P${phase}`), `H1 节奏快照：第 12 月 · P${phase}（以复查时间为准）`);
+  for (const [value, label] of [["7d", "7 天"], ["LONG_TERM", "长期（需复查）"], ["SEVEN_DAYS", "7 天"], [undefined, "—"]])
+    assert.equal(f.freezePeriodLabel(value), label);
+  for (const value of ["H1:M0:P1", "H1:M1:P7", "H1:M1:P1:future", "future"])
+    assert.equal(f.freezePeriodLabel(value), "未识别期限");
+  assert.match(page, /freezePeriodLabel\(detail.freezePeriod\)/);
+});
+
+test("D2 offline rendered review row shows the K4 explanation and retains review actions", { timeout: 30000 }, async () => {
+  const fixture = await offlineD2(), { page } = fixture;
+  try {
+    await settle(page, 0, [{ ...fixtureRow, chain: "BANK-VND", riskScore: 40, failureReason: "K4_MANUAL:40", freezePeriod: "H1:M1:P1" }]);
+    const text = await page.locator("main").textContent();
+    assert.match(text, /K4 评分达到人工审核区间，等待人工复核（评分 40）/);
+    assert.doesNotMatch(text, /未收录的处置原因/);
+    for (const name of ["放行", "延迟", "冻结", "拒绝并退款"])
+      assert.equal(await page.getByRole("button", { name, exact: true }).isEnabled(), true);
+  } finally { await fixture.close(); }
 });

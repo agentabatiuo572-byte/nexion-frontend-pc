@@ -176,7 +176,12 @@ function operationalText(value?: string) {
   const raw = value?.trim();
   if (!raw) return "—";
   if (FAILURE_REASON_LABELS[raw]) return FAILURE_REASON_LABELS[raw];
-  let result = raw;
+  let result = raw.replace(/(^|;)(K4_MANUAL|K4_HIGH_PRIORITY|K4_ESCALATED):(\d+)(?=;|$)/g,
+    (_, separator: string, code: string, score: string) => `${separator}${({
+      K4_MANUAL: "K4 评分达到人工审核区间，等待人工复核",
+      K4_HIGH_PRIORITY: "K4 评分达到高优先审核区间，需优先人工复核",
+      K4_ESCALATED: "K4 评分达到升级审核门槛，需加强人工复核",
+    } as Record<string, string>)[code]}（评分 ${score}）`);
   for (const [code, label] of Object.entries(OPERATION_TEXT_LABELS).sort(([left], [right]) => right.length - left.length)) {
     result = result.replaceAll(code, label);
   }
@@ -214,6 +219,8 @@ function userStatusLabel(value?: string) {
 }
 
 function freezePeriodLabel(value?: string) {
+  const rhythm = /^H1:M([1-9]\d*):(P[1-6])$/.exec(value ?? "");
+  if (rhythm) return `H1 节奏快照：第 ${rhythm[1]} 月 · ${rhythm[2]}（以复查时间为准）`;
   return ({ "7d": "7 天", "14d": "14 天", "30d": "30 天", "45d": "45 天", LONG_TERM: "长期（需复查）", SEVEN_DAYS: "7 天" } as Record<string, string>)[value ?? ""] ?? (value ? "未识别期限" : "—");
 }
 
