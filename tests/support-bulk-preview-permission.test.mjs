@@ -15,7 +15,7 @@ const ts = require("typescript"), React = require("react");
 const { renderToStaticMarkup } = require("react-dom/server");
 const source = readFileSync(path.join(process.env.SUPPORT_BULK_SOURCE_ROOT || repo, "app/components/domain-views/m-tabs/support-bulk-composer.tsx"), "utf8");
 
-function harness(cause, preview) {
+function harness(cause, preview, job = null, recipients = []) {
   let cursor = 0, pending = true, tree;
   const slots = [], effects = [], previews = [];
   const context = { exports: {}, AbortController, URL, Date, Number, Set, Promise, File: class {},
@@ -35,7 +35,9 @@ function harness(cause, preview) {
       if (name === "@/lib/admin/m-support-enhancements") return { supportEnhancements: {
         bulkPreview(input, signal) { previews.push({ input, signal }); return preview ? preview(input, previews.length) : Promise.reject(cause); },
         profile: async () => ({ identity: { data: {} }, annotations: { data: {} }, finance: { data: {} }, service: { data: {} } }),
-        bulkJobs: async () => ({ records: [], total: 0 }),
+        bulkJobs: async () => ({ records: job ? [job] : [], total: job ? 1 : 0 }),
+        bulkJob: async () => job,
+        bulkRecipients: async () => ({ records: recipients, total: recipients.length }),
         bulkCreate() { throw new Error("This read-only regression must never send"); },
       } };
       if (name === "@/lib/admin/m-support-client") return { SupportClientError };
@@ -115,6 +117,62 @@ test("known advisor-unavailable denial keeps qualification guidance and unknown 
       assert.equal(button(tree, "查询筛选结果").props.disabled, blocked);
       if (blocked) assert.match(html, /当前账号.*专属客服资格.*群发.*主管/);
       assert.doesNotMatch(html, /SUPPORT_SCOPE_FORBIDDEN|SUPPORT_AGENT_UNAVAILABLE|UNKNOWN_PRIVATE_TEXT/);
+    } finally { h.unmount(); }
+  }
+});
+
+
+test("closed and transferred customers are excluded with reasons before composing", async () => {
+  const h = harness(null, async () => ({ actorId: 1, count: 0, customers: [], excluded: [
+    { id: "42", reason: "CONVERSATION_CLOSED" }, { id: "43", reason: "CONVERSATION_TRANSFERRED" },
+  ] }));
+  try {
+    h.render(); const tree = await h.settle(), html = renderToStaticMarkup(tree);
+    assert.match(html, /原会话已结束.*本次不发送/);
+    assert.match(html, /原会话正在转接.*本次不发送/);
+    assert.equal(button(tree, "下一步：编写内容").props.disabled, true);
+    assert.ok(nodes(tree).filter(node => node.type === "input" && node.props.type === "checkbox").slice(1).every(node => node.props.disabled));
+  } finally { h.unmount(); }
+});
+
+test("closed during selection refreshes the excluded list and clears stale selection", async () => {
+  const h = harness(null, async (_input, call) => call === 1
+    ? { actorId: 1, count: 1, customers: [{ id: "42" }], excluded: [] }
+    : { actorId: 1, count: 0, customers: [], excluded: [{ id: "42", reason: "CONVERSATION_CLOSED" }] });
+  try {
+    h.render(); let tree = await h.settle();
+    button(tree, "选择当前全部筛选结果").props.onClick(); tree = h.render();
+    button(tree, "下一步：编写内容").props.onClick(); tree = await h.settle();
+    const html = renderToStaticMarkup(tree);
+    assert.match(html, /第 1 步：圈选客户/);
+    assert.match(html, /原会话已结束.*重新圈选/);
+    assert.match(html, /可选 0 位.*已选 0 位/);
+    assert.equal(button(tree, "下一步：编写内容").props.disabled, true);
+  } finally { h.unmount(); }
+});
+
+test("post-submit lifecycle exclusions show concrete next steps and no retry", async () => {
+  for (const [code, text] of [
+    ["CONVERSATION_CLOSED", /原会话已结束.*重新圈选/],
+    ["CONVERSATION_TRANSFERRED", /原会话正在转接.*归属确定/],
+    ["CONVERSATION_ARCHIVED", /原会话已归档.*核对归档状态/],
+    ["CONVERSATION_CONVERTED", /原会话已转工单.*关联工单/],
+    ["CONVERSATION_NOT_WRITABLE", /原会话已结束或正在转接/],
+    ["SUPPORT_BULK_CONVERSATION_CHANGED", /客户会话已变化.*重新圈选/],
+  ]) {
+    const job = { batchId: "lifecycle-batch", actorId: 1, state: "COMPLETED", frozenCount: 1, visibleCount: 1,
+      counts: { total: 1, pending: 0, sent: 0, failed: 0, skipped: 1, cancelled: 0, unknown: 0 } };
+    const h = harness(null, async () => ({ actorId: 1, count: 0, customers: [], excluded: [] }), job,
+      [{ customerId: "42", state: "SKIPPED", resultCertainty: "KNOWN", failureCode: code, retryable: false, conversationNo: "CV-OLD" }]);
+    try {
+      h.render(); let tree = await h.settle();
+      nodes(tree).find(node => node.type === "button" && node.key === "lifecycle-batch").props.onClick();
+      h.render(); tree = await h.settle();
+      const html = renderToStaticMarkup(tree);
+      assert.match(html, text);
+      assert.doesNotMatch(html, /执行未通过，请核对客户与原消息/);
+      assert.equal(button(tree, "核对并重试失败项").props.disabled, true);
+      assert.ok(nodes(tree).some(node => node.type === "a" && node.props.href === "/service/sessions?conversationNo=CV-OLD"));
     } finally { h.unmount(); }
   }
 });
