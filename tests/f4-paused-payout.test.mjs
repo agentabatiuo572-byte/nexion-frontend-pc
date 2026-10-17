@@ -80,6 +80,27 @@ function buttons(node, found = []) {
   return found;
 }
 
+test("hardware quota names and adjustment titles use UVEL without changing raw identities or quotas", async () => {
+  for (const [rawName, label] of [["NexGridBox Pro", "UVELBox Pro"], ["NEXGRIDRack P1", "UVELRack P1"], ["StellarBox S1", "UVELBox S1"], ["UVELRack P2", "UVELRack P2"]]) {
+    const f = await fixture(false, true, false, {
+      quotaRows: [{ id: 12, quotaCode: "HW-PRO", productNo: "stellarbox-pro", name: rawName, current: 2, cap: 200 }],
+    });
+    assert.ok(f.html().includes(label));
+    assert.doesNotMatch(f.html(), /NexGrid|NEXGRID|StellarBox/);
+    let action;
+    f.ctx.openActionConfirm = value => { action = value; };
+    const adjust = matching(f.tree(), node => node.type === "button" && text(node) === "调额度")[0];
+    adjust.props.onClick();
+    assert.equal(action.name, `${label} 月额度调整`);
+    assert.equal(action.paramKey, "F.quota.tier.HW-PRO.monthlyQuota");
+    assert.equal(action.expectedVersion, 200);
+    assert.equal(action.edit.current, "200");
+    assert.equal(f.ctx.f4Overview.quotaRows[0].name, rawName);
+    assert.equal(f.ctx.f4Overview.quotaRows[0].productNo, "stellarbox-pro");
+    assert.equal(f.ctx.f4Overview.quotaRows[0].current, 2);
+  }
+});
+
 test("paused F4 disables manual payout despite active period status and explains maintenance", async () => {
   const f = await fixture(true);
   const [button] = buttons(f.tree());

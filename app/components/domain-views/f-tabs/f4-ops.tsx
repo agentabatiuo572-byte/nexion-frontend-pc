@@ -6,6 +6,7 @@ import { formatF4AmbassadorBucketRule, formatF4AmbassadorBucketTitle } from "@/l
 import type { FViewCtx } from "./types";
 import { validateF4SettlementConfig } from "@/lib/admin/f4-settlement-config";
 import { formatBusinessTime } from "@/lib/admin/business-time";
+import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 function voteH(count: number, maxVote: number): number {
   const max = Math.max(1, Math.log2(maxVote + 1));
@@ -215,11 +216,11 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
           <div style={{ marginBottom: 12 }}>
             {data.quotaRows.length ? data.quotaRows.map((quota) => (
               <div key={quota.name} className="stock-meter">
-                <span className="nm">{quota.name}</span>
+                <span className="nm">{nexGridBrandText(quota.name)}</span>
                 <span className={`bar${quota.tight ? " tight" : ""}`}><span className="f" style={{ width: `${Math.min(100, (quota.current / Math.max(1, quota.cap)) * 100)}%` }} /></span>
                 <span className="ct">{quota.current} / {quota.cap}</span>
                 {canWrite && <button onClick={() => ctx.openActionConfirm({
-                  name: `${quota.name} 月额度调整`, op: "param",
+                  name: `${nexGridBrandText(quota.name)} 月额度调整`, op: "param",
                   paramKey: `F.quota.tier.${quota.quotaCode || quota.id}.monthlyQuota`,
                   expectedVersion: quota.cap,
                   edit: { kind: "number", current: String(quota.cap), unit: "台" },
