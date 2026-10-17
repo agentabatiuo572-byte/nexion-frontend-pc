@@ -1,6 +1,6 @@
 "use client";
 import { formatBusinessTime } from "@/lib/admin/business-time";
-import { userNicknameText } from "@/lib/admin/brand-copy";
+import { platformSessionDeviceText, userNicknameText } from "@/lib/admin/brand-copy";
 
 /**
  * C1 用户详情(L3 · 画像全景)。页面只消费后端聚合的 360 画像和操作接口。
@@ -703,7 +703,7 @@ export default function UserDetailPage() {
             <DataTable
               rows={visibleSessions}
               columns={[
-                { key: "deviceName", label: "设备" },
+                { key: "deviceName", label: "设备", render: (value) => platformSessionDeviceText(displayValue(value)) },
                 { key: "clientIpMasked", label: "IP" },
                 { key: "status", label: "状态", render: (value) => <StatusPill label={formatC1SessionStatus(value)} tone={asText(value).toUpperCase() === "ACTIVE" ? "success" : "neutral"} size="sm" /> },
                 { key: "issuedAt", label: "签发", render: formatDate },

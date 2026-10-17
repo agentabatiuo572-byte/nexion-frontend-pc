@@ -26,3 +26,8 @@ export function userNicknameText(value: string, phoneMasked: unknown): string {
   const phoneSuffix = typeof phoneMasked === "string" ? /^\d{3}\*{4}(\d{4})$/.exec(phoneMasked)?.[1] : undefined;
   return suffix && suffix === phoneSuffix ? nexGridBrandText(value) : value;
 }
+
+/** Fixed AppSessionSurface labels only; keep custom device names verbatim. */
+export function platformSessionDeviceText(value: string): string {
+  return ["NexGrid Phone App", "NexGrid H5", "NexGrid App / H5"].includes(value) ? nexGridBrandText(value) : value;
+}
