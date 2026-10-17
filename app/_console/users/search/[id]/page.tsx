@@ -1,5 +1,6 @@
 "use client";
 import { formatBusinessTime } from "@/lib/admin/business-time";
+import { userNicknameText } from "@/lib/admin/brand-copy";
 
 /**
  * C1 用户详情(L3 · 画像全景)。页面只消费后端聚合的 360 画像和操作接口。
@@ -429,6 +430,7 @@ export default function UserDetailPage() {
   const c3UserId = typeof userId === "string" || (typeof userId === "number" && Number.isSafeInteger(userId)) ? String(userId) : "";
   const userNo = asText(profile?.userNo ?? summary.userNo, "-");
   const nickname = asText(profile?.nickname, "用户详情");
+  const displayNickname = userNicknameText(nickname, profile?.phoneMasked);
   const status = asText(profile?.status ?? summary.status, "UNKNOWN").toUpperCase();
   const riskAuthorityReady = detail?.risk?.sourceStatus === "READY";
   const rawRiskScore = riskAuthorityReady ? detail?.risk?.effectiveScore : null;
@@ -537,7 +539,7 @@ export default function UserDetailPage() {
       <header className="mt-3 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="customer-panorama-name font-display text-[26px]" title={nickname} style={{ color: "var(--v5-ink)" }}>{nickname}</h1>
+            <h1 className="customer-panorama-name font-display text-[26px]" title={displayNickname} style={{ color: "var(--v5-ink)" }}>{displayNickname}</h1>
             <span className="font-mono-tabular text-[12px]" style={{ color: "var(--v5-ink-4)" }}>用户编码 {userNo}</span>
           </div>
           <p className="mt-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
@@ -639,7 +641,7 @@ export default function UserDetailPage() {
               ))}
               {canWriteC1 && <ActionButton
                 onClick={() => openActionConfirmReq({
-                  action: `重置昵称 · ${nickname}`,
+                  action: `重置昵称 · ${displayNickname}`,
                   detail: "服务器生成不暴露手机号等身份信息的新昵称；原昵称不再用于展示，操作写入审计。",
                   amplifies: false,
                   run: async (reason) => {
@@ -653,7 +655,7 @@ export default function UserDetailPage() {
                     try {
                       const result = await resetUserNickname(userId, nickname, reason, undefined, commandKey);
                       c1UserCommands.forget(nicknameSlot(userId));
-                      toast.success(`昵称已重置为 ${result.nickname}`);
+                      toast.success(`昵称已重置为 ${userNicknameText(result.nickname, profile?.phoneMasked)}`);
                       await load();
                     } catch (err) {
                       if (!(err instanceof UsersOutcomeUnknownError)) c1UserCommands.forget(nicknameSlot(userId));

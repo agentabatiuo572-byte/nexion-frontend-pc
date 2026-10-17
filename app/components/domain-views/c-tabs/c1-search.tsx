@@ -19,6 +19,7 @@ import {
   type UserProfileQuery,
 } from "@/lib/admin/user360-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { userNicknameText } from "@/lib/admin/brand-copy";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { CCtx } from "./types";
 
@@ -406,7 +407,7 @@ export function C1Search({
                         详情›
                       </button>
                     </td>
-                    <td>{text(u.nickname)}</td>
+                    <td>{userNicknameText(text(u.nickname), u.phoneMasked)}</td>
                     <td><span className="bdg dim">{text(u.userLevel)}</span></td>
                     <td><span className="bdg dim">{text(u.vRank)}</span></td>
                     <td className="num mono">{text(u.deviceCount)} / {text(u.activeDeviceCount)}</td>

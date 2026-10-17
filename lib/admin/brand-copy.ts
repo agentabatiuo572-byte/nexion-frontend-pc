@@ -19,3 +19,10 @@ const BRAND = "UVEL";
 export function nexGridBrandText(value: string): string {
   return value.replace(new RegExp(LEGACY_BRAND, "gi"), BRAND).replace(/NexGrid/gi, BRAND).replace(/Stellar(?=Box|Rack)/gi, BRAND);
 }
+
+/** Only the registration default, corroborated by its masked phone suffix. Keep custom names verbatim. */
+export function userNicknameText(value: string, phoneMasked: unknown): string {
+  const suffix = /^NexGrid (\d{4})$/.exec(value)?.[1];
+  const phoneSuffix = typeof phoneMasked === "string" ? /^\d{3}\*{4}(\d{4})$/.exec(phoneMasked)?.[1] : undefined;
+  return suffix && suffix === phoneSuffix ? nexGridBrandText(value) : value;
+}
