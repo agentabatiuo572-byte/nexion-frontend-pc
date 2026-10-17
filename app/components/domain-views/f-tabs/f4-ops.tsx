@@ -256,7 +256,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
           <div className="amb-bands">
             {data.ambassadorApplications.length ? data.ambassadorApplications.map((application) => (
               <div key={application.id} className="amb-band">
-                <div className="nm">#{application.id} · {application.applicantName} · {application.region}{application.city ? `/${application.city}` : ""}</div>
+                <div className="nm">#{application.id} · {nexGridBrandText(application.applicantName)} · {application.region}{application.city ? `/${application.city}` : ""}</div>
                 <div className="ct">{application.currentRank} · ${application.requestedBudgetUsd.toLocaleString("en-US")} · {application.status}</div>
                 {canApproveAmbassador && application.status.toUpperCase() === "PENDING" && <>
                   <button className="primary amp" onClick={() => ctx.openActionConfirm({ name: `批准大使申请 #${application.id}`, amplify: true, op: "dispose", paramKey: `F.ambassador.${application.id}.status`, fixedVal: "approved", detail: "按申请 ID 精确批准；同事务生成 KOL/EVENT/TRAVEL/PROMOTION 四类预算权益证明。" })}>批准</button>
