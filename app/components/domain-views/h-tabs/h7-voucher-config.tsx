@@ -20,6 +20,7 @@ import {
 } from "@/lib/admin/h-client";
 import type { HCtx } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { catalogSkuBrandText } from "@/lib/admin/brand-copy";
 
 const SURFACE_LABEL: Record<string, string> = { home: "首页", store: "商城", me: "我的", earn: "收益" };
 
@@ -236,7 +237,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   const skuList = data.skus;
   const activeSkus = skuList.filter((s) => (s.status || "on") === "on");
   const skuOptions = activeSkus.map((s) => s.id ?? s.name);
-  const skuLabels: Record<string, string> = Object.fromEntries(activeSkus.map((s) => [s.id ?? s.name, s.name]));
+  const skuLabels: Record<string, string> = Object.fromEntries(activeSkus.map((s) => [s.id ?? s.name, catalogSkuBrandText(s.id, s.name)]));
 
   const total = data.stats?.total ?? list.length;
   const activeN = data.stats?.active ?? list.filter((v) => v.status === "active").length;

@@ -31,3 +31,11 @@ export function userNicknameText(value: string, phoneMasked: unknown): string {
 export function platformSessionDeviceText(value: string): string {
   return ["NexGrid Phone App", "NexGrid H5", "NexGrid App / H5"].includes(value) ? nexGridBrandText(value) : value;
 }
+
+/** Only confirmed official SKU/name pairs; catalog names remain operator-owned. */
+export function catalogSkuBrandText(id: string | undefined, value: string): string {
+  const official = (id === "stellarbox-s1" && value === "NexGridBox S1")
+    || (id === "stellarbox-pro" && value === "StellarBox Pro")
+    || (id === "stellarrack-p1" && value === "StellarRack P1");
+  return official ? nexGridBrandText(value) : value;
+}
