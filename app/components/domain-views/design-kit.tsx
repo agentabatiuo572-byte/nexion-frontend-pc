@@ -1546,9 +1546,9 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
       const a = Number(state.amount);
       if (!Number.isFinite(a) || a <= 0) missing.push("奖励金额(正数)");
     } else if (state.rtype === "voucher") {
-      needs("voucherId", "代金券");
+      if (!spec.voucherOptions?.includes(state.voucherId)) missing.push("请选择当前可发放的代金券");
     } else if (state.rtype === "sku") {
-      needs("skuId", "系统 SKU");
+      if (!spec.skuOptions?.includes(state.skuId)) missing.push("请选择当前可用的系统 SKU");
     } else if (state.rtype === "custom") {
       needs("custom", "自定义奖励内容");
     }
@@ -1636,7 +1636,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
       <input className="fld" type={type} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />
     </label>
   );
-  const select = (key: string, label: string, options: string[], proofOrLabels?: string | Record<string, ReactNode>, optionLabels?: Record<string, ReactNode>, onValueChange?: (next: string) => void) => {
+  const select = (key: string, label: string, options: string[], proofOrLabels?: string | Record<string, ReactNode>, optionLabels?: Record<string, ReactNode>, onValueChange?: (next: string) => void, unavailableLabel?: string) => {
     const proof = typeof proofOrLabels === "string" ? proofOrLabels : undefined;
     const labels = typeof proofOrLabels === "string" ? optionLabels : proofOrLabels;
     const current = value[key] ?? options[0] ?? "";
@@ -1644,6 +1644,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     <label className="field" style={{ marginBottom: 0 }}>
       <span>{label}</span>
       <select className="fld" data-proof={proof} value={current} disabled={options.length === 0} onChange={(e) => onValueChange ? onValueChange(e.target.value) : set(key, e.target.value)}>
+        {unavailableLabel && !options.includes(current) && <option value={current} disabled>{unavailableLabel}</option>}
         {options.length === 0 ? <option value="">无后端返回选项</option> : options.map((o) => <option key={o} value={o}>{labels?.[o] ?? o}</option>)}
       </select>
     </label>
@@ -2652,14 +2653,14 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           <div data-proof="vrank-reward-voucher">
             {voucherOpts.length === 0
               ? <div className="tiny" style={{ color: "var(--ink-4)" }}>暂无可选代金券(先到 H7 代金券配置 新建并投放)。</div>
-              : select("voucherId", "选择代金券 voucher", voucherOpts, "vrank-reward-voucher-sel", spec.voucherLabels)}
+              : select("voucherId", "选择代金券 voucher", voucherOpts, "vrank-reward-voucher-sel", spec.voucherLabels, undefined, "当前代金券不可用，请重新选择")}
           </div>
         )}
         {rtype === "sku" && (
           <div data-proof="vrank-reward-sku">
             {skuOpts.length === 0
               ? <div className="tiny" style={{ color: "var(--ink-4)" }}>暂无在售 SKU(先到 E1 商品上架)。</div>
-              : select("skuId", "选择 SKU sku", skuOpts, "vrank-reward-sku-sel", spec.skuLabels)}
+              : select("skuId", "选择 SKU sku", skuOpts, "vrank-reward-sku-sel", spec.skuLabels, undefined, "当前 SKU 不可用，请重新选择")}
           </div>
         )}
         {rtype === "custom" && (
