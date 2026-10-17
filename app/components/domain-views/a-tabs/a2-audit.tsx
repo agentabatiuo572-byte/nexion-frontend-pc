@@ -151,6 +151,43 @@ function isCurrentOperator(w: A2OperationRow, principal: AuthPrincipal) {
 
 /* ────────────────── 主组件 ────────────────── */
 
+/** 详情与执行确认均完整展示已持久化的前后值。 */
+export function A2ChangeReview({ before, after }: { before: string; after: string }) {
+  const labels: Record<string, string> = {
+    skuId: "商品 ID", id: "商品 ID", name: "商品名称", tier: "商品档位", tagline: "卖点", badge: "角标",
+    gpu: "GPU", vram: "显存", hashRate: "算力", power: "功耗", datacenter: "数据中心", uptime: "在线率",
+    warranty: "保修", phoneDailyEarn: "手机日产收益", phoneDailyEarnNex: "手机日产 NEX", price: "价格",
+    dailyEarn: "日产收益", dailyEarnNex: "日产 NEX", shareYieldMin: "份额收益下限", shareYieldMax: "份额收益上限",
+    baseRate: "收益展示串", sold: "累计销量", stock: "库存", rating: "评分", reviews: "评价数",
+    aiImageGenPerMin: "图像生成性能", aiLlmTokensPerSec: "LLM 推理性能", aiVideoMinPerHour: "视频渲染性能",
+    aiFineTuneMins: "LoRA 微调性能", aiUnlocks: "解锁算力池", features: "产品特性", generation: "产品代际",
+    lifecycle: "生命周期", supersededBy: "后继商品", tradeinDiscount: "换新折扣", unlockPhase: "解锁阶段",
+    purchaseGate: "购买限制", imageAssetId: "产品图标识", imageObjectKey: "产品图对象键", imagePreviewUrl: "产品图预览",
+    tag: "商品标签", status: "商城状态", inventoryMode: "库存模式", expectedUpdatedAt: "变更基准时间",
+    updatedAt: "更新时间", trialEligible: "允许试用", productType: "商品类型", reason: "操作理由", operator: "操作人",
+    rankMin: "最低 V 等级", directsMin: "最低有效直推", teamUsdtMin: "最低团队业绩", mode: "条件组合",
+    activeDirectMin: "最低有效直推", teamVolumeMin: "最低团队业绩",
+    enforce: "启用限制", quotaCap: "总配额", quotaSold: "已用配额", quotaPeriod: "配额周期",
+  };
+  const format = (value: unknown): string => {
+    if (value === null) return "未设置";
+    if (Array.isArray(value)) return value.map(format).join("\n");
+    if (typeof value === "object") return Object.entries(value as Record<string, unknown>)
+      .map(([key, item]) => `${labels[key] ?? key}：${format(item)}`).join("\n") || "无原值 / 未创建";
+    return typeof value === "boolean" ? (value ? "是" : "否") : String(value);
+  };
+  const review = (value: string) => {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return parsed && typeof parsed === "object" ? format(parsed) : value;
+    } catch { return value; }
+  };
+  return <dl aria-label="完整变更内容" style={{ display: "grid", gap: 8, margin: "12px 0" }}>
+    <dt>变更前</dt><dd style={{ margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{review(before)}</dd>
+    <dt>变更后</dt><dd style={{ margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{review(after)}</dd>
+  </dl>;
+}
+
 export function A2Audit({ ctx }: { ctx: ACtx }) {
   const { toast, openActionConfirm } = ctx;
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
@@ -324,7 +361,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       action: <>确认执行 · {w.id}({w.action})</>,
       detail: (
         <>
-          对象 <b>{w.obj}</b> · 变更前 <b>{w.before}</b> · 变更后 <b>{w.after}</b> · 发起人 {w.operator}。
+          对象 <b>{w.obj}</b> · 发起人 {w.operator}。
+          <A2ChangeReview before={w.before} after={w.after} />
           操作理由必填,确认后一次性事务写入目标域并落审计
           {w.sos ? (<>,<b> 应急轨:确认后立即生效并通知 J 域值班</b></>) : null}。<br />
           执行门槛:<b>{w.roleGate}</b> · 同一次提交在 24 小时内不会重复生效。
@@ -977,7 +1015,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             title={`高敏动作 · ${w.id}`}
             sub={
               <>
-                {w.action} · 对象 {w.obj} · 发起人 {w.operator} · 变更前 {w.before} · 变更后 {w.after}
+                {w.action} · 对象 {w.obj} · 发起人 {w.operator}
               </>
             }
             onClose={() => setWoIdx(null)}
@@ -1008,6 +1046,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             }
           >
             <div className="l-b" style={{ padding: "4px 0 0" }}>
+              <A2ChangeReview before={w.before} after={w.after} />
               {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
               {w.phoneCalibrationError && <p role="alert">{w.phoneCalibrationError}</p>}
               <div className="kv"><span className="k">操作理由</span><span className="v" style={{ maxWidth: 360, textAlign: "right" }}>{w.reason}</span></div>

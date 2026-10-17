@@ -50,7 +50,7 @@ test("未变化时不生成误导性提案摘要", () => {
   assert.equal(summarizeSkuProposal(sku(), sku()), null);
 });
 
-test("A2 存储值始终限制在 128 字符内", () => {
+test("A2 完整保留超过 128 字符的多字段前后值", () => {
   const before = sku({
     stock: 1,
     name: "旧商品名称".repeat(20),
@@ -66,10 +66,12 @@ test("A2 存储值始终限制在 128 字符内", () => {
   const summary = summarizeSkuProposal(before, after);
 
   assert.ok(summary);
-  assert.ok(summary.before.length <= 128, summary.before);
-  assert.ok(summary.after.length <= 128, summary.after);
+  assert.ok(summary.before.length > 128, summary.before);
+  assert.ok(summary.after.length > 128, summary.after);
   assert.match(summary.after, /^库存：2/);
-  assert.ok(summary.omittedFields.length > 0);
+  assert.deepEqual(summary.omittedFields, []);
+  assert.ok(summary.before.includes(before.datacenter));
+  assert.ok(summary.after.includes(after.tagline));
 });
 
 test("有限库存切换为无限库存时显示业务语义而非漏填", () => {
@@ -127,7 +129,7 @@ test("替换产品图以完整对象键展示前后资产，不占用两份 A2 �
   assert.ok(summary.before.length <= 128 && summary.after.length <= 128);
 });
 
-test("不匹配的产品图标识不能靠对象键压缩后混入 A2", () => {
+test("不匹配的产品图标识仍完整展示两项身份供服务端校验", () => {
   const objectKey = "admin/e/sku-image/20260926/1315ec9b-61fc-4e1c-9fb9-0a9aba089835.png";
   const summary = summarizeSkuProposal(
     sku({ imageAssetId: Buffer.from(objectKey).toString("base64url"), imageObjectKey: objectKey }),
@@ -135,7 +137,9 @@ test("不匹配的产品图标识不能靠对象键压缩后混入 A2", () => {
   );
 
   assert.deepEqual(summary.changedFields, ["产品图对象键"]);
-  assert.deepEqual(summary.omittedFields, ["产品图对象键"]);
+  assert.deepEqual(summary.omittedFields, []);
+  assert.ok(summary.after.includes("x".repeat(129)));
+  assert.ok(summary.after.includes(objectKey));
 });
 
 test("Pro v2 无锁额等级门往返不制造购买限制变更，换图只审图片", () => {
@@ -231,8 +235,8 @@ test("E1 提交链路使用字段级摘要，A2 明示变更前后", () => {
 
   assert.match(e1Source, /summarizeSkuProposal\(ex, sku\)/);
   assert.match(e1Source, /summarizeSkuCreation\(sku\)/);
-  assert.match(e1Source, /summary\?\.omittedFields\.length/);
-  assert.match(e1Source, /previewSummary\?\.omittedFields\.length[\s\S]*?openActionConfirm\([\s\S]*?setSkuDrawer\(false\)/);
+  assert.doesNotMatch(e1Source, /omittedFields\.length/);
+  assert.match(e1Source, /openActionConfirm\([\s\S]*?setSkuDrawer\(false\)/);
   assert.doesNotMatch(e1Source, /before:\s*editSkuId\s*\?\s*["']编辑前 SKU["']/);
   assert.doesNotMatch(e1Source, /JSON\.stringify\(form\)\s*!==\s*JSON\.stringify\(skuToForm/);
   assert.match(e1Source, /disabled=\{Boolean\(editSkuId\)\}/);

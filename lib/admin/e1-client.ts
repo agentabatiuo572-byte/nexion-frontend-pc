@@ -105,6 +105,7 @@ export interface E1GenerationRelease {
 
 export interface E1GenerationGateData {
   domain: "E1";
+  skuReviewContractVersion?: number;
   phaseOrder: string[];
   phases: E1Phase[];
   platformMonth: number;

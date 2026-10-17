@@ -990,6 +990,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const canUseE1Writes = canWriteE1 && !e1Loading && !e1Error
     && e1Gates !== null && e1BundleDiscount !== null;
   const openSkuSaveConfirm = () => {
+    if (e1Gates?.skuReviewContractVersion !== 1) {
+      setToast("商品完整审核服务尚未就绪，请刷新后重试；当前输入已保留");
+      return;
+    }
     if (skuMediaUploading) { setToast("媒体仍在上传,请稍后提交"); return; }
     if (skuMedia && !skuMedia.assetId) { setToast("媒体未上传成功,请重新选择文件"); return; }
     if (!form.tier.trim() || !form.lifecycle.trim()) {
@@ -1034,10 +1038,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       : summarizeSkuCreation(candidateSku);
     if (editSkuId && !previewSummary) {
       setToast("未检测到商品字段变化，无需发起高敏审核");
-      return;
-    }
-    if (previewSummary?.omittedFields.length) {
-      setToast(`本次变更字段过多，A2 无法完整展示：${previewSummary.omittedFields.join("、")}。请拆分后提交`);
       return;
     }
     openActionConfirm({ name: (editSkuId ? "编辑 SKU · " : "新增 SKU · ") + (form.name || "未命名"), op: "sku-save", isNew: !editSkuId, hasImg: !!skuMedia });
@@ -1578,6 +1578,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 target: def.buildTarget(commandContext),
               });
             } else if (mc.op === "sku-save") {
+              if (e1Gates?.skuReviewContractVersion !== 1) {
+                throw new Error("商品完整审核服务尚未就绪，请刷新后重试；当前输入已保留");
+              }
               const ex = editSkuId ? skus.find((x) => x.id === editSkuId) : undefined;
               const sku = attachSkuMedia(formToSku(form, ex), skuMedia);
               const skuId = editSkuId ?? (form.id.trim() || form.name.trim());
@@ -1591,12 +1594,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               if (editSkuId && !summary) {
                 setToast("未检测到商品字段变化，无需发起高敏审核");
                 setActionConfirm(null);
-                return;
-              }
-              if (summary?.omittedFields.length) {
-                setToast(`本次变更字段过多，A2 无法完整展示：${summary.omittedFields.join("、")}。请拆分后提交`);
-                setActionConfirm(null);
-                setSkuDrawer(true);
                 return;
               }
               await propose(ctx.toast, {

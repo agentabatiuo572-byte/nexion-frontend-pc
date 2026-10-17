@@ -1,12 +1,10 @@
 import type { OpsSku } from "./platform-types";
 
-const A2_VALUE_LIMIT = 128;
-
 export interface SkuProposalSummary {
   before: string;
   after: string;
   changedFields: string[];
-  /** 非空时摘要不完整，调用方必须阻止提交，不能让审核人批准未展示字段。 */
+  /** 兼容既有消费者；完整字段提案不再省略变更。 */
   omittedFields: string[];
 }
 
@@ -111,30 +109,15 @@ export function summarizeSkuProposal(beforeSku: OpsSku, afterSku: OpsSku): SkuPr
 
   if (changes.length === 0) return null;
 
-  const included: typeof changes = [];
-  for (const change of changes) {
-    const next = [...included, change];
-    if (next.map((item) => item.before).join("；").length <= A2_VALUE_LIMIT
-      && next.map((item) => item.after).join("；").length <= A2_VALUE_LIMIT) {
-      included.push(change);
-    }
-  }
-
-  const omittedFields = changes.filter((change) => !included.includes(change)).map((change) => change.label);
-  let before = included.map((item) => item.before).join("；");
-  let after = included.map((item) => item.after).join("；");
-  if (omittedFields.length > 0) {
-    const suffix = `；另 ${omittedFields.length} 项`;
-    if (before.length + suffix.length <= A2_VALUE_LIMIT && after.length + suffix.length <= A2_VALUE_LIMIT) {
-      before += suffix;
-      after += suffix;
-    }
-  }
-
-  return { before, after, changedFields: changes.map((item) => item.label), omittedFields };
+  return {
+    before: changes.map((item) => item.before).join("；"),
+    after: changes.map((item) => item.after).join("；"),
+    changedFields: changes.map((item) => item.label),
+    omittedFields: [],
+  };
 }
 
-/** 新建商品也必须让 checker 看见业务字段；字段过多时沿用 omittedFields 门禁，先建核心字段再分批编辑。 */
+/** 新建与编辑均保留全部业务变更；A2 服务端持久化并回读完整审阅值。 */
 export function summarizeSkuCreation(afterSku: OpsSku): SkuProposalSummary | null {
   const emptySku: OpsSku = {
     id: "",
