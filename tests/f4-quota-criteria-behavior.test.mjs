@@ -44,11 +44,12 @@ function loadRuntime(responseData) {
   };
 }
 
-async function render(criteria) {
+async function render(criteria, pool = {}) {
   const raw = {
     domain: "F4", metrics: [], quotaRows: [{ id: 1, quotaCode: "PRO", productNo: "P-REAL", name: "Pro", current: 2, cap: 10, ...criteria }],
     ambassadorBands: [], podium: [], voteWeights: [{ v: "V3", votes: 1 }], config: {},
     configValues: {}, commissionPolicy: {}, guardrails: [], sources: ["nx_team_hardware_quota_tier"],
+    ...pool,
   };
   const { client, F4Ops } = loadRuntime(raw);
   const overview = await client.fetchF4LeadershipPoolOverview();
@@ -101,4 +102,23 @@ test("invalid and partial criteria cannot become an easier or invented rule", as
 test("the smallest nonzero quota threshold remains visible without numeric conversion", async () => {
   assert.match(await render({ directRefs: 0, monthVolumeUsd: 0.000001, monthVolumeUsdText: "0.000001", unlockMode: "ALL" }),
     /团队业绩 ≥ \$0\.000001/);
+});
+
+test("F4 renders one configured planned settlement time with an explicit business timezone", async () => {
+  const text = await render({}, { settlementConfigStatus: "READY", nextSettlementAt: "2026-10-18T23:59:00Z" });
+  assert.match(text, /下次计划结算：2026\/10\/19 07:59（北京时间）/);
+  assert.doesNotMatch(text, /快照 →|周一 00:00 UTC 派发/);
+});
+
+test("F4 never reuses legacy windows or an unavailable plan as a payout promise", async () => {
+  const legacy = { settlementWindow: "周日 23:59 UTC", settlementDispatchWindow: "周一 00:00 UTC" };
+  for (const plan of [
+    { settlementConfigStatus: "READY" },
+    { settlementConfigStatus: "READY", nextSettlementAt: "invalid" },
+    { settlementConfigStatus: "HOLD", nextSettlementAt: "2026-10-18T23:59:00Z" },
+  ]) {
+    const text = await render({}, { ...legacy, ...plan });
+    assert.match(text, /自动结算时间待确认/);
+    assert.doesNotMatch(text, /下次计划结算|周日 23:59|周一 00:00|快照 →/);
+  }
 });

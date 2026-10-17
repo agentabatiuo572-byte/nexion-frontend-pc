@@ -5,6 +5,7 @@ import { useState } from "react";
 import { formatF4AmbassadorBucketRule, formatF4AmbassadorBucketTitle } from "@/lib/admin/f4-ambassador-display";
 import type { FViewCtx } from "./types";
 import { validateF4SettlementConfig } from "@/lib/admin/f4-settlement-config";
+import { formatBusinessTime } from "@/lib/admin/business-time";
 
 function voteH(count: number, maxVote: number): number {
   const max = Math.max(1, Math.log2(maxVote + 1));
@@ -84,9 +85,10 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
   const stockEff = presentText(data.quotaMonthlyStockLabel);
   const periodLeaderboard = data.leaderboardPeriods?.[leaderboardPeriod];
   const lbPool = periodLeaderboard ? `$${periodLeaderboard.poolUsd.toLocaleString("en-US", { maximumFractionDigits: 6 })}` : "—";
-  const settlementEff = data.settlementWindow && data.settlementDispatchWindow
-    ? `${data.settlementWindow} 快照 → ${data.settlementDispatchWindow} 派发`
-    : "结算窗口未配置";
+  const nextSettlement = data.settlementConfigStatus === "READY"
+    ? formatBusinessTime(data.nextSettlementAt, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }, "")
+    : "";
+  const settlementEff = nextSettlement ? `下次计划结算：${nextSettlement}` : "自动结算时间待确认";
   const topLabel = data.topN > 0 ? `顶部 ${data.topN} 名占比(派生)` : "顶部占比(派生)";
   const topShareLabel = data.topSharePct > 0 ? `≈ ${data.topSharePct}%` : "暂无样本";
   const ambassadorBudgetLabel = data.ambassadorBudgetApprovedLabel || data.ambassadorBudgetCapLabel
@@ -417,7 +419,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
         <div className="f4-warn"><b>权重一动则虹吸放大</b> · 调高高 V 级权重会进一步放大头部分润,{voteSummary}。<b>每一项调整均视为「放大资金流出」</b>,须先核验 B1 兑付覆盖率(§1.8)。</div>
       </section>
 
-      <p className="f-foot">领导奖池闭环:<b>{settlementEff}</b> 时按真实已支付订单 GMV、月度 cap、解锁等级和 V_VOTES 结算；提前结算先进入 A2，成功后同步写 F5 佣金事件、D4 台账与 A4 commission.paid。同周 CAS 防重复；补发、冲正、冻结在 F5 按佣金事件处置。配额、大使、排行榜各自按其配置和状态独立生效，放大流出项前置 B1 覆盖率核验。</p>
+      <p className="f-foot">领导奖池闭环：<b>{settlementEff}</b>。结算时按真实已支付订单 GMV、月度 cap、解锁等级和 V_VOTES 计算并派发；提前结算先进入 A2，成功后同步写 F5 佣金事件、D4 台账与 A4 commission.paid。同周 CAS 防重复；补发、冲正、冻结在 F5 按佣金事件处置。配额、大使、排行榜各自按其配置和状态独立生效，放大流出项前置 B1 覆盖率核验。</p>
     </>
   );
 }

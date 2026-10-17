@@ -283,6 +283,7 @@ interface BackendF4LeadershipPoolOverview {
   unlockRank?: number | string | null;
   settlementWindow?: string | null;
   settlementDispatchWindow?: string | null;
+  nextSettlementAt?: string | null;
   quotaRows?: BackendF4QuotaRow[] | null;
   quotaUsages?: BackendF4QuotaUsage[] | null;
   quotaMonthlyStockLabel?: string | null;
@@ -780,6 +781,7 @@ export interface F4LeadershipPoolOverview {
   unlockRank: number;
   settlementWindow: string;
   settlementDispatchWindow: string;
+  nextSettlementAt: string;
   quotaRows: F4QuotaRow[];
   quotaUsages: F4QuotaUsage[];
   quotaMonthlyStockLabel: string;
@@ -1437,6 +1439,7 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     unlockRank: toNumber(data?.unlockRank),
     settlementWindow: asText(data?.settlementWindow),
     settlementDispatchWindow: asText(data?.settlementDispatchWindow),
+    nextSettlementAt: asText(data?.nextSettlementAt),
     quotaRows,
     quotaUsages,
     quotaMonthlyStockLabel: asText(data?.quotaMonthlyStockLabel, asText(config.monthlyStock)),
