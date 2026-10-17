@@ -266,7 +266,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
       {error && <div className="gtint" style={{ marginBottom: 12 }}>G7 操作提示 · {error}</div>}
       <div className="f-stats">
         <div className="f-stat ok"><div className="k">本月复投单</div><div className="v">{fmtNumber(stats.ordersMonth)}</div><div className="sub">在锁本金 {fmtUsdCompact(stats.principalUsd)} · 来自复投锁仓行</div></div>
-        <div className="f-stat"><div className="k">{stats.lockDays} 天后到期本息</div><div className="v">{fmtUsdCompact(stats.matureUsd)}</div><div className="sub">喂 B2 到期预测</div></div>
+        <div className="f-stat"><div className="k">未结算订单到期本息</div><div className="v">{fmtUsdCompact(stats.matureUsd)}</div><div className="sub">喂 B2 到期预测</div></div>
         <div className="f-stat cyan"><div className="k">发放 Genesis 抽奖券</div><div className="v">{fmtNumber(stats.ticketsMonth)} 张</div><div className="sub">每月开奖 · 联动 G4</div></div>
         <div className="f-stat"><div className="k">复投率</div><div className="v">{stats.reinvestRateAvailable ? `${stats.reinvestRate.toFixed(1).replace(/\.0$/, "")}%` : "—"}</div><div className="sub">{stats.reinvestRateAvailable ? "真实漏斗复投级" : "缺少漏斗分母，不用奖励倍率伪造"}</div></div>
       </div>
