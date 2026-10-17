@@ -11,6 +11,8 @@ import { F3Placements } from "./f3-placements";
 
 const usd = (n: number): string => "$" + n.toLocaleString();
 const text = (value?: string | null) => (value && value.trim() ? value.trim() : "—");
+const trackLabel = (value: number, other: number) => value > other ? "较大侧"
+  : value < other ? "较小侧 · 结算基数" : "两轨显示值相同";
 
 function metricClass(tone: string) {
   return ["ok", "warn", "cyan"].includes(tone) ? `f-stat ${tone}` : "f-stat";
@@ -48,6 +50,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   });
   const cfg = ctx.f3Config;
   const formula = ctx.f3Formula;
+  const trackFormula = formula?.user.trim() && Number.isFinite(formula.trackA) && Number.isFinite(formula.trackB) ? formula : null;
   const dailyCap = ctx.f3DailyCap;
   const maxTrackGmv = Math.max(1, ctx.f3MaxTrackGmv, ...rows.flatMap((row) => [row.a, row.b]));
   const thEff = cfg?.threshold ?? "";
@@ -115,13 +118,13 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
         <section className="pane">
           <div className="pane-h"><span className="ph-ttl">平衡匹配公式</span><span className="ph-sub">服务端权威 · {text(periodEff)}结算窗口</span><span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="electric">双轨结算</CodeTag></span></div>
           <div className="formula">
-            <div className="track a"><div className="nm">TRACK A · A 轨</div><div className="gv">{formula ? usd(formula.trackA) : "—"}</div><div className="meta">较大侧 · 自动安置流入<br />本期累计 GV(月初归零)</div></div>
+            <div className="track a"><div className="nm">TRACK A · A 轨</div><div className="gv">{formula ? usd(formula.trackA) : "—"}</div><div className="meta">{trackFormula ? trackLabel(trackFormula.trackA, trackFormula.trackB) : "暂无轨道数据"}<br />本期累计 GV(月初归零)</div></div>
             <div className="balance">
               <div className="op">min</div>
               <div className="fx"><div className="l">MATCH {text(formula?.matchRate)}</div><div className="v">{formula ? usd(formula.matchAmount) : "—"}</div><div className="u">today · {text(formula?.user)}</div></div>
               <div className="op">× {text(formula?.matchRate)}</div>
             </div>
-            <div className="track b"><div className="nm">TRACK B · B 轨</div><div className="gv">{formula ? usd(formula.trackB) : "—"}</div><div className="meta">较小侧 · <b>结算基数</b><br />min(A,B) 决定匹配上限</div></div>
+            <div className="track b"><div className="nm">TRACK B · B 轨</div><div className="gv">{formula ? usd(formula.trackB) : "—"}</div><div className="meta">{trackFormula ? trackLabel(trackFormula.trackB, trackFormula.trackA) : "暂无轨道数据"}<br />min(A,B) 决定匹配上限</div></div>
           </div>
           <div className="formula-foot">
             <span className="mono">balanceMatch = min(A, B) × <b>matchRate</b></span>
