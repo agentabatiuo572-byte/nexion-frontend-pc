@@ -1,4 +1,5 @@
 const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+  H7_VOUCHER_NOT_GRANTABLE: "所配置的优惠券当前不可发放，可能尚未生效、已失效或已停用。请在 F1 核对奖励所选券，并在 H7 核对券状态和有效期；处理后再审核原申请。",
   SUPPORT_RECOVERY_FACTS_UNAVAILABLE: "当前授权范围内暂时无法读取用于核对的客户资料，原操作结果仍待确认；请保留原命令并查询结果，不要重复提交。",
   SUPPORT_RECOVERY_FACTS_CHANGED: "客户绑定或版本已变化，原操作结果尚未完成核对；请保留原命令，重新读取当前获准资料后继续查询。",
   READ_IDENTITY_CHANGED: "本次读取已取消，或账号及查看范围已变化，旧资料不能用于确认结果；请返回当前获准范围重新读取，已提交的操作仍须查询原结果。",
