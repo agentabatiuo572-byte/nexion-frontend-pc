@@ -347,7 +347,7 @@ const GEARS = [
   //     而 run() 是 fail-fast —— 所以它们必须集中排在**最后**,否则其后的本地齿全部执行不到。
   //     2026-08-06 前它们散在中段,导致其后 21 道本可运行的门在本机从未跑过。
   ["real recharge-channel parity", "node", ["scripts/channel-parity-sentinel.mjs"]],
-  ["D1 channel contract", "node", ["--test", "tests/d1-channel-parity-contract.test.mjs"]],
+  ["D1 channel contract", "node", ["--test", "tests/d1-channel-parity-contract.test.mjs", "tests/cregis-payout-control.test.mjs"]],
   ["B4 cross-repository contract", "node", ["--test", "tests/b4-cross-repo-sentinel-contract.test.mjs", "tests/b4-export-client.test.mjs"]],
   ["F domain A2 proposal contract", "node", ["--test", "tests/f-domain-contract.test.mjs"]],
   ["FE/BE mapping closure ratchet", "node", ["scripts/fe-be-mapping-coverage.mjs"]],
