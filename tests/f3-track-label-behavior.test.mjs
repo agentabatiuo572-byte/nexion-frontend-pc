@@ -88,8 +88,42 @@ test("actual settlement action preserves permission, owner, date and financial r
   f.ctx.executeF3Settlement = async (...value) => { args = value; return { status: "SETTLED", amountUsdt: 335.894, replayed: false }; };
   f.ctx.toast = value => { toast = value; };
   find(f.tree(), node => node.type === "button" && text(node) === "执行结算")[0].props.onClick();
+  assert.match(action.businessForm.fields.find(field => field.key === "settlementDate").label, /业务日期/);
+  assert.match(action.businessForm.hint, /2026-10-19 起新周期按越南时间 UTC\+7/);
+  assert.match(action.businessForm.hint, /历史周期沿用 UTC\+8，不回溯重算/);
+  assert.equal(action.businessForm.fields.find(field => field.key === "settlementDate").current, undefined);
   await action.run("original reason", { ownerUserId: "60723153007", settlementDate: "2026-10-17" });
   assert.deepEqual(args, [60723153007, "2026-10-17", "original reason"]);
   assert.match(toast, /335\.894.*进入冷却/);
   assert.equal(find(fixture(2583.8, 2617.9, false).tree(), node => node.type === "button" && text(node) === "执行结算").length, 0);
+});
+
+test("Vietnam period copy preserves server configuration, proposal keys and read-only permissions", () => {
+  const f = fixture(100, 200);
+  let action;
+  f.ctx.can = () => true;
+  f.ctx.f3Config.gvResetCron = "每月1日00:00 UTC";
+  f.ctx.openActionConfirm = value => { action = value; };
+  assert.match(text(f.tree()), /越南时间 UTC\+7/);
+  assert.match(text(f.tree()), /每月1日00:00 UTC/);
+  find(f.tree(), node => node.type === "button" && text(node) === "归零口径")[0].props.onClick();
+  assert.equal(action.op, "param");
+  assert.equal(action.paramKey, "F.binary.gvResetCron");
+  assert.equal(action.edit.current, "每月1日00:00 UTC");
+  assert.equal(action.edit.kind, "select");
+  assert.deepEqual(action.edit.options, ["每月 1 日 00:00 Asia/Ho_Chi_Minh"]);
+  find(f.tree(), node => node.type === "button" && text(node) === "调整周期 & 策略")[0].props.onClick();
+  assert.match(action.businessForm.hint, /每日 00:00、每周一 00:00、每月 1 日 00:00/);
+  assert.deepEqual(action.paramKeys, [
+    { key: "period", paramKey: "F.binary.settlePeriod" },
+    { key: "residual", paramKey: "F.binary.residualPolicy" },
+  ]);
+  assert.equal(action.amplify, true);
+  assert.equal(action.completionCopy, "保存后只影响下一周期结算，不回溯已计提。");
+  f.ctx.can = () => false;
+  for (const label of ["执行结算", "归零口径", "调整周期 & 策略"]) {
+    assert.equal(find(f.tree(), node => node.type === "button" && text(node) === label).length, 0);
+  }
+  const h3 = readFileSync(new URL("../app/components/domain-views/h-tabs/h3-quest-events.tsx", import.meta.url), "utf8");
+  assert.match(h3, /越南时间 UTC\+7 · 每周一 00:00 开始新一周/);
 });

@@ -148,7 +148,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       <section className="pane bin-table">
         <div className="pane-h">
           <span className="ph-ttl">用户结算视图 · 当日</span>
-          <span className="ph-sub">A/B 轨 GV · Balance Match · 状态</span>
+          <span className="ph-sub">A/B 轨 GV · Balance Match · 状态 · 2026-10-19 起新周期按越南时间 UTC+7</span>
           <span className="ph-r" style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
             <Link className="fbtn" href="/network/commissions">前往 F5 补发 / 冲正</Link>
             {canSettle && <button className="fbtn primary" onClick={() => ctx.openActionConfirm({
@@ -156,10 +156,10 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
               businessForm: {
                 kind: "multi-field",
                 title: "目标用户与结算日",
-                hint: "仅执行服务端权威结算。系统会复核轨道归属、已支付业绩、结算周期、H1 封顶、B1 覆盖率、重复结算与退款冲正状态。",
+                hint: "2026-10-19 起新周期按越南时间 UTC+7 划分；此前历史周期沿用 UTC+8，不回溯重算。系统会复核轨道归属、已支付业绩、结算周期、H1 封顶、B1 覆盖率、重复结算与退款冲正状态。",
                 fields: [
                   { key: "ownerUserId", label: "用户 ID", inputKind: "number", min: 1, required: true },
-                  { key: "settlementDate", label: "结算日(YYYY-MM-DD)", inputKind: "text", placeholder: "例如 2026-07-31", required: true },
+                  { key: "settlementDate", label: "结算日(业务日期 · YYYY-MM-DD)", inputKind: "text", placeholder: "例如 2026-10-19", required: true },
                 ],
               },
               detail: "执行后产生 F3 结算记录、佣金冷却事件、D4 不可变资金流水、A2 审计和 A4 佣金事件；同一用户与结算日重复提交会安全重放。",
@@ -300,7 +300,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
 
         <div className="cfg-card">
           <div className="ch">自动安置 & 归零<span className="tag">F.binary.placement</span></div>
-          <div className="cs">自动安置 + 自然月 GV 归零</div>
+          <div className="cs">2026-10-19 起新周期按越南自然月划分 · 每月 1 日 00:00 UTC+7</div>
           <div className="ckv"><span className="k">自动安置</span><span className="v" style={{ color: spillOn ? "var(--success)" : "var(--ink-3)" }}>{spillOn ? "已启用" : "已关闭"}</span></div>
           <div className="ckv"><span className="k">近 7d 自动分配</span><span className="v">{ctx.f3AutoPlacement7dCount.toLocaleString()} 成员</span></div>
           <div className="ckv"><span className="k">归零时间</span><span className="v" style={{ fontSize: 11 }}>{text(resetEff)}</span></div>
@@ -310,7 +310,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
                 列进合法配置键清单,只是页面把入口撤了 —— 后端可配而控制台无门,是半截状态。
                 🔴 键名从 client 常量取、页面只出中文标签:本页有一道术语门扫原文(含注释),
                 禁止开发代号出现在页面正文里。 */}
-            <button className="fbtn" onClick={() => ctx.openActionConfirm({ name: "GV 归零口径调整", op: "param", paramKey: F3_GV_RESET_PARAM_KEY, edit: { kind: "text", current: resetEff }, detail: `两轨累计业绩的归零时点 · 当前 ${text(resetEff)} · 改后对下一周期结算生效,不回溯已计提。` })}>归零口径</button>
+            <button className="fbtn" onClick={() => ctx.openActionConfirm({ name: "GV 归零口径调整", op: "param", paramKey: F3_GV_RESET_PARAM_KEY, edit: { kind: "select", current: resetEff, options: ["每月 1 日 00:00 Asia/Ho_Chi_Minh"], optionLabels: { "每月 1 日 00:00 Asia/Ho_Chi_Minh": "每月 1 日 00:00 越南时间 UTC+7" } }, detail: `两轨累计业绩的归零时点 · 当前 ${text(resetEff)} · 改后对下一周期结算生效,不回溯已计提。` })}>归零口径</button>
           </div>}
         </div>
 
@@ -326,7 +326,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             businessForm: {
               kind: "multi-field",
               title: "目标新值 · 结算周期 & 沉淀处置",
-              hint: "结算周期=双轨对碰的派发节奏(每日/每周/每月);沉淀处置=对碰后未匹配剩余点数的处理。「转结」沿用沉淀到下期会拉大佣金应付与利息负债(科目 #3),受 B1 覆盖率约束。",
+              hint: "2026-10-19 起新周期按越南时间 UTC+7：每日 00:00、每周一 00:00、每月 1 日 00:00 划分；此前历史周期沿用 UTC+8，不回溯重算。沉淀处置=对碰后未匹配剩余点数的处理。「转结」沿用沉淀到下期会拉大佣金应付与利息负债(科目 #3),受 B1 覆盖率约束。",
               fields: [
                 { key: "period", label: "结算周期", current: periodEff, inputKind: "select", options: ["每日", "每周", "每月"] },
                 { key: "residual", label: "沉淀处置策略", current: residualEff, inputKind: "select", options: ["每月清零", "每次对碰清零", "转结"] },

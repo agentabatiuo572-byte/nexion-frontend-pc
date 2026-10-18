@@ -1318,7 +1318,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">每周任务(两档 + 周冠军)</span>
-            <span className="sub">· 按周键确定性派发 · 同周锁定 · 改动下周生效</span>
+            <span className="sub">· 2026-10-19 起新周期按越南时间 UTC+7 · 每周一 00:00 开始新一周 · 同周锁定 · 改动下周生效</span>
             <div className="r">
               <button className="l-btn sm mc" onClick={() => openCreateMission("WEEKLY_T1", "每周一档")} disabled={!canModuleWrite}>+ 新建一档</button>
               <button className="l-btn sm mc" onClick={() => openCreateMission("WEEKLY_T2", "每周二档")} disabled={!canModuleWrite}>+ 新建二档</button>
