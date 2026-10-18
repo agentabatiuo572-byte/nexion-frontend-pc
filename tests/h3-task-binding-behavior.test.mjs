@@ -20,6 +20,9 @@ function render(patch = {}, writable = true, client = {}) {
     if (name === "react/jsx-runtime") return require(name);
     if (name.endsWith("design-kit")) return { PaginationExemptionList: () => null };
     if (name.endsWith("error-messages")) return { displayAdminError: e => String(e) };
+    if (name.endsWith("a2-client")) return {};
+    if (name.endsWith("use-propose")) return { usePropose: () => assert.fail("unexpected policy proposal") };
+    if (name.endsWith("high-ops-registry")) return { findHighOp: () => assert.fail("unexpected policy operation") };
     if (name.endsWith("h-client")) return new Proxy({
       updateH3QuestConfig: async (...args) => { writes.push(args); return model; },
       createH3QuestEventBinding: async (...args) => { writes.push(args); return model; },

@@ -125,5 +125,5 @@ test("Vietnam period copy preserves server configuration, proposal keys and read
     assert.equal(find(f.tree(), node => node.type === "button" && text(node) === label).length, 0);
   }
   const h3 = readFileSync(new URL("../app/components/domain-views/h-tabs/h3-quest-events.tsx", import.meta.url), "utf8");
-  assert.match(h3, /越南时间 UTC\+7 · 每周一 00:00 开始新一周/);
+  assert.match(h3, /按注册手机号区号对应时区，每周一 00:00 开始新一周/);
 });

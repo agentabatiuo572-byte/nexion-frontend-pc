@@ -281,6 +281,77 @@ export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"):
   return growthRequest<Record<string, any>>(section === "events" ? "/quest-events/events-overview" : "/quest-events/tasks");
 }
 
+export type H3WeeklyRegionMapping = { callingCode: string; zoneId: string };
+export type H3WeeklyRegionActivation = { effectiveFrom: string; lastLegacyInstanceKey: string };
+export type H3WeeklyRegionPolicy = {
+  revision: number;
+  defaultZoneId: "Asia/Ho_Chi_Minh";
+  mappings: H3WeeklyRegionMapping[];
+  effectiveFrom: string | null;
+  lastLegacyInstanceKey: string | null;
+  activation: "NEXT_ACCOUNT_WEEK";
+  source: "DEFAULT" | "PUBLISHED";
+  nextActivation: H3WeeklyRegionActivation | null;
+};
+
+export function validateH3WeeklyRegionMappings(mappings: H3WeeklyRegionMapping[]): string | null {
+  if (mappings.length > 999) return "区号映射不能超过 999 条。";
+  const seen = new Set<string>();
+  for (const row of mappings) {
+    if (!/^\+[1-9][0-9]{0,2}$/.test(row.callingCode)) return "请输入带 + 的国家或地区电话区号，例如 +84。";
+    if (seen.has(row.callingCode)) return `区号 ${row.callingCode} 重复，请合并后再提交。`;
+    seen.add(row.callingCode);
+    if (!/^[A-Za-z_]+(?:\/[A-Za-z0-9_+\-]+)+$/.test(row.zoneId)) return "请输入地区时区名称，例如 Asia/Shanghai；不能填写 UTC 或固定偏移。";
+  }
+  return null;
+}
+
+export function parseH3WeeklyRegionPolicy(value: unknown): H3WeeklyRegionPolicy {
+  const row = value as H3WeeklyRegionPolicy | null;
+  const absolute = (value: unknown) => typeof value === "string"
+    && /^\d{4}-\d{2}-\d{2}T.*Z$/.test(value) && Number.isFinite(Date.parse(value));
+  const activationValid = (value: H3WeeklyRegionActivation) => absolute(value.effectiveFrom)
+    && typeof value.lastLegacyInstanceKey === "string" && value.lastLegacyInstanceKey.trim().length > 0;
+  if (!row || !Number.isSafeInteger(row.revision) || row.revision < 0
+      || row.defaultZoneId !== "Asia/Ho_Chi_Minh" || row.activation !== "NEXT_ACCOUNT_WEEK"
+      || !Array.isArray(row.mappings) || row.mappings.some(item => !item || typeof item.callingCode !== "string" || typeof item.zoneId !== "string")
+      || validateH3WeeklyRegionMappings(row.mappings)
+      || !["DEFAULT", "PUBLISHED"].includes(row.source)
+      || (row.revision === 0 ? row.source !== "DEFAULT" || row.effectiveFrom !== null || row.lastLegacyInstanceKey !== null
+        : row.source !== "PUBLISHED" || !activationValid(row as H3WeeklyRegionActivation))
+      || (row.nextActivation !== null && (!row.nextActivation || !activationValid(row.nextActivation)))
+      || (row.revision > 0 && row.nextActivation !== null)) {
+    throw new Error("每周任务地区规则暂不可用，请刷新后重试。");
+  }
+  return row;
+}
+
+export async function fetchH3WeeklyRegionPolicy(): Promise<H3WeeklyRegionPolicy> {
+  return parseH3WeeklyRegionPolicy(await growthRequest<unknown>("/quest-events/weekly-region-policy"));
+}
+
+export function h3WeeklyRegionPolicyParams(policy: H3WeeklyRegionPolicy, mappings: H3WeeklyRegionMapping[]) {
+  const error = validateH3WeeklyRegionMappings(mappings);
+  if (error) throw new Error(error);
+  if (policy.revision === 0 && !policy.nextActivation) throw new Error("首次生效时间尚未确定，请刷新后重试。");
+  return {
+    expectedRevision: policy.revision,
+    mappings: mappings.map(row => ({ ...row })),
+    ...(policy.revision === 0 ? { ...policy.nextActivation! } : {}),
+  };
+}
+
+const h3WeeklyRegionProposals = createPendingMutationStore({ storageKey: "nexion-admin-h3-weekly-region-proposals-v1" });
+export async function withH3WeeklyRegionProposalKey(
+  params: ReturnType<typeof h3WeeklyRegionPolicyParams>, reason: string, submit: (commandKey: string) => Promise<unknown>,
+) {
+  const fingerprint = JSON.stringify([currentAdminOperator(), params, reason]);
+  const commandKey = h3WeeklyRegionProposals.get(fingerprint) ?? nextIdempotencyKey("h3-weekly-region");
+  h3WeeklyRegionProposals.remember(fingerprint, commandKey);
+  await submit(commandKey);
+  h3WeeklyRegionProposals.forget(fingerprint, commandKey);
+}
+
 export async function updateH3QuestConfig(key: string, value: string, reason: string, expectedValue: string) {
   return growthRequest<Record<string, any>>(
     `/quest-events/config/${encodeURIComponent(key)}`,

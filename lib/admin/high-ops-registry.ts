@@ -1501,6 +1501,20 @@ export const HIGH_OPS: HighOpDef[] = [
   },
   // —— H 域增长(批 7) ——
   {
+    op: "h3_weekly_region_policy",
+    domain: "H",
+    action: "调整每周任务地区映射",
+    amplifies: true,
+    type: "acct",
+    gateLabel: "A2 审批（发起与审批分人）",
+    targetType: "config",
+    buildCommand: (ctx) => ({ domain: "H", op: "h3_weekly_region_policy", params: {
+      expectedRevision: ctx.expectedRevision, mappings: ctx.mappings,
+      ...(ctx.expectedRevision === 0 ? { effectiveFrom: ctx.effectiveFrom, lastLegacyInstanceKey: ctx.lastLegacyInstanceKey } : {}),
+    } }),
+    buildTarget: () => ({ domain: "H", type: "config", id: "growth.h3.weekly-region-policy" }),
+  },
+  {
     op: "h1_phase_dial",
     domain: "H",
     action: "Phase 月度旋钮放大",

@@ -1382,12 +1382,27 @@
     {
       "id": "OPS-H-05",
       "domain": "H",
-      "object": "Quest任务",
-      "action": "调奖励/启停层",
+      "object": "Quest任务配置",
+      "action": "调整任务参数及每周任务地区映射",
       "status": "built",
       "view": "h-view.tsx",
       "batch": "P1",
-      "restAction": "updateH3QuestConfig"
+      "restActions": ["updateH3QuestConfig", "h3_weekly_region_policy"],
+      "runtimeEvidence": [
+        {
+          "type": "pc-runtime",
+          "file": "app/components/domain-views/h-tabs/h3-quest-events.tsx",
+          "positivePatterns": ["H3WeeklyRegionPolicyPanel", "findHighOp\\(\"h3_weekly_region_policy\"\\)", "withH3WeeklyRegionProposalKey", "fetchA2Overview"],
+          "negativePatterns": ["updateH3QuestConfig\\(\"weekly_region_policy\""]
+        },
+        {
+          "type": "backend-runtime",
+          "file": "src/main/java/ffdd/opsconsole/growth/application/WeeklyRegionPolicyService.java",
+          "positivePatterns": ["A2ReplayContext.isReplaying", "activeValueForUpdate", "WEEKLY_REGION_VERSION_CONFLICT", "WEEKLY_REGION_ACTIVATION_CONFLICT", "WEEKLY_REGION_READBACK_FAILED"],
+          "negativePatterns": ["ZoneId.systemDefault", "TimeZone.getDefault"]
+        }
+      ],
+      "note": "地区映射由正常 H3/A2 提案发布，固定越南 fallback，首次边界复制实际旧实例，后续版本 CAS 保留生效边界。源码接线及 tests/h3-weekly-region-policy-contract.test.mjs 的真实组件回调验证已通过；后端行为证据为 src/test/java/ffdd/opsconsole/growth/application/WeeklyRegionPolicyReplayTest.java。仅登记代码实现与隔离验证，不代表 TEST 已发布、策略已激活或现场 A2 验收完成。"
     },
     {
       "id": "OPS-H-06",

@@ -1,9 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { fetchA2Overview } from "@/lib/admin/a2-client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PaginationExemptionList } from "../design-kit";
 import {
   fetchH3QuestEvents,
+  fetchH3WeeklyRegionPolicy,
+  h3WeeklyRegionPolicyParams,
+  validateH3WeeklyRegionMappings,
+  withH3WeeklyRegionProposalKey,
+  type H3WeeklyRegionPolicy,
+  type H3WeeklyRegionMapping,
   updateH3QuestConfig,
   updateH3LocalizedContent,
   updateH4LocalizedContent,
@@ -34,6 +42,8 @@ import {
 } from "@/lib/admin/h-client";
 import type { HCtx } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 
 type EventState = "upcoming" | "ongoing" | "ended";
 type HSection = "tasks" | "events";
@@ -274,6 +284,132 @@ function percentText(value: unknown) {
 function casExpected(value: string) {
   const normalized = value.trim();
   return !normalized || normalized === "-" ? "__MISSING__" : normalized;
+}
+
+export function H3WeeklyRegionPolicyPanel({ ctx }: { ctx: HCtx }) {
+  const canRead = ctx.can("growth_h3_read");
+  const canWrite = ctx.can("growth_h3_write");
+  const propose = usePropose();
+  const [policy, setPolicy] = useState<H3WeeklyRegionPolicy | null>(null);
+  const [draft, setDraft] = useState<H3WeeklyRegionMapping[] | null>(null);
+  const [draftBase, setDraftBase] = useState<H3WeeklyRegionPolicy | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [submittedRevision, setSubmittedRevision] = useState<number | null>(null);
+  const canReadA2 = ctx.can("platform_a2_read");
+  const [pendingReview, setPendingReview] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const generation = useRef(0);
+  const reload = async () => {
+    const request = ++generation.current;
+    setLoading(true);
+    try {
+      const [rules, audit] = await Promise.allSettled([
+        fetchH3WeeklyRegionPolicy(),
+        canReadA2 ? fetchA2Overview({ object: "growth.h3.weekly-region-policy" }) : Promise.resolve(null),
+      ]);
+      if (request !== generation.current) return;
+      if (rules.status === "rejected") throw rules.reason;
+      setPolicy(rules.value);
+      setError(null);
+      if (audit.status === "rejected") {
+        setReviewError("审批进度读取失败，请刷新后重试；暂不能再次提交。");
+      } else {
+        setReviewError(null);
+        if (audit.value) {
+          const waiting = audit.value.operationQueue.some(row => row.obj === "growth.h3.weekly-region-policy" && row.status === "pending");
+          setPendingReview(waiting);
+          if (!waiting) setSubmittedRevision(null);
+        } else if (submittedRevision !== rules.value.revision) {
+          setSubmittedRevision(null);
+          setPendingReview(false);
+        }
+      }
+    } catch (cause) {
+      if (request === generation.current) setError(displayAdminError(cause));
+    } finally {
+      if (request === generation.current) setLoading(false);
+    }
+  };
+  useEffect(() => {
+    if (canRead) void reload();
+    return () => { generation.current += 1; };
+  }, [canRead, canReadA2]);
+  if (!canRead) return null;
+  const invalid = draft ? validateH3WeeklyRegionMappings(draft) : null;
+  const pending = pendingReview || (policy && submittedRevision === policy.revision);
+  const staleDraft = draftBase && policy && (draftBase.revision !== policy.revision
+    || JSON.stringify(draftBase.nextActivation) !== JSON.stringify(policy.nextActivation));
+  const describe = (rows: H3WeeklyRegionMapping[]) => rows.length
+    ? rows.map(row => `${row.callingCode} → ${row.zoneId}`).join("；") : "全部区号使用越南时间";
+  const submit = () => {
+    if (!policy || !draftBase || !draft || invalid || loading || error || reviewError || pending || staleDraft || !canWrite) return;
+    const params = h3WeeklyRegionPolicyParams(draftBase, draft);
+    const def = findHighOp("h3_weekly_region_policy")!;
+    ctx.openActionConfirm({
+      action: def.action,
+      detail: <><p>当前：{describe(draftBase.mappings)}</p><p>调整为：{describe(draft)}</p>
+        <p>未配置区号始终使用越南时间。已开始的周期保持原规则，批准后从账户下一周期生效。</p>
+        {draftBase.revision === 0 && <p>首次切换边界：{draftBase.nextActivation!.effectiveFrom}（UTC）。超过该时间需重新读取，不能自行顺延。</p>}</>,
+      amplifies: true,
+      run: async reason => {
+        await withH3WeeklyRegionProposalKey(params, reason, commandKey => propose(ctx.toast, {
+          action: def.action, obj: "growth.h3.weekly-region-policy",
+          before: describe(draftBase.mappings), after: describe(params.mappings),
+          type: def.type, amplifies: true, gate: { roles: [] }, gateLabel: def.gateLabel,
+          reason, sourceDomain: "H", commandKey,
+          command: def.buildCommand(params), target: def.buildTarget(params),
+        }));
+        generation.current += 1;
+        setLoading(false);
+        setSubmittedRevision(draftBase.revision);
+        setPendingReview(true);
+        setDraft(null);
+      },
+    });
+  };
+  return <section className="l-card" aria-label="每周任务地区规则">
+    <div className="l-h"><span className="ttl">每周任务地区规则</span><div className="r">
+      <button className="l-btn sm" disabled={loading} onClick={() => void reload()}>刷新地区规则</button>
+    </div></div>
+    <div style={{ padding: 16 }}>
+      <p>地区切换生效后，按注册手机号区号对应时区，每周一 00:00 开始新一周。未配置区号使用越南时间（Asia/Ho_Chi_Minh）。</p>
+      <p>已开始的周期保持原规则；批准后的调整从账户下一周期生效。团队与财务周期仍按越南时间。</p>
+      {loading && <p role="status">正在读取地区规则…</p>}
+      {error && <p role="alert">地区规则读取失败：{error} 请刷新后重试。</p>}
+      {policy && <>
+        <p>当前{policy.source === "DEFAULT" ? "默认规则" : `已发布规则 · 版本 ${policy.revision}`}
+          {policy.effectiveFrom ? ` · 首次切换边界 ${policy.effectiveFrom}（UTC）` : " · 尚未发布地区切换"}</p>
+        <ul>{policy.mappings.map(row => <li key={row.callingCode}>{row.callingCode} → {row.zoneId}</li>)}</ul>
+        {policy.mappings.length === 0 && <p>全部区号使用越南时间。</p>}
+        {pending && <p role="status">调整已提交 A2，等待 A2 审批。当前显示的规则尚未因此更新。{canReadA2
+          ? <><a href="/platform/audit">查看审批队列</a>；审批处理后刷新地区规则以核对状态。</>
+          : "当前账号没有审批查看权限，请由有权限的管理员核对处理结果。"}</p>}
+        {reviewError && <p role="alert">{reviewError}</p>}
+        {policy.revision === 0 && !policy.nextActivation && <p role="status">首次生效时间尚未确定，暂不能提交调整。</p>}
+        {canWrite && !draft && <button className="l-btn sm mc" disabled={loading || !!error || !!reviewError || !!pending || (policy.revision === 0 && !policy.nextActivation)}
+          onClick={() => { setDraftBase(policy); setDraft(policy.mappings.map(row => ({ ...row }))); }}>编辑地区映射</button>}
+      </>}
+      {canWrite && draft && <fieldset disabled={loading || !!error || !!reviewError || !!pending} style={{ marginTop: 12 }}>
+        <legend>调整地区映射</legend>
+        {draft.map((row, index) => <div key={index} className="row wrap" style={{ gap: 8, marginBottom: 8 }}>
+          <label>电话区号<input className="fld" aria-label={`电话区号 ${index + 1}`} value={row.callingCode} placeholder="+84"
+            onChange={event => setDraft(draft.map((item, i) => i === index ? { ...item, callingCode: event.target.value.trim() } : item))} /></label>
+          <label>任务时区<input className="fld" aria-label={`任务时区 ${index + 1}`} value={row.zoneId} placeholder="Asia/Shanghai"
+            onChange={event => setDraft(draft.map((item, i) => i === index ? { ...item, zoneId: event.target.value.trim() } : item))} /></label>
+          <button className="l-btn sm" onClick={() => setDraft(draft.filter((_, i) => i !== index))}>删除 {row.callingCode || index + 1}</button>
+        </div>)}
+        <button className="l-btn sm" disabled={draft.length >= 999} onClick={() => setDraft([...draft, { callingCode: "", zoneId: "" }])}>添加区号</button>
+        {draft.length === 0 && <p>删除全部映射后，后续周期统一使用越南时间。</p>}
+        {invalid && <p role="alert">{invalid}</p>}
+        {staleDraft && <p role="alert">规则或首次生效边界已更新，草稿已保留。请取消编辑并重新读取当前规则后调整。</p>}
+        <div className="row" style={{ gap: 8, marginTop: 12 }}>
+          <button className="l-btn sm mc" disabled={!!invalid || !!staleDraft || !draftBase || (draftBase.revision === 0 && !draftBase.nextActivation)} onClick={submit}>提交 A2 审批</button>
+          <button className="l-btn sm" onClick={() => setDraft(null)}>取消编辑</button>
+        </div>
+      </fieldset>}
+    </div>
+  </section>;
 }
 
 export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?: HSection }) {
@@ -1122,12 +1258,12 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             <div className="sub">24h 内全额 · 宽限期降档领</div>
           </div>
           <div className="f-stat ok">
-            <div className="k">本周任务完成</div>
+            <div className="k">本周任务完成 · 越南运营统计</div>
             <div className="v">{text(h3Stats.weeklyDone)}</div>
             <div className="sub">Tier1 {text(h3Stats.t1Done)} · Tier2 {text(h3Stats.t2Done)}</div>
           </div>
           <div className="f-stat warn">
-            <div className="k">本周 NEX 派发</div>
+            <div className="k">本周 NEX 派发 · 越南运营统计</div>
             <div className="v">{text(h3Stats.weeklyNex)}</div>
             <div className="sub">含 Phase 加成 {currentPhaseCode} {phaseMultiplier}（H1 权威）；每周任务曲线 {weeklyCurveLabel}</div>
           </div>
@@ -1318,12 +1454,13 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">每周任务(两档 + 周冠军)</span>
-            <span className="sub">· 2026-10-19 起新周期按越南时间 UTC+7 · 每周一 00:00 开始新一周 · 同周锁定 · 改动下周生效</span>
+            <span className="sub">· 地区切换生效后，按注册手机号区号对应时区，每周一 00:00 开始新一周 · 未配置区号按越南时间 · 同周锁定</span>
             <div className="r">
               <button className="l-btn sm mc" onClick={() => openCreateMission("WEEKLY_T1", "每周一档")} disabled={!canModuleWrite}>+ 新建一档</button>
               <button className="l-btn sm mc" onClick={() => openCreateMission("WEEKLY_T2", "每周二档")} disabled={!canModuleWrite}>+ 新建二档</button>
             </div>
           </div>
+          <H3WeeklyRegionPolicyPanel ctx={ctx} />
           <div className="l-b" style={{ paddingTop: 4 }}>
             <div className="l-h" style={{ marginTop: 2, border: 0, paddingBottom: 0 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-2)" }}>一档(优先级派发 · 命中第一条)</span>
