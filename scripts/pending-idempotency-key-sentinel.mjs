@@ -76,6 +76,8 @@ const MIGRATED = [
   "app/components/domain-views/d-tabs/d2-withdrawals.tsx",
   "app/components/domain-views/d-tabs/d3-treasury.tsx",
   "app/components/domain-views/f-view.tsx",
+  // F2 lifecycle retains the complete original proposal for explicit unknown-result recovery.
+  "lib/admin/f2-activation-attempt.ts",
   "app/components/domain-views/i-tabs/i3-campaign.tsx",
   "app/components/domain-views/i-tabs/i4-trust.tsx",
   "app/components/domain-views/j-tabs/j3-tamper.tsx",

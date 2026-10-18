@@ -1017,6 +1017,17 @@
         "batch": "done",
         "restAction": "f_unilevel_rule"
       },
+      {
+        "id": "OPS-F-28",
+        "domain": "F",
+        "object": "七层结算状态",
+        "action": "按原状态申请启用、暂停或恢复审批",
+        "status": "built",
+        "view": "f-view.tsx",
+        "batch": "done",
+        "restAction": "f_seven_layer_activation",
+        "note": "独立A2生命周期动作；批准时首次生成启用时间，暂停恢复保留原时间/历史快照，恢复继续暂停滞留原来源；不改费率或自动启用拆分"
+      },
     {
       "id": "OPS-F-03",
       "domain": "F",

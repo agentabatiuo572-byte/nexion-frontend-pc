@@ -14,6 +14,8 @@ export interface DirectReferralPolicy {
   legacyPurchase: DirectReferralRule | null;
   settlementMode: "DIRECT_ONLY_V1" | "SEVEN_V2";
   sevenLayerEnabled: boolean;
+  sevenLayerPaused: boolean;
+  sevenLayerActivationContractVersion: 1 | null;
   cutoverAt: string | null;
   source: "server";
   serverCanonical: true;
@@ -57,6 +59,8 @@ export function parseDirectReferralPolicy(value: unknown): DirectReferralPolicy 
   const invalid = (): never => { throw new Error("DIRECT_REFERRAL_POLICY_INVALID"); };
   if (!value || typeof value !== "object" || Array.isArray(value)) return invalid();
   const row = value as Record<string, unknown>;
+  if (row.sevenLayerPaused !== undefined && typeof row.sevenLayerPaused !== "boolean") return invalid();
+  if (row.sevenLayerPaused === true && row.sevenLayerEnabled !== true) return invalid();
   const number = (raw: unknown): number => parseStrictFiniteNumber(raw) ?? invalid();
   const nullableNumber = (raw: unknown) => raw === null ? null : number(raw);
   const date = (raw: unknown): string | null => raw === null ? null : typeof raw === "string" && /^\d{4}-\d{2}-\d{2}T.*Z$/.test(raw) && Number.isFinite(Date.parse(raw)) ? raw : invalid();
@@ -72,7 +76,9 @@ export function parseDirectReferralPolicy(value: unknown): DirectReferralPolicy 
   const split = row.purchaseSplit as Record<string, unknown>, ref = row.sevenLayerReference as Record<string, unknown>;
   if (typeof split.enabled !== "boolean" || Object.keys(split).some(key => !["enabled", "usdtSharePct"].includes(key))) return invalid();
   const result: DirectReferralPolicy = {
-    schemaVersion: 2, settlementMode: row.settlementMode as DirectReferralPolicy["settlementMode"], sevenLayerEnabled: row.sevenLayerEnabled, cutoverAt: date(row.cutoverAt),
+    schemaVersion: 2, settlementMode: row.settlementMode as DirectReferralPolicy["settlementMode"], sevenLayerEnabled: row.sevenLayerEnabled,
+    sevenLayerPaused: row.sevenLayerPaused === true, sevenLayerActivationContractVersion: row.sevenLayerActivationContractVersion === 1 ? 1 : null,
+    cutoverAt: date(row.cutoverAt),
     policySchemaVersion: row.policySchemaVersion as 1 | 2, purchaseSplitConfigured: row.purchaseSplitConfigured,
     legacyPurchase: row.purchase === undefined ? null : rule(row.purchase),
     source: "server", serverCanonical: true, sourceEnvironment: row.sourceEnvironment, runId: row.runId,

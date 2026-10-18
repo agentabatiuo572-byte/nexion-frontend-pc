@@ -1,6 +1,7 @@
 import type { EditSpec, BusinessFormSpec, BusinessFormValue } from "../design-kit";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
 import type { DirectReferralPolicy, DirectReferralUpdate } from "@/lib/admin/direct-referral-policy";
+import type { A2OperationRow } from "@/lib/admin/a2-client";
 import type {
   F1Leadership,
   F1PayoutFilters,
@@ -94,6 +95,12 @@ export interface FViewCtx {
   f2DirectPolicyLoading: boolean;
   f2DirectPolicyError: string | null;
   updateF2DirectPolicy: (policy: DirectReferralUpdate, reason: string) => Promise<void>;
+  f2ActivationPending: A2OperationRow | null;
+  f2ActivationPendingLoading: boolean;
+  f2ActivationPendingError: string | null;
+  f2ActivationAttempt: { spec: { action: string; reason: string }; expiresAt: number } | null;
+  recoverF2SevenLayerActivation: () => Promise<void>;
+  changeF2SevenLayerActivation: (action: "ACTIVATE" | "PAUSE" | "RESUME", expectedSevenLayerRevision: number, expectedPolicyVersion: number, reason: string) => Promise<void>;
   f2Unilevel: F2UnilevelRate[];
   f2RateTiers: F2RateTier[];
   f2Params: F2PolicyParam[];

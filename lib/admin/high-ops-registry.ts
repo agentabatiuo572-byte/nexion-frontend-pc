@@ -1751,6 +1751,19 @@ export const HIGH_OPS: HighOpDef[] = [
   },
   // —— F 域网络(批 9) ——
   {
+    op: "f_seven_layer_activation",
+    domain: "F",
+    action: "七层结算状态调整",
+    amplifies: true,
+    type: "fund",
+    gateLabel: "另一位审批管理员",
+    targetType: "seven_layer_activation",
+    buildCommand: (ctx) => ({ domain: "F", op: "f_seven_layer_activation", params: {
+      action: ctx.action, expectedSevenLayerRevision: ctx.expectedSevenLayerRevision, expectedPolicyVersion: ctx.expectedPolicyVersion,
+    } }),
+    buildTarget: () => ({ domain: "F", type: "seven_layer_activation", id: "current" }),
+  },
+  {
     op: "f_direct_referral_policy",
     domain: "F",
     action: "直属分成政策整组调整",

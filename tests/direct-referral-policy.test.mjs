@@ -7,6 +7,28 @@ const split = (patch = {}) => ({ enabled: true, usdtSharePct: 60, ...patch });
 const update = (patch = {}) => ({ schemaVersion: 2, expectedVersion: 2, expectedSevenLayerRevision: 7, purchaseSplit: split(), deviceEarning: rule(), ...patch });
 const policy = () => ({ schemaVersion: 2, policySchemaVersion: 2, purchaseSplitConfigured: true, settlementMode: "SEVEN_V2", sevenLayerEnabled: true, cutoverAt: "2026-10-01T00:00:00Z", source: "server", serverCanonical: true, sourceEnvironment: "PRODUCTION", runId: "", configured: true, policyVersion: 2, sevenLayerRevision: 7, effectiveAt: "2026-10-01T00:00:00Z", nexUsdtPrice: 0.01, purchaseSplit: split(), deviceEarning: rule(), sevenLayerReference: { revision: 7, baseRatePct: 10, coolingDays: 30, legacyNexPerUsd: 2 } });
 
+test("activation reads actual pause state and only the supported server capability", () => {
+  const parsed = parseDirectReferralPolicy({ ...policy(), sevenLayerPaused: true, sevenLayerActivationContractVersion: 1 });
+  assert.equal(parsed.sevenLayerPaused, true);
+  assert.equal(parsed.sevenLayerActivationContractVersion, 1);
+  assert.equal(parsed.cutoverAt, policy().cutoverAt);
+});
+
+test("older and unknown activation capability keeps existing policy readable but activation unavailable", () => {
+  for (const version of [undefined, 0, 2, "1"]) {
+    const parsed = parseDirectReferralPolicy({ ...policy(), sevenLayerActivationContractVersion: version });
+    assert.equal(parsed.sevenLayerPaused, false);
+    assert.equal(parsed.sevenLayerActivationContractVersion, null);
+  }
+});
+
+test("malformed pause status cannot masquerade as running or enable an action", () => {
+  for (const paused of ["false", 0, null, {}]) {
+    assert.throws(() => parseDirectReferralPolicy({ ...policy(), sevenLayerPaused: paused }));
+  }
+  assert.throws(() => parseDirectReferralPolicy({ ...policy(), settlementMode: "DIRECT_ONLY_V1", sevenLayerEnabled: false, cutoverAt: null, sevenLayerPaused: true }));
+});
+
 test("approval summary exposes changed stored shares even while split is disabled", () => {
   const before = directReferralSummary({ ...policy(), purchaseSplit: split({ enabled: false, usdtSharePct: 50 }) });
   const after = directReferralSummary(update({ purchaseSplit: split({ enabled: false, usdtSharePct: 61 }) }));

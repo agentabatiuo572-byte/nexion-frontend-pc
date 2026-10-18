@@ -125,7 +125,10 @@ test("actual M1 pool, member pagination and random preview keep missing counts d
   assert.doesNotMatch(random, /preview\?\.count\?\?0|preview\?\.excluded.length\?\?0/);
   assert.ok(read("support-content-tools").includes('available ? filtered.length : "-"'));
   assert.ok(read("m3-dedicated-chat").includes('conversationsAvailable ? filtered.length : "-"'));
-  assert.ok(read("m1-personal-workbench").includes('`共 ${rows ? rows.total : "-"} 位`'));
+  const personalTotal = 'rows ? `共 ${rows.total} 位` : "总数待确认"';
+  assert.ok(read("m1-personal-workbench").includes(personalTotal));
+  assert.equal(vm.runInNewContext(personalTotal, { rows: null }), "总数待确认");
+  assert.equal(vm.runInNewContext(personalTotal, { rows: { total: 0 } }), "共 0 位");
   const m5 = read("m5-scripts");
   assert.equal((m5.match(/<Pager available=/g) ?? []).length,3);
   const actual = evaluate(functions(m5,["Pager"]) + "\nexport {Pager};",{totalPages:()=>1,clampPage:()=>1,Icon:()=>null});

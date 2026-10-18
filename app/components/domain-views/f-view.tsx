@@ -48,14 +48,16 @@ import {
   type F1VRankOverview,
 } from "@/lib/admin/f1-client";
 import { usePropose } from "@/lib/admin/use-propose";
-import { createA2CommandKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { createA2CommandKey, fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import { pendingF2Activation, submitF2Activation } from "@/lib/admin/f2-activation-attempt";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { findHighOp, isFFundAmplifyingKey } from "@/lib/admin/high-ops-registry";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { Mc, McSpec, FViewCtx } from "./f-tabs/types";
 import { F1Vrank } from "./f-tabs/f1-vrank";
 import { F2Rates } from "./f-tabs/f2-rates";
+import { F2SevenLayerActivation } from "./f-tabs/f2-seven-layer-activation";
 import { F3Binary } from "./f-tabs/f3-binary";
 import { F4Ops } from "./f-tabs/f4-ops";
 import { F5Audit } from "./f-tabs/f5-audit";
@@ -142,6 +144,11 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [f2DirectPolicy, setF2DirectPolicy] = useState<DirectReferralPolicy | null>(null);
   const [f2DirectPolicyLoading, setF2DirectPolicyLoading] = useState(tab === "F2");
   const [f2DirectPolicyError, setF2DirectPolicyError] = useState<string | null>(null);
+  const [f2ActivationPending, setF2ActivationPending] = useState<A2OperationRow | null>(null);
+  const [f2ActivationPendingLoading, setF2ActivationPendingLoading] = useState(tab === "F2");
+  const [f2ActivationPendingError, setF2ActivationPendingError] = useState<string | null>(null);
+  const [f2ActivationAttempt, setF2ActivationAttempt] = useState<ReturnType<typeof pendingF2Activation>>(null);
+  const canReadA2 = can("platform_a2_read");
   const [f2Loading, setF2Loading] = useState(tab === "F2");
   const [f2Error, setF2Error] = useState<string | null>(null);
   const [f3Overview, setF3Overview] = useState<F3BinaryOverview | null>(null);
@@ -275,26 +282,34 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   }, [refreshF1, tab]);
 
   const refreshF2 = useCallback(async () => {
+    setF2ActivationAttempt(pendingF2Activation());
     const request = ++f2Generation.current;
     setF2Loading(true);
     setF2Error(null);
     setF2DirectPolicyLoading(true);
     setF2DirectPolicyError(null);
+    setF2ActivationPendingLoading(true);
+    setF2ActivationPendingError(null);
     try {
-      const [overview, policy] = await Promise.allSettled([fetchF2RatesOverview(), fetchF2DirectReferralPolicy()]);
+      const [overview, policy, audit] = await Promise.allSettled([
+        fetchF2RatesOverview(), fetchF2DirectReferralPolicy(),
+        canReadA2 ? fetchA2Overview({ domain: "F", object: "current" }) : Promise.resolve(null),
+      ]);
       if (request !== f2Generation.current) return;
       if (policy.status === "fulfilled") setF2DirectPolicy(policy.value);
       else { setF2DirectPolicy(null); setF2DirectPolicyError(errorMessage(policy.reason)); }
       if (overview.status === "fulfilled") setF2Overview(overview.value);
       else { setF2Overview(null); setF2Error(errorMessage(overview.reason)); }
+      if (audit.status === "fulfilled") setF2ActivationPending(audit.value?.operationQueue.find(row => row.status === "pending" && row.obj === "current" && ["七层结算启用", "七层结算暂停", "七层结算恢复"].includes(row.action)) ?? null);
+      else { setF2ActivationPending(null); setF2ActivationPendingError("审批进度读取失败，请重新读取后继续。"); }
     } catch (error) {
       if (request !== f2Generation.current) return;
       setF2Overview(null);
       setF2Error(errorMessage(error));
     } finally {
-      if (request === f2Generation.current) { setF2Loading(false); setF2DirectPolicyLoading(false); }
+      if (request === f2Generation.current) { setF2Loading(false); setF2DirectPolicyLoading(false); setF2ActivationPendingLoading(false); }
     }
-  }, []);
+  }, [canReadA2]);
 
   useEffect(() => {
     if (tab === "F2") void refreshF2();
@@ -369,8 +384,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (tab === "F5") void refreshF5();
   }, [refreshF5, tab]);
 
-  // F 域全部 A2 propose 必经此咽喉:命令号先查在途记录再铸新——outcome-uncertain 重试同号让
-  // 后端去重,成功 / 确定性失败即收敛丢弃。绕开咽喉直调会失去幂等复用(契约门钉直调恒为 1 处)。
+  // F 域既有命令在此按槽位保号；F2 启停另用同一共享存储保留完整原申请，供显式恢复。
   const proposeStable = async (slot: string, inputFingerprint: string, spec: ProposeSpec) => {
     const commandKey = commandAttempts.resolve(slot, inputFingerprint, () => createA2CommandKey(slot.split(":")[0]));
     try {
@@ -540,6 +554,32 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f2SevenLayerRevision: f2Overview?.sevenLayerRevision ?? null,
     f2DirectPolicyLoading,
     f2DirectPolicyError,
+    f2ActivationPending,
+    f2ActivationPendingLoading,
+    f2ActivationPendingError,
+    f2ActivationAttempt,
+    recoverF2SevenLayerActivation: async () => {
+      if (!can("network_f2_policy_amplify") || !can("platform_a2_proposal_create")) throw new Error("当前角色没有七层结算审批申请权限。");
+      try { await submitF2Activation(null, spec => propose(setToast, spec), () => createA2CommandKey("f-seven-layer-activation")); }
+      finally { setF2ActivationAttempt(pendingF2Activation()); }
+      await refreshF2();
+    },
+    changeF2SevenLayerActivation: async (action, expectedSevenLayerRevision, expectedPolicyVersion, reason) => {
+      if (!can("network_f2_policy_amplify") || !can("platform_a2_proposal_create")) throw new Error("当前角色没有七层结算审批申请权限。");
+      if (f2DirectPolicy?.sevenLayerActivationContractVersion !== 1) throw new Error("七层结算启用服务暂不可用，请重新读取。");
+      const def = findHighOp("f_seven_layer_activation");
+      if (!def) throw new Error("F_OP_NOT_FOUND:f_seven_layer_activation");
+      const label = { ACTIVATE: "七层结算启用", PAUSE: "七层结算暂停", RESUME: "七层结算恢复" }[action];
+      try { await submitF2Activation({
+        action: label, obj: "current", before: f2DirectPolicy.sevenLayerEnabled ? f2DirectPolicy.sevenLayerPaused ? "已启用，已暂停" : "已启用，正常处理" : "未启用",
+        after: action === "ACTIVATE" ? "批准后启用；生效时间由批准记录确定，保留历史奖励" : action === "PAUSE" ? "暂停新来源，保留原生效时间与历史快照" : "恢复新来源及因暂停滞留的原来源，保留原生效时间",
+        type: action === "PAUSE" ? "param" : "fund", amplifies: action !== "PAUSE",
+        gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "F2",
+        command: def.buildCommand({ action, expectedSevenLayerRevision, expectedPolicyVersion }), target: def.buildTarget({}),
+      }, spec => propose(setToast, spec), () => createA2CommandKey("f-seven-layer-activation")); }
+      finally { setF2ActivationAttempt(pendingF2Activation()); }
+      await refreshF2();
+    },
     updateF2DirectPolicy: async (policy, reason) => {
       const invalid = validateDirectReferralUpdate(policy);
       if (invalid) throw new Error(invalid);
@@ -727,7 +767,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "F2" ? <div className="f2-page-header"><div><div className="f2-breadcrumb">网络 <span aria-hidden="true">›</span> 网络版税与分成</div><h1>网络版税与分成</h1></div><span className="f2-page-meta">{f2DirectPolicy?.effectiveAt ? `当前政策生效于 ${new Date(f2DirectPolicy.effectiveAt).toLocaleString()}` : "配置尚未生效"}</span></div> : <DomainHeader {...meta} right={cta ? <button className="f-cta" onClick={cta.onClick}>{cta.label}</button> : undefined} />}
 
       {tab === "F1" && <F1Vrank ctx={ctx} />}
-      {tab === "F2" && <F2Rates ctx={ctx} />}
+      {tab === "F2" && <><F2SevenLayerActivation ctx={ctx} /><F2Rates ctx={ctx} /></>}
       {tab === "F3" && <F3Binary ctx={ctx} />}
       {tab === "F4" && <F4Ops ctx={ctx} />}
       {tab === "F5" && <F5Audit ctx={ctx} />}

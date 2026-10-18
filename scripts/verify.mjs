@@ -234,7 +234,7 @@ const GEARS = [
   ["promotion generated API contract", "node", ["--test", "tests/promotion-generated-types-eol.test.mjs"]],
   ["promotion interactions and public copy", "node", ["--unhandled-rejections=strict", "--experimental-strip-types", "--test", "scripts/growth-promotions-behavior.test.mjs", "scripts/growth-promotions-read-state.test.mjs", "scripts/growth-promotions-visual-gate.test.mjs", "scripts/growth-promotions-runtime-waits.test.mjs", "scripts/growth-promotions-public-copy.test.mjs", "scripts/growth-promotions-banner.test.mjs"]],
   ["promotion dialog capture", "node", ["--test", "scripts/growth-promotions-capture.test.mjs"]],
-  ["direct referral policy contract", "node", ["--experimental-strip-types", "--test", "tests/direct-referral-policy.test.mjs", "tests/f5-event-runtime-contract.test.mjs"]],
+  ["direct referral policy contract", "node", ["--experimental-strip-types", "--test", "tests/direct-referral-policy.test.mjs", "tests/f2-seven-layer-activation.behavior.test.mjs", "tests/f5-event-runtime-contract.test.mjs"]],
   ["E6 phone binding policy contract", "node", ["--experimental-strip-types", "--test", "tests/e6-phone-binding-contract.test.mjs"]],
   ["E2/E6 phone calibration contract", "node", ["--test", "tests/phone-calibration-contract.test.mjs", "tests/phone-calibration-proxy.test.mjs"]],
   ["L1 selected-source export contract", "node", ["--experimental-strip-types", "--test", "tests/l1-export-source-flow.test.mjs", "tests/l1-narrow-phase-readback.test.mjs", "tests/l-final10-protocol-repair-contract.test.mjs"]],
