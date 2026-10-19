@@ -127,6 +127,34 @@ function harness({ auth = session(), search = "?conversationNo=CV-1", drafts = {
 const conversations = rows => ({ "I.session.conversationsAvailable": "1", "I.session.convos": JSON.stringify(rows) });
 const roster = (seatType = "MANAGER") => ({ "I.support.agentsAvailable": "1", "I.support.agents": JSON.stringify([{ adminId: 4283, seatType, enabled: true, position: seatType === "MANAGER" ? "客服主管" : "客服顾问" }]) });
 
+test("552 list labels use each segment's pending count before and after customer aggregate loads", async () => {
+  const probe = harness();
+  const rows = [0, 1, undefined, null, -1, "0"].map((pendingReplyCount, index) => ({
+    ...row(`CV-${index + 1}`, "1"), status: "closed", lastPublicMessageId: 3730,
+    pendingReplyCount,
+  }));
+  const labels = () => probe.buttons().filter(button => button.label.includes("发起来源未记录")).map(button => button.label);
+  const verify = () => {
+    const actual = labels();
+    assert.equal(actual.length, 6);
+    assert.match(actual[0], /已处理$/);
+    assert.match(actual[1], /待专属客服回复$/);
+    for (const label of actual.slice(2)) assert.match(label, /查看待回复状态$/);
+  };
+  try {
+    await flush(); probe.render();
+    probe.publish({ ...conversations(rows), ...roster() });
+    verify();
+    probe.profileRequests[0].resolve({ customerId: "1", agentAdminId: 4285, assignmentId: "9", waitingReply: true, pendingReplyCount: 3 });
+    await flush(); probe.render();
+    verify();
+    probe.publish(conversations(rows.map(value => value.id === "CV-1" ? { ...value, pendingReplyCount: 2 } : value)));
+    assert.match(labels()[0], /待专属客服回复$/);
+    probe.publish(conversations(rows.map(value => value.id === "CV-1" ? { ...value, pendingReplyCount: undefined } : value)));
+    assert.match(labels()[0], /查看待回复状态$/);
+  } finally { probe.unmount(); }
+});
+
 test("conversation data arriving before manager qualification stays pending, then shows all 44 without false revocation", async () => {
   const probe = harness();
   try {
@@ -240,6 +268,23 @@ function productionFunction(source, name) {
   assert.ok(declaration, `Missing production function ${name}`);
   return declaration.getText(parsed).replace(/^export\s+/, "");
 }
+
+test("552 conversation adapter preserves per-segment zero and positive counts but keeps old or malformed fields unknown", () => {
+  const client = read("lib/admin/m-client.ts");
+  const adapt = new Function("conversationType", "roleKey", "asTs", "asArray", "adaptCustomerProfile", "str", "num", "conversationStatus",
+    compile(productionFunction(client, "adaptConversation")) + "\nreturn adaptConversation;")(
+    value => value, value => value, () => 1, value => value ?? [], () => ({}),
+    (value, fallback = "") => value ?? fallback, (value, fallback) => typeof value === "number" ? value : fallback, value => value,
+  );
+  for (const pendingReplyCount of [0, 1, 3]) {
+    const base = { conversationNo: "CV-1", userId: 7, pendingReplyCount };
+    assert.equal(adapt(base).pendingReplyCount, pendingReplyCount);
+    assert.equal(adapt({ conversation: base, messages: [], historyTruncated: true }).pendingReplyCount, pendingReplyCount);
+  }
+  for (const pendingReplyCount of [undefined, null, -1, 0.5, "0", false, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.equal(adapt({ conversationNo: "CV-1", pendingReplyCount }).pendingReplyCount, null);
+  }
+});
 
 test("the actual end confirmation, row writer and HTTP client send OPEN to RESOLVED with the original CAS, reason and stable command key", async () => {
   const view = read("app/components/domain-views/m-view.tsx"), client = read("lib/admin/m-client.ts");

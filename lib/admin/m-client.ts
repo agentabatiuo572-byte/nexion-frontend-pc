@@ -142,6 +142,7 @@ type ContentConversationView = {
   ownerAgentId?: string | null;
   ownerAgentName?: string;
   unreadCount?: number;
+  pendingReplyCount?: number | null;
   lastMessage?: string;
   lastPublicMessageId?: number | null;
   lastMessageKind?: string | null;
@@ -1297,6 +1298,7 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
     agentName: str(base.ownerAgentName, type === "advisor" ? "Mia" : "客服台"),
     roleKey: roleKey(type),
     unread: num(base.unreadCount, 0),
+    pendingReplyCount: typeof base.pendingReplyCount === "number" && Number.isSafeInteger(base.pendingReplyCount) && base.pendingReplyCount >= 0 ? base.pendingReplyCount : null,
     lastTs: asTs(base.lastMessageAt, updated),
     status: conversationStatus(base.status),
     ownerAgentId: str(base.ownerAgentId),

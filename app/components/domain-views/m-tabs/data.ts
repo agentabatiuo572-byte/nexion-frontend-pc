@@ -204,6 +204,7 @@ export type SessionConvo = {
   agentName: string;   // 镜像前端 agentName
   roleKey: string;     // 镜像前端 roleKey
   unread: number;      // 镜像前端 unread
+  pendingReplyCount?: number | null; // 本会话回复游标之后的客户消息数；缺失表示未知。
   lastTs: number;      // 镜像前端 lastTs
   status: SessionStatus; // 后台坐席态
   ownerAgentId?: string; // 后台分配坐席的唯一身份，用于排除自转交

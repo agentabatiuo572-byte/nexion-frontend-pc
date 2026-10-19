@@ -633,8 +633,10 @@ test("M3 production adapter and list rendering distinguish public messages, expl
   assert.equal(positive.messages.length, 0, "list summaries must not fabricate a detail message");
   assert.match(render(positive), /消息摘要暂不可用.*2 条未读.*查看待回复状态/);
   assert.doesNotMatch(render(positive), /尚无人工消息|待首次联系|待专属客服回复|\[图片\]/);
-  assert.match(render(positive, true), /待专属客服回复/, "only an actual customer profile may confirm waiting reply");
-  assert.match(render(positive, false), /已处理/);
+  assert.match(render(positive, true), /查看待回复状态/, "customer aggregate cannot determine this segment's pending state");
+  assert.match(render(positive, false), /查看待回复状态/);
+  assert.match(render({ ...positive, pendingReplyCount: 1 }, false), /待专属客服回复/);
+  assert.match(render({ ...positive, pendingReplyCount: 0 }, true), /已处理/);
   const detail = adapter.adaptConversation(adapter.assertConversationDetail({
     conversation: { ...row, lastPublicMessageId: 3719 },
     messages: [{ id: 3719, senderType: "AGENT", content: "", kind: "IMAGE", attachmentId: "local-fixture-image", createdAt: row.updatedAt, authorConfidence: "UNKNOWN", senderAvatar: { assetId: "unverified", version: 1 } }],
