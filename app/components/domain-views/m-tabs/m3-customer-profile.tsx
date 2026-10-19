@@ -1,4 +1,5 @@
 "use client";
+import { userNicknameText } from "@/lib/admin/brand-copy";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { supportEnhancements, type SupportProfile, type SupportGroup, type SupportFinanceFieldStatus } from "@/lib/admin/m-support-enhancements";
@@ -160,7 +161,7 @@ export function M3CustomerProfile({ ctx, customerId, conversation, scopeVersion,
     {error && <div className="itint danger" role="alert">{error}<button className="l-btn sm" onClick={retryProfile}>重新读取资料</button></div>}
     {!scopeDenied && <>
     <Group title="基本信息" group={profile?.identity} failed={Boolean(error)} retry={()=>void retryGroup("identity")}>
-      <Row label="客户姓名" value={identity?.nickname}/><Row label="客户编码" value={identity?.userNo}/><Row label="客户 ID" value={customerId}/><Row label="客户等级" value={identity?.level}/><Row label="手机" value={identity?.phoneMasked}/><Row label="地区" value={identity?.region}/><Row label="注册时间" value={dates(identity?.registeredAt)}/><Row label="最近登录" value={dates(identity?.lastLoginAt)}/>
+      <Row label="客户姓名" value={userNicknameText(show(identity?.nickname), identity?.phoneMasked)}/><Row label="客户编码" value={identity?.userNo}/><Row label="客户 ID" value={customerId}/><Row label="客户等级" value={identity?.level}/><Row label="手机" value={identity?.phoneMasked}/><Row label="地区" value={identity?.region}/><Row label="注册时间" value={dates(identity?.registeredAt)}/><Row label="最近登录" value={dates(identity?.lastLoginAt)}/>
     </Group>
     <Group title="首充与邀请统计" group={profile?.statistics} failed={Boolean(error)} retry={()=>void retryGroup("statistics")}>
       <Row label="首充状态" value={firstState}/><Row label="首充来源" value={firstSource}/><Row label="首充时间" value={firstConfirmed && statistics?.first.succeededAt ? dates(statistics.first.succeededAt) : "-"}/><Row label="首充金额" value={firstConfirmed && statistics?.first.amount != null && statistics.first.currency ? `${statistics.first.amount} ${statistics.first.currency}` : "-"}/>
@@ -212,7 +213,7 @@ export function M3CustomerProfile({ ctx, customerId, conversation, scopeVersion,
     return group?.status === "READY" ? null : <p className="m3-profile-state" role={group?.status === "ERROR" || error ? "alert" : "status"}>{group ? statusText[group.status] : error ? "读取失败" : "正在读取…"}{group?.status === "ERROR" && <button type="button" className="m3-profile-link" onClick={()=>void retryGroup(key)}>重新读取</button>}</p>;
   };
   return <div className="m3-customer-sidebar">
-    <header className="m3-profile-identity"><SupportAvatar name={String(identity?.nickname ?? "客户")} path={identity?.avatar ? customerAvatarPath(customerId) : undefined} size={48}/><div><div className="m3-profile-name"><h3 title={show(identity?.nickname)}>{identity?.nickname == null ? "客户资料待核实" : show(identity.nickname)}</h3>{identity?.level != null && <span className="m3-profile-level">{show(identity.level)}</span>}</div><p className="m3-profile-uid">UID {identity?.userNo == null ? "-" : show(identity.userNo)}</p>{advisorName && <p className="m3-profile-owner">当前专属客服 {String(advisorName)}</p>}</div></header>
+    <header className="m3-profile-identity"><SupportAvatar name={userNicknameText(String(identity?.nickname ?? "客户"), identity?.phoneMasked)} path={identity?.avatar ? customerAvatarPath(customerId) : undefined} size={48}/><div><div className="m3-profile-name"><h3 title={userNicknameText(show(identity?.nickname), identity?.phoneMasked)}>{identity?.nickname == null ? "客户资料待核实" : userNicknameText(show(identity.nickname), identity?.phoneMasked)}</h3>{identity?.level != null && <span className="m3-profile-level">{show(identity.level)}</span>}</div><p className="m3-profile-uid">UID {identity?.userNo == null ? "-" : show(identity.userNo)}</p>{advisorName && <p className="m3-profile-owner">当前专属客服 {String(advisorName)}</p>}</div></header>
     {!scopeDenied && <a className="m3-profile-open" href={`/service/customers/${encodeURIComponent(customerId)}${conversation?.id ? `?conversationNo=${encodeURIComponent(conversation.id)}` : ""}`}>查看完整客户档案 / 360 <span aria-hidden="true">→</span></a>}
     {view360 && <Modal title="客户服务 360" icon="users" wide onClose={()=>setView360(false)} footer={<button className="btn btn-sec btn-sm" onClick={()=>setView360(false)}>返回会话</button>}>{body}</Modal>}
     <div hidden={view360}>

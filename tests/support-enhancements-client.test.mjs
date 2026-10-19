@@ -1,3 +1,4 @@
+import * as systemBrand from "../lib/admin/brand-copy.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {readFileSync} from "node:fs";
@@ -81,7 +82,7 @@ test("timeout known success with failed readback remains recoverable and account
 
 test("timeout modal requires a separate old-to-new confirmation and accepts exactly six reason characters",async()=>{
   const source=readFileSync(new URL("../app/components/domain-views/m-tabs/m3-modals.tsx",import.meta.url),"utf8"),require=createRequire(import.meta.url),jsx=require("react/jsx-runtime"),states=[],deps=[],effects=[],saves=[];let cursor=0,effectCursor=0;
-  const context={exports:{},require:name=>{if(name==="react")return {useState:initial=>{const index=cursor++;if(!(index in states))states[index]=initial;return [states[index],value=>{states[index]=typeof value==="function"?value(states[index]):value;}];},useEffect:(fn,values)=>{const index=effectCursor++;if(!deps[index]||values.some((value,i)=>value!==deps[index][i]))effects.push(fn);deps[index]=values;}};if(name==="react/jsx-runtime")return jsx;if(name==="../design-kit")return {Modal:"modal",Icon:"icon"};if(name==="./data"||name==="./hd-ui")return {};throw new Error(name);}};
+  const context={exports:{},require:name=>{ if(name==="@/lib/admin/brand-copy")return systemBrand;if(name==="react")return {useState:initial=>{const index=cursor++;if(!(index in states))states[index]=initial;return [states[index],value=>{states[index]=typeof value==="function"?value(states[index]):value;}];},useEffect:(fn,values)=>{const index=effectCursor++;if(!deps[index]||values.some((value,i)=>value!==deps[index][i]))effects.push(fn);deps[index]=values;}};if(name==="react/jsx-runtime")return jsx;if(name==="../design-kit")return {Modal:"modal",Icon:"icon"};if(name==="./data"||name==="./hd-ui")return {};throw new Error(name);}};
   runInNewContext(ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS}}).outputText,context);
   const props={policy:{warnMinutes:2,closeMinutes:9,version:7},canSave:true,saving:false,error:"",onClose(){},onSave:async input=>{saves.push(input);return true;}},render=()=>{cursor=0;effectCursor=0;const result=context.exports.IdlePolicyModal(props);while(effects.length)effects.shift()();return result;},walk=node=>!node||typeof node!=="object"?[]:[node,...[node.props?.children].flat(Infinity).flatMap(walk)];
   let modal=render(),nodes=walk(modal);nodes.find(node=>node.type==="input").props.onChange({target:{value:"3"}});nodes.find(node=>node.type==="textarea").props.onChange({target:{value:"一二三四五"}});modal=render();let save=walk(modal.props.footer).find(node=>node.props?.["data-proof"]);assert.equal(save.props.disabled,true);
@@ -159,7 +160,7 @@ test("funds-flow options use source statuses and reset the exact filter request 
   const records=[...expected,"UNRECOGNIZED","constructor","toString",null].map((status,i)=>({sourceId:`flow-${i}`,bizNo:`流水${i}`,kind:"DEPOSIT",currency:i%2?"NEX":"USDT",status})),state=[],effects=[],seen=[];
   const walk=node=>!node||typeof node!=="object"?[]:[node,...[node.props?.children].flat(Infinity).flatMap(walk)];
   const profile={identity:group({}),finance:group({byCurrency:[{currency:"USDT"},{currency:"NEX"}]}),devices:group({}),risk:group({}),annotations:group({}),service:group({}),actions:{}};
-  let cursor=0;const context={exports:{},AbortController,Date,Intl,JSON,document:{querySelectorAll:()=>[]},require:name=>{
+  let cursor=0;const context={exports:{},AbortController,Date,Intl,JSON,document:{querySelectorAll:()=>[]},require:name=>{ if(name==="@/lib/admin/brand-copy")return systemBrand;
     if(name==="react")return {useEffect:fn=>effects.push(fn),useRef:value=>({current:value}),useState:initial=>{const index=cursor++;if(!(index in state))state[index]=index===0?profile:index===5?3:index===7?group({records,total:records.length}):initial;return [state[index],value=>{state[index]=typeof value==="function"?value(state[index]):value;}];}};
     if(name==="react/jsx-runtime")return jsx;
     if(name==="@/lib/store/admin-auth")return {useAdminAuth:selector=>selector({session:{adminId:12,authorities:[]},authEpoch:1})};
@@ -267,7 +268,7 @@ test("an owned OPEN conversation exposes explicit old same-customer targets with
   visit(ast);assert.ok(panel&&restore&&revoke&&load);
   const closed={id:"CV-OLD",customerId:"7",ownerAdminId:12,status:"closed",detailReady:true,messages:[{id:11,sender:"user",sourceSenderType:"USER",text:"原待回复客户消息"},{id:12,sender:"agent",sourceSenderType:"AGENT",intent:"MAINTENANCE",text:"维护消息"}]},open={id:"CV-OPEN",customerId:"7",ownerAdminId:12,status:"open",detailReady:true,messages:[{id:31,sender:"user",sourceSenderType:"USER",text:"新段客户消息"}],version:4,owner:"顾问A"};
   const visible=[open,closed,{...closed,id:"CV-FOREIGN",customerId:"8"},{...closed,id:"CV-OTHER-OWNER",ownerAdminId:13}],storage={},seen=[];
-  const context={exports:{},require:name=>{assert.equal(name,"react/jsx-runtime");return jsx;},AbortController,Date,Number,Set,JSON,validCustomerId:value=>Boolean(value&&/^\d+$/.test(value)),visible,all:visible,requestedCustomerId:null,selectedId:open.id,adminId:12,authEpoch:1,selectedClosedIds:new Set(),closedCandidateError:"",closedCandidateRetry:0,firstPending:null,pending:null,intent:"SERVICE",includeCurrentReply:false,busy:false,canWriteM3:true,conversationsAvailable:true,identityRef:{current:"current"},scopeGeneration:{current:0},
+  const context={exports:{},require:name=>{ if(name==="@/lib/admin/brand-copy")return systemBrand;assert.equal(name,"react/jsx-runtime");return jsx;},AbortController,Date,Number,Set,JSON,validCustomerId:value=>Boolean(value&&/^\d+$/.test(value)),visible,all:visible,requestedCustomerId:null,selectedId:open.id,adminId:12,authEpoch:1,selectedClosedIds:new Set(),closedCandidateError:"",closedCandidateRetry:0,firstPending:null,pending:null,intent:"SERVICE",includeCurrentReply:false,busy:false,canWriteM3:true,conversationsAvailable:true,identityRef:{current:"current"},scopeGeneration:{current:0},
     setSelectedClosedIds:value=>{context.selectedClosedIds=typeof value==="function"?value(context.selectedClosedIds):value;},setIncludeCurrentReply:value=>{context.includeCurrentReply=value;},setIntent:value=>{context.intent=value;},setMetaTarget(){},setContentChoice(){},setSendError(){},setClosedCandidateError(){},setClosedCandidateRetry(){},setRequestedCustomerId(){},useEffect:fn=>fn(),
     sessionStorage:{getItem:key=>storage[key]??null,setItem:(key,value)=>{storage[key]=value;},removeItem:key=>{delete storage[key];}},ctx:{invalidateScope(){}},loadConversationDetail:async id=>seen.push(id),lostPermission:()=>false,displayAdminError:()=>"读取失败"};
   context.qualificationUnknown=false;
@@ -371,7 +372,7 @@ test("first-contact customer profiles require verified scope without inventing a
   for(const mode of ["first","read-only","write"]){
     const calls=[],profile={identity:group({nickname:"已核客户",userNo:"U-7"}),finance:group({byCurrency:[]}),devices:group({}),risk:group(null,"UNKNOWN"),annotations:group({systemTags:[],customTags:[],notes:[]}),service:group({agentAdminId:12,agentName:"当前顾问",conversationCount:mode==="first"?0:1,assignmentState:"BOUND"}),actions:{}};
     let state=0;const session={adminId:12,role:"support",authorities:mode==="read-only"?[]:["service_m3_write"]};
-    const context={exports:{},AbortController,Date,Intl,JSON,require:name=>{
+    const context={exports:{},AbortController,Date,Intl,JSON,require:name=>{ if(name==="@/lib/admin/brand-copy")return systemBrand;
       if(name==="react")return {useEffect(){},useRef:value=>({current:value}),useState:initial=>{const index=state++;return [index===0?profile:index===3?true:index===14?"新标签":index===15?"新备注":initial,()=>{}];}};
       if(name==="react/jsx-runtime")return jsx;
       if(name==="@/lib/store/admin-auth")return {useAdminAuth:selector=>selector({session,authEpoch:1})};
@@ -554,7 +555,7 @@ test("image proxies preserve binary bounds, cancellation, MIME rejection and unk
   const load=(kind,fetchStub)=>{
     const seen=[],source=readFileSync(new URL(`../app/api/admin/${kind}/[...path]/route.ts`,import.meta.url),"utf8");
     const context={exports:{},process:{env:{NEXION_SUPPORT_ATTACHMENT_PROXY_MAX_BYTES:"8",NEXION_BACKEND_TIMEOUT_MS:"1000"}},Headers,Response,Request,URL,ReadableStream,Uint8Array,ArrayBuffer,AbortSignal,
-      fetch:async(url,init)=>{seen.push({url,init});return fetchStub(url,init);},require:name=>{
+      fetch:async(url,init)=>{seen.push({url,init});return fetchStub(url,init);},require:name=>{ if(name==="@/lib/admin/brand-copy")return systemBrand;
         if(name==="next/headers")return {cookies:async()=>({get:name=>name==="unit-admin-cookie"?{value:"unit-token"}:undefined})};
         if(name==="@/lib/admin/require-password-change-cleared")return {ADMIN_TOKEN_COOKIE:"unit-admin-cookie",requirePasswordChangeCleared:()=>null};
         if(name==="@/lib/admin/support-image-proxy")return {boundedUpload};if(name==="@/lib/admin/account-avatar-contract")return avatarContract;throw new Error(`Unexpected dependency ${name}`);

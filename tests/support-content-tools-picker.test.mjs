@@ -27,6 +27,7 @@ function findPicker(node) {
 }
 findPicker(chat); assert.ok(pickerKey, "M3 picker must reset on real scope changes");
 const modules = {
+  "@/lib/admin/brand-copy": compile(read("lib/admin/brand-copy.ts")),
   react: production("react", "react.production.js"),
   "react/jsx-runtime": production("react/jsx-runtime", "react-jsx-runtime.production.js"),
   "react-dom": production("react-dom", "react-dom.production.js"),

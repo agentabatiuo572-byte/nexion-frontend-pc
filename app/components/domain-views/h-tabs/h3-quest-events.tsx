@@ -164,7 +164,7 @@ const TASK_ACTION_ROUTE_LABELS: Record<string, string> = {
   "/pages/me/devices": "我的设备",
   "/pages/earn/earn": "收益",
   "/pages/store/store": "商城",
-  "/pages/store/detail?id=stellarbox-s1": "StellarBox S1 详情",
+  "/pages/store/detail?id=stellarbox-s1": "UVELBox S1 详情",
   "/pages/team/team": "团队",
   "/pages/team/commissions": "佣金",
   "/pages/learn/courses": "学习中心",
@@ -208,7 +208,7 @@ const H3_BINDING_EVENT_LABELS: Record<string, string> = {
   H3_DAY_ONE_CARD_BOUND: "绑定支付卡（需服务商确认）",
   H3_DAY_ONE_EARN_PAGE_VIEWED: "查看收益页（Day One）",
   H3_DAY_ONE_STORE_PAGE_VIEWED: "查看商城页（Day One）",
-  H3_DAY_ONE_S1_ROI_VIEWED: "查看 StellarBox S1 收益估算（Day One）",
+  H3_DAY_ONE_S1_ROI_VIEWED: "查看 UVELBox S1 收益估算（Day One）",
 };
 const H3_BINDING_USER_FIELDS = ["user_id", "inviter_user_id"];
 const H3_BINDING_USER_FIELD_LABELS: Record<string, string> = {

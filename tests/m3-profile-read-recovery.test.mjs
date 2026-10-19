@@ -1,3 +1,4 @@
+import * as systemBrand from "../lib/admin/brand-copy.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -56,7 +57,7 @@ function harness(props = {}, detail = true) {
   const window = { addEventListener: (_, listener) => listeners.add(listener), removeEventListener: (_, listener) => listeners.delete(listener) };
   const ctx = { pget: () => "[]", removeCustomerTag: (...args) => new Promise((resolve, reject) => writes.push({ args, resolve, reject })), invalidateScope: (...args) => { invalidations.push(args); listeners.forEach(listener => listener({ detail: { conversationNo: args[0], customerId: args[1] } })); } };
   let currentProps = { ctx, customerId: "7", onHistory() {}, onRetryMessages() {}, ...props };
-  const modules = {
+  const modules = { "@/lib/admin/brand-copy": systemBrand,
     react: hooks, "react/jsx-runtime": jsx,
     "@/lib/store/admin-auth": { useAdminAuth: selector => selector(auth) },
     "@/lib/admin/m-support-enhancements": { supportEnhancements: { profile: transport("profile"), devices: transport("devices"), flows: transport("flows") } },

@@ -1,3 +1,4 @@
+import * as systemBrand from "../lib/admin/brand-copy.ts";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -15,7 +16,7 @@ const component = name => read(`app/components/domain-views/m-tabs/${name}.tsx`)
 function evaluate(source, bindings = {}, dependencies = {}) {
   const module = { exports: {} };
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText,
-    { module, exports: module.exports, AbortController, ...bindings, require: id => Object.hasOwn(dependencies, id) ? dependencies[id] : id.endsWith(".css") ? {} : require(id) });
+    { module, exports: module.exports, AbortController, ...bindings, require: id => id === "@/lib/admin/brand-copy" ? systemBrand : Object.hasOwn(dependencies, id) ? dependencies[id] : id.endsWith(".css") ? {} : require(id) });
   return module.exports;
 }
 const compactSupportBoardValue = evaluate(component("support-leaderboard")).compactSupportBoardValue;

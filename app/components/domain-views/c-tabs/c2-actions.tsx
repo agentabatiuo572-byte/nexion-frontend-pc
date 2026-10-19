@@ -2,6 +2,7 @@
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { userNicknameText } from "@/lib/admin/brand-copy";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -112,10 +113,10 @@ function riskTone(score: unknown) {
   return "ok";
 }
 
-function displayAccount(account: Pick<User360Profile, "userNo" | "nickname" | "id"> | null | undefined) {
+function displayAccount(account: Pick<User360Profile, "userNo" | "nickname" | "id" | "phoneMasked"> | null | undefined) {
   if (!account) return "—";
   const code = text(account.userNo);
-  const name = text(account.nickname, "");
+  const name = userNicknameText(text(account.nickname, ""), account.phoneMasked);
   return name ? `${code} · ${name}` : code;
 }
 
@@ -228,7 +229,7 @@ function ImpersonationUserScreen({ screen }: { screen: JsonRecord }) {
   return <div data-testid="impersonation-profile-screen">
     <h3 style={{ margin: "14px 0 8px" }}>用户视角我的</h3>
     <div className="kv"><span className="k">用户编码</span><span className="v">{text(screen.userNo)}</span></div>
-    <div className="kv"><span className="k">昵称</span><span className="v">{text(screen.nickname)}</span></div>
+    <div className="kv"><span className="k">昵称</span><span className="v">{userNicknameText(text(screen.nickname), screen.phoneMasked)}</span></div>
     <div className="kv"><span className="k">账户状态</span><span className="v">{accountStatusLabel(screen.accountStatus)}</span></div>
     <div className="kv"><span className="k">等级</span><span className="v">{text(screen.userLevel)} / {text(screen.vRank)}</span></div>
     <div className="kv"><span className="k">安全</span><span className="v">2FA {screen.twoFactorEnabled ? "已开启" : "未开启"} · 活跃会话 {text(screen.activeSessions, "0")}</span></div>
@@ -793,7 +794,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
                           style={{ background: "none", border: "none", padding: 0, font: "inherit", fontSize: 10.5, color: "var(--c-ac)", cursor: "pointer" }}
                         >详情›</button>
                       </td>
-                      <td>{text(account.nickname)}</td>
+                      <td>{userNicknameText(text(account.nickname), account.phoneMasked)}</td>
                       <td><span className={`bdg ${tone}`}>{label}</span></td>
                       <td><span className={`bdg ${riskTone(account.riskScore)}`}>{text(account.riskScore)}</span></td>
                       <td className="mono">{sessionCounts.get(accountId(account)) ?? 0} 个</td>
@@ -875,7 +876,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
                 return (
                   <tr key={`${text(entry.userId)}-${text(entry.kind)}-${text(entry.status)}`}>
                     <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{text(entry.userNo)}</td>
-                    <td>{text(entry.nickname)}</td>
+                    <td>{userNicknameText(text(entry.nickname), entry.phoneMasked)}</td>
                     <td><span className={`bdg ${kindTone}`}>{kindLabel}</span></td>
                     <td><span className={`bdg ${entryActive ? "ok" : "dim"}`}>{entryActive ? "生效中" : listStatusLabel(entryStatus)}</span></td>
                     <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{text(entry.reason)}</td>

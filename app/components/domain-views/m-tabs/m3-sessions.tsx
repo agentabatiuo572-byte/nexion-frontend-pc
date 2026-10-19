@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { subscribeAdminRealtime,getAdminRealtimeSnapshot,watchAdminConversation,sendAdminTyping } from '@/lib/admin/admin-conversation-realtime';
 import { useRouter } from "next/navigation";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { catalogSkuBrandText, supportMessageBrandText, userNicknameText } from "@/lib/admin/brand-copy";
 import { Icon, MessageThread, type ThreadMessage } from "../design-kit";
 import {
   STANDBY_POOL_LABEL,
@@ -121,7 +122,7 @@ function toPushSku(sku: PushSkuSource): PushSku {
   const subtitle = [sku.tier, sku.tagline, sku.gpu || sku.vram].filter(Boolean).slice(0, 2).join(" · ");
   return {
     id: sku.id || sku.name,
-    title: sku.name || sku.id || "未命名 SKU",
+    title: catalogSkuBrandText(sku.id, sku.name || sku.id || "未命名 SKU"),
     subtitle: subtitle || "客服工作台商品",
     to: "/store",
   };
@@ -816,7 +817,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       agentName: m.agentName,
       senderName: isAgent ? m.agentName : selected?.profile?.nickname ?? selected?.customer ?? "用户",
       vlevel: !isAgent ? selected?.profile?.vlevel : undefined,
-      body: m.text,
+      body: supportMessageBrandText(m),
       cta,
       receipt,
     };
@@ -893,7 +894,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
             const on = selected?.id === c.id;
             const lastMsg = c.messages[c.messages.length - 1];
             const active = c.status === "open";
-            const name = c.profile?.nickname ?? c.customer ?? c.agentName;
+            const name = userNicknameText(c.profile?.nickname ?? c.customer ?? c.agentName, c.profile?.phone);
             const origin = c.origin ?? "user";
             const originLabel = origin === "advisor" ? "顾问发起" : origin === "support" ? "客服发起" : "用户发起";
             return (
@@ -1084,7 +1085,7 @@ function ChatHeader({
   onToTicket: () => void;
   onToggleProfile: () => void;
 }) {
-  const name = convo.profile?.nickname ?? convo.customer ?? convo.agentName;
+  const name = userNicknameText(convo.profile?.nickname ?? convo.customer ?? convo.agentName, convo.profile?.phone);
   const active = convo.status === "open";
   const closed = convo.status === "closed" || convo.status === "transferred" || convo.archived;
   const incoming = !!convo.transfer; // 转入待处理:常规动作收起,改由转交横幅处置
@@ -1447,9 +1448,9 @@ function UserPanel({
     <div className={`cv-profile${open ? " open" : ""}`}>
       <div className="cvp-scroll">
         <div className="cvp-id">
-          <MAvatar name={p.nickname} size="lg" />
+          <MAvatar name={userNicknameText(p.nickname, p.phone)} size="lg" />
           <div style={{ minWidth: 0 }}>
-            <div className="nm">{p.nickname}</div>
+            <div className="nm">{userNicknameText(p.nickname, p.phone)}</div>
             <div className="uid">{p.uid}</div>
           </div>
         </div>

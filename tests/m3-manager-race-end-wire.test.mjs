@@ -1,3 +1,4 @@
+import * as systemBrand from "../lib/admin/brand-copy.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -81,7 +82,7 @@ function harness({ auth = session(), search = "?conversationNo=CV-1", drafts = {
     attachmentPolicy: async () => ({ allowedMimeTypes: [], maxBytes: 1 }),
   };
   const unused = () => null;
-  const imports = {
+  const imports = { "@/lib/admin/brand-copy": systemBrand,
     react,
     "react/jsx-runtime": { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }), Fragment: "fragment" },
     "@/lib/store/admin-auth": { useAdminAuth: select => select({ session: auth, authEpoch: 1 }) },
@@ -293,7 +294,7 @@ test("the actual end confirmation, row writer and HTTP client send OPEN to RESOL
   const declaration = component.body.statements.filter(ts.isVariableStatement).flatMap(node => [...node.declarationList.declarations]).find(node => node.name.getText(parsed) === "closeConversation");
   assert.ok(declaration, "Missing production end command");
   const exported = {}, wire = [], owner = { agentAdminId: 4285, assignmentId: "9" };
-  const imports = {
+  const imports = { "@/lib/admin/brand-copy": systemBrand,
     "@/lib/admin/current-operator": { currentAdminOperator: () => "4285" },
     "@/lib/store/admin-auth": { useAdminAuth: { getState: () => ({ session: session(4285) }) } },
     "@/lib/admin/m-support-read-contract": { parseMContentApiEnvelope: (_status, body) => JSON.parse(body).data },

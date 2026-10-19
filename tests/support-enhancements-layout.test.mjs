@@ -1,3 +1,4 @@
+import * as systemBrand from "../lib/admin/brand-copy.ts";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -31,7 +32,7 @@ const declaration = (text, name) => "const " + find(text, n => ts.isVariableDecl
 function evaluate(text, imports = {}, globals = {}) {
   const module = { exports: {} };
   const output = ts.transpileModule(text, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  const context = vm.createContext({ module, exports: module.exports, require: id => id.endsWith(".css") ? {} : imports[id] ?? require(id), ...globals });
+  const context = vm.createContext({ module, exports: module.exports, require: id => id === "@/lib/admin/brand-copy" ? systemBrand : id.endsWith(".css") ? {} : imports[id] ?? require(id), ...globals });
   vm.runInContext(output, context);
   return { exports: module.exports, context };
 }

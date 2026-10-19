@@ -1,3 +1,4 @@
+import * as systemBrand from "../lib/admin/brand-copy.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -18,7 +19,7 @@ function declarations(path, names) {
 test("image messages retain bidirectional captions through image states without rendering placeholders", () => {
   let imageState = "ready", receivedRevoked;
   const onRevoked = () => {};
-  const context = {
+  const context = { ...systemBrand,
     require, exports: {}, canAccessResolvedPath, resolveVisibleDomains,
     useAdminAuth: selector => selector({ session: null }),
     SupportAvatar: ({ name }) => React.createElement("span", null, name),
@@ -51,7 +52,7 @@ test("image messages retain bidirectional captions through image states without 
 });
 
 test("actual support messages gate administrative destinations without removing recommendations or App targets", () => {
-  const context = {
+  const context = { ...systemBrand,
     require, exports: {}, session: null, canAccessResolvedPath, resolveVisibleDomains,
     useAdminAuth: selector => selector({ session: context.session }),
     SupportAvatar: ({ name }) => React.createElement("span", null, name),
@@ -61,6 +62,13 @@ test("actual support messages gate administrative destinations without removing 
   const base = { sender: "agent", agentName: "客服A", authorConfidence: "VERIFIED", senderId: 1456, sourceSenderType: "AGENT", ts: 1, id: 8 };
   const sku = { ...base, kind: "SKU", text: "保留原推荐内容", skuName: "商品A", skuId: "SKU-12" };
   const render = message => renderToStaticMarkup(React.createElement(context.message, { message, customerId: "2005", customerName: "客户", onRevoked() {} }));
+  const original = Object.freeze({ ...base, kind: "SKU", text: "NexGridBox S1", skuName: "NexGridBox S1", skuId: "stellarbox-s1" });
+  assert.doesNotMatch(render(original), /NexGridBox/);
+  assert.equal((render(original).match(/UVELBox S1/g) ?? []).length, 2);
+  assert.equal(original.text, "NexGridBox S1");
+  assert.match(render({ ...original, text: "My NexGrid story" }), /My NexGrid story/);
+  assert.match(render({ ...original, kind: "TEXT" }), /NexGridBox S1/);
+  assert.match(render({ ...original, skuId: "custom" }), /NexGridBox S1/);
   const support = { role: "support", supportReadModes: ["PERSONAL"], menuCodes: ["M1", "M3"], authorities: ["service_m1_read", "service_m3_read"] };
   const authorized = { ...support, menuCodes: [...support.menuCodes, "E1"], authorities: [...support.authorities, "device_e1_read"] };
   for (const session of [null, support, { ...support, menuCodes: ["M1", "E1"] }, { ...support, authorities: [...support.authorities, "device_e1_read"] }, { ...authorized, menuNodes: [] }, { ...authorized, menuNodes: [{ menuCode: "E1", routePath: "/devices/wrong", parentCode: "E" }] }]) {

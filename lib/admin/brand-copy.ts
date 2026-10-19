@@ -20,9 +20,10 @@ export function nexGridBrandText(value: string): string {
   return value.replace(new RegExp(LEGACY_BRAND, "gi"), BRAND).replace(/NexGrid/gi, BRAND).replace(/Stellar(?=Box|Rack)/gi, BRAND);
 }
 
-/** Only the registration default, corroborated by its masked phone suffix. Keep custom names verbatim. */
+/** Recognized system defaults only; phone-suffix names need matching evidence. Keep custom names verbatim. */
 export function userNicknameText(value: string, phoneMasked: unknown): string {
-  const suffix = /^NexGrid (\d{4})$/.exec(value)?.[1];
+  if (/^NexGrid-[A-F0-9]{8}$/.test(value)) return nexGridBrandText(value);
+  const suffix = /^(?:NexGrid|Nexion) (\d{4})$/.exec(value)?.[1];
   const phoneSuffix = typeof phoneMasked === "string" ? /^\d{3}\*{4}(\d{4})$/.exec(phoneMasked)?.[1] : undefined;
   return suffix && suffix === phoneSuffix ? nexGridBrandText(value) : value;
 }
@@ -38,4 +39,10 @@ export function catalogSkuBrandText(id: string | undefined, value: string): stri
     || (id === "stellarbox-pro" && value === "StellarBox Pro")
     || (id === "stellarrack-p1" && value === "StellarRack P1");
   return official ? nexGridBrandText(value) : value;
+}
+
+/** A SKU's generated caption may equal its snapshot name; never rewrite authored message text. */
+export function supportMessageBrandText(message: { kind?: string; skuId?: string; skuName?: string; text: string }): string {
+  return message.kind === "SKU" && message.text === message.skuName
+    ? catalogSkuBrandText(message.skuId, message.text) : message.text;
 }

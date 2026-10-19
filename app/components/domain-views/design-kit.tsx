@@ -2782,7 +2782,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             "/pages/me/devices": "我的设备",
             "/pages/earn/earn": "收益",
             "/pages/store/store": "商城",
-            "/pages/store/detail?id=stellarbox-s1": "StellarBox S1 详情",
+            "/pages/store/detail?id=stellarbox-s1": "UVELBox S1 详情",
             "/pages/team/team": "团队",
             "/pages/team/commissions": "佣金",
             "/pages/learn/courses": "学习中心",

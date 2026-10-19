@@ -62,6 +62,23 @@ test("C1 reset sends the original nickname even when the displayed title changes
 
 test("the default-name formatter preserves unknown and unrelated source values", () => {
   assert.equal(brand.userNicknameText("NexGrid 1058", "187****1058"), "UVEL 1058");
-  for (const name of ["NexGridFan", "StellarBox collector", "Nexion 1058", "nexgrid 1058"])
+  for (const name of ["NexGridFan", "StellarBox collector", "Nexion Fan", "nexgrid 1058"])
     assert.equal(brand.userNicknameText(name, "187****1058"), name);
+});
+
+test("system reset and historical phone defaults display UVEL while CAS retains raw names", () => {
+  for (const [nickname, expected] of [
+    ["NexGrid-F343FA44", "UVEL-F343FA44"], ["Nexion 1058", "UVEL 1058"],
+  ]) {
+    const calls = [], profile = Object.freeze({ id: 42, nickname, phoneMasked: "187****1058" });
+    for (const render of [list, detail]) assert.equal(text(render(profile).node), expected);
+    detail(profile, (...args) => calls.push(args)).reset();
+    assert.equal(calls[0][1], nickname);
+    assert.equal(profile.nickname, nickname);
+  }
+  assert.equal(brand.userNicknameText("NexGrid-F343FA44", null), "UVEL-F343FA44");
+  for (const name of ["NexGrid1058", "Nexion1058", "NexGrid 1058\n", "Nexion 1058\n", "NexGrid-F343FA44\n", "NexGrid-F343FA4", "NexGrid-F343FA444", "NexGrid-f343fa44", "NexGrid-G343FA44", "My NexGrid-F343FA44", "NexGrid-F343FA44 fan"])
+    assert.equal(brand.userNicknameText(name, "187****1058"), name);
+  assert.equal(brand.userNicknameText("Nexion1058", "187****1057"), "Nexion1058");
+  assert.equal(brand.userNicknameText("Nexion1058", null), "Nexion1058");
 });

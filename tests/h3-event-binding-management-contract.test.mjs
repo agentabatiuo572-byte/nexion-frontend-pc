@@ -78,7 +78,7 @@ test("H3 offers the published Day One source contracts", () => {
   const dayOneEvents = [
     ["H3_DAY_ONE_EARN_PAGE_VIEWED", "查看收益页（Day One）"],
     ["H3_DAY_ONE_STORE_PAGE_VIEWED", "查看商城页（Day One）"],
-    ["H3_DAY_ONE_S1_ROI_VIEWED", "查看 StellarBox S1 收益估算（Day One）"],
+    ["H3_DAY_ONE_S1_ROI_VIEWED", "查看 UVELBox S1 收益估算（Day One）"],
   ];
 
   for (const [eventType, label] of dayOneEvents) {

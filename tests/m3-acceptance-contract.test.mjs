@@ -1,3 +1,4 @@
+import * as systemBrand from "../lib/admin/brand-copy.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
@@ -591,7 +592,7 @@ function m3VisibleTextFixture() {
   const evaluate = (node, scope = {}) => {
     const output = ts.transpileModule(`globalThis.result = (${node.getText(file)});`, { fileName: "branch.tsx", compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
     const jsx = (type, props) => ({ type, props });
-    const sandbox = { ...scope, exports: {}, require: (name) => { assert.equal(name, "react/jsx-runtime"); return { jsx, jsxs: jsx, Fragment: "fragment" }; } };
+    const sandbox = { ...systemBrand, ...scope, exports: {}, require: (name) => { assert.equal(name, "react/jsx-runtime"); return { jsx, jsxs: jsx, Fragment: "fragment" }; } };
     runInNewContext(output, sandbox); return sandbox.result;
   };
   const text = (value) => value == null || typeof value === "boolean" ? "" : Array.isArray(value) ? value.map(text).join("") : typeof value === "object" ? text(value.props?.children) : String(value);
