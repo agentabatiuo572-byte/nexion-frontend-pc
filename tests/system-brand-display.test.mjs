@@ -23,6 +23,44 @@ function execute(source, bindings) {
 }
 const content = node => Array.isArray(node) ? node.map(content).join("") : node == null ? "" : typeof node === "object" ? content(node.props?.children) : String(node);
 
+test("both M3 conversion commands normalize only evidenced default names in new ticket titles", async () => {
+  for (const file of ["m3-sessions.tsx", "m3-dedicated-chat.tsx"]) {
+    const { ast, result } = nodes(`app/components/domain-views/m-tabs/${file}`);
+    const conversion = result.find(n => ts.isVariableDeclaration(n) && n.name.getText(ast) === "convertToTicket");
+    assert.ok(conversion);
+    const request = execute(`export async function render(row) {
+      const selected=row, supportAgents=[{name:"Agent",adminId:7}], adminId=7, session={operator:"Agent"};
+      const writable=true, pending=false, firstPending=false, checkActionReady=async()=>true, identityRef={current:"same"};
+      let confirmation; const calls=[];
+      const setParam=(key,value,meta)=>{ calls.push({key,payload:JSON.parse(value),meta}); return true; };
+      const openActionConfirm=value=>{confirmation=value;}, ctx={setParam,openActionConfirm};
+      const commitM3Write=run=>run();
+      const convertToTicket=${conversion.initializer.getText(ast)};
+      await convertToTicket(); await confirmation.run("valid reason"); return calls;
+    }`, brand);
+    for (const [nickname, phone, expected] of [
+      ["Nexion 3778", "187****3778", "UVEL 3778"],
+      ["NexGrid 3778", "187****3778", "UVEL 3778"],
+      ["NexGrid-F343FA44", undefined, "UVEL-F343FA44"],
+      ["Nexion 3778", undefined, "Nexion 3778"],
+      ["Nexion 3778", "187****1058", "Nexion 3778"],
+      ["My NexGrid name", "187****3778", "My NexGrid name"],
+    ]) {
+      const row = Object.freeze({ id:"CV-original", customer:nickname, agentName:"Agent", owner:"Agent",
+        status:"open", version:4, detailReady:true, profile:Object.freeze({nickname,phone}) });
+      const calls = await request(row);
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].key, "I.session.ticket.__create");
+      assert.equal(calls[0].meta.reason, "valid reason");
+      assert.equal(calls[0].meta.commandKey, `m3:convert-ticket:CV-original${file === "m3-dedicated-chat.tsx" ? ":4" : ""}`);
+      assert.deepEqual(calls[0].payload, { conversationNo:row.id, category:"account", priority:"normal",
+        title:`由会话 CV-original 转入 · ${expected}`, assignedAdminId:7, assignedAdminName:"Agent",
+        expectedStatus:"open", expectedVersion:4 });
+      assert.equal(row.profile.nickname, nickname);
+    }
+  }
+});
+
 test("C2 actual account label and list cell share the formatter without changing source values", () => {
   const { ast, result } = nodes("app/components/domain-views/c-tabs/c2-actions.tsx");
   const declarations = ["text", "displayAccount"].map(name => result.find(n => ts.isFunctionDeclaration(n) && n.name?.text === name).getText(ast));

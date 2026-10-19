@@ -692,7 +692,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
           conversationNo: convo.id,
           category: "account",
           priority: "normal",
-          title: `由会话 ${convo.id} 转入 · ${convo.profile?.nickname ?? convo.customer ?? convo.agentName}`,
+          title: `由会话 ${convo.id} 转入 · ${userNicknameText(convo.profile?.nickname ?? convo.customer ?? convo.agentName, convo.profile?.phone)}`,
           assignedAdminId: supportAgents.find((agent) => agent.name === convo.owner)?.adminId,
           assignedAdminName: supportAgents.some((agent) => agent.name === convo.owner) ? convo.owner : "Unassigned",
           expectedStatus: convo.status,

@@ -869,7 +869,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
         if(requestStamp!==identityRef.current)return false;
         const ok = await ctx.setParam("I.session.ticket.__create", JSON.stringify({
           conversationNo: conversation.id, category: "account", priority: "normal",
-          title: `由会话 ${conversation.id} 转入 · ${conversation.customer || conversation.agentName}`,
+          title: `由会话 ${conversation.id} 转入 · ${userNicknameText(conversation.customer || conversation.agentName, conversation.profile?.phone)}`,
           assignedAdminId: adminId, assignedAdminName: session?.operator || conversation.owner,
           expectedStatus: conversation.status, expectedVersion: conversation.version,
         }), { action: `会话转工单 ${conversation.id}`, reason, commandKey: `m3:convert-ticket:${conversation.id}:${conversation.version}`, onBackendResult: (result) => {
