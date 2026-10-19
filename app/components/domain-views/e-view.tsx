@@ -16,7 +16,7 @@ import Link from "next/link";
 import { Icon, Btn, Chip, Drawer, KV, Badge, OperationConfirmModal, useToast } from "./design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { catalogSkuBrandText, nexGridBrandText } from "@/lib/admin/brand-copy";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { OpsSku, OpsTask } from "@/lib/admin/platform-types";
@@ -716,7 +716,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     setSkuDrawer(true);
   };
   const delSku = (skuId: string, rawDisplayName: string) => {
-    const displayName = nexGridBrandText(rawDisplayName);
+    const displayName = catalogSkuBrandText(skuId, rawDisplayName);
     openActionConfirm({
       name: "删除 SKU · " + displayName,
       op: "sku-delete",
@@ -1040,7 +1040,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setToast("未检测到商品字段变化，无需发起高敏审核");
       return;
     }
-    openActionConfirm({ name: (editSkuId ? "编辑 SKU · " : "新增 SKU · ") + (form.name || "未命名"), op: "sku-save", isNew: !editSkuId, hasImg: !!skuMedia });
+    openActionConfirm({ name: (editSkuId ? "编辑 SKU · " : "新增 SKU · ") + catalogSkuBrandText(editSkuId ?? (form.id.trim() || form.name.trim()), form.name || "未命名"), op: "sku-save", isNew: !editSkuId, hasImg: !!skuMedia });
     setSkuDrawer(false);
   };
 

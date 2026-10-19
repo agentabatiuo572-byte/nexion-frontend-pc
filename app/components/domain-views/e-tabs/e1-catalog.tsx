@@ -6,7 +6,7 @@ import type { OpsSku } from "@/lib/admin/platform-types";
 import type { EViewCtx } from "./types";
 import { e1GateReadiness, effectiveReleaseMonth, gateRemaining, releaseMonthPresentation, resolveE1PhaseId, type E1GateReadiness } from "./data";
 import { EStats } from "./stats";
-import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { catalogSkuBrandText, nexGridBrandText } from "@/lib/admin/brand-copy";
 
 const PHASE_STATUS_LABELS: Record<string, string> = {
   active: "启用",
@@ -224,7 +224,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
 
   const genShift = (g: E1GenerationRelease, offset: number, delta: number) =>
     ctx.openActionConfirm({
-      name: `上架节奏 · ${delta < 0 ? "提前" : "延迟"} ${Math.abs(delta)} 个月 · ${nexGridBrandText(g.name)}`,
+      name: `上架节奏 · ${delta < 0 ? "提前" : "延迟"} ${Math.abs(delta)} 个月 · ${catalogSkuBrandText(g.id, g.name)}`,
       op: "param", paramKey: `E.gen.${g.id}.phaseOffset`,
       edit: { kind: "number", current: String(offset), unit: "M" },
       detail: `当前计划发布月 ${g.releaseMonth}${offset ? `(偏移 ${offset}M)` : ""} · 调整发布偏移改发布门时点 · 以后端为准,改后对发布门生效`,
@@ -237,7 +237,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
     if (!state.eligibilityReady) { ctx.toast(`拒绝 · ${nexGridBrandText(g.name)} 设备资格未补录 · 发布门不能解锁`); return; }
     if (!state.phaseReached) { ctx.toast(`拒绝 · ${nexGridBrandText(g.name)} 当前阶段未到达 ${phaseLabel(g.phase)} · 发布门不能解锁`); return; }
     ctx.openActionConfirm({
-      name: `强制提前开放 · ${nexGridBrandText(g.name)}`,
+      name: `强制提前开放 · ${catalogSkuBrandText(g.id, g.name)}`,
       op: "generation-gate-force",
       generationGateId: g.id,
       generationGate: { forceUnlock: true },
@@ -247,7 +247,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   };
   const genForceLock = (g: E1GenerationRelease) =>
     ctx.openActionConfirm({
-      name: `撤销强制提前开放 · ${nexGridBrandText(g.name)}`,
+      name: `撤销强制提前开放 · ${catalogSkuBrandText(g.id, g.name)}`,
       op: "generation-gate-force",
       generationGateId: g.id,
       generationGate: { forceUnlock: false },
@@ -321,7 +321,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
     const gatePhaseOptions = g?.phase && !phaseOptions.includes(g.phase) ? [g.phase, ...phaseOptions] : phaseOptions;
     const gatePhaseLabels = Object.fromEntries(gatePhaseOptions.map((phaseId) => [phaseId, phaseLabel(phaseId)]));
     ctx.openActionConfirm({
-      name: g ? `编辑上架门 · ${nexGridBrandText(g.name)}` : "新增上架门",
+      name: g ? `编辑上架门 · ${catalogSkuBrandText(g.id, g.name)}` : "新增上架门",
       op: "generation-gate-save",
       generationGateId: g?.id,
       businessForm: {
@@ -346,10 +346,10 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   };
   const archiveGate = (g: E1GenerationRelease) =>
     ctx.openActionConfirm({
-      name: `移除上架门 · ${nexGridBrandText(g.name)}`,
+      name: `移除上架门 · ${catalogSkuBrandText(g.id, g.name)}`,
       op: "generation-gate-archive",
       generationGateId: g.id,
-      businessForm: { kind: "destructive-reason", target: nexGridBrandText(g.name), impact: "该 SKU 将从发布时点表移除,用户端上架门不会再读取这条配置。" },
+      businessForm: { kind: "destructive-reason", target: catalogSkuBrandText(g.id, g.name), impact: "该 SKU 将从发布时点表移除,用户端上架门不会再读取这条配置。" },
       detail: "归档这条发布规则,不物理删除,便于审计和恢复",
       amplify: false,
     });
@@ -695,7 +695,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                 <div className="acts">
                   {canWrite ? <button className="primary" aria-label={`改价 / 编辑 ${nexGridBrandText(s.name)}`} onClick={() => ctx.openSku(s.id)}>改价 / 编辑</button> : null}
                   {canWrite && st === "on" && (unlimitedInventory || Number(s.stock) > 0) && !open && !releaseGate && hasPhaseConfig ? <button className="brand" aria-label={`按当前阶段上架 ${nexGridBrandText(s.name)}`} onClick={() => ctx.openSku(s.id, phaseCur)}>按当前阶段上架</button> : null}
-                  {canWrite ? <button disabled={listingBlocked || s.publishBlocked === true} title={s.publishBlocked === true ? `未过发布门 · ${publishBlockLabel} · 该行不会进入 App 用户目录` : s.publishBlocked === undefined ? "服务端未返回发布门结论，上架是否生效未确认" : listingBlocked ? listingBlocker : undefined} aria-label={`${st === "on" ? "下架" : "上架"} ${nexGridBrandText(s.name)}`} onClick={() => ctx.openActionConfirm({ name: st === "on" ? `下架 SKU · ${nexGridBrandText(s.name)}` : `上架 SKU · ${nexGridBrandText(s.name)}`, op: "sku-status", target: s.id, status: st === "on" ? "off" : "on", detail: st === "on" ? "下架后从商城隐藏,不影响已售设备结算" : "上架后对用户可见", amplify: false })}>{st === "on" ? "下架" : "上架"}</button> : null}
+                  {canWrite ? <button disabled={listingBlocked || s.publishBlocked === true} title={s.publishBlocked === true ? `未过发布门 · ${publishBlockLabel} · 该行不会进入 App 用户目录` : s.publishBlocked === undefined ? "服务端未返回发布门结论，上架是否生效未确认" : listingBlocked ? listingBlocker : undefined} aria-label={`${st === "on" ? "下架" : "上架"} ${catalogSkuBrandText(s.id, s.name)}`} onClick={() => ctx.openActionConfirm({ name: st === "on" ? `下架 SKU · ${catalogSkuBrandText(s.id, s.name)}` : `上架 SKU · ${catalogSkuBrandText(s.id, s.name)}`, op: "sku-status", target: s.id, status: st === "on" ? "off" : "on", detail: st === "on" ? "下架后从商城隐藏,不影响已售设备结算" : "上架后对用户可见", amplify: false })}>{st === "on" ? "下架" : "上架"}</button> : null}
                   {canWrite ? <button className="danger" aria-label={`删除 ${nexGridBrandText(s.name)}`} onClick={() => ctx.delSku(s.id, s.name ?? s.id)}>删除</button> : null}
                 </div>
               </div>
