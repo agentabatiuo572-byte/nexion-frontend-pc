@@ -2,7 +2,7 @@
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { userNicknameText } from "@/lib/admin/brand-copy";
+import { platformSessionDeviceText, userNicknameText } from "@/lib/admin/brand-copy";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -949,7 +949,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
                     <tr key={text(session.refreshTokenId)}>
                       <td className="mono" style={{ fontSize: 11.5 }}>{maskedSessionId(session.refreshTokenId)}</td>
                       <td className="mono" style={{ fontSize: 11.5 }}>{text(session.clientIpMasked)}</td>
-                      <td style={{ fontSize: 12 }}>{text(session.deviceName)}</td>
+                      <td style={{ fontSize: 12 }}>{platformSessionDeviceText(text(session.deviceName))}</td>
                       <td><span className={`bdg ${activeSession(session) ? "ok" : "dim"}`}>{sessionStatusLabel(session.status)}</span></td>
                       <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{formatDate(session.expiresAt)}</td>
                     </tr>

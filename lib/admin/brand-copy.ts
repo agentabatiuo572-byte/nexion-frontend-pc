@@ -36,13 +36,29 @@ export function platformSessionDeviceText(value: string): string {
 /** Only confirmed official SKU/name pairs; catalog names remain operator-owned. */
 export function catalogSkuBrandText(id: string | undefined, value: string): string {
   const official = (id === "stellarbox-s1" && value === "NexGridBox S1")
+    || (id === "stellarbox-pro-v2" && value === "NexGridBox Pro v2")
     || (id === "stellarbox-pro" && value === "StellarBox Pro")
     || (id === "stellarrack-p1" && value === "StellarRack P1");
   return official ? nexGridBrandText(value) : value;
 }
 
-/** A SKU's generated caption may equal its snapshot name; never rewrite authored message text. */
+/** Match the catalog's paired item summaries; quantities and product IDs stay unchanged. */
+export function orderSkuBrandText(id: string | undefined, value: string): string {
+  const ids = id?.split(" + "), names = value.split(" + ");
+  if (!ids || ids.length !== names.length) return value;
+  return names.map((name, index) => {
+    const itemId = /^(.*)×([1-9]\d*)$/.exec(ids[index]);
+    const itemName = /^(.*)×([1-9]\d*)$/.exec(name);
+    if (!itemId && !itemName) return catalogSkuBrandText(ids[index], name);
+    return itemId && itemName && itemId[2] === itemName[2]
+      ? `${catalogSkuBrandText(itemId[1], itemName[1])}×${itemName[2]}` : name;
+  }).join(" + ");
+}
+
+/** Only exact generated SKU captions; never rewrite authored message text. */
 export function supportMessageBrandText(message: { kind?: string; skuId?: string; skuName?: string; text: string }): string {
-  return message.kind === "SKU" && message.text === message.skuName
-    ? catalogSkuBrandText(message.skuId, message.text) : message.text;
+  if (message.kind !== "SKU" || !message.skuName) return message.text;
+  const name = catalogSkuBrandText(message.skuId, message.skuName);
+  if (message.text === message.skuName) return name;
+  return message.text === `推荐商品：${message.skuName}` ? `推荐商品：${name}` : message.text;
 }

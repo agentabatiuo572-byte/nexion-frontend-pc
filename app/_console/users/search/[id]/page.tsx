@@ -1,6 +1,6 @@
 "use client";
 import { formatBusinessTime } from "@/lib/admin/business-time";
-import { platformSessionDeviceText, userNicknameText } from "@/lib/admin/brand-copy";
+import { catalogSkuBrandText, orderSkuBrandText, platformSessionDeviceText, userNicknameText } from "@/lib/admin/brand-copy";
 
 /**
  * C1 用户详情(L3 · 画像全景)。页面只消费后端聚合的 360 画像和操作接口。
@@ -795,7 +795,7 @@ export default function UserDetailPage() {
           section={detail.devices}
           columns={[
             { key: "instanceNo", label: "实例" },
-            { key: "name", label: "名称" },
+            { key: "name", label: "名称", render: (value, row) => catalogSkuBrandText(asText(row.productCode), displayValue(value)) },
             { key: "productTier", label: "规格", render: formatC1DeviceTier },
             { key: "status", label: "状态", render: formatC1DeviceStatus },
             { key: "runtimeStatus", label: "运行态", render: formatC1RuntimeStatus },
@@ -958,7 +958,7 @@ export default function UserDetailPage() {
           section={detail.commerce ? { records: asArray(detail.commerce.orders), sourceStatus: asText(detail.commerce.sourceStatus, "READY") } : undefined}
           columns={[
             { key: "orderNo", label: "订单号" },
-            { key: "skuName", label: "商品" },
+            { key: "skuName", label: "商品", render: (value, row) => orderSkuBrandText(asText(row.skuId), displayValue(value)) },
             { key: "amount", label: "金额", numeric: true },
             { key: "state", label: "状态" },
             { key: "dcLocation", label: "机房" },

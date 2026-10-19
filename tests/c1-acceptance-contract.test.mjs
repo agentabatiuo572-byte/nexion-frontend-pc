@@ -7,6 +7,7 @@ import { formatBusinessTime } from "../lib/admin/business-time.ts";
 import { createElement, useEffect, useMemo, useState } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { supportObject, parseSupportId } from "../lib/admin/m-support-client.ts";
+import { catalogSkuBrandText, orderSkuBrandText } from "../lib/admin/brand-copy.ts";
 
 const search = readFileSync(new URL("../app/components/domain-views/c-tabs/c1-search.tsx", import.meta.url), "utf8");
 const detail = readFileSync(new URL("../app/_console/users/search/[id]/page.tsx", import.meta.url), "utf8");
@@ -118,7 +119,7 @@ const fixtureSource = ast.statements.filter(node => ts.isFunctionDeclaration(nod
   .map(node => node.getText(ast)).join("\n")
   + `\nexport {money,numberLabel,HubSection};\n${pagerSource}\nexport function Fixture({ detail, userKey = "fixture-user" }) { const canWriteC2 = false; ${earningsDeclarations} return (<>{${sections.join("}{")}}</>); }`;
 const fixture = {};
-const scope = { ...format, ...labels, useEffect, useMemo, useState, formatBusinessTime };
+const scope = { ...format, ...labels, useEffect, useMemo, useState, formatBusinessTime, catalogSkuBrandText, orderSkuBrandText };
 new Function("require", "exports", ...Object.keys(scope), compile(fixtureSource))(
   createRequire(import.meta.url), fixture, ...Object.values(scope));
 

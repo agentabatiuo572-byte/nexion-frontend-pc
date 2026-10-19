@@ -71,8 +71,44 @@ test("legacy M3 session body uses the same exact SKU-caption rule", () => {
   const render = execute(`export function render(m) { return ${body.initializer.getText(ast)}; }`, brand);
   const message = Object.freeze({ kind: "SKU", skuId: "stellarbox-s1", skuName: "NexGridBox S1", text: "NexGridBox S1" });
   assert.equal(render(message), "UVELBox S1");
+  assert.equal(render({ ...message, text: "推荐商品：NexGridBox S1" }), "推荐商品：UVELBox S1");
+  assert.equal(render({ ...message, text: "推荐商品：NexGridBox S1 很好" }), "推荐商品：NexGridBox S1 很好");
+  assert.equal(render({ ...message, kind: "TEXT", text: "推荐商品：NexGridBox S1" }), "推荐商品：NexGridBox S1");
+  assert.equal(render({ ...message, skuId: "custom", text: "推荐商品：NexGridBox S1" }), "推荐商品：NexGridBox S1");
   assert.equal(render({ ...message, text: "My NexGrid story" }), "My NexGrid story");
   assert.equal(render({ ...message, kind: "TEXT" }), "NexGridBox S1");
   assert.equal(render({ ...message, skuId: "custom" }), "NexGridBox S1");
   assert.equal(message.text, "NexGridBox S1");
+});
+
+test("C1 actual device and order columns normalize only proven SKU pairs and preserve quantities", () => {
+  const { ast, result } = nodes("app/_console/users/search/[id]/page.tsx");
+  const columns = ["name", "skuName"].map(key => result.find(n => ts.isObjectLiteralExpression(n)
+    && n.properties.some(p => ts.isPropertyAssignment(p) && p.name.getText(ast) === "key" && p.initializer.getText(ast) === JSON.stringify(key))
+    && n.properties.some(p => ts.isPropertyAssignment(p) && p.name.getText(ast) === "render")));
+  assert.ok(columns.every(Boolean));
+  const declarations = ["asText", "displayValue"].map(name => result.find(n => ts.isFunctionDeclaration(n) && n.name?.text === name).getText(ast));
+  const render = execute(`${declarations.join("\n")} export function render(device, order) { return [(${columns[0].getText(ast)}).render(device.name,device), (${columns[1].getText(ast)}).render(order.skuName,order)]; }`, brand);
+  const device = Object.freeze({productCode:"stellarbox-pro-v2", name:"NexGridBox Pro v2"});
+  const order = Object.freeze({skuId:"stellarbox-s1×1 + stellarbox-pro-v2×2", skuName:"NexGridBox S1×1 + NexGridBox Pro v2×2"});
+  assert.deepEqual(render(device, order), ["UVELBox Pro v2", "UVELBox S1×1 + UVELBox Pro v2×2"]);
+  assert.equal(device.name, "NexGridBox Pro v2");
+  assert.equal(order.skuName, "NexGridBox S1×1 + NexGridBox Pro v2×2");
+  assert.equal(render({...device,productCode:"custom"},order)[0], device.name);
+  assert.equal(render({...device,name:"My NexGridBox Pro v2"},order)[0], "My NexGridBox Pro v2");
+  for (const [id,name] of [[undefined,"NexGridBox S1×1"],["stellarbox-s1×2","NexGridBox S1×1"],["stellarbox-s1×1","NexGridBox S1×1 + unknown×1"],["custom×1","NexGridBox S1×1"],["stellarbox-s1×1","My NexGridBox S1×1"]]) {
+    assert.equal(brand.orderSkuBrandText(id,name),name);
+  }
+});
+
+test("C2 actual session device cell shares the exact official platform label rule", () => {
+  const {ast,result} = nodes("app/components/domain-views/c-tabs/c2-actions.tsx");
+  const cell = result.find(n => ts.isJsxElement(n) && n.openingElement.tagName.getText(ast) === "td" && n.getText(ast).includes("session.deviceName"));
+  const text = result.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==="text").getText(ast);
+  const render = execute(`${text} export function render(session) {return (${cell.getText(ast)});}`,brand);
+  for(const [raw,expected] of [["NexGrid Phone App","UVEL Phone App"],["NexGrid H5","UVEL H5"],["My NexGrid Phone App","My NexGrid Phone App"]]) {
+    const row=Object.freeze({deviceName:raw});
+    assert.equal(content(render(row)),expected);
+    assert.equal(row.deviceName,raw);
+  }
 });
