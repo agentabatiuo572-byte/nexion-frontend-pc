@@ -331,7 +331,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   if (logoutUnknown) return <AdminSessionRecoveryGate onRetry={() => void restoreAdminSession()} />;
   if (sessionResolution === "anonymous") return <LoginGate onAuthenticated={() => setBootstrapState("authenticated")} />;
   if (!mounted || bootstrapState === "checking") return <AdminSessionBootstrapGate />;
-  if (bootstrapState === "error") return <AdminSessionRecoveryGate onRetry={() => void restoreAdminSession()} onLogout={session ? () => void logoutWithoutAccess() : undefined} />;
+  if (bootstrapState === "error") return <AdminSessionRecoveryGate error={logoutError ?? undefined} onRetry={() => void restoreAdminSession()} onLogout={() => void logoutWithoutAccess()} />;
   if (bootstrapState === "anonymous") return <LoginGate onAuthenticated={() => setBootstrapState("authenticated")} />;
   if (!isAuthenticated) return <LoginGate onAuthenticated={() => setBootstrapState("authenticated")} />;
   if (landingPath === null) return <AdminSessionRecoveryGate noAccess error={logoutError ?? undefined} onRetry={() => void restoreAdminSession()} onLogout={() => void logoutWithoutAccess()} />;

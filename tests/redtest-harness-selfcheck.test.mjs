@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 /**
  * 红测脚本自身的守门人(2026-08-06 第四轮验收 P1-C / P1-D)。
@@ -18,7 +19,7 @@ const REDTEST = "scripts/_redtest-idem-hardening.mjs";
 
 test("红测脚本语法可解析(它坏掉时 verify 不会有任何反应)", () => {
   // node --check 不执行,只解析;脚本一旦语法错误立刻红。
-  execFileSync("node", ["--check", REDTEST], { cwd: new URL("../", import.meta.url).pathname.replace(/^\//, "") });
+  execFileSync(process.execPath, ["--check", REDTEST], { cwd: fileURLToPath(new URL("../", import.meta.url)) });
 });
 
 test("红测规模不得静默缩水(用例被删就等于门失去判别力证明)", () => {
@@ -46,7 +47,7 @@ test("红测的三道自我保护还在(空注入守卫 / 失败关键词 / 还�
 const WD_REDTEST = "scripts/_redtest-withdrawal-key-parity.mjs";
 
 test("提现主键红测语法可解析且规模不缩水(用例被删=门失去判别力证明)", () => {
-  execFileSync("node", ["--check", WD_REDTEST], { cwd: new URL("../", import.meta.url).pathname.replace(/^\//, "") });
+  execFileSync(process.execPath, ["--check", WD_REDTEST], { cwd: fileURLToPath(new URL("../", import.meta.url)) });
   const src = read(WD_REDTEST);
   const cases = src.match(/^\s{2}\["/gm) ?? [];
   assert.ok(cases.length >= 16, `红测用例只剩 ${cases.length} 条,少于基线 16`);

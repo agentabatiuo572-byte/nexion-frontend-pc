@@ -216,20 +216,28 @@ test("real self editor queries unknown save before retry, detects original asset
 });
 
 test("manual upload reload only accepts the original image bytes and reuses the original multipart client id/key", async () => {
+  async function waitForUploadButton(view, disabled) {
+    const deadline = Date.now() + 5000;
+    while (button(view.render(), "上传或重试")?.props.disabled !== disabled && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    assert.equal(button(view.render(), "上传或重试")?.props.disabled, disabled,
+      "Wait for the real image hash/selection outcome before using the upload control");
+  }
   const f = fixture(); f.auth.session.role = "super"; globalThis.createImageBitmap = async () => ({ width: 512, height: 512, close() {} });
   const picker = f.load("app/components/domain-views/a-tabs/account-avatar-picker.tsx").AccountAvatarPicker;
   const props = { name: "客服", onChange() {}, onBlocking() {} }, file = new File(["original image bytes"], "portrait.jpg", { type: "image/jpeg" });
   const first = f.component(picker, props); first.render(); let tree = first.render(); nodes(tree, n => n.type === "input" && n.props.type === "file")[0].props.onChange({ target: { files: [file], value: "file" } });
-  for (let i = 0; i < 30 && !button(first.render(), "上传或重试"); i++) await flush();
+  await waitForUploadButton(first, false);
   const selected = first.render();
   assert.equal(nodes(selected, n => n.type === "input" && n.props.type === "file")[0].props.title, file.name);
   assert.equal(nodes(selected, n => n.type === "small" && n.props.title === file.name)[0].props.children, file.name, "The selected name remains visible after the native file input is reset");
   tree = first.render(); f.queue.push(new Error("upload unknown")); button(tree, "上传或重试").props.onClick(); await flush(); const original = f.requests[0]; assert.equal(original.init.body.get("clientUploadId").length, 36); first.dispose();
   const second = f.component(picker, props); second.render(); tree = second.render(); const select = nodes(tree, n => n.type === "input" && n.props.type === "file")[0];
   select.props.onChange({ target: { files: [new File(["different image"], "other.jpg", { type: "image/jpeg" })], value: "file" } });
-  for (let i = 0; i < 30; i++) await flush(); tree = second.render(); assert.equal(button(tree, "上传或重试").props.disabled, true); assert.equal(f.requests.length, 1);
+  await waitForUploadButton(second, true); tree = second.render(); assert.equal(button(tree, "上传或重试").props.disabled, true); assert.equal(f.requests.length, 1);
   select.props.onChange({ target: { files: [new File(["original image bytes"], "renamed.jpg", { type: "image/jpeg" })], value: "file" } });
-  for (let i = 0; i < 30 && button(second.render(), "上传或重试")?.props.disabled !== false; i++) await flush();
+  await waitForUploadButton(second, false);
   tree = second.render(); f.queue.push(json(prepared())); button(tree, "上传或重试").props.onClick(); await flush();
   assert.equal(f.requests[1].init.body.get("clientUploadId"), original.init.body.get("clientUploadId")); assert.equal(new Headers(f.requests[1].init.headers).get("Idempotency-Key"), new Headers(original.init.headers).get("Idempotency-Key")); assert.equal(await f.requests[1].init.body.get("file").text(), "original image bytes"); assert.equal(f.requests[1].init.body.get("file").name, "portrait.jpg"); assert.equal(f.requests[1].init.body.get("file").type, "image/jpeg"); second.dispose();
 });

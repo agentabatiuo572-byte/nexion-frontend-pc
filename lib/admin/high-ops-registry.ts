@@ -1477,7 +1477,7 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "e6_compute_config",
     buildCommand: (ctx) => ({ domain: "E", op: "e6_compute_config",
-      params: { paramKey: String(ctx.paramKey), value: String(ctx.value) } }),
+      params: { paramKey: String(ctx.paramKey), value: String(ctx.value), ...(ctx.expectedPolicyVersion === undefined ? {} : { expectedPolicyVersion: ctx.expectedPolicyVersion }) } }),
     buildTarget: (ctx) => ({ domain: "E", type: "e6_compute_config", id: String(ctx.paramKey) }),
   },
   {
@@ -1488,7 +1488,7 @@ export const HIGH_OPS: HighOpDef[] = [
     type: "param",
     gateLabel: "门槛者",
     targetType: "e6_compute_config",
-    buildCommand: (ctx) => ({ domain: "E", op: "e6_compute_config_batch", params: { values: ctx.values } }),
+    buildCommand: (ctx) => ({ domain: "E", op: "e6_compute_config_batch", params: { values: ctx.values, ...(ctx.expectedPolicyVersion === undefined ? {} : { expectedPolicyVersion: ctx.expectedPolicyVersion }) } }),
     buildTargets: (ctx) =>
       Object.keys((ctx.values as Record<string, unknown>) ?? {})
         .sort()

@@ -1,4 +1,5 @@
 "use client";
+import { PhoneReplacementPanel } from "./phone-replacement-panel";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -6,7 +7,7 @@ import { sessionTimeAnomaly } from "@/lib/admin/session-time";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DataListPager, Drawer, type BusinessFormValue } from "../design-kit";
 import {
   disableUserTwoFactor,
@@ -248,25 +249,30 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     setUserLookup(focusUserCode);
   }, [focusUserCode]);
 
+  const dataGeneration = useRef(0);
   const loadData = useCallback(async (silent = false) => {
+    const generation = ++dataGeneration.current;
     if (!silent) setLoading(true);
     try {
       const key = selectedUserKey === NO_USER_SELECTION ? "" : selectedUserKey.trim();
       const data = await fetchUserSecurityOverview({ userKey: key || undefined, pageNum: page, pageSize });
+      if (generation !== dataGeneration.current) return false;
       setOverview(key ? data : clearSelectedUserFromOverview(data));
       setError(null);
       return true;
     } catch (err) {
+      if (generation !== dataGeneration.current) return false;
       setOverview(null);
       setError(`C5 数据加载失败 · ${errorMessage(err)}`);
       return false;
     } finally {
-      if (!silent) setLoading(false);
+      if (!silent && generation === dataGeneration.current) setLoading(false);
     }
   }, [page, pageSize, selectedUserKey]);
 
   useEffect(() => {
     void loadData();
+    return () => { dataGeneration.current++; };
   }, [loadData]);
 
   useEffect(() => {
@@ -798,6 +804,8 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
           </div>
         </section>
       </div>
+
+      <PhoneReplacementPanel userId={!loading && selectedUser && [String(selectedUser.userId), String(selectedUser.userNo)].includes(selectedUserKey) ? String(selectedUserId) : null} userLabel={userLabel(selectedUser)} />
 
       {selectedSession && (
         <Drawer title={`会话详情 · ${maskSessionId(sessionId(selectedSession))}`} sub={`${userLabel(selectedUser)} · ${sessionStatusLabel(selectedSession.status)}`} onClose={() => setSsId(null)}

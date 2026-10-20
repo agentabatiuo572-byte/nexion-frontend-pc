@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, existsSync, realpathSync, statSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
 import { spawnSync, execFile } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 export const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
 export async function findPagedAccount(card, targetSelector, timeoutMs = 30000) {
@@ -370,20 +371,30 @@ function fingerprintCode(bindings) {
   const literal = JSON.stringify(bindings).replaceAll("'", "''");
   return `$ErrorActionPreference='Stop'; $bindings=ConvertFrom-Json '${literal}'; $bindings=@($bindings); $listeners=@(Get-NetTCPConnection -State Listen); $rows=@(foreach($binding in $bindings){ $owners=@($listeners | Where-Object {$_.LocalPort -eq $binding.port} | Select-Object -ExpandProperty OwningProcess -Unique); if($owners.Count -ne 1){throw ('Listener ownership is ambiguous for port '+$binding.port+'; bindings='+$bindings.Count+'; owners='+$owners.Count)}; $proc=Get-CimInstance Win32_Process -Filter ('ProcessId='+$owners[0]); if(!$proc){throw 'Listener process disappeared'}; $cmd=$proc.CommandLine; $digest=$null; $refs=$null; if($null -ne $cmd){$hash=[System.Security.Cryptography.SHA256]::Create(); $bytes=[System.Text.Encoding]::UTF8.GetBytes($cmd); $digest=([BitConverter]::ToString($hash.ComputeHash($bytes))).Replace('-','').ToLowerInvariant(); $refs=@($binding.paths | ForEach-Object {$cmd.Replace([char]92,[char]47).ToLowerInvariant().Contains($_.Replace([char]92,[char]47).ToLowerInvariant())})}; [pscustomobject]@{pid=[int]$proc.ProcessId;processStartTime=$proc.CreationDate.ToUniversalTime().ToString('o');commandLineHash=$digest;references=$refs;commandLineReadable=($null -ne $cmd);executablePathReadable=($null -ne $proc.ExecutablePath)} }); $final=@(Get-NetTCPConnection -State Listen); for($i=0;$i -lt $bindings.Count;$i++){ $owners=@($final | Where-Object {$_.LocalPort -eq $bindings[$i].port} | Select-Object -ExpandProperty OwningProcess -Unique); if($owners.Count -ne 1 -or $owners[0] -ne $rows[$i].pid){throw 'Listener changed during ownership collection'}; $nowProc=Get-CimInstance Win32_Process -Filter ('ProcessId='+$owners[0]); if(!$nowProc -or $nowProc.CreationDate.ToUniversalTime().ToString('o') -ne $rows[$i].processStartTime){throw 'Listener process changed during ownership collection'} }; ConvertTo-Json -InputObject $rows -Compress`;
 }
+function fingerprintInvocation(bindings) {
+  const code = fingerprintCode(bindings);
+  if (process.platform === "linux") return {
+    command: process.execPath,
+    args: [fileURLToPath(new URL("./support-analytics-linux-fingerprint.mjs", import.meta.url)), JSON.stringify(bindings)],
+  };
+  assert.equal(process.platform, "win32", "Unsupported live ownership collection platform");
+  return { command: "powershell.exe", args: ["-NoProfile", "-Command", code] };
+}
 function fingerprintRows(stdout, count) {
   const rows = JSON.parse(stdout);
   assert.ok(Array.isArray(rows) && rows.length === count, "Incomplete live process ownership collection");
   return rows;
 }
 export function windowsFingerprint(port, paths) {
-  const result = spawnSync("powershell.exe", ["-NoProfile", "-Command", fingerprintCode([{ port, paths }])], { windowsHide: true, encoding: "utf8", timeout: 15000 });
+  const { command, args } = fingerprintInvocation([{ port, paths }]);
+  const result = spawnSync(command, args, { windowsHide: true, encoding: "utf8", timeout: 15000 });
   assert.equal(result.status, 0, "Cannot establish live listener/process ownership");
   return fingerprintRows(result.stdout, 1)[0];
 }
 export function windowsFingerprintBatch(bindings) {
-  const code = fingerprintCode(bindings);
+  const { command, args } = fingerprintInvocation(bindings);
   return new Promise((resolve, reject) => {
-    execFile("powershell.exe", ["-NoProfile", "-Command", code], { windowsHide: true, encoding: "utf8", timeout: 15000, maxBuffer: 1024 * 1024 }, (error, stdout) => {
+    execFile(command, args, { windowsHide: true, encoding: "utf8", timeout: 15000, maxBuffer: 1024 * 1024 }, (error, stdout) => {
       if (error) { reject(new Error("Cannot establish live listener/process ownership", { cause: error })); return; }
       try { resolve(fingerprintRows(stdout, bindings.length)); } catch (failure) { reject(failure); }
     });

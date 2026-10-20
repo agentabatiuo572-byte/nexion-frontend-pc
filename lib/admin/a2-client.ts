@@ -370,7 +370,7 @@ function normalizeOverview(data: BackendOverview | null | undefined): A2Overview
   };
 }
 
-async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; commandKey?: string }) {
+async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; commandKey?: string; strictOutcome?: boolean }) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -395,6 +395,11 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
     throw error;
   }
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  // classification-ok: Strict recovery rejects malformed envelopes and wrapped business 5xx even under HTTP 200; HTTP failure classification below remains shared.
+  if (init?.commandKey && init.strictOutcome && (!result || !Number.isInteger(result.code)
+      || result.code >= 500 || result.code !== 0 && result.code < 400)) {
+    throw new A2OutcomeUncertainError("审批提交结果待核实，请查询原提案。", init.commandKey);
+  }
 
   if (init?.commandKey && !result) {
     throw new A2OutcomeUncertainError("A2_RESPONSE_UNREADABLE", init.commandKey);
@@ -418,7 +423,10 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
         init.commandKey,
       );
     }
-    throw new Error(formatAdminApiError(result?.message, `A2_REQUEST_FAILED_${response.status}`));
+    throw Object.assign(new Error(formatAdminApiError(result?.message, `A2_REQUEST_FAILED_${response.status}`)), {
+      status: response.ok && typeof result?.code === "number" ? result.code : response.status,
+      details: result?.data,
+    });
   }
   if (init?.commandKey && response.ok && result.code === 0 && result.data == null) {
     throw new A2OutcomeUncertainError("A2_SUCCESS_RESPONSE_DATA_MISSING", init.commandKey);
@@ -537,6 +545,18 @@ export async function fetchA2ReasonPolicy(): Promise<A2ReasonPolicy> {
   return { minChars, maxChars, sourceKey: "admin.a2.reason_min_chars" };
 }
 
+/** Exact original-maker lookup includes archived audit evidence; never resubmit a lost proposal. */
+export async function fetchA2ProposalByKey(commandKey: string): Promise<A2OperationRow | null> {
+  try {
+    const row = await a2Request<BackendTicket>(`/operations/proposals/by-idempotency-key?${new URLSearchParams({ idempotencyKey: commandKey })}`);
+    if (!row || typeof row.id !== "string" || !row.id || typeof row.status !== "string") throw new Error("原审批提案回执不完整，请继续查询。");
+    return fromTicket(row);
+  } catch (failure) {
+    if (failure && typeof failure === "object" && "status" in failure && failure.status === 404) return null;
+    throw failure;
+  }
+}
+
 export async function withdrawA2Operation(operationId: string, reason: string, operator: string, commandKey?: string) {
   const row = await a2Request<BackendTicket>(`/operations/${encodeURIComponent(operationId)}/withdraw`, {
     method: "POST",
@@ -562,12 +582,16 @@ export async function createA2OperationProposal(input: {
   command: { domain: string; op: string; params: Record<string, unknown> };
   target?: { domain: string; type: string; id: string };
   targets?: { domain: string; type: string; id: string }[];
-}, commandKey?: string) {
+}, commandKey?: string, strictOutcome = false) {
   const row = await a2Request<BackendTicket>("/operations", {
     method: "POST",
+    strictOutcome,
     body: JSON.stringify(input),
     ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-proposal" }),
   });
+  if (strictOutcome && (!row || typeof row.id !== "string" || !row.id)) {
+    throw new A2OutcomeUncertainError("审批回执不完整，请查询原提案。", commandKey!);
+  }
   return fromTicket(row);
 }
 

@@ -17,7 +17,7 @@ export const e6CoeffKey = (key: string): string => `${E6_PARAM_PREFIX}${key}`;
 export const e6YieldKey = (key: string): string => `${E6_PARAM_PREFIX}yieldEstimate.${key}`;
 export const e6GpuTierKey = (id: string, field: string): string => `${E6_PARAM_PREFIX}gpuTier.${id}.${field}`;
 export const e6DownloadKey = (field: string): string => `${E6_PARAM_PREFIX}download.${field}`;
-export const e6PhoneBindingKey = (field: "allowReplacement" | "minReplacementIntervalDays"): string => `${E6_PARAM_PREFIX}phoneBinding.${field}`;
+export const e6PhoneBindingKey = (field: "allowReplacement" | "minReplacementIntervalDays" | "replacementWindowDays" | "maxReplacementsInWindow"): string => `${E6_PARAM_PREFIX}phoneBinding.${field}`;
 
 export const E6_GPU_TIER_IDS = ["G1", "G2", "G3", "G4", "G5", "G6"] as const;
 const E6_KEYWORD_FIELDS = ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5", "keyword6"] as const;
@@ -41,6 +41,8 @@ const exactKeys = [
   e6FlagKey("computeShareEnabled"),
   e6PhoneBindingKey("allowReplacement"),
   e6PhoneBindingKey("minReplacementIntervalDays"),
+  e6PhoneBindingKey("replacementWindowDays"),
+  e6PhoneBindingKey("maxReplacementsInWindow"),
   e6CoeffKey("continuityFullHours"),
   e6YieldKey("topsBaseline"),
   e6YieldKey("dailyUsdtPerBaseline"),
@@ -102,7 +104,7 @@ export interface E6DownloadView {
 }
 export interface E6ComputeConfigView {
   domain: string;
-  phoneBinding?: { allowReplacement: boolean; minReplacementIntervalDays: number } | null;
+  phoneBinding?: import("./phone-replacement-contract").PhonePolicy | null;
   flags: E6FlagView[];
   coefficients: E6CoeffView[];
   yieldEstimate: E6YieldView[];
@@ -129,13 +131,15 @@ async function e6Request<T>(path: string, init?: RequestInit & { idempotencyPref
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  if (init?.idempotencyPrefix) {
+  if (init?.idempotencyPrefix && !headers.has("Idempotency-Key")) {
     headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
   }
   const response = await guardedFetch(`/api/admin/devices${path}`, { ...init, headers, cache: "no-store" });
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
   if (!response.ok || !result || result.code !== 0) {
-    throw new Error(formatAdminApiError(result?.message, `E6_REQUEST_FAILED_${response.status}`));
+    throw Object.assign(new Error(formatAdminApiError(result?.message, `E6_REQUEST_FAILED_${response.status}`)), {
+      status: response.ok && typeof result?.code === "number" ? result.code : response.status,
+    });
   }
   return result.data as T;
 }
@@ -153,12 +157,15 @@ export async function updateE6Param(
   value: string,
   reason: string,
   operator: string,
+  options?: { expectedPolicyVersion: number; commandKey: string },
 ): Promise<{ paramKey: string; value: string }> {
+  requirePhoneWriteContext([paramKey], options);
   return e6Request<{ paramKey: string; value: string }>(
     `/compute-config/params/${encodeURIComponent(paramKey)}`,
     {
       method: "PATCH",
-      body: JSON.stringify({ value, reason, operator }),
+      body: JSON.stringify({ value, reason, operator, ...(options ? { expectedPolicyVersion: options.expectedPolicyVersion } : {}) }),
+      ...(options ? { headers: { "Idempotency-Key": options.commandKey } } : {}),
       idempotencyPrefix: "e6-param",
     },
   );
@@ -169,13 +176,23 @@ export async function updateE6Params(
   values: Record<string, string>,
   reason: string,
   operator: string,
+  options?: { expectedPolicyVersion: number; commandKey: string },
 ): Promise<{ values: Record<string, string>; updatedAt: string }> {
+  requirePhoneWriteContext(Object.keys(values), options);
   return e6Request<{ values: Record<string, string>; updatedAt: string }>(
     "/compute-config/params",
     {
       method: "PATCH",
-      body: JSON.stringify({ values, reason, operator }),
+      body: JSON.stringify({ values, reason, operator, ...(options ? { expectedPolicyVersion: options.expectedPolicyVersion } : {}) }),
+      ...(options ? { headers: { "Idempotency-Key": options.commandKey } } : {}),
       idempotencyPrefix: "e6-param-batch",
     },
   );
+}
+
+function requirePhoneWriteContext(keys: string[], options?: { expectedPolicyVersion: number; commandKey: string }) {
+  if (!keys.some(key => key.startsWith("E.compute.phoneBinding."))) return;
+  if (keys.some(key => !key.startsWith("E.compute.phoneBinding.")) || !options || !Number.isSafeInteger(options.expectedPolicyVersion)
+      || options.expectedPolicyVersion < 1 || !options.commandKey.trim() || options.commandKey.length > 128)
+    throw new Error("手机策略须独立提交，并保留已确认的版本和原操作标识。");
 }

@@ -11,7 +11,7 @@ const artifacts = path.join(root, ".verify-cache", "phone-binding-runtime");
 fs.mkdirSync(artifacts, { recursive: true });
 const storage = path.join(artifacts, "fixture-storage.json");
 const config = {
-  domain: "E6", phoneBinding: { allowReplacement: false, minReplacementIntervalDays: 7 },
+  domain: "E6", phoneBinding: { available:true, allowReplacement: false, minReplacementIntervalDays: 7, replacementWindowDays:30, maxReplacementsInWindow:2, policyVersion:1 },
   flags: [{ key: "computeShareEnabled", label: "电脑共享", desc: "", enabled: false, frontendEffect: "" }],
   coefficients: ["h5BaseFactor", "continuityFullHours"].map(key => ({ key, label: key, value: "24", unit: "", desc: "", frontendEffect: "" })),
   yieldEstimate: ["topsBaseline", "dailyUsdtPerBaseline", "nexPerUsdt"].map(key => ({ key, label: key, value: "1", unit: "" })),
@@ -19,7 +19,8 @@ const config = {
   download: { url: "", zhTitle: "", zhGuide: "", enTitle: "", enGuide: "" }, sources: ["isolated-http-fixture"],
 };
 fs.writeFileSync(storage, JSON.stringify(config));
-let readMode = "valid", failWrite = false, reads = 0;
+let readMode = "valid", writeMode = "valid", reads = 0;
+const tickets=[];
 const writes = [];
 const readStored = () => JSON.parse(fs.readFileSync(storage, "utf8"));
 const server = await createServer({ configFile: false, root, appType: "custom", logLevel: "error", esbuild: { jsx: "automatic" },
@@ -36,8 +37,10 @@ const server = await createServer({ configFile: false, root, appType: "custom", 
         import {E6ComputeConfig} from '${root}/app/components/domain-views/e-tabs/e6-compute-config.tsx';
         import {PlatformParamsRegistry} from '${root}/app/_console/platform/params-registry/params-registry-client.tsx';
         import {OperationConfirmModal} from '${root}/app/components/domain-views/design-kit.tsx';
+        import {useAdminAuth} from '${root}/lib/store/admin-auth.ts';
         import {fetchE6ComputeConfig,updateE6Param} from '${root}/lib/admin/e6-client.ts';
         const permissions=new URLSearchParams(location.search);
+        useAdminAuth.getState().signIn({tokenType:"Bearer",session:{adminId:71,username:"fixture",operator:"fixture",role:"super",authorities:["device_e6_read","platform_a2_read","platform_a5_read",...(permissions.get("write")==="0"?[]:["device_e6_write"]),...(permissions.get("toggle")==="0"?[]:["device_e6_flag_toggle"])]}});
         function Fixture(){const [cfg,setCfg]=useState(null),[error,setError]=useState(null),[loading,setLoading]=useState(true),[action,setAction]=useState(null);
           async function refresh(){setLoading(true);try{setCfg(await fetchE6ComputeConfig());setError(null);}catch(e){setError(e.message);}finally{setLoading(false);}}
           useEffect(()=>{void refresh();},[]);
@@ -68,17 +71,23 @@ const server = await createServer({ configFile: false, root, appType: "custom", 
         if (readMode === "invalid") data.phoneBinding.minReplacementIntervalDays = -0.5;
         return reply({ code: 0, data });
       }
-      if (req.url.startsWith("/api/admin/devices/compute-config/params/") && req.method === "PATCH") {
-        let raw = ""; for await (const chunk of req) raw += chunk;
-        const body = JSON.parse(raw), key = decodeURIComponent(req.url.split("/").at(-1));
-        writes.push({ key, ...body, idempotencyKey: req.headers["idempotency-key"] });
-        if (failWrite) { failWrite = false; return reply({ code: 1, message: "保存失败，请重试" }); }
-        assert.ok(body.reason.length >= 8); assert.ok(req.headers["idempotency-key"]);
-        const data = readStored();
-        if (key === "E.compute.phoneBinding.allowReplacement") { assert.ok(["on", "off"].includes(body.value)); data.phoneBinding.allowReplacement = body.value === "on"; }
-        else { assert.equal(key, "E.compute.phoneBinding.minReplacementIntervalDays"); assert.ok(Number.isSafeInteger(Number(body.value)) && Number(body.value) >= 0); data.phoneBinding.minReplacementIntervalDays = Number(body.value); }
-        fs.writeFileSync(storage, JSON.stringify(data)); return reply({ code: 0, data: { paramKey: key, value: body.value } });
+      if (req.url === "/api/admin/config/phone-calibration") return reply({code:0,data:{policy:{revision:0,current:null,scheduled:null},pendingHardware:[],computeUnit:"platform"}});
+      if (req.url.startsWith("/api/admin/platform/audit/operations/proposals/by-idempotency-key?")) {
+        const key=new URL(req.url,"http://fixture").searchParams.get("idempotencyKey");
+        const ticket=tickets.find(t=>t.key===key);
+        return reply(ticket?{code:0,data:ticket}:{code:404,message:"OPERATION_RESULT_UNKNOWN",data:null});
       }
+      if (req.url === "/api/admin/platform/audit/operations" && req.method === "POST") {
+        let raw="";for await (const chunk of req) raw+=chunk;const input=JSON.parse(raw);
+        const key=req.headers["idempotency-key"];writes.push({key,...input});
+        assert.ok(key);assert.equal(Object.keys(input.command.params.values).length,4);assert.equal(input.command.params.expectedPolicyVersion,readStored().phoneBinding.policyVersion);
+        assert.ok(input.reason.length>=8);assert.equal(input.command.op,"e6_compute_config_batch");
+        if(writeMode==="rejected") {writeMode="valid";return reply({code:409,message:"POLICY_VERSION_CHANGED",data:{conflictType:"POLICY_VERSION_CHANGED",reason:"策略已更新，请刷新并重新确认。"}});}
+        const ticket={id:`A2-${tickets.length+1}`,key,...input,status:"pending",ts:new Date().toISOString()};tickets.push(ticket);
+        if(writeMode==="unknown") {writeMode="valid";return reply({code:503,message:"UPSTREAM_OUTCOME_UNKNOWN",data:null});}
+        return reply({code:0,data:ticket});
+      }
+      if (req.url.startsWith("/api/admin/platform/audit/overview")) return reply({code:0,data:{operationQueue:tickets.filter(t=>t.status==="pending"),operationHistory:tickets.filter(t=>t.status!=="pending").map(t=>({id:t.id,st:t.status})),recentLogs:tickets.map(t=>({id:t.id,resourceId:t.id,createdAt:t.ts,detailJson:JSON.stringify({idempotencyKey:t.key,sourceDomain:"E"})}))}});
       if (req.url.startsWith("/fixture") || req.url === "/devices/compute-config") { res.setHeader("Content-Type", "text/html"); return res.end('<!doctype html><html lang="zh-CN"><head><link rel="icon" href="data:,"></head><body><div id="root"></div><script type="module" src="/__phone-fixture.tsx"></script></body></html>'); }
       next();
     }); },
@@ -95,59 +104,44 @@ try {
   page.on("pageerror", error => errors.push(error.message));
   page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
   const phone = page.locator('[data-proof="e6-phone-binding"]');
-  const toggle = phone.getByRole("switch"), interval = phone.getByRole("button", { name: "调整换机间隔" });
-  const submit = page.getByRole("button", { name: "确认提交", exact: true });
-  const reason = page.getByRole("textbox", { name: /操作理由/ });
-  const value = page.getByLabel("目标新值");
-  await page.goto(base);
-  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  const allow=phone.getByLabel("允许更换绑定手机",{exact:true});
+  const interval=phone.getByLabel("换机最短间隔（天，0 表示不限）",{exact:true});
+  const windowDays=phone.getByLabel("滚动窗口（1–365 天）",{exact:true});
+  const limit=phone.getByLabel("窗口内最多更换（1–100 次）",{exact:true});
+  const preview=phone.getByRole("button",{name:"预览并确认策略变更"});
+  const submit=phone.getByRole("button",{name:"提交审批",exact:true});
+  const reason=phone.getByLabel("变更理由（8–200 字）",{exact:true});
+  async function confirm() {await preview.click();await reason.fill("已核实四项手机换机策略");await phone.getByLabel("我已核对四项前后值，确认提交给另一位审批人").check();}
+  function approveLatest() {
+    const ticket=tickets.at(-1), values=ticket.command.params.values,data=readStored();
+    for(const field of ["allowReplacement","minReplacementIntervalDays","replacementWindowDays","maxReplacementsInWindow"])data.phoneBinding[field]=field==="allowReplacement"?values[`E.compute.phoneBinding.${field}`]==="on":Number(values[`E.compute.phoneBinding.${field}`]);
+    data.phoneBinding.policyVersion++;fs.writeFileSync(storage,JSON.stringify(data));ticket.status="approved";
+  }
+  await page.goto(base);await expect(allow).not.toBeChecked();await expect(interval).toHaveValue("7");
   await expect(page.locator('[data-proof="e6-coeff-h5BaseFactor"]')).toHaveCount(0);
-  assert.ok(!(await page.locator("body").innerText()).includes("托管收益"));
   await expect(page.locator('[data-proof="e6-flag-toggle"]')).toBeDisabled();
-  await toggle.click(); await expect(submit).toBeDisabled();
-  await reason.fill("理由不足"); await expect(submit).toBeDisabled();
-  await page.getByRole("button", { name: "取消", exact: true }).click(); assert.equal(writes.length, 0);
-  await toggle.click(); await reason.fill("测试手机换绑配置理由"); await expect(submit).toBeEnabled(); await submit.click();
-  await expect(toggle).toHaveAttribute("aria-checked", "true"); assert.equal(readStored().phoneBinding.allowReplacement, true);
-  await page.reload(); await expect(toggle).toHaveAttribute("aria-checked", "true");
-  await toggle.click(); await reason.fill("测试禁止手机更换理由"); await submit.click(); await expect(toggle).toHaveAttribute("aria-checked", "false");
-  await interval.click(); await reason.fill("测试换机间隔配置理由");
-  for (const invalid of ["-1", "0.5", "9007199254740992"]) { await value.fill(invalid); await expect(submit).toBeDisabled(); }
-  assert.equal(writes.length, 2);
-  await value.fill("0"); await expect(submit).toBeEnabled(); failWrite = true; await submit.click();
-  await expect(page.getByRole("dialog").getByRole("alert")).toContainText("保存失败");
-  await expect(value).toHaveValue("0"); await expect(reason).toHaveValue("测试换机间隔配置理由");
-  assert.equal(readStored().phoneBinding.minReplacementIntervalDays, 7);
-  await submit.click(); await expect(page.getByRole("dialog")).toHaveCount(0);
-  assert.equal(readStored().phoneBinding.minReplacementIntervalDays, 0);
-  await page.reload(); await expect(phone.locator(".pkv .v")).toHaveText("0天"); await expect(toggle).toHaveAttribute("aria-checked", "false");
-  await interval.click(); await value.fill("30"); await reason.fill("测试三十天换机间隔理由"); await submit.click();
-  await expect(page.getByRole("dialog")).toHaveCount(0); assert.equal(readStored().phoneBinding.minReplacementIntervalDays, 30);
-  await page.reload(); await expect(phone.locator(".pkv .v")).toHaveText("30天");
+  await interval.fill("0");await preview.click();await expect(submit).toBeDisabled();await phone.getByRole("button",{name:"取消",exact:true}).click();assert.equal(writes.length,0);
+  for(const invalid of ["-1","0.5","9007199254740992"]) {await interval.fill(invalid);await expect(preview).toBeDisabled();}
+  await interval.fill("0");await windowDays.fill("365");await limit.fill("100");await confirm();writeMode="rejected";await submit.click();
+  await expect(phone.getByRole("alert")).toContainText("策略已更新");await expect(interval).toHaveValue("0");assert.equal(readStored().phoneBinding.minReplacementIntervalDays,7);
+  await confirm();await expect(reason).toHaveValue("已核实四项手机换机策略");writeMode="unknown";await submit.click();
+  await expect(phone).toContainText("原请求已保留");assert.equal(readStored().phoneBinding.policyVersion,1);
+  const postCount=writes.length;await page.reload();await expect(phone).toContainText("原审批提案");await expect(preview).toBeDisabled();
+  await phone.getByRole("button",{name:"只读查询审批结果"}).click();await expect(phone).toContainText(tickets.at(-1).id);assert.equal(writes.length,postCount);
+  approveLatest();await phone.getByRole("button",{name:"只读查询审批结果"}).click();await expect(phone).toContainText("原提案已获批准");
+  await phone.getByRole("button",{name:"原提案已结束，准备新变更"}).click();await expect(phone).toContainText("当前策略版本：2");await expect(interval).toHaveValue("0");await expect(windowDays).toHaveValue("365");await expect(limit).toHaveValue("100");
+  await page.reload();await expect(interval).toHaveValue("0");await expect(allow).not.toBeChecked();assert.equal(writes.length,postCount);
   const screenshots = [];
   for (const theme of ["light", "dark"]) { await page.evaluate(t => document.documentElement.dataset.theme = t, theme); const file = path.join(artifacts, `e6-phone-${theme}.png`); await phone.screenshot({ path: file }); screenshots.push(file); }
-  for (const [query, toggleCount, intervalCount] of [["?write=0&toggle=0", 0, 0], ["?write=1&toggle=0", 0, 1], ["?write=0&toggle=1", 1, 0]]) {
-    await page.goto(base + query); await expect(phone).toBeVisible(); await expect(phone.locator(".pkv")).toBeVisible(); await expect(toggle).toHaveCount(toggleCount); await expect(interval).toHaveCount(intervalCount);
+  for(const query of ["?write=0&toggle=0","?write=1&toggle=0","?write=0&toggle=1"]) {
+    await page.goto(base+query);await expect(phone).toBeVisible();await expect(preview).toBeDisabled();await expect(interval).toBeDisabled();
   }
-  const count = writes.length;
-  for (const mode of ["missing", "invalid"]) { readMode = mode; await page.goto(base); await expect(phone).toContainText("手机绑定配置未就绪"); await expect(toggle).toHaveCount(0); await expect(interval).toHaveCount(0); }
-  readMode = "error"; await page.goto(base); await expect(page.locator('[data-proof="e6-load-error"]')).toBeVisible(); await expect(toggle).toHaveCount(0);
-  readMode = "valid"; await page.getByRole("button", { name: "重新加载" }).click(); await expect(toggle).toHaveAttribute("aria-checked", "false");
-  await page.goto(base + "?a5=1");
-  const retired = page.locator("article").filter({ hasText: "E.compute.h5BaseFactor" });
-  await expect(retired).toContainText("历史配置 · 已退役（只读）");
-  await expect(retired.locator("a,button,input")).toHaveCount(0);
-  await expect(retired).not.toContainText("修改需确认");
-  await expect(retired).not.toContainText("当前服务端值");
-  for (const key of ["allowReplacement", "minReplacementIntervalDays"]) {
-    const current = page.locator("article").filter({ hasText: `E.compute.phoneBinding.${key}` });
-    await expect(current).toContainText("修改需确认");
-    const link = current.getByRole("link"); await expect(link).toHaveAttribute("href", "/devices/compute-config");
-    await link.click(); await expect(phone.locator(".pkv .v")).toHaveText("30天");
-    await page.goto(base + "?a5=1");
-  }
-  assert.equal(writes.length, count); assert.ok(reads >= 10); assert.deepEqual(errors, []); assert.deepEqual(external, []);
+  for(const mode of ["missing","invalid","error"]) {readMode=mode;await page.goto(base);await expect(phone).toContainText("策略读取失败");await expect(preview).toHaveCount(0);}
+  readMode="valid";await phone.getByRole("button",{name:"重新读取当前策略"}).click();await expect(phone).toContainText("当前策略版本：2");
+  await page.goto(base+"?a5=1");const retired=page.locator("article").filter({hasText:"E.compute.h5BaseFactor"});await expect(retired).toContainText("历史配置 · 已退役（只读）");await expect(retired.locator("a,button,input")).toHaveCount(0);
+  for(const key of ["allowReplacement","minReplacementIntervalDays"]) {const current=page.locator("article").filter({hasText:`E.compute.phoneBinding.${key}`});await expect(current.getByRole("link")).toHaveAttribute("href","/devices/compute-config");}
+  assert.equal(writes.length,postCount);assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
   const timestamp = new Date().toISOString();
-  fs.writeFileSync(path.join(root, ".verify-cache/phone-binding-runtime.json"), JSON.stringify({ taskId: process.env.WORKFLOW_TASK_ID ?? "standalone-debug", stepId: process.env.WORKFLOW_STEP_ID ?? "config-runtime", checkId: process.env.WORKFLOW_CHECK_ID ?? "phone-binding-runtime", runId: process.env.WORKFLOW_RUN_ID ?? "standalone-debug", repo: process.env.WORKFLOW_REPO ?? root, snapshotHash: process.env.WORKFLOW_SNAPSHOT_HASH ?? "standalone-debug", at: timestamp, timestamp, mode: "full", verdict: "pass", treeMoved: false, capability: "runtime", steps: [{ id: "config-runtime", status: "pass", verdict: "pass", innerSkipped: 0, evidence: ["Actual E6ComputeConfig + OperationConfirmModal + PlatformParamsRegistry + E6/A5 HTTP clients; isolated disk-backed localhost fixture, no production A2/DB claims", "Empty installer URL does not block phone switch; cancellation/short reasons/negative/fractional/unsafe integer reject writes", "Allow/deny and 0/30-day intervals saved through HTTP, authoritative GET and page reload preserve values; failed save retains inputs and retry succeeds", "Read-only and split write/toggle permissions, missing/malformed/read-error fail closed; retired H5 coefficient absent; zero console/page errors or external requests", "Actual A5 registry shows retired H5 row as history with no editing/link controls; both phone key links navigate to actual E6 with persisted 30 days", ...screenshots] }] }, null, 2));
-  console.log(`PASS E6/A5 phone component fixture: ${writes.length} HTTP attempts, ${reads} GET reads, 0/30-day persistence, A5 retired read-only and active links, two themes; not production A2/DB acceptance.`);
+  fs.writeFileSync(path.join(root, ".verify-cache/phone-binding-runtime.json"), JSON.stringify({ taskId: process.env.WORKFLOW_TASK_ID ?? "standalone-debug", stepId: process.env.WORKFLOW_STEP_ID ?? "config-runtime", checkId: process.env.WORKFLOW_CHECK_ID ?? "phone-binding-runtime", runId: process.env.WORKFLOW_RUN_ID ?? "standalone-debug", repo: process.env.WORKFLOW_REPO ?? root, snapshotHash: process.env.WORKFLOW_SNAPSHOT_HASH ?? "standalone-debug", at: timestamp, timestamp, mode: "full", verdict: "pass", treeMoved: false, capability: "runtime", steps: [{ id: "config-runtime", status: "pass", verdict: "pass", innerSkipped: 0, evidence: ["Actual E6ComputeConfig + PhoneReplacementPolicyPanel + PlatformParamsRegistry; isolated HTTP A2 fixture, no production A2/DB claims", "Four-field versioned proposal independent of installer; cancellation and invalid numbers produce no POST", "Determinate version rejection preserves inputs; uncertain proposal persists original key across reload; only GET recovery then simulated external checker publication is read back", "Read-only and split permissions, malformed/read-error fail closed; retired H5 coefficient absent; zero console/page errors or external requests", "Actual A5 registry retains retired H5 history and phone owner links", ...screenshots] }] }, null, 2));
+  console.log(`PASS E6/A5 phone component fixture: ${writes.length} HTTP attempts, ${reads} GET reads, four-field A2 version and unknown read-only recovery, A5 retired read-only, two themes; not production A2/DB acceptance.`);
 } finally { await browser?.close(); await server.close(); }

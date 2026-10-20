@@ -118,6 +118,9 @@ function backendPath(parts: string[]) {
     return "/api/admin/platform/rbac/actions";
   }
   if (parts.length >= 1 && parts[0] === "audit") {
+    if (parts.length === 4 && parts[1] === "operations" && parts[2] === "proposals" && parts[3] === "by-idempotency-key") {
+      return "/api/admin/platform/audit/operations/proposals/by-idempotency-key";
+    }
     // 🔴 `retention-preview` 必须在列(zentao #201):A2 客户端请求
     //    /api/admin/platform/audit/retention-preview,白名单漏掉它时代理回
     //    PLATFORM_ROUTE_NOT_FOUND,页面把「自己漏放行」显示成「清理范围读取失败」
@@ -177,6 +180,7 @@ function backendPath(parts: string[]) {
 
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
+  if (path.join("/") === "audit/operations/proposals/by-idempotency-key" && request.method !== "GET") return jsonError(405, "METHOD_NOT_ALLOWED");
   const diagnostics = path.length === 2 && path[0] === "events" && path[1] === "outbox-diagnostics";
   if (diagnostics && request.method !== "GET") return jsonError(405, "METHOD_NOT_ALLOWED");
   const avatarRoute = avatarProxyRoute(path, request.method);

@@ -92,7 +92,9 @@ test("shell hides authenticated data while logout is pending and renews on relog
   assert.match(shell, /if \(logoutPending\) return <AdminLogoutGate \/>/);
   assert.match(shell, /function AdminLogoutGate\(\)/);
   assert.match(auth, /if \(state\.logoutPending\) return state/);
-  assert.match(auth, /if \(identityChanged\) renewAdminAuthLifecycle/);
+  assert.match(auth, /const accessChanged = adminShellSessionKey\(state\.session\) !== adminShellSessionKey\(session\)/);
+  assert.match(auth, /if \(identityChanged \|\| accessChanged\) renewAdminAuthLifecycle\(\)/);
+  assert.match(auth, /authEpoch: identityChanged \|\| accessChanged \? state\.authEpoch \+ 1 : state\.authEpoch/);
   assert.match(auth, /renewAdminAuthLifecycle\(\)/);
 });
 

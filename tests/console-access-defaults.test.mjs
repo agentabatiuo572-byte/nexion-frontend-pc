@@ -135,3 +135,67 @@ test("the actual no-access logout preserves uncertain server outcomes and blocks
     assert.deepEqual(calls, outcome === "pending" ? [] : outcome === "success" ? ["begin", "request", "signOut"] : ["begin", "request", "verify", outcome === "unknown" ? "unknown" : outcome === "still-authenticated" ? "cancel" : "signOut"]);
   }
 });
+
+function failedBootstrapShell({ requestLogout, readSession }) {
+  const ast = shellAst();
+  const component = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "ConsoleShell");
+  const gate = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "AdminSessionRecoveryGate");
+  const logout = component.body.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "logoutWithoutAccess");
+  const decisions = component.body.statements.filter(ts.isIfStatement).map(node => node.getText(ast)).join("\n");
+  const calls = [];
+  const context = { require, exports: {}, session: null, mounted: true, bootstrapState: "error",
+    sessionResolution: "unknown", isAuthenticated: false, logoutPending: false, logoutUnknown: false,
+    logoutError: null, landingPath: null, redirecting: false,
+    restoreAdminSession: async () => calls.push("retry"),
+    requestAdminLogout: async () => { calls.push("request"); await requestLogout(); },
+    currentAdminSession: readSession,
+    signOut: () => { calls.push("signOut"); context.logoutPending = false; context.sessionResolution = "anonymous"; },
+    AdminLogoutGate: () => null, AdminSessionBootstrapGate: () => null,
+    LoginGate: () => null, AdminRouteRedirectGate: () => null,
+  };
+  const auth = { get logoutPending() { return context.logoutPending; },
+    beginLogout: () => { context.logoutPending = true; },
+    beginLogoutVerification: () => {},
+    cancelLogout: message => { context.logoutPending = false; context.logoutError = message; },
+    failLogoutUnknown: message => { context.logoutPending = false; context.logoutUnknown = true; context.logoutError = message; },
+  };
+  context.useAdminAuth = { getState: () => auth };
+  runInNewContext(ts.transpileModule(`${gate.getText(ast)}\n${logout.getText(ast)}\nfunction render() { ${decisions}\nthrow new Error("Protected shell must stay closed"); }\nglobalThis.render = render;`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText, context);
+  return { calls, context, render: () => context.render(),
+    buttons: () => { const element = context.render(); return element.type(element.props).props.children.filter(node => node?.type === "button"); } };
+}
+
+test("cold failed session validation exposes real retry and confirmed logout with no cached session", async () => {
+  let confirm;
+  const fixture = failedBootstrapShell({ requestLogout: () => new Promise(resolve => { confirm = resolve; }), readSession: async () => null });
+  const html = renderToStaticMarkup(fixture.render());
+  assert.match(html, /登录状态校验失败/);
+  assert.match(html, /重新校验/);
+  assert.match(html, /退出登录/);
+  fixture.buttons().find(button => button.props.children === "重新校验").props.onClick();
+  fixture.buttons().find(button => button.props.children === "退出登录").props.onClick();
+  assert.deepEqual(fixture.calls, ["retry", "request"]);
+  assert.equal(fixture.render().type, fixture.context.AdminLogoutGate);
+  assert.equal(fixture.context.sessionResolution, "unknown");
+  confirm(); await new Promise(setImmediate);
+  assert.deepEqual(fixture.calls, ["retry", "request", "signOut"]);
+  assert.equal(fixture.render().type, fixture.context.LoginGate);
+});
+
+test("failed-bootstrap logout retains server uncertainty and shows determinate retry failures", async () => {
+  for (const stillKnown of [true, false]) {
+    const fixture = failedBootstrapShell({ requestLogout: async () => { throw new Error("disconnect"); },
+      readSession: async () => { if (!stillKnown) throw new Error("unavailable"); return {}; } });
+    fixture.buttons().find(button => button.props.children === "退出登录").props.onClick();
+    await new Promise(setImmediate);
+    assert.deepEqual(fixture.calls, ["request"]);
+    assert.notEqual(fixture.render().type, fixture.context.LoginGate);
+    assert.equal(fixture.context.logoutUnknown, !stillKnown);
+    if (stillKnown) {
+      assert.match(renderToStaticMarkup(fixture.render()), /退出未完成，请重试/);
+      assert.ok(fixture.buttons().some(button => button.props.children === "退出登录"));
+    }
+  }
+});

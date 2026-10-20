@@ -40,6 +40,10 @@ const EXECUTOR_MODULE = "lib/admin/stable-mutation.ts";
 
 /** 已迁到共享 store 的文件:必须仍 import 它,且不得再出现裸内存态幂等键。 */
 const MIGRATED = [
+  // Phone operations retain original payload/key after expiry for GET-only recovery.
+  "lib/admin/phone-replacement-client.ts",
+  // E6 policy proposals recover their original A2 ticket by exact key, including archived evidence.
+  "app/components/domain-views/e-tabs/phone-replacement-policy-panel.tsx",
   // Promotions retain the original command payload and key until authoritative resource readback.
   "lib/admin/promotion-client.ts",
   // Avatar drafts and self saves use durable stores; the actual self consumer and expired query-only behavior are bound below.

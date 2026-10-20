@@ -1,3 +1,4 @@
+import { parsePhonePolicy, type PhonePolicy } from "./phone-replacement-contract.ts";
 type UnknownRecord = Record<string, unknown>;
 
 function object(value: unknown, message: string): UnknownRecord {
@@ -172,15 +173,7 @@ function validateE6GpuTier(value: unknown, message: string) {
   });
 }
 
-export function parseE6PhoneBinding(raw: unknown): { allowReplacement: boolean; minReplacementIntervalDays: number } | null {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
-  const row = raw as UnknownRecord;
-  if (typeof row.allowReplacement !== "boolean"
-      || typeof row.minReplacementIntervalDays !== "number"
-      || !Number.isSafeInteger(row.minReplacementIntervalDays)
-      || row.minReplacementIntervalDays < 0) return null;
-  return { allowReplacement: row.allowReplacement, minReplacementIntervalDays: row.minReplacementIntervalDays };
-}
+export function parseE6PhoneBinding(raw: unknown): PhonePolicy | null { return parsePhonePolicy(raw); }
 
 export function parseE6ComputeConfig<T = UnknownRecord>(raw: unknown): T {
   const message = "E6_COMPUTE_CONFIG_CONTRACT_INVALID";

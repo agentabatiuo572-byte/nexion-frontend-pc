@@ -86,6 +86,9 @@ function backendPath(parts: string[]) {
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
   const targetPath = backendPath(path);
+  if (targetPath && path[0] === "compute-config" && request.method !== (path.length === 1 ? "GET" : "PATCH")) {
+    return jsonError(405, "METHOD_NOT_ALLOWED");
+  }
 
   if (!targetPath) {
     return jsonError(404, "DEVICES_ROUTE_NOT_FOUND");

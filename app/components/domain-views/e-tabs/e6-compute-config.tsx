@@ -9,6 +9,7 @@
  * 值规则权威校验在后端 validateComputeValue。
  */
 import Link from "next/link";
+import { PhoneReplacementPolicyPanel } from "./phone-replacement-policy-panel";
 import { PhoneCalibrationPanel } from "./phone-calibration-panel";
 import { CodeTag } from "../design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
@@ -20,7 +21,6 @@ import {
   e6YieldKey,
   e6GpuTierKey,
   e6DownloadKey,
-  e6PhoneBindingKey,
   E6_DOWNLOAD_COPY_MAX_LENGTH,
   E6_DOWNLOAD_COPY_PATTERN,
   E6_DOWNLOAD_COPY_PATTERN_MESSAGE,
@@ -30,7 +30,6 @@ import {
 // 安装包地址判定是 E6/A5 共用的单一来源(zentao #156:两页曾各自判定,于是 A5 把 E6
 // 已判为无效的值当成「当前服务端值」展示)。规则住在 installer-url.ts,这里只引用。
 import { isSafeInstallerUrl } from "@/lib/admin/installer-url";
-import { parseE6PhoneBinding } from "@/lib/admin/e456-overview-contract";
 
 const numberFmt = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 });
 
@@ -71,32 +70,12 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
   } = ctx;
   const flags = e6Config?.flags ?? [];
   const coefficients = (e6Config?.coefficients ?? []).filter((c) => c.key !== "h5BaseFactor");
-  const phoneBinding = parseE6PhoneBinding(e6Config?.phoneBinding);
   const yields = e6Config?.yieldEstimate ?? [];
   const gpuTiers = e6Config?.gpuTiers ?? [];
   const download = e6Config?.download;
   const downloadUrl = (download?.url ?? "").trim();
   const downloadReady = isSafeInstallerUrl(downloadUrl);
   const ready = !!e6Config; // 后端聚合视图已加载
-
-  const togglePhoneReplacement = () => {
-    if (!phoneBinding || !canToggleE6) return;
-    openActionConfirm({
-      name: phoneBinding.allowReplacement ? "禁止更换绑定手机" : "允许更换绑定手机",
-      op: "param-fixed", paramKey: e6PhoneBindingKey("allowReplacement"),
-      fixedVal: phoneBinding.allowReplacement ? "off" : "on",
-      detail: "仅调整已绑定手机能否更换。首次绑定不受影响；提交理由并经 A2 批准后生效，不改变其它已购设备。",
-    });
-  };
-  const editPhoneReplacementInterval = () => {
-    if (!phoneBinding || !canWriteE6) return;
-    openActionConfirm({
-      name: "调整手机换机最短间隔",
-      op: "param", paramKey: e6PhoneBindingKey("minReplacementIntervalDays"),
-      edit: { kind: "number", current: String(phoneBinding.minReplacementIntervalDays), unit: "天", min: 0, max: Number.MAX_SAFE_INTEGER, step: 1, disallowCurrent: true },
-      detail: "填写非负整数天数，0 表示不限制间隔。禁止更换时仍可预设间隔；提交理由并经 A2 批准后生效。",
-    });
-  };
 
   // 入口开关切换 → param-fixed on/off。
   const requestToggle = (key: string, label: string, current: boolean) => {
@@ -271,22 +250,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
         { k: "在线系数", v: coefficients.length, sub: "App 稳定性", tone: "cyan" },
       ]} />
 
-      <section className="pane" data-proof="e6-phone-binding">
-        <div className="pane-h"><span className="ttl">手机绑定与换机</span><span className="sub">修改需理由与 A2 确认</span></div>
-        {!phoneBinding ? <div className="empty" role="status">手机绑定配置未就绪，暂不可修改。请刷新重试。</div> : <>
-          <div className="e6-flag-row">
-            <div className="e6-flag-meta"><span className="e6-flag-name">允许更换绑定手机</span><span className="e6-flag-desc">首次绑定不受换机开关限制。</span></div>
-            <div className="e6-flag-ctl"><span className="e6-flag-state">{phoneBinding.allowReplacement ? "已允许" : "已禁止"}</span>
-              {canToggleE6 && <button type="button" role="switch" aria-label="允许更换绑定手机" aria-checked={phoneBinding.allowReplacement} className="e6-switch" data-on={phoneBinding.allowReplacement} data-proof="e6-phone-replacement-toggle" disabled={e6Loading} onClick={togglePhoneReplacement}><span className="e6-switch-knob" aria-hidden /></button>}
-            </div>
-          </div>
-          <div className="pkv"><div className="lhs"><span className="zh">换机最短间隔</span><span className="desc">0 表示不限制间隔；禁止更换时仍可调整。</span></div><span className="v">{phoneBinding.minReplacementIntervalDays}<span className="u">天</span></span>
-            {canWriteE6 && <button type="button" className="adj" data-proof="e6-phone-replacement-interval" disabled={e6Loading} onClick={editPhoneReplacementInterval}>调整换机间隔</button>}
-          </div>
-        </>}
-        <div className="tint cyan tiny" style={{ margin: "12px 16px" }}>H5 手机算力奖励已退役。手机绑定和换机不影响其它已购设备。</div>
-        <button type="button" className="adj" style={{ margin: "0 16px 14px" }} disabled={e6Loading} onClick={() => void refreshE6()}>刷新手机绑定配置</button>
-      </section>
+      <PhoneReplacementPolicyPanel />
 
       <section className="pane" style={{ marginTop: 14 }}>
         <div className="pane-h">

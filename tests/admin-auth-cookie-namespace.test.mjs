@@ -43,6 +43,7 @@ function gateway(path, namespace, entries = {}, upstream = async () => Response.
     "@/lib/admin/auth-deadline": load("lib/admin/auth-deadline.ts", { fetchImpl }),
     "@/lib/admin/support-image-proxy": load("lib/admin/support-image-proxy.ts"),
     "@/lib/admin/promotion-routes": load("lib/admin/promotion-routes.ts"),
+    "@/lib/admin/phone-replacement-routes": load("lib/admin/phone-replacement-routes.ts"),
     "@/lib/admin/account-avatar-contract": load("lib/admin/account-avatar-contract.ts"),
   } });
   return { route, guard, calls };
@@ -71,6 +72,7 @@ const BUSINESS = {
   "market/[...path]/route.ts": ["staking"],
   "media/[...path]/route.ts": ["uploads", "fixture", "preview-url"],
   "phase/[[...path]]/route.ts": ["overview"],
+  "phone-replacement-operations/[...path]/route.ts": ["fixture"],
   "platform/[...path]/route.ts": ["accounts"],
   "regulatory/[[...path]]/route.ts": ["options"],
   "risk/[...path]/route.ts": ["overview"],

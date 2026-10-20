@@ -1,0 +1,17 @@
+.phone-admin-panel { margin: 16px 0; padding: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--ink); min-width: 0; }
+.phone-admin-panel h3,.phone-admin-panel h4 { margin: 6px 0 12px; }
+.phone-admin-panel p { margin: 10px 0; line-height: 1.6; }
+.phone-admin-panel label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.phone-admin-panel input:not([type=checkbox]),.phone-admin-panel select,.phone-admin-panel textarea { width: 100%; min-width: 0; padding: 8px 10px; color: var(--ink); background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; }
+.phone-admin-panel textarea { min-height: 80px; }
+.phone-admin-panel label:has(input[type=checkbox]) { flex-direction: row; align-items: center; }
+.phone-admin-panel fieldset { padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.phone-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(210px,1fr)); gap: 16px; }
+.phone-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+.phone-note { color: var(--ink-3); font-size: 12px; }
+.phone-error { padding: 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--ink); background: var(--surface-2); }
+.phone-facts { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 10px; font-size: 13px; }
+.phone-facts dt { color: var(--ink-3); }.phone-facts dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.phone-record,.phone-receipt { padding: 12px; border: 1px solid var(--border); border-radius: 8px; margin: 12px 0; overflow-wrap: anywhere; }
+.phone-admin-panel button:disabled { opacity: .5; cursor: not-allowed; }
+.phone-admin-panel .phone-selected { border-color: var(--ink-3); }

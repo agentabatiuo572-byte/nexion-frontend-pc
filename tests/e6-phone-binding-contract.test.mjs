@@ -23,7 +23,7 @@ const config = {
 test("phone config requires a boolean and a safe nonnegative integer; unavailable does not invent permission", () => {
   for (const allowReplacement of [false, true]) {
     for (const minReplacementIntervalDays of [0, 1, 30]) {
-      const value = { allowReplacement, minReplacementIntervalDays };
+      const value = { available: true, allowReplacement, minReplacementIntervalDays, replacementWindowDays: 30, maxReplacementsInWindow: 2, policyVersion: 1 };
       assert.deepEqual(parseE6PhoneBinding(value), value);
       assert.deepEqual(parseE6ComputeConfig({ ...config, phoneBinding: value }).phoneBinding, value);
     }
@@ -37,8 +37,8 @@ test("phone config requires a boolean and a safe nonnegative integer; unavailabl
   }
 });
 
-test("E6 write registry permits exactly the two phone keys and retires h5BaseFactor", () => {
-  for (const field of ["allowReplacement", "minReplacementIntervalDays"]) {
+test("E6 write registry permits exactly the four phone keys and retires h5BaseFactor", () => {
+  for (const field of ["allowReplacement", "minReplacementIntervalDays", "replacementWindowDays", "maxReplacementsInWindow"]) {
     assert.equal(client.exports.isE6ParamKey(client.exports.e6PhoneBindingKey(field)), true);
   }
   for (const key of ["E.compute.h5BaseFactor", "E.compute.phoneBinding", "E.compute.phoneBinding.other", "D.phoneBinding.allowReplacement"]) {
@@ -56,7 +56,7 @@ test("interval proposal rejects fractional and unsafe days and sends canonical i
   }).outputText, {
     isE6ParamKey: client.exports.isE6ParamKey,
     findHighOp: () => ({ buildCommand: params => ({ params }), buildTarget: () => ({}) }),
-    propose: async (_toast, command) => sent.push(command), ctx: {},
+    propose: async (_toast, command) => sent.push(command), ctx: {}, e6Config: {phoneBinding: {policyVersion: 7}},
   });
   const call = value => proposeParam("E.compute.phoneBinding.minReplacementIntervalDays", value, "7", "reason", "interval", false);
   for (const value of ["", "-1", "0.5", "0.0000000001", "9007199254740992"]) {
@@ -66,19 +66,14 @@ test("interval proposal rejects fractional and unsafe days and sends canonical i
   await call("0");
   await call("30.0");
   assert.deepEqual(sent.map(row => row.command.params.value), ["0", "30"]);
+  assert.equal(sent[0].command.params.expectedPolicyVersion, 7);
 });
 
-test("phone controls reuse A2 actions independently from installer and keep interval editable while replacement is off", () => {
+test("phone controls are an independent atomic policy editor; retired H5 coefficient remains hidden", () => {
   const ui = read("app/components/domain-views/e-tabs/e6-compute-config.tsx");
-  const actions = ui.slice(ui.indexOf("const togglePhoneReplacement"), ui.indexOf("// 入口开关切换"));
-  assert.match(actions, /!phoneBinding \|\| !canToggleE6/);
-  assert.match(actions, /!phoneBinding \|\| !canWriteE6/);
-  assert.match(actions, /fixedVal: phoneBinding\.allowReplacement \? "off" : "on"/);
-  assert.match(actions, /min: 0, max: Number\.MAX_SAFE_INTEGER, step: 1/);
-  assert.doesNotMatch(actions, /downloadReady|!phoneBinding\.allowReplacement/);
+  assert.match(ui, /<PhoneReplacementPolicyPanel \/>/);
+  assert.doesNotMatch(ui, /togglePhoneReplacement|editPhoneReplacementInterval/);
   assert.match(ui, /filter\(\(c\) => c\.key !== "h5BaseFactor"\)/);
-  assert.doesNotMatch(ui, /网页登录只拿|账户托管结算|H5 升级动机/);
   const a5 = read("app/_console/platform/params-registry/params-registry-client.tsx");
   assert.match(a5, /历史配置 · 已退役（只读）/);
-  assert.match(a5, /row\.canonicalKey !== "E\.compute\.h5BaseFactor" && <Link/);
 });

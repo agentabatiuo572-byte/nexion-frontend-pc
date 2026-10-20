@@ -1083,10 +1083,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     }
     if (isE6ParamKey(paramKey)) {
       const def = findHighOp("e6_compute_config")!;
+      const expectedPolicyVersion = paramKey.startsWith("E.compute.phoneBinding.") ? e6Config?.phoneBinding?.policyVersion : undefined;
+      if (paramKey.startsWith("E.compute.phoneBinding.") && !expectedPolicyVersion) throw new Error("请先重新读取手机策略版本。");
       await propose(ctx.toast, {
         action, obj: paramKey, before, after: value, type: def.type, amplifies: amplify,
         gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E6",
-        command: def.buildCommand({ paramKey, value }),
+        command: def.buildCommand({ paramKey, value, expectedPolicyVersion }),
         target: def.buildTarget({ paramKey }),
       });
       return;
