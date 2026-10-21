@@ -1,4 +1,9 @@
 const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+  CREGIS_PAYOUT_RECOVERY_REQUEST_INVALID: "请填写供应商原单的有效 CID 和 10–300 字核对理由。",
+  CREGIS_PAYOUT_RECOVERY_IN_PROGRESS_OR_CONFLICT: "原单核对正在处理或与原请求不一致，请先刷新核对；重试时保留原 CID、理由和请求号。",
+  CREGIS_PAYOUT_RECOVERY_STATE_CONFLICT: "提现状态或原单 CID 已变化，请刷新详情核对，勿重新发款。",
+  CREGIS_PAYOUT_RECOVERY_EVIDENCE_CONFLICT: "供应商原单与提现地址、金额或业务单号不一致，原预留保持，请核实原单。",
+  CREGIS_PAYOUT_RECOVERY_QUERY_UNAVAILABLE: "供应商原单暂时无法查询，请保留原 CID 和请求号稍后重试，原预留继续保留。",
   H7_VOUCHER_NOT_GRANTABLE: "所配置的优惠券当前不可发放，可能尚未生效、已失效或已停用。请在 F1 核对奖励所选券，并在 H7 核对券状态和有效期；处理后再审核原申请。",
   SUPPORT_RECOVERY_FACTS_UNAVAILABLE: "当前授权范围内暂时无法读取用于核对的客户资料，原操作结果仍待确认；请保留原命令并查询结果，不要重复提交。",
   SUPPORT_RECOVERY_FACTS_CHANGED: "客户绑定或版本已变化，原操作结果尚未完成核对；请保留原命令，重新读取当前获准资料后继续查询。",

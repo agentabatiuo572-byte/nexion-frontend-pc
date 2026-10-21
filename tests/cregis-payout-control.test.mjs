@@ -53,7 +53,7 @@ function harness(data) {
       throw new Error(`Unexpected module: ${name}`);
     },
   };
-  vm.runInNewContext(`${compiled}\nexports.checks = { parseExceptions, canEnableProviderPayout, payoutCapabilityText, payoutSwitchText };`, context);
+  vm.runInNewContext(`${compiled}\nexports.checks = { parseExceptions, canEnableProviderPayout, payoutCapabilityText, payoutSwitchText, canProvisionAddress };`, context);
   return {
     ...exports.checks, requests, confirms,
     render(canManage = true) {
@@ -142,4 +142,25 @@ test("a held enabled gate can still be proposed off, and checker copy carries al
   nodes(tree, "button").find((node) => node.props.children === "复核通过").props.onClick();
   assert.match(api.confirms[0].detail, /地址 开 \/ 入账 关 \/ 出款 开/);
   assert.equal(api.payoutSwitchText({}), "保持现值");
+});
+
+test("address replenishment uses verified pool facts and creates only one candidate through confirmation", async () => {
+  const data = snapshot();
+  data.addressPool = { available: true, total: 3, unassigned: 2, assigned: 1, verifying: 0, unknown: 0, limit: 60 };
+  const api = harness(data);
+  assert.equal(api.canProvisionAddress(api.parseExceptions(data)), true);
+  const button = nodes(api.render(), "button").find((node) => node.props.children === "补充收款地址");
+  assert.equal(button.props.disabled, false);
+  button.props.onClick();
+  assert.match(api.confirms[0].detail, /核对归属、余额和链上历史/);
+  await api.confirms[0].run("为测试用户补充一个经过核验的收款地址");
+  assert.equal(api.requests.filter((row) => row.options?.method === "POST").length, 1);
+  assert.equal(api.requests.find((row) => row.options?.method === "POST").path, "/cregis/addresses/provision");
+  assert.equal(nodes(api.render(false), "button").some((node) => node.props.children === "补充收款地址"), false);
+  for (const pool of [undefined, { ...data.addressPool, available: false }, { ...data.addressPool, total: 60 },
+    { ...data.addressPool, verifying: 1 }, { ...data.addressPool, unknown: 1 }]) {
+    assert.equal(api.canProvisionAddress({ ...data, addressPool: pool }), false);
+  }
+  assert.equal(api.canProvisionAddress({ ...data, provisionGate: { ...data.provisionGate, state: "BLOCKED" } }), false);
+  assert.throws(() => api.parseExceptions({ ...data, addressPool: { ...data.addressPool, unassigned: "2" } }), /地址池状态无效/);
 });

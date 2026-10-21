@@ -113,6 +113,13 @@ function backendPath(parts: string[]) {
   if (parts.length === 3 && parts[0] === "withdrawals" && isText(parts[1]) && parts[2] === "bank") {
     return `/api/admin/finance/withdrawals/${encodeURIComponent(parts[1])}/bank`;
   }
+  if (parts.length === 3 && parts[0] === "withdrawals" && isText(parts[1]) && parts[2] === "cregis") {
+    return `/api/admin/finance/withdrawals/${encodeURIComponent(parts[1])}/cregis`;
+  }
+  if (parts.length === 4 && parts[0] === "withdrawals" && isText(parts[1])
+      && parts[2] === "cregis" && parts[3] === "recover") {
+    return `/api/admin/finance/withdrawals/${encodeURIComponent(parts[1])}/cregis/recover`;
+  }
   if (parts.length === 4 && parts[0] === "withdrawals" && /^WD-[A-Za-z0-9]{1,60}$/.test(parts[1])
       && parts[2] === "bank" && parts[3] === "requery") {
     return `/api/admin/finance/withdrawals/${encodeURIComponent(parts[1])}/bank/requery`;
@@ -129,6 +136,11 @@ async function proxy(request: Request, context: RouteContext) {
 
   if (!targetPath) {
     return jsonError(404, "FINANCE_ROUTE_NOT_FOUND");
+  }
+  if (path[0] === "withdrawals" && path[2] === "cregis"
+      && ((path.length === 3 && !["GET", "HEAD"].includes(request.method))
+        || (path.length === 4 && request.method !== "POST"))) {
+    return jsonError(405, "CREGIS_RECOVERY_METHOD_NOT_ALLOWED");
   }
   if (path[0] === "vietqr" && path[1] === "orders"
       && ((path.length === 2 && !["GET", "HEAD"].includes(request.method))

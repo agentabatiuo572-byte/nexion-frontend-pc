@@ -275,11 +275,53 @@ test("D2 separates the primary search bar from advanced filters", () => {
 test("D2 detail fetch is latest-only and fails closed before any write", () => {
   assert.match(page, /const detailRequestSeq = useRef\(0\)/);
   assert.match(page, /const seq = \+\+detailRequestSeq\.current/);
-  assert.match(page, /if \(seq === detailRequestSeq\.current\) \{ setDetail\(latest\); setBankDetail\(bank\); \}/);
+  assert.match(page, /if \(seq === detailRequestSeq\.current\) \{ setDetail\(latest\); setBankDetail\(bank\); setCregisDetail\(cregis\); \}/);
   assert.match(page, /detailRequestSeq\.current \+= 1/);
   assert.match(page, /setDetailError\(message\)/);
   assert.match(page, /detailLoading \|\| !!detailError/);
   assert.match(page, /为避免按旧数据处置，写操作已关闭/);
+});
+
+test("D2 actual detail commands discard stale channel facts and fail closed when Cregis facts fail", async () => {
+  const ast = ts.createSourceFile("d2.tsx", page, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const declarations = new Map();
+  function visit(node) {
+    if (ts.isVariableDeclaration(node) && ["openDetail", "closeDetail"].includes(node.name.getText(ast)))
+      declarations.set(node.name.getText(ast), `const ${node.getText(ast)};`);
+    ts.forEachChild(node, visit);
+  }
+  visit(ast); assert.equal(declarations.size, 2);
+  const code = ts.transpileModule([...declarations.values()].join("\n"), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  const state = {}, pending = new Map(), facts = new Map();
+  const context = { Error, detailRequestSeq: { current: 0 },
+    fetchD2WithdrawalDetail: no => new Promise(resolve => pending.set(no, resolve)),
+    fetchD2BankPayout: async no => ({ withdrawalNo: no, state: "PENDING" }),
+    fetchD2CregisPayout: async no => {
+      if (facts.get(no) instanceof Error) throw facts.get(no);
+      return facts.get(no);
+    }, displayAdminError: error => error.message, toast: () => {} };
+  for (const [setter, key] of [["setDetail", "detail"], ["setBankDetail", "bank"], ["setCregisDetail", "cregis"],
+    ["setDetailLoading", "loading"], ["setDetailError", "error"]]) context[setter] = value => { state[key] = value; };
+  vm.runInNewContext(`${code};globalThis.commands={openDetail,closeDetail};`, context);
+  const { openDetail, closeDetail } = context.commands;
+  const old = openDetail({ withdrawalNo: "OLD" }), fresh = openDetail({ withdrawalNo: "FRESH" });
+  const latest = { withdrawalNo: "FRESH", chain: "USDT-BEP20" };
+  const latestFacts = { withdrawalNo: "FRESH", source: "provider", state: "TX_ORPHANED", canRecover: true };
+  facts.set("FRESH", latestFacts); pending.get("FRESH")(latest); await fresh;
+  pending.get("OLD")({ withdrawalNo: "OLD", chain: "BANK-VND" }); await old;
+  assert.equal(state.detail, latest); assert.equal(state.cregis, latestFacts); assert.equal(state.bank, null);
+
+  const closing = openDetail({ withdrawalNo: "CLOSED" }); closeDetail();
+  pending.get("CLOSED")({ withdrawalNo: "CLOSED", chain: "BANK-VND" }); await closing;
+  assert.equal(state.detail, null); assert.equal(state.cregis, null);
+
+  const failed = openDetail({ withdrawalNo: "UNAVAILABLE" });
+  facts.set("UNAVAILABLE", new Error("Cregis facts unavailable"));
+  pending.get("UNAVAILABLE")({ withdrawalNo: "UNAVAILABLE", chain: "USDT-BEP20" }); await failed;
+  assert.equal(state.cregis, null); assert.equal(state.bank, null);
+  assert.equal(state.error, "Cregis facts unavailable"); assert.equal(state.loading, false);
 });
 
 test("D2 exposes an order-scoped development cooldown simulation without client time travel", () => {
@@ -412,7 +454,7 @@ test("D2 explains service-generated K4 review reasons without suggesting approva
   assert.equal(f.operationalText("人工核验中"), "人工核验中");
   assert.match(f.operationalText("H1_COOLDOWN_FAST_TRACK"), /冷却中/);
   assert.match(page, /lifecycleSummary\(row\)/);
-  assert.match(page, /v=\{lifecycleSummary\(detail\)\}/);
+  assert.match(page, /<KV k="说明" v=\{cregisDetail\?\.source === "provider" \? "由原供应商订单和链上证据决定资金结算，原单恢复不会重新发款。" : lifecycleSummary\(detail\)\} \/>/);
 });
 
 test("D2 renders H1 month/phase snapshots as snapshots, preserving explicit legacy periods and unknowns", () => {

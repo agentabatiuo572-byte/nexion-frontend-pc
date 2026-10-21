@@ -19,7 +19,9 @@ test("mixed withdrawal history uses each order channel, without changing order e
   const input = "WD-B/BANK-VND/SENT/20.000000 USDT@2026-10-16 16:51 | WD-C/TRC20/SENT/21.000000 USDT@2026-09-17 12:13 | WD-F/BANK-VND/TX_FAILED/30.000000 USDT@2026-09-16 18:52";
   assert.equal(context.withdrawalHistoryText(input), input.replace("BANK-VND/SENT", "BANK-VND/银行处理中").replace("TRC20/SENT", "TRC20/已广播").replace("BANK-VND/TX_FAILED", "BANK-VND/代付失败"));
   assert.equal(context.withdrawalHistoryText("WD-O/BANK-VND/TX_ORPHANED/1 USDT@time"), "WD-O/BANK-VND/人工核对/1 USDT@time");
-  assert.equal(context.withdrawalHistoryText("WD-C/TRC20/TX_ORPHANED/1 USDT@time"), "WD-C/TRC20/孤块/死亡信件/1 USDT@time");
+  const orphanedHistory = context.withdrawalHistoryText("WD-C/TRC20/TX_ORPHANED/1 USDT@time");
+  assert.equal(orphanedHistory, "WD-C/TRC20/交易处理异常，需人工核对/1 USDT@time");
+  assert.doesNotMatch(orphanedHistory, /已退款|已到账|已确认/);
 });
 
 test("legacy history never guesses channel from the currently open order", () => {

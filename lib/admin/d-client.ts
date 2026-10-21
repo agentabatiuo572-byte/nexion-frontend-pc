@@ -2102,6 +2102,47 @@ export async function fetchD2WithdrawalDetail(withdrawalNo: string) {
   return normalizeWithdrawal(await apiRequest<unknown>("finance", `/withdrawals/${encodeURIComponent(withdrawalNo)}`));
 }
 
+export interface D2CregisPayout {
+  withdrawalNo: string; source: string | null; providerCid: string | null; state: string; canRecover: boolean;
+}
+
+function d2CregisCid(value: unknown): string {
+  if (typeof value !== "string" || !/^[1-9]\d{0,18}$/.test(value)
+      || (value.length === 19 && value > "9223372036854775807")) d2Invalid("cregisCid");
+  return value;
+}
+
+export async function fetchD2CregisPayout(withdrawalNo: string): Promise<D2CregisPayout> {
+  const row = d2Object(await apiRequest<unknown>("finance", `/withdrawals/${encodeURIComponent(withdrawalNo)}/cregis`), "cregisPayout");
+  if (row.withdrawalNo !== withdrawalNo || typeof row.canRecover !== "boolean"
+      || !(row.source === null || typeof row.source === "string")) d2Invalid("cregisIdentity");
+  if (row.source !== null && !["provider", "mock", "dev-simulator", "hdpay"].includes(String(row.source))) d2Invalid("cregisSource");
+  if (row.canRecover && (row.source !== "provider" || row.state !== "TX_ORPHANED")) d2Invalid("cregisCapability");
+  return { withdrawalNo, source: row.source === null ? null : d2String(row.source, "cregisSource"),
+    providerCid: row.providerCid === null ? null : d2CregisCid(row.providerCid),
+    state: d2String(row.state, "cregisState"), canRecover: row.canRecover };
+}
+
+export async function recoverD2CregisPayout(withdrawalNo: string, providerCid: string, reason: string, idempotencyKey: string) {
+  try {
+    d2CregisCid(providerCid);
+    if (reason.trim().length < 10 || reason.trim().length > 300) d2Invalid("cregisRecoveryReason");
+  } catch {
+    throw new Error(formatAdminApiError("CREGIS_PAYOUT_RECOVERY_REQUEST_INVALID", "CREGIS_PAYOUT_RECOVERY_REQUEST_INVALID"));
+  }
+  const response = await apiRequest<unknown>("finance", `/withdrawals/${encodeURIComponent(withdrawalNo)}/cregis/recover`, {
+    method: "POST", body: JSON.stringify({ providerCid, reason: reason.trim() }), idempotencyKey,
+  });
+  try {
+    const row = d2Object(response, "cregisRecovery");
+    if (row.withdrawalNo !== withdrawalNo || d2CregisCid(row.providerCid) !== providerCid
+        || !["SENT", "CONFIRMED", "FAILED"].includes(String(row.state))) d2Invalid("cregisRecoveryIdentity");
+    return { withdrawalNo, providerCid, state: d2String(row.state, "cregisState") };
+  } catch {
+    throw new DOutcomeUnknownError(idempotencyKey);
+  }
+}
+
 export interface D2BankPayout {
   withdrawalNo: string; state: string; version: number; providerOrderId: string | null; providerStatus: number | null; lastError: string | null;
   bankName: string; maskedAccount: string; amountVnd: number; rateVnd: number; feeUsdt: number; netUsdt: number;

@@ -9,6 +9,7 @@ type CregisExceptions = {
   mode: string;
   depositEnabled: boolean;
   depositCreditEnabled: boolean;
+  addressPool?: { available: boolean; total: number; unassigned: number; assigned: number; verifying: number; unknown: number; limit: number };
   providerPayout?: { configured: boolean; enabled: boolean; disabledReason: string | null };
   provisionGate: { state: string; updatedAt?: string; version?: number;
     assignEnabled?: boolean | number; creditEnabled?: boolean | number; payoutEnabled?: boolean | number };
@@ -61,7 +62,23 @@ function parseExceptions(value: unknown): CregisExceptions {
       throw new Error("Cregis 链上出款能力响应无效");
     }
   }
+  if (row.addressPool !== undefined) {
+    const pool = row.addressPool as CregisExceptions["addressPool"];
+    if (!pool || typeof pool.available !== "boolean" || [pool.total, pool.unassigned, pool.assigned, pool.verifying, pool.unknown, pool.limit]
+      .some((count) => !Number.isSafeInteger(count) || count < 0)
+      || pool.limit !== 60 || pool.total > pool.limit
+      || pool.unassigned + pool.assigned + pool.verifying + pool.unknown > pool.total) {
+      throw new Error("Cregis 地址池状态无效");
+    }
+  }
   return value as CregisExceptions;
+}
+
+function canProvisionAddress(data: CregisExceptions): boolean {
+  return data.mode === "PROVIDER" && data.provisionGate.state === "IDLE"
+    && Boolean(data.provisionGate.assignEnabled) && data.addressPool?.available === true
+    && data.addressPool.total < data.addressPool.limit && data.addressPool.verifying === 0
+    && data.addressPool.unknown === 0;
 }
 
 function canEnableProviderPayout(data: CregisExceptions): boolean {
@@ -293,6 +310,15 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
           <span className={`bdg ${data.provisionGate.state === "IDLE" ? "ok" : "bad"}`}>{data.provisionGate.state === "IDLE" ? "建址流程空闲" : "停止新地址分配"}</span>
         </div>
         <div className="dtint">{payoutCapabilityText(data)}</div>
+        <div className="cregis-recon">
+          <span>专属收款地址池：{data.addressPool?.available
+            ? `可分配 ${data.addressPool.unassigned} · 已分配 ${data.addressPool.assigned} · 核验中 ${data.addressPool.verifying} · 待核查 ${data.addressPool.unknown} · 总计 ${data.addressPool.total}/${data.addressPool.limit}`
+            : "暂不可用，请刷新核对"}</span>
+          {canManage && <button className="l-btn sm" disabled={busy || loading || !canProvisionAddress(data)} onClick={() => confirmCommand(
+            "补充一个专属收款地址", "向 Cregis 创建一个候选地址；系统核对归属、余额和链上历史后才可分配给用户。创建结果不明时请先核查，勿连续重试。",
+            "/cregis/addresses/provision",
+          )}>补充收款地址</button>}
+        </div>
         <div className="f-stats cregis-overview">
           <div className="f-stat"><div className="k">地址分配</div><div className={`v ${data.provisionGate.assignEnabled ? "" : "cregis-off"}`}>{data.provisionGate.assignEnabled ? "已开启" : "已关闭"}</div><div className="sub">{data.provisionGate.state} · {data.provisionGate.updatedAt ?? "更新时间未知"}</div></div>
           <div className="f-stat"><div className="k">自动入账</div><div className={`v ${data.provisionGate.creditEnabled ? "" : "cregis-off"}`}>{data.provisionGate.creditEnabled ? "已开启" : "已关闭"}</div><div className="sub">以资金开关为准 · 版本 {data.provisionGate.version ?? "未知"}</div></div>

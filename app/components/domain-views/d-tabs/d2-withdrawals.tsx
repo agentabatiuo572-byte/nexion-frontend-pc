@@ -12,6 +12,9 @@ import {
   fetchD2BankPayout,
   requeryD2BankPayout,
   type D2BankPayout,
+  fetchD2CregisPayout,
+  recoverD2CregisPayout,
+  type D2CregisPayout,
   fetchD2Withdrawals,
   fetchD2DevelopmentCapabilities,
   fetchD5WithdrawalParams,
@@ -81,6 +84,12 @@ function bankStatusLabel(row: D2Withdrawal) {
   if (row.status === "TX_ORPHANED") return "人工核对 · 未解冻";
   if (["FAILED", "TX_FAILED"].includes(row.status)) return "代付失败 · 已退回";
   return statusLabel(row.status);
+}
+
+function cregisStatusLabel(state: string) {
+  return ({ PROCESSING: "供应商提交处理中", SENT: "原代付单已绑定，等待链上确认",
+    TX_ORPHANED: "供应商提交结果待核对", FAILED: "代付确定失败", TX_FAILED: "代付确定失败",
+    CONFIRMED: "链上已确认到账" } as Record<string, string>)[state] ?? statusLabel(state);
 }
 
 function historyStatusLabel(status: string, chain?: string) {
@@ -236,8 +245,13 @@ function actionLabel(action: D2ReviewAction) {
   return ({ APPROVE: "放行", DELAY: "延迟", FREEZE: "冻结", UNFREEZE: "解冻", REJECT: "拒绝并退款", REFUND: "手动退款" } as const)[action];
 }
 
-function actionCandidates(row: D2Withdrawal): D2ReviewAction[] {
+function actionCandidates(row: D2Withdrawal, cregis?: D2CregisPayout | null): D2ReviewAction[] {
   const status = row.status.toUpperCase();
+  if (["USDT-BEP20", "BEP20"].includes(row.chain)) {
+    if (cregis?.withdrawalNo === row.withdrawalNo && cregis.source === "provider") return [];
+    if (["PROCESSING", "SENT", "CHAIN_SUBMITTED", "FAILED", "TX_FAILED", "TX_ORPHANED", "DEAD", "REVIEW_REJECTED", "REJECTED", "ADDRESS_INVALID"].includes(status)
+        && (!cregis || cregis.withdrawalNo !== row.withdrawalNo)) return [];
+  }
   if (row.chain === "BANK-VND" && ["PROCESSING", "FAILED", "TX_FAILED", "TX_ORPHANED", "REVIEW_REJECTED", "ADDRESS_INVALID", "DEAD"].includes(status)) return [];
   if (["REVIEW_PENDING", "REVIEWING"].includes(status)) return ["APPROVE", "DELAY", "FREEZE", "REJECT"];
   if (["EXTENDED_HOLD", "DELAYED"].includes(status)) return [];
@@ -462,6 +476,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const [batchAction, setBatchAction] = useState<D2BatchAction | "">("");
   const [detail, setDetail] = useState<D2Withdrawal | null>(null);
   const [bankDetail, setBankDetail] = useState<D2BankPayout | null>(null);
+  const [cregisDetail, setCregisDetail] = useState<D2CregisPayout | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
   /** 单调递增请求号:并发 load 时只有最后一发的响应可以落地,旧响应不许覆盖新筛选结果。 */
@@ -607,12 +622,14 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     const seq = ++detailRequestSeq.current;
     setDetail(row);
     setBankDetail(null);
+    setCregisDetail(null);
     setDetailLoading(true);
     setDetailError("");
     try {
       const latest = await fetchD2WithdrawalDetail(row.withdrawalNo);
       const bank = latest.chain === "BANK-VND" ? await fetchD2BankPayout(row.withdrawalNo) : null;
-      if (seq === detailRequestSeq.current) { setDetail(latest); setBankDetail(bank); }
+      const cregis = ["USDT-BEP20", "BEP20"].includes(latest.chain) ? await fetchD2CregisPayout(row.withdrawalNo) : null;
+      if (seq === detailRequestSeq.current) { setDetail(latest); setBankDetail(bank); setCregisDetail(cregis); }
     } catch (cause) {
       if (seq !== detailRequestSeq.current) return;
       const message = cause instanceof Error ? displayAdminError(cause) : "单笔详情加载失败";
@@ -621,6 +638,38 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     } finally {
       if (seq === detailRequestSeq.current) setDetailLoading(false);
     }
+  };
+
+  const confirmCregisRecovery = (row: D2Withdrawal, cregis: D2CregisPayout) => {
+    if (!cregis.canRecover || cregis.source !== "provider" || cregis.withdrawalNo !== row.withdrawalNo
+        || !hasAuthority("finance_d2_read") || !hasAuthority("finance_d2_withdrawal_approve")) return;
+    openActionConfirm({
+      action: `核对 Cregis 原代付单 · ${row.withdrawalNo}`,
+      detail: "请从 Cregis 核实这笔提现原单的 CID。系统会独立核对原单收款地址、金额与业务单号，再继续观察原提现；不会重新发款或直接标记成功，原预留按真实证据处理。",
+      businessForm: { kind: "multi-field", title: "原供应商订单", fields: [
+        { key: "providerCid", label: "Cregis 原单 CID", inputKind: "text", required: true,
+          current: cregis.providerCid ?? "", minLength: 1, maxLength: 19, pattern: "^[1-9][0-9]{0,18}$",
+          patternMessage: "CID 必须为正整数字符串", help: "填写原单 CID，请勿创建或重发新代付单。" },
+      ] },
+      reasonMin: 10, reasonMax: 300, completionCopy: "原单核对已提交",
+      run: async (reason, _newValue, form) => {
+        const providerCid = String((form as Record<string, unknown> | undefined)?.providerCid ?? "").trim();
+        const scope = `cregis-recover|${row.withdrawalNo}`;
+        const key = pendingKeys.get(scope) ?? operationKey(scope);
+        pendingKeys.remember(scope, key); setSubmitting(scope);
+        try {
+          await recoverD2CregisPayout(row.withdrawalNo, providerCid, reason, key);
+          pendingKeys.forget(scope);
+          toast("原代付单已核对，系统将按供应商及链上证据继续处理；未重新发款");
+          await load(); await openDetail(row);
+        } catch (cause) {
+          if (!isDOutcomeUnknownError(cause)) pendingKeys.forget(scope);
+          await load(); await openDetail(row);
+          toast(cause instanceof Error ? displayAdminError(cause) : "原单核对失败，请保留原 CID 核对后重试");
+          throw cause;
+        } finally { setSubmitting(""); }
+      },
+    });
   };
 
   const confirmBankRequery = (row: D2Withdrawal, bank: D2BankPayout) => {
@@ -687,6 +736,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const closeDetail = () => {
     detailRequestSeq.current += 1;
     setDetail(null);
+    setCregisDetail(null);
     setDetailLoading(false);
     setDetailError("");
   };
@@ -837,11 +887,14 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         && hasAuthority("finance_d2_withdrawal_approve") && hasAuthority("finance_d2_withdrawal_refund")
         && <button className="l-btn primary" disabled={!!submitting || detailLoading || !!detailError}
           onClick={() => confirmBankRequery(detail, bankDetail)}>查询原代付单并核对</button>}
+      {cregisDetail?.canRecover && hasAuthority("finance_d2_read") && hasAuthority("finance_d2_withdrawal_approve")
+        && <button className="l-btn primary" disabled={!writesEnabled || !!submitting || detailLoading || !!detailError}
+          onClick={() => confirmCregisRecovery(detail, cregisDetail)}>核对 Cregis 原代付单</button>}
       {developmentCapabilities?.simulateCooldownExpiry
         && hasAuthority("finance_d2_withdrawal_approve")
         && developmentSimulationEligible(detail)
         && <button className="l-btn primary" disabled={!writesEnabled || !!submitting || detailLoading || !!detailError} onClick={() => confirmDevelopmentSimulation(detail)}>模拟冷却到期</button>}
-      {actionCandidates(detail).filter((action) => hasAuthority(ACTION_AUTHORITY[action])).map((action) => <button key={action} className="l-btn primary" disabled={!writesEnabled || !!submitting || detailLoading || !!detailError || (action === "APPROVE" && (routingUnavailable(detail) || (detail.chain === "BANK-VND" && bankDetail?.beneficiaryEligibility?.canWithdraw !== true)))} onClick={() => confirmReview(detail, action)}>{actionLabel(action)}</button>)}
+      {actionCandidates(detail, cregisDetail).filter((action) => hasAuthority(ACTION_AUTHORITY[action])).map((action) => <button key={action} className="l-btn primary" disabled={!writesEnabled || !!submitting || detailLoading || !!detailError || (action === "APPROVE" && (routingUnavailable(detail) || (detail.chain === "BANK-VND" && bankDetail?.beneficiaryEligibility?.canWithdraw !== true)))} onClick={() => confirmReview(detail, action)}>{actionLabel(action)}</button>)}
     </>}>
       {detailLoading && <div className="dtint">正在读取服务端最新详情…</div>}
       {detailError && <div className="dtint warn">服务端最新详情加载失败 · {detailError} · 为避免按旧数据处置，写操作已关闭，请关闭后重试。</div>}
@@ -849,9 +902,26 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         <div className="f-stat"><div className="k">用户画像</div><div className="v">{detail.userNo}</div><div className="sub">{detail.nickname} · {detail.userLevel} · {detail.phoneMasked || "未展示手机号"}</div></div>
         <div className="f-stat warn"><div className="k">风险路由</div><div className="v">{routingPriorityLabel(detail)} · {k4RiskText(detail)}</div><div className="sub">K3 {routeLabel(detail.k3RiskRoute)} · {ruleSummary(detail.hitRules)}</div></div>
         <div className="f-stat cyan"><div className="k">账户状态</div><div className="v">{userStatusLabel(detail.userStatus)}</div><div className="sub">24h 第 {detail.withdrawalCount24h} 笔 · IP 段 {detail.ipSegment || "—"}</div></div>
-        <div className="f-stat"><div className="k">当前状态</div><div className="v">{bankStatusLabel(detail)}</div><div className="sub">{detail.chain === "BANK-VND" ? "已派发后以 HDPay 查单结果结算；结果不明不重发、不手工退款。" : lifecycleSummary(detail)}</div></div>
+        <div className="f-stat"><div className="k">当前状态</div><div className="v">{cregisDetail?.source === "provider" ? cregisStatusLabel(cregisDetail.state) : bankStatusLabel(detail)}</div><div className="sub">{detail.chain === "BANK-VND" ? "已派发后以 HDPay 查单结果结算；结果不明不重发、不手工退款。" : cregisDetail?.source === "provider" ? "按原代付单查询与链上证据处理；恢复原单不会重新发款。" : lifecycleSummary(detail)}</div></div>
       </div>
       <div className="d2-detail-grid">
+        {["USDT-BEP20", "BEP20"].includes(detail.chain) && <section className="d2-detail-section">
+          <h3>Cregis 代付核对</h3>
+          {cregisDetail ? <>
+            <KV k="执行来源" v={cregisDetail.source === "provider" ? "Cregis 正式供应商" : "未进入 Cregis 正式供应商流程"} />
+            <KV k="原单 CID" v={cregisDetail.providerCid ?? "尚未取得，需从供应商核对原单"} />
+            <KV k="处理状态" v={cregisDetail.source === "provider" ? cregisStatusLabel(cregisDetail.state) : statusLabel(cregisDetail.state)} />
+            {cregisDetail.source === "provider" && <>
+              <KV k="原提现预留" v={["PROCESSING", "SENT", "TX_ORPHANED"].includes(cregisDetail.state)
+                ? "继续保留，等待原单及链上证据；不重复发款或手工退款"
+                : cregisDetail.state === "CONFIRMED" ? "已按链上确认完成原预留结算"
+                  : "按原提现结算流程处理，资金结果请核对账单流水"} />
+              <div className="dtint">{cregisDetail.canRecover
+                ? "请核实供应商原单 CID 后使用“核对 Cregis 原代付单”；核对会继续处理原提现，不重新打款。"
+                : "系统按供应商原单与链上证据继续处理；结果不明时请核对原单，勿重新放行或退款。"}</div>
+            </>}
+          </> : <div className="dtint warn">代付事实正在读取或暂不可用；请读取成功后再处置。</div>}
+        </section>}
         {detail.chain === "BANK-VND" && <section className="d2-detail-section">
           <h3>HDPay 银行代付</h3>
           {bankDetail ? <>
@@ -886,8 +956,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         </section>
         <section className="d2-detail-section">
           <h3>生命周期</h3>
-          <KV k="状态" v={<span className={`bdg ${statusTone(detail.status)}`}>{bankStatusLabel(detail)}</span>} />
-          <KV k="说明" v={lifecycleSummary(detail)} />
+          <KV k="状态" v={<span className={`bdg ${statusTone(detail.status)}`}>{cregisDetail?.source === "provider" ? cregisStatusLabel(cregisDetail.state) : bankStatusLabel(detail)}</span>} />
+          <KV k="说明" v={cregisDetail?.source === "provider" ? "由原供应商订单和链上证据决定资金结算，原单恢复不会重新发款。" : lifecycleSummary(detail)} />
           <KV k="复查时间" v={timeText(detail.holdUntil)} />
           <KV k="责任人" v={detail.lifecycleOwner || "系统自动"} />
           <KV k="持有 / 冻结期限" v={freezePeriodLabel(detail.freezePeriod)} />
