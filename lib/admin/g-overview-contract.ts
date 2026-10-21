@@ -139,6 +139,7 @@ export function assertG1OverviewContract<T>(value: T): T {
   const module = "G1";
   const root = canonicalRoot(module, value, module);
   if (root.product !== "staking") fail(module, "data.product");
+  bool(module, root.appVisible, "data.appVisible");
   numeric(module, root.currentNexPrice, "data.currentNexPrice");
   const stats = record(module, root.stats, "data.stats");
   const statKeys = [

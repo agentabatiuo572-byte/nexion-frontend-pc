@@ -95,6 +95,7 @@ interface BackendOverview {
   positions?: BackendPositionGroup[] | null;
   stateMachine?: string[] | null;
   serverCanonical?: boolean | null;
+  appVisible?: boolean | null;
   sources?: string[] | null;
 }
 
@@ -154,7 +155,7 @@ export interface G1Pool {
   blockedBy: G1PoolBlockReason;
 }
 
-export type G1PoolBlockReason = "GLOBAL_GATE" | "TIER_KILLED" | "TIER_DISABLED" | null;
+export type G1PoolBlockReason = "GLOBAL_GATE" | "TIER_KILLED" | "TIER_DISABLED" | "APP_HIDDEN" | null;
 
 export interface G1PositionRow {
   positionNo: string;
@@ -189,6 +190,7 @@ export interface G1Overview {
   positions: G1PositionGroup[];
   stateMachine: string[];
   serverCanonical: boolean;
+  appVisible: boolean;
   sources: string[];
 }
 
@@ -236,7 +238,7 @@ function moneyMillions(value: number) {
 }
 
 function normalizePoolBlockReason(value: unknown): G1PoolBlockReason {
-  return value === "GLOBAL_GATE" || value === "TIER_KILLED" || value === "TIER_DISABLED" ? value : null;
+  return value === "GLOBAL_GATE" || value === "TIER_KILLED" || value === "TIER_DISABLED" || value === "APP_HIDDEN" ? value : null;
 }
 
 function normalizePool(row: BackendPool): G1Pool {
@@ -337,6 +339,7 @@ function normalizeOverview(data: BackendOverview | null | undefined): G1Overview
     positions,
     stateMachine: data?.stateMachine ?? [],
     serverCanonical: data?.serverCanonical === true,
+    appVisible: data?.appVisible !== false,
     sources: data?.sources ?? [],
   };
 }
@@ -389,6 +392,10 @@ function g1OverviewMutation(
 
 export async function fetchG1StakingOverview() {
   return normalizeOverview(await g1Request<BackendOverview>("/staking"));
+}
+
+export async function updateG1StakingVisibility(visible: boolean, reason: string, operator: string) {
+  return g1OverviewMutation("/staking/visibility", "PATCH", { value: String(visible), reason, operator }, "g1-visibility");
 }
 
 export async function updateG1StakingPoolParam(tierKey: string, paramKey: "apy" | "penalty" | "min", value: string, reason: string, operator: string) {

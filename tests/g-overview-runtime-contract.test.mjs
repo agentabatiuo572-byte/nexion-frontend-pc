@@ -41,6 +41,7 @@ const canonicalTail = {
 const g1 = {
   domain: "G1",
   product: "staking",
+  appVisible: true,
   currentNexPrice: 1,
   stats: {
     lockedTotalUsd: 0,

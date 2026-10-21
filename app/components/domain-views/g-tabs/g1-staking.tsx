@@ -12,6 +12,7 @@ import {
   updateG1StakingPoolKillStatus,
   updateG1StakingPoolParam,
   updateG1StakingPoolSaleStatus,
+  updateG1StakingVisibility,
   type G1Overview,
   type G1Pool,
   type G1PositionGroup,
@@ -235,6 +236,22 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
     });
   };
 
+  const toggleAppVisibility = () => {
+    const nextVisible = !overview!.appVisible;
+    openActionConfirm({
+      action: `${nextVisible ? "展示" : "隐藏"} App 质押功能`,
+      detail: nextVisible
+        ? "恢复 App 质押入口与存量持仓页面。各档是否可新开仓仍由档位与 J1 开关决定。"
+        : "App 将隐藏质押入口、推荐和持仓页面，并停止接受新质押。已有持仓、账务和到期规则保留，恢复展示后可继续办理。",
+      amplifies: nextVisible,
+      coverage: { coverageRatio: coverage.coverageRatio, redlinePct: coverage.redlinePct },
+      run: async (reason) => {
+        await mutate("visibility", () => updateG1StakingVisibility(nextVisible, reason, currentAdminOperator()),
+          `App 质押功能已${nextVisible ? "展示" : "隐藏"}`);
+      },
+    });
+  };
+
   // 单档状态在 G1 展示，但恢复权限和后端命令归 J1；页面只发起 J1 授权的恢复命令。
   const resumeTier = (pool: G1Pool) => {
     if (!pool.killed) return;
@@ -303,11 +320,12 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
             const busy = !!busyKey;
             // 对客可售 = 档位自身可售 且 整池闸开。整池闸熔断时四档必须显示为不可售,
             // 否则 PC 顶部「整池闸 已熔断(J1)」与档位「营业中」同屏自相矛盾(App 显示停售)。
-            const blockedByGate = !gate.enabled;
+            const blockedByGate = !gate.enabled || !overview!.appVisible;
             const sellable = pool.sellable && !blockedByGate;
             const statusLabel = blockedByGate ? "暂停售卖" : pool.statusLabel;
             const statusTone = blockedByGate ? "bad" : pool.statusTone;
-            const blockedReason = blockedByGate
+            const blockedReason = !overview!.appVisible ? "App 质押展示已关闭"
+              : blockedByGate
               ? "整池闸已熔断(J1)：全档对客停售，恢复只能走 J1 流程"
               : pool.blockedBy === "TIER_KILLED" ? "该档已熔断"
                 : pool.blockedBy === "TIER_DISABLED" ? "该档已停售" : "";
@@ -344,7 +362,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
                     className={`l-btn sm${pool.enabled && !pool.killed ? " mc" : ""}`}
                     onClick={() => togglePool(pool)}
                     disabled={busy || pool.killed || !canToggleSale}
-                    title={blockedByGate ? "整池闸已熔断,该档在恢复闸门后才会对客开售" : undefined}
+                    title={blockedByGate ? blockedReason : undefined}
                     style={pool.killed ? { opacity: 0.4, cursor: "not-allowed" } : undefined}
                   >
                     {pool.enabled ? "停售" : "恢复开售"}
@@ -386,6 +404,19 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
         <div className="f-stat warn"><div className="k">累计应付利息</div><div className="v">{fmtM(stats.interestUsd)}</div><div className="sub">按已锁天数线性派生 · 真实持仓</div></div>
         <div className="f-stat danger"><div className="k">单档熔断</div><div className="v">{stats.killedCount}</div><div className="sub">高息长锁档重点盯 · 整池闸 {gate.enabled ? "在线(J1)" : "已熔断(J1)"}</div></div>
       </div>
+
+      <section className="l-card">
+        <div className="l-h">
+          <span className="ttl">App 质押展示</span>
+          <span className="sub">· 关闭后隐藏所有质押入口及持仓页面，并停止新开仓</span>
+          <div className="r">
+            <span className={`bdg ${overview!.appVisible ? "ok" : "dim"}`}>{overview!.appVisible ? "展示中" : "已隐藏"}</span>
+            <button className="l-btn sm mc" disabled={!!busyKey || !canToggleSale}
+              onClick={toggleAppVisibility}>{overview!.appVisible ? "关闭展示" : "恢复展示"}</button>
+          </div>
+        </div>
+        <div className="l-b">已有持仓和账务继续保留。恢复展示后，用户可继续查看持仓并按原规则办理。</div>
+      </section>
 
       <section className="l-card">
         <div className="l-h">

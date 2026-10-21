@@ -1187,13 +1187,14 @@
       "id": "OPS-G-02",
       "domain": "G",
       "object": "Staking质押池",
-      "action": "停售/恢复开售 + 单档熔断(附处置方案；单档恢复另列欠账)",
+      "action": "停售/恢复开售 + 单档熔断(附处置方案；单档恢复另列欠账) + App 质押展示开关(隐藏存量入口并停止新开仓，持仓保留)",
       "status": "built",
       "view": "g-tabs/g1-staking.tsx",
       "batch": "P1",
       "restActions": [
         "updateG1StakingPoolSaleStatus",
-        "updateG1StakingPoolKillStatus"
+        "updateG1StakingPoolKillStatus",
+        "updateG1StakingVisibility"
       ]
     },
     {

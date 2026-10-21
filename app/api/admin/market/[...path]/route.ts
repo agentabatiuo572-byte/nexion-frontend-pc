@@ -23,6 +23,9 @@ function backendPath(parts: string[]) {
   if (parts.length === 1 && parts[0] === "staking") {
     return "/api/admin/market/staking";
   }
+  if (parts.length === 2 && parts[0] === "staking" && parts[1] === "visibility") {
+    return "/api/admin/market/staking/visibility";
+  }
   if (parts.length === 1 && parts[0] === "exchange") {
     return "/api/admin/market/exchange";
   }
