@@ -152,7 +152,8 @@ test("actual finance proxy admits only the two Cregis routes and restricts their
     IDEMPOTENCY_KEY_HEADER: "Idempotency-Key", ADMIN_TOKEN_COOKIE: "token",
     cookies: async () => ({ get: () => ({ value: "offline-token" }) }), requirePasswordChangeCleared: () => null,
     fetch: async (...args) => { calls.push(args); return Response.json({ code: 0, data: snapshot }); } };
-  execute(declarations("app/api/admin/finance/[...path]/route.ts", ["jsonError", "isText", "backendPath", "proxy"]), context);
+  execute(declarations("lib/admin/cregis-exception-routes.ts", ["cregisExceptionRoute"])
+    + declarations("app/api/admin/finance/[...path]/route.ts", ["jsonError", "isText", "backendPath", "proxy"]), context);
   const base = ["withdrawals", row.withdrawalNo, "cregis"];
   assert.equal(context.backendPath(base), `/api/admin/finance/withdrawals/${row.withdrawalNo}/cregis`);
   assert.equal(context.backendPath([...base, "recover"]), `/api/admin/finance/withdrawals/${row.withdrawalNo}/cregis/recover`);

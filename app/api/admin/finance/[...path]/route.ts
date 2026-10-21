@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { ADMIN_TOKEN_COOKIE, requirePasswordChangeCleared } from "@/lib/admin/require-password-change-cleared";
+import { cregisExceptionRoute } from "@/lib/admin/cregis-exception-routes";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
@@ -17,6 +18,8 @@ function isText(value: string | undefined) {
 }
 
 function backendPath(parts: string[]) {
+  const exceptionRoute = cregisExceptionRoute(parts);
+  if (exceptionRoute) return exceptionRoute.path;
   if (parts.length === 2 && parts[0] === "cregis" && parts[1] === "exceptions") {
     return "/api/admin/finance/cregis/exceptions";
   }
@@ -132,6 +135,10 @@ function backendPath(parts: string[]) {
 
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
+  const exceptionRoute = cregisExceptionRoute(path);
+  if (exceptionRoute && !exceptionRoute.methods.includes(request.method)) {
+    return jsonError(405, "CREGIS_EXCEPTION_METHOD_NOT_ALLOWED");
+  }
   const targetPath = backendPath(path);
 
   if (!targetPath) {

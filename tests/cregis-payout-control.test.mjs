@@ -33,6 +33,7 @@ function harness(data) {
   const context = {
     exports,
     require(name) {
+      if (name === "./cregis-exceptions") return { CregisExceptionOperations: () => null };
       if (name === "react") return {
         useState(initial) {
           const slot = index++;

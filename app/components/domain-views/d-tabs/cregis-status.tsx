@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { financeAdminRequest } from "@/lib/admin/d-client";
 import type { DCtx } from "./types";
+import { CregisExceptionOperations } from "./cregis-exceptions";
 
 type ExceptionRow = Record<string, unknown>;
 type CregisExceptions = {
@@ -424,6 +425,11 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
             {data[key].length > 5 && <div className="s">仅显示前 5 项；请在后端异常接口查看完整记录。</div>}
           </div>)}</div>
         </div>
+        <CregisExceptionOperations canManage={canManage} openActionConfirm={openActionConfirm}
+          sources={[
+            ...data.heldDeposits.filter(row => row.status === "DUST_HOLD").map(row => ({ sourceType: "EVENT", sourceId: String(row.id), title: `低额入金 #${row.id} · ${row.grossAmount ?? "待核对"} USDT` })),
+            ...data.unattributed.map(row => ({ sourceType: "OBSERVATION", sourceId: String(row.id), title: `未归属入金 #${row.id} · ${row.rawAmount ?? "待核对"} USDT` })),
+          ]} />
       </>}
     </div>
   </section>;
