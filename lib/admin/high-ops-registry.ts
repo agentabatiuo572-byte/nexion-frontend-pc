@@ -1610,6 +1610,29 @@ export const HIGH_OPS: HighOpDef[] = [
       } }),
     buildTarget: () => ({ domain: "H", type: "referral_settlement_batch", id: "pending" }),
   },
+  {
+    op: "h8_referral_settlement_user",
+    domain: "H",
+    action: "执行指定新人邀请奖励结算",
+    amplifies: true,
+    type: "fund",
+    gateLabel: "门槛者",
+    targetType: "referral_settlement_batch",
+    buildCommand: (ctx) => {
+      const invitedUserId = Number(ctx.invitedUserId);
+      if (!/^[1-9]\d*$/.test(String(ctx.invitedUserId)) || !Number.isSafeInteger(invitedUserId)) {
+        throw new Error("请填写有效的新人用户 ID");
+      }
+      return { domain: "H", op: "h8_referral_settlement_user", params: {
+        invitedUserId,
+        expectedH8Version: Number(ctx.expectedH8Version),
+        expectedRhythmMonth: Number(ctx.expectedRhythmMonth),
+        rewardSnapshotHash: String(ctx.rewardSnapshotHash),
+      } };
+    },
+    // 与批量结算共用审批锁，避免两个待审批方案交叉发奖。
+    buildTarget: () => ({ domain: "H", type: "referral_settlement_batch", id: "pending" }),
+  },
   // —— I 域内容(批 8) ——
   // buildCommand params 严格对齐后端 OpsTrustDisclosureService.replay(委托架构:I3/I7 委托另 2 service)。
   // I3 通知优先级 CAP(updateCapRule · tier 锁 · amplifies false)

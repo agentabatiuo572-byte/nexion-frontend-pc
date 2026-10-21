@@ -47,6 +47,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [invitedUserIdInput, setInvitedUserIdInput] = useState("");
   const loadGeneration = useRef(0);
   const propose = usePropose();
 
@@ -129,30 +130,33 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     });
   };
 
-  const settle = () => {
+  const settle = (invitedUserId?: number) => {
+    const targeted = invitedUserId != null;
     ctx.openActionConfirm({
-    action: "执行邀请奖励真实结算",
-    detail: `按服务端邀请关系扫描尚未结算的记录；当前 H1 第 ${data?.rhythmMonth ?? "—"} 月倍率计入后，每组结算为新人 ${data?.effectiveRewards?.["newcomer.usdt"] ?? "—"} USDT + ${data?.effectiveRewards?.["newcomer.nex"] ?? "—"} NEX、邀请人 ${data?.effectiveRewards?.["inviter.nex"] ?? "—"} NEX。奖励分别写入真实钱包与资金台账，同一新人只会结算一次。`,
+    action: targeted ? "执行指定新人邀请奖励结算" : "执行邀请奖励真实结算",
+    detail: `${targeted ? `仅结算新人 ${invitedUserId} 的邀请奖励；资格不符或已结算时终止。` : "按服务端邀请关系扫描尚未结算的记录；"}当前 H1 第 ${data?.rhythmMonth ?? "—"} 月倍率计入后，每组结算为新人 ${data?.effectiveRewards?.["newcomer.usdt"] ?? "—"} USDT + ${data?.effectiveRewards?.["newcomer.nex"] ?? "—"} NEX、邀请人 ${data?.effectiveRewards?.["inviter.nex"] ?? "—"} NEX。奖励分别写入真实钱包与资金台账，同一新人只会结算一次。`,
     amplifies: true,
-    edit: { kind: "number", current: "20", unit: "条", min: 1, max: 100, step: 1 },
+    edit: targeted ? undefined : { kind: "number", current: "20", unit: "条", min: 1, max: 100, step: 1 },
     run: async (reason, value) => {
-      const limit = Math.max(1, Math.min(100, Number(value) || 20));
-      const def = findHighOp("h8_referral_settlement")!;
-      const slot = "settle|batch";
+      const limit = targeted ? 1 : Math.max(1, Math.min(100, Number(value) || 20));
+      const def = targeted ? findHighOp("h8_referral_settlement_user")! : findHighOp("h8_referral_settlement")!;
+      const slot = targeted ? `settle|user|${invitedUserId}` : "settle|batch";
       let mintedFresh = false;
       // 指纹必须覆盖整个提案信封:pending 计数进了 body 的 before,刷新页面后它会随新邀请关系变化。
       // 漏掉它则指纹相同而 body 变了 → 后端 payload-bound 防重复提交回 409,且因非全新尝试不弃号 = 24h 死锁。
       const commandKey = commandAttempts.resolve(
         slot,
-        JSON.stringify([limit, data?.version, data?.rhythmMonth, data?.rewardSnapshotHash, data?.pending]),
+        targeted
+          ? JSON.stringify([invitedUserId, data?.version, data?.rhythmMonth, data?.rewardSnapshotHash, data?.pending])
+          : JSON.stringify([limit, data?.version, data?.rhythmMonth, data?.rewardSnapshotHash, data?.pending]),
         () => { mintedFresh = true; return createH8CommandKey("h8-settle"); },
       );
       try {
         await propose(ctx.toast, {
-          action: "执行邀请奖励真实结算",
-          obj: "待结算邀请批次",
+          action: targeted ? "执行指定新人邀请奖励结算" : "执行邀请奖励真实结算",
+          obj: targeted ? `新人 ${invitedUserId}` : "待结算邀请批次",
           before: `待结算 ${Number(data?.pending ?? 0)} 条 · H8 v${data?.version ?? "—"} · H1 第 ${data?.rhythmMonth ?? "—"} 月`,
-          after: `最多结算 ${limit} 条 · 新人 ${data?.effectiveRewards["newcomer.usdt"] ?? "—"} USDT + ${data?.effectiveRewards["newcomer.nex"] ?? "—"} NEX · 邀请人 ${data?.effectiveRewards["inviter.nex"] ?? "—"} NEX · 快照 ${data?.rewardSnapshotHash.slice(0, 12) ?? "—"}…`,
+          after: `${targeted ? `仅结算新人 ${invitedUserId} 的邀请奖励` : `最多结算 ${limit} 条`} · 新人 ${data?.effectiveRewards["newcomer.usdt"] ?? "—"} USDT + ${data?.effectiveRewards["newcomer.nex"] ?? "—"} NEX · 邀请人 ${data?.effectiveRewards["inviter.nex"] ?? "—"} NEX · 快照 ${data?.rewardSnapshotHash.slice(0, 12) ?? "—"}…`,
           type: "fund",
           amplifies: true,
           gate: { roles: [] },
@@ -162,11 +166,12 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           commandKey,
           command: def.buildCommand({
             limit,
+            invitedUserId,
             expectedH8Version: data?.version,
             expectedRhythmMonth: data?.rhythmMonth,
             rewardSnapshotHash: data?.rewardSnapshotHash,
           }),
-          target: def.buildTarget({ limit }),
+          target: def.buildTarget({ limit, invitedUserId }),
         });
         commandAttempts.forget(slot);
       } catch (error) {
@@ -180,6 +185,9 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   if (loading && !data) return <section className="l-card"><div className="l-b">H8 发奖数据加载中...</div></section>;
   if (error && !data) return <section className="l-card"><div className="l-b">H8 发奖数据读取失败 · {error} <button className="l-btn sm" onClick={() => void load()}>重试</button></div></section>;
 
+  const targetUserId = Number(invitedUserIdInput.trim());
+  const targetUserValid = /^[1-9]\d*$/.test(invitedUserIdInput.trim()) && Number.isSafeInteger(targetUserId);
+
   return (
     <>
       <div className="f-stats">
@@ -191,7 +199,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       </div>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">新人礼与邀请人奖励</span><span className="sub">· H8 唯一配置入口 · 生效时间 {data?.effectiveAt ? `${new Date(data.effectiveAt).toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" })}（上海）` : "—"}</span><div className="r">{canWrite && <button className="l-btn mc" disabled={!data} onClick={() => editParam(ENABLED_PARAM, String(!data?.enabled))}>{data?.enabled ? "停用奖励" : "启用奖励"}</button>}{canSettle && <button className="l-btn mc" disabled={!data?.enabled || Number(data.pending ?? 0) <= 0} title={!data?.enabled ? "邀请奖励当前已停用" : Number(data?.pending ?? 0) <= 0 ? "当前没有待结算邀请" : undefined} onClick={settle}>执行真实结算</button>}</div></div>
+        <div className="l-h"><span className="ttl">新人礼与邀请人奖励</span><span className="sub">· H8 唯一配置入口 · 生效时间 {data?.effectiveAt ? `${new Date(data.effectiveAt).toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" })}（上海）` : "—"}</span><div className="r">{canWrite && <button className="l-btn mc" disabled={!data} onClick={() => editParam(ENABLED_PARAM, String(!data?.enabled))}>{data?.enabled ? "停用奖励" : "启用奖励"}</button>}{canSettle && <button className="l-btn mc" disabled={!data?.enabled || Number(data.pending ?? 0) <= 0} title={!data?.enabled ? "邀请奖励当前已停用" : Number(data?.pending ?? 0) <= 0 ? "当前没有待结算邀请" : undefined} onClick={() => settle()}>执行真实结算</button>}</div></div>
         <div className="l-b"><div className="param-grid">
           {PARAMS.map((param) => <div className="p" key={param.key}>
             <div className="k">{param.label}</div>
@@ -201,6 +209,15 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
                 : `H1 第 ${data?.rhythmMonth ?? "—"} 月倍率计入后，实际发放 ${String(data?.effectiveRewards?.[param.key] ?? "—")} ${param.unit}（${param.key.startsWith("newcomer.") ? data?.newcomerMultiplier : data?.inviterMultiplier}×）。`}</div>
           </div>)}
         </div></div>
+      </section>
+
+      <section className="l-card">
+        <div className="l-h"><span className="ttl">指定新人结算</span></div>
+        <div className="l-b">
+          <label>新人用户 ID <input aria-label="指定结算的新人用户 ID" inputMode="numeric" placeholder="请输入新人用户 ID" value={invitedUserIdInput} onChange={(event) => setInvitedUserIdInput(event.target.value)} /></label>{" "}
+          {canSettle && <button className="l-btn mc" disabled={!data?.enabled || !targetUserValid} onClick={() => settle(targetUserId)}>结算指定新人</button>}
+          <p className="f-foot">审批单将锁定该新人；邀请人由服务端邀请关系确定。资格不符或已结算时终止，不会结算其他邀请。</p>
+        </div>
       </section>
 
       <section className="l-card">
