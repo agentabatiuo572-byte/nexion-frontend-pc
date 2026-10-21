@@ -400,7 +400,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
         <div className="sect-h">
           <span className="ic pool"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h4l3-7 4 14 3-7h4" /></svg></span>
           <div className="t"><div className="nm">V 级票数权重 · 领导池分配依据</div><div className="s">后端配置权重 · {voteSummary}</div></div>
-          
+
         </div>
         <div className="votes-grid">
           {data.voteWeights.length ? data.voteWeights.map((row, index) => (

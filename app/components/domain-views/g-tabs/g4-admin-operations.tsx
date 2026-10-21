@@ -13,20 +13,22 @@ import {
 import type { GCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
+const configValueText = (kind: string, value: unknown): string => value == null || value === "" ? "未配置" : kind === "select" ? value === true || value === "true" ? "已开启" : value === false || value === "false" ? "已关闭" : "状态待核实" : String(value);
+const sideText = (value: string) => value === "BUY" ? "模拟买入" : value === "SELL" ? "模拟卖出" : "方向待核实";
 const CONFIGS = [
-  { key: "eligibility.enabled", label: "资格门启用", kind: "select", options: ["true", "false"] },
-  { key: "eligibility.maxPerUser", label: "资格门每人上限", kind: "number" },
-  { key: "eligibility.minAccountAgeDays", label: "最低账户龄(天)", kind: "number" },
+  { key: "eligibility.enabled", label: "购买资格启用", kind: "select", options: ["true", "false"] },
+  { key: "eligibility.maxPerUser", label: "购买资格每人上限", kind: "number" },
+  { key: "eligibility.minAccountAgeDays", label: "最低注册天数(天)", kind: "number" },
   { key: "presale.enabled", label: "预售启用", kind: "select", options: ["true", "false"] },
   { key: "presale.showCountdown", label: "展示倒计时", kind: "select", options: ["true", "false"] },
   { key: "presale.unitPrice", label: "预售单价", kind: "number" },
   { key: "presale.maxPerUser", label: "预售每人上限", kind: "number" },
   { key: "presale.startAt", label: "预售开始(UTC)", kind: "text" },
   { key: "presale.endAt", label: "预售结束(UTC)", kind: "text" },
-  { key: "holder.allocationNexPerHolding", label: "持有人每节点预留 NEX", kind: "number" },
-  { key: "holder.priorityTop1Percent", label: "优先级 Top 1% 阈值", kind: "number" },
-  { key: "holder.priorityTop3Percent", label: "优先级 Top 3% 阈值", kind: "number" },
-  { key: "holder.priorityTop5Percent", label: "优先级 Top 5% 阈值", kind: "number" },
+  { key: "holder.allocationNexPerHolding", label: "持有人每节点预留 UVEL", kind: "number" },
+  { key: "holder.priorityTop1Percent", label: "优先级 排名前 1% 阈值", kind: "number" },
+  { key: "holder.priorityTop3Percent", label: "优先级 排名前 3% 阈值", kind: "number" },
+  { key: "holder.priorityTop5Percent", label: "优先级 排名前 5% 阈值", kind: "number" },
   { key: "holder.policyVersion", label: "持有人策略版本", kind: "text" },
   { key: "holder.effectiveAt", label: "持有人策略生效(UTC)", kind: "text" },
 ] as const;
@@ -55,10 +57,10 @@ export default function G4AdminOperations({ ctx }: { ctx: GCtx }) {
     const expectedValue = configured == null ? "" : String(configured);
     ctx.openActionConfirm({
       action: `G4 运营配置 · ${definition.label}`,
-      detail: `${definition.label} 当前 ${current || "未配置"}。配置保存在服务端，不产生用户资产或市场成交。时间须用 ISO-8601 UTC（例如 2026-08-01T00:00:00Z），且开始必须早于结束。`,
+      detail: `${definition.label} 当前 ${configValueText(definition.kind, configured)}。配置保存在服务器，不产生用户资产或市场成交。时间须用 ISO-8601 UTC（例如 2026-08-01T00:00:00Z），且开始必须早于结束。`,
       amplifies: false,
       edit: definition.kind === "select"
-        ? { kind: "select", current: String(current), options: [...(definition.options ?? [])] }
+        ? { kind: "select", current: String(current), options: [...(definition.options ?? [])], optionLabels: { true: "已开启", false: "已关闭" } }
         : definition.kind === "number"
           ? { kind: "number", current: String(current), min: 0 }
           : { kind: "text", current: String(current) },
@@ -95,18 +97,18 @@ export default function G4AdminOperations({ ctx }: { ctx: GCtx }) {
 
   const createSimulation = () => ctx.openActionConfirm({
     action: "创建管理端虚拟成交",
-    detail: `创建 ${side} ${quantity} × ${unitPrice} 的 SIMULATED 记录。它只用于管理端页面演练，不写钱包、账本、真实成交或市场统计，也不向用户展示。`,
+    detail: `创建 ${sideText(side)} ${quantity} × ${unitPrice} 的 模拟记录。它只用于管理端页面演练，不写钱包、账本、真实成交或市场统计，也不向用户展示。`,
     amplifies: false,
     run: async (reason) => {
       await createG4AdminSimulation(side, quantity, unitPrice, reason, currentAdminOperator());
       await load();
-      ctx.toast("SIMULATED 虚拟成交已创建");
+      ctx.toast("模拟记录 虚拟成交已创建");
     },
   });
 
   const archive = (id: number, no: string) => ctx.openActionConfirm({
     action: `归档虚拟成交 · ${no}`,
-    detail: "仅归档管理端 SIMULATED 记录，不影响真实市场、资产和统计。",
+    detail: "仅归档管理端 模拟记录，不影响真实市场、资产和统计。",
     amplifies: false,
     run: async (reason) => {
       await archiveG4AdminSimulation(id, reason, currentAdminOperator());
@@ -126,18 +128,18 @@ export default function G4AdminOperations({ ctx }: { ctx: GCtx }) {
     <section className="l-card" style={{ marginBottom: 16 }}>
       <div className="l-h"><span className="ttl">创世认购新配置与预售</span><span className="sub">· 服务端唯一权威 · 修改后即时投影到前端</span></div>
       <div className="l-b">
-        <div className="gtint" style={{ marginBottom: 12 }}><b>当前资格配置</b> · 仅使用 <span className="mono">eligibility.enabled / maxPerUser / minAccountAgeDays</span>。旧的入金、旗舰设备、V 等级、邀请码四项组合规则已退役，不再参与认购判定。设备商城自身的购买资格规则属于另一模块，不受影响。</div>
-        <div className="param-grid">{CONFIGS.map((definition) => <div className="p" key={definition.key}><div className="k">{definition.label}</div><div className="v">{data.config[definition.key] ?? "未配置"}{canWrite && <button className="l-btn sm mc" aria-label={`调整${definition.label}`} onClick={() => edit(definition)}>调整</button>}</div><div className="s">配置键 market.genesis.ops.{definition.key}</div></div>)}</div>
+        <div className="gtint" style={{ marginBottom: 12 }}><b>当前资格配置</b> · 仅使用 <span>资格开关、每人上限和最低注册天数</span>。旧的入金、旗舰设备、V 等级、邀请码四项组合规则已退役，不再参与认购判定。设备商城自身的购买资格规则属于另一模块，不受影响。</div>
+        <div className="param-grid">{CONFIGS.map((definition) => <div className="p" key={definition.key}><div className="k">{definition.label}</div><div className="v">{configValueText(definition.kind, data.config[definition.key])}{canWrite && <button className="l-btn sm mc" aria-label={`调整${definition.label}`} onClick={() => edit(definition)}>调整</button>}</div></div>)}</div>
       </div>
     </section>
     <section className="l-card" style={{ marginBottom: 16 }}>
-      <div className="l-h"><span className="ttl">虚拟成交演练</span><span className="sub">· 明确标记 SIMULATED / ADMIN_ONLY</span></div>
+      <div className="l-h"><span className="ttl">虚拟成交演练</span><span className="sub">· 明确标记 模拟记录 / 仅管理端可见</span></div>
       <div className="l-b">
         <div className="ctint warn" style={{ marginBottom: 12 }}><b>隔离保证</b> · 不写真实钱包/资金台账，不进入成交量、地板价、持有人等市场统计，不对用户端展示。</div>
         <div className="grid g-3" style={{ gap: 10, marginBottom: 12 }}><select className="fld" aria-label="虚拟成交方向" value={side} onChange={(e) => setSide(e.target.value === "SELL" ? "SELL" : "BUY")}><option value="BUY">模拟买入</option><option value="SELL">模拟卖出</option></select><input className="fld" type="number" min="0.000001" max="999999999999.999999" step="0.000001" value={quantity} aria-label="虚拟成交数量" onChange={(e) => setQuantity(e.target.value)} placeholder="数量" /><input className="fld" type="number" min="0.000001" max="999999999999.999999" step="0.000001" value={unitPrice} aria-label="虚拟成交单价" onChange={(e) => setUnitPrice(e.target.value)} placeholder="单价" /></div>
         {canWrite && <button className="l-btn mc" disabled={!(Number(quantity) > 0) || !(Number(unitPrice) > 0)} onClick={createSimulation}>创建虚拟成交</button>}
       </div>
-      <div style={{ overflowX: "auto" }}><table className="l-tbl"><thead><tr><th>编号</th><th>方向</th><th>数量</th><th>单价</th><th>名义额</th><th>类型</th><th>操作人</th>{canWrite && <th>动作</th>}</tr></thead><tbody>{data.simulations.map((row) => <tr key={row.id}><td className="mono">{row.simulationNo}</td><td>{row.side}</td><td>{row.quantity}</td><td>{row.unitPrice}</td><td>{row.notional}</td><td><span className="bdg warn">{row.recordType}</span></td><td>{row.operator}</td>{canWrite && <td><button className="l-btn sm" onClick={() => archive(row.id, row.simulationNo)}>归档</button></td>}</tr>)}{!data.simulations.length && <tr><td colSpan={canWrite ? 8 : 7} style={{ textAlign: "center", padding: 20 }}>暂无虚拟成交记录</td></tr>}</tbody></table></div>
+      <div style={{ overflowX: "auto" }}><table className="l-tbl"><thead><tr><th>编号</th><th>方向</th><th>数量</th><th>单价</th><th>名义额</th><th>类型</th><th>操作人</th>{canWrite && <th>动作</th>}</tr></thead><tbody>{data.simulations.map((row) => <tr key={row.id}><td className="mono">{row.simulationNo}</td><td>{sideText(row.side)}</td><td>{row.quantity}</td><td>{row.unitPrice}</td><td>{row.notional}</td><td><span className="bdg warn">{row.recordType === "SIMULATED" ? "模拟记录" : "记录类型待核实"}</span></td><td>{row.operator}</td>{canWrite && <td><button className="l-btn sm" onClick={() => archive(row.id, row.simulationNo)}>归档</button></td>}</tr>)}{!data.simulations.length && <tr><td colSpan={canWrite ? 8 : 7} style={{ textAlign: "center", padding: 20 }}>暂无虚拟成交记录</td></tr>}</tbody></table></div>
     </section>
   </>;
 }

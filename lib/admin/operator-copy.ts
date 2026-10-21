@@ -1,8 +1,27 @@
-import { nexGridBrandText } from "./brand-copy";
+import { nexGridBrandText } from "./brand-copy.ts";
 
 /** Only for system-owned display labels. Never use for request values or authored content. */
 export function operatorCopyText(value: string): string {
   return nexGridBrandText(value)
+    .replace(/Lifetime dividend/g, "累计分红")
+    .replace(/Current daily dividend/g, "当前每日分红")
+    .replace(/Guaranteed accrual basis/g, "保底收益计算基准")
+    .replace(/Primary holder, no secondary transfer/g, "首次认购持有人，暂无二级转让")
+    .replace(/secondary trade acquired by /g, "二级市场购入，买方 ")
+    .replace(/ listed on secondary market /g, " 在二级市场挂售 ")
+    .replace(/\bprimary\b/gi, "首次认购")
+    .replace(/\bsecondary\b/gi, "二级市场")
+    .replace(/\bdeducted\b/g, "已扣除")
+    .replace(/\bpending\b/g, "待处理")
+    .replace(/waiting payment confirmation/g, "等待付款确认")
+    .replace(/principal \+ forfeit interest/g, "本金，另取消未领取利息")
+    .replace(/interest forfeited/g, "未领取利息已取消")
+    .replace(/penalty /g, "提前赎回扣罚 ")
+    .replace(/accrued /g, "累计利息 ")
+    .replace(/matured /g, "到期日 ")
+    .replace(/claimed /g, "领取日期 ")
+    .replace(/\bdays\b/g, "天")
+    .replace(/\bday\b/g, "天")
     .replace(/V-Rank/g, "会员等级")
     .replace(/\bGMV\b/g, "已支付成交额")
     .replace(/\bGV\b/g, "团队业绩")

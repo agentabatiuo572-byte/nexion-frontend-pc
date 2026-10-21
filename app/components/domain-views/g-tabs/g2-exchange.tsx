@@ -1,4 +1,6 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
+
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -197,9 +199,9 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
   const adjCap = (cap: G2Cap) => {
     const isQueueMode = cap.key === "queueMode";
     openActionConfirm({
-      action: `兑换${isQueueMode ? "队列策略" : "参数"}调整 · ${cap.name}`,
+      action: `兑换${isQueueMode ? "队列策略" : "参数"}调整 · ${operatorCopyText(cap.name)}`,
       detail: <>
-        <b>{cap.name}</b> · 当前 {cap.displayValue} · {cap.note}。
+        <b>{operatorCopyText(cap.name)}</b> · 当前 {cap.displayValue} · {operatorCopyText(cap.note)}。
         <div className="gtint" data-proof="g2-cap-preview" style={{ marginTop: 10 }}>
           <div><b>放行 / 排队 / 拒绝影响预览</b></div>
           <div>当前额度占用:{cap.meterPct !== undefined ? `${cap.meterPct}%` : "—"} · 今日兑换成交 {fmtUsdK(stats.todayUsd)}(占日池 {stats.poolPct}%)</div>
@@ -222,7 +224,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
       run: async (reason, value) => {
         const nextValue = normalizeCapSubmitValue(cap, value);
         if (!nextValue) return;
-        await mutate(`param:${cap.key}`, () => updateG2ExchangeParam(cap.key, nextValue, reason, OPERATOR()), `${cap.name}已立即生效`);
+        await mutate(`param:${cap.key}`, () => updateG2ExchangeParam(cap.key, nextValue, reason, OPERATOR()), `${operatorCopyText(cap.name)}已立即生效`);
       },
     });
   };
@@ -230,18 +232,18 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
   const toggleSwap = () => {
     if (!swap.enabled) return;
     openActionConfirm({
-      action: "兑换全局熔断",
-      detail: <>立即停止全平台所有 NEX↔USDT 兑换并同步 J1。G2 只提供止血入口;恢复必须前往 J1 完成跨域前置核验。</>,
+      action: "兑换全局紧急暂停",
+      detail: <>立即停止全平台所有 UVEL↔USDT 兑换并同步 J1。G2 只提供止血入口;恢复必须前往 J1 完成跨域前置核验。</>,
       amplifies: false,
       businessForm: { kind: "multi-field", title: "结构化暂停上下文", fields: [
-        { key: "triggerBasis", label: "触发依据", current: "PRICE_ANOMALY", inputKind: "select", options: ["REGULATORY", "PRICE_ANOMALY", "SECURITY_INCIDENT", "OTHER"], required: true },
+        { key: "triggerBasis", label: "触发依据", current: "PRICE_ANOMALY", inputKind: "select", options: ["REGULATORY", "PRICE_ANOMALY", "SECURITY_INCIDENT", "OTHER"], optionLabels: { REGULATORY: "监管要求", PRICE_ANOMALY: "价格异常", SECURITY_INCIDENT: "安全事件", OTHER: "其他" }, required: true },
         { key: "geoBlock", label: "涉及国家(可选,逗号分隔)", current: "", inputKind: "text", required: false },
       ] },
       run: async (reason, _value, businessValue) => {
         const countries = (businessValue?.geoBlock ?? "").split(",").map((value) => value.trim()).filter(Boolean);
         await mutate("swap:pause", () => updateG2ExchangeSwapStatus(false, reason, OPERATOR(), {
           geoBlock: countries, triggerBasis: businessValue?.triggerBasis,
-        }), "兑换已立即熔断");
+        }), "兑换已立即紧急暂停");
       },
     });
   };
@@ -264,7 +266,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
         <div className="f-stat"><div className="k">今日兑换成交</div><div className="v">{fmtUsdK(stats.todayUsd)}</div><div className="sub">占平台日池 {stats.poolPct}%</div></div>
         <div className="f-stat warn"><div className="k">次日队列深度</div><div className="v">{fmtCount(stats.queueDepth)} 单</div><div className="sub">超额排队 · 可取消</div></div>
         <div className="f-stat"><div className="k">今日拦截</div><div className="v">{fmtCount(totalGate)} 次</div><div className="sub">单用户 {stats.gateUser} · 平台 {stats.gatePlatform} · 地域 {stats.gateGeo}</div></div>
-        <div className="f-stat danger"><div className="k">兑换全局熔断</div><div className="v">{swap.enabled ? "未启用" : "已熔断"}</div><div className="sub">监管点名时一键停 · 联动 {swap.linkedDomain}</div></div>
+        <div className="f-stat danger"><div className="k">兑换全局紧急暂停</div><div className="v">{swap.enabled ? "未启用" : "已紧急暂停"}</div><div className="sub">监管点名时一键停 · 联动 {swap.linkedDomain}</div></div>
       </div>
 
       <div className="two-col r11" style={{ marginBottom: 16 }}>
@@ -277,17 +279,17 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
             {caps.map((cap) => (
               <div className="cap-row" key={cap.key}>
                 <div className="txt">
-                  <div className="k">{cap.name}</div>
-                  <div className="s">{cap.sub}</div>
+                  <div className="k">{operatorCopyText(cap.name)}</div>
+                  <div className="s">{operatorCopyText(cap.sub)}</div>
                   {cap.meterPct !== undefined && <div className="meter"><i style={{ width: meterWidth(cap.meterPct), background: "var(--warning)" }} /></div>}
                 </div>
                 <span className="v">{cap.displayValue}</span>
                 {allowed(capAuthority(cap.key)) && <button className="l-btn sm mc" disabled={busy || (!swap.enabled && !["fee", "feeMin"].includes(cap.key))}
-                  title={!swap.enabled && !["fee", "feeMin"].includes(cap.key) ? "兑换已全局熔断；额度与队列策略暂不可调整" : undefined}
-                  onClick={() => adjCap(cap)}>调整 {cap.name}</button>}
+                  title={!swap.enabled && !["fee", "feeMin"].includes(cap.key) ? "兑换已全局紧急暂停；额度与队列策略暂不可调整" : undefined}
+                  onClick={() => adjCap(cap)}>调整 {operatorCopyText(cap.name)}</button>}
               </div>
             ))}
-            <div className="gtint" style={{ marginTop: 10 }}><b>手续费去向</b> · 当前推广期取后端配置;开费后兑换抽成里 30% 进 NEX 回购销毁池(G3),70% 进兑换手续费备付金(D1)。降费 = 放大流出,改动操作确认并留痕。</div>
+            <div className="gtint" style={{ marginTop: 10 }}><b>手续费去向</b> · 当前推广期取后端配置;开费后兑换抽成里 30% 进 UVEL 回购销毁池(G3),70% 进兑换手续费备付金(D1)。降费 = 放大流出,改动操作确认并留痕。</div>
           </div>
         </section>
 
@@ -300,7 +302,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
             <div className="gate-tiles">
               {gateTiles.map((tile) => (
                 <div className="t click" key={tile.key} onClick={() => setGateDrawer(tile.key)}>
-                  <div className="k">{tile.label} <span className="more">看清单›</span></div>
+                  <div className="k">{operatorCopyText(tile.label)} <span className="more">看清单›</span></div>
                   <div className="v" style={tile.tone === "warn" ? { color: "var(--warning)" } : tile.tone === "danger" ? { color: "var(--danger)" } : undefined}>{fmtCount(tile.count)}</div>
                 </div>
               ))}
@@ -328,23 +330,23 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
             {queue.map((order) => (
               <div className="q-row click" key={order.exchangeNo} onClick={() => setQueueDrawer(order.exchangeNo)} style={busy ? { pointerEvents: "none", opacity: 0.65 } : undefined}>
                 <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{order.userNo} <span className="more">详情›</span></span>
-                <span className="mono" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{order.directionLabel}</span>
+                <span className="mono" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{operatorCopyText(order.directionLabel)}</span>
                 <span className="mono" style={{ fontWeight: 700 }}>{order.amountUsdtDisplay}</span>
                 <span style={{ flex: 1, fontSize: 12, color: "var(--ink-4)" }}>{order.gateReason}</span>
                 <span className="bdg warn">{order.etaLabel} 处理</span>
               </div>
             ))}
-            <div className="gtint" style={{ marginTop: 10 }}><b>排队 vs 拒绝</b> · 默认超额进次日队列(用户可在到期前取消),也可改成直接拒绝。排队阶段不扣用户余额;地域封锁后,该国已在队列里的单子转取消,不会发生后续成交。</div>
+            <div className="gtint" style={{ marginTop: 10 }}><b>排队与拒绝</b> · 默认超额进次日队列(用户可在到期前取消),也可改成直接拒绝。排队阶段不扣用户余额;地域封锁后,该国已在队列里的单子转取消,不会发生后续成交。</div>
           </div>
         </section>
       </div>
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">全局熔断与地域封锁</span>
+          <span className="ttl">全局紧急暂停与地域封锁</span>
           <span className="sub">· 监管点名 / 合规事件时止血 · 联动 J1 矩阵</span>
           <div className="r">
-            {swap.enabled && allowed("finprod_g2_swap_toggle") && <button className="l-btn mc" disabled={busy} onClick={toggleSwap}>兑换全局熔断(立即执行)</button>}
+            {swap.enabled && allowed("finprod_g2_swap_toggle") && <button className="l-btn mc" disabled={busy} onClick={toggleSwap}>兑换全局紧急暂停(立即执行)</button>}
             {!swap.enabled && <Link href="/emergency/kill-switch" className="l-btn mc">前往 J1 核验并恢复 →</Link>}
             <Link href="/emergency/geo-block" className="l-btn">地域封锁(J2 权威)→</Link>
           </div>
@@ -382,18 +384,18 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
       })()}
 
       {selectedQueue && (
-        <Drawer title={`次日队列单 · ${selectedQueue.exchangeNo}`} sub={`${selectedQueue.userNo} · ${selectedQueue.exchangeAmountDisplay} · ${selectedQueue.etaLabel} 自动出队成交`} onClose={() => setQueueDrawer(null)}
+        <Drawer title={`次日队列单 · ${selectedQueue.exchangeNo}`} sub={`${selectedQueue.userNo} · ${operatorCopyText(selectedQueue.exchangeAmountDisplay)} · ${selectedQueue.etaLabel} 自动出队成交`} onClose={() => setQueueDrawer(null)}
           footer={<>
             {allowed("finprod_g2_queue_cancel") && <button className="l-btn mc" style={{ flex: 1, justifyContent: "center" }} disabled={busy} onClick={() => cancelQueue(selectedQueue)}>强制取消此单 →</button>}
           </>}>
           <div className="kv2"><span className="k">用户编码</span><span className="v mono">{selectedQueue.userNo}</span></div>
           <div className="kv2"><span className="k">用户名</span><span className="v">{selectedQueue.nickname}</span></div>
-          <div className="kv2"><span className="k">方向</span><span className="v">{selectedQueue.directionLabel}</span></div>
-          <div className="kv2"><span className="k">金额</span><span className="v mono">{selectedQueue.exchangeAmountDisplay}</span></div>
+          <div className="kv2"><span className="k">方向</span><span className="v">{operatorCopyText(selectedQueue.directionLabel)}</span></div>
+          <div className="kv2"><span className="k">金额</span><span className="v mono">{operatorCopyText(selectedQueue.exchangeAmountDisplay)}</span></div>
           <div className="kv2"><span className="k">排队原因</span><span className="v">{selectedQueue.gateReason}</span></div>
           <div className="kv2"><span className="k">预计成交</span><span className="v">{selectedQueue.etaLabel}</span></div>
-          <div className="kv2"><span className="k">状态</span><span className="v"><span className={`bdg ${toneClass(selectedQueue.statusTone)}`}>{selectedQueue.statusLabel}</span></span></div>
-          <div className="gtint" style={{ marginTop: 12 }}><b>处置</b> · 超额排队 vs 直接拒绝的策略在额度区配;兑换真值与扣款在服务端原子执行。</div>
+          <div className="kv2"><span className="k">状态</span><span className="v"><span className={`bdg ${toneClass(selectedQueue.statusTone)}`}>{operatorCopyText(selectedQueue.statusLabel)}</span></span></div>
+          <div className="gtint" style={{ marginTop: 12 }}><b>处置</b> · 超额排队与直接拒绝的策略在额度区配;兑换真值与扣款在服务端同时完成。</div>
         </Drawer>
       )}
     </>

@@ -1,4 +1,6 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
+
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -63,18 +65,18 @@ function paramByKey(overview: G4Overview, key: string) {
 
 function catalogBlockText(reason: string) {
   const labels: Record<string, string> = {
-    GENESIS_CATALOG_UNAVAILABLE: "Genesis 配置状态不可用",
-    GENESIS_SERIES_UNAVAILABLE: "未找到有效 ACTIVE 系列",
-    GENESIS_SERIES_RECOVERY_REQUIRED: "检测到历史持仓，但缺少可匹配的 ACTIVE 系列",
-    GENESIS_ACTIVE_SERIES_AMBIGUOUS: "检测到多个 ACTIVE 系列",
-    GENESIS_SERIES_INVALID: "ACTIVE 系列的总量或基础报价无效",
+    GENESIS_CATALOG_UNAVAILABLE: "创世节点 配置状态不可用",
+    GENESIS_SERIES_UNAVAILABLE: "未找到有效 当前启用系列",
+    GENESIS_SERIES_RECOVERY_REQUIRED: "检测到历史持仓，但缺少可匹配的 当前启用系列",
+    GENESIS_ACTIVE_SERIES_AMBIGUOUS: "检测到多个 当前启用系列",
+    GENESIS_SERIES_INVALID: "当前启用系列的总量或基础报价无效",
     GENESIS_TIERS_UNAVAILABLE: "未配置有效报价档位",
     GENESIS_TIERS_INVALID: "报价档位不连续或价格无效",
     GENESIS_TIERS_BELOW_SOLD: "报价档位总量低于已售数量",
-    GENESIS_TIERS_SUPPLY_MISMATCH: "报价档位总量与 ACTIVE 系列总量不一致",
+    GENESIS_TIERS_SUPPLY_MISMATCH: "报价档位总量与 当前启用系列总量不一致",
     GENESIS_TIER_QUOTE_UNAVAILABLE: "当前已售位置没有可用报价档位",
   };
-  return labels[reason] ?? "Genesis 系列或报价前置未通过校验";
+  return labels[reason] ?? "创世节点 系列或报价前置未通过校验";
 }
 
 export function G4Genesis({ ctx }: { ctx: GCtx }) {
@@ -222,18 +224,18 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
               : { min: 0, max: 5, step: 0.001 };
     const needsDecision = ["dividend", "divBase", "airdropPct", "emissionCurve"].includes(param.key);
     openActionConfirm({
-      action: `创世节点销售与收益参数 · ${param.name}`,
-      detail: <><b>{param.name}</b> · 当前 {param.displayValue} · {param.note}<br />B1 当前覆盖率 {cov}%，提交时后端重新预检增量负债。</>,
+      action: `创世节点销售与收益参数 · ${operatorCopyText(param.name)}`,
+      detail: <><b>{operatorCopyText(param.name)}</b> · 当前 {param.displayValue} · {operatorCopyText(param.note)}<br />B1 当前覆盖率 {cov}%，提交时后端重新预检增量负债。</>,
       amplifies: param.b1RedlineTriggered,
       edit: numeric ? { kind: "number", current: paramEditValue(param), ...bounds } : { kind: "text", current: paramEditValue(param) },
       businessForm: needsDecision ? { kind: "multi-field", title: "产品决议与负债依据", fields: [
-        { key: "decisionRef", label: "PM/财务决议编号", current: "", inputKind: "text", required: true },
+        { key: "decisionRef", label: "产品/财务决议编号", current: "", inputKind: "text", required: true },
       ] } : undefined,
       run: async (reason, value, businessValue) => {
         if (!value) return;
         await mutate(`param:${param.key}`, () => updateG4GenesisParam(
           param.key, String(value), reason, OPERATOR(), businessValue?.decisionRef,
-        ), `${param.name}已立即生效`);
+        ), `${operatorCopyText(param.name)}已立即生效`);
       },
     });
   };
@@ -241,17 +243,17 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   const runMarketSwitch = () => {
     if (!marketOn || !allowed("finprod_g4_market_toggle")) return;
     openActionConfirm({
-      action: "一二级市场熔断",
+      action: "一二级市场紧急暂停",
       detail: <>立即停止一级购买、挂单与内部 P2P 成交，联动 {overview.market.linkedDomain}。恢复只能前往 J1。</>,
       amplifies: false,
-      businessForm: { kind: "multi-field", title: "熔断上下文", fields: [
+      businessForm: { kind: "multi-field", title: "紧急暂停上下文", fields: [
         { key: "triggerBasis", label: "触发依据", current: "", inputKind: "text", required: true },
         { key: "dispositionPlan", label: "存量权益处置计划", current: "", inputKind: "text", required: true },
       ] },
       run: async (reason, _value, businessValue) => {
         await mutate("market:pause", () => updateG4GenesisMarketStatus(false, reason, OPERATOR(), {
           triggerBasis: businessValue?.triggerBasis, dispositionPlan: businessValue?.dispositionPlan,
-        }), "Genesis 市场已立即熔断；恢复入口仅在 J1");
+        }), "创世节点 市场已立即紧急暂停；恢复入口仅在 J1");
       },
     });
   };
@@ -312,12 +314,12 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   const initializeSeries = () => {
     if (!overview.seriesInitializationAvailable || !allowed("finprod_g4_write")) return;
     openActionConfirm({
-      action: "初始化并发布 Genesis ACTIVE 系列",
-      detail: <>总量与首档报价由当前有效阶梯档位派生。版税、每日排放率与排放公式固定以零值初始化；后续调整必须分别通过专用权限、上限、B1 预检及 PM/财务决议门禁。发布后市场保持暂未开放，需再次核验后手动开放。</>,
+      action: "初始化并发布 创世节点 当前启用系列",
+      detail: <>总量与首档报价由当前有效阶梯档位派生。版税、每日奖励产出率与奖励产出公式固定以零值初始化；后续调整必须分别通过专用权限、上限、B1 预检及 产品/财务决议门禁。发布后市场保持暂未开放，需再次核验后手动开放。</>,
       // Initializing the catalog does not start sales or create a payout. The
       // backend forces the market closed and requires a separate reviewed open.
       amplifies: false,
-      businessForm: { kind: "multi-field", title: "ACTIVE 系列资料", fields: [
+      businessForm: { kind: "multi-field", title: "当前启用系列资料", fields: [
         { key: "seriesCode", label: "系列编码", current: "", inputKind: "text", required: true },
         { key: "name", label: "系列名称", current: "", inputKind: "text", required: true },
       ] },
@@ -330,7 +332,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
           name,
           reason,
           operator: OPERATOR(),
-        }), "Genesis ACTIVE 系列已初始化；市场保持暂未开放，请复核后手动开放");
+        }), "创世节点 当前启用系列已初始化；市场保持暂未开放，请复核后手动开放");
       },
     });
   };
@@ -338,15 +340,15 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   const runRerunBatch = () => {
     if (!allowed("finprod_g4_write")) return;
     openActionConfirm({
-      action: `重跑今日排放批次 ${dividend.batchNo}`,
+      action: `重跑今日奖励产出批次 ${dividend.batchNo}`,
       detail: "批次按日期带持久防重号；已成功户不会重复发，只补失败项。服务端逐持有人写 D4 账单。",
       businessForm: { kind: "multi-field", title: "批次决议", fields: [
-        { key: "decisionRef", label: "财务/PM 决议编号", current: "", inputKind: "text", required: true },
+        { key: "decisionRef", label: "财务/产品 决议编号", current: "", inputKind: "text", required: true },
       ] },
       run: async (reason, _value, businessValue) => {
         await mutate(`batch:${dividend.batchNo}`, () => rerunG4GenesisDividendBatch(
           dividend.batchNo, reason, OPERATOR(), businessValue?.decisionRef,
-        ), "排放批次已立即重跑，仅补失败项");
+        ), "奖励产出批次已立即重跑，仅补失败项");
       },
     });
   };
@@ -371,7 +373,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     const nextTier = tiers[index + 1];
     openActionConfirm({
       action: `编辑创世档位 · ${tier.id}`,
-      detail: <><b>{tier.id}</b> 档 · 当前区间 [{fmtInt(tier.from)}, {fmtInt(tier.to)}) · 单价 ${fmtInt(tier.priceUSDT)}。起始由上档截止派生,不单独编辑;改截止时服务端顺移{nextTier ? <>下一档 <b>{nextTier.id}</b> 的起始</> : "总供应上界"}保持连续,并校验末档总量 ≥ 已售 {fmtNumber(stats.sold, 0)}。只影响未来供应与新购档价,在锁购买按开锁档价结算。</>,
+      detail: <><b>{tier.id}</b> 档 · 当前区间 [{fmtInt(tier.from)}, {fmtInt(tier.to)}) · 单价 ${fmtInt(tier.priceUSDT)}。起始由上档截止派生,不单独编辑;改截止时服务端顺移{nextTier ? <>下一档 <b>{nextTier.id}</b> 的起始</> : "总供应上界"}保持连续,并校验末档总量 ≥ 已售 {fmtNumber(stats.sold, 0)}。只影响未来供应与新购档价,已锁定报价的购买订单按开锁档价结算。</>,
       businessForm: { kind: "multi-field", title: `档位 ${tier.id}`, hint: "截止 = 本档累计售出上界(下一档起点);单价 = 落在本档区间的每张价格;均为整数。", fields: [
         { key: "to", label: "截止(累计售出上界)", current: String(tier.to), inputKind: "number", min: tier.from + 1, step: 1, required: true },
         { key: "priceUSDT", label: "单价(USDT)", current: String(tier.priceUSDT), inputKind: "number", min: 1, step: 1, required: true },
@@ -389,10 +391,10 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     const lastTier = firstTier ? null : tiers[tiers.length - 1];
     const rangeFrom = lastTier?.to ?? 0;
     openActionConfirm({
-      action: firstTier ? "创建 Genesis 首档报价" : "增开创世档位",
+      action: firstTier ? "创建 创世节点 首档报价" : "增开创世档位",
       detail: firstTier
-        ? <>创建首档 [0, 截止) 与首档报价，为系列初始化提供权威总量和基础报价。此操作不创建 ACTIVE 系列、不开放市场，也不产生持仓或排放；历史持仓存在时服务端会拒绝，必须先完成受控恢复。</>
-        : <>在末档 <b>{lastTier!.id}</b>(截止 {fmtInt(lastTier!.to)})之后追加新档:起始固定 = {fmtInt(lastTier!.to)}(服务端派生保持连续),档号由服务端分配,扩大总供应。<b>扩大供应会放大远期排放负债</b>,服务端按 B1 覆盖率预检(当前 {cov}%),越线整单拒绝。新档单价通常应 ≥ 末档 ${fmtInt(lastTier!.priceUSDT)}(售罄跳价方向);只影响未来供应。</>,
+        ? <>创建首档 [0, 截止) 与首档报价，为系列初始化提供权威总量和基础报价。此操作不创建 当前启用系列、不开放市场，也不产生持仓或奖励产出；历史持仓存在时服务端会拒绝，必须先完成受控恢复。</>
+        : <>在末档 <b>{lastTier!.id}</b>(截止 {fmtInt(lastTier!.to)})之后追加新档:起始固定 = {fmtInt(lastTier!.to)}(服务端派生保持连续),档号由服务端分配,扩大总供应。<b>扩大供应会放大远期奖励产出负债</b>,服务端按 B1 覆盖率预检(当前 {cov}%),越线整单拒绝。新档单价通常应 ≥ 末档 ${fmtInt(lastTier!.priceUSDT)}(售罄跳价方向);只影响未来供应。</>,
       amplifies: firstTier ? false : overview.coverage.redlineBreached,
       businessForm: { kind: "multi-field", title: firstTier ? "首档报价" : "新档位", hint: `起始固定 = ${fmtInt(rangeFrom)}${firstTier ? "" : "(上档截止)"};截止与单价均为整数。`, fields: [
         { key: "to", label: "截止(累计售出上界)", inputKind: "number", min: rangeFrom + 1, step: 1, required: true },
@@ -411,7 +413,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     const nextTier = tiers[index + 1];
     openActionConfirm({
       action: `删除创世档位 · ${tier.id}`,
-      detail: <>从阶梯移除 <b>{tier.id}</b> 档([{fmtInt(tier.from)}, {fmtInt(tier.to)}))。服务端自动补齐区间保持连续({prevTier ? <>上一档 <b>{prevTier.id}</b> 截止顺延至 {fmtInt(tier.to)}</> : nextTier ? <>下一档 <b>{nextTier.id}</b> 起始归至 {fmtInt(tier.from)}</> : "唯一档不可删"}),至少保留一档;在锁购买按开锁档价结算,不追溯。</>,
+      detail: <>从阶梯移除 <b>{tier.id}</b> 档([{fmtInt(tier.from)}, {fmtInt(tier.to)}))。服务端自动补齐区间保持连续({prevTier ? <>上一档 <b>{prevTier.id}</b> 截止顺延至 {fmtInt(tier.to)}</> : nextTier ? <>下一档 <b>{nextTier.id}</b> 起始归至 {fmtInt(tier.from)}</> : "唯一档不可删"}),至少保留一档;已锁定报价的购买订单按开锁档价结算,不追溯。</>,
       run: async (reason) => {
         await mutate(`tier:delete:${tier.id}`, () => deleteG4GenesisTier(tier.id, overview.tiersVersion, reason, OPERATOR()), `档位 ${tier.id} 已删除 · 区间已补齐`);
       },
@@ -441,12 +443,12 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     if (!showcaseEnabledParam || !allowed(paramAuthority(showcaseEnabledParam.key))) return;
     const next = showcaseEnabledParam.value !== "true";
     openActionConfirm({
-      action: next ? "展示 Genesis 商城入口" : "隐藏 Genesis 商城入口",
-      detail: <>该操作只控制正式 App 的商城展示入口，不改变现有持仓、分红、市场状态、熔断状态或购买资格。</>,
+      action: next ? "展示 创世节点 商城入口" : "隐藏 创世节点 商城入口",
+      detail: <>该操作只控制正式 App 的商城展示入口，不改变现有持仓、分红、市场状态、紧急暂停状态或购买资格。</>,
       run: async (reason) => {
         await mutate("param:showcaseEnabled", () => updateG4GenesisParam(
           "showcaseEnabled", String(next), reason, OPERATOR(),
-        ), next ? "Genesis 商城入口已展示" : "Genesis 商城入口已隐藏");
+        ), next ? "创世节点 商城入口已展示" : "创世节点 商城入口已隐藏");
       },
     });
   };
@@ -459,7 +461,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
         {overview.seriesRecoveryRequired
           ? " 历史持仓禁止覆盖初始化。请由数据负责人按持仓 series_code 恢复原系列，在事务内核对持仓归属、系列总量与档位覆盖后，再单独复核开放市场。"
           : overview.seriesInitializationAvailable
-            ? " 当前没有有效 ACTIVE 系列，可由已有阶梯档位派生总量与首档报价后初始化。"
+            ? " 当前没有有效 当前启用系列，可由已有阶梯档位派生总量与首档报价后初始化。"
             : overview.seriesSetupRequired && overview.tradeBlockedReason === "GENESIS_TIERS_UNAVAILABLE"
               ? " 当前还没有报价档位；先创建 [0, 截止) 首档，随后才能初始化系列。"
               : " 请先修复系列与阶梯档位的一致性；当前状态不允许初始化。"}
@@ -473,9 +475,9 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
       </div>}
       <div className="f-stats">
         <div className="f-stat ok"><div className="k">一级售出</div><div className="v">{fmtNumber(stats.sold, 0)} / {fmtNumber(stats.totalSlots, 0)}</div><div className="sub">{tierPriceText}{overview.tierPrice.status === "active" ? " / 张 · " : " · "}{tierPriceNote}</div></div>
-        <div className="f-stat"><div className="k">排放承诺预提</div><div className="v">{fmtUsdCompact(stats.genesisAccrualUsd)}</div><div className="sub">上所开阀后按真实策略计提</div></div>
-        <div className="f-stat cyan"><div className="k">二级地板价</div><div className="v">{fmtUsdCompact(stats.secondary.floor)}</div><div className="sub">24h 量 {fmtUsdCompact(stats.secondary.vol24h)} · 在挂 {fmtNumber(stats.secondary.listed, 0)}</div></div>
-        <div className="f-stat warn"><div className="k">市场熔断</div><div className="v">{marketOn ? "未启用" : "已熔断"}</div><div className="sub">联动 {overview.market.linkedDomain} · 恢复统一由 J1 执行</div></div>
+        <div className="f-stat"><div className="k">奖励产出承诺预提</div><div className="v">{fmtUsdCompact(stats.genesisAccrualUsd)}</div><div className="sub">上所开阀后按真实策略计提</div></div>
+        <div className="f-stat cyan"><div className="k">二级地板价</div><div className="v">{fmtUsdCompact(stats.secondary.floor)}</div><div className="sub">24 小时 量 {fmtUsdCompact(stats.secondary.vol24h)} · 在挂 {fmtNumber(stats.secondary.listed, 0)}</div></div>
+        <div className="f-stat warn"><div className="k">市场紧急暂停</div><div className="v">{marketOn ? "未启用" : "已紧急暂停"}</div><div className="sub">联动 {overview.market.linkedDomain} · 恢复统一由 J1 执行</div></div>
         {/* 🔴 与熔断分成两格,不合并(规格 FEAT-GEN10b ④)。sub 行明示**当前真正在生效的
             是哪一道限制** —— 两者可并存,运营把市场切回开放却仍卖不动时,得一眼看出是熔断。 */}
         <div className={`f-stat${marketClosed ? " warn" : ""}`}>
@@ -489,9 +491,9 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
             {marketClosed
               ? (marketOn
                   ? "用户可浏览与查看持仓,购买与二级承接已锁"
-                  : "市场关闭与熔断同时生效;用户端显示的是「暂未开放」(它优先级更高),恢复销售需两者都解除")
+                  : "市场关闭与紧急暂停同时生效;用户端显示的是「暂未开放」(它优先级更高),恢复销售需两者都解除")
               : !marketOn
-                ? "当前实际生效:市场熔断,恢复走 J1"
+                ? "当前实际生效:市场紧急暂停,恢复走 J1"
                 : !(stats.totalSlots > 0)
                   ? "市场开关已开放；系列配置前置未就绪，不能确认认购可用"
                   : "市场开关已开放；认购仍需通过系列、发售、资格与资金校验"}
@@ -519,12 +521,12 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
             </div>
             {supplyParam && <div className="p-row"><div className="txt"><div className="k">节点总量</div><div className="s">{supplyParam.sub}</div></div><span className="v">{supplyParam.displayValue}</span>{allowed(paramAuthority(supplyParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${supplyParam.name}`} onClick={() => adjustParam(supplyParam)}>调整</button>}</div>}
             {priceParam && <div className="p-row"><div className="txt"><div className="k">一级单价{tiers && <span className="bdg ok" style={{ fontSize: 9, marginLeft: 6 }}>按阶梯派生</span>}</div><div className="s">{overview.tierPrice.status === "active" ? "阶梯档位在场:单价由累计售出所落档位派生,本参数不生效;调价走下方「阶梯档位定价」卡" : tierPriceNote}</div></div><span className="v">{tierPriceText}</span>{overview.tierPrice.status === "legacy" && allowed(paramAuthority(priceParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${priceParam.name}`} onClick={() => adjustParam(priceParam)}>调整</button>}</div>}
-            {dividendParam && <div className="p-row"><div className="txt"><div className="k">每日排放率 <span className="bdg ok" style={{ fontSize: 9 }}>基准 0.1%/日</span></div><div className="s">{dividendParam.sub}</div></div><span className="v">{dividendParam.displayValue}</span>{allowed(paramAuthority(dividendParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${dividendParam.name}`} onClick={() => adjustParam(dividendParam)}>调整</button>}</div>}
+            {dividendParam && <div className="p-row"><div className="txt"><div className="k">每日奖励产出率 <span className="bdg ok" style={{ fontSize: 9 }}>基准 0.1%/日</span></div><div className="s">{dividendParam.sub}</div></div><span className="v">{dividendParam.displayValue}</span>{allowed(paramAuthority(dividendParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${dividendParam.name}`} onClick={() => adjustParam(dividendParam)}>调整</button>}</div>}
             {royaltyParam && <div className="p-row"><div className="txt"><div className="k">二级版税</div><div className="s">{royaltyParam.sub}</div></div><span className="v">{royaltyParam.displayValue}</span>{allowed(paramAuthority(royaltyParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${royaltyParam.name}`} onClick={() => adjustParam(royaltyParam)}>调整</button>}</div>}
-            <div className="p-row"><div className="txt"><div className="k">排放开阀 <span className="bdg ok" style={{ fontSize: 9 }}>H1 权威</span></div><div className="s">上所前关闭；由 H1 逐月节奏旋钮控制，本页只读</div></div><span className="v">{overview.emissionGate.open ? "已开放" : "未开放"}</span></div>
+            <div className="p-row"><div className="txt"><div className="k">奖励产出开阀 <span className="bdg ok" style={{ fontSize: 9 }}>H1 权威</span></div><div className="s">上所前关闭；由 H1 逐月节奏旋钮控制，本页只读</div></div><span className="v">{overview.emissionGate.open ? "已开放" : "未开放"}</span></div>
             {airdropPctParam && <div className="p-row"><div className="txt"><div className="k">空投占比</div><div className="s">{airdropPctParam.sub}</div></div><span className="v">{airdropPctParam.displayValue}</span>{allowed(paramAuthority(airdropPctParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${airdropPctParam.name}`} onClick={() => adjustParam(airdropPctParam)}>调整</button>}</div>}
-            {emissionCurveParam && <div className="p-row"><div className="txt"><div className="k">排放曲线</div><div className="s">{emissionCurveParam.sub}</div></div><span className="v">{emissionCurveParam.displayValue}</span>{allowed(paramAuthority(emissionCurveParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${emissionCurveParam.name}`} onClick={() => adjustParam(emissionCurveParam)}>调整</button>}</div>}
-            {airdropLockDaysParam && <div className="p-row"><div className="txt"><div className="k">OG 倍率锁仓期</div><div className="s">{airdropLockDaysParam.sub}</div></div><span className="v">{airdropLockDaysParam.displayValue}</span>{allowed(paramAuthority(airdropLockDaysParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${airdropLockDaysParam.name}`} onClick={() => adjustParam(airdropLockDaysParam)}>调整</button>}</div>}
+            {emissionCurveParam && <div className="p-row"><div className="txt"><div className="k">奖励产出曲线</div><div className="s">{emissionCurveParam.sub}</div></div><span className="v">{operatorCopyText(emissionCurveParam.displayValue).replace("TGE 10% · halve every 6 months", "初始发放 10%，每 6 个月减半")}</span>{allowed(paramAuthority(emissionCurveParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${emissionCurveParam.name}`} onClick={() => adjustParam(emissionCurveParam)}>调整</button>}</div>}
+            {airdropLockDaysParam && <div className="p-row"><div className="txt"><div className="k">早期持有人奖励倍率锁仓期</div><div className="s">{airdropLockDaysParam.sub}</div></div><span className="v">{airdropLockDaysParam.displayValue}</span>{allowed(paramAuthority(airdropLockDaysParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${airdropLockDaysParam.name}`} onClick={() => adjustParam(airdropLockDaysParam)}>调整</button>}</div>}
             {showcaseEnabledParam && <div className="p-row"><div className="txt"><div className="k">App 商城展示</div><div className="s">{showcaseEnabledParam.sub}</div></div><span className="v">{showcaseEnabledParam.displayValue}</span>{allowed(paramAuthority(showcaseEnabledParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`切换 ${showcaseEnabledParam.name}`} onClick={toggleShowcase}>{showcaseEnabledParam.value === "true" ? "隐藏" : "展示"}</button>}</div>}
           </div>
         </section>
@@ -532,7 +534,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">一二级市场</span>
-            <span className="sub">· 实时 stats · 排放跟随 NFT</span>
+            <span className="sub">· 实时统计 · 奖励产出跟随 NFT</span>
             <div className="r">
               {/* 市场状态开关(FEAT-GEN10b):双向可切,两个方向都走确认 + 理由 + 审计。
                   与右侧熔断按钮并列摆放,让运营看得出这是两个独立动作。 */}
@@ -542,7 +544,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
                 </button>
               )}
               {marketOn && allowed("finprod_g4_market_toggle")
-                ? <button className="l-btn mc" disabled={busy} onClick={runMarketSwitch}>市场熔断</button>
+                ? <button className="l-btn mc" disabled={busy} onClick={runMarketSwitch}>市场紧急暂停</button>
                 : !marketOn ? <Link href="/emergency/kill-switch" className="l-btn">前往 J1 申请恢复</Link> : null}
               <Link href="/emergency/geo-block" className="l-btn">地域封锁(J2)→</Link>
             </div>
@@ -550,17 +552,17 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
           <div className="l-b">
             <div className="mk-tiles">
               <div className="t"><div className="k">地板价</div><div className="v">{fmtUsdCompact(stats.secondary.floor)}</div></div>
-              <div className="t"><div className="k">24h 成交量</div><div className="v">{fmtUsdCompact(stats.secondary.vol24h)}</div></div>
+              <div className="t"><div className="k">24 小时成交量</div><div className="v">{fmtUsdCompact(stats.secondary.vol24h)}</div></div>
               <div className="t"><div className="k">在挂</div><div className="v">{fmtNumber(stats.secondary.listed, 0)}</div></div>
               <div className="t"><div className="k">持有人</div><div className="v">{fmtNumber(stats.secondary.owners, 0)}</div></div>
             </div>
             <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 8px" }}>节点处理流程</div>
             <div className="sm-strip">
               {overview.stateMachine.map((state, index) => (
-                <span key={state} className={index <= 1 ? "st ok" : "st"}>{state}</span>
+                <span key={state} className={index <= 1 ? "st ok" : "st"}>{({minted:"已创建",held:"持有中",listed:"挂售中",sold:"已售出"} as Record<string,string>)[state] ?? "状态待核实"}</span>
               ))}
             </div>
-            <div className="gtint" style={{ marginTop: 12 }}><b>排放与负债</b> · 当前地域封锁:{geoBlocked}(J2 只读)。二级转让后排放权益跟随最新持有者，节点台账来自持有表。</div>
+            <div className="gtint" style={{ marginTop: 12 }}><b>奖励产出与负债</b> · 当前地域封锁:{geoBlocked}(J2 只读)。二级转让后奖励产出权益跟随最新持有者，节点台账来自持有表。</div>
           </div>
         </section>
       </div>
@@ -569,7 +571,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
       <section className="l-card" style={{ marginBottom: 16 }}>
         <div className="l-h">
           <span className="ttl">阶梯档位定价</span>
-          <span className="sub">· 累计售出落 [起始, 截止) 决定当前档单价 · 售罄硬跳价 · 服务端权威校验</span>
+          <span className="sub">· 累计售出落 [起始, 截止) 决定当前档单价 · 售罄硬跳价 · 以服务器记录为准校验</span>
           {tiers && canPriceTiers && (
             <div className="r"><button className="l-btn sm mc" disabled={busy} onClick={addTier}>{tiers.length === 0 ? "+ 创建首档报价" : "+ 增开档位"}</button></div>
           )}
@@ -599,9 +601,9 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
                   ))}
                 </tbody>
               </table>
-              <PaginationExemption label="Genesis 阶梯档位表" maxRows={8} reason="阶梯档位数量少且需一屏纵向比较跳价关系,分页会破坏连续区间审核。" />
+              <PaginationExemption label="创世节点 阶梯档位表" maxRows={8} reason="阶梯档位数量少且需一屏纵向比较跳价关系,分页会破坏连续区间审核。" />
             </div>
-            <div className="gtint" style={{ margin: "0 12px 12px" }}><b>档价随累计售出派生</b> · 改截止/单价、增档、删档只影响未来供应;在锁购买按开锁档价结算不追溯。区间连续性、末档总量 ≥ 已售 {fmtNumber(stats.sold, 0)}、至少保留一档由服务端强制,不满足的提交会被整单拒绝;提交携带档表版本,两人并发修改时后提交的会被拒绝并需重读。</div>
+            <div className="gtint" style={{ margin: "0 12px 12px" }}><b>档价随累计售出派生</b> · 改截止/单价、增档、删档只影响未来供应;已锁定报价的购买订单按开锁档价结算不追溯。区间连续性、末档总量 ≥ 已售 {fmtNumber(stats.sold, 0)}、至少保留一档由服务端强制,不满足的提交会被整单拒绝;提交携带档表版本,两人并发修改时后提交的会被拒绝并需重读。</div>
           </>
         ) : (
           <div className="l-b">
@@ -612,32 +614,32 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">排放派发监控</span>
-          <span className="sub">· H1 开阀后按服务端排放参数执行</span>
+          <span className="ttl">收益发放监控</span>
+          <span className="sub">· H1 开阀后按服务端奖励产出参数执行</span>
           <div className="r">
-            {divBaseParam && allowed(paramAuthority(divBaseParam.key)) && <button className="l-btn mc" disabled={busy} onClick={() => adjustParam(divBaseParam)}>调整基数口径</button>}
+            {divBaseParam && allowed(paramAuthority(divBaseParam.key)) && <button className="l-btn mc" disabled={busy} onClick={() => adjustParam(divBaseParam)}>调整基数统计规则</button>}
             {allowed("finprod_g4_write") && <button className="l-btn" disabled={busy || !overview.emissionGate.open || !dividend.batchNo} onClick={runRerunBatch}>重跑今日批次{batchRerun ? "(已重跑)" : ""}</button>}
           </div>
         </div>
         <div className="l-b">
           <div className="mk-tiles">
             <div className="t"><div className="k">平台日交易量基数(今日)</div><div className="v">{fmtUsdCompact(dividend.dailyVolumeBase)}</div></div>
-            <div className="t"><div className="k">今日排放池</div><div className="v" style={{ color: "var(--success)" }}>{fmtUsdCompact(dividend.poolToday)}</div></div>
-            <div className="t"><div className="k">每 slot 均分</div><div className="v">{fmtUsd(dividend.perSlotPerDay)} / 天</div></div>
+            <div className="t"><div className="k">今日奖励产出池</div><div className="v" style={{ color: "var(--success)" }}>{fmtUsdCompact(dividend.poolToday)}</div></div>
+            <div className="t"><div className="k">每个节点 均分</div><div className="v">{fmtUsd(dividend.perSlotPerDay)} / 天</div></div>
             <div className="t"><div className="k">今日批次 {dividend.batchNo || "—"}</div><div className="v" style={{ color: "var(--success)" }}>{overview.emissionGate.open ? `已派 ${fmtNumber(stats.sold, 0)} 户 · ${fmtUsdCompact(dividend.payoutToday)}` : "未开阀 · 未派发"}</div></div>
           </div>
-          <div className="gtint" style={{ marginTop: 12 }}><b>两套口径</b> · 用户排放按服务端配置参数计算；财务预提按节点价 × 持有量 × 排放率保底。曲线字段是运营策略说明，当前批次金额仍按服务端基数与排放率计算。改排放率、曲线或基数口径会触发 B1 覆盖率预检，当前覆盖率 {cov}%。</div>
+          <div className="gtint" style={{ marginTop: 12 }}><b>两套统计规则</b> · 用户奖励产出按服务端配置参数计算；财务预提按节点价 × 持有量 × 奖励产出率保底。曲线字段是运营策略说明，当前批次金额仍按服务端基数与奖励产出率计算。改奖励产出率、曲线或基数统计规则会触发 B1 覆盖率预检，当前覆盖率 {cov}%。</div>
         </div>
       </section>
 
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">节点持有台账</span>
-          <span className="sub">· 来自真实 Genesis 持仓 · 点击查看详情</span>
+          <span className="sub">· 来自真实 创世节点 持仓 · 点击查看详情</span>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 760 }}>
-            <thead><tr><th>节点</th><th>持有者(脱敏)</th><th>来源</th><th className="num">lifetime 排放</th><th>状态</th></tr></thead>
+            <thead><tr><th>节点</th><th>持有者（隐藏隐私信息）</th><th>来源</th><th className="num">累计产出</th><th>状态</th></tr></thead>
             <tbody>
               {overview.nodes.length === 0 ? (
                 <tr><td colSpan={5} style={{ color: "var(--ink-3)", padding: 16 }}>暂无节点持有记录</td></tr>
@@ -645,9 +647,9 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
                 <tr key={node.id} className="click" onClick={() => setNodeDrawer(node.id)}>
                   <td className="mono" style={{ color: "var(--ink)" }}>{node.id} <span className="more">详情›</span></td>
                   <td className="mono">{node.owner}</td>
-                  <td>{node.source}</td>
+                  <td>{operatorCopyText(node.source)}</td>
                   <td className="num mono">{node.lifetimeDividend}</td>
-                  <td><span className={`bdg ${toneClass(node.statusTone)}`}>{node.statusLabel}</span></td>
+                  <td><span className={`bdg ${toneClass(node.statusTone)}`}>{operatorCopyText(node.statusLabel)}</span></td>
                 </tr>
               ))}
             </tbody>
@@ -675,7 +677,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
         </div>
       </section>
 
-      <p className="f-foot"><b>持有、排放、二级成交全部以服务器为准</b>:节点序号、钱包和排放由权威台账统一核算，客户端伪造持有或排放无效。</p>
+      <p className="f-foot"><b>持有、奖励产出、二级成交全部以服务器为准</b>:节点序号、钱包和奖励产出由权威台账统一核算，客户端伪造持有或奖励产出无效。</p>
 
       {selectedNode && <NodeDrawer node={selectedNode} onClose={() => setNodeDrawer(null)} />}
     </>
@@ -684,20 +686,20 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
 
 function NodeDrawer({ node, onClose }: { node: G4Node; onClose: () => void }) {
   return (
-    <Drawer title={`Genesis 节点 · ${node.id}`} sub={`持有者 ${node.owner} · ${node.statusLabel} · 购入:${node.buy}`} onClose={onClose}
+    <Drawer title={`创世节点 · ${node.id}`} sub={`持有者 ${node.owner} · ${operatorCopyText(node.statusLabel)} · 购入:${operatorCopyText(node.buy)}`} onClose={onClose}
       footer={<button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={onClose}>关闭</button>}>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>排放</div>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>奖励产出</div>
       {node.dividends.map((item) => (
-        <div className="kv2" key={item.label}><span className="k">{item.label}</span><span className="v">{item.value}</span></div>
+        <div className="kv2" key={item.label}><span className="k">{operatorCopyText(item.label)}</span><span className="v">{operatorCopyText(item.value)}</span></div>
       ))}
       <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 8px" }}>二级流转记录</div>
       <table className="l-tbl">
         <thead><tr><th>时间</th><th>事件</th><th>版税</th></tr></thead>
         <tbody>{node.transfers.map((transfer, index) => (
-          <tr key={`${transfer.time}-${index}`}><td className="mono">{transfer.time}</td><td style={{ fontSize: 12 }}>{transfer.event}</td><td style={{ fontSize: 12, color: "var(--ink-3)" }}>{transfer.royalty}</td></tr>
+          <tr key={`${transfer.time}-${index}`}><td className="mono">{transfer.time}</td><td style={{ fontSize: 12 }}>{operatorCopyText(transfer.event)}</td><td style={{ fontSize: 12, color: "var(--ink-3)" }}>{operatorCopyText(transfer.royalty)}</td></tr>
         ))}</tbody>
       </table>
-      <div className="gtint" style={{ marginTop: 12 }}><b>只读监控</b> · 节点详情来自后端持有记录和排放口径计算。</div>
+      <div className="gtint" style={{ marginTop: 12 }}><b>只读监控</b> · 节点详情来自后端持有记录和奖励产出统计规则计算。</div>
     </Drawer>
   );
 }

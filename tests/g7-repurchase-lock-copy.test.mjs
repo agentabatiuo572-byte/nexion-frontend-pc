@@ -1,3 +1,4 @@
+import { operatorCopyText } from "../lib/admin/operator-copy.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -15,7 +16,7 @@ test("G7 APY caption follows the current lock term while existing orders retain 
   let slots = [];
   let cursor = 0;
   const context = {
-    require: createRequire(import.meta.url), exports: {},
+    require: createRequire(import.meta.url), exports: {}, operatorCopyText,
     useAdminAuth: selector => selector({ session: null }),
     useState: () => [slots[cursor++], () => {}],
     useRef: value => ({ current: value }), useCallback: callback => callback, useEffect() {},

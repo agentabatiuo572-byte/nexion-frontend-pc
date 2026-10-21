@@ -1,4 +1,6 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
+
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -19,10 +21,10 @@ import type { GCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 const PARAM_COPY: Record<string, { name: string; sub: string }> = {
-  apy: { name: "年化 APY", sub: "只对新单生效" },
+  apy: { name: "年化收益率", sub: "只对新单生效" },
   lockDays: { name: "锁仓期限", sub: "整数天 · 只对新单生效" },
   nurture: { name: "培育奖倍率", sub: "复投者培育奖计算即用" },
-  lottery: { name: "Genesis 抽奖券", sub: "每复投单发放 · 改规则核对 G4 奖池容量" },
+  lottery: { name: "创世节点 抽奖券", sub: "每复投单发放 · 改规则核对 G4 奖池容量" },
   penalty: { name: "早赎罚款", sub: "本金罚款 + 没收利息/券" },
   presets: { name: "复投金额快捷档", sub: "用户复投金额快捷档 · 实时生效" },
 };
@@ -223,7 +225,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
       action: `产品参数调整 · ${label}`,
       detail: (
         <>
-          <b>{label}</b> · 当前 {paramDisplayValue(param)} · {param.note}。
+          <b>{label}</b> · 当前 {paramDisplayValue(param)} · {({ apy: "调高年化收益率会增加后续应付利息，须核验资金覆盖率", lockDays: "新期限仅用于新订单，已有订单按原期限结算", nurture: "影响后续培育奖励计算", lottery: "修改抽奖券数量前须核对创世奖池容量", penalty: "提前赎回按订单创建时锁定的扣罚规则处理", presets: "修改后更新用户端可选复投金额" } as Record<string,string>)[param.key] ?? "修改后按该参数生效规则执行"}。
           {param.b1RedlineTriggered && <>放大流出方向确认放行时过备付金红线，当前 {cov}%, 422。</>}
           操作确认，{param.newOnly ? "只对新单生效" : "实时生效"}。
         </>
@@ -243,7 +245,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
         kind: "multi-field",
         title: "G4 奖池容量核对",
         hint: `本月容量 ${fmtNumber(overview.g4Capacity.monthlyCapacity)} 张 · 已发 ${fmtNumber(overview.g4Capacity.ticketsIssuedThisMonth)} 张`,
-        fields: [{ key: "g4Ref", label: "G4 核对 ref", inputKind: "text", placeholder: "例如 G4-POOL-2026-07", required: true, wide: true }],
+        fields: [{ key: "g4Ref", label: "创世奖池核对编号", inputKind: "text", placeholder: "例如 G4-POOL-2026-07", required: true, wide: true }],
       } : undefined,
       run: async (reason, value, businessValue) => {
         if (value === undefined || value === null || String(value).trim() === "") return;
@@ -265,9 +267,9 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
     <>
       {error && <div className="gtint" style={{ marginBottom: 12 }}>G7 操作提示 · {error}</div>}
       <div className="f-stats">
-        <div className="f-stat ok"><div className="k">本月复投单</div><div className="v">{fmtNumber(stats.ordersMonth)}</div><div className="sub">在锁本金 {fmtUsdCompact(stats.principalUsd)} · 来自复投锁仓行</div></div>
+        <div className="f-stat ok"><div className="k">本月复投单</div><div className="v">{fmtNumber(stats.ordersMonth)}</div><div className="sub">锁仓本金 {fmtUsdCompact(stats.principalUsd)} · 来自复投锁仓行</div></div>
         <div className="f-stat"><div className="k">未结算订单到期本息</div><div className="v">{fmtUsdCompact(stats.matureUsd)}</div><div className="sub">喂 B2 到期预测</div></div>
-        <div className="f-stat cyan"><div className="k">发放 Genesis 抽奖券</div><div className="v">{fmtNumber(stats.ticketsMonth)} 张</div><div className="sub">每月开奖 · 联动 G4</div></div>
+        <div className="f-stat cyan"><div className="k">发放 创世节点 抽奖券</div><div className="v">{fmtNumber(stats.ticketsMonth)} 张</div><div className="sub">每月开奖 · 联动 G4</div></div>
         <div className="f-stat"><div className="k">复投率</div><div className="v">{stats.reinvestRateAvailable ? `${stats.reinvestRate.toFixed(1).replace(/\.0$/, "")}%` : "—"}</div><div className="sub">{stats.reinvestRateAvailable ? "真实漏斗复投级" : "缺少漏斗分母，不用奖励倍率伪造"}</div></div>
       </div>
 
@@ -290,16 +292,16 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
             <Link href="/growth/phase" className="l-btn sm">去 H1 →</Link>
           </div>
           <div className="gtint" style={{ marginTop: 10 }}><b>复投是原子组合</b> · 一次复投 = 扣余额 + 锁仓，两步在服务端单事务里一起成，中途崩了不会只成一半。限时倍率在复投那一刻套用，这页只展示生效面。</div>
-          <div className="gtint" style={{ marginTop: 10 }}><b>G4 奖池容量</b> · 月容量 {fmtNumber(overview.g4Capacity.monthlyCapacity)} 张 · 本月已发 {fmtNumber(overview.g4Capacity.ticketsIssuedThisMonth)} 张 · 改券规则必须提交 G4 核对 ref。</div>
+          <div className="gtint" style={{ marginTop: 10 }}><b>G4 奖池容量</b> · 月容量 {fmtNumber(overview.g4Capacity.monthlyCapacity)} 张 · 本月已发 {fmtNumber(overview.g4Capacity.ticketsIssuedThisMonth)} 张 · 改券规则必须提交 创世奖池核对编号。</div>
 
           <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 8px" }}>复投单处理流程与金额分布</div>
           <div className="sm-strip">
             {overview.stateMachine.map((state, index) => (
-              <span key={state} className={index === 1 ? "st ok" : index === 2 ? "st warn" : index === 4 ? "st bad" : "st"}>{REPURCHASE_STATE_LABELS[state] ?? state}</span>
+              <span key={state} className={index === 1 ? "st ok" : index === 2 ? "st warn" : index === 4 ? "st bad" : "st"}>{REPURCHASE_STATE_LABELS[state] ?? "状态待核实"}</span>
             ))}
           </div>
           <details className="gtint" style={{ marginTop: 6 }}>
-            <summary>技术详情 · 处理流程机器枚举</summary>
+            <summary>技术详情 · 状态代码</summary>
             <div className="mono" style={{ marginTop: 4, fontSize: 11.5 }}>
               {overview.stateMachine.map((state) => `${state} = ${REPURCHASE_STATE_LABELS[state] ?? "未知状态"}`).join(" · ")}
             </div>
@@ -309,13 +311,13 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
               <div className="t"><div className="k">状态分布</div><div className="v">暂无</div></div>
             ) : overview.statusBreakdown.map((status) => (
               <div className="t" key={status.status}>
-                <div className="k">{status.label}</div>
+                <div className="k">{operatorCopyText(status.label)}</div>
                 <div className="v">{fmtNumber(status.count)} 单</div>
-                <div style={{ marginTop: 4 }}><span className={`bdg ${toneClass(status.tone)}`}>{status.principalDisplay}</span></div>
+                <div style={{ marginTop: 4 }}><span className={`bdg ${toneClass(status.tone)}`}>{operatorCopyText(status.principalDisplay)}</span></div>
               </div>
             ))}
           </div>
-          <div className="gtint" style={{ marginTop: 10 }}><b>金额分布(本月 {fmtNumber(stats.ordersMonth)} 单)</b> · {overview.amountDistribution} · 到期本息 {fmtUsdCompact(stats.matureUsd)} 喂驾驶舱到期预测(B2)。</div>
+          <div className="gtint" style={{ marginTop: 10 }}><b>金额分布(本月 {fmtNumber(stats.ordersMonth)} 单)</b> · {overview.amountDistribution} · 到期本息 {fmtUsdCompact(stats.matureUsd)} 喂运营总览到期预测(B2)。</div>
         </div>
       </section>
 
@@ -323,7 +325,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
         <div className="l-h"><span className="ttl">真实复投单</span><span className="sub">· 服务端订单与账单关联</span></div>
         <div className="l-b" style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 1040 }}>
-            <thead><tr><th>订单号</th><th>用户</th><th>本金</th><th>快照 APY / 锁期</th><th>预计利息</th><th>状态</th><th>锁定 / 到期</th><th>账单关联</th></tr></thead>
+            <thead><tr><th>订单号</th><th>用户</th><th>本金</th><th>下单时锁定的年化收益率 / 锁期</th><th>预计利息</th><th>状态</th><th>锁定 / 到期</th><th>账单关联</th></tr></thead>
             <tbody>
               {orders.map((order) => (
                 <tr key={order.orderNo}>

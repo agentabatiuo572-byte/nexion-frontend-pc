@@ -14,7 +14,7 @@ function actualDisplay(relative, dependencies = {}) {
   return displayModule.exports;
 }
 const brandDisplay = actualDisplay("../lib/admin/brand-copy.ts");
-const operatorDisplay = actualDisplay("../lib/admin/operator-copy.ts", { "./brand-copy": brandDisplay });
+const operatorDisplay = actualDisplay("../lib/admin/operator-copy.ts", { "./brand-copy": brandDisplay, "./brand-copy.ts": brandDisplay });
 const filename = new URL("../app/components/domain-views/f-tabs/f3-binary.tsx", import.meta.url);
 const output = ts.transpileModule(readFileSync(filename, "utf8"), {
   compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
