@@ -522,8 +522,11 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const updateParam = (param: UserCredentialParam) => {
     if (!param.key || param.readOnly || !canWriteConfig) return;
     openActionConfirm({
-      action: `凭证参数调整 · ${text(param.name)}`,
-      detail: <><b>{text(param.name)}</b> · 当前 {text(param.value)} · {text(param.note)}。会话空闲阈值会立即影响活跃判定，其余凭证时长对新签发凭证生效。</>,
+      action: `账户安全规则调整 · ${text(param.name)}`,
+      detail: <><b>{text(param.name)}</b> · 当前 {text(param.value)} · {text(param.note)}。
+        {param.key === "phoneChangeWindowDays" || param.key === "phoneChangeMaxCount"
+          ? "更换手机号的限制对所有用户的下一次改号申请立即生效。"
+          : "会话空闲阈值会立即影响活跃判定，其余凭证时长对新签发凭证生效。"}</>,
       amplifies: false,
       edit: {
         kind: "number",
@@ -545,7 +548,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
         return perform(`credential|${param.key}|${value}|${expectedVersion}|${reason}`, async (commandKey) => {
           await updateUserCredentialParam(param.key as string, value, reason, OPERATOR(), expectedVersion, commandKey);
           return `${text(param.name)} 已更新为 ${value}`;
-        }, "凭证参数已更新");
+        }, "账户安全规则已更新");
       },
     });
   };
@@ -569,8 +572,8 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">凭证与会话参数</span>
-          <span className="sub">· 后端配置读取 · 改动写入服务端配置</span>
+          <span className="ttl">登录安全与更换手机号限制</span>
+          <span className="sub">· 每个用户单独统计改号次数</span>
         </div>
         <div className="l-b" style={{ paddingTop: 4 }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "0 32px", minWidth: 0 }}>
@@ -590,6 +593,9 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
               </div>
             ))}
             {credentialParams.length === 0 && <div className="ctint">暂无凭证参数</div>}
+          </div>
+          <div className="ctint" style={{ marginTop: 10 }}>
+            <b>更换登录手机号</b> · 按最近的统计天数滚动计算每位用户成功改号的次数；达到上限后，须等最早一次改号移出统计期。此规则与更换绑定设备的次数分开。
           </div>
           <div className="ctint" style={{ marginTop: 10 }}>
             <b>异常自动防御</b> · 同一个长凭证被使用两次时,服务器立即回收整条会话链;挑战码过期与高风险校验由后端执行。
