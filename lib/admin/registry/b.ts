@@ -29,6 +29,6 @@ export const DOMAIN_B: ModuleEntry[] = [
   ),
   liveDashboard(
     "/overview/risk-radar",
-    "风险提醒 —— 挤兑压力、异常账户、熔断开关和告警分布。页面读取 B 域后端聚合接口。",
+    "风险提醒 —— 挤兑压力、异常账户、紧急停止开关和告警分布。页面读取 B 域后端聚合接口。",
   ),
 ];

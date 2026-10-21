@@ -17,7 +17,7 @@ const BRAND = "UVEL";
 
 /** 大小写不敏感,命中即整词替换。 */
 export function nexGridBrandText(value: string): string {
-  return value.replace(new RegExp(LEGACY_BRAND, "gi"), BRAND).replace(/NexGrid/gi, BRAND).replace(/Stellar(?=Box|Rack)/gi, BRAND);
+  return value.replace(new RegExp(LEGACY_BRAND, "gi"), BRAND).replace(/NexGrid/gi, BRAND).replace(/Stellar(?=Box|Rack)/gi, BRAND).replace(/\bNEX\b/g, BRAND);
 }
 
 /** Recognized system defaults only; phone-suffix names need matching evidence. Keep custom names verbatim. */

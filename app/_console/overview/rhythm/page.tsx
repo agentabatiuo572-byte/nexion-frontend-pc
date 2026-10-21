@@ -87,7 +87,7 @@ export default function RhythmPage() {
         desc={
           <>
             从 <b>H1 运营阶段设置</b>读取各阶段用户数、当前八项调节值和下月预计变化。
-            本页只读；所有调整与效果归因都进入 H1。
+            本页只读；所有调整与效果分析都进入 H1。
           </>
         }
       />
@@ -252,7 +252,7 @@ export default function RhythmPage() {
             <div className="b4-section-head">
               <div>
                 <h2>八项调节值</h2>
-                <p>现值取自 H1 调度器服务端权威；B4 不缓存、不重算、无写入控件。</p>
+                <p>当前值来自运营阶段设置；请前往该页面调整。</p>
               </div>
               <span className="b4-source">8 / 8</span>
             </div>
@@ -263,7 +263,7 @@ export default function RhythmPage() {
                     <th>调节项</th>
                     <th>当前值</th>
                     <th>权威来源</th>
-                    <th>V1 生效状态</th>
+                    <th>当前生效状态</th>
                     {canJump && <th>操作</th>}
                   </tr>
                 </thead>
@@ -272,7 +272,7 @@ export default function RhythmPage() {
                     <tr key={dial.key} data-testid="b4-dial-row">
                       <td><b>{dial.label}</b><small>{dial.key}</small></td>
                       <td className="mono">{dialValue(dial.currentValue, dial.unit)}</td>
-                      <td>{dial.source}</td>
+                      <td>{dial.source === "H1" ? "运营阶段设置" : "运营阶段记录"}</td>
                       <td><span className={dial.v1Active ? "b4-status active" : "b4-status pending"}>{dial.v1Status}</span></td>
                       {canJump && (
                         <td>

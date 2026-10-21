@@ -48,10 +48,12 @@ const TRIAGE = {
 const GATE_LABELS: Record<string, string> = {
   withdraw: "提现",
   staking: "质押",
-  genesis: "Genesis",
+  genesis: "创世设备交易",
   exchange: "兑换",
   trial: "试用入口",
 };
+
+const deliveryStatusText = (value: string) => ({ PENDING: "待发送", DELIVERED: "已送达", SANDBOX_DELIVERED: "测试送达", NOT_QUEUED: "尚未加入发送队列", PROCESSING: "发送中", FAILED_RETRY: "发送失败，等待重试", DEAD: "发送已终止", SENT: "已发送", FAILED: "发送失败" } as Record<string,string>)[value.toUpperCase()] ?? "发送状态待核实";
 
 function pct(ratio: number | null) {
   return ratio === null ? "不可计算" : `${(ratio * 100).toFixed(1)}%`;
@@ -291,16 +293,16 @@ export default function RiskRadarPage() {
       <BPageHeader
         id="B5"
         title="风险提醒"
-        desc="挤兑、异常账户、提现积压、五个功能闸与兑付覆盖率同屏；这里只读研判，处置必须进入权威域。"
+        desc="挤兑、异常账户、提现积压、五个业务开关与兑付覆盖率同屏；本页仅展示风险，处理时请进入对应业务页面。"
         ctaLabel="紧急停用开关"
         ctaHref="/emergency/kill-switch"
         ctaAllowed={canCross("/emergency/kill-switch")}
       />
 
       <div className="b5-summary">
-        <span><Radar size={15} /> 服务端权威聚合</span>
+        <span><Radar size={15} /> 系统汇总数据</span>
         <span>更新于 {new Date(data.generatedAt).toLocaleString()}</span>
-        <span>出金压力比 e(t) 固定红线 {pct(data.bankrun.pressureRedLine)}（仅人工警戒）</span>
+        <span>提现与充值比率 固定红线 {pct(data.bankrun.pressureRedLine)}（仅人工警戒）</span>
       </div>
       {radar.streamWarning && <div className="b5-error" role="status">{radar.streamWarning}</div>}
 
@@ -312,18 +314,18 @@ export default function RiskRadarPage() {
           </div>
           <div className="b5-bankrun-grid">
             <div>
-              <span>24h 提现 ÷ 真实储备</span>
+              <span>24 小时 提现 ÷ 真实储备</span>
               <strong>{pct(data.bankrun.ratio24h)}</strong>
               <small>{money(data.bankrun.withdraw24hUsdt)} ÷ {money(data.bankrun.reserveUsdt)}</small>
               {!data.bankrun.ratioCalculable && <small>{data.bankrun.withdraw24hUsdt > 0 ? "真实储备为 0，比例不可计算，按红色风险处置。" : "提现与储备均为 0，比例不可计算，不判健康。"}</small>}
             </div>
             <div>
-              <span>出金压力比 e(t)</span>
+              <span>提现与充值比率</span>
               <strong>{pct(data.bankrun.pressureRatio)}</strong>
-              <small>{data.bankrun.pressureCalculable ? `固定红线 ${pct(data.bankrun.pressureRedLine)} · 仅人工警戒` : "近 24h 入金分母为 0，不生成伪百分比"}</small>
+              <small>{data.bankrun.pressureCalculable ? `固定红线 ${pct(data.bankrun.pressureRedLine)} · 仅人工警戒` : "近 24 小时 入金分母为 0，不生成伪百分比"}</small>
             </div>
           </div>
-          <p>挤兑比率（24h 提现 ÷ 真实储备）动态阈值：黄线 {bankRunYellowPct}% · 红线 {bankRunRedlinePct}%（J1 R1 已同步引用，越线触发 P0/自动关停）</p>
+          <p>挤兑比率（24 小时 提现 ÷ 真实储备）动态阈值：黄线 {bankRunYellowPct}% · 红线 {bankRunRedlinePct}%（J1 R1 已同步引用，越线触发 最高级告警并自动关停）</p>
           <div className="b5-actions">
             {canTriageDimension("bankrun") && <button onClick={() => void triage("bankrun")}>处置 → D2 提现队列</button>}
             {canThreshold && <button className="secondary" onClick={openThreshold}>阈值配置</button>}
@@ -348,7 +350,7 @@ export default function RiskRadarPage() {
         <section className={`b5-dimension ${data.withdrawBacklog.light}`}>
           <div className="b5-card-head">
             <div><Landmark size={18} /><b>提现队列积压</b></div>
-            <span className={`b5-light ${data.withdrawBacklog.light}`}>SLA {data.withdrawBacklog.slaHours}h</span>
+            <span className={`b5-light ${data.withdrawBacklog.light}`}>处理时限 {data.withdrawBacklog.slaHours} 小时</span>
           </div>
           <div className="b5-backlog">
             {data.withdrawBacklog.byState.map((item) => (
@@ -356,11 +358,11 @@ export default function RiskRadarPage() {
                 <span>{formatB5WithdrawalState(item.state)}</span>
                 <b>{item.count} 单</b>
                 <strong>{money(item.amountUsdt)}</strong>
-                <small>超 SLA {item.overSlaCount} 单</small>
+                <small>超 处理时限 {item.overSlaCount} 单</small>
               </div>
             ))}
           </div>
-          <p>合计 {data.withdrawBacklog.totalCount} 单 · {money(data.withdrawBacklog.totalAmountUsdt)} · 超 SLA {data.withdrawBacklog.overSlaCount} 单</p>
+          <p>合计 {data.withdrawBacklog.totalCount} 单 · {money(data.withdrawBacklog.totalAmountUsdt)} · 超 处理时限 {data.withdrawBacklog.overSlaCount} 单</p>
           <div className="b5-actions">
             {canTriageDimension("withdraw-backlog") && <button onClick={() => void triage("withdraw-backlog")}>处置 → D2 提现队列</button>}
           </div>
@@ -368,20 +370,20 @@ export default function RiskRadarPage() {
 
         <section className="b5-dimension">
           <div className="b5-card-head">
-            <div><ShieldCheck size={18} /><b>功能闸（5 个）</b></div>
-            <span>geo-block 归 J2</span>
+            <div><ShieldCheck size={18} /><b>功能开关（5 个）</b></div>
+            <span>地区限制请前往 J2</span>
           </div>
           <div className="b5-gates">
             {data.killSwitches.map((gate) => (
               <div key={gate.key}>
                 <i className={`b5-dot ${gate.enabled ? "green" : "red"}`} />
                 <span>{GATE_LABELS[gate.key]}</span>
-                <b>{gate.enabled ? "开放" : "已熔断"}</b>
+                <b>{gate.enabled ? "开放" : "已暂停"}</b>
               </div>
             ))}
           </div>
           <div className="b5-actions">
-            {canTriageDimension("kill-switches") && <button onClick={() => void triage("kill-switches")}>处置 → J1 功能闸</button>}
+            {canTriageDimension("kill-switches") && <button onClick={() => void triage("kill-switches")}>处置 → J1 功能开关</button>}
           </div>
         </section>
 
@@ -409,11 +411,11 @@ export default function RiskRadarPage() {
         </div>
         <div className="b5-channel-row">
           <label><input type="checkbox" name="inApp" checked={subscription.inApp} disabled={!canSubscribe} onChange={(event) => setSubscription((value) => ({ ...value, inApp: event.target.checked }))} />站内</label>
-          <label title="邮件 provider 尚未配置，当前失败关闭"><input type="checkbox" name="email" checked={false} disabled />邮件（disabled）</label>
-          <label title={webhookMode === "controlled-proxy" ? "经受控出口代理投递" : "未配置受控出口代理，失败关闭"}><input type="checkbox" name="webhook" checked={subscription.webhook} disabled={!canSubscribe || (webhookMode !== "controlled-proxy" && !subscription.webhook)} onChange={(event) => setSubscription((value) => ({ ...value, webhook: event.target.checked }))} />Webhook（{webhookMode}）</label>
+          <label title="邮件服务未配置，暂不能发送"><input type="checkbox" name="email" checked={false} disabled />邮件（不可点击）</label>
+          <label title={webhookMode === "controlled-proxy" ? "经受控出口代理投递" : "未配置受控出口代理，暂停发送"}><input type="checkbox" name="webhook" checked={subscription.webhook} disabled={!canSubscribe || (webhookMode !== "controlled-proxy" && !subscription.webhook)} onChange={(event) => setSubscription((value) => ({ ...value, webhook: event.target.checked }))} />外部消息通知（{webhookMode === "controlled-proxy" ? "已配置受控代理" : "未配置"}）</label>
           {subscription.webhook && (
             <input
-              aria-label="Webhook URL"
+              aria-label="外部通知接收地址"
               value={subscription.webhookUrl}
               disabled={!canSubscribe}
               placeholder="https://..."
@@ -429,8 +431,8 @@ export default function RiskRadarPage() {
       <section className="b5-subscription" data-capability="b5-subscriber-inbox">
         <div className="b5-card-head"><div><BellRing size={18} /><b>我的站内告警</b></div><span>仅显示当前登录管理员的持久化收件箱</span></div>
         {inbox.map((delivery) => <div className="b5-channel-row" key={delivery.id}>
-          <b>{delivery.signalNo}</b><span>{delivery.deliveryStatus}</span>
-          <span>回执：{delivery.receiptSource} · 送达 {delivery.deliveredAt}</span>
+          <b>{delivery.signalNo}</b><span>{deliveryStatusText(delivery.deliveryStatus)}</span>
+          <span>回执：{({ "durable-inbox": "站内收件箱", "controlled-proxy": "受控通知代理", provider: "外部通知服务", mock: "测试模拟回执" } as Record<string,string>)[delivery.receiptSource] ?? "回执来源待核实"} · 送达 {delivery.deliveredAt}</span>
           <span>{delivery.readAt ? `已读 ${delivery.readAt}` : "未读"}</span>
           <span>{delivery.acknowledgedAt ? `已确认 ${delivery.acknowledgedAt}` : "未确认"}</span>
           {canTriage && !delivery.acknowledgedAt && <button disabled={acknowledgingDelivery === delivery.id} onClick={() => void acknowledgeInbox(delivery)}>确认已读</button>}
@@ -439,9 +441,9 @@ export default function RiskRadarPage() {
       </section>
 
       <section className="b5-subscription" data-capability="b5-signal-disposition">
-        <div className="b5-card-head"><div><ShieldAlert size={18} /><b>近期风险信号</b></div><span>投递状态与处置状态均为服务端权威</span></div>
+        <div className="b5-card-head"><div><ShieldAlert size={18} /><b>近期风险信号</b></div><span>发送与处理进度以系统记录为准</span></div>
         {data.recentAlerts.map((alert) => <div className="b5-channel-row" key={alert.signalNo}>
-          <b>{alert.signalNo}</b><span>{alert.message}</span><span>投递：{alert.deliveryStatus}</span><span>处置：{alert.handlingStatus} · v{alert.handlingVersion}</span>
+          <b>{alert.signalNo}</b><span>{alert.message}</span><span>投递：{deliveryStatusText(alert.deliveryStatus)}</span><span>处置：{({ open: "待处理", handled: "已处理", resolved: "已解决" } as Record<string,string>)[alert.handlingStatus] ?? "处理状态待核实"} · 版本 {alert.handlingVersion}</span>
           {canTriage && alert.handlingStatus === "open" && <button disabled={updatingSignal === alert.signalNo} onClick={() => void changeSignalStatus(alert, "handled")}>标记已处理</button>}
           {canTriage && alert.handlingStatus === "handled" && <button disabled={updatingSignal === alert.signalNo} onClick={() => void changeSignalStatus(alert, "resolved")}>标记已解决</button>}
         </div>)}
@@ -451,15 +453,15 @@ export default function RiskRadarPage() {
       <B5RestoredInsights data={data} canAccessPath={canCross} />
 
       <p className="b-foot">
-        B5 不直接处置任何风险；五维数据分别引用 B1/D2/K/J1 单一权威源。P0 告警表示挤兑比率达到当前动态红线；
+        B5 不直接处置任何风险；五维数据分别引用 B1/D2/K/J1 单一权威源。最高级告警表示挤兑比率达到当前动态红线；
         R1 自动关停后须补录处置结论。接口失败、空值或结构异常时页面清空旧值并停止展示。
       </p>
 
       {thresholdOpen && (
         <div className="b5-modal-mask" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setThresholdOpen(false)}>
           <div className="b5-modal" role="dialog" aria-modal="true" aria-labelledby="b5-threshold-title">
-            <h2 id="b5-threshold-title">B5-MD1 · 挤兑阈值配置</h2>
-            <p>本配置只影响挤兑比率（24h 提现 ÷ 真实储备）的动态黄线/红线，越线触发 P0 并联动 J1 R1 提现闸自动熔断。当前挤兑比率 {pct(data.bankrun.ratio24h)}；出金压力比 e(t) {pct(data.bankrun.pressureRatio)}（{data.bankrun.pressureCalculable ? `固定红线 ${pct(data.bankrun.pressureRedLine)}，仅人工警戒，不在此处调整` : "入金分母为 0，不可计算"}）</p>
+            <h2 id="b5-threshold-title">挤兑阈值配置</h2>
+            <p>本配置只影响挤兑比率（24 小时 提现 ÷ 真实储备）的动态黄线/红线，越线触发最高级告警并联动 J1 R1 提现开关自动暂停。当前挤兑比率 {pct(data.bankrun.ratio24h)}；提现与充值比率 {pct(data.bankrun.pressureRatio)}（{data.bankrun.pressureCalculable ? `固定红线 ${pct(data.bankrun.pressureRedLine)}，仅人工警戒，不在此处调整` : "入金分母为 0，不可计算"}）</p>
             <div className="b5-threshold-fields">
               <label>黄线（5%–50%）<input value={yellowInput} onChange={(event) => setYellowInput(event.target.value)} inputMode="decimal" /></label>
               <label>红线（10%–80%）<input value={redInput} onChange={(event) => setRedInput(event.target.value)} inputMode="decimal" /></label>
@@ -468,7 +470,7 @@ export default function RiskRadarPage() {
             <label className="b5-reason">调整理由（8–200 字）<textarea value={reason} maxLength={200} onChange={(event) => setReason(event.target.value)} /></label>
             <div className="b5-preview">
                   {preview ? <>服务端影响预览：新阈值下灯色为 <b>{formatB5RiskLight(preview.light)}</b></> : "服务端影响预览加载中…"}
-              {redPct > data.bankrun.redPct && <p>警示：上调红线将同步推迟 J1 R1 提现闸自动熔断触发点。</p>}
+              {redPct > data.bankrun.redPct && <p>警示：上调红线将同步推迟 J1 R1 提现开关自动暂停触发点。</p>}
             </div>
             {previewError && <div className="b5-error">{previewError}</div>}
             <div className="b5-modal-actions">

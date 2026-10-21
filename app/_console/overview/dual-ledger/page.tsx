@@ -180,16 +180,16 @@ export default function DualLedgerPage() {
 
   // 覆盖率与红线/健康线的关系必须三分(zentao #169):数值**等于**红线时既不是「高于」也没有缓冲,
   // 与 #68 在 J1 修过的是同一类缺陷 —— 二分写法把「等于」归进「高于」,于是 100% 对 100% 会报
-  // 「高于红线 +0.0pct」。等于时明说「触及红线 / 缓冲 0.0pct」。
+  // 「高于红线 +0.0 个百分点」。等于时明说「触及红线 / 缓冲 0.0 个百分点」。
   const bufferPct = round2(coverageRatio - effRedline);
   const refTail =
     zone === "danger"
-      ? `已跌破红线 ${(effRedline - coverageRatio).toFixed(1)}pct`
+      ? `已跌破红线 ${(effRedline - coverageRatio).toFixed(1)} 个百分点`
       : bufferPct === 0
-        ? "触及红线 · 缓冲 0.0pct"
+        ? "触及红线 · 缓冲 0.0 个百分点"
         : zone === "warning"
-          ? `当前高于红线 +${bufferPct.toFixed(1)}pct,但已跌破健康线`
-          : `高于健康线 +${round2(coverageRatio - healthyPct).toFixed(1)}pct`;
+          ? `当前高于红线 +${bufferPct.toFixed(1)} 个百分点，但已跌破健康线`
+          : `高于健康线 +${round2(coverageRatio - healthyPct).toFixed(1)} 个百分点`;
 
   // 触红线预测:由近 8 窗口斜率外推(真实趋势,非装饰)
   const slope =
@@ -229,7 +229,7 @@ export default function DualLedgerPage() {
       deltaColor: reserveChg < 0 ? "var(--negative)" : "var(--success)", ext: "环比上窗口",
     },
     {
-      label: "24h 净流", value: `${netFlow24hUsd >= 0 ? "+" : "−"}${fmtUsdCompact(Math.abs(netFlow24hUsd))}`, valColor: netFlow24hUsd >= 0 ? "var(--success)" : "var(--negative)", href: "/overview/liquidity",
+      label: "24 小时资金净流入", value: `${netFlow24hUsd >= 0 ? "+" : "−"}${fmtUsdCompact(Math.abs(netFlow24hUsd))}`, valColor: netFlow24hUsd >= 0 ? "var(--success)" : "var(--negative)", href: "/overview/liquidity",
       arrow: netFlow24hUsd >= 0 ? "↗" : "↘", deltaText: `${netFlow24hUsd >= 0 ? "流入" : "流出"} ${outflowChg >= 0 ? "+" : ""}${outflowChg}%`, deltaColor: netFlow24hUsd >= 0 ? "var(--success)" : "var(--warning)", ext: "较上窗口",
     },
     {
@@ -324,7 +324,7 @@ export default function DualLedgerPage() {
               <span className="cov-label">
                 <Gauge size={15} className="ttl-glyph" />
                 <span>兑付覆盖率 · 储备 ÷ 应付负债</span>
-                <span className="help" data-tip="兑付覆盖率 = 平台真实储备 ÷ 应付负债总额。运营内部资金安全水位,数据以服务端为准。">?</span>
+                <span className="help" data-tip="兑付覆盖率 = 平台真实储备 ÷ 应付负债总额。运营内部资金安全水平,数据以服务端为准。">?</span>
               </span>
             </div>
             <span className={`status-pill ${zoneCls}`}>
@@ -385,11 +385,11 @@ export default function DualLedgerPage() {
                     </>
                   ) : zone === "danger" ? (
                     <>
-                      <b>已跌破红线:</b>立即冻结放大流出、暂停排放派发。放大资金流出动作须先核验本约束(§1.8 原则一)。
+                      <b>已跌破红线:</b>立即暂停增加资金支出的操作、暂停收益发放。放大资金流出动作须先核验本约束(§1.8 原则一)。
                     </>
                   ) : (
                     <>
-                      <b>警戒区:</b>建议收紧大额提现、暂缓 Genesis 排放与高 APY 放大。覆盖率跌破健康线后,放大资金流出动作须先核验本约束(§1.8 原则一)。
+                      <b>警戒区:</b>建议收紧大额提现、暂缓创世设备分红与提高年化收益率。覆盖率跌破健康线后,放大资金流出动作须先核验本约束(§1.8 原则一)。
                     </>
                   )}
                 </div>
@@ -397,7 +397,7 @@ export default function DualLedgerPage() {
               <div className="acts">
                 {alertAcked ? (
                   <span className="muted tiny done-stamp">
-                    <CheckCircle2 size={14} /> 已于本驾驶舱标记处置 · A2 留痕
+                    <CheckCircle2 size={14} /> 已于本运营总览标记处置 · A2 留痕
                   </span>
                 ) : (
                   <>
@@ -421,7 +421,7 @@ export default function DualLedgerPage() {
           <div className="ttl-row">
             <span className="ttl-ic"><Scale size={17} /></span>
             <span className="h">双账本对照</span>
-            <span className="sub">储备 vs 应付</span>
+            <span className="sub">储备与应付款</span>
             <div className="r"><span className="b1-tag">B-01</span></div>
           </div>
 
@@ -448,8 +448,8 @@ export default function DualLedgerPage() {
 
           <div className="net-box">
             <div className="nb-k">
-              净敞口(储备 − 负债){" "}
-              <span className="help" data-tip="净敞口 = 平台真实储备 − 应付负债总额。为负表示储备无法完全覆盖对用户的应付,即覆盖缺口。">?</span>
+              储备与应付款差额(储备 − 负债){" "}
+              <span className="help" data-tip="储备与应付款差额 = 平台真实储备 − 应付负债总额。为负表示储备无法完全覆盖对用户的应付,即覆盖缺口。">?</span>
             </div>
             <div className="net-num" style={{ color: netExposure < 0 ? "var(--danger)" : "var(--success)" }}>
               {netExposure < 0 ? "−" : ""}{fmtUsd(Math.abs(netExposure))}
@@ -497,7 +497,7 @@ export default function DualLedgerPage() {
               )}
             </div>
             {!canConfigureThresholds && !canInjectReserve && (
-              <div className="muted tiny">当前账号仅可查看；阈值与储备注入仅财务负责人 / 超管可执行。</div>
+              <div className="muted tiny">当前账号仅可查看；阈值与储备注入仅财务负责人 / 超级管理员可执行。</div>
             )}
           </div>
 
@@ -505,11 +505,11 @@ export default function DualLedgerPage() {
             <div className="dec-lbl">处置边界</div>
             <div className="fuse-row">
               <Link href="/emergency/kill-switch" prefetch={false} className="btn ghost">
-                前往 J1 管理业务闸 <ArrowRight size={14} />
+                前往 J1 管理业务开关 <ArrowRight size={14} />
               </Link>
             </div>
             <div className="muted tiny" style={{ marginTop: 11 }}>
-              B1 只给出水位、告警与建议，不自动执行提现收紧或全局熔断。
+              B1 只给出资金余额、告警与建议，不自动执行提现收紧或全局紧急暂停。
             </div>
           </div>
 
@@ -564,8 +564,8 @@ export default function DualLedgerPage() {
       <section className="card">
         <div className="ttl-row">
           <span className="ttl-ic"><TrendingDown size={17} /></span>
-          <span className="h">净敞口趋势</span>
-          <span className="sub">储备 − 负债 · 服务端权威序列</span>
+          <span className="h">储备与应付款差额趋势</span>
+          <span className="sub">储备 − 负债 · 系统记录的趋势</span>
           <div className="r" style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {/* 互斥时间范围必须暴露「当前选中项」(zentao #159)。此前三个按钮只有
                 aria-pressed:浏览器把 aria-pressed 按钮当 toggle button,读屏按复选框朗读
@@ -573,7 +573,7 @@ export default function DualLedgerPage() {
                 role=tab + aria-selected + roving tabindex,方向键即可切换。 */}
             <TabGroup<"7d" | "30d" | "90d">
               className="r"
-              label="净敞口趋势时间范围"
+              label="储备与应付款差额趋势时间范围"
               value={exposureWindow}
               items={["7d", "30d", "90d"] as const}
               onSelect={setExposureWindow}
@@ -592,17 +592,17 @@ export default function DualLedgerPage() {
         </div>
         {exposureError ? (
           <BDomainDataState
-            title="净敞口趋势暂不可用"
+            title="储备与应付款差额趋势暂不可用"
             error={`${exposureError} · 已停止展示旧值或推测值。`}
           />
         ) : exposureSeries.length === 0 ? (
           <div className="alertbar">
             <AlertTriangle size={16} />
-            暂无净敞口序列 · 当前窗口没有服务端数据，不使用前端模拟序列。
+            暂无储备与应付款差额序列 · 当前窗口没有服务端数据，不使用前端模拟序列。
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 24, alignItems: "end" }}>
-            <div aria-label={`${exposureWindow} 净敞口趋势图`}>
+            <div aria-label={`${exposureWindow} 储备与应付款差额趋势图`}>
               <TrendSparkline
                 data={exposureSeries.map((point) => point.netExposureUsdt)}
                 color={exposureSeries.at(-1)!.netExposureUsdt < 0 ? "var(--danger)" : "var(--success)"}
@@ -685,7 +685,7 @@ export default function DualLedgerPage() {
           }
           detail={
             mc.kind === "threshold"
-              ? "红线触发高风险告警，黄线定义恢复健康水位；黄线必须严格高于红线。B1 只做建议与告警，不自动执行资金处置。"
+              ? "红线触发高风险告警，黄线定义恢复资金健康水平；黄线必须严格高于红线。B1 只做建议与告警，不自动执行资金处置。"
               : mc.kind === "injection"
                 ? "输入真实到账金额与链上交易哈希或银行流水号。提交后写入 D3 储备权威账本并刷新 B1 覆盖率。"
                 : mc.kind === "export" ? "导出当前对账明细；理由、操作者与命令号由服务端审计留痕。" : "仅在覆盖率仍处于红线或黄线告警区间时确认已跟进；健康态服务端拒绝伪处置。"

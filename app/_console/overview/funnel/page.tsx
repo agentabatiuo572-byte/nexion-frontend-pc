@@ -96,7 +96,7 @@ export default function FunnelPage() {
       anchor.download = file.fileName;
       anchor.click();
       URL.revokeObjectURL(url);
-      setNotice("聚合 CSV 已生成并留痕；文件不含用户标识或原始 PII。");
+      setNotice("聚合 CSV 已生成并留痕；文件不含用户标识或原始个人隐私信息。");
     } catch (value) {
       setNotice(value instanceof Error ? displayAdminError(value) : "导出失败，请重试。");
     } finally {
@@ -112,7 +112,7 @@ export default function FunnelPage() {
         desc={
           <>
             从注册到提现的四级转化只读取 <b>A4 已登记事件</b>，并要求同一用户按时间顺序逐级进入。
-            空分母与未成熟 Day7 窗口显示“不可计算”，不会用 0 冒充经营事实。
+            没有符合条件的用户，或注册尚未满七天时，显示“不可计算”，不会用 0 冒充经营事实。
           </>
         }
       />

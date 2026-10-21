@@ -124,7 +124,7 @@ test("B5 owns structured bank-run bands and displays the same redline referenced
   assert.match(b5RiskRadar, /J1 R1 已同步引用/);
   assert.doesNotMatch(b5RiskRadar, /bankRunRatio < 20/);
   assert.match(b5RiskRadar, /R1 自动关停后须补录处置结论/);
-  assert.match(b5RiskRadar, /P0 告警表示挤兑比率达到当前动态红线/);
+  assert.match(b5RiskRadar, /最高级告警表示挤兑比率达到当前动态红线/);
 });
 
 test("J1 R3 renders the backend-provided J3 canonical alert threshold", () => {
