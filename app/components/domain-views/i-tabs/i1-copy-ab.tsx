@@ -40,7 +40,7 @@ type ExpRow = {
   audience: string; estimatedAudience?: number; impressions: string; conversions: string; state: string; note: string;
 };
 
-const COPY_MODULE_LABELS: Record<CopyModule, string> = { home: "首页", store: "商城", earn: "赚取", me: "我的" };
+const COPY_MODULE_LABELS: Record<CopyModule, string> = { home: "首页", store: "商城", earn: "收益", me: "我的" };
 const COPY_MODULE_OPTIONS = COPY_MODULES.map((value) => ({ value, label: COPY_MODULE_LABELS[value] }));
 const LEGACY_MODULES: Record<string, CopyModule> = { Home: "home", Store: "store", Earn: "earn", Me: "me", 商城: "store" };
 const SURF_FLT: [Surf, string][] = [["all", "全部"], ...COPY_MODULES.map((value) => [value, COPY_MODULE_LABELS[value]] as [Surf, string])];
@@ -429,7 +429,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
 
   const rollbackTo = (copy: CopyRow, v: string) => openActionConfirm({
     action: <>回滚 · {copy.key} → 重新发布 {v}</>,
-    detail: <>回滚 = 把历史版 <b>{v}</b> 重新发布,效果和发新版完全一样(对全体用户生效),所以同样走操作确认。仅完整满足中英越、受众和位置契约的归档版允许恢复。</>,
+    detail: <>回滚 = 把历史版 <b>{v}</b> 重新发布,效果和发新版完全一样(对符合该版本受众和投放位置的用户生效),所以同样走操作确认。仅完整满足中英越、受众和投放位置要求的归档版允许恢复。</>,
     amplifies: false,
     run: (reason) => {
       if (copy.revision == null) {
@@ -442,7 +442,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
 
   const archiveCurrentVersion = (copy: CopyRow, version: string) => openActionConfirm({
     action: <>下架当前发布版 · {copy.key} {version}</>,
-    detail: <>下架后该文案位<b>没有生效版本</b>,App 端会退回内置兜底文案——一般只在文案出合规问题时才这么做;常规换版直接发新版即可。下架立即生效。</>,
+    detail: <>下架后该文案位<b>没有生效版本</b>,App 端会退回内置备用文案——一般只在文案出合规问题时才这么做;常规换版直接发新版即可。下架立即生效。</>,
     amplifies: false,
     run: (reason) => {
       if (copy.revision == null) {
@@ -549,7 +549,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
 
   const adoptExp = (id: string) => openActionConfirm({
     action: <>采纳获胜变体 · {id}</>,
-    detail: <>把获胜变体<b>采纳为该文案位的发布版</b>——这等价于一次正式发布(对全体用户生效),审计会记采纳来源实验号。采纳前确认:数据量达标、提升显著。</>,
+    detail: <>把获胜变体<b>采纳为该文案位的发布版</b>——这等价于一次正式发布(对符合该版本受众和投放位置的用户生效),审计会记采纳来源实验号。采纳前确认:数据量达标、提升显著。</>,
     amplifies: false,
     run: (reason) => {
       runBackend(actions.adoptI1Experiment(id, reason), `${id} 获胜变体采纳已确认生效`);
@@ -585,7 +585,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
         const key = copy.surface || "未设置";
         acc[key] = (acc[key] ?? 0) + 1;
         return acc;
-      }, {})).map(([surface, count]) => `${surface} ${count}`).join(" · ")
+      }, {})).map(([surface, count]) => `${COPY_MODULE_LABELS[surface as CopyModule] ?? "其他页面"} ${count}`).join(" · ")
     : "暂无后端文案位";
   const topExperimentId = EXPS.find((exp) => exp.state === "running" || exp.state === "adopted")?.id ?? "";
 
@@ -637,7 +637,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                   <tr key={position.positionKey}>
                     <td style={{ fontWeight: 600 }}>{position.name}</td>
                     <td className="mono">{position.positionKey}</td>
-                    <td><span className="bdg dim">{COPY_MODULE_LABELS[module] ?? position.surface}</span></td>
+                    <td><span className="bdg dim">{COPY_MODULE_LABELS[module] ?? "页面待核实"}</span></td>
                     <td>{position.status.toUpperCase() === "ACTIVE"
                       ? <span className="bdg ok">启用</span>
                       : <span className="bdg dim">停用</span>}</td>
@@ -719,7 +719,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                     <div style={{ fontWeight: 600, color: "var(--ink)" }}>{c.desc}</div>
                     <span className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>{c.key}</span>
                   </td>
-                  <td><span className="bdg dim">{COPY_MODULE_LABELS[c.surface as CopyModule] ?? c.surface}</span></td>
+                  <td><span className="bdg dim">{COPY_MODULE_LABELS[c.surface as CopyModule] ?? "页面待核实"}</span></td>
                   <td className="mono" style={{ fontSize: 11.5 }}>{c.copyPosition || "—"}</td>
                   <td className="mono" style={{ fontWeight: 700 }}>{c.version}</td>
                   <td>{renderCopyStatus(c)}</td>
@@ -782,7 +782,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                 return (
                   <tr key={`${row.copyKey}:${row.v}`}>
                     <td><div style={{ fontWeight: 600 }}>{copy?.desc || row.copyKey}</div><span className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>{row.copyKey}</span></td>
-                    <td><div className="mono" style={{ fontSize: 11.5 }}>{row.copyPosition || "—"}</div><span className="bdg dim">{COPY_MODULE_LABELS[row.surface as CopyModule] ?? row.surface}</span></td>
+                    <td><div className="mono" style={{ fontSize: 11.5 }}>{row.copyPosition || "—"}</div><span className="bdg dim">{COPY_MODULE_LABELS[row.surface as CopyModule] ?? "页面待核实"}</span></td>
                     <td className="mono" style={{ fontWeight: 700 }}>{row.v}</td>
                     <td style={{ minWidth: 300 }}>
                       <div className="tiny" title={row.zh} style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><b>ZH</b> · {row.zh || "—"}</div>
@@ -837,7 +837,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
               );
             })}
             <div className="itint" style={{ marginTop: 10 }}>
-              <b>分组怎么发的</b> · 用户首次命中实验时由服务器掷签入组,之后固定不变(换设备也不变);曝光和转化都按服务器记的组归因。用户在本地改自己的组,服务器照旧按原组算,不会污染结论。
+              <b>分组怎么发的</b> · 用户首次命中实验时由服务器随机分组,之后固定不变(换设备也不变);曝光和转化都按服务器记的组归因。用户在本地改自己的组,服务器照旧按原组算,不会污染结论。
             </div>
             <div className="itint cyan" style={{ marginTop: 8 }}>
               <b>不碰钱</b> · 这页只改措辞,费率 / 奖励 / 价格一个都改不了——那些归各业务域,改之前要过备付金红线;文案发布没有这道约束。
@@ -849,7 +849,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">A/B 实验面板(c)</span>
-          <span className="sub">· 曝光 / 转化 / CVR 全部由事件流结算(服务器口径),不是页面临时拼的数</span>
+          <span className="sub">· 曝光 / 转化 / 转化率 全部由系统业务记录统计(服务器统计规则),不是页面临时拼的数</span>
           <div className="r chips">
             {canManageExperiments && <button type="button" className="l-btn sm mc" title={EXPERIMENT_COPY_OPTIONS.length === 0 ? experimentUnavailableReason : "创建 A/B 实验"} onClick={createExperiment}>+ 创建 A/B 实验</button>}
             {EXP_FLT.map(([k, l]) => (
@@ -858,7 +858,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
           </div>
         </div>
         <div className="itint cyan" style={{ margin: "0 14px 12px" }}>
-          <b>转化统计口径</b> · 仅统计服务端已支付/已完成订单事件；点击、加购、客户端自报不计入转化。
+          <b>转化统计规则</b> · 仅统计服务端已支付/已完成订单事件；点击、加购、客户端自报不计入转化。
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 980 }}>
@@ -870,7 +870,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                 <th>继承文案受众</th>
                 <th className="num">曝光</th>
                 <th className="num">转化</th>
-                <th className="num">CVR</th>
+                <th className="num">转化率</th>
                 <th>状态</th>
                 <th style={{ textAlign: "right" }}></th>
               </tr>
@@ -954,7 +954,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       </section>
 
       <p className="f-foot">
-        <b>执行门槛</b>:普通文案新增、编辑、发布、下架与回滚使用 <span className="mono">content_i1_write</span>；实验框架、创建、启停、弃用与采纳使用独立权限 <span className="mono">content_i1_experiment_manage</span>，无该权限不渲染实验写按钮。<b>事件去向</b>:变体曝光喂实时漏斗与 BI；转化仅统计服务端确认的已支付/已完成订单事件，点击、加购和客户端自报不计入 CVR。
+        <b>执行门槛</b>:普通文案新增、编辑、发布、下架与回滚使用 <span className="mono">content_i1_write</span>；实验框架、创建、启停、弃用与采纳使用独立权限 <span className="mono">content_i1_experiment_manage</span>，无该权限不渲染实验写按钮。<b>事件去向</b>:变体曝光喂实时转化分析与 数据分析；转化仅统计服务端确认的已支付/已完成订单事件，点击、加购和客户端自报不计入 转化率。
         <b>边界</b>:活动卡里能独立做 A/B 的通用文案归这页;活动本身的玩法 / 奖励 / 时窗归活动页(H4),互不越界。
       </p>
       <PaginationExemptionList

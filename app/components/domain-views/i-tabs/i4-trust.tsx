@@ -343,8 +343,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       detail: (
         <>
           <b>版本差异</b>：当前线上 <span className="mono">{s.v}</span> → 待发布 <span className="mono">{draft.version}</span>；
-          发布后 /trust 页即时换新。<b>三语确认</b>必须核对中文、越南语、英文语义一致。
-          {requiresDataSource(s) && <>财务数字 / NEX 叙事必须填写可追溯的<b>财务/NEX 数据来源</b>。</>}
+          发布后 信任中心页面即时换新。<b>三语确认</b>必须核对中文、越南语、英文语义一致。
+          {requiresDataSource(s) && <>财务数字 / UVEL介绍必须填写可追溯的<b>财务/UVEL 数据来源</b>。</>}
           <b>执行门槛:{s.roleGate}</b>
         </>
       ),
@@ -401,7 +401,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       action: <>回滚信任版块 · {s.key}</>,
       detail: (
         <>
-          当前 <b>{s.v}</b>。回滚 = 把历史版重新发布(对外内容立即回到旧版),等价一次发布,执行门槛与发布一致;审计记 from→to。
+          当前 <b>{s.v}</b>。回滚 = 把历史版重新发布(对外内容立即回到旧版),等价一次发布,执行门槛与发布一致;审计记 修改前后版本。
         </>
       ),
       amplifies: false,
@@ -438,7 +438,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       action: <>下架信任版块 · {s.key}</>,
       detail: (
         <>
-          当前 <b>{s.v}</b> 生效中。下架后 /trust 页该版块<b>整体隐藏</b>(无内置兜底)——一般只在对外内容出合规问题时才这么做;执行门槛与发布一致({s.roleGate})。
+          当前 <b>{s.v}</b> 生效中。下架后 信任中心页面该版块<b>整体隐藏</b>(无内置备用)——一般只在对外内容出合规问题时才这么做;执行门槛与发布一致({s.roleGate})。
         </>
       ),
       amplifies: false,
@@ -471,7 +471,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
   const draftDisclosure = (editing?: DisclosureVersionItemView) => {
     const initialJurisdiction = editing?.jurisdiction ?? activeJurisdictionOptions[0]?.value ?? "";
     if (!initialJurisdiction) {
-      toast("暂无启用法域，请先在法域配置中新增或启用法域");
+      toast("暂无启用适用地区，请先在适用地区配置中新增或启用适用地区");
       return;
     }
     const version = editing?.version ?? nextVersionFor(initialJurisdiction);
@@ -484,7 +484,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       action: <>{editing ? "编辑披露草稿" : "新建披露版本"} · 风控提交</>,
       detail: (
         <>
-          披露正文按中文、越南语必填，英语可选维护(占位符一致)。草稿不生效;发布走「执行门槛:风控/超管」操作确认并触发该法域重确认。
+          披露正文按中文、越南语必填，英语可选维护(占位符一致)。草稿不生效;发布走「执行门槛:风控/超级管理员」操作确认。发布后还须切换生效版本映射；切换时按规则触发用户重新确认。
         </>
       ),
       amplifies: false,
@@ -499,7 +499,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           try {
             snapshot = await actions.fetchI5DisclosureVersion(jurisdiction, currentVersion);
           } catch {
-            toast("目标法域快照加载失败，请刷新后重试");
+            toast("目标适用地区快照加载失败，请刷新后重试");
           }
         }
         return disclosureFormSpec(snapshot, jurisdiction, nextVersion, "create");
@@ -511,7 +511,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         const vi = form?.vi?.trim() || "";
         const en = form?.en?.trim() || "";
         if (!targetVersion || !jurisdiction || !zh || !vi) {
-          toast("缺少后端披露版本/法域/正文,无法提交草稿");
+          toast("缺少后端披露版本/适用地区/正文,无法提交草稿");
           return;
         }
         const payload = {
@@ -547,8 +547,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
   });
 
   const editJurisdiction = (current?: DisclosureJurisdictionOption) => openActionConfirm({
-    action: <>{current ? "编辑" : "新增"}披露法域</>,
-    detail: <>法域代码创建后不可修改；名称与生命周期由法域配置统一维护，版本和国家映射在下方独立管理。</>,
+    action: <>{current ? "编辑" : "新增"}披露适用地区</>,
+    detail: <>适用地区代码创建后不可修改；名称与生命周期由适用地区配置统一维护，版本和国家映射在下方独立管理。</>,
     amplifies: false,
     businessForm: {
       kind: "disclosure-jurisdiction",
@@ -564,7 +564,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       const task = current
         ? actions.updateI5Jurisdiction(current.code, { name, expectedRevision: current.revision }, reason)
         : actions.createI5Jurisdiction({ code, name }, reason);
-      runBackend(task, current ? "法域名称已更新" : "法域已新增");
+      runBackend(task, current ? "适用地区名称已更新" : "适用地区已新增");
     },
   });
 
@@ -572,12 +572,12 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     const labels = { enable: "启用", disable: "停用", archive: "归档" } as const;
     const statuses = { enable: "ACTIVE", disable: "DISABLED", archive: "ARCHIVED" } as const;
     openActionConfirm({
-      action: <>{labels[action]}法域 · {item.code}</>,
+      action: <>{labels[action]}适用地区 · {item.code}</>,
       detail: action === "disable"
-        ? <>停用后不能再为该法域新建披露版本或新增映射，历史版本与审计记录继续保留。</>
+        ? <>停用后不能再为该适用地区新建披露版本或新增映射，历史版本与审计记录继续保留。</>
         : action === "archive"
-          ? <>归档后法域退出可选目录，历史版本、映射和审计记录永久保留。</>
-          : <>启用后该法域可用于新建披露版本和法域版本映射。</>,
+          ? <>归档后适用地区退出可选目录，历史版本、映射和审计记录永久保留。</>
+          : <>启用后该适用地区可用于新建披露版本和适用地区版本映射。</>,
       amplifies: false,
       run: (reason) => {
         const def = findHighOp("i5_jurisdiction_status")!;
@@ -590,7 +590,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           `${item.code}:jurisdiction-status`,
           JSON.stringify({ command, reason }),
           {
-          action: `${labels[action]}披露法域 · ${item.code}`,
+          action: `${labels[action]}披露适用地区 · ${item.code}`,
           obj: item.code,
           before: item.status,
           after: statuses[action],
@@ -609,8 +609,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
   };
 
   const deleteJurisdiction = (item: DisclosureJurisdictionOption) => openActionConfirm({
-    action: <>删除未使用法域 · {item.code}</>,
-    detail: <>仅未被披露版本和当前映射引用的已归档法域可以删除；法域代码保留为审计防重标识，不可重新占用。</>,
+    action: <>删除未使用适用地区 · {item.code}</>,
+    detail: <>仅未被披露版本和当前映射引用的已归档适用地区可以删除；适用地区代码保留为审计防重标识，不可重新占用。</>,
     amplifies: false,
     run: (reason) => {
       const def = findHighOp("i5_jurisdiction_delete")!;
@@ -619,7 +619,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         `${item.code}:jurisdiction-delete`,
         JSON.stringify({ command, reason }),
         {
-        action: `删除未使用披露法域 · ${item.code}`,
+        action: `删除未使用披露适用地区 · ${item.code}`,
         obj: item.code,
         before: `${item.name} · ${item.status}`,
         after: "删除",
@@ -637,11 +637,11 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
   });
 
   const configMatrix = (current?: Jurisdiction) =>
-    activeJurisdictionOptions.length === 0 ? toast("暂无启用法域，请先维护法域配置") : openActionConfirm({
-      action: <>{current ? "编辑" : "新增"}法域 × 版本映射</>,
+    activeJurisdictionOptions.length === 0 ? toast("暂无启用适用地区，请先维护适用地区配置") : openActionConfirm({
+      action: <>{current ? "编辑" : "新增"}适用地区 × 版本映射</>,
       detail: (
         <>
-          这里仅维护启用法域的适用国家/地区与已发布版本映射。改映射等同给该法域换生效条款,会触发重确认;<b>发起人限风控,执行门槛 = 风控 / 超管</b>。
+          这里仅维护启用适用地区的适用国家/地区与已发布版本映射。改映射等同给该适用地区换生效条款,会触发重确认;<b>发起人限风控,执行门槛 = 风控 / 超级管理员</b>。
         </>
       ),
       amplifies: false,
@@ -679,7 +679,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           `${jurisdictionCode}:matrix-configure`,
           JSON.stringify({ command, reason }),
           {
-          action: `${current ? "调整" : "新增"}披露法域版本矩阵 · ${jurisdictionCode}`,
+          action: `${current ? "调整" : "新增"}披露适用地区版本矩阵 · ${jurisdictionCode}`,
           obj: jurisdictionCode,
           before: current ? `${current.v} · ${current.countryCodes.join("、")}` : "未配置",
           after: `${version} · ${countryCodes.join("、")}`,
@@ -697,7 +697,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     });
 
   const archiveMatrix = (j: Jurisdiction) => openActionConfirm({
-    action: <>归档法域版本映射 · {j.code}</>,
+    action: <>归档适用地区版本映射 · {j.code}</>,
     detail: <>归档后保留历史版本与审计记录，不再作为有效披露映射。</>,
     amplifies: false,
     run: (reason) => {
@@ -711,7 +711,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         `${j.code}:matrix-archive`,
         JSON.stringify({ command, reason }),
         {
-        action: `归档披露法域版本矩阵 · ${j.code}`,
+        action: `归档披露适用地区版本矩阵 · ${j.code}`,
         obj: j.code,
         before: `${j.v} · ${statusZh(j.status)}`,
         after: "已归档",
@@ -738,7 +738,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       action: <>发布已存披露草稿 · {row.jurisdiction}</>,
       detail: (
         <>
-          <b>合规关键动作</b>:发布只审批服务器已经保存的草稿并形成不可变 7 章快照，不接受确认框临时改正文，也不会改变 App 当前投放或用户确认状态。后续切换法域映射时才触发重新确认与服务器受限动作拦截。<b>执行门槛 = 风控 / 超管</b>。
+          <b>合规关键动作</b>:发布只审批服务器已经保存的草稿并形成不可变 7 章快照，不接受确认框临时改正文，也不会改变 App 当前投放或用户确认状态。后续切换适用地区映射时才触发重新确认与服务器受限动作拦截。<b>执行门槛 = 风控 / 超级管理员</b>。
         </>
       ),
       amplifies: false,
@@ -795,7 +795,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           {on
             ? <>把 <b>{g.name}</b> 移出受限范围:确认状态过期时<b>不再拦截</b>该动作。<b>缩小范围等于放松合规拦截</b>,确认时写清依据。</>
             : <>把 <b>{g.name}</b> 纳入受限范围:确认状态过期时拦截该动作。</>}
-          {" "}风控提交,风控 / 超管执行。
+          {" "}风控提交,风控 / 超级管理员执行。
         </>
       ),
       amplifies: on, // 移出受限范围(on=true)= 放松合规拦截 → amplifies;纳入(on=false)= 收紧 → false
@@ -855,9 +855,9 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           <div className="sub">财务数字/团队/叙事/徽章/审计/外链</div>
         </div>}
         {view === "disclosures" && <><div className="f-stat cyan">
-          <div className="k">披露法域 × 版本</div>
-          <div className="v">{I4_STATS.jurisdictions} 法域</div>
-          <div className="sub">{JURISDICTIONS.map((j) => j.code).join(" · ") || "暂无后端法域"}</div>
+          <div className="k">披露适用地区 × 版本</div>
+          <div className="v">{I4_STATS.jurisdictions} 适用地区</div>
+          <div className="sub">{JURISDICTIONS.map((j) => j.code).join(" · ") || "暂无后端适用地区"}</div>
         </div>
         <div className="f-stat warn">
           <div className="k">当前版本待确认用户</div>
@@ -882,7 +882,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
             {pendingTrustSectionKeys.size > 0 && <span className="bdg warn">A2待确认 {pendingTrustSectionKeys.size}</span>}
             <button className="l-btn sm" onClick={() => void actions.reloadIContent()}>刷新状态</button>
             {(isSuperadmin || session?.authorities.includes("platform_a2_read")) && <Link className="l-btn sm" href={pendingA2Href}>查看A2</Link>}
-            <span className="icode danger">高敏合规</span>
+            <span className="icode danger">敏感合规</span>
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -988,15 +988,15 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       {/* I5 法域配置：只维护法域元数据和生命周期 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">法域配置(I5)</span>
+          <span className="ttl">适用地区配置(I5)</span>
           <span className="sub">· 代码 / 名称 / 生命周期 · 国家与版本在下方映射</span>
           <div className="r">
-            {canDraftDisclosure && <button className="l-btn sm mc" onClick={() => editJurisdiction()}>新增法域</button>}
+            {canDraftDisclosure && <button className="l-btn sm mc" onClick={() => editJurisdiction()}>新增适用地区</button>}
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 800 }}>
-            <thead><tr><th>法域代码</th><th>法域名称</th><th>状态</th><th className="num">引用版本</th><th>当前映射</th><th>最后操作人</th><th>更新时间</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
+            <thead><tr><th>适用地区代码</th><th>适用地区名称</th><th>状态</th><th className="num">引用版本</th><th>当前映射</th><th>最后操作人</th><th>更新时间</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
             <tbody>
               {jurisdictionCatalog.map((item) => {
                 const status = item.status.toLowerCase();
@@ -1011,14 +1011,14 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                   <td className="mono tiny">{item.updatedAt || "—"}</td>
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                     {canDraftDisclosure && status !== "archived" && <><button className="l-btn sm" onClick={() => editJurisdiction(item)}>编辑</button>{" "}</>}
-                    {canPublishDisclosure && status === "active" && <><button className="l-btn sm" disabled={item.hasActiveMapping} title={item.hasActiveMapping ? "请先归档下方当前映射，再停用法域" : ""} onClick={() => changeJurisdictionLifecycle(item, "disable")}>停用</button>{" "}</>}
+                    {canPublishDisclosure && status === "active" && <><button className="l-btn sm" disabled={item.hasActiveMapping} title={item.hasActiveMapping ? "请先归档下方当前映射，再停用适用地区" : ""} onClick={() => changeJurisdictionLifecycle(item, "disable")}>停用</button>{" "}</>}
                     {canPublishDisclosure && status === "disabled" && <><button className="l-btn sm" onClick={() => changeJurisdictionLifecycle(item, "enable")}>启用</button>{" "}</>}
-                    {canPublishDisclosure && status !== "archived" && <><button className="l-btn sm" disabled={item.hasActiveMapping} title={item.hasActiveMapping ? "请先归档下方当前映射，再归档法域" : ""} onClick={() => changeJurisdictionLifecycle(item, "archive")}>归档</button>{" "}</>}
-                    {canPublishDisclosure && <button className="l-btn sm" disabled={!canDelete} title={canDelete ? "" : "须先归档法域，且不能存在版本或当前映射"} onClick={() => deleteJurisdiction(item)}>删除</button>}
+                    {canPublishDisclosure && status !== "archived" && <><button className="l-btn sm" disabled={item.hasActiveMapping} title={item.hasActiveMapping ? "请先归档下方当前映射，再归档适用地区" : ""} onClick={() => changeJurisdictionLifecycle(item, "archive")}>归档</button>{" "}</>}
+                    {canPublishDisclosure && <button className="l-btn sm" disabled={!canDelete} title={canDelete ? "" : "须先归档适用地区，且不能存在版本或当前映射"} onClick={() => deleteJurisdiction(item)}>删除</button>}
                   </td>
                 </tr>;
               })}
-              {jurisdictionCatalog.length === 0 && <tr><td colSpan={8}><div className="itint">暂无法域配置，请先新增法域。</div></td></tr>}
+              {jurisdictionCatalog.length === 0 && <tr><td colSpan={8}><div className="itint">暂无适用地区配置，请先新增适用地区。</div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -1027,8 +1027,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       {/* I5 披露版本 × 法域矩阵 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">披露矩阵(I5)· version × jurisdiction</span>
-          <span className="sub">· 风控提交 · 风控 / 超管执行</span>
+          <span className="ttl">披露矩阵(I5)· 版本与适用地区</span>
+          <span className="sub">· 风控提交 · 风控 / 超级管理员执行</span>
           <div className="r">
             <span className="icode danger">合规关键 · 风控确认</span>
             {canPublishDisclosure && <button className="l-btn sm" onClick={() => configMatrix()}>新增映射</button>}
@@ -1038,7 +1038,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           <table className="l-tbl" style={{ minWidth: 720 }}>
             <thead>
               <tr>
-                <th>法域</th>
+                <th>适用地区</th>
                 <th>适用国家/地区</th>
                 <th>当前版本</th>
                 <th>状态</th>
@@ -1095,12 +1095,12 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="itint danger">
-            <b>披露全链 操作员 = 风控、执行门槛 = 风控 / 超管;内容仅草拟。重新确认不是熔断闸,不进入 J1/J2。</b>
+            <b>披露全链 操作员 = 风控、执行门槛 = 风控 / 超级管理员;内容仅草拟。重新确认不是紧急停止开关,不进入 J1/J2。</b>
           </div>
           {disclosureDraft && disclosureDraft.version && disclosureDraft.zh && disclosureDraft.vi && (
             <div className="itint cyan" data-proof="disclosure-draft-preview" style={{ marginTop: 10 }}>
               <b>当前披露草稿回显</b> · 版本 <span className="mono">{disclosureDraft.version}</span>
-              {" "}· 法域 <span className="mono">{disclosureDraft.jurisdiction ?? ""}</span>
+              {" "}· 适用地区 <span className="mono">{disclosureDraft.jurisdiction ?? ""}</span>
               {" "}· 语言 <span className="mono">{disclosureDraft.languageScope ?? "zh+vi"}</span>
               {" "}· 生效日 <span className="mono">{disclosureDraft.effectiveDate ?? ""}</span>
               {" "}· 重新确认 <span className="mono">{disclosureDraft.requiresReack === false ? "否" : "是"}</span>
@@ -1126,13 +1126,13 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       {/* I5 披露版本列表 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">披露版本列表(I5) · 法域 × 版本</span>
+          <span className="ttl">披露版本列表(I5) · 适用地区 × 版本</span>
           <span className="sub">· 草稿可编辑/删除，发布后不可变</span>
           <div className="r">{canDraftDisclosure && <button className="l-btn sm mc" onClick={() => draftDisclosure()}>新建版本</button>}</div>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 860 }}>
-            <thead><tr><th>法域</th><th>版本</th><th>状态</th><th>语言</th><th>生效/更新</th><th>操作员</th><th>章节</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
+            <thead><tr><th>适用地区</th><th>版本</th><th>状态</th><th>语言</th><th>生效/更新</th><th>操作员</th><th>章节</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
             <tbody>
               {I5_VERSION_ROWS.map((row) => {
                 const isDraft = row.status.toLowerCase() === "draft";
@@ -1152,11 +1152,11 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                     <button className="l-btn sm" onClick={() => setDisclosureDetailKey(`${row.jurisdiction}\u0000${row.version}`)}>查看七章</button>{" "}
                     {isDraft && canDraftDisclosure && <>{!jurisdictionArchived && <><button className="l-btn sm" disabled={!hasConcurrencyToken} title={hasConcurrencyToken ? "" : "缺少后端并发校验信息，请刷新"} onClick={() => draftDisclosure(row)}>编辑版本</button>{" "}</>}<button className="l-btn sm" disabled={!hasConcurrencyToken} title={hasConcurrencyToken ? "" : "缺少后端并发校验信息，请刷新"} onClick={() => deleteDisclosureDraft(row)}>删除草稿</button>{" "}</>}
                     {isDraft && canPublishDisclosure && row.chapters.length === 7 && jurisdictionActive && <button className="l-btn sm mc" disabled={!hasConcurrencyToken} title={hasConcurrencyToken ? "" : "缺少后端并发校验信息，请刷新"} onClick={() => publishDisclosure(row)}>发布</button>}
-                    {isDraft && canPublishDisclosure && !jurisdictionActive && <span className="tiny" title="须先启用法域">须先启用法域</span>}
+                    {isDraft && canPublishDisclosure && !jurisdictionActive && <span className="tiny" title="须先启用适用地区">须先启用适用地区</span>}
                   </td>
                 </tr>;
               })}
-              {I5_VERSION_ROWS.length === 0 && <tr><td colSpan={8}><div className="itint">暂无后端披露版本，请等待后端返回 nextVersion 后新建。</div></td></tr>}
+              {I5_VERSION_ROWS.length === 0 && <tr><td colSpan={8}><div className="itint">暂无后端披露版本，请等待后端返回 下一版本号 后新建。</div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -1172,7 +1172,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           <table className="l-tbl" style={{ minWidth: 620 }}>
             <thead>
               <tr>
-                <th>法域</th>
+                <th>适用地区</th>
                 <th>目标版本</th>
                 <th className="num">受影响</th>
                 <th className="num">已确认</th>
@@ -1241,15 +1241,15 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
             );
           })}
           <div className="itint warn" style={{ marginTop: 10 }}>
-            <b>这不是熔断闸</b> · 重确认是「条款重新签字」机制,不是开关熔断——它不占应急熔断矩阵(J1)的闸位,也不进开关存储。监管点名要停业务,走 J 域;要改条款重签,走这页。J 域的应急剧本(J4)里「发布新披露版」就是引用这页的发布动作。
+            <b>这不是紧急停止开关</b> · 重确认是「条款重新签字」机制,不是开关紧急停用——它不占应急紧急停用矩阵(J1)的闸位,也不进开关存储。监管点名要停业务,走 J 域;要改条款重签,走这页。J 域的应急剧本(J4)里「发布新披露版」引用本页的发布动作；发布后仍须切换生效版本映射。
           </div>
         </div>
       </section>
       </>}
 
       <p className="f-foot">
-        {view === "trust" ? <><b>I4 执行门槛</b>:一般版块由内容角色维护；<b>财务数字 / NEX 叙事 / 对外合规声明必须由对应授权角色或超管发布</b>。版块曝光事件喂 BI 做信任到转化归因。</> : <><b>I5 执行门槛</b>:风险披露由风控起草、风控主管或超管发布；内容角色无发布权限。披露确认、重确认与拦截事件喂合规覆盖看板和风控域。</>}
-        <span title="§2.4.3 domain 枚举扩展 · V4 内容批次 · blocking">。</span>
+        {view === "trust" ? <><b>I4 执行门槛</b>:一般版块由内容角色维护；<b>财务数字 / UVEL介绍 / 对外合规声明必须由对应授权角色或超级管理员发布</b>。版块曝光事件喂 数据分析 做信任到转化归因。</> : <><b>I5 执行门槛</b>:风险披露由风控起草、风控主管或超级管理员发布；内容角色无发布权限。披露确认、重确认与拦截事件喂合规覆盖看板和风控域。</>}
+        <span title="§2.4.3 业务域列表扩展 · V4 内容批次 · blocking">。</span>
       </p>
       <PaginationExemptionList
         items={view === "trust" ? [
@@ -1261,14 +1261,14 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           },
         ] : [
           {
-            label: "披露矩阵(I5)· version × jurisdiction",
+            label: "披露矩阵(I5)· 版本与适用地区",
             maxRows: Math.max(JURISDICTIONS.length, 1),
-            reason: "披露矩阵法域来自后端配置,发布关系需同屏对比",
+            reason: "披露矩阵适用地区来自后端配置,发布关系需同屏对比",
           },
           {
             label: "重确认覆盖监控(I5)",
             maxRows: Math.max(JURISDICTIONS.length, 1),
-            reason: "重确认监控法域来自后端配置,完整 ack 事件进 BI",
+            reason: "重确认监控适用地区来自后端配置,完整 用户确认记录进 数据分析",
           },
         ]}
       />
@@ -1283,7 +1283,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           </>}
         >
           <div className="itint cyan" style={{ marginBottom: 12 }}>
-            草稿保存是普通内容编辑，不走高敏确认；只有发布、回滚和下架进入操作确认。
+            草稿保存是普通内容编辑，不走敏感确认；只有发布、回滚和下架进入操作确认。
           </div>
           <div className="field"><span className="bf-legend">版本号</span><input aria-label="版本号" className="inp" disabled={draftEditor.mode === "edit"} value={draftEditor.version} placeholder="如 v6" onChange={(event) => setDraftEditor({ ...draftEditor, version: event.target.value })} /></div>
           <div className="field"><span className="bf-legend">版块说明</span><input aria-label="版块说明" className="inp" value={draftEditor.description} onChange={(event) => setDraftEditor({ ...draftEditor, description: event.target.value })} /></div>
@@ -1365,7 +1365,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       {/* 法域详情 Drawer */}
       {view === "disclosures" && jur && (
         <Drawer
-          title={`法域 · ${jur.code}(${jurisdictionNameFor(jur.code, jur.name)})`}
+          title={`适用地区 · ${jur.code}(${jurisdictionNameFor(jur.code, jur.name)})`}
           onClose={() => setJurCode(null)}
           footer={
             <button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => setJurCode(null)}>
@@ -1377,7 +1377,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
             生效版本 {liveJurVersion(jur)} · {jur.publishedAt} 起 · 受影响用户 {jur.affected.toLocaleString("en-US")}
           </div>
           <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 4, lineHeight: 1.6 }}>
-            该法域用户的确认状态按这个版本校验;版本号只增不减。
+            该适用地区用户的确认状态按这个版本校验;版本号只增不减。
           </div>
           <div style={{ fontSize: 12.5, fontWeight: 600, margin: "14px 0 4px", color: "var(--ink)" }}>版本与操作 / 留痕</div>
           <div className="kv">
@@ -1390,14 +1390,14 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           </div>
           <div className="kv">
             <span className="k">操作 / 留痕</span>
-            <span className="v">风控 / 超管</span>
+            <span className="v">风控 / 超级管理员</span>
           </div>
           <div className="kv">
-            <span className="k">法域判定输入</span>
-            <span className="v">按用户账号国家/地区代码与本法域配置匹配</span>
+            <span className="k">适用地区判定输入</span>
+            <span className="v">按用户账号国家/地区代码与本适用地区配置匹配</span>
           </div>
           <div className="itint" style={{ marginTop: 12 }}>
-            给这个法域发新版 = 该法域全部用户确认状态转为已过期,下次受限动作前强制重新确认;提醒经 I3 关键级通道下发。
+            发布仅保存该地区的新版本。切换生效版本映射后，系统按规则要求用户在下次受限操作前重新确认；提醒经紧急通知频道下发。
           </div>
         </Drawer>
       )}
@@ -1462,7 +1462,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
             </table>
           </div>
           <div className="itint" style={{ marginTop: 12 }}>
-            中文、越南语镜像 ✓ 占位符一致 ✓ · 用户必须滚到底 + 勾选才能确认;确认记录(版本 + 法域)落在服务器。
+            中文、越南语镜像 ✓ 占位符一致 ✓ · 用户必须滚到底 + 勾选才能确认;确认记录(版本 + 适用地区)落在服务器。
           </div>
         </Drawer>
       )}

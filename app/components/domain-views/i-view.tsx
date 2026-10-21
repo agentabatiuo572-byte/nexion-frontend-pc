@@ -32,12 +32,12 @@ const FOLD: Record<string, string> = {
 };
 
 const RO_COPY: Record<string, string> = {
-  I1: "版本和实验分组都在服务器 · 用户侧改不了",
-  I2: "通道节奏以服务器为准 · 整体停 Nova 才轮到 J 域",
-  I3: "通知唯一账本在服务器 · App 端只是显示窗口",
-  I4: "信任中心发布版与历史快照都在服务器 · 客户端篡改无效",
-  I5: "披露版本、法域与重新确认状态都在服务器 · 客户端篡改无效",
-  I6: "词条、课程、推荐位与奖励以服务器为唯一来源 · 奖励上调走高敏审批",
+  I1: "管理文案版本，实验分组按首次分配结果固定",
+  I2: "管理消息频道和推送间隔；整体停用前往紧急控制",
+  I3: "通知送达、已读和取消状态以系统记录为准",
+  I4: "信任中心发布内容与历史版本均可追溯",
+  I5: "管理披露版本、适用地区与用户重新确认记录",
+  I6: "词条、课程、推荐位与奖励以服务器为唯一来源 · 奖励上调走敏感审批",
 };
 
 function countText(value?: number) {
@@ -74,7 +74,7 @@ function liveFromBackend(tab: string, content: IContentData, loading: boolean, e
   }
   if (tab === "I2") {
     const stats = content.nova?.stats;
-    return stats ? `Nova 点击率 ${stats.ctr} · 在线 ${countText(stats.onlineChannels)}/${countText(stats.totalChannels)}` : "暂无后端业务数据";
+    return stats ? `消息点击率 ${stats.ctr} · 在线 ${countText(stats.onlineChannels)}/${countText(stats.totalChannels)}` : "暂无后端业务数据";
   }
   if (tab === "I3") {
     const stats = content.campaigns?.stats;
@@ -88,7 +88,7 @@ function liveFromBackend(tab: string, content: IContentData, loading: boolean, e
     const stats = content.trustDisclosure?.stats;
     if (!stats) return "暂无后端业务数据";
     const coverage = stats.reackPct !== undefined
-      ? `${stats.reackJurisdiction || "法域"} 重新确认 ${stats.reackPct}% · 当前待确认 ${countText(stats.staleAckUsers)}`
+      ? `${stats.reackJurisdiction || "适用地区"} 重新确认 ${stats.reackPct}% · 当前待确认 ${countText(stats.staleAckUsers)}`
       : `当前待确认 ${countText(stats.staleAckUsers)}`;
     return `${coverage} · 近7天历史拦截 ${countText(stats.weeklyGateBlocked)}`;
   }

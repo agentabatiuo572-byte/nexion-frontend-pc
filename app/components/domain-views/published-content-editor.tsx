@@ -48,14 +48,14 @@ export function PublishedContentEditor({ kind }: { kind: Kind }) {
   const addLocale = () => {
     if (!document) return;
     const normalized = newLocale.trim().toLowerCase().replace("_", "-");
-    if (!/^[a-z]{2}(?:-[a-z0-9]{2,8})?$/.test(normalized)) { setError("Locale 格式无效，例如 en、zh、vi 或 zh-cn。"); return; }
-    if (!document.locales[normalized] && Object.keys(document.locales).length >= 10) { setError("最多维护 10 个 Locale。"); return; }
+    if (!/^[a-z]{2}(?:-[a-z0-9]{2,8})?$/.test(normalized)) { setError("语言 格式无效，例如 en、zh、vi 或 zh-cn。"); return; }
+    if (!document.locales[normalized] && Object.keys(document.locales).length >= 10) { setError("最多维护 10 个 语言。"); return; }
     const empty = kind === "developerDocs" ? { example: { request: "", response: "" }, endpoints: [{ method: "GET", path: "/" }], events: [""] } : { hero: "", sections: [{ id: "section-1", title: "", body: "", order: 0 }] };
     setDocument({ ...document, locales: { ...document.locales, [normalized]: document.locales[normalized] ?? empty } });
     setLocale(normalized); setNewLocale(""); setError(null);
   };
   const removeLocale = () => {
-    if (!document || Object.keys(document.locales).length <= 1) { setError("至少保留一个 Locale。"); return; }
+    if (!document || Object.keys(document.locales).length <= 1) { setError("至少保留一个 语言。"); return; }
     const next = { ...document.locales }; delete next[locale]; const nextLocale = Object.keys(next)[0];
     setDocument({ ...document, locales: next }); setLocale(nextLocale);
   };
@@ -84,7 +84,7 @@ export function PublishedContentEditor({ kind }: { kind: Kind }) {
           <div className={styles.subtitle}>{meta.subtitle}</div>
         </div>
         <div className={styles.headerActions}>
-          <span className={styles.status}>{document?.status ?? "—"} · rev {document?.revision ?? 0}{document && (document.hasPublishedVersion ? " · 已有公开版，草稿不替换" : " · 暂无公开版")}</span>
+          <span className={styles.status}>{({DRAFT:"草稿",PUBLISHED:"已发布",SUPERSEDED:"历史版本",REVOKED:"已撤回",draft:"草稿",published:"已发布"} as Record<string,string>)[document?.status ?? ""] ?? "状态待核实"} · 版本 {document?.revision ?? 0}{document && (document.hasPublishedVersion ? " · 已有公开版，草稿不替换" : " · 暂无公开版")}</span>
           <button className={`${styles.button} ${styles.smallButton}`} type="button" onClick={() => void refresh()} disabled={loading}>刷新</button>
           <button
             className={`${styles.button} ${styles.smallButton} ${styles.toggleButton}`}
@@ -122,7 +122,7 @@ export function PublishedContentEditor({ kind }: { kind: Kind }) {
             </div>
             <div className={styles.localeToolbar}>
               <label className={styles.field}>
-                <span>当前 Locale</span>
+                <span>当前 语言</span>
                 <select aria-label={`${kind} Locale`} value={locale} onChange={(event) => setLocale(event.target.value)}>
                   {Object.keys(document.locales).map((key) => <option key={key}>{key}</option>)}
                 </select>
@@ -130,11 +130,11 @@ export function PublishedContentEditor({ kind }: { kind: Kind }) {
               {canWrite && (
                 <>
                   <label className={styles.field}>
-                    <span>新增 Locale</span>
-                    <input aria-label="新增 Locale" placeholder="例如 vi、zh-cn" value={newLocale} maxLength={11} onChange={(event) => setNewLocale(event.target.value)} />
+                    <span>新增 语言</span>
+                    <input aria-label="新增 语言" placeholder="例如 vi、zh-cn" value={newLocale} maxLength={11} onChange={(event) => setNewLocale(event.target.value)} />
                   </label>
-                  <button className={`${styles.button} ${styles.smallButton}`} type="button" onClick={addLocale}>新增 Locale</button>
-                  <button className={`${styles.button} ${styles.smallButton} ${styles.dangerButton}`} type="button" onClick={removeLocale}>删除当前 Locale</button>
+                  <button className={`${styles.button} ${styles.smallButton}`} type="button" onClick={addLocale}>新增 语言</button>
+                  <button className={`${styles.button} ${styles.smallButton} ${styles.dangerButton}`} type="button" onClick={removeLocale}>删除当前 语言</button>
                 </>
               )}
             </div>

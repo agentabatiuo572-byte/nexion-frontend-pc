@@ -123,8 +123,8 @@ export function LegalTermsEditor() {
     <section className={`l-card ${styles.root}`} data-testid="legal-terms-editor">
       <div className="l-h">
         <div className={styles.headerCopy}>
-          <div className="ttl">Terms / 法律条款</div>
-          <div className="sub">按 Locale + Jurisdiction 管理结构化版本，App 只读已发布真源</div>
+          <div className="ttl">法律条款</div>
+          <div className="sub">按 语言 + 适用法律地区 管理结构化版本，用户端读取已发布版本</div>
         </div>
         <button className="l-btn sm" onClick={() => void refresh()} disabled={busy}>刷新</button>
       </div>
@@ -132,15 +132,15 @@ export function LegalTermsEditor() {
         {error && <div className={`atint warn ${styles.alert}`} role="alert">{error}</div>}
         <div className={styles.scopeGrid}>
           <label className={styles.field}>
-            <span>Locale</span>
+            <span>语言</span>
             <select value={locale} onChange={(e) => setLocale(e.target.value)}>
-              <option>en</option>
-              <option>zh</option>
-              <option>vi</option>
+              <option value="en">英文</option>
+              <option value="zh">中文</option>
+              <option value="vi">越南语</option>
             </select>
           </label>
           <label className={styles.field}>
-            <span>Jurisdiction</span>
+            <span>适用法律地区</span>
             <input value={jurisdiction} maxLength={32} onChange={(e) => setJurisdiction(e.target.value.toUpperCase())} />
           </label>
         </div>
@@ -154,7 +154,7 @@ export function LegalTermsEditor() {
                 aria-pressed={selected?.id === row.id}
                 onClick={() => setSelected(row)}
               >
-                {row.version} · {row.status}
+                {row.version} · {({DRAFT:"草稿",PUBLISHED:"已发布",SUPERSEDED:"历史版本",REVOKED:"已撤回"} as Record<string,string>)[row.status] ?? "版本状态待核实"}
               </button>
             ))}
           </div>

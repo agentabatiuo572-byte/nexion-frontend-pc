@@ -143,7 +143,7 @@ test("I1 文案支持越南语，并固定投放到 App 四个顶级模块", () 
 
   assert.match(component, /home: "首页"/);
   assert.match(component, /store: "商城"/);
-  assert.match(component, /earn: "赚取"/);
+  assert.match(component, /earn: "收益"/);
   assert.match(component, /me: "我的"/);
   assert.match(component, /vi: form\?\.vi/);
   assert.match(designKit, /textArea\("vi", "越南语 vi 文案"/);

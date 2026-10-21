@@ -22,8 +22,8 @@ const appApi = readFileSync(resolve(appRoot, "src/api/risk-disclosure-api.ts"), 
 const appPage = readFileSync(resolve(appRoot, "src/pages/me/risk-disclosure.vue"), "utf8");
 
 test("I5 summary follows the backend jurisdiction catalog instead of a stale fixed count", () => {
-  assert.match(registry, /按法域 × 7 章节/);
-  assert.doesNotMatch(registry, /4 个法域/);
+  assert.match(registry, /按适用地区 × 7 章节/);
+  assert.doesNotMatch(registry, /4 个适用地区/);
 });
 
 test("I5 jurisdiction mapping uses backend country and disclosure version catalogs", () => {
@@ -42,7 +42,7 @@ test("I5 publish command identifies persisted draft and does not carry mutable b
   const entry = highOps.slice(highOps.indexOf('op: "i5_disclosure_publish"'), highOps.indexOf('op: "i5_gate_adjust"'));
   assert.match(view, /发布只审批服务器已经保存的草稿并形成不可变 7 章快照/);
   assert.match(view, /不会改变 App 当前投放或用户确认状态/);
-  assert.match(view, /后续切换法域映射时才触发重新确认/);
+  assert.match(view, /后续切换适用地区映射时才触发重新确认/);
   assert.match(entry, /jurisdiction:\s*String\(ctx\.jurisdiction\)/);
   assert.match(entry, /version:\s*String\(ctx\.version\)/);
   assert.doesNotMatch(entry, /\b(?:zh|vi|en|chapters):/);
@@ -93,10 +93,10 @@ test("I5 jurisdiction configuration has backend CRUD and lifecycle controls", ()
   assert.match(client, /archiveI5Jurisdiction/);
   assert.match(client, /deleteI5Jurisdiction/);
   assert.match(client, /\/trust-disclosure\/disclosures\/jurisdictions/);
-  assert.match(view, />法域配置\(I5\)</);
+  assert.match(view, />适用地区配置\(I5\)</);
   assert.match(view, /disabled=\{item\.hasActiveMapping\}/);
   assert.match(view, /请先归档下方当前映射/);
-  for (const label of ["新增法域", "编辑", "启用", "停用", "归档", "删除"]) assert.match(view, new RegExp(label));
+  for (const label of ["新增适用地区", "编辑", "启用", "停用", "归档", "删除"]) assert.match(view, new RegExp(label));
   assert.match(form, /kind === "disclosure-jurisdiction"/);
 });
 
@@ -133,7 +133,7 @@ test("I5 renders real jurisdiction-version rows and complete draft CRUD controls
   assert.match(view, /删除草稿/);
   assert.match(view, /const jurisdictionActive = catalogStatus === "active"/);
   assert.match(view, /const jurisdictionArchived = catalogStatus === "archived"/);
-  assert.match(view, /须先启用法域/);
+  assert.match(view, /须先启用适用地区/);
 });
 
 test("I5 exposes new-version creation only from the disclosure version list", () => {

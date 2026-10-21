@@ -224,8 +224,8 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     action: <>立即下发 · {c.name}</>,
     detail: (
       <>
-        从排期改成<b>立即下发</b>:服务器即刻逐人写入通知流,带防重号(重复提交不会发两遍)。<b>优先级 {c.tier}</b>,受众 <b>{c.audience}</b>(估算 {c.reach} 人)。
-        {c.tier === "critical" ? <> <b>紧急级执行门槛升至合规/超管。</b></> : <> 执行门槛 = 内容主管。</>}
+        从排期改成<b>立即下发</b>:服务器即刻逐人写入通知流,带防重号(重复提交不会发两遍)。<b>优先级 {I3_TIER_STATE[c.tier]?.[0] ?? "优先级待核实"}</b>,受众 <b>{c.audience}</b>(估算 {c.reach} 人)。
+        {c.tier === "critical" ? <> <b>紧急级执行门槛升至合规/超级管理员。</b></> : <> 执行门槛 = 内容主管。</>}
       </>
     ),
     amplifies: false,
@@ -249,7 +249,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
   });
 
   const adjustCap = (tier: TierK, cap: string) => openActionConfirm({
-    action: <>调整 CAP · {tier}</>,
+    action: <>调整通知保留数量 · {I3_TIER_STATE[tier]?.[0] ?? "优先级待核实"}</>,
     detail: (
       <>
         当前 <b>{cap}</b> · A2 审批成功执行后按新上限清理已有通知。调小可能把未读的高档通知挤出显示窗,影响合规类可见性,所以操作确认;内容和风控都可发起。<b>紧急档锁死为无限保留,不在可调范围。</b>
@@ -275,7 +275,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       const commandKey = capCommandAttempts.resolve(`cap|${tier}`, fingerprint, () => createA2CommandKey("i3-cap-adjust"));
       try {
         const result = await propose(toast, {
-          action: `调整 CAP · ${tier}`,
+          action: `调整通知保留数量 · ${tier}`,
           obj: tier,
           before: cap,
           after: v,
@@ -304,7 +304,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
   const submitNew = () => {
     const trimmedName = form.name.trim();
     if (!trimmedName) {
-      toast("请填写 Campaign 名称");
+      toast("请填写 通知活动名称");
       return;
     }
     if (!form.titleZh.trim() || !form.titleVi.trim() || !form.bodyZh.trim() || !form.bodyVi.trim()) {
@@ -335,9 +335,9 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     };
     const id = editing?.id ?? `CMP-N-${slug(trimmedName)}`;
     const task = editing
-      ? actions.updateI3CampaignDraft(editing.id, payload, editing.revision, `编辑 Campaign 草稿 ${editing.id}`)
-      : actions.createI3Campaign(payload, `新建 Campaign 草稿 ${id}`);
-    runBackend(task, editing ? `${editing.id} 草稿已保存` : `Campaign 草稿已建 · ${id} · 下发需操作确认`);
+      ? actions.updateI3CampaignDraft(editing.id, payload, editing.revision, `编辑 通知活动 草稿 ${editing.id}`)
+      : actions.createI3Campaign(payload, `新建 通知活动 草稿 ${id}`);
+    runBackend(task, editing ? `${editing.id} 草稿已保存` : `通知活动 草稿已建 · ${id} · 下发需操作确认`);
     setNewOpen(false);
     setEditing(null);
     setForm(FORM_INIT);
@@ -399,7 +399,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       {/* ===== 4 f-stat ===== */}
       <div className="f-stats">
         <div className="f-stat">
-          <div className="k">本月 campaign</div>
+          <div className="k">本月 通知活动</div>
           <div className="v">{I3_STATS.monthCampaigns} 个</div>
           <div className="sub">已发 {I3_STATS.monthSent} · 排期 {I3_STATS.monthScheduled} · 草稿 {I3_STATS.monthDraft}</div>
         </div>
@@ -411,7 +411,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
         <div className="f-stat ok">
           <div className="k">平均已读率</div>
           <div className="v">{I3_STATS.avgReadRate}</div>
-          <div className="sub">已读 ÷ 送达 · 服务器口径</div>
+          <div className="sub">已读 ÷ 送达 · 服务器统计规则</div>
         </div>
         <div className="f-stat cyan">
           <div className="k">滑动直达转化(本周)</div>
@@ -423,7 +423,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       {/* ===== (a) campaign 列表 ===== */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">本月 campaign(a)</span>
+          <span className="ttl">本月 通知活动(a)</span>
           <span className="sub">· 列表 / 详情 / 下发(受众估算 + 双语预览 + 调度)</span>
           <div className="r chips">
             <span className="lb">状态</span>
@@ -431,7 +431,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
               <button key={k} className={`chip${stFlt === k ? " sel" : ""}`} onClick={() => setStFlt(k)}>{l}</button>
             ))}
             {!canWriteI3 && <span className="bdg dim">只读</span>}
-            {canWriteI3 && <button className="l-btn sm primary" onClick={() => { setEditing(null); setForm(FORM_INIT); setNewOpen(true); }}>+ 新建 Campaign</button>}
+            {canWriteI3 && <button className="l-btn sm primary" onClick={() => { setEditing(null); setForm(FORM_INIT); setNewOpen(true); }}>+ 新建 通知活动</button>}
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -441,7 +441,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                 <th>编号 / 名称</th>
                 <th>受众</th>
                 <th>优先级</th>
-                <th className="num">触达</th>
+                <th className="num">接收人数（未下发为预计）</th>
                 <th>调度</th>
                 <th>状态</th>
                 <th style={{ textAlign: "right" }}>动作</th>
@@ -472,7 +472,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={7} style={{ textAlign: "center", padding: "20px 12px", color: "var(--ink-4)", fontSize: 12 }}>
-                    当前筛选下没有 campaign
+                    当前筛选下没有 通知活动
                   </td>
                 </tr>
               )}
@@ -484,8 +484,8 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       {/* ===== (c) CAP 配置 ===== */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">优先级容量闸(c)</span>
-          <span className="sub">· 4 档保留策略 · CAP_CRITICAL 锁定 ∞</span>
+          <span className="ttl">各优先级通知保留上限</span>
+          <span className="sub">· 4 档保留策略 · 紧急通知不设保留数量上限</span>
           <div className="r">
             <span className="icode danger">发送上限以服务器配置为准</span>
           </div>
@@ -509,7 +509,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                   {cap}
                 </span>
                 {row.locked ? (
-                  <span className="icode lock" title="合规硬约束 · CAP_CRITICAL 固定 Infinity">🔒 锁定</span>
+                  <span className="icode lock" title="合规硬约束 · 紧急通知始终保留">🔒 锁定</span>
                 ) : canAdjustI3Cap ? (
                   <button className="l-btn sm mc" onClick={() => adjustCap(tier, cap)}>调整</button>
                 ) : (
@@ -519,10 +519,10 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
             );
           })}
           <div className="itint warn" style={{ marginTop: 10 }}>
-            <b>为什么动容量闸要操作确认</b> · 调小高档容量可能把还没读的合规通知挤掉——这影响紧急级和高级通知的可见性,所以内容和风控都能提交,但必须主管执行并填写理由。紧急档直接锁死不开口子。
+            <b>为什么动通知保留上限要操作确认</b> · 调小高档容量可能把还没读的合规通知挤掉——这影响紧急级和高级通知的可见性,所以内容和风控都能提交,但必须主管执行并填写理由。紧急通知始终保留，不可调整。
           </div>
           <div className="itint cyan" style={{ marginTop: 8 }}>
-            <b>合规通道特例</b> · 风险披露改版触发的重新确认提醒(I5 页)和 J 域监管应急公告,由对应域发起、借这页的通道按<b>紧急级</b>下发;这两类的执行门槛升到合规/超管级,常规运营公告执行门槛是内容主管。
+            <b>合规通道特例</b> · 风险披露改版触发的重新确认提醒(I5 页)和 J 域监管应急公告,由对应域发起、借这页的通道按<b>紧急级</b>下发;这两类的执行门槛升到合规/超级管理员级,常规运营公告执行门槛是内容主管。
           </div>
         </div>
       </section>
@@ -548,7 +548,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                 return (
                   <tr key={r.kind}>
                     <td className="mono" style={empty ? { color: "var(--ink-4)" } : undefined}>{r.to}</td>
-                    <td><span className="bdg dim">{DELIVERY_CATALOG?.kinds.find((option) => option.value === r.kind)?.label ?? r.kind}</span></td>
+                    <td><span className="bdg dim">{DELIVERY_CATALOG?.kinds.find((option) => option.value === r.kind)?.label ?? "通知类型待核实"}</span></td>
                     <td style={{ fontSize: 12 }}>{r.note}</td>
                   </tr>
                 );
@@ -558,22 +558,22 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="itint">
-            下发、取消、送达、已读和左滑动作均由服务器记录，供触达健康度与用户转化分析使用。
+            下发、取消、送达、已读和左滑动作均由服务器记录，供通知送达情况与用户转化分析使用。
           </div>
         </div>
       </section>
 
       {/* ===== f-foot ===== */}
       <p className="f-foot">
-        <b>执行门槛</b>:草稿随便建(留审计);调度下发 / 取消 = 内容提交(风控合规类可由风控提交),内容主管/超管执行;容量闸调整 = 内容或风控执行门槛:主管。<b>事件去向</b>:送达 / 已读 / 滑动动作三类事件喂触达健康度看板和数据 BI(L 域:触达→已读→用户转化分析、各档送达率);有转化路径的滑动(佣金→复投)喂实时漏斗(B3)。<b>I4 重新确认与 J 域监管应急</b>共用紧急级通道,执行门槛升至合规/超管。下发带防重号,重复点不会发两遍。
+        <b>执行门槛</b>:创建草稿会记录操作;调度下发 / 取消 = 内容提交(风控合规类可由风控提交),内容主管/超级管理员执行;通知保留上限调整 = 内容或风控执行门槛:主管。<b>事件去向</b>:送达 / 已读 / 滑动动作三类事件喂通知送达情况看板和数据分析（送达、已读与用户转化分析、各档送达率);有转化路径的滑动(佣金→复投)喂实时转化分析(B3)。<b>I4 重新确认与 J 域监管应急</b>共用紧急级通道,执行门槛升至合规/超级管理员。下发带防重号,重复点不会发两遍。
       </p>
       <PaginationExemptionList
         items={[
           {
-            label: "本月 campaign(a)",
+            label: "本月 通知活动(a)",
             kind: "reference-catalog",
             maxRows: 7,
-            reason: "本月 campaign 使用后端返回记录,按优先级和调度状态筛选",
+            reason: "本月 通知活动 使用后端返回记录,按优先级和调度状态筛选",
           },
           {
             label: "左滑直达表",
@@ -586,8 +586,8 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       {/* ===== Drawer · 新建 / 编辑 Campaign ===== */}
       {newOpen && canWriteI3 && (
         <Drawer
-          title={editing ? `编辑 Campaign 草稿 · ${editing.id}` : "新建 Campaign（存为草稿）"}
-          sub="中文、越南语必填，英文可选 · 受众条件按 AND 组合 · 下发另走操作确认"
+          title={editing ? `编辑 通知活动 草稿 · ${editing.id}` : "新建 通知活动（存为草稿）"}
+          sub="中文、越南语必填，英文可选 · 受众条件须同时满足 · 下发另走操作确认"
           onClose={() => { setNewOpen(false); setEditing(null); }}
           footer={
             <>
@@ -604,7 +604,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
           }
         >
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <FormField label="Campaign 名称 · 用于 slug" required>
+            <FormField label="通知活动名称" required>
               <input
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -613,7 +613,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
               />
               {form.name.trim() && (
                 <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 4 }}>
-                  slug → <span className="mono" style={{ color: "var(--ink-3)" }}>{slug(form.name)}</span>
+                  通知活动标识 → <span className="mono" style={{ color: "var(--ink-3)" }}>{slug(form.name)}</span>
                 </div>
               )}
             </FormField>
@@ -712,7 +712,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
             <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 12 }}>
               <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 4 }}>受众条件</div>
               <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginBottom: 10 }}>
-                以下条件同时满足（AND）才会进入受众范围，选项由后端配置提供。
+                以下条件同时满足才会进入受众范围，选项由后端配置提供。
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 24px 1fr", gap: 8, alignItems: "end" }}>
                 <FormField label="P 阶段起点" required>
@@ -899,12 +899,12 @@ function DetailBody({ c, liveStRender, budget }: { c: CampaignRow; liveStRender:
       <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.6 }}>
         <b style={{ color: "var(--ink-2)" }}>通知内容以服务器为准，App 负责展示</b>
         <div style={{ marginTop: 4, color: "var(--ink-4)" }}>
-          下发由服务器写入用户通知流,App 端只拉取显示;已读 / 删除 / 滑动动作也都按服务器记账,client 改不了。
+          下发由服务器写入用户通知流,App 端只拉取显示;已读 / 删除 / 滑动动作也都按服务器记账,以系统记录为准。
         </div>
       </div>
 
       <div>
-        <div style={{ fontSize: 12, color: "var(--ink-4)", marginBottom: 6 }}>通知体(EN)</div>
+        <div style={{ fontSize: 12, color: "var(--ink-4)", marginBottom: 6 }}>英文通知内容</div>
         <div className="ab-prev">
           <div className="lc">EN · {tierLabel} · {c.audience}</div>
           <div className="tx">{c.bodyEn}</div>
@@ -912,7 +912,7 @@ function DetailBody({ c, liveStRender, budget }: { c: CampaignRow; liveStRender:
       </div>
 
       <div>
-        <div style={{ fontSize: 12, color: "var(--ink-4)", marginBottom: 6 }}>通知体(VI)</div>
+        <div style={{ fontSize: 12, color: "var(--ink-4)", marginBottom: 6 }}>越南语通知内容</div>
         <div className="ab-prev">
           <div className="lc">VI</div>
           <div className="tx">{c.bodyVi}</div>
@@ -920,7 +920,7 @@ function DetailBody({ c, liveStRender, budget }: { c: CampaignRow; liveStRender:
       </div>
 
       <div>
-        <div style={{ fontSize: 12, color: "var(--ink-4)", marginBottom: 6 }}>通知体(ZH)</div>
+        <div style={{ fontSize: 12, color: "var(--ink-4)", marginBottom: 6 }}>中文通知内容</div>
         <div className="ab-prev">
           <div className="lc">ZH</div>
           <div className="tx">{c.bodyZh}</div>
@@ -929,7 +929,7 @@ function DetailBody({ c, liveStRender, budget }: { c: CampaignRow; liveStRender:
 
       <div>
         <div className="kv">
-          <span className="k">优先级 / 触达</span>
+          <span className="k">优先级 / 接收人数（未下发为预计）</span>
           <span className="v">
             <span className={`nc-pr ${c.tier}`}>{tierLabel}</span>
             <span className="mono" style={{ marginLeft: 8 }}>{c.reach}</span>
@@ -954,20 +954,20 @@ function DetailBody({ c, liveStRender, budget }: { c: CampaignRow; liveStRender:
           <span className="v mono">{c.st === "sent" ? `${c.sent} / ${c.read}` : "—"}</span>
         </div>
         <div className="kv">
-          <span className="k">swipe 直达</span>
+          <span className="k">滑动后跳转</span>
           <span className="v mono" style={c.swipeTo === "—" ? { color: "var(--ink-4)" } : undefined}>{c.swipeTo}</span>
         </div>
         <div className="kv">
           <span className="k">事件</span>
           <span className="v mono" style={{ fontSize: 11.5 }}>
-            admin.notification_campaign_sent + notification.delivered / read / swipe_action_taken
+            通知活动已下发 + notification.delivered / read / swipe_action_taken
           </span>
         </div>
       </div>
 
       {c.tier === "critical" && (
         <div className="itint warn">
-          <b>合规通道特例</b> · 风险披露重新确认(I5)+ J 域监管应急公告借这页紧急级通道下发;执行门槛升至合规/超管。
+          <b>合规通道特例</b> · 风险披露重新确认(I5)+ J 域监管应急公告借这页紧急级通道下发;执行门槛升至合规/超级管理员。
         </div>
       )}
     </div>

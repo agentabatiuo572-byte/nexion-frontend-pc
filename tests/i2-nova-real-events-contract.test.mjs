@@ -10,7 +10,7 @@ test("I2 manages verified event rows instead of editable pool counts", () => {
   assert.match(client, /socialEvents:/);
   assert.match(view, /真实事件明细/);
   assert.match(view, /来源系统/);
-  assert.match(view, /来源事件ID/);
+  assert.match(view, /来源事件编号/);
   assert.match(view, /脱敏展示/);
   assert.match(view, /到期时间/);
   assert.doesNotMatch(view, /social 池条目数编辑/);

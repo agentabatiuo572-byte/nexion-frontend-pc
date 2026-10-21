@@ -12,7 +12,7 @@ test("I3 写、CAP 和紧急发送按钮使用对应后端 authority", () => {
   assert.match(source, /content_i3_write/);
   assert.match(source, /content_i3_cap_adjust/);
   assert.match(source, /content_i3_critical_send/);
-  assert.match(source, /\{canWriteI3 && <button[\s\S]{0,300}\+ 新建 Campaign<\/button>\}/);
+  assert.match(source, /\{canWriteI3 && <button[\s\S]{0,300}\+ 新建 通知活动<\/button>\}/);
   assert.match(source, /canAdjustI3Cap \? \(/);
   assert.match(source, /canSendCampaign\(c\)/);
 });

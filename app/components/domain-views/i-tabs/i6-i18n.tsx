@@ -150,7 +150,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     ...courseCategories.map((category) => [category, `${COURSE_ICON_BY_CAT[category] ?? "📘"} ${{ Basics: "基础", Earn: "赚取", Team: "团队", Wealth: "财富", Security: "安全" }[category] ?? category}`] as [CatFlt, string]),
   ];
   const liveReward = (c: Course): string => {
-    return `${c.reward} NEX`;
+    return `${c.reward} UVEL`;
   };
   const liveStatus = (c: Course): string =>
     c.status || "published";
@@ -180,8 +180,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const query = messageSearch.trim().toLowerCase();
     return !query || message.messageKey.toLowerCase().includes(query) || message.namespace.toLowerCase().includes(query);
   });
-  const statusLabel = (status?: string) => ({ draft: "草稿", published: "已发布", archived: "已归档" }[status ?? ""] ?? status ?? "未知");
-  const categoryLabel = (value: string) => ({ Basics: "基础", Earn: "赚取", Team: "团队", Wealth: "财富", Security: "安全" }[value] ?? value);
+  const statusLabel = (status?: string) => ({ draft: "草稿", published: "已发布", archived: "已归档" }[status ?? ""] ?? "状态待核实");
+  const categoryLabel = (value: string) => ({ Basics: "基础", Earn: "赚取", Team: "团队", Wealth: "财富", Security: "安全" }[value] ?? "其他分类");
   const formatLabel = (value: string) => ({ Article: "图文", Video: "视频", "Hands-on": "实操" }[value] ?? value);
   const levelLabel = (value: string) => ({ Beginner: "入门", Intermediate: "进阶", Advanced: "高级" }[value] ?? value);
 
@@ -324,7 +324,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       action: <>发布课程新版 · {c.title}</>,
       detail: (
         <>
-          分类「{c.cat}」 · 奖励 {c.reward} NEX/课。定版发布至 /learn;受 B1 红线约束(本次只发布版本,不涨奖励,不挂 amplifies)。
+          分类「{categoryLabel(c.cat)}」 · 奖励 {c.reward} UVEL/课。定版发布至 /learn;受 B1 红线约束(本次只发布版本,不涨奖励,此次发布不提高奖励)。
         </>
       ),
       amplifies: false,
@@ -339,20 +339,20 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       action: <>课程奖励调整 · {c.title}</>,
       detail: (
         <>
-          分类「{c.cat}」完成 NEX 奖励调整 ·{" "}
-          <b>放大 NEX 流出,受 B1 兑付覆盖率红线约束</b>。后端会在提交时校验覆盖率,不达标直接拒绝。
+          分类「{categoryLabel(c.cat)}」完成 UVEL 奖励调整 ·{" "}
+          <b>放大 UVEL 流出,受 B1 兑付覆盖率红线约束</b>。后端会在提交时校验覆盖率,不达标直接拒绝。
         </>
       ),
       amplifies: true,
-      edit: { kind: "number", current: String(c.reward), unit: "NEX/课", min: TUTORIAL_REWARD_RANGE.min, max: TUTORIAL_REWARD_RANGE.max, step: 1 },
+      edit: { kind: "number", current: String(c.reward), unit: "UVEL/课", min: TUTORIAL_REWARD_RANGE.min, max: TUTORIAL_REWARD_RANGE.max, step: 1 },
       run: (reason, v) => {
         if (!v) return;
         const def = findHighOp("i7_course_reward_adjust")!;
         void propose(toast, {
           action: `课程奖励调整 · ${c.title}`,
           obj: c.id,
-          before: `${c.reward} NEX/课`,
-          after: `${v} NEX/课`,
+          before: `${c.reward} UVEL/课`,
+          after: `${v} UVEL/课`,
           type: "fund",
           amplifies: true,
           gate: { roles: [] },
@@ -422,7 +422,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       action: <>新建课程(存为草稿)</>,
       detail: (
         <>
-          填 slug / 分类 / 形式 / 难度 / 奖励({TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} NEX 区间内);标题正文另在词条库(I6)建双语词条。草稿不对外,发布需操作确认。
+          填 课程标识 / 分类 / 形式 / 难度 / 奖励({TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} UVEL 区间内);标题正文另在词条库(I6)建立中英越三语词条。草稿不对外,发布需操作确认。
         </>
       ),
       amplifies: false,
@@ -512,7 +512,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
   const editCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({
     action: <>编辑课程版本草稿 · {c.title} {row.version}</>,
-    detail: <>使用服务端 revision 做并发校验；三语正文和三语测验必须同时完整。</>,
+    detail: <>使用服务器当前版本 做并发校验；三语正文和三语测验必须同时完整。</>,
     amplifies: false,
     businessForm: {
       kind: "course-authoring", mode: "version-edit", rewardMin: TUTORIAL_REWARD_RANGE.min, rewardMax: TUTORIAL_REWARD_RANGE.max,
@@ -765,9 +765,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           <div className="l-b" style={{ paddingTop: 6 }}>
             {selectedMessage ? <>
               <div className="ab-grid">
-                <div className="ab-prev"><div className="lc">ZH · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.zh || "待补齐"}</div></div>
-                <div className="ab-prev"><div className="lc">EN · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.en || "待补齐"}</div></div>
-                <div className="ab-prev"><div className="lc">VI · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.vi || "待补齐"}</div></div>
+                <div className="ab-prev"><div className="lc">中文 · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.zh || "待补齐"}</div></div>
+                <div className="ab-prev"><div className="lc">英文 · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.en || "待补齐"}</div></div>
+                <div className="ab-prev"><div className="lc">越南语 · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.vi || "待补齐"}</div></div>
               </div>
               <div className={`itint ${selectedMessage.zh && selectedMessage.en && selectedMessage.vi ? "ok" : "warn"}`} style={{ marginTop: 8 }}>
                 <b>三语镜像</b> · 版本 {selectedMessage.version} · 占位符 {selectedMessage.placeholders.length ? selectedMessage.placeholders.join("、") : "无"}。草稿保存不会覆盖当前发布版。
@@ -867,9 +867,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           <div className="sub">{courseCategoryCount} 分类 · 推荐位 {TUTORIAL_FEATURED_DEFAULT ? 1 : 0} 个</div>
         </div>
         <div className="f-stat">
-          <div className="k">课程 NEX 派发(本周)</div>
+          <div className="k">课程 UVEL 派发(本周)</div>
           <div className="v">{I6_STATS.weeklyNexPayout}</div>
-          <div className="sub">完成发奖 · 喂流出口径(B1)</div>
+          <div className="sub">完成发奖 · 喂流出统计规则(B1)</div>
         </div>
       </div>
 
@@ -878,7 +878,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         <div className="l-h">
           <span className="ttl">教程中心(I7) · /learn · {allCourses.length} 课</span>
           <span className="sub">
-            · {courseCategoryCount} 分类 · 学完发 NEX · 涨奖励过 B1 红线
+            · {courseCategoryCount} 分类 · 学完发 UVEL · 涨奖励过 B1 红线
           </span>
           <div className="r chips">
             {categoryFilters.map(([k, l]) => (
@@ -1028,7 +1028,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             <thead><tr><th>版本</th><th>状态</th><th>说明</th><th>修订号</th><th>更新时间</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
             <tbody>
               {courseVersions.map((row) => {
-                const statusText = { DRAFT: "草稿", PUBLISHED: "已发布", SUPERSEDED: "历史版本" }[row.status] ?? row.status;
+                const statusText = { DRAFT: "草稿", PUBLISHED: "已发布", SUPERSEDED: "历史版本" }[row.status] ?? "版本状态待核实";
                 return <tr key={`${row.courseId}-${row.version}`}>
                   <td className="mono">{row.version}</td>
                   <td><span className={`bdg ${row.status === "DRAFT" ? "warn" : row.status === "PUBLISHED" ? "ok" : "dim"}`}>{statusText}</span></td>
@@ -1076,10 +1076,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             <div className="in-vrow">
               <span className="nm">
                 单课奖励区间
-                <small>权威口径 10–50 NEX;单课精确值在课程行上调</small>
+                <small>当前奖励范围 10–50 UVEL;单课精确值在课程行上调</small>
               </span>
               <span className="v">
-                {TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} NEX
+                {TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} UVEL
               </span>
             </div>
           </div>
@@ -1090,7 +1090,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           <div className="l-h">
             <span className="ttl">课程效果监控</span>
             <span className="sub">
-              · 只读 · 数字喂 BI(L 域)+ D 对账 + B1 流出
+              · 只读 · 数字喂 数据分析(L 域)+ D 对账 + B1 流出
             </span>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
@@ -1127,7 +1127,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               ))}
             </div>
             <div className="itint" style={{ marginTop: 10 }}>
-              <b>事件去向</b> · 开课、完课、测验通过实时写入学习事件；进度进入课程进度表，奖励进入奖励台账并同步钱包与资金流水。BI(L 域)可据此计算完课率、参与深度和回访贡献，B1/D 域可对账课程奖励流出。
+              <b>事件去向</b> · 开课、完课、测验通过实时写入学习事件；进度进入课程进度表，奖励进入奖励台账并同步钱包与资金流水。数据分析(L 域)可据此计算完课率、参与深度和回访贡献，B1/D 域可对账课程奖励流出。
             </div>
           </div>
         </section>
@@ -1136,7 +1136,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       </>}
 
       <p className="f-foot">
-        {view === "i18n" ? <><b>执行门槛</b>:词条草稿保存即校验中、英、越三语和占位符并留审计；词条发布/归档需内容主管或超管确认。<b>底座地位</b>:I1、I2、I4 与 I7 的可见文案都使用这里的三语词条。</> : <><b>执行门槛</b>:课程草稿可保存；发布、下架、换推荐课需内容主管或超管确认。<b>课程奖励上调</b>必须走高敏审批并通过 B1 备付金红线校验。</>}
+        {view === "i18n" ? <><b>执行门槛</b>:词条草稿保存即校验中、英、越三语和占位符并留审计；词条发布/归档需内容主管或超级管理员确认。<b>底座地位</b>:I1、I2、I4 与 I7 的可见文案都使用这里的三语词条。</> : <><b>执行门槛</b>:课程草稿可保存；发布、下架、换推荐课需内容主管或超级管理员确认。<b>课程奖励上调</b>必须走敏感审批并通过 B1 备付金红线校验。</>}
       </p>
       <PaginationExemptionList
         items={view === "i18n" ? [
