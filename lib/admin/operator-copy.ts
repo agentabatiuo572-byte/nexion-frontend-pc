@@ -3,6 +3,14 @@ import { nexGridBrandText } from "./brand-copy";
 /** Only for system-owned display labels. Never use for request values or authored content. */
 export function operatorCopyText(value: string): string {
   return nexGridBrandText(value)
+    .replace(/V-Rank/g, "会员等级")
+    .replace(/\bGMV\b/g, "已支付成交额")
+    .replace(/\bGV\b/g, "团队业绩")
+    .replace(/冷却计提中/g, "奖励等待发放")
+    .replace(/\bStandard\b/g, "基础档")
+    .replace(/\bVerified\b/g, "认证档")
+    .replace(/\bPremium\b/g, "高级档")
+    .replace(/\bDiamond\b/g, "钻石档")
     .replace(/\bstaking\b/gi, "质押")
     .replace(/\bGenesis\b/g, "创世节点")
     .replace(/\bTrial\b/g, "试用业务")

@@ -11,10 +11,10 @@
  */
 
 const BUCKET_COPY: Record<string, { title: string; rule: string }> = {
-  venue: { title: "线下大会场地", rule: "签到 QR ≥ 100 人" },
-  kol: { title: "KOL 推广配比", rule: "结束后提交发票 + 流量数据" },
+  venue: { title: "线下大会场地", rule: "扫码签到 ≥ 100 人" },
+  kol: { title: "达人推广预算", rule: "结束后提交发票 + 流量数据" },
   print: { title: "印制物料", rule: "横幅 / 手册 / 名片" },
-  dev: { title: "SDK / 开发支持", rule: "为顶级客户定制集成" },
+  dev: { title: "开发工具 / 技术支持", rule: "为顶级客户定制集成" },
 };
 
 /** 分档可见名:命中字典用中文,否则退回服务端原文(绝不显示空白)。 */

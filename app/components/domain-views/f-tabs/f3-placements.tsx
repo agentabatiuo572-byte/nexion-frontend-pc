@@ -32,7 +32,7 @@ export function F3Placements() {
   async function load(page = 1) {
     if (!canRead || working.current || stamp() !== identity) return;
     const ownerUserId = Number(owner.trim());
-    if (!/^\d+$/.test(owner.trim()) || !Number.isSafeInteger(ownerUserId) || ownerUserId <= 0) { setError("请输入有效的归属人用户 ID。"); return; }
+    if (!/^\d+$/.test(owner.trim()) || !Number.isSafeInteger(ownerUserId) || ownerUserId <= 0) { setError("请输入有效的归属人用户编号。"); return; }
     const key = stamp(), version = ++generation.current;
     working.current = true; setBusy(true); setData(null); setError(""); setNotice("");
     try { const result = await readPlacements(ownerUserId, status, page); if (current(key, version)) setData(result); }
@@ -97,7 +97,7 @@ export function F3Placements() {
     <div className="pane-h"><span className="ph-ttl">成员安置</span><span className="ph-sub">查询归属人的直推成员；已有 A/B 轨不能更改。</span></div>
     <div className="card-body">
       <form className="actions" onSubmit={event => { event.preventDefault(); void load(); }}>
-        <label>归属人用户 ID <input className="fld" inputMode="numeric" value={owner} disabled={busy || !!pending} onChange={event => { setOwner(event.target.value); setData(null); selectIntent(null); setNotice(""); setError(""); }} /></label>
+        <label>归属人用户编号 <input className="fld" inputMode="numeric" value={owner} disabled={busy || !!pending} onChange={event => { setOwner(event.target.value); setData(null); selectIntent(null); setNotice(""); setError(""); }} /></label>
         <label>安置状态 <select className="fld" value={status} disabled={busy || !!pending} onChange={event => { setStatus(event.target.value as PlacementStatus); setData(null); selectIntent(null); }}><option value="ALL">全部直推成员</option><option value="ASSIGNED">已安置</option><option value="UNASSIGNED">未安置</option></select></label>
         <button className="fbtn primary" type="submit" disabled={busy || !!pending}>查询成员</button>
       </form>
@@ -107,14 +107,14 @@ export function F3Placements() {
       {pending && <div><p>待确认：归属人 {pending.ownerUserId} · 成员 {pending.memberUserId} · {pending.leg} 轨</p><button className="fbtn" disabled={busy} onClick={() => void checkPending()}>查询原成员结果</button></div>}
       {data && <>
         <p>归属人 {data.ownerUserId} · 共 {data.total} 名直推成员</p>
-        <table className="table"><thead><tr><th>成员用户 ID</th><th>轨道</th><th>安置来源</th><th>安置时间</th><th>操作人</th><th>操作</th></tr></thead><tbody>
+        <table className="table"><thead><tr><th>成员用户编号</th><th>轨道</th><th>安置来源</th><th>安置时间</th><th>操作人</th><th>操作</th></tr></thead><tbody>
           {data.records.map(row => <tr key={row.memberUserId}><td>{row.memberUserId}</td><td>{row.leg ? `${row.leg} 轨` : "未安置"}</td><td>{row.assignmentSource === "AUTO" ? "自动安置" : row.assignmentSource === "MANUAL" ? "人工安置" : "—"}</td><td>{row.assignedAt?.replace("T", " ") || "—"}</td><td>{row.assignedBy || "—"}</td><td>{row.leg ? "已安置" : canWrite ? <div className="actions">{(["A", "B"] as const).map(leg => <button key={leg} className="fbtn" disabled={busy || !!pending} onClick={() => selectIntent({ownerUserId: data.ownerUserId, memberUserId: row.memberUserId, leg})}>安置到 {leg} 轨</button>)}</div> : "只读"}</td></tr>)}
         </tbody></table>
         {data.records.length === 0 && <p>当前条件下没有直推成员。</p>}
         <div className="actions"><button className="fbtn" disabled={busy || data.page <= 1} onClick={() => void load(data.page - 1)}>上一页</button><span>第 {data.page} 页</span><button className="fbtn" disabled={busy || data.page * data.pageSize >= data.total} onClick={() => void load(data.page + 1)}>下一页</button></div>
       </>}
       {selected && <Modal title="人工安置确认" busy={busy} onClose={() => { if (!working.current) selectIntent(null); }} footer={<><button className="fbtn" disabled={busy} onClick={() => selectIntent(null)}>取消</button><button className="fbtn primary" disabled={busy || !canWrite || !!pending} onClick={() => void submit()}>确认安置</button></>}>
-        <p>归属人用户 ID：{selected.ownerUserId}</p><p>成员用户 ID：{selected.memberUserId}</p><p>目标轨道：{selected.leg} 轨</p><p>安置后不能改到另一轨；本操作不执行结算。</p>
+        <p>归属人用户编号：{selected.ownerUserId}</p><p>成员用户编号：{selected.memberUserId}</p><p>目标轨道：{selected.leg} 轨</p><p>安置后不能改到另一轨；本操作不执行结算。</p>
       </Modal>}
     </div>
   </section>;

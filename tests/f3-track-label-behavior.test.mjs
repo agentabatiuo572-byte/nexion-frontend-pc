@@ -7,12 +7,21 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
+function actualDisplay(relative, dependencies = {}) {
+  const displayOutput = ts.transpileModule(readFileSync(new URL(relative, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const displayModule = { exports: {} };
+  new Function("require", "exports", "module", displayOutput)(name => dependencies[name] ?? require(name), displayModule.exports, displayModule);
+  return displayModule.exports;
+}
+const brandDisplay = actualDisplay("../lib/admin/brand-copy.ts");
+const operatorDisplay = actualDisplay("../lib/admin/operator-copy.ts", { "./brand-copy": brandDisplay });
 const filename = new URL("../app/components/domain-views/f-tabs/f3-binary.tsx", import.meta.url);
 const output = ts.transpileModule(readFileSync(filename, "utf8"), {
   compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 const module = { exports: {} };
 new Function("require", "exports", "module", output)((name) => {
+  if (name === "@/lib/admin/operator-copy") return operatorDisplay;
   if (name === "react") return { ...React, useMemo: fn => fn(), useState: value => [value, () => {}] };
   if (name === "next/link") return { __esModule: true, default: ({ children, ...props }) => React.createElement("a", props, children) };
   if (name === "../design-kit") return { Badge: ({ children }) => children, CodeTag: ({ children }) => children,
@@ -63,8 +72,8 @@ for (const [label, a, b, expectedA, expectedB] of [
     if (expected === "暂无轨道数据") assert.doesNotMatch(f.side(key), /较大侧|较小侧|结算基数/);
   }
   const html = renderToStaticMarkup(f.tree());
-  assert.match(html, /TRACK A · A 轨/);
-  assert.match(html, /TRACK B · B 轨/);
+  assert.match(html, /A 侧团队/);
+  assert.match(html, /B 侧团队/);
   assert.equal(f.ctx.f3Formula?.trackA ?? null, a);
   assert.equal(f.ctx.f3Formula?.trackB ?? null, b);
 });
@@ -106,13 +115,13 @@ test("Vietnam period copy preserves server configuration, proposal keys and read
   f.ctx.openActionConfirm = value => { action = value; };
   assert.match(text(f.tree()), /越南时间 UTC\+7/);
   assert.match(text(f.tree()), /每月1日00:00 UTC/);
-  find(f.tree(), node => node.type === "button" && text(node) === "归零口径")[0].props.onClick();
+  find(f.tree(), node => node.type === "button" && text(node) === "归零统计规则")[0].props.onClick();
   assert.equal(action.op, "param");
   assert.equal(action.paramKey, "F.binary.gvResetCron");
   assert.equal(action.edit.current, "每月1日00:00 UTC");
   assert.equal(action.edit.kind, "select");
   assert.deepEqual(action.edit.options, ["每月 1 日 00:00 Asia/Ho_Chi_Minh"]);
-  find(f.tree(), node => node.type === "button" && text(node) === "调整周期 & 策略")[0].props.onClick();
+  find(f.tree(), node => node.type === "button" && text(node) === "调整周期与策略")[0].props.onClick();
   assert.match(action.businessForm.hint, /每日 00:00、每周一 00:00、每月 1 日 00:00/);
   assert.deepEqual(action.paramKeys, [
     { key: "period", paramKey: "F.binary.settlePeriod" },

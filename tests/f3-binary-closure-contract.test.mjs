@@ -33,7 +33,7 @@ test("F3 periodic controls state their next-cycle, non-retroactive effect in con
 
   assert.match(component, /completionCopy:\s*"保存后只影响下一周期结算，不回溯已计提。"/);
   assert.match(component, /改后对下一周期结算生效,不回溯已计提/);
-  assert.match(view, /completionCopy=\{mc\.completionCopy\}/);
+  assert.match(view, /completionCopy=\{mc\.completionCopy \?\?/);
 });
 
 test("F3 backend consumes locked controls and publishes the shared commission event atomically", () => {

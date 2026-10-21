@@ -1,4 +1,6 @@
 "use client";
+import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -36,15 +38,16 @@ function badge(status: string): { label: string; tone: "ok" | "warn" | "err" | "
   if (status === "frozen") return { label: "已冻结", tone: "warn" };
   if (status === "rejected") return { label: "已拒绝", tone: "err" };
   if (status === "recovery_pending") return { label: "待追回", tone: "err" };
-  return { label: "冷却计提中", tone: "warn" };
+  if (status === "cooling") return { label: "奖励等待发放", tone: "warn" };
+  return { label: "状态待核实", tone: "warn" };
 }
 
 const directGroup = (row: F5CommissionEvent) => row.kind === "direct_purchase" || row.kind === "direct_device_earning";
 const operationLabels: Record<string, string> = { REVERSE: "冲正", REISSUE: "补发", SUSPEND: "暂停", RESUME: "恢复" };
 const kindNames = (value: string) => value.split(",").map((kind) => KIND_LABELS[kind.trim()] ?? "未识别奖种").join("、");
 const amountLabel = (row: F5CommissionEvent) => directGroup(row)
-  ? `结算组 ${row.settlementNo} · ${row.amountUSDT} USDT + ${row.amountNEX} NEX（整组处理）`
-  : `${row.amt.toLocaleString("en-US")} ${row.cur}`;
+  ? `结算组 ${row.settlementNo} · ${row.amountUSDT} USDT + ${row.amountNEX} UVEL（整组处理）`
+  : `${row.amt.toLocaleString("en-US")} ${nexGridBrandText(row.cur)}`;
 
 export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const canWrite = ctx.can("network_f5_write");
@@ -98,9 +101,9 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const dispose = (kind: "freeze" | "unlock" | "unfreeze", row: F5CommissionEvent) => {
     const amount = amountLabel(row);
     const map = {
-      freeze: { name: `冻结佣金 ${row.id}`, amplify: false, fixedVal: "frozen", detail: `冻结 ${row.id} · ${amount} · 先按住观察:暂停该笔的解锁与提现,可随时解冻,与不可逆冲正分层。确认后进入 A2 执行链,服务端按状态 CAS 变更并落审计。` },
-      unlock: { name: `佣金提前解锁 ${row.id}`, amplify: true, fixedVal: "unlocked", detail: `提前解锁 ${row.id} · ${amount} · 跳过剩余冷却直接进入可提余额,放大资金流出。确认后进入 A2 执行链,服务端按状态 CAS 变更并联动 D4 / B1 护栏。` },
-      unfreeze: { name: `解冻佣金 ${row.id}`, amplify: false, fixedVal: "cooling", detail: `解冻 ${row.id} · ${amount} · 恢复冻结前的冷却计提状态,不会绕过剩余冷却期。确认后进入 A2 执行链,服务端按状态与版本 CAS 变更并落审计。` },
+      freeze: { name: `冻结佣金 ${row.id}`, amplify: false, fixedVal: "frozen", detail: `冻结 ${row.id} · ${amount} · 先按住观察:暂停该笔的解锁与提现,可随时解冻,与不可逆冲正分层。确认后进入 A2 执行链,服务端检查当前状态及版本后更新并落审计。` },
+      unlock: { name: `佣金提前解锁 ${row.id}`, amplify: true, fixedVal: "unlocked", detail: `提前解锁 ${row.id} · ${amount} · 跳过剩余冷却直接进入可提余额,放大资金流出。确认后进入 A2 执行链,服务端按状态 防覆盖修改检查 变更并联动 D4 / B1 护栏。` },
+      unfreeze: { name: `解冻佣金 ${row.id}`, amplify: false, fixedVal: "cooling", detail: `解冻 ${row.id} · ${amount} · 恢复冻结前的冷却计提状态,不会绕过剩余冷却期。确认后进入 A2 执行链,服务端按状态与版本检查 变更并落审计。` },
     }[kind];
     ctx.openActionConfirm({ name: map.name, amplify: map.amplify, op: "dispose", paramKey: row.auditKey, fixedVal: map.fixedVal, expectedVersion: row.version, detail: map.detail });
   };
@@ -108,7 +111,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const reverse = (row: F5CommissionEvent) => {
     ctx.openActionConfirm({
       name: `冲正佣金 ${row.id}`,
-      detail: `冲正 ${row.id} · ${amountLabel(row)}。服务端校验退款单、V-Rank 派发单或工单证据，使用状态 CAS，并联动 D4、A2、A4。余额不足时显示待追回，不把改状态当作追回成功。`,
+      detail: `冲正 ${row.id} · ${amountLabel(row)}。服务端校验退款单、会员等级 派发单或工单证据，检查当前状态及版本，并联动 D4、A2、A4。余额不足时显示待追回，不把改状态当作追回成功。`,
       businessForm: {
         kind: "multi-field",
         title: "冲正证据",
@@ -229,13 +232,13 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
             {KINDS.map((item) => <option key={item} value={item}>{KIND_LABELS[item]}</option>)}
           </select>
           <select aria-label="全部币种" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-            <option value="">全部币种</option><option value="USDT">USDT</option><option value="NEX">NEX</option>
+            <option value="">全部币种</option><option value="USDT">USDT</option><option value="NEX">UVEL</option>
           </select>
-          <input aria-label="用户 ID" placeholder="用户 ID" value={userId} onChange={(e) => setUserId(e.target.value.replace(/\D/g, ""))} />
+          <input aria-label="用户编号" placeholder="用户编号" value={userId} onChange={(e) => setUserId(e.target.value.replace(/\D/g, ""))} />
           <input aria-label="用户群" type="month" title="按成员注册月份筛选" value={cohort} onChange={(e) => setCohort(e.target.value)} />
           <select aria-label="佣金状态" value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">全部状态</option>
-            <option value="cooling">冷却计提</option><option value="unlocked">已解锁</option>
+            <option value="cooling">奖励等待发放</option><option value="unlocked">已解锁</option>
             <option value="withdrawn">已提现</option><option value="reversed">已撤销</option><option value="frozen">已冻结</option><option value="rejected">已拒绝</option><option value="recovery_pending">待追回</option>
           </select>
           <button className="fbtn primary" onClick={() => void ctx.refreshF5(query())}>服务端筛选</button>
@@ -247,9 +250,9 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       {data && (
         <>
           <div className="f-stats">
-            <div className="f-stat"><div className="k">佣金全量合计</div><div className="v">{data.summary.monthlyCommissionSpendLabel}</div><div className="sub">八类 · USDT / NEX 分币种</div></div>
-            <div className="f-stat warn"><div className="k">冷却中全量余额</div><div className="v">{data.summary.coolingBalanceLabel}</div><div className="sub">按各类奖励的冷却快照统计</div></div>
-            <div className="f-stat ok"><div className="k">已解锁佣金全量</div><div className="v">{data.summary.withdrawableThisMonthLabel}</div><div className="sub">佣金状态金额，当前可提现以钱包为准</div></div>
+            <div className="f-stat"><div className="k">佣金全量合计</div><div className="v">{nexGridBrandText(data.summary.monthlyCommissionSpendLabel)}</div><div className="sub">八类 · USDT / UVEL 分币种</div></div>
+            <div className="f-stat warn"><div className="k">冷却中全量余额</div><div className="v">{nexGridBrandText(data.summary.coolingBalanceLabel)}</div><div className="sub">按各类奖励的冷却快照统计</div></div>
+            <div className="f-stat ok"><div className="k">已解锁佣金全量</div><div className="v">{nexGridBrandText(data.summary.withdrawableThisMonthLabel)}</div><div className="sub">佣金状态金额，当前可提现以钱包为准</div></div>
             <div className="f-stat danger"><div className="k">已冻结（全量）</div><div className="v">{data.summary.frozenCount}</div><div className="sub">来自全量状态聚合；异常样本另列</div></div>
           </div>
 
@@ -271,7 +274,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                   style={{ textAlign: "left", cursor: "pointer", borderColor: kind === item.key ? "var(--cyan)" : undefined }}
                 >
                   <span className="k" style={{ display: "block" }}>{KIND_LABELS[item.key] ?? item.lbl}</span>
-                  <strong className="v" style={{ color: item.amtColor || undefined, display: "block" }}>{item.amt}</strong>
+                  <strong className="v" style={{ color: item.amtColor || undefined, display: "block" }}>{nexGridBrandText(item.amt)}</strong>
                   <span className="sub" style={{ display: "block" }}>{item.ct}</span>
                 </button>
               ))}
@@ -293,7 +296,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                     style={{ display: "grid", gridTemplateColumns: "10px 1fr auto", alignItems: "center", gap: 8, padding: "12px 14px", borderColor: active ? "var(--cyan)" : undefined }}
                   >
                     <i aria-hidden style={{ width: 9, height: 9, borderRadius: 99, background: item.dot }} />
-                    <span style={{ textAlign: "left" }}>{item.nm === "已解锁可提" ? "已解锁" : item.nm}</span>
+                    <span style={{ textAlign: "left" }}>{item.nm === "已解锁可提" ? "已解锁" : operatorCopyText(item.nm)}</span>
                     <b>{item.ct} 笔</b>
                   </button>
                 );
@@ -310,7 +313,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                   {!data.pendingCalculations.length && <tr className="empty-row"><td colSpan={8}>当前筛选暂无待计算奖励</td></tr>}
                   {data.pendingCalculations.map(row => <tr key={row.settlementNo}>
                     <td className="cid">{row.settlementNo}</td><td>{KIND_LABELS[row.kind]}</td><td>{row.sourceRef} / {row.sourceUserName}</td>
-                    <td>{row.kind === "direct_purchase" ? `L${row.layer}` : "直属"}</td><td>{row.basisUsdt} USDT</td><td>USDT 待计算 · NEX 待计算</td>
+                    <td>{row.kind === "direct_purchase" ? `L${row.layer}` : "直属"}</td><td>{row.basisUsdt} USDT</td><td>USDT 待计算 · UVEL 待计算</td>
                     <td>{row.unlockAt ? new Date(row.unlockAt).toLocaleString() : "待确认"} / {row.ts}</td><td><Badge tone="warn">等待价格</Badge></td>
                   </tr>)}
                 </tbody>
@@ -334,14 +337,14 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                       <td><span className="cid">{row.id}</span>{(directGroup(row) || row.settlementNo) && <details style={{ marginTop: 6, maxWidth: 260 }}><summary>来源详情</summary><div style={{ display: "grid", gap: 5, padding: "8px 0", overflowWrap: "anywhere" }}>
                         <span>结算组：{row.settlementNo}</span><span>来源编号：{row.sourceRef}</span><span>设备：{row.sourceDeviceId || "不适用"}</span>
                         {directGroup(row) ? <>
-                        <span>政策版本：{row.policyVersion}</span><span>计价基数：{row.basisUsdt} USDT</span><span>当笔 NEX 价格：{row.nexUsdtPrice} USDT</span>
-                        <span>整组奖励：{row.amountUSDT} USDT + {row.amountNEX} NEX</span><span>待追回：{row.recoveryPendingUSDT} USDT + {row.recoveryPendingNEX} NEX</span>
+                        <span>政策版本：{row.policyVersion}</span><span>计价基数：{row.basisUsdt} USDT</span><span>当笔 UVEL 价格：{row.nexUsdtPrice} USDT</span>
+                        <span>整组奖励：{row.amountUSDT} USDT + {row.amountNEX} UVEL</span><span>待追回：{row.recoveryPendingUSDT} USDT + {row.recoveryPendingNEX} UVEL</span>
                         <span>{row.reversalRecorded ? "来源已退款或冲正，禁止补发" : "直属分成需按原来源核对，不能重复补发"}</span>
-                        </> : <><span>当前账项：{row.amt} {row.cur} · {state.label}</span><span>关联购买奖励组仅供核对，资金操作只作用于当前账项币种。</span></>}
+                        </> : <><span>当前账项：{row.amt} {nexGridBrandText(row.cur)} · {state.label}</span><span>关联购买奖励组仅供核对，资金操作只作用于当前账项币种。</span></>}
                       </div></details>}</td>
                       <td>{KIND_LABELS[row.kind] ?? row.kind}</td>
                       <td>{row.user} / {row.sourceUserId ? `U${row.sourceUserId}` : "--"}</td>
-                      <td>{row.amt.toLocaleString()} {row.cur}</td>
+                      <td>{row.amt.toLocaleString()} {nexGridBrandText(row.cur)}</td>
                       <td>{directGroup(row) ? "直属" : row.layer ? `L${row.layer}` : "--"} / {row.settledAt}</td>
                       <td>{row.coolingDaysLeft > 0 ? `剩余 ${row.coolingDaysLeft} 天` : "无独立冷却"}</td>
                       <td><Badge tone={state.tone}>{state.label}</Badge></td>
@@ -381,7 +384,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
               </table>
             </section>
             <aside className="rail">
-              <div className="rail-card"><div className="rc-h">八类冷却口径</div>{data.coolingPolicy.map((item) => <div className="it" key={item.kind}>{KIND_LABELS[item.kind]} · {item.days ? `${item.days} 天` : "即时"} · {item.policy}</div>)}</div>
+              <div className="rail-card"><div className="rc-h">八类冷却统计规则</div>{data.coolingPolicy.map((item) => <div className="it" key={item.kind}>{KIND_LABELS[item.kind]} · {item.days ? `${item.days} 天` : "即时"} · {operatorCopyText(item.policy)}</div>)}</div>
               <div className="rail-card"><div className="rc-h">跨域调用链</div>
                 {canReadD4
                   ? <Link href="/finance/ledger" style={LINK_STYLE}>D4 账本</Link>
@@ -408,7 +411,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                     detail: "提交 A2 审批；批准后解除暂停，后续该奖种可继续生产，历史冻结事件保持原状态。",
                     run: async (reason) => {
                       const numericUserId = Number(String(item.userId).replace(/\D/g, ""));
-                      if (!Number.isSafeInteger(numericUserId) || numericUserId <= 0) throw new Error("无效用户 ID");
+                      if (!Number.isSafeInteger(numericUserId) || numericUserId <= 0) throw new Error("无效用户编号");
                       await ctx.suspendF5UserCommissions(numericUserId, [item.kind], false, reason);
                       ctx.toast(`用户 ${item.userId} 的 ${KIND_LABELS[item.kind] ?? "所选奖种"} 恢复已提交 A2 待确认`);
                     },

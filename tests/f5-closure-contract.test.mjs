@@ -14,7 +14,7 @@ const bff = readFileSync(
 
 test("F5 exposes server-side event filters and explicit batch/history views", () => {
   assert.match(component, /全部币种/);
-  assert.match(component, /用户 ID/);
+  assert.match(component, /用户编号/);
   assert.match(component, /用户群/);
   assert.match(component, /异常预警列表/);
   assert.match(component, /处置批次与历史/);

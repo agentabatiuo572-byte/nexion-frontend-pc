@@ -53,7 +53,7 @@ test("F4 backend has one source of truth, CAS, D4, A4 and A2 replay", () => {
 
 test("F4 visible operations disclose the cross-domain contract", () => {
   const tab = read(pcRoot, "app/components/domain-views/f-tabs/f4-ops.tsx");
-  for (const marker of ["A2", "A4", "B1", "D4", "F5", "CAS"]) {
+  for (const marker of ["A2", "A4", "B1", "D4", "F5", "版本冲突保护"]) {
     assert.match(tab, new RegExp(marker));
   }
   assert.match(tab, /补发、冲正、冻结在 F5/);

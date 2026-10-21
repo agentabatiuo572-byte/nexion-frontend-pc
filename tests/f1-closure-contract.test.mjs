@@ -26,7 +26,7 @@ test("F1 PC exposes all read and action routes through the strict BFF", async ()
 
 test("F1 page closes ladder, promotion and payout workflows without placeholders", async () => {
   const view = await source(pcRoot, "app/components/domain-views/f-tabs/f1-vrank.tsx");
-  assert.match(view, /V-Rank 13 阶阶梯/);
+  assert.match(view, /会员等级 13 阶阶梯/);
   assert.match(view, /晋升流水/);
   assert.match(view, /人工晋升 \/ 回滚/);
   assert.match(view, /奖励派发流水/);

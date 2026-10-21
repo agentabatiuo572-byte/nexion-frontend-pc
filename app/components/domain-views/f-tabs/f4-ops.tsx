@@ -173,37 +173,37 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
         <section className="sect">
           <div className="sect-h">
             <span className="ic pool"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="6" rx="7" ry="3" /><path d="M5 6v12c0 1.66 3.13 3 7 3s7-1.34 7-3V6" /><path d="M5 12c0 1.66 3.13 3 7 3s7-1.34 7-3" /></svg></span>
-            <div className="t"><div className="nm">领导奖池</div><div className="s">{data.poolRatio ? `${ratioEff} 周 GMV / V_VOTES 加权分配` : "奖池比例未配置"}</div></div>
+            <div className="t"><div className="nm">领导奖池</div><div className="s">{data.poolRatio ? `${ratioEff} 周 已支付成交额 / 会员等级票数 加权分配` : "奖池比例未配置"}</div></div>
             <span className="tag">F4 · F.pool.*</span>
           </div>
           <div className="pool-hero">
-            <div><div className="lbl">本周池 · 已结算取实付，未结算按周 GMV × 比例并受月剩余额度约束</div><div className="v">{data.currentWeekPoolUsd === null ? "暂不可计算" : usd(data.currentWeekPoolUsd)}</div></div>
+            <div><div className="lbl">本周池 · 已结算取实付，未结算按周 已支付成交额 × 比例并受月剩余额度约束</div><div className="v">{data.currentWeekPoolUsd === null ? "暂不可计算" : usd(data.currentWeekPoolUsd)}</div></div>
             <div className="meta">{settlementEff}<br />参与 {unlockLabel} 领袖 <b>{data.participantCount}</b></div>
           </div>
           {!settlementOperable && <div className="f4-warn" role="alert">
             <b>提前结算已暂停</b> · {settlementBlockedCopy}
             <button disabled={ctx.f4Loading} onClick={() => void ctx.refreshF4()}>重新读取配置</button>
           </div>}
-          <div className="kv-row"><span className="k">奖池比例(周 GMV)</span><span className="v brand">{ratioEff}</span></div>
-          <div className="kv-row"><span className="k">月度预留上限(cap)</span><span className="v">{capEff}</span></div>
+          <div className="kv-row"><span className="k">奖池比例(周 已支付成交额)</span><span className="v brand">{ratioEff}</span></div>
+          <div className="kv-row"><span className="k">月度预留上限</span><span className="v">{capEff}</span></div>
           <div className="kv-row"><span className="k">结算配置版本</span><span className="v dim">{configVersionEff}</span></div>
           <div className="kv-row"><span className="k">{topLabel}</span><span className="v warn">{topShareLabel}</span></div>
-          <div className="kv-row"><span className="k">分配口径</span><span className="v dim">按 V_VOTES 权重</span></div>
+          <div className="kv-row"><span className="k">分配统计规则</span><span className="v dim">按 会员等级票数 权重</span></div>
           <div className="sect-foot">
             {canFund && <button className="primary amp" disabled={!settlementOperable} title={!settlementOperable ? settlementBlockedCopy : undefined} onClick={() => ctx.openActionConfirm({
               name: "提前结算本周领导奖池",
               amplify: true,
-              detail: "按服务端当前周已支付 GMV、F.pool.ratio、月度 cap、解锁等级与 V_VOTES 生成 F5 佣金事件和 D4 台账。资金动作先提交 A2 审批；同周 CAS 防止重复派发。",
+              detail: "按服务端当前周已支付成交额、F.pool.ratio、月度上限、解锁等级与 会员等级票数 生成 F5 佣金事件和 D4 台账。资金动作先提交 A2 审批；按版本检查，防止同周重复派发。",
               run: async (reason) => {
                 await ctx.proposeF4Settlement(reason);
               },
             })}>提前结算本周池</button>}
-            {canFund && <button className="primary amp" onClick={() => ctx.openActionConfirm({ name: "领导池比例调整(周 GMV)", amplify: true, op: "param", paramKey: "F.pool.ratio", edit: { kind: "text", current: data.poolRatio, unit: "%" }, detail: `每周 GMV 注入领导池的比例 · 当前 ${ratioEff} · 放大池子流出,受 B1 约束。` })}>调整池比例</button>}
-            {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "领导池月度 cap 调整", op: "param", paramKey: "F.pool.monthlyCap", edit: { kind: "text", current: data.monthlyCapLabel }, detail: `领导池月度预留护栏 · 当前 ${capEff} · 按本周外推月池约 ${monthPoolUsd === null ? "暂不可计算" : usdM(monthPoolUsd)}（仅估算）。` })}>调整月度 cap</button>}
-            {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "池结算周期调整", op: "param", paramKey: "F.pool.settleCron", edit: { kind: "text", current: settleCron, unit: "cron 表达式" }, detail: `领导奖池自动结算的 cron 周期 · 当前 ${settleCronEff} · 改后对下一周期派发生效。` })}>结算周期</button>}
+            {canFund && <button className="primary amp" onClick={() => ctx.openActionConfirm({ name: "领导池比例调整(周 已支付成交额)", amplify: true, op: "param", paramKey: "F.pool.ratio", edit: { kind: "text", current: data.poolRatio, unit: "%" }, detail: `每周 已支付成交额 注入领导池的比例 · 当前 ${ratioEff} · 放大池子流出,受 B1 约束。` })}>调整池比例</button>}
+            {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "领导池月度上限 调整", op: "param", paramKey: "F.pool.monthlyCap", edit: { kind: "text", current: data.monthlyCapLabel }, detail: `领导池月度预留护栏 · 当前 ${capEff} · 按本周外推月池约 ${monthPoolUsd === null ? "暂不可计算" : usdM(monthPoolUsd)}（仅估算）。` })}>调整月度上限</button>}
+            {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "池结算周期调整", op: "param", paramKey: "F.pool.settleCron", edit: { kind: "text", current: settleCron, unit: "自动结算时间表达式" }, detail: `领导奖池自动结算的 自动结算周期 · 当前 ${settleCronEff} · 改后对下一周期派发生效。` })}>结算周期</button>}
             {canWrite && <button onClick={() => ctx.openActionConfirm({ name: "池解锁等级调整", op: "param", paramKey: "F.pool.unlockVRank", edit: { kind: "select", current: unlockVRank, options: POOL_UNLOCK_OPTIONS }, detail: `领导奖池参与门槛 · 当前 ${unlockVRankEff} · 调高收紧参与人数,调低放大分润人数。` })}>解锁等级</button>}
-            {canFund && <button onClick={() => ctx.openActionConfirm({ name: "头部集中度·Top1 上限调整", amplify: true, op: "param", paramKey: "F.pool.top1MaxPct", edit: { kind: "number", current: top1MaxPct, unit: "%" }, detail: `领导池 Top1 头部集中度上限 · 当前 ${top1MaxPct}% · 范围 0-100 · 调低抑制头部虹吸,受 B1 约束。` })}>Top1 集中度</button>}
-            {canFund && <button onClick={() => ctx.openActionConfirm({ name: "头部集中度·Top5 上限调整", amplify: true, op: "param", paramKey: "F.pool.top5MaxPct", edit: { kind: "number", current: top5MaxPct, unit: "%" }, detail: `领导池 Top5 头部集中度上限 · 当前 ${top5MaxPct}% · 范围 0-100 · 调低抑制头部虹吸,受 B1 约束。` })}>Top5 集中度</button>}
+            {canFund && <button onClick={() => ctx.openActionConfirm({ name: "头部集中度·第1名 上限调整", amplify: true, op: "param", paramKey: "F.pool.top1MaxPct", edit: { kind: "number", current: top1MaxPct, unit: "%" }, detail: `领导池 第1名 头部集中度上限 · 当前 ${top1MaxPct}% · 范围 0-100 · 调低抑制高等级用户的分配占比,受 B1 约束。` })}>第1名 集中度</button>}
+            {canFund && <button onClick={() => ctx.openActionConfirm({ name: "头部集中度·前5名 上限调整", amplify: true, op: "param", paramKey: "F.pool.top5MaxPct", edit: { kind: "number", current: top5MaxPct, unit: "%" }, detail: `领导池 前5名 头部集中度上限 · 当前 ${top5MaxPct}% · 范围 0-100 · 调低抑制高等级用户的分配占比,受 B1 约束。` })}>前5名 集中度</button>}
           </div>
         </section>
 
@@ -224,15 +224,15 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
                   paramKey: `F.quota.tier.${quota.quotaCode || quota.id}.monthlyQuota`,
                   expectedVersion: quota.cap,
                   edit: { kind: "number", current: String(quota.cap), unit: "台" },
-                  detail: `CAS 更新权威配额 tier ${quota.quotaCode || quota.id}，当前已用 ${quota.current} / ${quota.cap}；若其他管理员先改，返回 409 并回读最新值。`,
+                  detail: `更新配额档位前检查修改版本： ${quota.quotaCode || quota.id}，当前已用 ${quota.current} / ${quota.cap}；若其他管理员先改，返回 409 并回读最新值。`,
                 })}>调额度</button>}
-                <span className="ct" style={{ gridColumn: "1 / -1", whiteSpace: "normal", textAlign: "left", overflowWrap: "anywhere" }}>SKU {quota.productNo || quota.quotaCode} · {quotaPrerequisites(quota)}</span>
+                <span className="ct" style={{ gridColumn: "1 / -1", whiteSpace: "normal", textAlign: "left", overflowWrap: "anywhere" }}>商品编号 {quota.productNo || quota.quotaCode} · {quotaPrerequisites(quota)}</span>
               </div>
             )) : <div className="empty">暂无硬件配额样本</div>}
             <div className="stock-note">月库存上限 {stockEff} · 已出 {data.quotaMonthlyStockUsed} 台 · 剩余 {data.quotaMonthlyStockRemaining} 台</div>
           </div>
-          <div className="kv-row"><span className="k">Pro 解锁门槛</span><span className="v dim">{proEff}</span></div>
-          <div className="kv-row"><span className="k">Rack 解锁门槛</span><span className="v dim">{rackEff}</span></div>
+          <div className="kv-row"><span className="k">专业设备解锁门槛</span><span className="v dim">{proEff}</span></div>
+          <div className="kv-row"><span className="k">机柜设备解锁门槛</span><span className="v dim">{rackEff}</span></div>
           <div className="kv-row"><span className="k">月库存上限</span><span className="v">{stockEff}</span></div>
           {data.quotaUsages.length > 0 && <div style={{ marginTop: 12 }}>
             {data.quotaUsages.map((usage) => <div key={usage.id} className="kv-row">
@@ -241,7 +241,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
               {canWrite && <button className="danger" onClick={() => ctx.openActionConfirm({
                 name: `回收配额 #${usage.id}`, op: "dispose",
                 paramKey: `F.quota.usage.${usage.id}.status`, fixedVal: "recycled",
-                detail: "服务端仅允许 ACTIVE→RECYCLED 的 CAS 状态迁移；并发重复回收返回冲突，成功后权威配额立即回读。",
+                detail: "服务器仅允许将已使用的配额回收，并检查修改版本；并发重复回收返回冲突，成功后权威配额立即回读。",
               })}>回收</button>}
             </div>)}
           </div>}
@@ -257,19 +257,19 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
             {data.ambassadorApplications.length ? data.ambassadorApplications.map((application) => (
               <div key={application.id} className="amb-band">
                 <div className="nm">#{application.id} · {nexGridBrandText(application.applicantName)} · {application.region}{application.city ? `/${application.city}` : ""}</div>
-                <div className="ct">{application.currentRank} · ${application.requestedBudgetUsd.toLocaleString("en-US")} · {application.status}</div>
+                <div className="ct">{application.currentRank} · ${application.requestedBudgetUsd.toLocaleString("en-US")} · {({PENDING:"待审核",APPROVED:"已通过",REJECTED:"已驳回",pending:"待审核",approved:"已通过",rejected:"已驳回"} as Record<string,string>)[application.status] ?? "申请状态待核实"}</div>
                 {canApproveAmbassador && application.status.toUpperCase() === "PENDING" && <>
-                  <button className="primary amp" onClick={() => ctx.openActionConfirm({ name: `批准大使申请 #${application.id}`, amplify: true, op: "dispose", paramKey: `F.ambassador.${application.id}.status`, fixedVal: "approved", detail: "按申请 ID 精确批准；同事务生成 KOL/EVENT/TRAVEL/PROMOTION 四类预算权益证明。" })}>批准</button>
+                  <button className="primary amp" onClick={() => ctx.openActionConfirm({ name: `批准大使申请 #${application.id}`, amplify: true, op: "dispose", paramKey: `F.ambassador.${application.id}.status`, fixedVal: "approved", detail: "按申请 ID 精确批准；同事务生成 推广、活动、差旅、宣传 四类预算权益证明。" })}>批准</button>
                   <button className="danger" onClick={() => ctx.openActionConfirm({ name: `驳回大使申请 #${application.id}`, op: "dispose", paramKey: `F.ambassador.${application.id}.status`, fixedVal: "rejected", detail: "按申请 ID 精确驳回，不再回退处置任意最新待审记录。" })}>驳回</button>
                 </>}
               </div>
             )) : <div className="empty">暂无大使申请样本</div>}
           </div>
           <div className="kv-row"><span className="k">本月已批准预算</span><span className="v ok">{ambassadorBudgetLabel}</span></div>
-          <div className="kv-row"><span className="k">KOL 预算占比</span><span className="v">{data.ambassadorKolBudgetPct}%</span></div>
+          <div className="kv-row"><span className="k">达人推广 预算占比</span><span className="v">{data.ambassadorKolBudgetPct}%</span></div>
           <div className="kv-row"><span className="k">下季度配额评估</span><span className="v dim">{nextQuotaReviewDate}</span></div>
           {ambassadorPolicy && <>
-            <div className="kv-row"><span className="k">申请政策版本</span><span className="v dim">{ambassadorPolicy.policyVersion} · revision {ambassadorPolicy.revision}</span></div>
+            <div className="kv-row"><span className="k">申请政策版本</span><span className="v dim">{ambassadorPolicy.policyVersion} · 版本 {ambassadorPolicy.revision}</span></div>
             <div className="kv-row"><span className="k">默认申请预算</span><span className="v">${ambassadorPolicy.defaultBudgetUsdt.toLocaleString("en-US")}</span></div>
             <div className="amb-bands">
               {ambassadorPolicy.buckets.map((bucket) => <div key={bucket.id} className="amb-band">
@@ -284,20 +284,20 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
               businessForm: {
                 kind: "multi-field",
                 title: "区域大使申请政策",
-                hint: `当前 revision ${ambassadorPolicy.revision}。保存使用版本冲突保护；扩大预算受 B1 覆盖率红线约束。`,
+                hint: `当前 版本 ${ambassadorPolicy.revision}。保存使用版本冲突保护；扩大预算受 B1 覆盖率红线约束。`,
                 fields: [
                   { key: "policyVersion", label: "政策版本", current: ambassadorPolicy.policyVersion, inputKind: "text" },
                   { key: "defaultBudgetUsdt", label: "默认预算(USDT)", current: String(ambassadorPolicy.defaultBudgetUsdt), inputKind: "number", min: 100 },
                   ...ambassadorPolicy.buckets.flatMap((bucket) => [
-                    { key: `${bucket.id}.title`, label: `${bucket.id} 名称`, current: bucket.title, inputKind: "text" as const },
-                    { key: `${bucket.id}.range`, label: `${bucket.id} 展示范围`, current: bucket.range, inputKind: "text" as const },
-                    { key: `${bucket.id}.rule`, label: `${bucket.id} 资格规则`, current: bucket.rule, inputKind: "text" as const },
-                    { key: `${bucket.id}.min`, label: `${bucket.id} 最低预算`, current: String(bucket.minBudgetUsdt), inputKind: "number" as const, min: 100 },
-                    { key: `${bucket.id}.max`, label: `${bucket.id} 最高预算`, current: String(bucket.maxBudgetUsdt), inputKind: "number" as const, min: 100 },
+                    { key: `${bucket.id}.title`, label: `${formatF4AmbassadorBucketTitle(bucket.id, bucket.title)} 名称`, current: bucket.title, inputKind: "text" as const },
+                    { key: `${bucket.id}.range`, label: `${formatF4AmbassadorBucketTitle(bucket.id, bucket.title)} 展示范围`, current: bucket.range, inputKind: "text" as const },
+                    { key: `${bucket.id}.rule`, label: `${formatF4AmbassadorBucketTitle(bucket.id, bucket.title)} 资格规则`, current: bucket.rule, inputKind: "text" as const },
+                    { key: `${bucket.id}.min`, label: `${formatF4AmbassadorBucketTitle(bucket.id, bucket.title)} 最低预算`, current: String(bucket.minBudgetUsdt), inputKind: "number" as const, min: 100 },
+                    { key: `${bucket.id}.max`, label: `${formatF4AmbassadorBucketTitle(bucket.id, bucket.title)} 最高预算`, current: String(bucket.maxBudgetUsdt), inputKind: "number" as const, min: 100 },
                   ]),
                 ],
               },
-              detail: "此处直接维护正式 App 提交时强制校验的 nx_team_ambassador_policy；不是展示镜像。",
+              detail: "此处直接维护正式 App 提交时强制校验的 区域大使申请政策；不是展示镜像。",
               completionCopy: "政策成功更新后，App 下一次打开/刷新申请页读取新政策。",
               run: async (reason, values) => {
                 if (!values) throw new Error("请填写完整政策");
@@ -331,7 +331,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
         <section className="sect">
           <div className="sect-h">
             <span className="ic lb"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h16" /><rect x="5" y="11" width="3.5" height="7" /><rect x="10.2" y="7" width="3.5" height="11" /><rect x="15.4" y="13" width="3.5" height="5" /></svg></span>
-            <div className="t"><div className="nm">排行榜 · 反欺诈</div><div className="s">4 周期奖池 · Podium · K2 联动</div></div>
+            <div className="t"><div className="nm">排行榜 · 反欺诈</div><div className="s">4 周期奖池 · 前三名展示 · K2 联动</div></div>
             <span className="tag">F4d · F.leaderboard.*</span>
           </div>
           {lbPaused && <div className="f4-warn" role="status"><b>排行榜已暂停</b> · {lbDataAvailable ? `快照已冻结 · ${data.leaderboardSnapshotAt}` : "冻结快照未确认；名次及金额暂不显示。"} · 派奖已挂起。</div>}
@@ -339,14 +339,14 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
             {([['today', '今日'], ['week', '本周'], ['month', '本月'], ['all', '总榜']] as const).map(([period, title]) =>
               <button key={period} aria-pressed={leaderboardPeriod === period} onClick={() => setLeaderboardPeriod(period)}>{title}</button>)}
           </div>
-          <p className="muted">本期已解锁 USDT 佣金 · Asia/Shanghai · {periodLeaderboard ? `快照 ${periodLeaderboard.snapshotAt} · 奖励名额 ${periodLeaderboard.topN}` : "周期榜单暂不可用"}</p>
+          <p className="muted">本期已解锁 USDT 佣金 · 上海时间 UTC+8 · {periodLeaderboard ? `快照 ${periodLeaderboard.snapshotAt} · 奖励名额 ${periodLeaderboard.topN}` : "周期榜单暂不可用"}</p>
           <div className="podium">
             {!lbDataAvailable ? <div className="empty">{lbPaused ? "冻结快照未确认" : "周期榜单暂不可用"}</div> : periodLeaderboard!.podium.length ? periodLeaderboard!.podium.map((row) => (
               <div key={row.userId} className={`pod ${row.className}`}><span className="rank">{row.rank}</span><div className="uid">{row.userId}</div><div className="gv">{row.gmvLabel}<small>{row.tip}</small></div>
                 {canControlLeaderboard && leaderboardPeriod === "week" && row.memberUserId > 0 && !row.className.includes("dq") && <button className="danger" aria-label={`取消 ${row.userId} 的榜单资格`} onClick={() => ctx.openActionConfirm({
                   name: `取消 ${row.userId} 本周榜单资格`, op: "dispose",
                   paramKey: `F.leaderboard.week.user.${row.memberUserId}.status`, fixedVal: "disqualified",
-                  detail: `按 member_user_id=${row.memberUserId} 精确排除；写入榜单动作后排名查询与奖池结算共同过滤该用户。`,
+                  detail: `按 成员编号=${row.memberUserId} 精确排除；写入榜单动作后排名查询与奖池结算共同过滤该用户。`,
                 })}>取消资格</button>}
               </div>
             )) : <div className="empty">暂无榜单样本</div>}
@@ -361,7 +361,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
             {canFund && <button className="primary amp" disabled={lbPaused} onClick={() => ctx.openActionConfirm({
               name: "派发总榜奖池",
               amplify: true,
-              detail: `总榜无自动 reset；按真实累计佣金、Top100 与当前 $${ppAllTime} 配置发放，A2 审批且 lifetime 防重复提交。`,
+              detail: `总榜不会自动重置；按真实累计佣金、前100名 与当前 $${ppAllTime} 配置发放，A2 审批且 全周期防止重复发放。`,
               run: (reason) => ctx.proposeF4LeaderboardPayout("allTime", reason),
             })}>派发总榜</button>}
             {canFund && lbPaused && <span className="muted">排行榜已暂停，派奖已挂起。</span>}
@@ -370,7 +370,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
               businessForm: {
                 kind: "multi-field",
                 title: "4 周期榜单奖池(USD)",
-                hint: "today/week/month/allTime 四周期榜单奖池 · 各须为非负数字 · 放大池子流出受 B1 约束。",
+                hint: "日榜/周榜/月榜/总榜 四周期榜单奖池 · 各须为非负数字 · 放大池子流出受 B1 约束。",
                 fields: [
                   { key: "today", label: "日榜奖池(USD)", current: ppToday, inputKind: "number", min: 0 },
                   { key: "week", label: "周榜奖池(USD)", current: ppWeek, inputKind: "number", min: 0 },
@@ -400,7 +400,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
         <div className="sect-h">
           <span className="ic pool"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h4l3-7 4 14 3-7h4" /></svg></span>
           <div className="t"><div className="nm">V 级票数权重 · 领导池分配依据</div><div className="s">后端配置权重 · {voteSummary}</div></div>
-          <span className="tag">F.pool.votes.*</span>
+          
         </div>
         <div className="votes-grid">
           {data.voteWeights.length ? data.voteWeights.map((row, index) => (
@@ -411,16 +411,16 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
           {data.voteWeights.map((row) => {
             const paramKey = row.configKey || `F.pool.votes.${row.v}`;
             return (
-              <div key={row.v} className="vote-cell" onClick={canFund ? () => ctx.openActionConfirm({ name: `领导池 ${row.v} 票数权重调整`, amplify: true, op: "param", paramKey, edit: { kind: "number", current: String(row.votes), unit: "票" }, detail: `${row.v} 当前 ${row.votes} 票 · 改变领导池分配权重 · 调高放大头部虹吸 · 受 B1 覆盖率约束。` }) : undefined}>
+              <div key={row.v} className="vote-cell" onClick={canFund ? () => ctx.openActionConfirm({ name: `领导池 ${row.v} 票数权重调整`, amplify: true, op: "param", paramKey, edit: { kind: "number", current: String(row.votes), unit: "票" }, detail: `${row.v} 当前 ${row.votes} 票 · 改变领导池分配权重 · 调高放大高等级用户的分配占比 · 受 B1 覆盖率约束。` }) : undefined}>
                 <div className="vlb">{row.v} 权重</div><div className="vct">{row.votes} 票</div>
               </div>
             );
           })}
         </div>
-        <div className="f4-warn"><b>权重一动则虹吸放大</b> · 调高高 V 级权重会进一步放大头部分润,{voteSummary}。<b>每一项调整均视为「放大资金流出」</b>,须先核验 B1 兑付覆盖率(§1.8)。</div>
+        <div className="f4-warn"><b>权重一动则分配占比增加</b> · 调高高 V 级权重会进一步放大头部分润,{voteSummary}。<b>每一项调整均视为「放大资金流出」</b>,须先核验 B1 兑付覆盖率(§1.8)。</div>
       </section>
 
-      <p className="f-foot">领导奖池闭环：<b>{settlementEff}</b>。结算时按真实已支付订单 GMV、月度 cap、解锁等级和 V_VOTES 计算并派发；提前结算先进入 A2，成功后同步写 F5 佣金事件、D4 台账与 A4 commission.paid。同周 CAS 防重复；补发、冲正、冻结在 F5 按佣金事件处置。配额、大使、排行榜各自按其配置和状态独立生效，放大流出项前置 B1 覆盖率核验。</p>
+      <p className="f-foot">领导奖池闭环：<b>{settlementEff}</b>。结算时按真实已支付订单金额、月度上限、解锁等级和 会员等级票数 计算并派发；提前结算先进入 A2，成功后同步写 F5 佣金事件、D4 台账与 A4 佣金发放事件。系统检查版本，防止同周重复派发；补发、冲正、冻结在 F5 按佣金事件处置。配额、大使、排行榜各自按其配置和状态独立生效，放大流出项前置 B1 覆盖率核验。</p>
     </>
   );
 }

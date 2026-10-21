@@ -4,13 +4,14 @@
  * 页面读模型来自后端 teams/binary。 */
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { Badge, CodeTag, DataListPager, useDataListPager } from "../design-kit";
 import { F3_GV_RESET_PARAM_KEY } from "@/lib/admin/f1-client";
 import type { FViewCtx } from "./types";
 import { F3Placements } from "./f3-placements";
 
 const usd = (n: number): string => "$" + n.toLocaleString();
-const text = (value?: string | null) => (value && value.trim() ? value.trim() : "—");
+const text = (value?: string | null) => operatorCopyText(value && value.trim() ? value.trim() : "—");
 const trackLabel = (value: number, other: number) => value > other ? "较大侧"
   : value < other ? "较小侧 · 结算基数" : "两轨显示值相同";
 
@@ -80,7 +81,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   if (ctx.f3Loading && rows.length === 0) {
     return (
       <section className="pane">
-        <div className="pane-h"><span className="ph-ttl">F3 数据加载中</span><span className="ph-sub">正在读取后端 teams/binary</span></div>
+        <div className="pane-h"><span className="ph-ttl">F3 数据加载中</span><span className="ph-sub">正在读取后端 团队结算数据</span></div>
         <div className="bin-empty">加载中...</div>
       </section>
     );
@@ -116,22 +117,22 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
 
       <div className="f3-hero">
         <section className="pane">
-          <div className="pane-h"><span className="ph-ttl">平衡匹配公式</span><span className="ph-sub">服务端权威 · {text(periodEff)}结算窗口</span><span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="electric">双轨结算</CodeTag></span></div>
+          <div className="pane-h"><span className="ph-ttl">平衡匹配公式</span><span className="ph-sub">以服务器记录为准 · {text(periodEff)}结算窗口</span><span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="electric">双轨结算</CodeTag></span></div>
           <div className="formula">
-            <div className="track a"><div className="nm">TRACK A · A 轨</div><div className="gv">{formula ? usd(formula.trackA) : "—"}</div><div className="meta">{trackFormula ? trackLabel(trackFormula.trackA, trackFormula.trackB) : "暂无轨道数据"}<br />本期累计 GV(月初归零)</div></div>
+            <div className="track a"><div className="nm">A 侧团队</div><div className="gv">{formula ? usd(formula.trackA) : "—"}</div><div className="meta">{trackFormula ? trackLabel(trackFormula.trackA, trackFormula.trackB) : "暂无轨道数据"}<br />本期累计团队业绩(月初归零)</div></div>
             <div className="balance">
-              <div className="op">min</div>
-              <div className="fx"><div className="l">MATCH {text(formula?.matchRate)}</div><div className="v">{formula ? usd(formula.matchAmount) : "—"}</div><div className="u">today · {text(formula?.user)}</div></div>
+              <div className="op">取较小值</div>
+              <div className="fx"><div className="l">匹配奖励 {text(formula?.matchRate)}</div><div className="v">{formula ? usd(formula.matchAmount) : "—"}</div><div className="u">今日 · {text(formula?.user)}</div></div>
               <div className="op">× {text(formula?.matchRate)}</div>
             </div>
-            <div className="track b"><div className="nm">TRACK B · B 轨</div><div className="gv">{formula ? usd(formula.trackB) : "—"}</div><div className="meta">{trackFormula ? trackLabel(trackFormula.trackB, trackFormula.trackA) : "暂无轨道数据"}<br />min(A,B) 决定匹配上限</div></div>
+            <div className="track b"><div className="nm">B 侧团队</div><div className="gv">{formula ? usd(formula.trackB) : "—"}</div><div className="meta">{trackFormula ? trackLabel(trackFormula.trackB, trackFormula.trackA) : "暂无轨道数据"}<br />两侧较低业绩 决定匹配上限</div></div>
           </div>
           <div className="formula-foot">
-            <span className="mono">balanceMatch = min(A, B) × <b>matchRate</b></span>
+            <span className="mono">匹配金额 = 两侧较低业绩 × <b>匹配比例</b></span>
             <span className="sep">·</span>
-            <span><b>matchRate = {text(rateEff)}</b></span>
+            <span><b>匹配比例 = {text(rateEff)}</b></span>
             <span className="sep">·</span>
-            <span className="mono">trackMinUsd = {text(thEff)}</span>
+            <span className="mono">每侧最低业绩 = {text(thEff)}</span>
             <span className="sep">·</span>
             <span className="mono">改后对下一周期结算生效</span>
           </div>
@@ -140,7 +141,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
         <section className="pane cap-card">
           <div className="pane-h"><span className="ph-ttl">双轨日封顶基准</span><span className="ph-sub">周期结算额度 = 日基准 × 周期天数</span><span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="cyan">H1 派发 · 只读</CodeTag></span></div>
           <div className="cap-body"><div className="vv" data-proof="f3-cap-h1">{text(dailyCap?.currentLabel)}</div><div className="lbl">{text(dailyCap?.windowLabel)}</div></div>
-          <div className="next-step">只读镜像 H1 当前月(<b>月 {dailyCap?.currentMonth ?? "—"} · {text(dailyCap?.currentPhase)}</b>)派发值;Phase 推进后随 H1 自动收紧,改值去 H1。</div>
+          <div className="next-step">只读镜像 H1 当前月(<b>月 {dailyCap?.currentMonth ?? "—"} · {text(dailyCap?.currentPhase)}</b>)派发值;运营阶段 推进后随 H1 自动收紧,改值去 H1。</div>
           <div className="cap-action"><button onClick={() => ctx.nav("H")}>前往 H1 调整 →</button></div>
         </section>
       </div>
@@ -148,7 +149,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       <section className="pane bin-table">
         <div className="pane-h">
           <span className="ph-ttl">用户结算视图 · 当日</span>
-          <span className="ph-sub">A/B 轨 GV · Balance Match · 状态 · 2026-10-19 起新周期按越南时间 UTC+7</span>
+          <span className="ph-sub">A/B 侧团队业绩 · 匹配结算 · 状态 · 2026-10-19 起新周期按越南时间 UTC+7</span>
           <span className="ph-r" style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
             <Link className="fbtn" href="/network/commissions">前往 F5 补发 / 冲正</Link>
             {canSettle && <button className="fbtn primary" onClick={() => ctx.openActionConfirm({
@@ -158,7 +159,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
                 title: "目标用户与结算日",
                 hint: "2026-10-19 起新周期按越南时间 UTC+7 划分；此前历史周期沿用 UTC+8，不回溯重算。系统会复核轨道归属、已支付业绩、结算周期、H1 封顶、B1 覆盖率、重复结算与退款冲正状态。",
                 fields: [
-                  { key: "ownerUserId", label: "用户 ID", inputKind: "number", min: 1, required: true },
+                  { key: "ownerUserId", label: "用户编号", inputKind: "number", min: 1, required: true },
                   { key: "settlementDate", label: "结算日(业务日期 · YYYY-MM-DD)", inputKind: "text", placeholder: "例如 2026-10-19", required: true },
                 ],
               },
@@ -166,7 +167,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
               run: async (reason, businessValue) => {
                 const ownerUserId = Number(businessValue?.ownerUserId);
                 const settlementDate = String(businessValue?.settlementDate ?? "").trim();
-                if (!Number.isSafeInteger(ownerUserId) || ownerUserId <= 0) throw new Error("请输入有效用户 ID");
+                if (!Number.isSafeInteger(ownerUserId) || ownerUserId <= 0) throw new Error("请输入有效用户编号");
                 if (!/^\d{4}-\d{2}-\d{2}$/.test(settlementDate)) throw new Error("结算日格式应为 YYYY-MM-DD");
                 const result = await ctx.executeF3Settlement(ownerUserId, settlementDate, reason);
                 if (result.status === "BLOCKED") {
@@ -246,7 +247,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <span className="muted tiny">{selectedUser ? `已选择 ${selectedUser}` : "未选择时展示全部"}</span>
           <span className="muted tiny" style={{ marginLeft: "auto" }}>{pager.total} 名用户</span>
         </div>
-        <div className="bin-row head"><span>用户</span><span>Track A · A 轨</span><span /><span>Track B · B 轨</span><span style={{ textAlign: "right" }}>Balance Match</span><span style={{ textAlign: "right" }}>当日已发</span><span style={{ textAlign: "right" }}>状态</span></div>
+        <div className="bin-row head"><span>用户</span><span>A 侧团队</span><span /><span>B 侧团队</span><span style={{ textAlign: "right" }}>匹配结算</span><span style={{ textAlign: "right" }}>当日已发</span><span style={{ textAlign: "right" }}>状态</span></div>
         {pager.pageRows.map((row) => (
           <div key={row.user} className="bin-row">
             <span className="uid">{row.user}</span>
@@ -273,16 +274,16 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
 
       <div className="cfg-grid">
         <div className="cfg-card">
-          <div className="ch">两轨门槛<span className="tag">F.binary.threshold</span></div>
+          <div className="ch">两轨门槛</div>
           <div className="cs">最低门槛 · 改后对下一周期结算生效</div>
           <div className="ckv"><span className="k">两轨结算门槛</span><span className="v">{text(thEff)}</span></div>
-          <div className="ckv"><span className="k">沉淀池(未达门槛)</span><span className="v">{text(cfg?.residualPool)}</span></div>
-          <div className="ckv"><span className="k">沉淀处置</span><span className="v" style={{ color: "var(--ink-3)" }}>{text(residualEff)}</span></div>
+          <div className="ckv"><span className="k">未匹配业绩(未达门槛)</span><span className="v">{text(cfg?.residualPool)}</span></div>
+          <div className="ckv"><span className="k">未匹配业绩处理</span><span className="v" style={{ color: "var(--ink-3)" }}>{text(residualEff)}</span></div>
           {canConfigure && <div className="cfg-foot"><button className="fbtn primary" onClick={() => ctx.openActionConfirm({ name: "两轨结算门槛调整", op: "param", paramKey: "F.binary.threshold", edit: { kind: "text", current: thEff }, detail: `两轨结算最低门槛 · 当前 ${text(thEff)} · 改后对下一周期结算生效,不影响本期已计提。` })}>调整门槛</button></div>}
         </div>
 
         <div className="cfg-card">
-          <div className="ch">平衡匹配比例<span className="tag">F.binary.matchRate</span></div>
+          <div className="ch">平衡匹配比例</div>
           <div className="cs">⚡ 放大佣金流出动作,受 B1 覆盖率约束</div>
           <div className="ckv"><span className="k">当前比例</span><span className="v" style={{ color: "var(--brand)" }}>{text(rateEff)}</span></div>
           <div className="ckv"><span className="k">今日匹配总额</span><span className="v">{usd(ctx.f3DailyMatchUsd)}</span></div>
@@ -293,16 +294,16 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             op: "param",
             paramKey: "F.binary.matchRate",
             edit: { kind: "text", current: rateEff, unit: "%" },
-            detail: `min(A,B) × 该比例，按当前配置周期结算 · 当前 ${text(rateEff)} · 放大佣金流出,受 B1 覆盖率约束。改后对下一周期结算生效,不回溯已计提。`,
+            detail: `两侧较低业绩 × 该比例，按当前配置周期结算 · 当前 ${text(rateEff)} · 放大佣金流出,受 B1 覆盖率约束。改后对下一周期结算生效,不回溯已计提。`,
             completionCopy: "保存后只影响下一周期结算，不回溯已计提。",
           })}>调整比例</button></div>}
         </div>
 
         <div className="cfg-card">
-          <div className="ch">自动安置 & 归零<span className="tag">F.binary.placement</span></div>
+          <div className="ch">自动安置与归零</div>
           <div className="cs">2026-10-19 起新周期按越南自然月划分 · 每月 1 日 00:00 UTC+7</div>
           <div className="ckv"><span className="k">自动安置</span><span className="v" style={{ color: spillOn ? "var(--success)" : "var(--ink-3)" }}>{spillOn ? "已启用" : "已关闭"}</span></div>
-          <div className="ckv"><span className="k">近 7d 自动分配</span><span className="v">{ctx.f3AutoPlacement7dCount.toLocaleString()} 成员</span></div>
+          <div className="ckv"><span className="k">近7天 自动分配</span><span className="v">{ctx.f3AutoPlacement7dCount.toLocaleString()} 成员</span></div>
           <div className="ckv"><span className="k">归零时间</span><span className="v" style={{ fontSize: 11 }}>{text(resetEff)}</span></div>
           {canConfigure && <div className="cfg-foot">
             <button className="fbtn" onClick={() => ctx.openActionConfirm({ name: "自动安置策略调整", op: "param", paramKey: "F.binary.spillover", edit: { kind: "select", current: spillOn ? "已启用" : "已关闭", options: ["已启用", "已关闭"] }, detail: "自动安置开关 · 关闭后新成员需手动安置(运营压力↑)。" })}>分配策略</button>
@@ -310,53 +311,53 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
                 列进合法配置键清单,只是页面把入口撤了 —— 后端可配而控制台无门,是半截状态。
                 🔴 键名从 client 常量取、页面只出中文标签:本页有一道术语门扫原文(含注释),
                 禁止开发代号出现在页面正文里。 */}
-            <button className="fbtn" onClick={() => ctx.openActionConfirm({ name: "GV 归零口径调整", op: "param", paramKey: F3_GV_RESET_PARAM_KEY, edit: { kind: "select", current: resetEff, options: ["每月 1 日 00:00 Asia/Ho_Chi_Minh"], optionLabels: { "每月 1 日 00:00 Asia/Ho_Chi_Minh": "每月 1 日 00:00 越南时间 UTC+7" } }, detail: `两轨累计业绩的归零时点 · 当前 ${text(resetEff)} · 改后对下一周期结算生效,不回溯已计提。` })}>归零口径</button>
+            <button className="fbtn" onClick={() => ctx.openActionConfirm({ name: "团队业绩归零统计规则调整", op: "param", paramKey: F3_GV_RESET_PARAM_KEY, edit: { kind: "select", current: resetEff, options: ["每月 1 日 00:00 Asia/Ho_Chi_Minh"], optionLabels: { "每月 1 日 00:00 Asia/Ho_Chi_Minh": "每月 1 日 00:00 越南时间 UTC+7" } }, detail: `两轨累计业绩的归零时点 · 当前 ${text(resetEff)} · 改后对下一周期结算生效,不回溯已计提。` })}>归零统计规则</button>
           </div>}
         </div>
 
         <div className="cfg-card">
-          <div className="ch">结算周期 &amp; 沉淀处置<span className="tag">F.binary.settlement</span></div>
-          <div className="cs">双轨对碰派发节奏 + 沉淀池处置策略 · 改后下一周期生效</div>
+          <div className="ch">结算周期与未匹配业绩处理</div>
+          <div className="cs">双轨对碰派发节奏 + 未匹配业绩处置策略 · 改后下一周期生效</div>
           <div className="ckv"><span className="k">结算周期</span><span className="v" style={{ color: "var(--brand)" }}>{text(periodEff)}</span></div>
-          <div className="ckv"><span className="k">沉淀处置策略</span><span className="v">{text(residualEff)}</span></div>
+          <div className="ckv"><span className="k">未匹配业绩处理策略</span><span className="v">{text(residualEff)}</span></div>
           {canConfigure && <div className="cfg-foot"><button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({
-            name: "结算周期 & 沉淀处置调整",
+            name: "结算周期与未匹配业绩处理调整",
             op: "param-multi",
             amplify: true,
             businessForm: {
               kind: "multi-field",
-              title: "目标新值 · 结算周期 & 沉淀处置",
-              hint: "2026-10-19 起新周期按越南时间 UTC+7：每日 00:00、每周一 00:00、每月 1 日 00:00 划分；此前历史周期沿用 UTC+8，不回溯重算。沉淀处置=对碰后未匹配剩余点数的处理。「转结」沿用沉淀到下期会拉大佣金应付与利息负债(科目 #3),受 B1 覆盖率约束。",
+              title: "目标新值 · 结算周期与未匹配业绩处理",
+              hint: "2026-10-19 起新周期按越南时间 UTC+7：每日 00:00、每周一 00:00、每月 1 日 00:00 划分；此前历史周期沿用 UTC+8，不回溯重算。未匹配业绩处理=对碰后未匹配剩余点数的处理。「转结」沿用沉淀到下期会拉大佣金应付与利息负债(科目 #3),受 B1 覆盖率约束。",
               fields: [
                 { key: "period", label: "结算周期", current: periodEff, inputKind: "select", options: ["每日", "每周", "每月"] },
-                { key: "residual", label: "沉淀处置策略", current: residualEff, inputKind: "select", options: ["每月清零", "每次对碰清零", "转结"] },
+                { key: "residual", label: "未匹配业绩处理策略", current: residualEff, inputKind: "select", options: ["每月清零", "每次对碰清零", "转结"] },
               ],
             },
             paramKeys: [
               { key: "period", paramKey: "F.binary.settlePeriod" },
               { key: "residual", paramKey: "F.binary.residualPolicy" },
             ],
-            detail: "结算周期(每日/每周/每月) + 沉淀处置(每月清零/每次对碰清零/转结) · server-canonical · 改后对下一周期结算生效,不回溯已计提;「转结」放大负债须 B1 覆盖率评估。",
+            detail: "结算周期(每日/每周/每月) + 未匹配业绩处理(每月清零/每次对碰清零/转结) · 以服务器数据为准 · 改后对下一周期结算生效,不回溯已计提;「转结」放大负债须 B1 覆盖率评估。",
             completionCopy: "保存后只影响下一周期结算，不回溯已计提。",
-          })}>调整周期 &amp; 策略</button></div>}
+          })}>调整周期与策略</button></div>}
         </div>
 
         <div className="cfg-card">
-          <div className="ch">双轨引擎暂停<span className="tag">F.binary.paused</span></div>
-          <div className="cs">⚡ Kill-switch · 暂停整个双轨 Balance Match 派发</div>
+          <div className="ch">双轨引擎暂停</div>
+          <div className="cs">⚡ 紧急暂停 · 暂停整个双轨 匹配结算 派发</div>
           <div className="ckv"><span className="k">引擎状态</span><span className="v" style={{ color: binaryPaused ? "var(--danger)" : "var(--success)" }}>{binaryPaused ? "已暂停" : "运行中"}</span></div>
           <div className="ckv"><span className="k">影响范围</span><span className="v" style={{ color: "var(--ink-3)" }}>{binaryPaused ? "全平台双轨派发冻结" : "正常按周期派发"}</span></div>
           {canPause && <div className="cfg-foot"><button className={`fbtn${binaryPaused ? " primary" : " danger"}`} onClick={() => ctx.openActionConfirm({
             name: binaryPaused ? "恢复左右团队业绩结算" : "暂停左右团队业绩结算",
             op: "dispose", paramKey: "F.binary.paused", fixedVal: binaryPaused ? "off" : "on",
             detail: binaryPaused
-              ? "恢复双轨结算 · 下一周期起正常 Balance Match 派发,写 A2 审计。"
-              : "暂停左右团队业绩结算 · 全平台 Balance Match 派发冻结,影响所有双轨用户结算,属极高风险止血动作,写 A2 审计。",
+              ? "恢复双轨结算 · 下一周期起正常 匹配结算 派发,写 A2 审计。"
+              : "暂停左右团队业绩结算 · 全平台 匹配结算 派发冻结,影响所有双轨用户结算,属极高风险止血动作,写 A2 审计。",
           })}>{binaryPaused ? "恢复引擎" : "暂停引擎"}</button></div>}
         </div>
       </div>
 
-      <p className="f-foot">阻塞用户(单轨 &lt; $1k)占比 {ctx.f3ParticipantCount ? Math.round((ctx.f3BlockedCount / ctx.f3ParticipantCount) * 100) : 0}%,是双轨制设计意图 — <b>逼用户两侧均衡发展</b>,而不只是单边狂铺。沉淀池当前口径「{text(residualEff)}」是 B 端杠杆;改为「转结」会拉大利息负债(科目 #3)与佣金应付,须严格 操作确认 + B1 覆盖率评估。</p>
+      <p className="f-foot">两侧团队均达到门槛后参与结算。未匹配业绩按当前设置「{text(residualEff)}」处理；若结转至下期，会增加后续佣金应付款，修改前须核验资金覆盖率。</p>
     </>
   );
 }

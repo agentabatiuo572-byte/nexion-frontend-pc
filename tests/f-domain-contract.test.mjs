@@ -162,7 +162,7 @@ test("F domain keeps current seven-layer writes while split policy uses one vers
   // 七层实际写入沿原 A2 路径；新拆分只有一个完整双版本命令。
   assert.match(view, /F\.commission\.[\s\S]*\.status/, "resolveFOp 缺 F.commission.{id}.status 分支");
   assert.match(view, /return "f_unilevel_rule"/);
-  assert.match(view, /key\.startsWith\("F\.unilevel\."\)[\s\S]*?throw new Error\("该网络版税参数未接入结算/);
+  assert.match(view, /key\.startsWith\("F\.unilevel\."\)[\s\S]*?throw new Error\("该网络购买奖励参数未接入结算/);
   assert.match(view, /findHighOp\("f_direct_referral_policy"\)/);
   assert.match(registry, /expectedSevenLayerRevision: ctx\.expectedSevenLayerRevision/);
   assert.match(registry, /purchaseSplit: ctx\.purchaseSplit/);

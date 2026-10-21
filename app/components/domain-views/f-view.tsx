@@ -85,7 +85,7 @@ function resolveFOp(key: string): string {
   if (/^F\.unilevel\.(?:nex\.)?L[1-7]$/.test(key)) return "f_unilevel_rule";
   if (key.startsWith("F.unilevel.")
       && !["F.unilevel.depthGate", "F.unilevel.depthGateRank", "F.unilevel.mergeExitMaxPct"].includes(key)
-      && !/^F\.unilevel\.L[1-7]\.paused$/.test(key)) throw new Error("该网络版税参数未接入结算，不能调整。");
+      && !/^F\.unilevel\.L[1-7]\.paused$/.test(key)) throw new Error("该网络购买奖励参数未接入结算，不能调整。");
   if (F_ACTIVE_KEYS.has(key)) return "f_config";
   return "f_ui_config";
 }
@@ -440,7 +440,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       await proposeStable(`f-config-batch:${sourceDomain}`, JSON.stringify([normalized, reason]), {
         action: `${def.action} · ${normalized.length} 项`,
         obj: normalized.map((item) => item.key).join(","),
-        before: "以服务端权威快照为准",
+        before: "以服务器记录为准",
         after: normalized.map((item) => `${item.key}=${item.value}`).join(" / "),
         type: "fund",
         amplifies: normalized.some((item) => isFFundAmplifyingKey(item.key)),
@@ -590,7 +590,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       if (!def) throw new Error("F_OP_NOT_FOUND:f_direct_referral_policy");
       await proposeStable("f-direct-referral-policy", JSON.stringify([policy, reason]), {
         action: def.action, obj: "current",
-        before: `当前政策版本 ${current.policyVersion}，七层引用版本 ${current.sevenLayerRevision}；${directReferralSummary(current)}；旧 L1 NEX 系数 ${current.sevenLayerReference.legacyNexPerUsd ?? "未配置"}`,
+        before: `当前政策版本 ${current.policyVersion}，七层引用版本 ${current.sevenLayerRevision}；${directReferralSummary(current)}；原直属层 UVEL 系数 ${current.sevenLayerReference.legacyNexPerUsd ?? "未配置"}`,
         after: `${directReferralSummary(policy)}；审批通过后立即对新来源生效`,
         type: "fund", amplifies: directReferralAmplifies(current, policy),
         gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "F2",
@@ -654,7 +654,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         action: def.action,
         obj: "F4 当前周领导奖池",
         before: "待结算",
-        after: "按实时周 GMV、门槛、票权及月度 cap 结算",
+        after: "按实时周 已支付成交额、门槛、票权及月度上限 结算",
         type: "fund",
         amplifies: true,
         gate: { roles: [] },
@@ -774,7 +774,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
 
       {mc && <OperationConfirmModal
         action={mc.name}
-        detail={mc.detail ?? "server-canonical · 改后对下一笔结算生效,不回溯已计提"}
+        detail={mc.detail ?? "以服务器数据为准 · 改后对下一笔结算生效,不回溯已计提"}
         amplifies={!!mc.amplify}
         // coverage 按当前 tab 选源(A1 批1b 修复):原硬编码 f1Overview?.coverage → 切到 F2-F5 时仍显示 F1 覆盖率(跨域误用)。
         // 现按 tab 路由到对应 overview 的 coverage,与后端 rates()/binary()/leadershipPool()/commissions() 注入的 B1 快照一致。

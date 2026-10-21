@@ -32,8 +32,8 @@ test("malformed pause status cannot masquerade as running or enable an action", 
 test("approval summary exposes changed stored shares even while split is disabled", () => {
   const before = directReferralSummary({ ...policy(), purchaseSplit: split({ enabled: false, usdtSharePct: 50 }) });
   const after = directReferralSummary(update({ purchaseSplit: split({ enabled: false, usdtSharePct: 61 }) }));
-  assert.match(before, /保存的拆分 USDT 50% \/ NEX 50%，停用期间不生效/);
-  assert.match(after, /保存的拆分 USDT 61% \/ NEX 39%，停用期间不生效/);
+  assert.match(before, /保存的拆分 USDT 50% \/ UVEL 50%，停用期间不生效/);
+  assert.match(after, /保存的拆分 USDT 61% \/ UVEL 39%，停用期间不生效/);
   assert.match(directReferralSummary({ ...policy(), purchaseSplitConfigured: false }), /当前占位.*尚未生效/);
 });
 
