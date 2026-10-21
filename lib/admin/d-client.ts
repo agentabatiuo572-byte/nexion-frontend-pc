@@ -707,7 +707,7 @@ export interface D2DevelopmentCapabilities {
 
 export function financeAdminRequest<T>(
   path: string,
-  init?: RequestInit & { idempotencyPrefix?: string; idempotencyKey?: string },
+  init?: RequestInit & { idempotencyPrefix?: string; idempotencyKey?: string; bankManualAuthEpoch?: number },
 ) {
   return apiRequest<T>("finance", path, init);
 }

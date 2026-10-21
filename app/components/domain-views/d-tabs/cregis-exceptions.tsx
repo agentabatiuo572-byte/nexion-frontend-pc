@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { adminAuthLifecycleEpoch, adminAuthActivityAllowed } from "@/lib/admin/auth-lifecycle";
 import { financeAdminRequest } from "@/lib/admin/d-client";
 import { exceptionChallengeId, exceptionCommand, exceptionFee, exceptionId, exceptionList, exceptionObject, exceptionRead, exceptionVersion,
-  type ExceptionPage, type ExceptionRecord } from "@/lib/admin/cregis-exceptions";
+  type ExceptionPage, type ExceptionRecord, type ExceptionRequestScope } from "@/lib/admin/cregis-exceptions";
 import type { DCtx } from "./types";
 
 const EMPTY: ExceptionPage = { records: [], hasMore: false, nextBeforeId: null };
@@ -29,11 +30,33 @@ function CaseSummary({ row }: { row: ExceptionRecord }) {
     {row.lastError ? ` · 待核查原因 ${row.lastError}` : ""}</div>;
 }
 
-export function CregisExceptionOperations({ canManage, openActionConfirm, sources }: {
+type OperationsProps = {
   canManage: boolean; openActionConfirm: DCtx["openActionConfirm"]; sources: { sourceType: string; sourceId: string; title: string }[];
-}) {
+};
+export function CregisExceptionOperations(props: OperationsProps) {
+  const session = useAdminAuth(state => state.session), epoch = useAdminAuth(state => state.authEpoch);
+  if (!session?.authorities.includes("finance_d1_read")) return null;
+  return <OwnedExceptionOperations key={`${session.adminId}:${epoch}:${adminAuthLifecycleEpoch()}:${props.canManage}:${session.authorities.join("|")}`}
+    {...props} owner={session.adminId} ownerEpoch={epoch} />;
+}
+function OwnedExceptionOperations({ canManage, openActionConfirm, sources, owner, ownerEpoch }: OperationsProps & { owner: number; ownerEpoch: number }) {
   const session = useAdminAuth(state => state.session);
   const canRefund = canManage && (session?.authorities ?? []).includes("finance_d2_withdrawal_approve");
+  const lifecycleEpoch = useRef(adminAuthLifecycleEpoch()).current;
+  const live = useRef(true);
+  const assertOwner = useCallback((write = false, refund = false) => {
+    const current = useAdminAuth.getState();
+    const rights = current.session?.authorities ?? [];
+    if (!live.current || !current.isAuthenticated || current.session?.adminId !== owner || current.authEpoch !== ownerEpoch
+        || adminAuthLifecycleEpoch() !== lifecycleEpoch || !adminAuthActivityAllowed()
+        || !rights.includes("finance_d1_read") || write && (!canManage || !rights.includes("finance_d1_channel_manage"))
+        || refund && !rights.includes("finance_d2_withdrawal_approve"))
+      throw new Error("登录身份或权限已变化，请重新打开异常处置后核对");
+  }, [owner, ownerEpoch, lifecycleEpoch, canManage]);
+  const owns = useCallback(() => { try { assertOwner(); return true; } catch { return false; } }, [assertOwner]);
+  const scopeFor = useCallback((write = false, refund = false): ExceptionRequestScope => ({
+    authEpoch: lifecycleEpoch, assertOwner: () => assertOwner(write, refund),
+  }), [assertOwner, lifecycleEpoch]);
   const [policy, setPolicy] = useState<ExceptionRecord | null>(null);
   const [policyCases, setPolicyCases] = useState<ExceptionRecord[]>([]);
   const [refunds, setRefunds] = useState(EMPTY);
@@ -57,67 +80,75 @@ export function CregisExceptionOperations({ canManage, openActionConfirm, source
   const clearProof = () => { selectionEpoch.current++; setChallenge(null); setEvidence(null); setSignature(""); };
 
   const refresh = useCallback(async () => {
+    const scope = scopeFor(); scope.assertOwner();
     const epoch = ++refreshEpoch.current;
     setLoading(true); setError("");
     try {
       const [p, pc, rf, cl, ri, rc] = await Promise.all([
-        exceptionRead("/refunds/fee-policy"), financeAdminRequest<unknown>("/cregis/refunds/fee-policy/cases"),
-        exceptionList("/refunds/cases"), exceptionList("/exception-claims"),
-        exceptionList("/reorg/incidents"), exceptionList("/reorg/proposals"),
+        exceptionRead("/refunds/fee-policy", scope), financeAdminRequest<unknown>("/cregis/refunds/fee-policy/cases", { bankManualAuthEpoch: scope.authEpoch }),
+        exceptionList("/refunds/cases", undefined, scope), exceptionList("/exception-claims", undefined, scope),
+        exceptionList("/reorg/incidents", undefined, scope), exceptionList("/reorg/proposals", undefined, scope),
       ]);
-      if (epoch !== refreshEpoch.current) return;
+      scope.assertOwner();
+      if (epoch !== refreshEpoch.current || !live.current || adminAuthLifecycleEpoch() !== lifecycleEpoch) return;
       if (!(String(p.mode) in MODE) || !Array.isArray(pc)) throw new Error("退款配置响应无效");
       exceptionVersion(p.version);
       setPolicy(p); setPolicyCases(pc.map(exceptionObject)); setRefunds(rf); setClaims(cl); setIncidents(ri); setReorgCases(rc);
     } catch (failure) {
-      if (epoch !== refreshEpoch.current) return;
+      if (epoch !== refreshEpoch.current || !owns()) return;
       setPolicy(null); setError(failure instanceof Error ? failure.message : "异常资金状态读取失败");
-    } finally { if (epoch === refreshEpoch.current) setLoading(false); }
-  }, []);
-  useEffect(() => { void refresh(); return () => { refreshEpoch.current++; selectionEpoch.current++; }; }, [refresh]);
+    } finally { if (epoch === refreshEpoch.current && owns()) setLoading(false); }
+  }, [scopeFor, lifecycleEpoch, owns]);
+  useEffect(() => { live.current = true; void refresh(); return () => { live.current = false; refreshEpoch.current++; selectionEpoch.current++; }; }, [refresh]);
 
   const mutate = async (path: string, body: ExceptionRecord) => {
+    const scope = scopeFor(true, path.startsWith("/refunds")); scope.assertOwner();
     if (mutationLock.current) throw new Error("上一项操作仍在处理，请先核对结果");
     mutationLock.current = true; setBusy(true); setError("");
     try {
-      await exceptionCommand(path, body);
+      await exceptionCommand(path, body, scope); scope.assertOwner();
       clearProof(); await refresh();
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "结果未知，请保留原请求号刷新核对"); throw failure;
-    } finally { mutationLock.current = false; setBusy(false); }
+      if (owns()) setError(failure instanceof Error ? failure.message : "结果未知，请保留原请求号刷新核对"); throw failure;
+    } finally { mutationLock.current = false; if (owns()) setBusy(false); }
   };
   const confirm = (action: string, path: string, body: ExceptionRecord, detail: string) => openActionConfirm({
     action, detail, reasonMin: 10, reasonMax: 200, completionCopy: "提交后回读原工单；需另一管理员复核的操作不会立即执行",
     run: reason => mutate(path, { ...body, reason }),
   });
   const pageMore = async (path: string, page: ExceptionPage, setter: (page: ExceptionPage) => void) => {
+    const scope = scopeFor(); scope.assertOwner();
     setBusy(true); setError("");
-    try { const next = await exceptionList(path, page.nextBeforeId ?? undefined); setter({ ...next, records: [...page.records, ...next.records] }); }
-    catch (failure) { setError(failure instanceof Error ? failure.message : "读取失败"); }
-    finally { setBusy(false); }
+    try { const next = await exceptionList(path, page.nextBeforeId ?? undefined, scope); scope.assertOwner(); setter({ ...next, records: [...page.records, ...next.records] }); }
+    catch (failure) { if (owns()) setError(failure instanceof Error ? failure.message : "读取失败"); }
+    finally { if (owns()) setBusy(false); }
   };
   const prepare = async () => {
+    const scope = scopeFor(true, intent === "REFUND_ORIGIN"); scope.assertOwner();
     setBusy(true); setError(""); const epoch = ++selectionEpoch.current;
     setChallenge(null); setEvidence(null); setSignature("");
     try {
       const source = sources.find(row => `${row.sourceType}:${row.sourceId}` === sourceKey);
       if (!source) throw new Error("请选择当前待处理的资金记录");
       const result = await exceptionCommand("/exception-ownership/challenges", { sourceType: source.sourceType,
-        sourceId: exceptionId(source.sourceId), action: intent, targetUserId: intent === "CLAIM_CREDIT" ? exceptionId(userId) : null });
+        sourceId: exceptionId(source.sourceId), action: intent, targetUserId: intent === "CLAIM_CREDIT" ? exceptionId(userId) : null }, scope);
+      scope.assertOwner();
       if (epoch === selectionEpoch.current) setChallenge(result);
-    } catch (failure) { if (epoch === selectionEpoch.current) setError(failure instanceof Error ? failure.message : "生成证明失败"); }
-    finally { setBusy(false); }
+    } catch (failure) { if (epoch === selectionEpoch.current && owns()) setError(failure instanceof Error ? failure.message : "生成证明失败"); }
+    finally { if (owns()) setBusy(false); }
   };
   const preview = async () => {
+    const scope = scopeFor(true, intent === "REFUND_ORIGIN"); scope.assertOwner();
     if (!challenge) return;
     setBusy(true); setError(""); const epoch = selectionEpoch.current;
     try {
       const result = await exceptionCommand(intent === "CLAIM_CREDIT" ? "/exception-claims/preview" : "/refunds/preview", {
         challengeId: exceptionChallengeId(challenge.challengeId), signature, ...(intent === "CLAIM_CREDIT" ? { targetUserId: exceptionId(userId) } : {}),
-      });
+      }, scope);
+      scope.assertOwner();
       if (epoch === selectionEpoch.current) setEvidence(result);
-    } catch (failure) { if (epoch === selectionEpoch.current) { setEvidence(null); setError(failure instanceof Error ? failure.message : "证明核验失败"); } }
-    finally { setBusy(false); }
+    } catch (failure) { if (epoch === selectionEpoch.current && owns()) { setEvidence(null); setError(failure instanceof Error ? failure.message : "证明核验失败"); } }
+    finally { if (owns()) setBusy(false); }
   };
   const configureFee = () => openActionConfirm({ action: "提议异常退款费用规则", detail: "另一管理员复核后仅对新工单生效，已有工单保留原毛额、费用与净额快照。",
     reasonMin: 10, reasonMax: 200, businessForm: { kind: "multi-field", fields: [
@@ -131,13 +162,14 @@ export function CregisExceptionOperations({ canManage, openActionConfirm, source
     run: (reason, _v, form) => mutate(`/refunds/cases/${exceptionId(row.id)}/recover`, { expectedVersion: exceptionVersion(row.version), providerCid: exceptionId(form?.cid), reason }),
   });
   const proposeReorg = async (row: ExceptionRecord, action: string) => {
+    const scope = scopeFor(true); scope.assertOwner();
     setBusy(true); setError("");
     try {
-      const proof = await exceptionRead(`/reorg/incidents/${exceptionId(row.id)}/evidence?action=${action}`);
+      const proof = await exceptionRead(`/reorg/incidents/${exceptionId(row.id)}/evidence?action=${action}`, scope); scope.assertOwner();
       confirm(ACTION[action], `/reorg/incidents/${exceptionId(row.id)}/proposals`, { action, expectedVersion: exceptionVersion(row.version), evidenceHash: proof.evidenceHash },
         `用户 ${label(row.userId)}，原净入账 ${label(row.netAmount)} USDT，待追偿 ${label(row.outstandingDebt)} USDT。证据 ${label(proof.evidenceHash)}。只处置本事件，不自动重开资金开关。`);
-    } catch (failure) { setError(failure instanceof Error ? failure.message : "读取事件证明失败"); }
-    finally { setBusy(false); }
+    } catch (failure) { if (owns()) setError(failure instanceof Error ? failure.message : "读取事件证明失败"); }
+    finally { if (owns()) setBusy(false); }
   };
   const list = (title: string, path: string, page: ExceptionPage, setter: (page: ExceptionPage) => void, actions: (row: ExceptionRecord) => React.ReactNode) => <section className="cregis-panel">
     <h4>{title}</h4>{page.records.length === 0 ? <p>暂无记录</p> : page.records.map(row => <div className="cregis-case" key={String(row.id)}>

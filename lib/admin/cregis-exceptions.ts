@@ -2,6 +2,7 @@ import { financeAdminRequest } from "./d-client";
 
 export type ExceptionRecord = Record<string, unknown>;
 export type ExceptionPage = { records: ExceptionRecord[]; hasMore: boolean; nextBeforeId: string | null };
+export type ExceptionRequestScope = { authEpoch: number; assertOwner: () => void };
 
 export function exceptionChallengeId(value: unknown): string {
   if (typeof value !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value))
@@ -43,17 +44,26 @@ export function exceptionFee(mode: string, fee: string): string {
   return fee;
 }
 
-export async function exceptionRead(path: string): Promise<ExceptionRecord> {
-  return exceptionObject(await financeAdminRequest<unknown>(`/cregis${path}`));
+export async function exceptionRead(path: string, scope?: ExceptionRequestScope): Promise<ExceptionRecord> {
+  scope?.assertOwner();
+  const response = await financeAdminRequest<unknown>(`/cregis${path}`, { bankManualAuthEpoch: scope?.authEpoch });
+  scope?.assertOwner();
+  return exceptionObject(response);
 }
 
-export async function exceptionList(path: string, beforeId?: string): Promise<ExceptionPage> {
-  return exceptionPage(await financeAdminRequest<unknown>(`/cregis${path}?limit=20&beforeId=${beforeId ? exceptionId(beforeId) : "0"}`));
+export async function exceptionList(path: string, beforeId?: string, scope?: ExceptionRequestScope): Promise<ExceptionPage> {
+  scope?.assertOwner();
+  const response = await financeAdminRequest<unknown>(`/cregis${path}?limit=20&beforeId=${beforeId ? exceptionId(beforeId) : "0"}`, { bankManualAuthEpoch: scope?.authEpoch });
+  scope?.assertOwner();
+  return exceptionPage(response);
 }
 
 /** The existing financial client persists the same command key for unknown outcomes and reloads. */
-export async function exceptionCommand(path: string, body: ExceptionRecord): Promise<ExceptionRecord> {
-  return exceptionObject(await financeAdminRequest<unknown>(`/cregis${path}`, {
-    method: "POST", body: JSON.stringify(body), idempotencyPrefix: "cregis-exception",
-  }));
+export async function exceptionCommand(path: string, body: ExceptionRecord, scope?: ExceptionRequestScope): Promise<ExceptionRecord> {
+  scope?.assertOwner();
+  const response = await financeAdminRequest<unknown>(`/cregis${path}`, {
+    method: "POST", body: JSON.stringify(body), idempotencyPrefix: "cregis-exception", bankManualAuthEpoch: scope?.authEpoch,
+  });
+  scope?.assertOwner();
+  return exceptionObject(response);
 }
