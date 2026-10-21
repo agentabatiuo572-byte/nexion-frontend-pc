@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * K6 Janus C2 控制台 — 壳 + 内部 5 tab(看板 / 设备队列 / 策略中心 / 批准目标 / 审计日志)。
- * 设计稿(Janus C2 控制台 v3)视觉基础 + PRD v1.0 富模型;数据由 /api/admin/janus 读取业务表。
+ * K6 设备风险处置 — 壳 + 内部 5 tab(看板 / 设备队列 / 策略中心 / 批准目标 / 审计日志)。
+ * 设计稿(设备风险处置 v3)视觉基础 + PRD v1.0 富模型;数据由 /api/admin/janus 读取业务表。
  */
 import { useEffect, useState } from "react";
 import "./k6-janus-c2.css";

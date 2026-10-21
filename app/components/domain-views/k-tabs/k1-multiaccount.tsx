@@ -21,7 +21,7 @@ const commandAttempt = createPendingMutationStore({
   storageKey: "nexion-admin-k1-multiaccount-commands-v1",
 });
 /** 释放参数调参带自由输入值,不能用按槽位无条件复用的朴素 store:运营在「结果未知」后改了值再提交,
- *  朴素 store 会复用旧命令号,后端 24h 幂等窗把新值当重复提交静默吞掉(界面还报成功)。
+ *  朴素 store 会复用旧命令号,后端 24h 防重复提交窗把新值当重复提交静默吞掉(界面还报成功)。
  *  按「槽位 + 输入指纹」解析 —— 同键同输入才复用,输入变了铸新号。F 域同类调参用的是同一个组件。 */
 const releaseAttempts = createSlotAttemptStore({
   storageKey: "nexion-admin-k1-release-commands-v1",
@@ -51,21 +51,41 @@ const CLUSTER_ST: Record<ClusterStatus, [string, string]> = {
 };
 
 // ── 收益释放参数(SPEC-7 搬回,合并底账 §二#5)──────────────────────────
-// enum/boolean 的运营可读中文标签(页面禁裸工程串);数值范围与键集单源在 k-client,
+// enum/boolean 的运营可读中文标签(页面禁裸工程串);数值范围与键集统一来源在 k-client,
 // 读校验与编辑弹窗共用,避免两处漂移。
 const RELEASE_MODE_LABELS: Record<string, string> = {
   attest_or_manual: "在线证明或人工放行",
   manual_only: "仅人工放行",
 };
 const RELEASE_BOOL_LABELS: Record<string, string> = { true: "开启", false: "关闭" };
+const RISK_PARAM_COPY: Record<string, { name: string; sub: string }> = {
+  maxSignupPerIp24h: { name: "同一 IP 每天最多注册多少个账号", sub: "正式环境达到上限后，会拒绝该 IP 的新注册。" },
+  maxAccountsPerDevice: { name: "同一设备最多关联多少个账号", sub: "超过这个数量后，系统会提示多账户风险。" },
+  maxAccountsPerPaymentInstrument: { name: "同一支付工具最多关联多少个账号", sub: "超过这个数量后，系统会提示多账户风险。" },
+  linkWeight: { name: "设备、支付工具和 IP 的关联权重", sub: "权重越高，该依据对关联程度的影响越大。" },
+  clusterFreezeSuggestThreshold: { name: "建议冻结的关联程度", sub: "达到这个数值只显示建议，不会自动冻结账户。" },
+};
+const riskParamName = (p: KRiskParam) => RISK_PARAM_COPY[p.key]?.name ?? p.name;
+const riskParamSub = (p: KRiskParam) => RISK_PARAM_COPY[p.key]?.sub ?? p.sub;
+const RELEASE_PARAM_COPY: Record<string, { name: string; sub: string }> = {
+  freePhoneSlotsPerCluster: { name: "同组正常放行的手机号数", sub: "同一组关联账户中，可按正常账户处理的手机号数量。" },
+  duplicateAccountPendingFrom: { name: "第几个关联账号起审核收益", sub: "从这个账号开始，新增收益须先审核。" },
+  duplicateAccountFreezeFrom: { name: "第几个关联账号起建议冻结", sub: "达到这个账号数只提出冻结建议，不会自动冻结账户。" },
+  pendingReleaseHours: { name: "批量放行统计时间范围", sub: "只统计这段时间内的放行记录，不会自动放款。" },
+  appAttestationReleaseHours: { name: "App 在线验证有效时间", sub: "在线验证须在这段时间内达到要求。" },
+  releaseMode: { name: "收益放行方式", sub: "选择在线验证或人工审核如何放行收益。" },
+  freeSlotRequiresBinding: { name: "正常名额是否需要绑定手机号", sub: "开启后，正常放行的名额须绑定手机号。" },
+};
+const releaseParamName = (p: KRiskParam) => RELEASE_PARAM_COPY[p.key]?.name ?? p.name;
+const releaseParamSub = (p: KRiskParam) => RELEASE_PARAM_COPY[p.key]?.sub ?? p.sub;
 
-// 簇状态 → 收益桶结论(展示派生,不动状态机;权威结算在服务端)。
+// 簇状态 → 收益桶结论(展示派生,不动处理流程;权威结算在服务端)。
 const CLUSTER_EARNING_IMPACT: Record<ClusterStatus, { label: string; tone: string; desc: string }> = {
-  detected: { label: "正常槽内可提", tone: "dim", desc: "仅命中待判,正常手机槽内收益继续可提;超出槽位进入审核中。" },
-  flagged: { label: "审核中", tone: "warn", desc: "已标可疑后,同簇超出正常槽位的托管收益进入审核中,等待人工结论。" },
-  frozen: { label: "锁定奖励", tone: "bad", desc: "已冻结簇的新增托管收益进入锁定奖励,提现侧同步更严处理。" },
+  detected: { label: "正常名额内可提现", tone: "dim", desc: "这组账户仍待判定；正常名额内的收益可提现，超出名额的收益须先审核。" },
+  flagged: { label: "审核中", tone: "warn", desc: "标记为可疑后，超出正常名额的收益须人工审核。" },
+  frozen: { label: "锁定奖励", tone: "bad", desc: "冻结这组账户后，新增收益会锁定，提现审核也会更严格。" },
   released: { label: "恢复正常", tone: "ok", desc: "误判解除后,后续收益按正常账户释放;历史待审仍按审计结果处理。" },
-  cleared: { label: "正常释放", tone: "ok", desc: "判定正常后退出多账户监控队列,后续收益按普通账户释放。" },
+  cleared: { label: "正常释放", tone: "ok", desc: "判定正常后，这组账户退出风险监控；后续收益按普通账户处理。" },
 };
 
 function formatThreshold(value: number) {
@@ -178,7 +198,7 @@ function ClusterGraph({ c }: { c: K1Cluster }) {
   }));
   return (
     <>
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: 272, display: "block" }} aria-label={`簇 ${c.id} 关联图谱`}>
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: 272, display: "block" }} aria-label={`关联账户组 ${c.id} 关系图`}>
       <circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--border)" strokeDasharray="3 6" />
       {c.edges.map((edge, index) => {
         const from = positions.get(edge[0]);
@@ -463,15 +483,15 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
   const flagCluster = (c: K1Cluster) =>
     ctx.openConfirm({
-      action: `标记可疑账户簇 · ${c.id}`,
-      detail: "只打可疑标签,不冻结资产。标记会同步给风险评分和风险雷达,操作写入后端审计。",
-      chips: [["仅标记 · 不动资产", "done"], ["后端落库 + 审计", "ready"]],
+      action: `标记可疑账户组 · ${c.id}`,
+      detail: "只标记为可疑，不冻结资产。风险评分和风险提醒会同步更新，并保留操作记录。",
+      chips: [["仅标记 · 不动资产", "done"], ["服务器保存操作记录", "ready"]],
       reason: true,
       okLabel: "确认标记",
       run: (reason) => {
         const def = findHighOp("k1_cluster_flag")!;
         return proposeClusterAction(`cluster-flag:${c.id}:${c.version}`, {
-          action: `标记可疑账户簇 · ${c.id}`,
+          action: `标记可疑账户组 · ${c.id}`,
           obj: c.id,
           before: c.status,
           after: "flagged",
@@ -490,7 +510,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const freezeCluster = (c: K1Cluster) =>
     ctx.openActionConfirm({
       action: `批量冻结关联账户 · ${c.id}`,
-      detail: `把簇内 ${c.n} 个账户置为冻结簇状态。冻结台账和账户执行仍由后端链路处理,本页只提交处置命令和原因。`,
+      detail: `将这组中的 ${c.n} 个账户交由服务器执行冻结。请填写原因；服务器会保存冻结记录和操作记录。`,
       reasonMax: 200,
       run: (reason) => {
         const def = findHighOp("k1_cluster_freeze")!;
@@ -514,7 +534,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const releaseCluster = (c: K1Cluster) =>
     ctx.openActionConfirm({
       action: `解除误判 · ${c.id}`,
-      detail: "解冻/放行方向会放大资金流出,需要操作确认并写清原因。后端会保留审计记录。",
+      detail: "解除后可能有更多收益可以提现。请核对影响并写明原因；服务器会保留操作记录。",
       amplifies: true,
       reasonMax: 200,
       run: (reason) => {
@@ -539,7 +559,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const clearCluster = (c: K1Cluster) =>
     ctx.openActionConfirm({
       action: `判定为正常 · ${c.id}`,
-      detail: "该动作会把账户簇移出监控队列,会减少后续风险评分输入,必须填写原因。",
+      detail: "这组账户将退出风险监控，后续风险评分也会受影响。请填写判定依据。",
       amplifies: true,
       reasonMax: 200,
       run: (reason) => {
@@ -624,7 +644,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     draftSubmitLock.current = true;
     setDraftSubmitting("release");
     const scope = releaseScope(releaseDraft.param.key);
-    // 同槽位 + 同输入 → 复用命令号(原样重试不重复下单);输入变了 → 自动铸新号(改值再提交不被幂等窗吞掉)。
+    // 同槽位 + 同输入 → 复用命令号(原样重试不重复下单);输入变了 → 自动铸新号(改值再提交不被防重复提交窗吞掉)。
     const commandKey = releaseAttempts.resolve(
       scope,
       releaseFingerprint(releaseDraft.value, releaseDraft.param.version, releaseDraft.reason),
@@ -649,9 +669,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     setReleaseDraft(null);
     try {
       await ctx.reloadKRisk({ multiAccount: pageQuery });
-      ctx.toast(`${releaseDraft.param.name} 已更新 · 后续结算与提现分诊按新值执行`);
+      ctx.toast(`${releaseParamName(releaseDraft.param)}已更新，后续收益审核与提现按新值执行`);
     } catch {
-      ctx.toast(`${releaseDraft.param.name} 已写入，但最新数据回读失败；请重试 K1 后核对`);
+      ctx.toast(`${releaseParamName(releaseDraft.param)}已保存，但暂时无法读取最新数据；请刷新本页核对`);
     }
   };
 
@@ -706,9 +726,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     setParamDraft(null);
     try {
       await ctx.reloadKRisk({ multiAccount: pageQuery });
-      ctx.toast(`${paramDraft.param.name} 已更新为 ${paramDraft.value}`);
+      ctx.toast(`${riskParamName(paramDraft.param)}已更新为 ${paramDraft.value}`);
     } catch {
-      ctx.toast(`${paramDraft.param.name} 已写入，但最新数据回读失败；请重试 K1 后核对`);
+      ctx.toast(`${riskParamName(paramDraft.param)}已保存，但暂时无法读取最新数据；请刷新本页核对`);
     }
   };
 
@@ -783,37 +803,37 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     <div>
       {focusClusterId && (
         <div className="ctint" role="status" style={{ marginBottom: 12 }}>
-          已从 J3 带入账户簇 <b>{focusClusterId}</b>；
-          {focusLookupState === "loading" && "正在跨分页查询服务器账户簇…"}
-          {focusLookupState === "positioning" && "已找到该簇，正在切换到对应分页…"}
+          已从 J3 带入关联账户组 <b>{focusClusterId}</b>；
+          {focusLookupState === "loading" && "正在查询全部分页中的关联账户组…"}
+          {focusLookupState === "positioning" && "已找到这组账户，正在切换到对应分页…"}
           {focusLookupState === "found" && "已按服务器查询结果自动定位。"}
-          {focusLookupState === "not-found" && "服务器未找到该簇，未自动选择其他簇；请返回 J3 刷新后重试。"}
-          {focusLookupState === "error" && "网络异常或账户簇数据持续变化，未能稳定定位；未自动选择其他簇。"}
+          {focusLookupState === "not-found" && "服务器未找到这组账户；请返回 J3 刷新后重试。"}
+          {focusLookupState === "error" && "网络异常或关联账户数据持续变化，暂时无法定位；请稍后重试。"}
           {focusLookupState !== "found" && (
             <button className="l-btn sm" style={{ marginLeft: 8 }} onClick={exitFocusMode}>退出定位后手动查看</button>
           )}
         </div>
       )}
       <div className="f-stats">
-        <div className="f-stat"><div className="k">监控中账户簇</div><div className="v">{statText("activeClusters")}</div><div className="sub">按已接入权威维度合成 · 覆盖 {statText("flaggedAccounts")} 个账户</div></div>
-        <div className="f-stat warn"><div className="k">高风险簇</div><div className="v">{statText("highClusters")}</div><div className="sub">建议冻结线 {formatThreshold(freezeSuggestThreshold)}</div></div>
-        <div className="f-stat danger"><div className="k">已冻结簇</div><div className="v">{statText("frozenClusters")}</div><div className="sub">共 {statText("frozenAccounts")} 个账户</div></div>
+        <div className="f-stat"><div className="k">监控中的关联账户组</div><div className="v">{statText("activeClusters")}</div><div className="sub">涉及 {statText("flaggedAccounts")} 个账户</div></div>
+        <div className="f-stat warn"><div className="k">高风险账户组</div><div className="v">{statText("highClusters")}</div><div className="sub">建议冻结的关联强度 {formatThreshold(freezeSuggestThreshold)}</div></div>
+        <div className="f-stat danger"><div className="k">已冻结账户组</div><div className="v">{statText("frozenClusters")}</div><div className="sub">共 {statText("frozenAccounts")} 个账户</div></div>
         <div className="f-stat ok"><div className="k">新人礼拦截</div><div className="v">{statKnown("giftBlockedUsd") ? `$${statText("giftBlockedUsd")}` : "—"}</div><div className="sub">{statKnown("giftBlockedCnt") ? `${statText("giftBlockedCnt")} 笔重复领取被拦下` : "数据尚未接入，不能判定为 0"}</div></div>
       </div>
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">拦截阈值</span>
-          <span className="sub">· K1 参数单源保存；注册 IP、设备指纹、支付工具与邀请奖励均按服务端事实裁决</span>
+          <span className="ttl">风险判断标准</span>
+          <span className="sub">· 服务器统一判断同一 IP、设备或支付工具关联的账户</span>
           <div className="r"><span className="kcode electric">改后下一次校验生效</span></div>
         </div>
         <div className="l-b">
           <div className="param-list">
             {params.map((p) => (
               <div className="p" key={p.key}>
-                <div className="txt"><div className="k">{p.name}</div><div className="s">{p.sub}</div></div>
+                <div className="txt"><div className="k">{riskParamName(p)}</div><div className="s">{riskParamSub(p)}</div></div>
                 <span className="v" style={p.key === "linkWeight" ? { fontSize: 13 } : undefined}>{p.value}{p.unit ? ` ${p.unit}` : ""}</span>
-                {canWrite && <button className="l-btn sm mc" aria-label={`调整${p.name}`} onClick={() => adjParam(p)}>调整</button>}
+                {canWrite && <button className="l-btn sm mc" aria-label={`调整${riskParamName(p)}`} onClick={() => adjParam(p)}>调整</button>}
               </div>
             ))}
           </div>
@@ -823,9 +843,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       {/* 收益释放参数(SPEC-7 搬回,合并底账 §二#5):与整簇冻结分开的放行细调。 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">收益释放参数</span>
-          <span className="sub">· 托管收益按账户结算,同簇多号超过阈值进入审核中或锁定奖励 · 账号上限与簇冻结建议强度(0-1)在上方「拦截阈值」区调整</span>
-          <div className="r"><span className="kcode electric">影响注册后收益分桶 + 提现分诊</span></div>
+          <span className="ttl">关联账户的收益审核规则</span>
+          <span className="sub">· 同组账户超过正常名额后，新增收益须审核；账户数量和冻结建议标准在上方调整</span>
+          <div className="r"><span className="kcode electric">影响后续收益审核与提现</span></div>
         </div>
         <div className="l-b">
           {overview && overview.releaseParams.length > 0 ? (
@@ -833,34 +853,34 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               <div className="param-list" data-proof="k1-risk-release-params">
                 {overview.releaseParams.map((p) => (
                   <div className="p" key={p.key}>
-                    <div className="txt"><div className="k">{p.name}</div><div className="s">{p.sub}</div></div>
+                    <div className="txt"><div className="k">{releaseParamName(p)}</div><div className="s">{releaseParamSub(p)}</div></div>
                     <span className="v">{releaseParamDisplay(p)}{p.unit && K1_RELEASE_PARAM_LIMITS[p.key] ? ` ${p.unit}` : ""}</span>
-                    {canRelease && p.adjustable !== false && <button className="l-btn sm mc" aria-label={`调整${p.name}`} onClick={() => adjReleaseParam(p)}>调整</button>}
+                    {canRelease && p.adjustable !== false && <button className="l-btn sm mc" aria-label={`调整${releaseParamName(p)}`} onClick={() => adjReleaseParam(p)}>调整</button>}
                   </div>
                 ))}
               </div>
               <div className="ktint warn" style={{ marginTop: 12 }}>
-                <b>落地规则</b> · 正常槽位内收益可提;超过待审起点进入审核中;达到重复账号冻结线(第 N 个账号)仅生成冻结建议,收益落入锁定奖励只在人工冻结簇或触发超槽熔断后发生。审核中的收益<b>不随时间自动放行</b>:释放只认 App 在线证明达标或人工放行两个来源;观察窗口内同簇批量释放有熔断——超出正常槽位数的待审收益自动升为锁定奖励。放宽任一参数 = 放大资金流出方向,请在操作理由写明依据。
+                <b>处理规则</b> · 正常名额内的收益可提现；超过审核起点后，新增收益须先审核。达到建议冻结的账号数时，系统只提出建议，不会自动冻结账户。只有人工冻结账户组，或短时间内放行数量超限，收益才会转为锁定奖励。待审核收益<b>不会因等待时间到期自动放行</b>，须通过 App 在线验证或人工放行。放宽规则可能增加资金支出，请写明依据。
               </div>
             </>
           ) : (
-            <div className="ktint">服务端尚未下发收益释放参数(后端未升级)· 为避免在错误口径上调参,本卡不提供编辑入口。</div>
+            <div className="ktint">服务器尚未提供收益审核规则，请稍后重试；当前不能调整。</div>
           )}
         </div>
       </section>
 
       <section className="l-card" data-proof="k1-protected-earnings">
         <div className="l-h">
-          <span className="ttl">待审 / 锁定收益分录</span>
-          <span className="sub">· 只读服务端清单；人工放行要求 risk_k1_cluster_release、稳定命令号、理由与 A2 审计</span>
-          <div className="r"><button className="l-btn" disabled={protectedEntriesLoading} onClick={() => void refreshProtectedEntries()}>刷新分录</button></div>
+          <span className="ttl">待审核或已锁定的收益</span>
+          <span className="sub">· 人工放行需要相应权限、操作理由，并留下操作记录</span>
+          <div className="r"><button className="l-btn" disabled={protectedEntriesLoading} onClick={() => void refreshProtectedEntries()}>刷新收益记录</button></div>
         </div>
         {protectedEntriesError ? (
           <div className="l-b"><div className="ktint bad">{protectedEntriesError} · 当前不提供人工放行入口。</div></div>
         ) : (
           <div style={{ overflowX: "auto" }}>
             <table className="l-tbl" style={{ minWidth: 900 }}>
-              <thead><tr><th>分录号</th><th>用户 / 簇</th><th>来源</th><th>资金桶</th><th className="num">金额</th><th>生成时间</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
+              <thead><tr><th>收益记录号</th><th>用户 / 关联账户组</th><th>来源</th><th>处理状态</th><th className="num">金额</th><th>生成时间</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
               <tbody>
                 {protectedEntries.map((entry) => <tr key={entry.entryNo}>
                   <td className="mono">{entry.entryNo}</td>
@@ -871,8 +891,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                   <td className="mono tiny">{entry.createdAt}</td>
                   <td style={{ textAlign: "right" }}>{canRelease && <button className="l-btn sm mc" onClick={() => releaseProtectedEntry(entry)}>人工放行</button>}</td>
                 </tr>)}
-                {!protectedEntriesLoading && protectedEntries.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-4)", padding: 22 }}>当前没有待审或锁定收益分录。</td></tr>}
-                {protectedEntriesLoading && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-4)", padding: 22 }}>正在读取服务端分录…</td></tr>}
+                {!protectedEntriesLoading && protectedEntries.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-4)", padding: 22 }}>当前没有待审核或已锁定的收益。</td></tr>}
+                {protectedEntriesLoading && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-4)", padding: 22 }}>正在读取收益记录…</td></tr>}
               </tbody>
             </table>
           </div>
@@ -881,28 +901,28 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">三层去重命中列表</span>
-          <span className="sub">· 点任意一行看簇详情</span>
+          <span className="ttl">可能属于同一人的账户</span>
+          <span className="sub">· 可按 IP、设备或支付工具筛选；点击一行查看详情</span>
           <div className="r">
             <TabGroup<"all" | "ip" | "device" | "payment">
               className="chips"
-              label="去重命中维度筛选"
+              label="关联依据筛选"
               value={layer}
               items={["all", "ip", "device", "payment"] as const}
               onSelect={(v) => { setLayer(v); setClusterPage(1); }}
               itemClassName={(_v, selected) => `chip${selected ? " sel" : ""}`}
             >{(v) => ({ all: "全部", ip: "IP", device: "设备指纹", payment: "支付工具" })[v]}</TabGroup>
-            <select className="fld" aria-label="账户簇状态" value={clusterStatus} onChange={(event) => { setClusterStatusFilter(event.target.value as K1ClusterStatusFilter); setClusterPage(1); }} style={{ width: 120 }}>
+            <select className="fld" aria-label="关联账户组状态" value={clusterStatus} onChange={(event) => { setClusterStatusFilter(event.target.value as K1ClusterStatusFilter); setClusterPage(1); }} style={{ width: 120 }}>
               <option value="all">全部状态</option><option value="detected">待判定</option><option value="flagged">可疑</option><option value="frozen">已冻结</option><option value="released">已解除</option><option value="cleared">正常</option>
             </select>
-            <select className="fld" aria-label="账户簇排序" value={clusterSort} onChange={(event) => { setClusterSort(event.target.value as K1ClusterSort); setClusterPage(1); }} style={{ width: 140 }}>
+            <select className="fld" aria-label="关联账户组排序" value={clusterSort} onChange={(event) => { setClusterSort(event.target.value as K1ClusterSort); setClusterPage(1); }} style={{ width: 140 }}>
               <option value="strength_desc">关联强度</option><option value="account_desc">关联账户数</option>
             </select>
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 1020 }}>
-            <thead><tr><th>去重键</th><th>维度</th><th className="num">关联账户</th><th>关联强度</th><th>注册时间跨度</th><th>状态</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
+            <thead><tr><th>关联依据</th><th>依据类型</th><th className="num">关联账户数</th><th>关联程度</th><th>注册时间跨度</th><th>状态</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
             <tbody>
               {clusters.map((c, index) => {
                 const [stLb, stTone] = CLUSTER_ST[c.status];
@@ -912,7 +932,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                     key={c.id}
                     className={focusBlocksSelection ? "" : "click"}
                     tabIndex={focusBlocksSelection ? undefined : 0}
-                    aria-label={focusBlocksSelection ? undefined : `查看账户簇 ${c.id} 详情`}
+                    aria-label={focusBlocksSelection ? undefined : `查看关联账户组 ${c.id} 详情`}
                     onClick={() => { if (!focusBlocksSelection) setSel(index); }}
                     onKeyDown={(event) => {
                       if (!focusBlocksSelection && event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
@@ -944,12 +964,12 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                   </tr>
                 );
               })}
-              {!clusters.length && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-4)", padding: 24 }}>当前筛选条件下暂无命中簇。可切换维度/状态，或等待下一轮服务端聚类。</td></tr>}
+              {!clusters.length && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-4)", padding: 24 }}>当前条件下没有关联账户组。可调整筛选条件后重试。</td></tr>}
             </tbody>
           </table>
         </div>
         <DataListPager
-          label="K1 去重命中列表"
+          label="关联账户组列表"
           page={clusterPage}
           pageSize={clusterPageSize}
           total={clusterPageData.total}
@@ -965,8 +985,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       {cur && (
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">簇详情 · {cur.id}</span>
-            <span className="sub">· 同一实体的账户群 · 连线标注共享维度</span>
+            <span className="ttl">关联账户组详情 · {cur.id}</span>
+            <span className="sub">· 连线表示账户之间共有的设备、支付工具或 IP</span>
             <div className="r">
               {canWrite && <button className="l-btn" onClick={() => reviewNote(cur)}>人工复审备注</button>}
               {cur.status === "detected" && canFlag && <button className="l-btn" onClick={() => flagCluster(cur)}>标可疑</button>}
@@ -979,7 +999,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               <ClusterGraph c={cur} />
               <div className="ktint" style={{ fontSize: 12 }}><b>判读</b> · {cur.note}</div>
               {(() => {
-                // 收益影响(SPEC-7 搬回):簇状态 → 收益桶结论 + 当前释放参数,展示派生不动状态机。
+                // 收益影响(SPEC-7 搬回):簇状态 → 收益桶结论 + 当前释放参数,展示派生不动处理流程。
                 const impact = CLUSTER_EARNING_IMPACT[cur.status];
                 const releaseValue = (key: string) => overview?.releaseParams.find((p) => p.key === key)?.value;
                 const slots = releaseValue("freePhoneSlotsPerCluster");
@@ -990,8 +1010,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                     <b>收益影响</b> · 当前结论:<span className={`bdg ${impact.tone}`} style={{ marginLeft: 6 }}>{impact.label}</span>
                     <div style={{ marginTop: 6 }}>{impact.desc}</div>
                     <div style={{ marginTop: 6 }}>{slots && pendingFrom && freezeFrom
-                      ? `当前参数:正常释放 ${slots} 个手机槽;第 ${pendingFrom} 个账号起进入审核中;第 ${freezeFrom} 个账号起建议锁定奖励。`
-                      : "当前参数:服务端尚未下发收益释放参数,以服务端结算口径为准。"}</div>
+                      ? `当前规则：前 ${slots} 个手机号的收益可正常处理；第 ${pendingFrom} 个关联账号起须审核收益；第 ${freezeFrom} 个关联账号起建议冻结。`
+                      : "当前无法读取收益审核规则，请以服务器实际处理结果为准。"}</div>
                   </div>
                 );
               })()}
@@ -1025,7 +1045,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                   <span className="gtx">{g[1]}</span>
                   <span className={`bdg ${g[2].includes("拦截") || g[2].includes("处置") ? "ok" : "warn"}`}>{g[2]}</span>
                 </div>
-              )) : <div className="ktint" style={{ fontSize: 12 }}>数据尚未接入，当前不能判定本簇重复发放次数为 0。</div>}
+              )) : <div className="ktint" style={{ fontSize: 12 }}>暂时无法读取这组账户的重复发放记录，不能据此认定没有重复发放。</div>}
             </div>
           </div>
         </section>
@@ -1076,7 +1096,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const reasonOk = paramDraft.reason.trim().length >= 8 && paramDraft.reason.trim().length <= 200;
         const update = (patch: Partial<ParamDraft>) => setParamDraft((current) => current ? { ...current, ...patch } : current);
         return (
-          <Modal title={`拦截阈值调整 · ${paramDraft.param.name}`} icon="shield" busy={draftSubmitting === "param"} onClose={() => setParamDraft(null)} footer={<>
+          <Modal title={`调整风险判断标准 · ${riskParamName(paramDraft.param)}`} icon="shield" busy={draftSubmitting === "param"} onClose={() => setParamDraft(null)} footer={<>
             <button className="l-btn" disabled={draftSubmitting === "param"} onClick={() => setParamDraft(null)}>取消</button>
             <button className="l-btn mc" disabled={!valueOk || !reasonOk || draftSubmitting === "param"} onClick={() => void saveParamDraft()}>{draftSubmitting === "param" ? "保存中…" : "确认保存"}</button>
             </>}>
@@ -1089,7 +1109,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               <label htmlFor={`${formId}-param-reason`}>操作理由（必填 · 8-200 字）</label>
               <textarea id={`${formId}-param-reason`} rows={3} maxLength={200} value={paramDraft.reason} onChange={(event) => update({ reason: event.target.value })} />
             </div>
-            <div className="ctint">该参数只改变风险建议与聚类阈值，不会自动冻结账户。</div>
+            <div className="ctint">{paramDraft.param.key === "maxSignupPerIp24h" ? "正式环境达到该 IP 的每日注册上限后，会拒绝新注册；不会自动冻结已有账户。" : "该参数会影响关联账户识别或冻结建议，不会自动冻结已有账户。"}</div>
           </Modal>
         );
       })()}
@@ -1108,7 +1128,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const reasonOk = releaseDraft.reason.trim().length >= 8 && releaseDraft.reason.trim().length <= 200;
         const update = (patch: Partial<ParamDraft>) => setReleaseDraft((current) => current ? { ...current, ...patch } : current);
         return (
-          <Modal title={`收益释放参数调整 · ${releaseDraft.param.name}`} icon="shield" busy={draftSubmitting === "release"} onClose={() => setReleaseDraft(null)} footer={<>
+          <Modal title={`调整收益审核规则 · ${releaseParamName(releaseDraft.param)}`} icon="shield" busy={draftSubmitting === "release"} onClose={() => setReleaseDraft(null)} footer={<>
             <button className="l-btn" disabled={draftSubmitting === "release"} onClick={() => setReleaseDraft(null)}>取消</button>
             <button className="l-btn mc" disabled={!valueOk || !reasonOk || draftSubmitting === "release"} onClick={() => void saveReleaseDraft()}>{draftSubmitting === "release" ? "保存中…" : "确认保存"}</button>
           </>}>
@@ -1139,10 +1159,12 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               // 放大资金流出方向的告知(与其它放大类动作同款口径):真正的拦截在服务端,
               // 本页没有覆盖率数据,不做客户端预检 —— 只如实告知会被核验,不假装拦得住。
               <div className="ktint warn" data-proof="k1-release-loosen-warning" style={{ marginTop: 10 }}>
-                <b>该改动会放大资金流出</b> · 放宽后更多收益进入可提桶,服务端会先核验 B1 备付金覆盖率,低于红线将整单拒绝(本次写入不生效)。请在操作理由写明放宽依据。
+                <b>这项调整可能增加可提现收益</b> · 保存前，服务器会检查备付金覆盖率（备付金与应付款的比值）；低于安全底线时不会生效。请在操作理由中写明依据。
               </div>
             )}
-            <div className="ctint">{releaseDraft.param.note.trim() || "释放参数只改变后续注册、结算与提现分诊,历史审计不回写;放宽方向请在理由写明依据。"}</div>
+            <div className="ctint">{key === "releaseMode" && releaseDraft.param.adjustable === false
+              ? "在线验证放行尚未开放，当前只能人工审核收益。"
+              : "调整只影响后续收益审核和提现，历史记录不会改动；放宽规则时请写明理由。"}</div>
           </Modal>
         );
       })()}

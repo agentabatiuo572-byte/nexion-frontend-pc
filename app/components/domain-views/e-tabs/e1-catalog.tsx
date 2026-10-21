@@ -210,7 +210,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   const enabledPhaseCount = phases.filter((ph) => (ph.status || "active") === "active").length;
 
   // 目录累计口径:来自 E1 商品目录的 nx_product.sold_count × 目录现价,是**商品目录计数器**,
-  // 不是订单主数据聚合值。E4 订单状态机读的是 nx_order 主数据,两者可能不一致,
+  // 不是订单主数据聚合值。E4 订单进度读的是 nx_order 主数据,两者可能不一致,
   // 所以这里既不改名成「GMV」也不声称可与订单对账 —— 对账口径以 E4 为准。
   // 只累计通过发布门的行,与 App 用户目录看到的口径一致。
   const soldUnits = publishableSkus.reduce((sum, s) => sum + (s.sold ?? 0), 0);

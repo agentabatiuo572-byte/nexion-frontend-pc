@@ -2238,7 +2238,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             {select("completionCond", "完成条件", ["quiz_passed", "all_questions_correct"], { quiz_passed: "达到通过分数", all_questions_correct: "全部答对" })}
             {select("rewardEvent", "发奖触发事件", ["quiz.passed", "course.completed"], { "quiz.passed": "测验通过", "course.completed": "课程完成" })}
           </div>
-          <div className="tint tiny" style={{ marginTop: 8 }}>服务端按课程、用户和版本生成幂等键；发奖失败自动重试，耗尽后转人工工单。</div>
+          <div className="tint tiny" style={{ marginTop: 8 }}>服务端按课程、用户和版本生成防重复提交编号；发奖失败自动重试，耗尽后转人工工单。</div>
         </div>
       </div>
     );

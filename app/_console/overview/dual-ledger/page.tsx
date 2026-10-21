@@ -1,11 +1,11 @@
 "use client";
 
 /**
- * B1 双账本总览(旗舰驾驶舱)。
- * UI 严格对齐设计稿 project/「B1 双账本总览.html」3 段式:
+ * B1 资金与应付款总览(旗舰驾驶舱)。
+ * UI 严格对齐设计稿 project/「B1 资金与应付款总览.html」3 段式:
  *   BAND1 兑付覆盖率 hero + 双账本对照卡(B-01)
- *   BAND2 运营决策卡(B-02/B-03)+ 风险雷达卡(B-05)
- *   BAND3 应付负债结构(下钻 B2)
+ *   BAND2 运营决策卡(B-02/B-03)+ 风险提醒卡(B-05)
+ *   BAND3 应付负债结构(查看明细 B2)
  * 顶部域标保留本项目外壳风格;其下布局端口设计稿(dual-ledger.css · .dlpage 作用域)。
  * 决策动作保留真实接线:阈值写 B1、储备注入写 D3、告警确认写 B1 告警接口并进入 A2 审计。
  * 数据从 /api/admin/treasury/b-domain 读取;后端无 B 域配置时先写入 MySQL 种子再读出。
@@ -106,11 +106,11 @@ export default function DualLedgerPage() {
               style={{ background: "color-mix(in srgb, var(--admin-domain-b) 14%, transparent)", color: "var(--admin-domain-b)" }}
             >
               <span className="inline-block rounded-full" style={{ width: 5, height: 5, background: "var(--admin-domain-b)" }} />
-              域 B · 总览驾驶舱
+              域 B · 运营总览
             </span>
             <span className="font-mono-tabular text-[11px]" style={{ color: "var(--v5-ink-4)" }}>B1</span>
           </div>
-          <h1 className="font-display mt-2 text-[24px]" style={{ color: "var(--v5-ink)" }}>双账本总览</h1>
+          <h1 className="font-display mt-2 text-[24px]" style={{ color: "var(--v5-ink)" }}>资金与应付款总览</h1>
         </header>
         <BDomainDataState title="B1 双账本" loading={bDomain.loading && !bDomain.error} error={bDomain.error} onRetry={bDomain.reload} />
         {toastNode}
@@ -148,11 +148,11 @@ export default function DualLedgerPage() {
               style={{ background: "color-mix(in srgb, var(--admin-domain-b) 14%, transparent)", color: "var(--admin-domain-b)" }}
             >
               <span className="inline-block rounded-full" style={{ width: 5, height: 5, background: "var(--admin-domain-b)" }} />
-              域 B · 总览驾驶舱
+              域 B · 运营总览
             </span>
             <span className="font-mono-tabular text-[11px]" style={{ color: "var(--v5-ink-4)" }}>B1</span>
           </div>
-          <h1 className="font-display mt-2 text-[24px]" style={{ color: "var(--v5-ink)" }}>双账本总览</h1>
+          <h1 className="font-display mt-2 text-[24px]" style={{ color: "var(--v5-ink)" }}>资金与应付款总览</h1>
         </header>
         <BDomainWarnings warnings={bDomain.warnings} />
         <BDomainDataState title="B1 双账本" error={b1DataError} onRetry={bDomain.reload} />
@@ -211,7 +211,7 @@ export default function DualLedgerPage() {
   const backlogChg = queueBacklogCount - prev.queueBacklogCount;
   const riskChg = avgRiskScore - prev.avgRiskScore;
 
-  // 风险雷达 4 联(点击钻取至处置域)
+  // 风险提醒 4 联(点击钻取至处置域)
   const radar: {
     label: string;
     value: string;
@@ -224,7 +224,7 @@ export default function DualLedgerPage() {
     ext: string;
   }[] = [
     {
-      label: "资金池水位(储备)", value: fmtUsdCompact(reserveUsd), valColor: "var(--ink)", href: "/finance/pool",
+      label: "可用资金与应付款(储备)", value: fmtUsdCompact(reserveUsd), valColor: "var(--ink)", href: "/finance/pool",
       arrow: reserveChg < 0 ? "↘" : "↗", deltaText: fmtPct(Math.abs(reserveChg)),
       deltaColor: reserveChg < 0 ? "var(--negative)" : "var(--success)", ext: "环比上窗口",
     },
@@ -306,11 +306,11 @@ export default function DualLedgerPage() {
             style={{ background: "color-mix(in srgb, var(--admin-domain-b) 14%, transparent)", color: "var(--admin-domain-b)" }}
           >
             <span className="inline-block rounded-full" style={{ width: 5, height: 5, background: "var(--admin-domain-b)" }} />
-            域 B · 总览驾驶舱
+            域 B · 运营总览
           </span>
           <span className="font-mono-tabular text-[11px]" style={{ color: "var(--v5-ink-4)" }}>B1</span>
         </div>
-        <h1 className="font-display mt-2 text-[24px]" style={{ color: "var(--v5-ink)" }}>双账本总览</h1>
+        <h1 className="font-display mt-2 text-[24px]" style={{ color: "var(--v5-ink)" }}>资金与应付款总览</h1>
       </header>
       <BDomainWarnings warnings={bDomain.warnings} />
 
@@ -465,7 +465,7 @@ export default function DualLedgerPage() {
         </section>
       </div>
 
-      {/* BAND 2: 运营决策 + 风险雷达 */}
+      {/* BAND 2: 运营决策 + 风险提醒 */}
       <div className="band ops-row">
         {/* 运营决策(B-02 / B-03) */}
         <section className="card">
@@ -525,11 +525,11 @@ export default function DualLedgerPage() {
           </div>
         </section>
 
-        {/* 风险雷达(B-05) */}
+        {/* 风险提醒(B-05) */}
         <section className="card radar-card">
           <div className="ttl-row">
             <span className="ttl-ic"><Radar size={17} /></span>
-            <span className="h">风险雷达</span>
+            <span className="h">风险提醒</span>
             <span className="sub">点击钻取</span>
             <div className="r"><span className="b1-tag">B-05</span></div>
           </div>
@@ -624,7 +624,7 @@ export default function DualLedgerPage() {
         )}
       </section>
 
-      {/* BAND 4: 应付负债结构(下钻 B2) */}
+      {/* BAND 4: 应付负债结构(查看明细 B2) */}
       <section className="card">
         <div className="ttl-row">
           <span className="ttl-ic"><Layers size={17} /></span>
@@ -632,7 +632,7 @@ export default function DualLedgerPage() {
           <span className="sub">用户应付项分账</span>
           <div className="r">
             <span className="liab-total">{fmtUsd(liabilitiesUsd)}</span>
-            <span className="b1-tag">{liabRows.length} 科目 · 下钻 B2</span>
+            <span className="b1-tag">{liabRows.length} 类应付款 · 到 B2 查看明细</span>
           </div>
         </div>
 
@@ -707,7 +707,7 @@ export default function DualLedgerPage() {
                 ? {
                     kind: "multi-field",
                     title: "真实到账凭证",
-                    hint: "凭证必须可回查；同一提交使用固定幂等键，结果未知时可安全重试。",
+                    hint: "凭证必须可回查；同一提交使用固定防重复提交编号，结果未知时可安全重试。",
                     fields: [
                       { key: "amount", label: "注资金额 (USDT)", inputKind: "number", min: 0.01, step: 0.01, required: true },
                       {

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * L1 · KPI 看板 — 8 KPI 卡矩阵 + 单 KPI 下钻 + 趋势/阈值叠加 + 口径锁定表。
+ * L1 · 关键指标 — 8 KPI 卡矩阵 + 单 KPI 查看明细 + 趋势/阈值叠加 + 口径锁定表。
  * 数值/目标/spark 全部 join 自 KPIS(B 域同口径单一源);口径与目标只读锁定,页面无修改入口。
  * 视图参数(时间窗/粒度/Phase 叠加/黄灯偏移)实时生效;聚合 CSV 无 PII,免确认并落审计。
  */
@@ -326,13 +326,13 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
     } catch (error) {
       const message = displayAdminError(error);
       setDrillError(message);
-      ctx.toast(`KPI 下钻读取失败 · ${message}`);
+      ctx.toast(`KPI 查看明细读取失败 · ${message}`);
     }
   };
 
   const toggleOvl = (i: number) => setOvlSel((p) => (p.includes(i) ? (p.length > 1 ? p.filter((x) => x !== i) : p) : [...p, i]));
 
-  /* ---- 下钻图(cohort 周序列 + 目标线 + 黄线 + Phase 标记;固定 viewBox 等比缩放) ---- */
+  /* ---- 查看明细图(cohort 周序列 + 目标线 + 黄线 + Phase 标记;固定 viewBox 等比缩放) ---- */
   const drillChart = () => {
     const W = 860, H = 260, P = 36;
     const s = [...k.spark];
@@ -377,12 +377,12 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
   /* ---- 趋势叠加(指数化:实际 ÷ 目标 → 达标线 100) ---- */
   const ovlChart = () => {
     const drawable = ovlSel.filter((index) => KPIS[index]?.available !== false && (KPIS[index]?.spark?.length ?? 0) >= 2);
-    if (!drawable.length) return <div className="empty">当前所选 KPI 没有完整趋势点，暂不绘制叠加线。</div>;
+    if (!drawable.length) return <div className="empty">当前所选指标没有足够的趋势数据，暂时无法画出对比曲线。</div>;
     const W = 1240, H = 230, P = 40, min = 80, max = 125;
     const X = (i: number) => P + (i / (WEEKS.length - 1)) * (W - 2 * P);
     const y100 = H - 24 - ((100 - min) / (max - min)) * (H - 44);
     return (
-      <svg className="ovl-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="多 KPI 指数化叠加趋势">
+      <svg className="ovl-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="多个关键指标的对比趋势">
         {WEEKS.map((w, i) => (
           <g key={w}>
             <line x1={X(i)} y1={14} x2={X(i)} y2={H - 24} stroke="var(--border)" />
@@ -392,7 +392,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
         {phaseOn && PHASE_SWITCH_IDX >= 0 && (
           <g>
             <rect x={X(PHASE_SWITCH_IDX) - 1} y={14} width={2} height={H - 38} fill="var(--cyan)" opacity={0.45} />
-            <text x={X(PHASE_SWITCH_IDX) + 5} y={26} fontSize={11} fill="var(--cyan)">Phase 切换</text>
+            <text x={X(PHASE_SWITCH_IDX) + 5} y={26} fontSize={11} fill="var(--cyan)">运营阶段切换</text>
           </g>
         )}
         {drawable.map((i) => {
@@ -415,15 +415,15 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
     <div>
       {refreshError && (
         <div className="ltint warn" data-module-health-state="error" style={{ fontSize: 12, marginBottom: 10 }}>
-          <b>KPI 刷新未成功</b> · 当前仍显示上一次已校验快照，时间窗未切换。{refreshError}
+          <b>关键指标刷新失败</b> · 当前仍显示上一次核对过的数据，时间范围未切换。{refreshError}
         </div>
       )}
       {/* stat strip */}
       <div className="f-stats">
-        <div className="f-stat ok"><div className="k">达标 KPI</div><div className="v">{green} / {KPIS.length}</div><div className="sub">绿灯 · 高于目标线</div></div>
-        <div className="f-stat warn"><div className="k">预警 KPI</div><div className="v">{yellow}</div><div className="sub">黄灯 · 距目标 −{ylOffset}% 区间内</div></div>
+        <div className="f-stat ok"><div className="k">已达标指标</div><div className="v">{green} / {KPIS.length}</div><div className="sub">绿灯 · 高于目标值</div></div>
+        <div className="f-stat warn"><div className="k">接近目标的指标</div><div className="v">{yellow}</div><div className="sub">黄灯 · 距目标值差不超过 {ylOffset}%</div></div>
         <div className="f-stat danger"><div className="k">未达 + 不可计算</div><div className="v">{attention} / {KPIS.length}</div><div className="sub">未达 {red} 项{redNames ? ` (${redNames})` : ""} · 不可计算 {unavailable} 项 · 缺分母不判 0%</div></div>
-        <div className="f-stat cyan"><div className="k">当前 Phase</div><div className="v">{rs.currentPhase}{phaseKnown ? ` · 月 ${rs.currentMonth}` : ""}</div><div className="sub">{PHASE_SWITCH_IDX >= 0 ? "趋势图已叠加事件 Phase 切换标记" : "当前窗口未识别到 Phase 切换"}</div></div>
+        <div className="f-stat cyan"><div className="k">当前运营阶段</div><div className="v">{rs.currentPhase}{phaseKnown ? ` · 月 ${rs.currentMonth}` : ""}</div><div className="sub">{PHASE_SWITCH_IDX >= 0 ? "趋势图已标出运营阶段切换时间" : "当前时间范围内没有阶段切换记录"}</div></div>
       </div>
 
       {/* view params bar(全部仅视图 · 实时生效 · 普通确认批) */}
@@ -455,7 +455,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
         <div className="sep" />
         <TabGroup
           className="chips"
-          label="cohort 粒度"
+          label="按注册周或月分组"
           labelClassName="lb"
           value={gran}
           items={["week", "month"] as const}
@@ -463,8 +463,8 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
           itemClassName={(_v, selected) => `chip${selected ? " sel" : ""}`}
         >{(v) => (v === "week" ? "注册周 YYYY-Www" : "注册月")}</TabGroup>
         <div className="sep" />
-        <button className={"toggle" + (phaseOn ? " on" : "")} onClick={() => { setPhaseOn(!phaseOn); ctx.toast(`Phase 效果叠加:${!phaseOn ? "开启" : "关闭"}`); }}>
-          <span className="tk" />Phase 效果叠加
+        <button className={"toggle" + (phaseOn ? " on" : "")} onClick={() => { setPhaseOn(!phaseOn); ctx.toast(`运营阶段切换标记已${!phaseOn ? "开启" : "关闭"}`); }}>
+          <span className="tk" />显示运营阶段切换
         </button>
         <div className="sep" />
         <div className="chips"><span className="lb">黄灯预警偏移</span>
@@ -476,7 +476,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
             onApply: (n) => { setYlOffset(n); ctx.toast(`黄灯预警偏移 → 目标 −${n}% · 仅视图参数`); },
           })}>调整</button>
         </div>
-        <button className="l-btn sm" onClick={() => void reloadKpi()} disabled={refreshing}>{refreshing ? "刷新中…" : "刷新 KPI"}</button>
+        <button className="l-btn sm" onClick={() => void reloadKpi()} disabled={refreshing}>{refreshing ? "刷新中…" : "刷新指标"}</button>
         <button className="l-btn sm" style={{ marginLeft: "auto" }} onClick={() => {
           let saved: ReturnType<typeof saveL1LocalView> = null;
           try {
@@ -490,18 +490,18 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
       </div>
 
       {/* (a) 8-KPI matrix */}
-      {/* 🔴 互斥下钻必须暴露「唯一选中项」(zentao #209):此前每张卡是 button + aria-pressed,
+      {/* 🔴 互斥查看明细必须暴露「唯一选中项」(zentao #209):此前每张卡是 button + aria-pressed,
           浏览器把它当 toggle button、读屏按复选框朗读(Value=1/0),而点 #1 会自动把 #2 置 0 ——
           运营无从判断这组是单选。改用与时间窗同款 TabGroup(role=tablist + aria-selected +
           roving tabindex + 方向键)。下方「多 KPI 趋势叠加」是可同时开启的多选组,保留 aria-pressed。 */}
       <TabGroup<number>
         className="kpi-grid"
-        label="KPI 下钻选择"
+        label="选择要查看的关键指标"
         value={selKpi}
         items={KPIS.map((_kk, i) => i)}
         onSelect={(index) => void selectKpi(index)}
         itemClassName={(_index, selected) => "kpi-card" + (selected ? " sel" : "")}
-        itemTitle={() => "点击下钻"}
+        itemTitle={() => "点击查看明细"}
       >
         {(i) => {
           const kk = KPIS[i];
@@ -530,16 +530,16 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
         }}
       </TabGroup>
 
-      {/* (b) 单 KPI 下钻 */}
+      {/* (b) 单 KPI 查看明细 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">单 KPI 下钻 · #{k.n} {k.name}</span>
+          <span className="ttl">关键指标详情 · #{k.n} {k.name}</span>
           <span className="sub">· 口径公式 / 分子分母 / 切片 / 趋势</span>
           <div className="r">
             <div className="chips"><span className="lb">真实切片</span>
-              <input aria-label="cohort 筛选" placeholder="YYYY-Www" value={cohortFilter} onChange={(event) => setCohortFilter(event.target.value)} />
-              <select aria-label="Phase 筛选" value={phaseFilter} onChange={(event) => setPhaseFilter(event.target.value)}>
-                <option value="">全部 Phase</option>
+              <input aria-label="注册周筛选" placeholder="年份与周数，如 2026-W42" value={cohortFilter} onChange={(event) => setCohortFilter(event.target.value)} />
+              <select aria-label="运营阶段筛选" value={phaseFilter} onChange={(event) => setPhaseFilter(event.target.value)}>
+                <option value="">全部阶段</option>
                 {["P1", "P2", "P3", "P4", "P5", "P6"].map((value) => <option key={value} value={value}>{value}</option>)}
               </select>
               <input aria-label="locale 筛选" placeholder="locale" value={localeFilter} onChange={(event) => setLocaleFilter(event.target.value)} />
@@ -579,15 +579,15 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
           <div className="chart-pane">
             {drillError && (
               <div className="ltint warn" style={{ fontSize: 12, marginBottom: 10 }}>
-                <b>下钻/趋势权威响应不可用</b> · 已保留概览卡，不使用异常响应覆盖明细。{drillError}
+                <b>查看明细/趋势权威响应不可用</b> · 已保留概览卡，不使用异常响应覆盖明细。{drillError}
               </div>
             )}
             {drillChart()}
             <div className="legend">
-              <span className="it"><span className="lsw" style={{ background: "var(--cyan)" }} />cohort 周序列</span>
+              <span className="it"><span className="lsw" style={{ background: "var(--cyan)" }} />按注册周统计的趋势</span>
               <span className="it" style={{ color: "var(--success)" }}><span className="lsw dash" />目标线</span>
               <span className="it" style={{ color: "var(--warning)" }}><span className="lsw dash" />黄灯预警线(目标 −{ylOffset}%)</span>
-              <span className="it" style={{ color: "var(--ink-4)" }}><span className="lsw" style={{ width: 8, height: 10 }} />事件 Phase 切换标记</span>
+              <span className="it" style={{ color: "var(--ink-4)" }}><span className="lsw" style={{ width: 8, height: 10 }} />运营阶段切换时间</span>
             </div>
           </div>
         </div>
@@ -597,8 +597,8 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">趋势 &amp; 阈值视图</span>
-          <span className="sub">· <AutoGloss>多 KPI cohort 周序列叠加 · 观察 Phase 切换对 KPI 的影响 · 归因跳 B4 / H1</AutoGloss></span>
-          <div className="r"><span className="lcode electric" title="按每条业务事件携带的阶段标记聚合">按事件自带的 Phase 标记聚合</span></div>
+          <span className="sub">· <AutoGloss>对比多个指标按注册周统计的趋势，观察运营阶段切换后的变化；原因可到 B4 / H1 查看</AutoGloss></span>
+          <div className="r"><span className="lcode electric" title="按每条业务事件携带的阶段标记统计">按行为记录中的运营阶段统计</span></div>
         </div>
         <div className="l-b">
           <div className="ovl-picks">
@@ -618,13 +618,13 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
       {/* 口径锁定表 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">KPI 口径锁定表</span>
+          <span className="ttl">关键指标的计算方式</span>
           <span className="sub">· <AutoGloss>每项 KPI 怎么算一目了然 · 要改算法须走事件中台治理 + 操作确认,本页改不了</AutoGloss></span>
           <div className="r"><span className="lcode lock" title="指标口径已锁定">🔒 算法锁定</span><span className="lcode lock" title="经营目标已锁定">🔒 目标锁定</span></div>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 900 }}>
-            <thead><tr><th>#</th><th>KPI</th><th>怎么算(服务端口径 · 只读)</th><th className="num">目标</th><th>落地批次</th><th>状态</th></tr></thead>
+            <thead><tr><th>#</th><th>指标</th><th>计算方式（由服务器管理）</th><th className="num">目标</th><th>启用批次</th><th>状态</th></tr></thead>
             <tbody>
               {KPIS.map((kk, i) => {
                 const st = states[i];
@@ -643,11 +643,11 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
           </table>
         </div>
         <div className="l-b" style={{ paddingTop: 12 }}>
-          <div className="ltint" style={{ fontSize: 12 }}><b>三点说明</b> · <AutoGloss>① #5 是推广率不是收入:算的是发出过邀请的设备持有者占比(不是收入指标);② #6 Nova:推送事件早已登记,数据一直是全的;③ #7 刚补齐:依赖团队分销关系树,早期只有粗略计数,本看板(V4)起完整下钻。</AutoGloss></div>
+          <div className="ltint" style={{ fontSize: 12 }}><b>三点说明</b> · <AutoGloss>① #5 是推广率不是收入:算的是发出过邀请的设备持有者占比(不是收入指标);② #6 Nova:推送事件早已登记,数据一直是全的;③ #7 刚补齐:依赖团队分销关系树,早期只有粗略计数,本看板(V4)起完整查看明细。</AutoGloss></div>
         </div>
       </section>
 
-      <p className="f-foot"><b>L1 没有任何「写数据」动作</b>:<AutoGloss>KPI 怎么算由事件统计规则统一治理,这里只配置呈现、下钻查询与聚合导出。导出内容为 8 项 KPI 的聚合序列,</AutoGloss><b>不含任何用户隐私明文</b>,<AutoGloss>每次导出都会生成可追溯记录。异常 KPI 的归因下钻:转化类(#1–#4)跳 L2 漏斗,财务类(#8 / 提现兑付)跳 L3 报表,团队类(#5/#7)跳 L4 网络报表。</AutoGloss></p>
+      <p className="f-foot"><b>L1 没有任何「写数据」动作</b>:<AutoGloss>KPI 怎么算由事件统计规则统一治理,这里只配置呈现、明细查询与聚合导出。导出内容为 8 项 KPI 的聚合序列,</AutoGloss><b>不含任何用户隐私明文</b>,<AutoGloss>每次导出都会生成可追溯记录。异常 KPI 的原因分析:转化类(#1–#4)跳 L2 漏斗,财务类(#8 / 提现兑付)跳 L3 报表,团队类(#5/#7)跳 L4 网络报表。</AutoGloss></p>
       <PaginationExemptionList
         items={[
           {

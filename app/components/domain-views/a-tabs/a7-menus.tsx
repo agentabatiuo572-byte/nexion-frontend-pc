@@ -84,7 +84,7 @@ export default function A7Menus() {
                   const stableKey = newA7IdempotencyKey("a7-menu-delete");
                   setConfirmReq({
                     action: `删除菜单 · ${n.menuNameZh || n.menuName}`,
-                    detail: <>删除菜单 <b>{n.menuNameZh || n.menuName}</b>（<span className="mono">{n.menuCode}</span>）。{n.children.length ? <b>该节点仍有子菜单，请先迁移或删除子菜单。</b> : "若仍有权限字典归属或角色菜单授权，服务器会拒绝删除；请先迁移权限归属，并在角色管理中解除菜单授权。"}操作会写入审计记录。</>,
+                    detail: <>删除菜单 <b>{n.menuNameZh || n.menuName}</b>（<span className="mono">{n.menuCode}</span>）。{n.children.length ? <b>该节点仍有子菜单，请先迁移或删除子菜单。</b> : "若仍有权限清单归属或角色菜单授权，服务器会拒绝删除；请先迁移权限归属，并在角色管理中解除菜单授权。"}操作会写入审计记录。</>,
                     run: async (reason) => {
                       try {
                         const next = await deleteA7Menu(n.id, n.version, reason, operator, stableKey);

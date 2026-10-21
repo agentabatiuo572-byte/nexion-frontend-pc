@@ -65,7 +65,7 @@ test("M2/M3 初始加载期间严格失败关闭，真实数据到达后才开�
   await assertDelayedModule(page, {
     href: "/service/tickets",
     routePattern: "**/api/admin/content/tickets**",
-    readyText: /工单台/,
+    readyText: /客服工单/,
     writeControl: page.locator('[data-proof="support-ticket-create"]'),
     screenshot: "00-m2-loading-fails-closed.png",
   });
@@ -86,7 +86,7 @@ test("M2 从可见侧栏完成真实工单、幂等/CAS/异常、审计及刷新
 
   await login(page);
   await openVisibleModule(page, "/service/tickets");
-  await expect(page.getByRole("heading", { name: "工单台", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "客服工单", exact: true })).toBeVisible();
   await cleanupInterruptedTickets(page);
   const title = `${PREFIX}-真实工单-${Date.now()}`;
   const body = `${PREFIX}-用户反馈提现状态需要核对。`;

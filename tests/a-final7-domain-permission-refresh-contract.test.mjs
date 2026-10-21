@@ -14,7 +14,7 @@ test("Final7 C/E/I fixture refresh is candidate-bound and uses visible A1/A6/A2"
     "+ 新建角色",
     "编辑授权（权限/菜单）",
     "+ 新建账号",
-    "审计 & 操作确认 A2",
+    "操作记录与审批 A2",
     "activateAccount",
   ]) assert.match(source, new RegExp(escapeRegExp(marker)));
 });

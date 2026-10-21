@@ -404,14 +404,14 @@ async function openH8(page: Page) {
 async function openA2(page: Page) {
   const sidebar = page.locator("aside");
   const group = sidebar.getByRole("button", { name: /平台基础.*A|A.*平台基础/ }).first();
-  const link = sidebar.getByRole("link", { name: "审计 & 操作确认 A2", exact: true }).first();
+  const link = sidebar.getByRole("link", { name: "操作记录与审批 A2", exact: true }).first();
   if (!(await link.isVisible().catch(() => false))) {
     await group.click();
     await expect(link).toBeVisible();
   }
   await link.click();
   await expect(page).toHaveURL(/\/platform\/audit$/);
-  await expect(page.getByRole("heading", { name: "审计 & 操作确认" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "操作记录与审批" })).toBeVisible();
 }
 
 async function loginMfa(page: Page, account: Account, key: string) {

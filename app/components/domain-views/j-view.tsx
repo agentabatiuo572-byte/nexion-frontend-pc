@@ -2,7 +2,7 @@
 
 /**
  * J 紧急与合规控制 — design_handoff_j_domain 设计稿 port(2026-06-10 重构)。
- * 4 子页独立:J1 Kill-Switch 矩阵 / J2 Geo-block / J3 篡改防御监控(纯只读) / J4 监管点名应急 SOP。
+ * 4 子页独立:J1 紧急停用开关 / J2 地区访问限制 / J3 篡改防御监控(纯只读) / J4 监管要求应急处理。
  * 真写统一走后端 /emergency/* 接口;概览为空时由后端写入 MySQL 种子后再查出。
  * OperationConfirmModal 显式 edit 契约(调参传 edit,处置不传)。
  * J3 处置权移交:冻结 → C2(/users/actions)、簇建档 → K1(/risk/multi-account),本页仅跨域跳转(PRD §15.4)。

@@ -3,7 +3,7 @@
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 /**
- * G3 NEX 行情引擎 — 数据来自后端 /api/admin/market/nex/curve 与 /curve/history。
+ * G3 NEX 价格管理 — 数据来自后端 /api/admin/market/nex/curve 与 /curve/history。
  * 页面只展示后端返回的 NEX 行情与控制状态。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -213,7 +213,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
   if (loading && !overview) {
     return (
       <section className="l-card">
-        <div className="l-h"><span className="ttl">G3 NEX 行情引擎</span><span className="sub">· 正在读取真实接口数据</span></div>
+        <div className="l-h"><span className="ttl">G3 NEX 价格管理</span><span className="sub">· 正在读取真实接口数据</span></div>
         <div className="l-b"><div className="gtint">G3 数据加载中...</div></div>
       </section>
     );
@@ -222,7 +222,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
   if (!overview) {
     return (
       <section className="l-card">
-        <div className="l-h"><span className="ttl">G3 NEX 行情引擎</span><span className="sub">· 真实接口数据</span></div>
+        <div className="l-h"><span className="ttl">G3 NEX 价格管理</span><span className="sub">· 真实接口数据</span></div>
         <div className="l-b">
           <div className="gtint">G3 数据加载失败 · {error || "未收到本页数据，请重试；持续失败时请联系值班人员。"}</div>
           <button className="l-btn mc" style={{ marginTop: 12 }} onClick={() => void reload()}>重新加载</button>
@@ -273,7 +273,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
         {amp
           ? <><b>属放大流出</b>:确认放行时以<b>周峰值价 {fmtPrice(peak)}</b> 重估全部 NEX 计价负债后核验 <b>B1 备付金覆盖率</b>(当前 {cov}%,红线 {redline}%),低于红线拒(422)。server 收到新值后按实际方向二次精算。</>
           : "做市波动不直接放大流出。"}
-        曲线修改只保存未来排程参数，不改写当前现价；到对应排程推进时才写入全站现价单源。
+        曲线修改只保存未来排程参数，不改写当前现价；到对应排程推进时才写入全站现价配置。
         运营执行门槛:财务主管 / 超管。
       </>,
       amplifies: amp,
@@ -416,7 +416,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
               {allowed("finprod_g3_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => openCurveCtlMc(control.key, control.name, ctlVals[control.key] || control.value)}>调整(立即执行)</button>}
             </div>
           ))}
-          <div className="gtint" style={{ marginTop: 10 }}><b>自动生效怎么工作</b> · 排程开后,server 动态定时任务按 <span className="mono">{schedV}</span> 把当日 <b>目标价</b> 写进全站现价单源 <span className="mono">wallet.exchange.nex_usdt_price</span>(G2 兑换 / G7 复投即时跟随),并产 <span className="mono">market.curve_advanced</span> 审计;当前有效 cron: <span className="mono">{scheduleMeta}</span>。钉住(pin)= 演示 / 应急时把生效日冻在某天,自动推进暂停。改 <b>目标价 / 上行概率</b> 是放大流出,提交即以周峰值价过 B1 红线。</div>
+          <div className="gtint" style={{ marginTop: 10 }}><b>自动生效怎么工作</b> · 排程开后,server 动态定时任务按 <span className="mono">{schedV}</span> 把当日 <b>目标价</b> 写进全站现价配置 <span className="mono">wallet.exchange.nex_usdt_price</span>(G2 兑换 / G7 复投即时跟随),并产 <span className="mono">market.curve_advanced</span> 审计;当前有效 cron: <span className="mono">{scheduleMeta}</span>。钉住(pin)= 演示 / 应急时把生效日冻在某天,自动推进暂停。改 <b>目标价 / 上行概率</b> 是放大流出,提交即以周峰值价过 B1 红线。</div>
         </div>
       </section>
 
@@ -476,7 +476,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
         </section>
       </div>
 
-      <p className="f-foot"><b>价格 100% 服务端驱动</b>:运营配的是一周关键帧曲线,server 动态定时任务按配置时间推进当日生效帧、把目标价写进现价单源;客户端价格线来自真实接口历史点。NEX 现价是<b>兑换(G2)报价和复投(G7)定价的单一源</b>,下游取服务端现价、不接客户端价;现价变动即时影响备付金里 NEX 计价负债的折算。改<b>目标价 / 上行概率</b>是放大流出,红线核验以<b>周峰值价</b>重估全部 NEX 计价应付负债后再判。引擎暂停 = 冻结现价 + 停自动推进,是紧急开关矩阵(J1)的生效面。</p>
+      <p className="f-foot"><b>价格 100% 服务端驱动</b>:运营配的是一周关键帧曲线,server 动态定时任务按配置时间推进当日生效帧、把目标价写进现价配置;客户端价格线来自真实接口历史点。NEX 现价是<b>兑换(G2)报价和复投(G7)定价的单一源</b>,下游取服务端现价、不接客户端价;现价变动即时影响备付金里 NEX 计价负债的折算。改<b>目标价 / 上行概率</b>是放大流出,红线核验以<b>周峰值价</b>重估全部 NEX 计价应付负债后再判。引擎暂停 = 冻结现价 + 停自动推进,是紧急开关矩阵(J1)的生效面。</p>
     </>
   );
 }

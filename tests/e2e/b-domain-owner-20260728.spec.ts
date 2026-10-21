@@ -12,11 +12,11 @@ const EVIDENCE_ROOT =
   || "D:/workspace/bug-pic/.restricted/pc-full-acceptance-20260728-151023/B/owner";
 
 const MODULES = [
-  { id: "B1", path: "/overview/dual-ledger", title: "双账本总览", response: "/api/admin/treasury/b-domain" },
-  { id: "B2", path: "/overview/liquidity", title: "资金池水位", response: "/api/admin/treasury/reserve" },
-  { id: "B3", path: "/overview/funnel", title: "转化漏斗", response: "/api/admin/funnel" },
-  { id: "B4", path: "/overview/rhythm", title: "节奏状态", response: "/api/admin/phase/overview" },
-  { id: "B5", path: "/overview/risk-radar", title: "风险雷达", response: "/api/admin/risk/radar" },
+  { id: "B1", path: "/overview/dual-ledger", title: "资金与应付款总览", response: "/api/admin/treasury/b-domain" },
+  { id: "B2", path: "/overview/liquidity", title: "可用资金与应付款", response: "/api/admin/treasury/reserve" },
+  { id: "B3", path: "/overview/funnel", title: "用户转化分析", response: "/api/admin/funnel" },
+  { id: "B4", path: "/overview/rhythm", title: "运营阶段状态", response: "/api/admin/phase/overview" },
+  { id: "B5", path: "/overview/risk-radar", title: "风险提醒", response: "/api/admin/risk/radar" },
 ] as const;
 
 const UNHEALTHY =
@@ -64,7 +64,7 @@ test("B1-B5 从登录页和可见侧栏完成首轮、刷新、返回、退出�
   current = "B5→B1 返回";
   await page.goBack({ waitUntil: "domcontentloaded" });
   await expect(page).toHaveURL(/\/overview\/rhythm$/);
-  await expect(page.getByRole("heading", { name: "节奏状态" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "运营阶段状态" })).toBeVisible();
 
   current = "退出重登";
   await logout(page);
@@ -290,8 +290,8 @@ test("B1-B5 对畸形 200、500 与网络超时全部失败关闭", async ({ pag
   const cases = [
     { path: "/overview/dual-ledger", route: "**/api/admin/treasury/b-domain", title: "B1 双账本" },
     { path: "/overview/liquidity", route: "**/api/admin/treasury/reserve", title: "服务端响应异常" },
-    { path: "/overview/funnel", route: "**/api/admin/funnel?*", title: "B3 转化漏斗" },
-    { path: "/overview/rhythm", route: "**/api/admin/phase/overview?*", title: "B4 节奏状态加载失败" },
+    { path: "/overview/funnel", route: "**/api/admin/funnel?*", title: "B3 用户转化分析" },
+    { path: "/overview/rhythm", route: "**/api/admin/phase/overview?*", title: "B4 运营阶段状态加载失败" },
   ] as const;
 
   for (const scenario of cases) {
@@ -320,7 +320,7 @@ test("B1-B5 对畸形 200、500 与网络超时全部失败关闭", async ({ pag
     body: JSON.stringify({ code: 0, message: "success", data: { malformed: true } }),
   }));
   await page.goto("/overview/risk-radar", { waitUntil: "domcontentloaded" });
-  await expect(page.getByText("B5 风险雷达加载失败", { exact: false })).toBeVisible();
+  await expect(page.getByText("B5 风险提醒加载失败", { exact: false })).toBeVisible();
   await expect(page.getByText("挤兑预警", { exact: true })).toHaveCount(0);
   await context.unroute("**/api/admin/risk/radar");
 
@@ -330,7 +330,7 @@ test("B1-B5 对畸形 200、500 与网络超时全部失败关闭", async ({ pag
     body: JSON.stringify({ code: 500, message: "B5_INJECTED_FAILURE", data: null }),
   }));
   await page.goto("/overview/risk-radar", { waitUntil: "domcontentloaded" });
-  await expect(page.getByText("B5 风险雷达加载失败", { exact: false })).toBeVisible();
+  await expect(page.getByText("B5 风险提醒加载失败", { exact: false })).toBeVisible();
   await expect(page.getByText("挤兑预警", { exact: true })).toHaveCount(0);
   await context.unroute("**/api/admin/risk/radar");
   await context.unroute("**/api/admin/risk/radar/stream");

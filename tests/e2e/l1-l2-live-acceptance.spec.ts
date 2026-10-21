@@ -23,7 +23,7 @@ test("L1/L2 真实降级链：可理解、可刷新、导出落真实任务且�
     if (path.includes("/api/admin/bi/") && (path.endsWith("/overview") || path === "/api/admin/bi/kpi")) biOverviewPaths.push(path);
   });
   await openFromSidebar(page, "/analytics/kpi");
-  await expect(page.getByRole("heading", { name: "KPI 看板" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "关键指标" })).toBeVisible();
   await expect(page.locator("button.kpi-card")).toHaveCount(8);
   await expect(page.getByText("KPI 口径锁定表", { exact: true })).toBeVisible();
   await expect(page.getByText("单 KPI 下钻", { exact: false })).toBeVisible();
@@ -64,7 +64,7 @@ test("L1/L2 真实降级链：可理解、可刷新、导出落真实任务且�
   await expect(page.getByText(/KPI 序列已导出/)).toBeVisible();
 
   await openFromSidebar(page, "/analytics/funnel-cohort");
-  await expect(page.getByRole("heading", { name: "漏斗/cohort/留存" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "用户转化与留存" })).toBeVisible();
   await expect(page.getByText("生命周期事实计数", { exact: true })).toBeVisible();
   await expect(page.getByText(/各行是独立累计量，不直接相除为转化率/)).toBeVisible();
   await expect(page.getByText(/Cohort、留存与逐级转化暂不可计算/)).toBeVisible();

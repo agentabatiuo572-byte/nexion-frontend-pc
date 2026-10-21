@@ -264,7 +264,7 @@ test("G3 墨菲技术探针：非当前帧不得覆盖应急价，服务端拒�
     "utf8",
   );
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByText("G3 NEX 行情引擎", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("G3 NEX 价格管理", { exact: true }).first()).toBeVisible();
   await page.screenshot({ path: path.join(EVIDENCE_DIR, "02-g3-after-probe-rollback.png"), fullPage: true });
 
   expect(afterInactiveEdit?.currentPrice, "编辑非当前帧不得提前覆盖应急现价").toBe(baseline.currentPrice);
@@ -304,7 +304,7 @@ async function openG3FromSidebar(page: Page) {
     entry.click(),
   ]);
   await expect(page).toHaveURL(/\/finance-products\/market(?:\?.*)?$/);
-  await expect(page.getByText("G3 NEX 行情引擎", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("G3 NEX 价格管理", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
 }
 
 async function g3Snapshot(page: Page): Promise<G3Snapshot> {

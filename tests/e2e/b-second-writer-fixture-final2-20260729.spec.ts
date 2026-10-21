@@ -1025,7 +1025,7 @@ async function grantRoleUi(page: Page, roleId: number) {
 }
 
 async function assertSelfApprovalDenied(page: Page, operationId: string) {
-  await nav(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  await nav(page, "操作记录与审批 A2", /\/platform\/audit$/);
   await page.reload({ waitUntil: "domcontentloaded" });
   const row = page.locator("tbody tr").filter({ hasText: operationId });
   await expect(row).toBeVisible();
@@ -1049,7 +1049,7 @@ async function assertSelfApprovalDenied(page: Page, operationId: string) {
 }
 
 async function approveUi(page: Page, operationId: string) {
-  await nav(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  await nav(page, "操作记录与审批 A2", /\/platform\/audit$/);
   await page.reload({ waitUntil: "domcontentloaded" });
   const row = page.locator("tbody tr").filter({ hasText: operationId });
   await expect(row).toBeVisible();
@@ -1068,7 +1068,7 @@ async function disableBootstrapUi(
   accountId: string,
   username: string,
 ) {
-  await nav(page, "运营账号 & RBAC A1", /\/platform\/rbac$/);
+  await nav(page, "运营账号与权限 A1", /\/platform\/rbac$/);
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator("select.pager-size").selectOption("50");
   const row = await findAccountRow(page, username);
@@ -1118,7 +1118,7 @@ async function createAccountUi(
   displayName: string,
   roleName: string,
 ) {
-  await nav(page, "运营账号 & RBAC A1", /\/platform\/rbac$/);
+  await nav(page, "运营账号与权限 A1", /\/platform\/rbac$/);
   await page.getByRole("button", { name: "+ 新建账号", exact: true }).click();
   const scope = page.getByRole("dialog").last();
   await expect(scope.getByText("新建运营账号", { exact: true })).toBeVisible();
@@ -1240,16 +1240,16 @@ async function assertSidebarExactB(page: Page) {
     name: /总览驾驶舱.*B|B.*总览驾驶舱/,
   });
   await expect(group).toBeVisible();
-  const b2 = sidebar.getByRole("link", { name: /资金池水位.*B2|B2.*资金池水位/ });
+  const b2 = sidebar.getByRole("link", { name: /可用资金与应付款.*B2|B2.*可用资金与应付款/ });
   if (!(await b2.isVisible().catch(() => false))) await group.click();
   await expect(b2).toBeVisible();
   await expect(
-    sidebar.getByRole("link", { name: /转化漏斗.*B3|B3.*转化漏斗/ }),
+    sidebar.getByRole("link", { name: /用户转化分析.*B3|B3.*用户转化分析/ }),
   ).toBeVisible();
   for (const forbidden of [
-    /双账本总览.*B1|B1.*双账本总览/,
-    /节奏状态.*B4|B4.*节奏状态/,
-    /风险雷达.*B5|B5.*风险雷达/,
+    /资金与应付款总览.*B1|B1.*资金与应付款总览/,
+    /运营阶段状态.*B4|B4.*运营阶段状态/,
+    /风险提醒.*B5|B5.*风险提醒/,
   ]) {
     await expect(sidebar.getByRole("link", { name: forbidden })).toHaveCount(0);
   }
@@ -1870,7 +1870,7 @@ async function decideUi(
   buttonName: "执行" | "取消",
   action: "approve" | "reject",
 ) {
-  await nav(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  await nav(page, "操作记录与审批 A2", /\/platform\/audit$/);
   await page.reload({ waitUntil: "domcontentloaded" });
   const row = page.locator("tbody tr").filter({ hasText: operationId });
   await expect(row).toBeVisible();

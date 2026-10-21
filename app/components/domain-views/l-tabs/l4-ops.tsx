@@ -349,7 +349,7 @@ function NetworkReport({ data, ctx, query }: { data: L4OperationsData; ctx: LCtx
 
   return (
     <section className="l-card">
-      <ReportHeader title="网络与团队报表" subtitle="F 域团队结构 + KPI #5/#7 完整下钻" />
+      <ReportHeader title="网络与团队报表" subtitle="F 域团队结构 + KPI #5/#7 完整查看明细" />
       <div className="l-b">
         <MetricTiles rows={[
           ["直推用户", s.directRefs, "referral bound 按被推荐用户去重"],

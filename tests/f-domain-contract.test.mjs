@@ -9,7 +9,7 @@ import { displayAdminError } from "../lib/admin/error-messages.ts";
 /**
  * F 域前后端契约(验收 5.12 F 域三项缺口修复)。
  *
- * 覆盖:F1 V-Rank 晋升 / F2 费率 / F3 双轨 / F4 池·配额·大使·榜 / F5 佣金事件 ——
+ * 覆盖:F1 团队等级晋升 / F2 费率 / F3 双轨 / F4 池·配额·大使·榜 / F5 佣金事件 ——
  *   ① 端点+字段对齐:5 fetcher 派后端 teams/{ranks|rates|binary|leadership-pool|commissions}
  *   ② polymorphic key→op 路由对齐后端 OpsTeamService.replay 4 case 分发
  *   ③ amplifies 默认 + UI key 资金放大集对齐后端 loosensPayoutControlUiKey 真值

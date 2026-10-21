@@ -3,7 +3,7 @@
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 /**
- * G4 Genesis 经济 — 数据来自后端 /api/admin/market/nex/genesis 及 Genesis 业务表。
+ * G4 创世节点销售与收益 — 数据来自后端 /api/admin/market/nex/genesis 及 Genesis 业务表。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -168,7 +168,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   if (loading && !overview) {
     return (
       <section className="l-card">
-        <div className="l-h"><span className="ttl">G4 Genesis 经济</span><span className="sub">· 正在读取真实接口数据</span></div>
+        <div className="l-h"><span className="ttl">G4 创世节点销售与收益</span><span className="sub">· 正在读取真实接口数据</span></div>
         <div className="l-b"><div className="gtint">G4 数据加载中...</div></div>
       </section>
     );
@@ -177,7 +177,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   if (!overview) {
     return (
       <section className="l-card">
-        <div className="l-h"><span className="ttl">G4 Genesis 经济</span><span className="sub">· 真实接口数据</span></div>
+        <div className="l-h"><span className="ttl">G4 创世节点销售与收益</span><span className="sub">· 真实接口数据</span></div>
         <div className="l-b">
           <div className="gtint">G4 数据加载失败 · {error || "未收到本页数据，请重试；持续失败时请联系值班人员。"}</div>
           <button className="l-btn mc" style={{ marginTop: 12 }} onClick={() => void reload()}>重新加载</button>
@@ -222,7 +222,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
               : { min: 0, max: 5, step: 0.001 };
     const needsDecision = ["dividend", "divBase", "airdropPct", "emissionCurve"].includes(param.key);
     openActionConfirm({
-      action: `Genesis 经济参数 · ${param.name}`,
+      action: `创世节点销售与收益参数 · ${param.name}`,
       detail: <><b>{param.name}</b> · 当前 {param.displayValue} · {param.note}<br />B1 当前覆盖率 {cov}%，提交时后端重新预检增量负债。</>,
       amplifies: param.b1RedlineTriggered,
       edit: numeric ? { kind: "number", current: paramEditValue(param), ...bounds } : { kind: "text", current: paramEditValue(param) },
@@ -554,7 +554,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
               <div className="t"><div className="k">在挂</div><div className="v">{fmtNumber(stats.secondary.listed, 0)}</div></div>
               <div className="t"><div className="k">持有人</div><div className="v">{fmtNumber(stats.secondary.owners, 0)}</div></div>
             </div>
-            <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 8px" }}>节点状态机</div>
+            <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 8px" }}>节点处理流程</div>
             <div className="sm-strip">
               {overview.stateMachine.map((state, index) => (
                 <span key={state} className={index <= 1 ? "st ok" : "st"}>{state}</span>

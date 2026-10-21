@@ -17,10 +17,10 @@ const fixture = JSON.parse(readFileSync(fixtureFile, "utf8")) as Fixture;
 const makerAccount = fixture.accounts?.maker ?? fixture.actors?.maker;
 const noMenuAccount = fixture.accounts?.nomenu;
 const modules = [
-  { id: "E1", path: "/devices/pricing", title: "商品目录 & 上架门", read: "/api/admin/e1/skus?pageNum=1&pageSize=10" },
+  { id: "E1", path: "/devices/pricing", title: "商品管理与上架条件", read: "/api/admin/e1/skus?pageNum=1&pageSize=10" },
   { id: "E2", path: "/devices/tasks", title: "6 类 AI 任务定价", read: "/api/admin/config/task-pricing" },
   { id: "E3", path: "/devices/trade-in", title: "任务产能曲线", read: "/api/admin/devices/e3/overview" },
-  { id: "E4", path: "/devices/orders", title: "订单状态机", read: "/api/admin/devices/orders?pageNum=1&pageSize=10" },
+  { id: "E4", path: "/devices/orders", title: "订单进度", read: "/api/admin/devices/orders?pageNum=1&pageSize=10" },
   { id: "E5", path: "/devices/ops", title: "设备库存 & 激活", read: "/api/admin/devices/overview" },
   { id: "E6", path: "/devices/compute-config", title: "电脑显卡映射表", read: "/api/admin/devices/compute-config" },
 ] as const;
@@ -183,7 +183,7 @@ test("E maker 登录和 E1 首次进入不应主动预取无权限域 API", asyn
     await page.waitForTimeout(2_000);
     phase = "E1";
     await openFromVisibleSidebar(page, "/devices/pricing");
-    await expect(page.getByText("商品目录 & 上架门", { exact: false }).first()).toBeVisible();
+    await expect(page.getByText("商品管理与上架条件", { exact: false }).first()).toBeVisible();
     await page.waitForTimeout(2_000);
   } finally {
     await cdp.detach();

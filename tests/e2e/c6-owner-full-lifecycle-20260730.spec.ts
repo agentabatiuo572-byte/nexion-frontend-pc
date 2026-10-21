@@ -160,7 +160,7 @@ test("C6 Owner: visible unknown retry, idempotency/CAS, CAPTCHA, permissions and
     expect(invalidCaptcha.body?.message).toBe("CAPTCHA_RESTORE_WINDOW_REJECTED");
 
     await maker.reload({ waitUntil: "domcontentloaded" });
-    await expect(maker.getByRole("heading", { name: "注册/登录风控", exact: true })).toBeVisible();
+    await expect(maker.getByRole("heading", { name: "注册与登录风险", exact: true })).toBeVisible();
     await maker.getByRole("button", { name: "紧急关闭", exact: true }).click();
     const disableDialog = maker.getByRole("dialog");
     await disableDialog.getByRole("button", { name: "30 分钟后自动恢复", exact: true }).click();
@@ -407,7 +407,7 @@ async function openVisibleC6(page: Page) {
   await expect(link).toBeVisible();
   await link.click();
   await expect(page).toHaveURL(/\/users\/reg-risk$/);
-  await expect(page.getByRole("heading", { name: "注册/登录风控", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "注册与登录风险", exact: true })).toBeVisible();
 }
 
 async function overview(page: Page) {

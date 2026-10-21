@@ -11,7 +11,7 @@ import { A4OutboxDiagnostics } from "./a4-outbox-diagnostics";
  * A 域三铁律(A4 实装,server-canonical 镜像):
  *  ① 资金/KPI 只认 is_server_authoritative=true — family 表「服务器权威」列展示「全部」/「部分」;
  *     COMMON_FIELDS「is_server_authoritative」行强调「资金/状态事件 = true(服务器发);界面交互 = false」;
- *     服务器在状态机推进的那一刻 emit,端上伪造不出来,界面事件丢/重不影响资金账。
+ *     服务器在处理流程推进的那一刻 emit,端上伪造不出来,界面事件丢/重不影响资金账。
  *  ② PII 禁入 — schema 注册校验「无隐私明文」(手机号/地址明文一律 hash 或 ID);
  *     多处文案强调,registry 拒绝注册含 PII 的事件名/属性。
  *  ③ 不放大资金流出 — A4 全部动作 amplifies=false(数据中台不直接动账)。
@@ -495,7 +495,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     const commandKey = createA4IdempotencyKey("a4-retention-run");
     openActionConfirm({
       action: <>立即执行终态事件保留清理</>,
-      detail: <>只删除已超过事件留存期的 analytics 终态 outbox（PUBLISHED / DEAD）与过期行为事实；PENDING / FAILED 投递、业务账本和非分析事件均不触及。执行结果会写 A2 required audit；同一命令号重试幂等。</>,
+      detail: <>只删除已超过事件留存期的 analytics 终态 outbox（PUBLISHED / DEAD）与过期行为事实；PENDING / FAILED 投递、业务账本和非分析事件均不触及。执行结果会写 A2 required audit；同一命令号重试防重复提交。</>,
       amplifies: false,
       reasonMin: a2ReasonMin,
       reasonMax: 200,
@@ -867,7 +867,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
             <span className="ttl">八项 KPI → 事件口径</span>
             <span className="sub">· 每个看板数字都能倒查到事件和算式</span>
             <div className="r">
-              <Link className="l-btn sm" href="/analytics/kpi">KPI 看板(L1)→</Link>
+              <Link className="l-btn sm" href="/analytics/kpi">关键指标(L1)→</Link>
             </div>
           </div>
           <div style={{ overflowX: "auto" }}>
@@ -887,7 +887,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
             </table>
           </div>
           <div className="l-b" style={{ paddingTop: 8 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>主漏斗(喂驾驶舱 B3 / 下钻在 L2)</div>
+            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>主漏斗(喂驾驶舱 B3 / 查看明细在 L2)</div>
             <div className="a4-pipe">
               <span className="st hot">注册</span><span className="ar">→</span>
               <span className="st">绑卡验证</span><span className="ar">→</span>
@@ -937,7 +937,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           <div className="two-col" style={{ marginBottom: 0 }}>
             <div className="atint cyan">
               <b>防篡改</b> · 资金和 KPI 口径只统计「服务器权威 = true」的事件——
-              服务器在状态机推进的那一刻发,端上伪造不出来;界面交互事件丢了重了都不影响资金账。
+              服务器在处理流程推进的那一刻发,端上伪造不出来;界面交互事件丢了重了都不影响资金账。
             </div>
             <div className="atint">
               <b>schema 注册</b> · 新事件名、新属性必须先在这里注册(超管执行门槛:超管)才能开始发;
@@ -991,7 +991,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       <section className="l-card" data-restored-capability="a4-event-lifecycle" aria-labelledby="a4-lifecycle-title">
         <div className="l-h">
           <span className="ttl" id="a4-lifecycle-title">事件发布生命周期</span>
-          <span className="sub">· 服务端权威状态 · 单向推进 · CAS + 幂等 + A4 审计</span>
+          <span className="sub">· 服务端权威状态 · 单向推进 · CAS + 防重复提交 + A4 审计</span>
         </div>
         <div className="l-b">
           <table className="l-tbl">

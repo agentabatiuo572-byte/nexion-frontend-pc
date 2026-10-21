@@ -315,7 +315,7 @@ test("B4 从真实侧栏进入，刷新与退出重登后仍恢复权威节奏�
     await entry.click();
     expect((await response).status()).toBe(200);
     await expect(page).toHaveURL(/\/overview\/rhythm$/);
-    await expect(page.getByRole("heading", { name: "节奏状态" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "运营阶段状态" })).toBeVisible();
     await expect(page.locator("[data-testid='b4-dial-row']")).toHaveCount(8);
   }
 
@@ -325,7 +325,7 @@ test("B4 从真实侧栏进入，刷新与退出重登后仍恢复权威节奏�
     && new URL(candidate.url()).pathname === "/api/admin/phase/overview");
   await page.reload({ waitUntil: "domcontentloaded" });
   expect((await refreshResponse).status()).toBe(200);
-  await expect(page.getByRole("heading", { name: "节奏状态" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "运营阶段状态" })).toBeVisible();
   await expect(page.locator("[data-testid='b4-dial-row']")).toHaveCount(8);
 
   await logoutAdmin(page);

@@ -69,7 +69,7 @@ const MODULES: ModuleProbe[] = [
       owner: "permission-probe",
       reviewAt: "2099-01-01T00:00",
     },
-    visibleText: /提现审核队列/,
+    visibleText: /待审核提现/,
     forbiddenButtons: /^(放行|延迟|冻结|解冻|拒绝并退款|手动退款|批量执行)$/,
   },
   {

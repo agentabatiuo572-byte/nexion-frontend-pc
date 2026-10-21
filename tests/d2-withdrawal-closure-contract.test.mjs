@@ -293,7 +293,7 @@ test("D2 exposes an order-scoped development cooldown simulation without client 
   assert.doesNotMatch(financeRoute, /parts\[1\] === "development"[\s\S]{0,160}return `\/api\/admin\/finance\/withdrawals\/development\/\$\{parts\.slice/s);
   assert.match(page, /模拟冷却到期/);
   assert.match(page, /仅开发环境/);
-  assert.match(page, /按真实到期状态机重新检查 K3、K4、B1/);
+  assert.match(page, /按真实到期处理流程重新检查 K3、K4、B1/);
   assert.match(page, /developmentSimulationScope/);
   assert.match(page, /row\.status\.toUpperCase\(\) === "EXTENDED_HOLD"/);
   assert.match(page, /row\.previousStatus\.toUpperCase\(\) === "REVIEW_PASSED"/);

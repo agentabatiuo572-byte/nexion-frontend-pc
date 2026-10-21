@@ -3,7 +3,7 @@
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 /**
- * G1 Staking 池配置 — 资金池、持仓状态、B1 覆盖率和 J1 闸状态都来自后端业务表。
+ * G1 质押产品配置 — 资金池、持仓状态、B1 覆盖率和 J1 闸状态都来自后端业务表。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Drawer, PaginationExemption } from "../design-kit";
@@ -429,7 +429,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">持仓状态机与监控</span>
+          <span className="ttl">持仓处理流程与监控</span>
           <span className="sub">· 真实持仓只读 · 状态只能服务器推进,客户端伪造无效</span>
         </div>
         <div className="l-b">

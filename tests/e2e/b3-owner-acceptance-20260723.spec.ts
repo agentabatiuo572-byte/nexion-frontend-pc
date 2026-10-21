@@ -14,7 +14,7 @@ test("B3 visible-entry journey exposes the complete canonical funnel workflow", 
   await expect(entry).toBeVisible();
   await entry.click();
   await expect(page).toHaveURL(/\/overview\/funnel$/);
-  await expect(page.getByRole("heading", { name: "转化漏斗" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "用户转化分析" })).toBeVisible();
 
   await expect(page.getByLabel("注册 cohort")).toBeVisible();
   await expect(page.getByLabel("Phase")).toBeVisible();

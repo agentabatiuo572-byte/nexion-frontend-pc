@@ -78,7 +78,7 @@ async function nav(page: Page, name: string, url: RegExp) {
 }
 
 async function approveIfPending(page: Page, operation: string, reason: string) {
-  await nav(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  await nav(page, "操作记录与审批 A2", /\/platform\/audit$/);
   await page.reload({ waitUntil: "domcontentloaded" });
   const row = page.locator("tbody tr").filter({ hasText: operation }).first();
   if (!await row.waitFor({ state: "visible", timeout: 3_000 }).then(() => true).catch(() => false)) return;
@@ -92,7 +92,7 @@ async function approveIfPending(page: Page, operation: string, reason: string) {
 }
 
 async function resetPassword(page: Page) {
-  await nav(page, "运营账号 & RBAC A1", /\/platform\/rbac$/);
+  await nav(page, "运营账号与权限 A1", /\/platform\/rbac$/);
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator("select.pager-size").selectOption("50");
   const next = page.locator(".pager-btn").last();
@@ -122,7 +122,7 @@ async function resetPassword(page: Page) {
 }
 
 async function resetMfa(page: Page) {
-  await nav(page, "运营账号 & RBAC A1", /\/platform\/rbac$/);
+  await nav(page, "运营账号与权限 A1", /\/platform\/rbac$/);
   await page.locator("select.pager-size").selectOption("50");
   const next = page.locator(".pager-btn").last();
   for (let index = 0; index < 20; index += 1) {

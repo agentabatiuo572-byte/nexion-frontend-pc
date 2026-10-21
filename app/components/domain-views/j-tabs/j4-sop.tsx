@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * J4 · 监管点名应急 SOP — 8 剧本库(actionSequence timeline)+ 应急快速轨 SLA + 执行追溯历史。
+ * J4 · 监管要求应急处理 — 8 剧本库(actionSequence timeline)+ 应急快速轨 SLA + 执行追溯历史。
  * 每步原子动作落各域确认门；J4 先收集整体原因，再逐项确认目标域、动作与规范引用。
  * 剧本编辑 / 演练 / 执行 / 新增均走 OperationConfirmModal，正式执行另经逐步确认 → 后端 /emergency/sop/* 接口。
  */

@@ -69,7 +69,7 @@ test("L5 首次用户从可见侧栏完成四类聚合、D4 七账单与四模�
   });
 
   await openFromSidebar(page);
-  await expect(page.getByRole("heading", { name: "导出 & 监管报告" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "数据导出与监管报告" })).toBeVisible();
   await expect(page.getByText("数据出境统一管控面")).toBeVisible();
   await expect(page.getByRole("button", { name: "发起聚合快照" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "生成监管报告" })).toBeEnabled();

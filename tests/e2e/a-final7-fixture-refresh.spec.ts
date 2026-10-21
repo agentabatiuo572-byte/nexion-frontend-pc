@@ -230,7 +230,7 @@ function verifyFinal6Candidate() {
 
 async function verifyVisibleAdminPaths(page: Page) {
   for (const [name, route] of [
-    ["运营账号 & RBAC A1", /\/platform\/rbac$/],
+    ["运营账号与权限 A1", /\/platform\/rbac$/],
     ["角色管理 A6", /\/platform\/roles$/],
     ["菜单管理 A7", /\/platform\/menus$/],
   ] as const) await nav(page, name, route);
@@ -313,7 +313,7 @@ async function fillFreshTotp(locator: ReturnType<Page["getByLabel"]>, secret: st
 
 async function createSuperAccountViaVisibleA1(page: Page, username: string, label: string) {
   validateUsername(username);
-  await nav(page, "运营账号 & RBAC A1", /\/platform\/rbac$/);
+  await nav(page, "运营账号与权限 A1", /\/platform\/rbac$/);
   await page.getByRole("button", { name: "+ 新建账号", exact: true }).click();
   const modal = page.getByRole("dialog").last();
   await modal.getByRole("textbox", { name: "登录名 *", exact: true }).fill(username);

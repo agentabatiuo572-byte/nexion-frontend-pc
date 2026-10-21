@@ -37,7 +37,7 @@ async function loginAndOpenK2(page) {
   await expect(link).toBeVisible();
   await link.click();
   await expect(page).toHaveURL(/\/risk\/abuse$/);
-  await expect(page.getByRole("heading", { name: "套利 & 刷量检测", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "异常套利与刷量排查", exact: true })).toBeVisible();
 }
 
 function totp(secret) {
@@ -125,6 +125,6 @@ test("K2 overview failure hides stale data and only retries K2", async ({ page }
   await expect(page.getByRole("button", { name: "调整", exact: true })).toHaveCount(0);
   await page.unroute("**/api/admin/risk/arbitrage/overview");
   await page.getByRole("button", { name: "仅重试 K2", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "套利 & 刷量检测", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "异常套利与刷量排查", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "调整", exact: true })).toHaveCount(8);
 });

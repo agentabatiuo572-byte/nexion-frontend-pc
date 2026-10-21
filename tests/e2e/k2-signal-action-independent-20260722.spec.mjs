@@ -39,7 +39,7 @@ test("K2-only signal stays pending in the visible F4 entry", async ({ page, cont
   await expect(k2Link).toBeVisible();
   await k2Link.click();
   await expect(page).toHaveURL(/\/risk\/abuse$/);
-  await expect(page.getByRole("heading", { name: "套利 & 刷量检测", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "异常套利与刷量排查", exact: true })).toBeVisible();
   await page.screenshot({ path: path.join(EVIDENCE_DIR, "02-k2-visible-entry.png"), fullPage: true });
 
   const f4Link = page.locator('a[href="/network/leadership-pool"]').first();
@@ -49,7 +49,7 @@ test("K2-only signal stays pending in the visible F4 entry", async ({ page, cont
   await expect(f4Link).toBeVisible();
   await f4Link.click();
   await expect(page).toHaveURL(/\/network\/leadership-pool$/);
-  await expect(page.getByRole("heading", { name: "池 / 配额 / 大使 / 榜", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "奖励池、名额与排行榜", exact: true })).toBeVisible();
 
   const main = page.locator("main");
   await expect(main.getByText("刷榜命中 · K2", { exact: true })).toBeVisible();

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 转化漏斗(today)— 按 Claude Design 稿「Conversion Funnel (dark)」复刻:
+ * 用户转化分析(today)— 按 Claude Design 稿「Conversion Funnel (dark)」复刻:
  * 左 SVG 梯形漏斗(柠檬→紫渐变 + 颈部留存率标记)+ 右阶段列表(色块/大数/转化率/较昨日),
  * 行↔段 hover 联动高亮,顶边渐变 accent。卡片 chrome 用 V5 token,漏斗图形用设计稿精确 hex。
  */
@@ -56,11 +56,11 @@ export function FunnelStrip({ stages }: { stages: FunnelStageInput[] }) {
       {/* 头部 */}
       <div className="flex items-baseline justify-between gap-4">
         <div className="font-display flex items-baseline gap-2.5" style={{ color: "var(--v5-ink)", fontSize: 19, fontWeight: 550 }}>
-          <AutoGloss>转化漏斗</AutoGloss> <span style={{ color: "var(--v5-ink-4)", fontWeight: 400 }}>·</span>
+          <AutoGloss>用户转化分析</AutoGloss> <span style={{ color: "var(--v5-ink-4)", fontWeight: 400 }}>·</span>
           <span style={{ color: "var(--v5-ink-3)", fontSize: 16, fontWeight: 450 }}>今日</span>
         </div>
         <Link href="/overview/funnel" prefetch={false} className="group inline-flex items-center gap-1.5 text-[13px] transition-colors hover:text-[var(--v5-ink)]" style={{ color: "var(--v5-ink-3)" }}>
-          <AutoGloss>下钻 cohort</AutoGloss> <span className="transition-transform group-hover:translate-x-0.5" style={{ color: "var(--v5-brand)" }}>→</span>
+          <AutoGloss>查看同批用户的明细</AutoGloss> <span className="transition-transform group-hover:translate-x-0.5" style={{ color: "var(--v5-brand)" }}>→</span>
         </Link>
       </div>
 
@@ -72,7 +72,7 @@ export function FunnelStrip({ stages }: { stages: FunnelStageInput[] }) {
       {/* 主体:漏斗 + 阶段列表 */}
       <div className="grid gap-7 [grid-template-columns:1fr] lg:[grid-template-columns:330px_1fr]" style={{ alignItems: "start" }}>
         {/* 漏斗 SVG */}
-        <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} className="block h-auto w-full" style={{ overflow: "visible" }} role="img" aria-label="转化漏斗">
+        <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} className="block h-auto w-full" style={{ overflow: "visible" }} role="img" aria-label="用户转化分析">
           <defs>
             <linearGradient id="adminFunnelGrad" x1="0" y1="0" x2="0" y2={VIEW_H} gradientUnits="userSpaceOnUse">
               <stop offset="0" stopColor="#A8DC2E" />

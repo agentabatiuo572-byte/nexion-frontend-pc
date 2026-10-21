@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * B5 风险雷达(设计稿 RiskRadar 模式)— 挤兑比率 + 异常账户 + Kill 状态灯 + 实时告警。
+ * B5 风险提醒(设计稿 RiskRadar 模式)— 挤兑比率 + 异常账户 + Kill 状态灯 + 实时告警。
  * 取代旧 AlertCenter:在告警列表之上补足 B5 的态势指标。只读,跳转到对应域处置。
  */
 import Link from "next/link";
@@ -46,7 +46,7 @@ export function RiskRadar({
   return (
     <div className="flex h-full flex-col rounded-[16px] p-5" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}>
       <div className="flex items-center gap-2.5">
-        <span className="font-display text-[14.5px]" style={{ color: "var(--v5-ink)" }}><AutoGloss>风险雷达</AutoGloss></span>
+        <span className="font-display text-[14.5px]" style={{ color: "var(--v5-ink)" }}><AutoGloss>风险提醒</AutoGloss></span>
         <span className="ml-auto font-mono-tabular rounded-[7px] px-2 py-0.5 text-[11px]" style={{ background: "var(--v5-surface-3)", color: "var(--v5-ink-3)", border: "1px solid var(--v5-border)" }}>B5 · 只读</span>
       </div>
       <p className="mt-1 text-[12px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>挤兑预警 · 异常账户 · Kill 状态灯</AutoGloss></p>

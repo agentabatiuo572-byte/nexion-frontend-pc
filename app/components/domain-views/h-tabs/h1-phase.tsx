@@ -253,7 +253,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
   const openControl = (control: H1Model["controls"][number]) => {
     const current = text(control.value, control.key === "pin" ? "未钉住" : "");
     openActionConfirm({
-      action: `Phase 切换控制 · ${control.label}`,
+      action: `运营阶段切换设置 · ${control.label}`,
       detail: <>{controlDescription(control) || "控制项变更会写入后端配置并留痕。"} 当前值 <b>{current || "未设置"}</b>。</>,
       amplifies: false,
       edit: CONTROL_OPTIONS[control.key]
@@ -263,7 +263,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
         if (value == null) return;
         const def = findHighOp("h1_phase_control")!;
         void propose(ctx.toast, {
-          action: `Phase 切换控制 · ${control.label}`,
+          action: `运营阶段切换设置 · ${control.label}`,
           obj: control.key,
           before: current || "未设置",
           after: String(value),
@@ -282,13 +282,13 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
 
   const openOverrideRemove = (override: H1Model["overrides"][number]) => {
     openActionConfirm({
-      action: `撤销 override · ${override.cohort}`,
-      detail: <>{override.description || "撤销后该批次回归全局阶段时间表。"} 后端会写入 disabled 标记。</>,
+      action: `撤销该批用户的单独设置 · ${override.cohort}`,
+      detail: <>{override.description || "撤销后，这批用户会重新按全局运营阶段安排处理。"} 服务器会保留撤销记录。</>,
       amplifies: false,
       run: (reason) => {
         const def = findHighOp("h1_phase_override")!;
         void propose(ctx.toast, {
-          action: `撤销 override · ${override.cohort}`,
+          action: `撤销该批用户的单独设置 · ${override.cohort}`,
           obj: override.id,
           before: "生效中",
           after: "已撤销",
@@ -342,7 +342,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
             <b>已从 B4 节奏看板定位</b>
             <span style={{ marginLeft: 8, color: "var(--ink-3)" }}>
               {deepLink.phase ? `${phaseName(deepLink.phase)} · ` : ""}
-              {deepLink.dial === "phaseAttribution" ? "Phase 效果归因" : deepLink.dial || "H1 节奏详情"}
+              {deepLink.dial === "phaseAttribution" ? "运营阶段效果分析" : deepLink.dial || "H1 运营阶段详情"}
             </span>
           </div>
         </section>
@@ -377,7 +377,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
       <section className="l-card" style={{ marginBottom: 16 }}>
         <div className="l-h">
           <span className="ttl">节奏骨架</span>
-          <span className="sub">· 后端配置单源 · 自动插入默认配置后查询</span>
+          <span className="sub">· 配置以服务器为准 · 自动插入默认配置后查询</span>
         </div>
         <div className="l-b" style={{ paddingTop: 4 }}>
           <div className="p-row">
@@ -451,7 +451,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
       <div className="two-col" style={{ marginBottom: 16 }}>
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">Phase 切换控制</span>
+            <span className="ttl">运营阶段切换设置</span>
             <span className="sub">· 后端配置 + 审计</span>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
@@ -485,7 +485,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
 
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">Phase 效果归因</span>
+            <span className="ttl">运营阶段效果分析</span>
             <span className="sub">· 从后端 H1 读模型返回</span>
             <div className="r">
               <Link href="/overview/rhythm" className="l-btn">去 B4 节奏看板 →</Link>
@@ -546,9 +546,9 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
             reason: "节奏矩阵必须同屏对比当前月和前后月",
           },
           {
-            label: "Phase 效果归因",
+            label: "运营阶段效果分析",
             maxRows: model.attribution.length,
-            reason: "阶段归因只读摘要,明细下钻到 B4/L4 报表",
+            reason: "本页只显示阶段效果摘要；详细数据请查看 B4 和 L4 报表",
           },
         ]}
       />

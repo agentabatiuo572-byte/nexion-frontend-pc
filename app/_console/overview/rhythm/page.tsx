@@ -59,7 +59,7 @@ export default function RhythmPage() {
       anchor.download = file.fileName;
       anchor.click();
       URL.revokeObjectURL(url);
-      setNotice("Phase 聚合 CSV 已生成并写入 A2 审计；文件不含用户标识或 PII。");
+      setNotice("运营阶段汇总文件已生成，并保留操作记录；文件不含用户身份信息。");
     } catch (value) {
       setNotice(value instanceof Error ? displayAdminError(value) : "B4 导出失败，请重新读取后再试。");
     } finally {
@@ -83,10 +83,10 @@ export default function RhythmPage() {
     <div className="dkpage bpage rhythmpage">
       <BPageHeader
         id="B4"
-        title="节奏状态"
+        title="运营阶段状态"
         desc={
           <>
-            从 <b>H1 服务端单一权威</b>读取 P1–P6 用户分布、当前 8-dial、下一月粒度拐点与杠杆组合。
+            从 <b>H1 运营阶段设置</b>读取各阶段用户数、当前八项调节值和下月预计变化。
             本页只读；所有调整与效果归因都进入 H1。
           </>
         }
@@ -104,7 +104,7 @@ export default function RhythmPage() {
                 granularity: event.target.value as B4Filters["granularity"],
               }))}
             >
-              <option value="PHASE">Phase 粒度</option>
+              <option value="PHASE">按运营阶段</option>
               <option value="MONTH">月粒度</option>
             </select>
           </label>
@@ -121,9 +121,9 @@ export default function RhythmPage() {
             </select>
           </label>
           <label>
-            <span>Phase 筛选</span>
+            <span>运营阶段筛选</span>
             <select
-              aria-label="Phase 筛选"
+              aria-label="运营阶段筛选"
               value={filters.phase}
               onChange={(event) => setFilters((current) => ({ ...current, phase: event.target.value }))}
             >
@@ -145,7 +145,7 @@ export default function RhythmPage() {
               onClick={() => void downloadDistribution()}
               disabled={busy !== "" || !data?.available || !data.distribution.length}
             >
-              <Download size={14} aria-hidden /> 导出 Phase 分布
+              <Download size={14} aria-hidden /> 导出各阶段用户数
             </button>
           )}
         </div>
@@ -159,14 +159,14 @@ export default function RhythmPage() {
         <>
           {!data.available && (
             <section className="card b4-alert" role="alert">
-              <b>当前 Phase 分布不可用于决策</b>
+              <b>当前各阶段用户数暂不可用于决策</b>
               <span>{B4_REASON_MESSAGES[data.reason ?? ""] || "账户月龄事实不可确认；已禁用导出，不以旧值或演示值替代。"}</span>
             </section>
           )}
 
           <section className="b4-summary" aria-label="当前节奏摘要">
             <article className="card">
-              <span>当前 Phase</span>
+              <span>当前运营阶段</span>
               <strong>{data.rhythm.currentPhase}</strong>
               <small>月 {data.rhythm.currentMonth} / {data.rhythm.totalMonths}</small>
             </article>
@@ -177,15 +177,15 @@ export default function RhythmPage() {
             </article>
             <article className="card">
               <span>当前视图</span>
-              <strong>{data.filters.granularity === "PHASE" ? "Phase" : "月"}</strong>
-              <small>月份 {data.filters.month} · {data.filters.phase === ALL ? "全 Phase" : data.filters.phase}</small>
+              <strong>{data.filters.granularity === "PHASE" ? "运营阶段" : "月"}</strong>
+              <small>月份 {data.filters.month} · {data.filters.phase === ALL ? "全部阶段" : data.filters.phase}</small>
             </article>
           </section>
 
           <section className="card b4-distribution">
             <div className="b4-section-head">
               <div>
-                <h2>各 Phase 用户数分布</h2>
+                <h2>各运营阶段用户数</h2>
                 <p>账户月龄事实由服务端映射到 H1 P1–P6；筛选只改变观察范围，不改变权威总数。</p>
               </div>
               <span className="b4-source">H1 权威数据</span>
@@ -225,7 +225,7 @@ export default function RhythmPage() {
               <ul>
                 {data.nextPivot.changes.length
                   ? data.nextPivot.changes.map((change) => <li key={change}>{change}</li>)
-                  : <li>下一月没有 dial 数值变化</li>}
+                  : <li>下个月没有调节值变化</li>}
               </ul>
             </section>
 
@@ -251,7 +251,7 @@ export default function RhythmPage() {
           <section className="card b4-dials">
             <div className="b4-section-head">
               <div>
-                <h2>8-dial 现值</h2>
+                <h2>八项调节值</h2>
                 <p>现值取自 H1 调度器服务端权威；B4 不缓存、不重算、无写入控件。</p>
               </div>
               <span className="b4-source">8 / 8</span>
@@ -260,7 +260,7 @@ export default function RhythmPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>dial</th>
+                    <th>调节项</th>
                     <th>当前值</th>
                     <th>权威来源</th>
                     <th>V1 生效状态</th>
@@ -299,8 +299,8 @@ export default function RhythmPage() {
           <section className="card b4-attribution">
             <div className="b4-section-head">
               <div>
-                <h2>Phase 效果归因</h2>
-                <p>H1 汇总选定 Phase 的 dial 变化；B3 提供转化，B1/B2 提供资金切片。</p>
+                <h2>运营阶段效果分析</h2>
+                <p>H1 显示所选运营阶段的调节值变化；B3 显示用户转化，B1/B2 显示资金情况。</p>
               </div>
             </div>
             <div className="b4-attribution-links">
@@ -323,7 +323,7 @@ export default function RhythmPage() {
                   <Link key={item.key} href={item.href} className="b4-link-card">
                     <b>{item.label}</b>
                     <span>{item.key === "B3"
-                      ? `按 ${filters.phase === ALL ? "全部 Phase" : filters.phase} 查看`
+                      ? `按 ${filters.phase === ALL ? "全部阶段" : filters.phase} 查看`
                       : "查看全局资金事实"}</span>
                   </Link>
                 ) : (
@@ -357,7 +357,7 @@ function B4State({
 }) {
   return (
     <section className="card b4-alert" role={error ? "alert" : "status"}>
-      <b>{loading ? "B4 节奏状态加载中" : "B4 节奏状态加载失败"}</b>
+      <b>{loading ? "B4 运营阶段状态加载中" : "B4 运营阶段状态加载失败"}</b>
       <span>{loading ? "正在读取 H1 权威节奏与账户月龄事实。" : `${error}；旧数据与导出已隐藏。`}</span>
       {error && onRetry && <button type="button" className="b4-btn" onClick={onRetry}>重试</button>}
     </section>

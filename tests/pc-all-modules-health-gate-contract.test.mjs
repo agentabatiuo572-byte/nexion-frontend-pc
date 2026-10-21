@@ -22,7 +22,7 @@ const healthySnapshot = (overrides = {}) => ({
 
 test("full-menu gate rejects A5-style handled business errors even when the page is non-empty", () => {
   const failures = evaluateModuleHealthSnapshot("A5", healthySnapshot({
-    text: "平台参数寄存器 A5。平台参数服务返回异常，请稍后重试。".repeat(8),
+    text: "平台参数管理 A5。平台参数服务返回异常，请稍后重试。".repeat(8),
   }));
 
   assert.ok(failures.some((failure) => failure.includes("fatal text")));

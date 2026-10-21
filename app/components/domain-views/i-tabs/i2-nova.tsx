@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * I2 Nova 推送运营 — design_handoff_i_domain/I2 Nova推送运营.html port。
- * 单源:后端 /content/nova/overview;空库时保持后端空态,不补前端业务样例。
+ * I2 Nova 消息推送 — design_handoff_i_domain/I2 Nova推送运营.html port。
+ * 统一来源:后端 /content/nova/overview;空库时保持后端空态,不补前端业务样例。
  * 操作确认 显式 edit 契约:调 cadence(tick/cd) / 调概率分布 = 调参传 edit;
  *   kill 单频道 / 启停 / 发布 / 归档模板 = 处置不传 edit。
  * amplifies = false(I2 不碰 B1 红线 —— 只动推送节奏与文案出口,不动费率/奖励/价格)。
@@ -347,7 +347,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const canRestoreEvent = (expiresAt: string) => new Date(expiresAt).getTime() > Date.now();
   const syncSocialEvents = () => openConfirm({
     action: <>同步真实业务事件</>,
-    detail: <>仅从提现、V 等级、Genesis 成交和整点新增用户等受信业务表采集；重复来源会幂等跳过，AI 客户消费在真实计费源接入前保持不可用。</>,
+    detail: <>仅从提现、V 等级、Genesis 成交和整点新增用户等受信业务表采集；重复来源会防重复提交跳过，AI 客户消费在真实计费源接入前保持不可用。</>,
     reason: true,
     okLabel: "开始同步",
     run: (reason) => {
@@ -643,7 +643,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           />
           <div className="l-b" style={{ paddingTop: 8 }}>
             <div className="itint">
-              <b>文案来源</b> · 模板池当前共 {templatePager.total} 条服务端目录记录，每页最多 {templatePager.pageSize} 条；发布和归档走操作确认。 模板中的中文、越南语和可选英语正文就是通道实际推送内容；通道、CTA 均从后端配置目录选择。状态机：草稿 → 已发布 → 已归档。
+              <b>文案来源</b> · 模板池当前共 {templatePager.total} 条服务端目录记录，每页最多 {templatePager.pageSize} 条；发布和归档走操作确认。 模板中的中文、越南语和可选英语正文就是通道实际推送内容；通道、CTA 均从后端配置目录选择。处理流程：草稿 → 已发布 → 已归档。
             </div>
           </div>
         </section>

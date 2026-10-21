@@ -175,7 +175,7 @@ function CoveragePill({ enabled }: { enabled: boolean }) {
 }
 
 // 全局命令面板触发器(设计稿顶栏签名元素)。点击或 ⌘K/Ctrl+K 打开 shadcn(cmdk)命令面板,
-// 跳转到任意运营模块(消费 IA 单源 visibleDomains)。真实可再接 A4 事件流 / userId 检索。
+// 跳转到任意运营模块(消费 IA 统一来源 visibleDomains)。真实可再接 A4 事件流 / userId 检索。
 function SearchBox({ domains }: { domains: NavDomain[] }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {

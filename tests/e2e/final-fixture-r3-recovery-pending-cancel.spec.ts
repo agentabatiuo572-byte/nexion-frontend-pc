@@ -23,5 +23,5 @@ test("A2 visibly cancels only stale ffix.recover pending proposals", async ({ pa
 });
 
 async function login(page: Page) { await page.goto("/"); if (await page.locator('input[autocomplete="username"]').isVisible({ timeout: 5_000 }).catch(() => false)) { await page.locator('input[autocomplete="username"]').fill(USERNAME); await page.locator('input[autocomplete="current-password"]').fill(PASSWORD); await page.getByRole("button", { name: "继续", exact: true }).click(); } await expect(page.locator("aside")).toBeVisible({ timeout: 30_000 }); }
-async function navA2(page: Page) { const link = page.locator("aside").getByRole("link", { name: "审计 & 操作确认 A2", exact: true }); if (!await link.isVisible().catch(() => false)) await page.locator("aside").getByRole("button", { name: /平台基础.*A|A.*平台基础/ }).click(); await link.click(); await expect(page).toHaveURL(/\/platform\/audit$/); }
+async function navA2(page: Page) { const link = page.locator("aside").getByRole("link", { name: "操作记录与审批 A2", exact: true }); if (!await link.isVisible().catch(() => false)) await page.locator("aside").getByRole("button", { name: /平台基础.*A|A.*平台基础/ }).click(); await link.click(); await expect(page).toHaveURL(/\/platform\/audit$/); }
 function required(name: string) { const value = process.env[name]?.trim(); if (!value) throw new Error(`${name}_REQUIRED`); return value; }

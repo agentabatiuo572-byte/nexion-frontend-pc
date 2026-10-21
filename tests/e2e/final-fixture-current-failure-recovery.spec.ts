@@ -24,7 +24,7 @@ test("A1/A2/A6 recovers failed RunID fixture account and role", async ({ page, b
     if (accountTicket) await approveUi(checker.page, accountTicket);
     const roleTicket = await deleteRoleUi(page, TARGET_ROLE, TARGET_ROLE_ID);
     if (roleTicket) await approveUi(checker.page, roleTicket);
-    await nav(page, "运营账号 & RBAC A1", /\/platform\/rbac$/);
+    await nav(page, "运营账号与权限 A1", /\/platform\/rbac$/);
     await page.reload();
     const targetRow = await findAccountRow(page, TARGET_ACCOUNT);
     if (targetRow) await expect(targetRow).toContainText("禁用");
@@ -48,7 +48,7 @@ test("A1/A2/A6 recovers failed RunID fixture account and role", async ({ page, b
 });
 
 async function createRecoveryChecker(page: Page, browser: Browser) {
-  await nav(page, "运营账号 & RBAC A1", /\/platform\/rbac$/);
+  await nav(page, "运营账号与权限 A1", /\/platform\/rbac$/);
   await page.getByRole("button", { name: "+ 新建账号", exact: true }).click();
   const create = page.getByRole("dialog").last();
   const username = `ffix.recover.${TOKEN}`;
@@ -88,7 +88,7 @@ async function createRecoveryChecker(page: Page, browser: Browser) {
 }
 
 async function disableAccountUi(page: Page, username: string) {
-  await nav(page, "运营账号 & RBAC A1", /\/platform\/rbac$/);
+  await nav(page, "运营账号与权限 A1", /\/platform\/rbac$/);
   await page.reload();
   const row = await findAccountRow(page, username);
   if (!row) return null;
@@ -119,7 +119,7 @@ async function findAccountRow(page: Page, username: string) {
 }
 
 async function findAccountUsernames(page: Page, prefix: string) {
-  await nav(page, "运营账号 & RBAC A1", /\/platform\/rbac$/);
+  await nav(page, "运营账号与权限 A1", /\/platform\/rbac$/);
   await page.reload();
   await page.locator("select.pager-size").selectOption("50");
   const found = new Set<string>();
@@ -149,7 +149,7 @@ async function submitConfirm(page: Page, predicate: (response: Response) => bool
 }
 
 async function approveUi(page: Page, operationId: string) {
-  await nav(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  await nav(page, "操作记录与审批 A2", /\/platform\/audit$/);
   await page.reload();
   const row = page.locator("tbody tr").filter({ hasText: operationId });
   await expect(row).toBeVisible();

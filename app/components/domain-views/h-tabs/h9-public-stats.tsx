@@ -1,11 +1,11 @@
 "use client";
 
 /**
- * H9「历史估算配置」—— 规格 FEAT-HOME02b 后台单元。
+ * H9「历史数据展示设置」—— 规格 FEAT-HOME02b 后台单元。
  *
  * 运营在这里维护历史估算参数；正式 App 对外事实读取服务端实测聚合。
  * 虚拟人口与算力分位表不参与正式 App 当前服务端排名。整组原子保存:
- * 确认弹窗给前后值 diff → 必填理由 → 服务端落审计 + 幂等键,任一项非法整组不落库。
+ * 确认弹窗给前后值 diff → 必填理由 → 服务端落审计 + 防重复提交编号,任一项非法整组不落库。
  *
  * 页面里没有任何平台数字的字面量:当前值、默认种子、历史日产锚都从服务端读模型来。
  *    「改了设备总数会连带改掉哪些金额」由下方影响预览现算给运营看(规格 ②异常2),
@@ -210,8 +210,8 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
 
   const save = () => {
     if (!data || !nextValues) return;
-    // 🔴 这里不铸幂等键:键由 updateH9PublicStats 从槽位存储按「值 + 版本 + 理由」取,
-    //    否则每点一次「保存变更」都是一条全新命令,失败横幅承诺的「同一个幂等键」就是空的。
+    // 🔴 这里不铸防重复提交编号:键由 updateH9PublicStats 从槽位存储按「值 + 版本 + 理由」取,
+    //    否则每点一次「保存变更」都是一条全新命令,失败横幅承诺的「同一个防重复提交编号」就是空的。
     const diffs = H9_FIELDS
       .filter((field) => nextValues[field.key] !== data.values[field.key])
       .map((field) => `${field.label}:${data.values[field.key]}${field.unit} → ${nextValues[field.key]}${field.unit}`);
@@ -224,7 +224,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     const nextDaily = nextValues.fleetDevices * data.publishedDailyUsdPerDevice;
 
     ctx.openActionConfirm({
-      action: "保存历史估算配置",
+      action: "保存历史数据展示设置",
       detail: <>
         <div>本次改动({diffs.length} 项):</div>
         {diffs.map((line) => <div key={line}>· {line}</div>)}
@@ -235,14 +235,14 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
         {baseChanged && <div>⚠️ 改了历史注册基数，估算起点会重置为本次保存时刻；正式 App 的注册账户总数仍来自真实账户记录。</div>}
         {virtualZero && <div>虚拟人口填了 0:历史本地估算分母仅含真实注册人口({int(data.realUserCount)} 人)。此参数不改变正式 App 当前服务端名次。</div>}
         <div>本次提交基于配置版本 v{data.version};并发改动会返回 409,任何一项不合法都整组不落库。</div>
-        <div>保存后仅影响历史估算配置；操作理由会写入审计。</div>
+        <div>保存后仅影响历史数据展示设置；操作理由会写入审计。</div>
       </>,
       // 🔴 不挂 amplifies:它的语义是「放大资金流出方向,系统会先检查备付金覆盖率」(K 域契约),
-      //    而本页改的是历史估算配置,一分钱都不流出,也没传 coverage —— 挂上等于在弹窗里
+      //    而本页改的是历史数据展示设置,一分钱都不流出,也没传 coverage —— 挂上等于在弹窗里
       //    向运营承诺一道根本没跑的资金闸。改设备总数的警示由上方 fleetChanged 段落负责。
       reasonMin: 8,
       reasonMax: 200,
-      completionCopy: "保存成功后更新历史估算配置并写入审计",
+      completionCopy: "保存成功后更新历史数据展示设置并写入审计",
       run: async (reason) => {
         try {
           const saved = await updateH9PublicStats(nextValues, data.version, reason);
@@ -250,7 +250,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
           setDrafts(draftsFrom(saved.values));
           setBands(bandDraftsFrom(saved.values));
           setSaveError(null);
-          ctx.toast(`历史估算配置已保存 · 版本 v${saved.version} · 已记审计`);
+          ctx.toast(`历史数据展示设置已保存 · 版本 v${saved.version} · 已记审计`);
         } catch (cause) {
           const message = formatAdminApiError(cause instanceof Error ? cause.message : null, "H9_SAVE_FAILED");
           setSaveError(message);
@@ -261,11 +261,11 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     });
   };
 
-  if (loading && !data) return <section className="l-card"><div className="l-b">历史估算配置加载中...</div></section>;
+  if (loading && !data) return <section className="l-card"><div className="l-b">历史数据展示设置加载中...</div></section>;
 
   if (!data || !drafts) {
     return <section className="l-card">
-      <div className="l-h"><span className="ttl">历史估算配置暂时读不到</span></div>
+      <div className="l-h"><span className="ttl">历史数据展示设置暂时读不到</span></div>
       <div className="l-b">
         {/* 文案拼接走 h9PlaceholderCopy:字典整句自带句号,直接再拼「。」就是双句号(P2-15 回归)。 */}
         <div className="htint danger">{h9PlaceholderCopy(error)}</div>
@@ -285,14 +285,14 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     {saveError && <div className="htint danger" style={{ marginBottom: 12 }}>
       上次保存没成功:{saveError} —— <b>本次改动没有生效,也没有落审计</b>。
       如果是别人同时改了这页,先点「刷新」拿最新值再改;其它情况可以直接再点「保存变更」原样重试
-      —— 值、版本与理由都不变时用的是同一个幂等键(刷新页面也还是它),服务端不会重复落账;
+      —— 值、版本与理由都不变时用的是同一个防重复提交编号(刷新页面也还是它),服务端不会重复落账;
       或先「放弃改动」把页面回填成当前生效值。
     </div>}
 
     <div className="two-col">
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">历史估算配置</span>
+          <span className="ttl">历史数据展示设置</span>
           <span className="sub">· 生效版本 v{data.version} · {when(Date.parse(data.effectiveAt))} · {canWrite ? "可改" : "当前角色只读"}</span>
           <div className="r">
             <button className="l-btn sm" onClick={() => void load()}>刷新</button>
@@ -405,7 +405,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     </section>
 
     <p className="f-foot">
-      <b>这页的数会去哪</b>:保存 → 服务端保留历史估算配置并写审计。正式 App 对外事实读取真实聚合；个人名次由独立服务端排名接口提供。改动记录去{" "}
+      <b>这页的数会去哪</b>:保存 → 服务端保留历史数据展示设置并写审计。正式 App 对外事实读取真实聚合；个人名次由独立服务端排名接口提供。改动记录去{" "}
       <Link href="/platform/audit" className="l-btn sm">A2 审批与审计</Link>{" "}查。
     </p>
   </>;

@@ -2,7 +2,7 @@
 
 /**
  * OperationConfirmCard — 操作确认卡。展示操作员与执行门槛,
- * 强制「操作理由必填」+「确认后即写审计」。是 PRD §A2 审计 & 操作确认 的 UI 原语。
+ * 强制「操作理由必填」+「确认后即写审计」。是 PRD §A2 操作记录与审批 的 UI 原语。
  */
 import { ArrowDown, Check, X, ShieldCheck } from "lucide-react";
 import type { AdminRole } from "@/lib/nav/console-nav";

@@ -2,14 +2,14 @@
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 
 /**
- * A2 审计 & 操作确认中心 — design_handoff_a_domain/A2 设计稿 port(387 行 + SPEC §4 矩阵 14 行权威 + §7 三铁律)。
+ * A2 操作记录与审批中心 — design_handoff_a_domain/A2 设计稿 port(387 行 + SPEC §4 矩阵 14 行权威 + §7 三铁律)。
  *
  * 全后台最高频工作台:高敏操作动态 + 审计日志 + 执行历史 + 机制参数四块,落 9 大类操作确认清单。
  *
  * A 域三铁律(A2 实装,server-canonical 镜像):
  *  ① append-only — 审计日志只导出不改/删,导出按钮仍需操作确认(强制留痕)。无 endpoint = 无 UI;
  *  ② reason-required — 所有高敏动作提交前必须填操作理由,弹窗校验不通过不写 store;
- *  ③ 确认即执行 + 幂等 — 同一命令 24 小时内重复提交不重复生效，失败时保持待处理且目标域零副作用。
+ *  ③ 确认即执行 + 防重复提交 — 同一命令 24 小时内重复提交不重复生效，失败时保持待处理且目标域零副作用。
  *
  * 真写键(A.*):
  *  A.appr.<id>.status(approved / rejected / withdrawn)·

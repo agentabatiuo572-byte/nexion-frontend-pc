@@ -39,7 +39,7 @@ const MODULES: ModuleProbe[] = [
   {
     id: "L1",
     path: "/analytics/kpi",
-    marker: /KPI 看板/,
+    marker: /关键指标/,
     readPath: "/api/admin/bi/kpi?window=7d",
     writePath: "/api/admin/bi/reports",
     writeMethod: "POST",

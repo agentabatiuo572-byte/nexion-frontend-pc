@@ -66,11 +66,11 @@ test("② client 契约:缺席向后兼容,在场精确集合 + 逐键值校验,
 
 test("③ 组件:卡片 + fail-closed + 运营可读标签 + 可枚举值下拉禁自由输入", () => {
   assert.match(component, /data-proof="k1-risk-release-params"/, "释放参数卡的 data-proof 锚被删");
-  assert.match(component, /服务端尚未下发收益释放参数/, "releaseParams 缺席时必须有明确的未下发文案且不给编辑入口");
+  assert.match(component, /服务器尚未提供收益审核规则/, "releaseParams 缺席时必须有明确的未下发文案且不给编辑入口");
   assert.match(component, /在线证明或人工放行/, "释放模式丢了运营可读中文标签(页面禁裸工程串)");
   assert.match(component, /仅人工放行/, "manual_only 丢了中文标签");
-  assert.match(component, /不随时间自动放行/, "落地规则丢了「审核中不随时间自动放行」关键口径(SPEC-7 的灵魂句,削文案不许静默)");
-  assert.match(component, /仅生成冻结建议/, "冻结线语义已拍板为「建议」(2026-08-06):达线不自动锁收益,削掉这句会退回语义分叉");
+  assert.match(component, /不会因等待时间到期自动放行/, "落地规则丢了「审核中不随时间自动放行」关键口径(SPEC-7 的灵魂句,削文案不许静默)");
+  assert.match(component, /只提出建议，不会自动冻结账户/, "冻结线语义已拍板为「建议」(2026-08-06):达线不自动锁收益,削掉这句会退回语义分叉");
   const modal = grabBetween(component, "releaseDraft && (() => {", "whitelistDraft && (() => {");
   assert.match(modal, /<select/, "枚举/开关参数必须下拉可选");
   assert.doesNotMatch(modal, /type="text"/, "释放参数弹窗禁自由文本输入(打错一个工程串就是静默配置事故)");
@@ -89,7 +89,7 @@ test("③ 组件:卡片 + fail-closed + 运营可读标签 + 可枚举值下拉�
 test("④ 簇详情收益影响:状态 → 收益桶结论 + 引用当前参数值", () => {
   assert.match(component, /data-proof="k1-cluster-earning-impact"/, "收益影响提示条被删,运营看不到簇状态与收益桶的对应关系");
   const impact = grabBetween(component, "const CLUSTER_EARNING_IMPACT", "export function K1HeaderActions");
-  for (const label of ["正常槽内可提", "审核中", "锁定奖励", "恢复正常", "正常释放"]) {
+  for (const label of ["正常名额内可提现", "审核中", "锁定奖励", "恢复正常", "正常释放"]) {
     assert.match(impact, new RegExp(label), `收益影响缺「${label}」档结论`);
   }
   assert.match(component, /freePhoneSlotsPerCluster/, "收益影响没有引用当前释放参数(展示与参数脱钩会误导处置)");

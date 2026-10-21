@@ -37,7 +37,7 @@ async function loginBypass(page: Page) {
 }
 
 async function createSuper(page: Page, username: string) {
-  await nav(page, "运营账号 & RBAC A1", /\/platform\/rbac$/);
+  await nav(page, "运营账号与权限 A1", /\/platform\/rbac$/);
   await page.locator("select.pager-size").selectOption("50");
   const existing = page.locator("tbody tr").filter({ hasText: username }).first();
   expect(await existing.count(), `${username} must not pre-exist in this isolated Final9 bootstrap`).toBe(0);

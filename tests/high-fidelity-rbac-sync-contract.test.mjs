@@ -15,7 +15,7 @@ test("D6 menu and all synchronized write permissions are durable RBAC data", () 
   const klmPermissions = readBackend("scripts/rbac-classic-seed/KLM.sql");
 
   for (const source of [migration, menuSeed]) {
-    assert.match(source, /'D6'[\s\S]*'汇率牌价'[\s\S]*'\/finance\/fx-rate'/);
+    assert.match(source, /'D6'[\s\S]*'汇率设置'[\s\S]*'\/finance\/fx-rate'/);
   }
 
   for (const permission of [

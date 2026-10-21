@@ -1,5 +1,5 @@
 /**
- * C1 用户检索 & 画像 — 渲染设计稿 C 域内容视图(C1),与 C 域其余子页统一布局。
+ * C1 用户查找用户与查看资料 — 渲染设计稿 C 域内容视图(C1),与 C 域其余子页统一布局。
  * 深度用户档案仍可经 /users/search/[id] 深链访问。
  */
 import { DomainViewSwitch } from "@/app/components/domain-views/registry";

@@ -237,7 +237,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
             <span className="ttl">任务列表</span>
             <span className="tcount">共 {tasks.length} 个{filterKind !== "all" ? ` · 筛选 ${filtered.length}` : ""}</span>
             <span className="sub">前端 /earn 任务池映射</span>
-            <span className="r"><CodeTag tone="electric">任务引擎</CodeTag><CodeTag>E.task.*</CodeTag></span>
+            <span className="r"><CodeTag tone="electric">用户任务管理</CodeTag><CodeTag>E.task.*</CodeTag></span>
           </div>
           <div className="filter-bar">
             <span className={`fchip${filterKind === "all" ? " on" : ""}`} onClick={() => { setFilterKind("all"); setPage(1); }}>全部 {tasks.length}</span>

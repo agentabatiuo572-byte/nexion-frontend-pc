@@ -419,7 +419,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const [model, setModel] = useState<H3Model | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const moduleLabel = section === "events" ? "H4 活动中心" : "H3 任务引擎";
+  const moduleLabel = section === "events" ? "H4 活动中心" : "H3 用户任务管理";
 
   const reload = async () => {
     setLoading(true);
@@ -734,7 +734,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     openConfirm({
       action: `${targetStatus === "active" ? "启用" : "停用"}任务 · ${label}`,
       detail: <>仅允许 active 与 paused 双向切换;归档任务不可恢复。后端按当前状态做 CAS 校验。</>,
-      chips: [["状态机校验", "ready"], ["审计留痕", "done"]],
+      chips: [["处理流程校验", "ready"], ["审计留痕", "done"]],
       reason: true,
       okLabel: targetStatus === "active" ? "确认启用" : "确认停用",
       run: async (reason) => {
@@ -1446,7 +1446,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               ))}
             </div>
             <div className="htint" style={{ marginTop: 10, fontSize: 12 }}>
-              <b>状态机</b> · active(实例冻结的全部任务完成后按快照奖励领取)→ grace(按快照窗口与奖励降档)→ expired(0,首页让位)。
+              <b>处理流程</b> · active(实例冻结的全部任务完成后按快照奖励领取)→ grace(按快照窗口与奖励降档)→ expired(0,首页让位)。
             </div>
           </div>
         </section>

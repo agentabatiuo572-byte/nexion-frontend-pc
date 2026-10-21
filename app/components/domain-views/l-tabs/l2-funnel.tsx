@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * L2 · 漏斗 / Cohort / 留存 — 五级漏斗逐级下钻 + cohort 留存热力矩阵 + 多维交叉。
+ * L2 · 漏斗 / Cohort / 留存 — 五级漏斗逐级查看明细 + cohort 留存热力矩阵 + 多维交叉。
  * 漏斗各级 users/cvr/色 join 自 FUNNEL(与 B3 驾驶舱同口径单一源);复投级挂「V1 降级口径」badge。
- * 全页只读下钻;导出为聚合序列(仍需操作确认 落审计)。
+ * 全页只读查看明细;导出为聚合序列(仍需操作确认 落审计)。
  */
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -161,10 +161,10 @@ export function L2HeaderActions({ ctx }: { ctx: LCtx }) {
   const exportable = (complete && ctx.l2SliceExportable !== false) || liveStages.length > 0;
   const exportFunnel = async () => {
     const ok = await confirm({
-      title: complete ? "导出 cohort / 漏斗序列 CSV" : "导出生命周期计数 CSV",
+      title: complete ? "导出用户转化与留存数据" : "导出用户各阶段人数",
       message: complete
-        ? "内容:漏斗各级去重人数 + 转化率 + 各 cohort 留存率序列(按当前切片与留存窗)。全部是聚合计数,不含手机号、地址等明文。仍需操作确认，并生成可追溯记录。"
-        : "完整同期群与逐级漏斗尚未开放。本次只导出页面已展示的生命周期独立事实计数，不包含转化率或留存推算值；不含手机号、地址等明文，并生成可追溯记录。",
+        ? "导出各步骤人数、转化率，以及按注册时间分组的留存率。仅包含汇总数据，不含手机号、地址等个人信息；操作会留记录。"
+        : "详细转化与留存数据暂不可用。本次只导出页面已显示的各阶段人数，不计算转化率或留存率；不含手机号、地址等个人信息。",
       confirmLabel: "导出",
     });
     if (!ok) return;
@@ -183,17 +183,17 @@ export function L2HeaderActions({ ctx }: { ctx: LCtx }) {
         ref: complete ? ctx.l2Query?.ref : undefined,
       }, complete ? "导出漏斗 cohort 聚合序列用于转化分析" : "导出 L2 当前生命周期事实用于数据核对");
       await ctx.reloadBi?.();
-      ctx.toast(complete ? "漏斗 cohort 导出任务已提交" : "生命周期计数任务已提交 · 仅包含页面已展示的累计事实");
+      ctx.toast(complete ? "用户转化与留存数据导出任务已提交" : "用户各阶段人数导出任务已提交");
     } catch (error) {
       ctx.toast(error instanceof Error ? `导出任务提交失败 · ${displayAdminError(error)}` : "导出任务提交失败 · 请稍后重试");
     }
   };
   return (
     <>
-      <span className="f-ro"><span className="d" />只读下钻 · 漏斗怎么定义这里改不了</span>
+      <span className="f-ro"><span className="d" />这里可以查看转化详情，不能修改计算方式</span>
       {!ctx.canExport && <span className="f-ro">当前角色仅可查看 · 导出需报表管理权限</span>}
       <button className="f-cta" onClick={exportFunnel} disabled={!ctx.canExport || !exportable || ctx.biLoading} title={!ctx.canExport ? "当前角色没有报表导出权限" : !exportable ? "尚未返回可导出的 L2 数据" : undefined}>
-        {complete ? "导出 cohort / 漏斗序列" : "导出生命周期计数 CSV"}
+        {complete ? "导出用户转化与留存数据" : "导出用户各阶段人数"}
       </button>
     </>
   );
@@ -274,7 +274,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
         locale: draftLocale.trim(),
         ref: draftRef.trim(),
       }));
-      ctx.toast("当前切片、cohort 粒度与留存窗已保存 · 不改统计口径");
+      ctx.toast("当前筛选条件、注册时间分组和留存时间已保存；统计方式未改变");
     } catch {
       ctx.toast("视图保存失败 · 浏览器存储不可用，请稍后重试");
     }
@@ -285,7 +285,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
     const locale = draftLocale.trim();
     const ref = draftRef.trim();
     if (cohort && !/^\d{4}-(?:W(?:0[1-9]|[1-4]\d|5[0-3])|(?:0[1-9]|1[0-2]))$/.test(cohort)) {
-      setQueryError("cohort 格式无效：请使用 YYYY-Www 或 YYYY-MM");
+      setQueryError("注册时间格式无效：请填写年份和周数（YYYY-Www）或年月（YYYY-MM）");
       ctx.setL2SliceExportable?.(false);
       return;
     }
@@ -312,7 +312,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
       if (response.available === false) {
         setQueryData(response);
         ctx.setL2Query?.({ cohort, phase: draftPhase, locale, ref });
-        setQueryError(str(response.message, "当前切片没有可计算的注册 cohort"));
+        setQueryError(str(response.message, "当前筛选条件下没有可计算的注册用户分组"));
         return;
       }
       if (!isStrictL2Dashboard(response)) {
@@ -321,7 +321,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
       setQueryData(response);
       ctx.setL2Query?.({ cohort, phase: draftPhase, locale, ref });
       ctx.setL2SliceExportable?.(true);
-      ctx.toast(stage ? "已按当前切片完成真实漏斗下钻" : "切片已从服务端重新计算");
+      ctx.toast(stage ? "已按当前切片完成真实漏斗查看明细" : "切片已从服务端重新计算");
     } catch (error) {
       if (generation === queryGeneration.current) setQueryError(error instanceof Error ? displayAdminError(error) : "L2 查询失败");
     } finally {
@@ -362,7 +362,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
   if (!detailedAttempt && liveStages.length) return <L2LiveStages stages={liveStages} />;
   if (detailedAttempt && !strictDetailed) return (
     <section className="l-card"><div className="l-b"><div className="ltint warn" role="alert">
-      <b>L2 响应协议错误</b> · 漏斗、cohort 或交叉矩阵不完整/越界，已 fail-closed；不展示部分数字，也不允许导出。
+      <b>统计数据暂不可用</b> · 用户转化、分组留存或对比数据不完整；当前不会展示不可靠的数字，也不能导出。
     </div></div></section>
   );
   if (!FUNNEL.length || !FUNNEL_EXT.length || !COHORTS.length) return <LDataState ctx={ctx} label="L2" />;
@@ -490,24 +490,24 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
     <div>
       {/* stat strip */}
       <div className="f-stats">
-        <div className="f-stat cyan"><div className="k">本{cohortKind}注册 cohort</div><div className="v">{COHORTS[COHORTS.length - 1].w}</div><div className="sub">{COHORTS[COHORTS.length - 1].size.toLocaleString("en-US")} 新注册 · 按注册{cohortKind}分组</div></div>
-        <div className="f-stat"><div className="k">全漏斗转化(注册→提现)</div><div className="v">{fullCvr}%</div><div className="sub">注册 cohort 中最终发起提现的比例</div></div>
-        <div className="f-stat warn"><div className="k">最近成熟 cohort · Day7 留存</div><div className="v">{day7.value == null ? "—" : `${day7.value}%`}</div><div className="sub">目标 &gt; {day7.target ?? 60}% · 未成熟窗口不推算</div></div>
-        <div className="f-stat ok"><div className="k">trial→购买率</div><div className="v">{trialBuy == null ? "—" : `${trialBuy}%`}</div><div className="sub">L3→L4 子路径 · 并列独立计量</div></div>
+        <div className="f-stat cyan"><div className="k">本{cohortKind}注册用户</div><div className="v">{COHORTS[COHORTS.length - 1].w}</div><div className="sub">{COHORTS[COHORTS.length - 1].size.toLocaleString("en-US")} 人新注册 · 按注册{cohortKind}分组</div></div>
+        <div className="f-stat"><div className="k">注册到提现的转化率</div><div className="v">{fullCvr}%</div><div className="sub">同批注册用户中最终发起提现的比例</div></div>
+        <div className="f-stat warn"><div className="k">最近可统计的一批用户 · 第 7 天留存</div><div className="v">{day7.value == null ? "—" : `${day7.value}%`}</div><div className="sub">目标 &gt; {day7.target ?? 60}% · 注册未满 7 天的不推算</div></div>
+        <div className="f-stat ok"><div className="k">试用后购买比例</div><div className="v">{trialBuy == null ? "—" : `${trialBuy}%`}</div><div className="sub">单独统计试用到购买的转化</div></div>
       </div>
 
       {/* view slice bar */}
       <div className="view-bar">
-        <div className="chips" aria-label="服务端切片条件"><span className="lb">服务端切片</span>
-          <input aria-label="cohort 条件" value={draftCohort} placeholder="YYYY-Www / YYYY-MM" onChange={(event) => setDraftCohort(event.target.value)} style={{ width: 150 }} />
-          <select aria-label="Phase 条件" value={draftPhase} onChange={(event) => setDraftPhase(event.target.value as L2FunnelQuery["phase"])}>
-            <option value="">全部 Phase</option>
+        <div className="chips" aria-label="筛选条件"><span className="lb">筛选数据</span>
+          <input aria-label="注册时间分组条件" value={draftCohort} placeholder="YYYY-Www / YYYY-MM" onChange={(event) => setDraftCohort(event.target.value)} style={{ width: 150 }} />
+          <select aria-label="运营阶段" value={draftPhase} onChange={(event) => setDraftPhase(event.target.value as L2FunnelQuery["phase"])}>
+            <option value="">全部阶段</option>
             {["P1", "P2", "P3", "P4", "P5", "P6"].map((phase) => <option key={phase} value={phase}>{phase}</option>)}
           </select>
-          <input aria-label="locale 条件" value={draftLocale} placeholder="locale，如 vi" onChange={(event) => setDraftLocale(event.target.value)} style={{ width: 110 }} />
-          <input aria-label="渠道 ref 条件" value={draftRef} placeholder="渠道 ref" onChange={(event) => setDraftRef(event.target.value)} style={{ width: 130 }} />
+          <input aria-label="语言地区" value={draftLocale} placeholder="语言地区，如 vi" onChange={(event) => setDraftLocale(event.target.value)} style={{ width: 110 }} />
+          <input aria-label="推广渠道" value={draftRef} placeholder="推广渠道" onChange={(event) => setDraftRef(event.target.value)} style={{ width: 130 }} />
           <button className="l-btn sm" disabled={queryLoading} onClick={() => void applySlice()}>
-            {queryLoading ? "查询中…" : "应用切片"}
+            {queryLoading ? "查询中…" : "查看筛选结果"}
           </button>
           <button className="l-btn sm" disabled={queryLoading} onClick={() => {
             cancelQuery();
@@ -525,20 +525,20 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
         <div className="sep" />
         <TabGroup
           className="chips"
-          label="cohort 粒度"
+          label="按注册周或月分组"
           labelClassName="lb"
           value={gran}
           items={[0, 1] as const}
-          onSelect={(i) => { cancelQuery(); setGran(i); ctx.toast(`切片已切换:${i === 0 ? "注册周 YYYY-Www" : "注册月"} · 仅视图,实时生效`); }}
+          onSelect={(i) => { cancelQuery(); setGran(i); ctx.toast(`已切换为按${i === 0 ? "注册周" : "注册月"}查看`); }}
           itemClassName={(_i, selected) => `chip${selected ? " sel" : ""}`}
         >{(i) => (i === 0 ? "注册周 YYYY-Www" : "注册月")}</TabGroup>
         <div className="sep" />
-        <div className="chips"><span className="lb">留存窗</span>
+        <div className="chips"><span className="lb">查看注册后第几天</span>
           {["Day1", "Day7", "Day14", "Day30", "Day60"].map((w) => (
             <button key={w} disabled={queryLoading} className={"chip" + (wins.includes(w) ? " sel" : "")} aria-pressed={wins.includes(w)} onClick={() => {
               const nextWins = wins.includes(w) ? wins.filter((x) => x !== w) : [...wins, w];
               if (!nextWins.length) {
-                ctx.toast("至少保留一个留存窗");
+                ctx.toast("请至少选择一天查看留存情况");
                 return;
               }
               void loadRetentionWindows(nextWins);
@@ -548,17 +548,17 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
         <button className="l-btn sm" style={{ marginLeft: "auto" }} onClick={saveView}>保存为视图</button>
       </div>
 
-      {/* (a) 完整漏斗下钻 */}
+      {/* (a) 完整漏斗查看明细 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">完整漏斗下钻 · 四级</span>
+          <span className="ttl">查看四步转化详情</span>
           <span className="sub">· <AutoGloss>点击任意一级展开「流入 / 转化 / 流失去向 / 停留时长」 · L1–L5 编号是内部生命周期标注,不对用户展示</AutoGloss></span>
           <div className="r"><span className="lcode lock" title="漏斗口径由服务端统一维护">🔒 漏斗定义锁定</span><span className="lcode electric">和驾驶舱漏斗是同一份数字</span></div>
         </div>
         <div className="l-b">
           <TabGroup
             className="fn-wrap"
-            label="漏斗阶段下钻"
+            label="转化步骤筛选"
             value={safeStage}
             items={FUNNEL.map((_f, i) => i)}
             disabled={() => queryLoading}
@@ -621,7 +621,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
       {/* (b) cohort 留存矩阵 + 曲线 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">Cohort 留存矩阵</span>
+          <span className="ttl">按注册时间查看留存</span>
           <span className="sub">· <AutoGloss>注册{cohortKind}分组 × 留存窗 · 每格 = 该批用户到那天还有多少在用 app · 点格子换右侧曲线</AutoGloss></span>
           <div className="r"><div className="ret-legend">
             <span>低</span>
@@ -632,7 +632,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
         <div className="ret-grid">
           <div>
             <table className="l-tbl ret-tbl">
-              <thead><tr><th>注册 cohort</th><th className="num">规模</th>{retentionColumns.map(({ day }) => <th key={day} style={{ textAlign: "center" }}>Day{day}</th>)}<th style={{ textAlign: "center" }}>对比</th></tr></thead>
+              <thead><tr><th>同批注册用户</th><th className="num">人数</th>{retentionColumns.map(({ day }) => <th key={day} style={{ textAlign: "center" }}>第 {day} 天</th>)}<th style={{ textAlign: "center" }}>对比</th></tr></thead>
               <tbody>
                 {COHORTS.map((c, i) => (
                   <tr key={c.w}>
@@ -646,11 +646,11 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
                 ))}
               </tbody>
             </table>
-            <div className="ltint" style={{ marginTop: 12, fontSize: 12 }}><b>读法</b> · <AutoGloss>横向看单个 cohort 的衰减;纵向比较产品迭代 / Phase 切换对同一留存窗的影响。没有成熟数据的窗口显示“—”,不据此生成归因结论。</AutoGloss></div>
+            <div className="ltint" style={{ marginTop: 12, fontSize: 12 }}><b>怎么看</b> · <AutoGloss>横向查看同一批注册用户在各天的活跃比例；纵向比较不同注册时间的用户。注册时间不足时显示“—”。</AutoGloss></div>
           </div>
           <div>
             <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 4 }}>留存衰减曲线 · {COHORTS[safeCohort].w}</div>
-            <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginBottom: 10 }}>该 cohort 留存率随天数衰减 · 虚线为对比 cohort</div>
+            <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginBottom: 10 }}>这批用户每天仍在使用的比例 · 虚线表示用于对比的另一批用户</div>
             {curveChart()}
             <TabGroup
               className="chips"
@@ -670,7 +670,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">多维交叉分析</span>
-          <span className="sub">· <AutoGloss>phase × locale × 渠道任意交叉 · 定位「P3 某渠道首购转化骤降」类信号</AutoGloss></span>
+          <span className="sub">· <AutoGloss>按运营阶段、语言地区和推广渠道比较，找出转化率下降的位置</AutoGloss></span>
           <div className="r"><TabGroup<"cvr" | "ret" | "trial">
             className="chips"
             label="指标"
@@ -680,12 +680,12 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
             disabled={() => queryLoading}
             onSelect={(v) => void loadCrossMetric(v)}
             itemClassName={(_v, selected) => `chip${selected ? " sel" : ""}`}
-          >{(v) => ({ cvr: "首购 CVR(L3→L4)", ret: "Day7 留存", trial: "trial→购买率" })[v]}</TabGroup></div>
+          >{(v) => ({ cvr: "首次购买转化率", ret: "第 7 天仍活跃比例", trial: "试用后购买比例" })[v]}</TabGroup></div>
         </div>
         <div className="l-b">
           <div style={{ overflowX: "auto" }}>
             <table className="l-tbl xd-tbl" style={{ minWidth: 760 }}>
-              <thead><tr><th>渠道 ref · Phase \ locale</th>{xd.columns.map((column) => <th key={column} style={{ textAlign: "center" }}>{column}</th>)}<th style={{ textAlign: "center" }}>行均值</th></tr></thead>
+              <thead><tr><th>渠道 · 运营阶段 · 语言地区</th>{xd.columns.map((column) => <th key={column} style={{ textAlign: "center" }}>{column}</th>)}<th style={{ textAlign: "center" }}>平均值</th></tr></thead>
               <tbody>
                 {xd.rows.map((r, ri) => (
                   <tr key={String(r[0])}>
@@ -708,7 +708,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
         </div>
       </section>
 
-      <p className="f-foot"><b>L2 没有任何「写数据」动作</b>:<AutoGloss>漏斗与留存怎么算由统一统计规则治理,这里只做下钻查询、视图配置与聚合导出。</AutoGloss><b>关于复投这一级</b>:<AutoGloss>优先采用 wallet.reinvest,并兼容首购后的第二笔 checkout.completed 降级口径。导出只含聚合计数,</AutoGloss><b>不含手机号、地址等明文</b>,<AutoGloss>每次导出都会生成可追溯记录。</AutoGloss></p>
+      <p className="f-foot"><b>L2 没有任何「写数据」动作</b>:<AutoGloss>漏斗与留存怎么算由统一统计规则治理,这里只做明细查询、视图配置与聚合导出。</AutoGloss><b>关于复投这一级</b>:<AutoGloss>优先采用 wallet.reinvest,并兼容首购后的第二笔 checkout.completed 降级口径。导出只含聚合计数,</AutoGloss><b>不含手机号、地址等明文</b>,<AutoGloss>每次导出都会生成可追溯记录。</AutoGloss></p>
       <PaginationExemptionList
         items={[
           {

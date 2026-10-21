@@ -30,7 +30,7 @@ const MODULES: ModuleProbe[] = [
   {
     id: "K1",
     path: "/risk/multi-account",
-    marker: /三层去重命中列表/,
+    marker: /可能属于同一人的账户/,
     readPath: "/api/admin/risk/multi-account/overview",
     writePath: "/api/admin/risk/multi-account/params/sharedIpAccounts",
     writeMethod: "PATCH",

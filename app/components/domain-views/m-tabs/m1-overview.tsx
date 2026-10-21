@@ -2,7 +2,7 @@
 
 /**
  * M1 客服中心总览 — 指标只读、坐席与负载授权维护(helpdesk 设计稿布局),零新 mock。
- * 数字单源派生自 pget(I.support.* / I.session.*),与 M2/M3/M4 写的真写键同源。
+ * 数字统一来源派生自 pget(I.support.* / I.session.*),与 M2/M3/M4 写的真写键同源。
  * 4 KPI(可点进台)+ 分类 SLA 达成与超时风险 + 坐席负载;调整负载 = 高敏配置(必填理由 → setParam + logAudit)。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -240,7 +240,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
         )}
         <Link href="/service/tickets" className="btn btn-sec btn-sm">
           <Icon name="doc" size={16} />
-          进工单台
+          进客服工单
         </Link>
         <Link href="/service/sessions" className="btn btn-pri btn-sm">
           <Icon name="users" size={16} />
@@ -355,7 +355,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
             {unassignedLoadCount > 0 && (
               <div className="itint" style={{ marginTop: 10 }}>
                 <div style={{ fontSize: 13 }}>待归属或名册外工作 {unassignedLoadCount} 项</div>
-                <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>这些在途工单或会话不会计入具体坐席利用率;请到工单台或会话台分配负责人。</div>
+                <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>这些在途工单或会话不会计入具体坐席利用率;请到客服工单或会话台分配负责人。</div>
               </div>
             )}
             {!supportAgentsAvailable ? (
@@ -418,7 +418,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
       </div>
 
       <p className="dim2" style={{ fontSize: 12, lineHeight: 1.6, margin: 0 }}>
-        <b style={{ color: "var(--ink-3)", fontWeight: 500 }}>使用说明</b>:概况数字和 SLA 进度仅用于查看;进入工单台或会话台处理用户问题。只有总管理员或客服主管能调整坐席与负载策略,所有调整都会记录操作人和理由。
+        <b style={{ color: "var(--ink-3)", fontWeight: 500 }}>使用说明</b>:概况数字和 SLA 进度仅用于查看;进入客服工单或会话台处理用户问题。只有总管理员或客服主管能调整坐席与负载策略,所有调整都会记录操作人和理由。
       </p>
 
       {showLoad && loadCfg && <LoadConfigModal ctx={ctx} loadCfg={loadCfg} rows={loadRows} onClose={() => setShowLoad(false)} />}

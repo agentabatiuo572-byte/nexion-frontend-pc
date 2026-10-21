@@ -321,7 +321,7 @@ test("G4 墨菲探针覆盖认证、幂等冲突、非法输入、H1 关阀与 A
     "utf8",
   );
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByText("G4 Genesis 经济", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText("G4 创世节点销售与收益", { exact: false }).first()).toBeVisible();
   await page.screenshot({ path: path.join(EVIDENCE_DIR, "03-murphy-restored.png"), fullPage: true });
 });
 
@@ -352,7 +352,7 @@ async function openG4FromSidebar(page: Page) {
     entry.click(),
   ]);
   await expect(page).toHaveURL(/\/finance-products\/genesis$/);
-  await expect(page.getByText("G4 Genesis 经济", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText("G4 创世节点销售与收益", { exact: false }).first()).toBeVisible();
 }
 
 async function readOverview(page: Page) {

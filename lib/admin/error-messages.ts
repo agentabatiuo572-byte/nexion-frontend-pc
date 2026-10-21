@@ -225,7 +225,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   VIETQR_MATCH_TARGET_REQUIRED: "人工匹配必须选择真实用户和付款意向单，本次未入账；请补齐后重试。",
   VIETQR_WRITE_OFF_NOT_ALLOWED: "当前回单不是可按实收核销的差额单，本次未入账；请刷新查看最新分类。",
   VIETQR_RETURN_NOT_ALLOWED: "当前回单状态不允许登记退回，本次未执行；请刷新查看最新分类。",
-  VIETQR_ORPHAN_RETURN_TARGET_NOT_ALLOWED: "孤儿回单登记退回时不得指定用户或付款意向单；本次未改动任何付款单，请清空目标后重试。",
+  VIETQR_ORPHAN_RETURN_TARGET_NOT_ALLOWED: "退回未匹配付款单的银行回单时，不能指定用户或付款单；本次未改动任何付款单，请清空目标后重试。",
   VIETQR_TARGET_WALLET_NOT_FOUND: "未找到目标用户的 USDT 钱包，本次未入账；请核对用户后再处理。",
   VIETQR_TARGET_WALLET_VERSION_CONFLICT: "目标钱包余额刚刚发生变化，本次未入账；请刷新回单和钱包后重试。",
   VIETQR_INTENT_NOT_FOUND: "未找到该付款意向单，或单号不属于可匹配的真实服务端记录；本次未入账。",

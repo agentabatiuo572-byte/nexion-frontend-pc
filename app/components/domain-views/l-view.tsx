@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * L 数据与分析 BI — design_handoff_l_domain 设计稿 port(2026-06-10 重构)。
- * 5 子页:L1 KPI 看板 / L2 漏斗·Cohort·留存 / L3 财务报表 / L4 设备·任务·网络报表 / L5 导出 & 监管报告。
+ * L 数据与分析 — design_handoff_l_domain 设计稿 port(2026-06-10 重构)。
+ * 5 子页:L1 关键指标 / L2 漏斗·Cohort·留存 / L3 财务报表 / L4 设备·任务·网络报表 / L5 数据导出与监管报告。
  * 读侧无写权威:口径全部单一源派生(KPIS/FUNNEL/REVENUE/LEDGER/LIABILITIES/MATURITY/PHASES/F5);
  * 写动作仅导出/监管报告/排程模板类,真写统一走 L 后端接口并由后端审计留痕;
  * 聚合导出仍需操作确认(confirm + 审计);视图参数普通确认批(ViewParamModal,会话级)。操作确认 显式 edit 契约同全域。

@@ -3,7 +3,7 @@
 /**
  * L6 · 用户行为热力图 — 前端操作按页面/层级聚合的热力矩阵 + 单页点击坐标热力。
  * 形态:① 页面活跃热力矩阵(行=页面[按所选层级上卷],列=PV/UV·点击·停留·跳出,格色=强度);
- *      ② 点行下钻到单页 SVG 手机框坐标热力(看该页内用户点哪)。
+ *      ② 点行查看明细到单页 SVG 手机框坐标热力(看该页内用户点哪)。
  * 粒度可设:全部 / 一级 / 二级 / 三级(按 UX 层级上卷,即「统计到哪个层级的页面」)。
  * 只读报表域:无任何写业务规则动作;唯一写动作=聚合导出(confirm + BI export task)。
  */
@@ -190,7 +190,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
   const maxClicks = Math.max(1, ...rows.map((r) => r.clicks));
   const maxDwell = Math.max(1, ...rows.map((r) => r.dwellMs));
 
-  // 下钻:默认选最热行,可点切换
+  // 查看明细:默认选最热行,可点切换
   const activeKey = sel ?? rows[0]?.key ?? null;
   const activeRow = rows.find((r) => r.key === activeKey) ?? null;
   useEffect(() => {
@@ -292,7 +292,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
 
   const selectRow = (key: string) => {
     setSel(key);
-    // 让下钻卡进入视野(已在视野则不滚动)
+    // 让查看明细卡进入视野(已在视野则不滚动)
     requestAnimationFrame(() => document.getElementById("l6-drill")?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
   };
 
@@ -499,7 +499,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
         </div>
       </section>
 
-      {/* (b) 单页点击坐标热力(下钻) */}
+      {/* (b) 单页点击坐标热力(查看明细) */}
       {heat && activeRow && (
         <section className="l-card" id="l6-drill">
           <div className="l-h">

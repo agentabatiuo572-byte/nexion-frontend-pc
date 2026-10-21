@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * I3 通知 Campaign — design_handoff_i_domain/I3 通知Campaign.html port。
- * 单源:后端 /content/campaigns/overview;空库时以后端初始化结果为准。
+ * I3 通知活动 — design_handoff_i_domain/I3 通知Campaign.html port。
+ * 统一来源:后端 /content/campaigns/overview;空库时以后端初始化结果为准。
  * 操作确认 显式 edit 契约:CAP 调整(传 edit text)= 调参;调度下发 / 取消 = 纯处置(不传 edit)。
  * critical 档锁定 = 不渲染调整按钮(渲染 icode lock)。
  * amplifies = false(I3 通知体系不动钱,不碰 B1 红线)。
@@ -487,7 +487,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
           <span className="ttl">优先级容量闸(c)</span>
           <span className="sub">· 4 档保留策略 · CAP_CRITICAL 锁定 ∞</span>
           <div className="r">
-            <span className="icode danger">CAP 单源 = SPEC §6 权威</span>
+            <span className="icode danger">发送上限以服务器配置为准</span>
           </div>
         </div>
         <div className="l-b" style={{ paddingTop: 4 }}>
@@ -558,14 +558,14 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="itint">
-            下发、取消、送达、已读和左滑动作均由服务器记录，供触达健康度与转化漏斗使用。
+            下发、取消、送达、已读和左滑动作均由服务器记录，供触达健康度与用户转化分析使用。
           </div>
         </div>
       </section>
 
       {/* ===== f-foot ===== */}
       <p className="f-foot">
-        <b>执行门槛</b>:草稿随便建(留审计);调度下发 / 取消 = 内容提交(风控合规类可由风控提交),内容主管/超管执行;容量闸调整 = 内容或风控执行门槛:主管。<b>事件去向</b>:送达 / 已读 / 滑动动作三类事件喂触达健康度看板和数据 BI(L 域:触达→已读→转化漏斗、各档送达率);有转化路径的滑动(佣金→复投)喂实时漏斗(B3)。<b>I4 重新确认与 J 域监管应急</b>共用紧急级通道,执行门槛升至合规/超管。下发带防重号,重复点不会发两遍。
+        <b>执行门槛</b>:草稿随便建(留审计);调度下发 / 取消 = 内容提交(风控合规类可由风控提交),内容主管/超管执行;容量闸调整 = 内容或风控执行门槛:主管。<b>事件去向</b>:送达 / 已读 / 滑动动作三类事件喂触达健康度看板和数据 BI(L 域:触达→已读→用户转化分析、各档送达率);有转化路径的滑动(佣金→复投)喂实时漏斗(B3)。<b>I4 重新确认与 J 域监管应急</b>共用紧急级通道,执行门槛升至合规/超管。下发带防重号,重复点不会发两遍。
       </p>
       <PaginationExemptionList
         items={[
@@ -897,7 +897,7 @@ function DetailBody({ c, liveStRender, budget }: { c: CampaignRow; liveStRender:
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.6 }}>
-        <b style={{ color: "var(--ink-2)" }}>通知 server 单源 · App 端只是显示窗口</b>
+        <b style={{ color: "var(--ink-2)" }}>通知内容以服务器为准，App 负责展示</b>
         <div style={{ marginTop: 4, color: "var(--ink-4)" }}>
           下发由服务器写入用户通知流,App 端只拉取显示;已读 / 删除 / 滑动动作也都按服务器记账,client 改不了。
         </div>

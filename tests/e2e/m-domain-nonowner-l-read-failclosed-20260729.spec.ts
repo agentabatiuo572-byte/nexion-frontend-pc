@@ -43,7 +43,7 @@ const EXACT_M_MENU_CODES = ["A2", "M1", "M2", "M3", "M4", "M5"];
 
 const MODULES = [
   { id: "M1", href: "/service/overview", ready: "SLA 监控" },
-  { id: "M2", href: "/service/tickets", ready: "工单台" },
+  { id: "M2", href: "/service/tickets", ready: "客服工单" },
   { id: "M3", href: "/service/sessions", ready: "会话收件箱" },
   { id: "M4", href: "/service/kb-sla", ready: "Help/FAQ 内容管理" },
   { id: "M5", href: "/service/scripts", ready: "客服岗位与专属客服" },
@@ -165,7 +165,7 @@ test("M1-M5 对 401/403/404/409/422/500、超时、畸形 200 与读取结果未
         await expect(page.getByText(/工单数据暂时无法同步/)).toBeVisible();
         await expect(page.locator('[data-proof="support-ticket-create"]')).toHaveCount(0);
       },
-      recoveredText: "工单台",
+      recoveredText: "客服工单",
       label: `M2-${status}`,
     });
   }

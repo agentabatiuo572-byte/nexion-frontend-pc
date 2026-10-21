@@ -136,7 +136,7 @@ export function K6Dashboard() {
     </div>
 
     <div className="k6-panel">
-      <div className="k6-sec-head"><div><div className="k6-kicker">转化漏斗</div><h3>服务端命中漏斗</h3></div>{operator.role !== "viewer" && <div style={{ display: "flex", gap: 8 }}><button className="k6-pgbtn" disabled={!!exporting} onClick={() => void exportReport("funnel", "csv")}>导出 CSV</button><button className="k6-pgbtn" disabled={!!exporting} onClick={() => void exportReport("funnel", "json")}>导出 JSON</button></div>}</div>
+      <div className="k6-sec-head"><div><div className="k6-kicker">用户转化分析</div><h3>服务端命中漏斗</h3></div>{operator.role !== "viewer" && <div style={{ display: "flex", gap: 8 }}><button className="k6-pgbtn" disabled={!!exporting} onClick={() => void exportReport("funnel", "csv")}>导出 CSV</button><button className="k6-pgbtn" disabled={!!exporting} onClick={() => void exportReport("funnel", "json")}>导出 JSON</button></div>}</div>
       <div className="k6-body"><div className="k6-funnel">{funnel.map((row) => <div className="k6-funnel-row" key={row.label}><span className="fl">{row.label}</span><span className="ft" style={{ width: `${Math.max(8, row.rate)}%` }}>{row.count}</span><span className="fp">{row.rate}%</span></div>)}</div></div>
     </div>
 

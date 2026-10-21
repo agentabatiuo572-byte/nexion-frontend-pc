@@ -2,7 +2,7 @@
 
 /**
  * 面包屑 — usePathname() → nav 查表 → 「UVEL 运营控制台 / 域 / L2」。
- * 根路径 / 显示「总览驾驶舱」。未匹配路径回退展示原始 segment。
+ * 根路径 / 显示「运营总览」。未匹配路径回退展示原始 segment。
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -14,7 +14,7 @@ export function Breadcrumb() {
   const crumbs: { label: string; accent?: string }[] = [{ label: "UVEL 运营控制台" }];
 
   if (pathname === "/" || pathname === "") {
-    crumbs.push({ label: "总览驾驶舱" });
+    crumbs.push({ label: "运营总览" });
   } else if (/^\/service\/customers\/[1-9]\d*\/?$/.test(pathname)) {
     const parent = findByPath("/service/overview");
     if (parent) crumbs.push({ label: `${parent.domain.code} ${parent.domain.name}`, accent: `var(${parent.domain.accentVar})` });

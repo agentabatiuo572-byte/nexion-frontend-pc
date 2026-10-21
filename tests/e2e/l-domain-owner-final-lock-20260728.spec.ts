@@ -12,7 +12,7 @@ const fixturePath = process.env.L_PERMISSION_FIXTURE_PATH;
 if (!fixturePath) throw new Error("L_PERMISSION_FIXTURE_PATH is required");
 const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as PermissionFixture;
 const MODULE_MARKERS: Record<string, RegExp> = {
-  L1: /KPI 看板/,
+  L1: /关键指标/,
   L2: /漏斗|留存/,
   L3: /财务报表/,
   L4: /历史运营报表/,

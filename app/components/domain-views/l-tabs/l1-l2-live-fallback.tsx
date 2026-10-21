@@ -46,7 +46,7 @@ export function L1LiveTotals({ metrics }: { metrics: L1LiveMetric[] }) {
       <section className="l-card">
         <div className="l-b">
           <div className="ltint warn" style={{ fontSize: 12 }}>
-            <b>八项核心 KPI 深度序列尚未开放</b> · 当前只提供已经核验的累计事实，尚无计算比率所需的分子、分母、同期群与周趋势。页面不会用累计值冒充 KPI 比率；统计序列准备完成后，才会启用目标线、红黄绿状态与单项下钻。
+            <b>八项核心 KPI 深度序列尚未开放</b> · 当前只提供已经核验的累计事实，尚无计算比率所需的分子、分母、同期群与周趋势。页面不会用累计值冒充 KPI 比率；统计序列准备完成后，才会启用目标线、红黄绿状态与单项查看明细。
           </div>
         </div>
       </section>
@@ -101,7 +101,7 @@ export function L2LiveStages({ stages }: { stages: L2LiveStage[] }) {
       <section className="l-card">
         <div className="l-b">
           <div className="ltint warn" style={{ fontSize: 12 }}>
-            <b>Cohort、留存与逐级转化暂不可计算</b> · 订单行数、账户数和钱包记录数不是同一去重用户集合，直接相除会产生伪转化率。当前也没有注册周同期群、次日/7 日/30 日活跃或阶段、地区、渠道切片；同一用户口径的统计完成后，才会启用留存矩阵与路径下钻。
+            <b>Cohort、留存与逐级转化暂不可计算</b> · 订单行数、账户数和钱包记录数不是同一去重用户集合，直接相除会产生伪转化率。当前也没有注册周同期群、次日/7 日/30 日活跃或阶段、地区、渠道切片；同一用户口径的统计完成后，才会启用留存矩阵与路径查看明细。
           </div>
         </div>
       </section>

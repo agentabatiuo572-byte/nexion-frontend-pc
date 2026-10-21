@@ -2,13 +2,13 @@
 
 /**
  * E 设备与商城 — 设计稿 design_handoff_e_domain 内容视图。
- * 全系统统一连续编号 E1-E5:E1 商品目录&上架门 / E2 收益&任务引擎 /
- * E3 生命周期&Trade-in / E4 订单状态机 / E5 设备运维。
+ * 全系统统一连续编号 E1-E5:E1 商品目录&上架门 / E2 收益&用户任务管理 /
+ * E3 生命周期&Trade-in / E4 订单进度 / E5 设备运行管理。
  * nav id == 视图 key == prdAnchor == PRD §10 章节(已全部重编号统一,FOLD 现为恒等映射)。
  *
  * 本 shell 持有全部共享 store 接线 + SKU / 任务 / 订单详情抽屉 + OperationConfirmModal;
  * 各 tab 视觉/布局拆到 e-tabs/*(复用 design-kit 原语 + e-domain.css 设计类),经 EViewCtx 注入派生读 + 回调。
- * 真写落点:E1 SKU/上架门、E2 任务引擎、E3 生命周期&Trade-in、E4 订单状态机、E5 设备运维走后端 API。
+ * 真写落点:E1 SKU/上架门、E2 用户任务管理、E3 生命周期&Trade-in、E4 订单进度、E5 设备运行管理走后端 API。
  * 操作确认 显式 edit 契约:调参(param / task-price)传 edit{kind,current,unit};处置/纯动作(sku-status / param-fixed / order-* / ops-pause)不传 edit。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -295,7 +295,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     // (「上架节奏 · 延迟 1 个月 · Gen3」),值进槽位就退化成 store 文档明令避开的形态 ——
     // 换个值提交成功只清了新槽,旧槽的号原样滞留,改回原值时会复用它被后端静默去重。
     const slot = `${spec.command.op}|${spec.obj}`;
-    // 指纹必须覆盖**整个提案信封**,不只是 command:后端幂等 payload-bound,提案 body 里的
+    // 指纹必须覆盖**整个提案信封**,不只是 command:后端防重复提交 payload-bound,提案 body 里的
     // before/after/type/amplifies 任何一项变了都是异载荷 → 409「内容已变化」。
     // before 尤其关键 —— 它是「变更前」快照(如订单当前状态、参数当前值),刷新页面重开弹窗时
     // 会随最新数据变化;漏掉它则指纹相同而 body 变了,重试撞 409 且因非全新尝试而不弃号 = 24h 死锁。
@@ -371,7 +371,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     return phase?.label || phaseId;
   };
 
-  // ── E2 任务引擎:服务端数据为单一来源 ──
+  // ── E2 用户任务管理:服务端数据为单一来源 ──
   const [tasks, setTasks] = useState<OpsTask[]>([]);
   const [phoneTiers, setPhoneTiers] = useState<E2PhoneTier[]>([]);
   const [yieldComparisons, setYieldComparisons] = useState<E2YieldComparison[]>([]);
@@ -428,7 +428,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   }, []);
   useEffect(() => { if (tab === "E1" || tab === "E2") void refreshE2(); }, [tab, refreshE2]);
 
-  // ── E3 生命周期 & Trade-in:服务端配置 / 概览 / tx 监控为单一来源 ──
+  // ── E3 设备使用与以旧换新:服务端配置 / 概览 / tx 监控为单一来源 ──
   const refreshE3 = useCallback(async () => {
     setE3Loading(true);
     setE3Error(null);
@@ -448,7 +448,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   }, []);
   useEffect(() => { if (tab === "E1" || tab === "E3") void refreshE3(); }, [tab, refreshE3]);
 
-  // ── E4 订单状态机:服务端数据为单一来源 ──
+  // ── E4 订单进度:服务端数据为单一来源 ──
   const [orders, setOrders] = useState<EOrder[]>([]);
   const [e4Loading, setE4Loading] = useState(false);
   const [e4Error, setE4Error] = useState<string | null>(null);
@@ -524,7 +524,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     return state && (TERMINAL_STATES as readonly string[]).includes(state) ? state : undefined;
   }, [orderById]);
 
-  // ── E5 设备运维:服务端 fleet / overview 为单一来源 ──
+  // ── E5 设备运行管理:服务端 fleet / overview 为单一来源 ──
   const [e5Devices, setE5Devices] = useState<E5Device[]>([]);
   const [e5Overview, setE5Overview] = useState<E5Overview | null>(null);
   const [e5Datacenters, setE5Datacenters] = useState<E5Datacenter[]>([]);
@@ -1184,7 +1184,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         return (
           <Drawer title={o.id} sub={`${o.sku} · ${o.user}`} onClose={closeOrder}
             footer={<>
-                  {nextState && <Btn onClick={() => openActionConfirm({ name: `推进订单 · ${o.id} → ${stateLabel(nextState)}`, op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, detail: `手动推进 ${o.id} 状态机:${stateLabel(eff)} → ${stateLabel(nextState)} · 须操作确认` })}>推进下一态</Btn>}
+                  {nextState && <Btn onClick={() => openActionConfirm({ name: `推进订单 · ${o.id} → ${stateLabel(nextState)}`, op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, detail: `手动推进 ${o.id} 处理流程:${stateLabel(eff)} → ${stateLabel(nextState)} · 须操作确认` })}>推进下一态</Btn>}
                   {canCancel && <Btn onClick={() => openActionConfirm({ name: "取消订单 · " + o.id, op: "order-cancel", orderId: o.id, amplify: false, detail: `取消 ${o.id}(${stateLabel(eff)})· 未扣款订单终止后续流程 · 须操作确认 + 审计留痕` })}>取消订单</Btn>}
                   {canWriteE4 && terminalOptions.length > 0 && <Btn onClick={() => openActionConfirm({ name: "落定失败终态 · " + o.id, op: "order-terminal", orderId: o.id, amplify: false, edit: { kind: "select", options: terminalOptions }, detail: `按当前 ${stateLabel(eff)} 状态落定合法失败终态;退款不走此入口 · 须操作确认 + 审计留痕` })}>落定失败终态</Btn>}
                   {canRefundE4 && refundableState && <Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!refundReady} onClick={() => {

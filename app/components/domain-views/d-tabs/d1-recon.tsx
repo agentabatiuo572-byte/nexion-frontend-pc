@@ -65,12 +65,12 @@ const BANK_VIEW_META: Record<D1VietQrView, { label: string; description: string;
   },
   orphan: {
     label: "未找到付款单",
-    description: "银行回单找不到对应付款单（原“孤儿队列”），当前不会给任何用户入账。",
+    description: "银行回单找不到对应付款单，当前不会给任何用户入账。",
     next: "核对附言后匹配到真实付款单；确实无法认领则登记退回。",
   },
   mismatch: {
     label: "信息不一致",
-    description: "已找到付款单，但收款账户或金额与付款单不一致（原“差额队列”）。",
+    description: "已找到付款单，但收款账户或金额与付款单不一致。",
     next: "只有金额不一致才可按实收核销；收款账户不一致的回单不能按实收核销，应核对凭证并登记退回。",
   },
   late: {
@@ -541,7 +541,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
       const next = await retryD1PendingTopupCommand(commandKey);
       setOverview(next);
       refreshPendingCommands();
-      toast(`请求号 ${commandKey} 已按原始参数完成幂等重试`);
+      toast(`请求号 ${commandKey} 已按原始参数完成防重复提交重试`);
       const nextFlows = await fetchD1TopupFlows({ status, keyword, pageNum: page, pageSize });
       setFlows(nextFlows);
     } catch (err) {
@@ -782,7 +782,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                             if (!intentNo) throw new Error("请输入真实付款意向单号");
                             return applyBankWrite(() => reconcileD1VietQr(row.id, "match-credit", {
                               expectedVersion: row.version, intentNo, evidenceRef, reason, operator,
-                            }), "孤儿回单已匹配入账");
+                            }), "未找到付款单的回单已匹配入账");
                           },
                         })}>手动匹配入账</button>
                       )}
@@ -1125,7 +1125,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
           <span className="sub">· 来源真实支付记录</span>
         </div>
         <div className="dtint warn" style={{ margin: "0 14px 12px" }}>
-          拒付追回不足额时，服务端会生成 K 域高风险信号；可前往 <Link href="/risk/multi-account">K1 反多账户中心</Link> 继续追踪关联账户与处置，即使当前暂无拒付案件也可直接进入。
+          拒付追回金额不足时，系统会生成风险提醒；可前往 <Link href="/risk/multi-account">K1 多账户风险排查</Link> 查看关联账户并处理。
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 920 }}>

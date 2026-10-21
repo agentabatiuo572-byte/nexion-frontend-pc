@@ -84,7 +84,7 @@ const MODULES: ModuleProbe[] = [
   {
     id: "F5",
     path: "/network/commissions",
-    marker: /F5 佣金事件审计/,
+    marker: /F5 佣金记录核对/,
     readPath: "/api/admin/teams/commissions",
     writePath: "/api/admin/teams/commissions/config/F.__acceptance.invalid__.F5",
     writeMethod: "PATCH",

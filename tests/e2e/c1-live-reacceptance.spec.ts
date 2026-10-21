@@ -97,7 +97,7 @@ test("C1 real flow keeps search read-only, masked, auditable and return-context 
   });
 
   await page.goto(`/users/search?q=${encodeURIComponent(userNo)}&pageSize=20`);
-  await expect(page.getByText("检索 & 画像", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("查找用户与查看资料", { exact: true }).first()).toBeVisible();
   await expect(page.locator("tbody tr").filter({ hasText: userNo }).first()).toBeVisible();
   let uiExportRequests = 0;
   let uiDownloads = 0;
@@ -152,7 +152,7 @@ async function loginThroughUi(page: Page) {
     await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
     await page.getByRole("button", { name: /登录|继续/ }).click();
   }
-  await expect(page.getByText("检索 & 画像", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("查找用户与查看资料", { exact: true }).first()).toBeVisible();
 }
 
 async function envelope<T>(response: { json(): Promise<unknown> }) {

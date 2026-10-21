@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * J1 · Kill-Switch 矩阵 — 5 闸 status grid + 矩阵主表 + 应急快速通道 + B1 备付金前置核验 + 自动触发规则。
- * 闸集 = 前端 §9.11d.1 的 4 闸 + 后台应急新增 withdraw(5 闸,与 B5 雷达 / 首页单源;Premium/NEX v2 已下线)。
- * B1 数值全部从后端 coverage facade 单源派生;recoverGate = B1.redLine,不另立数值。
+ * J1 · 紧急停用开关 — 5 闸 status grid + 矩阵主表 + 应急快速通道 + B1 备付金前置核验 + 自动触发规则。
+ * 闸集 = 前端 §9.11d.1 的 4 闸 + 后台应急新增 withdraw(5 闸,与 B5 雷达 / 首页统一来源;Premium/NEX v2 已下线)。
+ * B1 数值全部从后端 coverage facade 统一来源派生;recoverGate = B1.redLine,不另立数值。
  */
 import { useState } from "react";
 import { CodeTag } from "../design-kit";
@@ -86,7 +86,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   // R3 阈值由 J1 矩阵响应直接返回 J3 的权威配置值；J1 不再跨标签取数或持有默认副本。
   const effThr = (r: AutoRuleRow) => r.thr;
   const autoRuleDisplayName = (ruleId: string) => AUTO_RULES.find((rule) => rule.id === ruleId)?.nm ?? "未知自动规则";
-  // recoverGate 跟随 B1 红线单源(LEDGER),J 域只读引用不持有;其余应急参数 store 可调。
+  // recoverGate 跟随 B1 红线统一来源(LEDGER),J 域只读引用不持有;其余应急参数 store 可调。
   const effSla = (row: EmergencySlaRow) => row.v;
 
   const live = gates.filter(effOn).length;

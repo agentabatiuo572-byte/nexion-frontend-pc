@@ -80,7 +80,7 @@ test("missing ACTIVE series stays closed and can be initialized without auto-ope
       effectiveMenus: ["G", "G4"],
       effectiveMenuNodes: [
         { menuCode: "G", menuName: "金融产品", routePath: "", parentCode: null, sortOrder: 7 },
-        { menuCode: "G4", menuName: "Genesis 经济", routePath: "/finance-products/genesis", parentCode: "G", sortOrder: 4 },
+        { menuCode: "G4", menuName: "创世节点销售与收益", routePath: "/finance-products/genesis", parentCode: "G", sortOrder: 4 },
       ],
       passwordChangeRequired: false,
     } } }),
@@ -159,7 +159,7 @@ test("missing tiers offers a working first-tier path before series initializatio
       effectiveMenus: ["G", "G4"],
       effectiveMenuNodes: [
         { menuCode: "G", menuName: "金融产品", routePath: "", parentCode: null, sortOrder: 7 },
-        { menuCode: "G4", menuName: "Genesis 经济", routePath: "/finance-products/genesis", parentCode: "G", sortOrder: 4 },
+        { menuCode: "G4", menuName: "创世节点销售与收益", routePath: "/finance-products/genesis", parentCode: "G", sortOrder: 4 },
       ],
       passwordChangeRequired: false,
     } } }),

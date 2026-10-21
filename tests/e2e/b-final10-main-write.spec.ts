@@ -194,8 +194,8 @@ async function assertWriter(page: Page, actor: Account) {
   return { id: data.adminId ?? data.id, username: data.username, bAuthorities: authorities.filter((item: string) => item.startsWith("overview_b")) };
 }
 
-async function openVisibleB2(page: Page) { await openSidebar(page, "/overview/liquidity", "资金池水位"); }
-async function openVisibleB3(page: Page) { await openSidebar(page, "/overview/funnel", "转化漏斗"); }
+async function openVisibleB2(page: Page) { await openSidebar(page, "/overview/liquidity", "可用资金与应付款"); }
+async function openVisibleB3(page: Page) { await openSidebar(page, "/overview/funnel", "用户转化分析"); }
 async function openSidebar(page: Page, href: string, heading: string) {
   const link = page.locator(`aside a[href="${href}"]`).first();
   if (!(await link.isVisible().catch(() => false))) await page.getByRole("button", { name: /总览驾驶舱/ }).click();

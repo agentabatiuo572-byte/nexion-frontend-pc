@@ -4,7 +4,7 @@ import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 /**
  * F 分销与团队 — 设计稿 design_handoff_f_domain 内容视图(F1–F5)。
- * 标签:F1 V-Rank 晋升 / F2 网络版税费率 / F3 双轨结算引擎 / F4 池·配额·大使·榜 / F5 佣金事件审计。
+ * 标签:F1 团队等级晋升 / F2 网络版税费率 / F3 左右团队业绩结算 / F4 池·配额·大使·榜 / F5 佣金记录核对。
  * 导航已按设计稿收编为 F1–F5(旧 F6 硬件配额 / F7 区域大使 / F8 排行榜&反欺诈 已并入 F4「池/配额/大使/榜」聚合视图)。
  *
  * 本 shell 只持有后端快照 state + OperationConfirmModal;各 tab 视觉/布局拆到 f-tabs/*(复用 design-kit 原语 + f-domain.css 设计类)。
@@ -648,7 +648,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     proposeF4Settlement: async (reason) => {
       const def = findHighOp("f4_pool_settle");
       if (!def) throw new Error("F_OP_NOT_FOUND:f4_pool_settle");
-      // 指纹带日键:结算是按周期重复的意图,上一周期已决议的票被 24h 幂等回放会把新结算静默吞掉;
+      // 指纹带日键:结算是按周期重复的意图,上一周期已决议的票被 24h 防重复提交回放会把新结算静默吞掉;
       // 日键把该窗口压到当日,跨日重试铸新号(在途票期间由后端 current-week 目标锁兜底)。
       await proposeStable("f4-settle:current-week", JSON.stringify([reason, new Date().toISOString().slice(0, 10)]), {
         action: def.action,
@@ -757,14 +757,14 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   // 跨域 / 跨标签跳转 CTA(放进 DomainHeader 的 right 槽,不改 DomainHeader 组件)
   const CTA: Record<string, { label: string; onClick: () => void }> = {
     F1: { label: "领导池票数权重 →", onClick: () => { setTab("F4"); router.push("/network/leadership-pool"); setToast("已跳转 F4 · 领导池票数权重"); } },
-    F3: { label: "B5 风险雷达 →", onClick: () => nav("B") },
-    F4: { label: "F5 佣金审计 →", onClick: () => { setTab("F5"); router.push("/network/commissions"); setToast("已跳转 F5 · 佣金事件审计"); } },
+    F3: { label: "B5 风险提醒 →", onClick: () => nav("B") },
+    F4: { label: "F5 佣金审计 →", onClick: () => { setTab("F5"); router.push("/network/commissions"); setToast("已跳转 F5 · 佣金记录核对"); } },
   };
   const cta = CTA[tab];
 
   return (
     <div className="dkpage fdom">
-      {tab === "F2" ? <div className="f2-page-header"><div><div className="f2-breadcrumb">网络 <span aria-hidden="true">›</span> 网络版税与分成</div><h1>网络版税与分成</h1></div><span className="f2-page-meta">{f2DirectPolicy?.effectiveAt ? `当前政策生效于 ${new Date(f2DirectPolicy.effectiveAt).toLocaleString()}` : "配置尚未生效"}</span></div> : <DomainHeader {...meta} right={cta ? <button className="f-cta" onClick={cta.onClick}>{cta.label}</button> : undefined} />}
+      {tab === "F2" ? <div className="f2-page-header"><div><div className="f2-breadcrumb">网络 <span aria-hidden="true">›</span> 团队分成</div><h1>团队分成</h1></div><span className="f2-page-meta">{f2DirectPolicy?.effectiveAt ? `当前政策生效于 ${new Date(f2DirectPolicy.effectiveAt).toLocaleString()}` : "配置尚未生效"}</span></div> : <DomainHeader {...meta} right={cta ? <button className="f-cta" onClick={cta.onClick}>{cta.label}</button> : undefined} />}
 
       {tab === "F1" && <F1Vrank ctx={ctx} />}
       {tab === "F2" && <><F2SevenLayerActivation ctx={ctx} /><F2Rates ctx={ctx} /></>}

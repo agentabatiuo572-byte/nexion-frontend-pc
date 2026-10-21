@@ -452,14 +452,14 @@ test("真实 D2 提现消费 K3 路由，并同步 A4、B1/B5", async ({ page })
   expect(submittedEventContract[5]).toBeTruthy();
 
   await openSidebarPath(page, "/finance/withdrawals");
-  await expect(page.getByRole("heading", { name: "提现审核队列", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "待审核提现", exact: true })).toBeVisible();
   const search = page.getByLabel("提现单 / 用户");
   await search.fill(smallWithdrawalNo);
   await expect(page.locator("tr").filter({ hasText: smallWithdrawalNo })).toContainText(fixtureRuleId);
   await page.screenshot({ path: path.join(EVIDENCE_DIR, "04-d2-consumes-k3-route.png"), fullPage: true });
 
   await openSidebarPath(page, "/overview/risk-radar");
-  await expect(page.getByText(/风险雷达/).first()).toBeVisible();
+  await expect(page.getByText(/风险提醒/).first()).toBeVisible();
   await page.screenshot({ path: path.join(EVIDENCE_DIR, "05-b1-b5-risk-radar-after-withdrawals.png"), fullPage: true });
 
   await logout(page);

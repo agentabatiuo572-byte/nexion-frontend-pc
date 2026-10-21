@@ -1145,7 +1145,7 @@ test("Final7 adds A2-A4 audit reader and leaves one E6 cross-domain A6 grant pen
     createdRoles.push(pendingRole);
     pendingOperationId = await grantRoleVisible(page, pendingCreated, pendingRole.permissions, pendingRole.menus);
     pendingRole.grantOperationId = pendingOperationId;
-    await nav(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+    await nav(page, "操作记录与审批 A2", /\/platform\/audit$/);
     await page.reload({ waitUntil: "domcontentloaded" });
     const pendingRow = page.locator("tbody tr").filter({ hasText: pendingOperationId }).first();
     await expect(pendingRow, `pending probe ${pendingOperationId} must be visible`).toBeVisible({ timeout: 30_000 });
@@ -1501,7 +1501,7 @@ async function assertFinal9ProvisioningReviewer(page: Page, username: string) {
 }
 
 async function assertSelfApprovalDeniedFinal9(page: Page, operationId: string) {
-  await nav(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  await nav(page, "操作记录与审批 A2", /\/platform\/audit$/);
   await page.reload({ waitUntil: "domcontentloaded" });
   const row = page.locator("tbody tr").filter({ hasText: operationId }).first();
   await expect(row).toBeVisible({ timeout: 30_000 });
@@ -1755,7 +1755,7 @@ function menuCheckbox(panel: ReturnType<Page["locator"]>, code: string) {
 }
 
 async function approveVisibleA2(page: Page, operationId: string) {
-  await nav(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  await nav(page, "操作记录与审批 A2", /\/platform\/audit$/);
   await page.reload({ waitUntil: "domcontentloaded" });
   const pageSize = page.locator("select.pager-size").first();
   if (await pageSize.isVisible().catch(() => false)) await pageSize.selectOption("50");
@@ -1769,7 +1769,7 @@ async function approveVisibleA2(page: Page, operationId: string) {
 }
 
 async function rejectVisibleA2(page: Page, operationId: string) {
-  await nav(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  await nav(page, "操作记录与审批 A2", /\/platform\/audit$/);
   await page.reload({ waitUntil: "domcontentloaded" });
   const pageSize = page.locator("select.pager-size").first();
   if (await pageSize.isVisible().catch(() => false)) await pageSize.selectOption("50");
@@ -1829,7 +1829,7 @@ async function provisionVisibleAccount(
 }
 
 async function createAccountVisible(page: Page, username: string, displayName: string, roleName?: string) {
-  await nav(page, "运营账号 & RBAC A1", /\/platform\/rbac$/);
+  await nav(page, "运营账号与权限 A1", /\/platform\/rbac$/);
   await page.getByRole("button", { name: "+ 新建账号", exact: true }).click();
   const drawer = page.getByRole("dialog").last();
   await drawer.getByRole("textbox", { name: "登录名 *", exact: true }).fill(username);

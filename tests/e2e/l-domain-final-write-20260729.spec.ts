@@ -213,7 +213,7 @@ test("L Owner 最终写入闭环：L1/L2 同源、L4/L5/L6 真实出口与空切
     expect(liveBuild.status(), "3002 必须服务锁定的 final2 Next build asset").toBe(200);
 
     await openFromSidebar(page, "/analytics/kpi");
-    await expect(page.getByRole("heading", { name: "KPI 看板" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "关键指标" })).toBeVisible();
     await expect(page.locator("button.kpi-card")).toHaveCount(8);
     await createL1WithUnknownResult(page);
 

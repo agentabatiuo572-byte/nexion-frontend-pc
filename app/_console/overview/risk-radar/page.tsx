@@ -28,7 +28,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { B5RestoredInsights } from "@/app/components/dashboard/restored-b-insights";
 import { canAccessCrossDomainPath } from "@/lib/admin/cross-domain-authority";
 
-/** B5 阈值 / 订阅 / 分诊共用一张表,槽位分命名空间(分诊槽位带维度 = 目标对象)。
+/** B5 阈值 / 订阅 / 分类处理共用一张表,槽位分命名空间(分类处理槽位带维度 = 目标对象)。
  *  阈值与订阅额外把提交值 + 版本当输入指纹:改了值必须换新命令号,否则后端按旧号去重,
  *  新阈值会被静默吞掉。落 sessionStorage,刷新后「结果未知」的重试仍是同一命令号。 */
 const b5Commands = createSlotAttemptStore({
@@ -192,13 +192,13 @@ export default function RiskRadarPage() {
       <div className="dkpage bpage radarpage">
         <BPageHeader
           id="B5"
-          title="风险雷达"
+          title="风险提醒"
           desc="五维风险态势只读聚合；数据异常时停止展示旧值。"
-          ctaLabel="Kill-Switch 矩阵"
+          ctaLabel="紧急停用开关"
           ctaHref="/emergency/kill-switch"
           ctaAllowed={canCross("/emergency/kill-switch")}
         />
-        <BDomainDataState title="B5 风险雷达" loading={radar.loading && !radar.error} error={radar.error} onRetry={radar.reload} />
+        <BDomainDataState title="B5 风险提醒" loading={radar.loading && !radar.error} error={radar.error} onRetry={radar.reload} />
       </div>
     );
   }
@@ -227,7 +227,7 @@ export default function RiskRadarPage() {
       router.push(target);
     } catch (cause) {
       if (!(cause instanceof B5OutcomeUnknownError)) b5Commands.forget(triageSlot);
-      setToast(cause instanceof Error ? displayAdminError(cause) : "分诊失败");
+      setToast(cause instanceof Error ? displayAdminError(cause) : "处理失败，请稍后重试");
     }
   };
   const openThreshold = () => {
@@ -290,9 +290,9 @@ export default function RiskRadarPage() {
     <div className="dkpage bpage radarpage">
       <BPageHeader
         id="B5"
-        title="风险雷达"
+        title="风险提醒"
         desc="挤兑、异常账户、提现积压、五个功能闸与兑付覆盖率同屏；这里只读研判，处置必须进入权威域。"
-        ctaLabel="Kill-Switch 矩阵"
+        ctaLabel="紧急停用开关"
         ctaHref="/emergency/kill-switch"
         ctaAllowed={canCross("/emergency/kill-switch")}
       />

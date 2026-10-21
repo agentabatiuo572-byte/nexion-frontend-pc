@@ -15,7 +15,7 @@ const LABEL_BY_TYPE: Record<string, string> = { HIGH: "高敏操作", WRITE: "�
 
 type RoleGrants = { role: A6RoleSummary; codes: Set<string>; readable: boolean };
 
-/** A8 权限字典（只读）。服务端分页 + 搜索 debounce + 域 tab + 类型筛选 + 详情 drawer + 角色矩阵。 */
+/** A8 权限清单（只读）。服务端分页 + 搜索 debounce + 域 tab + 类型筛选 + 详情 drawer + 角色矩阵。 */
 export default function A8Permissions() {
   const [toast, setToast] = useToast();
   const [pageNum, setPageNum] = useState(1);
@@ -110,7 +110,7 @@ export default function A8Permissions() {
     <div className="dkpage adom">
       {toast}
       <DomainHeader domainCode="A" domainName="平台基础" accentVar="--admin-domain-a"
-        l2Id="A8" l2Name="权限字典"
+        l2Id="A8" l2Name="权限清单"
         summary="全平台权限码只读浏览。权限分为只读、写操作和高敏操作，由平台统一维护，本页不支持增删。"
         right={<span className="mono" style={{ color: "var(--ink-3)", fontSize: 12 }}>{loading ? "正在统计…" : `共 ${total} 条`}</span>} />
       <Card>
@@ -187,7 +187,7 @@ export default function A8Permissions() {
           </tbody>
         </table>
         {!loadError && <DataListPager
-          label="权限字典"
+          label="权限清单"
           page={pageNum}
           pageSize={pageSize}
           total={total}

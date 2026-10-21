@@ -539,7 +539,7 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
   }
   await page.screenshot({ path: path.join(evidenceRoot, "04-d2-k3-k4-joint-read.png"), fullPage: true });
   await openSidebarPath(page, "/overview/risk-radar", /驾驶舱.*B|B.*驾驶舱|总览/);
-  await expect(page.getByText("风险雷达", { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("风险提醒", { exact: true }).first()).toBeVisible({ timeout: 30_000 });
   const bDomain = await api<Record<string, any>>(await page.request.get("/api/admin/treasury/b-domain"));
   expect(bDomain.riskRadar.k4ScoringAvailable).toBe(true);
   expect(String(bDomain.riskRadar.k4ModelVersion)).toMatch(/^k4-v\d+$/);

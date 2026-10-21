@@ -80,8 +80,8 @@ test.beforeAll(async () => {
 test("K1 首次用户从可见登录与侧栏识别真实层、未接入层和权威簇状态", async ({ page }) => {
   const errors = collectRuntimeErrors(page);
   await loginAndOpenK1(page, ADMIN_USER);
-  await expect(page.getByText("监控中账户簇", { exact: true })).toBeVisible();
-  await expect(page.getByText("三层去重命中列表", { exact: true })).toBeVisible();
+  await expect(page.getByText("监控中的关联账户组", { exact: true })).toBeVisible();
+  await expect(page.getByText("可能属于同一人的账户", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "设备指纹", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "支付工具", exact: true })).toBeVisible();
   const overview = await currentOverview(page);
@@ -527,10 +527,10 @@ async function loginAndOpenK1(page: Page, username: string) {
   await expect(link, "K1 必须可从当前角色的可见侧栏进入").toBeVisible();
   await link.click();
   await expect(page).toHaveURL(/\/risk\/multi-account(?:\?.*)?$/);
-  if (!await page.getByText("三层去重命中列表", { exact: true }).isVisible({ timeout: 5_000 }).catch(() => false)) {
+  if (!await page.getByText("可能属于同一人的账户", { exact: true }).isVisible({ timeout: 5_000 }).catch(() => false)) {
     await page.reload({ waitUntil: "domcontentloaded" });
   }
-  await expect(page.getByText("三层去重命中列表", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("可能属于同一人的账户", { exact: true })).toBeVisible({ timeout: 20_000 });
 }
 
 async function openC2FromSidebar(page: Page) {

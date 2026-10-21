@@ -8,7 +8,7 @@ const ops = read("app/components/domain-views/e-tabs/e5-ops.tsx");
 const types = read("app/components/domain-views/e-tabs/types.ts");
 
 /**
- * zentao #44:E5 设备运维页在单面故障时整页失明。
+ * zentao #44:E5 设备运行管理页在单面故障时整页失明。
  *
  * e-view 里三个服务面本来就是独立读取(Promise.allSettled),注释也写明「任一面失败只冻结
  * 它自己,不能把另外两面的真实数据一起清空」—— 但它们随后被 join 成**一个** e5Error,而设备表

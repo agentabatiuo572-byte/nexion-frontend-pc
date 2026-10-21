@@ -108,7 +108,7 @@ export default function FunnelPage() {
     <div className="dkpage bpage funnelpage">
       <BPageHeader
         id="B3"
-        title="转化漏斗"
+        title="用户转化分析"
         desc={
           <>
             从注册到提现的四级转化只读取 <b>A4 已登记事件</b>，并要求同一用户按时间顺序逐级进入。
@@ -120,24 +120,24 @@ export default function FunnelPage() {
       <section className="card b3-controls" aria-label="漏斗筛选与操作">
         <div className="b3-filter-grid">
           <label>
-            <span>注册 cohort</span>
+            <span>注册时间分组</span>
             <select
-              aria-label="注册 cohort"
+              aria-label="注册时间分组"
               value={filters.cohort}
               onChange={(event) => setFilters((current) => ({ ...current, cohort: event.target.value }))}
             >
-              <option value={ALL}>全部 cohort</option>
+              <option value={ALL}>全部注册时间</option>
               {options.cohorts.map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
           </label>
           <label>
-            <span>Phase</span>
+            <span>运营阶段</span>
             <select
-              aria-label="Phase"
+              aria-label="运营阶段"
               value={filters.phase}
               onChange={(event) => setFilters((current) => ({ ...current, phase: event.target.value }))}
             >
-              <option value={ALL}>全部 Phase</option>
+              <option value={ALL}>全部阶段</option>
               {/^P[1-6]$/.test(filters.phase) && !options.phases.includes(filters.phase) && (
                 <option value={filters.phase}>{filters.phase}</option>
               )}
@@ -181,22 +181,22 @@ export default function FunnelPage() {
               onClick={() => void exportCohort()}
               disabled={busy !== "" || !data?.available || !data.stages.length}
             >
-              <Download size={14} aria-hidden /> 导出 cohort
+              <Download size={14} aria-hidden /> 导出注册用户分组
             </button>
           )}
         </div>
         {notice && <p className="b3-notice" role="status">{notice}</p>}
       </section>
 
-      {loading && !data && <BDomainDataState title="B3 转化漏斗" loading />}
-      {error && <BDomainDataState title="B3 转化漏斗" error={error} onRetry={reload} />}
+      {loading && !data && <BDomainDataState title="B3 用户转化分析" loading />}
+      {error && <BDomainDataState title="B3 用户转化分析" error={error} onRetry={reload} />}
 
       {data && !error && (
         <>
           {!data.available && (
             <section className="card b3-unavailable" role="alert">
-              <b>当前漏斗不可安全计算</b>
-              <span>{data.message || data.reason || "A4 主漏斗事实缺少可靠用户标识。"}</span>
+              <b>当前无法计算用户转化</b>
+              <span>{data.message || data.reason || "用户行为记录缺少可靠的用户标识。"}</span>
             </section>
           )}
 
@@ -220,7 +220,7 @@ export default function FunnelPage() {
               </small>
             </article>
             <article className="card">
-              <span className="b3-kicker">Day0 接入率</span>
+              <span className="b3-kicker">注册当天获得收益比例</span>
               <strong>{pct(data.auxMetrics.day0AccessRate)}</strong>
               <small>
                 {data.auxMetrics.day0WindowSeconds} 秒内首笔收益 {data.auxMetrics.day0Numerator} ÷ 注册 {data.auxMetrics.day0Denominator}
@@ -228,10 +228,10 @@ export default function FunnelPage() {
               </small>
             </article>
             <article className="card">
-              <span className="b3-kicker">Day7 留存率</span>
+              <span className="b3-kicker">注册第 7 天仍活跃的比例</span>
               <strong>{pct(data.auxMetrics.day7Retention)}</strong>
               <small>
-                Day7 活跃 {data.auxMetrics.day7Numerator} ÷ 已成熟 cohort {data.auxMetrics.day7Denominator}
+                第 7 天活跃 {data.auxMetrics.day7Numerator} ÷ 满 7 天的注册用户 {data.auxMetrics.day7Denominator}
                 · 目标 &gt; {data.auxMetrics.day7Target}%
               </small>
             </article>
@@ -239,7 +239,7 @@ export default function FunnelPage() {
 
           <section className="card b3-stage-card">
             <div className="ttl-row">
-              <span className="h">四级同用户漏斗</span>
+              <span className="h">同一批用户的四步转化</span>
               <span className="sub">注册 → 首购 → 复投 → 提现</span>
             </div>
             <TabGroup label="漏斗阶段" value={selectedStage?.key ?? data.stages[0]?.key ?? ""}
@@ -254,35 +254,35 @@ export default function FunnelPage() {
                   <span className="b3-stage-name">{item.stage}</span>
                   <span className="b3-stage-life">{item.lifecycleLabel}</span>
                   <strong>{item.distinctUsers.toLocaleString()}</strong>
-                  <small>{index === 0 ? "漏斗入口" : `自上级 ${pct(item.cvrFromPrev)}`}</small>
+                  <small>{index === 0 ? "第一步" : `从上一步转化 ${pct(item.cvrFromPrev)}`}</small>
                   <code>{item.event}</code>
                 </>;
               }}
             </TabGroup>
             {biggestDrop && (
               <p className="b3-bottleneck">
-                当前最大流失环节：<b>{biggestDrop.stage}</b>（自上级 {pct(biggestDrop.cvrFromPrev)}）。
-                请结合 H1 Phase 与 L2 cohort 下钻判断原因，页面不自动推断因果。
+                当前流失最多的环节：<b>{biggestDrop.stage}</b>（从上一步转化 {pct(biggestDrop.cvrFromPrev)}）。
+                请结合 H1 运营阶段和 L2 用户转化与留存数据判断原因。
               </p>
             )}
           </section>
 
           <section className="card b3-table-card">
             <div className="ttl-row">
-              <span className="h">级间指标表</span>
-              <span className="sub">去重用户数、上级分母、CVR、A4 权威事件</span>
+              <span className="h">各步骤转化数据</span>
+              <span className="sub">用户数、上一步人数、转化率和对应行为记录</span>
             </div>
             <div className="b3-table-wrap">
               <table>
                 <thead>
-                  <tr><th>阶段</th><th>生命周期</th><th>去重用户</th><th>上级</th><th>CVR</th><th>环比</th><th>事件口径</th></tr>
+                  <tr><th>步骤</th><th>用户阶段</th><th>用户数</th><th>上一步人数</th><th>转化率</th><th>与上月比较</th><th>对应行为</th></tr>
                 </thead>
                 <tbody>
                   {data.stages.map((item) => (
                     <tr key={item.key}>
                       <td>{item.stage}</td><td>{item.lifecycleLabel}</td><td>{item.distinctUsers}</td>
                       <td>{item.previousUsers}</td><td>{pct(item.cvrFromPrev)}</td>
-                      <td>{item.momDelta == null ? "无可比 cohort" : pct(item.momDelta)}</td>
+                      <td>{item.momDelta == null ? "没有可比较的注册用户组" : pct(item.momDelta)}</td>
                       <td><code>{item.event}</code></td>
                     </tr>
                   ))}
@@ -294,7 +294,7 @@ export default function FunnelPage() {
           <section className="card b3-trend-card">
             <div className="ttl-row">
               <TrendingUp size={15} aria-hidden />
-              <span className="h">cohort 趋势 · {selectedStage?.stage ?? "首购"}</span>
+              <span className="h">按注册周查看转化趋势 · {selectedStage?.stage ?? "首购"}</span>
               <span className="sub">最近 13 个注册周；未命中筛选时明确为空</span>
             </div>
             {data.trend.length ? (
@@ -308,18 +308,18 @@ export default function FunnelPage() {
                 ))}
               </div>
             ) : (
-              <p className="b3-empty">当前切片没有可比较 cohort，不推算趋势。</p>
+              <p className="b3-empty">当前筛选条件下没有可比较的注册用户组，无法计算趋势。</p>
             )}
           </section>
 
-          <section className="card b3-links" aria-label="跨域下钻">
+          <section className="card b3-links" aria-label="跨域查看明细">
             <div>
-              <b>归因与数据源</b>
+              <b>原因分析与数据来源</b>
               <span>{data.sourceStatement}</span>
             </div>
             <nav>
-              {canCross("/analytics/funnel-cohort") ? <Link href="/analytics/funnel-cohort" prefetch={false}>L2 完整下钻 →</Link> : <span aria-disabled="true">L2 完整下钻 · 无权限</span>}
-              {canCross("/growth/phase") ? <Link href="/growth/phase" prefetch={false}>H1 Phase 归因 →</Link> : <span aria-disabled="true">H1 Phase 归因 · 无权限</span>}
+              {canCross("/analytics/funnel-cohort") ? <Link href="/analytics/funnel-cohort" prefetch={false}>到 L2 查看完整分析 →</Link> : <span aria-disabled="true">L2 完整分析 · 无权限</span>}
+              {canCross("/growth/phase") ? <Link href="/growth/phase" prefetch={false}>H1 运营阶段效果 →</Link> : <span aria-disabled="true">H1 运营阶段效果 · 无权限</span>}
               {canCross("/platform/events") ? <Link href="/platform/events" prefetch={false}>A4 事件治理 →</Link> : <span aria-disabled="true">A4 事件治理 · 无权限</span>}
             </nav>
           </section>

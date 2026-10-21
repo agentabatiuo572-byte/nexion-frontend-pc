@@ -33,7 +33,7 @@ test("L1 主流程：八项 KPI、服务端筛选、下钻、趋势和刷新均�
   expect(overviewPayload.data.kpis).toHaveLength(8);
   await page.screenshot({ path: evidence("initial-visible-entry.png"), fullPage: true });
 
-  await expect(page.getByRole("heading", { name: "KPI 看板" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "关键指标" })).toBeVisible();
   await expect(page.locator("button.kpi-card")).toHaveCount(8);
   await expect(page.getByText("未达 + 不可计算", { exact: true })).toBeVisible();
   await expect(page.getByText("单 KPI 下钻", { exact: false })).toBeVisible();

@@ -58,7 +58,7 @@ test("J4 V3 read-only evidence from visible navigation", async ({ context, page 
     await page.getByRole("button", { name: "紧急与合规控制 J", exact: true }).click();
     await page.screenshot({ path: `${artifactRoot}/01-visible-j-menu.png`, fullPage: true });
     const overviewResponsePromise = page.waitForResponse((response) => response.request().method() === "GET" && response.url().includes("/api/admin/emergency/sop/playbooks"));
-    await page.getByRole("link", { name: "监管点名应急 SOP J4", exact: true }).click();
+    await page.getByRole("link", { name: "监管要求应急处理 J4", exact: true }).click();
     const overviewResponse = await overviewResponsePromise;
     expect(overviewResponse.status()).toBe(200);
     const overviewBody = await overviewResponse.json();
@@ -73,7 +73,7 @@ test("J4 V3 read-only evidence from visible navigation", async ({ context, page 
     await expect(page).toHaveURL(/\/emergency\/sop$/);
 
     const main = page.getByRole("main");
-    await expect(main.getByRole("heading", { name: "监管点名应急 SOP", exact: true })).toBeVisible();
+    await expect(main.getByRole("heading", { name: "监管要求应急处理", exact: true })).toBeVisible();
     await expect(main.getByText("当前可执行范围", { exact: true })).toBeVisible();
     await expect(main.getByText("提现 / Genesis 关停", { exact: true })).toBeVisible();
     await expect(main.getByText("已排期通知活动下发", { exact: true })).toBeVisible();

@@ -25,7 +25,7 @@ const MODULES: ModuleCase[] = [
   { id: "F2", path: "/network/royalty", endpoint: "/api/admin/teams/rates", marker: "F2 网络版税费率" },
   { id: "F3", path: "/network/binary", endpoint: "/api/admin/teams/binary", marker: "平衡匹配公式" },
   { id: "F4", path: "/network/leadership-pool", endpoint: "/api/admin/teams/leadership-pool", marker: "V 级票数权重 · 领导池分配依据" },
-  { id: "F5", path: "/network/commissions", endpoint: "/api/admin/teams/commissions", marker: "F5 佣金事件审计" },
+  { id: "F5", path: "/network/commissions", endpoint: "/api/admin/teams/commissions", marker: "F5 佣金记录核对" },
 ];
 
 test.describe.configure({ mode: "serial" });
@@ -164,13 +164,13 @@ test("F1-F5 刷新、返回、退出重登后仍从同一服务端恢复", async
   await login(page);
   await enterFromSidebar(page, MODULES[4]);
   await expect(
-    page.locator("main").getByText("F5 佣金事件审计", { exact: true }).first(),
+    page.locator("main").getByText("F5 佣金记录核对", { exact: true }).first(),
   ).toBeVisible();
   await page.goBack({ waitUntil: "domcontentloaded" });
   await expect(page.locator("aside")).toBeVisible();
   await page.goForward({ waitUntil: "domcontentloaded" });
   await expect(
-    page.locator("main").getByText("F5 佣金事件审计", { exact: true }).first(),
+    page.locator("main").getByText("F5 佣金记录核对", { exact: true }).first(),
   ).toBeVisible();
   await page.screenshot({ path: `${EVIDENCE_DIR}/03-refresh-relogin-history.png`, fullPage: true });
 });

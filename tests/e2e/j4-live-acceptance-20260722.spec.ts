@@ -165,7 +165,7 @@ test("J4 I3-only execution is visible, idempotent, irreversible, refresh-safe an
     const campaignNo = REQUESTED_CAMPAIGN_NO || await createScheduledI3Fixture(page);
     if (!REQUESTED_CAMPAIGN_NO) {
       await page.reload();
-      await expect(page.getByRole("heading", { name: "监管点名应急 SOP", exact: true })).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByRole("heading", { name: "监管要求应急处理", exact: true })).toBeVisible({ timeout: 20_000 });
       await expect(page.getByRole("button", { name: "+ 新增剧本", exact: true })).toBeVisible({ timeout: 20_000 });
     }
     await page.screenshot({ path: path.join(EVIDENCE_DIR, "01-visible-login-menu-j4.png"), fullPage: true });
@@ -404,7 +404,7 @@ test("J4 permission matrix enforces menu, page, button, API and refreshed role g
         await expect(profile.page.locator('a[href="/emergency/sop"]')).toHaveCount(0);
         await profile.page.goto("/emergency/sop");
         await expect(profile.page).toHaveURL(/\/$/, { timeout: 20_000 });
-        await expect(profile.page.getByRole("heading", { name: "监管点名应急 SOP" })).toHaveCount(0);
+        await expect(profile.page.getByRole("heading", { name: "监管要求应急处理" })).toHaveCount(0);
         await profile.page.screenshot({ path: path.join(EVIDENCE_DIR, "13-no-menu-direct-route-denied.png"), fullPage: true });
         continue;
       }
@@ -535,7 +535,7 @@ async function loginAndOpenJ4(page: Page) {
   await expect(link, "J4 must be discoverable from the visible sidebar").toBeVisible();
   await link.click();
   await expect(page).toHaveURL(/\/emergency\/sop$/);
-  await expect(page.getByRole("heading", { name: "监管点名应急 SOP", exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: "监管要求应急处理", exact: true })).toBeVisible({ timeout: 20_000 });
 }
 
 async function loginCredentialsFromVisibleEntry(
@@ -678,7 +678,7 @@ async function createScheduledI3Fixture(page: Page) {
     titleZh: "J4 最终复验监管通知",
     titleVi: "Thong bao kiem thu J4 cuoi cung",
     titleEn: "J4 final acceptance notice",
-    bodyZh: `${RUN_ID} 监管点名应急 SOP 最终复验通知。`,
+    bodyZh: `${RUN_ID} 监管要求应急处理 最终复验通知。`,
     bodyVi: `${RUN_ID} thong bao kiem thu quy trinh ung pho J4.`,
     bodyEn: `${RUN_ID} J4 emergency SOP final acceptance notice.`,
     kind: "system",
@@ -720,7 +720,7 @@ async function openJ4FromVisibleMenu(page: Page) {
   await expect(link).toBeVisible();
   await link.click();
   await expect(page).toHaveURL(/\/emergency\/sop$/);
-  await expect(page.getByRole("heading", { name: "监管点名应急 SOP", exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: "监管要求应急处理", exact: true })).toBeVisible({ timeout: 20_000 });
 }
 
 async function j1SnapshotAfterVisibleLogin(page: Page) {

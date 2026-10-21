@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * B3 同用户、时序约束的转化漏斗。分母为零时转化率不可计算。
- * flex 填充卡片高度:bar 区垂直居中,底部"最大流失环节"洞察 + 下钻锚定(消除留白)。
+ * B3 同用户、时序约束的用户转化分析。分母为零时转化率不可计算。
+ * flex 填充卡片高度:bar 区垂直居中,底部"最大流失环节"洞察 + 查看明细锚定(消除留白)。
  */
 import Link from "next/link";
 import { fmtNum, fmtPct } from "@/lib/format";
@@ -23,7 +23,7 @@ export interface FunnelStageInput {
 export function FunnelBars() {
   const { data, loading, error, reload } = useB3Funnel({ cohort: "ALL", phase: "ALL", ref: "ALL" }, "purchase");
   if (!data?.available || !data.stages.length || error) {
-    return <BDomainDataState title="B3 转化漏斗" loading={loading} error={error ?? (loading ? null : data?.message ?? "暂无可计算的用户漏斗")} onRetry={reload} />;
+    return <BDomainDataState title="B3 用户转化分析" loading={loading} error={error ?? (loading ? null : data?.message ?? "暂无可计算的用户漏斗")} onRetry={reload} />;
   }
   const stages = data.stages.map((stage) => ({ key: stage.key, label: stage.stage,
     count: stage.distinctUsers, prevCount: stage.previousUsers, cvr: stage.cvrFromPrev }));
@@ -44,7 +44,7 @@ export function FunnelBars() {
   return (
     <div className="flex h-full flex-col rounded-[16px] p-5" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}>
       <div className="flex items-baseline gap-2.5">
-        <span className="font-display text-[14.5px]" style={{ color: "var(--v5-ink)" }}><AutoGloss>用户转化漏斗</AutoGloss></span>
+        <span className="font-display text-[14.5px]" style={{ color: "var(--v5-ink)" }}><AutoGloss>用户用户转化分析</AutoGloss></span>
         <span className="hidden text-[12px] sm:inline" style={{ color: "var(--v5-ink-4)" }}>{stages.map((s) => s.label).join(" → ")}</span>
         <span className="ml-auto font-mono-tabular rounded-[7px] px-2 py-0.5 text-[11px]" style={{ background: "var(--v5-surface-3)", color: "var(--v5-ink-3)", border: "1px solid var(--v5-border)" }}>B3 · A4 派生</span>
       </div>
@@ -90,13 +90,13 @@ export function FunnelBars() {
         })}
       </div>
 
-      {/* 洞察 + 下钻(底部对齐,消除留白)*/}
+      {/* 洞察 + 查看明细(底部对齐,消除留白)*/}
       <div className="mt-auto flex items-center gap-2.5 rounded-[10px] px-3.5 py-2.5" style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)" }}>
         <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: "var(--v5-warning)" }} />
         <span className="text-[12px]" style={{ color: "var(--v5-ink-3)" }}>
           {worst.from ? <>最大流失 · {worst.from}→{worst.to} 仅 <span className="font-mono-tabular" style={{ color: "var(--v5-warning)", fontWeight: 600 }}>{worst.cvr}%</span> 转化</> : "暂无可计算的阶段转化"}
         </span>
-        <Link href="/overview/funnel" prefetch={false} className="ml-auto shrink-0 text-[12.5px]" style={{ color: "var(--v5-brand)" }}><AutoGloss>下钻 cohort →</AutoGloss></Link>
+        <Link href="/overview/funnel" prefetch={false} className="ml-auto shrink-0 text-[12.5px]" style={{ color: "var(--v5-brand)" }}><AutoGloss>查看同批用户的明细 →</AutoGloss></Link>
       </div>
     </div>
   );

@@ -345,7 +345,7 @@ async function selectEndpointMode(page: Page, mode: "derived" | "explicit") {
   await select.selectOption(mode);
 }
 
-test.describe.serial("J2 Geo-block 独立真实验收", () => {
+test.describe.serial("J2 地区访问限制 独立真实验收", () => {
   const runtime: Record<string, unknown> = { runId: RUN_ID, tests: [] as unknown[] };
 
   test.afterEach(async ({ page }, testInfo: TestInfo) => {

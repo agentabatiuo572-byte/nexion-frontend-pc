@@ -43,7 +43,7 @@ export const DOMAIN_A: ModuleEntry[] = [
   },
   {
     path: "/platform/permissions",
-    summary: "权限字典(A8):全平台权限码(READ/WRITE/HIGH)只读浏览。按域/类型筛选 + 搜索 + 分页,查看每个权限点所属菜单、是否放大资金流出、已绑定角色数。权限码本身由 seed 维护,本页不增删。",
+    summary: "权限清单(A8):全平台权限码(READ/WRITE/HIGH)只读浏览。按域/类型筛选 + 搜索 + 分页,查看每个权限点所属菜单、是否放大资金流出、已绑定角色数。权限码本身由 seed 维护,本页不增删。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

@@ -15,7 +15,7 @@ test("A1 visible sentinel: no unexpected ffix account is active", async ({ page 
   const fixtureConfig = await finalFixtureConfig();
   const allowedFinalAccounts = fixtureConfig.allowedFinalAccounts;
   await loginForVisibleA1(page, fixtureConfig.bootstrap);
-  const link = page.locator("aside").getByRole("link", { name: "运营账号 & RBAC A1", exact: true });
+  const link = page.locator("aside").getByRole("link", { name: "运营账号与权限 A1", exact: true });
   if (!await link.isVisible().catch(() => false)) await page.locator("aside").getByRole("button", { name: /平台基础.*A|A.*平台基础/ }).click();
   await link.click();
   await expect(page).toHaveURL(/\/platform\/rbac$/);

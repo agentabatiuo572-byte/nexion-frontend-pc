@@ -102,7 +102,7 @@ test("关键写操作按人工路径真实提交: 导出、资金、提现、冻
     await expectPageHealthy(page, "C3");
   });
 
-  await test.step("D2 提现审核队列执行冻结/驳回/延迟类处置", async () => {
+  await test.step("D2 待审核提现执行冻结/驳回/延迟类处置", async () => {
     await openModuleFromSidebar(page, moduleById("D2"));
     await runD2ReviewDisposition(page);
     await expectTransientSuccess(page);

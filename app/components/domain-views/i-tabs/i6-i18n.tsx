@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * I6 i18n 文案 / I7 教程中心共享数据与动作实现，按路由只渲染各自业务区。
- * 单源:后端 /content/i18n-learning/overview;空库时后端写入 MySQL 种子后再查出。
+ * I6 多语言文案 / I7 教程中心共享数据与动作实现，按路由只渲染各自业务区。
+ * 统一来源:后端 /content/i18n-learning/overview;空库时后端写入 MySQL 种子后再查出。
  * 操作确认 显式 edit 契约:奖励调整 / 换推荐课 = 调参传 edit;
  *   课程发布 / 词条发布 / 课程下架 = 处置不传 edit。
  * I 域唯一 amplifies = 课程奖励上调(B1 红线核验,SPEC §4 注:拒绝码 V4 目标 422,
@@ -539,7 +539,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
   const rollbackCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({
     action: <>回滚课程版本 · {c.title} → {row.version}</>,
-    detail: <>回滚只接受服务端历史快照；课程内容、测验和奖励配置一起原子恢复，用户奖励仍按课程+用户+版本幂等。</>,
+    detail: <>回滚只接受服务端历史快照；课程内容、测验和奖励配置一起原子恢复，用户奖励仍按课程+用户+版本防重复提交。</>,
     amplifies: true,
     run: (reason) => reloadVersions(c.id, actions.rollbackI7CourseVersion(c.id, row.version, reason), `已回滚到 ${row.version}`),
   });

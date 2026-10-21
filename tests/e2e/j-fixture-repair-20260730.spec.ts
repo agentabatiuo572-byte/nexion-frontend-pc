@@ -328,7 +328,7 @@ async function confirmDialog(page: Page, reason: string) {
 }
 
 async function approveThroughVisibleA2(page: Page, operationId: string, reason: string) {
-  await navigatePlatform(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  await navigatePlatform(page, "操作记录与审批 A2", /\/platform\/audit$/);
   await page.reload({ waitUntil: "domcontentloaded" });
   const row = page.locator("tbody tr").filter({ hasText: operationId }).first();
   await expect(row).toBeVisible({ timeout: 30_000 });
@@ -341,7 +341,7 @@ async function approveThroughVisibleA2(page: Page, operationId: string, reason: 
 }
 
 async function rejectThroughVisibleA2(page: Page, operationId: string, reason: string) {
-  await navigatePlatform(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  await navigatePlatform(page, "操作记录与审批 A2", /\/platform\/audit$/);
   await page.reload({ waitUntil: "domcontentloaded" });
   const row = page.locator("tbody tr").filter({ hasText: operationId }).first();
   await expect(row).toBeVisible({ timeout: 30_000 });

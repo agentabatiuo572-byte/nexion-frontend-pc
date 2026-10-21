@@ -129,7 +129,7 @@ test("A5 keeps owner routing server-defined and exposes distinct recovery states
   assert.match(api, /A5_REQUEST_TIMEOUT_MS/);
   assert.doesNotMatch(page + client, /function ownerFor|\/config\/overview/);
   assert.match(client, /currentValue/);
-  assert.match(client, /没有查看平台参数寄存器的权限/);
+  assert.match(client, /没有查看平台参数管理的权限/);
   assert.match(client, /登录已失效/);
   assert.match(client, /数据一致性校验未通过/);
   assert.match(client, /平台参数服务返回异常/);

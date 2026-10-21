@@ -141,7 +141,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       const slot = "settle|batch";
       let mintedFresh = false;
       // 指纹必须覆盖整个提案信封:pending 计数进了 body 的 before,刷新页面后它会随新邀请关系变化。
-      // 漏掉它则指纹相同而 body 变了 → 后端 payload-bound 幂等回 409,且因非全新尝试不弃号 = 24h 死锁。
+      // 漏掉它则指纹相同而 body 变了 → 后端 payload-bound 防重复提交回 409,且因非全新尝试不弃号 = 24h 死锁。
       const commandKey = commandAttempts.resolve(
         slot,
         JSON.stringify([limit, data?.version, data?.rhythmMonth, data?.rewardSnapshotHash, data?.pending]),
@@ -197,7 +197,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
             <div className="k">{param.label}</div>
             <div className="v">{param.kind === "select" ? LOCK_MODE_LABELS[String(data?.params?.[param.key] ?? "risk_bucket")] : `基础 ${String(data?.params?.[param.key] ?? "0")}`} <span className="vu">{param.unit}</span>{canWrite && <button className="l-btn sm mc" disabled={!data} onClick={() => editParam(param)}>调整</button>}</div>
             <div className="s">{param.kind === "select"
-                ? "影响后续真实结算；所有修改强制理由、幂等键和审计。"
+                ? "影响后续真实结算；所有修改强制理由、防重复提交编号和审计。"
                 : `H1 第 ${data?.rhythmMonth ?? "—"} 月倍率计入后，实际发放 ${String(data?.effectiveRewards?.[param.key] ?? "—")} ${param.unit}（${param.key.startsWith("newcomer.") ? data?.newcomerMultiplier : data?.inviterMultiplier}×）。`}</div>
           </div>)}
         </div></div>

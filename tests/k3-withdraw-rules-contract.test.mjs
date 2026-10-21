@@ -162,8 +162,8 @@ test("K3 Final7 carrier binds the candidate and global lock while creating the B
   assert.match(final7UiGuard, /K3_FINAL7_MANIFEST_RUN_MISMATCH/);
   assert.match(final7UiGuard, /K3_FINAL7_MANIFEST_CANDIDATE_MISMATCH/);
   assert.match(final7UiGuard, /a\[href="\/overview\/dual-ledger"\]/);
-  assert.doesNotMatch(final7UiGuard, /getByText\("双账本总览", \{ exact: true \}\)/);
-  assert.match(final7UiGuard, /getByRole\("heading", \{ name: "双账本总览", exact: true \}\)/);
+  assert.doesNotMatch(final7UiGuard, /getByText\("资金与应付款总览", \{ exact: true \}\)/);
+  assert.match(final7UiGuard, /getByRole\("heading", \{ name: "资金与应付款总览", exact: true \}\)/);
   assert.match(final7UiGuard, /getByRole\("button", \{ name: "登记储备注入" \}\)/);
   assert.match(final7UiGuard, /a\[href="\/emergency\/kill-switch"\]/);
   assert.match(final7UiGuard, /getByRole\("button", \{ name: "恢复", exact: true \}\)/);

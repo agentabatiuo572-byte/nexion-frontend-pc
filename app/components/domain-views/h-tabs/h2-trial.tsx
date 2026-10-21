@@ -270,7 +270,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     if (!canCancel || !knownTrialOwner(session)) return;
     openActionConfirm({
       action: `强制取消试用 · ${session.sid}`,
-      detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。会话会转为 <b>cancelled</b> 终态,由后端幂等处理并审计。</>,
+      detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。会话会转为 <b>cancelled</b> 终态,由后端防重复提交处理并审计。</>,
       amplifies: false,
       run: (reason) => {
         const def = findHighOp("h2_trial_cancel")!;
@@ -412,8 +412,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">四道前置闸</span>
-          <span className="sub">· 全部由服务器裁决</span>
+          <span className="ttl">开始试用前的四项检查</span>
+          <span className="sub">· 由服务器统一判断</span>
         </div>
         <div className="l-b" style={{ paddingTop: 4 }}>
           {model.gates.map((gate) => (
@@ -422,7 +422,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                 {gate.gate}
                 {gate.note && <small>{gate.note}</small>}
               </div>
-              <span className="bdg cyan">已挂闸</span>
+              <span className="bdg cyan">已启用</span>
             </div>
           ))}
         </div>
@@ -430,8 +430,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">7 态会话状态机</span>
-          <span className="sub">· 状态只能服务器推进</span>
+          <span className="ttl">试用流程的七种状态</span>
+          <span className="sub">· 状态由服务器更新</span>
         </div>
         <div className="l-b" style={{ paddingTop: 4 }}>
           <div className="sm-strip">
@@ -447,7 +447,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">会话监控</span>
-          <span className="sub">· 后端返回会话状态 · 处置接口幂等</span>
+          <span className="sub">· 后端返回会话状态 · 处置接口防重复提交</span>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 620 }}>

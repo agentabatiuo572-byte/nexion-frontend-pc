@@ -21,7 +21,7 @@ const MODULES: ModuleCase[] = [
     id: "K1",
     path: "/risk/multi-account",
     endpoint: "/api/admin/risk/multi-account/overview",
-    marker: /三层去重命中列表/,
+    marker: /可能属于同一人的账户/,
     error: /K1 数据加载失败/,
     retry: /仅重试 K1/,
     mutation: /调整|添加白名单|移除|标可疑|批量冻结|解除误判|判正常|保存复审/,

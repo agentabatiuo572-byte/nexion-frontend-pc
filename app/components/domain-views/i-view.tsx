@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * I 内容与合规 CMS — design_handoff_i_domain 设计稿 port(2026-06-11 重构;2026-06-15 客服 I8/I9 迁出至域 M 客服中心)。
- * 7 子页:I1 转化文案 A/B / I2 Nova 推送运营 / I3 通知 Campaign /
- *   I4 信任中心 / I5 风险披露 / I6 i18n 文案与课程管理。
+ * I 内容与合规 — design_handoff_i_domain 设计稿 port(2026-06-11 重构;2026-06-15 客服 I8/I9 迁出至域 M 客服中心)。
+ * 7 子页:I1 页面文案对比测试 / I2 Nova 消息推送 / I3 通知活动 /
+ *   I4 信任中心 / I5 风险披露 / I6 多语言文案与课程管理。
  * 三类弹窗:OperationConfirmModal(操作确认,显式 edit 契约)/ KConfirmModal(普通确认,复用 K 域原语)。
  * 真写统一走后端 /content/* 接口;概览为空时保持空态,不在前端补业务样例。
  * amplifies 唯一流出方向 = 课程奖励上调(B1 红线核验,SPEC §4 注:拒绝码 V4 目标 422,B1 现行 403)。

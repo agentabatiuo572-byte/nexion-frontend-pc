@@ -169,7 +169,7 @@ test("rejects counterfeit zeros when an authoritative revenue source is missing"
 test("allows confirmation events for earlier submissions but rejects a state-table source", () => {
   const payload = validPayload();
   assert.doesNotThrow(() => assertL3FinanceContract(payload));
-  payload.redemption.source = "提现订单状态机";
+  payload.redemption.source = "提现订单进度";
   assert.throws(
     () => assertL3FinanceContract(payload),
     /L3_FINANCE_PROTOCOL_INVALID:redemption\.source/,

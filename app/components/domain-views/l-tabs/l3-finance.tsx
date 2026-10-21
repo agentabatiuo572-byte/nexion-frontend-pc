@@ -2,7 +2,7 @@
 
 /**
  * L3 · 财务报表 — 收入结构 / 兑付 / 净敞口 / 负债到期 四类周期核账报表。
- * 不另立财务账本:覆盖率/红黄线/储备/负债 = LEDGER·TREASURY 单源,9 科目 = LIABILITIES(B2 定义),
+ * 不另立财务账本:覆盖率/红黄线/储备/负债 = LEDGER·TREASURY 统一来源,9 科目 = LIABILITIES(B2 定义),
  * 7d 到期 = MATURITY 聚合;收入金额 = REVENUE。本页只读聚合;含资金明细导出 = 操作确认。
  */
 import { useRef, useState } from "react";
@@ -366,7 +366,7 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
         <div className="f-stat"><div className="k">本期总收入</div><div className="v">{fmtM(revTotal)}</div><div className="sub">按服务器当前报表周期汇总</div></div>
         <div className="f-stat ok"><div className="k">兑付率(本期)</div><div className="v">{redRate}</div><div className="sub">已兑付 ÷ 已提交 · 慢性核账指标</div></div>
         <div className="f-stat ok"><div className="k">兑付覆盖率(来自权威账本)</div><div className="v">{TREASURY.coverageRatio}%</div><div className="sub">红线 {TREASURY.redLine} / 黄线 {TREASURY.yellowLine} · 只读展示</div></div>
-        <div className="f-stat cyan"><div className="k">储备可覆盖到期</div><div className="v">{reserveCoverDaysValue}</div><div className="sub">{reserveCoverDaysCopy} · 来自资金池水位</div></div>
+        <div className="f-stat cyan"><div className="k">储备可覆盖到期</div><div className="v">{reserveCoverDaysValue}</div><div className="sub">{reserveCoverDaysCopy} · 来自可用资金与应付款</div></div>
       </div>
 
       {/* period context */}
@@ -448,7 +448,7 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
             </div>
             <div className="ltint" style={{ fontSize: 12, marginBottom: 8 }}><b>比率与余额不可混用</b> · <AutoGloss>兑付率衡量本期申请完成比例；在途余额衡量尚未完成的应付款。两者同源但含义不同。</AutoGloss></div>
             <div className="ltint" style={{ fontSize: 12, marginBottom: 8 }}><b>口径说明</b> · <AutoGloss>提现申请、已兑付、驳回是互斥的结果分类；延迟与冻结是过程中的生命周期事件，一笔提现可能先延迟或冻结、之后仍完成兑付，因此二者可与已兑付重叠，不与申请总数相加等于分母。兑付率固定按 已兑付 ÷ 本期申请总数 计算，不把延迟/冻结计入分子或分母。</AutoGloss></div>
-            <div className="ltint warn" style={{ fontSize: 12 }}><b>告警归属</b> · <AutoGloss>兑付率用于周期核账；急性提现安全信号以覆盖率和挤兑比率越线记录为准。需要处置时请进入提现审核队列。</AutoGloss></div>
+            <div className="ltint warn" style={{ fontSize: 12 }}><b>告警归属</b> · <AutoGloss>兑付率用于周期核账；急性提现安全信号以覆盖率和挤兑比率越线记录为准。需要处置时请进入待审核提现。</AutoGloss></div>
           </div>
         </section>
       </div>
@@ -481,7 +481,7 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">负债到期报表</span>
-          <span className="sub">· <AutoGloss>接下来要付的钱什么时候到期 · 数字直接取自资金池水位,科目定义跟负债看板一致</AutoGloss></span>
+          <span className="sub">· <AutoGloss>接下来要付的钱什么时候到期 · 数字直接取自可用资金与应付款,科目定义跟负债看板一致</AutoGloss></span>
           <div className="r"><div className="chips">
             {(["7d", "30d"] as const).map((w) => (
                <button key={w} className={"chip" + (matWin === w ? " sel" : "")} onClick={() => { setMatWin(w); ctx.toast(`到期窗口已切换为${w === "7d" ? "未来 7 天" : "未来 30 天"}`); }}>{w === "7d" ? "未来 7 天" : "未来 30 天"}</button>
@@ -511,7 +511,7 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
               </div>
             </div>
             <div>
-              <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 10 }}>到期排程(30d) <span className="lcode" style={{ marginLeft: 6 }}>数字取自资金池水位</span></div>
+              <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 10 }}>到期排程(30d) <span className="lcode" style={{ marginLeft: 6 }}>数字取自可用资金与应付款</span></div>
               {matChart()}
               <div className="exp-legend" style={{ marginTop: 6 }}>
                 <span className="it"><span className="lsw" style={{ background: "var(--cyan)" }} />提现到期</span>

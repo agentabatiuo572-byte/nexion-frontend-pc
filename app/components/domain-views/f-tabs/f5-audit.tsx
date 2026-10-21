@@ -94,7 +94,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
 
   // 单笔冻结/提前解锁/解冻(合并底账 §二#4 恢复):可逆的「先按住观察」,与不可逆冲正分层。
   // 走既有 dispose 管线:openActionConfirm(op:"dispose") → shell updateF5Config → proposeFConfig
-  // → f_commission_status A2 票(幂等 + 服务端 CAS + 审计),paramKey 用行上现成的 auditKey。
+  // → f_commission_status A2 票(防重复提交 + 服务端 CAS + 审计),paramKey 用行上现成的 auditKey。
   const dispose = (kind: "freeze" | "unlock" | "unfreeze", row: F5CommissionEvent) => {
     const amount = amountLabel(row);
     const map = {
@@ -212,14 +212,14 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   };
 
   if (ctx.f5Loading && !data) {
-    return <section className="pane"><div style={{ padding: 18 }}>F5 佣金事件审计加载中...</div></section>;
+    return <section className="pane"><div style={{ padding: 18 }}>F5 佣金记录核对加载中...</div></section>;
   }
 
   return (
     <div className="f-section-stack">
       <section className="pane">
         <div className="pane-h">
-          <span className="ph-ttl">F5 佣金事件审计</span>
+          <span className="ph-ttl">F5 佣金记录核对</span>
           <span className="ph-sub">服务端游标 · 八类佣金真实账本</span>
         </div>
         {ctx.f5Error && <div style={{ padding: 12, color: "var(--danger)" }}>加载失败：{ctx.f5Error}。佣金权威快照不可用，批量补发已暂停。 <button className="fbtn" onClick={() => void ctx.refreshF5(query())}>重试</button></div>}

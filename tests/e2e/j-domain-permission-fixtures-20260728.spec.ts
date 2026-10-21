@@ -54,7 +54,7 @@ const MODULES: ModuleProbe[] = [
       reason: "权限探针不得执行",
       operator: "permission-probe",
     },
-    visibleText: /Geo-block/,
+    visibleText: /地区访问限制/,
     forbiddenButtons: /^(编辑黑名单|编辑受限名单|应急封锁|编辑封锁范围|切换判定源)$/,
   },
   {

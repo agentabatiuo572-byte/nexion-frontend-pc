@@ -215,8 +215,8 @@ test("visible A6/A2 grants only network_f1_write to the RunID checker role", asy
     await checker.reload({ waitUntil: "domcontentloaded" });
     const checkerAfterRefresh = await session(checker);
     expect([...checkerAfterRefresh.authorities].sort()).toEqual(expectedSessionAuthorities);
-    await navigatePlatform(checker, "审计 & 操作确认 A2", /\/platform\/audit$/);
-    await expect(checker.getByRole("heading", { name: "审计 & 操作确认" })).toBeVisible();
+    await navigatePlatform(checker, "操作记录与审批 A2", /\/platform\/audit$/);
+    await expect(checker.getByRole("heading", { name: "操作记录与审批" })).toBeVisible();
     await checker.screenshot({ path: path.join(EVIDENCE_DIR, "05-checker-refresh-relogin.png"), fullPage: true });
 
     evidence.roleId = beforeDetail.id;
@@ -360,7 +360,7 @@ async function confirmDialog(page: Page, reason: string) {
 }
 
 async function approveThroughVisibleA2(page: Page, operationId: string, reason: string) {
-  await navigatePlatform(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  await navigatePlatform(page, "操作记录与审批 A2", /\/platform\/audit$/);
   await page.reload({ waitUntil: "domcontentloaded" });
   const row = page.locator("tbody tr").filter({ hasText: operationId }).first();
   await expect(row).toBeVisible();
@@ -377,7 +377,7 @@ async function rejectPendingThroughVisibleA2(page: Page, operationId: string) {
   if (!(await page.locator("aside").isVisible({ timeout: 2_000 }).catch(() => false))) {
     await loginSuperadmin(page);
   }
-  await navigatePlatform(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  await navigatePlatform(page, "操作记录与审批 A2", /\/platform\/audit$/);
   await page.reload({ waitUntil: "domcontentloaded" });
   const row = page.locator("tbody tr").filter({ hasText: operationId }).first();
   if (!(await row.isVisible().catch(() => false))) return;

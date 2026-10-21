@@ -70,7 +70,7 @@ function statusLabel(status: string) {
     REVIEW_PASSED: "已放行", PENDING_CHAIN: "已放行", PROCESSING: "处理中",
     SENT: "已广播", CHAIN_SUBMITTED: "已广播", CONFIRMED: "已确认", SUCCESS: "已确认",
     REVIEW_REJECTED: "审核拒绝", REJECTED: "审核拒绝", ADDRESS_INVALID: "地址无效",
-    TX_FAILED: "链上失败", FAILED: "链上失败", TX_ORPHANED: "孤块/死亡信件", DEAD: "孤块/死亡信件",
+    TX_FAILED: "链上失败", FAILED: "链上失败", TX_ORPHANED: "交易处理异常，需人工核对", DEAD: "交易处理异常，需人工核对",
     REFUNDED: "已退款",
   } as Record<string, string>)[status.toUpperCase()] ?? "未知状态";
 }
@@ -144,7 +144,7 @@ const OPERATION_TEXT_LABELS: Record<string, string> = {
   EXTENDED_HOLD: "冷却期等待复查",
   REVIEW_PENDING: "待审核",
   REVIEW_PASSED: "已放行",
-  TX_ORPHANED: "孤块/死亡信件",
+  TX_ORPHANED: "交易处理异常，需人工核对",
   TX_FAILED: "链上失败",
   PROCESSING: "处理中",
   CONFIRMED: "已确认",
@@ -207,7 +207,7 @@ function lifecycleSummary(row: D2Withdrawal) {
   if (reason !== "—") return reason;
   if (["EXTENDED_HOLD", "DELAYED"].includes(row.status.toUpperCase())) return "等待复查时间，到期后系统自动转回待审核";
   if (row.status.toUpperCase() === "FROZEN") return "资金已冻结，需由有权限人员核验后解冻";
-  return "无异常，按提现状态机正常流转";
+  return "无异常，按提现处理流程正常流转";
 }
 
 function routeLabel(value?: string) {
@@ -657,7 +657,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       const updated = await simulateD2CooldownExpiry(row.withdrawalNo, reason, key);
       pendingKeys.forget(scope);
       setDetail(updated);
-      toast(`${row.withdrawalNo} 已模拟冷却到期 · 真实状态机结果：${statusLabel(updated.status)}`);
+      toast(`${row.withdrawalNo} 已模拟冷却到期 · 真实处理流程结果：${statusLabel(updated.status)}`);
       await load();
     } catch (cause) {
       if (!isDOutcomeUnknownError(cause)) pendingKeys.forget(scope);
@@ -674,7 +674,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const confirmDevelopmentSimulation = (row: D2Withdrawal) => {
     openActionConfirm({
       action: `模拟冷却到期 · ${row.withdrawalNo}`,
-      detail: "仅开发环境。只把这笔开发账号提现单的冷却时间推进到当前时刻；随后按真实到期状态机重新检查 K3、K4、B1 和提现开关，不直接标记成功。A2 对象锁、D3 储备、审计与幂等仍然生效。",
+      detail: "仅开发环境。只把这笔开发账号提现单的冷却时间推进到当前时刻；随后按真实到期处理流程重新检查 K3、K4、B1 和提现开关，不直接标记成功。A2 对象锁、D3 储备、审计与防重复提交仍然生效。",
       amplifies: true,
       coverage: d5 ? { coverageRatio: d5.coverageRatio, redlinePct: d5.redlinePct } : undefined,
       reasonMin: 8,
@@ -771,7 +771,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     <D2StatusFlow />
 
     <section className="l-card">
-      <div className="l-h"><span className="ttl">提现审核队列</span><span className="sub">· 服务端权威状态 · 逐笔 / 批量</span></div>
+      <div className="l-h"><span className="ttl">待审核提现</span><span className="sub">· 服务端权威状态 · 逐笔 / 批量</span></div>
       <div className="l-b d2-search-panel">
         <div className="d2-search-toolbar">
           <label className="d2-filter-field d2-keyword-field"><span>提现单 / 用户</span><input placeholder="输入提现单号、用户编号或昵称" value={keyword} onChange={(event) => setKeyword(event.target.value)} /></label>

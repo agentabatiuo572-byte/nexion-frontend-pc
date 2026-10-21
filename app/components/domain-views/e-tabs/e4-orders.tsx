@@ -9,7 +9,7 @@ const Arrow = () => <svg width={16} height={12} viewBox="0 0 16 12" fill="none" 
 const Chevron = () => <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 6l6 6-6 6" /></svg>;
 
 const CONNECTORS = [{ cls: "start", ln: "a" }, { cls: "mid", ln: "b" }, { cls: "end", ln: "c" }];
-// 筛选值 s 是后端订单状态机契约(backend-canonical,不可改);label 运营可读中文,复用 data.ts 的 stateLabel 单一真源。
+// 筛选值 s 是后端订单进度契约(backend-canonical,不可改);label 运营可读中文,复用 data.ts 的 stateLabel 单一真源。
 const ORDER_STATES = ["placed", "paid", "provisioning", "activated", "payment_failed", "expired", "provisioning_failed", "refunded", "chargeback", "cancelled"] as const;
 const FILTERS = [
   { s: "all", label: "全部" },
@@ -33,7 +33,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
     .filter((o) => ctx.orderState(o) === "activated")
     .reduce((sum, o) => sum + o.amt, 0);
   const inFlight = orders.filter((o) => IN_FLIGHT_STATES.has(ctx.orderState(o))).length;
-  // 状态机主路径节点:nm 中文主标(运营可读);ct 计数补全语义(原"X 在"语意残缺)。
+  // 处理流程主路径节点:nm 中文主标(运营可读);ct 计数补全语义(原"X 在"语意残缺)。
   const nodes = [
     { cls: "start", nm: "已下单", ct: `${stateCounts.get("placed") ?? 0} 单` },
     { cls: "flow", nm: "已支付", ct: `${stateCounts.get("paid") ?? 0} 单` },
@@ -60,12 +60,12 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
         { k: "失败终态", v: (stateCounts.get("payment_failed") ?? 0) + (stateCounts.get("provisioning_failed") ?? 0) + (stateCounts.get("chargeback") ?? 0), sub: "支付失败 / 开通失败 / 拒付", tone: "danger" },
       ]} />
 
-      {/* 状态机流转图 */}
+      {/* 订单处理流程图 */}
       <section className="sm-card">
         <div className="sm-h">
-          <span className="ttl">订单状态机 · 流转图</span>
+          <span className="ttl">订单进度 · 流转图</span>
           <span className="sub">当前页实时状态 · 主路径 + 终态分支</span>
-          <span className="r"><CodeTag tone="electric">订单状态机</CodeTag></span>
+          <span className="r"><CodeTag tone="electric">订单进度</CodeTag></span>
         </div>
         {ctx.e4Error && <div className="tint warn tiny" style={{ marginBottom: 12 }}>E4 同步失败:{ctx.e4Error}</div>}
         {ctx.e4Loading && <div className="tint tiny" style={{ marginBottom: 12 }}>正在同步订单数据...</div>}

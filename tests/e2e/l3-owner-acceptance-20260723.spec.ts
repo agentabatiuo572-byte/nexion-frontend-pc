@@ -43,7 +43,7 @@ test("L3 first-user entry exposes all four PRD financial report views", async ({
   expect(revenuePayload.data?.serverAuthoritative).toBe(true);
   expect(revenuePayload.data?.streams).toHaveLength(4);
   expect(redemptionPayload.data?.serverAuthoritative).toBe(true);
-  expect(redemptionPayload.data?.source).toBe("提现订单状态机");
+  expect(redemptionPayload.data?.source).toBe("提现订单进度");
   expect(maturity7Payload.data?.daily).toHaveLength(7);
   expect(maturity30Payload.data?.daily).toHaveLength(30);
   await saveEvidence("page.png", page, { fullPage: true });

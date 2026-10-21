@@ -15,9 +15,9 @@ const EVIDENCE = process.env.G_FINAL7_EVIDENCE_DIR
 
 const modules = [
   { id: "G1", href: "/finance-products/staking", title: "G1 Staking", api: "/api/admin/market/staking" },
-  { id: "G2", href: "/finance-products/exchange", title: "G2 兑换风控", api: "/api/admin/market/exchange" },
-  { id: "G3", href: "/finance-products/market", title: "G3 NEX 行情引擎", api: "/api/admin/market/nex/curve" },
-  { id: "G4", href: "/finance-products/genesis", title: "G4 Genesis 经济", api: "/api/admin/market/nex/genesis?page=1&pageSize=10" },
+  { id: "G2", href: "/finance-products/exchange", title: "G2 兑换风险规则", api: "/api/admin/market/exchange" },
+  { id: "G3", href: "/finance-products/market", title: "G3 NEX 价格管理", api: "/api/admin/market/nex/curve" },
+  { id: "G4", href: "/finance-products/genesis", title: "G4 创世节点销售与收益", api: "/api/admin/market/nex/genesis?page=1&pageSize=10" },
   { id: "G7", href: "/finance-products/repurchase", title: "G7 复投激励", api: "/api/admin/market/nex/repurchase" },
 ] as const;
 

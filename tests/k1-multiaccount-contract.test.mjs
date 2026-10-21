@@ -70,9 +70,10 @@ test("K1 renders write actions only when the authenticated session has the exact
 test("K1 exposes server-side status and sort controls with accessible selected state", () => {
   assert.match(client, /clusterStatus/);
   assert.match(client, /clusterSort/);
-  assert.match(component, /aria-pressed=\{layer === v\}/);
+  assert.match(component, /<TabGroup<"all" \| "ip" \| "device" \| "payment">/);
+  assert.match(component, /label="关联依据筛选"/);
   assert.match(component, /关联账户数/);
-  assert.match(component, /关联强度/);
+  assert.match(component, /关联程度/);
 });
 
 test("K1 whitelist collects CIDR, separate note, future expiry and reason", () => {

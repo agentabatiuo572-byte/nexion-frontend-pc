@@ -2,7 +2,7 @@
 
 /**
  * I4 信任中心 / I5 风险披露复用视图 — 按独立路由与权限渲染。
- * 单源:后端 /content/trust-disclosure/overview;空库时保持空态,不补前端业务样例。
+ * 统一来源:后端 /content/trust-disclosure/overview;空库时保持空态,不补前端业务样例。
  * 操作确认 显式 edit 契约:
  *  - 调参传 edit:回滚(text/current=v)/ 发布披露新版(text/current=j.v)/ 调整受限动作范围(text/current);
  *  - 处置不传 edit:发布信任版块 / 下架信任版块。
@@ -1357,7 +1357,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
             </>
           )}
           <div className="itint" style={{ marginTop: 12 }}>
-            外部链接：{sectionExternalLink || "未配置"}；版本由服务器单源持有，App 端只渲染当前发布版。
+            外部链接：{sectionExternalLink || "未配置"}；服务器管理发布版本，App 只显示当前发布的内容。
           </div>
         </Drawer>
       )}

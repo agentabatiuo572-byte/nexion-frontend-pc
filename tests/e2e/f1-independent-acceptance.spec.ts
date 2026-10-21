@@ -1,5 +1,5 @@
 /**
- * F1 V-Rank 晋升 独立首次用户初验 (v2)
+ * F1 团队等级晋升 独立首次用户初验 (v2)
  *
  * Run ID: F1ACC-20260721-131216
  * 载体: PC http://127.0.0.1:3002 (cookie-based, nexion_admin_token)
@@ -193,7 +193,7 @@ test.describe("F1 V-Rank 独立首次用户验收 v2", () => {
       if (!hasPromotionLog) {
         addDefect("F1-D-PROMOTION-LOG-MISSING", "P1",
           "F1 缺少 PRD ② 第 2 区「晋升记录流」",
-          "登录 → 侧栏 F → V-Rank 晋升 → 检查页面四区结构",
+          "登录 → 侧栏 F → 团队等级晋升 → 检查页面四区结构",
           "页面无「晋升记录流」区块,看不到 userId/before→after V/operator/判定快照",
           "PRD ② 第 2 区强制要求「晋升记录流」:userId/晋升前 V→晋升后 V/触发时点/判定快照/手动标记/operator;是验证 server 晋升判定是否真发生、申诉处理、审计回溯的关键业务区块",
           ["screenshots/01-01-f1-entry.png", "PRD §1264"]);
@@ -201,7 +201,7 @@ test.describe("F1 V-Rank 独立首次用户验收 v2", () => {
       if (!hasPayoutFlow) {
         addDefect("F1-D-PAYOUT-FLOW-MISSING", "P1",
           "F1 缺少 PRD ② 第 4 区「奖励派发流水」",
-          "登录 → 侧栏 F → V-Rank 晋升 → 检查页面四区结构",
+          "登录 → 侧栏 F → 团队等级晋升 → 检查页面四区结构",
           "页面无「奖励派发流水」区块,看不到受奖 userId/达成 V 级/奖励项/受奖上线/结算态/D4 billId",
           "PRD ② 第 4 区强制要求「奖励派发流水」;是核验奖励是否真派发、D4 bill 联动、补发撤销入口的承载区",
           ["screenshots/01-01-f1-entry.png", "PRD §1266"]);

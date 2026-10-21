@@ -87,6 +87,6 @@ test("L1 empty-trend semantics stay aligned with the current backend producer an
   ]);
 
   assert.match(backend, /for \(int index = 0; index < 6; index\+\+\)[\s\S]{0,500}if \(point\.value\(\) == null\) return List\.of\(\)/);
-  assert.match(ui, /KPI 看板/);
+  assert.match(ui, /关键指标/);
   assert.match(ui, /KPI 当前汇总 CSV/);
 });

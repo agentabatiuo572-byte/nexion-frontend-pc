@@ -184,14 +184,14 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     {error && <div className="dtint warn" style={{ marginBottom: 12 }}>{error}</div>}
 
     <div className="f-stats">
-      <div className="f-stat ok"><div className="k">买入牌价（D6 单源）</div><div className="v">{formatVnd(liveRates.buy)}</div><div className="sub">基准价 {formatVnd(config.baseRateVndPerUsdt)} · 买入点差 {config.buySpreadPct}%</div></div>
+      <div className="f-stat ok"><div className="k">买入牌价（按 D6 配置）</div><div className="v">{formatVnd(liveRates.buy)}</div><div className="sub">基准价 {formatVnd(config.baseRateVndPerUsdt)} · 买入点差 {config.buySpreadPct}%</div></div>
       <div className="f-stat cyan"><div className="k">卖出牌价（D7 派生）</div><div className="v">{formatVnd(liveRates.sell)}</div><div className="sub">卖出点差 {config.sellSpreadPct}%</div></div>
       <div className={`f-stat ${inverted ? "danger" : ""}`}><div className="k">草稿双向价差</div><div className="v">{formatVnd(draftRates.buy - draftRates.sell)}</div><div className="sub">{inverted ? "倒挂，默认禁止保存" : "买入牌价 − 卖出牌价"}</div></div>
       <div className={`f-stat ${config.providerReady ? "ok" : "warn"}`}><div className="k">HDPay 代付配置</div><div className="v">{config.providerReady ? "已配置" : "不可用"}</div><div className="sub">与代收共用商户配置</div></div>
     </div>
 
     <section className="l-card" style={{ marginBottom: 12 }}>
-      <div className="l-h"><span className="ttl">单源与审计入口</span><span className="sub">· 服务端 v{config.version} · {config.effectiveAt.replace("T", " ").replace("Z", " UTC")}</span><div className="r"><button className="l-btn sm" disabled={busy} onClick={() => void reload()}>刷新</button></div></div>
+      <div className="l-h"><span className="ttl">配置来源与操作记录</span><span className="sub">· 服务器版本 v{config.version} · {config.effectiveAt.replace("T", " ").replace("Z", " UTC")}</span><div className="r"><button className="l-btn sm" disabled={busy} onClick={() => void reload()}>刷新</button></div></div>
       <div className="l-b"><div className="chips">
         {authorities.includes("finance_d6_read") && <Link className="chip" href="/finance/fx-rate">D6 基准价与买入点差</Link>}
         {authorities.includes("finance_d2_read") && <Link className="chip" href="/finance/withdrawals">D2 提现审核</Link>}

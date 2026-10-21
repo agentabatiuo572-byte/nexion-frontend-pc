@@ -112,21 +112,21 @@ async function login(page: Page, actor: Credentials) {
 }
 
 async function openVisibleA1(page: Page) {
-  const link = page.locator("aside").getByRole("link", { name: "运营账号 & RBAC A1", exact: true });
+  const link = page.locator("aside").getByRole("link", { name: "运营账号与权限 A1", exact: true });
   if (!await link.isVisible().catch(() => false)) await page.locator("aside").getByRole("button", { name: /平台基础.*A|A.*平台基础/ }).click();
   await link.click();
   await expect(page).toHaveURL(/\/platform\/rbac$/);
 }
 
 async function openVisibleA2(page: Page) {
-  const link = page.locator("aside").getByRole("link", { name: "审计 & 操作确认 A2", exact: true });
+  const link = page.locator("aside").getByRole("link", { name: "操作记录与审批 A2", exact: true });
   if (!await link.isVisible().catch(() => false)) await page.locator("aside").getByRole("button", { name: /平台基础.*A|A.*平台基础/ }).click();
   await link.click();
   await expect(page).toHaveURL(/\/platform\/audit$/);
 }
 
 async function openVisibleA4(page: Page) {
-  const link = page.locator("aside").getByRole("link", { name: "埋点事件体系 A4", exact: true });
+  const link = page.locator("aside").getByRole("link", { name: "用户行为事件 A4", exact: true });
   if (!await link.isVisible().catch(() => false)) await page.locator("aside").getByRole("button", { name: /平台基础.*A|A.*平台基础/ }).click();
   await link.click();
   await expect(page).toHaveURL(/\/platform\/events$/);

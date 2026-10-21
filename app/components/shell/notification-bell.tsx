@@ -97,10 +97,10 @@ export function NotificationBell() {
   const bDomain = useBDomainDashboard(canReadBDomain);
   const bAlerts: ShellAlert[] = (() => {
     if (bDomain.error) {
-      return [{ id: "b-sync", level: "high", text: `B 域风险雷达同步失败: ${bDomain.error}`, href: "/overview/risk-radar" }];
+      return [{ id: "b-sync", level: "high", text: `B 域风险提醒同步失败: ${bDomain.error}`, href: "/overview/risk-radar" }];
     }
     if (!bDomain.hasData) {
-      return bDomain.loading ? [{ id: "b-sync", level: "low", text: "B 域风险雷达同步中", href: "/overview/risk-radar" }] : [];
+      return bDomain.loading ? [{ id: "b-sync", level: "low", text: "B 域风险提醒同步中", href: "/overview/risk-radar" }] : [];
     }
     const coverageLevel: AlertLevel =
       bDomain.ledger.coverageRatio < bDomain.ledger.redlinePct
@@ -113,7 +113,7 @@ export function NotificationBell() {
         ? `兑付覆盖率 ${fmtPct(bDomain.ledger.coverageRatio)} 已跌破红线 ${fmtPct(bDomain.ledger.redlinePct)}`
         : coverageLevel === "mid"
           ? `兑付覆盖率 ${fmtPct(bDomain.ledger.coverageRatio)} 低于健康线 ${fmtPct(bDomain.ledger.healthyPct)}`
-          : `兑付覆盖率 ${fmtPct(bDomain.ledger.coverageRatio)} · 风险雷达同步`;
+          : `兑付覆盖率 ${fmtPct(bDomain.ledger.coverageRatio)} · 风险提醒同步`;
     return [
       { id: "b-coverage", level: coverageLevel, text: coverageText, href: "/overview/dual-ledger" },
       ...bDomain.riskRadar.feed.slice(0, 5).map((item, index) => ({

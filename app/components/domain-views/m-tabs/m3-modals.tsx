@@ -328,7 +328,7 @@ export function QuickActionModal({
       <Modal title="关联工单" icon="doc" onClose={onClose} footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose}>关闭</button></>}>
         <div className="sub" style={{ marginBottom: 8 }}>{profile.nickname} · 当前 {profile.tickets} 张未关闭</div>
         <div className="itint">
-          <div style={{ fontSize: 13 }}>请在 M2 工单台使用用户昵称 / 用户编码 / 工单号搜索查看真实关联工单。</div>
+          <div style={{ fontSize: 13 }}>请在 M2 客服工单使用用户昵称 / 用户编码 / 工单号搜索查看真实关联工单。</div>
           <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>本弹窗不再展示静态工单预览。</div>
         </div>
       </Modal>
@@ -355,7 +355,7 @@ export function QuickActionModal({
     const acts: Array<[string, string, string]> = [
       ["临时冻结账户", "限制登录与交易 24h", "C2 账户操作"],
       ["提现限额下调", "单日上限调至默认 50%", "D 域提现记录"],
-      ["补充信息指令", "推送工单资料补充提醒", "M2 工单台账"],
+      ["补充信息指令", "推送工单资料补充提醒", "M2 客服工单账"],
       ["解绑并重装设备", "重新生成设备令牌", "E 域设备明细"],
     ];
     return (

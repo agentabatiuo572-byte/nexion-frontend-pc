@@ -848,13 +848,13 @@ async function openF1(page: Page) {
   await expect(link).toBeVisible();
   await link.click();
   await expect(page).toHaveURL(/\/network\/v-rank$/);
-  await expect(page.getByRole("heading", { name: "V-Rank 晋升", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "团队等级晋升", exact: true })).toBeVisible();
 }
 
 async function openA2(page: Page) {
-  await navigatePlatform(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  await navigatePlatform(page, "操作记录与审批 A2", /\/platform\/audit$/);
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "审计 & 操作确认" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "操作记录与审批" })).toBeVisible();
 }
 
 async function approveThroughVisibleA2(page: Page, id: string, reason: string) {

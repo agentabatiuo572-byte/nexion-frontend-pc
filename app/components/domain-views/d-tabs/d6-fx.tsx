@@ -44,7 +44,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       setData(await loadD6FxQuote());
     } catch (err) {
       setData(null);
-      setError(err instanceof Error ? displayAdminError(err) : "D6 汇率牌价读取失败");
+      setError(err instanceof Error ? displayAdminError(err) : "D6 汇率设置读取失败");
     } finally {
       setLoading(false);
     }
@@ -58,7 +58,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     if (!data) return;
     const current = data[param.key];
     openActionConfirm({
-      action: `汇率牌价调整 · ${param.label}`,
+      action: `汇率设置调整 · ${param.label}`,
       detail: `${param.label}当前为 ${current} ${param.unit}，合法范围 ${param.min.toLocaleString("en-US")}–${param.max.toLocaleString("en-US")}。只影响新付款单；在途付款单继续使用下单时的锁价快照。`,
       edit: { kind: "number", current: String(current), unit: param.unit, min: param.min, max: param.max, step: param.step },
       run: async (reason, value) => {
@@ -91,7 +91,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   };
 
   if (loading && !data) {
-    return <section className="l-card"><div className="l-b">D6 汇率牌价加载中...</div></section>;
+    return <section className="l-card"><div className="l-b">D6 汇率设置加载中...</div></section>;
   }
   if (error && !data) {
     return <section className="l-card"><div className="l-b"><div className="dtint warn">{error}</div><button className="l-btn primary" disabled={loading || busy} style={{ marginTop: 12 }} onClick={() => void load()}>重试读取</button></div></section>;
@@ -120,7 +120,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
 
       <div className="two-col r11">
         <section className="l-card">
-          <div className="l-h"><span className="ttl">牌价配置（操作确认）</span><span className="sub">· 真实后端单源 · CAS + 防重 + 审计</span><div className="r"><button className="l-btn sm" disabled={loading || busy} onClick={() => void load()}>刷新</button></div></div>
+          <div className="l-h"><span className="ttl">牌价配置（操作确认）</span><span className="sub">· 以服务器配置为准 · CAS + 防重 + 审计</span><div className="r"><button className="l-btn sm" disabled={loading || busy} onClick={() => void load()}>刷新</button></div></div>
           <div className="l-b">
             {PARAMS.map((param) => (
               <div className="p-row" key={param.key}>

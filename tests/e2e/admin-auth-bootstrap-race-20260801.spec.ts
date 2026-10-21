@@ -113,11 +113,11 @@ async function installAuthCarrier(page: Page, actor: Actor) {
     effectiveMenus: ["C", "C1", "C2", "C3", "C5", "C6"],
     effectiveMenuNodes: [
       { menuCode: "C", menuName: "用户与账户", routePath: "", parentCode: null, sortOrder: 3 },
-      { menuCode: "C1", menuName: "检索 & 画像", routePath: "/users/search", parentCode: "C", sortOrder: 1 },
+      { menuCode: "C1", menuName: "查找用户与查看资料", routePath: "/users/search", parentCode: "C", sortOrder: 1 },
       { menuCode: "C2", menuName: "账户操作", routePath: "/users/actions", parentCode: "C", sortOrder: 2 },
       { menuCode: "C3", menuName: "余额 & 资产调整", routePath: "/users/assets", parentCode: "C", sortOrder: 3 },
       { menuCode: "C5", menuName: "安全 & 会话", routePath: "/users/security", parentCode: "C", sortOrder: 5 },
-      { menuCode: "C6", menuName: "注册/登录风控", routePath: "/users/reg-risk", parentCode: "C", sortOrder: 6 },
+      { menuCode: "C6", menuName: "注册与登录风险", routePath: "/users/reg-risk", parentCode: "C", sortOrder: 6 },
     ],
     passwordChangeRequired: false,
   };

@@ -12,7 +12,7 @@ const maker: Account = requireMaker(fixture.accounts.maker);
 
 const MODULES = [
   ["J1", "/emergency/kill-switch", /Kill-Switch/],
-  ["J2", "/emergency/geo-block", /Geo-block/],
+  ["J2", "/emergency/geo-block", /地区访问限制/],
   ["J3", "/emergency/tamper", /篡改防御/],
   ["J4", "/emergency/sop", /应急 SOP|执行追溯/],
 ] as const;

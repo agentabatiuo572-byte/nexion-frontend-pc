@@ -8,7 +8,7 @@ import { PORTED_EMPTY_CONTENT } from "./ported-content";
 export const DOMAIN_L: ModuleEntry[] = [
   {
     path: "/analytics/kpi",
-    summary: "KPI 看板 —— 目标是承载八项经营指标的当期值、达标状态与趋势。完整统计序列尚未开放时，只展示可核验的累计事实并明确标出降级范围。",
+    summary: "关键指标 —— 目标是承载八项经营指标的当期值、达标状态与趋势。完整统计序列尚未开放时，只展示可核验的累计事实并明确标出降级范围。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
@@ -23,12 +23,12 @@ export const DOMAIN_L: ModuleEntry[] = [
   },
   {
     path: "/analytics/operations",
-    summary: "运营报表 —— 在役设备、任务完成和网络增长的运营侧汇总。数据来自 E 域设备台账、任务引擎和 F 域网络结构,经 A4 事件流汇总,供运营评估履约能力和裂变质量。",
+    summary: "运营报表 —— 在役设备、任务完成和网络增长的运营侧汇总。数据来自 E 域设备台账、用户任务管理和 F 域网络结构,经 A4 事件流汇总,供运营评估履约能力和裂变质量。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/analytics/export",
-    summary: "导出 & 监管报告 —— 当前可创建和下载 KPI、漏斗、财务、运营四类只读聚合快照。账单明细、监管报告与敏感字段导出会明确显示接入状态，不用模拟数据补齐。",
+    summary: "数据导出与监管报告 —— 当前可创建和下载 KPI、漏斗、财务、运营四类只读聚合快照。账单明细、监管报告与敏感字段导出会明确显示接入状态，不用模拟数据补齐。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

@@ -129,7 +129,7 @@ export function K6Queue() {
   return (
     <div className="k6-panel">
       <div className="k6-sec-head">
-        <div><div className="k6-kicker">设备队列</div><h3>按优先级处理设备</h3><p>状态机驱动的处置工作台:筛选、排序、分页,点开任意设备查看判定轨迹与上下文。</p></div>
+        <div><div className="k6-kicker">设备队列</div><h3>按优先级处理设备</h3><p>处理流程驱动的处置工作台:筛选、排序、分页,点开任意设备查看判定轨迹与上下文。</p></div>
         <span className="k6-bdg dim">{filtered.length} 台</span>
       </div>
       <div className="k6-body">

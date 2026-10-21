@@ -125,7 +125,7 @@ test("H9：首次用户可见入口、真实整组保存、CAS/幂等、权限�
 
     await openH9(maker);
     await openH9(second);
-    await expect(maker.getByText("历史估算配置", { exact: true }).first()).toBeVisible();
+    await expect(maker.getByText("历史数据展示设置", { exact: true }).first()).toBeVisible();
     await expect(maker.getByText(/这页的数会去哪/)).toBeVisible();
     await expect(maker.getByText(/本次提交基于配置版本/)).toHaveCount(0);
     await maker.screenshot({ path: join(EVIDENCE_DIR, "H9", "01-visible-entry.png"), fullPage: true });
@@ -333,7 +333,7 @@ test("F5：真实冻结/解冻/提前解锁、A2、CAS/幂等、权限、D4/审�
 
     await openF5(maker, fixtures.userId);
     await openF5(second, fixtures.userId);
-    await expect(maker.getByRole("main").getByText("F5 佣金事件审计", { exact: true })).toBeVisible();
+    await expect(maker.getByRole("main").getByText("F5 佣金记录核对", { exact: true })).toBeVisible();
     await expect(maker.getByText(/服务端游标 · 六类佣金真实账本/)).toBeVisible();
     await maker.screenshot({ path: join(EVIDENCE_DIR, "F5", "01-visible-entry.png"), fullPage: true });
 
@@ -685,7 +685,7 @@ async function openH9(page: Page) {
   await expect(link).toBeVisible();
   await link.click();
   await expect(page).toHaveURL(/\/growth\/public-stats$/);
-  await expect(page.getByText("历史估算配置", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("历史数据展示设置", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
 }
 
 async function openF5(page: Page, userId?: string, reload = false) {

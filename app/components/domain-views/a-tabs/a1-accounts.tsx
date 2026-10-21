@@ -741,7 +741,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     if (!canRegisterPermission || !permissionDraft.code.trim() || !permissionDraft.name.trim() || !permissionDraft.path.trim()) return;
     openActionConfirm({
       action: `登记动作权限 · ${permissionDraft.code.trim()}`,
-      detail: <>只向 A8 权限字典登记新动作，<b>不会自动绑定任何角色</b>；服务端强制 expectedAbsent、admin 路径校验与零角色绑定校验。</>,
+      detail: <>只向 A8 权限清单登记新动作，<b>不会自动绑定任何角色</b>；服务端强制 expectedAbsent、admin 路径校验与零角色绑定校验。</>,
       amplifies: permissionDraft.amplifies,
       reasonMin: 8,
       reasonMax: 200,
@@ -760,7 +760,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     return (
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">运营账号 & RBAC</span>
+          <span className="ttl">运营账号与权限</span>
           <span className="sub">· 正在从后端加载 A1 overview</span>
         </div>
         <div className="l-b">
@@ -774,7 +774,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     return (
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">运营账号 & RBAC</span>
+          <span className="ttl">运营账号与权限</span>
           <span className="sub">· 后端数据加载失败</span>
         </div>
         <div className="l-b">
@@ -833,7 +833,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         <div className="l-h">
           <span className="ttl">运营账号(a)</span>
           <span className="sub">
-            · 账号归属在 A1；角色授权以 <Link href="/platform/roles">A6 角色管理</Link> 与 <Link href="/platform/permissions">A8 权限字典</Link> 为准
+            · 账号归属在 A1；角色授权以 <Link href="/platform/roles">A6 角色管理</Link> 与 <Link href="/platform/permissions">A8 权限清单</Link> 为准
           </span>
           <div className="r">
             <button className="l-btn sm" onClick={() => void refreshOverview(true)} disabled={!!mutatingAction}>刷新</button>
@@ -940,7 +940,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       </section>
 
       <section className="l-card" data-capability="a1-permission-registration">
-        <div className="l-h"><span className="ttl">新增动作权限登记</span><span className="sub">· 只登记权限字典 · 默认不授予角色</span></div>
+        <div className="l-h"><span className="ttl">新增动作权限登记</span><span className="sub">· 只登记权限清单 · 默认不授予角色</span></div>
         <div className="l-b" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input aria-label="权限编码" placeholder="domain_action_write" value={permissionDraft.code} onChange={(e) => setPermissionDraft((v) => ({ ...v, code: e.target.value }))} />
           <input aria-label="权限名称" placeholder="权限名称" value={permissionDraft.name} onChange={(e) => setPermissionDraft((v) => ({ ...v, name: e.target.value }))} />

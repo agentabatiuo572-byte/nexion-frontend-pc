@@ -8,8 +8,8 @@
  * A1/A2/A3/A4 读写以各自后端 client 为准,本 shell 只负责弹窗与 toast。
  * A 域三铁律 server-canonical 承诺(UI 不变量,见 a-tabs/types.ts 文件头):
  *  ① 全员强制 2FA(不可关)② 新账号默认零写权 ③ 有效超管 ≥2(实时派生 OPERATORS.filter)
- *  ④ A2 append-only + reason-required + 确认即执行+幂等(Idempotency-Key 24h dedup)
- *  ⑤ A3 killswitch 操作面迁 J1/J2(本页只读);server time 单源 / 防重号仍是后端不变量(配置卡 2026-06-24 移除)
+ *  ④ A2 append-only + reason-required + 确认即执行+防重复提交(Idempotency-Key 24h dedup)
+ *  ⑤ A3 killswitch 操作面迁 J1/J2(本页只读);server time 统一来源 / 防重号仍是后端不变量(配置卡 2026-06-24 移除)
  *  ⑥ A4 资金/KPI 只认 is_server_authoritative=true + PII 禁入
  * amplifies 仅资金放大流出方向(A2 工单放行 fund 类 + amplifies 行)。
  */
@@ -79,7 +79,7 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
           return;
         }
         if (tab === "A9") {
-          if (!cancelled) setLive("服务端审批列表 · 状态机/CAS");
+          if (!cancelled) setLive("服务端审批列表 · 处理流程/CAS");
           return;
         }
         const overview = await fetchA4Overview();

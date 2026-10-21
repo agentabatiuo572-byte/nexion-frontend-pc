@@ -29,7 +29,7 @@ const MODULES = [
   {
     id: "B1",
     path: "/overview/dual-ledger",
-    title: "双账本总览",
+    title: "资金与应付款总览",
     readPath: "/api/admin/treasury/b-domain",
     writePath: "/api/admin/treasury/b-domain/alerts/coverage-redline/ack",
     writeMethod: "POST",
@@ -39,7 +39,7 @@ const MODULES = [
   {
     id: "B2",
     path: "/overview/liquidity",
-    title: "资金池水位",
+    title: "可用资金与应付款",
     readPath: "/api/admin/treasury/reserve",
     writePath: "/api/admin/treasury/forecast-config",
     writeMethod: "PUT",
@@ -49,7 +49,7 @@ const MODULES = [
   {
     id: "B3",
     path: "/overview/funnel",
-    title: "转化漏斗",
+    title: "用户转化分析",
     readPath: "/api/admin/funnel",
     writePath: "/api/admin/funnel/view",
     writeMethod: "POST",
@@ -59,7 +59,7 @@ const MODULES = [
   {
     id: "B4",
     path: "/overview/rhythm",
-    title: "节奏状态",
+    title: "运营阶段状态",
     readPath: "/api/admin/phase/overview",
     writePath: "/api/admin/phase/jump?dial=permission-probe",
     writeMethod: "GET",
@@ -69,7 +69,7 @@ const MODULES = [
   {
     id: "B5",
     path: "/overview/risk-radar",
-    title: "风险雷达",
+    title: "风险提醒",
     readPath: "/api/admin/risk/radar",
     writePath: "/api/admin/risk/radar/triage",
     writeMethod: "POST",
@@ -107,7 +107,7 @@ for (const key of ["b_readonly", "b_no_write"] as const) {
     }
 
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("heading", { name: "风险雷达" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "风险提醒" })).toBeVisible();
     await logout(page);
     await login(page, accounts[key]);
     await assertVisibleMenus(page);
@@ -128,7 +128,7 @@ test("b_no_menu：B 菜单和直接路由拒绝，接口严格按显式 read/wri
 
   await page.goto("/overview/dual-ledger", { waitUntil: "domcontentloaded" });
   await expect(page).not.toHaveURL(/\/overview\/dual-ledger(?:\?.*)?$/);
-  await expect(page.getByRole("heading", { name: "双账本总览" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "资金与应付款总览" })).toHaveCount(0);
   for (const module of MODULES) {
     expect((await browserApi(page, "GET", module.readPath)).status, `${module.id} read without authority`).toBe(403);
     expect((await browserApi(page, module.writeMethod, module.writePath, module.writeBody)).status, `${module.id} write`).toBe(403);

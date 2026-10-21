@@ -47,7 +47,7 @@ const MODULES: ModuleProbe[] = [
   {
     id: "C1",
     path: "/users/search",
-    title: "检索 & 画像",
+    title: "查找用户与查看资料",
     readPath: "/api/admin/users/overview",
     writePath: "/api/admin/users/profiles/export",
     writeMethod: "POST",
@@ -103,7 +103,7 @@ const MODULES: ModuleProbe[] = [
   {
     id: "C6",
     path: "/users/reg-risk",
-    title: "注册/登录风控",
+    title: "注册与登录风险",
     readPath: "/api/admin/users/registration-risk/overview",
     writePath: "/api/admin/users/registration-risk/params/lockShort",
     writeMethod: "PATCH",

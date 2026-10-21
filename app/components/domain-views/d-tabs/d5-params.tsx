@@ -227,7 +227,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
             {canDailyWrite && <button className="l-btn sm mc" disabled={!dailyValid || daily === params.dailyLimitCount} onClick={() => submit("每日提现次数", { dailyLimitCount: daily }, daily > params.dailyLimitCount, `${params.dailyLimitCount} 次 → ${daily} 次`)}>预览并提交</button>}
           </div>
           <div className="dtint ok" style={{ marginBottom: 12 }}>
-            小额免审与到账时效已进入真实提现状态机：新提现会保存快车道判定和到账截止时间；没有链上终局证明时保留资金，不会提前记为已到账。
+            小额免审与到账时效已进入真实提现处理流程：新提现会保存快车道判定和到账截止时间；没有链上终局证明时保留资金，不会提前记为已到账。
           </div>
           <div className="p-row">
             <div className="txt"><div className="k">小额免审线</div><div className="s">0–{D5_SMALL_AMOUNT_THRESHOLD_MAX} USD；上调会放大小额快车道范围</div></div>

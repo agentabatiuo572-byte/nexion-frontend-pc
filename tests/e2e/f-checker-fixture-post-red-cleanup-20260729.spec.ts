@@ -131,7 +131,7 @@ test("revoke old checker sessions and verify the intended fixture state after th
     expect(unknownBody.code).toBe(422);
     expect(unknownBody.message).toBe("A2_OPERATION_NOT_FOUND");
 
-    await navigatePlatform(superadmin, "运营账号 & RBAC A1", /\/platform\/rbac$/);
+    await navigatePlatform(superadmin, "运营账号与权限 A1", /\/platform\/rbac$/);
     const checkerRowBefore = await findAccountRow(superadmin, checkerAccount!.username);
     const sessionCountBefore = await accountSessionCount(checkerRowBefore);
     expect(sessionCountBefore).toBeGreaterThan(0);
@@ -200,8 +200,8 @@ test("revoke old checker sessions and verify the intended fixture state after th
     await checker.reload({ waitUntil: "domcontentloaded" });
     const afterRefresh = await session(checker);
     expect([...afterRefresh.authorities].sort()).toEqual([...afterRelogin.authorities].sort());
-    await navigatePlatform(checker, "审计 & 操作确认 A2", /\/platform\/audit$/);
-    await expect(checker.getByRole("heading", { name: "审计 & 操作确认" })).toBeVisible();
+    await navigatePlatform(checker, "操作记录与审批 A2", /\/platform\/audit$/);
+    await expect(checker.getByRole("heading", { name: "操作记录与审批" })).toBeVisible();
     await checker.screenshot({ path: path.join(EVIDENCE_DIR, "10-checker-refresh-relogin-stable.png"), fullPage: true });
 
     const a2Overview = await success<A2Overview>(
@@ -391,7 +391,7 @@ async function confirmDialog(page: Page, reason: string) {
 }
 
 async function approveThroughVisibleA2(page: Page, operationId: string, reason: string) {
-  await navigatePlatform(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  await navigatePlatform(page, "操作记录与审批 A2", /\/platform\/audit$/);
   await page.reload({ waitUntil: "domcontentloaded" });
   const row = page.locator("tbody tr").filter({ hasText: operationId }).first();
   await expect(row).toBeVisible();
@@ -412,7 +412,7 @@ async function rejectPendingThroughVisibleA2(page: Page, operationId: string, ac
     if (account) await loginMfa(page, account, "independent-super-reviewer-cleanup");
     else await loginSuperadmin(page);
   }
-  await navigatePlatform(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  await navigatePlatform(page, "操作记录与审批 A2", /\/platform\/audit$/);
   await page.reload({ waitUntil: "domcontentloaded" });
   const row = page.locator("tbody tr").filter({ hasText: operationId }).first();
   if (!(await row.isVisible().catch(() => false))) return;

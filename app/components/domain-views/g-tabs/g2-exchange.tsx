@@ -3,7 +3,7 @@
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 /**
- * G2 兑换风控 — 数据来自后端 /api/admin/market/exchange;空库返回空态。
+ * G2 兑换风险规则 — 数据来自后端 /api/admin/market/exchange;空库返回空态。
  */
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -164,7 +164,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
   if (loading && !overview) {
     return (
       <section className="l-card">
-        <div className="l-h"><span className="ttl">G2 兑换风控</span><span className="sub">· 正在读取真实接口数据</span></div>
+        <div className="l-h"><span className="ttl">G2 兑换风险规则</span><span className="sub">· 正在读取真实接口数据</span></div>
         <div className="l-b"><div className="gtint">G2 数据加载中...</div></div>
       </section>
     );
@@ -173,7 +173,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
   if (!overview) {
     return (
       <section className="l-card">
-        <div className="l-h"><span className="ttl">G2 兑换风控</span><span className="sub">· 真实接口数据</span></div>
+        <div className="l-h"><span className="ttl">G2 兑换风险规则</span><span className="sub">· 真实接口数据</span></div>
         <div className="l-b">
           <div className="gtint">G2 数据加载失败 · {error || "未收到本页数据，请重试；持续失败时请联系值班人员。"}</div>
           <button className="l-btn mc" style={{ marginTop: 12 }} onClick={() => void reload()}>重新加载</button>

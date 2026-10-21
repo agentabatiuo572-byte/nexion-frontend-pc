@@ -3,7 +3,7 @@
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 /**
- * C6 注册/登录风控配置。
+ * C6 注册与登录风险配置。
  * 数据源为后端 /registration-risk/overview；调参写 /registration-risk/params/{paramKey}。
  */
 import { useCallback, useEffect, useState } from "react";
@@ -167,7 +167,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   if (!overview) {
     return (
       <section className="l-card">
-        <div className="l-h"><span className="ttl">注册/登录风控</span><span className="sub">· 安全失败关闭</span></div>
+        <div className="l-h"><span className="ttl">注册与登录风险</span><span className="sub">· 安全失败关闭</span></div>
         <div className="l-b">
           <div className={`ctint ${error ? "bad" : ""}`} role={error ? "alert" : "status"}>
             {loading ? "C6 数据加载中，安全配置暂不可操作…" : (error ?? "C6 数据暂不可用，安全配置已停止展示和写入。")}
@@ -306,7 +306,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
 
   const k1Confirm = (guard: UserRegistrationRiskK1Guard) => openConfirm({
     action: `422 · ${text(guard.rejectCode, k1RejectCode)}`,
-    detail: <>服务器拒收：<b>{text(guard.name)}</b> 的唯一配置入口在反多账户引擎 K1。返回 422 {text(guard.rejectCode, k1RejectCode)}，suggestedPath 仅为导航建议。</>,
+    detail: <>服务器拒收：<b>{text(guard.name)}</b> 的唯一配置入口在多账户风险排查 K1。返回 422 {text(guard.rejectCode, k1RejectCode)}，suggestedPath 仅为导航建议。</>,
     chips: [["接口层强制 · 422 拒收", "ready"], ["唯一入口 · K1", "done"]],
     okLabel: "去 K1 配置",
     run: () => {
@@ -418,7 +418,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       </section>
 
       <p className="f-foot">
-        <b>全部在服务器执行</b>：验证码的有效期、试错次数、幂等去重都在服务端校验；锁定期间服务器拒绝该手机号的一切登录请求。数据源：{(overview?.sources ?? ["服务端风险配置", "用户安全状态", "K1 风控边界"]).map(sourceLabel).join(" · ")}
+        <b>全部在服务器执行</b>：验证码的有效期、试错次数、防止重复提交都在服务端校验；锁定期间服务器拒绝该手机号的一切登录请求。数据源：{(overview?.sources ?? ["服务端风险配置", "用户安全状态", "K1 风控边界"]).map(sourceLabel).join(" · ")}
       </p>
     </>
   );

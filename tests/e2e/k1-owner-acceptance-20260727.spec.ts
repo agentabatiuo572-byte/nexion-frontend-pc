@@ -45,12 +45,12 @@ test("K1 首次用户可见入口、失败关闭、刷新与重登完整复验",
   await test.step("首次用户从登录和侧栏进入 K1", async () => {
     await loginFromVisibleEntry(page);
     await openK1FromVisibleSidebar(page);
-    await expect(page.getByText("监控中账户簇", { exact: true })).toBeVisible();
-    await expect(page.getByText("三层去重命中列表", { exact: true })).toBeVisible();
+    await expect(page.getByText("监控中的关联账户组", { exact: true })).toBeVisible();
+    await expect(page.getByText("可能属于同一人的账户", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "IP", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "设备指纹", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "支付工具", exact: true })).toBeVisible();
-    await expect(page.getByText(/K1 参数单源保存/)).toBeVisible();
+    await expect(page.getByText(/服务器统一判断同一 IP、设备或支付工具关联的账户/)).toBeVisible();
     await page.screenshot({
       path: path.join(EVIDENCE_DIR, "01-visible-login-sidebar-three-authoritative-layers.png"),
       fullPage: true,
@@ -74,17 +74,17 @@ test("K1 首次用户可见入口、失败关闭、刷新与重登完整复验",
 
     await page.unroute(OVERVIEW_API);
     await page.getByRole("button", { name: "仅重试 K1", exact: true }).click();
-    await expect(page.getByText("监控中账户簇", { exact: true })).toBeVisible();
+    await expect(page.getByText("监控中的关联账户组", { exact: true })).toBeVisible();
     await expect(page.getByText("K1 数据加载失败", { exact: true })).toHaveCount(0);
   });
 
   await test.step("刷新和重登仍从服务端重新读取", async () => {
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByText("三层去重命中列表", { exact: true })).toBeVisible();
+    await expect(page.getByText("可能属于同一人的账户", { exact: true })).toBeVisible();
     await logout(page);
     await loginFromVisibleEntry(page);
     await openK1FromVisibleSidebar(page);
-    await expect(page.getByText("三层去重命中列表", { exact: true })).toBeVisible();
+    await expect(page.getByText("可能属于同一人的账户", { exact: true })).toBeVisible();
     await expect(page.getByText(/数据加载失败|UNKNOWN_ERROR|Handler dispatch failed/)).toHaveCount(0);
     await page.screenshot({
       path: path.join(EVIDENCE_DIR, "03-refresh-relogin-server-state.png"),

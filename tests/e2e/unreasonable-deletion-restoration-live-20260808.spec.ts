@@ -108,7 +108,7 @@ test("首次用户从可见菜单逐页看到恢复能力，筛选、刷新与�
   await expect(page.getByRole("heading", { name: "运营总览" })).toBeVisible();
   await assertAuthoritativeContracts(page, evidence);
 
-  await openMenuPage(page, "总览驾驶舱", "资金池水位", "/overview/liquidity");
+  await openMenuPage(page, "总览驾驶舱", "可用资金与应付款", "/overview/liquidity");
   await expect(page.getByTestId("b2-fund-flow-history")).toContainText("近 8 个窗口资金流入 / 流出");
   await expect(page.getByTestId("b2-monthly-inflow-history")).toContainText(/新增入金/);
   await expect(page.getByTestId("b2-maturity-chart")).toBeVisible();
@@ -133,7 +133,7 @@ test("首次用户从可见菜单逐页看到恢复能力，筛选、刷新与�
   await expect(page.getByTestId("b2-fund-flow-history")).toBeVisible();
   (evidence.pages as string[]).push("B2");
 
-  await openMenuPage(page, "总览驾驶舱", "转化漏斗", "/overview/funnel");
+  await openMenuPage(page, "总览驾驶舱", "用户转化分析", "/overview/funnel");
   await expect(page.getByTestId("b5-daily-first-purchase-conversion")).toContainText(/每日首购转化率[\s\S]*18%/);
   await expect(page.getByTestId("b7-first-purchase-channel-share")).toContainText("首购渠道来源占比");
   await expect(page.getByText("四级同用户漏斗")).toBeVisible();
@@ -159,7 +159,7 @@ test("首次用户从可见菜单逐页看到恢复能力，筛选、刷新与�
   await expect(page.getByTestId("b5-daily-first-purchase-conversion")).toBeVisible();
   (evidence.pages as string[]).push("B3");
 
-  await openMenuPage(page, "总览驾驶舱", "节奏状态", "/overview/rhythm");
+  await openMenuPage(page, "总览驾驶舱", "运营阶段状态", "/overview/rhythm");
   await expect(page.getByTestId("b3-growth-outflow-ratio")).toContainText(/新增 \/ 流出比趋势[\s\S]*1\.2/);
   await expect(page.getByTestId("b6-monthly-budget-allocation")).toContainText("本月运营预算分配");
   await expect(page.getByTestId("b7-rhythm-engine-decision")).toContainText("节奏引擎判定");
@@ -184,7 +184,7 @@ test("首次用户从可见菜单逐页看到恢复能力，筛选、刷新与�
   await expect(page.getByTestId("b3-growth-outflow-ratio")).toBeVisible();
   (evidence.pages as string[]).push("B4");
 
-  await openMenuPage(page, "总览驾驶舱", "风险雷达", "/overview/risk-radar");
+  await openMenuPage(page, "总览驾驶舱", "风险提醒", "/overview/risk-radar");
   await expect(page.getByTestId("b1-withdraw-pressure-trend")).toContainText(/出金压力走势图[\s\S]*70% 红线/);
   const currentPressure = await apiData(page, "/api/admin/risk/radar");
   const latestPressureRatio = currentPressure.pressureHistory.at(-1)?.ratio;
@@ -204,7 +204,7 @@ test("首次用户从可见菜单逐页看到恢复能力，筛选、刷新与�
   await shotLocator(page.getByTestId("b4-alert-volume-history"), "04c-b5-alert-volume.png");
   (evidence.pages as string[]).push("B5");
 
-  await openMenuPage(page, "分销与团队", "佣金事件审计", "/network/commissions");
+  await openMenuPage(page, "分销与团队", "佣金记录核对", "/network/commissions");
   await expect(page.getByTestId("f5-commission-kind-card")).toHaveCount(6);
   await expect(page.getByTestId("f5-status-distribution-item")).toHaveCount(5);
   await expect(page.getByTestId("f5-status-distribution-item")).toContainText(["已解锁", "冷却", "已提现", "已撤销", "已冻结"]);
@@ -286,7 +286,7 @@ test("首次用户从可见菜单逐页看到恢复能力，筛选、刷新与�
   await shotLocator(page.getByRole("region", { name: "六类佣金支出与状态分布" }), "05b-f5-refresh-stable.png");
   (evidence.pages as string[]).push("F5");
 
-  await openMenuPage(page, "用户与账户", "检索 & 画像", "/users/search");
+  await openMenuPage(page, "用户与账户", "查找用户与查看资料", "/users/search");
   const exportButton = page.getByRole("button", { name: "导出脱敏 CSV" });
   await expect(exportButton).toBeEnabled();
   await exportButton.click();
@@ -335,7 +335,7 @@ test("首次用户从可见菜单逐页看到恢复能力，筛选、刷新与�
   await expect(page.locator('[data-restored-capability^="a3-"] button')).toHaveCount(0);
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.locator('[data-restored-capability="a3-global-rate-limit"]')).toBeVisible();
-  await openMenuPage(page, "平台基础", "埋点事件体系", "/platform/events");
+  await openMenuPage(page, "平台基础", "用户行为事件", "/platform/events");
   await expect(page.locator('[data-restored-capability="a4-event-lifecycle"]')).toContainText("新建");
   await expect(page.locator('[data-restored-capability="a4-event-lifecycle"]')).toContainText("停用");
   await expect(page.locator('[data-restored-capability="a4-event-lifecycle"] button')).toHaveCount(0);
@@ -348,27 +348,27 @@ test("首次用户从可见菜单逐页看到恢复能力，筛选、刷新与�
   await page.getByRole("button", { name: "退出登录" }).click();
   await expect(page.getByRole("heading", { name: "运营控制台登录" })).toBeVisible();
   await login(page);
-  await openMenuPage(page, "总览驾驶舱", "资金池水位", "/overview/liquidity");
+  await openMenuPage(page, "总览驾驶舱", "可用资金与应付款", "/overview/liquidity");
   await expect(page.getByTestId("b2-fund-flow-history")).toBeVisible();
-  await openMenuPage(page, "总览驾驶舱", "转化漏斗", "/overview/funnel");
+  await openMenuPage(page, "总览驾驶舱", "用户转化分析", "/overview/funnel");
   await expect(page.getByTestId("b5-daily-first-purchase-conversion")).toBeVisible();
-  await openMenuPage(page, "总览驾驶舱", "节奏状态", "/overview/rhythm");
+  await openMenuPage(page, "总览驾驶舱", "运营阶段状态", "/overview/rhythm");
   await expect(page.getByTestId("b3-growth-outflow-ratio")).toBeVisible();
-  await openMenuPage(page, "总览驾驶舱", "风险雷达", "/overview/risk-radar");
+  await openMenuPage(page, "总览驾驶舱", "风险提醒", "/overview/risk-radar");
   await expect(page.getByTestId("b1-withdraw-pressure-trend")).toContainText("出金压力走势图");
   await assertNoRestorationFallback(page);
   await shotLocator(page.getByTestId("b1-withdraw-pressure-trend"), "08a-b5-relogin-stable.png");
-  await openMenuPage(page, "分销与团队", "佣金事件审计", "/network/commissions");
+  await openMenuPage(page, "分销与团队", "佣金记录核对", "/network/commissions");
   await expect(page.getByTestId("f5-commission-kind-card")).toHaveCount(6);
   await expect(page.getByTestId("f5-status-distribution-item")).toHaveCount(5);
   await shotLocator(page.getByRole("region", { name: "六类佣金支出与状态分布" }), "08b-f5-relogin-stable.png");
-  await openMenuPage(page, "用户与账户", "检索 & 画像", "/users/search");
+  await openMenuPage(page, "用户与账户", "查找用户与查看资料", "/users/search");
   await expect(page.getByRole("button", { name: "导出脱敏 CSV" })).toBeEnabled();
   await openMenuPage(page, "用户与账户", "余额 & 资产调整", "/users/assets");
   await expect(page.locator('[data-list-label="待放行调整队列"]')).toBeVisible();
   await openMenuPage(page, "平台基础", "系统配置", "/platform/config");
   await expect(page.locator('[data-restored-capability="a3-global-rate-limit"]')).toBeVisible();
-  await openMenuPage(page, "平台基础", "埋点事件体系", "/platform/events");
+  await openMenuPage(page, "平台基础", "用户行为事件", "/platform/events");
   await expect(page.locator('[data-restored-capability="a4-event-lifecycle"]')).toBeVisible();
 
   evidence.consoleErrors = consoleErrors;

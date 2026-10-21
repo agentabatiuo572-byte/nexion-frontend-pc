@@ -80,7 +80,7 @@ const MODULES: ModuleProbe[] = [
     writePath: "/api/admin/devices/orders/permission-probe/cancel",
     writeMethod: "PATCH",
     writeBody: { reason: "权限探针不得执行", operator: "permission-probe" },
-    visibleText: /订单状态机/,
+    visibleText: /订单进度/,
     forbiddenButtons: /^(取消订单|退款|推进|终态|保存状态)$/,
   },
   {

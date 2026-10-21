@@ -90,17 +90,15 @@ test("H1 高敏操作走门槛队列:旋钮放大=超管,控制/override=门槛�
 
 // ============================ H2 试用 ============================
 
-test("H2 前端四道前置闸与 7 态状态机全部由服务器裁决", () => {
+test("H2 试用前检查与七种状态都由服务器判断和更新", () => {
   const h2 = tab("h2-trial.tsx");
   assert.match(h2, /fetchH2Trials/);
   assert.match(h2, /updateH2TrialParam/);
   assert.match(h2, /killH2AutoPush/);
-  // 四道前置闸全部由服务器裁决。
-  assert.match(h2, /四道前置闸/);
-  assert.match(h2, /全部由服务器裁决/);
-  // 7 态会话状态机。
-  assert.match(h2, /7 态会话状态机/);
-  assert.match(h2, /状态只能服务器推进/);
+  assert.match(h2, /开始试用前的四项检查/);
+  assert.match(h2, /由服务器统一判断/);
+  assert.match(h2, /试用流程的七种状态/);
+  assert.match(h2, /状态由服务器更新/);
   // 终态会话不再允许强制介入。
   assert.match(h2, /\["cancelled", "redeemed", "failed"\]\.includes\(session\.state\)/);
   // Model A 抵扣由服务端重算,失败概率等 server-only 不下发。

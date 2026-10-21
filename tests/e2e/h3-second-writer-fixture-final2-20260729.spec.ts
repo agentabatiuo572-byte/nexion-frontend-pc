@@ -285,7 +285,7 @@ async function recoverOwnedPartialRole(page: Page, checkerPage: Page, checker: A
 }
 
 async function approvePendingOwnedRoleGrantUi(page: Page) {
-  await nav(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  await nav(page, "操作记录与审批 A2", /\/platform\/audit$/);
   await page.reload({ waitUntil: "domcontentloaded" });
   const row = page.locator("tbody tr")
     .filter({ hasText: ROLE_CODE })
@@ -303,7 +303,7 @@ async function approvePendingOwnedRoleGrantUi(page: Page) {
 }
 
 async function disableAccountUi(page: Page, username: string, reason: string) {
-  await nav(page, "运营账号 & RBAC A1", /\/platform\/rbac$/);
+  await nav(page, "运营账号与权限 A1", /\/platform\/rbac$/);
   await page.locator("select.pager-size").first().selectOption("50");
   let row = page.locator("tbody tr").filter({ hasText: username });
   for (let pageNo = 0; pageNo < 20 && !(await row.count()); pageNo++) {
@@ -357,7 +357,7 @@ async function grantRoleUi(page: Page, roleId: number) {
 }
 
 async function assertSelfApprovalDenied(page: Page, operationId: string) {
-  await nav(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  await nav(page, "操作记录与审批 A2", /\/platform\/audit$/);
   await page.reload({ waitUntil: "domcontentloaded" });
   const row = page.locator("tbody tr").filter({ hasText: operationId });
   await expect(row).toBeVisible();
@@ -374,7 +374,7 @@ async function assertSelfApprovalDenied(page: Page, operationId: string) {
 }
 
 async function approveUi(page: Page, operationId: string) {
-  await nav(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  await nav(page, "操作记录与审批 A2", /\/platform\/audit$/);
   await page.reload({ waitUntil: "domcontentloaded" });
   const row = page.locator("tbody tr").filter({ hasText: operationId });
   await expect(row).toBeVisible();
@@ -389,7 +389,7 @@ async function approveUi(page: Page, operationId: string) {
 }
 
 async function createAccountUi(page: Page, username: string, displayName: string, roleName: string) {
-  await nav(page, "运营账号 & RBAC A1", /\/platform\/rbac$/);
+  await nav(page, "运营账号与权限 A1", /\/platform\/rbac$/);
   await page.getByRole("button", { name: "+ 新建账号", exact: true }).click();
   const scope = page.getByRole("dialog").last();
   await expect(scope.getByText("新建运营账号", { exact: true })).toBeVisible();
@@ -552,7 +552,7 @@ async function cleanupPartial(
   }
   const actions: string[] = [];
   if (accountId) {
-    await nav(superPage, "运营账号 & RBAC A1", /\/platform\/rbac$/);
+    await nav(superPage, "运营账号与权限 A1", /\/platform\/rbac$/);
     await sanitizeAccount(superPage, accountId, superUsername);
     actions.push("account-reset2fa-unassigned-disabled-revoked");
   }
@@ -702,7 +702,7 @@ async function decideUi(
   buttonName: "执行" | "取消",
   action: "approve" | "reject",
 ) {
-  await nav(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  await nav(page, "操作记录与审批 A2", /\/platform\/audit$/);
   await page.reload({ waitUntil: "domcontentloaded" });
   const row = page.locator("tbody tr").filter({ hasText: operationId });
   await expect(row).toBeVisible();

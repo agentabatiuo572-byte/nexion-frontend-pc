@@ -80,7 +80,7 @@ function ownerLinkAccessibleName(row: A5RegistryRow) {
 
 const ERROR_COPY: Record<A5LoadErrorKind, { title: string; detail: string }> = {
   auth: { title: "登录已失效", detail: "正在清理旧会话，请重新登录后查看。" },
-  forbidden: { title: "没有查看平台参数寄存器的权限", detail: "请联系管理员授予 A5 只读权限；其他平台权限不会代替 A5 权限。" },
+  forbidden: { title: "没有查看平台参数管理的权限", detail: "请联系管理员授予 A5 只读权限；其他平台权限不会代替 A5 权限。" },
   integrity: { title: "数据一致性校验未通过", detail: "本页已停止展示可疑数据，避免把重复键或错误统计当成真实参数。" },
   server: { title: "平台参数服务返回异常", detail: "服务已响应但未能完成本次读取，当前不展示任何参数值；请重新加载或联系平台运维。" },
   unavailable: { title: "平台参数服务暂时不可用", detail: "现有配置没有被修改。请稍后重新加载；若持续失败，请检查后端服务。" },
@@ -135,7 +135,7 @@ export function PlatformParamsRegistry() {
     <div className="mx-auto w-full max-w-[1240px]">
       <header className="mb-4">
         <p className="font-mono-tabular text-[11px]" style={{ color: "var(--admin-domain-a)" }}>A5 · 平台基础</p>
-        <h1 className="font-display mt-1 text-[24px]" style={{ color: "var(--v5-ink)" }}>平台参数寄存器</h1>
+        <h1 className="font-display mt-1 text-[24px]" style={{ color: "var(--v5-ink)" }}>平台参数管理</h1>
         <p className="mt-1.5 max-w-[820px] text-[12.5px] leading-relaxed" style={{ color: "var(--v5-ink-3)" }}>
           汇总服务端当前启用的跨域参数与 J1/J2 实时状态。这里是只读索引；修改请进入每行标明的归属模块。
         </p>

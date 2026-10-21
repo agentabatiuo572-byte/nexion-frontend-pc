@@ -90,7 +90,7 @@ async function openB1(page: Page) {
   const group = page.getByRole("button", { name: /总览驾驶舱/ });
   if ((await group.getAttribute("aria-expanded")) !== "true") await group.click();
   await page.locator('aside a[href="/overview/dual-ledger"]').click();
-  await expect(page.getByRole("heading", { name: "双账本总览" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "资金与应付款总览" })).toBeVisible();
 }
 
 async function login(page: Page, account: { username: string; password: string; totpSecret: string }) {

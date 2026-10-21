@@ -4,8 +4,8 @@
  * A3 系统配置 — design_handoff_a_domain/A3 设计稿 port(SPEC §7)。
  *
  * 平台级横切配置面:feature flag 灰度台 + 熔断闸只读 + 系统健康面。
- * (服务器时钟·全平台时间单源卡 与 防重号策略卡 于 2026-06-24 按主人指令移除;
- *  server time 单源 / Idempotency-Key 仍是后端不变量,只是不再在本页设独立配置卡。)
+ * (服务器时钟·全平台时间统一来源卡 与 防重号策略卡 于 2026-06-24 按主人指令移除;
+ *  server time 统一来源 / Idempotency-Key 仍是后端不变量,只是不再在本页设独立配置卡。)
  *
  * killswitch 操作面已迁 J1/J2 — 本页表格只读(早期切换入口已退役),无切换按钮;
  * 头部两按钮路由跳转 J1(功能闸)/ J2(地区屏蔽);驾驶舱 B5 的状态灯也读这里(单一真值源)。
@@ -365,7 +365,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
         </section>
       </div>
 
-      <section className="l-card" data-capability="a3-authoritative-params" data-restored-capability="a3-global-rate-limit"><div className="l-h"><span className="ttl">平台权威参数 · 全球限流上限 / 提现强审阈值</span><span className="sub">· CAS · 幂等 · 审计 · 运行时真实消费</span></div><div className="l-b" data-restored-capability="a3-withdraw-strong-review-threshold">
+      <section className="l-card" data-capability="a3-authoritative-params" data-restored-capability="a3-global-rate-limit"><div className="l-h"><span className="ttl">平台权威参数 · 全球限流上限 / 提现强审阈值</span><span className="sub">· CAS · 防重复提交 · 审计 · 运行时真实消费</span></div><div className="l-b" data-restored-capability="a3-withdraw-strong-review-threshold">
         {platformParams.map((param) => <div className="a-vrow" key={param.key}><span className="nm">{param.name}<small>{param.desc}</small></span><span className="v">{param.value} {param.unit}</span>{param.writable && <button className="l-btn sm mc" disabled={!!mutating} onClick={() => paramChg(param)}>调整</button>}</div>)}
       </div></section>
 

@@ -23,7 +23,7 @@ test("B2 未知结果按原载荷复用 key，载荷变化生成新 key", async 
   });
 
   await page.goto("/overview/liquidity", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "资金池水位" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "可用资金与应付款" })).toBeVisible();
   await page.getByRole("button", { name: "调整预测配置" }).click();
   await page.locator("textarea").fill("B2 unknown outcome acceptance reason");
   await page.getByRole("button", { name: "保存并进入确认" }).click();

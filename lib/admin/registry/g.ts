@@ -13,12 +13,12 @@ export const DOMAIN_G: ModuleEntry[] = [
   },
   {
     path: "/finance-products/exchange",
-    summary: "兑换风控(G2)。NEX 兑换、额度、手续费、拦截、队列、熔断和地区封锁都以服务端实时结果为准。往松了调额度或降手续费要先过 B1 红线;兑换报价取 G3 的服务器实时价。",
+    summary: "兑换风险规则(G2)。NEX 兑换、额度、手续费、拦截、队列、熔断和地区封锁都以服务端实时结果为准。往松了调额度或降手续费要先过 B1 红线;兑换报价取 G3 的服务器实时价。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/finance-products/market",
-    summary: "NEX 行情引擎(G3)。行情曲线、喂价来源、偏离报警和暂停状态都从服务端读取。NEX 现价是 G2 兑换和 G7 复投的定价来源,下游不接客户端报的价。",
+    summary: "NEX 价格管理(G3)。行情曲线、喂价来源、偏离报警和暂停状态都从服务端读取。NEX 现价是 G2 兑换和 G7 复投的定价来源,下游不接客户端报的价。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

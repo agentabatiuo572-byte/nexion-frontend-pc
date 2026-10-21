@@ -223,7 +223,7 @@ test("K4 五个输入源开关各自带上所属维度,不再同名", () => {
   assert.equal(checkboxes.every((box) => "checked" in box.attrs), true, "checked 状态必须暴露");
 });
 
-// ── #161 M2 工单台:状态筛选 + 搜索框 ────────────────────────────────────────
+// ── #161 M2 客服工单:状态筛选 + 搜索框 ────────────────────────────────────────
 test("M2 状态筛选暴露组名与唯一选中项,搜索框有稳定可访问名", () => {
   const html = renderToHtml("app/components/domain-views/m-tabs/m2-tickets.tsx", "M2Tickets", {
     ctx: {
@@ -271,7 +271,7 @@ test("K1 每个参数调整按钮的可访问名唯一标识目标参数", () =>
   const names = buttons.map((button) => button.attrs["aria-label"]);
   assert.ok(names.every(Boolean), `每个调整按钮都必须带可访问名,实际 ${JSON.stringify(names)}`);
   assert.equal(new Set(names).size, names.length, `每个调整按钮必须唯一标识目标参数,实际 ${JSON.stringify(names)}`);
-  assert.ok(names.includes("调整同 IP 24h 最大注册数"), `按钮名必须含参数名,实际 ${JSON.stringify(names)}`);
+  assert.ok(names.includes("调整同一 IP 每天最多注册多少个账号"), `按钮名必须含参数名,实际 ${JSON.stringify(names)}`);
   assert.ok(names.every((name) => name.startsWith("调整")), "按钮名必须同时含动作与参数");
 });
 
@@ -415,10 +415,10 @@ test("L2 cohort 粒度 / 漏斗阶段 / 对比 / 指标各自唯一选中项", (
       trialSteps: [],
     } } },
   });
-  assert.equal(tablistNamed(html, "cohort 粒度").length, 1, "L2 cohort 粒度必须暴露组名");
-  assertSingleSelection(html, "cohort 粒度", 0, ["注册周 YYYY-Www", "注册月"]);
-  assert.equal(tablistNamed(html, "漏斗阶段下钻").length, 1, "L2 漏斗阶段必须暴露组名");
-  const stages = tabsOf(html, "漏斗阶段下钻");
+  assert.equal(tablistNamed(html, "按注册周或月分组").length, 1, "L2 用户分组方式必须暴露组名");
+  assertSingleSelection(html, "按注册周或月分组", 0, ["注册周 YYYY-Www", "注册月"]);
+  assert.equal(tablistNamed(html, "转化步骤筛选").length, 1, "L2 转化步骤必须暴露组名");
+  const stages = tabsOf(html, "转化步骤筛选");
   assert.equal(stages.length, 4, `L2 漏斗必须四级,实际 ${stages.length}`);
   assert.equal(selectedFlags(stages).filter((value) => value === "true").length, 1, "L2 漏斗阶段同一时刻只有一个选中项");
   assert.equal(tabIndexes(stages).filter((value) => value === 0).length, 1, "roving 焦点只落在一个阶段上");
@@ -476,8 +476,8 @@ test("K1 去重维度筛选是单选组而不是四个独立 checkbox", () => {
       } },
     },
   });
-  assert.equal(tablistNamed(html, "去重命中维度筛选").length, 1, "K1 去重维度必须是带组名的单选组(修前是四个独立 checkbox)");
-  assertSingleSelection(html, "去重命中维度筛选", 0, ["全部", "IP", "设备指纹", "支付工具"]);
+  assert.equal(tablistNamed(html, "关联依据筛选").length, 1, "K1 关联依据必须是带组名的单选组");
+  assertSingleSelection(html, "关联依据筛选", 0, ["全部", "IP", "设备指纹", "支付工具"]);
 });
 
 test("K2 检测命中视图是带组名的单选组", () => {

@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * I1 转化文案 A/B — design_handoff_i_domain/I1 转化文案AB.html port。
- * 单源:后端 /content/copy-ab/overview;空库时以后端初始化结果为准。
+ * I1 页面文案对比测试 — design_handoff_i_domain/I1 转化文案AB.html port。
+ * 统一来源:后端 /content/copy-ab/overview;空库时以后端初始化结果为准。
  * 操作确认 显式 edit 契约:编辑文案 / 回滚到历史版 / 调整框架参数 = 调参传 edit;
  *   下架 / 停止实验 / 采纳获胜变体 = 处置不传 edit。
  * amplifies = false(I1 不碰 B1 红线 —— 只改措辞,不动费率/奖励/价格)。
@@ -739,7 +739,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="ab-sm">
-            <span style={{ fontSize: 12, color: "var(--ink-4)", marginRight: 6 }}>版本状态机:</span>
+            <span style={{ fontSize: 12, color: "var(--ink-4)", marginRight: 6 }}>版本处理流程:</span>
             <span className="st">草稿</span>
             <span className="ar">发布(操作确认)→</span>
             <span className="st ok">生效中</span>
@@ -942,7 +942,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="ab-sm">
-            <span style={{ fontSize: 12, color: "var(--ink-4)", marginRight: 6 }}>实验状态机:</span>
+            <span style={{ fontSize: 12, color: "var(--ink-4)", marginRight: 6 }}>实验处理流程:</span>
             <span className="st">待启动</span>
             <span className="ar">到点开跑 →</span>
             <span className="st ok">进行中</span>

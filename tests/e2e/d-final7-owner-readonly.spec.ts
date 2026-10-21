@@ -29,7 +29,7 @@ const usedTotpSteps = new Map<string, number>();
 
 const modules = [
   { id: "D1", route: "/finance/recon", title: "充值收款对账", api: "/api/admin/finance/vietqr/overview?view=inflight&pageNum=1&pageSize=20" },
-  { id: "D2", route: "/finance/withdrawals", title: "提现审核队列", api: "/api/admin/finance/withdrawals?pageNum=1&pageSize=10" },
+  { id: "D2", route: "/finance/withdrawals", title: "待审核提现", api: "/api/admin/finance/withdrawals?pageNum=1&pageSize=10" },
   { id: "D3", route: "/finance/pool", title: "应付负债 · 9 类科目", api: "/api/admin/treasury/reserve" },
   { id: "D4", route: "/finance/ledger", title: "全平台账单流水", api: "/api/admin/bills?pageNum=1&pageSize=10" },
   { id: "D5", route: "/finance/params", title: "D5 自有四组参数", api: "/api/admin/withdraw/limits" },

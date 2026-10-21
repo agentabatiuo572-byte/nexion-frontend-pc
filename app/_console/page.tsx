@@ -5,7 +5,7 @@ import { finiteDashboardNumber, rollupKpiPassState } from "@/lib/admin/dashboard
  * 运营指挥台(首页 /)。按 Claude Design「NexGrid 运营控制后台」稿优点重构:
  * ① 页头(口径副标 + 对账导出)→ 破线条件 alertbar(仅建议)
  * ② 资金兑付安全 B1·B2·B5:CoverageHero(横向分区条 + 三账本)+ RiskRadar;FundPool 堆叠条 + 覆盖率趋势
- * ③ 实时运营脉搏 → ④ 待处理(操作确认)→ ⑤ 转化漏斗 → ⑥ 八项 KPI → ⑦ 域速览
+ * ③ 实时运营脉搏 → ④ 待处理(操作确认)→ ⑤ 用户转化分析 → ⑥ 八项 KPI → ⑦ 域速览
  * B 域资金/漏斗/节奏/风险和提现积压取后端聚合接口。按角色过滤。
  */
 import Link from "next/link";
@@ -349,7 +349,7 @@ export default function CommandCenter() {
       : cov < LEDGER.healthyPct
         ? `兑付覆盖率 ${fmtPct(cov)} 逼近红线 ${fmtPct(LEDGER.redlinePct, 0)}`
         : `兑付覆盖率 ${fmtPct(cov)} 健康`;
-  // Kill 闸告警文案派生自 KILL_GATES(单源,与 J1/B5 一致;非硬编码,operator 熔断后即时反映)。
+  // Kill 闸告警文案派生自 KILL_GATES(统一来源,与 J1/B5 一致;非硬编码,operator 熔断后即时反映)。
   const killTripped = KILL_GATES.filter((g) => (g.state ? g.state === "off" : !g.on)).length;
   const killMissing = KILL_GATES.filter((g) => g.state === "missing").length;
   const killOnline = KILL_GATES.filter((g) => (g.state ? g.state === "on" : g.on)).length;
@@ -398,7 +398,7 @@ export default function CommandCenter() {
       return lBiError ? "L1 KPI 同步失败" : "L1 KPI 同步中";
     }
     if (code === "H") {
-      // H 域脉搏 = 节奏单源(运营在 H1 可配),与 B4/H1/L1/L4 同源。
+      // H 域脉搏 = 节奏统一来源(运营在 H1 可配),与 B4/H1/L1/L4 同源。
       const rs = rhythm.h1;
       return `${rs.currentPhase} ${rs.currentPhaseName}期 · 第 ${rs.currentMonth}/${rs.totalMonths} 月`;
     }
@@ -513,8 +513,8 @@ export default function CommandCenter() {
       <SecLabel title="待处理 · 操作确认" modules="跨域确认 · 按角色" />
       <SensitiveOperationFeed items={sensitiveOperationItems} />
 
-      {/* ⑤ 转化漏斗 */}
-      <SecLabel title="转化漏斗" modules="B3 · A4 派生" />
+      {/* ⑤ 用户转化分析 */}
+      <SecLabel title="用户转化分析" modules="B3 · A4 派生" />
       <FunnelBars />
 
       {/* ⑥ 八项 KPI 验收墙 */}

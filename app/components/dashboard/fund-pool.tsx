@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * B2 资金池水位 · 应付负债科目(设计稿 FundPool 模式)。
+ * B2 可用资金与应付款 · 应付负债科目(设计稿 FundPool 模式)。
  * 堆叠条(按金额占比)+ 图例 + 最大科目 + 储备覆盖缺口。数据来自 B 域聚合接口。
  */
 import Link from "next/link";
@@ -16,12 +16,12 @@ export function FundPool() {
   const bDomain = useBDomainDashboard();
   const { ledger: LEDGER, liquidity } = bDomain;
   if ((bDomain.loading && !bDomain.hasData) || bDomain.error || !bDomain.hasData) {
-    return <BDomainDataState title="B2 资金池水位" loading={bDomain.loading && !bDomain.error} error={bDomain.error} onRetry={bDomain.reload} />;
+    return <BDomainDataState title="B2 可用资金与应付款" loading={bDomain.loading && !bDomain.error} error={bDomain.error} onRetry={bDomain.reload} />;
   }
   const total = LEDGER.liabilitiesUsd;
   const accounts = [...LEDGER.accounts].sort((a, b) => b.amount - a.amount);
   if (!accounts.length || !liquidity.runway.length) {
-    return <BDomainDataState title="B2 资金池水位" error="B2_REQUIRED_DATA_EMPTY" onRetry={bDomain.reload} />;
+    return <BDomainDataState title="B2 可用资金与应付款" error="B2_REQUIRED_DATA_EMPTY" onRetry={bDomain.reload} />;
   }
   const top = accounts[0];
   const net = LEDGER.reserveUsd - total;
@@ -31,7 +31,7 @@ export function FundPool() {
   return (
     <div className="flex h-full flex-col rounded-[16px] p-5" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}>
       <div className="flex items-center gap-2.5">
-        <span className="font-display text-[14.5px]" style={{ color: "var(--v5-ink)" }}><AutoGloss>资金池水位 · {accounts.length} 类应付负债科目</AutoGloss></span>
+        <span className="font-display text-[14.5px]" style={{ color: "var(--v5-ink)" }}><AutoGloss>可用资金与应付款 · {accounts.length} 类应付负债科目</AutoGloss></span>
         <span className="ml-auto font-mono-tabular rounded-[7px] px-2 py-0.5 text-[11px]" style={{ background: "var(--v5-surface-3)", color: "var(--v5-ink-3)", border: "1px solid var(--v5-border)" }}><AutoGloss>B2 · 口径同 D3</AutoGloss></span>
       </div>
       <p className="mt-1 text-[12px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>应付负债合计 </AutoGloss>{fmtUsdCompact(total)}<AutoGloss> · 须由储备覆盖</AutoGloss></p>
@@ -89,7 +89,7 @@ export function FundPool() {
           );
         })}
       </div>
-      <Link href="/overview/dual-ledger" prefetch={false} className="mt-auto inline-flex pt-3 text-[12.5px]" style={{ color: "var(--v5-brand)" }}>下钻 B2 负债结构 →</Link>
+      <Link href="/overview/dual-ledger" prefetch={false} className="mt-auto inline-flex pt-3 text-[12.5px]" style={{ color: "var(--v5-brand)" }}>查看 B2 应付款明细 →</Link>
     </div>
   );
 }

@@ -40,7 +40,7 @@ test("A5 real user flow, owner navigation, filtering and fail-closed recovery st
     }
   }
 
-  await expect(page.getByRole("heading", { name: "平台参数寄存器" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "平台参数管理" })).toBeVisible();
   await expect(page.getByText("当前服务端值").first()).toBeVisible();
   expect(await page.getByText("当前服务端值").count()).toBeGreaterThanOrEqual(100);
   await expect(page.getByText("参数键 · feature.ops.maintenanceBanner", { exact: true })).toBeVisible();
@@ -52,7 +52,7 @@ test("A5 real user flow, owner navigation, filtering and fail-closed recovery st
   await maintenanceCard.getByRole("link", { name: /A3 系统配置/ }).click();
   await expect(page).toHaveURL(/\/platform\/config$/);
   await page.goBack();
-  await expect(page.getByRole("heading", { name: "平台参数寄存器" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "平台参数管理" })).toBeVisible();
 
   await page.getByLabel("筛选业务域").selectOption("J");
   await expect(page.getByText("参数键 · emergency.geo-block", { exact: true })).toBeVisible();
@@ -64,14 +64,14 @@ test("A5 real user flow, owner navigation, filtering and fail-closed recovery st
   await j1Card.getByRole("link", { name: /J1 功能闸/ }).click();
   await expect(page).toHaveURL(/\/emergency\/kill-switch$/);
   await page.goBack();
-  await expect(page.getByRole("heading", { name: "平台参数寄存器" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "平台参数管理" })).toBeVisible();
   await page.getByLabel("筛选业务域").selectOption("J");
   await page.getByLabel("搜索参数").fill("地区屏蔽");
   const j2Card = page.getByText("参数键 · emergency.geo-block", { exact: true }).locator("xpath=ancestor::article");
   await j2Card.getByRole("link", { name: /J2 地区屏蔽/ }).click();
   await expect(page).toHaveURL(/\/emergency\/geo-block$/);
   await page.goBack();
-  await expect(page.getByRole("heading", { name: "平台参数寄存器" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "平台参数管理" })).toBeVisible();
 
   await page.unrouteAll({ behavior: "wait" });
   await page.route(API_PATH, (route) => route.fulfill({
@@ -80,7 +80,7 @@ test("A5 real user flow, owner navigation, filtering and fail-closed recovery st
     body: JSON.stringify({ code: 403, message: "FORBIDDEN", data: null }),
   }));
   await page.reload();
-  await expect(page.getByText("没有查看平台参数寄存器的权限", { exact: true })).toBeVisible();
+  await expect(page.getByText("没有查看平台参数管理的权限", { exact: true })).toBeVisible();
   await page.screenshot({ path: `${EVIDENCE_DIR}/03-forbidden.png` });
 
   await page.unrouteAll({ behavior: "wait" });

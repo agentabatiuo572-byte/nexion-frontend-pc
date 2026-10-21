@@ -69,7 +69,7 @@ test("legacy I7 grants expose course management inside the merged I6 page", asyn
 
   const domainToggle = page.getByRole("button", { name: /内容与合规 CMS/ });
   if (await domainToggle.getAttribute("aria-expanded") === "false") await domainToggle.click();
-  const i6Link = page.getByRole("link", { name: /国际化文案.*I6|i18n 文案.*I6/ });
+  const i6Link = page.getByRole("link", { name: /国际化文案.*I6|多语言文案.*I6/ });
   await expect(i6Link).toBeVisible();
   await expect(i6Link).toHaveAttribute("href", "/content/i18n");
   await expect(page).toHaveURL(/\/content\/i18n$/);
@@ -131,6 +131,6 @@ test("a successful interactive login reloads before rendering merged I6 and I7 c
 
   const domainToggle = page.getByRole("button", { name: /内容与合规 CMS/ });
   if (await domainToggle.getAttribute("aria-expanded") === "false") await domainToggle.click();
-  await expect(page.getByRole("link", { name: /i18n 文案.*I6|国际化文案.*I6/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /多语言文案.*I6|国际化文案.*I6/ })).toBeVisible();
   await expect(page.getByText(/^教程中心\(I7\) · \/learn · \d+ 课$/)).toBeVisible();
 });

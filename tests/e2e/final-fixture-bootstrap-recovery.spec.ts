@@ -12,7 +12,7 @@ test("A1 recovers incomplete FINAL bootstrap account through visible UI", async 
     await page.getByRole("button", { name: "继续", exact: true }).click();
   }
   await expect(page.locator("aside")).toBeVisible({ timeout: 30_000 });
-  const link = page.locator("aside").getByRole("link", { name: "运营账号 & RBAC A1", exact: true });
+  const link = page.locator("aside").getByRole("link", { name: "运营账号与权限 A1", exact: true });
   if (!await link.isVisible().catch(() => false)) {
     await page.locator("aside").getByRole("button", { name: /平台基础.*A|A.*平台基础/ }).click();
   }

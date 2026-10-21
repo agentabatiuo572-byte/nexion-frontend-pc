@@ -23,19 +23,19 @@ const MODULES = [
     id: "G2",
     path: "/finance-products/exchange",
     endpoint: "/api/admin/market/exchange",
-    marker: /G2 兑换风控/,
+    marker: /G2 兑换风险规则/,
   },
   {
     id: "G3",
     path: "/finance-products/market",
     endpoint: "/api/admin/market/nex/curve",
-    marker: /G3 NEX 行情引擎/,
+    marker: /G3 NEX 价格管理/,
   },
   {
     id: "G4",
     path: "/finance-products/genesis",
     endpoint: "/api/admin/market/nex/genesis",
-    marker: /G4 Genesis 经济/,
+    marker: /G4 创世节点销售与收益/,
   },
   {
     id: "G7",
@@ -108,7 +108,7 @@ test("G7 HTTP 500 与 G3 超时/结果未知均失败关闭且真实刷新恢复
   await page.getByRole("button", { name: "重新加载", exact: true }).click();
   await recovered;
   await expect(page.getByText(/G3 数据加载失败/)).toHaveCount(0);
-  await expect(page.getByText(/G3 NEX 行情引擎/).first()).toBeVisible();
+  await expect(page.getByText(/G3 NEX 价格管理/).first()).toBeVisible();
 });
 
 async function interceptExactGet(

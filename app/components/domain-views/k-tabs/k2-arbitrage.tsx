@@ -273,7 +273,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
   const markArb = (r: K2Row) =>
     ctx.openConfirm({
       action: `标记套利账户 · ${r.cells[0]}`,
-      detail: "打上套利标记并附证据链,不冻结、不动钱。标记会进风险评分和风险雷达。",
+      detail: "打上套利标记并附证据链,不冻结、不动钱。标记会进风险评分和风险提醒。",
       chips: [["仅标记 · 附证据链", "done"], ["后端审计", "ready"]],
       reason: true,
       okLabel: "确认标记",
@@ -301,7 +301,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
   const boardFlag = (r: K2Row) =>
     ctx.openConfirm({
       action: `标记刷榜账户 · ${r.cells[0]}`,
-      detail: "产出刷榜信号给排行榜反欺诈和风险雷达;取消资格由对应业务域执行。",
+      detail: "产出刷榜信号给排行榜反欺诈和风险提醒;取消资格由对应业务域执行。",
       chips: [["仅标记 + 产信号", "done"], ["后端审计", "ready"]],
       reason: true,
       okLabel: "确认标记",
@@ -461,7 +461,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
           <div className="l-h">
             <span className="ttl">{group.title}</span>
             <span className="sub">{group.sub}</span>
-            <div className="r"><span className="kcode electric">后端配置单源</span></div>
+            <div className="r"><span className="kcode electric">配置以服务器为准</span></div>
           </div>
           <div className="l-b">
             <div className="param-grid" data-proof={group.proof}>

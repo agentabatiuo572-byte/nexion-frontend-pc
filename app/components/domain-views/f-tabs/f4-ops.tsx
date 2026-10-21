@@ -361,7 +361,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
             {canFund && <button className="primary amp" disabled={lbPaused} onClick={() => ctx.openActionConfirm({
               name: "派发总榜奖池",
               amplify: true,
-              detail: `总榜无自动 reset；按真实累计佣金、Top100 与当前 $${ppAllTime} 配置发放，A2 审批且 lifetime 幂等。`,
+              detail: `总榜无自动 reset；按真实累计佣金、Top100 与当前 $${ppAllTime} 配置发放，A2 审批且 lifetime 防重复提交。`,
               run: (reason) => ctx.proposeF4LeaderboardPayout("allTime", reason),
             })}>派发总榜</button>}
             {canFund && lbPaused && <span className="muted">排行榜已暂停，派奖已挂起。</span>}

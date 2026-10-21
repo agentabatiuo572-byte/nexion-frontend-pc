@@ -363,7 +363,7 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
         </div>
         <div className="cregis-panel">
           <div className="cregis-panel-title">大额入金双人处置</div>
-          <p>仅支持 REVIEW_HOLD；缺单、孤儿资金和重组须保持冻结并核查。</p>
+          <p>只支持暂停审核；找不到对应订单的资金或链上交易重组时，须保持冻结并核查。</p>
           <div className="cregis-review-form">
           <input aria-label="待审核 Cregis CID" placeholder="Cregis CID" value={cid} onChange={(event) => setCid(event.target.value)} />{" "}
           <button className="l-btn sm" disabled={busy || !/^\d+$/.test(cid) || !Number.isSafeInteger(Number(cid)) || Number(cid) <= 0} onClick={() => void previewReview(Number(cid))}>实时核验证据</button>{" "}

@@ -48,7 +48,7 @@ const MODULES: ModuleProbe[] = [
   {
     id: "M2",
     path: "/service/tickets",
-    visibleText: /工单台/,
+    visibleText: /客服工单/,
     readPath: "/api/admin/content/tickets?pageNum=1&pageSize=1",
     writePath: "/api/admin/content/tickets",
     writeMethod: "POST",

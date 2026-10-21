@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * M2 工单台 — 全宽表格列队 + 右侧滑出详情抽屉(helpdesk 设计稿布局)。
+ * M2 客服工单 — 全宽表格列队 + 右侧滑出详情抽屉(helpdesk 设计稿布局)。
  * 业务读写走后端 content/ticket/conversation 接口;I.support.* / I.session.* 为 M 容器传入的视图适配键。
  * 例行坐席操作(回复/改状态/改优先级/转交/关闭重开)直接执行 + 自动 A2 审计;
  * 仅「升级为即时会话」这类跨载体处置走操作确认 + 理由。
@@ -290,7 +290,7 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
       .filter((t) => categoryFilter === "all" || t.category === categoryFilter)
       .filter((t) => {
         if (!q) return true;
-        // 用户编码必须可搜(2026-08-06 原型对比 M-2):会话页把运营指引到「用工单台按用户搜」,
+        // 用户编码必须可搜(2026-08-06 原型对比 M-2):会话页把运营指引到「用客服工单按用户搜」,
         // 而这里原本不认 userId —— 指引的路走不通,等于死路标。
         return [t.id, t.subject, t.owner, catCN(t.category), t.userId ? String(t.userId) : ""]
           .some((text) => text.toLowerCase().includes(q));

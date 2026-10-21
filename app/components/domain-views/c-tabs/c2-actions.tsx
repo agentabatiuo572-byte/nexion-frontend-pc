@@ -554,7 +554,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     }
     openActionConfirm({
     action: `强制登出 · ${displayAccount(account)}`,
-    detail: `确认后立即吊销当前 ${activeCount} 个活跃会话；这是止血动作，财务/风控/客服/超管均直接执行，重复提交同一幂等键不会二次执行。`,
+    detail: `确认后立即吊销当前 ${activeCount} 个活跃会话；这是止血动作，财务/风控/客服/超管均直接执行，重复提交同一防重复提交编号不会二次执行。`,
     amplifies: false,
     completionCopy: "确认后立即执行，并写必达审计与事件。",
     reasonMin: 8,
@@ -904,7 +904,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         />
       </section>
 
-      <p className="f-foot"><b>动作确认口径</b>：{freezeProposalOnly ? "当前财务角色的冻结/恢复只创建 A2 待确认票；强制登出是止血动作，确认后立即执行。" : "当前角色可直接执行其获授权动作，确认后原子落库。"} 所有动作均要求 8-200 字理由、24 小时幂等、必达审计与事件；刷新后以服务器返回为准。</p>
+      <p className="f-foot"><b>动作确认口径</b>：{freezeProposalOnly ? "当前财务角色的冻结/恢复只创建 A2 待确认票；强制登出是止血动作，确认后立即执行。" : "当前角色可直接执行其获授权动作，确认后原子落库。"} 所有动作均要求 8-200 字理由、24 小时防重复提交、必达审计与事件；刷新后以服务器返回为准。</p>
 
       {selectedAccount && (() => {
         const status = statusOf(selectedAccount);
@@ -916,7 +916,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
           <Drawer
             title={`账户明细 · ${displayAccount(selectedAccount)}`}
             onClose={() => { setAcct(null); setAccountContext(null); setAccountContextError(null); }}
-            footer={canOpenK1 ? <Link className="l-btn" style={{ flex: 1, justifyContent: "center" }} href={K1_PATH}>去 K1 看反多账户簇 →</Link> : undefined}
+            footer={canOpenK1 ? <Link className="l-btn" style={{ flex: 1, justifyContent: "center" }} href={K1_PATH}>去 K1 查看关联账户组 →</Link> : undefined}
           >
             <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>{displayAccount(selectedAccount)} · <span className={`bdg ${statusTone}`}>{statusLabel}</span></div>
             <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.55, margin: "4px 0 12px" }}>详情来自后端按该用户精确查询的 C2 权威上下文，不受总览截断影响。</div>

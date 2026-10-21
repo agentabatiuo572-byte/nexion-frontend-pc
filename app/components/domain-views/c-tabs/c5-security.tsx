@@ -438,7 +438,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     if (!selectedUserId) return;
     openActionConfirm({
       action: `人工关闭 2FA · ${userLabel(selectedUser)}`,
-      detail: <>用户丢失验证器设备时的恢复通道。服务器校验专门权限、幂等键和当前状态，并记录操作人、角色和理由。</>,
+      detail: <>用户丢失验证器设备时的恢复通道。服务器校验专门权限、防重复提交编号和当前状态，并记录操作人、角色和理由。</>,
       amplifies: false,
       businessForm: {
         kind: "identity-verify",
@@ -496,8 +496,8 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     openActionConfirm({
       action: `解除${longLock ? "长" : "短"}锁 · ${userLabel(row)}`,
       detail: longLock
-        ? "长锁仅限超管或风控角色解除。服务器校验锁类型未变化、权限和幂等键后立即清除登录锁。"
-        : "短锁仅限超管、风控或客服角色解除。服务器校验权限和幂等键后立即清除登录失败计数与登录锁。",
+        ? "长锁仅限超管或风控角色解除。服务器校验锁类型未变化、权限和防重复提交编号后立即清除登录锁。"
+        : "短锁仅限超管、风控或客服角色解除。服务器校验权限和防重复提交编号后立即清除登录失败计数与登录锁。",
       amplifies: false,
       businessForm: {
         kind: "identity-verify",

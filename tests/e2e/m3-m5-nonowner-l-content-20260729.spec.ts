@@ -385,7 +385,7 @@ test("M3/M5 非 Owner 双运营员、幂等 CAS、跨域与精确终态闭环", 
       await login(page, ROOT_USERNAME, ROOT_PASSWORD);
       rootReady = true;
       await openModule(page, "/service/tickets");
-      await expect(page.getByRole("heading", { name: "工单台", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "客服工单", exact: true })).toBeVisible();
       await page.getByRole("button", { name: "全部", exact: true }).click();
       await page.locator('[data-proof="support-ticket-search"]').fill(ticketNo);
       await expect(page.locator("tbody tr").filter({ hasText: ticketNo }).first()).toBeVisible();

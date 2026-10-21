@@ -1,6 +1,6 @@
 "use client";
 
-/** 风险雷达 — 全局告警聚合(覆盖率红线 / 风险命中 / kill 状态),按级别色点,点击钻取。 */
+/** 风险提醒 — 全局告警聚合(覆盖率红线 / 风险命中 / kill 状态),按级别色点,点击钻取。 */
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
@@ -25,7 +25,7 @@ export function AlertCenter({ alerts }: { alerts: AlertItem[] }) {
   return (
     <div className="rounded-[14px] p-4" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}>
       <div className="flex items-center justify-between">
-        <span className="font-display text-[15px]" style={{ color: "var(--v5-ink)" }}><AutoGloss>风险雷达</AutoGloss></span>
+        <span className="font-display text-[15px]" style={{ color: "var(--v5-ink)" }}><AutoGloss>风险提醒</AutoGloss></span>
         {highCount > 0 && (
           <span
             className="font-mono-tabular rounded-full px-2 py-0.5 text-[11px]"

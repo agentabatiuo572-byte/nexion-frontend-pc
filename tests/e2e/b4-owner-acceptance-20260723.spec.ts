@@ -14,7 +14,7 @@ test("B4 visible-entry journey exposes the complete H1-canonical read-only workf
   await expect(entry).toBeVisible();
   await entry.click();
   await expect(page).toHaveURL(/\/overview\/rhythm$/);
-  await expect(page.getByRole("heading", { name: "节奏状态" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "运营阶段状态" })).toBeVisible();
 
   await expect(page.getByLabel("分布粒度")).toBeVisible();
   await expect(page.getByLabel("查看月份")).toBeVisible();

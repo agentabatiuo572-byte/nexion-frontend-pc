@@ -66,7 +66,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
   if (ctx.f2Loading) {
     return (
       <div className="f-section-stack f2-layout"><F2DirectPolicy key="direct-policy" ctx={ctx} /><section className="pane">
-        <div className="pane-h"><span className="ph-ttl">网络版税与分成</span><span className="ph-sub">数据加载中</span></div>
+        <div className="pane-h"><span className="ph-ttl">团队分成</span><span className="ph-sub">数据加载中</span></div>
         <div style={{ padding: 18, color: "var(--ink-3)" }}>七层购买奖励与独立参数加载中...</div>
       </section></div>
     );
@@ -75,7 +75,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
   if (ctx.f2Error) {
     return (
       <div className="f-section-stack f2-layout"><F2DirectPolicy key="direct-policy" ctx={ctx} /><section className="pane">
-        <div className="pane-h"><span className="ph-ttl">网络版税与分成</span><span className="ph-sub">数据加载失败</span></div>
+        <div className="pane-h"><span className="ph-ttl">团队分成</span><span className="ph-sub">数据加载失败</span></div>
         <div role="alert" style={{ padding: 18, color: "var(--ink-3)" }}>七层购买奖励与独立参数加载失败 · {ctx.f2Error}</div>
         <div style={{ padding: "0 18px 18px" }}>
           <button className="fbtn primary" onClick={() => void ctx.refreshF2()}>重试</button>

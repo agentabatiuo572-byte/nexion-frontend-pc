@@ -278,7 +278,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
       {/* 只读 banner */}
       <div className="ro-banner">
         <span className="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg></span>
-        <div><b>账户处置只读，告警配置单独授权</b> · <AutoGloss>本页不会冻结账户或建立风险簇；当前角色模型尚未区分风控负责人，配置暂仅超级管理员可执行。</AutoGloss><b>实际的冻结 / 建档</b><AutoGloss>要到</AutoGloss> <b>账户处置页(C2)</b> <AutoGloss>或</AutoGloss> <b>风控批量页(K1)</b> <AutoGloss>完成。</AutoGloss></div>
+        <div><b>本页只查看账户处置情况</b> · <AutoGloss>本页不会冻结账户或建立关联账户组；当前仅超级管理员可修改提醒设置。</AutoGloss><b>需要冻结账户或建立关联账户组时</b><AutoGloss>请到</AutoGloss> <b>账户处置页(C2)</b> <AutoGloss>或</AutoGloss> <b>多账户风险排查页(K1)</b>。</div>
       </div>
 
       <div
@@ -298,7 +298,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
       <div className="feed-strip">
         <div className="it"><span className={TAMPER_ACCTS.length === 0 ? "led dim" : fedCount ? "led" : "led warn"} /><AutoGloss>K4 风险信号</AutoGloss> · <span style={{ color: "var(--ink-3)" }}>{TAMPER_ACCTS.length === 0 ? "本页暂无高频账户" : `${fedCount}/${TAMPER_ACCTS.length} 个本页账户已确认写入`}</span></div>
         <span className="sep">·</span>
-        <div className="it"><span className={TAMPER_ACCTS.length === 0 ? "led dim" : b5Count ? "led" : "led warn"} /><AutoGloss>B5 风险雷达</AutoGloss> · <span style={{ color: "var(--ink-3)" }}>{TAMPER_ACCTS.length === 0 ? "本页暂无高频账户" : `${b5Count}/${TAMPER_ACCTS.length} 个本页账户已确认触发`}</span></div>
+        <div className="it"><span className={TAMPER_ACCTS.length === 0 ? "led dim" : b5Count ? "led" : "led warn"} /><AutoGloss>B5 风险提醒</AutoGloss> · <span style={{ color: "var(--ink-3)" }}>{TAMPER_ACCTS.length === 0 ? "本页暂无高频账户" : `${b5Count}/${TAMPER_ACCTS.length} 个本页账户已确认触发`}</span></div>
         <span className="sep">·</span>
         <div className="it"><span className="led" /><b>脱敏报表</b> · <span style={{ color: "var(--ink-3)" }}>按当前 {win} 筛选导出</span></div>
         <span className="sep" style={{ marginLeft: "auto" }}>·</span>
@@ -396,7 +396,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
         <div className="accts-tblwrap"><div className="accts-tbl">
           <div className="hd">
             <div className="c">用户编码</div><div className="c">{win} 起数</div><div className="c">K4 / B5</div><div className="c">命中路径</div>
-            <div className="c">最近拦截</div><div className="c">簇 ID</div>
+            <div className="c">最近拦截</div><div className="c">关联账户组编号</div>
             <div className="c" style={{ justifyContent: "flex-end" }}>动作(跨域)</div>
           </div>
           {TAMPER_ACCTS.map((a) => {
@@ -408,12 +408,12 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
                 <div className="c"><span className={"badge-k4 " + k4Cls}>{a.fedToK4 ? `K4 ${a.k4}` : "K4 未喂送"} · {a.b5Triggered ? "B5 已触发" : "B5 未触发"}</span></div>
                 <div className="c"><div className="paths">{a.paths.map((p) => <span key={p} className="p">{p}</span>)}</div></div>
                 <div className="c last">{a.last}</div>
-                <div className="c">{a.cluster ? <span className="badge-cluster" title="K1 批量簇">{a.cluster}</span> : <span style={{ color: "var(--ink-4)", fontFamily: "var(--mono)", fontSize: 11 }}>—</span>}</div>
+                <div className="c">{a.cluster ? <span className="badge-cluster" title="K1 关联账户组">{a.cluster}</span> : <span style={{ color: "var(--ink-4)", fontFamily: "var(--mono)", fontSize: 11 }}>—</span>}</div>
                 <div className="c acts">
                   {a.cluster && canViewK1 && (a.alertState === "flagged" || a.alertState === "escalated") ? (
-                    <Link className="k1" href={{ pathname: "/risk/multi-account", query: { focusClusterId: a.cluster, source: "J3" } }} title={`${a.cluster} · 簇处置在 K1 完成 操作确认`}>→ K1 簇查看</Link>
+                    <Link className="k1" href={{ pathname: "/risk/multi-account", query: { focusClusterId: a.cluster, source: "J3" } }} title={`${a.cluster} · 到 K1 查看关联账户组`}>→ K1 查看账户组</Link>
                   ) : (
-                    <a className="off" aria-disabled>→ K1 簇查看</a>
+                    <a className="off" aria-disabled>→ K1 查看账户组</a>
                   )}
                   {canFreezeC2 && (a.alertState === "flagged" || a.alertState === "escalated") ? <Link className="c2" href={{ pathname: "/users/actions", query: { userCode: a.userCode, source: "J3" } }} title={`${a.userCode} · 冻结/解冻在 C2 完成 操作确认`}>→ C2 冻结</Link> : <a className="off" aria-disabled>→ C2 冻结</a>}
                 </div>

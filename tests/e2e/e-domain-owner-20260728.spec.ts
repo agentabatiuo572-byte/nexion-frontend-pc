@@ -15,9 +15,9 @@ const EVIDENCE_DIR =
   || "D:/workspace/bug-pic/.restricted/pc-full-acceptance-20260728-151023/E/owner";
 
 const MODULES = [
-  { id: "E1", path: "/devices/pricing", title: "商品目录 & 上架门" },
-  { id: "E4", path: "/devices/orders", title: "订单状态机" },
-  { id: "E5", path: "/devices/ops", title: "设备运维" },
+  { id: "E1", path: "/devices/pricing", title: "商品管理与上架条件" },
+  { id: "E4", path: "/devices/orders", title: "订单进度" },
+  { id: "E5", path: "/devices/ops", title: "设备运行管理" },
   { id: "E6", path: "/devices/compute-config", title: "算力与设备配置" },
 ] as const;
 
@@ -234,7 +234,7 @@ async function expectE1Healthy(page: Page) {
 }
 
 async function expectE4Healthy(page: Page) {
-  await expect(page.getByText("订单状态机 · 流转图")).toBeVisible();
+  await expect(page.getByText("订单进度 · 流转图")).toBeVisible();
   await expect(page.getByText("订单队列", { exact: true })).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/E4 (同步失败|订单接口读取失败)/);
 }

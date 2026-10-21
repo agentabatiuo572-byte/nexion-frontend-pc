@@ -424,7 +424,7 @@ async function openA2(page: Page) {
   await link.click();
   await expect(page).toHaveURL(/\/platform\/audit$/);
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "审计 & 操作确认", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "操作记录与审批", exact: true })).toBeVisible();
 }
 
 async function rawDecision(

@@ -2,7 +2,7 @@
 
 /**
  * 全局命令面板(⌘K)— PoC:验证 shadcn(cmdk)硬交互原语在 V5 皮肤下的融合。
- * 跳转目标消费 IA 单源 visibleDomains(role)(与侧边栏同源,按角色过滤),
+ * 跳转目标消费 IA 统一来源 visibleDomains(role)(与侧边栏同源,按角色过滤),
  * 不维护第二份菜单副本;选中即 router.push 到该 L2 路由。
  */
 import * as React from "react";

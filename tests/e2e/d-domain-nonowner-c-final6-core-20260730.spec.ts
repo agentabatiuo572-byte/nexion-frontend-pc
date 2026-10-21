@@ -17,7 +17,7 @@ const EVIDENCE_DIR = process.env.D_FINAL6_CORE_EVIDENCE
 
 const modules = [
   { id: "D1", route: "/finance/recon", text: "充值收款对账", read: "/api/admin/finance/vietqr/overview?view=inflight&pageNum=1&pageSize=20" },
-  { id: "D2", route: "/finance/withdrawals", text: "提现审核队列", read: "/api/admin/finance/withdrawals?pageNum=1&pageSize=10" },
+  { id: "D2", route: "/finance/withdrawals", text: "待审核提现", read: "/api/admin/finance/withdrawals?pageNum=1&pageSize=10" },
   { id: "D3", route: "/finance/pool", text: "应付负债 · 9 类科目", read: "/api/admin/treasury/reserve" },
   { id: "D4", route: "/finance/ledger", text: "全平台账单流水", read: "/api/admin/bills?pageNum=1&pageSize=10" },
   { id: "D5", route: "/finance/params", text: "D5 自有四组参数", read: "/api/admin/withdraw/limits" },
@@ -85,7 +85,7 @@ test("首次用户从登录和可见侧栏完整找到 D1–D6，五视图/九�
   }
   await expect(page.locator("body")).not.toContainText(/\bnx_[a-z0-9_]+\b/i);
 
-  await openAndSettleD(page, "/finance/withdrawals", "提现审核队列");
+  await openAndSettleD(page, "/finance/withdrawals", "待审核提现");
   await expect(page.getByText("D5 日限", { exact: true })).toBeVisible();
 
   await openAndSettleD(page, "/finance/pool", "应付负债 · 9 类科目");
@@ -153,7 +153,7 @@ test("墨菲故障包：D1–D6 的 500/畸形 200/超时均清空旧权威态�
   await expect(page.getByRole("button", { name: "批量执行", exact: true })).toBeDisabled();
   await page.unroute("**/api/admin/finance/withdrawals?*");
   await page.getByRole("button", { name: "重试", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "提现审核队列", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "待审核提现", exact: true })).toBeVisible();
   results.D2 = "MALFORMED_200_FAIL_CLOSED_RECOVERED";
 
   await page.route("**/api/admin/treasury/forecast-config", (route) => route.fulfill({
@@ -191,7 +191,7 @@ test("墨菲故障包：D1–D6 的 500/畸形 200/超时均清空旧权威态�
   await page.route("**/api/admin/finance/fx-quote", (route) => route.fulfill({
     status: 500, contentType: "application/json", body: JSON.stringify({ code: 500, message: "D6_FAULT", data: null }),
   }));
-  await openAndSettleD(page, "/finance/fx-rate", /汇率牌价尚未初始化或读取失败|服务返回的数据不完整|D6_FAULT|操作失败.*刷新页面后重试/);
+  await openAndSettleD(page, "/finance/fx-rate", /汇率设置尚未初始化或读取失败|服务返回的数据不完整|D6_FAULT|操作失败.*刷新页面后重试/);
   await expect(page.getByText("当前牌价（现场派生）", { exact: true })).toHaveCount(0);
   await page.unroute("**/api/admin/finance/fx-quote");
   await page.getByRole("button", { name: "重试读取", exact: true }).click();

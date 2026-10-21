@@ -14,7 +14,7 @@ type ModuleProbe = {
 const MODULES: ModuleProbe[] = [
   { id: "H1", path: "/growth/phase", apiPath: "/api/admin/growth/phases", healthyText: /节奏骨架/, errorText: /H1 数据加载失败/, mutationButtons: /改总时长|设定位置|调整|撤销/ },
   { id: "H2", path: "/growth/trial", apiPath: "/api/admin/growth/trials", healthyText: /四道前置闸/, errorText: /H2 数据加载失败/, mutationButtons: /调整|强制取消|强制扣款|auto-push 急停/ },
-  { id: "H3", path: "/growth/quest", apiPath: "/api/admin/growth/quest-events/tasks", healthyText: /任务事件契约与归因/, errorText: /H3 任务引擎 数据加载失败/, mutationButtons: /改奖励|调整|\+ 新建|改基础|改倍率|改天数|改小时|改设备|改日产/ },
+  { id: "H3", path: "/growth/quest", apiPath: "/api/admin/growth/quest-events/tasks", healthyText: /任务事件契约与归因/, errorText: /H3 用户任务管理 数据加载失败/, mutationButtons: /改奖励|调整|\+ 新建|改基础|改倍率|改天数|改小时|改设备|改日产/ },
   { id: "H4", path: "/growth/events", apiPath: "/api/admin/growth/quest-events/events-overview", healthyText: /抽奖转盘治理/, errorText: /H4 活动中心 数据加载失败/, mutationButtons: /\+ 新建活动|编辑|上线|下线|主推|保存概率|\+ 新建档位|\+ 新建护栏|删除|调整/ },
   { id: "H5", path: "/growth/daily", apiPath: "/api/admin/growth/check-in", healthyText: /收益里程碑/, errorText: /H5 数据加载失败/, mutationButtons: /调整|改奖励|检查间隔|保存/ },
   { id: "H7", path: "/growth/vouchers", apiPath: "/api/admin/growth/vouchers", healthyText: /代金券列表/, errorText: /H7 数据加载失败/, mutationButtons: /\+ 新增代金券|编辑|暂停|投放|撤销未核销|删除代金券/ },

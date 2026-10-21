@@ -55,7 +55,7 @@ const ALL_MODULES: ModuleProbe[] = [
   {
     id: "G2",
     path: "/finance-products/exchange",
-    marker: /G2 兑换风控/,
+    marker: /G2 兑换风险规则/,
     readPath: "/api/admin/market/exchange",
     writePath: "/api/admin/market/exchange/params/userDailyCap",
     writeMethod: "PATCH",
@@ -65,7 +65,7 @@ const ALL_MODULES: ModuleProbe[] = [
   {
     id: "G3",
     path: "/finance-products/market",
-    marker: /G3 NEX 行情引擎/,
+    marker: /G3 NEX 价格管理/,
     readPath: "/api/admin/market/nex/curve",
     writePath: "/api/admin/market/nex/curve/controls/pause",
     writeMethod: "PATCH",
@@ -75,7 +75,7 @@ const ALL_MODULES: ModuleProbe[] = [
   {
     id: "G4",
     path: "/finance-products/genesis",
-    marker: /G4 Genesis 经济/,
+    marker: /G4 创世节点销售与收益/,
     readPath: "/api/admin/market/nex/genesis?page=1&pageSize=10",
     writePath: "/api/admin/market/nex/genesis/params/price",
     writeMethod: "PATCH",

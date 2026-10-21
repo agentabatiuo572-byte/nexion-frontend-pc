@@ -27,7 +27,7 @@ const PARAM_COPY: Record<string, { name: string; sub: string }> = {
   presets: { name: "复投金额快捷档", sub: "用户复投金额快捷档 · 实时生效" },
 };
 
-/** 复投单状态机的中文业务名;未知状态原样回显,不伪造中文。 */
+/** 复投单处理流程的中文业务名;未知状态原样回显,不伪造中文。 */
 const REPURCHASE_STATE_LABELS: Record<string, string> = {
   pending_lock: "待锁定",
   active: "锁仓中",
@@ -292,14 +292,14 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
           <div className="gtint" style={{ marginTop: 10 }}><b>复投是原子组合</b> · 一次复投 = 扣余额 + 锁仓，两步在服务端单事务里一起成，中途崩了不会只成一半。限时倍率在复投那一刻套用，这页只展示生效面。</div>
           <div className="gtint" style={{ marginTop: 10 }}><b>G4 奖池容量</b> · 月容量 {fmtNumber(overview.g4Capacity.monthlyCapacity)} 张 · 本月已发 {fmtNumber(overview.g4Capacity.ticketsIssuedThisMonth)} 张 · 改券规则必须提交 G4 核对 ref。</div>
 
-          <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 8px" }}>复投单状态机与金额分布</div>
+          <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 8px" }}>复投单处理流程与金额分布</div>
           <div className="sm-strip">
             {overview.stateMachine.map((state, index) => (
               <span key={state} className={index === 1 ? "st ok" : index === 2 ? "st warn" : index === 4 ? "st bad" : "st"}>{REPURCHASE_STATE_LABELS[state] ?? state}</span>
             ))}
           </div>
           <details className="gtint" style={{ marginTop: 6 }}>
-            <summary>技术详情 · 状态机机器枚举</summary>
+            <summary>技术详情 · 处理流程机器枚举</summary>
             <div className="mono" style={{ marginTop: 4, fontSize: 11.5 }}>
               {overview.stateMachine.map((state) => `${state} = ${REPURCHASE_STATE_LABELS[state] ?? "未知状态"}`).join(" · ")}
             </div>

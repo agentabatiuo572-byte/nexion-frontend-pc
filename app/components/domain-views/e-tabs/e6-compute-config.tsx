@@ -427,11 +427,11 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
           <span className="r"><CodeTag tone="electric">可追溯</CodeTag><CodeTag>可回滚</CodeTag></span>
         </div>
         <div className="tint cyan tiny" style={{ margin: "12px 16px" }}>
-          <AutoGloss>每次批准都记录参数键、变更前值、变更后值、理由、操作人、幂等键和时间,同一幂等键重复提交不会产生第二个版本。需要回滚时,在 A2 审计中找到目标版本的变更前值,回到本页填入该值并重新提交理由与审批;回滚本身会生成新版本,不会删除或篡改旧记录。</AutoGloss>
+          <AutoGloss>每次批准都记录参数键、变更前值、变更后值、理由、操作人、防重复提交编号和时间,同一防重复提交编号重复提交不会产生第二个版本。需要回滚时,在 A2 审计中找到目标版本的变更前值,回到本页填入该值并重新提交理由与审批;回滚本身会生成新版本,不会删除或篡改旧记录。</AutoGloss>
         </div>
         <div className="row" style={{ margin: "0 16px 14px", gap: 10, flexWrap: "wrap" }}>
           <Link className="adj" href="/platform/audit?domain=E&object=E.compute">查看 E6 版本记录</Link>
-          <span className="sub">并发写由 A2 目标锁、配置行锁和幂等键串行化;批量修改要么全部成功,要么全部不写。</span>
+          <span className="sub">并发写由 A2 目标锁、配置行锁和防重复提交编号串行化;批量修改要么全部成功,要么全部不写。</span>
         </div>
       </section>
 

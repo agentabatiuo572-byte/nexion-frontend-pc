@@ -416,7 +416,7 @@ async function openF1FromSidebar(page: Page) {
   await expect(link).toBeVisible();
   await link.click();
   await expect(page).toHaveURL(/\/network\/v-rank$/);
-  await expect(page.getByRole("heading", { name: "V-Rank 晋升", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "团队等级晋升", exact: true })).toBeVisible();
 }
 
 function proposal(key: string, before: string, after: string, reason: string) {

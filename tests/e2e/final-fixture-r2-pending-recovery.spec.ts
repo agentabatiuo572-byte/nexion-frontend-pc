@@ -33,7 +33,7 @@ test("A2 cancels failed-attempt R2 role-deletion proposals through visible UI", 
 });
 
 async function navA2(page: Page) {
-  const link = page.locator("aside").getByRole("link", { name: "审计 & 操作确认 A2", exact: true });
+  const link = page.locator("aside").getByRole("link", { name: "操作记录与审批 A2", exact: true });
   if (!await link.isVisible().catch(() => false)) await page.locator("aside").getByRole("button", { name: /平台基础.*A|A.*平台基础/ }).click();
   await link.click();
   await expect(page).toHaveURL(/\/platform\/audit$/);

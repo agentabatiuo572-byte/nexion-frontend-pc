@@ -71,18 +71,18 @@ async function openD1(page: Page) {
 }
 
 async function openD3(page: Page) {
-  await openFinanceEntry(page, "资金池水位仪表盘", /\/finance\/pool$/);
+  await openFinanceEntry(page, "资金储备与应付款", /\/finance\/pool$/);
   await expect(page.getByText("应付负债 · 9 类科目", { exact: true })).toBeVisible();
 }
 
 async function openD2(page: Page) {
-  await openFinanceEntry(page, "提现审核队列", /\/finance\/withdrawals$/);
-  await expect(page.getByRole("heading", { name: "提现审核队列", exact: true })).toBeVisible();
+  await openFinanceEntry(page, "待审核提现", /\/finance\/withdrawals$/);
+  await expect(page.getByRole("heading", { name: "待审核提现", exact: true })).toBeVisible();
   await expect(page.getByText(/D2 数据加载失败/)).toHaveCount(0);
 }
 
 async function openD4(page: Page) {
-  await openFinanceEntry(page, "账本/账单审计", /\/finance\/ledger$/);
+  await openFinanceEntry(page, "账本与账单核对", /\/finance\/ledger$/);
   await expect(page.getByText("全平台账单流水", { exact: true })).toBeVisible();
   await expect(page.getByText(/资金账本已停止展示旧数据/)).toHaveCount(0);
 }
@@ -94,7 +94,7 @@ async function openD5(page: Page) {
 }
 
 async function openD6(page: Page) {
-  await openFinanceEntry(page, "汇率牌价", /\/finance\/fx-rate$/);
+  await openFinanceEntry(page, "汇率设置", /\/finance\/fx-rate$/);
   await expect(page.getByText("当前牌价（现场派生）", { exact: true })).toBeVisible();
 }
 
@@ -429,7 +429,7 @@ test("D1 与 D6 的真实写入具备中文 CAS 指引、幂等防重、审计�
   await staleD6Dialog.getByRole("button", { name: "确认提交", exact: true }).click();
   expect((await d6Stale).status()).toBe(409);
   await expect(
-    page.getByRole("alert").filter({ hasText: "汇率牌价已被其他操作员修改，本次未覆盖" }),
+    page.getByRole("alert").filter({ hasText: "汇率设置已被其他操作员修改，本次未覆盖" }),
   ).toBeVisible();
   await expect(page.getByText(/写入结果未确认，已停止展示旧牌价/)).toBeVisible();
   await expect(page.getByText("当前牌价（现场派生）", { exact: true })).toHaveCount(0);
@@ -491,7 +491,7 @@ test("D6 匿名访问被拒绝，读取异常时隐藏旧数据并给出恢复�
     });
   });
   await page.reload();
-  await expect(page.getByText(/汇率牌价尚未初始化或读取失败|服务返回的数据不完整/)).toBeVisible();
+  await expect(page.getByText(/汇率设置尚未初始化或读取失败|服务返回的数据不完整/)).toBeVisible();
   await expect(page.getByRole("button", { name: "重试读取", exact: true })).toBeVisible();
   await expect(page.getByText("当前牌价（现场派生）", { exact: true })).toHaveCount(0);
   await page.screenshot({ path: path.join(evidenceDir, "06-d6-read-failure-fail-closed.png"), fullPage: true });
@@ -518,7 +518,7 @@ test("D6 匿名访问被拒绝，读取异常时隐藏旧数据并给出恢复�
     });
   });
   await page.reload();
-  await expect(page.getByText(/汇率牌价尚未初始化或读取失败|服务返回的数据不完整/)).toBeVisible();
+  await expect(page.getByText(/汇率设置尚未初始化或读取失败|服务返回的数据不完整/)).toBeVisible();
   await expect(page.getByText("当前牌价（现场派生）", { exact: true })).toHaveCount(0);
   await page.screenshot({ path: path.join(evidenceDir, "06b-d6-malformed-200-fail-closed.png"), fullPage: true });
   await page.unroute("**/api/admin/finance/fx-quote");

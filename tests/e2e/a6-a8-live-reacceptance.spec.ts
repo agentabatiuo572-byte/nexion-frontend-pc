@@ -470,8 +470,8 @@ test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and re
     });
 
     await test.step("A8 shows mapped truth, handles page overflow and recovers from a real UI failure state", async () => {
-      await navigatePlatform(page, "权限字典 A8", /\/platform\/permissions$/);
-      await expect(page.getByRole("heading", { name: "权限字典" })).toBeVisible();
+      await navigatePlatform(page, "权限清单 A8", /\/platform\/permissions$/);
+      await expect(page.getByRole("heading", { name: "权限清单" })).toBeVisible();
       const baseline = await apiSuccess<Record<string, unknown>>(await page.request.get(
         "/api/admin/platform/permissions?pageNum=1&pageSize=20"));
       const permissionTotal = Number(baseline.total);
@@ -576,8 +576,8 @@ test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and re
       await expect(page.getByRole("button", { name: "+ 新建顶级菜单", exact: true })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "删除", exact: true })).toHaveCount(0);
-      await navigatePlatform(page, "权限字典 A8", /\/platform\/permissions$/);
-      await expect(page.getByRole("heading", { name: "权限字典" })).toBeVisible();
+      await navigatePlatform(page, "权限清单 A8", /\/platform\/permissions$/);
+      await expect(page.getByRole("heading", { name: "权限清单" })).toBeVisible();
       await expect(page.getByLabel("权限搜索")).toBeEnabled();
 
       const readonlyA6 = await page.request.get("/api/admin/platform/roles/overview");
@@ -926,11 +926,11 @@ async function confirmRejectedThroughUi(
 }
 
 async function approveThroughA2(page: Page, operationId: string, reason: string) {
-  await navigatePlatform(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  await navigatePlatform(page, "操作记录与审批 A2", /\/platform\/audit$/);
   // The checker can already be on A2 from an earlier approval. A same-route
   // sidebar click does not remount the page, so explicitly refresh server truth.
   await page.reload();
-  await expect(page.getByRole("heading", { name: "审计 & 操作确认" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "操作记录与审批" })).toBeVisible();
   const row = page.locator("tbody tr").filter({ hasText: operationId });
   await expect(row).toBeVisible();
   await row.getByRole("button", { name: "执行", exact: true }).click();

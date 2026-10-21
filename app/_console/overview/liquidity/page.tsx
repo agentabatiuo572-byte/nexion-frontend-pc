@@ -186,7 +186,7 @@ export default function LiquidityPage() {
       <div className="dkpage bpage liqpage">
         <BPageHeader
           id="B2"
-          title="资金池水位"
+          title="可用资金与应付款"
           desc={`正在从 D3 权威资金口径读取储备、${LIABILITY_CATEGORY_COUNT} 类应付负债与到期预测。`}
           ctaLabel="D3 资金池深页"
           ctaHref="/finance/pool"
@@ -202,7 +202,7 @@ export default function LiquidityPage() {
       <div className="dkpage bpage liqpage">
         <BPageHeader
           id="B2"
-          title="资金池水位"
+          title="可用资金与应付款"
           desc="D3 是 B2 负债与到期预测的唯一权威来源。"
           ctaLabel="D3 资金池深页"
           ctaHref="/finance/pool"
@@ -234,7 +234,7 @@ export default function LiquidityPage() {
     <div className="dkpage bpage liqpage">
       <BPageHeader
         id="B2"
-        title="资金池水位"
+        title="可用资金与应付款"
         desc={`以 D3 权威口径回答：当前可动用储备够不够、${LIABILITY_CATEGORY_COUNT} 类负债来自哪里、未来 7/30 天何时到期。`}
         ctaLabel="D3 资金池深页"
         ctaHref="/finance/pool"
@@ -276,7 +276,7 @@ export default function LiquidityPage() {
       {error && <div className="b2-alert error" role="alert">服务端响应异常 · {error}</div>}
       {notice && <div className="b2-alert success" role="status">{notice}</div>}
 
-      <section className="b2-kpis" aria-label="资金池水位摘要">
+      <section className="b2-kpis" aria-label="可用资金与应付款摘要">
         <article className="card b2-kpi">
           <span>真实可动用储备</span>
           <strong>{money(reserve.reserveTotalUsdt)}</strong>
@@ -374,9 +374,9 @@ export default function LiquidityPage() {
             </div>
           )}
           <div className="b2-cross-links">
-            {canCross("/overview/dual-ledger") ? <Link href="/overview/dual-ledger">B1 双账本总览<ExternalLink size={13} /></Link> : <span aria-disabled="true">B1 双账本总览 · 无权限</span>}
+            {canCross("/overview/dual-ledger") ? <Link href="/overview/dual-ledger">B1 资金与应付款总览<ExternalLink size={13} /></Link> : <span aria-disabled="true">B1 资金与应付款总览 · 无权限</span>}
             {canCross("/finance/pool") ? <Link href="/finance/pool">D3 资金池深页<ExternalLink size={13} /></Link> : <span aria-disabled="true">D3 资金池深页 · 无权限</span>}
-            {canCross("/overview/risk-radar") ? <Link href="/overview/risk-radar">B5 风险雷达<ExternalLink size={13} /></Link> : <span aria-disabled="true">B5 风险雷达 · 无权限</span>}
+            {canCross("/overview/risk-radar") ? <Link href="/overview/risk-radar">B5 风险提醒<ExternalLink size={13} /></Link> : <span aria-disabled="true">B5 风险提醒 · 无权限</span>}
           </div>
         </aside>
       </div>

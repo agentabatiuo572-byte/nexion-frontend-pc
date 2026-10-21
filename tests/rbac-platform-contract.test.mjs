@@ -106,7 +106,7 @@ test("classic database menu aliases render the split I4 and I5 pages", () => {
 test("D6 is a registered RBAC-controlled FX rate page", () => {
   assert.deepEqual(findByPath("/finance/fx-rate")?.l2, {
     id: "D6",
-    name: "汇率牌价",
+    name: "汇率设置",
     path: "/finance/fx-rate",
     prdAnchor: "D6",
     batch: "V1",
@@ -118,7 +118,7 @@ test("D6 is a registered RBAC-controlled FX rate page", () => {
     menuCodes: ["D", "D6"],
     menuNodes: [
       { menuCode: "D", menuName: "资金与财务", routePath: "/finance", parentCode: null, sortOrder: 4 },
-      { menuCode: "D6", menuName: "汇率牌价", routePath: "/finance/fx-rate", parentCode: "D", sortOrder: 6 },
+      { menuCode: "D6", menuName: "汇率设置", routePath: "/finance/fx-rate", parentCode: "D", sortOrder: 6 },
     ],
   }).find((domain) => domain.code === "D");
 
@@ -131,8 +131,8 @@ test("a stale K6 alias row cannot overwrite the canonical K6 menu metadata", () 
   const menuNodes = normalizeEffectiveMenuNodes({
     effectiveMenuNodes: [
       { menuCode: "K", menuName: "风控与反作弊", routePath: "/risk", parentCode: null, sortOrder: 10 },
-      { menuCode: "K6", menuName: "Janus C2 控制台", routePath: "/risk/janus-c2", parentCode: "K", sortOrder: 6 },
-      { menuCode: "MENU_RISK_K6", menuName: "Janus C2 控制台", routePath: "/risk/janus-c2", parentCode: null, sortOrder: 2006 },
+      { menuCode: "K6", menuName: "设备风险处置", routePath: "/risk/janus-c2", parentCode: "K", sortOrder: 6 },
+      { menuCode: "MENU_RISK_K6", menuName: "设备风险处置", routePath: "/risk/janus-c2", parentCode: null, sortOrder: 2006 },
     ],
   });
   const risk = resolveVisibleDomains({ role: "superadmin", menuCodes, menuNodes })
@@ -146,8 +146,8 @@ test("a complete K6 alias row repairs incomplete canonical metadata", () => {
   const menuNodes = normalizeEffectiveMenuNodes({
     effectiveMenuNodes: [
       { menuCode: "K", menuName: "风控与反作弊", routePath: "/risk", parentCode: null, sortOrder: 10 },
-      { menuCode: "K6", menuName: "Janus C2 控制台", routePath: null, parentCode: null, sortOrder: null },
-      { menuCode: "MENU_RISK_K6", menuName: "Janus C2 控制台", routePath: "/risk/janus-c2", parentCode: "MENU_RISK", sortOrder: 6 },
+      { menuCode: "K6", menuName: "设备风险处置", routePath: null, parentCode: null, sortOrder: null },
+      { menuCode: "MENU_RISK_K6", menuName: "设备风险处置", routePath: "/risk/janus-c2", parentCode: "MENU_RISK", sortOrder: 6 },
     ],
   });
   const risk = resolveVisibleDomains({ role: "superadmin", menuCodes, menuNodes })
@@ -161,7 +161,7 @@ test("K6 visibility ignores a more complete alias with a stale route", () => {
   const menuNodes = normalizeEffectiveMenuNodes({
     effectiveMenuNodes: [
       { menuCode: "K", menuName: "风控与反作弊", routePath: "/risk", parentCode: null, sortOrder: 10 },
-      { menuCode: "K6", menuName: "Janus C2 控制台", routePath: "/risk/janus-c2", parentCode: "K", sortOrder: null },
+      { menuCode: "K6", menuName: "设备风险处置", routePath: "/risk/janus-c2", parentCode: "K", sortOrder: null },
       { menuCode: "MENU_RISK_K6", menuName: "旧 Janus 页面", routePath: "/risk/old-janus", parentCode: "MENU_RISK", sortOrder: 6 },
     ],
   });
@@ -209,7 +209,7 @@ test("A7 effective menu metadata controls labels and ordering without allowing u
   const content = domains.find((domain) => domain.code === "I");
 
   assert.deepEqual(content?.l2.map((item) => [item.id, item.name, item.path]), [
-    ["I6", "i18n 文案与课程", "/content/i18n"],
+    ["I6", "多语言文案与课程", "/content/i18n"],
     ["I1", "文案实验", "/content/copy-ab"],
   ]);
 });

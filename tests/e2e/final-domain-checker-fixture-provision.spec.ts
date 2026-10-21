@@ -230,11 +230,11 @@ test("FINAL fixture window: visible A1/A6/A2 creates exact normal-MFA domain che
  */
 async function cleanupPartialSuccessUi(page: Page, checker: Page, recovery: { accounts: Array<{ username: string }>; roles: Array<{ roleCode: string; id: number }>; pending: string[]; errors: string[] }) {
   for (const operationId of recovery.pending) {
-    try { await nav(checker, "审计 & 操作确认 A2", /\/platform\/audit$/); await checker.reload(); const row = checker.locator("tbody tr").filter({ hasText: operationId }); if (await row.count()) { await row.getByRole("button", { name: "取消执行", exact: true }).click(); await confirm(checker, `${REASON} 失败清理撤回待处理票`, (r) => r.url().endsWith(`/api/admin/platform/audit/operations/${operationId}/reject`)); } } catch (error) { recovery.errors.push(`pending:${operationId}:${String(error)}`); }
+    try { await nav(checker, "操作记录与审批 A2", /\/platform\/audit$/); await checker.reload(); const row = checker.locator("tbody tr").filter({ hasText: operationId }); if (await row.count()) { await row.getByRole("button", { name: "取消执行", exact: true }).click(); await confirm(checker, `${REASON} 失败清理撤回待处理票`, (r) => r.url().endsWith(`/api/admin/platform/audit/operations/${operationId}/reject`)); } } catch (error) { recovery.errors.push(`pending:${operationId}:${String(error)}`); }
   }
   for (const account of [...recovery.accounts].reverse()) {
     try {
-      await nav(page, "运营账号 & RBAC A1", /\/platform\/rbac$/); await page.reload();
+      await nav(page, "运营账号与权限 A1", /\/platform\/rbac$/); await page.reload();
       const row = await findAccountRowUi(page, account.username);
       if (!row || !await row.getByRole("button", { name: "禁用", exact: true }).count()) continue;
       await row.getByRole("button", { name: "禁用", exact: true }).click();
@@ -244,7 +244,7 @@ async function cleanupPartialSuccessUi(page: Page, checker: Page, recovery: { ac
       // The original super is maker; the still-live bootstrap context is a
       // distinct A2 approver, including the final bootstrap-disable ticket.
       await approveUi(checker, operationId!);
-      await nav(page, "运营账号 & RBAC A1", /\/platform\/rbac$/); await page.reload();
+      await nav(page, "运营账号与权限 A1", /\/platform\/rbac$/); await page.reload();
       const readback = await findAccountRowUi(page, account.username);
       if (readback) { await expect(readback.locator("td").nth(3)).toContainText("已禁用"); await expect(readback.locator("td").nth(5)).toContainText("0"); }
     } catch (error) { recovery.errors.push(`account:${account.username}:${String(error)}`); }
@@ -402,7 +402,7 @@ async function grantFinal75ReadOnlyRoleUi(page: Page, roleId: number, roleCode: 
 function a6MenuCode(code: string) { return ({ I4: "MENU_CONTENT_I4", I5: "MENU_CONTENT_I5" } as Record<string, string>)[code] ?? code; }
 
 async function createAccountUi(page: Page, input: { username: string; displayName: string; roleName: string }) {
-  await nav(page, "运营账号 & RBAC A1", /\/platform\/rbac$/);
+  await nav(page, "运营账号与权限 A1", /\/platform\/rbac$/);
   await expect(page.getByText("正在读取 /api/admin/platform/accounts/overview。", { exact: true })).toBeHidden({ timeout: 30_000 });
   await expect(page.getByRole("button", { name: "+ 新建账号", exact: true })).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: "+ 新建账号", exact: true }).click();
@@ -433,7 +433,7 @@ async function takeTemporaryPassword(page: Page) {
 }
 
 async function assertSelfApprovalDenied(page: Page, operationId: string) {
-  await nav(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  await nav(page, "操作记录与审批 A2", /\/platform\/audit$/);
   await page.reload();
   const row = page.locator("tbody tr").filter({ hasText: operationId });
   await expect(row).toBeVisible();
@@ -450,7 +450,7 @@ async function assertSelfApprovalDenied(page: Page, operationId: string) {
 }
 
 async function approveUi(page: Page, operationId: string) {
-  await nav(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  await nav(page, "操作记录与审批 A2", /\/platform\/audit$/);
   await page.reload();
   const row = page.locator("tbody tr").filter({ hasText: operationId });
   await expect(row).toBeVisible();

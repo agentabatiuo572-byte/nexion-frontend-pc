@@ -452,7 +452,7 @@ async function openB1FromVisibleSidebar(page: Page) {
   await expect(link).toBeVisible();
   await link.click();
   await expect(page).toHaveURL(/\/overview\/dual-ledger/);
-  await expect(page.getByRole("heading", { name: "双账本总览", exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "资金与应付款总览", exact: true })).toBeVisible({ timeout: 30_000 });
 }
 
 async function openJ1FromVisibleSidebar(page: Page) {

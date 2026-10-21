@@ -393,7 +393,7 @@ async function openK2(page: Page) {
   await expect(link).toBeVisible();
   await link.click();
   await expect(page).toHaveURL(/\/risk\/abuse$/);
-  await expect(page.getByRole("heading", { name: "套利 & 刷量检测", exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: "异常套利与刷量排查", exact: true })).toBeVisible({ timeout: 20_000 });
 }
 
 async function openSidebarModule(page: Page, groupName: string, href: string) {

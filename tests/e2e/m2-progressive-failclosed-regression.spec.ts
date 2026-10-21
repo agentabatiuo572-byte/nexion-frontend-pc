@@ -105,7 +105,7 @@ async function faultWhileSiblingIsSlow(
     await page.unroute("**/api/admin/content/session-templates/overview", siblingHandler);
   }
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "工单台", exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "客服工单", exact: true })).toBeVisible({ timeout: 30_000 });
 }
 
 async function heldRequestFailsClosed(
@@ -136,7 +136,7 @@ async function heldRequestFailsClosed(
     await page.unroute(input.pattern, handler);
   }
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "工单台", exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "客服工单", exact: true })).toBeVisible({ timeout: 30_000 });
 }
 
 async function assertM2FailedClosed(page: Page, timeout: number) {
@@ -153,7 +153,7 @@ async function openVisibleM2(page: Page) {
   await expect(link).toBeVisible();
   await link.click();
   await expect(page).toHaveURL(/\/service\/tickets$/);
-  await expect(page.getByRole("heading", { name: "工单台", exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "客服工单", exact: true })).toBeVisible({ timeout: 30_000 });
 }
 
 async function login(page: Page, actor: Actor) {

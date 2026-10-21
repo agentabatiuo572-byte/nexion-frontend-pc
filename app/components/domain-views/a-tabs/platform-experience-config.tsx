@@ -57,7 +57,7 @@ export function PlatformExperienceConfig() {
       {error && <div className="atint warn" style={{ marginBottom: 10 }}>{error}</div>}
       {loading && !config ? <div className="tiny">读取体验配置中…</div> : !config ? <div className="atint warn">体验配置不可用，页面保持只读。</div> : <>
         <div className="two-col" style={{ marginBottom: 12 }}>
-          <div className="atint"><b>首页新手任务（只读投影）</b><br />{config.homeNewcomerTasksEnabled ? "已开启" : "已关闭"}<br /><Link href="/growth/quest">去 H3 任务引擎管理 →</Link></div>
+          <div className="atint"><b>首页新手任务（只读展示）</b><br />{config.homeNewcomerTasksEnabled ? "已开启" : "已关闭"}<br /><Link href="/growth/quest">去 H3 用户任务管理 →</Link></div>
           <div className="atint"><b>首页周促销（只读投影）</b><br />{config.homeWeeklyPromoEnabled ? "已开启" : "已关闭"}<br /><Link href="/growth/quest">去 H3 周促销管理 →</Link></div>
         </div>
         <nav className="a3-experience-nav" aria-label="App 体验配置分区"><a href="#a3-sharing" onClick={(event) => { event.preventDefault(); document.getElementById("a3-sharing")?.scrollIntoView({ block: "start" }); }}>分享渠道</a><a href="#a3-installer" onClick={(event) => { event.preventDefault(); document.getElementById("a3-installer")?.scrollIntoView({ block: "start" }); }}>App 官方安装</a></nav>

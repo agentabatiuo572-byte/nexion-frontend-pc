@@ -192,7 +192,7 @@ async function openVisibleA2(page: Page) {
   await expect(link).toBeVisible();
   await link.click();
   await expect(page).toHaveURL(/\/platform\/audit$/);
-  await expect(page.getByRole("heading", { name: "审计 & 操作确认", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "操作记录与审批", exact: true })).toBeVisible();
 }
 
 function databaseSnapshot(cross: CrossManifest): Snapshot {

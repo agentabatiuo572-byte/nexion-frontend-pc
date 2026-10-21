@@ -181,7 +181,7 @@ test("M1-M5 客服中心人工路径真实写入全流程", async ({ page }) => 
     await numbers.nth(0).fill("12");
     await numbers.nth(1).fill("8");
     await dialog.locator("input:visible").nth(2).fill("Payment desk");
-    await dialog.locator("input:visible").nth(3).fill("D2 提现审核队列");
+    await dialog.locator("input:visible").nth(3).fill("D2 待审核提现");
     await dialog.locator("input:visible").last().fill(WRITE_REASON);
     await clickConfirmInDialog(dialog, /保存 SLA/);
     await expectNoWriteFailures(page, "M4 保存 SLA");

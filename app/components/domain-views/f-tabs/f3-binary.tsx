@@ -1,6 +1,6 @@
 "use client";
 
-/** F3 · 双轨结算引擎。
+/** F3 · 左右团队业绩结算。
  * 页面读模型来自后端 teams/binary。 */
 import { useMemo, useState } from "react";
 import Link from "next/link";
@@ -347,11 +347,11 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <div className="ckv"><span className="k">引擎状态</span><span className="v" style={{ color: binaryPaused ? "var(--danger)" : "var(--success)" }}>{binaryPaused ? "已暂停" : "运行中"}</span></div>
           <div className="ckv"><span className="k">影响范围</span><span className="v" style={{ color: "var(--ink-3)" }}>{binaryPaused ? "全平台双轨派发冻结" : "正常按周期派发"}</span></div>
           {canPause && <div className="cfg-foot"><button className={`fbtn${binaryPaused ? " primary" : " danger"}`} onClick={() => ctx.openActionConfirm({
-            name: binaryPaused ? "恢复双轨结算引擎" : "暂停双轨结算引擎",
+            name: binaryPaused ? "恢复左右团队业绩结算" : "暂停左右团队业绩结算",
             op: "dispose", paramKey: "F.binary.paused", fixedVal: binaryPaused ? "off" : "on",
             detail: binaryPaused
               ? "恢复双轨结算 · 下一周期起正常 Balance Match 派发,写 A2 审计。"
-              : "暂停双轨结算引擎 · 全平台 Balance Match 派发冻结,影响所有双轨用户结算,属极高风险止血动作,写 A2 审计。",
+              : "暂停左右团队业绩结算 · 全平台 Balance Match 派发冻结,影响所有双轨用户结算,属极高风险止血动作,写 A2 审计。",
           })}>{binaryPaused ? "恢复引擎" : "暂停引擎"}</button></div>}
         </div>
       </div>

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * M4 知识库与 SLA — Help/FAQ 内容池 + Ticket 分类×SLA 矩阵(helpdesk 设计稿布局,由 I8 迁出)。
+ * M4 知识库与处理时限 — Help/FAQ 内容池 + Ticket 分类×SLA 矩阵(helpdesk 设计稿布局,由 I8 迁出)。
  * FAQ / SLA 读写走后端 content/knowledge 接口;I.support.* 为 M 容器传入的视图适配键。
  * 新建 FAQ、保存 SLA 走弹窗 + 审计理由;均刷新后仍在。
  */

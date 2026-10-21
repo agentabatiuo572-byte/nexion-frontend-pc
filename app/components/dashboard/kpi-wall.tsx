@@ -2,7 +2,7 @@
 
 /**
  * 八项 KPI 验收墙(§17.2)— 设计稿 KpiCard 模式:
- * 模块码 KPI #n + 达标/未达标 徽标 + 大数(达标色)+ sparkline + 目标;点击下钻 modal(口径/数据源/可见性)。
+ * 模块码 KPI #n + 达标/未达标 徽标 + 大数(达标色)+ sparkline + 目标;点击查看明细 modal(口径/数据源/可见性)。
  */
 import { useEffect, useRef, useState } from "react";
 import { Sparkline } from "@/app/components/kit/kpi-stat-card";
@@ -29,7 +29,7 @@ export function KpiWall({ kpis }: { kpis: DashboardKpi[] }) {
     <div>
       <div className="mb-2.5 flex items-center justify-between">
         <p className="text-[11px] uppercase tracking-[0.14em]" style={{ color: "var(--v5-ink-4)" }}>
-          八项 KPI 验收墙 · 可下钻
+          八项 KPI 验收墙 · 可查看明细
         </p>
         <span className="text-[11.5px]" style={{ color: "var(--v5-ink-3)" }}>
           达标 <span style={{ color: "var(--v5-success)" }}>{rollup.passed}</span> / 未达{" "}
@@ -84,7 +84,7 @@ function KpiModal({ kpi, n, onClose }: { kpi: DashboardKpi; n: number; onClose: 
   const rows = [
     { k: "测量口径", v: kpi.hint },
     { k: "数据源", v: "A4 事件流(server-authoritative)" },
-    { k: "后台可见性", v: "L1 KPI 看板 · 可下钻 cohort / Phase 切片" },
+    { k: "后台可见性", v: "L1 关键指标 · 可查看明细 cohort / Phase 切片" },
   ];
   return (
     <div
