@@ -1,4 +1,5 @@
 "use client";
+import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 import { useEffect, useState } from "react";
 import { PaginationExemptionList } from "../design-kit";
@@ -49,7 +50,7 @@ function rewardDestination(value: unknown) {
     "/team": "团队成长页",
     "/me/rewards": "我的奖励页",
     "/wallet/staking": "质押活动页",
-    "/market/genesis": "Genesis 资格页",
+    "/market/genesis": "创世节点 资格页",
   } as Record<string, string>)[path] ?? "相关权益页";
 }
 
@@ -139,7 +140,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const openStreak = (milestone: StreakMilestone) => {
     openActionConfirm({
       action: `连签里程碑 · ${milestone.day}`,
-      detail: <>当前奖励 <b>{milestone.reward}</b>,升高奖励时后端会检查覆盖率红线。</>,
+      detail: <>当前奖励 <b>{nexGridBrandText(milestone.reward)}</b>,升高奖励时后端会检查覆盖率红线。</>,
       amplifies: true,
       edit: { kind: "text", current: milestone.reward },
       run: async (reason, value) => {
@@ -152,12 +153,12 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
 
   const openPowerUp = (powerUp: PowerUp) => {
     openActionConfirm({
-      action: `Power-Up · ${powerUp.label}`,
+      action: `连续签到成长奖励 · ${powerUp.label}`,
       detail: <>当前触发天数 <b>{powerUp.day}</b>。可同步更新运营备注,两项都写后端。</>,
       amplifies: false,
       businessForm: {
         kind: "multi-field",
-        title: "Power-Up 配置",
+        title: "连续签到成长奖励设置",
         fields: [
           { key: "day", label: "触发天数", inputKind: "number", current: String(powerUp.day), placeholder: "例如 30" },
           { key: "note", label: "运营备注", inputKind: "text", current: text(powerUp.note, ""), placeholder: "可留空" },
@@ -183,14 +184,14 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const openEarn = (milestone: EarnMilestone) => {
     openActionConfirm({
       action: `收益里程碑 · $${milestone.threshold}`,
-      detail: <>当前门槛 <b>${milestone.threshold}</b>,奖励 <b>{milestone.nex} NEX</b>。后端校验门槛顺序。</>,
+      detail: <>当前门槛 <b>${milestone.threshold}</b>,奖励 <b>{milestone.nex} UVEL</b>。后端校验门槛顺序。</>,
       amplifies: true,
       businessForm: {
         kind: "multi-field",
         title: "收益里程碑",
         fields: [
           { key: "threshold", label: "门槛(USD)", inputKind: "number", current: String(milestone.threshold), placeholder: "500" },
-          { key: "nex", label: "奖励(NEX)", inputKind: "number", current: String(milestone.nex), placeholder: "250" },
+          { key: "nex", label: "奖励(UVEL)", inputKind: "number", current: String(milestone.nex), placeholder: "250" },
         ],
       },
       run: async (reason, _value, form) => {
@@ -260,7 +261,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           <div className="sub">连签里程碑触发 {Number(stats.weekMsTrigger ?? 0).toLocaleString()}</div>
         </div>
         <div className="f-stat warn">
-          <div className="k">本周里程碑 NEX</div>
+          <div className="k">本周里程碑 UVEL</div>
           <div className="v">{text(stats.weekMsNex)}</div>
           <div className="sub">覆盖率 {text(model.coverage?.coverageRatio)}% · 红线 {text(model.coverage?.redlinePct)}%</div>
         </div>
@@ -270,7 +271,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">签到规则</span>
-            <span className="sub">· H5 rules 来自后端</span>
+            <span className="sub">· 签到规则 来自后端</span>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             {model.rules.map((rule) => (
@@ -326,8 +327,8 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
               {model.streakMilestones.map((milestone) => (
                 <tr key={milestone.id}>
                   <td style={{ fontWeight: 600 }}>{milestone.day}</td>
-                  <td>{text(milestone.kind)}</td>
-                  <td className="num mono">{milestone.reward}</td>
+                  <td>{({nex:"UVEL奖励",NEX:"UVEL奖励",usdt:"USDT奖励",USDT:"USDT奖励",voucher:"代金券奖励"} as Record<string,string>)[text(milestone.kind)] ?? "成长奖励"}</td>
+                  <td className="num mono">{nexGridBrandText(milestone.reward)}</td>
                   <td style={{ textAlign: "right" }}>
                     <button className="l-btn sm mc" aria-label={`修改 ${milestone.day} 天连签奖励`} onClick={() => openStreak(milestone)} disabled={!canWrite}>改奖励</button>
                   </td>
@@ -383,7 +384,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
               <tr>
                 <th>键</th>
                 <th className="num">门槛(USD)</th>
-                <th className="num">奖励(NEX)</th>
+                <th className="num">奖励(UVEL)</th>
                 <th className="num">周触发</th>
                 <th style={{ textAlign: "right" }}>操作</th>
               </tr>
@@ -406,7 +407,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       </section>
 
       <div className="htint warn">
-        <b>服务端权威</b> · H5 页面只展示服务端返回的签到规则与里程碑；接口为空时保持空态，不使用本地示例数据。
+        <b>以服务器记录为准</b> · H5 页面只展示服务端返回的签到规则与里程碑；接口为空时保持空态，不使用本地示例数据。
       </div>
 
       <PaginationExemptionList

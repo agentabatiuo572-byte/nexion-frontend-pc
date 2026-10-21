@@ -4,8 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolveNexionAppRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
-const pc = "D:/workspace/nexion-ops-console";
-const backend = "D:/workspace/nexion-backend";
+const pc = path.resolve(import.meta.dirname, "..");
+const backend = process.env.NEXION_BACKEND_ROOT || path.resolve(pc, "..", "nexion-backend");
 const app = resolveNexionAppRoot({ adminRoot: pc });
 const read = (root, file) => fs.readFileSync(path.join(root, file), "utf8");
 
@@ -94,8 +94,8 @@ test("H8 remote registration writes one immutable sponsor relation before issuin
   assert.match(registration, /countRecentClient/);
   assert.match(registration, /countDailyClient/);
   assert.match(registration, /user\.setSponsorUserId\(sponsor == null \? null : sponsor\.getId\(\)\)/);
-  assert.match(registration, /userMapper\.insert\(user\)/);
-  assert.match(registration, /userMapper\.ensureRegisteredUserWallet\(user\.getId\(\), sandbox\)/);
+  assert.match(registration, /accountCreator\.insertNew\(new[\s\S]*user\.getSponsorUserId\(\), user\.getSponsorCode\(\)/);
+  assert.match(registration, /accountCreator\.ensureWallet\(birth\)/);
   assert.match(registration, /authService\.issueRegisteredSession/);
   assert.match(registrationMapper, /UNIQUE KEY uk_user_registration_otp_no/);
   assert.match(registrationMapper, /findSponsorForUpdate/);
@@ -103,7 +103,7 @@ test("H8 remote registration writes one immutable sponsor relation before issuin
   assert.match(authApi, /path: "\/auth\/users\/register"/);
   assert.match(registrationPage, /if \(remoteApiEnabled\)[\s\S]*registerAndLogin\(authApi/);
   assert.match(registrationPage, /sponsorCode: currentSponsorCode\(\)/);
-  assert.match(authApi, /async register\(request\)[\s\S]*consumeLoginResponse\(data, vault, revision, refreshCredentialMode\)[\s\S]*result\.kind !== "authenticated"/);
+  assert.match(authApi, /async register\(request\)[\s\S]*issue\("REGISTRATION"[\s\S]*result\.kind !== "authenticated"/);
   assert.match(registrationPage, /await registerAndLogin\(authApi[\s\S]*launchRegistrationSuccess\(\)/);
   assert.doesNotMatch(registrationPage, /authApi\.register\([\s\S]{0,800}authApi\.login/);
 });

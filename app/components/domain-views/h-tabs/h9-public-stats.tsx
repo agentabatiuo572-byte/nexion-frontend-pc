@@ -234,7 +234,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
         </div>}
         {baseChanged && <div>⚠️ 改了历史注册基数，估算起点会重置为本次保存时刻；正式 App 的注册账户总数仍来自真实账户记录。</div>}
         {virtualZero && <div>虚拟人口填了 0:历史本地估算分母仅含真实注册人口({int(data.realUserCount)} 人)。此参数不改变正式 App 当前服务端名次。</div>}
-        <div>本次提交基于配置版本 v{data.version};并发改动会返回 409,任何一项不合法都整组不落库。</div>
+        <div>本次提交基于配置版本 v{data.version};并发改动会返回 409,任何一项不合法都整组不保存记录。</div>
         <div>保存后仅影响历史数据展示设置；操作理由会写入审计。</div>
       </>,
       // 🔴 不挂 amplifies:它的语义是「放大资金流出方向,系统会先检查备付金覆盖率」(K 域契约),
@@ -308,7 +308,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
               const field = H9_FIELDS.find((item) => item.key === key)!;
               return <div className="p-row" key={key}>
                 <div className="txt">
-                  <div className="k">{field.label} <span className="hcode">{field.key}</span></div>
+                  <div className="k">{field.label} </div>
                   <div className="s">合法范围 {field.min}–{field.max}{field.unit}{field.integer ? "(整数)" : ""} · {field.hint}</div>
                   {fieldErrors[key] && <div className="ferr">{fieldErrors[key]}</div>}
                 </div>
@@ -333,7 +333,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
           </div>)}
           <div className="p-row">
             <div className="txt">
-              <div className="k">注册用户推算起点 <span className="hcode">registeredUsersAnchorAt</span></div>
+              <div className="k">注册用户推算起点 </div>
               <div className="s">仅用于历史估算；正式 App 对外账户数读取真实注册记录。修改基数时起点自动重置为保存时刻。</div>
             </div>
             <span className="v">{when(data.values.registeredUsersAnchorAt)}</span>
@@ -375,7 +375,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
         <span className="ttl">算力分位表</span>
         <span className="sub">· 历史本地估算参数，不参与正式 App 当前服务端排名</span>
         <div className="r">
-          <PaginationExemption label="算力分位表" reason="整表原子保存,分页会切断行间单调性校验" maxRows={bands.length} kind="fixed-matrix" />
+          <PaginationExemption label="算力分位表" reason="整表统一保存，需同时检查各行数值顺序" maxRows={bands.length} kind="fixed-matrix" />
           {canWrite && <button className="l-btn sm" onClick={addBand}>添加档</button>}
         </div>
       </div>
@@ -384,7 +384,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
         {bands.length === 0
           ? <div className="htint">还没有任何档位。历史估算表至少需要 {H9_BAND_MIN} 档才能保存。</div>
           : <table className="l-tbl">
-              <thead><tr><th>档</th><th>算力档位 <span className="hcode">tops</span></th><th>累计占比(%) <span className="hcode">cumPct</span></th><th>含义</th><th /></tr></thead>
+              <thead><tr><th>档</th><th>算力档位 </th><th>累计占比(%) </th><th>含义</th><th /></tr></thead>
               <tbody>
                 {bands.map((row, index) => <tr key={index}>
                   <td className="mono">{index + 1}</td>

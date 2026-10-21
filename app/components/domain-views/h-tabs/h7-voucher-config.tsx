@@ -86,13 +86,13 @@ function condText(v: OpsVoucher): string {
   if (v.type === "fixed") return (v.minPurchaseUSD ?? 0) > 0 ? `满 $${v.minPurchaseUSD}` : "无门槛";
   return (v.maxDiscountUSD ?? 0) > 0 ? `封顶 $${v.maxDiscountUSD}` : "不封顶";
 }
-function scopeText(v: OpsVoucher): string {
+function scopeText(v: OpsVoucher, labels: Record<string,string>): string {
   if (v.applicableSkus.length === 0) return "全设备";
-  if (v.applicableSkus.length === 1) return v.applicableSkus[0];
-  return `${v.applicableSkus.length} 个 SKU`;
+  if (v.applicableSkus.length === 1) return labels[v.applicableSkus[0]] ?? "指定商品（已不在当前目录）";
+  return `${v.applicableSkus.length} 个商品`;
 }
 function surfacesText(v: OpsVoucher): string {
-  return v.claimSurfaces.map((s) => SURFACE_LABEL[s] ?? s).join(" / ") || "—";
+  return v.claimSurfaces.map((s) => SURFACE_LABEL[s] ?? "其他页面").join(" / ") || "—";
 }
 
 /** businessValue → OpsVoucher(逗号串拆 SKU/入口 · 日期转 ms · 数值清洗)。 */
@@ -249,8 +249,8 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       action: "新增代金券",
       detail: (
         <>
-          新增一张领券促销:满减 / 折扣、门槛、适用 SKU、受众、有效期、领取入口。
-          <b>代金券是促销折扣、非 NEX 负债,不挂 B1 红线</b>;适用 SKU 留空 = 全设备(领券跳商城),单个 = 跳该 SKU 详情页。
+          新增一张领券促销:满减 / 折扣、门槛、适用商品、受众、有效期、领取入口。
+          <b>代金券是促销折扣、非 UVEL 负债,不受资金覆盖率门槛限制</b>;适用商品 留空 = 全设备(领券跳商城),单个 = 跳该商品 详情页。
         </>
       ),
       businessForm: {
@@ -286,8 +286,8 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       action: `编辑代金券 · ${v.name}`,
       detail: (
         <>
-          <b>{v.name}</b> · 多字段编辑:类型 / 面值 / 门槛 / 适用 SKU / 受众 / 有效期 / 领取入口 / 弹窗。
-          当前值已预填(改前可见 before→after);促销折扣非负债,不挂 B1。
+          <b>{v.name}</b> · 多字段编辑:类型 / 面值 / 门槛 / 适用商品 / 受众 / 有效期 / 领取入口 / 弹窗。
+          当前值已预填(改前可见 修改前后值);促销折扣非负债,不挂 B1。
         </>
       ),
       businessForm: {
@@ -418,7 +418,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       <section className="l-card" data-proof="h7-voucher-config">
         <div className="l-h">
           <span className="ttl">代金券列表</span>
-          <span className="sub">· 满减 / 折扣 · 名称 / 参数 / 适用 SKU / 受众 / 有效期 / 领取入口全部可配 · 改值经操作确认(当前值预填 before→after)</span>
+          <span className="sub">· 满减 / 折扣 · 名称 / 参数 / 适用商品 / 受众 / 有效期 / 领取入口全部可配 · 改值经操作确认(当前值预填 修改前后值)</span>
           <div className="r">
             <button className="l-btn sm mc" onClick={openAdd} disabled={!canWrite}>+ 新增代金券</button>
           </div>
@@ -450,7 +450,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
                     <td style={{ fontWeight: 600, color: isActive ? "var(--ink)" : "var(--ink-3)" }}>{v.name}</td>
                     <td className="mono" style={{ fontWeight: 700, color: isActive ? undefined : "var(--ink-3)" }}>{valueText(v)}</td>
                     <td style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{condText(v)}</td>
-                    <td style={{ fontSize: 11.5 }}>{scopeText(v)}</td>
+                    <td style={{ fontSize: 11.5 }}>{scopeText(v, skuLabels)}</td>
                     <td><span className={`bdg ${v.audience === "new" ? "cyan" : "dim"}`}>{v.audience === "new" ? "新人" : "全部"}</span></td>
                     <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{v.endAt ? `至 ${fmtDate(v.endAt)}` : "长期"}</td>
                     <td style={{ fontSize: 11.5, color: "var(--ink-2)" }}>{surfacesText(v)}</td>
@@ -475,7 +475,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="htint" style={{ fontSize: 12 }}>
-            <b>全端同一规则</b> · 代金券上下架或改参后，领取入口和首页活动位会按同一服务端配置生效。代金券属于促销折扣，不计入 NEX 兑付负债。
+            <b>全端同一规则</b> · 代金券上下架或改参后，领取入口和首页活动位会按同一服务端配置生效。代金券属于促销折扣，不计入 UVEL 兑付负债。
           </div>
         </div>
       </section>

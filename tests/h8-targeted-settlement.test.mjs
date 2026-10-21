@@ -1,3 +1,4 @@
+import { nexGridBrandText } from "../lib/admin/brand-copy.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -27,6 +28,7 @@ function render(input) {
     params: {}, effectiveRewards: { "newcomer.usdt": 0.015, "newcomer.nex": 0.015, "inviter.nex": 0.015 }, recentSettlements: [] };
   const jsx = (type, props) => ({ type, props });
   const dependencies = {
+    "@/lib/admin/brand-copy": { nexGridBrandText },
     react: { useState: (initial) => [[data, false, false, null, input][state++], () => {}],
       useCallback: (fn) => fn, useEffect: () => {}, useRef: (current) => ({ current }) },
     "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "fragment" },

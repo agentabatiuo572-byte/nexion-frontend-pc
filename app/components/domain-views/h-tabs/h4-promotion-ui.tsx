@@ -1,4 +1,5 @@
 "use client";
+import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { cloneElement, isValidElement, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type DependencyList, type ReactNode, type ReactElement } from 'react';
 import { displayAdminError } from '@/lib/admin/error-messages';
 import { fetchA2ReasonPolicy } from '@/lib/admin/a2-client';
@@ -16,7 +17,7 @@ catch {
 export const TEMPLATE_LABELS = { SKU_GIFT: '单设备赠礼', FIRST_PURCHASE: '首购礼', DIRECT_REFERRAL: '直邀首购双向礼', MULTI_PRODUCT: '多型号组合', REPURCHASE: '复购召回' } as const;
 const STATES: Record<string, string> = { DRAFT: '草稿', SCHEDULED: '待开始', ACTIVE: '进行中', PAUSED: '暂停新预留', ENDED: '已结束', ARCHIVED: '已归档', PENDING_APPROVAL: '待审核', APPROVED: '已审核待发布', PUBLISHED: '已发布', PENDING: '待发放', READY: '待执行', PROCESSING: '处理中', ISSUED: '已发放', RETRYABLE_FAILED: '可重试失败', OUTCOME_UNKNOWN: '结果未知', REVERSAL_PENDING: '追回待处理', REVERSED: '已冲正', CANCELED: '已取消', CANCELLED: '已取消', MANUAL_REVIEW: '人工审阅', MATCHED: '符合条件', REJECTED: '不符合', UNKNOWN: '未知', COMPLETE: '完整', UNAVAILABLE: '不可用', DELAYED: '延迟', ELIGIBLE: '符合条件', INELIGIBLE: '不符合', AVAILABLE: '可用', SHORTAGE: '不足', BUYER: '购买者', DIRECT_INVITER: '直接邀请人', SUCCEEDED: '成功', FAILED: '失败', NOT_FOUND: '未查到原操作', REVOKED: '已撤销' };
 export const labelState = (value: string) => STATES[value] || '待核实';
-export const rewardText = (r: DraftRewardSpec | RewardSpec | null | undefined, deviceName?: string | null) => !r ? '未配置' : r.type === 'DEVICE' ? `${deviceName || '设备赠礼'} × ${r.quantity ?? '未配置'}` : `${r.amount ?? '未配置'} ${r.type}`;
+export const rewardText = (r: DraftRewardSpec | RewardSpec | null | undefined, deviceName?: string | null) => !r ? '未配置' : r.type === 'DEVICE' ? `${nexGridBrandText(deviceName || '设备赠礼')} × ${r.quantity ?? '未配置'}` : `${r.amount ?? '未配置'} ${nexGridBrandText(r.type)}`;
 export function Button({ kind = '', className = '', type = 'button', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & {
     kind?: '' | 'primary' | 'link' | 'danger';
 }) { return <button {...props} type={type} className={`btn ${kind} ${className}`}/>; }
@@ -64,7 +65,7 @@ export function DeviceRightsSummary({ rights }: {rights: RewardDisclosure['devic
     return <Summary rows={[
         ['激活方式', rights?.activationMode === 'AUTO' ? '自动激活' : rights?.activationMode === 'MANUAL' ? '手动激活' : '未确认'],
         ['生效起点', rights?.effectiveOn === 'ISSUED' ? '发放时' : rights?.effectiveOn === 'ACTIVATED' ? '激活时' : '未确认'],
-        ['有效天数', rights?.durationDays === null ? '原合同未限定' : typeof rights?.durationDays === 'number' && Number.isFinite(rights.durationDays) ? rights.durationDays : '未确认'],
+        ['有效天数', rights?.durationDays === null ? '原业务协议未限定' : typeof rights?.durationDays === 'number' && Number.isFinite(rights.durationDays) ? rights.durationDays : '未确认'],
         ['参与任务', yesNo(rights?.taskEnabled)], ['计入设备持有', yesNo(rights?.countsAsDeviceHolding)],
         ['计入等级', yesNo(rights?.countsForRank)], ['可转让', yesNo(rights?.transferable)], ['可兑换', yesNo(rights?.exchangeable)],
         ['收回方式', rights?.revocationMode === 'REVOKE_IF_UNUSED' ? '未使用可收回' : rights?.revocationMode === 'MANUAL_IF_USED' ? '使用后人工处理' : '未确认']

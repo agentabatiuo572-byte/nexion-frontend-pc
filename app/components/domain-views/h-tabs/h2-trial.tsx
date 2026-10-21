@@ -1,4 +1,5 @@
 "use client";
+import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DataListPager } from "../design-kit";
@@ -129,7 +130,7 @@ function ParamRow({
   const currentProduct = isProduct ? trialProducts.find((product) => product.productNo === current) : undefined;
   const displayCurrent = isDay ? `${current} 天`
     : isQuota || isActualQuota ? (current === "UNKNOWN" ? "-" : `${current} 张`)
-      : currentProduct ? `${currentProduct.name} · ${current}` : current;
+      : currentProduct ? `${nexGridBrandText(currentProduct.name)} · ${current}` : current;
   const readOnly = !!param.readOnly || isActualQuota || ["phaseOpen", "trialPriceUSD"].includes(param.key);
   const productOptions = trialProducts.map((product) => product.productNo);
   const disabledProductOptions = trialProducts
@@ -137,7 +138,7 @@ function ParamRow({
     .map((product) => product.productNo);
   const productOptionLabels = Object.fromEntries(trialProducts.map((product) => [
     product.productNo,
-    `${product.name} · ${product.productNo} · 库存 ${product.stock ?? 0} · $${text(product.priceUsdt, "-")}${product.selectable ? "" : ` · 不可选：${trialProductReason(product.unavailableReason)}`}`,
+    `${nexGridBrandText(product.name)} · ${product.productNo} · 库存 ${product.stock ?? 0} · $${text(product.priceUsdt, "-")}${product.selectable ? "" : ` · 不可选：${trialProductReason(product.unavailableReason)}`}`,
   ]));
   const options = ["autoPushEnabled"].includes(param.key)
     ? ["开", "关"]
@@ -148,7 +149,7 @@ function ParamRow({
       <b>{param.name}</b> · 当前 <span className="mono">{displayCurrent}</span>。
       {param.serverOnly ? "该值仅服务端可见,接口返回仍保持遮罩。" : ""}
       {isInteger ? `请输入整数(${dayLimitHint(param.key)})。` : ""}
-      {isProduct ? "目标商品只能从 E1 中明确开启“允许试用”的在售实物 SKU 选择；试用价格始终读取 E1 当前售价。" : ""}
+      {isProduct ? "目标商品只能从 E1 中明确开启“允许试用”的在售实物商品 选择；试用价格始终读取 E1 当前售价。" : ""}
       {isProduct && currentProduct && !currentProduct.selectable ? (
         <span style={{ display: "block", marginTop: 5, color: "var(--danger)", fontWeight: 700 }}>
           当前目标商品不可用 · 库存 {currentProduct.stock ?? 0} · {trialProductReason(currentProduct.unavailableReason)}
@@ -270,7 +271,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     if (!canCancel || !knownTrialOwner(session)) return;
     openActionConfirm({
       action: `强制取消试用 · ${session.sid}`,
-      detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。会话会转为 <b>cancelled</b> 终态,由后端防重复提交处理并审计。</>,
+      detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。会话会转为 <b>已取消</b> 终态,由后端防重复提交处理并审计。</>,
       amplifies: false,
       run: (reason) => {
         const def = findHighOp("h2_trial_cancel")!;
@@ -296,7 +297,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     if (!canCharge || !knownTrialOwner(session)) return;
     openActionConfirm({
       action: `强制触发扣款 · ${session.sid}`,
-      detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。后端会按当前试用结算规则重算,重复请求由 Idempotency-Key 去重。直接动 USDT 台账,入 A2 待门槛者执行。</>,
+      detail: <>用户：<b>{trialOwnerLabel(session)}</b> · 试用：<b>{session.sid}</b>。后端会按当前试用结算规则重算,系统根据同一请求编号防止重复处理。直接动 USDT 台账,入 A2 等待有权限的管理员执行。</>,
       amplifies: true,
       run: (reason) => {
         const def = findHighOp("h2_trial_charge")!;
@@ -320,7 +321,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
 
   const openPushKill = () => {
     openConfirm({
-      action: "auto-push 急停",
+      action: "试用邀请自动弹出 急停",
       detail: <>立即关闭试用自动推送,后端写入配置并返回最新读模型。</>,
       chips: [["实时急停", "ready"], ["后端留痕", "done"]],
       reason: true,
@@ -328,7 +329,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       run: async (reason) => {
         await killH2AutoPush(reason);
         await reload();
-        toast("auto-push 已急停");
+        toast("试用邀请自动弹出 已急停");
       },
     });
   };
@@ -365,7 +366,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         <div className="f-stat cyan">
           <div className="k">抵扣上限</div>
           <div className="v">${text(model.params.find((param) => param.key === "trialOffsetCapUSD")?.cur)}</div>
-          <div className="sub">Model A 抵扣由服务端重算</div>
+          <div className="sub">试用抵扣额由服务器计算</div>
         </div>
         <div className="f-stat danger">
           <div className="k">循环养号阻断(K2)</div>
@@ -375,15 +376,15 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       </div>
 
       <div className="htint cyan" style={{ marginBottom: 16 }}>
-        <b>Model A</b> · 抵扣规则由后端返回: <span className="mono">{text(model.modelA?.offsetRule, "min(shadow, offsetCap)")}</span>。
-        扣款失败概率等 server-only 字段不会以真实值下发。
+        <b>试用收益抵扣规则</b> · 抵扣规则由后端返回: <span>抵扣额取试用累计收益与抵扣上限中的较小值</span>。
+        扣款失败概率等 仅供服务器内部计算的数据不会以真实值下发。
       </div>
 
       <div className="two-col">
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">试用参数 · 只影响新开</span>
-            <span className="sub">· 从后端 params 读取</span>
+            <span className="sub">· 从服务器配置 读取</span>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             {newOnlyParams.map((param) => (
@@ -398,7 +399,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
             <span className="sub">· 每次结算读最新后端配置</span>
             <div className="r">
               <button className="l-btn sm mc" onClick={openPushKill} disabled={!!model.autoPushKilled || !canWrite}>
-                {model.autoPushKilled ? "auto-push 已急停" : "auto-push 急停"}
+                {model.autoPushKilled ? "试用邀请自动弹出 已急停" : "试用邀请自动弹出 急停"}
               </button>
             </div>
           </div>
@@ -508,7 +509,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       </section>
 
       <div className="htint warn">
-        <b>服务端权威</b> · H2 参数、会话处置和自动推送急停均由服务端执行；当前没有会话时保持明确空态，不生成示例用户。
+        <b>以服务器记录为准</b> · H2 参数、会话处置和自动推送急停均由服务端执行；当前没有会话时保持明确空态，不生成示例用户。
       </div>
 
     </>

@@ -12,7 +12,7 @@ const readApp = (relative) => readFileSync(path.join(appRoot, relative), "utf8")
 test("H3 PC uses stable business codes, CAS and directional reward controls", () => {
   const view = read("app/components/domain-views/h-tabs/h3-quest-events.tsx");
   const client = read("lib/admin/h-client.ts");
-  assert.match(view, /mission\.\$\{text\(task\.completionEvent\)\}\.reward/);
+  assert.match(view, /mission\.\$\{text\(task\.taskCode \?\? task\.missionCode \?\? task\.id\)\}\.reward/);
   assert.match(view, /monthly\.\$\{text\(mission\.id\)\}\.reward/);
   assert.match(view, /expectedValue/);
   assert.match(view, /amplifiesWhen:\s*"increase"/);
@@ -61,7 +61,7 @@ test("H3 identifies the real weekly-card display fields consumed by the App", ()
     assert.match(appPresenter, new RegExp(key));
   }
   assert.match(view, /周任务名称和奖励来自活动任务/);
-  assert.match(view, /启用首页促销兜底/);
+  assert.match(view, /启用首页促销备用/);
   assert.match(view, /没有未领取周任务时跳商店/);
   assert.doesNotMatch(view, /上架本周转化卡|下架本周转化卡|转化卡上下架/);
 });

@@ -1,4 +1,5 @@
 "use client";
+import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -23,9 +24,9 @@ const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-h8-co
 
 const PARAMS = [
   { key: "newcomer.usdt", label: "新人 USDT", unit: "USDT", kind: "number", max: 50, step: 0.000001 },
-  { key: "newcomer.nex", label: "新人 NEX", unit: "NEX", kind: "number", max: 500, step: 0.000001 },
+  { key: "newcomer.nex", label: "新人 UVEL", unit: "NEX", kind: "number", max: 500, step: 0.000001 },
   { key: "newcomer.lockMode", label: "新人礼发放模式", unit: "", kind: "select", options: ["risk_bucket", "direct"] },
-  { key: "inviter.nex", label: "邀请人 NEX", unit: "NEX", kind: "number", max: 249_999_999.75, step: 0.000001 },
+  { key: "inviter.nex", label: "邀请人 UVEL", unit: "NEX", kind: "number", max: 249_999_999.75, step: 0.000001 },
 ] as const;
 
 const LOCK_MODE_LABELS: Record<string, string> = {
@@ -94,11 +95,11 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         ? enabling
           ? "启用后，只结算启用时刻之后形成且通过资格与风控校验的邀请；App 将显示当前真实奖励。"
           : "停用后，App 仍可分享邀请码，但不再承诺新人礼或邀请人奖励，服务端拒绝全部新结算。"
-        : `${param.label} 当前 ${current} ${param.unit}。新值只用于后续发放；已入账奖励不回写。升额或切 direct 会先过 B1 覆盖率红线。`,
+        : `${param.label} 当前 ${current} ${nexGridBrandText(param.unit)}。新值只用于后续发放；已入账奖励不更新。升额或改为直接发放 会先过 B1 覆盖率红线。`,
       amplifies: isEnabled ? enabling : true,
       edit: fixedValue != null ? undefined : param.kind === "select"
         ? { kind: "select", current, options: Object.values(LOCK_MODE_LABELS) }
-        : { kind: "number", current, unit: param.unit, min: 0, max: param.max, step: param.step },
+        : { kind: "number", current, unit: nexGridBrandText(param.unit), min: 0, max: param.max, step: param.step },
       run: async (reason, value) => {
         if (value == null && fixedValue == null) return;
         const slot = `param|${param.key}`;
@@ -125,7 +126,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           throw error;
         }
         await load();
-        ctx.toast(isEnabled ? enabling ? "邀请奖励已启用" : "邀请奖励已停用" : `${param.label} 已更新为 ${submittedValue} ${param.unit}`);
+        ctx.toast(isEnabled ? enabling ? "邀请奖励已启用" : "邀请奖励已停用" : `${param.label} 已更新为 ${submittedValue} ${nexGridBrandText(param.unit)}`);
       },
     });
   };
@@ -134,7 +135,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     const targeted = invitedUserId != null;
     ctx.openActionConfirm({
     action: targeted ? "执行指定新人邀请奖励结算" : "执行邀请奖励真实结算",
-    detail: `${targeted ? `仅结算新人 ${invitedUserId} 的邀请奖励；资格不符或已结算时终止。` : "按服务端邀请关系扫描尚未结算的记录；"}当前 H1 第 ${data?.rhythmMonth ?? "—"} 月倍率计入后，每组结算为新人 ${data?.effectiveRewards?.["newcomer.usdt"] ?? "—"} USDT + ${data?.effectiveRewards?.["newcomer.nex"] ?? "—"} NEX、邀请人 ${data?.effectiveRewards?.["inviter.nex"] ?? "—"} NEX。奖励分别写入真实钱包与资金台账，同一新人只会结算一次。`,
+    detail: `${targeted ? `仅结算新人 ${invitedUserId} 的邀请奖励；资格不符或已结算时终止。` : "按服务端邀请关系扫描尚未结算的记录；"}当前 H1 第 ${data?.rhythmMonth ?? "—"} 月倍率计入后，每组结算为新人 ${data?.effectiveRewards?.["newcomer.usdt"] ?? "—"} USDT + ${data?.effectiveRewards?.["newcomer.nex"] ?? "—"} UVEL、邀请人 ${data?.effectiveRewards?.["inviter.nex"] ?? "—"} UVEL。奖励分别写入真实钱包与资金台账，同一新人只会结算一次。`,
     amplifies: true,
     edit: targeted ? undefined : { kind: "number", current: "20", unit: "条", min: 1, max: 100, step: 1 },
     run: async (reason, value) => {
@@ -156,7 +157,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           action: targeted ? "执行指定新人邀请奖励结算" : "执行邀请奖励真实结算",
           obj: targeted ? `新人 ${invitedUserId}` : "待结算邀请批次",
           before: `待结算 ${Number(data?.pending ?? 0)} 条 · H8 v${data?.version ?? "—"} · H1 第 ${data?.rhythmMonth ?? "—"} 月`,
-          after: `${targeted ? `仅结算新人 ${invitedUserId} 的邀请奖励` : `最多结算 ${limit} 条`} · 新人 ${data?.effectiveRewards["newcomer.usdt"] ?? "—"} USDT + ${data?.effectiveRewards["newcomer.nex"] ?? "—"} NEX · 邀请人 ${data?.effectiveRewards["inviter.nex"] ?? "—"} NEX · 快照 ${data?.rewardSnapshotHash.slice(0, 12) ?? "—"}…`,
+          after: `${targeted ? `仅结算新人 ${invitedUserId} 的邀请奖励` : `最多结算 ${limit} 条`} · 新人 ${data?.effectiveRewards["newcomer.usdt"] ?? "—"} USDT + ${data?.effectiveRewards["newcomer.nex"] ?? "—"} UVEL · 邀请人 ${data?.effectiveRewards["inviter.nex"] ?? "—"} UVEL · 快照 ${data?.rewardSnapshotHash.slice(0, 12) ?? "—"}…`,
           type: "fund",
           amplifies: true,
           gate: { roles: [] },
@@ -191,8 +192,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   return (
     <>
       <div className="f-stats">
-        <div className={data?.enabled ? "f-stat ok" : "f-stat warn"}><div className="k">奖励开关</div><div className="v">{data?.enabled ? "已启用" : "已停用"}</div><div className="sub">服务端结算与 App 奖励展示共用此闸门</div></div>
-        <div className="f-stat warn"><div className="k">待结算邀请</div><div className="v">{data?.pending ?? 0}</div><div className="sub">真实 sponsor 关系且未发奖</div></div>
+        <div className={data?.enabled ? "f-stat ok" : "f-stat warn"}><div className="k">奖励开关</div><div className="v">{data?.enabled ? "已启用" : "已停用"}</div><div className="sub">服务端结算与 App 奖励展示使用同一开关</div></div>
+        <div className="f-stat warn"><div className="k">待结算邀请</div><div className="v">{data?.pending ?? 0}</div><div className="sub">真实 邀请关系且未发奖</div></div>
         <div className="f-stat ok"><div className="k">累计已结算</div><div className="v">{data?.settled ?? 0}</div><div className="sub">同一新人只结算一次</div></div>
         <div className="f-stat danger"><div className="k">风控暂缓</div><div className="v">{data?.blockedByK2 ?? 0}</div><div className="sub">仅统计尚未发奖且命中 K1/K2 的邀请关系</div></div>
         <div className="f-stat cyan"><div className="k">结算模式</div><div className="v">真实钱包与资金台账</div><div className="sub">结算结果由服务端持久化</div></div>
@@ -203,10 +204,10 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         <div className="l-b"><div className="param-grid">
           {PARAMS.map((param) => <div className="p" key={param.key}>
             <div className="k">{param.label}</div>
-            <div className="v">{param.kind === "select" ? LOCK_MODE_LABELS[String(data?.params?.[param.key] ?? "risk_bucket")] : `基础 ${String(data?.params?.[param.key] ?? "0")}`} <span className="vu">{param.unit}</span>{canWrite && <button className="l-btn sm mc" disabled={!data} onClick={() => editParam(param)}>调整</button>}</div>
+            <div className="v">{param.kind === "select" ? LOCK_MODE_LABELS[String(data?.params?.[param.key] ?? "risk_bucket")] : `基础 ${String(data?.params?.[param.key] ?? "0")}`} <span className="vu">{nexGridBrandText(param.unit)}</span>{canWrite && <button className="l-btn sm mc" disabled={!data} onClick={() => editParam(param)}>调整</button>}</div>
             <div className="s">{param.kind === "select"
                 ? "影响后续真实结算；所有修改强制理由、防重复提交编号和审计。"
-                : `H1 第 ${data?.rhythmMonth ?? "—"} 月倍率计入后，实际发放 ${String(data?.effectiveRewards?.[param.key] ?? "—")} ${param.unit}（${param.key.startsWith("newcomer.") ? data?.newcomerMultiplier : data?.inviterMultiplier}×）。`}</div>
+                : `H1 第 ${data?.rhythmMonth ?? "—"} 月倍率计入后，实际发放 ${String(data?.effectiveRewards?.[param.key] ?? "—")} ${nexGridBrandText(param.unit)}（${param.key.startsWith("newcomer.") ? data?.newcomerMultiplier : data?.inviterMultiplier}×）。`}</div>
           </div>)}
         </div></div>
       </section>
@@ -214,7 +215,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       <section className="l-card">
         <div className="l-h"><span className="ttl">指定新人结算</span></div>
         <div className="l-b">
-          <label>新人用户 ID <input aria-label="指定结算的新人用户 ID" inputMode="numeric" placeholder="请输入新人用户 ID" value={invitedUserIdInput} onChange={(event) => setInvitedUserIdInput(event.target.value)} /></label>{" "}
+          <label>新人用户编号 <input aria-label="指定结算的新人用户编号" inputMode="numeric" placeholder="请输入新人用户编号" value={invitedUserIdInput} onChange={(event) => setInvitedUserIdInput(event.target.value)} /></label>{" "}
           {canSettle && <button className="l-btn mc" disabled={!data?.enabled || !targetUserValid} onClick={() => settle(targetUserId)}>结算指定新人</button>}
           <p className="f-foot">审批单将锁定该新人；邀请人由服务端邀请关系确定。资格不符或已结算时终止，不会结算其他邀请。</p>
         </div>
@@ -223,7 +224,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       <section className="l-card">
         <div className="l-h"><span className="ttl">最近真实发奖</span><span className="sub">· 数据源 服务端邀请关系</span></div>
         <div style={{ overflowX: "auto" }}><table className="l-tbl"><thead><tr><th>结算号</th><th>新人</th><th>邀请人</th><th>新人奖励</th><th>邀请人奖励</th><th>状态</th></tr></thead><tbody>
-          {(data?.recentSettlements ?? []).map((row, index) => <tr key={row.settlementNo ?? index}><td className="mono">{row.settlementNo ?? "—"}</td><td>{row.invitedUserId ?? "—"}</td><td>{row.inviterUserId ?? "—"}</td><td>{row.newcomerUsdt ?? 0} USDT + {row.newcomerNex ?? 0} NEX</td><td>{row.inviterNex ?? 0} NEX</td><td><span className="bdg ok">{row.status === "SETTLED" ? "已结算" : "—"}</span></td></tr>)}
+          {(data?.recentSettlements ?? []).map((row, index) => <tr key={row.settlementNo ?? index}><td className="mono">{row.settlementNo ?? "—"}</td><td>{row.invitedUserId ?? "—"}</td><td>{row.inviterUserId ?? "—"}</td><td>{row.newcomerUsdt ?? 0} USDT + {row.newcomerNex ?? 0} UVEL</td><td>{row.inviterNex ?? 0} UVEL</td><td><span className="bdg ok">{row.status === "SETTLED" ? "已结算" : "—"}</span></td></tr>)}
           {!data?.recentSettlements?.length && <tr><td colSpan={6} style={{ textAlign: "center", padding: 24 }}>{Number(data?.pending ?? 0) > 0 ? "当前尚无结算记录，可从上方执行待结算邀请" : "暂无结算记录，当前也没有待结算邀请"}</td></tr>}
         </tbody></table></div>
         <div className="l-b" style={{ paddingTop: 10 }}>
@@ -232,7 +233,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           <><Link href="/platform/audit" className="l-btn sm">A2 审批与审计</Link>{" "}<Link href="/platform/events" className="l-btn sm">A4 事件</Link>{" "}<Link href="/finance/ledger" className="l-btn sm">D4 钱包台账</Link></>
         </div>
       </section>
-      <p className="f-foot"><b>真实发奖链</b>：App/H5 服务端奖励投影 → {data?.source ?? "服务端邀请关系"} → A2 审批 → 唯一结算记录 → 新人 / 邀请人钱包入账 → USDT / NEX 资金台账 → A4 事件。结算结果以服务端邀请关系、唯一结算记录、钱包与资金台账为准。</p>
+      <p className="f-foot"><b>奖励发放流程</b>：App/H5 服务端奖励展示 → 邀请关系记录 → A2 审批 → 唯一结算记录 → 新人 / 邀请人钱包入账 → USDT / UVEL 资金台账 → A4 事件。结算结果以服务端邀请关系、唯一结算记录、钱包与资金台账为准。</p>
     </>
   );
 }

@@ -123,9 +123,10 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
   const coverageRatio = text(model?.coverage?.coverageRatio, "-");
   const redlinePct = text(model?.coverage?.redlinePct, "-");
   const controlDescription = (control: H1Model["controls"][number]) =>
-    control.key === "schedule" ? describeH1Schedule(rhythm?.schedule) : control.description;
+    control.key === "schedule" ? describeH1Schedule(rhythm?.schedule) : control.key === "override" ? "为指定用户批次单独设置运营阶段" : control.description;
   const controlValue = (control: H1Model["controls"][number]) => {
-    if (control.key !== "schedule") return text(control.value, "未设置");
+    if (control.key === "override") return "启用用户群单独设置";
+    if (control.key !== "schedule") return control.key === "pin" && control.value === "未钉住" ? "自动切换阶段" : text(control.value, "未设置");
     const schedule = rhythm?.schedule;
     if (!schedule) return "排程状态不可用";
     if (!schedule.configured) return "未设置";
@@ -217,7 +218,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
       ? "decrease"
       : "increase";
     openActionConfirm({
-      action: `改旋钮 · 月 ${row.month} · ${label}`,
+      action: `调整阶段参数 · 月 ${row.month} · ${label}`,
       detail: <>当前值 <b>{current}</b>。提交后写入后端配置并重新查询 H1 矩阵。</>,
       amplifies: isComplianceToggle && current === "是",
       edit: isComplianceToggle
@@ -229,7 +230,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
         if (dialAmplifies(key, current, value)) {
           const def = findHighOp("h1_phase_dial")!;
           void propose(ctx.toast, {
-            action: `改旋钮 · 月 ${row.month} · ${label}`,
+            action: `调整阶段参数 · 月 ${row.month} · ${label}`,
             obj: `${row.month}:${key}`,
             before: current,
             after: value,
@@ -254,10 +255,10 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
     const current = text(control.value, control.key === "pin" ? "未钉住" : "");
     openActionConfirm({
       action: `运营阶段切换设置 · ${control.label}`,
-      detail: <>{controlDescription(control) || "控制项变更会写入后端配置并留痕。"} 当前值 <b>{current || "未设置"}</b>。</>,
+      detail: <>{controlDescription(control) || "控制项变更会写入后端配置并留痕。"} 当前值 <b>{control.key === "pin" && current === "未钉住" ? "自动切换阶段" : current || "未设置"}</b>。</>,
       amplifies: false,
       edit: CONTROL_OPTIONS[control.key]
-        ? { kind: "select", current, options: CONTROL_OPTIONS[control.key] }
+        ? { kind: "select", current, options: CONTROL_OPTIONS[control.key], optionLabels: { "未钉住": "自动切换阶段" } }
         : { kind: "text", current },
       run: (reason, value) => {
         if (value == null) return;
@@ -403,7 +404,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">逐月旋钮矩阵({monthlyRows.length} 月 x {model.dialCount ?? DIAL_COLUMNS.length} 项)</span>
+          <span className="ttl">每月阶段参数表({monthlyRows.length} 月 x {model.dialCount ?? DIAL_COLUMNS.length} 项)</span>
           <span className="sub">· 点击任意单元格调参 · 提交后从后端重新查询</span>
           <div className="r"><span className="bdg ok">后端配置生效</span></div>
         </div>
@@ -458,7 +459,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
             {model.controls.map((control) => (
               <div className="p-row" key={control.key}>
                 <span style={{ flex: 1 }}>
-                  <b>{control.label}</b>
+                  <b>{control.key === "override" ? "用户群单独设置" : control.label}</b>
                   <br />
                   <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{controlDescription(control)}</span>
                 </span>
@@ -498,7 +499,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
                   <th>阶段</th>
                   <th>阶段名称</th>
                   <th>主要驱动</th>
-                  <th>权威旋钮</th>
+                  <th>阶段参数</th>
                   <th className="num">当前值</th>
                   <th>责任域</th>
                 </tr>
@@ -521,7 +522,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
                         {phase}{currentPhase && phase === currentPhase ? " · 当前" : ""}{deepLinked ? " · B4 定位" : ""}
                       </td>
                       <td>{text(row.name, "—")}</td>
-                      <td>{text(row.driver, "暂无归因说明")}</td>
+                      <td>{text(row.driver, "暂无来源分析说明")}</td>
                       <td className="mono">{text(row.paramKey, "—")}</td>
                       <td className="num mono">{text(row.value, "—")}</td>
                       <td>{text(row.owner, "—")}</td>
@@ -529,7 +530,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
                   );
                 })}
                 {model.attribution.length === 0 && (
-                  <tr><td colSpan={6} style={{ textAlign: "center", padding: 24 }}>暂无阶段归因数据；可先查看当前旋钮矩阵，归因指标将在产生业务样本后展示</td></tr>
+                  <tr><td colSpan={6} style={{ textAlign: "center", padding: 24 }}>暂无阶段来源分析数据；可先查看当前阶段参数表，来源分析指标将在产生业务样本后展示</td></tr>
                 )}
               </tbody>
             </table>
@@ -540,7 +541,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
       <PaginationExemptionList
         items={[
           {
-            label: `逐月旋钮矩阵(${monthlyRows.length} 月 x ${model.dialCount ?? DIAL_COLUMNS.length} 项)`,
+            label: `每月阶段参数表(${monthlyRows.length} 月 x ${model.dialCount ?? DIAL_COLUMNS.length} 项)`,
             kind: "fixed-matrix",
             maxRows: monthlyRows.length,
             reason: "节奏矩阵必须同屏对比当前月和前后月",
