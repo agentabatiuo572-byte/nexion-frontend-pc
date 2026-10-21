@@ -150,14 +150,14 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, owner
     } catch (failure) { if (epoch === selectionEpoch.current && owns()) { setEvidence(null); setError(failure instanceof Error ? failure.message : "证明核验失败"); } }
     finally { if (owns()) setBusy(false); }
   };
-  const configureFee = () => openActionConfirm({ action: "提议异常退款费用规则", detail: "另一管理员复核后仅对新工单生效，已有工单保留原毛额、费用与净额快照。",
+  const configureFee = () => openActionConfirm({ action: "提议异常退款费用规则", completionCopy: "提案提交后，须由另一管理员复核才生效", detail: "另一管理员复核后仅对新工单生效，已有工单保留原毛额、费用与净额快照。",
     reasonMin: 10, reasonMax: 200, businessForm: { kind: "multi-field", fields: [
       { key: "mode", label: "退款费用方式", inputKind: "select", current: String(policy?.mode ?? "UNCONFIGURED"), options: Object.keys(MODE), optionLabels: MODE, required: true },
       { key: "fee", label: "固定扣费（USDT）", current: "0", inputKind: "text", visibleWhen: { key: "mode", equals: "FIXED_USDT" }, pattern: "^(0|[1-9][0-9]{0,11})(\\.[0-9]{1,6})?$", required: true },
     ] }, run: (reason, _value, form) => mutate("/refunds/fee-policy/cases", { expectedVersion: exceptionVersion(policy?.version),
       mode: form?.mode, feeUsdt: exceptionFee(form?.mode ?? "", form?.fee ?? ""), reason }),
   });
-  const recover = (row: ExceptionRecord) => openActionConfirm({ action: "核对并恢复原退款单 CID", detail: "只核对原业务号、返款地址及净额，不重新发送退款。",
+  const recover = (row: ExceptionRecord) => openActionConfirm({ action: "核对并恢复原退款单 CID", completionCopy: "只核对原退款单，不重新发送退款", detail: "只核对原业务号、返款地址及净额，不重新发送退款。",
     reasonMin: 10, reasonMax: 200, businessForm: { kind: "multi-field", fields: [{ key: "cid", label: "供应商原单 CID", inputKind: "text", required: true, pattern: "^[1-9][0-9]{0,18}$", maxLength: 19 }] },
     run: (reason, _v, form) => mutate(`/refunds/cases/${exceptionId(row.id)}/recover`, { expectedVersion: exceptionVersion(row.version), providerCid: exceptionId(form?.cid), reason }),
   });
