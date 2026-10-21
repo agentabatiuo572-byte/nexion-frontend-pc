@@ -1354,8 +1354,8 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
     </div>;
   }
 
-  const setOpen = (v: boolean) => ctx.setParam(DOCK_OPEN_KEY, v ? "1" : "0", { action: "持续接待 dock 展开/收起", reason: "ui-state" });
-  const closeDock = () => ctx.setParam(DOCK_OFF_KEY, conv.id, { action: "持续接待 dock 关闭", reason: "ui-state" });
+  const setOpen = (v: boolean) => ctx.setParam(DOCK_OPEN_KEY, v ? "1" : "0", { action: "持续接待窗口 展开/收起", reason: "ui-state" });
+  const closeDock = () => ctx.setParam(DOCK_OFF_KEY, conv.id, { action: "持续接待窗口 关闭", reason: "ui-state" });
   const send = async () => {
     const text = draft.trim();
     if (!text || pendingDock?.readOnlyRecovery || (!canWrite && !pendingDock) || sendInFlight.current) return;
@@ -1508,7 +1508,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
             e.preventDefault();
             void send();
           }}
-          placeholder="边处理边回复… · Enter 发送 · Shift+Enter 换行"
+          placeholder="边处理边回复… · 回车发送 · Shift+回车 换行"
           style={{ maxHeight: 80 }}
         />
         <button type="button" className="btn btn-pri btn-sm" aria-label={pendingDock ? "查询结果并重试会话回复" : "发送会话回复"} disabled={(!canWrite && !pendingDock) || !draft.trim() || sending} onClick={() => void send()}><Icon name="arrow" size={16} /></button>

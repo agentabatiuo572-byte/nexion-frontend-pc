@@ -404,7 +404,7 @@ export function M1PersonalWorkbench({ permission, ctx, primarySummary, onBrowseC
             <small>{hint}</small>
           </button>)}
         </div>
-        {overview && overview.unknownWindowCount > 0 && <p className="s5a-note">窗口活跃已确认 {overview.knownActiveCount} 位，另有 {overview.unknownWindowCount} 位活动数据待确认；名单只列已确认客户。</p>}
+        {overview && overview.unknownWindowCount > 0 && <p className="s5a-note">所选期间活跃已确认 {overview.knownActiveCount} 位，另有 {overview.unknownWindowCount} 位活动数据待确认；名单只列已确认客户。</p>}
         <div className="s5a-dashboard-grid">
           <section className="s5a-panel"><header><div><h3>待办客户</h3><p>待维护、待专属客服回复和首次待联系按客户去重。</p></div><button type="button" onClick={() => showCustomers("TODO")}>查看全部 <ArrowRight size={15} /></button></header>
             <CustomerRows rows={listRecords} loading={rowsLoading} error={rowsError} onRetry={() => setRowsRefresh((n) => n + 1)} onOpen={openDetail} onChat={openChat} />
@@ -448,7 +448,7 @@ export function M1PersonalWorkbench({ permission, ctx, primarySummary, onBrowseC
       {detailLoading && <div className="s5a-skeleton" aria-label="正在加载客户详情"><i /><i /><i /><i /></div>}
       {detailError && <div className="s5a-alert" role="alert">{detailError}<button type="button" onClick={() => void openDetail(detailId)}>重试</button></div>}
       {detail && <div className="s5a-drawer-body">
-        <div style={{display:"flex",gap:12,alignItems:"center"}}><SupportAvatar name={customerName(detail)} path={customerAvatarPath(detail.customerId)}/><SupportAvatar name={detail.agentName??"当前专属客服"} path={detail.agentAdminId&&detail.advisorAvatar?advisorAvatarPath(detail.agentAdminId,detail.customerId):undefined} version={detail.advisorAvatar?.version}/><span>当前专属客服：{detail.agentName??"资料未知"}</span></div><dl><div><dt>客户编码</dt><dd>{detail.customerNo||"未知"}</dd></div><div><dt>客户 ID</dt><dd>{detail.customerId}</dd></div><div><dt>账户状态</dt><dd>{labelForAccount(detail.accountState)}</dd></div><div><dt>维护状态</dt><dd>{labelForMaintenance(detail)}</dd></div><div><dt>上次账户活动</dt><dd>{formatTime(detail.lastEffectiveAt)}</dd></div><div><dt>下次维护</dt><dd>{formatTime(detail.nextMaintenanceAt)}</dd></div></dl>
+        <div style={{display:"flex",gap:12,alignItems:"center"}}><SupportAvatar name={customerName(detail)} path={customerAvatarPath(detail.customerId)}/><SupportAvatar name={detail.agentName??"当前专属客服"} path={detail.agentAdminId&&detail.advisorAvatar?advisorAvatarPath(detail.agentAdminId,detail.customerId):undefined} version={detail.advisorAvatar?.version}/><span>当前专属客服：{detail.agentName??"资料未知"}</span></div><dl><div><dt>客户编码</dt><dd>{detail.customerNo||"未知"}</dd></div><div><dt>客户编号</dt><dd>{detail.customerId}</dd></div><div><dt>账户状态</dt><dd>{labelForAccount(detail.accountState)}</dd></div><div><dt>维护状态</dt><dd>{labelForMaintenance(detail)}</dd></div><div><dt>上次账户活动</dt><dd>{formatTime(detail.lastEffectiveAt)}</dd></div><div><dt>下次维护</dt><dd>{formatTime(detail.nextMaintenanceAt)}</dd></div></dl>
         {detail.accountState === "UNKNOWN" && <p className="s5a-note">账户活动数据待核对，不能推定为沉睡或活跃。</p>}
         <button type="button" className="s5a-primary" onClick={() => openChat(detail.customerId)}>联系客户 <ArrowRight size={16} /></button>
         {canMaintain ? <button type="button" className="s5a-secondary" disabled={Boolean(maintenancePending)} onClick={() => { setMaintenanceAction(detail.maintenanceEnabled ? "stop" : "resume"); setReason(""); setSaveError(null); }}>{detail.maintenanceEnabled ? "不再维护" : "恢复维护"}</button> : <p className="s5a-note">仅当前专属客服可调整主动维护；主管可审阅并办理正式转绑。</p>}

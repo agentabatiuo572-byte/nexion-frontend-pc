@@ -25,8 +25,8 @@ const SURFACES: SupportFaq["surface"][] = ["Help Center", "Ticket Create", "Nova
 const SURFACE_CN: Record<SupportFaq["surface"], string> = { "Help Center": "帮助中心", "Ticket Create": "创建工单页", Nova: "Nova AI" };
 const LANGUAGE_OPTIONS: Array<{ value: SupportFaq["language"]; label: string }> = [
   { value: "zh-CN", label: "简体中文" },
-  { value: "en-US", label: "English" },
-  { value: "vi-VN", label: "Tiếng Việt" },
+  { value: "en-US", label: "英语" },
+  { value: "vi-VN", label: "越南语" },
 ];
 const FAQ_PAGE_SIZE = 5;
 
@@ -103,7 +103,7 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
   const saveFaq = async (form: { category: SupportFaq["category"]; surface: SupportFaq["surface"]; language: SupportFaq["language"]; sortOrder: string; question: string; answer: string; status: SupportFaq["status"]; reason: string }) => {
     const sortOrder = Number(form.sortOrder);
     if (!form.question.trim() || !form.answer.trim() || !minReason(form.reason)) {
-      toast("FAQ 需要问题 / 回答 / 8 字以上审计理由");
+      toast("常见问答 需要问题 / 回答 / 8 字以上审计理由");
       return false;
     }
     if (!Number.isInteger(sortOrder) || sortOrder < 0 || sortOrder > 999999) {
@@ -113,7 +113,7 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
     if (editFaq) {
       const currentFaq = faqs.find((faq) => faq.id === editFaq.id);
       if (!currentFaq || currentFaq.version !== editFaq.version || currentFaq.status !== editFaq.status) {
-        toast("FAQ 已更新或不可用，请保留当前输入，重新核对最新内容后再编辑。");
+        toast("常见问答 已更新或不可用，请保留当前输入，重新核对最新内容后再编辑。");
         return false;
       }
     }
@@ -132,10 +132,10 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
     const next = editFaq ? faqs.map((faq) => (faq.id === row.id ? row : faq)) : [row, ...faqs];
     const succeeded = await commitM4Write(
       () => setParam(FAQ_KEY, JSON.stringify(next), {
-        action: `${editFaq ? "编辑" : "新建"}支持 FAQ ${row.id} · admin.support_faq_${editFaq ? "updated" : "created"}`,
+        action: `${editFaq ? "编辑" : "新建"}支持 常见问答 ${row.id} · admin.support_faq_${editFaq ? "updated" : "created"}`,
         reason: form.reason.trim(),
       }),
-      `${row.id} 已保存 · ${catCN(row.category)} FAQ`,
+      `${row.id} 已保存 · ${catCN(row.category)}常见问答`,
     );
     if (succeeded) {
       createFaqTempId.current = null;
@@ -148,19 +148,19 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
   const changeFaqStatus = async (id: string, status: SupportFaq["status"]) => {
     await commitM4Write(
       () => setParam(FAQ_KEY, JSON.stringify(faqs.map((faq) => (faq.id === id ? { ...faq, status, version: faq.version + 1, updatedAt: new Date().toISOString().slice(0, 10) } : faq))), {
-        action: `${status === "published" ? "发布" : "下架"}支持 FAQ ${id} · admin.support_faq_${status === "published" ? "published" : "unpublished"}`,
-        reason: status === "published" ? "FAQ 发布例行审核留档" : "FAQ 下架例行审核留档",
+        action: `${status === "published" ? "发布" : "下架"}支持 常见问答 ${id} · admin.support_faq_${status === "published" ? "published" : "unpublished"}`,
+        reason: status === "published" ? "常见问答 发布例行审核留档" : "常见问答 下架例行审核留档",
       }),
       status === "published" ? `${id} 已发布` : `${id} 已下架为草稿`,
     );
   };
   const requestDeleteFaq = (faq: SupportFaq) => {
     openActionConfirm({
-      action: <>删除 FAQ <span className="mono">{faq.id}</span></>,
+      action: <>删除常见问答 <span className="mono">{faq.id}</span></>,
       detail: <>删除后将从帮助中心内容池移除“{faq.question}”,且不可在本页恢复。</>,
       reasonMin: 8,
       run: (reason) => commitM4Write(
-        () => setParam("I.support.faq.__delete", JSON.stringify({ faqId: faq.id, expectedStatus: faq.status, expectedVersion: faq.version }), { action: `删除支持 FAQ ${faq.id} · admin.support_faq_deleted`, reason }),
+        () => setParam("I.support.faq.__delete", JSON.stringify({ faqId: faq.id, expectedStatus: faq.status, expectedVersion: faq.version }), { action: `删除支持 常见问答 ${faq.id} · admin.support_faq_deleted`, reason }),
         `${faq.id} 已删除`,
       ),
     });
@@ -170,21 +170,21 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
     const firstResponseMins = Number(form.firstResponseMins);
     const resolutionHours = Number(form.resolutionHours);
     if (!Number.isFinite(firstResponseMins) || !Number.isFinite(resolutionHours) || firstResponseMins <= 0 || resolutionHours <= 0) {
-      toast("SLA 数值必须大于 0");
+      toast("处理时限数值必须大于 0");
       return false;
     }
     if (!form.queue.trim() || !form.escalation.trim() || !minReason(form.reason)) {
-      toast("SLA 需要队列 / 升级路径 / 8 字以上审计理由");
+      toast("处理时限需要队列 / 升级路径 / 8 字以上审计理由");
       return false;
     }
     if (!editRow) {
-      toast("SLA 权威版本不可用,请刷新后重试");
+      toast("处理时限权威版本不可用,请刷新后重试");
       return false;
     }
     const row: SupportSla = { category: cat, firstResponseMins, resolutionHours, queue: form.queue.trim(), escalation: form.escalation.trim(), version: editRow.version + 1 };
     const succeeded = await commitM4Write(
-      () => setParam(SLA_KEY, JSON.stringify([row, ...sla.filter((x) => x.category !== cat)]), { action: `更新支持 SLA ${cat} · admin.support_sla_changed`, reason: form.reason.trim() }),
-      `${catCN(cat)} SLA 已更新`,
+      () => setParam(SLA_KEY, JSON.stringify([row, ...sla.filter((x) => x.category !== cat)]), { action: `更新支持 处理时限${cat} · admin.support_sla_changed`, reason: form.reason.trim() }),
+      `${catCN(cat)} 处理时限已更新`,
     );
     if (succeeded) setEditCat(null);
     return succeeded;
@@ -197,13 +197,13 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
       <p className="dim" style={{ margin: 0, fontSize: 13 }}>维护帮助中心问答,设定每类工单多久要首次响应、多久要解决。</p>
 
       {!knowledgeAvailable && <div className="callout warn" data-module-health-state="error">知识库当前不可用，暂时无法修改。请稍后刷新重试。</div>}
-      {knowledgeAvailable && !canWriteM4 && <div className="callout">当前账号只有查看权限;编辑 FAQ、发布状态与 SLA 需要 service_m4_write 权限。</div>}
+      {knowledgeAvailable && !canWriteM4 && <div className="callout">当前账号只有查看权限;编辑 常见问答、发布状态与 处理时限需要 知识库编辑权限。</div>}
 
       <div className="m4-cols">
         <div className="card">
           <div className="card-pad" style={{ paddingBottom: 10, display: "flex", alignItems: "center" }}>
             <div className="sec-h" style={{ margin: 0 }}>
-              <span className="t">Help/FAQ 内容管理</span>
+              <span className="t">帮助内容管理</span>
               <span className="n">{knowledgeAvailable ? faqs.length : "-"} 篇</span>
             </div>
             {canWriteM4 && knowledgeAvailable && <button type="button" className="btn btn-pri btn-sm" style={{ marginLeft: "auto" }} disabled={writePending} onClick={() => { createFaqTempId.current = nextFaqId(); setEditFaq(null); setShowAddFaq(true); }}>
@@ -212,12 +212,12 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
             </button>}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, 1fr) 130px 110px", gap: 8, padding: "0 12px 10px" }}>
-            <input className="fld" aria-label="搜索 FAQ" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索编号、问题或回答" />
-            <select className="fld" aria-label="FAQ 分类筛选" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value as typeof categoryFilter)}>
+            <input className="fld" aria-label="搜索常见问答" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索编号、问题或回答" />
+            <select className="fld" aria-label="常见问答 分类筛选" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value as typeof categoryFilter)}>
               <option value="all">全部分类</option>
               {FAQ_CATEGORY_OPTIONS.map((category) => <option key={category} value={category}>{catCN(category)}</option>)}
             </select>
-            <select className="fld" aria-label="FAQ 状态筛选" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}>
+            <select className="fld" aria-label="常见问答 状态筛选" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}>
               <option value="all">全部状态</option>
               <option value="published">已发布</option>
               <option value="draft">草稿</option>
@@ -236,7 +236,7 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
                   </div>
                 </div>
                 <span className={`stat ${f.status === "published" ? "resolved" : "wait"}`} style={{ height: 20 }}>{f.status === "published" ? "已发布" : "草稿"}</span>
-                {canWriteM4 && knowledgeAvailable && <button type="button" className="btn btn-ghost btn-icon btn-sm" disabled={writePending} title="编辑 FAQ" onClick={() => { createFaqTempId.current = null; setShowAddFaq(false); setEditFaq(f); }}><Icon name="doc" size={16} /></button>}
+                {canWriteM4 && knowledgeAvailable && <button type="button" className="btn btn-ghost btn-icon btn-sm" disabled={writePending} title="编辑 常见问答" onClick={() => { createFaqTempId.current = null; setShowAddFaq(false); setEditFaq(f); }}><Icon name="doc" size={16} /></button>}
                 {canWriteM4 && knowledgeAvailable && (f.status === "draft" ? (
                   <button type="button" data-proof="support-faq-publish" className="btn btn-sec btn-sm" disabled={writePending} onClick={() => changeFaqStatus(f.id, "published")}>
                     <Icon name="download" size={16} />
@@ -248,10 +248,10 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
                     下架
                   </button>
                 ))}
-                {canWriteM4 && knowledgeAvailable && <button type="button" className="btn btn-ghost btn-icon btn-sm" disabled={writePending} title="删除 FAQ" onClick={() => requestDeleteFaq(f)}><Icon name="x" size={16} /></button>}
+                {canWriteM4 && knowledgeAvailable && <button type="button" className="btn btn-ghost btn-icon btn-sm" disabled={writePending} title="删除常见问答" onClick={() => requestDeleteFaq(f)}><Icon name="x" size={16} /></button>}
               </div>
             ))}
-            {pagedFaqs.length === 0 && <div className="empty" style={{ margin: 12 }}>没有符合当前筛选条件的 FAQ</div>}
+            {pagedFaqs.length === 0 && <div className="empty" style={{ margin: 12 }}>没有符合当前筛选条件的 常见问答</div>}
             {filteredFaqs.length > 0 && <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px 0", borderTop: "1px solid var(--border)" }}>
               <span className="dim2" style={{ fontSize: 11 }}>第 {currentPage}/{pageCount} 页 · 共 {filteredFaqs.length} 篇</span>
               <div style={{ display: "flex", gap: 6 }}>
@@ -265,7 +265,7 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
         <div className="card">
           <div className="card-pad" style={{ paddingBottom: 10 }}>
             <div className="sec-h" style={{ margin: 0 }}>
-              <span className="t">Ticket 分类与 SLA</span>
+              <span className="t">工单分类与 处理时限</span>
               <span className="sp" />
               <span className="n">首响 / 解决</span>
             </div>
@@ -285,9 +285,9 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
                   </div>
                   <div className="dim2" style={{ fontSize: 11 }}>{r.queue} · 升级 {r.escalation}</div>
                 </div>
-                <span className="mono" style={{ textAlign: "right", fontSize: 12.5, color: "var(--ink-2)" }}>{r.firstResponseMins}m</span>
-                <span className="mono" style={{ textAlign: "right", fontSize: 12.5, color: "var(--ink-2)" }}>{r.resolutionHours}h</span>
-                {canWriteM4 && knowledgeAvailable ? <button type="button" className="btn btn-ghost btn-icon btn-sm" disabled={writePending} title="编辑 SLA" onClick={() => setEditCat(r.category)}>
+                <span className="mono" style={{ textAlign: "right", fontSize: 12.5, color: "var(--ink-2)" }}>{r.firstResponseMins}分钟</span>
+                <span className="mono" style={{ textAlign: "right", fontSize: 12.5, color: "var(--ink-2)" }}>{r.resolutionHours}小时</span>
+                {canWriteM4 && knowledgeAvailable ? <button type="button" className="btn btn-ghost btn-icon btn-sm" disabled={writePending} title="编辑 处理时限" onClick={() => setEditCat(r.category)}>
                   <Icon name="doc" size={16} />
                 </button> : <span />}
               </div>
@@ -298,7 +298,7 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
 
       <PaginationExemptionList
         items={[
-          { label: "Ticket 分类与 SLA", kind: "reference-catalog", maxRows: 9, reason: "SLA 分类固定,同屏核对升级路径比翻页更适合" },
+          { label: "工单分类与 处理时限", kind: "reference-catalog", maxRows: 9, reason: "处理时限分类固定,同屏核对升级路径比翻页更适合" },
         ]}
       />
 
@@ -329,14 +329,14 @@ function FaqModal({
   const [reason, setReason] = useState("");
   return (
     <Modal
-      title={row ? `编辑 Help/FAQ · ${row.id}` : "新增 Help/FAQ 文章"}
+      title={row ? `编辑帮助内容 · ${row.id}` : "新增帮助内容"}
       icon="doc"
       onClose={onClose}
       footer={
         <>
           <span style={{ flex: 1 }} />
           <button type="button" className="btn btn-sec btn-sm" disabled={pending} onClick={onClose}>取消</button>
-          <button type="button" data-proof="support-faq-save" className="btn btn-pri btn-sm" disabled={pending} onClick={() => onSave({ category, surface, language, sortOrder, question, answer, status, reason })}>{pending ? "提交中…" : "保存 FAQ"}</button>
+          <button type="button" data-proof="support-faq-save" className="btn btn-pri btn-sm" disabled={pending} onClick={() => onSave({ category, surface, language, sortOrder, question, answer, status, reason })}>{pending ? "提交中…" : "保存 常见问答"}</button>
         </>
       }
     >
@@ -354,7 +354,7 @@ function FaqModal({
       </div>
       <div style={{ display: "grid", gap: 12 }}>
         <label className="field"><span className="bf-legend">问题</span><input className="fld" data-proof="support-faq-question" value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="如:提现审核要多久?" /></label>
-        <label className="field"><span className="bf-legend">回答</span><textarea className="fld" data-proof="support-faq-answer" rows={4} value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="写清用户可执行步骤、后台处理队列与 SLA" style={{ resize: "vertical" }} /></label>
+        <label className="field"><span className="bf-legend">回答</span><textarea className="fld" data-proof="support-faq-answer" rows={4} value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="写清用户可执行步骤、后台处理队列与 处理时限" style={{ resize: "vertical" }} /></label>
         <div className="grid g-2" style={{ gap: 12 }}>
           <label className="field"><span className="bf-legend">语言</span>
             <select className="fld" value={language} onChange={(e) => setLanguage(e.target.value as SupportFaq["language"])}>
@@ -397,14 +397,14 @@ function EditSlaModal({
   const [reason, setReason] = useState("");
   return (
     <Modal
-      title="编辑分类 SLA"
+      title="编辑分类处理时限"
       icon="clock"
       onClose={onClose}
       footer={
         <>
           <span style={{ flex: 1 }} />
           <button type="button" className="btn btn-sec btn-sm" disabled={pending} onClick={onClose}>取消</button>
-          <button type="button" className="btn btn-pri btn-sm" disabled={pending} onClick={() => onSave(category, { firstResponseMins, resolutionHours, queue, escalation, reason })}>{pending ? "提交中…" : "保存 SLA"}</button>
+          <button type="button" className="btn btn-pri btn-sm" disabled={pending} onClick={() => onSave(category, { firstResponseMins, resolutionHours, queue, escalation, reason })}>{pending ? "提交中…" : "保存处理时限"}</button>
         </>
       }
     >
@@ -413,12 +413,12 @@ function EditSlaModal({
         <div className="chip" style={{ width: "fit-content", border: "none" }}>{catCN(category)}</div>
       </div>
       <div className="grid g-2" style={{ gap: 12 }}>
-        <label className="field"><span className="bf-legend">首响(分钟)</span><input className="fld mono" type="number" value={firstResponseMins} onChange={(e) => setFirst(e.target.value)} /></label>
-        <label className="field"><span className="bf-legend">解决(小时)</span><input className="fld mono" type="number" value={resolutionHours} onChange={(e) => setResolve(e.target.value)} /></label>
-        <label className="field"><span className="bf-legend">负责人队列</span><input className="fld" value={queue} onChange={(e) => setQueue(e.target.value)} placeholder="例:Payment desk" /></label>
-        <label className="field"><span className="bf-legend">升级路径</span><input className="fld" value={escalation} onChange={(e) => setEscalation(e.target.value)} placeholder="例:D2 withdrawal review" /></label>
+        <label className="field"><span className="bf-legend">首次响应（分钟）</span><input className="fld mono" type="number" value={firstResponseMins} onChange={(e) => setFirst(e.target.value)} /></label>
+        <label className="field"><span className="bf-legend">解决时限（小时）</span><input className="fld mono" type="number" value={resolutionHours} onChange={(e) => setResolve(e.target.value)} /></label>
+        <label className="field"><span className="bf-legend">负责人队列</span><input className="fld" value={queue} onChange={(e) => setQueue(e.target.value)} placeholder="例：支付处理组" /></label>
+        <label className="field"><span className="bf-legend">升级路径</span><input className="fld" value={escalation} onChange={(e) => setEscalation(e.target.value)} placeholder="例：提现审核" /></label>
       </div>
-      <label className="field" style={{ marginTop: 12 }}><span className="bf-legend">审计理由(≥8 字)</span><input className="fld" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:SLA 与 D2/C5 队列口径同步" /></label>
+      <label className="field" style={{ marginTop: 12 }}><span className="bf-legend">审计理由(≥8 字)</span><input className="fld" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:处理时限与 D2/C5 队列统计规则同步" /></label>
     </Modal>
   );
 }

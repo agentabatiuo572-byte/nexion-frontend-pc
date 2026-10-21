@@ -58,7 +58,7 @@ function SensTag() {
   return (
     <span className="sens-tag">
       <Icon name="shield" size={12} />
-      高敏 · 需理由
+      敏感 · 需理由
     </span>
   );
 }
@@ -321,7 +321,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
       || (!masterOn && !ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE)) return;
     openActionConfirm({
       action: <>{masterOn ? "停用" : "启用"}专属客服主动推送</>,
-      detail: masterOn ? <>停用后专属客服不再主动触达,只在用户发起时回复。引导转化触点暂停。</> : <>启用后专属客服按下方 AutoPushPolicy 主动触达用户(引导购机 / 锁仓 / 复投)。</>,
+      detail: masterOn ? <>停用后专属客服不再主动触达,只在用户发起时回复。引导转化触点暂停。</> : <>启用后专属客服按下方 主动联系规则 主动触达用户(引导购机 / 锁仓 / 复投)。</>,
       amplifies: false,
       reasonMin: 8,
       reasonMax: 200,
@@ -673,7 +673,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
             <span>编号 · 分类</span>
             <span>文案</span>
             <span>受众</span>
-            <span>CTA</span>
+            <span>点击后跳转</span>
             <span style={{ textAlign: "right" }}>发布</span>
           </div>
           {scriptTotal === 0 && (

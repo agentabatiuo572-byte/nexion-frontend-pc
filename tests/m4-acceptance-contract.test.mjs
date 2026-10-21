@@ -32,9 +32,9 @@ test("M4 waits for backend truth before success or closing forms", () => {
 test("M4 exposes FAQ search, category and status filters with real pagination", () => {
   const page = read("app/components/domain-views/m-tabs/m4-kb-sla.tsx");
 
-  assert.match(page, /aria-label="搜索 FAQ"/);
-  assert.match(page, /aria-label="FAQ 分类筛选"/);
-  assert.match(page, /aria-label="FAQ 状态筛选"/);
+  assert.match(page, /aria-label="搜索常见问答"/);
+  assert.match(page, /aria-label="常见问答 分类筛选"/);
+  assert.match(page, /aria-label="常见问答 状态筛选"/);
   assert.match(page, /filteredFaqs\.slice/);
   assert.match(page, /上一页/);
   assert.match(page, /下一页/);
@@ -55,8 +55,8 @@ test("M4 offers real create, edit, status, delete, and SLA backend commands", ()
   assert.match(client, /deleteFaq\(/);
   assert.match(client, /updateSla\(/);
   assert.match(view, /I\.support\.faq\.__delete/);
-  assert.match(page, /编辑 Help\/FAQ/);
-  assert.match(page, /删除 FAQ/);
+  assert.match(page, /编辑帮助内容/);
+  assert.match(page, /删除常见问答/);
 });
 
 test("M4 consecutive FAQ creates use collision-free temporary IDs", () => {
@@ -161,7 +161,7 @@ test("M4 authoritative SLA is evaluated into M2 ticket deadlines and overdue fla
   assert.match(service, /resolvedAt\.isAfter\(resolutionDeadlineAt\)/);
   assert.match(client, /M2_TICKET_DETAIL_MALFORMED/);
   assert.match(client, /!slaTarget/);
-  assert.match(m2, /SLA v\{ticket\.slaTarget\.ruleVersion\}/);
+  assert.match(m2, /处理时限版本\{ticket\.slaTarget\.ruleVersion\}/);
   assert.match(m2, /firstResponseDeadlineAt/);
   assert.match(m2, /resolutionDeadlineAt/);
 });

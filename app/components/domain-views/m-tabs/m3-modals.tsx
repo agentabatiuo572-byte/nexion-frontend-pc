@@ -347,7 +347,7 @@ export function QuickActionModal({
           <button type="button" className={`chip${via === "sms" ? " sel" : ""}`} onClick={() => setVia("sms")}>手机 {profile.phone}</button>
           <button type="button" className={`chip${via === "email" ? " sel" : ""}`} onClick={() => setVia("email")}>注册邮箱</button>
         </div>
-        <div className="itint" style={{ marginTop: 10 }}>发送后由 C 账户域处置 · 客服侧不落库、不计审计。</div>
+        <div className="itint" style={{ marginTop: 10 }}>发送后由 C 账户域处置 · 客服侧不保存记录、不计审计。</div>
       </Modal>
     );
   }

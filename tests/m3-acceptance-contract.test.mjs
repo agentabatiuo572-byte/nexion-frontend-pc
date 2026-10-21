@@ -275,7 +275,7 @@ test("M2 customer replies require a verified advisor while internal work stays a
   assert.match(tickets, /if \(!await verifyCustomerReply\(userId\)\) return/);
   assert.match(tickets, /run: async \(reason: string\) => \{\s*if \(!await verifyCustomerReply\(ticket\.userId!\)\) return false/);
   assert.match(tickets, /disabled=\{submitting \|\| !userId\.trim\(\)/);
-  assert.match(tickets, /客户 ID（必填）/);
+  assert.match(tickets, /客户编号（必填）/);
   assert.doesNotMatch(tickets, /用户 ID\(可选\)|也可以留空/);
   assert.match(tickets, /data-proof="support-ticket-drawer-heading"[^\n]*flexWrap: "wrap"/);
   assert.match(tickets, /overflowWrap: "anywhere".*查看会话/);

@@ -294,7 +294,7 @@ export function M1SupervisorPool({ permission, initialGroupId }: { permission: M
     finally { setSaving(false); }
   }
 
-  if (permission === "agent") return <div className="m-admin-error">仅客服主管或超管可查看待绑定客户池。</div>;
+  if (permission === "agent") return <div className="m-admin-error">仅客服主管或超级管理员可查看待绑定客户池。</div>;
   if (scopeError) return <div className="m-admin-error" role="alert">{scopeError}<button className="btn btn-sec btn-sm" onClick={() => setScopeReload(n => n + 1)}>重试读取分配范围</button></div>;
   if (!scope) return <div role="status" className="m-admin-muted">正在读取当前授权组范围…</div>;
   if (pending) return <section className="m-admin-panel"><h2>查询未确认的分配</h2><p>存在尚未核对的分配；查询原命令并读取当前授权资料后，才能继续操作。</p><button className="btn btn-sec btn-sm" disabled={saving} onClick={() => void checkPending()}>查询上次结果</button>{error && <p role="alert">{error}</p>}</section>;
@@ -307,7 +307,7 @@ export function M1SupervisorPool({ permission, initialGroupId }: { permission: M
       {adminId&&hasPendingRandomAssignment(adminId)&&<button className="btn btn-sec btn-sm" onClick={()=>setRandomCustomers([])}>查询上次随机分配结果</button>}
       <div className="m-admin-muted">选择明确的客户后分配给一位专属客服。未选客户保持原状。</div>
       <div className="m-admin-toolbar">
-        <form onSubmit={(event) => { event.preventDefault(); setPage(1); setKeyword(keywordInput.trim()); }}><input aria-label="搜索客户 ID 或留言关键词" value={keywordInput} disabled={Boolean(pending)} onChange={(event) => setKeywordInput(event.target.value)} placeholder="搜索客户 ID 或留言关键词" /><button type="submit" className="btn btn-sec btn-sm" disabled={Boolean(pending)}>搜索</button></form>
+        <form onSubmit={(event) => { event.preventDefault(); setPage(1); setKeyword(keywordInput.trim()); }}><input aria-label="搜索客户编号 或留言关键词" value={keywordInput} disabled={Boolean(pending)} onChange={(event) => setKeywordInput(event.target.value)} placeholder="搜索客户编号 或留言关键词" /><button type="submit" className="btn btn-sec btn-sm" disabled={Boolean(pending)}>搜索</button></form>
         <select aria-label="筛选入池原因" value={reasonFilter} disabled={Boolean(pending)} onChange={(event) => { setPage(1); setReasonFilter(event.target.value as SupportPoolReason | ""); }}><option value="">全部入池原因</option>{Object.entries(POOL_REASONS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
         {(keyword || reasonFilter) && <button type="button" className="btn btn-sec btn-sm" disabled={Boolean(pending)} onClick={() => { setKeywordInput(""); setKeyword(""); setReasonFilter(""); setPage(1); }}>清除筛选</button>}
       </div>
@@ -330,7 +330,7 @@ export function M1SupervisorPool({ permission, initialGroupId }: { permission: M
     {routeItem && scope.mode === "ALL" && <PoolRouteModal item={routeItem} groups={scope.groups} onClose={() => setRouteItem(null)} onDone={() => { setRouteItem(null); setPool(null); setSelected(new Map()); setTarget(null); setReload(n => n + 1); }} />}
     {confirm && <Modal title="确认分配客户" icon="users" wide busy={saving} onClose={() => { if (!saving) setConfirm(false); }} footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => setConfirm(false)}>返回</button><button type="button" className="btn btn-pri btn-sm" disabled={!canSubmit || Boolean(pending) || saving} onClick={() => void assign()}>{saving ? "分配中…" : pending ? "等待原命令结果" : `确认分配 ${selected.size} 位`}</button></>}>
       <div className="m-admin-muted">本次只分配下列实际选中客户；每位客户开启新的 0 层继承段，其他客户不变。</div>
-      <div className="m-admin-list">{[...selected.values()].map((item) => <div key={item.customerId}>客户 ID {item.customerId}{item.customerNo ? ` · ${item.customerNo}` : ""} · {POOL_REASONS[item.reason]}</div>)}</div>
+      <div className="m-admin-list">{[...selected.values()].map((item) => <div key={item.customerId}>客户编号 {item.customerId}{item.customerNo ? ` · ${item.customerNo}` : ""} · {POOL_REASONS[item.reason]}</div>)}</div>
       {staleIds.size > 0 && <div className="m-admin-error" role="alert">{staleIds.size} 位已选客户版本需要刷新。选择已保留，请逐页重新读取或取消失效选择后再次确认。<button type="button" className="btn btn-sec btn-sm" onClick={() => setReload((n) => n + 1)}>刷新本页预览</button></div>}
       <label className="field"><span>选择接待专属客服</span><select value={target?.adminId ?? ""} disabled={agentsLoading || Boolean(pending) || saving} onChange={(event) => setTarget(candidates.find((agent) => agent.adminId === Number(event.target.value)) ?? null)}><option value="">请选择专属客服</option>{target && !candidates.some((agent) => agent.adminId === target.adminId) && <option value={target.adminId}>{target.name} · 已选专属客服</option>}{candidates.map((agent) => <option key={agent.adminId} value={agent.adminId}>{agent.name}{agent.busy ? " · 忙碌" : ""}</option>)}</select></label>
       {agentsLoading && <div role="status" className="m-admin-muted">正在读取专属客服…</div>}

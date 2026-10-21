@@ -294,7 +294,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
         <div className="card">
           <div className="card-pad" style={{ paddingBottom: 6 }}>
             <div className="sec-h">
-              <span className="t">SLA 监控</span>
+              <span className="t">处理时限监控</span>
               <span className="sp" />
               <span className="n">首响 / 解决</span>
             </div>
@@ -418,7 +418,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
       </div>
 
       <p className="dim2" style={{ fontSize: 12, lineHeight: 1.6, margin: 0 }}>
-        <b style={{ color: "var(--ink-3)", fontWeight: 500 }}>使用说明</b>:概况数字和 SLA 进度仅用于查看;进入客服工单或会话台处理用户问题。只有总管理员或客服主管能调整坐席与负载策略,所有调整都会记录操作人和理由。
+        <b style={{ color: "var(--ink-3)", fontWeight: 500 }}>使用说明</b>:概况数字和 处理时限进度仅用于查看;进入客服工单或会话台处理用户问题。只有总管理员或客服主管能调整坐席与负载策略,所有调整都会记录操作人和理由。
       </p>
 
       {showLoad && loadCfg && <LoadConfigModal ctx={ctx} loadCfg={loadCfg} rows={loadRows} onClose={() => setShowLoad(false)} />}
@@ -612,11 +612,11 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
             <Toggle on={autoBalance} onClick={() => { if (!commandInFlightRef.current && !writeOutcomeUnknown) setAutoBalance((v) => !v); }} />
           </label>
           {numField("默认负载上限(人均)", "单 + 话 合计上限", defaultCap, setDefaultCap, 0, 40)}
-          {numField("突发可超额上限", "临时峰值兜底", burstCap, setBurstCap, 0, 40)}
+          {numField("突发可超额上限", "临时峰值备用", burstCap, setBurstCap, 0, 40)}
           {numField("使用率预警阈值 %", "达到即标黄", warnPct, setWarnPct, 50, 100)}
           <label className="col" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <span style={{ fontSize: 13 }}>超额溢出去向</span>
-            <input className="fld" value={overflow} onChange={(e) => { if (!commandInFlightRef.current && !writeOutcomeUnknown) setOverflow(e.target.value); }} disabled={inputsLocked} placeholder="例:转人工备勤 / 排队 / Nova AI" />
+            <input className="fld" value={overflow} onChange={(e) => { if (!commandInFlightRef.current && !writeOutcomeUnknown) setOverflow(e.target.value); }} disabled={inputsLocked} placeholder="例：人工客服备勤 / 排队 / 智能客服" />
           </label>
           <label className="row" style={{ justifyContent: "space-between", gap: 12, alignItems: "center" }}>
             <span><span style={{ fontSize: 13 }}>夜间均衡(22:00–08:00)</span><span className="sub" style={{ display: "block" }}>夜间在岗坐席人均上限减半</span></span>
@@ -644,7 +644,7 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
 
       <label className="col" style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 16 }}>
         <span style={{ fontSize: 13 }}>变更理由 <span style={{ color: "var(--danger)" }}>*</span> <span className="sub">(必填 8-200 字 · 留档至 A2 审计)</span></span>
-        <textarea className="fld" rows={2} maxLength={200} value={reason} onChange={(e) => { if (!commandInFlightRef.current && !writeOutcomeUnknown) setReason(e.target.value); }} disabled={inputsLocked} placeholder="例:周一早高峰预期 Withdrawal 峰值,临时提升 Marina K. 上限并暂停 Aisha 接派单培训" style={{ resize: "vertical" }} />
+        <textarea className="fld" rows={2} maxLength={200} value={reason} onChange={(e) => { if (!commandInFlightRef.current && !writeOutcomeUnknown) setReason(e.target.value); }} disabled={inputsLocked} placeholder="例：预计周一提现咨询较多，临时调整客服接待上限并安排培训" style={{ resize: "vertical" }} />
       </label>
     </Modal>
   );
@@ -933,7 +933,7 @@ function SeatAssignmentModal({
             <span>搜索用户</span>
             <div className="inp">
               <Icon name="search" size={15} />
-              <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="昵称 / 用户 ID / 用户编码 / 手机号（尾号后 4 位）" disabled={!canManage} />
+              <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="昵称 / 用户编号 / 用户编码 / 手机号（尾号后 4 位）" disabled={!canManage} />
             </div>
           </label>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>

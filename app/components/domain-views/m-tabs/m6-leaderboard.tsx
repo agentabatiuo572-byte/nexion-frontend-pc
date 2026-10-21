@@ -1,5 +1,7 @@
 "use client";
 
+import { nexGridBrandText } from "@/lib/admin/brand-copy";
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -141,8 +143,8 @@ export function M6Leaderboard() {
     {data && data.rows.length === 0 && <p className="m6-leaderboard-notice" role="status">{data.state === "PROVISIONAL"
       ? query.keyword ? "参榜资料待核实，暂未找到匹配客服。请稍后重试。" : "参榜资料待核实，暂无法显示完整榜单。请稍后重试。"
       : query.keyword ? "没有匹配的客服；本人定位会清除搜索条件。" : "当前范围暂无参榜客服。"}</p>}</>}
-      monthOptions={(data?.selectableMonths ?? []).map(value => ({ value, label: value.replace("-", ".") }))}
-      currencyOptions={(data?.currencies ?? []).map(value => ({ value, label: value }))}
+      monthOptions={(data?.selectableMonths ?? []).map(value => ({ value, label: nexGridBrandText(value).replace("-", ".") }))}
+      currencyOptions={(data?.currencies ?? []).map(value => ({ value, label: nexGridBrandText(value) }))}
       scopeOptions={(data?.scopeOptions ?? []).flatMap(option => [{ value: option.scope, label: scopeLabels[option.scope] }, ...(option.scope === "managedGroups" ? option.groups.map(group => ({ value: scopeValue(option.scope, group.id), label: group.name })) : [])])}
       rows={data?.rows.map(withPhoto) ?? []} self={data?.self.row ? { row: withPhoto(data.self.row), gap: data.self.gap, reason: data.self.reason } : undefined}
       selfUnavailableReason={data?.self.reason}

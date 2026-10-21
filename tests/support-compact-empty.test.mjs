@@ -4,6 +4,7 @@ import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
 import React from "react";
+import { nexGridBrandText } from "../lib/admin/brand-copy.ts";
 import { createRequire } from "node:module";
 import { renderToStaticMarkup } from "react-dom/server";
 import "./support-compact-regression-r20.test.mjs";
@@ -14,7 +15,7 @@ const functions = (source, names) => tree(source).statements.filter(node => ts.i
 function evaluate(source, bindings = {}) {
   const module = { exports: {} };
   const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  vm.runInNewContext(js, { module, exports: module.exports, require: id => id.endsWith(".css") ? {} : require(id), ...bindings });
+  vm.runInNewContext(js, { module, exports: module.exports, require: id => id === "@/lib/admin/brand-copy" ? { nexGridBrandText } : id.endsWith(".css") ? {} : require(id), ...bindings });
   return module.exports;
 }
 const board = evaluate(read("support-leaderboard"));
@@ -22,7 +23,7 @@ export const compactSupportBoardValue = board.compactSupportBoardValue;
 test("actual self progress keeps units in the title and exact detail across boards, periods and missing values", () => {
   for (const [key, title] of [["netContribution", "净贡献额"], ["firstPayment", "首充人数"], ["customers", "客户规模"]]) {
     for (const currency of ["USDT", "NEX"]) for (const month of ["2026-09", "2026-10"]) for (const value of ["9007199254740993", "0", null, ...(key === "netContribution" ? ["-9007199254740993"] : [])]) {
-      const money = key === "netContribution", unit = money ? currency : "人", amount = value === null ? null : value === "0" ? "0" : value + ".01";
+      const money = key === "netContribution", unit = money ? nexGridBrandText(currency) : "人", amount = value === null ? null : value === "0" ? "0" : value + ".01";
       const row = { id: "self", name: "本人成绩", groupName: "客服组", rank: 1, rankStatus: "confirmed", isTied: false, movement: { kind: "same", explanation: "持平" }, canViewCustomers: false,
         amount: { value: amount, currency, periodLabel: key === "customers" ? "2026-10" : month, sourceVersion: "current", coverage: "complete" }, firstPayment: { value, coverage: "complete" }, customers: { value, coverage: "complete" } };
       const props = { query: { board: key, currency, month, scope: "all" }, currentMonth: "2026-10", periodLabel: month, status: "ready", rows: [], self: { row, gap: null }, monthOptions: [], scopeOptions: [], currencyOptions: [], updatedAt: "2026-10-10", disclosure: "", onRetry() {}, onLocateSelf() {}, onViewPerformance() {}, onQueryChange() {} };

@@ -1,5 +1,7 @@
 "use client";
 
+import { nexGridBrandText } from "@/lib/admin/brand-copy";
+
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowRight, ChevronDown, Home, Users, MessageSquareMore, ChartNoAxesColumn, LayoutGrid, FileText, MapPin } from "lucide-react";
 import "./support-leaderboard.css";
@@ -157,7 +159,7 @@ function AmountException({ row, note }: { row: SupportBoardRow; note: string }) 
 }
 function Amount({ row, expectedPeriod, expectedCurrency }: { row: SupportBoardRow; expectedPeriod: string; expectedCurrency?: string }) {
   const state = amountState(row, expectedPeriod, expectedCurrency);
-  return <div className="sl-amount" title={state.note || row.amount.reason} data-period={row.amount.periodLabel} data-source={row.amount.sourceVersion} data-currency={row.amount.currency} data-coverage={state.periodValid && state.currencyValid ? row.amount.coverage : "unavailable"}><NumberValue value={state.value} kind="amount" label={`${row.name} · ${row.amount.periodLabel}业绩额`} unit={row.amount.currency} />{state.note && <AmountException row={row} note={state.note} />}</div>;
+  return <div className="sl-amount" title={state.note || row.amount.reason} data-period={row.amount.periodLabel} data-source={row.amount.sourceVersion} data-currency={row.amount.currency} data-coverage={state.periodValid && state.currencyValid ? row.amount.coverage : "unavailable"}><NumberValue value={state.value} kind="amount" label={`${row.name} · ${row.amount.periodLabel}业绩额`} unit={nexGridBrandText(row.amount.currency)} />{state.note && <AmountException row={row} note={state.note} />}</div>;
 }
 /** Optional isolated preview navigation. Production supplies its authorised shell and identity. */
 export function SupportLeaderboardNavigation({ brand, identity, avatarUrl, roleLabel, items, demoLabel, onSettings }: { brand: string; identity: string; avatarUrl?: string; roleLabel: string; items: { label: string; active?: boolean; onClick: () => void }[]; demoLabel?: string; onSettings: () => void }) {
@@ -187,7 +189,7 @@ export function SupportLeaderboard(props: SupportLeaderboardProps) {
   const changeBoard = (board: SupportBoardKey) => props.onQueryChange({ ...query, board });
   const selfConfirmed = self ? confirmed(self.row, props) : false;
   const selfMetric = self ? mainMetric(self.row, query.board) : undefined;
-  const selfUnit = moneyBoard ? query.currency || "币种待核实" : "人";
+  const selfUnit = moneyBoard ? nexGridBrandText(query.currency || "币种待核实") : "人";
   const selfAmount = self && moneyBoard ? amountState(self.row, statisticsPeriod, query.currency) : undefined;
   const selfValue = moneyBoard ? selfAmount?.value ?? null : availableCountValue(selfMetric);
   // Only the published global summary can grant a podium; page rows never fill missing slots.
@@ -207,7 +209,7 @@ export function SupportLeaderboard(props: SupportLeaderboardProps) {
       {props.notice}
       <section className="sl-hero" ref={heroRef} data-motion={motionVisible ? "running" : "paused"} aria-label="前三名与我的进度">
         <div className="sl-orbit-art" aria-hidden="true"><i className="sl-orbit-accent" /><i className="sl-star sl-star-one" /><i className="sl-star sl-star-two" /><i className="sl-star sl-star-three" /></div>
-        <div className="sl-podium"><div className="sl-podium-heading"><h2>前三名</h2><p>{commonPeriodLabel} · {query.currency || "币种待核实"} · 人数单位：人 · 绑定客户数截至现在</p></div>
+        <div className="sl-podium"><div className="sl-podium-heading"><h2>前三名</h2><p>{commonPeriodLabel} · {nexGridBrandText(query.currency || "币种待核实")} · 人数单位：人 · 绑定客户数截至现在</p></div>
           {podiumRows.length > 0 ? <div className="sl-podium-slots">{podiumRows.map(row => <article key={row.id} className="sl-podium-person" data-rank={row.rank} aria-label={`${row.name}，${row.isTied ? "并列第" : "第"}${row.rank}名`}>
             <div className="sl-podium-rank"><small>{row.isTied ? "并列第" : "第"}{row.rank}名</small><strong>{String(row.rank).padStart(2, "0")}</strong></div>
             <button type="button" className="sl-podium-portrait" aria-label={`查看${row.name}成绩`} onClick={() => props.onViewPerformance(row.id)}><Avatar row={row} award={row.rank!} /></button><span className="sl-pedestal" aria-hidden="true" />

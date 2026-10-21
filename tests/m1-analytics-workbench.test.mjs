@@ -5,6 +5,7 @@ import path from "node:path";
 import vm from "node:vm";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
+import { nexGridBrandText } from "../lib/admin/brand-copy.ts";
 import "./support-compact-empty.test.mjs";
 
 const frontend = process.env.SUPPORT_ANALYTICS_FE_ROOT || fileURLToPath(new URL("../", import.meta.url));
@@ -33,9 +34,10 @@ await validatorModule.link(name => synthetic(name === "./business-time.ts" ? bus
 await validatorModule.evaluate();
 const formatterSource = ts.transpileModule(readFileSync(path.join(existsSync(path.join(stage, "app/components/domain-views/m-tabs/support-leaderboard.tsx")) ? stage : frontend, "app/components/domain-views/m-tabs/support-leaderboard.tsx"), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2017 } }).outputText;
 const formatterModule = new vm.SourceTextModule(formatterSource, { context });
-await formatterModule.link(name => synthetic(name === "react" ? React : name === "react/jsx-runtime" ? jsxRuntime : name === "lucide-react" ? Object.fromEntries(["ArrowRight", "ChevronDown", "Home", "Users", "MessageSquareMore", "ChartNoAxesColumn", "LayoutGrid", "FileText", "MapPin"].map(key => [key, require("lucide-react")[key]])) : {}));
+await formatterModule.link(name => synthetic(name === "@/lib/admin/brand-copy" ? { nexGridBrandText } : name === "react" ? React : name === "react/jsx-runtime" ? jsxRuntime : name === "lucide-react" ? Object.fromEntries(["ArrowRight", "ChevronDown", "Home", "Users", "MessageSquareMore", "ChartNoAxesColumn", "LayoutGrid", "FileText", "MapPin"].map(key => [key, require("lucide-react")[key]])) : {}));
 await formatterModule.evaluate();
 const mocks = {
+  "@/lib/admin/brand-copy": { nexGridBrandText },
   react: { ...React, useState: (...args) => driver.useState(...args), useRef: (...args) => driver.useRef(...args), useEffect: (...args) => driver.useEffect(...args) },
   "react/jsx-runtime": jsxRuntime,
   "next/navigation": { useRouter: () => ({ push: href => navigations.push(href) }) },
@@ -221,9 +223,9 @@ test("activity coverage preserves observed zero, unavailable state and trustwort
       requests.at(-1).resolve(data); await d.settle();
       const html = renderToStaticMarkup(React.createElement("div", null, elements(d.tree).find(x => x.props?.["aria-label"] === "所选范围汇总")));
       assert.match(html, /aria-label="当前客户已首充：已核实 0；查看明细"/);
-      const labels = [...html.matchAll(/aria-label="窗口活跃：([^"]+)"/g)].map(match => match[1]);
+      const labels = [...html.matchAll(/aria-label="当前统计期活跃：([^"]+)"/g)].map(match => match[1]);
       const table = renderToStaticMarkup(React.createElement(AnalyticsTable, { data, currency: "USDT", drill() {}, openProfile() {} }));
-      labels.push(...[...table.matchAll(/aria-label="窗口活跃：([^"]+)"/g)].map(match => match[1]));
+      labels.push(...[...table.matchAll(/aria-label="当前统计期活跃：([^"]+)"/g)].map(match => match[1]));
       assert.equal(labels.length, 2, "both activity count surfaces must be checked");
       for (const label of labels) { assert.match(label, expected); assert.doesNotMatch(label, forbidden); }
     } finally { d.unmount(); }
@@ -270,7 +272,7 @@ test("NET sort uses the current-customer selector and clears when switching basi
     assert.equal(requests.at(-1).options.pageNum, 1);
     assert.equal(requests.at(-1).options.expectedVersion, undefined);
     for (const basis of ["PERIOD_EVENT", "CURRENT_ASSET"]) {
-      elements(d.tree).find(x => x.props?.label === "统计口径").props.onChange(basis); d.render();
+      elements(d.tree).find(x => x.props?.label === "统计规则").props.onChange(basis); d.render();
       assert.equal(requests.at(-1).options.sortKey, undefined);
       assert.ok(!select().props.options.some(x => x.value === "NET_CONTRIBUTION"));
     }
@@ -392,7 +394,7 @@ test("device and finance clicks preserve scope conditions and issue only native 
     const financeQuery = requests.at(-1).options;
     assert.equal(financeQuery.view, "FINANCE"); assert.equal(financeQuery.basis, "CURRENT_CUSTOMER_HISTORY");
     assert.equal(financeQuery.category, "PENDING"); assert.equal(financeQuery.filter, "DUE"); assert.equal(financeQuery.groupId, "5");
-    const basisSelect = elements(d.tree).find(x => x.props?.label === "统计口径");
+    const basisSelect = elements(d.tree).find(x => x.props?.label === "统计规则");
     assert.ok(!basisSelect.props.options.some(x => x.value === "CURRENT_ASSET"));
     assert.equal(financeQuery.pageNum, 1); assert.equal(financeQuery.expectedVersion, undefined);
   } finally { d.unmount(); }
@@ -437,7 +439,7 @@ test("synchronous and asynchronous failures render retry instead of escaping eff
 test("wire projection throws inside the protected effect and cannot reach transport", async () => {
   const d = await resolveScope();
   try {
-    const select = elements(d.tree).find(x => x.props?.label === "统计口径"); select.props.onChange("PERIOD_EVENT"); d.render();
+    const select = elements(d.tree).find(x => x.props?.label === "统计规则"); select.props.onChange("PERIOD_EVENT"); d.render();
     const monthSelect = elements(d.tree).find(x => x.props?.label === "自然月"); monthSelect.props.onChange("2026-13");
     const before = requests.length; assert.doesNotThrow(() => d.render()); await d.settle(); assert.equal(requests.length, before); assert.match(content(d.tree), /统计资料暂时无法确认，请重试。/);
   } finally { d.unmount(); }

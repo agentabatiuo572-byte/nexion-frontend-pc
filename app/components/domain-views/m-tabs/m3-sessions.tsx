@@ -683,7 +683,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     const convo = selected;
     openActionConfirm({
       action: <>转工单 · {convo.id}</>,
-      detail: <>把会话 <b>{convo.agentName}</b>(<span className="mono">{convo.id}</span>)转为可追踪工单并进入 SLA 队列。适用于需要跨班次跟进的提现或设备问题。</>,
+      detail: <>把会话 <b>{convo.agentName}</b>(<span className="mono">{convo.id}</span>)转为可追踪工单并进入 处理时限 队列。适用于需要跨班次跟进的提现或设备问题。</>,
       amplifies: false,
       reasonMin: 8,
       reasonMax: 200,
@@ -1233,7 +1233,7 @@ function ChatComposer({
           data-proof="session-reply"
           aria-label={`回复会话 ${convo.id}`}
           rows={2}
-          placeholder="输入回复 · Enter 发送 · Shift+Enter 换行"
+          placeholder="输入回复 · 回车发送 · Shift+回车 换行"
           value={replyBody}
           disabled={!canWrite}
           onChange={(e) => {onReplyChange(e.target.value);sendAdminTyping(Boolean(e.target.value.trim()));}}
@@ -1342,7 +1342,7 @@ function SkuPicker({ skus, loading, error, onClose, onPick }: { skus: PushSku[];
       <div className="sku-pop-h">
         <span>
           <Icon name="box" size={16} />
-          推送商品 SKU
+          推送商品 商品
         </span>
         <button type="button" className="sku-pop-close" onClick={onClose}>
           <Icon name="x" size={15} />

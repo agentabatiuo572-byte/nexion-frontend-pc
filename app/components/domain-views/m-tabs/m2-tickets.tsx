@@ -394,7 +394,7 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
       return;
     }
     if (userId !== undefined && (!Number.isSafeInteger(userId) || userId <= 0)) {
-      toast("客户 ID 必须是正整数");
+      toast("客户编号 必须是正整数");
       return;
     }
     if (!userId) { toast("请先核对已绑定的真实客户，再新建工单"); return; }
@@ -406,7 +406,7 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
     }
     const selectedSla = slaRows.find((item) => item.category === form.category);
     if (!selectedSla) {
-      toast("该分类 SLA 权威规则不可用,请刷新后重试");
+      toast("该分类 处理时限 权威规则不可用,请刷新后重试");
       return;
     }
     const now = Date.now();
@@ -1002,7 +1002,7 @@ function TicketDrawer({
           )}
           {ticket.slaTarget && (
             <div className="dim2" data-proof="support-ticket-sla" style={{ marginTop: 10, fontSize: 12 }}>
-              SLA v{ticket.slaTarget.ruleVersion}：首响目标 {new Date(ticket.slaTarget.firstResponseDeadlineAt).toLocaleString()}
+              处理时限版本{ticket.slaTarget.ruleVersion}：首响目标 {new Date(ticket.slaTarget.firstResponseDeadlineAt).toLocaleString()}
               {ticket.slaTarget.firstResponseOverdue ? " · 已逾期" : " · 未逾期"}
               {" · "}解决目标 {new Date(ticket.slaTarget.resolutionDeadlineAt).toLocaleString()}
               {ticket.slaTarget.resolutionOverdue ? " · 已逾期" : " · 未逾期"}
@@ -1026,7 +1026,7 @@ function TicketDrawer({
               aria-label="内部备注"
               rows={2}
               maxLength={2000}
-              placeholder="记录内部核查、交接或 SLA 处置"
+              placeholder="记录内部核查、交接或 处理时限 处置"
               value={internalNoteBody}
               disabled={submitting}
               onChange={(e) => onInternalNoteChange(e.target.value)}
@@ -1066,7 +1066,7 @@ function TicketDrawer({
               data-proof="support-ticket-reply"
               aria-label={`回复工单 ${ticket.id}`}
               rows={3}
-              placeholder={`回复 ${ticket.id} · Enter 发送 · Shift+Enter 换行`}
+              placeholder={`回复 ${ticket.id} · 回车发送 · Shift+回车 换行`}
               value={replyBody}
               disabled={submitting || !canReply}
               onChange={(e) => onReplyChange(e.target.value)}
@@ -1155,8 +1155,8 @@ function CreateTicketModal({
       </div>
       <div style={{ display: "grid", gap: 12 }}>
         <label className="field">
-          <span className="bf-legend">客户 ID（必填）</span>
-          <input className="fld" required inputMode="numeric" value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="填写当前归属的真实客户 ID" />
+          <span className="bf-legend">客户编号（必填）</span>
+          <input className="fld" required inputMode="numeric" value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="填写当前归属的真实客户编号" />
         </label>
         <label className="field">
           <span className="bf-legend">标题</span>
