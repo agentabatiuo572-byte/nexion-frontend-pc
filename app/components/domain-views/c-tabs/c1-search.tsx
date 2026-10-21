@@ -100,7 +100,7 @@ function formatUsd(value: unknown) {
 
 function statusMeta(value: unknown) {
   const status = text(value, "").toUpperCase();
-  return STATUS_META[status] ?? [status || "未知", "dim"];
+  return STATUS_META[status] ?? ["状态待核实", "dim"];
 }
 
 function countText(value: unknown) {
@@ -339,13 +339,13 @@ export function C1Search({
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">检索 &amp; 画像</span>
-          <span className="sub">· 用户分层口径 L0-L5 / V0-V12 · 手机号仅脱敏展示</span>
+          <span className="ttl">查找用户与查看资料</span>
+          <span className="sub">· 生命周期等级 L0-L5 / 团队等级 V0-V12 · 手机号仅显示部分数字</span>
           <div className="r">
             <div className="search-bar">
               <input
                 aria-label="检索用户"
-                placeholder="用户编码 / 昵称 / 推荐码 / 脱敏手机号 / 手机哈希"
+                placeholder="用户编码 / 昵称 / 推荐码 / 脱敏手机号 / 手机号摘要"
                 value={q}
                 onChange={(e) => changeKeyword(e.target.value)}
               />
@@ -362,8 +362,8 @@ export function C1Search({
           <select aria-label="生命周期" value={filters.tier} onChange={(event) => changeFilter("tier", event.target.value)}>
             <option value="">全部生命周期</option>{[0, 1, 2, 3, 4, 5].map((value) => <option key={value} value={`L${value}`}>L{value}</option>)}
           </select>
-          <select aria-label="V-Rank" value={filters.vRank} onChange={(event) => changeFilter("vRank", event.target.value)}>
-            <option value="">全部 V-Rank</option>{Array.from({ length: 13 }, (_, value) => <option key={value} value={`V${value}`}>V{value}</option>)}
+          <select aria-label="团队等级" value={filters.vRank} onChange={(event) => changeFilter("vRank", event.target.value)}>
+            <option value="">全部团队等级</option>{Array.from({ length: 13 }, (_, value) => <option key={value} value={`V${value}`}>V{value}</option>)}
           </select>
           <input aria-label="推荐码" placeholder="推荐码" value={filters.referralCode} onChange={(event) => changeFilter("referralCode", event.target.value)} />
           {canReadRisk && <select aria-label="风险档" value={filters.riskBand} onChange={(event) => changeFilter("riskBand", event.target.value)}>
@@ -373,15 +373,15 @@ export function C1Search({
           <input aria-label="累计充值上限" type="number" min="0" placeholder="累计充值 ≤" value={filters.depositMax} onChange={(event) => changeFilter("depositMax", event.target.value)} />
           <input aria-label="USDT 余额下限" type="number" min="0" placeholder="USDT ≥" value={filters.usdtMin} onChange={(event) => changeFilter("usdtMin", event.target.value)} />
           <input aria-label="USDT 余额上限" type="number" min="0" placeholder="USDT ≤" value={filters.usdtMax} onChange={(event) => changeFilter("usdtMax", event.target.value)} />
-          <input aria-label="NEX 余额下限" type="number" min="0" placeholder="NEX ≥" value={filters.nexMin} onChange={(event) => changeFilter("nexMin", event.target.value)} />
-          <input aria-label="NEX 余额上限" type="number" min="0" placeholder="NEX ≤" value={filters.nexMax} onChange={(event) => changeFilter("nexMax", event.target.value)} />
+          <input aria-label="UVEL 余额下限" type="number" min="0" placeholder="UVEL ≥" value={filters.nexMin} onChange={(event) => changeFilter("nexMin", event.target.value)} />
+          <input aria-label="UVEL 余额上限" type="number" min="0" placeholder="UVEL ≤" value={filters.nexMax} onChange={(event) => changeFilter("nexMax", event.target.value)} />
           <input aria-label="加入日期起" type="date" value={filters.joinedFrom} onChange={(event) => changeFilter("joinedFrom", event.target.value)} />
           <input aria-label="加入日期止" type="date" value={filters.joinedTo} onChange={(event) => changeFilter("joinedTo", event.target.value)} />
         </div>
         {error && <div className="ctint warn" style={{ margin: 12 }}>{error}</div>}
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 1000 }}>
-            <thead><tr><th>用户编码</th><th>昵称</th><th>生命周期</th><th>V-Rank</th><th className="num">设备</th><th>风险分</th><th className="num">USDT余额</th><th>状态</th></tr></thead>
+            <thead><tr><th>用户编码</th><th>昵称</th><th>生命周期</th><th>团队等级</th><th className="num">设备</th><th>风险分</th><th className="num">USDT余额</th><th>状态</th></tr></thead>
             <tbody>
               {rows.map((u) => {
                 const [statusLabel, statusTone] = statusMeta(u.status);
@@ -443,7 +443,7 @@ export function C1Search({
           <div className="ctint"><b>检索结果只读</b> · 本页只定位与展示;冻结/解冻去 C2,资产调整去 C3,安全处置去 C5,各自走操作确认。</div>
         </div>
       </section>
-      <p className="f-foot">手机号、地址等敏感字段在检索、展示、导出时只显示脱敏值；名单导出按当前筛选条件生成文件并保留操作记录。生命周期 L0-L5 / 团队等级 V0-V12 是内部分类标准，用户端不会看到。</p>
+      <p className="f-foot">手机号、地址等敏感字段在检索、展示、导出时仅显示隐藏隐私信息后的内容；名单导出按当前筛选条件生成文件并保留操作记录。生命周期 L0-L5 / 团队等级 V0-V12 是内部分类标准，用户端不会看到。</p>
     </>
   );
 }
@@ -472,7 +472,7 @@ export function C1HeaderActions({ ctx, query }: { ctx: CCtx; query: C1ExportQuer
       const file = await exportUserProfilesCsv(query, exportKeyRef.current, reason);
       const fileName = downloadBlob(file.blob, file.fileName);
       exportKeyRef.current = null;
-      ctx.toast(`已下载脱敏用户名单 · ${fileName}`);
+      ctx.toast(`已下载隐藏隐私信息的用户名单 · ${fileName}`);
     } catch (err) {
       ctx.toast(`C1 导出失败 · ${errorMessage(err)}`);
     } finally {
@@ -489,17 +489,17 @@ export function C1HeaderActions({ ctx, query }: { ctx: CCtx; query: C1ExportQuer
       className="f-cta"
       disabled={exporting || !query}
       style={exporting || !query ? { opacity: 0.62, cursor: "not-allowed" } : undefined}
-      title="按当前安全筛选条件下载脱敏 CSV；确认理由、筛选哈希与导出事实写入服务端审计"
+      title="按当前筛选下载表格，隐藏手机号等隐私信息，并保存筛选条件、导出内容和操作理由"
       onClick={() => ctx.openConfirm({
-        action: "导出脱敏用户名单",
-        detail: "按当前筛选生成脱敏 CSV。导出理由、筛选摘要、行数和操作者会写入服务端审计。",
+        action: "导出用户名单（隐藏隐私信息）",
+        detail: "按当前筛选生成隐藏隐私信息的表格。导出理由、筛选摘要、行数和操作者会写入服务端审计。",
         reason: true,
         okLabel: "确认并导出",
         run: (reason) => runExport(reason),
       })}
     >
       <Download size={14} />
-      {exporting ? "生成中..." : "导出脱敏 CSV"}
+      {exporting ? "生成中..." : "导出表格（隐藏隐私信息）"}
     </button>
   );
 }

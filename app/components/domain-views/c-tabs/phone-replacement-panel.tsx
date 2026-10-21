@@ -257,12 +257,12 @@ function AccountPhonePanel({ userId, userLabel, owner, rights }: {
       <div><h4>换机资格</h4><p>已用次数：{overview.eligibility.usedCount ?? "待核实"} · 剩余额度：{overview.eligibility.remainingCount ?? "待核实"}</p>
         <p>历史完整性：{overview.eligibility.historyComplete ? "已确认" : "待核实，不视为零次"}</p>
         <p>最早普通换机时间：{overview.eligibility.nextAllowedAt == null ? "暂无法确定" : phoneTime(overview.eligibility.nextAllowedAt)}</p>
-        <p>{overview.eligibility.canReplace ? "当前满足换机条件，仍需用户在 App 明确确认。" : "当前不能更换绑定手机。"}</p>
+        <p>{overview.eligibility.canReplace ? "当前满足换机条件，仍需用户在应用中 明确确认。" : "当前不能更换绑定手机。"}</p>
         <ul>{overview.eligibility.blockedReasons.map((r, i) => <li key={`${r}:${i}`}>{phoneLabel(r)}</li>)}</ul></div></div>
       <details><summary>当前策略与会话概览</summary><PhoneFacts value={overview.eligibility.policy}/>
-        {overview.sessions.length ? overview.sessions.map((s, i) => <div className="phone-record" key={i}><b>{s.sessionGroup === "APP" ? "当前 App" : "H5 网页"}</b><p>安装：{s.installationId || "未提供"} · 会话数：{s.sessionCount} · 最近活跃：{s.lastActiveAt ?? "待核实"}</p><p>App 版本：{s.appSessionVersion ?? "不适用"} · 手机执行：{s.executionSupported ? "支持" : "不支持"}</p></div>) : <p>暂无有效 App 或 H5 会话。</p>}</details>
-      <h4>待处理申请</h4><p className="phone-note">选择用户从目标 App 发起的申请。请查看关联客服会话并完成人工核实；不能手工输入目标安装。</p>
-      {requests?.items.length ? <label>选择申请<select value={selected} disabled={blocked} onChange={e => { setSelected(e.target.value); setVerification(null); setWaiveCount(false); setWaiveInterval(false); }}><option value="">请选择申请</option>{requests.items.map(row => <option value={row.requestId} key={row.requestId}>{row.requestNo} · {phoneLabel(row.status)} · {row.targetInstallationId}</option>)}</select></label> : <p>本页暂无申请。请用户在目标 App 发起申请并关联客服会话。</p>}
+        {overview.sessions.length ? overview.sessions.map((s, i) => <div className="phone-record" key={i}><b>{s.sessionGroup === "APP" ? "当前应用" : "H5 网页"}</b><p>安装：{s.installationId || "未提供"} · 会话数：{s.sessionCount} · 最近活跃：{s.lastActiveAt ?? "待核实"}</p><p>应用版本：{s.appSessionVersion ?? "不适用"} · 手机执行：{s.executionSupported ? "支持" : "不支持"}</p></div>) : <p>暂无有效的应用或网页登录。</p>}</details>
+      <h4>待处理申请</h4><p className="phone-note">选择用户从目标应用 发起的申请。请查看关联客服会话并完成人工核实；不能手工输入目标安装。</p>
+      {requests?.items.length ? <label>选择申请<select value={selected} disabled={blocked} onChange={e => { setSelected(e.target.value); setVerification(null); setWaiveCount(false); setWaiveInterval(false); }}><option value="">请选择申请</option>{requests.items.map(row => <option value={row.requestId} key={row.requestId}>{row.requestNo} · {phoneLabel(row.status)} · {row.targetInstallationId}</option>)}</select></label> : <p>本页暂无申请。请用户在目标应用 发起申请并关联客服会话。</p>}
       <div className="phone-actions"><button className="l-btn" disabled={blocked || requestPage === 1} onClick={() => setRequestPage(p => p - 1)}>上一页申请</button><span>第 {requestPage} 页</span><button className="l-btn" disabled={blocked || !requests?.hasMore} onClick={() => setRequestPage(p => p + 1)}>下一页申请</button></div>
       {selection && <div className="phone-record"><PhoneFacts value={selection}/><p>客服关联：{phoneLabel(selection.supportLinkStatus)}</p>
         {selection.supportRef && <p>请在客服会话中核对引用 {selection.supportRef} 对应的用户和申请。核实不发送消息。</p>}
@@ -279,7 +279,7 @@ function AccountPhonePanel({ userId, userLabel, owner, rights }: {
     </>}
     {pendingRows.length > 0 && <div className="phone-record"><h4>提交结果待核实</h4><p>原请求已经保存。离开页面不会取消操作；超过 24 小时仍只查询原结果。</p>{pendingRows.some(row => !phoneCommandAllowed(row.type, rights)) && <p>有原操作需要恢复相应处置权限后核实，内容已隐藏。</p>}{pendingRows.filter(row => phoneCommandAllowed(row.type, rights)).map(row => <div key={row.commandKey}><p>{phoneLabel(row.type)} · {phoneTime(row.createdAt)} · 原操作标识：{row.commandKey}</p><p>原确认对象：{row.target}</p><PhoneFacts value={row.body}/><button className="l-btn" disabled={busy || !phoneCommandAllowed(row.type, rights)} onClick={() => void recover(row)}>查询原操作结果</button></div>)}</div>}
     {confirm && <section className="phone-record" aria-label="操作确认"><h4>{confirm.label}</h4><p>账号：{userLabel} · 对象：{confirm.target}</p>
-      {confirm.type === "PHONE_GRANT_ISSUE" && <p>目标：{selection?.targetInstallationId} · 绑定版本：{selection?.bindingVersion} · 次数豁免：{waiveCount ? "是" : "否"} · 间隔豁免：{waiveInterval ? "是" : "否"} · 24 小时、一次使用，须用户回 App 确认。</p>}
+      {confirm.type === "PHONE_GRANT_ISSUE" && <p>目标：{selection?.targetInstallationId} · 绑定版本：{selection?.bindingVersion} · 次数豁免：{waiveCount ? "是" : "否"} · 间隔豁免：{waiveInterval ? "是" : "否"} · 24 小时、一次使用，须用户返回应用 确认。</p>}
       <label>操作理由（8–200 字）<textarea value={reason} maxLength={200} disabled={busy} onChange={e => setReason(e.target.value)}/></label>
       <label><input type="checkbox" checked={confirmed} disabled={busy} onChange={e => setConfirmed(e.target.checked)}/>我已核对账号、对象及上述影响，明确确认此操作</label>
       <div className="phone-actions"><button className="l-btn primary" disabled={busy || !confirmed || reason.trim().length < 8} onClick={() => void submit()}>确认提交</button><button className="l-btn" disabled={busy} onClick={() => setConfirm(null)}>取消</button></div></section>}

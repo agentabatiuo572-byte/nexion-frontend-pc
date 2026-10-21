@@ -403,11 +403,11 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
 
   const revokeOne = (id: string) =>
     openConfirm({
-      action: `踢线 · ${maskSessionId(id)}`,
+      action: `退出该设备 · ${maskSessionId(id)}`,
       detail: "确认后服务器立即吊销该会话，用户当前设备马上下线；结果会写入高风险审计。",
       chips: [["立即吊销", "ready"], ["服务端审计", "done"]],
       reason: true,
-      okLabel: "确认踢线",
+      okLabel: "确认退出该设备",
       run: (reason) => {
         return perform(`revoke-one|${id}|${reason}`, async (commandKey) => {
           await revokeUserSession(id, reason, OPERATOR(), commandKey);
@@ -419,11 +419,11 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const revokeAll = () => {
     if (!selectedUserId) return;
     openConfirm({
-      action: `全部踢线 · ${userLabel(selectedUser)}`,
+      action: `退出全部设备 · ${userLabel(selectedUser)}`,
       detail: "确认后服务器立即吊销该用户全部活跃会话，常用于疑似盗号止损。",
       chips: [["整链立即吊销", "ready"], ["服务端审计", "done"]],
       reason: true,
-      okLabel: "确认全部踢线",
+      okLabel: "确认退出全部设备",
       run: (reason) => {
         if (!selectedUserId) return;
         return perform(`revoke-all|${selectedUserId}|${reason}`, async (commandKey) => {
@@ -437,14 +437,14 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const disable2fa = () => {
     if (!selectedUserId) return;
     openActionConfirm({
-      action: `人工关闭 2FA · ${userLabel(selectedUser)}`,
+      action: `人工关闭 两步验证 · ${userLabel(selectedUser)}`,
       detail: <>用户丢失验证器设备时的恢复通道。服务器校验专门权限、防重复提交编号和当前状态，并记录操作人、角色和理由。</>,
       amplifies: false,
       businessForm: {
         kind: "identity-verify",
-        subject: `${userLabel(selectedUser)} · 关闭 2FA`,
+        subject: `${userLabel(selectedUser)} · 关闭 两步验证`,
         serverVerification: {
-          channel: "RBAC + 双确认",
+          channel: "角色权限 + 双确认",
           ticket: "当前管理员会话",
           verifiedAt: "提交时服务端校验",
           verifiedBy: OPERATOR(),
@@ -455,8 +455,8 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
         if (!selectedUserId) return;
         return perform(`disable-2fa|${selectedUserId}|${reason}`, async (commandKey) => {
           await disableUserTwoFactor(selectedUserId, reason, OPERATOR(), operatorEvidence(businessValue), commandKey);
-          return "2FA 已立即关闭";
-        }, "2FA 已立即关闭");
+          return "两步验证 已立即关闭";
+        }, "两步验证 已立即关闭");
       },
     });
   };
@@ -471,7 +471,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
         kind: "identity-verify",
         subject: `${userLabel(selectedUser)} · 密码重置`,
         serverVerification: {
-          channel: "RBAC + 双确认",
+          channel: "角色权限 + 双确认",
           ticket: "当前管理员会话",
           verifiedAt: "提交时服务端校验",
           verifiedBy: OPERATOR(),
@@ -496,14 +496,14 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     openActionConfirm({
       action: `解除${longLock ? "长" : "短"}锁 · ${userLabel(row)}`,
       detail: longLock
-        ? "长锁仅限超管或风控角色解除。服务器校验锁类型未变化、权限和防重复提交编号后立即清除登录锁。"
-        : "短锁仅限超管、风控或客服角色解除。服务器校验权限和防重复提交编号后立即清除登录失败计数与登录锁。",
+        ? "长锁仅限超级管理员或风控角色解除。服务器校验锁类型未变化、权限和防重复提交编号后立即清除登录锁。"
+        : "短锁仅限超级管理员、风控或客服角色解除。服务器校验权限和防重复提交编号后立即清除登录失败计数与登录锁。",
       amplifies: false,
       businessForm: {
         kind: "identity-verify",
         subject: `${userLabel(row)} · 解除${longLock ? "长" : "短"}锁`,
         serverVerification: {
-          channel: "RBAC + 双确认",
+          channel: "角色权限 + 双确认",
           ticket: "当前管理员会话",
           verifiedAt: "提交时服务端校验",
           verifiedBy: OPERATOR(),
@@ -557,9 +557,9 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     <>
       <div className="f-stats">
         <StatCard label="活跃会话(全平台)" value={activeSessions.toLocaleString("en-US")} sub="来自会话统计" />
-        <StatCard tone="ok" label="2FA 开启率" value={`${text(overview?.stats?.twoFactorRatePct, "0.0")}%`} sub="来自凭证安全统计" />
+        <StatCard tone="ok" label="两步验证 开启率" value={`${text(overview?.stats?.twoFactorRatePct, "0.0")}%`} sub="来自凭证安全统计" />
         <StatCard tone="warn" label="锁定中账户" value={lockedShort + lockedLong} sub={`短锁 ${lockedShort} · 长锁 ${lockedLong}`} />
-        <StatCard tone="danger" label="今日凭证异常回收" value={tokenReuseToday} sub="刷新凭证复用 → 整链踢线" />
+        <StatCard tone="danger" label="今日异常登录清退" value={tokenReuseToday} sub="重复使用登录凭证 → 退出关联的所有登录设备" />
       </div>
 
       {error && (
@@ -582,7 +582,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
                 <div className="txt">
                   <div className="k">
                     {text(param.name)}
-                    {param.readOnly && <span className="bdg dim" style={{ marginLeft: 6 }}>V1 只读</span>}
+                    {param.readOnly && <span className="bdg dim" style={{ marginLeft: 6 }}>当前仅可查看</span>}
                   </div>
                   <div className="s">{text(param.note)}</div>
                 </div>
@@ -607,7 +607,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">单用户安全处置 · {userLabel(selectedUser)}</span>
-            <span className="sub">· 会话 / 2FA / 锁定</span>
+            <span className="sub">· 会话 / 两步验证 / 锁定</span>
             <div className="r">
               <div className="lookup" style={{ position: "relative", minWidth: 320 }}>
                 <input
@@ -733,7 +733,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
                           <span className="bdg dim">{sessionStatusLabel(session.status)}</span>
                         ) : (
                           <button className="l-btn sm" disabled={busy || !canRevokeOne} onClick={(event) => { event.stopPropagation(); revokeOne(id); }}>
-                            {canRevokeOne ? "踢线" : "无权限"}
+                            {canRevokeOne ? "退出该设备" : "无权限"}
                           </button>
                         )}
                       </td>
@@ -761,10 +761,10 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
           <div className="l-b" style={{ paddingTop: 10 }}>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button className="l-btn" disabled={!selectedUserId || busy || !canRevokeAll || activeSessionCount === 0} onClick={revokeAll}>
-                {canRevokeAll ? "全部踢线" : "全部踢线（无权限）"}
+                {canRevokeAll ? "退出全部设备" : "退出全部设备（无权限）"}
               </button>
               <button className="l-btn mc" disabled={!selectedUserId || busy || !canDisable2fa || !selectedUser?.twoFactorEnabled} onClick={disable2fa}>
-                关闭 2FA（高风险确认）
+                关闭 两步验证（高风险确认）
               </button>
               <button className="l-btn mc" disabled={!selectedUserId || busy || !canResetPassword || !!selectedUser?.passwordResetRequired} onClick={passwordReset}>
                 密码重置（高风险确认）
@@ -773,7 +773,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
             {selectedUser && (
               <>
                 <div className="ctint" style={{ marginTop: 10 }}>
-                  <b>2FA 状态</b> · {selectedUser.twoFactorEnabled ? "已开启" : "已关闭"} · 登录失败 {toNumber(selectedUser.loginFailCount)} 次
+                  <b>两步验证 状态</b> · {selectedUser.twoFactorEnabled ? "已开启" : "已关闭"} · 登录失败 {toNumber(selectedUser.loginFailCount)} 次
                 </div>
                 {selectedUser.passwordResetRequired && (
                   <div className="ctint warn" style={{ marginTop: 8 }}>
@@ -815,7 +815,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
 
       {selectedSession && (
         <Drawer title={`会话详情 · ${maskSessionId(sessionId(selectedSession))}`} sub={`${userLabel(selectedUser)} · ${sessionStatusLabel(selectedSession.status)}`} onClose={() => setSsId(null)}
-          footer={<button className="l-btn danger" disabled={busy || !canRevokeOne || text(selectedSession.status, "").toUpperCase() !== "ACTIVE"} onClick={() => revokeOne(sessionId(selectedSession))}>踢线</button>}>
+          footer={<button className="l-btn danger" disabled={busy || !canRevokeOne || text(selectedSession.status, "").toUpperCase() !== "ACTIVE"} onClick={() => revokeOne(sessionId(selectedSession))}>退出该设备</button>}>
           <SecLabel>服务器会话 · 北京时间（UTC+08）</SecLabel>
           <div className="kv"><span className="k">刷新凭证</span><span className="v mono">{maskSessionId(sessionId(selectedSession))}</span></div>
           <div className="kv"><span className="k">设备</span><span className="v">{text(selectedSession.deviceName)}</span></div>

@@ -2,7 +2,8 @@
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { platformSessionDeviceText, userNicknameText } from "@/lib/admin/brand-copy";
+import { formatC1DeviceStatus, formatC1RiskBand } from "@/lib/admin/c1-detail-display";
+import { nexGridBrandText, platformSessionDeviceText, userNicknameText } from "@/lib/admin/brand-copy";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -70,19 +71,19 @@ const SESSION_STATUS_LABELS: Record<string, string> = {
 };
 
 function accountStatusLabel(value: unknown) {
-  return STATUS_META[text(value).toUpperCase()]?.[0] ?? text(value);
+  return STATUS_META[text(value).toUpperCase()]?.[0] ?? "状态待核实";
 }
 
 function impersonationStatusLabel(value: unknown) {
-  return IMPERSONATION_STATUS_LABELS[text(value).toUpperCase()] ?? text(value);
+  return IMPERSONATION_STATUS_LABELS[text(value).toUpperCase()] ?? "状态待核实";
 }
 
 function listStatusLabel(value: unknown) {
-  return LIST_STATUS_LABELS[text(value).toUpperCase()] ?? text(value);
+  return LIST_STATUS_LABELS[text(value).toUpperCase()] ?? "状态待核实";
 }
 
 function sessionStatusLabel(value: unknown) {
-  return SESSION_STATUS_LABELS[text(value).toUpperCase()] ?? text(value);
+  return SESSION_STATUS_LABELS[text(value).toUpperCase()] ?? "状态待核实";
 }
 
 function text(value: unknown, fallback = "—") {
@@ -103,7 +104,7 @@ function statusOf(account: User360Profile) {
 }
 
 function statusMeta(status: string) {
-  return STATUS_META[status] ?? [status || "未知", "dim"];
+  return STATUS_META[status] ?? ["状态待核实", "dim"];
 }
 
 function riskTone(score: unknown) {
@@ -191,9 +192,9 @@ function jsonRecords(value: unknown): JsonRecord[] {
 
 function deviceDailyReference(device: JsonRecord): string {
   if (text(device.deviceType, "").toUpperCase() === "SHARE") {
-    return device.dailyNex == null ? "NEX/天暂不可用" : `${formatAmount(device.dailyNex)} NEX/天`;
+    return device.dailyNex == null ? "UVEL/天暂不可用" : `${formatAmount(device.dailyNex)} UVEL/天`;
   }
-  return `${formatAmount(device.dailyUsdt)} USDT · ${formatAmount(device.dailyNex)} NEX`;
+  return `${formatAmount(device.dailyUsdt)} USDT · ${formatAmount(device.dailyNex)} UVEL`;
 }
 
 function ImpersonationUserScreen({ screen }: { screen: JsonRecord }) {
@@ -204,7 +205,7 @@ function ImpersonationUserScreen({ screen }: { screen: JsonRecord }) {
     return <div data-testid="impersonation-home-screen">
       <h3 style={{ margin: "14px 0 4px" }}>用户视角首页</h3>
       <p style={{ margin: "0 0 12px", color: "var(--ink-3)" }}>{text(screen.greeting)}</p>
-      <div className="row wrap" style={{ gap: 8 }}>{assets.map((asset) => <div className="ctint" key={text(asset.symbol)}><b>{text(asset.symbol)}</b><br />{formatAmount(asset.available)}</div>)}</div>
+      <div className="row wrap" style={{ gap: 8 }}>{assets.map((asset) => <div className="ctint" key={nexGridBrandText(text(asset.symbol))}><b>{nexGridBrandText(text(asset.symbol))}</b><br />{formatAmount(asset.available)}</div>)}</div>
       <div className="kv"><span className="k">设备概况</span><span className="v">活跃 {text(devices.active, "0")} / 共 {text(devices.total, "0")}</span></div>
       <div className="kv"><span className="k">真实入口</span><span className="v">{Array.isArray(screen.entries) ? screen.entries.join(" · ") : "—"}</span></div>
     </div>;
@@ -213,7 +214,7 @@ function ImpersonationUserScreen({ screen }: { screen: JsonRecord }) {
     const assets = jsonRecords(screen.assets);
     return <div data-testid="impersonation-wallet-screen">
       <h3 style={{ margin: "14px 0 8px" }}>用户视角钱包</h3>
-      {assets.map((asset) => <div className="kv" key={text(asset.symbol)}><span className="k">{text(asset.symbol)} 可用</span><span className="v">{formatAmount(asset.available)}</span></div>)}
+      {assets.map((asset) => <div className="kv" key={nexGridBrandText(text(asset.symbol))}><span className="k">{nexGridBrandText(text(asset.symbol))} 可用</span><span className="v">{formatAmount(asset.available)}</span></div>)}
       <div className="ctint warn" style={{ marginTop: 10 }}>{text(screen.readOnlyHint)}</div>
     </div>;
   }
@@ -223,7 +224,7 @@ function ImpersonationUserScreen({ screen }: { screen: JsonRecord }) {
       <h3 style={{ margin: "14px 0 8px" }}>用户视角设备</h3>
       <div className="kv"><span className="k">设备概况</span><span className="v">活跃 {text(screen.active, "0")} / 共 {text(screen.total, "0")}</span></div>
       {Boolean(screen.truncated) && <div className="ctint warn" style={{ marginBottom: 10 }}>该用户共有 {text(screen.total, "0")} 台设备，当前按服务器限制展示最近 {text(screen.shown, String(devices.length))} 台。</div>}
-      {devices.length > 0 ? <table className="l-tbl"><thead><tr><th>设备</th><th>状态</th><th>算力</th><th>日产参考</th></tr></thead><tbody>{devices.map((device) => <tr key={text(device.instanceNo)}><td>{text(device.name)}<br /><span className="mono">{text(device.instanceNo)}</span></td><td>{text(device.status)}</td><td>{formatAmount(device.hashrate)}</td><td>{deviceDailyReference(device)}</td></tr>)}</tbody></table> : <p className="tiny">该用户暂无设备。</p>}
+      {devices.length > 0 ? <table className="l-tbl"><thead><tr><th>设备</th><th>状态</th><th>算力</th><th>日产参考</th></tr></thead><tbody>{devices.map((device) => <tr key={text(device.instanceNo)}><td>{text(device.name)}<br /><span className="mono">{text(device.instanceNo)}</span></td><td>{formatC1DeviceStatus(device.status)}</td><td>{formatAmount(device.hashrate)}</td><td>{deviceDailyReference(device)}</td></tr>)}</tbody></table> : <p className="tiny">该用户暂无设备。</p>}
     </div>;
   }
   return <div data-testid="impersonation-profile-screen">
@@ -232,7 +233,7 @@ function ImpersonationUserScreen({ screen }: { screen: JsonRecord }) {
     <div className="kv"><span className="k">昵称</span><span className="v">{userNicknameText(text(screen.nickname), screen.phoneMasked)}</span></div>
     <div className="kv"><span className="k">账户状态</span><span className="v">{accountStatusLabel(screen.accountStatus)}</span></div>
     <div className="kv"><span className="k">等级</span><span className="v">{text(screen.userLevel)} / {text(screen.vRank)}</span></div>
-    <div className="kv"><span className="k">安全</span><span className="v">2FA {screen.twoFactorEnabled ? "已开启" : "未开启"} · 活跃会话 {text(screen.activeSessions, "0")}</span></div>
+    <div className="kv"><span className="k">安全</span><span className="v">两步验证 {screen.twoFactorEnabled ? "已开启" : "未开启"} · 活跃会话 {text(screen.activeSessions, "0")}</span></div>
   </div>;
 }
 
@@ -401,7 +402,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     setAccountContext(null);
     setAccountContextError(null);
     if (!key) {
-      setAccountContextError("账户缺少后端 ID，无法读取 C2 权威详情");
+      setAccountContextError("账户缺少系统编号，无法读取 C2 权威详情");
       return;
     }
     void refreshAccountContext(key).catch((detailError: unknown) => {
@@ -477,13 +478,13 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
 
   const freezeCompletionCopy = freezeProposalOnly
     ? "本次只创建 A2 待确认票；确认执行前业务状态不变。"
-    : "具备执行权限；确认后立即落库，并写必达审计与事件。";
+    : "具备执行权限；确认后立即保存记录，并保存操作记录及相关业务事件。";
 
   const freeze = (account: User360Profile) => openActionConfirm({
     action: `冻结账户 · ${displayAccount(account)}`,
     detail: freezeProposalOnly
       ? "提交 A2 待确认票；确认执行后才冻结账户、吊销会话并冻结 D2 待处理提现。"
-      : "确认后原子冻结账户、吊销活跃会话、冻结 D2 待处理提现，并同步 C2/K1 权威状态。",
+      : "确认后同时冻结账户并退出所有已登录设备、冻结 D2 待处理提现，并同步 C2/K1 权威状态。",
     amplifies: false,
     completionCopy: freezeCompletionCopy,
     reasonMin: 8,
@@ -522,14 +523,14 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     action: `恢复账户 · ${displayAccount(account)}`,
     detail: freezeProposalOnly
       ? "提交 A2 待确认票；确认前账户与 D2 提现保持冻结。"
-      : "确认后仅允许 FROZEN→ACTIVE，并恢复由本次 C2 冻结联动暂停的 D2 提现；已吊销会话不会复活。",
+      : "确认后仅允许将冻结账户恢复正常，并恢复由本次 C2 冻结联动暂停的 D2 提现；已吊销会话不会复活。",
     amplifies: true,
     completionCopy: freezeCompletionCopy,
     reasonMin: 8,
     reasonMax: 200,
     run: (reason) => {
       const id = accountId(account);
-      if (!id) return toast("账户缺少后端ID");
+      if (!id) return toast("账户缺少系统编号");
       if (!freezeProposalOnly) {
         void perform(
           () => updateUserStatus(id, "ACTIVE", null, reason, OPERATOR()).then(() => `${displayAccount(account)} 已恢复`),
@@ -554,14 +555,14 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     }
     openActionConfirm({
     action: `强制登出 · ${displayAccount(account)}`,
-    detail: `确认后立即吊销当前 ${activeCount} 个活跃会话；这是止血动作，财务/风控/客服/超管均直接执行，重复提交同一防重复提交编号不会二次执行。`,
+    detail: `确认后立即吊销当前 ${activeCount} 个活跃会话；这是紧急安全操作，财务/风控/客服/超级管理员均直接执行，重复提交同一防重复提交编号不会二次执行。`,
     amplifies: false,
-    completionCopy: "确认后立即执行，并写必达审计与事件。",
+    completionCopy: "确认后立即执行，并保存操作记录及相关业务事件。",
     reasonMin: 8,
     reasonMax: 200,
     run: (reason) => {
       const id = accountId(account);
-      if (!id) return toast("账户缺少后端ID");
+      if (!id) return toast("账户缺少系统编号");
       void perform(
         () => revokeUserSessions(id, reason, OPERATOR()).then(() => `${displayAccount(account)} 已强制登出`),
         "会话已吊销",
@@ -574,14 +575,14 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     action: "发起只读模拟登录",
     detail: "确认后签发只在内存中保存的限时身份，并立即打开服务端用户 H5 镜像；所有写请求由服务器统一返回 403。",
     amplifies: false,
-    completionCopy: "确认后立即执行，并写必达审计与事件。",
+    completionCopy: "确认后立即执行，并保存操作记录及相关业务事件。",
     reasonMin: 8,
     reasonMax: 200,
     businessForm: {
       kind: "multi-field",
       title: "只读模拟登录参数",
       fields: [
-        { key: "userCode", label: "用户编码或后端ID", inputKind: "text", required: true, current: text(accounts[0]?.userNo, "") },
+        { key: "userCode", label: "用户编码或系统编号", inputKind: "text", required: true, current: text(accounts[0]?.userNo, "") },
         { key: "ttlMinutes", label: "有效期", inputKind: "select", required: true, current: "15", options: ["5", "10", "15", "30"], optionLabels: { "5": "5 分钟", "10": "10 分钟", "15": "15 分钟", "30": "30 分钟" } },
         { key: "reasonCode", label: "授权分类", inputKind: "select", required: true, current: "USER_ISSUE_REPRO", options: ["USER_ISSUE_REPRO", "DISPLAY_ANOMALY", "OTHER"], optionLabels: { USER_ISSUE_REPRO: "用户报障复现", DISPLAY_ANOMALY: "排查显示异常", OTHER: "其他" } },
       ],
@@ -614,12 +615,12 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     action: `终止模拟会话 · ${text(session.sessionNo)}`,
     detail: "确认后立即失效模拟身份；旧令牌下一次请求即被服务器拒绝。",
     amplifies: false,
-    completionCopy: "确认后立即执行，并写必达审计与事件。",
+    completionCopy: "确认后立即执行，并保存操作记录及相关业务事件。",
     reasonMin: 8,
     reasonMax: 200,
     run: (reason) => {
       const sessionNo = text(session.sessionNo, "");
-      if (!sessionNo) return toast("会话缺少 sessionNo");
+      if (!sessionNo) return toast("缺少登录会话编号");
       void perform(
         () => terminateUserImpersonation(sessionNo, reason, OPERATOR()).then(() => `模拟会话 ${sessionNo} 已终止`),
         "模拟会话已终止",
@@ -652,14 +653,14 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     action: kind === "ALLOW" ? "加入信任名单" : "加入禁入名单",
     detail: "确认后立即写入服务器名单；指定失效日到期后自动显示为已到期。",
     amplifies: false,
-    completionCopy: "确认后立即执行，并写必达审计与事件。",
+    completionCopy: "确认后立即执行，并保存操作记录及相关业务事件。",
     reasonMin: 8,
     reasonMax: 200,
     businessForm: {
       kind: "multi-field",
       title: "名单有效期",
       fields: [
-        { key: "userCode", label: "用户编码或后端ID", inputKind: "text", required: true, current: text(accounts[0]?.userNo, "") },
+        { key: "userCode", label: "用户编码或系统编号", inputKind: "text", required: true, current: text(accounts[0]?.userNo, "") },
         { key: "expiryMode", label: "有效期", inputKind: "select", required: true, current: "PERMANENT", options: ["PERMANENT", "SPECIFIED"], optionLabels: { PERMANENT: "长期", SPECIFIED: "指定日期" } },
         { key: "expiresAt", label: "失效日期", inputKind: "text", required: true, placeholder: "YYYY-MM-DD", visibleWhen: { key: "expiryMode", equals: "SPECIFIED" } },
       ],
@@ -687,11 +688,11 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     action: `移出名单 · ${displayAccount(entry)}`,
     detail: "确认后立即恢复默认风控判定，并保留名单历史。",
     amplifies: false,
-    completionCopy: "确认后立即执行，并写必达审计与事件。",
+    completionCopy: "确认后立即执行，并保存操作记录及相关业务事件。",
     reasonMin: 8,
     reasonMax: 200,
     run: (reason) => {
-      if (entry.userId === null || entry.userId === undefined) return toast("名单行缺少 userId");
+      if (entry.userId === null || entry.userId === undefined) return toast("名单记录缺少用户编号");
       const id = String(entry.userId);
       void perform(
         () => removeUserAccountList(id, reason, OPERATOR()).then(() => `${displayAccount(entry)} 已移出名单`),
@@ -747,8 +748,8 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       <div className="f-stats">
         <div className="f-stat danger"><div className="k">冻结中账户</div><div className="v">{loading ? "…" : frozenUsers}</div><div className="sub">来自账户状态统计</div></div>
         <div className="f-stat warn"><div className="k">进行中的模拟登录</div><div className="v">{loading ? "…" : asNumber(overview?.activeImpersonations)}</div><div className="sub">{liveLeftMin > 0 ? `最长剩 ${liveLeftMin} 分钟` : "当前无进行中会话"}</div></div>
-        <div className="f-stat"><div className="k">信任名单</div><div className="v">{loading ? "…" : asNumber(overview?.trustListCount)}</div><div className="sub">服务端名单 · ALLOW</div></div>
-        <div className="f-stat"><div className="k">禁入名单</div><div className="v">{loading ? "…" : asNumber(overview?.blockedListCount)}</div><div className="sub">服务端名单 · BLOCK</div></div>
+        <div className="f-stat"><div className="k">信任名单</div><div className="v">{loading ? "…" : asNumber(overview?.trustListCount)}</div><div className="sub">允许名单</div></div>
+        <div className="f-stat"><div className="k">禁入名单</div><div className="v">{loading ? "…" : asNumber(overview?.blockedListCount)}</div><div className="sub">限制名单</div></div>
       </div>
 
       {error && (
@@ -851,7 +852,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
             {!loading && impersonations.length === 0 && (
               <div style={{ fontSize: 12, color: "var(--ink-4)", lineHeight: 1.55 }}>暂无模拟登录会话。</div>
             )}
-            <div className="ctint warn" style={{ marginTop: 12, fontSize: 12 }}><b>只读边界</b> · 服务器签发 claim=impersonate_readonly 的限时身份；只允许访问 H5 镜像读接口，任意写请求统一返回 403。</div>
+            <div className="ctint warn" style={{ marginTop: 12, fontSize: 12 }}><b>只读边界</b> · 系统签发临时只读访问权限，仅可预览用户页面，不能修改任何数据。</div>
           </div>
         </section>
       </div>
@@ -904,7 +905,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         />
       </section>
 
-      <p className="f-foot"><b>动作确认口径</b>：{freezeProposalOnly ? "当前财务角色的冻结/恢复只创建 A2 待确认票；强制登出是止血动作，确认后立即执行。" : "当前角色可直接执行其获授权动作，确认后原子落库。"} 所有动作均要求 8-200 字理由、24 小时防重复提交、必达审计与事件；刷新后以服务器返回为准。</p>
+      <p className="f-foot"><b>操作执行说明</b>：{freezeProposalOnly ? "当前财务角色的冻结/恢复只创建 A2 待确认票；强制登出是紧急安全操作，确认后立即执行。" : "当前角色可直接执行其获授权动作，确认后同时保存相关记录。"} 所有动作均要求 8-200 字理由、24 小时防重复提交、必达审计与事件；刷新后以服务器返回为准。</p>
 
       {selectedAccount && (() => {
         const status = statusOf(selectedAccount);
@@ -919,15 +920,15 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
             footer={canOpenK1 ? <Link className="l-btn" style={{ flex: 1, justifyContent: "center" }} href={K1_PATH}>去 K1 查看关联账户组 →</Link> : undefined}
           >
             <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>{displayAccount(selectedAccount)} · <span className={`bdg ${statusTone}`}>{statusLabel}</span></div>
-            <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.55, margin: "4px 0 12px" }}>详情来自后端按该用户精确查询的 C2 权威上下文，不受总览截断影响。</div>
+            <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.55, margin: "4px 0 12px" }}>详情来自后端按该用户精确查询的 完整账户详情，包含总览未显示的记录。</div>
             {accountContextError && <div className="ctint bad" role="alert" style={{ marginBottom: 12 }}>账户详情回读失败：{accountContextError}。当前停止使用旧详情执行处置，请重新打开后再试。</div>}
 
             <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 4px" }}>账户概览</div>
             <div className="kv"><span className="k">用户编码</span><span className="v">{text(selectedAccount.userNo)}</span></div>
             <div className="kv"><span className="k">手机号</span><span className="v">{text(selectedAccount.phoneMasked)}</span></div>
             <div className="kv"><span className="k">等级</span><span className="v">{text(selectedAccount.userLevel)} / {text(selectedAccount.vRank)}</span></div>
-            <div className="kv"><span className="k">余额</span><span className="v">{formatAmount(selectedAccount.walletUsdt)} USDT · {formatAmount(selectedAccount.walletNex)} NEX</span></div>
-            <div className="kv"><span className="k">风险分</span><span className="v">{text(selectedAccount.riskScore, "0")} · {text(selectedAccount.riskBand, "未分档")}</span></div>
+            <div className="kv"><span className="k">余额</span><span className="v">{formatAmount(selectedAccount.walletUsdt)} USDT · {formatAmount(selectedAccount.walletNex)} UVEL</span></div>
+            <div className="kv"><span className="k">风险分</span><span className="v">{text(selectedAccount.riskScore, "0")} · {formatC1RiskBand(selectedAccount.riskBand)}</span></div>
             <div className="kv"><span className="k">当前名单</span><span className="v">{listEntry ? `${displayListKind(listEntry.kind)[0]} · ${text(listEntry.reason)}` : "无生效名单"}</span></div>
             <div className="kv"><span className="k">活跃会话</span><span className="v">{accountContext?.account && accountId(accountContext.account) === accountId(selectedAccount) ? asNumber(accountContext.activeSessions) : accountSessions.filter(activeSession).length} 个</span></div>
             {accountContext?.sessionsTruncated && <div className="ctint warn" style={{ marginTop: 8 }}>该用户共有 {asNumber(accountContext.totalSessions)} 条会话记录，当前展示最近 {accountSessions.length} 条；活跃数量由服务端全量统计。</div>}
@@ -1019,7 +1020,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
             ))}
           </div>
           {canTerminateImpersonation && <button disabled={busy} className="l-btn mc" style={{ width: "100%", justifyContent: "center", marginTop: 14 }} onClick={exitMirror}>退出并终止模拟会话</button>}
-          <div style={{ fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.5, marginTop: 8 }}>安全声明：claim={text(mirror.claim)} · 写策略={text(mirror.writePolicy)}；所有写请求由服务端拒绝。</div>
+          <div style={{ fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.5, marginTop: 8 }}>安全限制：仅可查看用户页面，所有修改请求都会被系统拒绝。</div>
           <p className="tiny" style={{ marginTop: 14 }}>当前页签：{text(mirror.currentPage, mirrorPage)}。以上为服务端按真实用户数据生成的页面级只读视图；每次页签访问均写必达审计，所有写入口保持禁用。</p>
         </Drawer>
       )}

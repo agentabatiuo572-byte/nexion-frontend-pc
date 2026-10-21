@@ -579,7 +579,7 @@ export default function UserDetailPage() {
 
       <div className={`mt-4 grid gap-4 ${!supportScope || detail.sessions ? "lg:grid-cols-2" : ""}`}>
         <div className={supportScope && !detail.sessions ? "customer-panorama-primary" : "flex flex-col gap-4"}>
-          {detail.risk && <Section title="风险画像" tag={supportScope ? undefined : "K4 风险评分"}>
+          {detail.risk && <Section title="风险评估" tag={supportScope ? undefined : "K4 风险评分"}>
             <div className="flex items-center gap-4">
               <div>
                 {hasRiskScore && <p className="font-mono-tabular text-[32px] leading-none" style={{ color: riskColor(riskScore) }}>{riskScore}</p>}
@@ -592,9 +592,9 @@ export default function UserDetailPage() {
             </div>
           </Section>}
 
-          {detail.financial && <Section title="资产 & 账户" tag={supportScope ? undefined : "C3 余额资产 · 双币 USDT/NEX"}>
+          {detail.financial && <Section title="资产 & 账户" tag={supportScope ? undefined : "C3 余额资产 · 双币 USDT/UVEL"}>
             <Row label="可提余额 · USDT"><span className="font-mono-tabular">{money(summary.walletUsdt ?? profile.walletUsdt)}</span></Row>
-            <Row label="NEX 余额"><span className="font-mono-tabular">{numberLabel(summary.walletNex ?? profile.walletNex)} NEX</span></Row>
+            <Row label="UVEL 余额"><span className="font-mono-tabular">{numberLabel(summary.walletNex ?? profile.walletNex)} UVEL</span></Row>
             <Row label="累计充值"><span className="font-mono-tabular">{money(summary.depositedUsd)}</span></Row>
             <Row label="累计提现"><span className="font-mono-tabular">{money(summary.withdrawnUsd)}</span></Row>
             <Row label="提现申请额"><span className="font-mono-tabular">{money(summary.withdrawRequestedUsd)}</span></Row>
@@ -676,10 +676,10 @@ export default function UserDetailPage() {
             </p>
           </Section>}
 
-          {detail.sessions && <Section title="安全 & 会话" tag={supportScope ? undefined : "C5 安全会话"}>
+          {detail.sessions && <Section title="安全与登录设备" tag={supportScope ? undefined : "C5 安全会话"}>
             <div className="customer-panorama-security-kpis mb-2 grid grid-cols-3 gap-2">
               <KpiStatCard label="活跃会话" value={numberLabel(summary.activeSessionCount)} accent="var(--admin-domain-c)" />
-              <KpiStatCard label="2FA" value={summary.twoFactorEnabled == null ? "-" : summary.twoFactorEnabled ? "开启" : "关闭"} accent="var(--admin-domain-e)" />
+              <KpiStatCard label="两步验证" value={summary.twoFactorEnabled == null ? "-" : summary.twoFactorEnabled ? "开启" : "关闭"} accent="var(--admin-domain-e)" />
               <KpiStatCard label="锁定" value={summary.locked == null ? "-" : summary.locked ? "是" : "否"} accent="var(--v5-warning)" />
             </div>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -741,9 +741,9 @@ export default function UserDetailPage() {
                     只在**未确认注销成功**时显眼提示;已成功(revoked/success/done)不占版面。 */}
                 {method.status !== "BOUND" && !!method.pspRevokeStatus && !/^(revoked|success|succeeded|done|completed)$/i.test(method.pspRevokeStatus) && (
                   <p className="mt-2 rounded-[6px] px-2 py-1 text-[11px]" style={{ color: "var(--v5-warning)", background: "color-mix(in srgb, var(--v5-warning) 12%, transparent)" }}>
-                    UVEL 本地解绑已成功，但支付商撤销{method.pspRevokeStatus === "FAILED" ? "失败" : "处理中"}（{method.pspRevokeStatus}）：该支付方式在支付商仍可能有效，未完成前不可视为彻底解绑。
+                    UVEL 本地解绑已成功，但支付商撤销{method.pspRevokeStatus === "FAILED" ? "失败" : "处理中"}：该支付方式在支付商仍可能有效，未完成前不可视为彻底解绑。
                     {method.revokeCommandNo ? ` 命令 ${method.revokeCommandNo}` : ""}{method.revokeAttempts ? ` · 已重试 ${method.revokeAttempts} 次` : ""}
-                    {method.revokeDeadlineAt && new Date(method.revokeDeadlineAt).getTime() < Date.now() ? " · 已超过撤销 SLA，请立即升级处理" : ""}
+                    {method.revokeDeadlineAt && new Date(method.revokeDeadlineAt).getTime() < Date.now() ? " · 已超过撤销处理时限，请立即联系主管" : ""}
                     {method.revokeLastError ? ` · ${method.revokeLastError}` : ""}
                   </p>
                 )}
@@ -800,11 +800,11 @@ export default function UserDetailPage() {
             { key: "status", label: "状态", render: formatC1DeviceStatus },
             { key: "runtimeStatus", label: "运行态", render: formatC1RuntimeStatus },
             { key: "dailyUsdt", label: "配置日产基准 USDT", numeric: true },
-            { key: "dailyNex", label: "配置日产基准 NEX", numeric: true },
+            { key: "dailyNex", label: "配置日产基准 UVEL", numeric: true },
           ]}
         >
           <Row label="在线 / 活跃">{numberLabel(detail.devices?.onlineCount)} / {numberLabel(detail.devices?.activeCount)}</Row>
-          <Row label="设备配置日产基准（所列记录合计）">{money(detail.devices?.dailyUsdt)} · {numberLabel(detail.devices?.dailyNex)} NEX</Row>
+          <Row label="设备配置日产基准（所列记录合计）">{money(detail.devices?.dailyUsdt)} · {numberLabel(detail.devices?.dailyNex)} UVEL</Row>
           <p className="mt-2 text-[12px]" style={{ color: "var(--v5-ink-4)" }}>含已停用历史记录的配置值，不代表今日实际收益或钱包入账</p>
           {canWriteC2 && asArray(detail.devices?.records).map((device) => {
             const deviceId = asNumber(device.id);
@@ -851,8 +851,8 @@ export default function UserDetailPage() {
             { key: "createdAt", label: "时间", render: formatDate },
           ]}
         >
-          <Row label="收益合计">{money(detail.earnings?.totalUsdt)} · {numberLabel(detail.earnings?.totalNex)} NEX</Row>
-          <Row label="设备配置日产基准（所列记录合计）">{money(detail.earnings?.deviceDailyUsdt)} · {numberLabel(detail.earnings?.deviceDailyNex)} NEX</Row>
+          <Row label="收益合计">{money(detail.earnings?.totalUsdt)} · {numberLabel(detail.earnings?.totalNex)} UVEL</Row>
+          <Row label="设备配置日产基准（所列记录合计）">{money(detail.earnings?.deviceDailyUsdt)} · {numberLabel(detail.earnings?.deviceDailyNex)} UVEL</Row>
           <p className="mt-2 text-[12px]" style={{ color: "var(--v5-ink-4)" }}>含已停用历史记录的配置值，不代表今日实际收益或钱包入账</p>
           <DataListPager label="收益明细" page={earningsPager.page} pageSize={earningsPager.pageSize} total={earningsPager.total} onPageChange={earningsPager.setPage} onPageSizeChange={earningsPager.setPageSize} />
         </HubSection>
@@ -864,7 +864,7 @@ export default function UserDetailPage() {
           columns={[
             { key: "memberNo", label: "成员编码" },
             { key: "nickname", label: "昵称" },
-            { key: "vRank", label: "V-Rank" },
+            { key: "vRank", label: "团队等级" },
             { key: "level", label: "层级", numeric: true },
             { key: "volume", label: "贡献额", numeric: true },
             { key: "createdAt", label: "加入时间", render: formatDate },
@@ -897,7 +897,7 @@ export default function UserDetailPage() {
         )}
 
         <div className="customer-panorama-primary">
-          {detail.vrank && <Section title="V-Rank">
+          {detail.vrank && <Section title="团队等级">
             <Row label="当前等级">{asText(detail.vrank?.currentRank)}</Row>
             <Row label="用户层级">{asText(detail.vrank?.userLevel)}</Row>
             <Row label="团队规模">{numberLabel(detail.vrank?.teamSize)} 人</Row>
@@ -908,7 +908,7 @@ export default function UserDetailPage() {
           {detail.account && <Section title="账户合规">
             <Row label="用户编码">{userNo}</Row>
             <Row label="账户状态"><StatusPill label={statusLabel(status)} tone={statusTone(status)} size="sm" /></Row>
-            <Row label="2FA">{summary.twoFactorEnabled == null ? "-" : summary.twoFactorEnabled ? "已开启" : "未开启"}</Row>
+            <Row label="两步验证">{summary.twoFactorEnabled == null ? "-" : summary.twoFactorEnabled ? "已开启" : "未开启"}</Row>
             <Row label="需重置密码">{summary.passwordResetRequired == null ? "-" : summary.passwordResetRequired ? "是" : "否"}</Row>
           </Section>}
         </div>
@@ -927,7 +927,7 @@ export default function UserDetailPage() {
           emptyText="暂无兑换/转换账单"
         >
           <Row label="钱包 USDT">{money((detail.financial?.wallet as JsonRecord | undefined)?.usdt)}</Row>
-          <Row label="钱包 NEX">{numberLabel((detail.financial?.wallet as JsonRecord | undefined)?.nex)} NEX</Row>
+          <Row label="钱包 UVEL">{numberLabel((detail.financial?.wallet as JsonRecord | undefined)?.nex)} UVEL</Row>
           <Row label="质押记录">{Array.isArray(detail.financial?.stakingLedgerRows) ? numberLabel(detail.financial.stakingLedgerRows.length) : "-"} 条</Row>
         </HubSection>
 
@@ -960,7 +960,7 @@ export default function UserDetailPage() {
             { key: "orderNo", label: "订单号" },
             { key: "skuName", label: "商品", render: (value, row) => orderSkuBrandText(asText(row.skuId), displayValue(value)) },
             { key: "amount", label: "金额", numeric: true },
-            { key: "state", label: "状态" },
+            { key: "state", label: "状态", render: (value) => ({ placed: "待付款", paid: "已付款", provisioning: "设备开通中", activated: "已开通", payment_failed: "付款失败", expired: "已过期", provisioning_failed: "开通失败", cancelled: "已取消", refunded: "已退款", chargeback: "已拒付" } as Record<string,string>)[asText(value)] ?? "订单状态待核实" },
             { key: "dcLocation", label: "机房" },
             { key: "orderedAt", label: "下单时间", render: formatDate },
           ]}

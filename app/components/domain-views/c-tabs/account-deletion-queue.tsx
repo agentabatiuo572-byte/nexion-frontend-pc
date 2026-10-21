@@ -232,7 +232,7 @@ export function AccountDeletionQueue({ toast }: { toast: (message: string) => vo
   return (
     <section className="l-card" data-testid="account-deletion-queue">
       <div className="l-h">
-        <div><div className="ttl">账号注销申请</div><div className="sub">服务端权威状态 · user_c1_read / user_c1_write · 每次写入均要求理由与 CAS</div></div>
+        <div><div className="ttl">账号注销申请</div><div className="sub">状态以系统记录为准；处理申请需有相应权限并填写理由，提交时检查记录是否已变化</div></div>
         <div className="r">
           <select aria-label="注销申请状态筛选" value={status} onChange={(event) => changeStatus(event.target.value as AccountDeletionStatus | "")}>
             <option value="">全部状态</option>
@@ -247,7 +247,7 @@ export function AccountDeletionQueue({ toast }: { toast: (message: string) => vo
           <table className="l-tbl"><thead><tr><th>申请号</th><th>用户</th><th>状态</th><th>版本</th><th>申请时间</th><th>理由</th></tr></thead><tbody>
             {rows.map((row) => <tr key={row.requestNo} className="click" onClick={() => void openDetail(row)}>
               <td className="mono">{row.requestNo}</td><td className="mono">{row.userId}</td>
-              <td><span className={`bdg ${tone(row.status)}`}>{LABELS[row.status] ?? row.status}</span></td>
+              <td><span className={`bdg ${tone(row.status)}`}>{LABELS[row.status] ?? "申请状态待核实"}</span></td>
               <td className="mono">{row.version}</td><td>{date(row.requestedAt)}</td><td>{row.reason || "—"}</td>
             </tr>)}
           </tbody></table>
@@ -263,8 +263,8 @@ export function AccountDeletionQueue({ toast }: { toast: (message: string) => vo
           </>}
         </div>}
         {detailReady && <>
-        <div className="kv"><span className="k">状态</span><span className="v">{LABELS[selected.status] ?? selected.status}</span></div>
-        <div className="kv"><span className="k">CAS 版本</span><span className="v mono">{selected.version}</span></div>
+        <div className="kv"><span className="k">状态</span><span className="v">{LABELS[selected.status] ?? "申请状态待核实"}</span></div>
+        <div className="kv"><span className="k">修改版本</span><span className="v mono">{selected.version}</span></div>
         <div className="kv"><span className="k">申请时间</span><span className="v">{date(selected.requestedAt)}</span></div>
         <div className="kv"><span className="k">审核时间</span><span className="v">{date(selected.reviewedAt)}</span></div>
         <div className="kv"><span className="k">完成时间</span><span className="v">{date(selected.completedAt)}</span></div>

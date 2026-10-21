@@ -39,7 +39,7 @@ test("C2 distinguishes A2 proposal-only actors from direct executors", () => {
   assert.match(actionSource, /if \(!freezeProposalOnly\)/);
   assert.match(actionSource, /确认(?:执行)?前业务状态不变/);
   assert.match(actionSource, /updateUserStatus\(id, "FROZEN", reasonCode/);
-  assert.match(actionSource, /财务\/风控\/客服\/超管均直接执行/);
+  assert.match(actionSource, /财务\/风控\/客服\/超级管理员均直接执行/);
   assert.match(actionSource, /revokeUserSessions\(id, reason, OPERATOR\(\)\)/);
 });
 
@@ -55,7 +55,7 @@ test("C2 collects structured reasons, exact TTLs and expiry", () => {
 test("impersonation uses a dedicated server token and read-only mirror", () => {
   assert.match(clientSource, /fetchImpersonationReadonlyView/);
   assert.match(routeSource, /Authorization/);
-  assert.match(actionSource, /claim=\{text\(mirror\.claim\)\}/);
+  assert.match(actionSource, /安全限制：仅可查看用户页面，所有修改请求都会被系统拒绝/);
   assert.match(actionSource, /data-testid="impersonation-countdown"/);
   assert.match(actionSource, /退出并终止模拟会话/);
   assert.match(actionSource, /模拟会话已到期，只读镜像已自动关闭/);

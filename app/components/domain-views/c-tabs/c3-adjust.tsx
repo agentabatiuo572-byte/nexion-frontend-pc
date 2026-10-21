@@ -1,5 +1,8 @@
 "use client";
 
+import { formatC1RiskBand } from "@/lib/admin/c1-detail-display";
+import { nexGridBrandText } from "@/lib/admin/brand-copy";
+
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -112,7 +115,8 @@ function statusTone(row: UserAssetAdjustment) {
 }
 
 function statusLabel(row: UserAssetAdjustment) {
-  return text(row.statusLabel, text(row.status));
+  const label = text(row.statusLabel, "");
+  return /[\u3400-\u9fff]/.test(label) ? label : ({ PENDING_REVIEW: "待复核", PENDING: "待复核", REQUESTED: "已申请", APPROVED: "已执行", REJECTED: "已拒绝", WITHDRAWN: "已撤回", EXPIRED: "已过期", SUSPENDED: "已挂起" } as Record<string,string>)[text(row.status).toUpperCase()] ?? "状态待核实";
 }
 
 function reasonCodeLabel(value: unknown) {
@@ -286,7 +290,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         : amountUsd > maxAmount
           ? `单笔金额不得超过 ${formatNumber(maxAmount)} USDT 等值`
           : asset === "NEX" && nexUsdRate <= 0
-            ? "当前 NEX 价格不可用，暂不能提交"
+            ? "当前 UVEL 价格不可用，暂不能提交"
             : debitInsufficient
               ? "扣减后余额不足"
               : reasonLength < 8 || reasonLength > 200
@@ -356,8 +360,8 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     const selectionGeneration = contextGeneration.current;
     openConfirm({
       action: supportRequest
-        ? `提交大额调整请求 · ${formatNumber(amount)} ${asset}`
-        : `提交${direction === "CREDIT" ? "增加" : "扣减"}调整申请 · ${formatNumber(amount)} ${asset}`,
+        ? `提交大额调整请求 · ${formatNumber(amount)} ${nexGridBrandText(asset)}`
+        : `提交${direction === "CREDIT" ? "增加" : "扣减"}调整申请 · ${formatNumber(amount)} ${nexGridBrandText(asset)}`,
       detail: supportRequest
         ? `${displayUser(selectedAccount)}；客服不能直接执行超过 500 USDT 等值的调整，本次只生成待独立复核请求，不改变余额。`
         : `${displayUser(selectedAccount)}；本次只生成待放行调整，不改变余额。独立复核员批准后才更新余额并生成关联账单。网络重试或重复提交不会重复入账。`,
@@ -405,7 +409,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     if (!adjustmentNo) return toast("请求编号缺失");
     openActionConfirm({
       action: `${approved ? "批准" : "驳回"}待放行调整 · ${adjustmentNo}`,
-      detail: `${displayRowUser(row)} · ${text(row.direction) === "CREDIT" ? "+" : "−"}${formatNumber(row.amount)} ${text(row.asset)} · ${text(row.reason)}`,
+      detail: `${displayRowUser(row)} · ${text(row.direction) === "CREDIT" ? "+" : "−"}${formatNumber(row.amount)} ${nexGridBrandText(text(row.asset))} · ${text(row.reason)}`,
       amplifies: approved && text(row.direction).toUpperCase() === "CREDIT",
       reasonMin: 8,
       reasonMax: 200,
@@ -439,7 +443,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     if (!adjustmentNo) return toast("请求编号缺失");
     openActionConfirm({
       action: `撤回待放行调整 · ${adjustmentNo}`,
-      detail: "仅发起人可撤回；撤回使用服务端状态 CAS，不改余额、不生成账单，并保留必达审计。",
+      detail: "仅发起人可撤回；撤回使用系统会检查当前状态是否变化，不改余额、不生成账单，并保留必达审计。",
       amplifies: false,
       reasonMin: 8,
       reasonMax: 200,
@@ -516,7 +520,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       <div className="f-stats">
         <div className="f-stat"><div className="k">已执行</div><div className="v">{number(overview?.approved).toLocaleString("en-US")} 笔</div><div className="sub">余额与账单均已落地</div></div>
         <div className="f-stat warn"><div className="k">待放行调整</div><div className="v">{number(overview?.pending).toLocaleString("en-US")} 笔</div><div className="sub">提交后由独立复核员处理</div></div>
-        <div className="f-stat cyan"><div className="k">NEX 价格</div><div className="v">${formatNumber(nexUsdRate || overview?.nexUsdRate)}</div><div className="sub">用于 500 USDT 等值权限判断</div></div>
+        <div className="f-stat cyan"><div className="k">UVEL 价格</div><div className="v">${formatNumber(nexUsdRate || overview?.nexUsdRate)}</div><div className="sub">用于 500 USDT 等值权限判断</div></div>
         <div className="f-stat ok"><div className="k">资金覆盖率</div><div className="v">{formatPercent(coverageRatio)}</div><div className="sub">红线 {formatPercent(redlinePct)}</div></div>
       </div>
 
@@ -568,12 +572,12 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
               {selectedAccount && (
                 <div className="ctint cyan" data-proof="c3-target-card">
                   <b>{displayUser(selectedAccount)}</b> · 用户ID <span className="mono">{accountId(selectedAccount)}</span><br />
-                  状态 {text(selectedAccount.status)} · 风险 {text(selectedAccount.riskBand)} / {text(selectedAccount.riskScore)} · 注册 {formatDate(selectedAccount.registeredAt)}<br />
-                  USDT {formatNumber(selectedAccount.walletUsdt)} · NEX {formatNumber(selectedAccount.walletNex)} · 提现处理中 {formatNumber(context?.pendingWithdraw)} USDT
+                  状态 {({ ACTIVE: "正常", FROZEN: "冻结", RESTRICTED: "受限", BANNED: "禁用" } as Record<string,string>)[text(selectedAccount.status).toUpperCase()] ?? "状态待核实"} · 风险 {formatC1RiskBand(selectedAccount.riskBand)} / {text(selectedAccount.riskScore)} · 注册 {formatDate(selectedAccount.registeredAt)}<br />
+                  USDT {formatNumber(selectedAccount.walletUsdt)} · UVEL {formatNumber(selectedAccount.walletNex)} · 提现处理中 {formatNumber(context?.pendingWithdraw)} USDT
                 </div>
               )}
 
-              <div className="row"><TabGroup label="资产" labelClassName="bf-legend" value={asset} items={ASSETS} onSelect={setAsset} className="chips" itemClassName={(_item, selected) => `chip${selected ? " sel" : ""}`}>{(item) => item}</TabGroup></div>
+              <div className="row"><TabGroup label="资产" labelClassName="bf-legend" value={asset} items={ASSETS} onSelect={setAsset} className="chips" itemClassName={(_item, selected) => `chip${selected ? " sel" : ""}`}>{(item) => nexGridBrandText(item)}</TabGroup></div>
               <div className="row"><TabGroup<Direction> label="方向" labelClassName="bf-legend" value={direction} items={["CREDIT", "DEBIT"]} onSelect={setDirection} className="chips" itemClassName={(_item, selected) => `chip${selected ? " sel" : ""}`}>{(item) => item === "CREDIT" ? "增加" : "扣减"}</TabGroup></div>
               <div className="row"><span className="bf-legend">金额</span><input aria-label="调整金额" value={amountText} onChange={(event) => setAmountText(event.target.value)} inputMode="decimal" style={{ width: 140 }} /><span style={{ fontSize: 12, color: "var(--ink-4)" }}>{asset === "NEX" ? `≈ $${formatUsdEquivalent(amountUsd)}` : "USDT"}</span></div>
               <div className="row"><TabGroup label="原因分类" labelClassName="bf-legend" value={reasonCode} items={REASON_CODES.map(([code]) => code)} onSelect={setReasonCode} className="chips" itemClassName={(_item, selected) => `chip${selected ? " sel" : ""}`}>{(code) => REASON_CODES.find(([value]) => value === code)?.[1]}</TabGroup></div>
@@ -598,13 +602,13 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
               <div className="ctint cyan" style={{ marginBottom: 12 }}>请先在上方选择目标账户,选定后此处才展示余额与覆盖率预估。</div>
             )}
             <div className="kv"><span className="k">目标账户</span><span className="v">{displayUser(selectedAccount)}</span></div>
-            <div className="kv"><span className="k">当前余额</span><span className="v mono">{selectedAccount ? `${formatNumber(currentBalance)} ${asset}` : "—"}</span></div>
-            <div className="kv"><span className="k">批准后余额预估</span><span className="v mono" style={{ color: debitInsufficient ? "var(--danger)" : "var(--ink)" }}>{selectedAccount ? `${formatNumber(balanceAfter)} ${asset}` : "—"}</span></div>
+            <div className="kv"><span className="k">当前余额</span><span className="v mono">{selectedAccount ? `${formatNumber(currentBalance)} ${nexGridBrandText(asset)}` : "—"}</span></div>
+            <div className="kv"><span className="k">批准后余额预估</span><span className="v mono" style={{ color: debitInsufficient ? "var(--danger)" : "var(--ink)" }}>{selectedAccount ? `${formatNumber(balanceAfter)} ${nexGridBrandText(asset)}` : "—"}</span></div>
             <div className="kv"><span className="k">USDT 等值</span><span className="v mono">{selectedAccount ? `$${formatUsdEquivalent(amountUsd)}` : "—"}</span></div>
             <div className="kv"><span className="k">当前覆盖率</span><span className="v">{selectedAccount ? formatPercent(coverageRatio) : "—"}</span></div>
             <div className="kv"><span className="k">批准后覆盖率预估</span><span className="v" style={{ color: selectedAccount && (creditCoverageUnavailable || creditBelowRedline) ? "var(--danger)" : "var(--success)" }}>{selectedAccount ? formatPercent(projectedCoverage) : "—"}</span></div>
             <div className="kv"><span className="k">红线</span><span className="v">{selectedAccount ? formatPercent(redlinePct) : "—"}</span></div>
-            <div className="ctint cyan" style={{ marginTop: 14 }}><b>复核闭环</b> · 提交仅落待放行申请与必达审计；独立复核员批准后，才原子完成余额更新、财务账单与两类业务事件。</div>
+            <div className="ctint cyan" style={{ marginTop: 14 }}><b>复核处理流程</b> · 提交时仅创建待复核申请并保存操作记录；独立复核员批准后，才同时更新余额、账单和相关业务事件。</div>
           </div>
         </section>
       </div>
@@ -618,7 +622,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
                 {requests.records.map((row) => (
                   <tr key={text(row.adjustmentNo)}>
                     <td className="mono">{text(row.adjustmentNo)}</td><td>{displayRowUser(row)}</td>
-                    <td className="mono">{text(row.direction) === "CREDIT" ? "+" : "−"}{formatNumber(row.amount)} {text(row.asset)}（${formatUsdEquivalent(row.amountUsd)}）</td>
+                    <td className="mono">{text(row.direction) === "CREDIT" ? "+" : "−"}{formatNumber(row.amount)} {nexGridBrandText(text(row.asset))}（${formatUsdEquivalent(row.amountUsd)}）</td>
                     <td>{text(row.reason)}</td><td className="mono">{text(row.evidenceRef)}</td><td>{text(row.maker)}</td>
                     <td style={{ textAlign: "right" }}><span style={{ display: "inline-flex", gap: 6 }}>
                       {canCreate && text(row.maker).toLowerCase() === OPERATOR().toLowerCase() && <button className="l-btn sm" disabled={busy} onClick={() => withdrawRequest(row)}>撤回</button>}
@@ -643,7 +647,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       </section>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">调整历史</span><span className="sub">· 已执行与已拒绝记录</span><div className="r"><TabGroup label="调整历史资产筛选" value={historyFilter} items={HISTORY_FILTERS} onSelect={(item) => { setHistoryFilter(item); setHistoryPage(1); }} className="chips" itemClassName={(_item, selected) => `chip${selected ? " sel" : ""}`}>{(item) => item}</TabGroup></div></div>
+        <div className="l-h"><span className="ttl">调整历史</span><span className="sub">· 已执行与已拒绝记录</span><div className="r"><TabGroup label="调整历史资产筛选" value={historyFilter} items={HISTORY_FILTERS} onSelect={(item) => { setHistoryFilter(item); setHistoryPage(1); }} className="chips" itemClassName={(_item, selected) => `chip${selected ? " sel" : ""}`}>{(item) => nexGridBrandText(item)}</TabGroup></div></div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 1120 }}>
             <thead><tr><th>调整单</th><th>账户</th><th>资产</th><th className="num">增减</th><th>原因</th><th>证据</th><th>状态</th><th>账单</th><th>时间</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
@@ -654,8 +658,8 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
                 return (
                   <tr key={text(row.adjustmentNo)} className="click" onClick={() => openDetail(row)}>
                     <td className="mono" style={{ fontWeight: 700, color: "var(--ink)" }}>{text(row.adjustmentNo)} <span style={{ fontSize: 10.5, color: "var(--c-ac)" }}>详情›</span></td>
-                    <td>{displayRowUser(row)}</td><td><span className="bdg dim">{text(row.asset)}</span></td>
-                    <td className="num mono" style={{ fontWeight: 700, color: row.credit ? "var(--success)" : "var(--danger)" }}>{sign}{formatNumber(row.amount)} {text(row.asset)}</td>
+                    <td>{displayRowUser(row)}</td><td><span className="bdg dim">{nexGridBrandText(text(row.asset))}</span></td>
+                    <td className="num mono" style={{ fontWeight: 700, color: row.credit ? "var(--success)" : "var(--danger)" }}>{sign}{formatNumber(row.amount)} {nexGridBrandText(text(row.asset))}</td>
                     <td style={{ fontSize: 12 }}>{text(row.reason)}</td><td className="mono" style={{ fontSize: 11.5 }}>{text(row.evidenceRef)}</td>
                     <td><span className={`bdg ${statusTone(row)}`}>{statusLabel(row)}</span>{row.reversalOf && <span className="bdg cyan" style={{ marginLeft: 6 }}>冲正单</span>}{row.reversedBy && <span className="bdg dim" style={{ marginLeft: 6 }}>已冲正</span>}</td>
                     <td onClick={(event) => event.stopPropagation()}>{row.ledgerId && canReadLedger ? <Link href={`/finance/ledger?bizNo=${encodeURIComponent(text(row.adjustmentNo, ""))}`} className="mono" style={{ color: "var(--c-ac)" }}>#{text(row.ledgerId)} →</Link> : row.ledgerId ? <span title="当前角色无账本查看权限">已生成</span> : "—"}</td>
@@ -674,11 +678,11 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       <p className="f-foot"><b>余额调整用于纠错与补偿</b>。提交后等待独立复核；只有批准才生效并记账；拒绝时不改余额；冲正以新的反向记录完成，不覆盖历史。</p>
 
       {detailRow && (
-        <Drawer title={`调整单明细 · ${text(detailRow.adjustmentNo)}`} sub={`${displayRowUser(detailRow)} · ${text(detailRow.asset)}`} onClose={() => { setDetail(null); setDetailFallback(null); }} footer={detailRow.ledgerId && canReadLedger ? <Link className="l-btn" style={{ flex: 1, justifyContent: "center" }} href={`/finance/ledger?bizNo=${encodeURIComponent(text(detailRow.adjustmentNo, ""))}`}>定位关联账单 →</Link> : undefined}>
+        <Drawer title={`调整单明细 · ${text(detailRow.adjustmentNo)}`} sub={`${displayRowUser(detailRow)} · ${nexGridBrandText(text(detailRow.asset))}`} onClose={() => { setDetail(null); setDetailFallback(null); }} footer={detailRow.ledgerId && canReadLedger ? <Link className="l-btn" style={{ flex: 1, justifyContent: "center" }} href={`/finance/ledger?bizNo=${encodeURIComponent(text(detailRow.adjustmentNo, ""))}`}>定位关联账单 →</Link> : undefined}>
           {detailLoading && <div className="ctint" style={{ marginBottom: 12 }}>明细加载中...</div>}
           <div className="kv"><span className="k">状态</span><span className="v"><span className={`bdg ${statusTone(detailRow)}`}>{statusLabel(detailRow)}</span></span></div>
-          <div className="kv"><span className="k">金额</span><span className="v">{text(detailRow.direction) === "CREDIT" ? "+" : "−"}{formatNumber(detailRow.amount)} {text(detailRow.asset)}（${formatUsdEquivalent(detailRow.amountUsd)}）</span></div>
-          <div className="kv"><span className="k">执行后余额</span><span className="v">{formatNumber(detailRow.balanceAfter)} {text(detailRow.asset)}</span></div>
+          <div className="kv"><span className="k">金额</span><span className="v">{text(detailRow.direction) === "CREDIT" ? "+" : "−"}{formatNumber(detailRow.amount)} {nexGridBrandText(text(detailRow.asset))}（${formatUsdEquivalent(detailRow.amountUsd)}）</span></div>
+          <div className="kv"><span className="k">执行后余额</span><span className="v">{formatNumber(detailRow.balanceAfter)} {nexGridBrandText(text(detailRow.asset))}</span></div>
           <div className="kv"><span className="k">原因分类</span><span className="v">{reasonCodeLabel(detailRow.reasonCode)}</span></div>
           <div className="kv"><span className="k">详细原因</span><span className="v">{text(detailRow.reason)}</span></div>
           <div className="kv"><span className="k">证据引用</span><span className="v mono">{text(detailRow.evidenceRef)}</span></div>

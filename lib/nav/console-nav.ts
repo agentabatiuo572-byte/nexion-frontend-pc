@@ -120,8 +120,8 @@ export const CONSOLE_NAV: NavDomain[] = [
     l2: [
       { id: "C1", name: "查找用户与查看资料", path: "/users/search", prdAnchor: "C1", batch: "V1", status: "flagship" },
       { id: "C2", name: "账户操作", path: "/users/actions", prdAnchor: "C2", batch: "V1", status: "flagship" },
-      { id: "C3", name: "余额 & 资产调整", path: "/users/assets", prdAnchor: "C3", batch: "V1", status: "flagship" },
-      { id: "C5", name: "安全 & 会话", path: "/users/security", prdAnchor: "C5", batch: "V1", status: "flagship" },
+      { id: "C3", name: "余额与资产调整", path: "/users/assets", prdAnchor: "C3", batch: "V1", status: "flagship" },
+      { id: "C5", name: "安全与登录设备", path: "/users/security", prdAnchor: "C5", batch: "V1", status: "flagship" },
       { id: "C6", name: "注册与登录风险", path: "/users/reg-risk", prdAnchor: "C6", batch: "V1", status: "flagship" },
     ],
   },

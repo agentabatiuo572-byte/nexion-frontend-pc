@@ -82,7 +82,7 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
       <p>读取证据不会修改通知。校正时间需要单独确认，已读状态保持不变。</p>
       {notice && <p role="status">{notice}</p>}
       {pending && canCorrect && actorKey && <div role="status">
-        <p>原校正请求尚未收敛。重试将保留原证据、理由和请求号。</p>
+        <p>原校正请求结果尚未确认。重试将保留原证据、理由和请求号。</p>
         <p>原理由：{pending.reason}</p><p>请求号：{pending.commandKey}</p>
         <button type="button" disabled={submitting} onClick={() => void submit(pending.reason)}>重试原校正</button>
       </div>}

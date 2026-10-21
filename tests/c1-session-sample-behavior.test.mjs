@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { formatBusinessTime } from "../lib/admin/business-time.ts";
+import { platformSessionDeviceText } from "../lib/admin/brand-copy.ts";
 
 const source = readFileSync(new URL("../app/_console/users/search/[id]/page.tsx", import.meta.url), "utf8");
 const ast = ts.createSourceFile("page.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -18,7 +20,7 @@ let section;
 function findSection(node) {
   if (ts.isJsxElement(node) && node.openingElement.tagName.getText(ast) === "Section"
     && node.openingElement.attributes.properties.some(attr => ts.isJsxAttribute(attr)
-      && attr.name.text === "title" && attr.initializer?.text === "安全 & 会话")) section = node;
+      && attr.name.text === "title" && attr.initializer?.text === "安全与登录设备")) section = node;
   ts.forEachChild(node, findSection);
 }
 findSection(page);
@@ -71,6 +73,8 @@ function harness(sessions) {
     },
     fmtNum: String,
     formatC1SessionStatus: labels.formatC1SessionStatus,
+    platformSessionDeviceText,
+    formatBusinessTime,
     KpiStatCard: props => element("span", { children: [props.label, props.value] }),
     StatusPill: props => element("span", { children: props.label }),
     TabGroup: props => element("div", { children: props.items.map(value => element("button", {

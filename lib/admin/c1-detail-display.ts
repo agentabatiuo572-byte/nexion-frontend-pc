@@ -50,7 +50,7 @@ const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
   TEAM: "团队",
   STAKING: "质押",
   MARKET: "市场",
-  GENESIS: "Genesis",
+  GENESIS: "创世设备",
 };
 
 /** 推送状态。 */
@@ -114,5 +114,9 @@ export function formatC1ReadFlag(value: unknown) {
   if (!raw) return "未读";
   if (raw === "READ" || raw === "TRUE" || raw === "1" || raw === "YES") return "已读";
   if (raw === "UNREAD" || raw === "FALSE" || raw === "0" || raw === "NO") return "未读";
-  return raw;
+  return "已读状态待核实";
+}
+
+export function formatC1RiskBand(value: unknown) {
+  return ({ LOW: "低风险", MEDIUM: "中风险", HIGH: "高风险", CRITICAL: "极高风险", NONE: "未分档", UNKNOWN: "未分档" } as Record<string,string>)[String(value ?? "").toUpperCase()] ?? "未分档";
 }
