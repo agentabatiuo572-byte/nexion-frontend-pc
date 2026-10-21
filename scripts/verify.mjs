@@ -332,6 +332,7 @@ const GEARS = [
   ["E domain pending-store contract", "node", ["--test", "tests/e-pending-store-contract.test.mjs"]],
   ["E2 task status preservation contract", "node", ["--test", "tests/e2-task-status-preservation-contract.test.mjs"]],
   ["H8 pending-store contract", "node", ["--test", "tests/h8-pending-store-contract.test.mjs"]],
+  ["H8 targeted settlement", "node", ["--experimental-strip-types", "--test", "tests/h8-targeted-settlement.test.mjs"]],
   ["J emergency pending-store contract", "node", ["--experimental-strip-types", "--test", "tests/j-emergency-pending-store-contract.test.mjs"]],
   ["endpoint citation ledger", "node", ["scripts/endpoint-citation-sentinel.mjs"]],
   // 提现单主键线上真名(`withdrawalNo`)在 PRD 与 admin 实现之间的 parity:后台 PRD 一度写成

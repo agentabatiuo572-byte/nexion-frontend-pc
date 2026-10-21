@@ -56,7 +56,7 @@ test("H8 A2 proposal freezes the exact H8 and H1 reward snapshot until replay", 
 });
 
 test("H8 PC proposal and A2 guard share one canonical pending-settlement context", () => {
-  assert.match(h8, /action: "执行邀请奖励真实结算"[\s\S]*?obj: "待结算邀请批次"[\s\S]*?sourceDomain: "H8"/);
+  assert.match(h8, /action: targeted \? "执行指定新人邀请奖励结算" : "执行邀请奖励真实结算"[\s\S]*?obj: targeted \? `新人 \$\{invitedUserId\}` : "待结算邀请批次"[\s\S]*?sourceDomain: "H8"/);
   assert.match(registry, /op: "h8_referral_settlement"[\s\S]*?domain: "H"[\s\S]*?targetType: "referral_settlement_batch"[\s\S]*?id: "pending"/);
   assert.match(a2BusinessGuard, /delegatedHDescriptor\(operation, params\)/);
   assert.match(a2BusinessGuard, /"h8_referral_settlement"[\s\S]*?"执行邀请奖励真实结算"[\s\S]*?"待结算邀请批次"[\s\S]*?"H8"[\s\S]*?"fund"[\s\S]*?"referral_settlement_batch", "pending"/);
