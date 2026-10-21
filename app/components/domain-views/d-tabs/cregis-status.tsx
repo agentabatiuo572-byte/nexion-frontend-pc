@@ -106,8 +106,9 @@ function payoutSwitchText(row: ExceptionRow, unknownText = "保持现值"): stri
     : row.payoutEnabled === false || row.payoutEnabled === 0 ? "关" : unknownText;
 }
 
+const cregisStateText = (value: unknown) => ({ IDLE: "地址创建空闲", BUSY: "正在创建地址", BLOCKED: "风险暂停", DISABLED: "未启用支付商收款", MISSING: "控制配置缺失", UNKNOWN: "创建结果待核实", PROVISIONING: "地址创建中", VERIFYING: "地址核验中", UNATTRIBUTED_HOLD: "未归属充值待处理", RETIRED_HOLD: "停用地址充值待处理", DUST_HOLD: "低额充值待处理", REVIEW_HOLD: "大额充值待复核", REORG_INVESTIGATING: "链重组调查中", PROVIDER_CONFLICT_HOLD: "支付商与链上记录冲突待处理", PROVIDER_MISSING: "支付商缺单待核对", CHAIN_MISMATCH_HOLD: "链上记录不符待核对", RUNNING: "对账中", COMPLETE: "完整对账完成", INCOMPLETE: "对账未完成", MAKER_DONE: "待另一管理员复核", RESOLVED: "复核处理完成", REJECTED: "已驳回" } as Record<string,string>)[String(value)] ?? "状态待核实";
 function rowSummary(row: ExceptionRow) {
-  return [row.id == null ? null : `#${row.id}`, row.state ?? row.status,
+  return [row.id == null ? null : `#${row.id}`, row.state == null && row.status == null ? null : cregisStateText(row.state ?? row.status),
     row.address, row.cid == null ? null : `CID ${row.cid}`, row.txid,
     row.ageSeconds == null ? null : `等待 ${row.ageSeconds} 秒`,
     row.lastError ?? row.last_error].filter((part) => part != null && part !== "").join(" · ");
@@ -189,7 +190,7 @@ function CregisDepositHistory() {
             <td className="num mono">{String(row.feeAmount)}</td>
             <td className="num mono">{String(row.netAmount)}</td>
             <td className="mono">{row.confirmations}</td>
-            <td><span className={`bdg ${row.status === "CREDITED" && row.depositNo ? "ok" : row.status.endsWith("HOLD") || row.status === "REORG_INVESTIGATING" ? "bad" : "warn"}`}>{row.status === "CREDITED" && !row.depositNo ? "入账记录异常" : DEPOSIT_STATUS[row.status] ?? row.status}</span></td>
+            <td><span className={`bdg ${row.status === "CREDITED" && row.depositNo ? "ok" : row.status.endsWith("HOLD") || row.status === "REORG_INVESTIGATING" ? "bad" : "warn"}`}>{row.status === "CREDITED" && !row.depositNo ? "入账记录异常" : DEPOSIT_STATUS[row.status] ?? "充值状态待核实"}</span></td>
             <td className="mono">{String(row.createdAt).replace("T", " ")}<div className="sub">{row.creditedAt ? `入账 ${String(row.creditedAt).replace("T", " ")}` : "尚未入账"}</div></td>
           </tr>)}</tbody>
       </table></div>
@@ -321,17 +322,17 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
           )}>补充收款地址</button>}
         </div>
         <div className="f-stats cregis-overview">
-          <div className="f-stat"><div className="k">地址分配</div><div className={`v ${data.provisionGate.assignEnabled ? "" : "cregis-off"}`}>{data.provisionGate.assignEnabled ? "已开启" : "已关闭"}</div><div className="sub">{data.provisionGate.state} · {data.provisionGate.updatedAt ?? "更新时间未知"}</div></div>
+          <div className="f-stat"><div className="k">地址分配</div><div className={`v ${data.provisionGate.assignEnabled ? "" : "cregis-off"}`}>{data.provisionGate.assignEnabled ? "已开启" : "已关闭"}</div><div className="sub">{cregisStateText(data.provisionGate.state)} · {data.provisionGate.updatedAt ?? "更新时间未知"}</div></div>
           <div className="f-stat"><div className="k">自动入账</div><div className={`v ${data.provisionGate.creditEnabled ? "" : "cregis-off"}`}>{data.provisionGate.creditEnabled ? "已开启" : "已关闭"}</div><div className="sub">以资金开关为准 · 版本 {data.provisionGate.version ?? "未知"}</div></div>
           <div className="f-stat"><div className="k">未决资金</div><div className="v">{String(data.unresolvedExposureUsdt ?? "未知")} <small>USDT</small></div><div className="sub">已验签待处理回调 {data.pendingAcceptedDeliveries ?? "未知"}</div></div>
-          <div className={`f-stat ${(data.openRiskAlertCount ?? 0) > 0 ? "warn" : ""}`}><div className="k">未解除 P0/P1 告警</div><div className="v">{data.openRiskAlertCount ?? "未知"}</div><div className="sub">链上出款：{payoutSwitchText(data.provisionGate, "未知")}</div></div>
+          <div className={`f-stat ${(data.openRiskAlertCount ?? 0) > 0 ? "warn" : ""}`}><div className="k">未解除的紧急与严重告警</div><div className="v">{data.openRiskAlertCount ?? "未知"}</div><div className="sub">链上出款：{payoutSwitchText(data.provisionGate, "未知")}</div></div>
         </div>
         <div className="cregis-recon">
           <span>最近完整对账：<strong>{data.reconcileRuns?.find((row) => row.status === "COMPLETE")?.completedAt?.toString() ?? "尚无"}</strong></span>
           <details><summary>查看最近对账与告警（{data.openRiskAlertCount ?? "未知"}）</summary>
-            {data.reconcileRuns?.slice(0, 3).map((row, index) => <div className="s" key={`recon-${index}`}>对账 {String(row.status ?? "未知")} · {String(row.completedAt ?? row.startedAt ?? "时间未知")}{row.failureCode ? ` · ${String(row.failureCode)}` : ""}</div>)}
+            {data.reconcileRuns?.slice(0, 3).map((row, index) => <div className="s" key={`recon-${index}`}>对账 {cregisStateText(row.status)} · {String(row.completedAt ?? row.startedAt ?? "时间未知")}{row.failureCode ? ` · ${String(row.failureCode)}` : ""}</div>)}
             <div className="s">未解除告警：已载入 {alerts.length} / {data.openRiskAlertCount ?? "未知"}</div>
-            {alerts.map((row) => <div className="s" key={`risk-${row.id}`}>{rowSummary(row)} · {String(row.severity)} · {String(row.kind)} · {String(row.evidence)}</div>)}
+            {alerts.map((row) => <div className="s" key={`risk-${row.id}`}>{rowSummary(row)} · {({ P0: "紧急", P1: "严重", P2: "警告", P3: "提示" } as Record<string,string>)[String(row.severity)] ?? "风险等级待核实"} · 告警类型编号：{String(row.kind)} · 证据：{String(row.evidence)}</div>)}
             {alerts.length > 0 && alerts.length < (data.openRiskAlertCount ?? 0) && <button className="l-btn sm" disabled={busy} onClick={() => void loadMoreAlerts(Number(alerts[alerts.length - 1].id))}>加载更早告警</button>}
           </details>
         </div>
@@ -342,7 +343,7 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
       {data && <>
         {canManage && <div className="cregis-operations">
         <div className="cregis-panel">
-          <div className="cregis-panel-title">对账与熔断</div>
+          <div className="cregis-panel-title">资金核对与紧急暂停</div>
           <p>对账会读取供应商与 BSC 链上事实；开关提案须由另一管理员复核。</p>
           <button className="l-btn sm" disabled={busy || loading} onClick={() => confirmCommand(
             "立即运行 Cregis 完整对账", "读取供应商和 BSC 链上事实，生成新的对账批次与异常告警。",

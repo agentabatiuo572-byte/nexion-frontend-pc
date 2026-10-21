@@ -31,7 +31,7 @@ test("D5 page fails closed and calculates direction from target values", () => {
 test("D5 displays all H1-owned read-only fields and cross-domain evidence links", () => {
   const page = read("app/components/domain-views/d-tabs/d5-params.tsx");
   // FEAT-WD02:penaltyFeeRate 行已删(费用改为 D5 自有三网络确认费),不再要求展示。
-  for (const term of ["cooldownDays", "complianceHoldEnabled", "source: phase-h1"]) {
+  for (const term of ["cooldownDays", "complianceHoldEnabled", "来源：运营阶段设置"]) {
     assert.match(page, new RegExp(term));
   }
   for (const route of ["/growth/phase", "/overview/dual-ledger", "/finance/withdrawals", "/platform/audit", "/platform/events"]) {

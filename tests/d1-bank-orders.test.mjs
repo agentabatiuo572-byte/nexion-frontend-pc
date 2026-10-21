@@ -101,7 +101,7 @@ findOrderCallbacks(ui); assert.ok(orderLoadCallback && orderRetryCallback);
 const rowScope = { jsx: (type, props, ...children) => ({ type, props, children }) };
 execute(ui.statements.filter(node => (ts.isFunctionDeclaration(node) &&
     ["orderStatusText", "orderVnd", "orderUsdt", "orderTime", "D1BankOrderRow"].includes(node.name?.text))
-  || (ts.isVariableStatement(node) && node.declarationList.declarations.some(item => item.name.getText(ui) === "ORDER_STATUS")))
+  || (ts.isVariableStatement(node) && node.declarationList.declarations.some(item => ["ORDER_STATUS", "originalOrderStatusText", "submissionStatusText", "settlementStatusText", "confirmationSourceText", "providerStatusText"].includes(item.name.getText(ui)))))
   .map(node => node.getText(ui)).join("\n"), rowScope);
 function textOf(node) {
   if (node == null || typeof node === "boolean") return "";
@@ -138,7 +138,7 @@ test("actual renderer keeps manual source and provider rejection after credit, w
     receivedVnd: 527800, receivedAt: "2026-10-04T16:00:00", paymentUrl: null,
     submissionStatus: "REJECTED", providerStatus: null, providerReason: "支付商已拒绝创建", manualCreditAllowed: false,
     confirmationSource: "ADMIN_MANUAL", manualConfirmationNo: "ADM-TEST20" });
-  assert.match(cells[4], /20\.00 USDT人工确认入账/); assert.match(cells[6], /REJECTED.*ADMIN_MANUAL.*ADM-TEST20/);
+  assert.match(cells[4], /20\.00 USDT人工确认入账/); assert.match(cells[6], /支付商拒绝创建.*管理员人工确认.*ADM-TEST20/);
   assert.match(cells[6], /支付商拒绝原因：支付商已拒绝创建/);
   assert.equal(nodes.some(node => node.type === "button"), false);
   assert.match(cells[8], /不可重复确认/);
@@ -148,7 +148,7 @@ test("actual renderer shows only explicit HDPay rejection reasons and generic mi
   const rejected = { status: "FAILED", submissionStatus: "REJECTED", paymentUrl: null };
   for (const status of ["FAILED", "EXPIRED"]) {
     const { cells } = rendered({ ...rejected, status, providerReason: "支付商已拒绝创建" });
-    assert.match(cells[6], /提交 REJECTED.*支付商拒绝原因：支付商已拒绝创建/);
+    assert.match(cells[6], /提交 支付商拒绝创建.*支付商拒绝原因：支付商已拒绝创建/);
   }
   for (const providerReason of [undefined, null, ""]) {
     assert.match(rendered({ ...rejected, providerReason }).cells[6], /支付商拒绝原因：支付商未提供具体原因/);
@@ -534,7 +534,7 @@ for (const stage of ["post-401-response", "post-401-json", "post-200-response", 
       } };
     // Exercise the existing lifecycle, auth reset and owner-clearing store, not a
     // new owner/epoch implementation or a second pending store.
-    for (const path of ["lib/admin/auth-lifecycle.ts", "lib/admin/auth-cookie-lane.ts", "lib/admin/logout-request.ts", "lib/admin/auth-session.ts", "lib/admin/pending-mutation-store.ts"]) {
+    for (const path of ["lib/admin/shell-authorities.ts", "lib/admin/auth-lifecycle.ts", "lib/admin/auth-cookie-lane.ts", "lib/admin/logout-request.ts", "lib/admin/auth-session.ts", "lib/admin/pending-mutation-store.ts"]) {
       execute(authModuleCode(path)
         + (path.endsWith("auth-lifecycle.ts") ? "\nvar epochChangedClass = AdminAuthEpochChangedError;" : ""), runtime);
     }
@@ -652,7 +652,7 @@ function cookieAuthFixture(financeTransport = async () => { throw new Error("une
       state = initializer(set); return { getState: () => state };
     }, logoutAttemptRef: { current: false }, setLoggingOut: () => {},
     currentAdminSession: async () => { throw new Error("logout fixture must complete its real envelope"); } };
-  for (const path of ["lib/admin/auth-lifecycle.ts", "lib/admin/auth-cookie-lane.ts", "lib/admin/logout-request.ts", "lib/admin/auth-session.ts", "lib/admin/pending-mutation-store.ts"]) {
+  for (const path of ["lib/admin/shell-authorities.ts", "lib/admin/auth-lifecycle.ts", "lib/admin/auth-cookie-lane.ts", "lib/admin/logout-request.ts", "lib/admin/auth-session.ts", "lib/admin/pending-mutation-store.ts"]) {
     execute(authModuleCode(path)
       + (path.endsWith("auth-lifecycle.ts") ? "\nvar epochChangedClass = AdminAuthEpochChangedError;" : ""), runtime);
   }
@@ -773,6 +773,7 @@ test("real order recovery finally does not refresh the old component after the a
 test("finance BFF routes only real order paths and rejects wrong read/write methods before auth or transport", async () => {
   const route = parse("app/api/admin/finance/[...path]/route.ts");
   const bff = { Response, cookies: () => { throw new Error("wrong methods must stop before auth"); } };
+  execute(authModuleCode("lib/admin/cregis-exception-routes.ts"), bff);
   execute(route.statements.filter(node => ts.isFunctionDeclaration(node)
     && ["isText", "backendPath", "jsonError", "proxy"].includes(node.name?.text)).map(node => node.getText(route)).join("\n"), bff);
   assert.equal(bff.backendPath(["vietqr", "orders"]), "/api/admin/finance/vietqr/orders");
@@ -781,5 +782,14 @@ test("finance BFF routes only real order paths and rejects wrong read/write meth
   for (const [path, method] of [[["vietqr", "orders"], "POST"], [["vietqr", "orders", "VQR-TEST20", "manual-credit"], "GET"],
     [["vietqr", "orders", "VQR-TEST20", "manual-credit"], "PATCH"]]) {
     const result = await bff.proxy({ method }, { params: Promise.resolve({ path }) }); assert.equal(result.status, 405);
+  }
+});
+
+test("provider confirmation stays distinct from local ledger credit in Chinese status labels", () => {
+  for (const [status, label] of [["0", "支付处理中"], ["1", "支付处理中"], ["3", "支付商已确认付款"], ["4", "支付商终态待核对"], ["5", "支付商终态待核对"]]) {
+    const view = rendered({ providerStatus: status, settlementStatus: "UNSETTLED" });
+    assert.ok(view.cells[6].includes(label));
+    assert.ok(view.cells[6].includes("未入账"));
+    assert.ok(view.cells[4].includes("尚未入账"));
   }
 });

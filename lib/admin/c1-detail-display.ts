@@ -50,7 +50,7 @@ const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
   TEAM: "团队",
   STAKING: "质押",
   MARKET: "市场",
-  GENESIS: "创世设备",
+  GENESIS: "创世节点",
 };
 
 /** 推送状态。 */

@@ -14,7 +14,7 @@ test("D3 binds every canonical read/config/export endpoint", () => {
 });
 
 test("D3 page is water-level oriented and does not calculate or edit B1 coverage", () => {
-  for (const copy of ["资金水位分级", "真实储备明细", "应付负债 · 9 类科目", "到期负债预测", "净敞口曲线"]) {
+  for (const copy of ["资金安全等级", "真实储备明细", "应付负债 · 9 类科目", "到期负债预测", "储备与应付款差额曲线"]) {
     assert.ok(page.includes(copy), `missing ${copy}`);
   }
   assert.doesNotMatch(page, /覆盖率阈值调整|saveThresholds|coverageSeries/);
@@ -76,5 +76,5 @@ test("D3 translates storage identifiers into operator-facing source labels", () 
   assert.match(page, /treasurySourceLabel\(row\.source\)/);
   assert.match(page, /map\(treasurySourceLabel\)/);
   assert.doesNotMatch(page, />\{row\.source\}<\//);
-  assert.match(page, /D3 权威事实来源：\{sourceText/);
+  assert.match(page, /D3 数据来源：\{sourceText/);
 });

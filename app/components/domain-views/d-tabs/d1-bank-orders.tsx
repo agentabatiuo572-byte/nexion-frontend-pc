@@ -14,7 +14,12 @@ const ORDER_STATUS: Record<string, string> = {
   LATE_REVIEW: "逾期回单待核对", RETURN_PENDING: "退回处理中",
 };
 
-function orderStatusText(status: string) { return ORDER_STATUS[status] ?? status; }
+function orderStatusText(status: string) { return ORDER_STATUS[status] ?? "订单状态待核实"; }
+const originalOrderStatusText = (value?: string | null) => value ? ({ AWAITING_PAYMENT: "待付款", EXPIRED: "已过期", CANCELLED: "已取消", RECEIPT_REVIEW: "回单待核对", MISMATCH_REVIEW: "金额或信息不符待核对", LATE_REVIEW: "逾期到账待核对", CREDITED: "已入账", RETURNED: "已登记退回", RETURN_PENDING: "退回处理中" } as Record<string,string>)[value] ?? "原订单状态待核实" : "未提供";
+const submissionStatusText = (value?: string | null) => value ? ({ PENDING: "待提交", SUBMIT_UNKNOWN: "提交结果待核实", CREATED: "付款单已创建", REJECTED: "支付商拒绝创建" } as Record<string,string>)[value] ?? "提交状态待核实" : "未提供";
+const settlementStatusText = (value?: string | null) => value ? ({ UNSETTLED: "未入账", CREDITED: "已入账", MANUAL_REVIEW: "待人工核对" } as Record<string,string>)[value] ?? "入账状态待核实" : "未提供";
+const confirmationSourceText = (value?: string | null) => value ? ({ UNCONFIRMED: "尚未确认", ADMIN_MANUAL: "管理员人工确认", BANK_RECEIPT: "银行回单核实", AUTO_PROVIDER: "支付商自动确认", UNKNOWN: "确认依据待核实" } as Record<string,string>)[value] ?? "确认依据待核实" : "尚未确认";
+const providerStatusText = (value: unknown) => value == null ? "未提供" : ({ "0": "支付处理中", "1": "支付处理中", "3": "支付商已确认付款", "4": "支付商终态待核对", "5": "支付商终态待核对" } as Record<string,string>)[String(value)] ?? "支付商状态待核实";
 function orderVnd(value: number | null) { return value === null ? "—" : `${value.toLocaleString("en-US")} VND`; }
 function orderUsdt(value: number) { return `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 })} USDT`; }
 function orderTime(value: string) { return value ? value.replace("T", " ").slice(0, 19) : "—"; }
@@ -40,10 +45,10 @@ function D1BankOrderRow({ order, blocked, onSettled, ...actions }: OrderActions 
     <td className="num mono">{orderUsdt(order.requestedUsdt)}<div className="sub">应付 {orderVnd(order.payableVnd)} · 锁价 {orderVnd(order.lockedFxRateVndPerUsdt)}/USDT</div></td>
     <td className="num mono">{orderVnd(order.receivedVnd)}<div className="sub">{order.receivedVnd === null ? "—" : orderTime(order.receivedAt)}</div></td>
     <td className="num mono">{credited ? orderUsdt(order.creditedUsdt) : "—"}<div className="sub">{credited ? (order.confirmationSource === "ADMIN_MANUAL" ? "人工确认入账" : "已入账") : "尚未入账"}</div></td>
-    <td><span className={`bdg ${tone}`}>{orderStatusText(order.status)}</span><div className="sub mono">原订单 {order.intentStatus || "—"}</div></td>
-    <td className="mono"><div>提交 {order.submissionStatus || "—"}</div><div className="sub">支付 {order.providerStatus || "—"} · 本地 {order.settlementStatus || "—"}</div>
+    <td><span className={`bdg ${tone}`}>{orderStatusText(order.status)}</span><div className="sub mono">原订单 {originalOrderStatusText(order.intentStatus)}</div></td>
+    <td className="mono"><div>提交 {submissionStatusText(order.submissionStatus)}</div><div className="sub">支付 {providerStatusText(order.providerStatus)} · 本地 {settlementStatusText(order.settlementStatus)}</div>
       {order.paymentRail === "HDPAY" && order.submissionStatus === "REJECTED" && <div className="sub" style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>支付商拒绝原因：{order.providerReason || "支付商未提供具体原因"}</div>}
-      <div className="sub">确认来源 {order.confirmationSource || "尚未确认"}</div><div className="sub mono">{order.manualConfirmationNo}</div></td>
+      <div className="sub">确认来源 {confirmationSourceText(order.confirmationSource)}</div><div className="sub mono">{order.manualConfirmationNo}</div></td>
     <td className="mono"><div>{orderTime(order.createdAt)}</div><div className="sub">截止 {orderTime(order.expiresAt)}</div></td>
     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
       {order.paymentUrl && (actions.busy || blocked ? <span className="bdg dim">正在核对结果，暂不打开付款渠道</span> : <a className="l-btn sm" href={order.paymentUrl} target="_blank" rel="noopener noreferrer">打开付款渠道</a>)}
@@ -104,7 +109,7 @@ export function D1BankOrders({ refreshKey, onRetry, ...actions }: OrderActions &
     finally { if (authEpoch === adminAuthLifecycleEpoch()) { setRetrying(false); await load(); } }
   };
   return <>
-    <div className="l-h"><span className="ttl">全部银行转账订单</span><span className="sub">· MANUAL / HDPay · 每张付款单只展示一次</span></div>
+    <div className="l-h"><span className="ttl">全部银行转账订单</span><span className="sub">· 人工转账 / HDPay · 每张付款单只展示一次</span></div>
     <div className="l-b" style={{ paddingBottom: 8 }}>
       <div className="dtint">包含待付款、创建中、结果未知、失败、过期、取消和已入账订单。订单数量不代表实收或入账；人工确认与支付商自动确认分别留痕，不能重复入账。登记、匹配、核销、退回仍在下方银行回单处置。</div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>

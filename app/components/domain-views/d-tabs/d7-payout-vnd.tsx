@@ -124,14 +124,14 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       detail: <>
         <div>整组配置 v{config.version} → v{config.version + 1}，任何字段失败均不部分生效。</div>
         <div>报价预览：买入 {formatVnd(draftRates.buy)} / 卖出 {formatVnd(draftRates.sell)}。</div>
-        <div>新参数用于新报价；未提交的旧报价须重新报价并确认，已提交订单保留金额快照。</div>
+        <div>新参数用于新报价；未提交的旧报价须重新报价并确认，已提交订单保留提交时确认的金额。</div>
         <div>{amplifies ? "方向：放大资金流出，服务端会强制校验 B1 覆盖率。" : "方向：收紧或中性。"}</div>
         {forceInverted && <div><b>风险：卖出牌价不低于买入牌价，可能形成循环套利空间。</b></div>}
       </>,
       amplifies,
       reasonMin: 8,
       reasonMax: 200,
-      completionCopy: "服务端 CAS 生效并写入 A2 审计",
+      completionCopy: "保存时检查配置是否已变化，并记录到 A2 操作日志",
       run: async (reason) => {
         setBusy(true);
         try {

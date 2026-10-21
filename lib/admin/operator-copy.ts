@@ -1,0 +1,27 @@
+import { nexGridBrandText } from "./brand-copy";
+
+/** Only for system-owned display labels. Never use for request values or authored content. */
+export function operatorCopyText(value: string): string {
+  return nexGridBrandText(value)
+    .replace(/\bstaking\b/gi, "质押")
+    .replace(/\bGenesis\b/g, "创世节点")
+    .replace(/\bTrial\b/g, "试用业务")
+    .replace(/\bqueue\b/gi, "待处理队列")
+    .replace(/\bKPI\b/g, "关键指标")
+    .replace(/\bSLA\b/g, "处理时限")
+    .replace(/\bRBAC\b/g, "角色权限")
+    .replace(/\bAPY\b/g, "年化收益率")
+    .replace(/\bv2\b/g, "第二版")
+    .replace(/schema registry/gi, "事件字段登记表")
+    .replace(/schema/gi, "字段定义")
+    .replace(/\bfamily\b/g, "事件类别")
+    .replace(/OTHER\s*\/\s*UNREGISTERED/g, "其他及未登记类型")
+    .replace(/Day0 接入/g, "首次收益到账")
+    .replace(/Day7 留存/g, "注册满七天后的活跃率")
+    .replace(/幂等键/g, "防重复提交编号")
+    .replace(/冷归档/g, "长期归档")
+    .replace(/用户画像/g, "用户资料")
+    .replace(/熔断/g, "紧急暂停")
+    .replace(/口径/g, "统计规则")
+    .replace(/创世节点\s*排放承诺/g, "创世节点应付分红");
+}

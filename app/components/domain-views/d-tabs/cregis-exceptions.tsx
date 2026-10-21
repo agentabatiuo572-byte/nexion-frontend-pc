@@ -173,7 +173,7 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, owner
   };
   const list = (title: string, path: string, page: ExceptionPage, setter: (page: ExceptionPage) => void, actions: (row: ExceptionRecord) => React.ReactNode) => <section className="cregis-panel">
     <h4>{title}</h4>{page.records.length === 0 ? <p>暂无记录</p> : page.records.map(row => <div className="cregis-case" key={String(row.id)}>
-      <strong>#{label(row.id)} · {STATE[String(row.state ?? row.status)] ?? label(row.state ?? row.status)}</strong><CaseSummary row={row} />{actions(row)}
+      <strong>#{label(row.id)} · {STATE[String(row.state ?? row.status)] ?? "处置状态待核实"}</strong><CaseSummary row={row} />{actions(row)}
     </div>)}{page.hasMore && <button className="l-btn sm" disabled={busy || loading} onClick={() => void pageMore(path, page, setter)}>加载更早{title}</button>}
   </section>;
 
@@ -184,7 +184,7 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, owner
     {policy && <>
       <div className="dtint">异常退款手续费：{MODE[String(policy.mode)]} {policy.mode === "FIXED_USDT" ? `${label(policy.feeUsdt)} USDT` : ""} · 版本 {label(policy.version)}
         {canRefund && <button className="l-btn sm" disabled={busy || loading} onClick={configureFee}>配置退款手续费</button>}</div>
-      {policyCases.map(row => <div className="cregis-case" key={label(row.id)}>费用提案 #{label(row.id)} · {MODE[String(row.mode)]} · 固定费 {label(row.feeUsdt)} USDT · {STATE[String(row.state ?? row.status)] ?? label(row.state ?? row.status)} · 发起人 {label(row.makerId)}
+      {policyCases.map(row => <div className="cregis-case" key={label(row.id)}>费用提案 #{label(row.id)} · {MODE[String(row.mode)]} · 固定费 {label(row.feeUsdt)} USDT · {STATE[String(row.state ?? row.status)] ?? "处置状态待核实"} · 发起人 {label(row.makerId)}
         {canRefund && caseCanCheck(row, session?.adminId) && ["APPROVE", "REJECT"].map(decision => <button key={decision} className="l-btn sm" disabled={busy || loading} onClick={() => confirm(decision === "APPROVE" ? "复核费用规则" : "拒绝费用规则", `/refunds/fee-policy/cases/${exceptionId(row.id)}/decision`, { expectedVersion: exceptionVersion(row.version), decision }, `请独立核对费用规则 ${MODE[String(row.mode)]}、固定费用 ${label(row.feeUsdt)} USDT。`)}>{decision === "APPROVE" ? "复核费用规则" : "拒绝"}</button>)}
       </div>)}
       {canManage && <div className="cregis-case">

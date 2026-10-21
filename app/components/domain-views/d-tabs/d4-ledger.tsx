@@ -1,4 +1,5 @@
 "use client";
+import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -50,7 +51,7 @@ function assetAmount(value: number, asset: string) {
 }
 
 function signed(row: D4Bill) {
-  return `${row.direction === "IN" || row.direction === "CREDIT" ? "+" : "-"}${assetAmount(row.amount, row.asset)} ${row.asset}`;
+  return `${row.direction === "IN" || row.direction === "CREDIT" ? "+" : "-"}${assetAmount(row.amount, row.asset)} ${nexGridBrandText(row.asset)}`;
 }
 
 function timeText(value?: string) {
@@ -273,8 +274,8 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
                       <td><span className="mono">{row.userNo}</span>{row.nickname && <div style={{ color: "var(--ink-4)", fontSize: 11 }}>{row.nickname}</div>}</td>
                       <td><span className="bdg dim">{BILL_TYPE_LABELS[row.billType]}</span></td><td>{formatD4Subtype(row.subtype)}</td>
                       <td className="num mono" style={{ color: row.direction === "IN" || row.direction === "CREDIT" ? "var(--success)" : "var(--negative)", fontWeight: 700 }}>{signed(row)}</td>
-                      <td className="num mono">{assetAmount(row.balanceAfter, row.asset)} {row.asset}</td>
-                      <td><span className={`bdg ${tone(row)}`}>{BILL_STATUS_LABELS[row.status.toUpperCase()] ?? row.status}</span></td>
+                      <td className="num mono">{assetAmount(row.balanceAfter, row.asset)} {nexGridBrandText(row.asset)}</td>
+                      <td><span className={`bdg ${tone(row)}`}>{BILL_STATUS_LABELS[row.status.toUpperCase()] ?? "账单状态待核实"}</span></td>
                       <td style={{ color: "var(--ink-4)" }}><D4RemarkCell value={row.remark} /></td><td className="mono" style={{ color: "var(--ink-4)" }}>{timeText(row.createdAt)}</td>
                       <td style={{ textAlign: "right" }}><button className="l-btn sm" onClick={() => { setUserInput(String(row.userId)); setSelectedUserId(row.userId); }}>查看账户</button></td>
                     </tr>
@@ -301,16 +302,16 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
             <div className="dtint cyan">{userLabel(userLedger)} · 全量 {userLedger.total} 笔；当前余额独立读取用户钱包</div>
             <div className="sum-grid">
               <div className="s"><div className="k">USDT 当前余额</div><div className="v">{assetAmount(userLedger.balance.USDT, "USDT")}</div></div>
-              <div className="s"><div className="k">NEX 当前余额</div><div className="v">{assetAmount(userLedger.balance.NEX, "NEX")}</div></div>
-              {Object.entries(userLedger.categoryTotals).map(([key, value]) => { const [kind, asset] = key.split(":"); return <div className="s" key={key}><div className="k">{BILL_TYPE_LABELS[kind as D4BillType] ?? kind} · {asset}</div><div className="v">{assetAmount(value, asset)}</div></div>; })}
+              <div className="s"><div className="k">UVEL 当前余额</div><div className="v">{assetAmount(userLedger.balance.NEX, "NEX")}</div></div>
+              {Object.entries(userLedger.categoryTotals).map(([key, value]) => { const [kind, asset] = key.split(":"); return <div className="s" key={key}><div className="k">{BILL_TYPE_LABELS[kind as D4BillType] ?? "其他业务"} · {nexGridBrandText(asset)}</div><div className="v">{assetAmount(value, asset)}</div></div>; })}
             </div>
-            {userLedger.rows.length === 0 ? <div className="dtint">该用户暂无资金账单；当前余额仍以钱包记录为准。</div> : userLedger.rows.map((row) => <div className="rb-row" key={row.id}><span className="mono" style={{ color: "var(--ink-4)" }}>{timeText(row.createdAt)}</span><span>{BILL_TYPE_LABELS[row.billType]} · {row.bizNo}</span><span className="mono" style={{ fontWeight: 700 }}>{signed(row)}</span><span className="mono">余 {assetAmount(row.balanceAfter, row.asset)} {row.asset}</span></div>)}
+            {userLedger.rows.length === 0 ? <div className="dtint">该用户暂无资金账单；当前余额仍以钱包记录为准。</div> : userLedger.rows.map((row) => <div className="rb-row" key={row.id}><span className="mono" style={{ color: "var(--ink-4)" }}>{timeText(row.createdAt)}</span><span>{BILL_TYPE_LABELS[row.billType]} · {row.bizNo}</span><span className="mono" style={{ fontWeight: 700 }}>{signed(row)}</span><span className="mono">余 {assetAmount(row.balanceAfter, row.asset)} {nexGridBrandText(row.asset)}</span></div>)}
           </> : <div className="dtint">输入用户 ID 后加载该用户全部账单、八类汇总与当前钱包余额。</div>}
         </div>
       </section>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">Running Balance 断点核对</span><span className="sub">· 每笔余额连续性；仅当前区间核对最新账本与钱包差额</span></div>
+        <div className="l-h"><span className="ttl">连续余额核对</span><span className="sub">· 每笔余额连续性；仅当前区间核对最新账本与钱包差额</span></div>
         <div className="l-b">
           {runningBalance ? <>
             {runningBalance.reconciliationScope === "HISTORICAL_RANGE" ? (
@@ -322,7 +323,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
               </div>
             ) : <>
               <div className={`dtint ${runningBalance.balanced ? "cyan" : "warn"}`} data-proof="d4-running-balance">{runningBalance.balanced ? `已入账流水连续，且最新余额与钱包一致${runningBalance.unsettledCount > 0 ? `；另有 ${runningBalance.unsettledCount} 条未结算流水不参与钱包核对` : ""}` : `发现 ${runningBalance.breakCount} 个账实断点，请回到对应业务单核查；D4 不提供调账入口`}</div>
-              {runningBalance.reconciliation && <div className="sum-grid"><div className="s"><div className="k">USDT 钱包差额</div><div className="v">{runningBalance.reconciliation.USDT}</div></div><div className="s"><div className="k">NEX 钱包差额</div><div className="v">{runningBalance.reconciliation.NEX}</div></div></div>}
+              {runningBalance.reconciliation && <div className="sum-grid"><div className="s"><div className="k">USDT 钱包差额</div><div className="v">{runningBalance.reconciliation.USDT}</div></div><div className="s"><div className="k">UVEL 钱包差额</div><div className="v">{runningBalance.reconciliation.NEX}</div></div></div>}
             </>}
             {runningBalance.rows.map((item) => <div className={`rb-row${item.breakDetected ? " warn" : ""}`} key={item.bill.id}><span className="mono">{timeText(item.bill.createdAt)}</span><span>{item.settlementBucket === "UNSETTLED" ? "未结算 · 不参与钱包核对" : item.breakDetected ? "⚠ 断点" : "连续"} · {item.bill.bizNo}</span><span className="mono">期望 {item.expectedBalanceAfter ?? "—"}</span><span className="mono">实际 {item.bill.balanceAfter} · 差 {item.difference}</span></div>)}
           </> : <div className="dtint">先加载单用户账本，即可检查时间轴断点与钱包最终余额。</div>}

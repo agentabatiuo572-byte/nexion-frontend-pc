@@ -222,7 +222,7 @@ test("D2 exposes detail, structured lifecycle forms and batch splitting UI", () 
   assert.match(page, /排序字段/);
   assert.match(page, /毛手续费/);
   assert.match(page, /费用减免/);
-  assert.match(page, /NEX抵扣率/);
+  assert.match(page, /UVEL抵扣率/);
   assert.match(page, /K4 评分明细/);
   assert.match(page, /全部提现历史/);
   assert.match(client, /reviewD2WithdrawalsBatch/);
@@ -400,9 +400,9 @@ test("D2 preserves a missing K4 score as unavailable and blocks approval", () =>
 test("D5 exposes the canonical NEX fee offset that D2 snapshots", () => {
   assert.match(client, /nexFeeOffsetRate: d5Number\(raw\.nexFeeOffsetRate/);
   assert.match(client, /"nexFeeOffsetRate"/);
-  assert.match(d5Page, /NEX 抵扣率/);
+  assert.match(d5Page, /UVEL 抵扣率/);
   assert.match(d5Page, /\{ nexFeeOffsetRate: nex \}/);
-  assert.match(d5Page, /nexFeeOffsetRate\.toFixed\(2\)\}\/NEX/);
+  assert.match(d5Page, /nexFeeOffsetRate\.toFixed\(2\)\}\/UVEL/);
 });
 
 test("D5 renders each write control only for its exact authority", () => {
@@ -460,7 +460,7 @@ test("D2 explains service-generated K4 review reasons without suggesting approva
 test("D2 renders H1 month/phase snapshots as snapshots, preserving explicit legacy periods and unknowns", () => {
   const f = lifecycleFormatters();
   for (let phase = 1; phase <= 6; phase++)
-    assert.equal(f.freezePeriodLabel(`H1:M12:P${phase}`), `H1 节奏快照：第 12 月 · P${phase}（以复查时间为准）`);
+    assert.equal(f.freezePeriodLabel(`H1:M12:P${phase}`), `下单时的运营阶段设置：第 12 月 · P${phase}（以复查时间为准）`);
   for (const [value, label] of [["7d", "7 天"], ["LONG_TERM", "长期（需复查）"], ["SEVEN_DAYS", "7 天"], [undefined, "—"]])
     assert.equal(f.freezePeriodLabel(value), label);
   for (const value of ["H1:M0:P1", "H1:M1:P7", "H1:M1:P1:future", "future"])

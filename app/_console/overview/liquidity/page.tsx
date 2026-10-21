@@ -56,8 +56,8 @@ const LIABILITY_LABELS: Record<(typeof B2_LIABILITY_KEYS)[number], string> = {
   withdrawable_balance: "可提现余额",
   usdt_staking_principal: "USDT 质押本金",
   staking_interest: "质押利息",
-  genesis_daily_emission: "创世设备 每日分红",
-  nex_v2_future: "UVEL 第二阶段 远期权益",
+  genesis_daily_emission: "创世节点 每日分红",
+  nex_v2_future: "UVEL 第二版 远期权益",
   withdrawal_queue: "提现队列",
   commission_cooling: "冷却期佣金",
   lock_other: "其他锁仓",
@@ -300,7 +300,7 @@ export default function LiquidityPage() {
         <article className="card b2-kpi">
           <span>{window} 累计到期</span>
           <strong>{money(maturity.cumulativeUsdt)}</strong>
-          <small>提现 + 利息 + 创世设备{maturity.trialStressIncluded ? " + 试用业务 压力测试" : ""}</small>
+          <small>提现 + 利息 + 创世节点{maturity.trialStressIncluded ? " + 试用业务 压力测试" : ""}</small>
         </article>
       </section>
 
@@ -342,7 +342,7 @@ export default function LiquidityPage() {
                 <div>
                   <b>{row.date}</b>
                   <small>
-                    提现 {money(row.withdrawDueUsdt)} · 利息 {money(row.interestDueUsdt)} · 创世设备分红 {money(row.genesisDividendUsdt)}
+                    提现 {money(row.withdrawDueUsdt)} · 利息 {money(row.interestDueUsdt)} · 创世节点分红 {money(row.genesisDividendUsdt)}
                     {maturity.trialStressIncluded ? ` · 试用业务 压力测试 ${money(row.trialShadowStressUsdt)}` : ""}
                   </small>
                 </div>
@@ -355,7 +355,7 @@ export default function LiquidityPage() {
           </div>
           <footer>
             {maturity.farLiabilityNote}
-            <span>UVEL 第二阶段 远期权益默认不作为当前必须兑付的应付款。</span>
+            <span>UVEL 第二版 远期权益默认不作为当前必须兑付的应付款。</span>
           </footer>
         </section>
 
@@ -364,7 +364,7 @@ export default function LiquidityPage() {
           <dl>
             <div><dt>默认窗口</dt><dd>{config.forecastWindow}</dd></div>
             <div><dt>质押利息</dt><dd>{config.stakingInterestMode === "LINEAR" ? "线性摊提" : "到期计提"}</dd></div>
-            <div><dt>创世设备</dt><dd>{config.genesisIncluded ? "纳入" : "不纳入"}</dd></div>
+            <div><dt>创世节点</dt><dd>{config.genesisIncluded ? "纳入" : "不纳入"}</dd></div>
             <div><dt>试用业务 压力测试</dt><dd>{config.trialStressEnabled ? "启用（非必须兑付的应付款）" : "关闭"}</dd></div>
             <div><dt>远期负债</dt><dd>{config.includeFarLiabilities ? "纳入" : "排除"}</dd></div>
           </dl>
@@ -465,7 +465,7 @@ export default function LiquidityPage() {
                   </div>
                 </fieldset>
                 <div className="b2-check-grid compact">
-                  <label><input type="checkbox" checked={draft.genesisIncluded} onChange={(event) => setDraft({ ...draft, genesisIncluded: event.target.checked })} />纳入 创世设备 每日分红</label>
+                  <label><input type="checkbox" checked={draft.genesisIncluded} onChange={(event) => setDraft({ ...draft, genesisIncluded: event.target.checked })} />纳入 创世节点 每日分红</label>
                   <label><input type="checkbox" checked={draft.trialStressEnabled} onChange={(event) => setDraft({ ...draft, trialStressEnabled: event.target.checked })} />展示 试用业务 压力测试</label>
                   <label><input type="checkbox" checked={draft.includeFarLiabilities} onChange={(event) => setDraft({ ...draft, includeFarLiabilities: event.target.checked })} />纳入远期负债</label>
                 </div>
@@ -490,7 +490,7 @@ export default function LiquidityPage() {
                   <b>请核对不可省略的写入信息</b>
                   <p>预测窗口：{draft.forecastWindow}</p>
                   <p>质押利息：{draft.stakingInterestMode === "LINEAR" ? "线性摊提" : "到期计提"}</p>
-                  <p>创世设备：{draft.genesisIncluded ? "纳入" : "不纳入"}；试用业务 压力测试：{draft.trialStressEnabled ? "启用" : "关闭"}</p>
+                  <p>创世节点：{draft.genesisIncluded ? "纳入" : "不纳入"}；试用业务 压力测试：{draft.trialStressEnabled ? "启用" : "关闭"}</p>
                   <p>原因：{reason.trim()}</p>
                   <p>基于版本 {config.version} 提交；配置于下一 UTC 日 00:00 生效，不追溯历史。配置已被其他人修改时会提示冲突，请刷新后重试。</p>
                 </div>

@@ -299,9 +299,9 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
         await task();
       } catch (err) {
         checkAuth();
-        const detail = err instanceof Error ? displayAdminError(err) : "银行轨操作失败";
+        const detail = err instanceof Error ? displayAdminError(err) : "银行转账渠道操作失败";
         setError(isDOutcomeUnknownError(err)
-          ? `银行轨操作结果暂时未知，当前队列保留供核对；请先刷新，并只用原请求号重试 · ${detail}`
+          ? `银行转账渠道操作结果暂时未知，当前队列保留供核对；请先刷新，并只用原请求号重试 · ${detail}`
           : `操作已被服务端拒绝，未入账；当前队列和回单仍保留，可按提示修正后重试 · ${detail}`);
         throw err;
       }
@@ -337,7 +337,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
     const selectedAccount = source?.bankAccountId ? String(source.bankAccountId) : "";
     const statusLabel: Record<D1VietQrOverview["accounts"][number]["status"], string> = {
       ACTIVE: "启用",
-      FUSED: "已熔断，仅核对历史回单",
+      FUSED: "已暂停，仅核对历史回单",
       DISABLED: "已停用，仅核对历史回单",
     };
     openActionConfirm({
@@ -456,7 +456,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
         ? channel.minAmountValue
         : channel.maxAmountValue;
     if (current === null) {
-      toast("该通道没有独立单笔上限；银行轨上限请在 VietQR 参数区调整");
+      toast("该通道没有独立单笔上限；银行转账上限请在 VietQR 参数区调整");
       return;
     }
     const unitLabel = kind === "fee" ? (channel.feeUnit === "PERCENT" ? "%" : "USDT 固定手续费") : "USD";
@@ -496,7 +496,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
   const bankConfigPayload = (
     patch: Partial<Pick<D1VietQrOverview["config"], "toleranceVnd" | "graceMinutes" | "perTxLimitUsd" | "trc20Confirmations" | "erc20Confirmations" | "bep20Confirmations" | "rotationStrategy">>,
   ) => {
-    if (!vietQr) throw new Error("银行轨配置尚未加载");
+    if (!vietQr) throw new Error("银行转账渠道配置尚未加载");
     return {
       toleranceVnd: patch.toleranceVnd ?? vietQr.config.toleranceVnd,
       graceMinutes: patch.graceMinutes ?? vietQr.config.graceMinutes,
@@ -519,7 +519,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
     if (!vietQr) return;
     const current = vietQr.config[key];
     openActionConfirm({
-      action: `银行轨参数调整 · ${label}`,
+      action: `银行转账渠道参数调整 · ${label}`,
       detail: `${label}当前为 ${current} ${unit}，合法范围 ${min.toLocaleString("en-US")}–${max.toLocaleString("en-US")}。仅对新回单或新付款单生效。`,
       edit: { kind: "number", current: String(current), unit, min, max, step: 1 },
       run: (reason, value) => {
@@ -597,7 +597,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
         <div className="dtint warn" style={{ marginBottom: 12 }}>
           历史账务证据尚未闭合：共 {overview.historicalBackfillAnomalyCount} 条待处理；
           手续费证据 {overview.feeEvidenceAnomalyCount} 条，D3 储备证据 {overview.treasuryReserveAnomalyCount} 条。
-          下方金额仅代表当前可验证部分，不得视为完整历史真值。请在 A2 审计中按 D1_CUMULATIVE_BACKFILL 追踪迁移记录并完成异常核对。
+          下方金额仅代表当前可验证部分，不得视为完整历史真值。请在 A2 审计中查询累计充值迁移记录并完成异常核对。
         </div>
       )}
 
@@ -653,13 +653,13 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
               </div>
             ))}
             <div className="dtint" style={{ marginTop: 12 }}>
-              当前主 PSP: <b>{overview?.primaryPsp ?? "—"}</b> · 备用: {overview?.backupPsp ?? "—"}
+              当前主要支付商: <b>{overview?.primaryPsp ?? "—"}</b> · 备用: {overview?.backupPsp ?? "—"}
               {canSwitchPsp && <button className="l-btn sm mc" disabled={loading || busy} style={{ marginLeft: 10 }} onClick={() => openActionConfirm({
-                action: "主备 PSP 切换",
-                detail: `切换到 ${overview?.backupPsp ?? "备用 PSP"}，后端写配置并落审计。`,
+                action: "切换主要与备用支付商",
+                detail: `切换到 ${overview?.backupPsp ?? "备用支付商"}，后端写配置并落审计。`,
                 run: (reason) => applyOverview(
                   () => switchD1Psp(overview?.backupPsp ?? "Stripe", overview?.primaryPsp ?? "", reason, operator),
-                  "主备 PSP 已切换",
+                  "主要与备用支付商已切换",
                 ),
               })}>切换主备</button>}
             </div>
@@ -716,7 +716,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
           onRetry={(commandKey) => applyBankWrite(() => retryD1PendingBankOrderCommand(commandKey), "原请求号人工入账重试已受理；请核对订单与账本", adminAuthLifecycleEpoch())} />
         <div className="l-h">
           <span className="ttl">银行回单处置与已入账历史</span>
-          <span className="sub">· 五视图 · 单据锁价快照 · 挂账与 D3 第 9 科目同源</span>
+          <span className="sub">· 五类回单 · 下单时锁定的汇率 · 待核实款项同步到资金储备页面</span>
           <div className="r">
             <span className="dcode electric">待核实入金 {money(vietQr?.pendingUnverifiedDepositUsdt ?? 0)}</span>
             {canBankReconcile && <button className="l-btn sm mc" disabled={busy || !vietQr?.accounts.length} onClick={() => openReceiptRegistration()}>登记未归属回单</button>}
@@ -724,7 +724,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
         </div>
         <div className="l-b" style={{ paddingBottom: 8 }}>
           <div className="dtint" style={{ marginBottom: 12 }}>
-            上方银行订单展示 MANUAL / HDPay 全部状态；下方五视图处理真实银行回单。HDPay 人工确认在上方订单行单独执行，这里的已入账历史用于追溯。银行转账可人工登记真实回单，登记图片可选填。
+            上方银行订单展示 人工转账 / HDPay 全部状态；下方五类回单处理真实银行回单。HDPay 人工确认在上方订单行单独执行，这里的已入账历史用于追溯。银行转账可人工登记真实回单，登记图片可选填。
           </div>
           <TabGroup label="银行转账视图及 HDPay 已入账历史" value={bankView} items={BANK_VIEW_TABS.map(([key]) => key)}
             onSelect={(key) => { setBankView(key); setBankPage(1); }} className="chips" disabled={() => loading || busy}
@@ -861,7 +861,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">收款账户池</span>
-            <span className="sub">· 账号只展示尾四位 · 全号加密落库</span>
+            <span className="sub">· 账号只展示尾四位 · 完整账号加密保存</span>
             {canManageBankAccounts && <div className="r"><button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
               action: "新增 VietQR 收款账户",
               detail: "账户全号只提交给后端加密保存，列表和审计均不得回显全号。",
@@ -895,7 +895,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
               return (
               <div className="p-row" key={account.id}>
                 <div className="txt"><div className="k">{account.bankName} · 尾号 {account.accountLast4}</div><div className="s">{account.holderMasked} · 今日 {vnd(account.receivedTodayVnd)} / 上限 {vnd(account.dailyCapVnd)}{fuseReason.label ? ` · ${fuseReason.label}` : ""}</div></div>
-                <span className={`bdg ${account.status === "ACTIVE" ? "ok" : account.status === "FUSED" ? "bad" : "dim"}`}>{account.status === "ACTIVE" ? "启用" : account.status === "FUSED" ? "已熔断" : "停用"}</span>
+                <span className={`bdg ${account.status === "ACTIVE" ? "ok" : account.status === "FUSED" ? "bad" : "dim"}`}>{account.status === "ACTIVE" ? "启用" : account.status === "FUSED" ? "已暂停收款" : "停用"}</span>
                 {canManageBankAccounts && <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
                   action: `调整日收上限 · ${account.bankName} 尾号 ${account.accountLast4}`,
                   detail: "日收上限仅影响后续新单分配，不改变已收款事实。",
@@ -929,7 +929,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                 })}>重新配置收款信息</button>}
                 {canManageBankAccounts && <button className="l-btn sm mc" disabled={busy || needsReprovision} title={needsReprovision ? "账号密文无法解密，请先重新配置收款信息" : undefined} onClick={() => openActionConfirm({
                   action: `${account.status === "ACTIVE" ? "停用" : account.status === "FUSED" ? "恢复" : "启用"}收款账户 · ${account.bankName} 尾号 ${account.accountLast4}`,
-                  detail: "状态通过服务端版本号比较后更新；熔断账户只能走恢复动作。",
+                  detail: "状态通过服务端版本号比较后更新；已暂停收款的账户只能通过恢复操作重新启用。",
                   run: (reason) => applyBankWrite(() => updateD1VietQrAccount(account.id, {
                     action: account.status === "ACTIVE" ? "DISABLE" : account.status === "FUSED" ? "RECOVER" : "ENABLE",
                     expectedVersion: account.version, reason, operator,
@@ -942,7 +942,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
         </section>
 
         <section className="l-card">
-          <div className="l-h"><span className="ttl">银行轨参数</span><span className="sub">· 服务端范围校验 · 仅新单/新回单生效</span></div>
+          <div className="l-h"><span className="ttl">银行转账渠道参数</span><span className="sub">· 服务端范围校验 · 仅新单/新回单生效</span></div>
           <div className="l-b">
             {vietQr && [
               ["toleranceVnd", "金额容差", vietQr.config.toleranceVnd, "VND", 0, 5_000],
@@ -1108,7 +1108,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                 <span className={`bdg ${bin.locked ? "bad" : "ok"}`}>{bin.locked ? "锁定" : "放行"}</span>
                 {((bin.locked && canUnlockBin) || (!bin.locked && canLockBin)) && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => openConfirm({
                   action: `${bin.locked ? "解锁" : "锁定"}${targetLabel} · ${targetValue}`,
-                  detail: `目标类型 ${targetType}，目标值 ${targetValue}。状态写入服务端风控锁表，并保留到期时间与操作审计。`,
+                  detail: `目标类型 ${targetLabel}，目标值 ${targetValue}。状态写入服务端风控锁表，并保留到期时间与操作审计。`,
                   reason: true,
                   okLabel: bin.locked ? "解锁" : "锁定",
                   run: (reason) => applyOverview(() => setD1BinLock(bin.segment, !bin.locked, reason, operator), `${bin.segment} 已${bin.locked ? "解锁" : "锁定"}`),

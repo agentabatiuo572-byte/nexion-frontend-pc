@@ -33,6 +33,6 @@ test("ordinary withdrawal and refund retain their existing labels", () => {
 });
 
 test("unknown event identifiers are not guessed as principal returns", () => {
-  assert.equal(formatD4Subtype("OTHER_EARLY_WITHDRAW"), "OTHER_EARLY_WITHDRAW");
+  assert.equal(formatD4Subtype("OTHER_EARLY_WITHDRAW"), "其他业务");
   assert.notEqual(formatD4Remark("G7 unknown event").label, "复投提前退出");
 });

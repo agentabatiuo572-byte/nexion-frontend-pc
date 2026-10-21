@@ -186,15 +186,15 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     && payoutSla >= D5_PAYOUT_SLA_HOURS_MIN && payoutSla <= D5_PAYOUT_SLA_HOURS_MAX;
 
   if (loading && !params) {
-    return <section className="l-card"><div className="l-b">D5 权威配置加载中，写操作已冻结...</div></section>;
+    return <section className="l-card"><div className="l-b">D5 当前系统配置加载中，写操作已冻结...</div></section>;
   }
 
   if (!params) {
     return <section className="l-card" data-module-health-state="error">
-      <div className="l-h"><span className="ttl">D5 权威配置不可用</span></div>
+      <div className="l-h"><span className="ttl">D5 当前系统配置不可用</span></div>
       <div className="l-b">
-        <div className="dtint warn">{error || "未获得服务器权威快照"}。旧值已清空，全部写操作保持冻结。</div>
-        <button className="l-btn" onClick={() => void load()}>重试获取权威快照</button>
+        <div className="dtint warn">{error || "未能读取当前配置"}。旧值已清空，全部写操作保持冻结。</div>
+        <button className="l-btn" onClick={() => void load()}>重试获取当前系统配置</button>
       </div>
     </section>;
   }
@@ -203,13 +203,13 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     {error && <div className="dtint warn" style={{ marginBottom: 12 }}>{error}</div>}
 
     <div className="f-stats">
-      <div className="f-stat"><div className="k">每日提现次数</div><div className="v">{params.dailyLimitCount}</div><div className="sub">D5 · D2 实时消费</div></div>
-      <div className="f-stat cyan"><div className="k">余额可提上限</div><div className="v">{pctRatio(params.maxBalanceRatio)}</div><div className="sub">D5 权威</div></div>
+      <div className="f-stat"><div className="k">每日提现次数</div><div className="v">{params.dailyLimitCount}</div><div className="sub">按此限制后续提现申请</div></div>
+      <div className="f-stat cyan"><div className="k">余额可提上限</div><div className="v">{pctRatio(params.maxBalanceRatio)}</div><div className="sub">当前生效配置</div></div>
       <div className="f-stat warn"><div className="k">网络确认费</div><div className="v">${params.networkConfirmFeeUsd.trc20} / ${params.networkConfirmFeeUsd.bep20} / ${params.networkConfirmFeeUsd.erc20}</div><div className="sub">TRC20 / BEP20 / ERC20 · 每笔固定</div></div>
-      <div className="f-stat"><div className="k">提现网络</div><div className="v">{params.networkEnabled.trc20 ? "TRC20 开" : "TRC20 关"} / {params.networkEnabled.bep20 ? "BEP20 开" : "BEP20 关"} / {params.networkEnabled.erc20 ? "ERC20 开" : "ERC20 关"}</div><div className="sub">D5 权威 · App 将按此隐藏不可用通道</div></div>
-      <div className="f-stat cyan"><div className="k">NEX 抵扣率</div><div className="v">${params.nexFeeOffsetRate.toFixed(2)}/NEX</div><div className="sub">D5 权威</div></div>
-      <div className="f-stat"><div className="k">小额免审线</div><div className="v">${params.smallAmountThresholdUsd}</div><div className="sub">提交时快车道判定</div></div>
-      <div className="f-stat"><div className="k">到账 SLA</div><div className="v">{params.payoutSlaHours}h</div><div className="sub">写入提现到期时间</div></div>
+      <div className="f-stat"><div className="k">提现网络</div><div className="v">{params.networkEnabled.trc20 ? "TRC20 开" : "TRC20 关"} / {params.networkEnabled.bep20 ? "BEP20 开" : "BEP20 关"} / {params.networkEnabled.erc20 ? "ERC20 开" : "ERC20 关"}</div><div className="sub">当前生效配置 · 应用将按此隐藏不可用通道</div></div>
+      <div className="f-stat cyan"><div className="k">UVEL 抵扣率</div><div className="v">${params.nexFeeOffsetRate.toFixed(2)}/UVEL</div><div className="sub">当前生效配置</div></div>
+      <div className="f-stat"><div className="k">小额免审线</div><div className="v">${params.smallAmountThresholdUsd}</div><div className="sub">提交时小额自动审核结果</div></div>
+      <div className="f-stat"><div className="k">预计到账时限</div><div className="v">{params.payoutSlaHours} 小时</div><div className="sub">写入提现到期时间</div></div>
       <div className={`f-stat ${params.coverageReliable && params.coverageRatio >= params.redlinePct ? "ok" : "danger"}`}><div className="k">B1 覆盖率</div><div className="v">{pct(params.coverageRatio)}</div><div className="sub">红线 {pct(params.redlinePct)} · {params.coverageReliable ? "可信" : "不可用"}</div></div>
     </div>
 
@@ -217,7 +217,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">D5 已接通参数</span>
-          <span className="sub">· 权威版本 v{params.version} · {canWriteAny ? "财务主管/超管可改" : "当前角色只读"}</span>
+          <span className="sub">· 配置版本 v{params.version} · {canWriteAny ? "财务主管/超级管理员可改" : "当前角色只读"}</span>
           <div className="r"><button className="l-btn sm" onClick={() => void load()}>刷新</button></div>
         </div>
         <div className="l-b">
@@ -227,16 +227,16 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
             {canDailyWrite && <button className="l-btn sm mc" disabled={!dailyValid || daily === params.dailyLimitCount} onClick={() => submit("每日提现次数", { dailyLimitCount: daily }, daily > params.dailyLimitCount, `${params.dailyLimitCount} 次 → ${daily} 次`)}>预览并提交</button>}
           </div>
           <div className="dtint ok" style={{ marginBottom: 12 }}>
-            小额免审与到账时效已进入真实提现处理流程：新提现会保存快车道判定和到账截止时间；没有链上终局证明时保留资金，不会提前记为已到账。
+            小额免审与到账时效已进入真实提现处理流程：新提现会保存小额自动审核结果和到账截止时间；没有链上最终到账证明时保留资金，不会提前记为已到账。
           </div>
           <div className="p-row">
-            <div className="txt"><div className="k">小额免审线</div><div className="s">0–{D5_SMALL_AMOUNT_THRESHOLD_MAX} USD；上调会放大小额快车道范围</div></div>
+            <div className="txt"><div className="k">小额免审线</div><div className="s">0–{D5_SMALL_AMOUNT_THRESHOLD_MAX} USD；上调会放大小额自动审核范围</div></div>
             <input aria-label="小额免审线目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.smallAmount} disabled={!canDailyWrite} onChange={(event) => updateDraft("smallAmount", event.target.value)} />
             <span>USD</span>
             {canDailyWrite && <button className="l-btn sm mc" disabled={!smallAmountValid || smallAmount === params.smallAmountThresholdUsd} onClick={() => submit("小额免审线", { smallAmountThresholdUsd: smallAmount }, smallAmount > params.smallAmountThresholdUsd, `$${params.smallAmountThresholdUsd} → $${smallAmount}`)}>预览并提交</button>}
           </div>
           <div className="p-row">
-            <div className="txt"><div className="k">提现通道（三网络 · 原子更新）</div><div className="s">关闭会收紧资金流出；开启会放大可提现范围，服务器将校验 B1 覆盖率。App 读取同一权威快照。</div></div>
+            <div className="txt"><div className="k">提现通道（三网络 · 统一保存）</div><div className="s">关闭会收紧资金流出；开启会放大可提现范围，服务器将校验 B1 覆盖率。应用读取同一当前系统配置。</div></div>
             {(["trc20", "bep20", "erc20"] as const).map((network) => {
               const enabled = params.networkEnabled[network];
               const label = network.toUpperCase();
@@ -260,7 +260,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
               任一网络调低 = 放大流出。0 = 该网络免手续费(合法值,给显著警示防误配)。 */}
           <div className="p-row">
             <div className="txt">
-              <div className="k">网络确认费（三网络 · 原子更新）</div>
+              <div className="k">网络确认费（三网络 · 统一保存）</div>
               <div className="s">每笔固定收取,按提现网络计,0–{D5_NETWORK_CONFIRM_FEE_MAX} USD、步进 0.5;三值一次提交,任一失败全回滚。任一网络<b>调低即放大流出</b>。默认 TRC20 $1 / BEP20 $1 / ERC20 $5</div>
               {canFeeWrite && !feeTrcValid && drafts.feeTrc !== "" && <div className="s" style={{ color: "var(--admin-danger, #e5484d)" }}>TRC20 超出 0–{D5_NETWORK_CONFIRM_FEE_MAX} 值域</div>}
               {canFeeWrite && !feeBepValid && drafts.feeBep !== "" && <div className="s" style={{ color: "var(--admin-danger, #e5484d)" }}>BEP20 超出 0–{D5_NETWORK_CONFIRM_FEE_MAX} 值域</div>}
@@ -274,23 +274,23 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
             {canFeeWrite && <button className="l-btn sm" disabled={feeIsDefault && feeUnchanged} onClick={() => submit("网络确认费恢复默认", { networkConfirmFeeUsd: { ...D5_NETWORK_CONFIRM_FEE_DEFAULT } }, D5_NETWORK_CONFIRM_FEE_DEFAULT.trc20 < params.networkConfirmFeeUsd.trc20 || D5_NETWORK_CONFIRM_FEE_DEFAULT.bep20 < params.networkConfirmFeeUsd.bep20 || D5_NETWORK_CONFIRM_FEE_DEFAULT.erc20 < params.networkConfirmFeeUsd.erc20, `TRC20 $${params.networkConfirmFeeUsd.trc20} / BEP20 $${params.networkConfirmFeeUsd.bep20} / ERC20 $${params.networkConfirmFeeUsd.erc20} → 默认 $${D5_NETWORK_CONFIRM_FEE_DEFAULT.trc20} / $${D5_NETWORK_CONFIRM_FEE_DEFAULT.bep20} / $${D5_NETWORK_CONFIRM_FEE_DEFAULT.erc20}`)}>恢复默认</button>}
           </div>
           <div className="p-row">
-            <div className="txt"><div className="k">NEX 抵扣率</div><div className="s">必须大于 0；上调放大、下调收紧</div></div>
-            <input aria-label="NEX 抵扣率目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.nex} disabled={!canFeeWrite} onChange={(event) => updateDraft("nex", event.target.value)} />
-            {canFeeWrite && <button className="l-btn sm mc" disabled={!nexValid || nex === params.nexFeeOffsetRate} onClick={() => submit("NEX 抵扣率", { nexFeeOffsetRate: nex }, nex > params.nexFeeOffsetRate, `$${params.nexFeeOffsetRate}/NEX → $${nex}/NEX`)}>预览并提交</button>}
+            <div className="txt"><div className="k">UVEL 抵扣率</div><div className="s">必须大于 0；上调放大、下调收紧</div></div>
+            <input aria-label="UVEL 抵扣率目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.nex} disabled={!canFeeWrite} onChange={(event) => updateDraft("nex", event.target.value)} />
+            {canFeeWrite && <button className="l-btn sm mc" disabled={!nexValid || nex === params.nexFeeOffsetRate} onClick={() => submit("UVEL 抵扣率", { nexFeeOffsetRate: nex }, nex > params.nexFeeOffsetRate, `$${params.nexFeeOffsetRate}/UVEL → $${nex}/UVEL`)}>预览并提交</button>}
           </div>
         </div>
       </section>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">H1 Phase 派发（只读）</span><span className="sub">· D5 不缓存、不写入</span></div>
+        <div className="l-h"><span className="ttl">运营阶段设置（仅查看）</span><span className="sub">· D5 不缓存、不写入</span></div>
         <div className="l-b">
-          <div className="p-row"><div className="txt"><div className="k">当前 Phase</div><div className="s">H1 月 {params.currentMonth}</div></div><span className="v">{params.currentPhase}</span></div>
+          <div className="p-row"><div className="txt"><div className="k">当前运营阶段</div><div className="s">H1 月 {params.currentMonth}</div></div><span className="v">{params.currentPhase}</span></div>
           {/* FEAT-WD01 改名:「提现冷却」易被读成「两笔提现要隔 N 天」,实际是「大额提现要等 N 天才到账」,
               与上面的「每日提现次数」概念直接打架。只改显示名,字段键 cooldownDays 不动(改键会破坏后端契约与既有审计)。 */}
-          <div className="p-row"><div className="txt"><div className="k">到账审查窗口</div><div className="s">source: phase-h1 · 大额提现(&gt; $1,000)在后期阶段的到账等待天数,非提现间隔</div></div><span className="v">{params.cooldownDays} 天</span></div>
+          <div className="p-row"><div className="txt"><div className="k">到账审查窗口</div><div className="s">来源：运营阶段设置 · 大额提现(&gt; $1,000)在后期阶段的到账等待天数,非提现间隔</div></div><span className="v">{params.cooldownDays} 天</span></div>
           {/* FEAT-WD02:「提现惩罚费率」行已删 —— 费用模型换为按网络固定确认费(上方 D5 自有可写),
               H1 旋钮同步下线;历史审计记录不删账。 */}
-          <div className="p-row"><div className="txt"><div className="k">增强合规审查</div><div className="s">source: phase-h1</div></div><span className={`bdg ${params.complianceHoldEnabled ? "warn" : "ok"}`}>{params.complianceHoldEnabled ? "开启" : "关闭"}</span></div>
+          <div className="p-row"><div className="txt"><div className="k">增强合规审查</div><div className="s">来源：运营阶段设置</div></div><span className={`bdg ${params.complianceHoldEnabled ? "warn" : "ok"}`}>{params.complianceHoldEnabled ? "开启" : "关闭"}</span></div>
           {authorities.includes("growth_h1_read") && <Link href="/growth/phase" className="l-btn">在 H1 调整 →</Link>}
         </div>
       </section>

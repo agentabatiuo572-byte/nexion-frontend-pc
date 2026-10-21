@@ -229,7 +229,7 @@ function userStatusLabel(value?: string) {
 
 function freezePeriodLabel(value?: string) {
   const rhythm = /^H1:M([1-9]\d*):(P[1-6])$/.exec(value ?? "");
-  if (rhythm) return `H1 节奏快照：第 ${rhythm[1]} 月 · ${rhythm[2]}（以复查时间为准）`;
+  if (rhythm) return `下单时的运营阶段设置：第 ${rhythm[1]} 月 · ${rhythm[2]}（以复查时间为准）`;
   return ({ "7d": "7 天", "14d": "14 天", "30d": "30 天", "45d": "45 天", LONG_TERM: "长期（需复查）", SEVEN_DAYS: "7 天" } as Record<string, string>)[value ?? ""] ?? (value ? "未识别期限" : "—");
 }
 
@@ -821,7 +821,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     <D2StatusFlow />
 
     <section className="l-card">
-      <div className="l-h"><span className="ttl">待审核提现</span><span className="sub">· 服务端权威状态 · 逐笔 / 批量</span></div>
+      <div className="l-h"><span className="ttl">待审核提现</span><span className="sub">· 状态以系统记录为准 · 逐笔 / 批量</span></div>
       <div className="l-b d2-search-panel">
         <div className="d2-search-toolbar">
           <label className="d2-filter-field d2-keyword-field"><span>提现单 / 用户</span><input placeholder="输入提现单号、用户编号或昵称" value={keyword} onChange={(event) => setKeyword(event.target.value)} /></label>
@@ -899,7 +899,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       {detailLoading && <div className="dtint">正在读取服务端最新详情…</div>}
       {detailError && <div className="dtint warn">服务端最新详情加载失败 · {detailError} · 为避免按旧数据处置，写操作已关闭，请关闭后重试。</div>}
       <div className="f-stats d2-detail-stats">
-        <div className="f-stat"><div className="k">用户画像</div><div className="v">{detail.userNo}</div><div className="sub">{detail.nickname} · {detail.userLevel} · {detail.phoneMasked || "未展示手机号"}</div></div>
+        <div className="f-stat"><div className="k">用户资料</div><div className="v">{detail.userNo}</div><div className="sub">{detail.nickname} · {detail.userLevel} · {detail.phoneMasked || "未展示手机号"}</div></div>
         <div className="f-stat warn"><div className="k">风险路由</div><div className="v">{routingPriorityLabel(detail)} · {k4RiskText(detail)}</div><div className="sub">K3 {routeLabel(detail.k3RiskRoute)} · {ruleSummary(detail.hitRules)}</div></div>
         <div className="f-stat cyan"><div className="k">账户状态</div><div className="v">{userStatusLabel(detail.userStatus)}</div><div className="sub">24h 第 {detail.withdrawalCount24h} 笔 · IP 段 {detail.ipSegment || "—"}</div></div>
         <div className="f-stat"><div className="k">当前状态</div><div className="v">{cregisDetail?.source === "provider" ? cregisStatusLabel(cregisDetail.state) : bankStatusLabel(detail)}</div><div className="sub">{detail.chain === "BANK-VND" ? "已派发后以 HDPay 查单结果结算；结果不明不重发、不手工退款。" : cregisDetail?.source === "provider" ? "按原代付单查询与链上证据处理；恢复原单不会重新发款。" : lifecycleSummary(detail)}</div></div>
@@ -938,7 +938,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
               <KV k="确认时间" v={bankEvidenceTime(bankDetail.settlementEvidence.checkedAt)} />
               {bankDetail.settlementEvidence.status === "refunded" && <KV k="已退回余额" v={`${bankDetail.settlementEvidence.amountUsdt?.toLocaleString("zh-CN", { maximumFractionDigits: 6 })} USDT`} />}
             </>}
-          </> : <div>银行卡快照正在读取或暂不可用；不能按旧数据放行。</div>}
+          </> : <div>下单时的收款账户信息正在读取或暂不可用；不能按旧数据放行。</div>}
         </section>}
         <section className="d2-detail-section">
           <h3>提现与费用</h3>
@@ -950,9 +950,9 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
             <KV k="网络费率 / 区间" v={`${detail.networkFeeRate ?? "—"} · ${money(detail.networkFeeMin ?? 0)}–${money(detail.networkFeeMax ?? 0)}`} />
             <KV k="毛手续费 / 金额费率" v={`${money(detail.grossFee ?? 0)} · ${detail.penaltyFeeRate ?? "—"}%`} />
           </>}
-          <KV k="NEX 抵扣" v={`${detail.nexBurned} NEX`} />
+          <KV k="UVEL 抵扣" v={`${detail.nexBurned} UVEL`} />
           <KV k="费用减免" v={money(detail.feeWaived)} />
-          <KV k="NEX抵扣率" v={`$${detail.nexFeeOffsetRate}/NEX`} />
+          <KV k="UVEL抵扣率" v={`$${detail.nexFeeOffsetRate}/UVEL`} />
         </section>
         <section className="d2-detail-section">
           <h3>生命周期</h3>

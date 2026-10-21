@@ -69,7 +69,7 @@ test("D1 renders actions from exact authorities and links anomaly evidence to K 
   assert.match(component, /finance_d1_chargeback_refund/);
   assert.match(component, /\/finance\/ledger/);
   assert.match(component, /\/risk\//);
-  assert.match(component, /K1 反多账户中心/);
+  assert.match(component, /K1 多账户风险排查/);
   assert.match(component, /历史账务证据尚未闭合/);
   assert.match(component, /仅代表当前可验证部分/);
   assert.match(component, /尚未确认/);

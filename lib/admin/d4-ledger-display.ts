@@ -19,10 +19,10 @@ const SUBTYPE_LABELS: Record<string, string> = {
   team_commission: "团队佣金",
   binary_commission: "对碰佣金",
   referral_reward: "推荐奖励",
-  genesis_dividend: "Genesis 分红",
+  genesis_dividend: "创世节点分红",
   leaderboard_prize: "榜单奖励",
   order_purchase: "商品购买",
-  genesis_purchase: "Genesis 购买",
+  genesis_purchase: "创世节点购买",
   trade_in_purchase: "以旧换新抵扣",
   deposit: "充值",
   topup: "充值",
@@ -38,7 +38,7 @@ const SUBTYPE_LABELS: Record<string, string> = {
   withdraw_bank_fee: "银行出款手续费",
   withdraw_fee_offset: "提现手续费抵扣",
   withdraw_payout_refund: "出款退回",
-  withdraw_payout_nex_refund: "NEX 出款退回",
+  withdraw_payout_nex_refund: "UVEL 出款退回",
   withdraw_refund: "提现退款",
   withdraw_fee_offset_refund: "手续费抵扣退回",
   staking_early_withdraw: "质押提前赎回",
@@ -56,9 +56,9 @@ const REMARK_LABELS: Record<string, string> = {
   "bank payout net principal": "银行出款 · 净额本金",
   "d7 bank payout fee": "银行出款 · 手续费",
   "d2 withdrawal net principal": "提现 · 净额本金",
-  "d5 actual network fee after nex offset": "提现 · NEX 抵扣后的实际网络费",
-  "h1 actual withdrawal penalty after nex offset": "提现 · NEX 抵扣后的实际违约金",
-  "d5 nex fee offset; penalty first, then network fee": "提现 · NEX 手续费抵扣（先抵违约金，再抵网络费）",
+  "d5 actual network fee after nex offset": "提现 · UVEL 抵扣后的实际网络费",
+  "h1 actual withdrawal penalty after nex offset": "提现 · UVEL 抵扣后的实际违约金",
+  "d5 nex fee offset; penalty first, then network fee": "提现 · UVEL 手续费抵扣（先抵违约金，再抵网络费）",
 };
 
 /**
@@ -69,9 +69,9 @@ const REMARK_LABELS: Record<string, string> = {
  * 按前缀归一既中文化了单元格,又保留了原始串作为技术详情。
  */
 const REMARK_PREFIXES: ReadonlyArray<readonly [RegExp, string]> = [
-  [/^HDPay\s+BANKQR\s+deposit\b/i, "HDPay 扫码入金"],
+  [/^HDPay\s+BANKQR\s+deposit\b/i, "HDPay 扫码充值"],
   [/^HDPay\s+.*\bwithdraw(al)?\b/i, "HDPay 出款"],
-  [/^VietQR\s+.*\bdeposit\b/i, "VietQR 银行入金"],
+  [/^VietQR\s+.*\bdeposit\b/i, "VietQR 银行充值"],
   [/^D[0-9]\s+/i, "平台参数调整"],
 ];
 
@@ -83,7 +83,7 @@ function normalizeKey(value: string) {
 export function formatD4Subtype(value: unknown) {
   const raw = typeof value === "string" ? value.trim() : "";
   if (!raw) return "—";
-  return SUBTYPE_LABELS[raw.toLowerCase()] ?? raw;
+  return SUBTYPE_LABELS[raw.toLowerCase()] ?? (/[\u3400-\u9fff]/.test(raw) ? raw : "其他业务");
 }
 
 /**

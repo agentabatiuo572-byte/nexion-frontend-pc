@@ -48,7 +48,7 @@ const TRIAGE = {
 const GATE_LABELS: Record<string, string> = {
   withdraw: "提现",
   staking: "质押",
-  genesis: "创世设备交易",
+  genesis: "创世节点交易",
   exchange: "兑换",
   trial: "试用入口",
 };

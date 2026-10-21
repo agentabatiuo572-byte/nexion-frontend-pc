@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
  * B1 资金与应付款总览(旗舰驾驶舱)。
@@ -389,7 +390,7 @@ export default function DualLedgerPage() {
                     </>
                   ) : (
                     <>
-                      <b>警戒区:</b>建议收紧大额提现、暂缓创世设备分红与提高年化收益率。覆盖率跌破健康线后,放大资金流出动作须先核验本约束(§1.8 原则一)。
+                      <b>警戒区:</b>建议收紧大额提现、暂缓创世节点分红与提高年化收益率。覆盖率跌破健康线后,放大资金流出动作须先核验本约束(§1.8 原则一)。
                     </>
                   )}
                 </div>
@@ -649,7 +650,7 @@ export default function DualLedgerPage() {
                   opacity: hovered != null && hovered !== i ? 0.3 : 1,
                   filter: hovered === i ? "brightness(1.15)" : "none",
                 }}
-                title={`${a.label} · ${fmtUsdCompact(a.amount)}`}
+                title={`${operatorCopyText(a.label)} · ${fmtUsdCompact(a.amount)}`}
                 onMouseEnter={() => setHovered(i)}
                 onMouseLeave={() => setHovered(null)}
               />
@@ -666,7 +667,7 @@ export default function DualLedgerPage() {
               onMouseLeave={() => setHovered(null)}
             >
               <span className="dot" style={{ background: `var(${a.cat})` }} />
-              <span className="nm">{a.label}</span>
+              <span className="nm">{operatorCopyText(a.label)}</span>
               <span className="am">{fmtUsdCompact(a.amount)}</span>
               <span className="pc">{fmtPct(a.pct)}</span>
             </div>

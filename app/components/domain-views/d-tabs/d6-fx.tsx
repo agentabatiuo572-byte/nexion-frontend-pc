@@ -101,7 +101,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     <>
       {error && <div className="dtint warn" style={{ marginBottom: 12 }}>{error}</div>}
       <div className="f-stats">
-        <div className="f-stat ok"><div className="k">当前牌价（现场派生）</div><div className="v">1 USDT ≈ {vnd(data?.quoteRateVndPerUsdt ?? 0)}</div><div className="sub">不存第二份派生牌价</div></div>
+        <div className="f-stat ok"><div className="k">当前报价</div><div className="v">1 USDT ≈ {vnd(data?.quoteRateVndPerUsdt ?? 0)}</div><div className="sub">根据基准价与买入点差实时计算</div></div>
         <div className="f-stat"><div className="k">基准价</div><div className="v">{vnd(data?.baseRateVndPerUsdt ?? 0)}</div><div className="sub">手动维护 · 20,000–35,000</div></div>
         <div className="f-stat cyan"><div className="k">买入点差</div><div className="v">{data?.buySpreadPct ?? 0}%</div><div className="sub">合法范围 0–3%</div></div>
         <div className="f-stat warn"><div className="k">锁价窗</div><div className="v">{data?.lockWindowMinutes ?? 0} 分钟</div><div className="sub">付款单下单即锁定</div></div>
@@ -120,7 +120,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
 
       <div className="two-col r11">
         <section className="l-card">
-          <div className="l-h"><span className="ttl">牌价配置（操作确认）</span><span className="sub">· 以服务器配置为准 · CAS + 防重 + 审计</span><div className="r"><button className="l-btn sm" disabled={loading || busy} onClick={() => void load()}>刷新</button></div></div>
+          <div className="l-h"><span className="ttl">牌价配置（操作确认）</span><span className="sub">· 按系统配置执行；防止覆盖他人修改和重复提交，并保存操作记录</span><div className="r"><button className="l-btn sm" disabled={loading || busy} onClick={() => void load()}>刷新</button></div></div>
           <div className="l-b">
             {PARAMS.map((param) => (
               <div className="p-row" key={param.key}>
@@ -133,7 +133,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
               <b>牌价怎么算</b> · 基准价 ×（1 + 买入点差），在整数域取整到十位。当前 {vnd(data?.baseRateVndPerUsdt ?? 0)} ×（1 + {data?.buySpreadPct ?? 0}%）= <b>{vnd(data?.quoteRateVndPerUsdt ?? 0)}</b>。
             </div>
             <div className="dtint warn" style={{ marginTop: 10 }}>
-              <b>调价不影响在途单</b> · 付款单上的牌价是下单时锁定的快照；本页调价只影响之后新建的付款单，不重算、不追差。
+              <b>调价不影响在途单</b> · 付款单沿用下单时锁定的汇率；本页调价只影响之后新建的付款单，不重算、不追差。
             </div>
           </div>
         </section>
