@@ -71,6 +71,9 @@ function formatMoney(value: string | undefined) {
   return Number.isFinite(parsed) ? parsed.toLocaleString("en-US") : "0";
 }
 function dimensionLabel(value: string) { return DIMENSION_LABELS[value] ?? value ?? "—"; }
+function conditionDisplay(text: string) {
+  return text.replace(/addressReputationSource=(internal|third-party|combined)\s*;\s*addressReputationLowThreshold=([\d.]+)/gi, (_m, source: string, threshold: string) => "地址信誉来源：" + ADDRESS_SOURCE_LABEL[source.toLowerCase()] + "；低信誉阈值：" + threshold).replace(/single/gi, "单笔").replace(/24h/gi, "24小时").replace(/withdrawals?/gi, "笔").replace(/registered/gi, "注册").replace(/days?/gi, "天").replace(/\bor\b/gi, "或");
+}
 function dryRunStatusLabel(value: string) { return DRY_RUN_STATUS_LABELS[value] ?? "状态未知"; }
 function operatorCopy(value: string, fallback: string) {
   return !value || /\bnx_|数据库|database|\bdb\b|mybatis|表字段/i.test(value) ? fallback : value;
@@ -147,13 +150,13 @@ function k3RuleBusinessForm(kind: K3RuleKind, current: string, action: RuleActio
   ];
   if (kind === "amount") return { kind: "multi-field", title: "金额规则", hint: "金额范围 $100-$50,000；同时保存命中动作与优先级。", fields: [
     { key: "amountOp", label: "比较符", current: parsed.value.amountOp, inputKind: "select", options: [">=", ">"] },
-    { key: "amount", label: "单笔金额 USD", current: parsed.value.amount, inputKind: "number", min: 100, max: 50000, step: 100 }, ...common,
+    { key: "amount", label: "单笔金额（美元）", current: parsed.value.amount, inputKind: "number", min: 100, max: 50000, step: 100 }, ...common,
   ] };
   if (kind === "velocity") return { kind: "multi-field", title: "速度规则", hint: "24 小时内笔数或累计金额任一命中即触发。", fields: [
     { key: "countOp", label: "笔数比较符", current: parsed.value.countOp, inputKind: "select", options: [">=", ">"] },
     { key: "count", label: "24h 笔数", current: parsed.value.count, inputKind: "number", min: 1, max: 20, step: 1 },
     { key: "velocityAmountOp", label: "金额比较符", current: parsed.value.velocityAmountOp, inputKind: "select", options: [">=", ">"] },
-    { key: "velocityAmount", label: "24h 金额 USD", current: parsed.value.velocityAmount, inputKind: "number", min: 500, max: 50000, step: 500 }, ...common,
+    { key: "velocityAmount", label: "24小时累计金额（美元）", current: parsed.value.velocityAmount, inputKind: "number", min: 500, max: 50000, step: 500 }, ...common,
   ] };
   if (kind === "newAccount") return { kind: "multi-field", title: "新账户保护", hint: "注册天数范围 0-30 天。", fields: [
     { key: "accountOp", label: "注册天数比较符", current: parsed.value.accountOp, inputKind: "select", options: ["<", "<="] },
@@ -171,11 +174,11 @@ function newK3RuleBusinessForm(): BusinessFormSpec {
     { key: "action", label: "命中动作", current: "延迟", inputKind: "select", options: ACTION_OPTIONS },
     { key: "priority", label: "优先级", current: "50", inputKind: "number", min: 1, max: 100, step: 1 },
     { key: "amountOp", label: "金额比较符", current: ">=", inputKind: "select", options: [">=", ">"], visibleWhen: { key: "dimension", equals: "金额" } },
-    { key: "amount", label: "单笔金额 USD", current: "1000", inputKind: "number", min: 100, max: 50000, step: 100, visibleWhen: { key: "dimension", equals: "金额" } },
+    { key: "amount", label: "单笔金额（美元）", current: "1000", inputKind: "number", min: 100, max: 50000, step: 100, visibleWhen: { key: "dimension", equals: "金额" } },
     { key: "countOp", label: "笔数比较符", current: ">", inputKind: "select", options: [">=", ">"], visibleWhen: { key: "dimension", equals: "速度" } },
     { key: "count", label: "24h 笔数", current: "3", inputKind: "number", min: 1, max: 20, step: 1, visibleWhen: { key: "dimension", equals: "速度" } },
-    { key: "velocityAmountOp", label: "24h 金额比较符", current: ">", inputKind: "select", options: [">=", ">"], visibleWhen: { key: "dimension", equals: "速度" } },
-    { key: "velocityAmount", label: "24h 金额 USD", current: "5000", inputKind: "number", min: 500, max: 50000, step: 500, visibleWhen: { key: "dimension", equals: "速度" } },
+    { key: "velocityAmountOp", label: "24小时金额比较符", current: ">", inputKind: "select", options: [">=", ">"], visibleWhen: { key: "dimension", equals: "速度" } },
+    { key: "velocityAmount", label: "24小时累计金额（美元）", current: "5000", inputKind: "number", min: 500, max: 50000, step: 500, visibleWhen: { key: "dimension", equals: "速度" } },
     { key: "accountOp", label: "注册天数比较符", current: "<", inputKind: "select", options: ["<", "<="], visibleWhen: { key: "dimension", equals: "新账户" } },
     { key: "days", label: "注册天数", current: "7", inputKind: "number", min: 0, max: 30, step: 1, visibleWhen: { key: "dimension", equals: "新账户" } },
     { key: "addressSource", label: "地址信誉来源", current: ADDRESS_SOURCE_OPTIONS[0], inputKind: "select", options: ADDRESS_SOURCE_OPTIONS, wide: true, visibleWhen: { key: "dimension", equals: "地址信誉" } },
@@ -238,7 +241,7 @@ export function K3HeaderActions({ ctx, onResult }: { ctx: KCtx; onResult: (resul
     <button
       className="f-cta"
       disabled={!canDryRun}
-      title={ctx.contentError ? "K3 权威数据不可用，已禁用模拟" : !canDryRun ? "缺少 risk_k3_write 权限" : undefined}
+      title={ctx.contentError ? "K3 权威数据不可用，已禁用模拟" : !canDryRun ? "缺少提现风险规则编辑权限" : undefined}
       onClick={dryRun}
     >
       沙盒模拟（不写生产）
@@ -325,7 +328,7 @@ export function K3Rules({ ctx, dryRunResult }: { ctx: KCtx; dryRunResult: K3DryR
     },
   });
 
-  if (!canRead) return <section className="l-card"><div className="l-h"><span className="ttl">无权查看提现风控规则</span><span className="sub">· 需要 risk_k3_read 权限</span></div></section>;
+  if (!canRead) return <section className="l-card"><div className="l-h"><span className="ttl">无权查看提现风控规则</span><span className="sub">· 需要提现风险规则查看权限</span></div></section>;
   if (ctx.contentLoading) return <section className="l-card"><div className="l-h"><span className="ttl">K3 数据加载中</span><span className="sub">· 正在读取提现规则</span></div></section>;
   if (ctx.contentError) return <section className="l-card"><div className="l-h"><span className="ttl">K3 数据加载失败</span><span className="sub">· {ctx.contentError}</span><div className="r"><button className="l-btn" onClick={() => void ctx.reloadKRisk(query).catch(() => undefined)}>仅重试 K3</button></div></div></section>;
   if (!overview) return <section className="l-card"><div className="l-h"><span className="ttl">K3 暂无可展示数据</span></div></section>;
@@ -369,14 +372,14 @@ export function K3Rules({ ctx, dryRunResult }: { ctx: KCtx; dryRunResult: K3DryR
         const editable = canWrite && !!dimension.ruleId && !parsed.conditionParseError && dimension.action !== "pass" && !!editableRule;
         const unavailableReason = !projectionComplete && !matchingRule ? "当前规则版本未完整加载，请在规则总表定位后编辑" : undefined;
         const conditionCopy = k3KindFromDimension(dimension.name, dimension.ruleKey) === "address"
-          ? addressConditionCopy(dimension.conditionText) : dimension.conditionText;
-        return <div className="dim" key={`${dimension.ruleKey}-${dimension.ruleId}`}><div className="top"><span className="ic">{DIM_ICONS[dimension.icon] ?? DIM_ICONS.shield}</span><div className="nm">{dimensionLabel(dimension.name)}</div></div><div className="cond">{conditionCopy}</div><div className="why">{operatorCopy(dimension.why, "用于评估该维度的提现风险")}</div>{parsed.conditionParseError && <div className="sub" style={{ color: "var(--danger)" }}>当前条件格式无法安全编辑</div>}<div className="ft"><span className={`act ${dimension.action}`}>{RULE_ACT[dimension.action][0]}</span><span className="mono">{dimension.priority == null ? "优先级未加载" : `P${dimension.priority}`}</span><button className="l-btn sm mc" disabled={!editable} title={!canWrite ? "缺少 risk_k3_write 权限" : parsed.conditionParseError ?? unavailableReason} onClick={() => editableRule && editRule(editableRule)}>调整</button></div></div>;
+          ? addressConditionCopy(dimension.conditionText) : conditionDisplay(dimension.conditionText);
+        return <div className="dim" key={`${dimension.ruleKey}-${dimension.ruleId}`}><div className="top"><span className="ic">{DIM_ICONS[dimension.icon] ?? DIM_ICONS.shield}</span><div className="nm">{dimensionLabel(dimension.name)}</div></div><div className="cond">{conditionCopy}</div><div className="why">{operatorCopy(dimension.why, "用于评估该维度的提现风险")}</div>{parsed.conditionParseError && <div className="sub" style={{ color: "var(--danger)" }}>当前条件格式无法安全编辑</div>}<div className="ft"><span className={`act ${dimension.action}`}>{RULE_ACT[dimension.action][0]}</span><span className="mono">{dimension.priority == null ? "优先级未加载" : `P${dimension.priority}`}</span><button className="l-btn sm mc" disabled={!editable} title={!canWrite ? "缺少提现风险规则编辑权限" : parsed.conditionParseError ?? unavailableReason} onClick={() => editableRule && editRule(editableRule)}>调整</button></div></div>;
       })}
     </div></div></section>
 
-    <div className="two-col r135"><section className="l-card"><div className="l-h"><span className="ttl">规则总表</span><span className="sub">· 已归档规则不能再启用</span><div className="r"><button className="l-btn mc" disabled={!canCreate} title={!canCreate ? "缺少 risk_k3_rule_create 权限" : undefined} onClick={newRule}>+ 新建规则</button></div></div><div style={{ overflowX: "auto" }}><table className="l-tbl" style={{ minWidth: 820 }}><thead><tr><th>规则</th><th>维度</th><th>条件</th><th>动作</th><th>优先级</th><th>版本</th><th>状态</th><th style={{ textAlign: "right" }}>操作</th></tr></thead><tbody>
+    <div className="two-col r135"><section className="l-card"><div className="l-h"><span className="ttl">规则总表</span><span className="sub">· 已归档规则不能再启用</span><div className="r"><button className="l-btn mc" disabled={!canCreate} title={!canCreate ? "缺少新增提现风险规则权限" : undefined} onClick={newRule}>+ 新建规则</button></div></div><div style={{ overflowX: "auto" }}><table className="l-tbl" style={{ minWidth: 820 }}><thead><tr><th>规则</th><th>维度</th><th>条件</th><th>动作</th><th>优先级</th><th>版本</th><th>状态</th><th style={{ textAlign: "right" }}>操作</th></tr></thead><tbody>
       {rules.length === 0 && <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--ink-4)" }}>暂无提现风控规则</td></tr>}
-      {rules.map((rule) => { const [stateLabel, stateTone] = RULE_ST[rule.state]; const [actionLabel, actionTone] = RULE_ACT[rule.action]; return <tr key={rule.ruleId}><td className="mono">{rule.ruleId}</td><td>{dimensionLabel(rule.dimension)}</td><td className="mono">{rule.conditionText}</td><td><span className={`bdg ${actionTone}`}>{actionLabel}</span></td><td className="mono">{rule.priority}</td><td className="mono">v{rule.version}</td><td><span className={`bdg ${stateTone}`}>{stateLabel}</span></td><td style={{ textAlign: "right", whiteSpace: "nowrap" }}><span style={{ display: "inline-flex", gap: 6 }}><button className="l-btn sm" disabled={!canWrite || rule.state === "archived" || rule.action === "pass" || !!parseK3Condition(k3KindFromDimension(rule.dimension), rule.conditionText).conditionParseError} onClick={() => editRule(rule)}>编辑</button>{rule.state === "active" && <button className="l-btn sm mc" disabled={!canToggle} onClick={() => toggleRule(rule, "paused")}>停用</button>}{(rule.state === "paused" || rule.state === "draft") && <button className="l-btn sm mc" disabled={!canToggle} onClick={() => toggleRule(rule, "active")}>启用</button>}{rule.state === "paused" && <button className="l-btn sm" disabled={!canArchive} onClick={() => archiveRule(rule)}>归档</button>}{rule.state === "archived" && <button className="l-btn sm" disabled title="归档规则是终态">已归档</button>}</span></td></tr>; })}
+      {rules.map((rule) => { const [stateLabel, stateTone] = RULE_ST[rule.state]; const [actionLabel, actionTone] = RULE_ACT[rule.action]; return <tr key={rule.ruleId}><td className="mono">{rule.ruleId}</td><td>{dimensionLabel(rule.dimension)}</td><td className="mono">{conditionDisplay(rule.conditionText)}</td><td><span className={`bdg ${actionTone}`}>{actionLabel}</span></td><td className="mono">{rule.priority}</td><td className="mono">v{rule.version}</td><td><span className={`bdg ${stateTone}`}>{stateLabel}</span></td><td style={{ textAlign: "right", whiteSpace: "nowrap" }}><span style={{ display: "inline-flex", gap: 6 }}><button className="l-btn sm" disabled={!canWrite || rule.state === "archived" || rule.action === "pass" || !!parseK3Condition(k3KindFromDimension(rule.dimension), rule.conditionText).conditionParseError} onClick={() => editRule(rule)}>编辑</button>{rule.state === "active" && <button className="l-btn sm mc" disabled={!canToggle} onClick={() => toggleRule(rule, "paused")}>停用</button>}{(rule.state === "paused" || rule.state === "draft") && <button className="l-btn sm mc" disabled={!canToggle} onClick={() => toggleRule(rule, "active")}>启用</button>}{rule.state === "paused" && <button className="l-btn sm" disabled={!canArchive} onClick={() => archiveRule(rule)}>归档</button>}{rule.state === "archived" && <button className="l-btn sm" disabled title="归档规则是终态">已归档</button>}</span></td></tr>; })}
     </tbody></table></div><DataListPager label="规则总表" page={rulesPage?.pageNum ?? rulePage} pageSize={rulesPage?.pageSize ?? rulePageSize} total={rulesPage?.total ?? rules.length} onPageChange={setRulePage} onPageSizeChange={(next) => { setRulePageSize(next); setRulePage(1); }} pageSizeOptions={[5, 10, 20]} /></section>
 
     <section className="l-card"><div className="l-h"><span className="ttl">路由结果分布</span><span className="sub">· 评估规则松紧</span></div><div className="l-b">{routeCounts.length === 0 ? <div className="sub">暂无路由结果数据</div> : <><div className="route-bar">{routeCounts.map((route) => <i key={route.key} style={{ width: `${pct1(route.count, routeTotal)}%`, background: route.color }} title={`${RULE_ACT[route.key][0]} ${pct1(route.count, routeTotal)}%`} />)}</div><div className="route-legend">{routeCounts.map((route) => <span className="it" key={route.key}><span className="d2" style={{ background: route.color }} />{RULE_ACT[route.key][0]} {pct1(route.count, routeTotal)}%</span>)}</div></>}</div></section></div>

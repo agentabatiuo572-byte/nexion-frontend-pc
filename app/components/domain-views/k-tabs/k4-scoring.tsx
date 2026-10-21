@@ -72,7 +72,7 @@ const K4_MAPPING_FIELDS: Array<{ key: K4ScoreMappingKey; label: string; min: num
   { key: "arbitrage.severeScore", label: "高风险套利情形的风险分", min: 0, max: 100 },
   { key: "withdraw.baselineMultiplierPct", label: "提现基线倍数（%）", min: 100, max: 1000 },
   { key: "withdraw.baselineScore", label: "提现超过平时水平时的风险分", min: 0, max: 100 },
-  { key: "withdraw.highFrequency24h", label: "24h 高频最小笔数", min: 1, max: 100 },
+  { key: "withdraw.highFrequency24h", label: "24小时频繁提现最少笔数", min: 1, max: 100 },
   { key: "withdraw.largeAmountUsd", label: "大额单笔阈值（USD）", min: 1, max: 1000000 },
   { key: "withdraw.highScore", label: "频繁大额提现情形的风险分", min: 0, max: 100 },
   { key: "account.matureDays", label: "成熟账户天数", min: 1, max: 10000 },
@@ -486,7 +486,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
     }
     ctx.openActionConfirm({
       action: "发布 K4 评分模型草稿",
-      detail: `生效模型 v${overview.model.version} → 草稿 v${draft.version}。变更：${modelPublishDiff(overview.model, draft, overview.dimensions)}。发布即触发按 200 人分片的全量重算，进度会在页面持续显示；影响 D2 路由、B5 点亮与 C1 展示分，旧生效版本自动归档并保留版本快照。`,
+      detail: `生效模型 v${overview.model.version} → 草稿 v${draft.version}。变更：${modelPublishDiff(overview.model, draft, overview.dimensions)}。发布即触发每批 200 人的重新计算全部用户，进度会在页面持续显示；影响 D2 路由、B5 点亮与 C1 展示分，旧生效版本自动归档并保留版本快照。`,
       run: (reason) => {
         const fingerprint = JSON.stringify({ expectedVersion: draft.rowVersion, reason });
         return runAction(
@@ -512,11 +512,11 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
         ))}
         {overview.totalUsers === 0 && <div className="f-stat"><div className="k">评分用户</div><div className="v">0</div><div className="sub">暂无风险评分用户</div></div>}
         <div className="f-stat cyan"><div className="k">人工覆盖中</div><div className="v">{overview.overrideActive}</div><div className="sub">全部带原因留痕 · 可回归模型</div></div>
-        <div className={`f-stat ${overview.recomputePending > 0 ? "warn" : "good"}`}><div className="k">模型重算队列</div><div className="v">{overview.recomputePending}</div><div className="sub">{overview.recomputePending > 0 ? "后台按 200 人分片推进，每秒续跑" : "全部用户已对齐当前模型"}</div></div>
+        <div className={`f-stat ${overview.recomputePending > 0 ? "warn" : "good"}`}><div className="k">模型重算队列</div><div className="v">{overview.recomputePending}</div><div className="sub">{overview.recomputePending > 0 ? "后台每批 200 人推进，每秒续跑" : "全部用户已按当前模型评分"}</div></div>
       </div>
 
       {canReadWithdrawalAlerts && <section className="l-card" aria-label="K4 提现升级告警">
-        <div className="l-h"><span className="ttl">K4 提现升级告警</span><span className="sub">· A6 权限 risk_k4_user_override / 超管 · 持久化逐人送达</span><div className="r"><span className={`bdg ${withdrawalAlerts.some((alert) => !alert.read) ? "bad" : "done"}`}>{withdrawalAlerts.filter((alert) => !alert.read).length} 条未读</span></div></div>
+        <div className="l-h"><span className="ttl">K4 提现升级告警</span><span className="sub">· 需要风险评分人工调整权限或超级管理员权限；告警逐条发送并保存送达记录</span><div className="r"><span className={`bdg ${withdrawalAlerts.some((alert) => !alert.read) ? "bad" : "done"}`}>{withdrawalAlerts.filter((alert) => !alert.read).length} 条未读</span></div></div>
         <div className="l-b">
           {withdrawalAlertError && <div className="dtint warn" data-module-health-state="error">告警读取失败 · {withdrawalAlertError} · 未展示缓存值</div>}
           {!withdrawalAlertError && withdrawalAlerts.length === 0 && <div className="note">暂无提现升级告警。</div>}
@@ -639,11 +639,11 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
       </section>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">模型版本历史</span><span className="sub">· active / draft / archived 完整快照，可恢复为草稿后再发布</span></div>
+        <div className="l-h"><span className="ttl">模型版本历史</span><span className="sub">· 生效中、草稿、已归档版本的完整记录，可恢复为草稿后再发布</span></div>
         <div className="l-b">
           {overview.modelHistory.map((model) => (
             <div className="ktint" key={`${model.version}-${model.state}`} style={{ marginBottom: 8 }}>
-              <span className="tx"><b>v{model.version}</b> · {model.state} · {model.createdBy} · {model.createdAt} · {model.reason}</span>
+              <span className="tx"><b>v{model.version}</b> · {({ active: "生效中", draft: "草稿", archived: "已归档" } as Record<string, string>)[model.state] ?? "版本状态待核实"} · {model.createdBy} · {model.createdAt} · {model.reason}</span>
               {canModelWrite && model.state === "archived" && (
                 <button className="l-btn" disabled={modelDirty} onClick={() => ctx.openActionConfirm({
                   action: `恢复 K4 历史模型 v${model.version} 为草稿`,
@@ -664,8 +664,8 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
       <section className="l-card">
         <div className="l-h"><span className="ttl">分档与全平台分布</span><span className="sub">· 雷达告警线只引用当前生效模型</span>
           {canRecompute && <div className="r"><button className="l-btn" disabled={overview.totalUsers > 1000} onClick={() => ctx.openActionConfirm({
-            action: "全量重算 K4 风险分",
-            detail: `按当前生效模型 v${overview.model.version} 原子重算 ${overview.totalUsers} 名在册用户，清除活动人工覆盖并保留历史版本快照。单次人工全量上限为 1000 人；更大规模由模型发布后的后台分片队列完成。`,
+            action: "重新计算全部用户 K4 风险分",
+            detail: `按当前生效模型 v${overview.model.version} 统一重新计算 ${overview.totalUsers} 名在册用户，清除当前人工调整并保留历史版本快照。单次人工全量上限为 1000 人；更大规模由模型发布后的后台分批队列完成。`,
             run: (reason) => runAction(
               "batch-recompute",
               JSON.stringify({ modelVersion: overview.model.version, reason }),
@@ -673,7 +673,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
               "K4 全量评分已重算并留痕",
               async () => { if (lookupUser) await loadUser(lookupUser.userNo); },
             ),
-          })}>全量重算回模型分</button>{overview.totalUsers > 1000 && <span className="note">超过 1000 人时请通过发布模型触发后台分片重算。</span>}</div>}
+          })}>恢复全部用户的模型评分</button>{overview.totalUsers > 1000 && <span className="note">超过 1000 人时请通过发布模型触发后台分批重算。</span>}</div>}
         </div>
         <div className="l-b">
           {dist.length === 0 ? (
@@ -818,7 +818,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
                 </div>
               </details>
               {lookupUser.modelVersion !== `k4-v${overview.model.version}` && (
-                <div className="ktint warn" style={{ marginTop: 10 }}>该用户仍在后台分片重算队列中；当前卡片是旧模型快照，可点击“回归模型分”立即按 v{overview.model.version} 重算。</div>
+                <div className="ktint warn" style={{ marginTop: 10 }}>该用户仍在后台分批重算队列中；当前卡片是旧模型快照，可点击“回归模型分”立即按 v{overview.model.version} 重算。</div>
               )}
             </>
           )}

@@ -38,8 +38,8 @@ type BoardThreshold = { kind: "board"; operator: string; multiplier: string; bas
 type K2Threshold = TrialThreshold | GiftThreshold | BoardThreshold;
 
 const K2_PARAM_HELP: Record<string, string> = {
-  trialCycleThreshold: "同一实体或账户簇在周期内反复开试用的次数阈值。",
-  welcomeGiftAnomalyThreshold: "同一口径下重复领取新人礼的笔数阈值。",
+  trialCycleThreshold: "同一人或组织的关联账户在统计期间反复开试用的次数阈值。",
+  welcomeGiftAnomalyThreshold: "同一统计规则下重复领取新人礼的笔数阈值。",
   leaderboardVelocityMultiplier: "排行榜、邀请或佣金增长速度相对基线的倍数阈值。",
 };
 
@@ -109,11 +109,11 @@ function k2ParamBusinessForm(p: KRiskParam): BusinessFormSpec | null {
     return {
       kind: "multi-field",
       title: "业务表单 · 新人礼异常阈值",
-      hint: "提交值由字段生成,格式为“比较符 数值 笔 / 口径”。后端校验范围:笔数 1-5,口径只能从下拉选择。",
+      hint: "提交值由字段生成,格式为“比较符 数值 笔 / 统计规则”。后端校验范围:笔数 1-5,统计规则只能从下拉选择。",
       fields: [
         { key: "operator", label: "比较符", current: current.operator, inputKind: "select", options: [">=", ">"] },
         { key: "count", label: "异常笔数", current: current.count, inputKind: "number", min: 1, max: 5, step: 1 },
-        { key: "scope", label: "统计口径", current: current.scope, inputKind: "select", options: ["实体", "账户簇", "手机号", "设备"] },
+        { key: "scope", label: "统计规则", current: current.scope, inputKind: "select", options: ["实体", "账户簇", "手机号", "设备"], optionLabels: { "实体": "同一人或组织", "账户簇": "关联账户组", "手机号": "手机号", "设备": "设备" } },
       ],
     };
   }
@@ -374,7 +374,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
   };
 
   if (ctx.contentLoading) {
-    return <section className="l-card"><div className="l-h"><span className="ttl">K2 数据加载中</span><span className="sub">· 正在读取后端 risk 接口</span></div></section>;
+    return <section className="l-card"><div className="l-h"><span className="ttl">K2 数据加载中</span><span className="sub">· 正在读取风险数据</span></div></section>;
   }
 
   if (ctx.contentError) {
@@ -530,7 +530,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
                             if (action === "freeze") {
                               if (!canFreeze) return null;
                               const ready = r.clusterStatus === "flagged" && r.clusterVersion !== undefined;
-                              return <button key={action} className="l-btn sm mc" disabled={!ready} title={ready ? "提交 A2 确认链" : "需先在 K1 将关联簇标记为可疑"} onClick={() => linkFreeze(r)}>{ready ? "联动 K1 冻结" : "先到 K1 标可疑"}</button>;
+                              return <button key={action} className="l-btn sm mc" disabled={!ready} title={ready ? "提交 A2 确认链" : "需先在 K1 将关联账户组标记为可疑"} onClick={() => linkFreeze(r)}>{ready ? "联动 K1 冻结" : "先到 K1 标记为可疑"}</button>;
                             }
                             return <span key={action} className="bdg warn" title="服务端返回了前端不认识的动作，已失败关闭">未知动作</span>;
                           })}

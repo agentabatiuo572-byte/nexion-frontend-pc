@@ -64,7 +64,7 @@ export function K6Dashboard() {
     return <div className="k6-empty k6-error" data-module-health-state="error">看板读取失败，未显示旧数据且数据未更新。{error} <button className="k6-pgbtn" onClick={() => void retry()}>重试</button></div>;
   }
   if (snapshot.summary.totalDevices === 0) {
-    return <div className="k6-empty">暂无设备样本，暂不能判定健康度、漏斗或趋势。等待 App 真实上报后再重试。</div>;
+    return <div className="k6-empty">暂无设备样本，暂不能判定健康度、漏斗或趋势。等待 应用实际报告后再重试。</div>;
   }
 
   const { summary, distribution, funnel, health, primaryStrategy, recentAudit } = snapshot;
@@ -93,7 +93,7 @@ export function K6Dashboard() {
 
   return <div>
     <div className="k6-empty" role="status" style={{ marginBottom: 12 }}>
-      服务端权威快照 · 当前执行环境：{snapshot.executionEnvironment === "SANDBOX" ? "Sandbox（仅 Test/Acceptance，不释放生产收益）" : "Production（设备绑定 HMAC 证明）"}
+      当前数据来自服务器 · 当前执行环境：{snapshot.executionEnvironment === "SANDBOX" ? "测试环境（仅用于测试验收，不发放正式环境收益）" : "正式环境（使用设备绑定的安全验证）"}
     </div>
     <div className="k6-command">
       <div className="k6-cmd-kicker">下一步 · 服务端决策建议</div>
@@ -114,7 +114,7 @@ export function K6Dashboard() {
 
     {primaryStrategy && <div className="k6-panel">
       <div className="k6-sec-head"><div><div className="k6-kicker">当前生效策略</div><h3>{primaryStrategy.name}</h3><p>{primaryStrategy.description}</p></div><span className="k6-bdg good">优先级 {primaryStrategy.priority}</span></div>
-      <div className="k6-body">动作：{ACTION_TYPE_LABEL[primaryStrategy.action.type]}{primaryStrategy.action.remoteUrlKey ? ` · ${remoteTargetBindingLabel(primaryStrategy.action.remoteUrlKey, primaryStrategy.action.remoteTargetVersion, primaryStrategy.action.remoteTargetCatalogVersion)}` : ""} · 灰度 {primaryStrategy.rollout?.percent ?? 100}%</div>
+      <div className="k6-body">动作：{ACTION_TYPE_LABEL[primaryStrategy.action.type]}{primaryStrategy.action.remoteUrlKey ? ` · ${remoteTargetBindingLabel(primaryStrategy.action.remoteUrlKey, primaryStrategy.action.remoteTargetVersion, primaryStrategy.action.remoteTargetCatalogVersion)}` : ""} · 分批开放 {primaryStrategy.rollout?.percent ?? 100}%</div>
     </div>}
 
     <div className="k6-panel">

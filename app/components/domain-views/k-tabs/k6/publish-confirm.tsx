@@ -58,7 +58,7 @@ export function PublishConfirm({ strategy: s, operatorId, onClose }: { strategy:
           <button className="k6-modal-close" onClick={onClose} aria-label="关闭"><X size={18} aria-hidden /></button>
         </div>
         <div className="k6-modal-body">
-          <div className="k6-hint" style={{ marginTop: 0, marginBottom: 10 }}>发布后立即生效,生成不可变版本 v{s.version + 1}。以下为对当前有效设备集的干跑预估影响:</div>
+          <div className="k6-hint" style={{ marginTop: 0, marginBottom: 10 }}>发布后立即生效,生成不可变版本 v{s.version + 1}。以下为对当前有效设备集的模拟执行预估影响:</div>
           <div className="k6-dryrun-grid" style={{ marginBottom: 14 }}>
             <div className="k6-dryrun-cell hit"><div className="v">{dry?.hit ?? "…"}</div><div className="k">预计命中</div></div>
             <div className="k6-dryrun-cell"><div className="v">{dry ? `${dry.hitRate}%` : "…"}</div><div className="k">命中率</div></div>

@@ -124,7 +124,7 @@ export function K6Queue() {
 
   if (statusLoad === "idle" || statusLoad === "loading") return <div className="k6-empty">正在读取设备队列…</div>;
   if (statusLoad === "error") return <div className="k6-empty k6-error" data-module-health-state="error">设备队列读取失败，数据未更新。{loadError} <button className="k6-pgbtn" onClick={() => void retry()}>重试</button></div>;
-  if (devices.length === 0) return <div className="k6-empty">暂无设备上报。等待 App 真实上报后再重试。</div>;
+  if (devices.length === 0) return <div className="k6-empty">暂无设备上报。等待 应用实际报告后再重试。</div>;
 
   return (
     <div className="k6-panel">
@@ -149,7 +149,7 @@ export function K6Queue() {
             >接管异常</button>
           </div>
           <div className="k6-toolbar-row">
-            <input className="k6-field k6-search" placeholder="搜索 会话 / 邀请码 / 渠道 / 型号 / UA" value={search} onChange={(ev) => { setSearch(ev.target.value); reset(); }} />
+            <input className="k6-field k6-search" placeholder="搜索会话 / 邀请码 / 渠道 / 型号 / 浏览器信息" value={search} onChange={(ev) => { setSearch(ev.target.value); reset(); }} />
             <span className="k6-toolbar-label">风险</span>
             <div className="k6-filters">
               {RISK_FILTERS.map(([v, l]) => (

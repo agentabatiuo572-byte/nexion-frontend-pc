@@ -180,8 +180,8 @@ export function K6RemoteTargetManager() {
       <div className="k6-sec-head">
         <div>
           <div className="k6-kicker">服务端批准目标目录</div>
-          <h3>RemoteTarget 版本管理</h3>
-          <p>数据直接来自 Janus；换 URL 只能新增不可变版本，历史版本不会被覆盖。</p>
+          <h3>批准目标版本管理</h3>
+          <p>目标数据来自服务器；修改目标地址会新增版本，历史版本保持不变。</p>
         </div>
         <span className="k6-bdg cyan">目录 v{catalogVersion}</span>
       </div>
@@ -206,7 +206,7 @@ export function K6RemoteTargetManager() {
             <button className="k6-ovr-confirm" data-proof="k6-target-create" disabled={!createValid || submitting} onClick={() => void submitVersion()}>{submitting ? "提交中…" : "确认新增不可变版本"}</button>
           </div>
         ) : (
-          <div className="k6-explain" style={{ marginBottom: 14 }}>当前账号只有 risk_k6_read；需要 risk_k6_target_manage 才能新增版本或停用目标。</div>
+          <div className="k6-explain" style={{ marginBottom: 14 }}>当前账号仅有查看权限；新增版本或停用目标需要目标管理权限。</div>
         )}
 
         {loadState === "loading" && <div className="k6-explain">正在读取真实批准目标目录…</div>}
@@ -225,7 +225,7 @@ export function K6RemoteTargetManager() {
                 <div className="k6-strat-meta">URL {target.url}</div>
                 <div className="k6-strat-meta">精确版本引用：{target.strategyCount} 条策略 · {target.pendingCommandCount} 条未领取命令</div>
                 {canManage && <div className="k6-strat-actions">
-                  <button className="k6-pgbtn" onClick={() => startVersion(target)}>以此新增版本 / 换 URL</button>
+                  <button className="k6-pgbtn" onClick={() => startVersion(target)}>以此新增版本 / 更换地址</button>
                   {target.status === "ACTIVE" && <button className="k6-pgbtn" style={{ color: "var(--danger)" }} onClick={() => { setPendingDisable(target); setReason(""); setImpact(""); setMessage(""); }}>停用</button>}
                 </div>}
               </div>

@@ -65,7 +65,7 @@ export function StatusChangeConfirm({
     setError("");
     try {
       // 原因与影响说明合并成一条 note 落审计:审计里要能独立读懂「为什么停」与「空窗谁兜」。
-      await setStatus(s.strategyId, mode, operatorId, `${reason.trim()} · 影响与兜底:${impact.trim()}`);
+      await setStatus(s.strategyId, mode, operatorId, `${reason.trim()} · 影响与应对措施:${impact.trim()}`);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? displayAdminError(err) : `${copy.verb}失败，请重试`);
@@ -91,7 +91,7 @@ export function StatusChangeConfirm({
           </div>
           <div className="k6-ovr-field" style={{ marginBottom: 0 }}>
             <label htmlFor="k6-status-impact">影响说明<i>必填</i></label>
-            <textarea id="k6-status-impact" className="k6-field k6-textarea" rows={2} value={impact} onChange={(e) => setImpact(e.target.value)} placeholder="这段时间内相关风险由什么兜底(其他策略 / 人工巡检 / 已下线场景)。" />
+            <textarea id="k6-status-impact" className="k6-field k6-textarea" rows={2} value={impact} onChange={(e) => setImpact(e.target.value)} placeholder="这段时间内相关如何控制相关风险(其他策略 / 人工巡检 / 已下线场景)。" />
             {!!impact.length && impact.trim().length < 4 && <div className="k6-hint" style={{ color: "var(--warning)", marginTop: 4 }}>影响说明至少 4 字。</div>}
           </div>
         </div>

@@ -281,18 +281,18 @@ export function StrategyEditor({ initial, isNew, operatorId, onClose }: { initia
           </div>
 
           <div className="k6-ovr-field">
-            <label htmlFor="st-rollout">灰度比例</label>
+            <label htmlFor="st-rollout">分批开放比例</label>
             <input id="st-rollout" className="k6-field" type="number" min={0} max={100} value={s.rollout?.percent ?? 100}
               onChange={(e) => patch({ rollout: { percent: Math.max(0, Math.min(100, Number(e.target.value || 0))), cohortIds: s.rollout?.cohortIds } })} />
-            <div className="k6-hint">100% = 全量生效;小于 100% = 仅对该比例设备灰度放量(可配合上方适用范围的渠道 / 邀请码定向)。</div>
-            <div className="k6-list-editor" aria-label="灰度人群队列列表" style={{ marginTop: 8 }}>
+            <div className="k6-hint">100% = 全量生效;小于 100% = 仅对该比例设备分批开放(可配合上方适用范围的渠道 / 邀请码定向)。</div>
+            <div className="k6-list-editor" aria-label="分批开放人群队列列表" style={{ marginTop: 8 }}>
               {rolloutCohortRows.map((cohortId, index) => <div className="k6-list-row" key={index}>
-                <input className="k6-field" value={cohortId} onChange={(event) => setRolloutCohortAt(index, event.target.value)} placeholder={`灰度队列 ${index + 1}`} />
-                <button type="button" className="k6-rl-del" onClick={() => removeRolloutCohortAt(index)} aria-label={`删除灰度队列 ${index + 1}`}><Trash2 size={14} /></button>
+                <input className="k6-field" value={cohortId} onChange={(event) => setRolloutCohortAt(index, event.target.value)} placeholder={`分批开放队列 ${index + 1}`} />
+                <button type="button" className="k6-rl-del" onClick={() => removeRolloutCohortAt(index)} aria-label={`删除分批开放队列 ${index + 1}`}><Trash2 size={14} /></button>
               </div>)}
-              <button type="button" className="k6-pgbtn" onClick={() => patch({ rollout: { ...(s.rollout ?? { percent: 100 }), cohortIds: [...rolloutCohortRows, ""] } })}><Plus size={13} /> 添加灰度队列</button>
+              <button type="button" className="k6-pgbtn" onClick={() => patch({ rollout: { ...(s.rollout ?? { percent: 100 }), cohortIds: [...rolloutCohortRows, ""] } })}><Plus size={13} /> 添加分批开放队列</button>
             </div>
-            <div className="k6-hint">灰度队列与灰度比例共同参与服务端命中判定。</div>
+            <div className="k6-hint">分批开放队列与分批开放比例共同参与服务端命中判定。</div>
           </div>
 
           <div className="k6-ovr-field" style={{ marginBottom: 0 }}>

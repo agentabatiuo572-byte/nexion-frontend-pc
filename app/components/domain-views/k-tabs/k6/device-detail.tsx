@@ -108,7 +108,7 @@ export function K6DeviceDetail({ device, onClose }: { device: Device; onClose: (
         const reason = window.prompt("请输入查询应用态理由（至少 8 个字）", "主动核验设备当前实际应用状态");
         if (!reason || reason.trim().length < 8) throw new Error("操作理由至少 8 个字");
         const result = await reconcileK6Takeover(d.sid, { expectedVersion: d.takeover.rowVersion, reason: reason.trim(), operator: operator.id });
-        setTakeoverMessage(result.fresh ? "设备已返回新的应用态对账结果。" : "设备在 15 秒内未响应；当前仍为 fresh=false，未使用旧值冒充实时结果。");
+        setTakeoverMessage(result.fresh ? "设备已返回新的应用态对账结果。" : "设备在15秒内未响应，当前没有最新结果；未使用旧数据代替。");
       } else {
         const reason = window.prompt("请输入操作理由（至少 8 个字）", "设备接管异常处置与应用态核验");
         if (!reason || reason.trim().length < 8) throw new Error("操作理由至少 8 个字");
@@ -117,7 +117,7 @@ export function K6DeviceDetail({ device, onClose }: { device: Device; onClose: (
         if (action === "resend") await resendK6TakeoverRevoke(d.sid, body);
         if (action === "retry") await retryK6Takeover(d.sid, body);
         if (action === "target") {
-          const targetId = window.prompt("批准目标 key", d.remoteUrlKey ?? "");
+          const targetId = window.prompt("批准目标编号", d.remoteUrlKey ?? "");
           const targetVersion = Number(window.prompt("批准目标版本", String(d.remoteTargetVersion ?? "")));
           const targetCatalogVersion = Number(window.prompt("批准目录版本", String(d.remoteTargetCatalogVersion ?? "")));
           if (!targetId || !Number.isInteger(targetVersion) || targetVersion <= 0 || !Number.isInteger(targetCatalogVersion) || targetCatalogVersion <= 0) throw new Error("批准目标及版本不完整");
@@ -140,7 +140,7 @@ export function K6DeviceDetail({ device, onClose }: { device: Device; onClose: (
             <code className="sid">{d.sid}</code>
             <span className={`k6-bdg ${STATUS_TONE[d.status]}`}>{STATUS_LABEL[d.status]}</span>
             <span className="k6-srctag">来源 · {STATUS_SOURCE_LABEL[d.statusSource]}</span>
-            {d.commandState && <span className="k6-bdg warning">{COMMAND_STATE_LABEL[d.commandState] ?? "设备命令处理中"}</span>}
+            {d.commandState && <span className="k6-bdg warning">{d.takeover ? TAKEOVER_PHASE_LABEL[d.takeover.phase] : COMMAND_STATE_LABEL[d.commandState] ?? "设备命令状态待核实"}</span>}
           </div>
           <button className="k6-modal-close" onClick={onClose} aria-label="关闭"><X size={18} aria-hidden /></button>
         </div>
@@ -239,7 +239,7 @@ export function K6DeviceDetail({ device, onClose }: { device: Device; onClose: (
                 )}
                 {operator.role !== "viewer" && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
                   {d.takeover.phase === "REVOKE_PENDING_ACK"
-                    ? <button className="k6-pgbtn" disabled={takeoverBusy} onClick={() => void runTakeover("resend")}>重发撤销（同命令 ID）</button>
+                    ? <button className="k6-pgbtn" disabled={takeoverBusy} onClick={() => void runTakeover("resend")}>重发撤销（同命令编号）</button>
                     : !["REVOKED", "CANCELLED", "NONE", "HIT_NOT_REQUESTED"].includes(d.takeover.phase)
                       ? <button className="k6-pgbtn" disabled={takeoverBusy} onClick={() => void runTakeover("revoke")}>撤销接管</button> : null}
                   {d.takeover.phase === "FAILED" && takeoverRetryable(d.takeover.failureClass) && <button className="k6-pgbtn" disabled={takeoverBusy} onClick={() => void runTakeover("retry")}>原地重试</button>}
@@ -254,17 +254,17 @@ export function K6DeviceDetail({ device, onClose }: { device: Device; onClose: (
           <div className="k6-dsec">
             <h4>会话信息</h4>
             <KV rows={[
-              ["会话 ID", <span className="ua" key="s">{d.latestSession?.sessionId ?? "—"}</span>],
+              ["会话编号", <span className="ua" key="s">{d.latestSession?.sessionId ?? "—"}</span>],
               ["会话开始", d.latestSession ? timeAgo(d.latestSession.startedAt) : "—"],
               ["会话更新", d.latestSession ? timeAgo(d.latestSession.lastSeenAt) : "—"],
-              ["白壳阶段", d.latestSession?.appPhase === "finance" ? "真盘" : "审核态(白壳)"],
+              ["初始页面阶段", !d.latestSession ? "页面状态待核实" : d.latestSession.appPhase === "finance" ? "批准目标页面" : d.latestSession.appPhase === "benign" ? "初始页面" : "页面状态待核实"],
               ["模拟业务日", d.latestSession?.simDay != null ? `第 ${d.latestSession.simDay} 天` : "—"],
               ["前后台", isFresh(d.lastSeenAt) ? "前台活跃" : "后台 / 已离开"],
               ["设备型号", `${platformLabel(d.platform)} · ${d.model}`],
               ["系统", d.osName],
               ["浏览器", d.browser],
               ["环境风险摘要", `${e.environmentRiskScore} 分${e.riskReasons.length ? ` · ${e.riskReasons.join(" / ")}` : ""}`],
-              ["UA", <span className="ua" key="ua">{d.ua ?? "—"}</span>],
+              ["浏览器信息", <span className="ua" key="ua">{d.ua ?? "—"}</span>],
             ]} />
           </div>
 
@@ -352,7 +352,7 @@ export function K6DeviceDetail({ device, onClose }: { device: Device; onClose: (
               </div>
             )}
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              <button className="k6-pgbtn" onClick={copy}>{copied ? "已复制" : "复制会话 ID"}</button>
+              <button className="k6-pgbtn" onClick={copy}>{copied ? "已复制" : "复制会话编号"}</button>
             </div>
           </div>
         </div>

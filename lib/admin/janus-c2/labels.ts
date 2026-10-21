@@ -69,10 +69,10 @@ export const STATUS_TONE: Record<DeviceStatus, Tone> = {
 /** 状态解释文案(PRD §8.2:每个状态必须展示解释,不能只显示状态名)。 */
 export const STATUS_EXPLAIN: Record<DeviceStatus, string> = {
   NEW: "首次上报或数据不足,尚未形成明确判断,继续收集行为。",
-  OBSERVING: "环境未过滤,但成熟度不足或策略尚未命中,保持白壳继续观察。",
+  OBSERVING: "环境未过滤,但成熟度不足或策略尚未命中,保持初始页面继续观察。",
   RECOMMENDED: "成熟度达到阈值、环境风险低,建议运营确认下发。",
   HIT: "自动策略已判定可下发,等待激活或下发链路。",
-  ACTIVATED: "已写入远程地址或激活标记,后续进入真盘。",
+  ACTIVATED: "已写入远程地址或激活标记,后续进入批准的目标页面。",
   ENV_FILTERED: "命中沙箱 / 审核 / 异常环境信号,默认不下发,可复核解除。",
   MANUAL_HOLD: "运营临时暂停自动决策,到期后恢复评估或手动释放。",
   MANUAL_FORCED: "运营绕过自动策略强制下发,当前或下次会话接管。",
@@ -134,6 +134,7 @@ export const STATUS_SOURCE_LABEL: Record<StatusSource, string> = {
 };
 
 export const COMMAND_STATE_LABEL: Record<string, string> = {
+  CANCELLED: "已取消",
   PENDING: "等待下发",
   PUBLISHED: "已下发，等待设备确认",
   ACKED: "设备已确认",
@@ -158,14 +159,14 @@ export const STRATEGY_STATUS_TONE: Record<StrategyStatus, Tone> = {
 
 // ===== 策略动作(PRD §6.4)=====
 export const ACTION_TYPE_LABEL: Record<StrategyActionType, string> = {
-  BENIGN: "保持白壳",
+  BENIGN: "保持初始页面",
   RECOMMEND: "进入建议下发",
   REVERSAL_IMMEDIATE: "当前会话立即接管",
-  REVERSAL_SESSION_EDGE: "下次会话边界接管",
+  REVERSAL_SESSION_EDGE: "下次会话开始时切换到批准目标",
   ENV_FILTER: "标记环境过滤",
   MANUAL_HOLD: "暂停自动决策",
   BLOCK: "禁止下发",
-  DRY_RUN_ONLY: "仅干跑模拟",
+  DRY_RUN_ONLY: "仅模拟执行",
 };
 
 // ===== 规则组合(PRD §6.2)=====

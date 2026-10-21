@@ -8,12 +8,12 @@ import { PORTED_EMPTY_CONTENT } from "./ported-content";
 export const DOMAIN_K: ModuleEntry[] = [
   {
     path: "/risk/multi-account",
-    summary: "多账户风险排查(K1)。从 IP、设备指纹、支付工具三层去重,把疑似同一人的账户聚成「关联群」；关联强度达到当前服务端冻结建议阈值时标红。批量冻结、解除误判、判为正常都要确认,冻结记录落到 C2;IP 白名单以 K1 为准。",
+    summary: "多账户风险排查(K1)。从 IP、设备指纹、支付工具三层去重,把疑似同一人的账户聚成「关联账户组」；关联强度达到当前服务端冻结建议阈值时标红。批量冻结、解除误判、判为正常都要确认,冻结记录落到 C2;IP 允许名单以 K1 为准。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/risk/abuse",
-    summary: "异常套利与刷量排查(K2)。按命中层级分级判定(命中 ≥2 层转人工、3 层全中判定为套利闭环):试用循环、换新套利(门槛在 E3、本页只读)、刷新人礼、刷排行榜(处置归 F8)。K2 只负责标记 + 产出信号,真正批量冻结走 K1 那套流程。",
+    summary: "按试用循环、设备更换、新人奖励和排行榜识别异常获利行为。排行榜处置前往 F4；本页负责标记风险，批量冻结前往多账户风险排查。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

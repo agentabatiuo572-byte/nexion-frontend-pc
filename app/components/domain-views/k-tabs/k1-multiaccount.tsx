@@ -1,5 +1,6 @@
 "use client";
 
+import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { DataListPager, Modal } from "../design-kit";
@@ -72,7 +73,7 @@ const RELEASE_PARAM_COPY: Record<string, { name: string; sub: string }> = {
   duplicateAccountPendingFrom: { name: "第几个关联账号起审核收益", sub: "从这个账号开始，新增收益须先审核。" },
   duplicateAccountFreezeFrom: { name: "第几个关联账号起建议冻结", sub: "达到这个账号数只提出冻结建议，不会自动冻结账户。" },
   pendingReleaseHours: { name: "批量放行统计时间范围", sub: "只统计这段时间内的放行记录，不会自动放款。" },
-  appAttestationReleaseHours: { name: "App 在线验证有效时间", sub: "在线验证须在这段时间内达到要求。" },
+  appAttestationReleaseHours: { name: "应用在线验证有效时间", sub: "在线验证须在这段时间内达到要求。" },
   releaseMode: { name: "收益放行方式", sub: "选择在线验证或人工审核如何放行收益。" },
   freeSlotRequiresBinding: { name: "正常名额是否需要绑定手机号", sub: "开启后，正常放行的名额须绑定手机号。" },
 };
@@ -155,7 +156,7 @@ function linkWeightValue(draft: WeightDraft) {
 }
 
 export function K1HeaderActions() {
-  return <span className="f-ro"><span className="d" />服务端分页 · 判定全部后端落库</span>;
+  return <span className="f-ro"><span className="d" />服务端分页 · 判定全部后端保存记录</span>;
 }
 
 // 账户状态三态口径,图与表共用一套 —— 两边各写一份必然漂开(表里三种处置全坍缩成
@@ -180,7 +181,7 @@ export function isUnknownStatus(status?: string) {
 export function accountStatusLabel(status?: string) {
   const value = (status ?? "").trim();
   if (isUnknownStatus(value)) return "未知";
-  return ACCOUNT_STATUS_LABEL[value.toUpperCase()] ?? `其它(${value})`;
+  return ACCOUNT_STATUS_LABEL[value.toUpperCase()] ?? "状态待核验";
 }
 
 function ClusterGraph({ c }: { c: K1Cluster }) {
@@ -617,7 +618,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const releaseProtectedEntry = (entry: K1ProtectedEntry) => {
     ctx.openActionConfirm({
       action: `人工放行收益 · ${entry.entryNo}`,
-      detail: `${entry.userId} · ${entry.clusterId} · ${entry.amount} ${entry.asset} · ${entry.bucket}`,
+      detail: `${entry.userId} · ${entry.clusterId} · ${entry.amount} ${nexGridBrandText(entry.asset)} · ${entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"}`,
       amplifies: true,
       reasonMin: 8,
       reasonMax: 200,
@@ -796,7 +797,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   }
 
   if (ctx.contentLoading && !overview) {
-    return <section className="l-card"><div className="l-h"><span className="ttl">K1 数据加载中</span><span className="sub">· 正在读取后端 risk 接口</span></div></section>;
+    return <section className="l-card"><div className="l-h"><span className="ttl">K1 数据加载中</span><span className="sub">· 正在读取风险数据</span></div></section>;
   }
 
   return (
@@ -860,7 +861,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 ))}
               </div>
               <div className="ktint warn" style={{ marginTop: 12 }}>
-                <b>处理规则</b> · 正常名额内的收益可提现；超过审核起点后，新增收益须先审核。达到建议冻结的账号数时，系统只提出建议，不会自动冻结账户。只有人工冻结账户组，或短时间内放行数量超限，收益才会转为锁定奖励。待审核收益<b>不会因等待时间到期自动放行</b>，须通过 App 在线验证或人工放行。放宽规则可能增加资金支出，请写明依据。
+                <b>处理规则</b> · 正常名额内的收益可提现；超过审核起点后，新增收益须先审核。达到建议冻结的账号数时，系统只提出建议，不会自动冻结账户。只有人工冻结账户组，或短时间内放行数量超限，收益才会转为锁定奖励。待审核收益<b>不会因等待时间到期自动放行</b>，须通过 应用在线验证或人工放行。放宽规则可能增加资金支出，请写明依据。
               </div>
             </>
           ) : (
@@ -885,9 +886,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 {protectedEntries.map((entry) => <tr key={entry.entryNo}>
                   <td className="mono">{entry.entryNo}</td>
                   <td><div className="mono">U{entry.userId}</div><div className="tiny">{entry.clusterId}</div></td>
-                  <td><div>{entry.sourceType}</div><div className="tiny mono">{entry.sourceRef}</div></td>
+                  <td><div>{({ TRIAL: "试用收益", DEVICE: "设备收益", TASK: "任务奖励", COMMISSION: "团队分成", REFERRAL: "邀请奖励", WELCOME: "新人奖励" } as Record<string, string>)[entry.sourceType.toUpperCase()] ?? "来源待核实"}</div><div className="tiny mono">{entry.sourceRef}</div></td>
                   <td><span className={`bdg ${entry.bucket === "bonus_locked" ? "bad" : "warn"}`}>{entry.bucket === "bonus_locked" ? "锁定奖励" : "审核中"}</span></td>
-                  <td className="num mono">{entry.amount.toLocaleString("en-US")} {entry.asset}</td>
+                  <td className="num mono">{entry.amount.toLocaleString("en-US")} {nexGridBrandText(entry.asset)}</td>
                   <td className="mono tiny">{entry.createdAt}</td>
                   <td style={{ textAlign: "right" }}>{canRelease && <button className="l-btn sm mc" onClick={() => releaseProtectedEntry(entry)}>人工放行</button>}</td>
                 </tr>)}
@@ -956,7 +957,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                     <td><span className={`bdg ${stTone}`}>{stLb}</span></td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       <span style={{ display: "inline-flex", gap: 6 }} onClick={(e) => e.stopPropagation()}>
-                        {!focusBlocksSelection && c.status === "detected" && <>{canFlag && <button className="l-btn sm" onClick={() => flagCluster(c)}>标可疑</button>}{canClear && <button className="l-btn sm mc" onClick={() => clearCluster(c)}>判正常</button>}</>}
+                        {!focusBlocksSelection && c.status === "detected" && <>{canFlag && <button className="l-btn sm" onClick={() => flagCluster(c)}>标记为可疑</button>}{canClear && <button className="l-btn sm mc" onClick={() => clearCluster(c)}>判定为正常</button>}</>}
                         {!focusBlocksSelection && c.status === "flagged" && canFreeze && <button className="l-btn sm mc" onClick={() => freezeCluster(c)}>批量冻结</button>}
                         {!focusBlocksSelection && (c.status === "frozen" || c.status === "flagged") && canRelease && <button className="l-btn sm mc" onClick={() => releaseCluster(c)}>解除误判</button>}
                       </span>
@@ -989,7 +990,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             <span className="sub">· 连线表示账户之间共有的设备、支付工具或 IP</span>
             <div className="r">
               {canWrite && <button className="l-btn" onClick={() => reviewNote(cur)}>人工复审备注</button>}
-              {cur.status === "detected" && canFlag && <button className="l-btn" onClick={() => flagCluster(cur)}>标可疑</button>}
+              {cur.status === "detected" && canFlag && <button className="l-btn" onClick={() => flagCluster(cur)}>标记为可疑</button>}
               {cur.status === "flagged" && canFreeze && <button className="l-btn mc" onClick={() => freezeCluster(cur)}>批量冻结</button>}
               {(cur.status === "frozen" || cur.status === "flagged") && canRelease && <button className="l-btn mc" onClick={() => releaseCluster(cur)}>解除误判</button>}
             </div>
@@ -1053,9 +1054,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">IP 白名单</span>
+          <span className="ttl">IP 允许名单</span>
           <span className="sub">· 只影响 IP 维度,不影响设备和支付维度</span>
-          <div className="r">{canWrite && <button className="l-btn" onClick={addWl}>+ 添加白名单</button>}</div>
+          <div className="r">{canWrite && <button className="l-btn" onClick={addWl}>+ 添加允许名单</button>}</div>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 680 }}>
@@ -1075,7 +1076,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           </table>
         </div>
         <DataListPager
-          label="K1 IP 白名单"
+          label="K1 IP 允许名单"
           page={whitelistPage}
           pageSize={whitelistPageSize}
           total={whitelistPageData.total}
@@ -1177,7 +1178,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const canSave = cidrOk && noteOk && expiryOk && reasonOk;
         const update = (patch: Partial<WhitelistDraft>) => setWhitelistDraft((current) => current ? { ...current, ...patch } : current);
         return (
-          <Modal title="添加 IP 白名单" icon="shield" busy={draftSubmitting === "whitelist"} onClose={() => setWhitelistDraft(null)} footer={<>
+          <Modal title="添加 IP 允许名单" icon="shield" busy={draftSubmitting === "whitelist"} onClose={() => setWhitelistDraft(null)} footer={<>
             <button className="l-btn" disabled={draftSubmitting === "whitelist"} onClick={() => setWhitelistDraft(null)}>取消</button>
             <button className="l-btn mc" disabled={!canSave || draftSubmitting === "whitelist"} onClick={() => void saveWhitelistDraft()}>{draftSubmitting === "whitelist" ? "提交中…" : "确认加白"}</button>
           </>}>
@@ -1220,7 +1221,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             </div>
             <div className="grid g-3" style={{ gap: 10 }}>
               {[
-                ["device", "设备指纹权重", "设备指纹 / 浏览器指纹 / App 实例"] as const,
+                ["device", "设备指纹权重", "设备指纹 / 浏览器指纹 / 应用实例"] as const,
                 ["payment", "支付工具权重", "银行卡 / 钱包 / 收款工具"] as const,
                 ["ip", "IP 权重", "同出口 IP / 网段"] as const,
               ].map(([key, label, help]) => (

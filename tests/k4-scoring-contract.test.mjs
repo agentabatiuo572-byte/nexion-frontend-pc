@@ -54,7 +54,7 @@ test("K4 model changes honor A6 draft authority but keep publication superadmin-
   assert.match(component, /没有待保存的模型修改/);
   assert.match(component, /disabled=\{!modelValid \|\| !mappingsValid \|\| !modelDirty\}/);
   assert.match(component, /modelPublishDiff\(overview\.model, draft, overview\.dimensions\)/);
-  assert.match(component, /发布即触发按 200 人分片的全量重算/);
+  assert.match(component, /发布即触发每批 200 人的重新计算全部用户/);
   assert.match(component, /影响 D2 路由、B5 点亮与 C1 展示分/);
   assert.match(component, /子分映射版本快照/);
   assert.match(component, /scoreMappings/);
@@ -62,7 +62,7 @@ test("K4 model changes honor A6 draft authority but keep publication superadmin-
   assert.match(component, /restoreK4ModelDraft/);
   assert.match(component, /disabled=\{modelDirty\}/);
   assert.match(component, /完整覆盖当前待发布草稿/);
-  assert.match(component, /全量重算回模型分/);
+  assert.match(component, /恢复全部用户的模型评分/);
   assert.match(component, /recomputeK4Scores/);
   assert.match(component, /overview\.model\.version, reason, commandKey/);
   assert.match(client, /expectedModelVersion/);
@@ -123,9 +123,9 @@ test("K4 score mappings fail closed on field bounds and severity order", () => {
 test("K4 large-scale recompute is observable and manual full-run fails closed above its transaction cap", () => {
   assert.match(client, /recomputePending/);
   assert.match(component, /模型重算队列/);
-  assert.match(component, /后台按 200 人分片推进/);
+  assert.match(component, /后台每批 200 人推进/);
   assert.match(component, /disabled=\{overview\.totalUsers > 1000\}/);
-  assert.match(component, /超过 1000 人时请通过发布模型触发后台分片重算/);
+  assert.match(component, /超过 1000 人时请通过发布模型触发后台分批重算/);
   assert.match(component, /ctx\.refreshK4Scoring/);
   assert.match(component, /window\.setTimeout\(poll, 1500\)/);
   assert.match(component, /overview\?\.recomputePending/);
@@ -142,10 +142,10 @@ test("K4 withdrawal escalation alerts are durable, A6-permission scoped and huma
   assert.match(client, /\/scoring\/withdrawal-alerts/);
   assert.match(client, /export async function markK4WithdrawalAlertRead/);
   assert.match(component, /const canReadWithdrawalAlerts = canOverride \|\| isSuperAdmin/);
-  assert.match(component, /risk_k4_user_override \/ 超管/);
+  assert.match(component, /需要风险评分人工调整权限或超级管理员权限/);
   assert.doesNotMatch(component, /RISK_LEAD/);
   assert.match(component, /K4 提现升级告警/);
-  assert.match(component, /持久化逐人送达/);
+  assert.match(component, /告警逐条发送并保存送达记录/);
   assert.match(component, /markK4WithdrawalAlertRead/);
 });
 
