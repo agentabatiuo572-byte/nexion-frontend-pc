@@ -104,7 +104,7 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false }: { ctx: EV
       </>}
       <fieldset disabled={!editing}><legend>试算硬件与生效时间</legend><div style={grid}>
         <label>平台<select value={hardware.platform} onChange={event => setHardware(old => ({...old,platform:event.target.value}))}><option value="android">Android</option><option value="ios">iOS</option></select></label>
-        {(["model","soc","gpu"] as const).map(field => <label key={field}>{({model:"试算机型",soc:"试算 SoC",gpu:"试算 GPU"})[field]}<input value={hardware[field]} onChange={event => setHardware(old => ({...old,[field]:event.target.value}))} /></label>)}
+        {(["model","soc","gpu"] as const).map(field => <label key={field}>{({model:"试算机型",soc:"试算芯片",gpu:"试算显卡"})[field]}<input value={hardware[field]} onChange={event => setHardware(old => ({...old,[field]:event.target.value}))} /></label>)}
         <label>试算内存 GB<input type="number" min="0" step="0.001" value={hardware.memoryGb || ""} onChange={event => setHardware(old => ({...old,memoryGb:Number(event.target.value)}))} /></label>
         <label>生效时间（留空为审批后生效）<input type="datetime-local" value={effective} onChange={event => setEffective(event.target.value)} /></label>
       </div></fieldset>

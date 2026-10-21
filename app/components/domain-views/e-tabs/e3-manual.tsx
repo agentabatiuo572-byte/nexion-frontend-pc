@@ -1,7 +1,7 @@
 /**
  * E3 设备生命周期 & 以旧换新 — 运营操作说明手册(右上角「操作说明手册」按钮弹出)。
  * 面向初级运营者:本页是什么、怎么读任务产能曲线、每个参数调高/调低的业务影响、怎么调整一个参数
- * (单值输入原理 + 各段月份在哪改)、高敏参数与 B1 资金护栏、换机 术语中英对照、原子换机事务。
+ * (单值输入原理 + 各段月份在哪改)、高敏参数与 B1 资金护栏、换机 术语中英对照、换机处理。
  * 当前值经 ctx.pE 实时读出，手册随后台当前配置同步，不写死。
  */
 import type { ReactNode } from "react";
@@ -24,9 +24,9 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
   const mid = pE("E.device.capacity.band2DeltaPct");
   const late = pE("E.device.capacity.band3DeltaPct");
   const floor = pE("E.device.capacity.floorPct");
-  const cyc = pE("E.device.cycleMonths");
-  const s1 = pE("E.device.stageEarlyEnd");
-  const s2 = pE("E.device.stageMidEnd");
+  const cyc = pE("E.device.总周期月数");
+  const s1 = pE("E.device.初期结束月");
+  const s2 = pE("E.device.中期结束月");
   const subsidy = pE("E.device.capacity.subsidyDays");
   const ladderCuts = [1, 2, 3, 4].map((i) => pE(`E.tradein.ladder.cut${i}`));
   const ladderCredits = [1, 2, 3, 4, 5].map((i) => pE(`E.tradein.ladder.credit${i}`));
@@ -40,9 +40,9 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
     { zh: "段2 产能变化", code: "band2DeltaPct", cur: `${mid}% / 月`, up: "中段任务量边际下降加速", down: "中段更平缓" },
     { zh: "段3 产能变化", code: "band3DeltaPct", cur: `${late}% / 月`, up: "深降更陡 → 更快推向置换 → 更多换机现金流(放大资金流出)", down: "深降放缓 → 换机变慢、现金流减少", hot: true },
     { zh: "产能下限", code: "floorPct", cur: `${floor}%`, up: "地板抬高,老设备仍有产出(应付负债更高)", down: "地板压低,老设备更早趋近停产" },
-    { zh: "产能分段周期", code: "stageEarlyEnd / stageMidEnd / cycleMonths", cur: `m${s1} / m${s2} / ${cyc}月`, up: "界点 / 视窗后移 → 各段变长、深降更晚", down: "前移 → 深降更早、曲线压缩、更快换机" },
+    { zh: "产能分段周期", code: "初期结束月 / 中期结束月 / 总周期月数", cur: `m${s1} / m${s2} / ${cyc}月`, up: "界点 / 视窗后移 → 各段变长、深降更晚", down: "前移 → 深降更早、曲线压缩、更快换机" },
     { zh: "新机任务补贴天数", code: "subsidyDays", cur: `${subsidy} 天`, up: "补贴标注窗口更长 → 新机安心期更长(纯展示,不改结算)", down: "窗口更短 → 产能百分比更早露出" },
-    { zh: "参与任务递减(SKU)", code: "applyTo.*", cur: `${exemptCount} 免 / ${8 - exemptCount} 参与`, up: "更多 SKU 参与递减 → 升级压力覆盖面更广", down: "更多 SKU 免递减 → 恒 100% 产能,保护入门体验" },
+    { zh: "参与任务递减(商品规格)", code: "applyTo.*", cur: `${exemptCount} 免 / ${8 - exemptCount} 参与`, up: "更多 商品规格 参与递减 → 升级压力覆盖面更广", down: "更多 商品规格 免递减 → 恒 100% 产能,保护入门体验" },
     { zh: "阶梯分档界点", code: "ladder.cut1–4", cur: `${ladderCuts.join("/")}%`, up: "界点后移 → 高抵扣档覆盖更久,升级激励更持久(放大资金流出)", down: "界点前移 → 抵扣更快滑向低档,升级紧迫感更强" },
     { zh: "各档抵扣率", code: "ladder.credit1–5", cur: `${ladderCredits.join("/")}%`, up: "任一档上调 → 置换更划算、渗透率升,但新机净收款降(放大资金流出)", down: "下调 → 净收款高,置换吸引力下降", hot: true },
     { zh: "仅限升级更高价设备", code: "requireHigherPrice", cur: requireHigher, up: "开 → 抵扣只服务升级,每笔置换平台净收新款(默认)", down: "关 → 允许平换,抵扣可能逼近应付款,须先核 B1 覆盖率" },
@@ -55,7 +55,7 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
     { code: "ladder.credit1–5", zh: "各档抵扣率", note: "5 档抵扣比例(按实付价的 %),逐档递减 —— 产出越多抵扣越小,越早升级抵扣越多" },
     { code: "requireHigherPrice", zh: "仅限升级更高价设备", note: "置换目标必须严格高于本机实付价(抵扣只服务升级)" },
     { code: "maxDevicesPerOrder", zh: "单笔最多抵扣台数", note: "一笔升级订单最多可用几台旧机抵扣" },
-    { code: "eligibility", zh: "置换资格门槛", note: "谁可发起置换(持有等级门槛)" },
+    { code: "eligibility", zh: "置换条件", note: "谁可发起置换(持有等级门槛)" },
   ];
 
   return (
@@ -63,7 +63,7 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
       footer={null}>
       <div className="e3man">
         <p className="e3man-lead">
-          本页(<b>E3</b>)管两套相互咬合的规则:<b>设备可接任务产能随月递减的节奏</b>(AI 任务池持续升级,低阶任务量逐月减少)+ <b>旧机折价抵扣换新机(Trade-in)的规则</b>。
+          本页(<b>E3</b>)管两套相互咬合的规则:<b>设备可接任务产能随月递减的节奏</b>(AI 任务池持续升级,低阶任务量逐月减少)+ <b>旧机折价抵扣换新机(以旧换新)的规则</b>。
           两者共同决定用户的「升级节奏」——段3 深降把用户推向置换决策点,折抵力度决定置换的吸引力。
           所有参数均以后台当前配置为准，改动经<AutoGloss>操作确认</AutoGloss>后即对全网新报价 / 估值器生效(<b>不回溯已生效报价</b>)。
         </p>
@@ -71,9 +71,9 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
         <Sec n="1" title="怎么读任务产能曲线">
           <ul className="e3man-ul">
             <li><b>三段节奏</b>:段1(m1–{s1},平缓)→ 段2(m{Number(s1) + 1}–{s2},中速)→ 段3(m{Number(s2) + 1} 起,<b>深降</b>,开区间)。颜色由绿→黄→橙。</li>
-            <li><b>FLOOR {floor}%</b>:任务产能降到此下限即不再下降(虚线)。</li>
+            <li><b>最低产能 {floor}%</b>:任务产能降到此下限即不再下降(虚线)。</li>
             <li>曲线上每个圆点 = 该月设备的任务产能;放大的点是各段分界(m0 / m{s1} / m{s2} / m{cyc})。</li>
-            <li>深降段(橙色)是把用户推向 <AutoGloss>trade-in</AutoGloss> 的关键——可接任务量预期下挫驱动换机升级。</li>
+            <li>深降段(橙色)可接任务量逐月减少，用户可按需求选择以旧换新。</li>
             <li><b>新机任务补贴</b>:新激活设备前 {subsidy} 天为补贴期,前端只显示补贴标注、不显示产能百分比(<b>纯展示层</b>,结算按曲线连续计算,不受影响)。</li>
           </ul>
         </Sec>
@@ -83,7 +83,7 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
             <div className="e3man-tr e3man-th"><span>参数</span><span>当前</span><span>调高 ↑</span><span>调低 ↓</span></div>
             {PARAMS.map((p) => (
               <div key={p.code} className={`e3man-tr${p.hot ? " hot" : ""}`}>
-                <span className="e3man-pc"><span className="nm"><b>{p.zh}</b>{p.hot ? <em className="e3man-hot">高敏</em> : null}</span><code>{p.code}</code></span>
+                <span className="e3man-pc"><span className="nm"><b>{p.zh}</b>{p.hot ? <em className="e3man-hot">敏感</em> : null}</span></span>
                 <span className="mono">{p.cur}</span>
                 <span><AutoGloss>{p.up}</AutoGloss></span>
                 <span><AutoGloss>{p.down}</AutoGloss></span>
@@ -102,9 +102,9 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
           </ul>
         </Sec>
 
-        <Sec n="4" title="高敏参数与「高敏」标">
+        <Sec n="4" title="敏感参数与「敏感」标">
           <p>
-            带<em className="e3man-hot">高敏</em>标的参数——<b>段3 产能变化</b>、<b>各档抵扣率</b> 与 <b>置换总开关</b>——是本页风险最高的杠杆:
+            带<em className="e3man-hot">敏感</em>标的参数——<b>段3 产能变化</b>、<b>各档抵扣率</b> 与 <b>置换总开关</b>——是本页风险最高的杠杆:
           </p>
           <ul className="e3man-ul">
             <li><b>段3 产能变化(深降)</b>:直接决定换机节奏与换机现金流,是<AutoGloss>放大流出</AutoGloss>的核心。</li>
@@ -112,7 +112,7 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
             <li><b>置换总开关</b>:关闭即全网置换入口消失,影响升级转化主通路,操作前须知会增长运营。</li>
           </ul>
           <p className="e3man-note">
-            「高敏」标只是<b>提示「重点关注、改动慎重」</b>,<b>不是「选中 / 已勾选」状态</b>——它不会被点选,也无需取消(原先整行琥珀高亮易被误读为选中态,已移除)。
+            「敏感」标只是<b>提示「重点关注、改动慎重」</b>,<b>不是「选中 / 已勾选」状态</b>——它不会被点选,也无需取消(原先整行琥珀高亮易被误读为选中态,已移除)。
           </p>
         </Sec>
 
@@ -120,18 +120,18 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
           <div className="e3man-terms">
             {TERMS.map((t) => (
               <div key={t.code} className="e3man-term">
-                <div className="t"><b>{t.zh}</b><code>{t.code}</code></div>
+                <div className="t"><b>{t.zh}</b></div>
                 <div className="n"><AutoGloss>{t.note}</AutoGloss></div>
               </div>
             ))}
           </div>
         </Sec>
 
-        <Sec n="6" title="原子换机事务(回收 / 置换 / 停用)">
+        <Sec n="6" title="换机处理(回收 / 置换 / 停用)">
           <ul className="e3man-ul">
-            <li>三类换机(recycle / replace / deactivate)走后端 <b>单事务</b>:任一步失败<b>全<AutoGloss>回滚</AutoGloss></b>(设备数组 + 余额 + 账单),防止半完成。</li>
+            <li>回收、置换、停用三类处理走后端 <b>单事务</b>:任一步失败<b>全<AutoGloss>回滚</AutoGloss></b>(设备数组 + 余额 + 账单),防止半完成。</li>
             <li>置换抵扣 <b>仅抵新机货款、不入可提余额</b>(资金不变量);<b>已回本设备(产出比 ≥ 界点4)仍保留第 5 档抵扣</b>——任何时点下架都有升级激励,无「归零只能退役」态。</li>
-            <li>页面底部「原子换机事务监控」看 24h 成功 / 失败 / 回滚;失败样本可跳 D4 账单查轨迹。</li>
+            <li>页面底部「换机处理监控」看 24 小时 成功 / 失败 / 回滚;失败样本可跳 D4 账单查轨迹。</li>
           </ul>
         </Sec>
       </div>

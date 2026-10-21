@@ -58,7 +58,7 @@ test("E6 copy explains the implemented flag and HTTPS installer gates", () => {
   assert.doesNotMatch(tab, /客户端读取服务端配置后生效/);
   assert.doesNotMatch(moduleRegistry, /版本、强制升级开关/);
   assert.match(moduleRegistry, /下载地址与中英文标题、引导文案/);
-  assert.match(errorMessages, /H5 基础托管系数须 >0 且 ≤1/);
+  assert.match(errorMessages, /H5 手机托管收益已停用/);
 });
 
 test("E6 exposes version rollback, phase boundary, structural and B1 failure contracts", () => {
@@ -69,7 +69,7 @@ test("E6 exposes version rollback, phase boundary, structural and B1 failure con
   assert.match(tab, /data-proof="e6-effective-boundary"/);
   assert.match(tab, /不等待 H1 的阶段\/月度切换/);
   assert.match(tab, /App\/H5 在启动、返回前台或用户下拉刷新时重拉配置后读取新值/);
-  assert.match(tab, /B1 覆盖率低于红线时服务端失败关闭/);
+  assert.match(tab, /B1 覆盖率低于红线时服务器会拒绝本次调整/);
   assert.match(errorMessages, /COMPUTE_GPU_TOPS_ORDER_INVALID/);
   assert.match(errorMessages, /COMPUTE_GPU_KEYWORD_DUPLICATE/);
   assert.match(errorMessages, /COVERAGE_BELOW_REDLINE/);

@@ -155,7 +155,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
       op: "ops-pause", dc: dcId, fixedVal: paused ? "false" : "true", amplify: false,
       detail: paused
         ? `恢复 ${dcId} 派单 · 重新接入调度,无需重启设备`
-        : `暂停 ${dcId} 全节点派单 · 仅运维窗口,不影响已售设备结算(用户按 baseRate 继续计提)· 处置限单 DC`,
+        : `暂停 ${dcId} 全节点派单 · 仅运维窗口,不影响已售设备结算(用户按 基础收益 继续累计收益)· 处置限单个数据中心`,
     });
   };
 
@@ -181,9 +181,9 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
           </svg>
         </div>
         <div className="hb-ctrl">
-          <div className="row"><span>过去 1h 心跳失联</span><span className="v">{telemetryCount(observability?.telemetry.heartbeatLost1h)}</span></div>
-          <div className="row"><span>过去 24h 重连 / 恢复</span><span className="v">{telemetryCount(observability?.telemetry.reconnectEvents24h)}</span></div>
-          <div className="row"><span>持续异常 &gt; 1h</span><span className="v warn">{telemetryCount(observability?.telemetry.persistentOffline1h)}</span></div>
+          <div className="row"><span>过去 1 小时 心跳失联</span><span className="v">{telemetryCount(observability?.telemetry.heartbeatLost1h)}</span></div>
+          <div className="row"><span>过去 24 小时 重连 / 恢复</span><span className="v">{telemetryCount(observability?.telemetry.reconnectEvents24h)}</span></div>
+          <div className="row"><span>持续异常 &gt; 1 小时</span><span className="v warn">{telemetryCount(observability?.telemetry.persistentOffline1h)}</span></div>
           <div className="row"><span>调度延迟 P95</span><span className="v">{telemetryLatency}</span></div>
           {observabilityError && <div className="row"><span className="warn">{observabilityError}</span></div>}
         </div>
@@ -196,7 +196,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
           <span className="sub">激活 / 取消激活 / 强制激活 / 解绑 · 校验订单关系 + 用户槽位 + 单户上限({maxDevicesLabel})</span>
         </div>
         <div className="row" style={{ gap: 8, padding: "8px 10px", flexWrap: "wrap" }} data-proof="e5-device-filters">
-          <input className="fld" style={{ maxWidth: 280 }} value={ctx.e5Keyword} onChange={(event) => ctx.setE5Keyword(event.target.value)} placeholder="搜索用户 / 设备 / SKU" aria-label="搜索用户设备" />
+          <input className="fld" style={{ maxWidth: 280 }} value={ctx.e5Keyword} onChange={(event) => ctx.setE5Keyword(event.target.value)} placeholder="搜索用户 / 设备 / 商品规格" aria-label="搜索用户设备" />
           <select className="fld" style={{ maxWidth: 160 }} value={ctx.e5StateFilter} onChange={(event) => ctx.setE5StateFilter(event.target.value)} aria-label="设备状态筛选">
             <option value="all">全部状态</option><option value="active">在线（含任务中）</option><option value="busy">任务中</option><option value="offline">离线</option><option value="unknown">运行状态待确认</option><option value="inventory">库存</option><option value="pending-deactivate">待任务结算后停用</option><option value="unbound">已解绑</option><option value="abnormal">异常</option>
           </select>
@@ -219,7 +219,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
             <thead>
               <tr style={{ textAlign: "left", color: "var(--ink-4)", fontSize: 11.5 }}>
                 <th style={{ padding: "8px 10px" }}>设备编号</th><th style={{ padding: "8px 10px" }}>设备名称</th><th style={{ padding: "8px 10px" }}>用户</th>
-                <th style={{ padding: "8px 10px" }}>SKU / 产品</th><th style={{ padding: "8px 10px" }}>DC</th><th style={{ padding: "8px 10px" }}>用户槽位</th>
+                <th style={{ padding: "8px 10px" }}>商品规格 / 产品</th><th style={{ padding: "8px 10px" }}>数据中心</th><th style={{ padding: "8px 10px" }}>用户槽位</th>
                 <th style={{ padding: "8px 10px" }}>购入 / 激活</th><th style={{ padding: "8px 10px" }}>基础收益 / 效率</th>
                 <th style={{ padding: "8px 10px" }}>心跳与任务</th><th style={{ padding: "8px 10px" }}>状态</th><th style={{ padding: "8px 10px", textAlign: "right" }}>动作</th>
               </tr>
@@ -360,7 +360,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
                 {ctx.canWriteE5 && <button className="dgr" onClick={() => ctx.deleteDatacenter(dc)}>删除</button>}
                 {(paused ? ctx.canWriteE5 : ctx.canPauseDcE5) && (paused
                   ? <button className="resume" onClick={() => toggle(dc.dcLocation)}>恢复派单</button>
-                  : <button className="pause" onClick={() => toggle(dc.dcLocation)}><PauseIcon /> 批量 pause</button>)}
+                  : <button className="pause" onClick={() => toggle(dc.dcLocation)}><PauseIcon /> 批量暂停</button>)}
               </div>
             </div>
           );
@@ -384,7 +384,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
             <span>心跳延迟 P95 <b>{healthLoading ? "读取中" : heartbeatP95 == null ? "未采集" : `${heartbeatP95.toFixed(2)} 分钟`}</b></span><span>CPU 平均 <b>未采集</b></span>
           </div>
           <div style={{ margin: "0 14px 14px", padding: 12, border: "1px solid var(--border)", borderRadius: 10 }} data-proof="e5-dc-heartbeat-samples">
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8 }}><b>心跳新鲜度样本</b><span className="muted tiny">10 分钟内 {freshHeartbeats}/{heartbeatLags.length} · 取该 DC 当前最新心跳，不伪造历史时序</span></div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8 }}><b>心跳新鲜度样本</b><span className="muted tiny">10 分钟内 {freshHeartbeats}/{heartbeatLags.length} · 取该数据中心 当前最新心跳，不伪造历史时序</span></div>
             <div style={{ display: "flex", gap: 3, minHeight: 28, alignItems: "end" }}>
               {heartbeatLags.length === 0 ? <span className="muted tiny">暂无可用心跳样本</span> : heartbeatLags.slice(0, 80).map((lag, index) => <span key={`${lag}-${index}`} title={`延迟 ${lag} 分钟`} style={{ width: 6, height: `${Math.max(4, Math.min(28, lag + 4))}px`, background: lag <= 10 ? "var(--success)" : "var(--warning)", borderRadius: 2 }} />)}
             </div>
@@ -399,17 +399,17 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
                 {!healthLoading && !healthError && healthDevices.map((device) => <tr key={device.deviceId} style={{ borderTop: "1px solid var(--border)" }}><td style={{ padding: 7 }} className="mono">{operatorDeviceIdentifier(device.serial)}</td><td style={{ padding: 7 }}>{operatorUserIdentifier(device.userNo)}</td><td style={{ padding: 7 }}>{DEV_STATE_LABEL[device.state]}</td><td style={{ padding: 7 }}>{operatorTaskLabel(device.activeTaskNo)}</td><td style={{ padding: 7 }} className="mono">{operatorTimestamp(device.heartbeatAt)}</td><td style={{ padding: 7 }}>{operatorOperationalNote(device.pausedReason) || "—"}</td></tr>)}
               </tbody>
             </table>
-            {!healthLoading && healthTotal > healthDevices.length && <div className="muted tiny" style={{ marginTop: 8 }}>当前显示前 {healthDevices.length} / {healthTotal} 台；完整吞吐与历史心跳曲线需 fleet 遥测接口继续提供。</div>}
+            {!healthLoading && healthTotal > healthDevices.length && <div className="muted tiny" style={{ marginTop: 8 }}>当前显示前 {healthDevices.length} / {healthTotal} 台；完整吞吐与历史心跳曲线需 设备集群监测接口继续提供。</div>}
           </div>
-          <div className="tint tiny" style={{ margin: "0 14px 14px" }}>任务吞吐、派单 P95、CPU 与历史心跳曲线尚无 fleet 遥测字段；当前任务数、心跳延迟 P95、GPU 与设备清单均来自实时服务端数据，未使用估算值。</div>
+          <div className="tint tiny" style={{ margin: "0 14px 14px" }}>任务吞吐、派单 P95、CPU 与历史心跳曲线尚无 设备集群监测字段；当前任务数、心跳延迟 P95、GPU 与设备清单均来自实时服务端数据，未使用估算值。</div>
         </section>;
       })()}
 
       {/* 运维活动 feed */}
       <section className="feed-card">
         <div className="feed-h">
-          <span className="ttl">运维活动 · 最近 24h</span>
-          <span className="sub">服务端持久事件 · nx_event_outbox</span>
+          <span className="ttl">运维活动 · 最近 24 小时</span>
+          <span className="sub">设备事件记录</span>
         </div>
         <div className="feed">
           {observabilityError && <div className="tint tiny" data-module-health-state="error">{observabilityError}</div>}
@@ -423,7 +423,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
           ))}
         </div>
       </section>
-      <p className="f-foot">批量 pause 是<b>仅限运维窗口</b>的处置 — 暂停 DC 全节点派单,但不影响已售设备结算(用户依然按 baseRate 计提收益)。处置范围限单 DC,跨 DC 联动须分次操作。<b>心跳失联 &gt; 24h</b> 的设备自动进入永久离线列表,资产回退由系统定时任务兜底。</p>
+      <p className="f-foot">批量暂停 是<b>仅限运维窗口</b>的处置 — 暂停该数据中心所有节点派单,但不影响已售设备结算(用户依然按 基础收益 计算收益)。处置范围限单个数据中心,跨数据中心 联动须分次操作。<b>心跳失联 &gt; 24 小时</b> 的设备自动进入永久离线列表,资产回退由系统定时处理。</p>
     </>
   );
 }

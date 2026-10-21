@@ -18,7 +18,7 @@ function Lbl({ zh, code, desc, hot }: { zh: string; code?: string; desc: string;
       <span className="zh">
         {zh}
         {code ? <code className="code">{code}</code> : null}
-        {hot ? <span className="hot" title="高敏参数:本页风险最高的杠杆,改动影响资金流出 / 套利风险,请重点关注">高敏</span> : null}
+        {hot ? <span className="hot" title="敏感参数:本页风险最高的杠杆,改动影响资金流出 / 套利风险,请重点关注">敏感</span> : null}
       </span>
       <div className="desc"><AutoGloss>{desc}</AutoGloss></div>
     </div>
@@ -63,7 +63,7 @@ const REQUIRED_E3_KEYS = [
 // FEAT-DEV01: 参与任务递减(每 SKU 开关)· 值=参与递减/免递减 · 与 uniapp CAPACITY_EXEMPT_KINDS 镜像(canon 哨兵对账)
 const APPLY_TO_SKUS: { kind: string; label: string }[] = [
   { kind: "phone", label: "手机" },
-  { kind: "cloud-share", label: "Cloud Share" },
+  { kind: "cloud-share", label: "云端共享份额" },
   { kind: "pc-gpu", label: "电脑共享" },
   { kind: "stellarbox-s1", label: "UVELBox S1" },
   { kind: "stellarbox-pro", label: "UVELBox Pro" },
@@ -165,7 +165,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
       <EStats items={[
         { k: "当前在网设备平均使用时长", v: `${num(String(stats.averageAgeMonths), 0).toFixed(1)} 月`, sub: "按当前在网设备汇总" },
         { k: `m${s2 + 1}+ 晚段低产能设备`, v: countText(stats.cliffDeviceCount), sub: "进入深降段", tone: "danger" },
-        { k: "Trade-in 本月", v: `${countText(stats.tradeinMonthCount)} 次`, sub: `折抵 ${moneyText(stats.tradeinDiscountUsdt)}`, tone: "cyan" },
+        { k: "以旧换新 本月", v: `${countText(stats.tradeinMonthCount)} 次`, sub: `折抵 ${moneyText(stats.tradeinDiscountUsdt)}`, tone: "cyan" },
         { k: "K2 套利簇命中", v: `${countText(stats.k2ArbitrageHits)} 账户`, sub: "风险簇拦截", tone: "warn" },
       ]} />
 
@@ -208,7 +208,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
               return <div key={i} className={`curve-label ${cls}`} style={{ left: `${(px(i) / 700) * 100}%`, top: `${(py(curve[i]) / 240) * 100}%`, color: dotColor(i) }}>m{i} · {curve[i].toFixed(1)}%</div>;
             })}
           </div>
-          <div className="curve-floor" style={{ top: `${(py(floorPct) / 240) * 100}%` }}>FLOOR {floorPct}%</div>
+          <div className="curve-floor" style={{ top: `${(py(floorPct) / 240) * 100}%` }}>最低产能 {floorPct}%</div>
           <div className="curve-x">{Array.from({ length: Math.floor(cyc / 2) + 1 }, (_, j) => <span key={j}>m{j * 2}</span>)}</div>
         </div>
         <div className="stage-lbl">
@@ -225,7 +225,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
           <div className="param-h"><span className="ic life"><LifeIcon /></span><div className="t"><div className="nm">任务产能节奏</div><div className="s">AI 任务池升级 · 三段产能递减 · 以当前运营配置为准</div></div><span className="tag">设备产能设置</span></div>
           <div className="pkv"><Lbl zh={`段1 产能变化(m1–${s1})`} code="band1DeltaPct" desc="平缓段 · 每月可接任务量变化幅度 · 不刺激置换" /><span className="v ok">{pE("E.device.capacity.band1DeltaPct")}%</span><Adj label="段1 产能变化" k="E.device.capacity.band1DeltaPct" unit="%" /></div>
           <div className="pkv"><Lbl zh={`段2 产能变化(m${s1 + 1}–${s2})`} code="band2DeltaPct" desc="中速段 · 可接任务量边际下降" /><span className="v warn">{pE("E.device.capacity.band2DeltaPct")}%</span><Adj label="段2 产能变化" k="E.device.capacity.band2DeltaPct" unit="%" /></div>
-          <div className="pkv"><Lbl zh={`段3 产能变化(m${s2 + 1} 起)`} code="band3DeltaPct" desc="深降段 · 驱动升级置换 · 加深幅度=加快换机现金流(放大资金流出)" hot /><span className="v danger">{pE("E.device.capacity.band3DeltaPct")}%</span><Adj label="段3 产能变化" k="E.device.capacity.band3DeltaPct" unit="%" amplify detail="段3 深降产能变化 · 加深幅度加快置换节奏(更多 Trade-in 现金流),晚段收益下挫 · 放大资金流出须操作确认 + B1 覆盖率" /></div>
+          <div className="pkv"><Lbl zh={`段3 产能变化(m${s2 + 1} 起)`} code="band3DeltaPct" desc="深降段 · 驱动升级置换 · 加深幅度=加快换机现金流(放大资金流出)" hot /><span className="v danger">{pE("E.device.capacity.band3DeltaPct")}%</span><Adj label="段3 产能变化" k="E.device.capacity.band3DeltaPct" unit="%" amplify detail="段3 深降产能变化 · 加深幅度加快置换节奏(更多 以旧换新 现金流),晚段收益下挫 · 放大资金流出须操作确认 + B1 覆盖率" /></div>
           <div className="pkv"><Lbl zh="产能下限" code="floorPct" desc="设备可接任务产能降至此值即不再下降(地板线)" /><span className="v">{pE("E.device.capacity.floorPct")}%</span><Adj label="产能下限" k="E.device.capacity.floorPct" unit="%" /></div>
           <div className="pkv"><Lbl zh="新机任务补贴天数" code="subsidyDays" desc="新激活设备的任务补贴期 · 补贴期内前端只显示补贴标注、不显示产能百分比 · 纯展示层,不进结算" /><span className="v cyan">{pE("E.device.capacity.subsidyDays")} 天</span><Adj label="新机任务补贴天数" k="E.device.capacity.subsidyDays" unit="天" detail="新机任务补贴天数 · 纯展示层参数(前端标注窗口),不进入结算公式 · 改后对新渲染生效" /></div>
           <div className="pkv"><Lbl zh="产能分段周期" code="stageEarlyEnd / stageMidEnd / cycleMonths" desc={`三段分界月份与曲线视窗 · 段1[1–${s1}] 段2[${s1 + 1}–${s2}] 段3[${s2 + 1}+ 开区间] · 一处调齐,改后曲线重算`} /><span className="v" style={{ fontSize: 13 }}>段1末 m{s1} · 段2末 m{s2} · 视窗 {cyc}月</span><AdjMulti title="产能分段周期" ascending hint="三段产能节奏的分界:段1[1–段1末]、段2[段1末+1–段2末]、段3[段2末+1 起,开区间到产能下限触底];视窗月数只决定曲线图表范围。须 段1末 < 段2末 < 视窗月数。改后全曲线 / 估值器重算。" detail="产能三段周期(段1末 / 段2末 / 视窗月数)· 以当前运营配置为准 · 改后对全网任务产能曲线 / 估值器生效,不回溯已生效报价" fields={[
@@ -233,13 +233,13 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
             { key: "mid", paramKey: "E.device.stageMidEnd", label: "段2 末月(m)", inputKind: "number", placeholder: "8" },
             { key: "total", paramKey: "E.device.cycleMonths", label: "曲线视窗月数(m)", inputKind: "number", placeholder: "12" },
           ]} /></div>
-          <div className="pkv"><Lbl zh="任务锁定月度损失阈" code="taskLock.s1 / .pro / .rack" desc="§6.7 banner 触发依据 · S1 / Pro / Rack 三阶月度损失阈(USDT)" /><span className="v" style={{ fontSize: 13 }}>${pE("E.device.taskLock.s1")} / ${pE("E.device.taskLock.pro")} / ${pE("E.device.taskLock.rack")}</span><AdjMulti title="任务锁定月度损失阈" hint="三档设备(S1 / Pro / Rack)各自的月度损失阈(USDT),达阈触发 §6.7 任务锁定 banner。" detail="任务锁定月度损失阈(S1 / Pro / Rack)· 以当前运营配置为准 · 改后对新触发判定生效" fields={[
+          <div className="pkv"><Lbl zh="任务锁定月度损失阈" code="taskLock.s1 / .pro / .rack" desc="§6.7 提示条 触发依据 · S1 / Pro / Rack 三阶月度损失阈(USDT)" /><span className="v" style={{ fontSize: 13 }}>${pE("E.device.taskLock.s1")} / ${pE("E.device.taskLock.pro")} / ${pE("E.device.taskLock.rack")}</span><AdjMulti title="任务锁定月度损失阈" hint="三档设备(S1 / Pro / Rack)各自的月度损失阈(USDT),达阈触发 §6.7 任务锁定 提示条。" detail="任务锁定月度损失阈(S1 / Pro / Rack)· 以当前运营配置为准 · 改后对新触发判定生效" fields={[
             { key: "s1", paramKey: "E.device.taskLock.s1", label: "S1 阈(USDT)", inputKind: "number", placeholder: "40" },
             { key: "pro", paramKey: "E.device.taskLock.pro", label: "Pro 阈(USDT)", inputKind: "number", placeholder: "140" },
             { key: "rack", paramKey: "E.device.taskLock.rack", label: "Rack 阈(USDT)", inputKind: "number", placeholder: "450" },
           ]} /></div>
-          <div className="pkv"><Lbl zh="参与任务递减(SKU)" code="applyTo.*" desc="逐 SKU 控制是否参与产能递减 · 免递减 = 恒 100% 产能(入门引流设备默认免)" /><span className="v" style={{ fontSize: 13 }}>{exemptCount} 免 / {APPLY_TO_SKUS.length - exemptCount} 参与</span><AdjMulti title="参与任务递减(SKU)" hint="逐 SKU 勾选:参与递减 = 按产能节奏逐月递减;免递减 = 恒 100% 产能(手机 / Cloud Share / 电脑共享默认免,保护入门体验)。改后对该 SKU 全网设备生效。" detail="参与任务递减(每 SKU 开关)· 以当前运营配置为准 · 改后对该 SKU 全网设备生效" fields={APPLY_TO_SKUS.map((s) => ({ key: s.kind, paramKey: `E.device.capacity.applyTo.${s.kind}`, label: s.label, inputKind: "select" as const, options: ["参与递减", "免递减"] }))} /></div>
-          <div className="param-foot"><span className="ic"><AlertIcon /></span><span><b>「段3 产能变化」是高敏参数</b>:加深幅度加快置换节奏(更多 Trade-in 现金流),但晚段收益预期下挫会触发用户负面信号;放缓则延后置换、减少现金流。<b>各段月份在「产能分段周期」一行一次调齐</b>;各段行只改每月变化幅度%。<b>「新机任务补贴」是纯展示层</b>——只控制前端补贴标注窗口,结算数学始终按产能曲线连续计算。</span></div>
+          <div className="pkv"><Lbl zh="参与任务递减(商品规格)" code="applyTo.*" desc="逐 商品规格 控制是否参与产能递减 · 免递减 = 恒 100% 产能(入门引流设备默认免)" /><span className="v" style={{ fontSize: 13 }}>{exemptCount} 免 / {APPLY_TO_SKUS.length - exemptCount} 参与</span><AdjMulti title="参与任务递减(商品规格)" hint="逐 商品规格 勾选:参与递减 = 按产能节奏逐月递减;免递减 = 恒 100% 产能(手机 / 云端共享份额 / 电脑共享默认免,保护入门体验)。改后对该 商品规格 全网设备生效。" detail="参与任务递减(每 商品规格 开关)· 以当前运营配置为准 · 改后对该 商品规格 全网设备生效" fields={APPLY_TO_SKUS.map((s) => ({ key: s.kind, paramKey: `E.device.capacity.applyTo.${s.kind}`, label: s.label, inputKind: "select" as const, options: ["参与递减", "免递减"] }))} /></div>
+          <div className="param-foot"><span className="ic"><AlertIcon /></span><span><b>「段3 产能变化」是敏感参数</b>:加深幅度加快置换节奏(更多 以旧换新 现金流),但晚段收益预期下挫会触发用户负面信号;放缓则延后置换、减少现金流。<b>各段月份在「产能分段周期」一行一次调齐</b>;各段行只改每月变化幅度%。<b>「新机任务补贴」是纯展示层</b>——只控制前端补贴标注窗口,结算数学始终按产能曲线连续计算。</span></div>
         </section>
 
         {/* 右:升级置换阶梯(FEAT-DEV02 · 随时下架,产出阶梯抵扣) */}
@@ -262,7 +262,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
           ]} /></div>
           <div className="pkv"><Lbl zh="仅限升级更高价设备" code="requireHigherPrice" desc="开=置换目标必须严格高于本机实付价(抵扣只服务升级,不做平换/降换)" /><span className="v" style={{ fontSize: 13, fontWeight: 600 }}>{pE("E.tradein.requireHigherPrice")}</span><Adj label="仅限升级更高价设备" k="E.tradein.requireHigherPrice" unit="" editKind="select" options={["开", "关"]} detail="仅限升级更高价设备 · 关闭后允许平换(抵扣可能逼近应付款,请先核 B1 覆盖率) · 改后对新置换请求生效" /></div>
           <div className="pkv"><Lbl zh="单笔最多抵扣台数" code="maxDevicesPerOrder" desc="一笔升级订单最多可用几台旧机抵扣" /><span className="v">{pE("E.tradein.maxDevicesPerOrder")} 台</span><Adj label="单笔最多抵扣台数" k="E.tradein.maxDevicesPerOrder" unit="台" detail="单笔最多抵扣台数 · 改后对新置换请求生效" /></div>
-          <div className="pkv"><Lbl zh="置换资格门槛" code="eligibility" desc="谁可发起置换(持有等级门槛)· 运营可调" /><span className="v" style={{ fontSize: 13, fontFamily: "var(--font-v5)", fontWeight: 500 }}>{pE("E.tradein.eligibility")}</span><Adj label="置换资格门槛" k="E.tradein.eligibility" unit="" editKind="select" options={["全部用户", "L2+ 持有者", "L3+ 持有者", "L4+ 持有者", "L5+ 持有者", "L6+ 持有者"]} detail="置换资格门槛 · 谁可发起置换(持有等级)· 勾选目标等级 · 改后对新置换请求生效" /></div>
+          <div className="pkv"><Lbl zh="置换购买资格槛" code="eligibility" desc="谁可发起置换(持有等级门槛)· 运营可调" /><span className="v" style={{ fontSize: 13, fontFamily: "var(--font-v5)", fontWeight: 500 }}>{pE("E.tradein.eligibility")}</span><Adj label="置换购买资格槛" k="E.tradein.eligibility" unit="" editKind="select" options={["全部用户", "L2+ 持有者", "L3+ 持有者", "L4+ 持有者", "L5+ 持有者", "L6+ 持有者"]} detail="置换购买资格槛 · 谁可发起置换(持有等级)· 勾选目标等级 · 改后对新置换请求生效" /></div>
           <div className="pkv"><Lbl zh="本月置换笔数" desc={`折抵总额 ${moneyText(stats.tradeinDiscountUsdt)}`} /><span className="v cyan">{countText(stats.tradeinMonthCount)}</span><span /></div>
           <div className="pkv"><Lbl zh="K2 套利簇命中" desc="风险簇拦截" /><span className="v warn">{countText(stats.k2ArbitrageHits)}</span><span /></div>
           <div className="param-foot cyan"><span className="ic"><ShieldIcon /></span><span><b>阶梯天然抗套利</b>:抵扣仅在结算时抵减升级应付款、<b>永不进入余额</b>,且默认仅限升级更高价设备 — 每笔置换平台都净收新款,「随时下架」无需最短持有闸门。高抵扣档(新设备早升级)正是运营期望的行为。「各档抵扣率」为<b>放大资金流出</b>动作(带 ⚡),须操作确认 + B1 覆盖率核验;K2 风险簇监控保留(异常批量置换仍会命中)。</span></div>
@@ -272,21 +272,21 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
       {/* 原子换机 tx 监控 */}
       <section className="tx-card">
         <div className="tx-h">
-          <span className="ttl">原子换机 tx 监控</span>
+          <span className="ttl">换机处理 监控</span>
           <span className="sub">· 三类事务分列:设备回收 / 设备置换 / 设备停用;所有步骤一起完成，失败时不会留下半成品</span>
-          <span className="r"><CodeTag tone="electric">A2 审计</CodeTag><span>24h · 成功率 <span style={{ color: txSuccessRate === null ? "var(--ink-3)" : "var(--success)" }}>{txSuccessRate === null ? "不可计算（24h 内无事务）" : `${txSuccessRate.toFixed(1)}%`}</span></span></span>
+          <span className="r"><CodeTag tone="electric">A2 审计</CodeTag><span>24 小时 · 成功率 <span style={{ color: txSuccessRate === null ? "var(--ink-3)" : "var(--success)" }}>{txSuccessRate === null ? "不可计算（24 小时 内无事务）" : `${txSuccessRate.toFixed(1)}%`}</span></span></span>
         </div>
         <div className="tx-grid">
           {e3Operations.length === 0 ? (
             <div className="tx-col">
               <div className="nm">暂无升级置换运行记录</div>
-              <div className="latest"><div className="k">后端暂无记录</div><div className="vrow"><span className="dot ok" /><span className="reason">等待业务表产生 Trade-in 操作样本</span></div></div>
+              <div className="latest"><div className="k">后端暂无记录</div><div className="vrow"><span className="dot ok" /><span className="reason">等待业务表产生 以旧换新 操作样本</span></div></div>
             </div>
           ) : e3Operations.map((t) => (
             <div className="tx-col" key={t.nm}>
               <div className="nm">{t.nm}</div>
               <div className="stats">
-                <div className="s ok"><div className="k">24h 成功</div><div className="v">{t.ok}</div></div>
+                <div className="s ok"><div className="k">24 小时 成功</div><div className="v">{t.ok}</div></div>
                 <div className="s fail"><div className="k">失败</div><div className="v">{t.fail}</div></div>
                 <div className="s roll"><div className="k">回滚</div><div className="v">{t.roll}</div></div>
               </div>
@@ -302,10 +302,10 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
           <span className="sep">·</span>
           <span>设备换机关系由系统自动记录，运营人员无需手工维护</span>
           <span className="sep">·</span>
-          <span>失败样本 → <Link href="/finance/ledger?keyword=tradein&status=FAILED" style={{ color: "var(--cyan)", cursor: "pointer" }}>查 D4 bill · 轨迹</Link></span>
+          <span>失败样本 → <Link href="/finance/ledger?keyword=tradein&status=FAILED" style={{ color: "var(--cyan)", cursor: "pointer" }}>查 D4 资金流水 · 轨迹</Link></span>
         </div>
       </section>
-      <p className="f-foot">任务产能节奏 + Trade-in 折抵定价<b>共同构成用户升级节奏</b>:段3 深降把用户推向置换决策点,折抵力度决定置换吸引力。两者改动会影响:① 硬件 GMV(置换新单)② D4 资金应付(置换补差)③ K2 套利风险。任一参数调整后<b>立即对前端 / 估值器生效</b>(不回溯已生效报价)。</p>
+      <p className="f-foot">任务产能节奏 + 以旧换新 折抵定价<b>共同构成用户升级节奏</b>:段3 深降把用户推向置换决策点,折抵力度决定置换吸引力。两者改动会影响:① 硬件 成交额(置换新单)② D4 资金应付(置换补差)③ K2 套利风险。任一参数调整后<b>立即对前端 / 估值器生效</b>(不回溯已生效报价)。</p>
     </>
   );
 }

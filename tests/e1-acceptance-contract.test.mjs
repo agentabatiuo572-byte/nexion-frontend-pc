@@ -44,7 +44,7 @@ test("E1 SKU editor blocks no-op edits and constrains stock to a non-negative in
   assert.match(view, /skuFormChanged/);
   assert.match(view, /type="number"[^\n]*min=\{0\}[^\n]*step=\{1\}/);
   assert.match(view, /库存必须填写 0 到 2147483647 之间的整数/);
-  assert.match(view, /无限库存仅适用于 Cloud Share 等非实物份额商品/);
+  assert.match(view, /无限库存仅适用于 云端共享份额 等非实物份额商品/);
   assert.match(view, /value="UNLIMITED">无限库存（非实物份额）/);
   assert.match(e1Client, /stock: inventoryMode === "UNLIMITED" \? null/);
   assert.match(e1Data, /stock: inventoryMode === "UNLIMITED" \? undefined/);
@@ -91,10 +91,10 @@ test("E1 catalog supports keyword, status and tier filtering with an explicit em
   assert.match(catalog, /const \[skuStatus, setSkuStatus\] = useState\("all"\)/);
   assert.match(catalog, /const \[skuTier, setSkuTier\] = useState\("all"\)/);
   assert.match(catalog, /const filteredSkus = useMemo\(/);
-  assert.match(catalog, /aria-label="搜索 SKU"/);
-  assert.match(catalog, /aria-label="SKU 状态筛选"/);
-  assert.match(catalog, /aria-label="SKU 档位筛选"/);
-  assert.match(catalog, /没有符合筛选条件的 SKU/);
+  assert.match(catalog, /aria-label="搜索商品规格"/);
+  assert.match(catalog, /aria-label="商品状态筛选"/);
+  assert.match(catalog, /aria-label="商品档位筛选"/);
+  assert.match(catalog, /没有符合筛选条件的 商品规格/);
   assert.match(catalog, /filteredSkus\.map\(/);
   assert.match(catalog, /new URLSearchParams\(window\.location\.search\)/);
   assert.match(catalog, /params\.get\("sku"\)/);
@@ -196,7 +196,7 @@ test("E1 hides every mutation entry point from read-only identities", () => {
   assert.match(view, /tab === "E1" \? \(canUseE1Writes \?/);
   assert.match(catalog, /const canWrite = ctx\.canWriteE1/);
   assert.match(catalog, /canWrite \? <button[^\n]*>\+ 新增阶段<\/button>/);
-  assert.match(catalog, /canWrite \? <button[^\n]*>\+ 新增上架门<\/button>/);
+  assert.match(catalog, /canWrite \? <button[^\n]*>\+ 新增上架条件<\/button>/);
   assert.match(catalog, /canWrite \? <button[^\n]*>改价 \/ 编辑<\/button>/);
   assert.match(catalog, /canWrite && \(unlocked \?/);
   assert.match(catalog, /canWrite \? <button className="danger"[^\n]*>移除<\/button>/);
@@ -232,7 +232,7 @@ test("E1 lets an operator move an ordinary locked SKU to the current storefront 
 test("E1 purchase gate is a structured server-enforced editor, not a HOLD placeholder", () => {
   assert.doesNotMatch(view, /用户购买资格（HOLD）/);
   assert.doesNotMatch(view, /不会向商城下发购买门/);
-  assert.match(view, /购买资格与锁额/);
+  assert.match(view, /购买条件与限量/);
   assert.match(view, /gateType/);
   assert.match(view, /gateActiveDirectMin/);
   assert.match(view, /gateRankMin/);
@@ -254,7 +254,7 @@ test("E1 purchase quota is lifetime-only while legacy month rows stay visibly re
   assert.match(e1Data, /quotaPeriod: hasQuota \? "lifetime"/);
   assert.match(e1Data, /历史按月周期暂不可用/);
   assert.doesNotMatch(view, /<option value="month">按月<\/option>/);
-  assert.match(view, /历史按月配置已暂停\(HOLD\)/);
+  assert.match(view, /历史按月配置已暂停/);
   assert.match(e1Gate, /quotaPeriod: gate\.quotaCap != null \? "lifetime" : null/);
   assert.match(e1Gate, /quotaPeriod: gate\.quotaPeriod === "month" \? "month" : gate\.quotaCap != null \? "lifetime" : undefined/);
   assert.match(e1Data, /direct > 1_000_000/);

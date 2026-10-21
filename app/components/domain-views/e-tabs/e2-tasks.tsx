@@ -10,7 +10,8 @@ import { updateE2TaskPricing, type E2TaskPricingClass } from "@/lib/admin/e2-cli
 /* ── 任务类型 → 图标 kind(单一真源:taskClass 权威枚举 ↔ 图标)── */
 type Kind = "llm" | "img" | "vid" | "ft" | "em" | "speech" | "unknown";
 const KIND_ORDER: Kind[] = ["img", "vid", "llm", "ft", "em", "speech", "unknown"];
-const KIND_LABEL: Record<Kind, string> = { llm: "LLM 推理", img: "图像生成", vid: "视频生成", ft: "微调", em: "Embedding", speech: "Speech", unknown: "未返回类型" };
+const taskUnitText = (value: string): string => ({ "/job": "/项任务", "/1k": "/千单位", "/min": "/分钟" } as Record<string,string>)[value] ?? "（计价单位待核实）";
+const KIND_LABEL: Record<Kind, string> = { llm: "大模型推理", img: "图像生成", vid: "视频生成", ft: "微调", em: "向量计算", speech: "语音处理", unknown: "未返回类型" };
 // 新增/编辑任务弹窗的 taskClass 权威枚举 → 图标 kind(与 e-view.tsx 抽屉 select 同源)。
 const CLASS_TO_KIND: Record<string, Exclude<Kind, "unknown">> = { LL: "llm", IG: "img", VG: "vid", FT: "ft", EM: "em", SP: "speech" };
 
@@ -108,7 +109,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     <>
       <PhoneCalibrationPanel ctx={ctx} thresholdsOnly />
       <EStats items={[
-        { k: "任务类型", v: pricingRows.length, sub: pricingRows.length === 6 ? "IG/VG/LL/FT/EM/SP" : "权威类型未齐", tone: pricingRows.length === 6 ? "ok" : "warn" },
+        { k: "任务类型", v: pricingRows.length, sub: pricingRows.length === 6 ? "IG/VG/LL/FT/EM/SP" : "正式类型未齐", tone: pricingRows.length === 6 ? "ok" : "warn" },
         { k: "平均单价", v: money(avgPrice), sub: tasks.length ? `${tasks.length} 个任务均价` : "暂无任务" },
         { k: "平均饱和度", v: avgSat == null ? "—" : `${avgSat}%`, sub: peakTask ? `最高 ${Math.round(peakTask.sat * 100)}% · ${peakTask.n}` : "后端未返回饱和度", tone: avgSat != null && avgSat >= 75 ? "warn" : "cyan" },
         { k: "最高单价任务", v: money(maxPriceTask?.price ?? 0), sub: maxPriceTask?.n ?? "暂无任务", tone: "cyan" },
@@ -129,39 +130,39 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         </div>
         <div style={{ overflowX: "auto", padding: "8px 16px 14px" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-            <thead><tr style={{ color: "var(--ink-4)", textAlign: "left" }}><th>任务类</th><th>代表模型</th><th title="服务端字段 minReward">最低奖励</th><th title="服务端字段 maxReward">最高奖励</th><th title="服务端字段 minVRAM">最低显存</th><th>派发状态</th><th>操作</th></tr></thead>
+            <thead><tr style={{ color: "var(--ink-4)", textAlign: "left" }}><th>任务类</th><th>代表模型</th><th title="最低奖励">最低奖励</th><th title="最高奖励">最高奖励</th><th title="最低显存">最低显存</th><th>派发状态</th><th>操作</th></tr></thead>
             <tbody>{pricingRows.map((row) => <tr key={row.taskClass} style={{ borderTop: "1px solid var(--border)" }}>
               <td style={{ padding: "11px 6px", fontFamily: "var(--mono)", fontWeight: 700 }}>{row.taskClass} · {KIND_LABEL[CLASS_TO_KIND[row.taskClass]]}</td>
               <td>{row.models.join(" / ")}</td><td className="tnum">${amount(row.minReward)}</td><td className="tnum">${amount(row.maxReward)}</td>
-              <td className="tnum">{row.minVRAM} GB</td><td><CodeTag tone={row.enabled ? "electric" : "warn"}>{row.enabled ? "派发中" : "已 Kill"}</CodeTag></td>
+              <td className="tnum">{row.minVRAM} GB</td><td><CodeTag tone={row.enabled ? "electric" : "warn"}>{row.enabled ? "派发中" : "已停止派发"}</CodeTag></td>
               <td><div className="row" style={{ gap: 5 }}>
                 {canMutate && <>
                   <Btn sm onClick={() => setPricingAction({ row, field: "minReward", current: row.minReward })}>调最低奖励</Btn>
                   <Btn sm onClick={() => setPricingAction({ row, field: "maxReward", current: row.maxReward })}>调最高奖励</Btn>
                   <Btn sm onClick={() => setPricingAction({ row, field: "minVRAM", current: row.minVRAM })}>调最低显存</Btn>
-                  <Btn sm variant={row.enabled ? "danger" : "primary"} onClick={() => setPricingAction({ row, field: "enabled", current: row.enabled, nextEnabled: !row.enabled })}>{row.enabled ? "Kill" : "恢复"}</Btn>
+                  <Btn sm variant={row.enabled ? "danger" : "primary"} onClick={() => setPricingAction({ row, field: "enabled", current: row.enabled, nextEnabled: !row.enabled })}>{row.enabled ? "停止派发" : "恢复"}</Btn>
                 </>}
               </div></td>
             </tr>)}</tbody>
           </table>
-          {!ctx.e2Loading && pricingRows.length !== 6 && <div className="tint danger tiny" style={{ marginTop: 10 }}>权威任务类不完整，已阻止把普通任务条数误报为任务类型数。</div>}
+          {!ctx.e2Loading && pricingRows.length !== 6 && <div className="tint danger tiny" style={{ marginTop: 10 }}>正式任务类不完整，已阻止把普通任务条数误报为任务类型数。</div>}
         </div>
       </section>
 
       <div className="e3-main">
         <section className="pane" data-testid="e2-queue-saturation">
-          <div className="pane-h"><span className="ttl" title="服务端字段 QUEUE_SATURATION">队列饱和度</span><span className="r"><CodeTag>{ctx.e2Pricing?.queueSaturation ?? "—"}</CodeTag></span></div>
+          <div className="pane-h"><span className="ttl" title="任务队列饱和度">队列饱和度</span><span className="r"><CodeTag>{ctx.e2Pricing?.queueSaturation ?? "—"}</CodeTag></span></div>
           <div style={{ padding: 16 }}>
             <div className="tnum" style={{ fontSize: 30, fontWeight: 700 }}>{ctx.e2Pricing ? `${Math.round(ctx.e2Pricing.queueSaturation * 100)}%` : "—"}</div>
-            <div className="tint tiny" style={{ margin: "10px 0" }}>锁定预览的每日潜在收益使用服务端公式：(86400 / avgSec) × 饱和因子 × 平均奖励。</div>
+            <div className="tint tiny" style={{ margin: "10px 0" }}>锁定预览的每日潜在收益使用服务端公式：(86400 / 平均处理秒数) × 饱和因子 × 平均奖励。</div>
             {canMutate && <Btn variant="primary" onClick={() => setPricingAction({ field: "queueSaturation", current: ctx.e2Pricing!.queueSaturation })}>调整全局队列饱和度</Btn>}
           </div>
         </section>
         <section className="pane" data-testid="e2-locked-teaser">
-          <div className="pane-h"><span className="ttl" title="服务端字段 teaser">锁定预览</span><span className="sub">设备 VRAM 档</span></div>
+          <div className="pane-h"><span className="ttl" title="升级收益预览">锁定预览</span><span className="sub">设备 显存档位</span></div>
           <div style={{ padding: 16 }}>
-            <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>{(ctx.e2Pricing?.teaser ?? []).map((row) => <Btn key={row.deviceClass} sm variant={teaserDevice === row.deviceClass ? "primary" : undefined} onClick={() => setTeaserDevice(row.deviceClass)}>{row.deviceClass} · {row.vram}GB</Btn>)}</div>
-            <div style={{ marginTop: 14, fontSize: 13 }}>被锁任务：<b>{selectedTeaser?.lockedTasks.join(" / ") || "无"}</b></div>
+            <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>{(ctx.e2Pricing?.teaser ?? []).map((row) => <Btn key={row.deviceClass} sm variant={teaserDevice === row.deviceClass ? "primary" : undefined} onClick={() => setTeaserDevice(row.deviceClass)}>{({ phone: "手机", "cloud-share": "云端共享份额", s1: "入门设备", pro: "专业设备", rack: "机柜设备" } as Record<string,string>)[row.deviceClass.toLowerCase()] ?? "其他设备"} · {row.vram}GB</Btn>)}</div>
+            <div style={{ marginTop: 14, fontSize: 13 }}>被锁任务：<b>{selectedTeaser?.lockedTasks.map(code => KIND_LABEL[CLASS_TO_KIND[code]] ?? "其他任务").join(" / ") || "无"}</b></div>
             <div style={{ marginTop: 8, fontSize: 13 }}>每日潜在收益:<b className="tnum">${amount(selectedTeaser?.dailyPotential ?? 0)} / 天</b></div>
           </div>
         </section>
@@ -185,19 +186,19 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div className="tnum" style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>${u}<span style={{ fontSize: 11, color: "var(--ink-4)", fontWeight: 400 }}> /天</span></div>
-                  <div className="tnum" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{n} NEX/天</div>
+                  <div className="tnum" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{n} UVEL/天</div>
                 </div>
                 {canMutate && <div className="row" style={{ gap: 6 }}>
                   <Btn sm variant="primary" onClick={() => ctx.openActionConfirm({
-                    name: `手机 T${t.tier} 日产 USDT 调整`, op: "phone-tier", phoneTier: t.tier, phoneField: "dailyUsdt", amplify: true,
+                    name: `手机 T${t.tier} 每日收益 USDT 调整`, op: "phone-tier", phoneTier: t.tier, phoneField: "dailyUsdt", amplify: true,
                     edit: { kind: "number", current: u, unit: "USDT/天", min: 0.00001, step: 0.00001, disallowCurrent: true },
-                    detail: `手机算力 T${t.tier}(${t.name})· 日产 USDT 当前 $${u} · 调高为放大资金流出,须核验 B1 覆盖率;改后对下一结算周期生效,不回溯已计提。`,
+                    detail: `手机算力 T${t.tier}(${t.name})· 每日收益 USDT 当前 $${u} · 调高为放大资金流出,须核验 B1 覆盖率;改后对下一结算周期生效,不回溯已累计收益。`,
                   })}>调 USDT</Btn>
                   <Btn sm onClick={() => ctx.openActionConfirm({
-                    name: `手机 T${t.tier} 日产 NEX 调整`, op: "phone-tier", phoneTier: t.tier, phoneField: "dailyNex", amplify: true,
-                    edit: { kind: "number", current: n, unit: "NEX/天", min: 0.00001, step: 0.00001, disallowCurrent: true },
-                    detail: `手机算力 T${t.tier}(${t.name})· 日产 NEX 当前 ${n} · NEX 派发为资金流出,受 B1 覆盖率约束;改后对下一结算周期生效。`,
-                  })}>调 NEX</Btn>
+                    name: `手机 T${t.tier} 每日收益 UVEL 调整`, op: "phone-tier", phoneTier: t.tier, phoneField: "dailyNex", amplify: true,
+                    edit: { kind: "number", current: n, unit: "UVEL/天", min: 0.00001, step: 0.00001, disallowCurrent: true },
+                    detail: `手机算力 T${t.tier}(${t.name})· 每日收益 UVEL 当前 ${n} · UVEL 派发为资金流出,受 B1 覆盖率约束;改后对下一结算周期生效。`,
+                  })}>调 UVEL</Btn>
                 </div>}
               </div>
             );
@@ -210,7 +211,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
 
       <section className="pane" data-testid="e2-onboarding-yield-comparison">
         <div className="pane-h">
-          <span className="ttl">Onboarding 收益对比配置</span>
+          <span className="ttl">新用户引导 收益对比配置</span>
           <span className="sub">App 校准结果同源</span>
         </div>
         <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -222,7 +223,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
                 <span style={{ fontSize: 13.5, fontWeight: 600 }}>{row.label}</span>
                 <span className="tint tiny">{row.configKey === "phone" ? "来源：手机 T3 档位" : `来源：E1 商品 ${E2_COMPARISON_SKU_ID[row.configKey]}`}</span>
               </div>
-              <div className="tnum" style={{ textAlign: "right", fontSize: 12.5 }}>${amount(row.dailyUsdt)} · {amount(row.dailyNex)} NEX/天</div>
+              <div className="tnum" style={{ textAlign: "right", fontSize: 12.5 }}>${amount(row.dailyUsdt)} · {amount(row.dailyNex)} UVEL/天</div>
               <span className="tint tiny">请在来源配置调整</span>
             </div>
             );
@@ -236,7 +237,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           <div className="pane-h">
             <span className="ttl">任务列表</span>
             <span className="tcount">共 {tasks.length} 个{filterKind !== "all" ? ` · 筛选 ${filtered.length}` : ""}</span>
-            <span className="sub">前端 /earn 任务池映射</span>
+            <span className="sub">前端 用户任务页同步设置</span>
             <span className="r"><CodeTag tone="electric">用户任务管理</CodeTag><CodeTag>E.task.*</CodeTag></span>
           </div>
           <div className="filter-bar">
@@ -261,7 +262,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
                 <div className="task" key={t.id}>
                   <span className={`ic ${k}`}><KindIcon k={k} /></span>
                   <div className="nm">{t.n}<span className="pid">{t.id}</span></div>
-                  <div className="price">${t.price.toFixed(2)}<small>{t.unit}</small></div>
+                  <div className="price">${t.price.toFixed(2)}<small>{taskUnitText(t.unit)}</small></div>
                   <span className={`req ${locked ? "lock" : "open"}`}>{locked && <LockMini />}{reqLabel}</span>
                   <div className="sat">
                     <div className="bar">{pct == null ? null : <div className="f" style={{ width: `${pct}%`, background: satColor(pct) }} />}</div>
@@ -308,7 +309,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
               <div className={`hook-row${task.req.includes("需") ? "" : " up"}`} key={task.id}>
                 <span className="ic">{task.req.includes("需") ? <LockSm /> : <CheckSm />}</span>
                 <span className="nm">{task.n}</span>
-                <span className="ct">{Math.round(task.sat * 100)}% · {money(task.price)}{task.unit}</span>
+                <span className="ct">{Math.round(task.sat * 100)}% · {money(task.price)}{taskUnitText(task.unit)}</span>
               </div>
             ))}
           </div>
@@ -352,8 +353,8 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       </div>
       <p className="f-foot">当前最高单价任务{maxPriceTask ? `「${maxPriceTask.n}」` : "暂无"}、最高负载任务{peakTask ? `「${peakTask.n}」` : "暂无"}会影响任务池展示。任务单价调整后<b>对新派发任务生效</b>，已派发任务仍按原单价完成。</p>
       {pricingAction && <OperationConfirmModal
-        action={pricingAction.field === "enabled" ? `${pricingAction.nextEnabled ? "恢复派发" : "紧急 Kill"} · ${pricingAction.row?.taskClass}` : pricingAction.field === "queueSaturation" ? "调整队列饱和度" : `调整 ${pricingAction.row?.taskClass} · ${pricingAction.field}`}
-        detail={pricingAction.field === "enabled" && !pricingAction.nextEnabled ? "立即停止该类新任务派发；已派任务继续按派发时价格结算。" : "确认后服务端立即热更，只影响新派发/新路由判定，并写入 A2/A4 审计链。"}
+        action={pricingAction.field === "enabled" ? `${pricingAction.nextEnabled ? "恢复派发" : "紧急停止派发"} · ${pricingAction.row?.taskClass}` : pricingAction.field === "queueSaturation" ? "调整队列饱和度" : `调整 ${pricingAction.row?.taskClass} · ${({minReward:"最低奖励",maxReward:"最高奖励",minVRAM:"最低显存",queueSaturation:"队列饱和度",enabled:"派发开关"})[pricingAction.field]}`}
+        detail={pricingAction.field === "enabled" && !pricingAction.nextEnabled ? "立即停止该类新任务派发；已派任务继续按派发时价格结算。" : "确认后服务端立即更新，只影响新派发/新路由判定，并写入 A2/A4 操作记录。"}
         amplifies={pricingAction.field !== "enabled" || !!pricingAction.nextEnabled}
         edit={pricingAction.field === "enabled" ? undefined : {
           kind: "number",
@@ -369,7 +370,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         onClose={() => setPricingAction(null)}
         onConfirm={async (reason, newValue) => {
           if (!canMutate) {
-            ctx.toast("E2 权威快照不可用，已取消本次配置提交");
+            ctx.toast("E2 当前配置不可用，已取消本次配置提交");
             setPricingAction(null);
             return;
           }

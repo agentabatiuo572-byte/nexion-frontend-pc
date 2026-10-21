@@ -37,14 +37,14 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
   const nodes = [
     { cls: "start", nm: "已下单", ct: `${stateCounts.get("placed") ?? 0} 单` },
     { cls: "flow", nm: "已支付", ct: `${stateCounts.get("paid") ?? 0} 单` },
-    { cls: "flow", nm: "开通中", ct: `${stateCounts.get("provisioning") ?? 0} 单 · DC 分配` },
+    { cls: "flow", nm: "开通中", ct: `${stateCounts.get("provisioning") ?? 0} 单 · 数据中心分配` },
     { cls: "end", nm: "已激活 ✓", ct: `${stateCounts.get("activated") ?? 0} 单` },
   ];
   // 终态分支:nm 中文主标;desc 补因果(去状态码裸用,与 nm 不重复)。
   const branches = [
     { cls: "err", nm: "支付失败", ct: `${stateCounts.get("payment_failed") ?? 0} 单`, desc: "下单后未成功扣款" },
     { cls: "warn", nm: "已过期", ct: `${stateCounts.get("expired") ?? 0} 单`, desc: "订单超时未支付" },
-    { cls: "err", nm: "开通失败", ct: `${stateCounts.get("provisioning_failed") ?? 0} 单`, desc: "DC 分配超时" },
+    { cls: "err", nm: "开通失败", ct: `${stateCounts.get("provisioning_failed") ?? 0} 单`, desc: "数据中心分配超时" },
     { cls: "warn", nm: "已退款", ct: `${stateCounts.get("refunded") ?? 0} 单`, desc: "人工退款 · D1/D4 资金闭环" },
     { cls: "err", nm: "拒付", ct: `${stateCounts.get("chargeback") ?? 0} 单`, desc: "支付渠道拒付 / 争议" },
     { cls: "neutral", nm: "已取消", ct: `${stateCounts.get("cancelled") ?? 0} 单`, desc: "仅未支付订单可取消" },
@@ -107,7 +107,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
             aria-label="搜索订单"
             value={ctx.e4Keyword}
             onChange={(event) => ctx.setE4Keyword(event.target.value)}
-            placeholder="订单号 / 用户编码 / SKU"
+            placeholder="订单号 / 用户编码 / 商品规格"
             style={{ minWidth: 240, flex: "1 1 280px" }}
           />
           <TabGroup
@@ -120,8 +120,8 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
         </div>
         <div className="q-scroll" role="region" aria-label="订单列表" tabIndex={0}>
           <div className="q-row head">
-            <div>订单 ID</div><div>用户</div><div>SKU</div><div style={{ textAlign: "right" }}>金额</div>
-            <div>DC 分配</div><div>状态</div><div style={{ textAlign: "right" }}>时长</div><div />
+            <div>订单 ID</div><div>用户</div><div>商品规格</div><div style={{ textAlign: "right" }}>金额</div>
+            <div>数据中心分配</div><div>状态</div><div style={{ textAlign: "right" }}>时长</div><div />
           </div>
           {!ctx.e4Loading && !ctx.e4Error && rows.map((o) => {
             const st = ctx.orderState(o);

@@ -1,3 +1,4 @@
+import { orderSkuBrandText, nexGridBrandText } from "./brand-copy.ts";
 const INTERNAL_FIXTURE_PATTERN = /(?:TRIALDEV|DEVTI|E3ACC|TIO|DEVICETRIALSTANDARD|INTERNAL|FIXTURE|QA(?:TEST)?|TEST(?:DEVICE|TASK)?)/i;
 const SAFE_DEVICE_IDENTIFIER = /^[A-Za-z0-9._:-]{3,64}$/;
 const SAFE_DATACENTER_IDENTIFIER = /^[A-Z]{2,6}-\d{1,3}$/;
@@ -82,7 +83,7 @@ export function operatorE3Reason(value: string | null | undefined) {
 export function operatorProductLabel(value: string | null | undefined) {
   const normalized = text(value);
   if (hasInternalFixtureMarker(normalized)) return "验收设备规格";
-  return SAFE_SKU_DISPLAY.test(normalized) && /[\p{Script=Han}\s]|[A-Z][a-z]/u.test(normalized) ? normalized : "商品信息待补";
+  return SAFE_SKU_DISPLAY.test(normalized) && /[\p{Script=Han}\s]|[A-Z][a-z]/u.test(normalized) ? nexGridBrandText(normalized) : "商品信息待补";
 }
 
 export function operatorTaskLabel(value: string | null | undefined) {
@@ -109,7 +110,7 @@ export function operatorRate(dailyUsdt: number | null | undefined, dailyNex: num
   const usdt = typeof dailyUsdt === "number" && Number.isFinite(dailyUsdt) && dailyUsdt >= 0 ? dailyUsdt : null;
   const nex = typeof dailyNex === "number" && Number.isFinite(dailyNex) && dailyNex >= 0 ? dailyNex : null;
   if (usdt == null && nex == null) return "收益待核验";
-  return [usdt == null ? null : format(usdt, "USDT"), nex == null ? null : format(nex, "NEX")]
+  return [usdt == null ? null : format(usdt, "USDT"), nex == null ? null : format(nex, "UVEL")]
     .filter((value): value is string => value != null).join(" · ");
 }
 
@@ -163,5 +164,19 @@ export function operatorSkuLabel(input: { orderNo: string; skuName?: string | nu
         operatorSkuLabel({ ...input, skuName: name, skuId: skuIds[index] }) === "商品信息待补"))) {
     return "商品信息待补";
   }
-  return skuName;
+  return orderSkuBrandText(skuId, skuName);
+}
+
+export function operatorSkuTier(value: string | undefined): string { return ({ Entry: "入门档", Pro: "专业档", Flagship: "旗舰档", Share: "共享份额" } as Record<string,string>)[value ?? ""] ?? "其他档位"; }
+
+export function operatorOrderFact(kind: "type" | "payment" | "paymentStatus" | "source" | "direction" | "fundingStatus", value: string): string {
+  const labels: Record<string, Record<string, string>> = {
+    type: { SINGLE: "单品购买", BUNDLE: "组合购买", TRADE_IN: "以旧换新", CAPACITY_KEEP: "保留算力", TRIAL_CONVERT: "试用转购买" },
+    payment: { USDT_WALLET: "USDT 钱包", WALLET: "钱包", BANK: "银行付款", BANK_TRANSFER: "银行转账", VIETQR: "VietQR 扫码付款", HDPAY: "支付商付款", CREGIS: "链上付款" },
+    paymentStatus: { PENDING: "待付款", UNPAID: "未付款", PROCESSING: "支付处理中", PAID: "已支付", CONFIRMED: "已确认付款", SUCCESS: "支付成功", REFUNDED: "已退款", CHARGEBACK: "拒付", DISPUTED: "存在争议", PAYMENT_FAILED: "支付失败", FAILED: "支付失败", EXPIRED: "已过期", CANCELLED: "已取消" },
+    source: { D1_PAYMENT: "付款记录", D4_LEDGER: "资金流水", D4_BILL: "账单记录" },
+    direction: { IN: "收入", OUT: "支出" },
+    fundingStatus: { PAID: "已支付", POSTED: "已入账", COMPLETED: "已完成", SUCCESS: "已完成", PENDING: "处理中", FAILED: "失败", CANCELLED: "已取消", REVERSED: "已撤回" },
+  };
+  return labels[kind][value.toUpperCase()] ?? ({ type: "订单类型待核实", payment: "支付方式待核实", paymentStatus: "支付状态待核实", source: "其他资金记录", direction: "方向待核实", fundingStatus: "资金状态待核实" })[kind];
 }

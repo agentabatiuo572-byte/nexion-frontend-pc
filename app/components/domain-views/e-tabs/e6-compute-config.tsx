@@ -1,3 +1,4 @@
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 /**
  * E6 · 算力与设备配置(server-canonical 聚合视图)。
  * 手机绑定换机 / 电脑算力入口开关 / App 在线加成系数 / 显卡映射表(G1-G6) / 客户端下载配置。
@@ -93,7 +94,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
   // 在线系数调整 → param(number edit)。
   const editCoefficient = (c: (typeof coefficients)[number]) => {
     openActionConfirm({
-      name: `${c.label}调整`,
+      name: `${operatorCopyText(c.label)}调整`,
       op: "param",
       paramKey: e6CoeffKey(c.key),
       edit: {
@@ -101,18 +102,18 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
         min: Number.MIN_VALUE,
         disallowCurrent: true,
       },
-      detail: `${c.label}: ${c.desc} 调整后对后续结算生效,不回溯已结算收益。${c.frontendEffect}`,
+      detail: `${operatorCopyText(c.label)}: ${operatorCopyText(c.desc)} 调整后对后续结算生效,不回溯已结算收益。${operatorCopyText(c.frontendEffect)}`,
     });
   };
 
   // 收益估算系数调整 → param(number edit)。
   const editYield = (p: (typeof yields)[number]) => {
     openActionConfirm({
-      name: `${p.label}调整`,
+      name: `${operatorCopyText(p.label)}调整`,
       op: "param",
       paramKey: e6YieldKey(p.key),
       edit: { kind: "number", current: p.value, unit: p.unit, min: Number.MIN_VALUE, disallowCurrent: true },
-      detail: `${p.label}用于本页电脑显卡收益预览,并供后续 PC 载体 SPEC 读取;不回溯已结算收益。`,
+      detail: `${operatorCopyText(p.label)}用于本页电脑显卡收益预览,并供后续 电脑客户端 读取;不回溯已结算收益。`,
     });
   };
 
@@ -128,13 +129,13 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
       businessForm: {
         kind: "multi-field",
         title: "编辑显卡档位",
-        hint: "档位名称与 TOPS 用于本页预览,并为后续 PC 载体 SPEC 提供服务端配置。关键词在表格中逐个新增、修改或删除。",
+        hint: "档位名称与 TOPS 用于本页预览,并为后续 电脑客户端 提供服务端配置。关键词在表格中逐个新增、修改或删除。",
         fields: [
           { key: "label", label: "档位展示名称", current: tier.label, inputKind: "text", wide: true, required: true },
           { key: "tops", label: "算力 TOPS", current: tier.tops, inputKind: "number", min: Number.MIN_VALUE, step: 1, required: true },
         ],
       },
-      detail: `调整「${tier.label}」的展示名称与算力标尺。批准后本页按新 TOPS 预览;后续 PC 载体 SPEC 可读取同一配置。`,
+      detail: `调整「${tier.label}」的展示名称与算力标尺。批准后本页按新 TOPS 预览;后续 电脑客户端 可读取同一配置。`,
     });
   };
 
@@ -145,7 +146,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
       op: "param",
       paramKey: e6GpuTierKey(tier.id, slot),
       edit: { kind: "text", current, unit: "单个显卡型号关键词", disallowCurrent: true },
-      detail: `每次只编辑一个识别词,不要把多个型号塞进同一输入框。该映射供后续 PC 载体 SPEC 使用,当前用户端没有显卡识别入口。`,
+      detail: `每次只编辑一个识别词,不要把多个型号塞进同一输入框。该映射供后续 电脑客户端 使用,当前用户端没有显卡识别入口。`,
     });
   };
 
@@ -263,8 +264,8 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
           return (
             <div className="e6-flag-row" key={f.key}>
               <div className="e6-flag-meta">
-                <span className="e6-flag-name">{f.label}</span>
-                <span className="e6-flag-desc"><AutoGloss>{f.desc}</AutoGloss></span>
+                <span className="e6-flag-name">{operatorCopyText(f.label)}</span>
+                <span className="e6-flag-desc"><AutoGloss>{operatorCopyText(f.desc)}</AutoGloss></span>
               </div>
               <div className="e6-flag-ctl">
                 <span className="e6-flag-state" style={{ color: on ? "var(--success)" : "var(--ink-4)" }}>
@@ -274,7 +275,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
                   type="button"
                   role="switch"
                   aria-checked={on}
-                  aria-label={`${f.label}:${on ? "已开启,点击关闭" : "已关闭,点击开启"}`}
+                  aria-label={`${operatorCopyText(f.label)}:${on ? "已开启,点击关闭" : "已关闭,点击开启"}`}
                   className="e6-switch"
                   data-on={on}
                   data-proof="e6-flag-toggle"
@@ -301,15 +302,15 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
         {coefficients.map((c) => (
           <div className="pkv" key={c.key}>
             <div className="lhs">
-              <span className="zh">{c.label}</span>
-              <span className="desc"><AutoGloss>{c.desc}</AutoGloss></span>
+              <span className="zh">{operatorCopyText(c.label)}</span>
+              <span className="desc"><AutoGloss>{operatorCopyText(c.desc)}</AutoGloss></span>
             </div>
-            <span className="v">{ready ? c.value : "—"}<span className="u">{c.unit}</span></span>
+            <span className="v">{ready ? c.value : "—"}<span className="u">{operatorCopyText(c.unit)}</span></span>
             {canWriteE6 && <button type="button" className="adj" data-proof={`e6-coeff-${c.key}`} onClick={() => editCoefficient(c)}>调整</button>}
           </div>
         ))}
         <div className="tint cyan tiny" style={{ margin: "12px 16px 14px" }}>
-          <AutoGloss>连续在线满额时长决定 App 稳定性加成爬满需要多久。缩短满额时长属于资金放大方向,B1 覆盖率低于红线时服务端失败关闭;收紧与回滚方向保持可用。调整不回溯已结算收益，不恢复 H5 手机算力奖励。</AutoGloss>
+          <AutoGloss>连续在线满额时长决定 App 稳定性加成爬满需要多久。缩短满额时长属于资金放大方向,B1 覆盖率低于红线时服务器会拒绝本次调整;收紧与回滚方向保持可用。调整不回溯已结算收益，不恢复 H5 手机算力奖励。</AutoGloss>
         </div>
       </section>
 
@@ -320,15 +321,15 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
           <span className="r"><CodeTag>六档显卡</CodeTag><CodeTag>单词一格</CodeTag></span>
         </div>
         <div className="tint cyan tiny" style={{ margin: "12px 16px 0" }}>
-          <AutoGloss>以下参数用于把显卡算力换算成每日 USDT / NEX 估算,全部后台可调。</AutoGloss>
+          <AutoGloss>以下参数用于把显卡算力换算成每日 USDT / UVEL 估算,全部后台可调。</AutoGloss>
         </div>
         <div data-proof="e6-yield-estimate-params" style={{ margin: "0 16px 14px" }}>
           {yields.map((p) => (
             <div className="pkv" key={p.key}>
               <div className="lhs">
-                <span className="zh">{p.label}</span>
+                <span className="zh">{operatorCopyText(p.label)}</span>
               </div>
-              <span className="v">{ready ? p.value : "—"}<span className="u">{p.unit}</span></span>
+              <span className="v">{ready ? p.value : "—"}<span className="u">{operatorCopyText(p.unit)}</span></span>
               {canWriteE6 && <button type="button" className="adj" onClick={() => editYield(p)}>调整</button>}
             </div>
           ))}
@@ -347,13 +348,13 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
                     <span className="e6-tier-badge">第 {numberFmt.format(index + 1)} 档</span>
                     <span className="e6-tier-name">{tier.label}</span>
                   </div>
-                  <span className="e6-tier-desc"><AutoGloss>{tier.desc}</AutoGloss></span>
+                  <span className="e6-tier-desc"><AutoGloss>{operatorCopyText(tier.desc)}</AutoGloss></span>
                   <span className="e6-tier-model">默认型号: {tier.defaultModel}</span>
                 </div>
                 <div className="e6-tier-yield">
                   <span><b>{topsNum == null ? "—" : numberFmt.format(topsNum)}</b> TOPS</span>
                   <span>{dailyUsdtValue == null ? "收益参数不可用" : `约 $${dailyUsdtValue.toFixed(2)} / 日`}</span>
-                  <span>{dailyNexValue == null ? "NEX 折算不可用" : `约 ${numberFmt.format(dailyNexValue)} NEX / 日`}</span>
+                  <span>{dailyNexValue == null ? "UVEL 折算不可用" : `约 ${numberFmt.format(dailyNexValue)} UVEL / 日`}</span>
                 </div>
                 <div className="e6-keyword-wrap">
                   {tier.keywords.map((kw) => (

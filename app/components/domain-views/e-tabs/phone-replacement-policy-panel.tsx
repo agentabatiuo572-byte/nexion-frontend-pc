@@ -208,14 +208,14 @@ function PolicyEditor({ owner, operator, rights }: {
         }
     }
     return <section className="phone-admin-panel" data-proof="e6-phone-binding"><h3>手机绑定与换机策略</h3>
-    <p>四项规则一起审批、原子生效。只约束后续换机；首次绑定、同绑定恢复及已运行的手机不受追溯影响。</p>
+    <p>四项规则一起审批、同时生效。只约束后续换机；首次绑定、同绑定恢复及已运行的手机不受追溯影响。</p>
     {error && <p role="alert" className="phone-error">{error}</p>}{message && !denied && <p role="status">{message}</p>}
     {denied ? <p>当前没有查看原结果的权限，内容已隐藏，请返回。</p> : <>
     <div className="phone-actions"><button className="l-btn" disabled={loading || busy || !!confirm} onClick={() => void refresh(true)}>重新读取当前策略</button><Link href="/platform/audit?domain=E">查看审批记录</Link></div>
     {loading ? <p role="status">正在读取手机策略…</p> : !policy ? <p>策略读取失败，暂不可提交。</p> : <>
       <p>当前策略版本：{policy.policyVersion ?? "未取得"} · {policy.available ? "配置可用" : "当前配置不完整，请填齐四项后提交修复"}</p>
       <fieldset disabled={blocked}><legend>手机换机规则</legend><label><input type="checkbox" checked={allow} onChange={e => setAllow(e.target.checked)}/>允许更换绑定手机</label>
-        <div className="phone-grid">{["换机最短间隔（天，0 表示不限）", "滚动窗口（1–365 天）", "窗口内最多更换（1–100 次）"].map((label, i) => <label key={label}>{label}<input type="number" min={i === 0 ? 0 : 1} max={i === 1 ? 365 : i === 2 ? 100 : undefined} step={1} value={values[i]} onChange={e => setValues(current => current.map((v, j) => j === i ? e.target.value : v))}/></label>)}</div></fieldset>
+        <div className="phone-grid">{["换机最短间隔（天，0 表示不限）", "最近多少天内统计（1–365 天）", "最近这段时间内最多换机（1–100 次）"].map((label, i) => <label key={label}>{label}<input type="number" min={i === 0 ? 0 : 1} max={i === 1 ? 365 : i === 2 ? 100 : undefined} step={1} value={values[i]} onChange={e => setValues(current => current.map((v, j) => j === i ? e.target.value : v))}/></label>)}</div></fieldset>
       {draftError && <p role="status">{draftError}</p>}{!canWrite && <p>本页只读。整组提交需同时具备策略配置及开关提案权限。</p>}
       <button className="l-btn primary" disabled={blocked || !!draftError || unchanged} onClick={preview}>预览并确认策略变更</button>
     </>}
@@ -224,7 +224,7 @@ function PolicyEditor({ owner, operator, rights }: {
       <label>变更理由（8–200 字）<textarea maxLength={200} disabled={busy} value={reason} onChange={e => setReason(e.target.value)}/></label><label><input type="checkbox" disabled={busy} checked={ack} onChange={e => setAck(e.target.checked)}/>我已核对四项前后值，确认提交给另一位审批人</label>
       <div className="phone-actions"><button className="l-btn primary" disabled={busy || !ack || reason.trim().length < 8} onClick={() => void submit()}>提交审批</button><button className="l-btn" disabled={busy} onClick={() => setConfirm(null)}>取消</button></div></div>}
     {pending && !canRecover && <p>有原操作待核实，恢复当前处置权限后才能查看；暂不能发起新提案。</p>}
-    {pending && canRecover && <div className="phone-record"><h4>原审批提案</h4><p>提交：{phoneTime(pending.createdAt)} · 原操作标识：{pending.commandKey}</p><p>审批单：{pending.ticketId ?? "结果待核实"}</p><p>原值：{pending.input.beforeValue}</p><p>目标：{pending.input.afterValue}</p><p>理由：{pending.input.reason}</p>
+    {pending && canRecover && <div className="phone-record"><h4>原审批提案</h4><p>提交：{phoneTime(pending.createdAt)} · 原操作标识：{pending.commandKey}</p><p>审批单：{pending.ticketId ?? "结果待核实"}</p><details><summary>原策略与目标策略技术记录</summary><p>原值：{pending.input.beforeValue}</p><p>目标：{pending.input.afterValue}</p></details><p>理由：{pending.input.reason}</p>
       <button className="l-btn" disabled={busy} onClick={() => void checkProposal()}>只读查询审批结果</button>
       {pending.terminal && <button className="l-btn" disabled={busy} onClick={() => { proposals.forget(pending.fingerprint, pending.commandKey); syncPending(); void refresh(); }}>原提案已结束，准备新变更</button>}</div>}
     {canRecover && <details><summary>查询原发布结果</summary><p>使用发布操作号，或执行审批人批准时的原操作标识。提交提案的标识不能代替批准标识。</p><div className="phone-grid">

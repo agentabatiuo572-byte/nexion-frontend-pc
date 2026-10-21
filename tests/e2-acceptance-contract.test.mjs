@@ -26,9 +26,9 @@ test("E2 renders all canonical task classes including Speech", () => {
   assert.match(e2, /最低奖励/);
   assert.match(e2, /最高奖励/);
   assert.match(e2, /最低显存/);
-  assert.match(e2, /title="服务端字段 minReward"/);
-  assert.match(e2, /title="服务端字段 maxReward"/);
-  assert.match(e2, /title="服务端字段 minVRAM"/);
+  assert.match(e2, /title="最低奖励"/);
+  assert.match(e2, /title="最高奖励"/);
+  assert.match(e2, /title="最低显存"/);
   // 不得再把这些字段名渲染成可见文本。
   assert.doesNotMatch(e2, /<th>minReward<\/th>/);
   assert.doesNotMatch(e2, /<th>maxReward<\/th>/);
@@ -37,11 +37,11 @@ test("E2 renders all canonical task classes including Speech", () => {
 
 test("E2 exposes saturation, five-tier teaser and kill or recovery", () => {
   // 同上:饱和度与锁定预览改出中文业务名,字段名退到 title 提示。
-  assert.match(e2, /title="服务端字段 QUEUE_SATURATION">队列饱和度/);
-  assert.match(e2, /title="服务端字段 teaser">锁定预览/);
+  assert.match(e2, /title="任务队列饱和度">队列饱和度/);
+  assert.match(e2, /title="升级收益预览">锁定预览/);
   assert.match(e2, /每日潜在收益/);
   assert.match(client, /cloud-share/);
-  assert.match(e2, /row\.enabled \? "Kill" : "恢复"/);
+  assert.match(e2, /row\.enabled \? "停止派发" : "恢复"/);
   assert.doesNotMatch(e2, /<span className="ttl">QUEUE_SATURATION<\/span>/);
   assert.doesNotMatch(e2, /Locked teaser 预览/);
   assert.doesNotMatch(e2, /daily potential/);
@@ -94,8 +94,8 @@ test("E2 rejects malformed config envelopes without deadlocking an empty but rea
   assert.match(e2, /\{canMutate && <div className="row"/);
   assert.match(e2, /\{canMutateTasks && <div className="acts"/);
   assert.match(e2, /useEffect\(\(\) => \{\s*if \(!canMutate\) setPricingAction\(null\);/);
-  assert.match(e2, /if \(!canMutate\) \{\s*ctx\.toast\("E2 权威快照不可用，已取消本次配置提交"\);/);
-  assert.match(view, /const rejectE2Mutation = \(\) => \{\s*setToast\("E2 权威快照不可用，已取消本次配置提交"\);/);
+  assert.match(e2, /if \(!canMutate\) \{\s*ctx\.toast\("E2 当前配置不可用，已取消本次配置提交"\);/);
+  assert.match(view, /const rejectE2Mutation = \(\) => \{\s*setToast\("E2 当前配置不可用，已取消本次配置提交"\);/);
   assert.match(view, /disabled=\{!canMutateE2Tasks \|\| !taskForm\.n\.trim\(\) \|\| !Number\(taskForm\.price\)\}/);
   assert.match(view, /if \(isE2TaskMutation\(mc\.op\) && !canMutateE2Tasks\) \{/);
   assert.match(view, /if \(isE2ConfigMutation\(mc\.op\) && !canMutateE2\) \{/);

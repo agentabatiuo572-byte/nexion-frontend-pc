@@ -14,7 +14,7 @@ export const ORDER_FLOW = ["placed", "paid", "provisioning", "activated"];
 export const ostate: Record<string, string> = { placed: "neutral", paid: "info", provisioning: "cyan", activated: "ok", refunded: "warn", cancelled: "neutral", payment_failed: "err", expired: "warn", provisioning_failed: "err", chargeback: "err" };
 // 终态中文标签。
 const STATE_LABEL: Record<string, string> = { placed: "已下单", paid: "已支付", provisioning: "开通中", activated: "已激活", cancelled: "已取消", payment_failed: "支付失败", expired: "已过期", refunded: "已退款", provisioning_failed: "开通失败", chargeback: "拒付" };
-export const stateLabel = (s: string): string => STATE_LABEL[s] ?? s;
+export const stateLabel = (s: string): string => STATE_LABEL[s] ?? "订单状态待核实";
 
 // E-13 补建终态可选值(为缺失终态的订单手动落定;真后台由订单状态机校验后写入)。
 export const TERMINAL_STATES = ["payment_failed", "expired", "provisioning_failed", "chargeback"] as const;
@@ -211,7 +211,7 @@ export function releaseMonthPresentation(releaseMonth: number, phaseOffset = 0):
 // 购买门表单校验(提交前调;返回错误串 = 拦截,null = 通过)。
 // 注:这是输入完整性/取值范围校验,非「锁死业务值」——阈值/开关本身全运营可调(铁律)。
 export function validateGateForm(f: SkuForm): string | null {
-  if (f.tier !== "Share" && !f.unlock.trim()) return "请先配置并选择解锁 Phase";
+  if (f.tier !== "Share" && !f.unlock.trim()) return "请先配置并选择解锁阶段";
   if (f.gateType === "activeDirect" && skuNumU(f.gateActiveDirectMin) == null) return "购买门:请填写活跃直推门槛";
   if (f.gateType === "rank" && skuNumU(f.gateRankMin) == null) return "购买门:请填写最低 V 级";
   if (f.gateType === "combo" && skuNumU(f.gateRankMin) == null && skuNumU(f.gateActiveDirectMin) == null && skuNumU(f.gateTeamVolumeMin) == null)
