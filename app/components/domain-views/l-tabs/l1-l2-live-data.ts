@@ -19,14 +19,14 @@ export type L2LiveStage = {
 };
 
 const L1_TOTALS = [
-  ["users", "注册完成用户", "nx_event_outbox:auth.register_completed", "A4 统一事件流", "服务器权威注册完成事件去重人数"],
-  ["orders", "支付完成人数", "nx_event_outbox:checkout.completed", "A4 统一事件流", "服务器权威支付完成事件去重人数"],
-  ["withdrawals", "提现申请人数", "nx_event_outbox:withdraw.submitted", "A4 统一事件流", "服务器权威提现提交事件去重人数"],
-  ["exchanges", "兑换完成人数", "nx_event_outbox:exchange.swapped", "A4 统一事件流", "服务器权威兑换完成事件去重人数"],
-  ["stakingPositions", "质押开仓人数", "nx_event_outbox:staking.opened", "A4 统一事件流", "服务器权威质押开仓事件去重人数"],
-  ["walletLedgerRows", "充值确认事件", "nx_event_outbox:wallet.topup_confirmed", "A4 统一事件流", "服务器权威充值确认事件数"],
-  ["supportTickets", "客服建单事件", "nx_event_outbox:support.ticket_created", "A4 统一事件流", "服务器权威客服建单事件数"],
-  ["auditLogs", "后台治理事件", "nx_event_outbox:phase_admin", "A4 统一事件流", "已注册的 phase/admin family 事件数"],
+  ["users", "注册完成用户", "nx_event_outbox:auth.register_completed", "A4 统一事件流", "服务器确认注册完成事件去重人数"],
+  ["orders", "支付完成人数", "nx_event_outbox:checkout.completed", "A4 统一事件流", "服务器确认支付完成事件去重人数"],
+  ["withdrawals", "提现申请人数", "nx_event_outbox:withdraw.submitted", "A4 统一事件流", "服务器确认提现提交事件去重人数"],
+  ["exchanges", "兑换完成人数", "nx_event_outbox:exchange.swapped", "A4 统一事件流", "服务器确认兑换完成事件去重人数"],
+  ["stakingPositions", "质押开仓人数", "nx_event_outbox:staking.opened", "A4 统一事件流", "服务器确认质押开仓事件去重人数"],
+  ["walletLedgerRows", "充值确认事件", "nx_event_outbox:wallet.topup_confirmed", "A4 统一事件流", "服务器确认充值确认事件数"],
+  ["supportTickets", "客服建单事件", "nx_event_outbox:support.ticket_created", "A4 统一事件流", "服务器确认客服建单事件数"],
+  ["auditLogs", "后台治理事件", "nx_event_outbox:phase_admin", "A4 统一事件流", "已注册的 phase/admin 事件类别 事件数"],
 ] as const;
 
 const L2_STAGE_META: Record<string, { label: string; description: string }> = {

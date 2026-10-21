@@ -254,16 +254,16 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
             </div>
             <div className="liab-split" style={{ marginTop: 14 }}>
               <div className="rev-row" style={{ gridTemplateColumns: "1fr auto" }}>
-                <span className="nm">页面浏览事件<span className="src">APP 埋点</span></span>
+                <span className="nm">页面浏览事件<span className="src">应用行为采集</span></span>
                 <span className="lcode">app.page_viewed</span>
               </div>
               <div className="rev-row" style={{ gridTemplateColumns: "1fr auto" }}>
-                <span className="nm">元素点击事件<span className="src">APP 埋点</span></span>
+                <span className="nm">元素点击事件<span className="src">应用行为采集</span></span>
                 <span className="lcode">app.element_clicked</span>
               </div>
             </div>
             <div className="ltint" style={{ marginTop: 14, fontSize: 12 }}>
-              <b>验收边界</b> · 等 APP 端产生上述两个真实事件、A4 提供埋点目录和字段字典后，再联调 24h / 7d / 30d 窗口、页面层级、坐标热区与聚合导出。当前不展示热力数值、不开放导出，也不使用 mock 数据补齐。
+              <b>验收边界</b> · 等 APP 端产生上述两个真实事件、A4 提供埋点目录和字段字典后，再联调 24h / 7d / 30d 窗口、页面层级、坐标热区与聚合导出。当前不展示热力数值、不开放导出，也不使用 演示数据补齐。
             </div>
           </div>
         </section>
@@ -316,7 +316,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
           <div className="sub">界面内 tap / click 事件合计</div>
         </div>
         <div className="f-stat cyan">
-          <div className="k">点击率 CTR</div>
+          <div className="k">点击率</div>
           <div className="v">{fmtPct(summary.totalPv ? summary.totalClicks / summary.totalPv : 0)}</div>
           <div className="sub">点击事件 / 页面曝光 PV</div>
         </div>
@@ -357,7 +357,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
             <option value="ALL">全部</option><option value="H5">H5</option><option value="APP">APP</option><option value="MP">小程序</option>
           </select>
           <span className="lb">Locale</span>
-          <select aria-label="Locale 筛选" value={locale} onChange={(event) => setLocale(event.target.value)}>
+          <select aria-label="语言筛选" value={locale} onChange={(event) => setLocale(event.target.value)}>
             <option value="ALL">全部</option><option value="zh-CN">zh-CN</option><option value="en-US">en-US</option><option value="vi-VN">vi-VN</option>
           </select>
           <button className="chip" disabled={!canExportCurrent || exporting} onClick={() => void exportCurrent()}>
@@ -556,7 +556,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
         <b>不纳入统计的系统页({heatmapData.excludedPages.length})</b>:
         <AutoGloss>{heatmapData.excludedPages.map((p) => p.titleZh).join(" · ")}（纯会话/工具页,无行为分析价值）。</AutoGloss>{" "}
         <b>L6 没有任何「写数据」动作</b>:
-        <AutoGloss>粒度 / 时间窗 / 排序均为会话级视图参数,不改任何业务规则。业务时区 {heatmapData.businessTimeZone}；clientEventId 去重；乱序事件会被拒绝，客户端须按原事件 ID 顺序重试。</AutoGloss>
+        <AutoGloss>粒度 / 时间窗 / 排序均为会话级视图参数,不改任何业务规则。业务时区 {heatmapData.businessTimeZone}；事件编号去重；乱序事件会被拒绝，客户端须按原事件 ID 顺序重试。</AutoGloss>
       </p>
     </div>
   );

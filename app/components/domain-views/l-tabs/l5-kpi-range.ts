@@ -20,7 +20,7 @@ export function l5KpiRange(value: Record<string, string>, today = l5BusinessToda
   window: Window; from?: string; to?: string; timeRange: string;
 } {
   const window = value.window;
-  if (!Object.hasOwn(L5_KPI_WINDOWS, window)) throw new Error("请选择 KPI 时间范围");
+  if (!Object.hasOwn(L5_KPI_WINDOWS, window)) throw new Error("请选择关键指标时间范围");
   if (window !== "custom") return { window: window as Window, timeRange: L5_KPI_WINDOWS[window as Window] };
   const from = value.from?.trim() ?? "", to = value.to?.trim() ?? "";
   const first = dateMillis(from), last = dateMillis(to);

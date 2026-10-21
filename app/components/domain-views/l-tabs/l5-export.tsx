@@ -41,11 +41,13 @@ function downloadBlob(blob: Blob, fileName: string) {
   URL.revokeObjectURL(href);
 }
 
+function exportTypeText(value: string) { return value.replace(/^KPI/, "关键指标").replaceAll("聚合", "汇总"); }
+
 export function L5HeaderActions({ ctx }: { ctx: LCtx }) {
   const exportTypes = ctx.availableAggregateExportTypes ?? [];
   const newExport = () => ctx.openActionConfirm({
     action: "发起聚合快照导出",
-    detail: <>当前账号可发起：{exportTypes.join("、")}。快照不含用户明细或明文敏感字段，确认后直接生成可下载任务；创建与下载使用同一来源域权限。</>,
+    detail: <>当前账号可发起：{exportTypes.map(exportTypeText).join("、")}。快照不含用户明细或明文敏感字段，确认后直接生成可下载任务；创建与下载使用同一来源域权限。</>,
     reasonMin: 8,
     reasonMax: 200,
     businessForm: {
@@ -75,7 +77,7 @@ export function L5HeaderActions({ ctx }: { ctx: LCtx }) {
   });
   return (
     <>
-      <span className="f-ro"><span className="d" />数据出境统一管控面</span>
+      <span className="f-ro"><span className="d" />数据导出统一管控面</span>
       <button
         className="f-cta"
         onClick={newExport}
@@ -197,7 +199,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
   const maskLabel = (mask: string) => ({ masked: "已脱敏", partial: "部分脱敏", decrypted: "已解密" })[mask] ?? mask;
   const statusLabel = (status: string): [string, string] => {
     const value = ST_LABEL[status];
-    if (Array.isArray(value)) return [str(value[0], STATUS_FALLBACK[status] ?? "未知状态"), str(value[1], "dim")];
+    if (Array.isArray(value)) return [STATUS_FALLBACK[status] ?? "导出状态待核实", str(value[1], "dim")];
     return [STATUS_FALLBACK[status] ?? "未知状态", "dim"];
   };
   const effSt = (t: LExportTask): string => t.st.toUpperCase();
@@ -254,16 +256,16 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
     const disclosureValues = disclosures.map((item) => `${item.jurisdictionCode}|${item.disclosureVersion}`);
     ctx.openActionConfirm({
       action: "生成监管报告",
-      detail: <>服务端将再次校验所选法域当前生效的披露版本与七章完整性，并按模板读取 L3、L4、D4、A2、J4 的聚合事实。报告不含逐用户行或明文敏感字段。</>,
+      detail: <>服务端将再次校验所选适用地区当前生效的披露版本与七章完整性，并按模板读取 L3、L4、D4、A2、J4 的聚合事实。报告不含逐用户行或明文敏感字段。</>,
       reasonMin: 8,
       reasonMax: 200,
       businessForm: {
         kind: "multi-field",
-        title: "监管报告 · 当前法域与披露版本",
-        hint: "法域/版本来自 I5 当前生效映射；创建时固化只读快照。",
+        title: "监管报告 · 当前适用地区与披露版本",
+        hint: "适用地区/版本来自 I5 当前生效映射；创建时固化只读快照。",
         fields: [
           { key: "templateCode", label: "报告模板", inputKind: "select", current: templates[0].code, options: templates.map((item) => item.code), optionLabels: Object.fromEntries(templates.map((item) => [item.code, item.label])) },
-          { key: "jurisdictionVersion", label: "法域 / 披露版本", inputKind: "select", current: disclosureValues[0], options: disclosureValues, optionLabels: Object.fromEntries(disclosures.map((item) => [`${item.jurisdictionCode}|${item.disclosureVersion}`, `${item.jurisdictionName} (${item.jurisdictionCode}) · ${item.disclosureVersion} · ${item.chapterCount}章`])) },
+          { key: "jurisdictionVersion", label: "适用地区 / 披露版本", inputKind: "select", current: disclosureValues[0], options: disclosureValues, optionLabels: Object.fromEntries(disclosures.map((item) => [`${item.jurisdictionCode}|${item.disclosureVersion}`, `${item.jurisdictionName} (${item.jurisdictionCode}) · ${item.disclosureVersion} · ${item.chapterCount}章`])) },
           { key: "period", label: "报告期间", placeholder: "如 2026-07 / 2026-Q3" },
           { key: "recipient", label: "接收机构 / 用途", placeholder: "如 合规团队 / 监管报送" },
           { key: "ticket", label: "业务工单", placeholder: "如 99105-L5-REG-001" },
@@ -299,8 +301,8 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">导出安全参数</span>
-          <span className="sub">· <AutoGloss>数据出境管控基线 · 明文敏感数据导出由服务端阻断</AutoGloss></span>
-          <div className="r"><span className="lcode electric" title="导出安全与隐私保护基线">数据出境管控</span></div>
+          <span className="sub">· <AutoGloss>数据导出管控基线 · 明文敏感数据导出由服务端阻断</AutoGloss></span>
+          <div className="r"><span className="lcode electric" title="导出安全与隐私保护基线">数据导出管控</span></div>
         </div>
         <div className="l-b">
           <div className="param-grid">
@@ -354,7 +356,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
                 return (
                   <tr key={t.id}>
                     <td className="mono" style={{ color: "var(--ink)" }}>{t.id}</td>
-                    <td style={{ fontWeight: 600, color: "var(--ink-2)" }}><AutoGloss>{t.type}</AutoGloss></td>
+                    <td style={{ fontWeight: 600, color: "var(--ink-2)" }}><AutoGloss>{exportTypeText(t.type)}</AutoGloss></td>
                     <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{t.scope}</td>
                     <td style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{t.fields}{t.pii && <span className="bdg bad" style={{ fontSize: 10.5, marginLeft: 4 }}>含隐私</span>}</td>
                     <td>{t.mask === "—" ? <span className="bdg dim">—</span> : <span className={"mask-pill " + t.mask}>{maskLabel(t.mask)}</span>}</td>
@@ -400,7 +402,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">监管报告生成</span>
-          <span className="sub">· <AutoGloss>I5 当前法域 × 披露版本 · L3/L4/D4 聚合事实 · A2/J4 可追溯</AutoGloss></span>
+          <span className="sub">· <AutoGloss>I5 当前适用地区 × 披露版本 · L3/L4/D4 聚合事实 · A2/J4 可追溯</AutoGloss></span>
           <div className="r">
             <button
               className="l-btn primary"
@@ -412,7 +414,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         </div>
         <div className="l-b">
           <div className="rev-row" style={{ gridTemplateColumns: "minmax(220px, 1fr) minmax(300px, 1.8fr) auto" }}>
-            <span className="nm">提现发放 / 反洗钱 / 法域专项</span>
+            <span className="nm">提现发放 / 反洗钱 / 适用地区专项</span>
             <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>服务端校验当前生效映射、披露版本与七章完整性；只固化聚合事实，缺失源字段明确标为不可用，不推测数值。</span>
             <span className="bdg ok">I5 → L5 已闭环</span>
           </div>
@@ -420,7 +422,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
             <div key={`${item.jurisdictionCode}-${item.disclosureVersion}`} className="rev-row" style={{ gridTemplateColumns: "minmax(180px, .8fr) minmax(140px, .5fr) minmax(260px, 1.2fr)" }}>
               <span className="nm">{item.jurisdictionName} ({item.jurisdictionCode})</span>
               <span className="mono">{item.disclosureVersion} · {item.chapterCount}章</span>
-              <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>当前映射 · {item.countryCodes.join(" / ") || "法域级"} · 发布 {item.publishedAt || "以 I5 记录为准"}</span>
+              <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>当前映射 · {item.countryCodes.join(" / ") || "适用地区级"} · 发布 {item.publishedAt || "以 I5 记录为准"}</span>
             </div>
           ))}
           {regulatoryLoading && <div className="ltint">正在读取 I5 当前披露版本...</div>}
@@ -437,7 +439,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         </div>
         <div className="l-b">
           <div className="rev-row" style={{ gridTemplateColumns: "minmax(220px, 1fr) minmax(320px, 2fr) auto" }}>
-            <span className="nm">swap / topup / withdraw / earning / commission / refund / bonus / purchase</span>
+            <span className="nm">兑换 / 充值 / 提现 / 收益 / 佣金 / 退款 / 奖励 / 购买</span>
             <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>用户编号只保留首尾字符，不导出昵称、备注或其他明文隐私；CSV 公式注入由服务端消毒。</span>
             <button className="l-btn sm" disabled={ledgerExporting} onClick={requestLedgerDownload}>
               {ledgerExporting ? "正在导出..." : "导出八类账单明细"}
@@ -529,7 +531,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         </section>
       </div>
 
-      <p className="f-foot"><b>本页只产出只读快照、脱敏账单和聚合监管报告，不修改业务状态。</b><AutoGloss>当前闭环覆盖 KPI、漏斗、财务、运营四类聚合、D4 八类账单明细与 I5 当前披露版本监管报告。快照创建时固化，下载令牌 24 小时失效；账单导出最多 10 万行，所有出口强制留痕，明文敏感字段由服务端阻断。</AutoGloss></p>
+      <p className="f-foot"><b>本页只产出只读快照、脱敏账单和聚合监管报告，不修改业务状态。</b><AutoGloss>当前闭环覆盖 关键指标、漏斗、财务、运营四类聚合、D4 八类账单明细与 I5 当前披露版本监管报告。快照创建时固化，下载令牌 24 小时失效；账单导出最多 10 万行，所有出口强制留痕，明文敏感字段由服务端阻断。</AutoGloss></p>
     </div>
   );
 }

@@ -55,9 +55,9 @@ test("L2 UI renders the selected real cohort curve and never prints null percent
   assert.match(page, /const selectedKey = COHORTS\[safeCohort\]\.w/);
   assert.match(page, /const scaled = CURVES\[selectedKey\] \?\? \[\]/);
   assert.match(page, /v == null \? "—" : `\$\{v\}\$\{xd\.unit\}`/);
-  assert.match(page, /未成熟窗口不推算/);
+  assert.match(page, /注册未满 7 天的不推算/);
   assert.match(page, /isStrictL2Dashboard/);
-  assert.match(page, /L2 响应协议错误/);
+  assert.match(page, /if \(detailedAttempt && !strictDetailed\) return/);
 });
 
 test("L2 strict parser uses the canonical event-contract cardinality, not a retired fixed stage count", () => {
@@ -74,11 +74,11 @@ test("L2 keeps malformed detailed responses fail-closed after the cardinality re
   assert.match(page, /!finiteCount\(item\.users\)/);
   assert.match(page, /!finitePercent\(item\.cvr\)/);
   assert.match(page, /if \(detailedAttempt && !strictDetailed\) return/);
-  assert.match(page, /不展示部分数字，也不允许导出/);
+  assert.match(page, /当前不会展示不可靠的数字，也不能导出/);
 });
 
 test("L2 labels the visible canonical funnel with its four actual stages", () => {
-  assert.match(page, /完整漏斗下钻 · 四级/);
+  assert.match(page, /查看四步转化详情/);
   assert.doesNotMatch(page, /完整漏斗下钻 · 五级/);
 });
 
@@ -90,7 +90,7 @@ test("L2 filters and exports are computed server-side from the registration acto
   assert.match(service, /trimOrDefault\(request\.phase\(\), ""\)/);
   assert.match(service, /trimOrDefault\(request\.locale\(\), ""\)/);
   assert.match(service, /trimOrDefault\(request\.ref\(\), ""\)/);
-  assert.match(page, /应用切片/);
+  assert.match(page, /查看筛选结果/);
   assert.doesNotMatch(page, /固定四个渠道样本/);
 });
 

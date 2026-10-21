@@ -25,7 +25,7 @@ test("L3 maps only the real wallet ledger facts returned by the backend", () => 
       ["refundBills", 2],
     ],
   );
-  assert.equal(result.find((row) => row.key === "genesisDividendBills")?.label, "Genesis 排放账单");
+  assert.equal(result.find((row) => row.key === "genesisDividendBills")?.label, "创世节点分红账单");
   assert.ok(result.every((row) => row.label && row.description && row.sourceLabel));
   assert.ok(result.every((row) => !row.sourceLabel.includes("nx_")));
 });
@@ -68,12 +68,12 @@ test("L3 reads the canonical treasury snapshot, liabilities and seven-day maturi
   assert.equal(result?.valuationReliable, true);
   assert.deepEqual(result?.accounts.map(({ label, amount }) => [label, amount]), [
     ["可提余额", 500000],
-    ["USDT staking 本金", 100],
-    ["staking 应付利息", 20],
-    ["Genesis 排放承诺", 30],
-    ["NEX v2 未来兑付", 40],
-    ["待提现 queue", 50],
-    ["佣金冷却未解锁", 60],
+    ["USDT质押本金", 100],
+    ["质押应付利息", 20],
+    ["创世节点应付分红", 30],
+    ["UVEL第二版未来兑付", 40],
+    ["待提现队列", 50],
+    ["等待解锁的佣金", 60],
     ["锁仓本息其他", 70],
   ]);
   assert.deepEqual(result?.maturity7d, [{ day: "2026-07-18", withdrawUsd: 120, interestUsd: 30 }]);

@@ -76,7 +76,7 @@ export function L1HeaderActions({ ctx, source }: { ctx: LCtx; source?: L1ExportS
         return;
       }
       await ctx.reloadBi?.();
-      ctx.toast(submittedMode === "series" ? "KPI 序列已导出 · 已记审计" : "KPI 当前汇总已导出 · 已记审计");
+      ctx.toast(submittedMode === "series" ? "关键指标 序列已导出 · 已记审计" : "关键指标 当前汇总已导出 · 已记审计");
     } catch (error) {
       ctx.toast(error instanceof Error ? `导出任务提交失败 · ${displayAdminError(error)}` : "导出任务提交失败 · 请稍后重试");
     }
@@ -86,7 +86,7 @@ export function L1HeaderActions({ ctx, source }: { ctx: LCtx; source?: L1ExportS
       <span className="f-ro"><span className="d" />只读报表域 · 不改任何业务规则</span>
       {!ctx.canExport && <span className="f-ro">当前角色仅可查看 · 导出需报表管理权限</span>}
       <button className="f-cta" onClick={exportKpi} disabled={!ctx.canExport || !exportable || ctx.biLoading} title={!ctx.canExport ? "当前角色没有报表导出权限" : exportUnavailableReason}>
-        {complete ? "导出 KPI 序列 CSV" : "导出 KPI 当前汇总 CSV"}
+        {complete ? "导出关键指标序列 CSV" : "导出关键指标当前汇总 CSV"}
       </button>
     </>
   );
@@ -222,7 +222,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
       <section className="l-card">
         <div className="l-b">
           <div className="ltint warn" data-module-health-state="error" style={{ fontSize: 12 }}>
-            <b>L1 权威响应协议校验失败</b> · 已停止渲染可疑 KPI，未把缺项或畸形值当成经营事实。
+            <b>L1 权威响应协议校验失败</b> · 已停止渲染可疑 关键指标，未把缺项或畸形值当成经营事实。
             {ctx.reloadBi && <button className="l-btn sm" style={{ marginLeft: 10 }} onClick={() => void ctx.reloadBi?.()}>重新读取</button>}
             <span className="lcode" style={{ marginLeft: 8 }}>{protocolError}</span>
           </div>
@@ -248,7 +248,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
   const k = drillKpi?.n === baseKpi.n
     ? { ...baseKpi, ...drillKpi, spark: drillTrend ?? drillKpi.spark ?? baseKpi.spark }
     : baseKpi;
-  const baseExt = KPI_EXT[String(k.n)] ?? { fx: k.name, fxBold: [], num: "—", den: "—", delta: "0", note: "暂未返回该 KPI 解释", jump: [] };
+  const baseExt = KPI_EXT[String(k.n)] ?? { fx: k.name, fxBold: [], num: "—", den: "—", delta: "0", note: "暂未返回该关键指标解释", jump: [] };
   const ext = {
     ...baseExt,
     num: k.numerator == null ? baseExt.num : String(k.numerator),
@@ -293,13 +293,13 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
         setRefreshError("");
         setWin(nextWindow);
         setCustomOpen(false);
-        ctx.toast(`KPI 已按${nextWindow === "custom" ? `${customFrom} 至 ${customTo}` : nextWindow === "30d" ? "滚动 30 天" : nextWindow === "1d" ? "当日" : "滚动 7 天"}重新读取`);
+        ctx.toast(`关键指标 已按${nextWindow === "custom" ? `${customFrom} 至 ${customTo}` : nextWindow === "30d" ? "滚动 30 天" : nextWindow === "1d" ? "当日" : "滚动 7 天"}重新读取`);
       },
       (error) => {
         const message = displayAdminError(error);
         setRefreshError(message);
         onExportSource?.({ parentData: ctx.biData?.l1, data, query, status: "error" });
-        ctx.toast(`KPI 刷新失败 · ${message}`);
+        ctx.toast(`关键指标 刷新失败 · ${message}`);
       },
       () => setRefreshing(false),
     );
@@ -326,7 +326,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
     } catch (error) {
       const message = displayAdminError(error);
       setDrillError(message);
-      ctx.toast(`KPI 查看明细读取失败 · ${message}`);
+      ctx.toast(`关键指标 查看明细读取失败 · ${message}`);
     }
   };
 
@@ -345,7 +345,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
     const Y = (v: number) => H - 26 - ((v - min) / rng) * (H - 56);
     const path = s.map((v, i) => `${i ? "L" : "M"}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(" ");
     return (
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`KPI #${k.n} cohort 周序列趋势`}>
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`KPI #${k.n} 同批用户 周序列趋势`}>
         {s.map((_, i) => (
           <g key={i}>
             <line x1={X(i)} y1={18} x2={X(i)} y2={H - 26} stroke="var(--border)" strokeWidth={1} />
@@ -355,7 +355,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
         {phaseOn && PHASE_SWITCH_IDX >= 0 && (
           <g>
             <rect x={X(PHASE_SWITCH_IDX) - 1} y={18} width={2} height={H - 44} fill="var(--cyan)" opacity={0.45} />
-            <text x={X(PHASE_SWITCH_IDX) + 5} y={30} fontSize={11} fill="var(--cyan)">Phase 切换</text>
+            <text x={X(PHASE_SWITCH_IDX) + 5} y={30} fontSize={11} fill="var(--cyan)">运营阶段 切换</text>
           </g>
         )}
         <line x1={P} y1={Y(tgt)} x2={W - P} y2={Y(tgt)} stroke="var(--success)" strokeWidth={1.4} strokeDasharray="5 4" />
@@ -459,9 +459,9 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
           labelClassName="lb"
           value={gran}
           items={["week", "month"] as const}
-          onSelect={(v) => { setGran(v); ctx.toast(`视图已切换:${v === "week" ? "注册周 YYYY-Www" : "注册月"} · 仅视图参数,实时生效`); }}
+          onSelect={(v) => { setGran(v); ctx.toast(`视图已切换:${v === "week" ? "注册周（如2026-W42）" : "注册月"} · 仅视图参数,实时生效`); }}
           itemClassName={(_v, selected) => `chip${selected ? " sel" : ""}`}
-        >{(v) => (v === "week" ? "注册周 YYYY-Www" : "注册月")}</TabGroup>
+        >{(v) => (v === "week" ? "注册周（如2026-W42）" : "注册月")}</TabGroup>
         <div className="sep" />
         <button className={"toggle" + (phaseOn ? " on" : "")} onClick={() => { setPhaseOn(!phaseOn); ctx.toast(`运营阶段切换标记已${!phaseOn ? "开启" : "关闭"}`); }}>
           <span className="tk" />显示运营阶段切换
@@ -471,7 +471,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
           <span className="lcode">目标 −{ylOffset}%</span>
           <button className="l-btn sm" onClick={() => setVp({
             title: "黄灯预警偏移",
-            detail: "状态灯黄线 = 目标值 − N%。落在「目标 − N%」与目标之间的 KPI 标黄灯(预警),低于黄线标红灯(未达)。只影响看板状态灯与图上黄线位置。",
+            detail: "状态灯黄线 = 目标值 − N%。落在「目标 − N%」与目标之间的关键指标标黄灯(预警),低于黄线标红灯(未达)。只影响看板状态灯与图上黄线位置。",
             current: ylOffset, unit: "%", min: 5, max: 20,
             onApply: (n) => { setYlOffset(n); ctx.toast(`黄灯预警偏移 → 目标 −${n}% · 仅视图参数`); },
           })}>调整</button>
@@ -486,7 +486,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
           }
           ctx.toast(saved ? "视图已保存到本机浏览器；刷新后会按已保存参数重新读取权威数据" : "视图参数无效或本机存储不可用，未保存");
         }}>保存为视图</button>
-        <span className="lcode lock" title="口径与目标值只读；仅保存本机浏览器视图参数，不保存数据、权限或业务状态">视图参数 · 本机浏览器保存 · 实时生效 · 不落确认</span>
+        <span className="lcode lock" title="统计规则与目标值只读；仅保存本机浏览器视图参数，不保存数据、权限或业务状态">视图参数 · 本机浏览器保存 · 实时生效 · 不落确认</span>
       </div>
 
       {/* (a) 8-KPI matrix */}
@@ -524,7 +524,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
                   <path d={sparkPath(kk.spark, 150, 30)} fill="none" stroke={st === "na" ? "var(--ink-4)" : LED_COLOR[st]} strokeWidth={1.8} />
                 </svg>
               )}
-              <div className="ft"><span className="ev" title={ex.fx}><AutoGloss>{KPI_PLAIN[kk.n]}</AutoGloss></span><span className="ph">{rs.currentPhase}</span><span className="lat">~2min</span></div>
+              <div className="ft"><span className="ev" title={ex.fx}><AutoGloss>{KPI_PLAIN[kk.n]}</AutoGloss></span><span className="ph">{rs.currentPhase}</span><span className="lat">约2分钟</span></div>
             </>
           );
         }}
@@ -534,7 +534,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">关键指标详情 · #{k.n} {k.name}</span>
-          <span className="sub">· 口径公式 / 分子分母 / 切片 / 趋势</span>
+          <span className="sub">· 统计规则公式 / 分子分母 / 切片 / 趋势</span>
           <div className="r">
             <div className="chips"><span className="lb">真实切片</span>
               <input aria-label="注册周筛选" placeholder="年份与周数，如 2026-W42" value={cohortFilter} onChange={(event) => setCohortFilter(event.target.value)} />
@@ -542,8 +542,8 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
                 <option value="">全部阶段</option>
                 {["P1", "P2", "P3", "P4", "P5", "P6"].map((value) => <option key={value} value={value}>{value}</option>)}
               </select>
-              <input aria-label="locale 筛选" placeholder="locale" value={localeFilter} onChange={(event) => setLocaleFilter(event.target.value)} />
-              <input aria-label="渠道筛选" placeholder="ref" value={refFilter} onChange={(event) => setRefFilter(event.target.value)} />
+              <input aria-label="语言筛选" placeholder="语言" value={localeFilter} onChange={(event) => setLocaleFilter(event.target.value)} />
+              <input aria-label="渠道筛选" placeholder="推荐来源" value={refFilter} onChange={(event) => setRefFilter(event.target.value)} />
               <button className="l-btn sm" disabled={refreshing} onClick={() => void reloadKpi()}>应用切片</button>
               <button className="l-btn sm" disabled={refreshing} onClick={() => {
                 setCohortFilter("");
@@ -558,10 +558,10 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
         <div className="drill">
           <div className="meta">
             <div className="formula">
-              <div className="lb" title="指标口径已锁定"><AutoGloss>这项指标怎么算 · 统计规则统一管理,这里只能看不能改</AutoGloss></div>
+              <div className="lb" title="指标统计规则已锁定"><AutoGloss>这项指标怎么算 · 统计规则统一管理,这里只能看不能改</AutoGloss></div>
               <div className="plain"><AutoGloss>{KPI_PLAIN[k.n]}</AutoGloss></div>
               <div className="fx">{renderFx(ext.fx, ext.fxBold)}</div>
-              <div className="anchor">口径编号 #{k.n} · 数据批次 {k.vis}</div>
+              <div className="anchor">统计规则编号 #{k.n} · 数据批次 {k.vis}</div>
             </div>
             <div className="nd">
               <div className="it"><div className="k">分子(实时)</div><div className="v" style={{ color: "var(--cyan)" }}>{ext.num}</div></div>
@@ -619,8 +619,8 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">关键指标的计算方式</span>
-          <span className="sub">· <AutoGloss>每项 KPI 怎么算一目了然 · 要改算法须走事件中台治理 + 操作确认,本页改不了</AutoGloss></span>
-          <div className="r"><span className="lcode lock" title="指标口径已锁定">🔒 算法锁定</span><span className="lcode lock" title="经营目标已锁定">🔒 目标锁定</span></div>
+          <span className="sub">· <AutoGloss>每项关键指标怎么算一目了然 · 要改算法须走事件统计规则管理 + 操作确认,本页改不了</AutoGloss></span>
+          <div className="r"><span className="lcode lock" title="指标统计规则已锁定">🔒 算法锁定</span><span className="lcode lock" title="经营目标已锁定">🔒 目标锁定</span></div>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 900 }}>
@@ -643,18 +643,18 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
           </table>
         </div>
         <div className="l-b" style={{ paddingTop: 12 }}>
-          <div className="ltint" style={{ fontSize: 12 }}><b>三点说明</b> · <AutoGloss>① #5 是推广率不是收入:算的是发出过邀请的设备持有者占比(不是收入指标);② #6 Nova:推送事件早已登记,数据一直是全的;③ #7 刚补齐:依赖团队分销关系树,早期只有粗略计数,本看板(V4)起完整查看明细。</AutoGloss></div>
+          <div className="ltint" style={{ fontSize: 12 }}><b>三点说明</b> · <AutoGloss>推广率表示发出过邀请的设备持有者占比；各项指标的可用性和统计范围以当前返回数据为准。</AutoGloss></div>
         </div>
       </section>
 
-      <p className="f-foot"><b>L1 没有任何「写数据」动作</b>:<AutoGloss>KPI 怎么算由事件统计规则统一治理,这里只配置呈现、明细查询与聚合导出。导出内容为 8 项 KPI 的聚合序列,</AutoGloss><b>不含任何用户隐私明文</b>,<AutoGloss>每次导出都会生成可追溯记录。异常 KPI 的原因分析:转化类(#1–#4)跳 L2 漏斗,财务类(#8 / 提现兑付)跳 L3 报表,团队类(#5/#7)跳 L4 网络报表。</AutoGloss></p>
+      <p className="f-foot"><b>L1 没有任何「写数据」动作</b>:<AutoGloss>关键指标怎么算由事件统计规则统一治理,这里只配置呈现、明细查询与聚合导出。导出内容为 8 项关键指标 的聚合序列,</AutoGloss><b>不含任何用户隐私明文</b>,<AutoGloss>每次导出都会生成可追溯记录。异常关键指标的原因分析:转化类(#1–#4)跳 L2 漏斗,财务类(#8 / 提现兑付)跳 L3 报表,团队类(#5/#7)跳 L4 网络报表。</AutoGloss></p>
       <PaginationExemptionList
         items={[
           {
-            label: "KPI 口径锁定表",
+            label: "关键指标 统计规则锁定表",
             kind: "reference-catalog",
             maxRows: 8,
-            reason: "八项 KPI 为固定验收口径,需要同屏锁定算式和状态",
+            reason: "八项关键指标 为固定验收统计规则,需要同屏锁定算式和状态",
           },
         ]}
       />

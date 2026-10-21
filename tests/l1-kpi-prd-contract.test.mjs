@@ -18,13 +18,13 @@ test("L1 page keeps eight-card unavailable values null-safe and performs server 
   assert.match(source, /fetchL1Kpi\(/);
   assert.match(source, /fetchL1KpiDrilldown\(/);
   assert.match(source, /fetchL1KpiTrend\(/);
-  assert.match(source, /刷新 KPI/);
+  assert.match(source, /刷新指标/);
   assert.match(source, /const attention = red \+ unavailable/);
   assert.match(source, /\{attention\} \/ \{KPIS\.length\}/);
   assert.match(source, /validateL1Dashboard\(next\)/);
   assert.match(source, /setDrillKpi\(checkedDrilldown\.selected as Kpi\)/);
   assert.match(source, /setDrillTrend\(checkedTrend\.values as number\[\]\)/);
-  assert.match(source, /当前仍显示上一次已校验快照，时间窗未切换/);
+  assert.match(source, /当前仍显示上一次核对过的数据，时间范围未切换/);
 });
 
 test("L1 rejects incomplete or malformed eight-KPI responses and misaligned trends", async () => {
@@ -85,5 +85,5 @@ test("L1 canonical producers publish registration, referral and F2 commission ev
 test("L1 aggregate export is direct and no longer opens an unnecessary confirmation", async () => {
   const source = await readFile(new URL("app/components/domain-views/l-tabs/l1-kpi.tsx", root), "utf8");
   assert.doesNotMatch(source, /from "@\/lib\/store\/ui"/);
-  assert.match(source, /KPI 序列已导出 · 已记审计/);
+  assert.match(source, /关键指标 序列已导出 · 已记审计/);
 });

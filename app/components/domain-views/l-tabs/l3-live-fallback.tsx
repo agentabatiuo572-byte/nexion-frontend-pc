@@ -94,7 +94,7 @@ export function L3LiveFacts({ facts, snapshot }: { facts: L3LiveFact[]; snapshot
       <section className="l-card">
         <div className="l-b">
           <div className="ltint warn" style={{ fontSize: 12 }}>
-            <b>部分周期统计尚未接入</b> · 当前可以核验资金池、负债科目、七日到期排程和钱包账单事实；收入金额分解、兑付率历史与多周期趋势仍缺少同口径序列。页面不会用账单数量换算金额或比率，也不展示推算值。
+            <b>部分周期统计尚未接入</b> · 当前可以核验资金池、负债科目、七日到期排程和钱包账单事实；收入金额分解、兑付率历史与多周期趋势仍缺少同统计规则序列。页面不会用账单数量换算金额或比率，也不展示推算值。
           </div>
           <div className="ltint" style={{ fontSize: 12, marginTop: 10 }}>
             <b>导出范围</b> · “财务当前汇总”包含本页当前资金池、负债科目、七日到期排程和钱包账单事实，不含用户级资金明细。有财务明细权限的角色可按当前服务端周期申请脱敏资金明细，并须通过字段白名单、行数上限、L5 审批与限时下载令牌校验。

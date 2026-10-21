@@ -27,7 +27,7 @@ const FACTS: ReadonlyArray<Omit<L3LiveFact, "value">> = [
   { key: "totalBills", label: "钱包账单总数", description: "当前钱包流水中已落账的全部账单数量。", sourceLabel: "钱包流水" },
   { key: "earningBills", label: "收益账单", description: "归类为用户收益的账单数量。", sourceLabel: "钱包流水" },
   { key: "teamCommissionBills", label: "团队佣金账单", description: "归类为团队佣金的账单数量。", sourceLabel: "钱包流水" },
-  { key: "genesisDividendBills", label: "Genesis 排放账单", description: "归类为 Genesis 排放的账单数量。", sourceLabel: "钱包流水" },
+  { key: "genesisDividendBills", label: "创世节点分红账单", description: "归类为创世节点分红的账单数量。", sourceLabel: "钱包流水" },
   { key: "refundBills", label: "退款账单", description: "归类为退款的账单数量。", sourceLabel: "钱包流水" },
 ];
 
@@ -47,19 +47,19 @@ export function readL3LiveFacts(value: unknown): L3LiveFact[] {
 
 const LIABILITY_LABELS: Record<string, string> = {
   withdrawable_balance: "可提余额",
-  usdt_staking_principal: "USDT staking 本金",
-  staking_interest: "staking 应付利息",
-  genesis_daily_emission: "Genesis 排放承诺",
-  nex_v2_future: "NEX v2 未来兑付",
-  withdrawal_queue: "待提现 queue",
-  commission_cooling: "佣金冷却未解锁",
+  usdt_staking_principal: "USDT质押本金",
+  staking_interest: "质押应付利息",
+  genesis_daily_emission: "创世节点应付分红",
+  nex_v2_future: "UVEL第二版未来兑付",
+  withdrawal_queue: "待提现队列",
+  commission_cooling: "等待解锁的佣金",
   lock_other: "锁仓本息其他",
   // Compatibility aliases for snapshots created before D3 adopted the eight
   // canonical liability keys. New responses must use the keys above.
   balance: "可提现余额",
   stake_principal: "质押本金",
   stake_interest: "质押应计利息",
-  nex_payable: "NEX 应付款",
+  nex_payable: "UVEL 应付款",
   withdraw_queue: "提现队列",
   pending_withdraw: "钱包待提现金额",
 };

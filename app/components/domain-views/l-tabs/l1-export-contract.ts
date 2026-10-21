@@ -47,19 +47,19 @@ export function resolveL1ExportUnavailableReason(
   raw: unknown,
   sourceState: "ready" | "loading" | "error" = "ready",
 ): string | undefined {
-  if (sourceState === "loading") return "正在读取 KPI 数据，请稍候";
-  if (sourceState === "error") return "KPI 数据读取失败，请重试";
+  if (sourceState === "loading") return "正在读取关键指标数据，请稍候";
+  if (sourceState === "error") return "关键指标 数据读取失败，请重试";
   if (resolveL1ExportMode(raw, false)) return undefined;
-  if (record(raw).available === false) return "KPI 数据暂不可用，请重新读取后再试";
+  if (record(raw).available === false) return "关键指标 数据暂不可用，请重新读取后再试";
   if (hasDetailedL1Attempt(raw)) {
     try {
       validateL1Dashboard(raw);
-      return "当前时间窗没有可用 KPI，暂不能导出";
+      return "当前时间窗没有可用 关键指标，暂不能导出";
     } catch {
-      return "KPI 数据格式异常，请重新读取后再试";
+      return "关键指标 数据格式异常，请重新读取后再试";
     }
   }
-  return "尚未读取到可导出的 KPI 数据";
+  return "尚未读取到可导出的关键指标数据";
 }
 
 export async function submitL1Export(
@@ -83,18 +83,18 @@ export async function submitL1Export(
     exportType: complete ? "KPI 序列" : "KPI 当前汇总",
     timeRange: complete ? "当前时间窗" : "当前快照",
     fields: complete
-      ? "8 KPI 当前值/目标/环比序列"
+      ? "8关键指标当前值/目标/环比序列"
       : detailedSnapshot
-        ? "8 KPI 当前值/目标/可用性"
+        ? "8关键指标当前值/目标/可用性"
         : "用户/订单/提现/兑换/质押/钱包流水/工单/审计聚合计数",
     piiLevel: "NONE",
     maskPolicy: "NONE",
     recipient: "BI 管理员",
     ticket: "L1-KPI",
   }, complete
-    ? "导出 KPI 聚合序列用于经营复盘"
+    ? "导出关键指标聚合序列用于经营复盘"
     : detailedSnapshot
-      ? "趋势数据不足时导出可用 KPI 当前快照用于经营核对"
+      ? "趋势数据不足时导出可用关键指标当前快照用于经营核对"
       : "导出 L1 当前累计事实用于经营核对");
   return mode;
 }

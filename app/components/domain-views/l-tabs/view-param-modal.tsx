@@ -43,11 +43,11 @@ export function ViewParamModal({ req, onClose }: { req: ViewParamReq; onClose: (
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10 }}>
             <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>影响</span>
-            <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.65 }}>只影响你当前看到的图表阈值,不改业务规则、不改报表口径,刷新后回到默认值。</span>
+            <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.65 }}>只影响你当前看到的图表阈值,不改业务规则、不改报表统计规则,刷新后回到默认值。</span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10 }}>
             <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>提交前</span>
-            <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.65 }}>输入 {req.min}–{req.max}{req.unit} 之间的数字。若要改真实业务口径,请回到对应权威模块。</span>
+            <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.65 }}>输入 {req.min}–{req.max}{req.unit} 之间的数字。若要改真实业务统计规则,请回到对应权威模块。</span>
           </div>
         </div>
         <details style={{ marginTop: 12 }}>
@@ -56,7 +56,7 @@ export function ViewParamModal({ req, onClose }: { req: ViewParamReq; onClose: (
         </details>
       </div>
       <div className="tint tiny" style={{ marginBottom: 14, border: 0 }}>
-        <b>仅视图参数</b> · 实时生效 · 不走高敏操作确认,不改任何业务口径。
+        <b>仅视图参数</b> · 实时生效 · 不走敏感操作确认,不改任何业务统计规则。
       </div>
       <div className="field">
         <span className="bf-legend">新值 *(当前 {req.current}{req.unit} · 范围 {req.min}–{req.max}{req.unit})</span>

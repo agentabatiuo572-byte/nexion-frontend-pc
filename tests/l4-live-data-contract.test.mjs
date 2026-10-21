@@ -192,13 +192,13 @@ test("L4 source exposes real four-report navigation, period/phase filters and sa
   const source = await readFile(new URL("../app/components/domain-views/l-tabs/l4-ops.tsx", import.meta.url), "utf8");
   const client = await readFile(new URL("../lib/admin/l-client.ts", import.meta.url), "utf8");
   const bff = await readFile(new URL("../app/api/admin/bi/[...path]/route.ts", import.meta.url), "utf8");
-  for (const label of ["历史运营报表", "设备运营报表", "任务承接报表", "网络与团队报表", "Phase 节奏效果报表"]) {
+  for (const label of ["历史运营报表", "设备运营报表", "任务承接报表", "网络与团队报表", "运营阶段节奏效果报表"]) {
     assert.match(source, new RegExp(label));
   }
   assert.match(source, /period=/);
   assert.match(source, /phase=/);
   assert.match(source, /所选周期暂无历史运营事件/);
-  assert.match(source, /actor 覆盖率/);
+  assert.match(source, /事件用户识别率/);
   assert.match(source, /导出运营报表 CSV/);
   assert.match(source, /导出团队明细/);
   assert.match(source, /reasonMin: 8/);

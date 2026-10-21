@@ -138,11 +138,11 @@ test("L5 exposes only implemented actions and L6 uses canonical filtered endpoin
   assert.match(l5, /八类账单/);
   const d4Client = await readFile(new URL("../lib/admin/d-client.ts", import.meta.url), "utf8");
   const canonicalTypes = d4Client.match(/const D4_BILL_TYPES = new Set<D4BillType>\(\[([^\]]+)\]\)/)?.[1];
-  const displayedTypes = l5.match(/<span className="nm">(swap \/[^<]+)<\/span>/)?.[1];
+  const displayedTypes = l5.match(/<span className="nm">(兑换 \/[^<]+)<\/span>/)?.[1];
   assert.ok(canonicalTypes && displayedTypes, "L5 must disclose the canonical D4 categories");
-  assert.deepEqual(displayedTypes.split(" / "), Array.from(canonicalTypes.matchAll(/"([^"]+)"/g), match => match[1]));
+  assert.deepEqual(displayedTypes.split(" / "), Array.from(canonicalTypes.matchAll(/"([^"]+)"/g), match => ({ swap: "兑换", topup: "充值", withdraw: "提现", earning: "收益", commission: "佣金", refund: "退款", bonus: "奖励", purchase: "购买" })[match[1]]));
   assert.match(l5, /生成监管报告/);
-  assert.match(l5, /I5 当前法域 × 披露版本/);
+  assert.match(l5, /I5 当前适用地区 × 披露版本/);
   assert.doesNotMatch(l5, /调整排程/);
   assert.doesNotMatch(l5, /\+ 新建模板/);
   assert.doesNotMatch(l5, /发起解密导出/);
@@ -157,7 +157,7 @@ test("L5 exposes only implemented actions and L6 uses canonical filtered endpoin
   assert.match(l6, /fetchL6ClickHeat/);
   assert.match(l6, /downloadL6Behavior/);
   assert.match(l6, /设备筛选/);
-  assert.match(l6, /Locale 筛选/);
+  assert.match(l6, /语言筛选/);
   assert.match(l6, /setLiveRaw\(null\)/);
   assert.match(l6, /heatmapData\.status === "RETIRED_ENVIRONMENT"/);
   assert.match(l6, /开发环境只接受主数据/);

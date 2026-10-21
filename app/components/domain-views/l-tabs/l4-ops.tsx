@@ -14,7 +14,7 @@ const REPORT_TABS: ReadonlyArray<[ReportTab, string]> = [
   ["device", "设备运营报表"],
   ["tasks", "任务承接报表"],
   ["network", "网络与团队报表"],
-  ["phase", "Phase 节奏效果报表"],
+  ["phase", "运营阶段节奏效果报表"],
 ];
 
 const PERIODS: ReadonlyArray<[L4OperationsQuery["period"], string]> = [
@@ -51,7 +51,7 @@ export function L4HeaderActions({ ctx }: { ctx: LCtx }) {
     const input = {
       exportType: "运营报表",
       timeRange: range,
-      fields: "设备/任务/网络/Phase 历史聚合指标",
+      fields: "设备/任务/网络/运营阶段 历史聚合指标",
       piiLevel: "NONE",
       maskPolicy: "NONE",
       recipient: "运营管理员",
@@ -152,7 +152,7 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
   const saveView = () => {
     try {
       window.localStorage.setItem("nexion:l4:view", JSON.stringify({ query, tab }));
-      ctx.toast("当前视图已保存 · 仅保存筛选与页签，不改变业务口径");
+      ctx.toast("当前视图已保存 · 仅保存筛选与页签，不改变业务统计规则");
     } catch {
       ctx.toast("视图保存失败 · 浏览器存储不可用；报表数据没有变化");
     }
@@ -163,7 +163,7 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
       <section className="l-card" aria-label="L4 历史运营报表筛选">
         <div className="l-h">
           <span className="ttl">历史运营报表</span>
-          <span className="sub">· 设备、任务、网络与 Phase 同读 A4 服务端事件</span>
+          <span className="sub">· 设备、任务、网络与 运营阶段 同读 A4 服务端事件</span>
           <div className="r"><span className="lcode electric">{data ? `${data.period.label} · ${data.phaseFilter}` : "等待所选周期数据"}</span></div>
         </div>
         <div className="l-b" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -177,9 +177,9 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
             itemClassName={() => "l-btn sm"}
             itemStyle={(_period, selected) => (selected ? { color: "var(--cyan)", borderColor: "var(--cyan)" } : undefined)}
           >{(period) => PERIODS.find(([value]) => value === period)?.[1]}</TabGroup>
-          <label style={{ fontSize: 12, color: "var(--ink-3)" }}>Phase
+          <label style={{ fontSize: 12, color: "var(--ink-3)" }}>运营阶段
             <select
-              aria-label="Phase 筛选"
+              aria-label="运营阶段 筛选"
               value={query.phase}
               onChange={(event) => updateQuery({ phase: event.target.value as L4OperationsQuery["phase"] })}
               style={{ marginLeft: 6 }}
@@ -213,12 +213,12 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
 
       {!data.available && (
         <div className="ltint warn" style={{ marginBottom: 14, fontSize: 12 }}>
-          <b>所选周期暂无历史运营事件</b> · 没有生成承接率、推广率、留存率或阶段跳变；请选择其他周期/Phase，或确认 E/F/H1 是否已产生服务端事件。
+          <b>所选周期暂无历史运营事件</b> · 没有生成承接率、推广率、留存率或阶段跳变；请选择其他周期/运营阶段，或确认 E/F/H1 是否已产生服务端事件。
         </div>
       )}
       {!data.quality.sameActorRates && data.available && (
         <div className="ltint warn" style={{ marginBottom: 14, fontSize: 12 }}>
-          <b>同用户覆盖不完整</b> · actor 覆盖率 {fmt(data.quality.actorCoveragePct, 1)}%，相关转化/留存比率显示“—”，不会用事件数替代用户数。
+          <b>同用户覆盖不完整</b> · 事件用户识别率 {fmt(data.quality.actorCoveragePct, 1)}%，相关转化/留存比率显示“—”，不会用事件数替代用户数。
         </div>
       )}
 
@@ -228,7 +228,7 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
       {tab === "phase" && <PhaseReport data={data} />}
       <HistoryTable data={data} />
 
-      <p className="f-foot"><b>L4 只读、不另立账本</b>：历史效果来自 A4 schema-accepted 事件；设备/任务参数归 E 域，团队关系归 F 域，Phase dial 归 H1。缺分母或窗口数据时显示“—”，不推算。</p>
+      <p className="f-foot"><b>L4 只读、不另立账本</b>：历史效果来自 A4 符合统计格式的 事件；设备/任务参数归 E 域，团队关系归 F 域，运营阶段参数 归 H1。缺分母或窗口数据时显示“—”，不推算。</p>
       </>}
     </div>
   );
@@ -243,7 +243,7 @@ function DeviceReport({ data }: { data: L4OperationsData }) {
         <MetricTiles rows={[
           ["当前活跃设备", data.liveFacts.activeUserDevices, "E 域设备台账当前事实"],
           ["期间购置设备", s.periodPurchasedDevices, "窗口内购买事件按设备去重，不等于期末在网数"],
-          ["期间产出 USDT", s.dailyYieldUsdt, "earnings credited 聚合"],
+          ["期间产出 USDT", s.dailyYieldUsdt, "收益入账汇总"],
           ["衰减影响 USDT", s.degradationLossUsdt, "基准产出 − 实际产出"],
         ]} />
         <div className="two-col">
@@ -276,7 +276,7 @@ function TaskReport({ data }: { data: L4OperationsData }) {
           ["签到活跃", s.checkinActive, "同用户去重"],
         ]} percentKeys={new Set(["任务承接率", "队列饱和度"])} />
         {warning && <div className="ltint warn" style={{ marginBottom: 12 }}><b>任务承接率低于 60%</b> · 建议跳转 E 域任务定价与队列配置归因；L4 不在此修改参数。</div>}
-        <Distribution title="六类任务 tier 完成分布" rows={data.tasks.byTier} />
+        <Distribution title="六类任务类型 完成分布" rows={data.tasks.byTier} />
       </div>
     </section>
   );
@@ -301,7 +301,7 @@ function NetworkReport({ data, ctx, query }: { data: L4OperationsData; ctx: LCtx
       action: "导出团队明细",
       detail: (
         <div>
-          将按当前 <b>{data.period.label}</b> 周期导出 F 域团队树快照；预计关系数 <b>{data.liveFacts.teamRelationships}</b>，最终行数由服务端重新核算。仅包含部分隐藏的用户编码、层级、V-Rank、团队业绩与加入时间，不包含手机号、昵称、完整用户编码或解密字段。文件下载令牌 24 小时有效，操作会通知超级管理员与增长负责人并写入高风险审计。
+          将按当前 <b>{data.period.label}</b> 周期导出 F 域团队树快照；预计关系数 <b>{data.liveFacts.teamRelationships}</b>，最终行数由服务端重新核算。仅包含部分隐藏的用户编码、层级、会员等级、团队业绩与加入时间，不包含手机号、昵称、完整用户编码或解密字段。文件下载令牌 24 小时有效，操作会通知超级管理员与增长负责人并写入高风险审计。
         </div>
       ),
       reasonMin: 8,
@@ -349,18 +349,18 @@ function NetworkReport({ data, ctx, query }: { data: L4OperationsData; ctx: LCtx
 
   return (
     <section className="l-card">
-      <ReportHeader title="网络与团队报表" subtitle="F 域团队结构 + KPI #5/#7 完整查看明细" />
+      <ReportHeader title="网络与团队报表" subtitle="F 域团队结构 +关键指标#5/#7 完整查看明细" />
       <div className="l-b">
         <MetricTiles rows={[
-          ["直推用户", s.directRefs, "referral bound 按被推荐用户去重"],
-          ["团队 GMV USDT", s.teamGmvUsdt, "带推荐来源的完成订单"],
-          ["佣金派发 USDT", s.commissionPaidUsdt, "commission paid"],
+          ["直推用户", s.directRefs, "邀请绑定按被邀请用户去重"],
+          ["团队成交额 USDT", s.teamGmvUsdt, "带推荐来源的完成订单"],
+          ["佣金派发 USDT", s.commissionPaidUsdt, "已发放团队分成"],
           ["L4→L5 推广率", s.promotionRate, "设备持有者邀请 ÷ 设备持有者"],
           ["团队佣金触发率", s.commissionTriggerRate, "直推中产生佣金人数 ÷ 直推人数"],
         ]} percentKeys={new Set(["L4→L5 推广率", "团队佣金触发率"])} />
         <div className="net-grid">
           <Distribution title="团队规模分布" rows={data.network.teamSizeDist} />
-          <Distribution title="V-Rank 分布" rows={data.network.vRankDist} />
+          <Distribution title="会员等级 分布" rows={data.network.vRankDist} />
           <Distribution title="佣金类型结构" rows={data.network.commissionStructure} />
         </div>
         <div className="ltint" style={{ marginTop: 12 }}><b>隐私边界</b> · 当前页和聚合 CSV 只展示计数与金额汇总，不包含用户编码、手机号或团队树明细。专用明细导出仅向授权角色开放，用户编码部分隐藏，且必须填写原因。</div>
@@ -386,10 +386,10 @@ function NetworkReport({ data, ctx, query }: { data: L4OperationsData; ctx: LCtx
 function PhaseReport({ data }: { data: L4OperationsData }) {
   return (
     <section className="l-card">
-      <ReportHeader title="Phase 节奏效果报表" subtitle="P1–P6 跨阶段历史对比；dial 参数仍由 H1 管理" />
+      <ReportHeader title="运营阶段节奏效果报表" subtitle="P1–P6 跨阶段历史对比；阶段参数仍由 H1 管理" />
       <div style={{ overflowX: "auto" }}>
         <table className="l-tbl ph-tbl" style={{ minWidth: 820 }}>
-          <thead><tr><th>Phase</th><th className="num">活跃人数</th><th className="num">留存率</th><th className="num">转化率</th><th className="num">产出 USDT</th><th className="num">切换事件</th><th className="num">dial 调整</th><th className="num">转化阶跃</th></tr></thead>
+          <thead><tr><th>运营阶段</th><th className="num">活跃人数</th><th className="num">留存率</th><th className="num">转化率</th><th className="num">产出 USDT</th><th className="num">切换事件</th><th className="num">阶段参数调整</th><th className="num">转化阶跃</th></tr></thead>
           <tbody>{data.phaseEffect.map((row) => (
             <tr key={row.phase}>
               <td><span className="lcode electric">{row.phase}</span></td>
