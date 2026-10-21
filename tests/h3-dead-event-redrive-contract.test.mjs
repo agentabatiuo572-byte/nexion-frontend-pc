@@ -60,7 +60,7 @@ test("changing the event input clears the live command, while a same-ID preview 
   assert.doesNotMatch(page.slice(previewStart, previewEnd), /redriveCommandRef\.current = null/);
   assert.match(page, /runH3DeadOutboxRedriveCommand\(/);
   assert.match(page, /redriveCommandRef/);
-  assert.match(page, /原 H3 事实重投结果未确认/);
+  assert.match(page, /原 H3 事实重新发送结果未确认/);
   assert.match(page, /请核对当前状态后再操作/);
 });
 

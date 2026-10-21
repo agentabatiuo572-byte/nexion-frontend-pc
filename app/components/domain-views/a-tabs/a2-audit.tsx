@@ -129,15 +129,15 @@ function operationMarkers(w: A2OperationRow): OperationMarker[] {
     return markers;
   }
   if (w.type === "acct") {
-    return [{ key: "acct", label: "账号/权限高敏", className: "a2-sensitive acct" }];
+    return [{ key: "acct", label: "账号/权限敏感", className: "a2-sensitive acct" }];
   }
   if (w.type === "param") {
-    return [{ key: "param", label: "参数高敏", className: "a2-sensitive param" }];
+    return [{ key: "param", label: "参数敏感", className: "a2-sensitive param" }];
   }
   if (w.type === "fund") {
-    return [{ key: "fund", label: "资金高敏", className: "a2-sensitive fund" }];
+    return [{ key: "fund", label: "资金敏感", className: "a2-sensitive fund" }];
   }
-  return [{ key: "general", label: "高敏动作", className: "a2-sensitive" }];
+  return [{ key: "general", label: "敏感动作", className: "a2-sensitive" }];
 }
 
 function normalizeOperatorIdentity(value: string | null | undefined) {
@@ -154,12 +154,12 @@ function isCurrentOperator(w: A2OperationRow, principal: AuthPrincipal) {
 /** 详情与执行确认均完整展示已持久化的前后值。 */
 export function A2ChangeReview({ before, after }: { before: string; after: string }) {
   const labels: Record<string, string> = {
-    skuId: "商品 ID", id: "商品 ID", name: "商品名称", tier: "商品档位", tagline: "卖点", badge: "角标",
+    skuId: "商品编号", id: "商品编号", name: "商品名称", tier: "商品档位", tagline: "卖点", badge: "角标",
     gpu: "GPU", vram: "显存", hashRate: "算力", power: "功耗", datacenter: "数据中心", uptime: "在线率",
-    warranty: "保修", phoneDailyEarn: "手机日产收益", phoneDailyEarnNex: "手机日产 NEX", price: "价格",
-    dailyEarn: "日产收益", dailyEarnNex: "日产 NEX", shareYieldMin: "份额收益下限", shareYieldMax: "份额收益上限",
+    warranty: "保修", phoneDailyEarn: "手机日产收益", phoneDailyEarnNex: "手机日产 UVEL", price: "价格",
+    dailyEarn: "日产收益", dailyEarnNex: "日产 UVEL", shareYieldMin: "份额收益下限", shareYieldMax: "份额收益上限",
     baseRate: "收益展示串", sold: "累计销量", stock: "库存", rating: "评分", reviews: "评价数",
-    aiImageGenPerMin: "图像生成性能", aiLlmTokensPerSec: "LLM 推理性能", aiVideoMinPerHour: "视频渲染性能",
+    aiImageGenPerMin: "图像生成性能", aiLlmTokensPerSec: "大模型推理性能", aiVideoMinPerHour: "视频渲染性能",
     aiFineTuneMins: "LoRA 微调性能", aiUnlocks: "解锁算力池", features: "产品特性", generation: "产品代际",
     lifecycle: "生命周期", supersededBy: "后继商品", tradeinDiscount: "换新折扣", unlockPhase: "解锁阶段",
     purchaseGate: "购买限制", imageAssetId: "产品图标识", imageObjectKey: "产品图对象键", imagePreviewUrl: "产品图预览",
@@ -305,13 +305,13 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const preview = retentionPreview;
     const commandKey = createA2CommandKey("a2-retention-run");
     openActionConfirm({
-      action: <>立即执行审计冷归档保留清理</>,
+      action: <>归档并清理已到期操作记录</>,
       detail: (
         <>
           本次范围由服务端按当前保留期({preview.retentionMonths} 个月)算出:<b>可清理 {preview.eligibleRows} 行</b>
           {preview.earliestExpireAt ? <>,最早到期 <b>{preview.earliestExpireAt}</b></> : null}
-          ;未到期 <b>{preview.notYetExpiredRows}</b> 行与政策前历史 <b>{preview.legacyRowsWithoutExpireAt}</b> 行均不会被触及。
-          每行先写入 append-only 冷归档并校验摘要后才从热表移除,执行审计自身和未归档行都不会删除;同一命令号重试不会重复生效。
+          ;未到期 <b>{preview.notYetExpiredRows}</b> 行与政策前历史 <b>{preview.legacyRowsWithoutExpireAt}</b>  行均不会被触及。
+          每行先写入 不可修改的长期归档并校验摘要后才从在线记录中移除,执行审计自身和未归档行都不会删除;同一命令号重试不会重复生效。
           执行需 <b>{preview.approvalAuthority}</b> 权限,由服务端强制校验,动作不可逆并写入 A2 审计。
         </>
       ),
@@ -422,7 +422,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const commandKey = createA2CommandKey(`a2-withdraw-${w.id}`);
     openActionConfirm({
       action: <>撤回本人提案 · {w.id}</>,
-      detail: <>仅提案发起人可在 pending 状态撤回；服务端以 maker 身份与状态 CAS 双重校验，撤回后释放锁且不执行目标动作。</>,
+      detail: <>仅申请人可撤回待确认申请。撤回前会核对申请人和当前状态；撤回后解除锁定，不执行原操作。</>,
       amplifies: false,
       reasonMin,
       reasonMax: 200,
@@ -450,7 +450,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       action: "导出审计日志",
       detail: (
         <>
-          导出范围:当前筛选条件命中的记录;隐私字段脱敏。导出本身也会留一条审计(谁、何时、导了什么范围)。
+
+          导出范围:当前筛选条件命中的记录;导出时隐藏隐私字段。导出本身也会留一条审计(谁、何时、导了什么范围)。
           可导角色:只读审计(全量)/ 财务·风控(本域)。
         </>
       ),
@@ -478,7 +479,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       action: "操作理由最短长度",
       detail: (
         <>
-          当前 <b>{cur}</b> · 范围 8–200 字。所有操作确认弹窗提交前校验,不满足时确认按钮保持 disabled。
+          当前 <b>{cur}</b>  · 范围 8–200 字。所有操作确认弹窗提交前校验,不满足时确认按钮保持 不可点击。
           这个参数只约束新提交的理由,历史审计按原文保留。
         </>
       ),
@@ -548,8 +549,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       action: "审计/事件字段结构变更",
       detail: (
         <>
-          新增事件名或属性须先在事件中台(A4)注册；当前仅支持已注册的 v3、v4，且只能单调升级。
-          全后台共用一套字段结构,各域不许私加字段——口径分裂了取证就对不上。
+
+          新增事件名或属性须先在事件管理(A4)注册；当前仅支持已注册的 v3、v4，且只能逐版升级。
+          全后台共用一套字段结构,各域不许私加字段——统计规则不一致了取证就对不上。
         </>
       ),
       amplifies: false,
@@ -630,14 +632,14 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       {/* ───── 4 f-stat ───── */}
       <div className="f-stats">
         <div className="f-stat warn">
-          <div className="k">高敏动作</div>
+          <div className="k">敏感动作</div>
           <div className="v">{stats.pendingTickets} 件</div>
           <div className="sub">资金类 {stats.fundTickets} 件置顶 · 理由必填留痕</div>
         </div>
         <div className="f-stat danger">
           <div className="k">应急快速轨</div>
           <div className="v">{stats.sosTickets} 件</div>
-          <div className="sub">J 域熔断恢复 · 时限以服务端工单记录为准</div>
+          <div className="sub">J 域紧急停用与恢复 · 时限以服务端工单记录为准</div>
         </div>
         <div className="f-stat">
           <div className="k">今日审计事件</div>
@@ -665,7 +667,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       {/* ───── (b) 高敏操作动态 ───── */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">高敏操作动态(b)· 待处理</span>
+          <span className="ttl">敏感操作动态(b)· 待处理</span>
           <span className="sub">· 大额/资金类置顶 · 点击执行会打开独立操作确认弹窗,理由必填后立即生效</span>
           <div className="r" style={{ display: "flex", gap: 10 }}>
             <TabGroup label="操作类型" labelClassName="lb" value={qType} items={TYPE_CHIPS.map((c) => c.key)}
@@ -693,7 +695,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               {qRows.length === 0 ? (
                 <tr>
                   <td colSpan={8} style={{ color: "var(--ink-4)", fontSize: 12, textAlign: "center" }}>
-                    当前筛选条件下没有高敏操作
+
+                    当前筛选条件下没有敏感操作
                   </td>
                 </tr>
               ) : qRows.map((w) => {
@@ -803,7 +806,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   disabled={loading || !!loadError || filteredLogRows.length === 0}
                   title={filteredLogRows.length === 0 ? "当前筛选没有可导出的记录" : undefined}
                   onClick={exportAudit}
-                >导出（脱敏）</button>
+                >导出（隐藏隐私字段）</button>
               )}
             </div>
           </div>
@@ -886,9 +889,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           />
           <div className="l-b" style={{ paddingTop: 8 }}>
             <div className="atint">
+
               可见性按角色自动裁剪:客服仅看自己的操作记录;财务看资金域、风控看风控域;
-              只读审计可全量查询并脱敏导出。页面最多展示当前筛选最近 500 条;导出超过 5000 条时需缩小筛选范围。
-              日志只能看不能改、不能单独删;唯一的移出路径是按下方保留期把<b>已超期</b>行冷归档后从热表移除,
+              只读审计可全量查询并隐藏隐私字段后导出。页面最多展示当前筛选最近 500 条;导出超过 5000 条时需缩小筛选范围。
+              日志只能看不能改、不能单独删;唯一的移出路径是按下方保留期把<b>已超期</b>行长期归档后从在线记录中移除,
               未到期行与政策前的历史行都不会被触及。
             </div>
           </div>
@@ -898,7 +902,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">执行历史(c)与机制参数</span>
-            <span className="sub">· 任一高敏动作的完整操作链可追溯</span>
+            <span className="sub">· 任一敏感动作的完整操作链可追溯</span>
           </div>
           <div style={{ overflowX: "auto" }}>
             <table className="l-tbl" style={{ minWidth: 520 }}>
@@ -998,10 +1002,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       {/* ───── f-foot ───── */}
       <p className="f-foot">
         <b>分工一句话</b>:这页管「记录谁做了什么 + 操作确认的流程」;「谁能做什么」的授权矩阵在账号页(A1);
-        事件叫什么名、带什么字段归事件中台(A4)定义,这页负责落库与可查。
-        <b> 执行门槛</b>:资金类 = 财务/超管;风控与账户类 = 风控/超管;
-        内容类 = 内容/超管;账号治理与系统参数 = 仅超管。
-        应急轨动作（J 域熔断/恢复）按服务端记录的处理时限置顶，超时升级告警到超管。
+        事件叫什么名、带什么字段归事件管理(A4)定义,这页负责保存记录与可查。
+        <b> 执行门槛</b>:资金类 = 财务/超级管理员;风控与账户类 = 风控/超级管理员;
+        内容类 = 内容/超级管理员;账号治理与系统参数 = 仅超级管理员。
+        应急轨动作（J 域紧急停用/恢复）按服务端记录的处理时限置顶，超时升级告警到超级管理员。
       </p>
 
       {/* ───── 高敏动作详情 Drawer ───── */}
@@ -1012,7 +1016,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         const isFinal = status !== "pending";
         return (
           <Drawer
-            title={`高敏动作 · ${w.id}`}
+            title={`敏感动作 · ${w.id}`}
             sub={
               <>
                 {w.action} · 对象 {w.obj} · 发起人 {w.operator}
@@ -1050,7 +1054,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
               {w.phoneCalibrationError && <p role="alert">{w.phoneCalibrationError}</p>}
               <div className="kv"><span className="k">操作理由</span><span className="v" style={{ maxWidth: 360, textAlign: "right" }}>{w.reason}</span></div>
-              <div className="kv"><span className="k">记录时间</span><span className="v">{w.ts}{w.sos ? "(应急 SLA)" : "(理由必填留痕)"}</span></div>
+              <div className="kv"><span className="k">记录时间</span><span className="v">{w.ts}{w.sos ? "(应急 处理时限)" : "(理由必填留痕)"}</span></div>
               <div className="kv"><span className="k">执行门槛</span><span className="v">{w.roleGate}</span></div>
               <div className="kv"><span className="k">防止重复执行</span><span className="v">同一次提交在 24 小时内重复发送也只会生效一次</span></div>
               <div className="kv"><span className="k">原子性</span><span className="v" style={{ maxWidth: 320, textAlign: "right" }}>确认执行使用一次事务写入目标域；失败则动作保持待处理，目标域不会产生部分结果</span></div>
@@ -1063,19 +1067,19 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 </>
               ) : w.sos ? (
                 <>
-                  <b>⚡ 应急轨高敏</b>:涉及熔断、恢复或紧急处置,核对值班授权、影响面和恢复条件后再裁决。
+                  <b>⚡ 应急轨敏感</b>:涉及紧急停用、恢复或紧急处置,核对值班授权、影响面和恢复条件后再裁决。
                 </>
               ) : w.type === "acct" ? (
                 <>
-                  <b>账号/权限高敏</b>:A1 新增/禁用管理员、改角色、重置 2FA、强制登出、RBAC 调整都按高敏处理,
+                  <b>账号/权限敏感</b>:A1 新增/禁用管理员、改角色、重置 两步验证、强制登出、角色权限 调整都按敏感处理,
                   审核时核对目标账号、申请角色和操作理由。
                 </>
               ) : w.type === "param" ? (
                 <>
-                  <b>参数高敏</b>:参数会影响后续业务规则,审核时核对前后值、影响范围和回滚口径。
+                  <b>参数敏感</b>:参数会影响后续业务规则,审核时核对前后值、影响范围和恢复方式。
                 </>
               ) : (
-                <>高敏动作:按动作说明核对对象、前后值、影响范围与原因。</>
+                <>敏感动作:按动作说明核对对象、前后值、影响范围与原因。</>
               )}
             </div>
             {isFinal && (
@@ -1108,11 +1112,12 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               <div className="kv"><span className="k">前值 → 后值</span><span className="v mono">{l.delta}</span></div>
               <div className="kv"><span className="k">原因</span><span className="v">{l.reason || "—"}</span></div>
               <div className="kv"><span className="k">IP</span><span className="v mono">{l.ip}</span></div>
-              <div className="kv"><span className="k">操作 / 留痕</span><span className="v">{l.actor} / 对应角色或超管</span></div>
-              <div className="kv"><span className="k">防重号</span><span className="v mono">{l.idempotencyKey || (needIdem ? "idem-… (资金类)" : "—")}</span></div>
+              <div className="kv"><span className="k">操作 / 留痕</span><span className="v">{l.actor}  / 对应角色或超级管理员</span></div>
+              <div className="kv"><span className="k">防重复提交编号</span><span className="v mono">{l.idempotencyKey || (needIdem ? "未返回资金操作请求编号" : "—")}</span></div>
             </div>
             <div className="atint" style={{ marginTop: 14 }}>
-              隐私字段(手机号/地址)在事件里只存哈希或 ID,导出时再脱敏一层。
+
+              隐私字段(手机号/地址)在事件里只保存不可逆摘要或编号，导出时继续隐藏敏感内容。
             </div>
           </Drawer>
         );
@@ -1137,7 +1142,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               {h.note}
             </div>
             <div className="atint cyan">
-              任何高敏动作的完整操作链(提案→决策→落库)都能这样追溯;这是内部问责的取证地基。
+
+              任何敏感动作的完整操作链(提案→决策→保存记录)都能这样追溯;这是内部问责的追溯依据。
             </div>
           </Drawer>
         );

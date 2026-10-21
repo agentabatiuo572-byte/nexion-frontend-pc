@@ -11,7 +11,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 const DOMAINS = [{ code: "ALL", label: "全部" }, ...CONSOLE_NAV.map((d) => ({ code: d.code, label: `${d.code} ${d.name}` })), { code: "UNMAPPED", label: "未归类" }];
 const PERM_TYPES = ["ALL", "READ", "WRITE", "HIGH"];
 const TONE_BY_TYPE: Record<string, string> = { HIGH: "danger", WRITE: "warn", READ: "ok" };
-const LABEL_BY_TYPE: Record<string, string> = { HIGH: "高敏操作", WRITE: "写操作", READ: "只读" };
+const LABEL_BY_TYPE: Record<string, string> = { HIGH: "敏感操作", WRITE: "写操作", READ: "只读" };
 
 type RoleGrants = { role: A6RoleSummary; codes: Set<string>; readable: boolean };
 
@@ -111,7 +111,7 @@ export default function A8Permissions() {
       {toast}
       <DomainHeader domainCode="A" domainName="平台基础" accentVar="--admin-domain-a"
         l2Id="A8" l2Name="权限清单"
-        summary="全平台权限码只读浏览。权限分为只读、写操作和高敏操作，由平台统一维护，本页不支持增删。"
+        summary="全平台权限码只读浏览。权限分为只读、写操作和敏感操作，由平台统一维护，本页不支持增删。"
         right={<span className="mono" style={{ color: "var(--ink-3)", fontSize: 12 }}>{loading ? "正在统计…" : `共 ${total} 条`}</span>} />
       <Card>
         <CardH title="权限列表" />

@@ -20,6 +20,8 @@ const developerAccessAttempts = createSlotAttemptStore({
 });
 
 /** Real server-backed developer access governance. Navigation ownership remains with the A-domain integrator. */
+const developerStatusText = (value: string) => ({ PENDING: "待审批", APPROVED: "已批准", REJECTED: "已驳回", REVOKED: "已撤销", EXPIRED: "已过期" } as Record<string,string>)[value] ?? "未知状态";
+
 export function A9DeveloperAccess() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -87,7 +89,7 @@ export function A9DeveloperAccess() {
             onSelect={(value) => { setStatus(value); setPage(1); }}
             style={{ display: "flex", flexWrap: "wrap", gap: 8 }}
             itemClassName={() => "btn sm"}
-          >{(value) => value || "全部"}</TabGroup>
+          >{(value) => value ? developerStatusText(value) : "全部"}</TabGroup>
         </div>
         {error && <div className="alertbar warn" role="alert" style={{ margin: 12 }}>{error} <Btn sm onClick={() => setReloadKey((value) => value + 1)}>重试</Btn></div>}
         <div style={{ overflowX: "auto" }}>
@@ -101,8 +103,8 @@ export function A9DeveloperAccess() {
                 return <tr key={row.requestNo} style={{ borderBottom: "1px solid var(--border)" }}>
                   <td style={{ padding: 10 }}><div className="mono">{row.requestNo}</div><div style={{ color: "var(--ink-3)", fontSize: 11 }}>{row.createdAt}</div></td>
                   <td style={{ padding: 10 }}><div>#{row.userId} · {row.company}</div><div style={{ color: "var(--ink-3)" }}>{row.email}</div></td>
-                  <td style={{ padding: 10 }}><Badge tone={row.sourceEnvironment === "SANDBOX" ? "info" : "neutral"}>{row.sourceEnvironment}</Badge><div className="mono" style={{ fontSize: 11 }}>{row.runId || "—"}</div></td>
-                  <td style={{ padding: 10 }}><Badge tone={row.status === "APPROVED" ? "ok" : row.status === "PENDING" ? "warn" : row.status === "EXPIRED" ? "err" : "neutral"}>{row.status}</Badge></td>
+                  <td style={{ padding: 10 }}><Badge tone={row.sourceEnvironment === "SANDBOX" ? "info" : "neutral"}>{row.sourceEnvironment === "SANDBOX" ? "测试环境" : "正式环境"}</Badge><div className="mono" style={{ fontSize: 11 }}>{row.runId || "—"}</div></td>
+                  <td style={{ padding: 10 }}><Badge tone={row.status === "APPROVED" ? "ok" : row.status === "PENDING" ? "warn" : row.status === "EXPIRED" ? "err" : "neutral"}>{developerStatusText(row.status)}</Badge></td>
                   <td style={{ padding: 10, maxWidth: 240 }}>{row.reviewReason || "—"}</td>
                   <td style={{ padding: 10, whiteSpace: "nowrap" }}>
                     {guard.canApprove && <Btn sm onClick={() => void review(row, "approve")}>批准</Btn>}

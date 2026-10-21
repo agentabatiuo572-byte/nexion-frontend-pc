@@ -65,7 +65,7 @@ export default function A7Menus() {
     <div className="dkpage adom">
       <DomainHeader domainCode="A" domainName="平台基础" accentVar="--admin-domain-a"
         l2Id="A7" l2Name="菜单管理"
-        summary={`A7 菜单状态、名称与排序（${overview?.domainCount ?? 0} 域 / ${overview?.pageCount ?? 0} 页）和 A6 角色绑定共同驱动侧栏；console-nav 仅保留已部署路由白名单，未注册或路由不匹配的节点不会进入导航。`}
+        summary={`A7 菜单状态、名称与排序（${overview?.domainCount ?? 0} 域 / ${overview?.pageCount ?? 0} 页）和 A6 角色绑定共同驱动侧栏；仅已部署且地址匹配的页面会显示在导航中。`}
         right={canWrite ? <Btn variant="primary" sm onClick={() => setMode({ kind: "create" })}>+ 新建顶级菜单</Btn> : <Badge tone="neutral">只读</Badge>} />
       <Card>
         <CardH title="菜单树" />
@@ -233,7 +233,7 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
       onSubmit(payload, `新建菜单 · ${menuName}`, <>新建菜单节点 <b>{menuName}</b>（<span className="mono">{menuCode}</span>）。菜单变更影响前端导航,审计留痕。</>);
     } else if (existing) {
       const payload: A7MenuUpdateInput = { menuName: normalizedName, menuNameZh: normalizedName, routePath: normalizedRoute || undefined, icon: icon.trim() || undefined, sortOrder, status, expectedVersion: existing.version };
-      onSubmit(payload, `编辑菜单 · ${menuName}`, <>编辑菜单节点 <b>{menuName}</b>（<span className="mono">{existing.menuCode}</span>,menuCode 不可改）。元数据变更不影响权限码缓存。</>);
+      onSubmit(payload, `编辑菜单 · ${menuName}`, <>编辑菜单节点 <b>{menuName}</b>（<span className="mono">{existing.menuCode}</span>,菜单标识不可修改）。元数据变更不影响权限码缓存。</>);
     }
   };
 
@@ -254,7 +254,7 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 16 }}>
         <div>
-          <div style={labelStyle}>菜单 code {isCreate ? "" : "（不可改）"}</div>
+          <div style={labelStyle}>菜单标识 {isCreate ? "" : "（不可改）"}</div>
           <input style={fieldStyle} value={menuCode} onChange={(e) => setMenuCode(e.target.value)} disabled={!isCreate} placeholder="如 A9 或 CUSTOM_X" />
         </div>
         <div>
@@ -276,7 +276,7 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
         </div>
         <div className="row" style={{ gap: 12 }}>
           <div style={{ flex: 1 }}>
-            <div style={labelStyle}>图标名（lucide）</div>
+            <div style={labelStyle}>图标名称（Lucide 图标库）</div>
             <input style={fieldStyle} value={icon} onChange={(e) => setIcon(e.target.value)} placeholder="shield-check" />
           </div>
           <div style={{ width: 100 }}>

@@ -1,5 +1,7 @@
 "use client";
 
+const credentialStatusText = (value?: string | null) => value === "PASSWORD_CHANGE_REQUIRED" ? "下次登录需修改密码" : value === "ACTIVE" ? "可正常使用" : "未返回";
+
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
 import Link from "next/link";
 import { readAdminSessionBaseline } from "@/lib/admin/session-baseline";
@@ -294,13 +296,13 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       return "不能强制登出自己的当前账号";
     }
     if (currentForceLogoutRole !== "super") {
-      return "只有超管可以强制登出运营账号";
+      return "只有超级管理员可以强制登出运营账号";
     }
     if (op.role === "super") {
-      return "超管账号不能被强制登出";
+      return "超级管理员账号不能被强制登出";
     }
     if (op.sessions === 0) {
-      return "Redis 中没有活跃后台会话,该账号当前未登录";
+      return "该账号当前未登录，无需强制退出";
     }
     return null;
   };
@@ -308,19 +310,19 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     op.role === "super" && op.status === "enabled" && op.tfa && effectiveSupers <= 2;
   const changeRoleBlockReason = (op: A1Operator) => {
     if (!permissionDiffReady) return permissionDiffError ?? "权限差异预览不可用，改角色已停用";
-    if (governanceFrozen) return "有效超管不足 2 个，治理写已冻结；请先创建并绑定恢复超管";
-    if (protectsEffectiveSuperFloor(op)) return "该操作会使有效超管少于 2 个";
+    if (governanceFrozen) return "有效超级管理员不足 2 个，账号管理操作已暂停；请先创建恢复用超级管理员并为其绑定两步验证";
+    if (protectsEffectiveSuperFloor(op)) return "该操作会使有效超级管理员少于 2 个";
     return null;
   };
   const reset2faBlockReason = (op: A1Operator) => {
-    if (!op.tfa) return "该账号尚未绑定双因子，无需重置";
-    if (governanceFrozen) return "有效超管不足 2 个，治理写已冻结；请先恢复安全基线";
-    if (protectsEffectiveSuperFloor(op)) return "重置后有效超管将少于 2 个";
+    if (!op.tfa) return "该账号尚未绑定两步验证，无需重置";
+    if (governanceFrozen) return "有效超级管理员不足 2 个，账号管理操作已暂停；请先恢复安全基线";
+    if (protectsEffectiveSuperFloor(op)) return "重置后有效超级管理员将少于 2 个";
     return null;
   };
   const disableAccountBlockReason = (op: A1Operator) => {
-    if (governanceFrozen) return "有效超管不足 2 个，治理写已冻结；请先恢复安全基线";
-    if (protectsEffectiveSuperFloor(op)) return "禁用后有效超管将少于 2 个";
+    if (governanceFrozen) return "有效超级管理员不足 2 个，账号管理操作已暂停；请先恢复安全基线";
+    if (protectsEffectiveSuperFloor(op)) return "禁用后有效超级管理员将少于 2 个";
     return null;
   };
 
@@ -343,7 +345,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         <>
           <b>{displayLabel}</b> · 当前 <b>{roleName(roles, op.role)}</b>。
           在下方业务表单选择目标角色;提交后由后端更新账号角色关系、平台配置和审计记录。
-          <b> 后端校验:</b>最小权限基线、角色合法性、有效超管不得少于 2 个。
+          <b> 后端校验:</b>最小权限基线、角色合法性、有效超级管理员不得少于 2 个。
         </>
       ),
       amplifies: false,
@@ -353,12 +355,12 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         roles: roleOptions.map((r) => ({ key: r.key, label: r.name, scope: r.scope })),
         actions: permissionActions,
         grantsByRole: { unassigned: permissionActions.map(() => "-"), ...grantsByRole },
-        guardHint: `有效超管 ${effectiveSupers} 个;降级超管时仍需 ≥2`,
+        guardHint: `有效超级管理员 ${effectiveSupers} 个;降级超级管理员时仍需 ≥2`,
       },
       run: (reason, value) => {
         const roleStr = (value || "").trim();
         if (!roleOptions.some((r) => r.key === roleStr)) {
-          toast(`拒绝:无效角色 key (${roleStr})`);
+          toast(`无法保存：角色标识无效（${roleStr})`);
           return;
         }
         if (roleStr === op.role) {
@@ -366,7 +368,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           return;
         }
         if (op.role === "super" && op.status === "enabled" && roleStr !== "super" && effectiveSupers - 1 < 2) {
-          toast("拒绝:剩余有效超管将不足 2 个");
+          toast("拒绝:剩余有效超级管理员将不足 2 个");
           return;
         }
         const def = findHighOp("a1_account_change_role")!;
@@ -389,7 +391,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   };
 
   const reset2fa = (op: A1Operator) => openActionConfirm({
-    action: `重置双因子 · ${operatorDisplayName(op)}`,
+    action: `重置两步验证 · ${operatorDisplayName(op)}`,
     detail: (
       <>
         <div className="atint danger" style={{ marginBottom: 12 }}>
@@ -399,7 +401,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         <div style={{ marginTop: 6, marginBottom: 4 }}>
           <div>1 · 当前绑定的验证器立即失效</div>
           <div>2 · 重新绑定前无法登录后台</div>
-          <div>3 · 下次登录强制重新绑定双因子</div>
+          <div>3 · 下次登录强制重新绑定两步验证</div>
         </div>
       </>
     ),
@@ -414,7 +416,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       const verify = `核验 ${businessValue?.channel ?? "—"} · ${businessValue?.verifiedAt || "—"} · 工单 ${businessValue?.ticket || "—"}`;
       const def = findHighOp("a1_account_reset_2fa")!;
       void propose(toast, {
-        action: `重置双因子 · ${operatorDisplayName(op)}`,
+        action: `重置两步验证 · ${operatorDisplayName(op)}`,
         obj: String(op.id),
         before: "已绑定",
         after: "待重新绑定",
@@ -435,7 +437,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     detail: (
       <>
         <div className="atint danger" style={{ marginBottom: 12 }}>
-          <b>高敏凭据操作</b> · 系统会生成临时密码、更新账号密码、吊销该账号旧登录态,并要求下次登录立即修改密码。
+          <b>敏感凭据操作</b> · 系统会生成临时密码、更新账号密码、吊销该账号旧登录态,并要求下次登录立即修改密码。
         </div>
         <b>{operatorDisplayLabel(op)}</b> · 登录名 <span className="acode">{op.username || "未返回"}</span>。
       </>
@@ -508,7 +510,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
 
   const disableAcct = (op: A1Operator) => {
     if (op.role === "super" && op.status === "enabled" && effectiveSupers - 1 < 2) {
-      toast("拒绝:剩余有效超管将不足 2 个");
+      toast("拒绝:剩余有效超级管理员将不足 2 个");
       return;
     }
     const displayName = operatorDisplayName(op);
@@ -517,8 +519,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       detail: (
         <>
           <b>{operatorDisplayLabel(op)}</b> · 角色 {roleName(roles, op.role)}。
-          禁用后后端会收回后台访问权并吊销该账号全部活跃 session;在途高敏动作仍需到 A2 操作确认中心处理。
-          {op.role === "super" && <> 剩余有效超管 {effectiveSupers} - 1 = {effectiveSupers - 1}。</>}
+          禁用后后端会收回后台访问权并吊销该账号全部有效登录会话;在途敏感动作仍需到 A2 操作确认中心处理。
+          {op.role === "super" && <>  剩余有效超级管理员 {effectiveSupers} - 1 = {effectiveSupers - 1}。</>}
         </>
       ),
       amplifies: false,
@@ -547,7 +549,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     detail: (
       <>
         <b>{operatorDisplayLabel(op)}</b> · 启用后恢复后台访问权,角色沿用 <b>{roleName(roles, op.role)}</b>;
-        首次登录仍需通过强制双因子校验。
+        首次登录仍需通过强制两步验证校验。
       </>
     ),
     amplifies: false,
@@ -581,10 +583,11 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       action: `强制登出 · ${displayName}`,
       detail: (
         <>
-          <b>{operatorDisplayLabel(op)}</b> 当前活跃 session <b>{op.sessions}</b> 个。
-          确认后后端立即吊销该账号全部 session,重新登录必须重过后台认证与双因子。
+          <b>{operatorDisplayLabel(op)}</b>  当前有效登录会话 <b>{op.sessions}</b>  个。
+          确认后后端立即吊销该账号全部登录会话,重新登录必须重过后台认证与两步验证。
           <div style={{ marginTop: 8, fontSize: 12, color: "var(--ink-4)" }}>
-            规则:不能登出自己;只有超管可执行;超管账号不可被强制登出。
+
+            规则:不能登出自己;只有超级管理员可执行;超级管理员账号不可被强制登出。
           </div>
         </>
       ),
@@ -642,7 +645,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       detail: (
         <>
           <b>{baseline.name}</b> · 当前 <span className="acode">{curN} {baseline.unit}</span> · 可填范围 <span className="acode">{baseline.min}–{baseline.max} {baseline.unit}</span>。
-          对<b> 下一次登录签发</b>生效,在途不受影响。后台是高敏操盘台,时限 / 阈值比用户侧更严。
+          对<b> 下一次登录签发</b>生效,在途不受影响。后台是管理后台,时限 / 阈值比用户侧更严。
         </>
       ),
       amplifies: false,
@@ -729,7 +732,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
             defaultAvatarMissing = Boolean(command.form.useDefaultAvatar && !created.avatarAssetId);
             return created;
           },
-          `${form.displayName} 已创建，首次登录需绑定 2FA 并修改密码`,
+          `${form.displayName} 已创建，首次登录需绑定两步验证 并修改密码`,
         );
         if (ok) { setNaOpen(false); if (defaultAvatarMissing) toast("账号已创建，默认头像暂缺；请在账号资料中准备并提交新头像。请勿再次创建账号。"); }
         return ok;
@@ -741,7 +744,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     if (!canRegisterPermission || !permissionDraft.code.trim() || !permissionDraft.name.trim() || !permissionDraft.path.trim()) return;
     openActionConfirm({
       action: `登记动作权限 · ${permissionDraft.code.trim()}`,
-      detail: <>只向 A8 权限清单登记新动作，<b>不会自动绑定任何角色</b>；服务端强制 expectedAbsent、admin 路径校验与零角色绑定校验。</>,
+      detail: <>只向 A8 权限清单登记新动作，<b>不会自动绑定任何角色</b>；保存前检查该权限是否尚未登记、接口路径是否属于后台，以及该权限是否尚未分配给任何角色。</>,
       amplifies: permissionDraft.amplifies,
       reasonMin: 8,
       reasonMax: 200,
@@ -761,10 +764,10 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">运营账号与权限</span>
-          <span className="sub">· 正在从后端加载 A1 overview</span>
+          <span className="sub">· 正在加载管理员账号</span>
         </div>
         <div className="l-b">
-          <div className="atint">正在读取 /api/admin/platform/accounts/overview。</div>
+          <div className="atint">正在加载管理员账号及登录安全设置。</div>
         </div>
       </section>
     );
@@ -800,7 +803,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       )}
       {governanceFrozen && (
         <div className="atint danger" style={{ marginBottom: 12 }}>
-          <b>账号治理恢复模式</b> · 当前实际启用且已绑定 2FA 的超管不足 2 个。除“新建超管账号”和安全事件下的会话吊销外，其他治理写操作已由前后端冻结。
+          <b>账号治理恢复模式</b>  · 当前实际启用且已绑定两步验证 的超级管理员不足 2 个。除“新建超级管理员账号”和安全事件下的会话吊销外，其他账号管理操作已由前后端冻结。
         </div>
       )}
 
@@ -811,12 +814,12 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           <div className="sub">启用 {stats?.activeAccounts ?? 0} · 已禁用 {stats?.disabledAccounts ?? 0}</div>
         </div>
         <div className="f-stat">
-          <div className="k">活跃 session</div>
+          <div className="k">有效登录会话</div>
           <div className="v">{stats?.activeSessions ?? 0} 个</div>
           <div className="sub">{sessionBaseline}</div>
         </div>
         <div className={`f-stat ${supersTone}`}>
-          <div className="k">有效超管</div>
+          <div className="k">有效超级管理员</div>
           <div className="v">{effectiveSupers} 个</div>
           <div className="sub">后端约束 ≥2 · {governanceFrozen ? "治理冻结" : effectiveSupers === 2 ? "位于下限" : "健康"}</div>
         </div>
@@ -851,10 +854,10 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
               <tr>
                 <th>账号</th>
                 <th>角色</th>
-                <th>双因子</th>
+                <th>两步验证</th>
                 <th>状态</th>
                 <th>最近登录</th>
-                <th>session</th>
+                <th>登录会话数</th>
                 <th style={{ textAlign: "right" }}>操作</th>
               </tr>
             </thead>
@@ -890,7 +893,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
                         <button className="l-btn sm" aria-label={`编辑 ${operatorDisplayLabel(op)}`} onClick={(event) => stopRowAction(event, () => setEditAccountTarget(op))} disabled={!!mutatingAction || governanceFrozen}>编辑</button>
                         {canManageQualifications && <><button className="l-btn sm" aria-label={`管理 ${operatorDisplayLabel(op)} 的专属客服资格`} onClick={event => stopRowAction(event, () => setQualificationTarget({ id: op.id, kind: "SERVICE" }))} disabled={!!mutatingAction}>专属客服资格</button><button className="l-btn sm" aria-label={`管理 ${operatorDisplayLabel(op)} 的主管资格`} onClick={event => stopRowAction(event, () => setQualificationTarget({ id: op.id, kind: "SUPERVISOR" }))} disabled={!!mutatingAction}>主管资格</button></>}
                         <button className="l-btn sm" aria-label={`修改 ${operatorDisplayLabel(op)} 的角色`} title={changeRoleBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => changeRole(op))} disabled={!!mutatingAction || !roles.length || !!changeRoleBlockReason(op)}>改角色</button>
-                        <button className="l-btn sm" aria-label={`重置 ${operatorDisplayLabel(op)} 的两步验证`} title={reset2faBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => reset2fa(op))} disabled={!!mutatingAction || !!reset2faBlockReason(op)}>重置 2FA</button>
+                        <button className="l-btn sm" aria-label={`重置 ${operatorDisplayLabel(op)} 的两步验证`} title={reset2faBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => reset2fa(op))} disabled={!!mutatingAction || !!reset2faBlockReason(op)}>重置 两步验证</button>
                         <button className="l-btn sm" aria-label={`重置 ${operatorDisplayLabel(op)} 的密码`} onClick={(event) => stopRowAction(event, () => resetPassword(op))} disabled={!!mutatingAction || governanceFrozen}>重置密码</button>
                         <button
                           className="l-btn sm"
@@ -898,7 +901,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
                           onClick={(event) => stopRowAction(event, () => kickAllSessions(op))}
                           disabled={!!mutatingAction || !!logoutBlock}
                           data-blocked={logoutBlock ? "true" : undefined}
-                          title={logoutBlock ?? "强制吊销该账号全部 Redis 后台会话"}
+                          title={logoutBlock ?? "强制退出该账号的所有后台登录"}
                           style={logoutBlock ? { opacity: 0.55, cursor: "not-allowed" } : undefined}
                         >
                           强制登出
@@ -934,7 +937,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
             </select>
           </div>
           <div className="atint" style={{ marginTop: 10 }}>
-            后端会再次校验有效超管 ≥2、角色合法性和写权限;前端预判只用于减少误操作。
+
+            后端会再次校验有效超级管理员 ≥2、角色合法性和写权限;前端预判只用于减少误操作。
           </div>
         </div>
       </section>
@@ -945,7 +949,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           <input aria-label="权限编码" placeholder="domain_action_write" value={permissionDraft.code} onChange={(e) => setPermissionDraft((v) => ({ ...v, code: e.target.value }))} />
           <input aria-label="权限名称" placeholder="权限名称" value={permissionDraft.name} onChange={(e) => setPermissionDraft((v) => ({ ...v, name: e.target.value }))} />
           <input aria-label="资源路径" placeholder="/api/admin/..." value={permissionDraft.path} onChange={(e) => setPermissionDraft((v) => ({ ...v, path: e.target.value }))} />
-          <select aria-label="权限类型" value={permissionDraft.type} onChange={(e) => setPermissionDraft((v) => ({ ...v, type: e.target.value as "READ" | "WRITE" }))}><option>READ</option><option>WRITE</option></select>
+          <select aria-label="权限类型" value={permissionDraft.type} onChange={(e) => setPermissionDraft((v) => ({ ...v, type: e.target.value as "READ" | "WRITE" }))}><option value="READ">查询</option><option value="WRITE">修改</option></select>
           <label><input type="checkbox" checked={permissionDraft.amplifies} onChange={(e) => setPermissionDraft((v) => ({ ...v, amplifies: e.target.checked }))} />放大资金流出</label>
           <button className="l-btn sm mc" disabled={!canRegisterPermission || !!mutatingAction || !permissionDraft.code.trim() || !permissionDraft.name.trim() || !permissionDraft.path.trim()} onClick={submitPermissionRegistration}>登记权限</button>
         </div>
@@ -954,13 +958,13 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       <section className="l-card">
           <div className="l-h">
             <span className="ttl">后台运营账号登录与安全基线</span>
-            <span className="sub">· 仅用于 PC 管理员登录；服务端实时返回；锁定项只读，可调项逐项生效</span>
+            <span className="sub">· 仅用于 后台管理员登录；服务端实时返回；锁定项只读，可调项逐项生效</span>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             {securityBaselineRows.map((baseline) => (
               <div className="a-vrow" key={baseline.key}>
                 <span className="nm">{baseline.name}<small>{baseline.sub}</small></span>
-                <span className={baseline.locked ? "acode lock" : "v"} title={baseline.locked ? "server 校验,前端不可关" : undefined}>
+                <span className={baseline.locked ? "acode lock" : "v"} title={baseline.locked ? "登录时强制验证，不能关闭" : undefined}>
                   {baselineDisplay(baseline)}
                 </span>
                 {!baseline.locked && (
@@ -972,13 +976,13 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
               <div className="atint">后端未返回安全基线配置。</div>
             )}
             <div className="atint" style={{ marginTop: 10 }}>
-              <b>疑似被盗怎么办</b> · 超管可立即强制登出非超管账号全部 session(普通确认、必填原因,事后可查);不能登出自己,Redis 无活跃会话代表目标未登录。要收权限走「禁用账号」操作确认。后台管理员登录锁基线: <b>{lockBaseline}</b>；App 用户登录锁由 C6 独立配置。
+              <b>疑似被盗怎么办</b>  · 超级管理员可立即强制登出非超级管理员账号全部登录会话(普通确认、必填原因,事后可查);不能登出自己,没有有效登录记录表示该账号当前未登录。要收权限走「禁用账号」操作确认。后台管理员登录锁基线: <b>{lockBaseline}</b>；应用用户登录锁由 C6 独立配置。
             </div>
           </div>
         </section>
 
       <p className="f-foot">
-        <b>执行门槛</b>:账号建 / 停 / 启 / 改角色 / 重置双因子 / 强制登出走后端真实接口;安全基线恢复 PRD 总表展示,提交动作仍通过后端接口发布。
+        <b>执行门槛</b>:管理后台账号、角色、两步验证与登录安全设置；所有修改均会保存操作记录。
       </p>
 
       {naOpen && (
@@ -1103,7 +1107,7 @@ function NewAccountDrawer({
     !username.trim() ? "登录名未填写" : !usernameOk ? "登录名格式不正确" : "",
     !displayName.trim() ? "显示名未填写" : "",
     email.trim() && !emailOk ? "工作邮箱格式不正确" : "",
-    recoveryMode && role !== "super" ? "恢复模式只能创建超管账号" : "",
+    recoveryMode && role !== "super" ? "恢复模式只能创建超级管理员账号" : "",
     !reason.trim() ? "操作理由未填写" : "",
   ].filter(Boolean);
   const disabledReason = disabled ? "权限或数据仍在加载,暂不能创建" : "";
@@ -1273,16 +1277,16 @@ function AccountDetailDrawer({
   onRevokeSession: (sessionId: string) => void;
 }) {
   const rows = [
-    ["账号 ID", account.id],
+    ["账号编号", account.id],
     ["登录名", account.username || "未返回"],
     ["显示名", operatorDisplayName(account)],
     ["工作邮箱", account.email || "未填写"],
     ["角色", roleName(roles, account.role)],
     ["状态", account.status === "enabled" ? "启用" : "已禁用"],
-    ["双因子", account.tfa ? "强制已绑" : "未绑定"],
+    ["两步验证", account.tfa ? "强制已绑" : "未绑定"],
     ["最近登录", account.lastLogin || "—"],
-    ["活跃 session", `${account.sessions}`],
-    ["凭据状态", account.credentialDeliveryStatus || "ACTIVE"],
+    ["有效登录会话", `${account.sessions}`],
+    ["凭据状态", credentialStatusText(account.credentialDeliveryStatus)],
   ];
 
   return (
@@ -1306,7 +1310,7 @@ function AccountDetailDrawer({
         <div className="f-stat">
           <div className="k">会话</div>
           <div className="v" style={{ fontSize: 18 }}>{account.sessions} 个</div>
-          <div className="sub">{account.credentialDeliveryStatus || "ACTIVE"}</div>
+          <div className="sub">{credentialStatusText(account.credentialDeliveryStatus)}</div>
         </div>
       </div>
       <table className="l-tbl">
@@ -1331,7 +1335,7 @@ function AccountDetailDrawer({
             <div style={{ marginTop: 3, color: "var(--ink-4)" }}>
               {history.source === "CURRENT_ASSIGNMENT"
                 ? "暂无更早的角色变更审计记录"
-                : `${history.changedAt || "时间未返回"} · 操作者 ${history.operator || "system"}`}
+                : `${history.changedAt || "时间未返回"} · 操作者 ${history.operator || "系统"}`}
             </div>
           </div>
         ))}
@@ -1342,7 +1346,7 @@ function AccountDetailDrawer({
         {(account.sessionDetails ?? []).map((session) => (
           <div key={session.sessionId} className="atint" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
             <div style={{ minWidth: 0 }}>
-              <div><b>{session.device || "未知设备"}</b> · <span className="mono">{session.ipAddress || "unknown"}</span></div>
+              <div><b>{session.device || "未知设备"}</b> · <span className="mono">{session.ipAddress || "未返回"}</span></div>
               <div style={{ marginTop: 3, color: "var(--ink-4)" }}>开始 {session.issuedAt || "—"} · 最近活动 {session.lastSeenAt || "—"}</div>
             </div>
             <button

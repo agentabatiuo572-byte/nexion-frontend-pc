@@ -192,7 +192,7 @@
       "id": "OPS-A-07b",
       "domain": "A",
       "object": "提现强审参数",
-      "action": "调整提现强审阈值",
+      "action": "调整提现加强审核金额",
       "status": "built",
       "view": "a-tabs/a3-config.tsx",
       "batch": "done",
@@ -200,7 +200,7 @@
         {
           "type": "pc-runtime",
           "file": "app/components/domain-views/a-tabs/a3-config.tsx",
-          "positivePatterns": ["提现强审阈值", "updateA3Parameter"],
+          "positivePatterns": ["提现加强审核金额", "updateA3Parameter"],
           "negativePatterns": ["服务端权威契约未完成"]
         }
       ],

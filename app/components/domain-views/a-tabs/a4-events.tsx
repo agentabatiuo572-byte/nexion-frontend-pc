@@ -19,7 +19,7 @@ import { A4OutboxDiagnostics } from "./a4-outbox-diagnostics";
  * 真写键(A.*):
  *  A.event.kpi.day0(Day0 接入窗口)· A.event.kpi.retention(留存口径,locked)·
  *  A.event.kpi.event_retention(事件留存期)· A.event.kpi.sampling(采样率)·
- *  A.event.schemaVer(schema registry 版本)· A.batch.new.<slug>.status(扩展工单登记)。
+ *  A.event.schemaVer(事件字段登记表 版本)· A.batch.new.<slug>.status(扩展工单登记)。
  *
  * 操作确认 显式 edit 契约(2026-06 跨域硬化):
  *  - 调参传 edit:{kind:"text",current,unit};
@@ -82,6 +82,8 @@ const H3_DEAD_REDRIVABLE_EVENT_TYPES = [
 ] as const;
 
 /* ────────────────── 组件 ────────────────── */
+
+const lifecycleText = (value: string) => ({ new: "新建", pending_publish: "待发布", gray: "分批开放", full: "全面开放", disabled: "已停用" } as Record<string,string>)[value] ?? "未知状态";
 
 export function A4Events({ ctx }: { ctx: ACtx }) {
   const canReadOutbox = useAdminAuth((state) => state.session?.authorities.includes("platform_a4_read") ?? false);
@@ -219,15 +221,15 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
   /* ────────────────── 口径参数调整 ────────────────── */
 
   const adjDay0 = () => {
-    if (!canWrite) { toast("当前账号只有 A4 读取权限，不能调整口径"); return; }
+    if (!canWrite) { toast("当前账号只有 A4 读取权限，不能调整统计规则"); return; }
     const cur = liveDay0;
     const stableKey = createA4IdempotencyKey("a4-param-day0");
     openActionConfirm({
-      action: "口径参数 · Day0 接入窗口",
+      action: "统计参数 · 注册后首次接入时限",
       detail: (
         <>
-          当前 <b>{cur}</b>。改了 KPI #1 口径就变,历史不重算。口径参数动一下,所有派生看板的算式跟着变,
-          所以超管执行门槛:超管,改动广播给消费方(B3 / L 域)。
+          当前 <b>{cur}</b>。改了 关键指标 #1 统计规则就变,历史不重算。统计参数动一下,所有派生看板的算式跟着变,
+          所以超级管理员执行门槛:超级管理员,改动广播给使用方(B3 / L 域)。
         </>
       ),
       amplifies: false,
@@ -237,21 +239,21 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         if (!/^\d{1,4}\s*(?:秒|s|sec|seconds?)?$/i.test(val)) { toast("A4_DAY0_VALUE_INVALID:请输入 30–600 秒"); return; }
         const seconds = Number.parseInt(val, 10);
         if (seconds < 30 || seconds > 600) { toast("A4_DAY0_VALUE_INVALID:请输入 30–600 秒"); return; }
-        return updateParam("day0", val, reason, `Day0 已更新为 ${seconds} 秒`, stableKey);
+        return updateParam("day0", val, reason, `首次接入时限已更新为 ${seconds} 秒`, stableKey);
       },
     });
   };
 
   const adjEventRetention = () => {
-    if (!canWrite) { toast("当前账号只有 A4 读取权限，不能调整口径"); return; }
+    if (!canWrite) { toast("当前账号只有 A4 读取权限，不能调整统计规则"); return; }
     const cur = liveEventRetention;
     const stableKey = createA4IdempotencyKey("a4-param-retention");
     openActionConfirm({
-      action: "口径参数 · 事件留存期",
+      action: "统计参数 · 事件留存期",
       detail: (
         <>
           当前 <b>{cur}</b>。<b>只对新事件生效,不回溯清理旧账</b>;下限要覆盖完整 12 月运营周期 + 1 月缓冲。
-          口径参数动一下,所有派生看板的算式跟着变,所以超管执行门槛:超管,改动广播给消费方(B3 / L 域)。
+          统计参数动一下,所有派生看板的算式跟着变,所以超级管理员执行门槛:超级管理员,改动广播给使用方(B3 / L 域)。
         </>
       ),
       amplifies: false,
@@ -267,15 +269,15 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
   };
 
   const adjSampling = () => {
-    if (!canWrite) { toast("当前账号只有 A4 读取权限，不能调整口径"); return; }
+    if (!canWrite) { toast("当前账号只有 A4 读取权限，不能调整统计规则"); return; }
     const cur = liveSampling;
     const stableKey = createA4IdempotencyKey("a4-param-sampling");
     openActionConfirm({
-      action: "口径参数 · 采样率",
+      action: "统计参数 · 采样率",
       detail: (
         <>
           当前 <b>{cur}</b>。<b>资金/风控/转化类 100% 不在可调范围</b>,只能调浏览/会话类抽样档省成本。
-          口径参数动一下,所有派生看板的算式跟着变,所以超管执行门槛:超管,改动广播给消费方(B3 / L 域)。
+          统计参数动一下,所有派生看板的算式跟着变,所以超级管理员执行门槛:超级管理员,改动广播给使用方(B3 / L 域)。
         </>
       ),
       amplifies: false,
@@ -297,18 +299,18 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     });
   };
 
-  /* ────────────────── schema registry 注册 ────────────────── */
+  /* ────────────────── 事件字段登记表 注册 ────────────────── */
 
   const registerSchema = () => {
     if (!canWrite) { toast("当前账号只有 A4 读取权限，不能注册事件"); return; }
     const stableKey = createA4IdempotencyKey("a4-schema");
     openActionConfirm({
-      action: "注册新事件 / 属性(schema registry)",
+      action: "登记新事件或字段",
       detail: (
         <>
           当前 <b>schema {liveSchemaVer}</b>。新事件名(<span className="acode">域.对象_动作</span>,过去式)或新属性<b>先注册后使用</b>;
-          注册校验:命名规范 ✓ 不与现有事件重复 ✓ <b>无隐私明文(手机号/地址)</b> ✓。
-          超管执行门槛:超管;registry 版本 +1 并广播。
+          注册校验:命名规范 ✓ 不与现有事件重复 ✓ <b>无隐私明文(手机号/地址)</b>  ✓。
+          超级管理员执行门槛:超级管理员;登记版本 +1 并广播。
         </>
       ),
       amplifies: false,
@@ -323,7 +325,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         const ev = (bv?.eventName || "").trim();
         if (!ev) { toast("拒绝:事件名不能为空"); return; }
         if (!eventNameValid(ev)) { toast("拒绝:事件名必须是 domain.object_action，且动作为已发生事实"); return; }
-        if (bv?.isPII === "true") { toast("拒绝:含 PII 明文的事件禁止注册(A 域三铁律 ② · server 422)"); return; }
+        if (bv?.isPII === "true") { toast("无法登记：事件不能包含手机号、地址等个人隐私明文"); return; }
         const ver = (bv?.version || "").trim() || liveSchemaVer;
         setMutating("schema");
         return registerA4Schema({
@@ -341,7 +343,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         }, stableKey)
           .then((next) => {
             setOverview(next);
-            toast(`事件 ${ev} schema 已提交注册(${ver} · ${bv?.producer})· 后端留痕`);
+            toast(`事件 ${ev} 字段定义 已提交注册(${ver} · ${bv?.producer})· 后端留痕`);
           })
           .catch((error: unknown) => {
             toast(`提交失败:${displayAdminError(error)}`);
@@ -361,7 +363,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
   };
 
   const openSchemaPropertyExtension = (schema: A4Overview["schemaRegistrations"][number]) => {
-    if (!canWrite) { toast("当前账号只有 A4 读取权限，不能扩展既有 schema 属性"); return; }
+    if (!canWrite) { toast("当前账号只有 A4 读取权限，不能扩展既有 字段定义 属性"); return; }
     // Both values are frozen before the confirm drawer opens. A later lookup/input
     // response or overview refresh must not redirect this write to another schema.
     const schemaSnapshot = { ...schema };
@@ -375,16 +377,16 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     // Freeze the registry value from the overview that the operator reviewed so the server can reject a stale command.
     const registryVersion = overview?.stats.schemaVersion ?? "";
     if (!/^v[1-9][0-9]*$/.test(registryVersion)) {
-      toast("当前全局 schema 注册表版本不可用，请刷新后重试");
+      toast("当前全局 字段定义 注册表版本不可用，请刷新后重试");
       return;
     }
     const stableKey = createA4IdempotencyKey(`a4-schema-property-${schemaSnapshot.eventName}`);
     openActionConfirm({
-      action: `扩展既有 schema 属性 · ${schemaSnapshot.eventName}`,
+      action: `扩展既有 字段定义 属性 · ${schemaSnapshot.eventName}`,
       detail: <>
-        事件登记版本 <b>{schemaSnapshot.version}</b> · 全局注册表 CAS 版本 <b>{registryVersion}</b> · 生产 <span className="acode">{schemaSnapshot.producer}</span> ·
+        事件登记版本 <b>{schemaSnapshot.version}</b>  · 全局注册表 修改版本 <b>{registryVersion}</b> · 生产 <span className="acode">{schemaSnapshot.producer}</span> ·
         消费 <span className="acode">{schemaSnapshot.consumers || "未指定"}</span> · 现有属性 <span className="acode">{schemaSnapshot.properties}</span>。
-        此入口只增加一个属性和类型；归属、生产方、消费方、采样和权威标记由服务端保留，不可在此覆盖。提交时以全局注册表版本校验，不以事件登记版本替代。
+        此入口只增加一个属性和类型；归属、发送方、使用方、采样和权威标记由服务端保留，不可在此覆盖。提交时以全局注册表版本校验，不以事件登记版本替代。
       </>,
       amplifies: false,
       reasonMin: a2ReasonMin,
@@ -392,7 +394,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       businessForm: {
         kind: "multi-field",
         title: `新增属性 · ${schemaSnapshot.eventName}`,
-        hint: "填写新属性名并选择类型；服务端以当前 schema 版本 CAS，并拒绝重复、PII 或不支持类型。",
+        hint: "填写新字段名称并选择类型。保存时会检查修改版本，拒绝重复字段、个人隐私明文及不支持的类型。",
         fields: [
           { key: "propertyName", label: "属性名", current: "", inputKind: "text", required: true, placeholder: "例如 instance_key" },
           {
@@ -431,10 +433,10 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
               // The overview is intentionally capped. Do not retain an old exact
               // preview when this target is outside the returned current rows.
               setSchemaLookup(null);
-              setSchemaLookupError("属性已增加；最新总览未包含该事件，请重新核验当前 Schema");
+              setSchemaLookupError("属性已增加；最新总览未包含该事件，请重新核验当前 字段定义");
             }
           }
-          toast(`schema ${schemaSnapshot.eventName} 已增加属性 ${propertyName}`);
+          toast(`字段定义 ${schemaSnapshot.eventName} 已增加属性 ${propertyName}`);
         } catch (error) {
           toast(`属性扩展未提交：${displayAdminError(error)}`);
           throw error;
@@ -457,7 +459,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
 
   const lookupSchemaRegistration = async () => {
     if (!canRead) {
-      toast("当前账号没有 A4 读取权限，不能查询既有 schema");
+      toast("当前账号没有 A4 读取权限，不能查询既有 字段定义");
       return;
     }
     const requestedEventName = schemaLookupEventName.trim();
@@ -475,7 +477,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       const found = await fetchA4SchemaRegistration(requestedEventName);
       if (sequence !== schemaLookupSequence.current) return;
       if (found.eventName !== requestedEventName) {
-        setSchemaLookupError("服务端返回的 schema 与本次精确查询不一致");
+        setSchemaLookupError("服务端返回的 字段定义 与本次精确查询不一致");
         return;
       }
       setSchemaLookup(found);
@@ -495,7 +497,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     const commandKey = createA4IdempotencyKey("a4-retention-run");
     openActionConfirm({
       action: <>立即执行终态事件保留清理</>,
-      detail: <>只删除已超过事件留存期的 analytics 终态 outbox（PUBLISHED / DEAD）与过期行为事实；PENDING / FAILED 投递、业务账本和非分析事件均不触及。执行结果会写 A2 required audit；同一命令号重试防重复提交。</>,
+      detail: <>仅清理超过保留期且已完成或已终止的分析事件，以及过期行为记录。待发送或发送失败的事件、业务账本和其他事件不变。操作会写入 A2 审计记录；重复提交同一请求不会重复清理。</>,
       amplifies: false,
       reasonMin: a2ReasonMin,
       reasonMax: 200,
@@ -505,7 +507,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           const result = await runA4RetentionNow(reason, commandKey);
           setRetentionRun(result);
           toast(result.lockAcquired
-            ? `事件保留清理完成：终态 outbox ${result.outboxRows}，行为事实 ${result.behaviorFactRows}`
+            ? `事件保留清理完成：已完成或已终止的待发送事件 ${result.outboxRows}，行为事实 ${result.behaviorFactRows}`
             : "已有事件保留清理在执行，本次未删除任何数据");
         } catch (error) {
           toast(`执行失败:${displayAdminError(error)}`);
@@ -536,7 +538,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     const eventId = redriveEventId.trim();
     if (!/^[A-Za-z0-9-]{8,64}$/.test(eventId)) {
       setRedrivePreview(null);
-      setRedrivePreviewError("请输入 8–64 位字母、数字或连字符组成的事件 ID");
+      setRedrivePreviewError("请输入 8–64 位字母、数字或连字符组成的事件编号");
       return;
     }
     const sequence = ++redrivePreviewSequence.current;
@@ -559,24 +561,24 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
 
   const redriveAuditedH3DeadEvent = () => {
     if (!canRedriveH3Dead) {
-      toast("重投原 H3 事实需要 A4 写权限和 A2 审计执行权限");
+      toast("重新发送原 H3 事实需要 A4 写权限和 A2 审计执行权限");
       return;
     }
     const snapshot = redrivePreview;
     if (!snapshot || snapshot.status !== "DEAD" || snapshot.deliveryStatus !== "DEAD" || snapshot.eventId !== redriveEventId.trim()) {
-      toast("请先核验当前事件，只有原事实和 h3-quest-completion 投递层均仍为 DEAD 的同一 H3 事实可重投");
+      toast("请先核验当前事件，只有原任务事件及其发送记录均仍已终止的同一事件可重新发送");
       return;
     }
     // The command key is selected in the confirmation callback, when the full
     // normalized request (including the audit reason) is available.
     openActionConfirm({
-      action: "重投审计 H3 DEAD 原事实",
+      action: "重新发送已终止的用户任务事件",
       detail: (
         <>
-          目标事件 ID <span className="acode">{snapshot.eventId}</span> · 类型 <span className="acode">{snapshot.eventType}</span> ·
-          原事实状态 <b>{snapshot.status}</b> · 已失败 {snapshot.retryCount} 次；h3-quest-completion 投递层状态 <b>{snapshot.deliveryStatus}</b> · 已尝试 {snapshot.deliveryAttemptCount} 次。
-          这里重投的是原 H3 事实，不是编辑或补造下游事件。服务端会同时锁定两层并以两个次数 CAS；仅在它仍是未删除的 <b>DEAD</b> 原事件、投递层也为 <b>DEAD</b>、类型仍属于这五项 H3 事实时，才将原事件改回 PENDING：
-          <span className="acode"> {H3_DEAD_REDRIVABLE_EVENT_TYPES.join(" / ")}</span>。不会传入或编辑 payload、source、时间、重试次数或错误内容。
+          目标事件编号 <span className="acode">{snapshot.eventId}</span> · 类型 <span className="acode">{snapshot.eventType}</span> ·
+          原事实状态 <b>{snapshot.status === "DEAD" ? "已终止" : "状态已变化"}</b> · 已失败 {snapshot.retryCount} 次；任务事件发送状态 <b>{snapshot.deliveryStatus === "DEAD" ? "已终止" : "状态已变化"}</b> · 已尝试 {snapshot.deliveryAttemptCount}  次。
+          这里重新发送的是原 H3 事实，不是编辑或补造下游事件。服务端会同时锁定两层并以失败与尝试次数检查，防止覆盖他人的修改；仅在它仍是未删除的 <b>已终止</b> 原事件、投递层也为 <b>已终止</b>、类型仍属于这五项 H3 事实时，才将原事件改回待发送：
+          <span className="acode"> {H3_DEAD_REDRIVABLE_EVENT_TYPES.join(" / ")}</span>。不会传入或编辑 事件内容、来源、时间、重试次数或错误内容。
         </>
       ),
       amplifies: false,
@@ -606,9 +608,9 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           setRedriveResult(result);
           redriveCommandRef.current = null;
           setRedriveCommand(null);
-          toast(`原 H3 事实已请求重投：${result.eventId} · ${result.eventType} · ${result.status}`);
+          toast(`原 H3 事实已请求重新发送：${result.eventId} · ${result.eventType} · ${result.status}`);
         } catch (error) {
-          toast(`原 H3 事实重投结果未确认：${displayAdminError(error)}；请核对当前状态后再操作。`);
+          toast(`原 H3 事实重新发送结果未确认：${displayAdminError(error)}；请核对当前状态后再操作。`);
           throw error;
         } finally {
           setMutating(null);
@@ -623,7 +625,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     const stableKey = createA4IdempotencyKey(`a4-lifecycle-${schema.eventName}`);
     openActionConfirm({
       action: `推进事件生命周期 · ${schema.eventName}`,
-      detail: <>服务端 CAS 校验 <b>{schema.lifecycleState} / v{schema.lifecycleVersion}</b> 后推进到 <b>{next}</b>；冲突或审计失败均不生效。</>,
+      detail: <>服务端 修改冲突检查 <b>{lifecycleText(schema.lifecycleState)} / v{schema.lifecycleVersion}</b> 后推进到 <b>{lifecycleText(next)}</b>；冲突或审计失败均不生效。</>,
       amplifies: false,
       reasonMin: 8,
       reasonMax: 200,
@@ -632,7 +634,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         try {
           await transitionA4Lifecycle(schema.eventName, next, schema.lifecycleState, schema.lifecycleVersion, reason, stableKey);
           await refreshOverview(true);
-          toast(`${schema.eventName} 已推进到 ${next} · 已回读服务端状态`);
+          toast(`${schema.eventName} 已推进到 ${lifecycleText(next)} · 已回读服务端状态`);
         } catch (error) {
           toast(`生命周期推进失败:${displayAdminError(error)}`);
           throw error;
@@ -658,7 +660,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     );
   }
   if (loading && !overview) {
-    return <section className="l-card"><div className="l-b"><div className="atint">正在核对 A4 事件事实源与 Schema Registry…</div></div></section>;
+    return <section className="l-card"><div className="l-b"><div className="atint">正在核对事件记录和字段登记表…</div></div></section>;
   }
 
   return (
@@ -677,18 +679,18 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       <A4OutboxDiagnostics canRead={canReadOutbox} />
       <section className="l-card" data-proof="a4-h3-dead-redrive">
         <div className="l-h">
-          <span className="ttl">审计 H3 DEAD 原事实恢复</span>
-          <span className="sub">· 每次只核验一个 ID；仅原事件与 h3-quest-completion 投递层均为 DEAD 才可恢复</span>
+          <span className="ttl">恢复已终止的用户任务事件</span>
+          <span className="sub">· 每次只核验一个编号；仅原事件及任务事件发送记录均已终止 才可恢复</span>
         </div>
         <div className="l-b">
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <label style={{ fontSize: 12, color: "var(--ink-3)" }}>
-              原事件 ID
+              原事件编号
               <input
                 value={redriveEventId}
                 onChange={(event) => resetRedriveTarget(event.target.value)}
-                placeholder="输入单个原 H3 事件 ID"
-                aria-label="原 H3 事件 ID"
+                placeholder="输入单个原 H3 事件编号"
+                aria-label="原 H3 事件编号"
                 style={{ marginLeft: 8, minWidth: 290 }}
                 disabled={!canRedriveH3Dead || !!mutating}
               />
@@ -697,20 +699,22 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
               {redrivePreviewing ? "核验中…" : "核验事件"}
             </button>
             <button className="l-btn sm mc" disabled={!canRedriveH3Dead || !!loadError || !!mutating || !redrivePreview || redrivePreview.status !== "DEAD" || redrivePreview.deliveryStatus !== "DEAD"} onClick={redriveAuditedH3DeadEvent}>
-              重投原 H3 事实
+
+              重新发送原 H3 事实
             </button>
           </div>
           <div className="atint" style={{ marginTop: 10 }}>
-            只读取两层状态、类型、失败次数和受控失败码；不提供 payload、source、用户或批量操作。服务端仅接受两层均为 DEAD 的五类 H3 原事实。
+            只读取两层状态、类型、失败次数和受控失败码；不提供 事件内容、来源或用户信息，也不支持批量操作。服务端仅接受原始记录与发送记录均已终止的五类任务事件。
           </div>
           {redrivePreviewError ? <div className="atint warn" style={{ marginTop: 8 }}>核验失败：{redrivePreviewError}</div> : null}
           {redrivePreview ? <div className="atint" style={{ marginTop: 8 }}>
-            已核验 · ID <span className="acode">{redrivePreview.eventId}</span> · 类型 <span className="acode">{redrivePreview.eventType}</span> ·
+            已核验 · 编号 <span className="acode">{redrivePreview.eventId}</span> · 类型 <span className="acode">{redrivePreview.eventType}</span> ·
             原事实状态 <b>{redrivePreview.status}</b> · 失败次数 {redrivePreview.retryCount} · 失败摘要 {redrivePreview.lastError ?? "—"} ·
-            h3-quest-completion 投递层 <b>{redrivePreview.deliveryStatus}</b> · 尝试次数 {redrivePreview.deliveryAttemptCount} · 失败摘要 {redrivePreview.deliveryLastError ?? "—"}
+            任务事件发送记录 <b>{redrivePreview.deliveryStatus}</b> · 尝试次数 {redrivePreview.deliveryAttemptCount} · 失败摘要 {redrivePreview.deliveryLastError ?? "—"}
           </div> : null}
           {redriveResult ? <div className="atint" style={{ marginTop: 8 }}>
-            已收到重投回执 · ID <span className="acode">{redriveResult.eventId}</span> · 类型 <span className="acode">{redriveResult.eventType}</span> ·
+
+            已收到重新发送结果 · 编号 <span className="acode">{redriveResult.eventId}</span> · 类型 <span className="acode">{redriveResult.eventType}</span> ·
             原事实状态 <b>{redriveResult.status}</b> · 投递层状态 <b>{redriveResult.deliveryStatus}</b>。如需再次操作，请重新核验当前状态。
           </div> : null}
         </div>
@@ -718,45 +722,45 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       {loading && !overview && (
         <section className="l-card">
           <div className="l-b">
-            <div className="atint" style={{ fontSize: 12 }}>正在读取 /api/admin/platform/events/overview。</div>
+            <div className="atint" style={{ fontSize: 12 }}>正在加载事件统计与登记信息。</div>
           </div>
         </section>
       )}
       {/* ───── 4 f-stat ───── */}
       <div className="f-stats">
         <div className="f-stat">
-          <div className="k">今日事件量（含 OTHER / UNREGISTERED）</div>
+          <div className="k">今日事件量（含其他及未登记类型）</div>
           <div className="v">{A4_STATS.todayEvents}</div>
-          <div className="sub">六类目录 + OTHER / UNREGISTERED，与下表今日量合计一致</div>
+          <div className="sub">包含六类已登记事件、其他及未登记类型，与下表今日总量一致</div>
         </div>
         <div className="f-stat cyan">
-          <div className="k">注册 domain</div>
+          <div className="k">已登记业务域</div>
           <div className="v">{A4_STATS.registeredDomains} + {A4_STATS.pendingDomains}</div>
           <div className="sub">V1 枚举 {A4_STATS.registeredDomains} · 扩展批次新增 {A4_STATS.pendingDomains}</div>
         </div>
         <div className="f-stat warn">
-          <div className="k">扩展工单(BI 上线前必办)</div>
+          <div className="k">业务域扩展工单（分析报表启用前须完成）</div>
           <div className="v">{batchDone} / {batchTotal} 批</div>
           <div className="sub">V3 批已落 · 内容批进行中</div>
         </div>
         <div className="f-stat">
-          <div className="k">schema registry</div>
+          <div className="k">事件字段登记表</div>
           <div className="v">{liveSchemaVer}</div>
-          <div className="sub">变更走超管操作确认注册</div>
+          <div className="sub">变更走超级管理员操作确认注册</div>
         </div>
       </div>
 
       {/* ───── 事件目录 × domain 注册表 ───── */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">事件目录 · {EVENT_FAMILIES.length} 个 family × domain 注册表</span>
-          <span className="sub">· 命名一律「域.对象_动作(过去式)」,事件 = 已发生的事实 · 点 family 看事件清单</span>
+          <span className="ttl">事件目录 · {EVENT_FAMILIES.length}  个 事件类别与业务域登记表</span>
+          <span className="sub">· 命名一律「域.对象_动作(过去式)」,事件 = 已发生的事实 · 点 事件类别 看事件清单</span>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 920 }}>
             <thead>
               <tr>
-                <th>family</th><th>口径作用</th><th>代表事件</th><th>服务器权威</th>
+                <th>事件类别</th><th>统计用途</th><th>代表事件</th><th>服务器确认</th>
                 <th className="num">今日量</th><th style={{ textAlign: "right" }}></th>
               </tr>
             </thead>
@@ -787,7 +791,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-            domain 枚举(V1 现行 {A4_STATS.registeredDomains} 个 + 扩展批次 {A4_STATS.pendingDomains} 个)
+
+            业务域列表(V1 现行 {A4_STATS.registeredDomains} 个 + 扩展批次 {A4_STATS.pendingDomains} 个)
           </div>
           <div style={{ marginBottom: 8 }}>
             {REGISTERED_DOMAINS.map((d) => (
@@ -798,8 +803,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
             ))}
           </div>
           <div className="atint cyan">
-            <b>身份怎么串起来</b> · 注册前用设备匿名 ID 打点(落地页就开始),注册完成事件同时带旧匿名 ID 和新用户 ID,
-            服务器做拼接——注册前的漏斗行为和渠道归因都能落到这个人头上。三件套:匿名 ID(注册前)/ 用户 ID(服务器权威)/ 会话 ID(单次会话)。
+            <b>身份怎么串起来</b>  · 注册前用设备匿名 ID 打点(落地页就开始),注册完成事件同时带旧匿名 ID 和新用户 ID,
+            服务器做拼接——注册前的漏斗行为和渠道归因都能落到这个人头上。三件套:匿名 ID(注册前)/ 用户 ID(服务器确认)/ 会话 ID(单次会话)。
           </div>
         </div>
       </section>
@@ -809,7 +814,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         {/* 通用字段 + 口径参数 */}
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">每个事件必带的字段 + 口径参数</span>
+            <span className="ttl">每个事件必带的字段 + 统计参数</span>
             <span className="sub">· 字段固定;参数调整走操作确认</span>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
@@ -829,14 +834,14 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
             {!COMMON_FIELDS.length && (
               <div className="atint warn" style={{ fontSize: 12 }}>后端暂无通用字段记录</div>
             )}
-            <div style={{ fontSize: 12, fontWeight: 600, margin: "10px 0 4px" }}>口径参数(锚定 12 月运营周期)</div>
+            <div style={{ fontSize: 12, fontWeight: 600, margin: "10px 0 4px" }}>统计参数(锚定 12 月运营周期)</div>
             {KPI_DIMENSION_PARAMS.map((p) => {
               if (p.locked) {
                 return (
                   <div className="a-vrow" key={p.key}>
                     <span className="nm">{p.name}<small>{p.sub}</small></span>
                     <span className="v">{p.value}</span>
-                    <span className="acode lock" title="§2.4.9 · 对齐 KPI #2">🔒</span>
+                    <span className="acode lock" title="§2.4.9 · 保持一致 关键指标 #2">🔒</span>
                   </div>
                 );
               }
@@ -850,7 +855,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
               return (
                 <div className="a-vrow" key={p.key}>
                   <span className="nm">{p.name}<small>{p.sub}{p.key === "event_retention" && (retentionRun
-                    ? ` · 最近执行:${retentionRun.evaluatedAt} · 锁:${retentionRun.lockAcquired ? "已取得" : "占用"} · outbox:${retentionRun.outboxRows} · 事实:${retentionRun.behaviorFactRows}`
+                    ? ` · 最近执行:${retentionRun.evaluatedAt} · 锁:${retentionRun.lockAcquired ? "已取得" : "占用"} · 事件发送状态：${retentionRun.outboxRows} · 事实:${retentionRun.behaviorFactRows}`
                     : retentionRunError ? ` · 最近状态读取失败:${retentionRunError}` : " · 暂无人工执行记录")}</small></span>
                   <span className="v">{live}</span>
                   <button className="l-btn sm mc" title={canWrite ? undefined : "当前账号只有读取权限"} disabled={!canWrite || !overview || !!loadError || !!mutating} onClick={onAdj}>调整</button>
@@ -864,7 +869,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         {/* 八项 KPI → 事件口径 */}
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">八项 KPI → 事件口径</span>
+            <span className="ttl">八项 关键指标 → 事件统计规则</span>
             <span className="sub">· 每个看板数字都能倒查到事件和算式</span>
             <div className="r">
               <Link className="l-btn sm" href="/analytics/kpi">关键指标(L1)→</Link>
@@ -873,7 +878,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           <div style={{ overflowX: "auto" }}>
             <table className="l-tbl" style={{ minWidth: 520 }}>
               <thead>
-                <tr><th>#</th><th>KPI</th><th>事件算式(大白话)</th></tr>
+                <tr><th>#</th><th>关键指标</th><th>事件算式(大白话)</th></tr>
               </thead>
               <tbody>
                 {KPI_FORMULAS.map((k) => (
@@ -887,7 +892,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
             </table>
           </div>
           <div className="l-b" style={{ paddingTop: 8 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>主漏斗(喂驾驶舱 B3 / 查看明细在 L2)</div>
+            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>主漏斗(喂运营总览 B3 / 查看明细在 L2)</div>
             <div className="a4-pipe">
               <span className="st hot">注册</span><span className="ar">→</span>
               <span className="st">绑卡验证</span><span className="ar">→</span>
@@ -906,7 +911,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">管道与治理</span>
-          <span className="sub">· 事件从产生到看板的全链路 · schema 注册归这页管</span>
+          <span className="sub">· 事件从产生到看板的全链路 · 字段定义 注册归这页管</span>
           <div className="r">
             <button className="l-btn sm mc" title={canWrite ? undefined : "当前账号只有读取权限"} disabled={!canWrite || !overview || !!loadError || !!mutating} onClick={registerSchema}>注册新事件 / 属性</button>
           </div>
@@ -915,12 +920,12 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           <div className="a4-pipe" style={{ marginBottom: 10 }}>
             <span className="st">
               产生
-              <small>资金/状态:服务器发 · 界面交互:端上 SDK 发</small>
+              <small>资金/状态:服务器发 · 界面交互:客户端发送</small>
             </span>
             <span className="ar">→</span>
             <span className="st">
               去重
-              <small>按 event_id</small>
+              <small>按事件编号</small>
             </span>
             <span className="ar">→</span>
             <span className="st hot">
@@ -930,23 +935,23 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
             <span className="ar">→</span>
             <span className="st">实时漏斗(B3)</span>
             <span className="ar">+</span>
-            <span className="st">BI(L 域)</span>
+            <span className="st">分析报表（L 域）</span>
             <span className="ar">+</span>
             <span className="st">风控(K)/ 对账(D)</span>
           </div>
           <div className="two-col" style={{ marginBottom: 0 }}>
             <div className="atint cyan">
-              <b>防篡改</b> · 资金和 KPI 口径只统计「服务器权威 = true」的事件——
+              <b>防篡改</b>  · 资金和 关键指标 统计规则只统计「服务器已确认」的事件——
               服务器在处理流程推进的那一刻发,端上伪造不出来;界面交互事件丢了重了都不影响资金账。
             </div>
             <div className="atint">
-              <b>schema 注册</b> · 新事件名、新属性必须先在这里注册(超管执行门槛:超管)才能开始发;
-              隐私明文(手机号/地址)进不了 schema。各域页面的「⑧ 埋点」段引用这里,不许私立命名。
+              <b>字段定义 注册</b>  · 新事件名、新属性必须先在这里注册(超级管理员执行门槛:超级管理员)才能开始发;
+              隐私明文(手机号/地址)进不了 字段定义。各域页面的「⑧ 埋点」段引用这里,不许私立命名。
             </div>
           </div>
-          <div style={{ fontSize: 12, fontWeight: 600, margin: "12px 0 5px" }}>真实 Schema Registry（最近 {SCHEMA_REGISTRATIONS.length} 条）</div>
+          <div style={{ fontSize: 12, fontWeight: 600, margin: "12px 0 5px" }}>真实 事件字段登记表（最近 {SCHEMA_REGISTRATIONS.length} 条）</div>
           <div className="atint" style={{ marginBottom: 10 }}>
-            <b>查询既有 Schema</b> · 最近列表不会替代完整注册表。输入一个已登记的精确事件名以核验其当前元数据；不会做模糊搜索、枚举或返回 payload。
+            <b>查询既有 字段定义</b> · 最近列表不会替代完整注册表。输入一个已登记的精确事件名以核验其当前元数据；不会做模糊搜索、枚举或返回事件内容。
             <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
               <input
                 aria-label="精确事件名"
@@ -956,20 +961,20 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                 style={{ minWidth: 260 }}
               />
               <button className="l-btn sm mc" disabled={!canRead || !!loadError || schemaLookupLoading} onClick={() => void lookupSchemaRegistration()}>
-                {schemaLookupLoading ? "核验中…" : "核验既有 schema"}
+                {schemaLookupLoading ? "核验中…" : "核验既有 字段定义"}
               </button>
               {schemaLookupError && <span className="bad">{schemaLookupError}</span>}
             </div>
             {schemaLookup && <div style={{ marginTop: 8 }}>
-              <span className="acode">{schemaLookup.eventName}</span> · 事件登记版本 <span className="acode">{schemaLookup.version}</span> ·
-              全局注册表 CAS 版本 <span className="acode">{liveSchemaVer}</span> · {schemaLookup.producer} → {schemaLookup.consumers || "未指定"} ·
+              <span className="acode">{schemaLookup.eventName}</span> · 事件登记版本 <span className="acode">{schemaLookup.version}</span>  ·
+              全局注册表 修改版本 <span className="acode">{liveSchemaVer}</span> · {schemaLookup.producer} → {schemaLookup.consumers || "未指定"} ·
               属性 <span className="acode">{schemaLookup.properties}</span>
               <button className="l-btn sm mc" style={{ marginLeft: 8 }} disabled={!canWrite || !!mutating || !!loadError} onClick={() => openSchemaPropertyExtension(schemaLookup)}>扩展属性</button>
             </div>}
           </div>
           <div style={{ overflowX: "auto" }}>
             <table className="l-tbl" style={{ minWidth: 1020 }}>
-              <thead><tr><th>事件</th><th>归属 / family</th><th>产 → 消</th><th>属性</th><th>权威 / 采样</th><th>版本</th><th>操作</th></tr></thead>
+              <thead><tr><th>事件</th><th>归属 / 事件类别</th><th>产 → 消</th><th>属性</th><th>权威 / 采样</th><th>版本</th><th>操作</th></tr></thead>
               <tbody>
                 {SCHEMA_REGISTRATIONS.map((schema) => (
                   <tr key={schema.eventName}>
@@ -991,7 +996,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       <section className="l-card" data-restored-capability="a4-event-lifecycle" aria-labelledby="a4-lifecycle-title">
         <div className="l-h">
           <span className="ttl" id="a4-lifecycle-title">事件发布生命周期</span>
-          <span className="sub">· 服务端权威状态 · 单向推进 · CAS + 防重复提交 + A4 审计</span>
+          <span className="sub">· 以服务器记录为准状态 · 按顺序处理 · 防覆盖修改检查 + 防重复提交 + A4 审计</span>
         </div>
         <div className="l-b">
           <table className="l-tbl">
@@ -999,8 +1004,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
             <tbody>{SCHEMA_REGISTRATIONS.map((schema) => {
               const next = ({ new: "pending_publish", pending_publish: "gray", gray: "full", full: "disabled" } as const)[schema.lifecycleState as "new" | "pending_publish" | "gray" | "full"];
               return <tr key={`lifecycle-${schema.eventName}`}>
-                <td className="mono">{schema.eventName}</td><td>{schema.lifecycleState}</td><td className="mono">v{schema.lifecycleVersion}</td>
-                <td style={{ textAlign: "right" }}>{next ? <button className="l-btn sm mc" disabled={!canWrite || !!mutating || !!loadError} onClick={() => transitionLifecycle(schema)}>推进到 {next}</button> : <span className="bdg dim">终态</span>}</td>
+                <td className="mono">{schema.eventName}</td><td>{lifecycleText(schema.lifecycleState)}</td><td className="mono">v{schema.lifecycleVersion}</td>
+                <td style={{ textAlign: "right" }}>{next ? <button className="l-btn sm mc" disabled={!canWrite || !!mutating || !!loadError} onClick={() => transitionLifecycle(schema)}>推进到 {lifecycleText(next)}</button> : <span className="bdg dim">终态</span>}</td>
               </tr>;
             })}</tbody>
           </table>
@@ -1010,8 +1015,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       {/* ───── domain 扩展批次看板 ───── */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">domain 扩展批次看板 · BI 上线前必办</span>
-          <span className="sub">· 扩展落地前,新类事件先进入待归属登记清单,落地后迁回各自 domain</span>
+          <span className="ttl">业务域扩展批次看板 ·分析报表启用前须完成</span>
+          <span className="sub">· 扩展落地前,新类事件先进入待归属登记清单,落地后迁回所属业务域</span>
           <div className="r">
             <button className="l-btn sm mc" title={canWrite ? undefined : "当前账号只有读取权限"} disabled={!canWrite || !overview || !!loadError || !!mutating} onClick={registerBatch}>登记扩展工单</button>
           </div>
@@ -1020,7 +1025,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           <table className="l-tbl" style={{ minWidth: 920 }}>
             <thead>
               <tr>
-                <th>批次</th><th>新增 domain / 事件</th><th>提出方</th>
+                <th>批次</th><th>新增业务域 / 事件</th><th>提出方</th>
                 <th>状态</th><th>归属影响</th><th style={{ textAlign: "right" }}></th>
               </tr>
             </thead>
@@ -1038,7 +1043,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                         ))
                       ) : (
                         <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
-                          全后台 admin.* 事件清单 ↔ registry 逐条对账
+                          将后台操作事件清单与登记表逐条核对
                         </span>
                       )}
                       {/* 🔴 zentao #202:列头写的是「新增 domain / 事件」,但此前只渲染 domain。
@@ -1071,32 +1076,32 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="atint warn">
-            <b>为什么是「必办」</b> · BI(L 域)切换到正式口径前,这四批必须清零——
-            否则内容/通知/披露/课程的事件仍停留在待归属登记清单,BI 一上线口径就带着归属债跑,
-            以后迁移要重算历史。待归属期间口径权威不受影响(算式不变,只是归类待迁移)。
+            <b>为什么是「必办」</b>  · 分析报表（L 域）切换到正式统计规则前,这四批必须清零——
+            否则内容/通知/披露/课程的事件仍停留在待归属登记清单,分析报表启用时就会存在尚未归类的数据,
+            以后迁移要重算历史。待归属期间统计规则权威不受影响(算式不变,只是归类待迁移)。
           </div>
         </div>
       </section>
 
       {/* ───── f-foot ───── */}
       <p className="f-foot">
-        <b>分工一句话</b>:这页定义「事件叫什么、带什么、归哪类」;审计中心(A2)负责 admin 类事件落库、理由留痕与高敏动态;
-        消费方是驾驶舱(B1–B5)、资金对账(D)、风控(K)、BI(L)和节奏归因(H1)。
-        <b> 动作分线</b>:schema 注册 / 变更 = 仅超管可执行;口径参数(窗口/留存/采样)= 超管操作确认;
-        扩展工单登记 = 提出域提交,这页注册并由超管执行。
+        <b>分工一句话</b>:这页定义「事件叫什么、带什么、归哪类」;审计中心(A2)负责后台操作事件保存记录、理由留痕与敏感动态;
+        使用方是运营总览(B1–B5)、资金对账(D)、风控(K)、分析报表（L）和节奏归因(H1)。
+        <b> 动作分线</b>:字段定义 注册 / 变更 = 仅超级管理员可执行;统计参数(窗口/留存/采样)= 超级管理员操作确认;
+        扩展工单登记 = 提出域提交,这页注册并由超级管理员执行。
       </p>
       {/* ───── family 事件清单 Drawer ───── */}
       {famIdx !== null && (() => {
               const f: A4EventFamily = EVENT_FAMILIES[famIdx];
         return (
           <Drawer
-            title={`family ${f.title} · 事件清单`}
+            title={`事件类别 ${f.title} · 事件清单`}
             sub={f.sub}
             onClose={() => setFamIdx(null)}
           >
             <div className="atint" style={{ marginBottom: 12 }}>
               命名规范:<span className="acode">域.对象_动作</span>(过去式);隐私明文禁入。
-              服务器权威:<b>{f.serverAuth}</b>。
+              服务器确认:<b>{f.serverAuth}</b>。
             </div>
             <table className="l-tbl">
               <thead>
@@ -1112,7 +1117,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
               </tbody>
             </table>
             <div className="atint" style={{ marginTop: 14 }}>
-              新增事件须先注册(超管操作确认)再开始发;各域页面「事件去向」段引用这里。
+
+              新增事件须先注册(超级管理员操作确认)再开始发;各域页面「事件去向」段引用这里。
             </div>
           </Drawer>
         );
@@ -1145,7 +1151,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
               </tbody>
             </table>
             <div className="atint" style={{ marginTop: 14 }}>
-              扩展登记走 schema 注册同一条确认路(超管操作确认);迁移时历史待归属事件批量改归属、口径不重算。
+
+              扩展登记走 字段定义 注册同一条确认路(超级管理员操作确认);迁移时历史待归属事件批量改归属、不重新计算历史数据。
             </div>
           </Drawer>
         );
@@ -1154,8 +1161,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       {/* ───── 登记 domain 扩展工单 · 多字段抽屉(domain / 事件名 / 产消方 各一格,不再一个框塞)───── */}
       {naBatch && (
         <Drawer
-          title="登记 domain 扩展工单"
-          sub="① domain 名 → ② 事件名(过去式) → ③ 生产方 → ④ 消费方 · 提交走超管操作确认"
+          title="登记 业务域扩展工单"
+          sub="① 业务域名称 → ② 事件名(过去式) → ③ 发送方 → ④ 使用方 · 提交走超级管理员操作确认"
           onClose={() => setNaBatch(false)}
           footer={
             <div style={{ display: "flex", gap: 8, padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
@@ -1168,12 +1175,12 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                   const domain = batchForm.domain.trim(), event = batchForm.event.trim();
                   const producer = batchForm.producer.trim(), consumer = batchForm.consumer.trim();
                   if (!canWrite) { toast("当前账号只有 A4 读取权限，不能登记扩展工单"); return; }
-                  if (!batchFormValid) { toast("拒绝:请填写合法 domain、过去式事件名、生产方和消费方"); return; }
+                  if (!batchFormValid) { toast("拒绝:请填写有效业务域名称、过去式事件名、发送方和使用方"); return; }
                   const stableKey = createA4IdempotencyKey("a4-domain-extension");
                   setNaBatch(false);
                   openActionConfirm({
-                    action: `登记 domain 扩展工单 · ${domain}`,
-                    detail: (<><b>{domain}</b> · 事件 <span className="acode">{event}</span> · 生产 {producer || "—"} → 消费 {consumer || "—"}。落地前进入待归属登记清单;超管执行,注册完成后归档。</>),
+                    action: `登记 业务域扩展工单 · ${domain}`,
+                    detail: (<><b>{domain}</b> · 事件 <span className="acode">{event}</span> · 生产 {producer || "—"} → 消费 {consumer || "—"}。落地前进入待归属登记清单;超级管理员执行,注册完成后归档。</>),
                     amplifies: false,
                     run: (reason) => {
                       setMutating("domain-extension");
@@ -1202,19 +1209,19 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
             const fst = { width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 13 };
             return (
               <div style={{ display: "grid", gap: 12 }}>
-                <label style={{ fontSize: 12, color: "var(--ink-3)" }}>domain 名 *
+                <label style={{ fontSize: 12, color: "var(--ink-3)" }}>业务域名称 *
                   <input value={batchForm.domain} onChange={(e) => setBatchForm({ ...batchForm, domain: e.target.value })} placeholder="如 referral" style={fst} />
                 </label>
                 <label style={{ fontSize: 12, color: "var(--ink-3)" }}>事件名(过去式)*
                   <input value={batchForm.event} onChange={(e) => setBatchForm({ ...batchForm, event: e.target.value })} placeholder="如 referral_bound" style={fst} />
                 </label>
-                <label style={{ fontSize: 12, color: "var(--ink-3)" }}>生产方(谁 emit)
+                <label style={{ fontSize: 12, color: "var(--ink-3)" }}>发送方(谁发送)
                   <input value={batchForm.producer} onChange={(e) => setBatchForm({ ...batchForm, producer: e.target.value })} placeholder="如 F 域结算服务" style={fst} />
                 </label>
-                <label style={{ fontSize: 12, color: "var(--ink-3)" }}>消费方(谁用)
+                <label style={{ fontSize: 12, color: "var(--ink-3)" }}>使用方(谁用)
                   <input value={batchForm.consumer} onChange={(e) => setBatchForm({ ...batchForm, consumer: e.target.value })} placeholder="如 B3 漏斗 / L2 留存" style={fst} />
                 </label>
-                <div className="atint">提交后走超管操作确认(填理由);注册为待归属记录,落地后迁回各自 domain。</div>
+                <div className="atint">提交后走超级管理员操作确认(填理由);注册为待归属记录,落地后迁回所属业务域。</div>
               </div>
             );
           })()}

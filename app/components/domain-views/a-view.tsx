@@ -33,10 +33,10 @@ const FOLD: Record<string, string> = { A1: "A1", A2: "A2", A3: "A3", A4: "A4", A
 
 const RO_COPY: Record<string, string> = {
   A1: "每点一个功能,服务器都会重新核对你有没有权限",
-  A2: "日志只能往里加 · 谁都改不了、也不能单独删,超级管理员也不行;唯一的移出路径是按保留期冷归档已超期行",
-  A3: "熔断开关、功能灰度都以服务器为准 · 改本地无效",
-  A4: "资金和 KPI 只认服务器正式发出的事件",
-  A9: "审批状态、操作权限和结果只认服务端真实数据",
+  A2: "操作记录不能修改或单独删除；到期记录须先完成归档，再从在线列表移出",
+  A3: "查看紧急停止开关与功能分批开放的当前设置",
+  A4: "资金和 关键指标 按服务器正式记录的事件统计",
+  A9: "审批状态、操作权限和结果以服务器记录为准",
 };
 
 export function ADomainView({ meta }: { meta: DomainViewMeta }) {
@@ -60,7 +60,7 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
         if (tab === "A1") {
           const overview = await fetchA1Overview();
           if (!cancelled) {
-            setLive(`有效超管 ${overview.stats?.effectiveSupers ?? 0} · 启用账号 ${overview.stats?.activeAccounts ?? 0}`);
+            setLive(`有效超级管理员 ${overview.stats?.effectiveSupers ?? 0} · 启用账号 ${overview.stats?.activeAccounts ?? 0}`);
           }
           return;
         }
@@ -79,7 +79,7 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
           return;
         }
         if (tab === "A9") {
-          if (!cancelled) setLive("服务端审批列表 · 处理流程/CAS");
+          if (!cancelled) setLive("审批列表 · 提交时检查状态是否已变化");
           return;
         }
         const overview = await fetchA4Overview();

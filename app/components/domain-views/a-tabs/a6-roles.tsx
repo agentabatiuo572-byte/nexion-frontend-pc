@@ -122,7 +122,7 @@ export default function A6Roles() {
     <div className="dkpage adom">
       <DomainHeader domainCode="A" domainName="平台基础" accentVar="--admin-domain-a"
         l2Id="A6" l2Name="角色管理"
-        summary="数据库角色授权唯一真源：权限码控制操作权，菜单绑定控制侧栏、路由守卫与命令面板可见性。HIGH 变更统一进入 A2 待确认队列。"
+        summary="为角色分配可执行的操作与可见菜单。敏感变更提交后，须到 A2 操作记录与审批页面确认才会生效。"
         right={canWrite ? <Btn variant="primary" sm onClick={() => setFormMode({ kind: "create" })}>+ 新建角色</Btn> : <Badge tone="neutral">只读</Badge>} />
 
       <div className="two-col" style={{ alignItems: "flex-start" }}>
@@ -172,7 +172,7 @@ export default function A6Roles() {
             <div style={{ padding: 24, color: "var(--ink-3)", textAlign: "center" }}>选择一个角色查看详情</div>
           ) : (
             <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-              <Row label="角色 code"><span className="mono">{detail.roleCode}</span></Row>
+              <Row label="角色标识"><span className="mono">{detail.roleCode}</span></Row>
               <Row label="名称">{detail.roleName}</Row>
               {ROLE_DESC[detail.roleCode] && <Row label="职责说明">{ROLE_DESC[detail.roleCode].desc}（可访问:{ROLE_DESC[detail.roleCode].scope}）</Row>}
               <Row label="备注">{detail.remark || "—"}</Row>
@@ -273,7 +273,7 @@ export default function A6Roles() {
             setConfirmReq({
                action: `改角色授权 · ${detail.roleName}`,
                completionCopy: "本次只创建 A2 待确认票；确认执行后才同步角色白名单并失效权限缓存。",
-               detail: <>改角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）的权限/菜单绑定。权限 {permBefore}→{payload.permissionCodes.length} · 菜单 {menuBefore}→{payload.menuIds.length}。该 HIGH 操作只提交 A2 待确认票，具备执行权限的操作者确认后才由服务器同步白名单并失效缓存。</>,
+               detail: <>改角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）的权限/菜单绑定。权限 {permBefore}→{payload.permissionCodes.length} · 菜单 {menuBefore}→{payload.menuIds.length}。该 敏感操作只提交 A2 待确认票，具备执行权限的操作者确认后才由服务器同步白名单并更新缓存。</>,
                run: async (reason) => {
                  try {
                    const ticket = await proposeA6RoleGrants(detail.id, payload, reason, operator, stableKey);
@@ -326,7 +326,7 @@ function RoleFormDrawer({ mode, detail, onClose, onSubmit }: {
     } else {
       onSubmit(buildRoleMetadataPayload(roleName, remark),
         `编辑角色 · ${roleName}`,
-        <>编辑角色 <b>{roleName}</b>（<span className="mono">{detail?.roleCode}</span>,code 不可改）。本表单只保存名称与备注；启用/停用使用详情页独立确认动作。</>);
+        <>编辑角色 <b>{roleName}</b>（<span className="mono">{detail?.roleCode}</span>,标识不可修改）。本表单只保存名称与备注；启用/停用使用详情页独立确认动作。</>);
     }
   };
 
@@ -334,7 +334,7 @@ function RoleFormDrawer({ mode, detail, onClose, onSubmit }: {
     <Drawer title={isCreate ? "新建角色" : `编辑 · ${detail?.roleName}`} sub={isCreate ? undefined : detail?.roleCode} onClose={onClose}
       footer={<Btn variant="primary" onClick={submit}>{isCreate ? "提交（需确认）" : "保存（需确认）"}</Btn>}>
       <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 16 }}>
-        <div><div style={labelStyle}>角色 code {isCreate ? "" : "（不可改,内置码保留）"}</div>
+        <div><div style={labelStyle}>角色标识 {isCreate ? "" : "（不可改,内置码保留）"}</div>
           <input style={fieldStyle} value={roleCode} onChange={(e) => setRoleCode(e.target.value)} disabled={!isCreate} placeholder="如 CONTENT_EDITOR" /></div>
         <div><div style={labelStyle}>名称</div>
           <input style={fieldStyle} value={roleName} onChange={(e) => setRoleName(e.target.value)} placeholder="如 内容编辑员" /></div>
@@ -462,7 +462,7 @@ function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubmit }: {
             权限授权（操作权）<span className="mono" style={{ fontSize: 11, color: "var(--ink-4)", fontWeight: 400 }}>· 左侧选业务域,右侧编辑该域页面权限;内容超出滚动</span>
           </div>
           <div style={{ padding: 10, borderBottom: "1px solid var(--border)" }}>
-            <input aria-label="权限搜索" placeholder="搜索权限码 / 中文名 / 页面(如 staking、g1、提现) — 跨域定位,自动跳到命中域"
+            <input aria-label="权限搜索" placeholder="搜索权限码 / 中文名 / 页面(如质押、G1、提现) — 跨域定位,自动跳到命中域"
               value={permQuery} onChange={(e) => setPermQuery(e.target.value)}
               style={{ width: "100%", padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border-strong)", borderRadius: 8, color: "var(--ink)" }} />
           </div>
@@ -529,7 +529,7 @@ function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubmit }: {
                                 <label key={pp.permissionCode} title={pp.permissionCode} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px", borderRadius: 6, cursor: "pointer", fontSize: 12, background: on ? "var(--surface-2)" : "transparent" }}>
                                   <input type="checkbox" checked={on} onChange={() => togglePerm(pp.permissionCode)} />
                                   <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pp.permissionName || pp.permissionCode}</span>
-                                  <Badge tone={tone}>{pp.permType}</Badge>
+                                  <Badge tone={tone}>{({ HIGH: "敏感操作", WRITE: "修改", READ: "查询" } as Record<string,string>)[pp.permType] ?? "未知权限类型"}</Badge>
                                   {pp.amplifies === 1 && <span title="放大资金流出" style={{ color: "var(--danger)", fontSize: 12 }}>⚠</span>}
                                 </label>
                               );

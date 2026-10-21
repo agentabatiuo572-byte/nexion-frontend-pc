@@ -38,7 +38,7 @@ function rowValueLabel(row: A5RegistryRow): string {
       ? "实时采样 · 当前不可用"
       : `实时采样${row.observedAt ? ` · 观测于 ${row.observedAt}` : ""}`;
   }
-  if (row.stale) return "历史快照 · 已过期";
+  if (row.stale) return "历史记录 · 已过期";
   return rowValueEffective(row) ? "当前服务端值" : "当前服务端值 · 未生效";
 }
 
@@ -165,7 +165,7 @@ export function PlatformParamsRegistry() {
           )}
 
           {overview.rows.length === 0 ? (
-            <StateCard title="尚未登记服务端参数" detail="当前没有启用中的服务端参数；本页不会用前端常量或文档占位值补齐。" onRetry={load} />
+            <StateCard title="尚未登记服务端参数" detail="当前没有启用中的平台参数。" onRetry={load} />
           ) : (
             <>
               <div className="mb-4 grid gap-2 sm:grid-cols-[minmax(240px,1fr)_220px_auto]">
@@ -259,7 +259,7 @@ function DomainSection({ domain, rows }: { domain: string; rows: A5RegistryRow[]
               {row.canonicalKey === "E.compute.h5BaseFactor"
                 ? <span>已退役 · 只读</span>
                 : row.stale
-                ? <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-warning-soft)", color: "var(--v5-warning)" }}>历史快照 · 已过期</span>
+                ? <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-warning-soft)", color: "var(--v5-warning)" }}>历史记录 · 已过期</span>
                 : rowValueEffective(row)
                   ? <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-success-soft)", color: "var(--v5-success)" }}>{row.live ? "实时权威" : "服务端权威"}</span>
                   : <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-warning-soft)", color: "var(--v5-warning)" }}>已存储 · 未生效</span>}

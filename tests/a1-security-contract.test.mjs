@@ -95,7 +95,7 @@ test("role changes fail closed when the A6 permission difference cannot be loade
 test("A1 prevents impossible MFA reset and effective-super reduction in the UI", () => {
   const page = read("app/components/domain-views/a-tabs/a1-accounts.tsx");
 
-  assert.match(page, /!op\.tfa\)\s*return\s*"该账号尚未绑定双因子/);
+  assert.match(page, /!op\.tfa\)\s*return\s*"该账号尚未绑定两步验证/);
   assert.match(page, /effectiveSupers\s*<=\s*2/);
   assert.match(page, /reset2faBlockReason\(op\)/);
   assert.match(page, /disableAccountBlockReason\(op\)/);
