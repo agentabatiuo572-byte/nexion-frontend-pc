@@ -57,7 +57,7 @@ export function J3HeaderActions({ ctx }: { ctx: JCtx }) {
       try {
         downloadJ3ReportFile(retryableReport);
         setPendingReport(null);
-        toast(`已重新下载 ${retryableReport.window} 脱敏报表 · 未重复生成报表或审计`);
+        toast(`已重新下载 ${retryableReport.window} 隐藏敏感信息的报表 · 未重复生成报表或审计`);
       } catch (error) {
         toast(`报表已生成并写审计，但浏览器下载仍失败；可继续重试本地下载，或放弃本次报表后重新生成 · ${j3ErrorText(error)}`);
       } finally {
@@ -87,7 +87,7 @@ export function J3HeaderActions({ ctx }: { ctx: JCtx }) {
     try {
       downloadJ3ReportFile(report);
       setPendingReport(null);
-      toast(`已导出 ${report.window} 脱敏报表 · ${report.eventCount} 起拦截 · 已写审计`);
+      toast(`已导出 ${report.window} 隐藏敏感信息的报表 · ${report.eventCount} 起拦截 · 已写审计`);
     } catch (error) {
       toast(`报表已生成并写审计，但浏览器下载失败；可重试本地下载，或放弃本次报表后重新生成 · ${j3ErrorText(error)}`);
     } finally {
@@ -98,7 +98,7 @@ export function J3HeaderActions({ ctx }: { ctx: JCtx }) {
     <>
       {canExport && (
         <>
-          <button className="f-cta neutral" disabled={exporting || (!hasData && !retryableReport)} onClick={() => void downloadReport()} title={retryableReport ? "仅重试下载已生成的报表，不会再次请求服务器" : !hasData ? "当前筛选结果为空，不能导出" : `导出 ${window} 脱敏报表`}>
+          <button className="f-cta neutral" disabled={exporting || (!hasData && !retryableReport)} onClick={() => void downloadReport()} title={retryableReport ? "仅重试下载已生成的报表，不会再次请求服务器" : !hasData ? "当前筛选结果为空，不能导出" : `导出 ${window} 隐藏敏感信息的报表`}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
             {exporting ? (retryableReport ? "下载中…" : "生成中…") : retryableReport ? `重试下载 ${window} 报表` : `导出 ${window} 报表`}
           </button>
@@ -180,7 +180,7 @@ function J3ConfigModal({ ctx, onClose }: { ctx: JCtx; onClose: () => void }) {
       <div className="tint tiny" style={{ margin: "10px 0" }}>
         影响预览：阈值 {current.threshold} → <b>{threshold}</b>，告警将{direction}；按服务器近 7 天分布估算，告警账户 {sevenDayAlertAccounts} → <b>{previewAvailable ? `${targetSevenDayAccounts} 个` : "预览不可用"}</b>；K4 {current.feedK4 ? "开启" : "关闭"} → <b>{feedK4 ? "开启" : "关闭"}</b>。
         {!previewAvailable && <span style={{ color: "var(--danger)" }}> 服务器未返回该阈值的完整影响预览，当前禁止提交。</span>}
-        {!feedK4 && <span style={{ color: "var(--danger)" }}> 关闭后，新产生的篡改事件不再写入 K4 分值与贡献；B5 仍会接收服务器权威篡改信号。</span>}
+        {!feedK4 && <span style={{ color: "var(--danger)" }}> 关闭后，新产生的篡改事件不再写入 K4 分值与贡献；B5 仍会接收服务器确认篡改信号。</span>}
       </div>
       <label className="field"><span>变更理由（8–200 字）</span><textarea value={reason} maxLength={200} rows={4} onChange={(event) => setReason(event.target.value)} style={inputStyle} /><span className="muted tiny">{reasonLength}/200</span></label>
     </Modal>
@@ -300,9 +300,9 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
         <span className="sep">·</span>
         <div className="it"><span className={TAMPER_ACCTS.length === 0 ? "led dim" : b5Count ? "led" : "led warn"} /><AutoGloss>B5 风险提醒</AutoGloss> · <span style={{ color: "var(--ink-3)" }}>{TAMPER_ACCTS.length === 0 ? "本页暂无高频账户" : `${b5Count}/${TAMPER_ACCTS.length} 个本页账户已确认触发`}</span></div>
         <span className="sep">·</span>
-        <div className="it"><span className="led" /><b>脱敏报表</b> · <span style={{ color: "var(--ink-3)" }}>按当前 {win} 筛选导出</span></div>
+        <div className="it"><span className="led" /><b>隐藏敏感信息的报表</b> · <span style={{ color: "var(--ink-3)" }}>按当前 {win} 筛选导出</span></div>
         <span className="sep" style={{ marginLeft: "auto" }}>·</span>
-        <div className="it"><span style={{ color: "var(--ink-4)", fontSize: 11.5 }}>数据来源 · </span><b>服务器拦截事件流</b></div>
+        <div className="it"><span style={{ color: "var(--ink-4)", fontSize: 11.5 }}>数据来源 · </span><b>服务器拦截业务记录</b></div>
       </div>
 
       {/* 趋势 */}
@@ -390,7 +390,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
               <button type="button" disabled={accountLoading || !accountPager.hasPrev} onClick={() => loadAccountPage(accountPager.page - 1)}>上一页</button>
               <button type="button" disabled={accountLoading || !accountPager.hasNext} onClick={() => loadAccountPage(accountPager.page + 1)}>下一页</button>
             </div>
-            <CodeTag tone="electric">A2 审计</CodeTag><CodeTag>服务器拦截事件流</CodeTag>
+            <CodeTag tone="electric">A2 审计</CodeTag><CodeTag>服务器拦截业务记录</CodeTag>
           </div>
         </div>
         <div className="accts-tblwrap"><div className="accts-tbl">
@@ -405,7 +405,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
               <div className="rw" key={a.userCode}>
                 <div className="c uid">{a.userCode}</div>
                 <div className="c cnt">{a.cnt}</div>
-                <div className="c"><span className={"badge-k4 " + k4Cls}>{a.fedToK4 ? `K4 ${a.k4}` : "K4 未喂送"} · {a.b5Triggered ? "B5 已触发" : "B5 未触发"}</span></div>
+                <div className="c"><span className={"badge-k4 " + k4Cls}>{a.fedToK4 ? `K4 ${a.k4}` : "K4 未同步"} · {a.b5Triggered ? "B5 已触发" : "B5 未触发"}</span></div>
                 <div className="c"><div className="paths">{a.paths.map((p) => <span key={p} className="p">{p}</span>)}</div></div>
                 <div className="c last">{a.last}</div>
                 <div className="c">{a.cluster ? <span className="badge-cluster" title="K1 关联账户组">{a.cluster}</span> : <span style={{ color: "var(--ink-4)", fontFamily: "var(--mono)", fontSize: 11 }}>—</span>}</div>
@@ -424,7 +424,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
         </div></div>
       </section>
 
-      <p className="f-foot"><b>所有计数来自服务器权威拦截事件</b>：<AutoGloss>本页只展示已经被业务端点拒绝并成功写入事件流的尝试；K4 / B5 状态只按服务端返回结果显示，不把“配置开启”当成“已经喂送”。本页</AutoGloss><b>不直接处置账户</b>，<AutoGloss>实际冻结 / 建档要到账户处置页或风控批量页去做。</AutoGloss></p>
+      <p className="f-foot"><b>所有计数来自服务器确认拦截事件</b>：<AutoGloss>本页只展示已经被业务接口拒绝并成功写入业务记录的尝试；K4 / B5 状态只按服务端返回结果显示，不把“配置开启”当成“已经同步”。本页</AutoGloss><b>不直接处置账户</b>，<AutoGloss>实际冻结 / 建档要到账户处置页或风控批量页去做。</AutoGloss></p>
     </div>
   );
 }

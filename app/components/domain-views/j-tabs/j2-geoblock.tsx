@@ -108,7 +108,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       if (isEmergencyOutcomeUncertain(error)) {
         try {
           await actions.reloadJEmergency();
-          toast(`执行结果待确认 · 已重新读取服务端权威状态，请以当前页面和审计记录为准。${error instanceof Error ? ` ${error.message}` : ""}`);
+          toast(`执行结果待确认 · 已重新读取最新状态，请以当前页面和审计记录为准。${error instanceof Error ? ` ${error.message}` : ""}`);
         } catch {
           toast("执行结果待确认 · 当前也无法重新读取权威状态，请勿连续提交；请恢复网络后刷新页面并核对审计记录。");
         }
@@ -135,12 +135,12 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     openActionConfirm({
     action: target === "blocked" ? "编辑全局封禁名单" : "编辑受限名单",
     detail: target === "blocked"
-      ? <>提交的是<b>完整封禁名单</b>，页面会展示新增和移除差异。新增国家会立即停止其注册、登录和资金操作；<b>解除全局封禁不会清除功能入口的单独封锁，最终可用能力以入口策略及其他业务闸为准。</b></>
-      : <>提交的是<b>完整受限名单</b>，页面会展示新增和移除差异。名单中的用户仍可登录和浏览，但资金变更入口会被拒绝；<b>解除全局受限不会清除功能入口的单独封锁，最终可用能力以入口策略及其他业务闸为准。</b>已封禁国家不能直接降级为受限。</>,
+      ? <>提交的是<b>完整封禁名单</b>，页面会展示新增和移除差异。新增国家会立即停止其注册、登录和资金操作；<b>解除全局封禁不会清除功能入口的单独封锁，最终可用能力以入口策略及其他业务开关为准。</b></>
+      : <>提交的是<b>完整受限名单</b>，页面会展示新增和移除差异。名单中的用户仍可登录和浏览，但资金变更入口会被拒绝；<b>解除全局受限不会清除功能入口的单独封锁，最终可用能力以入口策略及其他业务开关为准。</b>已封禁国家不能直接降级为受限。</>,
     businessForm: {
       kind: "multi-field",
       title: target === "blocked" ? "全局封禁名单" : "受限名单",
-      hint: `当前名单影响 ${impactUsers} 位活跃用户、钱包余额 ${impactWallet.toLocaleString()} USDT；本次移除对象会在差异区列出，移除只解除本名单，不会清除入口单独策略或其他业务闸。提交时会校验页面初始快照，若已被其他管理员修改则整单拒绝。`,
+      hint: `当前名单影响 ${impactUsers} 位活跃用户、钱包余额 ${impactWallet.toLocaleString()} USDT；本次移除对象会在差异区列出，移除只解除本名单，不会清除入口单独策略或其他业务开关。提交时会校验打开页面时的设置，若已被其他管理员修改则整单拒绝。`,
       reasonMax: 200,
       fields: [
         {
@@ -235,7 +235,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     return openActionConfirm({
     action: "切换边缘地区判定源",
     detail: <>当前使用“{currentEdgeSourceLabel}”，健康状态为“{health}”。只允许选择最近 5 分钟至少有 20 个可信请求头样本的边缘网络；{edgeFallbackAvailable
-      ? "切换后旧源继续兜底 5 分钟，请持续观察解析状态。"
+      ? "切换后旧源继续备用 5 分钟，请持续观察解析状态。"
       : "当前源不可用，不具备回退能力；所选健康判定源切换后立即生效，请持续观察解析状态。"}</>,
     edit: { kind: "select", current: edgeSwitchCandidates[0]?.value ?? "", options: edgeSwitchCandidates.map((source) => source.value), optionLabels: edgeSourceLabels },
     run: (reason, newValue) => runBackend(
@@ -348,7 +348,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         </section>
 
         <section className="edge-card">
-          <div className="edge-h"><span className="ic" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg></span><div><div className="t">边缘 IP 判定</div><div className="s">· 按访问 IP 判定地区</div></div></div>
+          <div className="edge-h"><span className="ic" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg></span><div><div className="t">按访问 IP 判断地区</div><div className="s">· 按访问 IP 判定地区</div></div></div>
           <div className="edge-body">
             <div className="edge-kv"><span className="k">判定源</span><span className={`v ${edgeSourceKnown ? "" : "danger"}`} style={{ display: "flex", alignItems: "center", gap: 8 }}>{currentEdgeSourceLabel}{canEdge && edgeSwitchCandidates.length > 0 && <button onClick={switchJudge}>切换</button>}</span></div>
             {canEdge && edgeSwitchCandidates.length === 0 && <div className="tiny muted">暂无满足最近 5 分钟 20 个可信样本门槛的备用判定源</div>}

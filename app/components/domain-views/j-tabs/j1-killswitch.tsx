@@ -22,7 +22,7 @@ const AUTO_CONFIRM_DECISIONS = ["", "keep_disabled", "recommend_restore"];
 const AUTO_CONFIRM_DECISION_LABELS = {
   "": "请选择复核结论",
   keep_disabled: "维持关停",
-  recommend_restore: "建议超管评估恢复",
+  recommend_restore: "建议超级管理员评估恢复",
 };
 
 export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
@@ -59,10 +59,10 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const toggleSel = (key: string) => setSel((s) => ({ ...s, [key]: !s[key] }));
 
   if (contentLoading && !data) {
-    return <section className="matrix-card"><div className="matrix-h"><span className="ttl">J1 状态同步中</span><span className="sub">· 正在确认各业务闸的最新状态</span></div></section>;
+    return <section className="matrix-card"><div className="matrix-h"><span className="ttl">J1 状态同步中</span><span className="sub">· 正在确认各业务开关的最新状态</span></div></section>;
   }
   if (!data) {
-    return <section className="matrix-card" data-module-health-state="error"><div className="matrix-h"><span className="ttl">当前无法确认业务闸状态</span><span className="sub">· 为避免误操作，控制项已隐藏，请刷新后重试</span></div></section>;
+    return <section className="matrix-card" data-module-health-state="error"><div className="matrix-h"><span className="ttl">当前无法确认业务开关状态</span><span className="sub">· 为避免误操作，控制项已隐藏，请刷新后重试</span></div></section>;
   }
 
   const runBackend = async (task: Promise<void>, ok: string) => {
@@ -99,7 +99,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const killGate = (g: Gate) => {
     const commandKey = createJEmergencyCommandKey();
     openActionConfirm({
-    action: `关停业务闸 · ${g.name}`,
+    action: `关停业务开关 · ${g.name}`,
     detail: (
       <><b>{g.name}</b>控制{g.cap}。确认后服务器立即拒绝对应业务请求，并记录操作人、理由、变更前后状态和时间。关停不会增加资金流出，不需要先检查备付金。</>
     ),
@@ -125,7 +125,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const resumeGate = (g: Gate) => {
     const commandKey = createJEmergencyCommandKey();
     openActionConfirm({
-    action: `恢复业务闸 · ${g.name}`,
+    action: `恢复业务开关 · ${g.name}`,
     amplifies: g.amplifies,
     coverage: g.coveragePrecheckRequired && coverageReady
       ? { coverageRatio: COV, redlinePct: RED, healthyPct: YELLOW }
@@ -144,12 +144,12 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const launchBatch = () => {
     // #28:用运营勾选的在线闸作为批量关停目标(替代旧固定「立即出钱」闸);未选任何闸禁止确认。
     const targets = gates.filter((g) => sel[g.key] && effOn(g));
-    if (!targets.length) { toast("请先在上方闸卡勾选要批量关停的在线功能闸(至少一个)"); return; }
+    if (!targets.length) { toast("请先在上方业务开关卡片勾选要批量关停的在线功能开关(至少一个)"); return; }
     const commandKey = createJEmergencyCommandKey();
     openActionConfirm({
-      action: "应急批量熔断 · 监管点名场景",
+      action: "应急批量停用 · 监管点名场景",
       detail: (
-        <>一次性立即关停<b>已选 {targets.length} 闸</b>，用于监管点名、法务事件等重大场景。确认后服务器同步关停并逐闸记录应急审计。<b>已选业务闸：{targets.map((g) => g.name).join(" / ")}</b>。</>
+        <>一次性立即关停<b>已选 {targets.length} 项业务</b>，用于监管点名、法务事件等重大场景。确认后服务器同步关停并逐项记录应急审计。<b>已选业务开关：{targets.map((g) => g.name).join(" / ")}</b>。</>
       ),
       businessForm: {
         kind: "multi-field",
@@ -169,7 +169,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           triggerBasis: businessValue?.triggerBasis ?? "",
           regulatoryContext: businessValue?.regulatoryContext ?? "",
           dispositionPlan: businessValue?.dispositionPlan,
-        }, commandKey), `已立即关停 ${targets.length} 个业务闸`)
+        }, commandKey), `已立即关停 ${targets.length} 个业务开关`)
           .then(() => setSel({}));
       },
     });
@@ -181,7 +181,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     const commandKey = createJEmergencyCommandKey();
     openActionConfirm({
       action: `应急参数调整 · ${row.k}`,
-      detail: <><b>{row.k}</b> · {row.d}。自动关停即时生效，补录只补全审计信息，不会自动恢复业务闸。</>,
+      detail: <><b>{row.k}</b> · {row.d}。自动关停即时生效，补录只补全审计信息，不会自动恢复业务开关。</>,
       edit: { kind: row.kind, current: cur, unit: row.unit, min: row.id === "autoConfirmMins" ? 10 : undefined, max: row.id === "autoConfirmMins" ? 120 : undefined, step: 1, disallowCurrent: true },
       run: (reason, newValue) => {
         return runBackend(actions.updateJ1Sla(row.id, newValue ?? cur, cur, reason, commandKey), `${row.k} 已调整`);
@@ -194,7 +194,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     const commandKey = createJEmergencyCommandKey();
     openActionConfirm({
       action: `自动触发规则调整 · ${r.nm}`,
-      detail: <><b>{r.nm}</b>当前阈值为 {cur} {r.unit}。保存后服务器定时读取真实业务指标；超过阈值时自动关停对应业务闸并写入审计记录。</>,
+      detail: <><b>{r.nm}</b>当前阈值为 {cur} {r.unit}。保存后服务器定时读取真实业务指标；超过阈值时自动关停对应业务开关并写入审计记录。</>,
       edit: { kind: "number", current: cur, unit: r.unit, min: 1, max: 1_000_000_000, step: 1, disallowCurrent: true },
       run: (reason, newValue) => {
         return runBackend(actions.updateJ1AutoRule(r.id, newValue ?? cur, cur, reason, commandKey), `${r.nm} 已确认生效`);
@@ -206,7 +206,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     const commandKey = createJEmergencyCommandKey();
     openActionConfirm({
     action: `补录自动关停结论 · ${row.name}`,
-    detail: <><b>{row.name}</b>由 {autoRuleDisplayName(row.ruleId)} 自动关停，触发值 {row.signalValue}，阈值 {row.threshold}。本操作只补全处置结论，不会自动恢复业务；如建议恢复，仍需超管单独发起恢复并通过备付金检查。</>,
+    detail: <><b>{row.name}</b>由 {autoRuleDisplayName(row.ruleId)} 自动关停，触发值 {row.signalValue}，阈值 {row.threshold}。本操作只补全处置结论，不会自动恢复业务；如建议恢复，仍需超级管理员单独发起恢复并通过备付金检查。</>,
     businessForm: {
       kind: "multi-field",
       title: "自动关停复核",
@@ -251,7 +251,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           data-proof="j1-backfill-overdue-banner"
         >
           <b>{overdueBackfills.length} 项自动关停结论已逾期未补录</b> ——
-          闸已止血,但处置理由仍空缺;逾期事项不会自行消失,请值班人员立即补录,或上报值班主管接手。
+          相关业务已停止,但处置理由仍空缺;逾期事项不会自行消失,请值班人员立即补录,或上报值班主管接手。
           {overdueBackfills.slice(0, 3).map((row) => (
             <span key={row.incidentId} style={{ marginLeft: 8 }}>
               · {row.name}(截止 {row.dueAt.replace("T", " ").slice(0, 16)})
@@ -263,9 +263,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
       {/* stat strip */}
       <div className="f-stats">
-        <div className="f-stat ok"><div className="k">在线功能闸</div><div className="v">{live} / {gates.length}</div><div className="sub">{killed === 0 ? "全闸正常营业" : "部分业务已关停"}</div></div>
-        <div className="f-stat warn"><div className="k">应急关停闸</div><div className="v">{emergencyGateCount}</div><div className="sub">自动或批量应急关停</div></div>
-        <div className="f-stat danger"><div className="k">已关停闸</div><div className="v">{killed}</div><div className="sub">备付金已阻断恢复 {coverageBlockedCount} 次</div></div>
+        <div className="f-stat ok"><div className="k">在线功能开关</div><div className="v">{live} / {gates.length}</div><div className="sub">{killed === 0 ? "全部业务正常开放" : "部分业务已关停"}</div></div>
+        <div className="f-stat warn"><div className="k">应急关停业务</div><div className="v">{emergencyGateCount}</div><div className="sub">自动或批量应急关停</div></div>
+        <div className="f-stat danger"><div className="k">已关停业务</div><div className="v">{killed}</div><div className="sub">备付金已阻断恢复 {coverageBlockedCount} 次</div></div>
         <div className="f-stat cyan"><div className="k">备付金覆盖率</div><div className="v">{coverageText(COV)}</div><div className="sub">红线 {coverageText(RED)} · {coverageGapText}</div></div>
       </div>
 
@@ -289,13 +289,13 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       {/* 矩阵主表 */}
       <section className="matrix-card">
         <div className="matrix-h">
-          <span className="ttl"><AutoGloss>{`功能开关总表 · ${gates.length} 个业务闸`}</AutoGloss></span>
+          <span className="ttl"><AutoGloss>{`功能开关总表 · ${gates.length} 个业务开关`}</AutoGloss></span>
           <span className="sub">· 状态以服务器为准</span>
           <div className="r"><CodeTag tone="electric">审计留痕</CodeTag><CodeTag>每次切换都记录</CodeTag></div>
         </div>
         <div className="matrix-tblwrap"><div className="matrix-tbl">
           <div className="hd">
-            <div className="c">业务闸</div><div className="c">控制的能力</div><div className="c">状态</div><div className="c">资金影响</div>
+            <div className="c">业务开关</div><div className="c">控制的能力</div><div className="c">状态</div><div className="c">资金影响</div>
             <div className="c"><AutoGloss>恢复需备付金</AutoGloss></div><div className="c">执行方式</div><div className="c">最近变更</div><div className="c">应急</div>
             <div className="c" style={{ justifyContent: "flex-end" }}>动作</div>
           </div>
@@ -303,7 +303,6 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
             <div className="rw" key={g.key}>
               <div className="c">
                 <div style={{ fontWeight: 600, color: "var(--ink)" }}>{g.name}</div>
-                <div className="mono" style={{ marginTop: 2, color: "var(--ink-3)", fontSize: 11.5 }}>{g.key}</div>
               </div>
               <div className="c cap"><span className="nm">{g.cap}</span><span className="desc"><AutoGloss>{g.desc}</AutoGloss></span></div>
               <div className="c">{on ? <span className="badge-st live">在线</span> : <span className="badge-st killed">已关停</span>}</div>
@@ -348,7 +347,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
             </div>
           ))}
           <div className="emer-launch">
-            <div className="txt"><b>一键批量关停</b> · <AutoGloss>遇监管点名 / 法务事件时,在上方闸卡勾选多个业务一次性全部关停 · 全程留下高亮记录备查</AutoGloss> · <b data-proof="j1-batch-count">已选 {selOnCount} 闸</b></div>
+            <div className="txt"><b>一键批量关停</b> · <AutoGloss>遇监管点名 / 法务事件时,在上方业务开关卡片勾选多个业务一次性全部关停 · 全程留下高亮记录备查</AutoGloss> · <b data-proof="j1-batch-count">已选 {selOnCount} 项业务</b></div>
             {canBatchKill && <button onClick={launchBatch} disabled={selOnCount === 0} style={selOnCount === 0 ? { opacity: 0.5, cursor: "not-allowed" } : undefined}>立即应急关停</button>}
           </div>
         </section>
@@ -356,7 +355,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         <section className="side-card">
           <div className="h">
             <span className="ic b1"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h4l3-7 4 14 3-7h4" /></svg></span>
-            <div><div className="t"><AutoGloss>恢复业务前 · 备付金检查</AutoGloss></div><div className="s"><AutoGloss>恢复会增加资金流出或未来负债的业务（提现、兑换、Genesis、质押）前，先检查平台备付金</AutoGloss></div></div>
+            <div><div className="t"><AutoGloss>恢复业务前 · 备付金检查</AutoGloss></div><div className="s"><AutoGloss>恢复会增加资金流出或未来负债的业务（提现、兑换、创世节点、质押）前，先检查平台备付金</AutoGloss></div></div>
             <span className="tag">备付金</span>
           </div>
           <div className="b1cov-hero">
@@ -384,7 +383,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           </div>
           <div className="b1cov-detail">
             <span className="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5L20 7" /></svg></span>
-            <div><b>{covPass ? "需要备付金检查的业务可以恢复" : "低于红线或缺少覆盖率，相关业务禁止恢复"}</b> · <AutoGloss>{coverageReady ? `备付金覆盖率 ${COV}%，${covPass ? (covRelation === "equal" ? `等于 ${RED}% 红线，缓冲为 0 个百分点(已达到恢复门槛)` : `高于 ${RED}% 红线，还有 ${(COV - RED).toFixed(0)} 个百分点的缓冲`) : `低于 ${RED}% 红线`}。恢复提现、兑换、Genesis 或质押时，系统都会记录当时的备付金水位。` : "最新备付金覆盖率暂不可用，系统不会使用默认值放行恢复操作。"}</AutoGloss></div>
+            <div><b>{covPass ? "需要备付金检查的业务可以恢复" : "低于红线或缺少覆盖率，相关业务禁止恢复"}</b> · <AutoGloss>{coverageReady ? `备付金覆盖率 ${COV}%，${covPass ? (covRelation === "equal" ? `等于 ${RED}% 红线，缓冲为 0 个百分点(已达到恢复门槛)` : `高于 ${RED}% 红线，还有 ${(COV - RED).toFixed(0)} 个百分点的缓冲`) : `低于 ${RED}% 红线`}。恢复提现、兑换、创世节点 或质押时，系统都会记录当时的备付金覆盖情况。` : "最新备付金覆盖率暂不可用，系统不会使用默认值放行恢复操作。"}</AutoGloss></div>
           </div>
         </section>
       </div>
@@ -447,7 +446,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         </div>
       </section>
 
-      <p className="f-foot"><b>关停后立即全站生效，客户端无法绕过</b>：<AutoGloss>开关状态以服务器为准。关停或恢复必须填写理由，服务器执行后立即写入审计。恢复提现、兑换、Genesis 或质押前，还会检查备付金是否高于红线。</AutoGloss></p>
+      <p className="f-foot"><b>关停后立即全站生效，客户端无法绕过</b>：<AutoGloss>开关状态以服务器为准。关停或恢复必须填写理由，服务器执行后立即写入审计。恢复提现、兑换、创世节点 或质押前，还会检查备付金是否达到红线。</AutoGloss></p>
     </div>
   );
 }

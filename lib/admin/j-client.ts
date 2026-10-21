@@ -1028,12 +1028,13 @@ function normalizeSop(raw: unknown): SopOverview {
     const canonical = ref === "withdraw"
       ? { action: "熔断提现通道", description: "暂停用户提现，用于挤兑或对账缺口止血" }
       : ref === "genesis"
-        ? { action: "熔断 Genesis 交易", description: "暂停 Genesis 交易或二级市场入口" }
+        ? { action: "熔断 Genesis 交易", description: "暂停创世节点交易或二级市场入口" }
         : ref === "campaign-notify"
           ? { action: "发送通知模板", description: "使用已排期的通知活动通知用户、法务、财务或超管" }
           : { action: str(row.action), description: str(row.description) };
     const { action, description } = canonical;
-    const label = `${domain} · ${action}`;
+    const actionLabel = ref === "withdraw" ? "暂停提现通道" : ref === "genesis" ? "暂停创世节点交易" : action;
+    const label = `${domain} · ${actionLabel}`;
     return {
       value: str(row.value, ref ? `${domain}:${ref}` : `${domain}:${action}`),
       domain,

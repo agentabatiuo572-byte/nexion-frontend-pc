@@ -3395,7 +3395,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   // 去除按动作名猜测的启发式正则(原 isAdjust/select 正则):既防 dispose 名含「调整 / 规则 / 启停…」误弹字段,也防 adjust 名不含触发词漏判;改为 by edit 显式契约。全域调用点已逐一显式传 edit(2026-06 跨域硬化)。
   const spec: EditSpec | null = edit ?? null;
   const actionText = typeof action === "string" ? action : "";
-  const isJ4Command = businessForm?.kind === "sop-authoring" || /应急剧本|启动演练|回滚剧本/.test(actionText);
+  const isJ4Command = businessForm?.kind === "sop-authoring" || /应急剧本|应急预案|启动演练|回滚剧本|回滚预案/.test(actionText);
   const kind = spec?.kind ?? "text";
   const opts = spec?.options ?? (kind === "select" || kind === "toggle" ? ["开启", "关闭"] : []);
   const currentNumber = Number(spec?.current);

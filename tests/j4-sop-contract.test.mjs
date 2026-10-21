@@ -120,7 +120,7 @@ test("J4 backend exposes only actions with real target-domain executors", () => 
 test("J4 quarantines legacy playbooks that still contain retired actions", () => {
   assert.match(component, /isSupportedStep/);
   assert.match(component, /unsupportedStepCount/);
-  assert.match(component, /历史剧本 · 需迁移/);
+  assert.match(component, /历史预案 · 需迁移/);
   assert.match(component, /禁止演练/);
   assert.match(component, /disabled=\{!contractReady \|\| contentLoading \|\| legacyStepCount > 0\}/);
   assert.match(component, /data-testid=\{`j4-playbook-\$\{p\.code\}`\}/);
@@ -135,7 +135,7 @@ test("J4 uses the versioned safe-execution contract and degrades old backends to
   assert.match(component, /emergency\.sop\?\.contractVersion === "J4_REAL_EXECUTION_V5"/);
   assert.match(component, /p\.drillEvidence === true/);
   assert.match(component, /!contractReady \? "后端未升级"/);
-  assert.match(component, /后端 J4 安全执行契约未就绪/);
+  assert.match(component, /应急执行服务尚未就绪/);
 });
 
 test("J4 serializes canonical action refs and rejects duplicate side effects", () => {
@@ -241,7 +241,8 @@ test("J4 persists and presents a validation-only drill terminal state instead of
   assert.match(emergencyMapper, /rollback_status, rollback_reason/);
   assert.match(component, /e\.rollbackStatus === "NOT_REQUIRED"/);
   assert.match(component, /演练仅校验，未执行生产动作，无需回滚/);
-  assert.match(component, /traceExecution\.rollbackStatus === "NOT_REQUIRED"/);
+  assert.match(component, /rollbackStatusText\(traceExecution\.rollbackStatus\)/);
+  assert.match(component, /NOT_REQUIRED: "无需恢复（演练未执行生产操作）"/);
 });
 
 test("J4 recovery uses a fresh execution snapshot and rollback claims only audited terminal work", () => {

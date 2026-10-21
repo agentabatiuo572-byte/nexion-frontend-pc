@@ -107,7 +107,7 @@ test("J2 edge switching only exposes healthy alternatives and renders measured h
   assert.match(view, /healthTone/);
   assert.match(view, /暂无满足最近 5 分钟 20 个可信样本门槛的备用判定源/);
   assert.match(view, /edgeFallbackAvailable\s*=\s*edgeSourceKnown\s*&&\s*data\.edge\.healthy/);
-  assert.match(view, /旧源继续兜底 5 分钟/);
+  assert.match(view, /旧源继续备用 5 分钟/);
   assert.match(view, /当前源不可用，不具备回退能力/);
 });
 
@@ -160,7 +160,7 @@ test("J2 removal warnings explain restored access and funding impact", () => {
   assert.match(view, /解除全局封禁/);
   assert.match(view, /解除全局受限/);
   assert.match(view, /不会清除功能入口的单独封锁/);
-  assert.match(view, /最终可用能力以入口策略及其他业务闸为准/);
+  assert.match(view, /最终可用能力以入口策略及其他业务开关为准/);
   assert.match(view, /移除只解除本名单/);
 });
 
