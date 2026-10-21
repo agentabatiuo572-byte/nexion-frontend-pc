@@ -1,3 +1,4 @@
+import { displayCopyModules } from "./display-copy-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -17,6 +18,7 @@ function harness({ writable = true, model = null } = {}) {
   const context = {
     exports: {},
     require(name) {
+      if (displayCopyModules[name]) return displayCopyModules[name];
       if (name === "react/jsx-runtime") return jsx;
       if (name === "react") return {
         useState: initial => [hook++ === 0 && model ? model : initial === true ? false : initial, () => {}],

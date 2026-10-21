@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 import { fetchA2Overview } from "@/lib/admin/a2-client";
@@ -1028,9 +1029,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
   const openCreateWheelGuard = () => {
     openActionConfirm({
-      action: "新建轮盘护栏",
-      detail: <>新建轮盘护栏目录项;key 小写英文唯一。</>,
-      businessForm: { kind: "wheel-guard-config", subject: "新护栏" },
+      action: "新建转盘安全限制",
+      detail: <>新建转盘安全限制；标识须使用小写英文字母且不能重复。</>,
+      businessForm: { kind: "wheel-guard-config", subject: "新安全限制" },
       run: async (reason, _v, bv) => {
         if (!bv) return;
         const payload = {
@@ -1041,7 +1042,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         };
         if (!payload.guardKey || !payload.guardLabel) return;
         apply(await createH4WheelGuard(payload, reason));
-        toast(`· 护栏「${payload.guardLabel}」已新建`);
+        toast(`· 安全限制「${payload.guardLabel}」已新建`);
       },
     });
   };
@@ -1049,14 +1050,14 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openWheelGuard = (guard: { key: string; label: string; value: string }) => {
     const current = text(guard.value);
     openActionConfirm({
-      action: `转盘护栏 · ${guard.label}`,
-      detail: <>当前值 <b>{current}</b>；确认后更新转盘护栏；内容已变化时须刷新后再确认。</>,
+      action: `转盘安全限制 · ${guard.label}`,
+      detail: <>当前值 <b>{current}</b>；确认后更新转盘安全限制；内容已变化时须刷新后再确认。</>,
       amplifies: guard.key !== "kill",
       edit: { kind: "text", current },
       run: async (reason, value) => {
         if (!value) return;
         apply(await updateH4WheelGuard(guard.key, value, current, reason));
-        toast(`· 转盘护栏「${guard.label}」已更新`);
+        toast(`· 转盘安全限制「${guard.label}」已更新`);
       },
     });
   };
@@ -1287,7 +1288,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             <div className="sub">达标 {text(h4Stats.trackDone)} · 已领 {text(h4Stats.trackClaim)}</div>
           </div>
           <div className="f-stat warn">
-            <div className="k">今日转盘派彩</div>
+            <div className="k">今日转盘奖励</div>
             <div className="v">{text(h4Stats.wheelToday)}</div>
           </div>
           <div className="f-stat danger">
@@ -1301,7 +1302,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">App 运营内容（三语）</span>
-          <span className="sub">· en / 简体中文 / Tiếng Việt；缺失时保留当前原文，不自动生成翻译</span>
+          <span className="sub">· 英语 / 简体中文 / 越南语；缺失时保留当前原文，不自动生成翻译</span>
         </div>
         {/* 缺失即阻断:事件转入「进行中」= 对用户发布,后端要求 zh/vi 填全。此前表格只把空值
             显示成中性的「填写」按钮,运营看不出缺内容会挡住发布;中文 App 于是直接回退英文原文。 */}
@@ -1390,7 +1391,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             </div>
             <div className="p-row">
               <span className="k">完成奖励(三相)</span>
-              <span className="v">{text(model.dayOneTriReward)}</span>
+              <span className="v">{operatorCopyText(text(model.dayOneTriReward))}</span>
               <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.triReward", "首日三相奖励", text(model.dayOneTriReward), true)} disabled={!canModuleWrite}>调整</button>
             </div>
 
@@ -1441,7 +1442,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             <div className="sm-strip" style={{ marginTop: 10 }}>
               {(model.dayOneStates ?? []).map((state, index, states) => (
                 <span key={state.st}>
-                  <span className={`st ${state.tone}`}>{state.label}</span>
+                  <span className={`st ${state.tone}`}>{({ ACTIVE: "进行中", GRACE: "宽限中", EXPIRED: "已过期" } as Record<string,string>)[state.st.toUpperCase()] ?? "状态待核实"}</span>
                   {index < states.length - 1 && <span className="ar">→</span>}
                 </span>
               ))}
@@ -1547,7 +1548,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
             <div className="htint cyan" style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
               <span style={{ flex: 1 }}>
-                <b>周冠军加奖</b> · {text(model.weeklyChampionBonus)} · 累计 UVEL 最高的当周用户额外加奖
+                <b>周冠军加奖</b> · {operatorCopyText(text(model.weeklyChampionBonus))} · 累计 UVEL 最高的当周用户额外加奖
               </span>
               <button className="l-btn sm mc" onClick={() => openSimpleConfig("weekly.champBonus", "周冠军加奖", text(model.weeklyChampionBonus), true)} disabled={!canModuleWrite}>调整</button>
             </div>
@@ -1611,7 +1612,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
       <section className="l-card" data-proof="h3-event-contract">
         <div className="l-h">
-          <span className="ttl">任务事件契约与来源分析(只读)</span>
+          <span className="ttl">任务完成记录与统计规则(只读)</span>
           <span className="sub">· 任务编号、完成记录、关联业务、转化分析与数据报表</span>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -1653,7 +1654,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="htint" style={{ fontSize: 12 }}>
-            <b>契约 = 来源分析共同事实源</b> · 任务编号关联任务配置、服务端完成事件、下游业务事件、用户转化分析和 数据分析。
+            <b>任务和统计共用同一份完成记录</b> · 任务编号关联任务配置、服务端完成事件、下游业务事件、用户转化分析和 数据分析。
           </div>
         </div>
       </section>
@@ -1797,7 +1798,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       <div className="two-col">
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">活动列表(玩法闭集 8 种 · 当前 {(model.events ?? []).length} 条)</span>
+            <span className="ttl">活动列表(支持 8 种玩法 · 当前 {(model.events ?? []).length} 条)</span>
             <span className="sub">· 主推位同时只能有一个 · 陈旧页面提交会被拒绝</span>
             <div className="r">
               <button className="l-btn sm mc" onClick={() => openCreateEvent()} disabled={!canModuleWrite}>+ 新建活动</button>
@@ -1829,7 +1830,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                         <div style={{ fontWeight: 600 }}>{zhName || "中文标题未配置"}</div>
                         <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{zhDescription || "中文说明未配置"}</div>
                       </td>
-                      <td><span className="bdg dim">{text(event.kind)}</span></td>
+                      <td><span className="bdg dim">{({ discount: "限时优惠", referral: "邀请推广", wheel: "幸运转盘", regional: "地区活动", boost: "收益加成", seasonal: "节日活动", holding: "持有奖励", onboarding: "新人活动" } as Record<string,string>)[text(event.kind)] ?? "其他活动"}</span></td>
                       <td><span className={`bdg ${tone}`}>{label}</span></td>
                       <td className="num">{zhRewardName || "中文奖项未配置"}</td>
                       <td>{event.featured ? <span className="bdg warn">主推</span> : <span style={{ color: "var(--ink-4)" }}>-</span>}</td>
@@ -1885,14 +1886,14 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">抽奖转盘治理</span>
+            <span className="ttl">抽奖转盘设置</span>
             <span className="sub">· 一个转盘一张奖池表(日免费 + 签到满 30 天加抽票共用)</span>
             <div className="r">
               <button className="l-btn mc" onClick={openWheelProbabilities} disabled={!canWheelWrite}>
                 改奖池 / 概率
               </button>
               <button className="l-btn sm mc" onClick={() => openCreateWheelTier()} disabled={!canWheelWrite}>+ 新建档位</button>
-              <button className="l-btn sm mc" onClick={() => openCreateWheelGuard()} disabled={!canWheelWrite}>+ 新建护栏</button>
+              <button className="l-btn sm mc" onClick={() => openCreateWheelGuard()} disabled={!canWheelWrite}>+ 新建安全限制</button>
             </div>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
@@ -1908,7 +1909,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               return (
                 <div className="wheel-row" key={text(tier.tier)}>
                   <span style={{ fontWeight: 600, color: "var(--ink)" }}>{text(tier.tier)}</span>
-                  <span className="mono">{nexGridBrandText(text(tier.reward))}</span>
+                  <span className="mono">{nexGridBrandText(text(tier.reward)).replace(/\bpoints\b/gi, "积分").replace(/\bdevice coupon\b/gi, "设备代金券")}</span>
                   <span className="mono" style={{ fontWeight: 700 }}>{percentText(tier.prob)}%</span>
                   <span>{real ? <span className="bdg bad">真实流出</span> : <span className="bdg dim">{({nex:"UVEL奖励",NEX:"UVEL奖励",usdt:"USDT奖励",USDT:"USDT奖励",voucher:"代金券",none:"未中奖"} as Record<string,string>)[text(tier.kind)] ?? "其他奖励"}</span>}</span>
                   <span style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
@@ -1955,7 +1956,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               <b>当前预期奖励金额 ≈ ${text(model.wheelEvUsd)} / 次抽奖</b> · 真实流出期望由现金档贡献,奖池变更后重新计算。
             </div>
             <div className="htint ok" style={{ marginTop: 8, fontSize: 12 }}>
-              <b>第四道护栏(自动)</b> · 抽奖前查覆盖率,跌破 100% 资金奖励暂停、只发 UVEL/券,回升自动恢复。
+              <b>第四项安全规则（自动）</b> · 抽奖前查覆盖率,跌破 100% 资金奖励暂停、只发 UVEL/券,回升自动恢复。
             </div>
           </div>
         </section>
@@ -1997,7 +1998,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="htint" style={{ fontSize: 12 }}>
-            <b>并发与时窗</b> · 活动结束或下架后不可领取；一次性活动仅可领取一次，日重置转盘每日仅可领取一次。
+            <b>参与和领取时间限制</b> · 活动结束或下架后不可领取；一次性活动仅可领取一次，日重置转盘每日仅可领取一次。
           </div>
         </div>
       </section>

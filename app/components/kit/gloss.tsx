@@ -12,6 +12,8 @@ import { GLOSSARY, GLOSSARY_TERMS, GLOSSARY_GUARD } from "@/lib/admin/glossary";
 import { createGlossaryMatcher } from "@/lib/admin/glossary-match";
 
 const PLAIN_LABELS: Record<string, string> = {
+  "NEX": "UVEL",
+  "Genesis": "创世节点",
   "RBAC": "角色权限",
   "CAS": "版本校验",
   "KPI": "关键指标",
@@ -36,7 +38,7 @@ const PLAIN_LABELS: Record<string, string> = {
   "归因": "原因分析",
   "口径": "计算方式",
   "SLA": "处理时限",
-  "2FA": "双重验证",
+  "2FA": "两步验证",
   "TVL": "质押资产总额",
   "GMV": "成交总额",
   "GV": "团队业绩",

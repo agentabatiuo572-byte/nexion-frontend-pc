@@ -1,4 +1,5 @@
 "use client";
+import { operatorNicknameText } from "@/lib/admin/brand-copy";
 
 /** F1 · 团队等级晋升 —— 13 阶阶梯(V-badge 热度渐变 + log 人口条)+ 右栏人口金字塔 / 治理口径。
  *  奖励改为运营可配的「奖励清单」(USDT / NEX / 代金券 / SKU / 自定义),实物奖与发货队列已删。 */
@@ -481,7 +482,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
               <tbody>
                 {ctx.promotionRecords.map((record) => (
                   <tr key={record.id}>
-                    <td><span className="cid">{record.nickname || "—"}</span><br /><span className="uid">{record.userId}</span></td>
+                    <td><span className="cid">{operatorNicknameText(record.nickname || "—")}</span><br /><span className="uid">{record.userId}</span></td>
                     <td><span className="kind-tag network">{record.fromCode || "—"} → {record.toCode || "—"}</span></td>
                     <td>{record.isManual ? "人工" : "引擎"}<br /><span className="uid">{record.operator || record.cohort || "—"}</span></td>
                     <td><details><summary>查看快照</summary><code className="f1-snapshot">{snapshotLabel(record.snapshot)}</code></details></td>

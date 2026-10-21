@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 
-const source = process.env.PROMOTION_OPENAPI || path.resolve('../growth-promotions-prd-20261007-backend/docs/specs/growth-promotions/openapi.json');
+const source = process.env.PROMOTION_OPENAPI || path.resolve(process.env.NEXION_BACKEND_ROOT || '../nexion-backend', 'docs/specs/growth-promotions/openapi.json');
 const raw = readFileSync(source, 'utf8').replaceAll('\r\n', '\n');
 const spec = JSON.parse(raw);
 function type(s) {

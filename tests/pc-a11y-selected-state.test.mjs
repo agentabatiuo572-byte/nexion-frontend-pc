@@ -356,7 +356,7 @@ test("TabGroup 跳过 disabled 项并保持 roving 焦点可达", () => {
   assert.equal(tabIndexes(tabs).filter((value) => value === 0).length, 0, "无可选项时不得有 roving 焦点落点");
 });
 
-test("L1 时间窗 / cohort 粒度 / KPI 卡 / 叠加选择都暴露选中态", () => {
+test("L1 时间窗 / 按注册周或月分组 / KPI 卡 / 叠加选择都暴露选中态", () => {
   const kpis = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => ({
     n, kpiId: String(n), name: `指标 ${n}`, target: 50, dir: "gte", unit: "%", available: true,
     value: 60 + n, numerator: 100 + n, denominator: 200, spark: [1, 2, 3, 4, 5, 6],
@@ -377,8 +377,8 @@ test("L1 时间窗 / cohort 粒度 / KPI 卡 / 叠加选择都暴露选中态", 
   });
   assert.equal(tablistNamed(html, "时间窗").length, 1, "L1 时间窗必须暴露组名");
   assertSingleSelection(html, "时间窗", 1, ["当日", "滚动 7d", "滚动 30d", "自定义"]);
-  assert.equal(tablistNamed(html, "cohort 粒度").length, 1, "L1 cohort 粒度必须暴露组名");
-  assertSingleSelection(html, "cohort 粒度", 0, ["注册周 YYYY-Www", "注册月"]);
+  assert.equal(tablistNamed(html, "按注册周或月分组").length, 1, "L1 按注册周或月分组必须暴露组名");
+  assertSingleSelection(html, "按注册周或月分组", 0, ["注册周（如2026-W42）", "注册月"]);
   // 🔴 zentao #209:八张 KPI 卡是**互斥单选**(点 #1 会把 #2 自动置 0),此前它们只是
   // `aria-pressed` 的按钮 —— 浏览器把带 aria-pressed 的按钮当 toggle button,读屏按复选框
   // 朗读(Value=1/0),运营会以为能多选。本用例过去只断言「aria-pressed 存在」,那正是缺陷
@@ -397,7 +397,7 @@ test("L1 时间窗 / cohort 粒度 / KPI 卡 / 叠加选择都暴露选中态", 
   assert.ok(overlayPicks.length >= 8, "叠加选择是多选组,必须暴露 aria-pressed");
 });
 
-test("L2 cohort 粒度 / 漏斗阶段 / 对比 / 指标各自唯一选中项", () => {
+test("L2 按注册周或月分组 / 漏斗阶段 / 对比 / 指标各自唯一选中项", () => {
   const stageEvents = ["auth.register_completed", "checkout.completed", "wallet.reinvest / 二次 checkout.completed", "withdraw.submitted"];
   const html = renderToHtml("app/components/domain-views/l-tabs/l2-funnel.tsx", "L2Funnel", {
     ctx: { toast: () => {}, openActionConfirm: () => {}, canExport: false, biLoading: false, biError: null, biData: { l2: {
@@ -416,7 +416,7 @@ test("L2 cohort 粒度 / 漏斗阶段 / 对比 / 指标各自唯一选中项", (
     } } },
   });
   assert.equal(tablistNamed(html, "按注册周或月分组").length, 1, "L2 用户分组方式必须暴露组名");
-  assertSingleSelection(html, "按注册周或月分组", 0, ["注册周 YYYY-Www", "注册月"]);
+  assertSingleSelection(html, "按注册周或月分组", 0, ["注册周（如2026-W42）", "注册月"]);
   assert.equal(tablistNamed(html, "转化步骤筛选").length, 1, "L2 转化步骤必须暴露组名");
   const stages = tabsOf(html, "转化步骤筛选");
   assert.equal(stages.length, 4, `L2 漏斗必须四级,实际 ${stages.length}`);

@@ -270,7 +270,7 @@ export default function CommandCenter() {
       <header className="mb-5 flex flex-wrap items-end gap-4">
         <div className="min-w-0 flex-1">
           <p className="font-mono-tabular text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--v5-ink-3)" }}>
-            UVEL Ops Console · 指挥台
+            UVEL运营控制台 · 指挥台
           </p>
           <h1 className="font-display mt-1.5 text-[26px]" style={{ color: "var(--v5-ink)" }}>运营总览</h1>
           <p className="mt-1.5 text-[13.5px]" style={{ color: "var(--v5-ink-2)" }}>
@@ -436,7 +436,7 @@ export default function CommandCenter() {
       <header className="mb-5 flex flex-wrap items-end gap-4">
         <div className="min-w-0 flex-1">
           <p className="font-mono-tabular text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--v5-ink-3)" }}>
-            UVEL Ops Console · 指挥台
+            UVEL运营控制台 · 指挥台
           </p>
           <h1 className="font-display mt-1.5 text-[26px]" style={{ color: "var(--v5-ink)" }}>运营总览</h1>
           <p className="mt-1.5 text-[13.5px]" style={{ color: "var(--v5-ink-2)" }}>
@@ -468,7 +468,7 @@ export default function CommandCenter() {
             <AlertTriangle size={16} style={{ color: "var(--v5-warning)" }} aria-hidden />
           </span>
           <span className="text-[13px]" style={{ color: "var(--v5-ink-2)" }}>
-            <AutoGloss>{covText}</AutoGloss><AutoGloss> · 建议收紧放大流出 dial（仅建议,不自动执行）</AutoGloss>
+            <AutoGloss>{covText}</AutoGloss><AutoGloss> · 建议收紧资金支出参数（仅建议,不自动执行）</AutoGloss>
           </span>
         </Link>
       )}
@@ -522,7 +522,7 @@ export default function CommandCenter() {
         {dashboardKpis.length ? (
           <KpiWall kpis={dashboardKpis} />
         ) : (
-          <DashboardDataState title="L1 KPI 验收墙" loading={lBiLoading} error={lBiError} />
+          <DashboardDataState title="L1关键指标" loading={lBiLoading} error={lBiError} />
         )}
       </div>
 

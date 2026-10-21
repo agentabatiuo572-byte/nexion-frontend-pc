@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
  * J4 · 监管要求应急处理 — 8 剧本库(actionSequence timeline)+ 应急快速轨 SLA + 执行追溯历史。
@@ -257,7 +258,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
           <b>动作序列({p.seq.length} 步)</b>:
           {p.seq.map((s, i) => (
             <span key={i} style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--ink-3)", display: "block", marginTop: 2 }}>
-              {i + 1}. {s.dom} · {s.ax.replace(/\*\*/g, "")}{s.approve ? "(操作确认)" : ""}
+              {i + 1}. {s.dom} · {operatorCopyText(s.ax.replace(/\*\*/g, ""))}{s.approve ? "(操作确认)" : ""}
             </span>
           ))}
         </span>
@@ -456,7 +457,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
               {supportedSteps.map((s, i) => (
                 <div key={i} className={"step " + (DOM_CLS[s.dom] ?? "di")}>
                   <span className="dom">{s.dom}</span>
-                  <div className="ax">{axRender(s.ax)}</div>
+                  <div className="ax">{axRender(operatorCopyText(s.ax))}</div>
                   {s.approve ? <span className="approve req">操作确认</span> : <span className="approve">普通确认</span>}
                   {s.ref && <span className="approve ref">{s.ref}</span>}
                 </div>
@@ -564,7 +565,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
             <span className="bf-legend">逐步执行结果</span>
             {traceExecution.domainActions.length === 0 ? <div className="tiny">没有可核对的分步操作记录。</div> : traceExecution.domainActions.map((action, index) => (
               <div className="tint tiny" key={`${String(action.domain)}-${String(action.stepIndex || index)}`} style={{ marginBottom: 7 }}>
-                <b>{index + 1}. {String(action.domain || "未知域")} · {String(action.action || "未记录动作")}</b><br />
+                <b>{index + 1}. {String(action.domain || "未知域")} · {operatorCopyText(String(action.action || "未记录动作"))}</b><br />
                 状态 {executionStepLabel(String(action.status || traceExecution.steps[index] || ""))}
                 {action.ref ? ` · 操作依据编号 ${String(action.ref)}` : ""}
                 {action.failure ? ` · 失败 ${String(action.failure)}` : ""}

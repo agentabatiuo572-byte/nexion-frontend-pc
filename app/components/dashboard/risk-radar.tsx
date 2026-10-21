@@ -49,7 +49,7 @@ export function RiskRadar({
         <span className="font-display text-[14.5px]" style={{ color: "var(--v5-ink)" }}><AutoGloss>风险提醒</AutoGloss></span>
         <span className="ml-auto font-mono-tabular rounded-[7px] px-2 py-0.5 text-[11px]" style={{ background: "var(--v5-surface-3)", color: "var(--v5-ink-3)", border: "1px solid var(--v5-border)" }}>B5 · 只读</span>
       </div>
-      <p className="mt-1 text-[12px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>挤兑预警 · 异常账户 · Kill 状态灯</AutoGloss></p>
+      <p className="mt-1 text-[12px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>挤兑预警 · 异常账户 · 紧急停止状态灯</AutoGloss></p>
 
       {/* 两项态势指标 */}
       <div className="mt-3 grid grid-cols-2 gap-3">
@@ -65,7 +65,7 @@ export function RiskRadar({
 
       {/* Kill 状态灯 */}
       <p className="mt-3.5 text-[12px]" style={{ color: "var(--v5-ink-2)", fontWeight: 600 }}>
-        <AutoGloss>Kill-Switch 状态灯 · </AutoGloss>{killOpen}/{killGates.length} 开{killMissing > 0 ? ` · ${killMissing} 未配置` : ""}
+        <AutoGloss>紧急停止状态灯 · </AutoGloss>{killOpen}/{killGates.length} 开{killMissing > 0 ? ` · ${killMissing} 未配置` : ""}
       </p>
       <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
         {killGates.map((k) => {

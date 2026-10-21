@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -75,7 +76,7 @@ const DOMAIN_FILTER_ID = "a5-domain-filter";
  * 含该卡片自己的参数键才唯一。
  */
 function ownerLinkAccessibleName(row: A5RegistryRow) {
-  return `前往 ${row.ownerLabel}：${row.displayName}（参数 ${row.canonicalKey}）`;
+  return `前往 ${operatorCopyText(row.ownerLabel)}：${operatorCopyText(row.displayName)}（参数 ${row.canonicalKey}）`;
 }
 
 const ERROR_COPY: Record<A5LoadErrorKind, { title: string; detail: string }> = {
@@ -225,13 +226,13 @@ function DomainSection({ domain, rows }: { domain: string; rows: A5RegistryRow[]
           <article key={row.canonicalKey} className="rounded-[9px] p-3" style={{ background: "var(--v5-surface-2)", border: "1px solid color-mix(in srgb, var(--v5-border) 75%, transparent)" }}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <p className="text-[12.5px] font-semibold leading-snug" style={{ color: "var(--v5-ink)" }}>{row.displayName}</p>
+                <p className="text-[12.5px] font-semibold leading-snug" style={{ color: "var(--v5-ink)" }}>{operatorCopyText(row.displayName)}</p>
                 <p className="font-mono-tabular mt-1 break-all text-[10px]" style={{ color: "var(--v5-ink-4)" }}>参数键 · {row.canonicalKey}</p>
               </div>
               {/* 归属链接此前只暴露模块名(如「A2 审计与追溯」),同一模块下多条链接完全同名,
                   读屏与语音控制无法区分目标。名称必须含该卡片的参数本身。 */}
               {row.canonicalKey !== "E.compute.h5BaseFactor" && <Link href={row.ownerRoute} aria-label={ownerLinkAccessibleName(row)} prefetch={false} className="inline-flex shrink-0 items-center gap-1 rounded-[7px] px-2 py-1 text-[10.5px] outline-none focus-visible:ring-2 focus-visible:ring-[var(--admin-domain-a)] focus-visible:ring-offset-1" style={{ border: "1px solid var(--v5-border)", color: accent }}>
-                {row.ownerLabel}<ArrowUpRight aria-hidden="true" size={11} />
+                {operatorCopyText(row.ownerLabel)}<ArrowUpRight aria-hidden="true" size={11} />
               </Link>}
             </div>
             <div className="mt-2 rounded-[7px] px-2.5 py-2" style={{ background: "var(--v5-surface)" }}>
@@ -239,21 +240,21 @@ function DomainSection({ domain, rows }: { domain: string; rows: A5RegistryRow[]
                   实时行标「实时采样 · 观测于 …」;过期/读不到的行标「历史快照 · 已过期」——
                   不许把 2026-06-24 的死行显示成「当前服务端值」。 */}
               <p className="text-[9.5px]" style={{ color: row.stale ? "var(--v5-warning)" : "var(--v5-ink-4)" }}>{rowValueLabel(row)}</p>
-              <p className="font-mono-tabular mt-0.5 break-all text-[13px]" style={{ color: rowValueEffective(row) && !row.stale ? "var(--v5-ink)" : "var(--v5-warning)" }}>{row.currentValue || "空值"}{row.unit ? <span className="ml-1 text-[10px]" style={{ color: "var(--v5-ink-3)" }}>{row.unit}</span> : null}</p>
+              <p className="font-mono-tabular mt-0.5 break-all text-[13px]" style={{ color: rowValueEffective(row) && !row.stale ? "var(--v5-ink)" : "var(--v5-warning)" }}>{row.valueType === "BOOLEAN" ? ({ true: "开启", false: "关闭", on: "开启", off: "关闭" } as Record<string, string>)[row.currentValue] ?? "状态待核实" : row.currentValue || "空值"}{row.unit ? <span className="ml-1 text-[10px]" style={{ color: "var(--v5-ink-3)" }}>{operatorCopyText(row.unit)}</span> : null}</p>
               {row.stale && (
                 <p className="mt-1 text-[10px] leading-relaxed" style={{ color: "var(--v5-warning)" }}>
-                  该值不是当前实时事实{row.observedAt ? `（最近采样 ${row.observedAt}）` : "（实时读取失败）"}；请以{row.ownerLabel}的实时页面为准，不要把这里的快照当成当前状态。
+                  该值不是当前实时事实{row.observedAt ? `（最近采样 ${row.observedAt}）` : "（实时读取失败）"}；请以{operatorCopyText(row.ownerLabel)}的实时页面为准，不要把这里的快照当成当前状态。
                 </p>
               )}
               {!rowValueEffective(row) && (
                 <p className="mt-1 text-[10px] leading-relaxed" style={{ color: "var(--v5-warning)" }}>
-                  该值未通过归属模块的有效性校验，当前不生效、也不会下发给用户端；请在{row.ownerLabel}修正后重新保存。
+                  该值未通过归属模块的有效性校验，当前不生效、也不会下发给用户端；请在{operatorCopyText(row.ownerLabel)}修正后重新保存。
                 </p>
               )}
             </div>
-            <p className="mt-2 text-[10.5px] leading-relaxed" style={{ color: "var(--v5-ink-3)" }}>{row.canonicalKey === "E.compute.h5BaseFactor" ? "仅保留历史值，不再提供编辑入口；H5 手机算力奖励已退役，其它已购设备不受影响。" : row.description}</p>
+            <p className="mt-2 text-[10.5px] leading-relaxed" style={{ color: "var(--v5-ink-3)" }}>{row.canonicalKey === "E.compute.h5BaseFactor" ? "仅保留历史值，不再提供编辑入口；H5 手机算力奖励已退役，其它已购设备不受影响。" : operatorCopyText(row.description)}</p>
             <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[9.5px]" style={{ color: "var(--v5-ink-4)" }}>
-              <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-surface)" }}>{row.valueType}</span>
+              <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-surface)" }}>{({ STRING: "文本", TEXT: "文本", NUMBER: "数值", BOOLEAN: "开关", SECRET: "敏感信息", JSON: "结构化设置" } as Record<string, string>)[row.valueType] ?? "其他类型"}</span>
               {/* 过期/读不到的实时行不得标「服务端权威」(zentao #198):那句声明的是
                   「这就是当前生效的服务端事实」,而陈旧快照恰恰不是。 */}
               {row.canonicalKey === "E.compute.h5BaseFactor"

@@ -17,6 +17,7 @@ const modules = Object.fromEntries([
   ["scheduler", "scheduler", "scheduler.development.js"],
 ].map(([id, pkg, file]) => [id, fs.readFileSync(path.join(path.dirname(require.resolve(`${pkg}/package.json`)), "cjs", file), "utf8")]));
 for (const [id, file] of [
+  ["@/lib/admin/brand-copy", "lib/admin/brand-copy.ts"],
   ["d2", process.env.D2_FOCUS_SOURCE_FILE || "app/components/domain-views/d-tabs/d2-withdrawals.tsx"],
   ["@/app/components/kit/tab-group", "app/components/kit/tab-group.tsx"],
   ["./tab-group-keyboard", "app/components/kit/tab-group-keyboard.ts"],

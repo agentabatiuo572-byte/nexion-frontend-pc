@@ -515,7 +515,7 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
                 </button>
               )}
               {!m.cta && m.ctaHref && m.ctaHref !== "—" && (
-                <span className="msg-script" style={{ marginTop: 6 }}>CTA → {m.ctaHref}</span>
+                <span className="msg-script" style={{ marginTop: 6 }}>点击后跳转 → {m.ctaHref}</span>
               )}
               {m.receipt && <span className="msg-receipt">{m.receipt}</span>}
             </div>
@@ -729,7 +729,7 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
     return [
       { label: "要做什么", text: actionText || "切换一个应急或地区管控状态。" },
       { label: "影响", text: "会立即影响对应业务入口、地区访问或资金能力。恢复类动作会重新放开用户操作。" },
-      { label: "提交前", text: "确认触发来源、影响国家/业务、SLA 和通知口径。操作理由写监管、风控或应急依据。" },
+      { label: "提交前", text: "确认触发来源、影响国家/业务、响应时限和通知内容。操作理由写监管、风控或应急依据。" },
     ];
   }
 
@@ -737,7 +737,7 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
     return [
       { label: "要做什么", text: actionText || "发布、回滚或下架一项内容。" },
       { label: "影响", text: "用户端看到的内容、通知或披露版本会变化。披露更新可能要求用户重新确认。" },
-      { label: "提交前", text: "确认中英文、占位符、受影响法域/人群和发布时间。操作理由写版本依据和回滚方案。" },
+      { label: "提交前", text: "确认所需语言内容、占位符、适用地区、接收人群和发布时间。操作理由写版本依据和回滚方案。" },
     ];
   }
 
@@ -751,7 +751,7 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
 
   return [
     { label: "要做什么", text: actionText || "执行这项后台操作。" },
-    { label: "影响", text: amplifies ? (localHistory ? "确认后立即生效,并会放大资金流出;本地配置面请人工确认资金方向影响。" : "确认后立即生效,并会放大资金流出;系统会先检查备付金覆盖率。") : (localHistory ? "确认后立即生效,并落本页变更历史。" : "确认后立即生效,并写入 A2 审计记录。") },
+    { label: "影响", text: amplifies ? (localHistory ? "提交后以系统处理结果为准,并会放大资金流出;本地配置面请人工确认资金方向影响。" : "提交后以系统处理结果为准,并会放大资金流出;系统会先检查备付金覆盖率。") : (localHistory ? "提交后以系统处理结果为准,并记录在本页修改历史。" : "提交后以系统处理结果为准,并写入 A2 审计记录。") },
     { label: "提交前", text: defaultCheck },
   ];
 }
@@ -1187,7 +1187,8 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
   if (!spec) return [];
   const missing: string[] = [];
   const needs = (key: string, label: string) => {
-    if (!state[key]?.trim()) missing.push(label);
+    const names: Record<string,string> = { title: "标题", body: "正文", tier: "等级", audience: "受众", schedule: "时间安排", budget: "预算", no: "章节编号", description: "说明", structure: "内容结构", exportType: "导出类型", fields: "导出字段", piiLevel: "隐私信息级别", maskPolicy: "脱敏方式", recipient: "接收人", ticket: "关联工单", jurisdictionCode: "适用地区代码", jurisdictionName: "适用地区名称", jurisdiction: "适用地区", countryCodes: "适用国家/地区", version: "版本", languageScope: "语言范围", effectiveDate: "生效日期", requiresReack: "是否要求重新确认", zh: "中文正文", vi: "越南语正文", zhTitle: "中文标题", enTitle: "英文标题", viTitle: "越南语标题", zhBody: "中文正文", enBody: "英文正文", viBody: "越南语正文", bodyZh: "中文正文", bodyEn: "英文正文", bodyVi: "越南语正文", titleZh: "中文标题", titleEn: "英文标题", titleVi: "越南语标题" };
+    if (!state[key]?.trim()) missing.push(label.replace(/\b[A-Za-z][A-Za-z0-9]*\b/g, (field) => names[field] ?? field));
   };
   if (spec.kind === "role-select") {
     needs("role", "目标角色");
@@ -1198,7 +1199,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
       missing.push("至少一个授权变更");
     }
   } else if (spec.kind === "localized-copy") {
-    if (spec.mode === "create") needs("messageKey", "词条 key");
+    if (spec.mode === "create") needs("messageKey", "词条标识");
     needs("zh", "中文文案");
     needs("en", "英文文案");
     needs("vi", "越南语文案");
@@ -1277,9 +1278,9 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
   } else if (spec.kind === "copy-experiment-start") {
     if (state.ack !== "true") missing.push("启动实验确认");
   } else if (spec.kind === "course-authoring") {
-    ["slug", "category", "format", "difficulty", "duration", "reward", "titleZh", "titleEn", "titleVi", "bodyZh", "bodyEn", "bodyVi"].forEach((key) => needs(key, key));
+    ["slug", "category", "format", "difficulty", "duration", "reward", "titleZh", "titleEn", "titleVi", "bodyZh", "bodyEn", "bodyVi"].forEach((key) => needs(key, ({ slug: "课程标识", category: "分类", format: "形式", difficulty: "难度", duration: "预计时长", reward: "完成奖励", titleZh: "中文标题", titleEn: "英文标题", titleVi: "越南语标题", bodyZh: "中文正文", bodyEn: "英文正文", bodyVi: "越南语正文" } as Record<string, string>)[key] ?? "课程字段"));
     for (const key of ["titleZh", "titleEn", "titleVi", "bodyZh", "bodyEn", "bodyVi"]) {
-      if ((state[key] ?? "").trim().length > 1024) missing.push(`${key} 最多 1024 字`);
+      if ((state[key] ?? "").trim().length > 1024) missing.push(`${({titleZh:"中文标题",titleEn:"英文标题",titleVi:"越南语标题",bodyZh:"中文正文",bodyEn:"英文正文",bodyVi:"越南语正文"} as Record<string,string>)[key] ?? "内容"} 最多 1024 字`);
     }
     if (spec.mode === "version-create" || spec.mode === "version-edit") {
       needs("version", "课程版本号");
@@ -1339,13 +1340,13 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
       if (state.languageScope?.includes("en")) ["enTitle", "enBody"].forEach((field) => needs(`chapter.${index}.${field}`, `第 ${index + 1} 章 ${field}`));
     });
   } else if (spec.kind === "disclosure-jurisdiction") {
-    needs("code", "法域代码");
-    needs("name", "法域名称");
-    if (!/^[A-Z][A-Z0-9_-]{1,15}$/.test((state.code ?? "").trim().toUpperCase())) missing.push("法域代码格式（2-16 位大写字母、数字、下划线或短横线）");
+    needs("code", "适用地区代码");
+    needs("name", "适用地区名称");
+    if (!/^[A-Z][A-Z0-9_-]{1,15}$/.test((state.code ?? "").trim().toUpperCase())) missing.push("适用地区代码格式（2-16 位大写字母、数字、下划线或短横线）");
   } else if (spec.kind === "disclosure-publish-review") {
     if (spec.targetChapters.length !== 7) missing.push("完整 7 章节");
     if (spec.targetChapters.some((chapter) => !chapter.zh.trim() || !chapter.vi.trim() || !chapter.zhBody.trim() || !chapter.viBody.trim())) missing.push("七章中越双语完整内容");
-    if (state.jurisdictionConfirmed !== "true") missing.push("受众法域确认");
+    if (state.jurisdictionConfirmed !== "true") missing.push("受众适用地区确认");
     if (state.bilingualConfirmed !== "true") missing.push("七章中越双语核对");
   } else if (spec.kind === "disclosure-matrix") {
     ["jurisdictionCode", "jurisdictionName", "countryCodes", "version"].forEach((key) => needs(key, key));
@@ -1366,7 +1367,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     const normalizedFieldKeys = fieldKeys.filter(Boolean).map((key) => key.toLowerCase());
     if (normalizedFieldKeys.length !== new Set(normalizedFieldKeys).size) missing.push("字段标识不能重复（不区分大小写）");
   } else if (spec.kind === "trust-section-publish") {
-    if (spec.requireDataSource) needs("dataSource", "财务/NEX 数据来源");
+    if (spec.requireDataSource) needs("dataSource", "财务/UVEL数据来源");
     const trilingual = validateTrustSectionTrilingualFields(spec.targetFields);
     if (!trilingual.valid) missing.push(`中越英字段不完整：${trilingual.missing.join("、")}`);
     if (state.bilingualConfirmed !== "true") missing.push("中越英三语确认");
@@ -1378,11 +1379,12 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     needs("ticket", "来源工单号");
     if (state.ack !== "true") missing.push("已核实本人身份确认");
   } else if (spec.kind === "schema-authoring") {
-    ["eventName", "ownerDomain", "producer", "consumer", "propName", "propType", "samplingPolicy", "version"].forEach((key) => needs(key, key));
+    const labels: Record<string, string> = { eventName: "事件名称", ownerDomain: "所属模块", producer: "产生方", consumer: "使用方", propName: "字段名称", propType: "字段类型", samplingPolicy: "采样规则", version: "版本" };
+    Object.entries(labels).forEach(([key, label]) => needs(key, label));
     if (state.eventName && !/^[a-z][a-z0-9_]*\.[a-z0-9]+(?:_[a-z0-9]+)*$/.test(state.eventName.trim())) {
-      missing.push("事件名须为 domain.object_action（小写 snake_case）");
+      missing.push("事件名称须使用小写字母，以点号分隔模块与动作、以下划线连接单词，例如 user.account_created");
     }
-    if (state.isPII === "true") missing.push("PII 禁入(隐私明文不可注册)");
+    if (state.isPII === "true") missing.push("不得登记包含个人隐私明文的字段");
   } else if (spec.kind === "disposition-lifecycle") {
     needs("period", "期限");
     needs("owner", "责任人");
@@ -1395,7 +1397,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (!Number.isFinite(amt) || amt <= 0) missing.push("调整金额(正数)");
   } else if (spec.kind === "sop-authoring") {
     ([
-      ["name", "剧本名称"], ["scene", "触发场景"], ["owner", "责任角色"],
+      ["name", "预案名称"], ["scene", "触发场景"], ["owner", "责任角色"],
       ["sla", "响应时限"], ["actionSeq", "动作序列"], ["rollback", "回滚方案"],
     ] as const).forEach(([key, label]) => needs(key, label));
     if (parseSopSlaMinutes(state.sla) == null) missing.push("响应时限须为 1-1440 分钟整数");
@@ -1548,18 +1550,18 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     } else if (state.rtype === "voucher") {
       if (!spec.voucherOptions?.includes(state.voucherId)) missing.push("请选择当前可发放的代金券");
     } else if (state.rtype === "sku") {
-      if (!spec.skuOptions?.includes(state.skuId)) missing.push("请选择当前可用的系统 SKU");
+      if (!spec.skuOptions?.includes(state.skuId)) missing.push("请选择当前可用的系统 商品");
     } else if (state.rtype === "custom") {
       needs("custom", "自定义奖励内容");
     }
   } else if (spec.kind === "mission-create") {
     needs("missionCode", "任务编号");
     needs("missionName", "任务名称");
-    needs("rewardPoints", "奖励 NEX 数");
+    needs("rewardPoints", "奖励 UVEL 数");
     needs("category", "任务类别");
     needs("actionRoute", "去完成页面");
     if (!Number.isSafeInteger(Number(state.rewardPoints)) || Number(state.rewardPoints) < 0) {
-      missing.push("奖励 NEX 数须为非负整数");
+      missing.push("奖励 UVEL 数须为非负整数");
     }
   }
   return missing;
@@ -1602,7 +1604,7 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
   if (spec.kind === "vrank-reward-edit") {
     const t = state.rtype;
     if (t === "usdt") return state.amount ? `USDT $${state.amount}` : undefined;
-    if (t === "nex") return state.amount ? `${Number(state.amount).toLocaleString()} NEX` : undefined;
+    if (t === "nex") return state.amount ? `${Number(state.amount).toLocaleString()} UVEL` : undefined;
     if (t === "voucher") return state.voucherId ? `代金券 ${spec.voucherLabels?.[state.voucherId] ?? state.voucherId}` : undefined;
     if (t === "sku") return state.skuId ? `SKU ${spec.skuLabels?.[state.skuId] ?? state.skuId}` : undefined;
     if (t === "custom") return state.custom || undefined;
@@ -1640,12 +1642,13 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     const proof = typeof proofOrLabels === "string" ? proofOrLabels : undefined;
     const labels = typeof proofOrLabels === "string" ? optionLabels : proofOrLabels;
     const current = value[key] ?? options[0] ?? "";
+    const displayOption = (option: string) => ({ NEX: "UVEL", nex: "UVEL", server: "服务器", client: "客户端", "server+client": "服务器与客户端", string: "文本", number: "数值", boolean: "是或否", enum: "固定选项", timestamp: "时间", id: "编号", "无 PII": "无个人隐私信息", "低(脱敏 ID)": "仅部分隐藏的编号", "默认脱敏": "默认隐藏敏感信息", "上架中 active": "上架中", "已下架 paused": "已下架", "超管": "超级管理员" } as Record<string, string>)[option] ?? option.replace(/^KPI/, "关键指标").replace(/\bStaking\b/g, "质押").replace(/\bGenesis\b/g, "创世节点").replace(/([\u3400-\u9fff])\s+(?:active|paused|fixed|percent|new|all|true|false)\b/g, "$1");
     return (
     <label className="field" style={{ marginBottom: 0 }}>
       <span>{label}</span>
       <select className="fld" data-proof={proof} value={current} disabled={options.length === 0} onChange={(e) => onValueChange ? onValueChange(e.target.value) : set(key, e.target.value)}>
         {unavailableLabel && !options.includes(current) && <option value={current} disabled>{unavailableLabel}</option>}
-        {options.length === 0 ? <option value="">无后端返回选项</option> : options.map((o) => <option key={o} value={o}>{labels?.[o] ?? o}</option>)}
+        {options.length === 0 ? <option value="">无后端返回选项</option> : options.map((o) => <option key={o} value={o}>{typeof labels?.[o] === "string" ? displayOption(String(labels[o])) : labels?.[o] ?? displayOption(o)}</option>)}
       </select>
     </label>
     );
@@ -1846,7 +1849,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
       <div className="field" data-business-form="role-select">
         <span className="bf-legend">业务表单 · 改角色</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {select("role", "目标角色 role", spec.roles.map((r) => r.key), "role-select-target")}
+          {select("role", "目标角色", spec.roles.map((r) => r.key), "role-select-target", Object.fromEntries(spec.roles.map((r) => [r.key, r.label])))}
         </div>
         <div className="row wrap" style={{ gap: 8, marginTop: 10 }}>
           {spec.roles.map((r) => (
@@ -1897,7 +1900,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <div className="grid g-2" style={{ gap: 10 }}>
           {spec.roles.map((r) => (
             <label key={r.key} className="field" style={{ marginBottom: 0 }}>
-              <span>{r.label} 授权 permission · 当前 <span className="mono">{r.current}</span></span>
+              <span>{r.label} 授权 · 当前 <span className="mono">{r.current}</span></span>
               <select className="fld" data-proof={`permission-grant-${r.key}`} value={value[`grant.${r.key}`] ?? r.current} onChange={(e) => set(`grant.${r.key}`, e.target.value)}>
                 {grants.map((g) => <option key={g} value={g}>{g}</option>)}
               </select>
@@ -1910,7 +1913,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <div className="tint tiny" data-proof="permission-diff-preview" style={{ marginTop: 10 }}>
           {diffs.length
             ? <>变更预览: {diffs.map((r) => <span key={r.key} className="mono" style={{ marginRight: 8 }}>{r.label}:{r.current}→{value[`grant.${r.key}`]}</span>)}</>
-            : <>变更预览: 尚未修改任何授权 cell,确认按钮保持禁用。</>}
+            : <>变更预览: 尚未修改任何授权项,确认按钮保持禁用。</>}
         </div>
       </div>
     );
@@ -1934,7 +1937,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
       <div className="field" data-business-form={spec.kind}>
         <span className="bf-legend">业务表单 · 中英越文案{"keyName" in spec && spec.keyName ? <> · <span className="mono">{spec.keyName}</span></> : null}</span>
         {spec.kind === "localized-copy" && spec.mode === "create" && (
-          <div style={{ marginBottom: 10 }}>{input("messageKey", "词条 key", "如 home.hero.title")}</div>
+          <div style={{ marginBottom: 10 }}>{input("messageKey", "词条", "如 home.hero.title")}</div>
         )}
         {spec.kind === "copy-create" && (
           <div className="grid g-2" style={{ gap: 10, marginBottom: 10 }}>
@@ -1953,7 +1956,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
               : select("version", "文案版本", (spec.versionOptions ?? []).map((item) => item.value), Object.fromEntries((spec.versionOptions ?? []).map((item) => [item.value, item.label])))}
             {select("surface", "投放模块", modules.map((item) => item.value), moduleLabels, undefined, changeSurface)}
             {select("copyPosition", "文案位置", positions.map((item) => item.value), positionLabels)}
-            {input("trafficSplit", "分流比例 traffic split(%)", "50", "number")}
+            {input("trafficSplit", "分流比例 (%)", "50", "number")}
             {spec.saveModeChoice && select("saveMode", "保存为", ["存草稿", "发布生效"])}
           </div>
         )}
@@ -1966,14 +1969,14 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           </div>
         )}
         <div className="grid g-2" style={{ gap: 10 }}>
-          {textArea("zh", "中文 zh 文案", "填写中文草稿")}
-          {textArea("en", "英文 en copy", "Fill English copy")}
-          {spec.kind === "localized-copy" && textArea("vi", "越南语 vi 文案", "Nhập nội dung tiếng Việt")}
-          {isManagedCopy && textArea("vi", "越南语 vi 文案", "Nhập nội dung tiếng Việt")}
+          {textArea("zh", "中文文案", "填写中文草稿")}
+          {textArea("en", "英文文案", "Fill English copy")}
+          {spec.kind === "localized-copy" && textArea("vi", "越南语文案", "Nhập nội dung tiếng Việt")}
+          {isManagedCopy && textArea("vi", "越南语文案", "Nhập nội dung tiếng Việt")}
         </div>
         {(spec.kind === "copy-edit" || spec.kind === "copy-create") && (
           <div style={{ marginTop: 10 }}>
-            {textArea("versionNote", "版本说明 version note", "本次草稿变更原因、预期指标和回滚口径", 2)}
+            {textArea("versionNote", "版本说明", "本次草稿变更原因、预期指标和回滚口径", 2)}
           </div>
         )}
         {(spec.placeholders ?? []).length > 0 && (
@@ -2077,7 +2080,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     };
     return (
       <div className="field" data-business-form="copy-experiment-create">
-        <span className="bf-legend">业务表单 · 创建 A/B 实验</span>
+        <span className="bf-legend">业务表单 · 创建文案对比测试</span>
         <label className="field" style={{ marginBottom: 10 }}>
           <span>选择文案</span>
           <select className="fld" aria-label="选择文案" value={copy?.value ?? ""} onChange={(event) => changeCopy(event.target.value)}>
@@ -2173,7 +2176,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
       <div className="field" data-business-form="course-authoring">
         <span className="bf-legend">业务表单 · 课程新建 / 编辑</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("slug", "课程 slug", "learn-earn-basics")}
+          {input("slug", "课程标识", "learn-earn-basics")}
           {(spec.mode === "version-create" || spec.mode === "version-edit") && input("version", "版本号", "v2")}
           {select("category", "课程分类", spec.categories ?? DEFAULT_COURSE_CATEGORIES, COURSE_CATEGORY_LABELS)}
           {select("format", "课程形式", spec.formats ?? ["Article", "Video", "Hands-on"], COURSE_FORMAT_LABELS)}
@@ -2247,16 +2250,16 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "campaign-edit") {
     return (
       <div className="field" data-business-form="campaign-edit">
-        <span className="bf-legend">业务表单 · Campaign 编辑</span>
+        <span className="bf-legend">业务表单 · 通知活动编辑</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("title", "通知标题 title", "Campaign title")}
-          {select("tier", "优先级 priority", spec.tiers ?? DEFAULT_CAMPAIGN_TIERS)}
-          {select("audience", "受众 audience", spec.audiences ?? [])}
-          {select("schedule", "排期 schedule", ["保存为草稿", "排期下发", "立即下发"])}
-          {input("budget", "预算 budget(USD)", "0", "number")}
+          {input("title", "通知标题", "Campaign title")}
+          {select("tier", "优先级", spec.tiers ?? DEFAULT_CAMPAIGN_TIERS)}
+          {select("audience", "受众", spec.audiences ?? [])}
+          {select("schedule", "排期", ["保存为草稿", "排期下发", "立即下发"])}
+          {input("budget", "预算 (美元)", "0", "number")}
         </div>
         <div style={{ marginTop: 10 }}>
-          {textArea("body", "通知正文 body", "填写通知正文与跳转口径", 4)}
+          {textArea("body", "通知正文", "填写通知正文与跳转口径", 4)}
         </div>
       </div>
     );
@@ -2268,9 +2271,9 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <span className="bf-legend">业务表单 · E1 上架节奏门</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {spec.mode === "create"
-            ? select("skuId", "目标 SKU", spec.skuOptions)
-            : input("skuId", "目标 SKU", "sku-id")}
-          {input("name", "展示名称", "留空则使用 SKU 名称")}
+            ? select("skuId", "目标 商品", spec.skuOptions)
+            : input("skuId", "目标 商品", "sku-id")}
+          {input("name", "展示名称", "留空则使用 商品 名称")}
           {input("releaseMonth", "计划发布月", "1-12", "number")}
           {select("phase", "发布阶段", spec.phaseOptions, spec.phaseLabels)}
           {input("phaseOffset", "发布偏移（月）", "0", "number")}
@@ -2291,7 +2294,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("label", "阶段名称", "如 P3 Pro v2 首发")}
           {input("meta", "门槛说明", "如 L0+ / 账户正常")}
-          {input("skus", "SKU 标签", "如 入门档 / Pro v2")}
+          {input("skus", "商品 标签", "如 入门档 / Pro v2")}
           {input("sortOrder", "排序", "10", "number")}
           {select("status", "状态", ["active", "archived"], { active: "启用", archived: "已归档" })}
         </div>
@@ -2312,7 +2315,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             <span>披露版本（后端原子分配）</span>
             <input className="fld" value={value.version ?? ""} readOnly aria-readonly="true" />
           </label>
-          {select("jurisdiction", "法域", (spec.jurisdictionOptions ?? []).map((item) => item.value), jurisdictionLabels, undefined, (next) => {
+          {select("jurisdiction", "适用地区", (spec.jurisdictionOptions ?? []).map((item) => item.value), jurisdictionLabels, undefined, (next) => {
             const updated = { ...value, jurisdiction: next };
             onChange(updated);
             onSelectionChange?.(updated);
@@ -2347,10 +2350,10 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "disclosure-jurisdiction") {
     return (
       <div className="field" data-business-form="disclosure-jurisdiction">
-        <span className="bf-legend">业务表单 · {spec.mode === "create" ? "新增法域" : "编辑法域"}</span>
+        <span className="bf-legend">业务表单 · {spec.mode === "create" ? "新增适用地区" : "编辑适用地区"}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           <label className="field" style={{ marginBottom: 0 }}>
-            <span>法域代码</span>
+            <span>适用地区代码</span>
             <input
               className="fld"
               value={value.code ?? ""}
@@ -2361,10 +2364,10 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
               onChange={(event) => set("code", event.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ""))}
             />
           </label>
-          {input("name", "法域名称", "如 越南司法辖区")}
+          {input("name", "适用地区名称", "如 越南司法辖区")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          法域代码创建后不可修改；启用、停用、归档和删除在列表中单独执行并保留审计记录。
+          适用地区代码创建后不可修改；启用、停用、归档和删除在列表中单独执行并保留审计记录。
         </div>
       </div>
     );
@@ -2400,7 +2403,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           })}
         </div>
         <label className="field" style={{ marginTop: 12 }}>
-          <span><input type="checkbox" checked={value.jurisdictionConfirmed === "true"} onChange={(event) => set("jurisdictionConfirmed", String(event.target.checked))} /> 确认发布法域为 {spec.jurisdiction}</span>
+          <span><input type="checkbox" checked={value.jurisdictionConfirmed === "true"} onChange={(event) => set("jurisdictionConfirmed", String(event.target.checked))} /> 确认发布适用地区为 {spec.jurisdiction}</span>
         </label>
         <label className="field" style={{ marginTop: 6 }}>
           <span><input type="checkbox" checked={value.bilingualConfirmed === "true"} onChange={(event) => set("bilingualConfirmed", String(event.target.checked))} /> 七章中越双语核对完成，确认与监管口径一致</span>
@@ -2419,9 +2422,9 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     };
     return (
       <div className="field" data-business-form="disclosure-matrix">
-        <span className="bf-legend">业务表单 · {spec.mode === "create" ? "新增法域版本映射" : "编辑法域版本映射"}</span>
+        <span className="bf-legend">业务表单 · {spec.mode === "create" ? "新增适用地区版本映射" : "编辑适用地区版本映射"}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {select("jurisdictionCode", "法域", (spec.jurisdictionOptions ?? []).map((item) => item.value), jurisdictionLabels, undefined, (next) => {
+          {select("jurisdictionCode", "适用地区", (spec.jurisdictionOptions ?? []).map((item) => item.value), jurisdictionLabels, undefined, (next) => {
             const selected = spec.jurisdictionOptions?.find((item) => item.value === next);
             const nextVersions = spec.publishedVersionsByJurisdiction?.[next] ?? [];
             onChange({
@@ -2510,10 +2513,10 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             {fieldKeys.length === 0 && <div className="tiny">当前版与待发布版均无结构化字段。</div>}
           </div>
         </div>
-        {spec.requireDataSource && input("dataSource", "财务/NEX 数据来源", "必填：报表、账本快照或市场数据编号")}
+        {spec.requireDataSource && input("dataSource", "财务/UVEL数据来源", "必填：报表、账本快照或市场数据编号")}
         <label className="row" style={{ gap: 8, marginTop: 10 }}>
           <input type="checkbox" checked={value.bilingualConfirmed === "true"} onChange={(event) => set("bilingualConfirmed", String(event.target.checked))} />
-          三语确认：中文、越南语、英文已逐项核对，关键数字和 NEX 口径一致
+          三语确认：中文、越南语、英文已逐项核对，关键数字和 UVEL 口径一致
         </label>
       </div>
     );
@@ -2523,7 +2526,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     const verified = spec.serverVerification;
     return (
       <div className="field" data-business-form="identity-verify">
-        <span className="bf-legend">业务表单 · 身份核验(高敏安全动作前置)</span>
+        <span className="bf-legend">业务表单 · 身份核验(高风险安全动作前置)</span>
         <div className="tint danger tiny" style={{ marginBottom: 10 }}>
           目标 <span className="mono">{spec.subject}</span> · 未完成全部核验项前,确认按钮保持禁用。
         </div>
@@ -2543,11 +2546,11 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           </div>
         </> : <>
           <div className="grid g-2" style={{ gap: 10 }}>
-            {select("channel", "核验渠道 channel", spec.channels ?? ["视频核实", "当面核实", "回拨预留号码"], "identity-channel")}
-            {input("verifiedAt", "核验时间 verified at", "2026-06-18 14:30", "datetime-local")}
+            {select("channel", "核验渠道", spec.channels ?? ["视频核实", "当面核实", "回拨预留号码"], "identity-channel")}
+            {input("verifiedAt", "核验时间", "2026-06-18 14:30", "datetime-local")}
           </div>
           <div style={{ marginTop: 10 }}>
-            {input("ticket", "来源工单号 ticket", spec.ticketHint ?? "如 SEC-20260618-001")}
+            {input("ticket", "来源工单号", spec.ticketHint ?? "如 SEC-20260618-001")}
           </div>
         </>}
         <label className="row" style={{ gap: 8, marginTop: 10, color: "var(--ink-2)", fontSize: 12.5 }}>
@@ -2563,16 +2566,16 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
       <div className="field" data-business-form="task-edit">
         <span className="bf-legend">业务表单 · 任务编辑{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("name", "任务名称 name", "如 逛收益页")}
+          {input("name", "任务名称", "如 逛收益页")}
           {input("path", "跳转路径 path", "如 /earn")}
-          {input("reward", "奖励 reward", "如 50 NEX(可双币:200 NEX + $1)")}
-          {select("status", "状态 status", spec.statusOptions ?? ["active", "paused", "archived"], "task-edit-status", { active: "生效中 active", paused: "已停用 paused", archived: "已归档 archived" })}
+          {input("reward", "奖励说明", "如 50 UVEL(可双币:200 UVEL + $1)")}
+          {select("status", "状态", spec.statusOptions ?? ["active", "paused", "archived"], "task-edit-status", { active: "生效中 active", paused: "已停用 paused", archived: "已归档 archived" })}
           {select("completionType", "完成判定方式 completion", spec.completionTypeOptions ?? ["visit", "event", "manual"], "task-edit-completion", { visit: "访问路径自动 visit", event: "业务事件触发 event", manual: "手动核验 manual" })}
           {input("completionEvent", "完成触发条件 / 事件", "visit 可空;event 填 order.paid;manual 填核验说明")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          完成判定:<b>访问路径自动</b> = 用户进入「跳转路径」即判完成(浏览类);<b>业务事件触发</b> = server 监听指定事件(如 order.paid / wallet.deposited)才算完成(转化类,谎报无效);<b>手动核验</b> = 运营人工确认。
-          升奖励 = 放大 NEX 流出,过 B1 红线;状态 paused = 用户端不再展示,已派发不回收。
+          完成判定:<b>访问路径自动</b> = 用户进入「跳转路径」即判完成(浏览类);<b>业务事件触发</b> = 系统确认对应业务已完成后，才计入任务完成记录;<b>手动核验</b> = 运营人工确认。
+          升奖励 = 放大 UVEL 流出,过 B1 红线;停用后 = 用户端不再展示,已派发不回收。
         </div>
       </div>
     );
@@ -2583,52 +2586,52 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
       <div className="field" data-business-form="voucher-config">
         <span className="bf-legend">业务表单 · 代金券配置{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("name", "名称 name", "如 新人专享券")}
-          {select("type", "类型 type", ["fixed", "percent"], "voucher-type", { fixed: "满减 fixed", percent: "折扣 percent" })}
+          {input("name", "名称", "如 新人专享券")}
+          {select("type", "类型", ["fixed", "percent"], "voucher-type", { fixed: "满减 fixed", percent: "折扣 percent" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {input("amountUSD", "满减面值 amount(USD)", "type=fixed 填;如 50", "number")}
-          {input("percent", "折扣率 percent(%)", "type=percent 填;如 8", "number")}
+          {input("amountUSD", "满减面值 (美元)", "type=fixed 填;如 50", "number")}
+          {input("percent", "折扣率 (%)", "type=percent 填;如 8", "number")}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {input("minPurchaseUSD", "满减门槛 min(USD)", "满 X 可用;0=无门槛", "number")}
-          {input("maxDiscountUSD", "折扣封顶 cap(USD)", "0=不封顶", "number")}
+          {input("minPurchaseUSD", "满减门槛 (美元)", "满 X 可用;0=无门槛", "number")}
+          {input("maxDiscountUSD", "折扣封顶 (美元)", "0=不封顶", "number")}
         </div>
         <div style={{ marginTop: 10 }}>
-          {input("issuanceLimit", "发行上限 inventory(张)", "0=不限量;正整数=总发行上限", "number")}
+          {input("issuanceLimit", "发行上限 (张)", "0=不限量;正整数=总发行上限", "number")}
         </div>
         <div style={{ marginTop: 10 }}>
-          {multiSelect("applicableSkus", "适用 SKU(点选;不选=全设备)", spec.applicableSkuOptions ?? [], "voucher-skus", spec.applicableSkuLabels)}
+          {multiSelect("applicableSkus", "适用商品(点选;不选=全设备)", spec.applicableSkuOptions ?? [], "voucher-skus", spec.applicableSkuLabels)}
         </div>
         <div style={{ marginTop: 10 }}>
           {multiSelect("claimSurfaces", "领取入口页面(点选)", ["home", "store", "me", "earn"], "voucher-surfaces", { home: "首页", store: "商城", me: "我的", earn: "收益" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {select("audience", "受众 audience", ["new", "all"], "voucher-audience", { new: "新人 new", all: "全部 all" })}
-          {select("status", "状态 status", ["active", "paused"], "voucher-status", { active: "投放中 active", paused: "已暂停 paused" })}
+          {select("audience", "受众", ["new", "all"], "voucher-audience", { new: "新人 new", all: "全部 all" })}
+          {select("status", "状态", ["active", "paused"], "voucher-status", { active: "投放中 active", paused: "已暂停 paused" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {input("startDate", "生效起 start", "留空=即时", "date")}
-          {input("endDate", "有效止 end", "留空=长期有效", "date")}
+          {input("startDate", "生效起", "留空=即时", "date")}
+          {input("endDate", "有效止", "留空=长期有效", "date")}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {select("popupEnabled", "首页弹窗 popup", ["true", "false"], "voucher-popup", { true: "参与弹窗 true", false: "不弹窗 false" })}
-          {select("popupCadenceEnabled", "弹窗总开关 cadence", ["true", "false"], "voucher-cadence-enabled", { true: "启用 true", false: "关闭 false" })}
+          {select("popupEnabled", "首页弹窗", ["true", "false"], "voucher-popup", { true: "参与弹窗 true", false: "不弹窗 false" })}
+          {select("popupCadenceEnabled", "弹窗总开关", ["true", "false"], "voucher-cadence-enabled", { true: "启用 true", false: "关闭 false" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {input("popupDelayMs", "弹窗延迟 delay(ms)", "0-60000;服务端单位毫秒", "number")}
-          {input("popupCooldownHours", "账号冷却 cooldown(h)", "0-720;服务端账号级", "number")}
+          {input("popupDelayMs", "弹窗延迟 (ms)", "0-60000;服务端单位毫秒", "number")}
+          {input("popupCooldownHours", "账号冷却 (h)", "0-720;服务端账号级", "number")}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {input("popupMaxPerSession", "单会话上限 maxPerSession", "1-10;当前登录会话", "number")}
-          {select("splittable", "可拆分 splittable", ["false", "true"], "voucher-splittable", { false: "不可拆分 false", true: "可拆分 true" })}
+          {input("popupMaxPerSession", "单会话上限", "1-10;当前登录会话", "number")}
+          {select("splittable", "可拆分", ["false", "true"], "voucher-splittable", { false: "不可拆分 false", true: "可拆分 true" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {select("stackWithTrial", "可叠加试用收益 stackWithTrial", ["false", "true"], "voucher-stack-trial", { false: "不可叠加 false", true: "可叠加 true" })}
-          {select("stackWithOthers", "可叠加其它优惠 stackWithOthers", ["false", "true"], "voucher-stack-others", { false: "不可叠加 false", true: "可叠加 true" })}
+          {select("stackWithTrial", "可叠加试用收益", ["false", "true"], "voucher-stack-trial", { false: "不可叠加 false", true: "可叠加 true" })}
+          {select("stackWithOthers", "可叠加其它优惠", ["false", "true"], "voucher-stack-others", { false: "不可叠加 false", true: "可叠加 true" })}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          <b>满减</b> = 满「门槛」减「面值」;<b>折扣</b> = 百分比折扣,封顶可选。发行上限 0 = 不限量,正整数 = 所有来源合计发券上限。适用 SKU 不选 = 全设备(领券跳商城),单选 = 跳该 SKU 详情页。领取入口 = 关闭弹窗后展示领券 banner 的前端页面。<b>叠加策略</b>:默认不与试用收益 / 其它优惠叠加(二选一取最优)。<b>不可提现</b>(固有性质:折扣只在结算抵扣价格、永不入可提现余额)。代金券是促销折扣、非 NEX 负债,不挂 B1 红线。
+          <b>满减</b> = 满「门槛」减「面值」;<b>折扣</b> = 百分比折扣,封顶可选。发行上限 0 = 不限量,正整数 = 所有来源合计发券上限。适用商品 不选 = 全设备(领券跳商城),单选 = 跳该 商品 详情页。领取入口 = 关闭弹窗后展示领券提示条 的前端页面。<b>叠加策略</b>:默认不与试用收益 / 其它优惠叠加(二选一取最优)。<b>不可提现</b>(固有性质:折扣只在结算抵扣价格、永不入可提现余额)。代金券是促销折扣、非 UVEL 负债,不挂 B1 红线。
         </div>
       </div>
     );
@@ -2642,11 +2645,11 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
       <div className="field" data-business-form="vrank-reward-edit">
         <span className="bf-legend">业务表单 · 等级奖励{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div style={{ marginBottom: 10 }}>
-          {select("rtype", "奖励类型 type", ["usdt", "nex", "voucher", "sku", "custom"], "vrank-reward-type", { usdt: "USDT 现金", nex: "NEX 代币", voucher: "代金券", sku: "系统 SKU", custom: "自定义" })}
+          {select("rtype", "奖励类型", ["usdt", "nex", "voucher", "sku", "custom"], "vrank-reward-type", { usdt: "USDT 现金", nex: "UVEL 代币", voucher: "代金券", sku: "系统 商品", custom: "自定义" })}
         </div>
         {(rtype === "usdt" || rtype === "nex") && (
           <div data-proof="vrank-reward-amount">
-            {input("amount", rtype === "usdt" ? "金额 amount(USDT)" : "数量 amount(NEX)", rtype === "usdt" ? "如 50" : "如 10000", "number")}
+            {input("amount", rtype === "usdt" ? "金额(USDT)" : "数量(UVEL)", rtype === "usdt" ? "如 50" : "如 10000", "number")}
           </div>
         )}
         {rtype === "voucher" && (
@@ -2659,8 +2662,8 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         {rtype === "sku" && (
           <div data-proof="vrank-reward-sku">
             {skuOpts.length === 0
-              ? <div className="tiny" style={{ color: "var(--ink-4)" }}>暂无在售 SKU(先到 E1 商品上架)。</div>
-              : select("skuId", "选择 SKU sku", skuOpts, "vrank-reward-sku-sel", spec.skuLabels, undefined, "当前 SKU 不可用，请重新选择")}
+              ? <div className="tiny" style={{ color: "var(--ink-4)" }}>暂无在售 商品(先到 E1 商品上架)。</div>
+              : select("skuId", "选择商品", skuOpts, "vrank-reward-sku-sel", spec.skuLabels, undefined, "当前 商品 不可用，请重新选择")}
           </div>
         )}
         {rtype === "custom" && (
@@ -2669,7 +2672,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           </div>
         )}
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          <b>USDT / NEX</b> = 直接发放金额(会放大资金流出,过 B1 备付金覆盖率检查);<b>代金券 / SKU</b> = 从现有代金券 / 在售 SKU 中选;<b>自定义</b> = 自由文本(线下兑付,不入资金账)。
+          <b>USDT / UVEL</b> = 直接发放金额(会放大资金流出,过 B1 备付金覆盖率检查);<b>代金券 / 商品</b> = 从现有代金券 / 在售 商品 中选;<b>自定义</b> = 自由文本(线下兑付,不入资金账)。
         </div>
       </div>
     );
@@ -2678,13 +2681,13 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "day-one-window") {
     return (
       <div className="field" data-business-form="day-one-window">
-        <span className="bf-legend">业务表单 · 首日时窗</span>
+        <span className="bf-legend">业务表单 · 首日任务完成期限</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("activeHours", "满额窗 active(小时)", "24", "number")}
-          {input("graceHours", "宽限窗 grace(小时)", "72", "number")}
+          {input("activeHours", "全额奖励期限（小时）", "24", "number")}
+          {input("graceHours", "宽限期限（小时）", "72", "number")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          满额窗内 6 项完成领满额(三相 active 档);超满额窗、宽限窗内完成领宽限档;超宽限窗过期(0)。<b>宽限窗须 ≥ 满额窗</b>。改后只对新进窗用户生效(A 方案快照不追溯);放宽窗 = 放大流出走 B1 红线核验。
+          在全额奖励期限内完成 6 项任务可领全额奖励；超过该期限、仍在宽限期内完成可领宽限期奖励；超过宽限期不再发放。<b>宽限窗须 ≥ 满额窗</b>。改后只对新进窗用户生效(A 方案快照不追溯);放宽窗 = 放大流出走 B1 红线核验。
         </div>
       </div>
     );
@@ -2693,14 +2696,14 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "day-one-tri-reward") {
     return (
       <div className="field" data-business-form="day-one-tri-reward">
-        <span className="bf-legend">业务表单 · 首日三相奖励</span>
+        <span className="bf-legend">业务表单 · 首日任务分档奖励</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("active", "满额 active(NEX)", "500", "number")}
-          {input("grace", "宽限 grace(NEX)", "200", "number")}
-          {input("expired", "过期 expired(NEX)", "0", "number")}
+          {input("active", "按时完成奖励(UVEL)", "500", "number")}
+          {input("grace", "宽限期奖励(UVEL)", "200", "number")}
+          {input("expired", "逾期奖励(UVEL)", "0", "number")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          满额(active 窗内 6 项完成)/ 宽限(grace 窗内)/ 过期(超窗,通常 0)三档,<b>须满额 ≥ 宽限 ≥ 过期</b>。升任一档 = 放大 NEX 流出,提交即过 B1 备付金红线。
+          按时完成、宽限期内完成和逾期共三档奖励，<b>须满额 ≥ 宽限 ≥ 过期</b>。升任一档 = 放大 UVEL 流出,提交即过 B1 备付金红线。
         </div>
       </div>
     );
@@ -2712,13 +2715,13 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <span className="bf-legend">业务表单 · 每周任务编辑{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("cond", "条件 / 任务 cond", "如 USDT 长期质押")}
-          {input("reward", "奖励 reward", "如 3,000(可双币:200 + $2)")}
-          {select("status", "状态 status", spec.statusOptions ?? ["active", "paused", "archived"], "weekly-task-status", { active: "生效中 active", paused: "已停用 paused", archived: "已归档 archived" })}
+          {input("reward", "奖励说明", "如 3,000(可双币:200 + $2)")}
+          {select("status", "状态", spec.statusOptions ?? ["active", "paused", "archived"], "weekly-task-status", { active: "生效中 active", paused: "已停用 paused", archived: "已归档 archived" })}
           {select("completionType", "完成判定方式 completion", spec.completionTypeOptions ?? ["visit", "event", "manual"], "weekly-task-completion", { visit: "访问路径自动 visit", event: "业务事件触发 event", manual: "手动核验 manual" })}
           {input("completionEvent", "完成触发条件 / 事件", "如 stake.locked / referral.sent")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          一档按优先级命中第一条派发、二档完成池每条独立派发;完成判定多为业务事件(行为归因,谎报无效)。升奖励 = 放大 NEX 流出过 B1 红线;同周锁定、下周生效;状态 paused = 该条本周起不派发。
+          一档按优先级命中第一条派发、二档完成池每条独立派发;完成判定多为业务事件(行为归因,谎报无效)。升奖励 = 放大 UVEL 流出过 B1 红线;同周锁定、下周生效;停用后 = 该条本周起不派发。
         </div>
       </div>
     );
@@ -2731,14 +2734,14 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("theme", "主题 theme", "如 地基建设者")}
           {input("age", "账龄段 age", "如 0–2 月")}
-          {input("reward", "奖励 reward", "如 1,500 NEX")}
-          {select("status", "状态 status", spec.statusOptions ?? ["active", "paused", "archived"], "monthly-task-status", { active: "生效中 active", paused: "已停用 paused", archived: "已归档 archived" })}
+          {input("reward", "奖励说明", "如 1,500 UVEL")}
+          {select("status", "状态", spec.statusOptions ?? ["active", "paused", "archived"], "monthly-task-status", { active: "生效中 active", paused: "已停用 paused", archived: "已归档 archived" })}
         </div>
         <div style={{ marginTop: 10 }}>
           {textArea("goals", "子目标 goals(3 个子目标全达成才可领)", "如 累计赚 200 · 绑卡 · 邀 1 人", 2)}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          按账龄段派发,3 个子目标全达成才可领,跨月清空重派;升奖励 = 放大 NEX 流出过 B1 红线;改动只对本月新派生效。
+          按账龄段派发,3 个子目标全达成才可领,跨月清空重派;升奖励 = 放大 UVEL 流出过 B1 红线;改动只对本月新派生效。
         </div>
       </div>
     );
@@ -2751,7 +2754,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("missionCode", "任务编号 code(英文唯一)", "如 dayOne-visit-earn")}
           {input("missionName", "任务名称", "如 逛收益页")}
-          {input("rewardPoints", "奖励 NEX 数", "如 50", "number")}
+          {input("rewardPoints", "奖励 UVEL 数", "如 50", "number")}
           {select("category", "任务类别", ["wallet", "explore", "recommend", "identity", "social"], {
             wallet: "钱包", explore: "探索", recommend: "推荐", identity: "身份", social: "社交",
           })}
@@ -2777,7 +2780,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             "/pages/me/profile": "个人资料",
             "/pages/me/wallet-cards-new": "绑定银行卡",
             "/pages/me/wallet-topup": "钱包充值",
-            "/pages/me/wallet-exchange": "NEX / USDT 兑换",
+            "/pages/me/wallet-exchange": "UVEL / USDT 兑换",
             "/pages/me/wallet-repurchase": "复投",
             "/pages/me/devices": "我的设备",
             "/pages/earn/earn": "收益",
@@ -2788,7 +2791,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             "/pages/learn/courses": "学习中心",
             "/pages/staking/staking": "Staking",
             "/pages/genesis/genesis": "Genesis",
-            "/pages/genesis/marketplace": "Genesis 二级市场",
+            "/pages/genesis/marketplace": "创世节点 二级市场",
           })}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
@@ -2810,9 +2813,9 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {input("monthsTo", "账龄止(月)", "2", "number")}
           {input("targetType", "目标类型", "如 earn")}
           {input("targetValue", "目标值", "200", "number")}
-          {select("rewardType", "奖励类型", ["NEX", "USDT"], "monthly-reward-type", { NEX: "NEX 代币", USDT: "USDT 现金" })}
+          {select("rewardType", "奖励类型", ["NEX", "USDT"], "monthly-reward-type", { NEX: "UVEL 代币", USDT: "USDT 现金" })}
           {input("rewardAmount", "奖励量", "1500", "number")}
-          {input("rewardName", "奖励展示", "如 1500 NEX")}
+          {input("rewardName", "奖励展示", "如 1500 UVEL")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
           按账龄段派发;奖励 &gt; 0 会放大资金流出,过 B1 备付金红线。
@@ -2827,12 +2830,12 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <span className="bf-legend">业务表单 · 新建轮盘档位{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("tierName", "档位名", "如 小额奖")}
-          {input("rewardName", "奖励展示", "如 100 NEX")}
+          {input("rewardName", "奖励展示", "如 100 UVEL")}
           {input("probabilityPct", "概率%", "如 5(0-100)", "number")}
           {select("realOutflow", "真实出金", ["0", "1"], "tier-real-outflow", { "0": "否(体验分/无流出)", "1": "是(真实出金)" })}
           {select("rewardKind", "奖励类型", ["nex", "points", "usdt", "coupon"], "tier-reward-kind", { nex: "NEX", points: "积分", usdt: "USDT", coupon: "代金券" })}
           {input("rewardAmount", "实际派奖数量", "如 100", "number")}
-          {input("voucherId", "代金券 ID(仅 coupon)", "如 WHEEL-50")}
+          {input("voucherId", "代金券 (仅 )", "如 WHEEL-50")}
           {input("dailyStock", "每日全局库存(0=不限)", "如 50", "number")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
@@ -2845,15 +2848,15 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "wheel-guard-config") {
     return (
       <div className="field" data-business-form="wheel-guard-config">
-        <span className="bf-legend">业务表单 · 新建轮盘护栏{spec.subject ? <> · {spec.subject}</> : null}</span>
+        <span className="bf-legend">业务表单 · 新建转盘安全限制{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {select("guardKey", "护栏 key", ["budget", "kill"], "wheel-guard-key", { budget: "每日真实派奖预算", kill: "真实奖总开关" })}
-          {input("guardLabel", "护栏名", "如 奖池预算")}
+          {select("guardKey", "安全限制", ["budget", "kill"], "wheel-guard-key", { budget: "每日真实派奖预算", kill: "真实奖总开关" })}
+          {input("guardLabel", "限制名称", "如 奖池预算")}
           {input("guardValue", "默认值", "如 1000")}
           {input("note", "说明", "如 单次抽奖预算上限")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          budget 与 kill 直接进入服务端转盘裁决；每档每日库存由奖池档位的 dailyStock 直接控制，不再维护第二份 cap 文本。
+          预算和暂停开关直接决定转盘是否可参与；每档每日奖励上限由奖池库存统一控制。
         </div>
       </div>
     );
@@ -2868,7 +2871,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {input("name", "活动名", "如 夏日狂欢")}
           {select("kind", "类型", ["discount", "referral", "regional", "boost", "seasonal", "holding", "onboarding"], "event-kind", { discount: "限时折扣", referral: "邀请挑战", regional: "区域活动", boost: "加成活动", seasonal: "季节活动", holding: "持币活动", onboarding: "新手活动" })}
           {select("state", "状态", ["ongoing", "upcoming", "ended"], "event-state", { ongoing: "进行中", upcoming: "待开始", ended: "已结束" })}
-          {input("reward", "奖励", "如 100 NEX")}
+          {input("reward", "奖励", "如 100 UVEL")}
           {input("condition", "完成条件", "如 order.paid")}
           {input("targetValue", "目标值", "如 5", "number")}
           {input("geo", "地域范围", "如 VN / GLOBAL")}
@@ -2879,7 +2882,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {select("trackable", "可追踪", ["false", "true"], "event-trackable", { "false": "否", "true": "是" })}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          活动 id 英文唯一;UTC 结束时间必须晚于开始时间;App 跳转仅允许 /pages/*;主推需进行中且全局唯一;奖励放大流出过 B1 红线。
+          活动标识须使用英文且不能重复；协调世界时结束时间必须晚于开始时间；应用跳转仅允许 /pages/*；主推活动须在进行中且全局唯一；提高奖励须通过 B1 资金覆盖率校验。
         </div>
       </div>
     );
@@ -2891,16 +2894,16 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
       <div className="field" data-business-form="promo-banner-edit">
         <span className="bf-legend">业务表单 · 本周转化卡</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("baseReward", "基础奖励 base(NEX)", "800", "number")}
+          {input("baseReward", "基础奖励(UVEL)", "800", "number")}
           {input("multiplier", "促销倍率 ×", "1.5", "number")}
           {input("countdownDays", "倒计时 · 天", "4", "number")}
           {input("countdownHours", "倒计时 · 时", "12", "number")}
           {input("targetDevice", "目标设备 target", "自动(用户最高设备)")}
           {input("targetDaily", "日产展示 $/d", "7.00")}
-          {select("status", "上下架 status", spec.statusOptions ?? ["active", "paused"], "promo-banner-status", { active: "上架中 active", paused: "已下架 paused" })}
+          {select("status", "上下架", spec.statusOptions ?? ["active", "paused"], "promo-banner-status", { active: "上架中 active", paused: "已下架 paused" })}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          最终奖励 = 基础 × 倍率 = <b>{Number.isFinite(final) ? Math.round(final) : "—"} NEX</b>(对应前端首页「激活设备领 NEX」促销卡)。升奖励 / 倍率 = 放大 NEX 流出,过 B1 红线;文案归 I 域,本块只配奖励 / 倍率 / 倒计时 / 目标设备 / 日产 / 上下架。
+          最终奖励 = 基础 × 倍率 = <b>{Number.isFinite(final) ? Math.round(final) : "—"} UVEL</b>(对应前端首页「激活设备领 UVEL」促销卡)。升奖励 / 倍率 = 放大 UVEL 流出,过 B1 红线;文案归 I 域,本块只配奖励 / 倍率 / 倒计时 / 目标设备 / 日产 / 上下架。
         </div>
       </div>
     );
@@ -2909,25 +2912,25 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "schema-authoring") {
     return (
       <div className="field" data-business-form="schema-authoring">
-        <span className="bf-legend">业务表单 · 事件 Schema 注册</span>
+        <span className="bf-legend">业务表单 · 事件字段登记</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("eventName", "事件名 eventName(域.对象_动作)", "device.order_paid")}
-          {select("ownerDomain", "归属域 ownerDomain", spec.ownerDomains ?? ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"])}
-          {select("producer", "生产方 producer", ["server", "client", "server+client"])}
-          {input("consumer", "消费方 consumer", "B3 / L 域 BI / 风控 K")}
-          {input("propName", "属性名 property", "order_id")}
-          {select("propType", "属性类型 type", spec.propertyTypes ?? ["string", "number", "boolean", "enum", "timestamp", "id"])}
-          {select("samplingPolicy", "采样策略 sampling", spec.samplingPolicies ?? ["100%(资金/风控/转化)", "浏览 10%", "会话 25%"])}
-          {input("version", "schema 版本 version", spec.versionHint ?? "输入 schema 版本")}
+          {input("eventName", "事件名称（业务域.对象_动作）", "device.order_paid")}
+          {select("ownerDomain", "所属业务域", spec.ownerDomains ?? ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"])}
+          {select("producer", "发送方", ["server", "client", "server+client"])}
+          {input("consumer", "使用方", "B3 / L 域 BI / 风控 K")}
+          {input("propName", "字段名称", "order_id")}
+          {select("propType", "字段类型", spec.propertyTypes ?? ["string", "number", "boolean", "enum", "timestamp", "id"])}
+          {select("samplingPolicy", "采集比例", spec.samplingPolicies ?? ["100%(资金/风控/转化)", "浏览 10%", "会话 25%"])}
+          {input("version", "登记版本", spec.versionHint ?? "输入登记版本")}
         </div>
         <div className="row wrap" style={{ gap: 16, marginTop: 10 }}>
           <label className="row" style={{ gap: 8, color: "var(--ink-2)", fontSize: 12.5 }}>
             <input data-proof="schema-server-auth" type="checkbox" checked={value.isServerAuthoritative === "true"} onChange={(e) => set("isServerAuthoritative", e.target.checked ? "true" : "false")} />
-            isServerAuthoritative(资金/状态事件必勾)
+            由服务器确认（资金和状态事件必选）
           </label>
           <label className="row" style={{ gap: 8, color: "var(--ink-2)", fontSize: 12.5 }}>
             <input data-proof="schema-pii" type="checkbox" checked={value.isPII === "true"} onChange={(e) => set("isPII", e.target.checked ? "true" : "false")} />
-            含 PII(勾选则禁止注册 · 隐私明文禁入)
+            包含个人隐私明文（不能登记）
           </label>
         </div>
       </div>
@@ -2944,7 +2947,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {input("reviewAt", "复查时间 review at", "2026-06-25", "date")}
         </div>
         <div style={{ marginTop: 10 }}>
-          {input("owner", "责任人 owner", spec.ownerHint ?? "如 risk@nexgrid / 风控-张三")}
+          {input("owner", "责任人 owner", spec.ownerHint ?? "如 风控值班人员 / 风控-张三")}
         </div>
       </div>
     );
@@ -3061,9 +3064,9 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     const slaMinutes = parseSopSlaMinutes(value.sla)?.toString() ?? "";
     return (
       <div className="field" data-business-form="sop-authoring">
-        <span className="bf-legend">应急 SOP 剧本编排</span>
+        <span className="bf-legend">应急预案步骤设置</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("name", "剧本名称", spec.nameHint ?? "如 监管点名快速止血")}
+          {input("name", "预案名称", spec.nameHint ?? "如 监管点名快速止血")}
           {select("scene", "触发场景", spec.scenes ?? ["监管点名", "资金异常", "数据泄露", "舆情挤兑", "技术故障"])}
           {select("owner", "责任角色", spec.owners ?? ["风控", "合规审计", "超管", "财务"])}
           <label className="field" style={{ marginBottom: 0 }}>
@@ -3312,14 +3315,14 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <span className="bf-legend">业务表单 · 导出任务向导</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {select("exportType", "导出类型", spec.exportTypes ?? ["账单 CSV", "漏斗序列", "财务报表", "运营报表", "监管报告"])}
-          {kpiRange ? select("window", "KPI 时间范围", Object.keys(L5_KPI_WINDOWS), L5_KPI_WINDOWS)
+          {kpiRange ? select("window", "关键指标时间范围", Object.keys(L5_KPI_WINDOWS), L5_KPI_WINDOWS)
             : input("timeRange", "时间范围", "如 2026-W17 ~ W22 / 2026-05")}
           {kpiRange && value.window === "custom" && <>
             <label className="field"><span>开始日期（北京时间）</span><input className="fld" type="date" value={value.from ?? ""} max={value.to || l5BusinessToday()} onChange={(event) => set("from", event.target.value)} /></label>
             <label className="field"><span>结束日期（北京时间）</span><input className="fld" type="date" value={value.to ?? ""} min={value.from || undefined} max={l5BusinessToday()} onChange={(event) => set("to", event.target.value)} /></label>
           </>}
           {input("fields", aggregateOnly ? "聚合字段" : "字段范围", aggregateOnly ? "如 用户数、订单数、完成率" : "如 user_id, amount, ts(留空=全字段)")}
-          {select("piiLevel", aggregateOnly ? "数据范围" : "PII 范围", spec.piiLevels ?? ["无 PII", "低(脱敏 ID)", "高(含手机 / 地址)"])}
+          {select("piiLevel", aggregateOnly ? "数据范围" : "个人隐私信息范围", spec.piiLevels ?? ["无 PII", "低(脱敏 ID)", "高(含手机 / 地址)"])}
           {select("maskPolicy", aggregateOnly ? "保护策略" : "脱敏策略", spec.maskPolicies ?? ["默认脱敏", "字段掩码", "解密(强操作确认)"])}
           {input("recipient", "接收人 / 用途", aggregateOnly ? "如 BI 周报分析" : "如 合规-王 / 监管报送")}
         </div>
@@ -3338,16 +3341,16 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "balance-adjust") {
     const amtN = Number(value.amount);
     const dir = value.direction ?? "增加";
-    const signed = !Number.isFinite(amtN) || amtN <= 0 ? "—" : `${dir === "扣减" ? "−" : dir === "冲正" ? "∓" : "+"}${amtN} ${value.currency ?? "USDT"}`;
+    const signed = !Number.isFinite(amtN) || amtN <= 0 ? "—" : `${dir === "扣减" ? "−" : dir === "冲正" ? "∓" : "+"}${amtN} ${value.currency === "NEX" ? "UVEL" : value.currency ?? "USDT"}`;
     return (
       <div className="field" data-business-form="balance-adjust">
         <span className="bf-legend">业务表单 · 结构化调账(方向 / 金额 / 凭证)</span>
         <div className="tint tiny" style={{ marginBottom: 10 }}>目标 <span className="mono">{spec.subject}</span> · 金额输入的是「调整额」非「调整后余额」,方向由下拉显式表达,避免增减误填。</div>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {select("direction", "调整方向 direction", spec.directions ?? ["增加", "扣减", "冲正"], "adjust-direction")}
-          {input("amount", "调整金额 amount(正数)", "100", "number")}
-          {select("currency", "币种 currency", spec.currencies ?? ["USDT", "NEX"], "adjust-currency")}
-          {input("voucher", "关联凭证 voucher", "工单号 / 链上 txid / 银行流水号")}
+          {select("direction", "调整方向", spec.directions ?? ["增加", "扣减", "冲正"], "adjust-direction")}
+          {input("amount", "调整金额(正数)", "100", "number")}
+          {select("currency", "币种", spec.currencies ?? ["USDT", "NEX"], "adjust-currency")}
+          {input("voucher", "关联凭证", "工单号 / 链上 txid / 银行流水号")}
         </div>
         <div className="tint tiny" data-proof="adjust-entry-preview" style={{ marginTop: 10 }}>
           分录预览:<span className="mono" style={{ color: dir === "扣减" ? "var(--danger)" : "var(--success)" }}>{signed}</span> · 方向 {dir} · 凭证 {value.voucher || "(待填)"}
@@ -3515,7 +3518,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
                       : `，低于红线 ${coverage.redlinePct}%，系统会拒绝提交`}
               </>
             ) : (
-              <>{auditSink === "local-history" ? "本页为本地配置面,覆盖率预检待接入后端后生效;请人工确认资金方向影响。" : "提交时由后端实时校验覆盖率，当前弹窗不使用前端兜底值。"}</>
+              <>{auditSink === "local-history" ? "本页为本地配置面,覆盖率预检待接入后端后生效;请人工确认资金方向影响。" : "提交时由后端实时校验覆盖率，当前弹窗不使用前端备用值。"}</>
             )}
           </div>
         </div>
@@ -3524,9 +3527,9 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         <span className="mc"><Icon name="check" size={12} /> 操作者确认</span>
         <Icon name="arrow" size={14} />
         <span className="mc" style={{ background: "var(--brand-soft)", color: "var(--brand)" }}>
-          操作理由必填 · {auditSink === "local-history" ? "落本页变更历史" : isJ4Command ? "写入审计记录" : "写入 A2 审计"}
+          操作理由必填 · {auditSink === "local-history" ? "记录在本页修改历史" : isJ4Command ? "写入审计记录" : "写入 A2 审计"}
         </span>
-        <span className="mc" style={{ background: "var(--surface-3)", color: "var(--ink-3)" }}>{completionCopy ?? (isJ4Command ? "提交后等待服务端确认" : "确认后立即生效")}</span>
+        <span className="mc" style={{ background: "var(--surface-3)", color: "var(--ink-3)" }}>{completionCopy ?? (isJ4Command ? "提交后等待服务端确认" : "提交后以系统处理结果为准")}</span>
       </div>
       {activeBusinessForm && (
         <BusinessFormBlock spec={activeBusinessForm} value={businessValue} onChange={setBusinessValue} onSelectionChange={(next) => void handleBusinessSelectionChange(next)} onUploadStateChange={(key, state) => setUploadStates((current) => ({ ...current, [key]: state }))} />
@@ -3534,10 +3537,10 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
       {uploadBlocked && <div role="alert" className="itint" style={{ marginTop: 8 }}>
         {Object.values(uploadStates).includes("uploading") ? "图片正在上传，请完成后再提交。" : "图片上传失败，请重新上传或明确清除图片后再提交。"}
       </div>}
-      {businessSelectionLoading && <div className="itint" style={{ marginTop: 8 }}>正在加载目标法域版本快照…</div>}
+      {businessSelectionLoading && <div className="itint" style={{ marginTop: 8 }}>正在加载目标适用地区版本快照…</div>}
       {spec && (
         <div className="field">
-          <span className="bf-legend">目标新值{spec.current ? <> · 当前 <span className="mono">{spec.current}</span></> : null}</span>
+          <span className="bf-legend">目标新值{spec.current ? <> · 当前 <span className="mono">{spec.optionLabels?.[spec.current] ?? spec.current}</span></> : null}</span>
           {kind === "select" || kind === "toggle" ? (
             <div className="row wrap" style={{ gap: 8 }}>
               {opts.map((o) => <Chip key={o} tab sel={newVal === o} disabled={spec.disabledOptions?.includes(o)} onClick={() => setNewVal(o)}>{spec.optionLabels?.[o] ?? o}</Chip>)}
@@ -3566,13 +3569,13 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
           )}
           {newVal && spec.current && (
             <div className="tiny" style={{ marginTop: 8, color: "var(--ink-3)" }}>
-              当前 <span className="mono">{spec.current}</span> → 新 <span className="mono" style={{ color: "var(--brand)" }}>{newVal}{spec.unit ? ` ${spec.unit}` : ""}</span>
+              当前 <span className="mono">{spec.optionLabels?.[spec.current] ?? spec.current}</span> → 新 <span className="mono" style={{ color: "var(--brand)" }}>{spec.optionLabels?.[newVal] ?? newVal}{spec.unit ? ` ${spec.unit}` : ""}</span>
             </div>
           )}
         </div>
       )}
       <div className="field">
-        <label htmlFor={reasonFieldId}>操作理由(必填 · {reasonMax ? `${reasonMin}-${reasonMax} 字` : `${reasonMin} 字以上`} · {auditSink === "local-history" ? "落本页变更历史" : isJ4Command ? "写入不可修改的审计记录" : "写入 A2 不可改审计"})</label>
+        <label htmlFor={reasonFieldId}>操作理由(必填 · {reasonMax ? `${reasonMin}-${reasonMax} 字` : `${reasonMin} 字以上`} · {auditSink === "local-history" ? "记录在本页修改历史" : isJ4Command ? "写入不可修改的审计记录" : "记录到 A2 操作日志（不能修改）"})</label>
         <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例: 工单号 / 业务依据 / 影响面 / 回滚预案" />
         {!reasonOk && (
           <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
@@ -3584,7 +3587,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         {reasonMax && reasonOk && <div className="tiny" style={{ marginTop: 7, color: "var(--ink-4)" }}>已填写 {reasonLength}/{reasonMax} 字</div>}
         {businessMissing.length > 0 && (
           <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
-            业务表单还缺: {businessMissing.slice(0, 4).join(" / ")}{businessMissing.length > 4 ? "…" : ""}。
+            请检查以下内容： {businessMissing.slice(0, 4).join(" / ")}{businessMissing.length > 4 ? "…" : ""}。
           </div>
         )}
       </div>
@@ -3606,7 +3609,7 @@ export function useToast(): [ReactNode, (s: string) => void] {
       onMouseEnter={() => { if (timerRef.current) clearTimeout(timerRef.current); }}
       onMouseLeave={() => { if (timerRef.current) clearTimeout(timerRef.current); timerRef.current = setTimeout(() => setToast(null), 2000); }}
       style={{ position: "fixed", top: "calc(var(--admin-topbar-h) + 32px)", left: "50%", transform: "translateX(-50%)", zIndex: 200, width: "min(420px, calc(100vw - 40px))", justifyContent: "center", background: "var(--v5-surface-2)", color: "var(--v5-ink)", padding: "12px 20px", borderRadius: 11, fontSize: 13.5, fontWeight: 500, display: "flex", alignItems: "center", gap: 9, boxShadow: "0 12px 36px rgba(0,0,0,.4)", border: "1px solid var(--v5-border-strong)" }}>
-      <Icon name="check" size={16} /> {toast}
+      <span aria-hidden="true" style={{ flexShrink: 0 }}>ⓘ</span> {toast}
     </div>
   ) : null;
   return [node, setToast];

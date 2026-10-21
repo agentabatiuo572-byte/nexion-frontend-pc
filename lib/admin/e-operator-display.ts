@@ -1,4 +1,4 @@
-import { orderSkuBrandText, nexGridBrandText } from "./brand-copy.ts";
+import { orderSkuBrandText, nexGridBrandText, operatorNicknameText } from "./brand-copy.ts";
 const INTERNAL_FIXTURE_PATTERN = /(?:TRIALDEV|DEVTI|E3ACC|TIO|DEVICETRIALSTANDARD|INTERNAL|FIXTURE|QA(?:TEST)?|TEST(?:DEVICE|TASK)?)/i;
 const SAFE_DEVICE_IDENTIFIER = /^[A-Za-z0-9._:-]{3,64}$/;
 const SAFE_DATACENTER_IDENTIFIER = /^[A-Z]{2,6}-\d{1,3}$/;
@@ -24,7 +24,7 @@ export function operatorDeviceIdentifier(value: string | null | undefined) {
 export function operatorDeviceName(value: string | null | undefined, identity: string | null | undefined) {
   const normalized = text(value);
   if (hasInternalFixtureMarker(normalized) || hasInternalFixtureMarker(identity)) return "本地验收设备";
-  return SAFE_DEVICE_IDENTIFIER.test(text(identity)) && SAFE_DEVICE_NAME.test(normalized) ? normalized : "设备信息待核验";
+  return SAFE_DEVICE_IDENTIFIER.test(text(identity)) && SAFE_DEVICE_NAME.test(normalized) ? nexGridBrandText(normalized) : "设备信息待核验";
 }
 
 export function operatorDeviceStatus(value: string | null | undefined) {
@@ -97,7 +97,7 @@ export function operatorUserIdentifier(value: string | null | undefined) {
 
 export function operatorUserName(value: string | null | undefined) {
   const normalized = text(value);
-  return !hasInternalFixtureMarker(normalized) && SAFE_SKU_DISPLAY.test(normalized) ? normalized : "用户资料待核验";
+  return !hasInternalFixtureMarker(normalized) && SAFE_SKU_DISPLAY.test(normalized) ? operatorNicknameText(normalized) : "用户资料待核验";
 }
 
 export function operatorTimestamp(value: string | null | undefined) {

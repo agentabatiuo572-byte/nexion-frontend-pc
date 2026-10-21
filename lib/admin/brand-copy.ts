@@ -62,3 +62,12 @@ export function supportMessageBrandText(message: { kind?: string; skuId?: string
   if (message.text === message.skuName) return name;
   return message.text === `推荐商品：${message.skuName}` ? `推荐商品：${name}` : message.text;
 }
+
+/** Generated default nickname display, for DTOs that omit the masked phone. */
+export function operatorNicknameText(value: string): string {
+  return /^(?:NexGrid|Nexion)(?: [0-9]{4}|-[A-F0-9]{8})$/i.test(value) ? nexGridBrandText(value) : value;
+}
+/** Historical built-in data center names; custom names remain intact. */
+export function datacenterNameText(value: string): string {
+  return ["NexGrid Mobile Network", "NexGrid Virginia Compute Center"].includes(value) ? nexGridBrandText(value) : value;
+}

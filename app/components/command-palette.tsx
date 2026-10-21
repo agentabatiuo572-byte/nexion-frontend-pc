@@ -40,10 +40,10 @@ export function CommandPalette({ domains, open, onOpenChange }: CommandPalettePr
     <CommandDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="全局命令面板"
+      title="查找功能页面"
       description="搜索并跳转到任意运营模块"
     >
-      <CommandInput placeholder="跳转到模块 / 搜索 userId·工单·交易…" />
+      <CommandInput placeholder="输入页面名称或编号" />
       <CommandList>
         <CommandEmpty>无匹配模块</CommandEmpty>
         {domains.map((domain) => (

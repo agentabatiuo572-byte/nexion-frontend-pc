@@ -24,7 +24,7 @@ vm.runInNewContext(ts.transpileModule(readFileSync(path.join(root, "app/componen
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
 }).outputText, {
   exports: leaderboardExports,
-  require: name => name === "./support-leaderboard.css" ? {} : require(name),
+  require: name => name === "@/lib/admin/brand-copy" ? systemBrand : name === "./support-leaderboard.css" ? {} : require(name),
   Intl,
 });
 const group = (data = {}, status = "READY") => ({ status, data, evaluatedAt: "2026-10-11T00:00:00Z" });
@@ -281,10 +281,10 @@ test("sidebar keeps original sections and opens exact first-payment plus invitat
   const h = harness({}, false); h.render(); const initial = profile(); initial.statistics = group(statistics());
   Object.assign(initial.statistics.data.invitations.deposits[0].deposits, {status:"PARTIAL",observed:"2400"});
   h.requests[0].resolve(initial); succeed(h.requests.slice(1)); await h.settle();
-  const sidebar = h.html(); assert.match(sidebar,/已首充/); assert.match(sidebar,/直属邀请（人）/); assert.match(sidebar,/全部邀请后代（人）/); assert.match(sidebar,/邀请累充（USDT）/); assert.match(sidebar,/2K（部分统计）/);
+  const sidebar = h.html(); assert.match(sidebar,/已首充/); assert.match(sidebar,/直属邀请（人）/); assert.match(sidebar,/全部下级邀请用户（人）/); assert.match(sidebar,/邀请累充（USDT）/); assert.match(sidebar,/2K（部分统计）/);
   assert.ok(sidebar.indexOf("快捷操作") < sidebar.indexOf("首充与邀请"), "new statistics follow the preserved original sections");
   button(h.render(), "统计明细 →").props.onClick(); h.render();
-  const detail=h.html(); assert.match(detail,/首充来源<\/span><span class="v">购机/); assert.match(detail,/649\.123456 USDT/); assert.match(detail,/NEX · 累计/); assert.match(detail,/邀请后代包含直属邀请/);
+  const detail=h.html(); assert.match(detail,/首充来源<\/span><span class="v">购机/); assert.match(detail,/649\.123456 USDT/); assert.match(detail,/NEX · 累计/); assert.match(detail,/下级邀请用户包含直属邀请/);
   assert.match(detail,/data-exact="2000（部分统计） USDT" aria-label="2000（部分统计） USDT" tabindex="0"/);
   assert.equal(h.requests.length,4); h.invalidate({customerId:"7"}); assert.doesNotMatch(h.html(),/649\.123456|邀请后代充值/); h.unmount();
 });

@@ -29,7 +29,7 @@ test("PC login keeps native form submission for every authentication stage", () 
 test("persistent session dock preserves the M3 production authority and single-flight gates", () => {
   const dock = read("app/components/domain-views/m-view.tsx");
   assert.doesNotMatch(dock, /acceptanceMode|support-acceptance-sandbox/i,
-    "M3 必须只保留开发/生产共用的服务端权威链，退役 Sandbox 模式不得回潮");
+    "M3 必须只保留开发/生产共用的以服务器记录为准链，退役 Sandbox 模式不得回潮");
   assert.match(dock, /canWriteM3 && Boolean\(supportReadModes\?\.includes\("PERSONAL"\)\) && conversationsAvailable && owned && conv\?\.detailReady === true/);
   assert.match(dock, /sendInFlight\.current/);
   assert.match(dock, /dockCommands\.remember\(dockSlot, key/);
@@ -61,7 +61,7 @@ test("all PC support composers use Enter to send and Shift+Enter to add a line",
     const source = read(path);
     assert.match(source, /shouldSendOnEnter\(e\)/, `${path} must use the shared Enter policy`);
     assert.match(source, /e\.preventDefault\(\)/, `${path} must suppress the newline only when sending`);
-    assert.match(source, /Enter[^\n]*发送[^\n]*Shift\+Enter[^\n]*换行/, `${path} must explain the keyboard behavior`);
+    assert.match(source, /回车[^\n]*发送[^\n]*Shift\+回车[^\n]*换行/, `${path} must explain the keyboard behavior`);
     assert.match(source, /aria-label=\{`回复(?:工单|会话)/, `${path} must expose a stable accessible name`);
   }
 });

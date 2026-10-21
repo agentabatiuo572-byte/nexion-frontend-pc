@@ -69,7 +69,7 @@ test("account deletion detail mismatch explains the required reread before revie
 test("A2、E5 与 G2 的当前协议错误给运营可操作的中文指引", () => {
   assert.match(formatAdminApiError("A2_REASON_POLICY_INVALID", ""), /理由/);
   assert.match(formatAdminApiError("A2_RETENTION_RUN_INVALID:retentionMonths", ""), /留存/);
-  assert.match(formatAdminApiError("E5_OBSERVABILITY_SCHEMA_INVALID:telemetry", ""), /可观测/);
+  assert.match(formatAdminApiError("E5_OBSERVABILITY_SCHEMA_INVALID:telemetry", ""), /设备运行监测/);
   assert.match(formatAdminApiError("G2_BATCH_RESPONSE_INVALID", ""), /批处理/);
 });
 

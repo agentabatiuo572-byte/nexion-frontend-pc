@@ -101,10 +101,10 @@ test("H2 试用前检查与七种状态都由服务器判断和更新", () => {
   assert.match(h2, /状态由服务器更新/);
   // 终态会话不再允许强制介入。
   assert.match(h2, /\["cancelled", "redeemed", "failed"\]\.includes\(session\.state\)/);
-  // Model A 抵扣由服务端重算,失败概率等 server-only 不下发。
-  assert.match(h2, /Model A/);
+  // 试用收益抵扣规则 抵扣由服务端重算,失败概率等 server-only 不下发。
+  assert.match(h2, /试用收益抵扣规则/);
   assert.match(h2, /抵扣规则由后端返回/);
-  assert.match(h2, /server-only 字段不会以真实值下发/);
+  assert.match(h2, /仅供服务器内部计算的数据不会以真实值下发/);
   assert.match(h2, /onChanged: \(\) => Promise<void>/);
   assert.match(h2, /await updateH2TrialParam[\s\S]*await onChanged\(\)/);
   assert.match(h2, /await killH2AutoPush\(reason\)[\s\S]*await reload\(\)/);
@@ -161,13 +161,13 @@ test("H3 前端任务清单消费 canonical 契约表(task_key 串起服务端�
   assert.match(h3, /createH3Mission/);
   assert.match(h3, /createH3MonthlyMission/);
   // 任务事件契约与归因表:canonical 字段集。
-  assert.match(h3, /任务事件契约与归因\(只读\)/);
-  assert.match(h3, /task_key \/ 服务端完成事件 \/ 下游业务事件 \/ B3 漏斗 \/ BI 口径/);
+  assert.match(h3, /任务完成记录与统计规则\(只读\)/);
+  assert.match(h3, /任务编号、完成记录、关联业务、转化分析与数据报表/);
   assert.match(h3, /contract\.taskKey/);
   assert.match(h3, /contract\.serverEvent/);
   assert.match(h3, /contract\.downstream/);
   assert.match(h3, /contract\.bi/);
-  assert.match(h3, /契约 = 归因共同事实源/);
+  assert.match(h3, /任务和统计共用同一份完成记录/);
   // 全局任务加成只读跟随 H1,本页只套用不派发。
   assert.match(h3, /全局任务加成 H1 派发/);
   // 新任务先保持待绑定停用态；绑定选择可列出暂停任务，任务编号不能由事件名伪造。
@@ -273,8 +273,8 @@ test("H5 前端签到规则与里程碑奖励由后端配置,幸运概率两档�
   assert.match(h5, /updateH5EarnTickInterval/);
   // 幸运概率由后端校验两档合计不超过 100%。
   assert.match(h5, /幸运概率由后端校验两档合计不超过 100%/);
-  // 服务端权威,空态不生成示例数据。
-  assert.match(h5, /服务端权威/);
+  // 以服务器记录为准,空态不生成示例数据。
+  assert.match(h5, /以服务器记录为准/);
   assert.match(h5, /不使用本地示例数据/);
 });
 
@@ -310,8 +310,8 @@ test("H7 前端代金券 CRUD 与上下架走后端 vouchers 写接口,促销折
   assert.match(h7, /updateH7Voucher/);
   assert.match(h7, /updateH7VoucherStatus/);
   assert.match(h7, /deleteH7Voucher/);
-  // 代金券是促销折扣、非 NEX 负债,不挂 B1 红线。
-  assert.match(h7, /代金券是促销折扣、非 NEX 负债,不挂 B1 红线/);
+  // 代金券只抵扣订单价格，不增加代币应付款，也不受资金覆盖率门槛限制。
+  assert.match(h7, /代金券只抵扣订单价格，不增加代币应付款，也不受资金覆盖率门槛限制/);
   // 类型闭集 fixed/percent。
   assert.match(h7, /type: "fixed" \| "percent"/);
 });

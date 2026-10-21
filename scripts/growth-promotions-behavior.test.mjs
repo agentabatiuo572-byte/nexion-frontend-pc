@@ -1,3 +1,4 @@
+import { displayCopyModules } from "../tests/display-copy-fixture.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -11,7 +12,7 @@ import * as promotionForm from '../lib/admin/promotion-form.ts';
 function loadComponent(file, imports) {
   const code = ts.transpileModule(readFileSync(new URL(file, import.meta.url), 'utf8'), {compilerOptions: {jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022}}).outputText;
   const module = {exports: {}};
-  new Function('require', 'exports', 'module', code)(imports, module.exports, module);
+  new Function('require', 'exports', 'module', code)(name => displayCopyModules[name] ?? imports(name), module.exports, module);
   return module.exports;
 }
 const componentRequire = createRequire(import.meta.url);
@@ -24,7 +25,7 @@ function editorHarness({writable=true,invalid=false,onSaved=async()=>{}}={}) {
   const ui=new Proxy({text:v=>typeof v==='string'?v:'',TEMPLATE_LABELS:{SKU_GIFT:'单设备赠礼'},PromotionSteps:promotionUi.PromotionSteps},{get:(object,key)=>{if(key in object)return object[key];if(!components.has(key))components.set(key,()=>null);return components.get(key);}});
   const code=ts.transpileModule(readFileSync(new URL('../app/components/domain-views/h-tabs/h4-promotion-editor.tsx',import.meta.url),'utf8'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
   const module={exports:{}};
-  new Function('require','exports','module',code)(name=>{
+  new Function('require','exports','module',code)(name=>{if(displayCopyModules[name])return displayCopyModules[name];
     if(name==='react')return {useState:initial=>{const key=index++;if(!(key in states))states[key]=typeof initial==='function'?initial():initial;return [states[key],value=>{states[key]=typeof value==='function'?value(states[key]):value;}];},useEffect:()=>{}};
     if(name==='react/jsx-runtime')return require(name);
     if(name.endsWith('promotion-form'))return promotionForm;

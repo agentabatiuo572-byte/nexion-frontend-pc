@@ -1722,8 +1722,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               };
               await propose(ctx.toast, {
                 action: mc.name, obj: comparison.configKey,
-                before: isLabel ? comparison.label : `${comparison.dailyUsdt} USDT / ${comparison.dailyNex} NEX`,
-                after: isLabel ? comparisonCtx.label : `${comparisonCtx.dailyUsdt} USDT / ${comparisonCtx.dailyNex} NEX`,
+                before: isLabel ? comparison.label : `${comparison.dailyUsdt} USDT / ${comparison.dailyNex} UVEL`,
+                after: isLabel ? comparisonCtx.label : `${comparisonCtx.dailyUsdt} USDT / ${comparisonCtx.dailyNex} UVEL`,
                 type: def.type, amplifies: !isLabel,
                 gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E2",
                 command: def.buildCommand(comparisonCtx), target: def.buildTarget(comparisonCtx),

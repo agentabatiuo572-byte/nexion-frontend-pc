@@ -61,10 +61,10 @@ test("D7 cross-domain links are gated by each target read authority", () => {
 
 test("D7 registry and header describe the server parameter capability without claiming a live payout rail", () => {
   const source = `${read("lib/admin/registry/d.ts")}\n${read("app/components/domain-views/d-view.tsx")}`;
-  assert.match(source, /服务端权威整组配置/);
+  assert.match(source, /参数统一保存，提交时检查是否已变化/);
   assert.match(source, /代收代付共用 HDPay 配置/);
-  assert.match(source, /HDPay 银行提现已接入报价、审核、订单、账本与回调处理/);
-  assert.match(source, /不再维护独立通道开关/);
+  assert.match(source, /银行提现通过 HDPay 审核与付款，订单、资金账单和支付结果相互关联/);
+  assert.doesNotMatch(source, /(?:开启|关闭)独立通道开关/);
   assert.doesNotMatch(source, /订单、账本与回调仍未完成/);
   assert.doesNotMatch(source, /只读 HOLD|本页不保存|通道停用不影响在途单|调整只影响新提现单/);
 });

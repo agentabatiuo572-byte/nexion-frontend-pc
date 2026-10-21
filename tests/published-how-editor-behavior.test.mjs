@@ -62,11 +62,11 @@ async function mount(initial = document(), transport = {}) {
 
 test("partial documents open their actual page and preserve its selected locale on refresh", async () => {
   const ui = await mount();
-  assert.equal(ui.field("How content key").props.value, "team-binary-how");
-  assert.equal(ui.field("How content locale").props.value, "zh");
-  await ui.change("How content locale", "vi"); await ui.click("刷新");
-  assert.equal(ui.field("How content key").props.value, "team-binary-how");
-  assert.equal(ui.field("How content locale").props.value, "vi");
+  assert.equal(ui.field("内容页面").props.value, "team-binary-how");
+  assert.equal(ui.field("内容语言").props.value, "zh");
+  await ui.change("内容语言", "vi"); await ui.click("刷新");
+  assert.equal(ui.field("内容页面").props.value, "team-binary-how");
+  assert.equal(ui.field("内容语言").props.value, "vi");
 });
 
 test("operators can add/delete blocks and type list items without JSON", async () => {
@@ -87,10 +87,10 @@ test("changing a rule-reference block to text removes the incompatible reference
   const doc = document(); const item = doc.contents["team-binary-how"].locales.zh.blocks[0];
   Object.assign(item, { kind: "ruleRef", ref: { source: "canonical", key: "F.binary.matchRate", version: "v1" }, body: "Rate {value}" });
   const ui = await mount(doc);
-  await ui.change("规则键", "F.binary.threshold");
+  await ui.change("规则标识", "F.binary.threshold");
   await ui.change("引用版本", "v2");
   await ui.change("类型", "text");
-  await ui.change("变更理由", "Independent editor regression"); await ui.click("保存并回读");
+  await ui.change("变更理由", "Independent editor regression"); await ui.click("保存并刷新");
   assert.equal(ui.writes.length, 1);
   assert.ok(!("ref" in ui.writes[0].payload.contents["team-binary-how"].locales.zh.blocks[0]));
 });
@@ -116,7 +116,7 @@ test("failed refresh preserves the last readable server document", async () => {
 test("CAS conflict retains the draft and original revision for recovery", async () => {
   const ui = await mount(document(), { beforeSave: () => { throw new Error("CONFIG_REVISION_CONFLICT"); } });
   await ui.change("版本", "local-change"); await ui.change("变更理由", "Independent conflict regression");
-  await ui.click("保存并回读"); await ui.flush();
+  await ui.click("保存并刷新"); await ui.flush();
   assert.equal(ui.field("版本").props.value, "local-change");
   assert.equal(ui.writes[0].payload.revision, 7);
   assert.match(ui.text(), /当前未保存内容已保留/);
@@ -126,7 +126,7 @@ test("pending save locks edits and refresh and blocks rapid duplicate submission
   let release; const pending = new Promise(resolve => { release = resolve; });
   const ui = await mount(document(), { beforeSave: () => pending });
   await ui.change("版本", "pending-change"); await ui.change("变更理由", "Independent pending regression");
-  const save = ui.button("保存并回读"); save.props.onClick(); save.props.onClick(); await ui.flush();
+  const save = ui.button("保存并刷新"); save.props.onClick(); save.props.onClick(); await ui.flush();
   assert.equal(ui.writes.length, 1);
   assert.equal(ui.field("版本").props.disabled, true);
   assert.equal(ui.button("刷新").props.disabled, true);
@@ -145,7 +145,7 @@ test("block and list size limits match the server and empty documents retain CAS
   assert.equal(ui.button("新增列表项").props.disabled, true);
   const empty = await mount({ ...document(), contents: {}, revision: 19 });
   await empty.change("版本", "empty-recovery"); await empty.change("变更理由", "Independent empty regression");
-  await empty.click("保存并回读"); await empty.flush();
+  await empty.click("保存并刷新"); await empty.flush();
   assert.equal(empty.writes[0].payload.revision, 19);
 });
 
@@ -180,24 +180,24 @@ test("operators can declare each page's own published revision, and it reaches t
   // 文档级版本仍可编辑。
   await ui.change("版本", "2026.09.10-document");
   // 当前页面(team-binary-how)的专属修订必须可填,且写进 contents[key].version。
-  const entryField = ui.field("当前页面（team-binary-how）的发布修订");
+  const entryField = ui.field("当前页面（左右团队结算说明）的发布版本");
   assert.equal(entryField.props.value, "", "初始未声明时应为空,不臆造");
-  await ui.change("当前页面（team-binary-how）的发布修订", "2026.09.11-binary-guide");
+  await ui.change("当前页面（左右团队结算说明）的发布版本", "2026.09.11-binary-guide");
   await ui.change("变更理由（必填）", "Declare the per-page published revision");
-  await ui.click("保存并回读");
+  await ui.click("保存并刷新");
   const saved = ui.writes.at(-1).payload;
   assert.equal(saved.contents["team-binary-how"].version, "2026.09.11-binary-guide",
     "条目版本必须写到 contents[key].version,而不是文档级 version");
   assert.equal(saved.version, "2026.09.10-document", "文档级版本不受影响");
   // 切到另一页时,输入框显示那一页自己的值,不能串页。
-  await ui.change("How content key", "team-commissions-how");
-  assert.equal(ui.field("当前页面（team-commissions-how）的发布修订").props.value, "");
+  await ui.change("内容页面", "team-commissions-how");
+  assert.equal(ui.field("当前页面（团队分成说明）的发布版本").props.value, "");
 });
 
 test("the editor no longer claims a single shared version document", async () => {
   const ui = await mount();
   assert.doesNotMatch(ui.text(), /6 个页面共用一个版本化文档/);
-  assert.match(ui.text(), /每个页面各自声明发布修订/);
+  assert.match(ui.text(), /各页面分别设置发布版本/);
 });
 
 test("saved per-page revisions remain visible across page selection and refresh", async () => {
@@ -206,15 +206,15 @@ test("saved per-page revisions remain visible across page selection and refresh"
   doc.contents["team-commissions-how"] = { version: "2026.10.05-direct-referral", locales: { en: locale() } };
   doc.contents["team-unilevel-how"] = { locales: { en: locale() } };
   const ui = await mount(doc);
-  assert.equal(ui.field("当前页面（team-binary-how）的发布修订").props.value, doc.contents["team-binary-how"].version);
-  await ui.change("How content key", "team-commissions-how");
-  assert.equal(ui.field("当前页面（team-commissions-how）的发布修订").props.value, doc.contents["team-commissions-how"].version);
+  assert.equal(ui.field("当前页面（左右团队结算说明）的发布版本").props.value, doc.contents["team-binary-how"].version);
+  await ui.change("内容页面", "team-commissions-how");
+  assert.equal(ui.field("当前页面（团队分成说明）的发布版本").props.value, doc.contents["team-commissions-how"].version);
   await ui.click("刷新");
-  assert.equal(ui.field("当前页面（team-commissions-how）的发布修订").props.value, doc.contents["team-commissions-how"].version);
-  await ui.change("How content key", "team-unilevel-how");
-  assert.equal(ui.field("当前页面（team-unilevel-how）的发布修订").props.value, "");
-  await ui.change("How content key", "team-binary-how");
-  assert.equal(ui.field("当前页面（team-binary-how）的发布修订").props.value, doc.contents["team-binary-how"].version);
+  assert.equal(ui.field("当前页面（团队分成说明）的发布版本").props.value, doc.contents["team-commissions-how"].version);
+  await ui.change("内容页面", "team-unilevel-how");
+  assert.equal(ui.field("当前页面（多层团队说明）的发布版本").props.value, "");
+  await ui.change("内容页面", "team-binary-how");
+  assert.equal(ui.field("当前页面（左右团队结算说明）的发布版本").props.value, doc.contents["team-binary-how"].version);
   assert.equal(ui.field("版本").props.value, doc.version);
   assert.equal(ui.writes.length, 0);
 });
@@ -224,7 +224,7 @@ test("typing a page revision stays visible through save readback and refresh wit
   doc.contents["team-commissions-how"] = { version: "2026.10.05-direct-referral", locales: { en: locale() } };
   doc.contents["team-unilevel-how"] = { locales: { en: locale() } };
   const ui = await mount(doc);
-  const entryLabel = "当前页面（team-binary-how）的发布修订";
+  const entryLabel = "当前页面（左右团队结算说明）的发布版本";
   let typed = "";
   for (const character of "2026.10.06-binary-guide") {
     typed += character;
@@ -232,7 +232,7 @@ test("typing a page revision stays visible through save readback and refresh wit
     assert.equal(ui.field(entryLabel).props.value, typed);
   }
   await ui.change("变更理由（必填）", "Verify visible per-page revision readback");
-  await ui.click("保存并回读");
+  await ui.click("保存并刷新");
   assert.equal(ui.writes.length, 1);
   assert.deepEqual(ui.writes[0].payload.contents, {
     ...doc.contents,
@@ -243,11 +243,11 @@ test("typing a page revision stays visible through save readback and refresh wit
   assert.equal(ui.field(entryLabel).props.value, typed);
   await ui.click("刷新");
   assert.equal(ui.field(entryLabel).props.value, typed);
-  await ui.change("How content key", "team-commissions-how");
-  assert.equal(ui.field("当前页面（team-commissions-how）的发布修订").props.value, doc.contents["team-commissions-how"].version);
-  await ui.change("How content key", "team-unilevel-how");
-  assert.equal(ui.field("当前页面（team-unilevel-how）的发布修订").props.value, "");
-  await ui.change("How content key", "team-binary-how");
+  await ui.change("内容页面", "team-commissions-how");
+  assert.equal(ui.field("当前页面（团队分成说明）的发布版本").props.value, doc.contents["team-commissions-how"].version);
+  await ui.change("内容页面", "team-unilevel-how");
+  assert.equal(ui.field("当前页面（多层团队说明）的发布版本").props.value, "");
+  await ui.change("内容页面", "team-binary-how");
   assert.equal(ui.field(entryLabel).props.value, typed);
   assert.equal(ui.field("版本").props.value, doc.version);
   assert.equal(ui.writes.length, 1);

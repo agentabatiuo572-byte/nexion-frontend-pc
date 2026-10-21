@@ -143,7 +143,7 @@ export function NotificationBell() {
     j1Alerts.push({
       id: "j2-alert-sync",
       level: "high",
-      text: `J2 超管告警同步失败: ${j2AlertError}`,
+      text: `J2 超级管理员告警同步失败: ${j2AlertError}`,
       href: "/emergency/geo-block",
     });
   }
@@ -151,7 +151,7 @@ export function NotificationBell() {
     j1Alerts.push({
       id: "j3-alert-sync",
       level: "high",
-      text: `J3 超管告警同步失败: ${j3AlertError}`,
+      text: `J3 超级管理员告警同步失败: ${j3AlertError}`,
       href: "/emergency/tamper",
     });
   }

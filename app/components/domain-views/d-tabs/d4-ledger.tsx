@@ -1,4 +1,5 @@
 "use client";
+import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 import Link from "next/link";
@@ -72,7 +73,7 @@ function D4RemarkCell({ value }: { value: unknown }) {
 }
 
 function userLabel(row: Pick<D4Bill, "userNo" | "nickname"> | Pick<D4UserLedger, "userNo" | "nickname"> | null | undefined) {
-  return row ? [row.userNo, row.nickname].filter(Boolean).join(" · ") || "—" : "—";
+  return row ? [row.userNo, operatorNicknameText(row.nickname ?? "")].filter(Boolean).join(" · ") || "—" : "—";
 }
 
 function positiveUserId(value: string) {
@@ -271,7 +272,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
                   {loading ? <tr><td colSpan={10} style={{ textAlign: "center", padding: 28 }}>资金账本数据加载中...</td></tr> : bills.records.length === 0 ? <tr><td colSpan={10} style={{ textAlign: "center", color: "var(--ink-4)", padding: 28 }}>暂无匹配账单流水；空数据不代表已经对平</td></tr> : bills.records.map((row) => (
                     <tr key={row.id} style={deepBizNo && row.bizNo === deepBizNo ? { background: "color-mix(in srgb, var(--c-ac) 12%, transparent)" } : undefined}>
                       <td className="mono" style={{ color: "var(--ink)" }}>{row.bizNo}</td>
-                      <td><span className="mono">{row.userNo}</span>{row.nickname && <div style={{ color: "var(--ink-4)", fontSize: 11 }}>{row.nickname}</div>}</td>
+                      <td><span className="mono">{row.userNo}</span>{row.nickname && <div style={{ color: "var(--ink-4)", fontSize: 11 }}>{operatorNicknameText(row.nickname)}</div>}</td>
                       <td><span className="bdg dim">{BILL_TYPE_LABELS[row.billType]}</span></td><td>{formatD4Subtype(row.subtype)}</td>
                       <td className="num mono" style={{ color: row.direction === "IN" || row.direction === "CREDIT" ? "var(--success)" : "var(--negative)", fontWeight: 700 }}>{signed(row)}</td>
                       <td className="num mono">{assetAmount(row.balanceAfter, row.asset)} {nexGridBrandText(row.asset)}</td>

@@ -1,4 +1,6 @@
 "use client";
+import { operatorNicknameText } from "@/lib/admin/brand-copy";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -75,8 +77,8 @@ function knownTrialOwner(session: TrialSession): boolean {
 
 function trialOwnerLabel(session: TrialSession): string {
   if (!knownTrialOwner(session)) return "用户信息暂不可用";
-  const name = typeof session.displayName === "string" ? session.displayName.trim() : "";
-  return `UID ${session.userId}${name ? ` · ${name}` : ""}`;
+  const name = typeof session.displayName === "string" ? operatorNicknameText(session.displayName.trim()) : "";
+  return `用户编号 ${session.userId}${name ? ` · ${name}` : ""}`;
 }
 
 function stateMap(states: TrialState[]) {
@@ -146,7 +148,7 @@ function ParamRow({
       : isProduct ? productOptions : undefined;
   const detail = (
     <>
-      <b>{param.name}</b> · 当前 <span className="mono">{displayCurrent}</span>。
+      <b>{operatorCopyText(param.name)}</b> · 当前 <span className="mono">{displayCurrent}</span>。
       {param.serverOnly ? "该值仅服务端可见,接口返回仍保持遮罩。" : ""}
       {isInteger ? `请输入整数(${dayLimitHint(param.key)})。` : ""}
       {isProduct ? "目标商品只能从 E1 中明确开启“允许试用”的在售实物商品 选择；试用价格始终读取 E1 当前售价。" : ""}
@@ -164,16 +166,16 @@ function ParamRow({
     if (!value || value.trim().length === 0) return;
     const normalizedValue = value.trim();
     if (isInteger && !/^\d+$/.test(normalizedValue)) {
-      toast(`${param.name} 请输入整数`);
+      toast(`${operatorCopyText(param.name)} 请输入整数`);
       return;
     }
     if (isQuota && Number(normalizedValue) > 1_000_000) {
-      toast(`${param.name} 必须在 0-1000000 张之间`);
+      toast(`${operatorCopyText(param.name)} 必须在 0-1000000 张之间`);
       return;
     }
     await updateH2TrialParam(param.key, normalizedValue, reason);
     await onChanged();
-    toast(`H2 ${param.name} 已更新`);
+    toast(`H2 ${operatorCopyText(param.name)} 已更新`);
   };
 
   if (param.key === "autoChargeAtEnd") return null;
@@ -181,8 +183,8 @@ function ParamRow({
   return (
     <div className="p-row" key={param.key}>
       <div className="k">
-        {param.name}
-        {param.sub && <small>{param.sub}</small>}
+        {operatorCopyText(param.name)}
+        {param.sub && <small>{operatorCopyText(param.sub)}</small>}
         {isActualQuota && param.businessDate && param.businessDate !== "UNKNOWN" && <small>业务日期 {param.businessDate}</small>}
       </div>
       <span className="v">{displayCurrent}</span>
@@ -190,14 +192,14 @@ function ParamRow({
       <button
         className={`l-btn sm${param.hot ? " mc" : ""}`}
         disabled={readOnly || !canWrite}
-        aria-label={readOnly ? `只读 · ${param.name}` : canWrite ? `调整 ${param.name}` : `无写权限 · ${param.name}`}
+        aria-label={readOnly ? `只读 · ${operatorCopyText(param.name)}` : canWrite ? `调整 ${operatorCopyText(param.name)}` : `无写权限 · ${operatorCopyText(param.name)}`}
         title={readOnly ? (param.sub || (param.key === "phaseOpen" ? "由 H1 当前阶段派发，只读"
           : param.key === "trialPriceUSD" ? "由 E1 目标商品售价同步，只读" : "服务端只读参数")) : undefined}
         onClick={() => {
           if (readOnly || !canWrite) return;
           if (param.hot || isInteger || isProduct) {
             openActionConfirm({
-              action: `${param.hot ? "试用敏感参数" : "试用参数"} · ${param.name}`,
+              action: `${param.hot ? "试用敏感参数" : "试用参数"} · ${operatorCopyText(param.name)}`,
               detail,
               amplifies: false,
               edit: {
@@ -213,7 +215,7 @@ function ParamRow({
             return;
           }
           openConfirm({
-            action: `试用参数 · ${param.name}`,
+            action: `试用参数 · ${operatorCopyText(param.name)}`,
             detail,
             chips: [["写后端配置", "ready"], ["审计留痕", "done"]],
             reason: true,
@@ -469,7 +471,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                   <tr key={session.sid}>
                     <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{trialOwnerLabel(session)}</td>
                     <td><span className={`bdg ${tone}`}>{label}</span></td>
-                    <td className="num mono">{text(session.shadow)}</td>
+                    <td className="num mono">{operatorCopyText(text(session.shadow))}</td>
                     <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(session.cardTok ?? session.cardToken)}</td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {terminal ? (

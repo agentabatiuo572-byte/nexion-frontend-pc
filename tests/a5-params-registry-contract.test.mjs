@@ -146,5 +146,5 @@ test("A5 exposes explicit control labels and a unique owner-link name per parame
   assert.match(client, />业务域筛选<\/label>/);
   assert.match(client, /id={DOMAIN_FILTER_ID}/);
   assert.match(client, /aria-label={ownerLinkAccessibleName\(row\)}/);
-  assert.match(client, /`前往 \${row\.ownerLabel}：\${row\.displayName}（参数 \${row\.canonicalKey}）`/);
+  assert.match(client, /`前往 \${operatorCopyText\(row\.ownerLabel\)}：\${operatorCopyText\(row\.displayName\)}（参数 \${row\.canonicalKey}）`/);
 });

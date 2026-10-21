@@ -373,7 +373,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     const nextTier = tiers[index + 1];
     openActionConfirm({
       action: `编辑创世档位 · ${tier.id}`,
-      detail: <><b>{tier.id}</b> 档 · 当前区间 [{fmtInt(tier.from)}, {fmtInt(tier.to)}) · 单价 ${fmtInt(tier.priceUSDT)}。起始由上档截止派生,不单独编辑;改截止时服务端顺移{nextTier ? <>下一档 <b>{nextTier.id}</b> 的起始</> : "总供应上界"}保持连续,并校验末档总量 ≥ 已售 {fmtNumber(stats.sold, 0)}。只影响未来供应与新购档价,已锁定报价的购买订单按开锁档价结算。</>,
+      detail: <><b>{tier.id}</b> 档 · 当前区间 [{fmtInt(tier.from)}, {fmtInt(tier.to)}) · 单价 ${fmtInt(tier.priceUSDT)}。起始由上档截止派生,不单独编辑;改截止时服务端顺移{nextTier ? <>下一档 <b>{nextTier.id}</b> 的起始</> : "总供应上界"}保持连续,并校验末档总量 ≥ 已售 {fmtNumber(stats.sold, 0)}。只影响未来供应与新购档价,已锁定报价的购买订单按锁定时的价格结算。</>,
       businessForm: { kind: "multi-field", title: `档位 ${tier.id}`, hint: "截止 = 本档累计售出上界(下一档起点);单价 = 落在本档区间的每张价格;均为整数。", fields: [
         { key: "to", label: "截止(累计售出上界)", current: String(tier.to), inputKind: "number", min: tier.from + 1, step: 1, required: true },
         { key: "priceUSDT", label: "单价(USDT)", current: String(tier.priceUSDT), inputKind: "number", min: 1, step: 1, required: true },
@@ -413,7 +413,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     const nextTier = tiers[index + 1];
     openActionConfirm({
       action: `删除创世档位 · ${tier.id}`,
-      detail: <>从阶梯移除 <b>{tier.id}</b> 档([{fmtInt(tier.from)}, {fmtInt(tier.to)}))。服务端自动补齐区间保持连续({prevTier ? <>上一档 <b>{prevTier.id}</b> 截止顺延至 {fmtInt(tier.to)}</> : nextTier ? <>下一档 <b>{nextTier.id}</b> 起始归至 {fmtInt(tier.from)}</> : "唯一档不可删"}),至少保留一档;已锁定报价的购买订单按开锁档价结算,不追溯。</>,
+      detail: <>从阶梯移除 <b>{tier.id}</b> 档([{fmtInt(tier.from)}, {fmtInt(tier.to)}))。服务端自动补齐区间保持连续({prevTier ? <>上一档 <b>{prevTier.id}</b> 截止顺延至 {fmtInt(tier.to)}</> : nextTier ? <>下一档 <b>{nextTier.id}</b> 起始归至 {fmtInt(tier.from)}</> : "唯一档不可删"}),至少保留一档;已锁定报价的购买订单按锁定时的价格结算,不追溯。</>,
       run: async (reason) => {
         await mutate(`tier:delete:${tier.id}`, () => deleteG4GenesisTier(tier.id, overview.tiersVersion, reason, OPERATOR()), `档位 ${tier.id} 已删除 · 区间已补齐`);
       },
@@ -603,7 +603,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
               </table>
               <PaginationExemption label="创世节点 阶梯档位表" maxRows={8} reason="阶梯档位数量少且需一屏纵向比较跳价关系,分页会破坏连续区间审核。" />
             </div>
-            <div className="gtint" style={{ margin: "0 12px 12px" }}><b>档价随累计售出派生</b> · 改截止/单价、增档、删档只影响未来供应;已锁定报价的购买订单按开锁档价结算不追溯。区间连续性、末档总量 ≥ 已售 {fmtNumber(stats.sold, 0)}、至少保留一档由服务端强制,不满足的提交会被整单拒绝;提交携带档表版本,两人并发修改时后提交的会被拒绝并需重读。</div>
+            <div className="gtint" style={{ margin: "0 12px 12px" }}><b>档价随累计售出派生</b> · 改截止/单价、增档、删档只影响未来供应;价格锁定期间的购买按锁定时价格结算，不重新计算历史数据。区间连续性、末档总量 ≥ 已售 {fmtNumber(stats.sold, 0)}、至少保留一档由服务端强制,不满足的提交会被整单拒绝;提交携带档表版本,两人并发修改时后提交的会被拒绝并需重读。</div>
           </>
         ) : (
           <div className="l-b">

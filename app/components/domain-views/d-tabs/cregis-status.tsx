@@ -106,7 +106,7 @@ function payoutSwitchText(row: ExceptionRow, unknownText = "保持现值"): stri
     : row.payoutEnabled === false || row.payoutEnabled === 0 ? "关" : unknownText;
 }
 
-const cregisStateText = (value: unknown) => ({ IDLE: "地址创建空闲", BUSY: "正在创建地址", BLOCKED: "风险暂停", DISABLED: "未启用支付商收款", MISSING: "控制配置缺失", UNKNOWN: "创建结果待核实", PROVISIONING: "地址创建中", VERIFYING: "地址核验中", UNATTRIBUTED_HOLD: "未归属充值待处理", RETIRED_HOLD: "停用地址充值待处理", DUST_HOLD: "低额充值待处理", REVIEW_HOLD: "大额充值待复核", REORG_INVESTIGATING: "链重组调查中", PROVIDER_CONFLICT_HOLD: "支付商与链上记录冲突待处理", PROVIDER_MISSING: "支付商缺单待核对", CHAIN_MISMATCH_HOLD: "链上记录不符待核对", RUNNING: "对账中", COMPLETE: "完整对账完成", INCOMPLETE: "对账未完成", MAKER_DONE: "待另一管理员复核", RESOLVED: "复核处理完成", REJECTED: "已驳回" } as Record<string,string>)[String(value)] ?? "状态待核实";
+const cregisStateText = (value: unknown) => ({ IDLE: "地址创建空闲", BUSY: "正在创建地址", BLOCKED: "风险暂停", DISABLED: "未启用支付商收款", MISSING: "控制配置缺失", UNKNOWN: "创建结果待核实", PROVISIONING: "地址创建中", VERIFYING: "地址核验中", UNATTRIBUTED_HOLD: "未归属充值待处理", RETIRED_HOLD: "停用地址充值待处理", DUST_HOLD: "低额充值待处理", REVIEW_HOLD: "大额充值待审核", REORG_INVESTIGATING: "链重组调查中", PROVIDER_CONFLICT_HOLD: "支付商与链上记录冲突待处理", PROVIDER_MISSING: "支付商缺单待核对", CHAIN_MISMATCH_HOLD: "链上记录不符待核对", RUNNING: "对账中", COMPLETE: "完整对账完成", INCOMPLETE: "对账未完成", MAKER_DONE: "待另一管理员复核", RESOLVED: "复核处理完成", REJECTED: "已驳回" } as Record<string,string>)[String(value)] ?? "状态待核实";
 function rowSummary(row: ExceptionRow) {
   return [row.id == null ? null : `#${row.id}`, row.state == null && row.status == null ? null : cregisStateText(row.state ?? row.status),
     row.address, row.cid == null ? null : `CID ${row.cid}`, row.txid,

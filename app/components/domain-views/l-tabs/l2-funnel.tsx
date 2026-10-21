@@ -712,7 +712,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
       <PaginationExemptionList
         items={[
           {
-            label: "Cohort 留存矩阵",
+            label: "同批用户留存表",
             kind: "fixed-matrix",
             maxRows: 6,
             reason: "留存 同批用户 固定六行,需同屏比较 Day1/7/30",

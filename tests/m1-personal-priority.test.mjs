@@ -98,7 +98,7 @@ test("period failures stay unknown and can retry; lifetime values never supply t
   runInNewContext(transpile(periodEffect), context); await flush();
   assert.equal(context.period, null); assert.equal(context.error, "期间读取失败"); context.cleanup();
   const summary = analytics.slice(analytics.indexOf("primarySummary="), analytics.indexOf("{operations &&"));
-  assert.match(summary, /当前本人绑定/); assert.match(summary, /窗口活跃/); assert.match(summary, /期间首充/); assert.match(summary, /期间净贡献/);
+  assert.match(summary, /当前本人绑定/); assert.match(summary, /当前统计期活跃/); assert.match(summary, /期间首充/); assert.match(summary, /期间净贡献/);
   assert.doesNotMatch(summary, /ownLifetime|firstConfirmed|\?\? 0/);
   assert.match(summary, /firstCandidates \?\? \{ observed: null, confirmed: null, status: "UNKNOWN" \}/);
   assert.match(summary, /firstSources/); assert.match(summary, /"deposits", "purchases"/);

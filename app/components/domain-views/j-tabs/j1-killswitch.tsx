@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
  * J1 · 紧急停用开关 — 5 闸 status grid + 矩阵主表 + 应急快速通道 + B1 备付金前置核验 + 自动触发规则。
@@ -99,9 +100,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const killGate = (g: Gate) => {
     const commandKey = createJEmergencyCommandKey();
     openActionConfirm({
-    action: `关停业务开关 · ${g.name}`,
+    action: `关停业务开关 · ${operatorCopyText(g.name)}`,
     detail: (
-      <><b>{g.name}</b>控制{g.cap}。确认后服务器立即拒绝对应业务请求，并记录操作人、理由、变更前后状态和时间。关停不会增加资金流出，不需要先检查备付金。</>
+      <><b>{operatorCopyText(g.name)}</b>控制{operatorCopyText(g.cap)}。确认后服务器立即拒绝对应业务请求，并记录操作人、理由、变更前后状态和时间。关停不会增加资金流出，不需要先检查备付金。</>
     ),
     businessForm: {
       kind: "multi-field",
@@ -117,7 +118,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       return runBackend(actions.toggleJ1KillSwitch(g.key, false, reason, {
         triggerBasis: businessValue?.triggerBasis,
         dispositionPlan: businessValue?.dispositionPlan,
-      }, commandKey), `${g.name}已立即关停`);
+      }, commandKey), `${operatorCopyText(g.name)}已立即关停`);
     },
     });
   };
@@ -125,18 +126,18 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const resumeGate = (g: Gate) => {
     const commandKey = createJEmergencyCommandKey();
     openActionConfirm({
-    action: `恢复业务开关 · ${g.name}`,
+    action: `恢复业务开关 · ${operatorCopyText(g.name)}`,
     amplifies: g.amplifies,
     coverage: g.coveragePrecheckRequired && coverageReady
       ? { coverageRatio: COV, redlinePct: RED, healthyPct: YELLOW }
       : undefined,
     detail: (
-      <><b>{g.name}</b>将从已关停恢复为在线，重新开放{g.cap}。{g.coveragePrecheckRequired
+      <><b>{operatorCopyText(g.name)}</b>将从已关停恢复为在线，重新开放{operatorCopyText(g.cap)}。{g.coveragePrecheckRequired
         ? <><b>恢复前检查备付金</b>：当前覆盖率 <b>{coverageText(COV)}</b>，恢复红线 <b>{coverageText(RED)}</b>；{covPass ? <>检查通过，{coverageGapText}</> : <>检查不通过，暂不能恢复</>}。</>
         : <>该业务不会直接增加资金流出，可在填写理由后立即恢复。</>}确认后由服务器立即执行并记录审计。</>
     ),
     run: (reason) => {
-      return runBackend(actions.toggleJ1KillSwitch(g.key, true, reason, undefined, commandKey), `${g.name}已立即恢复`);
+      return runBackend(actions.toggleJ1KillSwitch(g.key, true, reason, undefined, commandKey), `${operatorCopyText(g.name)}已立即恢复`);
     },
     });
   };
@@ -181,7 +182,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     const commandKey = createJEmergencyCommandKey();
     openActionConfirm({
       action: `应急参数调整 · ${row.k}`,
-      detail: <><b>{row.k}</b> · {row.d}。自动关停即时生效，补录只补全审计信息，不会自动恢复业务开关。</>,
+      detail: <><b>{row.k}</b> · {operatorCopyText(row.d)}。自动关停即时生效，补录只补全审计信息，不会自动恢复业务开关。</>,
       edit: { kind: row.kind, current: cur, unit: row.unit, min: row.id === "autoConfirmMins" ? 10 : undefined, max: row.id === "autoConfirmMins" ? 120 : undefined, step: 1, disallowCurrent: true },
       run: (reason, newValue) => {
         return runBackend(actions.updateJ1Sla(row.id, newValue ?? cur, cur, reason, commandKey), `${row.k} 已调整`);
@@ -205,8 +206,8 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const confirmAutoTrigger = (row: AutoConfirmationRow) => {
     const commandKey = createJEmergencyCommandKey();
     openActionConfirm({
-    action: `补录自动关停结论 · ${row.name}`,
-    detail: <><b>{row.name}</b>由 {autoRuleDisplayName(row.ruleId)} 自动关停，触发值 {row.signalValue}，阈值 {row.threshold}。本操作只补全处置结论，不会自动恢复业务；如建议恢复，仍需超级管理员单独发起恢复并通过备付金检查。</>,
+    action: `补录自动关停结论 · ${operatorCopyText(row.name)}`,
+    detail: <><b>{operatorCopyText(row.name)}</b>由 {autoRuleDisplayName(row.ruleId)} 自动关停，触发值 {row.signalValue}，阈值 {row.threshold}。本操作只补全处置结论，不会自动恢复业务；如建议恢复，仍需超级管理员单独发起恢复并通过备付金检查。</>,
     businessForm: {
       kind: "multi-field",
       title: "自动关停复核",
@@ -227,7 +228,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         reason,
         commandKey,
       ),
-      `${row.name}自动关停结论已补录`,
+      `${operatorCopyText(row.name)}自动关停结论已补录`,
     ),
     });
   };
@@ -254,7 +255,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           相关业务已停止,但处置理由仍空缺;逾期事项不会自行消失,请值班人员立即补录,或上报值班主管接手。
           {overdueBackfills.slice(0, 3).map((row) => (
             <span key={row.incidentId} style={{ marginLeft: 8 }}>
-              · {row.name}(截止 {row.dueAt.replace("T", " ").slice(0, 16)})
+              · {operatorCopyText(row.name)}(截止 {row.dueAt.replace("T", " ").slice(0, 16)})
             </span>
           ))}
           {overdueBackfills.length > 3 && <span style={{ marginLeft: 8 }}>· 另有 {overdueBackfills.length - 3} 项</span>}
@@ -274,10 +275,10 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         {gates.map((g) => { const on = effOn(g); return (
           <div key={g.key} className={"gate-card" + (on ? "" : " killed")}>
             <div className="top">
-              {on && canBatchKill && <input type="checkbox" data-proof="j1-gate-select" checked={!!sel[g.key]} onChange={() => toggleSel(g.key)} aria-label={`勾选${g.name}纳入批量关停`} title={`勾选${g.name}纳入批量关停`} style={{ marginRight: 6, cursor: "pointer" }} />}
-              <span className="key">{g.name}</span><span className="led" />
+              {on && canBatchKill && <input type="checkbox" data-proof="j1-gate-select" checked={!!sel[g.key]} onChange={() => toggleSel(g.key)} aria-label={`勾选${operatorCopyText(g.name)}纳入批量关停`} title={`勾选${operatorCopyText(g.name)}纳入批量关停`} style={{ marginRight: 6, cursor: "pointer" }} />}
+              <span className="key">{operatorCopyText(g.name)}</span><span className="led" />
             </div>
-            <div className="cap"><b>{g.cap}</b></div>
+            <div className="cap"><b>{operatorCopyText(g.cap)}</b></div>
             <div className="ft">
               <span className={"impact " + g.coverageImpactCategory}><AutoGloss>{IMPACT_LABEL[g.coverageImpactCategory]}</AutoGloss></span>
               <span className="ts" title={effChange(g)}>{effChange(g).split(" · ")[0]}</span>
@@ -302,9 +303,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           {gates.map((g) => { const on = effOn(g); return (
             <div className="rw" key={g.key}>
               <div className="c">
-                <div style={{ fontWeight: 600, color: "var(--ink)" }}>{g.name}</div>
+                <div style={{ fontWeight: 600, color: "var(--ink)" }}>{operatorCopyText(g.name)}</div>
               </div>
-              <div className="c cap"><span className="nm">{g.cap}</span><span className="desc"><AutoGloss>{g.desc}</AutoGloss></span></div>
+              <div className="c cap"><span className="nm">{operatorCopyText(g.cap)}</span><span className="desc"><AutoGloss>{operatorCopyText(g.desc)}</AutoGloss></span></div>
               <div className="c">{on ? <span className="badge-st live">在线</span> : <span className="badge-st killed">已关停</span>}</div>
               <div className="c"><span className={"badge-impact " + g.coverageImpactCategory}>{IMPACT_LABEL[g.coverageImpactCategory]}</span></div>
               <div className="c">{g.coveragePrecheckRequired ? <span className="badge-impact immediate"><AutoGloss>需核备付金</AutoGloss></span> : <span className="badge-impact none">不需</span>}</div>
@@ -339,7 +340,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           </div>
           {EMER_SLA.map((row) => (
             <div className="emer-row" key={row.id}>
-              <div className="l"><div className="k"><AutoGloss>{row.k}</AutoGloss></div><div className="d"><AutoGloss>{row.d}</AutoGloss></div></div>
+              <div className="l"><div className="k"><AutoGloss>{row.k}</AutoGloss></div><div className="d"><AutoGloss>{operatorCopyText(row.d)}</AutoGloss></div></div>
               <div className="v">{effSla(row)}<span className="u">{row.unit}</span></div>
               {row.id === "recoverGate"
                 ? <span className="gate-ref" title="恢复门槛跟随备付金红线，如需调整请前往备付金页面">跟随备付金红线</span>
@@ -400,7 +401,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
             : orderedBackfills.map((row) => (
             <div className="emer-row" key={row.incidentId}>
               <div className="l">
-                <div className="k">{row.name} · {autoRuleDisplayName(row.ruleId)}</div>
+                <div className="k">{operatorCopyText(row.name)} · {autoRuleDisplayName(row.ruleId)}</div>
                 <div className="d">触发值 {row.signalValue} / 阈值 {row.threshold} · 截止 {row.dueAt.replace("T", " ").slice(0, 16)}</div>
               </div>
               <span className={row.overdue ? "badge-emergency" : "gate-ref"}>{row.overdue ? "已逾期" : "待补录"}</span>

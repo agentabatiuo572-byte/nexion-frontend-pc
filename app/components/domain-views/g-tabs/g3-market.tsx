@@ -298,7 +298,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
     const editCurrent = isSchedule ? (scheduleControl?.rawValue || current) : current;
     openActionConfirm({
       action: `行情排程控制 · ${name}`,
-      detail: <><b>{name}</b> · 当前:{current}。{isSchedule ? <>请输入 <span className="mono">每日按“小时:分钟 时区”格式自动推进</span>,例如 <span className="mono">每日 08:30 Asia/Shanghai 自动推进</span>;后端会解析为自动执行计划,当前有效值 {scheduleMeta}。</> : <>排程按 服务器时间表推进当日生效帧;锁定生效日期 / 暂停推进不影响已配置的曲线本身。</>} 改排程产 <span className="mono">market.curve_advanced</span> / <span className="mono">market.schedule_changed</span> 审计。运营执行门槛:财务主管 / 超级管理员。</>,
+      detail: <><b>{name}</b> · 当前:{current}。{isSchedule ? <>请输入 <span className="mono">每日按“小时:分钟 时区”格式自动推进</span>,例如 <span className="mono">每天北京时间 08:30 自动推进</span>;后端会解析为自动执行计划,当前有效值 {scheduleMeta}。</> : <>排程按 服务器时间表推进当日生效帧;锁定生效日期 / 暂停推进不影响已配置的曲线本身。</>} 改排程产 <span className="mono">market.curve_advanced</span> / <span className="mono">market.schedule_changed</span> 审计。运营执行门槛:财务主管 / 超级管理员。</>,
       amplifies: false,
       edit: ctlOptions[key]
         ? { kind: "select", current, options: ctlOptions[key], optionLabels: { "未钉住": "不锁定生效日期" }, disallowCurrent: true }

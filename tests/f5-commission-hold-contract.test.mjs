@@ -1,3 +1,4 @@
+import { displayCopyModules } from "./display-copy-fixture.mjs";
 /**
  * F5 单笔佣金冻结/提前解锁/解冻 · 专属契约门(合并底账 ADMIN-MERGE-BASELINE-20260804 §二#4 恢复)。
  *
@@ -40,6 +41,7 @@ const output = ts.transpileModule(componentSource, {
 const element = (type, props, key) => ({ type, props: { ...props, key } });
 const exports = {};
 new Function("require", "exports", "module", output)((name) => {
+  if (displayCopyModules[name]) return displayCopyModules[name];
   if (name === "react") return { useState: (value) => [value, () => undefined], useMemo: (fn) => fn() };
   if (name === "react/jsx-runtime") return { jsx: element, jsxs: element, Fragment: Symbol("Fragment") };
   if (name === "next/link") return { default: () => null };
@@ -175,7 +177,7 @@ test("①c 直属两类双币保留整组冻结、解冻，解冻恢复 cooling"
         assert.deepEqual({ op: confirmation.op, paramKey: confirmation.paramKey, expectedVersion: confirmation.expectedVersion,
           fixedVal: confirmation.fixedVal, amplify: confirmation.amplify },
         { op: "dispose", paramKey: view.row.auditKey, expectedVersion: 4, fixedVal, amplify: false });
-        assert.match(confirmation.detail, /结算组 DR-71 · 12 USDT \+ 120 NEX（整组处理）/);
+        assert.match(confirmation.detail, /结算组 DR-71 · 12 USDT \+ 120 UVEL（整组处理）/);
         if (status === "frozen") assert.match(confirmation.detail, /不会绕过剩余冷却期/);
       }
     }

@@ -1,3 +1,4 @@
+import { displayCopyModules } from "../tests/display-copy-fixture.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -39,7 +40,7 @@ test('session renewal keeps promotion reads stable while permission and identity
     return new Proxy({__esModule:true,default:empty},{get:(target,key)=>key in target?target[key]:empty});
   };
   const code=ts.transpileModule(fs.readFileSync(new URL('../app/components/domain-views/h-view.tsx',import.meta.url),'utf8'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
-  const module={exports:{}};new Function('require','exports','module',code)(imports,module.exports,module);
+  const module={exports:{}};new Function('require','exports','module',code)(name => displayCopyModules[name] ?? imports(name),module.exports,module);
   const find=node=>{if(!node||typeof node!=='object')return;if(node.type===H4)return node.props.ctx.can;for(const child of [].concat(node.props?.children??[])){const result=find(child);if(result)return result;}};
   const render=value=>{state=value;hook=0;const can=find(module.exports.HDomainView({meta:{l2Id:'H4'}}));assert.equal(typeof can,'function');return can;};
   const initial={authEpoch:1,session:{role:'auditor',authorities:['growth_promotion_read','growth_promotion_edit']}};
@@ -53,7 +54,7 @@ test('session renewal keeps promotion reads stable while permission and identity
 });
 function component(file,imports,privateExport=''){
   const code=ts.transpileModule(fs.readFileSync(new URL('../app/components/domain-views/h-tabs/'+file,import.meta.url),'utf8'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
-  const module={exports:{}};new Function('require','exports','module',code+(privateExport?'\nmodule.exports.'+privateExport+'='+privateExport+';':''))(imports,module.exports,module);return module.exports;
+  const module={exports:{}};new Function('require','exports','module',code+(privateExport?'\nmodule.exports.'+privateExport+'='+privateExport+';':''))(name => displayCopyModules[name] ?? imports(name),module.exports,module);return module.exports;
 }
 const ui=component('h4-promotion-ui.tsx',name=>name.startsWith('react')?require(name):name.endsWith('error-messages')?{displayAdminError:e=>e.message}:{});
 const activity={activityId:'A1',name:'原活动',state:'DRAFT',current:{revision:1,draft:{}},impact:{}};
@@ -280,8 +281,8 @@ test('missing resolved rights remain unknown and existing reward disclosures reu
   const policy={state:'DRAFT',content:{kind:'DEVICE_RIGHTS',rightsDescription:{zh:'真实原说明'}},resolvedDeviceRights:null};const unknown=renderToStaticMarkup(policyDetails(policy,{nativeContracts:[]}));for(const label of rightsLabels)assert(unknown.includes(label));assert.equal((unknown.match(/未确认/g)||[]).length,9);assert.equal((unknown.match(/未知/g)||[]).length,2);assert(!unknown.includes('自动激活')&&!unknown.includes('未使用可收回'));
   const row={loading:false,error:null,data:{state:'ISSUED',version:1,beneficiaryRole:'BUYER',beneficiaryId:'12',reward:{type:'DEVICE',quantity:1},disclosure:{title:{zh:'原公开标题'},terms:{zh:'原活动规则'},benefitDescription:{zh:'原资产或设备权益'},refundTerms:{zh:'原售后条款'},deviceRights:{...rights,revocationMode:'REVOKE_IF_UNUSED'}},dispositionOptions:[],attempts:[]}};
   const rewardUi={...ui,useRead:()=>row};const Detail=component('h4-promotion-rewards.tsx',name=>name.startsWith('react')?require(name):name.endsWith('h4-promotion-ui')?rewardUi:{},'RewardDetail').RewardDetail;const html=renderToStaticMarkup(require('react').createElement(Detail,{id:'R1',can:()=>false,onClose:()=>{},onChanged:()=>{}}));for(const label of rightsLabels)assert(html.includes(label));assert(html.includes('未使用可收回')&&html.includes('原资产或设备权益')&&html.includes('原售后条款'));assert(!html.includes('REVOKE_IF_UNUSED'));
-  const unlimited=renderToStaticMarkup(ui.DeviceRightsSummary({rights:{...rights,durationDays:null}}));assert(unlimited.includes('原合同未限定'),'Preserve the established duration-null disclosure');
-  const partial=renderToStaticMarkup(ui.DeviceRightsSummary({rights:{activationMode:'UNRECOGNIZED',effectiveOn:undefined,durationDays:undefined,taskEnabled:null,countsAsDeviceHolding:'false',countsForRank:undefined,transferable:0,exchangeable:undefined,revocationMode:'UNRECOGNIZED'}}));assert.equal((partial.match(/未确认/g)||[]).length,9);assert(!partial.includes('原合同未限定')&&!partial.includes('手动激活')&&!partial.includes('<b>否</b>')&&!partial.includes('<b>是</b>'),'Unknown fields must not become a configured entitlement');
+  const unlimited=renderToStaticMarkup(ui.DeviceRightsSummary({rights:{...rights,durationDays:null}}));assert(unlimited.includes('原业务协议未限定'),'Preserve the established duration-null disclosure');
+  const partial=renderToStaticMarkup(ui.DeviceRightsSummary({rights:{activationMode:'UNRECOGNIZED',effectiveOn:undefined,durationDays:undefined,taskEnabled:null,countsAsDeviceHolding:'false',countsForRank:undefined,transferable:0,exchangeable:undefined,revocationMode:'UNRECOGNIZED'}}));assert.equal((partial.match(/未确认/g)||[]).length,9);assert(!partial.includes('原业务协议未限定')&&!partial.includes('手动激活')&&!partial.includes('<b>否</b>')&&!partial.includes('<b>是</b>'),'Unknown fields must not become a configured entitlement');
 });
 
 test('numeric formats follow the existing quantity, limit and exact amount contract while allowing empty drafts',()=>{
@@ -386,7 +387,7 @@ test('actual budget editor names unknown occupancy when any required current ter
 test('actual combination dialog rejects invalid quantity or match enum, preserves legal changes and shows each original rule reward separately',()=>{
   let closed=0;const changes=[],props={draft:{template:'MULTI_PRODUCT',combinationMatch:'ALL',rules:[structuredClone(originalRule),{...structuredClone(originalRule),ruleId:'R2',productNo:'SKU2',buyerReward:{...originalRule.buyerReward,type:'NEX',amount:'2'}}]},catalog:editCatalog,readOnly:false,onClose:()=>closed++,onChange:change=>{changes.push(change);props.draft={...props.draft,...change};}};
   const dialog=editingDialog('CombinationEditor',props);dialog.input('最低数量 1','101');dialog.button('保留到草稿').props.onClick();assert.equal(closed,0);assert.equal(changes.length,0);assert.equal(props.draft.rules[0].minBuyQty,1);assert.equal(dialog.field('最低数量 1').props.value,'101');
-  dialog.input('最低数量 1','100');dialog.button('保留到草稿').props.onClick();assert.equal(closed,1);assert.equal(props.draft.rules[0].minBuyQty,100);assert.equal(props.draft.rules[1].minBuyQty,1);const html=dialog.html();for(const text of ['购买者奖励 1','购买者奖励 2','1.000000 USDT','2 NEX','每单 1 组'])assert(html.includes(text));
+  dialog.input('最低数量 1','100');dialog.button('保留到草稿').props.onClick();assert.equal(closed,1);assert.equal(props.draft.rules[0].minBuyQty,100);assert.equal(props.draft.rules[1].minBuyQty,1);const html=dialog.html();for(const text of ['购买者奖励 1','购买者奖励 2','1.000000 USDT','2 UVEL','每单 1 组'])assert(html.includes(text));
   dialog.input('最低数量 1','');dialog.button('保留到草稿').props.onClick();assert.equal(closed,2);assert.equal(props.draft.rules[0].minBuyQty,null);props.draft.combinationMatch='STALE';dialog.button('保留到草稿').props.onClick();assert.equal(closed,2);assert(dialog.html().includes('该选项当前不可用'));saveEditorTrace('combination-format-regression',{rejectedRaw:'101',actualChanges:changes,closeCalls:closed,finalDraft:props.draft});
 });
 test('basic template picker reuses all existing choices and the original confirmation; cancellation keeps the draft',()=>{

@@ -69,7 +69,7 @@ export function CoverageHero() {
         <span className="font-display text-[14.5px]" style={{ color: "var(--v5-ink)" }}>资金与应付款总览 · <AutoGloss>兑付覆盖率</AutoGloss></span>
         <span className="ml-auto inline-flex items-center gap-1.5 rounded-[7px] px-2 py-0.5 font-mono-tabular text-[11px]" style={{ background: "var(--v5-tech-cyan-soft)", color: "var(--v5-tech-cyan)", border: "1px solid var(--v5-tech-cyan-border)" }}>
           <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: "var(--v5-tech-cyan)" }} />
-          server-canonical
+          以服务器数据为准
         </span>
       </div>
 

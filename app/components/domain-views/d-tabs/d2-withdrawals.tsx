@@ -1,4 +1,5 @@
 "use client";
+import { operatorNicknameText } from "@/lib/admin/brand-copy";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -864,7 +865,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           return <tr key={row.withdrawalNo}>
             <td><input aria-label={`${selectionHint}：${row.withdrawalNo}`} title={selectionHint} type="checkbox" disabled={!selectable && !selectedNow} checked={selectedNow} onChange={(event) => setSelected((current) => { const next = new Set(current); event.target.checked ? next.add(row.withdrawalNo) : next.delete(row.withdrawalNo); return next; })} />{!selectable && <span className="d2-selection-note">{anyBatchAction ? "当前动作不适用" : "系统自动流转"}</span>}</td>
             <td><button className="l-btn sm d2-withdrawal-link" title={row.withdrawalNo} aria-label={`打开提现单 ${row.withdrawalNo} 的详情`} onClick={() => void openDetail(row)}><span className="d2-cell-ellipsis">{row.withdrawalNo}</span></button></td>
-            <td>{row.userNo}<div className="sub">{row.nickname}</div></td>
+            <td>{row.userNo}<div className="sub">{operatorNicknameText(row.nickname)}</div></td>
             <td className="d2-asset-cell"><span className="d2-cell-ellipsis" title={`${row.asset} / ${row.chain}`} aria-label={`资产与渠道：${row.asset} / ${row.chain}`}>{row.chain === "BANK-VND" ? "越南银行卡 · HDPay" : `${row.asset} / ${row.chain}`}</span><div className="mono sub d2-address" title={row.targetAddress}>{row.chain === "BANK-VND" ? "账户信息见详情" : row.targetAddress}</div></td>
             <td className="num d2-fee-summary"><strong>{money(row.amount)}</strong><div className="sub">{row.chain === "BANK-VND" ? "兑换本金" : "到账"} {money(row.netReceive)}</div><div className="sub">手续费 {money(row.actualFee)}</div><button className="d2-inline-link" onClick={() => void openDetail(row)}>详情中查看完整费用</button></td>
             <td className="d2-review-cell"><span className={`bdg ${routingPriorityTone(row)}`} title={`K4 当前阈值：低风险上限 ${row.k4BandLowMax ?? "—"}，高风险起点 ${row.k4BandHighMin ?? "—"}，自动升级 ${row.k4AutoEscalateScore ?? "—"}`}>{routingPriorityLabel(row)} · {k4RiskText(row)}</span><div className="sub">K3 {routeLabel(row.k3RiskRoute)} · {ruleSummary(row.hitRules)}</div><div className="sub">账户 {userStatusLabel(row.userStatus)} · 近 24h {row.withdrawalCount24h} 笔 · 每日上限 {dailyLimit || "—"} 笔</div></td>
@@ -899,7 +900,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       {detailLoading && <div className="dtint">正在读取服务端最新详情…</div>}
       {detailError && <div className="dtint warn">服务端最新详情加载失败 · {detailError} · 为避免按旧数据处置，写操作已关闭，请关闭后重试。</div>}
       <div className="f-stats d2-detail-stats">
-        <div className="f-stat"><div className="k">用户资料</div><div className="v">{detail.userNo}</div><div className="sub">{detail.nickname} · {detail.userLevel} · {detail.phoneMasked || "未展示手机号"}</div></div>
+        <div className="f-stat"><div className="k">用户资料</div><div className="v">{detail.userNo}</div><div className="sub">{operatorNicknameText(detail.nickname)} · {detail.userLevel} · {detail.phoneMasked || "未展示手机号"}</div></div>
         <div className="f-stat warn"><div className="k">风险路由</div><div className="v">{routingPriorityLabel(detail)} · {k4RiskText(detail)}</div><div className="sub">K3 {routeLabel(detail.k3RiskRoute)} · {ruleSummary(detail.hitRules)}</div></div>
         <div className="f-stat cyan"><div className="k">账户状态</div><div className="v">{userStatusLabel(detail.userStatus)}</div><div className="sub">24h 第 {detail.withdrawalCount24h} 笔 · IP 段 {detail.ipSegment || "—"}</div></div>
         <div className="f-stat"><div className="k">当前状态</div><div className="v">{cregisDetail?.source === "provider" ? cregisStatusLabel(cregisDetail.state) : bankStatusLabel(detail)}</div><div className="sub">{detail.chain === "BANK-VND" ? "已派发后以 HDPay 查单结果结算；结果不明不重发、不手工退款。" : cregisDetail?.source === "provider" ? "按原代付单查询与链上证据处理；恢复原单不会重新发款。" : lifecycleSummary(detail)}</div></div>

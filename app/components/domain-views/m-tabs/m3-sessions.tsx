@@ -166,7 +166,7 @@ function workbenchUserToCustomerProfile(user: User360Profile): CustomerProfile {
     .filter(Boolean);
   const balances = [
     user.walletUsdt == null ? "" : `${textOf(user.walletUsdt)} USDT`,
-    user.walletNex == null ? "" : `${textOf(user.walletNex)} NEX`,
+    user.walletNex == null ? "" : `${textOf(user.walletNex)} UVEL`,
   ].filter(Boolean);
   const deviceCount = textOf(user.deviceCount).trim();
   const activeDeviceCount = textOf(user.activeDeviceCount).trim();
@@ -1350,7 +1350,7 @@ function SkuPicker({ skus, loading, error, onClose, onPick }: { skus: PushSku[];
       </div>
       <div className="sku-pop-search">
         <Icon name="search" size={15} />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索 SKU 名称 / 编号" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索商品名称 / 编号" />
       </div>
       <div className="sku-pop-list">
         {loading ? (

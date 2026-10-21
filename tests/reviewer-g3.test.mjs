@@ -1,3 +1,4 @@
+import { displayCopyModules } from "./display-copy-fixture.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -8,7 +9,7 @@ const root=path.resolve(import.meta.dirname,'..'), ts=createRequire(import.meta.
 function load(file, dependencies={}, globals={}) {
   const module={exports:{}};
   const code=ts.transpileModule(fs.readFileSync(path.join(root,file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
-  vm.runInNewContext(code,{module,exports:module.exports,require:name=>{if(name.endsWith('.css'))return {};if(name in dependencies)return dependencies[name];throw Error(name);},URL,URLSearchParams,AbortController,Date,Event,crypto,console,...globals});
+  vm.runInNewContext(code,{module,exports:module.exports,require:name=>{if(displayCopyModules[name])return displayCopyModules[name];if(name.endsWith('.css'))return {};if(name in dependencies)return dependencies[name];throw Error(name);},URL,URLSearchParams,AbortController,Date,Event,crypto,console,...globals});
   return module.exports;
 }
 function storage() {const rows=new Map();return {rows,quota:false,getItem:key=>rows.get(key)??null,setItem(key,value){if(this.quota)throw Error('quota');rows.set(key,value);},removeItem:key=>rows.delete(key),get length(){return rows.size;},key:i=>[...rows.keys()][i]??null};}

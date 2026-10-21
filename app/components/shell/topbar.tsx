@@ -126,7 +126,7 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
               style={{ color: "var(--v5-ink-3)" }}
             >
               <LogOut size={13} />
-              {loggingOut ? "正在撤销会话…" : "退出登录"}
+              {loggingOut ? "正在退出登录…" : "退出登录"}
             </button>
             {logoutError && (
               <p className="px-3 py-1.5 text-[11px]" role="alert" style={{ color: "var(--v5-danger)" }}>
@@ -162,8 +162,8 @@ function CoveragePill({ enabled }: { enabled: boolean }) {
     <Link
       href="/overview/dual-ledger"
       prefetch={false}
-      title={unavailable ? "兑付覆盖率暂不可用 · 查看双账本" : "兑付覆盖率 = 储备 ÷ 应付负债 · 点击进双账本"}
-      aria-label={`兑付覆盖率：${statusLabel}，查看双账本`}
+      title={unavailable ? "兑付覆盖率暂不可用 · 查看资金与应付款" : "兑付覆盖率 = 储备 ÷ 应付负债 · 点击进双账本"}
+      aria-label={`兑付覆盖率：${statusLabel}，查看资金与应付款`}
       className="admin-topbar-coverage inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-[9px] px-3 py-1.5 text-[12px] transition-opacity hover:opacity-90"
       style={{ background: `color-mix(in srgb, ${zoneVar} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${zoneVar} 35%, transparent)` }}
     >
@@ -193,14 +193,14 @@ function SearchBox({ domains }: { domains: NavDomain[] }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        aria-label="打开全局命令面板"
+        aria-label="打开查找功能页面"
         aria-keyshortcuts="Meta+K Control+K"
         className="admin-topbar-search inline-flex shrink-0 items-center gap-2 rounded-[9px] px-3 py-1.5 text-left transition-opacity hover:opacity-90"
         style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)" }}
       >
         <Search size={15} style={{ color: "var(--v5-ink-4)" }} aria-hidden />
         <span className="admin-topbar-search-label min-w-0 flex-1 truncate text-[12.5px]" style={{ color: "var(--v5-ink-4)" }}>
-          搜索账户 / 工单 / 交易…
+          搜索功能页面…
         </span>
         <kbd
           className="admin-topbar-search-shortcut font-mono-tabular rounded-[5px] px-1.5 py-0.5 text-[10px]"

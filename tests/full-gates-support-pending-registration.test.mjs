@@ -25,7 +25,7 @@ function isolatedBehaviorFixture(option) {
   const fixture = fs.mkdtempSync(path.join(artifacts, `${option}-`));
   assert.ok(!fixture.startsWith(root + path.sep), 'mutants must never alter the source checkout');
   for (const dir of ['app', 'lib']) fs.cpSync(path.join(root, dir), path.join(fixture, dir), {recursive:true});
-  for (const file of ['package.json', 'scripts/pending-idempotency-key-sentinel.mjs', 'scripts/lib/strip-comments.mjs', behaviorFile, 'tests/default-avatar-client-forms.test.mjs', 'tests/helpers.mjs']) {
+  for (const file of ['package.json', 'scripts/pending-idempotency-key-sentinel.mjs', 'scripts/lib/strip-comments.mjs', behaviorFile, 'tests/default-avatar-client-forms.test.mjs', 'tests/helpers.mjs', 'tests/display-copy-fixture.mjs']) {
     fs.mkdirSync(path.dirname(path.join(fixture, file)), {recursive:true});
     fs.copyFileSync(path.join(root, file), path.join(fixture, file));
   }

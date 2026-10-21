@@ -11,7 +11,7 @@ import { displayAdminError } from "../lib/admin/error-messages.ts";
 
 const element = (type, props) => ({ type, props });
 test("server export failures distinguish missing metrics from malformed data in operator copy", () => {
-  assert.match(displayAdminError(new Error("L1_EXPORT_NO_AVAILABLE_KPI")), /没有可用 KPI.*未生成报表/);
+  assert.match(displayAdminError(new Error("L1_EXPORT_NO_AVAILABLE_KPI")), /没有可用关键指标.*未生成报表/);
   assert.match(displayAdminError(new Error("L1_EXPORT_DATA_INVALID")), /格式异常.*未生成报表/);
 });
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };

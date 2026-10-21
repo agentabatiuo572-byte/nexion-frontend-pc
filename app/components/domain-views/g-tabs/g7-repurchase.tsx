@@ -1,4 +1,5 @@
 "use client";
+import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 
@@ -330,7 +331,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
               {orders.map((order) => (
                 <tr key={order.orderNo}>
                   <td className="mono">{order.orderNo}</td>
-                  <td>{order.nickname}<div className="mono" style={{ opacity: 0.65 }}>{order.userNo}</div></td>
+                  <td>{operatorNicknameText(order.nickname)}<div className="mono" style={{ opacity: 0.65 }}>{order.userNo}</div></td>
                   <td>{fmtUsd(order.amountUsdt)}</td>
                   <td>{fmtNumber(order.apyPct, 2)}% / {order.lockDays} 天</td>
                   <td>{fmtUsd(order.estimatedInterestUsdt)}</td>

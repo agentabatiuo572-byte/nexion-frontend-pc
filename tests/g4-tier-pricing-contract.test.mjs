@@ -74,7 +74,7 @@ test("③ 组件:卡片存在 + fail-closed 不给入口 + 三动作接线 + 唯
   assert.match(component, /finprod_g4_price_write/, "档位动作必须挂定价写权限");
   assert.match(component, /tiers\.length > 1\s*\?/, "唯一档必须不渲染删档入口(禁用态仍暗示可删,GEN11 纪律)");
   // 钉 gtint 的唯一形态(该短语在弹窗 detail 另有两处变体;钉最长的说明条,删它必红)。
-  assert.match(component, /在锁购买按开锁档价结算不追溯/, "档位卡说明条丢了「在锁购买按开锁档价结算不追溯」关键口径(钱语义,削文案不许静默)");
+  assert.match(component, /价格锁定期间的购买按锁定时价格结算，不重新计算历史数据/, "档位卡说明条丢了「价格锁定期间的购买按锁定时价格结算，不重新计算历史数据」关键口径(钱语义,削文案不许静默)");
   assert.match(component, /businessForm:\s*\{\s*kind:\s*"multi-field"/, "档位编辑必须走 multi-field 业务表单(截止/单价分字段,禁单框多值)");
 });
 

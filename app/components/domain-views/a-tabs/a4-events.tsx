@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import { A4OutboxDiagnostics } from "./a4-outbox-diagnostics";
 
@@ -225,7 +226,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     const cur = liveDay0;
     const stableKey = createA4IdempotencyKey("a4-param-day0");
     openActionConfirm({
-      action: "统计参数 · 注册后首次接入时限",
+      action: "统计参数 · 首笔收益到账时限",
       detail: (
         <>
           当前 <b>{cur}</b>。改了 关键指标 #1 统计规则就变,历史不重算。统计参数动一下,所有派生看板的算式跟着变,
@@ -239,7 +240,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         if (!/^\d{1,4}\s*(?:秒|s|sec|seconds?)?$/i.test(val)) { toast("A4_DAY0_VALUE_INVALID:请输入 30–600 秒"); return; }
         const seconds = Number.parseInt(val, 10);
         if (seconds < 30 || seconds > 600) { toast("A4_DAY0_VALUE_INVALID:请输入 30–600 秒"); return; }
-        return updateParam("day0", val, reason, `首次接入时限已更新为 ${seconds} 秒`, stableKey);
+        return updateParam("day0", val, reason, `首笔收益到账时限已更新为 ${seconds} 秒`, stableKey);
       },
     });
   };
@@ -308,7 +309,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       action: "登记新事件或字段",
       detail: (
         <>
-          当前 <b>schema {liveSchemaVer}</b>。新事件名(<span className="acode">域.对象_动作</span>,过去式)或新属性<b>先注册后使用</b>;
+          当前 <b>事件目录版本 {liveSchemaVer}</b>。新事件名(<span className="acode">域.对象_动作</span>,过去式)或新属性<b>先注册后使用</b>;
           注册校验:命名规范 ✓ 不与现有事件重复 ✓ <b>无隐私明文(手机号/地址)</b>  ✓。
           超级管理员执行门槛:超级管理员;登记版本 +1 并广播。
         </>
@@ -767,15 +768,15 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
             <tbody>
               {EVENT_FAMILIES.map((f, i) => (
                 <tr key={f.key} className="click" onClick={() => setFamIdx(i)}>
-                  <td style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink)", whiteSpace: "nowrap" }}>{f.title}</td>
-                  <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{f.sub}</td>
+                  <td style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink)", whiteSpace: "nowrap" }}>{operatorCopyText(f.title)}</td>
+                  <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{operatorCopyText(f.sub)}</td>
                   <td className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>{f.sample}</td>
                   <td style={{ fontSize: 11.5 }}>
                     {f.serverAuth.includes("全部")
                       ? f.serverAuth.split("全部").map((part, idx, arr) => (
                           <span key={idx}>{part}{idx < arr.length - 1 ? <b>全部</b> : null}</span>
                         ))
-                      : f.serverAuth}
+                      : operatorCopyText(f.serverAuth)}
                   </td>
                   <td className="num mono">{f.todayCount}</td>
                   <td style={{ textAlign: "right" }}>
@@ -825,7 +826,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                 <div className="a-vrow" key={c.key}>
                   <span className="nm">
                     {c.key === "misc" ? c.name : <span className="mono">{c.name}</span>}
-                    <small>{c.sub}</small>
+                    <small>{operatorCopyText(c.sub)}</small>
                   </span>
                   <span className="v">{isPii ? c.value : c.value}</span>
                 </div>
@@ -839,7 +840,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
               if (p.locked) {
                 return (
                   <div className="a-vrow" key={p.key}>
-                    <span className="nm">{p.name}<small>{p.sub}</small></span>
+                    <span className="nm">{operatorCopyText(p.name)}<small>{operatorCopyText(p.sub)}</small></span>
                     <span className="v">{p.value}</span>
                     <span className="acode lock" title="§2.4.9 · 保持一致 关键指标 #2">🔒</span>
                   </div>
@@ -854,7 +855,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                 : adjSampling;
               return (
                 <div className="a-vrow" key={p.key}>
-                  <span className="nm">{p.name}<small>{p.sub}{p.key === "event_retention" && (retentionRun
+                  <span className="nm">{operatorCopyText(p.name)}<small>{operatorCopyText(p.sub)}{p.key === "event_retention" && (retentionRun
                     ? ` · 最近执行:${retentionRun.evaluatedAt} · 锁:${retentionRun.lockAcquired ? "已取得" : "占用"} · 事件发送状态：${retentionRun.outboxRows} · 事实:${retentionRun.behaviorFactRows}`
                     : retentionRunError ? ` · 最近状态读取失败:${retentionRunError}` : " · 暂无人工执行记录")}</small></span>
                   <span className="v">{live}</span>
@@ -884,8 +885,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                 {KPI_FORMULAS.map((k) => (
                   <tr key={k.n}>
                     <td className="mono">{k.n}</td>
-                    <td style={{ fontSize: 12 }}>{k.kpi}</td>
-                    <td style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{k.formula}</td>
+                    <td style={{ fontSize: 12 }}>{operatorCopyText(k.kpi)}</td>
+                    <td style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{operatorCopyText(k.formula)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1095,13 +1096,13 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
               const f: A4EventFamily = EVENT_FAMILIES[famIdx];
         return (
           <Drawer
-            title={`事件类别 ${f.title} · 事件清单`}
-            sub={f.sub}
+            title={`事件类别 ${operatorCopyText(f.title)} · 事件清单`}
+            sub={operatorCopyText(f.sub)}
             onClose={() => setFamIdx(null)}
           >
             <div className="atint" style={{ marginBottom: 12 }}>
               命名规范:<span className="acode">域.对象_动作</span>(过去式);隐私明文禁入。
-              服务器确认:<b>{f.serverAuth}</b>。
+              服务器确认:<b>{operatorCopyText(f.serverAuth)}</b>。
             </div>
             <table className="l-tbl">
               <thead>
@@ -1111,7 +1112,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                 {f.events.map((event) => (
                   <tr key={event.item}>
                     <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-2)" }}>{event.item}</td>
-                    <td style={{ fontSize: 12 }}>{event.desc}</td>
+                    <td style={{ fontSize: 12 }}>{operatorCopyText(event.desc)}</td>
                   </tr>
                 ))}
               </tbody>

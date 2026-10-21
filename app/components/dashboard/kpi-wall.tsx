@@ -29,7 +29,7 @@ export function KpiWall({ kpis }: { kpis: DashboardKpi[] }) {
     <div>
       <div className="mb-2.5 flex items-center justify-between">
         <p className="text-[11px] uppercase tracking-[0.14em]" style={{ color: "var(--v5-ink-4)" }}>
-          八项 KPI 验收墙 · 可查看明细
+          八项关键指标 · 可查看明细
         </p>
         <span className="text-[11.5px]" style={{ color: "var(--v5-ink-3)" }}>
           达标 <span style={{ color: "var(--v5-success)" }}>{rollup.passed}</span> / 未达{" "}
@@ -49,7 +49,7 @@ export function KpiWall({ kpis }: { kpis: DashboardKpi[] }) {
               style={{ background: "var(--v5-surface)" }}
             >
               <div className="flex items-center gap-2">
-                <span className="font-mono-tabular rounded-[6px] px-1.5 py-0.5 text-[10.5px]" style={{ background: "var(--v5-brand-soft)", color: "var(--v5-brand)", border: "1px solid var(--v5-brand-border)" }}>KPI #{i + 1}</span>
+                <span className="font-mono-tabular rounded-[6px] px-1.5 py-0.5 text-[10.5px]" style={{ background: "var(--v5-brand-soft)", color: "var(--v5-brand)", border: "1px solid var(--v5-brand-border)" }}>关键指标 #{i + 1}</span>
                 <span className="ml-auto inline-flex items-center gap-1 rounded-[6px] px-1.5 py-0.5 text-[10.5px] font-medium" style={{ background: k.pass ? "var(--v5-brand-soft)" : "var(--v5-danger-soft)", color }}>
                   <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color }} />
                   {k.pass === null ? "暂不可计算" : k.pass ? "达标" : "未达标"}
@@ -102,7 +102,7 @@ function KpiModal({ kpi, n, onClose }: { kpi: DashboardKpi; n: number; onClose: 
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2.5 p-4" style={{ borderBottom: "1px solid var(--v5-border)" }}>
-          <span className="font-mono-tabular rounded-[6px] px-1.5 py-0.5 text-[10.5px]" style={{ background: "var(--v5-brand-soft)", color: "var(--v5-brand)", border: "1px solid var(--v5-brand-border)" }}>KPI #{n}</span>
+          <span className="font-mono-tabular rounded-[6px] px-1.5 py-0.5 text-[10.5px]" style={{ background: "var(--v5-brand-soft)", color: "var(--v5-brand)", border: "1px solid var(--v5-brand-border)" }}>关键指标 #{n}</span>
           <span className="font-display text-[15px]" style={{ color: "var(--v5-ink)" }}><AutoGloss>{kpi.label}</AutoGloss></span>
           <span className="ml-auto inline-flex items-center gap-1 rounded-[6px] px-2 py-0.5 text-[11px] font-medium" style={{ background: kpi.pass ? "var(--v5-brand-soft)" : "var(--v5-danger-soft)", color }}>
             {kpi.pass === null ? "暂不可计算" : kpi.pass ? "达标" : "未达标"}

@@ -1,3 +1,4 @@
+import { displayCopyModules } from "./display-copy-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -22,6 +23,7 @@ function harness(cause, preview, job = null, recipients = []) {
     window: { addEventListener() {}, removeEventListener() {} },
     sessionStorage: { getItem() { return null; }, setItem() {} },
     require(name) {
+      if (displayCopyModules[name]) return displayCopyModules[name];
       if (name === "react") return { useState(initial) {
         const index = cursor++;
         if (!(index in slots)) slots[index] = typeof initial === "function" ? initial() : initial;

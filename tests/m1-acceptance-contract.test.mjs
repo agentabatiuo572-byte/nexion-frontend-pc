@@ -142,7 +142,7 @@ test("M1 live workbench reaches the original seat form without widening its auth
     auth = { authEpoch: 1, session: { adminId: 4282, role: config.role, authorities: config.authorities, menuCodes: config.menuCodes } };
     const form = mount(overview.SupportSeatRoleModal, { ctx, operatorName: "客服", currentRole: config.role, currentAdminId: 4282, agents, canManage: config.canManage, onClose: no }).render();
     assert.equal(nodes(form).some(node => node.props?.href === "/platform/rbac"), false, "A1 entry needs current true-super role, A1 read, resolved path and caller authorization");
-    assert.ok(button(form, "关闭")); assert.match(text(form), /由总管理员/); assert.equal(writes.length, 0, "noLegacyDispatch");
+    assert.ok(button(form, "关闭")); assert.match(text(form), /由超级管理员/); assert.equal(writes.length, 0, "noLegacyDispatch");
   }
   identity("support", 4284, []);
   const ordinary = mount(M1PersonalWorkbench, { permission: "agent", ctx });
@@ -161,7 +161,7 @@ test("M1 explains its read and write boundary and deep-links KPI cards to matchi
   assert.match(view, /按当前授权范围查看客户与分组数据/);
   assert.match(overview, /\/service\/tickets\?scope=active&status=pending_user/);
   assert.match(overview, /\/service\/sessions\?seg=unread/);
-  assert.match(overview, /只有总管理员或客服主管能调整坐席与负载策略/);
+  assert.match(overview, /只有超级管理员或客服主管能调整客服与负载策略/);
 });
 
 test("M1 SLA health is time based and unmatched work remains visible", () => {
@@ -195,7 +195,7 @@ test("M1 renders an in-flight roster read as status, never as a false failure al
   const overview = read("app/components/domain-views/m-tabs/m1-overview.tsx");
 
   assert.match(overview, /const supportAgentsPending = !supportAgentsAvailable && supportAgentsError === "none"/);
-  assert.match(overview, /supportAgentsPending && \([\s\S]*?role="status"[\s\S]*?坐席数据正在同步/);
+  assert.match(overview, /supportAgentsPending && \([\s\S]*?role="status"[\s\S]*?客服数据正在同步/);
   assert.match(overview, /!supportAgentsAvailable && !supportAgentsPending && \([\s\S]*?role="alert"/);
   assert.doesNotMatch(
     overview,

@@ -263,7 +263,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
               </div>
             </div>
             <div className="ltint" style={{ marginTop: 14, fontSize: 12 }}>
-              <b>验收边界</b> · 等 APP 端产生上述两个真实事件、A4 提供埋点目录和字段字典后，再联调 24h / 7d / 30d 窗口、页面层级、坐标热区与聚合导出。当前不展示热力数值、不开放导出，也不使用 演示数据补齐。
+              <b>验收边界</b> · 等应用端产生上述两个真实事件、A4 提供埋点目录和字段字典后，再联调 24 小时 / 7 天 / 30 天统计期、页面层级、坐标热区与聚合导出。当前不展示热力数值、不开放导出，也不使用 演示数据补齐。
             </div>
           </div>
         </section>
@@ -313,7 +313,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
         <div className="f-stat">
           <div className="k">总点击 / 点按</div>
           <div className="v">{n(summary.totalClicks)}</div>
-          <div className="sub">界面内 tap / click 事件合计</div>
+          <div className="sub">界面内点击次数合计</div>
         </div>
         <div className="f-stat cyan">
           <div className="k">点击率</div>
@@ -354,11 +354,11 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
         <div className="chips">
           <span className="lb">设备</span>
           <select aria-label="设备筛选" value={device} onChange={(event) => setDevice(event.target.value as typeof device)}>
-            <option value="ALL">全部</option><option value="H5">H5</option><option value="APP">APP</option><option value="MP">小程序</option>
+            <option value="ALL">全部</option><option value="H5">移动网页</option><option value="APP">原生应用</option><option value="MP">小程序</option>
           </select>
-          <span className="lb">Locale</span>
+          <span className="lb">语言</span>
           <select aria-label="语言筛选" value={locale} onChange={(event) => setLocale(event.target.value)}>
-            <option value="ALL">全部</option><option value="zh-CN">zh-CN</option><option value="en-US">en-US</option><option value="vi-VN">vi-VN</option>
+            <option value="ALL">全部</option><option value="zh-CN">简体中文</option><option value="en-US">英语</option><option value="vi-VN">越南语</option>
           </select>
           <button className="chip" disabled={!canExportCurrent || exporting} onClick={() => void exportCurrent()}>
             {exporting ? "导出中…" : !ctx.canExport ? "无导出权限" : !stats.length ? "空结果不可导出" : liveError ? "数据异常不可导出" : "导出当前筛选"}

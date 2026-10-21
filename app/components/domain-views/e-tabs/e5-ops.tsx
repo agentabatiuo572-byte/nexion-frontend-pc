@@ -1,3 +1,4 @@
+import { datacenterNameText } from "@/lib/admin/brand-copy";
 import { useEffect, useState } from "react";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { operatorDatacenterLabel, operatorDeviceIdentifier, operatorDeviceName, operatorDeviceStatus, operatorOperationalNote, operatorProductLabel, operatorRate, operatorTaskLabel, operatorThermalLabel, operatorTimestamp, operatorUserIdentifier, operatorUserName } from "@/lib/admin/e-operator-display";
@@ -340,7 +341,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
             <div className={`dc-card ${cls}`} key={dc.dcLocation}>
               <div className="dc-h">
                 <span className="ic"><RackIcon /></span>
-                <div className="t"><div className="nm">{dc.displayName}</div><div className="reg">ID {dc.dcLocation} · {dc.regionLabel} · {dc.location} · {dcStatusLabel(dc.status)}</div></div>
+                <div className="t"><div className="nm">{datacenterNameText(dc.displayName)}</div><div className="reg">ID {dc.dcLocation} · {dc.regionLabel} · {dc.location} · {dcStatusLabel(dc.status)}</div></div>
                 <span className="state"><span className="d" />{stateLbl}</span>
               </div>
               <div className="dc-body">

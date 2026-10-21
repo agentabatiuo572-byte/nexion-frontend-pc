@@ -44,7 +44,7 @@ test("H3 binding commands retain an idempotency key for unknown outcomes and the
 test("H3 threshold events are selectable SYSTEM events with the event user as the default field", () => {
   const thresholdEvents = [
     ["H3_STOREFRONT_THREE_PRODUCTS_VIEWED", "浏览3个不同商品"],
-    ["H3_GENESIS_SECONDARY_MARKET_VIEWED", "查看Genesis二级市场"],
+    ["H3_GENESIS_SECONDARY_MARKET_VIEWED", "查看创世节点二级市场"],
     ["H3_COMPUTE_COMPLETED_50", "完成50笔已验证AI任务"],
   ];
 
@@ -76,9 +76,9 @@ test("H3 referral and exchange tasks only offer their confirmed SYSTEM events", 
 
 test("H3 offers the published Day One source contracts", () => {
   const dayOneEvents = [
-    ["H3_DAY_ONE_EARN_PAGE_VIEWED", "查看收益页（Day One）"],
-    ["H3_DAY_ONE_STORE_PAGE_VIEWED", "查看商城页（Day One）"],
-    ["H3_DAY_ONE_S1_ROI_VIEWED", "查看 UVELBox S1 收益估算（Day One）"],
+    ["H3_DAY_ONE_EARN_PAGE_VIEWED", "查看收益页（首日）"],
+    ["H3_DAY_ONE_STORE_PAGE_VIEWED", "查看商城页（首日）"],
+    ["H3_DAY_ONE_S1_ROI_VIEWED", "查看 UVELBox S1 收益估算（首日）"],
   ];
 
   for (const [eventType, label] of dayOneEvents) {

@@ -5,6 +5,8 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fetchHowContentAdmin, updateHowContentAdmin, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
 
+const PAGE_LABELS: Record<string, string> = { "genesis-how": "创世节点说明", "wallet-exchange-how": "兑换说明", "wallet-repurchase-how": "回购说明", "team-binary-how": "左右团队结算说明", "team-commissions-how": "团队分成说明", "team-unilevel-how": "多层团队说明" };
+const LANGUAGE_LABELS: Record<string, string> = { zh: "中文", "zh-cn": "简体中文", en: "英语", vi: "越南语" };
 const KEYS = ["genesis-how", "wallet-exchange-how", "wallet-repurchase-how", "team-binary-how", "team-commissions-how", "team-unilevel-how"] as const;
 type Row = Record<string, unknown>;
 function row(value: unknown): Row { return value && typeof value === "object" && !Array.isArray(value) ? value as Row : {}; }
@@ -66,7 +68,7 @@ export function PublishedHowContentEditor() {
    * (commissions-guide)。这里补上逐页面的版本输入。
    */
   const patchEntryVersion = (next: string) => { if (!document || locked || busyRef.current) return; const entry = row(document.contents[key]); setDocument({ ...document, contents: { ...document.contents, [key]: { ...entry, version: next } } }); };
-  const addLocale = () => { if (!document || locked || busyRef.current) return; const normalized = newLocale.trim().toLowerCase().replace("_", "-"); if (!/^[a-z]{2}(?:-[a-z0-9]{2,8})?$/.test(normalized)) { setError("Locale 格式无效，例如 en、zh、vi 或 zh-cn。"); return; } const entry = row(document.contents[key]); const locales = row(entry.locales); if (locales[normalized]) { setLocale(normalized); setNewLocale(""); return; } if (Object.keys(locales).length >= 10) { setError("单页最多 10 个 Locale。"); return; } setDocument({ ...document, contents: { ...document.contents, [key]: { ...entry, locales: { ...locales, [normalized]: { blocks: [{ id: "intro", kind: "text", title: key, body: "" }] } } } } }); setLocale(normalized); setNewLocale(""); setError(null); };
+  const addLocale = () => { if (!document || locked || busyRef.current) return; const normalized = newLocale.trim().toLowerCase().replace("_", "-"); if (!/^[a-z]{2}(?:-[a-z0-9]{2,8})?$/.test(normalized)) { setError("语言代码格式无效，例如 en、zh、vi 或 zh-cn。"); return; } const entry = row(document.contents[key]); const locales = row(entry.locales); if (locales[normalized]) { setLocale(normalized); setNewLocale(""); return; } if (Object.keys(locales).length >= 10) { setError("单页最多 10 种语言。"); return; } setDocument({ ...document, contents: { ...document.contents, [key]: { ...entry, locales: { ...locales, [normalized]: { blocks: [{ id: "intro", kind: "text", title: key, body: "" }] } } } } }); setLocale(normalized); setNewLocale(""); setError(null); };
   // UI identity is independent of the editable business ID and never enters the API payload.
   const nextIdentity = (kind: string) => `how-${kind}-${++identitySequence.current}`;
   const identityOf = (item: Row) => {
@@ -120,36 +122,36 @@ export function PublishedHowContentEditor() {
     finally { busyRef.current = false; setSaving(false); }
   };
   return <section className="l-card" data-testid="published-content-how">
-    <div className="l-h"><div><div className="ttl">How-it-works 服务端发布内容</div><div className="sub">每个页面各自声明发布修订；规则块只能引用 canonical key，不能在此复制业务数值</div></div>
-      <div className="r"><span className="bdg cyan">{document?.status ?? "—"} · rev {document?.revision ?? 0}</span><button className="l-btn sm" onClick={() => void refresh()} disabled={loading || saving}>刷新</button></div></div>
+    <div className="l-h"><div><div className="ttl">业务规则说明内容</div><div className="sub">各页面分别设置发布版本；规则块只引用系统规则标识，不在此复制业务数值</div></div>
+      <div className="r"><span className="bdg cyan">{({ DRAFT: "草稿", PUBLISHED: "已发布", UNPUBLISHED: "已撤下公开版本" } as Record<string,string>)[document?.status ?? ""] ?? "状态待核实"} · 版本 {document?.revision ?? 0}</span><button className="l-btn sm" onClick={() => void refresh()} disabled={loading || saving}>刷新</button></div></div>
     <div className="l-b">
       {document && <div className="tiny">{document.hasPublishedVersion ? "当前有公开版本；保存草稿不会替换公开内容。" : "当前没有公开版本；保存草稿不会发布内容。"}</div>}
       {error && <div className="atint warn" role="alert">{error}</div>}
-      {loading && !document ? <div className="tiny">读取说明内容中…</div> : !document ? <div className="atint warn">暂无内容；App remote 将失败关闭。</div> : <>
+      {loading && !document ? <div className="tiny">读取说明内容中…</div> : !document ? <div className="atint warn">暂无内容；应用暂不展示未发布的内容。</div> : <>
         <div className="two-col">
           <label className="tiny">版本<input value={document.version} maxLength={64} disabled={locked} onChange={e => setDocument({ ...document, version: e.target.value })} /></label>
-          <label className="tiny">发布状态<select value={document.status === "UNPUBLISHED" ? "DRAFT" : document.status} disabled={locked} onChange={e => setDocument({ ...document, status: e.target.value as PublishedHowContentDocument["status"] })}><option>DRAFT</option><option>PUBLISHED</option></select></label>
+          <label className="tiny">发布状态<select value={document.status === "UNPUBLISHED" ? "DRAFT" : document.status} disabled={locked} onChange={e => setDocument({ ...document, status: e.target.value as PublishedHowContentDocument["status"] })}><option value="DRAFT">草稿</option><option value="PUBLISHED">已发布</option></select></label>
         </div>
         <div className="two-col" style={{ marginTop: 10 }}>
-          <label className="tiny">当前页面（{key}）的发布修订<input value={text(row(document.contents[key]).version)} maxLength={64} disabled={locked} placeholder="例如 2026.09.01-genesis-guide" onChange={e => patchEntryVersion(e.target.value)} /></label>
+          <label className="tiny">当前页面（{PAGE_LABELS[key] ?? key}）的发布版本<input value={text(row(document.contents[key]).version)} maxLength={64} disabled={locked} placeholder="例如 2026.09.01-genesis-guide" onChange={e => patchEntryVersion(e.target.value)} /></label>
           <div className="tiny">页脚显示本页自己的修订；留空则退回上面的文档版本。发布态必须逐页填写。</div>
         </div>
         <div className="r" style={{ marginTop: 10 }}>
-          <select aria-label="How content key" value={key} disabled={loading || saving} onChange={e => { const next = e.target.value as (typeof KEYS)[number]; setKey(next); setLocale(Object.keys(row(row(document.contents[next]).locales))[0] ?? "en"); }}>{KEYS.map(item => <option key={item}>{item}</option>)}</select>
-          <select aria-label="How content locale" value={locale} disabled={loading || saving || !current} onChange={e => setLocale(e.target.value)}>{Object.keys(row(row(document.contents[key]).locales)).map(item => <option key={item}>{item}</option>)}</select>
-          {canWrite && <><input aria-label="新增 How Locale" placeholder="vi" value={newLocale} maxLength={11} disabled={locked} onChange={e => setNewLocale(e.target.value)} /><button className="l-btn sm" disabled={locked} onClick={addLocale}>新增 Locale</button></>}
+          <select aria-label="内容页面" value={key} disabled={loading || saving} onChange={e => { const next = e.target.value as (typeof KEYS)[number]; setKey(next); setLocale(Object.keys(row(row(document.contents[next]).locales))[0] ?? "en"); }}>{KEYS.map(item => <option key={item} value={item}>{PAGE_LABELS[item] ?? item}</option>)}</select>
+          <select aria-label="内容语言" value={locale} disabled={loading || saving || !current} onChange={e => setLocale(e.target.value)}>{Object.keys(row(row(document.contents[key]).locales)).map(item => <option key={item} value={item}>{LANGUAGE_LABELS[item] ?? item}</option>)}</select>
+          {canWrite && <><input aria-label="新增内容语言" placeholder="vi" value={newLocale} maxLength={11} disabled={locked} onChange={e => setNewLocale(e.target.value)} /><button className="l-btn sm" disabled={locked} onClick={addLocale}>新增语言</button></>}
         </div>
-        {!current && <div className="tiny">本页尚无所选语言内容，请先新增 Locale。</div>}
+        {!current && <div className="tiny">本页尚无所选语言内容，请先新增语言。</div>}
         <div className="tiny" style={{ marginTop: 10 }} ref={contentHeading} tabIndex={-1}>结构化内容块</div>
         {currentBlocks.map((item, index) => <div className="l-card" key={identityOf(item).block} style={{ padding: 10, marginTop: 8 }}>
           <div className="two-col">
             <label className="tiny">ID<input value={text(item.id)} maxLength={64} disabled={locked} onChange={e => patchBlock(index, { id: e.target.value })} /></label>
-            <label className="tiny">类型<select value={text(item.kind)} disabled={locked} onChange={e => changeKind(index, e.target.value)}><option>text</option><option>list</option><option>callout</option><option>ruleRef</option></select></label>
+            <label className="tiny">类型<select value={text(item.kind)} disabled={locked} onChange={e => changeKind(index, e.target.value)}><option value="text">正文</option><option value="list">列表</option><option value="callout">提示说明</option><option value="ruleRef">引用系统规则</option></select></label>
           </div>
           <label className="tiny">标题<input value={text(item.title)} maxLength={256} disabled={locked} onChange={e => patchBlock(index, { title: e.target.value })} /></label>
           <label className="tiny">正文（规则块必须保留 {'{value}'} 占位符）<textarea rows={3} value={text(item.body)} maxLength={20000} disabled={locked} onChange={e => patchBlock(index, { body: e.target.value })} /></label>
           {item.kind === "ruleRef" && <div className="two-col">
-            <label className="tiny">规则键<input value={text(row(item.ref).key)} maxLength={160} disabled={locked} onChange={e => patchBlock(index, { ref: { ...row(item.ref), source: "canonical", key: e.target.value } })} /></label>
+            <label className="tiny">规则标识<input value={text(row(item.ref).key)} maxLength={160} disabled={locked} onChange={e => patchBlock(index, { ref: { ...row(item.ref), source: "canonical", key: e.target.value } })} /></label>
             <label className="tiny">引用版本<input value={text(row(item.ref).version)} maxLength={128} disabled={locked} onChange={e => patchBlock(index, { ref: { ...row(item.ref), source: "canonical", version: e.target.value } })} /></label>
           </div>}
           {item.kind === "list" && <div>
@@ -164,7 +166,7 @@ export function PublishedHowContentEditor() {
         {canWrite && <>
           <button className="l-btn sm" style={{ marginTop: 8 }} disabled={locked || !current || currentBlocks.length >= 200} onClick={addBlock}>新增内容块</button>
           <label className="tiny" style={{ display: "block", marginTop: 10 }}>变更理由（必填）<input value={reason} maxLength={500} disabled={locked} onChange={e => setReason(e.target.value)} /></label>
-          <button className="l-btn mc" style={{ marginTop: 8 }} disabled={locked || !hasChanges} onClick={() => void save()}>{saving ? "保存中…" : "保存并回读"}</button>
+          <button className="l-btn mc" style={{ marginTop: 8 }} disabled={locked || !hasChanges} onClick={() => void save()}>{saving ? "保存中…" : "保存并刷新"}</button>
         </>}
       </>}
     </div>

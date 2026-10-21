@@ -1,3 +1,4 @@
+import { datacenterNameText } from "@/lib/admin/brand-copy";
 import { operatorSkuTier } from "@/lib/admin/e-operator-display";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CodeTag, Badge } from "../design-kit";
@@ -671,7 +672,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                 <div className="spec">
                   <div className="it"><span className="k">GPU</span><span className="v">{s.gpu || "—"}</span></div>
                   <div className="it"><span className="k">显存</span><span className="v">{s.vram || "—"}</span></div>
-                  <div className="it"><span className="k">数据中心</span><span className="v">{s.datacenter || "—"}</span></div>
+                  <div className="it"><span className="k">数据中心</span><span className="v">{datacenterNameText(s.datacenter || "—")}</span></div>
                   <div className="it"><span className="k">算力池</span><span className="v">{unlockPoolName(s.aiUnlocks)}</span></div>
                 </div>
                 <div className="meta">

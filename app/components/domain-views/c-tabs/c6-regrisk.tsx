@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -93,7 +94,7 @@ function StatCard({ tone, label, value, sub }: { tone?: string; label: string; v
 }
 
 function rowKey(param: UserRegistrationRiskParam) {
-  return text(param.key, `${text(param.group)}-${text(param.name)}`);
+  return text(param.key, `${text(param.group)}-${operatorCopyText(text(param.name))}`);
 }
 
 function guardKey(guard: UserRegistrationRiskK1Guard) {
@@ -203,8 +204,8 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     return (
       <div className="p-row" key={rowKey(param)}>
         <div className="txt">
-          <div className="k">{text(param.name)}</div>
-          <div className="s">{text(param.sub, text(param.note))}</div>
+          <div className="k">{operatorCopyText(text(param.name))}</div>
+          <div className="s">{operatorCopyText(text(param.sub, text(param.note)))}</div>
         </div>
         <span className="v">{text(param.value)}</span>
         <button
@@ -212,12 +213,12 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
           title={canWrite ? undefined : "当前账号只有 C6 读取权限"}
           disabled={!canWrite || busy || !key || !!param.readOnly}
           onClick={() => openActionConfirm({
-            action: `登录风控参数 · ${text(param.name)}`,
-            detail: <><b>{text(param.name)}</b> · 当前 {text(param.value)} · 次数范围 {attemptMin}-{attemptMax}，时长范围 {durationMin}-{durationMax} {durationUnit}。长锁次数必须大于短锁次数。</>,
+            action: `登录风控参数 · ${operatorCopyText(text(param.name))}`,
+            detail: <><b>{operatorCopyText(text(param.name))}</b> · 当前 {text(param.value)} · 次数范围 {attemptMin}-{attemptMax}，时长范围 {durationMin}-{durationMax} {durationUnit}。长锁次数必须大于短锁次数。</>,
             amplifies: false,
             businessForm: {
               kind: "multi-field",
-              title: `${text(param.name)}结构化参数`,
+              title: `${operatorCopyText(text(param.name))}结构化参数`,
               hint: `服务端将两项参数作为同一事务提交；当前配置版本 ${configVersion}`,
               fields: [
                 { key: "attempts", label: "触发次数", inputKind: "number", current: String(currentAttempts), min: toNumber(param.min, 0), max: toNumber(param.max, 0), step: 1, required: true },
@@ -239,7 +240,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
               const value = `${attempts} 次 / ${duration} ${durationUnit}`;
               return perform(`lock|${key}|${value}|${configVersion}|${reason}`, async (commandKey) => {
                 await updateUserRegistrationRiskParam(key, value, reason, OPERATOR(), configVersion, commandKey);
-                return `${text(param.name)} 已更新为 ${value}`;
+                return `${operatorCopyText(text(param.name))} 已更新为 ${value}`;
               }, "登录风控参数已更新");
             },
           })}
@@ -253,8 +254,8 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   const otpMirrorRow = (param: UserRegistrationRiskParam) => (
     <div className="p-row" key={rowKey(param)}>
       <div className="txt">
-        <div className="k">{text(param.name)} <span className="bdg dim">K2 唯一入口</span></div>
-        <div className="s">{text(param.sub, text(param.note))}；C6 仅展示服务端当前值，避免两处配置打架。</div>
+        <div className="k">{operatorCopyText(text(param.name))} <span className="bdg dim">K2 唯一入口</span></div>
+        <div className="s">{operatorCopyText(text(param.sub, text(param.note)))}；C6 仅展示服务端当前值，避免两处配置打架。</div>
       </div>
       <span className="v">{text(param.value)}</span>
       <Link className="l-btn sm" href="/risk/abuse">去 K2 调整</Link>
@@ -306,7 +307,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
 
   const k1Confirm = (guard: UserRegistrationRiskK1Guard) => openConfirm({
     action: `422 · ${text(guard.rejectCode, k1RejectCode)}`,
-    detail: <>服务器拒收：<b>{text(guard.name)}</b> 的唯一配置入口在多账户风险排查 K1。返回 422 {text(guard.rejectCode, k1RejectCode)}，推荐入口仅用于页面跳转。</>,
+    detail: <>服务器拒收：<b>{operatorCopyText(text(guard.name))}</b> 的唯一配置入口在多账户风险排查 K1。返回 422 {text(guard.rejectCode, k1RejectCode)}，推荐入口仅用于页面跳转。</>,
     chips: [["接口层强制 · 422 拒收", "ready"], ["唯一入口 · K1", "done"]],
     okLabel: "去 K1 配置",
     run: () => {
@@ -404,8 +405,8 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
           {k1Guards.map((guard) => (
             <div className="p-row" key={guardKey(guard)}>
               <div className="txt">
-                <div className="k">{text(guard.name)} <span className="bdg dim">K1 唯一入口</span></div>
-                <div className="s">本页提交会返回 422 {text(guard.rejectCode, k1RejectCode)}</div>
+                <div className="k">{operatorCopyText(text(guard.name))} <span className="bdg dim">K1 唯一入口</span></div>
+                <div className="s">请前往多账户风险排查修改此项设置</div>
               </div>
               <button className="l-btn sm" onClick={() => k1Confirm(guard)}>去 K1 调整</button>
             </div>

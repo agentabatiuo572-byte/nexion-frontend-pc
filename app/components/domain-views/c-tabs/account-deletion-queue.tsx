@@ -268,7 +268,7 @@ export function AccountDeletionQueue({ toast }: { toast: (message: string) => vo
         <div className="kv"><span className="k">申请时间</span><span className="v">{date(selected.requestedAt)}</span></div>
         <div className="kv"><span className="k">审核时间</span><span className="v">{date(selected.reviewedAt)}</span></div>
         <div className="kv"><span className="k">完成时间</span><span className="v">{date(selected.completedAt)}</span></div>
-        <div className="kv"><span className="k">服务端理由</span><span className="v">{selected.reason || "—"}</span></div>
+        <div className="kv"><span className="k">服务端理由</span><span className="v">{selected.reason === "USER_REQUESTED_CANCEL" ? "用户主动取消申请" : selected.reason || "—"}</span></div>
         <div className="ctint" style={{ marginTop: 12 }}>完成注销会执行服务端账户禁用、匿名化与会话撤销；前端不把申请状态误报为即时删除。</div>
         </>}
         {canWrite && availableActions(selected.status).length > 0 && <>

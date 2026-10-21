@@ -235,8 +235,8 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
           ]} /></div>
           <div className="pkv"><Lbl zh="任务锁定月度损失阈" code="taskLock.s1 / .pro / .rack" desc="§6.7 提示条 触发依据 · S1 / Pro / Rack 三阶月度损失阈(USDT)" /><span className="v" style={{ fontSize: 13 }}>${pE("E.device.taskLock.s1")} / ${pE("E.device.taskLock.pro")} / ${pE("E.device.taskLock.rack")}</span><AdjMulti title="任务锁定月度损失阈" hint="三档设备(S1 / Pro / Rack)各自的月度损失阈(USDT),达阈触发 §6.7 任务锁定 提示条。" detail="任务锁定月度损失阈(S1 / Pro / Rack)· 以当前运营配置为准 · 改后对新触发判定生效" fields={[
             { key: "s1", paramKey: "E.device.taskLock.s1", label: "S1 阈(USDT)", inputKind: "number", placeholder: "40" },
-            { key: "pro", paramKey: "E.device.taskLock.pro", label: "Pro 阈(USDT)", inputKind: "number", placeholder: "140" },
-            { key: "rack", paramKey: "E.device.taskLock.rack", label: "Rack 阈(USDT)", inputKind: "number", placeholder: "450" },
+            { key: "pro", paramKey: "E.device.taskLock.pro", label: "UVELBox Pro 升级门槛（USDT）", inputKind: "number", placeholder: "140" },
+            { key: "rack", paramKey: "E.device.taskLock.rack", label: "UVELRack 升级门槛（USDT）", inputKind: "number", placeholder: "450" },
           ]} /></div>
           <div className="pkv"><Lbl zh="参与任务递减(商品规格)" code="applyTo.*" desc="逐 商品规格 控制是否参与产能递减 · 免递减 = 恒 100% 产能(入门引流设备默认免)" /><span className="v" style={{ fontSize: 13 }}>{exemptCount} 免 / {APPLY_TO_SKUS.length - exemptCount} 参与</span><AdjMulti title="参与任务递减(商品规格)" hint="逐 商品规格 勾选:参与递减 = 按产能节奏逐月递减;免递减 = 恒 100% 产能(手机 / 云端共享份额 / 电脑共享默认免,保护入门体验)。改后对该 商品规格 全网设备生效。" detail="参与任务递减(每 商品规格 开关)· 以当前运营配置为准 · 改后对该 商品规格 全网设备生效" fields={APPLY_TO_SKUS.map((s) => ({ key: s.kind, paramKey: `E.device.capacity.applyTo.${s.kind}`, label: s.label, inputKind: "select" as const, options: ["参与递减", "免递减"] }))} /></div>
           <div className="param-foot"><span className="ic"><AlertIcon /></span><span><b>「段3 产能变化」是敏感参数</b>:加深幅度加快置换节奏(更多 以旧换新 现金流),但晚段收益预期下挫会触发用户负面信号;放缓则延后置换、减少现金流。<b>各段月份在「产能分段周期」一行一次调齐</b>;各段行只改每月变化幅度%。<b>「新机任务补贴」是纯展示层</b>——只控制前端补贴标注窗口,结算数学始终按产能曲线连续计算。</span></div>

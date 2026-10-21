@@ -105,6 +105,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const loLoad = tasksWithSat.filter((t) => t.sat < 0.40).length;
   const midLoad = tasksWithSat.length - hiLoad - loLoad;
 
+  if (ctx.e2Loading) return <div className="tint" role="status">正在读取设备收益与任务…</div>;
   return (
     <>
       <PhoneCalibrationPanel ctx={ctx} thresholdsOnly />

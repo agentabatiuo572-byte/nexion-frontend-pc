@@ -76,12 +76,12 @@ test("C3 reversal is dedicated, append-only and D4-linked by adjustment number",
   assert.doesNotMatch(dView, /服务器是唯一账本|客户端报的账一律不认|每笔资金动作必落账/);
   assert.doesNotMatch(dRegistry, /服务器唯一账本|C3 调账专用类|和 D3 的储备/);
   assert.match(d4, /BILL_TYPE_LABELS\[row\.billType\]/);
-  assert.match(d4, /BILL_STATUS_LABELS\[row\.status\.toUpperCase\(\)\] \?\? row\.status/);
+  assert.match(d4, /BILL_STATUS_LABELS\[row\.status\.toUpperCase\(\)\] \?\? "账单状态待核实"/);
   assert.match(d4, /assetAmount\(row\.amount, row\.asset\)/);
   assert.doesNotMatch(d4, /createD4Adjustment|submitAdjustment|手动调账|提交调账/);
   assert.doesNotMatch(dClient, /createD4Adjustment|\/ledger\/adjustments|d4-adjustment/);
   assert.doesNotMatch(treasuryRoute, /ledger\/adjustments/);
-  assert.match(dRegistry, /该页面只负责核对/);
+  assert.match(dRegistry, /核对充值、提现、收益和人工调整记录/);
 });
 
 /**

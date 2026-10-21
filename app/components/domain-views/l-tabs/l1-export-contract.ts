@@ -48,15 +48,15 @@ export function resolveL1ExportUnavailableReason(
   sourceState: "ready" | "loading" | "error" = "ready",
 ): string | undefined {
   if (sourceState === "loading") return "正在读取关键指标数据，请稍候";
-  if (sourceState === "error") return "关键指标 数据读取失败，请重试";
+  if (sourceState === "error") return "关键指标数据读取失败，请重试";
   if (resolveL1ExportMode(raw, false)) return undefined;
-  if (record(raw).available === false) return "关键指标 数据暂不可用，请重新读取后再试";
+  if (record(raw).available === false) return "关键指标数据暂不可用，请重新读取后再试";
   if (hasDetailedL1Attempt(raw)) {
     try {
       validateL1Dashboard(raw);
-      return "当前时间窗没有可用 关键指标，暂不能导出";
+      return "当前时间窗没有可用关键指标，暂不能导出";
     } catch {
-      return "关键指标 数据格式异常，请重新读取后再试";
+      return "关键指标数据格式异常，请重新读取后再试";
     }
   }
   return "尚未读取到可导出的关键指标数据";

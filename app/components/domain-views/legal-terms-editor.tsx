@@ -220,7 +220,7 @@ export function LegalTermsEditor() {
               {canPublish && selected.status === "PUBLISHED" && <button className="l-btn sm" onClick={() => void transition("revoke")} disabled={busy}>撤回</button>}
             </div>
           </div>
-        ) : <div className={`atint warn ${styles.emptyState}`}>当前法域暂无版本；服务端无有效条款时 App 将失败关闭。</div>}
+        ) : <div className={`atint warn ${styles.emptyState}`}>当前适用地区暂无有效条款版本，应用暂不提供该内容。</div>}
       </div>
     </section>
   );

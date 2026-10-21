@@ -10,8 +10,8 @@ type Kind = "developerDocs" | "rankHow" | "privacyPolicy";
 type Row = Record<string, unknown>;
 const META: Record<Kind, { title: string; subtitle: string; read: string; write: string }> = {
   privacyPolicy: { title: "隐私政策", subtitle: "注册、邀请页公开阅读；草稿保留当前公开版本，发布须使用新版本号。请仅发布已审核正文。", read: "content_legal_terms_read", write: "content_legal_terms_write" },
-  developerDocs: { title: "Developer API 发布内容", subtitle: "示例、接口和事件由 App 读取；保存草稿不会发布内容，发布后才替换公开版本。", read: "platform_a3_read", write: "platform_a3_write" },
-  rankHow: { title: "Rank How-it-works 策略", subtitle: "结构化规则说明由 App 读取；保存草稿不会发布内容，发布后才替换公开版本。", read: "network_f1_read", write: "network_f1_write" },
+  developerDocs: { title: "开发者接口文档", subtitle: "示例、接口和事件由 App 读取；保存草稿不会发布内容，发布后才替换公开版本。", read: "platform_a3_read", write: "platform_a3_write" },
+  rankHow: { title: "团队等级说明规则", subtitle: "结构化规则说明由 App 读取；保存草稿不会发布内容，发布后才替换公开版本。", read: "network_f1_read", write: "network_f1_write" },
 };
 function row(value: unknown): Row { return value && typeof value === "object" && !Array.isArray(value) ? value as Row : {}; }
 function text(value: unknown) { return typeof value === "string" ? value : ""; }
@@ -49,13 +49,13 @@ export function PublishedContentEditor({ kind }: { kind: Kind }) {
     if (!document) return;
     const normalized = newLocale.trim().toLowerCase().replace("_", "-");
     if (!/^[a-z]{2}(?:-[a-z0-9]{2,8})?$/.test(normalized)) { setError("语言 格式无效，例如 en、zh、vi 或 zh-cn。"); return; }
-    if (!document.locales[normalized] && Object.keys(document.locales).length >= 10) { setError("最多维护 10 个 语言。"); return; }
+    if (!document.locales[normalized] && Object.keys(document.locales).length >= 10) { setError("最多维护 10 种语言。"); return; }
     const empty = kind === "developerDocs" ? { example: { request: "", response: "" }, endpoints: [{ method: "GET", path: "/" }], events: [""] } : { hero: "", sections: [{ id: "section-1", title: "", body: "", order: 0 }] };
     setDocument({ ...document, locales: { ...document.locales, [normalized]: document.locales[normalized] ?? empty } });
     setLocale(normalized); setNewLocale(""); setError(null);
   };
   const removeLocale = () => {
-    if (!document || Object.keys(document.locales).length <= 1) { setError("至少保留一个 语言。"); return; }
+    if (!document || Object.keys(document.locales).length <= 1) { setError("至少保留一种语言。"); return; }
     const next = { ...document.locales }; delete next[locale]; const nextLocale = Object.keys(next)[0];
     setDocument({ ...document, locales: next }); setLocale(nextLocale);
   };
@@ -103,7 +103,7 @@ export function PublishedContentEditor({ kind }: { kind: Kind }) {
         {loading && !document ? (
           <div className={styles.loading} aria-live="polite">读取发布内容中…</div>
         ) : !document ? (
-          <div className={`${styles.notice} ${styles.warning}`}>当前暂无可发布内容，App remote 将保持失败关闭。</div>
+          <div className={`${styles.notice} ${styles.warning}`}>当前没有已发布内容，应用暂不展示该内容。</div>
         ) : (
           <>
             <div className={styles.formGrid}>
@@ -114,27 +114,27 @@ export function PublishedContentEditor({ kind }: { kind: Kind }) {
               <label className={styles.field}>
                 <span>状态</span>
                 <select value={document.status === "UNPUBLISHED" && kind !== "privacyPolicy" ? "DRAFT" : document.status} disabled={!canWrite} onChange={(event) => setDocument({ ...document, status: event.target.value as PublishedContentDocument["status"] })}>
-                  <option value="DRAFT">DRAFT</option>
-                  <option value="PUBLISHED" disabled={!canPublish}>PUBLISHED</option>
-                  {kind === "privacyPolicy" && <option value="UNPUBLISHED" disabled={!canPublish}>UNPUBLISHED（撤下公开版本）</option>}
+                  <option value="DRAFT">草稿</option>
+                  <option value="PUBLISHED" disabled={!canPublish}>已发布</option>
+                  {kind === "privacyPolicy" && <option value="UNPUBLISHED" disabled={!canPublish}>已撤下公开版本</option>}
                 </select>
               </label>
             </div>
             <div className={styles.localeToolbar}>
               <label className={styles.field}>
-                <span>当前 语言</span>
-                <select aria-label={`${kind} Locale`} value={locale} onChange={(event) => setLocale(event.target.value)}>
-                  {Object.keys(document.locales).map((key) => <option key={key}>{key}</option>)}
+                <span>当前语言</span>
+                <select aria-label="内容语言" value={locale} onChange={(event) => setLocale(event.target.value)}>
+                  {Object.keys(document.locales).map((key) => <option key={key} value={key}>{({zh:"中文","zh-cn":"简体中文",en:"英语",vi:"越南语"} as Record<string,string>)[key] ?? key}</option>)}
                 </select>
               </label>
               {canWrite && (
                 <>
                   <label className={styles.field}>
-                    <span>新增 语言</span>
-                    <input aria-label="新增 语言" placeholder="例如 vi、zh-cn" value={newLocale} maxLength={11} onChange={(event) => setNewLocale(event.target.value)} />
+                    <span>新增语言</span>
+                    <input aria-label="新增语言" placeholder="例如 vi、zh-cn" value={newLocale} maxLength={11} onChange={(event) => setNewLocale(event.target.value)} />
                   </label>
-                  <button className={`${styles.button} ${styles.smallButton}`} type="button" onClick={addLocale}>新增 语言</button>
-                  <button className={`${styles.button} ${styles.smallButton} ${styles.dangerButton}`} type="button" onClick={removeLocale}>删除当前 语言</button>
+                  <button className={`${styles.button} ${styles.smallButton}`} type="button" onClick={addLocale}>新增语言</button>
+                  <button className={`${styles.button} ${styles.smallButton} ${styles.dangerButton}`} type="button" onClick={removeLocale}>删除当前语言</button>
                 </>
               )}
             </div>

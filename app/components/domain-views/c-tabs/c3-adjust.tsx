@@ -1,4 +1,5 @@
 "use client";
+import { operatorNicknameText } from "@/lib/admin/brand-copy";
 
 import { formatC1RiskBand } from "@/lib/admin/c1-detail-display";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
@@ -99,11 +100,11 @@ function accountId(account: User360Profile | null | undefined) {
 
 function displayUser(account: Pick<User360Profile, "userNo" | "nickname"> | null | undefined) {
   if (!account) return "—";
-  return `${text(account.userNo)} · ${text(account.nickname)}`;
+  return `${text(account.userNo)} · ${operatorNicknameText(text(account.nickname))}`;
 }
 
 function displayRowUser(row: UserAssetAdjustment) {
-  return `${text(row.userNo)} · ${text(row.nickname)}`;
+  return `${text(row.userNo)} · ${operatorNicknameText(text(row.nickname))}`;
 }
 
 function statusTone(row: UserAssetAdjustment) {
@@ -116,7 +117,7 @@ function statusTone(row: UserAssetAdjustment) {
 
 function statusLabel(row: UserAssetAdjustment) {
   const label = text(row.statusLabel, "");
-  return /[\u3400-\u9fff]/.test(label) ? label : ({ PENDING_REVIEW: "待复核", PENDING: "待复核", REQUESTED: "已申请", APPROVED: "已执行", REJECTED: "已拒绝", WITHDRAWN: "已撤回", EXPIRED: "已过期", SUSPENDED: "已挂起" } as Record<string,string>)[text(row.status).toUpperCase()] ?? "状态待核实";
+  return /[\u3400-\u9fff]/.test(label) ? label : ({ PENDING_REVIEW: "待审核", PENDING: "待审核", REQUESTED: "已申请", APPROVED: "已执行", REJECTED: "已拒绝", WITHDRAWN: "已撤回", EXPIRED: "已过期", SUSPENDED: "已挂起" } as Record<string,string>)[text(row.status).toUpperCase()] ?? "状态待核实";
 }
 
 function reasonCodeLabel(value: unknown) {
@@ -364,7 +365,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         : `提交${direction === "CREDIT" ? "增加" : "扣减"}调整申请 · ${formatNumber(amount)} ${nexGridBrandText(asset)}`,
       detail: supportRequest
         ? `${displayUser(selectedAccount)}；客服不能直接执行超过 500 USDT 等值的调整，本次只生成待独立复核请求，不改变余额。`
-        : `${displayUser(selectedAccount)}；本次只生成待放行调整，不改变余额。独立复核员批准后才更新余额并生成关联账单。网络重试或重复提交不会重复入账。`,
+        : `${displayUser(selectedAccount)}；本次只生成待放行调整，不改变余额。独立审核员批准后才更新余额并生成关联账单。网络重试或重复提交不会重复入账。`,
       chips: supportRequest ? [["只建请求", "ready"], ["余额不变", "ready"]] : [["待独立复核", "ready"], ["余额不变", "ready"]],
       reason: false,
       okLabel: supportRequest ? "确认提交请求" : "确认提交调整申请",
@@ -559,7 +560,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
                       {!userSearchLoading && userOptions.length === 0 && <div style={{ padding: "8px 10px", fontSize: 12, color: "var(--ink-4)" }}>无匹配用户</div>}
                       {!userSearchLoading && userOptions.map((account) => (
                         <button key={`${text(account.userNo)}-${accountId(account)}`} type="button" onClick={() => selectUser(account)} style={{ width: "100%", display: "flex", justifyContent: "space-between", gap: 10, padding: "8px 10px", border: 0, borderRadius: 6, background: accountId(account) === accountId(selectedUser) ? "var(--surface-2)" : "transparent", color: "var(--ink)", cursor: "pointer", textAlign: "left" }}>
-                          <span><b className="mono">{text(account.userNo)}</b> · {text(account.nickname)}</span>
+                          <span><b className="mono">{text(account.userNo)}</b> · {operatorNicknameText(text(account.nickname))}</span>
                           <span style={{ color: "var(--ink-4)" }}>{text(account.phoneMasked)}</span>
                         </button>
                       ))}
@@ -608,7 +609,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
             <div className="kv"><span className="k">当前覆盖率</span><span className="v">{selectedAccount ? formatPercent(coverageRatio) : "—"}</span></div>
             <div className="kv"><span className="k">批准后覆盖率预估</span><span className="v" style={{ color: selectedAccount && (creditCoverageUnavailable || creditBelowRedline) ? "var(--danger)" : "var(--success)" }}>{selectedAccount ? formatPercent(projectedCoverage) : "—"}</span></div>
             <div className="kv"><span className="k">红线</span><span className="v">{selectedAccount ? formatPercent(redlinePct) : "—"}</span></div>
-            <div className="ctint cyan" style={{ marginTop: 14 }}><b>复核处理流程</b> · 提交时仅创建待复核申请并保存操作记录；独立复核员批准后，才同时更新余额、账单和相关业务事件。</div>
+            <div className="ctint cyan" style={{ marginTop: 14 }}><b>复核处理流程</b> · 提交时仅创建待审核申请并保存操作记录；独立复核员批准后，才同时更新余额、账单和相关业务事件。</div>
           </div>
         </section>
       </div>

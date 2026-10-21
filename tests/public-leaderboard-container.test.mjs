@@ -1,3 +1,4 @@
+import { displayCopyModules } from "./display-copy-fixture.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -10,7 +11,7 @@ const require = createRequire(path.join(fe, "package.json")), ts = require("type
 const VERSION = "slb-v1:" + "a".repeat(64);
 function load(file, dependencies, globals = {}) {
   const code = ts.transpileModule(fs.readFileSync(path.join(root, file), "utf8"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  const module = { exports: {} }; vm.runInNewContext(code, { module, exports: module.exports, require: name => name in dependencies ? dependencies[name] : require(name), URL, URLSearchParams, AbortController, Intl, Date, console, ...globals }); return module.exports;
+  const module = { exports: {} }; vm.runInNewContext(code, { module, exports: module.exports, require: name => displayCopyModules[name] ?? (name in dependencies ? dependencies[name] : require(name)), URL, URLSearchParams, AbortController, Intl, Date, console, ...globals }); return module.exports;
 }
 const nav = load("lib/nav/console-nav.ts", { "lucide-react": new Proxy({}, { get: () => () => null }) });
 const shellAuthorities = load("lib/admin/shell-authorities.ts", {});

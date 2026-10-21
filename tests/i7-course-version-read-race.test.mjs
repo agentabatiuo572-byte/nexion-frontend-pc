@@ -1,3 +1,4 @@
+import { displayCopyModules } from "./display-copy-fixture.mjs";
 // Complete production component/read client with deterministic hook/effect adapters.
 // No browser/reconciler or live HTTP; only deferred in-memory readonly GETs.
 import test from 'node:test';
@@ -53,6 +54,7 @@ function runtime() {
       target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
     const module = { exports: {} }; cache.set(relative, module.exports);
     const imports = name => {
+      if (displayCopyModules[name]) return displayCopyModules[name];
       if (name === 'react') return { ...React,
         useState: initial => engine.useState(initial),
         useEffect: (run, deps) => engine.useEffect(run, deps) };

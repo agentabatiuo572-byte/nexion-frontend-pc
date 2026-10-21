@@ -215,7 +215,7 @@ test("J1 renders server stats and uses a numeric R2 threshold editor", () => {
 });
 
 test("J1 exposes actionable, localized control and error states", () => {
-  assert.match(component, /aria-label=\{`勾选\$\{g\.name\}纳入批量关停`\}/);
+  assert.match(component, /aria-label=\{`勾选\$\{operatorCopyText\(g\.name\)\}纳入批量关停`\}/);
   assert.match(component, /恢复受阻/);
   assert.match(component, /当前没有待补录事项/);
   assert.match(component, /即时资金流出/);
@@ -228,5 +228,5 @@ test("J1 exposes actionable, localized control and error states", () => {
   assert.match(client, /无法连接应急控制服务，请检查网络后重试/);
   assert.match(client, /text = await res\.text\(\)/);
   assert.doesNotMatch(client, /Failed to fetch/);
-  assert.doesNotMatch(topbar, /SyncChip|服务端权威 · 已同步|server-canonical · live/);
+  assert.doesNotMatch(topbar, /SyncChip|以服务器记录为准 · 已同步|server-canonical · live/);
 });

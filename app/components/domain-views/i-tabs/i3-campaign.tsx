@@ -656,7 +656,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                   rows={4}
                   value={form.bodyVi}
                   onChange={(e) => setForm({ ...form, bodyVi: e.target.value })}
-                  placeholder="Nhập nội dung tiếng Việt"
+                  placeholder="请输入越南语内容"
                   style={{ ...INPUT_STYLE, resize: "vertical", fontFamily: "inherit", fontSize: 12.5 }}
                 />
               </FormField>

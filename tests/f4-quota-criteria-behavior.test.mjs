@@ -16,7 +16,7 @@ test("F4 normalizes applicant display branding across statuses without changing 
     const before = structuredClone(application);
     const text = await render({}, { ambassadorApplications: [application] });
     assert.ok(text.includes("#5 · UVEL 1058 · NexGrid district/Venue"), text);
-    assert.ok(text.includes(`V5 · $3,000 · ${status}`), text);
+    assert.ok(text.includes(`V5 · $3,000 · ${({PENDING:"待审核",APPROVED:"已通过",REJECTED:"已驳回"})[status]}`), text);
     assert.deepEqual(application, before);
   }
   assert.ok((await render({}, { ambassadorApplications: [{ id: 6, applicantName: "Nguyễn An", status: "PENDING" }] })).includes("Nguyễn An"));
@@ -75,7 +75,7 @@ async function render(criteria, pool = {}) {
 test("missing quota criteria are unavailable, never zero-threshold authority", async () => {
   for (const legacy of [{}, { directRefs: 8, monthVolumeUsd: 725, unlockMode: "ALL" }]) {
     const text = await render(legacy);
-    assert.match(text, /SKU P-REAL · 资格条件暂不可用/);
+    assert.match(text, /商品编号 P-REAL · 资格条件暂不可用/);
     assert.doesNotMatch(text, /无额外资格门槛/);
   }
 });

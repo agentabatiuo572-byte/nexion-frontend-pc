@@ -527,7 +527,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
               </tbody>
             </table>
           </div>
-          <div className="l-b" style={{ paddingTop: 10 }}><div className="ltint warn" style={{ fontSize: 11.5 }}><b>最小权限</b> · 手机号、卡 Token、地址和证件等明文敏感字段在当前管理端 API 中不可导出。</div></div>
+          <div className="l-b" style={{ paddingTop: 10 }}><div className="ltint warn" style={{ fontSize: 11.5 }}><b>最小权限</b> · 手机号、卡信息令牌、地址和证件等明文敏感字段在当前管理端 API 中不可导出。</div></div>
         </section>
       </div>
 

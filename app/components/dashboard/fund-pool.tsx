@@ -72,7 +72,7 @@ export function FundPool() {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <span className="text-[13px]" style={{ color: "var(--v5-ink)", fontWeight: 600 }}>到期预测(未来 7d)</span>
         <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: "var(--v5-ink-3)" }}><span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: "var(--v5-success)" }} />到期兑付</span>
-        <span className="ml-auto text-[11px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>后端 B2 runway 配置口径</AutoGloss></span>
+        <span className="ml-auto text-[11px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>运营总览中的资金可支撑天数设置</AutoGloss></span>
       </div>
       <div className="mt-3 flex items-end gap-2" style={{ height: 96 }}>
         {runway.map((m) => {

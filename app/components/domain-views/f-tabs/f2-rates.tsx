@@ -92,7 +92,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
         <div className="pane-h"><div><span className="ph-ttl">七层购买奖励</span><span className="ph-sub">设置各层级的购买基础费率与 UVEL 奖励系数。{ctx.f2Unilevel.length === 0 && "当前尚未配置。"}</span></div><button className="f2-history-link" aria-controls="royalty-history" onClick={() => { const history = document.getElementById("royalty-history"); if (history instanceof HTMLDetailsElement) { history.open = true; history.scrollIntoView({ block: "nearest" }); } }}>查看历史设置 <span aria-hidden="true">⌄</span></button></div>
         {ctx.f2Metrics.length > 0 && <div className="f-stats">
           {ctx.f2Metrics.map((metric) => <div key={metric.id} className={`f-stat${metric.tone ? " " + metric.tone : ""}`}>
-            <div className="k">{metric.name}</div><div className="v">{metric.value}</div>
+            <div className="k">{metric.id === "weeklyNexPayout" ? "近7天UVEL派发" : metric.id === "weeklyUsdtRoyalty" ? "近7天USDT分成" : operatorCopyText(metric.name)}</div><div className="v">{metric.value}</div>
           </div>)}
         </div>}
         <div className="casc" role="table" aria-label="七层购买奖励费率">

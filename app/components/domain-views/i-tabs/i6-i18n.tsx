@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
  * I6 多语言文案 / I7 教程中心共享数据与动作实现，按路由只渲染各自业务区。
@@ -638,9 +639,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             <thead>
               <tr>
                 <th>命名空间</th>
-                <th className="num">key 数</th>
+                <th className="num">词条数</th>
                 <th>覆盖</th>
-                <th className="num">缺 key</th>
+                <th className="num">缺少词条</th>
                 <th>进行中变体</th>
                 <th>最近改动</th>
               </tr>
@@ -712,7 +713,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             <input
               className="fld"
               aria-label="搜索词条"
-              placeholder="搜索 key / 命名空间"
+              placeholder="搜索词条标识 / 分类"
               value={messageSearch}
               onChange={(event) => setMessageSearch(event.target.value)}
               style={{ width: 210 }}
@@ -722,7 +723,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 760 }}>
-            <thead><tr><th>词条 key</th><th>命名空间</th><th>版本</th><th>状态</th><th>语言完整度</th><th></th></tr></thead>
+            <thead><tr><th>词条标识</th><th>命名空间</th><th>版本</th><th>状态</th><th>语言完整度</th><th></th></tr></thead>
             <tbody>
               {filteredMessages.map((message) => {
                 const languageCount = [message.zh, message.en, message.vi].filter(Boolean).length;
@@ -796,7 +797,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                   </tbody>
                 </table>
               </div>
-            </> : <div className="itint">暂无真实词条，请先选择已注册词条；新 key 需随 App 版本注册后再维护。</div>}
+            </> : <div className="itint">暂无真实词条，请先选择已注册词条；新词条标识需随应用版本登记后再维护。</div>}
           </div>
         </section>
 
@@ -868,7 +869,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         </div>
         <div className="f-stat">
           <div className="k">课程 UVEL 派发(本周)</div>
-          <div className="v">{I6_STATS.weeklyNexPayout}</div>
+          <div className="v">{operatorCopyText(I6_STATS.weeklyNexPayout)}</div>
           <div className="sub">完成发奖 · 喂流出统计规则(B1)</div>
         </div>
       </div>
@@ -1102,7 +1103,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               }}
             >
               {TUTORIAL_METRICS.map((m) => (
-                <div key={m.k}>
+                <div key={operatorCopyText(String(m.k))}>
                   <div
                     style={{
                       fontSize: 11.5,
@@ -1110,7 +1111,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                       marginBottom: 4,
                     }}
                   >
-                    {m.k}
+                    {operatorCopyText(String(m.k))}
                   </div>
                   <div
                     className="mono"
@@ -1121,7 +1122,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                       letterSpacing: "-.01em",
                     }}
                   >
-                    {m.v}
+                    {operatorCopyText(String(m.v))}
                   </div>
                 </div>
               ))}
@@ -1144,7 +1145,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             label: "命名空间矩阵(I6 · a)",
             kind: "reference-catalog",
             maxRows: Math.max(1, NAMESPACES.length),
-            reason: `命名空间来自真实词条目录,当前 ${NAMESPACES.length} 组,需要同屏核对三语覆盖率和缺 key`,
+            reason: `命名空间来自真实词条目录,当前 ${NAMESPACES.length} 组,需要同屏核对三语覆盖率和缺少词条`,
           },
         ] : [
           {
@@ -1177,14 +1178,14 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               className="muted tiny"
               style={{ marginTop: 4, fontSize: 11.5, color: "var(--ink-4)" }}
             >
-              词条按 key 组织,App 端按「空间 × 语言」整包拉取当前发布版。
+              词条按标识组织，应用端按「空间 × 语言」整包拉取当前发布版。
             </div>
           </div>
           <div style={{ overflowX: "auto", marginBottom: 12 }}>
             <table className="l-tbl" style={{ minWidth: 420 }}>
               <thead>
                 <tr>
-                  <th>key</th>
+                  <th>词条标识</th>
                   <th>状态</th>
                   <th>语言完整度</th>
                   <th>操作</th>

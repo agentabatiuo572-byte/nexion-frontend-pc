@@ -1,3 +1,4 @@
+import { displayCopyModules } from "./display-copy-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -16,6 +17,7 @@ function render(patch = {}, writable = true, client = {}) {
   let state = 0;
   const module = { exports: {} };
   new Function("require", "exports", "module", compiled)(name => {
+    if(displayCopyModules[name])return displayCopyModules[name];
     if (name === "react") return { useState: () => [[model, false, null][state++], () => {}], useEffect: () => {}, useMemo: fn => fn() };
     if (name === "react/jsx-runtime") return require(name);
     if (name.endsWith("design-kit")) return { PaginationExemptionList: () => null };
@@ -112,7 +114,7 @@ test("read-only users see disabled mutation controls and unknown completion kind
     const buttons = view.buttons(label); assert.ok(buttons.length, label);
     assert.ok(buttons.every(button => button.props.disabled), label);
   }
-  assert.match(view.text(view.tree), /待绑定规范事件/);
+  assert.match(view.text(view.tree), /待绑定业务事件/);
   assert.deepEqual(view.writes, []);
 });
 

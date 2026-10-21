@@ -1,3 +1,4 @@
+import { displayCopyModules } from "../tests/display-copy-fixture.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -24,7 +25,7 @@ function evaluate(file,imports,privateNames=[]){
   assert.equal(parsed.parseDiagnostics.length,0,`${file} syntax`);
   const code=ts.transpileModule(source,{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
   const module={exports:{}};
-  new Function('require','exports','module',code+privateNames.map(name=>`\nmodule.exports.${name}=${name};`).join(''))(imports,module.exports,module);
+  new Function('require','exports','module',code+privateNames.map(name=>`\nmodule.exports.${name}=${name};`).join(''))(name => displayCopyModules[name] ?? imports(name),module.exports,module);
   return module.exports;
 }
 function hooks(initial={}){
@@ -119,7 +120,7 @@ test('PCOPY-04: actual loading retains live region and skeleton; actual failure 
 test('PCOPY-05: actual editor preserves independent roles, budget obligations and missing occupancy without invented zero',()=>{
   const hook=hooks(),Editor=domain('h4-promotion-editor.tsx',hook,fresh).default;
   hook.states[6]=3;hook.reset();const html=markup(Editor(editorProps));
-  for(const text of ['购买者','直接邀请人','两个资产与每种赠品分别核算','发放失败的原义务继续占用','实际追回前不恢复额度','100.000000','保存成功后显示已保存版本'])assert(html.includes(text),text);
+  for(const text of ['购买者','直接邀请人','两个资产与每种赠品分别核算','发放失败的原奖励继续占用','实际追回前不恢复额度','100.000000','保存成功后显示已保存版本'])assert(html.includes(text),text);
   assert.equal((html.match(/<td>-<\/td>/g)||[]).length,3);assert.doesNotMatch(html,/暂无占用快照|服务端/);
   const known=structuredClone(activity);known.impact.budgets=[{asset:'USDT',committed:'0.000000',reserved:'0.000000',available:'100.000000'}];
   const knownHook=hooks({6:3}),Known=domain('h4-promotion-editor.tsx',knownHook,fresh).default;knownHook.reset();const actual=markup(Known({...editorProps,activity:known}));assert(actual.includes('<td>0.000000</td>'));
@@ -146,7 +147,7 @@ test('PCOPY-05/06: actual date hints hide storage details while retaining local 
 test('PCOPY-05/06: actual review and policy dialogs preserve review, publication, contract and refund restrictions',()=>{
   const hook=hooks(),Review=domain('h4-promotion-review.tsx',hook,fresh).default;hook.reset();const html=markup(Review({activity,catalog,can:()=>true,review:true,onBack(){}}));
   assert(html.includes('审核与发布须分别操作')&&html.includes('结果未知时先核查原操作')&&html.includes('查看试算结果'));assert.doesNotMatch(html,/同一响应|服务端/);
-  const Policy=domain('h4-promotion-policies.tsx',hooks(),fresh).default;const policy=markup(Policy({catalog,can:()=>false,onClose(){},onChanged(){}}));assert(policy.includes('只可选择适用的原合同版本。未批准政策不能执行活动。'));
+  const Policy=domain('h4-promotion-policies.tsx',hooks(),fresh).default;const policy=markup(Policy({catalog,can:()=>false,onClose(){},onChanged(){}}));assert(policy.includes('只可选择适用的原业务协议版本。未批准政策不能执行活动。'));
   const createHook=hooks(),Create=domain('h4-promotion-policies.tsx',createHook,fresh,['PolicyCreate']).PolicyCreate;createHook.reset();const create=markup(Create({catalog,can:()=>false,onClose(){},onDone(){}}));
   assert(!create.includes('目录自动绑定'));for(const term of ['整单钱包退款','不允许负余额或跨币抵扣','原商品合同'])assert(create.includes(term));
 });
@@ -258,7 +259,7 @@ test('PCOPY-10: actual H4 existing-events branch renders business state labels a
   const Legacy=domain('h3-quest-events.tsx',hook,fresh).H3QuestEvents;hook.reset();const html=markup(Legacy({section:'events',ctx:{can:()=>false,toast(){},openActionConfirm(){},openConfirm(){}}}));
   for(const text of ['每日上限按各奖项的每日库存设置','资金奖励暂停','可追踪活动监控','已参与','已达标','已领取','活动结束或下架后不可领取','每日仅可领取一次','地域限制'])assert(html.includes(text),text);
   assert.doesNotMatch(html,/后端|服务端|dailyStock|Trackable|各域状态消费|领取赛跑|真实奖正常开放|joined|claimed|ongoing|upcoming/);
-  assert(html.includes('>0</div>'));assert(html.includes('跌破 100%')&&html.includes('只发 NEX/券')&&html.includes('回升自动恢复'));
+  assert(html.includes('>0</div>'));assert(html.includes('跌破 100%')&&html.includes('只发 UVEL/券')&&html.includes('回升自动恢复'));
 });
 
 test('all ten groups: exact public-source guard covers normal/empty/error/title and accessible consumers without renaming data',()=>{
@@ -304,10 +305,10 @@ test('PCOPY-08: actual client refuses storage-loss writes before dispatch and ex
 });
 
 test('PCOPY-10: actual H4 confirmation callbacks preserve reasons, stale-value checks and probability/stock constraints',()=>{
-  const model={dayOneTasks:[],weeklyTier1:[],weeklyTier2:[],monthlyMissions:[],events:[{id:'EV1',name:'PCGP event',kind:'quest',state:'ongoing',reward:'2 NEX',featured:false}],wheelTiers:[{tier:'T1',prob:0,reward:'NEX'},{tier:'T2',prob:50,reward:'券'},{tier:'T3',prob:50,reward:'USDT',real:true}],wheelGuards:[{key:'kill',label:'启停',value:'已停用'}],trackables:[]};
+  const model={dayOneTasks:[],weeklyTier1:[],weeklyTier2:[],monthlyMissions:[],events:[{id:'EV1',name:'PCGP event',kind:'quest',state:'ongoing',reward:'2 UVEL',featured:false}],wheelTiers:[{tier:'T1',prob:0,reward:'NEX'},{tier:'T2',prob:50,reward:'券'},{tier:'T3',prob:50,reward:'USDT',real:true}],wheelGuards:[{key:'kill',label:'启停',value:'已停用'}],trackables:[]};
   const hook=hooks({0:model,1:false,2:null}),Legacy=domain('h3-quest-events.tsx',hook,fresh).H3QuestEvents,confirmations=[];hook.reset();const element=Legacy({section:'events',ctx:{can:()=>true,toast(){},openActionConfirm:value=>confirmations.push(value),openConfirm:value=>confirmations.push(value)}}),buttons=nodes(element).filter(n=>n.type==='button');
   for(const label of ['编辑','下架','设主推','改奖池 / 概率'])buttons.find(n=>n.props.children===label).props.onClick();
-  buttons.find(n=>n.props['aria-label']==='删除 T1（NEX）').props.onClick();
+  buttons.find(n=>n.props['aria-label']==='删除 T1（UVEL）').props.onClick();
   const html=confirmations.map(c=>markup(c.detail)).join('');for(const expected of ['确认后更新活动奖励','请确认目标状态','同时只能有一个进行中的主推活动','概率合计须为 100%','B1 红线','删除后仍至少保留 2 个档位'])assert(html.includes(expected),expected);assert.doesNotMatch(html,/后端|服务端|接口|互斥锁/);
   const state=confirmations.find(c=>c.action.startsWith('活动状态'));assert.equal(state.reason,true);const probability=confirmations.find(c=>c.action==='调整转盘档位概率');assert.equal(probability.businessForm.fields.length,3);assert.equal(probability.amplifies,true);
 });

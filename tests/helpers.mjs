@@ -1,3 +1,4 @@
+import { displayCopyModules } from "./display-copy-fixture.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
@@ -9,7 +10,7 @@ export const actualSupport = await import(pathToFileURL(path.join(fe, "lib/admin
 export function load(file, dependencies = {}, globals = {}, actual = false) {
   const source = fs.readFileSync(path.join(actual ? fe : root, file), "utf8"), code = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const module = { exports: {} };
-  vm.runInNewContext(code, { module, exports: module.exports, require: name => name in dependencies ? dependencies[name] : require(name), URL, URLSearchParams, AbortController, Date, crypto: { randomUUID: () => "12345678-1234-1234-1234-123456789012" }, console: { warn() {}, error: console.error }, ...globals });
+  vm.runInNewContext(code, { module, exports: module.exports, require: name => displayCopyModules[name] ?? (name in dependencies ? dependencies[name] : require(name)), URL, URLSearchParams, AbortController, Date, crypto: { randomUUID: () => "12345678-1234-1234-1234-123456789012" }, console: { warn() {}, error: console.error }, ...globals });
   return module.exports;
 }
 export function storage() { const records = new Map(); return { quota: false, records, get length() { return records.size; }, key(i) { return [...records.keys()][i] ?? null; }, getItem(k) { return records.get(k) ?? null; }, setItem(k,v) { if (this.quota) throw new Error("QuotaExceededError"); records.set(k,v); }, removeItem(k) { records.delete(k); } }; }

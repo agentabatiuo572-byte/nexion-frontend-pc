@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
  * I4 信任中心 / I5 风险披露复用视图 — 按独立路由与权限渲染。
