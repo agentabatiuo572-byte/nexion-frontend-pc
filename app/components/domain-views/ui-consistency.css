@@ -125,3 +125,5 @@
 .dkpage.edom .phone-policy-panel [aria-label="手机策略确认"] > .phone-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
 .dkpage.edom .phone-policy-panel [aria-label="手机策略确认"] .phone-facts { grid-template-columns: repeat(2,minmax(0,1fr)); }
 @media (max-width: 640px) { .dkpage.edom .phone-policy-panel [aria-label="手机策略确认"] > .phone-grid { grid-template-columns: 1fr; } }
+
+.k6c2 .ui-target-version textarea.k6-field { min-height: 90px; resize: vertical; }

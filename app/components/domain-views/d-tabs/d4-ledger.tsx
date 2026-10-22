@@ -254,14 +254,14 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
                 itemClassName={(_key, selected) => `chip${selected ? " sel" : ""}`}>
                 {(key) => BILL_TYPES.find(([value]) => value === key)?.[1]}
               </TabGroup>
-              <div className="ui-filter-grid">
-                <input className="ui-control" aria-label="精确用户 ID" value={draft.userId} onChange={(event) => setDraft((value) => ({ ...value, userId: event.target.value }))} placeholder="用户 ID" />
-                <select className="ui-control" aria-label="账单状态" value={draft.status} onChange={(event) => setDraft((value) => ({ ...value, status: event.target.value }))}>
+              <div className="ui-form-grid">
+                <label>用户编号<input className="ui-control" aria-label="精确用户 ID" value={draft.userId} onChange={(event) => setDraft((value) => ({ ...value, userId: event.target.value }))} placeholder="用户 ID" /></label>
+                <label>账单状态<select className="ui-control" aria-label="账单状态" value={draft.status} onChange={(event) => setDraft((value) => ({ ...value, status: event.target.value }))}>
                   <option value="">全部状态</option><option value="POSTED">已入账</option><option value="SUCCESS">成功</option><option value="PENDING">处理中</option><option value="FAILED">失败</option><option value="REJECTED">已拒绝</option>
-                </select>
-                <input className="ui-control" aria-label="开始时间" type="datetime-local" value={draft.from} onChange={(event) => setDraft((value) => ({ ...value, from: event.target.value }))} />
-                <input className="ui-control" aria-label="结束时间" type="datetime-local" value={draft.to} onChange={(event) => setDraft((value) => ({ ...value, to: event.target.value }))} />
-                <input className="ui-control" aria-label="账单关键词" value={draft.keyword} onChange={(event) => setDraft((value) => ({ ...value, keyword: event.target.value }))} placeholder="账单号 / 用户编码 / 昵称 / 备注" />
+                </select></label>
+                <label>开始时间<input className="ui-control" aria-label="开始时间" type="datetime-local" value={draft.from} onChange={(event) => setDraft((value) => ({ ...value, from: event.target.value }))} /></label>
+                <label>结束时间<input className="ui-control" aria-label="结束时间" type="datetime-local" value={draft.to} onChange={(event) => setDraft((value) => ({ ...value, to: event.target.value }))} /></label>
+                <label>关键词<input className="ui-control" aria-label="账单关键词" value={draft.keyword} onChange={(event) => setDraft((value) => ({ ...value, keyword: event.target.value }))} placeholder="账单号 / 用户编码 / 昵称 / 备注" /></label>
                 <button className="l-btn primary" onClick={applyFilters}>查询</button>
               </div>
             </div>
