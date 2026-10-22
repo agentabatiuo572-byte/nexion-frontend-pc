@@ -128,7 +128,7 @@ export default function FunnelPage() {
               onChange={(event) => setFilters((current) => ({ ...current, cohort: event.target.value }))}
             >
               <option value={ALL}>全部注册时间</option>
-              {options.cohorts.map((value) => <option key={value} value={value}>{value}</option>)}
+              {options.cohorts.map((value) => <option key={value} value={value}>{value === "SYSTEM" ? "系统记录" : value}</option>)}
             </select>
           </label>
           <label>
@@ -142,7 +142,7 @@ export default function FunnelPage() {
               {/^P[1-6]$/.test(filters.phase) && !options.phases.includes(filters.phase) && (
                 <option value={filters.phase}>{filters.phase}</option>
               )}
-              {options.phases.map((value) => <option key={value} value={value}>{value}</option>)}
+              {options.phases.map((value) => <option key={value} value={value}>{value === "SYSTEM" ? "系统记录" : value}</option>)}
             </select>
           </label>
           <label>

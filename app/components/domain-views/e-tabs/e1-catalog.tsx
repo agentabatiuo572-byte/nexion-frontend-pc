@@ -1,3 +1,4 @@
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { datacenterNameText } from "@/lib/admin/brand-copy";
 import { operatorSkuTier } from "@/lib/admin/e-operator-display";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -439,7 +440,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                 <div key={ph.p} className={`phase ${st}`}>
                   <div className="dot">{i + 1}</div>
                   <div className="nm">{phaseLabel(ph.p)}</div>
-                  <div className="skus">{nexGridBrandText([ph.meta, ph.skus].filter(Boolean).join(" · ") || "未配置说明")}</div>
+                  <div className="skus">{operatorCopyText([ph.meta, ph.skus].filter(Boolean).join(" · ") || "未配置说明")}</div>
                 </div>
               );
             })}
@@ -483,7 +484,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                 <div className="c phase-name ellipsis">{phaseLabel(ph.p)}</div>
                 <div className="c">{isCurrentPhase ? <span className="phaseNow"><span className="dot" />当前</span> : <span className="muted">—</span>}</div>
                 <div className="c optional ellipsis">{nexGridBrandText(ph.meta || "—")}</div>
-                <div className="c optional ellipsis">{nexGridBrandText(ph.skus || "—")}</div>
+                <div className="c optional ellipsis">{operatorCopyText(ph.skus || "—")}</div>
                 <div className="c optional mono">{ph.sortOrder ?? 0}</div>
                 <div className="c optional"><Badge tone={ph.status === "active" ? "ok" : "neutral"}>{phaseStatusLabel(ph.status)}</Badge></div>
                 <div className="c acts">
@@ -661,7 +662,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
               <div className="body">
                 <div className="top">
                   <div className="l">
-                    <div className="nm">{nexGridBrandText(s.name)}</div>
+                    <div className="nm">{catalogSkuBrandText(s.id, s.name)}</div>
                     {s.tagline ? <div className="tagline">{nexGridBrandText(s.tagline)}</div> : null}
                   </div>
                   <div className="r">
@@ -695,10 +696,10 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                   {s.publishBlocked === undefined ? <Badge tone="neutral">上架条件未声明</Badge> : null}
                 </div>
                 <div className="acts">
-                  {canWrite ? <button className="primary" aria-label={`改价 / 编辑 ${nexGridBrandText(s.name)}`} onClick={() => ctx.openSku(s.id)}>改价 / 编辑</button> : null}
-                  {canWrite && st === "on" && (unlimitedInventory || Number(s.stock) > 0) && !open && !releaseGate && hasPhaseConfig ? <button className="brand" aria-label={`按当前阶段上架 ${nexGridBrandText(s.name)}`} onClick={() => ctx.openSku(s.id, phaseCur)}>按当前阶段上架</button> : null}
+                  {canWrite ? <button className="primary" aria-label={`改价 / 编辑 ${catalogSkuBrandText(s.id, s.name)}`} onClick={() => ctx.openSku(s.id)}>改价 / 编辑</button> : null}
+                  {canWrite && st === "on" && (unlimitedInventory || Number(s.stock) > 0) && !open && !releaseGate && hasPhaseConfig ? <button className="brand" aria-label={`按当前阶段上架 ${catalogSkuBrandText(s.id, s.name)}`} onClick={() => ctx.openSku(s.id, phaseCur)}>按当前阶段上架</button> : null}
                   {canWrite ? <button disabled={listingBlocked || s.publishBlocked === true} title={s.publishBlocked === true ? `未过上架条件 · ${publishBlockLabel} · 该行不会进入 应用用户目录` : s.publishBlocked === undefined ? "服务端未返回上架条件结论，上架是否生效未确认" : listingBlocked ? listingBlocker : undefined} aria-label={`${st === "on" ? "下架" : "上架"} ${catalogSkuBrandText(s.id, s.name)}`} onClick={() => ctx.openActionConfirm({ name: st === "on" ? `下架 商品规格 · ${catalogSkuBrandText(s.id, s.name)}` : `上架 商品规格 · ${catalogSkuBrandText(s.id, s.name)}`, op: "sku-status", target: s.id, status: st === "on" ? "off" : "on", detail: st === "on" ? "下架后从商城隐藏,不影响已售设备结算" : "上架后对用户可见", amplify: false })}>{st === "on" ? "下架" : "上架"}</button> : null}
-                  {canWrite ? <button className="danger" aria-label={`删除 ${nexGridBrandText(s.name)}`} onClick={() => ctx.delSku(s.id, s.name ?? s.id)}>删除</button> : null}
+                  {canWrite ? <button className="danger" aria-label={`删除 ${catalogSkuBrandText(s.id, s.name)}`} onClick={() => ctx.delSku(s.id, s.name ?? s.id)}>删除</button> : null}
                 </div>
               </div>
             </div>

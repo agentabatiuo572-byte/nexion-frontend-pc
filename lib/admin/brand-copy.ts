@@ -73,3 +73,10 @@ export function operatorNicknameText(value: string): string {
 export function datacenterNameText(value: string): string {
   return ({ "NexGrid Mobile Network": "UVEL 手机算力网络", "NexGrid Virginia Compute Center": "UVEL 弗吉尼亚计算中心" } as Record<string, string>)[value] ?? value;
 }
+
+/** 自动生成的转入工单主题；用户自写主题保持原文。 */
+export function supportTicketSubjectText(value: string): string {
+  const transfer = /^(由会话 CV-[A-Za-z0-9-]+ 转入 · )(.+)$/.exec(value);
+  if (transfer) return transfer[1] + operatorNicknameText(transfer[2]);
+  return value.replace(/^Conversation (CV-[A-Za-z0-9-]+)$/, "会话 $1");
+}

@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
  * B5 风险提醒(设计稿 RiskRadar 模式)— 挤兑比率 + 异常账户 + Kill 状态灯 + 实时告警。
@@ -74,7 +75,7 @@ export function RiskRadar({
           return (
           <div key={k.key} className="flex items-center gap-1.5 rounded-[8px] px-2 py-1.5" style={{ border: "1px solid var(--v5-border)", background: missing ? "var(--v5-surface-3)" : off ? "var(--v5-danger-soft)" : "var(--v5-surface-2)" }}>
             <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: missing ? "var(--v5-ink-4)" : off ? "var(--v5-danger)" : "var(--v5-success)" }} />
-            <span className="font-mono-tabular truncate text-[10.5px]" style={{ color: "var(--v5-ink-3)" }}>{k.key}</span>
+            <span className="font-mono-tabular truncate text-[10.5px]" style={{ color: "var(--v5-ink-3)" }}>{({withdraw:"提现",exchange:"兑换",staking:"质押",genesis:"创世节点",trial:"免费试用"} as Record<string,string>)[k.key] ?? k.key}</span>
           </div>
           );
         })}
@@ -92,7 +93,7 @@ export function RiskRadar({
           <li key={a.id}>
             <Link href={a.href} prefetch={false} className="flex items-start gap-2.5 rounded-[9px] p-2 transition-colors hover:bg-[var(--v5-surface-2)]">
               <span className="mt-1 inline-block shrink-0 rounded-full" style={{ width: 7, height: 7, background: LEVEL_COLOR[a.level] }} />
-              <span className="flex-1 text-[12px]" style={{ color: "var(--v5-ink-2)" }}><AutoGloss>{a.text}</AutoGloss></span>
+              <span className="flex-1 text-[12px]" style={{ color: "var(--v5-ink-2)" }}><AutoGloss>{operatorCopyText(a.text)}</AutoGloss></span>
               <ChevronRight size={14} style={{ color: "var(--v5-ink-4)", marginTop: 1 }} aria-hidden />
             </Link>
           </li>

@@ -150,6 +150,11 @@ export default function A7Menus() {
   );
 }
 
+function menuNameText(node: A7MenuTreeNode): string {
+  const name = node.menuNameZh || node.menuName;
+  return node.menuCode === "I" && name === "内容与合规 CMS" ? "内容与合规" : name;
+}
+
 function MenuRow({ node, depth, expanded, onToggle, onCreate, onEdit, onDelete, canWrite }: {
   node: A7MenuTreeNode;
   depth: number;
@@ -174,7 +179,7 @@ function MenuRow({ node, depth, expanded, onToggle, onCreate, onEdit, onDelete, 
         >
           {hasChildren ? (isOpen ? "▼" : "▶") : "·"}
         </button>
-        <span style={{ fontWeight: isDomain ? 600 : 400, color: "var(--ink)" }}>{node.menuNameZh || node.menuName}</span>
+        <span style={{ fontWeight: isDomain ? 600 : 400, color: "var(--ink)" }}>{menuNameText(node)}</span>
         <CodeTag>{node.menuCode}</CodeTag>
         {node.routePath && <CodeTag><span className="mono" style={{ fontSize: 11 }}>{node.routePath}</span></CodeTag>}
         <Badge tone={node.status === 1 ? "ok" : "dim"}>{node.status === 1 ? "启用" : "停用"}</Badge>
@@ -240,7 +245,7 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
   // 只允许挂在顶级业务域下，避免生成控制台无法展示的第三级菜单。
   const parentOptions = tree
     .filter((node) => node.parentId == null && node.menuCode !== existing?.menuCode)
-    .map((node) => ({ code: node.menuCode, label: `${node.menuNameZh || node.menuName} (${node.menuCode})` }));
+    .map((node) => ({ code: node.menuCode, label: `${menuNameText(node)} (${node.menuCode})` }));
 
   const fieldStyle = { flex: "1 1 200px", minWidth: 200, padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border-strong)", borderRadius: 8, color: "var(--ink)" } as const;
   const labelStyle = { color: "var(--ink-3)", fontSize: 12, marginBottom: 4 } as const;

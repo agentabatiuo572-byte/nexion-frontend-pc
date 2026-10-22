@@ -1,4 +1,5 @@
 "use client";
+import { supportTicketSubjectText } from "@/lib/admin/brand-copy";
 
 /**
  * M2 客服工单 — 全宽表格列队 + 右侧滑出详情抽屉(helpdesk 设计稿布局)。
@@ -292,7 +293,7 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
         if (!q) return true;
         // 用户编码必须可搜(2026-08-06 原型对比 M-2):会话页把运营指引到「用客服工单按用户搜」,
         // 而这里原本不认 userId —— 指引的路走不通,等于死路标。
-        return [t.id, t.subject, t.owner, catCN(t.category), t.userId ? String(t.userId) : ""]
+        return [t.id, t.subject, supportTicketSubjectText(t.subject), t.owner, catCN(t.category), t.userId ? String(t.userId) : ""]
           .some((text) => text.toLowerCase().includes(q));
       })
       .sort((a, b) => b.lastReplyAt - a.lastReplyAt);
@@ -589,7 +590,7 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
       action: <>升级为即时会话 · {ticket.id}</>,
       detail: (
         <>
-          把工单 <b>{ticket.subject}</b> 升级为即时会话,坐席 <b>{ticket.owner}</b> 在会话中心继续实时接待;系统会保留真实用户关联,并在本工单同步记录会话编号。仅迁移接待载体,资金放行仍需在提现处置页面办理。
+          把工单 <b>{supportTicketSubjectText(ticket.subject)}</b> 升级为即时会话,坐席 <b>{ticket.owner}</b> 在会话中心继续实时接待;系统会保留真实用户关联,并在本工单同步记录会话编号。仅迁移接待载体,资金放行仍需在提现处置页面办理。
         </>
       ),
       amplifies: false,
@@ -721,7 +722,7 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
               return (
                 <tr key={t.id} className={`tk-row${sel ? " sel" : ""}`} onClick={() => openTicket(t.id)}>
                   <td>
-                    <div className="tk-subj">{t.subject}</div>
+                    <div className="tk-subj">{supportTicketSubjectText(t.subject)}</div>
                     <div className="tk-id">{t.id}</div>
                   </td>
                   <td>
@@ -934,7 +935,7 @@ function TicketDrawer({
               <Icon name="x" size={16} />
             </button>
           </div>
-          <h2 style={{ fontSize: 18, margin: "11px 0 0", fontWeight: 500 }}>{ticket.subject}</h2>
+          <h2 style={{ fontSize: 18, margin: "11px 0 0", fontWeight: 500 }}>{supportTicketSubjectText(ticket.subject)}</h2>
           {ticket.contentRestricted && <div className="callout warn" data-proof="support-ticket-content-restricted" style={{ marginTop: 10 }}>私聊内容仅当前专属客服和客服主管可阅；工单状态、负责人及内部备注仍可办理。</div>}
           <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 9, flexWrap: "wrap" }}>
             <span className="chip" style={{ border: "none" }}>{catCN(ticket.category)}</span>

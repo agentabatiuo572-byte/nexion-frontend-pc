@@ -432,7 +432,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
               <div className="cond">{r.cond.map((part, i) => {
                 if (!part) return null;
                 const text = r.id === "tamperCluster" && i === 1 ? `${effThr(r)} ${r.unit}` : part;
-                return i % 2 ? <b key={i}>{text}</b> : <AutoGloss key={i}>{text}</AutoGloss>;
+                return i % 2 ? <b key={i}>{operatorCopyText(text)}</b> : <AutoGloss key={i}>{operatorCopyText(text)}</AutoGloss>;
               })}</div>
               <div className="row">
                 <span className="key">{r.thrK}</span><span className="val">{effThr(r)}</span>

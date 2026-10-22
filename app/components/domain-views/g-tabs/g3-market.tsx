@@ -413,7 +413,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
           {overview.controls.map((control) => (
             <div className="p-row" key={control.key}>
               <div className="txt"><div className="k">{operatorCopyText(control.name)}</div><div className="s">{operatorCopyText(control.description)}</div></div>
-              <span className="v">{ctlVals[control.key] || control.value}</span>
+              <span className="v">{operatorCopyText(ctlVals[control.key] || control.value)}</span>
               {allowed("finprod_g3_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => openCurveCtlMc(control.key, operatorCopyText(control.name), ctlVals[control.key] || control.value)}>调整(立即执行)</button>}
             </div>
           ))}
@@ -433,7 +433,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
             {hasChart ? (
               <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: 180, display: "block" }}>
                 <line x1={P} y1={peakY} x2={W - P} y2={peakY} stroke="var(--ink-4)" strokeWidth={1} strokeDasharray="4 4" />
-                <text x={W - P} y={peakY - 5} fontSize={10.5} fill="var(--ink-4)" textAnchor="end" fontFamily="var(--mono)">{`PEAK ${fmtPrice(peak)}`}</text>
+                <text x={W - P} y={peakY - 5} fontSize={10.5} fill="var(--ink-4)" textAnchor="end" fontFamily="var(--mono)">{`峰值 ${fmtPrice(peak)}`}</text>
                 <path d={`${path} L${X(chart.length - 1)} ${H - 22} L${X(0)} ${H - 22} Z`} fill="var(--admin-domain-g)" opacity={0.08} />
                 <path d={path} fill="none" stroke="var(--admin-domain-g)" strokeWidth={2} />
                 <circle cx={X(chart.length - 1)} cy={Y(chart[chart.length - 1])} r={3.5} fill="var(--bg)" stroke="var(--admin-domain-g)" strokeWidth={2} />

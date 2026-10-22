@@ -95,7 +95,16 @@ export function L1HeaderActions({ ctx, source }: { ctx: LCtx; source?: L1ExportS
 
 /** fx 公式渲染:fxBold 词高亮(cyan b),其余纯文本。 */
 function renderFx(fx: string, bold: string[]) {
-  fx = ({"day7 app.dau ÷ register cohort":"注册后第8天活跃人数 ÷ 同批注册人数", "store.viewed distinct user ÷ auth.register_completed":"浏览商城的注册用户数 ÷ 注册用户数"} as Record<string,string>)[fx] ?? operatorCopyText(fx);
+  const firstYield = /^device\.first_yield_received\.latency_sec ≤ ([0-9.]+) ÷ auth\.register_completed$/.exec(fx);
+  fx = firstYield ? `${firstYield[1]} 秒内收到首笔收益的人数 ÷ 注册完成人数` : ({
+    "day7 app.dau ÷ register cohort": "注册满 7 天当日的活跃人数 ÷ 同批注册人数",
+    "store.viewed distinct user ÷ auth.register_completed": "浏览商城的去重用户数 ÷ 注册完成人数",
+    "checkout.completed ÷ store.viewed": "支付完成的去重用户数 ÷ 浏览商城的去重用户数",
+    "device holder referral.invite_sent ÷ device holders": "发出邀请的设备持有者人数 ÷ 设备持有者人数",
+    "nova.push_clicked ÷ nova.push_sent": "点击推送的去重用户数 ÷ 收到推送的去重用户数",
+    "L1 referred first commission.paid ÷ referral.bound": "直属邀请中产生首单佣金的人数 ÷ 直属邀请人数",
+    "genesis.purchased cumulative 1,000 days": "累计售出 1,000 个节点所用的自然日数",
+  } as Record<string,string>)[fx] ?? fx;
   if (!bold.length) return fx;
   const re = new RegExp(`(${bold.map((b) => b.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "g");
   return fx.split(re).map((part, i) => (bold.includes(part) ? <b key={i}>{part}</b> : <span key={i}>{part}</span>));

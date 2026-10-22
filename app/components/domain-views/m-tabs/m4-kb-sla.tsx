@@ -5,6 +5,11 @@
  * FAQ / SLA 读写走后端 content/knowledge 接口;I.support.* 为 M 容器传入的视图适配键。
  * 新建 FAQ、保存 SLA 走弹窗 + 审计理由;均刷新后仍在。
  */
+const supportRouteText = (value: string) => ({
+  "support2-withdrawal":"提现处理组", "D2/K4 support2 on-call":"提现与风险值班人员",
+  "D1 deposit reconciliation":"充值对账人员", "E5 device ops":"设备运维人员", "C5 security":"账户安全人员",
+  "F3/E6 earnings ledger":"收益与算力人员", "G4 Genesis economy":"创世节点业务人员", "A3 system config":"系统配置人员",
+} as Record<string,string>)[value] ?? value;
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Icon, Modal, PaginationExemptionList } from "../design-kit";
@@ -283,7 +288,7 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
                   <div style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>
                     {catCN(r.category)}
                   </div>
-                  <div className="dim2" style={{ fontSize: 11 }}>{r.queue} · 升级 {r.escalation}</div>
+                  <div className="dim2" style={{ fontSize: 11 }}>{supportRouteText(r.queue)} · 升级至 {supportRouteText(r.escalation)}</div>
                 </div>
                 <span className="mono" style={{ textAlign: "right", fontSize: 12.5, color: "var(--ink-2)" }}>{r.firstResponseMins}分钟</span>
                 <span className="mono" style={{ textAlign: "right", fontSize: 12.5, color: "var(--ink-2)" }}>{r.resolutionHours}小时</span>

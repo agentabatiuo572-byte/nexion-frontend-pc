@@ -44,7 +44,7 @@ export function FunnelBars() {
   return (
     <div className="flex h-full flex-col rounded-[16px] p-5" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}>
       <div className="flex items-baseline gap-2.5">
-        <span className="font-display text-[14.5px]" style={{ color: "var(--v5-ink)" }}><AutoGloss>用户用户转化分析</AutoGloss></span>
+        <span className="font-display text-[14.5px]" style={{ color: "var(--v5-ink)" }}><AutoGloss>用户转化分析</AutoGloss></span>
         <span className="hidden text-[12px] sm:inline" style={{ color: "var(--v5-ink-4)" }}>{stages.map((s) => s.label).join(" → ")}</span>
         <span className="ml-auto font-mono-tabular rounded-[7px] px-2 py-0.5 text-[11px]" style={{ background: "var(--v5-surface-3)", color: "var(--v5-ink-3)", border: "1px solid var(--v5-border)" }}>B3 · A4 派生</span>
       </div>

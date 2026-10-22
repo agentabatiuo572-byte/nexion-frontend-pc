@@ -212,7 +212,7 @@ function formatL2CrossRowLabel(value: unknown): string {
   const separator = raw.indexOf(" · ");
   if (separator < 0) return formatB3RefOption(raw);
   const ref = raw.slice(0, separator);
-  const rest = raw.slice(separator);
+  const rest = raw.slice(separator).replace(/\bSYSTEM\b/g, "系统记录");
   return formatB3RefOption(ref) + rest;
 }
 

@@ -499,7 +499,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                       <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{({welcome:"欢迎消息",market:"市场动态",upgrade:"设备升级建议",dailySummary:"每日汇总",tradein:"以旧换新",social:"真实动态",eventClaim:"活动领奖",taskLockMonthly:"月度任务提醒"} as Record<string,string>)[n.key] ?? n.name}</span>
                       <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }}>{n.name}</div>
                     </td>
-                    <td style={{ fontSize: 12, color: "var(--ink-3)", maxWidth: 240 }}>{operatorCopyText(trigger)}</td>
+                    <td style={{ fontSize: 12, color: "var(--ink-3)", maxWidth: 240 }}>{trigger.startsWith("a4:") ? ({"a4:staking.opened":"质押订单创建时触发","a4:commission.paid":"佣金发放时触发","a4:referral.bound":"邀请关系绑定时触发","a4:market.curve_advanced":"行情曲线更新时触发"} as Record<string,string>)[trigger] ?? "收到已登记业务事件时触发" : operatorCopyText(trigger)}</td>
                     <td className="mono" style={{ fontSize: 12 }}>{operatorCopyText(n.tick)}</td>
                     <td className="mono" style={{ fontSize: 12 }}>{operatorCopyText(n.cd).replace(/\bskip\b/g,"跳过")}</td>
                     <td style={phaseStyle}>{operatorCopyText(phaseKeyed).replace(/\bskip\b/g,"跳过")}</td>

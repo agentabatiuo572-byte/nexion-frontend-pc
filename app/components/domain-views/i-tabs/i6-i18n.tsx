@@ -664,7 +664,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                     }
                   >
                     <td>
-                      <span className="ns-name">{n.ns}</span>
+                      <span className="ns-name">{({conversation:"客服会话",home:"首页",learn:"学习课程",test:"测试词条"} as Record<string,string>)[n.ns] ?? n.ns}</span>
                     </td>
                     <td className="num mono">{n.keys}</td>
                     <td>{renderCoverage(n)}</td>
@@ -731,7 +731,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                 const selected = selectedMessage?.messageKey === message.messageKey;
                 return <tr key={message.messageKey} className="click" onClick={() => setSelectedMessageKey(message.messageKey)}>
                   <td className="mono" style={{ fontWeight: selected ? 700 : 500 }}>{message.messageKey}</td>
-                  <td>{message.namespace}</td>
+                  <td>{({conversation:"客服会话",home:"首页",learn:"学习课程",test:"测试词条"} as Record<string,string>)[message.namespace] ?? message.namespace}</td>
                   <td className="mono">{message.version}</td>
                   <td><span className={`bdg ${message.status === "published" ? "ok" : message.status === "draft" ? "warn" : "dim"}`}>{statusLabel(message.status)}</span></td>
                   <td>{languageCount}/3 · {languageCount === 3 ? "中英越完整" : "待补齐"}</td>

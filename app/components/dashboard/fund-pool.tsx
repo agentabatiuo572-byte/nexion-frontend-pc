@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
  * B2 可用资金与应付款 · 应付负债科目(设计稿 FundPool 模式)。
@@ -39,7 +40,7 @@ export function FundPool() {
       {/* 堆叠条 */}
       <div className="mt-3.5 flex overflow-hidden rounded-[7px]" style={{ height: 16, border: "1px solid var(--v5-border)" }}>
         {accounts.map((a) => (
-          <span key={a.key} title={`${a.label} ${fmtUsdCompact(a.amount)}`} style={{ width: `${total > 0 ? (a.amount / total) * 100 : 0}%`, background: `var(${a.cat})` }} />
+          <span key={a.key} title={`${operatorCopyText(a.label)} ${fmtUsdCompact(a.amount)}`} style={{ width: `${total > 0 ? (a.amount / total) * 100 : 0}%`, background: `var(${a.cat})` }} />
         ))}
       </div>
 
@@ -49,7 +50,7 @@ export function FundPool() {
           <div key={a.key} className="flex items-center gap-2">
             <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: `var(${a.cat})` }} />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[11.5px]" style={{ color: "var(--v5-ink-2)" }}><AutoGloss>{a.label}</AutoGloss></p>
+              <p className="truncate text-[11.5px]" style={{ color: "var(--v5-ink-2)" }}><AutoGloss>{operatorCopyText(a.label)}</AutoGloss></p>
               <p className="font-mono-tabular text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}>{fmtUsdCompact(a.amount)} · {fmtPct(total > 0 ? r2((a.amount / total) * 100) : 0, 0)}</p>
             </div>
           </div>
@@ -60,7 +61,7 @@ export function FundPool() {
       <div className="flex items-center justify-between gap-3 text-[12.5px]">
         <span style={{ color: "var(--v5-ink-3)" }}>最大科目</span>
         <span style={{ color: "var(--v5-ink-2)" }}>
-          <AutoGloss>{top.label}</AutoGloss> <span className="font-mono-tabular" style={{ color: "var(--v5-ink)" }}>{fmtUsdCompact(top.amount)}</span> · {fmtPct(total > 0 ? r2((top.amount / total) * 100) : 0, 0)}
+          <AutoGloss>{operatorCopyText(top.label)}</AutoGloss> <span className="font-mono-tabular" style={{ color: "var(--v5-ink)" }}>{fmtUsdCompact(top.amount)}</span> · {fmtPct(total > 0 ? r2((top.amount / total) * 100) : 0, 0)}
         </span>
       </div>
       <div className="mt-2 flex items-center justify-between gap-3 text-[12.5px]">

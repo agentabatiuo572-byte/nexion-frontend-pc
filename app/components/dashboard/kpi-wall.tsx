@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
  * 八项 KPI 验收墙(§17.2)— 设计稿 KpiCard 模式:
@@ -55,12 +56,12 @@ export function KpiWall({ kpis }: { kpis: DashboardKpi[] }) {
                   {k.pass === null ? "暂不可计算" : k.pass ? "达标" : "未达标"}
                 </span>
               </div>
-              <p className="mt-2 text-[11.5px]" style={{ color: "var(--v5-ink-3)", minHeight: 30 }}><AutoGloss>{k.label}</AutoGloss></p>
+              <p className="mt-2 text-[11.5px]" style={{ color: "var(--v5-ink-3)", minHeight: 30 }}><AutoGloss>{operatorCopyText(k.label)}</AutoGloss></p>
               <div className="mt-1 flex items-end justify-between gap-2">
                 <span className="font-mono-tabular text-[22px] leading-none" style={{ color }}>{k.value}</span>
                 <Sparkline data={k.series} color={color} />
               </div>
-              <p className="mt-1.5 text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>目标 </AutoGloss>{k.target}<AutoGloss> · 点击看口径</AutoGloss></p>
+              <p className="mt-1.5 text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>目标 </AutoGloss>{operatorCopyText(k.target)}<AutoGloss> · 点击看口径</AutoGloss></p>
             </button>
           );
         })}
@@ -83,8 +84,8 @@ function KpiModal({ kpi, n, onClose }: { kpi: DashboardKpi; n: number; onClose: 
   }, [onClose]);
   const rows = [
     { k: "测量口径", v: kpi.hint },
-    { k: "数据源", v: "A4 事件流(server-authoritative)" },
-    { k: "后台可见性", v: "L1 关键指标 · 可查看明细 cohort / Phase 切片" },
+    { k: "数据源", v: "A4 服务端行为记录" },
+    { k: "后台可见性", v: "L1 关键指标 · 可按注册用户组及运营阶段查看明细" },
   ];
   return (
     <div
@@ -103,7 +104,7 @@ function KpiModal({ kpi, n, onClose }: { kpi: DashboardKpi; n: number; onClose: 
       >
         <div className="flex items-center gap-2.5 p-4" style={{ borderBottom: "1px solid var(--v5-border)" }}>
           <span className="font-mono-tabular rounded-[6px] px-1.5 py-0.5 text-[10.5px]" style={{ background: "var(--v5-brand-soft)", color: "var(--v5-brand)", border: "1px solid var(--v5-brand-border)" }}>关键指标 #{n}</span>
-          <span className="font-display text-[15px]" style={{ color: "var(--v5-ink)" }}><AutoGloss>{kpi.label}</AutoGloss></span>
+          <span className="font-display text-[15px]" style={{ color: "var(--v5-ink)" }}><AutoGloss>{operatorCopyText(kpi.label)}</AutoGloss></span>
           <span className="ml-auto inline-flex items-center gap-1 rounded-[6px] px-2 py-0.5 text-[11px] font-medium" style={{ background: kpi.pass ? "var(--v5-brand-soft)" : "var(--v5-danger-soft)", color }}>
             {kpi.pass === null ? "暂不可计算" : kpi.pass ? "达标" : "未达标"}
           </span>
@@ -116,7 +117,7 @@ function KpiModal({ kpi, n, onClose }: { kpi: DashboardKpi; n: number; onClose: 
             </div>
             <div className="rounded-[10px] p-3" style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)" }}>
               <p className="text-[11px]" style={{ color: "var(--v5-ink-3)" }}>目标</p>
-              <p className="font-mono-tabular mt-0.5 text-[22px]" style={{ color: "var(--v5-ink)" }}>{kpi.target}</p>
+              <p className="font-mono-tabular mt-0.5 text-[22px]" style={{ color: "var(--v5-ink)" }}>{operatorCopyText(kpi.target)}</p>
             </div>
           </div>
           <div className="mt-3">
@@ -126,7 +127,7 @@ function KpiModal({ kpi, n, onClose }: { kpi: DashboardKpi; n: number; onClose: 
           {rows.map((r) => (
             <div key={r.k} className="flex justify-between gap-4 py-2" style={{ borderBottom: "1px solid var(--v5-border)" }}>
               <span className="text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}><AutoGloss>{r.k}</AutoGloss></span>
-              <span className="text-right text-[12.5px]" style={{ color: "var(--v5-ink-2)" }}><AutoGloss>{r.v}</AutoGloss></span>
+              <span className="text-right text-[12.5px]" style={{ color: "var(--v5-ink-2)" }}><AutoGloss>{operatorCopyText(r.v)}</AutoGloss></span>
             </div>
           ))}
         </div>

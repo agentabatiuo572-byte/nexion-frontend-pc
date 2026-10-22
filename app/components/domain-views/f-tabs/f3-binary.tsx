@@ -108,7 +108,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       <div className="f-stats">
         {ctx.f3Metrics.map((metric) => (
           <div key={metric.id} className={metricClass(metric.tone)}>
-            <div className="k">{metric.name}</div>
+            <div className="k">{operatorCopyText(metric.name)}</div>
             <div className="v">{operatorCopyText(metric.value)}</div>
             <div className="sub">{metric.id === "residualPool" ? text(residualSub) : operatorCopyText(metric.sub)}</div>
           </div>

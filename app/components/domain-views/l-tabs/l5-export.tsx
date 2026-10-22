@@ -25,6 +25,21 @@ import type { LCtx } from "./types";
 import { clampL5Page, l5PageCount } from "./l5-pagination";
 import { isL5KpiExport, l5KpiRange } from "./l5-kpi-range";
 
+function reportScopeText(value: string): string {
+  const scope = /^(L[1-4]) \{(.*)\}$/.exec(value);
+  if (!scope) return value.replace(/ \/ platform$/, " / 平台汇总").replace(/ \/ user$/, " / 用户明细");
+  const labels: Record<string,string> = {window:"统计窗口",from:"开始日期",to:"结束日期",cohort:"注册用户组",phase:"运营阶段",locale:"语言",ref:"推荐渠道"};
+  const parts = scope[2].split(",").map(part => {
+    const split = part.indexOf("=");
+    if (split < 0) return part.trim();
+    const key = part.slice(0,split).trim(), raw = part.slice(split+1).trim();
+    if (!raw) return "";
+    const label = key === "window" ? ({"7d":"近 7 天","30d":"近 30 天",custom:"自定义日期"} as Record<string,string>)[raw] ?? raw : raw;
+    return `${labels[key] ?? key}：${label}`;
+  }).filter(Boolean);
+  return `${scope[1]} · ${parts.join(" · ") || "默认范围"}`;
+}
+
 type ExportParam = { k: string; v: string; fixed?: boolean; cur?: string; s: string };
 type MaskRule = { f: string; cat: string; catTone: string; rule: string; ruleNote: string; dec: string; appr: string };
 
@@ -358,7 +373,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
                   <tr key={t.id}>
                     <td className="mono" style={{ color: "var(--ink)" }}>{t.id}</td>
                     <td style={{ fontWeight: 600, color: "var(--ink-2)" }}><AutoGloss>{exportTypeText(t.type)}</AutoGloss></td>
-                    <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{t.scope}</td>
+                    <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{reportScopeText(t.scope)}</td>
                     <td style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{operatorCopyText(t.fields)}{t.pii && <span className="bdg bad" style={{ fontSize: 10.5, marginLeft: 4 }}>含隐私</span>}</td>
                     <td>{t.mask === "—" ? <span className="bdg dim">—</span> : <span className={"mask-pill " + t.mask}>{maskLabel(t.mask)}</span>}</td>
                     <td className="num mono">{t.rows}</td>

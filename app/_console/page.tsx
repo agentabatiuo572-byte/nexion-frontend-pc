@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { finiteDashboardNumber, rollupKpiPassState } from "@/lib/admin/dashboard-number";
 
 /**
@@ -164,7 +165,7 @@ function DomainTile({ domain, pulse }: { domain: NavDomain; pulse: string }) {
           <StatusPill label="规格就绪" tone="info" size="sm" dot={false} />
         )}
       </div>
-      <p className="mt-2 text-[11.5px]" style={{ color: "var(--v5-ink-3)" }}><AutoGloss>{pulse}</AutoGloss></p>
+      <p className="mt-2 text-[11.5px]" style={{ color: "var(--v5-ink-3)" }}><AutoGloss>{operatorCopyText(pulse)}</AutoGloss></p>
     </Link>
   );
 }
@@ -391,7 +392,7 @@ export default function CommandCenter() {
           : "A2 审计同步中";
     }
     if (code === "D") return `待确认提现 ${inReview} · 积压 ${fmtUsdCompact(backlogUsd)}`;
-    if (code === "J") return KILL_GATES.length > 0 ? `Kill ${killOnline}/${KILL_GATES.length} 在线${killTripped ? ` · ${killTripped} 熔断` : ""}${killMissing ? ` · ${killMissing} 未配置` : ""} · Geo 策略待读取` : "Kill 状态同步中 · Geo 策略待读取";
+    if (code === "J") return KILL_GATES.length > 0 ? `业务开关 ${killOnline}/${KILL_GATES.length} 在线${killTripped ? ` · ${killTripped} 熔断` : ""}${killMissing ? ` · ${killMissing} 未配置` : ""} · 地区策略待读取` : "业务开关状态同步中 · 地区策略待读取";
     if (code === "K") return `风险命中 ${fmtNum(flaggedAccounts)} · 规则 ${riskRadar.rules.length}`;
     if (code === "L") {
       if (dashboardKpis.length) return `${kpiRollup.total} KPI · 达标 ${kpiRollup.passed} / 未达 ${kpiRollup.failed}${kpiRollup.unknown ? ` / 暂不可计算 ${kpiRollup.unknown}` : ""}`;
@@ -423,7 +424,7 @@ export default function CommandCenter() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `nexgrid-reconciliation-${snap.generatedAt.slice(0, 10)}.json`;
+    a.download = `uvel-reconciliation-${snap.generatedAt.slice(0, 10)}.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();
