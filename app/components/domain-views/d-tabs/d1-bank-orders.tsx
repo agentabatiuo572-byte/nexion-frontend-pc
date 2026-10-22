@@ -14,7 +14,7 @@ const ORDER_STATUS: Record<string, string> = {
   LATE_REVIEW: "逾期回单待核对", RETURN_PENDING: "退回处理中",
 };
 
-function orderStatusText(status: string) { return ORDER_STATUS[status] ?? "订单状态待核实"; }
+export function orderStatusText(status: string) { return ORDER_STATUS[status] ?? "订单状态待核实"; }
 const originalOrderStatusText = (value?: string | null) => value ? ({ AWAITING_PAYMENT: "待付款", EXPIRED: "已过期", CANCELLED: "已取消", RECEIPT_REVIEW: "回单待核对", MISMATCH_REVIEW: "金额或信息不符待核对", LATE_REVIEW: "逾期到账待核对", CREDITED: "已入账", RETURNED: "已登记退回", RETURN_PENDING: "退回处理中" } as Record<string,string>)[value] ?? "原订单状态待核实" : "未提供";
 const submissionStatusText = (value?: string | null) => value ? ({ PENDING: "待提交", SUBMIT_UNKNOWN: "提交结果待核实", CREATED: "付款单已创建", REJECTED: "支付商拒绝创建" } as Record<string,string>)[value] ?? "提交状态待核实" : "未提供";
 const settlementStatusText = (value?: string | null) => value ? ({ UNSETTLED: "未入账", CREDITED: "已入账", MANUAL_REVIEW: "待人工核对" } as Record<string,string>)[value] ?? "入账状态待核实" : "未提供";

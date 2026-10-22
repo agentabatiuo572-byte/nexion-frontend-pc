@@ -1,4 +1,5 @@
 "use client";
+import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -8,7 +9,7 @@ import { adminAuthLifecycleEpoch, AdminAuthEpochChangedError } from "@/lib/admin
 import { d1VietQrUsdtAmount } from "@/lib/admin/d1-vietqr-amount";
 import { formatD1FuseReason, requiresReprovision } from "@/lib/admin/d1-account-display";
 import { CregisStatus } from "./cregis-status";
-import { D1BankOrders } from "./d1-bank-orders";
+import { D1BankOrders, orderStatusText } from "./d1-bank-orders";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   createD1VietQrAccount,
@@ -45,6 +46,7 @@ import {
 } from "@/lib/admin/d-client";
 import type { DCtx } from "./types";
 
+const depositChannelText = (value: string) => ({vietqr:"VietQR 银行转账",bank:"银行转账",card:"银行卡支付",trc20:"USDT（TRC20）",bep20:"USDT（BEP20）",erc20:"USDT（ERC20）",hdpay:"HDPay 银行转账",cregis:"Cregis 链上付款"} as Record<string,string>)[value.toLowerCase()] ?? value;
 const EMPTY_D1_FLOWS: PageResult<D1DepositFlow> = { total: 0, pageNum: 1, pageSize: 10, records: [] };
 const FLOW_TABS = [
   ["", "全部"],
@@ -423,7 +425,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
     const authEpoch = adminAuthLifecycleEpoch();
     openActionConfirm({
       action: `人工确认入账 · ${order.intentNo}`,
-      detail: `用户 ${order.userId} · 原状态 ${order.status} → 人工已入账。必须先核实实际到账 ${vnd(order.payableVnd)}，按订单锁定金额入账 ${order.requestedUsdt} USDT；本操作记录为人工确认，不伪造支付商成功回调。自动确认与人工确认共享防重复校验，已入账单不能再次入账。`,
+      detail: `用户 ${order.userId} · 原状态 ${orderStatusText(order.status)} → 人工已入账。必须先核实实际到账 ${vnd(order.payableVnd)}，按订单锁定金额入账 ${order.requestedUsdt} USDT；本操作记录为人工确认，不伪造支付商成功回调。自动确认与人工确认共享防重复校验，已入账单不能再次入账。`,
       businessForm: { kind: "multi-field", fields: [
         { key: "paymentReference", label: "实际收款交易参考号", inputKind: "text", required: true,
           minLength: 6, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
@@ -1007,7 +1009,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                 <tr key={flow.depositNo}>
                   <td className="mono" style={{ color: "var(--ink)" }}>{flow.depositNo}</td>
                   <td className="mono">{flow.userId}</td>
-                  <td>{flow.channel} / {flow.asset}</td>
+                  <td>{depositChannelText(flow.channel)} / {nexGridBrandText(flow.asset)}</td>
                   <td className="num mono">{money(flow.amount)}</td>
                   <td className="num mono">{money(flow.providerReceived)}</td>
                   <td><span className={`bdg ${statusTone(flow.status)}`}>{d1StatusText(flow.status)}</span></td>
@@ -1045,12 +1047,12 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
               <div className="dtint">今天还没有支付商结算流水或平台入账分录。支付商流水进入后，系统会与 D4 钱包账本独立比对；空数据不代表已经对平。</div>
             ) : (overview?.reconciliation ?? []).map((row) => (
               <div className="cb-row" key={row.channel}>
-                <span className="mono" style={{ fontWeight: 700 }}>{row.channel}</span>
+                <span className="mono" style={{ fontWeight: 700 }}>{depositChannelText(row.channel)}</span>
                 <span style={{ flex: 1 }}>三方 {row.providerCount} / {money(row.providerAmount)} · 账本 {row.ledgerCount} / {money(row.ledgerAmount)}</span>
                 <span className={`bdg ${row.reconciled || !row.diff ? "ok" : "warn"}`}>{row.reconciled ? "已核销" : row.diff || "金额与笔数一致"}</span>
                 {canReconcile && !row.reconciled && Boolean(row.diff) && (
                   <button className="l-btn sm mc" disabled={loading || busy} onClick={() => openActionConfirm({
-                    action: `核销对账差异 · ${row.channel}`,
+                    action: `核销对账差异 · ${depositChannelText(row.channel)}`,
                     detail: `差异金额 ${money(row.diffAmount)}。聚合差异只能确认异常挂账，必须填写支付商账单或工单凭证。`,
                     businessForm: { kind: "multi-field", fields: [
                       { key: "method", label: "处理方式", inputKind: "select", current: "CONFIRM_EXCEPTION", options: ["CONFIRM_EXCEPTION"], optionLabels: { CONFIRM_EXCEPTION: "确认异常并挂账" } },
@@ -1058,7 +1060,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                     ] },
                     run: (reason, _value, business) => {
                       const evidenceRef = business?.evidenceRef?.trim() ?? "";
-                      return applyOverview(() => writeoffD1Reconciliation(row.channel, "CONFIRM_EXCEPTION", evidenceRef, reason, operator), `${row.channel} 差异已核销`);
+                      return applyOverview(() => writeoffD1Reconciliation(row.channel, "CONFIRM_EXCEPTION", evidenceRef, reason, operator), `${depositChannelText(row.channel)} 差异已核销`);
                     },
                   })}>核销</button>
                 )}

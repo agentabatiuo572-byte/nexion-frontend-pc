@@ -1,4 +1,5 @@
 "use client";
+const redriveStatusText = (value: string) => ({PENDING:"待发送",CLAIMED:"处理中",PROCESSING:"处理中",SENT:"已发送",DELIVERED:"已送达",DEAD:"已终止",RETRY_REQUESTED:"已请求重试"} as Record<string,string>)[value] ?? "状态待核实";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import { A4OutboxDiagnostics } from "./a4-outbox-diagnostics";
@@ -609,7 +610,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           setRedriveResult(result);
           redriveCommandRef.current = null;
           setRedriveCommand(null);
-          toast(`原 H3 事实已请求重新发送：${result.eventId} · ${result.eventType} · ${result.status}`);
+          toast(`原 H3 事实已请求重新发送：${result.eventId} · ${result.eventType} · ${redriveStatusText(result.status)}`);
         } catch (error) {
           toast(`原 H3 事实重新发送结果未确认：${displayAdminError(error)}；请核对当前状态后再操作。`);
           throw error;
@@ -710,13 +711,13 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           {redrivePreviewError ? <div className="atint warn" style={{ marginTop: 8 }}>核验失败：{redrivePreviewError}</div> : null}
           {redrivePreview ? <div className="atint" style={{ marginTop: 8 }}>
             已核验 · 编号 <span className="acode">{redrivePreview.eventId}</span> · 类型 <span className="acode">{redrivePreview.eventType}</span> ·
-            原事实状态 <b>{redrivePreview.status}</b> · 失败次数 {redrivePreview.retryCount} · 失败摘要 {redrivePreview.lastError ?? "—"} ·
-            任务事件发送记录 <b>{redrivePreview.deliveryStatus}</b> · 尝试次数 {redrivePreview.deliveryAttemptCount} · 失败摘要 {redrivePreview.deliveryLastError ?? "—"}
+            原事实状态 <b>{redriveStatusText(redrivePreview.status)}</b> · 失败次数 {redrivePreview.retryCount} · 失败摘要 {redrivePreview.lastError ?? "—"} ·
+            任务事件发送记录 <b>{redriveStatusText(redrivePreview.deliveryStatus)}</b> · 尝试次数 {redrivePreview.deliveryAttemptCount} · 失败摘要 {redrivePreview.deliveryLastError ?? "—"}
           </div> : null}
           {redriveResult ? <div className="atint" style={{ marginTop: 8 }}>
 
             已收到重新发送结果 · 编号 <span className="acode">{redriveResult.eventId}</span> · 类型 <span className="acode">{redriveResult.eventType}</span> ·
-            原事实状态 <b>{redriveResult.status}</b> · 投递层状态 <b>{redriveResult.deliveryStatus}</b>。如需再次操作，请重新核验当前状态。
+            原事实状态 <b>{redriveStatusText(redriveResult.status)}</b> · 投递层状态 <b>{redriveStatusText(redriveResult.deliveryStatus)}</b>。如需再次操作，请重新核验当前状态。
           </div> : null}
         </div>
       </section>

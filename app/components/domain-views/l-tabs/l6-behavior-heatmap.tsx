@@ -1,4 +1,5 @@
 "use client";
+import { behaviorPageTitle } from "@/lib/admin/l6-page-labels";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
@@ -466,7 +467,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
                   >
                     <td>
                       <div className="pg-nm">
-                        {r.titleZh}
+                        {behaviorPageTitle(r)}
                         <span className="lc">L{r.level}</span>
                         {r.pageCount > 1 && <span className="bdg dim">聚合 {r.pageCount} 页</span>}
                         <span className="pg-go" aria-hidden>›</span>
@@ -504,7 +505,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
       {heat && activeRow && (
         <section className="l-card" id="l6-drill">
           <div className="l-h">
-            <span className="ttl">单页点击热力 · {activeRow.titleZh}</span>
+            <span className="ttl">单页点击热力 · {behaviorPageTitle(activeRow)}</span>
             <span className="sub">
               ·{" "}
               <AutoGloss>
@@ -518,7 +519,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
             <div className="l-b">
               <div className="ltint warn" style={{ fontSize: 12.5 }}>
                 <b>聚合行不提供单页坐标热力</b> ·{" "}
-                <AutoGloss>{`「${activeRow.titleZh}」聚合了 ${activeRow.pageCount} 个页面,点击坐标按单页统计、跨异构页面叠加无意义。切到「全部」粒度并点击具体页,查看该页的点击热区。`}</AutoGloss>
+                <AutoGloss>{`「${behaviorPageTitle(activeRow)}」聚合了 ${activeRow.pageCount} 个页面,点击坐标按单页统计、跨异构页面叠加无意义。切到「全部」粒度并点击具体页,查看该页的点击热区。`}</AutoGloss>
               </div>
             </div>
           ) : (
@@ -555,7 +556,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
         <b>统计覆盖</b> ·{" "}
         <AutoGloss>{`共追踪 ${heatmapData.trackedCount} / ${heatmapData.totalPages} 个前端页面;`}</AutoGloss>
         <b>不纳入统计的系统页({heatmapData.excludedPages.length})</b>:
-        <AutoGloss>{heatmapData.excludedPages.map((p) => p.titleZh).join(" · ")}（纯会话/工具页,无行为分析价值）。</AutoGloss>{" "}
+        <AutoGloss>{heatmapData.excludedPages.map((p) => behaviorPageTitle(p)).join(" · ")}（纯会话/工具页,无行为分析价值）。</AutoGloss>{" "}
         <b>L6 没有任何「写数据」动作</b>:
         <AutoGloss>粒度 / 时间窗 / 排序均为会话级视图参数,不改任何业务规则。业务时区 {heatmapData.businessTimeZone}；事件编号去重；乱序事件会被拒绝，客户端须按原事件 ID 顺序重试。</AutoGloss>
       </p>

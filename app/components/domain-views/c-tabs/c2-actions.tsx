@@ -3,7 +3,7 @@
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { formatC1DeviceStatus, formatC1RiskBand } from "@/lib/admin/c1-detail-display";
-import { nexGridBrandText, platformSessionDeviceText, userNicknameText } from "@/lib/admin/brand-copy";
+import { nexGridBrandText, platformSessionDeviceText, userNicknameText, operatorNicknameText } from "@/lib/admin/brand-copy";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -204,7 +204,7 @@ function ImpersonationUserScreen({ screen }: { screen: JsonRecord }) {
     const devices = jsonRecord(screen.deviceSummary);
     return <div data-testid="impersonation-home-screen">
       <h3 style={{ margin: "14px 0 4px" }}>用户视角首页</h3>
-      <p style={{ margin: "0 0 12px", color: "var(--ink-3)" }}>{text(screen.greeting)}</p>
+      <p style={{ margin: "0 0 12px", color: "var(--ink-3)" }}>{text(screen.greeting).replace(/^(你好，)(.+)$/, (_, greeting: string, name: string) => greeting + operatorNicknameText(name))}</p>
       <div className="row wrap" style={{ gap: 8 }}>{assets.map((asset) => <div className="ctint" key={nexGridBrandText(text(asset.symbol))}><b>{nexGridBrandText(text(asset.symbol))}</b><br />{formatAmount(asset.available)}</div>)}</div>
       <div className="kv"><span className="k">设备概况</span><span className="v">活跃 {text(devices.active, "0")} / 共 {text(devices.total, "0")}</span></div>
       <div className="kv"><span className="k">真实入口</span><span className="v">{Array.isArray(screen.entries) ? screen.entries.join(" · ") : "—"}</span></div>
@@ -230,7 +230,7 @@ function ImpersonationUserScreen({ screen }: { screen: JsonRecord }) {
   return <div data-testid="impersonation-profile-screen">
     <h3 style={{ margin: "14px 0 8px" }}>用户视角我的</h3>
     <div className="kv"><span className="k">用户编码</span><span className="v">{text(screen.userNo)}</span></div>
-    <div className="kv"><span className="k">昵称</span><span className="v">{userNicknameText(text(screen.nickname), screen.phoneMasked)}</span></div>
+    <div className="kv"><span className="k">昵称</span><span className="v">{operatorNicknameText(text(screen.nickname))}</span></div>
     <div className="kv"><span className="k">账户状态</span><span className="v">{accountStatusLabel(screen.accountStatus)}</span></div>
     <div className="kv"><span className="k">等级</span><span className="v">{text(screen.userLevel)} / {text(screen.vRank)}</span></div>
     <div className="kv"><span className="k">安全</span><span className="v">两步验证 {screen.twoFactorEnabled ? "已开启" : "未开启"} · 活跃会话 {text(screen.activeSessions, "0")}</span></div>
