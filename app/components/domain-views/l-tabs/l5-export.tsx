@@ -26,9 +26,9 @@ import { clampL5Page, l5PageCount } from "./l5-pagination";
 import { isL5KpiExport, l5KpiRange } from "./l5-kpi-range";
 
 function reportScopeText(value: string): string {
-  const scope = /^(L[1-4]) \{(.*)\}$/.exec(value);
+  const scope = /^(L[1-4]) \{(.*)\}$/.exec(value) ?? /^(.*)；切片=\{(.*)\}$/.exec(value);
   if (!scope) return value.replace(/ \/ platform$/, " / 平台汇总").replace(/ \/ user$/, " / 用户明细");
-  const labels: Record<string,string> = {window:"统计窗口",from:"开始日期",to:"结束日期",cohort:"注册用户组",phase:"运营阶段",locale:"语言",ref:"推荐渠道"};
+  const labels: Record<string,string> = {stage:"转化步骤",window:"统计窗口",from:"开始日期",to:"结束日期",cohort:"注册用户组",phase:"运营阶段",locale:"语言",ref:"推荐渠道"};
   const parts = scope[2].split(",").map(part => {
     const split = part.indexOf("=");
     if (split < 0) return part.trim();

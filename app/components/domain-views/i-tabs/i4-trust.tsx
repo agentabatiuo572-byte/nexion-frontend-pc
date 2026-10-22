@@ -36,6 +36,8 @@ const commandAttempts = createSlotAttemptStore({
 const trustSlot = (attemptKey: string) => `trust|${attemptKey}`;
 const disclosureSlot = (attemptKey: string) => `disclosure|${attemptKey}`;
 
+const trustDescriptionText = (value: string) => value === "首页 Trust 专项徽章" ? "首页信任与资质徽章" : nexGridBrandText(value);
+
 type TrustSection = {
   key: string; desc: string; struct: string; v: string; status: string; lastChange: string; roleGate: string; highSensitivity: boolean;
 };
@@ -914,7 +916,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                   >
                     <td>
                       <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{s.key}</span>
-                      <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }}>{operatorCopyText(s.desc)}</div>
+                      <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }}>{trustDescriptionText(s.desc)}</div>
                     </td>
                     <td style={{ fontSize: 12, color: "var(--ink-2)" }}>{s.struct}</td>
                     <td className="mono" style={{ fontWeight: 700 }}>{s.v}</td>
@@ -965,7 +967,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                 return <tr key={`${version.sectionKey}-${version.version}`}>
                   <td className="mono">{version.sectionKey}</td>
                   <td className="mono" style={{ fontWeight: 700 }}>{version.version}</td>
-                  <td>{operatorCopyText(version.description)}</td>
+                  <td>{trustDescriptionText(version.description)}</td>
                   <td>{version.structure}</td>
                   <td className="num">{version.fields.length}</td>
                   <td><span className={`bdg ${isDraft ? "warn" : "ok"}`}>{statusZh(version.status)}</span></td>
