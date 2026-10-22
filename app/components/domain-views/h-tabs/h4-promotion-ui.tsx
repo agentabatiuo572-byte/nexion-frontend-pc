@@ -1,6 +1,6 @@
 "use client";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
-import { cloneElement, isValidElement, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type DependencyList, type ReactNode, type ReactElement } from 'react';
+import { cloneElement, isValidElement, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type DependencyList, type InputHTMLAttributes, type ReactNode, type ReactElement } from 'react';
 import { displayAdminError } from '@/lib/admin/error-messages';
 import { fetchA2ReasonPolicy } from '@/lib/admin/a2-client';
 import { PromotionApiError, promotionFieldLabel, acknowledgePromotionCommand, pendingPromotionCommands, promotionCommand, recoverPromotionCommand, type PromotionCommandIntent } from '@/lib/admin/promotion-client';
@@ -34,19 +34,25 @@ export function Field({ label, hint, wide, children }: {
     children: ReactNode;
 }) {
   const id=useId();
-  const control=isValidElement(children)&&typeof children.type==='string'&&['input','select','textarea'].includes(children.type)
-    ? cloneElement(children as ReactElement<Record<string,unknown>>,{'aria-labelledby':id,'aria-describedby':hint?`${id}-hint`:undefined}) : children;
-  return <label className={`field ${wide ? 'wide' : ''}`} onClick={event => {
-    const input = event.target;
-    if (event.defaultPrevented || event.button !== 0 || event.detail === 0 || !(input instanceof HTMLInputElement)
-      || !['date', 'datetime-local'].includes(input.type) || input.matches(':disabled') || input.readOnly
-      || typeof input.showPicker !== 'function') return;
-    try {
-      input.showPicker();
-    } catch {
-      // Keep native editing available when the browser cannot open its picker.
+  let control = children;
+  if (isValidElement(children) && typeof children.type === 'string' && ['input', 'select', 'textarea'].includes(children.type)) {
+    const child = children as ReactElement<InputHTMLAttributes<HTMLInputElement>>;
+    const props: InputHTMLAttributes<HTMLInputElement> = {'aria-labelledby': id, 'aria-describedby': hint ? `${id}-hint` : undefined};
+    if (child.type === 'input' && ['date', 'datetime-local'].includes(child.props.type || '')) {
+      props.onClick = event => {
+        child.props.onClick?.(event);
+        const input = event.currentTarget;
+        if (event.defaultPrevented || input.matches(':disabled') || input.readOnly || typeof input.showPicker !== 'function') return;
+        try {
+          input.showPicker();
+        } catch (error) {
+          console.warn('Unable to open the native date picker', error);
+        }
+      };
     }
-  }}><span id={id}>{label}</span>{control}{hint&&<small id={`${id}-hint`}>{hint}</small>}</label>;
+    control = cloneElement(child, props);
+  }
+  return <label className={`field ${wide ? 'wide' : ''}`}><span id={id}>{label}</span>{control}{hint&&<small id={`${id}-hint`}>{hint}</small>}</label>;
 }
 export function Notice({ title, children, kind = '' }: {
     title: string;
