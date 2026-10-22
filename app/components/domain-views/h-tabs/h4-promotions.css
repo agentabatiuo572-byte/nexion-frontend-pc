@@ -2,3 +2,26 @@
 
 .prm .extra-settings{display:flex;align-items:center;gap:12px;justify-content:space-between}.prm .extra-settings>span{min-width:0;overflow-wrap:anywhere}.prm .extra-settings .btn.link{min-height:0;padding:0;flex-shrink:0;font-size:11.5px}.prm .setting-hint{display:flex;justify-content:space-between;gap:8px}.prm .inline-setting{border:0;background:none;padding:0;color:var(--admin-domain-h);font-size:inherit;white-space:nowrap}.prm .metrics-filter .field{flex:1}.prm .metrics-filter .range-field{flex:2}
 .prm .read-target{margin-left:8px}.prm .read-failure{display:block;margin-top:4px}.prm .steps button:disabled{opacity:1}
+
+.prm .h4-datetime-trigger{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:40px;padding:9px 11px;border:1px solid var(--v5-border-strong);border-radius:8px;background:var(--v5-surface-2);color:var(--v5-ink);font-size:13px;text-align:left;font-variant-numeric:tabular-nums}
+.prm .h4-datetime-trigger svg{flex-shrink:0;color:var(--admin-domain-h)}
+.prm .h4-datetime-trigger[aria-disabled=true]{cursor:default;opacity:.6}
+.prm .h4-datetime-validation{position:absolute;width:1px;height:1px;min-height:0;padding:0;border:0;clip-path:inset(50%);overflow:hidden;white-space:nowrap}
+.prm .h4-datetime-dialog{width:360px;max-width:calc(100vw - 32px);max-height:calc(100dvh - 32px);overflow:auto}
+.prm .h4-datetime-dialog .dialog-head{padding:16px 20px}
+.prm .h4-datetime-dialog .dialog-foot{padding:14px 20px;gap:8px}
+.prm .h4-datetime-body{padding:14px 20px}
+.prm .h4-datetime-body p{font-size:12px}
+.prm .h4-calendar-heading{display:flex;align-items:center;justify-content:space-between;margin:12px 0 8px;gap:12px}
+.prm .h4-calendar-heading .btn{font-size:22px;min-width:36px;padding:0}
+.prm .h4-calendar-week,.prm .h4-calendar-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;text-align:center}
+.prm .h4-calendar-week{margin-bottom:5px;color:var(--v5-ink-3);font-size:12px}
+.prm .h4-calendar-days button{display:grid;place-items:center;min-height:36px;padding:0;border:1px solid transparent;border-radius:7px;background:var(--v5-surface-2);color:var(--v5-ink);font-variant-numeric:tabular-nums}
+.prm .h4-calendar-days button.outside{color:var(--v5-ink-3);background:transparent}
+.prm .h4-calendar-days button.selected{background:var(--admin-domain-h);color:var(--v5-on-brand-2);font-weight:600}
+.prm .h4-calendar-days button:focus-visible{outline-offset:0}
+.prm .h4-time-select{display:flex;align-items:flex-end;justify-content:center;gap:12px;margin:16px 0 10px}
+.prm .h4-time-select label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--v5-ink-2)}
+.prm .h4-time-select select{width:90px}
+.prm .h4-time-select>span{padding-bottom:10px}
+.prm .h4-datetime-preview{text-align:center;font-variant-numeric:tabular-nums;color:var(--v5-ink-2)}
