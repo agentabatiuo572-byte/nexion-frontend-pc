@@ -692,7 +692,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                 onChange={(event) => resetRedriveTarget(event.target.value)}
                 placeholder="输入单个原 H3 事件编号"
                 aria-label="原 H3 事件编号"
-                style={{ marginLeft: 8, minWidth: 290 }}
+                style={{ marginLeft: 8 }}
                 disabled={!canRedriveH3Dead || !!mutating}
               />
             </label>

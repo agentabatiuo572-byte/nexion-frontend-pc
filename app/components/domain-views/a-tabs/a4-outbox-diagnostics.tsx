@@ -33,7 +33,7 @@ export function A4OutboxDiagnostics({ canRead }: { canRead: boolean }) {
       <p>与 A3 一样统计待发送和发送失败的事件，未识别的状态归入“其他”。本页仅查询，不修改事件。上方统计包含全部积压，筛选只影响下方明细；未登记类型统一显示为“未登记事件”。</p>
       {!canRead ? <div className="atint warn">需要 A4 读取权限</div> : <>
         <p>奖励池结算受阻告警的处理成功，仅表示告警已核查；不代表配置已修复或结算已恢复。</p>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <div className="ui-form-grid">
           <label>精确类型 <input className="fld" aria-label="积压事件类型" maxLength={96} value={filters.eventType} onChange={e => setFilters({ ...filters, eventType: e.target.value })} /></label>
           <label>状态 <select className="fld" aria-label="积压事件状态" value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })}><option value="">全部</option><option value="PENDING">待发送</option><option value="FAILED">发送失败</option><option value="OTHER">其他</option></select></label>
           <label><input type="checkbox" checked={filters.unresolvedOnly} onChange={e => setFilters({ ...filters, unresolvedOnly: e.target.checked })} />仅未关联审计记录</label>

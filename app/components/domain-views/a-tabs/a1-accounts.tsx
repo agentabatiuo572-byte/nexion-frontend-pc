@@ -945,11 +945,11 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
 
       <section className="l-card" data-capability="a1-permission-registration">
         <div className="l-h"><span className="ttl">新增动作权限登记</span><span className="sub">· 只登记权限清单 · 默认不授予角色</span></div>
-        <div className="l-b" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <input aria-label="权限编码" placeholder="domain_action_write" value={permissionDraft.code} onChange={(e) => setPermissionDraft((v) => ({ ...v, code: e.target.value }))} />
-          <input aria-label="权限名称" placeholder="权限名称" value={permissionDraft.name} onChange={(e) => setPermissionDraft((v) => ({ ...v, name: e.target.value }))} />
-          <input aria-label="资源路径" placeholder="/api/admin/..." value={permissionDraft.path} onChange={(e) => setPermissionDraft((v) => ({ ...v, path: e.target.value }))} />
-          <select aria-label="权限类型" value={permissionDraft.type} onChange={(e) => setPermissionDraft((v) => ({ ...v, type: e.target.value as "READ" | "WRITE" }))}><option value="READ">查询</option><option value="WRITE">修改</option></select>
+        <div className="l-b ui-form-grid">
+          <label>权限编码<input aria-label="权限编码" placeholder="domain_action_write" value={permissionDraft.code} onChange={(e) => setPermissionDraft((v) => ({ ...v, code: e.target.value }))} /></label>
+          <label>权限名称<input aria-label="权限名称" placeholder="权限名称" value={permissionDraft.name} onChange={(e) => setPermissionDraft((v) => ({ ...v, name: e.target.value }))} /></label>
+          <label>资源路径<input aria-label="资源路径" placeholder="/api/admin/..." value={permissionDraft.path} onChange={(e) => setPermissionDraft((v) => ({ ...v, path: e.target.value }))} /></label>
+          <label>权限类型<select aria-label="权限类型" value={permissionDraft.type} onChange={(e) => setPermissionDraft((v) => ({ ...v, type: e.target.value as "READ" | "WRITE" }))}><option value="READ">查询</option><option value="WRITE">修改</option></select></label>
           <label><input type="checkbox" checked={permissionDraft.amplifies} onChange={(e) => setPermissionDraft((v) => ({ ...v, amplifies: e.target.checked }))} />放大资金流出</label>
           <button className="l-btn sm mc" disabled={!canRegisterPermission || !!mutatingAction || !permissionDraft.code.trim() || !permissionDraft.name.trim() || !permissionDraft.path.trim()} onClick={submitPermissionRegistration}>登记权限</button>
         </div>

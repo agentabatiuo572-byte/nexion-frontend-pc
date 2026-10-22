@@ -81,7 +81,7 @@ export function A9DeveloperAccess() {
       <Card>
         <CardH title="开发者访问审批" right={<span className="mono" style={{ color: "var(--ink-3)", fontSize: 12 }}>{loading ? "同步中…" : `共 ${data?.total ?? 0} 条`}</span>} />
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
-          <input aria-label="开发者访问申请搜索" placeholder="申请编号 / 公司 / 邮箱" value={keywordInput} onChange={(event) => setKeywordInput(event.target.value)} style={{ flex: "1 1 220px", padding: "8px 12px" }} />
+          <input className="ui-search-input" aria-label="开发者访问申请搜索" placeholder="申请编号 / 公司 / 邮箱" value={keywordInput} onChange={(event) => setKeywordInput(event.target.value)} style={{ flex: "1 1 220px", padding: "8px 12px" }} />
           <TabGroup
             label="开发者访问申请状态筛选"
             value={status}

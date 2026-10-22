@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./components/domain-views/ui-consistency.css";
 
 /* ============================================================================
    Nexion 运营控制后台 — 设计 token
