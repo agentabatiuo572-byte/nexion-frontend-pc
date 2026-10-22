@@ -17,7 +17,7 @@ import { Icon, Btn, Chip, Drawer, KV, Badge, OperationConfirmModal, useToast } f
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { catalogSkuBrandText, nexGridBrandText } from "@/lib/admin/brand-copy";
-import { operatorOrderFact } from "@/lib/admin/e-operator-display";
+import { operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReason } from "@/lib/admin/e-operator-display";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { OpsSku, OpsTask } from "@/lib/admin/platform-types";
@@ -1220,7 +1220,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             <div style={{ fontSize: 12.5, fontWeight: 600, margin: "14px 0 8px", color: "var(--ink)" }}>状态轨迹</div>
             <div className="edrawer-trail">
               {ORDER_FLOW.map((s) => { const done = ORDER_FLOW.indexOf(s) <= idx; return <div key={s} className={`it ${done ? "done" : "grey"}`}><span className={`d ${done ? "done" : "grey"}`} /><span className="nm">{stateLabel(s)}</span></div>; })}
-              {e4Detail?.history.map((item, index) => <div className="it" key={`${item.createdAt}-${index}`}><span className="d done" /><span className="nm">{stateLabel(item.fromState)} → {stateLabel(item.toState)} · {item.operator} · {item.reason}</span></div>)}
+              {e4Detail?.history.map((item, index) => <div className="it" key={`${item.createdAt}-${index}`}><span className="d done" /><span className="nm">{stateLabel(item.fromState)} → {stateLabel(item.toState)} · {operatorOrderHistoryActor(item.operator)} · {operatorOrderHistoryReason(item.reason, e4Detail.paymentMethod)}</span></div>)}
               {isCancelled(o.id) && <div className="it grey"><span className="d grey" /><span className="nm">已取消 · 运营手动取消</span></div>}
               {!isCancelled(o.id) && !isRefunded(o.id) && terminalOf(o.id) && <div className="it red"><span className="d red" /><span className="nm">{stateLabel(terminalOf(o.id)!)} · 人工补建终态</span></div>}
               {isRefunded(o.id) && <div className="it warn"><span className="d warn" /><span className="nm">已退款 · 人工退款</span></div>}

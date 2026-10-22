@@ -169,10 +169,21 @@ export function operatorSkuLabel(input: { orderNo: string; skuName?: string | nu
 
 export function operatorSkuTier(value: string | undefined): string { return ({ Entry: "入门档", Pro: "专业档", Flagship: "旗舰档", Share: "共享份额" } as Record<string,string>)[value ?? ""] ?? "其他档位"; }
 
+export function operatorOrderHistoryActor(value: string): string {
+  return value.trim() === "system:wallet-checkout" ? "系统自动结算" : value;
+}
+
+export function operatorOrderHistoryReason(value: string, paymentMethod: string): string {
+  if (nexGridBrandText(value.trim()).toLowerCase() === "uvel wallet checkout") {
+    return paymentMethod.toUpperCase() === "VOUCHER" ? "优惠券抵扣并激活设备" : "UVEL 钱包付款并激活设备";
+  }
+  return value;
+}
+
 export function operatorOrderFact(kind: "type" | "payment" | "paymentStatus" | "source" | "direction" | "fundingStatus", value: string): string {
   const labels: Record<string, Record<string, string>> = {
     type: { SINGLE: "单品购买", BUNDLE: "组合购买", TRADE_IN: "以旧换新", CAPACITY_KEEP: "保留算力", TRIAL_CONVERT: "试用转购买" },
-    payment: { USDT_WALLET: "USDT 钱包", WALLET: "钱包", BANK: "银行付款", BANK_TRANSFER: "银行转账", VIETQR: "VietQR 扫码付款", HDPAY: "支付商付款", CREGIS: "链上付款" },
+    payment: { USDT_WALLET: "USDT 钱包", WALLET: "钱包", NEXGRID_WALLET: "UVEL 钱包", VOUCHER: "优惠券抵扣", BANK: "银行付款", BANK_TRANSFER: "银行转账", VIETQR: "VietQR 扫码付款", HDPAY: "支付商付款", CREGIS: "链上付款" },
     paymentStatus: { PENDING: "待付款", UNPAID: "未付款", PROCESSING: "支付处理中", PAID: "已支付", CONFIRMED: "已确认付款", SUCCESS: "支付成功", REFUNDED: "已退款", CHARGEBACK: "拒付", DISPUTED: "存在争议", PAYMENT_FAILED: "支付失败", FAILED: "支付失败", EXPIRED: "已过期", CANCELLED: "已取消" },
     source: { D1_PAYMENT: "付款记录", D4_LEDGER: "资金流水", D4_BILL: "账单记录" },
     direction: { IN: "收入", OUT: "支出" },
