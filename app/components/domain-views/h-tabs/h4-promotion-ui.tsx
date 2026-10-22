@@ -36,7 +36,17 @@ export function Field({ label, hint, wide, children }: {
   const id=useId();
   const control=isValidElement(children)&&typeof children.type==='string'&&['input','select','textarea'].includes(children.type)
     ? cloneElement(children as ReactElement<Record<string,unknown>>,{'aria-labelledby':id,'aria-describedby':hint?`${id}-hint`:undefined}) : children;
-  return <label className={`field ${wide ? 'wide' : ''}`}><span id={id}>{label}</span>{control}{hint&&<small id={`${id}-hint`}>{hint}</small>}</label>;
+  return <label className={`field ${wide ? 'wide' : ''}`} onClick={event => {
+    const input = event.target;
+    if (event.defaultPrevented || event.button !== 0 || event.detail === 0 || !(input instanceof HTMLInputElement)
+      || !['date', 'datetime-local'].includes(input.type) || input.matches(':disabled') || input.readOnly
+      || typeof input.showPicker !== 'function') return;
+    try {
+      input.showPicker();
+    } catch {
+      // Keep native editing available when the browser cannot open its picker.
+    }
+  }}><span id={id}>{label}</span>{control}{hint&&<small id={`${id}-hint`}>{hint}</small>}</label>;
 }
 export function Notice({ title, children, kind = '' }: {
     title: string;
@@ -71,9 +81,10 @@ export function DeviceRightsSummary({ rights }: {rights: RewardDisclosure['devic
         ['收回方式', rights?.revocationMode === 'REVOKE_IF_UNUSED' ? '未使用可收回' : rights?.revocationMode === 'MANUAL_IF_USED' ? '使用后人工处理' : '未确认']
     ]}/>;
 }
-export function Tag({ value }: {
+export function Tag({ value, label }: {
     value: string;
-}) { const kind = ['ACTIVE', 'ISSUED', 'SUCCEEDED', 'COMPLETE'].includes(value) ? 'ok' : ['OUTCOME_UNKNOWN', 'PAUSED', 'MANUAL_REVIEW', 'REVERSAL_PENDING'].includes(value) ? 'warn' : ['RETRYABLE_FAILED', 'FAILED'].includes(value) ? 'bad' : 'blue'; return <span className={`tag ${kind}`}>{labelState(value)}</span>; }
+    label?: string;
+}) { const kind = ['ACTIVE', 'ISSUED', 'SUCCEEDED', 'COMPLETE'].includes(value) ? 'ok' : ['OUTCOME_UNKNOWN', 'PAUSED', 'MANUAL_REVIEW', 'REVERSAL_PENDING'].includes(value) ? 'warn' : ['RETRYABLE_FAILED', 'FAILED'].includes(value) ? 'bad' : 'blue'; return <span className={`tag ${kind}`}>{label ?? labelState(value)}</span>; }
 export function Empty({ title, children, action }: {
     title: string;
     children?: ReactNode;

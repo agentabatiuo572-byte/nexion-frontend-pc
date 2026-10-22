@@ -357,9 +357,9 @@ body {
   }
 }
 
-/* 原生下拉弹层不继承页面底色，必须同时指定主题、文字和背景。 */
-select { color-scheme: light; }
-html[data-theme="dark"] select { color-scheme: dark; }
+/* 原生下拉和日期控件按页面主题绘制弹层与图标。 */
+select, input[type="date"], input[type="datetime-local"] { color-scheme: light; }
+html[data-theme="dark"] :is(select, input[type="date"], input[type="datetime-local"]) { color-scheme: dark; }
 select option,
 select optgroup {
   background-color: var(--v5-surface);
