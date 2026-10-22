@@ -3,6 +3,7 @@ import { Btn, CodeTag, OperationConfirmModal } from "../design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import type { EViewCtx } from "./types";
 import type { OpsTask } from "@/lib/admin/platform-types";
+import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { EStats } from "./stats";
 import { PhoneCalibrationPanel } from "./phone-calibration-panel";
 import { updateE2TaskPricing, type E2TaskPricingClass } from "@/lib/admin/e2-client";
@@ -112,8 +113,8 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       <EStats items={[
         { k: "任务类型", v: pricingRows.length, sub: pricingRows.length === 6 ? "IG/VG/LL/FT/EM/SP" : "正式类型未齐", tone: pricingRows.length === 6 ? "ok" : "warn" },
         { k: "平均单价", v: money(avgPrice), sub: tasks.length ? `${tasks.length} 个任务均价` : "暂无任务" },
-        { k: "平均饱和度", v: avgSat == null ? "—" : `${avgSat}%`, sub: peakTask ? `最高 ${Math.round(peakTask.sat * 100)}% · ${peakTask.n}` : "后端未返回饱和度", tone: avgSat != null && avgSat >= 75 ? "warn" : "cyan" },
-        { k: "最高单价任务", v: money(maxPriceTask?.price ?? 0), sub: maxPriceTask?.n ?? "暂无任务", tone: "cyan" },
+        { k: "平均饱和度", v: avgSat == null ? "—" : `${avgSat}%`, sub: peakTask ? `最高 ${Math.round(peakTask.sat * 100)}% · ${nexGridBrandText(peakTask.n)}` : "后端未返回饱和度", tone: avgSat != null && avgSat >= 75 ? "warn" : "cyan" },
+        { k: "最高单价任务", v: money(maxPriceTask?.price ?? 0), sub: nexGridBrandText(maxPriceTask?.n ?? "暂无任务"), tone: "cyan" },
       ]} />
 
       {ctx.e2Error && (
@@ -134,7 +135,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
             <thead><tr style={{ color: "var(--ink-4)", textAlign: "left" }}><th>任务类</th><th>代表模型</th><th title="最低奖励">最低奖励</th><th title="最高奖励">最高奖励</th><th title="最低显存">最低显存</th><th>派发状态</th><th>操作</th></tr></thead>
             <tbody>{pricingRows.map((row) => <tr key={row.taskClass} style={{ borderTop: "1px solid var(--border)" }}>
               <td style={{ padding: "11px 6px", fontFamily: "var(--mono)", fontWeight: 700 }}>{row.taskClass} · {KIND_LABEL[CLASS_TO_KIND[row.taskClass]]}</td>
-              <td>{row.models.join(" / ")}</td><td className="tnum">${amount(row.minReward)}</td><td className="tnum">${amount(row.maxReward)}</td>
+              <td>{row.models.map(nexGridBrandText).join(" / ")}</td><td className="tnum">${amount(row.minReward)}</td><td className="tnum">${amount(row.maxReward)}</td>
               <td className="tnum">{row.minVRAM} GB</td><td><CodeTag tone={row.enabled ? "electric" : "warn"}>{row.enabled ? "派发中" : "已停止派发"}</CodeTag></td>
               <td><div className="row" style={{ gap: 5 }}>
                 {canMutate && <>
@@ -182,8 +183,8 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
               <div key={t.tier} style={{ display: "grid", gridTemplateColumns: "auto 1fr auto auto", gap: 14, alignItems: "center", paddingTop: t.tier === 1 ? 0 : 10, borderTop: t.tier === 1 ? "none" : "1px solid var(--border)" }}>
                 <span style={{ minWidth: 40, height: 26, padding: "0 8px", borderRadius: 7, background: "var(--brand-soft)", color: "var(--brand)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, fontFamily: "var(--mono)" }}>T{t.tier}</span>
                 <div className="col" style={{ gap: 2 }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>{t.name}</span>
-                  <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{t.note}</span>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>{nexGridBrandText(t.name)}</span>
+                  <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{nexGridBrandText(t.note)}</span>
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div className="tnum" style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>${u}<span style={{ fontSize: 11, color: "var(--ink-4)", fontWeight: 400 }}> /天</span></div>
@@ -193,12 +194,12 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
                   <Btn sm variant="primary" onClick={() => ctx.openActionConfirm({
                     name: `手机 T${t.tier} 每日收益 USDT 调整`, op: "phone-tier", phoneTier: t.tier, phoneField: "dailyUsdt", amplify: true,
                     edit: { kind: "number", current: u, unit: "USDT/天", min: 0.00001, step: 0.00001, disallowCurrent: true },
-                    detail: `手机算力 T${t.tier}(${t.name})· 每日收益 USDT 当前 $${u} · 调高为放大资金流出,须核验 B1 覆盖率;改后对下一结算周期生效,不回溯已累计收益。`,
+                    detail: `手机算力 T${t.tier}(${nexGridBrandText(t.name)})· 每日收益 USDT 当前 $${u} · 调高为放大资金流出,须核验 B1 覆盖率;改后对下一结算周期生效,不回溯已累计收益。`,
                   })}>调 USDT</Btn>
                   <Btn sm onClick={() => ctx.openActionConfirm({
                     name: `手机 T${t.tier} 每日收益 UVEL 调整`, op: "phone-tier", phoneTier: t.tier, phoneField: "dailyNex", amplify: true,
                     edit: { kind: "number", current: n, unit: "UVEL/天", min: 0.00001, step: 0.00001, disallowCurrent: true },
-                    detail: `手机算力 T${t.tier}(${t.name})· 每日收益 UVEL 当前 ${n} · UVEL 派发为资金流出,受 B1 覆盖率约束;改后对下一结算周期生效。`,
+                    detail: `手机算力 T${t.tier}(${nexGridBrandText(t.name)})· 每日收益 UVEL 当前 ${n} · UVEL 派发为资金流出,受 B1 覆盖率约束;改后对下一结算周期生效。`,
                   })}>调 UVEL</Btn>
                 </div>}
               </div>
@@ -221,7 +222,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
             return (
             <div key={row.configKey} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 14, alignItems: "center", paddingTop: row.sortOrder === 1 ? 0 : 10, borderTop: row.sortOrder === 1 ? "none" : "1px solid var(--border)" }}>
               <div className="col" style={{ gap: 2 }}>
-                <span style={{ fontSize: 13.5, fontWeight: 600 }}>{row.label}</span>
+                <span style={{ fontSize: 13.5, fontWeight: 600 }}>{nexGridBrandText(row.label)}</span>
                 <span className="tint tiny">{row.configKey === "phone" ? "来源：手机 T3 档位" : `来源：E1 商品 ${E2_COMPARISON_SKU_ID[row.configKey]}`}</span>
               </div>
               <div className="tnum" style={{ textAlign: "right", fontSize: 12.5 }}>${amount(row.dailyUsdt)} · {amount(row.dailyNex)} UVEL/天</div>
@@ -262,7 +263,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
               return (
                 <div className="task" key={t.id}>
                   <span className={`ic ${k}`}><KindIcon k={k} /></span>
-                  <div className="nm">{t.n}<span className="pid">{t.id}</span></div>
+                  <div className="nm">{nexGridBrandText(t.n)}<span className="pid">{t.id}</span></div>
                   <div className="price">${t.price.toFixed(2)}<small>{taskUnitText(t.unit)}</small></div>
                   <span className={`req ${locked ? "lock" : "open"}`}>{locked && <LockMini />}{reqLabel}</span>
                   <div className="sat">
@@ -309,7 +310,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
             {queueRank.length === 0 ? <div className="tint tiny">暂无任务排行</div> : queueRank.map((task) => (
               <div className={`hook-row${task.req.includes("需") ? "" : " up"}`} key={task.id}>
                 <span className="ic">{task.req.includes("需") ? <LockSm /> : <CheckSm />}</span>
-                <span className="nm">{task.n}</span>
+                <span className="nm">{nexGridBrandText(task.n)}</span>
                 <span className="ct">{Math.round(task.sat * 100)}% · {money(task.price)}{taskUnitText(task.unit)}</span>
               </div>
             ))}
@@ -335,8 +336,8 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
                   const pct = t.sat == null ? null : Math.max(0, Math.min(100, Math.round(t.sat * 100)));
                   return (
                     <div key={t.id} style={{ display: "contents" }}>
-                      <span className="lbl" title={t.n}>{t.n}</span>
-                      <div className="heat-row" title={pct == null ? `${t.n} · 后端未返回饱和度` : `${t.n} · 当前饱和度 ${pct}%`}>
+                      <span className="lbl" title={nexGridBrandText(t.n)}>{nexGridBrandText(t.n)}</span>
+                      <div className="heat-row" title={pct == null ? `${nexGridBrandText(t.n)} · 后端未返回饱和度` : `${nexGridBrandText(t.n)} · 当前饱和度 ${pct}%`}>
                         {pct == null
                           ? <span className="muted tiny">未返回</span>
                           : <div className="heat-cell" style={{ background: heatBg(pct), width: `${Math.max(3, pct)}%`, minWidth: 10 }} />}
@@ -352,7 +353,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           <span style={{ marginLeft: "auto" }}><AutoGloss>需要小时级曲线时应由后端返回时间序列</AutoGloss></span>
         </div>
       </div>
-      <p className="f-foot">当前最高单价任务{maxPriceTask ? `「${maxPriceTask.n}」` : "暂无"}、最高负载任务{peakTask ? `「${peakTask.n}」` : "暂无"}会影响任务池展示。任务单价调整后<b>对新派发任务生效</b>，已派发任务仍按原单价完成。</p>
+      <p className="f-foot">当前最高单价任务{maxPriceTask ? `「${nexGridBrandText(maxPriceTask.n)}」` : "暂无"}、最高负载任务{peakTask ? `「${nexGridBrandText(peakTask.n)}」` : "暂无"}会影响任务池展示。任务单价调整后<b>对新派发任务生效</b>，已派发任务仍按原单价完成。</p>
       {pricingAction && <OperationConfirmModal
         action={pricingAction.field === "enabled" ? `${pricingAction.nextEnabled ? "恢复派发" : "紧急停止派发"} · ${pricingAction.row?.taskClass}` : pricingAction.field === "queueSaturation" ? "调整队列饱和度" : `调整 ${pricingAction.row?.taskClass} · ${({minReward:"最低奖励",maxReward:"最高奖励",minVRAM:"最低显存",queueSaturation:"队列饱和度",enabled:"派发开关"})[pricingAction.field]}`}
         detail={pricingAction.field === "enabled" && !pricingAction.nextEnabled ? "立即停止该类新任务派发；已派任务继续按派发时价格结算。" : "确认后服务端立即更新，只影响新派发/新路由判定，并写入 A2/A4 操作记录。"}
