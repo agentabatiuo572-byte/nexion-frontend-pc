@@ -120,3 +120,8 @@
 .dkpage.edom .phone-policy-panel :is([role="alert"], .phone-error) { color: var(--danger); }
 .dkpage.fdom .ui-placements .pane-h { flex-wrap: wrap; }
 .dkpage.fdom .ui-placements .pane-h .ph-sub { white-space: normal; min-width: 0; }
+
+.dkpage.fdom .ui-placements { margin-bottom: 16px; }
+.dkpage.edom .phone-policy-panel [aria-label="手机策略确认"] > .phone-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.dkpage.edom .phone-policy-panel [aria-label="手机策略确认"] .phone-facts { grid-template-columns: repeat(2,minmax(0,1fr)); }
+@media (max-width: 640px) { .dkpage.edom .phone-policy-panel [aria-label="手机策略确认"] > .phone-grid { grid-template-columns: 1fr; } }
