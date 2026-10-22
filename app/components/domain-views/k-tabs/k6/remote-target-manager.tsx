@@ -187,12 +187,12 @@ export function K6RemoteTargetManager() {
       </div>
       <div className="k6-body">
         <div className="k6-explain" style={{ marginBottom: 14 }}>
-          允许来源：{allowedOrigins.length ? allowedOrigins.join("、") : "未配置（失败关闭，无法新增目标）"}
+          允许来源：{allowedOrigins.length ? allowedOrigins.join("、") : "未配置，暂不能新增目标"}
         </div>
         {message && <div className="k6-explain" role="status" style={{ marginBottom: 14 }}>{message}</div>}
         {canManage ? (
           <div className="k6-ovr-brief ui-target-version" style={{ marginBottom: 14 }}>
-            <h4>新增不可变版本</h4>
+            <h4>新增版本（历史版本不可覆盖）</h4>
             <div className="k6-form-row">
               <div className="k6-ovr-field"><label htmlFor="rt-key">目标键<i>小写字母开头</i></label><input id="rt-key" className="k6-field" value={key} maxLength={64} onChange={(event) => setKey(event.target.value)} placeholder="如 finance-main" /></div>
               <div className="k6-ovr-field"><label htmlFor="rt-label">运营名称<i>必填</i></label><input id="rt-label" className="k6-field" value={label} maxLength={96} onChange={(event) => setLabel(event.target.value)} /></div>
@@ -203,7 +203,7 @@ export function K6RemoteTargetManager() {
               <div className="k6-ovr-field"><label htmlFor="rt-reason">变更原因<i>8–500 字</i></label><textarea id="rt-reason" className="k6-field" value={reason} maxLength={500} onChange={(event) => setReason(event.target.value)} /></div>
               <div className="k6-ovr-field"><label htmlFor="rt-impact">影响确认<i>8–500 字</i></label><textarea id="rt-impact" className="k6-field" value={impact} maxLength={500} onChange={(event) => setImpact(event.target.value)} placeholder="说明受影响策略、命令与迁移安排" /></div>
             </div>
-            <button className="k6-ovr-confirm" data-proof="k6-target-create" disabled={!createValid || submitting} onClick={() => void submitVersion()}>{submitting ? "提交中…" : "确认新增不可变版本"}</button>
+            <button className="k6-ovr-confirm" data-proof="k6-target-create" disabled={!createValid || submitting} onClick={() => void submitVersion()}>{submitting ? "提交中…" : "确认新增版本"}</button>
           </div>
         ) : (
           <div className="k6-explain" style={{ marginBottom: 14 }}>当前账号仅有查看权限；新增版本或停用目标需要目标管理权限。</div>

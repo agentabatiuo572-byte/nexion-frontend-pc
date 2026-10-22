@@ -162,7 +162,7 @@ function k3RuleBusinessForm(kind: K3RuleKind, current: string, action: RuleActio
     { key: "accountOp", label: "注册天数比较符", current: parsed.value.accountOp, inputKind: "select", options: ["<", "<="] },
     { key: "days", label: "注册天数", current: parsed.value.days, inputKind: "number", min: 0, max: 30, step: 1 }, ...common,
   ] };
-  return { kind: "multi-field", title: "地址信誉源", hint: "内部不调用外部服务；第三方或组合使用真实链上信誉服务，服务不可用时提现失败关闭。", fields: [
+  return { kind: "multi-field", title: "地址信誉源", hint: "内部不调用外部服务；第三方或组合使用真实链上信誉服务，服务不可用时暂停提现。", fields: [
     { key: "addressSource", label: "信誉来源", current: parsed.value.addressSource, inputKind: "select", options: ADDRESS_SOURCE_OPTIONS, wide: true }, ...common,
     { key: "addressThreshold", label: "低信誉阈值", current: parsed.value.addressThreshold, inputKind: "number", min: 0, max: 1, step: 0.01 },
   ] };

@@ -1085,7 +1085,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         requireAnyChange: true,
         fields: tiers.map((tier) => ({
           key: text(tier.tier),
-          label: `${text(tier.tier)} · ${nexGridBrandText(text(tier.reward))}`,
+          label: `${text(tier.tier)} · ${nexGridBrandText(text(tier.reward)).replace(/\bpoints\b/gi, "积分").replace(/\bdevice coupon\b/gi, "设备代金券")}`,
           current: String(numericValue(tier.prob)),
           inputKind: "number" as const,
           min: 0,
@@ -1923,8 +1923,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   <span className="mono" style={{ fontWeight: 700 }}>{percentText(tier.prob)}%</span>
                   <span>{real ? <span className="bdg bad">真实流出</span> : <span className="bdg dim">{({nex:"UVEL奖励",NEX:"UVEL奖励",usdt:"USDT奖励",USDT:"USDT奖励",voucher:"代金券",none:"未中奖"} as Record<string,string>)[text(tier.kind)] ?? "其他奖励"}</span>}</span>
                   <span style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                    <button className="l-btn sm mc" aria-label={`编辑 ${text(tier.tier)}（${nexGridBrandText(text(tier.reward))}）`} onClick={() => openEditWheelTier(tier)} disabled={!canWheelWrite}>编辑</button>
-                    <button className="l-btn sm" aria-label={`删除 ${text(tier.tier)}（${nexGridBrandText(text(tier.reward))}）`} onClick={() => openDeleteWheelTier(tier)} disabled={numericValue(tier.prob) !== 0 || !canWheelWrite} title={numericValue(tier.prob) === 0 ? "删除档位" : "先将概率调为 0%"}>删除</button>
+                    <button className="l-btn sm mc" aria-label={`编辑 ${text(tier.tier)}（${nexGridBrandText(text(tier.reward)).replace(/\bpoints\b/gi, "积分").replace(/\bdevice coupon\b/gi, "设备代金券")}）`} onClick={() => openEditWheelTier(tier)} disabled={!canWheelWrite}>编辑</button>
+                    <button className="l-btn sm" aria-label={`删除 ${text(tier.tier)}（${nexGridBrandText(text(tier.reward)).replace(/\bpoints\b/gi, "积分").replace(/\bdevice coupon\b/gi, "设备代金券")}）`} onClick={() => openDeleteWheelTier(tier)} disabled={numericValue(tier.prob) !== 0 || !canWheelWrite} title={numericValue(tier.prob) === 0 ? "删除档位" : "先将概率调为 0%"}>删除</button>
                   </span>
                 </div>
               );

@@ -532,7 +532,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
                               const ready = r.clusterStatus === "flagged" && r.clusterVersion !== undefined;
                               return <button key={action} className="l-btn sm mc" disabled={!ready} title={ready ? "提交 A2 确认链" : "需先在 K1 将关联账户组标记为可疑"} onClick={() => linkFreeze(r)}>{ready ? "联动 K1 冻结" : "先到 K1 标记为可疑"}</button>;
                             }
-                            return <span key={action} className="bdg warn" title="服务端返回了前端不认识的动作，已失败关闭">未知动作</span>;
+                            return <span key={action} className="bdg warn" title="服务端返回了无法识别的动作，已暂停执行">未知动作</span>;
                           })}
                         </span>
                       )}
