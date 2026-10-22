@@ -187,7 +187,7 @@ export function operatorOrderFact(kind: "type" | "payment" | "paymentStatus" | "
     paymentStatus: { PENDING: "待付款", UNPAID: "未付款", PROCESSING: "支付处理中", PAID: "已支付", CONFIRMED: "已确认付款", SUCCESS: "支付成功", REFUNDED: "已退款", CHARGEBACK: "拒付", DISPUTED: "存在争议", PAYMENT_FAILED: "支付失败", FAILED: "支付失败", EXPIRED: "已过期", CANCELLED: "已取消" },
     source: { D1_PAYMENT: "付款记录", D4_LEDGER: "资金流水", D4_BILL: "账单记录" },
     direction: { IN: "收入", OUT: "支出" },
-    fundingStatus: { PAID: "已支付", POSTED: "已入账", COMPLETED: "已完成", SUCCESS: "已完成", PENDING: "处理中", FAILED: "失败", CANCELLED: "已取消", REVERSED: "已撤回" },
+    fundingStatus: { PAID: "已支付", POSTED: "已入账", COMPLETED: "已完成", SUCCESS: "已完成", PENDING: "处理中", FAILED: "失败", CANCELLED: "已取消", REVERSED: "已撤回", REFUNDED: "已退款", CHARGEBACK: "拒付" },
   };
   return labels[kind][value.toUpperCase()] ?? ({ type: "订单类型待核实", payment: "支付方式待核实", paymentStatus: "支付状态待核实", source: "其他资金记录", direction: "方向待核实", fundingStatus: "资金状态待核实" })[kind];
 }
