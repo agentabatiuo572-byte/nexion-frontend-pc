@@ -1,9 +1,15 @@
 "use client";
 
 import { useState } from 'react';
+import { operatorNicknameText } from '@/lib/admin/brand-copy';
 import { promotionRead } from '@/lib/admin/promotion-client';
 import type { AccountSamplePage } from '@/lib/admin/promotion-types';
 import { Button, Field, Notice, ReadError, useRead } from './h4-promotion-ui';
+
+const sampleLabel = (label: string) => {
+    const divider = label.indexOf(' · ');
+    return divider < 0 ? label : label.slice(0, divider + 3) + operatorNicknameText(label.slice(divider + 3));
+};
 
 /** The server supplies the simulation identity; user codes are never converted into IDs. */
 export function H4SampleAccountSelect({ value, onChange, allowed, disabled }: {
@@ -33,7 +39,7 @@ export function H4SampleAccountSelect({ value, onChange, allowed, disabled }: {
         {!!inputError && <ReadError target="账户搜索条件" error={inputError} retry={search}/>}
         {!!accounts.error && <ReadError target="授权账户搜索" error={accounts.error} retry={accounts.reload}/>}
         {!query && <p className="help">输入编码末几位或昵称查找，已知内部账户 ID 可切换精确模式；也可留空逐页选择。选中的账户仍须经过活动资格试算。</p>}
-        {page && <><Field label="样本账户"><select value={value} disabled={changing || !!accounts.error} onChange={event => { const id = event.target.value; setSelectedLabel(page.items.find(item => item.accountId === id)?.label || ''); onChange(id); }}><option value="">不选择，资格标未知</option>{value && !page.items.some(item => item.accountId === value) && <option value={value}>{selectedLabel || '已选择账户'} · 当前所选</option>}{page.items.map(item => <option value={item.accountId} key={item.accountId}>{item.label}</option>)}</select></Field>
+        {page && <><Field label="样本账户"><select value={value} disabled={changing || !!accounts.error} onChange={event => { const id = event.target.value; setSelectedLabel(page.items.find(item => item.accountId === id)?.label || ''); onChange(id); }}><option value="">不选择，资格标未知</option>{value && !page.items.some(item => item.accountId === value) && <option value={value}>{selectedLabel ? sampleLabel(selectedLabel) : '已选择账户'} · 当前所选</option>}{page.items.map(item => <option value={item.accountId} key={item.accountId}>{sampleLabel(item.label)}</option>)}</select></Field>
             {accounts.loading && <Notice title="正在刷新搜索结果">保留原选择，读取完成后可选择新账户。</Notice>}
             {!!accounts.error && <Notice title="搜索结果尚未更新" kind="warn">保留上次结果和原选择，请重试；试算时将重新检查账户访问权限。</Notice>}
             {!page.items.length && !accounts.loading && !accounts.error && <p className="help">没有符合条件的可读账户，可调整搜索内容后重试。</p>}

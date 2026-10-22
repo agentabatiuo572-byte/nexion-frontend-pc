@@ -27,6 +27,8 @@ export function promotionErrorMessage(code: string | undefined, status = 0): str
   if (key === 'AUTHORITATIVE_PAGE_INVALID') return '当前资料暂无法确认，相关操作已停用；请刷新后重试。';
   if (key?.includes('SNAPSHOT')) return '查询结果已失效，请重新查询。筛选条件已保留。';
   if (key?.includes('REVISION') || key?.includes('VERSION_CONFLICT')) return '内容已被其他操作修改，请读取最新版本并核对差异后再确认。';
+  if (key === 'PROMOTION_RULE_IDENTITY_IMMUTABLE' || key === 'PROMOTION_REWARD_IDENTITY_IMMUTABLE') return '已有购买规则或奖励身份不能直接更换；请刷新草稿，移除原规则后添加新设备。历史累计仍保留。';
+  if (key === 'PROMOTION_RULE_REPLACEMENT_RESETS_HISTORY') return '该设备已有历史规则，不能用新规则重置累计；请沿用原规则修改其他配置。';
   if (key?.includes('MAKER_CHECKER') || key?.includes('SAME_ACTOR')) return '此版本需要由另一名有权限的人员审核。';
   if (key?.includes('FIELD_INVALID')) return '部分配置尚未填写完整或格式不正确，请检查下方字段说明。';
   if (key?.includes('CONCURRENT_CHANGE')) return '内容已被其他操作修改，请读取最新版本并核对差异后再确认。';
