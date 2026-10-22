@@ -57,13 +57,6 @@ function amount(value: number) {
 
 const LIST_PAGE_SIZE = 6;   // 任务列表每页行数
 
-/** Onboarding 比较行的服务器权威来源；商品收益在 E1，手机收益在本页 T3 调整。 */
-const E2_COMPARISON_SKU_ID: Record<string, string> = {
-  s1: "stellarbox-s1",
-  pro: "stellarbox-pro",
-  rack: "stellarrack-p1",
-};
-
 export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const { tasks } = ctx;
   const canMutate = ctx.canWriteE2 && !ctx.e2Loading && !ctx.e2Error && !!ctx.e2Pricing;
@@ -223,7 +216,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
             <div key={row.configKey} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 14, alignItems: "center", paddingTop: row.sortOrder === 1 ? 0 : 10, borderTop: row.sortOrder === 1 ? "none" : "1px solid var(--border)" }}>
               <div className="col" style={{ gap: 2 }}>
                 <span style={{ fontSize: 13.5, fontWeight: 600 }}>{nexGridBrandText(row.label)}</span>
-                <span className="tint tiny">{row.configKey === "phone" ? "来源：手机 T3 档位" : `来源：E1 商品 ${E2_COMPARISON_SKU_ID[row.configKey]}`}</span>
+                <span className="tint tiny">{row.configKey === "phone" ? "来源：手机 T3 档位" : "来源：商品管理（E1）"}</span>
               </div>
               <div className="tnum" style={{ textAlign: "right", fontSize: 12.5 }}>${amount(row.dailyUsdt)} · {amount(row.dailyNex)} UVEL/天</div>
               <span className="tint tiny">请在来源配置调整</span>
