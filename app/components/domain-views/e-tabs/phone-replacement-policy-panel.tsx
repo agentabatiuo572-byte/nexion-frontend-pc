@@ -91,7 +91,7 @@ function PolicyEditor({ owner, operator, rights }: {
         setBusy(true);
         setError("");
         const def = findHighOp("e6_compute_config_batch")!;
-        const input: ProposalInput = { action: "发布手机换机策略", obj: Object.keys(confirm.values).sort().join(","), beforeValue: `策略版本 ${confirm.version}；允许换机：${(confirm.before.allowReplacement ?? "未配置") === null ? "未配置" : (confirm.before.allowReplacement ?? "未配置") ? "是" : "否"}；间隔 ${(confirm.before.minReplacementIntervalDays ?? "未配置") ?? "未配置"} 天；${(confirm.before.replacementWindowDays ?? "未配置") ?? "未配置"} 天内最多 ${(confirm.before.maxReplacementsInWindow ?? "未配置") ?? "未配置"} 次`,
+        const input: ProposalInput = { action: "发布手机换机策略", obj: Object.keys(confirm.values).sort().join(","), beforeValue: `策略版本 ${confirm.version}；允许换机：${confirm.before.allowReplacement === null ? "未配置" : confirm.before.allowReplacement ? "是" : "否"}；间隔 ${confirm.before.minReplacementIntervalDays ?? "未配置"} 天；${confirm.before.replacementWindowDays ?? "未配置"} 天内最多 ${confirm.before.maxReplacementsInWindow ?? "未配置"} 次`,
             afterValue: `允许换机：${confirm.values["E.compute.phoneBinding.allowReplacement"] === "on" ? "是" : "否"}；间隔 ${values[0]} 天；${values[1]} 天内最多 ${values[2]} 次`,
             operator, operatorRole: "运营人员", type: "param", amplifies: true, sos: false, roleGate: "另一位有审批权的管理员", reason: reason.trim(), sourceDomain: "E6",
             command: def.buildCommand({ values: confirm.values, expectedPolicyVersion: confirm.version }), targets: def.buildTargets!({ values: confirm.values }) };
