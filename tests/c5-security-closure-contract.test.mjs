@@ -62,6 +62,8 @@ test("C5 loads a paginated user list even before a search or selection", () => {
   assert.match(c5, /keyword \? await privacySafeUserLookup\(keyword\) : \{\}/);
   assert.match(c5, /pageNum: userPage/);
   assert.match(c5, /pageSize: userPageSize/);
+  assert.match(c5, /\[userPageSize, setUserPageSize\] = useState\(20\)/);
+  assert.match(c5, /pageSizeOptions=\{\[20, 50, 100, 200\]\}/);
   assert.match(c5, /aria-label="安全处置用户列表"/);
   assert.match(c5, /查看安全信息/);
   assert.doesNotMatch(c5, /setUserLookup\(profileLabel/);

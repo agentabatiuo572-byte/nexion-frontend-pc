@@ -215,7 +215,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const [userLookup, setUserLookup] = useState("");
   const [userOptions, setUserOptions] = useState<User360Profile[]>([]);
   const [userPage, setUserPage] = useState(1);
-  const [userPageSize, setUserPageSize] = useState(10);
+  const [userPageSize, setUserPageSize] = useState(20);
   const [userTotal, setUserTotal] = useState(0);
   const [userListRetry, setUserListRetry] = useState(0);
   const [userSearchLoading, setUserSearchLoading] = useState(false);
@@ -628,7 +628,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
             </table>
           </div>
           <DataListPager label="安全处置用户" page={userPage} pageSize={userPageSize} total={userTotal} onPageChange={setUserPage}
-            onPageSizeChange={(next) => { setUserPageSize(next); setUserPage(1); }} pageSizeOptions={PAGE_SIZE_OPTIONS} />
+            onPageSizeChange={(next) => { setUserPageSize(next); setUserPage(1); }} pageSizeOptions={[20, 50, 100, 200]} />
           <div className="l-h">
             <span className="ttl">{selectedUser ? `当前用户 · ${userLabel(selectedUser)}` : "选择用户后查看安全信息"}</span>
           </div>
