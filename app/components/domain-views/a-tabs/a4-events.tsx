@@ -955,11 +955,11 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
             <b>查询既有 字段定义</b> · 最近列表不会替代完整注册表。输入一个已登记的精确事件名以核验其当前元数据；不会做模糊搜索、枚举或返回事件内容。
             <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
               <input
-                aria-label="精确事件名"
+                className="ui-control" aria-label="精确事件名"
                 value={schemaLookupEventName}
                 placeholder="例如 quest.completed"
                 onChange={(event) => resetSchemaLookup(event.target.value)}
-                style={{ minWidth: 260 }}
+                style={{ width: 300, maxWidth: "100%" }}
               />
               <button className="l-btn sm mc" disabled={!canRead || !!loadError || schemaLookupLoading} onClick={() => void lookupSchemaRegistration()}>
                 {schemaLookupLoading ? "核验中…" : "核验既有 字段定义"}

@@ -358,25 +358,25 @@ export function C1Search({
             </TabGroup>
           </div>
         </div>
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] gap-2 px-3 pb-3 pt-2 [&>*]:min-w-0 [&>*]:w-full" style={{ borderBottom: "1px solid var(--line)" }}>
-          <select aria-label="生命周期" value={filters.tier} onChange={(event) => changeFilter("tier", event.target.value)}>
+        <div className="ui-form-grid" style={{ borderBottom: "1px solid var(--line)", padding: "12px 16px" }}>
+          <label>生命周期<select className="ui-control" aria-label="生命周期" value={filters.tier} onChange={(event) => changeFilter("tier", event.target.value)}>
             <option value="">全部生命周期</option>{[0, 1, 2, 3, 4, 5].map((value) => <option key={value} value={`L${value}`}>L{value}</option>)}
-          </select>
-          <select aria-label="团队等级" value={filters.vRank} onChange={(event) => changeFilter("vRank", event.target.value)}>
+          </select></label>
+          <label>团队等级<select className="ui-control" aria-label="团队等级" value={filters.vRank} onChange={(event) => changeFilter("vRank", event.target.value)}>
             <option value="">全部团队等级</option>{Array.from({ length: 13 }, (_, value) => <option key={value} value={`V${value}`}>V{value}</option>)}
-          </select>
-          <input aria-label="推荐码" placeholder="推荐码" value={filters.referralCode} onChange={(event) => changeFilter("referralCode", event.target.value)} />
-          {canReadRisk && <select aria-label="风险档" value={filters.riskBand} onChange={(event) => changeFilter("riskBand", event.target.value)}>
+          </select></label>
+          <label>推荐码<input className="ui-control" aria-label="推荐码" placeholder="推荐码" value={filters.referralCode} onChange={(event) => changeFilter("referralCode", event.target.value)} /></label>
+          {canReadRisk && <label>风险档<select className="ui-control" aria-label="风险档" value={filters.riskBand} onChange={(event) => changeFilter("riskBand", event.target.value)}>
             <option value="">全部风险档</option><option value="LOW">低风险</option><option value="MEDIUM">中风险</option><option value="HIGH">高风险</option>
-          </select>}
-          <input aria-label="累计充值下限" type="number" min="0" placeholder="累计充值 ≥" value={filters.depositMin} onChange={(event) => changeFilter("depositMin", event.target.value)} />
-          <input aria-label="累计充值上限" type="number" min="0" placeholder="累计充值 ≤" value={filters.depositMax} onChange={(event) => changeFilter("depositMax", event.target.value)} />
-          <input aria-label="USDT 余额下限" type="number" min="0" placeholder="USDT ≥" value={filters.usdtMin} onChange={(event) => changeFilter("usdtMin", event.target.value)} />
-          <input aria-label="USDT 余额上限" type="number" min="0" placeholder="USDT ≤" value={filters.usdtMax} onChange={(event) => changeFilter("usdtMax", event.target.value)} />
-          <input aria-label="UVEL 余额下限" type="number" min="0" placeholder="UVEL ≥" value={filters.nexMin} onChange={(event) => changeFilter("nexMin", event.target.value)} />
-          <input aria-label="UVEL 余额上限" type="number" min="0" placeholder="UVEL ≤" value={filters.nexMax} onChange={(event) => changeFilter("nexMax", event.target.value)} />
-          <input aria-label="加入日期起" type="date" value={filters.joinedFrom} onChange={(event) => changeFilter("joinedFrom", event.target.value)} />
-          <input aria-label="加入日期止" type="date" value={filters.joinedTo} onChange={(event) => changeFilter("joinedTo", event.target.value)} />
+          </select></label>}
+          <label>累计充值下限<input className="ui-control" aria-label="累计充值下限" type="number" min="0" placeholder="累计充值 ≥" value={filters.depositMin} onChange={(event) => changeFilter("depositMin", event.target.value)} /></label>
+          <label>累计充值上限<input className="ui-control" aria-label="累计充值上限" type="number" min="0" placeholder="累计充值 ≤" value={filters.depositMax} onChange={(event) => changeFilter("depositMax", event.target.value)} /></label>
+          <label>USDT 余额下限<input className="ui-control" aria-label="USDT 余额下限" type="number" min="0" placeholder="USDT ≥" value={filters.usdtMin} onChange={(event) => changeFilter("usdtMin", event.target.value)} /></label>
+          <label>USDT 余额上限<input className="ui-control" aria-label="USDT 余额上限" type="number" min="0" placeholder="USDT ≤" value={filters.usdtMax} onChange={(event) => changeFilter("usdtMax", event.target.value)} /></label>
+          <label>UVEL 余额下限<input className="ui-control" aria-label="UVEL 余额下限" type="number" min="0" placeholder="UVEL ≥" value={filters.nexMin} onChange={(event) => changeFilter("nexMin", event.target.value)} /></label>
+          <label>UVEL 余额上限<input className="ui-control" aria-label="UVEL 余额上限" type="number" min="0" placeholder="UVEL ≤" value={filters.nexMax} onChange={(event) => changeFilter("nexMax", event.target.value)} /></label>
+          <label>加入日期起<input className="ui-control" aria-label="加入日期起" type="date" value={filters.joinedFrom} onChange={(event) => changeFilter("joinedFrom", event.target.value)} /></label>
+          <label>加入日期止<input className="ui-control" aria-label="加入日期止" type="date" value={filters.joinedTo} onChange={(event) => changeFilter("joinedTo", event.target.value)} /></label>
         </div>
         {error && <div className="ctint warn" style={{ margin: 12 }}>{error}</div>}
         <div style={{ overflowX: "auto" }}>
