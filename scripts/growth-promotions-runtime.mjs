@@ -62,7 +62,7 @@ const casesIndex=process.argv.indexOf('--cases'),onlyCases=casesIndex>=0?process
 try{
   if(onlyCases){
     proof.mode='targeted';
-    for(const name of onlyCases){page=await actor(name==='reward'?'growth_reviewer':'growth_author');if(name==='templates')await runTemplateCases({page,base,source,click,fill,command,open,snap,record,runId,guard,actor:adminActor('growth_author')});else if(name==='qualification')await runQualificationChange({page,base,external,source,click,open,snap,record,runId,guard});else if(name==='reward')await runRewardRecovery({page,base,external,click,fill,command,open,snap,record,guard,actor:adminActor('growth_reviewer')});else throw Error('Unknown targeted case');}
+    for(const name of onlyCases){page=await actor(name==='reward'?'growth_reviewer':'growth_author');if(name==='templates')await runTemplateCases({page,base,source,click,fill,command,open,snap,record,runId,guard,actor:adminActor('growth_author'),sampleAccountId:String(accounts.members[2].id)});else if(name==='qualification')await runQualificationChange({page,base,external,source,click,open,snap,record,runId,guard});else if(name==='reward')await runRewardRecovery({page,base,external,click,fill,command,open,snap,record,guard,actor:adminActor('growth_reviewer')});else throw Error('Unknown targeted case');}
     assert.deepEqual(proof.pageErrors,[]);proof.status='passed';
   }else{
   proof.mode='full';
@@ -111,7 +111,7 @@ try{
   await open('rewards',source.activityId);await expect(page.getByRole('button',{name:'查看与处置',exact:true}).first()).toBeVisible();await click('查看与处置');await expect(page.getByRole('heading',{name:'原权益与售后说明'})).toBeVisible();record('reward-original-receipt',[await snap('ADM08-reward-detail')]);
   await prepareRewardFailure(external,activityId,guard);
   await runRewardRecovery({page,base,external,click,fill,command,open,snap,record,guard,actor:adminActor('growth_reviewer')});
-  page=author;await runTemplateCases({page,base,source,click,fill,command,open,snap,record,runId,guard,actor:adminActor('growth_author')});
+  page=author;await runTemplateCases({page,base,source,click,fill,command,open,snap,record,runId,guard,actor:adminActor('growth_author'),sampleAccountId:String(accounts.members[2].id)});
   await runQualificationChange({page,base,external,source,click,open,snap,record,runId,guard});
   page=await actor('growth_reader');await open('edit');await expect(page.getByLabel('活动名称 *',{exact:true})).toBeDisabled();await click('下一步');await expect(page.getByLabel('参与人群 *',{exact:true})).toBeDisabled();await click('下一步');await expect(page.getByRole('button',{name:'编辑',exact:true}).first()).toBeDisabled();record('real-reader-readonly',[await snap('ADM04-reader-disabled')]);
   const deniedUrl=`${base}/api/admin/growth/promotions/${activityId}/pause`,deniedBody={expectedRevision:dual.revision,reason:'仅验证真实只读账户拒绝权限',evidenceRefs:[]},deniedScope={channel:'api',actor:adminActor('growth_reader'),method:'POST',url:deniedUrl,body:deniedBody};await guard.beforeMutation(deniedScope);const denied=await page.request.post(deniedUrl,{headers:{'Idempotency-Key':'deny-'+runId},data:deniedBody,maxRedirects:0});await guard.observeResponse({...deniedScope,responseText:await denied.text(),status:denied.status()});assert.equal(denied.status(),403);record('real-permission-denial',[`${base}/api/admin/growth/promotions/${activityId}/pause → HTTP 403`]);

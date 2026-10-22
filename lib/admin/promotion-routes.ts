@@ -1,4 +1,4 @@
-const heads = new Set(['promotions','promotion-catalog','promotion-policies','device-rights-profiles','promotion-commands','promotion-rewards','promotion-exports']);
+const heads = new Set(['promotions','promotion-catalog','promotion-account-samples','promotion-policies','device-rights-profiles','promotion-commands','promotion-rewards','promotion-exports']);
 export const isPromotionHead = (head: string) => heads.has(head);
 
 /** Additional promotion routes are method-specific, never a free-form proxy prefix. */
@@ -6,7 +6,7 @@ export function allowedPromotionRoute(parts: string[], method: string): boolean 
   if (parts.some(p => !p || p.includes('..') || /[/\\]/.test(p))) return false;
   const [head,id,tail,last] = parts;
   const n = parts.length;
-  if (head === 'promotion-catalog') return method === 'GET' && n === 1;
+  if (head === 'promotion-catalog' || head === 'promotion-account-samples') return method === 'GET' && n === 1;
   if (head === 'promotion-commands') return method === 'GET' && n === 2 && !!id;
   if (head === 'promotion-exports') return method === 'GET' && (n === 2 || (n === 3 && tail === 'download'));
   if (head === 'device-rights-profiles') return method === 'GET' && (n === 1 || (n === 4 && tail === 'versions' && /^[1-9]\d*$/.test(last)));

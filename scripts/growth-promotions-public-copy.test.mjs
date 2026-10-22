@@ -152,6 +152,15 @@ test('PCOPY-05/06: actual review and policy dialogs preserve review, publication
   assert(!create.includes('目录自动绑定'));for(const term of ['整单钱包退款','不允许负余额或跨币抵扣','原商品合同'])assert(create.includes(term));
 });
 
+test('new device-rights policies only offer executable task rules while historical disabled values stay readable',()=>{
+  const hook=hooks(),policies=domain('h4-promotion-policies.tsx',hook,fresh,['PolicyCreate']);hook.reset();
+  const create=policies.PolicyCreate({catalog,can:()=>true,onClose(){},onDone(){}});
+  const taskField=nodes(create).find(n=>n.type===ui.Field&&n.props.label==='任务参与方式 *');
+  assert.deepEqual(nodes(taskField.props.children).filter(n=>n.type==='option'&&n.props.value).map(n=>n.props.value),['EXISTING_PRODUCT_RULES']);
+  const legacy=markup(policies.PromotionPolicyDetails({policy:{state:'DRAFT',content:{kind:'DEVICE_RIGHTS',taskEligibility:'DISABLED'},resolvedDeviceRights:null},catalog}));
+  assert(legacy.includes('不参与任务（历史设置）'));
+});
+
 test('PCOPY-C1: actual policy selector retains isolated restriction, review gate and accessible binding description',()=>{
   for(const fixture of [false,true])for(const state of ['APPROVED','DRAFT']){
     const policy={policyId:'P1',version:2,contentHash:'hash',fixture,state,content:{kind:'ASSET',asset:'USDT',availabilityDescription:{zh:'成熟后可用'}}};

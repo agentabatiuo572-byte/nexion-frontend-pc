@@ -2,8 +2,9 @@
 import { catalogSkuBrandText } from "@/lib/admin/brand-copy";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { useRef, useState } from 'react';
+import { H4SampleAccountSelect } from './h4-sample-account-select';
 import { promotionRead, promotionVersions } from '@/lib/admin/promotion-client';
-import type { AdminSimulation, AudiencePreview, Catalog, Item, Promotion, Version, VersionPage } from '@/lib/admin/promotion-types';
+import type { AdminSimulation, Catalog, Item, Promotion, Version, VersionPage } from '@/lib/admin/promotion-types';
 import { limitText } from '@/lib/admin/promotion-form';
 import { PromotionBannerPreview } from './h4-promotion-banner';
 import { Button, Card, ConfirmCommand, Dialog, Field, Notice, ReadError, Stats, Summary, Table, Tag, formatTime, labelState, rewardText, text, useRead } from './h4-promotion-ui';
@@ -62,18 +63,8 @@ function SimulationDialog({ activity, version, catalog, can, onClose, onResult }
     onClose: () => void;
     onResult: (s: AdminSimulation) => void;
 }) {
-    const [items, setItems] = useState<Item[]>([]), [sample, setSample] = useState(''), [audience, setAudience] = useState<AudiencePreview | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null);
+    const [items, setItems] = useState<Item[]>([]), [sample, setSample] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null);
     const failedRead = useRef<{target: string; retry: () => Promise<void>} | null>(null);
-    const samples = async () => { setBusy(true); setError(null); try {
-        setAudience(await promotionRead<AudiencePreview>(`/promotions/${activity.activityId}/audience-preview`, undefined, { method: 'POST', body: JSON.stringify({ draft: version.draft }) }));
-    }
-    catch (e) {
-        failedRead.current = {target: '授权账户样本', retry: samples};
-        setError(e);
-    }
-    finally {
-        setBusy(false);
-    } };
     const run = async () => { setBusy(true); setError(null); try {
         onResult(await promotionRead<AdminSimulation>(`/promotions/${activity.activityId}/simulate`, undefined, { method: 'POST', body: JSON.stringify({ draft: version.draft, items, sampleAccountId: can('user_c1_read') && sample ? sample : null }) }));
     }
@@ -84,5 +75,5 @@ function SimulationDialog({ activity, version, catalog, can, onClose, onResult }
     finally {
         setBusy(false);
     } };
-    return <Dialog title="试算购买场景" wide onClose={onClose} footer={<><Button disabled={busy} onClick={onClose}>取消</Button><Button kind="primary" disabled={busy || !items.length || items.some(i => !i.productNo || i.quantity < 1) || !can('growth_promotion_simulate')} onClick={run}>{busy ? '正在试算…' : '运行试算'}</Button></>}><Notice title="只读试算">不创建订单，不占资格或预算。没有账户样本时，账户资格明确显示未知。</Notice><fieldset disabled={busy}>{items.map((item, i) => <div className="grid2" key={i}><Field label={`购买设备 ${i + 1}`}><select value={item.productNo} onChange={e => setItems(items.map((v, j) => j === i ? { ...v, productNo: e.target.value } : v))}><option value="">请选择</option>{catalog.skus.filter(s => s.available).map(s => <option key={s.productNo} value={s.productNo}>{catalogSkuBrandText(s.productNo, text(s.name))}</option>)}</select></Field><Field label="购买数量"><input type="number" min={1} step={1} value={item.quantity || ''} onChange={e => setItems(items.map((v, j) => j === i ? { ...v, quantity: Number(e.target.value) } : v))}/></Field><Button kind="link" onClick={() => setItems(items.filter((_, j) => j !== i))}>移除此购买项</Button></div>)}<Button onClick={() => setItems([...items, { productNo: '', quantity: 0 }])} disabled={items.length >= 8}>添加购买项</Button>{can('user_c1_read') ? <><Button onClick={samples}>读取授权账户样本</Button><Field label="样本账户（可选）"><select value={sample} onChange={e => setSample(e.target.value)}><option value="">不选择，资格标未知</option>{audience?.samples.map(s => <option value={s.accountId} key={s.accountId}>{s.accountId} · {labelState(s.status)}</option>)}</select></Field></> : <p className="help">当前权限只允许汇总试算，不可查看或指定账户样本。</p>}</fieldset>{!!error && <ReadError target={failedRead.current?.target || "只读购买试算"} error={error} retry={() => {void failedRead.current?.retry();}}/>}</Dialog>;
+    return <Dialog title="试算购买场景" wide onClose={onClose} footer={<><Button disabled={busy} onClick={onClose}>取消</Button><Button kind="primary" disabled={busy || !items.length || items.some(i => !i.productNo || i.quantity < 1) || !can('growth_promotion_simulate')} onClick={run}>{busy ? '正在试算…' : '运行试算'}</Button></>}><Notice title="只读试算">不创建订单，不占资格或预算。没有账户样本时，账户资格明确显示未知。</Notice><fieldset disabled={busy}>{items.map((item, i) => <div className="grid2" key={i}><Field label={`购买设备 ${i + 1}`}><select value={item.productNo} onChange={e => setItems(items.map((v, j) => j === i ? { ...v, productNo: e.target.value } : v))}><option value="">请选择</option>{catalog.skus.filter(s => s.available).map(s => <option key={s.productNo} value={s.productNo}>{catalogSkuBrandText(s.productNo, text(s.name))}</option>)}</select></Field><Field label="购买数量"><input type="number" min={1} step={1} value={item.quantity || ''} onChange={e => setItems(items.map((v, j) => j === i ? { ...v, quantity: Number(e.target.value) } : v))}/></Field><Button kind="link" onClick={() => setItems(items.filter((_, j) => j !== i))}>移除此购买项</Button></div>)}<Button onClick={() => setItems([...items, { productNo: '', quantity: 0 }])} disabled={items.length >= 8}>添加购买项</Button>{can('user_c1_read') ? <H4SampleAccountSelect value={sample} onChange={setSample} allowed={can('user_c1_read') && can('growth_promotion_simulate')} disabled={busy}/> : <p className="help">当前权限只允许汇总试算，不可查看或指定账户样本。</p>}</fieldset>{!!error && <ReadError target={failedRead.current?.target || "只读购买试算"} error={error} retry={() => {void failedRead.current?.retry();}}/>}</Dialog>;
 }

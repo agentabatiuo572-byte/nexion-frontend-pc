@@ -239,28 +239,31 @@ test('blocked command dialogs deny new writes and original retries while retaini
 
 function simulation(read){
   const states=[],refs=[],calls=[],results=[];let stateIndex=0,refIndex=0;
+  const SampleSelect=()=>null;
   const Simulation=component('h4-promotion-review.tsx',name=>{
     if(name==='react')return {useState:initial=>{const i=stateIndex++;if(!(i in states))states[i]=typeof initial==='function'?initial():initial;return [states[i],next=>states[i]=typeof next==='function'?next(states[i]):next];},useRef:initial=>{const i=refIndex++;return refs[i]||(refs[i]={current:initial});}};
     if(name==='react/jsx-runtime')return require(name);
     if(name.endsWith('h4-promotion-ui'))return ui;
+    if(name.endsWith('h4-sample-account-select'))return {H4SampleAccountSelect:SampleSelect};
     if(name.endsWith('promotion-client'))return {promotionRead:async(route,query,options)=>{const call={route,method:options.method,body:JSON.parse(options.body)};calls.push(call);return read(call,calls);}};
     return {};
   },'SimulationDialog').SimulationDialog;
   const props={activity:{activityId:'A1'},version:{draft:{name:'Original draft'}},catalog:{skus:[{productNo:'SKU1',available:true,name:{zh:'测试设备'}}]},can:()=>true,onClose:()=>{},onResult:result=>results.push(result)};
   const render=()=>{stateIndex=0;refIndex=0;const nodes=[],walk=node=>{if(Array.isArray(node))return node.forEach(walk);if(!node||typeof node!=='object')return;nodes.push(node);walk(node.props?.children);walk(node.props?.footer);};walk(Simulation(props));return nodes;};
-  return {render,calls,results,button:label=>render().find(node=>node.type===ui.Button&&node.props.children===label),field:label=>render().find(node=>node.type===ui.Field&&node.props.label===label).props.children};
+  return {render,calls,results,selectSample:id=>render().find(node=>node.type===SampleSelect).props.onChange(id),sample:()=>render().find(node=>node.type===SampleSelect),button:label=>render().find(node=>node.type===ui.Button&&node.props.children===label),field:label=>render().find(node=>node.type===ui.Field&&node.props.label===label).props.children};
 }
 function saveFunctionTrace(name,calls){
   if(!process.env.PROMOTION_R2_FUNCTION_REPORT_DIR)return;const file=path.join(process.env.PROMOTION_R2_FUNCTION_REPORT_DIR,name+'.json');fs.mkdirSync(path.dirname(file),{recursive:true});assert(!fs.existsSync(file));const source=fs.readFileSync(new URL('../app/components/domain-views/h-tabs/h4-promotion-review.tsx',import.meta.url));fs.writeFileSync(file,JSON.stringify({kind:'actual-component-offline-regression-not-product-runtime',sourceSha256:createHash('sha256').update(source).digest('hex'),status:'passed',calls},null,2));
 }
-test('failed authorized samples retry the same sample read while the empty scenario remains disabled',async()=>{
-  const dialog=simulation((call,calls)=>{if(calls.length===1)throw Error('sample failure');return {samples:[{accountId:'12',status:'MATCHED'}]};});
-  assert.equal(dialog.button('运行试算').props.disabled,true);await dialog.button('读取授权账户样本').props.onClick();let failed=dialog.render().find(node=>node.type===ui.ReadError);assert.equal(failed.props.target,'授权账户样本');failed.props.retry();await new Promise(resolve=>setImmediate(resolve));
-  assert.deepEqual(dialog.calls.map(call=>call.route),['/promotions/A1/audience-preview','/promotions/A1/audience-preview']);assert.deepEqual(dialog.calls[0].body,dialog.calls[1].body);assert.equal(dialog.button('运行试算').props.disabled,true);assert.equal(dialog.results.length,0);assert.equal(dialog.render().some(node=>node.type===ui.ReadError),false);saveFunctionTrace('sample-retry-regression',dialog.calls);
+test('simulation uses scoped account search and cannot run an empty purchase scenario',()=>{
+  const dialog=simulation(()=>{throw Error('unexpected request');});
+  assert.equal(dialog.sample().props.allowed,true);dialog.selectSample('29');
+  assert.equal(dialog.sample().props.value,'29');assert.equal(dialog.button('运行试算').props.disabled,true);assert.equal(dialog.calls.length,0);
 });
+
 test('failed simulations retain their original items and authorized sample when retried',async()=>{
   let attempts=0;const dialog=simulation(call=>{if(call.route.endsWith('audience-preview'))return {samples:[{accountId:'12',status:'MATCHED'}]};if(++attempts===1)throw Error('simulation failure');return {kind:'offline-test-result'};});
-  dialog.button('添加购买项').props.onClick();dialog.field('购买设备 1').props.onChange({target:{value:'SKU1'}});dialog.field('购买数量').props.onChange({target:{value:'2'}});await dialog.button('读取授权账户样本').props.onClick();dialog.field('样本账户（可选）').props.onChange({target:{value:'12'}});assert.equal(dialog.button('运行试算').props.disabled,false);await dialog.button('运行试算').props.onClick();const failed=dialog.render().find(node=>node.type===ui.ReadError);assert.equal(failed.props.target,'只读购买试算');
+  dialog.button('添加购买项').props.onClick();dialog.field('购买设备 1').props.onChange({target:{value:'SKU1'}});dialog.field('购买数量').props.onChange({target:{value:'2'}});dialog.selectSample('12');assert.equal(dialog.button('运行试算').props.disabled,false);await dialog.button('运行试算').props.onClick();const failed=dialog.render().find(node=>node.type===ui.ReadError);assert.equal(failed.props.target,'只读购买试算');
   dialog.field('购买数量').props.onChange({target:{value:'3'}});failed.props.retry();await new Promise(resolve=>setImmediate(resolve));const reads=dialog.calls.filter(call=>call.route.endsWith('simulate'));assert.equal(reads.length,2);assert.deepEqual(reads[0].body,reads[1].body);assert.deepEqual(reads[1].body.items,[{productNo:'SKU1',quantity:2}]);assert.equal(reads[1].body.sampleAccountId,'12');assert.equal(dialog.field('购买数量').props.value,3,'Retry must not reset current selections');assert.equal(dialog.results.length,1);saveFunctionTrace('simulation-retry-regression',dialog.calls);
 });
 

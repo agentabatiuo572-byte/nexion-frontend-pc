@@ -1,5 +1,5 @@
 // Generated from the reviewed promotion OpenAPI; run scripts/generate-promotion-types.mjs.
-// Source SHA256: b43348cd1eab223c432a04bb9d5d6ef0c982ce736a8d6a251e719bb874bde4f2
+// Source SHA256: d215f0dcc1445544a175090bb4ec1d1cb825dc5561208828ba5fb41b0cf7bb8c
 export type Id = string;
 export type Hash = string;
 export type Amount = string;
@@ -118,3 +118,5 @@ export type OrderReceiptItem = { "lineId": Id; "productNo": Id; "quantity": Quan
 export type MetricSkuSales = { "purchaseProductNo": Id; "productName": string; "paidOrders": number; "grossPaidUsdt": AggregateAmount; "refundUsdt": AggregateAmount; "netReceivedUsdt": AggregateAmount };
 export type PromotionListItem = { "activityId": Id; "eventCode": Id; "revision": Revision; "state": ActivityState; "activeVersion": (Revision) | (null); "draftVersion": (Revision) | (null); "serverTime": Time; "fixture": boolean; "name": (string) | (null); "category": "PROMOTION" | "REFERRAL"; "template": Template; "startsAt": (Time) | (null); "endsAt": (Time) | (null); "displayTimezone": string | null; "updatedAt": Time; "draftVersionState": (VersionState) | (null); "impact": PromotionListImpact; "reserved": number; "issued": number; "unresolved": number; "asOf": Time };
 export type PromotionListImpact = { "reserved": number; "issued": number; "unresolved": number; "unpaidOrders": number; "pendingRewards": number; "failedRewards": number; "unknownRewards": number; "reversingRewards": number; "manualReviewRewards": number; "unfulfilledRewards": number; "obligations": number; "budgets": Array<Budget>; "asOf": Time; "completeness": "COMPLETE"; "source": Array<string> };
+export type AccountSample = { "accountId": Id; "label": string };
+export type AccountSamplePage = { "items": Array<AccountSample>; "total": number; "pageNum": number; "pageSize": number };

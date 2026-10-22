@@ -232,7 +232,7 @@ writeRecord({
 const GEARS = [
   ["F3 real placement query and manual assignment", "node", ["--test", "tests/f3-placements-client.test.mjs", "tests/f3-placements-component.test.mjs"]],
   ["promotion generated API contract", "node", ["--test", "tests/promotion-generated-types-eol.test.mjs"]],
-  ["promotion interactions and public copy", "node", ["--unhandled-rejections=strict", "--experimental-strip-types", "--test", "scripts/growth-promotions-behavior.test.mjs", "scripts/growth-promotions-read-state.test.mjs", "scripts/growth-promotions-visual-gate.test.mjs", "scripts/growth-promotions-runtime-waits.test.mjs", "scripts/growth-promotions-public-copy.test.mjs", "scripts/growth-promotions-banner.test.mjs"]],
+  ["promotion interactions and public copy", "node", ["--unhandled-rejections=strict", "--experimental-strip-types", "--test", "scripts/growth-promotions-behavior.test.mjs", "scripts/growth-promotions-read-state.test.mjs", "scripts/growth-promotions-visual-gate.test.mjs", "scripts/growth-promotions-runtime-waits.test.mjs", "scripts/growth-promotions-public-copy.test.mjs", "scripts/growth-promotions-banner.test.mjs", "tests/h4-sample-account-select.test.mjs"]],
   ["promotion dialog capture", "node", ["--test", "scripts/growth-promotions-capture.test.mjs"]],
   ["direct referral policy contract", "node", ["--experimental-strip-types", "--test", "tests/direct-referral-policy.test.mjs", "tests/f2-seven-layer-activation.behavior.test.mjs", "tests/f5-event-runtime-contract.test.mjs"]],
   ["E6 phone binding policy contract", "node", ["--experimental-strip-types", "--test", "tests/e6-phone-binding-contract.test.mjs", "tests/phone-replacement-admin-contract.test.mjs"]],

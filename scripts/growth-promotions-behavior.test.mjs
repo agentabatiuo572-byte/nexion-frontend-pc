@@ -94,6 +94,9 @@ test('proxy accepts only contract methods and paths, including partial draft PUT
   assert.equal(allowedPromotionRoute(['promotions','a','draft'],'DELETE'),false);
   assert.equal(allowedPromotionRoute(['promotions','..','draft'],'PUT'),false);
   assert.equal(allowedPromotionRoute(['promotion-catalog','anything'],'GET'),false);
+  assert.equal(allowedPromotionRoute(['promotion-account-samples'],'GET'),true);
+  assert.equal(allowedPromotionRoute(['promotion-account-samples'],'POST'),false);
+  assert.equal(allowedPromotionRoute(['promotion-account-samples','other'],'GET'),false);
 });
 
 test('uncertain command survives and blocks changed payload; recovery uses the original key', async () => {
