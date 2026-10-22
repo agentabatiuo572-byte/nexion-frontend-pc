@@ -929,8 +929,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
             <KV k="收款方式" v="按收款账号路由 · 银行未预先核验" /><KV k="收款账号" v={bankDetail.maskedAccount} />
             <KV k="锁定汇率" v={`${bankDetail.rateVnd.toLocaleString()} VND / USDT`} />
             <KV k="银行到账金额" v={`${bankDetail.amountVnd.toLocaleString()} VND`} />
-            <KV k="代付状态" v={bankDetail.state} /><KV k="HDPay 单号" v={bankDetail.providerOrderId || "尚未取得"} />
-            <KV k="核对提示" v={bankDetail.lastError || "按供应商查询结果自动结算；接单不等于到账"} />
+            <KV k="代付状态" v={({CREATED:"待派发",PENDING:"待处理",PROCESSING:"银行处理中",SENT:"银行处理中",SUCCESS:"已到账",COMPLETED:"已到账",FAILED:"代付失败",REFUNDED:"已退款",CANCELLED:"已取消",UNKNOWN:"状态待核实"} as Record<string,string>)[bankDetail.state] ?? "状态待核实"} /><KV k="HDPay 单号" v={bankDetail.providerOrderId || "尚未取得"} />
+            <KV k="核对提示" v={bankDetail.lastError ? operationalText(bankDetail.lastError) : "按供应商查询结果自动结算；接单不等于到账"} />
             <KV k="收款账户" v={bankDetail.beneficiaryEligibility?.canWithdraw === true ? "与订单收款账户一致" : "暂不能审核放行"} />
             {bankDetail.beneficiaryEligibility?.canWithdraw !== true && <div className="dtint warn">{bankDetail.beneficiaryEligibility?.reasonCode ? displayAdminError(new Error(bankDetail.beneficiaryEligibility.reasonCode)) : "收款账户状态读取失败，请刷新后重试。"}</div>}
             <KV k="结算证明" v={bankDetail.settlementEvidence ? bankEvidenceLabels[bankDetail.settlementEvidence.status] : "尚无结算证据"} />

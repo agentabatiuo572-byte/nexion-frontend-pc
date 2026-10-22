@@ -1,4 +1,6 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
+import { formatB3RefOption } from "@/lib/admin/b3-ref-display";
 
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { useId, type CSSProperties, type ReactNode } from "react";
@@ -142,7 +144,7 @@ export function B2RestoredInsights({ data }: { data: B2Dashboard }) {
   return <>
     <div style={GRID}>
       <section data-testid="b2-maturity-chart" style={CARD}><Header title={`未来 ${data.maturity.window === "7d" ? 7 : 30} 日到期负债图`} meta="每日到期柱 + 累计曲线 · USDT" /><MaturityChart daily={data.maturity.daily} cumulative={data.maturity.cumulative} /></section>
-      <section data-testid="b2-liability-distribution" style={CARD}><Header title="应付负债构成" meta={`${data.liabilities.hardLiabilityCategoryCount} 类应付款科目`} />{liabilityRows.length ? <Donut center="应付负债" rows={liabilityRows.map((row, index) => ({ label: nexGridBrandText(row.label), value: row.share * 100, suffix: "%", color: COLORS[index % COLORS.length] }))} /> : <Notice>服务端当前没有非零负债科目；不绘制伪环图。</Notice>}</section>
+      <section data-testid="b2-liability-distribution" style={CARD}><Header title="应付负债构成" meta={`${data.liabilities.hardLiabilityCategoryCount} 类应付款科目`} />{liabilityRows.length ? <Donut center="应付负债" rows={liabilityRows.map((row, index) => ({ label: operatorCopyText(row.label), value: row.share * 100, suffix: "%", color: COLORS[index % COLORS.length] }))} /> : <Notice>服务端当前没有非零负债科目；不绘制伪环图。</Notice>}</section>
     </div>
     <div style={GRID}>
       <section data-testid="b2-fund-flow-history" style={CARD}><Header title="近 8 个窗口资金流入 / 流出" meta="储备账本 · 万 USDT" />{history.data ? <FlowBars rows={history.data.flowWindows} /> : history.loading ? <Notice>正在读取服务端资金流窗口。</Notice> : <Notice healthState="error">{`资金流历史暂不可用：${history.error ?? "响应为空"}`}</Notice>}</section>
@@ -155,7 +157,7 @@ export function B3RestoredInsights({ data }: { data: B3Dashboard }) {
   const daily = data.dailyFirstPurchase;
   return <div style={GRID}>
     <section data-testid="b5-daily-first-purchase-conversion" style={CARD}><Header title="每日首购转化率（当日注册→当日首购）" meta={`近 8 日 · 目标 ${data.dailyFirstPurchaseTargetPct}%`} /><TrendChart values={daily.map((row) => row.conversionPct)} labels={daily.map((row) => row.date.slice(5))} threshold={data.dailyFirstPurchaseTargetPct} thresholdLabel={`目标 ${data.dailyFirstPurchaseTargetPct}%`} valueSuffix="%" ariaLabel={`当日注册用户的每日首购转化率曲线与 ${data.dailyFirstPurchaseTargetPct}% 目标线`} />{daily.every((row) => row.conversionPct === null) && <Notice>近 8 日没有可计算的当日注册分母；保留每日坐标与 {data.dailyFirstPurchaseTargetPct}% 目标线，不用 0% 冒充转化率。</Notice>}</section>
-    <section data-testid="b7-first-purchase-channel-share" style={CARD}><Header title="首购渠道来源占比" meta="按注册来源统计 · 同用户首购" />{data.purchaseChannels.length ? <Donut center="首购渠道" rows={data.purchaseChannels.map((row, index) => ({ label: row.channel, value: row.sharePct, suffix: "%", color: COLORS[index % COLORS.length] }))} /> : <Notice>当前筛选没有同用户首购事实，渠道占比不可计算。</Notice>}</section>
+    <section data-testid="b7-first-purchase-channel-share" style={CARD}><Header title="首购渠道来源占比" meta="按注册来源统计 · 同用户首购" />{data.purchaseChannels.length ? <Donut center="首购渠道" rows={data.purchaseChannels.map((row, index) => ({ label: formatB3RefOption(row.channel), value: row.sharePct, suffix: "%", color: COLORS[index % COLORS.length] }))} /> : <Notice>当前筛选没有同用户首购事实，渠道占比不可计算。</Notice>}</section>
     <section data-testid="b3-cohort-trend-chart" style={{ ...CARD, gridColumn: "1 / -1" }}><Header title="按注册周查看转化趋势" meta="当前转化步骤" />{data.trend.length ? <TrendChart values={data.trend.map((row) => row.cvrFromPrev)} labels={data.trend.map((row) => row.cohort.replace(/^\d{4}-/, ""))} valueSuffix="%" ariaLabel="按注册周查看转化率趋势" /> : <div data-testid="b3-cohort-trend-empty"><Notice>当前筛选没有可比较的注册周用户，无法计算趋势。</Notice></div>}</section>
   </div>;
 }
@@ -167,7 +169,7 @@ export function B4RestoredInsights() {
   const latest = data.currentRatio;
   return <div style={GRID}>
     <section data-testid="b3-growth-outflow-ratio" style={CARD}><Header title="新增 / 流出比趋势" meta={`当前 ${latest === null ? "不可计算" : latest.toFixed(2)} · 健康线 ${data.healthyRatio}`} /><TrendChart values={data.ratioSeries.map((row) => row.ratio)} labels={data.ratioSeries.map((row) => row.label.slice(5))} threshold={data.healthyRatio} thresholdLabel={`健康线 ${data.healthyRatio}`} ariaLabel={`新增流出比趋势与 ${data.healthyRatio} 健康线`} /><div data-testid="b7-rhythm-engine-decision" style={{ borderLeft: `3px solid ${latest !== null && latest >= data.healthyRatio ? "var(--success)" : "var(--warning)"}`, paddingLeft: 10, fontSize: 13 }}><b>运营阶段建议：{data.suggestion}</b><div style={{ color: "var(--ink-3)", marginTop: 3 }}>{latest === null ? "本月流出分母为 0，不能用 0 或无限大替代真实比值。" : latest >= data.healthyRatio ? "高于健康线，可保持当前扩张节奏。" : "低于健康线，应进入收紧观察；这里只给建议，不自动执行。"}</div></div></section>
-    <section data-testid="b6-monthly-budget-allocation" style={CARD}><Header title="本月运营预算分配" meta="拉新 / 返佣 / 创世 / 储备" />{data.budget.available ? <Donut center="本月预算" rows={data.budget.rows.map((row, index) => ({ label: nexGridBrandText(row.label), value: row.sharePct, suffix: "%", color: COLORS[index % COLORS.length] }))} /> : <Notice>四类本月运营预算尚未配置完整，暂不显示预算图表。</Notice>}</section>
+    <section data-testid="b6-monthly-budget-allocation" style={CARD}><Header title="本月运营预算分配" meta="拉新 / 返佣 / 创世 / 储备" />{data.budget.available ? <Donut center="本月预算" rows={data.budget.rows.map((row, index) => ({ label: operatorCopyText(row.label), value: row.sharePct, suffix: "%", color: COLORS[index % COLORS.length] }))} /> : <Notice>四类本月运营预算尚未配置完整，暂不显示预算图表。</Notice>}</section>
   </div>;
 }
 

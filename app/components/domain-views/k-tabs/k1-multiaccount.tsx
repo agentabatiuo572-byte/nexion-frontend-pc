@@ -704,9 +704,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     setWeightDraft(null);
     try {
       await ctx.reloadKRisk({ multiAccount: pageQuery });
-      ctx.toast(`${weightDraft.param.name} 已更新为 ${value}`);
+      ctx.toast(`${riskParamName(weightDraft.param)} 已更新为 ${value}`);
     } catch {
-      ctx.toast(`${weightDraft.param.name} 已写入，但最新数据回读失败；请重试 K1 后核对`);
+      ctx.toast(`${riskParamName(weightDraft.param)} 已写入，但最新数据回读失败；请重试 K1 后核对`);
     }
   };
 
@@ -1205,7 +1205,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const updateDraft = (patch: Partial<WeightDraft>) => setWeightDraft((current) => current ? { ...current, ...patch } : current);
         return (
           <Modal
-            title={`拦截阈值调整 · ${weightDraft.param.name}`}
+            title={`拦截阈值调整 · ${riskParamName(weightDraft.param)}`}
             icon="shield"
             busy={draftSubmitting === "weight"}
             onClose={() => setWeightDraft(null)}

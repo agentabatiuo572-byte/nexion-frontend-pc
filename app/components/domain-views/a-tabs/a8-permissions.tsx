@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 import "../a-domain.css";
 import { useEffect, useRef, useState } from "react";
 import { fetchA8Permissions, fetchA8PermissionDetail, type A8Permission, type A8PermissionPage } from "@/lib/admin/a8-client";
@@ -177,9 +178,9 @@ export default function A8Permissions() {
                     <CodeTag>{p.permissionCode}</CodeTag>
                   </button>
                 </td>
-                <td style={{ padding: "10px 12px" }}>{p.permissionName || "—"}</td>
+                <td style={{ padding: "10px 12px" }}>{operatorCopyText(p.permissionName || "—")}</td>
                 <td style={{ padding: "10px 12px" }}><Badge tone={TONE_BY_TYPE[p.permType] || "neutral"}>{LABEL_BY_TYPE[p.permType] || "未知类型"}</Badge></td>
-                <td style={{ padding: "10px 12px" }}><span className="mono" style={{ fontSize: 12, color: "var(--ink-3)" }}>{p.menuCodePath}</span></td>
+                <td style={{ padding: "10px 12px" }}><span className="mono" style={{ fontSize: 12, color: "var(--ink-3)" }}>{operatorCopyText(p.menuCodePath)}</span></td>
                 <td style={{ padding: "10px 12px", textAlign: "center" }}>{p.amplifies ? <span title="放大资金流出·受 B1 红线约束">⚠️</span> : "—"}</td>
                 <td style={{ padding: "10px 12px" }}><span className="mono">{p.boundRoleCount}</span></td>
               </tr>
@@ -236,7 +237,7 @@ export default function A8Permissions() {
                       {records.map((p) => (
                         <tr key={p.permissionCode} style={{ borderBottom: "1px solid var(--border)" }}>
                           <td style={{ padding: "10px 12px", position: "sticky", left: 0, background: "var(--surface)" }}>
-                            <div>{p.permissionName || p.permissionCode}</div>
+                            <div>{operatorCopyText(p.permissionName || p.permissionCode)}</div>
                             <div className="mono" style={{ marginTop: 2, color: "var(--ink-3)", fontSize: 11.5 }}>{p.permissionCode}</div>
                           </td>
                           {grants.map(({ role, codes, readable }) => (
@@ -266,7 +267,7 @@ export default function A8Permissions() {
       </Card>
       {(detail || detailLoading) && (
         <Drawer
-          title={detail ? (detail.permissionName || detail.permissionCode) : "加载中…"}
+          title={detail ? operatorCopyText(detail.permissionName || detail.permissionCode) : "加载中…"}
           sub={detail?.permissionCode}
           onClose={() => {
             detailRequestSeq.current += 1;
@@ -279,9 +280,9 @@ export default function A8Permissions() {
           ) : detail ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 16 }}>
               <Row label="权限值"><span className="mono">{detail.permissionCode}</span></Row>
-              <Row label="中文名">{detail.permissionName || "—"}</Row>
+              <Row label="中文名">{operatorCopyText(detail.permissionName || "—")}</Row>
               <Row label="类型"><Badge tone={TONE_BY_TYPE[detail.permType] || "neutral"}>{LABEL_BY_TYPE[detail.permType] || "未知类型"}</Badge></Row>
-              <Row label="所属菜单"><span className="mono" style={{ fontSize: 13 }}>{detail.menuCodePath}</span></Row>
+              <Row label="所属菜单"><span className="mono" style={{ fontSize: 13 }}>{operatorCopyText(detail.menuCodePath)}</span></Row>
               <Row label="资源路径"><span className="mono" style={{ fontSize: 13 }}>{detail.resourcePath || "—"}</span></Row>
               <Row label="放大资金流出">{detail.amplifies ? "是（受 B1 红线约束）" : "否"}</Row>
               <Row label="已绑定角色"><span className="mono">{detail.boundRoleCount} 个</span></Row>

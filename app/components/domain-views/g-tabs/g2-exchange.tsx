@@ -1,4 +1,5 @@
 "use client";
+import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 
@@ -389,7 +390,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
             {allowed("finprod_g2_queue_cancel") && <button className="l-btn mc" style={{ flex: 1, justifyContent: "center" }} disabled={busy} onClick={() => cancelQueue(selectedQueue)}>强制取消此单 →</button>}
           </>}>
           <div className="kv2"><span className="k">用户编码</span><span className="v mono">{selectedQueue.userNo}</span></div>
-          <div className="kv2"><span className="k">用户名</span><span className="v">{selectedQueue.nickname}</span></div>
+          <div className="kv2"><span className="k">用户名</span><span className="v">{operatorNicknameText(selectedQueue.nickname)}</span></div>
           <div className="kv2"><span className="k">方向</span><span className="v">{operatorCopyText(selectedQueue.directionLabel)}</span></div>
           <div className="kv2"><span className="k">金额</span><span className="v mono">{operatorCopyText(selectedQueue.exchangeAmountDisplay)}</span></div>
           <div className="kv2"><span className="k">排队原因</span><span className="v">{selectedQueue.gateReason}</span></div>

@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import "./risk-radar.css";
 import { useEffect, useMemo, useState } from "react";
@@ -339,7 +340,7 @@ export default function RiskRadarPage() {
           </div>
           <div className="b5-list">
             {data.abnormalAccounts.byCategory.map((item) => (
-              <div key={item.category}><span>{item.label}</span><b>{item.count}</b></div>
+              <div key={item.category}><span>{operatorCopyText(item.label)}</span><b>{item.count}</b></div>
             ))}
           </div>
           <div className="b5-actions">

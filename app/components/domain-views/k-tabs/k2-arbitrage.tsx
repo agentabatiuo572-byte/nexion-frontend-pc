@@ -471,7 +471,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
                   <div className="p" key={definition.key}>
                     <div className="k">{definition.label}</div>
                     <div className="v">
-                      {param?.value ?? "—"} <span className="vu">{definition.unit}</span>
+                      {definition.key === "captchaGate.alwaysScenes" && param ? (param?.value ?? "").split(",").map(value => ({register:"注册",login:"登录",reset:"找回密码"} as Record<string,string>)[value.trim()] ?? value.trim()).join("、") || "无" : param?.value ?? "—"} <span className="vu">{definition.unit}</span>
                       {canWrite && <button className="l-btn sm mc" aria-label={`调整${definition.label}`} disabled={!param} onClick={() => adjExtraParam(definition)}>调整</button>}
                     </div>
                     <div className="s">{param?.sub ?? "等待后端配置"}</div>

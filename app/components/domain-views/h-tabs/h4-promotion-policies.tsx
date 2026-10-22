@@ -1,4 +1,5 @@
 "use client";
+import { catalogSkuBrandText } from "@/lib/admin/brand-copy";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { useState } from 'react';
 import type { Catalog, NativeRef, Policy, PolicyContent, PolicyPage } from '@/lib/admin/promotion-types';
@@ -38,7 +39,7 @@ function PolicyCreate({ catalog, can, onClose, onDone }: {
         resourceId?: string;
     })?.resourceId || ''} onChange={e => { const n = catalog.nativeContracts.find(n => n.system === system && n.resourceId === e.target.value); patch(key, n?.reference); }}><option value="">请选择原业务协议</option>{catalog.nativeContracts.filter(n => n.system === system).map(n => <option key={n.resourceId} value={n.resourceId} disabled={!n.available || !n.reference}>{text(n.title)}{!n.available ? ' · 当前不可用' : ''}</option>)}</select></Field>;
     const localized = (key: string) => <fieldset className="form-section wide" key={key}><legend>{FIELD_LABELS[key]} *</legend><div className="grid2">{(['zh', 'en', 'vi'] as const).map((lang, i) => <Field label={['中文', '英语', '越南语'][i]} key={lang}><textarea value={(content[key] as Record<string, string>)?.[lang] || ''} onChange={e => patch(key, { ...(content[key] as Record<string, string> || {}), [lang]: e.target.value })}/></Field>)}</div></fieldset>;
-    const sku = <Field label="适用设备 *"><select value={String(content.productNo || '')} onChange={e => patch('productNo', e.target.value)}><option value="">请选择</option>{catalog.skus.filter(s => s.giftEligible && s.available).map(s => <option value={s.productNo} key={s.productNo}>{text(s.name)}</option>)}</select></Field>;
+    const sku = <Field label="适用设备 *"><select value={String(content.productNo || '')} onChange={e => patch('productNo', e.target.value)}><option value="">请选择</option>{catalog.skus.filter(s => s.giftEligible && s.available).map(s => <option value={s.productNo} key={s.productNo}>{catalogSkuBrandText(s.productNo, text(s.name))}</option>)}</select></Field>;
     const evidence = [...(audit.data?.operationQueue || []).filter(t => t.status === 'approved').map(t => ({ value: t.id, label: `已批准操作 · ${t.action}` })), ...(audit.data?.recentLogs || []).map(t => ({ value: t.id, label: `审计记录 · ${t.action} · ${t.ts}` }))];
     if (confirm)
         return <ConfirmCommand writeAllowed={can('growth_promotion_policy_write') && !audit.loading && !audit.error} title="保存政策草稿" intent={{ operation: 'createPolicy', targetId: 'promotion-policies', path: '/promotion-policies', method: 'POST' }} body={{ content, evidenceRefs: [] }} evidenceOptions={evidence} requireEvidence evidenceMode="select" onClose={() => setConfirm(false)} onSuccess={onDone}><Notice title="保存后仍需批准">批准前须核验所选原业务协议与证据。</Notice></ConfirmCommand>;

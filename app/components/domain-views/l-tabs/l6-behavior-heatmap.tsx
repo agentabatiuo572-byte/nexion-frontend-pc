@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
  * L6 · 用户行为热力图 — 前端操作按页面/层级聚合的热力矩阵 + 单页点击坐标热力。
@@ -532,7 +533,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
                 .map((z, i) => (
                   <div key={z.label} className="zone-row">
                     <span className="zsw" style={{ opacity: 0.25 + z.share }} />
-                    <span className="znm">{z.label}</span>
+                    <span className="znm">{({TOP:"页面顶部",MIDDLE:"页面中部",BOTTOM:"页面底部",top:"页面顶部",middle:"页面中部",bottom:"页面底部"} as Record<string,string>)[z.label] ?? operatorCopyText(z.label)}</span>
                     <span className="ztrack">
                       <i style={{ width: `${Math.round(z.share * 100)}%` }} />
                     </span>

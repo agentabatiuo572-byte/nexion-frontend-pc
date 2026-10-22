@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
  * L1 · 关键指标 — 8 KPI 卡矩阵 + 单 KPI 查看明细 + 趋势/阈值叠加 + 口径锁定表。
@@ -49,7 +50,7 @@ function sparkPath(series: readonly number[], w: number, h: number): string {
 }
 const tgtLabel = (k: Kpi) => {
   const [low = 0, high = 0] = k.band ?? [];
-  return k.dir === "band" ? `健康带 ${low}–${high}${k.unit}` : `目标 ${k.dir === "lte" ? "< " : "> "}${k.target}${k.unit}`;
+  return k.dir === "band" ? `健康带 ${low}–${high}${k.unit === "d" ? "天" : k.unit}` : `目标 ${k.dir === "lte" ? "< " : "> "}${k.target}${k.unit === "d" ? "天" : k.unit}`;
 };
 const tgtValue = (k: Kpi) => (k.dir === "band" ? (k.band?.[0] ?? k.target) : k.target);
 
@@ -94,6 +95,7 @@ export function L1HeaderActions({ ctx, source }: { ctx: LCtx; source?: L1ExportS
 
 /** fx 公式渲染:fxBold 词高亮(cyan b),其余纯文本。 */
 function renderFx(fx: string, bold: string[]) {
+  fx = ({"day7 app.dau ÷ register cohort":"注册后第8天活跃人数 ÷ 同批注册人数", "store.viewed distinct user ÷ auth.register_completed":"浏览商城的注册用户数 ÷ 注册用户数"} as Record<string,string>)[fx] ?? operatorCopyText(fx);
   if (!bold.length) return fx;
   const re = new RegExp(`(${bold.map((b) => b.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "g");
   return fx.split(re).map((part, i) => (bold.includes(part) ? <b key={i}>{part}</b> : <span key={i}>{part}</span>));
@@ -359,9 +361,9 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
           </g>
         )}
         <line x1={P} y1={Y(tgt)} x2={W - P} y2={Y(tgt)} stroke="var(--success)" strokeWidth={1.4} strokeDasharray="5 4" />
-        <text x={W - P} y={Y(tgt) - 5} fontSize={11} fill="var(--success)" textAnchor="end">目标 {tgt}{k.unit}</text>
+        <text x={W - P} y={Y(tgt) - 5} fontSize={11} fill="var(--success)" textAnchor="end">目标 {tgt}{k.unit === "d" ? "天" : k.unit}</text>
         <line x1={P} y1={Y(yl)} x2={W - P} y2={Y(yl)} stroke="var(--warning)" strokeWidth={1.2} strokeDasharray="3 4" />
-        <text x={W - P} y={Y(yl) + 13} fontSize={11} fill="var(--warning)" textAnchor="end">黄灯 {yl.toFixed(1)}{k.unit}</text>
+        <text x={W - P} y={Y(yl) + 13} fontSize={11} fill="var(--warning)" textAnchor="end">黄灯 {yl.toFixed(1)}{k.unit === "d" ? "天" : k.unit}</text>
         <path d={`${path} L${X(s.length - 1)} ${H - 26} L${X(0)} ${H - 26} Z`} fill="var(--cyan)" opacity={0.07} />
         <path d={path} fill="none" stroke="var(--cyan)" strokeWidth={2.2} />
         {s.map((v, i) => (
@@ -511,9 +513,9 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
           const goodUp = kk.dir !== "lte";
           return (
             <>
-              <div className="top"><span className="n">#{kk.n}</span><span className="nm"><AutoGloss>{kk.name}</AutoGloss></span><span className={"led " + st} /></div>
+              <div className="top"><span className="n">#{kk.n}</span><span className="nm"><AutoGloss>{operatorCopyText(kk.name)}</AutoGloss></span><span className={"led " + st} /></div>
               <div className="vrow">
-                <span className="v">{kk.available === false || kk.value == null ? "不可计算" : kk.value}<span className="u">{kk.available === false || kk.value == null ? "" : kk.unit}</span></span>
+                <span className="v">{kk.available === false || kk.value == null ? "不可计算" : kk.value}<span className="u">{kk.available === false || kk.value == null ? "" : kk.unit === "d" ? "天" : kk.unit}</span></span>
                 <span className="tgt">{tgtLabel(kk)}</span>
                 <span className={"delta " + (dUp === goodUp ? "up" : "dn")}>{ex.delta === "—" ? "环比 —" : `${dUp ? "▲" : "▼"} ${ex.delta.replace("-", "")}`}</span>
               </div>
@@ -533,7 +535,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
       {/* (b) 单 KPI 查看明细 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">关键指标详情 · #{k.n} {k.name}</span>
+          <span className="ttl">关键指标详情 · #{k.n} {operatorCopyText(k.name)}</span>
           <span className="sub">· 统计规则公式 / 分子分母 / 切片 / 趋势</span>
           <div className="r">
             <div className="chips"><span className="lb">真实切片</span>
@@ -566,7 +568,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
             <div className="nd">
               <div className="it"><div className="k">分子(实时)</div><div className="v" style={{ color: "var(--cyan)" }}>{ext.num}</div></div>
               <div className="it"><div className="k">分母(实时)</div><div className="v">{ext.den}</div></div>
-              <div className="it"><div className="k">当前值</div><div className="v" style={{ color: k.available === false || k.value == null ? "var(--ink-4)" : "var(--success)" }}>{k.available === false || k.value == null ? "不可计算" : `${k.value}${k.unit}`}</div></div>
+              <div className="it"><div className="k">当前值</div><div className="v" style={{ color: k.available === false || k.value == null ? "var(--ink-4)" : "var(--success)" }}>{k.available === false || k.value == null ? "不可计算" : `${k.value}${k.unit === "d" ? "天" : k.unit}`}</div></div>
               <div className="it"><div className="k">目标值</div><div className="v" style={{ color: "var(--ink-3)" }}>{tgtLabel(k).replace("目标 ", "").replace("健康带 ", "")}</div></div>
             </div>
             <div className="ltint" style={{ fontSize: 12 }}><b>解读</b> · <AutoGloss>{ext.note}</AutoGloss></div>
@@ -604,12 +606,12 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
           <div className="ovl-picks">
             {KPIS.map((kk, i) => {
               const on = ovlSel.includes(i);
-              return <button key={kk.n} className={"chip" + (on ? " sel" : "")} aria-pressed={on} style={on ? { background: KPI_COLORS[i], color: "#0A0A0A" } : undefined} onClick={() => toggleOvl(i)}>#{kk.n} {kk.name}</button>;
+              return <button key={kk.n} className={"chip" + (on ? " sel" : "")} aria-pressed={on} style={on ? { background: KPI_COLORS[i], color: "#0A0A0A" } : undefined} onClick={() => toggleOvl(i)}>#{kk.n} {operatorCopyText(kk.name)}</button>;
             })}
           </div>
           {ovlChart()}
           <div className="legend">
-            {ovlSel.map((i) => <span key={i} className="it"><span className="lsw" style={{ background: KPI_COLORS[i] }} />#{KPIS[i].n} {KPIS[i].name}</span>)}
+            {ovlSel.map((i) => <span key={i} className="it"><span className="lsw" style={{ background: KPI_COLORS[i] }} />#{KPIS[i].n} {operatorCopyText(KPIS[i].name)}</span>)}
             <span className="it" style={{ color: "var(--ink-4)" }}>纵轴 = 实际值 ÷ 目标值(达标线 100)</span>
           </div>
         </div>
@@ -631,7 +633,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
                 return (
                   <tr key={kk.n}>
                     <td className="mono">{kk.n}</td>
-                    <td style={{ fontWeight: 600, color: "var(--ink)" }}><AutoGloss>{kk.name}</AutoGloss></td>
+                    <td style={{ fontWeight: 600, color: "var(--ink)" }}><AutoGloss>{operatorCopyText(kk.name)}</AutoGloss></td>
                     <td><div style={{ color: "var(--ink-2)" }}><AutoGloss>{KPI_PLAIN[kk.n]}</AutoGloss></div><div className="mono fx" style={{ color: "var(--ink-4)", fontSize: 11.5, marginTop: 3 }}>{renderFx(KPI_EXT[kk.n].fx, KPI_EXT[kk.n].fxBold)}</div></td>
                     <td className="num mono" style={{ color: "var(--ink)" }}>{tgtLabel(kk).replace("目标 ", "").replace("健康带 ", "")}</td>
                     <td><span className="lcode">{kk.vis}</span></td>

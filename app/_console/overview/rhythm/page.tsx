@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import "../b-domain.css";
 import "./rhythm.css";
@@ -239,7 +240,7 @@ export default function RhythmPage() {
               <div className="b4-lever-list">
                 {data.monthLeverCombo.map((lever) => (
                   <article key={`${lever.key}-${lever.label}`}>
-                    <span>{lever.key}</span>
+                    <span title={lever.key}>运营杠杆</span>
                     <b>{lever.label}</b>
                     <small>{lever.purpose}</small>
                   </article>
@@ -270,10 +271,10 @@ export default function RhythmPage() {
                 <tbody>
                   {data.dials.map((dial) => (
                     <tr key={dial.key} data-testid="b4-dial-row">
-                      <td><b>{dial.label}</b><small>{dial.key}</small></td>
+                      <td><b>{dial.label}</b></td>
                       <td className="mono">{dialValue(dial.currentValue, dial.unit)}</td>
                       <td>{dial.source === "H1" ? "运营阶段设置" : "运营阶段记录"}</td>
-                      <td><span className={dial.v1Active ? "b4-status active" : "b4-status pending"}>{dial.v1Status}</span></td>
+                      <td><span className={dial.v1Active ? "b4-status active" : "b4-status pending"}>{operatorCopyText(dial.v1Status)}</span></td>
                       {canJump && (
                         <td>
                           <a
@@ -316,19 +317,19 @@ export default function RhythmPage() {
                         if (!busy) void openH1("phaseAttribution");
                       }}
                     >
-                      <b>{item.label}</b><span>记录 B4 → H1 跳转审计</span>
+                      <b>{operatorCopyText(item.label)}</b><span>记录 B4 → H1 跳转审计</span>
                     </a>
                   )
                 ) : canCross(item.href) ? (
                   <Link key={item.key} href={item.href} className="b4-link-card">
-                    <b>{item.label}</b>
+                    <b>{operatorCopyText(item.label)}</b>
                     <span>{item.key === "B3"
                       ? `按 ${filters.phase === ALL ? "全部阶段" : filters.phase} 查看`
                       : "查看全局资金事实"}</span>
                   </Link>
                 ) : (
                   <span key={item.key} className="b4-link-card" aria-disabled="true">
-                    <b>{item.label}</b><span>目标域无权限</span>
+                    <b>{operatorCopyText(item.label)}</b><span>目标域无权限</span>
                   </span>
                 )
               ))}

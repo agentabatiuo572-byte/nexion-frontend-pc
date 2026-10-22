@@ -1,4 +1,5 @@
 "use client";
+import { operatorNicknameText, nexGridBrandText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 
@@ -171,9 +172,9 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
 
   const adjApy = (pool: G1Pool) => {
     openActionConfirm({
-      action: `质押 年化收益率 调整 · ${pool.product} · ${displayTerm(pool)}`,
+      action: `质押 年化收益率 调整 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
       detail: <>
-        当前 年化收益率 {pool.apyDisplay} · 影响产品 <b>{pool.product} · {displayTerm(pool)}</b> · 影响范围 <b>仅新单</b>(存量按开始锁仓时锁定值结算,不追溯)。
+        当前 年化收益率 {pool.apyDisplay} · 影响产品 <b>{nexGridBrandText(pool.product)} · {displayTerm(pool)}</b> · 影响范围 <b>仅新单</b>(存量按开始锁仓时锁定值结算,不追溯)。
         <div className="gtint" data-proof="g1-apy-preview" style={{ marginTop: 10 }}>
           <div><b>调整影响预览</b></div>
           <div>当前锁仓本金:<b>{pool.lockedDisplay}</b> · 计息中持仓:<b>{fmtCount(stats.activeCount)}</b> 单</div>
@@ -188,14 +189,14 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
         if (!value) return;
         await mutate(`apy:${pool.tierKey}`, () => updateG1StakingPoolParam(
           pool.tierKey, "apy", value, reason, currentAdminOperator(),
-        ), `年化收益率 已调整 · ${pool.product} · ${displayTerm(pool)}`);
+        ), `年化收益率 已调整 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`);
       },
     });
   };
 
   const adjPenalty = (pool: G1Pool) => {
     openActionConfirm({
-      action: `质押 提前赎回罚款调整 · ${pool.product} · ${displayTerm(pool)}`,
+      action: `质押 提前赎回罚款调整 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
       detail: <>当前罚款 {operatorCopyText(pool.penaltyDisplay)}。降罚款是放大流出,提交后端会按真实 B1 覆盖率红线校验(当前 {cov}%,红线 {redline}%)。只对新单生效。</>,
       coverage: { coverageRatio: coverage.coverageRatio, redlinePct: coverage.redlinePct },
       edit: { kind: "number", current: pool.penalty, unit: "%", min: 0, max: 100, step: 0.01, disallowCurrent: true, amplifiesWhen: "decrease" },
@@ -203,14 +204,14 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
         if (!value) return;
         await mutate(`penalty:${pool.tierKey}`, () => updateG1StakingPoolParam(
           pool.tierKey, "penalty", value, reason, currentAdminOperator(),
-        ), `提前赎回罚款已调整 · ${pool.product} · ${displayTerm(pool)}`);
+        ), `提前赎回罚款已调整 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`);
       },
     });
   };
 
   const adjMin = (pool: G1Pool) => {
     openActionConfirm({
-      action: `质押 最小额调整 · ${pool.product} · ${displayTerm(pool)}`,
+      action: `质押 最小额调整 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
       detail: <>当前最小额 {pool.minDisplayValue}。最小额收紧不影响锁仓中的订单,只对新单生效。</>,
       coverage: { coverageRatio: coverage.coverageRatio, redlinePct: coverage.redlinePct },
       edit: { kind: "number", current: pool.minStake, unit: "USDT", min: 0, max: 1_000_000_000, step: 0.01, disallowCurrent: true, amplifiesWhen: "decrease" },
@@ -218,7 +219,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
         if (!value) return;
         await mutate(`min:${pool.tierKey}`, () => updateG1StakingPoolParam(
           pool.tierKey, "min", value, reason, currentAdminOperator(),
-        ), `最小锁仓额已调整 · ${pool.product} · ${displayTerm(pool)}`);
+        ), `最小锁仓额已调整 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`);
       },
     });
   };
@@ -226,14 +227,14 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
   const togglePool = (pool: G1Pool) => {
     const nextEnabled = !pool.enabled;
     openActionConfirm({
-      action: `${pool.enabled ? "停售" : "恢复开售"}档位 · ${pool.product} · ${displayTerm(pool)}`,
+      action: `${pool.enabled ? "停售" : "恢复开售"}档位 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
       detail: <>{pool.enabled ? "停售只停新锁仓,锁仓中的订单照常计息到期。" : `恢复该档新锁仓开放,后端会按真实 B1 覆盖率红线校验(当前 ${cov}%,红线 ${redline}%)。`}操作确认。</>,
       amplifies: nextEnabled,
       coverage: { coverageRatio: coverage.coverageRatio, redlinePct: coverage.redlinePct },
       run: async (reason) => {
         await mutate(`sale:${pool.tierKey}`, () => updateG1StakingPoolSaleStatus(
           pool.tierKey, nextEnabled, reason, currentAdminOperator(),
-        ), `${nextEnabled ? "已恢复开售" : "已停售"} · ${pool.product} · ${displayTerm(pool)}`);
+        ), `${nextEnabled ? "已恢复开售" : "已停售"} · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`);
       },
     });
   };
@@ -258,7 +259,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
   const resumeTier = (pool: G1Pool) => {
     if (!pool.killed) return;
     openActionConfirm({
-      action: `解除单档紧急暂停 · ${pool.product} · ${displayTerm(pool)}`,
+      action: `解除单档紧急暂停 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
       detail: <>解除后该档立即恢复接收新锁仓单。恢复属放大流出,提交时由后端重新校验 B1 兑付覆盖率红线(当前 {cov}%,红线 {redline}%),不达标会被拒绝。</>,
       amplifies: true,
       coverage: { coverageRatio: coverage.coverageRatio, redlinePct: coverage.redlinePct },
@@ -278,7 +279,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
           currentAdminOperator(),
           "MANUAL_RISK_REVIEW",
           businessValue?.dispositionPlan ?? "",
-        ), `已解除紧急暂停 · ${pool.product} · ${displayTerm(pool)}`);
+        ), `已解除紧急暂停 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`);
       },
     });
   };
@@ -286,7 +287,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
   const killTier = (pool: G1Pool) => {
     if (pool.killed) return;
     openActionConfirm({
-      action: `单档紧急暂停 · ${pool.product} · ${displayTerm(pool)}`,
+      action: `单档紧急暂停 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
       detail: <>紧急暂停该档会立即停止新锁仓,并由后端同时完成锁仓中的订单处置、A2 审计与事件记录。解除紧急暂停在本页操作,需重新过 B1 兑付覆盖率红线。</>,
       businessForm: {
         kind: "multi-field",
@@ -305,7 +306,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
           currentAdminOperator(),
           businessValue?.triggerBasis ?? "",
           businessValue?.dispositionPlan ?? "",
-        ), `已暂停 · ${pool.product} · ${displayTerm(pool)}`);
+        ), `已暂停 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`);
       },
     });
   };
@@ -470,8 +471,8 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
               {dd.rows.map((row) => (
                 <tr key={row.positionNo}>
                   <td className="mono" style={{ color: "var(--ink)" }}>{row.positionNo}</td>
-                  <td><span className="mono">{row.userNo}</span><div className="tiny" style={{ color: "var(--ink-3)" }}>{row.nickname}</div></td>
-                  <td>{row.tier}</td>
+                  <td><span className="mono">{row.userNo}</span><div className="tiny" style={{ color: "var(--ink-3)" }}>{operatorNicknameText(row.nickname)}</div></td>
+                  <td>{operatorCopyText(row.tier)}</td>
                   <td className="mono" style={{ fontWeight: 700 }}>{operatorCopyText(row.amount)}</td>
                   <td className="mono">{row.lockedApy}<div className="tiny" style={{ color: "var(--ink-3)" }}>{row.earlyPenalty}</div></td>
                   <td className="mono" style={{ fontSize: 11 }}>{row.lockedAt}<div className="tiny" style={{ color: "var(--ink-3)" }}>{row.unlockAt}</div></td>

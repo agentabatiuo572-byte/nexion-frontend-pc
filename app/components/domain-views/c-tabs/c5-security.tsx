@@ -1,4 +1,5 @@
 "use client";
+import { operatorNicknameText, userNicknameText, platformSessionDeviceText } from "@/lib/admin/brand-copy";
 import { PhoneReplacementPanel } from "./phone-replacement-panel";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
@@ -85,7 +86,7 @@ function userIdOf(row?: UserSecurityUserRow | null) {
 
 function userLabel(row?: UserSecurityUserRow | null) {
   if (!row) return "未选择用户";
-  return `${text(row.userNo)} · ${text(row.nickname)}`;
+  return `${text(row.userNo)} · ${operatorNicknameText(text(row.nickname))}`;
 }
 
 function profileKey(account?: User360Profile | null) {
@@ -95,7 +96,7 @@ function profileKey(account?: User360Profile | null) {
 
 function profileLabel(account?: User360Profile | null) {
   if (!account) return "未选择用户";
-  return `${text(account.userNo, text(account.id))} · ${text(account.nickname)}`;
+  return `${text(account.userNo, text(account.id))} · ${userNicknameText(text(account.nickname), account.phoneMasked)}`;
 }
 
 function sessionId(session?: UserSession | null) {
@@ -613,7 +614,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
                   return (
                     <tr key={key ?? profileLabel(account)} aria-selected={selected}>
                       <td className="mono">{text(account.userNo, text(account.id))}</td>
-                      <td>{text(account.nickname)}</td>
+                      <td>{userNicknameText(text(account.nickname), account.phoneMasked)}</td>
                       <td className="mono">{text(account.phoneMasked)}</td>
                       <td><button className="l-btn sm" disabled={busy || loading || !key || selected} onClick={() => selectLookupUser(account)}>
                         {selected ? "已选择" : "查看安全信息"}
@@ -652,7 +653,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
                     <tr key={id} className="click" style={!active ? { opacity: 0.62 } : undefined} onClick={() => setSsId(id)}>
                       <td className="mono" style={{ color: "var(--ink)" }}>{maskSessionId(id)} <span style={{ fontSize: 10.5, color: "var(--c-ac)" }}>详情›</span></td>
                       <td className="mono" style={{ fontSize: 11.5 }}>{text(session.clientIpMasked)}</td>
-                      <td style={{ fontSize: 12 }}>{text(session.deviceName)}</td>
+                      <td style={{ fontSize: 12 }}>{platformSessionDeviceText(text(session.deviceName))}</td>
                       <td><span className={`bdg ${sessionTone(session.status)}`}>{sessionStatusLabel(session.status)}</span></td>
                       <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>
                         {sessionTimeAnomaly(session) ? <span style={{ color: "var(--v5-warning)" }} title="服务端时间顺序异常，请核对会话原始记录">时间异常 · 查看详情</span> : formatDateTime(session.lastActiveAt ?? session.issuedAt)}
@@ -727,7 +728,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
                 <div className="lock-row" key={id} onClick={() => setLockId(id)}>
                   <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{text(row.userNo)} <span style={{ fontSize: 10.5, color: "var(--c-ac)" }}>详情›</span></span>
                   <span className={`bdg ${longLock ? "bad" : "warn"}`}>{text(row.lockLabel)}</span>
-                  <span style={{ flex: 1, fontSize: 12, color: "var(--ink-3)" }}>{text(row.nickname)} · {text(row.lockReason)}</span>
+                  <span style={{ flex: 1, fontSize: 12, color: "var(--ink-3)" }}>{operatorNicknameText(text(row.nickname))} · {text(row.lockReason)}</span>
                   <span className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(row.lockLeft)}</span>
                   <button className={`l-btn sm ${longLock ? "mc" : ""}`} disabled={busy || (longLock ? !canUnlockLong : !canUnlockShort)} onClick={(event) => { event.stopPropagation(); unlockUser(row); }}>
                     {(longLock ? canUnlockLong : canUnlockShort) ? "解锁" : "无权限"}
@@ -747,7 +748,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
           footer={<button className="l-btn danger" disabled={busy || !canRevokeOne || text(selectedSession.status, "").toUpperCase() !== "ACTIVE"} onClick={() => revokeOne(sessionId(selectedSession))}>退出该设备</button>}>
           <SecLabel>服务器会话 · 北京时间（UTC+08）</SecLabel>
           <div className="kv"><span className="k">刷新凭证</span><span className="v mono">{maskSessionId(sessionId(selectedSession))}</span></div>
-          <div className="kv"><span className="k">设备</span><span className="v">{text(selectedSession.deviceName)}</span></div>
+          <div className="kv"><span className="k">设备</span><span className="v">{platformSessionDeviceText(text(selectedSession.deviceName))}</span></div>
           <div className="kv"><span className="k">IP</span><span className="v mono">{text(selectedSession.clientIpMasked)}</span></div>
           <div className="kv"><span className="k">状态</span><span className="v">{sessionStatusLabel(selectedSession.status)}</span></div>
           <div className="kv"><span className="k">签发</span><span className="v mono">{text(selectedSession.issuedAt)}</span></div>
@@ -758,11 +759,11 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       )}
 
       {selectedLock && (
-        <Drawer title={`锁定详情 · ${text(selectedLock.userNo)}`} sub={`${text(selectedLock.nickname)} · ${text(selectedLock.lockLabel)}`} onClose={() => setLockId(null)}
+        <Drawer title={`锁定详情 · ${text(selectedLock.userNo)}`} sub={`${operatorNicknameText(text(selectedLock.nickname))} · ${text(selectedLock.lockLabel)}`} onClose={() => setLockId(null)}
           footer={<button className={`l-btn ${selectedLock.lockKind === "LONG" ? "mc" : "primary"}`} disabled={busy || (selectedLock.lockKind === "LONG" ? !canUnlockLong : !canUnlockShort)} onClick={() => unlockUser(selectedLock)}>解除锁定</button>}>
           <SecLabel>锁定事实</SecLabel>
           <div className="kv"><span className="k">用户编码</span><span className="v mono">{text(selectedLock.userNo)}</span></div>
-          <div className="kv"><span className="k">用户昵称</span><span className="v">{text(selectedLock.nickname)}</span></div>
+          <div className="kv"><span className="k">用户昵称</span><span className="v">{operatorNicknameText(text(selectedLock.nickname))}</span></div>
           <div className="kv"><span className="k">失败次数</span><span className="v mono">{toNumber(selectedLock.loginFailCount)}</span></div>
           <div className="kv"><span className="k">锁定类型</span><span className="v">{text(selectedLock.lockLabel)}</span></div>
           <div className="kv"><span className="k">强制重置</span><span className="v">{selectedLock.passwordResetRequired ? "是" : "否"}</span></div>

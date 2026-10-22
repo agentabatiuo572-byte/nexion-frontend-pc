@@ -1,4 +1,5 @@
 "use client";
+import { catalogSkuBrandText } from "@/lib/admin/brand-copy";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 
 /** F1 · 团队等级晋升 —— 13 阶阶梯(V-badge 热度渐变 + log 人口条)+ 右栏人口金字塔 / 治理口径。
@@ -43,7 +44,7 @@ function rewardLabel(it: OpsVRankRewardItem, voucherLabels: Record<string, strin
     case "usdt": return `USDT $${(it.amount ?? 0).toLocaleString()}`;
     case "nex": return `${(it.amount ?? 0).toLocaleString()} UVEL`;
     case "voucher": return `券 · ${voucherLabels[it.voucherId ?? ""] ?? it.voucherId ?? "—"}`;
-    case "sku": return `商品 · ${skuLabels[it.skuId ?? ""] ?? it.skuId ?? "—"}`;
+    case "sku": return `商品 · ${catalogSkuBrandText(it.skuId ?? undefined, skuLabels[it.skuId ?? ""] ?? it.skuId ?? "—")}`;
     case "custom": return safeCustomLabel(it.custom);
     default: return "—";
   }
@@ -249,8 +250,8 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     try { return JSON.stringify(snapshot); } catch { return "—"; }
   };
   const rewardPayoutLabel = (record: (typeof ctx.payoutRecords)[number]) => {
-    if (record.rewardType === "USDT" || record.rewardType === "NEX") {
-      return `${record.amount.toLocaleString()} ${nexGridBrandText(record.rewardType)}`;
+    if (["USDT", "NEX", "UVEL"].includes(record.rewardType.toUpperCase())) {
+      return `${record.amount.toLocaleString()} ${nexGridBrandText(record.rewardType.toUpperCase())}`;
     }
     // 派发台账同样可能带内部标识符(custom_label 是自由文本),同 #30 一并归一。
     return record.voucherId || record.skuId || safeCustomLabel(record.customLabel, record.rewardType || "—") || record.rewardType || "—";

@@ -32,7 +32,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   const lookupKw = lookupText.trim().toLowerCase();
   const userOptions = useMemo(() => {
     const source = lookupKw
-      ? rows.filter((row) => `${row.user} ${row.state} ${row.a} ${row.b} ${row.match} ${row.today}`.toLowerCase().includes(lookupKw))
+      ? rows.filter((row) => `${row.user} ${({ paid: "已结算", blocked: "已阻断", pending: "待结算", processing: "结算中", failed: "结算失败" } as Record<string, string>)[row.state.toLowerCase()] ?? operatorCopyText(row.state)} ${row.a} ${row.b} ${row.match} ${row.today}`.toLowerCase().includes(lookupKw))
       : rows;
     return source.slice(0, 12);
   }, [lookupKw, rows]);
@@ -109,8 +109,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
         {ctx.f3Metrics.map((metric) => (
           <div key={metric.id} className={metricClass(metric.tone)}>
             <div className="k">{metric.name}</div>
-            <div className="v">{metric.value}</div>
-            <div className="sub">{metric.id === "residualPool" ? text(residualSub) : metric.sub}</div>
+            <div className="v">{operatorCopyText(metric.value)}</div>
+            <div className="sub">{metric.id === "residualPool" ? text(residualSub) : operatorCopyText(metric.sub)}</div>
           </div>
         ))}
       </div>
@@ -215,7 +215,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => selectUser(row.user)}
                   >
-                    <span className="bin-user-main"><b>{row.user}</b><span>{row.state}</span></span>
+                    <span className="bin-user-main"><b>{row.user}</b><span>{({ paid: "已结算", blocked: "已阻断", pending: "待结算", processing: "结算中", failed: "结算失败" } as Record<string, string>)[row.state.toLowerCase()] ?? operatorCopyText(row.state)}</span></span>
                     <span className="bin-user-meta">A {usd(row.a)} · B {usd(row.b)} · 当日 {row.today ? usd(row.today) : "—"}</span>
                   </button>
                 ))}
@@ -232,7 +232,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           >
             <option value="">全部状态</option>
             {Array.from(new Set(rows.map((row) => row.state).filter(Boolean))).sort().map((state) => (
-              <option key={state} value={state}>{state}</option>
+              <option key={state} value={state}>{({paid:"已结算",blocked:"已阻断",pending:"待结算",processing:"结算中",failed:"结算失败"} as Record<string,string>)[state.toLowerCase()] ?? operatorCopyText(state)}</option>
             ))}
           </select>
           <select
@@ -256,7 +256,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             <span className="bar b"><span className="f" style={{ width: `${(row.b / maxTrackGmv) * 100}%` }} /><span className="blbl">{usd(row.b)}</span></span>
             <span className={`match${row.match ? "" : " zero"}`}>{row.match ? usd(row.match) : "—"}</span>
             <span className="today">{row.today ? usd(row.today) : "—"}</span>
-            <span className="state"><Badge tone={row.tone}>{row.state}</Badge></span>
+            <span className="state"><Badge tone={row.tone}>{({ paid: "已结算", blocked: "已阻断", pending: "待结算", processing: "结算中", failed: "结算失败" } as Record<string, string>)[row.state.toLowerCase()] ?? operatorCopyText(row.state)}</Badge></span>
           </div>
         ))}
         {pager.pageRows.length === 0 && <div className="bin-empty">无匹配用户 · 请从下拉结果选择用户</div>}

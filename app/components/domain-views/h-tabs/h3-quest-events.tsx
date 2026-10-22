@@ -1050,14 +1050,14 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const openWheelGuard = (guard: { key: string; label: string; value: string }) => {
     const current = text(guard.value);
     openActionConfirm({
-      action: `转盘安全限制 · ${guard.label}`,
-      detail: <>当前值 <b>{current}</b>；确认后更新转盘安全限制；内容已变化时须刷新后再确认。</>,
+      action: `转盘安全限制 · ${({ budget: "每日实际奖励预算（美元）", cap: "各奖档每日库存", kill: "实际奖品发放开关" } as Record<string,string>)[guard.key] ?? operatorCopyText(guard.label)}`,
+      detail: <>当前值 <b>{guard.key === "cap" ? "按各奖档每日库存" : ({on:"启用",off:"停用"} as Record<string,string>)[current] ?? operatorCopyText(current)}</b>；确认后更新转盘安全限制；内容已变化时须刷新后再确认。</>,
       amplifies: guard.key !== "kill",
       edit: { kind: "text", current },
       run: async (reason, value) => {
         if (!value) return;
         apply(await updateH4WheelGuard(guard.key, value, current, reason));
-        toast(`· 转盘安全限制「${guard.label}」已更新`);
+        toast(`· 转盘安全限制「${({ budget: "每日实际奖励预算（美元）", cap: "各奖档每日库存", kill: "实际奖品发放开关" } as Record<string,string>)[guard.key] ?? operatorCopyText(guard.label)}」已更新`);
       },
     });
   };
@@ -1329,7 +1329,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               return rows.map((row) => (
                 <tr key={`${item.entity}:${item.code}:${row.field}`}>
                   <td className="mono">{row.label}</td>
-                  <td>{row.source}</td>
+                  <td>{operatorCopyText(row.source)}</td>
                   {(["en", "zh", "vi"] as const).map((language) => {
                     const current = localizedValue(item.entity, item.code, row.field, language);
                     // 目标语言缺失(zh/vi)是发布阻断项,不是可忽略的空值 —— 单独标出。
@@ -1419,7 +1419,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                     const active = text(task.status, "") === "active";
                     return (
                       <tr key={id}>
-                        <td style={{ fontWeight: 600, color: active ? "var(--ink)" : "var(--ink-3)" }}>{text(task.task)}</td>
+                        <td style={{ fontWeight: 600, color: active ? "var(--ink)" : "var(--ink-3)" }}>{operatorCopyText(text(task.task))}</td>
                         <td><span className="bdg">{TASK_CATEGORY_LABELS[text(task.category, "explore")] ?? "其他任务分类"}</span></td>
                         <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(task.href)}</td>
                         <td style={{ color: "var(--ink-3)" }}>新进入用户的快照总奖励</td>
@@ -1485,7 +1485,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                     const [statusLabel, statusTone] = taskStatusMeta(task);
                     return (
                       <tr key={`${task.cond}-${index}`}>
-                        <td style={{ fontWeight: 600 }}>{text(task.cond)}</td>
+                        <td style={{ fontWeight: 600 }}>{operatorCopyText(text(task.cond))}</td>
                         <td><span className="bdg">{TASK_CATEGORY_LABELS[text(task.category, "explore")] ?? "其他任务分类"}</span></td>
                         <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(task.href)}</td>
                         <td className="num mono" style={{ fontWeight: 700 }}>{nexGridBrandText(text(task.reward))}</td>
@@ -1526,7 +1526,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                     const [statusLabel, statusTone] = taskStatusMeta(task);
                     return (
                       <tr key={`${task.cond}-${index}`}>
-                        <td style={{ fontWeight: 600 }}>{text(task.cond)}</td>
+                        <td style={{ fontWeight: 600 }}>{operatorCopyText(text(task.cond))}</td>
                         <td><span className="bdg">{TASK_CATEGORY_LABELS[text(task.category, "explore")] ?? "其他任务分类"}</span></td>
                         <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(task.href)}</td>
                         <td className="num mono" style={{ fontWeight: 700 }}>{nexGridBrandText(text(task.reward))}</td>
@@ -1636,7 +1636,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                 const contract = contractForTask(task, model.taskContracts, index);
                 return (
                   <tr key={`${text(task.id, String(index))}-${text(contract.taskKey, String(index))}`}>
-                    <td style={{ fontWeight: 600, color: "var(--ink)" }}>{text(task.task)}</td>
+                    <td style={{ fontWeight: 600, color: "var(--ink)" }}>{operatorCopyText(text(task.task))}</td>
                     <td className="mono" style={{ fontSize: 11 }}>{text(contract.taskKey)}</td>
                     <td className="mono" style={{ fontSize: 11 }}>{text(contract.serverEvent)}</td>
                     <td className="mono" style={{ fontSize: 11, color: text(contract.downstream) === "-" ? "var(--ink-4)" : undefined }}>{text(contract.downstream)}</td>
@@ -1691,10 +1691,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                 const [statusLabel, statusTone] = statusMeta(mission.status);
                 return (
                   <tr key={text(mission.id)}>
-                    <td style={{ fontWeight: 600 }}>{text(mission.theme)}</td>
+                    <td style={{ fontWeight: 600 }}>{operatorCopyText(text(mission.theme))}</td>
                     <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{text(mission.age)}</td>
                     <td className="num mono" style={{ fontWeight: 700 }}>{nexGridBrandText(text(mission.reward))}</td>
-                    <td style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(mission.goals)}</td>
+                    <td style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{operatorCopyText(text(mission.goals))}</td>
                     <td><span className={`bdg ${statusTone}`}>{statusLabel}</span></td>
                     <td style={{ textAlign: "right" }}>
                       <button className="l-btn sm mc" onClick={() => openTaskReward(`monthly.${text(mission.id)}.reward`, text(mission.theme), text(mission.reward))} disabled={!canModuleWrite}>改奖励</button>
@@ -1732,7 +1732,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           </div>
           {(model.taskMonitor ?? []).map((item) => (
             <div className="p-row" key={item.label}>
-              <span className="k"><b>{item.label}:</b> {item.note}</span>
+              <span className="k"><b>{operatorCopyText(item.label)}:</b> {operatorCopyText(item.note)}</span>
             </div>
           ))}
           <div className="htint dim" style={{ marginTop: 8, fontSize: 12 }}>
@@ -1763,13 +1763,13 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           </div>
           <div className="p-row">
             <span className="k">倒计时窗口</span>
-            <span className="v">{text(promoBanner.countdownDays)}d {text(promoBanner.countdownHours)}h</span>
+            <span className="v">{text(promoBanner.countdownDays)} 天 {text(promoBanner.countdownHours)} 小时</span>
             <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.countdownDays", "转化卡倒计时天数", text(promoBanner.countdownDays), 0, 365, 1)} disabled={!canModuleWrite}>改天数</button>
             <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.countdownHours", "转化卡倒计时小时", text(promoBanner.countdownHours), 0, 23, 1)} disabled={!canModuleWrite}>改小时</button>
           </div>
           <div className="p-row">
             <span className="k">目标设备 / 日产展示</span>
-            <span className="v">{text(promoBanner.targetDevice)} · ${text(promoBanner.targetDaily)}/d</span>
+            <span className="v">{nexGridBrandText(text(promoBanner.targetDevice))} · ${text(promoBanner.targetDaily)}/天</span>
             <button className="l-btn sm mc" onClick={() => openSimpleConfig("promoBanner.targetDevice", "转化卡目标设备", text(promoBanner.targetDevice), false)} disabled={!canModuleWrite}>改设备</button>
             <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.targetDaily", "转化卡日产展示", text(promoBanner.targetDaily), 0, 1000000, 0.01)} disabled={!canModuleWrite}>改日产</button>
           </div>
@@ -1931,11 +1931,11 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               {(model.wheelGuards ?? []).map((guard) => (
                 <div key={guard.key} className="htint" style={{ fontSize: 11.5, display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ flex: 1 }}>
-                    <b>{guard.label}</b> {guard.value}
+                    <b>{({ budget: "每日实际奖励预算（美元）", cap: "各奖档每日库存", kill: "实际奖品发放开关" } as Record<string,string>)[guard.key] ?? operatorCopyText(guard.label)}</b> {guard.key === "cap" ? "按各奖档每日库存" : ({ on: "启用", off: "停用" } as Record<string,string>)[guard.value] ?? operatorCopyText(guard.value)}
                     {guard.note && (
                       <>
                         <br />
-                        <span style={{ color: "var(--ink-4)" }}>{guard.note}</span>
+                        <span style={{ color: "var(--ink-4)" }}>{({ budget: "按每日实际发放金额限制奖励预算。", cap: "每日数量由各奖项库存决定。", kill: "关闭后不再发放实际奖品。" } as Record<string,string>)[guard.key] ?? operatorCopyText(guard.note)}</span>
                       </>
                     )}
                   </span>

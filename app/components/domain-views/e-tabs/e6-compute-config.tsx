@@ -83,11 +83,11 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
     const next = !current;
     if (next && !downloadReady) return;
     openActionConfirm({
-      name: `${next ? "开启" : "关闭"}${label}`,
+      name: `${next ? "开启" : "关闭"}${operatorCopyText(label)}`,
       op: "param-fixed",
       paramKey: e6FlagKey(key),
       fixedVal: next ? "on" : "off",
-      detail: `${next ? "开启" : "关闭"}「${label}」。批准后保存服务端开关并同步用户端配置缓存；开启前必须先配置有效的 HTTPS 安装包地址，App 才会开放下载和配对入口。`,
+      detail: `${next ? "开启" : "关闭"}「${operatorCopyText(label)}」。批准后保存服务端开关并同步用户端配置缓存；开启前必须先配置有效的 HTTPS 安装包地址，App 才会开放下载和配对入口。`,
     });
   };
 
@@ -98,7 +98,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
       op: "param",
       paramKey: e6CoeffKey(c.key),
       edit: {
-        kind: "number", current: c.value, unit: c.unit,
+        kind: "number", current: c.value, unit: operatorCopyText(c.unit),
         min: Number.MIN_VALUE,
         disallowCurrent: true,
       },
@@ -112,7 +112,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
       name: `${operatorCopyText(p.label)}调整`,
       op: "param",
       paramKey: e6YieldKey(p.key),
-      edit: { kind: "number", current: p.value, unit: p.unit, min: Number.MIN_VALUE, disallowCurrent: true },
+      edit: { kind: "number", current: p.value, unit: operatorCopyText(p.unit), min: Number.MIN_VALUE, disallowCurrent: true },
       detail: `${operatorCopyText(p.label)}用于本页电脑显卡收益预览,并供后续 电脑客户端 读取;不回溯已结算收益。`,
     });
   };

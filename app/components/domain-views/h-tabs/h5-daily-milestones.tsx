@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 import { useEffect, useState } from "react";
@@ -102,7 +103,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       if (!nextValue) return;
       const def = findHighOp("h5_checkin_rule")!;
       void propose(ctx.toast, {
-        action: `签到规则 · ${rule.name}`,
+        action: `签到规则 · ${operatorCopyText(rule.name)}`,
         obj: rule.key,
         before: current,
         after: String(nextValue),
@@ -118,7 +119,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     };
     if (rule.hot) {
       openActionConfirm({
-        action: `签到规则 · ${rule.name}`,
+        action: `签到规则 · ${operatorCopyText(rule.name)}`,
         detail: <>当前 <b>{current}</b>。幸运概率由后端校验两档合计不超过 100%。</>,
         amplifies: true,
         edit: { kind: "number", current: currentNumber || current },
@@ -127,7 +128,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       return;
     }
     openConfirm({
-      action: `签到规则 · ${rule.name}`,
+      action: `签到规则 · ${operatorCopyText(rule.name)}`,
       detail: <>当前 <b>{current}</b>,提交后写入后端配置。</>,
       chips: [["写后端配置", "ready"], ["审计留痕", "done"]],
       reason: true,
@@ -140,7 +141,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const openStreak = (milestone: StreakMilestone) => {
     openActionConfirm({
       action: `连签里程碑 · ${milestone.day}`,
-      detail: <>当前奖励 <b>{nexGridBrandText(milestone.reward)}</b>,升高奖励时后端会检查覆盖率红线。</>,
+      detail: <>当前奖励 <b>{operatorCopyText(milestone.reward)}</b>,升高奖励时后端会检查覆盖率红线。</>,
       amplifies: true,
       edit: { kind: "text", current: milestone.reward },
       run: async (reason, value) => {
@@ -153,7 +154,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
 
   const openPowerUp = (powerUp: PowerUp) => {
     openActionConfirm({
-      action: `连续签到成长奖励 · ${powerUp.label}`,
+      action: `连续签到成长奖励 · ${operatorCopyText(powerUp.label)}`,
       detail: <>当前触发天数 <b>{powerUp.day}</b>。可同步更新运营备注,两项都写后端。</>,
       amplifies: false,
       businessForm: {
@@ -176,7 +177,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           reason,
         );
         apply(next);
-        toast(`${powerUp.label} 已更新`);
+        toast(`${operatorCopyText(powerUp.label)} 已更新`);
       },
     });
   };
@@ -262,7 +263,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         </div>
         <div className="f-stat warn">
           <div className="k">本周里程碑 UVEL</div>
-          <div className="v">{text(stats.weekMsNex)}</div>
+          <div className="v">{nexGridBrandText(text(stats.weekMsNex))}</div>
           <div className="sub">覆盖率 {text(model.coverage?.coverageRatio)}% · 红线 {text(model.coverage?.redlinePct)}%</div>
         </div>
       </div>
@@ -277,11 +278,11 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
             {model.rules.map((rule) => (
               <div className="p-row" key={rule.key}>
                 <div className="k">
-                  {rule.name}
-                  {rule.sub && <small>{rule.sub}</small>}
+                  {operatorCopyText(rule.name)}
+                  {rule.sub && <small>{operatorCopyText(rule.sub)}</small>}
                 </div>
                 <span className="v">{text(rule.cur)}</span>
-                <button className={`l-btn sm${rule.hot ? " mc" : ""}`} aria-label={`调整 ${rule.name}`} onClick={() => openRule(rule)} disabled={!canRuleWrite}>
+                <button className={`l-btn sm${rule.hot ? " mc" : ""}`} aria-label={`调整 ${operatorCopyText(rule.name)}`} onClick={() => openRule(rule)} disabled={!canRuleWrite}>
                   调整
                 </button>
               </div>
@@ -328,7 +329,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 <tr key={milestone.id}>
                   <td style={{ fontWeight: 600 }}>{milestone.day}</td>
                   <td>{({nex:"UVEL奖励",NEX:"UVEL奖励",usdt:"USDT奖励",USDT:"USDT奖励",voucher:"代金券奖励"} as Record<string,string>)[text(milestone.kind)] ?? "成长奖励"}</td>
-                  <td className="num mono">{nexGridBrandText(milestone.reward)}</td>
+                  <td className="num mono">{operatorCopyText(milestone.reward)}</td>
                   <td style={{ textAlign: "right" }}>
                     <button className="l-btn sm mc" aria-label={`修改 ${milestone.day} 天连签奖励`} onClick={() => openStreak(milestone)} disabled={!canWrite}>改奖励</button>
                   </td>
@@ -348,7 +349,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           {model.powerUps.map((powerUp) => (
             <div className="p-row" key={powerUp.id}>
               <span style={{ flex: 1 }}>
-                <b>{powerUp.businessAvailable === false ? "目标业务已停用" : powerUp.businessAvailable == null && (powerUp.downstream === "/wallet/staking" || powerUp.downstream === "/market/genesis") ? "目标业务状态待核实" : powerUp.label}</b>
+                <b>{powerUp.businessAvailable === false ? "目标业务已停用" : powerUp.businessAvailable == null && (powerUp.downstream === "/wallet/staking" || powerUp.downstream === "/market/genesis") ? "目标业务状态待核实" : operatorCopyText(powerUp.label)}</b>
                 <br />
                 <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>
                   {powerUp.businessAvailable === false ? "当前不可兑现，历史权益记录保留"
@@ -364,7 +365,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 )}
               </span>
               <span className="bdg">{powerUp.day} 天</span>
-              <button className="l-btn sm mc" aria-label={`调整成长奖励 ${powerUp.label}（${powerUp.day} 天）`} onClick={() => openPowerUp(powerUp)} disabled={!canWrite}>调整</button>
+              <button className="l-btn sm mc" aria-label={`调整成长奖励 ${operatorCopyText(powerUp.label)}（${powerUp.day} 天）`} onClick={() => openPowerUp(powerUp)} disabled={!canWrite}>调整</button>
             </div>
           ))}
         </div>

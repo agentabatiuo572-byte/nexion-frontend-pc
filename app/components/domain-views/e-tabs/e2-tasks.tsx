@@ -1,3 +1,4 @@
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Btn, CodeTag, OperationConfirmModal } from "../design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
@@ -176,8 +177,8 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
               <div key={t.tier} style={{ display: "grid", gridTemplateColumns: "auto 1fr auto auto", gap: 14, alignItems: "center", paddingTop: t.tier === 1 ? 0 : 10, borderTop: t.tier === 1 ? "none" : "1px solid var(--border)" }}>
                 <span style={{ minWidth: 40, height: 26, padding: "0 8px", borderRadius: 7, background: "var(--brand-soft)", color: "var(--brand)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, fontFamily: "var(--mono)" }}>T{t.tier}</span>
                 <div className="col" style={{ gap: 2 }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>{nexGridBrandText(t.name)}</span>
-                  <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{nexGridBrandText(t.note)}</span>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>{operatorCopyText(t.name)}</span>
+                  <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{operatorCopyText(t.note)}</span>
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div className="tnum" style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>${u}<span style={{ fontSize: 11, color: "var(--ink-4)", fontWeight: 400 }}> /天</span></div>
@@ -187,12 +188,12 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
                   <Btn sm variant="primary" onClick={() => ctx.openActionConfirm({
                     name: `手机 T${t.tier} 每日收益 USDT 调整`, op: "phone-tier", phoneTier: t.tier, phoneField: "dailyUsdt", amplify: true,
                     edit: { kind: "number", current: u, unit: "USDT/天", min: 0.00001, step: 0.00001, disallowCurrent: true },
-                    detail: `手机算力 T${t.tier}(${nexGridBrandText(t.name)})· 每日收益 USDT 当前 $${u} · 调高为放大资金流出,须核验 B1 覆盖率;改后对下一结算周期生效,不回溯已累计收益。`,
+                    detail: `手机算力 T${t.tier}(${operatorCopyText(t.name)})· 每日收益 USDT 当前 $${u} · 调高为放大资金流出,须核验 B1 覆盖率;改后对下一结算周期生效,不回溯已累计收益。`,
                   })}>调 USDT</Btn>
                   <Btn sm onClick={() => ctx.openActionConfirm({
                     name: `手机 T${t.tier} 每日收益 UVEL 调整`, op: "phone-tier", phoneTier: t.tier, phoneField: "dailyNex", amplify: true,
                     edit: { kind: "number", current: n, unit: "UVEL/天", min: 0.00001, step: 0.00001, disallowCurrent: true },
-                    detail: `手机算力 T${t.tier}(${nexGridBrandText(t.name)})· 每日收益 UVEL 当前 ${n} · UVEL 派发为资金流出,受 B1 覆盖率约束;改后对下一结算周期生效。`,
+                    detail: `手机算力 T${t.tier}(${operatorCopyText(t.name)})· 每日收益 UVEL 当前 ${n} · UVEL 派发为资金流出,受 B1 覆盖率约束;改后对下一结算周期生效。`,
                   })}>调 UVEL</Btn>
                 </div>}
               </div>

@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 const credentialStatusText = (value?: string | null) => value === "PASSWORD_CHANGE_REQUIRED" ? "下次登录需修改密码" : value === "ACTIVE" ? "可正常使用" : "未返回";
 
@@ -976,7 +977,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
               <div className="atint">后端未返回安全基线配置。</div>
             )}
             <div className="atint" style={{ marginTop: 10 }}>
-              <b>疑似被盗怎么办</b>  · 超级管理员可立即强制登出非超级管理员账号全部登录会话(普通确认、必填原因,事后可查);不能登出自己,没有有效登录记录表示该账号当前未登录。要收权限走「禁用账号」操作确认。后台管理员登录锁基线: <b>{lockBaseline}</b>；应用用户登录锁由 C6 独立配置。
+              <b>疑似被盗怎么办</b>  · 超级管理员可立即强制登出非超级管理员账号全部登录会话(普通确认、必填原因,事后可查);不能登出自己,没有有效登录记录表示该账号当前未登录。要收权限走「禁用账号」操作确认。后台管理员登录锁基线: <b>{operatorCopyText(lockBaseline)}</b>；应用用户登录锁由 C6 独立配置。
             </div>
           </div>
         </section>

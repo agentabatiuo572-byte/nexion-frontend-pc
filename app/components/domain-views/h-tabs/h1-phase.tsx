@@ -523,7 +523,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
                       </td>
                       <td>{text(row.name, "—")}</td>
                       <td>{text(row.driver, "暂无来源分析说明")}</td>
-                      <td className="mono">{text(row.paramKey, "—")}</td>
+                      <td className="mono">{DIAL_COLUMNS.find(([key]) => key === row.paramKey)?.[1] ?? "其他阶段参数"}</td>
                       <td className="num mono">{text(row.value, "—")}</td>
                       <td>{text(row.owner, "—")}</td>
                     </tr>

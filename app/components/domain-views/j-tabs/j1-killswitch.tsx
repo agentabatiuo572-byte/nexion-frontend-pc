@@ -150,7 +150,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     openActionConfirm({
       action: "应急批量停用 · 监管点名场景",
       detail: (
-        <>一次性立即关停<b>已选 {targets.length} 项业务</b>，用于监管点名、法务事件等重大场景。确认后服务器同步关停并逐项记录应急审计。<b>已选业务开关：{targets.map((g) => g.name).join(" / ")}</b>。</>
+        <>一次性立即关停<b>已选 {targets.length} 项业务</b>，用于监管点名、法务事件等重大场景。确认后服务器同步关停并逐项记录应急审计。<b>已选业务开关：{targets.map((g) => operatorCopyText(g.name)).join(" / ")}</b>。</>
       ),
       businessForm: {
         kind: "multi-field",

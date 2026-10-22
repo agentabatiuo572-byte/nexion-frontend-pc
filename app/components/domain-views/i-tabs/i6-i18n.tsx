@@ -1,4 +1,5 @@
 "use client";
+import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
@@ -322,7 +323,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   /* ============ tutorial actions ============ */
   const pubCrs = (c: Course) =>
     openActionConfirm({
-      action: <>发布课程新版 · {c.title}</>,
+      action: <>发布课程新版 · {nexGridBrandText(c.title)}</>,
       detail: (
         <>
           分类「{categoryLabel(c.cat)}」 · 奖励 {c.reward} UVEL/课。定版发布至 /learn;受 B1 红线约束(本次只发布版本,不涨奖励,此次发布不提高奖励)。
@@ -330,14 +331,14 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       ),
       amplifies: false,
       run: (reason) => {
-        runBackend(actions.publishI6Course(c.id, reason), `${c.title} 已发布至 /learn`);
+        runBackend(actions.publishI6Course(c.id, reason), `${nexGridBrandText(c.title)} 已发布至 /learn`);
       },
     });
 
   // 唯一 amplifies = 课程奖励调整。
   const adjRwd = (c: Course) =>
     openActionConfirm({
-      action: <>课程奖励调整 · {c.title}</>,
+      action: <>课程奖励调整 · {nexGridBrandText(c.title)}</>,
       detail: (
         <>
           分类「{categoryLabel(c.cat)}」完成 UVEL 奖励调整 ·{" "}
@@ -350,7 +351,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         if (!v) return;
         const def = findHighOp("i7_course_reward_adjust")!;
         void propose(toast, {
-          action: `课程奖励调整 · ${c.title}`,
+          action: `课程奖励调整 · ${nexGridBrandText(c.title)}`,
           obj: c.id,
           before: `${c.reward} UVEL/课`,
           after: `${v} UVEL/课`,
@@ -368,7 +369,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
   const archiveCrs = (c: Course) =>
     openActionConfirm({
-      action: <>下架课程 · {c.title}</>,
+      action: <>下架课程 · {nexGridBrandText(c.title)}</>,
       detail: (
         <>
           下架后 /learn 不再展示该课;已开课用户保留进度,但完成奖励不再发放。常规换版直接发新版,只有正文/合规问题才下架。
@@ -376,7 +377,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       ),
       amplifies: false,
       run: (reason) => {
-        runBackend(actions.archiveI6Course(c.id, reason), `${c.title} 下架已确认生效`);
+        runBackend(actions.archiveI6Course(c.id, reason), `${nexGridBrandText(c.title)} 下架已确认生效`);
       },
     });
 
@@ -443,7 +444,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     });
 
   const editCrs = (c: Course) => openActionConfirm({
-    action: <>编辑课程草稿 · {c.title}</>,
+    action: <>编辑课程草稿 · {nexGridBrandText(c.title)}</>,
     detail: <>仅草稿可编辑；分类、形式、难度均来自后端配置，测验按题目和选项结构化维护。</>,
     amplifies: false,
     businessForm: {
@@ -461,14 +462,14 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         completionCondition: c.completionCondition, rewardEvent: c.rewardEvent,
       },
     },
-    run: (reason, _slug, form) => runBackend(actions.updateI7CourseDraft(c.id, coursePayload(form, c.revision), reason), `${c.title} 草稿已更新`),
+    run: (reason, _slug, form) => runBackend(actions.updateI7CourseDraft(c.id, coursePayload(form, c.revision), reason), `${nexGridBrandText(c.title)} 草稿已更新`),
   });
 
   const deleteCrs = (c: Course) => openActionConfirm({
-    action: <>删除课程草稿 · {c.title}</>,
+    action: <>删除课程草稿 · {nexGridBrandText(c.title)}</>,
     detail: <>只允许删除未发布草稿；已发布或已归档课程由服务端拒绝删除，操作写入审计。</>,
     amplifies: false,
-    run: (reason) => runBackend(actions.deleteI7CourseDraft(c.id, reason), `${c.title} 草稿已删除`),
+    run: (reason) => runBackend(actions.deleteI7CourseDraft(c.id, reason), `${nexGridBrandText(c.title)} 草稿已删除`),
   });
 
   const reloadVersions = (courseId: string, task: Promise<void>, ok: string) => {
@@ -498,7 +499,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const maxVersion = Math.max(Number(c.v.replace(/^v/i, "")) || 0,
       ...courseVersions.map((row) => Number(row.version.replace(/^v/i, "")) || 0));
     openActionConfirm({
-      action: <>新建课程版本草稿 · {c.title}</>,
+      action: <>新建课程版本草稿 · {nexGridBrandText(c.title)}</>,
       detail: <>当前发布版继续服务用户；新版本在独立草稿中编辑，发布后才原子替换当前版。</>,
       amplifies: false,
       businessForm: {
@@ -507,12 +508,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         current: courseCurrent(c, `v${maxVersion + 1}`),
       },
       run: (reason, _value, form) => reloadVersions(c.id,
-        actions.createI7CourseVersion(c.id, coursePayload(form), reason), `${c.title} ${form?.version} 草稿已创建`),
+        actions.createI7CourseVersion(c.id, coursePayload(form), reason), `${nexGridBrandText(c.title)} ${form?.version} 草稿已创建`),
     });
   };
 
   const editCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({
-    action: <>编辑课程版本草稿 · {c.title} {row.version}</>,
+    action: <>编辑课程版本草稿 · {nexGridBrandText(c.title)} {row.version}</>,
     detail: <>使用服务器当前版本 做并发校验；三语正文和三语测验必须同时完整。</>,
     amplifies: false,
     businessForm: {
@@ -521,25 +522,25 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       current: courseCurrent(c, row.version, row.payload),
     },
     run: (reason, _value, form) => reloadVersions(c.id,
-      actions.updateI7CourseVersion(c.id, row.version, coursePayload(form, row.revision), reason), `${c.title} ${row.version} 草稿已更新`),
+      actions.updateI7CourseVersion(c.id, row.version, coursePayload(form, row.revision), reason), `${nexGridBrandText(c.title)} ${row.version} 草稿已更新`),
   });
 
   const deleteCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({
-    action: <>删除课程版本草稿 · {c.title} {row.version}</>,
+    action: <>删除课程版本草稿 · {nexGridBrandText(c.title)} {row.version}</>,
     detail: <>仅草稿可删除；已发布和历史版本由服务端拒绝，避免破坏用户进度与奖励账本。</>,
     amplifies: false,
     run: (reason) => reloadVersions(c.id, actions.deleteI7CourseVersion(c.id, row.version, reason), `${row.version} 草稿已删除`),
   });
 
   const publishCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({
-    action: <>发布课程版本 · {c.title} {row.version}</>,
+    action: <>发布课程版本 · {nexGridBrandText(c.title)} {row.version}</>,
     detail: <>发布前服务端复核三语测验、B1 兑付覆盖率和专用权限；成功后旧发布版转为历史版。</>,
     amplifies: true,
     run: (reason) => reloadVersions(c.id, actions.publishI7CourseVersion(c.id, row.version, reason), `${row.version} 已发布`),
   });
 
   const rollbackCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({
-    action: <>回滚课程版本 · {c.title} → {row.version}</>,
+    action: <>回滚课程版本 · {nexGridBrandText(c.title)} → {row.version}</>,
     detail: <>回滚只接受服务端历史快照；课程内容、测验和奖励配置一起原子恢复，用户奖励仍按课程+用户+版本防重复提交。</>,
     amplifies: true,
     run: (reason) => reloadVersions(c.id, actions.rollbackI7CourseVersion(c.id, row.version, reason), `已回滚到 ${row.version}`),
@@ -923,7 +924,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                   <tr key={c.id} style={archived ? { opacity: 0.55 } : undefined}>
                     <td>
                       <div style={{ fontWeight: 600, color: "var(--ink)" }}>
-                        {c.title}
+                        {nexGridBrandText(c.title)}
                       </div>
                       <span
                         className="mono"
@@ -960,7 +961,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                       )}
                     </td>
                     <td className="mono" style={{ fontSize: 11.5 }}>
-                      {c.duration}
+                      {operatorCopyText(c.duration)}
                     </td>
                     <td>
                       {archived ? (
@@ -972,17 +973,17 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                       )}
                     </td>
                     <td style={{ textAlign: "right" }}>
-                      <button className="l-btn sm" aria-label={`版本管理 ${c.title}`} onClick={() => setVersionCourseId(c.id)} style={{ marginRight: 6 }}>版本管理</button>
+                      <button className="l-btn sm" aria-label={`版本管理 ${nexGridBrandText(c.title)}`} onClick={() => setVersionCourseId(c.id)} style={{ marginRight: 6 }}>版本管理</button>
                       {canWriteI7 && <>
                       {isDraft && <>
-                      <button className="l-btn sm" aria-label={`编辑 ${c.title}`} onClick={() => editCrs(c)} style={{ marginRight: 6 }}>编辑</button>
-                      <button className="l-btn sm mc" aria-label={`发布 ${c.title}`} onClick={() => pubCrs(c)} style={{ marginRight: 6 }}>发布</button>
-                      <button className="l-btn sm" aria-label={`删除草稿 ${c.title}`} onClick={() => deleteCrs(c)} style={{ marginRight: 6 }}>删除草稿</button>
+                      <button className="l-btn sm" aria-label={`编辑 ${nexGridBrandText(c.title)}`} onClick={() => editCrs(c)} style={{ marginRight: 6 }}>编辑</button>
+                      <button className="l-btn sm mc" aria-label={`发布 ${nexGridBrandText(c.title)}`} onClick={() => pubCrs(c)} style={{ marginRight: 6 }}>发布</button>
+                      <button className="l-btn sm" aria-label={`删除草稿 ${nexGridBrandText(c.title)}`} onClick={() => deleteCrs(c)} style={{ marginRight: 6 }}>删除草稿</button>
                       </>}
                       {!archived && !isDraft && (
                         <button
                           className="l-btn sm"
-                          aria-label={`下架 ${c.title}`}
+                          aria-label={`下架 ${nexGridBrandText(c.title)}`}
                           onClick={() => archiveCrs(c)}
                         >
                           下架
@@ -992,7 +993,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                       {canAdjustI7Reward && !archived && !isDraft && (
                         <button
                           className="l-btn sm mc"
-                          aria-label={`调整奖励 ${c.title}`}
+                          aria-label={`调整奖励 ${nexGridBrandText(c.title)}`}
                           onClick={() => adjRwd(c)}
                           style={{ marginRight: 6 }}
                         >
@@ -1017,7 +1018,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
       {versionCourse && <section className="l-card" data-proof="i7-course-version-crud">
         <div className="l-h">
-          <span className="ttl">课程版本列表 · {versionCourse.title}</span>
+          <span className="ttl">课程版本列表 · {nexGridBrandText(versionCourse.title)}</span>
           <span className="sub">· 数据来自后端版本快照 · 当前 {versionCourse.v}</span>
           <div className="r chips">
             {canWriteI7 && <button className="l-btn sm primary" onClick={() => newCourseVersion(versionCourse)}>+ 新版本草稿</button>}

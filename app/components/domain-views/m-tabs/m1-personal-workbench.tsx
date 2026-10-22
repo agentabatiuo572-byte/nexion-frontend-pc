@@ -1,4 +1,5 @@
 "use client";
+import { operatorNicknameText } from "@/lib/admin/brand-copy";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -77,7 +78,7 @@ function labelForMaintenance(row: SupportCustomer): string {
 const HISTORY_STATES: Record<string, string> = { OPEN: "进行中", SUCCEEDED: "已完成", STOPPED: "已暂停", TRANSFERRED: "已转由其他专属客服接手" };
 const HISTORY_KINDS: Record<string, string> = { EXECUTION: "主动联系", MAINTENANCE_EXECUTION: "主动联系", CYCLE: "维护周期", MAINTENANCE_CYCLE: "维护周期" };
 function historyLabel(value: string, labels: Record<string, string>): string { return labels[value] ?? "记录待核对"; }
-function customerName(row: SupportCustomer): string { return row.displayName || row.customerNo || `客户 ${row.customerId}`; }
+function customerName(row: SupportCustomer): string { return operatorNicknameText(row.displayName || "") || row.customerNo || `客户 ${row.customerId}`; }
 function invalidateCustomerOnDenied(customerId: string, error: unknown): boolean {
   if (!(error instanceof SupportClientError) || ![403, 404].includes(error.status)) return false;
   window.dispatchEvent(new CustomEvent("support-scope-invalidated", { detail: { customerId } }));

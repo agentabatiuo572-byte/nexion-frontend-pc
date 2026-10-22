@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 import "../a-domain.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -528,7 +529,7 @@ function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubmit }: {
                               return (
                                 <label key={pp.permissionCode} title={pp.permissionCode} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px", borderRadius: 6, cursor: "pointer", fontSize: 12, background: on ? "var(--surface-2)" : "transparent" }}>
                                   <input type="checkbox" checked={on} onChange={() => togglePerm(pp.permissionCode)} />
-                                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pp.permissionName || pp.permissionCode}</span>
+                                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{operatorCopyText(pp.permissionName || pp.permissionCode)}</span>
                                   <Badge tone={tone}>{({ HIGH: "敏感操作", WRITE: "修改", READ: "查询" } as Record<string,string>)[pp.permType] ?? "未知权限类型"}</Badge>
                                   {pp.amplifies === 1 && <span title="放大资金流出" style={{ color: "var(--danger)", fontSize: 12 }}>⚠</span>}
                                 </label>

@@ -414,7 +414,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
             <div className="p-row" key={control.key}>
               <div className="txt"><div className="k">{operatorCopyText(control.name)}</div><div className="s">{operatorCopyText(control.description)}</div></div>
               <span className="v">{ctlVals[control.key] || control.value}</span>
-              {allowed("finprod_g3_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => openCurveCtlMc(control.key, control.name, ctlVals[control.key] || control.value)}>调整(立即执行)</button>}
+              {allowed("finprod_g3_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => openCurveCtlMc(control.key, operatorCopyText(control.name), ctlVals[control.key] || control.value)}>调整(立即执行)</button>}
             </div>
           ))}
           <div className="gtint" style={{ marginTop: 10 }}><b>自动生效怎么工作</b> · 排程开后,服务器定时任务按 <span className="mono">{schedV}</span> 把当日 <b>目标价</b> 写进全站现价配置 <span className="mono">wallet.exchange.nex_usdt_price</span>(G2 兑换 / G7 复投即时跟随),并产 <span className="mono">market.curve_advanced</span> 审计;当前有效执行计划: <span className="mono">{scheduleMeta}</span>。锁定生效日期= 演示 / 应急时把生效日冻在某天,自动推进暂停。改 <b>目标价 / 上行概率</b> 是放大流出,提交即以周峰值价过 B1 红线。</div>

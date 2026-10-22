@@ -1,4 +1,5 @@
 "use client";
+import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 /**
  * I 内容与合规 — design_handoff_i_domain 设计稿 port(2026-06-11 重构;2026-06-15 客服 I8/I9 迁出至域 M 客服中心)。
@@ -94,7 +95,7 @@ function liveFromBackend(tab: string, content: IContentData, loading: boolean, e
   }
   if (tab === "I6") {
     const stats = content.i18nLearning?.stats;
-    return stats ? `受管词条:${countText(stats.managedKeys)} 条 · 在线课程:${countText(stats.coursesOnline)} 门 · 本周派发 ${stats.weeklyNexPayout}` : "暂无后端业务数据";
+    return stats ? `受管词条:${countText(stats.managedKeys)} 条 · 在线课程:${countText(stats.coursesOnline)} 门 · 本周派发 ${nexGridBrandText(stats.weeklyNexPayout)}` : "暂无后端业务数据";
   }
   return "暂无后端业务数据";
 }

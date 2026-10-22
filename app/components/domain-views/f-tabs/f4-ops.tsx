@@ -1,4 +1,6 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
+import { operatorNicknameText } from "@/lib/admin/brand-copy";
 
 /** F4 · 池/配额/大使/榜 —— 数据源为后端 /api/admin/teams/leadership-pool。 */
 import { useState } from "react";
@@ -162,9 +164,9 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
       <div className="f-stats">
         {data.metrics.map((metric) => (
           <div key={metric.id} className={`f-stat ${statTone(metric.tone)}`}>
-            <div className="k">{metric.name}</div>
-            <div className="v">{metric.value}</div>
-            <div className="sub">{metric.sub}</div>
+            <div className="k">{operatorCopyText(metric.name)}</div>
+            <div className="v">{operatorCopyText(metric.value)}</div>
+            <div className="sub">{operatorCopyText(metric.sub)}</div>
           </div>
         ))}
       </div>
@@ -256,7 +258,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
           <div className="amb-bands">
             {data.ambassadorApplications.length ? data.ambassadorApplications.map((application) => (
               <div key={application.id} className="amb-band">
-                <div className="nm">#{application.id} · {nexGridBrandText(application.applicantName)} · {application.region}{application.city ? `/${application.city}` : ""}</div>
+                <div className="nm">#{application.id} · {operatorNicknameText(application.applicantName)} · {application.region}{application.city ? `/${application.city}` : ""}</div>
                 <div className="ct">{application.currentRank} · ${application.requestedBudgetUsd.toLocaleString("en-US")} · {({PENDING:"待审核",APPROVED:"已通过",REJECTED:"已驳回",pending:"待审核",approved:"已通过",rejected:"已驳回"} as Record<string,string>)[application.status] ?? "申请状态待核实"}</div>
                 {canApproveAmbassador && application.status.toUpperCase() === "PENDING" && <>
                   <button className="primary amp" onClick={() => ctx.openActionConfirm({ name: `批准大使申请 #${application.id}`, amplify: true, op: "dispose", paramKey: `F.ambassador.${application.id}.status`, fixedVal: "approved", detail: "按申请 ID 精确批准；同事务生成 推广、活动、差旅、宣传 四类预算权益证明。" })}>批准</button>
@@ -342,7 +344,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
           <p className="muted">本期已解锁 USDT 佣金 · 上海时间 UTC+8 · {periodLeaderboard ? `快照 ${periodLeaderboard.snapshotAt} · 奖励名额 ${periodLeaderboard.topN}` : "周期榜单暂不可用"}</p>
           <div className="podium">
             {!lbDataAvailable ? <div className="empty">{lbPaused ? "冻结快照未确认" : "周期榜单暂不可用"}</div> : periodLeaderboard!.podium.length ? periodLeaderboard!.podium.map((row) => (
-              <div key={row.userId} className={`pod ${row.className}`}><span className="rank">{row.rank}</span><div className="uid">{row.userId}</div><div className="gv">{row.gmvLabel}<small>{row.tip}</small></div>
+              <div key={row.userId} className={`pod ${row.className}`}><span className="rank">{row.rank}</span><div className="uid">{row.userId}</div><div className="gv">{row.gmvLabel}<small>{operatorCopyText(row.tip)}</small></div>
                 {canControlLeaderboard && leaderboardPeriod === "week" && row.memberUserId > 0 && !row.className.includes("dq") && <button className="danger" aria-label={`取消 ${row.userId} 的榜单资格`} onClick={() => ctx.openActionConfirm({
                   name: `取消 ${row.userId} 本周榜单资格`, op: "dispose",
                   paramKey: `F.leaderboard.week.user.${row.memberUserId}.status`, fixedVal: "disqualified",

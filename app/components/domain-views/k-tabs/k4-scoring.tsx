@@ -803,7 +803,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
                   {lookupUser.history.map((row, index) => (
                     <details className="ktint" key={`${row.createdAt}-${row.modelVersion}-${index}`}>
                       <summary style={{ cursor: "pointer" }}>
-                        v{row.modelVersion} · 模型分 {row.modelScore} · 有效分 {row.effectiveScore} · {row.scoreState} · {row.operator} · {row.createdAt}
+                        v{row.modelVersion} · 模型分 {row.modelScore} · 有效分 {row.effectiveScore} · {({ "manually-overridden": "人工覆盖评分", "model-scored": "模型评分" } as Record<string,string>)[row.scoreState] ?? "评分来源待核实"} · {row.operator} · {row.createdAt}
                       </summary>
                       <div className="note" style={{ marginTop: 8 }}>{row.reason}</div>
                       <div style={{ display: "grid", gap: 4, marginTop: 6 }}>

@@ -17,7 +17,7 @@ function Lbl({ zh, code, desc, hot }: { zh: string; code?: string; desc: string;
     <div className="lhs">
       <span className="zh">
         {zh}
-        {code ? <code className="code">{code}</code> : null}
+        {code ? <span title={`技术字段：${code}`} aria-label={`技术字段：${code}`} /> : null}
         {hot ? <span className="hot" title="敏感参数:本页风险最高的杠杆,改动影响资金流出 / 套利风险,请重点关注">敏感</span> : null}
       </span>
       <div className="desc"><AutoGloss>{desc}</AutoGloss></div>
@@ -233,7 +233,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
             { key: "mid", paramKey: "E.device.stageMidEnd", label: "段2 末月(m)", inputKind: "number", placeholder: "8" },
             { key: "total", paramKey: "E.device.cycleMonths", label: "曲线视窗月数(m)", inputKind: "number", placeholder: "12" },
           ]} /></div>
-          <div className="pkv"><Lbl zh="任务锁定月度损失阈" code="taskLock.s1 / .pro / .rack" desc="§6.7 提示条 触发依据 · S1 / Pro / Rack 三阶月度损失阈(USDT)" /><span className="v" style={{ fontSize: 13 }}>${pE("E.device.taskLock.s1")} / ${pE("E.device.taskLock.pro")} / ${pE("E.device.taskLock.rack")}</span><AdjMulti title="任务锁定月度损失阈" hint="三档设备(S1 / Pro / Rack)各自的月度损失阈(USDT),达阈触发 §6.7 任务锁定 提示条。" detail="任务锁定月度损失阈(S1 / Pro / Rack)· 以当前运营配置为准 · 改后对新触发判定生效" fields={[
+          <div className="pkv"><Lbl zh="任务锁定月度损失阈" code="taskLock.s1 / .pro / .rack" desc="§6.7 提示条 触发依据 · 入门设备 / 专业设备 / 机柜设备 三阶月度损失阈(USDT)" /><span className="v" style={{ fontSize: 13 }}>${pE("E.device.taskLock.s1")} / ${pE("E.device.taskLock.pro")} / ${pE("E.device.taskLock.rack")}</span><AdjMulti title="任务锁定月度损失阈" hint="三档设备(入门设备 / 专业设备 / 机柜设备)各自的月度损失阈(USDT),达阈触发 §6.7 任务锁定 提示条。" detail="任务锁定月度损失阈(入门设备 / 专业设备 / 机柜设备)· 以当前运营配置为准 · 改后对新触发判定生效" fields={[
             { key: "s1", paramKey: "E.device.taskLock.s1", label: "S1 阈(USDT)", inputKind: "number", placeholder: "40" },
             { key: "pro", paramKey: "E.device.taskLock.pro", label: "UVELBox Pro 升级门槛（USDT）", inputKind: "number", placeholder: "140" },
             { key: "rack", paramKey: "E.device.taskLock.rack", label: "UVELRack 升级门槛（USDT）", inputKind: "number", placeholder: "450" },

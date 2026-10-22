@@ -1343,7 +1343,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               <span className="muted tiny">{form.tier === "Share" ? "解锁算力池（份额可访问的池）" : "解锁算力池"}</span>
               <select className="fld" value={form.aiUnlocks} onChange={(e) => setForm({ ...form, aiUnlocks: e.target.value })} disabled={skuUnlockPoolOptions.length === 0}>
                 <option value="">{e2Loading ? "任务列表加载中" : skuUnlockPoolOptions.length ? "请选择算力池" : "暂无可选任务"}</option>
-                {skuUnlockPoolOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                {skuUnlockPoolOptions.map((item) => <option key={item.id} value={item.id}>{nexGridBrandText(item.name)}</option>)}
               </select>
             </label>
           </SkuFieldGroup>

@@ -1,4 +1,6 @@
 "use client";
+import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
  * I2 Nova 消息推送 — design_handoff_i_domain/I2 Nova推送运营.html port。
@@ -494,15 +496,15 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                       /> : <span className={`bdg ${n.on ? "ok" : "dim"}`}>{n.on ? "开启" : "停推"}</span>}
                     </td>
                     <td>
-                      <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{n.key}</span>
+                      <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{({welcome:"欢迎消息",market:"市场动态",upgrade:"设备升级建议",dailySummary:"每日汇总",tradein:"以旧换新",social:"真实动态",eventClaim:"活动领奖",taskLockMonthly:"月度任务提醒"} as Record<string,string>)[n.key] ?? n.name}</span>
                       <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }}>{n.name}</div>
                     </td>
-                    <td style={{ fontSize: 12, color: "var(--ink-3)", maxWidth: 240 }}>{trigger}</td>
-                    <td className="mono" style={{ fontSize: 12 }}>{n.tick}</td>
-                    <td className="mono" style={{ fontSize: 12 }}>{n.cd}</td>
-                    <td style={phaseStyle}>{phaseKeyed}</td>
+                    <td style={{ fontSize: 12, color: "var(--ink-3)", maxWidth: 240 }}>{operatorCopyText(trigger)}</td>
+                    <td className="mono" style={{ fontSize: 12 }}>{operatorCopyText(n.tick)}</td>
+                    <td className="mono" style={{ fontSize: 12 }}>{operatorCopyText(n.cd).replace(/\bskip\b/g,"跳过")}</td>
+                    <td style={phaseStyle}>{operatorCopyText(phaseKeyed).replace(/\bskip\b/g,"跳过")}</td>
                     <td>{renderTplBadge(tplStatus(n.key))}<div style={{ fontSize: 11, marginTop: 3, color: "var(--ink-4)" }}>{channelTemplate?.name ?? "请先新增模板"}</div></td>
-                    <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{`CTR ${n.ctr}%`}</td>
+                    <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{`点击率 ${n.ctr}%`}</td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {canWriteI2 && <>
                         {h1CadenceReadOnly
@@ -553,10 +555,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
               <tbody>
                 {offTableChannels.map((r) => (
                   <tr key={r.name}>
-                    <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{r.name}</td>
-                    <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{r.why}</td>
-                    <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{r.owner}</td>
-                    <td><span className={`bdg ${r.tone}`}>{r.st}</span></td>
+                    <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{({team_event:"团队事件通知",staking_event:"质押事件通知",market_event:"市场事件通知","risk-alert":"风险告警","weekly-quest-refresh":"每周任务刷新"} as Record<string,string>)[r.name] ?? operatorCopyText(r.name)}</td>
+                    <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{operatorCopyText(r.why)}</td>
+                    <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{operatorCopyText(r.owner)}</td>
+                    <td><span className={`bdg ${r.tone}`}>{operatorCopyText(r.st)}</span></td>
                   </tr>
                 ))}
               </tbody>
@@ -605,9 +607,9 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                       <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{t.name}</td>
                       <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{t.cta}</td>
                       <td style={{ fontSize: 11.5, color: "var(--ink-3)", maxWidth: 260 }}>
-                        <div><b>中文：</b>{t.titleZh} · {t.bodyZh}</div>
-                        <div><b>越南语：</b>{t.titleVi} · {t.bodyVi}</div>
-                        {t.bodyEn && <div><b>英语：</b>{t.titleEn} · {t.bodyEn}</div>}
+                        <div><b>中文：</b>{nexGridBrandText(t.titleZh)} · {nexGridBrandText(t.bodyZh)}</div>
+                        <div><b>越南语：</b>{nexGridBrandText(t.titleVi)} · {nexGridBrandText(t.bodyVi)}</div>
+                        {t.bodyEn && <div><b>英语：</b>{nexGridBrandText(t.titleEn)} · {nexGridBrandText(t.bodyEn)}</div>}
                       </td>
                       <td className="mono" style={{ fontWeight: 700 }}>{t.v}</td>
                       <td>{renderTplBadge(st)}</td>
@@ -672,7 +674,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
               {SOCIAL_DIST.map((d) => (
                 <span key={d.name}>
                   <span className="d" style={{ background: d.color }} />
-                  {d.name} {Number(d.pct)}%
+                  {operatorCopyText(d.name)} {Number(d.pct)}%
                 </span>
               ))}
             </div>
@@ -694,11 +696,11 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0 8px" }}>
               <select className="fld" style={{ width: 190 }} value={eventTypeFilter} onChange={(event) => { setEventTypeFilter(event.target.value); setEventPage(1); }} aria-label="事件类型筛选">
                 <option value="">全部事件类型</option>
-                {SOCIAL_EVENT_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                {SOCIAL_EVENT_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{operatorCopyText(option.label)}</option>)}
               </select>
               <select className="fld" style={{ width: 160 }} value={eventStatusFilter} onChange={(event) => { setEventStatusFilter(event.target.value); setEventPage(1); }} aria-label="事件状态筛选">
                 <option value="">全部状态</option>
-                {SOCIAL_EVENT_STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                {SOCIAL_EVENT_STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{operatorCopyText(option.label)}</option>)}
               </select>
               {(eventTypeFilter || eventStatusFilter) && <button className="l-btn sm" onClick={() => { setEventTypeFilter(""); setEventStatusFilter(""); setEventPage(1); }}>清除筛选</button>}
             </div>
@@ -722,7 +724,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                     {visibleSocialEvents.map((event) => (
                       <tr key={event.id}>
                         <td><b>{[event.actorDisplay, event.cityDisplay, event.amountDisplay].filter(Boolean).join(" · ") || "聚合事件"}</b><div className="muted tiny">{event.sourceNote || "来源已核验"}</div></td>
-                        <td>{event.eventTypeLabel || optionLabel(SOCIAL_EVENT_TYPE_OPTIONS, event.eventType)}</td>
+                        <td>{operatorCopyText(event.eventTypeLabel || optionLabel(SOCIAL_EVENT_TYPE_OPTIONS, event.eventType))}</td>
                         <td><span className="bdg ok">已验证</span><div className="muted tiny">{({WITHDRAWAL:"提现记录",V_RANK:"会员等级记录",GENESIS:"创世节点记录",REGISTRATION:"注册记录"} as Record<string,string>)[event.sourceSystem ?? ""] ?? "业务系统"}</div></td>
                         <td><span className="mono">{event.sourceEventId || "已脱敏"}</span></td>
                         <td>{formatEventTime(event.occurredAt)}</td>
@@ -859,7 +861,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                 onChange={(e) => setForm({ ...form, runtimeSource: e.target.value })}
               >
                 <option value="">请选择受控事实源</option>
-                {RUNTIME_SOURCE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                {RUNTIME_SOURCE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{operatorCopyText(option.label)}</option>)}
               </select>
               <span className="muted tiny">仅可选择服务端 A4 事实；客户端不能输入或伪造事件名。</span>
             </label>
@@ -958,7 +960,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             <label className="col" style={{ gap: 5 }}><span className="muted tiny">点击后跳转页面（来自后端路由目录）</span>
               <select className="fld" value={tplForm.cta} onChange={(e) => setTplForm({ ...tplForm, cta: e.target.value })}>
                 <option value="">请选择投放去向</option>
-                {CTA_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}（{option.value}）</option>)}
+                {CTA_OPTIONS.map((option) => <option key={option.value} value={option.value}>{operatorCopyText(option.label)}（{option.value}）</option>)}
               </select></label>
             {(["Zh", "Vi", "En"] as const).map((locale) => {
               const label = locale === "Zh" ? "中文" : locale === "Vi" ? "越南语" : "英语（可选）";

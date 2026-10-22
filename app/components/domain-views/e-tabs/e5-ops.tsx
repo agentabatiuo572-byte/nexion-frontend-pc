@@ -1,4 +1,5 @@
-import { datacenterNameText } from "@/lib/admin/brand-copy";
+import { operatorSkuTier } from "@/lib/admin/e-operator-display";
+import { datacenterNameText, catalogSkuBrandText } from "@/lib/admin/brand-copy";
 import { useEffect, useState } from "react";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { operatorDatacenterLabel, operatorDeviceIdentifier, operatorDeviceName, operatorDeviceStatus, operatorOperationalNote, operatorProductLabel, operatorRate, operatorTaskLabel, operatorThermalLabel, operatorTimestamp, operatorUserIdentifier, operatorUserName } from "@/lib/admin/e-operator-display";
@@ -245,9 +246,9 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
                 const skuMain = d.productCode || d.sku;
                 const skuSub = d.productTier && d.productTier !== skuMain ? d.productTier : "";
                 const displaySerial = operatorDeviceIdentifier(d.serial);
-                const displayName = operatorDeviceName(d.deviceName, d.serial);
-                const displaySku = operatorProductLabel(skuMain);
-                const displaySkuSub = skuSub ? operatorProductLabel(skuSub) : "";
+                const displayName = d.productCode === "cloud-share" && d.deviceName === "Cloud Share" ? "云端共享份额" : operatorDeviceName(d.deviceName, d.serial);
+                const displaySku = operatorProductLabel(catalogSkuBrandText(d.productCode, skuMain));
+                const displaySkuSub = skuSub ? operatorSkuTier(skuSub) : "";
                 const displayDc = operatorDatacenterLabel(d.dc);
                 const displayUserNo = operatorUserIdentifier(d.userNo);
                 const displayUserName = operatorUserName(d.nickname);
@@ -280,7 +281,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
                       {isActivatable(d.state) && (ctx.canWriteE5 || ctx.canForceActivateE5) && (
                         <>
                           {ctx.canWriteE5 && d.state === "inventory" && <><button className="l-btn sm mc" disabled={!reasonReady || actionBusy || maxDevicesPerUser == null || d.activeDevicesForUser >= maxDevicesPerUser} title={maxDevicesPerUser == null ? "服务端槽位上限不可用" : d.activeDevicesForUser >= maxDevicesPerUser ? `该用户已占满 ${maxDevicesPerUser} 个激活槽位` : undefined} onClick={() => void runDirect(() => ctx.runE5DeviceAction(d.deviceId, "activate", actionReason.trim()))}>激活</button>{" "}</>}
-                          {ctx.canForceActivateE5 && <button className="l-btn sm mc" disabled={maxDevicesPerUser == null || d.activeDevicesForUser >= maxDevicesPerUser} title={maxDevicesPerUser == null ? "服务端槽位上限不可用" : d.activeDevicesForUser >= maxDevicesPerUser ? `强制激活也不能绕过 ${maxDevicesPerUser} 台上限` : undefined} onClick={() => devAct(d, "device-activate", "force-activate", "强制激活设备", `设备 ${displaySerial} / 用户 ${displayUserNo} / 类型 ${operatorProductLabel(d.productTier) || displayName} / 购入 ${operatorTimestamp(d.purchasedAt)} / 已激活 ${d.activeDevicesForUser}/${maxDevicesLabel} · 强制激活不绕过服务端上限 · 非资金动作`, false)}>强制激活</button>}
+                          {ctx.canForceActivateE5 && <button className="l-btn sm mc" disabled={maxDevicesPerUser == null || d.activeDevicesForUser >= maxDevicesPerUser} title={maxDevicesPerUser == null ? "服务端槽位上限不可用" : d.activeDevicesForUser >= maxDevicesPerUser ? `强制激活也不能绕过 ${maxDevicesPerUser} 台上限` : undefined} onClick={() => devAct(d, "device-activate", "force-activate", "强制激活设备", `设备 ${displaySerial} / 用户 ${displayUserNo} / 类型 ${operatorSkuTier(d.productTier) || displayName} / 购入 ${operatorTimestamp(d.purchasedAt)} / 已激活 ${d.activeDevicesForUser}/${maxDevicesLabel} · 强制激活不绕过服务端上限 · 非资金动作`, false)}>强制激活</button>}
                           {maxDevicesPerUser != null && d.activeDevicesForUser >= maxDevicesPerUser && <div className="tiny" style={{ color: "var(--danger)", marginTop: 4 }}>槽位已满 {d.activeDevicesForUser}/{maxDevicesPerUser}</div>}
                         </>
                       )}

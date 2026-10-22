@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
  * L2 · 漏斗 / Cohort / 留存 — 五级漏斗逐级查看明细 + cohort 留存热力矩阵 + 多维交叉。
@@ -700,7 +701,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
             </table>
           </div>
           <div className="xd-foot">
-            <span className="ltint warn" style={{ flex: 1, minWidth: 260 }}><b>{xd.msg.pre.split("·")[0].trim()}</b> · <AutoGloss>{xd.msg.pre.split("·").slice(1).join("·")}</AutoGloss><b>{xd.msg.bold}</b><AutoGloss>{xd.msg.post}</AutoGloss></span>
+            <span className="ltint warn" style={{ flex: 1, minWidth: 260 }}><b>{operatorCopyText(xd.msg.pre.split("·")[0].trim())}</b> · <AutoGloss>{xd.msg.pre.split("·").slice(1).join("·")}</AutoGloss><b>{xd.msg.bold}</b><AutoGloss>{xd.msg.post}</AutoGloss></span>
             {L2_ATTRIBUTION_LINKS.map(({ label, href }) => (
               <Link key={label} className="l-btn sm" href={href}>{label}</Link>
             ))}

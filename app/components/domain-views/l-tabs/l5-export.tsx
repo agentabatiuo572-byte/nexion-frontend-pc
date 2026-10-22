@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
  * L5 · 数据导出与监管报告 — 全平台数据出口的唯一管控面。
@@ -310,7 +311,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
               <div key={p.k} className="p">
                 <div className="k">{p.k}</div>
                 <div className="v" style={p.fixed ? { color: "var(--success)" } : undefined}>
-                  {p.v}<span className="bdg dim">服务端固定</span>
+                  {operatorCopyText(p.v)}<span className="bdg dim">服务端固定</span>
                 </div>
                 <div className="s"><AutoGloss>{p.s}</AutoGloss></div>
               </div>
@@ -358,11 +359,11 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
                     <td className="mono" style={{ color: "var(--ink)" }}>{t.id}</td>
                     <td style={{ fontWeight: 600, color: "var(--ink-2)" }}><AutoGloss>{exportTypeText(t.type)}</AutoGloss></td>
                     <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{t.scope}</td>
-                    <td style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{t.fields}{t.pii && <span className="bdg bad" style={{ fontSize: 10.5, marginLeft: 4 }}>含隐私</span>}</td>
+                    <td style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{operatorCopyText(t.fields)}{t.pii && <span className="bdg bad" style={{ fontSize: 10.5, marginLeft: 4 }}>含隐私</span>}</td>
                     <td>{t.mask === "—" ? <span className="bdg dim">—</span> : <span className={"mask-pill " + t.mask}>{maskLabel(t.mask)}</span>}</td>
                     <td className="num mono">{t.rows}</td>
                     <td><span className={"bdg " + st[1]}>{st[0]}</span></td>
-                    <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{t.chain}</td>
+                    <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{operatorCopyText(t.chain)}</td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {!t.supported && <span className="bdg warn">当前版本已关闭此历史类型</span>}
                       {t.supported && acts.length === 0 && (t.snapshotAvailable || !["READY", "EXPIRED", "FAILED"].includes(effSt(t))) && <span className="mono" style={{ color: "var(--ink-4)" }}>—</span>}

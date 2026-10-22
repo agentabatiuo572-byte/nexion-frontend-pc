@@ -57,6 +57,21 @@ function rowValueEffective(row: A5RegistryRow): boolean {
   return true;
 }
 
+/** 参数索引只呈现可读摘要；结构化正文在归属菜单编辑，原配置值保留在 DTO 中。 */
+function parameterValueText(row: A5RegistryRow): string {
+  const value = row.currentValue.trim();
+  if (!value) return "空值";
+  if (E6_DOWNLOAD_COPY_KEYS.has(row.canonicalKey)) return value;
+  if (/^[\[{]/.test(value)) {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === "object") return `已配置 ${Array.isArray(parsed) ? parsed.length : Object.keys(parsed).length} 项，请进入归属模块查看`;
+    } catch { /* 非 JSON 的普通文字按原展示处理。 */ }
+  }
+  if (/^(?:https?:\/\/|\/)/.test(value)) return value;
+  return ({ on: "开启", off: "关闭", true: "是", false: "否" } as Record<string,string>)[value] ?? operatorCopyText(value);
+}
+
 const DOMAIN_ACCENT: Record<string, string> = {
   A: "var(--admin-domain-a)", B: "var(--admin-domain-b)", C: "var(--admin-domain-c)",
   D: "var(--admin-domain-d)", E: "var(--admin-domain-e)", F: "var(--admin-domain-f)",
@@ -160,7 +175,7 @@ export function PlatformParamsRegistry() {
               <AlertTriangle size={16} className="mt-0.5 shrink-0" />
               <div>
                 <b>部分来源未就绪</b>
-                {partialSources.map((source) => <p key={source.key} className="mt-0.5">{source.label}：{source.detail}</p>)}
+                {partialSources.map((source) => <p key={source.key} className="mt-0.5">{source.label}：{operatorCopyText(source.detail)}</p>)}
               </div>
             </div>
           )}
@@ -202,7 +217,7 @@ export function PlatformParamsRegistry() {
               <div key={source.key} className="rounded-[9px] px-3 py-2 text-[11px]" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)", color: "var(--v5-ink-3)" }}>
                 <span className="inline-flex items-center gap-1.5"><Database size={12} />{source.label}</span>
                 <span className="ml-2 font-mono-tabular" style={{ color: source.status === "READY" ? "var(--v5-success)" : "var(--v5-warning)" }}>{source.status === "READY" ? "已就绪" : source.status === "EMPTY" ? "无记录" : "部分可用"}</span>
-                <p className="mt-1">{source.rowCount} 条 · {source.detail}</p>
+                <p className="mt-1">{source.rowCount} 条 · {operatorCopyText(source.detail)}</p>
               </div>
             ))}
           </div>
@@ -240,7 +255,7 @@ function DomainSection({ domain, rows }: { domain: string; rows: A5RegistryRow[]
                   实时行标「实时采样 · 观测于 …」;过期/读不到的行标「历史快照 · 已过期」——
                   不许把 2026-06-24 的死行显示成「当前服务端值」。 */}
               <p className="text-[9.5px]" style={{ color: row.stale ? "var(--v5-warning)" : "var(--v5-ink-4)" }}>{rowValueLabel(row)}</p>
-              <p className="font-mono-tabular mt-0.5 break-all text-[13px]" style={{ color: rowValueEffective(row) && !row.stale ? "var(--v5-ink)" : "var(--v5-warning)" }}>{row.valueType === "BOOLEAN" ? ({ true: "开启", false: "关闭", on: "开启", off: "关闭" } as Record<string, string>)[row.currentValue] ?? "状态待核实" : row.currentValue || "空值"}{row.unit ? <span className="ml-1 text-[10px]" style={{ color: "var(--v5-ink-3)" }}>{operatorCopyText(row.unit)}</span> : null}</p>
+              <p className="font-mono-tabular mt-0.5 break-all text-[13px]" style={{ color: rowValueEffective(row) && !row.stale ? "var(--v5-ink)" : "var(--v5-warning)" }}>{row.valueType === "BOOLEAN" ? ({ true: "开启", false: "关闭", on: "开启", off: "关闭" } as Record<string, string>)[row.currentValue] ?? "状态待核实" : parameterValueText(row)}{row.unit ? <span className="ml-1 text-[10px]" style={{ color: "var(--v5-ink-3)" }}>{operatorCopyText(row.unit)}</span> : null}</p>
               {row.stale && (
                 <p className="mt-1 text-[10px] leading-relaxed" style={{ color: "var(--v5-warning)" }}>
                   该值不是当前实时事实{row.observedAt ? `（最近采样 ${row.observedAt}）` : "（实时读取失败）"}；请以{operatorCopyText(row.ownerLabel)}的实时页面为准，不要把这里的快照当成当前状态。

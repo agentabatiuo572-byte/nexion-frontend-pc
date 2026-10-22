@@ -1,6 +1,6 @@
 "use client";
 
-import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -354,7 +354,7 @@ export default function LiquidityPage() {
             ))}
           </div>
           <footer>
-            {maturity.farLiabilityNote}
+            {operatorCopyText(maturity.farLiabilityNote)}
             <span>UVEL 第二版 远期权益默认不作为当前必须兑付的应付款。</span>
           </footer>
         </section>
@@ -368,7 +368,7 @@ export default function LiquidityPage() {
             <div><dt>试用业务 压力测试</dt><dd>{config.trialStressEnabled ? "启用（非必须兑付的应付款）" : "关闭"}</dd></div>
             <div><dt>远期负债</dt><dd>{config.includeFarLiabilities ? "纳入" : "排除"}</dd></div>
           </dl>
-          <p>{config.effectiveRule}</p>
+          <p>{config.effectiveRule === "NEXT_UTC_DAY_00:00" ? "次日 UTC 00:00 生效" : operatorCopyText(config.effectiveRule)}</p>
           {config.pendingConfig && (
             <div className="b2-pending">
               待生效版本 {config.pendingVersion} · {config.pendingEffectiveAt}
@@ -396,7 +396,7 @@ export default function LiquidityPage() {
               {liabilities.breakdown.map((row) => (
                 <tr key={row.category}>
                   <td className="mono">{row.category}</td>
-                  <td>{nexGridBrandText(row.label)}</td>
+                  <td>{operatorCopyText(row.label)}</td>
                   <td className="num mono">{money(row.amountUsdt)}</td>
                   <td className="num mono">{(row.share * 100).toFixed(2)}%</td>
                   <td className="mono source">{row.source.startsWith("nx_") ? "业务资金记录" : /[\u3400-\u9fff]/.test(row.source) ? row.source : "业务资金记录"}</td>

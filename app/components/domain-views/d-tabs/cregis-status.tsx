@@ -308,7 +308,7 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
       {error && <div className="dtint warn">Cregis 状态不可用：{error}</div>}
       {data && <>
         <div className="cregis-intro">
-          <div><strong>接入模式：{data.mode}</strong><span>App 收款入口{data.depositEnabled ? "已启用" : "已关闭"} · 自动入账能力{data.depositCreditEnabled ? "已配置" : "未配置"}</span></div>
+          <div><strong>接入模式：{({PROVIDER:"支付服务商模式",provider:"支付服务商模式",MOCK:"模拟模式",DISABLED:"未启用"} as Record<string,string>)[data.mode] ?? "接入模式待核实"}</strong><span>App 收款入口{data.depositEnabled ? "已启用" : "已关闭"} · 自动入账能力{data.depositCreditEnabled ? "已配置" : "未配置"}</span></div>
           <span className={`bdg ${data.provisionGate.state === "IDLE" ? "ok" : "bad"}`}>{data.provisionGate.state === "IDLE" ? "建址流程空闲" : "停止新地址分配"}</span>
         </div>
         <div className="dtint">{payoutCapabilityText(data)}</div>

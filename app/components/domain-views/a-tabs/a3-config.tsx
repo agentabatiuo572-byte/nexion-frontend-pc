@@ -90,6 +90,10 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
 
   /* ────────────────── 调参动作:feature flag 切换 ────────────────── */
 
+  const consumerLabel = (value: string) => ({
+    "ops-console-shell": "后台全局维护公告", "PlatformGlobalRateLimitFilter": "全平台请求频率限制",
+    "D2 AppWithdrawalService + B1/B5 withdrawal projection": "提现强审及资金风险统计", "SupportLeaderboardService": "客服业绩榜刷新",
+  } as Record<string,string>)[value] ?? value;
   const flagChg = (f: A3FeatureFlag) => {
     const cur = f.status;
     openActionConfirm({
@@ -97,8 +101,8 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
       detail: (
         <>
           <b>{f.name}</b>(<span className="mono">{f.key}</span>)· {f.desc}。
-          当前 <b>{cur}</b> · 范围 {f.scope} · 使用此设置的功能 <b>{f.consumer}</b>。
-          服务端允许值为 {f.allowedValues.join(" / ")}；<b>写入资格</b>:{f.resourceOwner}。
+          当前 <b>{({on:"开启",off:"关闭"} as Record<string,string>)[cur] ?? cur}</b> · 范围 {f.scope} · 使用此设置的功能 <b>{consumerLabel(f.consumer)}</b>。
+          服务端允许值为 {f.allowedValues.map(value => ({on:"开启",off:"关闭"} as Record<string,string>)[value] ?? value).join(" / ")}；<b>写入资格</b>:{f.resourceOwner}。
           生效后会立即刷新后台外壳，审计记录保留前后值。
         </>
       ),
@@ -139,7 +143,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
 
   const paramChg = (param: typeof platformParams[number]) => openActionConfirm({
     action: `调整平台参数 · ${param.name}`,
-    detail: <>{param.desc} · 使用此设置的功能 <b>{param.consumer}</b> · 服务端以当前值 <b>{param.value}</b>  检查是否已被其他人修改。</>,
+    detail: <>{param.desc} · 使用此设置的功能 <b>{consumerLabel(param.consumer)}</b> · 服务端以当前值 <b>{param.value}</b>  检查是否已被其他人修改。</>,
     amplifies: false, reasonMin: 8, reasonMax: 200,
     edit: { kind: "number", current: param.value, min: param.min, max: param.max, unit: param.unit },
     run: async (reason, value) => {

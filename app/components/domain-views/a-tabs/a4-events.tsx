@@ -1036,7 +1036,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                 const impactColor = b.state === "inprogress" ? "var(--warning)" : "var(--ink-4)";
                 return (
                   <tr key={b.id} className="click" onClick={() => setBatchIdx(i)}>
-                    <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{b.title}</td>
+                    <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{operatorCopyText(b.title)}</td>
                     <td>
                       {b.newDomains.length > 0 ? (
                         b.newDomains.map((d) => (
@@ -1060,7 +1060,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                     </td>
                     <td style={{ fontSize: 12 }}>{b.proposer}</td>
                     <td><span className={`bdg ${st.tone}`}>{st.label}</span></td>
-                    <td style={{ fontSize: 11.5, color: impactColor }}>{b.impact}</td>
+                    <td style={{ fontSize: 11.5, color: impactColor }}>{operatorCopyText(b.impact)}</td>
                     <td style={{ textAlign: "right" }}>
                       <button
                         className="l-btn sm"
@@ -1131,12 +1131,12 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         const st = BATCH_STATE[b.state];
         return (
           <Drawer
-            title={`扩展批次 · ${b.title}(${st.label})`}
-            sub={<>{st.label} · {b.impact}</>}
+            title={`扩展批次 · ${operatorCopyText(b.title)}(${st.label})`}
+            sub={<>{st.label} · {operatorCopyText(b.impact)}</>}
             onClose={() => setBatchIdx(null)}
           >
             <div className="atint" style={{ marginBottom: 12 }}>
-              <b>{st.label}</b> · {b.impact}
+              <b>{st.label}</b> · {operatorCopyText(b.impact)}
             </div>
             <table className="l-tbl">
               <thead>
@@ -1146,7 +1146,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                 {b.details.map((detail) => (
                   <tr key={detail.item}>
                     <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-2)" }}>{detail.item}</td>
-                    <td style={{ fontSize: 12 }}>{detail.desc}</td>
+                    <td style={{ fontSize: 12 }}>{operatorCopyText(detail.desc)}</td>
                   </tr>
                 ))}
               </tbody>

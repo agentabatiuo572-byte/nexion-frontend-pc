@@ -958,7 +958,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 return (
                   <div className="a-vrow" key={p.key}>
                     <span className="nm">{p.name}<small>{p.sub}</small></span>
-                    <span className="v">{p.value}</span>
+                    <span className="v">{operatorCopyText(p.value)}</span>
                     {canWrite && <button className="l-btn sm mc" onClick={adjReasonMin}>调整</button>}
                   </div>
                 );
@@ -971,7 +971,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                       : retentionPreviewError ? `清理范围读取失败:${retentionPreviewError}(已阻止执行)` : "正在读取清理范围"} · {retentionRun
                       ? `最近执行:${retentionRun.evaluatedAt} · 锁:${retentionRun.lockAcquired ? "已取得" : "占用"} · 归档:${retentionRun.archivedRows} · 删除:${retentionRun.deletedRows}`
                       : retentionRunError ? `最近状态读取失败:${retentionRunError}` : "暂无人工执行记录"}</small></span>
-                    <span className="v">{p.value}</span>
+                    <span className="v">{operatorCopyText(p.value)}</span>
                     {canWrite && <button className="l-btn sm mc" onClick={adjRet}>调整</button>}
                     {canWrite && <button className="l-btn sm mc" disabled={retentionPending || !overview || !!loadError || !retentionPreview} onClick={runRetention}>立即清理</button>}
                   </div>
@@ -981,7 +981,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 return (
                   <div className="a-vrow" key={p.key}>
                     <span className="nm">{p.name}<small>{p.sub}</small></span>
-                    <span className="v">{p.value}</span>
+                    <span className="v">{operatorCopyText(p.value)}</span>
                     <button className="l-btn sm" onClick={() => setActionConfirmListOpen(true)}>看清单</button>
                   </div>
                 );
@@ -990,7 +990,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               return (
                 <div className="a-vrow" key={p.key}>
                   <span className="nm">{p.name}<small>{p.sub}</small></span>
-                  <span className="v">{p.value}</span>
+                  <span className="v">{operatorCopyText(p.value)}</span>
                   {canWrite && <button className="l-btn sm mc" onClick={adjSchema}>变更（注册）</button>}
                 </div>
               );
@@ -1166,9 +1166,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               <tbody>
                 {confirmCategories.map((c) => (
                   <tr key={c.cat}>
-                    <td style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)" }}>{c.cat}</td>
-                    <td style={{ fontSize: 12 }}>{c.examples}</td>
-                    <td style={{ fontSize: 12 }}>{c.roleGate}</td>
+                    <td style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)" }}>{operatorCopyText(c.cat)}</td>
+                    <td style={{ fontSize: 12 }}>{operatorCopyText(c.examples)}</td>
+                    <td style={{ fontSize: 12 }}>{operatorCopyText(c.roleGate)}</td>
                   </tr>
                 ))}
               </tbody>

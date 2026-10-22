@@ -17,28 +17,29 @@ const BRAND = "UVEL";
 
 /** 大小写不敏感,命中即整词替换。 */
 export function nexGridBrandText(value: string): string {
-  return value.replace(new RegExp(LEGACY_BRAND, "gi"), BRAND).replace(/NexGrid/gi, BRAND).replace(/Stellar(?=Box|Rack)/gi, BRAND).replace(/\bNEX\b/g, BRAND);
+  return value.replace(new RegExp(LEGACY_BRAND, "gi"), BRAND).replace(/NexGrid/gi, BRAND).replace(/Stellar(?=Box|Rack)/gi, BRAND).replace(/\bNEX\b/gi, BRAND);
 }
 
 /** Recognized system defaults only; phone-suffix names need matching evidence. Keep custom names verbatim. */
 export function userNicknameText(value: string, phoneMasked: unknown): string {
-  if (/^NexGrid-[A-F0-9]{8}$/.test(value)) return nexGridBrandText(value);
-  const suffix = /^(?:NexGrid|Nexion) (\d{4})$/.exec(value)?.[1];
+  if (/^(?:NexGrid|Nexion)-[A-F0-9]{8}$/i.test(value)) return nexGridBrandText(value);
+  const suffix = /^(?:NexGrid|Nexion) (\d{4})$/i.exec(value)?.[1];
   const phoneSuffix = typeof phoneMasked === "string" ? /^\d{3}\*{4}(\d{4})$/.exec(phoneMasked)?.[1] : undefined;
   return suffix && suffix === phoneSuffix ? nexGridBrandText(value) : value;
 }
 
 /** Fixed AppSessionSurface labels only; keep custom device names verbatim. */
 export function platformSessionDeviceText(value: string): string {
-  return ["NexGrid Phone App", "NexGrid H5", "NexGrid App / H5"].includes(value) ? nexGridBrandText(value) : value;
+  return ({ "NexGrid Phone App": "UVEL 手机应用", "NexGrid H5": "UVEL 网页版", "NexGrid App / H5": "UVEL 应用 / 网页版" } as Record<string, string>)[value] ?? value;
 }
 
 /** Only confirmed official SKU/name pairs; catalog names remain operator-owned. */
-export function catalogSkuBrandText(id: string | undefined, value: string): string {
+export function catalogSkuBrandText(id: string | null | undefined, value: string): string {
   const official = (id === "stellarbox-s1" && value === "NexGridBox S1")
     || (id === "stellarbox-pro-v2" && value === "NexGridBox Pro v2")
     || (id === "stellarbox-pro" && value === "StellarBox Pro")
     || (id === "stellarrack-p1" && value === "StellarRack P1");
+  if (id === "cloud-share" && value === "Cloud Share") return "云端共享份额";
   return official ? nexGridBrandText(value) : value;
 }
 
@@ -69,5 +70,5 @@ export function operatorNicknameText(value: string): string {
 }
 /** Historical built-in data center names; custom names remain intact. */
 export function datacenterNameText(value: string): string {
-  return ["NexGrid Mobile Network", "NexGrid Virginia Compute Center"].includes(value) ? nexGridBrandText(value) : value;
+  return ({ "NexGrid Mobile Network": "UVEL 手机算力网络", "NexGrid Virginia Compute Center": "UVEL 弗吉尼亚计算中心" } as Record<string, string>)[value] ?? value;
 }

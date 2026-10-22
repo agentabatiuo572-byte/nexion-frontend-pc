@@ -1,4 +1,5 @@
 "use client";
+import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 /**
  * I1 页面文案对比测试 — design_handoff_i_domain/I1 转化文案AB.html port。
@@ -785,9 +786,9 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                     <td><div className="mono" style={{ fontSize: 11.5 }}>{row.copyPosition || "—"}</div><span className="bdg dim">{COPY_MODULE_LABELS[row.surface as CopyModule] ?? "页面待核实"}</span></td>
                     <td className="mono" style={{ fontWeight: 700 }}>{row.v}</td>
                     <td style={{ minWidth: 300 }}>
-                      <div className="tiny" title={row.zh} style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><b>ZH</b> · {row.zh || "—"}</div>
-                      <div className="tiny" title={row.vi} style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><b>VI</b> · {row.vi || "—"}</div>
-                      <div className="tiny" title={row.en} style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><b>EN</b> · {row.en || "—"}</div>
+                      <div className="tiny" title={nexGridBrandText(row.zh)} style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><b>中文</b> · {nexGridBrandText(row.zh || "—")}</div>
+                      <div className="tiny" title={nexGridBrandText(row.vi)} style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><b>越南语</b> · {nexGridBrandText(row.vi || "—")}</div>
+                      <div className="tiny" title={nexGridBrandText(row.en)} style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><b>英语</b> · {nexGridBrandText(row.en || "—")}</div>
                     </td>
                     <td style={{ minWidth: 170 }}><div className="tiny">{row.audience || "全量"}</div></td>
                     <td>{renderVerStatus(status)}</td>

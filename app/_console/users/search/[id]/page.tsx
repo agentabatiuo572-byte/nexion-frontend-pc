@@ -1,6 +1,7 @@
 "use client";
+import { formatD4Subtype } from "@/lib/admin/d4-ledger-display";
 import { formatBusinessTime } from "@/lib/admin/business-time";
-import { catalogSkuBrandText, orderSkuBrandText, platformSessionDeviceText, userNicknameText } from "@/lib/admin/brand-copy";
+import { catalogSkuBrandText, orderSkuBrandText, platformSessionDeviceText, userNicknameText, nexGridBrandText, operatorNicknameText, datacenterNameText } from "@/lib/admin/brand-copy";
 
 /**
  * C1 用户详情(L3 · 画像全景)。页面只消费后端聚合的 360 画像和操作接口。
@@ -762,7 +763,7 @@ export default function UserDetailPage() {
           columns={[
             { key: "depositNo", label: "充值单号" },
             { key: "channel", label: "渠道" },
-            { key: "asset", label: "币种" },
+            { key: "asset", label: "币种", render: (value) => nexGridBrandText(asText(value)) },
             { key: "amount", label: "金额", numeric: true },
             { key: "statusLabel", label: "状态" },
             { key: "confirmedAt", label: "确认时间", render: formatDate },
@@ -777,10 +778,10 @@ export default function UserDetailPage() {
           section={detail.withdrawals}
           columns={[
             { key: "withdrawalNo", label: "提现单号" },
-            { key: "asset", label: "币种" },
+            { key: "asset", label: "币种", render: (value) => nexGridBrandText(asText(value)) },
             { key: "chain", label: "链" },
             { key: "amount", label: "金额", numeric: true },
-            { key: "status", label: "状态" },
+            { key: "status", label: "状态", render: (value) => ({PENDING:"待审核",REVIEWING:"审核中",APPROVED:"已批准",PROCESSING:"处理中",SENT:"已发出",COMPLETED:"已到账",SUCCESS:"已到账",REJECTED:"已拒绝",FAILED:"失败",REFUNDED:"已退款",CANCELLED:"已取消"} as Record<string,string>)[asText(value).toUpperCase()] ?? "状态待核实" },
             { key: "riskScore", label: "风险分", numeric: true },
             { key: "createdAt", label: "创建时间", render: formatDate },
           ]}
@@ -843,9 +844,9 @@ export default function UserDetailPage() {
           section={detail.earnings ? { records: earningsPager.pageRows, sourceStatus: asText(detail.earnings.sourceStatus, "READY") } : undefined}
           columns={[
             { key: "bizNo", label: "业务单号" },
-            { key: "bizType", label: "类型" },
-            { key: "asset", label: "币种" },
-            { key: "direction", label: "方向" },
+            { key: "bizType", label: "类型", render: formatD4Subtype },
+            { key: "asset", label: "币种", render: (value) => nexGridBrandText(asText(value)) },
+            { key: "direction", label: "方向", render: (value) => ({IN:"收入",OUT:"支出"} as Record<string,string>)[asText(value).toUpperCase()] ?? "方向待核实" },
             { key: "amount", label: "金额", numeric: true },
             { key: "balanceAfter", label: "余额", numeric: true },
             { key: "createdAt", label: "时间", render: formatDate },
@@ -863,7 +864,7 @@ export default function UserDetailPage() {
           section={detail.referral ? { records: asArray(detail.referral.members), sourceStatus: asText(detail.referral.sourceStatus, "READY") } : undefined}
           columns={[
             { key: "memberNo", label: "成员编码" },
-            { key: "nickname", label: "昵称" },
+            { key: "nickname", label: "昵称", render: (value) => operatorNicknameText(asText(value)) },
             { key: "vRank", label: "团队等级" },
             { key: "level", label: "层级", numeric: true },
             { key: "volume", label: "贡献额", numeric: true },
@@ -918,9 +919,9 @@ export default function UserDetailPage() {
           section={detail.financial ? { records: asArray(detail.financial.exchangeRows), sourceStatus: asText(detail.financial.sourceStatus, "READY") } : undefined}
           columns={[
             { key: "bizNo", label: "业务单号" },
-            { key: "bizType", label: "类型" },
-            { key: "asset", label: "币种" },
-            { key: "direction", label: "方向" },
+            { key: "bizType", label: "类型", render: formatD4Subtype },
+            { key: "asset", label: "币种", render: (value) => nexGridBrandText(asText(value)) },
+            { key: "direction", label: "方向", render: (value) => ({IN:"收入",OUT:"支出"} as Record<string,string>)[asText(value).toUpperCase()] ?? "方向待核实" },
             { key: "amount", label: "金额", numeric: true },
             { key: "createdAt", label: "时间", render: formatDate },
           ]}
@@ -961,7 +962,7 @@ export default function UserDetailPage() {
             { key: "skuName", label: "商品", render: (value, row) => orderSkuBrandText(asText(row.skuId), displayValue(value)) },
             { key: "amount", label: "金额", numeric: true },
             { key: "state", label: "状态", render: (value) => ({ placed: "待付款", paid: "已付款", provisioning: "设备开通中", activated: "已开通", payment_failed: "付款失败", expired: "已过期", provisioning_failed: "开通失败", cancelled: "已取消", refunded: "已退款", chargeback: "已拒付" } as Record<string,string>)[asText(value)] ?? "订单状态待核实" },
-            { key: "dcLocation", label: "机房" },
+            { key: "dcLocation", label: "机房", render: (value) => datacenterNameText(asText(value)) },
             { key: "orderedAt", label: "下单时间", render: formatDate },
           ]}
         >

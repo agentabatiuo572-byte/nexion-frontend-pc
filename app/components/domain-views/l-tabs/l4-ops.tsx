@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import { useEffect, useId, useRef, useState } from "react";
 import { TabGroup } from "@/app/components/kit/tab-group";
@@ -57,7 +58,7 @@ export function L4HeaderActions({ ctx }: { ctx: LCtx }) {
       recipient: "运营管理员",
       ticket: "L4-OPERATIONS",
     };
-    const reason = `导出 L4 ${data.period.label} ${data.phaseFilter} 聚合运营报表`;
+    const reason = `导出 L4 ${data.period.label} ${data.phaseFilter === "ALL" ? "全部阶段" : data.phaseFilter} 聚合运营报表`;
     const fingerprint = JSON.stringify([input, reason]);
     if (intentKeyRef.current.fingerprint !== fingerprint) {
       intentKeyRef.current = { fingerprint, key: `l4-ops-${now}-${Math.random().toString(36).slice(2, 10)}` };
@@ -164,7 +165,7 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
         <div className="l-h">
           <span className="ttl">历史运营报表</span>
           <span className="sub">· 设备、任务、网络与 运营阶段 同读 A4 服务端事件</span>
-          <div className="r"><span className="lcode electric">{data ? `${data.period.label} · ${data.phaseFilter}` : "等待所选周期数据"}</span></div>
+          <div className="r"><span className="lcode electric">{data ? `${data.period.label} · ${data.phaseFilter === "ALL" ? "全部阶段" : data.phaseFilter}` : "等待所选周期数据"}</span></div>
         </div>
         <div className="l-b" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <span id={periodLabelId} style={{ fontSize: 12, color: "var(--ink-3)" }}>报表周期</span>
@@ -252,7 +253,7 @@ function DeviceReport({ data }: { data: L4OperationsData }) {
         </div>
         <table className="l-tbl" style={{ marginTop: 12 }}>
           <thead><tr><th>衰减段</th><th className="num">事件数</th><th className="num">实际产出 USDT</th><th className="num">影响 USDT</th></tr></thead>
-          <tbody>{data.device.degradation.map((row) => <tr key={row.band}><td>{row.band}</td><td className="num mono">{row.events}</td><td className="num mono">{fmt(row.actualUsdt)}</td><td className="num mono">{fmt(row.lossUsdt)}</td></tr>)}</tbody>
+          <tbody>{data.device.degradation.map((row) => <tr key={row.band}><td>{operatorCopyText(row.band)}</td><td className="num mono">{row.events}</td><td className="num mono">{fmt(row.actualUsdt)}</td><td className="num mono">{fmt(row.lossUsdt)}</td></tr>)}</tbody>
         </table>
         {data.device.degradation.length === 0 && <Empty text="本周期没有可核验的设备产出与衰减事件。" />}
       </div>
@@ -411,7 +412,7 @@ function PhaseReport({ data }: { data: L4OperationsData }) {
 function HistoryTable({ data }: { data: L4OperationsData }) {
   return (
     <section className="l-card">
-      <ReportHeader title="周期趋势" subtitle={`${data.period.from} 至 ${data.period.to} · ${data.phaseFilter}`} />
+      <ReportHeader title="周期趋势" subtitle={`${data.period.from} 至 ${data.period.to} · ${data.phaseFilter === "ALL" ? "全部阶段" : data.phaseFilter}`} />
       <div style={{ overflowX: "auto" }}>
         <table className="l-tbl" style={{ minWidth: 760 }}>
           <thead><tr><th>时间桶</th><th className="num">设备购置</th><th className="num">设备退役</th><th className="num">产出 USDT</th><th className="num">任务完成</th><th className="num">新增直推</th><th className="num">佣金 USDT</th></tr></thead>
@@ -433,7 +434,7 @@ function MetricTiles({ rows, percentKeys = new Set<string>() }: { rows: Array<[s
 
 function Distribution({ title, rows }: { title: string; rows: L4DistRow[] }) {
   const max = Math.max(1, ...rows.map((row) => row.count));
-  return <div><div style={{ fontWeight: 600, fontSize: 12, marginBottom: 6 }}>{title}</div>{rows.map((row) => <div className="dist-row tight" key={row.key}><div className="nm">{row.key}</div><div className="track"><i style={{ width: `${Math.max(3, row.count / max * 100)}%`, background: "var(--cyan)" }} /></div><div className="amt">{row.count}</div></div>)}{rows.length === 0 && <Empty text="本周期暂无分布数据。" />}</div>;
+  return <div><div style={{ fontWeight: 600, fontSize: 12, marginBottom: 6 }}>{title}</div>{rows.map((row) => <div className="dist-row tight" key={row.key}><div className="nm">{title === "购置代际分布" || title === "购置机型分布" ? row.key : operatorCopyText(row.key)}</div><div className="track"><i style={{ width: `${Math.max(3, row.count / max * 100)}%`, background: "var(--cyan)" }} /></div><div className="amt">{row.count}</div></div>)}{rows.length === 0 && <Empty text="本周期暂无分布数据。" />}</div>;
 }
 
 function Empty({ text }: { text: string }) {

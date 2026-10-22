@@ -1,4 +1,5 @@
 "use client";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import "../b-domain.css";
 import "./funnel.css";
@@ -315,7 +316,7 @@ export default function FunnelPage() {
           <section className="card b3-links" aria-label="跨域查看明细">
             <div>
               <b>原因分析与数据来源</b>
-              <span>{data.sourceStatement}</span>
+              <span>{operatorCopyText(data.sourceStatement)}</span>
             </div>
             <nav>
               {canCross("/analytics/funnel-cohort") ? <Link href="/analytics/funnel-cohort" prefetch={false}>到 L2 查看完整分析 →</Link> : <span aria-disabled="true">L2 完整分析 · 无权限</span>}

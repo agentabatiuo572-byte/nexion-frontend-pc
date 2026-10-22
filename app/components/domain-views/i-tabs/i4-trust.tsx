@@ -1,4 +1,6 @@
 "use client";
+import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
@@ -346,7 +348,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           <b>版本差异</b>：当前线上 <span className="mono">{s.v}</span> → 待发布 <span className="mono">{draft.version}</span>；
           发布后 信任中心页面即时换新。<b>三语确认</b>必须核对中文、越南语、英文语义一致。
           {requiresDataSource(s) && <>财务数字 / UVEL介绍必须填写可追溯的<b>财务/UVEL 数据来源</b>。</>}
-          <b>执行门槛:{s.roleGate}</b>
+          <b>执行门槛:{operatorCopyText(s.roleGate)}</b>
         </>
       ),
       amplifies: false,
@@ -439,7 +441,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       action: <>下架信任版块 · {s.key}</>,
       detail: (
         <>
-          当前 <b>{s.v}</b> 生效中。下架后 信任中心页面该版块<b>整体隐藏</b>(无内置备用)——一般只在对外内容出合规问题时才这么做;执行门槛与发布一致({s.roleGate})。
+          当前 <b>{s.v}</b> 生效中。下架后 信任中心页面该版块<b>整体隐藏</b>(无内置备用)——一般只在对外内容出合规问题时才这么做;执行门槛与发布一致({operatorCopyText(s.roleGate)})。
         </>
       ),
       amplifies: false,
@@ -913,15 +915,15 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                   >
                     <td>
                       <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{s.key}</span>
-                      <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }}>{s.desc}</div>
+                      <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }}>{nexGridBrandText(s.desc)}</div>
                     </td>
                     <td style={{ fontSize: 12, color: "var(--ink-2)" }}>{s.struct}</td>
                     <td className="mono" style={{ fontWeight: 700 }}>{s.v}</td>
                     <td>
                       {isSensitiveTrustSection(s) ? (
-                        <span className="bdg warn">{s.roleGate}</span>
+                        <span className="bdg warn">{operatorCopyText(s.roleGate)}</span>
                       ) : (
-                        <span className="bdg dim">{s.roleGate}</span>
+                        <span className="bdg dim">{operatorCopyText(s.roleGate)}</span>
                       )}
                     </td>
                     <td>
@@ -964,7 +966,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                 return <tr key={`${version.sectionKey}-${version.version}`}>
                   <td className="mono">{version.sectionKey}</td>
                   <td className="mono" style={{ fontWeight: 700 }}>{version.version}</td>
-                  <td>{version.description}</td>
+                  <td>{nexGridBrandText(version.description)}</td>
                   <td>{version.structure}</td>
                   <td className="num">{version.fields.length}</td>
                   <td><span className={`bdg ${isDraft ? "warn" : "ok"}`}>{statusZh(version.status)}</span></td>
@@ -1308,7 +1310,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       {/* 版块详情 Drawer */}
       {view === "trust" && sec && (
         <Drawer
-          title={`版块 · ${sec.key}(${sec.desc})`}
+          title={`版块 · ${sec.key}(${nexGridBrandText(sec.desc)})`}
           onClose={() => setSecKey(null)}
           footer={
             <button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => setSecKey(null)}>
@@ -1317,7 +1319,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           }
         >
           <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>
-            当前 {sec.v} · {statusZh(liveTrustStatus(sec))} · 执行门槛:{sec.roleGate}
+            当前 {sec.v} · {statusZh(liveTrustStatus(sec))} · 执行门槛:{operatorCopyText(sec.roleGate)}
           </div>
           <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 4, lineHeight: 1.6 }}>
             结构化内容字段如下；中文、越南语文案必填，英语文案可选。发布前可预览，发布走操作确认。
@@ -1337,8 +1339,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                   <tbody>
                     {FINANCIALS_FIELDS.map((f) => (
                       <tr key={f.k}>
-                        <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{f.k}</td>
-                        <td className="mono" style={{ fontWeight: 700 }}>{f.v}</td>
+                        <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{({tvlOnChain:"链上资产总值",mrrValue:"月度收入",mrrDelta:"月度收入变化",activeAccountsValue:"活跃账户数",activeAccountsDelta:"活跃账户变化",devicesOnlineValue:"在线设备数",devicesOnlineDelta:"在线设备变化",payoutsProcessedValue:"累计处理付款",payoutsProcessedDelta:"付款金额变化","footnote.zh":"中文数据说明","footnote.vi":"越南语数据说明","footnote.en":"英文数据说明"} as Record<string,string>)[f.k] ?? f.k}</td>
+                        <td className="mono" style={{ fontWeight: 700 }}>{nexGridBrandText(f.v)}</td>
                         <td className="mono" style={{ color: "var(--success)" }}>{f.delta}</td>
                       </tr>
                     ))}

@@ -1,4 +1,5 @@
 "use client";
+import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
@@ -312,7 +313,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                 <tbody>
                   {!data.pendingCalculations.length && <tr className="empty-row"><td colSpan={8}>当前筛选暂无待计算奖励</td></tr>}
                   {data.pendingCalculations.map(row => <tr key={row.settlementNo}>
-                    <td className="cid">{row.settlementNo}</td><td>{KIND_LABELS[row.kind]}</td><td>{row.sourceRef} / {row.sourceUserName}</td>
+                    <td className="cid">{row.settlementNo}</td><td>{KIND_LABELS[row.kind]}</td><td>{row.sourceRef} / {operatorNicknameText(row.sourceUserName)}</td>
                     <td>{row.kind === "direct_purchase" ? `L${row.layer}` : "直属"}</td><td>{row.basisUsdt} USDT</td><td>USDT 待计算 · UVEL 待计算</td>
                     <td>{row.unlockAt ? new Date(row.unlockAt).toLocaleString() : "待确认"} / {row.ts}</td><td><Badge tone="warn">等待价格</Badge></td>
                   </tr>)}
@@ -343,7 +344,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                         </> : <><span>当前账项：{row.amt} {nexGridBrandText(row.cur)} · {state.label}</span><span>关联购买奖励组仅供核对，资金操作只作用于当前账项币种。</span></>}
                       </div></details>}</td>
                       <td>{KIND_LABELS[row.kind] ?? row.kind}</td>
-                      <td>{row.user} / {row.sourceUserId ? `U${row.sourceUserId}` : "--"}</td>
+                      <td>{operatorNicknameText(row.user)} / {row.sourceUserId ? `U${row.sourceUserId}` : "--"}</td>
                       <td>{row.amt.toLocaleString()} {nexGridBrandText(row.cur)}</td>
                       <td>{directGroup(row) ? "直属" : row.layer ? `L${row.layer}` : "--"} / {row.settledAt}</td>
                       <td>{row.coolingDaysLeft > 0 ? `剩余 ${row.coolingDaysLeft} 天` : "无独立冷却"}</td>

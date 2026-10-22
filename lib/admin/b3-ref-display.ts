@@ -13,6 +13,7 @@
 
 const REF_VALUE_LABELS: Record<string, string> = {
   direct: "自然渠道（无推荐码）",
+  system: "系统渠道",
 };
 
 /** 空/内部占位值:没有有效推荐码归因。 */
