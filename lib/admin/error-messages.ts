@@ -1,4 +1,8 @@
 const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+  CREGIS_AUTO_ACTIVATION_NOT_APPROVED: "自动资金流程运行总闸尚未批准或渠道风控条件未满足，不能开启。",
+  CREGIS_AUTO_DIFFERENT_CHECKER_REQUIRED: "自动资金开关须由另一位有效且有权限的管理员复核。",
+  CREGIS_AUTO_EVIDENCE_OR_CONFIGURATION_INVALID: "自动任务的原入金、链上证据或固定配置未通过核对。",
+  CREGIS_AUTO_STATE_CONFLICT: "自动任务或开关版本已变化，请刷新后核对原记录。",
   CREGIS_PREPARATION_CONFIGURATION_REQUIRED: "归集与甲方付款配置尚未就绪，请联系管理员核对。",
   CREGIS_PREPARATION_REQUEST_INVALID: "请核对金额、业务参考号和操作理由。",
   CREGIS_PREPARATION_REFERENCE_EXISTS: "该业务参考号已有准备单，请查找原单，勿重复创建。",

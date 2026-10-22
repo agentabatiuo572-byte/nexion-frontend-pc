@@ -5,6 +5,7 @@ import { financeAdminRequest } from "@/lib/admin/d-client";
 import type { DCtx } from "./types";
 import { CregisExceptionOperations } from "./cregis-exceptions";
 import { CregisFundsPreparation } from "./cregis-funds-preparation";
+import { CregisAutoForward } from "./cregis-auto-forward";
 
 type ExceptionRow = Record<string, unknown>;
 type CregisExceptions = {
@@ -429,6 +430,7 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
             {data[key].length > 5 && <div className="s">仅显示前 5 项；请在后端异常接口查看完整记录。</div>}
           </div>)}</div>
         </div>
+        <CregisAutoForward canManage={canManage} openActionConfirm={openActionConfirm} />
         <CregisFundsPreparation canManage={canManage} openActionConfirm={openActionConfirm} />
         <CregisExceptionOperations canManage={canManage} openActionConfirm={openActionConfirm}
           sources={[
