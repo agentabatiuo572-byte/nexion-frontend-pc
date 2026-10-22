@@ -3,6 +3,10 @@ export function cregisExceptionRoute(parts: string[]): { path: string; methods: 
   const route = parts.join("/");
   const id = "[1-9][0-9]{0,18}";
   const definitions: Array<[RegExp, string[]]> = [
+    [/^cregis\/funds-preparation\/status$/, ["GET", "HEAD"]],
+    [/^cregis\/funds-preparation\/preflight$/, ["POST"]],
+    [/^cregis\/funds-preparation\/plans$/, ["GET", "HEAD", "POST"]],
+    [/^cregis\/funds-preparation\/plans\/CF-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/decision$/, ["POST"]],
     [/^cregis\/exception-ownership\/challenges$/, ["POST"]],
     [/^cregis\/exception-claims$/, ["GET", "HEAD", "POST"]],
     [/^cregis\/exception-claims\/preview$/, ["POST"]],

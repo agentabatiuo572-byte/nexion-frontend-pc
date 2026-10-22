@@ -1,4 +1,10 @@
 const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+  CREGIS_PREPARATION_CONFIGURATION_REQUIRED: "归集与甲方付款配置尚未就绪，请联系管理员核对。",
+  CREGIS_PREPARATION_REQUEST_INVALID: "请核对金额、业务参考号和操作理由。",
+  CREGIS_PREPARATION_REFERENCE_EXISTS: "该业务参考号已有准备单，请查找原单，勿重复创建。",
+  CREGIS_PREPARATION_SOURCE_INVALID: "该来源地址当前不可归集，请刷新地址列表后重新选择。",
+  CREGIS_PREPARATION_DIFFERENT_CHECKER_REQUIRED: "准备单须由另一位有权限的管理员复核。",
+  CREGIS_PREPARATION_STATE_CONFLICT: "准备单状态或版本已变化，请刷新后核对。",
   CREGIS_REFUND_FEE_NOT_CONFIGURED: "请先在 D1 配置异常退款手续费，并由另一管理员复核生效。",
   CREGIS_EXCEPTION_OBJECT_LOCKED_BY_A2: "该入金或用户正由 A2 审核锁定，请先处理原审核工单。",
   CREGIS_EXCEPTION_RISK_GATE_BLOCKED: "当前存在阻断处置的资金风险，请先核对 D1 风险与原入金证据。",
