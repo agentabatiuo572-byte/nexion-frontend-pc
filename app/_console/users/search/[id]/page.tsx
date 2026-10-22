@@ -942,7 +942,7 @@ export default function UserDetailPage() {
                 ? <button type="button" onClick={() => setNotificationEvidence({ userKey, authEpoch, id })}>查看证据 · {id}</button>
                 : displayValue(value);
             } },
-            { key: "title", label: "标题" },
+            { key: "title", label: "标题", render: (value) => nexGridBrandText(displayValue(value)) },
             { key: "type", label: "类型", render: formatC1NotificationType },
             { key: "pushStatus", label: "推送", render: formatC1PushStatus },
             { key: "readFlag", label: "已读", render: formatC1ReadFlag },
