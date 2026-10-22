@@ -781,7 +781,7 @@ export default function UserDetailPage() {
             { key: "asset", label: "币种", render: (value) => nexGridBrandText(asText(value)) },
             { key: "chain", label: "链" },
             { key: "amount", label: "金额", numeric: true },
-            { key: "status", label: "状态", render: (value) => ({PENDING:"待审核",REVIEWING:"审核中",APPROVED:"已批准",PROCESSING:"处理中",SENT:"已发出",COMPLETED:"已到账",SUCCESS:"已到账",REJECTED:"已拒绝",FAILED:"失败",REFUNDED:"已退款",CANCELLED:"已取消"} as Record<string,string>)[asText(value).toUpperCase()] ?? "状态待核实" },
+            { key: "status", label: "状态", render: (value) => ({SUBMITTED:"已提交",REVIEW_PENDING:"待审核",EXTENDED_HOLD:"等待复查",DELAYED:"延迟复查",FROZEN:"已冻结",REVIEW_PASSED:"已放行",PENDING_CHAIN:"已放行",CHAIN_SUBMITTED:"已发出",CONFIRMED:"已确认到账",REVIEW_REJECTED:"审核拒绝",ADDRESS_INVALID:"地址无效",TX_FAILED:"处理失败",TX_ORPHANED:"交易异常待核查",DEAD:"交易异常待核查",PENDING:"待审核",REVIEWING:"审核中",APPROVED:"已批准",PROCESSING:"处理中",SENT:"已发出",COMPLETED:"已到账",SUCCESS:"已到账",REJECTED:"已拒绝",FAILED:"失败",REFUNDED:"已退款",CANCELLED:"已取消"} as Record<string,string>)[asText(value).toUpperCase()] ?? "状态待核实" },
             { key: "riskScore", label: "风险分", numeric: true },
             { key: "createdAt", label: "创建时间", render: formatDate },
           ]}

@@ -1,7 +1,6 @@
 "use client";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
-import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
  * I4 信任中心 / I5 风险披露复用视图 — 按独立路由与权限渲染。
@@ -1354,7 +1353,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
               {(SECTION_FIELDS[sec.key] ?? []).map(([k, v], i) => (
                 <div className="kv" key={i}>
                   <span className="k">{k}</span>
-                  <span className="v">{v}</span>
+                  <span className="v">{nexGridBrandText(v)}</span>
                 </div>
               ))}
             </>

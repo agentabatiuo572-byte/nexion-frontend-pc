@@ -1047,6 +1047,16 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     });
   };
 
+  const taskTitleText = (value: string) => {
+    const branded = nexGridBrandText(value);
+    return ({
+      "Start your first order": "开始首笔订单", "Complete a qualified referral": "完成一次符合条件的邀请",
+      "Complete a learning course": "完成一门课程", "Activate a device": "激活一台设备",
+      "查看 UVELBox S1 ROI": "查看 UVELBox S1 预计回报", "购入 Genesis 创世节点": "购入创世节点",
+      "锁仓 USDT $1,000+ 进入 365 天 Staking": "锁定不少于 1,000 USDT，参与 365 天质押",
+      "扩展硬件 fleet · 加购一台": "扩充设备 · 加购一台", "首台 UVELBox · 止血 $7/天": "首台 UVELBox · 每日收益 7 美元",
+    } as Record<string,string>)[branded] ?? branded;
+  };
   const openWheelGuard = (guard: { key: string; label: string; value: string }) => {
     const current = text(guard.value);
     openActionConfirm({
@@ -1315,7 +1325,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         )}
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 740 }}>
-            <thead><tr><th>内容</th><th>原文</th><th>英文</th><th>中文</th><th>越南语</th></tr></thead>
+            <thead><tr><th>内容</th><th>内容预览</th><th>英文</th><th>中文</th><th>越南语</th></tr></thead>
             <tbody>{localizedRows.flatMap((item) => {
               const rows: Array<{ field: "name" | "description" | "rewardName"; source: string; label: string }> = [
                 { field: "name", source: item.label, label: item.code },
@@ -1329,7 +1339,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               return rows.map((row) => (
                 <tr key={`${item.entity}:${item.code}:${row.field}`}>
                   <td className="mono">{row.label}</td>
-                  <td>{operatorCopyText(row.source)}</td>
+                  <td>{taskTitleText(row.source)}</td>
                   {(["en", "zh", "vi"] as const).map((language) => {
                     const current = localizedValue(item.entity, item.code, row.field, language);
                     // 目标语言缺失(zh/vi)是发布阻断项,不是可忽略的空值 —— 单独标出。
@@ -1419,7 +1429,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                     const active = text(task.status, "") === "active";
                     return (
                       <tr key={id}>
-                        <td style={{ fontWeight: 600, color: active ? "var(--ink)" : "var(--ink-3)" }}>{operatorCopyText(text(task.task))}</td>
+                        <td style={{ fontWeight: 600, color: active ? "var(--ink)" : "var(--ink-3)" }}>{taskTitleText(text(task.task))}</td>
                         <td><span className="bdg">{TASK_CATEGORY_LABELS[text(task.category, "explore")] ?? "其他任务分类"}</span></td>
                         <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(task.href)}</td>
                         <td style={{ color: "var(--ink-3)" }}>新进入用户的快照总奖励</td>
@@ -1485,7 +1495,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                     const [statusLabel, statusTone] = taskStatusMeta(task);
                     return (
                       <tr key={`${task.cond}-${index}`}>
-                        <td style={{ fontWeight: 600 }}>{operatorCopyText(text(task.cond))}</td>
+                        <td style={{ fontWeight: 600 }}>{taskTitleText(text(task.cond))}</td>
                         <td><span className="bdg">{TASK_CATEGORY_LABELS[text(task.category, "explore")] ?? "其他任务分类"}</span></td>
                         <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(task.href)}</td>
                         <td className="num mono" style={{ fontWeight: 700 }}>{nexGridBrandText(text(task.reward))}</td>
@@ -1526,7 +1536,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                     const [statusLabel, statusTone] = taskStatusMeta(task);
                     return (
                       <tr key={`${task.cond}-${index}`}>
-                        <td style={{ fontWeight: 600 }}>{operatorCopyText(text(task.cond))}</td>
+                        <td style={{ fontWeight: 600 }}>{taskTitleText(text(task.cond))}</td>
                         <td><span className="bdg">{TASK_CATEGORY_LABELS[text(task.category, "explore")] ?? "其他任务分类"}</span></td>
                         <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(task.href)}</td>
                         <td className="num mono" style={{ fontWeight: 700 }}>{nexGridBrandText(text(task.reward))}</td>
@@ -1636,7 +1646,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                 const contract = contractForTask(task, model.taskContracts, index);
                 return (
                   <tr key={`${text(task.id, String(index))}-${text(contract.taskKey, String(index))}`}>
-                    <td style={{ fontWeight: 600, color: "var(--ink)" }}>{operatorCopyText(text(task.task))}</td>
+                    <td style={{ fontWeight: 600, color: "var(--ink)" }}>{taskTitleText(text(task.task))}</td>
                     <td className="mono" style={{ fontSize: 11 }}>{text(contract.taskKey)}</td>
                     <td className="mono" style={{ fontSize: 11 }}>{text(contract.serverEvent)}</td>
                     <td className="mono" style={{ fontSize: 11, color: text(contract.downstream) === "-" ? "var(--ink-4)" : undefined }}>{text(contract.downstream)}</td>
@@ -1691,10 +1701,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                 const [statusLabel, statusTone] = statusMeta(mission.status);
                 return (
                   <tr key={text(mission.id)}>
-                    <td style={{ fontWeight: 600 }}>{operatorCopyText(text(mission.theme))}</td>
+                    <td style={{ fontWeight: 600 }}>{nexGridBrandText(text(mission.theme))}</td>
                     <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{text(mission.age)}</td>
                     <td className="num mono" style={{ fontWeight: 700 }}>{nexGridBrandText(text(mission.reward))}</td>
-                    <td style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{operatorCopyText(text(mission.goals))}</td>
+                    <td style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{nexGridBrandText(text(mission.goals))}</td>
                     <td><span className={`bdg ${statusTone}`}>{statusLabel}</span></td>
                     <td style={{ textAlign: "right" }}>
                       <button className="l-btn sm mc" onClick={() => openTaskReward(`monthly.${text(mission.id)}.reward`, text(mission.theme), text(mission.reward))} disabled={!canModuleWrite}>改奖励</button>

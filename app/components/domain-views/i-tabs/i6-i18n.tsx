@@ -1034,7 +1034,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                 return <tr key={`${row.courseId}-${row.version}`}>
                   <td className="mono">{row.version}</td>
                   <td><span className={`bdg ${row.status === "DRAFT" ? "warn" : row.status === "PUBLISHED" ? "ok" : "dim"}`}>{statusText}</span></td>
-                  <td>{String(row.payload.titleZh ?? row.payload.titleEn ?? "—")}</td>
+                  <td>{nexGridBrandText(String(row.payload.titleZh ?? row.payload.titleEn ?? "—"))}</td>
                   <td className="mono">{row.revision}</td>
                   <td className="mono">{row.updatedAt ? new Date(row.updatedAt).toLocaleString("zh-CN") : "—"}</td>
                   <td style={{ textAlign: "right" }}>

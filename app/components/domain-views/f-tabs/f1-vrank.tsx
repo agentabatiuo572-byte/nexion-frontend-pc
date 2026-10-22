@@ -155,7 +155,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   // ── 奖励 CRUD(复用 OperationConfirmModal + businessForm「vrank-reward-edit」;真写经 ctx.run 回调 + 审计)──
   const rewardFormBase = (r: VRow) => ({
     voucherOptions: ctx.voucherOptions, voucherLabels: ctx.voucherLabels,
-    skuOptions: ctx.skuOptions, skuLabels: ctx.skuLabels, subject: `${r.v} 等级`,
+    skuOptions: ctx.skuOptions, skuLabels: Object.fromEntries(Object.entries(ctx.skuLabels).map(([id, label]) => [id, catalogSkuBrandText(id, label)])), subject: `${r.v} 等级`,
   });
   const openAddReward = (r: VRow) => {
     // 新增是「配置奖励模板」,非即时派发资金;类型在表单内选,资金提示由表单内 per-type tint 给出,
