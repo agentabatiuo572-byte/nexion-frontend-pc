@@ -35,12 +35,13 @@ export function platformSessionDeviceText(value: string): string {
 
 /** Only confirmed official SKU/name pairs; catalog names remain operator-owned. */
 export function catalogSkuBrandText(id: string | null | undefined, value: string): string {
-  const official = (id === "stellarbox-s1" && value === "NexGridBox S1")
-    || (id === "stellarbox-pro-v2" && value === "NexGridBox Pro v2")
-    || (id === "stellarbox-pro" && value === "StellarBox Pro")
-    || (id === "stellarrack-p1" && value === "StellarRack P1");
+  const officialModel = ({
+    "stellarbox-s1": "Box S1", "stellarbox-pro": "Box Pro", "stellarbox-pro-v2": "Box Pro v2",
+    "stellarrack-p1": "Rack P1", "stellarrack-p2": "Rack P2",
+  } as Record<string,string>)[id ?? ""];
   if (id === "cloud-share" && value === "Cloud Share") return "云端共享份额";
-  return official ? nexGridBrandText(value) : value;
+  return officialModel && new RegExp(`^(?:NexGrid|Nexion|Stellar)${officialModel}$`, "i").test(value)
+    ? `UVEL${officialModel}` : value;
 }
 
 /** Match the catalog's paired item summaries; quantities and product IDs stay unchanged. */

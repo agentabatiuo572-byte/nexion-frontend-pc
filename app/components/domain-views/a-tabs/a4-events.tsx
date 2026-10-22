@@ -1,5 +1,5 @@
 "use client";
-const redriveStatusText = (value: string) => ({PENDING:"待发送",CLAIMED:"处理中",PROCESSING:"处理中",SENT:"已发送",DELIVERED:"已送达",DEAD:"已终止",RETRY_REQUESTED:"已请求重试"} as Record<string,string>)[value] ?? "状态待核实";
+const redriveStatusText = (value: string) => ({PENDING:"待发送",CLAIMED:"处理中",PROCESSING:"处理中",SENT:"已发送",DELIVERED:"已送达",DEAD:"已终止",FAILED:"失败待重试",RETRY_REQUESTED:"已请求重试"} as Record<string,string>)[value] ?? "状态待核实";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import { A4OutboxDiagnostics } from "./a4-outbox-diagnostics";

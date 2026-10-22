@@ -19,7 +19,7 @@ const PAGE_LABELS: Record<string,string> = {
   "/pages/me/wallet-withdraw-tracking": "提现状态",
   "/pages/me/wallet-exchange": "兑换",
   "/pages/me/wallet-bills": "账单",
-  "/pages/me/wallet-nex": "NEX 钱包",
+  "/pages/me/wallet-nex": "UVEL 钱包",
   "/pages/me/wallet-repurchase": "复投",
   "/pages/me/profile": "个人资料",
   "/pages/me/security": "安全",
@@ -46,7 +46,7 @@ const PAGE_LABELS: Record<string,string> = {
   "/pages/team/agent": "区域大使",
   "/pages/genesis/marketplace": "二级市场",
   "/pages/genesis/holder": "创世持有",
-  "/pages/trust/nex": "NEX 信任",
+  "/pages/trust/nex": "UVEL 介绍",
   "/pages/genesis/how-it-works": "创世节点说明",
   "/pages/staking/how-it-works": "质押说明",
   "/pages/team/rank-how": "V 级头衔说明",
@@ -99,5 +99,6 @@ const PAGE_LABELS: Record<string,string> = {
 };
 
 export function behaviorPageTitle(page: { route?: string; key?: string; titleZh: string }): string {
-  return /[\u3400-\u9fff]/.test(page.titleZh) ? nexGridBrandText(page.titleZh) : PAGE_LABELS[page.route ?? page.key ?? ""] ?? nexGridBrandText(page.titleZh);
+  const title = /[\u3400-\u9fff]/.test(page.titleZh) ? page.titleZh : PAGE_LABELS[page.route ?? page.key ?? ""] ?? page.titleZh;
+  return nexGridBrandText(title);
 }
