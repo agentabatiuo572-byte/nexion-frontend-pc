@@ -215,7 +215,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       <section className="l-card">
         <div className="l-h"><span className="ttl">指定新人结算</span></div>
         <div className="l-b">
-          <label>新人用户编号 <input aria-label="指定结算的新人用户编号" inputMode="numeric" placeholder="请输入新人用户编号" value={invitedUserIdInput} onChange={(event) => setInvitedUserIdInput(event.target.value)} /></label>{" "}
+          <label>新人用户编号 <input className="ui-control" aria-label="指定结算的新人用户编号" inputMode="numeric" placeholder="请输入新人用户编号" value={invitedUserIdInput} onChange={(event) => setInvitedUserIdInput(event.target.value)} /></label>{" "}
           {canSettle && <button className="l-btn mc" disabled={!data?.enabled || !targetUserValid} onClick={() => settle(targetUserId)}>结算指定新人</button>}
           <p className="f-foot">审批单将锁定该新人；邀请人由服务端邀请关系确定。资格不符或已结算时终止，不会结算其他邀请。</p>
         </div>

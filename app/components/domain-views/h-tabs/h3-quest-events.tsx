@@ -370,7 +370,7 @@ export function H3WeeklyRegionPolicyPanel({ ctx }: { ctx: HCtx }) {
       },
     });
   };
-  return <section className="l-card" aria-label="每周任务地区规则">
+  return <section className="l-card ui-weekly-region" aria-label="每周任务地区规则">
     <div className="l-h"><span className="ttl">每周任务地区规则</span><div className="r">
       <button className="l-btn sm" disabled={loading} onClick={() => void reload()}>刷新地区规则</button>
     </div></div>
@@ -382,7 +382,7 @@ export function H3WeeklyRegionPolicyPanel({ ctx }: { ctx: HCtx }) {
       {policy && <>
         <p>当前{policy.source === "DEFAULT" ? "默认规则" : `已发布规则 · 版本 ${policy.revision}`}
           {policy.effectiveFrom ? ` · 首次切换边界 ${policy.effectiveFrom}（UTC）` : " · 尚未发布地区切换"}</p>
-        <ul>{policy.mappings.map(row => <li key={row.callingCode}>{row.callingCode} → {row.zoneId}</li>)}</ul>
+        <dl className="ui-facts-grid">{policy.mappings.map(row => <div key={row.callingCode}><dt>电话区号 {row.callingCode}</dt><dd>{row.zoneId}</dd></div>)}</dl>
         {policy.mappings.length === 0 && <p>全部区号使用越南时间。</p>}
         {pending && <p role="status">调整已提交 A2，等待 A2 审批。当前显示的规则尚未因此更新。{canReadA2
           ? <><a href="/platform/audit">查看审批队列</a>；审批处理后刷新地区规则以核对状态。</>

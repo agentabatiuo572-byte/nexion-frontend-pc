@@ -21,13 +21,13 @@ function caseCanCheck(row: ExceptionRecord, adminId: unknown): boolean {
 }
 
 function CaseSummary({ row }: { row: ExceptionRecord }) {
-  return <div className="s">用户 {label(row.userId ?? row.targetUserId ?? row.claimantUserId)} · 毛额 {label(row.grossAmount)} / 费用 {label(row.feeAmount)} / 净额 {label(row.netAmount)} USDT
-    {row.returnAddress ? ` · 原转出地址 ${row.returnAddress}` : ""}
-    {row.providerCid ? ` · Cregis CID ${row.providerCid}` : ""}
-    {row.outstandingDebt != null ? ` · 待追偿 ${row.outstandingDebt} USDT` : ""}
-    {row.evidenceHash ? ` · 证据摘要 ${row.evidenceHash}` : ""}
-    {row.reason ? ` · 理由 ${row.reason}` : ""}
-    {row.lastError ? ` · 待核查原因 ${row.lastError}` : ""}</div>;
+  const facts = [
+    ["用户", row.userId ?? row.targetUserId ?? row.claimantUserId],
+    ["毛额（USDT）", row.grossAmount], ["费用（USDT）", row.feeAmount], ["净额（USDT）", row.netAmount],
+    ["原转出地址", row.returnAddress], ["Cregis 订单编号", row.providerCid],
+    ["待追偿（USDT）", row.outstandingDebt], ["证据摘要", row.evidenceHash], ["理由", row.reason], ["待核查原因", row.lastError],
+  ];
+  return <dl className="ui-facts-grid">{facts.filter(([, value], index) => index < 4 || value != null && value !== "").map(([title, value]) => <div key={String(title)}><dt>{String(title)}</dt><dd>{label(value)}</dd></div>)}</dl>;
 }
 
 type OperationsProps = {
@@ -177,7 +177,7 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, owner
     </div>)}{page.hasMore && <button className="l-btn sm" disabled={busy || loading} onClick={() => void pageMore(path, page, setter)}>加载更早{title}</button>}
   </section>;
 
-  return <section className="cregis-panel" aria-label="异常入金处置">
+  return <section className="cregis-panel ui-exception-panel" aria-label="异常入金处置">
     <h3>异常入金处置</h3><button className="l-btn sm" disabled={busy || loading} onClick={() => void refresh()}>刷新异常处置</button>
     {error && <div role="alert" className="dtint warn">{error}</div>}
     {loading && <p>正在核对费用规则与处置工单…</p>}
@@ -187,16 +187,16 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, owner
       {policyCases.map(row => <div className="cregis-case" key={label(row.id)}>费用提案 #{label(row.id)} · {MODE[String(row.mode)]} · 固定费 {label(row.feeUsdt)} USDT · {STATE[String(row.state ?? row.status)] ?? "处置状态待核实"} · 发起人 {label(row.makerId)}
         {canRefund && caseCanCheck(row, session?.adminId) && ["APPROVE", "REJECT"].map(decision => <button key={decision} className="l-btn sm" disabled={busy || loading} onClick={() => confirm(decision === "APPROVE" ? "复核费用规则" : "拒绝费用规则", `/refunds/fee-policy/cases/${exceptionId(row.id)}/decision`, { expectedVersion: exceptionVersion(row.version), decision }, `请独立核对费用规则 ${MODE[String(row.mode)]}、固定费用 ${label(row.feeUsdt)} USDT。`)}>{decision === "APPROVE" ? "复核费用规则" : "拒绝"}</button>)}
       </div>)}
-      {canManage && <div className="cregis-case">
+      {canManage && <div className="cregis-case ui-exception-form">
         <h4>认领或原路退款申请</h4><p>由原转出钱包签名证明归属。交易所或合约不能提供该证明时，保留待核查并联系原平台补证；公开交易哈希不能代替签名。</p>
-        <label>待处理入金 <select aria-label="待处理入金" value={sourceKey} disabled={busy} onChange={e => { setSourceKey(e.target.value); clearProof(); }}><option value="">请选择</option>{sources.map(row => <option key={`${row.sourceType}:${row.sourceId}`} value={`${row.sourceType}:${row.sourceId}`}>{row.title}</option>)}</select></label>
-        <label>处置方式 <select aria-label="异常处置方式" value={intent} disabled={busy} onChange={e => { setIntent(e.target.value); clearProof(); }}><option value="CLAIM_CREDIT" disabled={claimUnavailable}>认领并入账</option>{canRefund && <option value="REFUND_ORIGIN" disabled={policy.mode === "UNCONFIGURED"}>原路退款{policy.mode === "UNCONFIGURED" ? "（费用待配置）" : ""}</option>}</select></label>
-        {intent === "CLAIM_CREDIT" && <label>认领用户编号 <input aria-label="认领用户编号" value={userId} disabled={busy} inputMode="numeric" onChange={e => { setUserId(e.target.value); clearProof(); }} /></label>}
+        <label>待处理入金 <select className="ui-control" aria-label="待处理入金" value={sourceKey} disabled={busy} onChange={e => { setSourceKey(e.target.value); clearProof(); }}><option value="">请选择</option>{sources.map(row => <option key={`${row.sourceType}:${row.sourceId}`} value={`${row.sourceType}:${row.sourceId}`}>{row.title}</option>)}</select></label>
+        <label>处置方式 <select className="ui-control" aria-label="异常处置方式" value={intent} disabled={busy} onChange={e => { setIntent(e.target.value); clearProof(); }}><option value="CLAIM_CREDIT" disabled={claimUnavailable}>认领并入账</option>{canRefund && <option value="REFUND_ORIGIN" disabled={policy.mode === "UNCONFIGURED"}>原路退款{policy.mode === "UNCONFIGURED" ? "（费用待配置）" : ""}</option>}</select></label>
+        {intent === "CLAIM_CREDIT" && <label>认领用户编号 <input className="ui-control" aria-label="认领用户编号" value={userId} disabled={busy} inputMode="numeric" onChange={e => { setUserId(e.target.value); clearProof(); }} /></label>}
         <button className="l-btn sm" disabled={busy || loading || !sourceKey || (intent === "REFUND_ORIGIN" && (!canRefund || policy.mode === "UNCONFIGURED")) || (intent === "CLAIM_CREDIT" && (claimUnavailable || !/^[1-9][0-9]{0,18}$/.test(userId)))} onClick={() => void prepare()}>生成钱包签名原文</button>
         {claimUnavailable && <p>这笔低额入金已有归属，仅支持原路退款；费用待配置时请先配置规则。</p>}
         {sources.length === 0 && <p>当前没有可提交的低额或未归属入金。</p>}
-        {challenge && <><label>钱包签名原文 <textarea aria-label="钱包签名原文" readOnly rows={8} value={label(challenge.message)} /></label><p>有效期至 {label(challenge.expiresAt)}。请将以上原文交给原转出钱包签名，无须转账或提供私钥。</p>
-          <label>签名结果 <textarea aria-label="钱包签名结果" rows={3} value={signature} disabled={busy} onChange={e => { setSignature(e.target.value); setEvidence(null); }} /></label>
+        {challenge && <><label>钱包签名原文 <textarea className="ui-control" aria-label="钱包签名原文" readOnly rows={8} value={label(challenge.message)} /></label><p>有效期至 {label(challenge.expiresAt)}。请将以上原文交给原转出钱包签名，无须转账或提供私钥。</p>
+          <label>签名结果 <textarea className="ui-control" aria-label="钱包签名结果" rows={3} value={signature} disabled={busy} onChange={e => { setSignature(e.target.value); setEvidence(null); }} /></label>
           <button className="l-btn sm" disabled={busy || !/^0x[0-9a-fA-F]{130}$/.test(signature)} onClick={() => void preview()}>核对归属与资金证据</button></>}
         {evidence && challenge && <div className="cregis-case"><CaseSummary row={evidence} />{intent === "REFUND_ORIGIN" && evidence.canPropose === false && <p>当前费用规则下不能提交退款，请核对净额及费用配置。</p>}<button className="l-btn sm" disabled={busy || loading || (intent === "REFUND_ORIGIN" && evidence.canPropose !== true)} onClick={() => confirm(intent === "CLAIM_CREDIT" ? "提交认领入账提案" : "提交原路退款提案", intent === "CLAIM_CREDIT" ? "/exception-claims" : "/refunds/cases", { challengeId: exceptionChallengeId(challenge.challengeId), signature, ...(intent === "CLAIM_CREDIT" ? { targetUserId: exceptionId(userId) } : {}), evidenceHash: evidence.evidenceHash }, `证据 ${label(evidence.evidenceHash)}。另一管理员须独立复核后才会执行。`)}>提交处置提案</button></div>}
       </div>}

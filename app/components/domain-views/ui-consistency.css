@@ -1,4 +1,94 @@
 /* Scoped additions follow the console's existing surfaces and type scale. */
+.ui-support-workflow { color: var(--ink); font-size: 12px; line-height: 1.7; }
+.ui-support-workflow .ui-workflow-steps { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); list-style: none; padding: 0; margin: 0 0 18px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.ui-support-workflow .ui-workflow-steps li { display: flex; align-items: center; gap: 8px; padding: 12px 10px; background: var(--surface-2); color: var(--ink-3); font-size: 12px; }
+.ui-support-workflow .ui-workflow-steps li > span { display: grid; place-items: center; width: 22px; height: 22px; flex-shrink: 0; border: 1px solid var(--border); border-radius: 50%; font-size: 11px; }
+.ui-support-workflow .ui-workflow-steps li.current { background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+.ui-support-workflow .ui-workflow-steps li.complete { color: var(--success); }
+.ui-support-workflow > p { margin: 12px 0; color: var(--ink-3); }
+.ui-support-workflow :is(h3,.ui-step-heading) { font-size: 14px; font-weight: 600; color: var(--ink); margin: 16px 0 12px; }
+.ui-support-workflow > label, .ui-support-workflow .m-admin-toolbar > label { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin-bottom: 12px; color: var(--ink-3); font-size: 12px; }
+.ui-support-workflow label:has(> input[type="checkbox"]) { flex-direction: row; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.ui-support-workflow .m-admin-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+.ui-support-workflow .m-admin-toolbar:has(> label) { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,180px),1fr)); gap: 12px; align-items: end; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.ui-support-workflow .m-admin-toolbar > label { margin-bottom: 0; }
+.ui-support-workflow :is(input:not([type="checkbox"]):not([type="file"]),select,textarea) { width: 100%; min-width: 0; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; }
+.ui-support-workflow textarea { min-height: 90px; resize: vertical; }
+.ui-support-workflow fieldset { padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; margin: 14px 0; }
+.ui-support-workflow legend { padding: 0 6px; font-size: 12px; font-weight: 600; }
+.ui-support-workflow fieldset > label { display: inline-flex; align-items: center; gap: 6px; margin: 4px 12px 4px 0; }
+.ui-support-workflow details { margin: 16px 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; max-height: 300px; overflow: auto; }
+.ui-support-workflow summary { font-weight: 600; cursor: pointer; }
+.ui-support-workflow details p { padding: 10px 0; margin: 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.ui-support-workflow details > button { display: block; max-width: 100%; margin: 8px 0; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+.ui-random-assignment > p:first-child { padding: 12px 14px; background: var(--surface-2); border-radius: 8px; }
+.k6c2 .ui-target-version .k6-form-row { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,200px),1fr)); gap: 14px; }
+.ui-target-version h4 { font-size: 14px; font-weight: 600; margin: 0 0 14px; }
+.ui-target-version .k6-ovr-field { min-width: 0; margin-bottom: 14px; }
+.ui-target-version .k6-ovr-field > label { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; color: var(--ink-2); margin-bottom: 6px; }
+.ui-target-version .k6-ovr-field > label i { color: var(--ink-3); font-style: normal; font-size: 11px; }
+.ui-target-version .k6-field { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; font: inherit; font-size: 12px; background: var(--surface-2); color: var(--ink); }
+.ui-target-version textarea { min-height: 90px; resize: vertical; }
+.dkpage .ui-export-row { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 1200px) { .dkpage .ui-export-row { grid-template-columns: 1fr !important; gap: 10px; } }
+@media (max-width: 640px) { .ui-support-workflow .ui-workflow-steps { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+.dkpage.edom .phone-policy-panel { padding: 0; font-size: 12px; }
+.dkpage.edom .phone-policy-panel > .pane-h { padding: 16px 18px; border-bottom: 1px solid var(--border); }
+.dkpage.edom .phone-policy-panel .phone-policy-body { padding: 18px; }
+.dkpage.edom .phone-policy-panel .phone-grid { grid-template-columns: repeat(auto-fit,minmax(min(100%,210px),1fr)); gap: 14px; }
+.dkpage.edom .phone-policy-panel :is(h4,legend) { font-size: 13px; font-weight: 600; }
+.dkpage.edom .phone-policy-panel p { color: var(--ink-3); font-size: 12px; }
+.dkpage.edom .phone-policy-panel fieldset { margin: 16px 0; padding: 16px; background: var(--surface-2); }
+.dkpage.edom .phone-policy-panel legend { padding: 0 6px; }
+.dkpage.edom .phone-policy-panel fieldset > label:has(input[type="checkbox"]) { margin-bottom: 16px; }
+.dkpage.edom .phone-policy-panel label { font-size: 12px; color: var(--ink-3); }
+.dkpage.edom .phone-policy-panel :is(input,select,textarea) { font: inherit; color: var(--ink); }
+.dkpage.edom .phone-policy-panel .phone-record { padding: 16px; margin: 16px 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; }
+.dkpage.edom .phone-policy-panel details { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-top: 16px; }
+.dkpage.edom .phone-policy-panel summary { font-size: 12px; font-weight: 600; cursor: pointer; }
+.dkpage.edom .phone-calibration-panel { padding: 18px; margin-bottom: 16px; font-family: inherit; font-size: 12px; }
+.dkpage.edom .phone-calibration-panel .pane-head { margin: -18px -18px 16px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.dkpage.edom .phone-calibration-panel h3 { font-size: 14.5px; font-weight: 600; }
+.dkpage.edom .phone-calibration-panel .pane-head .btn { margin: 0; }
+.dkpage.edom .phone-calibration-panel > p:not([role="alert"]) { color: var(--ink-3); }
+.dkpage.edom .phone-calibration-panel fieldset { padding: 14px; background: var(--surface-2); }
+.dkpage.edom .phone-calibration-panel .phone-hardware-rule { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--surface); margin: 0 0 10px; }
+.dkpage.edom .phone-calibration-panel .phone-hardware-rule[open] > summary { margin-bottom: 14px; }
+.dkpage.fdom .ui-placements .card-body { padding: 16px 18px; font-size: 12px; }
+.dkpage.fdom .ui-placements .actions { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; margin: 12px 0; }
+.dkpage.fdom .ui-placements .actions > label { display: flex; flex-direction: column; gap: 6px; color: var(--ink-3); flex: 1 1 200px; min-width: 0; }
+.dkpage.fdom .ui-placements .actions .fld { width: 100%; }
+.dkpage.fdom .ui-placements .ui-table-scroll { overflow-x: auto; margin: 14px 0; }
+.dkpage.fdom .ui-placements .ctbl { min-width: 720px; width: 100%; }
+.dkpage.fdom .ui-placements [role="alert"] { padding: 10px 12px; background: var(--danger-soft); color: var(--danger); border-radius: 8px; }
+.dkpage .ui-weekly-region > div:last-child > p { font-size: 12px; line-height: 1.7; margin: 0 0 12px; color: var(--ink-3); }
+.dkpage .ui-weekly-region fieldset { padding: 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.dkpage .ui-weekly-region legend { font-size: 13px; font-weight: 600; padding: 0 6px; }
+.dkpage .ui-weekly-region fieldset .row.wrap { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,2fr) auto; align-items: end; }
+.dkpage .ui-weekly-region fieldset label { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 12px; color: var(--ink-3); }
+.dkpage .ui-weekly-region fieldset input { width: 100%; }
+@media (max-width: 640px) { .dkpage .ui-weekly-region fieldset .row.wrap { grid-template-columns: 1fr; } }
+.dkpage .ui-control { box-sizing: border-box; min-width: 0; max-width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--surface-2); color: var(--ink); font: inherit; font-size: 12px; line-height: 1.5; }
+.dkpage .ui-control:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.dkpage .ui-filter-grid { display: grid; width: 100%; grid-template-columns: repeat(auto-fit,minmax(min(100%,180px),1fr)); gap: 8px; align-items: center; }
+.dkpage .ui-filter-grid > input { width: 100%; }
+.dkpage .ui-facts-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,200px),1fr)); gap: 12px; margin: 12px 0; }
+.dkpage .ui-facts-grid > div { min-width: 0; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; }
+.dkpage .ui-facts-grid dt { color: var(--ink-3); font-size: 11px; margin-bottom: 5px; }
+.dkpage .ui-facts-grid dd { margin: 0; color: var(--ink); font-size: 12px; overflow-wrap: anywhere; }
+.dkpage .ui-exception-panel :is(h3,h4) { font-size: 14px; font-weight: 600; margin: 0 0 12px; }
+.dkpage .ui-exception-panel p { color: var(--ink-3); font-size: 12px; line-height: 1.7; margin: 10px 0; }
+.dkpage .ui-exception-form { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,240px),1fr)); gap: 12px; align-items: end; }
+.dkpage .ui-exception-form > :is(h4,p,.cregis-case) { grid-column: 1 / -1; }
+.dkpage .ui-exception-form > label { display: flex; flex-direction: column; gap: 6px; color: var(--ink-3); font-size: 12px; min-width: 0; }
+.dkpage .ui-exception-form > label:has(textarea) { grid-column: 1 / -1; }
+.dkpage .ui-exception-form .ui-control { width: 100%; }
+.dkpage.ddom .ui-network-fees { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+.dkpage.ddom .ui-network-fees > .txt { grid-column: 1 / -1; }
+.dkpage.ddom .ui-network-field { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--ink-3); min-width: 0; }
+.dkpage.ddom .ui-network-field .l-inp { width: 100%; min-width: 0; }
+.dkpage.ddom .ui-network-fees > button { justify-self: start; max-width: 100%; white-space: normal; }
+@media (max-width: 640px) { .dkpage.ddom .ui-network-fees { grid-template-columns: 1fr; } }
 .dkpage .ui-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 14px; align-items: end; }
 .dkpage .ui-form-grid > label { display: flex; flex-direction: column; gap: 6px; min-width: 0; color: var(--ink-3); font-size: 12px; }
 .dkpage .ui-form-grid > label:has(input[type="checkbox"]) { flex-direction: row; align-items: center; min-height: 36px; }
@@ -26,3 +116,7 @@
 
 .dkpage [data-proof="a4-outbox-diagnostics"] .l-b > p { font-size: 12px; line-height: 1.7; color: var(--ink-3); margin: 0 0 12px; }
 .dkpage [data-proof="a4-outbox-diagnostics"] .ui-form-grid { margin-bottom: 14px; }
+
+.dkpage.edom .phone-policy-panel :is([role="alert"], .phone-error) { color: var(--danger); }
+.dkpage.fdom .ui-placements .pane-h { flex-wrap: wrap; }
+.dkpage.fdom .ui-placements .pane-h .ph-sub { white-space: normal; min-width: 0; }

@@ -842,7 +842,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
         <div className="l-b" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <span className="sub">共 {(vietQr?.page.total ?? 0).toLocaleString("en-US")} 条 · 第 {bankPage} / {Math.max(1, Math.ceil((vietQr?.page.total ?? 0) / bankPageSize))} 页</span>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <select
+            <select className="ui-control"
               value={bankPageSize}
               disabled={loading || busy}
               onChange={(event) => { setBankPageSize(Number(event.target.value)); setBankPage(1); }}
@@ -986,7 +986,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
             </TabGroup>
             <div className="lookup" style={{ width: 380 }}>
               <label className="sub" htmlFor="d1-flow-keyword" style={{ whiteSpace: "nowrap" }}>查询关键字</label>
-              <input
+              <input className="ui-control"
                 id="d1-flow-keyword"
                 value={keyword}
                 aria-label="充值流水查询关键字：充值单号 / 用户编号 / 凭证"
@@ -1075,7 +1075,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
           <div className="l-b">
             <div className="lookup" style={{ marginBottom: 10, width: 380 }}>
               <label className="sub" htmlFor="d1-manual-lock" style={{ whiteSpace: "nowrap" }}>手动锁定标识</label>
-              <input
+              <input className="ui-control"
                 id="d1-manual-lock"
                 value={manualBin}
                 disabled={loading || busy || !canCreateBinLock}

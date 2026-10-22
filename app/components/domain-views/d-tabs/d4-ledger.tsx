@@ -254,14 +254,14 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
                 itemClassName={(_key, selected) => `chip${selected ? " sel" : ""}`}>
                 {(key) => BILL_TYPES.find(([value]) => value === key)?.[1]}
               </TabGroup>
-              <div className="lookup" style={{ flexWrap: "wrap" }}>
-                <input aria-label="精确用户 ID" value={draft.userId} onChange={(event) => setDraft((value) => ({ ...value, userId: event.target.value }))} placeholder="用户 ID" />
-                <select aria-label="账单状态" value={draft.status} onChange={(event) => setDraft((value) => ({ ...value, status: event.target.value }))}>
+              <div className="ui-filter-grid">
+                <input className="ui-control" aria-label="精确用户 ID" value={draft.userId} onChange={(event) => setDraft((value) => ({ ...value, userId: event.target.value }))} placeholder="用户 ID" />
+                <select className="ui-control" aria-label="账单状态" value={draft.status} onChange={(event) => setDraft((value) => ({ ...value, status: event.target.value }))}>
                   <option value="">全部状态</option><option value="POSTED">已入账</option><option value="SUCCESS">成功</option><option value="PENDING">处理中</option><option value="FAILED">失败</option><option value="REJECTED">已拒绝</option>
                 </select>
-                <input aria-label="开始时间" type="datetime-local" value={draft.from} onChange={(event) => setDraft((value) => ({ ...value, from: event.target.value }))} />
-                <input aria-label="结束时间" type="datetime-local" value={draft.to} onChange={(event) => setDraft((value) => ({ ...value, to: event.target.value }))} />
-                <input aria-label="账单关键词" value={draft.keyword} onChange={(event) => setDraft((value) => ({ ...value, keyword: event.target.value }))} placeholder="账单号 / 用户编码 / 昵称 / 备注" />
+                <input className="ui-control" aria-label="开始时间" type="datetime-local" value={draft.from} onChange={(event) => setDraft((value) => ({ ...value, from: event.target.value }))} />
+                <input className="ui-control" aria-label="结束时间" type="datetime-local" value={draft.to} onChange={(event) => setDraft((value) => ({ ...value, to: event.target.value }))} />
+                <input className="ui-control" aria-label="账单关键词" value={draft.keyword} onChange={(event) => setDraft((value) => ({ ...value, keyword: event.target.value }))} placeholder="账单号 / 用户编码 / 昵称 / 备注" />
                 <button className="l-btn primary" onClick={applyFilters}>查询</button>
               </div>
             </div>
@@ -297,7 +297,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
       </section>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">单用户账本与分类汇总</span><span className="sub">· 独立用户输入 · 沿用上方时间范围，超大账本可收窄后重试</span><div className="r"><div className="lookup"><input aria-label="单用户账本用户 ID" value={userInput} onChange={(event) => setUserInput(event.target.value)} placeholder="输入用户 ID" /><button className="l-btn primary" disabled={!canUserRead} onClick={() => openUser()}>加载账户</button></div></div></div>
+        <div className="l-h"><span className="ttl">单用户账本与分类汇总</span><span className="sub">· 独立用户输入 · 沿用上方时间范围，超大账本可收窄后重试</span><div className="r"><div className="lookup"><input className="ui-control" aria-label="单用户账本用户 ID" value={userInput} onChange={(event) => setUserInput(event.target.value)} placeholder="输入用户 ID" /><button className="l-btn primary" disabled={!canUserRead} onClick={() => openUser()}>加载账户</button></div></div></div>
         <div className="l-b">
           {userLoading ? <div className="dtint">正在核对用户账本与钱包余额...</div> : userLedger ? <>
             <div className="dtint cyan">{userLabel(userLedger)} · 全量 {userLedger.total} 笔；当前余额独立读取用户钱包</div>

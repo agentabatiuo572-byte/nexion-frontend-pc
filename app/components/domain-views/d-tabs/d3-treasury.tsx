@@ -294,8 +294,8 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
             {canInject ? (
               <>
                 <div className="lookup" style={{ marginBottom: 10 }}>
-                  <input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" placeholder="注资金额 USDT" aria-label="注资金额（USDT，最多两位小数）" />
-                  <input value={voucherNo} onChange={(event) => setVoucherNo(event.target.value)} placeholder="真实凭证号（必填且唯一）" aria-label="真实凭证号（必填且唯一，登记后不可重复）" />
+                  <input className="ui-control" value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" placeholder="注资金额 USDT" aria-label="注资金额（USDT，最多两位小数）" />
+                  <input className="ui-control" value={voucherNo} onChange={(event) => setVoucherNo(event.target.value)} placeholder="真实凭证号（必填且唯一）" aria-label="真实凭证号（必填且唯一，登记后不可重复）" />
                   <button className="l-btn primary" onClick={saveInjection}>登记</button>
                 </div>
                 <div className="dtint">重复凭证返回冲突，不会写储备、审计或事件。</div>
@@ -317,7 +317,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
 
       <div className="two-col r11">
         <section className="l-card">
-          <div className="l-h"><span className="ttl">到期负债预测</span><span className="sub">· 每日构成与累计</span><div className="r"><select value={maturityWindow} onChange={(event) => selectMaturity(event.target.value as "7d" | "30d")}><option value="7d">7 天</option><option value="30d">30 天</option></select></div></div>
+          <div className="l-h"><span className="ttl">到期负债预测</span><span className="sub">· 每日构成与累计</span><div className="r"><select className="ui-control" value={maturityWindow} onChange={(event) => selectMaturity(event.target.value as "7d" | "30d")}><option value="7d">7 天</option><option value="30d">30 天</option></select></div></div>
           <div className="l-b" style={{ maxHeight: 430, overflowY: "auto" }}>
             {(data?.maturity.daily ?? []).map((row) => <div className="res-row" key={row.date}><span className="nm">{row.date}<small>提现 {money(row.withdrawDueUsdt)} · 利息 {money(row.interestDueUsdt)} · 创世节点 {money(row.genesisDividendUsdt)}{data.maturity.trialStressIncluded ? ` · 试用业务 压力测试 ${money(row.trialShadowStressUsdt)}` : ""}</small></span><span className="v">{money(row.totalDueUsdt)}</span></div>)}
             <div className="dtint" style={{ marginTop: 10 }}>{operatorCopyText(data?.maturity.farLiabilityNote ?? "")}</div>
@@ -325,7 +325,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
         </section>
 
         <section className="l-card">
-          <div className="l-h"><span className="ttl">储备与应付款差额曲线</span><span className="sub">· 储备减应付负债</span><div className="r"><select value={exposureWindow} onChange={(event) => selectExposure(event.target.value as "7d" | "30d" | "90d")}><option value="7d">7 天</option><option value="30d">30 天</option><option value="90d">90 天</option></select></div></div>
+          <div className="l-h"><span className="ttl">储备与应付款差额曲线</span><span className="sub">· 储备减应付负债</span><div className="r"><select className="ui-control" value={exposureWindow} onChange={(event) => selectExposure(event.target.value as "7d" | "30d" | "90d")}><option value="7d">7 天</option><option value="30d">30 天</option><option value="90d">90 天</option></select></div></div>
           <div className="l-b">
             <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(1, data?.exposure.series.length ?? 1)}, minmax(2px, 1fr))`, gap: 2, alignItems: "end", height: 220 }}>
               {(data?.exposure.series ?? []).map((row) => <div key={row.date} title={`${row.date}: ${money(row.netExposureUsdt)}`} style={{ minHeight: 4, height: `${Math.max(4, Math.abs(row.netExposureUsdt) / exposureMax * 200)}px`, background: row.negative ? "var(--danger)" : "var(--success)", borderRadius: 2 }} />)}
@@ -339,22 +339,22 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
         <div className="l-h"><span className="ttl">应付款预测设置</span><span className="sub">· 下一 UTC 日 00:00 生效，不追溯历史</span>{canExport && <div className="r"><button className="l-btn sm" onClick={() => exportCsv("reconciliation")}>导出对账 CSV</button></div>}</div>
         <div className="l-b">
           {draft && <>
-            <div className="lookup" style={{ marginBottom: 12 }}>
-              <label>默认窗口 <select disabled={!canConfig} value={draft.forecastWindow} onChange={(event) => setDraft({ ...draft, forecastWindow: event.target.value as D3ForecastConfig["forecastWindow"] })}><option value="7d">7 天</option><option value="30d">30 天</option><option value="90d">90 天</option></select></label>
-              <label>利息预测 <select disabled={!canConfig} value={draft.stakingInterestMode} onChange={(event) => setDraft({ ...draft, stakingInterestMode: event.target.value as D3ForecastConfig["stakingInterestMode"] })}><option value="LINEAR">按日线性</option><option value="AT_MATURITY">到期确认</option></select></label>
+            <div className="ui-form-grid" style={{ marginBottom: 12 }}>
+              <label>默认窗口 <select className="ui-control" disabled={!canConfig} value={draft.forecastWindow} onChange={(event) => setDraft({ ...draft, forecastWindow: event.target.value as D3ForecastConfig["forecastWindow"] })}><option value="7d">7 天</option><option value="30d">30 天</option><option value="90d">90 天</option></select></label>
+              <label>利息预测 <select className="ui-control" disabled={!canConfig} value={draft.stakingInterestMode} onChange={(event) => setDraft({ ...draft, stakingInterestMode: event.target.value as D3ForecastConfig["stakingInterestMode"] })}><option value="LINEAR">按日线性</option><option value="AT_MATURITY">到期确认</option></select></label>
             </div>
-            <div className="lookup" style={{ marginBottom: 12 }}>
+            <div className="ui-form-grid" style={{ marginBottom: 12 }}>
               <label><input type="checkbox" disabled={!canConfig} checked={draft.genesisIncluded} onChange={(event) => setDraft({ ...draft, genesisIncluded: event.target.checked })} /> 纳入创世节点分红</label>
               <label><input type="checkbox" disabled={!canConfig} checked={draft.includeFarLiabilities} onChange={(event) => setDraft({ ...draft, includeFarLiabilities: event.target.checked })} /> 纳入远期负债</label>
               <label><input type="checkbox" disabled={!canConfig} checked={draft.trialStressEnabled} onChange={(event) => setDraft({ ...draft, trialStressEnabled: event.target.checked })} /> 试用压力情景</label>
             </div>
             <div style={{ marginBottom: 12 }}>
               <div className="dtint" style={{ marginBottom: 8 }}>储备科目开关</div>
-              <div className="lookup">{Object.entries(draft.reserveCategories).map(([key, enabled]) => <label key={key}><input type="checkbox" disabled={!canConfig} checked={enabled} onChange={(event) => setDraft({ ...draft, reserveCategories: { ...draft.reserveCategories, [key]: event.target.checked } })} /> {categoryText(key)}</label>)}</div>
+              <div className="ui-form-grid">{Object.entries(draft.reserveCategories).map(([key, enabled]) => <label key={key}><input type="checkbox" disabled={!canConfig} checked={enabled} onChange={(event) => setDraft({ ...draft, reserveCategories: { ...draft.reserveCategories, [key]: event.target.checked } })} /> {categoryText(key)}</label>)}</div>
             </div>
             <div style={{ marginBottom: 12 }}>
               <div className="dtint" style={{ marginBottom: 8 }}>负债科目开关</div>
-              <div className="lookup">{Object.entries(draft.liabilityCategories).map(([key, enabled]) => <label key={key}><input type="checkbox" disabled={!canConfig} checked={enabled} onChange={(event) => setDraft({ ...draft, liabilityCategories: { ...draft.liabilityCategories, [key]: event.target.checked } })} /> {categoryText(key)}</label>)}</div>
+              <div className="ui-form-grid">{Object.entries(draft.liabilityCategories).map(([key, enabled]) => <label key={key}><input type="checkbox" disabled={!canConfig} checked={enabled} onChange={(event) => setDraft({ ...draft, liabilityCategories: { ...draft.liabilityCategories, [key]: event.target.checked } })} /> {categoryText(key)}</label>)}</div>
             </div>
             <div className="dtint" style={{ marginBottom: 12 }}>当前修订 v{draft.version}（已生效 v{draft.effectiveVersion}）；储备科目 {Object.values(draft.reserveCategories).filter(Boolean).length}/{Object.keys(draft.reserveCategories).length} 开启；负债科目 {Object.values(draft.liabilityCategories).filter(Boolean).length}/{Object.keys(draft.liabilityCategories).length} 开启。</div>
             {draft.pendingConfig && <div className="dtint warn" style={{ marginBottom: 12 }}>待生效 v{draft.pendingVersion}：窗口 {draft.pendingConfig.forecastWindow.replace("d", " 天")}，储备科目 {Object.values(draft.pendingConfig.reserveCategories).filter(Boolean).length}/{Object.keys(draft.pendingConfig.reserveCategories).length}，负债科目 {Object.values(draft.pendingConfig.liabilityCategories).filter(Boolean).length}/{Object.keys(draft.pendingConfig.liabilityCategories).length}，创世节点 {draft.pendingConfig.genesisIncluded ? "纳入" : "不纳入"}，生效时间 {draft.pendingEffectiveAt}。</div>}

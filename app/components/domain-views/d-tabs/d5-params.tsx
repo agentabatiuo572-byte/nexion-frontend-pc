@@ -258,7 +258,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
           </div>
           {/* FEAT-WD02:三网络固定确认费(每笔 USD)。三值一次 PUT 原子提交,任一失败全回滚;
               任一网络调低 = 放大流出。0 = 该网络免手续费(合法值,给显著警示防误配)。 */}
-          <div className="p-row">
+          <div className="p-row ui-network-fees">
             <div className="txt">
               <div className="k">网络确认费（三网络 · 统一保存）</div>
               <div className="s">每笔固定收取,按提现网络计,0–{D5_NETWORK_CONFIRM_FEE_MAX} USD、步进 0.5;三值一次提交,任一失败全回滚。任一网络<b>调低即放大流出</b>。默认 TRC20 $1 / BEP20 $1 / ERC20 $5</div>
@@ -267,9 +267,9 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
               {canFeeWrite && !feeErcValid && drafts.feeErc !== "" && <div className="s" style={{ color: "var(--admin-danger, #e5484d)" }}>ERC20 超出 0–{D5_NETWORK_CONFIRM_FEE_MAX} 值域</div>}
               {feeValid && (feeTrc === 0 || feeBep === 0 || feeErc === 0) && <div className="s" style={{ color: "var(--admin-warning, #f5a623)" }}>配置为 0 的网络将免手续费,请确认这是有意为之</div>}
             </div>
-            <input aria-label="TRC20 网络确认费目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.feeTrc} disabled={!canFeeWrite} onChange={(event) => updateDraft("feeTrc", event.target.value)} />
-            <input aria-label="BEP20 网络确认费目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.feeBep} disabled={!canFeeWrite} onChange={(event) => updateDraft("feeBep", event.target.value)} />
-            <input aria-label="ERC20 网络确认费目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.feeErc} disabled={!canFeeWrite} onChange={(event) => updateDraft("feeErc", event.target.value)} />
+            <label className="ui-network-field">TRC20（美元 / 笔）<input aria-label="TRC20 网络确认费目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.feeTrc} disabled={!canFeeWrite} onChange={(event) => updateDraft("feeTrc", event.target.value)} /></label>
+            <label className="ui-network-field">BEP20（美元 / 笔）<input aria-label="BEP20 网络确认费目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.feeBep} disabled={!canFeeWrite} onChange={(event) => updateDraft("feeBep", event.target.value)} /></label>
+            <label className="ui-network-field">ERC20（美元 / 笔）<input aria-label="ERC20 网络确认费目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.feeErc} disabled={!canFeeWrite} onChange={(event) => updateDraft("feeErc", event.target.value)} /></label>
             {canFeeWrite && <button className="l-btn sm mc" disabled={!feeValid || feeUnchanged} onClick={() => submit("网络确认费", { networkConfirmFeeUsd: { trc20: feeTrc, bep20: feeBep, erc20: feeErc } }, feeAmplifies, `TRC20 $${params.networkConfirmFeeUsd.trc20} / BEP20 $${params.networkConfirmFeeUsd.bep20} / ERC20 $${params.networkConfirmFeeUsd.erc20} → $${feeTrc} / $${feeBep} / $${feeErc}`)}>预览并提交</button>}
             {canFeeWrite && <button className="l-btn sm" disabled={feeIsDefault && feeUnchanged} onClick={() => submit("网络确认费恢复默认", { networkConfirmFeeUsd: { ...D5_NETWORK_CONFIRM_FEE_DEFAULT } }, D5_NETWORK_CONFIRM_FEE_DEFAULT.trc20 < params.networkConfirmFeeUsd.trc20 || D5_NETWORK_CONFIRM_FEE_DEFAULT.bep20 < params.networkConfirmFeeUsd.bep20 || D5_NETWORK_CONFIRM_FEE_DEFAULT.erc20 < params.networkConfirmFeeUsd.erc20, `TRC20 $${params.networkConfirmFeeUsd.trc20} / BEP20 $${params.networkConfirmFeeUsd.bep20} / ERC20 $${params.networkConfirmFeeUsd.erc20} → 默认 $${D5_NETWORK_CONFIRM_FEE_DEFAULT.trc20} / $${D5_NETWORK_CONFIRM_FEE_DEFAULT.bep20} / $${D5_NETWORK_CONFIRM_FEE_DEFAULT.erc20}`)}>恢复默认</button>}
           </div>

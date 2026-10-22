@@ -413,13 +413,13 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
           </div>
         </div>
         <div className="l-b">
-          <div className="rev-row" style={{ gridTemplateColumns: "minmax(220px, 1fr) minmax(300px, 1.8fr) auto" }}>
+          <div className="rev-row ui-export-row" style={{ gridTemplateColumns: "minmax(220px, 1fr) minmax(300px, 1.8fr) auto" }}>
             <span className="nm">提现发放 / 反洗钱 / 适用地区专项</span>
             <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>服务端校验当前生效映射、披露版本与七章完整性；只固化聚合事实，缺失源字段明确标为不可用，不推测数值。</span>
             <span className="bdg ok">I5 → L5 已闭环</span>
           </div>
           {(regulatoryOptions?.disclosures ?? []).map((item) => (
-            <div key={`${item.jurisdictionCode}-${item.disclosureVersion}`} className="rev-row" style={{ gridTemplateColumns: "minmax(180px, .8fr) minmax(140px, .5fr) minmax(260px, 1.2fr)" }}>
+            <div key={`${item.jurisdictionCode}-${item.disclosureVersion}`} className="rev-row ui-export-row" style={{ gridTemplateColumns: "minmax(180px, .8fr) minmax(140px, .5fr) minmax(260px, 1.2fr)" }}>
               <span className="nm">{item.jurisdictionName} ({item.jurisdictionCode})</span>
               <span className="mono">{item.disclosureVersion} · {item.chapterCount}章</span>
               <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>当前映射 · {item.countryCodes.join(" / ") || "适用地区级"} · 发布 {item.publishedAt || "以 I5 记录为准"}</span>
@@ -438,7 +438,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
           <div className="r"><span className="lcode electric">D4 → L5 已闭环</span></div>
         </div>
         <div className="l-b">
-          <div className="rev-row" style={{ gridTemplateColumns: "minmax(220px, 1fr) minmax(320px, 2fr) auto" }}>
+          <div className="rev-row ui-export-row" style={{ gridTemplateColumns: "minmax(220px, 1fr) minmax(320px, 2fr) auto" }}>
             <span className="nm">兑换 / 充值 / 提现 / 收益 / 佣金 / 退款 / 奖励 / 购买</span>
             <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>用户编号只保留首尾字符，不导出昵称、备注或其他明文隐私；CSV 公式注入由服务端消毒。</span>
             <button className="l-btn sm" disabled={ledgerExporting} onClick={requestLedgerDownload}>
@@ -457,7 +457,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         </div>
         <div className="l-b">
           {CROSS_MODULE_BLOCKERS.map((item) => (
-            <div key={item.code} className="rev-row" style={{ gridTemplateColumns: "minmax(160px, .7fr) auto minmax(280px, 1.4fr)" }}>
+            <div key={item.code} className="rev-row ui-export-row" style={{ gridTemplateColumns: "minmax(160px, .7fr) auto minmax(280px, 1.4fr)" }}>
               <span className="nm">{item.label}</span>
               <span className={"bdg " + (item.status === "BLOCKED" ? "bad" : "warn")}>{item.status === "BLOCKED" ? "服务端阻断" : "跨模块验收"}</span>
               <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{item.reason}</span>

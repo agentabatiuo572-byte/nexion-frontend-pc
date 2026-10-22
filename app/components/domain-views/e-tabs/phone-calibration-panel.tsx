@@ -85,7 +85,7 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false }: { ctx: EV
       <p className="f-foot">T1：低于首个分界；T2–T4：从本档下限至下一档下限；T5：不低于最后一个分界。小数不会落入空档。</p>
       {thresholdsOnly ? <p>硬件规则共 {rules.length} 条。<Link href="/devices/compute-config#phone-calibration">前往 E6 维护手机硬件规则</Link></p> : <>
         <fieldset disabled={!editing}><legend>硬件规则（{rules.length}/500）</legend>
-          {rules.map((rule,index) => <fieldset key={index} style={{ marginBottom: 16 }}><legend>规则 {index+1}</legend><div style={grid}>
+          {rules.map((rule,index) => <details className="phone-hardware-rule" key={index}><summary>规则 {index+1} · {rule.model || rule.soc || "未填写机型"}</summary><div style={grid}>
             <label>规则编号<input value={rule.id} maxLength={64} onChange={event => changeRule(index,{id:event.target.value})} /></label>
             <label>平台<select value={rule.platform} onChange={event => changeRule(index,{platform:event.target.value as "android" | "ios"})}><option value="android">Android</option><option value="ios">iOS</option></select></label>
             {(["model","soc","gpu","evidence"] as const).map(field => <label key={field}>{({model:"精确机型（留空匹配该芯片）",soc:"SoC",gpu:"GPU",evidence:"核验依据"})[field]}
@@ -93,7 +93,7 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false }: { ctx: EV
             {(["minMemoryGb","maxMemoryGb","computeValue"] as const).map(field => <label key={field}>{({minMemoryGb:"内存下限 GB（含）",maxMemoryGb:"内存上限 GB（不含）",computeValue:"平台算力值"})[field]}
               <input type="number" min="0" step="0.001" value={Number.isFinite(rule[field]) ? rule[field] : ""}
                 onChange={event => changeRule(index,{[field]:event.target.value ? Number(event.target.value) : NaN})} /></label>)}
-          </div><Btn onClick={() => setRules(old => old.filter((_,i) => i !== index))}>删除规则 {index+1}</Btn></fieldset>)}
+          </div><Btn onClick={() => setRules(old => old.filter((_,i) => i !== index))}>删除规则 {index+1}</Btn></details>)}
           <Btn disabled={rules.length >= 500} onClick={() => setRules(old => [...old,{id:"",platform:"android",model:"",soc:"",gpu:"",minMemoryGb:NaN,maxMemoryGb:NaN,computeValue:NaN,evidence:""}])}>添加硬件规则</Btn>
         </fieldset>
         <details><summary>待核验硬件样本（最多展示 100 组）</summary>

@@ -112,10 +112,10 @@ export function D1BankOrders({ refreshKey, onRetry, ...actions }: OrderActions &
     <div className="l-h"><span className="ttl">全部银行转账订单</span><span className="sub">· 人工转账 / HDPay · 每张付款单只展示一次</span></div>
     <div className="l-b" style={{ paddingBottom: 8 }}>
       <div className="dtint">包含待付款、创建中、结果未知、失败、过期、取消和已入账订单。订单数量不代表实收或入账；人工确认与支付商自动确认分别留痕，不能重复入账。登记、匹配、核销、退回仍在下方银行回单处置。</div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>
-        <label>转账类型 <select aria-label="银行订单转账类型" value={rail} disabled={disabled} onChange={event => { setRail(event.target.value); setPageNum(1); }}><option value="">全部类型</option><option value="MANUAL">人工银行转账</option><option value="HDPAY">HDPay</option></select></label>
-        <label>订单状态 <select aria-label="银行订单状态" value={status} disabled={disabled} onChange={event => { setStatus(event.target.value); setPageNum(1); }}><option value="">全部状态</option>{Object.entries(ORDER_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-        <input aria-label="银行订单查询：付款单、用户或附言" placeholder="付款单 / 用户 / 附言" value={keyword} disabled={disabled} onChange={event => setKeyword(event.target.value)} />
+      <div className="ui-form-grid" style={{ marginTop: 12 }}>
+        <label>转账类型 <select className="ui-control" aria-label="银行订单转账类型" value={rail} disabled={disabled} onChange={event => { setRail(event.target.value); setPageNum(1); }}><option value="">全部类型</option><option value="MANUAL">人工银行转账</option><option value="HDPAY">HDPay</option></select></label>
+        <label>订单状态 <select className="ui-control" aria-label="银行订单状态" value={status} disabled={disabled} onChange={event => { setStatus(event.target.value); setPageNum(1); }}><option value="">全部状态</option>{Object.entries(ORDER_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <input className="ui-control" aria-label="银行订单查询：付款单、用户或附言" placeholder="付款单 / 用户 / 附言" value={keyword} disabled={disabled} onChange={event => setKeyword(event.target.value)} />
         <button className="l-btn sm" disabled={disabled} onClick={() => { setPageNum(1); if (query === keyword.trim() && pageNum === 1) void load(); else setQuery(keyword.trim()); }}>查询</button>
         <button className="l-btn sm" disabled={disabled} onClick={() => void load()}>刷新订单</button>
       </div>
@@ -133,7 +133,7 @@ export function D1BankOrders({ refreshKey, onRetry, ...actions }: OrderActions &
       </tbody></table></div>
     <div className="l-b" style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
       <span className="sub">{data ? `共 ${data.total} 张付款单 · 第 ${data.pageNum} / ${pages} 页 · 数据时间 ${orderTime(data.asOf)}` : "订单数量尚未确认"}</span>
-      <div style={{ display: "flex", gap: 8 }}><select aria-label="银行订单每页数量" value={pageSize} disabled={disabled} onChange={event => { setPageSize(Number(event.target.value)); setPageNum(1); }}>{[10, 20, 50, 100].map(value => <option key={value} value={value}>{value} 条/页</option>)}</select>
+      <div style={{ display: "flex", gap: 8 }}><select className="ui-control" aria-label="银行订单每页数量" value={pageSize} disabled={disabled} onChange={event => { setPageSize(Number(event.target.value)); setPageNum(1); }}>{[10, 20, 50, 100].map(value => <option key={value} value={value}>{value} 条/页</option>)}</select>
         <button className="l-btn sm" disabled={disabled || pageNum <= 1 || !data} onClick={() => setPageNum(value => value - 1)}>上一页</button>
         <button className="l-btn sm" disabled={disabled || pageNum >= pages || !data} onClick={() => setPageNum(value => value + 1)}>下一页</button></div>
     </div>

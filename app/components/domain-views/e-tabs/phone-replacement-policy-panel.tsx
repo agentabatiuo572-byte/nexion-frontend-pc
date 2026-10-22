@@ -207,7 +207,7 @@ function PolicyEditor({ owner, operator, rights }: {
                 setBusy(false);
         }
     }
-    return <section className="phone-admin-panel" data-proof="e6-phone-binding"><h3>手机绑定与换机策略</h3>
+    return <section className="pane phone-admin-panel phone-policy-panel" data-proof="e6-phone-binding"><div className="pane-h"><span className="ttl">手机绑定与换机策略</span><span className="sub">后续换机统一规则</span></div><div className="phone-policy-body">
     <p>四项规则一起审批、同时生效。只约束后续换机；首次绑定、同绑定恢复及已运行的手机不受追溯影响。</p>
     {error && <p role="alert" className="phone-error">{error}</p>}{message && !denied && <p role="status">{message}</p>}
     {denied ? <p>当前没有查看原结果的权限，内容已隐藏，请返回。</p> : <>
@@ -233,5 +233,5 @@ function PolicyEditor({ owner, operator, rights }: {
       <label>{mode === "id" ? "发布操作号" : "当前审批人的批准操作标识"}<input maxLength={128} value={lookup} onChange={e => setLookup(e.target.value)}/></label></div><button className="l-btn" disabled={busy || !lookup.trim()} onClick={() => void query()}>只读查询原发布</button></details>}
     {receipt && <PhoneReceiptView receipt={receipt}/>}
     </>}
-  </section>;
+  </div></section>;
 }

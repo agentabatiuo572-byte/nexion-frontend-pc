@@ -191,7 +191,7 @@ export function K6RemoteTargetManager() {
         </div>
         {message && <div className="k6-explain" role="status" style={{ marginBottom: 14 }}>{message}</div>}
         {canManage ? (
-          <div className="k6-ovr-brief" style={{ marginBottom: 14 }}>
+          <div className="k6-ovr-brief ui-target-version" style={{ marginBottom: 14 }}>
             <h4>新增不可变版本</h4>
             <div className="k6-form-row">
               <div className="k6-ovr-field"><label htmlFor="rt-key">目标键<i>小写字母开头</i></label><input id="rt-key" className="k6-field" value={key} maxLength={64} onChange={(event) => setKey(event.target.value)} placeholder="如 finance-main" /></div>

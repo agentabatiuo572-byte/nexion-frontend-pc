@@ -93,7 +93,7 @@ export function F3Placements() {
   }
 
   if (!canRead) return null;
-  return <section className="pane" aria-label="成员安置">
+  return <section className="pane ui-placements" aria-label="成员安置">
     <div className="pane-h"><span className="ph-ttl">成员安置</span><span className="ph-sub">查询归属人的直推成员；已有 A/B 轨不能更改。</span></div>
     <div className="card-body">
       <form className="actions" onSubmit={event => { event.preventDefault(); void load(); }}>
@@ -107,9 +107,9 @@ export function F3Placements() {
       {pending && <div><p>待确认：归属人 {pending.ownerUserId} · 成员 {pending.memberUserId} · {pending.leg} 轨</p><button className="fbtn" disabled={busy} onClick={() => void checkPending()}>查询原成员结果</button></div>}
       {data && <>
         <p>归属人 {data.ownerUserId} · 共 {data.total} 名直推成员</p>
-        <table className="table"><thead><tr><th>成员用户编号</th><th>轨道</th><th>安置来源</th><th>安置时间</th><th>操作人</th><th>操作</th></tr></thead><tbody>
+        <div className="ui-table-scroll"><table className="ctbl"><thead><tr><th>成员用户编号</th><th>轨道</th><th>安置来源</th><th>安置时间</th><th>操作人</th><th>操作</th></tr></thead><tbody>
           {data.records.map(row => <tr key={row.memberUserId}><td>{row.memberUserId}</td><td>{row.leg ? `${row.leg} 轨` : "未安置"}</td><td>{row.assignmentSource === "AUTO" ? "自动安置" : row.assignmentSource === "MANUAL" ? "人工安置" : "—"}</td><td>{row.assignedAt?.replace("T", " ") || "—"}</td><td>{row.assignedBy || "—"}</td><td>{row.leg ? "已安置" : canWrite ? <div className="actions">{(["A", "B"] as const).map(leg => <button key={leg} className="fbtn" disabled={busy || !!pending} onClick={() => selectIntent({ownerUserId: data.ownerUserId, memberUserId: row.memberUserId, leg})}>安置到 {leg} 轨</button>)}</div> : "只读"}</td></tr>)}
-        </tbody></table>
+        </tbody></table></div>
         {data.records.length === 0 && <p>当前条件下没有直推成员。</p>}
         <div className="actions"><button className="fbtn" disabled={busy || data.page <= 1} onClick={() => void load(data.page - 1)}>上一页</button><span>第 {data.page} 页</span><button className="fbtn" disabled={busy || data.page * data.pageSize >= data.total} onClick={() => void load(data.page + 1)}>下一页</button></div>
       </>}
