@@ -18,6 +18,7 @@ import { A2OutcomeUncertainError, createA2CommandKey } from "@/lib/admin/a2-clie
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /** 每个 CAP 档位一个槽位:同档位改了值就铸新命令号并丢弃旧号(旧号可能已被后端消费,
  *  留着会让「改回原值」的新操作被当成重复提交吞掉)。落 sessionStorage,刷新后重试仍去重。 */
@@ -500,7 +501,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                   <div className="k">
                     <span className={`nc-pr ${tier}`}>{I3_TIER_STATE[tier][0]}</span>
                   </div>
-                  <div className="s" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{row.policy}</div>
+                  <div className="s" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{operatorCopyText(row.policy)}</div>
                 </div>
                 <span
                   className="v"
@@ -549,7 +550,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                   <tr key={r.kind}>
                     <td className="mono" style={empty ? { color: "var(--ink-4)" } : undefined}>{r.to}</td>
                     <td><span className="bdg dim">{DELIVERY_CATALOG?.kinds.find((option) => option.value === r.kind)?.label ?? "通知类型待核实"}</span></td>
-                    <td style={{ fontSize: 12 }}>{r.note}</td>
+                    <td style={{ fontSize: 12 }}>{operatorCopyText(r.note)}</td>
                   </tr>
                 );
               })}

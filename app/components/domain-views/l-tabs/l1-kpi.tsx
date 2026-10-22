@@ -453,7 +453,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
             void reloadKpi(v);
           }}
           itemClassName={(_v, selected) => `chip${selected ? " sel" : ""}`}
-        >{(v) => ({ "1d": "当日", "7d": "滚动 7d", "30d": "滚动 30d", custom: "自定义" })[v]}</TabGroup>
+        >{(v) => ({ "1d": "当日", "7d": "滚动 7 天", "30d": "滚动 30 天", custom: "自定义" })[v]}</TabGroup>
         {customOpen && (
           <div className="chips">
             <label className="lb" htmlFor="l1-custom-from">起</label>

@@ -51,7 +51,7 @@ export function CoverageHero() {
   const tiles = [
     { k: "真实储备账本", v: fmtUsdCompact(reserveUsd), cap: "口径同 D3 · 实时聚合" },
     { k: "应付负债账本", v: fmtUsdCompact(liabilitiesUsd), cap: `${LEDGER.accounts.length} 类科目汇总 → B2` },
-    { k: "净敞口(储备 − 负债)", v: fmtUsdCompact(net), cap: net < 0 ? "覆盖率 <100% · 兑付缺口" : "30d 趋势 →", tone: net < 0 ? "var(--v5-danger)" : "var(--v5-success)" },
+    { k: "净敞口(储备 − 负债)", v: fmtUsdCompact(net), cap: net < 0 ? "覆盖率 <100% · 兑付缺口" : "30 天趋势 →", tone: net < 0 ? "var(--v5-danger)" : "var(--v5-success)" },
   ];
 
   return (

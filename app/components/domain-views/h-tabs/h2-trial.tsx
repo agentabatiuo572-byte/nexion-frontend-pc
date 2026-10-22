@@ -132,7 +132,7 @@ function ParamRow({
   const currentProduct = isProduct ? trialProducts.find((product) => product.productNo === current) : undefined;
   const displayCurrent = isDay ? `${current} 天`
     : isQuota || isActualQuota ? (current === "UNKNOWN" ? "-" : `${current} 张`)
-      : currentProduct ? `${nexGridBrandText(currentProduct.name)} · ${current}` : current;
+      : currentProduct ? `${nexGridBrandText(currentProduct.name)} · ${current}` : param.serverOnly ? operatorCopyText(current) : current;
   const readOnly = !!param.readOnly || isActualQuota || ["phaseOpen", "trialPriceUSD"].includes(param.key);
   const productOptions = trialProducts.map((product) => product.productNo);
   const disabledProductOptions = trialProducts
@@ -193,7 +193,7 @@ function ParamRow({
         className={`l-btn sm${param.hot ? " mc" : ""}`}
         disabled={readOnly || !canWrite}
         aria-label={readOnly ? `只读 · ${operatorCopyText(param.name)}` : canWrite ? `调整 ${operatorCopyText(param.name)}` : `无写权限 · ${operatorCopyText(param.name)}`}
-        title={readOnly ? (param.sub || (param.key === "phaseOpen" ? "由 H1 当前阶段派发，只读"
+        title={readOnly ? (operatorCopyText(param.sub || "") || (param.key === "phaseOpen" ? "由 H1 当前阶段派发，只读"
           : param.key === "trialPriceUSD" ? "由 E1 目标商品售价同步，只读" : "服务端只读参数")) : undefined}
         onClick={() => {
           if (readOnly || !canWrite) return;

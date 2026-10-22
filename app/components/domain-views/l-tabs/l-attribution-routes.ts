@@ -12,7 +12,7 @@ const REGISTERED_ATTRIBUTION_ROUTES = new Set([
 
 export const L2_ATTRIBUTION_LINKS: readonly AttributionLink[] = [
   { label: "B4 节奏", href: "/overview/rhythm" },
-  { label: "H1 Phase", href: "/growth/phase" },
+  { label: "H1 运营阶段", href: "/growth/phase" },
   { label: "I 域文案", href: "/content/copy-ab" },
   { label: "F 域渠道", href: "/network/commissions" },
 ];

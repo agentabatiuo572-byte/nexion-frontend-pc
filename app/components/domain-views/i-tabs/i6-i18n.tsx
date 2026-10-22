@@ -104,7 +104,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const HARDCODED_FINDINGS: HardcodedFinding[] = data?.hardcodedFindings ?? [];
   const COURSES: Course[] = (data?.courses ?? []).map((c) => ({
     id: c.id,
-    title: c.title,
+    title: c.titleZh || c.title,
     cat: c.category,
     icon: COURSE_ICON_BY_CAT[c.category] ?? "📘",
     format: c.format,
@@ -549,7 +549,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const setFeat = () => {
     const cur = liveFeatured();
     const publishedCourseOptions = COURSES.filter((course) => liveStatus(course) === "published").map((course) => course.id);
-    const publishedCourseLabels = Object.fromEntries(COURSES.filter((course) => liveStatus(course) === "published").map((course) => [course.id, `${course.title}（${course.id}）`]));
+    const publishedCourseLabels = Object.fromEntries(COURSES.filter((course) => liveStatus(course) === "published").map((course) => [course.id, `${nexGridBrandText(course.title)}（${course.id}）`]));
     openActionConfirm({
       action: <>更换推荐位课程</>,
       detail: (
@@ -1067,10 +1067,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               <span className="nm">
                 推荐位课程(首页大卡)
                 <small>
-                  当前：{featuredCourse?.title ?? "未设置推荐课程"} · 单一位置，换课走操作确认
+                  当前：{featuredCourse ? nexGridBrandText(featuredCourse.title) : "未设置推荐课程"} · 单一位置，换课走操作确认
                 </small>
               </span>
-              <span className="v">{featuredCourse?.title ?? "未设置"}</span>
+              <span className="v">{featuredCourse ? nexGridBrandText(featuredCourse.title) : "未设置"}</span>
               {canWriteI7 && <button className="l-btn sm mc" onClick={setFeat}>
                 换推荐课
               </button>}

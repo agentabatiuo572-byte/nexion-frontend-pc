@@ -771,7 +771,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                 <tr key={f.key} className="click" onClick={() => setFamIdx(i)}>
                   <td style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink)", whiteSpace: "nowrap" }}>{operatorCopyText(f.title)}</td>
                   <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{operatorCopyText(f.sub)}</td>
-                  <td className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>{f.sample}</td>
+                  <td className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>{f.key === "OTHER" || f.key === "UNREGISTERED" || f.sample.includes("其他已注册 family") ? operatorCopyText(f.sample) : f.sample}</td>
                   <td style={{ fontSize: 11.5 }}>
                     {f.serverAuth.includes("全部")
                       ? f.serverAuth.split("全部").map((part, idx, arr) => (

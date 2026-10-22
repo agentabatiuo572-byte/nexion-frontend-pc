@@ -35,7 +35,7 @@ export function ExposureCard() {
     <div className="flex h-full flex-col rounded-[16px] p-5" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}>
       <div className="flex items-center gap-2.5">
         <span className="font-display text-[14.5px]" style={{ color: "var(--v5-ink)" }}>净敞口曲线</span>
-        <span className="text-[12px]" style={{ color: "var(--v5-ink-4)" }}>30d · USDT</span>
+        <span className="text-[12px]" style={{ color: "var(--v5-ink-4)" }}>30 天 · USDT</span>
         <span className="ml-auto font-mono-tabular rounded-[7px] px-2 py-0.5 text-[11px]" style={{ background: "var(--v5-surface-2)", color: "var(--v5-ink-4)", border: "1px solid var(--v5-border)" }}>B1</span>
       </div>
       <div className="font-mono-tabular mt-1.5" style={{ fontSize: 26, fontWeight: 600, letterSpacing: "-0.02em", color: tone }}>{fmtUsdCompact(net)}</div>
@@ -44,7 +44,7 @@ export function ExposureCard() {
       </p>
       <AreaChart data={netSeries} color={tone} height={96} />
       <div className="mt-2 flex items-center justify-between font-mono-tabular text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}>
-        <span>30d 前 {fmtUsdCompact(netSeries[0])}</span>
+        <span>30 天前 {fmtUsdCompact(netSeries[0])}</span>
         <span style={{ color: tone }}>今日 {fmtUsdCompact(net)}</span>
       </div>
       {windowsToRedline != null && (
