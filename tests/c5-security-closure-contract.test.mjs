@@ -45,9 +45,10 @@ test("C5 rejects malformed success payloads and never preserves stale target dat
   assert.match(c5, /重新加载/);
 });
 
-test("C5 empty lookup cleanup never erases an overview load failure", () => {
-  assert.match(c5, /setError\(\(current\) => current\?\.startsWith\("C5 用户搜索失败"\) \? null : current\)/);
-  assert.doesNotMatch(c5, /if \(!keyword\) \{[\s\S]{0,360}setError\(null\)/);
+test("C5 keeps list loading errors separate from the selected user's overview", () => {
+  assert.match(c5, /setUserSearchError\(`用户列表加载失败/);
+  assert.match(c5, /重新加载用户/);
+  assert.doesNotMatch(c5, /setError\(`C5 用户搜索失败/);
 });
 
 test("C5 clears a stale user without erasing global statistics and credential parameters", () => {
@@ -57,9 +58,19 @@ test("C5 clears a stale user without erasing global statistics and credential pa
   assert.doesNotMatch(c5, /selectedUserKey === NO_USER_SELECTION[\s\S]{0,160}setOverview\(null\)/);
 });
 
-test("C5 keeps an explicitly selected user while the decorated display label is shown", () => {
-  assert.match(c5, /selectedLookupUser && keyword === profileLabel\(selectedLookupUser\)/);
-  assert.match(c5, /setUserOptions\(\[selectedLookupUser\]\)/);
+test("C5 loads a paginated user list even before a search or selection", () => {
+  assert.match(c5, /keyword \? await privacySafeUserLookup\(keyword\) : \{\}/);
+  assert.match(c5, /pageNum: userPage/);
+  assert.match(c5, /pageSize: userPageSize/);
+  assert.match(c5, /aria-label="安全处置用户列表"/);
+  assert.match(c5, /查看安全信息/);
+  assert.doesNotMatch(c5, /setUserLookup\(profileLabel/);
+  assert.doesNotMatch(c5, /chooseFirstUserOption/);
+});
+
+test("C5 shows account actions only after selection and explains unavailable actions", () => {
+  assert.match(c5, /selectedUserId && <div/);
+  for (const explanation of ["暂无在线设备", "未开启", "已要求重置", "无权限"]) assert.ok(c5.includes(explanation));
 });
 
 test("C5 masks credential identifiers and validates numeric configuration bounds", () => {
@@ -96,8 +107,10 @@ test("C5 preserves only an explicitly selected target across refresh", () => {
   assert.match(c5, /replaceFocusUserCode\(\)/);
 });
 
-test("C5 does not reapply a stale URL target while the operator edits the lookup", () => {
-  assert.match(c5, /if \(selectedUserKey === focusUserCode\) return;[\s\S]{0,180}\}, \[focusUserCode\]\);/);
+test("C5 changes the URL target without allowing old user data to remain actionable", () => {
+  assert.match(c5, /const key = focusUserCode \|\| NO_USER_SELECTION/);
+  assert.match(c5, /dataGeneration\.current\+\+;\s+setOverview\(clearSelectedUserFromOverview\);\s+setSelectedUserKey\(key\)/);
+  assert.match(c5, /\}, \[focusUserCode\]\);/);
   assert.doesNotMatch(c5, /\}, \[focusUserCode, selectedUserKey\]\);/);
 });
 

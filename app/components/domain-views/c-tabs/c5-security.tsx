@@ -98,11 +98,6 @@ function profileLabel(account?: User360Profile | null) {
   return `${text(account.userNo, text(account.id))} · ${text(account.nickname)}`;
 }
 
-function profileMeta(account?: User360Profile | null) {
-  if (!account) return "—";
-  return [account.phoneMasked, account.status].map((item) => text(item, "")).filter(Boolean).join(" · ") || "—";
-}
-
 function sessionId(session?: UserSession | null) {
   return text(session?.refreshTokenId, "—");
 }
@@ -219,9 +214,12 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const [selectedUserKey, setSelectedUserKey] = useState(NO_USER_SELECTION);
   const [userLookup, setUserLookup] = useState("");
   const [userOptions, setUserOptions] = useState<User360Profile[]>([]);
-  const [selectedLookupUser, setSelectedLookupUser] = useState<User360Profile | null>(null);
+  const [userPage, setUserPage] = useState(1);
+  const [userPageSize, setUserPageSize] = useState(10);
+  const [userTotal, setUserTotal] = useState(0);
+  const [userListRetry, setUserListRetry] = useState(0);
   const [userSearchLoading, setUserSearchLoading] = useState(false);
-  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [userSearchError, setUserSearchError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [loading, setLoading] = useState(false);
@@ -242,14 +240,18 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     router.replace(destination, { scroll: false });
   }, [pathname, router, searchParams]);
 
+  const dataGeneration = useRef(0);
   useEffect(() => {
-    if (!focusUserCode) return;
-    if (selectedUserKey === focusUserCode) return;
-    setSelectedUserKey(focusUserCode);
-    setUserLookup(focusUserCode);
+    const key = focusUserCode || NO_USER_SELECTION;
+    if (selectedUserKey === key) return;
+    dataGeneration.current++;
+    setOverview(clearSelectedUserFromOverview);
+    setSelectedUserKey(key);
+    setPage(1);
+    setSsId(null);
+    setLockId(null);
   }, [focusUserCode]);
 
-  const dataGeneration = useRef(0);
   const loadData = useCallback(async (silent = false) => {
     const generation = ++dataGeneration.current;
     if (!silent) setLoading(true);
@@ -277,47 +279,26 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
 
   useEffect(() => {
     let cancelled = false;
+    setUserSearchLoading(true);
+    setUserOptions([]);
     const timer = window.setTimeout(async () => {
-      setUserSearchLoading(true);
       try {
         const keyword = userLookup.trim();
-        if (selectedLookupUser && keyword === profileLabel(selectedLookupUser)) {
-          if (!cancelled) setUserOptions([selectedLookupUser]);
-          return;
-        }
-        if (!keyword) {
-          if (!cancelled) {
-            setUserOptions([]);
-            setSelectedLookupUser(null);
-            setSelectedUserKey(NO_USER_SELECTION);
-            setOverview(clearSelectedUserFromOverview);
-            setError((current) => current?.startsWith("C5 用户搜索失败") ? null : current);
-          }
-          return;
-        }
-        if (focusUserCode && keyword === focusUserCode && selectedUserKey === focusUserCode) {
-          if (!cancelled) setUserOptions([]);
-          return;
-        }
         const pageData = await fetchUserProfilesPage({
-          ...(await privacySafeUserLookup(keyword)),
-          pageNum: 1,
-          pageSize: 20,
+          ...(keyword ? await privacySafeUserLookup(keyword) : {}),
+          pageNum: userPage,
+          pageSize: userPageSize,
         });
         if (!cancelled) {
-          const records = pageData.records ?? [];
-          setUserOptions(records);
-          if (keyword && records.length === 0) {
-            setOverview(clearSelectedUserFromOverview);
-            setSelectedUserKey(NO_USER_SELECTION);
-            if (focusUserCode) replaceFocusUserCode();
-          }
+          setUserOptions(pageData.records);
+          setUserTotal(pageData.total);
+          setUserSearchError(null);
         }
       } catch (err) {
         if (!cancelled) {
           setUserOptions([]);
-          setOverview(null);
-          setError(`C5 用户搜索失败 · ${errorMessage(err)}`);
+          setUserTotal(0);
+          setUserSearchError(`用户列表加载失败 · ${errorMessage(err)}`);
         }
       } finally {
         if (!cancelled) setUserSearchLoading(false);
@@ -327,7 +308,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [focusUserCode, replaceFocusUserCode, selectedLookupUser, selectedUserKey, userLookup]);
+  }, [userPage, userPageSize, userLookup, userListRetry]);
 
   const perform = useCallback(async (
     fingerprint: string,
@@ -378,27 +359,14 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
 
   const selectLookupUser = (account: User360Profile) => {
     const key = profileKey(account);
-    if (!key) return;
-    setSelectedLookupUser(account);
-    setUserLookup(profileLabel(account));
+    if (!key || key === selectedUserKey) return;
+    dataGeneration.current++;
+    setOverview(clearSelectedUserFromOverview);
     setSelectedUserKey(key);
     replaceFocusUserCode(key);
     setPage(1);
     setSsId(null);
     setLockId(null);
-    setShowUserMenu(false);
-  };
-
-  const chooseFirstUserOption = () => {
-    const first = userOptions[0];
-    if (first) {
-      selectLookupUser(first);
-      return;
-    }
-    setSelectedUserKey(NO_USER_SELECTION);
-    replaceFocusUserCode();
-    setOverview(clearSelectedUserFromOverview);
-    setError("没有匹配用户，请核对用户编码、姓名或手机号后重试。");
   };
 
   const revokeOne = (id: string) =>
@@ -606,102 +574,63 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       <div className="two-col r125-1">
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">单用户安全处置 · {userLabel(selectedUser)}</span>
-            <span className="sub">· 会话 / 两步验证 / 锁定</span>
-            <div className="r">
-              <div className="lookup" style={{ position: "relative", minWidth: 320 }}>
-                <input
-                  aria-label="检索安全处置用户"
-                  aria-describedby="c5-user-lookup-hint"
-                  aria-expanded={showUserMenu}
-                  aria-controls="c5-user-lookup-options"
-                  role="combobox"
-                  aria-autocomplete="list"
-                  value={userLookup}
-                  onChange={(event) => {
-                    const next = event.target.value;
-                    setUserLookup(next);
-                    setShowUserMenu(true);
-                    if (selectedLookupUser && next !== profileLabel(selectedLookupUser)) {
-                      setSelectedLookupUser(null);
-                    }
-                    if (!selectedLookupUser || next !== profileLabel(selectedLookupUser)) {
-                      setSelectedUserKey(NO_USER_SELECTION);
-                      if (focusUserCode) replaceFocusUserCode();
-                      setOverview(clearSelectedUserFromOverview);
-                      setPage(1);
-                      setSsId(null);
-                      setLockId(null);
-                    }
-                  }}
-                  onFocus={() => setShowUserMenu(true)}
-                  onBlur={() => window.setTimeout(() => setShowUserMenu(false), 140)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      chooseFirstUserOption();
-                    }
-                  }}
-                  placeholder="搜索用户编码 / 用户名 / 推荐码 / 手机号"
-                />
-                <div id="c5-user-lookup-hint" style={{ marginTop: 4, fontSize: 10.5, color: "var(--ink-4)" }}>
-                  手机号仅在本机转为哈希后检索，服务端不会接收明文号码
-                </div>
-                {showUserMenu && (
-                  <div
-                    id="c5-user-lookup-options"
-                    role="listbox"
-                    aria-label="匹配的安全处置用户"
-                    style={{
-                      position: "absolute",
-                      top: "calc(100% + 6px)",
-                      right: 0,
-                      left: 0,
-                      zIndex: 30,
-                      maxHeight: 260,
-                      overflowY: "auto",
-                      border: "1px solid var(--line)",
-                      borderRadius: 8,
-                      background: "var(--panel)",
-                      boxShadow: "0 14px 36px rgba(15, 23, 42, 0.16)",
-                      padding: 6,
-                    }}
-                  >
-                    {userSearchLoading && <div className="ctint" style={{ margin: 4 }}>搜索用户中...</div>}
-                    {!userSearchLoading && userOptions.length === 0 && <div className="ctint" style={{ margin: 4 }}>没有匹配用户</div>}
-                    {!userSearchLoading && userOptions.map((account) => {
-                      const key = profileKey(account) ?? profileLabel(account);
-                      return (
-                        <button
-                          key={key}
-                          type="button"
-                          className="l-btn"
-                          onMouseDown={(event) => {
-                            event.preventDefault();
-                            selectLookupUser(account);
-                          }}
-                          style={{
-                            width: "100%",
-                            justifyContent: "space-between",
-                            marginBottom: 4,
-                            padding: "8px 10px",
-                            textAlign: "left",
-                          }}
-                        >
-                          <span style={{ minWidth: 0 }}>
-                            <span style={{ display: "block", fontWeight: 650, color: "var(--ink)" }}>{profileLabel(account)}</span>
-                            <span className="mono" style={{ display: "block", marginTop: 3, fontSize: 11, color: "var(--ink-4)" }}>
-                              {profileMeta(account)}
-                            </span>
-                          </span>
-                          <span className="bdg ok" style={{ flex: "0 0 auto" }}>选择</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+            <span className="ttl">用户安全处置</span>
+            <span className="sub">· 先选择用户，再处理该用户的登录设备、两步验证或密码</span>
+          </div>
+          <div className="l-b" style={{ paddingBottom: 10 }}>
+            <input
+              className="fld"
+              aria-label="检索安全处置用户"
+              value={userLookup}
+              disabled={busy}
+              onChange={(event) => {
+                if (selectedUserKey !== NO_USER_SELECTION) dataGeneration.current++;
+                setUserLookup(event.target.value);
+                setUserPage(1);
+                setSelectedUserKey(NO_USER_SELECTION);
+                if (focusUserCode) replaceFocusUserCode();
+                setOverview(clearSelectedUserFromOverview);
+                setPage(1);
+                setSsId(null);
+                setLockId(null);
+              }}
+              placeholder="搜索用户编码 / 用户名 / 推荐码 / 手机号"
+            />
+            <div className="ctint" style={{ marginTop: 8 }}>
+              直接点击用户右侧的“查看安全信息”；也可以先搜索。所有处置仅针对选中的用户。
             </div>
+            {userSearchError && <div className="ctint bad" role="alert">
+              {userSearchError} <button className="l-btn sm" disabled={userSearchLoading} onClick={() => setUserListRetry((value) => value + 1)}>重新加载用户</button>
+            </div>}
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table className="l-tbl" aria-label="安全处置用户列表">
+              <thead><tr><th>用户编码</th><th>用户名</th><th>手机号</th><th>操作</th></tr></thead>
+              <tbody>
+                {userOptions.map((account) => {
+                  const key = profileKey(account);
+                  const selected = key === selectedUserKey;
+                  return (
+                    <tr key={key ?? profileLabel(account)} aria-selected={selected}>
+                      <td className="mono">{text(account.userNo, text(account.id))}</td>
+                      <td>{text(account.nickname)}</td>
+                      <td className="mono">{text(account.phoneMasked)}</td>
+                      <td><button className="l-btn sm" disabled={busy || loading || !key || selected} onClick={() => selectLookupUser(account)}>
+                        {selected ? "已选择" : "查看安全信息"}
+                      </button></td>
+                    </tr>
+                  );
+                })}
+                {userOptions.length === 0 && <tr><td colSpan={4} style={{ textAlign: "center", padding: 18 }}>
+                  {userSearchLoading ? "用户列表加载中…" : userSearchError ? "用户列表未能加载，请点击重新加载用户" : userLookup.trim() ? "没有匹配用户，请调整搜索条件" : "暂无可查看的用户"}
+                </td></tr>}
+              </tbody>
+            </table>
+          </div>
+          <DataListPager label="安全处置用户" page={userPage} pageSize={userPageSize} total={userTotal} onPageChange={setUserPage}
+            onPageSizeChange={(next) => { setUserPageSize(next); setUserPage(1); }} pageSizeOptions={PAGE_SIZE_OPTIONS} />
+          <div className="l-h">
+            <span className="ttl">{selectedUser ? `当前用户 · ${userLabel(selectedUser)}` : "选择用户后查看安全信息"}</span>
           </div>
           <div style={{ overflowX: "auto" }}>
             <table className="l-tbl" style={{ minWidth: 700 }}>
@@ -759,17 +688,17 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
             pageSizeOptions={PAGE_SIZE_OPTIONS}
           />
           <div className="l-b" style={{ paddingTop: 10 }}>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {selectedUserId && <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button className="l-btn" disabled={!selectedUserId || busy || !canRevokeAll || activeSessionCount === 0} onClick={revokeAll}>
-                {canRevokeAll ? "退出全部设备" : "退出全部设备（无权限）"}
+                {!canRevokeAll ? "退出全部设备（无权限）" : activeSessionCount === 0 ? "退出全部设备（暂无在线设备）" : "退出全部设备"}
               </button>
               <button className="l-btn mc" disabled={!selectedUserId || busy || !canDisable2fa || !selectedUser?.twoFactorEnabled} onClick={disable2fa}>
-                关闭 两步验证（高风险确认）
+                {!canDisable2fa ? "关闭两步验证（无权限）" : !selectedUser?.twoFactorEnabled ? "关闭两步验证（未开启）" : "关闭两步验证"}
               </button>
               <button className="l-btn mc" disabled={!selectedUserId || busy || !canResetPassword || !!selectedUser?.passwordResetRequired} onClick={passwordReset}>
-                密码重置（高风险确认）
+                {!canResetPassword ? "密码重置（无权限）" : selectedUser?.passwordResetRequired ? "密码重置（已要求重置）" : "密码重置"}
               </button>
-            </div>
+            </div>}
             {selectedUser && (
               <>
                 <div className="ctint" style={{ marginTop: 10 }}>
