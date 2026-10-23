@@ -8,6 +8,7 @@ import * as exportContract from "../app/components/domain-views/l-tabs/l1-export
 import * as requestController from "../app/components/domain-views/l-tabs/l1-request-generation.ts";
 import * as attribution from "../app/components/domain-views/l-tabs/l-attribution-routes.ts";
 import { displayAdminError } from "../lib/admin/error-messages.ts";
+import * as operatorCopy from "../lib/admin/operator-copy.ts";
 
 const element = (type, props) => ({ type, props });
 test("server export failures distinguish missing metrics from malformed data in operator copy", () => {
@@ -83,6 +84,7 @@ function harness(dependencies = {}) {
       if (name.endsWith("l1-export-contract")) return exportContract;
       if (name.endsWith("l1-request-generation")) return requestController;
       if (name.endsWith("l-attribution-routes")) return attribution;
+      if (name.endsWith("operator-copy")) return operatorCopy;
       if (name.endsWith("error-messages")) return { displayAdminError: error => error.message ?? String(error), formatAdminApiError: value => value };
       return {};
     }, exports, { exports }, dependencies.window);
@@ -121,7 +123,7 @@ function kpiFlow(saved) {
 
 test("L1 export stays disabled during refresh and exports only the latest accepted query", async () => {
   const flow = kpiFlow(); flow.render();
-  flow.choose("滚动 30d"); await settle();
+  flow.choose("滚动 30 天"); await settle();
   assert.equal(flow.header().props.disabled, true);
   await flow.header().props.onClick(); assert.equal(flow.exports.length, 0);
   flow.choose("当日"); await settle();
@@ -137,19 +139,19 @@ test("L1 export stays disabled during refresh and exports only the latest accept
 
 test("L1 failed or malformed refresh keeps export disabled; a later successful read restores it", async () => {
   const flow = kpiFlow(); flow.render();
-  flow.choose("滚动 30d"); await settle(); flow.reads[0].reject(new Error("SERVICE_UNAVAILABLE")); await settle(); flow.render();
+  flow.choose("滚动 30 天"); await settle(); flow.reads[0].reject(new Error("SERVICE_UNAVAILABLE")); await settle(); flow.render();
   assert.equal(flow.header().props.disabled, true); assert.match(flow.header().props.title, /读取失败/);
   await flow.header().props.onClick(); assert.equal(flow.exports.length, 0);
   flow.choose("当日"); await settle(); flow.reads[1].resolve({ module: "L1", kpis: [] }); await settle(); flow.render();
   assert.equal(flow.header().props.disabled, true);
-  flow.choose("滚动 7d"); await settle(); flow.reads[2].resolve(dashboard()); await settle(); flow.render();
+  flow.choose("滚动 7 天"); await settle(); flow.reads[2].resolve(dashboard()); await settle(); flow.render();
   assert.equal(flow.header().props.disabled, false);
   flow.ctx.canExport = false;
   await flow.header().props.onClick(); assert.equal(flow.exports.length, 0);
 });
 
 test("L1 parent replacement and unmount invalidate old local reads", async () => {
-  const flow = kpiFlow(); flow.render(); flow.choose("滚动 30d"); await settle();
+  const flow = kpiFlow(); flow.render(); flow.choose("滚动 30 天"); await settle();
   flow.ctx.biData = { l1: dashboard(null) }; flow.render();
   flow.reads[0].resolve(dashboard(90)); await settle(); flow.render();
   assert.equal(flow.source().data.kpis[0].value, null);
@@ -160,7 +162,7 @@ test("L1 parent replacement and unmount invalidate old local reads", async () =>
 });
 
 test("parent reload re-reads the selected window before allowing export instead of silently using default data", async () => {
-  const flow = kpiFlow(); flow.render(); flow.choose("滚动 30d"); await settle();
+  const flow = kpiFlow(); flow.render(); flow.choose("滚动 30 天"); await settle();
   flow.reads[0].resolve(dashboard(81)); await settle(); flow.render();
   flow.ctx.biData = { l1: dashboard(12) }; flow.render(); await settle();
   assert.equal(flow.header().props.disabled, true);

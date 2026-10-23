@@ -19,6 +19,7 @@ import {
 import {
   resolveNexionAppRoot,
   resolveNexionBackendRoot,
+  resolveNexionJanusRoot,
 } from "./lib/nexion-workspace-paths.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -49,9 +50,7 @@ const problems = [];
 const warnings = [];
 const BACKEND_ROOT = resolveNexionBackendRoot({ adminRoot: ROOT });
 const UNIAPP_ROOT = resolveNexionAppRoot({ adminRoot: ROOT });
-const JANUS_ROOT = process.env.NEXION_JANUS_ROOT?.trim()
-  ? path.resolve(process.env.NEXION_JANUS_ROOT.trim())
-  : path.resolve(ROOT, "..", "NX1.0-Janus");
+const JANUS_ROOT = resolveNexionJanusRoot({ adminRoot: ROOT });
 const evidenceRoot = (type) => type.startsWith("backend-") ? BACKEND_ROOT
   : type.startsWith("uniapp-") ? UNIAPP_ROOT
     : type.startsWith("janus-") ? JANUS_ROOT : ROOT;

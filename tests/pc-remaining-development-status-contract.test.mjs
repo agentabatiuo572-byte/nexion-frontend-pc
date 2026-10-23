@@ -4,6 +4,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, win32 } from "node:path";
 import test from "node:test";
 import ts from "typescript";
+import { resolveNexionAppRoot, resolveNexionBackendRoot, resolveNexionJanusRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 import {
   auditRepositoryReverseCoverage,
   collectActiveNavLeaves,
@@ -14,9 +15,9 @@ import {
 } from "../scripts/lib/ops-actions-reverse-coverage.mjs";
 
 const ROOT = process.cwd();
-const BACKEND_ROOT = process.env.NEXION_BACKEND_ROOT?.trim() || join(ROOT, "..", "nexion-backend");
-const UNIAPP_ROOT = process.env.NEXION_APP_ROOT?.trim() || join(ROOT, "..", "NX1.0-UniApp");
-const JANUS_ROOT = process.env.NEXION_JANUS_ROOT?.trim() || join(ROOT, "..", "NX1.0-Janus");
+const BACKEND_ROOT = resolveNexionBackendRoot({ adminRoot: ROOT });
+const UNIAPP_ROOT = resolveNexionAppRoot({ adminRoot: ROOT });
+const JANUS_ROOT = resolveNexionJanusRoot({ adminRoot: ROOT });
 const read = (relative) => readFileSync(join(ROOT, relative), "utf8");
 const readBackend = (relative) => readFileSync(join(BACKEND_ROOT, relative), "utf8");
 const manifest = JSON.parse(read("docs/ops-actions.manifest.json"));

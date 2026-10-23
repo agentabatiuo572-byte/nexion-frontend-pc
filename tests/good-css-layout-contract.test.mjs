@@ -3,7 +3,24 @@ import fs from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
+import { hasNativeSelectTheme } from "../scripts/lib/native-select-theme-contract.mjs";
 const read = file => fs.readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+
+test("native select guard accepts grouped controls and rejects missing theme or popup colors", () => {
+  const css = read("app/globals.css");
+  assert.equal(hasNativeSelectTheme(css), true);
+  assert.equal(hasNativeSelectTheme(css
+    .replace('select, input[type="date"], input[type="datetime-local"]', 'select')
+    .replace(':is(select, input[type="date"], input[type="datetime-local"])', 'select')), true);
+  for (const [name, candidate] of [
+    ["light select target", css.replace('select, input[type="date"]', 'textarea, input[type="date"]')],
+    ["dark select target", css.replace(':is(select, input[type="date"]', ':is(textarea, input[type="date"]')],
+    ["dark scheme", css.replace('color-scheme: dark;', 'color-scheme: light;')],
+    ["popup background", css.replace('background-color: var(--v5-surface)', 'background-color: transparent')],
+    ["popup foreground", css.replace(/(select optgroup\s*\{[^}]*?)color: var\(--v5-ink\);/, '$1color: inherit;')],
+    ["comment-only evidence", `/* ${css.replace(/\/\*[\s\S]*?\*\//g, "")} */`],
+  ]) assert.equal(hasNativeSelectTheme(candidate), false, name);
+});
 
 test("countdown retains five tabular character slots across ten-minute boundary", () => {
   const source = read("app/components/domain-views/c-tabs/c2-actions.tsx");
@@ -18,8 +35,13 @@ test("countdown retains five tabular character slots across ten-minute boundary"
 
 test("C1 filter tracks adapt to content width with shrinkable native controls", () => {
   const source = read("app/components/domain-views/c-tabs/c1-search.tsx");
-  assert.ok(source.includes("grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))]"));
-  assert.ok(source.includes("[&>*]:min-w-0 [&>*]:w-full"));
+  const css = read("app/components/domain-views/ui-consistency.css");
+  assert.match(source, /className="ui-form-grid"/);
+  assert.match(css, /\.dkpage \.ui-form-grid\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*220px\),\s*1fr\)\)/);
+  assert.match(css, /\.dkpage \.ui-form-grid > label\s*\{[^}]*min-width:\s*0/);
+  const nativeControls = /\.dkpage \.ui-form-grid :is\(input:not\(\[type="checkbox"\]\), select, textarea\)/;
+  assert.match(css, new RegExp(nativeControls.source + "[^{}]*\\{[^}]*min-width:\\s*0;[^}]*max-width:\\s*100%"));
+  assert.match(css, new RegExp(nativeControls.source + "\\s*\\{\\s*width:\\s*100%"));
   assert.doesNotMatch(source, /sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6/);
 });
 

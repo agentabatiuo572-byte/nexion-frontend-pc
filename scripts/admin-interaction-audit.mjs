@@ -11,6 +11,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { hasNativeSelectTheme } from "./lib/native-select-theme-contract.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PLAN = path.resolve(ROOT, "..");
@@ -170,12 +171,7 @@ for (const f of walk(path.join(ROOT, "app/components/domain-views"), /-view\.tsx
 // 原生弹层有独立系统底色；保护全局修复不被删除，实景展开仍须浏览器验收。
 (() => {
   const file = path.join(ROOT, "app/globals.css");
-  const css = read(file).replace(/\/\*[\s\S]*?\*\//g, "");
-  const popup = css.match(/select\s+option\s*,\s*select\s+optgroup\s*\{([^}]+)\}/)?.[1] ?? "";
-  if (!/(?:^|\})\s*select\s*\{[^}]*color-scheme:\s*light\s*;/.test(css)
-    || !/html\[data-theme="dark"\]\s+select\s*\{[^}]*color-scheme:\s*dark\s*;/.test(css)
-    || !/background-color:\s*var\(--v5-surface\)/.test(popup)
-    || !/(?:^|;)\s*color:\s*var\(--v5-ink\)/.test(popup)) {
+  if (!hasNativeSelectTheme(read(file))) {
     add("J", "HIGH", file, "原生下拉菜单缺双主题或成对前景/背景规则，可能再次出现白底白字。恢复共用规则并实景检查展开菜单。");
   }
 })();

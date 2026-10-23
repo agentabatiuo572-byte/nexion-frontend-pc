@@ -376,7 +376,7 @@ test("L1 时间窗 / 按注册周或月分组 / KPI 卡 / 叠加选择都暴露�
     },
   });
   assert.equal(tablistNamed(html, "时间窗").length, 1, "L1 时间窗必须暴露组名");
-  assertSingleSelection(html, "时间窗", 1, ["当日", "滚动 7d", "滚动 30d", "自定义"]);
+  assertSingleSelection(html, "时间窗", 1, ["当日", "滚动 7 天", "滚动 30 天", "自定义"]);
   assert.equal(tablistNamed(html, "按注册周或月分组").length, 1, "L1 按注册周或月分组必须暴露组名");
   assertSingleSelection(html, "按注册周或月分组", 0, ["注册周（如2026-W42）", "注册月"]);
   // 🔴 zentao #209:八张 KPI 卡是**互斥单选**(点 #1 会把 #2 自动置 0),此前它们只是

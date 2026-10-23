@@ -13,7 +13,12 @@ function resolveCheckoutRoot({ adminRoot, env, exists, envKey, candidates, label
     return resolved;
   }
 
-  const matched = candidates.map((candidate) => path.resolve(adminRoot, candidate)).find((candidate) => exists(candidate));
+  // Managed candidates live in workspace/.worktrees/<task>. A sibling junction there
+  // can belong to an older task; prefer the declared projects in the workspace.
+  const ordered = path.basename(path.dirname(path.resolve(adminRoot))).toLowerCase() === ".worktrees"
+    ? [...candidates.filter(candidate => candidate.startsWith("../../")), ...candidates.filter(candidate => !candidate.startsWith("../../"))]
+    : candidates;
+  const matched = ordered.map((candidate) => path.resolve(adminRoot, candidate)).find((candidate) => exists(candidate));
   if (matched) return matched;
 
   const checked = candidates.map((candidate) => path.resolve(adminRoot, candidate));
@@ -51,6 +56,19 @@ export function resolveNexionBackendRoot({
     envKey: "NEXION_BACKEND_ROOT",
     label: "Backend",
     candidates: ["../nexion-backend", "../../nexion-backend"],
+  });
+}
+
+export function resolveNexionJanusRoot({
+  adminRoot,
+  env = process.env,
+  exists = fs.existsSync,
+} = {}) {
+  return resolveCheckoutRoot({
+    adminRoot, env, exists,
+    envKey: "NEXION_JANUS_ROOT",
+    label: "Janus",
+    candidates: ["../NX1.0-Janus", "../../NX1.0-Janus"],
   });
 }
 

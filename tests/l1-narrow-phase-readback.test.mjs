@@ -7,6 +7,7 @@ import * as liveTotals from "../app/components/domain-views/l-tabs/l1-l2-live-da
 import * as exportContract from "../app/components/domain-views/l-tabs/l1-export-contract.ts";
 import * as requestController from "../app/components/domain-views/l-tabs/l1-request-generation.ts";
 import * as attributionRoutes from "../app/components/domain-views/l-tabs/l-attribution-routes.ts";
+import * as operatorCopy from "../lib/admin/operator-copy.ts";
 
 function loadClient(read) {
   const source = readFileSync(new URL("../lib/admin/l-client.ts", import.meta.url), "utf8");
@@ -70,6 +71,7 @@ function renderKpi(parent, local) {
       if (name === "./l1-export-contract") return exportContract;
       if (name === "./l1-request-generation") return requestController;
       if (name === "./l-attribution-routes") return attributionRoutes;
+      if (name.endsWith("operator-copy")) return operatorCopy;
       // Presentation-only children are represented as elements; effects and event handlers are not run.
       return {};
     }, exports, { exports });
