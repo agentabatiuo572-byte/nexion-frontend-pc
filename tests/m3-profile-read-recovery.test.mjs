@@ -284,7 +284,7 @@ test("sidebar keeps original sections and opens exact first-payment plus invitat
   const sidebar = h.html(); assert.match(sidebar,/已首充/); assert.match(sidebar,/直属邀请（人）/); assert.match(sidebar,/全部下级邀请用户（人）/); assert.match(sidebar,/邀请累充（USDT）/); assert.match(sidebar,/2K（部分统计）/);
   assert.ok(sidebar.indexOf("快捷操作") < sidebar.indexOf("首充与邀请"), "new statistics follow the preserved original sections");
   button(h.render(), "统计明细 →").props.onClick(); h.render();
-  const detail=h.html(); assert.match(detail,/首充来源<\/span><span class="v">购机/); assert.match(detail,/649\.123456 USDT/); assert.match(detail,/NEX · 累计/); assert.match(detail,/下级邀请用户包含直属邀请/);
+  const detail=h.html(); assert.match(detail,/首充来源<\/span><span class="v">购机/); assert.match(detail,/649\.123456 USDT/); assert.match(detail,/UVEL · 累计/); assert.match(detail,/下级邀请用户包含直属邀请/);
   assert.match(detail,/data-exact="2000（部分统计） USDT" aria-label="2000（部分统计） USDT" tabindex="0"/);
   assert.equal(h.requests.length,4); h.invalidate({customerId:"7"}); assert.doesNotMatch(h.html(),/649\.123456|邀请后代充值/); h.unmount();
 });
@@ -319,7 +319,7 @@ test("actual sidebar restores bounded identity, two-currency 2x2 funds and short
   selector.props.onChange("NEX");
   const shortcuts = elements(h.render()).find(node => node.props?.className === "m3-profile-shortcuts");
   assert.deepEqual(elements(shortcuts).filter(node => node.props?.size === 15).map(node => node.props.name), ["clock", "doc", "lock", "wallet", "doc"]);
-  const nex = h.html(); assert.match(nex, />0<small>NEX/); assert.match(nex, /9007199254740993\.12345678 NEX/); assert.match(nex, /部分统计/); assert.doesNotMatch(nex, /12400 USDT/);
+  const nex = h.html(); assert.match(nex, />0<small>UVEL/); assert.match(nex, /9007199254740993\.12345678 UVEL/); assert.match(nex, /部分统计/); assert.doesNotMatch(nex, /12400 USDT/);
   assert.equal(h.requests.length, 4, "currency summary uses already loaded facts without another read");
   button(h.render(), "明细 →").props.onClick(); h.render();
   const detail = h.html(); assert.match(detail, /资金流水/); assert.match(detail, /type="date"/); assert.match(detail, /新标签/); assert.match(detail, /新内部备注/); assert.match(detail, /历史会话/); assert.match(detail, /关联工单/); assert.match(detail, /账户操作/);

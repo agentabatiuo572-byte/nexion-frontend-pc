@@ -51,6 +51,7 @@ test("M1 live workbench reaches the original seat form without widening its auth
     } });
     return module.exports;
   }
+  imports["@/lib/admin/brand-copy"] = load("lib/admin/brand-copy.ts");
   const overview = load("app/components/domain-views/m-tabs/m1-overview.tsx");
   imports["./m1-overview"] = overview;
   const { M1PersonalWorkbench } = load("app/components/domain-views/m-tabs/m1-personal-workbench.tsx");

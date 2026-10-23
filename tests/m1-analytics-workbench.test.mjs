@@ -5,7 +5,7 @@ import path from "node:path";
 import vm from "node:vm";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
-import { nexGridBrandText } from "../lib/admin/brand-copy.ts";
+import * as systemBrand from "../lib/admin/brand-copy.ts";
 import "./support-compact-empty.test.mjs";
 
 const frontend = process.env.SUPPORT_ANALYTICS_FE_ROOT || fileURLToPath(new URL("../", import.meta.url));
@@ -34,10 +34,10 @@ await validatorModule.link(name => synthetic(name === "./business-time.ts" ? bus
 await validatorModule.evaluate();
 const formatterSource = ts.transpileModule(readFileSync(path.join(existsSync(path.join(stage, "app/components/domain-views/m-tabs/support-leaderboard.tsx")) ? stage : frontend, "app/components/domain-views/m-tabs/support-leaderboard.tsx"), "utf8"), { compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2017 } }).outputText;
 const formatterModule = new vm.SourceTextModule(formatterSource, { context });
-await formatterModule.link(name => synthetic(name === "@/lib/admin/brand-copy" ? { nexGridBrandText } : name === "react" ? React : name === "react/jsx-runtime" ? jsxRuntime : name === "lucide-react" ? Object.fromEntries(["ArrowRight", "ChevronDown", "Home", "Users", "MessageSquareMore", "ChartNoAxesColumn", "LayoutGrid", "FileText", "MapPin"].map(key => [key, require("lucide-react")[key]])) : {}));
+await formatterModule.link(name => synthetic(name === "@/lib/admin/brand-copy" ? systemBrand : name === "react" ? React : name === "react/jsx-runtime" ? jsxRuntime : name === "lucide-react" ? Object.fromEntries(["ArrowRight", "ChevronDown", "Home", "Users", "MessageSquareMore", "ChartNoAxesColumn", "LayoutGrid", "FileText", "MapPin"].map(key => [key, require("lucide-react")[key]])) : {}));
 await formatterModule.evaluate();
 const mocks = {
-  "@/lib/admin/brand-copy": { nexGridBrandText },
+  "@/lib/admin/brand-copy": systemBrand,
   react: { ...React, useState: (...args) => driver.useState(...args), useRef: (...args) => driver.useRef(...args), useEffect: (...args) => driver.useEffect(...args) },
   "react/jsx-runtime": jsxRuntime,
   "next/navigation": { useRouter: () => ({ push: href => navigations.push(href) }) },
