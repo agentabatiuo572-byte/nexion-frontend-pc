@@ -41,6 +41,7 @@ function currentMonthRange() {
 }
 
 const liabilityName = (value: string) => ({ "USDT staking 本金": "USDT质押本金", "staking 应付利息": "质押应付利息", "Genesis 排放承诺": "创世节点应付分红", "NEX v2 未来兑付": "UVEL第二版未来兑付", "待提现 queue": "待处理提现", "佣金冷却未解锁": "等待解锁的佣金" } as Record<string, string>)[value] ?? value;
+const signedColor = (value: number | null) => value === null || value === 0 ? "var(--ink-3)" : value > 0 ? "var(--success)" : "var(--danger)";
 
 export function L3HeaderActions({ ctx }: { ctx: LCtx }) {
   const exportingRef = useRef(false);
@@ -446,7 +447,7 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
                <div className="t"><div className="k">驳回</div><div className="v">{REDEMPTION.rejected}</div><div className="s">本期已驳回申请（结果分类）</div></div>
                <div className="t"><div className="k">延迟</div><div className="v" style={{ color: "var(--warning)" }}>{REDEMPTION.delayed}</div><div className="s">本期曾延迟 · 过程事件，可与最终兑付重叠</div></div>
                <div className="t"><div className="k">冻结</div><div className="v" style={{ color: "var(--danger)" }}>{REDEMPTION.frozen}</div><div className="s">本期曾冻结 · 过程事件，可与最终兑付重叠</div></div>
-               <div className="t"><div className="k">较上期变化</div><div className="v" style={{ color: "var(--success)" }}>{redRateDelta === null ? "—" : `${redRateDelta > 0 ? "+" : ""}${redRateDelta.toFixed(1)} 个百分点`}</div><div className="s">{REDEMPTION.prevLabel}为 {REDEMPTION.prevRate === null ? "—" : `${REDEMPTION.prevRate}%`}</div></div>
+               <div className="t"><div className="k">较上期变化</div><div className="v" style={{ color: signedColor(redRateDelta) }}>{redRateDelta === null ? "—" : `${redRateDelta > 0 ? "+" : ""}${redRateDelta.toFixed(1)} 个百分点`}</div><div className="s">{REDEMPTION.prevLabel}为 {REDEMPTION.prevRate === null ? "—" : `${REDEMPTION.prevRate}%`}</div></div>
             </div>
             <div className="ltint" style={{ fontSize: 12, marginBottom: 8 }}><b>比率与余额不可混用</b> · <AutoGloss>兑付率衡量本期申请完成比例；在途余额衡量尚未完成的应付款。两者同源但含义不同。</AutoGloss></div>
             <div className="ltint" style={{ fontSize: 12, marginBottom: 8 }}><b>统计规则说明</b> · <AutoGloss>提现申请、已兑付、驳回是互斥的结果分类；延迟与冻结是过程中的生命周期事件，一笔提现可能先延迟或冻结、之后仍完成兑付，因此二者可与已兑付重叠，不与申请总数相加等于分母。兑付率固定按 已兑付 ÷ 本期申请总数 计算，不把延迟/冻结计入分子或分母。</AutoGloss></div>
@@ -463,7 +464,7 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
           <div className="r">
              <span className="lcode">真实储备 {fmtM(LEDGER.reserveUsd)}</span>
              <span className="lcode">应付负债 {fmtM(LEDGER.liabilitiesUsd)}</span>
-             <span className="lcode electric">储备与应付款差额 {TREASURY.netExposure > 0 ? "+" : ""}{fmtM(TREASURY.netExposure)}</span>
+             <span className="lcode" style={{ color: signedColor(TREASURY.netExposure) }}>储备与应付款差额 {TREASURY.netExposure > 0 ? "+" : ""}{fmtM(TREASURY.netExposure)}</span>
           </div>
         </div>
         <div className="l-b">
