@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import ts from 'typescript';
+import { displayCopyModules } from './display-copy-fixture.mjs';
 
 const require = createRequire(import.meta.url);
 function picker({ allowed = true, disabled = false } = {}) {
@@ -13,6 +14,7 @@ function picker({ allowed = true, disabled = false } = {}) {
   const code = ts.transpileModule(readFileSync(new URL('../app/components/domain-views/h-tabs/h4-sample-account-select.tsx', import.meta.url), 'utf8'), { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const module = { exports: {} };
   new Function('require', 'exports', 'module', code)(name => {
+    if (name in displayCopyModules) return displayCopyModules[name];
     if (name === 'react') return { useState: initial => { const i = index++; if (!(i in states)) states[i] = initial; return [states[i], next => states[i] = next]; } };
     if (name === 'react/jsx-runtime') return require(name);
     if (name.endsWith('h4-promotion-ui')) return ui;
@@ -38,7 +40,7 @@ test('search reaches a later C1 page and returns its opaque ID without parsing t
 });
 test('permission loss and busy state block the handler; raw-phone keyword stays off the wire', () => {
   for (const props of [{ allowed: false }, { disabled: true }]) { const p = picker(props); p.button('查找账户').props.onClick(); p.render(); assert.equal(p.enabled(), false); assert.equal(p.reloads(), 0); }
-  const p = picker(); p.field('用户编码 / 昵称').props.onChange({ target: { value: '13812345678' } }); p.button('查找账户').props.onClick(); p.render(); assert.equal(p.enabled(), false); assert(p.render().some(node => node.type === p.ui.ReadError));
+  const p = picker(); p.field('编码末几位 / 昵称').props.onChange({ target: { value: '13812345678' } }); p.button('查找账户').props.onClick(); p.render(); assert.equal(p.enabled(), false); assert(p.render().some(node => node.type === p.ui.ReadError));
 });
 test('failed results keep the selected account and expose retry without enabling stale choices', () => {
   const p = picker(); p.props.value = '29'; p.read({ data: { items: [{ accountId: '29', label: 'U29' }], total: 1, pageNum: 1, pageSize: 20 }, loading: false, error: Error('search failed') });

@@ -1,4 +1,5 @@
 import { displayCopyModules } from "../tests/display-copy-fixture.mjs";
+import { promotionFieldModule } from '../tests/promotion-field-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -26,6 +27,7 @@ function editorHarness({writable=true,invalid=false,onSaved=async()=>{}}={}) {
   const code=ts.transpileModule(readFileSync(new URL('../app/components/domain-views/h-tabs/h4-promotion-editor.tsx',import.meta.url),'utf8'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
   const module={exports:{}};
   new Function('require','exports','module',code)(name=>{if(displayCopyModules[name])return displayCopyModules[name];
+    const field = promotionFieldModule(name, ui); if (field) return field;
     if(name==='react')return {useState:initial=>{const key=index++;if(!(key in states))states[key]=typeof initial==='function'?initial():initial;return [states[key],value=>{states[key]=typeof value==='function'?value(states[key]):value;}];},useEffect:()=>{}};
     if(name==='react/jsx-runtime')return require(name);
     if(name.endsWith('promotion-form'))return promotionForm;

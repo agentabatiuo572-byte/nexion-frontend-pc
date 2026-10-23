@@ -1,4 +1,5 @@
 import { displayCopyModules } from "../tests/display-copy-fixture.mjs";
+import { promotionFieldModule } from '../tests/promotion-field-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -314,6 +315,7 @@ function editingDialog(name,props){
   const buckets=new Map(),nodes=[],mounted=new Set();let bucket=[],index=0,id=0;
   const scope=(fn,p,key)=>{mounted.add(key);const prior=bucket,priorIndex=index;bucket=buckets.get(key)||[];buckets.set(key,bucket);index=0;try{return fn(p);}finally{bucket=prior;index=priorIndex;}};
   const exports=component('h4-promotion-editor.tsx',dependency=>{
+    const field = promotionFieldModule(dependency, ui); if (field) return field;
     if(dependency==='react')return {useState:initial=>{const values=bucket,i=index++;if(!(i in values))values[i]=typeof initial==='function'?initial():initial;return [values[i],next=>values[i]=typeof next==='function'?next(values[i]):next];},useEffect:()=>{},useId:()=>`offline-field-${id++}`};
     if(dependency==='react/jsx-runtime')return require(dependency);
     if(dependency.endsWith('h4-promotion-ui'))return ui;

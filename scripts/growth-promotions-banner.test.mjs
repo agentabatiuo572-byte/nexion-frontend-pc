@@ -1,4 +1,5 @@
 import { displayCopyModules } from "../tests/display-copy-fixture.mjs";
+import { promotionFieldModule } from '../tests/promotion-field-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -99,6 +100,7 @@ test('activity detail exposes both saved version images to readers and the revie
   const published = { version: 1, state: 'PUBLISHED', draft: { bannerAssetId: 'published-image' } };
   const ui = new Proxy({ useRead: () => ({ data: { items: [published, current] }, loading: false }), limitText: () => '', formatTime: () => '', labelState: () => '', rewardText: () => '' }, { get: (obj, key) => { if (key in obj) return obj[key]; if (!widgets.has(key)) widgets.set(key, () => null); return widgets.get(key); } });
   const Review = load('app/components/domain-views/h-tabs/h4-promotion-review.tsx', name => {
+    const field = promotionFieldModule(name, ui); if (field) return field;
     if (name === 'react') return hooks;
     if (name === 'react/jsx-runtime') return require(name);
     if (name.endsWith('h4-promotion-banner')) return { PromotionBannerPreview };

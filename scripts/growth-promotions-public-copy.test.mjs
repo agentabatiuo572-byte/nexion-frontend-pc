@@ -1,4 +1,5 @@
 import { displayCopyModules } from "../tests/display-copy-fixture.mjs";
+import { promotionFieldModule } from '../tests/promotion-field-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -36,6 +37,7 @@ const noop=()=>null;
 const ui=evaluate(h+'h4-promotion-ui.tsx',name=>name.startsWith('react')?require(name):name.endsWith('error-messages')?{displayAdminError}:name.endsWith('promotion-client')?client:{});
 function domain(file,hook,readState,privateNames=[],extras={}){
   return evaluate(h+file,name=>{
+    const field = promotionFieldModule(name, {...ui, useRead: typeof readState === 'function' ? readState : () => readState ?? fresh}); if (field) return field;
     if(name==='react')return hook.react;
     if(name==='react/jsx-runtime')return require(name);
     if(name==='next/navigation')return {useSearchParams:()=>new URLSearchParams()};
@@ -138,7 +140,11 @@ test('PCOPY-05/06: actual date hints hide storage details while retaining local 
     const row=structuredClone(activity);row.current.draft={...row.current.draft,displayTimezone:'Asia/Tokyo',startsAt:populated?activity.startsAt:null,endsAt:populated?activity.endsAt:null};
     const hook=hooks(),Editor=domain('h4-promotion-editor.tsx',hook,fresh).default;hook.reset();const element=Editor({...editorProps,activity:row}),html=markup(element);
     assert.doesNotMatch(html,forbidden);assert.equal(html.includes('先选择时区，再填写日期'),!populated);
-    assert.deepEqual(nodes(element).filter(n=>n.type==='input'&&n.props.type==='datetime-local').map(n=>n.props.value),populated?['2026-10-08T09:00','2026-10-12T09:00']:['','']);
+    const dates=nodes(element).filter(n=>n.type?.name==='H4DateTimeField');
+    assert.deepEqual(dates.map(n=>n.props.value),populated?['2026-10-08T09:00','2026-10-12T09:00']:['','']);
+    assert.deepEqual(dates.map(n=>n.props.timeZone),['Asia/Tokyo','Asia/Tokyo']);
+    assert.equal((html.match(/class="h4-datetime-trigger"/g)||[]).length,2);
+    for(const value of populated?['2026/10/08 09:00','2026/10/12 09:00']:['请选择日期和时间'])assert(html.includes(value),value);
   }
   const hook=hooks(),Review=domain('h4-promotion-review.tsx',hook,fresh).default;hook.reset();const html=markup(Review({activity,catalog,can:()=>true,review:false,onBack(){}}));
   assert(html.includes('更新时间：'+ui.formatTime(impact.asOf)+'；包含活动所有版本。'));assert.doesNotMatch(html,forbidden);
