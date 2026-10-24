@@ -594,6 +594,15 @@ function m3ListRenderingFixture() {
   return { adapter, row, render };
 }
 
+test("M3 pending reply time uses the business timezone like message time", () => {
+  const { adapter, row } = m3ListRenderingFixture();
+  for (const value of ["2026-10-24T21:06:30", "2026-10-24T13:06:30Z", "2026-10-24T21:06:30+08:00"]) {
+    const conversation = adapter.adaptConversation({ ...row, pendingReplySince: value, pendingReplyCount: 1 });
+    assert.equal(conversation.pendingReplySince, Date.parse("2026-10-24T13:06:30Z"));
+  }
+  assert.equal(adapter.adaptConversation({ ...row, pendingReplySince: null }).pendingReplySince, null);
+});
+
 test("M3 production adapter and list rendering distinguish public messages, explicit empty and unknown summaries", () => {
   const { adapter, row, render } = m3ListRenderingFixture();
   const positive = adapter.adaptConversation(adapter.assertConversationRow({ ...row, lastPublicMessageId: 3719 }));

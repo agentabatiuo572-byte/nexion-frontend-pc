@@ -1299,7 +1299,7 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
     agentName: str(base.ownerAgentName, type === "advisor" ? "Mia" : "客服台"),
     roleKey: roleKey(type),
     unread: num(base.unreadCount, 0),
-    pendingReplySince: base.pendingReplySince ? new Date(base.pendingReplySince).getTime() : null,
+    pendingReplySince: base.pendingReplySince ? parseBusinessTime(base.pendingReplySince) : null,
     pendingReplyCount: typeof base.pendingReplyCount === "number" && Number.isSafeInteger(base.pendingReplyCount) && base.pendingReplyCount >= 0 ? base.pendingReplyCount : null,
     lastTs: asTs(base.lastMessageAt, updated),
     status: conversationStatus(base.status),
