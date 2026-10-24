@@ -1,32 +1,21 @@
 "use client";
 
-/**
- * M4 知识库与处理时限 — Help/FAQ 内容池 + Ticket 分类×SLA 矩阵(helpdesk 设计稿布局,由 I8 迁出)。
- * FAQ / SLA 读写走后端 content/knowledge 接口;I.support.* 为 M 容器传入的视图适配键。
- * 新建 FAQ、保存 SLA 走弹窗 + 审计理由;均刷新后仍在。
- */
-const supportRouteText = (value: string) => ({
-  "support2-withdrawal":"提现处理组", "D2/K4 support2 on-call":"提现与风险值班人员",
-  "D1 deposit reconciliation":"充值对账人员", "E5 device ops":"设备运维人员", "C5 security":"账户安全人员",
-  "F3/E6 earnings ledger":"收益与算力人员", "G4 Genesis economy":"创世节点业务人员", "A3 system config":"系统配置人员",
-} as Record<string,string>)[value] ?? value;
+/** M4 help center content. Retired ticket configuration remains stored on the server. */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { Icon, Modal, PaginationExemptionList } from "../design-kit";
+import { Icon, Modal } from "../design-kit";
 import {
   type SupportFaq,
-  type SupportSla,
   type SupportTicketCategory,
 } from "./data";
 import { catCN } from "./hd-ui";
 import type { MCtx } from "./types";
 
 const FAQ_KEY = "I.support.faqs";
-const SLA_KEY = "I.support.sla";
 
 const CATEGORY_OPTIONS: SupportTicketCategory[] = ["withdrawal", "deposit", "hardware", "account", "earnings", "genesis", "technical", "other"];
 const FAQ_CATEGORY_OPTIONS: SupportFaq["category"][] = ["general", ...CATEGORY_OPTIONS];
-const SURFACES: SupportFaq["surface"][] = ["Help Center", "Ticket Create", "Nova"];
+const SURFACES: SupportFaq["surface"][] = ["Help Center", "Nova"];
 const SURFACE_CN: Record<SupportFaq["surface"], string> = { "Help Center": "帮助中心", "Ticket Create": "创建工单页", Nova: "Nova AI" };
 const LANGUAGE_OPTIONS: Array<{ value: SupportFaq["language"]; label: string }> = [
   { value: "zh-CN", label: "简体中文" },
@@ -61,11 +50,9 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
   // strict M4 response validator explicitly publishes a successful "1".
   const knowledgeAvailable = pget("I.support.knowledgeAvailable") === "1";
   const faqs = useMemo(() => parseParamArray<SupportFaq>(pget(FAQ_KEY), []), [ctx.params, pget]);
-  const sla = useMemo(() => parseParamArray<SupportSla>(pget(SLA_KEY), []), [ctx.params, pget]);
 
   const [showAddFaq, setShowAddFaq] = useState(false);
   const [editFaq, setEditFaq] = useState<SupportFaq | null>(null);
-  const [editCat, setEditCat] = useState<SupportTicketCategory | null>(null);
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<"all" | SupportFaq["category"]>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | SupportFaq["status"]>("all");
@@ -77,6 +64,7 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
   const filteredFaqs = useMemo(() => {
     const q = query.trim().toLowerCase();
     return faqs
+      .filter(faq => faq.surface !== "Ticket Create")
       .filter((faq) => categoryFilter === "all" || faq.category === categoryFilter)
       .filter((faq) => statusFilter === "all" || faq.status === statusFilter)
       .filter((faq) => !q || [faq.id, faq.question, faq.answer, faq.surface].some((value) => value.toLowerCase().includes(q)))
@@ -171,45 +159,19 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
     });
   };
 
-  const saveSla = async (cat: SupportTicketCategory, form: { firstResponseMins: string; resolutionHours: string; queue: string; escalation: string; reason: string }) => {
-    const firstResponseMins = Number(form.firstResponseMins);
-    const resolutionHours = Number(form.resolutionHours);
-    if (!Number.isFinite(firstResponseMins) || !Number.isFinite(resolutionHours) || firstResponseMins <= 0 || resolutionHours <= 0) {
-      toast("处理时限数值必须大于 0");
-      return false;
-    }
-    if (!form.queue.trim() || !form.escalation.trim() || !minReason(form.reason)) {
-      toast("处理时限需要队列 / 升级路径 / 8 字以上审计理由");
-      return false;
-    }
-    if (!editRow) {
-      toast("处理时限权威版本不可用,请刷新后重试");
-      return false;
-    }
-    const row: SupportSla = { category: cat, firstResponseMins, resolutionHours, queue: form.queue.trim(), escalation: form.escalation.trim(), version: editRow.version + 1 };
-    const succeeded = await commitM4Write(
-      () => setParam(SLA_KEY, JSON.stringify([row, ...sla.filter((x) => x.category !== cat)]), { action: `更新支持 处理时限${cat} · admin.support_sla_changed`, reason: form.reason.trim() }),
-      `${catCN(cat)} 处理时限已更新`,
-    );
-    if (succeeded) setEditCat(null);
-    return succeeded;
-  };
-
-  const editRow = editCat ? sla.find((r) => r.category === editCat) ?? null : null;
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <p className="dim" style={{ margin: 0, fontSize: 13 }}>维护帮助中心问答,设定每类工单多久要首次响应、多久要解决。</p>
+      <p className="dim" style={{ margin: 0, fontSize: 13 }}>维护帮助中心的常见问题与解答。</p>
 
       {!knowledgeAvailable && <div className="callout warn" data-module-health-state="error">知识库当前不可用，暂时无法修改。请稍后刷新重试。</div>}
-      {knowledgeAvailable && !canWriteM4 && <div className="callout">当前账号只有查看权限;编辑 常见问答、发布状态与 处理时限需要 知识库编辑权限。</div>}
+      {knowledgeAvailable && !canWriteM4 && <div className="callout">当前账号只有查看权限;编辑常见问答与发布状态需要知识库编辑权限。</div>}
 
-      <div className="m4-cols">
+      <div>
         <div className="card">
           <div className="card-pad" style={{ paddingBottom: 10, display: "flex", alignItems: "center" }}>
             <div className="sec-h" style={{ margin: 0 }}>
               <span className="t">帮助内容管理</span>
-              <span className="n">{knowledgeAvailable ? faqs.length : "-"} 篇</span>
+              <span className="n">{knowledgeAvailable ? faqs.filter(f => f.surface !== "Ticket Create").length : "-"} 篇</span>
             </div>
             {canWriteM4 && knowledgeAvailable && <button type="button" className="btn btn-pri btn-sm" style={{ marginLeft: "auto" }} disabled={writePending} onClick={() => { createFaqTempId.current = nextFaqId(); setEditFaq(null); setShowAddFaq(true); }}>
               <Icon name="plus" size={16} />
@@ -267,48 +229,9 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
           </div>
         </div>
 
-        <div className="card">
-          <div className="card-pad" style={{ paddingBottom: 10 }}>
-            <div className="sec-h" style={{ margin: 0 }}>
-              <span className="t">工单分类与 处理时限</span>
-              <span className="sp" />
-              <span className="n">首响 / 解决</span>
-            </div>
-          </div>
-          <div style={{ padding: "0 8px 10px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 30px", gap: 8, padding: "0 12px 8px", fontSize: 11.5, color: "var(--ink-4)" }}>
-              <span>分类 · 队列 · 升级</span>
-              <span style={{ textAlign: "right" }}>首响</span>
-              <span style={{ textAlign: "right" }}>解决</span>
-              <span />
-            </div>
-            {sla.map((r) => (
-              <div key={r.category} data-proof="support-sla-row" data-sla-category={r.category} style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 30px", gap: 8, alignItems: "center", padding: "10px 12px", borderTop: "1px solid var(--border)" }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>
-                    {catCN(r.category)}
-                  </div>
-                  <div className="dim2" style={{ fontSize: 11 }}>{supportRouteText(r.queue)} · 升级至 {supportRouteText(r.escalation)}</div>
-                </div>
-                <span className="mono" style={{ textAlign: "right", fontSize: 12.5, color: "var(--ink-2)" }}>{r.firstResponseMins}分钟</span>
-                <span className="mono" style={{ textAlign: "right", fontSize: 12.5, color: "var(--ink-2)" }}>{r.resolutionHours}小时</span>
-                {canWriteM4 && knowledgeAvailable ? <button type="button" className="btn btn-ghost btn-icon btn-sm" disabled={writePending} title="编辑 处理时限" onClick={() => setEditCat(r.category)}>
-                  <Icon name="doc" size={16} />
-                </button> : <span />}
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
 
-      <PaginationExemptionList
-        items={[
-          { label: "工单分类与 处理时限", kind: "reference-catalog", maxRows: 9, reason: "处理时限分类固定,同屏核对升级路径比翻页更适合" },
-        ]}
-      />
-
       {(showAddFaq || editFaq) && <FaqModal key={editFaq?.id ?? "new"} row={editFaq} pending={writePending} onClose={() => { createFaqTempId.current = null; setShowAddFaq(false); setEditFaq(null); }} onSave={saveFaq} />}
-      {editCat && <EditSlaModal category={editCat} row={editRow} pending={writePending} onClose={() => setEditCat(null)} onSave={saveSla} />}
     </div>
   );
 }
@@ -378,52 +301,6 @@ function FaqModal({
           <label className="field"><span className="bf-legend">审计理由(≥8 字)</span><input className="fld" data-proof="support-faq-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:帮助中心提现板块缺口补齐" /></label>
         </div>
       </div>
-    </Modal>
-  );
-}
-
-function EditSlaModal({
-  category,
-  row,
-  pending,
-  onClose,
-  onSave,
-}: {
-  category: SupportTicketCategory;
-  row: SupportSla | null;
-  pending: boolean;
-  onClose: () => void;
-  onSave: (cat: SupportTicketCategory, form: { firstResponseMins: string; resolutionHours: string; queue: string; escalation: string; reason: string }) => Promise<boolean>;
-}) {
-  const [firstResponseMins, setFirst] = useState(String(row?.firstResponseMins ?? 15));
-  const [resolutionHours, setResolve] = useState(String(row?.resolutionHours ?? 12));
-  const [queue, setQueue] = useState(row?.queue ?? "");
-  const [escalation, setEscalation] = useState(row?.escalation ?? "");
-  const [reason, setReason] = useState("");
-  return (
-    <Modal
-      title="编辑分类处理时限"
-      icon="clock"
-      onClose={onClose}
-      footer={
-        <>
-          <span style={{ flex: 1 }} />
-          <button type="button" className="btn btn-sec btn-sm" disabled={pending} onClick={onClose}>取消</button>
-          <button type="button" className="btn btn-pri btn-sm" disabled={pending} onClick={() => onSave(category, { firstResponseMins, resolutionHours, queue, escalation, reason })}>{pending ? "提交中…" : "保存处理时限"}</button>
-        </>
-      }
-    >
-      <div className="field" style={{ marginBottom: 12 }} data-proof="support-sla-category">
-        <span className="bf-legend">分类</span>
-        <div className="chip" style={{ width: "fit-content", border: "none" }}>{catCN(category)}</div>
-      </div>
-      <div className="grid g-2" style={{ gap: 12 }}>
-        <label className="field"><span className="bf-legend">首次响应（分钟）</span><input className="fld mono" type="number" value={firstResponseMins} onChange={(e) => setFirst(e.target.value)} /></label>
-        <label className="field"><span className="bf-legend">解决时限（小时）</span><input className="fld mono" type="number" value={resolutionHours} onChange={(e) => setResolve(e.target.value)} /></label>
-        <label className="field"><span className="bf-legend">负责人队列</span><input className="fld" value={queue} onChange={(e) => setQueue(e.target.value)} placeholder="例：支付处理组" /></label>
-        <label className="field"><span className="bf-legend">升级路径</span><input className="fld" value={escalation} onChange={(e) => setEscalation(e.target.value)} placeholder="例：提现审核" /></label>
-      </div>
-      <label className="field" style={{ marginTop: 12 }}><span className="bf-legend">审计理由(≥8 字)</span><input className="fld" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:处理时限与 D2/C5 队列统计规则同步" /></label>
     </Modal>
   );
 }

@@ -29,7 +29,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useConversationStream, type ConversationStreamEvent } from "@/lib/admin/use-conversation-stream";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { M1AnalyticsWorkbench } from "./m-tabs/m1-analytics-workbench";
-import { M2Tickets } from "./m-tabs/m2-tickets";
+
 import { M3DedicatedChat } from "./m-tabs/m3-dedicated-chat";
 import { M4KbSla } from "./m-tabs/m4-kb-sla";
 import { M5Scripts } from "./m-tabs/m5-scripts";
@@ -625,7 +625,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         </div>
       ) : safeMData && (
         <>
-          {tab === "M2" && <M2Tickets ctx={ctx} advisorQualified={Boolean(session?.supportReadModes?.includes("PERSONAL"))} />}
+          {tab === "M2" && <p>工单服务已下线，请通过客户会话继续联系。</p>}
           {tab === "M3" && <M3DedicatedChat ctx={ctx} />}
           {tab === "M4" && <M4KbSla ctx={ctx} />}
           {tab === "M5" && effectiveM5Pane === "templates" && <M5Scripts ctx={ctx} showSeatOperations={false} showSeatProfiles={permission !== "agent"} />}

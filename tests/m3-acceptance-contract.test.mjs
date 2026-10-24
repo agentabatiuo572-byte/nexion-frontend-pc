@@ -249,44 +249,12 @@ test("M3 roster failure exposes qualification retry instead of claiming an empty
   assert.match(chat, /qualificationUnknown \? "专属客服身份待核对/);
 });
 
-test("M2 customer replies require a verified advisor while internal work stays available", () => {
+test("retired M2 is absent from the live workbench", () => {
   const view = read("app/components/domain-views/m-view.tsx");
-  const tickets = read("app/components/domain-views/m-tabs/m2-tickets.tsx");
-  assert.match(view, /advisorQualified=\{Boolean\(session\?\.supportReadModes\?\.includes\("PERSONAL"\)\)\}/);
-  const file = ts.createSourceFile("m-view.tsx", view, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const qualification = [];
-  const walk = node => {
-    if (ts.isJsxAttribute(node) && node.name.getText(file) === "advisorQualified") qualification.push(node.initializer.expression.getText(file));
-    ts.forEachChild(node, walk);
-  };
-  walk(file); assert.equal(qualification.length, 1, "Execute the actual M2 qualification prop");
-  for (const [session, expected] of [[undefined, false], [{}, false], [{ supportReadModes: [] }, false], [{ supportReadModes: ["MANAGED"] }, false], [{ supportReadModes: ["ALL"] }, false], [{ supportReadModes: ["PERSONAL"] }, true], [{ supportReadModes: ["MANAGED", "PERSONAL"] }, true]]) {
-    const code = ts.transpileModule(`globalThis.result = ${qualification[0]};`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-    const state = { session }; runInNewContext(code, state); assert.equal(state.result, expected, JSON.stringify(session));
-  }
-  assert.match(tickets, /const canRespondToCustomers = canWriteM2 && advisorQualified/);
-  assert.match(tickets, /canReply=\{canReplyToSelected\}/);
-  assert.match(tickets, /ticketDetail\.replyAgentAdminId === adminId/);
-  assert.match(tickets, /customer\.customerId === String\(ticket\.userId\) \? customer\.agentAdminId : null/);
-  assert.match(tickets, /customer\.agentAdminId !== adminId/);
-  assert.match(tickets, /current\.authEpoch === authEpoch && current\.session\?\.adminId === adminId/);
-  assert.match(tickets, /support-scope-invalidated/);
-  assert.ok(tickets.indexOf('setTicketDetail({ ticket, epoch: authEpoch, scope') < tickets.indexOf('await supportClient.customerDetail(String(ticket.userId)'));
-  assert.match(tickets, /if \(!await verifyCustomerReply\(userId\)\) return/);
-  assert.match(tickets, /run: async \(reason: string\) => \{\s*if \(!await verifyCustomerReply\(ticket\.userId!\)\) return false/);
-  assert.match(tickets, /disabled=\{submitting \|\| !userId\.trim\(\)/);
-  assert.match(tickets, /客户编号（必填）/);
-  assert.doesNotMatch(tickets, /用户 ID\(可选\)|也可以留空/);
-  assert.match(tickets, /data-proof="support-ticket-drawer-heading"[^\n]*flexWrap: "wrap"/);
-  assert.match(tickets, /overflowWrap: "anywhere".*查看会话/);
-  assert.match(tickets, /data-proof="support-ticket-reply"[\s\S]*?disabled=\{submitting \|\| !canReply\}/);
-  assert.match(tickets, /data-proof="support-ticket-reply-save"[^>]*disabled=\{submitting \|\| !canReply\}/);
-  assert.match(tickets, /仅当前专属客服可以回复客户/);
-  assert.match(tickets, /canWrite=\{canWriteM2 && ticketsAvailable\}/);
-  assert.match(tickets, /const createTicket = [\s\S]*?if \(!canRespondToCustomers/);
-  assert.match(tickets, /const sendReply = [\s\S]*?!canReplyToSelected[^\n]*selected\.contentRestricted/);
-  assert.match(tickets, /const escalateToConversation = [\s\S]*?!canReplyToSelected[^\n]*selected\.contentRestricted/);
-  assert.match(tickets, /data-proof="support-ticket-internal-note"[\s\S]*?disabled=\{submitting\}/);
+  const nav = read("lib/nav/console-nav.ts");
+  assert.doesNotMatch(view, /<M2Tickets/);
+  assert.doesNotMatch(nav, /id: "M2"/);
+  assert.doesNotMatch(read("lib/admin/m-client.ts"), /apiRequest<unknown>\("\/tickets\/assignee-candidates"\)/);
 });
 
 test("M3 explicit unbound review avoids assigned-only profile reads and reaches the real pool", () => {
@@ -536,7 +504,7 @@ test("M3 idle timeout policy is loaded and saved through a real CAS backend cont
   assert.match(sessions, /updateMConversationTimeoutPolicy/);
   assert.match(sessions, /data-proof="session-idle-policy"/);
   assert.match(modals, /data-proof="session-idle-policy-save"/);
-  assert.match(modals, /自动结束时长必须大于提醒时长/);
+  assert.match(modals, /严重超时时长必须大于提醒时长/);
   assert.doesNotMatch(modals, /ctx\.setParam/);
   assert.doesNotMatch(modals, /ctx\.logAudit/);
 });
@@ -609,7 +577,7 @@ test("M3 human reception and origin branches use one exclusive support identity 
   const definition = source.match(/function conversationType[^\n]*\{[\s\S]*?\n\}/)?.[0]; assert.ok(definition);
   const parse = runInNewContext(ts.transpileModule(`${definition}\nconversationType;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText);
   for (const [wire, expected] of [["ADVISOR", "advisor"], ["SUPPORT", "support"], ["AI", "ai"]]) assert.equal(parse(wire), expected);
-  assert.match(f.source, /const canSendTo = \(convo: SessionConvo, adminId: number\) => convo.status === "open" && convo.type !== "ai"/);
+  assert.match(f.source, /const canSendTo = \(convo: SessionConvo, adminId: number\) => convo.status !== "transferred" && convo.type !== "ai"/);
 });
 
 function m3ListRenderingFixture() {
@@ -619,7 +587,7 @@ function m3ListRenderingFixture() {
   const lastMessage = f.evaluate(f.one(node => ts.isFunctionDeclaration(node) && node.name?.text === "lastMessage"));
   const row = { ...transferredHistory(), conversationNo: "CV-PREVIEW", status: "OPEN", customerId: 7, ownerAdminId: 12, assignmentId: "9", lastMessage: "", lastMessageKind: null, unreadCount: 2 };
   const render = (conversation, waitingReply = null) => f.text(f.evaluate(list, {
-    listRows: [conversation], selected: null, currentProfileDetail: waitingReply === null ? null : { customerId: "7", waitingReply },
+    listRows: [conversation], selected: null, timeoutPolicy: null, currentProfileDetail: waitingReply === null ? null : { customerId: "7", waitingReply },
     lastMessage, canWriteM3: false, adminId: 12, archiveIds: new Set(), setArchiveIds() {}, select() {},
     SupportAvatar: "avatar", customerAvatarPath: () => undefined, messageTime: () => "", conversationStateLabel: () => "进行中",
   }));
@@ -749,7 +717,7 @@ test("M3 active surface excludes retired human labels while preserving client de
   const link = f.one(node => ts.isConditionalExpression(node) && node.getText(f.file).includes("客户端目标：") && node.condition.getText(f.file) === 'message.targetAvailability==="UNAVAILABLE"');
   for (const [type, expected] of [["HOME", "首页"], ["WALLET", "钱包"], ["SUPPORT", "在线客服"]]) assert.equal(f.evaluate(link, { message: { linkTarget: { type } } }), `客户端目标：${expected}`);
   assert.equal(f.evaluate(link, { message: { targetAvailability: "UNAVAILABLE", linkTarget: { type: "SUPPORT" } } }), "目标页面已不可用");
-  for (const copy of ["将这段服务会话标记为已解决，不改变客户的专属客服。客户再次求助时会开启新会话。", "正在核对当前专属客服归属…", "该客户由当前专属客服服务，本账号仅可审阅。", "待分配专属客服，尚无绑定客户的维护状态。", "重新核对当前专属客服归属，前往当前会话；不会恢复历史段"]) assert.ok(f.source.includes(copy), copy);
+  for (const copy of ["将这段服务会话标记为已解决，不改变客户的专属客服。客户再次发消息时，会继续当前对话。", "正在核对当前专属客服归属…", "该客户由当前专属客服服务，本账号仅可审阅。", "待分配专属客服，尚无绑定客户的维护状态。", "重新核对当前专属客服归属，继续当前对话"]) assert.ok(f.source.includes(copy), copy);
   assert.match(f.source, /qualificationUnknown \? \[\] : all\.filter/);
   assert.match(f.source, /const writable = !qualificationUnknown && !recoveryBlocksTarget && canWriteM3/);
   assert.match(f.source, /disabled=\{!canWriteM3\|\|qualificationUnknown\} onClick=\{\(\)=>setContactOpen\(true\)\}/);

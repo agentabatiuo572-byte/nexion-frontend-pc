@@ -129,7 +129,7 @@ export function IdlePolicyModal({
         <div className="row" style={{ gap: 10, alignItems: "center", width: "100%" }}>
           <span className="sub" style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <Icon name="shield" size={13} />
-            静默提醒与自动结束设置
+            待回复超时提醒设置
           </span>
           <div className="spacer" style={{ flex: 1 }} />
           <button type="button" className="btn btn-sec btn-sm" onClick={onClose} disabled={saving}>取消</button>
@@ -148,17 +148,17 @@ export function IdlePolicyModal({
     >
       <div className="col" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {!canSave && <p role="status">仅获准总管理员可修改，当前为只读。</p>}
-        {numField("静默提醒时长(分钟)", "客户静默满该时长，会话内写入提醒", warn, setWarn, 1, 30)}
-        {numField("静默自动结束时长(分钟)", "客户静默满该时长，且没有待客服回复，才自动结束", close, setClose, 2, 120)}
+        {numField("待回复提醒时长(分钟)", "客户消息等待回复达到该时长，标记待处理", warn, setWarn, 1, 30)}
+        {numField("严重超时时长(分钟)", "超过该时长仍未回复，标记严重超时", close, setClose, 2, 120)}
         {!orderOk && (
           <div className="sub" style={{ color: "var(--danger)" }}>
-            {!warnOk || !closeOk ? "请输入整数分钟并满足允许范围。" : "自动结束时长必须大于提醒时长。"}
+            {!warnOk || !closeOk ? "请输入整数分钟并满足允许范围。" : "严重超时时长必须大于提醒时长。"}
           </div>
         )}
         <div className="itint" style={{ padding: "11px 13px", lineHeight: 1.7, fontSize: 12.5 }}>
-          仅保存后新建的会话段使用新策略。已有会话段继续使用原策略；待客服回复不会自动结束。结束会话不改变客户的专属归属。
+          按最早未处理的客户消息计算等待时间；新策略保存后用于当前待回复消息。超时不会结束对话，也不会改变专属客服归属。
         </div>
-        {confirm && <div className="itint" role="status" style={{ padding: "11px 13px" }}><strong>确认下列变更</strong><p>静默提醒：{policy.warnMinutes} 分钟 → {warnN} 分钟</p><p>自动结束：{policy.closeMinutes} 分钟 → {closeN} 分钟</p><p>修改理由：{reason.trim()}</p></div>}
+        {confirm && <div className="itint" role="status" style={{ padding: "11px 13px" }}><strong>确认下列变更</strong><p>待回复提醒：{policy.warnMinutes} 分钟 → {warnN} 分钟</p><p>严重超时：{policy.closeMinutes} 分钟 → {closeN} 分钟</p><p>修改理由：{reason.trim()}</p></div>}
         <label className="col" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <span style={{ fontSize: 13 }}>
             变更理由 <span style={{ color: "var(--danger)" }}>*</span>
@@ -180,8 +180,8 @@ export function IdlePolicyModal({
             {error}
           </div>
         )}
-        {pending && <div role="status">原操作结果待确认，输入已锁定。原提交基于版本 {policy.version}。{latest && <p>当前策略为版本 {latest.version}：静默提醒 {latest.warnMinutes} 分钟，自动结束 {latest.closeMinutes} 分钟；尚不能据此认定原操作成功。</p>}{canSave && onCheckPending && <button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => void onCheckPending()}>查询原操作结果</button>}</div>}
-        {conflict && <div role="alert">配置已变化，草稿已保留。{latest ? <><p>静默提醒：原 {policy.warnMinutes} 分钟 → 最新 {latest.warnMinutes} 分钟；自动结束：原 {policy.closeMinutes} 分钟 → 最新 {latest.closeMinutes} 分钟。</p><button type="button" className="btn btn-sec btn-sm" disabled={saving || !canSave} onClick={onReviewLatest}>以最新策略重新确认</button></> : <button type="button" className="btn btn-sec btn-sm" disabled={saving || !canSave} onClick={() => void onRefreshLatest?.()}>读取最新策略</button>}</div>}
+        {pending && <div role="status">原操作结果待确认，输入已锁定。原提交基于版本 {policy.version}。{latest && <p>当前策略为版本 {latest.version}：待回复提醒 {latest.warnMinutes} 分钟，严重超时 {latest.closeMinutes} 分钟；尚不能据此认定原操作成功。</p>}{canSave && onCheckPending && <button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => void onCheckPending()}>查询原操作结果</button>}</div>}
+        {conflict && <div role="alert">配置已变化，草稿已保留。{latest ? <><p>待回复提醒：原 {policy.warnMinutes} 分钟 → 最新 {latest.warnMinutes} 分钟；严重超时：原 {policy.closeMinutes} 分钟 → 最新 {latest.closeMinutes} 分钟。</p><button type="button" className="btn btn-sec btn-sm" disabled={saving || !canSave} onClick={onReviewLatest}>以最新策略重新确认</button></> : <button type="button" className="btn btn-sec btn-sm" disabled={saving || !canSave} onClick={() => void onRefreshLatest?.()}>读取最新策略</button>}</div>}
       </div>
     </Modal>
   );

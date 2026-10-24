@@ -135,6 +135,7 @@ export type SupportMessageInput = {
   clientMessageId: string;
   replyTargets?: SupportReplyTarget[];
   expectedAssignmentId: string;
+  expectedStatus?: string;
   expectedVersion: number;
 };
 export type SupportStartConversationInput = {
@@ -486,7 +487,7 @@ export const supportClient = {
   cancelAttachment: (attachmentId: string, idempotencyKey: string, signal?: AbortSignal) =>
     request(attachmentPath(attachmentId), () => undefined, { method: "DELETE", headers: keyHeader(idempotencyKey), signal }),
   sendConversationReply: (conversationNo: string, input: SupportMessageInput, idempotencyKey: string, signal?: AbortSignal) =>
-    request(`/conversations/${encodeURIComponent(nonempty(conversationNo, "conversationNo"))}/replies`, messageResult, json("POST", { body: input.content ?? "", kind: input.kind, skuId: input.skuId, linkTarget: input.linkTarget, attachmentId: input.attachmentId, intent: input.intent, clientMessageId: input.clientMessageId, expectedAssignmentId: wireId(input.expectedAssignmentId, "conversation.expectedAssignmentId"), expectedStatus: "OPEN", expectedVersion: count(input.expectedVersion, "conversation.expectedVersion"), replyTargets: input.replyTargets?.map((target) => ({ ...target, throughMessageId: positive(target.throughMessageId, "conversation.throughMessageId") })), reason: "专属客服回复客户消息" }, idempotencyKey, signal)),
+    request(`/conversations/${encodeURIComponent(nonempty(conversationNo, "conversationNo"))}/replies`, messageResult, json("POST", { body: input.content ?? "", kind: input.kind, skuId: input.skuId, linkTarget: input.linkTarget, attachmentId: input.attachmentId, intent: input.intent, clientMessageId: input.clientMessageId, expectedAssignmentId: wireId(input.expectedAssignmentId, "conversation.expectedAssignmentId"), expectedStatus: input.expectedStatus ?? "OPEN", expectedVersion: count(input.expectedVersion, "conversation.expectedVersion"), replyTargets: input.replyTargets?.map((target) => ({ ...target, throughMessageId: positive(target.throughMessageId, "conversation.throughMessageId") })), reason: "专属客服回复客户消息" }, idempotencyKey, signal)),
   createConversation: (input: SupportMessageInput & { customerId: string }, idempotencyKey: string, signal?: AbortSignal) =>
     request("/conversations", messageResult, json("POST", { conversationType: "ADVISOR", userId: wireId(input.customerId, "conversation.customerId"), openingText: input.content ?? "", kind: input.kind, skuId: input.skuId, linkTarget: input.linkTarget, attachmentId: input.attachmentId, intent: input.intent, clientMessageId: input.clientMessageId, expectedAssignmentId: wireId(input.expectedAssignmentId, "conversation.expectedAssignmentId"), replyTargets: input.replyTargets?.map((target) => ({ ...target, throughMessageId: positive(target.throughMessageId, "conversation.throughMessageId") })) }, idempotencyKey, signal)),
   startConversation: (input: SupportStartConversationInput, idempotencyKey: string, signal?: AbortSignal) =>

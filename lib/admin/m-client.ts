@@ -143,6 +143,7 @@ type ContentConversationView = {
   ownerAgentName?: string;
   unreadCount?: number;
   pendingReplyCount?: number | null;
+  pendingReplySince?: string | null;
   lastMessage?: string;
   lastPublicMessageId?: number | null;
   lastMessageKind?: string | null;
@@ -1298,6 +1299,7 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
     agentName: str(base.ownerAgentName, type === "advisor" ? "Mia" : "客服台"),
     roleKey: roleKey(type),
     unread: num(base.unreadCount, 0),
+    pendingReplySince: base.pendingReplySince ? new Date(base.pendingReplySince).getTime() : null,
     pendingReplyCount: typeof base.pendingReplyCount === "number" && Number.isSafeInteger(base.pendingReplyCount) && base.pendingReplyCount >= 0 ? base.pendingReplyCount : null,
     lastTs: asTs(base.lastMessageAt, updated),
     status: conversationStatus(base.status),
@@ -1581,18 +1583,7 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
     onProgress?.(snapshot);
   };
 
-  const ticketsTask = (async () => {
-    if (!authorities.includes("service_m2_read")) {
-      publish({ tickets: [], ticketsAvailable: false });
-      return;
-    }
-    try {
-      const page = await fetchAllSupportTickets();
-      publish({ tickets: page.records.map(adaptTicket), ticketsAvailable: true });
-    } catch {
-      publish({ tickets: [], ticketsAvailable: false }, "工单数据");
-    }
-  })();
+  const ticketsTask = Promise.resolve();
 
   const conversationsTask = (async () => {
     if (!authorities.includes("service_m3_read")) {
@@ -1675,20 +1666,7 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
     }
   })();
 
-  const m2CandidatesTask = (async () => {
-    if (!authorities.includes("service_m2_read")) {
-      publish({ ticketAssigneeCandidates: [], ticketAssigneeCandidatesAvailable: false });
-      return;
-    }
-    try {
-      const candidates = parseTicketAssigneeCandidates(
-        await apiRequest<unknown>("/tickets/assignee-candidates"),
-      );
-      publish({ ticketAssigneeCandidates: candidates, ticketAssigneeCandidatesAvailable: true });
-    } catch {
-      publish({ ticketAssigneeCandidates: [], ticketAssigneeCandidatesAvailable: false }, "工单坐席候选数据");
-    }
-  })();
+  const m2CandidatesTask = Promise.resolve();
 
   const knowledgeTask = (async () => {
     if (!authorities.includes("service_m4_read")) {

@@ -31,7 +31,7 @@ assertAbsent("lib/admin/m-client.ts", "DEFAULT_LOAD_CONFIG", "M client must not 
 
 assertContains("lib/admin/m-client.ts", 'apiRequest<Record<string, unknown>>("/tickets/load-config")', "load config backend endpoint");
 assertContains("lib/admin/m-client.ts", 'parseM1SupportAgentOverview(await apiRequest<unknown>("/support-agents"))', "strict shared M1 agent and transfer-target backend endpoint");
-assertContains("lib/admin/m-client.ts", 'apiRequest<unknown>("/tickets/assignee-candidates")', "M2 minimal assignee candidate backend endpoint");
+assertAbsent("lib/admin/m-client.ts", 'apiRequest<unknown>("/tickets/assignee-candidates")', "retired M2 must not fetch ticket candidates");
 assertContains("lib/admin/m-client.ts", '"I.session.transferTargets": JSON.stringify(data.transferTargets)', "backend transfer targets materialized for M3");
 assertContains("lib/admin/m-client.ts", "M_LOAD_CONFIG_FIELD_MISSING", "missing backend load-config fields fail closed");
 assertContains("lib/admin/m-client.ts", "let loadConfigAvailable = false", "M1 load writes start fail-closed");

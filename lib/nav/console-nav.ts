@@ -279,10 +279,9 @@ export const CONSOLE_NAV: NavDomain[] = [
     // 客服中心 = 抽 I8(工单)+ I9(即时会话)重组的独立域;真写键沿用 I.support.*/I.session.* 保 persist 兼容。
     l2: [
       { id: "M1", name: "客服工作台", path: "/service/overview", prdAnchor: "M1", batch: "V4", status: "flagship" },
-      { id: "M2", name: "客服工单", path: "/service/tickets", prdAnchor: "M2", batch: "V4", status: "flagship" },
       { id: "M3", name: "专属会话", path: "/service/sessions", prdAnchor: "M3", batch: "V4", status: "flagship" },
       { id: "M6", name: "业绩榜", path: "/service/leaderboard", prdAnchor: "M6", batch: "V4", status: "flagship" },
-      { id: "M4", name: "知识库与处理时限", path: "/service/kb-sla", prdAnchor: "M4", batch: "V4", status: "flagship" },
+      { id: "M4", name: "知识库", path: "/service/kb-sla", prdAnchor: "M4", batch: "V4", status: "flagship" },
       { id: "M5", name: "服务规则与话术", path: "/service/scripts", prdAnchor: "M5", batch: "V4", status: "flagship" },
     ],
   },
@@ -340,7 +339,7 @@ const LEGACY_MENU_NAMES: Record<string, string> = {
   "L2": "漏斗/cohort/留存",
   "L5": "导出 & 监管报告",
   "M2": "工单台",
-  "M4": "知识库与 SLA",
+  "M4": "知识库",
 };
 const STOCK_MENU_ALIASES: Record<string, string[]> = {
   M1: ["客服总览"], M3: ["即时会话台"], M5: ["话术与模板配置"], C3: ["余额 & 资产调整"], C5: ["安全 & 会话"], F2: ["网络版税费率"], H3: ["Quest 引擎"], H4: ["活动中心 CMS"], H5: ["签到 & NEX"], G3: ["NEX 价格管理"], I4: ["信任中心 CMS"], I6: ["i18n 文案与教程", "i18n 文案与课程"]

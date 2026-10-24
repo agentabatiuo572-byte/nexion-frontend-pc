@@ -111,7 +111,7 @@ test("M4 carries visible FAQ and SLA versions through every concurrent mutation"
   assert.match(data, /export type SupportSla = \{[\s\S]*version: number/);
   assert.match(page, /expectedStatus: faq\.status/);
   assert.match(page, /expectedVersion: faq\.version/);
-  assert.match(page, /version: editRow\.version \+ 1/);
+  assert.doesNotMatch(page, /EditSlaModal|support-sla-row/);
   assert.match(view, /updateFaq\(row, before, reason, idempotencyKey\)/);
   assert.match(view, /updateFaqStatus\(row\.id, row\.status, before\.status, before\.version, reason, idempotencyKey\)/);
   assert.match(view, /updateSla\(row, before\.version, reason, idempotencyKey\)/);
