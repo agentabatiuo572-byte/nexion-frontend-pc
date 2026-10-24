@@ -4,6 +4,10 @@
 
 Terms 是独立于 I5 风险披露的法律条款能力。后端 `nx_legal_terms_version` 保存每个 `locale + jurisdiction + version` 的结构化段落、状态、revision 和生效时间；正文由字段组成，运营端不得提交整段 JSON。`nx_legal_terms_ack` 保存用户、环境、Sandbox RunID、法域、语言和已确认版本。
 
+## 2026-10-25 品牌与显示口径
+
+App 隐私政策、用户协议及服务端发布正文中的历史项目品牌在展示时统一为 UVEL；平台代币显示为 UVT。该显示层兼容处理不改写法务版本、确认记录、链接、域名、邮箱或协议标识，不把展示替换视为发布新条款。CMS 的结构化编辑、发布权限、revision、确认与撤回规则继续生效；后续正式修改条款仍走原版本流程。
+
 ## 状态与并发
 
 版本状态为 `DRAFT → PUBLISHED → SUPERSEDED` 或 `PUBLISHED → REVOKED`。草稿保存、发布和撤回都携带 expected revision；过期 revision 返回 `LEGAL_TERMS_VERSION_CONFLICT`。发布新版本后，服务端读取只返回该语言/法域的当前 `PUBLISHED` 版本，旧确认不会满足新版本。

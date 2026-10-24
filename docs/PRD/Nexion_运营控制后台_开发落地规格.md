@@ -1,6 +1,8 @@
 # Nexion 运营控制后台 — 开发落地规格(Dev-Ready Spec)
 
-**最后更新：2026-10-09**
+**最后更新：2026-10-25**
+
+> **本轮现行规格**：[FEAT-APP-20261025：V8、H9 与 App 体验联动](specs/FEAT-APP-20261025-experience-alignment.md)。F1 有效等级 V0–V8，H9 独立首页数字增长板块及开关；UVT 为用户展示名，NEX 仍为协议/账本代码。旧原型阈值不得覆盖已发布配置。
 
 > **2026-08-07 后发裁定**：全项目已取消 KYC 与钱包配对。C4、K5、相关 API、字段、参数、菜单、权限和资金门禁均退出当前规格；提现改为用户按网络直管收款地址。历史 PRD 中的相关描述仅作归档，不得实现或恢复。具体以 `specs-snapshot-20260807/FEAT-KYC-RM01-remove-kyc-and-pairing.md` 为准。
 
@@ -154,7 +156,7 @@
 | E4 | 订单状态机 | 设备订单全生命周期:列表/状态推进/DC 分配/退款 | E 设备 | V2·Ch10 | §7.4 / §9.11f |
 | E5 | 设备运维 | fleet heartbeat 监控/批量操作/库存激活/强制激活解绑 | E 设备 | V2·Ch10 | §6.1 / §11.1 / §9.11d.2 |
 | E6 | 算力与设备配置 | PC 算力备用模块入口开关、在线系数、显卡档位映射、下载内容配置 | E 设备 | V2·Ch10 | 三端改造 SPEC-0~2 |
-| F1 | V-Rank 晋升管理 | 13 阶 V 级门槛/server 晋升判定/实物奖发货/培育奖 | F 分销 | V2·Ch11 | §8.2 / §13.2 / 节奏表§6.3 |
+| F1 | V-Rank 晋升管理 | V0–V8 有效门槛/server 晋升判定/等级奖励/培育奖 | F 分销 | V2·Ch11 | §8.2 / §13.2 / 节奏表§6.3 |
 | F2 | 网络版税与分成 | 现行七层配置、原 L1 预算与冷却只读引用的购买拆分、独立设备总比例/拆分/冷却整组审批；Partner Status 独立；空配置不补默认 | F 分销 | V2·Ch11 | v2 F2 / F5 / A2 / B1 |
 | F3 | 双轨结算引擎 | 较小侧匹配比例/两轨门槛/自动分配/月度 GV 归零(日封顶只读) | F 分销 | V2·Ch11 | §8.4 / §13.4.1 / 节奏表§6.4 |
 | F4 | 领导奖池 | 周注入比例/V_VOTES 票数权重/周结算(V3+ 头部分享) | F 分销 | V2·Ch11 | §8.5 |
@@ -266,13 +268,13 @@
 
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
-| **V_RANKS**(F1 13阶) | v:enum{V0…V12} · 头衔 · 晋升条件{selfBuyUSD?,directRefs?,teamVolumeUSD?,vDownlines?}(AND 复合,各阶组合不一) · unilevelDepth(旧扩展版税历史，不作用于新直属) · peerBonus[V](V0–V2=0/V3+=5%) · leadershipVotes · prizeName(全局唯一) · cultivationBonus(NEX) · 可见性解锁 · vRankPermanent=true；本人权益、培育与领导票权保持原规则 | SC | §17.1 / Ch11 F1 |
+| **V_RANKS**(F1 有效9级) | v:有效配置{V0…V8}，V9–V12历史停用记录保留 · 头衔 · 晋升条件{selfBuyUSD?,directRefs?,teamVolumeUSD?,vDownlines?}(AND 复合,各阶组合不一) · unilevelDepth(旧扩展版税历史，不作用于新直属) · peerBonus[V](V0–V2=0/V3+=5%) · leadershipVotes · prizeName(全局唯一) · cultivationBonus(NEX) · 可见性解锁 · vRankPermanent=true；本人权益、培育与领导票权保持原规则 | SC | §17.1 / Ch11 F1 |
 | **直属分成政策**(F2) | schemaVersion=2 · policyVersion/expectedVersion 与 sevenLayerRevision/expectedSevenLayerRevision 双版本；settlementMode/sevenLayerEnabled/cutoverAt 标记代际 · effectiveAt 为批准时间 · purchaseSplit{enabled,usdtSharePct}，原 L1 固定 10% 基础预算/冷却/旧系数只读 sevenLayerReference 引用 · deviceEarning{enabled,totalRatePct,usdtSharePct,coolingDays} 独立 · nexUsdtPrice 只读；整组审批，缺配置不补默认，拆分 NEX 替代旧 L1 额外 NEX | SC | Ch11 F2 |
 | **独立权益与冷却**(F2) | `F.partner.tiers`{standard,verified,premium,diamond} 非负保序，只决定非现金权益；`F.cooldown` 整数 0–90 天，仅用于其他奖励；当前值取服务端，缺值不填默认 | SC | Ch11 F2 |
 | **旧网络版税历史**(F2) | 当前 PC historicalOnly：unilevelRates 为空或完整 L1–L7 实值快照；NEX 系数按每 1 USDT 版税计，不按订单额；旧出口合并上限只读实值、缺值未配置；新购 checkout.completed 不再调用旧结算。后端 Unilevel 引擎及旧参数写入/A2重放仍保留，并非全局禁用；旧账查询、释放及处置保留 | SC | Ch11 F2 / F5 |
 | **双轨**(F3) | binaryDailyCap(月1-6=$5000/月7+=$2000,权威 H1) · balanceMatchRate(10%) · binaryTrackMinUsd($1000) · spillover · gvResetCron | SC | §17.1 / Ch11 F3 |
 | **Commission Event**(F5,§12.5) | commissionId · userId · kind:enum{network\|binary\|peer\|cultivation\|leadership\|genesis} · currency:enum{USDT\|NEX} · amount · sourceUserId · layer(L1–L7,仅network) · settledAt:ms-epoch · coolingDaysLeft · status:enum{cooling\|unlocked\|withdrawn\|reversed};**F5 仅审计消费,落 D4 commission bill** | SC | §17.1 / Ch11 F5 |
-| 领导池(F4) | leadershipPoolInjectRate(5%,3–10%) · V_VOTES{V3:1…V12:512} · poolSettleCron(周日23:59 UTC) · poolUnlockVRank(V3+) | SC | Ch11 F4 |
+| 领导池(F4) | leadershipPoolInjectRate(5%,3–10%) · V_VOTES{有效等级的已发布票权} · poolSettleCron(周日23:59 UTC) · poolUnlockVRank(V3+) | SC | Ch11 F4 |
 
 ### 域 G — 金融产品
 
@@ -463,7 +465,7 @@
 
 | Endpoint | Method | 用途 | 确认 | 模块 |
 |---|---|---|---|---|
-| `/api/admin/config/v-ranks` · `/v-ranks` | GET / PUT | 13 阶 V 级配置(门槛保序 Vn≥Vn-1 违反 400) | F1-MD2(高敏) | F1 |
+| `/api/admin/config/v-ranks` · `/v-ranks` | GET / PUT | V0–V8 有效等级配置(门槛保序 Vn≥Vn-1 违反 400) | F1-MD2(高敏) | F1 |
 | `/api/admin/users/:userId/vrank/override` | POST | 手动晋升/回滚 V 级(携 Key;执行=增长 lead/超管) | F1-MD1 | F1 |
 | `/api/admin/team/prize-queue` · `/prize-queue/:id/ship` | GET/POST | 实物奖发货队列 / 标发货(须 kycAddressVerified 否则 409) | F1-MD3(ship) | F1 |
 | `/api/admin/teams/direct-referral-policy` · `/api/config/commission/direct-referral` | GET；admin PUT | GET 显式 ?schemaVersion=2；PUT 携 schemaVersion=2、expectedVersion、expectedSevenLayerRevision、完整 purchaseSplit/deviceEarning、reason、Idempotency-Key，仅 A2 批准后生效；拒绝旧 purchase 和第二购买总比例；T 前只读，T 后 Team 旧版明确升级提示 | f_direct_referral_policy，target=direct_referral_policy/current | F2 |
@@ -796,8 +798,8 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 
 | 参数(key) | 默认值 | 范围 | 生效时机 | 权威源 |
 |---|---|---|---|---|
-| V_RANKS 各阶门槛 | V1 自买≥$299 AND 直推≥3 / V2 团队≥$5K / V3 ≥$20K AND vDownlines … V12 $500M(AND 复合) | 各≥0 保序 | 仅新判定(不回溯) | F1 |
-| 培育奖 NEX `cultivationBonus[V]` | V1 500 / V2 2,000 / V3 10,000 / V4 50,000 / V5 200,000 / V6 800,000 / V7 320万 / V8 1000万 / V9+ 0 | 各 ≥ 0 | 实时(下次跨阶) | F1 |
+| V_RANKS 各阶门槛 | V0–V8 发布配置；不照搬旧原型固定金额 | 各≥0 保序，等级引用须有效 | 仅新判定(不回溯) | F1 |
+| 培育奖 UVT `cultivationBonus[V]` | 有效等级的发布值，协议资产仍为 NEX | 各 ≥ 0 | 实时(下次跨阶) | F1 |
 | 平级奖 `peerBonus[V]` | V0–V2=0 / V3+=5%，仅保留参数 | 0–100% | 能力位尚未开放、无发奖程序；本轮不启用 | F1 |
 | `vRankPermanent` | true(不降级) | true/false | 实时 | F1 |
 | `purchase` / `deviceEarning` | 未配置均禁用；totalRatePct=0、usdtSharePct=50、coolingDays=0 仅占位 | enabled boolean；总比例0–100，启用大于0；USDT占比0–100，启用严格介于0与100；NEX占比自动为100减USDT；冷却整数0–365 | A2 批准后立即用于新来源；同一 policyVersion，不回算旧账 | F2 |
@@ -811,12 +813,12 @@ BANKQR 出金参数由 v1 D7 持有，字段、默认值、合法域和权限以
 | `unmatchedSurplusDisposition` | **裁定前冻结**(见第7章 #3) | 待裁定 | — | F3 |
 | `gvResetCron` | 每月1日 00:00 UTC 归零;月底 23:59 锁定 | 固定 | 配置即生效 | F3 |
 | `leadershipPoolInjectRate` | 5% 平台周总交易额 | 3%–10% | 仅新结算周 | F4 |
-| V_VOTES 票数权重 | {V3:1…V12:512}(逐级翻倍) | 各≥0 | 仅新结算周 | F4 |
+| V_VOTES 票数权重 | 有效等级的已发布票权，不写死旧 V12 表 | 各≥0 | 仅新结算周 | F4 |
 | `poolSettleCron` | 周日 23:59 UTC 快照 / 周一 00:00 开新池 | 固定 | 配置即生效 | F4 |
 | `top1MaxPct/top5MaxPct`(头部集中度) | top1≤25% / top5≤60%(超阈告警非阻断) | 各 0–100%(见第7章 #18) | 实时 | F4 |
 | `proUnlockDirects` / `rackP1UnlockDirects/UnlockVolumeUsd` | ≥5 直推 / ≥15 直推 OR 月业绩≥$20,000 | 各 ≥ 0 | 实时 | F4b |
 | `proMonthlyStock` / `rackP1MonthlyStock` | 1,000 / 100 台 | ≥ 0 | 仅新月度周期 | F4b |
-| `agentEligibilityVRank`(大使资格) | V5 Wing Leader+ | V0–V12 | 实时 | F4c |
+| `agentEligibilityVRank`(大使资格) | V5 Wing Leader+ | 有效等级 V0–V8 | 实时 | F4c |
 | 线下活动预算 / KOL 补贴 | $1,000–$10,000 / 50% | ≥0 / 0–100% | 仅新申请 | F4c |
 | `PERIOD_PRIZE`(4 周期奖池) | today $5,000/Top20 · week $50,000/Top50 · month $250,000/Top100 · all-time $1,000,000/Top100 | 奖池≥0/TopN≥1 | 仅新周期 | F4d |
 | `leaderboardMinUsd` / `snapshotIntervalMin` | ≥$1 / 5 分钟 | ≥0 / 1–60min | 实时 | F4d |
@@ -977,8 +979,8 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 - **约束**:订单 ID server mint;`/refund` MC+Key,单事务联动 D1 退款+D4 冲正+`cumulativeDepositUsdt` 核减。**GMV 以 order.paid 去重为权威,payment_failed 不计**。
 - **注**:E3 设备效率为连续值(100%→0.22 floor),非状态机;曲线变更仅影响下次快照,不追溯历史收益。
 
-### 5.7 F1 V-Rank 晋升(Ch11 F1,13 阶 V0–V12)
-- **状态集**:`V0 … V12`
+### 5.7 F1 V-Rank 晋升(Ch11 F1,9 级 V0–V8)
+- **当前有效状态集**:`V0 … V8`；停用 V9–V12 不作新晋升目标，不自动降低存量等级
 - **合法转移**:晋升 `V(n) → V(n+1)`(server 在被动评估触发点 re-check;条件 **AND 复合**,各阶组合不一)/ 手动晋升回滚 `V(x) → V(y)`(确认弹窗 F1-MD1,理由必填;执行=增长运营(lead)/超管)/ **不降级**(vRankPermanent=true,唯一例外账户注销)
 - **约束**:`/vrank/override` 携 Key + MC 两步,server 原子置 V 级并联动本人权益/平级奖/票数/可见性；旧扩展版税覆盖仅历史说明，不作用于新直属;client 显示对但 server 可 reject(anti-abuse/race)是产品契约;改门槛不回溯已晋升者。
 
@@ -1006,6 +1008,10 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 - **H4 活动**:`upcoming → ongoing → ended`(时窗);trackable 用户 `(未join)→ joined → done → claimed`。Lucky Spin server RNG+NODE_ENV guard;日上限 `eventId×userId×spinDate` 超额 409;B1 红线自动降级(只发 NEX/积分/券)。
 - **H5 签到**:`signed_today →(次日)pending → signed` / `signed → broken`(>48h 归 0)/ `broken → restored`(耗 1 Saver,恢复 min(longest,30));里程碑 `locked → claimable → claimed`。
 - **H6 累计里程碑**:`unfired → fired`(跨阈自动 creditNex+overlay);一次 fire 一档(watcher 4s 串行);firedIds server 记录不重触发;自动派 NEX 携 Key(milestoneId×userId 去重)。
+
+### 5.11a H9 首页数字增长
+
+独立板块收纳在线设备与累计已发放当前值、各自增量区间及开启/暂停按钮；默认暂停，普通保存不开启，暂停保留当前值。采用服务端共享随机批次、数据库持久化和 Redis 缓存，客户端可见时逐秒显示、约每60秒拉取，隐藏停止、恢复重取。当前值/区间、权限、版本冲突、迁移和异常恢复详见 [本轮规格](specs/FEAT-APP-20261025-experience-alignment.md)。该展示不写业务账本。
 
 ### 5.12 I 内容 / J 应急(Ch14 / Ch15)
 - **I1 文案 A/B**:版本 `draft → published(MC)→ archived`(回滚=重发历史版,MC);实验 `scheduled → running → concluded(adopted|discarded)`。分组 assignment server 权威,已分组 sticky。
