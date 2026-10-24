@@ -339,7 +339,7 @@ const LEGACY_MENU_NAMES: Record<string, string> = {
   "L2": "漏斗/cohort/留存",
   "L5": "导出 & 监管报告",
   "M2": "工单台",
-  "M4": "知识库",
+  "M4": "知识库与 SLA",
 };
 const STOCK_MENU_ALIASES: Record<string, string[]> = {
   M1: ["客服总览"], M3: ["即时会话台"], M5: ["话术与模板配置"], C3: ["余额 & 资产调整"], C5: ["安全 & 会话"], F2: ["网络版税费率"], H3: ["Quest 引擎"], H4: ["活动中心 CMS"], H5: ["签到 & NEX"], G3: ["NEX 价格管理"], I4: ["信任中心 CMS"], I6: ["i18n 文案与教程", "i18n 文案与课程"]
