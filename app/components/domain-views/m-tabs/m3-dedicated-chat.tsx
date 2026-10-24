@@ -136,16 +136,16 @@ function SupportContactPicker({onClose,onSelect}:{onClose:()=>void;onSelect:(id:
   return <Modal title="主动联系本人客户" icon="users" onClose={onClose} footer={<button className="btn btn-sec btn-sm" onClick={onClose}>取消</button>}><label>搜索客户姓名或编码<input className="fld" value={keyword} onChange={e=>{setKeyword(e.target.value);setPage(1);}}/></label><p>只可向当前本人客户发送；不再维护客户可在原求助会话中继续普通服务回复。</p>{error?<p role="alert">{error}<button className="l-btn sm" onClick={()=>setRetry(n=>n+1)}>重试客户列表</button></p>:!rows?<p role="status">正在读取客户…</p>:<>{!rows.records.length&&<p>暂无匹配的客户。</p>}{rows.records.map(c=><button className="l-btn sm" key={c.customerId} disabled={c.agentAdminId!==adminId||!c.maintenanceEnabled} onClick={()=>onSelect(c.customerId)}>{c.displayName||c.customerNo||c.customerId} · {c.customerNo||"编码未知"}{!c.maintenanceEnabled?" · 不再维护":c.agentAdminId!==adminId?" · 当前归属其他专属客服":""}</button>)}<div className="m-admin-toolbar"><button className="l-btn sm" disabled={page<=1} onClick={()=>setPage(n=>n-1)}>上一页</button><span>第 {page} 页 · {rows.total} 位</span><button className="l-btn sm" disabled={page*10>=rows.total} onClick={()=>setPage(n=>n+1)}>下一页</button></div></>}</Modal>;
 }
 
-function CustomerHistoryMessages({ conversation, ctx, customerName }: { conversation: SessionConvo; ctx: MCtx; customerName: string }) {
+function CustomerHistoryMessages({ conversation, ctx, customerName, loadEnabled }: { conversation: SessionConvo; ctx: MCtx; customerName: string; loadEnabled: boolean }) {
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
   const load = ctx.loadConversationDetail;
   useEffect(() => {
-    if (conversation.detailReady) return;
+    if (!loadEnabled || conversation.detailReady) return;
     const controller = new AbortController();
     void load(conversation.id, controller.signal).catch(cause => { if (!controller.signal.aborted) { if (lostPermission(cause)) ctx.invalidateScope(conversation.id,conversation.customerId); else setError(displayAdminError(cause)); } });
     return () => controller.abort();
-  }, [conversation.id, conversation.version, conversation.detailReady, load, retry]);
+  }, [conversation.id, conversation.version, conversation.detailReady, loadEnabled, load, retry]);
   const unread = conversation.detailReady ? [...conversation.messages].reverse().find(message => message.sender === "user" && message.id && message.status !== "read")?.id : undefined;
   useEffect(() => {
     if (!unread) return;
@@ -277,7 +277,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     return latest?.sender === "user" && Number.isSafeInteger(latest.id) ? [{ conversationNo: convo.id, throughMessageId: latest.id!, text: latest.text }] : [];
   });
   const closedReplyTargets = closedReplyCandidates.filter((row) => intent === "SERVICE" || selectedClosedIds.has(row.conversationNo)).map(({ conversationNo, throughMessageId }) => ({ conversationNo, throughMessageId }));
-  const closedCandidatesReady = closedCandidateMissing.length === 0 && !closedCandidateError && [...selectedClosedIds].every((id) => closedReplyCandidates.some((row) => row.conversationNo === id));
+  const closedCandidatesReady = closedCandidateMissing.length === 0 && (Boolean(selected) || !closedCandidateError) && [...selectedClosedIds].every((id) => closedReplyCandidates.some((row) => row.conversationNo === id));
   const displayedIntent = pending?.intent ?? firstPending?.intent ?? intent;
   const lockedTargets = firstPending?.replyTargets ?? pending?.message.replyTargets ?? [];
   const displayedClosedIds = new Set([...selectedClosedIds, ...lockedTargets.map((target) => target.conversationNo)]);
@@ -323,7 +323,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   useEffect(() => { setConversationError(""); }, [selected?.id, selected?.version, selected?.lastTs, authEpoch]);
 
   useEffect(() => {
-    if (!replyCustomerId || !conversationsAvailable || !closedCandidateMissing.length || closedCandidateError) return;
+    if (selected || !replyCustomerId || !conversationsAvailable || !closedCandidateMissing.length || closedCandidateError) return;
     const controller = new AbortController();
     void loadConversationDetail(closedCandidateMissing[0], controller.signal).catch((cause: unknown) => {
       if (controller.signal.aborted) return;
@@ -332,7 +332,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
       } else setClosedCandidateError(displayAdminError(cause));
     });
     return () => controller.abort();
-  }, [replyCustomerId, closedCandidateMissing.join("|"), conversationsAvailable, authEpoch, closedCandidateRetry, closedCandidateError, loadConversationDetail]);
+  }, [selected?.id, replyCustomerId, closedCandidateMissing.join("|"), conversationsAvailable, authEpoch, closedCandidateRetry, closedCandidateError, loadConversationDetail]);
   useEffect(() => { setClosedCandidateError(""); }, [replyCustomerId, authEpoch]);
 
   useEffect(() => {
@@ -1079,7 +1079,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
         {actionError && <div className="itint danger" role="alert">{actionError}<button type="button" className="l-btn sm" onClick={() => setActionError("")}>知道了</button></div>}
         {!requestedCustomerIdValid && <div className="itint danger" role="alert">客户链接无效，无法打开会话。请从<a href="/service/overview">我的客户</a>重新进入。</div>}
         {readError && <div className="itint warn" role="alert">已读状态更新失败：{readError} <button type="button" className="l-btn sm" onClick={() => { markedRef.current = ""; setReadRetry((value) => value + 1); }}>重试</button></div>}
-        {customerHistory.map(row => <CustomerHistoryMessages key={`${authEpoch}:${row.id}`} conversation={row} ctx={ctx} customerName={title}/>)}
+        {customerHistory.map(row => <CustomerHistoryMessages key={`${authEpoch}:${row.id}`} conversation={row} ctx={ctx} customerName={title} loadEnabled={Boolean(selected?.detailReady && customerHistory.find(item => !item.detailReady)?.id === row.id)}/>)}
         {selected && !selected.detailReady ? <div className="itint" role={conversationError ? "alert" : "status"}>{conversationError ? `会话详情读取失败：${conversationError}` : "正在读取会话消息…"} {conversationError && <button type="button" className="l-btn sm" onClick={() => { setConversationError(""); setConversationRetry((value) => value + 1); }}>重试读取详情</button>}</div> : selected && threadMessages.length ? threadMessages.map((message,index)=><SupportMessage key={message.id??`${message.ts}-${index}`} message={message} previous={threadMessages[index-1]} newlyArrived={message.id!==undefined&&newMessageIds.has(message.id)} customerId={String(selected.customerId)} customerName={title} onRevoked={()=>ctx.invalidateScope(selected.id,String(selected.customerId))}/>) : <div className="itint">{requestedCustomerId?"尚无进行中会话。核对归属后即可发送首次联系。":selected?"这段会话尚无消息。":"选择会话后查看消息。"}</div>}
       </div>
       <div className="ChatComposer">
