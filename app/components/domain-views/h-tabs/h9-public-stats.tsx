@@ -44,9 +44,12 @@ type ScalarDrafts = Record<ScalarKey, string>;
 /** 分位表两个数值列的业务精度 —— 与下方 input 的 step 同一取值,不许两处各写一份。 */
 const H9_BAND_STEP = 0.1;
 
+const HOME_SECTIONS: { title: string; keys: ScalarKey[] }[] = [
+  { title: "首页在线设备", keys: ["homeOnlineCurrent", "homeOnlineStepMin", "homeOnlineStepMax"] },
+  { title: "首页累计已发放", keys: ["homePaidCurrent", "homePaidStepMin", "homePaidStepMax"] },
+];
+
 const SECTIONS: { title: string; sub: string; keys: ScalarKey[] }[] = [
-  { title: "首页在线设备", sub: "当前值作为保存后的起点；开启后，每秒按区间随机增加", keys: ["homeOnlineCurrent", "homeOnlineStepMin", "homeOnlineStepMax"] },
-  { title: "首页累计已发放", sub: "金额保留两位小数；展示设置不改变实际资金账单", keys: ["homePaidCurrent", "homePaidStepMin", "homePaidStepMax"] },
   { title: "历史规模配置", sub: "仅供历史估算；正式 App 对外在线设备读取服务端实测聚合", keys: ["fleetDevices", "onlineRatePct", "onlineJitter"] },
   { title: "历史用户配置", sub: "仅供历史估算；正式 App 对外注册账户读取服务端真实记录", keys: ["registeredUsersBase", "registeredUsersMonthlyGrowthPct"] },
   { title: "历史排名估算", sub: "仅用于本地估算；不改变正式 App 当前服务端名次", keys: ["virtualUserCount"] },
@@ -282,12 +285,58 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     </section>;
   }
 
-  return <>
-    <section className="l-card" style={{ marginBottom: 16 }}>
-      <div className="l-h"><span className="ttl">首页数字增长 · {data.values.homeDisplayEnabled ? "已开启" : "已暂停"}</span>
-        {canWrite && <button className="l-btn" disabled={!allValid} onClick={() => save(!data.values.homeDisplayEnabled)}>{data.values.homeDisplayEnabled ? "暂停增长" : "开启增长"}</button>}
+  const renderField = (key: ScalarKey, compact = false) => {
+    const field = H9_FIELDS.find((item) => item.key === key)!;
+    return <div className="p-row" key={key}>
+      <div className="txt">
+        <div className="k">{field.label} </div>
+        {!compact && <div className="s">合法范围 {field.min}–{field.max}{field.unit}{field.integer ? "(整数)" : ""} · {field.hint}</div>}
+        {fieldErrors[key] && <div className="ferr">{fieldErrors[key]}</div>}
       </div>
-      <div className="l-b">开启后从当前值累计；暂停保留已累计数值，再次开启继续。保存数值或区间不会自动开启。首页展示与实际资金账单独立。</div>
+      {/* 🔴 type="text" 而不是 type="number"(zentao #200)。
+          Chrome 对 number 控件的可访问值走 float32 转换:String(97.6) 得到的
+          字符串会被重新解析成 97.5999984741211 再交给无障碍树 —— 视觉文本是 97.6,
+          读屏/自动化却读到二进制尾差,编辑后还会把尾差提交回去。这与 #185 的
+          D5 数值输入是同一个缺陷类,修法也一致:用文本控件承载已按业务精度规范化
+          的草稿,inputMode 保留移动端数字键盘。合法域校验仍由 scalarError 执行。 */}
+      <input
+        aria-label={`${field.label}目标值`}
+        className="l-inp"
+        type="text"
+        inputMode={field.integer ? "numeric" : "decimal"}
+        value={drafts[key]}
+        disabled={!canWrite}
+        onChange={(event) => setDraft(key, event.target.value)}
+      />
+      <span className="unit">{field.unit}</span>
+    </div>;
+  };
+
+  return <>
+    <section className="l-card" aria-label="首页数字增长" style={{ marginBottom: 24 }}>
+      <div className="l-h">
+        <span className="ttl">首页数字增长</span>
+        <span className="sub">{data.values.homeDisplayEnabled ? "已开启" : "已暂停"}</span>
+        <div className="r">
+          {canWrite && <button className="l-btn mc" disabled={!allValid} onClick={() => save(!data.values.homeDisplayEnabled)}>{data.values.homeDisplayEnabled ? "暂停增长" : "开启增长"}</button>}
+        </div>
+      </div>
+      <div className="l-b">
+        <div className="two-col" style={{ marginBottom: 0 }}>
+          {HOME_SECTIONS.map((section) => <div key={section.title} style={{ border: "1px solid var(--border)", borderRadius: 12, padding: "4px 16px 12px" }}>
+            <div className="hgrp"><span className="t">{section.title}</span></div>
+            {section.keys.map((key) => renderField(key, true))}
+          </div>)}
+        </div>
+      </div>
+      <div className="l-h" style={{ borderTop: "1px solid var(--border)", borderBottom: 0 }}>
+        <span className="sub">每秒在区间内随机增加；暂停保留累计值。保存配置不会自动开启。</span>
+        <div className="r">
+          <button className="l-btn sm" onClick={() => void load()}>刷新</button>
+          {canWrite && <button className="l-btn sm" disabled={!dirty} onClick={restoreCurrent}>放弃改动</button>}
+          {canWrite && <button className="l-btn" disabled={!dirty || !allValid} title={!dirty ? "没有改动" : !allValid ? "有参数不合法,先按红字改" : undefined} onClick={() => save()}>保存变更</button>}
+        </div>
+      </div>
     </section>
     <div className="f-stats">
       <div className="f-stat cyan"><div className="k">历史设备配置</div><div className="v">{int(data.values.fleetDevices)}</div><div className="sub">非实测设备数，不用于对外事实</div></div>
@@ -306,7 +355,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     <div className="two-col">
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">首页与历史展示设置</span>
+          <span className="ttl">历史展示设置</span>
           <span className="sub">· 生效版本 v{data.version} · {when(Date.parse(data.effectiveAt))} · {canWrite ? "可改" : "当前角色只读"}</span>
           <div className="r">
             <button className="l-btn sm" onClick={() => void load()}>刷新</button>
@@ -318,32 +367,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
         <div className="l-b">
           {SECTIONS.map((section) => <div key={section.title}>
             <div className="hgrp"><span className="t">{section.title}</span><span className="s">{section.sub}</span></div>
-            {section.keys.map((key) => {
-              const field = H9_FIELDS.find((item) => item.key === key)!;
-              return <div className="p-row" key={key}>
-                <div className="txt">
-                  <div className="k">{field.label} </div>
-                  <div className="s">合法范围 {field.min}–{field.max}{field.unit}{field.integer ? "(整数)" : ""} · {field.hint}</div>
-                  {fieldErrors[key] && <div className="ferr">{fieldErrors[key]}</div>}
-                </div>
-                {/* 🔴 type="text" 而不是 type="number"(zentao #200)。
-                    Chrome 对 number 控件的可访问值走 float32 转换:String(97.6) 得到的
-                    字符串会被重新解析成 97.5999984741211 再交给无障碍树 —— 视觉文本是 97.6,
-                    读屏/自动化却读到二进制尾差,编辑后还会把尾差提交回去。这与 #185 的
-                    D5 数值输入是同一个缺陷类,修法也一致:用文本控件承载已按业务精度规范化
-                    的草稿,inputMode 保留移动端数字键盘。合法域校验仍由 scalarError 执行。 */}
-                <input
-                  aria-label={`${field.label}目标值`}
-                  className="l-inp"
-                  type="text"
-                  inputMode={field.integer ? "numeric" : "decimal"}
-                  value={drafts[key]}
-                  disabled={!canWrite}
-                  onChange={(event) => setDraft(key, event.target.value)}
-                />
-                <span className="unit">{field.unit}</span>
-              </div>;
-            })}
+            {section.keys.map((key) => renderField(key))}
           </div>)}
           <div className="p-row">
             <div className="txt">
