@@ -51,7 +51,7 @@ import { summarizeSkuCreation, summarizeSkuProposal } from "@/lib/admin/e1-a2-pr
 import { refreshAdminMediaPreviewUrl, uploadAdminMedia } from "@/lib/admin/media-client";
 import {
   FOLD, ORDER_FLOW, TERMINAL_STATES,
-  EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, skuNum, stateLabel, ostate,
+  EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, validateSkuSpecs, skuNum, stateLabel, ostate,
 } from "./e-tabs/data";
 import type { DatacenterForm, Mc, EOp, EViewCtx, EOrder } from "./e-tabs/types";
 import { E1Catalog } from "./e-tabs/e1-catalog";
@@ -1014,6 +1014,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setToast("请选择 E5 当前有效的数据中心");
       return;
     }
+    const specErr = validateSkuSpecs(form);
+    if (specErr) { setToast(specErr); return; }
     const poolErr = validateSkuUnlockPool();
     if (poolErr) { setToast(poolErr); return; }
     const inventoryMode = form.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE";
@@ -1288,12 +1290,13 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
           <SkuFieldGroup n="②" title="硬件规格">
             <div className="grid g-2" style={{ gap: 12 }}>
-              <SkuFld label="GPU" value={form.gpu} onChange={(v) => setForm({ ...form, gpu: v })} placeholder="4× RTX 4090" />
+              <SkuFld label="GPU 型号（单卡）" value={form.gpu} onChange={(v) => setForm({ ...form, gpu: v })} placeholder="RTX 4090" />
+              <SkuFld label="GPU 数量" type="number" min={1} step={1} value={form.gpuCount} onChange={(v) => setForm({ ...form, gpuCount: v })} placeholder="4" hint="按实际配置填写；留空保留原型号，不推定为 1 张" />
               <SkuFld label="显存" value={form.vram} onChange={(v) => setForm({ ...form, vram: v })} placeholder="96GB VRAM" />
             </div>
             {form.tier !== "Share" && <div className="grid g-2" style={{ gap: 12 }}>
               <SkuFld label="算力" value={form.hashRate} onChange={(v) => setForm({ ...form, hashRate: v })} placeholder="1,240 MH/s" />
-              <SkuFld label="功率" value={form.power} onChange={(v) => setForm({ ...form, power: v })} placeholder="1,200W TDP" />
+              <SkuFld label="功耗 / 功率说明" value={form.power} onChange={(v) => setForm({ ...form, power: v })} placeholder="1,800W（GPU 额定合计）" hint="注明单卡、显卡合计或整机实测口径；限功耗配置需有实际依据" />
             </div>}
             <label className="col" style={{ gap: 5 }}>
               <span className="muted tiny">数据中心<span style={{ color: "var(--ink-4)" }}> · 选 E5 数据中心(前端展示名称)· 在 E5 运维增删改</span></span>
@@ -1346,6 +1349,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 {skuUnlockPoolOptions.map((item) => <option key={item.id} value={item.id}>{nexGridBrandText(item.name)}</option>)}
               </select>
             </label>
+          </SkuFieldGroup>
+
+          <SkuFieldGroup n="" title="相关资料">
+            <SkuFld label="资料名称" value={form.specDocumentTitle} onChange={(v) => setForm({ ...form, specDocumentTitle: v })} placeholder="厂商规格或产品说明" />
+            <SkuFld label="资料链接" value={form.specDocumentUrl} onChange={(v) => setForm({ ...form, specDocumentUrl: v })} placeholder="https://" hint="填写与该商品匹配的公开资料链接；清空名称和链接可移除" />
           </SkuFieldGroup>
 
           <SkuFieldGroup n="⑤" title="营销与销量信息">

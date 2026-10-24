@@ -87,6 +87,8 @@ const SKU_FIELDS: FieldDescriptor[] = [
   { label: "LLM 推理性能", read: (sku) => sku.aiLlmTokensPerSec, format: number, equal: numberEqual },
   { label: "视频渲染性能", read: (sku) => sku.aiVideoMinPerHour, format: number, equal: numberEqual },
   { label: "LoRA 微调性能", read: (sku) => sku.aiFineTuneMins, format: number, equal: numberEqual },
+  { label: "资料名称", read: (sku) => sku.specDocumentTitle, format: text, equal: stringEqual },
+  { label: "资料链接", read: (sku) => sku.specDocumentUrl, format: text, equal: stringEqual },
   { label: "解锁算力池", read: (sku) => sku.aiUnlocks, format: text, equal: stringEqual },
   { label: "产品特性", read: (sku) => sku.features, format: features, equal: (a, b) => JSON.stringify(a ?? []) === JSON.stringify(b ?? []) },
   { label: "购买限制", read: (sku) => sku.purchaseGate, format: structured, equal: (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null) },

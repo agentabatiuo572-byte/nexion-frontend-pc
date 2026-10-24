@@ -84,7 +84,7 @@ export function e1SkuInvalidFields(value: unknown): string[] {
   }
   if (value.inventoryMode === "FINITE" && !isCanonicalFiniteStock(value.stock)) invalid.push("stock");
   for (const key of ["tier", "tagline", "badge", "gpu", "vram", "hashRate", "power", "datacenter", "uptime", "warranty",
-    "baseRate", "stock", "aiUnlocks", "lifecycle", "unlockPhase", "imageAssetId",
+    "specDocumentTitle", "specDocumentUrl", "baseRate", "stock", "aiUnlocks", "lifecycle", "unlockPhase", "imageAssetId",
     "imageObjectKey", "imagePreviewUrl", "tag", "status"]) {
     if (!isOptionalString(value[key])) invalid.push(key);
   }

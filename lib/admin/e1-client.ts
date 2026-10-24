@@ -62,6 +62,8 @@ interface BackendSku {
   aiVideoMinPerHour?: number | null;
   aiFineTuneMins?: number | null;
   aiUnlocks?: string | null;
+  specDocumentTitle?: string | null;
+  specDocumentUrl?: string | null;
   features?: string[] | null;
   lifecycle?: string | null;
   unlockPhase?: string | null;
@@ -243,6 +245,8 @@ function fromSku(sku: BackendSku): OpsSku {
     aiVideoMinPerHour: sku.aiVideoMinPerHour ?? undefined,
     aiFineTuneMins: sku.aiFineTuneMins ?? undefined,
     aiUnlocks: sku.aiUnlocks ?? undefined,
+    specDocumentTitle: sku.specDocumentTitle ?? undefined,
+    specDocumentUrl: sku.specDocumentUrl ?? undefined,
     features: sku.features ?? undefined,
     lifecycle: sku.lifecycle ?? undefined,
     unlock: sku.unlockPhase ?? "",
@@ -292,6 +296,8 @@ function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
     aiVideoMinPerHour: sku.aiVideoMinPerHour ?? null,
     aiFineTuneMins: sku.aiFineTuneMins ?? null,
     aiUnlocks: sku.aiUnlocks ?? null,
+    specDocumentTitle: sku.specDocumentTitle ?? null,
+    specDocumentUrl: sku.specDocumentUrl ?? null,
     features: sku.features ?? [],
     lifecycle: sku.lifecycle ?? "active",
     unlockPhase: sku.unlock || "",

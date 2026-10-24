@@ -33,6 +33,8 @@ export interface OpsSku {
   tagline?: string;
   badge?: string;
   gpu?: string;
+  specDocumentTitle?: string;
+  specDocumentUrl?: string;
   vram?: string;
   hashRate?: string;
   power?: string;

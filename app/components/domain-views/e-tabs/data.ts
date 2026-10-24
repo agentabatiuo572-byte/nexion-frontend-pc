@@ -37,6 +37,7 @@ export function effCurve(early: number, mid: number, late: number, stage1: numbe
 // ── SKU 表单 = 前端 Product 全字段镜像。input 一律 string,提交时 formToSku 转结构化 OpsSku ──
 export const EMPTY_SKU_FORM = {
   name: "", id: "", tier: "", tagline: "", badge: "",
+  gpuCount: "", specDocumentTitle: "", specDocumentUrl: "",
   gpu: "", vram: "", hashRate: "", power: "", datacenter: "", uptime: "", warranty: "", phoneDailyEarn: "", phoneDailyEarnNEX: "",
   price: "",
   dailyEarn: "", dailyEarnNEX: "", shareYieldMin: "", shareYieldMax: "",
@@ -68,12 +69,35 @@ export const skuNum = (s: string): number => { const n = Number(String(s).replac
 export const skuNumU = (s: string): number | undefined => { const t = String(s).trim(); if (!t) return undefined; const n = Number(t.replace(/[^0-9.\-]/g, "")); return Number.isFinite(n) ? n : undefined; };
 
 // OpsSku → 表单(编辑回填:数字转 string,features 数组转换行文本,purchaseGate 扁平回填)。
+// Keep the existing canonical GPU specification while exposing quantity separately.
+export function splitGpu(value?: string) {
+  const model = value?.trim() ?? "";
+  const match = model.match(/^(\d+)\s*[×xX*]\s*(.+)$/u);
+  return match ? { count: match[1], model: match[2] } : { count: "", model };
+}
+export function joinGpu(model: string, count: string): string | undefined {
+  const value = model.trim();
+  return value ? count.trim() ? `${Number(count)}× ${value}` : value : undefined;
+}
+export function validateSkuSpecs(f: SkuForm): string | null {
+  if (f.gpuCount.trim() && (!/^[1-9]\d*$/.test(f.gpuCount.trim()) || Number(f.gpuCount) > 1024 || !f.gpu.trim())) return "GPU 数量须为 1–1024 的整数，并填写单卡型号";
+  if (f.gpuCount.trim() && /^\d+\s*[×xX*]/u.test(f.gpu.trim())) return "GPU 型号请只填单卡型号，数量填写在 GPU 数量中";
+  if (f.specDocumentTitle.trim() || f.specDocumentUrl.trim()) {
+    if (!f.specDocumentTitle.trim() || f.specDocumentTitle.trim().length > 200 || f.specDocumentUrl.trim().length > 2048) return "请填写资料名称和有效的 HTTPS 链接";
+    try { const url = new URL(f.specDocumentUrl.trim()); if (url.protocol !== "https:" || !url.hostname || url.username || url.password) return "资料链接须为不含账号密码的 HTTPS 地址"; }
+    catch { return "请填写有效的 HTTPS 资料链接"; }
+  }
+  return null;
+}
+
 export function skuToForm(s: OpsSku): SkuForm {
   const str = (v: number | string | undefined): string => (v === undefined || v === null ? "" : String(v));
   const g = s.purchaseGate;
+  const gpuParts = splitGpu(s.gpu);
   return {
     name: s.name ?? "", id: s.id ?? "", tier: s.tier ?? "", tagline: s.tagline ?? "", badge: s.badge ?? "",
-    gpu: s.gpu ?? "", vram: s.vram ?? "", hashRate: s.hashRate ?? "", power: s.power ?? "", datacenter: s.datacenter ?? "", uptime: s.uptime ?? "", warranty: s.warranty ?? "", phoneDailyEarn: str(s.phoneDailyEarn), phoneDailyEarnNEX: str(s.phoneDailyEarnNEX),
+    gpuCount: gpuParts.count, specDocumentTitle: s.specDocumentTitle ?? "", specDocumentUrl: s.specDocumentUrl ?? "",
+    gpu: gpuParts.model, vram: s.vram ?? "", hashRate: s.hashRate ?? "", power: s.power ?? "", datacenter: s.datacenter ?? "", uptime: s.uptime ?? "", warranty: s.warranty ?? "", phoneDailyEarn: str(s.phoneDailyEarn), phoneDailyEarnNEX: str(s.phoneDailyEarnNEX),
     price: str(s.price),
     dailyEarn: str(s.dailyEarn), dailyEarnNEX: str(s.dailyEarnNEX), shareYieldMin: str(s.shareYieldMin), shareYieldMax: str(s.shareYieldMax),
     inventoryMode: s.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE", stock: s.inventoryMode === "UNLIMITED" ? "" : str(s.stock), trialEligible: s.trialEligible ? "true" : "false",
@@ -256,7 +280,8 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
   return {
     name: f.name.trim(), id: f.id.trim() || existing?.id || f.name.trim(),
     tier: f.tier, tagline: f.tagline.trim() || undefined, badge: f.badge.trim() || undefined,
-    gpu: f.gpu.trim() || undefined, vram: f.vram.trim() || undefined, hashRate: f.hashRate.trim() || undefined, power: f.power.trim() || undefined, datacenter: f.datacenter.trim() || undefined, uptime: f.uptime.trim() || undefined, warranty: f.warranty.trim() || undefined, phoneDailyEarn: skuNumU(f.phoneDailyEarn), phoneDailyEarnNEX: skuNumU(f.phoneDailyEarnNEX),
+    specDocumentTitle: f.specDocumentTitle.trim() || undefined, specDocumentUrl: f.specDocumentUrl.trim() || undefined,
+    gpu: joinGpu(f.gpu, f.gpuCount), vram: f.vram.trim() || undefined, hashRate: f.hashRate.trim() || undefined, power: f.power.trim() || undefined, datacenter: f.datacenter.trim() || undefined, uptime: f.uptime.trim() || undefined, warranty: f.warranty.trim() || undefined, phoneDailyEarn: skuNumU(f.phoneDailyEarn), phoneDailyEarnNEX: skuNumU(f.phoneDailyEarnNEX),
     price: skuNum(f.price),
     dailyEarn, dailyEarnNEX, shareYieldMin, shareYieldMax, baseRate,
     // Sales is an order lifecycle counter. The editor only round-trips its

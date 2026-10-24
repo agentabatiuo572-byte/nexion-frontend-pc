@@ -1,4 +1,5 @@
 const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+  SKU_DOCUMENT_INVALID: "请填写资料名称和有效的 HTTPS 链接；移除资料时请同时清空两项。",
   CREGIS_AUTO_ACTIVATION_NOT_APPROVED: "自动资金流程运行总闸尚未批准或渠道风控条件未满足，不能开启。",
   CREGIS_AUTO_DIFFERENT_CHECKER_REQUIRED: "自动资金开关须由另一位有效且有权限的管理员复核。",
   CREGIS_AUTO_EVIDENCE_OR_CONFIGURATION_INVALID: "自动任务的原入金、链上证据或固定配置未通过核对。",
