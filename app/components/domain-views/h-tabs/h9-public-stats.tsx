@@ -3,7 +3,7 @@
 /**
  * H9「历史数据展示设置」—— 规格 FEAT-HOME02b 后台单元。
  *
- * 运营在这里维护历史估算参数；正式 App 对外事实读取服务端实测聚合。
+ * 运营在这里维护首页展示和历史估算参数；个人排名仍由真实设备算力决定。
  * 虚拟人口与算力分位表不参与正式 App 当前服务端排名。整组原子保存:
  * 确认弹窗给前后值 diff → 必填理由 → 服务端落审计 + 防重复提交编号,任一项非法整组不落库。
  *
@@ -45,13 +45,13 @@ type ScalarDrafts = Record<ScalarKey, string>;
 const H9_BAND_STEP = 0.1;
 
 const HOME_SECTIONS: { title: string; keys: ScalarKey[] }[] = [
-  { title: "首页在线设备", keys: ["homeOnlineCurrent", "homeOnlineStepMin", "homeOnlineStepMax"] },
+  { title: "介绍页与网络脉搏在线设备", keys: ["homeOnlineCurrent", "homeOnlineStepMin", "homeOnlineStepMax"] },
   { title: "首页累计已发放", keys: ["homePaidCurrent", "homePaidStepMin", "homePaidStepMax"] },
 ];
 
 const SECTIONS: { title: string; sub: string; keys: ScalarKey[] }[] = [
-  { title: "历史规模配置", sub: "仅供历史估算；正式 App 对外在线设备读取服务端实测聚合", keys: ["fleetDevices", "onlineRatePct", "onlineJitter"] },
-  { title: "历史用户配置", sub: "仅供历史估算；正式 App 对外注册账户读取服务端真实记录", keys: ["registeredUsersBase", "registeredUsersMonthlyGrowthPct"] },
+  { title: "历史规模配置", sub: "仅用于历史估算；介绍页与网络脉搏在线设备使用上方首页数字设置", keys: ["fleetDevices", "onlineRatePct", "onlineJitter"] },
+  { title: "网络脉搏注册用户", sub: "注册用户按基数、月增长率和起点推算；不改变真实账户和个人名次", keys: ["registeredUsersBase", "registeredUsersMonthlyGrowthPct"] },
   { title: "历史排名估算", sub: "仅用于本地估算；不改变正式 App 当前服务端名次", keys: ["virtualUserCount"] },
 ];
 
@@ -243,7 +243,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
           ⚠️ 历史估算日金额从 {money(data.values.fleetDevices * data.publishedDailyUsdPerDevice)} 变成 {money(nextDaily)}
           (每台每日配置值 {money2(data.publishedDailyUsdPerDevice)} 不变)。这是内部估算，不代表实际支付，也不改变正式 App 对外统计。
         </div>}
-        {baseChanged && <div>⚠️ 改了历史注册基数，估算起点会重置为本次保存时刻；正式 App 的注册账户总数仍来自真实账户记录。</div>}
+        {baseChanged && <div>改动注册用户基数后，网络脉搏推算起点会重置为本次保存时刻；真实账户和个人名次不变。</div>}
         {virtualZero && <div>虚拟人口填了 0:历史本地估算分母仅含真实注册人口({int(data.realUserCount)} 人)。此参数不改变正式 App 当前服务端名次。</div>}
         <div>本次提交基于配置版本 v{data.version};并发改动会返回 409,任何一项不合法都整组不保存记录。</div>
         <div>首页数字仅在开启后增长，暂停保留当前值；页面最多 60 秒同步状态。操作理由会写入审计。</div>
@@ -253,7 +253,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       //    向运营承诺一道根本没跑的资金闸。改设备总数的警示由上方 fleetChanged 段落负责。
       reasonMin: 8,
       reasonMax: 200,
-      completionCopy: "保存成功后更新历史数据展示设置并写入审计",
+      completionCopy: "保存成功后更新首页与历史展示设置并写入审计",
       run: async (reason) => {
         try {
           const saved = await updateH9PublicStats(submitted, data.version, reason);
@@ -341,7 +341,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     <div className="f-stats">
       <div className="f-stat cyan"><div className="k">历史设备配置</div><div className="v">{int(data.values.fleetDevices)}</div><div className="sub">非实测设备数，不用于对外事实</div></div>
       <div className="f-stat"><div className="k">历史在线估算</div><div className="v">{int(data.values.fleetDevices * data.values.onlineRatePct / 100)}</div><div className="sub">配置设备数 × 配置占比 {data.values.onlineRatePct}%</div></div>
-      <div className="f-stat"><div className="k">历史注册估算基数</div><div className="v">{int(data.values.registeredUsersBase)}</div><div className="sub">仅供内部估算；月增速 {data.values.registeredUsersMonthlyGrowthPct}%</div></div>
+      <div className="f-stat"><div className="k">网络脉搏注册基数</div><div className="v">{int(data.values.registeredUsersBase)}</div><div className="sub">网络脉搏展示；月增速 {data.values.registeredUsersMonthlyGrowthPct}%</div></div>
       <div className="f-stat ok"><div className="k">历史估算分母</div><div className="v">{int(data.realUserCount + data.values.virtualUserCount)}</div><div className="sub">真实注册人口 + 虚拟人口；不用于当前服务端名次</div></div>
     </div>
 
@@ -355,7 +355,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     <div className="two-col">
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">历史展示设置</span>
+          <span className="ttl">注册用户与历史展示设置</span>
           <span className="sub">· 生效版本 v{data.version} · {when(Date.parse(data.effectiveAt))} · {canWrite ? "可改" : "当前角色只读"}</span>
           <div className="r">
             <button className="l-btn sm" onClick={() => void load()}>刷新</button>
@@ -372,7 +372,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
           <div className="p-row">
             <div className="txt">
               <div className="k">注册用户推算起点 </div>
-              <div className="s">仅用于历史估算；正式 App 对外账户数读取真实注册记录。修改基数时起点自动重置为保存时刻。</div>
+              <div className="s">用于网络脉搏注册用户展示。修改基数时起点自动重置为保存时刻。</div>
             </div>
             <span className="v">{when(data.values.registeredUsersAnchorAt)}</span>
           </div>
@@ -402,7 +402,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
             </tbody>
           </table>
           <div className="htint warn" style={{ marginTop: 10 }}>
-            这些历史估算与上方首页展示设置独立；不改变实际账户、设备或资金账单。
+            下表是历史规模估算，与首页在线设备展示独立；不改变实际账户、设备或资金账单。
           </div>
         </div>
       </section>
@@ -443,7 +443,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     </section>
 
     <p className="f-foot">
-      <b>这页的数会去哪</b>:保存首页与历史展示设置并写审计。只有开启后首页数字才累计，个人名次和实际资金账单不受影响。改动记录去{" "}
+      <b>这页的数会去哪</b>:保存首页与历史展示设置并写审计。介绍页与网络脉搏共用在线设备展示，开启后按设置区间增长；网络脉搏注册用户按基数与月增长率推算。个人名次和实际资金账单不受影响。改动记录去{" "}
       <Link href="/platform/audit" className="l-btn sm">A2 审批与审计</Link>{" "}查。
     </p>
   </>;

@@ -25,6 +25,8 @@ function backendPath(parts: string[], method: string) {
     "rhythm",
     "trials",
     "quest-events",
+    "event-rules",
+    "genesis-raffle",
     "check-in",
     "earn-milestones",
     "withdraw-gate",

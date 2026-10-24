@@ -46,6 +46,8 @@ import type { HCtx } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
+import H4EventRules from "./h4-event-rules";
+import H4GenesisRaffle from "./h4-genesis-raffle";
 
 type EventState = "upcoming" | "ongoing" | "ended";
 type HSection = "tasks" | "events";
@@ -1805,6 +1807,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
       {section === "events" && (
         <>
+      <H4EventRules ctx={ctx} />
+      <H4GenesisRaffle ctx={ctx} />
       <div className="two-col">
         <section className="l-card">
           <div className="l-h">
