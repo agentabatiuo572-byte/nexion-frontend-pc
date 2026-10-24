@@ -22,10 +22,11 @@ export function PlatformExperienceConfig() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!canRead) return;
-    setLoading(true); setError(null);
+    setLoading(true); setError(null); setSuccess(null);
     try { setConfig(await fetchPlatformExperienceConfig()); }
     catch (cause) { setError(displayAdminError(cause)); }
     finally { setLoading(false); }
@@ -40,21 +41,24 @@ export function PlatformExperienceConfig() {
   };
 
   const save = async () => {
-    if (!config || !canWrite) return;
-    if (reason.trim().length < 8) { setError("保存理由必须为 8–200 字。"); return; }
+    if (!config || !canWrite || saving || loading) return;
+    setSuccess(null);
+    if (reason.trim().length < 8 || reason.trim().length > 200) { setError("保存理由必须为 8–200 字，请补充后再保存。"); return; }
     setSaving(true); setError(null);
     try {
-      setConfig(await updatePlatformExperienceConfig(config, reason, session?.operator ?? session?.username ?? ""));
+      const saved = await updatePlatformExperienceConfig(config, reason, session?.operator ?? session?.username ?? "");
+      setConfig(saved);
       setReason("");
+      setSuccess(`已保存并回读，当前版本 v${saved.version}。`);
     } catch (cause) {
-      setError(`${displayAdminError(cause)}；请刷新后重新读取 修改版本，禁止盲目重提。`);
+      setError(displayAdminError(cause));
     } finally { setSaving(false); }
   };
 
-  return <><section className="l-card a3-experience" data-testid="platform-experience-config">
-    <div className="l-h"><div><div className="ttl">应用体验配置</div><div className="sub">管理官方下载链接、分享渠道与首页开关；保存时检查修改冲突并记录操作</div></div><div className="r"><span className="bdg cyan">v{config?.version ?? "—"}</span><button className="l-btn sm" onClick={() => void refresh()} disabled={loading}>刷新</button></div></div>
+  return <><section className="l-card a3-experience" data-testid="platform-experience-config" onChange={() => { setError(null); setSuccess(null); }}>
+    <div className="l-h"><div><div className="ttl">应用体验配置</div><div className="sub">管理官方下载链接、分享渠道与首页开关；保存时检查修改冲突并记录操作</div></div><div className="r"><span className="bdg cyan">v{config?.version ?? "—"}</span><button className="l-btn sm" onClick={() => void refresh()} disabled={loading || saving}>刷新</button></div></div>
     <div className="l-b">
-      {error && <div className="atint warn" style={{ marginBottom: 10 }}>{error}</div>}
+      {error && !config && <div role="alert" className="atint warn" style={{ marginBottom: 10 }}>{error}</div>}
       {loading && !config ? <div className="tiny">读取体验配置中…</div> : !config ? <div className="atint warn">体验配置不可用，页面保持只读。</div> : <>
         <div className="two-col" style={{ marginBottom: 12 }}>
           <div className="atint"><b>首页新手任务（只读展示）</b><br />{config.homeNewcomerTasksEnabled ? "已开启" : "已关闭"}<br /><Link href="/growth/quest">去 H3 用户任务管理 →</Link></div>
@@ -83,7 +87,9 @@ export function PlatformExperienceConfig() {
           <label className="tiny" style={{ display: "block", marginTop: 8 }}>发布说明（中文 / 英文）</label><div className="row"><input aria-label="中文发布说明" value={config.appDownload.releaseNotes.zh} disabled={!canWrite || config.appDownload.source === "unavailable"} onChange={(event) => setConfig({ ...config, appDownload: { ...config.appDownload, releaseNotes: { ...config.appDownload.releaseNotes, zh: event.target.value } } })} /><input aria-label="英文发布说明" value={config.appDownload.releaseNotes.en} disabled={!canWrite || config.appDownload.source === "unavailable"} onChange={(event) => setConfig({ ...config, appDownload: { ...config.appDownload, releaseNotes: { ...config.appDownload.releaseNotes, en: event.target.value } } })} /></div>
           {config.appDownload.source === "unavailable" && <div className="tiny" style={{ marginTop: 6 }}>当前暂不提供官方安装包；安装链接、版本和发布说明不生效。确定官方发布地址后再切换来源。</div>}
         </div></div>
-        {canWrite && <><label className="tiny" style={{ display: "block", marginTop: 12 }}>保存理由（8–200 字，记录在操作日志中）</label><textarea aria-label="体验配置保存理由" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={200} rows={2} style={{ width: "100%", marginTop: 4 }} /><button className="l-btn mc" style={{ marginTop: 8 }} disabled={saving || reason.trim().length < 8} onClick={() => void save()}>{saving ? "保存中…" : "保存并回读"}</button></>}
+        {canWrite && <><label className="tiny" style={{ display: "block", marginTop: 12 }}>保存理由（8–200 字，记录在操作日志中）</label><textarea aria-label="体验配置保存理由" value={reason} onChange={(event) => setReason(event.target.value)} maxLength={200} rows={2} style={{ width: "100%", marginTop: 4 }} /><button className="l-btn mc" style={{ marginTop: 8 }} disabled={saving || loading} onClick={() => void save()}>{saving ? "保存中…" : "保存并回读"}</button></>}
+        {error && <div role="alert" className="atint warn" style={{ marginTop: 8 }}>{error}</div>}
+        {success && <div role="status" className="atint" style={{ marginTop: 8 }}>{success}</div>}
       </>}
     </div>
   </section><PublishedContentEditor kind="developerDocs" /><PublishedHowContentEditor /></>;

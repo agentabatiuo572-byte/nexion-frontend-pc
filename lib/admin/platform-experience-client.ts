@@ -51,10 +51,10 @@ export function recommendedExperienceChannels(): ExperienceChannel[] {
 interface ApiResult<T> { code: number; message?: string; data?: T; }
 const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-platform-experience-commands-v1" });
 
-function strictUrl(value: unknown, required: boolean, allowHttp: boolean): string {
+function strictUrl(value: unknown, required: boolean, allowHttp: boolean, allowFragment = false): string {
   const url = typeof value === "string" ? value.trim() : "";
   if (!url && !required) return "";
-  if (!url || /[\s#@]/.test(url)) throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
+  if (!url || /[\s@]/.test(url) || (!allowFragment && url.includes("#"))) throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
   try {
     const parsed = new URL(url);
     const protocols = allowHttp ? ["https:", "http:"] : ["https:"];
@@ -127,7 +127,7 @@ function normalize(raw: unknown): PlatformExperienceConfig {
       };
     }),
     appDownload: {
-      officialUrl: strictUrl(download.officialUrl, source !== "unavailable", false),
+      officialUrl: strictUrl(download.officialUrl, source !== "unavailable", false, true),
       iosUrl: strictUrl(download.iosUrl, false, false),
       androidUrl: strictUrl(download.androidUrl, false, false),
       apkUrl: strictUrl(download.apkUrl, false, false),
@@ -150,12 +150,12 @@ export async function updatePlatformExperienceConfig(
   reason: string,
   operator = "",
 ) {
-  if (!Number.isSafeInteger(config.version) || reason.trim().length < 8) throw new Error("A3_REASON_LENGTH_INVALID");
+  if (!Number.isSafeInteger(config.version) || reason.trim().length < 8 || reason.trim().length > 200) throw new Error("A3_REASON_LENGTH_INVALID");
   if (config.appDownload.source === "official") {
-    strictUrl(config.appDownload.officialUrl, true, false);
-    strictUrl(config.appDownload.iosUrl, false, false);
-    strictUrl(config.appDownload.androidUrl, false, false);
-    strictUrl(config.appDownload.apkUrl, false, false);
+    for (const [field, label] of [["officialUrl", "官方安装链接"], ["iosUrl", "iOS 官方下载链接"], ["androidUrl", "Android 官方下载链接"], ["apkUrl", "APK 下载链接"]] as const) {
+      try { strictUrl(config.appDownload[field], field === "officialUrl", false, field === "officialUrl"); }
+      catch { throw new Error(`${label}需填写有效的 HTTPS 地址，不能包含空格或账号密码${field === "officialUrl" ? "，支持 #download 等页面锚点" : "或页面锚点"}。`); }
+    }
     if (!config.appDownload.version.trim() || !config.appDownload.releaseNotes.zh.trim() || !config.appDownload.releaseNotes.en.trim()) {
       throw new Error("PLATFORM_EXPERIENCE_RELEASE_METADATA_REQUIRED");
     }
