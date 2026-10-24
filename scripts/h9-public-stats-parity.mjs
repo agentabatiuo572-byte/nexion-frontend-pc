@@ -59,7 +59,7 @@ const ADMIN_CLIENT = path.join(ROOT, "lib", "admin", "h9-client.ts");
 const ADMIN_RULES = path.join(ROOT, "lib", "admin", "h9-validation.ts");
 
 /** 派生锚点由服务端在改基数时重置,不给运营手填;分位表是表不是标量。 */
-const NON_SCALAR = new Set(["registeredUsersAnchorAt", "hashratePercentileTable"]);
+const NON_SCALAR = new Set(["registeredUsersAnchorAt", "hashratePercentileTable", "homeDisplayEnabled"]);
 
 const failures = [];
 
@@ -112,6 +112,15 @@ const specSource = read(SPEC, "FEAT-HOME02 规格");
 
 const uniKeys = uniSource ? interfaceKeys(uniSource, "PublicStatsConfig", "前端") : new Set();
 const adminKeys = adminSource ? interfaceKeys(adminSource, "H9PublicStatsValues", "后台") : new Set();
+// Home display settings are consumed by the server batch endpoint, not the legacy publicStats object.
+const HOME_DISPLAY_KEYS = new Set(["homeOnlineCurrent", "homeOnlineStepMin", "homeOnlineStepMax", "homePaidCurrent", "homePaidStepMin", "homePaidStepMax", "homeDisplayEnabled"]);
+for (const key of HOME_DISPLAY_KEYS) {
+  if (!adminKeys.has(key)) failures.push(`A 首页展示控制项缺失: ${key}`);
+}
+const homeService = read(path.join(BACKEND_ROOT, "src/main/java/ffdd/opsconsole/growth/application/HomeDisplayService.java"), "首页批次服务");
+for (const key of HOME_DISPLAY_KEYS) if (!homeService.includes(`"${key}"`)) failures.push(`A 首页批次服务未消费 ${key}`);
+const homeComponent = read(path.join(APP_ROOT, "src/components/home/home-display-stats.vue"), "首页数字组件");
+if (!homeComponent.includes("/api/config/home-display")) failures.push("A 首页未接入共享批次接口");
 const SERVER_PROJECTION_ONLY = new Set(["realUserCount"]);
 // 🔴 常量 / 字段的比对一律用剥掉注释的正文:注释里写「曾经有过 H9_BAND_MAX = 8」不等于代码里还有它。
 //    (子串哨兵不剥注释 = 假阳性,同族坑见 feedback_cards_audit_round_lessons)
@@ -125,7 +134,7 @@ for (const key of uniKeys) {
   if (!adminKeys.has(key)) failures.push(`A 前端有、后台没有:${key} —— 运营改不到这个配置(死配置)`);
 }
 for (const key of adminKeys) {
-  if (!uniKeys.has(key)) failures.push(`A 后台有、前端没有:${key} —— 后台在配一个客户端不消费的字段`);
+  if (!uniKeys.has(key) && !HOME_DISPLAY_KEYS.has(key)) failures.push(`A 后台有、前端没有:${key} —— 后台在配一个客户端不消费的字段`);
 }
 // A2 的循环在 specRows 解析之后(见下),这里只留坑位说明:A 是两侧互比,对「两端一起删、
 // 规格还在」这个形态是盲的 —— 删除向必须锚在规格 ③ 的字段表上反查代码。
@@ -145,7 +154,8 @@ for (const key of fieldKeys) {
 
 // ── C. 值域与规格 ③ 表逐字段相等 ─────────────────────────────────────────
 const specRanges = new Map();
-for (const match of specSource.matchAll(/`H\.publicStats\.([\w$]+)`[^\n]*?\[\s*(-?[\d_]+)\s*,\s*(-?[\d_]+)\s*\]/g)) {
+const homeSpec = read(path.join(ROOT, "docs/h9-home-display.md"), "H9 首页展示规格");
+for (const match of (specSource + "\n" + homeSpec).matchAll(/`H\.publicStats\.([\w$]+)`[^\n]*?\[\s*(-?[\d_]+)\s*,\s*(-?[\d_]+)\s*\]/g)) {
   specRanges.set(match[1], [Number(match[2].replace(/_/g, "")), Number(match[3].replace(/_/g, ""))]);
 }
 if (specSource && specRanges.size === 0) failures.push("C 规格 ③ 表解析出 0 条值域(表结构变了?同步更新本哨兵)");
@@ -373,6 +383,7 @@ for (const matched of (interfaceBody(uniSource, "PublicStatsConfig") ?? "").matc
 }
 if (uniSource && uniDocs.size === 0) failures.push("G 前端 PublicStatsConfig 解析出 0 条字段注释(判据失效)");
 for (const key of fieldKeys) {
+  if (HOME_DISPLAY_KEYS.has(key)) continue; // Home values are validated and consumed by the server batch service.
   const spec = specRanges.get(key);
   if (!spec || uniDocs.size === 0) continue; // 规格缺值域已在 C 报过,不重复刷屏
   const doc = uniDocs.get(key);

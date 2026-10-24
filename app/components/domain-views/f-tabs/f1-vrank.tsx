@@ -63,9 +63,9 @@ function rewardFields(bv: BusinessFormValue): Omit<OpsVRankRewardItem, "id"> {
 function genRewardId(): string { return `vr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`; }
 const isFund = (t: VRankRewardType): boolean => t === "usdt" || t === "nex";
 
-// 门槛按钮按语义分色(易辨认):业绩/金额=lemon green · 人数/分支=cyan · 等级=橙。
+// 门槛按钮按语义分色(易辨认):算力额/金额=lemon green · 人数/分支=cyan · 等级=橙。
 function toneOf(k: string): string {
-  if (k === "selfBuy" || k === "teamGv") return "t-vol";   // 业绩 / 金额
+  if (k === "selfBuy" || k === "teamGv") return "t-vol";   // 算力额 / 金额
   if (k === "directRefs" || k === "legCount") return "t-count"; // 人数 / 分支数
   if (k === "legRank") return "t-rank";                    // 等级
   return "t-vol";
@@ -86,7 +86,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     return (
       <section className="ladder">
         <div className="ladder-h">
-          <span className="ph-ttl">会员等级 13 阶阶梯</span>
+          <span className="ph-ttl">会员等级 {rows.length} 阶阶梯</span>
           <span className="ph-sub">正在读取后端数据</span>
           <span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="cyan">以服务器数据为准</CodeTag></span>
         </div>
@@ -99,7 +99,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     return (
       <section className="ladder">
         <div className="ladder-h">
-          <span className="ph-ttl">会员等级 13 阶阶梯</span>
+          <span className="ph-ttl">会员等级 {rows.length} 阶阶梯</span>
           <span className="ph-sub">后端接口返回失败</span>
         </div>
         <div className="empty">F1 数据加载失败 · {ctx.f1Error}</div>
@@ -112,7 +112,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     return (
       <section className="ladder">
         <div className="ladder-h">
-          <span className="ph-ttl">会员等级 13 阶阶梯</span>
+          <span className="ph-ttl">会员等级 {rows.length} 阶阶梯</span>
           <span className="ph-sub">后端暂无数据</span>
           <span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="cyan">以服务器数据为准</CodeTag></span>
         </div>
@@ -127,7 +127,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const composeTh = (r: VRow): string => {
     const p: string[] = [];
     if (r.selfBuy != null) p.push(`自买 ${r.selfBuy}`);
-    if (r.teamGv != null) p.push(`团队业绩 ${r.teamGv}`);
+    if (r.teamGv != null) p.push(`团队算力额 ${r.teamGv}`);
     if (r.directRefs != null) p.push(`直推 ${r.directRefs}`);
     if (r.legCount != null) p.push(`${r.legCount} 条分支 · 每条 ≥${r.legRank ?? "—"}`);
     return p.length ? p.join(" · ") : "—";
@@ -135,7 +135,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const fieldsOf = (r: VRow): VField[] => {
     const f: VField[] = [];
     if (r.selfBuy != null) f.push({ k: "selfBuy", label: "自买额", cur: r.selfBuy, kind: "text" });
-    if (r.teamGv != null) f.push({ k: "teamGv", label: "团队业绩", cur: r.teamGv, kind: "text" });
+    if (r.teamGv != null) f.push({ k: "teamGv", label: "团队算力额", cur: r.teamGv, kind: "text" });
     if (r.directRefs != null) f.push({ k: "directRefs", label: "直推数", cur: r.directRefs, kind: "number" });
     if (r.legCount != null) f.push({ k: "legCount", label: "达标分支数", cur: r.legCount, kind: "number" });
     // 分支最低等级 = V-Rank 13 阶有限枚举(运营从已存在等级里勾选,不手输「V3」串)。
@@ -228,7 +228,8 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const topN = ctx.leadership?.topN ?? 10;
   // 人口金字塔底注的真实顶部分布(取代历史硬编码 "V8+ 仅 10 人;V12 仅 1 人")。
   const v8plusPop = rows.filter((r) => Number(r.v.replace("V", "")) >= 8).reduce((s, r) => s + r.pop, 0);
-  const v12Pop = rows.find((r) => r.v === "V12")?.pop ?? 0;
+  const highestRank = rows.at(-1)?.v ?? "—";
+  const highestPop = rows.at(-1)?.pop ?? 0;
   // 等级票权串:从 leadership.ranks 真实 votes 派生(取代硬编码 "V3=1 票 … V12=512 票")。
   const voteRanks = ctx.leadership?.ranks ?? [];
   const voteWeightLabel = voteRanks.length > 0
@@ -298,14 +299,14 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         <div className="f-stat"><div className="k">总会员</div><div className="v">{totalMembers.toLocaleString()}</div><div className="sub">含 V0 {v0Pop.toLocaleString()}</div></div>
         <div className="f-stat ok"><div className="k">V3+ 高价值</div><div className="v">{v3plus}</div><div className="sub">≈ {v3plusPct}% · 顶部漏斗</div></div>
         <div className="f-stat cyan"><div className="k">本月晋升</div><div className="v">{ctx.promotionTotal.toLocaleString()}</div><div className="sub">晋升流水 · 初始按本月筛选</div></div>
-        <div className="f-stat cyan"><div className="k">已配奖励等级</div><div className="v">{configuredLevels}</div><div className="sub">全 13 阶 · 运营可增删</div></div>
+        <div className="f-stat cyan"><div className="k">已配奖励等级</div><div className="v">{configuredLevels}</div><div className="sub">全 {rows.length} 阶 · 运营可增删</div></div>
       </div>
 
       <div className="f1-layout-shell">
         <div className="f1-main">
           <section className="ladder">
           <div className="ladder-h">
-            <span className="ph-ttl">会员等级 13 阶阶梯</span>
+            <span className="ph-ttl">会员等级 {rows.length} 阶阶梯</span>
             <span className="ph-sub">门槛 · 奖励 · 在册人数</span>
             <span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="cyan">以服务器数据为准</CodeTag></span>
           </div>
@@ -363,7 +364,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
                 );
               })}
             </div>
-            <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 6, lineHeight: 1.5 }}>按对数刻度展示各等级人数分布 · 真实在册 V8+ {v8plusPop.toLocaleString()} 人 · V12 {v12Pop.toLocaleString()} 人。</div>
+            <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 6, lineHeight: 1.5 }}>按对数刻度展示各等级人数分布 · 真实在册 V8+ {v8plusPop.toLocaleString()} 人 · {highestRank} {highestPop.toLocaleString()} 人。</div>
           </div>
 
           <div className="rail-card">
@@ -419,17 +420,17 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
           </div>
 
           <div className="rail-card">
-            <div className="rc-h">13 阶头衔</div>
+            <div className="rc-h">{rows.length} 阶头衔</div>
             <div className="gov-list">
-              <div className="it">V0-V12 各阶展示头衔 · 已配 <b>{Object.keys(titlesByLevel).length}</b>/13 阶</div>
+              <div className="it">V0–{highestRank} 各阶展示头衔 · 已配 <b>{Object.keys(titlesByLevel).length}</b>/{rows.length} 阶</div>
               <div className="it" style={{ marginTop: 4 }}>用于 PC 与客户端等级名称展示 · 不影响资金计算与晋升判定。</div>
             </div>
             {canWrite && <button type="button" className="f-cta" style={{ marginTop: 8 }} onClick={() => ctx.openActionConfirm({
-              name: "会员等级 13 阶头衔调整",
+              name: "会员等级各阶头衔调整",
               businessForm: {
                 kind: "multi-field",
-                title: "会员等级 13 阶头衔",
-                hint: "V0-V12 各阶展示头衔 · 13 阶均须非空 · 用于 PC 与客户端等级名称展示 · 不影响资金计算与晋升判定。",
+                title: "会员等级各阶头衔",
+                hint: "当前启用等级的展示头衔 · 各阶均须非空 · 用于 PC 与客户端等级名称展示 · 不影响资金计算与晋升判定。",
                 fields: rows.map((r) => ({
                   key: r.v,
                   label: r.v,
@@ -438,19 +439,19 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
                   placeholder: `${r.v} 头衔`,
                 })),
               },
-              detail: "会员等级 13 阶展示头衔 · 13 阶均须非空 · 不影响资金计算与晋升判定 · 用于 PC 与客户端展示。",
+              detail: "会员等级各阶展示头衔 · 各阶均须非空 · 不影响资金计算与晋升判定 · 用于 PC 与客户端展示。",
               run: async (reason, bv) => {
                 if (!bv) throw new Error("请填写头衔");
                 const titles: Record<string, string> = {};
                 for (const r of rows) {
                   const t = (bv[r.v] ?? "").trim();
-                  if (!t) throw new Error(`请填写 ${r.v} 的头衔(13 阶均须非空)`);
+                  if (!t) throw new Error(`请填写 ${r.v} 的头衔(各阶均须非空)`);
                   titles[r.v] = t;
                 }
                 await ctx.updateF1Config("F.vrank.titles", JSON.stringify(titles), reason);
-                ctx.toast("会员等级 13 阶头衔已确认生效");
+                ctx.toast("会员等级各阶头衔已确认生效");
               },
-            })}>配置 13 阶头衔</button>}
+            })}>配置各阶头衔</button>}
           </div>
           </aside>
         </div>

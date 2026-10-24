@@ -206,7 +206,7 @@ export const CONSOLE_NAV: NavDomain[] = [
       // H6 已折入 H5 同页，里程碑在 H5 页面内明确分区展示；不再声明一个后端未登记的独立菜单。
       { id: "H7", name: "代金券", path: "/growth/vouchers", prdAnchor: "H7", batch: "V3", status: "flagship" },
       { id: "H8", name: "新人礼与邀请奖励", path: "/growth/referral-rewards", prdAnchor: "H8", batch: "V3", status: "flagship" },
-      { id: "H9", name: "历史数据展示设置", path: "/growth/public-stats", prdAnchor: "H9", batch: "V3", status: "flagship" },
+      { id: "H9", name: "首页与历史展示设置", path: "/growth/public-stats", prdAnchor: "H9", batch: "V3", status: "flagship" },
     ],
   },
   {

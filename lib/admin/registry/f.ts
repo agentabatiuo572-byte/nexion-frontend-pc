@@ -8,7 +8,7 @@ import { PORTED_EMPTY_CONTENT } from "./ported-content";
 export const DOMAIN_F: ModuleEntry[] = [
   {
     path: "/network/v-rank",
-    summary: "会员等级体系(V0–V12)的晋升门槛和权益。等级由服务器判定;改门槛或权益走操作确认并记入 A2 审计。",
+    summary: "会员等级体系(V0–V8)的晋升门槛和权益。等级由服务器判定;改门槛或权益走操作确认并记入 A2 审计。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
@@ -18,7 +18,7 @@ export const DOMAIN_F: ModuleEntry[] = [
   },
   {
     path: "/network/binary",
-    summary: "平衡匹配结算引擎。把团队分成 A、B 两路,按业绩较小的一路来匹配计酬;新成员自动归位补到弱的一侧,并设每日封顶。结算周期(每日/每周/每月)与未匹配业绩处理(每月清零/每次对碰清零/转结)可配,改封顶 / 匹配比例 / 结算周期走操作确认。",
+    summary: "平衡匹配结算引擎。把团队分成 A、B 两路,按算力额较小的一路来匹配计酬;新成员自动归位补到弱的一侧,并设每日封顶。结算周期(每日/每周/每月)与未匹配算力额处理(每月清零/每次对碰清零/转结)可配,改封顶 / 匹配比例 / 结算周期走操作确认。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

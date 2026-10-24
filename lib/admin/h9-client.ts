@@ -27,6 +27,13 @@ export interface H9PercentileBand {
 
 /** 与前端 PublicStatsConfig 逐键等同(8 键)。 */
 export interface H9PublicStatsValues {
+  homeOnlineCurrent: number;
+  homeOnlineStepMin: number;
+  homeOnlineStepMax: number;
+  homePaidCurrent: number;
+  homePaidStepMin: number;
+  homePaidStepMax: number;
+  homeDisplayEnabled: boolean;
   fleetDevices: number;
   onlineRatePct: number;
   onlineJitter: number;
@@ -55,7 +62,7 @@ export interface H9PublicStatsOverview {
 
 /** 单个数值参数的运营面定义:中文标签 + 英文标识 + 合法域(逐字取自规格 FEAT-HOME02b ③)。 */
 export interface H9FieldDef {
-  key: keyof Omit<H9EditableValues, "hashratePercentileTable">;
+  key: keyof Omit<H9EditableValues, "hashratePercentileTable" | "homeDisplayEnabled">;
   /** 运营可读中文名(页面主标)。 */
   label: string;
   /** 单位,无量纲留空。 */
@@ -70,6 +77,13 @@ export interface H9FieldDef {
 }
 
 export const H9_FIELDS: readonly H9FieldDef[] = [
+  { key: "homeOnlineCurrent", label: "在线设备当前值", unit: "台", min: 0, max: 9000000000000, step: 1, integer: true, hint: "用于首页数字展示；仅开启后按区间累计，不改变资金账单。" },
+  { key: "homeOnlineStepMin", label: "每秒增加设备下限", unit: "台", min: 0, max: 1000000, step: 1, integer: true, hint: "用于首页数字展示；仅开启后按区间累计，不改变资金账单。" },
+  { key: "homeOnlineStepMax", label: "每秒增加设备上限", unit: "台", min: 0, max: 1000000, step: 1, integer: true, hint: "用于首页数字展示；仅开启后按区间累计，不改变资金账单。" },
+  { key: "homePaidCurrent", label: "累计已发放当前值", unit: "USD", min: 0, max: 9000000000000, step: 0.01, integer: false, hint: "用于首页数字展示；仅开启后按区间累计，不改变资金账单。" },
+  { key: "homePaidStepMin", label: "每秒增加金额下限", unit: "USD", min: 0, max: 1000000, step: 0.01, integer: false, hint: "用于首页数字展示；仅开启后按区间累计，不改变资金账单。" },
+  { key: "homePaidStepMax", label: "每秒增加金额上限", unit: "USD", min: 0, max: 1000000, step: 0.01, integer: false, hint: "用于首页数字展示；仅开启后按区间累计，不改变资金账单。" },
+
   {
     key: "fleetDevices",
     label: "历史估算设备总数",
@@ -192,6 +206,13 @@ function bands(value: unknown, field: string): H9PercentileBand[] {
 function values(value: unknown, field: string): H9PublicStatsValues {
   const raw = record(value, field);
   return {
+    homeOnlineCurrent: nonNegative(raw.homeOnlineCurrent, `${field}.homeOnlineCurrent`),
+    homeOnlineStepMin: nonNegative(raw.homeOnlineStepMin, `${field}.homeOnlineStepMin`),
+    homeOnlineStepMax: nonNegative(raw.homeOnlineStepMax, `${field}.homeOnlineStepMax`),
+    homePaidCurrent: nonNegative(raw.homePaidCurrent, `${field}.homePaidCurrent`),
+    homePaidStepMin: nonNegative(raw.homePaidStepMin, `${field}.homePaidStepMin`),
+    homePaidStepMax: nonNegative(raw.homePaidStepMax, `${field}.homePaidStepMax`),
+    homeDisplayEnabled: typeof raw.homeDisplayEnabled === "boolean" ? raw.homeDisplayEnabled : invalid(`${field}.homeDisplayEnabled`),
     fleetDevices: nonNegative(raw.fleetDevices, `${field}.fleetDevices`),
     onlineRatePct: nonNegative(raw.onlineRatePct, `${field}.onlineRatePct`),
     onlineJitter: nonNegative(raw.onlineJitter, `${field}.onlineJitter`),

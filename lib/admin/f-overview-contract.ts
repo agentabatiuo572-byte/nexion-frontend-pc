@@ -129,7 +129,8 @@ export function assertF1Overview(value: unknown): asserts value is JsonRecord {
   const row = record(value, "F1");
   domain(row, "F1");
   const ranks = array(row, "vrankRows", "F1");
-  uniqueCodes(ranks, "F1", "vrankRows", Array.from({ length: 13 }, (_, index) => `V${index}`), "v");
+  if (ranks.length < 1 || ranks.length > 13) invalid("F1", "vrankRows");
+  uniqueCodes(ranks, "F1", "vrankRows", Array.from({ length: ranks.length }, (_, index) => `V${index}`), "v");
   ranks.forEach((value, index) => {
     const rank = record(value, "F1", `vrankRows[${index}]`);
     text(rank.label, "F1", `vrankRows[${index}].label`);

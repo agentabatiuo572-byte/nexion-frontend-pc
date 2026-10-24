@@ -45,6 +45,8 @@ type ScalarDrafts = Record<ScalarKey, string>;
 const H9_BAND_STEP = 0.1;
 
 const SECTIONS: { title: string; sub: string; keys: ScalarKey[] }[] = [
+  { title: "首页在线设备", sub: "当前值作为保存后的起点；开启后，每秒按区间随机增加", keys: ["homeOnlineCurrent", "homeOnlineStepMin", "homeOnlineStepMax"] },
+  { title: "首页累计已发放", sub: "金额保留两位小数；展示设置不改变实际资金账单", keys: ["homePaidCurrent", "homePaidStepMin", "homePaidStepMax"] },
   { title: "历史规模配置", sub: "仅供历史估算；正式 App 对外在线设备读取服务端实测聚合", keys: ["fleetDevices", "onlineRatePct", "onlineJitter"] },
   { title: "历史用户配置", sub: "仅供历史估算；正式 App 对外注册账户读取服务端真实记录", keys: ["registeredUsersBase", "registeredUsersMonthlyGrowthPct"] },
   { title: "历史排名估算", sub: "仅用于本地估算；不改变正式 App 当前服务端名次", keys: ["virtualUserCount"] },
@@ -144,7 +146,10 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
 
   const fieldErrors = useMemo(() => {
     if (!drafts) return {} as Record<ScalarKey, string>;
-    return Object.fromEntries(H9_FIELDS.map((field) => [field.key, scalarError(field, drafts[field.key])])) as Record<ScalarKey, string>;
+    const errors = Object.fromEntries(H9_FIELDS.map((field) => [field.key, scalarError(field, drafts[field.key])])) as Record<ScalarKey, string>;
+    if (num(drafts.homeOnlineStepMin) > num(drafts.homeOnlineStepMax)) errors.homeOnlineStepMax = "上限不能小于下限";
+    if (num(drafts.homePaidStepMin) > num(drafts.homePaidStepMax)) errors.homePaidStepMax = "上限不能小于下限";
+    return errors;
   }, [drafts]);
 
   const rowErrors = useMemo(() => h9BandRowErrors(bands), [bands]);
@@ -157,6 +162,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   const nextValues: H9EditableValues | null = useMemo(() => {
     if (!drafts || !allValid) return null;
     return {
+      homeDisplayEnabled: data?.values.homeDisplayEnabled ?? false,
       ...(Object.fromEntries(H9_FIELDS.map((field) => [field.key, num(drafts[field.key])])) as Record<ScalarKey, number>),
       hashratePercentileTable: bands.map((row) => ({ tops: num(row.tops), cumPct: num(row.cumPct) })),
     } as H9EditableValues;
@@ -208,23 +214,25 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     ctx.toast("已回填出厂默认值 —— 还没保存,点「保存变更」走确认后才生效");
   };
 
-  const save = () => {
+  const save = (enabled?: boolean) => {
     if (!data || !nextValues) return;
+    const submitted = { ...nextValues, homeDisplayEnabled: enabled ?? data.values.homeDisplayEnabled };
     // 🔴 这里不铸防重复提交编号:键由 updateH9PublicStats 从槽位存储按「值 + 版本 + 理由」取,
     //    否则每点一次「保存变更」都是一条全新命令,失败横幅承诺的「同一个防重复提交编号」就是空的。
     const diffs = H9_FIELDS
-      .filter((field) => nextValues[field.key] !== data.values[field.key])
-      .map((field) => `${field.label}:${data.values[field.key]}${field.unit} → ${nextValues[field.key]}${field.unit}`);
-    if (!sameBands(nextValues.hashratePercentileTable, data.values.hashratePercentileTable)) {
-      diffs.push(`算力分位表:${bandsText(data.values.hashratePercentileTable)} → ${bandsText(nextValues.hashratePercentileTable)}`);
+      .filter((field) => submitted[field.key] !== data.values[field.key])
+      .map((field) => `${field.label}:${data.values[field.key]}${field.unit} → ${submitted[field.key]}${field.unit}`);
+    if (!sameBands(submitted.hashratePercentileTable, data.values.hashratePercentileTable)) {
+      diffs.push(`算力分位表:${bandsText(data.values.hashratePercentileTable)} → ${bandsText(submitted.hashratePercentileTable)}`);
     }
+    if (submitted.homeDisplayEnabled !== data.values.homeDisplayEnabled) diffs.push(submitted.homeDisplayEnabled ? "开启首页数字增长" : "暂停首页数字增长，保留当前值");
     const fleetChanged = nextValues.fleetDevices !== data.values.fleetDevices;
     const baseChanged = nextValues.registeredUsersBase !== data.values.registeredUsersBase;
     const virtualZero = nextValues.virtualUserCount === 0 && data.values.virtualUserCount !== 0;
     const nextDaily = nextValues.fleetDevices * data.publishedDailyUsdPerDevice;
 
     ctx.openActionConfirm({
-      action: "保存历史数据展示设置",
+      action: "保存首页与历史展示设置",
       detail: <>
         <div>本次改动({diffs.length} 项):</div>
         {diffs.map((line) => <div key={line}>· {line}</div>)}
@@ -235,7 +243,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
         {baseChanged && <div>⚠️ 改了历史注册基数，估算起点会重置为本次保存时刻；正式 App 的注册账户总数仍来自真实账户记录。</div>}
         {virtualZero && <div>虚拟人口填了 0:历史本地估算分母仅含真实注册人口({int(data.realUserCount)} 人)。此参数不改变正式 App 当前服务端名次。</div>}
         <div>本次提交基于配置版本 v{data.version};并发改动会返回 409,任何一项不合法都整组不保存记录。</div>
-        <div>保存后仅影响历史数据展示设置；操作理由会写入审计。</div>
+        <div>首页数字仅在开启后增长，暂停保留当前值；页面最多 60 秒同步状态。操作理由会写入审计。</div>
       </>,
       // 🔴 不挂 amplifies:它的语义是「放大资金流出方向,系统会先检查备付金覆盖率」(K 域契约),
       //    而本页改的是历史数据展示设置,一分钱都不流出,也没传 coverage —— 挂上等于在弹窗里
@@ -245,12 +253,12 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       completionCopy: "保存成功后更新历史数据展示设置并写入审计",
       run: async (reason) => {
         try {
-          const saved = await updateH9PublicStats(nextValues, data.version, reason);
+          const saved = await updateH9PublicStats(submitted, data.version, reason);
           setData(saved);
           setDrafts(draftsFrom(saved.values));
           setBands(bandDraftsFrom(saved.values));
           setSaveError(null);
-          ctx.toast(`历史数据展示设置已保存 · 版本 v${saved.version} · 已记审计`);
+          ctx.toast(`展示设置已保存 · 版本 v${saved.version} · 已记审计`);
         } catch (cause) {
           const message = formatAdminApiError(cause instanceof Error ? cause.message : null, "H9_SAVE_FAILED");
           setSaveError(message);
@@ -261,11 +269,11 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     });
   };
 
-  if (loading && !data) return <section className="l-card"><div className="l-b">历史数据展示设置加载中...</div></section>;
+  if (loading && !data) return <section className="l-card"><div className="l-b">展示设置加载中...</div></section>;
 
   if (!data || !drafts) {
     return <section className="l-card">
-      <div className="l-h"><span className="ttl">历史数据展示设置暂时读不到</span></div>
+      <div className="l-h"><span className="ttl">展示设置暂时读不到</span></div>
       <div className="l-b">
         {/* 文案拼接走 h9PlaceholderCopy:字典整句自带句号,直接再拼「。」就是双句号(P2-15 回归)。 */}
         <div className="htint danger">{h9PlaceholderCopy(error)}</div>
@@ -275,6 +283,12 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   }
 
   return <>
+    <section className="l-card" style={{ marginBottom: 16 }}>
+      <div className="l-h"><span className="ttl">首页数字增长 · {data.values.homeDisplayEnabled ? "已开启" : "已暂停"}</span>
+        {canWrite && <button className="l-btn" disabled={!allValid} onClick={() => save(!data.values.homeDisplayEnabled)}>{data.values.homeDisplayEnabled ? "暂停增长" : "开启增长"}</button>}
+      </div>
+      <div className="l-b">开启后从当前值累计；暂停保留已累计数值，再次开启继续。保存数值或区间不会自动开启。首页展示与实际资金账单独立。</div>
+    </section>
     <div className="f-stats">
       <div className="f-stat cyan"><div className="k">历史设备配置</div><div className="v">{int(data.values.fleetDevices)}</div><div className="sub">非实测设备数，不用于对外事实</div></div>
       <div className="f-stat"><div className="k">历史在线估算</div><div className="v">{int(data.values.fleetDevices * data.values.onlineRatePct / 100)}</div><div className="sub">配置设备数 × 配置占比 {data.values.onlineRatePct}%</div></div>
@@ -292,13 +306,13 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     <div className="two-col">
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">历史数据展示设置</span>
+          <span className="ttl">首页与历史展示设置</span>
           <span className="sub">· 生效版本 v{data.version} · {when(Date.parse(data.effectiveAt))} · {canWrite ? "可改" : "当前角色只读"}</span>
           <div className="r">
             <button className="l-btn sm" onClick={() => void load()}>刷新</button>
             {canWrite && <button className="l-btn sm" onClick={fillDefaults}>恢复默认</button>}
             {canWrite && <button className="l-btn sm" disabled={!dirty} onClick={restoreCurrent}>放弃改动</button>}
-            {canWrite && <button className="l-btn mc" disabled={!dirty || !allValid} title={!dirty ? "没有改动" : !allValid ? "有参数不合法,先按红字改" : undefined} onClick={save}>保存变更</button>}
+            {canWrite && <button className="l-btn mc" disabled={!dirty || !allValid} title={!dirty ? "没有改动" : !allValid ? "有参数不合法,先按红字改" : undefined} onClick={() => save()}>保存变更</button>}
           </div>
         </div>
         <div className="l-b">
@@ -364,7 +378,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
             </tbody>
           </table>
           <div className="htint warn" style={{ marginTop: 10 }}>
-            这些估算不作为正式 App 的在线设备、注册账户、已付金额或信任中心财务数据。真实数字由服务端业务表聚合，并附统计时刻。
+            这些历史估算与上方首页展示设置独立；不改变实际账户、设备或资金账单。
           </div>
         </div>
       </section>
@@ -405,7 +419,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     </section>
 
     <p className="f-foot">
-      <b>这页的数会去哪</b>:保存 → 服务端保留历史数据展示设置并写审计。正式 App 对外事实读取真实聚合；个人名次由独立服务端排名接口提供。改动记录去{" "}
+      <b>这页的数会去哪</b>:保存首页与历史展示设置并写审计。只有开启后首页数字才累计，个人名次和实际资金账单不受影响。改动记录去{" "}
       <Link href="/platform/audit" className="l-btn sm">A2 审批与审计</Link>{" "}查。
     </p>
   </>;
