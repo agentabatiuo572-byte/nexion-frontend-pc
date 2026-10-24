@@ -28,7 +28,7 @@ export const DOMAIN_M: ModuleEntry[] = [
   },
   {
     path: "/service/kb-sla",
-    summary: "维护帮助中心的常见问答,设定每类工单多久要首次响应、多久要解决。改动要确认并填理由。",
+    summary: "维护帮助中心的常见问答。修改内容须确认并填写理由。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

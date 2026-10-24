@@ -431,7 +431,7 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
   const newReplyTemplate = () =>
     canManageM5Content && sessionTemplatesAvailable && !writePending && openActionConfirm({
       action: <>新增即时回复模板</>,
-      detail: <>新增草稿后进入坐席快捷回复模板库,发布后可在 M2/M3 回复框中选用。</>,
+      detail: <>新增草稿后进入坐席快捷回复模板库，发布后可在专属会话回复框中选用。</>,
       amplifies: false,
       edit: { kind: "text", current: "", unit: "模板文案" },
       reasonMin: 8,
