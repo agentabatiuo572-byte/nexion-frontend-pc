@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { fetchEventRules, parseEventRule, updateEventRule, type EventRuleView } from "../lib/admin/event-rules-client";
+import { fetchEventRules, fetchEventVouchers, parseEventRule, updateEventRule, type EventRuleView } from "../lib/admin/event-rules-client";
 
 const remote = vi.hoisted(() => ({ request: vi.fn(), operator: "admin-a" }));
 vi.mock("../lib/admin/h-client", () => ({ growthRequest: remote.request }));
@@ -11,6 +11,26 @@ beforeEach(() => {
   vi.stubGlobal("window", { sessionStorage: { getItem: (key: string) => store.get(key) ?? null, setItem: (key: string, value: string) => store.set(key, value), removeItem: (key: string) => store.delete(key) } });
 });
 afterEach(() => vi.unstubAllGlobals());
+it("reads actual percentage vouchers and retains their paused state for the picker", async () => {
+  remote.request.mockResolvedValue({ vouchers: [
+    { id: "BF20", name: "黑五八折", type: "percent", percent: 20, status: "active" },
+    { id: "OLD20", name: "旧八折券", type: "percentage", percent: "20", status: "paused" },
+    { id: "CASH", name: "现金券", type: "fixed", status: "active" },
+  ] });
+  expect(await fetchEventVouchers()).toEqual([
+    { id: "BF20", name: "黑五八折", percent: 20, status: "active" },
+    { id: "OLD20", name: "旧八折券", percent: 20, status: "paused" },
+  ]);
+  expect(remote.request).toHaveBeenCalledWith("/vouchers");
+});
+it("does not manufacture an empty voucher catalogue on invalid responses or request failure", async () => {
+  for (const response of [{}, { vouchers: null }, { vouchers: [null] }, ...["invalid", true, [20]].map(percent => ({ vouchers: [{ id: "BF20", name: "黑五八折", type: "percent", percent, status: "active" }] }))]) {
+    remote.request.mockResolvedValueOnce(response);
+    await expect(fetchEventVouchers()).rejects.toThrow("优惠券目录读取失败");
+  }
+  remote.request.mockRejectedValueOnce(new Error("forbidden"));
+  await expect(fetchEventVouchers()).rejects.toThrow("forbidden");
+});
 it("rejects an incomplete rule/readiness response without manufacturing an enabled state", async () => {
   expect(parseEventRule(row())).toEqual(row());
   expect(() => parseEventRule({ ...row(), readiness: null })).toThrow();

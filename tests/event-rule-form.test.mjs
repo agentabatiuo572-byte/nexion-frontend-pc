@@ -6,7 +6,9 @@ test('each event kind edits its actual rule fields, with separate boost actions'
   assert.deepEqual(eventRuleFields({kind:'boost', rules:{action:'CHECKIN_MULTIPLIER'}}).map(f=>f.key), ['multiplier','weekdays','timeZone','budgetNex']);
   assert.deepEqual(eventRuleFields({kind:'boost', rules:{action:'REINVEST_TICKETS'}}).map(f=>f.key), ['thresholdUsdt','ticketsPerThreshold','ticketBudget']);
   assert.equal(eventRuleFields({kind:'referral',rules:{}}).some(f=>f.key==='giftProductNo'),true);
-  assert.deepEqual(eventRuleFields({kind:'seasonal',rules:{}}),eventRuleFields({kind:'discount',rules:{}}));
+  assert.deepEqual(eventRuleFields({kind:'seasonal',rules:{}}).map(f=>f.key),['voucherId','promotionActivityId','extraGenesisTickets','ticketBudget']);
+  assert.equal(eventRuleFields({kind:'seasonal',rules:{}})[0].type,'voucher');
+  assert.equal(eventRuleFields({kind:'discount',rules:{}}).some(f=>f.key==='voucherId'),false);
   assert.deepEqual(eventRuleFields({kind:'wheel',rules:{}}),[]);
 });
 test('regional inputs round trip without dropping countries and reject ambiguous rows', () => {

@@ -14,6 +14,7 @@ export interface EventRuleView {
   readiness: { ready: boolean; missing: string[] };
 }
 export type EventRuleChange = Pick<EventRuleView, "enabled" | "startsAt" | "endsAt" | "rules">;
+export interface EventVoucherOption { id: string; name: string; percent: number; status: "active" | "paused"; }
 const attempts = createSlotAttemptStore({ storageKey: "uvel-admin-event-rule-attempts-v1" });
 export function parseEventRule(value: unknown): EventRuleView {
   const row = value as EventRuleView | null;
@@ -28,6 +29,18 @@ export async function fetchEventRules(): Promise<EventRuleView[]> {
   const result = await growthRequest<{ rules: unknown[] }>("/event-rules");
   if (!Array.isArray(result?.rules)) throw new Error("活动规则读取失败，请刷新后重试。");
   return result.rules.map(parseEventRule);
+}
+export async function fetchEventVouchers(): Promise<EventVoucherOption[]> {
+  const result = await growthRequest<{ vouchers: Record<string, unknown>[] }>("/vouchers");
+  if (!Array.isArray(result?.vouchers)) throw new Error("优惠券目录读取失败，请重试。");
+  return result.vouchers.flatMap(row => {
+    if (!row || typeof row.id !== "string" || !row.id.trim() || typeof row.name !== "string" || !row.name.trim()
+      || !["fixed", "percent", "percentage"].includes(String(row.type)) || !["active", "paused"].includes(String(row.status))) throw new Error("优惠券目录读取失败，请重试。");
+    if (row.type === "fixed") return [];
+    const percent = Number(row.percent);
+    if (!["number", "string"].includes(typeof row.percent) || !Number.isFinite(percent) || percent <= 0 || percent > 100) throw new Error("优惠券目录读取失败，请重试。");
+    return [{ id: row.id.trim(), name: row.name.trim(), percent, status: row.status as EventVoucherOption["status"] }];
+  });
 }
 export async function updateEventRule(eventCode: string, change: EventRuleChange, expectedRevision: number, reason: string): Promise<EventRuleView> {
   const body = JSON.stringify({ ...change, expectedRevision, reason });
