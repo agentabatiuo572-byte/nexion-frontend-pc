@@ -27,6 +27,7 @@ import {
   h9BandMeaning,
   h9BandRowErrors,
   h9DraftNumber,
+  h9DraftText,
   h9PlaceholderCopy,
 } from "../lib/admin/h9-validation.ts";
 import { formatAdminApiError } from "../lib/admin/error-messages.ts";
@@ -148,4 +149,13 @@ test("分位档含义按累计占比表述，100% 边界不读成「超过 100% 
 
   // 空值仍走占位,不抛错也不编数。
   assert.match(h9BandMeaning("", ""), /—/);
+});
+
+
+test("H9 保存回读保留实际小数，不按输入步长舍入或制造未保存修改", () => {
+  for (const value of [2.91, 2.9, 20.25, 1.125, 97.6, 0.0000001, 0, 28432]) {
+    assert.equal(h9DraftText(value), String(value));
+    assert.equal(h9DraftNumber(h9DraftText(value)), value);
+  }
+  assert.equal(h9DraftText(Number.NaN), "");
 });

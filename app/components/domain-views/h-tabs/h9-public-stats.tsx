@@ -32,6 +32,7 @@ import {
   H9_BAND_TOPS_MIN,
   h9BandRowErrors,
   h9DraftNumber as num,
+  h9DraftText,
   h9BandMeaning,
   h9PlaceholderCopy,
   type H9BandDraft as BandDraft,
@@ -60,42 +61,17 @@ const money = (value: number) => (Number.isFinite(value) ? `$${Math.round(value)
 const money2 = (value: number) => (Number.isFinite(value) ? `$${value.toFixed(2)}` : "—");
 const when = (ms: number) => (Number.isFinite(ms) && ms > 0 ? new Date(ms).toLocaleString("zh-CN", { hour12: false }) : "—");
 
-/**
- * 按业务精度规范化一个数值草稿(zentao #200)。
- *
- * 服务端返回的是 JSON 数字,落到 JS 里就是 float64:String(97.6) 可能得到
- * 97.5999984741211,于是输入控件的 value 与可访问值暴露浮点尾差 —— 视觉文本是
- * 97.6,读屏与自动化读到 18 位小数,编辑后还会把尾差提交回去。
- *
- * 精度由字段自己声明:标量用 field.step 的小数位数,分位表用 step 0.1。这不是新增
- * 业务规则,而是把「配置允许的小数位」这一既有事实用于**展示与提交**。
- */
-function decimalsForStep(step: number): number {
-  if (!Number.isFinite(step) || step <= 0) return 0;
-  const text = step.toString();
-  const dot = text.indexOf(".");
-  return dot < 0 ? 0 : text.length - dot - 1;
-}
-
-function normalizeNumberText(value: number, decimals: number): string {
-  if (!Number.isFinite(value)) return "";
-  // toFixed 会把 97.5999984741211 收敛到 97.6;再去掉无意义的尾随零,
-  // 让「整数」字段(decimals=0)不显示成 28432.0。
-  const fixed = value.toFixed(decimals);
-  return decimals > 0 ? fixed.replace(/0+$/, "").replace(/\.$/, "") : fixed;
-}
-
 function draftsFrom(values: H9PublicStatsValues): ScalarDrafts {
   return Object.fromEntries(H9_FIELDS.map((field) => [
     field.key,
-    normalizeNumberText(values[field.key], field.integer ? 0 : decimalsForStep(field.step)),
+    h9DraftText(values[field.key]),
   ])) as ScalarDrafts;
 }
 
 function bandDraftsFrom(values: H9PublicStatsValues): BandDraft[] {
   return values.hashratePercentileTable.map((band) => ({
-    tops: normalizeNumberText(band.tops, decimalsForStep(H9_BAND_STEP)),
-    cumPct: normalizeNumberText(band.cumPct, decimalsForStep(H9_BAND_STEP)),
+    tops: h9DraftText(band.tops),
+    cumPct: h9DraftText(band.cumPct),
   }));
 }
 

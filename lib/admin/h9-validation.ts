@@ -24,10 +24,15 @@ export const H9_BAND_TOPS_MIN = 0;
 /** 分位表单行的表单草稿(输入框原文,未解析)。 */
 export type H9BandDraft = { tops: string; cumPct: string };
 
+/** 文本控件保留服务端实际精度；step 是输入步长，不能用于舍入已保存配置。 */
+export function h9DraftText(value: number): string {
+  return Number.isFinite(value) ? String(value) : "";
+}
+
 /** 表单草稿 → 数字:空串 / 非纯数字一律 NaN(不让 `Number("")===0` 把空输入当合法值)。 */
 export function h9DraftNumber(value: string): number {
   const text = value.trim();
-  if (!text || !/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(text)) return Number.NaN;
+  if (!text || !/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(text)) return Number.NaN;
   return Number(text);
 }
 
