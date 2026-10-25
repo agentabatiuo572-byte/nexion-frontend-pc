@@ -60,8 +60,8 @@ function component(file,imports,privateExport=''){
 }
 const ui=component('h4-promotion-ui.tsx',name=>name.startsWith('react')?require(name):name.endsWith('error-messages')?{displayAdminError:e=>e.message}:{});
 const activity={activityId:'A1',name:'原活动',state:'DRAFT',current:{revision:1,draft:{}},impact:{}};
-function page({catalog={data:{},loading:false,error:null},list={data:{},loading:false,error:null},current=activity,error=null,busy=false,screen='edit',query={limit:20},previous=[],pending=null,routeReady=true,old=false}={}){
-  const states={1:2,2:old,3:screen,4:'A1',5:current,6:error,7:busy,11:pending,15:query,16:previous,17:routeReady};let stateIndex=0,readIndex=0;const calls=[],readGates=[],effects=[];
+function page({catalog={data:{},loading:false,error:null},list={data:{},loading:false,error:null},current=activity,error=null,busy=false,screen='edit',query={limit:20},previous=[],pending=null,routeReady=true,old=false,template=null,copy=null,notice='',deletedId=''}={}){
+  const states={1:2,2:old,3:screen,4:'A1',5:current,6:error,7:busy,9:template,10:copy,11:pending,12:notice,15:query,16:previous,17:routeReady,20:deletedId};let stateIndex=0,readIndex=0;const calls=[],readGates=[],effects=[];
   const fakeUi=new Proxy({...ui,useRead:(_loader,_deps,enabled=true)=>{const i=readIndex++;readGates.push(enabled);return {...[catalog,list][i],reload:()=>calls.push(i===0?'catalog':'list')};}},{get:(obj,key)=>key in obj?obj[key]:()=>null});
   const Editor=()=>null;
   const H4=component('h4-promotions.tsx',name=>{
@@ -504,5 +504,24 @@ test('successful recovered deletion returns to list and never opens the deleted 
     await dialog.props.onSuccess({targetId:'A1',resource:{type:'PROMOTION',id:'A1'}});
     assert.equal(restored.states[3],'list');assert.equal(restored.states[4],'');assert.equal(restored.states[5],null);assert.equal(restored.states[20],'A1');
     assert.deepEqual(restored.calls,['list']);assert.deepEqual(restored.states[15],{limit:20});
+  } finally {globalThis.location=originalLocation;globalThis.history=originalHistory;}
+});
+
+
+test('creating or copying an activity clears the previous deletion feedback before entering its editor', async () => {
+  const originalLocation=globalThis.location,originalHistory=globalThis.history;
+  try {
+    globalThis.location={href:'https://local.test/growth/events'};
+    globalThis.history={pushState(){}};
+    for (const input of [{template:'SKU_GIFT'},{copy:{activityId:'COPY-SOURCE',revision:1,name:'source'}}]) {
+      const state=page({...input,notice:'活动已删除，历史记录保留。',deletedId:'DELETED-OLD'});
+      assert(state.nodes.some(node=>node.type===ui.Button&&node.props.children==='查看历史记录'));
+      const dialog=state.nodes.find(node=>node.type===ui.ConfirmCommand&&['createPromotion','copyPromotion'].includes(node.props.intent.operation));
+      assert(dialog);
+      await dialog.props.onSuccess({targetId:'A1',resource:{type:'PROMOTION',id:'A1'}});
+      assert.equal(state.states[3],'edit');assert.equal(state.states[4],'A1');
+      assert.equal(state.states[12],'');assert.equal(state.states[20],'');
+      assert.equal(state.states[9],null);assert.equal(state.states[10],null);
+    }
   } finally {globalThis.location=originalLocation;globalThis.history=originalHistory;}
 });

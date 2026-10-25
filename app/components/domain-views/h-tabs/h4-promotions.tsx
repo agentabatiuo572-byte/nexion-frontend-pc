@@ -61,7 +61,7 @@ export default function H4Promotions({ ctx, legacy }: {
     const refresh = async (nextStep?: number) => { if (!id)
         return; const latest = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(id)}`); if(nextStep!==undefined)changeStep(nextStep); setActivity(latest); reloadList(); };
     const afterCreate = async (result: CommandReceipt) => { if (!result.resource)
-        throw new Error('创建结果暂无法确认，请核查原操作。'); const target = result.resource.type === 'VERSION' ? result.resource.id.slice(0, result.resource.id.lastIndexOf(':')) : result.resource.id; const saved = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(target)}`); setActivity(saved); setTemplate(null); setCreating(false); setCopy(null); reloadList(); navigate('edit', target); };
+        throw new Error('创建结果暂无法确认，请核查原操作。'); const target = result.resource.type === 'VERSION' ? result.resource.id.slice(0, result.resource.id.lastIndexOf(':')) : result.resource.id; const saved = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(target)}`); setActivity(saved); setTemplate(null); setCreating(false); setCopy(null); setNotice(''); setDeletedId(''); reloadList(); navigate('edit', target); };
     const openDelete = async (target: string) => {
         if (!can('growth_promotion_archive') || deleteLoading) return;
         setDeleteLoading(true); setNotice(''); setDeletedId('');
