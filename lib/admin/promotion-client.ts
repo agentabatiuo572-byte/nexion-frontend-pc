@@ -24,6 +24,7 @@ export function promotionErrorMessage(code: string | undefined, status = 0): str
   const key = code && /^[A-Z][A-Z0-9_]*$/.test(code) ? code : undefined;
   if (status === 403) return '当前账户没有此操作权限，请返回或联系有权限的审核人员。';
   if (status === 503) return '活动服务暂时不可用，请稍后重试。';
+  if (key === 'PROMOTION_STATE_INVALID') return '当前活动状态不支持此操作，请刷新后核对；只有可编辑草稿或已结束活动可以删除。';
   if (key === 'AUTHORITATIVE_PAGE_INVALID') return '当前资料暂无法确认，相关操作已停用；请刷新后重试。';
   if (key === 'PROMOTION_DISCOUNT_EXCEEDS_LINE_AMOUNT') return '订单立减超过对应商品扣除已有优惠后的应付金额，请调低立减金额或调整购买规则。';
   if (key === 'PROMOTION_DISCOUNT_REQUIRES_PAYMENT') return '活动立减后整单仍需保留大于 0 的应付金额，请调整购买数量或活动配置。';

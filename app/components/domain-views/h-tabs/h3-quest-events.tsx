@@ -35,6 +35,8 @@ import {
   updateH3QuestEventBinding,
   deleteH3QuestEventBinding,
   createH4QuestEvent,
+  deleteH4QuestEvent,
+  pendingH4EventDeletes,
   createH4WheelTier,
   updateH4WheelProbabilities,
   updateH4WheelTier,
@@ -46,6 +48,7 @@ import type { HCtx } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { isDeletableQuestEvent } from "@/lib/admin/activity-delete";
 import H4EventRules from "./h4-event-rules";
 import H4GenesisRaffle from "./h4-genesis-raffle";
 
@@ -58,6 +61,9 @@ type QuestEvent = {
   name: string;
   kind?: string;
   state: EventState;
+  deleteState?: "draft" | EventState;
+  deleteVersion?: string;
+  deletable?: boolean;
   reward?: string;
   description?: string;
   rewardName?: string;
@@ -424,6 +430,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const { toast, openActionConfirm, openConfirm } = ctx;
   const canModuleWrite = ctx.can(section === "events" ? "growth_h4_write" : "growth_h3_write");
   const canWheelWrite = ctx.can("growth_h4_wheel_pool_write");
+  const [, pendingDeleteChanged] = useState(0);
   const [model, setModel] = useState<H3Model | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -976,6 +983,22 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         <button className="l-btn sm" onClick={() => openMissionArchive(task, label, monthly)} disabled={!canModuleWrite}>归档</button>
       </>}
     </>;
+  };
+
+  const runEventDelete = async (eventId: string, expectedVersion: string, reason: string) => {
+    if (!ctx.can("growth_h4_write")) throw new Error("当前账户没有删除活动的权限。");
+    try {
+      apply(await deleteH4QuestEvent(eventId, expectedVersion, reason));
+      toast("活动已删除，历史参与、奖励与操作记录保留");
+    } finally { pendingDeleteChanged(value => value + 1); }
+  };
+  const openEventDelete = (event: QuestEvent) => {
+    if (!canModuleWrite || loading || error || !isDeletableQuestEvent(event)) return;
+    openActionConfirm({
+      action: `删除活动 · ${event.name}`,
+      detail: <>删除后活动移出活动中心。历史参与、奖励权益和操作记录保留；仅草稿或已结束活动可以删除，状态变化时须刷新后再确认。</>,
+      run: reason => runEventDelete(event.id, event.deleteVersion!, reason),
+    });
   };
 
   const openCreateEvent = () => {
@@ -1811,6 +1834,14 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
       {section === "events" && (
         <>
+      {pendingH4EventDeletes().map(record => <div className="l-card" key={record.commandKey} role="status">
+        删除操作「{record.eventId}」尚未核实；原理由：{record.reason}。
+        <button className="l-btn sm" disabled={!canModuleWrite} onClick={() => openActionConfirm({
+          action: `恢复原删除操作 · ${record.eventId}`,
+          detail: <>沿用原操作编号、版本与理由核实删除结果，不创建第二次操作。</>,
+          run: () => runEventDelete(record.eventId, record.expectedVersion, record.reason),
+        })}>恢复原操作</button>
+      </div>)}
       <H4EventRules ctx={ctx} />
       <H4GenesisRaffle ctx={ctx} />
       <div className="two-col">
@@ -1836,8 +1867,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               </thead>
               <tbody>
                 {(model.events ?? []).map((event) => {
-                  const [label, tone] = stateTone.get(event.state) ?? EVENT_LABEL[event.state] ?? ["活动状态待核实", "dim"];
-                  const ended = event.state === "ended";
+                  const lifecycle = event.deleteState || event.state;
+                  const [label, tone] = lifecycle === "draft" ? ["草稿", "dim"] : EVENT_LABEL[lifecycle] ?? stateTone.get(event.state) ?? ["活动状态待核实", "dim"];
+                  const ended = lifecycle === "ended";
                   const wheelEvent = text(event.kind).toLowerCase() === "wheel";
                   const zhName = localizedValue("event", event.id, "name", "zh");
                   const zhDescription = localizedValue("event", event.id, "description", "zh");
@@ -1865,11 +1897,12 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                             {event.state === "ongoing" ? "下架" : "上架"}
                           </button>
                         )}
-                        {event.state === "ongoing" && (
+                        {!ended && event.state === "ongoing" && (
                           <button className="l-btn sm mc" onClick={() => openEventFeatured(event)} disabled={!canModuleWrite}>
                             {event.featured ? "取消主推" : "设主推"}
                           </button>
                         )}
+                        <button className="l-btn sm" style={{ marginLeft: 6 }} disabled={!canModuleWrite || loading || !!error || !isDeletableQuestEvent(event)} onClick={() => openEventDelete(event)}>删除</button>
                       </td>
                     </tr>
                   );

@@ -1,5 +1,5 @@
 // Generated from the reviewed promotion OpenAPI; run scripts/generate-promotion-types.mjs.
-// Source SHA256: e82bbfe2dfa1ade980d89b799d7dbf556393c2a271740a841e70504c78a96d91
+// Source SHA256: c1a3b89c5308581adba0a1bc3552b71e199a549e9404cbb1eff0ec8481bcd7f6
 export type Id = string;
 export type EvidenceRef = (Id) | (string);
 export type Hash = string;
@@ -35,7 +35,7 @@ export type CreatePromotion = { "reason": string; "draft": Draft };
 export type Action = { "expectedRevision": Revision; "reason": string; "evidenceRefs": Array<EvidenceRef> };
 export type PublishAction = { "expectedRevision": Revision; "reason": string; "evidenceRefs": Array<EvidenceRef>; "version": Revision };
 export type Version = { "activityId": Id; "version": Revision; "revision": Revision; "state": VersionState; "contentHash": Hash; "draft": Draft; "approvedBy": (Id) | (null); "approvedAt": (Time) | (null); "publishedBy": (Id) | (null); "publishedAt": (Time) | (null); "policyResolutionErrors": Array<string> };
-export type Promotion = { "activityId": Id; "eventCode": Id; "revision": Revision; "state": ActivityState; "activeVersion": (Revision) | (null); "draftVersion": (Revision) | (null); "current": (Version) | (null); "serverTime": Time; "fixture": boolean; "name": (string) | (null); "category": "PROMOTION" | "REFERRAL"; "template": Template; "startsAt": (Time) | (null); "endsAt": (Time) | (null); "displayTimezone": string | null; "updatedAt": Time; "draftVersionState": (VersionState) | (null); "impact": PromotionImpact; "reserved": number; "issued": number; "unresolved": number; "asOf": Time };
+export type Promotion = { "activityId": Id; "eventCode": Id; "revision": Revision; "state": ActivityState; "activeVersion": (Revision) | (null); "draftVersion": (Revision) | (null); "current": (Version) | (null); "serverTime": Time; "fixture": boolean; "name": (string) | (null); "category": "PROMOTION" | "REFERRAL"; "template": Template; "startsAt": (Time) | (null); "endsAt": (Time) | (null); "displayTimezone": string | null; "updatedAt": Time; "draftVersionState": (VersionState) | (null); "impact": PromotionImpact; "reserved": number; "issued": number; "unresolved": number; "asOf": Time; "deleted"?: boolean };
 export type PublicPromotion = { "bannerImageUrl"?: string | null; "activityId": Id; "version": Revision; "template": Template; "state": ActivityState; "startsAt": Time; "endsAt": Time; "serverTime": Time; "title": LocalizedText; "terms": LocalizedText; "placement": "home.purchase-promotion" | null; "target": "STORE"; "productNos": Array<Id>; "minimumClientCapabilities": Array<"PROMOTION_QUOTE_V1" | "ORDER_ITEM_QUANTITIES_V1" | "PROMOTION_REWARDS_V1">; "eligibility": "SIGN_IN_REQUIRED" | "ESTIMATE_ELIGIBLE" | "INELIGIBLE" | "UNKNOWN"; "eligibilityMessage": (LocalizedText) | (null); "rewardRules": Array<PublicPurchaseRule> };
 export type Item = { "productNo": Id; "quantity": Quantity };
 export type QuoteInput = { "items": Array<Item>; "voucherId"?: (Id) | (null); "activityId"?: (Id) | (null); "clientCapabilities": Array<"PROMOTION_QUOTE_V1" | "ORDER_ITEM_QUANTITIES_V1" | "PROMOTION_REWARDS_V1">; "autoSelectPromotion"?: boolean };
@@ -121,3 +121,4 @@ export type PromotionListItem = { "activityId": Id; "eventCode": Id; "revision":
 export type PromotionListImpact = { "reserved": number; "issued": number; "unresolved": number; "unpaidOrders": number; "pendingRewards": number; "failedRewards": number; "unknownRewards": number; "reversingRewards": number; "manualReviewRewards": number; "unfulfilledRewards": number; "obligations": number; "budgets": Array<Budget>; "asOf": Time; "completeness": "COMPLETE"; "source": Array<string> };
 export type AccountSample = { "accountId": Id; "label": string };
 export type AccountSamplePage = { "items": Array<AccountSample>; "total": number; "pageNum": number; "pageSize": number };
+export type DeleteAction = { "expectedRevision": Revision; "reason": string; "evidenceRefs": Array<EvidenceRef>; "expectedDraftRevision"?: Revision };

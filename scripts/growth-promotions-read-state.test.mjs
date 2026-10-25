@@ -8,6 +8,7 @@ import ts from 'typescript';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {createHash} from 'node:crypto';
 import path from 'node:path';
+import * as activityDelete from '../lib/admin/activity-delete.ts';
 import * as promotionForm from '../lib/admin/promotion-form.ts';
 
 const require=createRequire(import.meta.url);
@@ -71,6 +72,7 @@ function page({catalog={data:{},loading:false,error:null},list={data:{},loading:
     if(name.endsWith('h4-promotion-editor'))return {__esModule:true,default:Editor};
     if(name.endsWith('promotion-client'))return {pendingPromotionCommands:()=>[],promotionRead:async()=>{calls.push('activity');return activity;}};
     if(name.endsWith('promotion-form'))return promotionForm;
+    if(name.endsWith('activity-delete'))return activityDelete;
     if(name.endsWith('.css'))return {};
     return {__esModule:true,default:()=>null};
   }).default;
@@ -150,6 +152,7 @@ test('same-path navigation restores the activity screen when only Next search pa
     if(name.endsWith('h4-promotion-ui'))return {...ui,useRead:()=>({data:null,loading:true,error:null,reload(){}})};
     if(name.endsWith('promotion-client'))return {pendingPromotionCommands:()=>[],promotionRead:()=>new Promise(()=>{})};
     if(name.endsWith('promotion-form'))return promotionForm;
+    if(name.endsWith('activity-delete'))return activityDelete;
     if(name.endsWith('.css'))return {};
     return {__esModule:true,default:()=>null};
   }).default;
@@ -194,6 +197,7 @@ test('failed first export read retries its original task and later metric errors
     if(name==='react/jsx-runtime')return require(name);
     if(name.endsWith('h4-promotion-ui'))return metricUi;
     if(name.endsWith('promotion-form'))return promotionForm;
+    if(name.endsWith('activity-delete'))return activityDelete;
     if(name.endsWith('promotion-client'))return {promotionRead:async (route,query)=>{calls.push(route);queries.push(query);if(route in responses)return responses[route];throw Error('read unavailable');},promotionVersions:async()=>({items:[]})};
     return {};
   }).default;
@@ -478,4 +482,27 @@ test('save after continue retains its original return target while a bad limit i
     const readbacks=[],editor=participationEditor({onSaved:async step=>readbacks.push(step)});editor.open();editor.inlineInput('全活动参与订单上限','1.5');editor.button('返回预算与叠加').props.onClick();editor.button(label).props.onClick();assert(editor.modal('配置尚未保存'));editor.button('保存后继续').props.onClick();assert(!editor.command());assert(editor.modal('参与角色与每单上限'));editor.inlineInput('全活动参与订单上限','10');editor.button('返回预算与叠加').props.onClick();assert(editor.modal('配置尚未保存'));editor.button('保存后继续').props.onClick();const command=editor.command();assert(command);await command.props.onSuccess();assert.deepEqual(editor.events,[target]);assert.deepEqual(readbacks,[undefined]);observed.push({target,payload:command.props.body,readbackCalled:true,events:editor.events});
   }
   saveEditorTrace('participation-save-and-leave-regression',observed);
+});
+
+test('deleted activity is read-only but reward recovery and historical metrics remain accessible', () => {
+  const deleted=page({screen:'detail',current:{...activity,deleted:true}});
+  const child=deleted.nodes.find(node=>typeof node.props.can==='function');
+  assert(child);
+  for (const permission of ['growth_promotion_edit','growth_promotion_simulate','growth_promotion_archive','growth_promotion_publish','growth_promotion_approve']) assert.equal(child.props.can(permission),false,permission);
+  for (const permission of ['growth_promotion_read','growth_promotion_reward_read','growth_promotion_reward_retry','growth_promotion_metrics_read','growth_promotion_metrics_export']) assert.equal(child.props.can(permission),true,permission);
+  assert(deleted.nodes.some(node=>node.type===ui.Notice&&node.props.title==='活动已删除'));
+  assert.equal(deleted.nodes.find(node=>node.type===ui.Button&&node.props.children==='删除活动').props.disabled,true);
+});
+
+test('successful recovered deletion returns to list and never opens the deleted resource as an editor', async () => {
+  const originalLocation=globalThis.location,originalHistory=globalThis.history;
+  try {
+    globalThis.location={href:'https://local.test/growth/events?promotion=detail&activity=A1'};
+    globalThis.history={pushState(){}};
+    const restored=page({pending:{operation:'deletePromotion',body:{},path:'/promotions/A1/delete',targetId:'A1'},query:{limit:20,querySnapshot:'old',cursor:'20'},previous:[{limit:20,querySnapshot:'old'}]});
+    const dialog=restored.nodes.find(node=>node.type===ui.ConfirmCommand&&node.props.title==='核查原操作结果');
+    await dialog.props.onSuccess({targetId:'A1',resource:{type:'PROMOTION',id:'A1'}});
+    assert.equal(restored.states[3],'list');assert.equal(restored.states[4],'');assert.equal(restored.states[5],null);assert.equal(restored.states[20],'A1');
+    assert.deepEqual(restored.calls,['list']);assert.deepEqual(restored.states[15],{limit:20});
+  } finally {globalThis.location=originalLocation;globalThis.history=originalHistory;}
 });

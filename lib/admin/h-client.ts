@@ -1,7 +1,7 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { validateH1DialValue } from "@/lib/admin/h1-dial-validation";
 
 interface ApiResult<T> {
@@ -946,6 +946,41 @@ export function archiveH3Mission(
 export function deleteH3Mission(taskCode: string, taskKind: H3MissionKind, reason: string) {
   return h3MissionCommand(`/quest-events/tasks/${encodeURIComponent(taskCode)}`, "DELETE",
     { taskKind, targetStatus: "deleted", expectedStatus: "archived", reason });
+}
+
+interface PendingH4EventDelete extends PendingMutationRecord { eventId: string; expectedVersion: string; reason: string }
+const h4EventDeletes = createPendingMutationStore<PendingH4EventDelete>({
+  storageKey: "nexion-admin-h4-event-deletes-v1",
+  isValidRecord: record => typeof record.eventId === "string" && typeof record.expectedVersion === "string" && typeof record.reason === "string",
+});
+export const pendingH4EventDeletes = () => h4EventDeletes.list();
+
+export async function deleteH4QuestEvent(eventId: string, expectedVersion: string, reason: string) {
+  const previous = h4EventDeletes.list().find(record => record.fingerprint === eventId);
+  if (previous && (previous.expectedVersion !== expectedVersion || previous.reason !== reason)) {
+    throw new Error("存在待核实的删除操作，请使用活动列表上方的原操作恢复入口。");
+  }
+  const commandKey = previous?.commandKey ?? nextIdempotencyKey("h4-event-delete");
+  h4EventDeletes.remember(eventId, commandKey, { eventId, expectedVersion, reason });
+  if (!h4EventDeletes.isDurablyStored(eventId, commandKey)) {
+    if (!previous) h4EventDeletes.forget(eventId);
+    throw new Error("当前页面无法保存操作记录，尚未提交，请检查浏览器设置。");
+  }
+  let acknowledged = false;
+  try {
+    const receipt = await growthRequest<{ eventId: string; deleted: boolean }>(`/quest-events/events/${encodeURIComponent(eventId)}`, {
+      method: "DELETE", headers: { "Idempotency-Key": commandKey }, body: JSON.stringify({ expectedVersion, reason }),
+    });
+    if (receipt?.eventId !== eventId || receipt.deleted !== true) throw new Error("删除结果尚未确认，请恢复原操作核实。");
+    acknowledged = true;
+    const overview = await fetchH3QuestEvents("events");
+    h4EventDeletes.forget(eventId);
+    return overview;
+  } catch (error) {
+    const { status, apiCode, bodyUnreadable } = error as Error & { status?: number; apiCode?: number; bodyUnreadable?: boolean };
+    if (!previous && !acknowledged && typeof status === "number" && !bodyUnreadable && !outcomeStaysUnknown(status, apiCode)) h4EventDeletes.forget(eventId);
+    throw error;
+  }
 }
 
 export async function createH4QuestEvent(event: Record<string, any>, reason: string) {

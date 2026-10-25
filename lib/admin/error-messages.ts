@@ -361,6 +361,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   DEVICE_RANK_SANDBOX_RUN_ID_REQUIRED: "沙箱请求缺少测试隔离标识，请核对测试环境。",
   QUEST_CONFIG_STALE: "H3 配置已被其他操作员修改，本次未覆盖；请刷新页面后基于最新值重试。",
   QUEST_CONFIG_NO_CHANGE: "目标值与 H3 当前配置相同，本次未写入。",
+  EVENT_DELETE_STATE_INVALID: "只有草稿或已结束的活动可以删除，请刷新活动状态。",
   EVENT_CONFIG_STALE: "活动已被其他操作员修改，本次未覆盖；请刷新页面后基于最新值重试。",
   EVENT_RULE_NOT_FOUND: "该活动尚未配置玩法，请刷新活动列表后核对。",
   EVENT_RULE_INCOMPLETE: "参与条件、奖励或有效期尚未配置完整，请补齐后再开启活动。",
