@@ -3,7 +3,7 @@
 /**
  * H9「历史数据展示设置」—— 规格 FEAT-HOME02b 后台单元。
  *
- * 运营在这里维护首页展示和历史估算参数；个人排名仍由真实设备算力决定。
+ * 运营在这里维护首页展示和历史估算参数；设备预估排名由独立卡片维护。
  * 虚拟人口与算力分位表不参与正式 App 当前服务端排名。整组原子保存:
  * 确认弹窗给前后值 diff → 必填理由 → 服务端落审计 + 防重复提交编号,任一项非法整组不落库。
  *
@@ -38,6 +38,7 @@ import {
   type H9BandDraft as BandDraft,
 } from "@/lib/admin/h9-validation";
 import type { HCtx } from "./types";
+import { H9DeviceRank } from "./h9-device-rank";
 
 type ScalarKey = H9FieldDef["key"];
 type ScalarDrafts = Record<ScalarKey, string>;
@@ -93,6 +94,10 @@ function bandsText(rows: H9PercentileBand[]) {
 }
 
 export function H9PublicStats({ ctx }: { ctx: HCtx }) {
+  return <><H9DeviceRank ctx={ctx} /><H9DisplayStats ctx={ctx} /></>;
+}
+
+function H9DisplayStats({ ctx }: { ctx: HCtx }) {
   const canWrite = ctx.can("growth_h9_write");
   const [data, setData] = useState<H9PublicStatsOverview | null>(null);
   const [loading, setLoading] = useState(true);

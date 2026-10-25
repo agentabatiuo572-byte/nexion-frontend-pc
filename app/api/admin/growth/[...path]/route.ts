@@ -19,6 +19,7 @@ function isNonEmpty(value: string | undefined) {
 
 function backendPath(parts: string[], method: string) {
   if (!parts.length) return null;
+  if (parts[0] === "device-rank-config") return parts.length === 1 && (method === "GET" || method === "PATCH") ? "/api/admin/growth/device-rank-config" : null;
   if (isPromotionHead(parts[0])) return allowedPromotionRoute(parts, method) ? `/api/admin/growth/${parts.map(encodeURIComponent).join("/")}` : null;
   const allowedHeads = new Set([
     "phases",

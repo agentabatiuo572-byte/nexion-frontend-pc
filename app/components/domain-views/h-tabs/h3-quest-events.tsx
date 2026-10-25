@@ -2012,7 +2012,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="htint" style={{ fontSize: 12 }}>
-            <b>参与和领取时间限制</b> · 活动结束或下架后不可领取；一次性活动仅可领取一次，日重置转盘每日仅可领取一次。
+            <b>参与和领取时间限制</b> · 活动关闭或结束后不接纳新参与，已获得的权益按活动规则领取或结算；参与及转盘次数以活动配置为准。
           </div>
         </div>
       </section>
