@@ -284,11 +284,10 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
     gpu: joinGpu(f.gpu, f.gpuCount), vram: f.vram.trim() || undefined, hashRate: f.hashRate.trim() || undefined, power: f.power.trim() || undefined, datacenter: f.datacenter.trim() || undefined, uptime: f.uptime.trim() || undefined, warranty: f.warranty.trim() || undefined, phoneDailyEarn: skuNumU(f.phoneDailyEarn), phoneDailyEarnNEX: skuNumU(f.phoneDailyEarnNEX),
     price: skuNum(f.price),
     dailyEarn, dailyEarnNEX, shareYieldMin, shareYieldMax, baseRate,
-    // Sales is an order lifecycle counter. The editor only round-trips its
-    // current value so a display-only field cannot create an A2 change; Java
-    // independently rejects a changed value and its persistence SQL never
-    // updates nx_product.sold_count.
+    // Sales remains display-only; write payloads omit it and Java retains the live counter.
     sold: existing?.sold ?? 0, productType, inventoryMode,
+    rating: existing?.rating, reviews: existing?.reviews, generation: existing?.generation,
+    supersededBy: existing?.supersededBy, tradeinDiscount: existing?.tradeinDiscount,
     stock: inventoryMode === "UNLIMITED" ? undefined : (skuNumU(stockTrim) ?? stockTrim),
     trialEligible: f.trialEligible === "true",
     aiImageGenPerMin: skuNumU(f.aiImageGenPerMin), aiLlmTokensPerSec: skuNumU(f.aiLlmTokensPerSec), aiVideoMinPerHour: skuNumU(f.aiVideoMinPerHour), aiFineTuneMins: skuNumU(f.aiFineTuneMins), aiUnlocks: f.aiUnlocks.trim() || undefined,

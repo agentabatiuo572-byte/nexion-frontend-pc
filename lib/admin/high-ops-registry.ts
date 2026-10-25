@@ -26,7 +26,7 @@ export interface HighOpDef {
 
 function canonicalE1SkuParams(ctx: Record<string, unknown>): Record<string, unknown> {
   const {
-    dailyEarnNEX, unlock, generation: _generation, supersededBy: _supersededBy, tradeinDiscount: _tradeinDiscount,
+    dailyEarnNEX, unlock, sold: _sold,
     updatedAt,
     // 媒体预览链接是带时效的预签名 URL,每次拉目录都会重新续签 —— 它既不是运营编辑的商品属性
     // (后端认 assetId / objectKey,展示时按 assetId 重新签发),又会让「业务输入一字未改的重试」
@@ -41,8 +41,8 @@ function canonicalE1SkuParams(ctx: Record<string, unknown>): Record<string, unkn
     dailyEarnNex: dailyEarnNEX,
     unlockPhase: unlock,
     expectedUpdatedAt: updatedAt,
-    // 数据库仍保留内部兼容列，但该值不再是运营可编辑的商品属性。
-    generation: 1,
+    // 内部兼容列不能通过库存编辑重置；新建仍沿用既有默认值。
+    generation: ctx.generation ?? 1,
   };
 }
 

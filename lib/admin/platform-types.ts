@@ -50,6 +50,9 @@ export interface OpsSku {
   shareYieldMax?: number;
   baseRate?: string;
   sold?: number;
+  /** 服务端已有商品属性；编辑表单不开放修改，但全量保存须保留。 */
+  rating?: number;
+  reviews?: number;
   /** 服务端权威商品形态；仅用于展示/约束，不能由库存模式反推。 */
   productType?: "SERVER" | "DEVICE" | "SHARE";
   /** FINITE 扣减实际库存；UNLIMITED 不扣库存且仅允许 SHARE。 */

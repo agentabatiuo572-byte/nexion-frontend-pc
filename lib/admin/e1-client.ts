@@ -46,6 +46,11 @@ interface BackendSku {
   shareYieldMax?: number | string | null;
   baseRate?: string | null;
   sold?: number | null;
+  rating?: number | string | null;
+  reviews?: number | null;
+  generation?: number | null;
+  supersededBy?: string | null;
+  tradeinDiscount?: number | string | null;
   productType: "SERVER" | "DEVICE" | "SHARE";
   inventoryMode: "FINITE" | "UNLIMITED";
   trialEligible: boolean;
@@ -234,6 +239,11 @@ function fromSku(sku: BackendSku): OpsSku {
     shareYieldMax: toOptionalNumber(sku.shareYieldMax),
     baseRate: sku.baseRate ?? undefined,
     sold: sku.sold ?? undefined,
+    rating: toOptionalNumber(sku.rating),
+    reviews: sku.reviews ?? undefined,
+    generation: sku.generation ?? undefined,
+    supersededBy: sku.supersededBy ?? undefined,
+    tradeinDiscount: toOptionalNumber(sku.tradeinDiscount),
     productType: sku.productType,
     inventoryMode,
     stock,
@@ -287,7 +297,11 @@ function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
     shareYieldMin: sku.shareYieldMin ?? null,
     shareYieldMax: sku.shareYieldMax ?? null,
     baseRate: sku.baseRate ?? null,
-    sold: sku.sold ?? null,
+    rating: sku.rating ?? null,
+    reviews: sku.reviews ?? null,
+    generation: sku.generation ?? 1,
+    supersededBy: sku.supersededBy ?? null,
+    tradeinDiscount: sku.tradeinDiscount ?? null,
     inventoryMode,
     stock: inventoryMode === "UNLIMITED" ? null : String(sku.stock ?? "0"),
     trialEligible: sku.trialEligible === true,
