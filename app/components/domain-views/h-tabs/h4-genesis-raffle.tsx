@@ -6,7 +6,7 @@ import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 
 const empty = (): RaffleDraft => ({ id: "", titleZh: "", titleEn: "", titleVi: "", startsAt: "", drawAt: "", prizes: [] });
-const dateInput = (value: string) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString().slice(0, 16) : "";
+const dateInput = (value: string) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString().slice(0, 19) : "";
 export default function H4GenesisRaffle({ ctx }: { ctx: HCtx }) {
   const [rows, setRows] = useState<AdminRaffle[]>([]), [base, setBase] = useState<AdminRaffle | null>(null), [draft, setDraft] = useState<RaffleDraft | null>(null);
   const [enabled, setEnabled] = useState(false), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [error, setError] = useState("");
@@ -53,7 +53,7 @@ export default function H4GenesisRaffle({ ctx }: { ctx: HCtx }) {
             <div className="grid g-2" style={{ gap: 12 }}>
               <label className="field"><span>本期编号</span><input value={draft.id} disabled={!!base} onChange={event => setDraft({ ...draft, id: event.target.value })}/></label>
               {(["Zh", "En", "Vi"] as const).map((lang, index) => <label className="field" key={lang}><span>抽奖名称 · {["中文", "英文", "越南语"][index]}</span><input value={draft[`title${lang}`]} onChange={event => setDraft({ ...draft, [`title${lang}`]: event.target.value })}/></label>)}
-              {(["startsAt", "drawAt"] as const).map((key, index) => <label className="field" key={key}><span>{index ? "开奖时间" : "报名开始"}（UTC）</span><input type="datetime-local" value={dateInput(draft[key])} onChange={event => setDraft({ ...draft, [key]: event.target.value ? `${event.target.value}:00Z` : "" })}/></label>)}
+              {(["startsAt", "drawAt"] as const).map((key, index) => <label className="field" key={key}><span>{index ? "开奖时间" : "报名开始"}（UTC）</span><input type="datetime-local" step={1} value={dateInput(draft[key])} onChange={event => setDraft({ ...draft, [key]: event.target.value ? new Date(`${event.target.value}Z`).toISOString() : "" })}/></label>)}
             </div>
             {draft.prizes.map((prize, index) => <section key={prize.id} style={{ marginTop: 14, padding: 12, border: "1px solid var(--line)", borderRadius: 10 }}><b>奖项 {index + 1}</b><div className="grid g-2" style={{ gap: 12, marginTop: 10 }}>
               {(["Zh", "En", "Vi"] as const).map((lang, i) => <label className="field" key={lang}><span>奖项名称 · {["中文", "英文", "越南语"][i]}</span><input value={prize[`name${lang}`]} onChange={event => prizePatch(prize.id, { [`name${lang}`]: event.target.value })}/></label>)}

@@ -2830,10 +2830,10 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <span className="bf-legend">业务表单 · 新建轮盘档位{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("tierName", "档位名", "如 小额奖")}
-          {input("rewardName", "奖励展示", "如 100 UVEL")}
+          {input("rewardName", "奖励展示", "如 100 UVT")}
           {input("probabilityPct", "概率%", "如 5(0-100)", "number")}
           {select("realOutflow", "真实出金", ["0", "1"], "tier-real-outflow", { "0": "否(体验分/无流出)", "1": "是(真实出金)" })}
-          {select("rewardKind", "奖励类型", ["nex", "points", "usdt", "coupon"], "tier-reward-kind", { nex: "NEX", points: "积分", usdt: "USDT", coupon: "代金券" })}
+          {select("rewardKind", "奖励类型", ["nex", "points", "usdt", "coupon"], "tier-reward-kind", { nex: "UVT", points: "积分", usdt: "USDT", coupon: "代金券" })}
           {input("rewardAmount", "实际派奖数量", "如 100", "number")}
           {input("voucherId", "代金券 (仅 )", "如 WHEEL-50")}
           {input("dailyStock", "每日全局库存(0=不限)", "如 50", "number")}
