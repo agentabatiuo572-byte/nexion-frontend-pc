@@ -1327,6 +1327,7 @@
 > 执行权 = 单人执行(2026-06 操作确认决议):代金券为增长促销面,原复核层级就高为增长(lead)/ 超管;**无 B1 红线预检**(促销折扣非负债)。审计字段(A2 统一 schema,§2.x ⑥):`action / voucher_id / field / before / after / reason / operator / ts`。
 
 **⑦ 风控 & 联动**:
+- **累计发行上限**：正数上限由同一券的用户领取、转盘、晋升等发放来源共用，0 表示无限；已核销、过期或撤销不恢复名额。耗尽后未领用户的领取入口及自动领取弹窗均不可用，已领 grant 保持原身份与状态。列表读取不预占名额，后续领取仍按实时额度裁决；限额 1 时并发请求只能成功新发一张，其余明确额度耗尽，重放已有领取不再次占额度。
 - **server-canonical**:代金券**领取资格(受众 / 有效期 / 未领)、核销(有效期 / 适用 SKU / 未用 + 单次 markUsed)均 server 权威**;前端 `useVoucher`(persist `nexion-voucher-v1`)/ `bestVoucherFor` / `computeVoucherDiscount` 为乐观 UI 镜像,真后台对接后以 server 裁决为准。**单券单用幂等**:下单核销携 `Idempotency-Key`(`voucherId × userId × orderId` 维度),retry / 并发不重复核销,防一券多用。
 - **字段级镜像门**:`OpsVoucher`(本模块,§③ 全字段)⊇ 前端 `VoucherDef`(§12.20),两端映射同一后端资源(`sku-field-mirror` 同源约定);新增前端展示字段必同步后台可编辑字段。
 - **反套利**:① 受众 `new` 限新人(server 按账户首购 / 注册态判定);② `applicableSkus` 限定可用设备;③ 满减门槛防小额套利;④ 折扣封顶防大额超额让利;⑤ **不可提现 + 不可拆分**(固有性质,前端 `computeVoucherDiscount` 只减价不入账,后台不提供「可提现」开关)杜绝券→现金套现;⑥ 异常领取 / 核销模式(短时大量领取、同设备多账户领同券)喂 K 域反作弊。
