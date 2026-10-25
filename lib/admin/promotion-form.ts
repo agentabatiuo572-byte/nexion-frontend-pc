@@ -68,8 +68,13 @@ export function changeTemplate(draft:Draft,template:Template):Draft {
 }
 export function changeRewardType(previous:DraftRewardSpec|null|undefined,type:DraftRewardSpec['type'],role:'BUYER'|'DIRECT_INVITER'):DraftRewardSpec {
   const base={rewardRuleId:previous?.rewardRuleId||`reward-${crypto.randomUUID()}`,beneficiaryRole:role};
+  if(type==='DISCOUNT_USDT') {
+    if(role!=='BUYER')throw new Error('订单立减仅适用于购买者。');
+    return {...base,beneficiaryRole:'BUYER',type,calculation:'FIXED',amount:null};
+  }
   return type==='DEVICE'?{...base,type,giftProductNo:null,quantity:null,deviceRightsProfile:null}:{...base,type,calculation:'FIXED',amount:null,assetPolicy:null};
 }
+export const promotionRewardTypes=(role:'BUYER'|'DIRECT_INVITER')=>role==='BUYER'?['DEVICE','USDT','NEX','DISCOUNT_USDT']:['DEVICE','USDT','NEX'];
 export function dateInput(iso:string|null|undefined,zone:string):string {
   if(!iso)return '';
   const parts=new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(iso));

@@ -25,6 +25,8 @@ export function promotionErrorMessage(code: string | undefined, status = 0): str
   if (status === 403) return '当前账户没有此操作权限，请返回或联系有权限的审核人员。';
   if (status === 503) return '活动服务暂时不可用，请稍后重试。';
   if (key === 'AUTHORITATIVE_PAGE_INVALID') return '当前资料暂无法确认，相关操作已停用；请刷新后重试。';
+  if (key === 'PROMOTION_DISCOUNT_EXCEEDS_LINE_AMOUNT') return '订单立减超过对应商品扣除已有优惠后的应付金额，请调低立减金额或调整购买规则。';
+  if (key === 'PROMOTION_DISCOUNT_REQUIRES_PAYMENT') return '活动立减后整单仍需保留大于 0 的应付金额，请调整购买数量或活动配置。';
   if (key?.includes('SNAPSHOT')) return '查询结果已失效，请重新查询。筛选条件已保留。';
   if (key?.includes('REVISION') || key?.includes('VERSION_CONFLICT')) return '内容已被其他操作修改，请读取最新版本并核对差异后再确认。';
   if (key === 'PROMOTION_RULE_IDENTITY_IMMUTABLE' || key === 'PROMOTION_REWARD_IDENTITY_IMMUTABLE') return '已有购买规则或奖励身份不能直接更换；请刷新草稿，移除原规则后添加新设备。历史累计仍保留。';
@@ -39,7 +41,7 @@ export function promotionErrorMessage(code: string | undefined, status = 0): str
   return formatAdminApiError(key, `PROMOTION_REQUEST_FAILED_${status}`);
 }
 export function promotionFieldLabel(path: string): string {
-  const labels: Record<string,string> = {name:'活动名称',bannerAssetId:'活动宣传图',title:'公开标题（三种语言）',terms:'公开说明（三种语言）',startsAt:'开始时间',endsAt:'结束时间',displayTimezone:'显示时区',buyerAudience:'购买者条件',inviterAudience:'直接邀请人条件',purchaseHistory:'购机历史',devicePresence:'设备条件',registrationAge:'注册天数范围',lastValidPurchaseAge:'购机间隔范围',rankIds:'参与等级',markets:'适用市场',sponsor:'邀请关系',neverPurchased:'历史购机排除',rules:'购买规则',productNo:'购买设备',minBuyQty:'每组购买数量',buyerReward:'购买者奖励',inviterReward:'直接邀请人奖励',amount:'资产奖励金额',quantity:'赠送数量',assetPolicy:'资产政策',deviceRightsProfile:'设备权益政策',giftProductNo:'赠送设备',maxGroups:'每单计奖组数',maxGroupsPerPerson:'每人累计计奖组数',repeatMode:'计奖方式',priority:'规则优先级',budgets:'预算与赠品额度',policies:'批准政策',firstPurchase:'首购认定政策',settlement:'结算政策',stacking:'叠加政策',refund:'售后政策',quote:'报价政策',authorization:'审核发布政策',perPersonLimit:'受益角色参与上限',activityLimit:'活动参与上限',maxRewardUnitsPerOrder:'每单奖励义务上限',shortagePolicy:'额度不足处理',minimumClientCapabilities:'兼容客户端要求',reason:'操作理由',evidenceRefs:'关联证据',content:'政策内容'};
+  const labels: Record<string,string> = {name:'活动名称',bannerAssetId:'活动宣传图',title:'公开标题（三种语言）',terms:'公开说明（三种语言）',startsAt:'开始时间',endsAt:'结束时间',displayTimezone:'显示时区',buyerAudience:'购买者条件',inviterAudience:'直接邀请人条件',purchaseHistory:'购机历史',devicePresence:'设备条件',registrationAge:'注册天数范围',lastValidPurchaseAge:'购机间隔范围',rankIds:'参与等级',markets:'适用市场',sponsor:'邀请关系',neverPurchased:'历史购机排除',rules:'购买规则',productNo:'购买设备',minBuyQty:'每组购买数量',buyerReward:'购买者奖励',inviterReward:'直接邀请人奖励',amount:'奖励或订单立减金额',quantity:'赠送数量',assetPolicy:'资产政策',deviceRightsProfile:'设备权益政策',giftProductNo:'赠送设备',maxGroups:'每单计奖组数',maxGroupsPerPerson:'每人累计计奖组数',repeatMode:'计奖方式',priority:'规则优先级',budgets:'预算与赠品额度',policies:'批准政策',firstPurchase:'首购认定政策',settlement:'结算政策',stacking:'叠加政策',refund:'售后政策',quote:'报价政策',authorization:'审核发布政策',perPersonLimit:'受益角色参与上限',activityLimit:'活动参与上限',maxRewardUnitsPerOrder:'每单奖励义务上限',shortagePolicy:'额度不足处理',minimumClientCapabilities:'兼容客户端要求',reason:'操作理由',evidenceRefs:'关联证据',content:'政策内容'};
   const parts=path.split(/[.:[\]]/).filter(Boolean);
   return [...new Set(parts.map(p=>labels[p]).filter(Boolean))].join(' / ') || '当前配置（请逐步核对必填项）';
 }

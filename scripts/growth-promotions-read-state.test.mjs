@@ -389,6 +389,30 @@ test('actual budget editor names unknown occupancy when any required current ter
   const dialog=editingDialog('BudgetEditor',{draft:{budgets:[{asset:'USDT',total:'1'}]},catalog:editCatalog,activity:{impact:{budgets:[{asset:'USDT',reserved:'0',committed:'0',issued:'0'}]}},onClose:()=>{},onSave:()=>{}});
   assert(dialog.html().includes('当前占用尚未确认'));assert(!dialog.html().includes('合计 0.000000'));
 });
+
+test('actual buyer discount editor removes the cash policy and rejects malformed amounts or inviter discounts',()=>{
+  const saved=[],dialog=editingDialog('RuleEditor',{initial:{...originalRule,buyerReward:{...originalRule.buyerReward,assetPolicy:{policyId:'cash-policy',version:1,contentHash:'hash'}}},catalog:editCatalog,dual:false,readOnly:false,onClose:()=>{},onSave:rule=>saved.push(rule)});
+  dialog.input('奖励类型 *','DISCOUNT_USDT');dialog.button('确认切换').props.onClick();
+  assert(!dialog.html().includes('USDT 资产政策'));
+  const label='每组订单立减金额（USDT） *';
+  for(const amount of ['0','-1','1e2','500.0000001']){dialog.input(label,amount);dialog.button('保留到草稿').props.onClick();assert.equal(saved.length,0);}
+  dialog.input(label,'500.000000');dialog.button('保留到草稿').props.onClick();
+  assert.deepEqual(saved[0].buyerReward,{rewardRuleId:'B1',beneficiaryRole:'BUYER',type:'DISCOUNT_USDT',calculation:'FIXED',amount:'500.000000'});
+  const invalid=[],inviter=editingDialog('RuleEditor',{initial:{...originalRule,inviterReward:{...saved[0].buyerReward,beneficiaryRole:'DIRECT_INVITER'}},catalog:editCatalog,dual:true,readOnly:false,onClose:()=>{},onSave:rule=>invalid.push(rule)});
+  const inviterFields=inviter.render();assert(inviterFields);const types=inviter.nodes.filter(node=>node.type===ui.Field&&node.props.label==='奖励类型 *');
+  assert.equal(renderToStaticMarkup(types[1]).includes('value="DISCOUNT_USDT"'),false);
+  inviter.button('保留到草稿').props.onClick();assert.equal(invalid.length,0);
+});
+
+test('actual discount budget stays separate from USDT rewards and preserves exact amounts',()=>{
+  const saved=[],draft={budgets:[{asset:'USDT',total:'90.000000'},{asset:'DISCOUNT_USDT',total:'500.000000'}]};
+  const activity={impact:{budgets:[{asset:'DISCOUNT_USDT',reserved:'500.000000',committed:'0',issued:'0',reversed:'0'},{asset:'USDT',reserved:'90.000000',committed:'0',issued:'0',reversed:'0'}]}};
+  const dialog=editingDialog('BudgetEditor',{draft,catalog:editCatalog,activity,onClose:()=>{},onSave:budgets=>saved.push(budgets)}),label='订单立减（USDT） 总额度';
+  dialog.input(label,'500.0000001');dialog.button('保留到草稿').props.onClick();assert.equal(saved.length,0);
+  dialog.input(label,'499.000000');assert(dialog.html().includes('合计 500.000000 订单立减（USDT）'));
+  dialog.input(label,'1000.000001');dialog.button('保留到草稿').props.onClick();
+  assert.deepEqual(saved[0],[{asset:'USDT',total:'90.000000'},{asset:'DISCOUNT_USDT',total:'1000.000001'}]);
+});
 test('actual combination dialog rejects invalid quantity or match enum, preserves legal changes and shows each original rule reward separately',()=>{
   let closed=0;const changes=[],props={draft:{template:'MULTI_PRODUCT',combinationMatch:'ALL',rules:[structuredClone(originalRule),{...structuredClone(originalRule),ruleId:'R2',productNo:'SKU2',buyerReward:{...originalRule.buyerReward,type:'NEX',amount:'2'}}]},catalog:editCatalog,readOnly:false,onClose:()=>closed++,onChange:change=>{changes.push(change);props.draft={...props.draft,...change};}};
   const dialog=editingDialog('CombinationEditor',props);dialog.input('最低数量 1','101');dialog.button('保留到草稿').props.onClick();assert.equal(closed,0);assert.equal(changes.length,0);assert.equal(props.draft.rules[0].minBuyQty,1);assert.equal(dialog.field('最低数量 1').props.value,'101');

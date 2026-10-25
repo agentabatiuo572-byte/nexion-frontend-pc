@@ -17,7 +17,8 @@ catch {
 export const TEMPLATE_LABELS = { SKU_GIFT: '单设备赠礼', FIRST_PURCHASE: '首购礼', DIRECT_REFERRAL: '直邀首购双向礼', MULTI_PRODUCT: '多型号组合', REPURCHASE: '复购召回' } as const;
 const STATES: Record<string, string> = { DRAFT: '草稿', SCHEDULED: '待开始', ACTIVE: '进行中', PAUSED: '暂停新预留', ENDED: '已结束', ARCHIVED: '已归档', PENDING_APPROVAL: '待审核', APPROVED: '已审核待发布', PUBLISHED: '已发布', PENDING: '待发放', READY: '待执行', PROCESSING: '处理中', ISSUED: '已发放', RETRYABLE_FAILED: '可重试失败', OUTCOME_UNKNOWN: '结果未知', REVERSAL_PENDING: '追回待处理', REVERSED: '已冲正', CANCELED: '已取消', CANCELLED: '已取消', MANUAL_REVIEW: '人工审阅', MATCHED: '符合条件', REJECTED: '不符合', UNKNOWN: '未知', COMPLETE: '完整', UNAVAILABLE: '不可用', DELAYED: '延迟', ELIGIBLE: '符合条件', INELIGIBLE: '不符合', AVAILABLE: '可用', SHORTAGE: '不足', BUYER: '购买者', DIRECT_INVITER: '直接邀请人', SUCCEEDED: '成功', FAILED: '失败', NOT_FOUND: '未查到原操作', REVOKED: '已撤销' };
 export const labelState = (value: string) => STATES[value] || '待核实';
-export const rewardText = (r: DraftRewardSpec | RewardSpec | null | undefined, deviceName?: string | null) => !r ? '未配置' : r.type === 'DEVICE' ? `${nexGridBrandText(deviceName || '设备赠礼')} × ${r.quantity ?? '未配置'}` : `${r.amount ?? '未配置'} ${nexGridBrandText(r.type)}`;
+export const promotionAssetText = (asset: string) => asset === 'DISCOUNT_USDT' ? '订单立减（USDT）' : nexGridBrandText(asset);
+export const rewardText = (r: DraftRewardSpec | RewardSpec | null | undefined, deviceName?: string | null) => !r ? '未配置' : r.type === 'DEVICE' ? `${nexGridBrandText(deviceName || '设备赠礼')} × ${r.quantity ?? '未配置'}` : r.type === 'DISCOUNT_USDT' ? `订单立减 ${r.amount ?? '未配置'} USDT` : `${r.amount ?? '未配置'} ${nexGridBrandText(r.type)}`;
 export function Button({ kind = '', className = '', type = 'button', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & {
     kind?: '' | 'primary' | 'link' | 'danger';
 }) { return <button {...props} type={type} className={`btn ${kind} ${className}`}/>; }

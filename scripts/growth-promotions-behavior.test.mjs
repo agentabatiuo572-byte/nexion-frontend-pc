@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import ts from 'typescript';
 import { allowedPromotionRoute } from '../lib/admin/promotion-routes.ts';
-import { acknowledgePromotionCommand, promotionCommand, recoverPromotionCommand, pendingPromotionCommands, promotionVersions, promotionFieldLabel } from '../lib/admin/promotion-client.ts';
+import { acknowledgePromotionCommand, promotionCommand, recoverPromotionCommand, pendingPromotionCommands, promotionVersions, promotionFieldLabel, promotionErrorMessage } from '../lib/admin/promotion-client.ts';
 import { changeRewardType, changeTemplate, dateInput, utcInput, newPurchaseRule } from '../lib/admin/promotion-form.ts';
 import * as promotionForm from '../lib/admin/promotion-form.ts';
 
@@ -141,6 +141,18 @@ test('new rules and beneficiaries receive distinct identities while editing pres
   assert.equal(changeRewardType(buyer,'DEVICE','BUYER').rewardRuleId,buyer.rewardRuleId);
   assert.equal(structuredClone(first).ruleId,first.ruleId);
 });
+
+test('order discounts are buyer-only, preserve identity and never carry an asset policy',()=>{
+  const original={rewardRuleId:'buyer-reward',beneficiaryRole:'BUYER',type:'USDT',amount:'500.000000',assetPolicy:{policyId:'cash-policy',version:1,contentHash:'hash'}};
+  const discount=changeRewardType(original,'DISCOUNT_USDT','BUYER');
+  assert.deepEqual(discount,{rewardRuleId:'buyer-reward',beneficiaryRole:'BUYER',type:'DISCOUNT_USDT',calculation:'FIXED',amount:null});
+  assert.throws(()=>changeRewardType(null,'DISCOUNT_USDT','DIRECT_INVITER'),/仅适用于购买者/);
+  assert.equal(promotionUi.rewardText({...discount,amount:'500.000000'}),'订单立减 500.000000 USDT');
+  assert.equal(promotionUi.promotionAssetText('DISCOUNT_USDT'),'订单立减（USDT）');
+  assert.match(promotionErrorMessage('PROMOTION_DISCOUNT_EXCEEDS_LINE_AMOUNT'),/订单立减超过对应商品扣除已有优惠后的应付金额/);
+  assert.match(promotionErrorMessage('PROMOTION_DISCOUNT_REQUIRES_PAYMENT'),/整单仍需保留大于 0 的应付金额/);
+  assert.deepEqual(changeRewardType(discount,'USDT','BUYER'),{...original,calculation:'FIXED',amount:null,assetPolicy:null});
+});
 test('template change clears incompatible configuration without losing public information',()=>{
   const next=changeTemplate({category:'PROMOTION',template:'SKU_GIFT',name:'内部名称',title:{zh:'标题'},rules:[{ruleId:'a'}],budgets:[{asset:'USDT',total:'100.000000'}]},'DIRECT_REFERRAL');
   assert.equal(next.category,'REFERRAL');assert.equal(next.rules,null);assert.equal(next.budgets,null);assert.equal(next.name,'内部名称');assert.deepEqual(next.title,{zh:'标题'});
@@ -171,5 +183,5 @@ test('unavailable persistent storage refuses dispatch rather than losing the ori
 test('version selection reads every page and field errors never expose internal paths',async()=>{
   const urls=[];globalThis.fetch=async url=>{urls.push(url);return new Response(JSON.stringify({code:0,data:urls.length===1?{items:[{version:2}],hasMore:true,nextCursor:'older'}:{items:[{version:1}],hasMore:false,nextCursor:null}}));};
   assert.deepEqual((await promotionVersions('p1')).items.map(v=>v.version),[2,1]);assert.match(urls[1],/cursor=older/);
-  assert.equal(promotionFieldLabel('$.draft.rules[2].buyerReward.amount'),'购买规则 / 购买者奖励 / 资产奖励金额');
+  assert.equal(promotionFieldLabel('$.draft.rules[2].buyerReward.amount'),'购买规则 / 购买者奖励 / 奖励或订单立减金额');
 });

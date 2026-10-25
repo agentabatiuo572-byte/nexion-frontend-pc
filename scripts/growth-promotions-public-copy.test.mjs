@@ -122,10 +122,12 @@ test('PCOPY-04: actual loading retains live region and skeleton; actual failure 
 test('PCOPY-05: actual editor preserves independent roles, budget obligations and missing occupancy without invented zero',()=>{
   const hook=hooks(),Editor=domain('h4-promotion-editor.tsx',hook,fresh).default;
   hook.states[6]=3;hook.reset();const html=markup(Editor(editorProps));
-  for(const text of ['购买者','直接邀请人','两个资产与每种赠品分别核算','发放失败的原奖励继续占用','实际追回前不恢复额度','100.000000','保存成功后显示已保存版本'])assert(html.includes(text),text);
+  for(const text of ['购买者','直接邀请人','资产奖励、订单立减与每种赠品分别核算','发放失败的原奖励继续占用','实际追回前不恢复额度','100.000000','保存成功后显示已保存版本'])assert(html.includes(text),text);
   assert.equal((html.match(/<td>-<\/td>/g)||[]).length,3);assert.doesNotMatch(html,/暂无占用快照|服务端/);
   const known=structuredClone(activity);known.impact.budgets=[{asset:'USDT',committed:'0.000000',reserved:'0.000000',available:'100.000000'}];
   const knownHook=hooks({6:3}),Known=domain('h4-promotion-editor.tsx',knownHook,fresh).default;knownHook.reset();const actual=markup(Known({...editorProps,activity:known}));assert(actual.includes('<td>0.000000</td>'));
+  known.current.draft.budgets=[{asset:'DISCOUNT_USDT',total:'1000.000000'}];known.impact.budgets=[{asset:'DISCOUNT_USDT',committed:'500.000000',reserved:'0.000000',available:'500.000000'}];
+  const discountHook=hooks({6:3}),Discount=domain('h4-promotion-editor.tsx',discountHook,fresh).default;discountHook.reset();const discount=markup(Discount({...editorProps,activity:known}));assert(discount.includes('订单立减（USDT）'));assert(discount.includes('500.000000<small>已用立减</small>'));
 });
 
 test('PCOPY-05: actual audience counters distinguish unknown from actual zero',()=>{
@@ -300,6 +302,16 @@ test('PCOPY-05: actual budget dialog preserves unknown, insufficient and suffici
   for(const [occupied,total,expected] of [[null,'100.000000','发布前须确认当前占用'],[{reserved:'1.000000',committed:'2.000000',issued:'0.000000',reversed:'0.000000'},'1.000000','低于当前已用和有效预留合计 3.000000'],[{reserved:'1.000000',committed:'2.000000',issued:'0.000000',reversed:'0.000000'},'4.000000','发布前须再次核对占用']]){
     const row=structuredClone(activity);row.impact.budgets=occupied?[{asset:'USDT',...occupied}]:[];const hook=hooks(),Budget=domain('h4-promotion-editor.tsx',hook,fresh,['BudgetEditor']).BudgetEditor;hook.reset();
     const html=markup(Budget({activity:row,catalog,draft:{rules:[],budgets:[{asset:'USDT',total}]},onClose(){},onSave(){}}));assert(html.includes(expected));assert(html.includes('保存草稿不会释放既有义务'));assert.doesNotMatch(html,/服务端/);
+  }
+});
+
+test('order-discount review shows server totals separately and keeps absent legacy detail unknown',()=>{
+  for(const promotionDiscountUsdt of ['500.000000',undefined]){
+    const simulation={eligibility:'ELIGIBLE',asOf:impact.asOf,ruleResults:[],rewardUnits:[],blockers:[],resources:[{kind:'BUDGET',asset:'DISCOUNT_USDT',required:'500.000000',available:'1000.000000',status:'AVAILABLE'}],quotaImpact:[],pricing:{subtotalUsdt:'2000.000000',discountUsdt:'600.000000',promotionDiscountUsdt,amountUsdt:'1400.000000'},publicPreview:null};
+    const hook=hooks({1:simulation}),Review=domain('h4-promotion-review.tsx',hook,fresh).default;hook.reset();const element=Review({activity,catalog,can:()=>true,review:true,onBack(){}});
+    const pricing=nodes(element).find(node=>node.type===ui.Summary&&node.props.rows[0]?.[0]==='商品小计（USDT）');
+    assert.deepEqual(pricing.props.rows,[['商品小计（USDT）','2000.000000'],['优惠合计（USDT）','600.000000'],['其中订单立减（USDT）',promotionDiscountUsdt??'未提供'],['应付款（USDT）','1400.000000']]);
+    const resource=nodes(element).find(node=>node.type===ui.Table&&node.props.headers[0]==='资源');assert.equal(resource.props.rows[0][0],'订单立减（USDT）');
   }
 });
 
