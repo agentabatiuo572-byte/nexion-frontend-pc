@@ -101,7 +101,8 @@ test("用户端不再保留 H9 落盘种子或硬编码回退", () => {
 test("h9DraftNumber:空串与非数字给 NaN,不让 Number(\"\")===0 把空输入当 0", () => {
   assert.ok(Number.isNaN(h9DraftNumber("")));
   assert.ok(Number.isNaN(h9DraftNumber("  ")));
-  assert.ok(Number.isNaN(h9DraftNumber("1e3")));
+  assert.equal(h9DraftNumber("1e3"), 1000);
+  assert.ok(Number.isNaN(h9DraftNumber("1e")));
   assert.equal(h9DraftNumber(" 42.5 "), 42.5);
 });
 
