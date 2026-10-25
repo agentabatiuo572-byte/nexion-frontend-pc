@@ -55,7 +55,7 @@ export interface H9PublicStatsOverview {
   defaults: H9PublicStatsValues;
   /** 历史估算的单台日产(USD/台/日)—— 仅用于内部影响预览。 */
   publishedDailyUsdPerDevice: number;
-  /** 真实注册人口 —— 历史本地估算分母使用它加虚拟人口，正式服务端名次另算。 */
+  /** 真实注册人口 —— 仅用于历史本地估算分母，不参与设备预估排名。 */
   realUserCount: number;
   effectiveAt: string;
 }
@@ -122,7 +122,7 @@ export const H9_FIELDS: readonly H9FieldDef[] = [
     max: 100_000_000,
     step: 1,
     integer: true,
-    hint: "用于网络脉搏注册用户展示。修改基数时推算起点重置为保存时刻；不改变真实账户或个人名次。",
+    hint: "用于网络脉搏注册用户展示。修改基数时推算起点重置为保存时刻；不参与设备预估排名，不改变真实账户。",
   },
   {
     key: "registeredUsersMonthlyGrowthPct",
@@ -144,7 +144,7 @@ export const H9_FIELDS: readonly H9FieldDef[] = [
     max: 10_000_000,
     step: 1,
     integer: true,
-    hint: "历史本地估算分母 = 真实注册人口 + 本数值。正式 App 当前服务端排名不使用此参数；修改它不会改变当前名次。",
+    hint: "历史本地估算分母 = 真实注册人口 + 本数值。虚拟人口不参与设备预估排名。",
   },
 ] as const;
 

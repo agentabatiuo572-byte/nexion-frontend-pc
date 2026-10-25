@@ -4,7 +4,7 @@
  * H9「历史数据展示设置」—— 规格 FEAT-HOME02b 后台单元。
  *
  * 运营在这里维护首页展示和历史估算参数；设备预估排名由独立卡片维护。
- * 虚拟人口与算力分位表不参与正式 App 当前服务端排名。整组原子保存:
+ * 虚拟人口与算力分位表不参与设备预估排名。整组原子保存:
  * 确认弹窗给前后值 diff → 必填理由 → 服务端落审计 + 防重复提交编号,任一项非法整组不落库。
  *
  * 页面里没有任何平台数字的字面量:当前值、默认种子、历史日产锚都从服务端读模型来。
@@ -53,8 +53,8 @@ const HOME_SECTIONS: { title: string; keys: ScalarKey[] }[] = [
 
 const SECTIONS: { title: string; sub: string; keys: ScalarKey[] }[] = [
   { title: "历史规模配置", sub: "仅用于历史估算；介绍页与网络脉搏在线设备使用上方首页数字设置", keys: ["fleetDevices", "onlineRatePct", "onlineJitter"] },
-  { title: "网络脉搏注册用户", sub: "注册用户按基数、月增长率和起点推算；不改变真实账户和个人名次", keys: ["registeredUsersBase", "registeredUsersMonthlyGrowthPct"] },
-  { title: "历史排名估算", sub: "仅用于本地估算；不改变正式 App 当前服务端名次", keys: ["virtualUserCount"] },
+  { title: "网络脉搏注册用户", sub: "注册用户按基数、月增长率和起点推算；不参与设备预估排名，不改变真实账户", keys: ["registeredUsersBase", "registeredUsersMonthlyGrowthPct"] },
+  { title: "历史排名估算", sub: "仅用于历史本地估算；虚拟人口不参与设备预估排名", keys: ["virtualUserCount"] },
 ];
 
 const int = (value: number) => (Number.isFinite(value) ? Math.round(value).toLocaleString("en-US") : "—");
@@ -224,8 +224,8 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
           ⚠️ 历史估算日金额从 {money(data.values.fleetDevices * data.publishedDailyUsdPerDevice)} 变成 {money(nextDaily)}
           (每台每日配置值 {money2(data.publishedDailyUsdPerDevice)} 不变)。这是内部估算，不代表实际支付，也不改变正式 App 对外统计。
         </div>}
-        {baseChanged && <div>改动注册用户基数后，网络脉搏推算起点会重置为本次保存时刻；真实账户和个人名次不变。</div>}
-        {virtualZero && <div>虚拟人口填了 0:历史本地估算分母仅含真实注册人口({int(data.realUserCount)} 人)。此参数不改变正式 App 当前服务端名次。</div>}
+        {baseChanged && <div>改动注册用户基数后，网络脉搏推算起点会重置为本次保存时刻；注册用户数字不参与设备预估排名，也不改变真实账户。</div>}
+        {virtualZero && <div>虚拟人口填了 0:历史本地估算分母仅含真实注册人口({int(data.realUserCount)} 人)。虚拟人口不参与设备预估排名。</div>}
         <div>本次提交基于配置版本 v{data.version};并发改动会返回 409,任何一项不合法都整组不保存记录。</div>
         <div>首页数字仅在开启后增长，暂停保留当前值；页面最多 60 秒同步状态。操作理由会写入审计。</div>
       </>,
@@ -323,7 +323,7 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
       <div className="f-stat cyan"><div className="k">历史设备配置</div><div className="v">{int(data.values.fleetDevices)}</div><div className="sub">非实测设备数，不用于对外事实</div></div>
       <div className="f-stat"><div className="k">历史在线估算</div><div className="v">{int(data.values.fleetDevices * data.values.onlineRatePct / 100)}</div><div className="sub">配置设备数 × 配置占比 {data.values.onlineRatePct}%</div></div>
       <div className="f-stat"><div className="k">网络脉搏注册基数</div><div className="v">{int(data.values.registeredUsersBase)}</div><div className="sub">网络脉搏展示；月增速 {data.values.registeredUsersMonthlyGrowthPct}%</div></div>
-      <div className="f-stat ok"><div className="k">历史估算分母</div><div className="v">{int(data.realUserCount + data.values.virtualUserCount)}</div><div className="sub">真实注册人口 + 虚拟人口；不用于当前服务端名次</div></div>
+      <div className="f-stat ok"><div className="k">历史估算分母</div><div className="v">{int(data.realUserCount + data.values.virtualUserCount)}</div><div className="sub">真实注册人口 + 虚拟人口；不用于设备预估排名</div></div>
     </div>
 
     {saveError && <div className="htint danger" style={{ marginBottom: 12 }}>
@@ -392,7 +392,7 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
     <section className="l-card">
       <div className="l-h">
         <span className="ttl">算力分位表</span>
-        <span className="sub">· 历史本地估算参数，不参与正式 App 当前服务端排名</span>
+        <span className="sub">· 历史本地估算参数，不参与设备预估排名</span>
         <div className="r">
           <PaginationExemption label="算力分位表" reason="整表统一保存，需同时检查各行数值顺序" maxRows={bands.length} kind="fixed-matrix" />
           {canWrite && <button className="l-btn sm" onClick={addBand}>添加档</button>}
@@ -418,13 +418,13 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
             </table>}
         <div className="htint" style={{ marginTop: 10 }}>
           填表规则:算力档位从 {H9_BAND_TOPS_MIN} 起从小到大排,累计占比只能一行比一行大或持平,最高不超过 100%。
-          这些参数保留用于历史本地估算。正式 App 的当前名次由服务端按符合条件的设备有效算力排序。
+          这些参数保留用于历史本地估算。设备预估排名使用独立配置的档位分布及在线设备展示量，与当前绑定手机的有效算力比较，不使用本表或虚拟人口。
         </div>
       </div>
     </section>
 
     <p className="f-foot">
-      <b>这页的数会去哪</b>:保存首页与历史展示设置并写审计。介绍页与网络脉搏共用在线设备展示，开启后按设置区间增长；网络脉搏注册用户按基数与月增长率推算。个人名次和实际资金账单不受影响。改动记录去{" "}
+      <b>这页的数会去哪</b>:保存首页与历史展示设置并写审计。介绍页与网络脉搏共用在线设备展示，开启后按设置区间增长；网络脉搏注册用户按基数与月增长率推算。在线设备展示量用于设备预估排名；注册用户数字不参与设备排名；不改变真实设备算力和资金账单。改动记录去{" "}
       <Link href="/platform/audit" className="l-btn sm">A2 审批与审计</Link>{" "}查。
     </p>
   </>;
