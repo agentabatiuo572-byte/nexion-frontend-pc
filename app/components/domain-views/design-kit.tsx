@@ -1524,7 +1524,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     needs("status", "状态");
     if (state.type === "fixed") {
       const a = Number(state.amountUSD);
-      if (!Number.isFinite(a) || a <= 0) missing.push("满减面值(正数)");
+      if (!Number.isFinite(a) || a < 1 || a > 1_000_000) missing.push("满减面值(1–1,000,000 USDT)");
     } else if (state.type === "percent") {
       const p = Number(state.percent);
       if (!Number.isFinite(p) || p <= 0 || p >= 100) missing.push("折扣率 1-99");
@@ -2589,7 +2589,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {select("type", "类型", ["fixed", "percent"], "voucher-type", { fixed: "满减 fixed", percent: "折扣 percent" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
-          {input("amountUSD", "满减面值 (美元)", "type=fixed 填;如 50", "number")}
+          {input("amountUSD", "满减面值 (1–1,000,000 USDT)", "满减券填写，可含小数；如 1.01", "number")}
           {input("percent", "折扣率 (%)", "type=percent 填;如 8", "number")}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>

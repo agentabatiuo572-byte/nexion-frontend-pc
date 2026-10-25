@@ -31,3 +31,25 @@ test('explicit H7 surfaces stay scoped and unknown surfaces remain invalid', () 
   assert.equal(surfacesText({ claimSurfaces: ['store'] }), '商城');
   assert.ok(missingBusinessFields(spec, { ...state, claimSurfaces: 'admin' }).some(s => s.includes('领取入口')));
 });
+
+test('H7 fixed amounts outside the backend range block both new and existing forms', () => {
+  for (const currentAmountUSD of ['', '1']) {
+    const state = initBusinessForm({ ...spec, currentAmountUSD });
+    for (const amountUSD of ['0.01', '0', '-1', '', 'NaN', 'Infinity', '1000000.000001']) {
+      const missing = missingBusinessFields(spec, { ...state, amountUSD });
+      assert.ok(missing.some(s => s.includes('满减面值')), `${currentAmountUSD}/${amountUSD}`);
+      assert.ok(missing.some(s => s.includes('1–1,000,000')), 'failure must explain the allowed range');
+    }
+  }
+});
+
+test('H7 fixed range endpoints and fractional amounts are preserved; percent validation stays independent', () => {
+  const state = initBusinessForm(spec);
+  for (const amountUSD of ['1', '1.01', '999999.999999', '1000000']) {
+    const values = { ...state, amountUSD };
+    assert.deepEqual(missingBusinessFields(spec, values), [], amountUSD);
+    assert.equal(parseVoucher(values, 'TEST-face-range').amountUSD, Number(amountUSD));
+  }
+  assert.deepEqual(missingBusinessFields(spec, { ...state, type: 'percent', percent: '20', amountUSD: '0.01' }), []);
+  assert.ok(missingBusinessFields(spec, { ...state, type: 'percent', percent: '101' }).some(s => s.includes('折扣率')));
+});
