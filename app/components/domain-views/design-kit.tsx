@@ -1530,8 +1530,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
       if (!Number.isFinite(p) || p <= 0 || p >= 100) missing.push("折扣率 1-99");
     }
     const surfs = (state.claimSurfaces ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-    if (surfs.length === 0) missing.push("领取入口页面(至少一个)");
-    else if (surfs.some((s) => !["home", "store", "me", "earn"].includes(s))) missing.push("领取入口仅限 home/store/me/earn");
+    if (surfs.some((s) => !["home", "store", "me", "earn"].includes(s))) missing.push("领取入口仅限 home/store/me/earn");
     const issuanceLimit = Number(state.issuanceLimit);
     if (!Number.isSafeInteger(issuanceLimit) || issuanceLimit < 0 || issuanceLimit > 10_000_000) {
       missing.push("发行上限须为 0-10000000 的整数");
@@ -2604,7 +2603,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {multiSelect("applicableSkus", "适用商品(点选;不选=全设备)", spec.applicableSkuOptions ?? [], "voucher-skus", spec.applicableSkuLabels)}
         </div>
         <div style={{ marginTop: 10 }}>
-          {multiSelect("claimSurfaces", "领取入口页面(点选)", ["home", "store", "me", "earn"], "voucher-surfaces", { home: "首页", store: "商城", me: "我的", earn: "收益" })}
+          {multiSelect("claimSurfaces", "领取入口页面(不选则不限入口)", ["home", "store", "me", "earn"], "voucher-surfaces", { home: "首页", store: "商城", me: "我的", earn: "收益" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
           {select("audience", "受众", ["new", "all"], "voucher-audience", { new: "新人 new", all: "全部 all" })}

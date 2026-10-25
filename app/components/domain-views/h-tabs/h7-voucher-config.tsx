@@ -92,7 +92,7 @@ function scopeText(v: OpsVoucher, labels: Record<string,string>): string {
   return `${v.applicableSkus.length} 个商品`;
 }
 function surfacesText(v: OpsVoucher): string {
-  return v.claimSurfaces.map((s) => SURFACE_LABEL[s] ?? "其他页面").join(" / ") || "—";
+  return v.claimSurfaces.map((s) => SURFACE_LABEL[s] ?? "其他页面").join(" / ") || "不限入口";
 }
 
 /** businessValue → OpsVoucher(逗号串拆 SKU/入口 · 日期转 ms · 数值清洗)。 */
