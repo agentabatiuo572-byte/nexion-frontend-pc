@@ -321,7 +321,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
           <span className="r"><CodeTag>六档显卡</CodeTag><CodeTag>单词一格</CodeTag></span>
         </div>
         <div className="tint cyan tiny" style={{ margin: "12px 16px 0" }}>
-          <AutoGloss>以下参数用于把显卡算力换算成每日 USDT / UVEL 估算,全部后台可调。</AutoGloss>
+          <AutoGloss>以下参数用于把显卡算力换算成每日 USDT / UVT 估算,全部后台可调。</AutoGloss>
         </div>
         <div data-proof="e6-yield-estimate-params" style={{ margin: "0 16px 14px" }}>
           {yields.map((p) => (
@@ -354,7 +354,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
                 <div className="e6-tier-yield">
                   <span><b>{topsNum == null ? "—" : numberFmt.format(topsNum)}</b> TOPS</span>
                   <span>{dailyUsdtValue == null ? "收益参数不可用" : `约 $${dailyUsdtValue.toFixed(2)} / 日`}</span>
-                  <span>{dailyNexValue == null ? "UVEL 折算不可用" : `约 ${numberFmt.format(dailyNexValue)} UVEL / 日`}</span>
+                  <span>{dailyNexValue == null ? "UVT 折算不可用" : `约 ${numberFmt.format(dailyNexValue)} UVT / 日`}</span>
                 </div>
                 <div className="e6-keyword-wrap">
                   {tier.keywords.map((kw) => (

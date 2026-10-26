@@ -50,7 +50,7 @@ const LIABILITY_LABELS: Record<string, string> = {
   usdt_staking_principal: "USDT质押本金",
   staking_interest: "质押应付利息",
   genesis_daily_emission: "创世节点应付分红",
-  nex_v2_future: "UVEL第二版未来兑付",
+  nex_v2_future: "UVT第二版未来兑付",
   withdrawal_queue: "待提现队列",
   commission_cooling: "等待解锁的佣金",
   lock_other: "锁仓本息其他",
@@ -59,7 +59,7 @@ const LIABILITY_LABELS: Record<string, string> = {
   balance: "可提现余额",
   stake_principal: "质押本金",
   stake_interest: "质押应计利息",
-  nex_payable: "UVEL 应付款",
+  nex_payable: "UVT 应付款",
   withdraw_queue: "提现队列",
   pending_withdraw: "钱包待提现金额",
 };

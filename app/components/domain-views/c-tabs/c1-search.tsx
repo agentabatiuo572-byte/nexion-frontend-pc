@@ -373,8 +373,8 @@ export function C1Search({
           <label>累计充值上限<input className="ui-control" aria-label="累计充值上限" type="number" min="0" placeholder="累计充值 ≤" value={filters.depositMax} onChange={(event) => changeFilter("depositMax", event.target.value)} /></label>
           <label>USDT 余额下限<input className="ui-control" aria-label="USDT 余额下限" type="number" min="0" placeholder="USDT ≥" value={filters.usdtMin} onChange={(event) => changeFilter("usdtMin", event.target.value)} /></label>
           <label>USDT 余额上限<input className="ui-control" aria-label="USDT 余额上限" type="number" min="0" placeholder="USDT ≤" value={filters.usdtMax} onChange={(event) => changeFilter("usdtMax", event.target.value)} /></label>
-          <label>UVEL 余额下限<input className="ui-control" aria-label="UVEL 余额下限" type="number" min="0" placeholder="UVEL ≥" value={filters.nexMin} onChange={(event) => changeFilter("nexMin", event.target.value)} /></label>
-          <label>UVEL 余额上限<input className="ui-control" aria-label="UVEL 余额上限" type="number" min="0" placeholder="UVEL ≤" value={filters.nexMax} onChange={(event) => changeFilter("nexMax", event.target.value)} /></label>
+          <label>UVT 余额下限<input className="ui-control" aria-label="UVT 余额下限" type="number" min="0" placeholder="UVT ≥" value={filters.nexMin} onChange={(event) => changeFilter("nexMin", event.target.value)} /></label>
+          <label>UVT 余额上限<input className="ui-control" aria-label="UVT 余额上限" type="number" min="0" placeholder="UVT ≤" value={filters.nexMax} onChange={(event) => changeFilter("nexMax", event.target.value)} /></label>
           <label>加入日期起<input className="ui-control" aria-label="加入日期起" type="date" value={filters.joinedFrom} onChange={(event) => changeFilter("joinedFrom", event.target.value)} /></label>
           <label>加入日期止<input className="ui-control" aria-label="加入日期止" type="date" value={filters.joinedTo} onChange={(event) => changeFilter("joinedTo", event.target.value)} /></label>
         </div>

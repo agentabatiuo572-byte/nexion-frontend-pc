@@ -192,9 +192,9 @@ function jsonRecords(value: unknown): JsonRecord[] {
 
 function deviceDailyReference(device: JsonRecord): string {
   if (text(device.deviceType, "").toUpperCase() === "SHARE") {
-    return device.dailyNex == null ? "UVEL/天暂不可用" : `${formatAmount(device.dailyNex)} UVEL/天`;
+    return device.dailyNex == null ? "UVT/天暂不可用" : `${formatAmount(device.dailyNex)} UVT/天`;
   }
-  return `${formatAmount(device.dailyUsdt)} USDT · ${formatAmount(device.dailyNex)} UVEL`;
+  return `${formatAmount(device.dailyUsdt)} USDT · ${formatAmount(device.dailyNex)} UVT`;
 }
 
 function ImpersonationUserScreen({ screen }: { screen: JsonRecord }) {
@@ -927,7 +927,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
             <div className="kv"><span className="k">用户编码</span><span className="v">{text(selectedAccount.userNo)}</span></div>
             <div className="kv"><span className="k">手机号</span><span className="v">{text(selectedAccount.phoneMasked)}</span></div>
             <div className="kv"><span className="k">等级</span><span className="v">{text(selectedAccount.userLevel)} / {text(selectedAccount.vRank)}</span></div>
-            <div className="kv"><span className="k">余额</span><span className="v">{formatAmount(selectedAccount.walletUsdt)} USDT · {formatAmount(selectedAccount.walletNex)} UVEL</span></div>
+            <div className="kv"><span className="k">余额</span><span className="v">{formatAmount(selectedAccount.walletUsdt)} USDT · {formatAmount(selectedAccount.walletNex)} UVT</span></div>
             <div className="kv"><span className="k">风险分</span><span className="v">{text(selectedAccount.riskScore, "0")} · {formatC1RiskBand(selectedAccount.riskBand)}</span></div>
             <div className="kv"><span className="k">当前名单</span><span className="v">{listEntry ? `${displayListKind(listEntry.kind)[0]} · ${text(listEntry.reason)}` : "无生效名单"}</span></div>
             <div className="kv"><span className="k">活跃会话</span><span className="v">{accountContext?.account && accountId(accountContext.account) === accountId(selectedAccount) ? asNumber(accountContext.activeSessions) : accountSessions.filter(activeSession).length} 个</span></div>

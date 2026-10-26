@@ -223,7 +223,7 @@ test("D2 exposes detail, structured lifecycle forms and batch splitting UI", () 
   assert.match(page, /排序字段/);
   assert.match(page, /毛手续费/);
   assert.match(page, /费用减免/);
-  assert.match(page, /UVEL抵扣率/);
+  assert.match(page, /UVT抵扣率/);
   assert.match(page, /K4 评分明细/);
   assert.match(page, /全部提现历史/);
   assert.match(client, /reviewD2WithdrawalsBatch/);
@@ -401,9 +401,9 @@ test("D2 preserves a missing K4 score as unavailable and blocks approval", () =>
 test("D5 exposes the canonical NEX fee offset that D2 snapshots", () => {
   assert.match(client, /nexFeeOffsetRate: d5Number\(raw\.nexFeeOffsetRate/);
   assert.match(client, /"nexFeeOffsetRate"/);
-  assert.match(d5Page, /UVEL 抵扣率/);
+  assert.match(d5Page, /UVT 抵扣率/);
   assert.match(d5Page, /\{ nexFeeOffsetRate: nex \}/);
-  assert.match(d5Page, /nexFeeOffsetRate\.toFixed\(2\)\}\/UVEL/);
+  assert.match(d5Page, /nexFeeOffsetRate\.toFixed\(2\)\}\/UVT/);
 });
 
 test("D5 renders each write control only for its exact authority", () => {

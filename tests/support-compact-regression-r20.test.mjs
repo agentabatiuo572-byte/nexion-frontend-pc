@@ -75,8 +75,8 @@ test("R20CE-PARTIAL actual finance shows partial amounts and keeps complete NET 
   const nex=structuredClone(usd);Object.assign(nex,{currency:"NEX",creditedDepositTotal:"12.000001",successfulWithdrawalPrincipalTotal:null,netContributionTotal:"-12.000001",balance:"0"});
   nex.fieldStatuses.successfulWithdrawalPrincipalTotal="UNKNOWN";value.finance.data.byCurrency.push(nex);
   const html=profileHarness(value).html();
-  assert.match(html,/749 USDT（部分统计）/);assert.match(html,/100 USDT（部分统计）/);assert.match(html,/12\.000001 UVEL（部分统计）/);
-  assert.match(html,/849 USDT<\/span>/);assert.match(html,/-12\.000001 UVEL<\/span>/);assert.match(html,/0 UVEL<\/span>/);
+  assert.match(html,/749 USDT（部分统计）/);assert.match(html,/100 USDT（部分统计）/);assert.match(html,/12\.000001 UVT（部分统计）/);
+  assert.match(html,/849 USDT<\/span>/);assert.match(html,/-12\.000001 UVT<\/span>/);assert.match(html,/0 UVT<\/span>/);
   assert.doesNotMatch(html.replace(/<[^>]*>/g,""),/PARTIAL|fieldStatuses|API|数据库|聚合|投影|夹具|验收/);
   assert.doesNotMatch(html,/累计成功充值实际入账暂时无法确认/);
 });

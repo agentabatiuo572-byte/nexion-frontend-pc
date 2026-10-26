@@ -132,7 +132,7 @@ test("L3 reads the canonical treasury snapshot, liabilities and seven-day maturi
     ["USDT质押本金", 100],
     ["质押应付利息", 20],
     ["创世节点应付分红", 30],
-    ["UVEL第二版未来兑付", 40],
+    ["UVT第二版未来兑付", 40],
     ["待提现队列", 50],
     ["等待解锁的佣金", 60],
     ["锁仓本息其他", 70],

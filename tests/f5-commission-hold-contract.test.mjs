@@ -177,7 +177,7 @@ test("①c 直属两类双币保留整组冻结、解冻，解冻恢复 cooling"
         assert.deepEqual({ op: confirmation.op, paramKey: confirmation.paramKey, expectedVersion: confirmation.expectedVersion,
           fixedVal: confirmation.fixedVal, amplify: confirmation.amplify },
         { op: "dispose", paramKey: view.row.auditKey, expectedVersion: 4, fixedVal, amplify: false });
-        assert.match(confirmation.detail, /结算组 DR-71 · 12 USDT \+ 120 UVEL（整组处理）/);
+        assert.match(confirmation.detail, /结算组 DR-71 · 12 USDT \+ 120 UVT（整组处理）/);
         if (status === "frozen") assert.match(confirmation.detail, /不会绕过剩余冷却期/);
       }
     }

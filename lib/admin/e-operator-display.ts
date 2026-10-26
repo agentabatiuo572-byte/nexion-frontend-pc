@@ -110,7 +110,7 @@ export function operatorRate(dailyUsdt: number | null | undefined, dailyNex: num
   const usdt = typeof dailyUsdt === "number" && Number.isFinite(dailyUsdt) && dailyUsdt >= 0 ? dailyUsdt : null;
   const nex = typeof dailyNex === "number" && Number.isFinite(dailyNex) && dailyNex >= 0 ? dailyNex : null;
   if (usdt == null && nex == null) return "收益待核验";
-  return [usdt == null ? null : format(usdt, "USDT"), nex == null ? null : format(nex, "UVEL")]
+  return [usdt == null ? null : format(usdt, "USDT"), nex == null ? null : format(nex, "UVT")]
     .filter((value): value is string => value != null).join(" · ");
 }
 

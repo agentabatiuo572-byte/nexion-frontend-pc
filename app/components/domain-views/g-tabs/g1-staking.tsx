@@ -402,7 +402,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
       )}
 
       <div className="f-stats">
-        <div className="f-stat ok"><div className="k">USDT 锁仓本金</div><div className="v">{fmtM(stats.usdtPoolUsd)}</div><div className="sub">G1 USDT 池 · UVEL 质押已下线</div></div>
+        <div className="f-stat ok"><div className="k">USDT 锁仓本金</div><div className="v">{fmtM(stats.usdtPoolUsd)}</div><div className="sub">G1 USDT 池 · UVT 质押已下线</div></div>
         <div className="f-stat"><div className="k">锁仓中持仓数</div><div className="v">{fmtCount(stats.positionCount)}</div><div className="sub">计息中 {fmtCount(stats.activeCount)} · 到期未领 {fmtCount(stats.matureCount)}</div></div>
         <div className="f-stat warn"><div className="k">累计应付利息</div><div className="v">{fmtM(stats.interestUsd)}</div><div className="sub">按已锁天数线性派生 · 真实持仓</div></div>
         <div className="f-stat danger"><div className="k">单档紧急暂停</div><div className="v">{stats.killedCount}</div><div className="sub">高息长锁档重点盯 · 整个质押池开关 {gate.enabled ? "在线(J1)" : "已暂停(J1)"}</div></div>

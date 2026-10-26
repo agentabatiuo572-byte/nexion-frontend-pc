@@ -1367,7 +1367,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     const normalizedFieldKeys = fieldKeys.filter(Boolean).map((key) => key.toLowerCase());
     if (normalizedFieldKeys.length !== new Set(normalizedFieldKeys).size) missing.push("字段标识不能重复（不区分大小写）");
   } else if (spec.kind === "trust-section-publish") {
-    if (spec.requireDataSource) needs("dataSource", "财务/UVEL数据来源");
+    if (spec.requireDataSource) needs("dataSource", "财务/UVT数据来源");
     const trilingual = validateTrustSectionTrilingualFields(spec.targetFields);
     if (!trilingual.valid) missing.push(`中越英字段不完整：${trilingual.missing.join("、")}`);
     if (state.bilingualConfirmed !== "true") missing.push("中越英三语确认");
@@ -1556,11 +1556,11 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
   } else if (spec.kind === "mission-create") {
     needs("missionCode", "任务编号");
     needs("missionName", "任务名称");
-    needs("rewardPoints", "奖励 UVEL 数");
+    needs("rewardPoints", "奖励 UVT 数");
     needs("category", "任务类别");
     needs("actionRoute", "去完成页面");
     if (!Number.isSafeInteger(Number(state.rewardPoints)) || Number(state.rewardPoints) < 0) {
-      missing.push("奖励 UVEL 数须为非负整数");
+      missing.push("奖励 UVT 数须为非负整数");
     }
   }
   return missing;
@@ -1598,12 +1598,12 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
   if (spec.kind === "voucher-config") return state.name || undefined;
   if (spec.kind === "promo-banner-edit") {
     const f = Number(state.baseReward) * Number(state.multiplier);
-    return Number.isFinite(f) ? `${Math.round(f)} NEX(${state.baseReward}×${state.multiplier})` : undefined;
+    return Number.isFinite(f) ? `${Math.round(f)} UVT(${state.baseReward}×${state.multiplier})` : undefined;
   }
   if (spec.kind === "vrank-reward-edit") {
     const t = state.rtype;
     if (t === "usdt") return state.amount ? `USDT $${state.amount}` : undefined;
-    if (t === "nex") return state.amount ? `${Number(state.amount).toLocaleString()} UVEL` : undefined;
+    if (t === "nex") return state.amount ? `${Number(state.amount).toLocaleString()} UVT` : undefined;
     if (t === "voucher") return state.voucherId ? `代金券 ${spec.voucherLabels?.[state.voucherId] ?? state.voucherId}` : undefined;
     if (t === "sku") return state.skuId ? `SKU ${spec.skuLabels?.[state.skuId] ?? state.skuId}` : undefined;
     if (t === "custom") return state.custom || undefined;
@@ -1641,7 +1641,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
     const proof = typeof proofOrLabels === "string" ? proofOrLabels : undefined;
     const labels = typeof proofOrLabels === "string" ? optionLabels : proofOrLabels;
     const current = value[key] ?? options[0] ?? "";
-    const displayOption = (option: string) => ({ NEX: "UVEL", nex: "UVEL", server: "服务器", client: "客户端", "server+client": "服务器与客户端", string: "文本", number: "数值", boolean: "是或否", enum: "固定选项", timestamp: "时间", id: "编号", "无 PII": "无个人隐私信息", "低(脱敏 ID)": "仅部分隐藏的编号", "默认脱敏": "默认隐藏敏感信息", "上架中 active": "上架中", "已下架 paused": "已下架", "超管": "超级管理员" } as Record<string, string>)[option] ?? option.replace(/^KPI/, "关键指标").replace(/\bStaking\b/g, "质押").replace(/\bGenesis\b/g, "创世节点").replace(/([\u3400-\u9fff])\s+(?:active|paused|fixed|percent|new|all|true|false)\b/g, "$1");
+    const displayOption = (option: string) => ({ NEX: "UVT", nex: "UVT", server: "服务器", client: "客户端", "server+client": "服务器与客户端", string: "文本", number: "数值", boolean: "是或否", enum: "固定选项", timestamp: "时间", id: "编号", "无 PII": "无个人隐私信息", "低(脱敏 ID)": "仅部分隐藏的编号", "默认脱敏": "默认隐藏敏感信息", "上架中 active": "上架中", "已下架 paused": "已下架", "超管": "超级管理员" } as Record<string, string>)[option] ?? option.replace(/^KPI/, "关键指标").replace(/\bStaking\b/g, "质押").replace(/\bGenesis\b/g, "创世节点").replace(/([\u3400-\u9fff])\s+(?:active|paused|fixed|percent|new|all|true|false)\b/g, "$1");
     return (
     <label className="field" style={{ marginBottom: 0 }}>
       <span>{label}</span>
@@ -2181,7 +2181,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {select("format", "课程形式", spec.formats ?? ["Article", "Video", "Hands-on"], COURSE_FORMAT_LABELS)}
           {select("difficulty", "课程难度", spec.levels ?? ["Beginner", "Intermediate", "Advanced"], COURSE_LEVEL_LABELS)}
           {select("duration", "预计时长", spec.durations ?? DEFAULT_COURSE_DURATIONS)}
-          {input("reward", `完成奖励(${spec.rewardMin ?? 0}-${spec.rewardMax ?? 999} NEX)`, "5", "number")}
+          {input("reward", `完成奖励(${spec.rewardMin ?? 0}-${spec.rewardMax ?? 999} UVT)`, "5", "number")}
           <div className="itint ok"><b>保存状态</b> · {COURSE_STATUS_LABELS.draft}；发布必须回到课程列表单独确认。</div>
           {input("titleZh", "中文标题（最多 1024 字）", "课程标题", "text", 1024)}
           {input("titleVi", "越南语标题（最多 1024 字）", "Tiêu đề khóa học", "text", 1024)}
@@ -2512,10 +2512,10 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             {fieldKeys.length === 0 && <div className="tiny">当前版与待发布版均无结构化字段。</div>}
           </div>
         </div>
-        {spec.requireDataSource && input("dataSource", "财务/UVEL数据来源", "必填：报表、账本快照或市场数据编号")}
+        {spec.requireDataSource && input("dataSource", "财务/UVT数据来源", "必填：报表、账本快照或市场数据编号")}
         <label className="row" style={{ gap: 8, marginTop: 10 }}>
           <input type="checkbox" checked={value.bilingualConfirmed === "true"} onChange={(event) => set("bilingualConfirmed", String(event.target.checked))} />
-          三语确认：中文、越南语、英文已逐项核对，关键数字和 UVEL 口径一致
+          三语确认：中文、越南语、英文已逐项核对，关键数字和 UVT 口径一致
         </label>
       </div>
     );
@@ -2567,14 +2567,14 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("name", "任务名称", "如 逛收益页")}
           {input("path", "跳转路径 path", "如 /earn")}
-          {input("reward", "奖励说明", "如 50 UVEL(可双币:200 UVEL + $1)")}
+          {input("reward", "奖励说明", "如 50 UVT(可双币:200 UVT + $1)")}
           {select("status", "状态", spec.statusOptions ?? ["active", "paused", "archived"], "task-edit-status", { active: "生效中 active", paused: "已停用 paused", archived: "已归档 archived" })}
           {select("completionType", "完成判定方式 completion", spec.completionTypeOptions ?? ["visit", "event", "manual"], "task-edit-completion", { visit: "访问路径自动 visit", event: "业务事件触发 event", manual: "手动核验 manual" })}
           {input("completionEvent", "完成触发条件 / 事件", "visit 可空;event 填 order.paid;manual 填核验说明")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
           完成判定:<b>访问路径自动</b> = 用户进入「跳转路径」即判完成(浏览类);<b>业务事件触发</b> = 系统确认对应业务已完成后，才计入任务完成记录;<b>手动核验</b> = 运营人工确认。
-          升奖励 = 放大 UVEL 流出,过 B1 红线;停用后 = 用户端不再展示,已派发不回收。
+          升奖励 = 放大 UVT 流出,过 B1 红线;停用后 = 用户端不再展示,已派发不回收。
         </div>
       </div>
     );
@@ -2630,7 +2630,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {select("stackWithOthers", "可叠加其它优惠", ["false", "true"], "voucher-stack-others", { false: "不可叠加 false", true: "可叠加 true" })}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          <b>满减</b> = 满「门槛」减「面值」;<b>折扣</b> = 百分比折扣,封顶可选。发行上限 0 = 不限量,正整数 = 所有来源合计发券上限。适用商品 不选 = 全设备(领券跳商城),单选 = 跳该 商品 详情页。领取入口 = 关闭弹窗后展示领券提示条 的前端页面。<b>叠加策略</b>:默认不与试用收益 / 其它优惠叠加(二选一取最优)。<b>不可提现</b>(固有性质:折扣只在结算抵扣价格、永不入可提现余额)。代金券是促销折扣、非 UVEL 负债,不挂 B1 红线。
+          <b>满减</b> = 满「门槛」减「面值」;<b>折扣</b> = 百分比折扣,封顶可选。发行上限 0 = 不限量,正整数 = 所有来源合计发券上限。适用商品 不选 = 全设备(领券跳商城),单选 = 跳该 商品 详情页。领取入口 = 关闭弹窗后展示领券提示条 的前端页面。<b>叠加策略</b>:默认不与试用收益 / 其它优惠叠加(二选一取最优)。<b>不可提现</b>(固有性质:折扣只在结算抵扣价格、永不入可提现余额)。代金券是促销折扣、非 UVT 负债,不挂 B1 红线。
         </div>
       </div>
     );
@@ -2644,11 +2644,11 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
       <div className="field" data-business-form="vrank-reward-edit">
         <span className="bf-legend">业务表单 · 等级奖励{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div style={{ marginBottom: 10 }}>
-          {select("rtype", "奖励类型", ["usdt", "nex", "voucher", "sku", "custom"], "vrank-reward-type", { usdt: "USDT 现金", nex: "UVEL 代币", voucher: "代金券", sku: "系统 商品", custom: "自定义" })}
+          {select("rtype", "奖励类型", ["usdt", "nex", "voucher", "sku", "custom"], "vrank-reward-type", { usdt: "USDT 现金", nex: "UVT 代币", voucher: "代金券", sku: "系统 商品", custom: "自定义" })}
         </div>
         {(rtype === "usdt" || rtype === "nex") && (
           <div data-proof="vrank-reward-amount">
-            {input("amount", rtype === "usdt" ? "金额(USDT)" : "数量(UVEL)", rtype === "usdt" ? "如 50" : "如 10000", "number")}
+            {input("amount", rtype === "usdt" ? "金额(USDT)" : "数量(UVT)", rtype === "usdt" ? "如 50" : "如 10000", "number")}
           </div>
         )}
         {rtype === "voucher" && (
@@ -2671,7 +2671,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           </div>
         )}
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          <b>USDT / UVEL</b> = 直接发放金额(会放大资金流出,过 B1 备付金覆盖率检查);<b>代金券 / 商品</b> = 从现有代金券 / 在售 商品 中选;<b>自定义</b> = 自由文本(线下兑付,不入资金账)。
+          <b>USDT / UVT</b> = 直接发放金额(会放大资金流出,过 B1 备付金覆盖率检查);<b>代金券 / 商品</b> = 从现有代金券 / 在售 商品 中选;<b>自定义</b> = 自由文本(线下兑付,不入资金账)。
         </div>
       </div>
     );
@@ -2697,12 +2697,12 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
       <div className="field" data-business-form="day-one-tri-reward">
         <span className="bf-legend">业务表单 · 首日任务分档奖励</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("active", "按时完成奖励(UVEL)", "500", "number")}
-          {input("grace", "宽限期奖励(UVEL)", "200", "number")}
-          {input("expired", "逾期奖励(UVEL)", "0", "number")}
+          {input("active", "按时完成奖励(UVT)", "500", "number")}
+          {input("grace", "宽限期奖励(UVT)", "200", "number")}
+          {input("expired", "逾期奖励(UVT)", "0", "number")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          按时完成、宽限期内完成和逾期共三档奖励，<b>须满额 ≥ 宽限 ≥ 过期</b>。升任一档 = 放大 UVEL 流出,提交即过 B1 备付金红线。
+          按时完成、宽限期内完成和逾期共三档奖励，<b>须满额 ≥ 宽限 ≥ 过期</b>。升任一档 = 放大 UVT 流出,提交即过 B1 备付金红线。
         </div>
       </div>
     );
@@ -2720,7 +2720,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {input("completionEvent", "完成触发条件 / 事件", "如 stake.locked / referral.sent")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          一档按优先级命中第一条派发、二档完成池每条独立派发;完成判定多为业务事件(行为归因,谎报无效)。升奖励 = 放大 UVEL 流出过 B1 红线;同周锁定、下周生效;停用后 = 该条本周起不派发。
+          一档按优先级命中第一条派发、二档完成池每条独立派发;完成判定多为业务事件(行为归因,谎报无效)。升奖励 = 放大 UVT 流出过 B1 红线;同周锁定、下周生效;停用后 = 该条本周起不派发。
         </div>
       </div>
     );
@@ -2733,14 +2733,14 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("theme", "主题 theme", "如 地基建设者")}
           {input("age", "账龄段 age", "如 0–2 月")}
-          {input("reward", "奖励说明", "如 1,500 UVEL")}
+          {input("reward", "奖励说明", "如 1,500 UVT")}
           {select("status", "状态", spec.statusOptions ?? ["active", "paused", "archived"], "monthly-task-status", { active: "生效中 active", paused: "已停用 paused", archived: "已归档 archived" })}
         </div>
         <div style={{ marginTop: 10 }}>
           {textArea("goals", "子目标 goals(3 个子目标全达成才可领)", "如 累计赚 200 · 绑卡 · 邀 1 人", 2)}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          按账龄段派发,3 个子目标全达成才可领,跨月清空重派;升奖励 = 放大 UVEL 流出过 B1 红线;改动只对本月新派生效。
+          按账龄段派发,3 个子目标全达成才可领,跨月清空重派;升奖励 = 放大 UVT 流出过 B1 红线;改动只对本月新派生效。
         </div>
       </div>
     );
@@ -2753,7 +2753,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("missionCode", "任务编号 code(英文唯一)", "如 dayOne-visit-earn")}
           {input("missionName", "任务名称", "如 逛收益页")}
-          {input("rewardPoints", "奖励 UVEL 数", "如 50", "number")}
+          {input("rewardPoints", "奖励 UVT 数", "如 50", "number")}
           {select("category", "任务类别", ["wallet", "explore", "recommend", "identity", "social"], {
             wallet: "钱包", explore: "探索", recommend: "推荐", identity: "身份", social: "社交",
           })}
@@ -2779,7 +2779,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
             "/pages/me/profile": "个人资料",
             "/pages/me/wallet-cards-new": "绑定银行卡",
             "/pages/me/wallet-topup": "钱包充值",
-            "/pages/me/wallet-exchange": "UVEL / USDT 兑换",
+            "/pages/me/wallet-exchange": "UVT / USDT 兑换",
             "/pages/me/wallet-repurchase": "复投",
             "/pages/me/devices": "我的设备",
             "/pages/earn/earn": "收益",
@@ -2812,9 +2812,9 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {input("monthsTo", "账龄止(月)", "2", "number")}
           {input("targetType", "目标类型", "如 earn")}
           {input("targetValue", "目标值", "200", "number")}
-          {select("rewardType", "奖励类型", ["NEX", "USDT"], "monthly-reward-type", { NEX: "UVEL 代币", USDT: "USDT 现金" })}
+          {select("rewardType", "奖励类型", ["NEX", "USDT"], "monthly-reward-type", { NEX: "UVT 代币", USDT: "USDT 现金" })}
           {input("rewardAmount", "奖励量", "1500", "number")}
-          {input("rewardName", "奖励展示", "如 1500 UVEL")}
+          {input("rewardName", "奖励展示", "如 1500 UVT")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
           按账龄段派发;奖励 &gt; 0 会放大资金流出,过 B1 备付金红线。
@@ -2870,7 +2870,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {input("name", "活动名", "如 夏日狂欢")}
           {select("kind", "类型", ["discount", "referral", "regional", "boost", "seasonal", "holding", "onboarding"], "event-kind", { discount: "限时折扣", referral: "邀请挑战", regional: "区域活动", boost: "加成活动", seasonal: "季节活动", holding: "持币活动", onboarding: "新手活动" })}
           {select("state", "状态", ["ongoing", "upcoming", "ended"], "event-state", { ongoing: "进行中", upcoming: "待开始", ended: "已结束" })}
-          {input("reward", "奖励", "如 100 UVEL")}
+          {input("reward", "奖励", "如 100 UVT")}
           {input("condition", "完成条件", "如 order.paid")}
           {input("targetValue", "目标值", "如 5", "number")}
           {input("geo", "地域范围", "如 VN / GLOBAL")}
@@ -2893,7 +2893,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
       <div className="field" data-business-form="promo-banner-edit">
         <span className="bf-legend">业务表单 · 本周转化卡</span>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("baseReward", "基础奖励(UVEL)", "800", "number")}
+          {input("baseReward", "基础奖励(UVT)", "800", "number")}
           {input("multiplier", "促销倍率 ×", "1.5", "number")}
           {input("countdownDays", "倒计时 · 天", "4", "number")}
           {input("countdownHours", "倒计时 · 时", "12", "number")}
@@ -2902,7 +2902,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {select("status", "上下架", spec.statusOptions ?? ["active", "paused"], "promo-banner-status", { active: "上架中 active", paused: "已下架 paused" })}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          最终奖励 = 基础 × 倍率 = <b>{Number.isFinite(final) ? Math.round(final) : "—"} UVEL</b>(对应前端首页「激活设备领 UVEL」促销卡)。升奖励 / 倍率 = 放大 UVEL 流出,过 B1 红线;文案归 I 域,本块只配奖励 / 倍率 / 倒计时 / 目标设备 / 日产 / 上下架。
+          最终奖励 = 基础 × 倍率 = <b>{Number.isFinite(final) ? Math.round(final) : "—"} UVT</b>(对应前端首页「激活设备领 UVT」促销卡)。升奖励 / 倍率 = 放大 UVT 流出,过 B1 红线;文案归 I 域,本块只配奖励 / 倍率 / 倒计时 / 目标设备 / 日产 / 上下架。
         </div>
       </div>
     );
@@ -3340,7 +3340,7 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
   if (spec.kind === "balance-adjust") {
     const amtN = Number(value.amount);
     const dir = value.direction ?? "增加";
-    const signed = !Number.isFinite(amtN) || amtN <= 0 ? "—" : `${dir === "扣减" ? "−" : dir === "冲正" ? "∓" : "+"}${amtN} ${value.currency === "NEX" ? "UVEL" : value.currency ?? "USDT"}`;
+    const signed = !Number.isFinite(amtN) || amtN <= 0 ? "—" : `${dir === "扣减" ? "−" : dir === "冲正" ? "∓" : "+"}${amtN} ${value.currency === "NEX" ? "UVT" : value.currency ?? "USDT"}`;
     return (
       <div className="field" data-business-form="balance-adjust">
         <span className="bf-legend">业务表单 · 结构化调账(方向 / 金额 / 凭证)</span>

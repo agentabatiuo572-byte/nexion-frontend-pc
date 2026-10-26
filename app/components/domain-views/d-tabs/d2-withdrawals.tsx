@@ -951,9 +951,9 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
             <KV k="网络费率 / 区间" v={`${detail.networkFeeRate ?? "—"} · ${money(detail.networkFeeMin ?? 0)}–${money(detail.networkFeeMax ?? 0)}`} />
             <KV k="毛手续费 / 金额费率" v={`${money(detail.grossFee ?? 0)} · ${detail.penaltyFeeRate ?? "—"}%`} />
           </>}
-          <KV k="UVEL 抵扣" v={`${detail.nexBurned} UVEL`} />
+          <KV k="UVT 抵扣" v={`${detail.nexBurned} UVT`} />
           <KV k="费用减免" v={money(detail.feeWaived)} />
-          <KV k="UVEL抵扣率" v={`$${detail.nexFeeOffsetRate}/UVEL`} />
+          <KV k="UVT抵扣率" v={`$${detail.nexFeeOffsetRate}/UVT`} />
         </section>
         <section className="d2-detail-section">
           <h3>生命周期</h3>

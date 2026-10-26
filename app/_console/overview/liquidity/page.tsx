@@ -57,7 +57,7 @@ const LIABILITY_LABELS: Record<(typeof B2_LIABILITY_KEYS)[number], string> = {
   usdt_staking_principal: "USDT 质押本金",
   staking_interest: "质押利息",
   genesis_daily_emission: "创世节点 每日分红",
-  nex_v2_future: "UVEL 第二版 远期权益",
+  nex_v2_future: "UVT 第二版 远期权益",
   withdrawal_queue: "提现队列",
   commission_cooling: "冷却期佣金",
   lock_other: "其他锁仓",
@@ -355,7 +355,7 @@ export default function LiquidityPage() {
           </div>
           <footer>
             {operatorCopyText(maturity.farLiabilityNote)}
-            <span>UVEL 第二版 远期权益默认不作为当前必须兑付的应付款。</span>
+            <span>UVT 第二版 远期权益默认不作为当前必须兑付的应付款。</span>
           </footer>
         </section>
 

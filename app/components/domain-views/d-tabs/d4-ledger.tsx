@@ -303,7 +303,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
             <div className="dtint cyan">{userLabel(userLedger)} · 全量 {userLedger.total} 笔；当前余额独立读取用户钱包</div>
             <div className="sum-grid">
               <div className="s"><div className="k">USDT 当前余额</div><div className="v">{assetAmount(userLedger.balance.USDT, "USDT")}</div></div>
-              <div className="s"><div className="k">UVEL 当前余额</div><div className="v">{assetAmount(userLedger.balance.NEX, "NEX")}</div></div>
+              <div className="s"><div className="k">UVT 当前余额</div><div className="v">{assetAmount(userLedger.balance.NEX, "NEX")}</div></div>
               {Object.entries(userLedger.categoryTotals).map(([key, value]) => { const [kind, asset] = key.split(":"); return <div className="s" key={key}><div className="k">{BILL_TYPE_LABELS[kind as D4BillType] ?? "其他业务"} · {nexGridBrandText(asset)}</div><div className="v">{assetAmount(value, asset)}</div></div>; })}
             </div>
             {userLedger.rows.length === 0 ? <div className="dtint">该用户暂无资金账单；当前余额仍以钱包记录为准。</div> : userLedger.rows.map((row) => <div className="rb-row" key={row.id}><span className="mono" style={{ color: "var(--ink-4)" }}>{timeText(row.createdAt)}</span><span>{BILL_TYPE_LABELS[row.billType]} · {row.bizNo}</span><span className="mono" style={{ fontWeight: 700 }}>{signed(row)}</span><span className="mono">余 {assetAmount(row.balanceAfter, row.asset)} {nexGridBrandText(row.asset)}</span></div>)}
@@ -324,7 +324,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
               </div>
             ) : <>
               <div className={`dtint ${runningBalance.balanced ? "cyan" : "warn"}`} data-proof="d4-running-balance">{runningBalance.balanced ? `已入账流水连续，且最新余额与钱包一致${runningBalance.unsettledCount > 0 ? `；另有 ${runningBalance.unsettledCount} 条未结算流水不参与钱包核对` : ""}` : `发现 ${runningBalance.breakCount} 个账实断点，请回到对应业务单核查；D4 不提供调账入口`}</div>
-              {runningBalance.reconciliation && <div className="sum-grid"><div className="s"><div className="k">USDT 钱包差额</div><div className="v">{runningBalance.reconciliation.USDT}</div></div><div className="s"><div className="k">UVEL 钱包差额</div><div className="v">{runningBalance.reconciliation.NEX}</div></div></div>}
+              {runningBalance.reconciliation && <div className="sum-grid"><div className="s"><div className="k">USDT 钱包差额</div><div className="v">{runningBalance.reconciliation.USDT}</div></div><div className="s"><div className="k">UVT 钱包差额</div><div className="v">{runningBalance.reconciliation.NEX}</div></div></div>}
             </>}
             {runningBalance.rows.map((item) => <div className={`rb-row${item.breakDetected ? " warn" : ""}`} key={item.bill.id}><span className="mono">{timeText(item.bill.createdAt)}</span><span>{item.settlementBucket === "UNSETTLED" ? "未结算 · 不参与钱包核对" : item.breakDetected ? "⚠ 断点" : "连续"} · {item.bill.bizNo}</span><span className="mono">期望 {item.expectedBalanceAfter ?? "—"}</span><span className="mono">实际 {item.bill.balanceAfter} · 差 {item.difference}</span></div>)}
           </> : <div className="dtint">先加载单用户账本，即可检查时间轴断点与钱包最终余额。</div>}

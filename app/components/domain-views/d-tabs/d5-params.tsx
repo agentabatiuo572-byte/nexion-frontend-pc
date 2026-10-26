@@ -207,7 +207,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       <div className="f-stat cyan"><div className="k">余额可提上限</div><div className="v">{pctRatio(params.maxBalanceRatio)}</div><div className="sub">当前生效配置</div></div>
       <div className="f-stat warn"><div className="k">网络确认费</div><div className="v">${params.networkConfirmFeeUsd.trc20} / ${params.networkConfirmFeeUsd.bep20} / ${params.networkConfirmFeeUsd.erc20}</div><div className="sub">TRC20 / BEP20 / ERC20 · 每笔固定</div></div>
       <div className="f-stat"><div className="k">提现网络</div><div className="v">{params.networkEnabled.trc20 ? "TRC20 开" : "TRC20 关"} / {params.networkEnabled.bep20 ? "BEP20 开" : "BEP20 关"} / {params.networkEnabled.erc20 ? "ERC20 开" : "ERC20 关"}</div><div className="sub">当前生效配置 · 应用将按此隐藏不可用通道</div></div>
-      <div className="f-stat cyan"><div className="k">UVEL 抵扣率</div><div className="v">${params.nexFeeOffsetRate.toFixed(2)}/UVEL</div><div className="sub">当前生效配置</div></div>
+      <div className="f-stat cyan"><div className="k">UVT 抵扣率</div><div className="v">${params.nexFeeOffsetRate.toFixed(2)}/UVT</div><div className="sub">当前生效配置</div></div>
       <div className="f-stat"><div className="k">小额免审线</div><div className="v">${params.smallAmountThresholdUsd}</div><div className="sub">提交时小额自动审核结果</div></div>
       <div className="f-stat"><div className="k">预计到账时限</div><div className="v">{params.payoutSlaHours} 小时</div><div className="sub">写入提现到期时间</div></div>
       <div className={`f-stat ${params.coverageReliable && params.coverageRatio >= params.redlinePct ? "ok" : "danger"}`}><div className="k">B1 覆盖率</div><div className="v">{pct(params.coverageRatio)}</div><div className="sub">红线 {pct(params.redlinePct)} · {params.coverageReliable ? "可信" : "不可用"}</div></div>
@@ -274,9 +274,9 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
             {canFeeWrite && <button className="l-btn sm" disabled={feeIsDefault && feeUnchanged} onClick={() => submit("网络确认费恢复默认", { networkConfirmFeeUsd: { ...D5_NETWORK_CONFIRM_FEE_DEFAULT } }, D5_NETWORK_CONFIRM_FEE_DEFAULT.trc20 < params.networkConfirmFeeUsd.trc20 || D5_NETWORK_CONFIRM_FEE_DEFAULT.bep20 < params.networkConfirmFeeUsd.bep20 || D5_NETWORK_CONFIRM_FEE_DEFAULT.erc20 < params.networkConfirmFeeUsd.erc20, `TRC20 $${params.networkConfirmFeeUsd.trc20} / BEP20 $${params.networkConfirmFeeUsd.bep20} / ERC20 $${params.networkConfirmFeeUsd.erc20} → 默认 $${D5_NETWORK_CONFIRM_FEE_DEFAULT.trc20} / $${D5_NETWORK_CONFIRM_FEE_DEFAULT.bep20} / $${D5_NETWORK_CONFIRM_FEE_DEFAULT.erc20}`)}>恢复默认</button>}
           </div>
           <div className="p-row">
-            <div className="txt"><div className="k">UVEL 抵扣率</div><div className="s">必须大于 0；上调放大、下调收紧</div></div>
-            <input aria-label="UVEL 抵扣率目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.nex} disabled={!canFeeWrite} onChange={(event) => updateDraft("nex", event.target.value)} />
-            {canFeeWrite && <button className="l-btn sm mc" disabled={!nexValid || nex === params.nexFeeOffsetRate} onClick={() => submit("UVEL 抵扣率", { nexFeeOffsetRate: nex }, nex > params.nexFeeOffsetRate, `$${params.nexFeeOffsetRate}/UVEL → $${nex}/UVEL`)}>预览并提交</button>}
+            <div className="txt"><div className="k">UVT 抵扣率</div><div className="s">必须大于 0；上调放大、下调收紧</div></div>
+            <input aria-label="UVT 抵扣率目标值" className="l-inp" type="text" inputMode="decimal" value={drafts.nex} disabled={!canFeeWrite} onChange={(event) => updateDraft("nex", event.target.value)} />
+            {canFeeWrite && <button className="l-btn sm mc" disabled={!nexValid || nex === params.nexFeeOffsetRate} onClick={() => submit("UVT 抵扣率", { nexFeeOffsetRate: nex }, nex > params.nexFeeOffsetRate, `$${params.nexFeeOffsetRate}/UVT → $${nex}/UVT`)}>预览并提交</button>}
           </div>
         </div>
       </section>

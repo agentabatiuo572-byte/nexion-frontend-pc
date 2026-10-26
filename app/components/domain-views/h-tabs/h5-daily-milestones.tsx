@@ -185,14 +185,14 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const openEarn = (milestone: EarnMilestone) => {
     openActionConfirm({
       action: `收益里程碑 · $${milestone.threshold}`,
-      detail: <>当前门槛 <b>${milestone.threshold}</b>,奖励 <b>{milestone.nex} UVEL</b>。后端校验门槛顺序。</>,
+      detail: <>当前门槛 <b>${milestone.threshold}</b>,奖励 <b>{milestone.nex} UVT</b>。后端校验门槛顺序。</>,
       amplifies: true,
       businessForm: {
         kind: "multi-field",
         title: "收益里程碑",
         fields: [
           { key: "threshold", label: "门槛(USD)", inputKind: "number", current: String(milestone.threshold), placeholder: "500" },
-          { key: "nex", label: "奖励(UVEL)", inputKind: "number", current: String(milestone.nex), placeholder: "250" },
+          { key: "nex", label: "奖励(UVT)", inputKind: "number", current: String(milestone.nex), placeholder: "250" },
         ],
       },
       run: async (reason, _value, form) => {
@@ -262,7 +262,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           <div className="sub">连签里程碑触发 {Number(stats.weekMsTrigger ?? 0).toLocaleString()}</div>
         </div>
         <div className="f-stat warn">
-          <div className="k">本周里程碑 UVEL</div>
+          <div className="k">本周里程碑 UVT</div>
           <div className="v">{nexGridBrandText(text(stats.weekMsNex))}</div>
           <div className="sub">覆盖率 {text(model.coverage?.coverageRatio)}% · 红线 {text(model.coverage?.redlinePct)}%</div>
         </div>
@@ -328,7 +328,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
               {model.streakMilestones.map((milestone) => (
                 <tr key={milestone.id}>
                   <td style={{ fontWeight: 600 }}>{milestone.day}</td>
-                  <td>{({nex:"UVEL奖励",NEX:"UVEL奖励",usdt:"USDT奖励",USDT:"USDT奖励",voucher:"代金券奖励"} as Record<string,string>)[text(milestone.kind)] ?? "成长奖励"}</td>
+                  <td>{({nex:"UVT奖励",NEX:"UVT奖励",usdt:"USDT奖励",USDT:"USDT奖励",voucher:"代金券奖励"} as Record<string,string>)[text(milestone.kind)] ?? "成长奖励"}</td>
                   <td className="num mono">{operatorCopyText(milestone.reward)}</td>
                   <td style={{ textAlign: "right" }}>
                     <button className="l-btn sm mc" aria-label={`修改 ${milestone.day} 天连签奖励`} onClick={() => openStreak(milestone)} disabled={!canWrite}>改奖励</button>
@@ -385,7 +385,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
               <tr>
                 <th>键</th>
                 <th className="num">门槛(USD)</th>
-                <th className="num">奖励(UVEL)</th>
+                <th className="num">奖励(UVT)</th>
                 <th className="num">周触发</th>
                 <th style={{ textAlign: "right" }}>操作</th>
               </tr>

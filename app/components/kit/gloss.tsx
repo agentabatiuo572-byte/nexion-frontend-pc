@@ -12,7 +12,7 @@ import { GLOSSARY, GLOSSARY_TERMS, GLOSSARY_GUARD } from "@/lib/admin/glossary";
 import { createGlossaryMatcher } from "@/lib/admin/glossary-match";
 
 const PLAIN_LABELS: Record<string, string> = {
-  "NEX": "UVEL",
+  "NEX": "UVT",
   "Genesis": "创世节点",
   "RBAC": "角色权限",
   "CAS": "版本校验",
@@ -55,7 +55,7 @@ export function Gloss({ children }: { children: string }) {
   const tip = GLOSSARY[children];
   if (!tip) return <>{children}</>;
   const label = PLAIN_LABELS[children] ?? children;
-  return <span className="gloss" data-tip={`${children}：${tip}`} role="note" aria-label={`${label}：${tip}`}>{label}</span>;
+  return <span className="gloss" data-tip={`${label}：${tip}`} role="note" aria-label={`${label}：${tip}`}>{label}</span>;
 }
 
 // 匹配边界规则(守护词 / 拉丁词边界 / 长词优先)见 lib/admin/glossary-match.ts。

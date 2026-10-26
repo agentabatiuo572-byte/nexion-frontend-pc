@@ -38,7 +38,7 @@ const SUBTYPE_LABELS: Record<string, string> = {
   withdraw_bank_fee: "银行出款手续费",
   withdraw_fee_offset: "提现手续费抵扣",
   withdraw_payout_refund: "出款退回",
-  withdraw_payout_nex_refund: "UVEL 出款退回",
+  withdraw_payout_nex_refund: "UVT 出款退回",
   withdraw_refund: "提现退款",
   withdraw_fee_offset_refund: "手续费抵扣退回",
   staking_early_withdraw: "质押提前赎回",
@@ -56,9 +56,9 @@ const REMARK_LABELS: Record<string, string> = {
   "bank payout net principal": "银行出款 · 净额本金",
   "d7 bank payout fee": "银行出款 · 手续费",
   "d2 withdrawal net principal": "提现 · 净额本金",
-  "d5 actual network fee after nex offset": "提现 · UVEL 抵扣后的实际网络费",
-  "h1 actual withdrawal penalty after nex offset": "提现 · UVEL 抵扣后的实际违约金",
-  "d5 nex fee offset; penalty first, then network fee": "提现 · UVEL 手续费抵扣（先抵违约金，再抵网络费）",
+  "d5 actual network fee after nex offset": "提现 · UVT 抵扣后的实际网络费",
+  "h1 actual withdrawal penalty after nex offset": "提现 · UVT 抵扣后的实际违约金",
+  "d5 nex fee offset; penalty first, then network fee": "提现 · UVT 手续费抵扣（先抵违约金，再抵网络费）",
 };
 
 /**

@@ -30,7 +30,7 @@ test("E5 preserves server-issued PHONE and paired-compute identifiers while reta
 });
 
 test("E5 renders authoritative daily snapshots with units instead of catalog copy", () => {
-  assert.equal(operatorRate(18, 90), "18 USDT/日 · 90 UVEL/日");
+  assert.equal(operatorRate(18, 90), "18 USDT/日 · 90 UVT/日");
   assert.equal(operatorRate(0.19, null), "0.19 USDT/日");
   assert.equal(operatorRate(null, null), "收益待核验");
 });
@@ -55,7 +55,7 @@ test("E5 maps the actual device snapshot over catalog baseRate and wires it to t
 
   assert.equal(mapped.dailyUsdt, 18);
   assert.equal(mapped.dailyNex, 90);
-  assert.equal(operatorRate(mapped.dailyUsdt, mapped.dailyNex), "18 USDT/日 · 90 UVEL/日");
+  assert.equal(operatorRate(mapped.dailyUsdt, mapped.dailyNex), "18 USDT/日 · 90 UVT/日");
   assert.match(e5Ops, /operatorRate\(d\.dailyUsdt, d\.dailyNex\)/);
   assert.doesNotMatch(e5Ops, /operatorRate\(d\.baseRate\)/);
 });

@@ -99,7 +99,7 @@ export function parseDirectReferralPolicy(value: unknown): DirectReferralPolicy 
 
 export function directReferralSummary(value: Pick<DirectReferralUpdate, "purchaseSplit" | "deviceEarning"> & { purchaseSplitConfigured?: boolean }): string {
   const split = value.purchaseSplit, device = value.deviceEarning;
-  return `直属购买奖励拆分：${value.purchaseSplitConfigured === false ? `未配置，沿用原 直属层全额 USDT 与旧额外 UVEL；当前占位 USDT ${split.usdtSharePct}% / UVEL ${100 - split.usdtSharePct}%，尚未生效` : split.enabled ? `启用，USDT ${split.usdtSharePct}% / UVEL ${100 - split.usdtSharePct}%，替代原直属层 额外 UVEL` : `停用，恢复 直属层全额 USDT 与旧额外 UVEL；保存的拆分 USDT ${split.usdtSharePct}% / UVEL ${100 - split.usdtSharePct}%，停用期间不生效`}，基础预算及冷却引用原七层；直属设备收益分成：${device.enabled ? "启用" : "停用"}，总比例 ${device.totalRatePct}%，USDT ${device.usdtSharePct}% / UVEL ${100 - device.usdtSharePct}%，冷却 ${device.coolingDays} 天`;
+  return `直属购买奖励拆分：${value.purchaseSplitConfigured === false ? `未配置，沿用原 直属层全额 USDT 与旧额外 UVT；当前占位 USDT ${split.usdtSharePct}% / UVT ${100 - split.usdtSharePct}%，尚未生效` : split.enabled ? `启用，USDT ${split.usdtSharePct}% / UVT ${100 - split.usdtSharePct}%，替代原直属层 额外 UVT` : `停用，恢复 直属层全额 USDT 与旧额外 UVT；保存的拆分 USDT ${split.usdtSharePct}% / UVT ${100 - split.usdtSharePct}%，停用期间不生效`}，基础预算及冷却引用原七层；直属设备收益分成：${device.enabled ? "启用" : "停用"}，总比例 ${device.totalRatePct}%，USDT ${device.usdtSharePct}% / UVT ${100 - device.usdtSharePct}%，冷却 ${device.coolingDays} 天`;
 }
 
 export function directReferralAmplifies(before: DirectReferralPolicy, after: DirectReferralUpdate): boolean {

@@ -166,7 +166,7 @@ function workbenchUserToCustomerProfile(user: User360Profile): CustomerProfile {
     .filter(Boolean);
   const balances = [
     user.walletUsdt == null ? "" : `${textOf(user.walletUsdt)} USDT`,
-    user.walletNex == null ? "" : `${textOf(user.walletNex)} UVEL`,
+    user.walletNex == null ? "" : `${textOf(user.walletNex)} UVT`,
   ].filter(Boolean);
   const deviceCount = textOf(user.deviceCount).trim();
   const activeDeviceCount = textOf(user.activeDeviceCount).trim();

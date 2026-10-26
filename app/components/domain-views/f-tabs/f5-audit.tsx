@@ -47,7 +47,7 @@ const directGroup = (row: F5CommissionEvent) => row.kind === "direct_purchase" |
 const operationLabels: Record<string, string> = { REVERSE: "冲正", REISSUE: "补发", SUSPEND: "暂停", RESUME: "恢复" };
 const kindNames = (value: string) => value.split(",").map((kind) => KIND_LABELS[kind.trim()] ?? "未识别奖种").join("、");
 const amountLabel = (row: F5CommissionEvent) => directGroup(row)
-  ? `结算组 ${row.settlementNo} · ${row.amountUSDT} USDT + ${row.amountNEX} UVEL（整组处理）`
+  ? `结算组 ${row.settlementNo} · ${row.amountUSDT} USDT + ${row.amountNEX} UVT（整组处理）`
   : `${row.amt.toLocaleString("en-US")} ${nexGridBrandText(row.cur)}`;
 
 export function F5Audit({ ctx }: { ctx: FViewCtx }) {
@@ -233,7 +233,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
             {KINDS.map((item) => <option key={item} value={item}>{KIND_LABELS[item]}</option>)}
           </select>
           <select aria-label="全部币种" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-            <option value="">全部币种</option><option value="USDT">USDT</option><option value="NEX">UVEL</option>
+            <option value="">全部币种</option><option value="USDT">USDT</option><option value="NEX">UVT</option>
           </select>
           <input aria-label="用户编号" placeholder="用户编号" value={userId} onChange={(e) => setUserId(e.target.value.replace(/\D/g, ""))} />
           <input aria-label="用户群" type="month" title="按成员注册月份筛选" value={cohort} onChange={(e) => setCohort(e.target.value)} />
@@ -251,7 +251,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       {data && (
         <>
           <div className="f-stats">
-            <div className="f-stat"><div className="k">佣金全量合计</div><div className="v">{nexGridBrandText(data.summary.monthlyCommissionSpendLabel)}</div><div className="sub">八类 · USDT / UVEL 分币种</div></div>
+            <div className="f-stat"><div className="k">佣金全量合计</div><div className="v">{nexGridBrandText(data.summary.monthlyCommissionSpendLabel)}</div><div className="sub">八类 · USDT / UVT 分币种</div></div>
             <div className="f-stat warn"><div className="k">冷却中全量余额</div><div className="v">{nexGridBrandText(data.summary.coolingBalanceLabel)}</div><div className="sub">按各类奖励的冷却快照统计</div></div>
             <div className="f-stat ok"><div className="k">已解锁佣金全量</div><div className="v">{nexGridBrandText(data.summary.withdrawableThisMonthLabel)}</div><div className="sub">佣金状态金额，当前可提现以钱包为准</div></div>
             <div className="f-stat danger"><div className="k">已冻结（全量）</div><div className="v">{data.summary.frozenCount}</div><div className="sub">来自全量状态聚合；异常样本另列</div></div>
@@ -314,7 +314,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                   {!data.pendingCalculations.length && <tr className="empty-row"><td colSpan={8}>当前筛选暂无待计算奖励</td></tr>}
                   {data.pendingCalculations.map(row => <tr key={row.settlementNo}>
                     <td className="cid">{row.settlementNo}</td><td>{KIND_LABELS[row.kind]}</td><td>{row.sourceRef} / {operatorNicknameText(row.sourceUserName)}</td>
-                    <td>{row.kind === "direct_purchase" ? `L${row.layer}` : "直属"}</td><td>{row.basisUsdt} USDT</td><td>USDT 待计算 · UVEL 待计算</td>
+                    <td>{row.kind === "direct_purchase" ? `L${row.layer}` : "直属"}</td><td>{row.basisUsdt} USDT</td><td>USDT 待计算 · UVT 待计算</td>
                     <td>{row.unlockAt ? new Date(row.unlockAt).toLocaleString() : "待确认"} / {row.ts}</td><td><Badge tone="warn">等待价格</Badge></td>
                   </tr>)}
                 </tbody>
@@ -338,8 +338,8 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                       <td><span className="cid">{row.id}</span>{(directGroup(row) || row.settlementNo) && <details style={{ marginTop: 6, maxWidth: 260 }}><summary>来源详情</summary><div style={{ display: "grid", gap: 5, padding: "8px 0", overflowWrap: "anywhere" }}>
                         <span>结算组：{row.settlementNo}</span><span>来源编号：{row.sourceRef}</span><span>设备：{row.sourceDeviceId || "不适用"}</span>
                         {directGroup(row) ? <>
-                        <span>政策版本：{row.policyVersion}</span><span>计价基数：{row.basisUsdt} USDT</span><span>当笔 UVEL 价格：{row.nexUsdtPrice} USDT</span>
-                        <span>整组奖励：{row.amountUSDT} USDT + {row.amountNEX} UVEL</span><span>待追回：{row.recoveryPendingUSDT} USDT + {row.recoveryPendingNEX} UVEL</span>
+                        <span>政策版本：{row.policyVersion}</span><span>计价基数：{row.basisUsdt} USDT</span><span>当笔 UVT 价格：{row.nexUsdtPrice} USDT</span>
+                        <span>整组奖励：{row.amountUSDT} USDT + {row.amountNEX} UVT</span><span>待追回：{row.recoveryPendingUSDT} USDT + {row.recoveryPendingNEX} UVT</span>
                         <span>{row.reversalRecorded ? "来源已退款或冲正，禁止补发" : "直属分成需按原来源核对，不能重复补发"}</span>
                         </> : <><span>当前账项：{row.amt} {nexGridBrandText(row.cur)} · {state.label}</span><span>关联购买奖励组仅供核对，资金操作只作用于当前账项币种。</span></>}
                       </div></details>}</td>

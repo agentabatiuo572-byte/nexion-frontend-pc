@@ -22,8 +22,8 @@ const badgeClass = (tier?: string): string =>
   tier === "Entry" ? "popular" : tier === "Pro" ? "new" : tier === "Flagship" ? "limited" : tier === "Share" ? "share" : "new";
 const yld = (s: OpsSku): string =>
   s.tier === "Share"
-    ? `${s.shareYieldMin != null && s.shareYieldMax != null && s.shareYieldMin > 0 && s.shareYieldMax >= s.shareYieldMin ? `参考年化 ${s.shareYieldMin}–${s.shareYieldMax}%` : "年化区间暂不可用"} · ${(s.dailyEarnNEX ?? 0).toLocaleString()} UVEL/天`
-    : `$${(s.dailyEarn ?? 0).toFixed(2)}/天 · ${(s.dailyEarnNEX ?? 0).toLocaleString()} UVEL`;
+    ? `${s.shareYieldMin != null && s.shareYieldMax != null && s.shareYieldMin > 0 && s.shareYieldMax >= s.shareYieldMin ? `参考年化 ${s.shareYieldMin}–${s.shareYieldMax}%` : "年化区间暂不可用"} · ${(s.dailyEarnNEX ?? 0).toLocaleString()} UVT/天`
+    : `$${(s.dailyEarn ?? 0).toFixed(2)}/天 · ${(s.dailyEarnNEX ?? 0).toLocaleString()} UVT`;
 const compactUsd = (value: number): string =>
   value >= 1_000_000 ? `$${(value / 1_000_000).toFixed(1)}M`
     : value >= 1_000 ? `$${Math.round(value / 1_000).toLocaleString()}K`

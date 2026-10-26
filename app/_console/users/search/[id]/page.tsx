@@ -593,9 +593,9 @@ export default function UserDetailPage() {
             </div>
           </Section>}
 
-          {detail.financial && <Section title="资产 & 账户" tag={supportScope ? undefined : "C3 余额资产 · 双币 USDT/UVEL"}>
+          {detail.financial && <Section title="资产 & 账户" tag={supportScope ? undefined : "C3 余额资产 · 双币 USDT/UVT"}>
             <Row label="可提余额 · USDT"><span className="font-mono-tabular">{money(summary.walletUsdt ?? profile.walletUsdt)}</span></Row>
-            <Row label="UVEL 余额"><span className="font-mono-tabular">{numberLabel(summary.walletNex ?? profile.walletNex)} UVEL</span></Row>
+            <Row label="UVT 余额"><span className="font-mono-tabular">{numberLabel(summary.walletNex ?? profile.walletNex)} UVT</span></Row>
             <Row label="累计充值"><span className="font-mono-tabular">{money(summary.depositedUsd)}</span></Row>
             <Row label="累计提现"><span className="font-mono-tabular">{money(summary.withdrawnUsd)}</span></Row>
             <Row label="提现申请额"><span className="font-mono-tabular">{money(summary.withdrawRequestedUsd)}</span></Row>
@@ -801,11 +801,11 @@ export default function UserDetailPage() {
             { key: "status", label: "状态", render: formatC1DeviceStatus },
             { key: "runtimeStatus", label: "运行态", render: formatC1RuntimeStatus },
             { key: "dailyUsdt", label: "配置日产基准 USDT", numeric: true },
-            { key: "dailyNex", label: "配置日产基准 UVEL", numeric: true },
+            { key: "dailyNex", label: "配置日产基准 UVT", numeric: true },
           ]}
         >
           <Row label="在线 / 活跃">{numberLabel(detail.devices?.onlineCount)} / {numberLabel(detail.devices?.activeCount)}</Row>
-          <Row label="设备配置日产基准（所列记录合计）">{money(detail.devices?.dailyUsdt)} · {numberLabel(detail.devices?.dailyNex)} UVEL</Row>
+          <Row label="设备配置日产基准（所列记录合计）">{money(detail.devices?.dailyUsdt)} · {numberLabel(detail.devices?.dailyNex)} UVT</Row>
           <p className="mt-2 text-[12px]" style={{ color: "var(--v5-ink-4)" }}>含已停用历史记录的配置值，不代表今日实际收益或钱包入账</p>
           {canWriteC2 && asArray(detail.devices?.records).map((device) => {
             const deviceId = asNumber(device.id);
@@ -852,8 +852,8 @@ export default function UserDetailPage() {
             { key: "createdAt", label: "时间", render: formatDate },
           ]}
         >
-          <Row label="收益合计">{money(detail.earnings?.totalUsdt)} · {numberLabel(detail.earnings?.totalNex)} UVEL</Row>
-          <Row label="设备配置日产基准（所列记录合计）">{money(detail.earnings?.deviceDailyUsdt)} · {numberLabel(detail.earnings?.deviceDailyNex)} UVEL</Row>
+          <Row label="收益合计">{money(detail.earnings?.totalUsdt)} · {numberLabel(detail.earnings?.totalNex)} UVT</Row>
+          <Row label="设备配置日产基准（所列记录合计）">{money(detail.earnings?.deviceDailyUsdt)} · {numberLabel(detail.earnings?.deviceDailyNex)} UVT</Row>
           <p className="mt-2 text-[12px]" style={{ color: "var(--v5-ink-4)" }}>含已停用历史记录的配置值，不代表今日实际收益或钱包入账</p>
           <DataListPager label="收益明细" page={earningsPager.page} pageSize={earningsPager.pageSize} total={earningsPager.total} onPageChange={earningsPager.setPage} onPageSizeChange={earningsPager.setPageSize} />
         </HubSection>
@@ -928,7 +928,7 @@ export default function UserDetailPage() {
           emptyText="暂无兑换/转换账单"
         >
           <Row label="钱包 USDT">{money((detail.financial?.wallet as JsonRecord | undefined)?.usdt)}</Row>
-          <Row label="钱包 UVEL">{numberLabel((detail.financial?.wallet as JsonRecord | undefined)?.nex)} UVEL</Row>
+          <Row label="钱包 UVT">{numberLabel((detail.financial?.wallet as JsonRecord | undefined)?.nex)} UVT</Row>
           <Row label="质押记录">{Array.isArray(detail.financial?.stakingLedgerRows) ? numberLabel(detail.financial.stakingLedgerRows.length) : "-"} 条</Row>
         </HubSection>
 

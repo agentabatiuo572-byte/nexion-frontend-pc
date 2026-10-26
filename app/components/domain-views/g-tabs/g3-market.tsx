@@ -214,7 +214,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
   if (loading && !overview) {
     return (
       <section className="l-card">
-        <div className="l-h"><span className="ttl">G3 UVEL 价格管理</span><span className="sub">· 正在读取真实接口数据</span></div>
+        <div className="l-h"><span className="ttl">G3 UVT 价格管理</span><span className="sub">· 正在读取真实接口数据</span></div>
         <div className="l-b"><div className="gtint">G3 数据加载中...</div></div>
       </section>
     );
@@ -223,7 +223,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
   if (!overview) {
     return (
       <section className="l-card">
-        <div className="l-h"><span className="ttl">G3 UVEL 价格管理</span><span className="sub">· 真实接口数据</span></div>
+        <div className="l-h"><span className="ttl">G3 UVT 价格管理</span><span className="sub">· 真实接口数据</span></div>
         <div className="l-b">
           <div className="gtint">G3 数据加载失败 · {error || "未收到本页数据，请重试；持续失败时请联系值班人员。"}</div>
           <button className="l-btn mc" style={{ marginTop: 12 }} onClick={() => void reload()}>重新加载</button>
@@ -272,7 +272,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
       detail: <>
         <b>D{dayIndex + 1} {label.name}</b> · 当前 {fmtCurveVal(field, current)}({label.unit})。
         {amp
-          ? <><b>属放大流出</b>:确认放行时以<b>周峰值价 {fmtPrice(peak)}</b> 重估全部 UVEL 计价负债后核验 <b>B1 备付金覆盖率</b>(当前 {cov}%,红线 {redline}%),低于红线拒(422)。服务器收到新值后按实际方向二次精算。</>
+          ? <><b>属放大流出</b>:确认放行时以<b>周峰值价 {fmtPrice(peak)}</b> 重估全部 UVT 计价负债后核验 <b>B1 备付金覆盖率</b>(当前 {cov}%,红线 {redline}%),低于红线拒(422)。服务器收到新值后按实际方向二次精算。</>
           : "做市波动不直接放大流出。"}
         曲线修改只保存未来排程参数，不改写当前现价；到对应排程推进时才写入全站现价配置。
         运营执行门槛:财务主管 / 超级管理员。
@@ -313,7 +313,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
   const adj = (overrideKey: G3OverrideKey, label: string, current: string, note: string, amp?: boolean) => {
     openActionConfirm({
       action: `手动覆盖设置 · ${label}`,
-      detail: <><b>{label}</b> · 当前 {current} · {note}。{amp && <><b>属放大流出</b>:确认放行时以周峰值价 {fmtPrice(peak)} 重估全部 UVEL 计价负债后核验 <b>B1 备付金覆盖率</b>(当前 {cov}%,红线 {redline}%,低于红线拒绝 422)。</>}手动直写 = 临时压过自动排程,下次排程推进会以曲线值覆盖。</>,
+      detail: <><b>{label}</b> · 当前 {current} · {note}。{amp && <><b>属放大流出</b>:确认放行时以周峰值价 {fmtPrice(peak)} 重估全部 UVT 计价负债后核验 <b>B1 备付金覆盖率</b>(当前 {cov}%,红线 {redline}%,低于红线拒绝 422)。</>}手动直写 = 临时压过自动排程,下次排程推进会以曲线值覆盖。</>,
       amplifies: !!amp,
       coverage: amp ? coverageSnapshot : undefined,
       edit: overrideKey === "volatilityPct"
@@ -332,7 +332,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
     action: paused ? "恢复行情引擎" : "暂停行情引擎",
     detail: paused
       ? <>恢复后现价继续按曲线排程推进。恢复 = 价格继续上行预期,确认放行时核验 B1 覆盖率(当前 {cov}%,红线 {redline}%)。行情不在 J1 五闸内,作独立暂停开关 通知 J1 编排面联动。</>
-      : <>暂停后现价冻结在最后值、曲线自动推进暂停,全站 UVEL 价格停止更新。执行门槛:风控主管 / 超级管理员。行情不在 J1 五闸内,作独立暂停开关 通知 J1 编排面联动。</>,
+      : <>暂停后现价冻结在最后值、曲线自动推进暂停,全站 UVT 价格停止更新。执行门槛:风控主管 / 超级管理员。行情不在 J1 五闸内,作独立暂停开关 通知 J1 编排面联动。</>,
     amplifies: paused,
     coverage: paused ? coverageSnapshot : undefined,
     run: async (reason) => {
@@ -359,7 +359,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
     <>
       {error && <div className="gtint" style={{ marginBottom: 12 }}>G3 操作提示 · {error}</div>}
       <div className="f-stats">
-        <div className="f-stat ok"><div className="k">UVEL 现价</div><div className="v">{price}</div><div className="sub">{change == null ? "24 小时 历史未返回" : `24h ${change >= 0 ? "+" : ""}${change.toFixed(2)}%`} · 当日帧 D{curDay} 派发</div></div>
+        <div className="f-stat ok"><div className="k">UVT 现价</div><div className="v">{price}</div><div className="sub">{change == null ? "24 小时 历史未返回" : `24h ${change >= 0 ? "+" : ""}${change.toFixed(2)}%`} · 当日帧 D{curDay} 派发</div></div>
         <div className="f-stat cyan"><div className="k">排程进度</div><div className="v">D{curDay} / 7</div><div className="sub">{schedV} · 周峰值 {fmtPrice(peak)}</div></div>
         <div className="f-stat"><div className="k">价格来源</div><div className="v">{oracle}</div><div className="sub">健康状态未提供 · 偏离告警阈值 {deviation}</div></div>
         <div className="f-stat"><div className="k">引擎状态</div><div className="v" style={{ color: runtimeStatus.tone === "bad" ? "var(--danger)" : runtimeStatus.tone === "warn" ? "var(--warning)" : "var(--ink-3)" }}>{runtimeStatus.label}</div><div className="sub">{runtimeStatus.detail}</div></div>
@@ -477,7 +477,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
         </section>
       </div>
 
-      <p className="f-foot"><b>价格 100% 服务端驱动</b>:运营配的是一周关键帧曲线,服务器定时任务按配置时间推进当日生效帧、把目标价写进现价配置;客户端价格线来自真实接口历史点。UVEL 现价是<b>兑换(G2)报价和复投(G7)定价的单一源</b>,下游取服务端现价、不接客户端价;现价变动即时影响备付金里 UVEL 计价负债的折算。改<b>目标价 / 上行概率</b>是放大流出,红线核验以<b>周峰值价</b>重估全部 UVEL 计价应付负债后再判。引擎暂停 = 冻结现价 + 停自动推进,是紧急开关矩阵(J1)的生效面。</p>
+      <p className="f-foot"><b>价格 100% 服务端驱动</b>:运营配的是一周关键帧曲线,服务器定时任务按配置时间推进当日生效帧、把目标价写进现价配置;客户端价格线来自真实接口历史点。UVT 现价是<b>兑换(G2)报价和复投(G7)定价的单一源</b>,下游取服务端现价、不接客户端价;现价变动即时影响备付金里 UVT 计价负债的折算。改<b>目标价 / 上行概率</b>是放大流出,红线核验以<b>周峰值价</b>重估全部 UVT 计价应付负债后再判。引擎暂停 = 冻结现价 + 停自动推进,是紧急开关矩阵(J1)的生效面。</p>
     </>
   );
 }

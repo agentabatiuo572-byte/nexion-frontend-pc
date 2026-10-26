@@ -20,7 +20,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { DCtx } from "./types";
 
 const OPERATOR = currentAdminOperator;
-const categoryText = (key: string) => ({ usdt: "USDT 储备", otherLiquid: "其他可用资产", withdrawable_balance: "可提现余额", usdt_staking_principal: "USDT 质押本金", staking_interest: "待付质押利息", genesis_daily_emission: "创世节点每日分红", nex_v2_future: "UVEL 第二版远期权益", withdrawal_queue: "待处理提现", commission_cooling: "待解锁佣金", lock_other: "其他锁仓本息", unverified_deposit: "待核实充值" } as Record<string,string>)[key] ?? "其他科目";
+const categoryText = (key: string) => ({ usdt: "USDT 储备", otherLiquid: "其他可用资产", withdrawable_balance: "可提现余额", usdt_staking_principal: "USDT 质押本金", staking_interest: "待付质押利息", genesis_daily_emission: "创世节点每日分红", nex_v2_future: "UVT 第二版远期权益", withdrawal_queue: "待处理提现", commission_cooling: "待解锁佣金", lock_other: "其他锁仓本息", unverified_deposit: "待核实充值" } as Record<string,string>)[key] ?? "其他科目";
 const WATER_LABEL: Record<D3WaterLevel["tier"], string> = {
   NORMAL: "正常",
   WATCH: "关注",
@@ -36,8 +36,8 @@ const TREASURY_SOURCE_LABELS: Record<string, string> = {
   "nx_staking_position.estimated_interest_usdt": "待付质押利息",
   "nx_genesis_holding": "创世节点 持仓承诺",
   "nx_genesis_holding × nx_genesis_series.daily_dividend_rate_pct": "创世节点 持仓与每日排放规则",
-  "nx_nex_lock_order": "UVEL 锁仓订单",
-  "nx_nex_lock_order active maturity": "生效中的 UVEL 锁仓到期额",
+  "nx_nex_lock_order": "UVT 锁仓订单",
+  "nx_nex_lock_order active maturity": "生效中的 UVT 锁仓到期额",
   "nx_withdrawal_order": "提现订单",
   "nx_withdrawal_order active queue": "待处理提现订单",
   "nx_wallet_ledger": "钱包资金流水",

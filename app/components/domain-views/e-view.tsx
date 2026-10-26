@@ -1312,13 +1312,13 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             </div>
           </SkuFieldGroup>
 
-          <SkuFieldGroup n="③" title={form.tier === "Share" ? "收益参数(年化 + UVEL)" : "收益参数(双币)"}>
+          <SkuFieldGroup n="③" title={form.tier === "Share" ? "收益参数(年化 + UVT)" : "收益参数(双币)"}>
             {form.tier !== "Share" ? (
               <div className="grid g-2" style={{ gap: 12 }}>
                 <SkuFld label="每日收益 USDT" type="number" value={form.dailyEarn} onChange={(v) => setForm({ ...form, dailyEarn: v })} placeholder="38.50" />
-                <SkuFld label="每日收益 UVEL" type="number" value={form.dailyEarnNEX} onChange={(v) => setForm({ ...form, dailyEarnNEX: v })} placeholder="65" />
+                <SkuFld label="每日收益 UVT" type="number" value={form.dailyEarnNEX} onChange={(v) => setForm({ ...form, dailyEarnNEX: v })} placeholder="65" />
                 <SkuFld label="手机每日收益 USDT" type="number" min={0} step={0.000001} value={form.phoneDailyEarn} onChange={(v) => setForm({ ...form, phoneDailyEarn: v })} placeholder="0.06" hint="可留空，服务端缺值则 App 显示不可用" />
-                <SkuFld label="手机每日收益 UVEL" type="number" min={0} step={0.000001} value={form.phoneDailyEarnNEX} onChange={(v) => setForm({ ...form, phoneDailyEarnNEX: v })} placeholder="10" hint="可留空，服务端缺值则 App 显示不可用" />
+                <SkuFld label="手机每日收益 UVT" type="number" min={0} step={0.000001} value={form.phoneDailyEarnNEX} onChange={(v) => setForm({ ...form, phoneDailyEarnNEX: v })} placeholder="10" hint="可留空，服务端缺值则 App 显示不可用" />
               </div>
             ) : (
               <>
@@ -1326,7 +1326,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                   <SkuFld label="共享份额年化下限 %" type="number" value={form.shareYieldMin} onChange={(v) => setForm({ ...form, shareYieldMin: v })} placeholder="8" />
                   <SkuFld label="共享份额年化上限 %" type="number" value={form.shareYieldMax} onChange={(v) => setForm({ ...form, shareYieldMax: v })} placeholder="15" />
                 </div>
-                <SkuFld label="每日收益 UVEL(份额每日额外发放)" type="number" value={form.dailyEarnNEX} onChange={(v) => setForm({ ...form, dailyEarnNEX: v })} placeholder="30" />
+                <SkuFld label="每日收益 UVT(份额每日额外发放)" type="number" value={form.dailyEarnNEX} onChange={(v) => setForm({ ...form, dailyEarnNEX: v })} placeholder="30" />
               </>
             )}
           </SkuFieldGroup>
@@ -1455,7 +1455,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             if (form.tier === "Share") {
               const lo = skuNum(form.shareYieldMin); const hi = skuNum(form.shareYieldMax); const nex = skuNum(form.dailyEarnNEX); const pr = skuNum(form.price);
               const complete = form.shareYieldMin.trim() !== "" && form.shareYieldMax.trim() !== "" && lo > 0 && hi >= lo;
-              return <div className="tint cyan tiny">派生 · {complete ? <>参考年化 <span className="nowrap">{lo}–{hi}%</span></> : "年化区间暂不可用"} · 每日收益 <span className="nowrap">{nex.toLocaleString()} UVEL/天</span>{pr > 0 ? <> · 起投 <span className="nowrap">${pr.toLocaleString()}</span></> : null}</div>;
+              return <div className="tint cyan tiny">派生 · {complete ? <>参考年化 <span className="nowrap">{lo}–{hi}%</span></> : "年化区间暂不可用"} · 每日收益 <span className="nowrap">{nex.toLocaleString()} UVT/天</span>{pr > 0 ? <> · 起投 <span className="nowrap">${pr.toLocaleString()}</span></> : null}</div>;
             }
             const p = skuNum(form.price); const d = skuNum(form.dailyEarn);
             return p > 0 && d > 0 ? <div className="tint cyan tiny">派生 · 回本 ≈ <span className="nowrap">{Math.round(p / d)} 天</span> · 首年净 ≈ <span className="nowrap">${(d * 365 - p).toLocaleString()}</span> · 年化 ≈ <span className="nowrap">{Math.round((d * 365 / p) * 100)}%</span> · vs 手机 ≈ <span className="nowrap">{Math.round(d / 0.08).toLocaleString()}×</span></div> : null;
@@ -1730,8 +1730,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               };
               await propose(ctx.toast, {
                 action: mc.name, obj: comparison.configKey,
-                before: isLabel ? comparison.label : `${comparison.dailyUsdt} USDT / ${comparison.dailyNex} UVEL`,
-                after: isLabel ? comparisonCtx.label : `${comparisonCtx.dailyUsdt} USDT / ${comparisonCtx.dailyNex} UVEL`,
+                before: isLabel ? comparison.label : `${comparison.dailyUsdt} USDT / ${comparison.dailyNex} UVT`,
+                after: isLabel ? comparisonCtx.label : `${comparisonCtx.dailyUsdt} USDT / ${comparisonCtx.dailyNex} UVT`,
                 type: def.type, amplifies: !isLabel,
                 gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E2",
                 command: def.buildCommand(comparisonCtx), target: def.buildTarget(comparisonCtx),

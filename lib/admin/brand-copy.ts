@@ -15,9 +15,9 @@
 const LEGACY_BRAND = "Nexi" + "on";
 const BRAND = "UVEL";
 
-/** 大小写不敏感,命中即整词替换。 */
+/** 品牌仍为 UVEL；独立 NEX 代币名称显示为 UVT。仅用于展示。 */
 export function nexGridBrandText(value: string): string {
-  return value.replace(new RegExp(LEGACY_BRAND, "gi"), BRAND).replace(/NexGrid/gi, BRAND).replace(/Stellar(?=Box|Rack)/gi, BRAND).replace(/\bNEX\b/gi, BRAND);
+  return value.replace(new RegExp(LEGACY_BRAND, "gi"), BRAND).replace(/NexGrid/gi, BRAND).replace(/Stellar(?=Box|Rack)/gi, BRAND).replace(/\bNEX\b/gi, "UVT");
 }
 
 /** Recognized system defaults only; phone-suffix names need matching evidence. Keep custom names verbatim. */
@@ -80,4 +80,9 @@ export function supportTicketSubjectText(value: string): string {
   const transfer = /^(由会话 CV-[A-Za-z0-9-]+ 转入 · )(.+)$/.exec(value);
   if (transfer) return transfer[1] + operatorNicknameText(transfer[2]);
   return value.replace(/^Conversation (CV-[A-Za-z0-9-]+)$/, "会话 $1");
+}
+
+/** Asset symbols only: retain protocol values and unrelated brands/currencies. */
+export function platformAssetText(value: string): string {
+  return /^(?:NEX|UVEL|UVT)$/i.test(value) ? "UVT" : value;
 }

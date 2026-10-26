@@ -158,8 +158,8 @@ export function A2ChangeReview({ before, after }: { before: string; after: strin
   const labels: Record<string, string> = {
     skuId: "商品编号", id: "商品编号", name: "商品名称", tier: "商品档位", tagline: "卖点", badge: "角标",
     gpu: "GPU", vram: "显存", hashRate: "算力", power: "功耗", datacenter: "数据中心", uptime: "在线率",
-    warranty: "保修", phoneDailyEarn: "手机日产收益", phoneDailyEarnNex: "手机日产 UVEL", price: "价格",
-    dailyEarn: "日产收益", dailyEarnNex: "日产 UVEL", shareYieldMin: "份额收益下限", shareYieldMax: "份额收益上限",
+    warranty: "保修", phoneDailyEarn: "手机日产收益", phoneDailyEarnNex: "手机日产 UVT", price: "价格",
+    dailyEarn: "日产收益", dailyEarnNex: "日产 UVT", shareYieldMin: "份额收益下限", shareYieldMax: "份额收益上限",
     baseRate: "收益展示串", sold: "累计销量", stock: "库存", rating: "评分", reviews: "评价数",
     aiImageGenPerMin: "图像生成性能", aiLlmTokensPerSec: "大模型推理性能", aiVideoMinPerHour: "视频渲染性能",
     aiFineTuneMins: "LoRA 微调性能", aiUnlocks: "解锁算力池", features: "产品特性", generation: "产品代际",

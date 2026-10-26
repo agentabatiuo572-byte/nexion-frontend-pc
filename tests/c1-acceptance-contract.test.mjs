@@ -219,11 +219,11 @@ test("C1 labels all listed device configuration values separately from actual ea
   const html = renderDaily([historicalDevice]);
   const text = plain(html);
   assert.match(html, /<th[^>]*>配置日产基准 USDT<\/th>/);
-  assert.match(html, /<th[^>]*>配置日产基准 UVEL<\/th>/);
+  assert.match(html, /<th[^>]*>配置日产基准 UVT<\/th>/);
   assert.equal(text.match(/设备配置日产基准（所列记录合计）/g)?.length, 2);
   assert.equal(text.match(/含已停用历史记录的配置值，不代表今日实际收益或钱包入账/g)?.length, 2);
-  assert.match(text, /收益合计\$0\.00 · 10 UVEL/);
-  assert.equal(text.match(/设备配置日产基准（所列记录合计）\$1\.00 · 1 UVEL/g)?.length, 2);
+  assert.match(text, /收益合计\$0\.00 · 10 UVT/);
+  assert.equal(text.match(/设备配置日产基准（所列记录合计）\$1\.00 · 1 UVT/g)?.length, 2);
   assert.doesNotMatch(text, /设备日产出|在线 \/ 活跃0 \/ 0日产出/);
 });
 
@@ -234,8 +234,8 @@ test("C1 keeps inactive history visible and renders backend totals without recal
   assert.match(text, /fixture-history/);
   assert.match(text, /fixture-active/);
   assert.match(text, /在线 \/ 活跃1 \/ 1/);
-  assert.match(text, /设备配置日产基准（所列记录合计）\$123\.45 · 67 UVEL/);
-  assert.match(text, /收益合计\$0\.00 · 10 UVEL/);
+  assert.match(text, /设备配置日产基准（所列记录合计）\$123\.45 · 67 UVT/);
+  assert.match(text, /收益合计\$0\.00 · 10 UVT/);
   assert.match(html, /<tbody><tr[\s\S]*?fixture-history[\s\S]*?<\/tr><tr[\s\S]*?fixture-active/);
 });
 
@@ -306,7 +306,7 @@ test("C1 earnings renders twenty of 10,385 records while preserving backend tota
   assert.deepEqual(page.rows(), records.slice(0, 20).map(row => row.bizNo));
   assert.match(page.text(), /筛选后 10385 条/);
   assert.match(page.text(), /第 1 \/ 520 页/);
-  assert.match(page.text(), /收益合计\$12,345\.67 · 98 UVEL/);
+  assert.match(page.text(), /收益合计\$12,345\.67 · 98 UVT/);
   assert.equal(page.button("上一页").props.disabled, true);
   page.click("下一页");
   assert.deepEqual(page.rows(), records.slice(20, 40).map(row => row.bizNo));
@@ -321,7 +321,7 @@ test("C1 earnings renders twenty of 10,385 records while preserving backend tota
   assert.deepEqual(visited, records.map(row => row.bizNo));
   assert.match(page.text(), /第 520 \/ 520 页/);
   assert.equal(page.rows().length, 5);
-  assert.match(page.text(), /收益合计\$12,345\.67 · 98 UVEL/);
+  assert.match(page.text(), /收益合计\$12,345\.67 · 98 UVT/);
   assert.equal(records.length, 10385);
 });
 

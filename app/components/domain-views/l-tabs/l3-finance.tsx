@@ -40,7 +40,7 @@ function currentMonthRange() {
   };
 }
 
-const liabilityName = (value: string) => ({ "USDT staking 本金": "USDT质押本金", "staking 应付利息": "质押应付利息", "Genesis 排放承诺": "创世节点应付分红", "NEX v2 未来兑付": "UVEL第二版未来兑付", "待提现 queue": "待处理提现", "佣金冷却未解锁": "等待解锁的佣金" } as Record<string, string>)[value] ?? value;
+const liabilityName = (value: string) => ({ "USDT staking 本金": "USDT质押本金", "staking 应付利息": "质押应付利息", "Genesis 排放承诺": "创世节点应付分红", "NEX v2 未来兑付": "UVT第二版未来兑付", "待提现 queue": "待处理提现", "佣金冷却未解锁": "等待解锁的佣金" } as Record<string, string>)[value] ?? value;
 const signedColor = (value: number | null) => value === null || value === 0 ? "var(--ink-3)" : value > 0 ? "var(--success)" : "var(--danger)";
 
 export function L3HeaderActions({ ctx }: { ctx: LCtx }) {

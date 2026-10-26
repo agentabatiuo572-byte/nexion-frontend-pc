@@ -22,7 +22,7 @@ const F2_HISTORICAL_PARAM_NAMES: Record<string, string> = {
   "F.unilevel.mergeExitMaxPct": "合并出口保护上限",
   "F.peer.rate": "平级奖励比例",
   "F.royalty.minPayout": "购买奖励支付阈值",
-  "F.unilevel.nexCap": "UVEL 日封顶（旧引擎未接入）",
+  "F.unilevel.nexCap": "UVT 日封顶（旧引擎未接入）",
   "F.unilevel.backfill": "回溯窗口（旧引擎未接入）",
 };
 
@@ -89,15 +89,15 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
   return (
     <div className="f-section-stack f2-layout">
       <section className="pane">
-        <div className="pane-h"><div><span className="ph-ttl">七层购买奖励</span><span className="ph-sub">设置各层级的购买基础费率与 UVEL 奖励系数。{ctx.f2Unilevel.length === 0 && "当前尚未配置。"}</span></div><button className="f2-history-link" aria-controls="royalty-history" onClick={() => { const history = document.getElementById("royalty-history"); if (history instanceof HTMLDetailsElement) { history.open = true; history.scrollIntoView({ block: "nearest" }); } }}>查看历史设置 <span aria-hidden="true">⌄</span></button></div>
+        <div className="pane-h"><div><span className="ph-ttl">七层购买奖励</span><span className="ph-sub">设置各层级的购买基础费率与 UVT 奖励系数。{ctx.f2Unilevel.length === 0 && "当前尚未配置。"}</span></div><button className="f2-history-link" aria-controls="royalty-history" onClick={() => { const history = document.getElementById("royalty-history"); if (history instanceof HTMLDetailsElement) { history.open = true; history.scrollIntoView({ block: "nearest" }); } }}>查看历史设置 <span aria-hidden="true">⌄</span></button></div>
         {ctx.f2Metrics.length > 0 && <div className="f-stats">
           {ctx.f2Metrics.map((metric) => <div key={metric.id} className={`f-stat${metric.tone ? " " + metric.tone : ""}`}>
-            <div className="k">{metric.id === "weeklyNexPayout" ? "近7天UVEL派发" : metric.id === "weeklyUsdtRoyalty" ? "近7天USDT分成" : operatorCopyText(metric.name)}</div><div className="v">{operatorCopyText(metric.value)}</div>
+            <div className="k">{metric.id === "weeklyNexPayout" ? "近7天UVT派发" : metric.id === "weeklyUsdtRoyalty" ? "近7天USDT分成" : operatorCopyText(metric.name)}</div><div className="v">{operatorCopyText(metric.value)}</div>
           </div>)}
         </div>}
         <div className="casc" role="table" aria-label="七层购买奖励费率">
           <div className="casc-head" role="row">
-            {["层级", "购买基础费率", "UVEL 奖励系数", "派发状态", "操作"].map(label => <span key={label} role="columnheader">{label}</span>)}
+            {["层级", "购买基础费率", "UVT 奖励系数", "派发状态", "操作"].map(label => <span key={label} role="columnheader">{label}</span>)}
           </div>
           {F2_DEPTH_GATE_LAYERS.map((level) => {
             const rate = ctx.f2Unilevel.find((row) => row.l === level);
@@ -108,12 +108,12 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
             return <div key={level} className="casc-row" role="row">
               <div role="rowheader" className="casc-level" title={direct ? "直属购买" : "下级购买"}><span className={`lchip${direct ? "" : " ext"}`}>{level}</span></div>
               <div role="cell" className="casc-rate"><span className="casc-mobile-label">购买基础费率</span><strong>{rate ? `${currentRate}%` : "未配置"}</strong>{rate && <div className="rate-bar" aria-hidden="true"><div className={`f${direct ? "" : " ext"}`} style={{ width: `${Math.max(0, Math.min(100, rate.usdt))}%` }} /></div>}</div>
-              <div role="cell" className="casc-nex"><span className="casc-mobile-label">UVEL 奖励系数</span>
-              {canRoyaltyRate && (!direct || !l1NexReadonly) ? <button className="nex-val" title={`调整 ${level} UVEL 奖励系数`} style={{ background: "none", border: 0, padding: 0, cursor: "pointer" }} onClick={() => ctx.openActionConfirm({
-                name: `${level} 购买奖励 UVEL 系数调整`, amplify: true, op: "param", paramKey: `F.unilevel.nex.${level}`,
-                edit: { kind: "number", current: currentNex, min: 0, unit: "UVEL/USDT购买奖励", amplifiesWhen: "increase" },
-                detail: `${level} 每 1 USDT购买奖励的 UVEL 奖励 · 当前 ${currentNex || "未配置"}；上调须核验 B1 覆盖率，批准后用于后续结算，不回溯。`,
-              })}>{currentNex || "未配置"}<small>UVEL/USDT购买奖励</small></button> : <span className="nex-val">{currentNex || "未配置"}<small>{direct && l1NexReadonly ? "旧系数只读 · 拆分启用时不适用" : "UVEL/USDT购买奖励"}</small></span>}
+              <div role="cell" className="casc-nex"><span className="casc-mobile-label">UVT 奖励系数</span>
+              {canRoyaltyRate && (!direct || !l1NexReadonly) ? <button className="nex-val" title={`调整 ${level} UVT 奖励系数`} style={{ background: "none", border: 0, padding: 0, cursor: "pointer" }} onClick={() => ctx.openActionConfirm({
+                name: `${level} 购买奖励 UVT 系数调整`, amplify: true, op: "param", paramKey: `F.unilevel.nex.${level}`,
+                edit: { kind: "number", current: currentNex, min: 0, unit: "UVT/USDT购买奖励", amplifiesWhen: "increase" },
+                detail: `${level} 每 1 USDT购买奖励的 UVT 奖励 · 当前 ${currentNex || "未配置"}；上调须核验 B1 覆盖率，批准后用于后续结算，不回溯。`,
+              })}>{currentNex || "未配置"}<small>UVT/USDT购买奖励</small></button> : <span className="nex-val">{currentNex || "未配置"}<small>{direct && l1NexReadonly ? "旧系数只读 · 拆分启用时不适用" : "UVT/USDT购买奖励"}</small></span>}
               </div>
               <div role="cell" className="casc-status"><span className="casc-mobile-label">派发状态</span><span className="f2-status" data-state={paused}>{paused === "on" ? "已暂停" : paused === "off" ? "未暂停" : paused ? "配置无效" : "未配置"}</span></div>
               <div role="cell" className="casc-action">{direct ? <span className="casc-fixed">{rate ? "L1 费率固定" : "L1 待配置"}<small>{rate ? "由服务端管理" : "不可手动调整"}</small></span> : canRoyaltyRate ? <button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({

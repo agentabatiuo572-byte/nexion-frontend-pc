@@ -590,7 +590,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       if (!def) throw new Error("F_OP_NOT_FOUND:f_direct_referral_policy");
       await proposeStable("f-direct-referral-policy", JSON.stringify([policy, reason]), {
         action: def.action, obj: "current",
-        before: `当前政策版本 ${current.policyVersion}，七层引用版本 ${current.sevenLayerRevision}；${directReferralSummary(current)}；原直属层 UVEL 系数 ${current.sevenLayerReference.legacyNexPerUsd ?? "未配置"}`,
+        before: `当前政策版本 ${current.policyVersion}，七层引用版本 ${current.sevenLayerRevision}；${directReferralSummary(current)}；原直属层 UVT 系数 ${current.sevenLayerReference.legacyNexPerUsd ?? "未配置"}`,
         after: `${directReferralSummary(policy)}；审批通过后立即对新来源生效`,
         type: "fund", amplifies: directReferralAmplifies(current, policy),
         gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "F2",

@@ -971,7 +971,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                 <input className="fld" value={tplForm[titleKey]}
                   onChange={(e) => setTplForm({ ...tplForm, [titleKey]: e.target.value })} placeholder={`${label}标题`} />
                 <textarea className="fld" rows={3} value={tplForm[bodyKey]}
-                  onChange={(e) => setTplForm({ ...tplForm, [bodyKey]: e.target.value })} placeholder={`${label}正文，例如：你有 {amount} UVEL 待领取`} />
+                  onChange={(e) => setTplForm({ ...tplForm, [bodyKey]: e.target.value })} placeholder={`${label}正文，例如：你有 {amount} UVT 待领取`} />
               </div>;
             })}
             {!!tplForm.titleEn.trim() !== !!tplForm.bodyEn.trim() && <div className="itint danger">英语标题和正文必须同时填写，或同时留空。</div>}

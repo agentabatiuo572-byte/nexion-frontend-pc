@@ -169,7 +169,7 @@ const TASK_ACTION_ROUTE_LABELS: Record<string, string> = {
   "/pages/me/profile": "个人资料",
   "/pages/me/wallet-cards-new": "绑定银行卡",
   "/pages/me/wallet-topup": "钱包充值",
-  "/pages/me/wallet-exchange": "UVEL / USDT 兑换",
+  "/pages/me/wallet-exchange": "UVT / USDT 兑换",
   "/pages/me/wallet-repurchase": "复投",
   "/pages/me/devices": "我的设备",
   "/pages/earn/earn": "收益",
@@ -1304,7 +1304,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             <div className="sub">基础任务 {text(h3Stats.t1Done)} · 进阶任务 {text(h3Stats.t2Done)}</div>
           </div>
           <div className="f-stat warn">
-            <div className="k">本周 UVEL 派发 · 越南运营统计</div>
+            <div className="k">本周 UVT 派发 · 越南运营统计</div>
             <div className="v">{text(h3Stats.weeklyNex)}</div>
             <div className="sub">含 运营阶段加成 {currentPhaseCode} {phaseMultiplier}（H1 权威）；每周任务曲线 {weeklyCurveLabel}</div>
           </div>
@@ -1513,7 +1513,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                     <th>条件(优先级自上而下)</th>
                     <th>类别</th>
                     <th>去完成路径</th>
-                    <th className="num">奖励 UVEL</th>
+                    <th className="num">奖励 UVT</th>
                     <th>状态</th>
                     <th>完成判定</th>
                     <th style={{ textAlign: "right" }}>动作</th>
@@ -1554,7 +1554,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                     <th>任务</th>
                     <th>类别</th>
                     <th>去完成路径</th>
-                    <th className="num">奖励 UVEL</th>
+                    <th className="num">奖励 UVT</th>
                     <th>状态</th>
                     <th>完成判定</th>
                     <th style={{ textAlign: "right" }}>动作</th>
@@ -1587,7 +1587,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
             <div className="htint cyan" style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
               <span style={{ flex: 1 }}>
-                <b>周冠军加奖</b> · {operatorCopyText(text(model.weeklyChampionBonus))} · 累计 UVEL 最高的当周用户额外加奖
+                <b>周冠军加奖</b> · {operatorCopyText(text(model.weeklyChampionBonus))} · 累计 UVT 最高的当周用户额外加奖
               </span>
               <button className="l-btn sm mc" onClick={() => openSimpleConfig("weekly.champBonus", "周冠军加奖", text(model.weeklyChampionBonus), true)} disabled={!canModuleWrite}>调整</button>
             </div>
@@ -1712,7 +1712,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               <tr>
                 <th>主题</th>
                 <th>账龄段</th>
-                <th className="num">奖励 UVEL</th>
+                <th className="num">奖励 UVT</th>
                 <th>子目标</th>
                 <th>状态</th>
                 <th style={{ textAlign: "right" }}>动作</th>
@@ -1796,7 +1796,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               基础奖励 × 倍率 = 最终奖励
               <small>仅在没有活动周任务时计算促销备用奖励。</small>
             </span>
-            <span className="v">{text(promoBanner.baseReward)} × {text(promoBanner.multiplier)} = {promoFinalReward(promoBanner.baseReward, promoBanner.multiplier)} UVEL</span>
+            <span className="v">{text(promoBanner.baseReward)} × {text(promoBanner.multiplier)} = {promoFinalReward(promoBanner.baseReward, promoBanner.multiplier)} UVT</span>
             <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.baseReward", "转化卡基础奖励", text(promoBanner.baseReward), 0, 100000, 1, "increase")} disabled={!canModuleWrite}>改基础</button>
             <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.multiplier", "转化卡倍率", text(promoBanner.multiplier), 0.1, 5, 0.1, "increase")} disabled={!canModuleWrite}>改倍率</button>
           </div>

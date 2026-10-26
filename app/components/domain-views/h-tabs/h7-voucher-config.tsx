@@ -475,7 +475,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="htint" style={{ fontSize: 12 }}>
-            <b>全端同一规则</b> · 代金券上下架或改参后，领取入口和首页活动位会按同一服务端配置生效。代金券属于促销折扣，不计入 UVEL 兑付负债。
+            <b>全端同一规则</b> · 代金券上下架或改参后，领取入口和首页活动位会按同一服务端配置生效。代金券属于促销折扣，不计入 UVT 兑付负债。
           </div>
         </div>
       </section>

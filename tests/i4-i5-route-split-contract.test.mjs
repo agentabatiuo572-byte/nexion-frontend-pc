@@ -40,7 +40,7 @@ test("I4 publish confirmation exposes version diff trilingual check and sensitiv
   assert.match(view, /版本差异/);
   assert.match(view, /三语确认/);
   assert.match(view, /中文、越南语、英文/);
-  assert.match(view, /财务\/UVEL 数据来源/);
+  assert.match(view, /财务\/UVT 数据来源/);
   assert.match(view, /dataSource/);
   assert.match(view, /currentFields:/);
   assert.match(view, /targetFields:/);

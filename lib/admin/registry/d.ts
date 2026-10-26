@@ -28,7 +28,7 @@ export const DOMAIN_D: ModuleEntry[] = [
   },
   {
     path: "/finance/params",
-    summary: "设置每日提现次数、余额比例、网络费用、UVEL 抵扣、小额免审和到账时限。保存时检查修改冲突并记录操作；增加资金支出时须核对覆盖率。运营阶段相关设置在 H1 修改。",
+    summary: "设置每日提现次数、余额比例、网络费用、UVT 抵扣、小额免审和到账时限。保存时检查修改冲突并记录操作；增加资金支出时须核对覆盖率。运营阶段相关设置在 H1 修改。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

@@ -25,7 +25,7 @@ const CONFIGS = [
   { key: "presale.maxPerUser", label: "预售每人上限", kind: "number" },
   { key: "presale.startAt", label: "预售开始(UTC)", kind: "text" },
   { key: "presale.endAt", label: "预售结束(UTC)", kind: "text" },
-  { key: "holder.allocationNexPerHolding", label: "持有人每节点预留 UVEL", kind: "number" },
+  { key: "holder.allocationNexPerHolding", label: "持有人每节点预留 UVT", kind: "number" },
   { key: "holder.priorityTop1Percent", label: "优先级 排名前 1% 阈值", kind: "number" },
   { key: "holder.priorityTop3Percent", label: "优先级 排名前 3% 阈值", kind: "number" },
   { key: "holder.priorityTop5Percent", label: "优先级 排名前 5% 阈值", kind: "number" },

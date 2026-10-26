@@ -234,7 +234,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
     if (!swap.enabled) return;
     openActionConfirm({
       action: "兑换全局紧急暂停",
-      detail: <>立即停止全平台所有 UVEL↔USDT 兑换并同步 J1。G2 只提供止血入口;恢复必须前往 J1 完成跨域前置核验。</>,
+      detail: <>立即停止全平台所有 UVT↔USDT 兑换并同步 J1。G2 只提供止血入口;恢复必须前往 J1 完成跨域前置核验。</>,
       amplifies: false,
       businessForm: { kind: "multi-field", title: "结构化暂停上下文", fields: [
         { key: "triggerBasis", label: "触发依据", current: "PRICE_ANOMALY", inputKind: "select", options: ["REGULATORY", "PRICE_ANOMALY", "SECURITY_INCIDENT", "OTHER"], optionLabels: { REGULATORY: "监管要求", PRICE_ANOMALY: "价格异常", SECURITY_INCIDENT: "安全事件", OTHER: "其他" }, required: true },
@@ -290,7 +290,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
                   onClick={() => adjCap(cap)}>调整 {operatorCopyText(cap.name)}</button>}
               </div>
             ))}
-            <div className="gtint" style={{ marginTop: 10 }}><b>手续费去向</b> · 当前推广期取后端配置;开费后兑换抽成里 30% 进 UVEL 回购销毁池(G3),70% 进兑换手续费备付金(D1)。降费 = 放大流出,改动操作确认并留痕。</div>
+            <div className="gtint" style={{ marginTop: 10 }}><b>手续费去向</b> · 当前推广期取后端配置;开费后兑换抽成里 30% 进 UVT 回购销毁池(G3),70% 进兑换手续费备付金(D1)。降费 = 放大流出,改动操作确认并留痕。</div>
           </div>
         </section>
 

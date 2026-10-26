@@ -348,7 +348,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         <>
           <b>版本差异</b>：当前线上 <span className="mono">{s.v}</span> → 待发布 <span className="mono">{draft.version}</span>；
           发布后 信任中心页面即时换新。<b>三语确认</b>必须核对中文、越南语、英文语义一致。
-          {requiresDataSource(s) && <>财务数字 / UVEL介绍必须填写可追溯的<b>财务/UVEL 数据来源</b>。</>}
+          {requiresDataSource(s) && <>财务数字 / UVT介绍必须填写可追溯的<b>财务/UVT 数据来源</b>。</>}
           <b>执行门槛:{operatorCopyText(s.roleGate)}</b>
         </>
       ),
@@ -1252,7 +1252,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       </>}
 
       <p className="f-foot">
-        {view === "trust" ? <><b>I4 执行门槛</b>:一般版块由内容角色维护；<b>财务数字 / UVEL介绍 / 对外合规声明必须由对应授权角色或超级管理员发布</b>。版块曝光事件喂 数据分析 做信任到转化归因。</> : <><b>I5 执行门槛</b>:风险披露由风控起草、风控主管或超级管理员发布；内容角色无发布权限。披露确认、重确认与拦截事件喂合规覆盖看板和风控域。</>}
+        {view === "trust" ? <><b>I4 执行门槛</b>:一般版块由内容角色维护；<b>财务数字 / UVT介绍 / 对外合规声明必须由对应授权角色或超级管理员发布</b>。版块曝光事件喂 数据分析 做信任到转化归因。</> : <><b>I5 执行门槛</b>:风险披露由风控起草、风控主管或超级管理员发布；内容角色无发布权限。披露确认、重确认与拦截事件喂合规覆盖看板和风控域。</>}
         <span title="§2.4.3 业务域列表扩展 · V4 内容批次 · blocking">。</span>
       </p>
       <PaginationExemptionList

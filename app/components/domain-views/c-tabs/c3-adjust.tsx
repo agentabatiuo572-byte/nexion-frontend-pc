@@ -291,7 +291,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         : amountUsd > maxAmount
           ? `单笔金额不得超过 ${formatNumber(maxAmount)} USDT 等值`
           : asset === "NEX" && nexUsdRate <= 0
-            ? "当前 UVEL 价格不可用，暂不能提交"
+            ? "当前 UVT 价格不可用，暂不能提交"
             : debitInsufficient
               ? "扣减后余额不足"
               : reasonLength < 8 || reasonLength > 200
@@ -521,7 +521,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       <div className="f-stats">
         <div className="f-stat"><div className="k">已执行</div><div className="v">{number(overview?.approved).toLocaleString("en-US")} 笔</div><div className="sub">余额与账单均已落地</div></div>
         <div className="f-stat warn"><div className="k">待放行调整</div><div className="v">{number(overview?.pending).toLocaleString("en-US")} 笔</div><div className="sub">提交后由独立复核员处理</div></div>
-        <div className="f-stat cyan"><div className="k">UVEL 价格</div><div className="v">${formatNumber(nexUsdRate || overview?.nexUsdRate)}</div><div className="sub">用于 500 USDT 等值权限判断</div></div>
+        <div className="f-stat cyan"><div className="k">UVT 价格</div><div className="v">${formatNumber(nexUsdRate || overview?.nexUsdRate)}</div><div className="sub">用于 500 USDT 等值权限判断</div></div>
         <div className="f-stat ok"><div className="k">资金覆盖率</div><div className="v">{formatPercent(coverageRatio)}</div><div className="sub">红线 {formatPercent(redlinePct)}</div></div>
       </div>
 
@@ -574,7 +574,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
                 <div className="ctint cyan" data-proof="c3-target-card">
                   <b>{displayUser(selectedAccount)}</b> · 用户ID <span className="mono">{accountId(selectedAccount)}</span><br />
                   状态 {({ ACTIVE: "正常", FROZEN: "冻结", RESTRICTED: "受限", BANNED: "禁用" } as Record<string,string>)[text(selectedAccount.status).toUpperCase()] ?? "状态待核实"} · 风险 {formatC1RiskBand(selectedAccount.riskBand)} / {text(selectedAccount.riskScore)} · 注册 {formatDate(selectedAccount.registeredAt)}<br />
-                  USDT {formatNumber(selectedAccount.walletUsdt)} · UVEL {formatNumber(selectedAccount.walletNex)} · 提现处理中 {formatNumber(context?.pendingWithdraw)} USDT
+                  USDT {formatNumber(selectedAccount.walletUsdt)} · UVT {formatNumber(selectedAccount.walletNex)} · 提现处理中 {formatNumber(context?.pendingWithdraw)} USDT
                 </div>
               )}
 

@@ -185,7 +185,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     l2: [
       { id: "G1", name: "质押产品配置", path: "/finance-products/staking", prdAnchor: "G1", batch: "V3", status: "flagship" },
       { id: "G2", name: "兑换风险规则", path: "/finance-products/exchange", prdAnchor: "G2", batch: "V3", status: "flagship" },
-      { id: "G3", name: "UVEL价格管理", path: "/finance-products/market", prdAnchor: "G3", batch: "V3", status: "flagship" },
+      { id: "G3", name: "UVT价格管理", path: "/finance-products/market", prdAnchor: "G3", batch: "V3", status: "flagship" },
       { id: "G4", name: "创世节点销售与收益", path: "/finance-products/genesis", prdAnchor: "G4", batch: "V3", status: "flagship" },
       { id: "G7", name: "复投激励", path: "/finance-products/repurchase", prdAnchor: "G7", batch: "V3", status: "flagship" },
     ],
@@ -202,7 +202,7 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "H2", name: "免费试用设置", path: "/growth/trial", prdAnchor: "H2", batch: "V1", status: "flagship" },
       { id: "H3", name: "用户任务管理", path: "/growth/quest", prdAnchor: "H3", batch: "V3", status: "flagship" },
       { id: "H4", name: "活动中心", path: "/growth/events", prdAnchor: "H4", batch: "V3", status: "flagship" },
-      { id: "H5", name: "签到与UVEL奖励", path: "/growth/daily", prdAnchor: "H5", batch: "V3", status: "flagship" },
+      { id: "H5", name: "签到与UVT奖励", path: "/growth/daily", prdAnchor: "H5", batch: "V3", status: "flagship" },
       // H6 已折入 H5 同页，里程碑在 H5 页面内明确分区展示；不再声明一个后端未登记的独立菜单。
       { id: "H7", name: "代金券", path: "/growth/vouchers", prdAnchor: "H7", batch: "V3", status: "flagship" },
       { id: "H8", name: "新人礼与邀请奖励", path: "/growth/referral-rewards", prdAnchor: "H8", batch: "V3", status: "flagship" },
@@ -342,7 +342,7 @@ const LEGACY_MENU_NAMES: Record<string, string> = {
   "M4": "知识库与 SLA",
 };
 const STOCK_MENU_ALIASES: Record<string, string[]> = {
-  M1: ["客服总览"], M3: ["即时会话台"], M5: ["话术与模板配置"], C3: ["余额 & 资产调整"], C5: ["安全 & 会话"], F2: ["网络版税费率"], H3: ["Quest 引擎"], H4: ["活动中心 CMS"], H5: ["签到 & NEX"], G3: ["NEX 价格管理"], I4: ["信任中心 CMS"], I6: ["i18n 文案与教程", "i18n 文案与课程"]
+  M1: ["客服总览"], M3: ["即时会话台"], M5: ["话术与模板配置"], C3: ["余额 & 资产调整"], C5: ["安全 & 会话"], F2: ["网络版税费率"], H3: ["Quest 引擎"], H4: ["活动中心 CMS"], H5: ["签到 & NEX", "签到与UVEL奖励"], G3: ["NEX 价格管理", "UVEL价格管理"], I4: ["信任中心 CMS"], I6: ["i18n 文案与教程", "i18n 文案与课程"]
 };
 const LEGACY_DOMAIN_NAMES: Record<string, string> = {
   B: "总览驾驶舱",

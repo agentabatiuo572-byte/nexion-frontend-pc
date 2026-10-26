@@ -9,7 +9,7 @@ import { useState } from "react";
 import type { BusinessFormValue } from "../design-kit";
 import type { FViewCtx } from "./types";
 import type { F1VRankRow } from "@/lib/admin/f1-client";
-import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { nexGridBrandText, platformAssetText } from "@/lib/admin/brand-copy";
 import { PublishedContentEditor } from "@/app/components/domain-views/published-content-editor";
 import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/admin/platform-types";
 
@@ -42,7 +42,7 @@ function safeCustomLabel(raw: string | undefined, fallback = "自定义"): strin
 function rewardLabel(it: OpsVRankRewardItem, voucherLabels: Record<string, string>, skuLabels: Record<string, string>): string {
   switch (it.type) {
     case "usdt": return `USDT $${(it.amount ?? 0).toLocaleString()}`;
-    case "nex": return `${(it.amount ?? 0).toLocaleString()} UVEL`;
+    case "nex": return `${(it.amount ?? 0).toLocaleString()} UVT`;
     case "voucher": return `券 · ${voucherLabels[it.voucherId ?? ""] ?? it.voucherId ?? "—"}`;
     case "sku": return `商品 · ${catalogSkuBrandText(it.skuId ?? undefined, skuLabels[it.skuId ?? ""] ?? it.skuId ?? "—")}`;
     case "custom": return safeCustomLabel(it.custom);
@@ -148,7 +148,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     ctx.openActionConfirm({
       name: `${r.v} 门槛 · ${f.label}调整`, amplify: fund, op: "param", paramKey: `F.vrank.${r.v}.${f.k}`,
       edit: f.options ? { kind: "select", current: cur, options: f.options } : { kind: f.kind, current: cur },
-      detail: `${r.v} 晋升门槛 · ${f.label} 当前 ${cur} · 服务器晋升判定改后对下一轮评估生效,不回溯已晋升用户。${fund ? "该阶含 UVEL / USDT 奖励派发,放大资金流出,受 B1 覆盖率约束。" : ""}`,
+      detail: `${r.v} 晋升门槛 · ${f.label} 当前 ${cur} · 服务器晋升判定改后对下一轮评估生效,不回溯已晋升用户。${fund ? "该阶含 UVT / USDT 奖励派发,放大资金流出,受 B1 覆盖率约束。" : ""}`,
     });
   };
 
@@ -163,7 +163,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     ctx.openActionConfirm({
       name: `${r.v} · 新增奖励`, amplify: false,
       businessForm: { kind: "vrank-reward-edit", ...rewardFormBase(r) },
-      detail: `为 ${r.v} 等级新增一项晋升奖励。USDT / UVEL 类为资金 / 代币流出,派发时受 B1 备付金覆盖率约束;代金券 / SKU / 自定义不直接入资金账。`,
+      detail: `为 ${r.v} 等级新增一项晋升奖励。USDT / UVT 类为资金 / 代币流出,派发时受 B1 备付金覆盖率约束;代金券 / SKU / 自定义不直接入资金账。`,
       run: async (reason, bv) => {
         if (!bv) return;
         const item: OpsVRankRewardItem = { id: genRewardId(), ...rewardFields(bv) };
@@ -251,8 +251,8 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     try { return JSON.stringify(snapshot); } catch { return "—"; }
   };
   const rewardPayoutLabel = (record: (typeof ctx.payoutRecords)[number]) => {
-    if (["USDT", "NEX", "UVEL"].includes(record.rewardType.toUpperCase())) {
-      return `${record.amount.toLocaleString()} ${nexGridBrandText(record.rewardType.toUpperCase())}`;
+    if (["USDT", "NEX", "UVEL", "UVT"].includes(record.rewardType.toUpperCase())) {
+      return `${record.amount.toLocaleString()} ${platformAssetText(record.rewardType.toUpperCase())}`;
     }
     // 派发台账同样可能带内部标识符(custom_label 是自由文本),同 #30 一并归一。
     return record.voucherId || record.skuId || safeCustomLabel(record.customLabel, record.rewardType || "—") || record.rewardType || "—";
@@ -376,7 +376,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
               </div>
               <div className="gov-grp">
                 <div className="gov-grp-h">激励与资金风控</div>
-                <div className="gov-list"><div className="it">发放 <b>UVEL / USDT</b> 奖励会即时计入平台待付,受备付金覆盖率监控约束。</div></div>
+                <div className="gov-list"><div className="it">发放 <b>UVT / USDT</b> 奖励会即时计入平台待付,受备付金覆盖率监控约束。</div></div>
               </div>
               <div className="gov-grp">
                 <div className="gov-grp-h">等级权力</div>
@@ -515,7 +515,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
               {rows.map((row) => <option key={row.v} value={row.v}>{row.v}</option>)}
             </select>
             <select aria-label="奖励类型" value={payoutFilters.type} onChange={(event) => setPayoutFilter("type", event.target.value)}>
-              <option value="">全部奖励</option><option value="USDT">USDT</option><option value="NEX">UVEL</option><option value="VOUCHER">代金券</option><option value="SKU">商品</option><option value="CUSTOM">自定义</option>
+              <option value="">全部奖励</option><option value="USDT">USDT</option><option value="NEX">UVT</option><option value="VOUCHER">代金券</option><option value="SKU">商品</option><option value="CUSTOM">自定义</option>
             </select>
             <select aria-label="派发状态" value={payoutFilters.status} onChange={(event) => setPayoutFilter("status", event.target.value)}>
               <option value="">全部状态</option><option value="PENDING_GRANT">待派发</option><option value="GRANTED">已派发</option><option value="REISSUED">已重发</option><option value="REVERSED">已冲正</option><option value="FAILED">失败</option>

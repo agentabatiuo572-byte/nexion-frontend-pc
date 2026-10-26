@@ -152,7 +152,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     ...courseCategories.map((category) => [category, `${COURSE_ICON_BY_CAT[category] ?? "📘"} ${{ Basics: "基础", Earn: "赚取", Team: "团队", Wealth: "财富", Security: "安全" }[category] ?? category}`] as [CatFlt, string]),
   ];
   const liveReward = (c: Course): string => {
-    return `${c.reward} UVEL`;
+    return `${c.reward} UVT`;
   };
   const liveStatus = (c: Course): string =>
     c.status || "published";
@@ -326,7 +326,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       action: <>发布课程新版 · {nexGridBrandText(c.title)}</>,
       detail: (
         <>
-          分类「{categoryLabel(c.cat)}」 · 奖励 {c.reward} UVEL/课。定版发布至 /learn;受 B1 红线约束(本次只发布版本,不涨奖励,此次发布不提高奖励)。
+          分类「{categoryLabel(c.cat)}」 · 奖励 {c.reward} UVT/课。定版发布至 /learn;受 B1 红线约束(本次只发布版本,不涨奖励,此次发布不提高奖励)。
         </>
       ),
       amplifies: false,
@@ -341,20 +341,20 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       action: <>课程奖励调整 · {nexGridBrandText(c.title)}</>,
       detail: (
         <>
-          分类「{categoryLabel(c.cat)}」完成 UVEL 奖励调整 ·{" "}
-          <b>放大 UVEL 流出,受 B1 兑付覆盖率红线约束</b>。后端会在提交时校验覆盖率,不达标直接拒绝。
+          分类「{categoryLabel(c.cat)}」完成 UVT 奖励调整 ·{" "}
+          <b>放大 UVT 流出,受 B1 兑付覆盖率红线约束</b>。后端会在提交时校验覆盖率,不达标直接拒绝。
         </>
       ),
       amplifies: true,
-      edit: { kind: "number", current: String(c.reward), unit: "UVEL/课", min: TUTORIAL_REWARD_RANGE.min, max: TUTORIAL_REWARD_RANGE.max, step: 1 },
+      edit: { kind: "number", current: String(c.reward), unit: "UVT/课", min: TUTORIAL_REWARD_RANGE.min, max: TUTORIAL_REWARD_RANGE.max, step: 1 },
       run: (reason, v) => {
         if (!v) return;
         const def = findHighOp("i7_course_reward_adjust")!;
         void propose(toast, {
           action: `课程奖励调整 · ${nexGridBrandText(c.title)}`,
           obj: c.id,
-          before: `${c.reward} UVEL/课`,
-          after: `${v} UVEL/课`,
+          before: `${c.reward} UVT/课`,
+          after: `${v} UVT/课`,
           type: "fund",
           amplifies: true,
           gate: { roles: [] },
@@ -424,7 +424,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       action: <>新建课程(存为草稿)</>,
       detail: (
         <>
-          填 课程标识 / 分类 / 形式 / 难度 / 奖励({TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} UVEL 区间内);标题正文另在词条库(I6)建立中英越三语词条。草稿不对外,发布需操作确认。
+          填 课程标识 / 分类 / 形式 / 难度 / 奖励({TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} UVT 区间内);标题正文另在词条库(I6)建立中英越三语词条。草稿不对外,发布需操作确认。
         </>
       ),
       amplifies: false,
@@ -869,7 +869,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           <div className="sub">{courseCategoryCount} 分类 · 推荐位 {TUTORIAL_FEATURED_DEFAULT ? 1 : 0} 个</div>
         </div>
         <div className="f-stat">
-          <div className="k">课程 UVEL 派发(本周)</div>
+          <div className="k">课程 UVT 派发(本周)</div>
           <div className="v">{operatorCopyText(I6_STATS.weeklyNexPayout)}</div>
           <div className="sub">完成发奖 · 喂流出统计规则(B1)</div>
         </div>
@@ -880,7 +880,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         <div className="l-h">
           <span className="ttl">教程中心(I7) · /learn · {allCourses.length} 课</span>
           <span className="sub">
-            · {courseCategoryCount} 分类 · 学完发 UVEL · 涨奖励过 B1 红线
+            · {courseCategoryCount} 分类 · 学完发 UVT · 涨奖励过 B1 红线
           </span>
           <div className="r chips">
             {categoryFilters.map(([k, l]) => (
@@ -1078,10 +1078,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             <div className="in-vrow">
               <span className="nm">
                 单课奖励区间
-                <small>当前奖励范围 10–50 UVEL;单课精确值在课程行上调</small>
+                <small>当前奖励范围 10–50 UVT;单课精确值在课程行上调</small>
               </span>
               <span className="v">
-                {TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} UVEL
+                {TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} UVT
               </span>
             </div>
           </div>

@@ -13,12 +13,12 @@ export const DOMAIN_G: ModuleEntry[] = [
   },
   {
     path: "/finance-products/exchange",
-    summary: "兑换风险规则(G2)。UVEL 兑换、额度、手续费、拦截、队列、紧急暂停和地区封锁都以服务端实时结果为准。往松了调额度或降手续费要先过 B1 红线;兑换报价取 G3 的服务器实时价。",
+    summary: "兑换风险规则(G2)。UVT 兑换、额度、手续费、拦截、队列、紧急暂停和地区封锁都以服务端实时结果为准。往松了调额度或降手续费要先过 B1 红线;兑换报价取 G3 的服务器实时价。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/finance-products/market",
-    summary: "UVEL 价格管理(G3)。行情曲线、价格来源、偏离报警和暂停状态都从服务端读取。UVEL 现价是 G2 兑换和 G7 复投的定价来源,下游不接客户端报的价。",
+    summary: "UVT 价格管理(G3)。行情曲线、价格来源、偏离报警和暂停状态都从服务端读取。UVT 现价是 G2 兑换和 G7 复投的定价来源,下游不接客户端报的价。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

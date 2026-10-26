@@ -182,7 +182,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div className="tnum" style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>${u}<span style={{ fontSize: 11, color: "var(--ink-4)", fontWeight: 400 }}> /天</span></div>
-                  <div className="tnum" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{n} UVEL/天</div>
+                  <div className="tnum" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{n} UVT/天</div>
                 </div>
                 {canMutate && <div className="row" style={{ gap: 6 }}>
                   <Btn sm variant="primary" onClick={() => ctx.openActionConfirm({
@@ -191,10 +191,10 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
                     detail: `手机算力 T${t.tier}(${operatorCopyText(t.name)})· 每日收益 USDT 当前 $${u} · 调高为放大资金流出,须核验 B1 覆盖率;改后对下一结算周期生效,不回溯已累计收益。`,
                   })}>调 USDT</Btn>
                   <Btn sm onClick={() => ctx.openActionConfirm({
-                    name: `手机 T${t.tier} 每日收益 UVEL 调整`, op: "phone-tier", phoneTier: t.tier, phoneField: "dailyNex", amplify: true,
-                    edit: { kind: "number", current: n, unit: "UVEL/天", min: 0.00001, step: 0.00001, disallowCurrent: true },
-                    detail: `手机算力 T${t.tier}(${operatorCopyText(t.name)})· 每日收益 UVEL 当前 ${n} · UVEL 派发为资金流出,受 B1 覆盖率约束;改后对下一结算周期生效。`,
-                  })}>调 UVEL</Btn>
+                    name: `手机 T${t.tier} 每日收益 UVT 调整`, op: "phone-tier", phoneTier: t.tier, phoneField: "dailyNex", amplify: true,
+                    edit: { kind: "number", current: n, unit: "UVT/天", min: 0.00001, step: 0.00001, disallowCurrent: true },
+                    detail: `手机算力 T${t.tier}(${operatorCopyText(t.name)})· 每日收益 UVT 当前 ${n} · UVT 派发为资金流出,受 B1 覆盖率约束;改后对下一结算周期生效。`,
+                  })}>调 UVT</Btn>
                 </div>}
               </div>
             );
@@ -219,7 +219,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
                 <span style={{ fontSize: 13.5, fontWeight: 600 }}>{nexGridBrandText(row.label)}</span>
                 <span className="tint tiny">{row.configKey === "phone" ? "来源：手机 T3 档位" : "来源：商品管理（E1）"}</span>
               </div>
-              <div className="tnum" style={{ textAlign: "right", fontSize: 12.5 }}>${amount(row.dailyUsdt)} · {amount(row.dailyNex)} UVEL/天</div>
+              <div className="tnum" style={{ textAlign: "right", fontSize: 12.5 }}>${amount(row.dailyUsdt)} · {amount(row.dailyNex)} UVT/天</div>
               <span className="tint tiny">请在来源配置调整</span>
             </div>
             );
