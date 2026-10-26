@@ -160,6 +160,7 @@ test("address replenishment uses verified pool facts and creates only one candid
   assert.equal(api.requests.filter((row) => row.options?.method === "POST").length, 1);
   assert.equal(api.requests.find((row) => row.options?.method === "POST").path, "/cregis/addresses/provision");
   assert.equal(nodes(api.render(false), "button").some((node) => node.props.children === "补充收款地址"), false);
+  assert.equal(api.canProvisionAddress({ ...data, addressPool: { ...data.addressPool, limit: 0, total: 10000 } }), true);
   for (const pool of [undefined, { ...data.addressPool, available: false }, { ...data.addressPool, total: 60 },
     { ...data.addressPool, verifying: 1 }, { ...data.addressPool, unknown: 1 }]) {
     assert.equal(api.canProvisionAddress({ ...data, addressPool: pool }), false);
