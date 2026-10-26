@@ -37,6 +37,11 @@ export function eventRuleMissingLabel(key: string): string {
   return field?.label ?? ({ startsAt: "开始时间", endsAt: "结束时间", locales: "三语活动文案", promotion: "关联促销活动", allocation: "奖池分配规则", metric: "区域排名统计项目", "regions.countries": "参赛国家范围", regions: "参赛地区", wheel: "转盘奖池", rules: "玩法配置", stakingAppVisible: "请先在G1展示App质押功能" } as Record<string, string>)[key] ?? "参与条件或奖励配置";
 }
 
+export function eventRuleReadinessText(row: Pick<EventRuleView, "rulesLocked" | "endsAt" | "readiness">, now = Date.now()): string {
+  if (row.rulesLocked && row.endsAt && Date.parse(row.endsAt) <= now) return "活动已结束，参与条件与有效期保持原配置。";
+  return row.readiness.ready ? "配置已满足开启条件。" : `待补齐：${[...new Set(row.readiness.missing.map(eventRuleMissingLabel))].join("、") || "参与条件与奖励配置"}。`;
+}
+
 export function eventRuleDraftRules(row: Pick<EventRuleView, "kind" | "rules"> & { eventCode?: string }): Record<string, unknown> {
   const action = row.eventCode === "evt-weekend-double-nex" ? "CHECKIN_MULTIPLIER" : row.eventCode === "evt-reinvest-bonus" ? "REINVEST_TICKETS" : null;
   return { ...row.rules, ...(action ? { action } : {}), ...(row.kind === "holding" ? { allocation: "EQUAL" } : row.kind === "regional" ? { allocation: "PROPORTIONAL_VOLUME", metric: "PAID_ORDER_USDT" } : {}) };

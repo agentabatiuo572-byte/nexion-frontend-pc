@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { eventRuleDraftRules, eventRuleFields, eventRegionText, parseEventRegions, eventRuleMissingLabel } from '../lib/admin/event-rule-form.ts';
+import { eventRuleDraftRules, eventRuleFields, eventRegionText, parseEventRegions, eventRuleMissingLabel, eventRuleReadinessText } from '../lib/admin/event-rule-form.ts';
 
 test('each event kind edits its actual rule fields, with separate boost actions', () => {
   assert.deepEqual(eventRuleFields({kind:'boost', rules:{action:'CHECKIN_MULTIPLIER'}}).map(f=>f.key), ['multiplier','weekdays','timeZone','budgetNex']);
@@ -29,4 +29,14 @@ test('empty holding and regional drafts include their fixed settlement contract'
 test('fixed boost activities cannot be configured as the other activity', () => {
   assert.equal(eventRuleDraftRules({eventCode:'evt-weekend-double-nex',kind:'boost',rules:{}}).action,'CHECKIN_MULTIPLIER');
   assert.equal(eventRuleDraftRules({eventCode:'evt-reinvest-bonus',kind:'boost',rules:{action:'CHECKIN_MULTIPLIER'}}).action,'REINVEST_TICKETS');
+});
+
+test('expired activated rules show ended status while draft readiness and enablement remain separate', () => {
+  const now = Date.parse('2026-10-26T07:00:00Z');
+  const ended = {rulesLocked:true,endsAt:'2026-10-26T07:00:00Z',readiness:{ready:false,missing:['endsAt']}};
+  assert.equal(eventRuleReadinessText(ended,now),'活动已结束，参与条件与有效期保持原配置。');
+  assert.equal(eventRuleReadinessText({...ended,rulesLocked:false},now),'待补齐：结束时间。');
+  assert.equal(eventRuleReadinessText({...ended,endsAt:null},now),'待补齐：结束时间。');
+  assert.equal(eventRuleReadinessText({...ended,endsAt:'2026-10-26T07:00:01Z',readiness:{ready:true,missing:[]}},now),'配置已满足开启条件。');
+  assert.deepEqual(ended.readiness,{ready:false,missing:['endsAt']});
 });

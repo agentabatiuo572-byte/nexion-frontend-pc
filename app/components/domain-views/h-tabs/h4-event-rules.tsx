@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { HCtx } from "./types";
 import { fetchEventRules, fetchEventVouchers, updateEventRule, type EventRuleView, type EventRuleChange, type EventVoucherOption } from "@/lib/admin/event-rules-client";
-import { EVENT_KIND_LABELS, eventRuleDraftRules, eventRuleFields, eventRuleMissingLabel, eventRegionText, parseEventRegions } from "@/lib/admin/event-rule-form";
+import { EVENT_KIND_LABELS, eventRuleDraftRules, eventRuleFields, eventRuleReadinessText, eventRegionText, parseEventRegions } from "@/lib/admin/event-rule-form";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 
@@ -64,7 +64,7 @@ export default function H4EventRules({ ctx }: { ctx: HCtx }) {
         {!rows.length && error && <button className="l-btn" onClick={() => void load()}>重试</button>}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{rows.map(row => <button className="l-btn sm" key={row.eventCode} disabled={saving || !!selected} aria-pressed={selected?.eventCode === row.eventCode} onClick={() => choose(row)}>{EVENT_KIND_LABELS[row.kind] ?? "活动"} · {row.eventCode} · {row.enabled ? "已开启" : "已关闭"}</button>)}</div>
         {selected && draft && <><fieldset disabled={!canWrite || saving} style={{ marginTop: 16, border: 0, padding: 0 }}>
-          <p>{selected.readiness.ready ? "配置已满足开启条件。" : `待补齐：${[...new Set(selected.readiness.missing.map(eventRuleMissingLabel))].join("、") || "参与条件与奖励配置"}。`}</p>
+          <p>{eventRuleReadinessText(selected)}</p>
           <p>{selected.rulesLocked ? "活动玩法和有效期已固定，只可关闭活动；关闭后不能重新开启。" : "活动首次开放后，玩法和有效期固定；关闭后不能重新开启。"}</p>
           <label className="field"><span>活动开放</span><select value={String(draft.enabled)} onChange={event => setDraft({ ...draft, enabled: event.target.value === "true" })}><option value="false">关闭</option><option value="true" disabled={!selected.readiness.ready || (selected.rulesLocked && !selected.enabled)}>开启</option></select></label>
           <fieldset disabled={selected.rulesLocked} className="grid g-2" style={{ gap: 12, border: 0, margin: 0, padding: 0 }}>
