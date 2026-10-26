@@ -308,7 +308,7 @@ export function M1SupervisorPool({ permission, initialGroupId }: { permission: M
       {adminId&&hasPendingRandomAssignment(adminId)&&<button className="btn btn-sec btn-sm" onClick={()=>setRandomCustomers([])}>查询上次随机分配结果</button>}
       <div className="m-admin-muted">选择明确的客户后分配给一位专属客服。未选客户保持原状。</div>
       <div className="m-admin-toolbar">
-        <form onSubmit={(event) => { event.preventDefault(); setPage(1); setKeyword(keywordInput.trim()); }}><input aria-label="搜索客户编号 或留言关键词" value={keywordInput} disabled={Boolean(pending)} onChange={(event) => setKeywordInput(event.target.value)} placeholder="搜索客户编号 或留言关键词" /><button type="submit" className="btn btn-sec btn-sm" disabled={Boolean(pending)}>搜索</button></form>
+        <form onSubmit={(event) => { event.preventDefault(); setPage(1); setKeyword(keywordInput.trim()); }}><input aria-label="搜索客户编号、昵称或手机号" value={keywordInput} disabled={Boolean(pending)} onChange={(event) => setKeywordInput(event.target.value)} placeholder="搜索客户编号、昵称或手机号" /><button type="submit" className="btn btn-sec btn-sm" disabled={Boolean(pending)}>搜索</button></form>
         <select aria-label="筛选入池原因" value={reasonFilter} disabled={Boolean(pending)} onChange={(event) => { setPage(1); setReasonFilter(event.target.value as SupportPoolReason | ""); }}><option value="">全部入池原因</option>{Object.entries(POOL_REASONS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
         {(keyword || reasonFilter) && <button type="button" className="btn btn-sec btn-sm" disabled={Boolean(pending)} onClick={() => { setKeywordInput(""); setKeyword(""); setReasonFilter(""); setPage(1); }}>清除筛选</button>}
       </div>
