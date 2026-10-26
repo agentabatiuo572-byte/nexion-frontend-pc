@@ -6,13 +6,14 @@ import type { DCtx } from "./types";
 import { CregisExceptionOperations } from "./cregis-exceptions";
 import { CregisFundsPreparation } from "./cregis-funds-preparation";
 import { CregisAutoForward } from "./cregis-auto-forward";
+import { CregisPoolPolicy } from "./cregis-pool-policy";
 
 type ExceptionRow = Record<string, unknown>;
 type CregisExceptions = {
   mode: string;
   depositEnabled: boolean;
   depositCreditEnabled: boolean;
-  addressPool?: { available: boolean; total: number; unassigned: number; assigned: number; verifying: number; unknown: number; limit: number; reserveTarget?: number; automatic?: boolean };
+  addressPool?: { available: boolean; total: number; unassigned: number; assigned: number; verifying: number; unknown: number; limit: number; reserveTarget?: number; automatic?: boolean; queued?: number; lastError?: string | null; retryAfter?: number | null };
   providerPayout?: { configured: boolean; enabled: boolean; disabledReason: string | null };
   provisionGate: { state: string; updatedAt?: string; version?: number;
     assignEnabled?: boolean | number; creditEnabled?: boolean | number; payoutEnabled?: boolean | number };
@@ -316,7 +317,7 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
         <div className="dtint">{payoutCapabilityText(data)}</div>
         <div className="cregis-recon">
           <span>专属收款地址池：{data.addressPool?.available
-            ? `可分配 ${data.addressPool.unassigned} · 已分配 ${data.addressPool.assigned} · 核验中 ${data.addressPool.verifying} · 待核查 ${data.addressPool.unknown} · 总计 ${data.addressPool.total}${data.addressPool.limit > 0 ? `/${data.addressPool.limit}` : " · 无总量上限"}${data.addressPool.automatic ? ` · 自动补充至 ${data.addressPool.reserveTarget ?? 5} 个备用地址` : ""}`
+            ? `可分配 ${data.addressPool.unassigned} · 待创建 ${data.addressPool.queued ?? 0} · 已分配 ${data.addressPool.assigned} · 核验中 ${data.addressPool.verifying} · 待核查 ${data.addressPool.unknown} · 总计 ${data.addressPool.total}${data.addressPool.limit > 0 ? `/${data.addressPool.limit}` : " · 无总量上限"}${data.addressPool.automatic ? ` · 自动补充至 ${data.addressPool.reserveTarget ?? 5} 个备用地址` : ""}`
             : "暂不可用，请刷新核对"}</span>
           {canManage && <button className="l-btn sm" disabled={busy || loading || !canProvisionAddress(data)} onClick={() => confirmCommand(
             "补充一个专属收款地址", "向 Cregis 创建一个候选地址；系统核对归属、余额和链上历史后才可分配给用户。创建结果不明时请先核查，勿连续重试。",
@@ -430,6 +431,10 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
             {data[key].length > 5 && <div className="s">仅显示前 5 项；请在后端异常接口查看完整记录。</div>}
           </div>)}</div>
         </div>
+        {data.addressPool?.lastError && <div className="dtint warn">{data.addressPool.lastError === "CREGIS_ADDRESS_QUOTA_EXCEEDED"
+          ? "供应商地址额度不足，请扩容后恢复补充。" : data.addressPool.lastError === "CREGIS_ADDRESS_RATE_LIMITED"
+          ? "供应商请求频率受限，稍后自动继续补充。" : "供应商暂未受理地址创建，请核对额度及接口状态后恢复。"}</div>}
+        <CregisPoolPolicy canManage={canManage} openActionConfirm={openActionConfirm} />
         <CregisAutoForward canManage={canManage} openActionConfirm={openActionConfirm} />
         <CregisFundsPreparation canManage={canManage} openActionConfirm={openActionConfirm} />
         <CregisExceptionOperations canManage={canManage} openActionConfirm={openActionConfirm}

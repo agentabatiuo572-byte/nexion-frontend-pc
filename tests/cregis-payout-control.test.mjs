@@ -35,6 +35,7 @@ function harness(data) {
     require(name) {
       if (name === "./cregis-exceptions") return { CregisExceptionOperations: () => null };
     if (name === "./cregis-funds-preparation") return { CregisFundsPreparation: () => null };
+    if (name === "./cregis-pool-policy") return { CregisPoolPolicy: () => null };
     if (name === "./cregis-auto-forward") return { CregisAutoForward: () => null };
       if (name === "react") return {
         useState(initial) {
