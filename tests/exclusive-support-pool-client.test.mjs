@@ -16,6 +16,15 @@ test('pool API preserves explicit UTC microseconds and nullable last attempts', 
   } finally { globalThis.fetch = original; }
 });
 const page = records => ({records, total: records.length, pageNum: 1, pageSize: 8});
+test('pool preserves the masked phone and accepts missing phone data from earlier backends', async () => {
+  try {
+    for (const phoneMasked of ['187****2601', null, undefined]) {
+      globalThis.fetch = async () => envelope(page([{...row, phoneMasked}]));
+      const result = (await supportClient.bindingPool({pageNum:1,pageSize:8})).records[0];
+      assert.equal(result.phoneMasked, phoneMasked);
+    }
+  } finally { globalThis.fetch = original; }
+});
 test('candidate page preserves historical roster and rejects unknown or contradictory assignment authority', async () => {
   const agent = {adminId: 7, name: '专属客服', seatType: 'MANAGER', serviceTypes: ['support'], status: 'enabled', enabled: true, assignmentEligible: true, busy: true, assignedUserCount: 4, maxConcurrent: 10, version: 1};
   try {

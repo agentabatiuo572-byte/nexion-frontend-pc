@@ -52,6 +52,15 @@ test('pool UTC clocks render the same business time in Tokyo, UTC and Shanghai, 
     }
   } finally {if(previousZone===undefined)delete process.env.TZ;else process.env.TZ=previousZone;}
 });
+test('pool customer identity shows the supplied masked phone and a neutral missing value',async()=>{
+  for(const phoneMasked of ['187****2601',null,undefined]){
+    const h=harness({poolRows:[{...item,phoneMasked}]}),mounted=h.mount(h.M1SupervisorPool,{permission:'supervisor'});
+    mounted.render();await flush();mounted.render();await flush();const tree=mounted.render();
+    const identity=nodes(tree).find(n=>n.type==='td'&&n.props?.['data-label']==='客户');
+    assert.ok(text(identity).includes(`手机号：${phoneMasked??'—'}`));
+    assert.ok(text(identity).includes('ID 71'));
+  }
+});
 test('managed empty scope and a denied read never query all pool/agents',async()=>{
   for(const options of [{mode:'MANAGED',groupRows:[]},{scopeFailure:true}]){const h=harness(options),mounted=h.mount(h.M1SupervisorPool,{permission:'supervisor'});mounted.render();await flush();const tree=mounted.render();assert.equal(h.calls.filter(c=>['pool','agents'].includes(c[0])).length,0);assert.match(text(tree),options.scopeFailure?/无权/:/没有可管理/);}
 });
