@@ -4,14 +4,22 @@ import fs from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
 
-const client = { exports: {} };
-vm.runInNewContext(ts.transpileModule(fs.readFileSync("lib/admin/phone-calibration-client.ts","utf8"), {
+const transpile = file => ts.transpileModule(fs.readFileSync(file,"utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-}).outputText, { exports: client.exports, require: () => ({}) });
-const { phoneProposalError, parsePhoneCalibrationOverview } = client.exports;
+}).outputText;
+const iosRules = { exports: {} };
+vm.runInNewContext(transpile("lib/admin/ios-model-rules.ts"), { exports: iosRules.exports, require: () => ({}) });
+const client = { exports: {} };
+vm.runInNewContext(transpile("lib/admin/phone-calibration-client.ts"),
+  { exports: client.exports, require: id => id.endsWith("ios-model-rules") ? iosRules.exports : {} });
+const { phoneProposalError, parsePhoneCalibrationOverview, parsePhoneProposalView } = client.exports;
+const { iosRuleIssues, planIosImport, diffIosRules } = iosRules.exports;
+const same = (actual, expected) => assert.equal(JSON.stringify(actual), JSON.stringify(expected));
+const ios = (id, model, min, max, extra = {}) => ({ id, model, aliases: [], minComputeValue: min, maxComputeValue: max,
+  enabled: true, valueSource: "OPERATOR_PRESET", catalogClass: "APPLE_RELEASED_HISTORICAL", note: null, ...extra });
 const rule = {id:"fixture",platform:"android",model:"Test phone",soc:"Test SoC",gpu:"Test GPU",
   minMemoryGb:6,maxMemoryGb:9,computeValue:24.3,evidence:"Test fixture only"};
-const proposal = {expectedRevision:0,effectiveAt:0,thresholds:[19,25,35,47],rules:[rule]};
+const proposal = {expectedRevision:0,effectiveAt:0,thresholds:[19,25,35,47],rules:[rule],iosModelRules:[]};
 test("an unreadable phone proposal is isolated without hiding the rest of the A2 queue", () => {
   const a2 = {exports:{}};
   const source = fs.readFileSync("lib/admin/a2-client.ts","utf8") + "\nexport const inspectQueue = normalizeOverview;";
@@ -27,6 +35,7 @@ test("an unreadable phone proposal is isolated without hiding the rest of the A2
   assert.ok(result.operationQueue[0].phoneCalibrationError);
   assert.equal(result.operationQueue[0].phoneCalibrationProposal,undefined);
   assert.equal(result.operationQueue[1].phoneCalibrationProposal.rules[0].id,"fixture");
+  assert.equal(result.operationQueue[1].phoneCalibrationProposal.baseline,null);
   assert.equal(result.operationQueue[2].id,"other");
 });
 test("phone rule editing validates continuous thresholds and hardware fields", () => {
@@ -57,4 +66,46 @@ test("A2 phone policy targets one atomic configuration with E6 publication comma
   assert.equal(operation.buildCommand(proposal).params,proposal);
   assert.equal(operation.buildTarget({}).type,"phone_calibration_policy");
   assert.equal(operation.buildTarget({}).id,"phone-calibration");
+});
+
+test("iPhone model rules need only a model and an operator range, and names stay unique", () => {
+  const good = {...proposal,iosModelRules:[ios("ios-16-pro","iPhone 16 Pro",100,120,{aliases:["iPhone17,1"]}),ios("fixed","iPhone 6",12.5,12.5)]};
+  assert.equal(phoneProposalError(good),null);
+  for (const change of [{model:""},{model:"iPhone"},{model:" apple  iphone "},{minComputeValue:130},{minComputeValue:0},
+    {maxComputeValue:120.001},{id:"bad id"},{id:"fixture"},{aliases:["iphone"]},{note:"x".repeat(501)}])
+    assert.ok(phoneProposalError({...good,iosModelRules:[{...good.iosModelRules[0],...change}]}), JSON.stringify(change));
+  const duplicate = iosRuleIssues([ios("a","iPhone 16 Pro",1,2),ios("b"," IPHONE 16 PRO",1,2)]);
+  assert.equal(duplicate[0].index,1);
+  assert.equal(duplicate[0].field,"model");
+  assert.equal(iosRuleIssues([ios("a","iPhone 6",1,2,{aliases:["iPhone7,2"]}),ios("b","iPhone 6 Plus",1,2,{aliases:["iphone7,2"]})])[0].field,"aliases");
+});
+test("a stored policy without iPhone rules reads as an empty list", () => {
+  const empty = {policy:{revision:1,current:{version:1,effectiveAt:0,thresholds:[19,25,35,47],rules:[]},scheduled:null},pendingHardware:[],computeUnit:"platform"};
+  same(parsePhoneCalibrationOverview(empty).policy.current.iosModelRules,[]);
+  assert.throws(() => parsePhoneCalibrationOverview({...empty,policy:{...empty.policy,current:{...empty.policy.current,iosModelRules:[{id:"x"}]}}}));
+});
+test("preset import only fills missing models and never overwrites operator edits", () => {
+  const draft = [ios("ios-16-pro","iPhone 16 Pro",95,115,{enabled:false,aliases:["custom"]}), ios("mine","iPhone 6",1,2,{aliases:["iPhone7,1"]})];
+  const presets = [ios("ios-16-pro","iPhone 16 Pro",100,120,{aliases:["iPhone17,1"]}), ios("ios-6-plus","iPhone 6 Plus",12,22,{aliases:["iPhone7,1"]}),
+    ios("ios-air","iPhone Air",105,125)];
+  const plan = planIosImport(draft, presets);
+  same(plan.added.map(rule => rule.id),["ios-air"]);
+  same(plan.skipped.map(rule => rule.id),["ios-16-pro"]);
+  same(plan.conflicts.map(entry => entry.preset.id),["ios-6-plus"]);
+  same(planIosImport([...draft,...plan.added], presets).added,[]);
+});
+test("A2 sees added, modified, disabled and removed iPhone rules against the server baseline", () => {
+  const before = [ios("a","iPhone 16 Pro",95,115), ios("b","iPhone 6",10,20), ios("c","iPhone 7",20,30)];
+  const after = [ios("a","iPhone 16 Pro",100,120), ios("b","iPhone 6",10,20,{enabled:false}), ios("d","iPhone Air",105,125)];
+  const changes = diffIosRules(before, after);
+  same(changes.map(change => [change.kind,change.id]),[["modified","a"],["disabled","b"],["added","d"],["removed","c"]]);
+  assert.match(changes[0].details[0],/95–115 → 100–120/);
+  assert.deepEqual([...diffIosRules([], [ios("n","iPhone 6",10,20,{enabled:false})])[0].details],["范围 10–20","停用"]);
+  const view = parsePhoneProposalView({...proposal,iosModelRules:after,baseline:{revision:3,rules:[],iosModelRules:before}});
+  assert.equal(view.baseline.revision,3);
+  assert.throws(() => parsePhoneProposalView({...proposal,baseline:{revision:"x",rules:[]}}));
+  const { iosModelRules: _omitted, ...older } = proposal;
+  const inherited = parsePhoneProposalView({...older,baseline:{revision:3,rules:[],iosModelRules:before}});
+  assert.equal(inherited.iosRulesInherited,true);
+  assert.equal(view.iosRulesInherited,false);
 });

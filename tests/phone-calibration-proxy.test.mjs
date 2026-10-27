@@ -35,17 +35,19 @@ function gateway({ entries = { nexion_admin_token: "fixture-token" }, upstream =
 }
 
 test("the real phone client reads and previews through the authenticated config BFF", async () => {
-  const preview = { expectedRevision: 0, match: { status: "MATCHED" },
+  const preview = { expectedRevision: 0, match: { status: "MATCHED" }, possibleTiers: [3],
     impact: { matched: 1, changed: 1, pending: 0, appliesTo: "NEXT_CALIBRATION", historicalSettlementChanged: false } };
   const fixture = gateway({ upstream: async url => Response.json({ code: 0, data: url.endsWith("/preview") ? preview : overview }) });
+  const iosRules = load("../lib/admin/ios-model-rules.ts", id => { throw new Error(`Unexpected rules import: ${id}`); });
   const client = load("../lib/admin/phone-calibration-client.ts", id => {
+    if (id.endsWith("ios-model-rules")) return iosRules;
     if (id.endsWith("error-messages")) return {
       formatAdminApiError: (message, fallback) => message || fallback,
       guardedFetch: (url, init) => fixture.request(url.replace("/api/admin/config/", ""), init.method, init.body),
     };
     throw new Error(`Unexpected client import: ${id}`);
   });
-  const proposal = { expectedRevision: 0, effectiveAt: 0, thresholds: [19, 25, 35, 47], rules: [] };
+  const proposal = { expectedRevision: 0, effectiveAt: 0, thresholds: [19, 25, 35, 47], rules: [], iosModelRules: [] };
   assert.deepEqual(await client.fetchPhoneCalibration(), overview);
   assert.deepEqual(await client.previewPhoneCalibration(proposal, { platform: "android", model: "fixture" }), preview);
   assert.equal(fixture.calls.length, 2);
@@ -63,16 +65,18 @@ test("the real phone client reads and previews through the authenticated config 
   assert.equal(fixture.calls[1].init.headers.get("Idempotency-Key"), "fixture-request");
 });
 
-test("only the two phone route and method pairs are forwarded; existing config GET and PUT still work", async () => {
+test("only the three phone route and method pairs are forwarded; existing config GET and PUT still work", async () => {
   const fixture = gateway();
   for (const path of ["task-pricing", "phone-tiers", "phone-tiers/comparison"]) {
     for (const method of ["GET", "PUT"]) assert.equal((await fixture.request(path, method)).status, 200);
     assert.equal((await fixture.request(path, "POST")).status, 405);
   }
-  for (const [path, methods] of [["phone-calibration", ["POST", "PUT"]], ["phone-calibration/preview", ["GET", "PUT"]]]) {
+  for (const [path, methods] of [["phone-calibration", ["POST", "PUT"]], ["phone-calibration/preview", ["GET", "PUT"]],
+    ["phone-calibration/ios-model-presets", ["POST", "PUT"]]]) {
     for (const method of methods) assert.equal((await fixture.request(path, method)).status, 405);
   }
-  assert.equal(fixture.calls.length, 6, "rejected methods must not reach the backend");
+  assert.equal((await fixture.request("phone-calibration/ios-model-presets", "GET")).status, 200);
+  assert.equal(fixture.calls.length, 7, "rejected methods must not reach the backend");
 });
 
 test("unknown, publish and nested config paths remain unavailable for every exposed method", async () => {
