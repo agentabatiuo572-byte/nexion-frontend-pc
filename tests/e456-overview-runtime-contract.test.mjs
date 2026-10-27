@@ -79,5 +79,9 @@ test("E6 aggregate contract accepts six complete GPU tiers and rejects malformed
     sources: ["nx_config_item"],
   });
   assert.equal(config.gpuTiers.length, 6);
+  const retired=parseE6ComputeConfig({...config,flags:[],gpuTiers:[],download:{url:"",zhTitle:"",zhGuide:"",enTitle:"",enGuide:""}});
+  assert.deepEqual(retired.coefficients,config.coefficients);
+  assert.deepEqual(retired.yieldEstimate,config.yieldEstimate);
+  assert.throws(()=>parseE6ComputeConfig({...retired,yieldEstimate:[]}),/E6_COMPUTE_CONFIG_CONTRACT_INVALID/);
   assert.throws(() => parseE6ComputeConfig({}), /E6_COMPUTE_CONFIG_CONTRACT_INVALID/);
 });

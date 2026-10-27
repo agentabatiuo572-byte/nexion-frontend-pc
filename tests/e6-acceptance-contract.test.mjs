@@ -6,7 +6,6 @@ const shell = readFileSync(new URL("../app/components/domain-views/e-view.tsx", 
 const tab = readFileSync(new URL("../app/components/domain-views/e-tabs/e6-compute-config.tsx", import.meta.url), "utf8");
 const types = readFileSync(new URL("../app/components/domain-views/e-tabs/types.ts", import.meta.url), "utf8");
 const client = readFileSync(new URL("../lib/admin/e6-client.ts", import.meta.url), "utf8");
-const installer = readFileSync(new URL("../lib/admin/installer-url.ts", import.meta.url), "utf8");
 const registry = readFileSync(new URL("../lib/admin/high-ops-registry.ts", import.meta.url), "utf8");
 const moduleRegistry = readFileSync(new URL("../lib/admin/registry/e.ts", import.meta.url), "utf8");
 const errorMessages = readFileSync(new URL("../lib/admin/error-messages.ts", import.meta.url), "utf8");
@@ -31,8 +30,7 @@ test("E6 permissions expose only the actions authorized for the current operator
   assert.match(shell, /canToggleE6\s*=\s*canWriteE6\s*\|\|\s*hasToggleE6/);
   assert.match(types, /canWriteE6: boolean/);
   assert.match(types, /canToggleE6: boolean/);
-  assert.match(tab, /canToggleE6[\s\S]{0,600}e6-flag-toggle/);
-  assert.match(tab, /canWriteE6[\s\S]{0,1800}编辑档位/);
+  assert.match(tab, /PhoneCalibrationPanel/);
 });
 
 test("E6 fails visibly, preserves keyword slots, and never invents yield values", () => {
@@ -41,25 +39,10 @@ test("E6 fails visibly, preserves keyword slots, and never invents yield values"
   assert.match(tab, /重新加载/);
   assert.match(client, /keywords: E6KeywordView\[\]/);
   assert.match(client, /slot: string/);
-  assert.match(tab, /kw\.slot/);
-  assert.match(tab, /firstFreeKeywordSlot/);
   assert.doesNotMatch(tab, /yieldValue\([^)]*fallback/);
   assert.doesNotMatch(tab, /166\.67|0\.06|topsBaseline", 28/);
 });
 
-test("E6 copy explains the implemented flag and HTTPS installer gates", () => {
-  assert.match(tab, /入口开关与 HTTPS 地址共同生效/);
-  assert.match(tab, /只有开关开启且安装包地址通过 HTTPS 校验时/);
-  assert.match(tab, /实际接入仍需桌面客户端完成配对/);
-  assert.match(tab, /启动、返回前台或用户下拉刷新时重拉公共配置/);
-  assert.doesNotMatch(tab, /后续 SPEC|当前不会出现新入口/);
-  assert.doesNotMatch(tab, /每 60 秒刷新公共配置缓存|下一次 60 秒配置刷新/);
-  assert.doesNotMatch(tab, /确认后客户端会按新状态显示或隐藏对应入口/);
-  assert.doesNotMatch(tab, /客户端读取服务端配置后生效/);
-  assert.doesNotMatch(moduleRegistry, /版本、强制升级开关/);
-  assert.match(moduleRegistry, /下载地址与中英文标题、引导文案/);
-  assert.match(errorMessages, /H5 手机托管收益已停用/);
-});
 
 test("E6 exposes version rollback, phase boundary, structural and B1 failure contracts", () => {
   assert.match(tab, /data-proof="e6-version-rollback"/);
@@ -73,32 +56,4 @@ test("E6 exposes version rollback, phase boundary, structural and B1 failure con
   assert.match(errorMessages, /COMPUTE_GPU_TOPS_ORDER_INVALID/);
   assert.match(errorMessages, /COMPUTE_GPU_KEYWORD_DUPLICATE/);
   assert.match(errorMessages, /COVERAGE_BELOW_REDLINE/);
-});
-
-test("E6 download copy rejects test punctuation before it can become the published configuration", () => {
-  // 后端只校验 ≤320 字符长度(COMPUTE_DOWNLOAD_TEXT_INVALID);测试标点必须由运营面在提交前拦住,
-  // 否则「！！！Download the desktop client...」会被当成正式文案写入并下发给用户端(简报 #45)。
-  const patternLiteral = installer.match(/E6_DOWNLOAD_COPY_PATTERN = "((?:[^"\\]|\\.)*)"/);
-  assert.ok(patternLiteral, "the copy gate pattern must live in the shared installer-url constants");
-  const copyPattern = new RegExp(JSON.parse(`"${patternLiteral[1]}"`));
-  assert.match(installer, /E6_DOWNLOAD_COPY_MAX_LENGTH = 320/);
-  assert.match(client, /E6_DOWNLOAD_COPY_PATTERN_MESSAGE/);
-
-  // 简报里的真实坏值:必须被拒。
-  assert.equal(copyPattern.test("！！！Download the desktop client, sign in with the same account."), false);
-  assert.equal(copyPattern.test("为什么？？？"), false);
-  assert.equal(copyPattern.test("Wait!!"), false);
-  // 正式文案不得被误伤。
-  assert.equal(copyPattern.test("Download the desktop client, sign in with the same account."), true);
-  assert.equal(copyPattern.test("电脑显卡算力共享"), true);
-  assert.equal(copyPattern.test("What is this?"), true, "a single question mark is normal prose");
-
-  // 四个字段共用同一条规则与同一组常量,避免只改一个字段绕过质量门。
-  for (const field of ["zhTitle", "zhGuide", "enTitle", "enGuide"]) {
-    assert.match(tab, new RegExp(`key: "${field}"[^}]*maxLength: E6_DOWNLOAD_COPY_MAX_LENGTH`));
-    assert.match(tab, new RegExp(`key: "${field}"[^}]*pattern: E6_DOWNLOAD_COPY_PATTERN`));
-  }
-  // 已存在的不合规文案必须在页面上显式暴露,而不是静默当正式值展示。
-  assert.match(tab, /e6-copy-quality-gate/);
-  assert.match(tab, /含测试标点/);
 });

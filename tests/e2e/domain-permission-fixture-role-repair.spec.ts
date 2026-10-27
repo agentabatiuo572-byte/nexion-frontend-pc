@@ -81,7 +81,7 @@ const G_READ = modules("finprod_", ["G1", "G2", "G3", "G4", "G7"]);
 const H_READ = modules("growth_", ["H1", "H2", "H3", "H4", "H5", "H7", "H8"]);
 const I_READ = modules("content_", ["I1", "I2", "I3", "I4", "I5", "I6"]);
 const J_READ = modules("emergency_", ["J1", "J2", "J3", "J4"]);
-const K_READ = modules("risk_", ["K1", "K2", "K3", "K4", "K6"]);
+const K_READ = modules("risk_", ["K1", "K2", "K3", "K4"]);
 const L_READ = modules("bi_", ["L1", "L2", "L3", "L4", "L5", "L6"]);
 const M_READ = modules("service_", ["M1", "M2", "M3", "M4", "M5"]);
 const A2_MAKER = ["platform_a2_read", "platform_a2_proposal_create"];
@@ -241,7 +241,7 @@ const DOMAIN_DEFINITIONS: Record<Domain, DomainDefinition> = {
     ],
   },
   K: {
-    modules: ["K1", "K2", "K3", "K4", "K6"],
+    modules: ["K1", "K2", "K3", "K4"],
     read: K_READ,
     maker: [
       ...K_READ, ...A2_MAKER,
@@ -251,8 +251,7 @@ const DOMAIN_DEFINITIONS: Record<Domain, DomainDefinition> = {
       "risk_k2_row_blockgift", "risk_k2_row_boardflag",
       "risk_k3_write", "risk_k3_rule_create", "risk_k3_rule_toggle",
       "risk_k3_rule_archive", "risk_k4_write", "risk_k4_user_override",
-      "risk_k4_user_recompute", "risk_k6_write",
-      "risk_k6_senior", "risk_k6_target_manage",
+      "risk_k4_user_recompute",
     ],
   },
   L: {

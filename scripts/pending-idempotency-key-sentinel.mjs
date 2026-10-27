@@ -56,7 +56,6 @@ const MIGRATED = [
   "lib/admin/d-client.ts",
   "lib/admin/user360-client.ts",
   "lib/admin/i-client.ts",
-  "lib/admin/k6-client.ts",
   "lib/admin/stable-mutation.ts",
   "lib/admin/f1-stable-write.ts",
   // H3 task-event bindings keep their key across an unknown write outcome before server readback.

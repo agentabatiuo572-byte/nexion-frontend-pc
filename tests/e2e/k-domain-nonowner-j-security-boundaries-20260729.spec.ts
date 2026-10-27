@@ -11,12 +11,11 @@ const READ_ENDPOINTS = [
   "/api/admin/risk/arbitrage/overview",
   "/api/admin/risk/withdraw-rules/overview",
   "/api/admin/risk/scoring/overview",
-  "/api/admin/janus/dashboard",
 ];
 
 test.describe.configure({ mode: "serial", timeout: 180_000 });
 
-test("K1-K6 匿名读取 401，已认证不存在资源 404，且不触发成功写", async ({ page }) => {
+test("K1-K4 匿名读取 401，已认证不存在资源 404，且不触发成功写", async ({ page }) => {
   const anonymous = await request.newContext({ baseURL: BASE_URL });
   try {
     for (const endpoint of READ_ENDPOINTS) {
@@ -28,6 +27,8 @@ test("K1-K6 匿名读取 401，已认证不存在资源 404，且不触发成功
   }
 
   await login(page);
+  const retired = await page.request.get("/api/admin/janus/dashboard");
+  expect(retired.status()).toBe(404); // The PC proxy has been removed; the direct backend route returns 410.
   const missing = await page.request.get(`/api/admin/risk/__nonexistent_nonowner_j_${Date.now()}`);
   expect(missing.status()).toBe(404);
 });

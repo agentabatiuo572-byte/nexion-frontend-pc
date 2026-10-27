@@ -68,7 +68,6 @@ const BUSINESS = {
   "finance/[...path]/route.ts": ["withdrawals"],
   "funnel/[[...path]]/route.ts": [],
   "growth/[...path]/route.ts": ["phases"],
-  "janus/[...path]/route.ts": { GET: ["dashboard"], POST: ["strategies"], PUT: ["strategies", "fixture"], DELETE: ["strategies", "fixture"] },
   "legal-terms/[...path]/route.ts": ["list"],
   "market/[...path]/route.ts": ["staking"],
   "media/[...path]/route.ts": ["uploads", "fixture", "preview-url"],

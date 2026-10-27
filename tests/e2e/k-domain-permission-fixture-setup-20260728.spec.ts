@@ -14,7 +14,7 @@ const FIXTURE_PATH = process.env.K_PERMISSION_FIXTURE_PATH
 const SUFFIX = process.env.K_PERMISSION_SUFFIX ?? randomBytes(3).toString("hex");
 const READ_ROLE_CODE = `ACC_K_RO_R151023_${SUFFIX}`.toUpperCase();
 const MAKER_ROLE_CODE = `ACC_K_MAKER_R151023_${SUFFIX}`.toUpperCase();
-const READ_PERMISSIONS = ["risk_k1_read", "risk_k2_read", "risk_k3_read", "risk_k4_read", "risk_k6_read"];
+const READ_PERMISSIONS = ["risk_k1_read", "risk_k2_read", "risk_k3_read", "risk_k4_read"];
 const MAKER_PERMISSIONS = [
   ...READ_PERMISSIONS,
   "risk_k1_write", "risk_k1_cluster_freeze", "risk_k1_cluster_release",
@@ -23,10 +23,9 @@ const MAKER_PERMISSIONS = [
   "risk_k2_row_blockgift", "risk_k2_row_boardflag",
   "risk_k3_write", "risk_k3_rule_create", "risk_k3_rule_toggle", "risk_k3_rule_archive",
   "risk_k4_write", "risk_k4_user_override", "risk_k4_user_recompute",
-  "risk_k6_write", "risk_k6_senior", "risk_k6_target_manage",
   "platform_a2_read", "platform_a2_proposal_create",
 ];
-const MENU_CODES = ["K", "K1", "K2", "K3", "K4", "K6"];
+const MENU_CODES = ["K", "K1", "K2", "K3", "K4"];
 
 type AccountKey = "k_readonly" | "k_no_write" | "k_no_menu" | "k_maker";
 type FixtureAccount = {
@@ -200,7 +199,7 @@ async function createRole(page: Page, roleCode: string, roleName: string) {
       data: {
         roleCode,
         roleName: `${RUN_ID} ${roleName}`,
-        remark: "K1-K6 全量验收隔离夹具",
+        remark: "K1-K4 全量验收隔离夹具",
         status: 1,
         reason: `${RUN_ID} 创建 ${roleName}角色`,
         operator: ROOT_USERNAME,

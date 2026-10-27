@@ -244,10 +244,10 @@ test("J3 contextual actions carry the selected account or cluster into C2 and K1
   assert.match(kView, /fetchK1MultiAccountOverview\(query\.multiAccount\)/);
   assert.match(kView, /const sequence = \+\+requestSequence\.current/);
   assert.match(kView, /sequence === requestSequence\.current/);
-  assert.match(kView, /tab !== "K6" && tab !== "K1"/);
+  assert.match(kView, /tab !== "K1"/);
   // K1 owns its focused deep-link error state, so the shell-level error branch
   // must exclude K1 even as the other K pages move to their own local states.
-  assert.match(kView, /tab !== "K6" && tab !== "K1"[\s\S]{0,180}contentError/);
+  assert.match(kView, /tab !== "K1"[\s\S]{0,180}contentError/);
   assert.match(k1Component, /仅重试 K1/);
   assert.match(k1Component, /reloadKRisk\(\{ multiAccount: pageQuery \}\)\.catch/);
 });

@@ -4,7 +4,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, win32 } from "node:path";
 import test from "node:test";
 import ts from "typescript";
-import { resolveNexionAppRoot, resolveNexionBackendRoot, resolveNexionJanusRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
+import { resolveNexionAppRoot, resolveNexionBackendRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 import {
   auditRepositoryReverseCoverage,
   collectActiveNavLeaves,
@@ -17,14 +17,12 @@ import {
 const ROOT = process.cwd();
 const BACKEND_ROOT = resolveNexionBackendRoot({ adminRoot: ROOT });
 const UNIAPP_ROOT = resolveNexionAppRoot({ adminRoot: ROOT });
-const JANUS_ROOT = resolveNexionJanusRoot({ adminRoot: ROOT });
 const read = (relative) => readFileSync(join(ROOT, relative), "utf8");
 const readBackend = (relative) => readFileSync(join(BACKEND_ROOT, relative), "utf8");
 const manifest = JSON.parse(read("docs/ops-actions.manifest.json"));
 const row = (id) => manifest.rows.find((item) => item.id === id);
 
 const SEMANTIC_PENDING_IDS = [
-  "OPS-K-17",
   "OPS-D-29",
   "OPS-D-30",
 ];
@@ -50,7 +48,7 @@ function readSourceTree(root, excludedSuffix = "") {
 }
 
 test("semantic debts stay pending until producer, runtime consumer and behavior evidence all exist", () => {
-  assert.equal(SEMANTIC_PENDING_IDS.length, 3);
+  assert.equal(SEMANTIC_PENDING_IDS.length, 2);
   for (const id of SEMANTIC_PENDING_IDS) {
     assert.equal(row(id)?.status, "pending", `${id} must remain pending until its runtime consumer contract is proven`);
     assert.ok(row(id)?.runtimeConsumerContract, `${id} must describe its pending runtime consumer contract`);
@@ -85,8 +83,9 @@ test("semantic debts stay pending until producer, runtime consumer and behavior 
   assert.deepEqual(validateRuntimeConsumerContracts(manifest, () => undefined), []);
 
   const falseGreen = structuredClone(manifest);
-  const debt = falseGreen.rows.find((item) => item.id === "OPS-K-17");
+  const debt = falseGreen.rows.find((item) => item.id === "OPS-D-29");
   debt.status = "built";
+  delete debt.runtimeConsumerEvidence;
   debt.runtimeEvidence = [{
     type: "backend-runtime",
     file: "symbol-only.java",
@@ -95,11 +94,11 @@ test("semantic debts stay pending until producer, runtime consumer and behavior 
   }];
   assert.match(
     validateRuntimeConsumerContracts(falseGreen, () => "reasonMin").join("\n"),
-    /OPS-K-17: built runtime consumer contract requires evidence/,
+    /OPS-D-29: built runtime consumer contract requires evidence/,
   );
 
   debt.runtimeConsumerEvidence = [{
-    profile: "production",
+    profile: debt.runtimeConsumerContract.profiles[0],
     producer: { type: "backend-runtime", file: "same.java", positivePatterns: [debt.runtimeConsumerContract.successOutcome] },
     consumer: { type: "backend-runtime", file: "same.java", positivePatterns: [debt.runtimeConsumerContract.successOutcome] },
     behaviorTest: {
@@ -118,7 +117,7 @@ test("semantic debts stay pending until producer, runtime consumer and behavior 
   );
 
   debt.runtimeConsumerEvidence = [{
-    profile: "production",
+    profile: debt.runtimeConsumerContract.profiles[0],
     producer: { type: "pc-runtime", file: "producer.ts", positivePatterns: [debt.runtimeConsumerContract.successOutcome] },
     consumer: { type: "backend-runtime", file: "consumer.java", positivePatterns: [debt.runtimeConsumerContract.failureOutcome] },
     behaviorTest: {
@@ -149,7 +148,7 @@ test("semantic debts stay pending until producer, runtime consumer and behavior 
   );
 });
 
-test("final accepted semantic closures are built while K17 production native-device handoff stays HOLD", () => {
+test("final accepted semantic closures are built and retired Janus is absent", () => {
   for (const id of FINAL_ACCEPTED_IDS) {
     assert.equal(row(id)?.status, "built", `${id} passed final acceptance and must be built`);
     assert.equal(row(id)?.batch, "done", `${id} must leave the pending batch`);
@@ -157,62 +156,9 @@ test("final accepted semantic closures are built while K17 production native-dev
     assert.equal(row(id)?.runtimeConsumerContract, undefined, `${id} must replace the pending contract with verified evidence`);
   }
 
-  const k17 = row("OPS-K-17");
-  assert.equal(k17?.status, "pending");
-  assert.equal(k17?.batch, "P1");
-  assert.ok(k17?.runtimeEvidence?.some((item) => item.type === "janus-runtime"));
-  assert.match(k17?.action ?? "", /已提交[\s\S]*Sandbox\/native 分支[\s\S]*UTS[\s\S]*fail-closed[\s\S]*Production[\s\S]*原生真机[\s\S]*HOLD/);
-  assert.match(k17?.note ?? "", /分支源码不替代真实环境验收[\s\S]*Production 原生真机[\s\S]*仍未验收/);
-  assert.match(k17?.note ?? "", /Janus 开发暂停[\s\S]*pending\/HOLD/);
-  assert.doesNotMatch(row("OPS-K-15")?.note ?? "", /OPS-K-17 完成/);
+  for (const id of ["OPS-K-15","OPS-K-16","OPS-K-17"]) assert.equal(row(id),undefined);
 });
 
-test("K17 committed Sandbox/native branches reject disabled/bridge removal, production Sandbox fallback and comment-only evidence", () => {
-  const k17 = row("OPS-K-17");
-  const runtime = k17.runtimeEvidence.find((item) => item.file === "src/lib/janus/executor-runtime.ts");
-  const source = readFileSync(join(JANUS_ROOT, runtime.file), "utf8");
-  const problems = (candidate) => validateRuntimeEvidence({ rows: [k17] }, (type, relative) => {
-    if (relative !== runtime.file) return readFileSync(join(JANUS_ROOT, relative), "utf8");
-    const file = ts.createSourceFile(relative, candidate, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-    assert.equal(file.parseDiagnostics.length, 0, "Janus runtime evidence must parse as executable TypeScript");
-    const configured = file.statements.find((statement) => ts.isFunctionDeclaration(statement)
-      && statement.name?.text === "configuredRuntime");
-    const executor = configured?.body?.statements.filter(ts.isVariableStatement)
-      .flatMap(statement => [...statement.declarationList.declarations]).find(declaration => declaration.name.getText(file) === "executor");
-    const selection = executor?.initializer;
-    const armBody = (arm) => {
-      const call = ts.isAwaitExpression(arm) ? arm.expression : arm;
-      const fn = ts.isCallExpression(call) && ts.isParenthesizedExpression(call.expression) ? call.expression.expression : undefined;
-      return fn && ts.isArrowFunction(fn) && ts.isBlock(fn.body) ? fn.body : undefined;
-    };
-    const returnsFactory = (body, name) => body?.statements.some(statement => ts.isReturnStatement(statement)
-      && statement.expression && ts.isCallExpression(statement.expression)
-      && ts.isIdentifier(statement.expression.expression) && statement.expression.expression.text === name);
-    if (!selection || !ts.isConditionalExpression(selection)
-      || !returnsFactory(armBody(selection.whenTrue), "createSandboxJanusExecutor")
-      || !returnsFactory(armBody(selection.whenFalse), "createProductionJanusExecutor")) return "";
-    return configured?.body?.statements.map((statement) => statement.getText(file)).join("\n") ?? "";
-  });
-  assert.deepEqual(problems(source), [], "committed Sandbox/native branches are source evidence, not completed native-device delivery");
-  for (const guard of [
-    'if (mode === "disabled") return null;',
-    'if (!bridge) throw new Error("JANUS_NATIVE_EXECUTOR_REQUIRED");',
-  ]) {
-    assert.ok(source.includes(guard), `missing actual guard: ${guard}`);
-    assert.ok(problems(source.replace(guard, "")).length > 0, `removing ${guard} must fail`);
-    assert.ok(problems(source.replace(guard, `/* ${guard} */`)).length > 0, `commented ${guard} must fail`);
-  }
-  assert.ok(problems(`/*\n${source}\n*/`).length > 0, "copied source comments cannot attest native guards");
-  assert.ok(problems(source.replace(
-    "createProductionJanusExecutor({ bridge })", "createSandboxJanusExecutor()",
-  )).length > 0, "the native branch cannot fall back to the Sandbox executor");
-  assert.ok(problems(source.replace(
-    'mode === "sandbox"', 'mode === "production"',
-  )).length > 0, "the Sandbox executor must be restricted to the explicit Sandbox branch");
-  assert.ok(problems(source.replace(
-    "return createSandboxJanusExecutor({", "/* return createSandboxJanusExecutor({}); */ return Object.assign({",
-  )).length > 0, "a factory name copied into a branch comment cannot attest an actual executor call");
-});
 
 test("unknown OPS_BATCH values fail closed", () => {
   const result = spawnSync(process.execPath, ["scripts/ops-actions-audit.mjs"], {
@@ -297,7 +243,6 @@ test("remaining-development ledger has unique claims and preserves semantic cons
     "OPS-I-14",
     "OPS-I-15",
     "OPS-I-16",
-    "OPS-K-16",
     "OPS-L-08",
     "OPS-L-09",
     "OPS-M-17",
@@ -312,10 +257,10 @@ test("remaining-development ledger has unique claims and preserves semantic cons
   const counts = Object.groupBy(manifest.rows, (item) => item.status);
 
   assert.equal(new Set(ids).size, ids.length, "action IDs must be unique");
-  assert.equal(manifest.rows.length, 271);
+  assert.equal(manifest.rows.length, 268);
   assert.deepEqual(
     { built: counts.built?.length, readonly: counts.readonly?.length, pending: counts.pending?.length ?? 0, missing: counts.missing?.length ?? 0 },
-    { built: 238, readonly: 30, pending: 3, missing: 0 },
+    { built: 236, readonly: 30, pending: 2, missing: 0 },
   );
   assert.equal(row("OPS-F-28")?.restAction, "f_seven_layer_activation");
   for (const id of expectedBuiltClosures) assert.equal(row(id)?.status, "built", id + " must stay built");
@@ -325,7 +270,7 @@ test("remaining-development ledger has unique claims and preserves semantic cons
   assert.deepEqual(ledgerDomains.toSorted(), activeDomains.toSorted(), "every active navigation domain must be represented in the action ledger");
 
   const activeLeaves = collectActiveNavLeaves(read("lib/nav/console-nav.ts")).map((leaf) => leaf.id);
-  assert.equal(activeLeaves.length, 77, "navigation baseline changed; re-audit every active leaf");
+  assert.equal(activeLeaves.length, 75, "navigation baseline changed; re-audit every active leaf");
   assert.deepEqual(manifest.activeLeafCoverage.M6, ["OPS-M-31"]);
   assert.equal(row("OPS-M-31")?.status, "readonly");
   assert.equal(row("OPS-M-31")?.view, "m-tabs/m6-leaderboard.tsx");
@@ -348,7 +293,7 @@ test("remaining-development ledger has unique claims and preserves semantic cons
     validateRuntimeEvidence(manifest, (type, relative) => {
       const base = type.startsWith("backend-") ? BACKEND_ROOT
         : type.startsWith("uniapp-") ? UNIAPP_ROOT
-          : type.startsWith("janus-") ? JANUS_ROOT : ROOT;
+          : ROOT;
       const absolute = join(base, relative);
       return existsSync(absolute) ? readFileSync(absolute, "utf8") : undefined;
     }),
@@ -424,16 +369,6 @@ test("ledger scopes match implemented PC actions instead of compound or aspirati
 });
 
 test("typed evidence validators reject source-only false greens while pending contracts stay explicit", () => {
-  const k16Evidence = row("OPS-K-16")?.runtimeEvidence?.[0];
-  assert.equal(k16Evidence?.type, "backend-runtime");
-  assert.equal(k16Evidence?.file, "src/main/java/ffdd/opsconsole/finance/application/EarningsReleaseService.java");
-  assert.ok(k16Evidence?.positivePatterns?.includes("\"JANUS_PRODUCTION_EXECUTOR\"\\.equals\\(proof\\.source\\(\\)\\)"));
-  assert.ok(k16Evidence?.positivePatterns?.includes("String\\s+sourceEnvironment\\s*=\\s*\"PRODUCTION\""));
-  assert.ok(k16Evidence?.positivePatterns?.includes("mapper\\.attestedSeconds\\(userId,\\s*sourceEnvironment\\)"));
-  assert.ok(k16Evidence?.positivePatterns?.includes("mapper\\.protectedEntries\\(userId,\\s*sourceEnvironment\\)"));
-  assert.ok(k16Evidence?.negativePatterns?.includes("JANUS_SANDBOX_EXECUTOR"));
-  assert.ok(k16Evidence?.negativePatterns?.includes("sourceEnvironment\\s*=\\s*\"SANDBOX\""));
-
   assert.deepEqual(
     manifest.rows.filter((item) => item.status === "pending").map((item) => item.id).toSorted(),
     SEMANTIC_PENDING_IDS.toSorted(),
@@ -442,7 +377,7 @@ test("typed evidence validators reject source-only false greens while pending co
     validateRuntimeEvidence(manifest, (type, relative) => {
       const base = type.startsWith("backend-") ? BACKEND_ROOT
         : type.startsWith("uniapp-") ? UNIAPP_ROOT
-          : type.startsWith("janus-") ? JANUS_ROOT : ROOT;
+          : ROOT;
       const absolute = join(base, relative);
       return existsSync(absolute) ? readFileSync(absolute, "utf8") : undefined;
     }),
@@ -509,20 +444,6 @@ test("built rows have real PC callers, including active L3/L4 and C1 detail acti
     ["OPS-D-08", "updateD1TopupChannelMin", "app/components/domain-views/d-tabs/d1-recon.tsx"],
     ["OPS-D-08", "updateD1TopupChannelMax", "app/components/domain-views/d-tabs/d1-recon.tsx"],
     ["OPS-D-11", "createD1BinLock", "app/components/domain-views/d-tabs/d1-recon.tsx"],
-    ["OPS-K-15", "disableK6RemoteTarget", "app/components/domain-views/k-tabs/k6/remote-target-manager.tsx"],
-    ["OPS-K-15", "createK6RemoteTargetVersion", "app/components/domain-views/k-tabs/k6/remote-target-manager.tsx"],
-    ["OPS-K-15", "reconcileK6Takeover", "app/components/domain-views/k-tabs/k6/device-detail.tsx"],
-    ["OPS-K-15", "revokeK6Takeover", "app/components/domain-views/k-tabs/k6/device-detail.tsx"],
-    ["OPS-K-15", "resendK6TakeoverRevoke", "app/components/domain-views/k-tabs/k6/device-detail.tsx"],
-    ["OPS-K-15", "retryK6Takeover", "app/components/domain-views/k-tabs/k6/device-detail.tsx"],
-    ["OPS-K-15", "changeK6TakeoverTarget", "app/components/domain-views/k-tabs/k6/device-detail.tsx"],
-    ["OPS-K-15", "updateK6DeviceStatus", "lib/store/admin/janus-c2-store.ts"],
-    ["OPS-K-15", "saveK6Strategy", "lib/store/admin/janus-c2-store.ts"],
-    ["OPS-K-15", "runK6DryRun", "lib/store/admin/janus-c2-store.ts"],
-    ["OPS-K-15", "changeK6StrategyStatus", "lib/store/admin/janus-c2-store.ts"],
-    ["OPS-K-15", "deleteK6Strategy", "lib/store/admin/janus-c2-store.ts"],
-    ["OPS-K-15", "rollbackK6Strategy", "lib/store/admin/janus-c2-store.ts"],
-    ["OPS-K-15", "recordK6Export", "app/components/domain-views/k-tabs/k6/audit-log.tsx"],
     ["OPS-D-24", "reconcileD1VietQr", "app/components/domain-views/d-tabs/d1-recon.tsx"],
     ["OPS-F-01", "addF1VRankReward", "app/components/domain-views/f-view.tsx"],
     ["OPS-F-01", "removeF1VRankReward", "app/components/domain-views/f-view.tsx"],
@@ -724,7 +645,7 @@ test("historical audit receipt cannot override the live machine-readable pending
   const report = read(relative);
   assert.match(report, /生产环境没有真实供应商时一律失败关闭/);
   assert.match(report, /没有执行真实资金\/供应商动作，没有提交、推送或部署/);
-  assert.equal(manifest.rows.filter((item) => item.status === "pending").length, 3);
+  assert.equal(manifest.rows.filter((item) => item.status === "pending").length, 2);
 });
 
 test("historical selected-evidence SHA256 receipt retains its inventory without requiring retired external artifacts", () => {

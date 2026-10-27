@@ -101,11 +101,8 @@ function mysql(sql: string) {
   });
 }
 
-function cleanupCrossDomainSmoke(sid = "") {
-  const safeSid = sid.replace(/'/g, "''");
+function cleanupCrossDomainSmoke() {
   mysql(`
-    DELETE FROM nx_janus_evaluation WHERE sid='${safeSid || "__none__"}';
-    DELETE FROM nx_janus_device WHERE sid='${safeSid || "__none__"}';
     DELETE FROM nx_user_session WHERE user_id IN (
       SELECT id FROM nx_user WHERE phone='${SMOKE_PHONE}' OR referral_code='${SMOKE_REFERRAL}'
     );
@@ -149,59 +146,6 @@ async function loginCrossDomainAppUser(page: Page) {
   expect(payload.code, payload.message).toBe(0);
   expect(payload.data?.accessToken).toBeTruthy();
   return payload.data!.accessToken!;
-}
-
-function janusReportPayload() {
-  const reportedAt = Date.now();
-  return {
-    reportId: `hifi-smoke-${SMOKE_RUN.toLowerCase()}`,
-    deviceId: SMOKE_DEVICE_ID,
-    reportedAt,
-    firstSeenAt: reportedAt - 3 * 86_400_000,
-    installAt: reportedAt - 3 * 86_400_000,
-    inviteCode: null,
-    channel: "official",
-    cohortId: null,
-    reportedStatus: "ERROR",
-    activated: false,
-    ua: "High-fidelity cross-domain Playwright",
-    platform: "android",
-    model: "Acceptance Device",
-    osName: "Android 15",
-    browser: "Chrome",
-    maturityScore: 0,
-    recommendationScore: 0,
-    environmentRiskScore: 0,
-    priorityScore: 0,
-    maturity: {
-      appOpenCount: 2,
-      sessionCount: 2,
-      foregroundDurationSeconds: 300,
-      repeatStreakDays: 1,
-      benchmarkViewed: true,
-      optimizeDone: true,
-      marketViewed: true,
-      walletViewed: true,
-    },
-    environment: {
-      isHeadless: false,
-      automationSignalCount: 0,
-      fpBlocklistHit: false,
-      screenAnomaly: false,
-      timezoneMismatch: false,
-      languageMismatch: false,
-    },
-    hitStrategy: null,
-    hitStrategyVersion: null,
-    latestDecision: null,
-    latestSession: {
-      sessionId: `session-${SMOKE_RUN.toLowerCase()}`,
-      startedAt: reportedAt - 60_000,
-      lastSeenAt: reportedAt,
-      foregroundDurationSeconds: 300,
-    },
-    tags: [],
-  };
 }
 
 test("D1 真实入口展示五条权威充值轨，并跨刷新保留同号幂等重试", async ({ page }) => {
@@ -350,10 +294,9 @@ test("B4 从真实侧栏进入，刷新与退出重登后仍恢复权威节奏�
   expect(pageErrors).toEqual([]);
 });
 
-test("M9/M10 通过真实 App API、后端与 PC 可见入口完成跨域 smoke", async ({ page }) => {
+test("M9 退役拒绝与 M10 普通会话跨域 smoke", async ({ page }) => {
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
-  let janusSid = "";
   createCrossDomainSmokeUser();
 
   try {
@@ -362,21 +305,7 @@ test("M9/M10 通过真实 App API、后端与 PC 可见入口完成跨域 smoke"
     const riskGroup = page.getByRole("button", { name: /风控与反作弊/ });
     if ((await riskGroup.getAttribute("aria-expanded")) !== "true") await riskGroup.click();
     const janusEntry = page.locator('aside a[href="/risk/janus-c2"]');
-    await expect(janusEntry).toBeVisible();
-    const dashboardResponse = page.waitForResponse((candidate) =>
-      candidate.request().method() === "GET"
-      && new URL(candidate.url()).pathname === "/api/admin/janus/dashboard");
-    await janusEntry.click();
-    const dashboardHttp = await dashboardResponse;
-    const dashboardPayload = await dashboardHttp.json() as { code?: number; message?: string };
-    expect(dashboardHttp.status(), dashboardPayload.message).toBe(200);
-    expect(dashboardPayload.code, dashboardPayload.message).toBe(0);
-    await expect(page).toHaveURL(/\/risk\/janus-c2$/);
-    await expect(page.getByRole("navigation", { name: "C2 控制台模块" })).toBeVisible();
-    await page.screenshot({
-      path: path.join(EVIDENCE_ROOT, "M9-M10", "01-m9-janus-pc-live.png"),
-      fullPage: true,
-    });
+    await expect(janusEntry).toHaveCount(0);
 
     const appToken = await loginCrossDomainAppUser(page);
     const appHeaders = {
@@ -386,26 +315,11 @@ test("M9/M10 通过真实 App API、后端与 PC 可见入口完成跨域 smoke"
     };
     const reportResponse = await page.request.post(`${BACKEND_URL}/api/app/janus/reports`, {
       headers: appHeaders,
-      data: janusReportPayload(),
+      data: { deviceId: SMOKE_DEVICE_ID },
     });
-    const reportPayload = await reportResponse.json() as {
-      code?: number;
-      message?: string;
-      data?: { sid?: string; status?: string };
-    };
-    expect(reportResponse.status(), reportPayload.message).toBe(200);
-    expect(reportPayload.code, reportPayload.message).toBe(0);
-    expect(reportPayload.data?.sid).toMatch(/^J-[A-F0-9]{32}$/);
-    expect(reportPayload.data?.status).toBeTruthy();
-    janusSid = reportPayload.data!.sid!;
-
-    const pendingResponse = await page.request.get(
-      `${BACKEND_URL}/api/app/janus/commands/pending?deviceId=${encodeURIComponent(SMOKE_DEVICE_ID)}`,
-      { headers: appHeaders },
-    );
-    const pendingPayload = await pendingResponse.json() as { code?: number; message?: string };
-    expect(pendingResponse.status(), pendingPayload.message).toBe(200);
-    expect(pendingPayload.code, pendingPayload.message).toBe(0);
+    expect(reportResponse.status()).toBe(410);
+    const pendingResponse = await page.request.get(`${BACKEND_URL}/api/app/janus/commands/pending?deviceId=${encodeURIComponent(SMOKE_DEVICE_ID)}`, { headers: appHeaders });
+    expect(pendingResponse.status()).toBe(410);
 
     const securityResponse = await page.request.get(`${BACKEND_URL}/api/app/security`, {
       headers: appHeaders,
@@ -454,11 +368,9 @@ test("M9/M10 通过真实 App API、后端与 PC 可见入口完成跨域 smoke"
       path.join(EVIDENCE_ROOT, "M9-M10", "result.json"),
       JSON.stringify({
         m9: {
-          pcVisibleEntry: "/risk/janus-c2",
-          adminDashboardStatus: dashboardHttp.status(),
+          pcEntryHidden: true,
           appReportStatus: reportResponse.status(),
           appPendingStatus: pendingResponse.status(),
-          serverStatus: reportPayload.data?.status,
         },
         m10: {
           appSecurityStatus: securityResponse.status(),
@@ -472,7 +384,7 @@ test("M9/M10 通过真实 App API、后端与 PC 可见入口完成跨域 smoke"
     );
     expect(pageErrors).toEqual([]);
   } finally {
-    cleanupCrossDomainSmoke(janusSid);
+    cleanupCrossDomainSmoke();
   }
 });
 

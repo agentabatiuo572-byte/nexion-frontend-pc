@@ -187,10 +187,9 @@ export function parseE6ComputeConfig<T = UnknownRecord>(raw: unknown): T {
       || !Array.isArray(config.yieldEstimate)
       || !Array.isArray(config.gpuTiers)
       || !Array.isArray(config.sources)
-      || config.flags.length === 0
       || config.coefficients.length === 0
       || config.yieldEstimate.length === 0
-      || config.gpuTiers.length !== 6
+      || ![0,6].includes(config.gpuTiers.length)
       || config.sources.length === 0) {
     throw new Error(message);
   }
@@ -199,7 +198,7 @@ export function parseE6ComputeConfig<T = UnknownRecord>(raw: unknown): T {
   config.yieldEstimate.forEach((row) => validateE6ValueRow(row, message, false));
   config.gpuTiers.forEach((row) => validateE6GpuTier(row, message));
   const tierIds = config.gpuTiers.map((row) => object(row, message).id);
-  if (new Set(tierIds).size !== 6 || !["G1", "G2", "G3", "G4", "G5", "G6"].every((id) => tierIds.includes(id))) {
+  if (tierIds.length && (new Set(tierIds).size !== 6 || !["G1", "G2", "G3", "G4", "G5", "G6"].every((id) => tierIds.includes(id)))) {
     throw new Error(message);
   }
   const download = object(config.download, message);

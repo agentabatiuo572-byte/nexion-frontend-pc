@@ -66,28 +66,19 @@ expect(mapping.includes("scripts/fe-be-mapping-coverage.mjs"), "mapping does not
 expect(mapping.includes("scripts/verify.mjs"), "mapping does not declare verify.mjs integration");
 
 const evidence = [
-  ["M1", APP_ROOT, "src/store/config-types.ts", ["computeShareEnabled"]],
-  ["M1", ROOT, "app/components/domain-views/e-tabs/e6-compute-config.tsx", ["电脑算力入口开关"]],
+  ["M9", ROOT, "tests/janus-retirement.test.mjs", ["retired"]],
   ["M2", APP_ROOT, "src/store/app.ts", ["activateDevice", "lastSettledAt"]],
   ["M3", APP_ROOT, "src/store/app.ts", ["settleDevice", "function settle()"]],
   ["M4", APP_ROOT, "src/lib/hashpower.ts", ["isDeviceOnline", "continuityFactor"]],
-  ["M5", APP_ROOT, "src/components/earn/compute-share-entry.vue", ["computeShareEnabled"]],
-  ["M6", APP_ROOT, "src/lib/gpu-tiers.ts", ["GPU_TIERS", "matchGpuTier"]],
   ["M7", APP_ROOT, "src/store/device-types.ts", ["MAX_DEVICES"]],
   ["M8", APP_ROOT, "src/pages/entry-surfaces/index.vue", ["entry-surfaces/signed", "entry-surfaces/h5", "entry-surfaces/white"]],
-  ["M9", APP_ROOT, "src/services/janus-c2.ts", ["currentJanusSyncAvailability", "JANUS_NATIVE_EXECUTOR_REQUIRED", "createJanusCoordinator"]],
-  ["M9", APP_ROOT, "src/api/janus-api.ts", ["/api/app/janus/reports", "/api/app/janus/commands/pending", "/api/app/janus/commands/ack"]],
-  ["M9", ROOT, "app/components/domain-views/k-tabs/k6-janus-c2.tsx", ["JanusC2"]],
-  ["M9", ROOT, "app/api/admin/janus/[...path]/route.ts", ["/api/admin/janus/", "X-Nexion-Upstream-Outcome"]],
-  ["M9", BACKEND_ROOT, "src/main/java/ffdd/opsconsole/janus/web/AppJanusController.java", ["/api/app/janus", "acknowledgeCommand"]],
-  ["M9", BACKEND_ROOT, "src/main/java/ffdd/opsconsole/janus/web/OpsJanusController.java", ["OpsAdminApi.ADMIN_PREFIX + \"/janus\"", "Idempotency-Key"]],
   ["M10", APP_ROOT, "src/store/account-cloud.ts", ["nexgrid-account-cloud-v1", "mergeAndWriteAccountSnapshot"]],
   ["M10", APP_ROOT, "src/api/account-api.ts", ["/api/app/security", "/sessions/revoke-others", "idempotencyKey"]],
   ["M10", ROOT, "lib/nav/console-nav.ts", ["/users/security", "/finance/ledger"]],
   ["M10", ROOT, "app/api/admin/users/[...path]/route.ts", ["/api/admin/users/account-actions/", "/api/admin/users/account-lists"]],
   ["M10", BACKEND_ROOT, "src/main/java/ffdd/opsconsole/auth/web/AppUserSecurityController.java", ["/api/app/security", "/sessions/revoke-others"]],
   ["M11", APP_ROOT, "src/lib/entry-surface.ts", ["signed-app", "white-app"]],
-  ["M11", ROOT, "lib/nav/console-nav.ts", ["/risk/janus-c2", "/devices/compute-config"]],
+  ["M11", ROOT, "lib/nav/console-nav.ts", ["/devices/compute-config"]],
   ["backend", BACKEND_ROOT, "pom.xml", ["spring-boot"]],
 ];
 

@@ -23,7 +23,6 @@ const RELEASE_KEYS = [
   "duplicateAccountPendingFrom",
   "duplicateAccountFreezeFrom",
   "pendingReleaseHours",
-  "appAttestationReleaseHours",
   "releaseMode",
   "freeSlotRequiresBinding",
 ];
@@ -46,7 +45,7 @@ test("① client 键集:七个释放参数一个不少,范围限值单源可供�
   const keyCount = (keysBlock.match(/"/g) ?? []).length / 2;
   assert.equal(keyCount, RELEASE_KEYS.length, `键集应恰为 ${RELEASE_KEYS.length} 个,实际 ${keyCount} 个(多出的键会让精确集合校验拒掉合法响应)`);
   assert.match(client, /export const K1_RELEASE_PARAM_LIMITS/, "范围限值必须从 k-client 导出,读校验与编辑弹窗共用一份,禁两处漂移");
-  for (const key of RELEASE_KEYS.slice(0, 5)) {
+  for (const key of RELEASE_KEYS.slice(0, 4)) {
     assert.match(client, new RegExp(`${key}:\\s*\\{\\s*min:`), `${key} 缺范围限值,编辑弹窗会失去数值围栏`);
   }
 });
@@ -67,7 +66,7 @@ test("② client 契约:缺席向后兼容,在场精确集合 + 逐键值校验,
 test("③ 组件:卡片 + fail-closed + 运营可读标签 + 可枚举值下拉禁自由输入", () => {
   assert.match(component, /data-proof="k1-risk-release-params"/, "释放参数卡的 data-proof 锚被删");
   assert.match(component, /服务器尚未提供收益审核规则/, "releaseParams 缺席时必须有明确的未下发文案且不给编辑入口");
-  assert.match(component, /在线证明或人工放行/, "释放模式丢了运营可读中文标签(页面禁裸工程串)");
+  assert.doesNotMatch(component, /attest_or_manual|appAttestationReleaseHours/);
   assert.match(component, /仅人工放行/, "manual_only 丢了中文标签");
   assert.match(component, /不会因等待时间到期自动放行/, "落地规则丢了「审核中不随时间自动放行」关键口径(SPEC-7 的灵魂句,削文案不许静默)");
   assert.match(component, /只提出建议，不会自动冻结账户/, "冻结线语义已拍板为「建议」(2026-08-06):达线不自动锁收益,削掉这句会退回语义分叉");

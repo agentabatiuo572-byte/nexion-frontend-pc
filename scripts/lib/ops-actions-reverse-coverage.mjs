@@ -282,7 +282,6 @@ function leafFromSource(file, action, leaves) {
     ["app/components/domain-views/a-tabs/a6-roles.tsx", "A6"],
     ["app/components/domain-views/a-tabs/a7-menus.tsx", "A7"],
     ["app/components/domain-views/a-tabs/a8-permissions.tsx", "A8"],
-    ["lib/store/admin/janus-c2-store.ts", "K6"],
   ]);
   if (exact.has(normalized)) return exact.get(normalized);
   return undefined;
@@ -430,7 +429,6 @@ const RUNTIME_EVIDENCE_TYPES = new Set([
   "pc-navigation",
   "backend-runtime",
   "uniapp-runtime",
-  "janus-runtime",
 ]);
 
 /**
@@ -518,13 +516,11 @@ const CONSUMER_RUNTIME_TYPES = new Set([
   "pc-runtime",
   "backend-runtime",
   "uniapp-runtime",
-  "janus-runtime",
 ]);
 const CONSUMER_TEST_TYPES = new Set([
   "test-runtime",
   "backend-test",
   "uniapp-test",
-  "janus-test",
 ]);
 
 function containsAssertionCall(node) {
