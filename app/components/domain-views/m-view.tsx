@@ -1315,7 +1315,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
 
   const loadConversationDetail = ctx.loadConversationDetail;
   useEffect(() => {
-    if (hidden || !open || !conv || conv.detailReady && !conv.detailStale || !conversationsAvailable || detailError) return;
+    if (hidden || !open || !conv || conv.detailReady || !conversationsAvailable || detailError) return;
     const controller = new AbortController();
     void loadConversationDetail(conv.id, controller.signal).catch((cause: unknown) => {
       if (!controller.signal.aborted) {
@@ -1324,7 +1324,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       }
     });
     return () => controller.abort();
-  }, [hidden, open, conv?.id, conv?.version, conv?.detailReady, conv?.detailStale, conversationsAvailable, authEpoch, detailRetry, detailError, loadConversationDetail, onScopeInvalidated]);
+  }, [hidden, open, conv?.id, conv?.version, conv?.detailReady, conversationsAvailable, authEpoch, detailRetry, detailError, loadConversationDetail, onScopeInvalidated]);
   useEffect(() => { setDetailError(""); }, [conv?.id, authEpoch]);
 
   // M3 在台 / 无活跃会话 / 已被关闭(且仍是同一会话)→ 不显

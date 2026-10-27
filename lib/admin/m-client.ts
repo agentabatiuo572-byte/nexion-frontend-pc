@@ -76,12 +76,10 @@ export type ConversationTimeoutPolicy = {
 };
 
 type SupportTicketView = {
-  slaTarget?: SupportTicketDetail["slaTarget"];
   id?: number;
   ticketNo?: string;
   sourceConversationNo?: string;
   contentRestricted?: boolean;
-  customerName?: string | null;
   userId?: number;
   category?: string;
   priority?: string;
@@ -982,7 +980,7 @@ function adaptCustomerProfile(
 
 function adaptTicket(detail: SupportTicketDetail | SupportTicketView): SupportTicket {
   const base = "ticket" in detail && detail.ticket ? detail.ticket : (detail as SupportTicketView);
-  const slaTarget = "ticket" in detail ? detail.slaTarget : (detail as SupportTicketView).slaTarget;
+  const slaTarget = "ticket" in detail ? detail.slaTarget : undefined;
   const created = asTs(base.createdAt);
   const updated = asTs(base.updatedAt, created);
   const contentRestricted = base.contentRestricted === true;
@@ -1011,7 +1009,6 @@ function adaptTicket(detail: SupportTicketDetail | SupportTicketView): SupportTi
     sourceConversationNo: base.sourceConversationNo,
     contentRestricted,
     userId: base.userId,
-    customerName: base.customerName ?? undefined,
     userVerified: Boolean(base.userExists),
     subject: contentRestricted ? "私聊内容仅当前专属客服和客服主管可阅" : str(base.title, "未命名工单"),
     category: ticketCategory(base.category),

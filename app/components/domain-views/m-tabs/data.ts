@@ -40,7 +40,6 @@ export type SupportTicket = {
     sourceConversationNo?: string;
     contentRestricted?: boolean;
   userId?: number;
-  customerName?: string; // 客户昵称（M-32）
   userVerified: boolean;
   subject: string;
   category: SupportTicketCategory;
@@ -218,7 +217,6 @@ export type SessionConvo = {
   owner: string;       // 后台分配坐席
   messages: SessionMsg[]; // 镜像前端 messages{sender,text,ctaHref,ts}
   detailReady?: boolean; // True means detail loaded; history completeness is separate.
-  detailStale?: boolean; // Loaded messages are shown while a newer detail loads in the background.
   historyTruncated?: boolean; // Only false confirms a loaded detail covers the complete history.
   lastPreview?: string;
   lastPublicMessageId?: number | null; // Positive = public message exists; zero = empty; missing/null = unknown.
