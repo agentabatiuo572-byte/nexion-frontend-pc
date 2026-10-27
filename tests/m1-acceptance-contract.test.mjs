@@ -54,14 +54,17 @@ test("M1 live workbench reaches the original seat form without widening its auth
   imports["@/lib/admin/brand-copy"] = load("lib/admin/brand-copy.ts");
   const overview = load("app/components/domain-views/m-tabs/m1-overview.tsx");
   imports["./m1-overview"] = overview;
-  const { M1PersonalWorkbench } = load("app/components/domain-views/m-tabs/m1-personal-workbench.tsx");
+  const { M1PersonalWorkbench, SupportSeatRolesButton } = load("app/components/domain-views/m-tabs/m1-personal-workbench.tsx");
   const view = read("app/components/domain-views/m-view.tsx");
   assert.match(view, /tab === "M1" && <M1AnalyticsWorkbench[^>]*permission=\{permission\}[^>]*ctx=\{ctx\}/);
   const analytics = read("app/components/domain-views/m-tabs/m1-analytics-workbench.tsx");
   assert.match(analytics, /const isPersonal = scope\?\.scopeSummary.mode === "PERSONAL"/);
   assert.match(analytics, /const mode = scope.scopeSummary.mode/);
   assert.match(analytics, /\{isPersonal &&[\s\S]*?<M1PersonalWorkbench permission="agent" ctx=\{ctx\}/);
-  assert.match(analytics, /\{operations &&[\s\S]*?<M1PersonalWorkbench permission=\{mode === "ALL" \? "superadmin" : "supervisor"\} ctx=\{ctx\}/);
+  // M-41: one tab row; the pool and a supervisor's own customers are tabs derived from the server scope, not a seat.
+  assert.match(analytics, /const leadPermission: Permission = mode === "ALL" \? "superadmin" : "supervisor";/);
+  assert.match(analytics, /section === "pool" && <M1SupervisorPool permission=\{leadPermission\}/);
+  assert.match(analytics, /section === "mine" && <M1PersonalWorkbench permission="supervisor" ctx=\{ctx\}/);
   assert.equal([...analytics.matchAll(/<M1PersonalWorkbench\b/g)].length, 2, "Both personal and scope-derived operations entries remain present");
   assert.doesNotMatch(analytics, /<M1PersonalWorkbench[^>]*permission=\{permission\}/, "Legacy seat-derived permission must not override current server scope");
   assert.match(view, /setParam: runMWrite/);
@@ -126,9 +129,9 @@ test("M1 live workbench reaches the original seat form without widening its auth
 
   for (const [role, permission] of [["superadmin", "superadmin"], ["support", "supervisor"]]) {
     identity(role, 4282);
-    const workbench = mount(M1PersonalWorkbench, { permission, ctx });
+    // M-41: the workbench tabs live in the analytics workbench; 客服资格 is its own entry on the 客服与分组 tab.
+    const workbench = mount(SupportSeatRolesButton, { permission, ctx });
     const tree = workbench.render();
-    for (const label of ["工作台", "我的客户", "圈选群发", "待绑定客户池"]) assert.ok(button(tree, label), label);
     const entry = button(tree, "客服资格"); assert.ok(entry); entry.props.onClick();
     const modal = nodes(workbench.render()).find(node => node.type === overview.SupportSeatRoleModal); assert.ok(modal);
     const form = mount(overview.SupportSeatRoleModal, modal.props).render();
@@ -146,7 +149,7 @@ test("M1 live workbench reaches the original seat form without widening its auth
     assert.ok(button(form, "关闭")); assert.match(text(form), /由超级管理员/); assert.equal(writes.length, 0, "noLegacyDispatch");
   }
   identity("support", 4284, []);
-  const ordinary = mount(M1PersonalWorkbench, { permission: "agent", ctx });
+  const ordinary = mount(SupportSeatRolesButton, { permission: "agent", ctx });
   assert.equal(button(ordinary.render(), "客服资格"), undefined);
   assert.equal(writes.length, 0);
 
@@ -159,7 +162,8 @@ test("M1 explains its read and write boundary and deep-links KPI cards to matchi
 
   assert.doesNotMatch(overview, /只看不改/);
   assert.doesNotMatch(registry, /只看不改/);
-  assert.match(view, /按当前授权范围查看客户与分组数据/);
+  // M-44: the decorative read/live chips were removed; the boundary is stated by the pages themselves.
+  assert.doesNotMatch(view, /const RO_LIVE/);
   assert.match(overview, /\/service\/tickets\?scope=active&status=pending_user/);
   assert.match(overview, /\/service\/sessions\?seg=unread/);
   assert.match(overview, /只有超级管理员或客服主管能调整客服与负载策略/);

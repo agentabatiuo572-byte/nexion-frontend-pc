@@ -1,8 +1,9 @@
 "use client";
+import { businessZone, businessZoneText } from "@/lib/admin/business-time";
 import { phoneLabel, record, type PhoneReceipt } from "@/lib/admin/phone-replacement-contract";
 import "./phone-replacement.css";
 export const phoneTime = (value: unknown) => typeof value === "number" && Number.isFinite(value)
-    ? new Date(value).toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" }) : "待核实";
+    ? new Date(value).toLocaleString("zh-CN", { hour12: false, timeZone: businessZone().zoneId }) : "待核实";
 const fields: Record<string, string> = {
     operationId: "操作号", auditRef: "审计引用", requestId: "申请号", requestNo: "申请编号", grantId: "授权号",
     targetInstallationId: "目标安装", installationId: "绑定安装", oldInstallationId: "原安装", newInstallationId: "新安装",
@@ -38,6 +39,6 @@ export function PhoneReceiptView({ receipt }: {
     <p>操作号：{receipt.operationId} · 提交：{phoneTime(receipt.submittedAt)} · 审计引用：{receipt.auditRef ?? "待生成"}</p>
     <div className="phone-grid"><div><h4>原操作结果</h4><PhoneFacts value={receipt.originalResult}/></div>
       <div><h4>当前状态</h4><PhoneFacts value={receipt.currentResource}/></div></div>
-    <p className="phone-note">时间均为北京时间（UTC+08）。原成功事实不会随当前状态变化而改写。查询不会重新发布、续期或再次授权。</p>
+    <p className="phone-note">时间均为{businessZoneText()}。原成功事实不会随当前状态变化而改写。查询不会重新发布、续期或再次授权。</p>
   </section>;
 }

@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import test from "node:test";
 import { SupportClientError } from "../lib/admin/m-support-client.ts";
-import { formatBusinessTime } from "../lib/admin/business-time.ts";
+import * as businessTime from "../lib/admin/business-time.ts";
+const { formatBusinessTime } = businessTime;
 import { displayAdminError } from "../lib/admin/error-messages.ts";
 import { parseSupportProfile } from "../lib/admin/m-support-enhancements.ts";
 import { MDomainLoadCoordinator } from "../lib/admin/m-content-load-coordinator.ts";
@@ -67,7 +68,7 @@ function harness(props = {}, detail = true) {
     "./hd-ui": { HDSelect: () => null },
     "./support-avatar": { SupportAvatar: () => null, customerAvatarPath: id => id, advisorAvatarPath: id => id },
     "./support-leaderboard": leaderboardExports,
-    "@/lib/admin/business-time": { formatBusinessTime },
+    "@/lib/admin/business-time": businessTime,
     "./m3-customer-profile.css": {},
   };
   const context = { exports: {}, AbortController, Date, Intl, JSON, window, document: { querySelectorAll: () => [] }, require: name => { assert.ok(Object.hasOwn(modules, name), name); return modules[name]; } };
@@ -293,7 +294,7 @@ test("unknown first candidate is not shown as a confirmed payment and detail fil
   const h=harness(); h.render(); const initial=profile(); const stats=statistics();
   stats.first.state="UNKNOWN"; stats.first.status="UNKNOWN"; stats.invitations.direct={observed:2,confirmed:null,status:"UNKNOWN"}; initial.statistics=group(stats);
   h.requests[0].resolve(initial); succeed(h.requests.slice(1)); await h.settle();
-  const detail=h.html(); assert.doesNotMatch(detail, /649\.123456 USDT|首充来源<\/span><span class="v">购机/); assert.match(detail,/首充状态<\/span><span class="v">待核实/);
+  const detail=h.html(); assert.doesNotMatch(detail, /649\.123456 USDT|首充来源<\/span><span class="v">购机/); assert.match(detail,/首充状态<\/span><span class="v">未知/);
   assert.doesNotMatch(source, /<select\b/);
   const filters=elements(h.render()).find(node=>node.props?.["aria-label"]==="流水币种");
   const picker=elements(filters).find(node=>typeof node.props?.onChange==="function"); picker.props.onChange("NEX"); h.render();

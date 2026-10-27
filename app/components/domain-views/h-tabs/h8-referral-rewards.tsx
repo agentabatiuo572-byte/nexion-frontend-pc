@@ -1,4 +1,5 @@
 "use client";
+import { businessZone } from "@/lib/admin/business-time";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -200,7 +201,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       </div>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">新人礼与邀请人奖励</span><span className="sub">· H8 唯一配置入口 · 生效时间 {data?.effectiveAt ? `${new Date(data.effectiveAt).toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" })}（上海）` : "—"}</span><div className="r">{canWrite && <button className="l-btn mc" disabled={!data} onClick={() => editParam(ENABLED_PARAM, String(!data?.enabled))}>{data?.enabled ? "停用奖励" : "启用奖励"}</button>}{canSettle && <button className="l-btn mc" disabled={!data?.enabled || Number(data.pending ?? 0) <= 0} title={!data?.enabled ? "邀请奖励当前已停用" : Number(data?.pending ?? 0) <= 0 ? "当前没有待结算邀请" : undefined} onClick={() => settle()}>执行真实结算</button>}</div></div>
+        <div className="l-h"><span className="ttl">新人礼与邀请人奖励</span><span className="sub">· H8 唯一配置入口 · 生效时间 {data?.effectiveAt ? `${new Date(data.effectiveAt).toLocaleString("zh-CN", { hour12: false, timeZone: businessZone().zoneId })}（${businessZone().label}）` : "—"}</span><div className="r">{canWrite && <button className="l-btn mc" disabled={!data} onClick={() => editParam(ENABLED_PARAM, String(!data?.enabled))}>{data?.enabled ? "停用奖励" : "启用奖励"}</button>}{canSettle && <button className="l-btn mc" disabled={!data?.enabled || Number(data.pending ?? 0) <= 0} title={!data?.enabled ? "邀请奖励当前已停用" : Number(data?.pending ?? 0) <= 0 ? "当前没有待结算邀请" : undefined} onClick={() => settle()}>执行真实结算</button>}</div></div>
         <div className="l-b"><div className="param-grid">
           {PARAMS.map((param) => <div className="p" key={param.key}>
             <div className="k">{param.label}</div>

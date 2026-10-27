@@ -31,6 +31,13 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "config" && parts[1] === "experience") {
     return "/api/admin/platform/config/experience";
   }
+  // R-1: A3 业务时区 (GET for every console; PUT and POST cancel are super-admin only on the backend).
+  if (parts.length === 1 && parts[0] === "business-calendar") {
+    return "/api/admin/platform/business-calendar";
+  }
+  if (parts.length === 2 && parts[0] === "business-calendar" && parts[1] === "cancel") {
+    return "/api/admin/platform/business-calendar/cancel";
+  }
   if (parts.length === 1 && parts[0] === "params-registry") {
     return "/api/admin/platform/params-registry";
   }

@@ -216,6 +216,8 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
   }, [actorStamp, hasM1ReadAuthority, currentRoleKey, currentAdminId]);
   const sessionTemplatesAvailable = pget("I.session.templatesAvailable") === "1";
   const policyDisplay = (field: string) => sessionTemplatesAvailable && compactSupportBoardValue(pget(POLICY_KEY(field)), "count") !== "-" ? pget(POLICY_KEY(field)) : "-";
+  // M-48: show delays in seconds ("1.5 秒"), not raw milliseconds.
+  const delayText = () => { const ms = Number(policyDisplay("delayMs")); return Number.isFinite(ms) ? `${Number((ms / 1000).toFixed(1))} 秒` : "-"; };
   // 正式列表与分页始终排除验收记录；不改变原记录。
   const keptScripts = scripts.filter((row) => !isAutoAcceptancePlaceholder(row.text));
   const keptReplyTemplates = replyTemplates.filter((row) => !isAutoAcceptancePlaceholder(row.text));
@@ -474,7 +476,6 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
 
   return (
     <div className="m5">
-      <p className="dim" style={{ margin: 0, fontSize: 13 }}>管会话类别、专属客服主动推送、话术和回复模板。改动要确认 + 填理由。</p>
       {!sessionTemplatesAvailable && (
         <div className="itint" data-module-health-state="error">话术与模板当前不可用，暂时无法修改。请稍后刷新重试。</div>
       )}
@@ -630,9 +631,9 @@ export function M5Scripts({ ctx, showSeatOperations = true, showSeatProfiles = f
           <div className="m5-policy-grid" style={{ gap: 10 }}>
             {canManageM5Operations ? (
               <button type="button" data-proof="session-policy-delay" disabled={!sessionTemplatesAvailable || writePending} style={tileStyle} onClick={() => editPolicy("delayMs", "首推延迟", policyVal("delayMs", DEFAULT_ADVISOR_POLICY.delayMs), " ms")}>
-                {tileHead("首推延迟")}{tileVal(`${policyDisplay("delayMs")} ms`)}
+                {tileHead("首推延迟")}{tileVal(delayText())}
               </button>
-            ) : <div style={tileStyle}>{tileHead("首推延迟")}{tileVal(`${policyDisplay("delayMs")} ms`)}</div>}
+            ) : <div style={tileStyle}>{tileHead("首推延迟")}{tileVal(delayText())}</div>}
             {canManageM5Operations ? (
               <button type="button" data-proof="session-policy-cooldown" disabled={!sessionTemplatesAvailable || writePending} style={tileStyle} onClick={() => editPolicy("cooldownHours", "冷却", policyVal("cooldownHours", DEFAULT_ADVISOR_POLICY.cooldownHours), " h")}>
                 {tileHead("冷却时间")}{tileVal(`${policyDisplay("cooldownHours")} h`)}
@@ -785,7 +786,6 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
     [agents],
   );
   const position = agent.position;
-  const serviceTypes = agent.serviceTypes;
   const [tags, setTags] = useState<string[]>(agent.tags ?? []);
   const [maxConcurrent, setMaxConcurrent] = useState(String(agent.maxConcurrent || 10));
   const [enabled, setEnabled] = useState(agent.enabled);
@@ -803,7 +803,8 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
       const succeeded = await ctx.setParam("I.support.agentProfile.__update", JSON.stringify({
         adminId: agent.adminId,
         expectedVersion: agent.version,
-        serviceTypes,
+        // M-56: the displayed type ("advisor") is the canonical role; the stored legacy routing flag is
+        // left alone, so saving tags or capacity no longer rewrites it.
         tags,
         maxConcurrent: Math.max(0, Math.min(40, Math.round(Number(maxConcurrent) || 0))),
         enabled,

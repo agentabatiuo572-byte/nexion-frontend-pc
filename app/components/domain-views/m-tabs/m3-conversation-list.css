@@ -10,7 +10,7 @@
 .mdom .m3-list-statuses .l-btn.sm { min-width: 0; min-height: 32px; padding: 6px 8px; border: 0; background: transparent; color: var(--v5-ink-3); font-weight: 400; font-size: 12.5px; gap: 5px; }
 .mdom .m3-list-statuses .l-btn.sm.primary { background: var(--m-hd-soft); color: var(--m-hd-2); }
 .mdom .m3-list-count { min-width: 16px; padding: 0 4px; border-radius: 10px; background: var(--v5-surface-3); font-size: 11px; font-variant-numeric: tabular-nums; }
-.mdom .m3-list-secondary-actions { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+.mdom .m3-list-secondary-actions { display: flex; align-items: center; gap: 10px; justify-content: flex-start; flex-wrap: wrap; column-gap: 14px; row-gap: 2px; }
 .mdom .m3-list-secondary-actions .l-btn.sm { min-height: 28px; padding: 3px 0; border: 0; background: none; color: var(--m-hd); font-size: 12.5px; }
 .mdom .m3-list-row { position: relative; min-width: 0; flex-shrink: 0; }
 .mdom .m3-list-row .cv-item { padding: 14px 10px; gap: 7px; border-radius: 7px; }
@@ -28,3 +28,7 @@
 .mdom .m3-list-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; min-height: 45px; padding: 7px 12px; border-top: 1px solid var(--v5-border); color: var(--v5-ink-3); font-size: 12px; }
 .mdom .m3-list-footer .l-btn.sm { padding: 4px 7px; min-height: 28px; }
 .mdom .m3-list-header button:focus-visible, .mdom .m3-list-search:focus-visible { outline: 2px solid var(--m-hd); outline-offset: 2px; }
+
+.mdom .m3-list-count.overdue { color: var(--v5-danger); font-weight: 600; }
+.mdom .m3-list-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mdom .m3-list-scope { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }

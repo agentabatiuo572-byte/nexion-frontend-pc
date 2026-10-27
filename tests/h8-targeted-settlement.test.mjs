@@ -42,6 +42,7 @@ function render(input) {
       attempts.push({ slot, fingerprint }); return mint();
     }, forget: () => {} }) },
     "@/lib/admin/error-messages": { displayAdminError: String },
+    "@/lib/admin/business-time": { businessZone: () => ({ zoneId: "Asia/Shanghai", label: "北京时间", offset: "UTC+8" }) },
   };
   const source = readFileSync(new URL("../app/components/domain-views/h-tabs/h8-referral-rewards.tsx", import.meta.url), "utf8");
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;

@@ -29,7 +29,7 @@ function version(value: unknown): string { const result = text(value); if (!/^sl
 function instant(value: unknown): string { const result = text(value); if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(result) || !Number.isFinite(Date.parse(result)) || new Date(result).toISOString().slice(0, 19) !== result.slice(0, 19)) invalid("instant"); return result; }
 function decimal(value: unknown, signed = false): string | null { if (value === null) return null; const result = text(value); if (!(signed ? /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/ : /^(?:0|[1-9]\d*)(?:\.\d+)?$/).test(result)) invalid("decimal"); return result; }
 const REASON_TEXT: Record<typeof REASONS[number], string> = {
-  NONE: "", SOURCE_INCOMPLETE: "部分数据暂不可用", HISTORY_UNKNOWN: "历史记录待核实", ATTRIBUTION_UNKNOWN: "贡献归属待核实", REFUNDS_UNKNOWN: "退款记录待核实", SOURCE_FAILED: "数据暂不可用，请重试", CANDIDATES_INCOMPLETE: "参榜资料待核实", METRIC_INCOMPLETE: "成绩待核实", HISTORICAL_MONTH: "历史月份不比较每日变化", MONTH_START: "月初暂无同月可比名次", NO_BASELINE: "暂无昨日可比名次", DEFINITION_CHANGED: "统计口径已变化", SCOPE_CHANGED: "统计范围已变化", MEMBERS_CHANGED: "参榜人员已变化", NOT_A_CANDIDATE: "当前账号未参榜", LEADER: "已达到榜首成绩",
+  NONE: "", SOURCE_INCOMPLETE: "部分数据暂不可用", HISTORY_UNKNOWN: "历史记录未同步", ATTRIBUTION_UNKNOWN: "贡献归属未同步", REFUNDS_UNKNOWN: "退款记录未同步", SOURCE_FAILED: "数据暂不可用，请重试", CANDIDATES_INCOMPLETE: "参榜资料还在汇总", METRIC_INCOMPLETE: "成绩还在汇总", HISTORICAL_MONTH: "历史月份不比较每日变化", MONTH_START: "月初暂无同月可比名次", NO_BASELINE: "暂无昨日可比名次", DEFINITION_CHANGED: "统计口径已变化", SCOPE_CHANGED: "统计范围已变化", MEMBERS_CHANGED: "参榜人员已变化", NOT_A_CANDIDATE: "当前账号未参榜", LEADER: "已达到榜首成绩",
 };
 function reason(value: unknown): string { return REASON_TEXT[enumeration(value, REASONS)]; }
 function coverage(value: unknown) { return enumeration(value, COVERAGE); }
@@ -81,7 +81,7 @@ function row(value: unknown, meta: LeaderboardMetadata): SupportBoardRow {
   const agentId = id(r.agentId), name = text(r.name);
   if (!name.trim()) invalid("name");
   const avatarUrl = r.avatarUrl === null ? undefined : text(r.avatarUrl);
-  return { id: agentId, name, groupName: text(r.groupName), avatarUrl, rank, isTied: tied, rankStatus: confirmed ? "confirmed" : main.coverage === "unavailable" ? "unavailable" : "provisional", amount, firstPayment, customers, movement, unavailableReason: confirmed ? undefined : "当前名次待核实", canViewCustomers: bool(r.canViewCustomers) };
+  return { id: agentId, name, groupName: text(r.groupName), avatarUrl, rank, isTied: tied, rankStatus: confirmed ? "confirmed" : main.coverage === "unavailable" ? "unavailable" : "provisional", amount, firstPayment, customers, movement, unavailableReason: confirmed ? undefined : "名次未确定", canViewCustomers: bool(r.canViewCustomers) };
 }
 export function leaderboardQueryString(input: LeaderboardQuery): string {
   const q = object(input, PARAMETERS), params = new URLSearchParams();

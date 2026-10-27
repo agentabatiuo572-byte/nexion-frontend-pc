@@ -23,7 +23,7 @@ export interface FunnelStageInput {
 export function FunnelBars() {
   const { data, loading, error, reload } = useB3Funnel({ cohort: "ALL", phase: "ALL", ref: "ALL" }, "purchase");
   if (!data?.available || !data.stages.length || error) {
-    return <BDomainDataState title="B3 用户转化分析" loading={loading} error={error ?? (loading ? null : data?.message ?? "暂无可计算的用户漏斗")} onRetry={reload} />;
+    return <BDomainDataState title="B3 用户转化分析" loading={loading} empty={!error && !loading} error={error ?? (loading ? null : data?.message ?? "暂无可计算的用户漏斗")} onRetry={reload} />;
   }
   const stages = data.stages.map((stage) => ({ key: stage.key, label: stage.stage,
     count: stage.distinctUsers, prevCount: stage.previousUsers, cvr: stage.cvrFromPrev }));

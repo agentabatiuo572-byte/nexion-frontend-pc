@@ -1,4 +1,5 @@
 import { displayCopyModules } from "./display-copy-fixture.mjs";
+import * as businessTime from "../lib/admin/business-time.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -38,6 +39,7 @@ function harness(permission = "m3", options = {}) {
   const dependencies = {
     react: hooks, "next/navigation": { useRouter: () => ({ push: url => routes.push(url) }) }, "@/lib/store/admin-auth": { useAdminAuth: selector => selector(auth) },
     "@/lib/admin/shell-authorities": shellAuthorities,
+    "@/lib/admin/business-time": businessTime,
     "@/lib/nav/console-nav": nav, "../design-kit": { Btn, Modal }, "./support-leaderboard": { SupportLeaderboard, NumberValue: display.NumberValue }, "./m6-leaderboard.css": {},
     "@/lib/admin/support-leaderboard-client": { supportLeaderboardClient: {
       page(query, signal) { const p = pending(); pages.push({ ...p, query, signal }); return p.promise; },
@@ -221,8 +223,8 @@ test("unmount aborts late avatar and revokes every created Blob; stale timestamp
 test("uncertified empty publication stays ready with incomplete-data explanation rather than certified zero", async () => {
   for (const candidateCoverage of ["PARTIAL", "UNKNOWN"]) {
     const h = harness(); h.pages[0].resolve(page("17", { state: "PROVISIONAL", candidateCoverage, rows: [], self: { row: null, gap: null, reason: "资料待核实", pageNum: null }, total: 0, matched: 0 })); await h.flush();
-    assert.equal(h.board().status, "ready"); assert.equal(h.board().rows.length, 0); assert.match(h.board().candidateReason, /待核实/);
-    const notice = find(h.tree, node => node.type === "p" && node.props.children?.includes?.("参榜资料待核实"));
+    assert.equal(h.board().status, "ready"); assert.equal(h.board().rows.length, 0); assert.match(h.board().candidateReason, /还在汇总/);
+    const notice = find(h.tree, node => node.type === "p" && node.props.children?.includes?.("参榜资料还在汇总"));
     assert.ok(notice); assert.equal(h.avatars.length, 0); h.unmount();
   }
   const h = harness(); h.pages[0].resolve(page("17", { rows: [], self: { row: null, gap: null, reason: "未参榜", pageNum: null }, total: 0, matched: 0 })); await h.flush();

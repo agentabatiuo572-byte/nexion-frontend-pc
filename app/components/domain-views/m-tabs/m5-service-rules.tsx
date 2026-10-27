@@ -1,5 +1,6 @@
 "use client";
 
+import { M5UnboundPolicy } from "./m5-unbound-policy";
 import { useEffect, useMemo, useState } from "react";
 import { supportClient, isIndeterminateSupportError, type SupportRules } from "../../../../lib/admin/m-support-client";
 import { Modal } from "../design-kit";
@@ -188,10 +189,10 @@ export function M5ServiceRules({ permission }: { permission: MSupportPermission 
           <fieldset disabled={!editable} className="m-assignment-mode" aria-describedby="m-assignment-help">
             <legend>无专属客服客户分配方式</legend>
             <div className="m-assignment-options">
-              <label className="m-assignment-option"><input type="radio" name="unbound-mode" value="AUTO_RANDOM" checked={draft.unboundAssignmentMode === "AUTO_RANDOM"} onChange={() => setField("unboundAssignmentMode", "AUTO_RANDOM")} /><span>自动随机分配</span></label>
+              <label className="m-assignment-option"><input type="radio" name="unbound-mode" value="AUTO_RANDOM" checked={draft.unboundAssignmentMode === "AUTO_RANDOM"} onChange={() => setField("unboundAssignmentMode", "AUTO_RANDOM")} /><span>客户首次咨询时按负载自动分配</span></label>
               <label className="m-assignment-option"><input type="radio" name="unbound-mode" value="SUPERVISOR" checked={draft.unboundAssignmentMode === "SUPERVISOR"} onChange={() => setField("unboundAssignmentMode", "SUPERVISOR")} /><span>客服主管分配</span></label>
             </div>
-            <p id="m-assignment-help" className="m-assignment-help">有效邀请继承优先。只影响保存后新进入的无专属客服客户；历史池须单独预览确认。已绑定专属客服离线或忙碌不会重新分配。</p>
+            <p id="m-assignment-help" className="m-assignment-help">有效邀请继承优先。自动模式在客户第一次发消息时分配给负载最低的专属客服；主管模式由主管分配，等待超时后按下方「待分配客户」设置自动兜底。已绑定专属客服离线或忙碌不会重新分配。</p>
           </fieldset>
           {dayFields.map((field) => <div className="m-admin-row" key={field}>
             <div><label htmlFor={`m-rule-${field}`}>{LABELS[field]}</label><p>{field === "dormantDays" ? "有效账户活动超出设定天数且记录完整，才可判定沉睡。" : field === "maintenanceDays" ? "已到维护时间的客户会进入主动维护待办。" : "用于活跃客户统计，与当前沉睡状态分别计算。"}</p></div>
@@ -210,6 +211,7 @@ export function M5ServiceRules({ permission }: { permission: MSupportPermission 
           <div className="m-admin-toolbar"><span className="m-admin-muted">当前版本 {current.version} · {changed.length} 项变更</span><button type="button" className="btn btn-pri btn-sm" disabled={permission !== "superadmin" || (retry ? false : !editable || !parsed || changed.length === 0)} onClick={() => setConfirm(true)}>{retry ? "继续确认上次提交" : "预览并保存"}</button></div>
         </>}
       </div>
+      <M5UnboundPolicy permission={permission} />
       <aside className="m-admin-panel m5-impact-preview">
         <h2>影响预览</h2>
         <a className="btn btn-sec btn-sm" href="/service/overview?view=pool">核对历史池并明确分配</a>

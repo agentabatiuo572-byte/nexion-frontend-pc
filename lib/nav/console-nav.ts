@@ -427,6 +427,14 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
 
   if (effectiveCodes === undefined) return [];
   const supportScopeUnknown = snapshot.role === "support" && !snapshot.supportReadModes?.length;
+  // M-48: an advisor who can only read the knowledge base (M4) or service rules (M5) uses that content inside
+  // the conversation; the read-only configuration pages only add menu noise. This narrows, never widens, access.
+  // While the support qualification is unknown those pages are all the advisor has, so they stay.
+  const supportWrites = (code: string) => (snapshot.authorities ?? []).some((authority) => {
+    const upper = authority.toUpperCase();
+    return upper.includes(`_${code}_`) && /_(WRITE|MANAGE|PUBLISH|EDIT)(_|$)/.test(upper);
+  });
+  const readOnlyConfig = new Set(snapshot.role === "support" && !supportScopeUnknown ? ["M4", "M5"].filter((code) => !supportWrites(code)) : []);
   const allowed = new Set(effectiveCodes
     .map((code) => code.trim().toUpperCase())
     .filter(Boolean)
@@ -455,7 +463,7 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
   return CONSOLE_NAV.flatMap((domain, domainIndex) => {
     const staticOrder = new Map(domain.l2.map((item, index) => [item.id, index]));
     const l2 = domain.l2
-      .filter((item) => item.id !== "M6" && allowed.has(item.id.toUpperCase()) && (!supportScopeUnknown || !["M1", "M2", "M3"].includes(item.id)))
+      .filter((item) => item.id !== "M6" && allowed.has(item.id.toUpperCase()) && !readOnlyConfig.has(item.id) && (!supportScopeUnknown || !["M1", "M2", "M3"].includes(item.id)))
       .flatMap((item) => {
         const node = findNode(item.id.toUpperCase(), (candidate) =>
           candidate.routePath === item.path

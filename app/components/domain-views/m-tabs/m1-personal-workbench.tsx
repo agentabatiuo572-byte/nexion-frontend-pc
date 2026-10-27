@@ -10,7 +10,6 @@ import { fetchMRecentAdvisorConversations, type MSupportAgent } from "@/lib/admi
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { supportClient, verifySupportTransfer, SupportClientError, isIndeterminateSupportError, type SupportAgentCandidate, type SupportCustomer, type SupportCustomerDetail, type SupportCustomerFilter, type SupportMaintenanceHistory, type SupportWorkbenchSnapshot } from "@/lib/admin/m-support-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { M1SupervisorPool } from "./m1-supervisor-pool";
 import { SupportSeatRoleModal } from "./m1-overview";
 import "./m-support-workbench.css";
 import "./m1-personal-workbench.css";
@@ -21,7 +20,7 @@ import type { SelfAvatarSnapshot } from "@/lib/admin/a1-client";
 import type { MCtx } from "./types";
 
 type Permission = "agent" | "supervisor" | "superadmin";
-type View = "dashboard" | "customers" | "pool";
+export type PersonalWorkbenchView = "dashboard" | "customers";
 const PAGE_SIZE = 10;
 const metricDefs = [
   { key: "boundCustomers", label: "绑定客户", filter: "ALL", icon: Users, hint: "当前归属的客户" },
@@ -54,7 +53,7 @@ const actorStamp = () => { const auth = useAdminAuth.getState(); return adminShe
 function formatTime(value: string | null | undefined): string {
   if (!value) return "—";
   const ts = parseBusinessTime(value);
-  return Number.isNaN(ts) ? "数据待核对" : new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(ts);
+  return Number.isNaN(ts) ? "数据未同步" : new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(ts);
 }
 function errorText(error: unknown): string {
   if (isIndeterminateSupportError(error)) return "操作结果待确认，请查询原命令请稍后继续查询。";
@@ -72,12 +71,12 @@ function labelForMaintenance(row: SupportCustomer): string {
   if (row.maintenanceEnabled === false) return "暂停主动维护";
   if (row.maintenanceStatus === "DUE") return "待维护";
   if (row.maintenanceStatus === "OPEN") return "等待后续活动";
-  if (row.maintenanceStatus === "UNCONFIGURED" || row.maintenanceStatus === undefined) return "未配置或待核对";
+  if (row.maintenanceStatus === "UNCONFIGURED" || row.maintenanceStatus === undefined) return "未配置或未同步";
   return "正常跟进";
 }
 const HISTORY_STATES: Record<string, string> = { OPEN: "进行中", SUCCEEDED: "已完成", STOPPED: "已暂停", TRANSFERRED: "已转由其他专属客服接手" };
 const HISTORY_KINDS: Record<string, string> = { EXECUTION: "主动联系", MAINTENANCE_EXECUTION: "主动联系", CYCLE: "维护周期", MAINTENANCE_CYCLE: "维护周期" };
-function historyLabel(value: string, labels: Record<string, string>): string { return labels[value] ?? "记录待核对"; }
+function historyLabel(value: string, labels: Record<string, string>): string { return labels[value] ?? "记录未同步"; }
 function customerName(row: SupportCustomer): string { return operatorNicknameText(row.displayName || "") || row.customerNo || `客户 ${row.customerId}`; }
 function invalidateCustomerOnDenied(customerId: string, error: unknown): boolean {
   if (!(error instanceof SupportClientError) || ![403, 404].includes(error.status)) return false;
@@ -85,27 +84,17 @@ function invalidateCustomerOnDenied(customerId: string, error: unknown): boolean
   return true;
 }
 
-export function M1PersonalWorkbench({ permission, ctx, primarySummary, onBrowseCustomers }: { permission: Permission; ctx: MCtx; primarySummary?: ReactNode; onBrowseCustomers?: (filter: SupportCustomerFilter) => void }) {
+export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, primarySummary, onBrowseCustomers }: { permission: Permission; ctx: MCtx; view: PersonalWorkbenchView; onViewChange: (view: PersonalWorkbenchView) => void; primarySummary?: ReactNode; onBrowseCustomers?: (filter: SupportCustomerFilter) => void }) {
   const router = useRouter();
   const authEpoch = useAdminAuth((state) => state.authEpoch);
   const adminId = useAdminAuth((state) => state.session?.adminId);
-  const currentRole = useAdminAuth((state) => state.session?.role ?? state.role);
   const operatorName = useAdminAuth((state) => state.operator || state.session?.operator || state.session?.username || "");
-  const canManageSupportSeats = useAdminAuth((state) => state.session?.role === "super" || state.session?.role === "superadmin" || Boolean(state.session?.authorities.includes("service_m1_write"))) && permission !== "agent";
-  const supportAgentsAvailable = ctx.pget("I.support.agentsAvailable") === "1";
-  const supportAgentsPending = !supportAgentsAvailable && ctx.pget("I.support.agentsError") === "none";
-  const seatAssignmentAgents = useMemo(() => {
-    try {
-      const agents = JSON.parse(ctx.pget("I.support.agents") ?? "[]") as MSupportAgent[];
-      return Array.isArray(agents) ? agents.filter((agent) => agent.adminId > 0 && agent.assignmentEligible === true) : [];
-    } catch { return []; }
-  }, [ctx.params, ctx.pget]);
   const canBulk = useAdminAuth(state => state.session?.role==="super"||state.session?.role==="superadmin"||Boolean(state.session?.authorities.includes("service_m3_write")));
   const selfAgent = (() => { try { return (JSON.parse(ctx.pget("I.support.agents")??"[]") as SupportAgentCandidate[]).find(a=>a.adminId===adminId); } catch { return undefined; } })();
   const [selfAvatarSnapshot, setSelfAvatarSnapshot] = useState<SelfAvatarSnapshot | null>(null);
-  const [view, setView] = useState<View>("dashboard");
+  // M-41: the workbench tabs own the view; this component only renders it.
+  const setView = onViewChange;
   const [bulkOpen,setBulkOpen]=useState(false);
-  const [showSeatRoles, setShowSeatRoles] = useState(false);
   const [snapshot, setSnapshot] = useState<SupportWorkbenchSnapshot | null>(null);
   const overview = snapshot?.overview ?? null;
   const rows = snapshot?.customers.available ? snapshot.customers : null;
@@ -153,11 +142,9 @@ export function M1PersonalWorkbench({ permission, ctx, primarySummary, onBrowseC
     setSelfAvatarSnapshot(null);
     setDetailId(null); setDetail(null); setSnapshot(null);
   }, [authEpoch]);
-  useEffect(() => { if (permission !== "agent" && new URLSearchParams(window.location.search).get("view") === "pool") setView("pool"); }, [permission]);
 
   const activeFilter = view === "dashboard" ? "TODO" : filter;
   useEffect(() => {
-    if (view === "pool") return;
     const controller = new AbortController();
     snapshotController.current = controller;
     setSnapshot(null); setRowsLoading(true); setOverviewLoading(true); setRowsError(null); setOverviewError(null);
@@ -203,7 +190,6 @@ export function M1PersonalWorkbench({ permission, ctx, primarySummary, onBrowseC
   }, [detailId, closeDetail]);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("view") === "pool" && permission !== "agent") { setView("pool"); return; }
     const customerId = params.get("customerId");
     if (!customerId || !/^[1-9]\d*$/.test(customerId)) return;
     setView("customers"); setFilter("ALL"); setKeyword(customerId);
@@ -226,7 +212,8 @@ export function M1PersonalWorkbench({ permission, ctx, primarySummary, onBrowseC
   }, [detailId, closeDetail]);
 
   const showCustomers = (next: SupportCustomerFilter) => { if (onBrowseCustomers) { onBrowseCustomers(next); return; } setFilter(next); setPage(1); setView("customers"); };
-  const openChat = (customerId: string) => router.push(`/service/sessions?customerId=${encodeURIComponent(customerId)}`);
+  // M-54: opening a due customer from the maintenance to-do pre-selects the explicit 联系维护 intent (still changeable).
+  const openChat = (customerId: string, maintenance = false) => router.push(`/service/sessions?customerId=${encodeURIComponent(customerId)}${maintenance ? "&intent=maintenance" : ""}`);
   const loadHistory = async (pageNum = 1) => {
     if (!detailId) return;
     const generation = detailsGeneration.current;
@@ -358,7 +345,9 @@ export function M1PersonalWorkbench({ permission, ctx, primarySummary, onBrowseC
   const metrics = useMemo(() => {
     const items = metricDefs.map((item) => ({ ...item, count: overview?.counts[item.key] ?? null }));
     const priority = ["waitingReplyCustomers", "firstContactCustomers", "dueMaintenanceCustomers", "boundCustomers", "windowActiveCustomers", "dormantCustomers"];
-    return primarySummary ? items.sort((a, b) => priority.indexOf(a.key) - priority.indexOf(b.key)) : items;
+    // M-42: under 今日服务待办 only things an advisor can act on today; bound/active/dormant figures
+    // already sit in the summary above and showed a second, conflicting count here.
+    return primarySummary ? items.filter((item) => priority.indexOf(item.key) < 3).sort((a, b) => priority.indexOf(a.key) - priority.indexOf(b.key)) : items;
   }, [overview, primarySummary]);
   const listRecords = rows?.records ?? [];
   const totalPages = rows ? Math.max(1, Math.ceil(rows.total / rows.pageSize)) : 1;
@@ -370,21 +359,8 @@ export function M1PersonalWorkbench({ permission, ctx, primarySummary, onBrowseC
     {maintenanceCommands.list().filter(record => record.actorId === adminId).map((record, index) => <p className="s5a-note" key={record.commandKey}>存在未核对的维护操作。<button type="button" disabled={saving} onClick={() => void checkMaintenance(record)}>查询维护结果 {index + 1}</button></p>)}
     {transferCommands.list().filter(record => record.actorId === adminId).map((record, index) => <p className="s5a-note" key={record.commandKey}>存在未核对的转绑操作。<button type="button" disabled={transferSaving} onClick={() => void checkTransfer(record)}>查询转绑结果 {index + 1}</button></p>)}
     {notice && <div className="s5a-alert" role="alert">{notice}<button type="button" onClick={() => setNotice(null)}>关闭提示</button></div>}
-    <nav className="s5a-nav" aria-label="客服工作区">
-      <button type="button" className={view === "dashboard" ? "active" : ""} onClick={() => setView("dashboard")}>工作台</button>
-      <button type="button" className={view === "customers" ? "active" : ""} onClick={() => showCustomers("ALL")}>我的客户</button>
-      <button type="button" disabled={!canBulk} title={canBulk?"联系明确圈选的本人客户":"需要会话发送权限"} onClick={()=>setBulkOpen(true)}>圈选群发</button>
-      {permission !== "agent" && <button type="button" className={view === "pool" ? "active" : ""} onClick={() => setView("pool")}>待绑定客户池</button>}
-      {permission !== "agent" && <button
-        type="button"
-        data-proof="m1-seat-role-entry"
-        disabled={!canManageSupportSeats || !supportAgentsAvailable}
-        title={!canManageSupportSeats ? "只有总管理员或客服主管可以分配坐席" : supportAgentsPending ? "坐席数据正在同步，请稍候" : !supportAgentsAvailable ? "坐席数据暂不可用，请刷新后重试" : "前往 A1 维护接待资格与主管管理资格"}
-        onClick={() => { if (canManageSupportSeats && supportAgentsAvailable) setShowSeatRoles(true); }}
-      >客服资格</button>}
-    </nav>
 
-    {view === "pool" ? <M1SupervisorPool permission={permission} /> : <>
+    <>
       {view === "dashboard" && <>
         <div className="s5a-intro s5a-personal-header">
           <div className="s5a-personal-identity">
@@ -400,7 +376,7 @@ export function M1PersonalWorkbench({ permission, ctx, primarySummary, onBrowseC
         {primarySummary && <h3 className="sa-personal-tasks-title">今日服务待办</h3>}
         {overviewError && <div className="s5a-alert" role="alert">{overviewError}<button type="button" onClick={() => setRowsRefresh((value) => value + 1)}><RefreshCw size={15} />重试</button></div>}
         <div className="s5a-metrics">
-          {metrics.map(({ key, label, filter: metricFilter, icon: Icon, hint, count }) => <button type="button" key={key} className="s5a-metric" onClick={() => showCustomers(metricFilter)} aria-label={`${key === "windowActiveCustomers" ? overview?.activityWindowDays ? `近 ${overview.activityWindowDays} 天活跃` : "活跃客户，窗口待同步" : label}，${overviewLoading ? "加载中" : count === null ? "未配置或数据待核对" : `${count} 位`}，查看名单`}>
+          {metrics.map(({ key, label, filter: metricFilter, icon: Icon, hint, count }) => <button type="button" key={key} className="s5a-metric" onClick={() => showCustomers(metricFilter)} aria-label={`${key === "windowActiveCustomers" ? overview?.activityWindowDays ? `近 ${overview.activityWindowDays} 天活跃` : "活跃客户，窗口待同步" : label}，${overviewLoading ? "加载中" : count === null ? "未配置或数据未同步" : `${count} 位`}，查看名单`}>
             <Icon size={21} aria-hidden="true" /><span>{key === "windowActiveCustomers" && overview?.activityWindowDays ? `近 ${overview.activityWindowDays} 天活跃` : label}</span><strong>{overviewLoading || count === null ? "-" : count.toLocaleString("zh-CN")}</strong>
             <small>{hint}</small>
           </button>)}
@@ -411,7 +387,7 @@ export function M1PersonalWorkbench({ permission, ctx, primarySummary, onBrowseC
             <CustomerRows rows={listRecords} loading={rowsLoading} error={rowsError} onRetry={() => setRowsRefresh((n) => n + 1)} onOpen={openDetail} onChat={openChat} />
           </section>
           <section className="s5a-panel s5a-recent"><header><div><h3>最近会话</h3><p>当前本人客户的最近消息</p></div><button type="button" onClick={() => router.push("/service/sessions")}>查看会话 <ArrowRight size={15} /></button></header>
-            {recentError ? <div className="s5a-alert" role="alert">{recentError}<button type="button" onClick={() => setRecentRefresh((value) => value + 1)}>重试</button></div> : recent === null ? <div className="s5a-skeleton" aria-label="正在加载最近会话"><i /><i /><i /></div> : recent.length ? <ul>{recent.map((item) => <li key={item.conversationNo}><button type="button" onClick={() => router.push(`/service/sessions?conversationNo=${encodeURIComponent(item.conversationNo)}`)}><strong>客户 {item.customerId}</strong><span>{item.lastMessageKind === "IMAGE" ? "[图片]" : item.lastMessage || "暂无消息预览"}</span><small>{formatTime(new Date(item.lastTs).toISOString())}{item.unreadCount > 0 ? ` · ${item.unreadCount} 条未读` : ""}</small></button></li>)}</ul> : <p className="s5a-empty">暂无最近会话。可从本人客户列表发起联系。</p>}
+            {recentError ? <div className="s5a-alert" role="alert">{recentError}<button type="button" onClick={() => setRecentRefresh((value) => value + 1)}>重试</button></div> : recent === null ? <div className="s5a-skeleton" aria-label="正在加载最近会话"><i /><i /><i /></div> : recent.length ? <ul>{recent.map((item) => <li key={item.conversationNo}><button type="button" onClick={() => router.push(`/service/sessions?conversationNo=${encodeURIComponent(item.conversationNo)}`)}><strong>{item.customerName || `客户 ${item.customerId}`}</strong><span>{item.lastMessageKind === "IMAGE" ? "[图片]" : item.lastMessage || "暂无消息预览"}</span><small>{formatTime(new Date(item.lastTs).toISOString())}{item.unreadCount > 0 ? ` · ${item.unreadCount} 条未读` : ""}</small></button></li>)}</ul> : <p className="s5a-empty">暂无最近会话。可从本人客户列表发起联系。</p>}
           </section>
         </div>
         <div className="s5a-progress-grid"><section className="s5a-panel s5a-progress"><header><div><h3>维护进展</h3><p>{overview?.performance ? `${formatTime(overview.performance.from)} 至 ${formatTime(overview.performance.to)}` : "统计区间待同步"}</p></div></header>
@@ -421,7 +397,7 @@ export function M1PersonalWorkbench({ permission, ctx, primarySummary, onBrowseC
       </>}
 
       {view === "customers" && <>
-        <div className="s5a-intro"><div><h2>我的客户</h2><p>账户状态与维护状态分开查看</p></div><span className="s5a-stamp">{rows ? `共 ${rows.total} 位` : "总数待确认"}</span></div>
+        <div className="s5a-intro"><div><h2>我的客户</h2><p>账户状态与维护状态分开查看</p></div><div className="s5a-personal-header-actions"><span className="s5a-stamp">{rows ? `共 ${rows.total} 位` : "总数待确认"}</span><button type="button" disabled={!canBulk} title={canBulk ? "联系明确圈选的本人客户" : "需要会话发送权限"} onClick={() => setBulkOpen(true)}>圈选群发</button></div></div>
         <section className="s5a-panel"><form className="s5a-controls" onSubmit={(event) => { event.preventDefault(); setPage(1); setKeyword(keywordDraft.trim()); }}>
           <label><Search size={17} /><span className="sr-only">搜索客户名称或 ID</span><input value={keywordDraft} onChange={(event) => setKeywordDraft(event.target.value)} placeholder="搜索客户名称或 ID" /></label>
           <button type="submit">搜索</button>
@@ -432,25 +408,16 @@ export function M1PersonalWorkbench({ permission, ctx, primarySummary, onBrowseC
           {rows && rows.total > rows.pageSize && <div className="s5a-pager"><button type="button" disabled={page <= 1} onClick={() => setPage((n) => n - 1)} aria-label="上一页"><ChevronLeft size={16} /></button><span>第 {page} / {totalPages} 页</span><button type="button" disabled={page >= totalPages} onClick={() => setPage((n) => n + 1)} aria-label="下一页"><ChevronRight size={16} /></button></div>}
         </section>
       </>}
-    </>}
+    </>
 
     {bulkOpen&&<SupportBulkComposer ctx={ctx} onClose={()=>setBulkOpen(false)}/>}
-    {showSeatRoles && canManageSupportSeats && <SupportSeatRoleModal
-      ctx={ctx}
-      operatorName={operatorName}
-      currentRole={String(currentRole)}
-      currentAdminId={adminId ?? 0}
-      agents={supportAgentsAvailable ? seatAssignmentAgents : []}
-      canManage={canManageSupportSeats && supportAgentsAvailable}
-      onClose={() => setShowSeatRoles(false)}
-    />}
     {detailId && <div className="s5a-drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDetail(); }}><aside ref={drawerRef} className="s5a-drawer" role="dialog" aria-modal="true" aria-label="客户详情">
       <header><h2>{detail ? customerName(detail) : "客户详情"}</h2><button ref={drawerCloseRef} type="button" onClick={closeDetail} aria-label="关闭客户详情"><X size={20} /></button></header>
       {detailLoading && <div className="s5a-skeleton" aria-label="正在加载客户详情"><i /><i /><i /><i /></div>}
       {detailError && <div className="s5a-alert" role="alert">{detailError}<button type="button" onClick={() => void openDetail(detailId)}>重试</button></div>}
       {detail && <div className="s5a-drawer-body">
         <div style={{display:"flex",gap:12,alignItems:"center"}}><SupportAvatar name={customerName(detail)} path={customerAvatarPath(detail.customerId)}/><SupportAvatar name={detail.agentName??"当前专属客服"} path={detail.agentAdminId&&detail.advisorAvatar?advisorAvatarPath(detail.agentAdminId,detail.customerId):undefined} version={detail.advisorAvatar?.version}/><span>当前专属客服：{detail.agentName??"资料未知"}</span></div><dl><div><dt>客户编码</dt><dd>{detail.customerNo||"未知"}</dd></div><div><dt>客户编号</dt><dd>{detail.customerId}</dd></div><div><dt>账户状态</dt><dd>{labelForAccount(detail.accountState)}</dd></div><div><dt>维护状态</dt><dd>{labelForMaintenance(detail)}</dd></div><div><dt>上次账户活动</dt><dd>{formatTime(detail.lastEffectiveAt)}</dd></div><div><dt>下次维护</dt><dd>{formatTime(detail.nextMaintenanceAt)}</dd></div></dl>
-        {detail.accountState === "UNKNOWN" && <p className="s5a-note">账户活动数据待核对，不能推定为沉睡或活跃。</p>}
+        {detail.accountState === "UNKNOWN" && <p className="s5a-note">账户活动数据不完整，无法判断沉睡或活跃。</p>}
         <button type="button" className="s5a-primary" onClick={() => openChat(detail.customerId)}>联系客户 <ArrowRight size={16} /></button>
         {canMaintain ? <button type="button" className="s5a-secondary" disabled={Boolean(maintenancePending)} onClick={() => { setMaintenanceAction(detail.maintenanceEnabled ? "stop" : "resume"); setReason(""); setSaveError(null); }}>{detail.maintenanceEnabled ? "不再维护" : "恢复维护"}</button> : <p className="s5a-note">仅当前专属客服可调整主动维护；主管可审阅并办理正式转绑。</p>}
         {permission !== "agent" && detail.assignmentId && <button type="button" className="s5a-secondary" onClick={() => void openTransfer()}>正式转绑客户</button>}
@@ -471,9 +438,45 @@ export function M1PersonalWorkbench({ permission, ctx, primarySummary, onBrowseC
   </section>;
 }
 
-function CustomerRows({ rows, loading, error, onRetry, onOpen, onChat }: { rows: SupportCustomer[]; loading: boolean; error: string | null; onRetry: () => void; onOpen: (id: string) => void; onChat: (id: string) => void }) {
+function CustomerRows({ rows, loading, error, onRetry, onOpen, onChat }: { rows: SupportCustomer[]; loading: boolean; error: string | null; onRetry: () => void; onOpen: (id: string) => void; onChat: (id: string, maintenance?: boolean) => void }) {
   if (loading) return <div className="s5a-skeleton" aria-label="正在加载客户列表"><i /><i /><i /><i /></div>;
   if (error) return <div className="s5a-alert" role="alert">{error}<button type="button" onClick={onRetry}>重试</button></div>;
   if (!rows.length) return <div className="s5a-empty">当前筛选下没有客户。可切换筛选或等待主管分配。</div>;
-  return <div className="s5a-table-wrap"><table className="s5a-table"><thead><tr><th>客户</th><th>上次账户活动</th><th>账户状态</th><th>维护状态</th><th>待办</th><th>操作</th></tr></thead><tbody>{rows.map((row) => <tr key={row.customerId}><td><SupportAvatar name={customerName(row)} path={customerAvatarPath(row.customerId)}/><button type="button" className="s5a-link" onClick={() => onOpen(row.customerId)}>{customerName(row)}</button><small>编码 {row.customerNo||"未知"} · ID {row.customerId}</small></td><td>{formatTime(row.lastEffectiveAt)}</td><td><span className={`s5a-tag ${row.accountState?.toLowerCase() || "unknown"}`}>{labelForAccount(row.accountState)}</span></td><td><span className="s5a-tag">{labelForMaintenance(row)}</span></td><td>{[row.waitingReply ? "待专属客服回复" : null, row.maintenanceEnabled && row.firstContact ? "首次待联系" : null, row.maintenanceEnabled && row.maintenanceStatus === "DUE" ? "待维护" : null].filter(Boolean).join(" · ") || "—"}</td><td><button type="button" onClick={() => row.waitingReply || (row.maintenanceEnabled && (row.firstContact || row.maintenanceStatus === "DUE")) ? onChat(row.customerId) : onOpen(row.customerId)}>{row.waitingReply ? "回复" : row.maintenanceEnabled && (row.firstContact || row.maintenanceStatus === "DUE") ? "联系" : "查看"}</button></td></tr>)}</tbody></table></div>;
+  return <div className="s5a-table-wrap"><table className="s5a-table"><thead><tr><th>客户</th><th>上次账户活动</th><th>账户状态</th><th>维护状态</th><th>待办</th><th>操作</th></tr></thead><tbody>{rows.map((row) => <tr key={row.customerId}><td><SupportAvatar name={customerName(row)} path={customerAvatarPath(row.customerId)}/><button type="button" className="s5a-link" onClick={() => onOpen(row.customerId)}>{customerName(row)}</button><small>编码 {row.customerNo||"未知"} · ID {row.customerId}</small></td><td>{formatTime(row.lastEffectiveAt)}</td><td><span className={`s5a-tag ${row.accountState?.toLowerCase() || "unknown"}`}>{labelForAccount(row.accountState)}</span></td><td><span className="s5a-tag">{labelForMaintenance(row)}</span></td><td>{[row.waitingReply ? "待专属客服回复" : null, row.maintenanceEnabled && row.firstContact ? "首次待联系" : null, row.maintenanceEnabled && row.maintenanceStatus === "DUE" ? "待维护" : null].filter(Boolean).join(" · ") || "—"}</td><td><button type="button" onClick={() => row.waitingReply || (row.maintenanceEnabled && (row.firstContact || row.maintenanceStatus === "DUE")) ? onChat(row.customerId, !row.waitingReply && row.maintenanceEnabled && row.maintenanceStatus === "DUE") : onOpen(row.customerId)}>{row.waitingReply ? "回复" : row.maintenanceEnabled && row.maintenanceStatus === "DUE" ? "联系维护" : row.maintenanceEnabled && row.firstContact ? "联系" : "查看"}</button></td></tr>)}</tbody></table></div>;
+}
+
+/** M-41: 客服资格 entry for the 客服与分组 tab; opens the A1 seat-role dialog for supervisors and the super admin. */
+export function SupportSeatRolesButton({ permission, ctx }: { permission: Permission; ctx: MCtx }) {
+  const adminId = useAdminAuth((state) => state.session?.adminId);
+  const currentRole = useAdminAuth((state) => state.session?.role ?? state.role);
+  const operatorName = useAdminAuth((state) => state.operator || state.session?.operator || state.session?.username || "");
+  const canManageSupportSeats = useAdminAuth((state) => state.session?.role === "super" || state.session?.role === "superadmin" || Boolean(state.session?.authorities.includes("service_m1_write"))) && permission !== "agent";
+  const supportAgentsAvailable = ctx.pget("I.support.agentsAvailable") === "1";
+  const supportAgentsPending = !supportAgentsAvailable && ctx.pget("I.support.agentsError") === "none";
+  const seatAssignmentAgents = useMemo(() => {
+    try {
+      const agents = JSON.parse(ctx.pget("I.support.agents") ?? "[]") as MSupportAgent[];
+      return Array.isArray(agents) ? agents.filter((agent) => agent.adminId > 0 && agent.assignmentEligible === true) : [];
+    } catch { return []; }
+  }, [ctx.params, ctx.pget]);
+  const [showSeatRoles, setShowSeatRoles] = useState(false);
+  if (permission === "agent") return null;
+  return <>
+    <button
+      type="button"
+      data-proof="m1-seat-role-entry"
+      disabled={!canManageSupportSeats || !supportAgentsAvailable}
+      title={!canManageSupportSeats ? "只有总管理员或客服主管可以分配坐席" : supportAgentsPending ? "坐席数据正在同步，请稍候" : !supportAgentsAvailable ? "坐席数据暂不可用，请刷新后重试" : "前往 A1 维护接待资格与主管管理资格"}
+      onClick={() => { if (canManageSupportSeats && supportAgentsAvailable) setShowSeatRoles(true); }}
+    >客服资格</button>
+    {showSeatRoles && canManageSupportSeats && <SupportSeatRoleModal
+      ctx={ctx}
+      operatorName={operatorName}
+      currentRole={String(currentRole)}
+      currentAdminId={adminId ?? 0}
+      agents={supportAgentsAvailable ? seatAssignmentAgents : []}
+      canManage={canManageSupportSeats && supportAgentsAvailable}
+      onClose={() => setShowSeatRoles(false)}
+    />}
+  </>;
 }

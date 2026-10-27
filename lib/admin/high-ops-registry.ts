@@ -149,7 +149,7 @@ export const HIGH_OPS: HighOpDef[] = [
         email: ctx.email ?? null,
         ...accountAvatarFields(ctx, true),
         role: ctx.role,
-        initialPassword: ctx.initialPassword,
+        // B-3: the server always issues a one-time temporary password; operators never choose another person's password.
       },
     }),
     buildTarget: (ctx) => ({ domain: "A", type: "account", id: String(ctx.username) }),

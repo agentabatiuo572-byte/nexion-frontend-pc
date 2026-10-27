@@ -206,6 +206,7 @@ export type SessionConvo = {
   unread: number;      // 镜像前端 unread
   pendingReplySince?: number | null;
   pendingReplyCount?: number | null; // 本会话回复游标之后的客户消息数；缺失表示未知。
+  lastHumanTs?: number; // 最后一条客户或客服消息时间（不含系统消息），用于排序。
   lastTs: number;      // 镜像前端 lastTs
   status: SessionStatus; // 后台坐席态
   ownerAgentId?: string; // 后台分配坐席的唯一身份，用于排除自转交

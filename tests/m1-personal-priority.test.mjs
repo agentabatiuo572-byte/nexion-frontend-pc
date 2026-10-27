@@ -44,21 +44,22 @@ test("personal period uses explicit month/currency, clears missing data and reje
 
 test("scope refresh and failed-period retry retain the personal dashboard or the open customer view", async () => {
   for (const visible of [false, true]) {
-    const context = { personalAnalytics: visible, personalViewBeforeScopeRefresh: { current: false }, managementReturnQuery: { current: null }, managementCustomerGroup: { current: null }, queryState: { view: "CUSTOMERS", month: "2026-10", filter: "ALL", sortKey: "TEAM_DEPOSIT" },
+    // M-41: one section state replaces the personalAnalytics / operations / groupManagement switches.
+    const context = { section: visible ? "stats" : "personal", managementReturnQuery: { current: null }, managementCustomerGroup: { current: null }, queryState: { view: "CUSTOMERS", month: "2026-10", filter: "ALL", sortKey: "TEAM_DEPOSIT" },
       scopeControllerRef: { current: null }, controllerRef: { current: null }, generation: { current: 1 }, AbortController, scopeRetry: 0,
       changeAnalyticsQuery: (state, changes) => ({ ...state, ...changes }),
       supportAnalyticsClient: { query: async () => ({ scopeSummary: { mode: "PERSONAL", groups: [] } }) },
       analyticsEntryAgent: () => undefined, initialAnalyticsQuery: () => { throw new Error("refresh must restore the query"); },
       window: { location: { search: "" } }, URLSearchParams,
-      setPersonalAnalytics: value => { context.visible = value; }, setQueryState: value => { context.query = value; },
+      setSection: value => { context.section = typeof value === "function" ? value(context.section) : value; }, setPersonalView() {}, entryTab: () => "home",
+      setQueryState: value => { context.query = value; },
       setScopeRetry: callback => { context.scopeRetry = callback(context.scopeRetry); },
-      setScope() {}, setScopeError() {}, setData() {}, setProfileId() {}, setOperations() {}, setGroupManagement() {}, setError() {}, setKeyword() {},
+      setScope() {}, setScopeError() {}, setData() {}, setProfileId() {}, setError() {}, setKeyword() {},
       useEffect: callback => { context.cleanup = callback(); }, analyticsErrorText: () => "读取失败",
     };
     runInNewContext(transpile(`${refresh}; refreshScope();`), context);
-    assert.equal(context.personalViewBeforeScopeRefresh.current, visible);
     runInNewContext(transpile(scopeEffect), context); await flush();
-    assert.equal(context.visible, visible, "scope reread must preserve the page that triggered refresh");
+    assert.equal(context.section, visible ? "stats" : "personal", "scope reread must preserve the page that triggered refresh");
     assert.equal(context.query.sortKey, "TEAM_DEPOSIT"); context.cleanup();
   }
 });
@@ -67,7 +68,7 @@ test("all summary drilldowns discard unrelated customer filters while period fir
   assert.equal(summaryClicks.length, 5, "four primary metrics and the mapped source entry");
   for (let index = 0; index < summaryClicks.length; index++) {
     const context = { queryState: { keyword: "old customer", firstState: "UNKNOWN", filter: "DORMANT", agentId: "22", groupId: "33", category: "PENDING", direction: "ASC", sortKey: "TEAM_DEPOSIT" },
-      setPersonalAnalytics() {}, setKeyword: value => { context.keywordDraft = value; }, change: changes => { context.query = { ...context.queryState, ...changes }; },
+      setSection() {}, setKeyword: value => { context.keywordDraft = value; }, change: changes => { context.query = { ...context.queryState, ...changes }; },
     };
     runInNewContext(transpile(`const drill = ${drillBody}; const click = ${summaryClicks[index]}; click();`), context);
     for (const key of ["keyword", "groupId", "agentId", "direction", "sortKey"]) assert.equal(context.query[key], undefined, key);
@@ -97,7 +98,7 @@ test("period failures stay unknown and can retry; lifetime values never supply t
   };
   runInNewContext(transpile(periodEffect), context); await flush();
   assert.equal(context.period, null); assert.equal(context.error, "期间读取失败"); context.cleanup();
-  const summary = analytics.slice(analytics.indexOf("primarySummary="), analytics.indexOf("{operations &&"));
+  const summary = analytics.slice(analytics.indexOf("primarySummary="), analytics.indexOf('{!isPersonal && section === "pool"'));
   assert.match(summary, /当前本人绑定/); assert.match(summary, /当前统计期活跃/); assert.match(summary, /期间首充/); assert.match(summary, /期间净贡献/);
   assert.doesNotMatch(summary, /ownLifetime|firstConfirmed|\?\? 0/);
   assert.match(summary, /firstCandidates \?\? \{ observed: null, confirmed: null, status: "UNKNOWN" \}/);
@@ -106,12 +107,13 @@ test("period failures stay unknown and can retry; lifetime values never supply t
 
 test("customer entry reuses the detailed list and preserves unchanged category, sorting and page on return", () => {
   assert.ok(browse);
-  const calls = [], context = { queryState: { view: "CUSTOMERS", basis: "CURRENT_CUSTOMER_HISTORY", filter: "ALL", category: "BOUND", sortKey: "TEAM_DEPOSIT", pageNum: 3 }, setPersonalAnalytics: value => { context.visible = value; }, drill: value => calls.push(value) };
+  const calls = [], context = { queryState: { view: "CUSTOMERS", basis: "CURRENT_CUSTOMER_HISTORY", filter: "ALL", category: "BOUND", sortKey: "TEAM_DEPOSIT", pageNum: 3 }, setSection: value => { context.visible = value === "stats"; }, drill: value => calls.push(value) };
   runInNewContext(`${transpile(`const browse = ${browse};`)} browse("ALL");`, context);
   assert.equal(context.visible, true); assert.equal(calls.length, 0); assert.equal(context.queryState.sortKey, "TEAM_DEPOSIT"); assert.equal(context.queryState.pageNum, 3);
   runInNewContext(`${transpile(`const open = ${browse};`)} open("WAITING_REPLY");`, context);
   assert.equal(calls[0].filter, "WAITING_REPLY"); assert.equal(calls[0].category, "BOUND");
   assert.match(personal, /if \(onBrowseCustomers\) \{ onBrowseCustomers\(next\); return; \}/);
   for (const key of ["boundCustomers", "windowActiveCustomers", "dormantCustomers", "dueMaintenanceCustomers", "waitingReplyCustomers", "firstContactCustomers"]) assert.match(personal, new RegExp(key));
-  assert.match(analytics, /返回我的工作台/);
+  // M-41: 我的数据 is a tab; there is no "返回我的工作台" button any more.
+  assert.match(analytics, /"my-data": "我的数据"/);
 });

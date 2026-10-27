@@ -100,7 +100,8 @@ export type L6BehaviorHeatmapData = {
   clickHeatByRoute: Record<string, PageClickHeat>;
   dailyTrend: { bucket: string; pv: number; clicks: number }[];
   weeklyTrend: { bucket: string; pv: number; clicks: number }[];
-  businessTimeZone: "UTC+08:00";
+  /** R-1: the business offset the daily buckets were cut in, e.g. "UTC+07:00". */
+  businessTimeZone: string;
   lateArrivalPolicy: "rejected_retry_in_order";
   deduplication: "clientEventId";
 };
@@ -114,7 +115,7 @@ export function normalizeL6BehaviorHeatmap(raw: unknown): L6BehaviorHeatmapData 
   const available = flag(data.available);
   const status = text(data.status);
   if (!available) return emptyL6(status, optionalText(data.message));
-  if (status !== "AVAILABLE" || data.businessTimeZone !== "UTC+08:00"
+  if (status !== "AVAILABLE" || !/^UTC[+-]\d{2}:\d{2}$/.test(text(data.businessTimeZone))
       || data.lateArrivalPolicy !== "rejected_retry_in_order") invalid();
   const quality = rec(data.quality);
   if (quality.clientEventIdDeduplicated !== true || quality.outOfOrderRejected !== true
@@ -151,7 +152,7 @@ export function normalizeL6BehaviorHeatmap(raw: unknown): L6BehaviorHeatmapData 
     clickHeatByRoute,
     dailyTrend: normalizeTrend(data.dailyTrend),
     weeklyTrend: normalizeTrend(data.weeklyTrend),
-    businessTimeZone: "UTC+08:00",
+    businessTimeZone: text(data.businessTimeZone),
     lateArrivalPolicy: "rejected_retry_in_order",
     deduplication: "clientEventId",
   };
