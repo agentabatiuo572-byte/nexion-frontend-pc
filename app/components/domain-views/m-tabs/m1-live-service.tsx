@@ -20,7 +20,7 @@ function parse<T>(raw: string | undefined): T[] {
  * M-40: what needs handling right now, above the business statistics. Built from the inbox and advisor
  * data the console already holds; each figure opens the list where it is handled. (Tickets are retired.)
  */
-export function M1LiveService({ ctx, alertMinutes = 5 }: { ctx: MCtx; alertMinutes?: number }) {
+export function M1LiveService({ ctx, alertMinutes = ctx.unboundAlertMinutes ?? 5 }: { ctx: MCtx; alertMinutes?: number }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 30000); return () => window.clearInterval(timer); }, []);
   const conversationsReady = ctx.pget("I.session.conversationsAvailable") === "1";

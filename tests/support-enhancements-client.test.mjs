@@ -305,8 +305,8 @@ test("ticket return links select the exact original M3 conversation regardless o
     [{sourceConversationNo:"CV-SOURCE",messages:[{body:"会话号: CV-OTHER"}]},"CV-SOURCE"],
   ]){
     const conversation=ticketContext.linked(ticket);assert.ok(conversation);const target=new URL(ticketContext.href(conversation),"http://offline.local");
-    let selectedId="CV-OTHER",customerId="2328",screen="list";const selectionRestored={current:false},entryContext={URLSearchParams,window:{location:{search:target.search}},selectionRestored,setSelectedId:value=>{selectedId=value;},setRequestedCustomerId:value=>{customerId=value;},setScreen:value=>{screen=value;}};
-    runInNewContext(`(()=>{${entry}})()`,entryContext);assert.equal(selectedId,no);assert.equal(customerId,null);assert.equal(screen,"chat");assert.equal(selectionRestored.current,true);
+    let selectedId="CV-OTHER",customerId="2328",screen="list";const selectionRestored={current:false},followSelection={current:false},entryContext={URLSearchParams,window:{location:{search:target.search}},selectionRestored,followSelection,setSelectedId:value=>{selectedId=value;},setRequestedCustomerId:value=>{customerId=value;},setScreen:value=>{screen=value;}};
+    runInNewContext(`(()=>{${entry}})()`,entryContext);assert.equal(selectedId,no);assert.equal(customerId,null);assert.equal(screen,"chat");assert.equal(selectionRestored.current,true);assert.equal(followSelection.current,true);
   }
   assert.equal(ticketContext.linked({sourceConversationNo:"DIRECT",messages:[]}),null);
 });

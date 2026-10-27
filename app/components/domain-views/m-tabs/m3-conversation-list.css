@@ -29,9 +29,6 @@
 .mdom .m3-list-footer .l-btn.sm { padding: 4px 7px; min-height: 28px; }
 .mdom .m3-list-header button:focus-visible, .mdom .m3-list-search:focus-visible { outline: 2px solid var(--m-hd); outline-offset: 2px; }
 
-/* M-22: how long the oldest unanswered message has waited; red past the D-3 alert threshold. */
-.mdom .cv-wait { flex: none; font-size: 11.5px; color: var(--v5-ink-3); font-variant-numeric: tabular-nums; }
-.mdom .cv-wait.overdue { color: var(--v5-danger); font-weight: 600; }
 .mdom .m3-list-count.overdue { color: var(--v5-danger); font-weight: 600; }
 .mdom .m3-list-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .mdom .m3-list-scope { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }

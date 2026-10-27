@@ -21,6 +21,8 @@ export type MCtx = {
   addCustomerNote: (convoId: string, text: string) => Promise<boolean>;
   removeCustomerNote: (convoId: string, noteId: string, reason?: string) => Promise<boolean>;
   toast: (s: string) => void;
+  /** M5 未绑定策略的「等待分配提醒」分钟数；未读到时按 5 分钟。 */
+  unboundAlertMinutes?: number;
   openActionConfirm: (req: import("../k-tabs/types").ActionConfirmReq) => void;
   openConfirm: (req: import("../k-tabs/types").ConfirmReq) => void;
 };

@@ -82,7 +82,8 @@ export function useSupportInboxAlerts(conversations: AlertConversation[] | null,
     if (!conversations || !adminId) return;
     const mineRows = conversations.filter((row) => row.ownerAdminId === adminId && !row.archived);
     const unread = new Map(mineRows.map((row) => [row.id, row.unread]));
-    const mine = new Set(mineRows.map((row) => row.customerId ?? row.id));
+    // Archived conversations still count as my customers, so un-archiving never looks like a new assignment.
+    const mine = new Set(conversations.filter((row) => row.ownerAdminId === adminId).map((row) => row.customerId ?? row.id));
     const now = Date.now();
     const overdue = new Set(supervisor ? conversations.filter((row) => row.ownerUnbound && (row.pendingReplyCount ?? 0) > 0 && row.pendingReplySince && now - row.pendingReplySince >= alertMinutes * 60000).map((row) => row.customerId ?? row.id) : []);
     unreadTotal = mineRows.reduce((sum, row) => sum + row.unread, 0);
@@ -92,8 +93,8 @@ export function useSupportInboxAlerts(conversations: AlertConversation[] | null,
     if (!previous || previous.adminId !== adminId) return;
     const name = (row: AlertConversation) => row.customer || `客户 ${row.customerId ?? ""}`;
     const assigned = mineRows.filter((row) => !previous.mine.has(row.customerId ?? row.id));
-    if (assigned.length) { supportAlert("新分配的专属客户", assigned.map(name).join("、"), `assigned-${assigned[0].id}`); return; }
-    const grown = mineRows.find((row) => row.unread > (previous.unread.get(row.id) ?? 0));
+    if (assigned.length) supportAlert("新分配的专属客户", assigned.map(name).join("、"), `assigned-${assigned[0].id}`);
+    const grown = mineRows.find((row) => !assigned.includes(row) && row.unread > (previous.unread.get(row.id) ?? 0));
     if (grown) { supportAlert(`${name(grown)} 发来新消息`, "打开专属会话回复", `message-${grown.id}`); return; }
     const late = [...overdue].filter((id) => !previous.overdue.has(id));
     if (late.length) supportAlert("有客户等待分配超时", `${late.length} 位客户等待超过 ${alertMinutes} 分钟仍未分配专属客服`, "unassigned-overdue");

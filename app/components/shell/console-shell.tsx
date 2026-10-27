@@ -7,7 +7,7 @@
  * mounted 门控:后台权限不从 localStorage 恢复,每次挂载先向服务端 session 端点校验。
  * 服务端会话确认前只渲染校验壳,避免登录框或默认角色后台闪现。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { currentAdminSession, recordAdminActivity, AdminActivityIdentityChangedError } from "@/lib/admin/auth-client";
 import { createAdminActivityTracker } from "@/lib/admin/admin-activity";
@@ -24,6 +24,7 @@ import { PageTransition } from "./page-transition";
 import { LoginGate } from "./login-gate";
 import { useServicePendingCount } from "./use-service-badges";
 import { fetchBusinessCalendar } from "@/lib/admin/business-calendar-client";
+import { businessZone, subscribeBusinessZone } from "@/lib/admin/business-time";
 
 const SESSION_REFRESH_MS = 60_000;
 type AdminBootstrapState = "checking" | "authenticated" | "anonymous" | "error";
@@ -214,6 +215,9 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
     window.addEventListener("focus", load);
     return () => window.removeEventListener("focus", load);
   }, [mounted, bootstrapState, isAuthenticated]);
+  // Time labels and day / month cuts are computed during render (some once at mount): remount the page when the zone changes.
+  const [zoneKey, setZoneKey] = useState(() => businessZone().zoneId);
+  useEffect(() => subscribeBusinessZone(() => setZoneKey(businessZone().zoneId)), []);
 
   // A6/A7 changes must reach an already-open console without requiring a full reload.
   // Focus refresh handles operators returning to the tab; the interval closes the long-open-tab gap.
@@ -406,7 +410,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
               <b>平台维护提示已开启</b> · 当前后台可能正在进行维护操作，请谨慎提交高风险变更。
             </div>
           )}
-          <PageTransition>{children}</PageTransition>
+          <PageTransition><Fragment key={zoneKey}>{children}</Fragment></PageTransition>
         </div>
       </main>
     </div>

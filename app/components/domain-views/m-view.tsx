@@ -255,17 +255,28 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   }, [reconcileConversationSnapshot]);
   useEffect(() => () => liveSnapshotController.current?.abort(), []);
 
+  const detailReads = useRef(new Map<string, { again: boolean }>());
   // M3 即时会话 SSE 订阅：后端 OpsConversationStreamController 推 ConversationMessageEvent。
   // 增量合并进 mData.conversations —— 直接 setMData，绕开 runMWrite 写链（避免被 writeConversationRows
   // 当成「坐席新回复」二次回写后端，形成回环）。收到事件后 mergedParams 自动重算 → M3 / Dock 重渲。
   const handleStreamEvent = useCallback(async (event: ConversationStreamEvent, connectionSignal: AbortSignal) => {
     if (connectionSignal.aborted) return;
-    // M-31: a message or receipt on a conversation we already hold re-reads only that conversation.
-    // Ownership changes, new conversations and anything unexpected still reconcile the whole inbox.
-    if ((event.eventType === "MESSAGE" || event.eventType === "RECEIPT")
-      && mDataRef.current?.conversations.some((conversation) => conversation.id === event.conversationNo)) {
+    // M-31: a message or receipt on a conversation we already hold re-reads only that conversation, as long as it is
+    // the customer's only thread here (a reply can also clear pending messages on the customer's older threads).
+    // Bursts on one conversation share one read plus one trailing read. Ownership changes, new conversations and
+    // anything unexpected still reconcile the whole inbox.
+    const held = mDataRef.current?.conversations;
+    const target = held?.find((conversation) => conversation.id === event.conversationNo);
+    const onlyThread = Boolean(target && !held!.some((conversation) => conversation.id !== target.id && conversation.customerId && conversation.customerId === target.customerId));
+    if ((event.eventType === "MESSAGE" || event.eventType === "RECEIPT") && onlyThread) {
       try {
-        await loadConversationDetail(event.conversationNo, connectionSignal);
+        const reads = detailReads.current, running = reads.get(event.conversationNo);
+        if (running) { running.again = true; return; }
+        const state = { again: false };
+        reads.set(event.conversationNo, state);
+        try {
+          do { state.again = false; await loadConversationDetail(event.conversationNo, connectionSignal); } while (state.again && !connectionSignal.aborted);
+        } finally { reads.delete(event.conversationNo); }
         return;
       } catch {
         if (connectionSignal.aborted) return;
@@ -547,6 +558,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     );
   }, [runM3DirectWrite]);
   const ctx: MCtx = {
+    unboundAlertMinutes: alertMinutes,
     pget: (k) => mergedParams[k] as string | undefined,
     params: mergedParams,
     setParam: runMWrite,

@@ -199,6 +199,8 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   const [requestedCustomerId, setRequestedCustomerId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState("");
   const selectionRestored = useRef(false);
+  // A deep link or restored selection opens in whichever inbox scope holds it (supervisors default to "mine").
+  const followSelection = useRef(false);
   const [screen, setScreen] = useState<"list" | "chat" | "profile">("list");
   const [query, setQuery] = useState("");
   const [listTab, setListTab] = useState<ListTab>(() => { const tab = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("tab"); return LIST_TABS.some(([value]) => value === tab) ? tab as ListTab : "pending"; }), [listLimit, setListLimit] = useState(LIST_CHUNK), [archiveIds, setArchiveIds] = useState<Set<string>>(new Set());
@@ -217,7 +219,6 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   const [draftOwner, setDraftOwner] = useState(0), [metaTarget, setMetaTarget] = useState("");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   // Saved drafts may still carry a purpose; it is now derived from the explicit 联系维护 switch below (M-26 / M-54).
-  const [, setIntent] = useState<Intent>("SERVICE");
   const [pending, setPending] = useState<Pending | null>(null);
   const [recoveries, setRecoveries] = useState<Array<{ slot: string; locator: PrivateMessageRecovery }>>([]);
   const [recoveryError, setRecoveryError] = useState("");
@@ -287,7 +288,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   const customerRows = customerConversations(scoped);
   const tabs = LIST_TABS.filter(([value]) => value !== "unassigned" || reviewing);
   const filtered = customerRows.filter(convo => tabMatch(convo,listTab) && (!query.trim() || [convo.customer ?? "", convo.profile?.nickname ?? "", convo.profile?.uid ?? "", customerIdOf(convo), convo.id].some(value => value.toLowerCase().includes(query.trim().toLowerCase()))))
-    .sort(listTab === "pending" || listTab === "unassigned" ? (a, b) => (a.pendingReplySince ?? Infinity) - (b.pendingReplySince ?? Infinity) : (a, b) => b.lastTs - a.lastTs);
+    .sort(listTab === "pending" || listTab === "unassigned" ? (a, b) => (a.pendingReplySince ?? Infinity) - (b.pendingReplySince ?? Infinity) : (a, b) => (b.lastHumanTs ?? b.lastTs) - (a.lastHumanTs ?? a.lastTs));
   const listRows = filtered.slice(0, listLimit);
   const requestedConvo = validCustomerId(requestedCustomerId) ? customerRows.find((convo) => customerIdOf(convo) === requestedCustomerId) : null;
   const selectedCustomer = visible.find(row=>row.id===selectedId)?.customerId;
@@ -392,14 +393,24 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     setRequestedCustomerId(conversationNo ? null : params.get("customerId"));
     if (conversationNo) setSelectedId(conversationNo);
     if (conversationNo || params.get("customerId")) selectionRestored.current = true;
+    if (conversationNo || params.get("customerId")) followSelection.current = true;
     if (conversationNo || params.get("customerId")) setScreen("chat");
   }, []);
   useEffect(() => {
     if (selectionRestored.current || !conversationsAvailable || qualificationUnknown) return;
     selectionRestored.current = true;
     const saved = ctx.pget("I.session.ui.lastConvo");
-    if (saved && visible.some(convo => convo.id === saved && !convo.archived)) setSelectedId(saved);
+    if (saved && visible.some(convo => convo.id === saved && !convo.archived)) { setSelectedId(saved); followSelection.current = true; }
   }, [conversationsAvailable, visible, ctx, qualificationUnknown]);
+  useEffect(() => {
+    if (!followSelection.current || !conversationsAvailable) return;
+    const target = requestedCustomerId ? visible.find((convo) => customerIdOf(convo) === requestedCustomerId) : selectedId ? visible.find((convo) => convo.id === selectedId) : undefined;
+    if (!target && requestedCustomerId === null && !selectedId) return;
+    followSelection.current = false;
+    if (!target || !canReviewAll) return;
+    setAgentFilter(0);
+    setScopeView(target.ownerAdminId === adminId ? "mine" : "team");
+  }, [conversationsAvailable, visible, requestedCustomerId, selectedId, canReviewAll, adminId]);
 
   const clearAttachment = useCallback((cancel = true) => {
     imageSelectionRef.current += 1;
@@ -553,7 +564,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     };
   }, []);
   useEffect(() => {
-    setDrafts({}); setDraftOwner(0); setPending(null); setFirstPending(null); setSendError(""); setIntent("SERVICE"); setBusy(false); setActionChecking(false); setRevokedIds(new Set()); setTicketLinks({}); setContentChoice(null); setBulkOpen(false); setContactOpen(false); setTimeoutOpen(false); seenMessages.current=null; setNewMessageIds(new Set()); clearAttachment();
+    setDrafts({}); setDraftOwner(0); setPending(null); setFirstPending(null); setSendError(""); setMaintenanceChosen(false); setBusy(false); setActionChecking(false); setRevokedIds(new Set()); setTicketLinks({}); setContentChoice(null); setBulkOpen(false); setContactOpen(false); setTimeoutOpen(false); seenMessages.current=null; setNewMessageIds(new Set()); clearAttachment();
   }, [authEpoch, clearAttachment]);
   useEffect(() => {
     setTimeoutOpen(false); setTimeoutPolicy(null); setTimeoutInput(undefined); setTimeoutPending(null); setTimeoutLatest(null); setTimeoutConflict(false); setTimeoutReadOnly(false); setTimeoutError(""); setTimeoutSaving(false);
@@ -576,7 +587,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     try {
       const saved=JSON.parse(sessionStorage.getItem(`nexion-m3-reply-targets:${adminId}:${targetKey}`)??"{}");
       setSelectedClosedIds(new Set());
-      setIncludeCurrentReply(saved.include===true); setIntent(saved.intent==="MAINTENANCE"?"MAINTENANCE":"SERVICE");
+      setIncludeCurrentReply(saved.include===true); setMaintenanceChosen(saved.intent==="MAINTENANCE");
     } catch { setSelectedClosedIds(new Set()); setIncludeCurrentReply(false); }
     setMetaTarget(targetKey);
   }, [targetKey, adminId, authEpoch, qualificationUnknown]);
@@ -685,7 +696,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
 
   const select = (convo: SessionConvo) => {
     if (firstPending) { setSendError("首次联系的发送结果待确认，请先查询原命令结果，再切换会话。"); return; }
-    clearAttachment(pending?.kind !== "IMAGE"); setRequestedCustomerId(null); setSelectedId(convo.id); setScreen("chat"); setIntent("SERVICE"); setMaintenanceChosen(false); setReadError(""); setSendError(pending ? "上条消息的结果待确认，请返回原会话用同一命令重试。" : "");
+    clearAttachment(pending?.kind !== "IMAGE"); setRequestedCustomerId(null); setSelectedId(convo.id); setScreen("chat"); setMaintenanceChosen(false); setReadError(""); setSendError(pending ? "上条消息的结果待确认，请返回原会话用同一命令重试。" : "");
     const url = new URL(window.location.href); url.searchParams.delete("customerId"); url.searchParams.set("conversationNo",convo.id); window.history.replaceState(null, "", url);
   };
 
@@ -1101,7 +1112,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
         {canReviewAll && <div className="m3-list-scope" role="group" aria-label="收件箱范围"><button type="button" className={`l-btn sm ${!reviewing?"primary":""}`} aria-pressed={!reviewing} onClick={()=>{setScopeView("mine");if(listTab==="unassigned")setListTab("pending");}}>我的客户</button><button type="button" className={`l-btn sm ${reviewing?"primary":""}`} aria-pressed={reviewing} onClick={()=>setScopeView("team")}>组内审阅</button>{reviewing&&teamAgents.length>0&&<HDSelect value={String(agentFilter)} width={120} onChange={value=>setAgentFilter(Number(value))} options={[{value:"0",label:"全部专属客服"},...teamAgents.map(([id,name])=>({value:String(id),label:name}))]}/>}</div>}
         <input className="fld m3-list-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索客户或会话编号" aria-label="搜索客户或会话编号" />
         <div className="m3-list-statuses" role="group" aria-label="会话状态筛选">
-          {tabs.map(([value,label])=>{const count=customerRows.filter(row=>tabMatch(row,value)).length;const overdue=(value==="unassigned"||value==="pending")&&Boolean(timeoutPolicy)&&customerRows.some(row=>tabMatch(row,value)&&Boolean(replyTimeout(row.pendingReplySince,timeoutNow,timeoutPolicy!.warnMinutes,timeoutPolicy!.closeMinutes)));return <button type="button" className={`l-btn sm ${listTab===value?"primary":""}`} key={value} aria-pressed={listTab===value} onClick={()=>setListTab(value)}><span>{label}</span>{" "}<span className={`m3-list-count${overdue?" overdue":""}`} title={overdue?"有客户已超时待处理":undefined}>{conversationsAvailable ? count : "-"}</span></button>;})}
+          {tabs.map(([value,label])=>{const count=customerRows.filter(row=>tabMatch(row,value)).length;const overdue=value==="unassigned"?customerRows.some(row=>tabMatch(row,value)&&row.pendingReplySince!=null&&timeoutNow-row.pendingReplySince>=(ctx.unboundAlertMinutes??5)*60000):value==="pending"&&Boolean(timeoutPolicy)&&customerRows.some(row=>tabMatch(row,value)&&Boolean(replyTimeout(row.pendingReplySince,timeoutNow,timeoutPolicy!.warnMinutes,timeoutPolicy!.closeMinutes)));return <button type="button" className={`l-btn sm ${listTab===value?"primary":""}`} key={value} aria-pressed={listTab===value} onClick={()=>setListTab(value)}><span>{label}</span>{" "}<span className={`m3-list-count${overdue?" overdue":""}`} title={overdue?"有客户已超时待处理":undefined}>{conversationsAvailable ? count : "-"}</span></button>;})}
         </div>
         <div className="m3-list-secondary-actions" role="group" aria-label="会话列表管理">
           <button type="button" className="l-btn sm" aria-pressed={alertPrefs.sound||alertPrefs.desktop} title="新消息、新分配客户的提示音和浏览器通知（仅本浏览器）" onClick={()=>{const on=!(alertPrefs.sound||alertPrefs.desktop);setSupportAlertPrefs({sound:on,desktop:on});}}><Icon name="bell" size={13}/>{alertPrefs.sound||alertPrefs.desktop?"提醒已开":"提醒已关"}</button>
@@ -1143,6 +1154,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
           <input ref={fileInputRef} type="file" accept="image/jpeg,image/png" aria-label="选择图片" disabled={!writable || busy || Boolean(pending || firstPending) || !selected || !attachmentPolicy?.available} onChange={(event) => { chooseImage(event.target.files?.[0]); event.target.value = ""; }} hidden />
           <button type="button" className="l-btn sm" aria-label="选择图片" title={attachmentPolicyError || (!attachmentPolicy ? "正在读取图片规则…" : !attachmentPolicy.available ? "图片功能暂不可用（存储服务未就绪）" : "发送图片")} disabled={!writable || busy || Boolean(pending || firstPending) || !selected || !attachmentPolicy?.available} onClick={() => fileInputRef.current?.click()}><Icon name="image" size={14}/>图片</button>
         </div>
+        {selected && attachmentPolicyError && <div className="itint warn" role="status">{attachmentPolicyError} <button type="button" className="l-btn sm" onClick={() => setAttachmentPolicyRetry((value) => value + 1)}>重试</button></div>}
         {maintenanceOffered&&!pending&&!firstPending&&<label className="m3-maintenance-intent"><input type="checkbox" checked={maintenanceChosen} disabled={!writable&&!requestedCustomerId||busy} onChange={event=>setMaintenanceChosen(event.target.checked)}/>本条记为联系维护{intentSource?.due===true?"（该客户维护已到期）":""}</label>}
         {displayedIntent==="MAINTENANCE"&&<div className="m3-composer-note">发送成功后计入一次人工维护执行；客户之后重新活跃才算维护成功。</div>}
         {contentChoice&&<div className="itint">将发送：{contentChoice.name}<button className="l-btn sm" disabled={busy||Boolean(pending)} onClick={()=>setContentChoice(null)}>取消推荐</button></div>}
