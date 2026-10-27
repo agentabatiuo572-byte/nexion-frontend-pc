@@ -28,7 +28,8 @@ test("M5 cards follow content width while tabular scripts retain their own scrol
   assert.match(view, /value=\{seatLabel\(position\)\} readOnly disabled/);
   assert.doesNotMatch(view, />\{agent\.position\}/);
   assert.match(view, /function isDedicatedSupportAgent\(agent: MSupportAgent\): boolean \{\s*return agent\.enabled;/);
-  assert.match(view, /const serviceTypes = agent.serviceTypes;/, "Profile edits retain original service-type wire values");
+  // M-56: the stored service types are the legacy transfer-routing flag; profile edits no longer send them.
+  assert.doesNotMatch(view, /const serviceTypes = agent\.serviceTypes;/, "Profile edits leave the legacy service-type flag untouched");
   const client = read("lib/admin/m-client.ts"), support = read("lib/admin/m-support-client.ts"), data = read("app/components/domain-views/m-tabs/data.ts");
   assert.match(client, /seatType: "MANAGER" \| "DEDICATED" \| "GENERAL"/);
   assert.match(support, /enumValue\(row.seatType, \["MANAGER", "DEDICATED", "GENERAL"\]/);
@@ -246,7 +247,7 @@ test("M3 roster failure exposes qualification retry instead of claiming an empty
   assert.match(view, /permissionUnknown && \(tab === "M1" \|\| tab === "M2" \|\| tab === "M3" \|\| tab === "M5"\)/);
   assert.match(view, /重试核对<\/button>/);
   assert.match(chat, /qualificationUnknown.*[\s\S]*I\.support\.agentsAvailable/);
-  assert.match(chat, /qualificationUnknown \? "专属客服身份待核对/);
+  assert.match(chat, /qualificationUnknown \? "正在确认你的专属客服身份/);
 });
 
 test("retired M2 is absent from the live workbench", () => {
@@ -260,13 +261,15 @@ test("retired M2 is absent from the live workbench", () => {
 test("M3 explicit unbound review avoids assigned-only profile reads and reaches the real pool", () => {
   const client = read("lib/admin/m-client.ts");
   const chat = read("app/components/domain-views/m-tabs/m3-dedicated-chat.tsx");
-  const workbench = read("app/components/domain-views/m-tabs/m1-personal-workbench.tsx");
+  const workbench = read("app/components/domain-views/m-tabs/m1-analytics-workbench.tsx");
   assert.match(client, /ownerUnbound: base\.ownerAgentId === null/);
   assert.match(chat, /selected\?\.ownerUnbound === true/);
   assert.match(chat, /if \(selectedUnbound\) \{[\s\S]*?return;[\s\S]*?supportClient\.customerDetail\(String\(selected\.customerId\)/);
   assert.match(chat, /lostPermission\(cause\)[\s\S]*?ctx\.invalidateScope\(selected\.id, String\(selected\.customerId\)\)/);
-  assert.match(chat, /href="\/service\/overview\?view=pool"/);
-  assert.match(workbench, /get\("view"\) === "pool" && permission !== "agent"/);
+  // D-1/M-41: supervisors assign an unbound customer from the conversation; the pool is the 待分配 tab (?view=pool).
+  assert.match(chat, /canAssign && <button type="button" className="l-btn sm primary" onClick=\{\(\) => setAssignOpen\(true\)\}>分配专属客服<\/button>/);
+  assert.match(workbench, /personal \? \["home", "my-customers", "my-data"\] : \["data", "pool"/);
+  assert.match(workbench, /new URLSearchParams\(window\.location\.search\)\.get\("view"\)/);
   assert.match(chat, /待分配专属客服/);
 });
 
@@ -570,9 +573,11 @@ function m3VisibleTextFixture() {
 test("M3 human reception and origin branches use one exclusive support identity without changing wire types", () => {
   const f = m3VisibleTextFixture();
   assert.doesNotMatch(f.source, /普通客服接待|专属顾问接待/);
-  for (const [origin, expected] of [["user", "客户发起"], ["advisor", "客服主动联系"], ["support", "客服主动联系"], [undefined, "发起来源未记录"]]) assert.equal(f.evaluate(f.conditional("convo.origin"), { convo: { origin } }), expected);
+  // Origin is a compact prefix of the row status; an unrecorded origin shows nothing rather than a placeholder.
+  for (const [origin, expected] of [["user", "客户发起 · "], ["advisor", "客服主动联系 · "], ["support", "客服主动联系 · "], [undefined, ""]]) assert.equal(f.evaluate(f.conditional("convo.origin"), { convo: { origin } }), expected);
   const reception = f.one(node => ts.isConditionalExpression(node) && node.condition.getText(f.file) === "hasMessage===false" && ts.isStringLiteral(node.whenTrue) && node.whenTrue.text === "待首次联系" && node.whenFalse.getText(f.file).includes("查看待回复状态"));
-  for (const [hasMessage, knownReplyState, expected] of [[false, true, "待首次联系"], [true, true, "待专属客服回复"], [true, false, "已处理"], [true, null, "查看待回复状态"], [null, null, "查看待回复状态"]]) assert.equal(f.evaluate(reception, { hasMessage, knownReplyState }), expected);
+  for (const [hasMessage, knownReplyState, expected] of [[false, true, "待首次联系"], [true, true, "待专属客服回复"], [true, false, "已处理"], [true, null, "查看待回复状态"], [null, null, "查看待回复状态"]]) assert.equal(f.evaluate(reception, { hasMessage, knownReplyState, convo: { ownerUnbound: false } }), expected);
+  assert.equal(f.evaluate(reception, { hasMessage: true, knownReplyState: true, convo: { ownerUnbound: true } }), "待分配专属客服");
   const source = read("lib/admin/m-client.ts");
   const definition = source.match(/function conversationType[^\n]*\{[\s\S]*?\n\}/)?.[0]; assert.ok(definition);
   const parse = runInNewContext(ts.transpileModule(`${definition}\nconversationType;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText);
@@ -585,10 +590,15 @@ function m3ListRenderingFixture() {
   const f = m3VisibleTextFixture();
   const list = f.one(node => ts.isCallExpression(node) && node.expression.getText(f.file) === "listRows.map");
   const lastMessage = f.evaluate(f.one(node => ts.isFunctionDeclaration(node) && node.name?.text === "lastMessage"));
+  const waitMinutes = f.evaluate(f.one(node => ts.isFunctionDeclaration(node) && node.name?.text === "waitMinutes"));
+  const waitText = f.evaluate(f.one(node => ts.isFunctionDeclaration(node) && node.name?.text === "waitText"));
+  const customerIdOf = f.evaluate(f.variable("customerIdOf"));
+  // M-21: the list renders one row per customer; wrap a conversation the way groupByCustomer does.
+  const customerRow = (convo) => ({ customerId: customerIdOf(convo), convo, segmentIds: [convo.id], unread: convo.unread ?? 0, pending: convo.pendingReplyCount ?? 0, waitingSinceTs: convo.waitingSinceTs, activityTs: convo.lastTs });
   const row = { ...transferredHistory(), conversationNo: "CV-PREVIEW", status: "OPEN", customerId: 7, ownerAdminId: 12, assignmentId: "9", lastMessage: "", lastMessageKind: null, unreadCount: 2 };
   const render = (conversation, waitingReply = null) => f.text(f.evaluate(list, {
     listRows: [conversation], selected: null, timeoutPolicy: null, currentProfileDetail: waitingReply === null ? null : { customerId: "7", waitingReply },
-    lastMessage, canWriteM3: false, adminId: 12, archiveIds: new Set(), setArchiveIds() {}, select() {},
+    lastMessage, archiveMode: false, reviewing: false, canWriteM3: false, adminId: 12, archiveIds: new Set(), setArchiveIds() {}, select() {},
     SupportAvatar: "avatar", customerAvatarPath: () => undefined, messageTime: () => "", conversationStateLabel: () => "进行中",
   }));
   return { adapter, row, render };
@@ -712,10 +722,10 @@ test("M3 owner headers and author fallbacks preserve history and named actors wi
 
 test("M3 qualification and supervisor read-only branches retain denial and recovery priority", () => {
   const f = m3VisibleTextFixture();
-  for (const [qualificationUnknown, query, expected] of [[true, "", "专属客服身份待核对，暂时无法确认可审阅的会话范围。"], [false, "x", "没有匹配的会话，请清除搜索。"], [false, "", "暂无会话。可从“我的客户”发起首次联系。"]]) assert.equal(f.evaluate(f.one(node => ts.isConditionalExpression(node) && node.condition.getText(f.file) === "qualificationUnknown" && ts.isStringLiteral(node.whenTrue)), { qualificationUnknown, query }), expected);
+  for (const [qualificationUnknown, query, expected] of [[true, "", "正在确认你的专属客服身份，稍后显示可查看的会话。"], [false, "x", "没有匹配的客户，请清除搜索。"], [false, "", "暂无会话。可从“我的客户”发起首次联系。"]]) assert.equal(f.evaluate(f.one(node => ts.isConditionalExpression(node) && node.condition.getText(f.file) === "qualificationUnknown" && ts.isStringLiteral(node.whenTrue)), { qualificationUnknown, query, listTab: "all" }), expected);
   const deny = f.one(node => ts.isConditionalExpression(node) && node.condition.getText(f.file) === "recoveryBlocksTarget" && node.getText(f.file).includes("主管审阅不能代发"));
-  const common = { recoveryBlocksTarget: false, canWriteM3: true, selected: { status: "open", ownerAdminId: "A" }, selectedUnbound: false, currentProfileDetail: { assignmentId: "binding", agentAdminId: "A" }, profileError: "", historyReadOnlyHint: "原历史只读提示" };
-  for (const [state, expected] of [[{ selectedUnbound: true }, "待分配专属客服；主管可审阅求助，分配后由当前专属客服回复。"], [{}, "仅当前专属客服可发送消息；主管审阅不能代发。"], [{ canWriteM3: false, selectedUnbound: true }, "当前账号只可查看会话，发送需会话操作权限。"], [{ selected: { status: "transferred" } }, "原历史只读提示"], [{ currentProfileDetail: { assignmentId: "binding", agentAdminId: "B" } }, "客户归属已变化，请刷新会话后重试。刷新会话"], [{ recoveryBlocksTarget: true }, "原消息结果待确认，暂不能重复发送。返回列表查询原消息"]]) assert.equal(f.text(f.evaluate(deny, { ...common, ...state })), expected);
+  const common = { recoveryBlocksTarget: false, canAssign: false, canWriteM3: true, selected: { status: "open", ownerAdminId: "A" }, selectedUnbound: false, currentProfileDetail: { assignmentId: "binding", agentAdminId: "A" }, profileError: "", historyReadOnlyHint: "原历史只读提示" };
+  for (const [state, expected] of [[{ selectedUnbound: true }, "该客户还没有专属客服，等待主管分配后回复。"], [{}, "仅当前专属客服可发送消息；主管审阅不能代发。"], [{ canWriteM3: false, selectedUnbound: true }, "当前账号只可查看会话，发送需会话操作权限。"], [{ selected: { status: "transferred" } }, "原历史只读提示"], [{ currentProfileDetail: { assignmentId: "binding", agentAdminId: "B" } }, "客户归属已变化，请刷新会话后重试。刷新会话"], [{ recoveryBlocksTarget: true }, "原消息结果待确认，暂不能重复发送。返回列表查询原消息"]]) assert.equal(f.text(f.evaluate(deny, { ...common, ...state })), expected);
   for (const [c, expected] of [[{ maintenanceEnabled: false, agentAdminId: "B" }, " · 不再维护"], [{ maintenanceEnabled: true, agentAdminId: "B" }, " · 当前归属其他专属客服"], [{ maintenanceEnabled: true, agentAdminId: "A" }, ""]]) assert.equal(f.evaluate(f.conditional("!c.maintenanceEnabled"), { c, adminId: "A" }), expected);
 });
 
@@ -729,5 +739,6 @@ test("M3 active surface excludes retired human labels while preserving client de
   for (const copy of ["将这段服务会话标记为已解决，不改变客户的专属客服。客户再次发消息时，会继续当前对话。", "正在核对当前专属客服归属…", "该客户由当前专属客服服务，本账号仅可审阅。", "待分配专属客服，尚无绑定客户的维护状态。", "重新核对当前专属客服归属，继续当前对话"]) assert.ok(f.source.includes(copy), copy);
   assert.match(f.source, /qualificationUnknown \? \[\] : all\.filter/);
   assert.match(f.source, /const writable = !qualificationUnknown && !recoveryBlocksTarget && canWriteM3/);
-  assert.match(f.source, /disabled=\{!canWriteM3\|\|qualificationUnknown\} onClick=\{\(\)=>setContactOpen\(true\)\}/);
+  // An account without its own dedicated customers (e.g. a supervisor without a seat) cannot start a contact.
+  assert.match(f.source, /disabled=\{!canWriteM3\|\|qualificationUnknown\|\|!hasOwn&&!myAgent\}[^>]*onClick=\{\(\)=>setContactOpen\(true\)\}/);
 });

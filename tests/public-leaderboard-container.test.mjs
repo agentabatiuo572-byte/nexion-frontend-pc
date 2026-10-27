@@ -1,4 +1,5 @@
 import { displayCopyModules } from "./display-copy-fixture.mjs";
+import * as businessTime from "../lib/admin/business-time.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -38,6 +39,7 @@ function harness(permission = "m3", options = {}) {
   const dependencies = {
     react: hooks, "next/navigation": { useRouter: () => ({ push: url => routes.push(url) }) }, "@/lib/store/admin-auth": { useAdminAuth: selector => selector(auth) },
     "@/lib/admin/shell-authorities": shellAuthorities,
+    "@/lib/admin/business-time": businessTime,
     "@/lib/nav/console-nav": nav, "../design-kit": { Btn, Modal }, "./support-leaderboard": { SupportLeaderboard, NumberValue: display.NumberValue }, "./m6-leaderboard.css": {},
     "@/lib/admin/support-leaderboard-client": { supportLeaderboardClient: {
       page(query, signal) { const p = pending(); pages.push({ ...p, query, signal }); return p.promise; },

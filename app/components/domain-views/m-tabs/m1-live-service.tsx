@@ -36,6 +36,6 @@ export function M1LiveService({ ctx, alertMinutes = 5 }: { ctx: MCtx; alertMinut
     <Link href="/service/sessions?tab=pending" className="m1-live-item"><span>待回复客户</span><strong>{dash(conversationsReady, facts.waiting)}</strong></Link>
     <Link href="/service/sessions?tab=pending" className={`m1-live-item${late ? " alert" : ""}`}><span>最长等待</span><strong>{!conversationsReady ? "-" : facts.oldest === null ? "无" : durationText(facts.oldest)}</strong></Link>
     <Link href="/service/sessions?tab=unassigned" className={`m1-live-item${facts.unassigned ? " alert" : ""}`}><span>待分配（有留言）</span><strong>{dash(conversationsReady, facts.unassigned)}</strong></Link>
-    <div className="m1-live-item"><span>可接待顾问</span><strong>{facts.agents}</strong></div>
+    <div className="m1-live-item"><span>可接待专属客服</span><strong>{facts.agents}</strong></div>
   </section>;
 }

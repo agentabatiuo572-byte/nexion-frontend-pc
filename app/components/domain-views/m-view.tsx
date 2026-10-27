@@ -208,19 +208,11 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!mLoadCoordinator.current.isConversationSnapshotCurrent(generation) || mDataAuthEpoch.current !== snapshotAuthEpoch) {
       throw new Error("M3_CONVERSATION_SNAPSHOT_SUPERSEDED");
     }
-    // List rows carry no messages. Keep loaded messages on screen and refresh the detail
-    // in the background, so a refresh never blanks the open conversation (M-9).
-    setMData((previous) => {
-      if (!previous) return previous;
-      const loaded = new Map(previous.conversations.filter((row) => row.detailReady).map((row) => [row.id, row]));
-      const merged = conversations.map((row) => {
-        const old = loaded.get(row.id);
-        if (!old || old.ownerAdminId !== row.ownerAdminId || old.assignmentId !== row.assignmentId) return row;
-        const unchanged = old.version === row.version && old.lastPublicMessageId === row.lastPublicMessageId && old.lastTs === row.lastTs;
-        return { ...row, messages: old.messages, historyTruncated: old.historyTruncated, detailReady: true, detailStale: unchanged ? old.detailStale : true };
-      });
-      return { ...previous, conversations: merged, conversationsAvailable: true };
-    });
+    // Replace the scoped snapshot; never merge prior details (a scope change must not keep old private detail).
+    // The open thread keeps its last loaded messages on screen while the detail reloads (M-9, m3-dedicated-chat).
+    setMData((previous) => previous
+      ? { ...previous, conversations, conversationsAvailable: true }
+      : previous);
   }, [authEpoch]);
   const loadConversationDetail = useCallback(async (no: string, signal?: AbortSignal) => {
     const detailEpoch = authEpoch;

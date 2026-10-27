@@ -126,6 +126,7 @@ const KNOWN = {
   "app/components/domain-views/m-view.tsx#pendingMCommandBaselines": { verdict: "not-idempotency", reason: "只缓存调参前基线用于 diff 展示,丢了只是少一段回显" },
   "app/components/domain-views/m-tabs/m5-scripts.tsx#pendingReplyTemplateDraftIds": { verdict: "not-idempotency", reason: "话术草稿的本地临时 id,非 Idempotency-Key,不入后端去重" },
   "lib/admin/registry/index.ts#BY_PATH": { verdict: "not-idempotency", reason: "registry 路由→模块的派生只读索引,进程内重建即可" },
+  "app/components/domain-views/m-tabs/support-avatar.tsx#missing": { verdict: "not-idempotency", reason: "M-5:头像 GET 返回 404 后的短期负缓存(带 TTL),避免重复请求不存在的头像;不是写命令号,丢了只是多发一次 GET" },
   // ---- 2026-08-06 merge origin/main 带入(B 域看板读路径,与命令幂等无关)----
   "lib/admin/b-client.ts#cachedDashboards": { verdict: "not-idempotency", reason: "看板响应读缓存(stale-while-revalidate),丢了只是多发一次 GET,不承载重试/入账语义" },
   "lib/admin/b-client.ts#inflightDashboards": { verdict: "not-idempotency", reason: "在途 GET 去重(同 key 并发合流),不是写命令号容器" },

@@ -192,7 +192,7 @@ export function M5ServiceRules({ permission }: { permission: MSupportPermission 
               <label className="m-assignment-option"><input type="radio" name="unbound-mode" value="AUTO_RANDOM" checked={draft.unboundAssignmentMode === "AUTO_RANDOM"} onChange={() => setField("unboundAssignmentMode", "AUTO_RANDOM")} /><span>客户首次咨询时按负载自动分配</span></label>
               <label className="m-assignment-option"><input type="radio" name="unbound-mode" value="SUPERVISOR" checked={draft.unboundAssignmentMode === "SUPERVISOR"} onChange={() => setField("unboundAssignmentMode", "SUPERVISOR")} /><span>客服主管分配</span></label>
             </div>
-            <p id="m-assignment-help" className="m-assignment-help">有效邀请继承优先。自动模式在客户第一次发消息时分配给负载最低的顾问；主管模式由主管分配，等待超时后按下方「待分配客户」设置自动兜底。已绑定专属客服离线或忙碌不会重新分配。</p>
+            <p id="m-assignment-help" className="m-assignment-help">有效邀请继承优先。自动模式在客户第一次发消息时分配给负载最低的专属客服；主管模式由主管分配，等待超时后按下方「待分配客户」设置自动兜底。已绑定专属客服离线或忙碌不会重新分配。</p>
           </fieldset>
           {dayFields.map((field) => <div className="m-admin-row" key={field}>
             <div><label htmlFor={`m-rule-${field}`}>{LABELS[field]}</label><p>{field === "dormantDays" ? "有效账户活动超出设定天数且记录完整，才可判定沉睡。" : field === "maintenanceDays" ? "已到维护时间的客户会进入主动维护待办。" : "用于活跃客户统计，与当前沉睡状态分别计算。"}</p></div>

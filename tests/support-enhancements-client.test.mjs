@@ -4,7 +4,8 @@ import test from "node:test";
 import {readFileSync} from "node:fs";
 import {runInNewContext} from "node:vm";
 import ts from "typescript";
-import {formatBusinessTime} from "../lib/admin/business-time.ts";
+import * as businessTime from "../lib/admin/business-time.ts";
+const {formatBusinessTime}=businessTime;
 import {createRequire} from "node:module";
 import {parseBulkJob,parseBulkPreview,parseRandomPreview,parseSupportProfile,supportEnhancements,legacySupportDestination,privateMessageRecovery} from "../lib/admin/m-support-enhancements.ts";
 import {supportClient,supportObject} from "../lib/admin/m-support-client.ts";
@@ -166,7 +167,7 @@ test("funds-flow options use source statuses and reset the exact filter request 
     if(name==="@/lib/store/admin-auth")return {useAdminAuth:selector=>selector({session:{adminId:12,authorities:[]},authEpoch:1})};
     if(name==="@/lib/admin/m-support-enhancements")return {supportEnhancements};
     if(name==="@/lib/admin/m-support-client")return {supportClient:{},SupportClientError:class extends Error{}};
-    if(name==="@/lib/admin/business-time")return {formatBusinessTime};
+    if(name==="@/lib/admin/business-time")return businessTime;
     if(name==="@/lib/admin/error-messages")return {displayAdminError:()=>"读取失败"};
     if(name==="../design-kit")return {Modal:props=>jsx.jsx("div",{children:props.children}),Icon:()=>null};
     if(name==="./hd-ui")return {HDSelect:()=>null};
@@ -378,7 +379,7 @@ test("first-contact customer profiles require verified scope without inventing a
       if(name==="@/lib/store/admin-auth")return {useAdminAuth:selector=>selector({session,authEpoch:1})};
       if(name==="@/lib/admin/m-support-enhancements")return {supportEnhancements:{profile:async()=>profile}};
       if(name==="@/lib/admin/m-support-client")return {supportClient:{},SupportClientError:class extends Error{}};
-      if(name==="@/lib/admin/business-time")return {formatBusinessTime};
+      if(name==="@/lib/admin/business-time")return businessTime;
     if(name==="@/lib/admin/error-messages")return {displayAdminError:()=>"读取失败"};
       if(name==="../design-kit")return {Modal:props=>jsx.jsx("div",{children:props.children}),Icon:()=>null};
     if(name==="./hd-ui")return {HDSelect:()=>null};

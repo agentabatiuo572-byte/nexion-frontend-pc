@@ -58,11 +58,11 @@ export function AssignAdvisorDialog({ customerId, customerName, onClose, onAssig
 
   return <Modal title={`分配专属客服 · ${customerName}`} icon="users" busy={saving} onClose={onClose} footer={<>
     <button type="button" className="l-btn sm" disabled={saving} onClick={onClose}>取消</button>
-    <button type="button" className="l-btn sm primary" disabled={!chosen || !reasonOk || saving} onClick={() => void assign()}>{saving ? "分配中…" : chosen ? `分配给 ${chosen.name}` : "选择顾问"}</button>
+    <button type="button" className="l-btn sm primary" disabled={!chosen || !reasonOk || saving} onClick={() => void assign()}>{saving ? "分配中…" : chosen ? `分配给 ${chosen.name}` : "选择专属客服"}</button>
   </>}>
     {loadError ? <div className="itint danger" role="alert">{loadError} <button type="button" className="l-btn sm" onClick={() => setRetry((value) => value + 1)}>重试</button></div>
-      : !agents ? <div className="itint" role="status">正在读取可分配的顾问…</div>
-      : agents.length === 0 ? <div className="itint warn">该客户所在组暂无可接待的顾问。请先在「客服资格」里启用顾问，或调整客户分组。</div>
+      : !agents ? <div className="itint" role="status">正在读取可分配的专属客服…</div>
+      : agents.length === 0 ? <div className="itint warn">该客户所在组暂无可接待的专属客服。请先在「客服资格」里启用接待资格，或调整客户分组。</div>
       : <div className="m3-assign-list" role="radiogroup" aria-label="选择专属客服">
         {agents.map((agent, index) => <label key={agent.adminId} className={`m3-assign-card${target === agent.adminId ? " on" : ""}`}>
           <input type="radio" name="m3-assign-target" checked={target === agent.adminId} disabled={saving} onChange={() => setTarget(agent.adminId)} />

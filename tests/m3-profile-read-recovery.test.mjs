@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import test from "node:test";
 import { SupportClientError } from "../lib/admin/m-support-client.ts";
-import { formatBusinessTime } from "../lib/admin/business-time.ts";
+import * as businessTime from "../lib/admin/business-time.ts";
+const { formatBusinessTime } = businessTime;
 import { displayAdminError } from "../lib/admin/error-messages.ts";
 import { parseSupportProfile } from "../lib/admin/m-support-enhancements.ts";
 import { MDomainLoadCoordinator } from "../lib/admin/m-content-load-coordinator.ts";
@@ -67,7 +68,7 @@ function harness(props = {}, detail = true) {
     "./hd-ui": { HDSelect: () => null },
     "./support-avatar": { SupportAvatar: () => null, customerAvatarPath: id => id, advisorAvatarPath: id => id },
     "./support-leaderboard": leaderboardExports,
-    "@/lib/admin/business-time": { formatBusinessTime },
+    "@/lib/admin/business-time": businessTime,
     "./m3-customer-profile.css": {},
   };
   const context = { exports: {}, AbortController, Date, Intl, JSON, window, document: { querySelectorAll: () => [] }, require: name => { assert.ok(Object.hasOwn(modules, name), name); return modules[name]; } };

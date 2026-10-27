@@ -5,7 +5,8 @@ import path from "node:path";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
-import { formatBusinessTime } from "../lib/admin/business-time.ts";
+import * as businessTime from "../lib/admin/business-time.ts";
+const { formatBusinessTime } = businessTime;
 import React from "react";
 import { createRequire } from "node:module";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -40,7 +41,7 @@ function profileHarness(initial = profile()) {
   const h = hooks(), requests = [], props = { customerId: "101", scopeVersion: 1, conversation: { id: "CV-101", ownerAdminId: 12 }, onHistory() {}, onRetryMessages() {}, ctx: { pget: () => "[]", invalidateScope() {}, addCustomerTag: async () => true } };
   const listeners = new Set(), window = { addEventListener: (_type, listener) => listeners.add(listener), removeEventListener: (_type, listener) => listeners.delete(listener) };
   const exports = evaluate(component("m3-customer-profile"), { window, document: { querySelectorAll: () => [] } }, {
-    "@/lib/admin/business-time": { formatBusinessTime },
+    "@/lib/admin/business-time": businessTime,
     react: h.react, "@/lib/store/admin-auth": { useAdminAuth: selector => selector({ authEpoch: 1, session: { adminId: 12, role: "super", authorities: ["service_m3_write"] } }) },
     "@/lib/admin/m-support-enhancements": { supportEnhancements: { profile() { const request = deferred(); requests.push(request); return request.promise; }, devices: async () => group({ total: 0, heldCount: 0, fieldStatuses: { heldCount: "READY" }, onlineCount: 0, records: [] }), flows: async () => group({ total: 0, records: [] }) } },
     "@/lib/admin/m-support-client": { supportClient: { maintenanceHistory: async () => ({ totalExecutions: 0, totalCycles: 0, cycles: [], executions: [] }) }, SupportClientError: class extends Error {} },

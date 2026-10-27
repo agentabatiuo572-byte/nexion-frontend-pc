@@ -1,5 +1,3 @@
-import { useSyncExternalStore } from "react";
-
 /**
  * R-1: the business time zone comes from the backend (A3 业务时区). Until it loads, and whenever it cannot be
  * read, the console keeps the historical Beijing time. Storage timestamps stay Asia/Shanghai local time.
@@ -18,12 +16,8 @@ export function setBusinessZone(next: BusinessZone | null) {
   listeners.forEach((listener) => listener());
 }
 
-function subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }
-
-/** Re-renders the caller when the super admin's zone change is picked up. */
-export function useBusinessZone(): BusinessZone {
-  return useSyncExternalStore(subscribe, businessZone, () => DEFAULT_ZONE);
-}
+/** Notifies when the super admin's zone change is picked up; returns the unsubscribe function. Kept framework-free. */
+export function subscribeBusinessZone(listener: () => void): () => void { listeners.add(listener); return () => { listeners.delete(listener); }; }
 
 /** "越南时间（UTC+7）" for captions that state the zone once. */
 export function businessZoneText(zone: BusinessZone = current): string { return `${zone.label}（${zone.offset}）`; }

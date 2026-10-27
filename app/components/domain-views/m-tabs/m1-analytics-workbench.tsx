@@ -184,7 +184,7 @@ function AnalyticsSelect({ label, value, options, onChange }: { label: string; v
 
 type Drill = (changes: Partial<AnalyticsQueryState>) => void;
 export function AnalyticsTable({ data, currency, drill, openProfile }: { data: SupportAnalyticsResponse; currency: Currency; drill: Drill; openProfile: (customerId: string) => void }) {
-  if (!data.records.length) return <p className="sa-empty">当前范围与筛选下暂无已观测记录。{data.total === null && "部分数据来源尚未接入。"}</p>;
+  if (!data.records.length) return <p className="sa-empty">当前范围与筛选下暂无已观测记录。{data.total === null && "总数仍在统计。"}</p>;
   const name = (row: SupportAnalyticsCustomer) => operatorNicknameText(row.nickname || "") || row.customerNo || `客户 ${row.customerId}`;
   if (data.view === "AGENTS") return <div className="sa-table-scroll"><table className="sa-table"><caption className="sr-only">客服当前客户画像；金额币种 {nexGridBrandText(currency)}</caption><thead><tr><th>客服 / 当前组</th><th>账号 / 资格</th><th>当前绑定</th><th>当前统计期活跃</th><th>已首充</th><th>持有设备</th><th>客户累计净贡献 / {nexGridBrandText(currency)}</th><th>客户累计充值 / {nexGridBrandText(currency)}</th><th>当前余额 / {nexGridBrandText(currency)}</th></tr></thead><tbody>{data.records.map(row => {
     const customerCount = row.funds.customerCount !== undefined ? String(row.funds.customerCount) : row.current.firstConfirmed.confirmed !== null && row.current.firstNone.confirmed !== null && row.current.firstUnknown.confirmed !== null ? (BigInt(row.current.firstConfirmed.confirmed) + BigInt(row.current.firstNone.confirmed) + BigInt(row.current.firstUnknown.confirmed)).toString() : null;
