@@ -32,7 +32,9 @@ function harness(file, name, initialProps, dependencies = {}) {
     "../../../../lib/admin/m-support-client": { supportClient: { rules: async () => rules }, isIndeterminateSupportError: () => false },
     "../../../../lib/admin/pending-mutation-store": { createPendingMutationStore: () => ({ list: () => [] }) },
     "../../../../lib/admin/shell-authorities": { adminShellSessionKey: () => "7" },
-    "../../../../lib/store/admin-auth": { useAdminAuth }, ...dependencies,
+    "../../../../lib/store/admin-auth": { useAdminAuth },
+    // D-3 / M-18: the 待分配客户 policy panel renders separately and is not under test here.
+    "./m5-unbound-policy": { M5UnboundPolicy: () => null }, ...dependencies,
   };
   const code = ts.transpileModule(readFileSync(new URL(`../app/components/domain-views/m-tabs/${file}`, import.meta.url), "utf8"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const context = { exports: {}, AbortController, queueMicrotask, document: { addEventListener() {}, removeEventListener() {} }, require: key => { assert.ok(Object.hasOwn(modules, key), key); return modules[key]; } };

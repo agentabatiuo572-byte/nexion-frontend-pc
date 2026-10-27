@@ -20,7 +20,10 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 
 test("M1 personal cards, TODO and customer pagination use PERSONAL after losing a managed group; the pool makes no personal request", async () => {
   const source = effect("app/components/domain-views/m-tabs/m1-personal-workbench.tsx", "supportClient.snapshot");
-  for (const view of ["dashboard", "customers", "pool"]) {
+  // M-41: the pool is its own tab rendered by M1SupervisorPool, so the personal snapshot never runs for it.
+  const analytics = readFileSync(new URL("../app/components/domain-views/m-tabs/m1-analytics-workbench.tsx", import.meta.url), "utf8");
+  if (!/section === "pool" && <M1SupervisorPool permission=\{leadPermission\}/.test(analytics)) throw new Error("pool tab must render M1SupervisorPool");
+  for (const view of ["dashboard", "customers"]) {
     const calls = [], context = {
       view, page: 2, keyword: "2005", activeFilter: view === "dashboard" ? "TODO" : "ALL", PAGE_SIZE: 10,
       authEpoch: 1, rowsRefresh: 0, AbortController, snapshotController: { current: null },

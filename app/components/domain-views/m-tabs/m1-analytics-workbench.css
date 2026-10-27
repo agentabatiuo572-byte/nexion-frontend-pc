@@ -56,7 +56,7 @@
 .m1-live { display: grid; grid-template-columns: auto repeat(5, minmax(0, 1fr)); align-items: stretch; gap: 8px; margin-bottom: 14px; padding: 10px 12px; border: 1px solid var(--v5-border); border-radius: 12px; background: var(--v5-surface-2); }
 .m1-live h3 { align-self: center; margin: 0 6px 0 0; font-size: 13px; font-weight: 600; color: var(--v5-ink-2); }
 .m1-live-item { display: grid; gap: 2px; padding: 6px 10px; border-radius: 8px; color: inherit; text-decoration: none; }
-a.m1-live-item:hover { background: var(--v5-surface-3); }
+@media (hover: hover) and (pointer: fine) { a.m1-live-item:hover { background: var(--v5-surface-3); } }
 .m1-live-item span { font-size: 12px; color: var(--v5-ink-3); }
 .m1-live-item strong { font-size: 18px; font-variant-numeric: tabular-nums; }
 .m1-live-item.alert strong { color: var(--v5-danger); }

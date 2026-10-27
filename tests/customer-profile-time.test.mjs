@@ -16,8 +16,8 @@ function formatter(path, name) {
     (ts.isVariableStatement(node) && node.declarationList.declarations.some(d => d.name.getText(source) === name)));
   assert.ok(declaration, `actual ${name} formatter exists`);
   const exports = {};
-  new Function("exports", "formatBusinessTime", "asText", compile(`${declaration.getText(source)}\nexport {${name}};`))(
-    exports, business.formatBusinessTime, (value, fallback) => typeof value === "string" ? value : fallback);
+  new Function("exports", "formatBusinessTime", "formatBusinessTimeCompact", "asText", compile(`${declaration.getText(source)}\nexport {${name}};`))(
+    exports, business.formatBusinessTime, business.formatBusinessTimeCompact, (value, fallback) => typeof value === "string" ? value : fallback);
   return exports[name];
 }
 const drawer = formatter("app/components/domain-views/m-tabs/m3-customer-profile.tsx", "dates");
@@ -36,7 +36,8 @@ for (const zone of ["Asia/Tokyo", "Asia/Shanghai", "UTC"]) {
         for (const render of [drawer, full]) {
           assert.equal(render(utc), render(local), "offset and business-local representations must agree");
           assert.ok(render(utc).includes(expected), render(utc));
-          assert.ok(render(utc).includes("北京时间"), "display identifies its time zone");
+          // M-12: the profile drawer uses a compact stamp and states the zone once in its section heading.
+          if (render === full) assert.ok(render(utc).includes("北京时间"), "display identifies its time zone");
           assert.equal(render(utc), render(utc.replace("Z", "+00:00")));
         }
       }

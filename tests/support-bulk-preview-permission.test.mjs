@@ -159,7 +159,7 @@ test("post-submit lifecycle exclusions show concrete next steps and no retry", a
     ["CONVERSATION_TRANSFERRED", /原会话正在转接.*归属确定/],
     ["CONVERSATION_ARCHIVED", /原会话已归档.*核对归档状态/],
     ["CONVERSATION_CONVERTED", /原会话已转工单.*关联工单/],
-    ["CONVERSATION_NOT_WRITABLE", /原会话已结束或正在转接/],
+    ["CONVERSATION_NOT_WRITABLE", /原会话正在转接或不可发送/],
     ["SUPPORT_BULK_CONVERSATION_CHANGED", /客户会话已变化.*重新圈选/],
   ]) {
     const job = { batchId: "lifecycle-batch", actorId: 1, state: "COMPLETED", frozenCount: 1, visibleCount: 1,

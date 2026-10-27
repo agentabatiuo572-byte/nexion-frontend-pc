@@ -183,7 +183,7 @@ test("funds-flow options use source statuses and reset the exact filter request 
   assert.ok(select);assert.deepEqual(options.map(option=>option.value).filter(Boolean).sort(),expected.toSorted());
   const labels=Object.fromEntries(options.map(option=>[option.value,option.label]));assert.equal(labels.CONFIRMED,"已确认");assert.equal(labels.CREDITED,"已入账");assert.equal(labels.REVIEW_PENDING,"待审核");assert.equal(labels.REFUNDED,"已退款");assert.notEqual(labels.CONFIRMED,labels.SUCCESS);
   const summaries=walk(tree).filter(node=>node.type==="summary"&&Array.isArray(node.props.children)&&node.props.children.some(value=>typeof value==="string"&&value.startsWith("流水")));
-  assert.equal(summaries.length,records.length);for(let i=0;i<records.length;i++)assert.equal(summaries[i].props.children.at(-1),i<expected.length?labels[records[i].status]:"待核对");
+  assert.equal(summaries.length,records.length);for(let i=0;i<records.length;i++)assert.equal(summaries[i].props.children.at(-1),i<expected.length?labels[records[i].status]:"未知");
   const original=globalThis.fetch;
   try{globalThis.fetch=async url=>{seen.push(new URL(String(url),"http://local.invalid"));return new Response(JSON.stringify({code:0,data:group({records:[],total:0})}),{headers:{"Content-Type":"application/json"}});};
     for(const [status,currency] of [["CONFIRMED","USDT"],["CREDITED","NEX"],["REVIEW_PENDING","USDT"],["REFUNDED","NEX"],["",""]]){

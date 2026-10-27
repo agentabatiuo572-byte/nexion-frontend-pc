@@ -14,8 +14,8 @@ import type { MCtx } from "./types";
 type Stored = PendingMutationRecord & { actorId:number; payload:BulkContent; batchId?:string; readOnlyRecovery?:boolean; action?:"cancel"|"retry"; mutation?:{expectedVersion:number;reason:string} };
 const commands=createPendingMutationStore<Stored>({storageKey:"nexion-support-bulk-pending",ttlMs:Number.MAX_SAFE_INTEGER-Date.now(),isValidRecord:r=>Number.isSafeInteger(r.actorId)&&Boolean(r.payload?.selectionId)});
 const conversationReasonText:Record<string,string>={
-  // Kept for batches created before closed conversations started getting a new segment (D-6).
-  CONVERSATION_CLOSED:"原会话已结束，本次未发送（旧批次记录）。现在重新圈选会为该客户新开会话发送。",
+  // Kept for batches created before closed conversations were included (D-6); customer threads are now resumed.
+  CONVERSATION_CLOSED:"原会话已结束，本次未发送（旧批次记录）。现在重新圈选会在该客户的会话中继续发送。",
   CONVERSATION_TRANSFERRED:"原会话正在转接，本次不发送。请等待接待归属确定后重新圈选。",
   CONVERSATION_ARCHIVED:"原会话已归档，本次不发送。请查看原会话并核对归档状态，恢复为可发送状态后重新圈选。",
   CONVERSATION_CONVERTED:"原会话已转工单，本次不发送。请查看原会话并继续处理关联工单。",

@@ -590,15 +590,10 @@ function m3ListRenderingFixture() {
   const f = m3VisibleTextFixture();
   const list = f.one(node => ts.isCallExpression(node) && node.expression.getText(f.file) === "listRows.map");
   const lastMessage = f.evaluate(f.one(node => ts.isFunctionDeclaration(node) && node.name?.text === "lastMessage"));
-  const waitMinutes = f.evaluate(f.one(node => ts.isFunctionDeclaration(node) && node.name?.text === "waitMinutes"));
-  const waitText = f.evaluate(f.one(node => ts.isFunctionDeclaration(node) && node.name?.text === "waitText"));
-  const customerIdOf = f.evaluate(f.variable("customerIdOf"));
-  // M-21: the list renders one row per customer; wrap a conversation the way groupByCustomer does.
-  const customerRow = (convo) => ({ customerId: customerIdOf(convo), convo, segmentIds: [convo.id], unread: convo.unread ?? 0, pending: convo.pendingReplyCount ?? 0, waitingSinceTs: convo.waitingSinceTs, activityTs: convo.lastTs });
   const row = { ...transferredHistory(), conversationNo: "CV-PREVIEW", status: "OPEN", customerId: 7, ownerAdminId: 12, assignmentId: "9", lastMessage: "", lastMessageKind: null, unreadCount: 2 };
   const render = (conversation, waitingReply = null) => f.text(f.evaluate(list, {
     listRows: [conversation], selected: null, timeoutPolicy: null, currentProfileDetail: waitingReply === null ? null : { customerId: "7", waitingReply },
-    lastMessage, archiveMode: false, reviewing: false, canWriteM3: false, adminId: 12, archiveIds: new Set(), setArchiveIds() {}, select() {},
+    lastMessage, archiveMode: false, timeoutNow: Date.now(), canWriteM3: false, adminId: 12, archiveIds: new Set(), setArchiveIds() {}, select() {},
     SupportAvatar: "avatar", customerAvatarPath: () => undefined, messageTime: () => "", conversationStateLabel: () => "进行中",
   }));
   return { adapter, row, render };

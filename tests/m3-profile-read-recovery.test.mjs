@@ -294,7 +294,7 @@ test("unknown first candidate is not shown as a confirmed payment and detail fil
   const h=harness(); h.render(); const initial=profile(); const stats=statistics();
   stats.first.state="UNKNOWN"; stats.first.status="UNKNOWN"; stats.invitations.direct={observed:2,confirmed:null,status:"UNKNOWN"}; initial.statistics=group(stats);
   h.requests[0].resolve(initial); succeed(h.requests.slice(1)); await h.settle();
-  const detail=h.html(); assert.doesNotMatch(detail, /649\.123456 USDT|首充来源<\/span><span class="v">购机/); assert.match(detail,/首充状态<\/span><span class="v">待核实/);
+  const detail=h.html(); assert.doesNotMatch(detail, /649\.123456 USDT|首充来源<\/span><span class="v">购机/); assert.match(detail,/首充状态<\/span><span class="v">未知/);
   assert.doesNotMatch(source, /<select\b/);
   const filters=elements(h.render()).find(node=>node.props?.["aria-label"]==="流水币种");
   const picker=elements(filters).find(node=>typeof node.props?.onChange==="function"); picker.props.onChange("NEX"); h.render();

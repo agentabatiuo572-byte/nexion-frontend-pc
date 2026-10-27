@@ -164,3 +164,4 @@
 .sl-podium-chip-metrics{grid-column:2;display:flex;gap:14px;font-size:13px}
 .sl-podium-chip-metrics small{display:block;font-size:11.5px;color:var(--v5-ink-3)}
 .sl-hero-compact .sl-podium-status{min-height:0;padding:14px 0}
+.sl-self-note{grid-column:1/-1;margin:4px 0 0;font-size:13px;color:var(--sl-muted)}.sl-self-note p{margin:0}
