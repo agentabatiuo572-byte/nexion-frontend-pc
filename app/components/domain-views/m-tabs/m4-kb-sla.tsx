@@ -161,7 +161,6 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <p className="dim" style={{ margin: 0, fontSize: 13 }}>维护帮助中心的常见问题与解答。</p>
 
       {!knowledgeAvailable && <div className="callout warn" data-module-health-state="error">知识库当前不可用，暂时无法修改。请稍后刷新重试。</div>}
       {knowledgeAvailable && !canWriteM4 && <div className="callout">当前账号只有查看权限;编辑常见问答与发布状态需要知识库编辑权限。</div>}

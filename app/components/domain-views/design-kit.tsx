@@ -6,6 +6,7 @@
  * 适配:Modal/Drawer 补 ESC+聚焦+点遮罩关闭(a11y 铁律);OperationConfirmModal 负责高敏操作确认 + 理由留痕;
  * 跨域跳转用 next/navigation。导航/外壳仍沿用本项目 shell。
  */
+import { businessZone } from "@/lib/admin/business-time";
 import { Fragment, isValidElement, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
@@ -3317,8 +3318,8 @@ export function BusinessFormBlock({ spec, value, onChange, onSelectionChange, on
           {kpiRange ? select("window", "关键指标时间范围", Object.keys(L5_KPI_WINDOWS), L5_KPI_WINDOWS)
             : input("timeRange", "时间范围", "如 2026-W17 ~ W22 / 2026-05")}
           {kpiRange && value.window === "custom" && <>
-            <label className="field"><span>开始日期（北京时间）</span><input className="fld" type="date" value={value.from ?? ""} max={value.to || l5BusinessToday()} onChange={(event) => set("from", event.target.value)} /></label>
-            <label className="field"><span>结束日期（北京时间）</span><input className="fld" type="date" value={value.to ?? ""} min={value.from || undefined} max={l5BusinessToday()} onChange={(event) => set("to", event.target.value)} /></label>
+            <label className="field"><span>开始日期（{businessZone().label}）</span><input className="fld" type="date" value={value.from ?? ""} max={value.to || l5BusinessToday()} onChange={(event) => set("from", event.target.value)} /></label>
+            <label className="field"><span>结束日期（{businessZone().label}）</span><input className="fld" type="date" value={value.to ?? ""} min={value.from || undefined} max={l5BusinessToday()} onChange={(event) => set("to", event.target.value)} /></label>
           </>}
           {input("fields", aggregateOnly ? "聚合字段" : "字段范围", aggregateOnly ? "如 用户数、订单数、完成率" : "如 user_id, amount, ts(留空=全字段)")}
           {select("piiLevel", aggregateOnly ? "数据范围" : "个人隐私信息范围", spec.piiLevels ?? ["无 PII", "低(脱敏 ID)", "高(含手机 / 地址)"])}

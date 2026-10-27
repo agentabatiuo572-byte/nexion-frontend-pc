@@ -388,7 +388,8 @@ function normalizeRhythm(raw: Record<string, unknown>): BRhythm {
   const h1 = requiredRow(raw.h1, "rhythm.h1");
   return {
     h1: {
-      currentPhase: requiredText(h1.currentPhase, "rhythm.h1.currentPhase"),
+      // B-1: an unconfigured H1 rhythm reports "" with phase name 未配置; show that instead of failing the board.
+      currentPhase: h1.currentPhase === "" ? "" : requiredText(h1.currentPhase, "rhythm.h1.currentPhase"),
       currentPhaseName: requiredText(h1.currentPhaseName, "rhythm.h1.currentPhaseName"),
       currentMonth: requiredNum(h1.currentMonth, "rhythm.h1.currentMonth"),
       totalMonths: requiredNum(h1.totalMonths, "rhythm.h1.totalMonths"),

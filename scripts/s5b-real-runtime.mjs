@@ -121,7 +121,7 @@ try {
       await page.getByRole("button", { name: "重试", exact: true }).first().click();
       await page.getByRole("button", { name: /绑定客户，2 位/ }).waitFor();
     });
-    await page.getByRole("button", { name: /活跃客户，窗口待同步，未配置或数据待核对/ }).waitFor();
+    await page.getByRole("button", { name: /活跃客户，窗口待同步，未配置或数据未同步/ }).waitFor();
     const metricValues = [
       ["绑定客户", snapshot.overview.boundTotal], ["活跃客户", snapshot.overview.activeTotal],
       ["沉睡客户", snapshot.overview.dormantTotal], ["待维护", snapshot.overview.dueTotal],

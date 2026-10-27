@@ -149,3 +149,18 @@
 /* At responsive anchors, fade before the source name holes become exposed. */
 @container sl-board (max-width:1269px){.sl-pedestal::after{mask-image:linear-gradient(#000 50%,transparent 75%)}}
 @container sl-board (max-width:760px){.sl-pedestal{--sl-pedestal-height:50px}}
+/* D-12 / M-49：前三名压缩成顶部横条，排名表上移到首屏；去掉星球插画背景，品牌感留在颜色上 */
+.sl-content:before{display:none}
+.sl-hero.sl-hero-compact{min-height:0;grid-template-columns:minmax(0,1fr) 188px;margin-top:14px}
+.sl-hero.sl-hero-compact.no-self{grid-template-columns:minmax(0,1fr)}
+.sl-podium-strip{list-style:none;margin:10px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
+.sl-podium-chip{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;gap:6px 10px;align-items:center;padding:10px 12px;border:1px solid var(--v5-border);border-radius:12px;background:var(--v5-surface-2)}
+.sl-podium-chip-rank{grid-row:1/3;font-size:24px;font-weight:700;color:var(--sl-lime,var(--admin-domain-m));font-variant-numeric:tabular-nums;min-width:28px;text-align:center}
+.sl-podium-chip-person{display:flex;align-items:center;gap:8px;background:none;border:0;padding:0;color:inherit;text-align:left;cursor:pointer;min-width:0}
+.sl-podium-chip-person .sl-avatar{width:36px;height:36px}
+.sl-podium-chip-person span{display:grid;min-width:0}
+.sl-podium-chip-person strong{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sl-podium-chip-person small{font-size:12px;color:var(--v5-ink-3)}
+.sl-podium-chip-metrics{grid-column:2;display:flex;gap:14px;font-size:13px}
+.sl-podium-chip-metrics small{display:block;font-size:11.5px;color:var(--v5-ink-3)}
+.sl-hero-compact .sl-podium-status{min-height:0;padding:14px 0}

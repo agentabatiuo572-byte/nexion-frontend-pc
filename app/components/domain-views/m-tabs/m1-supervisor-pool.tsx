@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { supportClient, isIndeterminateSupportError, type SupportAgentCandidate, type SupportBindingPoolItem, type SupportPoolReason } from "../../../../lib/admin/m-support-client";
 import { Modal } from "../design-kit";
 import { createPendingMutationStore } from "../../../../lib/admin/pending-mutation-store";
-import { parseBusinessTime } from "../../../../lib/admin/business-time";
+import { businessZone, parseBusinessTime } from "../../../../lib/admin/business-time";
 import { adminShellSessionKey } from "../../../../lib/admin/shell-authorities";
 import { useAdminAuth } from "../../../../lib/store/admin-auth";
 import type { MSupportPermission } from "./m5-service-rules";
@@ -13,13 +13,14 @@ import "./m-support-admin.css";
 import { SupportRandomAssignment, hasPendingRandomAssignment } from "./support-random-assignment";
 import { compactSupportBoardValue } from "./support-leaderboard";
 import { SupportAvatar, advisorAvatarPath } from "./support-avatar";
+import { AssignAdvisorDialog } from "./m3-assign-advisor";
 import { supportGroupClient, type SupportGroup } from "../../../../lib/admin/support-group-client";
 import { setSupportPoolRoute, readSupportPoolCustomer, verifySupportTransfer, type SupportRouteInput, type SupportReadMode } from "../../../../lib/admin/m-support-client";
 
 const PAGE_SIZE = 8;
 const actorStamp = () => { const auth = useAdminAuth.getState(); return adminShellSessionKey(auth.session, auth.authEpoch); };
 const POOL_REASONS: Record<SupportPoolReason, string> = {
-  NO_INVITER: "无邀请人", INVITER_UNBOUND: "邀请人未绑定", DEPTH_LIMIT: "继承层数已达上限", RULE_UNCONFIGURED: "继承规则未配置", AGENT_UNAVAILABLE: "专属客服暂不可接新继承", MIGRATION_REVIEW: "存量关系待核对",
+  NO_INVITER: "无邀请人", INVITER_UNBOUND: "邀请人未绑定", DEPTH_LIMIT: "继承层数已达上限", RULE_UNCONFIGURED: "继承规则未配置", AGENT_UNAVAILABLE: "专属客服暂不可接新继承", MIGRATION_REVIEW: "历史归属需人工确认",
 };
 
 type PoolPage = Awaited<ReturnType<typeof supportClient.bindingPool>>;
@@ -104,7 +105,7 @@ export function PoolRouteModal({ item, groups, onClose, onDone }: { item: Suppor
   if (pending) return <Modal title="查询未确认的组范围调整" icon="users" busy={busy} onClose={onClose} footer={<><button className="btn btn-sec btn-sm" disabled={busy} onClick={onClose}>返回</button><button className="btn btn-pri btn-sm" disabled>确认调整</button></>}><p>存在尚未核对的调整。查询原命令并读取当前授权资料后，才能结束本次恢复。</p><button className="btn btn-sec btn-sm" disabled={busy} onClick={() => void check()}>查询原调整结果</button>{error && <p role="alert">{error}</p>}</Modal>;
   if (requiresFreshPool) return <Modal title="返回客户池重新确认" icon="users" onClose={onClose} footer={<><button className="btn btn-sec btn-sm" onClick={onClose}>返回</button><button className="btn btn-pri btn-sm" disabled>确认调整</button></>}><p role="alert">{error}</p></Modal>;
   return <Modal title="调整待绑定客户组范围" icon="users" busy={busy} onClose={onClose} footer={<><button className="btn btn-sec btn-sm" disabled={busy} onClick={onClose}>返回</button><button className="btn btn-pri btn-sm" disabled={!canSave} onClick={() => void save()}>确认调整</button></>}>
-    <p>客户 {operatorNicknameText(item.displayName || "") || item.customerNo || item.customerId}；当前范围：{item.routeState === "UNKNOWN" ? "资料待核对" : groups.find(group => group.id === item.routeGroupId)?.name || "未分组"}。调整范围后仍须明确分配给专属客服。</p>
+    <p>客户 {operatorNicknameText(item.displayName || "") || item.customerNo || item.customerId}；当前范围：{item.routeState === "UNKNOWN" ? "资料未同步" : groups.find(group => group.id === item.routeGroupId)?.name || "未分组"}。调整范围后仍须明确分配给专属客服。</p>
     <label className="field"><span>目标组</span><select aria-label="目标客服组" value={targetId} disabled={busy || Boolean(pending)} onChange={event => setTargetId(event.target.value)}><option value="">未分组</option>{groups.filter(group => group.status === "ENABLED").map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
     <label className="field"><span>调整理由（8–200 字）</span><textarea value={reason} maxLength={200} disabled={busy || Boolean(pending)} onChange={event => setReason(event.target.value)} /></label>
     {pending ? <button className="btn btn-sec btn-sm" disabled={busy} onClick={() => void check()}>查询原调整结果</button> : !versions && !error ? <p role="status">正在读取当前组资料…</p> : null}
@@ -141,6 +142,8 @@ export function M1SupervisorPool({ permission, initialGroupId }: { permission: M
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [agentsError, setAgentsError] = useState("");
+  // M-17: a single customer gets the same one-click dialog as the conversation page; batch selection is untouched.
+  const [single, setSingle] = useState<SupportBindingPoolItem | null>(null);
   const [reload, setReload] = useState(0);
   const [agentsReload, setAgentsReload] = useState(0);
   const [selected, setSelected] = useState<Map<string, SupportBindingPoolItem>>(() => new Map());
@@ -245,7 +248,7 @@ export function M1SupervisorPool({ permission, initialGroupId }: { permission: M
 
   function openFor(item?: SupportBindingPoolItem) {
     if (pending && item) return;
-    if (item) { setSelected(new Map([[item.customerId, item]])); setStaleIds(new Set()); setTarget(null); setAssignmentReason(""); }
+    if (item) { setSelected(new Map([[item.customerId, item]])); setStaleIds(new Set()); setTarget(null); setAssignmentReason("新客户首次咨询分配"); }
     if (!item && selected.size === 0) return;
     setConfirm(true); setError("");
   }
@@ -318,9 +321,9 @@ export function M1SupervisorPool({ permission, initialGroupId }: { permission: M
       {!loading && pool && !error && <>
         {records.length === 0 ? <div className="m-admin-muted">当前没有匹配的待分配客户。可清除筛选查看全部。</div> : <div className="m-admin-table-wrap"><table className="m-admin-table"><thead><tr><th><input ref={selectAllRef} type="checkbox" checked={wholePageSelected} disabled={Boolean(pending)} onChange={toggleVisible} aria-label="选择或取消当前页客户" /></th><th>客户</th><th>入池原因</th><th>等待起点</th><th>客户留言</th><th>操作</th></tr></thead><tbody>{records.map((item) => <tr key={item.customerId}>
           <td><input type="checkbox" checked={selected.has(item.customerId)} disabled={Boolean(pending)} onChange={() => toggle(item)} aria-label={`选择客户 ${item.customerNo || item.customerId}`} /></td>
-          <td data-label="客户"><strong>{operatorNicknameText(item.displayName || "") || item.customerNo || item.customerId}</strong><div className="m-admin-muted">ID {item.customerId}</div><div className="m-admin-muted">手机号：{item.phoneMasked ?? "—"}</div></td>
-          <td data-label="入池原因">{POOL_REASONS[item.reason]}<div className="m-admin-muted">{item.autoEligible==null?"自动处理资格未知":item.autoEligible?"当前可自动重试":"需主管处理"} · 尝试 {compactSupportBoardValue(item.attempts,"count")} 次</div><div className="m-admin-muted">最近尝试：{item.lastAttemptAt?new Date(parseBusinessTime(item.lastAttemptAt)).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }):"尚无记录"} · {item.autoAttemptState==="ASSIGNED"?"已分配":item.autoAttemptState==="WAITING_CANDIDATE"?"等待合格候选，将按规则重试":item.autoAttemptState==="PAUSED"?"已暂停，需核对分配模式":item.autoAttemptState==="NONE"?"历史记录需明确处理":"状态待核对"}</div><div className="m-admin-muted">最近结果：{item.lastOutcome==="NO_CANDIDATE"?"暂无合格候选":item.lastOutcome==="ASSIGNED"?"已成功分配":item.lastOutcome==="SUPERVISOR_MODE"?"当前由主管处理":item.lastOutcome?"需刷新资料后核对":"尚无结果"}</div></td><td data-label="等待起点">{item.enteredAt ? new Date(parseBusinessTime(item.enteredAt)).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }) : "待核对"}</td><td data-label="客户留言">{compactSupportBoardValue(item.pendingMessageCount,"count") === "-" ? "-" : `${item.pendingMessageCount} 条`}</td>
-          <td data-label="操作">{scope.mode === "ALL" && <button type="button" className="btn btn-sec btn-sm" disabled={Boolean(pending) || item.routeState === "UNKNOWN"} title={item.routeState === "UNKNOWN" ? "当前组范围资料待核对，不能调整" : "调整此客户的待绑定组范围"} onClick={() => setRouteItem(item)}>调整组范围</button>}<button type="button" className="btn btn-sec btn-sm" disabled={Boolean(pending)} onClick={() => openFor(item)}>分配此客户</button></td>
+          <td data-label="客户"><strong>{item.pendingMessageCount ? <a href={`/service/sessions?customerId=${encodeURIComponent(item.customerId)}`} title="打开该客户的会话">{operatorNicknameText(item.displayName || "") || item.customerNo || item.customerId}</a> : operatorNicknameText(item.displayName || "") || item.customerNo || item.customerId}</strong><div className="m-admin-muted">ID {item.customerId}</div><div className="m-admin-muted">手机号：{item.phoneMasked ?? "—"}</div></td>
+          <td data-label="入池原因">{POOL_REASONS[item.reason]}<div className="m-admin-muted">{item.autoEligible==null?"自动处理资格未知":item.autoEligible?"当前可自动重试":"需主管处理"} · 尝试 {compactSupportBoardValue(item.attempts,"count")} 次</div><div className="m-admin-muted">最近尝试：{item.lastAttemptAt?new Date(parseBusinessTime(item.lastAttemptAt)).toLocaleString("zh-CN", { timeZone: businessZone().zoneId }):"尚无记录"} · {item.autoAttemptState==="ASSIGNED"?"已分配":item.autoAttemptState==="WAITING_CANDIDATE"?"等待合格候选，将按规则重试":item.autoAttemptState==="PAUSED"?"已暂停，需核对分配模式":item.autoAttemptState==="NONE"?"历史记录需明确处理":"状态未知"}</div><div className="m-admin-muted">最近结果：{item.lastOutcome==="NO_CANDIDATE"?"暂无合格候选":item.lastOutcome==="ASSIGNED"?"已成功分配":item.lastOutcome==="SUPERVISOR_MODE"?"当前由主管处理":item.lastOutcome?"需刷新资料后核对":"尚无结果"}</div></td><td data-label="等待起点">{item.waitingSince ? <>{new Date(parseBusinessTime(item.waitingSince)).toLocaleString("zh-CN", { timeZone: businessZone().zoneId })}<div className="m-admin-muted">客户留言后等待</div></> : item.enteredAt ? new Date(parseBusinessTime(item.enteredAt)).toLocaleString("zh-CN", { timeZone: businessZone().zoneId }) : "未知"}</td><td data-label="客户留言">{item.pendingMessageCount ? <><strong>{item.pendingMessageCount} 条未回复</strong>{item.lastMessagePreview && <div className="m-admin-muted" title={item.lastMessagePreview}>“{item.lastMessagePreview.length > 30 ? `${item.lastMessagePreview.slice(0, 30)}…` : item.lastMessagePreview}”</div>}</> : "暂无留言"}</td>
+          <td data-label="操作">{scope.mode === "ALL" && <button type="button" className="btn btn-sec btn-sm" disabled={Boolean(pending) || item.routeState === "UNKNOWN"} title={item.routeState === "UNKNOWN" ? "该客户的分组信息不完整，暂不能调整" : "调整此客户的待绑定组范围"} onClick={() => setRouteItem(item)}>调整组范围</button>}<button type="button" className="btn btn-sec btn-sm" disabled={Boolean(pending)} onClick={() => setSingle(item)}>分配此客户</button></td>
         </tr>)}</tbody></table></div>}
         <div className="m-admin-toolbar"><span className="m-admin-muted">已明确选择 {selected.size} 位客户；本页 {visibleSelected}/{records.length} 位 · 共 {pool.total} 位待分配</span><button type="button" className="btn btn-pri btn-sm" disabled={selected.size === 0 || selected.size > 100 || (staleIds.size > 0 && !pending)} onClick={() => openFor()}>{pending ? "继续确认上次分配" : `批量分配已选 ${selected.size} 位`}</button></div>
         <div className="m-admin-toolbar"><button type="button" className="btn btn-sec btn-sm" disabled={page <= 1 || Boolean(pending)} onClick={() => setPage((n) => n - 1)}>上一页</button><span className="m-admin-muted">第 {page} / {Math.max(1, Math.ceil(pool.total / PAGE_SIZE))} 页</span><button type="button" className="btn btn-sec btn-sm" disabled={page >= Math.ceil(pool.total / PAGE_SIZE) || Boolean(pending)} onClick={() => setPage((n) => n + 1)}>下一页</button></div>
@@ -328,9 +331,10 @@ export function M1SupervisorPool({ permission, initialGroupId }: { permission: M
     </div>
     <aside className="m-admin-panel"><h2>分配范围</h2><div className="m-admin-muted">只操作逐项勾选的客户；每位成功分配的客户成为新继承段 0 层起点。</div><div className="m-admin-stats"><div className="m-admin-stat">已选客户<strong>{selected.size}</strong></div><div className="m-admin-stat">本页选择<strong>{visibleSelected}</strong></div><div className="m-admin-stat">单次上限<strong>100</strong></div></div><div className="m-admin-muted">每次最多分配 100 位客户；专属客服绑定总人数不受此限制。专属客服忙碌或离线时不会自动改派。</div><button className="btn btn-pri btn-sm" disabled={!selected.size||selected.size>100||Boolean(pending)||staleIds.size>0} onClick={()=>setRandomCustomers([...selected.values()])}>预览已选客户随机分配</button><p className="m-admin-muted">明确确认后才处理历史池，不影响未选客户或已有下级。</p></aside>
     {randomCustomers&&<SupportRandomAssignment customers={randomCustomers} onClose={()=>setRandomCustomers(null)} onDone={()=>{setSelected(new Map());setReload(n=>n+1);window.dispatchEvent(new Event("support-todo-changed"));}}/>}
+    {single && <AssignAdvisorDialog customerId={single.customerId} customerName={operatorNicknameText(single.displayName || "") || `客户 ${single.customerId}`} onClose={() => setSingle(null)} onAssigned={() => { setSingle(null); setReload((n) => n + 1); }} />}
     {routeItem && scope.mode === "ALL" && <PoolRouteModal item={routeItem} groups={scope.groups} onClose={() => setRouteItem(null)} onDone={() => { setRouteItem(null); setPool(null); setSelected(new Map()); setTarget(null); setReload(n => n + 1); }} />}
     {confirm && <Modal title="确认分配客户" icon="users" wide busy={saving} onClose={() => { if (!saving) setConfirm(false); }} footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => setConfirm(false)}>返回</button><button type="button" className="btn btn-pri btn-sm" disabled={!canSubmit || Boolean(pending) || saving} onClick={() => void assign()}>{saving ? "分配中…" : pending ? "等待原命令结果" : `确认分配 ${selected.size} 位`}</button></>}>
-      <div className="m-admin-muted">本次只分配下列实际选中客户；每位客户开启新的 0 层继承段，其他客户不变。</div>
+      <div className="m-admin-muted">只分配下列选中的客户，其他客户不变。之后这些客户邀请的新用户会跟随同一位专属客服。</div>
       <div className="m-admin-list">{[...selected.values()].map((item) => <div key={item.customerId}>客户编号 {item.customerId}{item.customerNo ? ` · ${item.customerNo}` : ""} · {POOL_REASONS[item.reason]}</div>)}</div>
       {staleIds.size > 0 && <div className="m-admin-error" role="alert">{staleIds.size} 位已选客户版本需要刷新。选择已保留，请逐页重新读取或取消失效选择后再次确认。<button type="button" className="btn btn-sec btn-sm" onClick={() => setReload((n) => n + 1)}>刷新本页预览</button></div>}
       <label className="field"><span>选择接待专属客服</span><select value={target?.adminId ?? ""} disabled={agentsLoading || Boolean(pending) || saving} onChange={(event) => setTarget(candidates.find((agent) => agent.adminId === Number(event.target.value)) ?? null)}><option value="">请选择专属客服</option>{target && !candidates.some((agent) => agent.adminId === target.adminId) && <option value={target.adminId}>{target.name} · 已选专属客服</option>}{candidates.map((agent) => <option key={agent.adminId} value={agent.adminId}>{agent.name}{agent.busy ? " · 忙碌" : ""}</option>)}</select></label>

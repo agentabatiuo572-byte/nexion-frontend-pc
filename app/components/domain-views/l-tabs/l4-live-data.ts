@@ -278,7 +278,7 @@ export function readL4Operations(value: unknown): L4OperationsData | null {
   const businessTimeZone = text(quality.businessTimeZone);
   if (quality.serverCanonical !== true || typeof quality.sameActorRates !== "boolean"
       || quality.incompleteRatesAreNull !== true || actorCoveragePct === null || eventCount === null
-      || duplicateEventsIgnored === null || businessTimeZone !== "UTC+08:00"
+      || duplicateEventsIgnored === null || !/^UTC[+-]\d{2}:\d{2}$/.test(businessTimeZone)
       || root.available !== (eventCount > 0)) return null;
   const rateValues = [
     taskSummary.acceptanceRate,

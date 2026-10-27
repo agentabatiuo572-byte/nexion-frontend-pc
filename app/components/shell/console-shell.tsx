@@ -23,6 +23,7 @@ import { TopBar } from "./topbar";
 import { PageTransition } from "./page-transition";
 import { LoginGate } from "./login-gate";
 import { useServicePendingCount } from "./use-service-badges";
+import { fetchBusinessCalendar } from "@/lib/admin/business-calendar-client";
 
 const SESSION_REFRESH_MS = 60_000;
 type AdminBootstrapState = "checking" | "authenticated" | "anonymous" | "error";
@@ -204,6 +205,15 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
       window.removeEventListener("popstate", revalidate);
     };
   }, [mounted, restoreAdminSession]);
+
+  // R-1: every time label follows the business time zone set in A3; refreshed on focus so a zone that just took effect shows up.
+  useEffect(() => {
+    if (!mounted || bootstrapState !== "authenticated" || !isAuthenticated) return;
+    const load = () => { void fetchBusinessCalendar().catch(() => undefined); };
+    load();
+    window.addEventListener("focus", load);
+    return () => window.removeEventListener("focus", load);
+  }, [mounted, bootstrapState, isAuthenticated]);
 
   // A6/A7 changes must reach an already-open console without requiring a full reload.
   // Focus refresh handles operators returning to the tab; the interval closes the long-open-tab gap.

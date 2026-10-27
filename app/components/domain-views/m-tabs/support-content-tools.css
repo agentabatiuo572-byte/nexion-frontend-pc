@@ -37,3 +37,7 @@
   .support-content-tools .support-content-pager { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .support-content-tools .support-content-pager > span { grid-column: 1 / -1; grid-row: 1; }
 }
+.support-phrase-add { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 8px; }
+.support-phrase-add textarea { flex: 1; resize: vertical; }
+.support-phrase-row { display: flex; gap: 6px; align-items: center; }
+.support-phrase-row .support-content-result { flex: 1; min-width: 0; }

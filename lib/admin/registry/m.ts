@@ -13,7 +13,7 @@ export const DOMAIN_M: ModuleEntry[] = [
   },
   {
     path: "/service/tickets",
-    summary: "用户提的问题在这排队处理。点一行打开工单详情:回复 / 改状态 / 转交坐席 / 关单;要实时沟通就升级为即时会话。真正放钱回 D2、账户处置回 C5、设备换货回 E5,本页只做客服答复和工单流转。",
+    summary: "处理客户提交的工单：回复客户、记内部备注、调整状态与优先级；负责人跟随客户的专属客服。资金、账户和设备的处置请到对应模块办理。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
@@ -33,7 +33,7 @@ export const DOMAIN_M: ModuleEntry[] = [
   },
   {
     path: "/service/scripts",
-    summary: "配置服务规则、坐席资格以及客服话术；规则修改须确认并填写理由。",
+    summary: "配置服务规则、待分配处理方式和客服话术。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];

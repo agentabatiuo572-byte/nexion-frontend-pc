@@ -29,7 +29,8 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useConversationStream, type ConversationStreamEvent } from "@/lib/admin/use-conversation-stream";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { M1AnalyticsWorkbench } from "./m-tabs/m1-analytics-workbench";
-
+import { useSupportInboxAlerts } from "@/lib/admin/support-alerts";
+import { supportUnboundPolicyClient } from "@/lib/admin/m-support-client";
 import { M3DedicatedChat } from "./m-tabs/m3-dedicated-chat";
 import { M4KbSla } from "./m-tabs/m4-kb-sla";
 import { M5Scripts } from "./m-tabs/m5-scripts";
@@ -124,14 +125,6 @@ const FOLD: Record<string, string> = {
   M5: "M5",
 };
 
-const RO_LIVE: Record<string, [ro: string, live: string]> = {
-  M1: ["按当前授权范围查看客户与分组数据", "统计数据与服务待办"],
-  M2: ["回复 / 关单自动留痕 · 资金处置请到提现管理", "处理中工单实时计数"],
-  M3: ["本人专属会话 · 主管只读审阅", "会话按当前归属显示"],
-  M4: ["修改常见问答需填写理由", "帮助内容与常见问答"],
-  M5: ["服务规则需理由与版本校验", "服务规则 + 话术模板"],
-};
-
 function templateStatus(value: string | undefined): AdvisorScript["status"] {
   return value === "published" ? "published" : value === "archived" ? "archived" : "draft";
 }
@@ -146,6 +139,15 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const actionConfirmRunRef = useRef<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
   const [mData, setMData] = useState<MContentData | null>(null);
+  const [alertMinutes, setAlertMinutes] = useState(5);
+  const supervisesSupport = Boolean(session?.supportReadModes?.some((mode) => mode === "MANAGED" || mode === "ALL")) || session?.role === "superadmin" || session?.role === "super";
+  useEffect(() => {
+    if (!supervisesSupport) return;
+    const controller = new AbortController();
+    supportUnboundPolicyClient.read(controller.signal).then((policy) => setAlertMinutes(policy.alertMinutes)).catch(() => {});
+    return () => controller.abort();
+  }, [supervisesSupport, authEpoch]);
+  useSupportInboxAlerts(mData?.conversationsAvailable ? mData.conversations : null, session?.adminId ?? 0, supervisesSupport, alertMinutes);
   const [mLoading, setMLoading] = useState(true);
   const [mError, setMError] = useState<string | null>(null);
   const [uiParams, setUiParams] = useState<Record<string, string>>({});
@@ -206,9 +208,19 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!mLoadCoordinator.current.isConversationSnapshotCurrent(generation) || mDataAuthEpoch.current !== snapshotAuthEpoch) {
       throw new Error("M3_CONVERSATION_SNAPSHOT_SUPERSEDED");
     }
-    setMData((previous) => previous
-      ? { ...previous, conversations, conversationsAvailable: true }
-      : previous);
+    // List rows carry no messages. Keep loaded messages on screen and refresh the detail
+    // in the background, so a refresh never blanks the open conversation (M-9).
+    setMData((previous) => {
+      if (!previous) return previous;
+      const loaded = new Map(previous.conversations.filter((row) => row.detailReady).map((row) => [row.id, row]));
+      const merged = conversations.map((row) => {
+        const old = loaded.get(row.id);
+        if (!old || old.ownerAdminId !== row.ownerAdminId || old.assignmentId !== row.assignmentId) return row;
+        const unchanged = old.version === row.version && old.lastPublicMessageId === row.lastPublicMessageId && old.lastTs === row.lastTs;
+        return { ...row, messages: old.messages, historyTruncated: old.historyTruncated, detailReady: true, detailStale: unchanged ? old.detailStale : true };
+      });
+      return { ...previous, conversations: merged, conversationsAvailable: true };
+    });
   }, [authEpoch]);
   const loadConversationDetail = useCallback(async (no: string, signal?: AbortSignal) => {
     const detailEpoch = authEpoch;
@@ -256,6 +268,17 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   // 当成「坐席新回复」二次回写后端，形成回环）。收到事件后 mergedParams 自动重算 → M3 / Dock 重渲。
   const handleStreamEvent = useCallback(async (event: ConversationStreamEvent, connectionSignal: AbortSignal) => {
     if (connectionSignal.aborted) return;
+    // M-31: a message or receipt on a conversation we already hold re-reads only that conversation.
+    // Ownership changes, new conversations and anything unexpected still reconcile the whole inbox.
+    if ((event.eventType === "MESSAGE" || event.eventType === "RECEIPT")
+      && mDataRef.current?.conversations.some((conversation) => conversation.id === event.conversationNo)) {
+      try {
+        await loadConversationDetail(event.conversationNo, connectionSignal);
+        return;
+      } catch {
+        if (connectionSignal.aborted) return;
+      }
+    }
     if (
       event.eventType === "RECEIPT"
       || event.eventType === "MESSAGE"
@@ -315,7 +338,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       conversations[idx] = nextConvo;
       return { ...prev, conversations };
     });
-  }, [reconcileLiveConversationSnapshot]);
+  }, [reconcileLiveConversationSnapshot, loadConversationDetail]);
   // 鉴权：走同源 cookie（nexion_admin_token 由 Next route 转 Authorization 头）。
   // 仅走同源 httpOnly cookie 代理；JWT 永不进入 SSE URL。
   const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
@@ -537,7 +560,12 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     setParam: runMWrite,
     refreshConversations: async () => {
       const controller = new AbortController();
-      await reconcileConversationSnapshot(controller.signal);
+      try { await reconcileConversationSnapshot(controller.signal); }
+      catch (cause) {
+        // A newer snapshot is already loading and will land instead; that is not a failure (M-10).
+        if (cause instanceof Error && cause.message === "M3_CONVERSATION_SNAPSHOT_SUPERSEDED") return;
+        throw cause;
+      }
     },
     refreshContent: reloadMContent,
     loadConversationDetail,
@@ -559,7 +587,6 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       ? "supervisor" : "agent";
   const effectiveM5Pane = permission === "agent" ? "templates" : m5Pane;
 
-  const [ro, liveLabel] = RO_LIVE[tab];
   // 实时计数:M1/M2/M3 的「实时计数/汇总」从后端会话 / 工单快照派生;
   // M4/M5 是描述标签(未声称计数)保留原文。
   const liveCount = useMemo(() => {
@@ -575,13 +602,8 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     if (tab === "M2") return `处理中工单 ${openTickets}`;
     return null;
   }, [tab, mergedParams]);
-  const live = liveCount ?? liveLabel;
-  const right = (
-    <>
-      <span className="f-ro"><span className="d" />{ro}</span>
-      <span className="f-live"><span className="dot" />{live}</span>
-    </>
-  );
+  // M-44: only a live figure earns header space; the fixed descriptive tags repeated the page summary.
+  const right = liveCount ? <span className="f-live"><span className="dot" />{liveCount}</span> : null;
 
   return (
     <div className="dkpage mdom">
@@ -1301,7 +1323,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
 
   const loadConversationDetail = ctx.loadConversationDetail;
   useEffect(() => {
-    if (hidden || !open || !conv || conv.detailReady || !conversationsAvailable || detailError) return;
+    if (hidden || !open || !conv || conv.detailReady && !conv.detailStale || !conversationsAvailable || detailError) return;
     const controller = new AbortController();
     void loadConversationDetail(conv.id, controller.signal).catch((cause: unknown) => {
       if (!controller.signal.aborted) {
@@ -1310,7 +1332,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       }
     });
     return () => controller.abort();
-  }, [hidden, open, conv?.id, conv?.version, conv?.detailReady, conversationsAvailable, authEpoch, detailRetry, detailError, loadConversationDetail, onScopeInvalidated]);
+  }, [hidden, open, conv?.id, conv?.version, conv?.detailReady, conv?.detailStale, conversationsAvailable, authEpoch, detailRetry, detailError, loadConversationDetail, onScopeInvalidated]);
   useEffect(() => { setDetailError(""); }, [conv?.id, authEpoch]);
 
   // M3 在台 / 无活跃会话 / 已被关闭(且仍是同一会话)→ 不显

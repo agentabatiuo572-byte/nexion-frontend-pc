@@ -25,6 +25,7 @@ import { fetchSupportTicketDetail, type MTicketAssigneeCandidate } from "@/lib/a
 import { supportClient, SupportClientError } from "@/lib/admin/m-support-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
+import { compareTicketSla, ticketSla, ticketSlaText } from "@/lib/admin/support-sla";
 
 const TICKET_KEY = "I.support.tickets";
 const SLA_KEY = "I.support.sla";
@@ -278,6 +279,8 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
   const resolvedCount = tickets.filter((t) => !t.archived && (t.status === "resolved" || t.status === "closed")).length;
   const archivedCount = tickets.filter((t) => t.archived).length;
 
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 60000); return () => window.clearInterval(timer); }, []);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return tickets
@@ -296,8 +299,9 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
         return [t.id, t.subject, supportTicketSubjectText(t.subject), t.owner, catCN(t.category), t.userId ? String(t.userId) : ""]
           .some((text) => text.toLowerCase().includes(q));
       })
-      .sort((a, b) => b.lastReplyAt - a.lastReplyAt);
-  }, [tickets, scope, statusFilter, categoryFilter, query]);
+      // M-33: open work is ordered by deadline risk (overdue first); finished queues stay newest first.
+      .sort(scope === "active" ? (a, b) => compareTicketSla(ticketSla(a, now), ticketSla(b, now)) || b.lastReplyAt - a.lastReplyAt : (a, b) => b.lastReplyAt - a.lastReplyAt);
+  }, [tickets, scope, statusFilter, categoryFilter, query, now]);
 
   useEffect(() => {
     if (drawerOpen && selectedId && !filtered.some((ticket) => ticket.id === selectedId)) {
@@ -636,9 +640,6 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
 
   return (
     <div className="tk-wrap m2-stage">
-      <p className="dim" style={{ margin: "0 0 12px", fontSize: 13 }}>
-        用户提的问题在这排队 · 点一行打开<b style={{ color: "var(--ink-2)", fontWeight: 500 }}>工单详情与处理</b>:回复 / 改状态 / 转交 / 关单 / 升级为即时会话。
-      </p>
       {!ticketsAvailable && (
         <div className="itint" role="alert" style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 13 }}>工单数据暂时无法同步,当前不展示空队列,也不会开放写操作。</div>
@@ -655,12 +656,6 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
         <div className="itint" role="alert" style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 13 }}>坐席候选数据暂时无法同步,当前不会开放新建或转交操作。</div>
           <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>请稍后刷新；持续失败时请联系平台管理员检查客服坐席数据。</div>
-        </div>
-      )}
-      {ticketsAvailable && canWriteM2 && ticketAssigneeCandidatesAvailable && ownerOptions.length === 0 && (
-        <div className="itint" role="alert" style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 13 }}>当前没有可接单的客服坐席。</div>
-          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>请在客服坐席配置中启用可接单人员。</div>
         </div>
       )}
       <div className="tk-toolbar">
@@ -705,12 +700,13 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
         <table className="tk-table">
           <thead>
             <tr>
-              <th style={{ width: "38%" }}>工单</th>
+              <th style={{ width: "32%" }}>工单</th>
+              <th style={{ width: 130 }}>客户</th>
               <th style={{ width: 110 }}>分类</th>
               <th style={{ width: 86 }}>优先级</th>
               <th style={{ width: 120 }}>状态</th>
               <th style={{ width: 132 }}>负责人</th>
-              <th style={{ width: 150 }}>最近回复</th>
+              <th style={{ width: 160 }}>处理时限</th>
               <th style={{ textAlign: "right" }}>操作</th>
             </tr>
           </thead>
@@ -724,6 +720,10 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
                   <td>
                     <div className="tk-subj">{supportTicketSubjectText(t.subject)}</div>
                     <div className="tk-id">{t.id}</div>
+                  </td>
+                  <td>
+                    <div style={{ fontSize: 12.5 }}>{t.customerName || (t.userId ? `客户 ${t.userId}` : "-")}</div>
+                    {t.userId ? <div className="dim2 mono" style={{ fontSize: 11 }}>ID {t.userId}</div> : null}
                   </td>
                   <td>
                     <span className="chip" style={{ border: "none" }}>{catCN(t.category)}</span>
@@ -741,33 +741,21 @@ export function M2Tickets({ ctx, advisorQualified }: { ctx: MCtx; advisorQualifi
                     </span>
                   </td>
                   <td>
-                    <div className="mono" style={{ fontSize: 12, color: "var(--ink-2)" }}>{relWhen(t.lastReplyAt)}</div>
-                    {last && <div className="dim2" style={{ fontSize: 11 }}>{WHO_CN[last.author]}回复</div>}
+                    {(() => { const sla = ticketSla(t, now); return <div className={`tk-sla ${sla.state}`}>{ticketSlaText(sla, now)}</div>; })()}
+                    <div className="dim2" style={{ fontSize: 11 }}>{relWhen(t.lastReplyAt)}{last ? ` · ${WHO_CN[last.author]}回复` : ""}</div>
                   </td>
                   <td onClick={(e) => e.stopPropagation()}>
                     <div className="tk-acts">
                       {canWriteM2 && ticketsAvailable && !t.archived && !done && (
-                        <button type="button" className="tk-iact ok" title="标记已解决" onClick={() => setTicketStatusDirect(t.id, "resolved")}>
-                          <Icon name="check" size={16} />
-                        </button>
+                        <button type="button" className="btn btn-sec btn-sm" onClick={() => setTicketStatusDirect(t.id, "resolved")}>标记已解决</button>
                       )}
                       {canWriteM2 && ticketsAvailable && t.archived ? (
-                        <button type="button" className="tk-iact" title="恢复到已解决队列" onClick={() => setArchivedDirect(t.id, false)}>
-                          <Icon name="arrow" size={16} />
-                        </button>
+                        <button type="button" className="btn btn-sec btn-sm" title="恢复到已解决队列" onClick={() => setArchivedDirect(t.id, false)}>恢复</button>
                       ) : canWriteM2 && ticketsAvailable && done ? (
                         <>
-                          <button type="button" className="tk-iact" title="归档" onClick={() => setArchivedDirect(t.id, true)}>
-                            <Icon name="box" size={16} />
-                          </button>
-                          <button type="button" className="tk-iact" title="重新打开" onClick={() => setTicketStatusDirect(t.id, "open")}>
-                            <Icon name="arrow" size={16} />
-                          </button>
+                          <button type="button" className="btn btn-sec btn-sm" onClick={() => setArchivedDirect(t.id, true)}>归档</button>
+                          <button type="button" className="btn btn-sec btn-sm" onClick={() => setTicketStatusDirect(t.id, "open")}>重新打开</button>
                         </>
-                      ) : canWriteM2 && ticketsAvailable ? (
-                        <button type="button" className="tk-iact" title="关闭" onClick={() => setTicketStatusDirect(t.id, "closed")}>
-                          <Icon name="x" size={16} />
-                        </button>
                       ) : null}
                       <button type="button" className="btn btn-sec btn-sm" title="打开处理" onClick={() => openTicket(t.id)}>
                         <Icon name="eye" size={16} />
@@ -914,7 +902,11 @@ function TicketDrawer({
   const isTerminal = ticket.status === "resolved" || ticket.status === "closed";
   const conversation = ticket.contentRestricted ? null : linkedConversation(ticket);
   const categoryCrossLink = findCategoryCrossLink(ticket.category);
-  const statusItems: MenuItem[] = STATUS_TRANSITIONS[ticket.status].map((status) => ({ label: STATUS_ACTION_CN[status], onClick: () => onStatus(status) }));
+  // M-34: closing is a status change with a confirmation, not a red button next to the drawer's ✕.
+  const [confirmClose, setConfirmClose] = useState(false);
+  const [composeMode, setComposeMode] = useState<"reply" | "note">(canReply ? "reply" : "note");
+  const statusItems: MenuItem[] = STATUS_TRANSITIONS[ticket.status].map((status) => ({ label: STATUS_ACTION_CN[status], onClick: () => status === "closed" ? setConfirmClose(true) : onStatus(status) }));
+  const now = Date.now(), sla = ticketSla(ticket, now);
   const priorityItems: MenuItem[] = PRIORITY_LIST.map((p) => ({ label: PRIO_CN[p], cur: ticket.priority === p, onClick: () => onPriority(p) }));
   const ownerItems: MenuItem[] = ownerOptions.map((candidate) => ({
     label: candidate.label,
@@ -936,6 +928,14 @@ function TicketDrawer({
             </button>
           </div>
           <h2 style={{ fontSize: 18, margin: "11px 0 0", fontWeight: 500 }}>{supportTicketSubjectText(ticket.subject)}</h2>
+          {ticket.userId ? <div data-proof="support-ticket-customer" style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 9, flexWrap: "wrap", fontSize: 13 }}>
+            <MAvatar name={ticket.customerName || `客户 ${ticket.userId}`} size="sm" />
+            <strong>{ticket.customerName || `客户 ${ticket.userId}`}</strong>
+            <span className="dim2 mono" style={{ fontSize: 12 }}>ID {ticket.userId}</span>
+            <span className="dim2" style={{ fontSize: 12 }}>专属客服 {ownerLabel(ticket.owner)}</span>
+            <Link className="btn btn-sec btn-sm" href={`/service/overview?customerId=${encodeURIComponent(String(ticket.userId))}`}>客户档案</Link>
+            <Link className="btn btn-sec btn-sm" href={`/service/sessions?customerId=${encodeURIComponent(String(ticket.userId))}`}>打开会话</Link>
+          </div> : null}
           {ticket.contentRestricted && <div className="callout warn" data-proof="support-ticket-content-restricted" style={{ marginTop: 10 }}>私聊内容仅当前专属客服和客服主管可阅；工单状态、负责人及内部备注仍可办理。</div>}
           <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 9, flexWrap: "wrap" }}>
             <span className="chip" style={{ border: "none" }}>{catCN(ticket.category)}</span>
@@ -978,10 +978,10 @@ function TicketDrawer({
                 升级会话
               </button>
             )}
-            {canWrite && !ticket.archived && (
-              <button type="button" data-proof="support-ticket-close" className={`btn btn-sm ${isTerminal ? "btn-sec" : "btn-danger"}`} disabled={submitting} onClick={onCloseReopen}>
-                <Icon name={isTerminal ? "arrow" : "x"} size={16} />
-                {isTerminal ? "重新打开" : "关闭"}
+            {canWrite && !ticket.archived && isTerminal && (
+              <button type="button" data-proof="support-ticket-close" className="btn btn-sm btn-sec" disabled={submitting} onClick={onCloseReopen}>
+                <Icon name="arrow" size={16} />
+                重新打开
               </button>
             )}
             {canWrite && !ticket.archived && isTerminal && (
@@ -1002,12 +1002,10 @@ function TicketDrawer({
             </div>
           )}
           {ticket.slaTarget && (
-            <div className="dim2" data-proof="support-ticket-sla" style={{ marginTop: 10, fontSize: 12 }}>
-              处理时限版本{ticket.slaTarget.ruleVersion}：首响目标 {new Date(ticket.slaTarget.firstResponseDeadlineAt).toLocaleString()}
-              {ticket.slaTarget.firstResponseOverdue ? " · 已逾期" : " · 未逾期"}
-              {" · "}解决目标 {new Date(ticket.slaTarget.resolutionDeadlineAt).toLocaleString()}
-              {ticket.slaTarget.resolutionOverdue ? " · 已逾期" : " · 未逾期"}
-              {" · "}队列 {ticket.slaTarget.queue} · 升级 {ticket.slaTarget.escalation}
+            <div data-proof="support-ticket-sla" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
+              <span className={`tk-sla-tag ${ticket.slaTarget.firstResponseAt ? "done" : now > ticket.slaTarget.firstResponseDeadlineAt ? "overdue" : sla.state}`}>首响 {ticket.slaTarget.firstResponseAt ? "已完成" : ticketSlaText({ kind: "first", due: ticket.slaTarget.firstResponseDeadlineAt, state: now > ticket.slaTarget.firstResponseDeadlineAt ? "overdue" : "ok" }, now).replace(/^首响/, "")}</span>
+              <span className={`tk-sla-tag ${sla.state === "done" ? "done" : now > ticket.slaTarget.resolutionDeadlineAt ? "overdue" : "kind" in sla && sla.kind === "resolve" ? sla.state : "ok"}`}>解决 {sla.state === "done" ? "已完成" : sla.state === "unknown" ? "未配置" : ticketSlaText({ kind: "resolve", due: ticket.slaTarget.resolutionDeadlineAt, state: now > ticket.slaTarget.resolutionDeadlineAt ? "overdue" : "ok" }, now).replace(/^解决/, "")}</span>
+              <span className="dim2" style={{ fontSize: 11.5 }}>时限规则 v{ticket.slaTarget.ruleVersion}</span>
             </div>
           )}
         </div>
@@ -1016,8 +1014,16 @@ function TicketDrawer({
           <MessageThread messages={thread} relWhen={relWhen} />
         </div>
 
+        {ticket.contentRestricted && <div className="callout warn">当前无法查看这段私聊；可继续处理内部备注、状态和指派。</div>}
+        {/* M-35: one composer; the switch makes it explicit whether text goes to the customer or stays internal. */}
         {canWrite && !ticket.archived && (
-          <div style={{ padding: "12px 18px", borderTop: "1px solid var(--border)", background: "var(--panel-2)" }}>
+          <div className="tk-compose-switch" role="group" aria-label="输入用途">
+            <button type="button" className={`btn btn-sm ${composeMode === "reply" ? "btn-pri" : "btn-sec"}`} aria-pressed={composeMode === "reply"} disabled={ticket.contentRestricted || ticket.status === "closed"} onClick={() => setComposeMode("reply")}>回复客户</button>
+            <button type="button" className={`btn btn-sm ${composeMode === "note" ? "btn-pri" : "btn-sec"}`} aria-pressed={composeMode === "note"} onClick={() => setComposeMode("note")}>内部备注</button>
+          </div>
+        )}
+        {composeMode === "note" && canWrite && !ticket.archived && (
+          <div className="tk-note-composer">
             <div className="dim2" style={{ fontSize: 11.5, marginBottom: 7 }}>
               内部备注仅客服可见，不会作为回复发送给用户
             </div>
@@ -1046,8 +1052,7 @@ function TicketDrawer({
           </div>
         )}
 
-        {ticket.contentRestricted && <div className="callout warn">当前无法查看这段私聊；可继续处理内部备注、状态和指派。</div>}
-        {canWrite && !ticket.contentRestricted && ticket.status !== "closed" && !ticket.archived && (
+        {composeMode === "reply" && canWrite && !ticket.contentRestricted && ticket.status !== "closed" && !ticket.archived && (
           <div className="ChatComposer">
             {!canReply && <div className="callout" role="status">{replyReadonlyReason} <button type="button" className="btn btn-sec btn-sm" disabled={submitting} onClick={onRetryReply}>重试读取详情</button></div>}
             <div style={{ display: "flex", gap: 7, marginBottom: 9, flexWrap: "wrap", alignItems: "center" }}>
@@ -1087,6 +1092,9 @@ function TicketDrawer({
           </div>
         )}
       </div>
+      {confirmClose && <Modal title={`关闭工单 ${ticket.id}`} icon="x" onClose={() => setConfirmClose(false)} footer={<><button type="button" className="btn btn-sec btn-sm" onClick={() => setConfirmClose(false)}>取消</button><button type="button" className="btn btn-danger btn-sm" disabled={submitting} onClick={() => { setConfirmClose(false); onStatus("closed"); }}>确认关闭</button></>}>
+        <p>关闭后客户不能再在这张工单里回复，需要时可以重新打开。确认关闭？</p>
+      </Modal>}
     </>
   );
 }

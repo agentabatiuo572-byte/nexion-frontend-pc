@@ -15,11 +15,19 @@
 .sa-group-label{flex-shrink:0;margin-right:8px;font-size:12.5px;color:var(--v5-ink-3)}
 .sa-workbench .sa-group-tabs button{flex-shrink:0;min-height:40px;max-width:220px;padding:8px 16px;border-color:transparent;background:transparent;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sa-workbench .sa-group-tabs button[aria-pressed=true]{background:var(--v5-surface-2);color:var(--admin-domain-m)}
-.sa-datasets{gap:24px;padding:4px 4px 0;border-bottom:1px solid var(--v5-border);margin-bottom:20px;scroll-padding-inline:4px}
-.sa-workbench .sa-datasets button{flex-shrink:0;min-height:44px;padding:8px 6px 12px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--v5-ink-3);white-space:nowrap}
-.sa-workbench .sa-datasets button[aria-pressed=true]{background:transparent;border-bottom-color:var(--admin-domain-m);color:var(--admin-domain-m);font-weight:600}
+/* M-41: data views are a secondary segmented switch; the only tab row is .sa-main-tabs. */
+.sa-datasets{gap:4px;width:max-content;padding:4px;border:1px solid var(--v5-border);border-radius:10px;background:var(--v5-surface);margin-bottom:16px;scroll-padding-inline:4px}
+.sa-workbench .sa-datasets button{flex-shrink:0;min-height:36px;padding:6px 14px;border:0;border-radius:7px;background:transparent;color:var(--v5-ink-3);white-space:nowrap}
+.sa-workbench .sa-datasets button[aria-pressed=true]{background:var(--v5-surface-2);color:var(--v5-ink);font-weight:600}
+.sa-tabbar{display:flex;align-items:flex-end;justify-content:space-between;gap:8px 18px;flex-wrap:wrap;border-bottom:1px solid var(--v5-border);margin:4px 0 20px}
+.sa-tabbar .sa-actions{padding-bottom:8px}
+.sa-main-tabs{display:flex;gap:24px;min-width:0;max-width:100%;overflow-x:auto}
+.sa-workbench .sa-main-tabs button{flex-shrink:0;display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:8px 6px 12px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--v5-ink-3);font-size:15px;white-space:nowrap}
+.sa-workbench .sa-main-tabs button[aria-current=page]{border-bottom-color:var(--admin-domain-m);color:var(--admin-domain-m);font-weight:600}
+.sa-workbench .sa-main-tabs button:focus-visible{outline-offset:-4px}
+.sa-tab-count{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--v5-danger);color:var(--v5-bg);font-size:11px;font-weight:600}
 .sa-workbench .sa-datasets button:focus-visible{outline-offset:-4px}
-@media (hover: hover) and (pointer: fine) { .sa-workbench :is(.sa-group-tabs,.sa-datasets) button:hover{color:var(--v5-ink)} }
+@media (hover: hover) and (pointer: fine) { .sa-workbench :is(.sa-group-tabs,.sa-datasets,.sa-main-tabs) button:hover{color:var(--v5-ink)} }
 .sa-controls{display:flex;align-items:end;gap:10px;flex-wrap:wrap;margin-bottom:12px}
 .sa-active-conditions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;margin:0 0 12px;font-size:12.5px;color:var(--v5-ink-3)}.sa-active-conditions button{display:inline-flex;align-items:center;gap:10px;max-width:100%;border-radius:18px;font-size:12.5px}.sa-active-conditions button>span:first-child{min-width:0;max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sa-active-conditions button>span:last-child{flex-shrink:0}
 .sa-control-label{display:block;font-size:12.5px;color:var(--v5-ink-3);margin-bottom:4px}
@@ -43,3 +51,13 @@
 .sa-personal-additions{padding:18px 0;border-top:1px solid var(--v5-border);margin-top:18px}.sa-inline-metrics{display:flex;align-items:center;gap:24px;flex-wrap:wrap;padding:10px 0}.sa-inline-metrics>div>span{display:block;font-size:12.5px;color:var(--v5-ink-3)}.sa-inline-metrics .sa-number-wrap{font-size:24px;line-height:1.4}
 @media(max-width:1100px){.sa-group-comparison>div{grid-template-columns:repeat(2,minmax(0,1fr))}.sa-header{align-items:start;flex-direction:column}.sa-metrics{gap:12px}.sa-metrics>div{min-width:125px}}
 @media(max-width:650px){.sa-workbench button,.sa-workbench a,.sa-workbench input,.sa-workbench .sa-group-tabs button{min-height:44px}.sa-group-tabs{padding-inline:10px}.sa-datasets{gap:16px}.sa-select{flex:1;max-width:100%;min-width:145px}.sa-search{max-width:100%;flex-basis:100%}.sa-pager{align-items:start;flex-direction:column}.sa-group-comparison>div{grid-template-columns:1fr}.sa-workbench .sa-name{max-width:160px}}
+
+/* M-40 实时服务条 */
+.m1-live { display: grid; grid-template-columns: auto repeat(5, minmax(0, 1fr)); align-items: stretch; gap: 8px; margin-bottom: 14px; padding: 10px 12px; border: 1px solid var(--v5-border); border-radius: 12px; background: var(--v5-surface-2); }
+.m1-live h3 { align-self: center; margin: 0 6px 0 0; font-size: 13px; font-weight: 600; color: var(--v5-ink-2); }
+.m1-live-item { display: grid; gap: 2px; padding: 6px 10px; border-radius: 8px; color: inherit; text-decoration: none; }
+a.m1-live-item:hover { background: var(--v5-surface-3); }
+.m1-live-item span { font-size: 12px; color: var(--v5-ink-3); }
+.m1-live-item strong { font-size: 18px; font-variant-numeric: tabular-nums; }
+.m1-live-item.alert strong { color: var(--v5-danger); }
+@media (max-width: 900px) { .m1-live { grid-template-columns: repeat(2, minmax(0, 1fr)); } .m1-live h3 { grid-column: 1 / -1; } }

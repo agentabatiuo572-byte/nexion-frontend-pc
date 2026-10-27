@@ -17,6 +17,7 @@ import { CommandPalette } from "@/app/components/command-palette";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { displayAdminError, guardedFetch } from "@/lib/admin/error-messages";
 import { useServicePendingCount } from "./use-service-badges";
+import { useSupportUnreadTotal } from "@/lib/admin/support-alerts";
 import { B_DASHBOARD_READ_AUTHORITIES, M_CONTENT_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
 import { requestAdminLogout } from "@/lib/admin/logout-request";
 import { currentAdminSession } from "@/lib/admin/auth-client";
@@ -214,32 +215,30 @@ function SearchBox({ domains }: { domains: NavDomain[] }) {
   );
 }
 
-// 客服中心快捷入口 — 显示待办客户数，一键返回会话台。
-// 计数来自 M1 TODO 分页的服务端 total，按客户去重；未加载时为 0。
+// 客服中心快捷入口（M-24）：未读消息数进会话台，待办客户数进工作台，两个数字分开显示。
+// 未读来自客服页已加载的会话（不在客服页时不显示）；待办来自 M1 TODO 分页的服务端 total，按客户去重。
 function SupportInboxPill({ pending }: { pending: number }) {
+  const unread = useSupportUnreadTotal();
+  const badge = { minWidth: 16, height: 16, color: "#0A0A0A" } as const;
   return (
-    <Link
-      href="/service/sessions"
-      prefetch={false}
-      title="客服中心 · 待办客户"
-      aria-label={pending > 0 ? `客服中心，${pending} 位待办客户` : "客服中心"}
-      className="admin-topbar-support relative inline-flex items-center gap-1.5 rounded-[9px] px-2.5 py-1.5 text-[12px] transition-opacity hover:opacity-90"
+    <span
+      className="admin-topbar-support relative inline-flex items-center gap-1.5 rounded-[9px] px-2.5 py-1.5 text-[12px]"
       style={{
         background: "color-mix(in srgb, var(--admin-domain-m) 12%, transparent)",
         border: "1px solid color-mix(in srgb, var(--admin-domain-m) 32%, transparent)",
       }}
     >
-      <Headset size={14} style={{ color: "var(--admin-domain-m)" }} aria-hidden />
-      <span className="hidden md:inline" style={{ color: "var(--v5-ink-3)" }}>客服</span>
+      <Link href="/service/sessions" prefetch={false} title="专属会话 · 未读消息" aria-label={unread > 0 ? `专属会话，${unread} 条未读` : "专属会话"} className="inline-flex items-center gap-1.5 hover:opacity-90">
+        <Headset size={14} style={{ color: "var(--admin-domain-m)" }} aria-hidden />
+        <span className="hidden md:inline" style={{ color: "var(--v5-ink-3)" }}>客服</span>
+        {unread > 0 && <span className="admin-topbar-support-count font-mono-tabular inline-flex items-center justify-center rounded-full px-1.5 text-[10.5px] font-semibold" style={{ ...badge, background: "var(--admin-domain-m)" }}>{unread}</span>}
+      </Link>
       {pending > 0 && (
-        <span
-          className="admin-topbar-support-count font-mono-tabular inline-flex items-center justify-center rounded-full px-1.5 text-[10.5px] font-semibold"
-          style={{ minWidth: 16, height: 16, background: "var(--admin-domain-m)", color: "#0A0A0A" }}
-        >
-          {pending}
-        </span>
+        <Link href="/service/overview" prefetch={false} title="工作台 · 待办客户（待回复、首次联系、待维护）" aria-label={`${pending} 位待办客户`} className="hidden md:inline-flex items-center gap-1 hover:opacity-90" style={{ color: "var(--v5-ink-3)" }}>
+          待办 <span className="font-mono-tabular">{pending}</span>
+        </Link>
       )}
-    </Link>
+    </span>
   );
 }
 

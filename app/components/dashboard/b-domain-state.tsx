@@ -10,11 +10,14 @@ export function BDomainDataState({
   loading,
   error,
   onRetry,
+  empty = false,
 }: {
   title?: string;
   loading?: boolean;
   error?: string | null;
   onRetry?: () => void;
+  /** The read succeeded but there is nothing to compute yet; say so instead of "加载失败". */
+  empty?: boolean;
 }) {
   const isLoading = loading && !error;
   return (
@@ -36,7 +39,7 @@ export function BDomainDataState({
         </span>
         <div className="min-w-0 flex-1">
           <div className="text-[14px] font-medium" style={{ color: "var(--v5-ink, var(--ink))" }}>
-            {isLoading ? `${title}加载中` : `${title}加载失败`}
+            {isLoading ? `${title}加载中` : empty ? `${title}暂无数据` : `${title}加载失败`}
           </div>
           <div className="mt-1 text-[12.5px]" style={{ color: "var(--v5-ink-3, var(--ink-3))" }}>
             {isLoading ? "正在读取服务端权威数据。" : error || "当前数据暂不可用，请重试。"}

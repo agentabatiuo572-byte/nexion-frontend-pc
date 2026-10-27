@@ -37,6 +37,7 @@ import {
 } from "@/lib/admin/a3-client";
 import type { ACtx } from "./types";
 import { PlatformExperienceConfig } from "./platform-experience-config";
+import { BusinessCalendarConfig } from "./business-calendar-config";
 
 const a3ParamCommands = createSlotAttemptStore({ storageKey: "nexion-admin-a3-param-commands-v1" });
 
@@ -173,6 +174,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
 
   return (
     <>
+      <BusinessCalendarConfig />
       <PlatformExperienceConfig />
       {loadError && (
         <section className="l-card">

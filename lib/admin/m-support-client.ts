@@ -74,6 +74,8 @@ export type SupportBindingPoolItem = {
   inviterCustomerId?: string | null;
   pendingMessageCount?: number;
   lastMessageAt?: string | null;
+  waitingSince?: string | null;
+  lastMessagePreview?: string | null;
   autoEligible?: boolean;
   autoAttemptState?: string;
   attempts?: number;
@@ -422,7 +424,7 @@ export const supportClient = {
   bindingPool: (options: { pageNum: number; pageSize: number; keyword?: string; reason?: SupportPoolReason; groupId?: number; signal?: AbortSignal }) =>
     request(`/support-agents/binding-pool${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize"), keyword: options.keyword, reason: options.reason, groupId: options.groupId === undefined ? undefined : positive(options.groupId, "groupId") })}`, (value) => page(value, (entry): SupportBindingPoolItem => {
       const row = object(entry, "bindingPool.item");
-      return { ...parsePoolRoute(row), customerId: id(row.customerId, "bindingPool.customerId"), reason: enumValue(row.reason, POOL_REASONS, "bindingPool.reason"), enteredAt: timestamp(row.enteredAt, "bindingPool.enteredAt"), version: count(row.version, "bindingPool.version"), customerNo: optionalString(row.customerNo, "bindingPool.customerNo"), displayName: optionalString(row.displayName, "bindingPool.displayName"), phoneMasked: row.phoneMasked === undefined ? undefined : nullableString(row.phoneMasked, "bindingPool.phoneMasked"), inviterCustomerId: row.inviterCustomerId === null ? null : row.inviterCustomerId === undefined ? undefined : id(row.inviterCustomerId, "bindingPool.inviterCustomerId"), pendingMessageCount: row.pendingMessageCount === undefined ? undefined : count(row.pendingMessageCount, "bindingPool.pendingMessageCount"), autoEligible: row.autoEligible==null?undefined:row.autoEligible===0?false:row.autoEligible===1?true:bool(row.autoEligible,"pool.autoEligible"), autoAttemptState: optionalString(row.autoAttemptState,"pool.autoAttemptState"), attempts: row.attempts==null?undefined:count(row.attempts,"pool.attempts"), lastAttemptAt: nullableTimestamp(row.lastAttemptAt,"pool.lastAttemptAt"), lastOutcome: row.lastOutcome==null?row.lastOutcome:nullableString(row.lastOutcome,"pool.lastOutcome"), lastMessageAt: nullableTimestamp(row.lastMessageAt, "bindingPool.lastMessageAt") };
+      return { ...parsePoolRoute(row), customerId: id(row.customerId, "bindingPool.customerId"), reason: enumValue(row.reason, POOL_REASONS, "bindingPool.reason"), enteredAt: timestamp(row.enteredAt, "bindingPool.enteredAt"), version: count(row.version, "bindingPool.version"), customerNo: optionalString(row.customerNo, "bindingPool.customerNo"), displayName: optionalString(row.displayName ?? row.nickname ?? undefined, "bindingPool.displayName"), phoneMasked: row.phoneMasked === undefined ? undefined : nullableString(row.phoneMasked, "bindingPool.phoneMasked"), inviterCustomerId: row.inviterCustomerId === null ? null : row.inviterCustomerId === undefined ? undefined : id(row.inviterCustomerId, "bindingPool.inviterCustomerId"), pendingMessageCount: row.pendingMessageCount === undefined ? undefined : count(row.pendingMessageCount, "bindingPool.pendingMessageCount"), autoEligible: row.autoEligible==null?undefined:row.autoEligible===0?false:row.autoEligible===1?true:bool(row.autoEligible,"pool.autoEligible"), autoAttemptState: optionalString(row.autoAttemptState,"pool.autoAttemptState"), attempts: row.attempts==null?undefined:count(row.attempts,"pool.attempts"), lastAttemptAt: nullableTimestamp(row.lastAttemptAt,"pool.lastAttemptAt"), lastOutcome: row.lastOutcome==null?row.lastOutcome:nullableString(row.lastOutcome,"pool.lastOutcome"), lastMessageAt: nullableTimestamp(row.lastMessageAt, "bindingPool.lastMessageAt"), waitingSince: nullableTimestamp(row.waitingSince, "bindingPool.waitingSince"), lastMessagePreview: row.lastMessagePreview == null ? null : nullableString(row.lastMessagePreview, "bindingPool.lastMessagePreview") };
     }), { signal: options.signal }),
   agents: (options: { pageNum: number; pageSize: number; groupId?: number; signal?: AbortSignal }) =>
     request(`/support-agents/page${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize"), groupId: options.groupId === undefined ? undefined : positive(options.groupId, "groupId") })}`, (value) => page(value, (entry): SupportAgentCandidate => {
@@ -493,6 +495,30 @@ export const supportClient = {
     request("/conversations", messageResult, json("POST", { conversationType: "ADVISOR", userId: wireId(input.customerId, "conversation.customerId"), openingText: input.content ?? "", kind: input.kind, skuId: input.skuId, linkTarget: input.linkTarget, attachmentId: input.attachmentId, intent: input.intent, clientMessageId: input.clientMessageId, expectedAssignmentId: wireId(input.expectedAssignmentId, "conversation.expectedAssignmentId"), replyTargets: input.replyTargets?.map((target) => ({ ...target, throughMessageId: positive(target.throughMessageId, "conversation.throughMessageId") })) }, idempotencyKey, signal)),
   startConversation: (input: SupportStartConversationInput, idempotencyKey: string, signal?: AbortSignal) =>
     request("/conversations", messageResult, json("POST", { conversationType: "ADVISOR", userId: wireId(input.customerId, "conversation.customerId"), openingText: input.openingText, kind: "TEXT", intent: input.intent, clientMessageId: input.clientMessageId, expectedAssignmentId: wireId(input.expectedAssignmentId, "conversation.expectedAssignmentId"), replyTargets: input.replyTargets?.map((target) => ({ ...target, throughMessageId: positive(target.throughMessageId, "conversation.throughMessageId") })) }, idempotencyKey, signal)),
+};
+
+export type SupportUnboundPolicy = { alertMinutes: number; fallbackMinutes: number; defaultGroupId: number | null; defaultGroupName: string | null; version: number; updatedBy: string; reason: string; updatedAt: string };
+const unboundPolicy = (value: unknown): SupportUnboundPolicy => {
+  const row = object(value, "unboundPolicy");
+  return { alertMinutes: positive(row.alertMinutes, "unboundPolicy.alertMinutes"), fallbackMinutes: positive(row.fallbackMinutes, "unboundPolicy.fallbackMinutes"), defaultGroupId: row.defaultGroupId == null ? null : positive(row.defaultGroupId, "unboundPolicy.defaultGroupId"), defaultGroupName: row.defaultGroupName == null ? null : nonempty(row.defaultGroupName, "unboundPolicy.defaultGroupName"), version: positive(row.version, "unboundPolicy.version"), updatedBy: nonempty(row.updatedBy, "unboundPolicy.updatedBy"), reason: nonempty(row.reason, "unboundPolicy.reason"), updatedAt: timestamp(row.updatedAt, "unboundPolicy.updatedAt") };
+};
+/** D-3 / M-18: how long an unassigned inquiry may wait before an alert / automatic fallback, and the default receiving group. */
+export const supportUnboundPolicyClient = {
+  read: (signal?: AbortSignal) => request("/support-agents/unbound-policy", unboundPolicy, { signal }),
+  update: (input: { alertMinutes: number; fallbackMinutes: number; defaultGroupId: number | null; expectedVersion: number; reason: string }) =>
+    request("/support-agents/unbound-policy", unboundPolicy, { method: "PUT", body: JSON.stringify(input) }),
+};
+
+export type SupportPersonalPhrase = { id: string; content: string };
+const phraseList = (value: unknown): SupportPersonalPhrase[] => {
+  if (!Array.isArray(value)) malformed("phrases");
+  return value.map((entry) => { const row = object(entry, "phrase"); return { id: id(row.id, "phrase.id"), content: nonempty(row.content, "phrase.content") }; });
+};
+/** D-9: advisor-private quick replies; nothing is shared, so no review or idempotency ledger is involved. */
+export const supportPhraseClient = {
+  list: (signal?: AbortSignal) => request("/support-workbench/phrases", phraseList, { signal }),
+  add: (content: string) => request("/support-workbench/phrases", phraseList, { method: "POST", body: JSON.stringify({ content }) }),
+  remove: (phraseId: string) => request(`/support-workbench/phrases/${encodeURIComponent(id(phraseId, "phrase.id"))}`, phraseList, { method: "DELETE" }),
 };
 
 export async function readSupportPoolCustomer(customerId: string, groupId?: number): Promise<SupportBindingPoolItem> {

@@ -11,6 +11,7 @@ import {
   remoteUrlLabel,
   platformLabel,
 } from "./janus-c2/labels.ts";
+import { businessZone } from "@/lib/admin/business-time";
 import { TAKEOVER_PHASE_LABEL } from "./janus-c2/takeover.ts";
 import type { AuditLog } from "./janus-c2/types";
 
@@ -58,7 +59,7 @@ export function formatAuditTime(value: unknown): string {
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return "—";
   const parts = new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
+    timeZone: businessZone().zoneId,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

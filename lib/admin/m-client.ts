@@ -76,10 +76,12 @@ export type ConversationTimeoutPolicy = {
 };
 
 type SupportTicketView = {
+  slaTarget?: SupportTicketDetail["slaTarget"];
   id?: number;
   ticketNo?: string;
   sourceConversationNo?: string;
   contentRestricted?: boolean;
+  customerName?: string | null;
   userId?: number;
   category?: string;
   priority?: string;
@@ -144,6 +146,8 @@ type ContentConversationView = {
   unreadCount?: number;
   pendingReplyCount?: number | null;
   pendingReplySince?: string | null;
+  lastHumanMessageAt?: string | null;
+  customerNickname?: string | null;
   lastMessage?: string;
   lastPublicMessageId?: number | null;
   lastMessageKind?: string | null;
@@ -916,7 +920,8 @@ function adaptCustomerProfile(
     // 列表场景 / 会话未关联用户:占位档案(只读辅助,真实数据在打开 detail 时由后端聚合返回)
     return {
       uid: fallbackUid,
-      nickname: fallbackUid === "—" ? "未关联用户" : `用户 ${fallbackUid}`,
+      // List rows carry the customer's nickname, so the same person reads the same everywhere (M-2 / M-38).
+      nickname: base.customerNickname?.trim() || (fallbackUid === "—" ? "未关联用户" : `用户 ${fallbackUid}`),
       phone: "—",
       vlevel: "—",
       systemTags: [type === "advisor" ? "顾问会话" : "客服会话"],
@@ -977,7 +982,7 @@ function adaptCustomerProfile(
 
 function adaptTicket(detail: SupportTicketDetail | SupportTicketView): SupportTicket {
   const base = "ticket" in detail && detail.ticket ? detail.ticket : (detail as SupportTicketView);
-  const slaTarget = "ticket" in detail ? detail.slaTarget : undefined;
+  const slaTarget = "ticket" in detail ? detail.slaTarget : (detail as SupportTicketView).slaTarget;
   const created = asTs(base.createdAt);
   const updated = asTs(base.updatedAt, created);
   const contentRestricted = base.contentRestricted === true;
@@ -1006,6 +1011,7 @@ function adaptTicket(detail: SupportTicketDetail | SupportTicketView): SupportTi
     sourceConversationNo: base.sourceConversationNo,
     contentRestricted,
     userId: base.userId,
+    customerName: base.customerName ?? undefined,
     userVerified: Boolean(base.userExists),
     subject: contentRestricted ? "私聊内容仅当前专属客服和客服主管可阅" : str(base.title, "未命名工单"),
     category: ticketCategory(base.category),
@@ -1302,6 +1308,7 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
     pendingReplySince: base.pendingReplySince ? parseBusinessTime(base.pendingReplySince) : null,
     pendingReplyCount: typeof base.pendingReplyCount === "number" && Number.isSafeInteger(base.pendingReplyCount) && base.pendingReplyCount >= 0 ? base.pendingReplyCount : null,
     lastTs: asTs(base.lastMessageAt, updated),
+    lastHumanTs: base.lastHumanMessageAt ? asTs(base.lastHumanMessageAt) : undefined,
     status: conversationStatus(base.status),
     ownerAgentId: str(base.ownerAgentId),
     ownerUnbound: base.ownerAgentId === null,
@@ -1767,7 +1774,7 @@ export async function fetchMRecentAdvisorConversations(ownerAdminId: number, sig
     if (!["ADVISOR", "SUPPORT"].includes(upper(row.conversationType, ""))) return [];
     const customerId = row.customerId ?? row.userId;
     if (!Number.isSafeInteger(customerId) || Number(customerId) <= 0 || !row.conversationNo) return [];
-    return [{ conversationNo: row.conversationNo, customerId: String(customerId), lastMessage: str(row.lastMessage), lastMessageKind: str(row.lastMessageKind), lastTs: asTs(row.lastMessageAt ?? row.updatedAt), unreadCount: num(row.unreadCount, 0) }];
+    return [{ conversationNo: row.conversationNo, customerId: String(customerId), lastMessage: str(row.lastMessage), lastMessageKind: str(row.lastMessageKind), lastTs: asTs(row.lastMessageAt ?? row.updatedAt), unreadCount: num(row.unreadCount, 0), customerName: row.customerNickname?.trim() || undefined }];
   });
 }
 
