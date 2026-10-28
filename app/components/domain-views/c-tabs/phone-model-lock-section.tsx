@@ -8,7 +8,8 @@ import { PHONE_GRANT } from "@/lib/admin/phone-replacement-contract";
 const platformLabel = (platform: string | null) => platform === "ios" ? "iPhone" : platform === "android" ? "Android" : "未知";
 const time = (value: number | null) => value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "—";
 function status(lock: PhoneModelLock): { text: string; tone: string } {
-  if (lock.held) return { text: "换报机型被拦截", tone: "warn" };
+  // Released but not yet recalibrated: the held calibration stays until the customer calibrates again.
+  if (lock.held) return lock.releasable ? { text: "换报机型被拦截", tone: "warn" } : { text: "已解除，等用户重新校准", tone: "cyan" };
   return lock.releasable ? { text: "已锁定", tone: "ok" } : { text: "未锁定（下次校准锁定）", tone: "dim" };
 }
 
@@ -38,7 +39,7 @@ export function PhoneModelLockSection({ userId, rights }: { userId: string; righ
   }, [userId]);
   useEffect(() => { live.current = true; void load(); return () => { live.current = false; generation.current++; }; }, [load]);
 
-  return <section className="l-card phone-admin-panel" data-proof="c5-phone-model-lock" aria-label="手机机型锁">
+  return <section className="l-card phone-admin-panel phone-account-panel" data-proof="c5-phone-model-lock" aria-label="手机机型锁">
     <div className="l-h">
       <div className="phone-panel-heading"><Lock size={16} aria-hidden="true" /><h3>手机机型锁</h3></div>
       <div className="r"><button className="l-btn sm" disabled={loading || !!target} onClick={() => void load()}><RefreshCw size={13} aria-hidden="true" />{loading ? "刷新中…" : "刷新"}</button></div>
@@ -49,7 +50,7 @@ export function PhoneModelLockSection({ userId, rights }: { userId: string; righ
       {message && <div role="status" className="ctint cyan phone-feedback">{message}</div>}
       {loading && !locks ? <div className="phone-loading" role="status"><RefreshCw size={16} aria-hidden="true" />正在读取手机校准记录…</div>
         : !locks ? null : locks.length === 0 ? <p>这个用户还没有手机校准记录。</p>
-        : <div className="ui-table-scroll"><table>
+        : <div style={{ overflowX: "auto" }}><table className="l-tbl" style={{ minWidth: 760 }}>
           <thead><tr>{["手机", "锁定机型", "最近上报机型", "状态", "更新时间", "操作"].map(label => <th key={label}>{label}</th>)}</tr></thead>
           <tbody>{locks.map(lock => {
             const state = status(lock);
