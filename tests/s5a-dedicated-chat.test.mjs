@@ -20,7 +20,7 @@ test("invalid customer links stop before requesting customer detail", () => {
   assert.match(source, /all\.filter\(\(convo\) => validCustomerId\(customerIdOf\(convo\)\)/);
 });
 
-test("verified customer messages use their scoped image without requiring an agent avatar asset", () => {
+test("verified customer messages use the customer's own avatar reference without requiring an agent avatar asset", () => {
   const component = file.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "SupportMessage");
   const path = component?.body?.statements.flatMap((node) => ts.isVariableStatement(node) ? [...node.declarationList.declarations] : [])
     .find((node) => node.name.getText(file) === "path");
@@ -28,17 +28,19 @@ test("verified customer messages use their scoped image without requiring an age
   const expression = ts.transpileModule(`const result = ${path.initializer.getText(file)};`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
   }).outputText;
-  const resolve = new Function("message", "customerId", "advisorAvatarPath", "customerAvatarPath", `${expression}; return result;`);
+  const resolve = new Function("message", "customerId", "advisorAvatarPath", "customerAvatarRef", `${expression}; return result;`);
   const advisor = (id, customer) => `/agents/${id}?customer=${customer}`;
-  const customer = (id) => `/customers/${id}/avatar`;
+  const ref = "/customers/42/avatar";
   const verified = { authorConfidence: "VERIFIED", sender: "user", senderId: 42, senderAvatar: null };
-  assert.equal(resolve(verified, "42", advisor, customer), "/customers/42/avatar");
-  assert.equal(resolve({ ...verified, senderId: 43 }, "42", advisor, customer), undefined);
-  assert.equal(resolve({ ...verified, authorConfidence: "UNKNOWN" }, "42", advisor, customer), undefined);
-  assert.equal(resolve({ ...verified, senderId: null }, "42", advisor, customer), undefined);
-  assert.equal(resolve({ ...verified, sender: "agent", senderId: 8 }, "42", advisor, customer), undefined);
-  assert.equal(resolve({ ...verified, sender: "agent", senderId: 8, senderAvatar: { assetId: "owned", version: 2 } }, "42", advisor, customer), "/agents/8?customer=42");
+  assert.equal(resolve(verified, "42", advisor, ref), ref);
+  assert.equal(resolve(verified, "42", advisor, null), undefined);
+  assert.equal(resolve({ ...verified, senderId: 43 }, "42", advisor, ref), undefined);
+  assert.equal(resolve({ ...verified, authorConfidence: "UNKNOWN" }, "42", advisor, ref), undefined);
+  assert.equal(resolve({ ...verified, senderId: null }, "42", advisor, ref), undefined);
+  assert.equal(resolve({ ...verified, sender: "agent", senderId: 8 }, "42", advisor, ref), undefined);
+  assert.equal(resolve({ ...verified, sender: "agent", senderId: 8, senderAvatar: { assetId: "owned", version: 2 } }, "42", advisor, ref), "/agents/8?customer=42");
 });
+
 
 test("unchanged conversation data preserves first-contact profile across parent refreshes", () => {
   const chat = file.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === "M3DedicatedChat");
