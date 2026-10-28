@@ -15,7 +15,7 @@ export type IosRuleField = "id" | "model" | "aliases" | "minComputeValue" | "max
 export interface IosRuleIssue { index: number; field: IosRuleField; message: string }
 
 export const IOS_CATALOG_LABELS: Record<IosCatalogClass, string> = {
-  APPLE_CURRENT_SNAPSHOT: "官方在售快照", APPLE_RELEASED_HISTORICAL: "历史已售", OPERATOR_ADDED: "运营新增",
+  APPLE_CURRENT_SNAPSHOT: "官方在售机型", APPLE_RELEASED_HISTORICAL: "历史已售", OPERATOR_ADDED: "运营新增",
 };
 /** Names that identify no specific model; the server refuses them as well. */
 const GENERIC = new Set(["iphone", "apple iphone", "apple", "ios", "unknown"]);
