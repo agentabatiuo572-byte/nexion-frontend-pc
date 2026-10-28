@@ -1420,7 +1420,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               <div className="grid g-2" style={{ gap: 12 }}>
                 {(form.gateType === "rank" || form.gateType === "combo") && <SkuFld label="最低会员等级" type="number" min={0} max={8} step={1} value={form.gateRankMin} onChange={(v) => setForm({ ...form, gateRankMin: v })} placeholder="3" hint="0–12" />}
                 {(form.gateType === "activeDirect" || form.gateType === "combo") && <SkuFld label="活跃直接邀请人数" type="number" min={0} step={1} value={form.gateActiveDirectMin} onChange={(v) => setForm({ ...form, gateActiveDirectMin: v })} placeholder="5" hint="非负整数" />}
-                {form.gateType === "combo" && <SkuFld label="团队算力点" type="number" min={0} step={1} value={form.gateTeamComputePointsMin} onChange={(v) => setForm({ ...form, gateTeamComputePointsMin: v })} placeholder="20000" hint="非负数" />}
+                {form.gateType === "combo" && <SkuFld label="团队算力点" type="number" min={0} step={1} value={form.gateTeamComputePointsMin} onChange={(v) => setForm({ ...form, gateTeamComputePointsMin: v })} placeholder="200000" hint="非负整数" />}
               </div>
               {form.gateType === "combo" && <label className="col" style={{ gap: 5 }}>
                 <span className="muted tiny">多条件关系</span>

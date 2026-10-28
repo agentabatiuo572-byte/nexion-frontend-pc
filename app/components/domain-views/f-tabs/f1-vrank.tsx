@@ -126,8 +126,9 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const hasFundReward = (v: string): boolean => rewardsOf(v).some((it) => isFund(it.type));
   const composeTh = (r: VRow): string => {
     const p: string[] = [];
-    if (r.selfBuy != null) p.push(`自购算力点 ${r.selfBuy}`);
-    if (r.teamGv != null) p.push(`团队算力点 ${r.teamGv}`);
+    const points = (value: string) => Number.isFinite(Number(value)) ? Number(value).toLocaleString("en-US") : value;
+    if (r.selfBuy != null) p.push(`自购算力点 ${points(r.selfBuy)}`);
+    if (r.teamGv != null) p.push(`团队算力点 ${points(r.teamGv)}`);
     if (r.directRefs != null) p.push(`直接邀请 ${r.directRefs}`);
     if (r.legCount != null) p.push(`${r.legCount} 条分支 · 每条 ≥${r.legRank ?? "—"}`);
     return p.length ? p.join(" · ") : "—";
