@@ -20,6 +20,7 @@ export const IOS_CATALOG_LABELS: Record<IosCatalogClass, string> = {
 /** Names that identify no specific model; the server refuses them as well. */
 const GENERIC = new Set(["iphone", "apple iphone", "apple", "ios", "unknown"]);
 const MAX_VALUE = 1_000_000;
+const MAX_RULES = 500;
 
 /** Same normalization as the server: NFKC, trimmed, single spaces, lower case. */
 export function normalizeModel(value: string): string {
@@ -49,7 +50,7 @@ export function iosRuleIssues(rules: IosModelRule[], otherRuleIds: string[] = []
   const issues: IosRuleIssue[] = [];
   const ids = new Set(otherRuleIds);
   const owners = new Map<string, number>();
-  if (rules.length > 500) issues.push({ index: -1, field: "id", message: "最多维护 500 个 iPhone 机型。" });
+  if (rules.length > MAX_RULES) issues.push({ index: -1, field: "id", message: "最多维护 500 个 iPhone 机型。" });
   rules.forEach((rule, index) => {
     const add = (field: IosRuleField, message: string) => issues.push({ index, field, message });
     if (typeof rule.id !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(rule.id)) add("id", "规则编号只支持字母、数字、短横线和下划线，最多 64 位。");
@@ -74,6 +75,12 @@ export function iosRuleIssues(rules: IosModelRule[], otherRuleIds: string[] = []
   return issues;
 }
 
+/** Problems of one edited rule. It is checked last, so a clash with any other rule is reported on it, not on the other rule. */
+export function iosRuleFormIssues(rules: IosModelRule[], index: number | null, candidate: IosModelRule, otherRuleIds: string[] = []): IosRuleIssue[] {
+  const others = rules.filter((_, i) => i !== index);
+  return iosRuleIssues([...others, candidate], otherRuleIds).filter(issue => issue.index === others.length);
+}
+
 /** Shape check for rules read from the server; any mismatch makes the whole response unreadable. */
 export function isIosModelRule(value: unknown): value is IosModelRule {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -92,18 +99,20 @@ export interface IosImportPlan { added: IosModelRule[]; skipped: IosModelRule[];
 /**
  * Only fills models the draft lacks. A preset whose model already exists is skipped,
  * so ranges, aliases and the disabled state an operator maintained are never overwritten.
+ * Android rule ids share one id space with iPhone rules on the server.
  */
-export function planIosImport(draft: IosModelRule[], presets: IosModelRule[]): IosImportPlan {
+export function planIosImport(draft: IosModelRule[], presets: IosModelRule[], otherRuleIds: string[] = []): IosImportPlan {
   const plan: IosImportPlan = { added: [], skipped: [], conflicts: [] };
   const byModel = new Map(draft.map(rule => [normalizeModel(rule.model), rule]));
   const owners = new Map<string, string>();
   for (const rule of draft) for (const name of namesOf(rule)) owners.set(name, rule.model);
-  const ids = new Set(draft.map(rule => rule.id));
+  const ids = new Set([...otherRuleIds, ...draft.map(rule => rule.id)]);
   for (const preset of presets) {
     if (byModel.has(normalizeModel(preset.model))) { plan.skipped.push(preset); continue; }
     const taken = namesOf(preset).find(name => owners.has(name));
     if (taken) { plan.conflicts.push({ preset, reason: `「${taken}」已属于 ${owners.get(taken)}` }); continue; }
     if (ids.has(preset.id)) { plan.conflicts.push({ preset, reason: `规则编号 ${preset.id} 已被使用` }); continue; }
+    if (draft.length + plan.added.length >= MAX_RULES) { plan.conflicts.push({ preset, reason: `已达 ${MAX_RULES} 个机型上限` }); continue; }
     plan.added.push(normalizeIosRule(preset));
     for (const name of namesOf(preset)) owners.set(name, preset.model);
     ids.add(preset.id);
@@ -116,7 +125,10 @@ export interface IosRuleChange { kind: IosRuleChangeKind; id: string; before: Io
 export const IOS_CHANGE_LABELS: Record<IosRuleChangeKind, string> = {
   added: "新增", modified: "修改", disabled: "停用", enabled: "启用", removed: "删除",
 };
-const range = (rule: IosModelRule) => `${rule.minComputeValue}–${rule.maxComputeValue}`;
+const bound = (value: number | null | undefined) => typeof value === "number" && Number.isFinite(value) ? String(value) : "?";
+/** The one display form of a range, also for a half-filled draft. */
+export const formatRange = (rule: { minComputeValue?: number | null; maxComputeValue?: number | null }) =>
+  `${bound(rule.minComputeValue)}–${bound(rule.maxComputeValue)}`;
 /** Changes from the published rules to the draft, matched by stable rule id. */
 export function diffIosRules(before: IosModelRule[], after: IosModelRule[]): IosRuleChange[] {
   const old = new Map(before.map(rule => [rule.id, rule]));
@@ -125,24 +137,25 @@ export function diffIosRules(before: IosModelRule[], after: IosModelRule[]): Ios
     const prior = old.get(rule.id);
     old.delete(rule.id);
     if (!prior) {
-      changes.push({ kind: "added", id: rule.id, before: null, after: rule, details: [`范围 ${range(rule)}`, ...(rule.enabled ? [] : ["停用"])] });
+      changes.push({ kind: "added", id: rule.id, before: null, after: rule, details: [`范围 ${formatRange(rule)}`, ...(rule.enabled ? [] : ["停用"])] });
       continue;
     }
     const details: string[] = [];
     if (prior.model !== rule.model) details.push(`机型 ${prior.model} → ${rule.model}`);
-    if (range(prior) !== range(rule)) details.push(`范围 ${range(prior)} → ${range(rule)}`);
+    if (formatRange(prior) !== formatRange(rule)) details.push(`范围 ${formatRange(prior)} → ${formatRange(rule)}`);
     if (prior.aliases.join("\n") !== rule.aliases.join("\n")) details.push(`别名 ${prior.aliases.join("、") || "无"} → ${rule.aliases.join("、") || "无"}`);
     if ((prior.note ?? "") !== (rule.note ?? "") || (prior.catalogClass ?? null) !== (rule.catalogClass ?? null)) details.push("说明或目录分类已修改");
     if (prior.enabled !== rule.enabled) changes.push({ kind: rule.enabled ? "enabled" : "disabled", id: rule.id, before: prior, after: rule, details });
     else if (details.length) changes.push({ kind: "modified", id: rule.id, before: prior, after: rule, details });
   }
-  for (const rule of old.values()) changes.push({ kind: "removed", id: rule.id, before: rule, after: null, details: [`范围 ${range(rule)}`] });
+  for (const rule of old.values()) changes.push({ kind: "removed", id: rule.id, before: rule, after: null, details: [`范围 ${formatRange(rule)}`] });
   return changes;
 }
 
-export function blankIosRule(existing: IosModelRule[]): IosModelRule {
+export function blankIosRule(existing: IosModelRule[], otherRuleIds: string[] = []): IosModelRule {
+  const ids = new Set([...otherRuleIds, ...existing.map(rule => rule.id)]);
   let n = existing.length + 1;
-  while (existing.some(rule => rule.id === `ios-operator-${n}`)) n++;
+  while (ids.has(`ios-operator-${n}`)) n++;
   return { id: `ios-operator-${n}`, model: "", aliases: [], minComputeValue: NaN, maxComputeValue: NaN,
     enabled: true, valueSource: "OPERATOR_PRESET", catalogClass: "OPERATOR_ADDED", note: null };
 }

@@ -1,15 +1,15 @@
 "use client";
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Btn } from "../design-kit";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { fetchIosModelPresets } from "@/lib/admin/phone-calibration-client";
-import { IOS_CATALOG_LABELS, IOS_CHANGE_LABELS, blankIosRule, diffIosRules, iosRuleIssues, normalizeModel, planIosImport,
+import { IOS_CATALOG_LABELS, IOS_CHANGE_LABELS, blankIosRule, diffIosRules, formatRange, iosRuleFormIssues, normalizeModel, planIosImport,
   type IosCatalogClass, type IosImportPlan, type IosModelPresetCatalog, type IosModelRule } from "@/lib/admin/ios-model-rules";
 
 const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 };
-const range = (rule: IosModelRule) => `${Number.isFinite(rule.minComputeValue) ? rule.minComputeValue : "?"} – ${Number.isFinite(rule.maxComputeValue) ? rule.maxComputeValue : "?"}`;
 type StatusFilter = "all" | "enabled" | "disabled";
-type Editing = { index: number | null; rule: IosModelRule; aliases: string };
+/** `id` is the edited rule's id when the form opened (null for a new rule), so list changes never retarget the form. */
+type Editing = { id: string | null; rule: IosModelRule; aliases: string };
 
 /** E6 "iPhone 机型预设": the draft list, its editor and the preset import. Publishing stays with the panel's A2 flow. */
 export function IosModelRulesSection({ rules, published, androidRuleIds, editing: editable, onChange }: {
@@ -20,11 +20,14 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
   const [status, setStatus] = useState<StatusFilter>("all");
   const [catalog, setCatalog] = useState<IosCatalogClass | "all">("all");
   const [form, setForm] = useState<Editing | null>(null);
-  const [confirmRemove, setConfirmRemove] = useState<number | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [presets, setPresets] = useState<{ catalog: IosModelPresetCatalog; plan: IosImportPlan; selected: Set<string> } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const live = useRef(true);
+  useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
+  // A lock, reload or pending confirmation ends every open edit, so nothing stale is written into the new list.
+  useEffect(() => { if (!editable) { setForm(null); setPresets(null); setConfirmRemove(null); } }, [editable]);
 
   const changes = useMemo(() => diffIosRules(published, rules), [published, rules]);
   const changeById = useMemo(() => new Map(changes.map(change => [change.id, change])), [changes]);
@@ -36,45 +39,45 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
     && (status === "all" || (status === "enabled") === rule.enabled)
     && (catalog === "all" || rule.catalogClass === catalog));
   const filtered = !!needle || status !== "all" || catalog !== "all";
+  const clearFilters = () => { setQuery(""); setStatus("all"); setCatalog("all"); };
 
-  const draftRules = form ? rules.map((rule, index) => index === form.index ? formRule(form) : rule) : rules;
-  const formIndex = form ? (form.index ?? rules.length) : -1;
-  const formIssues = form ? iosRuleIssues(form.index === null ? [...rules, formRule(form)] : draftRules, androidRuleIds)
-    .filter(issue => issue.index === formIndex) : [];
+  const formIndex = form?.id == null ? null : rules.findIndex(rule => rule.id === form.id);
+  const formGone = formIndex === -1;
+  useEffect(() => { if (formGone) setForm(null); }, [formGone]);
+  const formIssues = form && !formGone ? iosRuleFormIssues(rules, formIndex, formRule(form), androidRuleIds) : [];
   const fieldIssue = (field: string) => formIssues.find(issue => issue.field === field)?.message;
 
   function formRule(value: Editing): IosModelRule {
     return { ...value.rule, aliases: value.aliases.split(/\r?\n/).map(alias => alias.trim()).filter(Boolean) };
   }
   function save() {
-    if (!form || formIssues.length) return;
+    if (!form || !editable || formGone || formIssues.length) return;
     const rule = formRule(form);
-    onChange(form.index === null ? [...rules, rule] : rules.map((item, index) => index === form.index ? rule : item));
+    onChange(formIndex === null ? [...rules, rule] : rules.map((item, index) => index === formIndex ? rule : item));
     setForm(null);
   }
-  function toggle(index: number) {
-    onChange(rules.map((rule, i) => i === index ? { ...rule, enabled: !rule.enabled } : rule));
+  function toggle(id: string) {
+    onChange(rules.map(rule => rule.id === id ? { ...rule, enabled: !rule.enabled } : rule));
   }
-  function remove(index: number) {
-    onChange(rules.filter((_, i) => i !== index));
+  function remove(id: string) {
+    onChange(rules.filter(rule => rule.id !== id));
     setConfirmRemove(null);
-    if (form?.index === index) setForm(null);
   }
   async function loadPresets() {
     setLoading(true); setError("");
     try {
       const result = await fetchIosModelPresets();
       if (!live.current) return;
-      const plan = planIosImport(rules, result.models);
+      const plan = planIosImport(rules, result.models, androidRuleIds);
       setPresets({ catalog: result, plan, selected: new Set(plan.added.map(rule => rule.id)) });
     } catch (failure) {
       if (live.current) setError(displayAdminError(failure));
     } finally { if (live.current) setLoading(false); }
   }
   function applyImport() {
-    if (!presets) return;
+    if (!presets || !editable) return;
     // Re-plan against the current draft so an edit made meanwhile is never overwritten.
-    const plan = planIosImport(rules, presets.catalog.models.filter(rule => presets.selected.has(rule.id)));
+    const plan = planIosImport(rules, presets.catalog.models.filter(rule => presets.selected.has(rule.id)), androidRuleIds);
     onChange([...rules, ...plan.added]);
     setPresets(null);
   }
@@ -87,7 +90,7 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
       <div className="ios-actions">
         <Btn disabled={!editable || loading || !!presets} onClick={() => void loadPresets()}>{loading ? "正在读取预设…" : "载入 iPhone 机型预设"}</Btn>
         <Btn variant="primary" disabled={!editable || rules.length >= 500 || !!form}
-          onClick={() => setForm({ index: null, rule: blankIosRule(rules), aliases: "" })}>新增机型</Btn>
+          onClick={() => setForm({ id: null, rule: blankIosRule(rules, androidRuleIds), aliases: "" })}>新增机型</Btn>
       </div>
     </div>
     {error && <p role="alert">{error}</p>}
@@ -110,10 +113,10 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
             const selected = new Set(presets.selected);
             if (event.target.checked) selected.add(rule.id); else selected.delete(rule.id);
             setPresets({ ...presets, selected });
-          }} />{rule.model} · {range(rule)} · {rule.catalogClass ? IOS_CATALOG_LABELS[rule.catalogClass] : "未分类"}</label>)}</div>
+          }} />{rule.model} · {formatRange(rule)} · {rule.catalogClass ? IOS_CATALOG_LABELS[rule.catalogClass] : "未分类"}</label>)}</div>
       </>}
       <p className="f-foot">取消勾选只是本次不导入，不代表该机型不支持；以后可再次载入补齐。{presets.catalog.notice}</p>
-      <Btn variant="primary" disabled={presets.selected.size === 0} onClick={applyImport}>加入草稿</Btn>
+      <Btn variant="primary" disabled={!editable || presets.selected.size === 0} onClick={applyImport}>加入草稿</Btn>
       <Btn onClick={() => setPresets(null)}>取消</Btn>
       <p className="f-foot">加入草稿后仍需「试算并预览影响」→「提交 A2 审批」，审批通过才生效。</p>
     </div>}
@@ -124,40 +127,41 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
         <option value="all">全部</option><option value="enabled">启用</option><option value="disabled">停用</option></select></label>
       <label>目录分类<select value={catalog} onChange={event => setCatalog(event.target.value as IosCatalogClass | "all")}>
         <option value="all">全部</option>{Object.entries(IOS_CATALOG_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-      <div className="ios-clear"><Btn disabled={!filtered} onClick={() => { setQuery(""); setStatus("all"); setCatalog("all"); }}>清空筛选</Btn></div>
+      <div className="ios-clear"><Btn disabled={!filtered} onClick={clearFilters}>清空筛选</Btn></div>
     </div>
     <p role="status">共 {rules.length} 个机型{filtered ? ` · 显示 ${visible.length} 个` : ""} · 草稿相对已发布：新增 {counts.added ?? 0}、修改 {counts.modified ?? 0}、停用 {counts.disabled ?? 0}、启用 {counts.enabled ?? 0}、删除 {counts.removed ?? 0}</p>
 
     {rules.length === 0 ? <p>尚无 iPhone 机型规则。iOS 校准会进入待核验，不授予算力。可载入预设或新增机型。</p>
-      : visible.length === 0 ? <p>没有符合筛选条件的机型。<Btn sm onClick={() => { setQuery(""); setStatus("all"); setCatalog("all"); }}>清空筛选</Btn></p>
+      : visible.length === 0 ? <p>没有符合筛选条件的机型。<Btn sm onClick={clearFilters}>清空筛选</Btn></p>
       : <div className="ios-table"><table>
         <thead><tr>{["机型", "已核验别名", "运营预设范围", "状态", "目录分类", "草稿变化", "操作"].map(label => <th key={label}>{label}</th>)}</tr></thead>
         <tbody>{visible.map(({ rule, index }) => {
+          const removing = confirmRemove === rule.id;
           const change = changeById.get(rule.id);
           return <tr key={rule.id + index}>
             <td><strong>{rule.model || "未填写机型"}</strong><br /><small className="mono">{rule.id}</small></td>
             <td>{rule.aliases.join("、") || "—"}</td>
-            <td>{range(rule)}</td>
+            <td>{formatRange(rule)}</td>
             <td><span className={rule.enabled ? "ios-pill on" : "ios-pill"}>{rule.enabled ? "启用" : "停用"}</span></td>
             <td>{rule.catalogClass ? IOS_CATALOG_LABELS[rule.catalogClass] : "—"}</td>
             <td>{change ? <>{IOS_CHANGE_LABELS[change.kind]}{change.details.length > 0 && <><br /><small>{change.details.join("；")}</small></>}</> : "—"}</td>
             <td><div className="ios-row-actions">
-              <Btn sm disabled={!editable || !!form} onClick={() => setForm({ index, rule: { ...rule }, aliases: rule.aliases.join("\n") })}>编辑</Btn>
-              <Btn sm disabled={!editable} onClick={() => toggle(index)}>{rule.enabled ? "停用" : "启用"}</Btn>
-              {confirmRemove === index
-                ? <><Btn sm variant="danger" onClick={() => remove(index)}>确认{publishedIds.has(rule.id) ? "删除" : "移除"}</Btn><Btn sm onClick={() => setConfirmRemove(null)}>取消</Btn></>
-                : <Btn sm disabled={!editable} onClick={() => setConfirmRemove(index)}>{publishedIds.has(rule.id) ? "删除" : "移除"}</Btn>}
+              <Btn sm disabled={!editable || !!form} onClick={() => setForm({ id: rule.id, rule: { ...rule }, aliases: rule.aliases.join("\n") })}>编辑</Btn>
+              <Btn sm disabled={!editable} onClick={() => toggle(rule.id)}>{rule.enabled ? "停用" : "启用"}</Btn>
+              {removing
+                ? <><Btn sm variant="danger" onClick={() => remove(rule.id)}>确认{publishedIds.has(rule.id) ? "删除" : "移除"}</Btn><Btn sm onClick={() => setConfirmRemove(null)}>取消</Btn></>
+                : <Btn sm disabled={!editable} onClick={() => setConfirmRemove(rule.id)}>{publishedIds.has(rule.id) ? "删除" : "移除"}</Btn>}
             </div>
-            {confirmRemove === index && <small role="status">{publishedIds.has(rule.id)
+            {removing && <small role="status">{publishedIds.has(rule.id)
               ? "删除只影响后续校准；已分配的算力、已激活设备和历史记录保留。审批后生效。" : "这是尚未发布的草稿条目，移除后不会进入提案。"}</small>}</td>
           </tr>;
         })}</tbody>
       </table></div>}
 
-    {form && <div className="ios-form" role="region" aria-label={form.index === null ? "新增 iPhone 机型" : `编辑 ${form.rule.model}`}>
-      <h4>{form.index === null ? "新增机型" : `编辑机型 · ${rules[form.index].model || "未填写"}`}</h4>
+    {form && !formGone && <div className="ios-form" role="region" aria-label={formIndex === null ? "新增 iPhone 机型" : `编辑 ${form.rule.model}`}>
+      <h4>{formIndex === null ? "新增机型" : `编辑机型 · ${rules[formIndex].model || "未填写"}`}</h4>
       <div style={grid}>
-        <Field label="规则编号" error={fieldIssue("id")}><input value={form.rule.id} maxLength={64} disabled={form.index !== null && publishedIds.has(form.rule.id)}
+        <Field label="规则编号" error={fieldIssue("id")}><input value={form.rule.id} maxLength={64} disabled={form.id !== null && publishedIds.has(form.id)}
           onChange={event => setForm({ ...form, rule: { ...form.rule, id: event.target.value } })} /></Field>
         <Field label="规范机型名" error={fieldIssue("model")}><input value={form.rule.model} maxLength={128} placeholder="例如 iPhone 16 Pro"
           onChange={event => setForm({ ...form, rule: { ...form.rule, model: event.target.value } })} /></Field>
@@ -178,7 +182,7 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
       <Field label="运营说明（选填，最多 500 字）" error={fieldIssue("note")}><input value={form.rule.note ?? ""} maxLength={500}
         onChange={event => setForm({ ...form, rule: { ...form.rule, note: event.target.value || null } })} /></Field>
       <p className="f-foot">上下限相等时为固定值，最多 2 位小数。不需要填写 SoC、GPU、内存或容量。</p>
-      <Btn variant="primary" disabled={formIssues.length > 0} onClick={save}>保存到草稿</Btn>
+      <Btn variant="primary" disabled={!editable || formIssues.length > 0} onClick={save}>保存到草稿</Btn>
       <Btn onClick={() => setForm(null)}>取消</Btn>
     </div>}
   </fieldset>;

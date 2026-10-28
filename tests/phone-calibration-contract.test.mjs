@@ -13,7 +13,7 @@ const client = { exports: {} };
 vm.runInNewContext(transpile("lib/admin/phone-calibration-client.ts"),
   { exports: client.exports, require: id => id.endsWith("ios-model-rules") ? iosRules.exports : {} });
 const { phoneProposalError, parsePhoneCalibrationOverview, parsePhoneProposalView } = client.exports;
-const { iosRuleIssues, planIosImport, diffIosRules } = iosRules.exports;
+const { iosRuleIssues, iosRuleFormIssues, planIosImport, diffIosRules, blankIosRule } = iosRules.exports;
 const same = (actual, expected) => assert.equal(JSON.stringify(actual), JSON.stringify(expected));
 const ios = (id, model, min, max, extra = {}) => ({ id, model, aliases: [], minComputeValue: min, maxComputeValue: max,
   enabled: true, valueSource: "OPERATOR_PRESET", catalogClass: "APPLE_RELEASED_HISTORICAL", note: null, ...extra });
@@ -79,6 +79,14 @@ test("iPhone model rules need only a model and an operator range, and names stay
   assert.equal(duplicate[0].field,"model");
   assert.equal(iosRuleIssues([ios("a","iPhone 6",1,2,{aliases:["iPhone7,2"]}),ios("b","iPhone 6 Plus",1,2,{aliases:["iphone7,2"]})])[0].field,"aliases");
 });
+test("an edited rule is blamed for the clash it creates, wherever it sits in the list", () => {
+  const rules = [ios("a","iPhone 6",1,2), ios("b","iPhone 15",1,2)];
+  const issues = iosRuleFormIssues(rules, 0, {...rules[0],aliases:["iPhone 15"]});
+  assert.equal(issues[0].field,"aliases");
+  assert.equal(iosRuleFormIssues(rules, 0, {...rules[0],id:"b"})[0].field,"id");
+  assert.equal(iosRuleFormIssues(rules, null, ios("c","iPhone 7",1,2), ["c"])[0].field,"id");
+  same(iosRuleFormIssues(rules, 1, {...rules[1],minComputeValue:3,maxComputeValue:4}),[]);
+});
 test("a stored policy without iPhone rules reads as an empty list", () => {
   const empty = {policy:{revision:1,current:{version:1,effectiveAt:0,thresholds:[19,25,35,47],rules:[]},scheduled:null},pendingHardware:[],computeUnit:"platform"};
   same(parsePhoneCalibrationOverview(empty).policy.current.iosModelRules,[]);
@@ -93,6 +101,11 @@ test("preset import only fills missing models and never overwrites operator edit
   same(plan.skipped.map(rule => rule.id),["ios-16-pro"]);
   same(plan.conflicts.map(entry => entry.preset.id),["ios-6-plus"]);
   same(planIosImport([...draft,...plan.added], presets).added,[]);
+  same(planIosImport([], [ios("x","iPhone Air",1,2)], ["x"]).conflicts.map(entry => entry.preset.id),["x"]);
+  const full = Array.from({length:499},(_,i) => ios(`r${i}`,`Model ${i}`,1,2));
+  const capped = planIosImport(full, [ios("p1","iPhone Air",1,2), ios("p2","iPhone 17",1,2)]);
+  same([capped.added.map(rule => rule.id), capped.conflicts.map(entry => entry.preset.id)],[["p1"],["p2"]]);
+  assert.equal(blankIosRule([], ["ios-operator-1"]).id,"ios-operator-2");
 });
 test("A2 sees added, modified, disabled and removed iPhone rules against the server baseline", () => {
   const before = [ios("a","iPhone 16 Pro",95,115), ios("b","iPhone 6",10,20), ios("c","iPhone 7",20,30)];

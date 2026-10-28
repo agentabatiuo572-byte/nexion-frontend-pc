@@ -10,7 +10,7 @@ import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { fetchPhoneCalibration, previewPhoneCalibration, phoneProposalError,
   type PhoneCalibrationOverview, type PhonePolicyProposal, type PhoneRule, type PhoneHardware, type PhonePreview } from "@/lib/admin/phone-calibration-client";
-import type { IosModelRule } from "@/lib/admin/ios-model-rules";
+import { formatRange, type IosModelRule } from "@/lib/admin/ios-model-rules";
 import { IosModelRulesSection } from "./ios-model-rules-section";
 
 const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 };
@@ -24,8 +24,9 @@ function trialText(result: PhonePreview): string {
   const { match, possibleTiers } = result;
   if (match.status !== "MATCHED") return `试算：待核验${PENDING_TEXT[match.status] ? `（${PENDING_TEXT[match.status]}）` : ""}，不能激活手机算力。`;
   if (match.method === "IOS_MODEL_RANGE") {
-    const tiers = possibleTiers.length > 1 ? `T${possibleTiers[0]}–T${possibleTiers[possibleTiers.length - 1]}` : `T${possibleTiers[0]}`;
-    return `试算：命中 ${match.model}（${match.ruleId}），运营预设范围 ${match.minComputeValue}–${match.maxComputeValue}，可能档位 ${tiers}。最终值在首次成功校准时由服务端抽取并保存；试算不产生用户校准记录。`;
+    const tiers = possibleTiers.length === 0 ? "未知" : possibleTiers.length > 1
+      ? `T${possibleTiers[0]}–T${possibleTiers[possibleTiers.length - 1]}` : `T${possibleTiers[0]}`;
+    return `试算：命中 ${match.model}，运营预设范围 ${formatRange(match)}，可能档位 ${tiers}。最终值在首次成功校准时由服务端抽取并保存；试算不产生用户校准记录。`;
   }
   return `试算：T${match.tier}，平台算力 ${match.computeValue}`;
 }
@@ -110,7 +111,7 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false }: { ctx: EV
           {rules.some(rule => rule.platform === "ios") && <p role="status">有 {rules.filter(rule => rule.platform === "ios").length} 条旧的 iOS 硬件规则，iOS 只按上方 iPhone 机型规则匹配，这些规则不再参与匹配。核对后请删除或改到 iPhone 机型。</p>}
           {rules.map((rule,index) => <details className="phone-hardware-rule" key={index}><summary>规则 {index+1} · {rule.model || rule.soc || "未填写机型"}</summary><div style={grid}>
             <label>规则编号<input value={rule.id} maxLength={64} onChange={event => changeRule(index,{id:event.target.value})} /></label>
-            <label>平台<select value={rule.platform} onChange={event => changeRule(index,{platform:event.target.value as "android" | "ios"})}><option value="android">Android</option><option value="ios">iOS</option></select></label>
+            <label>平台<select value={rule.platform} onChange={event => changeRule(index,{platform:event.target.value as "android" | "ios"})}><option value="android">Android</option>{rule.platform === "ios" && <option value="ios">iOS（旧规则，不再匹配）</option>}</select></label>
             {(["model","soc","gpu","evidence"] as const).map(field => <label key={field}>{({model:"精确机型（留空匹配该芯片）",soc:"SoC",gpu:"GPU",evidence:"核验依据"})[field]}
               <input value={rule[field]} maxLength={field === "evidence" ? 500 : field === "gpu" ? 256 : 128} onChange={event => changeRule(index,{[field]:event.target.value})} /></label>)}
             {(["minMemoryGb","maxMemoryGb","computeValue"] as const).map(field => <label key={field}>{({minMemoryGb:"内存下限 GB（含）",maxMemoryGb:"内存上限 GB（不含）",computeValue:"平台算力值"})[field]}
