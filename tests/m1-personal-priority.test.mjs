@@ -27,8 +27,9 @@ test("personal period uses explicit month/currency, clears missing data and reje
   assert.ok(periodEffect);
   for (const mode of ["PERSONAL", "MANAGED", "ALL"]) {
     const calls = []; let resolve;
-    const context = { scope: { scopeSummary: { mode } }, queryState: { month: "2026-09", currency: "NEX" }, AbortController,
-      analyticsMonthWindow: month => { assert.equal(month, "2026-09"); return { from: "2026-08-31T16:00:00Z", to: "2026-09-30T16:00:00Z" }; },
+    const monthCalendar = [{ month: "2026-09", from: "2026-08-31T16:00:00Z", to: "2026-09-30T16:00:00Z" }];
+    const context = { scope: { scopeSummary: { mode } }, queryState: { month: "2026-09", currency: "NEX" }, AbortController, monthCalendar,
+      analyticsMonthWindow: (month, calendar) => { assert.equal(month, "2026-09"); assert.equal(calendar, monthCalendar); return calendar[0]; },
       supportAnalyticsClient: { query: options => { calls.push(options); return new Promise(done => { resolve = done; }); } },
       setPersonalPeriod: value => { context.period = value; }, setPersonalPeriodError: value => { context.error = value; }, analyticsErrorText: () => "期间读取失败",
       useEffect: callback => { context.cleanup = callback(); },
@@ -91,7 +92,7 @@ test("PERSONAL retains ACTIVE and TODO selection and labels without expanding ma
 });
 
 test("period failures stay unknown and can retry; lifetime values never supply the period metrics", async () => {
-  const context = { scope: { scopeSummary: { mode: "PERSONAL" } }, queryState: { month: "2026-10", currency: "USDT" }, AbortController,
+  const context = { scope: { scopeSummary: { mode: "PERSONAL" } }, queryState: { month: "2026-10", currency: "USDT" }, AbortController, monthCalendar: [],
     analyticsMonthWindow: () => ({ from: "start", to: "end" }), supportAnalyticsClient: { query: async () => { throw new Error("unavailable"); } },
     setPersonalPeriod: value => { context.period = value; }, setPersonalPeriodError: value => { context.error = value; }, analyticsErrorText: () => "期间读取失败",
     useEffect: callback => { context.cleanup = callback(); },

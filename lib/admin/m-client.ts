@@ -146,6 +146,7 @@ type ContentConversationView = {
   pendingReplySince?: string | null;
   lastHumanMessageAt?: string | null;
   customerNickname?: string | null;
+  customerAvatarRef?: string | null;
   lastMessage?: string;
   lastPublicMessageId?: number | null;
   lastMessageKind?: string | null;
@@ -1310,6 +1311,7 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
     ownerAgentId: str(base.ownerAgentId),
     ownerUnbound: base.ownerAgentId === null,
     customerId: Number.isSafeInteger(base.customerId ?? base.userId) && Number(base.customerId ?? base.userId) > 0 ? String(base.customerId ?? base.userId) : undefined,
+    customerAvatarRef: typeof base.customerAvatarRef === "string" && /^\/api\/admin\/content\/support-workbench\/customers\/\d+\/avatar$/.test(base.customerAvatarRef) ? base.customerAvatarRef : null,
     assignmentId: base.assignmentId == null ? null : String(base.assignmentId),
     ownerAdminId: Number.isSafeInteger(Number(base.ownerAgentId)) && Number(base.ownerAgentId) > 0
       ? Number(base.ownerAgentId)

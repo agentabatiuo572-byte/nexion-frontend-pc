@@ -212,6 +212,7 @@ export type SessionConvo = {
   ownerAgentId?: string; // 后台分配坐席的唯一身份，用于排除自转交
   ownerUnbound?: boolean; // 后端明确返回 ownerAgentId=null，缺字段不视为待分配
   customerId?: string;
+  customerAvatarRef?: string | null; // Set only when the customer uploaded an avatar; otherwise no request is made.
   assignmentId?: string | null;
   ownerAdminId?: number | null;
   owner: string;       // 后台分配坐席

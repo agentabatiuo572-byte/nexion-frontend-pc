@@ -43,6 +43,7 @@ export type SupportCustomer = {
   displayName?: string;
   agentName?: string;
   advisorAvatar?: {assetId:string;version:number};
+  customerAvatarRef: string | null;
   accountState: "ACTIVE" | "DORMANT" | "UNKNOWN";
   windowStatus: "ACTIVE" | "INACTIVE" | "UNKNOWN";
   maintenanceEnabled: boolean;
@@ -246,6 +247,7 @@ function customer(value: unknown): SupportCustomer {
     customerNo: optionalString(row.customerNo, "customer.customerNo"),
     displayName: nullableString(row.nickname, "customer.nickname") ?? undefined,
     agentName: row.agentName==null?undefined:nonempty(row.agentName,"customer.agentName"),
+    customerAvatarRef: row.customerAvatarRef==null?null:row.customerAvatarRef===`/api/admin/content/support-workbench/customers/${id(row.customerId, "customer.customerId")}/avatar`?row.customerAvatarRef:malformed("customer.customerAvatarRef"),
     advisorAvatar: row.advisorAvatar==null?undefined:(()=>{const avatar=object(row.advisorAvatar,"customer.avatar");return {assetId:nonempty(avatar.assetId,"avatar.assetId"),version:count(avatar.version,"avatar.version")};})(),
     accountState: enumValue(row.activityStatus, ["ACTIVE", "DORMANT", "UNKNOWN"] as const, "customer.activityStatus"),
     windowStatus: enumValue(row.windowStatus, ["ACTIVE", "INACTIVE", "UNKNOWN"] as const, "customer.windowStatus"),
