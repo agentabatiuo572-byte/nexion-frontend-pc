@@ -53,7 +53,7 @@ const HOME_SECTIONS: { title: string; keys: ScalarKey[] }[] = [
 
 const SECTIONS: { title: string; sub: string; keys: ScalarKey[] }[] = [
   { title: "历史规模配置", sub: "仅用于历史估算；介绍页与网络脉搏在线设备使用上方首页数字设置", keys: ["fleetDevices", "onlineRatePct", "onlineJitter"] },
-  { title: "网络脉搏注册用户", sub: "设置跳动间隔和每次增加人数后，从基数开始按间隔增加；两项留空时按月增长率推算。不参与设备预估排名，不改变真实账户", keys: ["registeredUsersBase", "registeredUsersTickIntervalSec", "registeredUsersTickStep", "registeredUsersMonthlyGrowthPct"] },
+  { title: "网络脉搏注册用户", sub: "设置跳动间隔和每次最少、最多增加人数后，从基数开始每隔一段时间在范围内增加；三项留空时按月增长率推算。不参与设备预估排名，不改变真实账户", keys: ["registeredUsersBase", "registeredUsersTickIntervalSec", "registeredUsersTickStepMin", "registeredUsersTickStepMax", "registeredUsersMonthlyGrowthPct"] },
   { title: "历史排名估算", sub: "仅用于历史本地估算；虚拟人口不参与设备预估排名", keys: ["virtualUserCount"] },
 ];
 
@@ -135,11 +135,15 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
     const errors = Object.fromEntries(H9_FIELDS.map((field) => [field.key, scalarError(field, drafts[field.key])])) as Record<ScalarKey, string>;
     if (num(drafts.homeOnlineStepMin) > num(drafts.homeOnlineStepMax)) errors.homeOnlineStepMax = "上限不能小于下限";
     if (num(drafts.homePaidStepMin) > num(drafts.homePaidStepMax)) errors.homePaidStepMax = "上限不能小于下限";
-    const tickInterval = drafts.registeredUsersTickIntervalSec.trim();
-    const tickStep = drafts.registeredUsersTickStep.trim();
-    if (!tickInterval && tickStep) errors.registeredUsersTickIntervalSec = "跳动间隔和每次增加人数要一起填写";
-    if (tickInterval && !tickStep) errors.registeredUsersTickStep = "跳动间隔和每次增加人数要一起填写";
-    if (data?.values.registeredUsersTickIntervalSec !== undefined && !tickInterval && !tickStep) {
+    const tickKeys = ["registeredUsersTickIntervalSec", "registeredUsersTickStepMin", "registeredUsersTickStepMax"] as const;
+    const tickFilled = tickKeys.filter((key) => drafts[key].trim());
+    if (tickFilled.length > 0 && tickFilled.length < tickKeys.length) {
+      for (const key of tickKeys) if (!drafts[key].trim()) errors[key] = "跳动间隔、每次最少和最多增加人数要一起填写";
+    }
+    if (tickFilled.length === tickKeys.length && num(drafts.registeredUsersTickStepMin) > num(drafts.registeredUsersTickStepMax)) {
+      errors.registeredUsersTickStepMax = "最多增加人数不能小于最少增加人数";
+    }
+    if (data?.values.registeredUsersTickIntervalSec !== undefined && tickFilled.length === 0) {
       errors.registeredUsersTickIntervalSec = "已设置的跳动间隔不能清空，可以改成新的值";
     }
     return errors;
@@ -224,7 +228,8 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
     const fleetChanged = nextValues.fleetDevices !== data.values.fleetDevices;
     const baseChanged = nextValues.registeredUsersBase !== data.values.registeredUsersBase
       || nextValues.registeredUsersTickIntervalSec !== data.values.registeredUsersTickIntervalSec
-      || nextValues.registeredUsersTickStep !== data.values.registeredUsersTickStep;
+      || nextValues.registeredUsersTickStepMin !== data.values.registeredUsersTickStepMin
+      || nextValues.registeredUsersTickStepMax !== data.values.registeredUsersTickStepMax;
     const virtualZero = nextValues.virtualUserCount === 0 && data.values.virtualUserCount !== 0;
     const nextDaily = nextValues.fleetDevices * data.publishedDailyUsdPerDevice;
 
@@ -237,7 +242,7 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
           ⚠️ 历史估算日金额从 {money(data.values.fleetDevices * data.publishedDailyUsdPerDevice)} 变成 {money(nextDaily)}
           (每台每日配置值 {money2(data.publishedDailyUsdPerDevice)} 不变)。这是内部估算，不代表实际支付，也不改变正式 App 对外统计。
         </div>}
-        {baseChanged && <div>改动注册用户基数、跳动间隔或每次增加人数后，网络脉搏会从基数重新开始计算；注册用户数字不参与设备预估排名，也不改变真实账户。</div>}
+        {baseChanged && <div>改动注册用户基数、跳动间隔或每次增加人数范围后，网络脉搏会从基数重新开始计算；注册用户数字不参与设备预估排名，也不改变真实账户。</div>}
         {virtualZero && <div>虚拟人口填了 0：历史估算只按真实注册人数（{int(data.realUserCount)} 人）计算。</div>}
         <div>如果别人同时改了这页，你需要刷新后重改；有任何一项不合法，整组都不会保存。</div>
         <div>首页数字只在开启后增长，暂停后停在当前值；App 最多 60 秒内同步。</div>
@@ -335,8 +340,8 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
     <div className="f-stats">
       <div className="f-stat cyan"><div className="k">历史设备配置</div><div className="v">{int(data.values.fleetDevices)}</div><div className="sub">设置值，不是实际设备数</div></div>
       <div className="f-stat"><div className="k">历史在线估算</div><div className="v">{int(data.values.fleetDevices * data.values.onlineRatePct / 100)}</div><div className="sub">设备数 × 在线比例 {data.values.onlineRatePct}%</div></div>
-      <div className="f-stat"><div className="k">网络脉搏注册基数</div><div className="v">{int(data.values.registeredUsersBase)}</div><div className="sub">「网络脉搏」显示用；{data.values.registeredUsersTickIntervalSec !== undefined && data.values.registeredUsersTickStep !== undefined
-        ? `每 ${data.values.registeredUsersTickIntervalSec} 秒增加 ${int(data.values.registeredUsersTickStep)} 人`
+      <div className="f-stat"><div className="k">网络脉搏注册基数</div><div className="v">{int(data.values.registeredUsersBase)}</div><div className="sub">「网络脉搏」显示用；{data.values.registeredUsersTickIntervalSec !== undefined && data.values.registeredUsersTickStepMin !== undefined && data.values.registeredUsersTickStepMax !== undefined
+        ? `每 ${data.values.registeredUsersTickIntervalSec} 秒增加 ${data.values.registeredUsersTickStepMin === data.values.registeredUsersTickStepMax ? int(data.values.registeredUsersTickStepMin) : `${int(data.values.registeredUsersTickStepMin)}–${int(data.values.registeredUsersTickStepMax)}`} 人`
         : `每月增长 ${data.values.registeredUsersMonthlyGrowthPct}%`}</div></div>
       <div className="f-stat ok"><div className="k">历史估算分母</div><div className="v">{int(data.realUserCount + data.values.virtualUserCount)}</div><div className="sub">真实注册人数 + 虚拟人口</div></div>
     </div>
@@ -367,7 +372,7 @@ function H9DisplayStats({ ctx }: { ctx: HCtx }) {
           <div className="p-row">
             <div className="txt">
               <div className="k">注册用户推算起点 </div>
-              <div className="s">用于网络脉搏注册用户展示。修改基数、跳动间隔或每次增加人数时，起点自动重置为保存时刻。</div>
+              <div className="s">用于网络脉搏注册用户展示。修改基数、跳动间隔或每次增加人数范围时，起点自动重置为保存时刻。</div>
             </div>
             <span className="v">{when(data.values.registeredUsersAnchorAt)}</span>
           </div>
