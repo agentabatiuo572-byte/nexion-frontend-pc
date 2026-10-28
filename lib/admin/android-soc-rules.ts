@@ -147,3 +147,68 @@ export function blankAndroidRule(existing: AndroidSocRule[], otherRuleIds: strin
   while (ids.has(`soc-tier-${n}`)) n++;
   return { id: `soc-tier-${n}`, name: "", minComputeValue: NaN, maxComputeValue: NaN, enabled: true, valueSource: "OPERATOR_PRESET", note: null, chips: [] };
 }
+
+export interface AndroidPresetCatalog {
+  catalogVersion: string; verifiedOn: string; sources: string[]; notice: string;
+  ambiguousIds: Array<{ id: string; chips: string[]; note: string }>; excluded: Array<{ chip: string; reason: string }>;
+  tiers: AndroidSocRule[];
+}
+/** What loading the presets would change; removed items come back only when explicitly restored. */
+export interface AndroidImportPlan {
+  tiers: AndroidSocRule[]; chips: Array<{ tierId: string; chip: AndroidSocChip }>; aliases: Array<{ socKey: string; alias: string }>;
+  removed: Array<{ kind: "chip" | "alias"; key: string; label: string }>; conflicts: string[];
+}
+/**
+ * Only fills what the draft lacks: missing tiers, missing chips (into their preset tier, or the draft tier
+ * with the same id), missing identifiers of existing chips. Ranges, states and chip placement are never changed.
+ */
+export function planAndroidImport(draft: AndroidSocRule[], removals: AndroidPresetRemovals, presets: AndroidSocRule[]): AndroidImportPlan {
+  const plan: AndroidImportPlan = { tiers: [], chips: [], aliases: [], removed: [], conflicts: [] };
+  const tierIds = new Set(draft.map(rule => rule.id));
+  const chips = new Map(draft.flatMap(rule => rule.chips).map(chip => [chip.socKey, chip]));
+  const owners = new Map(draft.flatMap(rule => rule.chips.flatMap(chip => chip.aliases.map(alias => [normalizeModel(alias), chip.name] as const))));
+  const removedKeys = new Set(removals.socKeys), removedAliases = new Set(removals.aliases.map(normalizeModel));
+  for (const tier of presets) {
+    if (!tierIds.has(tier.id)) { plan.tiers.push({ ...tier, chips: [] }); tierIds.add(tier.id); }
+    for (const chip of tier.chips) {
+      const existing = chips.get(chip.socKey);
+      if (!existing) {
+        if (removedKeys.has(chip.socKey)) { plan.removed.push({ kind: "chip", key: chip.socKey, label: chip.name }); continue; }
+        const taken = chip.aliases.find(alias => owners.has(normalizeModel(alias)));
+        if (taken) { plan.conflicts.push(`${chip.name}：「${taken}」已属于 ${owners.get(normalizeModel(taken))}`); continue; }
+        plan.chips.push({ tierId: tier.id, chip: { ...chip, aliases: [...chip.aliases] } });
+        for (const alias of chip.aliases) owners.set(normalizeModel(alias), chip.name);
+        continue;
+      }
+      for (const alias of chip.aliases) {
+        const id = normalizeModel(alias);
+        if (existing.aliases.some(item => normalizeModel(item) === id)) continue;
+        if (removedAliases.has(id)) plan.removed.push({ kind: "alias", key: alias, label: `${existing.name} 的「${alias}」` });
+        else if (owners.has(id)) plan.conflicts.push(`${existing.name}：「${alias}」已属于 ${owners.get(id)}`);
+        else { plan.aliases.push({ socKey: chip.socKey, alias }); owners.set(id, existing.name); }
+      }
+    }
+  }
+  return plan;
+}
+/** Applies a plan; restore brings back the removed items the operator ticked and drops them from the removal record. */
+export function applyAndroidImport(draft: AndroidSocRule[], removals: AndroidPresetRemovals, presets: AndroidSocRule[],
+                                   plan: AndroidImportPlan, restore: boolean) {
+  let rules = [...draft, ...plan.tiers.map(tier => ({ ...tier, chips: [] as AndroidSocChip[] }))];
+  const add = (tierId: string, chip: AndroidSocChip) => { rules = rules.map(rule => rule.id === tierId ? { ...rule, chips: [...rule.chips, chip] } : rule); };
+  for (const { tierId, chip } of plan.chips) add(tierId, chip);
+  const extra = [...plan.aliases, ...(restore ? plan.removed.filter(item => item.kind === "alias").map(item => ({
+    socKey: presets.flatMap(rule => rule.chips).find(chip => chip.aliases.includes(item.key))?.socKey ?? "", alias: item.key })) : [])];
+  rules = rules.map(rule => ({ ...rule, chips: rule.chips.map(chip => {
+    const more = extra.filter(item => item.socKey === chip.socKey).map(item => item.alias);
+    return more.length ? { ...chip, aliases: [...chip.aliases, ...more] } : chip;
+  }) }));
+  if (restore) for (const item of plan.removed.filter(entry => entry.kind === "chip")) {
+    const tier = presets.find(rule => rule.chips.some(chip => chip.socKey === item.key))!;
+    add(tier.id, { ...tier.chips.find(chip => chip.socKey === item.key)! });
+  }
+  const restoredAliases = new Set(restore ? plan.removed.filter(item => item.kind === "alias").map(item => normalizeModel(item.key)) : []);
+  const restoredKeys = new Set(restore ? plan.removed.filter(item => item.kind === "chip").map(item => item.key) : []);
+  return { rules, removals: { socKeys: removals.socKeys.filter(key => !restoredKeys.has(key)),
+    aliases: removals.aliases.filter(alias => !restoredAliases.has(normalizeModel(alias))) } };
+}

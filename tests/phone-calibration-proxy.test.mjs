@@ -83,10 +83,12 @@ test("only the three phone route and method pairs are forwarded; existing config
     for (const method of methods) assert.equal((await fixture.request(path, method)).status, 405);
   }
   assert.equal((await fixture.request("phone-calibration/ios-model-presets", "GET")).status, 200);
+  assert.equal((await fixture.request("phone-calibration/android-soc-presets", "GET")).status, 200);
+  assert.equal((await fixture.request("phone-calibration/android-soc-presets", "POST")).status, 405);
   // Model risk settings are read and saved directly; there is no POST.
   for (const method of ["GET", "PUT"]) assert.equal((await fixture.request("phone-calibration/risk", method)).status, 200);
   assert.equal((await fixture.request("phone-calibration/risk", "POST")).status, 405);
-  assert.equal(fixture.calls.length, 9, "rejected methods must not reach the backend");
+  assert.equal(fixture.calls.length, 10, "rejected methods must not reach the backend");
 });
 
 test("unknown, publish and nested config paths remain unavailable for every exposed method", async () => {

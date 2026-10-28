@@ -1,7 +1,7 @@
 import { guardedFetch, formatAdminApiError } from "./error-messages";
 import { iosRuleIssues, isIosModelRule, normalizeIosRule, type IosModelPresetCatalog, type IosModelRule } from "./ios-model-rules";
 import { androidRuleIssues, isAndroidSocRule, normalizeAndroidRule, normalizeRemovals,
-  type AndroidPresetRemovals, type AndroidSocRule } from "./android-soc-rules";
+  type AndroidPresetCatalog, type AndroidPresetRemovals, type AndroidSocRule } from "./android-soc-rules";
 
 export interface PhonePolicy { version: number; effectiveAt: number; thresholds: number[]; androidSocRules: AndroidSocRule[];
   iosModelRules: IosModelRule[]; androidPresetRemovals: AndroidPresetRemovals }
@@ -134,4 +134,12 @@ export async function fetchIosModelPresets(): Promise<IosModelPresetCatalog> {
       || !Array.isArray(value.sources) || typeof value.notice !== "string"
       || !Array.isArray(value.models) || !value.models.every(isIosModelRule)) return invalid();
   return { ...(value as unknown as IosModelPresetCatalog), models: (value.models as IosModelRule[]).map(normalizeIosRule) };
+}
+/** The versioned Android chip-tier presets shipped with the backend; loading them only fills the E6 draft. */
+export async function fetchAndroidSocPresets(): Promise<AndroidPresetCatalog> {
+  const value = await request("/android-soc-presets");
+  if (!object(value) || typeof value.catalogVersion !== "string" || typeof value.verifiedOn !== "string"
+      || !Array.isArray(value.sources) || typeof value.notice !== "string" || !Array.isArray(value.ambiguousIds)
+      || !Array.isArray(value.excluded) || !Array.isArray(value.tiers) || !value.tiers.every(isAndroidSocRule)) return invalid();
+  return { ...(value as unknown as AndroidPresetCatalog), tiers: (value.tiers as AndroidSocRule[]).map(normalizeAndroidRule) };
 }

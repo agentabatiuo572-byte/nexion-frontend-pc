@@ -141,3 +141,21 @@ test("A2 sees added, modified, disabled and removed iPhone rules against the ser
   assert.equal(inherited.iosRulesInherited,true);
   assert.equal(view.iosRulesInherited,false);
 });
+test("Android presets fill only what is missing and bring back removed items only when restored", () => {
+  const { planAndroidImport, applyAndroidImport } = androidRules.exports;
+  const preset = [{...rule,chips:[chip("sd-8g2","SM8550","SM8550-AB"),chip("sd-8g3","SM8650")]},
+    {...rule,id:"entry",name:"入门",minComputeValue:20,maxComputeValue:38,chips:[chip("sd-680","SM6225")]}];
+  const draft = [{...rule,minComputeValue:80,chips:[chip("sd-8g2","SM8550")]}];
+  const removals = {socKeys:["sd-8g3"],aliases:[]};
+  const plan = planAndroidImport(draft, removals, preset);
+  same([plan.tiers.map(t => t.id), plan.chips.map(c => c.chip.socKey), plan.aliases.map(a => a.alias), plan.removed.map(r => r.key)],
+    [["entry"],["sd-680"],["SM8550-AB"],["sd-8g3"]]);
+  const kept = applyAndroidImport(draft, removals, preset, plan, false);
+  assert.equal(kept.rules[0].minComputeValue, 80);
+  same(kept.rules.map(t => t.chips.map(c => c.socKey)), [["sd-8g2"],["sd-680"]]);
+  same(kept.removals.socKeys, ["sd-8g3"]);
+  const restored = applyAndroidImport(draft, removals, preset, plan, true);
+  same(restored.rules[0].chips.map(c => c.socKey), ["sd-8g2","sd-8g3"]);
+  same(restored.removals.socKeys, []);
+});
+

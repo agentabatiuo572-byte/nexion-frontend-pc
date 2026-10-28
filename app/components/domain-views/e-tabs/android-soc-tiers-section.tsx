@@ -2,8 +2,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Btn } from "../design-kit";
 import { formatRange } from "@/lib/admin/ios-model-rules";
-import { androidRuleIssues, blankAndroidRule, diffAndroidRules, moveChip, removeChip, setChipAliases,
-  type AndroidPresetRemovals, type AndroidSocChip, type AndroidSocRule } from "@/lib/admin/android-soc-rules";
+import { androidRuleIssues, applyAndroidImport, blankAndroidRule, diffAndroidRules, moveChip, planAndroidImport, removeChip, setChipAliases,
+  type AndroidImportPlan, type AndroidPresetCatalog, type AndroidPresetRemovals, type AndroidSocChip, type AndroidSocRule } from "@/lib/admin/android-soc-rules";
+import { fetchAndroidSocPresets } from "@/lib/admin/phone-calibration-client";
+import { displayAdminError } from "@/lib/admin/error-messages";
 
 const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 };
 const CHANGE_LABELS = { added: "新增", modified: "修改", disabled: "停用", enabled: "启用", removed: "删除" } as const;
@@ -19,7 +21,25 @@ export function AndroidSocTiersSection({ rules, removals, published, iosRuleIds,
 }) {
   const [query, setQuery] = useState("");
   const [chipForm, setChipForm] = useState<ChipForm | null>(null);
-  useEffect(() => { if (!editable) setChipForm(null); }, [editable]);
+  const [presets, setPresets] = useState<{ catalog: AndroidPresetCatalog; plan: AndroidImportPlan; restore: boolean } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => { if (!editable) { setChipForm(null); setPresets(null); } }, [editable]);
+  async function loadPresets() {
+    setLoading(true); setError("");
+    try {
+      const catalog = await fetchAndroidSocPresets();
+      setPresets({ catalog, plan: planAndroidImport(rules, removals, catalog.tiers), restore: false });
+    } catch (failure) { setError(displayAdminError(failure)); } finally { setLoading(false); }
+  }
+  function applyPresets() {
+    if (!presets || !editable) return;
+    // Re-plan against the current draft so an edit made meanwhile is never overwritten.
+    const plan = planAndroidImport(rules, removals, presets.catalog.tiers);
+    const next = applyAndroidImport(rules, removals, presets.catalog.tiers, plan, presets.restore);
+    onChange(next.rules, next.removals);
+    setPresets(null);
+  }
   const issues = useMemo(() => androidRuleIssues(rules, iosRuleIds), [rules, iosRuleIds]);
   const changes = useMemo(() => diffAndroidRules(published, rules), [published, rules]);
   const needle = query.trim().toLowerCase();
@@ -45,8 +65,33 @@ export function AndroidSocTiersSection({ rules, removals, published, iosRuleIds,
     <p className="f-foot">按手机芯片匹配，不区分机型和内存。每档一个运营预设区间，档内所有芯片共用；用户首次校准时服务端在区间内取值并保存。芯片连同它的全部标识一起移档，标识不能拆到别的档。</p>
     <div style={grid}>
       <label>搜索芯片或标识<input value={query} maxLength={64} onChange={event => setQuery(event.target.value)} /></label>
-      <div className="ios-clear"><Btn disabled={!editable} onClick={() => onChange([...rules, blankAndroidRule(rules, iosRuleIds)], removals)}>新增芯片档</Btn></div>
+      <div className="ios-clear"><Btn disabled={!editable || loading || !!presets} onClick={() => void loadPresets()}>{loading ? "正在读取预设…" : "载入芯片预设"}</Btn>
+        <Btn disabled={!editable} onClick={() => onChange([...rules, blankAndroidRule(rules, iosRuleIds)], removals)}>新增芯片档</Btn></div>
     </div>
+    {error && <p role="alert">{error}</p>}
+    {presets && <div className="ios-import" role="region" aria-label="Android 芯片预设导入预览">
+      <h4>导入预览 · {presets.catalog.catalogVersion}</h4>
+      <p>核对于 {presets.catalog.verifiedOn}。只补草稿中缺少的芯片档、芯片和标识，不改已有的区间、启停和归档。</p>
+      <div className="ios-stats">
+        <div><small>新增芯片档</small><strong>{presets.plan.tiers.length}</strong></div>
+        <div><small>新增芯片</small><strong>{presets.plan.chips.length}</strong></div>
+        <div><small>补充标识</small><strong>{presets.plan.aliases.length}</strong></div>
+        <div><small>标识冲突</small><strong className={presets.plan.conflicts.length ? "danger" : ""}>{presets.plan.conflicts.length}</strong></div>
+      </div>
+      {presets.plan.conflicts.map(conflict => <p role="alert" key={conflict}>未导入 {conflict}，请先核对。</p>)}
+      {presets.plan.removed.length > 0 && <label className="ios-check"><input type="checkbox" checked={presets.restore}
+        onChange={event => setPresets({ ...presets, restore: event.target.checked })} />
+        同时恢复之前主动删除的 {presets.plan.removed.length} 项（{presets.plan.removed.slice(0, 4).map(item => item.label).join("、")}{presets.plan.removed.length > 4 ? " 等" : ""}）。默认不恢复。</label>}
+      <details><summary>未收录的芯片与共用标识</summary>
+        <ul>{presets.catalog.excluded.map(item => <li key={item.chip}>{item.chip}：{item.reason}</li>)}
+          {presets.catalog.ambiguousIds.map(item => <li key={item.id}><span className="mono">{item.id}</span>（{item.chips.join("、")}）：{item.note}</li>)}</ul>
+      </details>
+      <p className="f-foot">{presets.catalog.notice}</p>
+      <Btn variant="primary" disabled={!editable || presets.plan.tiers.length + presets.plan.chips.length + presets.plan.aliases.length === 0 && !(presets.restore && presets.plan.removed.length)}
+        onClick={applyPresets}>加入草稿</Btn>
+      <Btn onClick={() => setPresets(null)}>取消</Btn>
+      <p className="f-foot">加入草稿后仍需「试算并预览影响」→「提交审批」，审批通过才生效。</p>
+    </div>}
     {issues.length > 0 && <p role="alert">{issues[0].index >= 0 ? `第 ${issues[0].index + 1} 档：` : ""}{issues[0].message}</p>}
     <p role="status">草稿相对已发布：{changes.length === 0 ? "没有变化" : changes.map(change => `${CHANGE_LABELS[change.kind]}「${change.name || change.id}」`).join("、")}</p>
     {rules.length === 0 ? <p>尚无芯片档。Android 校准会进入待核验，不授予算力。</p> : rules.map((rule, index) => {
