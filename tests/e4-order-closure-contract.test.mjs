@@ -28,6 +28,17 @@ test("E4 detail and refund proposal carry real evidence and refund channel", asy
   assert.match(registry, /refundChannel: String\(ctx\.refundChannel/);
 });
 
+test("E4 refund requires a user-visible reason that reaches the A2 command", async () => {
+  const client = await read("lib/admin/e4-client.ts");
+  const shell = await read("app/components/domain-views/e-view.tsx");
+  const registry = await read("lib/admin/high-ops-registry.ts");
+  assert.match(client, /E4_REFUND_REASONS = \["USER_REQUEST", "DUPLICATE_PAYMENT", "DELIVERY_UNAVAILABLE", "ORDER_EXCEPTION", "OTHER"\]/);
+  assert.match(shell, /key: "refundReasonCode", label: "退款原因（用户可见）", current: ""/);
+  assert.match(shell, /if \(!\(E4_REFUND_REASONS as readonly string\[\]\)\.includes\(refundReasonCode\)\) \{ throw new Error\("请选择退款原因"\); \}/);
+  assert.match(shell, /def\.buildCommand\(\{ orderNo: mc\.orderId, refundChannel, refundReasonCode \}\)/);
+  assert.match(registry, /refundReasonCode: String\(ctx\.refundReasonCode\)/);
+});
+
 test("E4 removes reverse transitions and illegal refund terminal", async () => {
   const shell = await read("app/components/domain-views/e-view.tsx");
   const data = await read("app/components/domain-views/e-tabs/data.ts");
