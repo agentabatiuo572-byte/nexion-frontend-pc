@@ -11,7 +11,12 @@ export function phoneUserRoute(parts: string[]): {
         method = "GET";
     else if (parts.length === 4 && section === "phone-replacement-verifications" && parts[3] === "by-idempotency-key")
         method = "GET";
+    else if (parts.length === 3 && section === "phone-model-locks")
+        method = "GET";
     else if (parts.length === 3 && section === "phone-replacement-grants")
+        method = "POST";
+    // "." and ".." would let the joined path climb out of this resource.
+    else if (parts.length === 5 && section === "phone-model-locks" && /^(?!\.{1,2}$)[A-Za-z0-9._:-]{1,128}$/.test(parts[3]) && parts[4] === "release")
         method = "POST";
     else if (parts.length === 5 && /^[A-Za-z0-9_-]{1,64}$/.test(parts[3]) &&
         (section === "phone-replacement-requests" && ["verify", "close"].includes(parts[4]) || section === "phone-replacement-grants" && parts[4] === "revoke"))
