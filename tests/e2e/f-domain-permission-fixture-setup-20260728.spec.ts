@@ -171,7 +171,7 @@ async function assertExpectedSession(page: Page, key: AccountKey) {
     for (const authority of readAuthorities) expect(authorities).toContain(authority);
     for (const authority of [
       "network_f1_write", "network_f2_royalty_rate", "network_f3_write",
-      "network_f4_pool_fund", "network_f5_commission_dispose",
+      "network_f4_pool_fund", "network_f5_commission_freeze",
       "platform_a2_read", "platform_a2_proposal_create",
     ]) expect(authorities).toContain(authority);
   } else {

@@ -125,7 +125,7 @@
 | F2 网络版税费率 | `network_f2_read` | GROWTH、FINANCE、AUDITOR | H：GROWTH lead+资金守卫 | ALL；费率和≤上限，历史结算不重算 |
 | F3 双轨结算引擎 | `network_f3_read` | GROWTH、FINANCE、AUDITOR | W/H：GROWTH lead | ALL；暂停与结算批次分离 |
 | F4 池/配额/大使/榜 | `network_f4_read` | GROWTH、FINANCE、AUDITOR | W：GROWTH；资金池动作 H | REGION/ALL；榜单信号不得直接冻结账户 |
-| F5 佣金事件审计 | `network_f5_read` | GROWTH、FINANCE、RISK、AUDITOR | 处置：GROWTH/FINANCE；撤销/补发 H：FINANCE_LEAD | MASKED；原事件不可改，纠错建新事件 |
+| F5 佣金事件审计 | `network_f5_read` | GROWTH、FINANCE、FINANCE_LEAD、RISK、RISK_LEAD、AUDITOR | 冻结/解冻：RISK_LEAD、FINANCE_LEAD；暂停：RISK_LEAD；提前解锁/冲正/补发 H：FINANCE_LEAD；增长只读与异常阈值 | MASKED；原事件不可改，纠错建新事件 |
 
 ### 3.7 G 金融产品（5）
 

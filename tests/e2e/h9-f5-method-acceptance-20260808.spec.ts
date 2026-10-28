@@ -81,10 +81,10 @@ test.beforeAll(() => {
   const fReadRole = createRole(`HF_${suffix}_F_RO`, ["F5"], ["network_f5_read"]);
   const fNoMenuRole = createRole(`HF_${suffix}_F_NM`, ["F2"], ["network_f2_read"]);
   const fOperatorRole = createRole(`HF_${suffix}_F_OP`, ["F5", "D4"], [
-    "network_f5_read", "network_f5_commission_dispose", "platform_a2_proposal_create", "finance_d4_read",
+    "network_f5_read", "network_f5_commission_freeze", "network_f5_commission_release", "platform_a2_proposal_create", "finance_d4_read",
   ]);
   const fCheckerRole = createRole(`HF_${suffix}_F_CK`, ["A2"], [
-    "platform_a2_read", "platform_a2_operation_approve", "network_f5_commission_dispose",
+    "platform_a2_read", "platform_a2_operation_approve", "network_f5_commission_freeze", "network_f5_commission_release",
   ]);
   hPrimary = cloneAdmin(hFixture, "maker", `h9sa1_${suffix}`, true, 1);
   hSecondWriter = cloneAdmin(hFixture, "maker", `h9sa2_${suffix}`, true, 1);

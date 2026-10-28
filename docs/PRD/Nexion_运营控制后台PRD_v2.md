@@ -1841,7 +1841,7 @@ flowchart TD
 
 **⑤ 接口**：PC `/api/admin/teams/commissions` 代理服务端 `GET /api/admin/commissions`；沿用 `kind/currency/userId/cohort/status/cursor/limit` 查询和 `/export` 脱敏导出。状态处置沿用既有 F5 A2 命令；服务端把直属行解析为同一结算组，再执行冻结、解锁、冲正、补发或暂停。返回八类汇总、七态分布及完整来源快照；不以列表当前页代替全量汇总。真实退款事实优先于客户端提交的状态或金额。
 
-**⑥ 权限 & 审计**：读取、异常配置、处置和冲正/暂停分别沿用 `network_f5_read`、`network_f5_write`、`network_f5_commission_dispose`、`network_f5_commission_reject`。权限由服务端验证，前端仅提供便利。审计追加记录结算组、源/结果事件、两币实际金额、追回与待追回、证据、理由、命令号、审批人及时间。导出按现有脱敏策略处理。
+**⑥ 权限 & 审计**：按动作对资金的影响分权：读取 `network_f5_read`（增长、财务、风控、审计）；异常阈值 `network_f5_write`（增长、风控主管）；冻结与解冻 `network_f5_commission_freeze`（风控主管、财务主管）；暂停／恢复用户佣金 `network_f5_commission_suspend`（风控主管）；提前解锁与支付 `network_f5_commission_release`、冲正 `network_f5_commission_reverse`、补发 `network_f5_commission_reissue`（财务主管）。增长岗不处置佣金资金。所有处置走审批，提交人与审批人不同。权限由服务端验证，前端仅提供便利。审计追加记录结算组、源/结果事件、两币实际金额、追回与待追回、证据、理由、命令号、审批人及时间。导出按现有脱敏策略处理。
 
 **⑦ 风控 & 联动**：B1 检查仅资金放大；真实冻结、退款、释放及补发共用结算层，不能绕过两币事务。按来源唯一性防重复，不将政策版本加入防重键；退单重试不重复扣款、累计追回不超过原奖励。其他独立奖励保留原计算、冷却与处置；排行榜仅计合法净到账，不把未释放或已撤销奖励当作收入。D4、钱包、佣金状态与 A2 审计必须一致。
 

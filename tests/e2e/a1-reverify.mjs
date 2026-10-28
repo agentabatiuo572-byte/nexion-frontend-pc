@@ -401,7 +401,7 @@ try {
   // 权限:superadmin 应有 dispose/reject 权限(前面状态转换全跑通证明)
   record("A1-F5-PERM-DISPOSE-REJECT",
     "passed",
-    `F5 写权限强制:superadmin 走 dispose/reject 已在前置用例验证(若缺权限,前面状态转换会 403);后端 @PreAuthorize 已改为细粒度 network_f5_commission_dispose/reject`);
+    `F5 写权限强制:superadmin 走 freeze/release/reverse 已在前置用例验证(若缺权限,前面状态转换会 403);后端按资金影响分为 network_f5_commission_freeze/suspend/release/reverse/reissue`);
 
   log("=== A1 复验 v2 结束 ===");
 } catch (e) {
