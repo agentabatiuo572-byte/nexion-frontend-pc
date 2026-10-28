@@ -17,7 +17,7 @@ export interface OpsTask {
 export interface PurchaseGate {
   rankMin?: number;
   activeDirectMin?: number;
-  teamVolumeMin?: number;
+  teamComputePointsMin?: number;
   mode: "all" | "either";
   quotaCap?: number;
   quotaSold?: number;
@@ -44,6 +44,8 @@ export interface OpsSku {
   phoneDailyEarn?: number;
   phoneDailyEarnNEX?: number;
   price: number;
+  /** 每件算力点：计入团队等级与配额，下单时记入订单。 */
+  computePoints?: number;
   dailyEarn: number;
   dailyEarnNEX: number;
   shareYieldMin?: number;

@@ -358,7 +358,7 @@ type SupportAgentPageView = {
 type SupportWorkbenchPurchaseGate = {
   rankMin?: number | null;
   activeDirectMin?: number | null;
-  teamVolumeMin?: number | null;
+  teamComputePointsMin?: number | null;
   mode?: "all" | "either" | null;
   quotaCap?: number | null;
   quotaSold?: number | null;
@@ -649,7 +649,7 @@ function adaptPurchaseGate(gate: SupportWorkbenchPurchaseGate | null | undefined
   const purchaseGate: PurchaseGate = {
     rankMin: gate.rankMin ?? undefined,
     activeDirectMin: gate.activeDirectMin ?? undefined,
-    teamVolumeMin: gate.teamVolumeMin ?? undefined,
+    teamComputePointsMin: gate.teamComputePointsMin ?? undefined,
     mode: gate.mode === "either" ? "either" : "all",
     quotaCap: gate.quotaCap ?? undefined,
     quotaSold: gate.quotaSold ?? undefined,
@@ -659,7 +659,7 @@ function adaptPurchaseGate(gate: SupportWorkbenchPurchaseGate | null | undefined
   const hasValue =
     purchaseGate.rankMin != null ||
     purchaseGate.activeDirectMin != null ||
-    purchaseGate.teamVolumeMin != null ||
+    purchaseGate.teamComputePointsMin != null ||
     purchaseGate.quotaCap != null;
   return hasValue ? purchaseGate : undefined;
 }

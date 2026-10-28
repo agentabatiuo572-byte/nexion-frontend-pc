@@ -16,7 +16,7 @@ export interface ImpersonateUser {
   id: string;
   name: string;
   lc: string;       // 生命周期 L0–L5
-  vrank: string;    // V0–V12
+  vrank: string;    // V0–V8
   devices: number;  // 设备数
   risk: number;
   balance: number;  // USDT

@@ -60,7 +60,7 @@ function validPurchaseGate(value: unknown) {
   if (value.quotaCap != null && value.quotaSold != null
     && isFiniteNumberLike(value.quotaCap) && isFiniteNumberLike(value.quotaSold)
     && Number(value.quotaSold) > Number(value.quotaCap)) return false;
-  return ["rankMin", "activeDirectMin", "teamVolumeMin", "quotaCap", "quotaSold"]
+  return ["rankMin", "activeDirectMin", "teamComputePointsMin", "quotaCap", "quotaSold"]
     .every((key) => isOptionalNonNegativeNumberLike(value[key]));
 }
 

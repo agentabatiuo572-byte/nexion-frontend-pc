@@ -684,7 +684,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                     const parts: string[] = [];
                     if (g.rankMin != null) parts.push(`V≥${g.rankMin}`);
                     if (g.activeDirectMin != null) parts.push(`${g.activeDirectMin}直接邀请`);
-                    if (g.teamVolumeMin != null) parts.push(`$${Math.round(g.teamVolumeMin / 1000)}K业绩`);
+                    if (g.teamComputePointsMin != null) parts.push(`团队算力点 ${g.teamComputePointsMin.toLocaleString("en-US")}`);
                     const cond = parts.join(g.mode === "either" ? "/" : "+");
                     const remaining = gateRemaining(g);
                     const txt = `购买条件${cond ? " " + cond : ""}${remaining != null ? ` · 剩 ${remaining}` : ""}`;

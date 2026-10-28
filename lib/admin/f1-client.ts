@@ -23,9 +23,9 @@ interface ApiResult<T> {
 interface BackendVRankRow {
   v?: string | null;
   label?: string | null;
-  selfBuy?: string | null;
+  selfBuy?: string | number | null;
   directRefs?: string | null;
-  teamGv?: string | null;
+  teamGv?: string | number | null;
   legCount?: string | null;
   legRank?: string | null;
   unilevelDepth?: string | null;
@@ -222,8 +222,8 @@ interface BackendF4QuotaRow {
   productNo?: string | null;
   name?: string | null;
   directRefs?: number | string | null;
-  monthVolumeUsd?: number | string | null;
-  monthVolumeUsdText?: string | null;
+  monthComputePoints?: number | string | null;
+  monthComputePointsText?: string | null;
   unlockMode?: string | null;
   current?: number | string | null;
   cap?: number | string | null;
@@ -692,8 +692,8 @@ export interface F4QuotaRow {
   productNo: string;
   name: string;
   directRefs: number;
-  monthVolumeUsd: number;
-  monthVolumeUsdText: string | null;
+  monthComputePoints: number;
+  monthComputePointsText: string | null;
   unlockMode: "ALL" | "EITHER";
   criteriaKnown: boolean;
   current: number;
@@ -1078,9 +1078,9 @@ function normalizeOverview(data: BackendOverview | null | undefined): F1VRankOve
     return {
       v,
       label: asText(row.label, v),
-      selfBuy: optionalText(row.selfBuy),
+      selfBuy: row.selfBuy == null ? undefined : String(row.selfBuy),
       directRefs: row.directRefs == null ? undefined : String(row.directRefs),
-      teamGv: optionalText(row.teamGv),
+      teamGv: row.teamGv == null ? undefined : String(row.teamGv),
       legCount: row.legCount == null ? undefined : String(row.legCount),
       legRank: optionalText(row.legRank),
       unilevelDepth: asText(row.unilevelDepth),
@@ -1318,16 +1318,16 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
   };
 }
 
-function quotaVolumeText(value: unknown): string | null {
+function quotaPointsText(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const text = value.trim();
-  return /^(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/.test(text) ? text : null;
+  return /^(?:0|[1-9]\d{0,17})$/.test(text) ? text : null;
 }
 
 function quotaCriteriaKnown(row: BackendF4QuotaRow): boolean {
   const refs = finiteDashboardNumber(row.directRefs);
   return refs !== null && Number.isSafeInteger(refs) && refs >= 0
-    && quotaVolumeText(row.monthVolumeUsdText) !== null
+    && quotaPointsText(row.monthComputePointsText) !== null
     && ["ALL", "EITHER"].includes(asText(row.unlockMode).toUpperCase());
 }
 
@@ -1378,8 +1378,8 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     productNo: asText(row.productNo),
     name: asText(row.name, "Quota"),
     directRefs: toNumber(row.directRefs),
-    monthVolumeUsd: toNumber(row.monthVolumeUsd),
-    monthVolumeUsdText: quotaVolumeText(row.monthVolumeUsdText),
+    monthComputePoints: toNumber(row.monthComputePoints),
+    monthComputePointsText: quotaPointsText(row.monthComputePointsText),
     unlockMode: asText(row.unlockMode).toUpperCase() === "EITHER" ? "EITHER" as const : "ALL" as const,
     criteriaKnown: quotaCriteriaKnown(row),
     current: toNumber(row.current),

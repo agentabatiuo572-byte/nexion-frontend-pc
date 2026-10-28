@@ -73,47 +73,46 @@ async function render(criteria, pool = {}) {
 }
 
 test("missing quota criteria are unavailable, never zero-threshold authority", async () => {
-  for (const legacy of [{}, { directRefs: 8, monthVolumeUsd: 725, unlockMode: "ALL" }]) {
+  for (const legacy of [{}, { directRefs: 8, monthComputePoints: 725, unlockMode: "ALL" }]) {
     const text = await render(legacy);
     assert.match(text, /商品编号 P-REAL · 资格条件暂时无法显示/);
     assert.doesNotMatch(text, /无额外条件/);
   }
 });
 
-test("known ALL and EITHER criteria preserve six-decimal monetary thresholds", async () => {
+test("known ALL and EITHER criteria show whole team compute points", async () => {
   for (const [mode, conjunction] of [["ALL", "且"], ["EITHER", "或"]]) {
-    const text = await render({ directRefs: "8", monthVolumeUsd: "725.123456", monthVolumeUsdText: "725.123456", unlockMode: mode });
-    assert.ok(text.includes(`有效直接邀请 ≥ 8 ${conjunction} 团队业绩 ≥ $725.123456`), text);
-    assert.doesNotMatch(text, /资格条件暂时无法显示/);
+    const text = await render({ directRefs: "8", monthComputePoints: 7250, monthComputePointsText: "7250", unlockMode: mode });
+    assert.ok(text.includes(`有效直接邀请 ≥ 8 ${conjunction} 本月团队算力点 ≥ 7,250`), text);
+    assert.doesNotMatch(text, /资格条件暂时无法显示|\$/);
   }
 });
 
 test("explicit known zero criteria retain the no-extra-threshold message", async () => {
-  assert.match(await render({ directRefs: 0, monthVolumeUsd: 0, monthVolumeUsdText: "0.000000", unlockMode: "ALL" }), /无额外条件/);
+  assert.match(await render({ directRefs: 0, monthComputePoints: 0, monthComputePointsText: "0", unlockMode: "ALL" }), /无额外条件/);
 });
 
-test("the maximum DECIMAL(18,6) value survives JSON parsing without rounding", async () => {
-  const text = await render({ directRefs: 8, monthVolumeUsd: 999999999999.999999,
-    monthVolumeUsdText: "999999999999.999999", unlockMode: "ALL" });
-  assert.ok(text.includes("团队业绩 ≥ $999,999,999,999.999999"), text);
-  assert.doesNotMatch(text, /团队业绩 ≥ \$1,000,000,000,000/);
+test("large point thresholds survive JSON parsing without rounding", async () => {
+  const text = await render({ directRefs: 8, monthComputePoints: 999999999999999999,
+    monthComputePointsText: "999999999999999999", unlockMode: "ALL" });
+  assert.ok(text.includes("本月团队算力点 ≥ 999,999,999,999,999,999"), text);
 });
 
 test("invalid and partial criteria cannot become an easier or invented rule", async () => {
   for (const invalid of [
     { directRefs: null }, { directRefs: -1 }, { directRefs: 1.5 }, { unlockMode: "future" },
-    ...[null, "", "Infinity", "-1", "1e3", "1,000.00", "1000000000000.000001", "0.0000001", true]
-      .map((monthVolumeUsdText) => ({ monthVolumeUsdText })),
+    ...[null, "", "Infinity", "-1", "1e3", "1,000", "725.5", "0.000000", "1000000000000000000", true]
+      .map((monthComputePointsText) => ({ monthComputePointsText })),
   ]) {
-    const text = await render({ directRefs: 8, monthVolumeUsd: 725, monthVolumeUsdText: "725.000000", unlockMode: "ALL", ...invalid });
+    const text = await render({ directRefs: 8, monthComputePoints: 725, monthComputePointsText: "725", unlockMode: "ALL", ...invalid });
     assert.match(text, /资格条件暂时无法显示/);
-    assert.doesNotMatch(text, /无额外条件|有效直接邀请 ≥|团队业绩 ≥/);
+    assert.doesNotMatch(text, /无额外条件|有效直接邀请 ≥|团队算力点 ≥/);
   }
 });
 
-test("the smallest nonzero quota threshold remains visible without numeric conversion", async () => {
-  assert.match(await render({ directRefs: 0, monthVolumeUsd: 0.000001, monthVolumeUsdText: "0.000001", unlockMode: "ALL" }),
-    /团队业绩 ≥ \$0\.000001/);
+test("the smallest nonzero quota threshold remains visible", async () => {
+  assert.match(await render({ directRefs: 0, monthComputePoints: 1, monthComputePointsText: "1", unlockMode: "ALL" }),
+    /本月团队算力点 ≥ 1/);
 });
 
 test("F4 renders one configured planned settlement time with an explicit business timezone", async () => {
