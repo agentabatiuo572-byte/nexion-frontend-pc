@@ -183,7 +183,7 @@ export function operatorOrderHistoryReason(value: string, paymentMethod: string)
 export function operatorOrderFact(kind: "type" | "payment" | "paymentStatus" | "source" | "direction" | "fundingStatus", value: string): string {
   const labels: Record<string, Record<string, string>> = {
     type: { SINGLE: "单品购买", BUNDLE: "组合购买", TRADE_IN: "以旧换新", CAPACITY_KEEP: "保留算力", TRIAL_CONVERT: "试用转购买" },
-    payment: { USDT_WALLET: "USDT 钱包", WALLET: "钱包", NEXGRID_WALLET: "UVEL 钱包", VOUCHER: "优惠券抵扣", BANK: "银行付款", BANK_TRANSFER: "银行转账", VIETQR: "VietQR 扫码付款", HDPAY: "支付商付款", CREGIS: "链上付款" },
+    payment: { USDT_WALLET: "USDT 钱包", WALLET: "钱包", UVEL_WALLET: "UVEL 钱包", VOUCHER: "优惠券抵扣", BANK: "银行付款", BANK_TRANSFER: "银行转账", VIETQR: "VietQR 扫码付款", HDPAY: "支付商付款", CREGIS: "链上付款" },
     paymentStatus: { PENDING: "待付款", UNPAID: "未付款", PROCESSING: "支付处理中", PAID: "已支付", CONFIRMED: "已确认付款", SUCCESS: "支付成功", REFUNDED: "已退款", CHARGEBACK: "拒付", DISPUTED: "存在争议", PAYMENT_FAILED: "支付失败", FAILED: "支付失败", EXPIRED: "已过期", CANCELLED: "已取消" },
     source: { D1_PAYMENT: "付款记录", D4_LEDGER: "资金流水", D4_BILL: "账单记录" },
     direction: { IN: "收入", OUT: "支出" },
