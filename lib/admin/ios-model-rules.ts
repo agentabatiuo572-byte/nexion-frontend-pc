@@ -7,11 +7,14 @@ export type IosCatalogClass = "APPLE_CURRENT_SNAPSHOT" | "APPLE_RELEASED_HISTORI
 export interface IosModelRule {
   id: string; model: string; aliases: string[]; minComputeValue: number; maxComputeValue: number;
   enabled: boolean; valueSource: "OPERATOR_PRESET"; catalogClass: IosCatalogClass | null; note: string | null;
+  /** Device facts for the model consistency checks; empty skips that check. */
+  minOsVersion: string | null; maxOsMajor: number | null; scales: number[]; screens: string[];
 }
 export interface IosModelPresetCatalog {
   catalogVersion: string; verifiedOn: string; scope: string; sources: string[]; notice: string; models: IosModelRule[];
 }
-export type IosRuleField = "id" | "model" | "aliases" | "minComputeValue" | "maxComputeValue" | "note";
+export type IosRuleField = "id" | "model" | "aliases" | "minComputeValue" | "maxComputeValue" | "note"
+  | "minOsVersion" | "maxOsMajor" | "scales" | "screens";
 export interface IosRuleIssue { index: number; field: IosRuleField; message: string }
 
 export const IOS_CATALOG_LABELS: Record<IosCatalogClass, string> = {
@@ -41,6 +44,32 @@ function valueError(value: unknown): string | null {
   if (Math.round(value * 100) / 100 !== value) return "最多保留 2 位小数。";
   return null;
 }
+/** "17", "17.5" or "17.5.1" as [major, minor]; anything else is null. Same as the server. */
+export function osVersionParts(value: string): [number, number] | null {
+  const text = value.trim();
+  if (!/^\d{1,2}(\.\d{1,2}){0,2}$/.test(text)) return null;
+  const [major, minor = "0"] = text.split(".");
+  return Number(major) < 1 ? null : [Number(major), Number(minor)];
+}
+/** "WxH" in points as "short x long", so either orientation compares equal. */
+export function screenKey(value: string): string | null {
+  if (!/^\d{3,4}x\d{3,4}$/.test(value)) return null;
+  const [a, b] = value.split("x").map(Number);
+  return `${Math.min(a, b)}x${Math.max(a, b)}`;
+}
+function factIssues(rule: IosModelRule, add: (field: IosRuleField, message: string) => void) {
+  // A rule written before these facts existed has none of them, which skips the checks.
+  const minOs = rule.minOsVersion ?? null, maxOs = rule.maxOsMajor ?? null, scales = rule.scales ?? [], screens = rule.screens ?? [];
+  const min = minOs === null ? null : osVersionParts(minOs);
+  if (minOs !== null && !min) add("minOsVersion", "请填写如 17.0 的系统版本。");
+  if (maxOs !== null && (!Number.isInteger(maxOs) || maxOs < 1 || maxOs > 99)) add("maxOsMajor", "请填写 1 到 99 的整数大版本。");
+  else if (maxOs !== null && min && maxOs < min[0]) add("maxOsMajor", "最高大版本不能低于出厂系统版本。");
+  if (!Array.isArray(scales) || scales.length > 3 || new Set(scales).size !== scales.length
+      || scales.some(scale => ![1, 2, 3].includes(scale))) add("scales", "倍率只能是 1、2 或 3，不能重复。");
+  if (!Array.isArray(screens) || screens.length > 10 || new Set(screens).size !== screens.length
+      || screens.some(screen => !screenKey(screen))) add("screens", "屏幕尺寸写成 402x874，最多 10 组，不能重复。");
+}
+
 export function namesOf(rule: Pick<IosModelRule, "model" | "aliases">): string[] {
   return [rule.model, ...rule.aliases].map(normalizeModel);
 }
@@ -65,6 +94,7 @@ export function iosRuleIssues(rules: IosModelRule[], otherRuleIds: string[] = []
     if (maxError) add("maxComputeValue", maxError);
     if (!minError && !maxError && rule.minComputeValue > rule.maxComputeValue) add("maxComputeValue", "上限不能低于下限。");
     if (rule.note !== null && (typeof rule.note !== "string" || rule.note.length > 500 || hasControl(rule.note))) add("note", "运营说明最多 500 字。");
+    factIssues(rule, add);
     if (modelError || !Array.isArray(rule.aliases)) return;
     for (const name of new Set(namesOf(rule))) {
       const owner = owners.get(name);
@@ -89,10 +119,25 @@ export function isIosModelRule(value: unknown): value is IosModelRule {
     && rule.aliases.every(alias => typeof alias === "string") && typeof rule.minComputeValue === "number"
     && typeof rule.maxComputeValue === "number" && typeof rule.enabled === "boolean" && rule.valueSource === "OPERATOR_PRESET"
     && (rule.catalogClass === null || rule.catalogClass === undefined || (typeof rule.catalogClass === "string" && rule.catalogClass in IOS_CATALOG_LABELS))
-    && (rule.note === null || rule.note === undefined || typeof rule.note === "string");
+    && (rule.note === null || rule.note === undefined || typeof rule.note === "string")
+    && (rule.minOsVersion === null || rule.minOsVersion === undefined || typeof rule.minOsVersion === "string")
+    && (rule.maxOsMajor === null || rule.maxOsMajor === undefined || typeof rule.maxOsMajor === "number")
+    && (rule.scales === null || rule.scales === undefined || (Array.isArray(rule.scales) && rule.scales.every(scale => typeof scale === "number")))
+    && (rule.screens === null || rule.screens === undefined || (Array.isArray(rule.screens) && rule.screens.every(screen => typeof screen === "string")));
 }
+/** Rules stored before the device facts existed read as having none. */
 export function normalizeIosRule(rule: IosModelRule): IosModelRule {
-  return { ...rule, aliases: [...rule.aliases], catalogClass: rule.catalogClass ?? null, note: rule.note ?? null };
+  return { ...rule, aliases: [...rule.aliases], catalogClass: rule.catalogClass ?? null, note: rule.note ?? null,
+    minOsVersion: rule.minOsVersion ?? null, maxOsMajor: rule.maxOsMajor ?? null, scales: [...(rule.scales ?? [])], screens: [...(rule.screens ?? [])] };
+}
+/** Device facts as one line for lists and diffs. */
+export function formatFacts(rule: Pick<IosModelRule, "minOsVersion" | "maxOsMajor" | "scales" | "screens">): string {
+  const parts = [
+    rule.minOsVersion || rule.maxOsMajor ? `iOS ${rule.minOsVersion ?? "?"}–${rule.maxOsMajor ?? "最新"}` : "",
+    rule.scales?.length ? `@${rule.scales.join("/")}x` : "",
+    rule.screens?.length ? rule.screens.join("、") : "",
+  ].filter(Boolean);
+  return parts.join(" · ") || "未填写";
 }
 
 export interface IosImportPlan { added: IosModelRule[]; skipped: IosModelRule[]; conflicts: Array<{ preset: IosModelRule; reason: string }> }
@@ -145,6 +190,7 @@ export function diffIosRules(before: IosModelRule[], after: IosModelRule[]): Ios
     if (formatRange(prior) !== formatRange(rule)) details.push(`范围 ${formatRange(prior)} → ${formatRange(rule)}`);
     if (prior.aliases.join("\n") !== rule.aliases.join("\n")) details.push(`别名 ${prior.aliases.join("、") || "无"} → ${rule.aliases.join("、") || "无"}`);
     if ((prior.note ?? "") !== (rule.note ?? "") || (prior.catalogClass ?? null) !== (rule.catalogClass ?? null)) details.push("说明或目录分类已修改");
+    if (formatFacts(prior) !== formatFacts(rule)) details.push(`设备信息 ${formatFacts(prior)} → ${formatFacts(rule)}`);
     if (prior.enabled !== rule.enabled) changes.push({ kind: rule.enabled ? "enabled" : "disabled", id: rule.id, before: prior, after: rule, details });
     else if (details.length) changes.push({ kind: "modified", id: rule.id, before: prior, after: rule, details });
   }
@@ -157,5 +203,6 @@ export function blankIosRule(existing: IosModelRule[], otherRuleIds: string[] = 
   let n = existing.length + 1;
   while (ids.has(`ios-operator-${n}`)) n++;
   return { id: `ios-operator-${n}`, model: "", aliases: [], minComputeValue: NaN, maxComputeValue: NaN,
-    enabled: true, valueSource: "OPERATOR_PRESET", catalogClass: "OPERATOR_ADDED", note: null };
+    enabled: true, valueSource: "OPERATOR_PRESET", catalogClass: "OPERATOR_ADDED", note: null,
+    minOsVersion: null, maxOsMajor: null, scales: [], screens: [] };
 }

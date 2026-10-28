@@ -5,6 +5,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { PhoneApiError, fetchPhoneOverview, fetchPhoneRequests, fetchPhoneHistory, fetchPhoneOperation, pendingPhoneCommands, preparePhoneCommand, submitPhoneCommand, recoverPhoneCommand, type PendingPhoneCommand } from "@/lib/admin/phone-replacement-client";
 import { PHONE_GRANT, PHONE_REVOKE, phoneLabel, phoneCommandAllowed, record, type PhoneCommand, type PhoneOverview, type PhonePage, type PhoneRequest, type PhoneReceipt, type PhoneVerification } from "@/lib/admin/phone-replacement-contract";
 import { PhoneFacts, PhoneReceiptView, phoneTime } from "../phone-replacement-receipt";
+import { PhoneModelLockSection } from "./phone-model-lock-section";
 export function PhoneReplacementPanel({ userId, userLabel }: {
     userId: string | null;
     userLabel: string;
@@ -15,7 +16,10 @@ export function PhoneReplacementPanel({ userId, userLabel }: {
         return <section className="l-card phone-admin-panel phone-account-panel"><div className="l-h"><span className="ttl">手机绑定与换机特批</span></div><PhoneEmptyState title="当前没有查看权限" detail="请联系有查看权限的管理员。" /></section>;
     if (!userId)
         return <section className="l-card phone-admin-panel phone-account-panel"><div className="l-h"><span className="ttl">手机绑定与换机特批</span></div><PhoneEmptyState title="请先选择用户" detail="在上方用户列表中点击“查看安全信息”，再查看该用户的手机绑定和换机申请。" /></section>;
-    return <AccountPhonePanel key={`${session.adminId}:${epoch}:${userId}`} userId={userId} userLabel={userLabel} owner={session.adminId} rights={session.authorities}/>;
+    return <>
+        <AccountPhonePanel key={`${session.adminId}:${epoch}:${userId}`} userId={userId} userLabel={userLabel} owner={session.adminId} rights={session.authorities}/>
+        <PhoneModelLockSection key={`lock:${session.adminId}:${epoch}:${userId}`} userId={userId} rights={session.authorities}/>
+    </>;
 }
 function AccountPhonePanel({ userId, userLabel, owner, rights }: {
     userId: string;

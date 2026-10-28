@@ -201,6 +201,9 @@ export const phoneLabels: Record<string, string> = {
     ACTIVE_GRANT_EXISTS: "已有有效特批，请先核对现有授权", IDEMPOTENCY_MISMATCH: "该操作标识已用于另一份内容，请查询原结果",
     PERMISSION_DENIED: "当前账号无权执行此操作", ADMIN_AUTH_REQUIRED: "管理会话已失效，请重新登录",
     OPERATION_RESULT_UNKNOWN: "暂未查到原操作，结果仍待核实。请勿重新提交。",
+    PHONE_INSTALLATION_NOT_FOUND: "没有找到这台手机的校准记录，请刷新", PHONE_MODEL_LOCK_RELEASE_CONFLICT: "机型锁状态已变化，请刷新后核对",
+    ONBOARDING_DEVICE_INVALID: "手机安装编号无效", PHONE_REPLACEMENT_REASON_INVALID: "请填写 8 到 200 字的处理理由",
+    PHONE_REPLACEMENT_CONFIRMATION_REQUIRED: "请先确认本次操作", IDEMPOTENCY_KEY_REQUIRED: "缺少操作标识，请刷新后重试",
 };
 export function phoneLabel(value: unknown): string {
     if (value == null || value === "")

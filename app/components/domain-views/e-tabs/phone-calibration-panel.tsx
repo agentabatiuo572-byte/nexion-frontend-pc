@@ -9,9 +9,11 @@ import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { fetchPhoneCalibration, previewPhoneCalibration, phoneProposalError,
-  type PhoneCalibrationOverview, type PhonePolicyProposal, type PhoneRule, type PhoneHardware, type PhonePreview } from "@/lib/admin/phone-calibration-client";
+  type PhoneCalibrationOverview, type PhonePolicyProposal, type PhoneRule, type PhoneHardware, type PhonePreview, type PhoneTrialFacts } from "@/lib/admin/phone-calibration-client";
 import { formatRange, type IosModelRule } from "@/lib/admin/ios-model-rules";
 import { IosModelRulesSection } from "./ios-model-rules-section";
+import { PhoneRiskSection } from "./phone-risk-section";
+import { RISK_CODE_LABELS, RISK_MODE_LABELS } from "@/lib/admin/phone-risk-client";
 
 const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 };
 const time = (value: number) => new Date(value).toLocaleString("zh-CN", { hour12: false });
@@ -19,7 +21,10 @@ const emptyHardware: PhoneHardware = { platform: "android", model: "", soc: "", 
 
 const PENDING_TEXT: Record<string, string> = {
   MODEL_MISSING: "未提供具体机型", MODEL_UNKNOWN: "没有这个机型的规则", MODEL_DISABLED: "该机型规则已停用",
+  HARDWARE_INCOMPLETE: "硬件信息不全", HARDWARE_UNKNOWN: "没有匹配的硬件规则", HARDWARE_CONFLICT: "机型与芯片或显卡不符",
+  HARDWARE_AMBIGUOUS: "匹配到多条硬件规则", RULES_UNAVAILABLE: "规则暂不可用", ...RISK_CODE_LABELS,
 };
+const emptyFacts = { osVersion: "", pixelRatio: "", screenWidth: "", screenHeight: "" };
 function trialText(result: PhonePreview): string {
   const { match, possibleTiers } = result;
   if (match.status !== "MATCHED") return `试算：待核验${PENDING_TEXT[match.status] ? `（${PENDING_TEXT[match.status]}）` : ""}，不能激活手机算力。`;
@@ -30,6 +35,11 @@ function trialText(result: PhonePreview): string {
   }
   return `试算：T${match.tier}，平台算力 ${match.computeValue}`;
 }
+function riskText(result: PhonePreview): string {
+  if (result.risk.length === 0) return "机型风控：按当前设置未命中。";
+  return `机型风控：${result.risk.map(finding => `${RISK_CODE_LABELS[finding.code] ?? finding.code}（${RISK_MODE_LABELS[finding.mode]}）`).join("、")}。`
+    + (result.risk.some(finding => finding.mode === "ENFORCE") ? "这样上报的手机会进入待核验。" : "只记录，不影响校准。");
+}
 
 export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false }: { ctx: EViewCtx; thresholdsOnly?: boolean }) {
   const propose = usePropose();
@@ -39,6 +49,7 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false }: { ctx: EV
   const [iosRules, setIosRules] = useState<IosModelRule[]>([]);
   const [effective, setEffective] = useState("");
   const [hardware, setHardware] = useState<PhoneHardware>(emptyHardware);
+  const [facts, setFacts] = useState(emptyFacts);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<{ key: string; result: PhonePreview } | null>(null);
@@ -53,7 +64,12 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false }: { ctx: EV
   const ios = hardware.platform === "ios";
   // iOS is matched by model only; Android keeps its SoC / GPU / memory trial.
   const trialHardware: PhoneHardware = ios ? { platform: "ios", model: hardware.model, soc: "", gpu: "", memoryGb: 0 } : hardware;
-  const draftKey = JSON.stringify({ proposal, hardware: trialHardware });
+  // Optional iPhone facts show which model checks a report like this would hit.
+  const trialFacts: PhoneTrialFacts | null = ios && Object.values(facts).some(value => value.trim()) ? {
+    osVersion: facts.osVersion.trim() || null, pixelRatio: facts.pixelRatio ? Number(facts.pixelRatio) : null,
+    screenWidth: facts.screenWidth ? Number(facts.screenWidth) : null, screenHeight: facts.screenHeight ? Number(facts.screenHeight) : null,
+  } : null;
+  const draftKey = JSON.stringify({ proposal, hardware: trialHardware, facts: trialFacts });
   const validation = phoneProposalError(proposal);
   const previewCurrent = preview?.key === draftKey;
 
@@ -81,7 +97,7 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false }: { ctx: EV
     const request = generation.current;
     setBusy(true); setError(""); setPreview(null);
     try {
-      const result = await previewPhoneCalibration(proposal, trialHardware);
+      const result = await previewPhoneCalibration(proposal, trialHardware, trialFacts);
       if (live.current && request === generation.current) setPreview({ key: draftKey, result });
     } catch (failure) {
       if (live.current && request === generation.current) setError(displayAdminError(failure));
@@ -121,20 +137,29 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false }: { ctx: EV
           <Btn disabled={rules.length >= 500} onClick={() => setRules(old => [...old,{id:"",platform:"android",model:"",soc:"",gpu:"",minMemoryGb:NaN,maxMemoryGb:NaN,computeValue:NaN,evidence:""}])}>添加硬件规则</Btn>
         </fieldset>
         <details><summary>待核验硬件样本（最多展示 100 组）</summary>
-          {snapshot.pendingHardware.length === 0 ? <p>暂无待核验样本。</p> : <table><thead><tr><th>平台 / 机型</th><th>SoC / GPU</th><th>内存 GB</th><th>记录数</th></tr></thead><tbody>
-            {snapshot.pendingHardware.map((sample,index) => <tr key={index}><td>{sample.platform || "未知"} / {sample.model || "未知"}</td><td>{sample.soc || "未知"} / {sample.gpu || "未知"}</td><td>{sample.memoryGb ?? "未知"}</td><td>{sample.count}</td></tr>)}
+          {snapshot.pendingHardware.length === 0 ? <p>暂无待核验样本。</p> : <table><thead><tr><th>平台 / 机型</th><th>SoC / GPU</th><th>内存 GB</th><th>原因</th><th>记录数</th></tr></thead><tbody>
+            {snapshot.pendingHardware.map((sample,index) => <tr key={index}><td>{sample.platform || "未知"} / {sample.model || "未知"}</td><td>{sample.soc || "未知"} / {sample.gpu || "未知"}</td><td>{sample.memoryGb ?? "未知"}</td><td>{sample.reason ? PENDING_TEXT[sample.reason] ?? sample.reason : "未知"}</td><td>{sample.count}</td></tr>)}
           </tbody></table>}
         </details>
+        <PhoneRiskSection canWrite={ctx.canWriteE6} toast={ctx.toast} />
       </>}
       <fieldset disabled={!editing}><legend>{ios ? "试算机型与生效时间（iOS 只需机型）" : "试算硬件与生效时间"}</legend><div style={grid}>
         <label>平台<select value={hardware.platform} onChange={event => setHardware(old => ({...old,platform:event.target.value}))}><option value="android">Android</option><option value="ios">iOS</option></select></label>
         {(ios ? ["model"] as const : ["model","soc","gpu"] as const).map(field => <label key={field}>{({model:ios ? "试算机型（名称或硬件标识符）" : "试算机型",soc:"试算芯片",gpu:"试算显卡"})[field]}<input value={hardware[field]} onChange={event => setHardware(old => ({...old,[field]:event.target.value}))} /></label>)}
+        {ios && <>
+          <label>试算系统版本（选填）<input value={facts.osVersion} maxLength={8} placeholder="例如 18.1" onChange={event => setFacts(old => ({...old,osVersion:event.target.value}))} /></label>
+          <label>试算屏幕倍率（选填）<input type="number" min="1" max="3" step="1" value={facts.pixelRatio} onChange={event => setFacts(old => ({...old,pixelRatio:event.target.value}))} /></label>
+          <label>试算屏幕宽 × 高（点，选填）<span style={{ display: "flex", gap: 6 }}>
+            <input aria-label="试算屏幕宽" type="number" min="1" step="1" value={facts.screenWidth} onChange={event => setFacts(old => ({...old,screenWidth:event.target.value}))} />
+            <input aria-label="试算屏幕高" type="number" min="1" step="1" value={facts.screenHeight} onChange={event => setFacts(old => ({...old,screenHeight:event.target.value}))} /></span></label>
+        </>}
         {!ios && <label>试算内存 GB<input type="number" min="0" step="0.001" value={hardware.memoryGb || ""} onChange={event => setHardware(old => ({...old,memoryGb:Number(event.target.value)}))} /></label>}
         <label>生效时间（留空为审批后生效）<input type="datetime-local" value={effective} onChange={event => setEffective(event.target.value)} /></label>
       </div></fieldset>
       {validation && <p role="status">{validation}</p>}
       <Btn disabled={!editing || !!validation} onClick={() => void runPreview()}>试算并预览影响</Btn>
       {previewCurrent && preview && <div role="status"><p>{trialText(preview.result)}</p>
+        {trialFacts && preview.result.match.status === "MATCHED" && <p>{riskText(preview.result)}</p>}
         <p>历史采样预览：匹配 {preview.result.impact.matched}，数值或档位变化 {preview.result.impact.changed}，待核验 {preview.result.impact.pending}。审批生效后用于后续校准，不修改历史结算。</p></div>}
       <Btn disabled={!editing || !!validation || !previewCurrent} onClick={() => setConfirm({ proposal, commandKey: createA2CommandKey("phone-policy") })}>提交审批</Btn>
       <p><Link href="/platform/audit?domain=E&object=phone-calibration">查看审批记录</Link></p>

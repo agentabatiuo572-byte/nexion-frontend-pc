@@ -13,15 +13,20 @@ export interface PhonePolicyBaseline { revision: number; rules: PhoneRule[]; ios
 /** iosRulesInherited: an older client sent no iosModelRules, so the server keeps the published ones. */
 export type PhoneProposalView = PhonePolicyProposal & { baseline: PhonePolicyBaseline | null; iosRulesInherited: boolean };
 export interface PhoneHardware { platform: string; model: string; soc: string; gpu: string; memoryGb: number }
+/** Optional iPhone facts a trial can add to see which model checks would fire. */
+export interface PhoneTrialFacts { osVersion: string | null; pixelRatio: number | null; screenWidth: number | null; screenHeight: number | null }
 export interface PhoneCalibrationOverview {
   policy: { revision: number; current: PhonePolicy | null; scheduled: PhonePolicy | null };
-  pendingHardware: Array<PhoneHardware & { count: number }>;
+  /** reason: why these calibrations wait, for example an unknown model or a model risk check. */
+  pendingHardware: Array<PhoneHardware & { count: number; reason?: string | null }>;
   computeUnit: "platform";
 }
 export interface PhonePreview {
   match: { status: string; ruleId: string | null; computeValue: number | null; tier: number | null; ruleVersion: number;
     method?: "HARDWARE_RULE" | "IOS_MODEL_RANGE"; model?: string | null; minComputeValue?: number | null; maxComputeValue?: number | null };
   possibleTiers: number[];
+  /** Per-report model checks for an iPhone trial with OS and screen facts; empty otherwise. */
+  risk: Array<{ code: string; mode: "OBSERVE" | "ENFORCE" }>;
   impact: { matched: number; changed: number; pending: number; appliesTo: "NEXT_CALIBRATION"; historicalSettlementChanged: false };
   expectedRevision: number;
 }
@@ -102,16 +107,20 @@ async function request(path: string, body?: unknown): Promise<unknown> {
 export async function fetchPhoneCalibration(): Promise<PhoneCalibrationOverview> {
   return parsePhoneCalibrationOverview(await request(""));
 }
-export async function previewPhoneCalibration(proposal: PhonePolicyProposal, hardware: PhoneHardware): Promise<PhonePreview> {
+export async function previewPhoneCalibration(proposal: PhonePolicyProposal, hardware: PhoneHardware,
+                                              facts: PhoneTrialFacts | null = null): Promise<PhonePreview> {
   const error = phoneProposalError(proposal);
   if (error) throw new Error(error);
-  const value = await request("/preview", { proposal, hardware });
+  const value = await request("/preview", { proposal, hardware, ...(facts ? { facts: { platform: hardware.platform, ...facts } } : {}) });
   if (!object(value) || !object(value.match) || !object(value.impact) || value.expectedRevision !== proposal.expectedRevision
       || value.impact.appliesTo !== "NEXT_CALIBRATION" || value.impact.historicalSettlementChanged !== false
       || ![value.impact.matched,value.impact.changed,value.impact.pending].every(nonnegative)
       || typeof value.match.status !== "string"
       || !Array.isArray(value.possibleTiers) || !value.possibleTiers.every(tier => Number.isInteger(tier) && tier >= 1 && tier <= 5)) return invalid();
-  return value as unknown as PhonePreview;
+  const risk = value.risk === undefined ? [] : value.risk;
+  if (!Array.isArray(risk) || !risk.every(entry => object(entry) && typeof entry.code === "string"
+      && (entry.mode === "OBSERVE" || entry.mode === "ENFORCE"))) return invalid();
+  return { ...(value as unknown as PhonePreview), risk: risk as PhonePreview["risk"] };
 }
 /** The versioned preset catalog shipped with the backend; loading it only fills the E6 draft. */
 export async function fetchIosModelPresets(): Promise<IosModelPresetCatalog> {

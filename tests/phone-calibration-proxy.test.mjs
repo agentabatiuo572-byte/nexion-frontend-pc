@@ -49,7 +49,8 @@ test("the real phone client reads and previews through the authenticated config 
   });
   const proposal = { expectedRevision: 0, effectiveAt: 0, thresholds: [19, 25, 35, 47], rules: [], iosModelRules: [] };
   assert.deepEqual(await client.fetchPhoneCalibration(), overview);
-  assert.deepEqual(await client.previewPhoneCalibration(proposal, { platform: "android", model: "fixture" }), preview);
+  // A preview without trial facts has no model risk findings.
+  assert.deepEqual(await client.previewPhoneCalibration(proposal, { platform: "android", model: "fixture" }), { ...preview, risk: [] });
   assert.equal(fixture.calls.length, 2);
   assert.equal(fixture.calls[0].url, "http://upstream.fixture/api/admin/config/phone-calibration");
   assert.equal(fixture.calls[0].init.method, "GET");
@@ -76,7 +77,10 @@ test("only the three phone route and method pairs are forwarded; existing config
     for (const method of methods) assert.equal((await fixture.request(path, method)).status, 405);
   }
   assert.equal((await fixture.request("phone-calibration/ios-model-presets", "GET")).status, 200);
-  assert.equal(fixture.calls.length, 7, "rejected methods must not reach the backend");
+  // Model risk settings are read and saved directly; there is no POST.
+  for (const method of ["GET", "PUT"]) assert.equal((await fixture.request("phone-calibration/risk", method)).status, 200);
+  assert.equal((await fixture.request("phone-calibration/risk", "POST")).status, 405);
+  assert.equal(fixture.calls.length, 9, "rejected methods must not reach the backend");
 });
 
 test("unknown, publish and nested config paths remain unavailable for every exposed method", async () => {

@@ -3,13 +3,16 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Btn } from "../design-kit";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { fetchIosModelPresets } from "@/lib/admin/phone-calibration-client";
-import { IOS_CATALOG_LABELS, IOS_CHANGE_LABELS, blankIosRule, diffIosRules, formatRange, iosRuleFormIssues, normalizeModel, planIosImport,
+import { IOS_CATALOG_LABELS, IOS_CHANGE_LABELS, blankIosRule, diffIosRules, formatFacts, formatRange, iosRuleFormIssues, normalizeModel, planIosImport,
   type IosCatalogClass, type IosImportPlan, type IosModelPresetCatalog, type IosModelRule } from "@/lib/admin/ios-model-rules";
 
 const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 };
 type StatusFilter = "all" | "enabled" | "disabled";
 /** `id` is the edited rule's id when the form opened (null for a new rule), so list changes never retarget the form. */
-type Editing = { id: string | null; rule: IosModelRule; aliases: string };
+/** Multi-value fields are edited as text and parsed on save. */
+type Editing = { id: string | null; rule: IosModelRule; aliases: string; scales: string; screens: string };
+const editing = (id: string | null, rule: IosModelRule): Editing => ({ id, rule: { ...rule }, aliases: rule.aliases.join("\n"),
+  scales: (rule.scales ?? []).join(", "), screens: (rule.screens ?? []).join("\n") });
 
 /** E6 "iPhone 机型预设": the draft list, its editor and the preset import. Publishing stays with the panel's A2 flow. */
 export function IosModelRulesSection({ rules, published, androidRuleIds, editing: editable, onChange }: {
@@ -48,7 +51,9 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
   const fieldIssue = (field: string) => formIssues.find(issue => issue.field === field)?.message;
 
   function formRule(value: Editing): IosModelRule {
-    return { ...value.rule, aliases: value.aliases.split(/\r?\n/).map(alias => alias.trim()).filter(Boolean) };
+    return { ...value.rule, aliases: value.aliases.split(/\r?\n/).map(alias => alias.trim()).filter(Boolean),
+      scales: value.scales.split(/[,，\s]+/).filter(Boolean).map(Number),
+      screens: value.screens.split(/[\r\n,，]+/).map(screen => screen.trim().replace(/\s*[x×*]\s*/i, "x")).filter(Boolean) };
   }
   function save() {
     if (!form || !editable || formGone || formIssues.length) return;
@@ -90,7 +95,7 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
       <div className="ios-actions">
         <Btn disabled={!editable || loading || !!presets} onClick={() => void loadPresets()}>{loading ? "正在读取预设…" : "载入 iPhone 机型预设"}</Btn>
         <Btn variant="primary" disabled={!editable || rules.length >= 500 || !!form}
-          onClick={() => setForm({ id: null, rule: blankIosRule(rules, androidRuleIds), aliases: "" })}>新增机型</Btn>
+          onClick={() => setForm(editing(null, blankIosRule(rules, androidRuleIds)))}>新增机型</Btn>
       </div>
     </div>
     {error && <p role="alert">{error}</p>}
@@ -134,7 +139,7 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
     {rules.length === 0 ? <p>尚无 iPhone 机型规则。iOS 校准会进入待核验，不授予算力。可载入预设或新增机型。</p>
       : visible.length === 0 ? <p>没有符合筛选条件的机型。<Btn sm onClick={clearFilters}>清空筛选</Btn></p>
       : <div className="ios-table"><table>
-        <thead><tr>{["机型", "已核验别名", "运营预设范围", "状态", "目录分类", "草稿变化", "操作"].map(label => <th key={label}>{label}</th>)}</tr></thead>
+        <thead><tr>{["机型", "已核验别名", "运营预设范围", "设备信息", "状态", "目录分类", "草稿变化", "操作"].map(label => <th key={label}>{label}</th>)}</tr></thead>
         <tbody>{visible.map(({ rule, index }) => {
           const removing = confirmRemove === rule.id;
           const change = changeById.get(rule.id);
@@ -142,11 +147,12 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
             <td><strong>{rule.model || "未填写机型"}</strong><br /><small className="mono">{rule.id}</small></td>
             <td>{rule.aliases.join("、") || "—"}</td>
             <td>{formatRange(rule)}</td>
+            <td><small>{formatFacts(rule)}</small></td>
             <td><span className={rule.enabled ? "ios-pill on" : "ios-pill"}>{rule.enabled ? "启用" : "停用"}</span></td>
             <td>{rule.catalogClass ? IOS_CATALOG_LABELS[rule.catalogClass] : "—"}</td>
             <td>{change ? <>{IOS_CHANGE_LABELS[change.kind]}{change.details.length > 0 && <><br /><small>{change.details.join("；")}</small></>}</> : "—"}</td>
             <td><div className="ios-row-actions">
-              <Btn sm disabled={!editable || !!form} onClick={() => setForm({ id: rule.id, rule: { ...rule }, aliases: rule.aliases.join("\n") })}>编辑</Btn>
+              <Btn sm disabled={!editable || !!form} onClick={() => setForm(editing(rule.id, rule))}>编辑</Btn>
               <Btn sm disabled={!editable} onClick={() => toggle(rule.id)}>{rule.enabled ? "停用" : "启用"}</Btn>
               {removing
                 ? <><Btn sm variant="danger" onClick={() => remove(rule.id)}>确认{publishedIds.has(rule.id) ? "删除" : "移除"}</Btn><Btn sm onClick={() => setConfirmRemove(null)}>取消</Btn></>
@@ -179,6 +185,18 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
       </div>
       <Field label="已核验别名（每行一个，SDK 返回的名称或硬件标识符）" error={fieldIssue("aliases")}>
         <textarea rows={3} value={form.aliases} onChange={event => setForm({ ...form, aliases: event.target.value })} /></Field>
+      <h5>设备信息（选填，用于机型风控；不确定就留空，留空不检查）</h5>
+      <div style={grid}>
+        <Field label="出厂系统版本" error={fieldIssue("minOsVersion")}><input value={form.rule.minOsVersion ?? ""} maxLength={8} placeholder="例如 18.0"
+          onChange={event => setForm({ ...form, rule: { ...form.rule, minOsVersion: event.target.value.trim() || null } })} /></Field>
+        <Field label="最高可升级大版本" error={fieldIssue("maxOsMajor")}><input type="number" min="1" max="99" step="1"
+          value={form.rule.maxOsMajor ?? ""} placeholder="仍支持就留空"
+          onChange={event => setForm({ ...form, rule: { ...form.rule, maxOsMajor: event.target.value ? Number(event.target.value) : null } })} /></Field>
+        <Field label="屏幕倍率" error={fieldIssue("scales")}><input value={form.scales} maxLength={16} placeholder="例如 3"
+          onChange={event => setForm({ ...form, scales: event.target.value })} /></Field>
+      </div>
+      <Field label="屏幕尺寸（逻辑点，每行一组，含放大显示模式）" error={fieldIssue("screens")}>
+        <textarea rows={2} value={form.screens} placeholder="402x874" onChange={event => setForm({ ...form, screens: event.target.value })} /></Field>
       <Field label="运营说明（选填，最多 500 字）" error={fieldIssue("note")}><input value={form.rule.note ?? ""} maxLength={500}
         onChange={event => setForm({ ...form, rule: { ...form.rule, note: event.target.value || null } })} /></Field>
       <p className="f-foot">上下限相等时为固定值，最多 2 位小数。不需要填写 SoC、GPU、内存或容量。</p>
