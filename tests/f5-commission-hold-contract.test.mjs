@@ -71,7 +71,7 @@ function renderRow(kind, status, cur, canDispose = true, coolingDaysLeft = 3, ov
   };
   const confirmations = [];
   const tree = exports.F5Audit({ ctx: {
-    can: (permission) => permission === "network_f5_commission_dispose" && canDispose,
+    can: (permission) => canDispose && ["network_f5_commission_freeze", "network_f5_commission_release"].includes(permission),
     f5Overview: {
       pendingCalculations: [], pendingCalculationCount: 0,
       summary: { monthlyCommissionSpendLabel: "", coolingBalanceLabel: "", withdrawableThisMonthLabel: "", frozenCount: 0 },
@@ -98,7 +98,7 @@ test("F5 暂停提示显示奖种名称，提交仍保持真实枚举", async ()
   const calls = [];
   const toasts = [];
   const view = renderRow("network", "cooling", "USDT", true, 3, {
-    can: (permission) => permission === "network_f5_commission_reject",
+    can: (permission) => permission === "network_f5_commission_suspend",
     suspendF5UserCommissions: async (...args) => calls.push(args),
     toast: (message) => toasts.push(message),
   });
@@ -121,7 +121,7 @@ test("F5 恢复确认和提示使用相同奖种名称", async () => {
     operationHistory: [{ operationNo: "F5-1", operationType: "RESUME", userId: "9", kinds: "network,direct_device_earning", reason: "核对", operator: "审核", createdAt: "2026-10-06" }], configValues: {}, total: 0, nextCursor: "",
   };
   const view = renderRow("network", "cooling", "USDT", true, 3, {
-    can: (permission) => permission === "network_f5_commission_reject", f5Overview: data,
+    can: (permission) => permission === "network_f5_commission_suspend", f5Overview: data,
     suspendF5UserCommissions: async (...args) => calls.push(args), toast: (message) => toasts.push(message),
   });
   button(view, "恢复").props.onClick();

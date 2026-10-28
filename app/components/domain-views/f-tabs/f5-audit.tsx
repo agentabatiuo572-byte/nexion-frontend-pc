@@ -52,8 +52,11 @@ const amountLabel = (row: F5CommissionEvent) => directGroup(row)
 
 export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const canWrite = ctx.can("network_f5_write");
-  const canDispose = ctx.can("network_f5_commission_dispose");
-  const canReject = ctx.can("network_f5_commission_reject");
+  const canFreeze = ctx.can("network_f5_commission_freeze");
+  const canSuspend = ctx.can("network_f5_commission_suspend");
+  const canRelease = ctx.can("network_f5_commission_release");
+  const canReverse = ctx.can("network_f5_commission_reverse");
+  const canReissue = ctx.can("network_f5_commission_reissue");
   const canReadD4 = ctx.can("finance_d4_read");
   const canReadB1 = ctx.can("overview_b1_read");
   const canReadL4 = ctx.can("bi_l4_read");
@@ -66,7 +69,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const [status, setStatus] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const data = ctx.f5Overview;
-  const reissueAvailable = canDispose && !ctx.f5Error && !!data;
+  const reissueAvailable = canReissue && !ctx.f5Error && !!data;
   const events = data?.commissionEvents ?? [];
   const selectedRows = useMemo(
     () => events.filter((row) => selected.includes(row.id)),
@@ -331,7 +334,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                 {!events.length && <tr className="empty-row"><td colSpan={9}>没有符合条件的佣金记录</td></tr>}
                 {events.map((row) => {
                   const state = badge(row.status);
-                  const selectable = canDispose && row.status === "reversed" && !directGroup(row) && !row.reversalRecorded;
+                  const selectable = canReissue && row.status === "reversed" && !directGroup(row) && !row.reversalRecorded;
                   return (
                     <tr key={row.id}>
                       <td><input aria-label={`选择 ${row.id}`} type="checkbox" disabled={!selectable} title={directGroup(row) ? "直属分成不能补发" : row.reversalRecorded ? "已退款的记录不能补发" : undefined} checked={selected.includes(row.id)} onChange={(e) => setSelected((old) => e.target.checked ? [...old, row.id] : old.filter((id) => id !== row.id))} /></td>
@@ -359,11 +362,11 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                         )}
                         <GatedLink allowed={canReadB1} href="/overview/dual-ledger" label="覆盖率" />
                         <GatedLink allowed={canReadL4} href="/analytics/operations" label="L4" />
-                        {canDispose && row.status === "cooling" && <button className="fbtn" onClick={() => dispose("freeze", row)}>冻结</button>}
-                        {canDispose && row.status === "cooling" && !directGroup(row) && <button className="fbtn" onClick={() => dispose("unlock", row)}>提前解锁</button>}
-                        {canDispose && row.status === "frozen" && <button className="fbtn" onClick={() => dispose("unfreeze", row)}>解冻</button>}
-                        {canReject && !["reversed", "withdrawn", "rejected", "recovery_pending"].includes(row.status) && <button className="fbtn" onClick={() => reverse(row)}>冲正</button>}
-                        {canReject && <button className="fbtn" onClick={() => suspend(row)}>暂停此类奖励</button>}
+                        {canFreeze && row.status === "cooling" && <button className="fbtn" onClick={() => dispose("freeze", row)}>冻结</button>}
+                        {canRelease && row.status === "cooling" && !directGroup(row) && <button className="fbtn" onClick={() => dispose("unlock", row)}>提前解锁</button>}
+                        {canFreeze && row.status === "frozen" && <button className="fbtn" onClick={() => dispose("unfreeze", row)}>解冻</button>}
+                        {canReverse && !["reversed", "withdrawn", "rejected", "recovery_pending"].includes(row.status) && <button className="fbtn" onClick={() => reverse(row)}>冲正</button>}
+                        {canSuspend && <button className="fbtn" onClick={() => suspend(row)}>暂停此类奖励</button>}
                       </td>
                     </tr>
                   );
@@ -407,7 +410,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                 {data.activeSuspensions.map((item) => <tr key={`${item.userId}:${item.kind}`}>
                   <td>{item.userId}</td><td>{KIND_LABELS[item.kind] ?? item.kind}</td>
                   <td>{item.reason} / {item.operator}</td><td>{item.updatedAt}</td>
-                  <td>{canReject && <button className="fbtn primary" onClick={() => ctx.openActionConfirm({
+                  <td>{canSuspend && <button className="fbtn primary" onClick={() => ctx.openActionConfirm({
                     name: `恢复奖励 · ${item.userId} / ${KIND_LABELS[item.kind] ?? "所选奖励"}`,
                     detail: "需要审批。批准后这类佣金以后照常产生，已冻结的不会自动解冻。",
                     run: async (reason) => {

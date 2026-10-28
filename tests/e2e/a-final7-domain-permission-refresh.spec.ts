@@ -191,7 +191,8 @@ const F25_FINAL9_CHECKER_PERMISSIONS = [
   "network_f4_read", "network_f5_read", "network_f2_policy_amplify", "network_f2_royalty_rate",
   "network_f2_write", "network_f3_engine_pause", "network_f3_match_rate", "network_f3_write",
   "network_f4_leaderboard_control", "network_f4_pool_fund", "network_f4_write",
-  "network_f5_commission_dispose", "network_f5_commission_reject", "network_f5_write",
+  "network_f5_commission_freeze", "network_f5_commission_suspend", "network_f5_commission_release",
+  "network_f5_commission_reverse", "network_f5_commission_reissue", "network_f5_write",
 ] as const;
 const F25_FINAL9_CHECKER_MENUS = ["A2", "F2", "F3", "F4", "F5"] as const;
 const H3_FINAL9_SECOND_PERMISSIONS = ["growth_h3_read", "growth_h3_write"] as const;

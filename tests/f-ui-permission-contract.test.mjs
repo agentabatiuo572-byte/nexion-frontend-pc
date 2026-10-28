@@ -85,17 +85,17 @@ test("F4 池、常规配置、大使与榜单权限互不替代", () => {
 
 test("F5 异常阈值、补发、冲正与暂停使用对应后端 authority", () => {
   assert.match(f5, /network_f5_write/);
-  assert.match(f5, /network_f5_commission_dispose/);
-  assert.match(f5, /network_f5_commission_reject/);
-  assert.match(f5, /const reissueAvailable = canDispose && !ctx\.f5Error && !!data;/);
+  for (const key of ["freeze", "suspend", "release", "reverse", "reissue"]) assert.match(f5, new RegExp(`network_f5_commission_${key}`));
+  assert.doesNotMatch(f5, /network_f5_commission_(dispose|reject)/);
+  assert.match(f5, /const reissueAvailable = canReissue && !ctx\.f5Error && !!data;/);
   assert.match(f5, /\{reissueAvailable && <button[^>]+onClick=\{reissue\}/);
-  assert.match(f5, /canReject && !\["reversed", "withdrawn", "rejected", "recovery_pending"\]\.includes\(row\.status\)/);
-  assert.match(f5, /\{canReject && <button[^>]+onClick=\{\(\) => suspend\(row\)\}/);
+  assert.match(f5, /canReverse && !\["reversed", "withdrawn", "rejected", "recovery_pending"\]\.includes\(row\.status\)/);
+  assert.match(f5, /\{canSuspend && <button[^>]+onClick=\{\(\) => suspend\(row\)\}/);
   assert.match(f5, /\{canWrite && <button[^>]+onClick=\{editThreshold\}/);
 });
 
-test("F5 单笔冻结/提前解锁/解冻按状态渲染且全部挂处置 authority(合并底账 §二#4 恢复)", () => {
-  assert.match(f5, /\{canDispose && row\.status === "cooling" && <button[^>]+onClick=\{\(\) => dispose\("freeze", row\)\}/);
-  assert.match(f5, /\{canDispose && row\.status === "cooling" && !directGroup\(row\) && <button[^>]+onClick=\{\(\) => dispose\("unlock", row\)\}/);
-  assert.match(f5, /\{canDispose && row\.status === "frozen" && <button[^>]+onClick=\{\(\) => dispose\("unfreeze", row\)\}/);
+test("F5 单笔冻结/解冻挂冻结 authority，提前解锁挂放款 authority", () => {
+  assert.match(f5, /\{canFreeze && row\.status === "cooling" && <button[^>]+onClick=\{\(\) => dispose\("freeze", row\)\}/);
+  assert.match(f5, /\{canRelease && row\.status === "cooling" && !directGroup\(row\) && <button[^>]+onClick=\{\(\) => dispose\("unlock", row\)\}/);
+  assert.match(f5, /\{canFreeze && row\.status === "frozen" && <button[^>]+onClick=\{\(\) => dispose\("unfreeze", row\)\}/);
 });
