@@ -15,3 +15,28 @@
 .phone-calibration-panel th, .phone-calibration-panel td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .phone-calibration-panel a { color: var(--brand); text-decoration: underline; text-underline-offset: 3px; }
 @media (max-width: 600px) { .phone-calibration-panel { padding: 16px; } }
+.phone-calibration-panel .ios-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.phone-calibration-panel .ios-head p { flex: 1 1 360px; margin: 0; color: var(--ink-2); }
+.phone-calibration-panel .ios-actions { display: flex; flex-wrap: wrap; }
+.phone-calibration-panel .ios-actions .btn { margin-top: 0; }
+.phone-calibration-panel .ios-clear { display: flex; align-items: flex-end; }
+.phone-calibration-panel .ios-table { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; margin: 12px 0; }
+.phone-calibration-panel .ios-table table { width: 100%; min-width: 760px; border-collapse: collapse; }
+.phone-calibration-panel .ios-table th { background: var(--surface-2); font-weight: 600; }
+.phone-calibration-panel .ios-row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.phone-calibration-panel .ios-row-actions .btn { margin: 0; }
+.phone-calibration-panel .ios-pill { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2); white-space: nowrap; }
+.phone-calibration-panel .ios-pill.on { background: color-mix(in srgb, var(--success, var(--brand)) 16%, transparent); color: var(--ink); }
+.phone-calibration-panel .ios-import, .phone-calibration-panel .ios-form { border: 1px solid var(--border-strong); border-radius: 10px; padding: 16px; margin: 16px 0; background: var(--surface-2); }
+.phone-calibration-panel .ios-import h4, .phone-calibration-panel .ios-form h4 { margin: 0 0 8px; font-size: 15px; }
+.phone-calibration-panel .ios-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 12px 0; }
+.phone-calibration-panel .ios-stats div { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; }
+.phone-calibration-panel .ios-stats strong { font-size: 20px; }
+.phone-calibration-panel .ios-stats strong.danger { color: var(--danger); }
+.phone-calibration-panel .ios-check { flex-direction: row; align-items: center; gap: 8px; color: var(--ink); }
+.phone-calibration-panel .ios-check input { width: 18px; height: 18px; flex: none; }
+.phone-calibration-panel .ios-preset-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 16px; max-height: 280px; overflow-y: auto; margin: 8px 0; }
+.phone-calibration-panel .ios-field { margin-top: 12px; }
+.phone-calibration-panel .ios-field.invalid input, .phone-calibration-panel .ios-field.invalid textarea { border-color: var(--danger); }
+.phone-calibration-panel .ios-field small[role="alert"] { color: var(--danger); }
+.phone-calibration-panel textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--border-strong); border-radius: 8px; padding: 9px 11px; color: var(--ink); background: var(--surface); font: inherit; resize: vertical; }

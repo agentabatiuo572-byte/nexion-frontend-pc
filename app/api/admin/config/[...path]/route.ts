@@ -8,6 +8,7 @@ const ROUTE_METHODS: readonly (readonly [string, readonly string[]])[] = [
   ["phone-tiers/comparison", ["GET", "HEAD", "PUT"]],
   ["phone-calibration", ["GET"]],
   ["phone-calibration/preview", ["POST"]],
+  ["phone-calibration/ios-model-presets", ["GET"]],
 ];
 
 type RouteContext = { params: Promise<{ path?: string[] }> };
