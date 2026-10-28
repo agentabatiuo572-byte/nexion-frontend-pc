@@ -359,6 +359,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   H9_RESPONSE_INVALID: "历史估算配置服务返回的内容不完整或类型不对，页面已停止展示任何数字并冻结写操作；请重新加载或联系值班人员。",
   H9_DATA_LOAD_FAILED: "历史估算配置加载失败，页面没有展示任何数字；请点重试，持续失败时联系值班人员。",
   H9_SAVE_FAILED: "历史估算配置保存失败，本次改动没有生效也没有记入操作记录；请刷新核对当前生效值后重试。",
+  H9_MEMBER_TICK_INVALID: "网络脉搏跳动间隔、每次最少和最多增加人数要一起填写，最多不能小于最少，且都在可填范围内；本次改动没有生效。",
   DEVICE_RANK_CONFIG_INVALID: "设备预估排名档位配置无效，请检查名称、占比合计和算力范围。",
   DEVICE_RANK_REQUEST_INVALID: "设备预估排名修改信息不完整，请重新加载配置并填写 8–200 字修改理由。",
   DEVICE_RANK_VERSION_CONFLICT: "设备预估排名配置已被其他操作员修改，请重新加载后核对并修改。",
