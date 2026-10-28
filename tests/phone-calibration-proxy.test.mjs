@@ -39,18 +39,24 @@ test("the real phone client reads and previews through the authenticated config 
     impact: { matched: 1, changed: 1, pending: 0, appliesTo: "NEXT_CALIBRATION", historicalSettlementChanged: false } };
   const fixture = gateway({ upstream: async url => Response.json({ code: 0, data: url.endsWith("/preview") ? preview : overview }) });
   const iosRules = load("../lib/admin/ios-model-rules.ts", id => { throw new Error(`Unexpected rules import: ${id}`); });
+  const androidRules = load("../lib/admin/android-soc-rules.ts", id => {
+    if (id.endsWith("ios-model-rules")) return iosRules;
+    throw new Error(`Unexpected rules import: ${id}`);
+  });
   const client = load("../lib/admin/phone-calibration-client.ts", id => {
     if (id.endsWith("ios-model-rules")) return iosRules;
+    if (id.endsWith("android-soc-rules")) return androidRules;
     if (id.endsWith("error-messages")) return {
       formatAdminApiError: (message, fallback) => message || fallback,
       guardedFetch: (url, init) => fixture.request(url.replace("/api/admin/config/", ""), init.method, init.body),
     };
     throw new Error(`Unexpected client import: ${id}`);
   });
-  const proposal = { expectedRevision: 0, effectiveAt: 0, thresholds: [19, 25, 35, 47], rules: [], iosModelRules: [] };
+  const proposal = { expectedRevision: 0, effectiveAt: 0, thresholds: [19, 25, 35, 47], androidSocRules: [], iosModelRules: [],
+    androidPresetRemovals: { socKeys: [], aliases: [] } };
   assert.deepEqual(await client.fetchPhoneCalibration(), overview);
   // A preview without trial facts has no model risk findings.
-  assert.deepEqual(await client.previewPhoneCalibration(proposal, { platform: "android", model: "fixture" }), { ...preview, risk: [] });
+  assert.deepEqual(await client.previewPhoneCalibration(proposal, { platform: "android", model: "fixture", socIds: ["SM8550"] }), { ...preview, risk: [] });
   assert.equal(fixture.calls.length, 2);
   assert.equal(fixture.calls[0].url, "http://upstream.fixture/api/admin/config/phone-calibration");
   assert.equal(fixture.calls[0].init.method, "GET");
@@ -77,10 +83,12 @@ test("only the three phone route and method pairs are forwarded; existing config
     for (const method of methods) assert.equal((await fixture.request(path, method)).status, 405);
   }
   assert.equal((await fixture.request("phone-calibration/ios-model-presets", "GET")).status, 200);
+  assert.equal((await fixture.request("phone-calibration/android-soc-presets", "GET")).status, 200);
+  assert.equal((await fixture.request("phone-calibration/android-soc-presets", "POST")).status, 405);
   // Model risk settings are read and saved directly; there is no POST.
   for (const method of ["GET", "PUT"]) assert.equal((await fixture.request("phone-calibration/risk", method)).status, 200);
   assert.equal((await fixture.request("phone-calibration/risk", "POST")).status, 405);
-  assert.equal(fixture.calls.length, 9, "rejected methods must not reach the backend");
+  assert.equal(fixture.calls.length, 10, "rejected methods must not reach the backend");
 });
 
 test("unknown, publish and nested config paths remain unavailable for every exposed method", async () => {

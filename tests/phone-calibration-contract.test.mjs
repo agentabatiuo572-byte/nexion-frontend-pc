@@ -9,17 +9,22 @@ const transpile = file => ts.transpileModule(fs.readFileSync(file,"utf8"), {
 }).outputText;
 const iosRules = { exports: {} };
 vm.runInNewContext(transpile("lib/admin/ios-model-rules.ts"), { exports: iosRules.exports, require: () => ({}) });
+const androidRules = { exports: {} };
+vm.runInNewContext(transpile("lib/admin/android-soc-rules.ts"),
+  { exports: androidRules.exports, require: id => id.endsWith("ios-model-rules") ? iosRules.exports : {} });
 const client = { exports: {} };
-vm.runInNewContext(transpile("lib/admin/phone-calibration-client.ts"),
-  { exports: client.exports, require: id => id.endsWith("ios-model-rules") ? iosRules.exports : {} });
+vm.runInNewContext(transpile("lib/admin/phone-calibration-client.ts"), { exports: client.exports,
+  require: id => id.endsWith("ios-model-rules") ? iosRules.exports : id.endsWith("android-soc-rules") ? androidRules.exports : {} });
 const { phoneProposalError, parsePhoneCalibrationOverview, parsePhoneProposalView } = client.exports;
 const { iosRuleIssues, iosRuleFormIssues, planIosImport, diffIosRules, blankIosRule } = iosRules.exports;
 const same = (actual, expected) => assert.equal(JSON.stringify(actual), JSON.stringify(expected));
 const ios = (id, model, min, max, extra = {}) => ({ id, model, aliases: [], minComputeValue: min, maxComputeValue: max,
   enabled: true, valueSource: "OPERATOR_PRESET", catalogClass: "APPLE_RELEASED_HISTORICAL", note: null, ...extra });
-const rule = {id:"fixture",platform:"android",model:"Test phone",soc:"Test SoC",gpu:"Test GPU",
-  minMemoryGb:6,maxMemoryGb:9,computeValue:24.3,evidence:"Test fixture only"};
-const proposal = {expectedRevision:0,effectiveAt:0,thresholds:[19,25,35,47],rules:[rule],iosModelRules:[]};
+const chip = (socKey, ...aliases) => ({socKey, name:`Chip ${socKey}`, manufacturer:"Qualcomm", aliases});
+const rule = {id:"fixture",name:"高端",minComputeValue:75,maxComputeValue:95,enabled:true,valueSource:"OPERATOR_PRESET",note:null,
+  chips:[chip("sd-8g2","SM8550")]};
+const proposal = {expectedRevision:0,effectiveAt:0,thresholds:[19,25,35,47],androidSocRules:[rule],iosModelRules:[],
+  androidPresetRemovals:{socKeys:[],aliases:[]}};
 test("an unreadable phone proposal is isolated without hiding the rest of the A2 queue", () => {
   const a2 = {exports:{}};
   const source = fs.readFileSync("lib/admin/a2-client.ts","utf8") + "\nexport const inspectQueue = normalizeOverview;";
@@ -34,22 +39,36 @@ test("an unreadable phone proposal is isolated without hiding the rest of the A2
   assert.equal(result.operationQueue.length,3);
   assert.ok(result.operationQueue[0].phoneCalibrationError);
   assert.equal(result.operationQueue[0].phoneCalibrationProposal,undefined);
-  assert.equal(result.operationQueue[1].phoneCalibrationProposal.rules[0].id,"fixture");
+  assert.equal(result.operationQueue[1].phoneCalibrationProposal.androidSocRules[0].id,"fixture");
   assert.equal(result.operationQueue[1].phoneCalibrationProposal.baseline,null);
   assert.equal(result.operationQueue[2].id,"other");
 });
-test("phone rule editing validates continuous thresholds and hardware fields", () => {
+test("Android chip tiers validate ranges, chip keys and identifiers like the server", () => {
   assert.equal(phoneProposalError(proposal),null);
   for (const thresholds of [[19,19,35,47],[0,25,35,47],[19,25,35],[19,25,NaN,47]])
     assert.ok(phoneProposalError({...proposal,thresholds}));
-  for (const change of [{soc:""},{gpu:""},{minMemoryGb:9},{computeValue:0},{evidence:"x".repeat(501)}])
-    assert.ok(phoneProposalError({...proposal,rules:[{...rule,...change}]}));
-  assert.ok(phoneProposalError({...proposal,rules:[rule,rule]}));
+  for (const change of [{name:""},{minComputeValue:100},{maxComputeValue:95.001},{chips:[chip("sd-8g2")]},
+    {chips:[chip("sd-8g2","qcom")]},{chips:[chip("sd-8g2","MT6833")]},{chips:[chip("Bad Key","SM8550")]},
+    {chips:[chip("a","SM8550"),chip("b"," sm8550 ")]}])
+    assert.ok(phoneProposalError({...proposal,androidSocRules:[{...rule,...change}]}), JSON.stringify(change));
+  assert.ok(phoneProposalError({...proposal,androidSocRules:[rule,rule]}));
+  assert.ok(phoneProposalError({...proposal,androidSocRules:[rule,{...rule,id:"other",chips:[chip("sd-8g2","SM8650")]}]}));
+});
+test("chips move whole between tiers and removals are remembered", () => {
+  const { moveChip, removeChip, setChipAliases, diffAndroidRules } = androidRules.exports;
+  const other = {...rule,id:"mid",name:"中端",minComputeValue:55,maxComputeValue:75,chips:[chip("sd-778g","SM7325")]};
+  const moved = moveChip([rule,other],"sd-8g2","mid");
+  same(moved.map(tier => tier.chips.map(item => item.socKey)),[[],["sd-778g","sd-8g2"]]);
+  assert.match(diffAndroidRules([rule,other],moved).map(change => change.details.join(" ")).join(" "),/从「高端」移入/);
+  const removed = removeChip([rule],{socKeys:[],aliases:[]},"sd-8g2");
+  same([removed.rules[0].chips.length, removed.removals.socKeys],[0,["sd-8g2"]]);
+  const trimmed = setChipAliases([{...rule,chips:[chip("sd-8g2","SM8550","kalama")]}],{socKeys:[],aliases:[]},"sd-8g2",["SM8550"]);
+  same(trimmed.removals.aliases,["kalama"]);
 });
 test("empty and scheduled server catalogs remain distinct; malformed data is rejected", () => {
   const empty = {policy:{revision:0,current:null,scheduled:null},pendingHardware:[],computeUnit:"platform"};
   assert.equal(parsePhoneCalibrationOverview(empty).policy.current,null);
-  const published = {version:1,effectiveAt:1000,thresholds:proposal.thresholds,rules:proposal.rules};
+  const published = {version:1,effectiveAt:1000,thresholds:proposal.thresholds,androidSocRules:proposal.androidSocRules};
   const future = {...published,version:2,effectiveAt:5000};
   assert.equal(parsePhoneCalibrationOverview({...empty,policy:{revision:2,current:published,scheduled:future}}).policy.scheduled.version,2);
   assert.throws(() => parsePhoneCalibrationOverview({...empty,computeUnit:"TOPS"}));
@@ -122,3 +141,21 @@ test("A2 sees added, modified, disabled and removed iPhone rules against the ser
   assert.equal(inherited.iosRulesInherited,true);
   assert.equal(view.iosRulesInherited,false);
 });
+test("Android presets fill only what is missing and bring back removed items only when restored", () => {
+  const { planAndroidImport, applyAndroidImport } = androidRules.exports;
+  const preset = [{...rule,chips:[chip("sd-8g2","SM8550","SM8550-AB"),chip("sd-8g3","SM8650")]},
+    {...rule,id:"entry",name:"入门",minComputeValue:20,maxComputeValue:38,chips:[chip("sd-680","SM6225")]}];
+  const draft = [{...rule,minComputeValue:80,chips:[chip("sd-8g2","SM8550")]}];
+  const removals = {socKeys:["sd-8g3"],aliases:[]};
+  const plan = planAndroidImport(draft, removals, preset);
+  same([plan.tiers.map(t => t.id), plan.chips.map(c => c.chip.socKey), plan.aliases.map(a => a.alias), plan.removed.map(r => r.key)],
+    [["entry"],["sd-680"],["SM8550-AB"],["sd-8g3"]]);
+  const kept = applyAndroidImport(draft, removals, preset, plan, false);
+  assert.equal(kept.rules[0].minComputeValue, 80);
+  same(kept.rules.map(t => t.chips.map(c => c.socKey)), [["sd-8g2"],["sd-680"]]);
+  same(kept.removals.socKeys, ["sd-8g3"]);
+  const restored = applyAndroidImport(draft, removals, preset, plan, true);
+  same(restored.rules[0].chips.map(c => c.socKey), ["sd-8g2","sd-8g3"]);
+  same(restored.removals.socKeys, []);
+});
+

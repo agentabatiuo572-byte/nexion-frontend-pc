@@ -1,29 +1,31 @@
 import { guardedFetch, formatAdminApiError } from "./error-messages";
 import { iosRuleIssues, isIosModelRule, normalizeIosRule, type IosModelPresetCatalog, type IosModelRule } from "./ios-model-rules";
+import { androidRuleIssues, isAndroidSocRule, normalizeAndroidRule, normalizeRemovals,
+  type AndroidPresetCatalog, type AndroidPresetRemovals, type AndroidSocRule } from "./android-soc-rules";
 
-export interface PhoneRule {
-  id: string; platform: "android" | "ios"; model: string; soc: string; gpu: string;
-  minMemoryGb: number; maxMemoryGb: number; computeValue: number; evidence: string;
-}
-export interface PhonePolicy { version: number; effectiveAt: number; thresholds: number[]; rules: PhoneRule[]; iosModelRules: IosModelRule[] }
-/** The E6 client always sends iosModelRules; the server keeps the published ones only for older clients that omit them. */
-export interface PhonePolicyProposal { expectedRevision: number; effectiveAt: number; thresholds: number[]; rules: PhoneRule[]; iosModelRules: IosModelRule[] }
+export interface PhonePolicy { version: number; effectiveAt: number; thresholds: number[]; androidSocRules: AndroidSocRule[];
+  iosModelRules: IosModelRule[]; androidPresetRemovals: AndroidPresetRemovals }
+/** One proposal publishes the Android chip tiers, the iPhone rules and the thresholds together. */
+export interface PhonePolicyProposal { expectedRevision: number; effectiveAt: number; thresholds: number[];
+  androidSocRules: AndroidSocRule[]; iosModelRules: IosModelRule[]; androidPresetRemovals: AndroidPresetRemovals }
 /** The latest published rules the server attaches to an A2 ticket so reviewers see the real before/after. */
-export interface PhonePolicyBaseline { revision: number; rules: PhoneRule[]; iosModelRules: IosModelRule[] }
+export interface PhonePolicyBaseline { revision: number; androidSocRules: AndroidSocRule[]; iosModelRules: IosModelRule[] }
 /** iosRulesInherited: an older client sent no iosModelRules, so the server keeps the published ones. */
 export type PhoneProposalView = PhonePolicyProposal & { baseline: PhonePolicyBaseline | null; iosRulesInherited: boolean };
-export interface PhoneHardware { platform: string; model: string; soc: string; gpu: string; memoryGb: number }
+/** socIds: every chip identifier an Android phone reported; an iPhone reports only its model. */
+export interface PhoneHardware { platform: string; model: string; socIds: string[] }
 /** Optional iPhone facts a trial can add to see which model checks would fire. */
 export interface PhoneTrialFacts { osVersion: string | null; pixelRatio: number | null; screenWidth: number | null; screenHeight: number | null }
 export interface PhoneCalibrationOverview {
   policy: { revision: number; current: PhonePolicy | null; scheduled: PhonePolicy | null };
   /** reason: why these calibrations wait, for example an unknown model or a model risk check. */
-  pendingHardware: Array<PhoneHardware & { count: number; reason?: string | null }>;
+  pendingHardware: Array<{ platform: string | null; model: string | null; socIds: string[]; reason: string | null; count: number }>;
   computeUnit: "platform";
 }
 export interface PhonePreview {
   match: { status: string; ruleId: string | null; computeValue: number | null; tier: number | null; ruleVersion: number;
-    method?: "HARDWARE_RULE" | "IOS_MODEL_RANGE"; model?: string | null; minComputeValue?: number | null; maxComputeValue?: number | null };
+    method?: "IOS_MODEL_RANGE" | "ANDROID_SOC_RANGE" | null; model?: string | null; socKey?: string | null;
+    minComputeValue?: number | null; maxComputeValue?: number | null };
   possibleTiers: number[];
   /** Per-report model checks for an iPhone trial with OS and screen facts; empty otherwise. */
   risk: Array<{ code: string; mode: "OBSERVE" | "ENFORCE" }>;
@@ -42,46 +44,40 @@ export function phoneProposalError(proposal: PhonePolicyProposal): string | null
       || proposal.thresholds.some((value,index) => !finite(value) || value <= 0 || (index > 0 && value <= proposal.thresholds[index-1]))) {
     return "四个档位分界必须为严格递增的正数。";
   }
-  if (!Array.isArray(proposal.rules) || proposal.rules.length > 500) return "最多维护 500 条手机规则。";
+  if (!Array.isArray(proposal.androidSocRules) || !proposal.androidSocRules.every(isAndroidSocRule)) return "Android 芯片档格式无效。";
   if (!Array.isArray(proposal.iosModelRules) || !proposal.iosModelRules.every(isIosModelRule)) return "iPhone 机型规则格式无效。";
-  const ids = new Set<string>();
-  for (const rule of proposal.rules) {
-    if (!object(rule) || typeof rule.id !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(rule.id) || ids.has(rule.id)) return "规则编号须唯一，只支持字母、数字、短横线和下划线。";
-    ids.add(rule.id);
-    if (!["android","ios"].includes(rule.platform) || typeof rule.model !== "string" || rule.model.length > 128
-        || typeof rule.soc !== "string" || !rule.soc.trim() || rule.soc.length > 128
-        || typeof rule.gpu !== "string" || !rule.gpu.trim() || rule.gpu.length > 256
-        || typeof rule.evidence !== "string" || !rule.evidence.trim() || rule.evidence.length > 500) return "请完整填写平台、SoC、GPU 和核验依据（最多 500 字）。";
-    if (!finite(rule.minMemoryGb) || !finite(rule.maxMemoryGb) || rule.minMemoryGb <= 0 || rule.maxMemoryGb <= rule.minMemoryGb
-        || rule.maxMemoryGb > 129 || !finite(rule.computeValue) || rule.computeValue <= 0 || rule.computeValue > 1_000_000) return "内存范围或平台算力值无效。";
-  }
-  const issue = iosRuleIssues(proposal.iosModelRules, proposal.rules.map(rule => rule.id))[0];
+  const android = androidRuleIssues(proposal.androidSocRules, proposal.iosModelRules.map(rule => rule.id))[0];
+  if (android) return android.index < 0 ? android.message : `Android 芯片档 ${android.index + 1}（${proposal.androidSocRules[android.index].name || "未填写"}）：${android.message}`;
+  const issue = iosRuleIssues(proposal.iosModelRules, proposal.androidSocRules.map(rule => rule.id))[0];
   if (issue) return issue.index < 0 ? issue.message : `iPhone 机型 ${issue.index + 1}（${proposal.iosModelRules[issue.index].model || "未填写"}）：${issue.message}`;
   return null;
 }
-/** A policy stored before iPhone rules existed has none; that is an empty list, not an error. */
-function withIosRules<T extends Record<string, unknown>>(value: T): T & { iosModelRules: IosModelRule[] } {
-  const rules = value.iosModelRules === undefined || value.iosModelRules === null ? [] : value.iosModelRules;
-  if (!Array.isArray(rules) || !rules.every(isIosModelRule)) return invalid();
-  return { ...value, iosModelRules: rules.map(normalizeIosRule) };
+/** Missing rule lists read as empty; anything present must have the exact shape. */
+function withRules<T extends Record<string, unknown>>(value: T): T & { iosModelRules: IosModelRule[]; androidSocRules: AndroidSocRule[];
+  androidPresetRemovals: AndroidPresetRemovals } {
+  const ios = value.iosModelRules === undefined || value.iosModelRules === null ? [] : value.iosModelRules;
+  const android = value.androidSocRules === undefined || value.androidSocRules === null ? [] : value.androidSocRules;
+  if (!Array.isArray(ios) || !ios.every(isIosModelRule) || !Array.isArray(android) || !android.every(isAndroidSocRule)) return invalid();
+  return { ...value, iosModelRules: ios.map(normalizeIosRule), androidSocRules: android.map(normalizeAndroidRule),
+    androidPresetRemovals: normalizeRemovals(value.androidPresetRemovals) };
 }
 /** A2 ticket payload: the proposal plus the server's baseline, both checked like a live read. */
 export function parsePhoneProposalView(value: unknown): PhoneProposalView {
   if (!object(value)) return invalid();
-  const proposal = withIosRules(value) as unknown as PhoneProposalView;
+  const proposal = withRules(value) as unknown as PhoneProposalView;
   if (phoneProposalError(proposal)) return invalid();
   const raw = value.baseline;
   let baseline: PhonePolicyBaseline | null = null;
   if (raw !== null && raw !== undefined) {
-    if (!object(raw) || !Number.isSafeInteger(raw.revision) || !Array.isArray(raw.rules)) return invalid();
-    baseline = withIosRules(raw) as unknown as PhonePolicyBaseline;
+    if (!object(raw) || !Number.isSafeInteger(raw.revision)) return invalid();
+    baseline = withRules(raw) as unknown as PhonePolicyBaseline;
   }
   return { ...proposal, baseline, iosRulesInherited: value.iosModelRules === undefined || value.iosModelRules === null };
 }
 function policy(value: unknown): PhonePolicy | null {
   if (value === null) return null;
   if (!object(value) || !Number.isSafeInteger(value.version) || Number(value.version) < 1) return invalid();
-  const result = withIosRules(value) as unknown as PhonePolicy;
+  const result = withRules(value) as unknown as PhonePolicy;
   if (phoneProposalError({ ...result, expectedRevision: result.version })) return invalid();
   return result;
 }
@@ -92,8 +88,17 @@ export function parsePhoneCalibrationOverview(value: unknown): PhoneCalibrationO
   const current = policy(value.policy.current), scheduled = policy(value.policy.scheduled);
   if ([current,scheduled].some(entry => entry && entry.version > Number((value.policy as Record<string,unknown>).revision))) return invalid();
   if (value.pendingHardware.some(sample => !object(sample) || !Number.isSafeInteger(sample.count) || Number(sample.count) < 1)) return invalid();
-  return { policy: { revision: Number(value.policy.revision), current, scheduled },
-    pendingHardware: value.pendingHardware as PhoneCalibrationOverview["pendingHardware"], computeUnit: "platform" };
+  // The server groups by the identifiers' JSON text, so they arrive as a string.
+  const ids = (raw: unknown): string[] => {
+    try {
+      const list = typeof raw === "string" ? JSON.parse(raw) : raw;
+      return Array.isArray(list) ? list.filter((id): id is string => typeof id === "string") : [];
+    } catch { return []; }
+  };
+  const pendingHardware = (value.pendingHardware as Record<string, unknown>[]).map(sample => ({
+    platform: typeof sample.platform === "string" ? sample.platform : null, model: typeof sample.model === "string" ? sample.model : null,
+    socIds: ids(sample.socIds), reason: typeof sample.reason === "string" ? sample.reason : null, count: Number(sample.count) }));
+  return { policy: { revision: Number(value.policy.revision), current, scheduled }, pendingHardware, computeUnit: "platform" };
 }
 async function request(path: string, body?: unknown): Promise<unknown> {
   const response = await guardedFetch(`/api/admin/config/phone-calibration${path}`, {
@@ -129,4 +134,12 @@ export async function fetchIosModelPresets(): Promise<IosModelPresetCatalog> {
       || !Array.isArray(value.sources) || typeof value.notice !== "string"
       || !Array.isArray(value.models) || !value.models.every(isIosModelRule)) return invalid();
   return { ...(value as unknown as IosModelPresetCatalog), models: (value.models as IosModelRule[]).map(normalizeIosRule) };
+}
+/** The versioned Android chip-tier presets shipped with the backend; loading them only fills the E6 draft. */
+export async function fetchAndroidSocPresets(): Promise<AndroidPresetCatalog> {
+  const value = await request("/android-soc-presets");
+  if (!object(value) || typeof value.catalogVersion !== "string" || typeof value.verifiedOn !== "string"
+      || !Array.isArray(value.sources) || typeof value.notice !== "string" || !Array.isArray(value.ambiguousIds)
+      || !Array.isArray(value.excluded) || !Array.isArray(value.tiers) || !value.tiers.every(isAndroidSocRule)) return invalid();
+  return { ...(value as unknown as AndroidPresetCatalog), tiers: (value.tiers as AndroidSocRule[]).map(normalizeAndroidRule) };
 }
