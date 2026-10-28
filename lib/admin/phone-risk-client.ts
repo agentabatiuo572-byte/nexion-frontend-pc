@@ -11,7 +11,7 @@ export interface PhoneRiskSettings {
 export interface PhoneRiskStats {
   days: number;
   checks: Array<{ code: string; flagged: number; held: number; accounts: number }>;
-  models: Array<{ code: string; platform: string; model: string; flagged: number; held: number }>;
+  models: Array<{ code: string; platform: string | null; model: string | null; flagged: number; held: number }>;
 }
 export interface PhoneRiskOverview { settings: PhoneRiskSettings; stats: PhoneRiskStats }
 export type PhoneRiskUpdate = Omit<PhoneRiskSettings, "revision" | "updatedAt" | "updatedBy" | "reason"> & { reason: string };

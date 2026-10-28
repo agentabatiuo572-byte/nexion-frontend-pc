@@ -52,8 +52,9 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
 
   function formRule(value: Editing): IosModelRule {
     return { ...value.rule, aliases: value.aliases.split(/\r?\n/).map(alias => alias.trim()).filter(Boolean),
-      scales: value.scales.split(/[,，\s]+/).filter(Boolean).map(Number),
-      screens: value.screens.split(/[\r\n,，]+/).map(screen => screen.trim().replace(/\s*[x×*]\s*/i, "x")).filter(Boolean) };
+      // The list shows "@2/3x" and "375x667、414x736"; both forms are accepted back.
+      scales: value.scales.replace(/[@x]/gi, " ").split(/[,，、/\s]+/).filter(Boolean).map(Number),
+      screens: value.screens.split(/[\r\n,，、]+/).map(screen => screen.trim().replace(/\s*[x×*]\s*/i, "x")).filter(Boolean) };
   }
   function save() {
     if (!form || !editable || formGone || formIssues.length) return;
@@ -83,7 +84,8 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
     if (!presets || !editable) return;
     // Re-plan against the current draft so an edit made meanwhile is never overwritten.
     const plan = planIosImport(rules, presets.catalog.models.filter(rule => presets.selected.has(rule.id)), androidRuleIds);
-    onChange([...rules, ...plan.added]);
+    const facts = new Map(planIosImport(rules, presets.catalog.models, androidRuleIds).factsFilled.map(fill => [fill.id, fill.facts]));
+    onChange([...rules.map(rule => facts.has(rule.id) ? { ...rule, ...facts.get(rule.id) } : rule), ...plan.added]);
     setPresets(null);
   }
 
@@ -106,6 +108,7 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
       <div className="ios-stats">
         <div><small>将新增</small><strong>{presets.plan.added.length}</strong></div>
         <div><small>已存在 · 跳过</small><strong>{presets.plan.skipped.length}</strong></div>
+        <div><small>补充设备信息</small><strong>{presets.plan.factsFilled.length}</strong></div>
         <div><small>名称冲突</small><strong className={presets.plan.conflicts.length ? "danger" : ""}>{presets.plan.conflicts.length}</strong></div>
       </div>
       {presets.plan.conflicts.map(({ preset, reason }) => <p role="alert" key={preset.id}>未导入「{preset.model}」：{reason}，请先核对。</p>)}
@@ -121,7 +124,8 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
           }} />{rule.model} · {formatRange(rule)} · {rule.catalogClass ? IOS_CATALOG_LABELS[rule.catalogClass] : "未分类"}</label>)}</div>
       </>}
       <p className="f-foot">取消勾选只是本次不导入，不代表该机型不支持；以后可再次载入补齐。{presets.catalog.notice}</p>
-      <Btn variant="primary" disabled={!editable || presets.selected.size === 0} onClick={applyImport}>加入草稿</Btn>
+      {presets.plan.factsFilled.length > 0 && <p className="f-foot">已有的 {presets.plan.factsFilled.length} 个机型还没有设备信息，加入草稿时一并补上（只补设备信息，不改范围、别名和停用状态）。</p>}
+      <Btn variant="primary" disabled={!editable || presets.selected.size === 0 && presets.plan.factsFilled.length === 0} onClick={applyImport}>加入草稿</Btn>
       <Btn onClick={() => setPresets(null)}>取消</Btn>
       <p className="f-foot">加入草稿后仍需「试算并预览影响」→「提交审批」，审批通过才生效。</p>
     </div>}

@@ -141,7 +141,6 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false }: { ctx: EV
             {snapshot.pendingHardware.map((sample,index) => <tr key={index}><td>{sample.platform || "未知"} / {sample.model || "未知"}</td><td>{sample.soc || "未知"} / {sample.gpu || "未知"}</td><td>{sample.memoryGb ?? "未知"}</td><td>{sample.reason ? PENDING_TEXT[sample.reason] ?? sample.reason : "未知"}</td><td>{sample.count}</td></tr>)}
           </tbody></table>}
         </details>
-        <PhoneRiskSection canWrite={ctx.canWriteE6} toast={ctx.toast} />
       </>}
       <fieldset disabled={!editing}><legend>{ios ? "试算机型与生效时间（iOS 只需机型）" : "试算硬件与生效时间"}</legend><div style={grid}>
         <label>平台<select value={hardware.platform} onChange={event => setHardware(old => ({...old,platform:event.target.value}))}><option value="android">Android</option><option value="ios">iOS</option></select></label>
@@ -164,6 +163,8 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false }: { ctx: EV
       <Btn disabled={!editing || !!validation || !previewCurrent} onClick={() => setConfirm({ proposal, commandKey: createA2CommandKey("phone-policy") })}>提交审批</Btn>
       <p><Link href="/platform/audit?domain=E&object=phone-calibration">查看审批记录</Link></p>
     </>}
+    {/* Its own endpoint: stays usable when the calibration rules cannot be read, e.g. to stop an enforcing check. */}
+    {!thresholdsOnly && <PhoneRiskSection canWrite={ctx.canWriteE6} toast={ctx.toast} />}
     {confirm && <OperationConfirmModal action="发布手机校准规则" amplifies detail="整份 Android 硬件规则、iPhone 机型规则与档位分界将一起发布，须另一位有审批权的管理员确认。这里只创建提案，不代表已经生效。" reasonMin={8} reasonMax={200}
       onClose={() => setConfirm(null)} onConfirm={async reason => {
         if (!ctx.canWriteE6) throw new Error("你没有修改设备配置的权限");

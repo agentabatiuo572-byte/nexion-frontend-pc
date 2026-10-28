@@ -4,12 +4,12 @@ import { Lock, RefreshCw, Unlock } from "lucide-react";
 import { OperationConfirmModal } from "../design-kit";
 import { PhoneApiError, fetchPhoneModelLocks, releasePhoneModelLock, type PhoneModelLock } from "@/lib/admin/phone-replacement-client";
 import { PHONE_GRANT } from "@/lib/admin/phone-replacement-contract";
+import { phoneTime } from "../phone-replacement-receipt";
 
 const platformLabel = (platform: string | null) => platform === "ios" ? "iPhone" : platform === "android" ? "Android" : "未知";
-const time = (value: number | null) => value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "—";
 function status(lock: PhoneModelLock): { text: string; tone: string } {
-  // Released but not yet recalibrated: the held calibration stays until the customer calibrates again.
-  if (lock.held) return lock.releasable ? { text: "换报机型被拦截", tone: "warn" } : { text: "已解除，等用户重新校准", tone: "cyan" };
+  if (lock.released) return { text: "已解除，等用户重新校准", tone: "cyan" };
+  if (lock.held) return { text: "换报机型被拦截", tone: "warn" };
   return lock.releasable ? { text: "已锁定", tone: "ok" } : { text: "未锁定（下次校准锁定）", tone: "dim" };
 }
 
@@ -24,7 +24,8 @@ export function PhoneModelLockSection({ userId, rights }: { userId: string; righ
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
-  const [target, setTarget] = useState<PhoneModelLock | null>(null);
+  // One key per confirmation, so a retry after an unknown outcome is the same command.
+  const [target, setTarget] = useState<{ lock: PhoneModelLock; key: string } | null>(null);
   const live = useRef(true), generation = useRef(0);
 
   const load = useCallback(async () => {
@@ -59,21 +60,21 @@ export function PhoneModelLockSection({ userId, rights }: { userId: string; righ
               <td>{lock.lockedModel ?? "—"}</td>
               <td>{lock.reportedModel ?? "—"}</td>
               <td><span className={`bdg ${state.tone}`}>{state.text}</span></td>
-              <td>{time(lock.updatedAt)}</td>
+              <td>{phoneTime(lock.updatedAt)}</td>
               <td>{lock.releasable && canRelease
-                ? <button className="l-btn sm" disabled={!!target || loading} onClick={() => { setMessage(""); setTarget(lock); }}><Unlock size={13} aria-hidden="true" />解除机型锁</button>
+                ? <button className="l-btn sm" disabled={!!target || loading} onClick={() => { setMessage(""); setTarget({ lock, key: crypto.randomUUID() }); }}><Unlock size={13} aria-hidden="true" />解除机型锁</button>
                 : lock.releasable ? <small>需要换机特批权限</small> : "—"}</td>
             </tr>;
           })}</tbody>
         </table></div>}
     </div>
     {target && <OperationConfirmModal action="解除手机机型锁"
-      detail={<>{platformLabel(target.platform)} · 锁定机型 {target.lockedModel ?? "—"}{target.reportedModel && target.reportedModel !== target.lockedModel ? `，最近上报 ${target.reportedModel}` : ""}。
+      detail={<>{platformLabel(target.lock.platform)} · 锁定机型 {target.lock.lockedModel ?? "—"}{target.lock.reportedModel && target.lock.reportedModel !== target.lock.lockedModel ? `，最近上报 ${target.lock.reportedModel}` : ""}。
         <br />解除后，用户在这台手机上重新校准即锁定新机型，并按新机型分配算力。只在核实用户确实更换了手机后操作。</>}
       reasonMin={8} reasonMax={200} onClose={() => setTarget(null)} onConfirm={async reason => {
         if (!canRelease) throw new Error("当前账号无权执行此操作");
         try {
-          await releasePhoneModelLock(userId, target.installationId, reason, crypto.randomUUID());
+          await releasePhoneModelLock(userId, target.lock, reason, target.key);
         } catch (failure) {
           throw failure instanceof PhoneApiError && failure.unknownOutcome
             ? new Error("提交结果暂不确定，请刷新列表核对，不要重复提交。") : failure;

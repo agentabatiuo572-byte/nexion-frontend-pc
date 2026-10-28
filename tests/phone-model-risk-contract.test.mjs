@@ -30,6 +30,13 @@ test("iPhone device facts are optional, validated like the server and shown in d
   assert.equal(change.kind, "modified");
   assert.match(change.details.join(" "), /设备信息 未填写 → iOS 11\.0–最新 · @2x/);
   assert.equal(rules.normalizeIosRule(legacy).scales.length, 0);
+  // Presets supply facts only to existing models that have none, and change nothing else.
+  const preset = ios({ minComputeValue: 9, maxComputeValue: 9, minOsVersion: "11.0", scales: [2] });
+  const plan = rules.planIosImport([ios(), ios({ id: "ios-x", model: "iPhone X", scales: [3] })],
+    [preset, ios({ id: "ios-x", model: "iPhone X", scales: [3], minOsVersion: "11.0" })]);
+  assert.equal(JSON.stringify(plan.factsFilled.map(fill => [fill.id, fill.facts.minOsVersion, fill.facts.scales])),
+    JSON.stringify([["ios-8", "11.0", [2]]]));
+  assert.equal(plan.added.length, 0);
 });
 
 test("risk settings keep display size and account churn observe-only and need a reason", () => {
@@ -51,5 +58,6 @@ test("C5 support reaches only the model-lock list and its release through the us
   assert.deepEqual({ ...routes.phoneUserRoute(["profiles", "9", "phone-model-locks", "install.a:1", "release"]) },
     { path: "/api/admin/users/profiles/9/phone-model-locks/install.a%3A1/release", method: "POST" });
   for (const parts of [["profiles", "9", "phone-model-locks", "a"], ["profiles", "9", "phone-model-locks", "a b", "release"],
+    ["profiles", "9", "phone-model-locks", "..", "release"], ["profiles", "9", "phone-model-locks", ".", "release"],
     ["profiles", "9", "phone-model-locks", "a", "delete"]]) assert.equal(routes.phoneUserRoute(parts), null);
 });

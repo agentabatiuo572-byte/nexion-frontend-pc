@@ -140,20 +140,33 @@ export function formatFacts(rule: Pick<IosModelRule, "minOsVersion" | "maxOsMajo
   return parts.join(" · ") || "未填写";
 }
 
-export interface IosImportPlan { added: IosModelRule[]; skipped: IosModelRule[]; conflicts: Array<{ preset: IosModelRule; reason: string }> }
+export type IosDeviceFacts = Pick<IosModelRule, "minOsVersion" | "maxOsMajor" | "scales" | "screens">;
+/** factsFilled: models already in the draft without any device facts, which the preset fills in. */
+export interface IosImportPlan { added: IosModelRule[]; skipped: IosModelRule[]; conflicts: Array<{ preset: IosModelRule; reason: string }>;
+  factsFilled: Array<{ id: string; model: string; facts: IosDeviceFacts }> }
+const factsOf = (rule: IosModelRule): IosDeviceFacts => ({ minOsVersion: rule.minOsVersion ?? null, maxOsMajor: rule.maxOsMajor ?? null,
+  scales: [...(rule.scales ?? [])], screens: [...(rule.screens ?? [])] });
+const hasFacts = (facts: IosDeviceFacts) => facts.minOsVersion !== null || facts.maxOsMajor !== null || facts.scales.length > 0 || facts.screens.length > 0;
 /**
- * Only fills models the draft lacks. A preset whose model already exists is skipped,
- * so ranges, aliases and the disabled state an operator maintained are never overwritten.
+ * Only fills models the draft lacks. A preset whose model already exists is skipped, so ranges,
+ * aliases and the disabled state an operator maintained are never overwritten; it only supplies
+ * device facts to an existing model that has none.
  * Android rule ids share one id space with iPhone rules on the server.
  */
 export function planIosImport(draft: IosModelRule[], presets: IosModelRule[], otherRuleIds: string[] = []): IosImportPlan {
-  const plan: IosImportPlan = { added: [], skipped: [], conflicts: [] };
+  const plan: IosImportPlan = { added: [], skipped: [], conflicts: [], factsFilled: [] };
   const byModel = new Map(draft.map(rule => [normalizeModel(rule.model), rule]));
   const owners = new Map<string, string>();
   for (const rule of draft) for (const name of namesOf(rule)) owners.set(name, rule.model);
   const ids = new Set([...otherRuleIds, ...draft.map(rule => rule.id)]);
   for (const preset of presets) {
-    if (byModel.has(normalizeModel(preset.model))) { plan.skipped.push(preset); continue; }
+    const existing = byModel.get(normalizeModel(preset.model));
+    if (existing) {
+      // Device facts are only added where the operator has none; ranges, aliases and states stay untouched.
+      if (!hasFacts(factsOf(existing)) && hasFacts(factsOf(preset))) plan.factsFilled.push({ id: existing.id, model: existing.model, facts: factsOf(preset) });
+      plan.skipped.push(preset);
+      continue;
+    }
     const taken = namesOf(preset).find(name => owners.has(name));
     if (taken) { plan.conflicts.push({ preset, reason: `「${taken}」已属于 ${owners.get(taken)}` }); continue; }
     if (ids.has(preset.id)) { plan.conflicts.push({ preset, reason: `规则编号 ${preset.id} 已被使用` }); continue; }

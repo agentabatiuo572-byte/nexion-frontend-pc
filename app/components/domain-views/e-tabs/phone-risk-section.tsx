@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Btn, OperationConfirmModal } from "../design-kit";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { phoneTime } from "../phone-replacement-receipt";
 import { RISK_CHECKS, RISK_CODE_LABELS, RISK_MODE_LABELS, fetchPhoneRisk, riskSettingsError, savePhoneRisk,
   type PhoneRiskOverview, type PhoneRiskUpdate } from "@/lib/admin/phone-risk-client";
 
@@ -11,7 +12,7 @@ const draftOf = ({ settings }: PhoneRiskOverview): PhoneRiskUpdate => ({
   screenSize: settings.screenSize, missingSignals: settings.missingSignals, accountModelChurn: settings.accountModelChurn,
   churnWindowDays: settings.churnWindowDays, churnModelCount: settings.churnModelCount, reason: "",
 });
-const platformLabel = (platform: string) => platform === "ios" ? "iPhone" : platform === "android" ? "Android" : platform || "未知";
+const platformLabel = (platform: string | null) => platform === "ios" ? "iPhone" : platform === "android" ? "Android" : "未知";
 
 /** E6 "机型风控": checks run before a phone calibration draws a value. Saved directly; the server audits each save. */
 export function PhoneRiskSection({ canWrite, toast }: { canWrite: boolean; toast: (message: string) => void }) {
@@ -19,7 +20,8 @@ export function PhoneRiskSection({ canWrite, toast }: { canWrite: boolean; toast
   const [draft, setDraft] = useState<PhoneRiskUpdate | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [confirming, setConfirming] = useState(false);
+  // One key per confirmation, so a retry after an unknown outcome is the same command.
+  const [confirming, setConfirming] = useState<string | null>(null);
   const live = useRef(true);
 
   async function load() {
@@ -34,8 +36,6 @@ export function PhoneRiskSection({ canWrite, toast }: { canWrite: boolean; toast
   useEffect(() => { live.current = true; void load(); return () => { live.current = false; }; }, []);
 
   const saved = overview ? draftOf(overview) : null;
-  const changed = !!draft && !!saved && RISK_CHECKS.some(check => draft[check.key] !== saved[check.key])
-    || !!draft && !!saved && (draft.churnWindowDays !== saved.churnWindowDays || draft.churnModelCount !== saved.churnModelCount);
   const validation = draft ? riskSettingsError({ ...draft, reason: "占位理由，仅用于校验" }) : null;
   const editable = canWrite && !busy && !!overview;
   const statsOf = (code: string) => overview?.stats.checks.find(row => row.code === code);
@@ -45,6 +45,9 @@ export function PhoneRiskSection({ canWrite, toast }: { canWrite: boolean; toast
     ...(draft.churnWindowDays !== saved.churnWindowDays ? [`统计窗口：${saved.churnWindowDays} → ${draft.churnWindowDays} 天`] : []),
     ...(draft.churnModelCount !== saved.churnModelCount ? [`机型数上限：${saved.churnModelCount} → ${draft.churnModelCount} 个`] : []),
   ] : [];
+  const changed = summary.length > 0;
+  // Leaving the facts out is the way around an enforced OS or scale check until missing facts are enforced too.
+  const bypassable = !!draft && draft.missingSignals !== "ENFORCE" && (draft.osVersion === "ENFORCE" || draft.screenScale === "ENFORCE");
 
   return <fieldset className="phone-risk" aria-label="机型风控">
     <legend>机型风控（保存即生效，不走审批）</legend>
@@ -52,7 +55,7 @@ export function PhoneRiskSection({ canWrite, toast }: { canWrite: boolean; toast
     {error && <p role="alert">{error}</p>}
     {!overview || !draft ? <p role="status">{busy ? "正在加载…" : "设置加载失败，请刷新重试。"}</p> : <>
       <p role="status">版本 {overview.settings.revision}{overview.settings.updatedAt
-        ? ` · ${new Date(overview.settings.updatedAt).toLocaleString("zh-CN", { hour12: false })} 修改：${overview.settings.reason ?? "—"}`
+        ? ` · ${phoneTime(overview.settings.updatedAt)} 修改：${overview.settings.reason ?? "—"}`
         : " · 默认设置：同一手机换报机型直接拦截，其余只观察"}</p>
       {!canWrite && <p>你只能查看，修改需要设备配置权限。</p>}
       <div className="ui-table-scroll"><table>
@@ -76,8 +79,9 @@ export function PhoneRiskSection({ canWrite, toast }: { canWrite: boolean; toast
           onChange={event => setDraft({ ...draft, churnModelCount: Number(event.target.value) })} /></label>
       </div>
       {validation && <p role="alert">{validation}</p>}
+      {bypassable && <p role="status">「缺少系统或屏幕信息」仍是观察：不上报系统版本或屏幕的请求不会被这两项拦下。新版 App 普及后，再把它改为拦截。</p>}
       <div className="ios-actions">
-        <Btn variant="primary" disabled={!editable || !changed || !!validation} onClick={() => setConfirming(true)}>保存并生效</Btn>
+        <Btn variant="primary" disabled={!editable || !changed || !!validation} onClick={() => setConfirming(crypto.randomUUID())}>保存并生效</Btn>
         <Btn disabled={busy || !changed} onClick={() => setDraft(draftOf(overview))}>撤销修改</Btn>
         <Btn disabled={busy} onClick={() => void load()}>刷新</Btn>
       </div>
@@ -86,7 +90,7 @@ export function PhoneRiskSection({ canWrite, toast }: { canWrite: boolean; toast
           <thead><tr>{["检查项", "平台", "上报机型", "命中", "拦截"].map(label => <th key={label}>{label}</th>)}</tr></thead>
           <tbody>{overview.stats.models.map(row => <tr key={`${row.code}:${row.platform}:${row.model}`}>
             <td>{RISK_CODE_LABELS[row.code] ?? row.code}</td><td>{platformLabel(row.platform)}</td>
-            <td style={{ overflowWrap: "anywhere" }}>{row.model || "未上报"}</td><td>{row.flagged}</td><td>{row.held}</td>
+            <td style={{ overflowWrap: "anywhere" }}>{row.model ?? "未上报"}</td><td>{row.flagged}</td><td>{row.held}</td>
           </tr>)}</tbody>
         </table></div>
         <p className="f-foot">被拦下的正常用户（例如从备份恢复到新手机）由客服在「用户 · 手机绑定与换机特批」中解除机型锁。</p>
@@ -94,11 +98,11 @@ export function PhoneRiskSection({ canWrite, toast }: { canWrite: boolean; toast
     </>}
     {confirming && draft && overview && <OperationConfirmModal action="保存机型风控设置"
       detail={<>{summary.map(line => <span key={line}>{line}<br /></span>)}保存后立即用于之后的校准，不走审批；已激活的手机和历史结算不受影响。</>}
-      reasonMin={8} reasonMax={200} onClose={() => setConfirming(false)} onConfirm={async reason => {
+      reasonMin={8} reasonMax={200} onClose={() => setConfirming(null)} onConfirm={async reason => {
         if (!canWrite) throw new Error("你没有修改设备配置的权限");
-        const next = await savePhoneRisk(overview.settings.revision, { ...draft, reason }, crypto.randomUUID());
+        const next = await savePhoneRisk(overview.settings.revision, { ...draft, reason }, confirming);
         if (!live.current) return;
-        setOverview(next); setDraft(draftOf(next)); setConfirming(false);
+        setOverview(next); setDraft(draftOf(next)); setConfirming(null);
         toast("机型风控设置已生效");
       }} />}
   </fieldset>;
