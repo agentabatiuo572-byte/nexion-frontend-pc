@@ -35,10 +35,10 @@ function fixture(path, kind) {
 const list = fixture("app/components/domain-views/c-tabs/c1-search.tsx", "list");
 const detail = fixture("app/_console/users/search/[id]/page.tsx", "detail");
 
-test("C1 actual list and heading normalize only the matching default name without mutating DTO", () => {
+test("C1 actual list and heading preserve the source default name without mutating DTO", () => {
   for (const suffix of ["1058", "1057", "0001"]) {
     const profile = Object.freeze({ id: 42, nickname: `NexGrid ${suffix}`, phoneMasked: `187****${suffix}` });
-    for (const render of [list, detail]) assert.equal(text(render(profile).node), `UVEL ${suffix}`);
+    for (const render of [list, detail]) assert.equal(text(render(profile).node), profile.nickname);
     assert.equal(profile.nickname, `NexGrid ${suffix}`);
   }
 });
@@ -52,23 +52,23 @@ test("C1 retains custom names, mismatches and missing phone evidence", () => {
   ]) for (const render of [list, detail]) assert.equal(text(render({ nickname, phoneMasked }).node), nickname);
 });
 
-test("C1 reset sends the original nickname even when the displayed title changes", () => {
+test("C1 reset sends the original nickname and displays the same source name", () => {
   const calls = [], profile = { id: 42, nickname: "NexGrid 1058", phoneMasked: "187****1058" };
   const page = detail(profile, (...args) => calls.push(args));
-  assert.equal(text(page.node), "UVEL 1058");
+  assert.equal(text(page.node), "NexGrid 1058");
   page.reset();
   assert.deepEqual(calls, [[42, "NexGrid 1058", "fixture", undefined, "key"]]);
 });
 
 test("the default-name formatter preserves unknown and unrelated source values", () => {
-  assert.equal(brand.userNicknameText("NexGrid 1058", "187****1058"), "UVEL 1058");
+  assert.equal(brand.userNicknameText("NexGrid 1058", "187****1058"), "NexGrid 1058");
   for (const name of ["NexGridFan", "StellarBox collector", "Nexion Fan", "nexgrid 1058"])
     assert.equal(brand.userNicknameText(name, "187****1058"), name);
 });
 
-test("system reset and historical phone defaults display UVEL while CAS retains raw names", () => {
+test("system reset and historical phone defaults remain visible while CAS retains raw names", () => {
   for (const [nickname, expected] of [
-    ["NexGrid-F343FA44", "UVEL-F343FA44"], ["Nexion 1058", "UVEL 1058"],
+    ["NexGrid-F343FA44", "NexGrid-F343FA44"], ["Nexion 1058", "Nexion 1058"], ["UVEL 1058", "UVEL 1058"],
   ]) {
     const calls = [], profile = Object.freeze({ id: 42, nickname, phoneMasked: "187****1058" });
     for (const render of [list, detail]) assert.equal(text(render(profile).node), expected);
@@ -76,7 +76,7 @@ test("system reset and historical phone defaults display UVEL while CAS retains 
     assert.equal(calls[0][1], nickname);
     assert.equal(profile.nickname, nickname);
   }
-  assert.equal(brand.userNicknameText("NexGrid-F343FA44", null), "UVEL-F343FA44");
+  assert.equal(brand.userNicknameText("NexGrid-F343FA44", null), "NexGrid-F343FA44");
   for (const name of ["NexGrid1058", "Nexion1058", "NexGrid 1058\n", "Nexion 1058\n", "NexGrid-F343FA44\n", "NexGrid-F343FA4", "NexGrid-F343FA444", "NexGrid-f343fa44", "NexGrid-G343FA44", "My NexGrid-F343FA44", "NexGrid-F343FA44 fan"])
     assert.equal(brand.userNicknameText(name, "187****1058"), name);
   assert.equal(brand.userNicknameText("Nexion1058", "187****1057"), "Nexion1058");

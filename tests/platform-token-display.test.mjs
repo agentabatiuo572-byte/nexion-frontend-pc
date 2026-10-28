@@ -19,15 +19,15 @@ const expression = (path, name) => {
   return ts.transpileModule(`module.exports = ${result}`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 };
 
-test("platform token display changes units while preserving platform/product brands and unrelated assets", () => {
-  assert.equal(nexGridBrandText("NEX / nex / 1 NEX"), "UVT / UVT / 1 UVT");
-  assert.equal(nexGridBrandText("UVEL · NexGridBox S1 · USDT · BNB · BSC"), "UVEL · UVELBox S1 · USDT · BNB · BSC");
-  for (const raw of ["UVT", "nex", "UVEL", "UVT"]) assert.equal(platformAssetText(raw), "UVT");
+test("asset and name display preserves current and unmigrated source values", () => {
+  assert.equal(nexGridBrandText("NEX / nex / 1 NEX"), "NEX / nex / 1 NEX");
+  assert.equal(nexGridBrandText("UVEL · NexGridBox S1 · USDT · BNB · BSC"), "UVEL · NexGridBox S1 · USDT · BNB · BSC");
+  for (const raw of ["UVT", "NEX", "nex", "UVEL"]) assert.equal(platformAssetText(raw), raw);
   for (const raw of ["USDT", "BNB", "BSC", "UVELBox S1", "NEX_MARKET", "My UVEL reward"]) assert.equal(platformAssetText(raw), raw);
   assert.equal(({ kind: "TEXT", text: "100 UVEL · My NEX story" }).text, "100 UVEL · My NEX story");
 });
 
-test("legacy server navigation labels resolve to UVT while custom menus and grants remain intact", () => {
+test("server navigation source labels remain exact while grants remain intact", () => {
   for (const [id, domain, oldNames, expected] of [
     ["G3", "G", ["NEX 行情引擎", "NEX 价格管理", "UVEL价格管理"], "UVT价格管理"],
     ["H5", "H", ["签到 & NEX", "签到与UVEL奖励"], "签到与UVT奖励"],
@@ -35,18 +35,18 @@ test("legacy server navigation labels resolve to UVT while custom menus and gran
     for (const old of [...oldNames, "自定义菜单"]) {
       const menus = [{ menuCode: domain, menuName: "" }, { menuCode: id, menuName: old, parentCode: domain, routePath: ALL_L2.find(item => item.id === id).path }];
       const resolved = resolveVisibleDomains({ role: "superadmin", menuCodes: [id], menuNodes: menus });
-      assert.equal(resolved.flatMap(d => d.l2).find(item => item.id === id)?.name, old === "自定义菜单" ? old : expected);
+      assert.equal(resolved.flatMap(d => d.l2).find(item => item.id === id)?.name, old);
     }
   }
   assert.deepEqual(resolveVisibleDomains({ role: "superadmin", menuCodes: [] }), []);
 });
 
-test("F1 historical payout assets and H8 adjustment units display UVT without changing stored symbols", () => {
+test("F1 payout source assets remain exact and H8 current source units use UVT", () => {
   const module = { exports: undefined };
   new Function("module", "platformAssetText", "safeCustomLabel", expression("app/components/domain-views/f-tabs/f1-vrank.tsx", "rewardPayoutLabel"))(module, platformAssetText, value => value);
-  for (const rewardType of ["UVT", "UVEL", "UVT", "USDT"]) {
+  for (const rewardType of ["UVT", "NEX", "UVEL", "USDT"]) {
     const row = Object.freeze({ rewardType, amount: 100 });
-    assert.equal(module.exports(row), `100 ${rewardType === "USDT" ? "USDT" : "UVT"}`);
+    assert.equal(module.exports(row), rewardType === "NEX" ? "NEX" : `100 ${rewardType}`);
     assert.equal(row.rewardType, rewardType);
   }
   assert.equal(module.exports({ rewardType: "CUSTOM", customLabel: "UVEL 品牌礼物" }), "UVEL 品牌礼物");

@@ -40,7 +40,7 @@ function currentMonthRange() {
   };
 }
 
-const liabilityName = (value: string) => ({ "可提余额": "可提现余额", "USDT staking 本金": "USDT 质押本金", "staking 应付利息": "质押应付利息", "Genesis 排放承诺": "创世节点应付分红", "NEX v2 未来兑付": "UVT 锁仓到期应付", "待提现 queue": "待处理提现", "佣金冷却未解锁": "冷却期内未发放的佣金", "锁仓本息其他": "其他锁仓本息", "待核实入金": "未确认的入金" } as Record<string, string>)[value] ?? value;
+const liabilityName = (value: string) => ({ "可提余额": "可提现余额", "USDT staking 本金": "USDT 质押本金", "staking 应付利息": "质押应付利息", "Genesis 排放承诺": "创世节点应付分红", "待提现 queue": "待处理提现", "佣金冷却未解锁": "冷却期内未发放的佣金", "锁仓本息其他": "其他锁仓本息", "待核实入金": "未确认的入金" } as Record<string, string>)[value] ?? value;
 const signedColor = (value: number | null) => value === null || value === 0 ? "var(--ink-3)" : value > 0 ? "var(--success)" : "var(--danger)";
 
 export function L3HeaderActions({ ctx }: { ctx: LCtx }) {

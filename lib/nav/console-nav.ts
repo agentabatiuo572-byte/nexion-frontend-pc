@@ -316,7 +316,6 @@ const LEGACY_MENU_NAMES: Record<string, string> = {
   "F5": "佣金事件审计",
   "G1": "Staking 池配置",
   "G2": "兑换风控",
-  "G3": "NEX 行情引擎",
   "G4": "Genesis 经济",
   "H1": "Phase 调度器",
   "H2": "免费试用引擎",
@@ -340,7 +339,7 @@ const LEGACY_MENU_NAMES: Record<string, string> = {
   "M4": "知识库与 SLA",
 };
 const STOCK_MENU_ALIASES: Record<string, string[]> = {
-  M1: ["客服总览"], M3: ["即时会话台"], M5: ["话术与模板配置"], C3: ["余额 & 资产调整"], C5: ["安全 & 会话"], F2: ["网络版税费率"], H3: ["Quest 引擎"], H4: ["活动中心 CMS"], H5: ["签到 & NEX", "签到与UVEL奖励"], G3: ["NEX 价格管理", "UVEL价格管理"], I4: ["信任中心 CMS"], I6: ["i18n 文案与教程", "i18n 文案与课程"]
+  M1: ["客服总览"], M3: ["即时会话台"], M5: ["话术与模板配置"], C3: ["余额 & 资产调整"], C5: ["安全 & 会话"], F2: ["网络版税费率"], H3: ["Quest 引擎"], H4: ["活动中心 CMS"], I4: ["信任中心 CMS"], I6: ["i18n 文案与教程", "i18n 文案与课程"]
 };
 const LEGACY_DOMAIN_NAMES: Record<string, string> = {
   B: "总览驾驶舱",

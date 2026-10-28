@@ -13,8 +13,8 @@ const column=nodes.find(n=>ts.isObjectLiteralExpression(n)&&n.properties.some(p=
 assert.ok(column,'actualC1sessiondevicecolumn');
 const out={};new Function('exports','require','platformSessionDeviceText',compile(declarations.join('\n')+'\nexport function render(row){return DataTable({rows:[row],columns:['+column.getText(ast)+']});}'))(out,()=>({jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})}),brand.platformSessionDeviceText);
 function text(n){if(Array.isArray(n))return n.map(text).join('');if(n==null)return '';if(typeof n==='object')return text(n.props?.children);return String(n);}
-for(const [raw,expected] of [['NexGrid Phone App','UVEL Phone App'],['NexGrid H5','UVEL H5'],['NexGrid App / H5','UVEL App / H5']]){
- test('actualC1table shows official platform label '+raw,()=>{
+for(const [raw,expected] of [['NexGrid Phone App','NexGrid Phone App'],['NexGrid H5','NexGrid H5'],['NexGrid App / H5','NexGrid App / H5'],['UVEL Phone App','UVEL Phone App']]){
+ test('actualC1table shows source platform label '+raw,()=>{
   const row=Object.freeze({id:'session-1',deviceId:'device-1',deviceName:raw,status:'ACTIVE'});
   assert.equal(text(out.render(row)),'设备'+expected);assert.equal(row.deviceName,raw);assert.equal(row.id,'session-1');assert.equal(row.status,'ACTIVE');
  });

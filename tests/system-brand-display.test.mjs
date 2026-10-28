@@ -23,8 +23,8 @@ function execute(source, bindings) {
 }
 const content = node => Array.isArray(node) ? node.map(content).join("") : node == null ? "" : typeof node === "object" ? content(node.props?.children) : String(node);
 
-test("both M3 conversion commands normalize only evidenced default names in new ticket titles", async () => {
-  for (const file of ["m3-sessions.tsx", "m3-dedicated-chat.tsx"]) {
+test("the remaining M3 conversion command preserves source names in new ticket titles", async () => {
+  for (const file of ["m3-sessions.tsx"]) {
     const { ast, result } = nodes(`app/components/domain-views/m-tabs/${file}`);
     const conversion = result.find(n => ts.isVariableDeclaration(n) && n.name.getText(ast) === "convertToTicket");
     assert.ok(conversion);
@@ -39,9 +39,9 @@ test("both M3 conversion commands normalize only evidenced default names in new 
       await convertToTicket(); await confirmation.run("valid reason"); return calls;
     }`, brand);
     for (const [nickname, phone, expected] of [
-      ["Nexion 3778", "187****3778", "UVEL 3778"],
-      ["NexGrid 3778", "187****3778", "UVEL 3778"],
-      ["NexGrid-F343FA44", undefined, "UVEL-F343FA44"],
+      ["Nexion 3778", "187****3778", "Nexion 3778"],
+      ["NexGrid 3778", "187****3778", "NexGrid 3778"],
+      ["NexGrid-F343FA44", undefined, "NexGrid-F343FA44"],
       ["Nexion 3778", undefined, "Nexion 3778"],
       ["Nexion 3778", "187****1058", "Nexion 3778"],
       ["My NexGrid name", "187****3778", "My NexGrid name"],
@@ -66,7 +66,7 @@ test("C2 actual account label and list cell share the formatter without changing
   const declarations = ["text", "displayAccount"].map(name => result.find(n => ts.isFunctionDeclaration(n) && n.name?.text === name).getText(ast));
   const cell = result.find(n => ts.isJsxElement(n) && n.openingElement.tagName.getText(ast) === "td" && n.getText(ast).includes("account.nickname"));
   const render = execute(`${declarations.join("\n")} export function render(account) { return [displayAccount(account), (${cell.getText(ast)})]; }`, brand);
-  for (const [nickname, expected] of [["Nexion 3778", "UVEL 3778"], ["NexGrid-F343FA44", "UVEL-F343FA44"], ["NexGrid Fan", "NexGrid Fan"]]) {
+  for (const [nickname, expected] of [["Nexion 3778", "Nexion 3778"], ["NexGrid-F343FA44", "NexGrid-F343FA44"], ["NexGrid Fan", "NexGrid Fan"]]) {
     const account = Object.freeze({ userNo: "60723153007", nickname, phoneMasked: "187****3778" });
     const [label, cell] = render(account);
     assert.equal(label, `60723153007 · ${expected}`);
@@ -144,9 +144,16 @@ test("C2 actual session device cell shares the exact official platform label rul
   const cell = result.find(n => ts.isJsxElement(n) && n.openingElement.tagName.getText(ast) === "td" && n.getText(ast).includes("session.deviceName"));
   const text = result.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==="text").getText(ast);
   const render = execute(`${text} export function render(session) {return (${cell.getText(ast)});}`,brand);
-  for(const [raw,expected] of [["NexGrid Phone App","UVEL Phone App"],["NexGrid H5","UVEL H5"],["My NexGrid Phone App","My NexGrid Phone App"]]) {
+  for(const [raw,expected] of [["NexGrid Phone App","NexGrid Phone App"],["NexGrid H5","NexGrid H5"],["My NexGrid Phone App","My NexGrid Phone App"]]) {
     const row=Object.freeze({deviceName:raw});
     assert.equal(content(render(row)),expected);
     assert.equal(row.deviceName,raw);
   }
+});
+
+
+test("dedicated chat keeps its retired ticket conversion unavailable", () => {
+  const source = read("app/components/domain-views/m-tabs/m3-dedicated-chat.tsx");
+  assert.doesNotMatch(source, /const convertToTicket\s*=/);
+  assert.doesNotMatch(source, /I\.session\.ticket\.__create/);
 });
