@@ -62,13 +62,18 @@ export function PhoneRiskSection({ canWrite, toast }: { canWrite: boolean; toast
         <thead><tr>{["检查项", "说明", "处理方式", `最近 ${overview.stats.days} 天`].map(label => <th key={label}>{label}</th>)}</tr></thead>
         <tbody>{RISK_CHECKS.map(check => {
           const stats = statsOf(check.code);
+          // The install lock also holds Android chip changes, which the server counts under their own code.
+          const chip = check.key === "installModelLock" ? statsOf("SOC_CHANGED") : undefined;
           return <tr key={check.key}>
             <td><strong>{check.label}</strong></td>
             <td><small>{check.detail}</small></td>
             <td><select aria-label={`${check.label}的处理方式`} value={draft[check.key]} disabled={!editable}
               onChange={event => setDraft({ ...draft, [check.key]: event.target.value })}>
               {check.modes.map(mode => <option key={mode} value={mode}>{RISK_MODE_LABELS[mode]}</option>)}</select></td>
-            <td>{stats ? <>命中 {stats.flagged} 次 · 拦截 {stats.held} 次<br /><small>{stats.accounts} 个账号</small></> : "无命中"}</td>
+            <td>{!stats && !chip ? "无命中" : <>
+              {stats && <>{chip && "换报机型："}命中 {stats.flagged} 次 · 拦截 {stats.held} 次<br /><small>{stats.accounts} 个账号</small></>}
+              {chip && <>{stats && <br />}换报芯片：命中 {chip.flagged} 次 · 拦截 {chip.held} 次<br /><small>{chip.accounts} 个账号</small></>}
+            </>}</td>
           </tr>;
         })}</tbody>
       </table></div>
