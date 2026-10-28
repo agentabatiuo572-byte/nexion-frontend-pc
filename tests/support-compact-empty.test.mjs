@@ -72,8 +72,8 @@ test("actual compact list/header totals use existing read availability instead o
     ["m2-tickets", "ticketsAvailable ? filtered.length : \"-\"", { filtered: [] }, "ticketsAvailable"],
     ["m2-tickets", "ticketsAvailable ? resolvedCount : \"-\"", { resolvedCount: 0 }, "ticketsAvailable"],
     ["m2-tickets", "ticketsAvailable ? archivedCount : \"-\"", { archivedCount: 0 }, "ticketsAvailable"],
-    ["m3-dedicated-chat", "conversationsAvailable ? visible.filter(c=>tabMatch(c,value)).length : \"-\"", { visible: [], tabMatch:()=>true,value:"all" }, "conversationsAvailable"],
-    ["m4-kb-sla", "knowledgeAvailable ? faqs.length : \"-\"", { faqs: [] }, "knowledgeAvailable"],
+    ["m3-dedicated-chat", "conversationsAvailable ? count : \"-\"", { count: 0 }, "conversationsAvailable"],
+    ["m4-kb-sla", "knowledgeAvailable ? faqs.filter(f => f.surface !== \"Ticket Create\").length : \"-\"", { faqs: [] }, "knowledgeAvailable"],
     ["m5-scripts", "sessionTemplatesAvailable ? scriptTotal : \"-\"", { scriptTotal: 0 }, "sessionTemplatesAvailable"],
     ["m5-scripts", "sessionTemplatesAvailable ? replyTemplateTotal : \"-\"", { replyTemplateTotal: 0 }, "sessionTemplatesAvailable"],
   ];
@@ -82,8 +82,10 @@ test("actual compact list/header totals use existing read availability instead o
     assert.equal(vm.runInNewContext(expression,{...bindings,[flag]:false}),"-");
     assert.equal(vm.runInNewContext(expression,{...bindings,[flag]:true}),0);
   }
+  assert.ok(read("m3-dedicated-chat").includes("const count=customerRows.filter(row=>tabMatch(row,value)).length"));
   const m5 = read("m5-scripts");
-  for (const field of ["delayMs", "cooldownHours", "maxPerSession"]) assert.equal((m5.match(new RegExp(`tileVal\\(\\x60\\$\\{policyDisplay\\("${field}"`,"g")) ?? []).length,2);
+  assert.equal((m5.match(/tileVal\(delayText\(\)\)/g) ?? []).length, 2);
+  for (const field of ["cooldownHours", "maxPerSession"]) assert.equal((m5.match(new RegExp(`tileVal\\(\\x60\\$\\{policyDisplay\\("${field}"`,"g")) ?? []).length,2);
   const declarations = [];
   function findPolicy(node) { if (ts.isVariableDeclaration(node) && node.name.getText() === "policyDisplay") declarations.push(node.getText()); ts.forEachChild(node,findPolicy); }
   findPolicy(tree(m5)); assert.equal(declarations.length,1);
