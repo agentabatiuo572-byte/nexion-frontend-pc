@@ -29,7 +29,7 @@ import {
 } from "@/lib/admin/e1-client";
 import { fetchE2PhoneTiers, fetchE2TaskPricing, fetchE2Tasks, type E2PhoneTier, type E2TaskPricingSnapshot, type E2YieldComparison } from "@/lib/admin/e2-client";
 import { fetchE3Snapshot, type E3OperationMetric, type E3Stats } from "@/lib/admin/e3-client";
-import { e4FundingLedgerHref, fetchE4OrderDetail, fetchE4OrderPage, type E4OrderDetail } from "@/lib/admin/e4-client";
+import { E4_REFUND_REASONS, E4_REFUND_REASON_LABELS, e4FundingLedgerHref, fetchE4OrderDetail, fetchE4OrderPage, type E4OrderDetail } from "@/lib/admin/e4-client";
 import {
   fetchE5Datacenters,
   fetchE5Devices,
@@ -1195,7 +1195,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                     const channels = e4Detail.refundChannels.length ? e4Detail.refundChannels : ["WALLET"];
                     openActionConfirm({
                       name: "退款 · " + o.id, op: "order-refund", orderId: o.id, amplify: true,
-                      businessForm: { kind: "multi-field", title: "退款渠道", hint: coverageText, fields: [{ key: "refundChannel", label: "退款渠道", current: channels[0], inputKind: "select", options: channels, optionLabels: { WALLET: "退回 USDT 钱包", ORIGINAL_PAYMENT: "原支付渠道" }, required: true, showDiff: true }] },
+                      businessForm: { kind: "multi-field", title: "退款渠道与原因", hint: coverageText, fields: [
+                        { key: "refundChannel", label: "退款渠道", current: channels[0], inputKind: "select", options: channels, optionLabels: { WALLET: "退回 USDT 钱包", ORIGINAL_PAYMENT: "原支付渠道" }, required: true, showDiff: true },
+                        { key: "refundReasonCode", label: "退款原因（用户可见）", current: "", inputKind: "select", options: ["", ...E4_REFUND_REASONS], optionLabels: { "": "请选择退款原因", ...E4_REFUND_REASON_LABELS }, required: true, help: "App 订单详情会向用户展示这个原因；下方操作备注只进审计。" },
+                      ] },
                       detail: `退款 ${o.id} · $${o.amt.toLocaleString()} · ${coverageText}。钱会退回用户，充值记录、账单和累计充值一起冲回，不可撤销。`,
                     });
                   }}><AutoGloss>{e4DetailLoading ? "正在检查退款条件…" : e4Detail?.refundAllowed === false ? "覆盖率低于红线，暂不能退款" : "退款"}</AutoGloss></Btn>}
@@ -1828,11 +1831,13 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             } else if (mc.op === "order-refund" && mc.orderId) {
               const refundChannel = (businessValue?.refundChannel ?? "").trim();
               if (!refundChannel) { throw new Error("请选择退款渠道"); }
+              const refundReasonCode = (businessValue?.refundReasonCode ?? "").trim();
+              if (!(E4_REFUND_REASONS as readonly string[]).includes(refundReasonCode)) { throw new Error("请选择退款原因"); }
               const def = findHighOp("e4_order_refund")!;
               await propose(ctx.toast, {
                 action: mc.name, obj: mc.orderId, before: effOrderState(mc.orderId), after: "已退款", type: def.type, amplifies: true,
                 gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
-                command: def.buildCommand({ orderNo: mc.orderId, refundChannel }),
+                command: def.buildCommand({ orderNo: mc.orderId, refundChannel, refundReasonCode }),
                 target: def.buildTarget({ orderNo: mc.orderId }),
               });
               setSelOrder(null);
