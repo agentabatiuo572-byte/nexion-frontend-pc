@@ -7,6 +7,7 @@ import { CregisExceptionOperations } from "./cregis-exceptions";
 import { CregisFundsPreparation } from "./cregis-funds-preparation";
 import { CregisAutoForward } from "./cregis-auto-forward";
 import { CregisPoolPolicy } from "./cregis-pool-policy";
+import { CregisDepositPolicy } from "./cregis-deposit-policy";
 
 type ExceptionRow = Record<string, unknown>;
 type CregisExceptions = {
@@ -342,6 +343,7 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
         {(!data.depositEnabled || !data.depositCreditEnabled || !data.provisionGate.assignEnabled) && <div className="dtint warn">USDT 充值尚未开放；请勿向测试地址转账。</div>}
         {data.depositEnabled && data.depositCreditEnabled && data.provisionGate.assignEnabled && !data.provisionGate.creditEnabled && <div className="dtint warn">仅开放试点收款地址，到账后进入人工复核，暂不自动入账；请仅按测试安排转账。</div>}
       </>}
+      <CregisDepositPolicy canManage={canManage} openActionConfirm={openActionConfirm} />
       <CregisDepositHistory />
       {data && <>
         {canManage && <div className="cregis-operations">
@@ -404,11 +406,11 @@ export function CregisStatus({ canManage = false, openActionConfirm, embedded = 
           )}>提交入金复核</button>
           </div>
           {reviewEvidence && <div className="cregis-case"><dl className="ui-facts-grid">
-            {[["实时核验时间", reviewEvidence.checkedAt], ["支付商核验", reviewEvidence.providerMatched ? "匹配" : "未匹配"], ["链上核验", reviewEvidence.chainMatched ? "匹配" : "未匹配"], ["Cregis 订单编号", reviewEvidence.cid], ["用户", reviewEvidence.userId], ["毛额（USDT）", reviewEvidence.grossAmount], ["净入账（USDT）", reviewEvidence.proposedNetAmount], ["交易哈希", reviewEvidence.txid], ["地址", reviewEvidence.address], ["区块哈希", reviewEvidence.blockHash], ["确认数", reviewEvidence.confirmations], ["证据摘要", reviewEvidence.evidenceHash]].map(([title, value]) => <div key={String(title)}><dt>{String(title)}</dt><dd>{String(value)}</dd></div>)}
+            {[["实时核验时间", reviewEvidence.checkedAt], ["支付商核验", reviewEvidence.providerMatched ? "匹配" : "未匹配"], ["链上核验", reviewEvidence.chainMatched ? "匹配" : "未匹配"], ["Cregis 订单编号", reviewEvidence.cid], ["用户", reviewEvidence.userId], ["毛额（USDT）", reviewEvidence.grossAmount], ["手续费（USDT）", reviewEvidence.feeAmount ?? "未提供"], ["净入账（USDT）", reviewEvidence.proposedNetAmount], ["交易哈希", reviewEvidence.txid], ["地址", reviewEvidence.address], ["区块哈希", reviewEvidence.blockHash], ["确认数", reviewEvidence.confirmations], ["证据摘要", reviewEvidence.evidenceHash]].map(([title, value]) => <div key={String(title)}><dt>{String(title)}</dt><dd>{String(value)}</dd></div>)}
           </dl></div>}
           <div className="cregis-case-count">待审核工单：已载入 {reviewCases.length} / {data.openReviewCaseCount ?? "未知"}</div>
           {reviewCases.map((row) => <div className="cregis-case" key={`review-${row.id}`}>
-            <dl className="ui-facts-grid">{[["工单", row.id], ["Cregis 订单编号", row.cid], ["用户", row.userId], ["链上毛额（USDT）", row.grossAmount], ["手续费（USDT）", 1], ["钱包净入账（USDT）", row.proposedNetAmount], ["地址", row.address], ["交易哈希", row.txid], ["区块", row.blockNumber], ["日志序号", row.logIndex], ["确认数", row.confirmations], ["发起人", row.makerId], ["理由", row.reason], ["证据摘要", row.evidenceHash]].map(([title, value]) => <div key={String(title)}><dt>{String(title)}</dt><dd>{String(value)}</dd></div>)}</dl>
+            <dl className="ui-facts-grid">{[["工单", row.id], ["Cregis 订单编号", row.cid], ["用户", row.userId], ["链上毛额（USDT）", row.grossAmount], ["手续费（USDT）", row.feeAmount ?? "未提供"], ["钱包净入账（USDT）", row.proposedNetAmount], ["地址", row.address], ["交易哈希", row.txid], ["区块", row.blockNumber], ["日志序号", row.logIndex], ["确认数", row.confirmations], ["发起人", row.makerId], ["理由", row.reason], ["证据摘要", row.evidenceHash]].map(([title, value]) => <div key={String(title)}><dt>{String(title)}</dt><dd>{String(value)}</dd></div>)}</dl>
             <button className="l-btn sm" disabled={busy} onClick={() => void previewReview(Number(row.cid))}>刷新证据</button>{" "}
             <button className="l-btn sm" disabled={busy || String(reviewEvidence?.cid) !== String(row.cid) || String(reviewEvidence?.evidenceHash) !== String(row.evidenceHash)} onClick={() => confirmCommand(
               `复核入账 CID ${String(row.cid)}`, `交易 ${String(row.txid)}，毛额 ${String(row.grossAmount)} USDT，净入账 ${String(row.proposedNetAmount)} USDT 给用户 ${String(row.userId)}。请独立核对地址 ${String(row.address)}、发起理由 ${String(row.reason)} 与证据 ${String(row.evidenceHash)}。`,

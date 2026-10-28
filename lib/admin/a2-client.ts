@@ -424,6 +424,7 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
     throw Object.assign(new Error(formatAdminApiError(result?.message, `A2_REQUEST_FAILED_${response.status}`)), {
       status: response.ok && typeof result?.code === "number" ? result.code : response.status,
       details: result?.data,
+      backendMessage: result?.message,
     });
   }
   if (init?.commandKey && response.ok && result.code === 0 && result.data == null) {
