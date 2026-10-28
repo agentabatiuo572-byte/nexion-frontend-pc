@@ -15,15 +15,15 @@ function outcomeUncertainDetail(error: unknown): { commandKey: string; isA2: boo
 export function operationConfirmErrorMessage(error: unknown): string {
   const uncertain = outcomeUncertainDetail(error);
   if (uncertain?.isA2) {
-    return "A2 提案结果暂不确定，可能已经生效；请保留当前弹窗与输入，"
-      + `使用同一命令号重试并核对 A2 审计。同一命令号：${uncertain.commandKey}`;
+    return "提交结果暂未确认，可能已经生效。请不要关闭弹窗或修改内容，直接重试（不会重复执行），"
+      + `或到操作记录里核对。命令号：${uncertain.commandKey}`;
   }
   if (uncertain) {
     // 刻意不承诺「系统会复用同一命令号自动去重」:携带命令号的错误族里,只有走持久 store 的面
     // (F1 直写 / H8 / K1 / K6 …)真会复用,A3 等仍是每次现铸 —— 对它们做这个承诺就是骗运营去重试。
     // 「保留输入原样重试」对所有域都成立;是否去重交由运营核对审计后决定。
-    return "提交结果暂不确定，可能已经生效；请先核对审计记录再决定是否重试，"
-      + `重试时保留当前弹窗与输入不要改动。命令号：${uncertain.commandKey}`;
+    return "提交结果暂未确认，可能已经生效。请先到操作记录里核对，再决定是否重试；"
+      + `重试时不要修改弹窗内容。命令号：${uncertain.commandKey}`;
   }
   if (error instanceof Error) {
     // 弹窗 alertbar 也是展示边界:非空 message 必须过咽喉,裸机器码不得原样上屏。

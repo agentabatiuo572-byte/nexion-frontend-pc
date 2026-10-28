@@ -59,7 +59,7 @@ test("I1 用同一文案版本创建实验，并经确认启动 scheduled 实验
   await createForm.getByLabel("变体 A 分流比例").fill("60");
   await createForm.getByLabel("变体 B 分流比例").fill("40");
   const createDialog = page.getByRole("dialog");
-  await createDialog.getByPlaceholder("例: 工单号 / 业务依据 / 影响面 / 回滚预案").fill("验证首页主横幅转化提升");
+  await createDialog.getByPlaceholder("例如：工单号、处理依据").fill("验证首页主横幅转化提升");
   await createDialog.getByRole("button", { name: "确认执行" }).click();
   await expect.poll(() => writes.find((item) => item.pathname.endsWith("/copy-ab/experiments"))).toBeTruthy();
   const createWrite = writes.find((item) => item.pathname.endsWith("/copy-ab/experiments"));
@@ -74,7 +74,7 @@ test("I1 用同一文案版本创建实验，并经确认启动 scheduled 实验
   const confirm = startDialog.getByRole("button", { name: "确认执行" });
   await expect(confirm).toBeDisabled();
   await startDialog.getByRole("checkbox").check();
-  const reason = startDialog.getByPlaceholder("例: 工单号 / 业务依据 / 影响面 / 回滚预案");
+  const reason = startDialog.getByPlaceholder("例如：工单号、处理依据");
   await expect(reason).toHaveAttribute("maxlength", "200");
   await reason.fill("版本与分流已由内容负责人复核");
   await expect(confirm).toBeEnabled();
@@ -88,7 +88,7 @@ test("I1 用同一文案版本创建实验，并经确认启动 scheduled 实验
   await concludedRow.getByRole("button", { name: "弃用实验" }).click();
   const discardDialog = page.getByRole("dialog");
   await expect(discardDialog).toContainText("弃用后不能再次启动或采纳");
-  const discardReason = discardDialog.getByPlaceholder("例: 工单号 / 业务依据 / 影响面 / 回滚预案");
+  const discardReason = discardDialog.getByPlaceholder("例如：工单号、处理依据");
   await expect(discardReason).toHaveAttribute("maxlength", "200");
   await discardReason.fill("实验结论不具备业务采纳价值");
   await discardDialog.getByRole("button", { name: "确认执行" }).click();

@@ -64,8 +64,8 @@ test("② 代理 allowlist:列表级与单档级两个端点均放行", () => {
 });
 
 test("③ 组件:卡片存在 + fail-closed 不给入口 + 三动作接线 + 唯一档不渲染删档", () => {
-  assert.match(component, /阶梯档位定价/, "档位卡标题被删,运营找不到入口");
-  assert.match(component, /服务端尚未下发阶梯档位数据/, "tiers 缺席/坏形时必须有明确的未下发文案");
+  assert.match(component, /<span className="ttl">价格档位<\/span>/, "档位卡标题被删,运营找不到入口");
+  assert.match(component, /价格档位数据暂时无法加载/, "tiers 缺席/坏形时必须有明确的未下发文案");
   // 增开入口必须收在 tiers 真值分支里:tiers 为 null 时不许出现任何 CRUD affordance。
   assert.match(component, /\{tiers && canPriceTiers && \(/, "增开档位按钮没有收进 tiers 真值 + 权限双条件");
   for (const fn of ["createG4GenesisTier", "updateG4GenesisTier", "deleteG4GenesisTier"]) {
@@ -74,7 +74,7 @@ test("③ 组件:卡片存在 + fail-closed 不给入口 + 三动作接线 + 唯
   assert.match(component, /finprod_g4_price_write/, "档位动作必须挂定价写权限");
   assert.match(component, /tiers\.length > 1\s*\?/, "唯一档必须不渲染删档入口(禁用态仍暗示可删,GEN11 纪律)");
   // 钉 gtint 的唯一形态(该短语在弹窗 detail 另有两处变体;钉最长的说明条,删它必红)。
-  assert.match(component, /价格锁定期间的购买按锁定时价格结算，不重新计算历史数据/, "档位卡说明条丢了「价格锁定期间的购买按锁定时价格结算，不重新计算历史数据」关键口径(钱语义,削文案不许静默)");
+  assert.match(component, /只影响以后的销售，已下单的按下单时价格结算。各档必须连续/, "档位卡说明条丢了「已下单的按下单时价格结算」关键口径(钱语义,削文案不许静默)");
   assert.match(component, /businessForm:\s*\{\s*kind:\s*"multi-field"/, "档位编辑必须走 multi-field 业务表单(截止/单价分字段,禁单框多值)");
 });
 
@@ -82,7 +82,7 @@ test("③b 单价仲裁:tiers 在场时一级单价只读(主人拍板 2026-08-0
   // 同页两扇写门改同一个钱数曾语义未定义(skeptic P2-3);拍板后:tiers 在场 → 档位卡是唯一调价入口。
   assert.match(component, /overview\.tierPrice\.status === "legacy" && allowed\(paramAuthority\(priceParam\.key\)\)/, "一级单价的调整入口只能收在旧策略 fallback 分支(坏档时不许编辑旧价)");
   assert.match(component, /param\.key === "price" && overview\.tierPrice\.status !== "legacy"/, "adjustParam 缺一级单价的函数级双保险");
-  assert.match(component, /按阶梯派生/, "只读态必须向运营标明「按阶梯派生」,不能只是按钮消失");
+  assert.match(component, /按价格档位/, "只读态必须向运营标明「按价格档位」,不能只是按钮消失");
 });
 
 test("④ 组件源码顺序:档位 handler 不落入 GEN10b grabBetween 锚窗", () => {

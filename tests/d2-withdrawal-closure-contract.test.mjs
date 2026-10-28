@@ -64,7 +64,7 @@ async function offlineD2() {
 }
 async function requests(page, count) {
   await page.waitForFunction(n => window.__d2.rows.length === n && window.__d2.limits.length === n, count);
-  await page.waitForFunction(() => document.querySelector("main").textContent.includes("D2 数据加载中..."));
+  await page.waitForFunction(() => document.querySelector("main").textContent.includes("正在加载…"));
 }
 async function settle(page, index, records = [], rejectLimits = false) {
   await page.evaluate(({ index, records, rejectLimits }) => {
@@ -72,7 +72,7 @@ async function settle(page, index, records = [], rejectLimits = false) {
     if (rejectLimits) window.__d2.limits[index].reject(new Error("Offline D5 fixture failure"));
     else window.__d2.limits[index].resolve({ dailyLimitCount: 3 });
   }, { index, records, rejectLimits });
-  await page.waitForFunction(() => !document.querySelector("main").textContent.includes("D2 数据加载中..."));
+  await page.waitForFunction(() => !document.querySelector("main").textContent.includes("正在加载…"));
 }
 async function remember(page, key, locator) {
   await locator.evaluate((element, key) => { window.__d2.nodes[key] = element; }, key);
@@ -130,7 +130,7 @@ test("D2 Query Enter from an empty result keeps its DOM node and focus after suc
     await requests(page, 3);
     await settle(page, 2, [], true);
     await retained(page, "query", "query-d5-failure", t);
-    assert.match(await page.locator("main").textContent(), /D2 数据加载失败.*写操作已关闭/);
+    assert.match(await page.locator("main").textContent(), /加载失败.*已暂停所有操作/);
     assert.equal(await page.getByRole("button", { name: "批量执行", exact: true }).isDisabled(), true);
     assert.deepEqual(await page.locator(".f-stats .v").allTextContents(), ["—", "—", "—", "—"]);
     await page.keyboard.press("Enter");
@@ -156,7 +156,7 @@ test("D2 pending reads do not publish zero statistics or enable writes, and stal
     await settle(page, 1, [fixtureRow], true);
     assert.equal(await page.getByRole("button", { name: "打开提现单 OFFLINE-WD-1 的详情", exact: true }).count(), 0);
     assert.equal(await page.locator(".f-stat").first().locator(".v").textContent(), "0");
-    assert.doesNotMatch(await page.locator("main").textContent(), /D2 数据加载失败/);
+    assert.doesNotMatch(await page.locator("main").textContent(), /加载失败 ·/);
   } finally { await fixture.close(); }
 });
 
@@ -176,7 +176,7 @@ test("D2 displays current D5 payout SLA without hardcoded or historical promises
       window.__d2.limits[0].resolve({ dailyLimitCount: 3, payoutSlaHours: 24 });
     });
     await h.page.getByText("当前到账时限：24 小时", { exact: false }).waitFor();
-    assert.match(await text(), /历史订单以提交时约定为准/);
+    assert.match(await text(), /已提交的提现按提交时的时限/);
     await h.page.getByRole("button", {name:"查询",exact:true}).click();
     await requests(h.page, 2);
     assert.match(await text(), /当前到账时限：—/);
@@ -221,10 +221,10 @@ test("D2 exposes detail, structured lifecycle forms and batch splitting UI", () 
   assert.match(page, /addressVerified/);
   assert.match(page, /IP 段/);
   assert.match(page, /排序字段/);
-  assert.match(page, /毛手续费/);
+  assert.match(page, /手续费合计/);
   assert.match(page, /费用减免/);
   assert.match(page, /UVT抵扣率/);
-  assert.match(page, /K4 评分明细/);
+  assert.match(page, /风险分明细/);
   assert.match(page, /全部提现历史/);
   assert.match(client, /reviewD2WithdrawalsBatch/);
   assert.match(client, /fetchD2WithdrawalDetail/);
@@ -255,11 +255,11 @@ test("D2 truncates long withdrawal and asset-chain labels while exposing the ful
 test("D2 lets operators select rows before choosing a permitted batch action", () => {
   assert.doesNotMatch(page, /if \(!action\) return false/);
   assert.match(page, /availableBatchActions/);
-  assert.match(page, /可先勾选提现单，再选择批量动作/);
+  assert.match(page, /先选操作，再勾选提现单/);
   assert.match(page, /已勾选 \{selectedRows\.length\} 笔/);
   assert.match(page, /batchTargets\(visibleRows, current, "", availableBatchActions\)/);
   assert.doesNotMatch(page, /batchTargets\(visibleRows, current, batchAction, availableBatchActions\)/);
-  assert.match(page, /当前批量动作“\$\{actionLabel\(batchAction\)\}”不适用于该状态/);
+  assert.match(page, /「\$\{actionLabel\(batchAction\)\}」不适用于这个状态/);
   assert.match(page, /disabled=\{!selectable && !selectedNow\}/);
   assert.match(dCss, /\.ddom \.d2-selection-note/);
 });
@@ -280,7 +280,7 @@ test("D2 detail fetch is latest-only and fails closed before any write", () => {
   assert.match(page, /detailRequestSeq\.current \+= 1/);
   assert.match(page, /setDetailError\(message\)/);
   assert.match(page, /detailLoading \|\| !!detailError/);
-  assert.match(page, /为避免按旧数据处置，写操作已关闭/);
+  assert.match(page, /为避免按旧数据操作，已暂停处理/);
 });
 
 test("D2 actual detail commands discard stale channel facts and fail closed when Cregis facts fail", async () => {
@@ -335,8 +335,8 @@ test("D2 exposes an order-scoped development cooldown simulation without client 
   assert.match(financeRoute, /return null;/);
   assert.doesNotMatch(financeRoute, /parts\[1\] === "development"[\s\S]{0,160}return `\/api\/admin\/finance\/withdrawals\/development\/\$\{parts\.slice/s);
   assert.match(page, /模拟冷却到期/);
-  assert.match(page, /仅开发环境/);
-  assert.match(page, /按真实到期处理流程重新检查 K3、K4、B1/);
+  assert.match(page, /仅测试环境可用/);
+  assert.match(page, /按正常流程重新检查风险规则、风险分、覆盖率/);
   assert.match(page, /developmentSimulationScope/);
   assert.match(page, /row\.status\.toUpperCase\(\) === "EXTENDED_HOLD"/);
   assert.match(page, /row\.previousStatus\.toUpperCase\(\) === "REVIEW_PASSED"/);
@@ -347,9 +347,9 @@ test("D2 exposes an order-scoped development cooldown simulation without client 
 
 test("D2 localizes unknown machine values instead of exposing raw codes", () => {
   assert.match(page, /\^\[A-Z0-9_.:-\]\+\$\/i/);
-  assert.match(page, /未识别路由/);
-  assert.match(page, /未识别账户状态/);
-  assert.match(page, /未识别期限/);
+  assert.match(page, /\(value \? "未知" : "—"\)/);
+  assert.match(page, /\(value \? "未知" : "—"\)/);
+  assert.match(page, /\(value \? "未知" : "—"\)/);
   assert.match(page, /ruleSummary\(row\.hitRules\)/);
   assert.match(page, /userStatusLabel\(row\.userStatus\)/);
 });
@@ -389,9 +389,9 @@ test("D2 preserves a missing K4 score as unavailable and blocks approval", () =>
   assert.match(client, /riskScore: number \| null/);
   assert.match(client, /riskScore: d2NullableNumber\(row\.riskScore\)/);
   assert.match(client, /routingPriority: "ESCALATED" \| "HIGH" \| "NORMAL" \| "LOW" \| "UNAVAILABLE"/);
-  assert.match(page, /K4 风险评分不可用/);
+  assert.match(page, /风险分 —/);
   assert.match(page, /action === "APPROVE" && routingUnavailable\(row\)/);
-  assert.match(page, /按当前生效 K4 模型动态路由/);
+  assert.match(page, /按风险分自动分配/);
   assert.match(page, /row\.k4AutoEscalateScore/);
   assert.doesNotMatch(page, /riskScore\s*>?=\s*70/);
   assert.doesNotMatch(page, /K4 风险分 ≥ 70/);
@@ -442,20 +442,20 @@ function lifecycleFormatters() {
 test("D2 explains service-generated K4 review reasons without suggesting approval or payout", () => {
   const f = lifecycleFormatters();
   for (const [code, score, expected] of [
-    ["K4_MANUAL", 40, "K4 评分达到人工审核区间，等待人工复核（评分 40）"],
-    ["K4_HIGH_PRIORITY", 70, "K4 评分达到高优先审核区间，需优先人工复核（评分 70）"],
-    ["K4_ESCALATED", 91, "K4 评分达到升级审核门槛，需加强人工复核（评分 91）"],
+    ["K4_MANUAL", 40, "风险分需要人工审核（评分 40）"],
+    ["K4_HIGH_PRIORITY", 70, "风险分偏高，需优先人工审核（评分 70）"],
+    ["K4_ESCALATED", 91, "风险分很高，需加强人工审核（评分 91）"],
   ]) {
     assert.equal(f.lifecycleSummary({ status: "REVIEW_PENDING", failureReason: `${code}:${score}` }), expected);
-    assert.equal(f.operationalText(`K3_ROUTE:manual:rule-1;${code}:${score}`), `K3 路由：人工复核:rule-1;${expected}`);
+    assert.equal(f.operationalText(`K3_ROUTE:manual:rule-1;${code}:${score}`), `风险规则：人工复核:rule-1;${expected}`);
   }
   for (const unknown of ["K4_FUTURE:40", "K4_MANUAL:bad", "K4_MANUAL:40:extra"])
-    assert.match(f.operationalText(unknown), /未收录/);
+    assert.match(f.operationalText(unknown), /未知，请联系技术人员/);
   assert.equal(f.operationalText(undefined), "—");
   assert.equal(f.operationalText("人工核验中"), "人工核验中");
   assert.match(f.operationalText("H1_COOLDOWN_FAST_TRACK"), /冷却中/);
   assert.match(page, /lifecycleSummary\(row\)/);
-  assert.match(page, /<KV k="说明" v=\{cregisDetail\?\.source === "provider" \? "由原供应商订单和链上证据决定资金结算，原单恢复不会重新发款。" : lifecycleSummary\(detail\)\} \/>/);
+  assert.match(page, /<KV k="说明" v=\{cregisDetail\?\.source === "provider" \? "按 Cregis 的打款结果结算，不会重新打款。" : lifecycleSummary\(detail\)\} \/>/);
 });
 
 test("D2 renders H1 month/phase snapshots as snapshots, preserving explicit legacy periods and unknowns", () => {
@@ -465,7 +465,7 @@ test("D2 renders H1 month/phase snapshots as snapshots, preserving explicit lega
   for (const [value, label] of [["7d", "7 天"], ["LONG_TERM", "长期（需复查）"], ["SEVEN_DAYS", "7 天"], [undefined, "—"]])
     assert.equal(f.freezePeriodLabel(value), label);
   for (const value of ["H1:M0:P1", "H1:M1:P7", "H1:M1:P1:future", "future"])
-    assert.equal(f.freezePeriodLabel(value), "未识别期限");
+    assert.equal(f.freezePeriodLabel(value), "未知");
   assert.match(page, /freezePeriodLabel\(detail.freezePeriod\)/);
 });
 
@@ -474,7 +474,7 @@ test("D2 offline rendered review row shows the K4 explanation and retains review
   try {
     await settle(page, 0, [{ ...fixtureRow, chain: "BANK-VND", riskScore: 40, failureReason: "K4_MANUAL:40", freezePeriod: "H1:M1:P1" }]);
     const text = await page.locator("main").textContent();
-    assert.match(text, /K4 评分达到人工审核区间，等待人工复核（评分 40）/);
+    assert.match(text, /风险分需要人工审核（评分 40）/);
     assert.doesNotMatch(text, /未收录的处置原因/);
     for (const name of ["放行", "延迟", "冻结", "拒绝并退款"])
       assert.equal(await page.getByRole("button", { name, exact: true }).isEnabled(), true);

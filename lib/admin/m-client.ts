@@ -511,7 +511,7 @@ const CATEGORY_LABEL: Record<string, string> = {
 const MANAGED_BY: Record<string, string> = {
   advisor: "增长 / 客服坐席",
   support: "客服坐席",
-  ai: "Nova 自动(配置见 I2)",
+  ai: "Nova 自动（在「Nova 消息推送」设置）",
 };
 
 function idempotencyKey() {
@@ -925,7 +925,7 @@ function adaptCustomerProfile(
       systemTags: [type === "advisor" ? "顾问会话" : "客服会话"],
       customTags: [],
       risk: "中",
-      riskNote: "打开会话后由后端聚合客户资金 / 风险 / 设备档案。",
+      riskNote: "打开会话后显示客户的资金、风险和设备资料。",
       recharge: "—",
       withdraw: "—",
       balance: "—",

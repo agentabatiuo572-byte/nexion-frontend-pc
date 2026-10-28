@@ -208,15 +208,15 @@ test("A2 mechanism boundaries and dynamic reason minimum reject malformed values
   assert.deepEqual(validateA2MechanismValue("schema", "v4", "v3"), { ok: true, value: "v4" });
   assert.deepEqual(validateA2MechanismValue("schema", "v2", "v3"), {
     ok: false,
-    message: "字段结构版本只能升级，不能降级或重复提交",
+    message: "字段版本只能往上升级，不能降级或重复提交",
   });
   assert.deepEqual(validateA2MechanismValue("schema", "vx", "v3"), {
     ok: false,
-    message: "字段结构版本仅支持已注册的 v3、v4",
+    message: "字段版本只能选已登记的 v3、v4",
   });
   assert.deepEqual(validateA2MechanismValue("schema", "v5", "v3"), {
     ok: false,
-    message: "字段结构版本仅支持已注册的 v3、v4",
+    message: "字段版本只能选已登记的 v3、v4",
   });
   assert.equal(matchesA2OperationRole("FINANCE", "财务"), true);
   assert.equal(matchesA2OperationRole("总管理员", "超管"), true);
@@ -231,7 +231,7 @@ test("A2 page is fail-closed, permission-aware and uses one applied filter for l
   assert.match(page, /canAccessA2Export/);
   assert.match(page, /canAccessA2Write/);
   assert.match(page, /isCurrentOperator\(w,\s*principal\)/);
-  assert.match(page, /需其他具权人员执行/);
+  assert.match(page, /需由其他有权限的人执行/);
   assert.match(page, /matchesA2AuditFilter\(l, appliedFilter\)/);
   assert.match(page, /exportA2Audit\(reason, appliedFilter, commandKey\)/);
   assert.match(page, /filteredLogRows\.length === 0/);
@@ -239,7 +239,7 @@ test("A2 page is fail-closed, permission-aware and uses one applied filter for l
   assert.match(page, /A2_MECHANISM_WRITE_NOT_CONFIRMED/);
   assert.match(page, /A2_OPERATION_WRITE_NOT_CONFIRMED/);
   assert.match(page, /runA2RetentionNow\(reason, commandKey\)/);
-  assert.match(page, /最近执行:.*锁/);
+  assert.match(page, /上次清理.*当时有其他清理在进行/);
   assert.match(client, /\/retention-runs\/latest/);
   assert.match(client, /\/retention-runs/);
   assert.match(page, /reasonMax:\s*200/);
@@ -251,7 +251,7 @@ test("A2 page is fail-closed, permission-aware and uses one applied filter for l
   assert.doesNotMatch(page, /42 \* 60 \+ 10/);
   assert.doesNotMatch(page, /admin\.\*/);
   assert.doesNotMatch(page, /· pending/);
-  for (const label of ["已执行", "已取消", "已撤回", "已过期", "今日审计事件"]) {
+  for (const label of ["已执行", "已取消", "已撤回", "已过期", "今日操作记录"]) {
     assert.match(page, new RegExp(label));
   }
 });
@@ -282,7 +282,7 @@ test("shared confirmation awaits the mutation and accepts a server-derived reaso
 test("A6 contains only the current single-person confirmation wording", () => {
   const page = read("app/components/domain-views/a-tabs/a6-roles.tsx");
   assert.doesNotMatch(page, /双人(?:审|复)|双.{0}签/);
-  assert.match(page, /A2 单人确认/);
+  assert.match(page, /等待确认/);
   assert.match(page, /await confirmReq\.run/);
   assert.match(page, /throw error/);
 });

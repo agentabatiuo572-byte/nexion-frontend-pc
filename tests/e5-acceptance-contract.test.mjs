@@ -29,8 +29,8 @@ test("E5 canonical UNBOUND state renders as unbound and cannot expose active-dev
 });
 
 test("E5 datacenter delete copy matches the backend cross-domain hard guard", () => {
-  assert.match(view, /服务端会硬阻断仍被 E5 设备、E4 待履约订单或 E1 商品规格 引用的数据中心/);
-  assert.match(view, /三类引用计数全部为 0 后才允许删除/);
+  assert.match(view, /只有没有设备、没有待开通订单、也没有商品在用时才能删除/);
+  assert.match(view, /不会删除设备库存/);
   assert.doesNotMatch(view, /系统不做跨域硬阻断/);
   assert.doesNotMatch(view, /孤儿引用/);
 });

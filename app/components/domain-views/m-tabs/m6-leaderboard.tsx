@@ -16,8 +16,8 @@ import "./m6-leaderboard.css";
 function status(error: unknown): number | undefined { return error && typeof error === "object" && "status" in error ? Number(error.status) : undefined; }
 function message(error: unknown): string {
   return status(error) === 403 || status(error) === 401 ? "当前账号不能查看此榜单，请重新确认登录和客服权限。"
-    : status(error) === 409 ? "榜单版本或可见范围已变化，请重新读取第一页。"
-    : "榜单暂时无法读取，请重试。";
+    : status(error) === 409 ? "榜单版本或可见范围已变化，请从第一页重新加载。"
+    : "榜单加载失败，请重试。";
 }
 function scopeValue(scope: string, groupId?: string) { return groupId ? `${scope}:${groupId}` : scope; }
 function asOf(data: LeaderboardPage | LeaderboardDetail) { return new Intl.DateTimeFormat("zh-CN", { timeZone: businessZone().zoneId, dateStyle: "short", timeStyle: "medium", hour12: false }).format(new Date(data.asOf)) + `（${businessZone().label}）`; }
@@ -123,7 +123,7 @@ export function M6Leaderboard() {
       if (controller.signal.aborted || sequence !== detailSequence.current || liveKey.current !== requestKey) return;
       if (status(cause) === 403 || status(cause) === 401) deny();
       else if (status(cause) === 409) { closeDetail(); setResult(undefined); setPhotos(undefined); setError(message(cause)); setNotice("榜单已更新，请刷新后重试。"); }
-      else setDetail({ key: requestKey, agentId, error: "公开成绩暂时无法读取，请重试。" });
+      else setDetail({ key: requestKey, agentId, error: "成绩加载失败，请重试。" });
     });
   };
   const customers = (row: SupportBoardRow) => { if (enabled && privateRead && row.canViewCustomers) router.push(`/service/overview?agentId=${encodeURIComponent(row.id)}`); };
@@ -140,7 +140,7 @@ export function M6Leaderboard() {
       {!!query.keyword && <Btn type="button" onClick={() => { setKeyword(""); setQuery(current => ({ ...current, keyword: undefined, pageNum: 1, expectedVersion: undefined })); }}>清除搜索</Btn>}
     </form>}
       notice={<>{notice && <p className="m6-leaderboard-notice" role="status">{notice}</p>}
-    {data?.stale && <p className="m6-leaderboard-notice" role="status">当前显示上次发布的榜单。{data.refreshFailed ? "榜单更新失败，请重试。" : "榜单尚未更新，可重新读取。"}<Btn onClick={() => resetFirstPage("正在重新读取第一页…")}>重新读取</Btn></p>}
+    {data?.stale && <p className="m6-leaderboard-notice" role="status">当前显示上次发布的榜单。{data.refreshFailed ? "榜单更新失败，请重试。" : "榜单还没更新，可以重新加载。"}<Btn onClick={() => resetFirstPage("正在重新加载…")}>重新加载</Btn></p>}
     {data && data.rows.length === 0 && <p className="m6-leaderboard-notice" role="status">{data.state === "PROVISIONAL"
       ? query.keyword ? "参榜资料还在汇总，暂未找到匹配的客服。请稍后重试。" : "参榜资料还在汇总，暂无法显示完整榜单。请稍后重试。"
       : query.keyword ? "没有匹配的客服；本人定位会清除搜索条件。" : "当前范围暂无参榜客服。"}</p>}</>}
@@ -150,11 +150,11 @@ export function M6Leaderboard() {
       rows={data?.rows.map(withPhoto) ?? []} self={data?.self.row ? { row: withPhoto(data.self.row), gap: data.self.gap, reason: data.self.reason } : undefined}
       selfUnavailableReason={data?.self.reason}
       podium={data?.podium ? { total: data.podium.total, rows: data.podium.rows.map(withPhoto) } : undefined}
-      currentMonth={data?.referenceMonth ?? ""} periodLabel={period} updatedAt={data ? asOf(data) : "尚未读取"}
+      currentMonth={data?.referenceMonth ?? ""} periodLabel={period} updatedAt={data ? asOf(data) : "加载中"}
       disclosure="业绩额按净贡献统计：充值与余额消费不重复计算；成功提现及后台退款仅冲减已计贡献部分，收益提现不冲减原业绩。客户明细按权限查看。"
       candidateReason={data?.state === "PROVISIONAL" ? data.candidateCoverage !== "COMPLETE" ? "参榜资料还在汇总，暂不显示名次" : "成绩还在汇总，暂不显示名次" : undefined}
       status={data ? "ready" : !enabled || error ? "error" : "loading"} statusMessage={!enabled ? "当前账号不能查看此榜单，请确认登录和客服权限。" : error}
-      onRetry={() => { if (allowed) { setDeniedIdentity(undefined); resetFirstPage("正在重新读取第一页…"); } }}
+      onRetry={() => { if (allowed) { setDeniedIdentity(undefined); resetFirstPage("正在重新加载…"); } }}
       onLocateSelf={() => { if (data) { const target = locateLeaderboardSelf(data, acceptedQuery(data, query)); if (target) { pendingLocate.current = { identity, query: JSON.stringify(target) }; setKeyword(""); closeDetail(); setNotice("已清除搜索，按完整榜单定位本人。"); setQuery(target); setRefresh(value => value + 1); } } }}
       onViewPerformance={openDetail} onViewCustomers={agentId => { const row = [...(data?.rows ?? []), ...(data?.podium?.rows ?? [])].find(row => row.id === agentId); if (row) customers(row); }}
       onViewAllRankings={() => { if (data) { setKeyword(""); closeDetail(); setQuery({ ...acceptedQuery(data, query), keyword: undefined, pageNum: 1 }); setRefresh(value => value + 1); } }}
@@ -162,7 +162,7 @@ export function M6Leaderboard() {
         onPageSizeChange: pageSize => { if ([5, 10, 20].includes(pageSize)) { closeDetail(); setQuery({ ...acceptedQuery(data, query), pageNum: 1, pageSize }); } },
         onChange: pageNum => { if (pageNum >= 1 && pageNum <= Math.ceil(data.matched / data.pageSize)) { closeDetail(); setQuery({ ...acceptedQuery(data, query), pageNum }); } } } : undefined} />
     {visibleDetail && <Modal title={detailRow ? `${detailRow.name}的公开成绩` : "公开成绩"} onClose={closeDetail} footer={<><Btn onClick={closeDetail}>关闭</Btn>{visibleDetail.error && <Btn onClick={() => openDetail(visibleDetail.agentId)}>重试</Btn>}{detailRow && privateRead && detailRow.canViewCustomers && <Btn onClick={() => customers(detailRow)}>查看授权客户明细</Btn>}</>}>
-      {!visibleDetail.data ? <p role={visibleDetail.error ? "alert" : "status"}>{visibleDetail.error ?? "正在读取公开成绩…"}</p> : detailRow && <div className="m6-leaderboard-summary">
+      {!visibleDetail.data ? <p role={visibleDetail.error ? "alert" : "status"}>{visibleDetail.error ?? "正在加载…"}</p> : detailRow && <div className="m6-leaderboard-summary">
         <p>{detailRow.groupName || "待分组"} · {detailRow.rankStatus === "confirmed" ? `${detailRow.isTied ? "并列第" : "第"}${detailRow.rank}名` : "名次未确定"}</p>
         <dl><dt>业绩额 · {detailRow.amount.periodLabel} · {nexGridBrandText(detailRow.amount.currency)}</dt><dd><NumberValue value={detailRow.amount.coverage === "unavailable" ? null : detailRow.amount.value} kind="amount" label={`${detailRow.name}业绩额`} unit={nexGridBrandText(detailRow.amount.currency)} /></dd><dt>首充人数 · {period} · 人</dt><dd><NumberValue value={detailRow.firstPayment.coverage === "unavailable" ? null : detailRow.firstPayment.value} kind="count" label={`${detailRow.name}首充人数`} unit="人" /></dd><dt>绑定客户数 · 截至现在 · 人</dt><dd><NumberValue value={detailRow.customers.coverage === "unavailable" ? null : detailRow.customers.value} kind="count" label={`${detailRow.name}绑定客户数`} unit="人" /></dd></dl>
         {[...new Set([detailRow.amount.reason, detailRow.firstPayment.reason, detailRow.customers.reason].filter(Boolean))].map(reason => <p key={reason} role="status">{reason}</p>)}

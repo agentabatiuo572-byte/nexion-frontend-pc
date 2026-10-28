@@ -18,7 +18,7 @@ test("H7 PC writes carry CAS and expose inventory, grant metrics and revocation"
   assert.match(page, /issuanceLimit/);
   assert.match(page, /issuedCount/);
   assert.match(page, /redeemedCount/);
-  assert.match(page, /撤销未核销/);
+  assert.match(page, /作废未使用/);
   assert.match(page, /H7_VOUCHER_RESPONSE_INVALID/);
   assert.match(form, /发行上限须为 0-10000000 的整数/);
 });

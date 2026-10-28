@@ -47,7 +47,7 @@ test("F proposals pass the retained key and derive stable child keys for multi-f
 test("F submit failures reach OperationConfirmModal instead of being consumed by the domain shell", () => {
   assert.match(
     fView,
-    /catch \(error\) \{[\s\S]*?setToast\([\s\S]*?"F 域数据提交失败 · " \+ errorMessage\(error\)\)[\s\S]*?throw error;/,
+    /catch \(error\) \{[\s\S]*?setToast\([\s\S]*?"提交失败 · " \+ errorMessage\(error\)\)[\s\S]*?throw error;/,
   );
   assert.match(
     designKit,

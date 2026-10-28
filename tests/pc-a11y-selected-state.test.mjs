@@ -216,7 +216,7 @@ test("K4 五个输入源开关各自带上所属维度,不再同名", () => {
   const labels = checkboxes.map((box) => box.attrs["aria-label"]);
   assert.deepEqual(
     labels.sort(),
-    ["多账户输入源", "套利与刷量输入源", "提现速度输入源", "账户年龄输入源", "异常行为输入源"].sort(),
+    ["多账户是否参与评分", "套利与刷量是否参与评分", "提现速度是否参与评分", "账户年龄是否参与评分", "异常行为是否参与评分"].sort(),
     "五个开关的可访问名必须各自带上所属维度",
   );
   assert.equal(new Set(labels).size, 5, "五个可访问名必须互不相同(修前是五个同名「输入源已启用」)");
@@ -328,7 +328,7 @@ test("A9 开发者访问状态筛选是带组名的单选组,默认 PENDING", ()
 
 test("TabGroup 支持可见组标签并把它作为组名(不抄第二份字符串)", () => {
   const html = renderToStaticMarkup(React.createElement(TabGroup, {
-    label: "时间窗",
+    label: "时间范围",
     labelClassName: "lb",
     value: "7d",
     items: ["1d", "7d", "30d"],
@@ -336,9 +336,9 @@ test("TabGroup 支持可见组标签并把它作为组名(不抄第二份字符�
     itemClassName: (_value, selected) => `chip${selected ? " sel" : ""}`,
   }, (value) => value));
   const list = tablists(html)[0];
-  assert.equal(groupName(html, list), "时间窗", "可见标签文本必须同时成为组名");
-  assert.equal(elements(html).some((element) => element.text.trim() === "时间窗"), true, "可见标签必须仍然渲染出来");
-  const tabs = tabsOf(html, "时间窗");
+  assert.equal(groupName(html, list), "时间范围", "可见标签文本必须同时成为组名");
+  assert.equal(elements(html).some((element) => element.text.trim() === "时间范围"), true, "可见标签必须仍然渲染出来");
+  const tabs = tabsOf(html, "时间范围");
   assert.deepEqual(selectedFlags(tabs), ["false", "true", "false"]);
   assert.deepEqual(tabIndexes(tabs), [-1, 0, -1]);
 });
@@ -375,8 +375,8 @@ test("L1 时间窗 / 按注册周或月分组 / KPI 卡 / 叠加选择都暴露�
       },
     },
   });
-  assert.equal(tablistNamed(html, "时间窗").length, 1, "L1 时间窗必须暴露组名");
-  assertSingleSelection(html, "时间窗", 1, ["当日", "滚动 7 天", "滚动 30 天", "自定义"]);
+  assert.equal(tablistNamed(html, "时间范围").length, 1, "L1 时间窗必须暴露组名");
+  assertSingleSelection(html, "时间范围", 1, ["当日", "滚动 7 天", "滚动 30 天", "自定义"]);
   assert.equal(tablistNamed(html, "按注册周或月分组").length, 1, "L1 按注册周或月分组必须暴露组名");
   assertSingleSelection(html, "按注册周或月分组", 0, ["注册周（如2026-W42）", "注册月"]);
   // 🔴 zentao #209:八张 KPI 卡是**互斥单选**(点 #1 会把 #2 自动置 0),此前它们只是
@@ -448,7 +448,7 @@ test("L4 报表周期是单选组而不是四个独立 checkbox,四类报表也�
   const periodTabs = tabsOf(html, "报表周期");
   assert.deepEqual(selectedFlags(periodTabs).filter((value) => value === "true").length, 1, "报表周期同一时刻只有一个选中项");
   assert.equal(periodTabs[selectedFlags(periodTabs).indexOf("true")].text.trim(), "周", "L4 默认「周」");
-  assert.equal(tablistNamed(html, "L4 四类运营报表").length, 1, "L4 四类报表必须暴露组名");
+  assert.equal(tablistNamed(html, "四类运营报表").length, 1, "L4 四类报表必须暴露组名");
 });
 
 test("L5 导出任务状态筛选暴露组名与唯一选中项", () => {

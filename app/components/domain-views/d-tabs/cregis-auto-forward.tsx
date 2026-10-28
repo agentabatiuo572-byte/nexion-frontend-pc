@@ -38,7 +38,7 @@ function Owned({canManage,openActionConfirm,owner,epoch}:Props&{owner:number;epo
   const command=async(path:string,body:ExceptionRecord)=>{
     const request=scope(true);request.assertOwner();if(mutation.current)throw new Error("上一项操作尚未完成，请先刷新核对");
     mutation.current=true;setBusy(true);setError("");
-    try{await exceptionCommand(`${ROOT}${path}`,body,request);request.assertOwner();if(!await refresh())throw new Error("变更已提交，但回读失败。请勿重复提交，关闭弹窗后刷新原记录核对。");}
+    try{await exceptionCommand(`${ROOT}${path}`,body,request);request.assertOwner();if(!await refresh())throw new Error("已提交，但页面没刷新出来。请不要重复提交，关闭弹窗后刷新查看。");}
     catch(failure){if(owns())setError((failure as Error).message);throw failure;}
     finally{mutation.current=false;if(owns())setBusy(false);}
   };
@@ -46,7 +46,7 @@ function Owned({canManage,openActionConfirm,owner,epoch}:Props&{owner:number;epo
     try{assertOwner(true);if(!status)throw new Error("请刷新配置");
       const snapshot={action,expectedVersion:exceptionVersion(status.version),collectionEnabled:collect,paymentEnabled:pay};
       openActionConfirm({action:action==="PAUSE"?"暂停自动归集及付款":action==="PROPOSE"?"提交自动流程开关提案":action==="APPROVE"?"复核自动流程开关":"取消自动流程开关提案",
-        detail:action==="PAUSE"?"停止新的自动归集与甲方付款，原单仍继续只读核对。":action==="PROPOSE"?`归集 ${collect?"开":"关"} · 付款 ${pay?"开":"关"}。开启须另一管理员复核及服务端运行总闸批准。`:`归集提案 ${status.pendingCollection?"开":"关"} · 付款提案 ${status.pendingPayment?"开":"关"}。按服务端提案版本处理。`,
+        detail:action==="PAUSE"?"停止新的自动归集与甲方付款，原单仍继续只读核对。":action==="PROPOSE"?`归集 ${collect?"开":"关"} · 付款 ${pay?"开":"关"}。开启需另一位管理员复核，且运行总开关已批准。`:`待审核：归集 ${status.pendingCollection?"开":"关"} · 付款 ${status.pendingPayment?"开":"关"}。`,
         reasonMin:10,reasonMax:300,completionCopy:"自动流程配置已保存，请核对实际开关",run:reason=>command("/policy",{...snapshot,reason})});
     }catch(failure){setError((failure as Error).message);}
   };
@@ -68,8 +68,8 @@ function Owned({canManage,openActionConfirm,owner,epoch}:Props&{owner:number;epo
     <p>充值核实入账 → 自动归集充值全额至平台钱包 → 链上确认 → 自动向甲方支付用户入账净额。充值手续费留平台，链上手续费由平台另付；不重复入账或扣用户余额。</p>
     {error&&<p role="alert" className="dtint bad">{error}</p>}{loading&&<p>正在读取自动资金流程…</p>}
     {status&&<>
-      <p className={status.executionEnabled?"dtint warn":"dtint"}>执行总闸：{status.runtimeApproved?"已批准":"关闭"} · 自动归集：{status.collectionEnabled?"开启":"关闭"} · 自动付款：{status.paymentEnabled?"开启":"关闭"}</p>
-      {!status.runtimeApproved&&<p>当前不发送自动转账。未来启用前须确认 Cregis 自动审批/签名及套餐权益、绑定钱包和 BNB 手续费安排，再取得运行总闸批准及双人开关复核。</p>}
+      <p className={status.executionEnabled?"dtint warn":"dtint"}>运行总开关：{status.runtimeApproved?"已批准":"关闭"} · 自动归集：{status.collectionEnabled?"开启":"关闭"} · 自动付款：{status.paymentEnabled?"开启":"关闭"}</p>
+      {!status.runtimeApproved&&<p>当前不发送自动转账。未来启用前须确认 Cregis 自动审批/签名及套餐权益、绑定钱包和 BNB 手续费安排，再取得运行总开关批准，并由另一位管理员复核开关。</p>}
       <p style={{overflowWrap:"anywhere"}}>归集接收 / 付款来源：{String(status.platformAddress)}<br/>甲方接收：{String(status.counterpartyAddress)}</p>
       <p>{status.startEventId===null?"尚未首次启用，不会处理历史充值。":"仅处理首次启用水位之后的充值事件，暂停和恢复不会重置水位。"} 已发送单在关闭后仍继续只读核对。</p>
       {canWrite&&<div>
@@ -84,7 +84,7 @@ function Owned({canManage,openActionConfirm,owner,epoch}:Props&{owner:number;epo
       <h4>自动任务与原单跟踪</h4>
       {!page.records.length&&!loading&&<p>暂无自动任务。关闭状态不会创建任务或发送资金。</p>}
       {page.records.map(row=>{const id=String(row.id),state=String(row.state),stage=state.startsWith("COLLECTION")?"collection":"payment";return <article key={id} style={{border:"1px solid var(--border)",padding:12,overflowWrap:"anywhere"}}>
-        <strong>任务 {id} · {AUTO_STATES[state]??"状态待核实"}</strong>
+        <strong>任务 {id} · {AUTO_STATES[state]??"状态未知"}</strong>
         <p>充值事件 {String(row.eventId)} · 归集 {String(row.grossAmount)} USDT · 甲方 {String(row.netAmount)} USDT · 留存手续费 {String(row.feeAmount)} USDT</p>
         <p>{String(row.sourceAddress)} → {String(row.platformAddress)} → {String(row.counterpartyAddress)}</p>
         <p>付款业务号 {String(row.paymentKey)} · 归集 CID {String(row.collectionCid??"未取得")} · 付款 CID {String(row.paymentCid??"未取得")}</p>

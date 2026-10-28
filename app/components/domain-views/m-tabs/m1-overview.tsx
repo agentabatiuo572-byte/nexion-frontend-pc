@@ -230,7 +230,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
               : !supportAgentsAvailable
                 ? "客服数据暂不可用,请刷新后重试"
               : canManageSupportSeats
-                ? "接待资格与主管管理资格在 A1 账号管理分别维护"
+                ? "接待资格和主管资格在「运营账号与权限」里设置"
                 : "只有超级管理员或客服主管可以分配客服"}
             onClick={() => setShowSeatRoles(true)}
           >
@@ -258,14 +258,14 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
       {supportAgentsPending && (
         <div className="itint" role="status" aria-live="polite">
           <div style={{ fontSize: 13 }}>客服数据正在同步,请稍候。</div>
-          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>读取完成后会自动展示客服名册并开放已授权操作。</div>
+          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>加载完成后会显示客服名单。</div>
         </div>
       )}
 
       {!supportAgentsAvailable && !supportAgentsPending && (
         <div className="itint" role="alert">
           <div style={{ fontSize: 13 }}>
-            {supportAgentsError === "permission" ? "当前账号没有读取 M1 客服名册的权限。" : "客服数据暂不可用,当前不会开放客服与负载调整。"}
+            {supportAgentsError === "permission" ? "你没有查看客服名单的权限。" : "客服数据加载失败，暂时不能调整客服和接待量。"}
           </div>
           <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>
             {supportAgentsError === "permission" ? "请联系管理员核对 service_m1_read 权限。" : "这不是客服管理权限不足;系统已停止使用空名册推断权限,请刷新后重试。"}
@@ -361,12 +361,12 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
             {!supportAgentsAvailable ? (
               <div className="itint" style={{ marginTop: 10 }}>
                 <div style={{ fontSize: 13 }}>客服负载数据暂不可用</div>
-                <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>已按失败关闭处理,不会把读取失败显示成“暂无客服客服”。</div>
+                <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>加载失败，这不代表没有客服。</div>
               </div>
             ) : loadRows.length === 0 ? (
               <div className="itint" style={{ marginTop: 10 }}>
                 <div style={{ fontSize: 13 }}>暂无客服客服</div>
-                <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>客服名单来自 A1 全局角色为「客服」的管理员,请先给管理员分配客服角色。</div>
+                <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>客服名单就是角色为「客服」的后台账号，请先在「运营账号与权限」给账号分配客服角色。</div>
               </div>
             ) : loadRows.map((l) => {
               const warnPct = loadCfg?.warnPct ?? 101;
@@ -508,7 +508,7 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
         defaultCap: Number(clamp(defaultCap, 0, 40)), burstCap: Number(clamp(burstCap, 0, 40)),
         warnPct: Number(clamp(warnPct, 50, 100)), quietHourBalance: quietHour,
         overflowQueue: overflow.trim(), agentState,
-      }), "M1 客服负载调度", r);
+      }), "调整客服接待量", r);
     });
     if (!command) return;
     pendingCommandRef.current = command;
@@ -522,7 +522,7 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
         return;
       }
       pendingCommandRef.current = null;
-      ctx.toast("负载调度已提交 · 后端留档");
+      ctx.toast("接待量设置已提交");
       onClose();
     } catch {
       setWriteOutcomeUnknown(true);
@@ -543,7 +543,7 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
       return createM1PendingCommand("rebalance", JSON.stringify({
         expectedVersion: baseline.loadCfg.version,
         rows: baseline.rows.map((r) => ({ id: r.id, name: r.name, cap: r.cap, total: r.total, util: r.util })),
-      }), "M1 客服负载手动均衡", reason.trim());
+      }), "手动平衡客服接待量", reason.trim());
     });
     if (!command) return;
     pendingCommandRef.current = command;
@@ -557,7 +557,7 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
         return;
       }
       pendingCommandRef.current = null;
-      ctx.toast("已触发一次手动均衡 · 后端留档");
+      ctx.toast("已手动平衡一次");
       onClose();
     } catch {
       setWriteOutcomeUnknown(true);
@@ -583,11 +583,11 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
       footer={
         <div className="row" style={{ gap: 10, alignItems: "center", width: "100%" }}>
           <span className="sub" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Icon name="shield" size={13} />负载调度影响所有新单分配 · 变更与手动均衡均记入 A2 审计
+            <Icon name="shield" size={13} />接待量设置影响所有新会话的分配，修改和手动平衡都会记入操作记录
           </span>
           <div className="spacer" style={{ flex: 1 }} />
           <button type="button" className="btn btn-sec btn-sm" onClick={() => { if (!commandInFlightRef.current) onClose(); }} disabled={Boolean(saving)}>取消</button>
-          <button type="button" className="btn btn-sec btn-sm" onClick={rebalance} disabled={Boolean(saving) || (inputsLocked && pendingKind !== "rebalance")}>{saving === "rebalance" ? "提交中..." : "立即手动均衡"}</button>
+          <button type="button" className="btn btn-sec btn-sm" onClick={rebalance} disabled={Boolean(saving) || (inputsLocked && pendingKind !== "rebalance")}>{saving === "rebalance" ? "提交中…" : "立即手动平衡"}</button>
           <button type="button" className="btn btn-pri btn-sm" onClick={save} disabled={!reasonOk || Boolean(saving) || (inputsLocked && pendingKind !== "config")}>{saving === "config" ? "提交中..." : writeOutcomeUnknown ? "使用同一命令重试" : `保存${!reasonOk ? " · 需填理由" : ""}`}</button>
         </div>
       }
@@ -601,7 +601,7 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
       {writeOutcomeUnknown && (
         <div className="itint" role="alert" style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 13 }}>写入失败或结果未知,输入已保留。</div>
-          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>当前编辑已锁定,请使用同一命令重试;若要发起新变更,请取消后重新打开并读取当前状态。</div>
+          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>结果还没确认，请直接重试（不会重复执行）；要改别的，请取消后重新打开。</div>
         </div>
       )}
       <div className="mcol" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
@@ -643,7 +643,7 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
       </div>
 
       <label className="col" style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 16 }}>
-        <span style={{ fontSize: 13 }}>变更理由 <span style={{ color: "var(--danger)" }}>*</span> <span className="sub">(必填 8-200 字 · 留档至 A2 审计)</span></span>
+        <span style={{ fontSize: 13 }}>变更理由 <span style={{ color: "var(--danger)" }}>*</span> <span className="sub">（必填，8–200 字，会记入操作记录）</span></span>
         <textarea className="fld" rows={2} maxLength={200} value={reason} onChange={(e) => { if (!commandInFlightRef.current && !writeOutcomeUnknown) setReason(e.target.value); }} disabled={inputsLocked} placeholder="例：预计周一提现咨询较多，临时调整客服接待上限并安排培训" style={{ resize: "vertical" }} />
       </label>
     </Modal>
@@ -653,7 +653,7 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
 export function SupportSeatRoleModal({ canManage, onClose }: { ctx: MCtx; operatorName: string; currentRole: string; currentAdminId: number; agents: MSupportAgent[]; canManage: boolean; onClose: () => void }) {
   const canManageQualifications = useAdminAuth(state => Boolean(canManage && state.session && ["super", "superadmin"].includes(state.session.role) && state.session.authorities.includes("platform_a1_read") && canAccessResolvedPath(resolveVisibleDomains(state.session), "/platform/rbac")));
   return <Modal title="客服资格管理" icon="users" onClose={onClose} footer={<button type="button" className="btn btn-sec btn-sm" onClick={onClose}>关闭</button>}>
-    <p>人工接待统一为专属客服。接待资格与主管管理资格分别由超级管理员在 A1 账号管理维护。</p>
+    <p>人工接待统一由专属客服负责。接待资格和主管资格由超级管理员在「运营账号与权限」里设置。</p>
     {canManageQualifications && <Link className="btn btn-pri btn-sm" href="/platform/rbac">前往账号管理</Link>}
     <p className="sub">当前页仍可调整会话承载量与在线状态；已有会话、客户资料和绑定关系保留。</p>
   </Modal>;
@@ -813,7 +813,7 @@ function SeatAssignmentModal({
         adminId: agent.adminId,
         userIds,
       }), {
-        action: "M1 绑定专属客服服务用户",
+        action: "给用户绑定专属客服",
         reason: reason.trim(),
       });
       if (!ok) return;
@@ -836,7 +836,7 @@ function SeatAssignmentModal({
         adminId: agent.adminId,
         assignmentId: assignment.id,
       }), {
-        action: "M1 解绑专属客服服务用户",
+        action: "解除用户的专属客服",
         reason: reason.trim(),
       });
       if (!ok) return;
@@ -852,7 +852,7 @@ function SeatAssignmentModal({
       icon="users"
       wide
       onClose={onClose}
-      footer={<><span className="sub">{agents.length === 0 ? "暂无可接待的专属客服，请先在 A1 核对接待资格" : agentCanAssign ? `用户来自客服工作台查询 · 已选 ${bindableSelectedUsers.length} 人 · 已绑定 ${activeAssignments.length} 人` : `当前客服未开启专属客服服务 · 可解绑已绑定 ${activeAssignments.length} 人`}</span><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose} disabled={saving || unbindingId !== null}>取消</button><button type="button" data-proof="m1-seat-assignment-save" className="btn btn-pri btn-sm" disabled={!canSave} onClick={save}>{saving ? "提交中..." : `绑定${canSave ? ` ${bindableSelectedUsers.length} 人` : agents.length === 0 ? " · 无专属客服" : agentCanAssign ? " · 待补全" : " · 需开启接待"}`}</button></>}
+      footer={<><span className="sub">{agents.length === 0 ? "暂无可接待的专属客服，请先在「运营账号与权限」核对接待资格" : agentCanAssign ? `用户来自客服工作台查询 · 已选 ${bindableSelectedUsers.length} 人 · 已绑定 ${activeAssignments.length} 人` : `当前客服未开启专属客服服务 · 可解绑已绑定 ${activeAssignments.length} 人`}</span><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose} disabled={saving || unbindingId !== null}>取消</button><button type="button" data-proof="m1-seat-assignment-save" className="btn btn-pri btn-sm" disabled={!canSave} onClick={save}>{saving ? "提交中..." : `绑定${canSave ? ` ${bindableSelectedUsers.length} 人` : agents.length === 0 ? " · 无专属客服" : agentCanAssign ? " · 待补全" : " · 需开启接待"}`}</button></>}
     >
       <div className="mcol" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -861,7 +861,7 @@ function SeatAssignmentModal({
             {agents.length === 0 ? (
               <div className="itint" style={{ padding: "10px 12px" }}>
                 <div style={{ fontSize: 13 }}>暂无专属客服客服</div>
-                <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>名单来自后端授权的接待账号；接待资格在 A1 账号管理维护。</div>
+                <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>名单来自有接待资格的账号；接待资格在「运营账号与权限」里设置。</div>
               </div>
             ) : (
               <select className="fld" value={agentAdminId || String(agent?.adminId ?? "")} onChange={(e) => { setAgentAdminId(e.target.value); setSelectedUsers([]); }}>
@@ -876,7 +876,7 @@ function SeatAssignmentModal({
           {agents.length > 0 && !agentCanAssign && (
             <div className="itint" style={{ padding: "10px 12px" }}>
               <div style={{ fontSize: 13 }}>该客服当前不能接收专属服务用户分配</div>
-              <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>到 A1 账号管理核对接待资格；当前已绑定客户仍可在下方解绑。</div>
+              <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>请到「运营账号与权限」核对接待资格；已绑定的客户仍可在下方解绑。</div>
             </div>
           )}
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
@@ -913,7 +913,7 @@ function SeatAssignmentModal({
                           title={reasonOk ? "解除此用户与当前专属客服的绑定" : "先填写变更理由(8-200 字)"}
                           onClick={() => unbind(row)}
                         >
-                          {unbindingId === row.id ? "解绑中..." : "解绑"}
+                          {unbindingId === row.id ? "解绑中…" : "解绑"}
                         </button>
                       </div>
                     ))}
@@ -965,7 +965,7 @@ function SeatAssignmentModal({
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
           <div className="sub" style={{ fontWeight: 600 }}>可选用户</div>
-          {loading && <div className="itint">正在查询用户...</div>}
+          {loading && <div className="itint">正在查询用户…</div>}
           {!loading && error && <div className="itint">用户加载失败 · {error} <button type="button" className="btn btn-sec btn-sm" onClick={() => setUserReload((value) => value + 1)}>重试</button></div>}
           {!loading && !error && users.length === 0 && (
             <div className="itint">

@@ -52,5 +52,5 @@ test("F1 rendered totals use every V-Rank row, not the leadership-pool qualifier
 
   const text = textOf(tree);
   assert.match(text, /总会员9含 V0 5/);
-  assert.match(text, /V3\+ 高价值2≈ 22\.22%/);
+  assert.match(text, /V3\+ 高价值2约占 22\.22%/);
 });

@@ -1,7 +1,7 @@
 "use client";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
-const credentialStatusText = (value?: string | null) => value === "PASSWORD_CHANGE_REQUIRED" ? "下次登录需修改密码" : value === "ACTIVE" ? "可正常使用" : "未返回";
+const credentialStatusText = (value?: string | null) => value === "PASSWORD_CHANGE_REQUIRED" ? "下次登录需修改密码" : value === "ACTIVE" ? "正常" : "—";
 
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
 import Link from "next/link";
@@ -60,12 +60,12 @@ type SecurityBaselineRow = SecurityBaselineMeta & {
 };
 
 const SECURITY_BASELINE_META: Record<string, SecurityBaselineMeta> = {
-  session_idle: { key: "session_idle", name: "会话空闲时限", sub: "无有效操作多久自动登出；有效操作续期", unit: "分钟" },
-  session_abs: { key: "session_abs", name: "会话最长时限", sub: "持续有效操作不会因固定时长登出", unit: "小时" },
-  lock_short_cnt: { key: "lock_short_cnt", name: "登录失败短锁 · 触发次数", sub: "连错几次触发短锁", unit: "次", min: 3, max: 10 },
-  lock_short_min: { key: "lock_short_min", name: "登录失败短锁 · 锁定时长", sub: "触发短锁后锁定多久", unit: "分钟", min: 5, max: 60 },
-  lock_long_cnt: { key: "lock_long_cnt", name: "24 小时累计长锁 · 触发次数", sub: "一天内累计失败几次触发长锁", unit: "次" },
-  lock_long_hour: { key: "lock_long_hour", name: "24 小时累计长锁 · 锁定时长", sub: "触发长锁后锁定多久", unit: "小时" },
+  session_idle: { key: "session_idle", name: "会话空闲时限", sub: "多久无操作自动登出", unit: "分钟" },
+  session_abs: { key: "session_abs", name: "会话最长时限", sub: "登录后最长可保持多久", unit: "小时" },
+  lock_short_cnt: { key: "lock_short_cnt", name: "短时锁定 · 连续输错次数", sub: "连续输错几次后锁定", unit: "次", min: 3, max: 10 },
+  lock_short_min: { key: "lock_short_min", name: "短时锁定 · 锁定时长", sub: "锁定多久后可重试", unit: "分钟", min: 5, max: 60 },
+  lock_long_cnt: { key: "lock_long_cnt", name: "长时锁定 · 24 小时内输错次数", sub: "一天内累计输错几次后长时锁定", unit: "次" },
+  lock_long_hour: { key: "lock_long_hour", name: "长时锁定 · 锁定时长", sub: "锁定多久后可重试", unit: "小时" },
 };
 
 function errorMessage(error: unknown) {
@@ -179,7 +179,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         setPermissionDiffReady(true);
       } catch (error) {
         setPermissionCodesByRole({});
-        setPermissionDiffError(`权限差异预览不可用：${errorMessage(error)}；改角色已停用`);
+        setPermissionDiffError(`权限变化预览加载失败：${errorMessage(error)}，暂时不能改角色`);
       }
     } catch (error) {
       setLoadError(errorMessage(error));
@@ -208,7 +208,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         return true;
       } catch (error) {
         if (isA1OutcomeUncertainError(error)) {
-          toast(`提交结果未知（命令号 ${error.commandKey}）；请先刷新并核对 A2 审计，禁止重复提交。`);
+          toast(`提交结果暂未确认（命令号 ${error.commandKey}）。请先刷新，在操作记录里核对，不要重复提交。`);
         } else {
           toast(`提交失败:${errorMessage(error)}`);
         }
@@ -222,7 +222,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
 
   const roles = overview?.roles ?? [];
   const roleOptions = useMemo(() => [
-    { key: "unassigned", name: "暂未分配", scope: "默认零权限、零菜单；在 A6 明确授权后再分配" },
+    { key: "unassigned", name: "暂未分配", scope: "没有任何权限和菜单，在「角色管理」授权后再分配" },
     ...roles,
   ], [roles]);
   const operators = overview?.operators ?? [];
@@ -265,7 +265,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     securityBaselineRows.push(
       { ...SECURITY_BASELINE_META.session_idle, sourceKey: "session", current: baselineCurrent("session_idle"),
         unit: parsedSessionBaseline.idleDisabled ? undefined : "分钟",
-        sub: parsedSessionBaseline.idleDisabled ? "闲置自动登出已停用；可主动登出或撤销会话" : SECURITY_BASELINE_META.session_idle.sub, locked: true },
+        sub: parsedSessionBaseline.idleDisabled ? "无操作自动登出已关闭" : SECURITY_BASELINE_META.session_idle.sub, locked: true },
       { ...SECURITY_BASELINE_META.session_abs, sourceKey: "session", current: baselineCurrent("session_abs"), unit: parsedSessionBaseline.unlimited ? undefined : "小时", locked: true },
     );
   }
@@ -281,10 +281,10 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     baseline.current == null ? "—" : `${baseline.current} ${baseline.unit ?? ""}`.trim()
   );
   const sessionBaseline = parsedSessionBaseline.idleDisabled
-    ? `闲置自动登出已停用 / ${parsedSessionBaseline.unlimited ? "无固定登录上限"
-      : parsedSessionBaseline.absoluteHours ? `${parsedSessionBaseline.absoluteHours}小时登录上限` : "登录上限未确认"}`
-    : backendSessionBaseline || "后端未返回会话基线";
-  const lockBaseline = backendLockBaseline || "后端未返回登录锁定基线";
+    ? `无操作自动登出已关闭 / ${parsedSessionBaseline.unlimited ? "无固定登录上限"
+      : parsedSessionBaseline.absoluteHours ? `最长保持登录 ${parsedSessionBaseline.absoluteHours} 小时` : "最长登录时间未获取到"}`
+    : backendSessionBaseline || "未获取到";
+  const lockBaseline = backendLockBaseline || "未获取到";
 
   const totalPages = Math.max(1, Math.ceil(operators.length / perPage));
   const safePage = Math.min(page, totalPages - 1);
@@ -303,27 +303,27 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       return "超级管理员账号不能被强制登出";
     }
     if (op.sessions === 0) {
-      return "该账号当前未登录，无需强制退出";
+      return "该账号当前未登录";
     }
     return null;
   };
   const protectsEffectiveSuperFloor = (op: A1Operator) =>
     op.role === "super" && op.status === "enabled" && op.tfa && effectiveSupers <= 2;
   const changeRoleBlockReason = (op: A1Operator) => {
-    if (!permissionDiffReady) return permissionDiffError ?? "权限差异预览不可用，改角色已停用";
-    if (governanceFrozen) return "有效超级管理员不足 2 个，账号管理操作已暂停；请先创建恢复用超级管理员并为其绑定两步验证";
-    if (protectsEffectiveSuperFloor(op)) return "该操作会使有效超级管理员少于 2 个";
+    if (!permissionDiffReady) return permissionDiffError ?? "权限变化预览加载失败，暂时不能改角色";
+    if (governanceFrozen) return "可用的超级管理员不足 2 个，账号操作已暂停。请先新建一个超级管理员并绑定两步验证";
+    if (protectsEffectiveSuperFloor(op)) return "操作后可用的超级管理员会少于 2 个";
     return null;
   };
   const reset2faBlockReason = (op: A1Operator) => {
     if (!op.tfa) return "该账号尚未绑定两步验证，无需重置";
-    if (governanceFrozen) return "有效超级管理员不足 2 个，账号管理操作已暂停；请先恢复安全基线";
-    if (protectsEffectiveSuperFloor(op)) return "重置后有效超级管理员将少于 2 个";
+    if (governanceFrozen) return "可用的超级管理员不足 2 个，账号操作已暂停";
+    if (protectsEffectiveSuperFloor(op)) return "重置后可用的超级管理员会少于 2 个";
     return null;
   };
   const disableAccountBlockReason = (op: A1Operator) => {
-    if (governanceFrozen) return "有效超级管理员不足 2 个，账号管理操作已暂停；请先恢复安全基线";
-    if (protectsEffectiveSuperFloor(op)) return "禁用后有效超级管理员将少于 2 个";
+    if (governanceFrozen) return "可用的超级管理员不足 2 个，账号操作已暂停";
+    if (protectsEffectiveSuperFloor(op)) return "禁用后可用的超级管理员会少于 2 个";
     return null;
   };
 
@@ -335,7 +335,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
 
   const changeRole = (op: A1Operator) => {
     if (!permissionDiffReady) {
-      toast(permissionDiffError ?? "权限差异预览不可用，改角色已停用");
+      toast(permissionDiffError ?? "权限变化预览加载失败，暂时不能改角色");
       return;
     }
     const displayName = operatorDisplayName(op);
@@ -345,8 +345,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       detail: (
         <>
           <b>{displayLabel}</b> · 当前 <b>{roleName(roles, op.role)}</b>。
-          在下方业务表单选择目标角色;提交后由后端更新账号角色关系、平台配置和审计记录。
-          <b> 后端校验:</b>最小权限基线、角色合法性、有效超级管理员不得少于 2 个。
+          选择新角色，下方会显示权限的变化。可用的超级管理员不能少于 2 个。
         </>
       ),
       amplifies: false,
@@ -356,20 +355,20 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         roles: roleOptions.map((r) => ({ key: r.key, label: r.name, scope: r.scope })),
         actions: permissionActions,
         grantsByRole: { unassigned: permissionActions.map(() => "-"), ...grantsByRole },
-        guardHint: `有效超级管理员 ${effectiveSupers} 个;降级超级管理员时仍需 ≥2`,
+        guardHint: `当前可用超级管理员 ${effectiveSupers} 个，至少保留 2 个`,
       },
       run: (reason, value) => {
         const roleStr = (value || "").trim();
         if (!roleOptions.some((r) => r.key === roleStr)) {
-          toast(`无法保存：角色标识无效（${roleStr})`);
+          toast(`无法保存：角色无效（${roleStr}）`);
           return;
         }
         if (roleStr === op.role) {
-          toast("未提交:目标角色与当前角色相同");
+          toast("新角色与当前角色相同");
           return;
         }
         if (op.role === "super" && op.status === "enabled" && roleStr !== "super" && effectiveSupers - 1 < 2) {
-          toast("拒绝:剩余有效超级管理员将不足 2 个");
+          toast("不能执行：可用的超级管理员会少于 2 个");
           return;
         }
         const def = findHighOp("a1_account_change_role")!;
@@ -396,7 +395,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     detail: (
       <>
         <div className="atint danger" style={{ marginBottom: 12 }}>
-          <b>社工高危路径</b> · 提交前请用第二渠道核实本人身份;核验方式和工单会随理由提交到后端审计。
+          <b>骗子常用这一步盗号</b> · 提交前请通过另一种方式核实是本人。
         </div>
         <div className="dlg-sec">重置后会发生什么</div>
         <div style={{ marginTop: 6, marginBottom: 4 }}>
@@ -438,7 +437,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     detail: (
       <>
         <div className="atint danger" style={{ marginBottom: 12 }}>
-          <b>敏感凭据操作</b> · 系统会生成临时密码、更新账号密码、吊销该账号旧登录态,并要求下次登录立即修改密码。
+          系统会生成临时密码并让该账号下线，对方下次登录须先改密码。
         </div>
         <b>{operatorDisplayLabel(op)}</b> · 登录名 <span className="acode">{op.username || "未返回"}</span>。
       </>
@@ -473,7 +472,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       detail: (
         <>
           <b>{operatorDisplayLabel(op)}</b> · 登录名从 <span className="acode">{op.username || "未返回"}</span> 更新为 <span className="acode">{form.username}</span>。
-          后端会检查登录名和邮箱唯一性;登录名变更后会吊销该账号当前登录态。
+          登录名和邮箱不能与其他账号重复；改登录名后该账号会被强制下线。
         </>
       ),
       amplifies: false,
@@ -511,7 +510,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
 
   const disableAcct = (op: A1Operator) => {
     if (op.role === "super" && op.status === "enabled" && effectiveSupers - 1 < 2) {
-      toast("拒绝:剩余有效超级管理员将不足 2 个");
+      toast("不能执行：可用的超级管理员会少于 2 个");
       return;
     }
     const displayName = operatorDisplayName(op);
@@ -520,8 +519,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       detail: (
         <>
           <b>{operatorDisplayLabel(op)}</b> · 角色 {roleName(roles, op.role)}。
-          禁用后后端会收回后台访问权并吊销该账号全部有效登录会话;在途敏感动作仍需到 A2 操作确认中心处理。
-          {op.role === "super" && <>  剩余有效超级管理员 {effectiveSupers} - 1 = {effectiveSupers - 1}。</>}
+          禁用后该账号立即下线且无法登录；它提交但还没确认的操作，请到「操作记录与审批」处理。
+          {op.role === "super" && <>  禁用后剩余可用超级管理员 {effectiveSupers - 1} 个。</>}
         </>
       ),
       amplifies: false,
@@ -549,8 +548,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     action: `启用账号 · ${operatorDisplayName(op)}`,
     detail: (
       <>
-        <b>{operatorDisplayLabel(op)}</b> · 启用后恢复后台访问权,角色沿用 <b>{roleName(roles, op.role)}</b>;
-        首次登录仍需通过强制两步验证校验。
+        <b>{operatorDisplayLabel(op)}</b> · 启用后可重新登录，角色仍为 <b>{roleName(roles, op.role)}</b>，登录时需通过两步验证。
       </>
     ),
     amplifies: false,
@@ -584,11 +582,11 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       action: `强制登出 · ${displayName}`,
       detail: (
         <>
-          <b>{operatorDisplayLabel(op)}</b>  当前有效登录会话 <b>{op.sessions}</b>  个。
-          确认后后端立即吊销该账号全部登录会话,重新登录必须重过后台认证与两步验证。
+          <b>{operatorDisplayLabel(op)}</b> · 当前在 <b>{op.sessions}</b> 台设备上登录。
+          确认后该账号在所有设备上立即下线，重新登录需再次通过两步验证。
           <div style={{ marginTop: 8, fontSize: 12, color: "var(--ink-4)" }}>
 
-            规则:不能登出自己;只有超级管理员可执行;超级管理员账号不可被强制登出。
+            只有超级管理员能操作；不能登出自己，也不能登出其他超级管理员。
           </div>
         </>
       ),
@@ -615,19 +613,19 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
 
   const adjustBaseline = (baseline: SecurityBaselineRow) => {
     if (baseline.sourceKey === "session") {
-      const idlePolicy = parsedSessionBaseline.idleDisabled ? "闲置自动登出已停用"
-        : parsedSessionBaseline.idleMinutes ? `无有效操作${parsedSessionBaseline.idleMinutes}分钟登出、有效操作续期` : "闲置策略未确认";
+      const idlePolicy = parsedSessionBaseline.idleDisabled ? "无操作自动登出已关闭"
+        : parsedSessionBaseline.idleMinutes ? `${parsedSessionBaseline.idleMinutes} 分钟无操作自动登出` : "无操作登出时间未获取到";
       const absolutePolicy = parsedSessionBaseline.unlimited ? "无固定登录上限"
-        : parsedSessionBaseline.absoluteHours ? `${parsedSessionBaseline.absoluteHours}小时登录上限` : "登录上限未确认";
-      toast(`会话策略由后端锁定：${idlePolicy}，${absolutePolicy}`);
+        : parsedSessionBaseline.absoluteHours ? `最长保持登录 ${parsedSessionBaseline.absoluteHours} 小时` : "最长登录时间未获取到";
+      toast(`登录时长由系统固定，不能修改：${idlePolicy}，${absolutePolicy}`);
       return;
     }
     if (baseline.locked) {
-      toast("该安全基线由后端锁定,不可在前端调整");
+      toast("这项设置由系统固定，不能修改");
       return;
     }
     if (baseline.current == null) {
-      toast("后端未返回当前基线值,请先刷新或在配置中心补齐该基线");
+      toast("没有获取到当前值，请刷新后重试");
       return;
     }
     const curN = Number(baseline.current);
@@ -638,7 +636,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       return Number.isFinite(value) ? value : null;
     };
     if (!Number.isFinite(curN)) {
-      toast("后端未返回当前基线值,请先刷新或在配置中心补齐该基线");
+      toast("没有获取到当前值，请刷新后重试");
       return;
     }
     openActionConfirm({
@@ -646,7 +644,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       detail: (
         <>
           <b>{baseline.name}</b> · 当前 <span className="acode">{curN} {baseline.unit}</span> · 可填范围 <span className="acode">{baseline.min}–{baseline.max} {baseline.unit}</span>。
-          对<b> 下一次登录签发</b>生效,在途不受影响。后台是管理后台,时限 / 阈值比用户侧更严。
+          从下次登录开始生效，已登录的不受影响。
         </>
       ),
       amplifies: false,
@@ -654,7 +652,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       run: (reason, value) => {
         const n = Number((value ?? "").replace(/[^\d.]/g, "").trim());
         if (!Number.isFinite(n) || n < baseline.min! || n > baseline.max!) {
-          toast(`拒绝:${baseline.name} 需在 ${baseline.min}–${baseline.max} ${baseline.unit} 之间`);
+          toast(`${baseline.name}需在 ${baseline.min}–${baseline.max} ${baseline.unit} 之间`);
           return;
         }
         let backendKey: "session" | "lock";
@@ -663,13 +661,13 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           const count = baseline.key === "lock_short_cnt" ? n : siblingNumber("lock_short_cnt");
           const minutes = baseline.key === "lock_short_min" ? n : siblingNumber("lock_short_min");
           if (count == null || minutes == null) {
-            toast("后端登录锁定基线不完整,拒绝用前端默认值补齐");
+            toast("当前锁定设置不完整，请刷新后重试");
             return;
           }
           backendKey = "lock";
           backendValue = `${count} 次 / ${minutes}min`;
         } else {
-          toast("拒绝:该安全基线暂不支持前端调整");
+          toast("这项设置暂不支持修改");
           return;
         }
         const def = findHighOp("a1_security_baseline_update")!;
@@ -712,9 +710,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         const finalReason = `${form.reason}；${reason}`;
         if(!currentAdminId)return false;
         const command=creationPending??{fingerprint:`${currentAdminId}:create`,commandKey:crypto.randomUUID(),createdAt:Date.now(),expiresAt:Date.now()+86400000,actorId:currentAdminId,form,reason:finalReason,operator};
-        if (Date.now() >= command.expiresAt) { toast("原账号创建命令已超过安全重试窗口，请先核对账号名单或联系管理员，不要重复创建。"); return false; }
+        if (Date.now() >= command.expiresAt) { toast("距上次提交已超过可重试时间。请先在账号列表核对是否已创建，不要重复创建。"); return false; }
         creationCommands.remember(command.fingerprint,command.commandKey,{actorId:command.actorId,form:command.form,reason:command.reason,operator:command.operator});setCreationPending(command);
-        if(!creationCommands.isDurablyStored(command.fingerprint,command.commandKey)){toast("原账号创建命令暂不能持久保存，尚未提交；请恢复浏览器存储后重试。");return false;}
+        if(!creationCommands.isDurablyStored(command.fingerprint,command.commandKey)){toast("浏览器无法保存本次提交记录，尚未提交。请检查浏览器存储设置后重试。");return false;}
         let defaultAvatarMissing = false;
         const ok = await runMutation(
           `新建账号 ${form.username}`,
@@ -733,9 +731,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
             defaultAvatarMissing = Boolean(command.form.useDefaultAvatar && !created.avatarAssetId);
             return created;
           },
-          `${form.displayName} 已创建，首次登录需绑定两步验证 并修改密码`,
+          `${form.displayName} 已创建，首次登录需绑定两步验证并修改密码`,
         );
-        if (ok) { setNaOpen(false); if (defaultAvatarMissing) toast("账号已创建，默认头像暂缺；请在账号资料中准备并提交新头像。请勿再次创建账号。"); }
+        if (ok) { setNaOpen(false); if (defaultAvatarMissing) toast("账号已创建，但默认头像暂缺，请在账号资料里上传头像。不要重复创建账号。"); }
         return ok;
       },
     });
@@ -745,7 +743,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     if (!canRegisterPermission || !permissionDraft.code.trim() || !permissionDraft.name.trim() || !permissionDraft.path.trim()) return;
     openActionConfirm({
       action: `登记动作权限 · ${permissionDraft.code.trim()}`,
-      detail: <>只向 A8 权限清单登记新动作，<b>不会自动绑定任何角色</b>；保存前检查该权限是否尚未登记、接口路径是否属于后台，以及该权限是否尚未分配给任何角色。</>,
+      detail: <>把新操作加入权限清单，<b>不会自动分给任何角色</b>。需要时到「角色管理」授权。</>,
       amplifies: permissionDraft.amplifies,
       reasonMin: 8,
       reasonMax: 200,
@@ -754,7 +752,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           permissionCode: permissionDraft.code.trim(), permissionName: permissionDraft.name.trim(),
           resourcePath: permissionDraft.path.trim(), permType: permissionDraft.type,
           amplifies: permissionDraft.amplifies, reason, operator,
-        }), `${permissionDraft.code.trim()} 已登记 · 默认零角色绑定`);
+        }), `${permissionDraft.code.trim()} 已登记，尚未分给任何角色`);
         setPermissionDraft({ code: "", name: "", path: "", type: "WRITE", amplifies: false });
       },
     });
@@ -765,10 +763,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">运营账号与权限</span>
-          <span className="sub">· 正在加载管理员账号</span>
         </div>
         <div className="l-b">
-          <div className="atint">正在加载管理员账号及登录安全设置。</div>
+          <div className="atint">正在加载…</div>
         </div>
       </section>
     );
@@ -779,10 +776,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">运营账号与权限</span>
-          <span className="sub">· 后端数据加载失败</span>
         </div>
         <div className="l-b">
-          <div className="atint danger">A1 真实接口不可用:{loadError || "未收到本页数据，请重试；持续失败时请联系值班人员。"}</div>
+          <div className="atint danger">加载失败：{loadError || "请重试，持续失败请联系值班人员。"}</div>
           <button className="l-btn sm mc" onClick={() => void refreshOverview()}>重试</button>
         </div>
       </section>
@@ -793,18 +789,18 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     <>
       {loadError && (
         <div className="atint danger" data-module-health-state="error" style={{ marginBottom: 12 }}>
-          后端刷新失败:{loadError}
+          刷新失败：{loadError}
           <button className="l-btn sm mc" onClick={() => void refreshOverview()} style={{ marginLeft: 8 }}>重试</button>
         </div>
       )}
       {mutatingAction && (
         <div className="atint" style={{ marginBottom: 12 }}>
-          正在提交后端操作:{mutatingAction}
+          正在提交：{mutatingAction}
         </div>
       )}
       {governanceFrozen && (
         <div className="atint danger" style={{ marginBottom: 12 }}>
-          <b>账号治理恢复模式</b>  · 当前实际启用且已绑定两步验证 的超级管理员不足 2 个。除“新建超级管理员账号”和安全事件下的会话吊销外，其他账号管理操作已由前后端冻结。
+          <b>账号操作已暂停</b> · 已启用且绑定两步验证的超级管理员不足 2 个。现在只能新建超级管理员账号或强制下线，补足后自动恢复。
         </div>
       )}
 
@@ -815,29 +811,29 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           <div className="sub">启用 {stats?.activeAccounts ?? 0} · 已禁用 {stats?.disabledAccounts ?? 0}</div>
         </div>
         <div className="f-stat">
-          <div className="k">有效登录会话</div>
+          <div className="k">在线登录</div>
           <div className="v">{stats?.activeSessions ?? 0} 个</div>
           <div className="sub">{sessionBaseline}</div>
         </div>
         <div className={`f-stat ${supersTone}`}>
-          <div className="k">有效超级管理员</div>
+          <div className="k">可用超级管理员</div>
           <div className="v">{effectiveSupers} 个</div>
-          <div className="sub">后端约束 ≥2 · {governanceFrozen ? "治理冻结" : effectiveSupers === 2 ? "位于下限" : "健康"}</div>
+          <div className="sub">至少 2 个 · {governanceFrozen ? "不足，账号操作已暂停" : effectiveSupers === 2 ? "已到下限" : "正常"}</div>
         </div>
         <div className="f-stat">
-          <div className="k">账号治理待办</div>
+          <div className="k">待确认的账号操作</div>
           <div className="v">{stats?.pendingAcctTickets ?? 0} 件</div>
           <div className="sub">
-            在操作确认中心(A2)排队 · <Link className="l-btn sm" href="/platform/audit" style={{ marginLeft: 4 }}>→ 去 A2</Link>
+            <Link className="l-btn sm" href="/platform/audit">去处理 →</Link>
           </div>
         </div>
       </div>
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">运营账号(a)</span>
+          <span className="ttl">运营账号</span>
           <span className="sub">
-            · 账号归属在 A1；角色授权以 <Link href="/platform/roles">A6 角色管理</Link> 与 <Link href="/platform/permissions">A8 权限清单</Link> 为准
+            · 角色能做什么在 <Link href="/platform/roles">角色管理</Link> 设置
           </span>
           <div className="r">
             <button className="l-btn sm" onClick={() => void refreshOverview(true)} disabled={!!mutatingAction}>刷新</button>
@@ -846,7 +842,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         </div>
         {permissionDiffError && (
           <div className="atint danger" style={{ margin: "0 12px 12px" }}>
-            {permissionDiffError}。请刷新重试；在恢复前仍可查看账号和执行不依赖权限差异的操作。
+            {permissionDiffError}。请刷新重试，其他账号操作不受影响。
           </div>
         )}
         <div style={{ overflowX: "auto" }}>
@@ -885,7 +881,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
                     <td>
                       <span className="mc">{roleName(roles, op.role)}</span>
                     </td>
-                    <td>{op.tfa ? <span className="mc ok">强制已绑</span> : <span className="mc danger">未绑定</span>}</td>
+                    <td>{op.tfa ? <span className="mc ok">已绑定</span> : <span className="mc danger">未绑定</span>}</td>
                     <td>{op.status === "enabled" ? <span className="mc ok">启用</span> : <span className="mc danger">已禁用</span>}</td>
                     <td style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{op.lastLogin || "—"}</td>
                     <td><span className="mono">{op.sessions}</span></td>
@@ -920,7 +916,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
               {!pageRows.length && (
                 <tr>
                   <td colSpan={7} style={{ color: "var(--ink-4)", textAlign: "center", padding: 24 }}>
-                    后端暂无运营账号记录
+                    暂无运营账号
                   </td>
                 </tr>
               )}
@@ -937,29 +933,26 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
               {[10, 20, 50].map((n) => <option key={n} value={n}>{n}/页</option>)}
             </select>
           </div>
-          <div className="atint" style={{ marginTop: 10 }}>
 
-            后端会再次校验有效超级管理员 ≥2、角色合法性和写权限;前端预判只用于减少误操作。
-          </div>
         </div>
       </section>
 
       <section className="l-card" data-capability="a1-permission-registration">
-        <div className="l-h"><span className="ttl">新增动作权限登记</span><span className="sub">· 只登记权限清单 · 默认不授予角色</span></div>
+        <div className="l-h"><span className="ttl">登记新权限</span><span className="sub">· 登记后不会自动分给任何角色</span></div>
         <div className="l-b ui-form-grid">
           <label>权限编码<input aria-label="权限编码" placeholder="domain_action_write" value={permissionDraft.code} onChange={(e) => setPermissionDraft((v) => ({ ...v, code: e.target.value }))} /></label>
           <label>权限名称<input aria-label="权限名称" placeholder="权限名称" value={permissionDraft.name} onChange={(e) => setPermissionDraft((v) => ({ ...v, name: e.target.value }))} /></label>
           <label>资源路径<input aria-label="资源路径" placeholder="/api/admin/..." value={permissionDraft.path} onChange={(e) => setPermissionDraft((v) => ({ ...v, path: e.target.value }))} /></label>
           <label>权限类型<select aria-label="权限类型" value={permissionDraft.type} onChange={(e) => setPermissionDraft((v) => ({ ...v, type: e.target.value as "READ" | "WRITE" }))}><option value="READ">查询</option><option value="WRITE">修改</option></select></label>
-          <label><input type="checkbox" checked={permissionDraft.amplifies} onChange={(e) => setPermissionDraft((v) => ({ ...v, amplifies: e.target.checked }))} />放大资金流出</label>
+          <label><input type="checkbox" checked={permissionDraft.amplifies} onChange={(e) => setPermissionDraft((v) => ({ ...v, amplifies: e.target.checked }))} />会让平台多付钱</label>
           <button className="l-btn sm mc" disabled={!canRegisterPermission || !!mutatingAction || !permissionDraft.code.trim() || !permissionDraft.name.trim() || !permissionDraft.path.trim()} onClick={submitPermissionRegistration}>登记权限</button>
         </div>
       </section>
 
       <section className="l-card">
           <div className="l-h">
-            <span className="ttl">后台运营账号登录与安全基线</span>
-            <span className="sub">· 仅用于 后台管理员登录；服务端实时返回；锁定项只读，可调项逐项生效</span>
+            <span className="ttl">后台登录安全</span>
+            <span className="sub">· 只针对后台账号，App 用户的登录规则在「注册与登录风险」设置</span>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             {securityBaselineRows.map((baseline) => (
@@ -974,17 +967,15 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
               </div>
             ))}
             {securityBaselineRows.length === 0 && (
-              <div className="atint">后端未返回安全基线配置。</div>
+              <div className="atint">暂未获取到登录安全设置。</div>
             )}
             <div className="atint" style={{ marginTop: 10 }}>
-              <b>疑似被盗怎么办</b>  · 超级管理员可立即强制登出非超级管理员账号全部登录会话(普通确认、必填原因,事后可查);不能登出自己,没有有效登录记录表示该账号当前未登录。要收权限走「禁用账号」操作确认。后台管理员登录锁基线: <b>{operatorCopyText(lockBaseline)}</b>；应用用户登录锁由 C6 独立配置。
+              <b>账号疑似被盗？</b> 超级管理员可在上方列表点「强制登出」让它立即下线；要彻底收回权限，点「禁用」。当前锁定规则：<b>{operatorCopyText(lockBaseline)}</b>
             </div>
           </div>
         </section>
 
-      <p className="f-foot">
-        <b>执行门槛</b>:管理后台账号、角色、两步验证与登录安全设置；所有修改均会保存操作记录。
-      </p>
+
 
       {naOpen && (
         <NewAccountDrawer
@@ -1011,8 +1002,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           onRevokeSession={(sessionId) => {
             const target = detailAccount;
             openActionConfirm({
-              action: `吊销单个会话 · ${operatorDisplayName(target)}`,
-              detail: <>只吊销会话 <span className="acode">{sessionId}</span>，不会影响该账号的其他设备。</>,
+              action: `让单台设备下线 · ${operatorDisplayName(target)}`,
+              detail: <>只让这台设备（<span className="acode">{sessionId}</span>）下线，不影响该账号的其他设备。</>,
               amplifies: false,
               run: (reason) => {
                 setMutatingAction(`吊销会话 ${target.username}`);
@@ -1020,7 +1011,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
                   .then(async () => {
                     await refreshOverview(true);
                     setDetailAccount(null);
-                    toast("指定会话已吊销");
+                    toast("该设备已下线");
                   })
                   .catch((error) => toast(`提交失败:${errorMessage(error)}`))
                   .finally(() => setMutatingAction(null));
@@ -1111,7 +1102,7 @@ function NewAccountDrawer({
     recoveryMode && role !== "super" ? "恢复模式只能创建超级管理员账号" : "",
     !reason.trim() ? "操作理由未填写" : "",
   ].filter(Boolean);
-  const disabledReason = disabled ? "权限或数据仍在加载,暂不能创建" : "";
+  const disabledReason = disabled ? "正在加载，稍后再创建" : "";
   const submitBlockers = [disabledReason, ...missingItems].filter(Boolean);
   const canSubmit = !disabled && !avatarBlocking && missingItems.length === 0;
 
@@ -1201,7 +1192,7 @@ function NewAccountDrawer({
       </fieldset>}
       {!useDefaultAvatar && <AccountAvatarPicker name={displayName} disabled={disabled} onChange={setAvatarAssetId} onBlocking={setAvatarBlocking}/>}
       {avatarBlocking&&<p className="account-avatar-feedback" role="status">新头像尚未上传成功；上传或取消新头像后可继续创建。</p>}
-      <h3 className="account-profile-section-title"><span className="account-profile-step-number" aria-hidden="true">2</span>初始角色(可暂不分配)</h3>
+      <h3 className="account-profile-section-title"><span className="account-profile-step-number" aria-hidden="true">2</span>初始角色（可暂不分配）</h3>
       <div className="account-initial-roles">
         <label className="l-btn" style={{ justifyContent: "flex-start", padding: "10px 12px", background: role === "" ? "var(--a-ac-soft)" : "var(--surface-2)", color: role === "" ? "var(--a-ac)" : "var(--ink-2)", cursor: recoveryMode ? "not-allowed" : "pointer" }}>
           <input type="radio" name="operator-role" value="" checked={role === ""} disabled={recoveryMode} onChange={() => setRole("")} style={{ accentColor: "var(--a-ac)" }} />
@@ -1245,7 +1236,7 @@ function NewAccountDrawer({
         按所选角色开通权限；首次登录须修改密码。
       </div>
 
-      <h3 id="account-create-reason-title" className="account-profile-section-title"><span className="account-profile-step-number" aria-hidden="true">4</span>操作理由（必填 · 写入审计）</h3>
+      <h3 id="account-create-reason-title" className="account-profile-section-title"><span className="account-profile-step-number" aria-hidden="true">4</span>操作理由（必填）</h3>
       <div>
         <textarea
           aria-labelledby="account-create-reason-title"
@@ -1253,7 +1244,7 @@ function NewAccountDrawer({
           rows={2}
           value={reason}
           onChange={(e) => setReason(e.target.value)}
-          placeholder="为什么开这个账号(入职 / 换岗 / 外审…)"
+          placeholder="为什么开这个账号（入职、换岗、外部审计…）"
           style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "inherit", fontSize: 14, resize: "vertical" }}
         />
       </div>
@@ -1284,10 +1275,10 @@ function AccountDetailDrawer({
     ["工作邮箱", account.email || "未填写"],
     ["角色", roleName(roles, account.role)],
     ["状态", account.status === "enabled" ? "启用" : "已禁用"],
-    ["两步验证", account.tfa ? "强制已绑" : "未绑定"],
+    ["两步验证", account.tfa ? "已绑定" : "未绑定"],
     ["最近登录", account.lastLogin || "—"],
-    ["有效登录会话", `${account.sessions}`],
-    ["凭据状态", credentialStatusText(account.credentialDeliveryStatus)],
+    ["在线设备", `${account.sessions}`],
+    ["密码状态", credentialStatusText(account.credentialDeliveryStatus)],
   ];
 
   return (
@@ -1309,7 +1300,7 @@ function AccountDetailDrawer({
           <div className="sub">{account.status === "enabled" ? "账号启用中" : "账号已禁用"}</div>
         </div>
         <div className="f-stat">
-          <div className="k">会话</div>
+          <div className="k">在线设备</div>
           <div className="v" style={{ fontSize: 18 }}>{account.sessions} 个</div>
           <div className="sub">{credentialStatusText(account.credentialDeliveryStatus)}</div>
         </div>
@@ -1335,14 +1326,14 @@ function AccountDetailDrawer({
             </div>
             <div style={{ marginTop: 3, color: "var(--ink-4)" }}>
               {history.source === "CURRENT_ASSIGNMENT"
-                ? "暂无更早的角色变更审计记录"
+                ? "没有更早的角色变更"
                 : `${history.changedAt || "时间未返回"} · 操作者 ${history.operator || "系统"}`}
             </div>
           </div>
         ))}
-        {!(account.roleHistory ?? []).length && <div className="atint">服务端未返回角色变更记录。</div>}
+        {!(account.roleHistory ?? []).length && <div className="atint">暂无角色变更记录。</div>}
       </div>
-      <div className="dlg-sec" style={{ marginTop: 16 }}>活跃会话明细</div>
+      <div className="dlg-sec" style={{ marginTop: 16 }}>在线设备</div>
       <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
         {(account.sessionDetails ?? []).map((session) => (
           <div key={session.sessionId} className="atint" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
@@ -1354,14 +1345,14 @@ function AccountDetailDrawer({
               className="l-btn sm dgr"
               type="button"
               disabled={!!sessionRevokeBlockReason}
-              title={sessionRevokeBlockReason || "只吊销这一条会话"}
+              title={sessionRevokeBlockReason || "只让这台设备下线"}
               onClick={() => onRevokeSession(session.sessionId)}
             >
-              吊销此会话
+              让此设备下线
             </button>
           </div>
         ))}
-        {!(account.sessionDetails ?? []).length && <div className="atint">当前没有可展示的活跃会话。</div>}
+        {!(account.sessionDetails ?? []).length && <div className="atint">当前没有在线设备。</div>}
       </div>
     </Drawer>
   );
@@ -1399,7 +1390,7 @@ function EditAccountDrawer({
     !changed ? "资料没有变化" : "",
     !reason.trim() ? "操作理由未填写" : "",
   ].filter(Boolean);
-  const disabledReason = disabled ? "账号操作仍在提交,暂不能编辑" : "";
+  const disabledReason = disabled ? "正在提交，稍后再编辑" : "";
   const submitBlockers = [disabledReason, ...missingItems].filter(Boolean);
   const canSubmit = !disabled && !avatarBlocking && missingItems.length === 0;
 
@@ -1476,9 +1467,9 @@ function EditAccountDrawer({
       <fieldset className="account-avatar-controls" disabled={disabled || avatarBlocking}><legend>头像分类</legend><HDSelect value={avatarGenderValue} options={AVATAR_GENDER_OPTIONS} onChange={value => setAvatarGenderValue(value as AvatarGender)} /><p>修改分类不换图；提交新头像后才会更换。</p></fieldset>
       <AccountAvatarPicker account={account} name={displayName} gender={avatarGenderValue} allowDefault={account.role === "support"} disabled={disabled} onChange={setAvatarAssetId} onBlocking={setAvatarBlocking}/>
       {avatarBlocking&&<p className="account-avatar-feedback" role="status">新头像尚未上传成功；上传或取消新头像后可提交。</p>}
-      <p className="account-profile-note">提交后仍需在操作确认中心执行，账号资料与头像以执行后刷新读回为准。</p>
+      <p className="account-profile-note">提交后需在「操作记录与审批」确认才会生效。</p>
       <label style={{ fontSize: 14, color: "var(--ink-3)" }}>
-        操作理由 *(必填 · 写入审计)
+        操作理由 *
         <textarea
           rows={2}
           value={reason}
@@ -1522,7 +1513,7 @@ function PasswordResetDrawer({
       }
     >
       <div className="atint danger" style={{ marginBottom: 14 }}>
-        关闭此窗口后不会再次显示临时密码;请通过已核验渠道告知对应运维人员。
+        关闭后不会再显示临时密码，请通过可靠渠道告诉账号本人。
       </div>
       <div style={{ fontSize: 12.5, color: "var(--ink-3)", lineHeight: 1.7, marginBottom: 12 }}>
         账号 <b style={{ color: "var(--ink-2)" }}>{operatorDisplayName(account)}</b>
@@ -1535,7 +1526,7 @@ function PasswordResetDrawer({
         </div>
       </div>
       <div className="atint" style={{ marginTop: 14 }}>
-        该账号使用临时密码登录后,必须先修改密码才能进入控制台。
+        对方用临时密码登录后，须先修改密码才能使用后台。
       </div>
     </Drawer>
   );

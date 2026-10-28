@@ -75,21 +75,21 @@ async function render(criteria, pool = {}) {
 test("missing quota criteria are unavailable, never zero-threshold authority", async () => {
   for (const legacy of [{}, { directRefs: 8, monthVolumeUsd: 725, unlockMode: "ALL" }]) {
     const text = await render(legacy);
-    assert.match(text, /商品编号 P-REAL · 资格条件暂不可用/);
-    assert.doesNotMatch(text, /无额外资格门槛/);
+    assert.match(text, /商品编号 P-REAL · 资格条件暂时无法显示/);
+    assert.doesNotMatch(text, /无额外条件/);
   }
 });
 
 test("known ALL and EITHER criteria preserve six-decimal monetary thresholds", async () => {
   for (const [mode, conjunction] of [["ALL", "且"], ["EITHER", "或"]]) {
     const text = await render({ directRefs: "8", monthVolumeUsd: "725.123456", monthVolumeUsdText: "725.123456", unlockMode: mode });
-    assert.ok(text.includes(`有效直推 ≥ 8 ${conjunction} 团队业绩 ≥ $725.123456`), text);
-    assert.doesNotMatch(text, /资格条件暂不可用/);
+    assert.ok(text.includes(`有效直接邀请 ≥ 8 ${conjunction} 团队业绩 ≥ $725.123456`), text);
+    assert.doesNotMatch(text, /资格条件暂时无法显示/);
   }
 });
 
 test("explicit known zero criteria retain the no-extra-threshold message", async () => {
-  assert.match(await render({ directRefs: 0, monthVolumeUsd: 0, monthVolumeUsdText: "0.000000", unlockMode: "ALL" }), /无额外资格门槛/);
+  assert.match(await render({ directRefs: 0, monthVolumeUsd: 0, monthVolumeUsdText: "0.000000", unlockMode: "ALL" }), /无额外条件/);
 });
 
 test("the maximum DECIMAL(18,6) value survives JSON parsing without rounding", async () => {
@@ -106,8 +106,8 @@ test("invalid and partial criteria cannot become an easier or invented rule", as
       .map((monthVolumeUsdText) => ({ monthVolumeUsdText })),
   ]) {
     const text = await render({ directRefs: 8, monthVolumeUsd: 725, monthVolumeUsdText: "725.000000", unlockMode: "ALL", ...invalid });
-    assert.match(text, /资格条件暂不可用/);
-    assert.doesNotMatch(text, /无额外资格门槛|有效直推 ≥|团队业绩 ≥/);
+    assert.match(text, /资格条件暂时无法显示/);
+    assert.doesNotMatch(text, /无额外条件|有效直接邀请 ≥|团队业绩 ≥/);
   }
 });
 
@@ -130,7 +130,7 @@ test("F4 never reuses legacy windows or an unavailable plan as a payout promise"
     { settlementConfigStatus: "HOLD", nextSettlementAt: "2026-10-18T23:59:00Z" },
   ]) {
     const text = await render({}, { ...legacy, ...plan });
-    assert.match(text, /自动结算时间待确认/);
+    assert.match(text, /自动结算时间未知/);
     assert.doesNotMatch(text, /下次计划结算|周日 23:59|周一 00:00|快照 →/);
   }
 });

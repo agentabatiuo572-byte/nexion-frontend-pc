@@ -4,6 +4,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { LIABILITY_DISPLAY_NAMES } from "@/lib/admin/liability-labels";
 import {
   CalendarClock,
   Download,
@@ -52,17 +53,7 @@ const WATER_LABEL: Record<B2WaterLevel["tier"], string> = {
  *  服务端增删科目时四处同步变化,不再各自硬编码(#108:页首写「8 类」而实际展示 9 类)。 */
 const LIABILITY_CATEGORY_COUNT = B2_LIABILITY_KEYS.length;
 
-const LIABILITY_LABELS: Record<(typeof B2_LIABILITY_KEYS)[number], string> = {
-  withdrawable_balance: "可提现余额",
-  usdt_staking_principal: "USDT 质押本金",
-  staking_interest: "质押利息",
-  genesis_daily_emission: "创世节点 每日分红",
-  nex_v2_future: "UVT 第二版 远期权益",
-  withdrawal_queue: "提现队列",
-  commission_cooling: "冷却期佣金",
-  lock_other: "其他锁仓",
-  unverified_deposit: "待核实入金",
-};
+const LIABILITY_LABELS: Record<(typeof B2_LIABILITY_KEYS)[number], string> = LIABILITY_DISPLAY_NAMES;
 
 function money(value: number) {
   return `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -109,7 +100,7 @@ export default function LiquidityPage() {
     } catch (caught) {
       setData(null);
       setDraft(null);
-      setError(caught instanceof Error ? displayAdminError(caught) : "B2 服务端响应异常");
+      setError(caught instanceof Error ? displayAdminError(caught) : "加载失败，请重试");
     } finally {
       setLoading(false);
     }
@@ -133,7 +124,7 @@ export default function LiquidityPage() {
     setError("");
     void downloadB2LiabilitiesCsv()
       .then(() => setNotice("负债明细 CSV 已导出"))
-      .catch((caught) => setError(caught instanceof Error ? displayAdminError(caught) : "B2 导出失败"));
+      .catch((caught) => setError(caught instanceof Error ? displayAdminError(caught) : "导出失败，请重试"));
   };
 
   const openConfig = () => {
@@ -146,7 +137,7 @@ export default function LiquidityPage() {
   const proceedToConfirm = () => {
     const length = reason.trim().length;
     if (length < 8 || length > 200) {
-      setError("操作原因需为 8-200 个字符");
+      setError("操作原因需为 8–200 个字");
       return;
     }
     setError("");
@@ -171,13 +162,13 @@ export default function LiquidityPage() {
       .then(async () => {
         forecastConfigCommandKey.forget(FORECAST_CONFIG_SLOT);
         setDialogStep("closed");
-        setNotice("预测配置已保存，配置于下一 UTC 日 00:00 生效；刷新后可核对待生效版本");
+        setNotice("已保存，次日 UTC 00:00 起生效");
         await load(window);
       })
       .catch((caught) => {
         if (!(caught instanceof B2OutcomeUnknownError)) forecastConfigCommandKey.forget(FORECAST_CONFIG_SLOT);
         setDialogStep(caught instanceof B2OutcomeUnknownError ? "confirm" : "edit");
-        setError(caught instanceof Error ? displayAdminError(caught) : "B2 配置保存失败");
+        setError(caught instanceof Error ? displayAdminError(caught) : "保存失败，请重试");
       })
       .finally(() => setSaving(false));
   };
@@ -188,12 +179,12 @@ export default function LiquidityPage() {
         <BPageHeader
           id="B2"
           title="可用资金与应付款"
-          desc={`正在从 资金储备页面记录读取储备、${LIABILITY_CATEGORY_COUNT} 类应付负债与到期预测。`}
+          desc="正在加载…"
           ctaLabel="资金储备明细"
           ctaHref="/finance/pool"
           ctaAllowed={canCross("/finance/pool")}
         />
-        <section className="card b2-state" aria-live="polite">B2 资金余额加载中...</section>
+        <section className="card b2-state" aria-live="polite">正在加载…</section>
       </div>
     );
   }
@@ -204,14 +195,14 @@ export default function LiquidityPage() {
         <BPageHeader
           id="B2"
           title="可用资金与应付款"
-          desc="D3 是 B2 负债与到期预测的唯一权威来源。"
+          desc="数据来自「资金储备与应付款」。"
           ctaLabel="资金储备明细"
           ctaHref="/finance/pool"
           ctaAllowed={canCross("/finance/pool")}
         />
         <section className="card b2-state b2-state-error" aria-live="assertive">
-          <b>服务端响应异常，已停止展示旧财务数据</b>
-          <span>{error || "B2 服务端响应异常"}</span>
+          <b>加载失败，已暂停显示旧数据</b>
+          <span>{error || "加载失败，请重试"}</span>
           <button type="button" className="b2-button primary" onClick={() => void load(window)}>
             <RefreshCw size={15} />重新加载
           </button>
@@ -236,13 +227,13 @@ export default function LiquidityPage() {
       <BPageHeader
         id="B2"
         title="可用资金与应付款"
-        desc={`以 资金储备页面记录回答：当前可动用储备够不够、${LIABILITY_CATEGORY_COUNT} 类负债来自哪里、未来 7/30 天何时到期。`}
+        desc={`现在能动用的钱够不够付、${LIABILITY_CATEGORY_COUNT} 类应付款各有多少、未来 7 / 30 天什么时候到期。`}
         ctaLabel="资金储备明细"
         ctaHref="/finance/pool"
         ctaAllowed={canCross("/finance/pool")}
       />
 
-      <div className="b2-toolbar" aria-label="B2 操作栏">
+      <div className="b2-toolbar" aria-label="操作栏">
         {/* 互斥到期预测窗口(zentao #159):aria-pressed 会被读屏按 toggle button 朗读,
             运营无法判断「7 天 / 30 天」是一组单选。TabGroup 给 tablist + aria-selected。 */}
         <TabGroup<"7d" | "30d">
@@ -263,65 +254,65 @@ export default function LiquidityPage() {
             <Download size={14} />导出负债 CSV
           </button>
         ) : (
-          <span className="b2-readonly">当前账号无导出权限</span>
+          <span className="b2-readonly">你没有导出权限</span>
         )}
         {canConfig ? (
           <button type="button" className="b2-button primary" onClick={openConfig}>
             <Settings2 size={14} />调整预测配置
           </button>
         ) : (
-          <span className="b2-readonly">当前账号只有查看权限</span>
+          <span className="b2-readonly">你只有查看权限</span>
         )}
       </div>
 
-      {error && <div className="b2-alert error" role="alert">服务端响应异常 · {error}</div>}
+      {error && <div className="b2-alert error" role="alert">加载失败 · {error}</div>}
       {notice && <div className="b2-alert success" role="status">{notice}</div>}
 
       <section className="b2-kpis" aria-label="可用资金与应付款摘要">
         <article className="card b2-kpi">
-          <span>真实可动用储备</span>
+          <span>可动用储备</span>
           <strong>{money(reserve.reserveTotalUsdt)}</strong>
-          <small>USDT + 其他高流动资产，已扣锁定本金</small>
+          <small>USDT 和其他可随时动用的资产，已扣除锁定的本金</small>
         </article>
         <article className="card b2-kpi">
-          <span>应付负债</span>
+          <span>应付款</span>
           <strong>{money(liabilities.totalUsdt)}</strong>
-          <small>{liabilities.hardLiabilityCategoryCount}/{LIABILITY_CATEGORY_COUNT} 类服务端科目</small>
+          <small>{liabilities.hardLiabilityCategoryCount}/{LIABILITY_CATEGORY_COUNT} 类有金额</small>
         </article>
         <article className={`card b2-kpi tier-${reserve.waterLevel.tier.toLowerCase()}`}>
           <span>资金安全等级</span>
           <strong>{WATER_LABEL[reserve.waterLevel.tier]}</strong>
           <small>
             {noDue
-              ? "当前窗口无到期兑付，不计算覆盖天数"
-              : `按日均到期可覆盖 ${reserve.waterLevel.reserveCoverDays} 天`}
+              ? "这段时间没有到期款项"
+              : `按每天平均到期额，储备够付 ${reserve.waterLevel.reserveCoverDays} 天`}
           </small>
         </article>
         <article className="card b2-kpi">
           <span>{window} 累计到期</span>
           <strong>{money(maturity.cumulativeUsdt)}</strong>
-          <small>提现 + 利息 + 创世节点{maturity.trialStressIncluded ? " + 试用业务 压力测试" : ""}</small>
+          <small>提现 + 利息 + 创世节点分红{maturity.trialStressIncluded ? " + 试用业务（压力测试）" : ""}</small>
         </article>
       </section>
 
       <section className="card b2-coverage">
         <div>
           <span className="eyebrow">兑付覆盖率</span>
-          <strong>{coverageRatio === null ? "无应付负债" : `${coverageRatio.toFixed(1)}%`}</strong>
+          <strong>{coverageRatio === null ? "无应付款" : `${coverageRatio.toFixed(1)}%`}</strong>
         </div>
-        <div className="b2-meter" aria-label="储备相对负债覆盖率">
+        <div className="b2-meter" aria-label="兑付覆盖率">
           <div style={{ width: `${meterWidth}%` }} />
         </div>
         <div className="b2-cover-copy">
           <ShieldCheck size={18} />
           {noDue ? (
             <span>
-              当前窗口无到期兑付；不虚构“可覆盖天数”，也无需对 0 USDT 安排调度。
+              这段时间没有到期款项，无需安排资金。
             </span>
           ) : (
             <span>
               峰值日 <b>{peak.date}</b> 到期 <b>{money(peak.totalDueUsdt)}</b>；
-              服务端建议：{reserve.waterLevel.suggestedAction}。
+              建议：{reserve.waterLevel.suggestedAction}。
             </span>
           )}
         </div>
@@ -332,9 +323,9 @@ export default function LiquidityPage() {
           <header>
             <div>
               <CalendarClock size={17} />
-              <b>未来 {window === "7d" ? "7" : "30"} 日到期负债</b>
+              <b>未来 {window === "7d" ? "7" : "30"} 天到期的应付款</b>
             </div>
-            <span>每日构成与累计 · USDT</span>
+            <span>每天构成和累计 · USDT</span>
           </header>
           <div className="b2-maturity-list">
             {maturity.daily.map((row, index) => (
@@ -343,7 +334,7 @@ export default function LiquidityPage() {
                   <b>{row.date}</b>
                   <small>
                     提现 {money(row.withdrawDueUsdt)} · 利息 {money(row.interestDueUsdt)} · 创世节点分红 {money(row.genesisDividendUsdt)}
-                    {maturity.trialStressIncluded ? ` · 试用业务 压力测试 ${money(row.trialShadowStressUsdt)}` : ""}
+                    {maturity.trialStressIncluded ? ` · 试用业务（压力测试）${money(row.trialShadowStressUsdt)}` : ""}
                   </small>
                 </div>
                 <div className="amount">
@@ -355,18 +346,18 @@ export default function LiquidityPage() {
           </div>
           <footer>
             {operatorCopyText(maturity.farLiabilityNote)}
-            <span>UVT 第二版 远期权益默认不作为当前必须兑付的应付款。</span>
+            <span>UVT 锁仓到期应付默认不算作眼下必须付的钱。</span>
           </footer>
         </section>
 
         <aside className="card b2-config-summary">
-          <header><b>当前预测统计规则</b><span>版本 {config.version}</span></header>
+          <header><b>当前预测设置</b><span>版本 {config.version}</span></header>
           <dl>
             <div><dt>默认窗口</dt><dd>{config.forecastWindow}</dd></div>
             <div><dt>质押利息</dt><dd>{config.stakingInterestMode === "LINEAR" ? "线性摊提" : "到期计提"}</dd></div>
             <div><dt>创世节点</dt><dd>{config.genesisIncluded ? "纳入" : "不纳入"}</dd></div>
-            <div><dt>试用业务 压力测试</dt><dd>{config.trialStressEnabled ? "启用（非必须兑付的应付款）" : "关闭"}</dd></div>
-            <div><dt>远期负债</dt><dd>{config.includeFarLiabilities ? "纳入" : "排除"}</dd></div>
+            <div><dt>试用业务压力测试</dt><dd>{config.trialStressEnabled ? "开启（不算必须付的钱）" : "关闭"}</dd></div>
+            <div><dt>远期应付款</dt><dd>{config.includeFarLiabilities ? "纳入" : "排除"}</dd></div>
           </dl>
           <p>{config.effectiveRule === "NEXT_UTC_DAY_00:00" ? "次日 UTC 00:00 生效" : operatorCopyText(config.effectiveRule)}</p>
           {config.pendingConfig && (
@@ -375,22 +366,22 @@ export default function LiquidityPage() {
             </div>
           )}
           <div className="b2-cross-links">
-            {canCross("/overview/dual-ledger") ? <Link href="/overview/dual-ledger">B1 资金与应付款总览<ExternalLink size={13} /></Link> : <span aria-disabled="true">B1 资金与应付款总览 · 无权限</span>}
+            {canCross("/overview/dual-ledger") ? <Link href="/overview/dual-ledger">资金与应付款总览<ExternalLink size={13} /></Link> : <span aria-disabled="true">资金与应付款总览 · 无权限</span>}
             {canCross("/finance/pool") ? <Link href="/finance/pool">资金储备明细<ExternalLink size={13} /></Link> : <span aria-disabled="true">资金储备明细 · 无权限</span>}
-            {canCross("/overview/risk-radar") ? <Link href="/overview/risk-radar">B5 风险提醒<ExternalLink size={13} /></Link> : <span aria-disabled="true">B5 风险提醒 · 无权限</span>}
+            {canCross("/overview/risk-radar") ? <Link href="/overview/risk-radar">风险提醒<ExternalLink size={13} /></Link> : <span aria-disabled="true">风险提醒 · 无权限</span>}
           </div>
         </aside>
       </div>
 
       <section className="card b2-liabilities">
         <header>
-          <div><b>应付负债 · {LIABILITY_CATEGORY_COUNT} 类科目</b><span>{liabilities.hardLiabilityCategoryCount}/{LIABILITY_CATEGORY_COUNT} · 合计 {money(liabilities.totalUsdt)}</span></div>
-          <span>试用业务 仅为压力测试：{liabilities.trialShadowIncluded ? "当前展示" : "未计入必须兑付的应付款"}</span>
+          <div><b>应付款 · {LIABILITY_CATEGORY_COUNT} 类</b><span>{liabilities.hardLiabilityCategoryCount}/{LIABILITY_CATEGORY_COUNT} · 合计 {money(liabilities.totalUsdt)}</span></div>
+          <span>试用业务只做压力测试：{liabilities.trialShadowIncluded ? "已显示" : "未计入必须付的钱"}</span>
         </header>
         <div className="b2-table-wrap">
           <table>
             <thead>
-              <tr><th>科目编号</th><th>说明</th><th className="num">金额</th><th className="num">占比</th><th>事实来源</th></tr>
+              <tr><th>类型编号</th><th>说明</th><th className="num">金额</th><th className="num">占比</th><th>数据来源</th></tr>
             </thead>
             <tbody>
               {liabilities.breakdown.map((row) => (
@@ -405,7 +396,7 @@ export default function LiquidityPage() {
             </tbody>
           </table>
         </div>
-        <footer>权威事实来源：{sourceText ? "资金储备与应付款记录" : "未返回来源"}</footer>
+        <footer>数据来源：{sourceText ? "资金储备与应付款记录" : "—"}</footer>
       </section>
 
       <B2RestoredInsights data={data} />
@@ -416,7 +407,7 @@ export default function LiquidityPage() {
             <header>
               <div>
                 <b id="b2-config-title">{dialogStep === "edit" ? "调整预测配置" : "确认资金预测配置"}</b>
-                <span>仅财务负责人 / 超级管理员可提交</span>
+                <span>只有财务负责人或超级管理员可以提交</span>
               </div>
               <button type="button" aria-label="关闭配置弹窗" onClick={() => setDialogStep("closed")}>×</button>
             </header>
@@ -447,7 +438,7 @@ export default function LiquidityPage() {
                   </label>
                 </div>
                 <fieldset>
-                  <legend>{LIABILITY_CATEGORY_COUNT} 类负债统计规则</legend>
+                  <legend>{LIABILITY_CATEGORY_COUNT} 类应付款怎么算</legend>
                   <div className="b2-check-grid">
                     {B2_LIABILITY_KEYS.map((key) => (
                       <label key={key}>
@@ -465,39 +456,39 @@ export default function LiquidityPage() {
                   </div>
                 </fieldset>
                 <div className="b2-check-grid compact">
-                  <label><input type="checkbox" checked={draft.genesisIncluded} onChange={(event) => setDraft({ ...draft, genesisIncluded: event.target.checked })} />纳入 创世节点 每日分红</label>
-                  <label><input type="checkbox" checked={draft.trialStressEnabled} onChange={(event) => setDraft({ ...draft, trialStressEnabled: event.target.checked })} />展示 试用业务 压力测试</label>
-                  <label><input type="checkbox" checked={draft.includeFarLiabilities} onChange={(event) => setDraft({ ...draft, includeFarLiabilities: event.target.checked })} />纳入远期负债</label>
+                  <label><input type="checkbox" checked={draft.genesisIncluded} onChange={(event) => setDraft({ ...draft, genesisIncluded: event.target.checked })} />计入创世节点每日分红</label>
+                  <label><input type="checkbox" checked={draft.trialStressEnabled} onChange={(event) => setDraft({ ...draft, trialStressEnabled: event.target.checked })} />显示试用业务压力测试</label>
+                  <label><input type="checkbox" checked={draft.includeFarLiabilities} onChange={(event) => setDraft({ ...draft, includeFarLiabilities: event.target.checked })} />计入远期应付款</label>
                 </div>
                 <label className="b2-reason">
-                  操作原因（8-200 字符）
+                  操作原因（8–200 字）
                   <textarea
                     value={reason}
                     maxLength={200}
-                    placeholder="说明本次统计规则调整的业务原因"
+                    placeholder="为什么要调整预测设置"
                     onChange={(event) => setReason(event.target.value)}
                   />
                   <span>{reason.trim().length}/200</span>
                 </label>
                 <div className="b2-dialog-actions">
                   <button type="button" className="b2-button" onClick={() => setDialogStep("closed")}>取消</button>
-                  <button type="button" className="b2-button primary" onClick={proceedToConfirm}>保存并进入确认</button>
+                  <button type="button" className="b2-button primary" onClick={proceedToConfirm}>下一步：确认</button>
                 </div>
               </>
             ) : (
               <>
                 <div className="b2-confirm">
-                  <b>请核对不可省略的写入信息</b>
+                  <b>请核对以下内容</b>
                   <p>预测窗口：{draft.forecastWindow}</p>
                   <p>质押利息：{draft.stakingInterestMode === "LINEAR" ? "线性摊提" : "到期计提"}</p>
-                  <p>创世节点：{draft.genesisIncluded ? "纳入" : "不纳入"}；试用业务 压力测试：{draft.trialStressEnabled ? "启用" : "关闭"}</p>
+                  <p>创世节点：{draft.genesisIncluded ? "计入" : "不计入"}；试用业务压力测试：{draft.trialStressEnabled ? "开启" : "关闭"}</p>
                   <p>原因：{reason.trim()}</p>
-                  <p>基于版本 {config.version} 提交；配置于下一 UTC 日 00:00 生效，不追溯历史。配置已被其他人修改时会提示冲突，请刷新后重试。</p>
+                  <p>次日 UTC 00:00 起生效，不影响历史数据。</p>
                 </div>
                 <div className="b2-dialog-actions">
                   <button type="button" className="b2-button" disabled={saving} onClick={() => setDialogStep("edit")}>返回修改</button>
                   <button type="button" className="b2-button primary" disabled={saving} onClick={saveConfig}>
-                    {saving ? "提交中..." : "确认提交配置"}
+                    {saving ? "提交中…" : "确认提交"}
                   </button>
                 </div>
               </>

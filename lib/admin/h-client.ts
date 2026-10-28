@@ -139,10 +139,10 @@ function normalizeSchedule(raw: unknown): H1Schedule | null {
  * 时间按运营本地时区展示,避免把 UTC 时刻当成运营所在时区。
  */
 export function describeH1Schedule(schedule: H1Schedule | null | undefined): string {
-  if (!schedule) return "排程状态不可用";
-  if (!schedule.configured) return "排程未设置";
-  if (!schedule.automatic) return "排程配置已保存 · 服务端未启用自动推进";
-  const parts = [`排程 ${schedule.expression ?? "已配置"}`];
+  if (!schedule) return "自动切换状态未知";
+  if (!schedule.configured) return "未设置自动切换";
+  if (!schedule.automatic) return "未开启自动切换";
+  const parts = [`自动切换 ${schedule.expression ?? "已开启"}`];
   if (schedule.timezone) parts.push(schedule.timezone);
   if (schedule.nextAdvanceAt) {
     const next = new Date(schedule.nextAdvanceAt);
@@ -958,7 +958,7 @@ export const pendingH4EventDeletes = () => h4EventDeletes.list();
 export async function deleteH4QuestEvent(eventId: string, expectedVersion: string, reason: string) {
   const previous = h4EventDeletes.list().find(record => record.fingerprint === eventId);
   if (previous && (previous.expectedVersion !== expectedVersion || previous.reason !== reason)) {
-    throw new Error("存在待核实的删除操作，请使用活动列表上方的原操作恢复入口。");
+    throw new Error("有一个删除操作结果还没确认，请先在活动列表上方查看结果。");
   }
   const commandKey = previous?.commandKey ?? nextIdempotencyKey("h4-event-delete");
   h4EventDeletes.remember(eventId, commandKey, { eventId, expectedVersion, reason });

@@ -76,8 +76,7 @@ test("I7 course versions use real backend CRUD publish and rollback endpoints", 
 });
 
 test("I7 event copy describes the real progress event and reward ledgers", () => {
-  assert.match(view, /实时写入学习事件/);
-  assert.match(view, /课程进度表/);
-  assert.match(view, /奖励台账/);
+  assert.match(view, /开始学习、学完、测验通过都会记录/);
+  assert.match(view, /奖励直接到用户钱包并记账/);
   assert.doesNotMatch(view, /占位期按临时编号入库/);
 });

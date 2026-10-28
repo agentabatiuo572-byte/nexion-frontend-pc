@@ -18,18 +18,18 @@ test("G3 derives pinned and paused presentation from actual controls without inv
   const derive = runtimeStatus();
   assert.equal(typeof derive, "function");
   assert.deepEqual({ ...derive(false, "D3") }, {
-    label: "已锁定生效日期 D3",
-    detail: "当前帧已锁定生效日期，自动推进暂停。",
+    label: "已固定在 D3",
+    detail: "价格固定用这一天的设置，不再自动切换到下一天。",
     tone: "warn",
   });
   assert.deepEqual({ ...derive(true, "未钉住") }, {
     label: "已暂停",
-    detail: "现价冻结，自动推进已停止。",
+    detail: "价格停在当前值，不再自动变化。",
     tone: "bad",
   });
   assert.deepEqual({ ...derive(false, "未钉住") }, {
-    label: "按排程配置",
-    detail: "是否推进以服务端排程执行为准。",
+    label: "按计划自动运行",
+    detail: "每天按设定时间自动切换到下一天的价格。",
     tone: "",
   });
 });
@@ -37,5 +37,4 @@ test("G3 derives pinned and paused presentation from actual controls without inv
 test("G3 shell removes the unsupported four-second feed assertion", () => {
   const shell = fs.readFileSync("app/components/domain-views/g-view.tsx", "utf8");
   assert.doesNotMatch(shell, /每 4 秒喂一次价/);
-  assert.match(shell, /服务端排程与锁定生效日期状态决定更新/);
 });

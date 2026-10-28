@@ -40,7 +40,7 @@ function currentMonthRange() {
   };
 }
 
-const liabilityName = (value: string) => ({ "USDT staking 本金": "USDT质押本金", "staking 应付利息": "质押应付利息", "Genesis 排放承诺": "创世节点应付分红", "NEX v2 未来兑付": "UVT第二版未来兑付", "待提现 queue": "待处理提现", "佣金冷却未解锁": "等待解锁的佣金" } as Record<string, string>)[value] ?? value;
+const liabilityName = (value: string) => ({ "可提余额": "可提现余额", "USDT staking 本金": "USDT 质押本金", "staking 应付利息": "质押应付利息", "Genesis 排放承诺": "创世节点应付分红", "NEX v2 未来兑付": "UVT 锁仓到期应付", "待提现 queue": "待处理提现", "佣金冷却未解锁": "冷却期内未发放的佣金", "锁仓本息其他": "其他锁仓本息", "待核实入金": "未确认的入金" } as Record<string, string>)[value] ?? value;
 const signedColor = (value: number | null) => value === null || value === 0 ? "var(--ink-3)" : value > 0 ? "var(--success)" : "var(--danger)";
 
 export function L3HeaderActions({ ctx }: { ctx: LCtx }) {
@@ -69,7 +69,7 @@ export function L3HeaderActions({ ctx }: { ctx: LCtx }) {
         maskPolicy: "NONE",
         recipient: "财务管理员",
         ticket: "L3-FINANCE",
-      }, "导出 L3 当前可核验财务事实用于财务核对");
+      }, "导出当前财务汇总，用于财务核对");
       await ctx.reloadBi?.();
       ctx.toast("财务当前汇总已生成 · 已记录导出范围与操作者");
     } catch (error) {
@@ -86,16 +86,16 @@ export function L3HeaderActions({ ctx }: { ctx: LCtx }) {
       action: "申请导出脱敏资金明细",
       detail: (
         <div>
-          导出范围锁定为当前报表周期 <b>{periodFrom} 至 {periodTo}</b>，最多 100,000 行。文件只包含所选账单字段，用户编码始终脱敏，不提供手机号、昵称、备注或任何明文身份字段；提交后进入 L5 审批，审批、下载及 24 小时令牌均会留痕。
+          导出范围锁定为当前报表周期 <b>{periodFrom} 至 {periodTo}</b>，最多 100,000 行。文件只包含选中的账单字段，用户编码会隐藏部分字符，不含手机号、昵称、备注等身份信息。提交后需在「数据导出与监管报告」审批，下载链接 24 小时有效，全程有记录。
         </div>
       ),
       reasonMin: 8,
       reasonMax: 200,
-      completionCopy: "提交后进入 L5 审批",
+      completionCopy: "提交后需在「数据导出与监管报告」审批",
       businessForm: {
         kind: "multi-field",
         title: "脱敏资金明细范围",
-        hint: "至少选择一个字段；服务端会再次校验周期、字段白名单、权限和 100,000 行上限，任一来源异常都会拒绝创建任务。",
+        hint: "至少选一个字段；最多 100,000 行。",
         fields: [
           {
             key: "fields",
@@ -148,7 +148,7 @@ export function L3HeaderActions({ ctx }: { ctx: LCtx }) {
           await ctx.biActions.createReport(input, reason, detailIntentRef.current.key);
           detailIntentRef.current = null;
           await ctx.reloadBi?.();
-          ctx.toast("脱敏资金明细申请已提交 · 请在 L5 完成审批后下载");
+          ctx.toast("资金明细申请已提交，请在「数据导出与监管报告」审批后下载");
         } catch (error) {
           ctx.toast(error instanceof Error ? `脱敏资金明细申请失败 · ${displayAdminError(error)}` : "脱敏资金明细申请失败 · 请稍后重试");
         } finally {
@@ -160,16 +160,16 @@ export function L3HeaderActions({ ctx }: { ctx: LCtx }) {
   };
   return (
     <>
-      <span className="f-ro"><span className="d" />只读财务事实 · 不修改账本</span>
+
       {!ctx.canExport && <span className="f-ro">当前角色仅可查看 · 导出需报表管理权限</span>}
       <button
         className="f-cta"
         onClick={exportAgg}
         disabled={exporting || !ctx.canExport || !exportable || ctx.biLoading || Boolean(ctx.biError)}
         aria-busy={exporting}
-        title={!ctx.canExport ? "当前角色没有报表导出权限" : !exportable ? "尚未返回可导出的 L3 财务事实" : ctx.biError ? "数据读取失败，不能导出旧快照" : undefined}
+        title={!ctx.canExport ? "当前角色没有报表导出权限" : !exportable ? "暂无可导出的财务数据" : ctx.biError ? "数据加载失败，暂时不能导出" : undefined}
       >
-        {exporting ? "正在生成财务汇总..." : "导出财务当前汇总 CSV"}
+        {exporting ? "正在生成…" : "导出财务汇总（CSV）"}
       </button>
       {ctx.canExportFinanceDetail ? (
         <button
@@ -177,9 +177,9 @@ export function L3HeaderActions({ ctx }: { ctx: LCtx }) {
           onClick={openDetailExport}
           disabled={detailExporting || !detailExportable || ctx.biLoading || Boolean(ctx.biError)}
           aria-busy={detailExporting}
-          title={!detailExportable ? "当前周期缺少服务端起止日期，不能创建明细导出" : ctx.biError ? "财务来源读取失败，不能导出旧快照" : "脱敏明细需填写原因并进入 L5 审批"}
+          title={!detailExportable ? "当前周期没有起止日期，不能导出明细" : ctx.biError ? "财务数据加载失败，暂时不能导出" : "导出明细需填写原因并审批"}
         >
-          {detailExporting ? "正在提交明细申请..." : "申请导出脱敏资金明细"}
+          {detailExporting ? "正在提交…" : "申请导出资金明细（已隐藏隐私）"}
         </button>
       ) : (
         <span className="f-ro">当前角色仅可导出聚合报表 · 明细需财务明细权限</span>
@@ -311,7 +311,7 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
         <rect x={P} y={Y(TREASURY.yellowLine)} width={W - 2 * P} height={Y(TREASURY.redLine) - Y(TREASURY.yellowLine)} fill="var(--warning)" opacity={0.05} />
         <rect x={P} y={Y(TREASURY.redLine)} width={W - 2 * P} height={H - 28 - Y(TREASURY.redLine)} fill="var(--danger)" opacity={0.06} />
         <line x1={P} y1={Y(TREASURY.redLine)} x2={W - P} y2={Y(TREASURY.redLine)} stroke="var(--danger)" strokeWidth={1.4} strokeDasharray="5 4" />
-        <text x={W - P} y={Y(TREASURY.redLine) + 13} fontSize={11} fill="var(--danger)" textAnchor="end">红线 {TREASURY.redLine}%(低于此线,服务器拒绝放大资金流出)</text>
+        <text x={W - P} y={Y(TREASURY.redLine) + 13} fontSize={11} fill="var(--danger)" textAnchor="end">红线 {TREASURY.redLine}%（低于这条线，会多付钱的操作都无法保存）</text>
         <line x1={P} y1={Y(TREASURY.yellowLine)} x2={W - P} y2={Y(TREASURY.yellowLine)} stroke="var(--warning)" strokeWidth={1.2} strokeDasharray="4 4" />
         <text x={W - P} y={Y(TREASURY.yellowLine) - 5} fontSize={11} fill="var(--warning)" textAnchor="end">黄线 {TREASURY.yellowLine}%</text>
         <path d={`${path} L${X(cov.length - 1)} ${H - 28} L${X(0)} ${H - 28} Z`} fill="var(--brand)" opacity={0.06} />
@@ -366,9 +366,9 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
     <div>
       {/* stat strip */}
       <div className="f-stats">
-        <div className="f-stat"><div className="k">本期总收入</div><div className="v">{fmtM(revTotal)}</div><div className="sub">按服务器当前报表周期汇总</div></div>
+        <div className="f-stat"><div className="k">本期总收入</div><div className="v">{fmtM(revTotal)}</div><div className="sub">按当前报表周期汇总</div></div>
         <div className="f-stat ok"><div className="k">兑付率(本期)</div><div className="v">{redRate}</div><div className="sub">已兑付 ÷ 已提交 · 慢性核账指标</div></div>
-        <div className="f-stat ok"><div className="k">兑付覆盖率(来自权威账本)</div><div className="v">{TREASURY.coverageRatio}%</div><div className="sub">红线 {TREASURY.redLine} / 黄线 {TREASURY.yellowLine} · 只读展示</div></div>
+        <div className="f-stat ok"><div className="k">兑付覆盖率</div><div className="v">{TREASURY.coverageRatio}%</div><div className="sub">红线 {TREASURY.redLine} / 健康线 {TREASURY.yellowLine}</div></div>
         <div className="f-stat cyan"><div className="k">储备可覆盖到期</div><div className="v">{reserveCoverDaysValue}</div><div className="sub">{reserveCoverDaysCopy} · 来自可用资金与应付款</div></div>
       </div>
 
@@ -404,8 +404,8 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
             onChange={(event) => ctx.setL3Query?.({ ...(ctx.l3Query ?? { period: "month" }), cohort: event.target.value || undefined })}
           />
         </label>
-        <span className="lcode electric">{String(data.periodLabel ?? "服务器当前周期")}</span>
-        <span className="lcode lock" style={{ marginLeft: "auto" }} title="页面只展示服务器计算结果，不在浏览器重新计算财务统计规则">🔒 财务统计规则由服务器统一计算</span>
+        <span className="lcode electric">{String(data.periodLabel ?? "当前周期")}</span>
+        <span className="lcode lock" style={{ marginLeft: "auto" }} title="财务数字由系统统一计算，这里只显示">🔒 数字由系统统一计算</span>
       </div>
 
       <div className="two-col">
@@ -427,7 +427,7 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
                 <span className={"mom " + (r.up ? "up" : "dn")}>{r.mom}</span>
               </div>
             ))}
-            <div className="ltint" style={{ marginTop: 13, fontSize: 12 }}><b>说明</b> · <AutoGloss>每条收入按服务器业务账本的权威分类汇总；本页不重新定义收入，也不会把未登记的记录自动归类。</AutoGloss></div>
+            <div className="ltint" style={{ marginTop: 13, fontSize: 12 }}><b>说明</b> · <AutoGloss>每笔收入按账本里的分类汇总；没登记分类的不会被自动归类。</AutoGloss></div>
           </div>
         </section>
 
@@ -435,7 +435,7 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">兑付报表</span>
-            <span className="sub">· <AutoGloss>提现提交后兑付得怎么样 · 全部服务端事件</AutoGloss></span>
+            <span className="sub">· <AutoGloss>提现申请之后兑付得怎么样</AutoGloss></span>
             <div className="r"><span className="lcode electric">本页新增观察指标 · 不属八项关键指标</span></div>
           </div>
           <div className="l-b">
@@ -450,7 +450,7 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
                <div className="t"><div className="k">较上期变化</div><div className="v" style={{ color: signedColor(redRateDelta) }}>{redRateDelta === null ? "—" : `${redRateDelta > 0 ? "+" : ""}${redRateDelta.toFixed(1)} 个百分点`}</div><div className="s">{REDEMPTION.prevLabel}为 {REDEMPTION.prevRate === null ? "—" : `${REDEMPTION.prevRate}%`}</div></div>
             </div>
             <div className="ltint" style={{ fontSize: 12, marginBottom: 8 }}><b>比率与余额不可混用</b> · <AutoGloss>兑付率衡量本期申请完成比例；在途余额衡量尚未完成的应付款。两者同源但含义不同。</AutoGloss></div>
-            <div className="ltint" style={{ fontSize: 12, marginBottom: 8 }}><b>统计规则说明</b> · <AutoGloss>提现申请、已兑付、驳回是互斥的结果分类；延迟与冻结是过程中的生命周期事件，一笔提现可能先延迟或冻结、之后仍完成兑付，因此二者可与已兑付重叠，不与申请总数相加等于分母。兑付率固定按 已兑付 ÷ 本期申请总数 计算，不把延迟/冻结计入分子或分母。</AutoGloss></div>
+            <div className="ltint" style={{ fontSize: 12, marginBottom: 8 }}><b>怎么算</b> · <AutoGloss>已兑付、已驳回是最终结果；延迟、冻结是中间状态，一笔提现可能先被延迟或冻结、后来又兑付了，所以这几项加起来不等于申请总数。兑付率 = 已兑付 ÷ 本期申请总数。</AutoGloss></div>
             <div className="ltint warn" style={{ fontSize: 12 }}><b>告警归属</b> · <AutoGloss>兑付率用于周期核账；急性提现安全信号以覆盖率和挤兑比率越线记录为准。需要处置时请进入待审核提现。</AutoGloss></div>
           </div>
         </section>
@@ -460,9 +460,9 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">储备与应付款差额报表</span>
-          <span className="sub">· <AutoGloss>储备与应付款差额 = 真实储备 − 应付负债 · 覆盖率走势与红黄线均由服务器确认账本提供</AutoGloss></span>
+          <span className="sub">· <AutoGloss>储备与应付款差额 = 实际储备 − 应付款</AutoGloss></span>
           <div className="r">
-             <span className="lcode">真实储备 {fmtM(LEDGER.reserveUsd)}</span>
+             <span className="lcode">实际储备 {fmtM(LEDGER.reserveUsd)}</span>
              <span className="lcode">应付负债 {fmtM(LEDGER.liabilitiesUsd)}</span>
              <span className="lcode" style={{ color: signedColor(TREASURY.netExposure) }}>储备与应付款差额 {TREASURY.netExposure > 0 ? "+" : ""}{fmtM(TREASURY.netExposure)}</span>
           </div>
@@ -476,7 +476,7 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
              <span className="it"><span className="ldot" style={{ background: "var(--danger)" }} />覆盖率阈值越线记录</span>
              <span className="it"><span className="ldot" style={{ background: "var(--warning)" }} />挤兑比率阈值越线记录</span>
           </div>
-          <div className="ltint" style={{ marginTop: 12, fontSize: 12 }}><b>越线区段来自服务器告警记录</b> · <AutoGloss>图上只标注当前响应中实际存在的覆盖率或挤兑比率越线记录；没有记录时不生成示例标记。</AutoGloss></div>
+          <div className="ltint" style={{ marginTop: 12, fontSize: 12 }}><b>越线标记</b> · <AutoGloss>图上只标出实际发生过的覆盖率或提现压力越线；没有就不标。</AutoGloss></div>
         </div>
       </section>
 
@@ -495,12 +495,12 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
           <div className="mat-grid">
              <div className="t"><div className="k">提现到期</div><div className="e">未来窗口内应付的提现金额</div><div className="v">{fmtM(m.withdraw)}</div></div>
              <div className="t"><div className="k">利息到期(质押本息)</div><div className="e">未来窗口内应付的质押本息</div><div className="v">{fmtM(m.interest)}</div></div>
-             <div className="t"><div className="k">创世节点每日分红到期</div><div className="e">按服务器当前日排放率计算</div><div className="v">{fmtM(m.genesis)}</div></div>
+             <div className="t"><div className="k">创世节点每日分红到期</div><div className="e">按当前每日收益率计算</div><div className="v">{fmtM(m.genesis)}</div></div>
           </div>
-           <div className="ltint cyan" style={{ fontSize: 12, marginBottom: 16 }}><b>创世节点每日分红怎么算</b> · <AutoGloss>到期排放 = 持有量 × 服务器下发的当前日排放率。页面不写死比例，始终展示服务器计算结果。</AutoGloss></div>
+           <div className="ltint cyan" style={{ fontSize: 12, marginBottom: 16 }}><b>创世节点每日分红怎么算</b> · <AutoGloss>每日分红 = 持有量 × 当前每日收益率。</AutoGloss></div>
           <div className="liab-split">
             <div>
-              <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 10 }}>负债科目分解 <span className="lcode" style={{ marginLeft: 6 }}>来自权威负债账本</span></div>
+              <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 10 }}>应付款明细 <span className="lcode" style={{ marginLeft: 6 }}>来自账本</span></div>
               {LIABILITIES.map((l) => (
                 <div key={l.id} className="liab-row">
                   <span className="nm"><i style={{ background: l.color }} /><AutoGloss>{liabilityName(l.name)}</AutoGloss></span>
@@ -526,7 +526,7 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
         </div>
       </section>
 
-      <p className="f-foot"><b>L3 没有任何写账动作</b>：<AutoGloss>财务数字由服务器确认账本和资金池统一计算，本页只读展示与导出。聚合汇总不含用户明细；脱敏资金明细仅向有权限的角色开放，并强制经过范围校验、操作原因、L5 审批、限时下载令牌与审计留痕。</AutoGloss></p>
+      <p className="f-foot"><b>这页只能查看和导出，不会改账</b>：<AutoGloss>汇总导出不含用户明细；资金明细只有授权的人能申请，要填原因、经过审批，下载链接限时有效，全程有记录。</AutoGloss></p>
     </div>
   );
 }

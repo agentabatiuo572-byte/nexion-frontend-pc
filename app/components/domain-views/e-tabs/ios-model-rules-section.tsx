@@ -86,7 +86,7 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
   return <fieldset className="ios-model-rules" aria-label="iPhone 机型预设">
     <legend>iPhone 机型预设（{rules.length}/500）</legend>
     <div className="ios-head">
-      <p>按机型匹配，不区分容量、颜色和地区版本。范围是运营预设的平台算力，不是 Apple 性能指标或实测跑分。新校准在范围内由服务端抽取一次并保存。</p>
+      <p>按机型匹配，不区分容量、颜色和地区版本。范围是运营预设的平台算力，不是 Apple 性能指标或实测跑分。用户首次校准时，系统在范围内随机取一个值并保存。</p>
       <div className="ios-actions">
         <Btn disabled={!editable || loading || !!presets} onClick={() => void loadPresets()}>{loading ? "正在读取预设…" : "载入 iPhone 机型预设"}</Btn>
         <Btn variant="primary" disabled={!editable || rules.length >= 500 || !!form}
@@ -118,7 +118,7 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
       <p className="f-foot">取消勾选只是本次不导入，不代表该机型不支持；以后可再次载入补齐。{presets.catalog.notice}</p>
       <Btn variant="primary" disabled={!editable || presets.selected.size === 0} onClick={applyImport}>加入草稿</Btn>
       <Btn onClick={() => setPresets(null)}>取消</Btn>
-      <p className="f-foot">加入草稿后仍需「试算并预览影响」→「提交 A2 审批」，审批通过才生效。</p>
+      <p className="f-foot">加入草稿后仍需「试算并预览影响」→「提交审批」，审批通过才生效。</p>
     </div>}
 
     <div style={grid}>
@@ -153,7 +153,7 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
                 : <Btn sm disabled={!editable} onClick={() => setConfirmRemove(rule.id)}>{publishedIds.has(rule.id) ? "删除" : "移除"}</Btn>}
             </div>
             {removing && <small role="status">{publishedIds.has(rule.id)
-              ? "删除只影响后续校准；已分配的算力、已激活设备和历史记录保留。审批后生效。" : "这是尚未发布的草稿条目，移除后不会进入提案。"}</small>}</td>
+              ? "删除只影响后续校准；已分配的算力、已激活设备和历史记录保留。审批后生效。" : "这是尚未发布的草稿条目，移除后不会提交。"}</small>}</td>
           </tr>;
         })}</tbody>
       </table></div>}

@@ -11,7 +11,7 @@ const contract = fs.readFileSync(path.join(root, "lib/admin/i-overview-contract.
 test("dynamic Nova channel creation selects a server-declared runtime source", () => {
   assert.match(client, /runtimeSourceOptions/);
   assert.match(contract, /runtimeSourceOptions/);
-  assert.match(page, /服务端真实事实源/);
+  assert.match(page, /系统实际发生的事件/);
   assert.match(page, /runtimeSourceOptions/);
   assert.doesNotMatch(page, /DEFAULT_TRIGGER_DESCRIPTION/);
 });

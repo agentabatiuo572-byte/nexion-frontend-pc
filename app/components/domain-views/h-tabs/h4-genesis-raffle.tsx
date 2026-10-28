@@ -33,7 +33,7 @@ export default function H4GenesisRaffle({ ctx }: { ctx: HCtx }) {
         try {
           const result = await saveAdminRaffle(savedDraft, previous?.revision ?? null, nextEnabled, reason);
           if (own !== generation.current) return;
-          setRows(current => current.some(row => row.id === result.id) ? current.map(row => row.id === result.id ? result : row) : [...current, result]); choose(result); ctx.toast("创世抽奖配置已保存并回读");
+          setRows(current => current.some(row => row.id === result.id) ? current.map(row => row.id === result.id ? result : row) : [...current, result]); choose(result); ctx.toast("创世抽奖设置已保存");
         } catch (cause) { if (own === generation.current) setError(displayAdminError(cause)); throw cause; }
         finally { if (own === generation.current) setSaving(false); }
       },
@@ -42,7 +42,7 @@ export default function H4GenesisRaffle({ ctx }: { ctx: HCtx }) {
   if (!read) return null;
   return <section className="l-card">
     <div className="l-h"><span className="ttl">创世抽奖</span><span className="sub">使用创世抽奖券报名，按配置时间开奖</span><div className="r"><button className="l-btn sm" disabled={loading || saving || !!draft} onClick={() => void load()}>刷新</button><button className="l-btn sm mc" disabled={!write || loading || saving || !!draft} onClick={() => choose(null)}>新建一期</button></div></div>
-    <div className="l-b">{error && <p role="alert">{error}</p>}{loading ? <p role="status">正在读取抽奖配置…</p> : <>
+    <div className="l-b">{error && <p role="alert">{error}</p>}{loading ? <p role="status">正在加载抽奖设置…</p> : <>
       {!rows.length && !error && <p>暂无抽奖轮次。</p>}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>{rows.map(row => <button className="l-btn sm" key={row.id} disabled={!!draft || saving} onClick={() => choose(row)}>{row.titleZh || row.id} · {{ DRAFT: "草稿", OPEN: "已开放", PROCESSING: "发放中", DRAWN: "已开奖" }[row.status]} · 已报名 {row.totalEntries} 票</button>)}</div>
       {draft && <>

@@ -142,7 +142,7 @@ test("network failure keeps the existing recovery copy and permits a later retry
   t.after(() => { globalThis.fetch = original; });
   globalThis.fetch = async () => { throw new TypeError("Failed to fetch"); };
   const api = client();
-  await assert.rejects(api.exportB4Distribution(filters), /网络连接失败或后台服务不可达/);
+  await assert.rejects(api.exportB4Distribution(filters), /网络连接失败或系统暂时连不上/);
   globalThis.fetch = async () => new Response("phase,userCount\r\nP2,12\r\n", { headers: { "Content-Type": "text/csv" } });
   assert.match(await (await api.exportB4Distribution(filters)).blob.text(), /P2,12/);
   assert.equal(api.resets(), 0);

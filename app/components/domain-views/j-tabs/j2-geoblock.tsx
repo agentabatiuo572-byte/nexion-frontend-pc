@@ -35,20 +35,20 @@ function formatGeoChangeValue(value: string, countryNames: Record<string, string
     const countries = Array.isArray(row.countries) ? row.countries.map((item) => countryLabel(String(item))) : [];
     if (mode === "derived") return "继承全局封禁名单";
     if (mode === "explicit") return countries.length > 0 ? `单独封禁：${countries.join("、")}` : "单独设定（空）";
-    return "结构化策略已记录";
+    return "已单独设置";
   }
   const text = String(parsed);
-  if (resourceType === "GEO_EDGE") return edgeLabels[text] ?? "未登记判定源";
+  if (resourceType === "GEO_EDGE") return edgeLabels[text] ?? "未知识别来源";
   return statusLabels[text] ?? edgeLabels[text] ?? countryLabel(text);
 }
 
 function geoChangeObjectLabel(change: GeoRecentChange, endpoints: GeoEndpoint[], countryNames: Record<string, string>) {
   if (change.resourceType === "GEO_COUNTRY_LIST") return change.resourceId === "limited" ? "受限名单" : "全局封禁名单";
   if (change.resourceType === "GEO_ENDPOINT") return endpoints.find((item) => item.key === change.resourceId)?.label ?? "功能入口封锁规则";
-  if (change.resourceType === "GEO_EDGE") return "边缘地区判定源";
+  if (change.resourceType === "GEO_EDGE") return "地区识别来源";
   if (change.resourceType === "GEO_COUNTRY_BATCH") return "应急批量封锁";
   if (change.resourceType === "GEO_COUNTRY") return countryNames[change.resourceId] ?? "国家或地区策略";
-  return "J2 地域策略";
+  return "地区访问限制";
 }
 
 export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
@@ -62,7 +62,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   const data = emergency.geoBlock;
 
   if (contentLoading && !data) {
-    return <section className="deriv-card"><div className="deriv-h"><span className="ttl">J2 数据加载中</span><span className="sub">· 正在读取地区封锁状态</span></div></section>;
+    return <section className="deriv-card"><div className="deriv-h"><span className="ttl">地区封锁加载中</span><span className="sub">· 请稍候</span></div></section>;
   }
   if (!data) {
     return <section className="deriv-card" data-module-health-state="error"><div className="deriv-h"><span className="ttl">当前无法确认地区封锁状态</span><span className="sub">· 为避免误操作，控制项已隐藏</span></div></section>;
@@ -82,10 +82,10 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   // 只要还有未接入入口,健康状态就必须降级,不能以「正常」掩盖待实装范围。
   const pendingEndpoints = geoEndpoints.filter((entry) => !entry.configurable);
   const endpointsFullyWired = geoEndpoints.length > 0 && pendingEndpoints.length === 0;
-  const healthBase = !edgeSourceKnown ? "判定源未登记" : healthStatus === "healthy" ? "正常" : healthStatus === "degraded" ? "异常" : healthStatus === "stale" ? "已过期" : "待采样";
+  const healthBase = !edgeSourceKnown ? "识别来源未设置" : healthStatus === "healthy" ? "正常" : healthStatus === "degraded" ? "异常" : healthStatus === "stale" ? "已过期" : "等待数据";
   const health = endpointsFullyWired || !edgeSourceKnown || healthStatus !== "healthy"
     ? healthBase
-    : `降级 · ${pendingEndpoints.length} 个入口待实装`;
+    : `部分未接入 · ${pendingEndpoints.length} 个入口还没接入`;
   const healthTone = !edgeSourceKnown || healthStatus === "degraded" || !endpointsFullyWired ? "danger" : healthStatus === "healthy" ? "ok" : "warn";
   const countryOptions = data.countryOptions.map((option) => option.value);
   const blockedCodes = new Set(banned.map((country) => country.cc));
@@ -98,7 +98,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   ]);
   const edgeSwitchCandidates = data.edge.sources.filter((source) => source.healthy && source.value !== edgeSource);
   const edgeSourceLabels = Object.fromEntries(data.edge.sources.map((source) => [source.value, source.label]));
-  const currentEdgeSourceLabel = edgeSourceKnown ? (edgeSourceLabels[edgeSource] ?? "已登记判定源") : "判定源未登记";
+  const currentEdgeSourceLabel = edgeSourceKnown ? (edgeSourceLabels[edgeSource] ?? "已设置识别来源") : "识别来源未设置";
   const edgeFallbackAvailable = edgeSourceKnown && data.edge.healthy;
 
   const runBackend = async (task: () => Promise<void>, ok: string) => {
@@ -108,9 +108,9 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       if (isEmergencyOutcomeUncertain(error)) {
         try {
           await actions.reloadJEmergency();
-          toast(`执行结果待确认 · 已重新读取最新状态，请以当前页面和审计记录为准。${error instanceof Error ? ` ${error.message}` : ""}`);
+          toast(`结果暂未确认 · 页面已刷新，请核对当前状态和操作记录。${error instanceof Error ? ` ${error.message}` : ""}`);
         } catch {
-          toast("执行结果待确认 · 当前也无法重新读取权威状态，请勿连续提交；请恢复网络后刷新页面并核对审计记录。");
+          toast("结果暂未确认，页面也刷新不了。请不要重复提交，等网络恢复后刷新页面并核对操作记录。");
         }
       } else {
         toast(`操作未完成 · ${error instanceof Error ? displayAdminError(error) : "请稍后重试"}`);
@@ -140,7 +140,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     businessForm: {
       kind: "multi-field",
       title: target === "blocked" ? "全局封禁名单" : "受限名单",
-      hint: `当前名单影响 ${impactUsers} 位活跃用户、钱包余额 ${impactWallet.toLocaleString()} USDT；本次移除对象会在差异区列出，移除只解除本名单，不会清除入口单独策略或其他业务开关。提交时会校验打开页面时的设置，若已被其他管理员修改则整单拒绝。`,
+      hint: `当前名单影响 ${impactUsers} 位活跃用户、钱包余额 ${impactWallet.toLocaleString()} USDT；本次移除对象会在差异区列出，移除只解除本名单，不会清除入口单独策略或其他业务开关。如果别人刚改过，需要刷新后重改。`,
       reasonMax: 200,
       fields: [
         {
@@ -169,7 +169,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       }
       return runBackend(
         () => actions.replaceJ2CountryList(target, countries, currentCodes, triggerBasis || undefined, reason, commandKey),
-        target === "blocked" ? "全局封禁名单已更新 · 已记审计" : "受限名单已更新 · 已记审计",
+        target === "blocked" ? "全局封禁名单已更新" : "受限名单已更新",
       );
     },
   });
@@ -183,7 +183,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     businessForm: {
       kind: "multi-field",
       title: "功能入口封锁规则",
-      hint: "待实装确认的功能入口不可编辑；单独设定至少选择一个国家。",
+      hint: "还没接入的功能入口不能编辑；单独设定至少选一个国家。",
       reasonMax: 200,
       fields: [
         {
@@ -225,7 +225,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         toast(`操作未完成 · ${error.message}`);
         throw error;
       }
-      return runBackend(() => actions.updateJ2Endpoint(entry.key, mode, countries, expectedMode, expectedCountries, reason, commandKey), `${entry.label}的封锁范围已生效 · 已记审计`);
+      return runBackend(() => actions.updateJ2Endpoint(entry.key, mode, countries, expectedMode, expectedCountries, reason, commandKey), `${entry.label}的封锁范围已生效`);
     },
   });
   };
@@ -233,14 +233,14 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   const switchJudge = () => {
     const commandKey = createJ2CommandKey("edge-source");
     return openActionConfirm({
-    action: "切换边缘地区判定源",
-    detail: <>当前使用“{currentEdgeSourceLabel}”，健康状态为“{health}”。只允许选择最近 5 分钟至少有 20 个可信请求头样本的边缘网络；{edgeFallbackAvailable
-      ? "切换后旧源继续备用 5 分钟，请持续观察解析状态。"
-      : "当前源不可用，不具备回退能力；所选健康判定源切换后立即生效，请持续观察解析状态。"}</>,
+    action: "切换地区识别来源",
+    detail: <>当前使用“{currentEdgeSourceLabel}”，健康状态为“{health}”。只能选最近 5 分钟内至少有 20 次可靠识别记录的来源；{edgeFallbackAvailable
+      ? "切换后旧来源继续备用 5 分钟，请留意识别是否正常。"
+      : "当前来源不可用，无法退回；切换后马上生效，请留意识别是否正常。"}</>,
     edit: { kind: "select", current: edgeSwitchCandidates[0]?.value ?? "", options: edgeSwitchCandidates.map((source) => source.value), optionLabels: edgeSourceLabels },
     run: (reason, newValue) => runBackend(
       () => actions.updateJ2EdgeJudge(newValue ?? "", edgeSource, reason, commandKey),
-      "边缘地区判定源已切换 · 已记审计",
+      "地区识别来源已切换",
     ),
   });
   };
@@ -272,7 +272,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     run: (reason, _newValue, businessValue) => {
       const countries = (businessValue?.countries ?? "").split(",").map((item) => item.trim()).filter(Boolean);
       const triggerBasis = businessValue?.triggerBasis ?? "";
-      return runBackend(() => actions.emergencyBlockJ2(countries, triggerBasis, reason, commandKey), "应急封锁已整批生效 · 已记审计");
+      return runBackend(() => actions.emergencyBlockJ2(countries, triggerBasis, reason, commandKey), "应急封锁已全部生效");
     },
   });
   };
@@ -289,12 +289,12 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         <div className="f-stat danger"><div className="k">封禁国家</div><div className="v">{banned.length}</div><div className="sub">注册、登录、资金操作全停</div></div>
         <div className="f-stat warn"><div className="k">受限国家</div><div className="v">{limited.length}</div><div className="sub">可浏览，不可新增资金操作</div></div>
         <div className="f-stat cyan"><div className="k">今日拦截</div><div className="v">{totalHits}</div><div className="sub">在业务入口被拒绝</div></div>
-        <div className={`f-stat ${healthTone}`}><div className="k">判定系统健康</div><div className="v">{health}</div><div className="sub">{endpointsFullyWired ? "服务端实时判定 · 全入口已接入" : `服务端实时判定 · ${pendingEndpoints.length}/${geoEndpoints.length} 个入口待实装`}</div></div>
+        <div className={`f-stat ${healthTone}`}><div className="k">地区识别状态</div><div className="v">{health}</div><div className="sub">{endpointsFullyWired ? "实时识别 · 所有入口已接入" : `实时识别 · ${pendingEndpoints.length}/${geoEndpoints.length} 个入口还没接入`}</div></div>
       </div>
 
       <div className="emer-strip">
         <span className="ic" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M4.93 4.93l14.14 14.14" /></svg></span>
-        <div className="txt"><b>一键紧急封锁</b> · <AutoGloss>遇监管点名、制裁名单更新或安全事件时，一次性把多个国家加入全局封禁名单。单人授权确认后立即执行，全程留痕。</AutoGloss>{emergencyCandidates.length === 0 && <span className="tiny muted"> 所有国家和地区均已封禁，当前没有可新增候选。</span>}</div>
+        <div className="txt"><b>一键紧急封锁</b> · <AutoGloss>遇监管点名、制裁名单更新或安全事件时，一次性把多个国家加入全局封禁名单。确认后马上生效，并记入操作记录。</AutoGloss>{emergencyCandidates.length === 0 && <span className="tiny muted"> 所有国家和地区均已封禁，当前没有可新增候选。</span>}</div>
         {canEmergency && <button disabled={emergencyCandidates.length === 0} onClick={emergencyBlock}>应急封锁</button>}
       </div>
 
@@ -319,7 +319,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       </div>
 
       <section className="deriv-card">
-        <div className="deriv-h"><span className="ttl">各功能入口的封锁范围</span><span className="sub">· 分别查看继承或单独设置的国家</span><div className="r"><CodeTag tone="electric">审计留痕</CodeTag><CodeTag>变更立即生效</CodeTag></div></div>
+        <div className="deriv-h"><span className="ttl">各功能入口的封锁范围</span><span className="sub">· 分别查看继承或单独设置的国家</span><div className="r"><CodeTag tone="electric">修改马上生效</CodeTag></div></div>
         <div className="deriv-tblwrap"><div className="deriv-tbl">
           <div className="hd"><div className="c">功能入口</div><div className="c">所属业务</div><div className="c">屏蔽国家</div><div className="c">设置方式</div><div className="c">今日拦截</div><div className="c" style={{ justifyContent: "flex-end" }}>动作</div></div>
           {geoEndpoints.length === 0 && <div className="rw"><div className="c muted" style={{ gridColumn: "1 / -1" }}>当前没有已登记的功能入口</div></div>}
@@ -334,7 +334,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
               <div className="c"><div className="geo-set">{entry.countries.length === 0 ? <span className="inherit">{entry.source === "derived" ? "跟随全局" : "尚未设置"}</span> : <>{entry.countries.slice(0, 4).map((code) => <span key={code} className="cc">{countryNames[code] ?? "未知地区"}（{code}）</span>)}{entry.countries.length > 4 && <span className="more">+{entry.countries.length - 4}</span>}</>}</div></div>
               <div className="c"><span className={`src ${entry.source}`}>{entry.sourceLabel}</span></div>
               <div className="c">{entry.hits === 0 ? <span className="hits zero">—</span> : <span className="hits">{entry.hits}</span>}</div>
-              <div className="c acts">{canEndpoint && entry.configurable ? <button onClick={() => editEndpoint(entry)}>编辑封锁范围</button> : <span className="muted tiny">{entry.configurable ? "无编辑权限" : "待实装确认"}</span>}</div>
+              <div className="c acts">{canEndpoint && entry.configurable ? <button onClick={() => editEndpoint(entry)}>编辑封锁范围</button> : <span className="muted tiny">{entry.configurable ? "无编辑权限" : "还没接入"}</span>}</div>
             </div>
           ))}
         </div></div>
@@ -350,8 +350,8 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         <section className="edge-card">
           <div className="edge-h"><span className="ic" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg></span><div><div className="t">按访问 IP 判断地区</div><div className="s">· 按访问 IP 判定地区</div></div></div>
           <div className="edge-body">
-            <div className="edge-kv"><span className="k">判定源</span><span className={`v ${edgeSourceKnown ? "" : "danger"}`} style={{ display: "flex", alignItems: "center", gap: 8 }}>{currentEdgeSourceLabel}{canEdge && edgeSwitchCandidates.length > 0 && <button onClick={switchJudge}>切换</button>}</span></div>
-            {canEdge && edgeSwitchCandidates.length === 0 && <div className="tiny muted">暂无满足最近 5 分钟 20 个可信样本门槛的备用判定源</div>}
+            <div className="edge-kv"><span className="k">识别来源</span><span className={`v ${edgeSourceKnown ? "" : "danger"}`} style={{ display: "flex", alignItems: "center", gap: 8 }}>{currentEdgeSourceLabel}{canEdge && edgeSwitchCandidates.length > 0 && <button onClick={switchJudge}>切换</button>}</span></div>
+            {canEdge && edgeSwitchCandidates.length === 0 && <div className="tiny muted">暂无可切换的备用识别来源</div>}
             {geoEdge.map((row) => <div className="edge-kv" key={row.k}><span className="k"><AutoGloss>{row.k}</AutoGloss></span><span className={`v ${row.tone}`}><AutoGloss>{row.v}</AutoGloss></span></div>)}
             <div className="edge-note"><span className="ic" aria-hidden="true">ⓘ</span><div><b>地区封锁只按访问 IP；风险提示书按 IP 与账户注册地区。</b>两套机制相互独立。</div></div>
           </div>
@@ -359,10 +359,10 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       </div>
 
       <section className="deriv-card">
-        <div className="deriv-h"><span className="ttl">最近 J2 变更</span><span className="sub">· 来自不可修改的服务端审计记录</span></div>
+        <div className="deriv-h"><span className="ttl">最近修改记录</span><span className="sub">· 操作记录不可修改</span></div>
         <div className="deriv-tblwrap"><div className="deriv-tbl">
           <div className="hd"><div className="c">时间</div><div className="c">操作人</div><div className="c">对象</div><div className="c">理由</div><div className="c">变更前</div><div className="c">变更后</div></div>
-          {data.recentChanges.length === 0 && <div className="rw"><div className="c muted" style={{ gridColumn: "1 / -1" }}>暂无 J2 变更记录</div></div>}
+          {data.recentChanges.length === 0 && <div className="rw"><div className="c muted" style={{ gridColumn: "1 / -1" }}>暂无修改记录</div></div>}
           {data.recentChanges.map((change, index) => (
             <div className="rw" key={`${change.createdAt}-${change.resourceId}-${index}`}>
               <div className="c tiny">{change.createdAt || "—"}</div><div className="c">{change.operator || "—"}</div><div className="c"><CodeTag>{geoChangeObjectLabel(change, geoEndpoints, countryNames)}</CodeTag></div><div className="c">{change.reason || "—"}</div><div className="c tiny">{formatGeoChangeValue(change.beforeValue, countryNames, edgeSourceLabels, change.resourceType)}</div><div className="c tiny">{formatGeoChangeValue(change.afterValue, countryNames, edgeSourceLabels, change.resourceType)}</div>
@@ -371,7 +371,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         </div></div>
       </section>
 
-      <p className="f-foot"><b>全局名单在请求边界生效,客户端无法绕过。</b>全局封禁名单与受限名单由服务端边缘过滤器对 <span className="mono">/api/</span>、<span className="mono">/auth/</span> 等用户请求路径统一判定;<b>各功能入口的单独封锁只对已接入入口生效</b> —— 标记「待实装确认」的入口当前不受入口级规则保护,判定系统健康已相应降级。每次变更都记录操作者、理由、前后状态和通知事件。</p>
+      <p className="f-foot"><b>全局名单对所有请求生效，App 无法绕过。</b><b>功能入口的单独封锁只对已接入的入口生效</b>，标着「还没接入」的入口暂时不受单独封锁保护。每次修改都会记录操作人、理由和修改前后的内容。</p>
     </div>
   );
 }

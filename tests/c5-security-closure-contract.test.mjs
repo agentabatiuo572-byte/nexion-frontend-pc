@@ -47,7 +47,7 @@ test("C5 rejects malformed success payloads and never preserves stale target dat
 
 test("C5 keeps list loading errors separate from the selected user's overview", () => {
   assert.match(c5, /setUserSearchError\(`用户列表加载失败/);
-  assert.match(c5, /重新加载用户/);
+  assert.match(c5, />重新加载<\/button>/);
   assert.doesNotMatch(c5, /setError\(`C5 用户搜索失败/);
 });
 
@@ -64,7 +64,7 @@ test("C5 loads a paginated user list even before a search or selection", () => {
   assert.match(c5, /pageSize: userPageSize/);
   assert.match(c5, /\[userPageSize, setUserPageSize\] = useState\(20\)/);
   assert.match(c5, /pageSizeOptions=\{\[20, 50, 100, 200\]\}/);
-  assert.match(c5, /aria-label="安全处置用户列表"/);
+  assert.match(c5, /aria-label="用户列表"/);
   assert.match(c5, /查看安全信息/);
   assert.doesNotMatch(c5, /setUserLookup\(profileLabel/);
   assert.doesNotMatch(c5, /chooseFirstUserOption/);
@@ -117,7 +117,7 @@ test("C5 changes the URL target without allowing old user data to remain actiona
 });
 
 test("C5 explains the empty session table before a user is selected", () => {
-  assert.match(c5, /selectedUserId \? "该用户暂无会话记录" : "请先搜索并选择用户查看会话"/);
+  assert.match(c5, /selectedUserId \? "该用户暂无登录记录" : "请先选择用户"/);
 });
 
 test("C5 translates high-risk rejection and internal failure codes", () => {
@@ -146,5 +146,5 @@ test("C5 uses action-bound operator confirmation and exact server session totals
   assert.match(c5, /operatorConfirmed:/);
   assert.match(c5, /overview\?\.selectedActiveSessionCount/);
   assert.doesNotMatch(c5, /activeSessionCount\s*=\s*sessions\.filter/);
-  assert.match(c5, /前 5 个紧急账户/);
+  assert.match(c5, /只显示输错次数最多的 5 个/);
 });

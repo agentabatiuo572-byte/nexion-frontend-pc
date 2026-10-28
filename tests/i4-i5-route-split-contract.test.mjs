@@ -19,7 +19,7 @@ test("I4 and I5 have independent routes and render modes", () => {
   assert.match(domain, /<I4Trust\s+ctx=\{ctx\}\s+view="trust"/);
   assert.match(domain, /<I4Trust\s+ctx=\{ctx\}\s+view="disclosures"/);
   assert.match(view, /view:\s*"trust"\s*\|\s*"disclosures"/);
-  assert.match(view, /const pageId = view === "trust" \? "I4" : "I5"/);
+  assert.match(view, /view === "trust" \? "信任中心" : "风险披露"/);
 });
 
 test("I4 draft authoring saves directly without high-sensitive confirmation", () => {

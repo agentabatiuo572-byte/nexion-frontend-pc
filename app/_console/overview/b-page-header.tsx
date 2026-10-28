@@ -27,7 +27,7 @@ export function BPageHeader({
     <header>
       <div className="b-bar">
         <span className="b-pill">
-          <span className="dot green pulse" /> 域 B · 运营总览
+          <span className="dot green pulse" /> 运营总览
         </span>
         <span className="b-tag">{id}</span>
       </div>
@@ -42,7 +42,7 @@ export function BPageHeader({
           </Link>
         ) : (
           <span className="b-cta" aria-disabled="true" data-testid="b-cross-domain-disabled">
-            {ctaLabel} · 无目标域权限
+            {ctaLabel} · 无权限
           </span>
         ))}
       </div>

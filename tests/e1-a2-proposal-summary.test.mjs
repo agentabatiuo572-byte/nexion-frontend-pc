@@ -174,7 +174,7 @@ test("锁额周期仍为 lifetime，历史 month 仍在编辑器中可识别", (
   assert.equal(fromPurchaseGate({ rankMin: 2, quotaCap: 50, quotaSold: 3 }).quotaPeriod, "lifetime");
   const legacy = fromPurchaseGate({ rankMin: 2, quotaPeriod: "month" });
   assert.equal(legacy.quotaPeriod, "month");
-  assert.match(validateGateForm(skuToForm(sku({ unlock: "P3", purchaseGate: legacy }))), /历史按月周期暂不可用/);
+  assert.match(validateGateForm(skuToForm(sku({ unlock: "P3", purchaseGate: legacy }))), /按月统计已停用/);
 });
 
 test("缺少历史 baseRate 的 SKU 原样回填不制造 no-op 提案", () => {
@@ -215,7 +215,7 @@ test("E1 把累计销量视为订单运行态计数，编辑往返不得提交�
   assert.equal(roundTripped.sold, 1245);
   assert.equal(summarizeSkuProposal(existing, roundTripped), null);
   assert.doesNotMatch(e1Source, /SkuFld label="累计销量"/);
-  assert.match(e1Source, /累计销量由成功支付订单累计/);
+  assert.match(e1Source, /按已付款订单自动累计/);
 });
 
 test("新建 SKU 展示核心业务字段而非只有商品名称", () => {

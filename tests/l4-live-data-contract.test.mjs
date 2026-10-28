@@ -197,9 +197,9 @@ test("L4 source exposes real four-report navigation, period/phase filters and sa
   }
   assert.match(source, /period=/);
   assert.match(source, /phase=/);
-  assert.match(source, /所选周期暂无历史运营事件/);
+  assert.match(source, /这个周期没有数据/);
   assert.match(source, /事件用户识别率/);
-  assert.match(source, /导出运营报表 CSV/);
+  assert.match(source, /导出运营报表（CSV）/);
   assert.match(source, /导出团队明细/);
   assert.match(source, /reasonMin: 8/);
   assert.match(source, /reasonMax: 200/);

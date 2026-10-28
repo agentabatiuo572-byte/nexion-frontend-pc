@@ -31,8 +31,8 @@ const PARAMS = [
 ] as const;
 
 const LOCK_MODE_LABELS: Record<string, string> = {
-  risk_bucket: "先风控评估再发放",
-  direct: "通过资格校验后直接发放",
+  risk_bucket: "先过风险检查再发",
+  direct: "符合资格就直接发",
 };
 const LOCK_MODE_VALUES: Record<string, string> = Object.fromEntries(Object.entries(LOCK_MODE_LABELS).map(([key, value]) => [value, key]));
 const ENABLED_PARAM = { key: "enabled", label: "邀请奖励", unit: "", kind: "select", options: ["已停用", "已启用"] } as const;
@@ -91,12 +91,12 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       : param.kind === "select" ? LOCK_MODE_LABELS[rawCurrent] ?? LOCK_MODE_LABELS.risk_bucket : rawCurrent;
     const enabling = isEnabled && (fixedValue ?? rawCurrent) === "true";
     ctx.openActionConfirm({
-      action: isEnabled ? enabling ? "启用邀请奖励" : "停用邀请奖励" : `H8 发奖参数 · ${param.label}`,
+      action: isEnabled ? enabling ? "启用邀请奖励" : "停用邀请奖励" : `调整邀请奖励 · ${param.label}`,
       detail: isEnabled
         ? enabling
-          ? "启用后，只结算启用时刻之后形成且通过资格与风控校验的邀请；App 将显示当前真实奖励。"
-          : "停用后，App 仍可分享邀请码，但不再承诺新人礼或邀请人奖励，服务端拒绝全部新结算。"
-        : `${param.label} 当前 ${current} ${nexGridBrandText(param.unit)}。新值只用于后续发放；已入账奖励不更新。升额或改为直接发放 会先过 B1 覆盖率红线。`,
+          ? "启用后，只给启用之后产生、且符合资格和风险检查的邀请发奖励；App 会显示当前奖励。"
+          : "停用后，App 仍能分享邀请码，但不再显示新人礼和邀请人奖励，也不再发新的奖励。"
+        : `${param.label} 当前 ${current} ${nexGridBrandText(param.unit)}。只影响之后发放的奖励，已到账的不变。调高金额或改为直接发放时，覆盖率低于红线无法保存。`,
       amplifies: isEnabled ? enabling : true,
       edit: fixedValue != null ? undefined : param.kind === "select"
         ? { kind: "select", current, options: Object.values(LOCK_MODE_LABELS) }
@@ -135,8 +135,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const settle = (invitedUserId?: number) => {
     const targeted = invitedUserId != null;
     ctx.openActionConfirm({
-    action: targeted ? "执行指定新人邀请奖励结算" : "执行邀请奖励真实结算",
-    detail: `${targeted ? `仅结算新人 ${invitedUserId} 的邀请奖励；资格不符或已结算时终止。` : "按服务端邀请关系扫描尚未结算的记录；"}当前 H1 第 ${data?.rhythmMonth ?? "—"} 月倍率计入后，每组结算为新人 ${data?.effectiveRewards?.["newcomer.usdt"] ?? "—"} USDT + ${data?.effectiveRewards?.["newcomer.nex"] ?? "—"} UVT、邀请人 ${data?.effectiveRewards?.["inviter.nex"] ?? "—"} UVT。奖励分别写入真实钱包与资金台账，同一新人只会结算一次。`,
+    action: targeted ? "给指定新人结算邀请奖励" : "结算邀请奖励",
+    detail: `${targeted ? `只结算新人 ${invitedUserId} 的邀请奖励；不符合资格或已结算过就不发。` : "按邀请关系找出还没结算的记录；"}按当前第 ${data?.rhythmMonth ?? "—"} 个月的倍率计算后，每组结算为新人 ${data?.effectiveRewards?.["newcomer.usdt"] ?? "—"} USDT + ${data?.effectiveRewards?.["newcomer.nex"] ?? "—"} UVT、邀请人 ${data?.effectiveRewards?.["inviter.nex"] ?? "—"} UVT。奖励直接进用户钱包，同一新人只结算一次。`,
     amplifies: true,
     edit: targeted ? undefined : { kind: "number", current: "20", unit: "条", min: 1, max: 100, step: 1 },
     run: async (reason, value) => {
@@ -155,9 +155,9 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       );
       try {
         await propose(ctx.toast, {
-          action: targeted ? "执行指定新人邀请奖励结算" : "执行邀请奖励真实结算",
+          action: targeted ? "给指定新人结算邀请奖励" : "结算邀请奖励",
           obj: targeted ? `新人 ${invitedUserId}` : "待结算邀请批次",
-          before: `待结算 ${Number(data?.pending ?? 0)} 条 · H8 v${data?.version ?? "—"} · H1 第 ${data?.rhythmMonth ?? "—"} 月`,
+          before: `待结算 ${Number(data?.pending ?? 0)} 条 · 设置版本 v${data?.version ?? "—"} · 第 ${data?.rhythmMonth ?? "—"} 个月`,
           after: `${targeted ? `仅结算新人 ${invitedUserId} 的邀请奖励` : `最多结算 ${limit} 条`} · 新人 ${data?.effectiveRewards["newcomer.usdt"] ?? "—"} USDT + ${data?.effectiveRewards["newcomer.nex"] ?? "—"} UVT · 邀请人 ${data?.effectiveRewards["inviter.nex"] ?? "—"} UVT · 快照 ${data?.rewardSnapshotHash.slice(0, 12) ?? "—"}…`,
           type: "fund",
           amplifies: true,
@@ -184,8 +184,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     });
   };
 
-  if (loading && !data) return <section className="l-card"><div className="l-b">H8 发奖数据加载中...</div></section>;
-  if (error && !data) return <section className="l-card"><div className="l-b">H8 发奖数据读取失败 · {error} <button className="l-btn sm" onClick={() => void load()}>重试</button></div></section>;
+  if (loading && !data) return <section className="l-card"><div className="l-b">邀请奖励数据加载中…</div></section>;
+  if (error && !data) return <section className="l-card"><div className="l-b">邀请奖励数据加载失败 · {error} <button className="l-btn sm" onClick={() => void load()}>重试</button></div></section>;
 
   const targetUserId = Number(invitedUserIdInput.trim());
   const targetUserValid = /^[1-9]\d*$/.test(invitedUserIdInput.trim()) && Number.isSafeInteger(targetUserId);
@@ -193,22 +193,22 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   return (
     <>
       <div className="f-stats">
-        <div className={data?.enabled ? "f-stat ok" : "f-stat warn"}><div className="k">奖励开关</div><div className="v">{data?.enabled ? "已启用" : "已停用"}</div><div className="sub">服务端结算与 App 奖励展示使用同一开关</div></div>
-        <div className="f-stat warn"><div className="k">待结算邀请</div><div className="v">{data?.pending ?? 0}</div><div className="sub">真实 邀请关系且未发奖</div></div>
+        <div className={data?.enabled ? "f-stat ok" : "f-stat warn"}><div className="k">奖励开关</div><div className="v">{data?.enabled ? "已启用" : "已停用"}</div><div className="sub">同时控制发奖和 App 上的奖励显示</div></div>
+        <div className="f-stat warn"><div className="k">待结算邀请</div><div className="v">{data?.pending ?? 0}</div><div className="sub">已建立邀请关系、还没发奖</div></div>
         <div className="f-stat ok"><div className="k">累计已结算</div><div className="v">{data?.settled ?? 0}</div><div className="sub">同一新人只结算一次</div></div>
-        <div className="f-stat danger"><div className="k">风控暂缓</div><div className="v">{data?.blockedByK2 ?? 0}</div><div className="sub">仅统计尚未发奖且命中 K1/K2 的邀请关系</div></div>
-        <div className="f-stat cyan"><div className="k">结算模式</div><div className="v">真实钱包与资金台账</div><div className="sub">结算结果由服务端持久化</div></div>
+        <div className="f-stat danger"><div className="k">风控暂缓</div><div className="v">{data?.blockedByK2 ?? 0}</div><div className="sub">还没发奖、被风险规则拦下的邀请</div></div>
+        <div className="f-stat cyan"><div className="k">结算模式</div><div className="v">直接入账</div><div className="sub">奖励直接进用户钱包并记账</div></div>
       </div>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">新人礼与邀请人奖励</span><span className="sub">· H8 唯一配置入口 · 生效时间 {data?.effectiveAt ? `${new Date(data.effectiveAt).toLocaleString("zh-CN", { hour12: false, timeZone: businessZone().zoneId })}（${businessZone().label}）` : "—"}</span><div className="r">{canWrite && <button className="l-btn mc" disabled={!data} onClick={() => editParam(ENABLED_PARAM, String(!data?.enabled))}>{data?.enabled ? "停用奖励" : "启用奖励"}</button>}{canSettle && <button className="l-btn mc" disabled={!data?.enabled || Number(data.pending ?? 0) <= 0} title={!data?.enabled ? "邀请奖励当前已停用" : Number(data?.pending ?? 0) <= 0 ? "当前没有待结算邀请" : undefined} onClick={() => settle()}>执行真实结算</button>}</div></div>
+        <div className="l-h"><span className="ttl">新人礼与邀请人奖励</span><span className="sub">· 生效时间 {data?.effectiveAt ? `${new Date(data.effectiveAt).toLocaleString("zh-CN", { hour12: false, timeZone: businessZone().zoneId })}（${businessZone().label}）` : "—"}</span><div className="r">{canWrite && <button className="l-btn mc" disabled={!data} onClick={() => editParam(ENABLED_PARAM, String(!data?.enabled))}>{data?.enabled ? "停用奖励" : "启用奖励"}</button>}{canSettle && <button className="l-btn mc" disabled={!data?.enabled || Number(data.pending ?? 0) <= 0} title={!data?.enabled ? "邀请奖励当前已停用" : Number(data?.pending ?? 0) <= 0 ? "当前没有待结算邀请" : undefined} onClick={() => settle()}>结算邀请奖励</button>}</div></div>
         <div className="l-b"><div className="param-grid">
           {PARAMS.map((param) => <div className="p" key={param.key}>
             <div className="k">{param.label}</div>
             <div className="v">{param.kind === "select" ? LOCK_MODE_LABELS[String(data?.params?.[param.key] ?? "risk_bucket")] : `基础 ${String(data?.params?.[param.key] ?? "0")}`} <span className="vu">{nexGridBrandText(param.unit)}</span>{canWrite && <button className="l-btn sm mc" disabled={!data} onClick={() => editParam(param)}>调整</button>}</div>
             <div className="s">{param.kind === "select"
-                ? "影响后续真实结算；所有修改强制理由、防重复提交编号和审计。"
-                : `H1 第 ${data?.rhythmMonth ?? "—"} 月倍率计入后，实际发放 ${String(data?.effectiveRewards?.[param.key] ?? "—")} ${nexGridBrandText(param.unit)}（${param.key.startsWith("newcomer.") ? data?.newcomerMultiplier : data?.inviterMultiplier}×）。`}</div>
+                ? "只影响之后的结算；修改需要填写理由，并记入操作记录。"
+                : `按第 ${data?.rhythmMonth ?? "—"} 个月的倍率，实际发放 ${String(data?.effectiveRewards?.[param.key] ?? "—")} ${nexGridBrandText(param.unit)}（${param.key.startsWith("newcomer.") ? data?.newcomerMultiplier : data?.inviterMultiplier}×）。`}</div>
           </div>)}
         </div></div>
       </section>
@@ -218,23 +218,23 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         <div className="l-b">
           <label>新人用户编号 <input className="ui-control" aria-label="指定结算的新人用户编号" inputMode="numeric" placeholder="请输入新人用户编号" value={invitedUserIdInput} onChange={(event) => setInvitedUserIdInput(event.target.value)} /></label>{" "}
           {canSettle && <button className="l-btn mc" disabled={!data?.enabled || !targetUserValid} onClick={() => settle(targetUserId)}>结算指定新人</button>}
-          <p className="f-foot">审批单将锁定该新人；邀请人由服务端邀请关系确定。资格不符或已结算时终止，不会结算其他邀请。</p>
+          <p className="f-foot">只结算这一位新人，邀请人按邀请关系自动确定。不符合资格或已结算过就不发。</p>
         </div>
       </section>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">最近真实发奖</span><span className="sub">· 数据源 服务端邀请关系</span></div>
+        <div className="l-h"><span className="ttl">最近发奖记录</span></div>
         <div style={{ overflowX: "auto" }}><table className="l-tbl"><thead><tr><th>结算号</th><th>新人</th><th>邀请人</th><th>新人奖励</th><th>邀请人奖励</th><th>状态</th></tr></thead><tbody>
           {(data?.recentSettlements ?? []).map((row, index) => <tr key={row.settlementNo ?? index}><td className="mono">{row.settlementNo ?? "—"}</td><td>{row.invitedUserId ?? "—"}</td><td>{row.inviterUserId ?? "—"}</td><td>{row.newcomerUsdt ?? 0} USDT + {row.newcomerNex ?? 0} UVT</td><td>{row.inviterNex ?? 0} UVT</td><td><span className="bdg ok">{row.status === "SETTLED" ? "已结算" : "—"}</span></td></tr>)}
-          {!data?.recentSettlements?.length && <tr><td colSpan={6} style={{ textAlign: "center", padding: 24 }}>{Number(data?.pending ?? 0) > 0 ? "当前尚无结算记录，可从上方执行待结算邀请" : "暂无结算记录，当前也没有待结算邀请"}</td></tr>}
+          {!data?.recentSettlements?.length && <tr><td colSpan={6} style={{ textAlign: "center", padding: 24 }}>{Number(data?.pending ?? 0) > 0 ? "还没有结算记录，可以点上方按钮结算" : "暂无结算记录，也没有待结算的邀请"}</td></tr>}
         </tbody></table></div>
         <div className="l-b" style={{ paddingTop: 10 }}>
-          {data?.settlementHasMore && <button className="l-btn sm" disabled={loadingMore} onClick={() => void load(data.settlementNextCursor, true)}>{loadingMore ? "加载中..." : "加载更早记录"}</button>}{" "}
-          <span className="f-foot">结算后联动核对：</span>{" "}
-          <><Link href="/platform/audit" className="l-btn sm">A2 审批与审计</Link>{" "}<Link href="/platform/events" className="l-btn sm">A4 事件</Link>{" "}<Link href="/finance/ledger" className="l-btn sm">D4 钱包台账</Link></>
+          {data?.settlementHasMore && <button className="l-btn sm" disabled={loadingMore} onClick={() => void load(data.settlementNextCursor, true)}>{loadingMore ? "加载中…" : "加载更早记录"}</button>}{" "}
+          <span className="f-foot">结算后可以去核对：</span>{" "}
+          <><Link href="/platform/audit" className="l-btn sm">操作记录与审批</Link>{" "}<Link href="/platform/events" className="l-btn sm">用户行为事件</Link>{" "}<Link href="/finance/ledger" className="l-btn sm">账本与账单核对</Link></>
         </div>
       </section>
-      <p className="f-foot"><b>奖励发放流程</b>：App/H5 服务端奖励展示 → 邀请关系记录 → A2 审批 → 唯一结算记录 → 新人 / 邀请人钱包入账 → USDT / UVT 资金台账 → A4 事件。结算结果以服务端邀请关系、唯一结算记录、钱包与资金台账为准。</p>
+      <p className="f-foot"><b>发奖流程</b>：App 显示奖励 → 建立邀请关系 → 审批 → 结算（每位新人只结算一次）→ 新人和邀请人钱包到账 → 记入资金账本。</p>
     </>
   );
 }

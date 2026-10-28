@@ -82,7 +82,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
   }, [refreshOverview]);
 
   /* 5 闸只读派生(killSwitchReadonly 同源 design-data.KILLSWITCH + geo-block 行)。
-   *「生效中」= enabled 或 「空列表 · 无封锁」(geo-block 列表非空才算「生效」,空列表 = 无封锁 = 通) */
+   *「生效中」= enabled 或 「没有限制」(旧文案「空列表 · 无封锁」;geo-block 列表非空才算「生效」,空列表 = 无封锁 = 通) */
   const gates = overview?.killSwitches ?? [];
   const featureFlags = overview?.featureFlags ?? [];
   const systemHealth = overview?.systemHealth ?? [];
@@ -93,7 +93,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
 
   const consumerLabel = (value: string) => ({
     "ops-console-shell": "后台全局维护公告", "PlatformGlobalRateLimitFilter": "全平台请求频率限制",
-    "D2 AppWithdrawalService + B1/B5 withdrawal projection": "提现强审及资金风险统计", "SupportLeaderboardService": "客服业绩榜刷新",
+    "D2 AppWithdrawalService + B1/B5 withdrawal projection": "提现加强审核及资金风险统计", "SupportLeaderboardService": "客服业绩榜刷新",
   } as Record<string,string>)[value] ?? value;
   const flagChg = (f: A3FeatureFlag) => {
     const cur = f.status;
@@ -102,9 +102,8 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
       detail: (
         <>
           <b>{f.name}</b>(<span className="mono">{f.key}</span>)· {f.desc}。
-          当前 <b>{({on:"开启",off:"关闭"} as Record<string,string>)[cur] ?? cur}</b> · 范围 {f.scope} · 使用此设置的功能 <b>{consumerLabel(f.consumer)}</b>。
-          服务端允许值为 {f.allowedValues.map(value => ({on:"开启",off:"关闭"} as Record<string,string>)[value] ?? value).join(" / ")}；<b>写入资格</b>:{f.resourceOwner}。
-          生效后会立即刷新后台外壳，审计记录保留前后值。
+          当前 <b>{({on:"开启",off:"关闭"} as Record<string,string>)[cur] ?? cur}</b> · 范围 {f.scope} · 影响 <b>{consumerLabel(f.consumer)}</b>。
+          谁能改：{f.resourceOwner}。切换后立即生效。
         </>
       ),
       amplifies: false,
@@ -113,7 +112,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
       run: (reason, v) => {
         const val = (v || "").trim();
         if (!f.allowedValues.includes(val)) {
-          const copy = "目标状态不在服务端允许范围内，请刷新页面后重试。";
+          const copy = "所选状态不可用，请刷新页面后重试。";
           toast(copy);
           throw new Error(copy);
         }
@@ -122,16 +121,16 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
           .then((next) => {
             setOverview(next);
             window.dispatchEvent(new CustomEvent("a3:runtime-flags-changed"));
-            toast(`「${f.name}」已切换为 ${val}，审计记录已写入。`);
+            toast(`「${f.name}」已切换为${({on:"开启",off:"关闭"} as Record<string,string>)[val] ?? val}`);
           })
           .catch((error: unknown) => {
             if (isA3ReadbackFailedError(error)) {
-              toast(`写入已成功，但权威状态刷新失败；页面将重新读取，请勿重复提交。`);
+              toast(`已保存，但页面刷新失败，正在重新加载。请不要重复提交。`);
               void refreshOverview(true);
               return;
             }
             if (isA3OutcomeUncertainError(error)) {
-              toast(`提交结果未知（命令号 ${error.commandKey}）；请先刷新并核对 A2 审计，禁止重复提交。`);
+              toast(`提交结果暂未确认（命令号 ${error.commandKey}）。请先刷新，在操作记录里核对，不要重复提交。`);
               throw error;
             }
             toast(`提交失败:${displayAdminError(error)}`);
@@ -144,7 +143,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
 
   const paramChg = (param: typeof platformParams[number]) => openActionConfirm({
     action: `调整平台参数 · ${param.name}`,
-    detail: <>{param.desc} · 使用此设置的功能 <b>{consumerLabel(param.consumer)}</b> · 服务端以当前值 <b>{param.value}</b>  检查是否已被其他人修改。</>,
+    detail: <>{param.desc} · 影响 <b>{consumerLabel(param.consumer)}</b>。</>,
     amplifies: false, reasonMin: 8, reasonMax: 200,
     edit: { kind: "number", current: param.value, min: param.min, max: param.max, unit: param.unit },
     run: async (reason, value) => {
@@ -156,10 +155,10 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
       try {
         setOverview(await updateA3Parameter(param.key, normalizedValue, param.value, reason, operator, commandKey));
         a3ParamCommands.forget(slot);
-        toast(`${param.name} 已更新并回读`);
+        toast(`${param.name} 已更新`);
       } catch (error) {
         if (isA3OutcomeUncertainError(error)) {
-          toast(`提交结果未知（命令号 ${error.commandKey}）；保持输入不变再次确认会复用同一命令号。`);
+          toast(`提交结果暂未确认（命令号 ${error.commandKey}）。保持输入不变再次确认即可，不会重复执行。`);
         } else {
           a3ParamCommands.forget(slot);
           toast(`提交失败:${displayAdminError(error)}`);
@@ -180,7 +179,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
         <section className="l-card">
           <div className="l-b">
             <div className="atint warn" style={{ fontSize: 12 }}>
-              A3 接口读取失败:{loadError}
+              加载失败：{loadError}
               <button className="l-btn sm" style={{ marginLeft: 8 }} onClick={() => void refreshOverview()}>重试</button>
             </div>
           </div>
@@ -189,7 +188,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
       {loading && !overview && (
         <section className="l-card">
           <div className="l-b">
-            <div className="atint" style={{ fontSize: 12 }}>正在读取系统配置与应急状态。</div>
+            <div className="atint" style={{ fontSize: 12 }}>正在加载…</div>
           </div>
         </section>
       )}
@@ -198,30 +197,29 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
         <div className="f-stat cyan">
           <div className="k">功能开关</div>
           <div className="v">{overview?.stats.flagCount ?? featureFlags.length} 个</div>
-          <div className="sub">{overview?.stats.flagOnCount ?? featureFlags.filter((flag) => flag.status === "on").length} 个已开启 · 切换走操作确认</div>
+          <div className="sub">{overview?.stats.flagOnCount ?? featureFlags.filter((flag) => flag.status === "on").length} 个已开启</div>
         </div>
         <div className="f-stat ok">
           <div className="k">紧急停止开关</div>
           <div className="v">{upGates} / {gates.length} 正常</div>
-          <div className="sub">J1 功能开关 + J2 地区屏蔽</div>
+          <div className="sub">含业务停用开关和地区访问限制</div>
         </div>
       </div>
 
       {/* (a) 功能开关平台 全宽 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">功能开关平台(a)</span>
-          <span className="sub">· 仅展示已有实际使用功能的服务端开关 · 切换需要操作确认</span>
+          <span className="ttl">功能开关</span>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 860 }}>
             <thead>
               <tr>
                 <th>功能开关</th>
-                <th>当前态</th>
+                <th>状态</th>
                 <th>适用范围</th>
                 <th>最近变更</th>
-                <th>发起资格</th>
+                <th>谁能改</th>
                 <th style={{ textAlign: "right" }}></th>
               </tr>
             </thead>
@@ -243,7 +241,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
                     <td style={{ textAlign: "right" }}>
                       {f.writable && (
                         <button className="l-btn sm mc" onClick={() => flagChg(f)} disabled={mutating === f.key}>
-                          {mutating === f.key ? "提交中" : "切换"}
+                          {mutating === f.key ? "提交中…" : "切换"}
                         </button>
                       )}
                       {!f.writable && <span style={{ color: "var(--ink-4)", fontSize: 11.5 }}>只读</span>}
@@ -254,7 +252,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
               {!featureFlags.length && (
                 <tr>
                   <td colSpan={6} style={{ color: "var(--ink-4)", textAlign: "center", padding: 24 }}>
-                    后端暂无功能开关记录
+                    暂无功能开关
                   </td>
                 </tr>
               )}
@@ -263,8 +261,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="atint">
-            <b>这里只放有实际使用功能的全平台通用开关</b>  · 每一行都声明允许值、使用功能与可修改角色；
-            没有实际使用功能的实验或参数不会在此伪装成可用开关。有业务主的参数仍归各业务域维护。
+            这里只放全平台通用的开关，各业务自己的设置在对应页面修改。
           </div>
         </div>
       </section>
@@ -274,15 +271,15 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
         {/* (b) 熔断闸状态存储 · 只读兼容视图 */}
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">应急状态(b)· 只读兼容视图</span>
-            <span className="sub">· 状态真值来自 J1 / J2 · 操作仍在应急域</span>
+            <span className="ttl">紧急开关状态</span>
+            <span className="sub">· 只能查看，操作请到右侧入口</span>
             <div className="r">
               <button className="l-btn sm" onClick={() => router.push("/emergency/kill-switch")}>
 
-                去 J1 操作功能开关 →
+                去紧急停用开关 →
               </button>
               <button className="l-btn sm" onClick={() => router.push("/emergency/geo-block")}>
-                去 J2 配地区屏蔽 →
+                去地区访问限制 →
               </button>
             </div>
           </div>
@@ -293,7 +290,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
                   <th>开关</th>
                   <th>状态</th>
                   <th>最近变更</th>
-                  <th>操作 / 留痕</th>
+                  <th>操作人</th>
                 </tr>
               </thead>
               <tbody>
@@ -315,7 +312,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
                   <tr>
                     <td colSpan={4} style={{ color: "var(--ink-4)", textAlign: "center", padding: 24 }}>
 
-                      后端暂无紧急停止开关记录
+                      暂无紧急开关
                     </td>
                   </tr>
                 )}
@@ -324,10 +321,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
           </div>
           <div className="l-b" style={{ paddingTop: 8 }}>
             <div className="atint">
-              <b>分工</b>  · 本表直接读取 J1 的五个功能开关和 J2 的地区策略，不保存第二份状态；
-              <b>切换操作仍在 J1 / J2</b>，这页只负责跨域核对和跳转。
-              地区屏蔽不是开关而是国家列表:列表非空才算「生效」。<b>注意</b>:
-              风险披露的再次确认不属于紧急停止开关,不在这张表里——它归内容域(I4–I5 页)。
+              地区限制按国家名单生效：名单不为空才算「生效中」。风险披露的重新确认不在这里，请到「风险披露」查看。
             </div>
           </div>
         </section>
@@ -335,8 +329,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
         {/* (c) 系统健康 */}
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">系统健康(c)</span>
-            <span className="sub">· 服务端关键依赖 · 只读</span>
+            <span className="ttl">系统运行状况</span>
           </div>
           <div className="l-b">
             {systemHealth.map((h) => (
@@ -356,30 +349,28 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
                   {h.metric}
                 </span>
                 <span style={{ fontSize: 10.5, color: "var(--ink-4)" }} title={h.source}>
-                  {h.stale ? "状态不可确认" : `采样 ${h.observedAt}`}
+                  {h.stale ? "状态未知" : `检测于 ${h.observedAt}`}
                 </span>
               </div>
             ))}
             {!systemHealth.length && (
               <div className="atint warn" style={{ fontSize: 12 }}>
-                后端暂无系统健康记录
+                暂无运行状况数据
               </div>
             )}
             <div className="atint" style={{ marginTop: 10 }}>
-              <b>系统健康只读</b>  · 服务端关键依赖的实时状态,查看类全角色按裁剪可看。
-              健康面异常只告警、不在这页处置——管道问题找技术值班,资金账异常走运营总览(B1/B2)。
+              出现异常请联系技术值班；资金异常请到「资金与应付款总览」查看。
             </div>
           </div>
         </section>
       </div>
 
-      <section className="l-card" data-capability="a3-authoritative-params" data-restored-capability="a3-global-rate-limit"><div className="l-h"><span className="ttl">平台参数 · 全局请求频率上限 / 提现加强审核金额</span><span className="sub">· 防覆盖修改检查 · 防重复提交 · 审计 · 保存后供业务使用</span></div><div className="l-b" data-restored-capability="a3-withdraw-strong-review-threshold">
+      <section className="l-card" data-capability="a3-authoritative-params" data-restored-capability="a3-global-rate-limit"><div className="l-h"><span className="ttl">平台参数</span><span className="sub">· 全平台请求频率上限、提现加强审核金额</span></div><div className="l-b" data-restored-capability="a3-withdraw-strong-review-threshold">
         {platformParams.map((param) => <div className="a-vrow" key={param.key}><span className="nm">{param.name}<small>{param.desc}</small></span><span className="v">{param.value} {param.unit}</span>{param.writable && <button className="l-btn sm mc" disabled={!!mutating} onClick={() => paramChg(param)}>调整</button>}</div>)}
       </div></section>
 
       <p className="f-foot">
-        <b>执行门槛</b>:当前登记的平台维护开关仅超级管理员可切换；其他角色只读。紧急停止开关与地区屏蔽的操作权限由 J1 / J2 独立控制。
-        <b>事件去向</b>:A3 开关切换写入 A2 审计；J1 / J2 继续维护自己的状态与操作留痕。
+        功能开关只有超级管理员能切换，其他角色只能查看。
       </p>
       <PaginationExemptionList
         items={[

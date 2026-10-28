@@ -18,14 +18,14 @@ test("D4 exposes the exact eight canonical BillTypes and all four filters", () =
 test("D4 contains user-wide category totals, running-balance breaks, masked export and fail-closed resets", () => {
   assert.match(page, /categoryTotals/);
   assert.match(page, /breakDetected/);
-  assert.match(page, /未结算流水不参与钱包核对/);
+  assert.match(page, /未结算的不参与核对/);
   assert.match(client, /settlementBucket/);
   assert.match(client, /unsettledCount/);
   assert.match(client, /reconciliationScope/);
   assert.match(client, /reconciliationNote/);
   assert.match(client, /reconciliation:\s*Record<"USDT" \| "NEX", number> \| null/);
-  assert.match(page, /历史截止区间/);
-  assert.match(page, /不使用当前钱包/);
+  assert.match(page, /这段时间的账单余额都对得上/);
+  assert.match(page, /历史时段不与当前钱包对比/);
   assert.match(page, /downloadD4BillsCsv/);
   assert.match(page, /setBills\(EMPTY_PAGE\)/);
   assert.match(page, /setUserLedger\(null\)/);
@@ -57,6 +57,6 @@ test("D4 client rejects malformed financial facts and uses the canonical read-on
 
 test("D4 masked eight-type export is available from the L5 regulatory export surface", () => {
   assert.match(l5, /downloadD4BillsCsv/);
-  assert.match(l5, /导出八类账单明细/);
+  assert.match(l5, /导出 8 类账单明细/);
   assert.doesNotMatch(l5, /D4 的八类账单明细.*留到跨模块验收/);
 });

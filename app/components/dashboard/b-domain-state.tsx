@@ -6,7 +6,7 @@ import type { BDomainDashboard } from "@/lib/admin/b-client";
 type BDomainWarning = BDomainDashboard["warnings"][number];
 
 export function BDomainDataState({
-  title = "B 域数据",
+  title = "运营总览数据",
   loading,
   error,
   onRetry,
@@ -42,7 +42,7 @@ export function BDomainDataState({
             {isLoading ? `${title}加载中` : empty ? `${title}暂无数据` : `${title}加载失败`}
           </div>
           <div className="mt-1 text-[12.5px]" style={{ color: "var(--v5-ink-3, var(--ink-3))" }}>
-            {isLoading ? "正在读取服务端权威数据。" : error || "当前数据暂不可用，请重试。"}
+            {isLoading ? "请稍候…" : error || "数据暂时无法加载，请重试。"}
           </div>
           {!isLoading && onRetry && (
             <button
@@ -62,7 +62,7 @@ export function BDomainDataState({
 }
 
 export function BDomainWarnings({
-  title = "B 域配置降级",
+  title = "部分设置未生效",
   warnings,
 }: {
   title?: string;
@@ -97,7 +97,7 @@ export function BDomainWarnings({
                 <span className="font-mono-tabular">{warning.key}</span> · {warning.code}: {warning.message}
               </div>
             ))}
-            {warnings.length > 4 && <div>另有 {warnings.length - 4} 条配置降级未展开。</div>}
+            {warnings.length > 4 && <div>另有 {warnings.length - 4} 条未展开。</div>}
           </div>
         </div>
       </div>

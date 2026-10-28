@@ -108,12 +108,12 @@ const sample = count => Array.from({ length: count }, (_, i) => ({ id: i + 1, de
 
 for (const count of [0, 7, 50]) test(`recent sample scope stays explicit for ${count} returned sessions`, () => {
   const page = harness(sample(count));
-  assert.match(page.text(), /最近最多50条会话样本/);
+  assert.match(page.text(), /最近 50 条登录记录/);
   assert.match(page.text(), new RegExp(`筛选后 ${count} 条`));
   assert.doesNotMatch(page.text(), /已截断|用户共有|用户总数/);
   assert.match(page.text(), new RegExp(`第 1/${Math.max(1, Math.ceil(count / 5))} 页`));
   assert.equal(page.devices().length, Math.min(5, count));
-  if (!count) assert.match(page.text(), /暂无会话/);
+  if (!count) assert.match(page.text(), /暂无登录记录/);
 });
 
 test("actual five-row pagination and all four filters remain bounded to the returned sample", () => {
@@ -133,7 +133,7 @@ test("actual five-row pagination and all four filters remain bounded to the retu
     page.click("下一页");
   }
   const empty = harness([{ id: 1, deviceName: "device-1", status: "ACTIVE" }]);
-  empty.click("已撤销"); assert.match(empty.text(), /当前筛选下没有会话/);
+  empty.click("已撤销"); assert.match(empty.text(), /当前筛选下没有登录记录/);
   assert.equal(empty.devices().length, 0);
   assert.equal(empty.button("下一页"), undefined);
 });

@@ -138,8 +138,8 @@ function errorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || "C5_DATA_LOAD_FAILED");
   // client 层已接 guardedFetch 咽喉,网络异常到这里通常已是咽喉中文文案;按原压制意图把判据扩到
   // 咽喉网络文案前缀(error-messages.ts 未导出该文案常量,就地字面量),命中仍走 C5 自家短文案。
-  if (/failed to fetch|networkerror|network request failed/i.test(message) || message.includes("网络连接失败或后台服务不可达")) {
-    return "网络请求失败，页面数据未改变，请检查连接后重试";
+  if (/failed to fetch|networkerror|network request failed/i.test(message) || message.includes("网络连接失败或系统暂时连不上")) {
+    return "网络连接失败，数据没有变化，请检查网络后重试";
   }
   return displayAdminError(error);
 }
@@ -266,7 +266,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     } catch (err) {
       if (generation !== dataGeneration.current) return false;
       setOverview(null);
-      setError(`C5 数据加载失败 · ${errorMessage(err)}`);
+      setError(`加载失败 · ${errorMessage(err)}`);
       return false;
     } finally {
       if (!silent && generation === dataGeneration.current) setLoading(false);
@@ -324,7 +324,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       const message = await work(commandKey);
       writeReturned = true;
       if (!await loadData(true)) {
-        throw new Error("操作可能已生效，但结果回读失败；请刷新核对，重试将继续使用同一请求号");
+        throw new Error("可能已生效，但页面没刷新出来。请刷新查看，重试不会重复执行");
       }
       pendingCommandKeys.forget(fingerprint);
       toast(message || fallback);
@@ -335,8 +335,8 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
         pendingCommandKeys.forget(fingerprint);
       }
       const message = errorMessage(err);
-      setError(`C5 操作失败 · ${message}`);
-      toast(`C5 操作失败 · ${message}`);
+      setError(`操作失败 · ${message}`);
+      toast(`操作失败 · ${message}`);
       return false;
     } finally {
       setBusy(false);
@@ -373,15 +373,15 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const revokeOne = (id: string) =>
     openConfirm({
       action: `退出该设备 · ${maskSessionId(id)}`,
-      detail: "确认后服务器立即吊销该会话，用户当前设备马上下线；结果会写入高风险审计。",
-      chips: [["立即吊销", "ready"], ["服务端审计", "done"]],
+      detail: "确认后用户在这台设备上立即下线。",
+      chips: [["立即下线", "ready"]],
       reason: true,
       okLabel: "确认退出该设备",
       run: (reason) => {
         return perform(`revoke-one|${id}|${reason}`, async (commandKey) => {
           await revokeUserSession(id, reason, OPERATOR(), commandKey);
-          return "会话已立即吊销";
-        }, "会话已立即吊销");
+          return "该设备已下线";
+        }, "该设备已下线");
       },
     });
 
@@ -389,16 +389,16 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     if (!selectedUserId) return;
     openConfirm({
       action: `退出全部设备 · ${userLabel(selectedUser)}`,
-      detail: "确认后服务器立即吊销该用户全部活跃会话，常用于疑似盗号止损。",
-      chips: [["整链立即吊销", "ready"], ["服务端审计", "done"]],
+      detail: "确认后用户在所有设备上立即下线，常用于怀疑账号被盗时。",
+      chips: [["全部设备立即下线", "ready"]],
       reason: true,
       okLabel: "确认退出全部设备",
       run: (reason) => {
         if (!selectedUserId) return;
         return perform(`revoke-all|${selectedUserId}|${reason}`, async (commandKey) => {
           await revokeUserSessions(selectedUserId, reason, OPERATOR(), commandKey);
-          return "全部活跃会话已立即吊销";
-        }, "全部活跃会话已立即吊销");
+          return "所有设备已下线";
+        }, "所有设备已下线");
       },
     });
   };
@@ -406,26 +406,26 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const disable2fa = () => {
     if (!selectedUserId) return;
     openActionConfirm({
-      action: `人工关闭 两步验证 · ${userLabel(selectedUser)}`,
-      detail: <>用户丢失验证器设备时的恢复通道。服务器校验专门权限、防重复提交编号和当前状态，并记录操作人、角色和理由。</>,
+      action: `关闭两步验证 · ${userLabel(selectedUser)}`,
+      detail: <>用于用户丢了验证器设备时帮他恢复登录。请先核实是本人。</>,
       amplifies: false,
       businessForm: {
         kind: "identity-verify",
-        subject: `${userLabel(selectedUser)} · 关闭 两步验证`,
+        subject: `${userLabel(selectedUser)} · 关闭两步验证`,
         serverVerification: {
-          channel: "角色权限 + 双确认",
-          ticket: "当前管理员会话",
-          verifiedAt: "提交时服务端校验",
+          channel: "管理员权限",
+          ticket: "当前登录的管理员",
+          verifiedAt: "提交时检查",
           verifiedBy: OPERATOR(),
-          expiresAt: "单次命令",
+          expiresAt: "仅本次",
         },
       },
       run: (reason, _value, businessValue?: BusinessFormValue) => {
         if (!selectedUserId) return;
         return perform(`disable-2fa|${selectedUserId}|${reason}`, async (commandKey) => {
           await disableUserTwoFactor(selectedUserId, reason, OPERATOR(), operatorEvidence(businessValue), commandKey);
-          return "两步验证 已立即关闭";
-        }, "两步验证 已立即关闭");
+          return "两步验证已关闭";
+        }, "两步验证已关闭");
       },
     });
   };
@@ -434,17 +434,17 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     if (!selectedUserId) return;
     openActionConfirm({
       action: `密码重置 · ${userLabel(selectedUser)}`,
-      detail: <>后台始终看不到密码明文。双确认后，服务器标记“下次登录必须改密”并吊销全部旧会话。</>,
+      detail: <>后台看不到用户密码。确认后用户在所有设备上下线，下次登录必须先改密码。</>,
       amplifies: false,
       businessForm: {
         kind: "identity-verify",
         subject: `${userLabel(selectedUser)} · 密码重置`,
         serverVerification: {
-          channel: "角色权限 + 双确认",
-          ticket: "当前管理员会话",
-          verifiedAt: "提交时服务端校验",
+          channel: "管理员权限",
+          ticket: "当前登录的管理员",
+          verifiedAt: "提交时检查",
           verifiedBy: OPERATOR(),
-          expiresAt: "单次命令",
+          expiresAt: "仅本次",
         },
       },
       run: (reason, _value, businessValue?: BusinessFormValue) => {
@@ -465,18 +465,18 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     openActionConfirm({
       action: `解除${longLock ? "长" : "短"}锁 · ${userLabel(row)}`,
       detail: longLock
-        ? "长锁仅限超级管理员或风控角色解除。服务器校验锁类型未变化、权限和防重复提交编号后立即清除登录锁。"
-        : "短锁仅限超级管理员、风控或客服角色解除。服务器校验权限和防重复提交编号后立即清除登录失败计数与登录锁。",
+        ? "长时锁定只有超级管理员或风控能解除，解除后用户可立即重新登录。"
+        : "短时锁定可由超级管理员、风控或客服解除，解除后输错次数清零，用户可立即重新登录。",
       amplifies: false,
       businessForm: {
         kind: "identity-verify",
         subject: `${userLabel(row)} · 解除${longLock ? "长" : "短"}锁`,
         serverVerification: {
-          channel: "角色权限 + 双确认",
-          ticket: "当前管理员会话",
-          verifiedAt: "提交时服务端校验",
+          channel: "管理员权限",
+          ticket: "当前登录的管理员",
+          verifiedAt: "提交时检查",
           verifiedBy: OPERATOR(),
-          expiresAt: "单次命令",
+          expiresAt: "仅本次",
         },
       },
       run: (reason, _value, businessValue?: BusinessFormValue) => {
@@ -491,11 +491,11 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const updateParam = (param: UserCredentialParam) => {
     if (!param.key || param.readOnly || !canWriteConfig) return;
     openActionConfirm({
-      action: `账户安全规则调整 · ${text(param.name)}`,
+      action: `调整账户安全规则 · ${text(param.name)}`,
       detail: <><b>{text(param.name)}</b> · 当前 {text(param.value)} · {text(param.note)}。
         {param.key === "phoneChangeWindowDays" || param.key === "phoneChangeMaxCount"
-          ? "更换手机号的限制对所有用户的下一次改号申请立即生效。"
-          : "会话空闲阈值会立即影响活跃判定，其余凭证时长对新签发凭证生效。"}</>,
+          ? "对所有用户的下一次改号申请立即生效。"
+          : "无操作登出时间立即生效，其他时长从用户下次登录开始生效。"}</>,
       amplifies: false,
       edit: {
         kind: "number",
@@ -511,7 +511,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
         if (!value) return;
         const expectedVersion = toNumber(param.version, Number.NaN);
         if (!Number.isFinite(expectedVersion)) {
-          toast("当前配置版本不可用，请重新加载后再操作");
+          toast("设置已被修改，请刷新后再操作");
           return false;
         }
         return perform(`credential|${param.key}|${value}|${expectedVersion}|${reason}`, async (commandKey) => {
@@ -525,10 +525,10 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   return (
     <>
       <div className="f-stats">
-        <StatCard label="活跃会话(全平台)" value={activeSessions.toLocaleString("en-US")} sub="来自会话统计" />
-        <StatCard tone="ok" label="两步验证 开启率" value={`${text(overview?.stats?.twoFactorRatePct, "0.0")}%`} sub="来自凭证安全统计" />
-        <StatCard tone="warn" label="锁定中账户" value={lockedShort + lockedLong} sub={`短锁 ${lockedShort} · 长锁 ${lockedLong}`} />
-        <StatCard tone="danger" label="今日异常登录清退" value={tokenReuseToday} sub="重复使用登录凭证 → 退出关联的所有登录设备" />
+        <StatCard label="在线设备（全平台）" value={activeSessions.toLocaleString("en-US")} sub="当前登录中" />
+        <StatCard tone="ok" label="两步验证开启率" value={`${text(overview?.stats?.twoFactorRatePct, "0.0")}%`} sub="已开启的用户占比" />
+        <StatCard tone="warn" label="锁定中账户" value={lockedShort + lockedLong} sub={`短时 ${lockedShort} · 长时 ${lockedLong}`} />
+        <StatCard tone="danger" label="今日异常登录" value={tokenReuseToday} sub="发现登录凭证被盗用，已让相关设备全部下线" />
       </div>
 
       {error && (
@@ -537,12 +537,12 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
           <button className="l-btn sm" disabled={loading} onClick={() => void loadData()}>重新加载</button>
         </div>
       )}
-      {loading && <div className="ctint" style={{ marginBottom: 12 }}>C5 数据加载中...</div>}
+      {loading && <div className="ctint" style={{ marginBottom: 12 }}>正在加载…</div>}
 
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">登录安全与更换手机号限制</span>
-          <span className="sub">· 每个用户单独统计改号次数</span>
+          <span className="sub">· 改号次数按每个用户单独统计</span>
         </div>
         <div className="l-b" style={{ paddingTop: 4 }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "0 32px", minWidth: 0 }}>
@@ -551,23 +551,23 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
                 <div className="txt">
                   <div className="k">
                     {text(param.name)}
-                    {param.readOnly && <span className="bdg dim" style={{ marginLeft: 6 }}>当前仅可查看</span>}
+                    {param.readOnly && <span className="bdg dim" style={{ marginLeft: 6 }}>只能查看</span>}
                   </div>
                   <div className="s">{text(param.note)}</div>
                 </div>
                 <span className="v">{text(param.value)}</span>
                 <button className="l-btn sm mc" disabled={busy || !!param.readOnly || !canWriteConfig} onClick={() => updateParam(param)}>
-                  {param.readOnly ? "只读" : canWriteConfig ? "调整" : "无权限"}
+                  {param.readOnly ? "只能查看" : canWriteConfig ? "调整" : "无权限"}
                 </button>
               </div>
             ))}
-            {credentialParams.length === 0 && <div className="ctint">暂无凭证参数</div>}
+            {credentialParams.length === 0 && <div className="ctint">暂无设置</div>}
           </div>
           <div className="ctint" style={{ marginTop: 10 }}>
             <b>更换登录手机号</b> · 按最近的统计天数滚动计算每位用户成功改号的次数；达到上限后，须等最早一次改号移出统计期。此规则与更换绑定设备的次数分开。
           </div>
           <div className="ctint" style={{ marginTop: 10 }}>
-            <b>异常自动防御</b> · 同一个长凭证被使用两次时,服务器立即回收整条会话链;挑战码过期与高风险校验由后端执行。
+            <b>自动防盗号</b> · 发现同一登录凭证被两个地方使用时，系统会让相关设备全部下线。
           </div>
         </div>
       </section>
@@ -575,13 +575,13 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       <div className="two-col r125-1">
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">用户安全处置</span>
+            <span className="ttl">处理用户账户安全</span>
             <span className="sub">· 先选择用户，再处理该用户的登录设备、两步验证或密码</span>
           </div>
           <div className="l-b" style={{ paddingBottom: 10 }}>
             <input
               className="fld"
-              aria-label="检索安全处置用户"
+              aria-label="搜索用户"
               value={userLookup}
               disabled={busy}
               onChange={(event) => {
@@ -598,14 +598,14 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
               placeholder="搜索用户编码 / 用户名 / 推荐码 / 手机号"
             />
             <div className="ctint" style={{ marginTop: 8 }}>
-              直接点击用户右侧的“查看安全信息”；也可以先搜索。所有处置仅针对选中的用户。
+              点用户右侧的「查看安全信息」，下面的操作只对选中的用户生效。
             </div>
             {userSearchError && <div className="ctint bad" role="alert">
-              {userSearchError} <button className="l-btn sm" disabled={userSearchLoading} onClick={() => setUserListRetry((value) => value + 1)}>重新加载用户</button>
+              {userSearchError} <button className="l-btn sm" disabled={userSearchLoading} onClick={() => setUserListRetry((value) => value + 1)}>重新加载</button>
             </div>}
           </div>
           <div style={{ overflowX: "auto" }}>
-            <table className="l-tbl" aria-label="安全处置用户列表">
+            <table className="l-tbl" aria-label="用户列表">
               <thead><tr><th>用户编码</th><th>用户名</th><th>手机号</th><th>操作</th></tr></thead>
               <tbody>
                 {userOptions.map((account) => {
@@ -623,12 +623,12 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
                   );
                 })}
                 {userOptions.length === 0 && <tr><td colSpan={4} style={{ textAlign: "center", padding: 18 }}>
-                  {userSearchLoading ? "用户列表加载中…" : userSearchError ? "用户列表未能加载，请点击重新加载用户" : userLookup.trim() ? "没有匹配用户，请调整搜索条件" : "暂无可查看的用户"}
+                  {userSearchLoading ? "正在加载…" : userSearchError ? "用户列表加载失败，请点击重新加载" : userLookup.trim() ? "没有找到用户，换个关键词试试" : "暂无用户"}
                 </td></tr>}
               </tbody>
             </table>
           </div>
-          <DataListPager label="安全处置用户" page={userPage} pageSize={userPageSize} total={userTotal} onPageChange={setUserPage}
+          <DataListPager label="用户" page={userPage} pageSize={userPageSize} total={userTotal} onPageChange={setUserPage}
             onPageSizeChange={(next) => { setUserPageSize(next); setUserPage(1); }} pageSizeOptions={[20, 50, 100, 200]} />
           <div className="l-h">
             <span className="ttl">{selectedUser ? `当前用户 · ${userLabel(selectedUser)}` : "选择用户后查看安全信息"}</span>
@@ -637,12 +637,12 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
             <table className="l-tbl" style={{ minWidth: 700 }}>
               <thead>
                 <tr>
-                  <th>会话</th>
+                  <th>设备编号</th>
                   <th>IP</th>
                   <th>设备</th>
                   <th>状态</th>
                   <th>最近活跃</th>
-                  <th style={{ textAlign: "right" }}>动作</th>
+                  <th style={{ textAlign: "right" }}>操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -656,7 +656,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
                       <td style={{ fontSize: 12 }}>{platformSessionDeviceText(text(session.deviceName))}</td>
                       <td><span className={`bdg ${sessionTone(session.status)}`}>{sessionStatusLabel(session.status)}</span></td>
                       <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>
-                        {sessionTimeAnomaly(session) ? <span style={{ color: "var(--v5-warning)" }} title="服务端时间顺序异常，请核对会话原始记录">时间异常 · 查看详情</span> : formatDateTime(session.lastActiveAt ?? session.issuedAt)}
+                        {sessionTimeAnomaly(session) ? <span style={{ color: "var(--v5-warning)" }} title="记录的时间先后有误，请点开查看">时间异常 · 查看详情</span> : formatDateTime(session.lastActiveAt ?? session.issuedAt)}
                       </td>
                       <td style={{ textAlign: "right" }}>
                         {!active ? (
@@ -671,13 +671,13 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
                   );
                 })}
                 {sessions.length === 0 && (
-                  <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--ink-4)", padding: "18px 12px" }}>{selectedUserId ? "该用户暂无会话记录" : "请先搜索并选择用户查看会话"}</td></tr>
+                  <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--ink-4)", padding: "18px 12px" }}>{selectedUserId ? "该用户暂无登录记录" : "请先选择用户"}</td></tr>
                 )}
               </tbody>
             </table>
           </div>
           <DataListPager
-            label="用户会话"
+            label="用户登录设备"
             page={page}
             pageSize={pageSize}
             total={total}
@@ -703,11 +703,11 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
             {selectedUser && (
               <>
                 <div className="ctint" style={{ marginTop: 10 }}>
-                  <b>两步验证 状态</b> · {selectedUser.twoFactorEnabled ? "已开启" : "已关闭"} · 登录失败 {toNumber(selectedUser.loginFailCount)} 次
+                  <b>两步验证</b> · {selectedUser.twoFactorEnabled ? "已开启" : "已关闭"} · 登录失败 {toNumber(selectedUser.loginFailCount)} 次
                 </div>
                 {selectedUser.passwordResetRequired && (
                   <div className="ctint warn" style={{ marginTop: 8 }}>
-                    <b>密码重置</b> · 等待用户用当前密码验证身份并设置不同的新密码
+                    <b>密码重置</b> · 等待用户下次登录时设置新密码
                   </div>
                 )}
               </>
@@ -717,8 +717,8 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
 
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">锁定状态与解除</span>
-            <span className="sub">· 仅显示按失败次数排序的前 5 个紧急账户；精确到期时间来自服务端登录锁</span>
+            <span className="ttl">被锁定的账户</span>
+            <span className="sub">· 只显示输错次数最多的 5 个</span>
           </div>
           <div className="l-b">
             {lockedUsers.map((row) => {
@@ -744,29 +744,29 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       <PhoneReplacementPanel userId={!loading && selectedUser && [String(selectedUser.userId), String(selectedUser.userNo)].includes(selectedUserKey) ? String(selectedUserId) : null} userLabel={userLabel(selectedUser)} />
 
       {selectedSession && (
-        <Drawer title={`会话详情 · ${maskSessionId(sessionId(selectedSession))}`} sub={`${userLabel(selectedUser)} · ${sessionStatusLabel(selectedSession.status)}`} onClose={() => setSsId(null)}
+        <Drawer title={`登录设备详情 · ${maskSessionId(sessionId(selectedSession))}`} sub={`${userLabel(selectedUser)} · ${sessionStatusLabel(selectedSession.status)}`} onClose={() => setSsId(null)}
           footer={<button className="l-btn danger" disabled={busy || !canRevokeOne || text(selectedSession.status, "").toUpperCase() !== "ACTIVE"} onClick={() => revokeOne(sessionId(selectedSession))}>退出该设备</button>}>
-          <SecLabel>服务器会话 · 北京时间（UTC+08）</SecLabel>
-          <div className="kv"><span className="k">刷新凭证</span><span className="v mono">{maskSessionId(sessionId(selectedSession))}</span></div>
+          <SecLabel>登录信息 · 北京时间（UTC+08）</SecLabel>
+          <div className="kv"><span className="k">设备编号</span><span className="v mono">{maskSessionId(sessionId(selectedSession))}</span></div>
           <div className="kv"><span className="k">设备</span><span className="v">{platformSessionDeviceText(text(selectedSession.deviceName))}</span></div>
           <div className="kv"><span className="k">IP</span><span className="v mono">{text(selectedSession.clientIpMasked)}</span></div>
           <div className="kv"><span className="k">状态</span><span className="v">{sessionStatusLabel(selectedSession.status)}</span></div>
-          <div className="kv"><span className="k">签发</span><span className="v mono">{text(selectedSession.issuedAt)}</span></div>
-          <div className="kv"><span className="k">最近活跃</span><span className="v mono">{text(selectedSession.lastActiveAt ?? selectedSession.issuedAt)}{sessionTimeAnomaly(selectedSession) ? " · 源数据时间异常" : ""}</span></div>
-          <div className="kv"><span className="k">过期</span><span className="v mono">{text(selectedSession.expiresAt)}</span></div>
-          <div className="kv"><span className="k">吊销</span><span className="v mono">{text(selectedSession.revokedAt)}</span></div>
+          <div className="kv"><span className="k">登录时间</span><span className="v mono">{text(selectedSession.issuedAt)}</span></div>
+          <div className="kv"><span className="k">最近活跃</span><span className="v mono">{text(selectedSession.lastActiveAt ?? selectedSession.issuedAt)}{sessionTimeAnomaly(selectedSession) ? " · 时间记录有误" : ""}</span></div>
+          <div className="kv"><span className="k">过期时间</span><span className="v mono">{text(selectedSession.expiresAt)}</span></div>
+          <div className="kv"><span className="k">下线时间</span><span className="v mono">{text(selectedSession.revokedAt)}</span></div>
         </Drawer>
       )}
 
       {selectedLock && (
         <Drawer title={`锁定详情 · ${text(selectedLock.userNo)}`} sub={`${operatorNicknameText(text(selectedLock.nickname))} · ${text(selectedLock.lockLabel)}`} onClose={() => setLockId(null)}
           footer={<button className={`l-btn ${selectedLock.lockKind === "LONG" ? "mc" : "primary"}`} disabled={busy || (selectedLock.lockKind === "LONG" ? !canUnlockLong : !canUnlockShort)} onClick={() => unlockUser(selectedLock)}>解除锁定</button>}>
-          <SecLabel>锁定事实</SecLabel>
+          <SecLabel>锁定信息</SecLabel>
           <div className="kv"><span className="k">用户编码</span><span className="v mono">{text(selectedLock.userNo)}</span></div>
           <div className="kv"><span className="k">用户昵称</span><span className="v">{operatorNicknameText(text(selectedLock.nickname))}</span></div>
-          <div className="kv"><span className="k">失败次数</span><span className="v mono">{toNumber(selectedLock.loginFailCount)}</span></div>
+          <div className="kv"><span className="k">输错次数</span><span className="v mono">{toNumber(selectedLock.loginFailCount)}</span></div>
           <div className="kv"><span className="k">锁定类型</span><span className="v">{text(selectedLock.lockLabel)}</span></div>
-          <div className="kv"><span className="k">强制重置</span><span className="v">{selectedLock.passwordResetRequired ? "是" : "否"}</span></div>
+          <div className="kv"><span className="k">需重置密码</span><span className="v">{selectedLock.passwordResetRequired ? "是" : "否"}</span></div>
           <div className="kv"><span className="k">说明</span><span className="v">{text(selectedLock.lockReason)}</span></div>
         </Drawer>
       )}

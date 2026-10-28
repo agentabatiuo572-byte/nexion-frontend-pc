@@ -36,7 +36,7 @@ test("E-domain confirmations await A2 and preserve one command key across retrie
   // 同一意图的重试复用同号这条不变量没变,而且现在跨刷新也成立。
   assert.match(view, /const commandKey = commandAttempts\.resolve\(slot, fingerprint,/);
   assert.match(view, /rawPropose\(toast, \{ \.\.\.spec, commandKey \}\)/);
-  assert.match(view, /completionCopy="提交后进入 A2 待确认队列/);
+  assert.match(view, /completionCopy="提交后需在「操作记录与审批」确认才生效/);
   assert.doesNotMatch(view, /finally\s*\{\s*setActionConfirm\(null\)/);
 });
 
@@ -44,8 +44,8 @@ test("E1 SKU editor blocks no-op edits and constrains stock to a non-negative in
   assert.match(view, /skuFormChanged/);
   assert.match(view, /type="number"[^\n]*min=\{0\}[^\n]*step=\{1\}/);
   assert.match(view, /库存必须填写 0 到 2147483647 之间的整数/);
-  assert.match(view, /无限库存仅适用于 云端共享份额 等非实物份额商品/);
-  assert.match(view, /value="UNLIMITED">无限库存（非实物份额）/);
+  assert.match(view, /无限库存只适用于云端共享份额这类非实物商品/);
+  assert.match(view, /value="UNLIMITED">无限库存（非实物份额商品）/);
   assert.match(e1Client, /stock: inventoryMode === "UNLIMITED" \? null/);
   assert.match(e1Data, /stock: inventoryMode === "UNLIMITED" \? undefined/);
   assert.match(catalog, /unlimitedInventory \? "∞（非实物）"/);
@@ -72,8 +72,8 @@ test("E1 SKU edits carry the product revision through the PC proxy", () => {
 });
 
 test("E1 exposes retry paths for read and media failures", () => {
-  assert.match(catalog, /重新加载 E1 数据/);
-  assert.match(catalog, /重新加载媒体/);
+  assert.match(catalog, /商品数据加载失败/);
+  assert.match(catalog, /重新加载图片/);
 });
 
 test("E1 never mounts a persisted presigned URL before a per-asset refresh succeeds", () => {
@@ -91,10 +91,10 @@ test("E1 catalog supports keyword, status and tier filtering with an explicit em
   assert.match(catalog, /const \[skuStatus, setSkuStatus\] = useState\("all"\)/);
   assert.match(catalog, /const \[skuTier, setSkuTier\] = useState\("all"\)/);
   assert.match(catalog, /const filteredSkus = useMemo\(/);
-  assert.match(catalog, /aria-label="搜索商品规格"/);
+  assert.match(catalog, /aria-label="搜索商品"/);
   assert.match(catalog, /aria-label="商品状态筛选"/);
   assert.match(catalog, /aria-label="商品档位筛选"/);
-  assert.match(catalog, /没有符合筛选条件的 商品规格/);
+  assert.match(catalog, /没有符合条件的商品/);
   assert.match(catalog, /filteredSkus\.map\(/);
   assert.match(catalog, /new URLSearchParams\(window\.location\.search\)/);
   assert.match(catalog, /params\.get\("sku"\)/);
@@ -108,15 +108,15 @@ test("E1 release schedule keeps its seven visible cells on a seven-column grid",
 
 test("E1 release schedule presents the effective month as the primary date", () => {
   assert.deepEqual(releaseMonthPresentation(5, 1), {
-    effectiveLabel: "M6",
-    adjustmentLabel: "基准 M5 · 延后 1M",
+    effectiveLabel: "第 6 个月",
+    adjustmentLabel: "原定第 5 个月 · 推迟 1 个月",
   });
   assert.deepEqual(releaseMonthPresentation(5, -2), {
-    effectiveLabel: "M3",
-    adjustmentLabel: "基准 M5 · 提前 2M",
+    effectiveLabel: "第 3 个月",
+    adjustmentLabel: "原定第 5 个月 · 提前 2 个月",
   });
   assert.deepEqual(releaseMonthPresentation(5, 0), {
-    effectiveLabel: "M5",
+    effectiveLabel: "第 5 个月",
     adjustmentLabel: "按原计划",
   });
   assert.match(catalog, /releaseMonthPresentation\(g\.releaseMonth, offset\)/);
@@ -140,7 +140,7 @@ test("E1 release state follows product unlockPhase, never the free-text phase SK
   assert.equal(conflict.unlocked, false);
   const missing = e1GateReadiness({ ...input, sku: { id: "rack-p2", unlock: "" } });
   assert.equal(missing.unlocked, false);
-  assert.ok(missing.blockers.includes("商品解锁阶段未配置"));
+  assert.ok(missing.blockers.includes("商品没有设置开放阶段"));
   const matching = e1GateReadiness({ ...input, sku: { id: "rack-p2", unlock: "seed" } });
   assert.equal(matching.phaseConflict, false);
   assert.equal(matching.unlocked, true);
@@ -173,7 +173,7 @@ test("E1 current product vocabulary and open-without-phase semantics are enforce
   assert.doesNotMatch(view, /编辑前代际门/);
   assert.match(catalog, /无需阶段/);
   assert.doesNotMatch(catalog, /设为当前/);
-  assert.match(catalog, /当前阶段<\/b> 只读跟随 H1/);
+  assert.match(catalog, /当前阶段<\/b> 跟随「运营阶段设置」/);
   assert.doesNotMatch(registry.slice(registry.indexOf('op: "e1_gate_create"'), registry.indexOf('// E2 收益')), /换代门槛|discount/);
   assert.doesNotMatch(registry, /op: "e1_phase_current"/);
 });
@@ -185,7 +185,7 @@ test("E1 A2 SKU replay uses the backend canonical field names", () => {
 });
 
 test("E1 early-access promotional discount does not claim B1 cash-outflow gating", () => {
-  assert.match(catalog, /name: "置换侧抢先购 调整", op: "early-access", amplify: false/);
+  assert.match(catalog, /name: "调整以旧换新抢先购", op: "early-access", amplify: false/);
   assert.match(registry, /op: "e1_early_access_update"[\s\S]*targetType: "device_release_early_access"/);
 });
 
@@ -205,7 +205,7 @@ test("E1 hides every mutation entry point from read-only identities", () => {
 test("E1 consumes the E5 frontend display name and preserves stale SKU datacenter values", () => {
   assert.match(view, /const value = dc\.displayName\.trim\(\)/);
   assert.match(view, /if \(datacenter\) return current/);
-  assert.match(view, /历史值\(当前不可选\)/);
+  assert.match(view, /旧值（现在不能选）/);
   assert.match(view, /if \(!skuDatacenterSet\.has\(datacenter\) && !editSkuId\)/);
   assert.doesNotMatch(view, /setForm\(\{ \.\.\.form, datacenter: skuDatacenterDefault \}\)/);
   assert.doesNotMatch(view, /const value = dc\.regionLabel\.trim\(\)/);
@@ -252,13 +252,13 @@ test("E1 purchase gate is a structured server-enforced editor, not a HOLD placeh
 test("E1 purchase quota is lifetime-only while legacy month rows stay visibly repairable", () => {
   assert.match(e1Data, /gateQuotaPeriod: "lifetime"/);
   assert.match(e1Data, /quotaPeriod: hasQuota \? "lifetime"/);
-  assert.match(e1Data, /历史按月周期暂不可用/);
+  assert.match(e1Data, /按月统计已停用/);
   assert.doesNotMatch(view, /<option value="month">按月<\/option>/);
-  assert.match(view, /历史按月配置已暂停/);
+  assert.match(view, /按月统计已停用/);
   assert.match(e1Gate, /quotaPeriod: gate\.quotaCap != null \? "lifetime" : null/);
   assert.match(e1Gate, /quotaPeriod: gate\.quotaPeriod === "month" \? "month" : gate\.quotaCap != null \? "lifetime" : undefined/);
   assert.match(e1Data, /direct > 1_000_000/);
-  assert.match(e1Data, /已售数量必须和锁额上限成对配置/);
+  assert.match(e1Data, /已售数量和可售上限要一起填写/);
   assert.match(e1Contract, /value\.activeDirectMin/);
 });
 
@@ -293,11 +293,11 @@ test("E1 projects force-unlock provenance instead of admitting the backend omits
   // 渲染必须用溯源函数,不得再写死「后端未返回批准人与审计编号」。
   // (注释里保留那句是为了记录历史缺口,所以只断言**渲染代码**不含它。)
   assert.match(catalog, /title=\{forceUnlockProvenanceTitle\(g\)\}/);
-  assert.match(catalog, /批准人 \{g\.forceUnlockApprovedBy \|\| "未记录"\} · A2 编号 \{g\.forceUnlockAuditId \|\| "未记录"\}/);
+  assert.match(catalog, /批准人 \{g\.forceUnlockApprovedBy \|\| "未记录"\} · 操作记录 \{g\.forceUnlockAuditId \|\| "未记录"\}/);
   const renderCode = catalog.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   assert.doesNotMatch(renderCode, /后端未返回批准人与审计编号/);
   // 有溯源就显示,没有则如实说未记录 —— 不编造批准人。
-  assert.match(catalog, /未找到可核实的强制提前开放审计记录/);
+  assert.match(catalog, /找不到对应的操作记录/);
   assert.match(catalog, /批准人 \$\{approver\}/);
-  assert.match(catalog, /审计编号 \$\{auditId\}/);
+  assert.match(catalog, /操作记录编号 \$\{auditId\}/);
 });

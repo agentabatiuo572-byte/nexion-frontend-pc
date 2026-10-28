@@ -14,7 +14,7 @@ import type { DCtx } from "./types";
 const PARAMS = [
   { key: "baseRateVndPerUsdt", label: "基准价", unit: "₫/USDT", min: 20_000, max: 35_000, step: 1 },
   { key: "buySpreadPct", label: "买入点差", unit: "%", min: 0, max: 3, step: 0.01 },
-  { key: "lockWindowMinutes", label: "锁价窗", unit: "分钟", min: 5, max: 120, step: 1 },
+  { key: "lockWindowMinutes", label: "报价有效期", unit: "分钟", min: 5, max: 120, step: 1 },
 ] as const;
 
 function vnd(value: number) {
@@ -44,7 +44,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       setData(await loadD6FxQuote());
     } catch (err) {
       setData(null);
-      setError(err instanceof Error ? displayAdminError(err) : "D6 汇率设置读取失败");
+      setError(err instanceof Error ? displayAdminError(err) : "汇率设置加载失败");
     } finally {
       setLoading(false);
     }
@@ -58,13 +58,13 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     if (!data) return;
     const current = data[param.key];
     openActionConfirm({
-      action: `汇率设置调整 · ${param.label}`,
-      detail: `${param.label}当前为 ${current} ${param.unit}，合法范围 ${param.min.toLocaleString("en-US")}–${param.max.toLocaleString("en-US")}。只影响新付款单；在途付款单继续使用下单时的锁价快照。`,
+      action: `调整汇率 · ${param.label}`,
+      detail: `${param.label}当前为 ${current} ${param.unit}，可设 ${param.min.toLocaleString("en-US")}–${param.max.toLocaleString("en-US")}。只影响新付款单，已下单的按下单时的汇率。`,
       edit: { kind: "number", current: String(current), unit: param.unit, min: param.min, max: param.max, step: param.step },
       run: async (reason, value) => {
         const nextValue = Number(value);
         if (!Number.isFinite(nextValue) || nextValue < param.min || nextValue > param.max) {
-          throw new Error(`${param.label}超出合法范围`);
+          throw new Error(`${param.label}超出可设范围`);
         }
         if (nextValue === current) {
           throw new Error("参数值未变化，本次未提交");
@@ -78,10 +78,10 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
             lockWindowMinutes: param.key === "lockWindowMinutes" ? nextValue : data.lockWindowMinutes,
           }, data.version, reason, operator);
           setData(next);
-          toast(`${param.label}已更新，仅新付款单取新值`);
+          toast(`${param.label}已更新，新付款单起生效`);
         } catch (err) {
           setData(null);
-          setError(`写入结果未确认，已停止展示旧牌价 · ${err instanceof Error ? err.message : "D6 写入失败"}`);
+          setError(`保存结果未确认，已停止展示旧牌价 · ${err instanceof Error ? err.message : "保存失败"}`);
           throw err;
         } finally {
           setBusy(false);
@@ -91,58 +91,58 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   };
 
   if (loading && !data) {
-    return <section className="l-card"><div className="l-b">D6 汇率设置加载中...</div></section>;
+    return <section className="l-card"><div className="l-b">正在加载…</div></section>;
   }
   if (error && !data) {
-    return <section className="l-card"><div className="l-b"><div className="dtint warn">{error}</div><button className="l-btn primary" disabled={loading || busy} style={{ marginTop: 12 }} onClick={() => void load()}>重试读取</button></div></section>;
+    return <section className="l-card"><div className="l-b"><div className="dtint warn">{error}</div><button className="l-btn primary" disabled={loading || busy} style={{ marginTop: 12 }} onClick={() => void load()}>重试</button></div></section>;
   }
 
   return (
     <>
       {error && <div className="dtint warn" style={{ marginBottom: 12 }}>{error}</div>}
       <div className="f-stats">
-        <div className="f-stat ok"><div className="k">当前报价</div><div className="v">1 USDT ≈ {vnd(data?.quoteRateVndPerUsdt ?? 0)}</div><div className="sub">根据基准价与买入点差实时计算</div></div>
-        <div className="f-stat"><div className="k">基准价</div><div className="v">{vnd(data?.baseRateVndPerUsdt ?? 0)}</div><div className="sub">手动维护 · 20,000–35,000</div></div>
-        <div className="f-stat cyan"><div className="k">买入点差</div><div className="v">{data?.buySpreadPct ?? 0}%</div><div className="sub">合法范围 0–3%</div></div>
-        <div className="f-stat warn"><div className="k">锁价窗</div><div className="v">{data?.lockWindowMinutes ?? 0} 分钟</div><div className="sub">付款单下单即锁定</div></div>
+        <div className="f-stat ok"><div className="k">当前报价</div><div className="v">1 USDT ≈ {vnd(data?.quoteRateVndPerUsdt ?? 0)}</div><div className="sub">基准价加上买入点差</div></div>
+        <div className="f-stat"><div className="k">基准价</div><div className="v">{vnd(data?.baseRateVndPerUsdt ?? 0)}</div><div className="sub">手动设置 · 20,000–35,000</div></div>
+        <div className="f-stat cyan"><div className="k">买入点差</div><div className="v">{data?.buySpreadPct ?? 0}%</div><div className="sub">可设 0–3%</div></div>
+        <div className="f-stat warn"><div className="k">报价有效期</div><div className="v">{data?.lockWindowMinutes ?? 0} 分钟</div><div className="sub">用户下单后汇率锁定这么久</div></div>
       </div>
 
       <section className="l-card" style={{ marginBottom: 12 }}>
-        <div className="l-h"><span className="ttl">联动核验入口</span><span className="sub">· 新单锁价、审计与事件回执可直接追踪</span></div>
+        <div className="l-h"><span className="ttl">相关页面</span></div>
         <div className="l-b">
           <div className="chips">
-            <Link className="chip" href="/finance/recon">D1 新付款单与回单</Link>
-            <Link className="chip" href="/platform/audit">A2 调价审计</Link>
-            <Link className="chip" href="/platform/events">A4 调价事件</Link>
+            <Link className="chip" href="/finance/recon">充值对账</Link>
+            <Link className="chip" href="/platform/audit">操作记录</Link>
+            <Link className="chip" href="/platform/events">用户行为事件</Link>
           </div>
         </div>
       </section>
 
       <div className="two-col r11">
         <section className="l-card">
-          <div className="l-h"><span className="ttl">牌价配置（操作确认）</span><span className="sub">· 按系统配置执行；防止覆盖他人修改和重复提交，并保存操作记录</span><div className="r"><button className="l-btn sm" disabled={loading || busy} onClick={() => void load()}>刷新</button></div></div>
+          <div className="l-h"><span className="ttl">汇率设置</span><div className="r"><button className="l-btn sm" disabled={loading || busy} onClick={() => void load()}>刷新</button></div></div>
           <div className="l-b">
             {PARAMS.map((param) => (
               <div className="p-row" key={param.key}>
-                <div className="txt"><div className="k">{param.label}</div><div className="s">仅对新付款单生效；非法值由服务器 422 拒绝</div></div>
+                <div className="txt"><div className="k">{param.label}</div><div className="s">只对新付款单生效</div></div>
                 <span className="v">{param.key === "baseRateVndPerUsdt" ? vnd(data?.[param.key] ?? 0) : `${data?.[param.key] ?? 0} ${param.unit}`}</span>
                 {canManage && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => editParam(param)}>调整</button>}
               </div>
             ))}
             <div className="dtint ok" style={{ marginTop: 12 }}>
-              <b>牌价怎么算</b> · 基准价 ×（1 + 买入点差），在整数域取整到十位。当前 {vnd(data?.baseRateVndPerUsdt ?? 0)} ×（1 + {data?.buySpreadPct ?? 0}%）= <b>{vnd(data?.quoteRateVndPerUsdt ?? 0)}</b>。
+              <b>汇率怎么算</b> · 基准价 ×（1 + 买入点差），取整到十位。当前 {vnd(data?.baseRateVndPerUsdt ?? 0)} ×（1 + {data?.buySpreadPct ?? 0}%）= <b>{vnd(data?.quoteRateVndPerUsdt ?? 0)}</b>。
             </div>
             <div className="dtint warn" style={{ marginTop: 10 }}>
-              <b>调价不影响在途单</b> · 付款单沿用下单时锁定的汇率；本页调价只影响之后新建的付款单，不重算、不追差。
+              <b>调价不影响已下的单</b> · 已下单的按下单时的汇率，只有之后的新付款单用新汇率。
             </div>
           </div>
         </section>
 
         <section className="l-card">
-          <div className="l-h"><span className="ttl">生效历史</span><span className="sub">· 服务端历史，与必写审计同一事务</span></div>
+          <div className="l-h"><span className="ttl">调整历史</span></div>
           <div style={{ overflowX: "auto" }}>
             <table className="l-tbl" style={{ minWidth: 720 }}>
-              <thead><tr><th>时间</th><th>基准价</th><th>点差</th><th>锁价窗</th><th>操作者</th><th>理由</th></tr></thead>
+              <thead><tr><th>时间</th><th>基准价</th><th>点差</th><th>报价有效期</th><th>操作者</th><th>理由</th></tr></thead>
               <tbody>
                 {(data?.history ?? []).length === 0 ? (
                   <tr><td colSpan={6} style={{ textAlign: "center", padding: 24, color: "var(--ink-4)" }}>暂无调价历史</td></tr>

@@ -8,32 +8,32 @@ import { PORTED_EMPTY_CONTENT } from "./ported-content";
 export const DOMAIN_M: ModuleEntry[] = [
   {
     path: "/service/overview",
-    summary: "查看本人客户、待办与维护进展；主管可审阅客户并办理分配和交接。",
+    summary: "查看你的客户、待办和维护进度；主管还可以分配和交接客户。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/service/tickets",
-    summary: "处理客户提交的工单：回复客户、记内部备注、调整状态与优先级；负责人跟随客户的专属客服。资金、账户和设备的处置请到对应模块办理。",
+    summary: "处理客户工单：回复、写内部备注、改状态和优先级。资金、账户和设备问题请到对应页面处理。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/service/sessions",
-    summary: "与本人专属客户沟通；主管可审阅，客户归属变更须走正式转绑。",
+    summary: "和你负责的客户沟通；主管可查看所有会话。更换客户的专属客服需走转绑流程。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/service/leaderboard",
-    summary: "查看公开客服业绩与完整榜单名次；客户明细仍按原有权限开放。",
+    summary: "查看客服业绩榜和名次。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/service/kb-sla",
-    summary: "维护帮助中心的常见问答。修改内容须确认并填写理由。",
+    summary: "维护帮助中心的常见问题。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/service/scripts",
-    summary: "配置服务规则、待分配处理方式和客服话术。",
+    summary: "设置服务规则、未分配客户的处理方式和客服常用话术。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];

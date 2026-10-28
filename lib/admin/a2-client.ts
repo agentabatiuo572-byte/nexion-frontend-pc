@@ -23,8 +23,8 @@ export class A2OutcomeUncertainError extends Error {
   constructor(message: string, public readonly commandKey: string) {
     const detail = message.trim();
     super(
-      `A2 提案结果暂不确定，可能已经生效；请保留当前弹窗与输入，使用同一命令号重试并核对 A2 审计。`
-      + `同一命令号：${commandKey}${detail ? `（${detail}）` : ""}`,
+      `提交结果暂未确认，可能已经生效。请不要关闭弹窗或修改内容，直接重试（不会重复执行），或到操作记录里核对。`
+      + `命令号：${commandKey}${detail ? `（${detail}）` : ""}`,
     );
     this.name = "A2OutcomeUncertainError";
   }
@@ -294,7 +294,7 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
   if (ticket.obj === "phone-calibration") {
     try {
       phoneCalibrationProposal = parsePhoneProposalView(JSON.parse(ticket.phoneCalibrationProposal ?? "null"));
-    } catch { phoneCalibrationError = "手机规则提案详情不可读取，禁止批准；可驳回后重新提交。"; }
+    } catch { phoneCalibrationError = "手机规则申请的详情加载失败，不能执行；可取消后重新提交。"; }
   }
   return {
     ...(phoneCalibrationProposal ? { phoneCalibrationProposal } : {}),
@@ -396,7 +396,7 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
   // classification-ok: Strict recovery rejects malformed envelopes and wrapped business 5xx even under HTTP 200; HTTP failure classification below remains shared.
   if (init?.commandKey && init.strictOutcome && (!result || !Number.isInteger(result.code)
       || result.code >= 500 || result.code !== 0 && result.code < 400)) {
-    throw new A2OutcomeUncertainError("审批提交结果待核实，请查询原提案。", init.commandKey);
+    throw new A2OutcomeUncertainError("提交结果暂未确认，请到操作记录里核对。", init.commandKey);
   }
 
   if (init?.commandKey && !result) {
@@ -547,7 +547,7 @@ export async function fetchA2ReasonPolicy(): Promise<A2ReasonPolicy> {
 export async function fetchA2ProposalByKey(commandKey: string): Promise<A2OperationRow | null> {
   try {
     const row = await a2Request<BackendTicket>(`/operations/proposals/by-idempotency-key?${new URLSearchParams({ idempotencyKey: commandKey })}`);
-    if (!row || typeof row.id !== "string" || !row.id || typeof row.status !== "string") throw new Error("原审批提案回执不完整，请继续查询。");
+    if (!row || typeof row.id !== "string" || !row.id || typeof row.status !== "string") throw new Error("提交结果不完整，请稍后再查。");
     return fromTicket(row);
   } catch (failure) {
     if (failure && typeof failure === "object" && "status" in failure && failure.status === 404) return null;
@@ -588,7 +588,7 @@ export async function createA2OperationProposal(input: {
     ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-proposal" }),
   });
   if (strictOutcome && (!row || typeof row.id !== "string" || !row.id)) {
-    throw new A2OutcomeUncertainError("审批回执不完整，请查询原提案。", commandKey!);
+    throw new A2OutcomeUncertainError("提交结果不完整，请到操作记录里核对。", commandKey!);
   }
   return fromTicket(row);
 }

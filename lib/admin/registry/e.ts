@@ -8,32 +8,32 @@ import { PORTED_EMPTY_CONTENT } from "./ported-content";
 export const DOMAIN_E: ModuleEntry[] = [
   {
     path: "/devices/pricing",
-    summary: "UVELBox 商品目录和定价管理(E1)—— 管商品清单(售价、每日收益、库存、上下架、促销)+ 新增机型。价格和每日收益基准以服务器为准;新增机型、改价、上下架都走操作确认并记入 A2 审计,会联动 E4 订单和 E2 收益引擎。",
+    summary: "管理 UVELBox 商品：售价、每日收益、库存、上下架和促销，新增机型，设置各机型何时开放购买。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/devices/tasks",
-    summary: "收益与用户任务管理(E2)—— 管设备的每日收益基准、UVT 配比和每日任务奖励,以服务器为准。改了费率从第二天起影响全网在线设备的收益计算(改费率走操作确认),会牵动 B 域应付负债和 D 域提现压力。",
+    summary: "设置设备每日收益、UVT 发放比例和每日任务奖励。改收益从次日起对所有在线设备生效，会直接增加平台应付款。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/devices/trade-in",
-    summary: "设备生命周期与以旧换新(E3)—— 管设备任务产能随月龄递减的节奏与产出阶梯抵扣。折抵只能抵新机货款、不进可提余额,默认仅限升级更高价设备;抵扣和下单一笔完成(要么都成、要么都回滚)。改规则走操作确认,会联动 E1 商品与旧机置换流转。",
+    summary: "设置设备产出随使用时长递减的规则，以及旧机抵扣换新机的规则。抵扣额只能用来买更贵的新机，不能提现。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/devices/orders",
-    summary: "购机订单管理(E4)—— 全部订单的用户、机型、金额、支付方式和状态流转。订单按固定步骤推进:下单 → 已付 → 开通中 → 已激活,外加失败态;退款会核减累计入金,资金那边走 D1/D4,异常订单点开能看全部字段。",
+    summary: "查看所有购机订单的用户、机型、金额、支付方式和进度（下单 → 已付款 → 开通中 → 已激活）。退款会相应扣减用户的累计充值。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/devices/ops",
-    summary: "设备运行管理(E5)—— 在线设备的健康度、算力波动、告警和客服工单。盯设备产出异常(掉线、算力骤降、收益计算偏差),按级别处置告警;会动到钱或状态的运维(强制下线、补发收益)要确认并记入 A2 审计。",
+    summary: "监控在线设备的状态、算力波动和告警，处理掉线、算力骤降和收益异常。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/devices/compute-config",
-    summary: "算力与设备配置(E6)—— 管理手机绑定换机开关与最短间隔、App 在线加成系数和收益估算参数。变更须填写理由并经 A2 操作确认。H5 手机算力奖励已退役，其它已购设备不受影响。",
+    summary: "设置手机绑定与换机规则、App 在线加成和收益估算参数。H5 手机算力奖励已停用，已购设备不受影响。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];

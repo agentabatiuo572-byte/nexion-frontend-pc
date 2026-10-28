@@ -35,7 +35,7 @@ test("B2 page uses its own authoritative client and clears stale financial facts
   assert.match(page, /@\/lib\/admin\/b2-client/);
   assert.doesNotMatch(page, /@\/lib\/admin\/b-client/);
   assert.match(page, /setData\(null\)/);
-  assert.match(page, /服务端响应异常/);
+  assert.match(page, /加载失败，已暂停显示旧数据/);
   assert.match(page, /重新加载/);
 });
 
@@ -57,7 +57,7 @@ test("B2 exposes the locked 7/30 day forecast, nine-source liability detail and 
 
 test("B2 zero-due copy does not invent cover days or recommend scheduling zero funds", () => {
   assert.match(page, /maturity\.cumulativeUsdt === 0/);
-  assert.match(page, /当前窗口无到期兑付/);
+  assert.match(page, /这段时间没有到期款项/);
   assert.doesNotMatch(page, /Math\.max\(RW_TOTAL\s*\/\s*7,\s*1\)/);
 });
 
@@ -75,10 +75,10 @@ test("B2 zero-due chart keeps its safe scale internal and reports real zero summ
 test("B2 write and export controls use dedicated authorities, reason validation and optimistic concurrency", () => {
   assert.match(page, /overview_b2_write/);
   assert.match(page, /overview_b2_export/);
-  assert.match(page, /8-200/);
+  assert.match(page, /8–200/);
   assert.match(client, /expectedVersion/);
   assert.match(client, /Idempotency-Key/);
-  assert.match(page, /配置于下一 UTC 日 00:00 生效/);
+  assert.match(page, /次日 UTC 00:00 起生效/);
 });
 
 test("B2 read/write/export authorities are enforced server-side without weakening D3 authorities", () => {

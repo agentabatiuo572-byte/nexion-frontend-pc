@@ -34,16 +34,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 // H5 页面内用明确分区承载里程碑，旧 /growth/milestones 地址只做兼容迁移。
 const FOLD: Record<string, string> = { H1: "H1", H2: "H2", H3: "H3", H4: "H4", H5: "H5", H6: "H5", H7: "H7", H8: "H8", H9: "H9" };
 
-const RO_COPY: Record<string, [ro: string, live: string]> = {
-  H1: ["阶段流转只能服务器推进 · 客户端不能改", ""],
-  H2: ["扣款失败概率只在服务器 · 永不下发前端", "自动推送 1.5 秒即时急停 · 进行中的按开始时锁定值结算"],
-  H3: ["任务完成态和奖励结算由服务器裁决", "进行中的按入窗/入周/跨档快照结算 · 不追溯"],
-  H4: ["同时只能有一个进行中的主推活动", "配置活动、奖池与领取限制"],
-  H5: ["签到/转盘的结果由服务器定 · 客户端只显示", "幸运两档概率之和 ≤100% · 里程碑阈值严格从低到高"],
-  H7: ["代金券领取/核销在服务器裁决 · 客户端只展示与跳转", "改参即时对前端领券弹窗 + 提示条 生效 · 促销折扣非负债不走 B1"],
-  H8: ["邀请关系和是否已结算由服务器裁决", "真实钱包 + 资金台账 · 同一新人唯一结算"],
-  H9: ["首页数字由此配置", "开启后增长 · 暂停保留当前值 · 不改变实际账单"],
-};
+
 
 export function HDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
@@ -76,18 +67,9 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
     };
   }, [tab]);
 
-  const [ro, liveSeed] = RO_COPY[tab];
-  const live = tab === "H1"
-    ? rhythm
-      ? `${rhythm.currentPhase} · 月 ${rhythm.currentMonth}/${rhythm.totalMonths} · ${describeH1Schedule(rhythm.schedule)}`
-      : "0"
-    : liveSeed;
-  const right = (
-    <>
-      <span className="f-ro"><span className="d" />{ro}</span>
-      <span className="f-live"><span className="dot" />{live}</span>
-    </>
-  );
+  const right = tab === "H1" && rhythm
+    ? <span className="f-live"><span className="dot" />{`${rhythm.currentPhase} · 第 ${rhythm.currentMonth}/${rhythm.totalMonths} 月 · ${describeH1Schedule(rhythm.schedule)}`}</span>
+    : null;
 
   return (
     <div className={tab === "H4" ? "hdom" : "dkpage hdom"}>

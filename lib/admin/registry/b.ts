@@ -13,22 +13,22 @@ function liveDashboard(path: string, summary: string): ModuleEntry {
 export const DOMAIN_B: ModuleEntry[] = [
   liveDashboard(
     "/overview/dual-ledger",
-    "资金与应付款总览 —— 可用储备、应付负债、覆盖率红线和风险动作。页面读取 B 域后端聚合接口。",
+    "平台储备够不够付用户的钱：可用储备、应付款、兑付覆盖率和红线，跌破时在这里处理。",
   ),
   liveDashboard(
     "/overview/liquidity",
-    "可用资金与应付款 —— 真实能拿出来的钱和该还给用户的钱之间,实时还差多少、什么时候到期。页面读取 B 域后端聚合接口。",
+    "现在能动用的钱和要付给用户的钱：还差多少、什么时候到期。",
   ),
   liveDashboard(
     "/overview/funnel",
-    "用户转化分析 —— 用户从注册一路走到提现的跨阶段留存和流失。页面读取 B 域后端聚合接口。",
+    "用户从注册到提现，每一步留下多少、流失多少。",
   ),
   liveDashboard(
     "/overview/rhythm",
-    "运营阶段状态 —— 12 个月运营节奏当前阶段、进度和预算结构。页面读取 B 域后端聚合接口。",
+    "12 个月运营计划走到了哪个阶段，进度和预算情况如何。",
   ),
   liveDashboard(
     "/overview/risk-radar",
-    "风险提醒 —— 挤兑压力、异常账户、紧急停止开关和告警分布。页面读取 B 域后端聚合接口。",
+    "集中查看提现压力、异常账户、紧急开关和各类告警。",
   ),
 ];

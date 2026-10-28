@@ -73,13 +73,13 @@ export async function proposeOrExecute(deps: ProposeDeps, spec: ProposeSpec): Pr
       target: spec.target,
       targets: spec.targets,
     }, spec.commandKey);
-    toast(`已写入 A2 后端待确认队列,待 ${spec.gateLabel} 执行`);
+    toast("已提交，等待审批后执行");
     return "proposed";
   } catch (error) {
     if (isA2OutcomeUncertainError(error)) {
-      toast(`A2 提案结果暂不确定；当前弹窗与输入已保留，请使用同一命令号重试并核对 A2 审计 · ${error.commandKey}`);
+      toast(`提交结果暂未确认，请保持弹窗内容不变直接重试，或到操作记录里核对 · 命令号 ${error.commandKey}`);
     } else {
-      toast(`A2 提案提交失败:${displayAdminError(error)}`);
+      toast(`提交失败：${displayAdminError(error)}`);
     }
     throw error;
   }

@@ -226,7 +226,7 @@ test('PCOPY-07: loading or failed group queries never show the previous empty re
   for(const state of [{6:true},{5:Error('查询结果已失效，请重新查询。')}]){
     const element=metrics(metricData(0),{1:true,...state});
     const dialog=nodes(element).find(n=>n.type===ui.Dialog&&n.props.title==='奖励分组明细');
-    const html=markup(dialog);assert.doesNotMatch(html,/当前窗口没有分组记录|共 0 组|<td>0<\/td>/);
+    const html=markup(dialog);assert.doesNotMatch(html,/这个时段没有记录|共 0 组|<td>0<\/td>/);
     if(state[5]){
       assert(html.includes('role="alert"')&&html.includes('查询结果已失效'));
       const exporting=nodes(element).find(n=>n.type===ui.Button&&n.props.children==='导出当前报表');
@@ -234,7 +234,7 @@ test('PCOPY-07: loading or failed group queries never show the previous empty re
     }
   }
   const ready=nodes(metrics(metricData(0),{1:true})).find(n=>n.type===ui.Dialog&&n.props.title==='奖励分组明细');
-  assert(markup(ready).includes('当前窗口没有分组记录'));
+  assert(markup(ready).includes('这个时段没有记录'));
 });
 
 test('PCOPY-08: actual recovery dialog reads original result with revoked write permission and keeps original parameters',async()=>{
@@ -265,7 +265,7 @@ test('PCOPY-C2: actual H4 error mapping never passes unknown Chinese SQL/path di
 test('PCOPY-09: actual coverage tooltip/a11y shows unavailable status without zero and preserves reserve/liability definition',()=>{
   for(const [hasData,loading,error] of [[false,true,null],[false,false,null],[true,false,Error('offline')],[true,false,null]]){
     const hook=hooks(),{top}=shell(hook,{ledger:{coverageRatio:0,redlinePct:0.8,healthyPct:1},hasData,loading,error});hook.reset();const html=markup(top.CoveragePill({enabled:true}));
-    if(!hasData||error){assert(html.includes('>\u002d</span>'));assert(html.includes('兑付覆盖率暂不可用'));assert.doesNotMatch(html,/0%|接口|B 域/);}else{assert(html.includes('0%')&&html.includes('储备 ÷ 应付负债'));}
+    if(!hasData||error){assert(html.includes('>\u002d</span>'));assert(html.includes('兑付覆盖率暂不可用'));assert.doesNotMatch(html,/0%|接口|B 域/);}else{assert(html.includes('0%')&&html.includes('可用储备 ÷ 应付款'));}
     assert(html.includes('aria-label="兑付覆盖率：'));
   }
   assert(read('app/components/shell/console-shell.tsx').includes('暂时无法确认登录状态，请重试。'));
@@ -282,7 +282,7 @@ test('PCOPY-10: actual H4 existing-events branch renders business state labels a
 test('all ten groups: exact public-source guard covers normal/empty/error/title and accessible consumers without renaming data',()=>{
   const files=['h4-promotion-ui.tsx','h4-promotion-editor.tsx','h4-promotion-banner.tsx','h4-promotion-review.tsx','h4-promotion-rewards.tsx','h4-promotion-policies.tsx','h4-promotion-metrics.tsx','h4-promotions.tsx'];
   for(const file of files){const source=read(h+file);assert.doesNotMatch(source,forbidden,file);assert.doesNotMatch(source,/不由浏览器重算|目录自动绑定当前版本|版本和内容摘要由目录绑定|不能由同一响应|读取服务端结果|以服务端发布复核|曝光与成本缺失时保持未提供|来源：订单、退款与奖励确认事实/);}
-  const legacy=read(h+'h3-quest-events.tsx');for(const retained of ['至少保留 2 个档位','概率调为 0%','100%','B1 红线'])assert(legacy.includes(retained));
+  const legacy=read(h+'h3-quest-events.tsx');for(const retained of ['至少还要保留 2 个奖项','概率调成 0%','100%','红线'])assert(legacy.includes(retained));
   assert(read('lib/admin/promotion-client.ts').includes("'Idempotency-Key':key"));assert(read(h+'h4-promotions.tsx').includes('p.name ||'));
   assert(read('app/components/domain-views/h-view.tsx').includes('useShallow')); // Root owns identity/permission stability.
 });

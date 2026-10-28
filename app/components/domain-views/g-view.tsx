@@ -23,14 +23,6 @@ import type { ConfirmReq, GCtx, ActionConfirmReq } from "./g-tabs/types";
 
 const FOLD: Record<string, string> = { G1: "G1", G2: "G2", G3: "G3", G4: "G4", G7: "G7" };
 
-// 每页两枚签名 chip(设计稿 f-bar):f-ro = server-canonical 不变量,f-live = 节奏/红线。
-const RO_LIVE: Record<string, [ro: string, live: string]> = {
-  G1: ["锁仓本金、利息、状态都以服务器为准", "调高年化、调低罚金先过备付金红线"],
-  G2: ["拦截判定都在服务器 · 客户端绕不过", "放宽额度先过备付金红线"],
-  G3: ["价格 100% 由服务器定 · 是兑换/复投的定价来源", "服务端排程与锁定生效日期状态决定更新"],
-  G4: ["持有、奖励产出、成交都以服务器为准", "奖励产出率 0.1%/天已裁定"],
-  G7: ["限时倍率由 H1 派发 · 这页只读", "调高年化、倍率或调低罚金过备付金红线"],
-};
 
 export function GDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
@@ -44,17 +36,9 @@ export function GDomainView({ meta }: { meta: DomainViewMeta }) {
     openConfirm: setCf,
   };
 
-  const [ro, live] = RO_LIVE[tab];
-  const right = (
-    <>
-      <span className="f-ro"><span className="d" />{ro}</span>
-      <span className="f-live"><span className="dot" />{live}</span>
-    </>
-  );
-
   return (
     <div className="dkpage gdom">
-      <DomainHeader {...meta} right={right} />
+      <DomainHeader {...meta} />
 
       {tab === "G1" && <G1Staking ctx={ctx} />}
       {tab === "G2" && <G2Exchange ctx={ctx} />}

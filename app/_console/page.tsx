@@ -114,7 +114,7 @@ function normalizeDashboardKpis(data: LBiData | null): DashboardKpi[] {
       target,
       pass,
       series: spark,
-      hint: rawText(kpiPlain[String(n)] ?? ext.note ?? row.vis, "L1 后端 BI 口径"),
+      hint: rawText(kpiPlain[String(n)] ?? ext.note ?? row.vis, ""),
     }];
   });
 }
@@ -157,13 +157,9 @@ function DomainTile({ domain, pulse }: { domain: NavDomain; pulse: string }) {
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-[13px]" style={{ color: "var(--v5-ink)" }}>{domain.name}</p>
-          <p className="font-mono-tabular text-[10px]" style={{ color: "var(--v5-ink-4)" }}>域 {domain.code} · {domain.l2.length} 模块</p>
+          <p className="font-mono-tabular text-[10px]" style={{ color: "var(--v5-ink-4)" }}>{domain.l2.length} 个页面</p>
         </div>
-        {flagship ? (
-          <StatusPill label="已上线" tone="brand" size="sm" />
-        ) : (
-          <StatusPill label="规格就绪" tone="info" size="sm" dot={false} />
-        )}
+        {!flagship && <StatusPill label="未上线" tone="info" size="sm" dot={false} />}
       </div>
       <p className="mt-2 text-[11.5px]" style={{ color: "var(--v5-ink-3)" }}><AutoGloss>{operatorCopyText(pulse)}</AutoGloss></p>
     </Link>
@@ -191,10 +187,10 @@ function DashboardDataState({ title, loading, error }: { title: string; loading?
         </span>
         <div className="min-w-0 flex-1">
           <div className="text-[14px] font-medium" style={{ color: "var(--v5-ink)" }}>
-            {isLoading ? `${title}同步中` : `${title}暂无可用数据`}
+            {isLoading ? `正在加载${title}` : `${title}暂无数据`}
           </div>
           <div className="mt-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
-            {isLoading ? "正在读取服务端接口。" : error || "接口返回为空,页面保持空态。"}
+            {isLoading ? "请稍候…" : error || "暂时没有可显示的数据。"}
           </div>
         </div>
       </div>
@@ -271,21 +267,21 @@ export default function CommandCenter() {
       <header className="mb-5 flex flex-wrap items-end gap-4">
         <div className="min-w-0 flex-1">
           <p className="font-mono-tabular text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--v5-ink-3)" }}>
-            UVEL运营控制台 · 指挥台
+            UVEL 运营控制台
           </p>
           <h1 className="font-display mt-1.5 text-[26px]" style={{ color: "var(--v5-ink)" }}>运营总览</h1>
           <p className="mt-1.5 text-[13.5px]" style={{ color: "var(--v5-ink-2)" }}>
-            欢迎,{operator || "当前操作者"}<AutoGloss> · 正在读取服务端 B 域资金、漏斗、节奏和风险聚合数据。</AutoGloss>
+            欢迎，{operator || "运营同学"}<AutoGloss> · 正在加载资金、转化、节奏和风险数据…</AutoGloss>
           </p>
         </div>
       </header>
       <BDomainWarnings warnings={bDomain.warnings} />
-      <BDomainDataState title="B 域指挥台" loading={loading} error={error} onRetry={bDomain.reload} />
+      <BDomainDataState title="运营总览" loading={loading} error={error} onRetry={bDomain.reload} />
     </div>
   );
 
   if (!canReadBDomain) {
-    return renderBDomainState("当前角色没有 B 域总览权限，请从侧栏进入已授权模块。");
+    return renderBDomainState("你的角色没有运营总览的查看权限，请从左侧菜单进入其他页面。");
   }
   if ((bDomain.loading && !bDomain.hasData) || bDomain.error || !bDomain.hasData) {
     return renderBDomainState(bDomain.error, bDomain.loading && !bDomain.error);
@@ -293,7 +289,7 @@ export default function CommandCenter() {
 
   const homeDataError =
     LEDGER.coverageSeries.length < 2
-      ? "B1_COVERAGE_SERIES_EMPTY"
+      ? "覆盖率走势数据不足，暂时无法显示"
       : "";
   if (homeDataError) {
     return renderBDomainState(homeDataError);
@@ -327,7 +323,7 @@ export default function CommandCenter() {
 
   // ── 高敏操作动态(按角色过滤)──
   const sensitiveOperationItems: SensitiveOperationItem[] = [
-    { id: "pa-wd", label: "提现确认队列", detail: `${inReview} 单在审 · 积压 ${fmtUsdCompact(backlogUsd)}`, href: "/finance/withdrawals", role: "finance" as AdminRole },
+    { id: "pa-wd", label: "待审核提现", detail: `${inReview} 单审核中 · 共 ${fmtUsdCompact(backlogUsd)}`, href: "/finance/withdrawals", role: "finance" as AdminRole },
     ...pendingA2Operations.flatMap((row) => {
       const operationRole = roleForA2Operation(row);
       if (!operationRole) return [];
@@ -346,7 +342,7 @@ export default function CommandCenter() {
   const covLevel: AlertItem["level"] = cov < LEDGER.redlinePct ? "high" : cov < LEDGER.healthyPct ? "mid" : "low";
   const covText =
     cov < LEDGER.redlinePct
-      ? `兑付覆盖率 ${fmtPct(cov)} 已跌破红线 ${fmtPct(LEDGER.redlinePct, 0)} · 立即冻结放大流出`
+      ? `兑付覆盖率 ${fmtPct(cov)} 已跌破红线 ${fmtPct(LEDGER.redlinePct, 0)} · 请立即暂停会多付钱的操作`
       : cov < LEDGER.healthyPct
         ? `兑付覆盖率 ${fmtPct(cov)} 逼近红线 ${fmtPct(LEDGER.redlinePct, 0)}`
         : `兑付覆盖率 ${fmtPct(cov)} 健康`;
@@ -356,10 +352,10 @@ export default function CommandCenter() {
   const killOnline = KILL_GATES.filter((g) => (g.state ? g.state === "on" : g.on)).length;
   const killText =
     KILL_GATES.length === 0
-      ? "Kill-Switch 状态同步中"
+      ? "正在加载紧急开关状态"
       : killTripped === 0
-      ? `Kill-Switch ${killOnline}/${KILL_GATES.length} 在线${killMissing ? ` · ${killMissing} 未配置` : " · 功能闸全部正常"}`
-      : `Kill-Switch ${killOnline}/${KILL_GATES.length} 在线 · ${killTripped} 熔断待确认`;
+      ? `紧急开关 ${killOnline}/${KILL_GATES.length} 正常${killMissing ? ` · ${killMissing} 个未设置` : ""}`
+      : `紧急开关 ${killOnline}/${KILL_GATES.length} 正常 · ${killTripped} 个已关停`;
   const liveAlerts: AlertItem[] = [
     ...opsAlerts.filter((alert) => alert.id === "J1-AUTO-CONFIRM").map((alert) => ({
       id: `ops-${alert.id}`,
@@ -370,7 +366,7 @@ export default function CommandCenter() {
     ...(opsAlertError ? [{
       id: "ops-dashboard-sync",
       level: "high" as AlertItem["level"],
-      text: `J1 值班告警同步失败: ${opsAlertError}`,
+      text: `紧急开关告警加载失败：${opsAlertError}`,
       href: "/emergency/kill-switch",
     }] : []),
     { id: "al-cov", level: covLevel, text: covText, href: "/overview/dual-ledger" },
@@ -386,17 +382,17 @@ export default function CommandCenter() {
     if (code === "B") return `覆盖率 ${fmtPct(cov)} · ${zoneLabel}`;
     if (code === "A") {
       return a2Overview
-        ? `A2 待确认 ${pendingA2Operations.length} · 今日审计 ${a2Overview.stats.todayAuditEvents}`
+        ? `待确认 ${pendingA2Operations.length} · 今日操作 ${a2Overview.stats.todayAuditEvents}`
         : a2Error
-          ? "A2 审计同步失败"
-          : "A2 审计同步中";
+          ? "操作记录加载失败"
+          : "正在加载操作记录";
     }
     if (code === "D") return `待确认提现 ${inReview} · 积压 ${fmtUsdCompact(backlogUsd)}`;
-    if (code === "J") return KILL_GATES.length > 0 ? `业务开关 ${killOnline}/${KILL_GATES.length} 在线${killTripped ? ` · ${killTripped} 熔断` : ""}${killMissing ? ` · ${killMissing} 未配置` : ""} · 地区策略待读取` : "业务开关状态同步中 · 地区策略待读取";
-    if (code === "K") return `风险命中 ${fmtNum(flaggedAccounts)} · 规则 ${riskRadar.rules.length}`;
+    if (code === "J") return KILL_GATES.length > 0 ? `业务开关 ${killOnline}/${KILL_GATES.length} 正常${killTripped ? ` · ${killTripped} 个已关停` : ""}${killMissing ? ` · ${killMissing} 个未设置` : ""}` : "正在加载业务开关";
+    if (code === "K") return `风险账户 ${fmtNum(flaggedAccounts)} · 规则 ${riskRadar.rules.length} 条`;
     if (code === "L") {
-      if (dashboardKpis.length) return `${kpiRollup.total} KPI · 达标 ${kpiRollup.passed} / 未达 ${kpiRollup.failed}${kpiRollup.unknown ? ` / 暂不可计算 ${kpiRollup.unknown}` : ""}`;
-      return lBiError ? "L1 KPI 同步失败" : "L1 KPI 同步中";
+      if (dashboardKpis.length) return `${kpiRollup.total} 项关键指标 · 达标 ${kpiRollup.passed} / 未达标 ${kpiRollup.failed}${kpiRollup.unknown ? ` / 暂无法计算 ${kpiRollup.unknown}` : ""}`;
+      return lBiError ? "关键指标加载失败" : "正在加载关键指标";
     }
     if (code === "H") {
       // H 域脉搏 = 节奏统一来源(运营在 H1 可配),与 B4/H1/L1/L4 同源。
@@ -405,7 +401,7 @@ export default function CommandCenter() {
     }
     const domain = CONSOLE_NAV.find((item) => item.code === code);
     const flagship = domain?.l2.find((item) => item.status === "flagship") ?? domain?.l2[0];
-    return flagship ? `${flagship.id} ${flagship.name} · ${domain?.l2.length ?? 0} 模块` : "后端接口以各域页面为准";
+    return flagship ? `${flagship.name} 等 ${domain?.l2.length ?? 0} 个页面` : "";
   }
 
   // 对账导出 — 客户端导出当前账本快照(真实功能,无需后端)
@@ -437,11 +433,11 @@ export default function CommandCenter() {
       <header className="mb-5 flex flex-wrap items-end gap-4">
         <div className="min-w-0 flex-1">
           <p className="font-mono-tabular text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--v5-ink-3)" }}>
-            UVEL运营控制台 · 指挥台
+            UVEL 运营控制台
           </p>
           <h1 className="font-display mt-1.5 text-[26px]" style={{ color: "var(--v5-ink)" }}>运营总览</h1>
           <p className="mt-1.5 text-[13.5px]" style={{ color: "var(--v5-ink-2)" }}>
-            欢迎,{operator || "当前操作者"}<AutoGloss> · 资金兑付安全和转化健康一屏看全 · 以服务端数据为准。</AutoGloss>
+            欢迎，{operator || "运营同学"}<AutoGloss> · 资金安全和用户转化，一屏看全。</AutoGloss>
           </p>
         </div>
         <div className="flex items-center gap-2.5">
@@ -451,7 +447,7 @@ export default function CommandCenter() {
             className="inline-flex items-center gap-2 rounded-[9px] px-3.5 py-2 text-[13px] font-medium transition-colors hover:bg-[var(--v5-surface-2)]"
             style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border-strong)", color: "var(--v5-ink)" }}
           >
-            <Download size={15} aria-hidden /> <AutoGloss>对账导出</AutoGloss>
+            <Download size={15} aria-hidden /> <AutoGloss>导出资金数据</AutoGloss>
           </button>
         </div>
       </header>
@@ -469,13 +465,13 @@ export default function CommandCenter() {
             <AlertTriangle size={16} style={{ color: "var(--v5-warning)" }} aria-hidden />
           </span>
           <span className="text-[13px]" style={{ color: "var(--v5-ink-2)" }}>
-            <AutoGloss>{covText}</AutoGloss><AutoGloss> · 建议收紧资金支出参数（仅建议,不自动执行）</AutoGloss>
+            <AutoGloss>{covText}</AutoGloss><AutoGloss> · 建议收紧提现和奖励等支出设置</AutoGloss>
           </span>
         </Link>
       )}
 
       {/* ② 资金兑付安全 */}
-      <SecLabel title="资金兑付安全" modules="B1 · B2 · B5" />
+      <SecLabel title="资金安全" />
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <CoverageHero />
@@ -490,32 +486,32 @@ export default function CommandCenter() {
       </div>
 
       {/* ③ 实时运营脉搏 */}
-      <SecLabel title="实时运营脉搏" modules="D · K · 较上窗口" />
+      <SecLabel title="实时动态" modules="与上一时段相比" />
       <div className="grid gap-3 sm:grid-cols-3">
         <Link href="/overview/liquidity" prefetch={false} className="block transition-transform hover:-translate-y-0.5">
           <KpiStatCard
-            label="24h 净流"
+            label="24 小时资金净流入"
             value={`${netFlowPositive ? "+" : "−"}${fmtUsdCompact(Math.abs(LEDGER.netFlow24hUsd))}`}
             accent={netFlowPositive ? "var(--v5-success)" : "var(--v5-warning)"}
-            sublabel="较上窗口"
-            hint="近 24 小时资金净流,按流入减流出口径。"
+            sublabel="较上一时段"
+            hint="近 24 小时流入的钱减去流出的钱。"
             delta={{ dir: netFlowPositive ? "up" : "down", text: netFlowDeltaText, good: netFlowPositive }}
           />
         </Link>
         <Link href="/finance/withdrawals" prefetch={false} className="block transition-transform hover:-translate-y-0.5">
-          <KpiStatCard label="提现积压" value={`${fmtNum(inReview)} 单`} accent="var(--admin-domain-k)" sublabel={fmtUsdCompact(backlogUsd)} hint="进入确认、尚未放行的提现单数与金额(存量 + 观测窗实时)。" />
+          <KpiStatCard label="提现积压" value={`${fmtNum(inReview)} 单`} accent="var(--admin-domain-k)" sublabel={fmtUsdCompact(backlogUsd)} hint="正在审核、还没放款的提现单数和金额。" />
         </Link>
         <Link href="/risk/scoring" prefetch={false} className="block transition-transform hover:-translate-y-0.5">
-          <KpiStatCard label="风险评分均值" value={`${LEDGER.avgRiskScore}`} accent="var(--admin-domain-k)" sublabel="/ 100 · ≥70 高危" hint="在审提现的风险评分均值。" delta={{ dir: riskChg > 0 ? "up" : "down", text: `${riskChg > 0 ? "+" : ""}${riskChg}`, good: riskChg <= 0 }} />
+          <KpiStatCard label="风险评分均值" value={`${LEDGER.avgRiskScore}`} accent="var(--admin-domain-k)" sublabel="满分 100 · 70 以上为高危" hint="正在审核的提现申请的平均风险分。" delta={{ dir: riskChg > 0 ? "up" : "down", text: `${riskChg > 0 ? "+" : ""}${riskChg}`, good: riskChg <= 0 }} />
         </Link>
       </div>
 
       {/* ④ 待处理 · 操作确认 */}
-      <SecLabel title="待处理 · 操作确认" modules="跨域确认 · 按角色" />
+      <SecLabel title="待你确认的操作" />
       <SensitiveOperationFeed items={sensitiveOperationItems} />
 
       {/* ⑤ 用户转化分析 */}
-      <SecLabel title="用户转化分析" modules="B3 · A4 派生" />
+      <SecLabel title="用户转化" />
       <FunnelBars />
 
       {/* ⑥ 八项 KPI 验收墙 */}
@@ -523,15 +519,15 @@ export default function CommandCenter() {
         {dashboardKpis.length ? (
           <KpiWall kpis={dashboardKpis} />
         ) : (
-          <DashboardDataState title="L1关键指标" loading={lBiLoading} error={lBiError} />
+          <DashboardDataState title="关键指标" loading={lBiLoading} error={lBiError} />
         )}
       </div>
 
       {/* ⑦ 域速览 */}
       <div className="mt-7">
         <div className="mb-2.5 flex items-center justify-between">
-          <p className="text-[11px] uppercase tracking-[0.14em]" style={{ color: "var(--v5-ink-4)" }}>域速览</p>
-          <span className="text-[11.5px]" style={{ color: "var(--v5-ink-4)" }}>{domains.length} 域 · 可见 {visibleModuleCount} 模块</span>
+          <p className="text-[11px] uppercase tracking-[0.14em]" style={{ color: "var(--v5-ink-4)" }}>各模块概况</p>
+          <span className="text-[11.5px]" style={{ color: "var(--v5-ink-4)" }}>{domains.length} 个模块 · {visibleModuleCount} 个页面</span>
         </div>
         <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(248px,1fr))]">
           {domains.map((d) => (

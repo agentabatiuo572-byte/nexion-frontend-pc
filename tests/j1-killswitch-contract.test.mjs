@@ -103,7 +103,7 @@ test("J1 duty alerts use the all-operator minimal snapshot and refresh while the
   assert.match(opsAlertsClient, /j1DutyAlertSubscribers\.size === 1/);
   assert.match(opsAlertsClient, /window\.setInterval\(refreshJ1DutyAlerts, 30_000\)/);
   assert.match(opsAlertsClient, /requestSequence !== j1DutyAlertRequestSequence/);
-  assert.match(opsAlertsClient, /J1 值班告警暂时无法读取，请稍后重试/);
+  assert.match(opsAlertsClient, /紧急停用告警加载失败，请稍后重试/);
   assert.doesNotMatch(opsAlertsClient, /error:\s*error instanceof Error \? error\.message/);
   assert.match(notificationBell, /const session = useAdminAuth\(\(state\) => state\.session\)/);
   assert.match(notificationBell, /const hasAdminSession = session != null/);
@@ -121,10 +121,10 @@ test("B5 owns structured bank-run bands and displays the same redline referenced
   assert.match(bClient, /expectedGateKeys = \["withdraw", "staking", "genesis", "exchange", "trial"\]/);
   assert.match(b5RiskRadar, /bankRunYellowPct = riskRadar\.bankRunYellowPct/);
   assert.match(b5RiskRadar, /bankRunRedlinePct = riskRadar\.bankRunRedlinePct/);
-  assert.match(b5RiskRadar, /J1 R1 已同步引用/);
+  assert.match(b5RiskRadar, /超过红线会触发最高级告警，并自动暂停提现/);
   assert.doesNotMatch(b5RiskRadar, /bankRunRatio < 20/);
-  assert.match(b5RiskRadar, /R1 自动关停后须补录处置结论/);
-  assert.match(b5RiskRadar, /最高级告警表示挤兑比率达到当前动态红线/);
+  assert.match(b5RiskRadar, /自动暂停提现，事后请补记处理结论/);
+  assert.match(b5RiskRadar, /提现压力超过红线/);
 });
 
 test("J1 R3 renders the backend-provided J3 canonical alert threshold", () => {
@@ -223,7 +223,7 @@ test("J1 exposes actionable, localized control and error states", () => {
   assert.match(component, /autoRuleDisplayName/);
   assert.doesNotMatch(component, /\{row\.ruleId\}/);
   assert.match(view, /role="alert"/);
-  assert.match(view, /重新读取/);
+  assert.match(view, />刷新</);
   assert.match(client, /无法识别的内容/);
   assert.match(client, /无法连接应急控制服务，请检查网络后重试/);
   assert.match(client, /text = await res\.text\(\)/);

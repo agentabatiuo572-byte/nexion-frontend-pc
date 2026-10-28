@@ -20,7 +20,7 @@ import { canAccessCrossDomainPath } from "@/lib/admin/cross-domain-authority";
 
 const ALL = "ALL";
 const B4_REASON_MESSAGES: Record<string, string> = {
-  B4_PHASE_DISTRIBUTION_EMPTY: "当前没有可确认的账户月龄分布；请检查用户创建时间事实后重试。",
+  B4_PHASE_DISTRIBUTION_EMPTY: "暂时统计不出各阶段的用户数，请稍后重试。",
 };
 
 function dialValue(value: string | number | boolean, unit: string) {
@@ -60,9 +60,9 @@ export default function RhythmPage() {
       anchor.download = file.fileName;
       anchor.click();
       URL.revokeObjectURL(url);
-      setNotice("运营阶段汇总文件已生成，并保留操作记录；文件不含用户身份信息。");
+      setNotice("已导出，文件不含用户个人信息。");
     } catch (value) {
-      setNotice(value instanceof Error ? displayAdminError(value) : "B4 导出失败，请重新读取后再试。");
+      setNotice(value instanceof Error ? displayAdminError(value) : "导出失败，请刷新后重试。");
     } finally {
       setBusy("");
     }
@@ -75,7 +75,7 @@ export default function RhythmPage() {
       const target = await recordB4H1Jump(dial, filters.phase);
       window.location.assign(target.href);
     } catch (value) {
-      setNotice(value instanceof Error ? displayAdminError(value) : "H1 跳转留痕失败，本次未跳转。");
+      setNotice(value instanceof Error ? displayAdminError(value) : "跳转失败，请重试。");
       setBusy("");
     }
   }
@@ -87,18 +87,17 @@ export default function RhythmPage() {
         title="运营阶段状态"
         desc={
           <>
-            从 <b>H1 运营阶段设置</b>读取各阶段用户数、当前八项调节值和下月预计变化。
-            本页只读；所有调整与效果分析都进入 H1。
+            查看各阶段的用户数、当前八项调节值和下个月的变化。这里只能查看，调整请到 <b>运营阶段设置</b>。
           </>
         }
       />
 
-      <section className="card b4-controls" aria-label="节奏筛选与操作">
+      <section className="card b4-controls" aria-label="筛选与操作">
         <div className="b4-filter-grid">
           <label>
-            <span>分布粒度</span>
+            <span>查看方式</span>
             <select
-              aria-label="分布粒度"
+              aria-label="查看方式"
               value={filters.granularity}
               onChange={(event) => setFilters((current) => ({
                 ...current,
@@ -106,7 +105,7 @@ export default function RhythmPage() {
               }))}
             >
               <option value="PHASE">按运营阶段</option>
-              <option value="MONTH">月粒度</option>
+              <option value="MONTH">按月</option>
             </select>
           </label>
           <label>
@@ -117,14 +116,14 @@ export default function RhythmPage() {
               onChange={(event) => setFilters((current) => ({ ...current, month: event.target.value }))}
             >
               {(data?.filters.monthOptions ?? []).map((month) => (
-                <option key={month} value={month}>月 {month}</option>
+                <option key={month} value={month}>第 {month} 月</option>
               ))}
             </select>
           </label>
           <label>
-            <span>运营阶段筛选</span>
+            <span>运营阶段</span>
             <select
-              aria-label="运营阶段筛选"
+              aria-label="运营阶段"
               value={filters.phase}
               onChange={(event) => setFilters((current) => ({ ...current, phase: event.target.value }))}
             >
@@ -137,7 +136,7 @@ export default function RhythmPage() {
         </div>
         <div className="b4-actions">
           <button type="button" className="b4-btn" onClick={() => void reload()} disabled={loading}>
-            <RefreshCw size={14} aria-hidden /> 重新读取
+            <RefreshCw size={14} aria-hidden /> 刷新
           </button>
           {canExport && (
             <button
@@ -160,26 +159,26 @@ export default function RhythmPage() {
         <>
           {!data.available && (
             <section className="card b4-alert" role="alert">
-              <b>当前各阶段用户数暂不可用于决策</b>
-              <span>{B4_REASON_MESSAGES[data.reason ?? ""] || "账户月龄事实不可确认；已禁用导出，不以旧值或演示值替代。"}</span>
+              <b>各阶段用户数暂时不准，请勿据此决策</b>
+              <span>{B4_REASON_MESSAGES[data.reason ?? ""] || "用户注册时长数据不完整，已暂停导出。"}</span>
             </section>
           )}
 
-          <section className="b4-summary" aria-label="当前节奏摘要">
+          <section className="b4-summary" aria-label="当前阶段摘要">
             <article className="card">
               <span>当前运营阶段</span>
               <strong>{data.rhythm.currentPhase}</strong>
-              <small>月 {data.rhythm.currentMonth} / {data.rhythm.totalMonths}</small>
+              <small>第 {data.rhythm.currentMonth} / {data.rhythm.totalMonths} 月</small>
             </article>
             <article className="card">
               <span>阶段进度</span>
               <strong>{data.rhythm.phaseProgressPct}%</strong>
-              <small>由 H1 节奏骨架下发</small>
+              <small>按「运营阶段设置」</small>
             </article>
             <article className="card">
               <span>当前视图</span>
-              <strong>{data.filters.granularity === "PHASE" ? "运营阶段" : "月"}</strong>
-              <small>月份 {data.filters.month} · {data.filters.phase === ALL ? "全部阶段" : data.filters.phase}</small>
+              <strong>{data.filters.granularity === "PHASE" ? "按运营阶段" : "按月"}</strong>
+              <small>第 {data.filters.month} 月 · {data.filters.phase === ALL ? "全部阶段" : data.filters.phase}</small>
             </article>
           </section>
 
@@ -187,9 +186,9 @@ export default function RhythmPage() {
             <div className="b4-section-head">
               <div>
                 <h2>各运营阶段用户数</h2>
-                <p>账户月龄事实由服务端映射到 H1 P1–P6；筛选只改变观察范围，不改变权威总数。</p>
+                <p>按用户注册时长分到 P1–P6 各阶段，筛选不影响总数。</p>
               </div>
-              <span className="b4-source">H1 权威数据</span>
+              <span className="b4-source">来自运营阶段设置</span>
             </div>
             <div className="b4-bars">
               {data.distribution.map((row) => (
@@ -202,7 +201,7 @@ export default function RhythmPage() {
                   <div className="b4-bar-track">
                     <div style={{ height: `${Math.max(4, (row.userCount / maxUsers) * 100)}%` }} />
                   </div>
-                  <b>{row.month == null ? row.phase : `月 ${row.month}`}</b>
+                  <b>{row.month == null ? row.phase : `第 ${row.month} 月`}</b>
                   {row.month != null && <small>{row.phase}</small>}
                 </article>
               ))}
@@ -213,13 +212,13 @@ export default function RhythmPage() {
             <section className="card b4-pivot">
               <div className="b4-section-head">
                 <div>
-                  <h2>距下一月粒度拐点</h2>
+                  <h2>距下次调整还有</h2>
                   <p>{data.nextPivot.basis}</p>
                 </div>
               </div>
               <strong>
                 {data.nextPivot.atMonth == null
-                  ? "节奏末月"
+                  ? "已是最后一个月"
                   : `${data.nextPivot.daysLeft ?? "—"} 天`}
               </strong>
               <span>{data.nextPivot.message}</span>
@@ -233,14 +232,14 @@ export default function RhythmPage() {
             <section className="card b4-levers">
               <div className="b4-section-head">
                 <div>
-                  <h2>本月被推动的杠杆组合</h2>
-                  <p>月份 {data.filters.month} · 同时推动 2–3 个杠杆</p>
+                  <h2>本月重点调整的项目</h2>
+                  <p>第 {data.filters.month} 月 · 每月重点调 2–3 项</p>
                 </div>
               </div>
               <div className="b4-lever-list">
                 {data.monthLeverCombo.map((lever) => (
                   <article key={`${lever.key}-${lever.label}`}>
-                    <span title={lever.key}>运营杠杆</span>
+                    <span title={lever.key}>调整项</span>
                     <b>{lever.label}</b>
                     <small>{lever.purpose}</small>
                   </article>
@@ -253,7 +252,7 @@ export default function RhythmPage() {
             <div className="b4-section-head">
               <div>
                 <h2>八项调节值</h2>
-                <p>当前值来自运营阶段设置；请前往该页面调整。</p>
+                <p>修改请到「运营阶段设置」。</p>
               </div>
               <span className="b4-source">8 / 8</span>
             </div>
@@ -263,8 +262,8 @@ export default function RhythmPage() {
                   <tr>
                     <th>调节项</th>
                     <th>当前值</th>
-                    <th>权威来源</th>
-                    <th>当前生效状态</th>
+                    <th>来源</th>
+                    <th>是否生效</th>
                     {canJump && <th>操作</th>}
                   </tr>
                 </thead>
@@ -286,7 +285,7 @@ export default function RhythmPage() {
                               if (!busy) void openH1(dial.key);
                             }}
                           >
-                            在 H1 调整 →
+                            去调整 →
                           </a>
                         </td>
                       )}
@@ -301,7 +300,7 @@ export default function RhythmPage() {
             <div className="b4-section-head">
               <div>
                 <h2>运营阶段效果分析</h2>
-                <p>H1 显示所选运营阶段的调节值变化；B3 显示用户转化，B1/B2 显示资金情况。</p>
+                <p>看调节值变化后，用户转化和资金分别怎么变。</p>
               </div>
             </div>
             <div className="b4-attribution-links">
@@ -317,7 +316,7 @@ export default function RhythmPage() {
                         if (!busy) void openH1("phaseAttribution");
                       }}
                     >
-                      <b>{operatorCopyText(item.label)}</b><span>记录 B4 → H1 跳转审计</span>
+                      <b>{operatorCopyText(item.label)}</b><span>打开运营阶段设置</span>
                     </a>
                   )
                 ) : canCross(item.href) ? (
@@ -325,11 +324,11 @@ export default function RhythmPage() {
                     <b>{operatorCopyText(item.label)}</b>
                     <span>{item.key === "B3"
                       ? `按 ${filters.phase === ALL ? "全部阶段" : filters.phase} 查看`
-                      : "查看全局资金事实"}</span>
+                      : "查看整体资金情况"}</span>
                   </Link>
                 ) : (
                   <span key={item.key} className="b4-link-card" aria-disabled="true">
-                    <b>{operatorCopyText(item.label)}</b><span>目标域无权限</span>
+                    <b>{operatorCopyText(item.label)}</b><span>无权限</span>
                   </span>
                 )
               ))}
@@ -339,7 +338,7 @@ export default function RhythmPage() {
           <B4RestoredInsights />
 
           <p className="b-foot">
-            {data.sourceStatement} · 数据时间 {new Date(data.asOf).toLocaleString()} · 查看、跳 H1、导出均写 A2 审计。
+            {data.sourceStatement} · 数据时间 {new Date(data.asOf).toLocaleString()}
           </p>
         </>
       )}
@@ -358,8 +357,8 @@ function B4State({
 }) {
   return (
     <section className="card b4-alert" role={error ? "alert" : "status"}>
-      <b>{loading ? "B4 运营阶段状态加载中" : "B4 运营阶段状态加载失败"}</b>
-      <span>{loading ? "正在读取 H1 权威节奏与账户月龄事实。" : `${error}；旧数据与导出已隐藏。`}</span>
+      <b>{loading ? "正在加载运营阶段状态" : "运营阶段状态加载失败"}</b>
+      <span>{loading ? "请稍候…" : `${error}，已暂停显示旧数据和导出。`}</span>
       {error && onRetry && <button type="button" className="b4-btn" onClick={onRetry}>重试</button>}
     </section>
   );

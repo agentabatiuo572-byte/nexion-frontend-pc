@@ -111,7 +111,7 @@ test("C3 从真实第 2 页收缩到第 1 页并重新读取", async ({ page }) 
   test.setTimeout(120_000);
   await login(page, C3_USERNAME);
   await page.goto("/users/assets", { waitUntil: "domcontentloaded" });
-  const pager = page.locator('[data-list-label="待放行调整队列"]');
+  const pager = page.locator('[data-list-label="待审核的调整"]');
   await expect(pager).toContainText("筛选后 6 条");
   await expect(pager).toContainText("第 1 / 2 页");
 
@@ -122,7 +122,7 @@ test("C3 从真实第 2 页收缩到第 1 页并重新读取", async ({ page }) 
       && url.searchParams.get("status") === "PENDING_REVIEW"
       && url.searchParams.get("pageNum") === "2";
   });
-  await page.getByLabel("待放行调整队列 下一页").click();
+  await page.getByLabel("待审核的调整 下一页").click();
   expect((await pageTwoResponse).status()).toBe(200);
   await expect(pager).toContainText("第 2 / 2 页");
   await pager.screenshot({ path: join(EVIDENCE_DIR, "01-c3-real-page-2.png") });
@@ -142,7 +142,7 @@ test("C3 从真实第 2 页收缩到第 1 页并重新读取", async ({ page }) 
       && url.searchParams.get("status") === "PENDING_REVIEW"
       && url.searchParams.get("pageNum") === "1";
   });
-  await page.getByLabel("刷新待放行调整队列").click();
+  await page.getByLabel("刷新待审核的调整").click();
   expect((await shrinkingResponse).status()).toBe(200);
   expect((await correctedResponse).status()).toBe(200);
   await expect(pager).toContainText("筛选后 0 条");

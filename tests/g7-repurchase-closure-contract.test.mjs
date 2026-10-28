@@ -29,7 +29,7 @@ test("G7 exposes typed lock-days, correct RBAC split, G4 evidence and honest rat
   assert.match(ui, /finprod_g7_write/);
   assert.match(ui, /g4Ref/);
   assert.match(ui, /reinvestRateAvailable/);
-  assert.match(ui, /缺少漏斗分母/);
+  assert.match(ui, /数据不足，暂无法计算/);
   assert.match(ui, /MATURE_UNCLAIMED: "到期未领取"/);
   assert.match(client, /createStableMutationExecutor/);
   assert.match(client, /executeG7Mutation/);

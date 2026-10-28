@@ -54,7 +54,7 @@ for (const scenario of CASES) {
     });
 
     await openFromVisibleSidebar(page, scenario.moduleId);
-    await expect(page.getByText("I 域数据加载失败", { exact: false })).toBeVisible();
+    await expect(page.getByText("内容数据加载失败", { exact: false })).toBeVisible();
     await expect(page.getByText(`${scenario.moduleId} 返回数据格式异常，请刷新重试`, { exact: false })).toBeVisible();
     await expect(page.getByRole("button", { name: "重新加载", exact: true })).toBeVisible();
     await expect(page.locator(".idom table")).toHaveCount(0);
@@ -72,7 +72,7 @@ for (const scenario of CASES) {
     );
     await page.getByRole("button", { name: "重新加载", exact: true }).click();
     await recovered;
-    await expect(page.getByText("I 域数据加载失败", { exact: false })).toBeHidden();
+    await expect(page.getByText("内容数据加载失败", { exact: false })).toBeHidden();
     await expect(page.getByRole("button", { name: "重新加载", exact: true })).toBeHidden();
     await expect(page.locator("body")).not.toContainText(/Cannot read properties|ReferenceError|TypeError/i);
 

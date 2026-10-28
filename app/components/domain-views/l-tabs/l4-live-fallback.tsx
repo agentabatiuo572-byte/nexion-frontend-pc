@@ -3,33 +3,33 @@ import type { L4LiveFact } from "./l4-live-data";
 const GROUPS: ReadonlyArray<{ key: L4LiveFact["group"]; title: string; subtitle: string; missing: string }> = [
   {
     key: "device",
-    title: "设备运营事实",
-    subtitle: "设备目录、订单和用户设备当前快照",
-    missing: "尚无设备事实可供核验。",
+    title: "设备数据",
+    subtitle: "设备目录、订单和用户设备的当前情况",
+    missing: "暂无设备数据。",
   },
   {
     key: "task",
-    title: "任务运营事实",
-    subtitle: "算力任务和任务目录当前快照",
-    missing: "尚无任务事实可供核验。",
+    title: "任务数据",
+    subtitle: "算力任务和任务目录的当前情况",
+    missing: "暂无任务数据。",
   },
   {
     key: "network",
-    title: "网络与团队事实",
-    subtitle: "团队关系和佣金事件当前快照",
-    missing: "尚无团队与佣金事实可供核验。",
+    title: "团队数据",
+    subtitle: "团队关系和佣金的当前情况",
+    missing: "暂无团队和佣金数据。",
   },
   {
     key: "phase",
-    title: "阶段配置事实",
+    title: "运营阶段数据",
     subtitle: "仅显示已启用配置，不等同于效果分析",
-    missing: "尚无阶段配置事实可供核验。",
+    missing: "暂无运营阶段数据。",
   },
   {
     key: "tradein",
-    title: "E3 置换闭环事实",
-    subtitle: "配置变更、置换申请和完成结果当前快照",
-    missing: "尚无 E3 置换事实可供核验。",
+    title: "以旧换新数据",
+    subtitle: "设置修改、换新申请和完成情况",
+    missing: "暂无以旧换新数据。",
   },
 ];
 
@@ -37,7 +37,7 @@ export function L4LiveFacts({ facts }: { facts: L4LiveFact[] }) {
   return (
     <div>
       <div className="ltint warn" style={{ marginBottom: 12, fontSize: 12 }}>
-        <b>当前仅支持实时快照</b> · 服务器尚未提供日、周、月历史序列和阶段切换效果序列，因此本页不开放周期与阶段筛选，也不会推算环比、承接率、收益影响、团队成交额 或阶段跳变。
+        <b>目前只能看当前数据</b> · 还没有按日、周、月的历史数据，所以暂时不能按周期或阶段筛选，也不会估算环比、承接率等指标。
       </div>
 
       <div className="two-col">
@@ -48,7 +48,7 @@ export function L4LiveFacts({ facts }: { facts: L4LiveFact[] }) {
               <div className="l-h">
                 <span className="ttl">{group.title}</span>
                 <span className="sub">· {group.subtitle}</span>
-                <div className="r"><span className="lcode electric">服务器当前事实</span></div>
+                <div className="r"><span className="lcode electric">当前数据</span></div>
               </div>
               <div style={{ overflowX: "auto" }}>
                 <table className="l-tbl" style={{ minWidth: 620 }}>
@@ -77,12 +77,12 @@ export function L4LiveFacts({ facts }: { facts: L4LiveFact[] }) {
             <b>跨模块历史分析待统一接入</b> · 设备机型与产出衰减、六类任务承接与饱和度、团队层级分布与团队成交额、阶段留存与转化效果，都需要各业务域提供同统计规则历史序列。当前页面明确降级，不使用目录数量替代活跃量，也不使用累计记录拼接周期趋势。
           </div>
           <div className="ltint" style={{ fontSize: 12, marginTop: 10 }}>
-            <b>导出范围</b> · “运营当前汇总”只包含本页服务器事实。团队关系明细暂不可导出；真实明细快照、服务器行数估算和审批链接入后才能开放。
+            <b>导出范围</b> · 「运营汇总」只包含本页数据。团队关系明细暂时不能导出。
           </div>
         </div>
       </section>
 
-      <p className="f-foot"><b>L4 是只读分析面</b>：当前可核验内容均为服务器当前事实；未接入的历史效果保持明确降级。</p>
+      <p className="f-foot"><b>这页只能查看</b>：显示的都是当前数据；还没接入的历史统计会明确标出。</p>
     </div>
   );
 }

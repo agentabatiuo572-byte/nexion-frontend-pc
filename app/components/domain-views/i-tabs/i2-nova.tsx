@@ -186,7 +186,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   // ── 删除通道:走普通确认(原因必填 + 留痕) ──
   const removeNova = (n: OpsNova) => openConfirm({
     action: <>删除推送通道 · {n.name}</>,
-    detail: <>删除该消息频道并停止投递。需审计留痕。</>,
+    detail: <>删除这个推送频道，并停止推送。</>,
     reason: true,
     okLabel: "确认删除",
     run: (reason) => {
@@ -205,11 +205,11 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
 
   const publishTpl = (ch: string, name: string) => openActionConfirm({
     action: <>发布模板 · {name}</>,
-    detail: <>频道 <b>{ch}</b>。发布即对该频道下一条推送生效;服务器侧校验中文和越南语内容完整、占位符一致（英文可选）,不齐直接拒。</>,
+    detail: <>频道 <b>{ch}</b>。发布后，这个频道的下一条推送就用新内容。中文和越南语必须填写完整、变量一致（英文可选），否则不能发布。</>,
     amplifies: false,
     reasonMax: 200,
     run: (reason) => {
-      return runBackend(actions.updateI2TemplateStatus(ch, "PUBLISHED", reason), `${name} 发布已确认生效`);
+      return runBackend(actions.updateI2TemplateStatus(ch, "PUBLISHED", reason), `${name} 已发布`);
     },
   });
   const archiveTpl = (ch: string, name: string) => openActionConfirm({
@@ -218,7 +218,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     amplifies: false,
     reasonMax: 200,
     run: (reason) => {
-      return runBackend(actions.updateI2TemplateStatus(ch, "ARCHIVED", reason), `${name} 归档已确认生效`);
+      return runBackend(actions.updateI2TemplateStatus(ch, "ARCHIVED", reason), `${name} 已归档`);
     },
   });
 
@@ -241,7 +241,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const closeTplDrawer = () => { setTplDrawer(false); setEditTplChannel(null); setTplForm(EMPTY_TEMPLATE); };
   const submitTpl = () => openConfirm({
     action: <>{editTplChannel ? "编辑" : "新增"}推送模板 · {tplForm.name}</>,
-    detail: <>保存后状态为草稿；发布前服务器会再次校验中越文完整性和占位符一致性。</>,
+    detail: <>保存后是草稿；发布前会再次检查中文、越南语是否完整、变量是否一致。</>,
     reason: true,
     okLabel: "保存草稿",
     run: (reason) => {
@@ -282,7 +282,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     run: (reason) => {
       const items = SOCIAL_DIST.map((item) => ({ key: item.key, pct: Number(distDraft[item.key] ?? 0) }));
       const expectedItems = SOCIAL_DIST.map((item) => ({ key: item.key, pct: Number(item.pct) }));
-      return runBackend(actions.updateI2Distribution(items, expectedItems, reason), "真实事件概率分布已更新", () => setDistDrawer(false));
+      return runBackend(actions.updateI2Distribution(items, expectedItems, reason), "事件出现概率已更新", () => setDistDrawer(false));
     },
   });
 
@@ -337,10 +337,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     return () => { active = false; };
   }, [actions.listI2SocialEvents, data, eventPage, eventRefreshKey, eventStatusFilter, eventTypeFilter, toast]);
   const optionLabel = (options: { value: string; label: string }[], value: string) =>
-    options.find((option) => option.value === value)?.label ?? "类型待核实";
+    options.find((option) => option.value === value)?.label ?? "类型未知";
   const statusLabel = (value: string) => SOCIAL_EVENT_STATUS_OPTIONS.find((option) => option.value === value)?.label
     ?? ({ ACTIVE: "已验证", DISABLED: "已停用", EXPIRED: "已过期" } as Record<string, string>)[value]
-    ?? "状态待核实";
+    ?? "状态未知";
   const formatEventTime = (value?: string) => {
     if (!value) return "—";
     const date = new Date(value);
@@ -376,7 +376,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   };
   const changeSocialEventStatus = (event: (typeof SOCIAL_EVENTS)[number], status: "ACTIVE" | "DISABLED" | "EXPIRED") => openConfirm({
     action: <>{status === "ACTIVE" ? "恢复" : status === "DISABLED" ? "停用" : "立即过期"}真实事件 · #{event.id}</>,
-    detail: <>来源事件只允许改变投放资格，不允许修改来源、人物、金额或发生时间；全部操作保留审计记录。</>,
+    detail: <>只能控制这条事件是否推送，不能改来源、人物、金额和时间。</>,
     reason: true,
     okLabel: "确认操作",
     run: (reason) => {
@@ -388,12 +388,12 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   });
   const deleteSocialEvent = (event: (typeof SOCIAL_EVENTS)[number]) => openConfirm({
     action: <>删除真实事件 · #{event.id}</>,
-    detail: <>执行软删除并保留来源和审计链；已投递记录不会被物理抹除。</>,
+    detail: <>删除后不再推送；已推送的记录仍保留。</>,
     reason: true,
     okLabel: "确认删除",
     run: (reason) => {
       setEventBusy(`delete-${event.id}`);
-      return runBackend(actions.deleteI2SocialEvent(event.id, reason), "事件已软删除",
+      return runBackend(actions.deleteI2SocialEvent(event.id, reason), "事件已删除",
         () => setEventRefreshKey((key) => key + 1))
         .finally(() => setEventBusy(null));
     },
@@ -421,10 +421,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       : `目标 >${ctrTargetValue}% ✗ 未达标 · 点击 ÷ 送达`;
 
   if (contentLoading && !data) {
-    return <section className="l-card"><div className="l-b"><div className="itint">I2 数据加载中...</div></div></section>;
+    return <section className="l-card"><div className="l-b"><div className="itint">推送数据加载中…</div></div></section>;
   }
   if (!data) {
-    return <section className="l-card"><div className="l-b"><div className="itint danger">I2 暂无真实接口数据</div></div></section>;
+    return <section className="l-card"><div className="l-b"><div className="itint danger">暂无推送数据</div></div></section>;
   }
 
   return (
@@ -433,7 +433,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         <div className="f-stat">
           <div className="k">今日推送量</div>
           <div className="v">{I2_STATS.todayDelivered}</div>
-          <div className="sub">送达事件服务器统计规则</div>
+          <div className="sub">按实际送达统计</div>
         </div>
         <div className={`f-stat ${!ctrComparable ? "" : ctrValue > ctrTargetValue ? "ok" : "warn"}`}>
           <div className="k">消息点击率</div>
@@ -446,7 +446,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           <div className="sub">停推 = 停止单个频道推送,操作确认</div>
         </div>
         <div className="f-stat">
-          <div className="k">业务动态事件派发(本周)</div>
+          <div className="k">本周推送的动态消息</div>
           <div className="v">{I2_STATS.weeklySocial}</div>
           <div className="sub">5 类按概率分布抽取</div>
         </div>
@@ -508,7 +508,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {canWriteI2 && <>
                         {h1CadenceReadOnly
-                          ? <button className="l-btn sm" disabled title="当前节奏由 H1 阶段权威派发">H1 节奏只读</button>
+                          ? <button className="l-btn sm" disabled title="推送间隔跟随「运营阶段设置」">跟随运营阶段</button>
                           : <button className="l-btn sm" onClick={() => openEditNova(n)}>编辑</button>}
                         <button className="l-btn sm" style={{ marginLeft: 6 }} onClick={() => removeNova(n)}>删除</button>
                       </>}
@@ -521,10 +521,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="itint warn">
-            <b>这套开关不在紧急停用矩阵里</b> · 停某个 Nova 频道走这页的开关(操作确认),不占应急紧急停用矩阵(J1)的 6 个功能开关,也不是地区屏蔽(J2);只有「Nova 整体作为一种能力要平台级停掉」才轮到 J 域出手。别把频道停推误报成紧急停用。
+            <b>这不是紧急开关</b> · 停某个 Nova 频道用这页的开关就行，和「紧急停用开关」「地区访问限制」无关。只有要整体停掉 Nova 推送时，才去「紧急停用开关」。
           </div>
           <div className="itint" style={{ marginTop: 8 }}>
-          <b>两个随阶段变的频道</b> · 以旧换新和月度任务锁定的同一用户最短推送间隔按运营阶段(P1–P6)分档,阶段切换时自动换档——<b>阶段由节奏调度页(H1)说了算,这页只读跟随</b>,想改当前是 P 几去 H1。
+          <b>两个跟随阶段的频道</b> · 以旧换新和月度任务给同一用户的最短推送间隔按运营阶段（P1–P6）分档，阶段切换时自动换档。<b>阶段在「运营阶段设置」里改，这里只能查看。</b>
           </div>
         </div>
       </section>
@@ -533,12 +533,12 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">{offTableTitle}</span>
-          <span className="sub">· 文案归这页的模板池管,节奏这页管不了 · 防止盘点时漏数或多数</span>
+          <span className="sub">· 这些推送的文案在下方模板里管理</span>
         </div>
         {offTableChannels.length === 0 ? (
           <div className="l-b" style={{ paddingTop: 4 }}>
             <div className="itint ok">
-              服务端目录里没有任何「不在节奏表内」的推送频道:每个频道都有开关字段、读服务器 推送间隔,并已在上方可调节奏表中逐条列出。
+              所有推送频道都已列在上方的推送节奏表里。
             </div>
           </div>
         ) : (
@@ -576,7 +576,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         {/* (b) 推送模板池 */}
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">推送模板池(b)</span>
+            <span className="ttl">推送模板</span>
             <span className="sub">· 中文/越南语必填,英语可选 · 发布操作确认</span>
             <div className="r">
               {!canWriteI2 && <span className="bdg dim">只读</span>}
@@ -635,7 +635,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             </table>
           </div>
           <DataListPager
-            label="推送模板池(b)"
+            label="推送模板"
             page={templatePager.page}
             pageSize={templatePager.pageSize}
             total={templatePager.total}
@@ -645,7 +645,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           />
           <div className="l-b" style={{ paddingTop: 8 }}>
             <div className="itint">
-              <b>文案来源</b> · 模板池当前共 {templatePager.total} 条服务端目录记录，每页最多 {templatePager.pageSize} 条；发布和归档走操作确认。 模板中的中文、越南语和可选英语正文就是通道实际推送内容；通道、跳转页面均从后端配置目录选择。处理流程：草稿 → 已发布 → 已归档。
+              <b>说明</b> · 共 {templatePager.total} 个模板，每页 {templatePager.pageSize} 个。模板里的中文、越南语（英语可选）就是实际推送的内容。流程：草稿 → 已发布 → 已归档。
             </div>
           </div>
         </section>
@@ -657,7 +657,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             <span className="sub">· 只消费已核验、未过期的真实业务事件 · 无事件就跳过投放</span>
             <div className="r">
               {canWriteI2 && <button className="l-btn sm" onClick={openDistDrawer}>编辑全部概率</button>}
-              {canWriteI2 && <button className="l-btn sm mc" disabled={eventBusy !== null} onClick={syncSocialEvents}>{eventBusy === "sync" ? "同步中…" : "同步真实事件"}</button>}
+              {canWriteI2 && <button className="l-btn sm mc" disabled={eventBusy !== null} onClick={syncSocialEvents}>{eventBusy === "sync" ? "同步中…" : "同步最新事件"}</button>}
               <select className="fld" style={{ width: 112 }} value={previewLanguage} onChange={(event) => setPreviewLanguage(event.target.value as "ZH" | "VI" | "EN")} aria-label="预览语言">
                 <option value="VI">越南语</option><option value="ZH">中文</option><option value="EN">英语</option>
               </select>
@@ -708,10 +708,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             <div className="k" style={{ marginBottom: 8 }}>真实事件明细</div>
             {eventError ? (
               <div className="itint warn" role="alert">
-                {eventError} <button className="l-btn sm" onClick={() => setEventRefreshKey((key) => key + 1)}>重新读取事件</button>
+                {eventError} <button className="l-btn sm" onClick={() => setEventRefreshKey((key) => key + 1)}>重新加载事件</button>
               </div>
             ) : eventLoading || !eventReadable ? (
-              <div className="itint">正在读取真实事件...</div>
+              <div className="itint">正在加载事件…</div>
             ) : visibleEventTotal === 0 && !eventTypeFilter && !eventStatusFilter ? (
               <div className="itint warn"><b>当前没有可投放的真实事件</b> · 业务动态频道不会发送，系统不会生成虚假占位内容。等待真实业务数据产生后点击“同步真实事件”。</div>
             ) : visibleEventTotal === 0 ? (
@@ -761,8 +761,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
 
       <p className="f-foot">
         <b>执行门槛</b>:节奏调整 = 内容或增长执行门槛:内容主管/超级管理员;<b>频道停推</b> = 内容或<b>风控</b>可提交,内容主管/超级管理员执行;模板与事件池发布 = 内容执行门槛:内容主管。
-        <b>事件去向</b>:送达 / 点击都是已登记事件(nova 域,无需扩展),点击率统计规则只认服务器发的送达事件;各频道点击率与召回贡献用于数据分析(L 域),推送拉回访间接喂 注册满七天后的活跃率。
-        <b>直播代答模式</b>期间 AI 自动推送全静默,服务端同样拦,不止前端。
+        <b>数据</b>：点击率按实际送达计算；各频道的点击率和拉回用户情况会进入数据分析。
+        <b>直播代答模式</b>期间，AI 自动推送全部暂停。
       </p>
       <PaginationExemptionList
         items={[
@@ -777,7 +777,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             maxRows: Math.max(offTableChannels.length, 1),
             reason: offTableChannels.length
               ? "剩余不可调频道只做统计规则闭合说明"
-              : "服务端目录里已无不可调频道,本区只留统计规则闭合结论",
+              : "所有频道都在上方节奏表里",
           },
         ]}
       />
@@ -853,7 +853,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
               />
             </label>
             <label className="col" style={{ gap: 5 }}>
-              <span className="muted tiny">服务端真实事实源</span>
+              <span className="muted tiny">系统实际发生的事件</span>
               <select
                 className="fld"
                 value={form.runtimeSource}
@@ -863,7 +863,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                 <option value="">请选择受控事实源</option>
                 {RUNTIME_SOURCE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{operatorCopyText(option.label)}</option>)}
               </select>
-              <span className="muted tiny">仅可选择服务端 A4 事实；客户端不能输入或伪造事件名。</span>
+              <span className="muted tiny">只能从系统事件里选，不能手动输入。</span>
             </label>
             <label className="col" style={{ gap: 5 }}>
               <span className="muted tiny">检查间隔（多久执行一次扫描）</span>
@@ -957,7 +957,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
               <label className="col" style={{ gap: 5 }}><span className="muted tiny">版本号</span>
                 <input className="fld" value={tplForm.version} onChange={(e) => setTplForm({ ...tplForm, version: e.target.value })} placeholder="v1" /></label>
             </div>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">点击后跳转页面（来自后端路由目录）</span>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">点击后跳转页面</span>
               <select className="fld" value={tplForm.cta} onChange={(e) => setTplForm({ ...tplForm, cta: e.target.value })}>
                 <option value="">请选择投放去向</option>
                 {CTA_OPTIONS.map((option) => <option key={option.value} value={option.value}>{operatorCopyText(option.label)}（{option.value}）</option>)}

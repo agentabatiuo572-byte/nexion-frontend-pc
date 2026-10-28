@@ -31,18 +31,12 @@ import { fetchA4Overview } from "@/lib/admin/a4-client";
 
 const FOLD: Record<string, string> = { A1: "A1", A2: "A2", A3: "A3", A4: "A4", A9: "A9" };
 
-const RO_COPY: Record<string, string> = {
-  A1: "每点一个功能,服务器都会重新核对你有没有权限",
-  A2: "操作记录不能修改或单独删除；到期记录须先完成归档，再从在线列表移出",
-  A3: "查看紧急停止开关与功能分批开放的当前设置",
-  A4: "资金和 关键指标 按服务器正式记录的事件统计",
-  A9: "审批状态、操作权限和结果以服务器记录为准",
-};
+
 
 export function ADomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "A1", [meta.l2Id]);
-  const [live, setLive] = useState("0");
+  const [live, setLive] = useState("");
   const [actionConfirmReq, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
 
@@ -54,40 +48,39 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
 
   useEffect(() => {
     let cancelled = false;
-    setLive("0");
+    setLive("");
     const loadLive = async () => {
       try {
         if (tab === "A1") {
           const overview = await fetchA1Overview();
           if (!cancelled) {
-            setLive(`有效超级管理员 ${overview.stats?.effectiveSupers ?? 0} · 启用账号 ${overview.stats?.activeAccounts ?? 0}`);
+            setLive(`超级管理员 ${overview.stats?.effectiveSupers ?? 0} 人 · 启用账号 ${overview.stats?.activeAccounts ?? 0} 个`);
           }
           return;
         }
         if (tab === "A2") {
           const overview = await fetchA2Overview();
           if (!cancelled) {
-            setLive(`待确认 ${overview.stats?.pendingTickets ?? 0} · 今日审计 ${overview.stats?.todayAuditEvents ?? 0}`);
+            setLive(`待确认 ${overview.stats?.pendingTickets ?? 0} · 今日操作 ${overview.stats?.todayAuditEvents ?? 0}`);
           }
           return;
         }
         if (tab === "A3") {
           const overview = await fetchA3Overview();
           if (!cancelled) {
-            setLive(`应急状态正常 ${overview.stats?.killGatesUp ?? 0}/${overview.stats?.killGates ?? 0} · 平台开关开启 ${overview.stats?.flagOnCount ?? 0}`);
+            setLive(`紧急开关正常 ${overview.stats?.killGatesUp ?? 0}/${overview.stats?.killGates ?? 0} · 已开启功能 ${overview.stats?.flagOnCount ?? 0}`);
           }
           return;
         }
         if (tab === "A9") {
-          if (!cancelled) setLive("审批列表 · 提交时检查状态是否已变化");
           return;
         }
         const overview = await fetchA4Overview();
         if (!cancelled) {
-          setLive(`今日事件 ${overview.stats?.todayEvents ?? "0"} · 注册域 ${overview.stats?.registeredDomains ?? 0}`);
+          setLive(`今日事件 ${overview.stats?.todayEvents ?? "0"} · 已接入模块 ${overview.stats?.registeredDomains ?? 0}`);
         }
       } catch {
-        if (!cancelled) setLive("0");
+        if (!cancelled) setLive("");
       }
     };
     void loadLive();
@@ -96,13 +89,7 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
     };
   }, [tab]);
 
-  const ro = RO_COPY[tab];
-  const right = (
-    <>
-      <span className="f-ro"><span className="d" />{ro}</span>
-      <span className="f-live"><span className="dot" />{live}</span>
-    </>
-  );
+  const right = live ? <span className="f-live"><span className="dot" />{live}</span> : null;
 
   return (
     <div className="dkpage adom">

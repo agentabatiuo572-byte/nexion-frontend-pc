@@ -48,7 +48,7 @@ export function DomainHeader({
             style={{ background: `color-mix(in srgb, ${accent} 14%, transparent)`, color: accent, border: `1px solid color-mix(in srgb, ${accent} 30%, transparent)` }}
           >
             <span className="inline-block rounded-full" style={{ width: 5, height: 5, background: accent }} />
-            域 {domainCode} · {domainName}
+            {domainName}
           </span>
           <span className="font-mono-tabular text-[11px]" style={{ color: "var(--v5-ink-4)" }}>{l2Id}</span>
         </div>

@@ -154,7 +154,7 @@ const executeG3Mutation = createStableMutationExecutor(idempotencyKey, "nexion-a
 function requireNumber(value: RawNumber, field: string) {
   const parsed = parseNumber(value);
   if (parsed == null) {
-    throw new Error(`G3 后端数据缺少字段:${field}`);
+    throw new Error(`UVT 价格数据不完整（缺少 ${field}），请刷新重试`);
   }
   return parsed;
 }
@@ -176,11 +176,11 @@ function asText(value: unknown, fallback = "—") {
 function requireText(value: unknown, field: string) {
   if (typeof value === "string" && value.trim()) return value.trim();
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  throw new Error(`G3 后端数据缺少字段:${field}`);
+  throw new Error(`UVT 价格数据不完整（缺少 ${field}），请刷新重试`);
 }
 
 function normalizeFrame(frame: BackendFrame | null | undefined, index: number): G3CurveFrame {
-  if (!frame) throw new Error(`G3 后端数据缺少字段:frames[${index}]`);
+  if (!frame) throw new Error(`UVT 价格计划不完整（缺少第 ${index + 1} 天），请刷新重试`);
   return {
     dayIndex: requireNumber(frame.dayIndex, `frames[${index}].dayIndex`),
     targetPrice: requireNumber(frame.targetPrice, `frames[${index}].targetPrice`),
@@ -190,15 +190,15 @@ function normalizeFrame(frame: BackendFrame | null | undefined, index: number): 
 }
 
 function normalizeOverview(data: BackendOverview | null | undefined): G3Overview {
-  if (!data) throw new Error("G3 后端未返回行情总览数据");
+  if (!data) throw new Error("UVT 价格数据加载失败，请刷新重试");
   const frames = (data?.frames ?? []).map(normalizeFrame);
   const activeDayIndex = Math.max(0, requireNumber(data.activeDayIndex, "activeDayIndex"));
   const activeFrame = data?.activeFrame
     ? normalizeFrame(data.activeFrame, activeDayIndex)
     : frames.find((frame) => frame.dayIndex === activeDayIndex);
-  if (!activeFrame) throw new Error("G3 后端数据缺少字段:activeFrame");
-  if (!data.coverage) throw new Error("G3 后端数据缺少字段:coverage");
-  if (!data.overrides) throw new Error("G3 后端数据缺少字段:overrides");
+  if (!activeFrame) throw new Error("UVT 价格数据不完整（缺少当天计划），请刷新重试");
+  if (!data.coverage) throw new Error("UVT 价格数据不完整（缺少覆盖率），请刷新重试");
+  if (!data.overrides) throw new Error("UVT 价格数据不完整（缺少手动设置），请刷新重试");
   const coverage = data.coverage;
   const overrides = data.overrides;
   return {
@@ -237,7 +237,7 @@ function normalizeOverview(data: BackendOverview | null | undefined): G3Overview
 }
 
 function normalizeHistory(data: BackendHistory | null | undefined): G3History {
-  if (!data) throw new Error("G3 后端未返回行情历史数据");
+  if (!data) throw new Error("UVT 价格走势加载失败，请刷新重试");
   return {
     points: (data.points ?? []).map((point, index) => ({
       sampledAt: asText(point.sampledAt, ""),
@@ -323,7 +323,7 @@ export async function updateG3CurveFrame(
   const expectedFrames = serializeFrames(overview.frames);
   const frames = expectedFrames.map((frame) => ({ ...frame }));
   const target = frames.find((frame) => frame.dayIndex === dayIndex);
-  if (!target) throw new Error("G3 曲线日不存在,请刷新页面后重试。");
+  if (!target) throw new Error("这一天的价格计划不存在，请刷新页面后重试。");
   target[field] = value;
   return g3OverviewMutation(
     "/nex/curve",

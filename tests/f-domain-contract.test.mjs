@@ -26,7 +26,7 @@ test("直属政策版本冲突使用服务端实际错误码并提示重新读�
   const service = read(BACKEND_ROOT, "src/main/java/ffdd/opsconsole/team/application/DirectReferralPolicyService.java");
   for (const code of ["DIRECT_REFERRAL_VERSION_CONFLICT", "SEVEN_LAYER_REVISION_CONFLICT"]) {
     assert.ok(service.includes(`"${code}"`), `service must emit ${code}`);
-    assert.match(displayAdminError(new Error(code)), /重新读取/);
+    assert.match(displayAdminError(new Error(code)), /重新加载/);
   }
 });
 
@@ -162,7 +162,7 @@ test("F domain keeps current seven-layer writes while split policy uses one vers
   // 七层实际写入沿原 A2 路径；新拆分只有一个完整双版本命令。
   assert.match(view, /F\.commission\.[\s\S]*\.status/, "resolveFOp 缺 F.commission.{id}.status 分支");
   assert.match(view, /return "f_unilevel_rule"/);
-  assert.match(view, /key\.startsWith\("F\.unilevel\."\)[\s\S]*?throw new Error\("该网络购买奖励参数未接入结算/);
+  assert.match(view, /key\.startsWith\("F\.unilevel\."\)[\s\S]*?throw new Error\("这个参数还没用于结算/);
   assert.match(view, /findHighOp\("f_direct_referral_policy"\)/);
   assert.match(registry, /expectedSevenLayerRevision: ctx\.expectedSevenLayerRevision/);
   assert.match(registry, /purchaseSplit: ctx\.purchaseSplit/);
@@ -264,9 +264,9 @@ test("F 参数提案如实显示等待 A2 执行，不把建票误报为已生�
   );
 
   assert.ok(paramBranch.length > 0 && multiBranch.length > 0, "F 参数确认分支必须存在");
-  assert.match(paramBranch, /已提交 · 等待 A2 执行/);
+  assert.match(paramBranch, /已提交，等待确认/);
   assert.doesNotMatch(paramBranch, /已生效/);
-  assert.match(multiBranch, /已提交 · 等待 A2 执行/);
+  assert.match(multiBranch, /已提交，等待确认/);
   assert.doesNotMatch(multiBranch, /已生效/);
 });
 
@@ -279,5 +279,5 @@ test("F A2 参数与处置确认框默认说明批准后才生效，显式说明
   for (const operation of ["param", "param-multi", "dispose"]) {
     assert.match(modal, new RegExp(`mc\\.op === "${operation}"`));
   }
-  assert.match(modal, /提交后进入 A2 待确认队列，批准执行后生效/);
+  assert.match(modal, /提交后需在「操作记录与审批」确认才生效/);
 });

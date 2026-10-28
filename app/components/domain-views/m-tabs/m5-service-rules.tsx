@@ -182,8 +182,8 @@ export function M5ServiceRules({ permission }: { permission: MSupportPermission 
         <div className="m-admin-muted">沉睡、维护与活跃统计分别配置。未配置的能力会显示不可用，不影响其他已配置规则。</div>
         {permission === "supervisor" && <div className="m-admin-error">仅超级管理员可修改服务规则；当前为只读视图。</div>}
         {readOnlyPending && <div className="m-admin-error" role="status">此账号有一笔规则提交结果尚未确认；下方显示最近已保存的规则。请恢复超级管理员权限后查询原命令。</div>}
-        {loading && <div className="m-admin-muted" role="status">正在读取规则…</div>}
-        {error && <div className="m-admin-error" role="alert">{error} {readUnavailable && <button type="button" className="btn btn-sec btn-sm" disabled={Boolean(retry)} onClick={() => setReload((n) => n + 1)}>重试读取</button>}</div>}
+        {loading && <div className="m-admin-muted" role="status">正在加载规则…</div>}
+        {error && <div className="m-admin-error" role="alert">{error} {readUnavailable && <button type="button" className="btn btn-sec btn-sm" disabled={Boolean(retry)} onClick={() => setReload((n) => n + 1)}>重试</button>}</div>}
         {!loading && !current && <div className="m-admin-muted">规则暂不可用，无法保存。</div>}
         {draft && current && <>
           <fieldset disabled={!editable} className="m-assignment-mode" aria-describedby="m-assignment-help">

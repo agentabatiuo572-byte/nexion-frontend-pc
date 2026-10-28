@@ -9,12 +9,12 @@ import type { EViewCtx } from "./types";
 import { EStats } from "./stats";
 
 const DEV_STATE_LABEL: Record<E5DeviceState, string> = {
-  active: "已激活在线",
+  active: "在线",
   busy: "任务中",
-  offline: "已激活离线",
-  unknown: "运行状态待确认",
-  inventory: "库存待激活",
-  "pending-deactivate": "待任务结算后停用",
+  offline: "离线",
+  unknown: "状态未知",
+  inventory: "库存（未激活）",
+  "pending-deactivate": "任务结算后停用",
   unbound: "已解绑/停用",
   abnormal: "异常",
 };
@@ -88,8 +88,8 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
       if (live) {
         setObservability(null);
         setObservabilityError(error instanceof Error
-          ? `舰队可观测数据不可用：${displayAdminError(error)}`
-          : "舰队可观测数据不可用，请稍后重试");
+          ? `设备监控数据加载失败：${displayAdminError(error)}`
+          : "设备监控数据加载失败，请稍后重试");
       }
     });
     return () => { live = false; };
@@ -109,10 +109,10 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
   const dcRows = ctx.e5Datacenters.length ? ctx.e5Datacenters : overview?.datacenters ?? [];
   const telemetryCount = (value: number | undefined) => observabilityError
     ? "不可用"
-    : observability == null ? "读取中" : fmtCount(value);
+    : observability == null ? "加载中" : fmtCount(value);
   const telemetryLatency = observabilityError
     ? "不可用"
-    : observability == null ? "读取中"
+    : observability == null ? "加载中"
       : observability.telemetry.dispatchLatencyP95Ms == null
         ? "未采集"
         : `${observability.telemetry.dispatchLatencyP95Ms.toFixed(0)}ms`;
@@ -124,7 +124,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
     if (!reasonReady || actionBusy) return;
     setActionBusy(true);
     try { await work(); }
-    catch (error) { ctx.toast(error instanceof Error ? displayAdminError(error) : "E5 操作失败"); }
+    catch (error) { ctx.toast(error instanceof Error ? displayAdminError(error) : "操作失败"); }
     finally { setActionBusy(false); }
   };
   const batchUser = (d: E5Device) => {
@@ -144,7 +144,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
       setHealthDevices(page.records);
       setHealthTotal(page.total);
     } catch (error) {
-      setHealthError(error instanceof Error ? displayAdminError(error) : "数据中心健康详情读取失败");
+      setHealthError(error instanceof Error ? displayAdminError(error) : "数据中心运行详情加载失败");
     } finally {
       setHealthLoading(false);
     }
@@ -153,28 +153,28 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
   const toggle = (dcId: string) => {
     const paused = ctx.isDcPaused(dcId);
     ctx.openActionConfirm({
-      name: paused ? `恢复派单 · ${dcId}` : `批量暂停 · ${dcId}`,
+      name: paused ? `恢复派单 · ${dcId}` : `暂停派单 · ${dcId}`,
       op: "ops-pause", dc: dcId, fixedVal: paused ? "false" : "true", amplify: false,
       detail: paused
-        ? `恢复 ${dcId} 派单 · 重新接入调度,无需重启设备`
-        : `暂停 ${dcId} 全节点派单 · 仅运维窗口,不影响已售设备结算(用户按 基础收益 继续累计收益)· 处置限单个数据中心`,
+        ? `恢复 ${dcId} 的任务派发，设备无需重启`
+        : `暂停 ${dcId} 所有设备的任务派发，只在维护时使用。用户的基础收益照常计算。`,
     });
   };
 
   return (
     <>
       <EStats items={[
-        { k: "在线设备(全网)", v: fmtCount(onlineDevices), sub: "全网设备概览", tone: "ok" },
-        { k: "离线 / 异常", v: fmtCount(abnormalDevices), sub: "运行状态汇总", tone: "warn" },
-        { k: "单户设备上限", v: maxDevicesLabel, sub: "服务端 device.max_active_slots" },
-        { k: "回收 / 停用", v: fmtCount(recycledDevices), sub: "可恢复设备", tone: "cyan" },
+        { k: "在线设备", v: fmtCount(onlineDevices), sub: "全平台", tone: "ok" },
+        { k: "离线 / 异常", v: fmtCount(abnormalDevices), sub: "需要关注", tone: "warn" },
+        { k: "每个用户最多设备数", v: maxDevicesLabel, sub: "同时激活" },
+        { k: "回收 / 停用", v: fmtCount(recycledDevices), sub: "可恢复", tone: "cyan" },
       ]} />
 
       {/* Global heartbeat banner */}
       <section className="heartbeat" data-observability-state={observabilityError ? "error" : observability ? "ready" : "loading"}>
         <div>
           <div className="hb-num">{fmtCount(totalDevices)}</div>
-          <div className="hb-lbl">设备总数 · 最近状态同步</div>
+          <div className="hb-lbl">设备总数 · 最近状态</div>
         </div>
         <div className="ecg-wrap">
           <svg viewBox="0 0 800 60" preserveAspectRatio="none">
@@ -183,10 +183,10 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
           </svg>
         </div>
         <div className="hb-ctrl">
-          <div className="row"><span>过去 1 小时 心跳失联</span><span className="v">{telemetryCount(observability?.telemetry.heartbeatLost1h)}</span></div>
-          <div className="row"><span>过去 24 小时 重连 / 恢复</span><span className="v">{telemetryCount(observability?.telemetry.reconnectEvents24h)}</span></div>
+          <div className="row"><span>过去 1 小时失联</span><span className="v">{telemetryCount(observability?.telemetry.heartbeatLost1h)}</span></div>
+          <div className="row"><span>过去 24 小时重连 / 恢复</span><span className="v">{telemetryCount(observability?.telemetry.reconnectEvents24h)}</span></div>
           <div className="row"><span>持续异常 &gt; 1 小时</span><span className="v warn">{telemetryCount(observability?.telemetry.persistentOffline1h)}</span></div>
-          <div className="row"><span>调度延迟 P95</span><span className="v">{telemetryLatency}</span></div>
+          <div className="row"><span>派单延迟（95% 不超过）</span><span className="v">{telemetryLatency}</span></div>
           {observabilityError && <div className="row"><span className="warn">{observabilityError}</span></div>}
         </div>
       </section>
@@ -194,52 +194,52 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
       {/* #22 设备库存 & 激活 */}
       <section className="feed-card" data-proof="e5-inventory" style={{ marginBottom: 16 }}>
         <div className="feed-h">
-          <span className="ttl">设备库存 & 激活</span>
-          <span className="sub">激活 / 取消激活 / 强制激活 / 解绑 · 校验订单关系 + 用户槽位 + 单户上限({maxDevicesLabel})</span>
+          <span className="ttl">设备库存与激活</span>
+          <span className="sub">激活、取消激活、强制激活、解绑 · 每个用户最多 {maxDevicesLabel} 台</span>
         </div>
         <div className="row" style={{ gap: 8, padding: "8px 10px", flexWrap: "wrap" }} data-proof="e5-device-filters">
-          <input className="fld" style={{ maxWidth: 280 }} value={ctx.e5Keyword} onChange={(event) => ctx.setE5Keyword(event.target.value)} placeholder="搜索用户 / 设备 / 商品规格" aria-label="搜索用户设备" />
+          <input className="fld" style={{ maxWidth: 280 }} value={ctx.e5Keyword} onChange={(event) => ctx.setE5Keyword(event.target.value)} placeholder="搜索用户 / 设备 / 商品" aria-label="搜索用户设备" />
           <select className="fld" style={{ maxWidth: 160 }} value={ctx.e5StateFilter} onChange={(event) => ctx.setE5StateFilter(event.target.value)} aria-label="设备状态筛选">
-            <option value="all">全部状态</option><option value="active">在线（含任务中）</option><option value="busy">任务中</option><option value="offline">离线</option><option value="unknown">运行状态待确认</option><option value="inventory">库存</option><option value="pending-deactivate">待任务结算后停用</option><option value="unbound">已解绑</option><option value="abnormal">异常</option>
+            <option value="all">全部状态</option><option value="active">在线（含任务中）</option><option value="busy">任务中</option><option value="offline">离线</option><option value="unknown">状态未知</option><option value="inventory">库存</option><option value="pending-deactivate">任务结算后停用</option><option value="unbound">已解绑</option><option value="abnormal">异常</option>
           </select>
           <select className="fld" style={{ maxWidth: 160 }} value={ctx.e5KindFilter} onChange={(event) => ctx.setE5KindFilter(event.target.value)} aria-label="设备类型筛选">
             <option value="all">全部类型</option><option value="MOBILE">手机</option><option value="S1">S1</option><option value="PRO">专业设备</option><option value="RACK">机柜设备</option>
           </select>
           <select className="fld" style={{ maxWidth: 180 }} value={ctx.e5HeartbeatFilter} onChange={(event) => ctx.setE5HeartbeatFilter(event.target.value)} aria-label="心跳筛选">
-            <option value="all">全部心跳</option><option value="fresh">10 分钟内</option><option value="stale">失联 / 未采集</option>
+            <option value="all">全部心跳</option><option value="fresh">10 分钟内</option><option value="stale">失联 / 无数据</option>
           </select>
-          <span className="muted tiny">当前页命中 {filteredDevices.length} 台</span>
+          <span className="muted tiny">当前页 {filteredDevices.length} 台</span>
           {/* zentao #44:概览/数据中心各自的失败在这里单独说明 —— 拆开失败态是为了不连坐,
               但也不能把另外两面的故障悄悄吞掉,否则运维会以为「都正常」。 */}
           {!ctx.e5Loading && ctx.e5OverviewError && <span className="tiny" style={{ color: "var(--warning)" }}>{ctx.e5OverviewError}</span>}
           {!ctx.e5Loading && ctx.e5DatacenterError && <span className="tiny" style={{ color: "var(--warning)" }}>{ctx.e5DatacenterError}</span>}
-          {ctx.canWriteE5 && <input className="fld" style={{ minWidth: 300 }} maxLength={200} value={actionReason} onChange={(event) => setActionReason(event.target.value)} placeholder="直接操作理由(8–200 字)" aria-label="E5 直接操作理由" />}
-          {ctx.canWriteE5 && <span className="muted tiny">{actionReason.trim().length}/200{reasonReady ? " · 可执行" : " · 需 8–200 字"}</span>}
+          {ctx.canWriteE5 && <input className="fld" style={{ minWidth: 300 }} maxLength={200} value={actionReason} onChange={(event) => setActionReason(event.target.value)} placeholder="操作理由（8–200 字）" aria-label="设备操作理由" />}
+          {ctx.canWriteE5 && <span className="muted tiny">{actionReason.trim().length}/200{reasonReady ? " · 可以操作" : " · 需 8–200 字"}</span>}
         </div>
         <div style={{ overflowX: "auto", padding: "4px 4px 0" }}>
           <table style={{ width: "100%", minWidth: 1480, borderCollapse: "collapse", fontSize: 12.5 }}>
             <thead>
               <tr style={{ textAlign: "left", color: "var(--ink-4)", fontSize: 11.5 }}>
                 <th style={{ padding: "8px 10px" }}>设备编号</th><th style={{ padding: "8px 10px" }}>设备名称</th><th style={{ padding: "8px 10px" }}>用户</th>
-                <th style={{ padding: "8px 10px" }}>商品规格 / 产品</th><th style={{ padding: "8px 10px" }}>数据中心</th><th style={{ padding: "8px 10px" }}>用户槽位</th>
+                <th style={{ padding: "8px 10px" }}>商品</th><th style={{ padding: "8px 10px" }}>数据中心</th><th style={{ padding: "8px 10px" }}>用户设备数</th>
                 <th style={{ padding: "8px 10px" }}>购入 / 激活</th><th style={{ padding: "8px 10px" }}>基础收益 / 效率</th>
-                <th style={{ padding: "8px 10px" }}>心跳与任务</th><th style={{ padding: "8px 10px" }}>状态</th><th style={{ padding: "8px 10px", textAlign: "right" }}>动作</th>
+                <th style={{ padding: "8px 10px" }}>心跳与任务</th><th style={{ padding: "8px 10px" }}>状态</th><th style={{ padding: "8px 10px", textAlign: "right" }}>操作</th>
               </tr>
             </thead>
             <tbody>
               {ctx.e5Loading && (
                 <tr style={{ borderTop: "1px solid var(--border)" }}>
-                  <td colSpan={11} style={{ padding: "18px 10px", color: "var(--ink-3)" }}>正在加载第 {ctx.e5Page} 页设备库存...</td>
+                  <td colSpan={11} style={{ padding: "18px 10px", color: "var(--ink-3)" }}>正在加载…</td>
                 </tr>
               )}
               {!ctx.e5Loading && ctx.e5DeviceError && (
                 <tr style={{ borderTop: "1px solid var(--border)" }}>
-                  <td colSpan={11} style={{ padding: "18px 10px", color: "var(--danger)" }}>设备库存读取异常:{ctx.e5DeviceError}</td>
+                  <td colSpan={11} style={{ padding: "18px 10px", color: "var(--danger)" }}>设备库存加载失败：{ctx.e5DeviceError}</td>
                 </tr>
               )}
               {!ctx.e5Loading && !ctx.e5DeviceError && filteredDevices.length === 0 && (
                 <tr style={{ borderTop: "1px solid var(--border)" }}>
-                  <td colSpan={11} style={{ padding: "18px 10px", color: "var(--ink-3)" }}>当前筛选无设备数据</td>
+                  <td colSpan={11} style={{ padding: "18px 10px", color: "var(--ink-3)" }}>没有符合条件的设备</td>
                 </tr>
               )}
               {!ctx.e5Loading && !ctx.e5DeviceError && filteredDevices.map((d) => {
@@ -273,22 +273,22 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
                     <td style={{ padding: "9px 10px" }}><div>{operatorRate(d.dailyUsdt, d.dailyNex)}</div><div style={{ marginTop: 2 }}>{(d.currentEfficiency * 100).toFixed(1)}%</div></td>
                     <td style={{ padding: "9px 10px" }}>
                       <div className="mono">{operatorTimestamp(d.heartbeatAt)}</div>
-                      <div className="muted tiny" style={{ marginTop: 2 }}>电量 {d.batteryLevel == null ? "未采集" : `${d.batteryLevel}%`} · {d.isCharging == null ? "充电未采集" : d.isCharging ? "充电中" : "未充电"} · {d.isWifiConnected == null ? "网络未采集" : d.isWifiConnected ? "网络可达" : "网络断开"}</div>
-                      <div className="muted tiny" style={{ marginTop: 2 }}>温控 {operatorThermalLabel(d.thermalState)} · 任务 {operatorTaskLabel(d.activeTaskNo)}{d.pendingDeactivate ? " · 结算后自动停用" : ""}{d.pausedReason ? ` · 暂停:${operatorOperationalNote(d.pausedReason)}` : ""}</div>
+                      <div className="muted tiny" style={{ marginTop: 2 }}>电量 {d.batteryLevel == null ? "—" : `${d.batteryLevel}%`} · {d.isCharging == null ? "充电状态 —" : d.isCharging ? "充电中" : "未充电"} · {d.isWifiConnected == null ? "网络 —" : d.isWifiConnected ? "网络可达" : "网络断开"}</div>
+                      <div className="muted tiny" style={{ marginTop: 2 }}>温控 {operatorThermalLabel(d.thermalState)} · 任务 {operatorTaskLabel(d.activeTaskNo)}{d.pendingDeactivate ? " · 结算后自动停用" : ""}{d.pausedReason ? ` · 暂停：${operatorOperationalNote(d.pausedReason)}` : ""}</div>
                     </td>
                     <td style={{ padding: "9px 10px" }}><Badge tone={DEV_STATE_TONE[d.state]}>{DEV_STATE_LABEL[d.state]}</Badge></td>
                     <td style={{ padding: "9px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
                       {isActivatable(d.state) && (ctx.canWriteE5 || ctx.canForceActivateE5) && (
                         <>
-                          {ctx.canWriteE5 && d.state === "inventory" && <><button className="l-btn sm mc" disabled={!reasonReady || actionBusy || maxDevicesPerUser == null || d.activeDevicesForUser >= maxDevicesPerUser} title={maxDevicesPerUser == null ? "服务端槽位上限不可用" : d.activeDevicesForUser >= maxDevicesPerUser ? `该用户已占满 ${maxDevicesPerUser} 个激活槽位` : undefined} onClick={() => void runDirect(() => ctx.runE5DeviceAction(d.deviceId, "activate", actionReason.trim()))}>激活</button>{" "}</>}
-                          {ctx.canForceActivateE5 && <button className="l-btn sm mc" disabled={maxDevicesPerUser == null || d.activeDevicesForUser >= maxDevicesPerUser} title={maxDevicesPerUser == null ? "服务端槽位上限不可用" : d.activeDevicesForUser >= maxDevicesPerUser ? `强制激活也不能绕过 ${maxDevicesPerUser} 台上限` : undefined} onClick={() => devAct(d, "device-activate", "force-activate", "强制激活设备", `设备 ${displaySerial} / 用户 ${displayUserNo} / 类型 ${operatorSkuTier(d.productTier) || displayName} / 购入 ${operatorTimestamp(d.purchasedAt)} / 已激活 ${d.activeDevicesForUser}/${maxDevicesLabel} · 强制激活不绕过服务端上限 · 非资金动作`, false)}>强制激活</button>}
-                          {maxDevicesPerUser != null && d.activeDevicesForUser >= maxDevicesPerUser && <div className="tiny" style={{ color: "var(--danger)", marginTop: 4 }}>槽位已满 {d.activeDevicesForUser}/{maxDevicesPerUser}</div>}
+                          {ctx.canWriteE5 && d.state === "inventory" && <><button className="l-btn sm mc" disabled={!reasonReady || actionBusy || maxDevicesPerUser == null || d.activeDevicesForUser >= maxDevicesPerUser} title={maxDevicesPerUser == null ? "每个用户的设备上限未获取到" : d.activeDevicesForUser >= maxDevicesPerUser ? `该用户已占满 ${maxDevicesPerUser} 个激活槽位` : undefined} onClick={() => void runDirect(() => ctx.runE5DeviceAction(d.deviceId, "activate", actionReason.trim()))}>激活</button>{" "}</>}
+                          {ctx.canForceActivateE5 && <button className="l-btn sm mc" disabled={maxDevicesPerUser == null || d.activeDevicesForUser >= maxDevicesPerUser} title={maxDevicesPerUser == null ? "每个用户的设备上限未获取到" : d.activeDevicesForUser >= maxDevicesPerUser ? `强制激活也不能绕过 ${maxDevicesPerUser} 台上限` : undefined} onClick={() => devAct(d, "device-activate", "force-activate", "强制激活设备", `设备 ${displaySerial} / 用户 ${displayUserNo} / 类型 ${operatorSkuTier(d.productTier) || displayName} / 购入 ${operatorTimestamp(d.purchasedAt)} / 已激活 ${d.activeDevicesForUser}/${maxDevicesLabel} · 强制激活不绕过服务端上限 · 非资金动作`, false)}>强制激活</button>}
+                          {maxDevicesPerUser != null && d.activeDevicesForUser >= maxDevicesPerUser && <div className="tiny" style={{ color: "var(--danger)", marginTop: 4 }}>已达上限 {d.activeDevicesForUser}/{maxDevicesPerUser}</div>}
                         </>
                       )}
                       {isDeactivatable(d.state) && (ctx.canWriteE5 || ctx.canUnbindE5) && (
                         <>
                           {ctx.canWriteE5 && <button className="l-btn sm mc" disabled={!reasonReady || actionBusy} onClick={() => void runDirect(() => ctx.runE5DeviceAction(d.deviceId, "deactivate", actionReason.trim()))}>取消激活</button>}{" "}
-                          {ctx.canUnbindE5 && <button className="l-btn sm dgr" onClick={() => devAct(d, "device-deactivate", "unbind", "解绑设备", `解绑 ${displaySerial} · 解除资产关系但不退款、不改写购入时间 · 理由 8–200 字`, false)}>解绑</button>}{" "}
+                          {ctx.canUnbindE5 && <button className="l-btn sm dgr" onClick={() => devAct(d, "device-deactivate", "unbind", "解绑设备", `解绑 ${displaySerial}：设备不再属于这个用户，不退款，购入时间不变。`, false)}>解绑</button>}{" "}
                           {ctx.canWriteE5 && <button className="l-btn sm" disabled={!reasonReady || actionBusy} onClick={() => batchUser(d)}>{d.pausedReason ? "恢复该用户" : "暂停该用户"}</button>}
                         </>
                       )}
@@ -314,7 +314,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
       <div className="dc-toolbar">
         <div>
           <div className="ttl">数据中心</div>
-          <div className="sub">区域、状态与派单控制</div>
+          <div className="sub">区域、状态和任务派发</div>
         </div>
         {ctx.canWriteE5 && <button className="l-btn sm mc" onClick={() => ctx.openDatacenter()}>+ 新增数据中心</button>}
       </div>
@@ -323,7 +323,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
           <section className="feed-card dc-empty" style={{ color: "var(--warning)" }}>{ctx.e5DatacenterError}</section>
         )}
         {!ctx.e5Loading && !ctx.e5DatacenterError && dcRows.length === 0 && (
-          <section className="feed-card dc-empty">暂无数据中心配置</section>
+          <section className="feed-card dc-empty">暂无数据中心</section>
         )}
         {dcRows.map((dc) => {
           const realDc = dcStats.get(dc.dcLocation) ?? dc;
@@ -331,7 +331,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
           const abnormal = realDc?.abnormalDevices ?? 0;
           const disabled = dc.status === "disabled";
           const cls = paused || disabled ? "paused" : abnormal > 0 ? "warn" : realDc ? "online" : "idle";
-          const stateLbl = disabled ? "已禁用" : paused ? "已暂停" : abnormal > 0 ? "波动中" : realDc ? "在线" : "未返回";
+          const stateLbl = disabled ? "已禁用" : paused ? "已暂停" : abnormal > 0 ? "波动中" : realDc ? "在线" : "未知";
           const sparkColor = paused ? "var(--ink-4)" : abnormal > 0 ? "var(--warning)" : "var(--success)";
           const online = realDc?.onlineDevices;
           const onlineValue = online ?? 0;
@@ -348,21 +348,21 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
               <div className="dc-body">
                 <div className="dc-num"><span className={`v${abnormal > 0 && !paused ? " warn" : ""}`}>{fmtCount(online)}</span></div>
                 <div className="lbl">在线设备 · 占比 {pct}%</div>
-                <div className="dc-spark">{spark.length >= 2 ? <DcSpark data={spark} color={sparkColor} /> : <span className="muted tiny">后端未返回趋势</span>}</div>
+                <div className="dc-spark">{spark.length >= 2 ? <DcSpark data={spark} color={sparkColor} /> : <span className="muted tiny">暂无趋势</span>}</div>
                 <div className="dc-sub">
                   <div className="stat"><div className="k">任务吞吐</div><div className="v">—</div></div>
-                  <div className="stat"><div className="k">P95 延迟</div><div className={`v ${abnormal > 0 ? "warn" : "ok"}`}>—</div></div>
+                  <div className="stat"><div className="k">延迟（95%）</div><div className={`v ${abnormal > 0 ? "warn" : "ok"}`}>—</div></div>
                   <div className="stat"><div className="k">CPU 平均</div><div className="v">—</div></div>
                   <div className="stat"><div className="k">GPU 平均</div><div className={`v${parseInt(gpu, 10) > 80 ? " warn" : ""}`}>{gpu}</div></div>
                 </div>
               </div>
               <div className="dc-foot">
-                <button onClick={() => void openHealth(dc.dcLocation)}>健康详情</button>
+                <button onClick={() => void openHealth(dc.dcLocation)}>运行详情</button>
                 {ctx.canWriteE5 && <button onClick={() => ctx.openDatacenter(dc)}>编辑</button>}
                 {ctx.canWriteE5 && <button className="dgr" onClick={() => ctx.deleteDatacenter(dc)}>删除</button>}
                 {(paused ? ctx.canWriteE5 : ctx.canPauseDcE5) && (paused
                   ? <button className="resume" onClick={() => toggle(dc.dcLocation)}>恢复派单</button>
-                  : <button className="pause" onClick={() => toggle(dc.dcLocation)}><PauseIcon /> 批量暂停</button>)}
+                  : <button className="pause" onClick={() => toggle(dc.dcLocation)}><PauseIcon /> 暂停派单</button>)}
               </div>
             </div>
           );
@@ -377,33 +377,33 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
         const heartbeatP95 = percentile95(heartbeatLags);
         const freshHeartbeats = heartbeatLags.filter((value) => value <= 10).length;
         const activeTasks = healthDevices.filter((device) => device.activeTaskNo && device.activeTaskNo !== "—").length;
-        return <section className="feed-card" role="dialog" aria-label={`${selectedDc} 健康详情`} data-proof="e5-dc-health-detail" style={{ marginTop: 14 }}>
-          <div className="feed-h"><span className="ttl">{selectedDc} · 健康详情</span><button className="l-btn sm" onClick={() => setSelectedDc(null)}>关闭</button></div>
+        return <section className="feed-card" role="dialog" aria-label={`${selectedDc} 运行详情`} data-proof="e5-dc-health-detail" style={{ marginTop: 14 }}>
+          <div className="feed-h"><span className="ttl">{selectedDc} · 运行详情</span><button className="l-btn sm" onClick={() => setSelectedDc(null)}>关闭</button></div>
           <div className="row" style={{ gap: 18, padding: 14, flexWrap: "wrap" }}>
             <span>绑定设备 <b>{fmtCount(live.totalDevices)}</b></span><span>在线 <b>{fmtCount(live.onlineDevices)}</b></span><span>异常 <b>{fmtCount(live.abnormalDevices)}</b></span>
             <span>GPU 平均 <b>{Math.round(live.avgGpuUsage)}%</b></span><span>GPU 温度 <b>{Math.round(live.avgGpuTempC)}℃</b></span><span>GPU 功耗 <b>{Math.round(live.avgGpuPowerW)}W</b></span>
-            <span>派单 <b>{live.dispatchPaused ? `已暂停:${live.pausedReason || "未填写"}` : "正常"}</b></span><span>当前任务设备 <b>{healthLoading ? "读取中" : fmtCount(activeTasks)}</b></span>
-            <span>心跳延迟 P95 <b>{healthLoading ? "读取中" : heartbeatP95 == null ? "未采集" : `${heartbeatP95.toFixed(2)} 分钟`}</b></span><span>CPU 平均 <b>未采集</b></span>
+            <span>派单 <b>{live.dispatchPaused ? `已暂停：${live.pausedReason || "未填写原因"}` : "正常"}</b></span><span>当前任务设备 <b>{healthLoading ? "加载中" : fmtCount(activeTasks)}</b></span>
+            <span>心跳延迟（95%） <b>{healthLoading ? "加载中" : heartbeatP95 == null ? "—" : `${heartbeatP95.toFixed(2)} 分钟`}</b></span><span>CPU 平均 <b>—</b></span>
           </div>
           <div style={{ margin: "0 14px 14px", padding: 12, border: "1px solid var(--border)", borderRadius: 10 }} data-proof="e5-dc-heartbeat-samples">
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8 }}><b>心跳新鲜度样本</b><span className="muted tiny">10 分钟内 {freshHeartbeats}/{heartbeatLags.length} · 取该数据中心 当前最新心跳，不伪造历史时序</span></div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8 }}><b>设备心跳</b><span className="muted tiny">10 分钟内有心跳 {freshHeartbeats}/{heartbeatLags.length} 台</span></div>
             <div style={{ display: "flex", gap: 3, minHeight: 28, alignItems: "end" }}>
-              {heartbeatLags.length === 0 ? <span className="muted tiny">暂无可用心跳样本</span> : heartbeatLags.slice(0, 80).map((lag, index) => <span key={`${lag}-${index}`} title={`延迟 ${lag} 分钟`} style={{ width: 6, height: `${Math.max(4, Math.min(28, lag + 4))}px`, background: lag <= 10 ? "var(--success)" : "var(--warning)", borderRadius: 2 }} />)}
+              {heartbeatLags.length === 0 ? <span className="muted tiny">暂无心跳数据</span> : heartbeatLags.slice(0, 80).map((lag, index) => <span key={`${lag}-${index}`} title={`延迟 ${lag} 分钟`} style={{ width: 6, height: `${Math.max(4, Math.min(28, lag + 4))}px`, background: lag <= 10 ? "var(--success)" : "var(--warning)", borderRadius: 2 }} />)}
             </div>
           </div>
           <div style={{ overflowX: "auto", margin: "0 14px 14px" }} data-proof="e5-dc-bound-devices">
             <table style={{ width: "100%", minWidth: 860, borderCollapse: "collapse", fontSize: 12 }}>
               <thead><tr style={{ textAlign: "left", color: "var(--ink-4)" }}><th style={{ padding: 7 }}>设备</th><th style={{ padding: 7 }}>用户</th><th style={{ padding: 7 }}>状态</th><th style={{ padding: 7 }}>当前任务</th><th style={{ padding: 7 }}>最新心跳</th><th style={{ padding: 7 }}>暂停原因</th></tr></thead>
               <tbody>
-                {healthLoading && <tr><td colSpan={6} style={{ padding: 10 }}>正在读取该数据中心绑定设备...</td></tr>}
+                {healthLoading && <tr><td colSpan={6} style={{ padding: 10 }}>正在加载…</td></tr>}
                 {!healthLoading && healthError && <tr><td colSpan={6} data-module-health-state="error" style={{ padding: 10, color: "var(--danger)" }}>{healthError}</td></tr>}
                 {!healthLoading && !healthError && healthDevices.length === 0 && <tr><td colSpan={6} style={{ padding: 10 }}>该数据中心暂无绑定设备</td></tr>}
                 {!healthLoading && !healthError && healthDevices.map((device) => <tr key={device.deviceId} style={{ borderTop: "1px solid var(--border)" }}><td style={{ padding: 7 }} className="mono">{operatorDeviceIdentifier(device.serial)}</td><td style={{ padding: 7 }}>{operatorUserIdentifier(device.userNo)}</td><td style={{ padding: 7 }}>{DEV_STATE_LABEL[device.state]}</td><td style={{ padding: 7 }}>{operatorTaskLabel(device.activeTaskNo)}</td><td style={{ padding: 7 }} className="mono">{operatorTimestamp(device.heartbeatAt)}</td><td style={{ padding: 7 }}>{operatorOperationalNote(device.pausedReason) || "—"}</td></tr>)}
               </tbody>
             </table>
-            {!healthLoading && healthTotal > healthDevices.length && <div className="muted tiny" style={{ marginTop: 8 }}>当前显示前 {healthDevices.length} / {healthTotal} 台；完整吞吐与历史心跳曲线需 设备集群监测接口继续提供。</div>}
+            {!healthLoading && healthTotal > healthDevices.length && <div className="muted tiny" style={{ marginTop: 8 }}>只显示前 {healthDevices.length} / {healthTotal} 台。</div>}
           </div>
-          <div className="tint tiny" style={{ margin: "0 14px 14px" }}>任务吞吐、派单 P95、CPU 与历史心跳曲线尚无 设备集群监测字段；当前任务数、心跳延迟 P95、GPU 与设备清单均来自实时服务端数据，未使用估算值。</div>
+          <div className="tint tiny" style={{ margin: "0 14px 14px" }}>任务吞吐、派单延迟、CPU 和历史心跳暂时没有数据；其他数据都是实时的。</div>
         </section>;
       })()}
 
@@ -411,12 +411,12 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
       <section className="feed-card">
         <div className="feed-h">
           <span className="ttl">运维活动 · 最近 24 小时</span>
-          <span className="sub">设备事件记录</span>
+          <span className="sub">设备相关的操作和事件</span>
         </div>
         <div className="feed">
           {observabilityError && <div className="tint tiny" data-module-health-state="error">{observabilityError}</div>}
-          {!observabilityError && !observability && <div className="tint tiny">正在读取运维活动...</div>}
-          {!observabilityError && observability?.activity.length === 0 && <div className="tint tiny">最近 24 小时无持久化 E5 运维事件</div>}
+          {!observabilityError && !observability && <div className="tint tiny">正在加载…</div>}
+          {!observabilityError && observability?.activity.length === 0 && <div className="tint tiny">最近 24 小时没有运维记录</div>}
           {observability?.activity.map((event) => (
             <div className="feed-row" key={`${event.eventType}-${event.aggregateType}-${event.aggregateId}-${event.occurredAt}`}>
               <div><b>{operatorOperationalNote(event.eventType)}</b><div className="muted tiny">{operatorOperationalNote(event.aggregateType)} · {operatorDeviceIdentifier(event.aggregateId)}</div></div>
@@ -425,7 +425,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
           ))}
         </div>
       </section>
-      <p className="f-foot">批量暂停 是<b>仅限运维窗口</b>的处置 — 暂停该数据中心所有节点派单,但不影响已售设备结算(用户依然按 基础收益 计算收益)。处置范围限单个数据中心,跨数据中心 联动须分次操作。<b>心跳失联 &gt; 24 小时</b> 的设备自动进入永久离线列表,资产回退由系统定时处理。</p>
+      <p className="f-foot">「暂停派单」<b>只在维护时使用</b>：暂停这个数据中心所有设备的任务派发，用户的基础收益照常计算；每次只能暂停一个数据中心。<b>失联超过 24 小时</b>的设备会自动转为永久离线，由系统定时处理。</p>
     </>
   );
 }

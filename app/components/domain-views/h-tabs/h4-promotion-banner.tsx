@@ -10,7 +10,7 @@ export function PromotionBannerPreview({ assetId }: { assetId: string | null | u
     useEffect(() => { setImageFailed(false); }, [assetId]);
     const src = preview.data?.assetId === assetId ? preview.data?.previewUrl : null;
     const retry = () => { setImageFailed(false); preview.reload(); };
-    return assetId ? preview.loading ? <p role="status">正在读取宣传图…</p> : preview.error || imageFailed ? <ReadError target="活动宣传图" error={preview.error || new Error('图片暂时无法显示，请重试。')} retry={retry}/> : src ? <img key={assetId} src={src} alt="当前活动宣传图" onError={() => setImageFailed(true)} style={{ display: 'block', maxWidth: '100%', maxHeight: 220, objectFit: 'contain', marginTop: 12 }}/> : <Button onClick={retry}>读取宣传图</Button> : null;
+    return assetId ? preview.loading ? <p role="status">正在加载宣传图…</p> : preview.error || imageFailed ? <ReadError target="活动宣传图" error={preview.error || new Error('图片暂时无法显示，请重试。')} retry={retry}/> : src ? <img key={assetId} src={src} alt="当前活动宣传图" onError={() => setImageFailed(true)} style={{ display: 'block', maxWidth: '100%', maxHeight: 220, objectFit: 'contain', marginTop: 12 }}/> : <Button onClick={retry}>读取宣传图</Button> : null;
 }
 
 export function PromotionBanner({ assetId, readOnly, onChange, onUploading }: {

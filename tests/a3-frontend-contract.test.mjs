@@ -38,8 +38,8 @@ test("A3 renders bad health as a red severe state and distinguishes committed wr
   assert.match(page, /healthToneLabel/);
   assert.match(page, /严重异常/);
   assert.match(page, /isA3ReadbackFailedError/);
-  assert.match(page, /写入已成功/);
-  assert.match(page, /结果未知/);
+  assert.match(page, /已保存，但页面刷新失败/);
+  assert.match(page, /结果暂未确认/);
 });
 
 test("shared confirmation rejects selecting the current value", () => {

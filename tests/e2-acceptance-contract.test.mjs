@@ -38,7 +38,7 @@ test("E2 renders all canonical task classes including Speech", () => {
 test("E2 exposes saturation, five-tier teaser and kill or recovery", () => {
   // 同上:饱和度与锁定预览改出中文业务名,字段名退到 title 提示。
   assert.match(e2, /title="任务队列饱和度">队列饱和度/);
-  assert.match(e2, /title="升级收益预览">锁定预览/);
+  assert.match(e2, /title="升级后能多赚多少">升级收益预览/);
   assert.match(e2, /每日潜在收益/);
   assert.match(client, /cloud-share/);
   assert.match(e2, /row\.enabled \? "停止派发" : "恢复"/);
@@ -74,7 +74,7 @@ test("E2 scalar controls reject invalid negative values before submission", () =
 });
 
 test("E2 exposes read failures and a real retry action instead of showing false zeroes", () => {
-  assert.match(e2, /ctx\.e2Error[\s\S]*E2 数据读取失败/);
+  assert.match(e2, /ctx\.e2Error[\s\S]*设备收益数据加载失败/);
   assert.match(e2, /onClick=\{\(\) => void ctx\.refreshE2\(\)\}[\s\S]*重试/);
 });
 
@@ -94,8 +94,8 @@ test("E2 rejects malformed config envelopes without deadlocking an empty but rea
   assert.match(e2, /\{canMutate && <div className="row"/);
   assert.match(e2, /\{canMutateTasks && <div className="acts"/);
   assert.match(e2, /useEffect\(\(\) => \{\s*if \(!canMutate\) setPricingAction\(null\);/);
-  assert.match(e2, /if \(!canMutate\) \{\s*ctx\.toast\("E2 当前配置不可用，已取消本次配置提交"\);/);
-  assert.match(view, /const rejectE2Mutation = \(\) => \{\s*setToast\("E2 当前配置不可用，已取消本次配置提交"\);/);
+  assert.match(e2, /if \(!canMutate\) \{\s*ctx\.toast\("设备收益设置加载失败，本次没有提交"\);/);
+  assert.match(view, /const rejectE2Mutation = \(\) => \{\s*setToast\("设备收益设置加载失败，本次没有提交"\);/);
   assert.match(view, /disabled=\{!canMutateE2Tasks \|\| !taskForm\.n\.trim\(\) \|\| !Number\(taskForm\.price\)\}/);
   assert.match(view, /if \(isE2TaskMutation\(mc\.op\) && !canMutateE2Tasks\) \{/);
   assert.match(view, /if \(isE2ConfigMutation\(mc\.op\) && !canMutateE2\) \{/);
@@ -123,7 +123,7 @@ test("E2 shows the unknown-class filter only for real unknown backend data", () 
 });
 
 test("E2 operator copy explains task load in business language without API or field names", () => {
-  assert.match(e2, /当前饱和度由任务运行情况汇总/);
+  assert.match(e2, /按任务运行情况汇总/);
   assert.doesNotMatch(e2, /\/api\/admin\/devices\/tasks/);
   assert.doesNotMatch(e2, /sat 字段/);
   assert.doesNotMatch(e2, /Server Canonical/);

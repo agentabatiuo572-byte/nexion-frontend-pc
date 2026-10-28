@@ -74,8 +74,8 @@ test("SKU rewards enter fulfillment and F5 exports the server-side filtered full
   assert.match(fulfillment, /reserveSkuStock/);
   assert.match(fulfillment, /hasGrantedEntitlement/);
   assert.match(fulfillment, /grantSkuPayout/);
-  assert.match(f5, /恢复奖种/);
-  assert.match(f5, /导出筛选全量 CSV/);
+  assert.match(f5, /恢复奖励/);
+  assert.match(f5, /导出筛选结果（CSV）/);
   assert.match(client, /\/api\/admin\/teams\/commissions\/export/);
   assert.match(client, /f1StableWrite\("f5-export", fingerprint/);
   assert.match(client, /reason is audit metadata/);

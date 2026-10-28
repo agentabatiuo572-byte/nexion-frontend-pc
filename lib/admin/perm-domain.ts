@@ -45,7 +45,7 @@ const FALLBACK_DOMAIN: NavDomain = {
 
 /** 第二段(页面)无 console-nav L2 对应的显式 fallback。 */
 const PAGE_FALLBACK: Record<string, { id: string; name: string }> = {
-  c1hub: { id: "C1HUB", name: "C1 用户 360 画像" },
+  c1hub: { id: "C1HUB", name: "用户完整资料" },
 };
 
 /** 权限码 → 所属业务域(未识别返回兜底域)。 */

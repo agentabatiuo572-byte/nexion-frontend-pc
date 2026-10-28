@@ -94,7 +94,7 @@ export function BusinessCalendarConfig() {
     <div className="l-b">
       {error && <div role="alert" className="atint warn" style={{ marginBottom: 10 }}>{error}</div>}
       {success && <div role="status" className="atint" style={{ marginBottom: 10 }}>{success}</div>}
-      {!view ? <div className="tiny">{loading ? "读取业务时区中…" : "业务时区暂不可用；后台按北京时间显示。"}</div> : <>
+      {!view ? <div className="tiny">{loading ? "正在加载…" : "业务时区暂不可用；后台按北京时间显示。"}</div> : <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, marginBottom: 14 }}>
           <div className="atint"><span className="tiny">当前业务时区</span><br /><b>{view.currentZoneLabel} · {view.currentOffset}</b></div>
           {growthZone && <div className={view.unified ? "atint" : "atint warn"}><span className="tiny">增长与团队</span><br /><b>{zoneLabel(growthZone)} · {offsetOf(growthZone)}</b>{!view.unified && <><br /><span className="tiny">与其他模块不一致，设置后统一</span></>}</div>}
@@ -113,8 +113,8 @@ export function BusinessCalendarConfig() {
             <label className="tiny">时区<select aria-label="时区" value={zoneId} disabled={!country} onChange={(event) => setZoneId(event.target.value)} style={{ width: "100%", marginTop: 4 }}>{zones.length === 0 && <option value="">先选择国家</option>}{zones.map((option) => <option key={option.zoneId} value={option.zoneId}>{zoneOptionLabel(option, offsetOf(option.zoneId))}</option>)}</select></label>
             <label className="tiny">生效日期（最早 {view.earliestEffectiveDate}）<input aria-label="生效日期" type="date" min={view.earliestEffectiveDate} value={effectiveDate} onChange={(event) => setEffectiveDate(event.target.value)} style={{ width: "100%", marginTop: 4 }} /></label>
           </div>
-          {selected && effectiveDate && <div className="atint" style={{ marginTop: 12 }}>{effectiveDate} 00:00（{selected.label}）起，所有模块按{selected.label}切日。<br />{previousDay(effectiveDate)} 及以前已结算的日、周、月保持原口径；切换当天，原时区的最后一天会相应变长或变短。</div>}
-          <label className="tiny" style={{ display: "block", marginTop: 12 }}>修改理由（8–200 字，记入操作日志）</label>
+          {selected && effectiveDate && <div className="atint" style={{ marginTop: 12 }}>{effectiveDate} 00:00（{selected.label}）起，所有模块按{selected.label}切日。<br />{previousDay(effectiveDate)} 及以前已结算的日、周、月保持不变；切换当天，原时区的最后一天会相应变长或变短。</div>}
+          <label className="tiny" style={{ display: "block", marginTop: 12 }}>修改理由（8–200 字）</label>
           <textarea aria-label="业务时区修改理由" value={reason} maxLength={200} rows={2} onChange={(event) => setReason(event.target.value)} style={{ width: "100%" }} />
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}><button className="l-btn sm primary" type="button" disabled={!formReady || saving} onClick={() => setConfirming({ key: `a3-business-zone-${crypto.randomUUID()}` })}>确认设置</button></div>
         </div>}
@@ -128,7 +128,7 @@ export function BusinessCalendarConfig() {
     {confirming && selected && <Modal title="确认设置业务时区" busy={saving} onClose={() => setConfirming(null)} footer={<><button className="l-btn sm" type="button" disabled={saving} onClick={() => setConfirming(null)}>取消</button><button className="l-btn sm primary" type="button" disabled={saving} onClick={() => void submit()}>确认设置</button></>}>
       <p>新的业务时区：<b>{zoneOptionLabel(selected, offsetOf(selected.zoneId))}</b></p>
       <p>生效时间：<b>{effectiveDate} 00:00（{selected.label}）</b></p>
-      <p className="tiny">生效后，所有日 / 周 / 月统计、每日结算、每周分红和月度榜单都按新时区切分；{previousDay(effectiveDate)} 及以前已结算的周期保持原口径。生效前可以撤销。</p>
+      <p className="tiny">生效后，所有日 / 周 / 月统计、每日结算、每周分红和月度榜单都按新时区切分；{previousDay(effectiveDate)} 及以前已结算的周期保持不变。生效前可以撤销。</p>
       <p className="tiny">理由：{reason.trim()}</p>
     </Modal>}
   </section>;

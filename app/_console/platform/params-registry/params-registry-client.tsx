@@ -33,14 +33,14 @@ const E6_DOWNLOAD_COPY_KEYS: ReadonlySet<string> = new Set([
  * 「正常 · 延迟 1.2s」同屏出现且都自称当前值。
  */
 function rowValueLabel(row: A5RegistryRow): string {
-  if (row.canonicalKey === "E.compute.h5BaseFactor") return "历史配置 · 已退役（只读）";
+  if (row.canonicalKey === "E.compute.h5BaseFactor") return "已停用（只能查看）";
   if (row.live) {
     return row.stale
-      ? "实时采样 · 当前不可用"
-      : `实时采样${row.observedAt ? ` · 观测于 ${row.observedAt}` : ""}`;
+      ? "实时值 · 暂时获取不到"
+      : `实时值${row.observedAt ? ` · 获取于 ${row.observedAt}` : ""}`;
   }
-  if (row.stale) return "历史记录 · 已过期";
-  return rowValueEffective(row) ? "当前服务端值" : "当前服务端值 · 未生效";
+  if (row.stale) return "旧值 · 已过期";
+  return rowValueEffective(row) ? "当前值" : "当前值 · 未生效";
 }
 
 function rowValueEffective(row: A5RegistryRow): boolean {
@@ -96,10 +96,10 @@ function ownerLinkAccessibleName(row: A5RegistryRow) {
 
 const ERROR_COPY: Record<A5LoadErrorKind, { title: string; detail: string }> = {
   auth: { title: "登录已失效", detail: "正在清理旧会话，请重新登录后查看。" },
-  forbidden: { title: "没有查看平台参数管理的权限", detail: "请联系管理员授予 A5 只读权限；其他平台权限不会代替 A5 权限。" },
-  integrity: { title: "数据一致性校验未通过", detail: "本页已停止展示可疑数据，避免把重复键或错误统计当成真实参数。" },
-  server: { title: "平台参数服务返回异常", detail: "服务已响应但未能完成本次读取，当前不展示任何参数值；请重新加载或联系平台运维。" },
-  unavailable: { title: "平台参数服务暂时不可用", detail: "现有配置没有被修改。请稍后重新加载；若持续失败，请检查后端服务。" },
+  forbidden: { title: "没有查看平台参数的权限", detail: "请联系管理员开通「平台参数管理」的查看权限。" },
+  integrity: { title: "数据有误，已停止显示", detail: "参数数据存在重复或统计不一致，为避免误判已暂停显示，请联系技术人员。" },
+  server: { title: "平台参数加载失败", detail: "暂时无法显示参数，请重新加载；持续失败请联系技术人员。" },
+  unavailable: { title: "平台参数暂时无法加载", detail: "参数设置没有被修改，请稍后重新加载。" },
 };
 
 export function PlatformParamsRegistry() {
@@ -153,21 +153,21 @@ export function PlatformParamsRegistry() {
         <p className="font-mono-tabular text-[11px]" style={{ color: "var(--admin-domain-a)" }}>A5 · 平台基础</p>
         <h1 className="font-display mt-1 text-[24px]" style={{ color: "var(--v5-ink)" }}>平台参数管理</h1>
         <p className="mt-1.5 max-w-[820px] text-[12.5px] leading-relaxed" style={{ color: "var(--v5-ink-3)" }}>
-          汇总服务端当前启用的跨域参数与 J1/J2 实时状态。这里是只读索引；修改请进入每行标明的归属模块。
+          汇总全平台可调参数和紧急开关的当前值。这里只能查看，修改请点进每行标注的所在页面。
         </p>
       </header>
 
       {loading ? (
-        <StateCard title="正在读取平台参数" detail="正在核对服务端当前值与归属模块……" spinning />
+        <StateCard title="正在加载平台参数" detail="请稍候…" spinning />
       ) : errorKind ? (
         <StateCard title={ERROR_COPY[errorKind].title} detail={ERROR_COPY[errorKind].detail} tone="danger" onRetry={errorKind === "auth" ? undefined : load} />
       ) : overview ? (
         <>
           <div className="mb-4 flex flex-wrap gap-2.5">
-            <Stat label="服务端参数" value={`${overview.stats.registeredCount}`} accent="var(--admin-domain-a)" />
-            <Stat label="覆盖业务域" value={`${overview.stats.domainCount}`} />
-            <Stat label="需操作确认" value={`${overview.stats.highSensitivityCount}`} accent="var(--v5-warning)" />
-            <Stat label="数据来源" value={`${overview.stats.sourceCount}`} sub={`核对于 ${formatTime(overview.observedAt)}`} />
+            <Stat label="参数" value={`${overview.stats.registeredCount}`} accent="var(--admin-domain-a)" />
+            <Stat label="涉及模块" value={`${overview.stats.domainCount}`} />
+            <Stat label="修改需确认" value={`${overview.stats.highSensitivityCount}`} accent="var(--v5-warning)" />
+            <Stat label="数据来源" value={`${overview.stats.sourceCount}`} sub={`更新于 ${formatTime(overview.observedAt)}`} />
           </div>
 
           {partialSources.length > 0 && (
@@ -181,18 +181,18 @@ export function PlatformParamsRegistry() {
           )}
 
           {overview.rows.length === 0 ? (
-            <StateCard title="尚未登记服务端参数" detail="当前没有启用中的平台参数。" onRetry={load} />
+            <StateCard title="暂无平台参数" detail="当前没有启用中的参数。" onRetry={load} />
           ) : (
             <>
               <div className="mb-4 grid gap-2 sm:grid-cols-[minmax(240px,1fr)_220px_auto]">
                 <label htmlFor={SEARCH_INPUT_ID} className="flex items-center gap-2 rounded-[9px] px-3 focus-within:ring-2 focus-within:ring-[var(--admin-domain-a)] focus-within:ring-offset-1" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}>
                   <span className="sr-only">搜索平台参数</span>
                   <Search aria-hidden="true" size={15} style={{ color: "var(--v5-ink-4)" }} />
-                  <input id={SEARCH_INPUT_ID} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索参数名称、参数键、当前值或归属模块" className="min-w-0 flex-1 bg-transparent py-2 text-[12px] outline-none" style={{ color: "var(--v5-ink)" }} />
+                  <input id={SEARCH_INPUT_ID} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索参数名、参数键、当前值或所在页面" className="min-w-0 flex-1 bg-transparent py-2 text-[12px] outline-none" style={{ color: "var(--v5-ink)" }} />
                 </label>
-                <label htmlFor={DOMAIN_FILTER_ID} className="sr-only">业务域筛选</label>
+                <label htmlFor={DOMAIN_FILTER_ID} className="sr-only">模块筛选</label>
                 <select id={DOMAIN_FILTER_ID} value={domain} onChange={(event) => setDomain(event.target.value)} className="rounded-[9px] px-3 py-2 text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-[var(--admin-domain-a)] focus-visible:ring-offset-1" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)", color: "var(--v5-ink)" }}>
-                  <option value="ALL">全部业务域</option>
+                  <option value="ALL">全部模块</option>
                   {domains.map(([code, label]) => <option key={code} value={code}>{code} · {label}</option>)}
                 </select>
                 <button type="button" onClick={() => void load()} className="inline-flex items-center justify-center gap-1.5 rounded-[9px] px-3 py-2 text-[12px]" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}>
@@ -201,7 +201,7 @@ export function PlatformParamsRegistry() {
               </div>
 
               {grouped.length === 0 ? (
-                <StateCard title="没有匹配的参数" detail="请调整关键词或业务域筛选条件。" />
+                <StateCard title="没有匹配的参数" detail="换个关键词或模块试试。" />
               ) : (
                 <div className="flex flex-col gap-3.5">
                   {grouped.map(([domainCode, rows]) => (
@@ -258,27 +258,27 @@ function DomainSection({ domain, rows }: { domain: string; rows: A5RegistryRow[]
               <p className="font-mono-tabular mt-0.5 break-all text-[13px]" style={{ color: rowValueEffective(row) && !row.stale ? "var(--v5-ink)" : "var(--v5-warning)" }}>{row.valueType === "BOOLEAN" ? ({ true: "开启", false: "关闭", on: "开启", off: "关闭" } as Record<string, string>)[row.currentValue] ?? "状态待核实" : parameterValueText(row)}{row.unit ? <span className="ml-1 text-[10px]" style={{ color: "var(--v5-ink-3)" }}>{operatorCopyText(row.unit)}</span> : null}</p>
               {row.stale && (
                 <p className="mt-1 text-[10px] leading-relaxed" style={{ color: "var(--v5-warning)" }}>
-                  该值不是当前实时事实{row.observedAt ? `（最近采样 ${row.observedAt}）` : "（实时读取失败）"}；请以{operatorCopyText(row.ownerLabel)}的实时页面为准，不要把这里的快照当成当前状态。
+                  这是旧值{row.observedAt ? `（获取于 ${row.observedAt}）` : "（实时值获取失败）"}，可能已经变了，请到「{operatorCopyText(row.ownerLabel)}」查看当前值。
                 </p>
               )}
               {!rowValueEffective(row) && (
                 <p className="mt-1 text-[10px] leading-relaxed" style={{ color: "var(--v5-warning)" }}>
-                  该值未通过归属模块的有效性校验，当前不生效、也不会下发给用户端；请在{operatorCopyText(row.ownerLabel)}修正后重新保存。
+                  这个值不合规，目前没有生效，请到「{operatorCopyText(row.ownerLabel)}」改正后重新保存。
                 </p>
               )}
             </div>
-            <p className="mt-2 text-[10.5px] leading-relaxed" style={{ color: "var(--v5-ink-3)" }}>{row.canonicalKey === "E.compute.h5BaseFactor" ? "仅保留历史值，不再提供编辑入口；H5 手机算力奖励已退役，其它已购设备不受影响。" : operatorCopyText(row.description)}</p>
+            <p className="mt-2 text-[10.5px] leading-relaxed" style={{ color: "var(--v5-ink-3)" }}>{row.canonicalKey === "E.compute.h5BaseFactor" ? "H5 手机算力奖励已停用，这里只保留旧值，不能再修改；已购设备不受影响。" : operatorCopyText(row.description)}</p>
             <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[9.5px]" style={{ color: "var(--v5-ink-4)" }}>
               <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-surface)" }}>{({ STRING: "文本", TEXT: "文本", NUMBER: "数值", BOOLEAN: "开关", SECRET: "敏感信息", JSON: "结构化设置" } as Record<string, string>)[row.valueType] ?? "其他类型"}</span>
               {/* 过期/读不到的实时行不得标「服务端权威」(zentao #198):那句声明的是
                   「这就是当前生效的服务端事实」,而陈旧快照恰恰不是。 */}
               {row.canonicalKey === "E.compute.h5BaseFactor"
-                ? <span>已退役 · 只读</span>
+                ? <span>已停用 · 只能查看</span>
                 : row.stale
-                ? <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-warning-soft)", color: "var(--v5-warning)" }}>历史记录 · 已过期</span>
+                ? <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-warning-soft)", color: "var(--v5-warning)" }}>旧值 · 已过期</span>
                 : rowValueEffective(row)
-                  ? <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-success-soft)", color: "var(--v5-success)" }}>{row.live ? "实时权威" : "服务端权威"}</span>
-                  : <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-warning-soft)", color: "var(--v5-warning)" }}>已存储 · 未生效</span>}
+                  ? <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-success-soft)", color: "var(--v5-success)" }}>{row.live ? "实时值" : "已生效"}</span>
+                  : <span className="rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-warning-soft)", color: "var(--v5-warning)" }}>已保存 · 未生效</span>}
               {row.operationConfirm && row.canonicalKey !== "E.compute.h5BaseFactor" && <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5" style={{ background: "var(--v5-warning-soft)", color: "var(--v5-warning)" }}><ShieldCheck size={9} />修改需确认</span>}
               <span>更新于 {formatTime(row.live && row.observedAt ? row.observedAt : row.updatedAt)}</span>
             </div>

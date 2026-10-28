@@ -12,7 +12,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 const DOMAINS = [{ code: "ALL", label: "全部" }, ...CONSOLE_NAV.map((d) => ({ code: d.code, label: `${d.code} ${d.name}` })), { code: "UNMAPPED", label: "未归类" }];
 const PERM_TYPES = ["ALL", "READ", "WRITE", "HIGH"];
 const TONE_BY_TYPE: Record<string, string> = { HIGH: "danger", WRITE: "warn", READ: "ok" };
-const LABEL_BY_TYPE: Record<string, string> = { HIGH: "敏感操作", WRITE: "写操作", READ: "只读" };
+const LABEL_BY_TYPE: Record<string, string> = { HIGH: "敏感操作", WRITE: "修改", READ: "查看" };
 
 type RoleGrants = { role: A6RoleSummary; codes: Set<string>; readable: boolean };
 
@@ -51,7 +51,7 @@ export default function A8Permissions() {
       .catch((err) => {
         if (!cancelled) {
           setLoadError(displayAdminError(err));
-          setToast("权限目录加载失败，当前数据不可确认，请重试");
+          setToast("权限列表加载失败，请重试");
         }
       })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -112,26 +112,26 @@ export default function A8Permissions() {
       {toast}
       <DomainHeader domainCode="A" domainName="平台基础" accentVar="--admin-domain-a"
         l2Id="A8" l2Name="权限清单"
-        summary="全平台权限码只读浏览。权限分为只读、写操作和敏感操作，由平台统一维护，本页不支持增删。"
+        summary="查看全平台的操作权限，以及每项权限属于哪个菜单、分给了几个角色。权限分为查看、修改和敏感操作三类，由系统维护，这里只能查看。"
         right={<span className="mono" style={{ color: "var(--ink-3)", fontSize: 12 }}>{loading ? "正在统计…" : `共 ${total} 条`}</span>} />
       <Card>
         <CardH title="权限列表" />
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
           <input
             aria-label="权限搜索"
-            placeholder="搜索权限值 / 中文名"
+            placeholder="搜索权限编码或名称"
             value={keywordInput}
             onChange={(e) => setKeywordInput(e.target.value)}
             style={{ flex: "1 1 240px", minWidth: 200, padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border-strong)", borderRadius: 8, color: "var(--ink)" }}
           />
           <div className="row" style={{ gap: 4, alignItems: "center", flexWrap: "wrap" }}>
-            <span style={{ color: "var(--ink-3)", fontSize: 12 }}>域:</span>
+            <span style={{ color: "var(--ink-3)", fontSize: 12 }}>模块：</span>
             {DOMAINS.map((d) => (
               <Chip key={d.code} sel={domain === d.code} tab onClick={() => { setDomain(d.code); setPageNum(1); }}>{d.label}</Chip>
             ))}
           </div>
           <div className="row" style={{ gap: 4, alignItems: "center", flexWrap: "wrap" }}>
-            <span style={{ color: "var(--ink-3)", fontSize: 12 }}>类型:</span>
+            <span style={{ color: "var(--ink-3)", fontSize: 12 }}>类型：</span>
             {PERM_TYPES.map((t) => (
               <Chip key={t} sel={permType === t} tab onClick={() => { setPermType(t); setPageNum(1); }}>{t === "ALL" ? "全部" : LABEL_BY_TYPE[t]}</Chip>
             ))}
@@ -140,11 +140,11 @@ export default function A8Permissions() {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ background: "var(--surface-2)", color: "var(--ink-3)", textAlign: "left" }}>
-              <th style={{ padding: "10px 12px", fontWeight: 600 }}>权限值</th>
-              <th style={{ padding: "10px 12px", fontWeight: 600 }}>中文名</th>
+              <th style={{ padding: "10px 12px", fontWeight: 600 }}>权限编码</th>
+              <th style={{ padding: "10px 12px", fontWeight: 600 }}>名称</th>
               <th style={{ padding: "10px 12px", fontWeight: 600, width: 80 }}>类型</th>
               <th style={{ padding: "10px 12px", fontWeight: 600 }}>所属菜单</th>
-              <th style={{ padding: "10px 12px", fontWeight: 600, width: 70 }}>放大</th>
+              <th style={{ padding: "10px 12px", fontWeight: 600, width: 70 }}>多付钱</th>
               <th style={{ padding: "10px 12px", fontWeight: 600, width: 90 }}>绑定角色</th>
             </tr>
           </thead>
@@ -154,7 +154,7 @@ export default function A8Permissions() {
             ) : loadError ? (
               <tr><td colSpan={6} style={{ padding: 24, textAlign: "center" }}>
                 <div className="alertbar warn" role="alert" style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-                  权限目录加载失败，当前没有可确认的数据。<Btn sm onClick={() => setReloadKey((value) => value + 1)}>重试</Btn>
+                  权限列表加载失败，请重试。<Btn sm onClick={() => setReloadKey((value) => value + 1)}>重试</Btn>
                 </div>
               </td></tr>
             ) : records.length === 0 ? (
@@ -181,7 +181,7 @@ export default function A8Permissions() {
                 <td style={{ padding: "10px 12px" }}>{operatorCopyText(p.permissionName || "—")}</td>
                 <td style={{ padding: "10px 12px" }}><Badge tone={TONE_BY_TYPE[p.permType] || "neutral"}>{LABEL_BY_TYPE[p.permType] || "未知类型"}</Badge></td>
                 <td style={{ padding: "10px 12px" }}><span className="mono" style={{ fontSize: 12, color: "var(--ink-3)" }}>{operatorCopyText(p.menuCodePath)}</span></td>
-                <td style={{ padding: "10px 12px", textAlign: "center" }}>{p.amplifies ? <span title="放大资金流出·受 B1 红线约束">⚠️</span> : "—"}</td>
+                <td style={{ padding: "10px 12px", textAlign: "center" }}>{p.amplifies ? <span title="会让平台多付钱，执行时会检查兑付覆盖率">⚠️</span> : "—"}</td>
                 <td style={{ padding: "10px 12px" }}><span className="mono">{p.boundRoleCount}</span></td>
               </tr>
             ))}
@@ -197,26 +197,25 @@ export default function A8Permissions() {
         />}
       </Card>
       <Card>
-        <CardH title="权限矩阵" right={
-          <Btn sm onClick={() => setMatrixOpen((open) => !open)}>{matrixOpen ? "收起矩阵" : "展开权限矩阵"}</Btn>
+        <CardH title="角色权限对照表" right={
+          <Btn sm onClick={() => setMatrixOpen((open) => !open)}>{matrixOpen ? "收起" : "展开对照表"}</Btn>
         } />
         {matrixOpen && (
           <div style={{ padding: "12px 16px" }}>
             <div className="tint tiny" style={{ marginBottom: 10 }}>
-              横排是角色,竖排是当前这一页的权限(共 {records.length} 条,跟着上面的搜索和筛选走)。
-              打勾 = 该角色有这个权限。要看别的权限就先在上面筛。
+              横向是角色，纵向是上面列表当前页的 {records.length} 项权限，打勾表示该角色有这项权限。
             </div>
             {matrixLoading ? (
-              <div style={{ padding: 20, color: "var(--ink-3)" }}>正在读取各角色的授权明细…</div>
+              <div style={{ padding: 20, color: "var(--ink-3)" }}>正在加载…</div>
             ) : matrixError ? (
               <div className="alertbar warn" role="alert" style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-                角色授权读取失败,矩阵不可信。{matrixError}
+                各角色的权限加载失败，对照表暂不可信。{matrixError}
                 <Btn sm onClick={() => setMatrixReloadKey((value) => value + 1)}>重试</Btn>
               </div>
             ) : !grants || grants.length === 0 ? (
               <div style={{ padding: 20, color: "var(--ink-3)" }}>没有可展示的角色</div>
             ) : records.length === 0 ? (
-              <div style={{ padding: 20, color: "var(--ink-3)" }}>当前筛选下没有权限可比对</div>
+              <div style={{ padding: 20, color: "var(--ink-3)" }}>当前筛选下没有权限</div>
             ) : (
               <>
                 <div style={{ overflowX: "auto" }}>
@@ -228,7 +227,7 @@ export default function A8Permissions() {
                           <th key={role.id} style={{ padding: "10px 12px", fontWeight: 600, textAlign: "center", minWidth: 92 }}>
                             <div style={{ color: "var(--ink-2)" }}>{role.roleName}</div>
                             <div className="mono" style={{ marginTop: 2, color: "var(--ink-3)", fontSize: 11.5 }}>{role.roleCode}</div>
-                            {!readable && <div style={{ marginTop: 2, color: "var(--warning)", fontSize: 11.5 }}>读不到</div>}
+                            {!readable && <div style={{ marginTop: 2, color: "var(--warning)", fontSize: 11.5 }}>加载失败</div>}
                           </th>
                         ))}
                       </tr>
@@ -242,7 +241,7 @@ export default function A8Permissions() {
                           </td>
                           {grants.map(({ role, codes, readable }) => (
                             <td key={role.id} style={{ padding: "10px 12px", textAlign: "center" }}
-                              title={!readable ? `${role.roleName} 的授权读不到,这一格不代表没有权限` : codes.has(p.permissionCode) ? `${role.roleName} 有此权限` : `${role.roleName} 没有此权限`}>
+                              title={!readable ? `${role.roleName} 的权限加载失败，这一格不代表没有权限` : codes.has(p.permissionCode) ? `${role.roleName} 有此权限` : `${role.roleName} 没有此权限`}>
                               {!readable
                                 ? <span style={{ color: "var(--warning)" }}>?</span>
                                 : codes.has(p.permissionCode)
@@ -257,7 +256,7 @@ export default function A8Permissions() {
                 </div>
                 {grants.some(({ readable }) => !readable) && (
                   <div className="alertbar warn" role="alert" style={{ marginTop: 10 }}>
-                    有角色的授权明细没读到,那几列标的是「?」,不是「没权限」。别拿这张图下结论,先解决读取问题。
+                    部分角色的权限没加载出来，标「?」的列不代表没有权限，请刷新后再看。
                   </div>
                 )}
               </>
@@ -279,12 +278,12 @@ export default function A8Permissions() {
             <div style={{ padding: 24, color: "var(--ink-3)" }}>加载中…</div>
           ) : detail ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 16 }}>
-              <Row label="权限值"><span className="mono">{detail.permissionCode}</span></Row>
-              <Row label="中文名">{operatorCopyText(detail.permissionName || "—")}</Row>
+              <Row label="权限编码"><span className="mono">{detail.permissionCode}</span></Row>
+              <Row label="名称">{operatorCopyText(detail.permissionName || "—")}</Row>
               <Row label="类型"><Badge tone={TONE_BY_TYPE[detail.permType] || "neutral"}>{LABEL_BY_TYPE[detail.permType] || "未知类型"}</Badge></Row>
               <Row label="所属菜单"><span className="mono" style={{ fontSize: 13 }}>{operatorCopyText(detail.menuCodePath)}</span></Row>
-              <Row label="资源路径"><span className="mono" style={{ fontSize: 13 }}>{detail.resourcePath || "—"}</span></Row>
-              <Row label="放大资金流出">{detail.amplifies ? "是（受 B1 红线约束）" : "否"}</Row>
+              <Row label="接口地址"><span className="mono" style={{ fontSize: 13 }}>{detail.resourcePath || "—"}</span></Row>
+              <Row label="会让平台多付钱">{detail.amplifies ? "是（执行时检查兑付覆盖率）" : "否"}</Row>
               <Row label="已绑定角色"><span className="mono">{detail.boundRoleCount} 个</span></Row>
             </div>
           ) : null}

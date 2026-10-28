@@ -78,17 +78,17 @@ test("L1 incomplete KPI spark sequences are not exportable", () => {
 test("L1 distinguishes unavailable metrics, invalid data and read failures without enabling export", async () => {
   const noMetrics = validL1Dashboard();
   noMetrics.kpis = noMetrics.kpis.map((row) => ({ ...row, available: false, value: null }));
-  assert.equal(resolveL1ExportUnavailableReason(noMetrics), "当前时间窗没有可用关键指标，暂不能导出");
+  assert.equal(resolveL1ExportUnavailableReason(noMetrics), "当前时间范围没有可用的关键指标，暂时不能导出");
   assert.equal(resolveL1ExportMode(noMetrics, false), null);
   let writes = 0;
   assert.equal(await submitL1Export(noMetrics, false, async () => { writes += 1; }), null);
   assert.equal(writes, 0);
   const malformed = { ...noMetrics, kpis: noMetrics.kpis.slice(0, 7) };
-  assert.equal(resolveL1ExportUnavailableReason(malformed), "关键指标数据格式异常，请重新读取后再试");
-  assert.equal(resolveL1ExportUnavailableReason(validL1Dashboard(), "loading"), "正在读取关键指标数据，请稍候");
-  assert.equal(resolveL1ExportUnavailableReason(validL1Dashboard(), "error"), "关键指标数据读取失败，请重试");
-  assert.equal(resolveL1ExportUnavailableReason({ available: false }), "关键指标数据暂不可用，请重新读取后再试");
-  assert.equal(resolveL1ExportUnavailableReason(null), "尚未读取到可导出的关键指标数据");
+  assert.equal(resolveL1ExportUnavailableReason(malformed), "关键指标数据有误，请刷新后再试");
+  assert.equal(resolveL1ExportUnavailableReason(validL1Dashboard(), "loading"), "关键指标加载中，请稍候");
+  assert.equal(resolveL1ExportUnavailableReason(validL1Dashboard(), "error"), "关键指标加载失败，请重试");
+  assert.equal(resolveL1ExportUnavailableReason({ available: false }), "关键指标暂时不能用，请刷新后再试");
+  assert.equal(resolveL1ExportUnavailableReason(null), "暂无可导出的关键指标");
   assert.equal(resolveL1ExportUnavailableReason(validL1Dashboard()), undefined);
   assert.equal(resolveL1ExportUnavailableReason({ totals: { users: 3 } }), undefined);
 });

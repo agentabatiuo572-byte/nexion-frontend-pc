@@ -3,14 +3,14 @@ import test from "node:test";
 
 import { displayAdminError, formatAdminApiError } from "../lib/admin/error-messages.ts";
 
-const UNAVAILABLE = "服务暂时不可用，当前结果尚未确认；请先查询原命令或核对原操作，不要重复提交。持续无法确认时请联系值班人员。";
-const NETWORK = "网络连接失败或后台服务不可达；请检查网络后重试，提交类操作请先刷新核对是否已生效。";
+const UNAVAILABLE = "服务暂时不可用，结果尚未确认；请先核对原操作是否已生效，不要重复提交。一直无法确认请联系值班人员。";
+const NETWORK = "网络连接失败或系统暂时连不上；请检查网络后重试，提交类操作请先刷新，确认是否已生效。";
 // 表外机器码的中性兜底(2026-08-06 改:旧文案说「请检查输入内容」,把协议类失败冤枉成运营输错)
-const GENERIC_UNMAPPED_FALLBACK = "操作未完成,请刷新页面核对最新状态后重试;若仍未恢复请联系值班人员。";
+const GENERIC_UNMAPPED_FALLBACK = "操作未完成，请刷新页面核对最新状态后重试；仍未恢复请联系值班人员。";
 
 test("malformed support agent page explains the read failure and retry without internal diagnostics", () => {
   const shown = displayAdminError(new Error("M1_SUPPORT_AGENT_PAGE_MALFORMED"));
-  assert.equal(shown, "客服名单读取失败，请重试。持续失败时请联系值班人员。");
+  assert.equal(shown, "客服名单加载失败，请重试。持续失败时请联系值班人员。");
   assert.notEqual(shown, GENERIC_UNMAPPED_FALLBACK);
   assert.doesNotMatch(shown, /M1_|API|接口|字段|数据库|推测|成功|暂无客服|0/);
 });
@@ -45,7 +45,7 @@ test("browser network failures translate to operator-readable Chinese", () => {
 });
 
 test("existing domain-specific unavailable entries keep their bespoke copy", () => {
-  assert.match(formatAdminApiError("EMERGENCY_BACKEND_UNAVAILABLE", "X"), /应急控制后端/);
+  assert.match(formatAdminApiError("EMERGENCY_BACKEND_UNAVAILABLE", "X"), /应急控制系统/);
   assert.match(formatAdminApiError("RISK_BACKEND_UNAVAILABLE", "X"), /风险服务/);
   assert.match(formatAdminApiError("PLATFORM_BACKEND_UNAVAILABLE", "X"), /平台服务暂时不可用/);
 });
@@ -61,7 +61,7 @@ test("unavailable net contribution has a specific retry message", () => {
 
 test("account deletion detail mismatch explains the required reread before review", async () => {
   const { displayAdminError } = await import("../lib/admin/error-messages.ts");
-  const copy = "账号注销申请详情与当前记录不一致，请重新读取详情后再审核。";
+  const copy = "账号注销申请详情与当前记录不一致，请重新加载详情后再审核。";
   assert.equal(formatAdminApiError("ACCOUNT_DELETION_DETAIL_MISMATCH", ""), copy);
   assert.equal(displayAdminError(new Error("ACCOUNT_DELETION_DETAIL_MISMATCH")), copy);
 });
@@ -90,16 +90,16 @@ test("M3 reconnect snapshot races explain automatic recovery and the manual fall
 test("already-formatted Chinese copy passes through unchanged (idempotent throat)", () => {
   // displayAdminError 会把 client 已格式化的 Error.message 再喂回咽喉,必须幂等
   for (const copy of [
-    "服务暂时不可用，当前结果尚未确认；请先查询原命令或核对原操作，不要重复提交。持续无法确认时请联系值班人员。",
+    "服务暂时不可用，结果尚未确认；请先核对原操作是否已生效，不要重复提交。一直无法确认请联系值班人员。",
     "操作理由需填写 8-200 个字符。",
-    "F 域数据提交失败 · 服务暂时不可用，当前结果尚未确认；请先查询原命令或核对原操作，不要重复提交。持续无法确认时请联系值班人员。",
+    "F 域数据提交失败 · 服务暂时不可用，结果尚未确认；请先核对原操作是否已生效，不要重复提交。一直无法确认请联系值班人员。",
   ]) {
     assert.equal(formatAdminApiError(copy, "X"), copy);
   }
 });
 
 test("NETWORK_FAILURE fallback code maps to the network copy, never the input fallback", () => {
-  assert.match(formatAdminApiError(null, "NETWORK_FAILURE"), /网络连接失败或后台服务不可达/);
+  assert.match(formatAdminApiError(null, "NETWORK_FAILURE"), /网络连接失败或系统暂时连不上/);
 });
 
 test("displayAdminError funnels any unknown into operator-readable copy", async () => {

@@ -44,7 +44,7 @@ test("H2 trial target is selected from real E1 products and its price cannot dri
   assert.match(ui, /trialProducts/);
   assert.match(ui, /param\.key === "trialProductId"/);
   assert.match(ui, /kind: isProduct \? "select"/);
-  assert.match(ui, /去 E1 查看商品/);
+  assert.match(ui, /去商品管理查看/);
   assert.match(ui, /\["phaseOpen", "trialPriceUSD"\]/);
   assert.match(growthService, /TRIAL_PRODUCT_NOT_FOUND_IN_E1/);
   assert.match(growthService, /trialProductOptions/);
@@ -64,7 +64,7 @@ test("H2 trial target is selected from real E1 products and its price cannot dri
 
 test("H2 failed is terminal and all admin interventions delegate to the canonical lifecycle", () => {
   assert.match(ui, /\["cancelled", "redeemed", "failed"\]/);
-  assert.match(ui, /<th>试用业务号<\/th>/);
+  assert.match(ui, /<th>试用编号<\/th>/);
   assert.doesNotMatch(ui, /<th>卡 token<\/th>/);
   assert.match(growthService, /Set\.of\("cancelled", "redeemed", "failed"\)/);
   assert.match(growthService, /appTrialLifecycleService\.cancel\(userId, "explicit", idempotencyKey\)/);

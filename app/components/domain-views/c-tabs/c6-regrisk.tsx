@@ -67,20 +67,20 @@ function numericParts(value: unknown) {
 function formatCaptchaRestoreAt(value: unknown) {
   const raw = text(value, "");
   const deadline = new Date(raw);
-  if (!raw || Number.isNaN(deadline.getTime())) return "恢复时刻不可用";
+  if (!raw || Number.isNaN(deadline.getTime())) return "恢复时间未知";
   return deadline.toLocaleString("zh-CN", { hour12: false });
 }
 
 function sourceLabel(value: unknown) {
   const source = text(value, "");
   const labels: Record<string, string> = {
-    "nx_user_otp_challenge": "验证码挑战事实",
-    "nx_event_outbox:auth.captcha_required": "人机验证触发事件",
-    "nx_event_outbox:auth.login_locked": "登录锁定事件",
-    "nx_admin_risk_multi_account_cluster": "K1 多账户关联簇",
-    "nx_config_item:auth.risk.*": "服务端登录风控配置",
+    "nx_user_otp_challenge": "验证码记录",
+    "nx_event_outbox:auth.captcha_required": "人机验证记录",
+    "nx_event_outbox:auth.login_locked": "登录锁定记录",
+    "nx_admin_risk_multi_account_cluster": "多账户关联记录",
+    "nx_config_item:auth.risk.*": "登录风控设置",
   };
-  return labels[source] ?? (source.startsWith("nx_") ? "服务端业务事实" : source);
+  return labels[source] ?? (source.startsWith("nx_") ? "系统记录" : source);
 }
 
 function StatCard({ tone, label, value, sub }: { tone?: string; label: string; value: string | number; sub: string }) {
@@ -121,7 +121,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       return true;
     } catch (err) {
       setOverview(null);
-      setError(`C6 数据加载失败 · ${errorMessage(err)}`);
+      setError(`加载失败 · ${errorMessage(err)}`);
       return false;
     } finally {
       if (!silent) setLoading(false);
@@ -146,7 +146,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       writeReturned = true;
       const refreshed = await loadData(true);
       if (!refreshed) {
-        throw new Error("操作可能已生效，但结果回读失败；请刷新核对，重试将继续使用同一请求号");
+        throw new Error("可能已生效，但页面没刷新出来。请刷新查看，重试不会重复执行");
       }
       pendingCommandKeys.forget(fingerprint);
       toast(message || fallback);
@@ -157,8 +157,8 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       }
       const message = errorMessage(err);
       setOverview(null);
-      setError(`C6 操作失败 · ${message}`);
-      toast(`C6 操作失败 · ${message}`);
+      setError(`操作失败 · ${message}`);
+      toast(`操作失败 · ${message}`);
       return false;
     } finally {
       setBusy(false);
@@ -168,10 +168,10 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   if (!overview) {
     return (
       <section className="l-card">
-        <div className="l-h"><span className="ttl">注册与登录风险</span><span className="sub">· 安全失败关闭</span></div>
+        <div className="l-h"><span className="ttl">注册与登录风险</span><span className="sub">· 加载失败时暂停所有操作</span></div>
         <div className="l-b">
           <div className={`ctint ${error ? "bad" : ""}`} role={error ? "alert" : "status"}>
-            {loading ? "C6 数据加载中，安全配置暂不可操作…" : (error ?? "C6 数据暂不可用，安全配置已停止展示和写入。")}
+            {loading ? "正在加载…" : (error ?? "数据暂不可用，已暂停显示和修改。")}
           </div>
           {!loading && <button className="l-btn" style={{ marginTop: 12 }} onClick={() => void loadData()}>重新加载</button>}
         </div>
@@ -210,18 +210,18 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         <span className="v">{text(param.value)}</span>
         <button
           className="l-btn sm mc"
-          title={canWrite ? undefined : "当前账号只有 C6 读取权限"}
+          title={canWrite ? undefined : "你只有查看权限"}
           disabled={!canWrite || busy || !key || !!param.readOnly}
           onClick={() => openActionConfirm({
-            action: `登录风控参数 · ${operatorCopyText(text(param.name))}`,
-            detail: <><b>{operatorCopyText(text(param.name))}</b> · 当前 {text(param.value)} · 次数范围 {attemptMin}-{attemptMax}，时长范围 {durationMin}-{durationMax} {durationUnit}。长锁次数必须大于短锁次数。</>,
+            action: `调整登录锁定 · ${operatorCopyText(text(param.name))}`,
+            detail: <><b>{operatorCopyText(text(param.name))}</b> · 当前 {text(param.value)} · 次数可设 {attemptMin}–{attemptMax}，时长可设 {durationMin}–{durationMax} {durationUnit}。长时锁定的次数须大于短时锁定。</>,
             amplifies: false,
             businessForm: {
               kind: "multi-field",
-              title: `${operatorCopyText(text(param.name))}结构化参数`,
-              hint: `服务端将两项参数作为同一事务提交；当前配置版本 ${configVersion}`,
+              title: operatorCopyText(text(param.name)),
+              hint: `次数和时长会一起保存（当前版本 ${configVersion}）`,
               fields: [
-                { key: "attempts", label: "触发次数", inputKind: "number", current: String(currentAttempts), min: toNumber(param.min, 0), max: toNumber(param.max, 0), step: 1, required: true },
+                { key: "attempts", label: "输错几次后锁定", inputKind: "number", current: String(currentAttempts), min: toNumber(param.min, 0), max: toNumber(param.max, 0), step: 1, required: true },
                 { key: "duration", label: `锁定时长(${durationUnit})`, inputKind: "number", current: String(currentDuration), min: toNumber(param.secondaryMin, 0), max: toNumber(param.secondaryMax, 0), step: 1, required: true },
               ],
             },
@@ -234,18 +234,18 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
               }
               if ((key === "lockShort" && attempts >= longAttempts)
                 || (key === "lockLong" && attempts <= shortAttempts)) {
-                toast("长锁触发次数必须大于短锁触发次数，未执行");
+                toast("长时锁定的次数须大于短时锁定，未保存");
                 return false;
               }
               const value = `${attempts} 次 / ${duration} ${durationUnit}`;
               return perform(`lock|${key}|${value}|${configVersion}|${reason}`, async (commandKey) => {
                 await updateUserRegistrationRiskParam(key, value, reason, OPERATOR(), configVersion, commandKey);
                 return `${operatorCopyText(text(param.name))} 已更新为 ${value}`;
-              }, "登录风控参数已更新");
+              }, "登录锁定规则已更新");
             },
           })}
         >
-          {!canWrite || param.readOnly ? "只读" : "调整"}
+          {!canWrite || param.readOnly ? "只能查看" : "调整"}
         </button>
       </div>
     );
@@ -254,22 +254,22 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   const otpMirrorRow = (param: UserRegistrationRiskParam) => (
     <div className="p-row" key={rowKey(param)}>
       <div className="txt">
-        <div className="k">{operatorCopyText(text(param.name))} <span className="bdg dim">K2 唯一入口</span></div>
-        <div className="s">{operatorCopyText(text(param.sub, text(param.note)))}；C6 仅展示服务端当前值，避免两处配置打架。</div>
+        <div className="k">{operatorCopyText(text(param.name))} <span className="bdg dim">在别处设置</span></div>
+        <div className="s">{operatorCopyText(text(param.sub, text(param.note)))}。这里只显示当前值，修改请到「异常套利与刷量排查」。</div>
       </div>
       <span className="v">{text(param.value)}</span>
-      <Link className="l-btn sm" href="/risk/abuse">去 K2 调整</Link>
+      <Link className="l-btn sm" href="/risk/abuse">去修改</Link>
     </div>
   );
 
   const restoreCaptcha = () => {
     if (!canWrite) {
-      toast("当前账号只有 C6 读取权限，不能恢复人机验证");
+      toast("你只有查看权限，不能恢复人机验证");
       return;
     }
     openConfirm({
     action: "恢复人机验证",
-    detail: "立即恢复 人机验证 拦截；服务端会清除临时关闭时限并保留操作记录。",
+    detail: "人机验证立即恢复拦截。",
     reason: true,
     okLabel: "确认恢复",
     run: (reason) => {
@@ -283,18 +283,18 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
 
   const disableCaptcha = () => {
     if (!canWrite) {
-      toast("当前账号只有 C6 读取权限，不能关闭人机验证");
+      toast("你只有查看权限，不能关闭人机验证");
       return;
     }
     openActionConfirm({
     action: "紧急关闭人机验证",
-    detail: <><b>关闭 = 同号验证码超频不再拦截</b>。只用于人机验证服务商故障等系统级紧急维护，必须选择恢复时限，到点自动开回。</>,
+    detail: <><b>关闭后，同一手机号频繁发验证码将不再被拦截</b>。只在人机验证服务出故障时使用，须选择恢复时间，到时自动开回。</>,
     amplifies: false,
     edit: { kind: "select", current: CAPTCHA_RECOVERY_OPTIONS[0], options: CAPTCHA_RECOVERY_OPTIONS },
     run: (reason, nextValue) => {
       const value = (nextValue ?? "").trim();
       if (!CAPTCHA_RECOVERY_OPTIONS.includes(value)) {
-        toast("必须选择有效恢复时限，未执行");
+        toast("请选择恢复时间");
         return false;
       }
       return perform(`captcha-disable|${value}|${configVersion}|${reason}`, async (commandKey) => {
@@ -307,9 +307,9 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
 
   const k1Confirm = (guard: UserRegistrationRiskK1Guard) => openConfirm({
     action: `422 · ${text(guard.rejectCode, k1RejectCode)}`,
-    detail: <>服务器拒收：<b>{operatorCopyText(text(guard.name))}</b> 的唯一配置入口在多账户风险排查 K1。返回 422 {text(guard.rejectCode, k1RejectCode)}，推荐入口仅用于页面跳转。</>,
-    chips: [["接口层强制 · 422 拒收", "ready"], ["唯一入口 · K1", "done"]],
-    okLabel: "去 K1 配置",
+    detail: <><b>{operatorCopyText(text(guard.name))}</b> 只能在「多账户风险排查」修改。</>,
+    chips: [["在多账户风险排查修改", "done"]],
+    okLabel: "去修改",
     run: () => {
       router.push(text(guard.suggestedPath, k1Path));
     },
@@ -319,7 +319,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     <>
       <div className="f-stats">
         <StatCard
-          label="今日短信验证码发送"
+          label="今日发送短信验证码"
           value={toNumber(overview?.stats?.otpToday).toLocaleString("en-US")}
           sub={`触发人机验证 ${toNumber(overview?.stats?.captchaTriggeredToday).toLocaleString("en-US")} 次`}
         />
@@ -327,27 +327,27 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
           tone="warn"
           label="今日登录锁定"
           value={toNumber(overview?.stats?.locked)}
-          sub={`短锁 ${toNumber(overview?.stats?.lockedShort)} · 长锁 ${toNumber(overview?.stats?.lockedLong)} · 来自今日登录锁定事件`}
+          sub={`短时 ${toNumber(overview?.stats?.lockedShort)} · 长时 ${toNumber(overview?.stats?.lockedLong)}`}
         />
         {captchaRestoreAt ? (
-          <StatCard tone="danger" label="人机验证" value="临时关闭" sub={`服务端自动恢复：${formatCaptchaRestoreAt(captchaRestoreAt)}`} />
+          <StatCard tone="danger" label="人机验证" value="临时关闭" sub={`将于 ${formatCaptchaRestoreAt(captchaRestoreAt)} 自动恢复`} />
         ) : (
-          <StatCard tone="ok" label="人机验证" value="开启" sub={`非强制场景中，同一手机号跨注册/登录/找回 24h 累计完成 ${otpCaptchaAfterSends} 次发送后，第 ${otpCaptchaStart} 次起要求滑块；K2 强制场景每次要求`} />
+          <StatCard tone="ok" label="人机验证" value="开启" sub={`同一手机号 24 小时内发满 ${otpCaptchaAfterSends} 次验证码后，从第 ${otpCaptchaStart} 次起要拖动滑块`} />
         )}
         <StatCard
           tone="cyan"
-          label="撞库信号(7 天)"
-          value={`${toNumber(overview?.stats?.stuffingClusters7d)} 簇`}
-          sub="IP 维度命中同步 K1"
+          label="批量试密码（7 天）"
+          value={`${toNumber(overview?.stats?.stuffingClusters7d)} 组`}
+          sub="同一 IP 大量试密码，已同步到多账户风险排查"
         />
       </div>
 
       {error && <div className="ctint bad" style={{ marginBottom: 12 }}>{error}</div>}
-      {loading && <div className="ctint" style={{ marginBottom: 12 }}>C6 数据加载中...</div>}
+      {loading && <div className="ctint" style={{ marginBottom: 12 }}>正在加载…</div>}
 
       <div className="sec-grid">
         <section className="l-card">
-          <div className="l-h"><span className="ttl">短信验证码</span><span className="sub">· 读取 K2 短信发送设置，当前页仅可查看</span></div>
+          <div className="l-h"><span className="ttl">短信验证码</span><span className="sub">· 只能查看，修改请到「异常套利与刷量排查」</span></div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             {otpParams.map(otpMirrorRow)}
             {otpParams.length === 0 && <div className="ctint">暂无短信验证码设置</div>}
@@ -355,71 +355,71 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         </section>
 
         <section className="l-card">
-          <div className="l-h"><span className="ttl">应用用户连错锁定</span><span className="sub">· 按手机号与账户风控配置；后台管理员登录锁由 A1 单独展示；解锁在 C5</span></div>
+          <div className="l-h"><span className="ttl">App 用户输错锁定</span><span className="sub">· 解锁用户请到「安全与登录设备」</span></div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             {lockParams.map(adjustRow)}
             {lockParams.length === 0 && <div className="ctint">暂无锁定参数</div>}
             <div className="p-row">
-              <div className="txt"><div className="k">计数维度</div><div className="s">按 IP + 账户双维度在服务器计数，应用页面显示倒计时</div></div>
+              <div className="txt"><div className="k">怎么计数</div><div className="s">同时按 IP 和账户计数，用户在 App 上能看到解锁倒计时</div></div>
               <span className="v">IP + 账户</span>
             </div>
           </div>
         </section>
 
         <section className="l-card">
-          <div className="l-h"><span className="ttl">人机验证</span><span className="sub">· 关掉 = 开放短信轰炸，慎用</span></div>
+          <div className="l-h"><span className="ttl">人机验证</span><span className="sub">· 关掉就挡不住短信轰炸，慎用</span></div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             <div className="p-row">
-              <div className="txt"><div className="k">全局开关</div><div className="s">仅限服务商故障等紧急维护时关，关闭必须填恢复时限</div></div>
+              <div className="txt"><div className="k">全局开关</div><div className="s">只在服务出故障时关，关闭时须选择恢复时间</div></div>
               {captchaRestoreAt ? (
                 <>
                   <span className="v" style={{ color: "var(--danger)" }}>临时关闭 · {formatCaptchaRestoreAt(captchaRestoreAt)} 恢复</span>
-                  <button className="l-btn sm" title={canWrite ? undefined : "当前账号只有 C6 读取权限"} disabled={!canWrite || busy} onClick={restoreCaptcha}>{canWrite ? "立即恢复" : "只读"}</button>
+                  <button className="l-btn sm" title={canWrite ? undefined : "你只有查看权限"} disabled={!canWrite || busy} onClick={restoreCaptcha}>{canWrite ? "立即恢复" : "只能查看"}</button>
                 </>
               ) : (
                 <>
                   <span className="v" style={{ color: "var(--success)" }}>开启</span>
-                  <button className="l-btn sm mc" title={canWrite ? undefined : "当前账号只有 C6 读取权限"} disabled={!canWrite || busy} onClick={disableCaptcha}>{canWrite ? "紧急关闭" : "只读"}</button>
+                  <button className="l-btn sm mc" title={canWrite ? undefined : "你只有查看权限"} disabled={!canWrite || busy} onClick={disableCaptcha}>{canWrite ? "紧急关闭" : "只能查看"}</button>
                 </>
               )}
             </div>
             <div className="p-row">
               <div className="txt">
-                <div className="k">触发阈值 <span className="bdg dim">K2 唯一入口</span></div>
-                <div className="s">非强制场景中，同一手机号跨注册/登录/找回 24h 累计完成 {otpCaptchaAfterSends} 次发送后，第 {otpCaptchaStart} 次起要求滑块；K2 强制场景每次要求，C6 只读。</div>
+                <div className="k">什么时候要求滑块 <span className="bdg dim">在别处设置</span></div>
+                <div className="s">同一手机号 24 小时内发满 {otpCaptchaAfterSends} 次验证码后，从第 {otpCaptchaStart} 次起要拖动滑块。修改请到「异常套利与刷量排查」。</div>
               </div>
               <span className="v">&gt;= {otpCaptchaAfterSends} 次/24h</span>
             </div>
-            <div className="ctint warn" style={{ marginTop: 10 }}><b>给增长同事的话</b> · 人机验证影响注册漏斗转化，但这是安全开关，不开放写权。</div>
+            <div className="ctint warn" style={{ marginTop: 10 }}><b>增长同事请注意</b> · 人机验证会影响注册转化，但它是安全开关，增长角色不能修改。</div>
           </div>
         </section>
       </div>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">和 K1 / K2 的分工(接口层强制)</span><span className="sub">· 防参数配两套打架</span></div>
+        <div className="l-h"><span className="ttl">相关设置在哪里改</span></div>
         <div className="l-b">
           <div className="split-grid">
-            <div className="ctint"><b>这页管(登录安全)</b> · 连错锁定两档与人机验证紧急开关。验证码有效期、重发冷却、触发线由 K2 短信发送设置统一配置，当前页仅可查看。</div>
-            <div className="ctint"><b>K1 管(多账户去重)</b> · 同 IP 24h 注册上限 / 同设备绑定上限 / 同支付工具绑定上限。在本页提交这三个参数，系统会拒绝保存。</div>
+            <div className="ctint"><b>这里改</b> · 输错锁定和人机验证开关。验证码有效期、重发间隔和滑块触发次数请到「异常套利与刷量排查」修改。</div>
+            <div className="ctint"><b>「多账户风险排查」改</b> · 同一 IP 每天注册上限、同一设备绑定上限、同一支付方式绑定上限。</div>
           </div>
           {k1Guards.map((guard) => (
             <div className="p-row" key={guardKey(guard)}>
               <div className="txt">
-                <div className="k">{operatorCopyText(text(guard.name))} <span className="bdg dim">K1 唯一入口</span></div>
-                <div className="s">请前往多账户风险排查修改此项设置</div>
+                <div className="k">{operatorCopyText(text(guard.name))} <span className="bdg dim">在别处设置</span></div>
+                <div className="s">请到「多账户风险排查」修改</div>
               </div>
-              <button className="l-btn sm" onClick={() => k1Confirm(guard)}>去 K1 调整</button>
+              <button className="l-btn sm" onClick={() => k1Confirm(guard)}>去修改</button>
             </div>
           ))}
-          {k1Guards.length === 0 && <div className="ctint" style={{ marginTop: 10 }}>暂无 K1 边界参数</div>}
+          {k1Guards.length === 0 && <div className="ctint" style={{ marginTop: 10 }}>暂无</div>}
           <div className="ctint" style={{ marginTop: 10 }}>
-            <b>产出去向</b> · 注册漏斗事件喂 B3；登录锁定事件喂 B5 和 C5；注册侧 IP/设备命中喂 K1。配置变更会写入不可改操作记录。
+            注册数据会进入用户转化分析，登录锁定会显示在风险提醒和「安全与登录设备」，注册时发现的同 IP / 同设备会同步到多账户风险排查。
           </div>
         </div>
       </section>
 
       <p className="f-foot">
-        <b>全部在服务器执行</b>：验证码的有效期、试错次数、防止重复提交都在服务端校验；锁定期间服务器拒绝该手机号的一切登录请求。数据源：{(overview?.sources ?? ["服务端风险配置", "用户安全状态", "K1 风控边界"]).map(sourceLabel).join(" · ")}
+        锁定期间，该手机号的所有登录都会被拒绝。数据来源：{(overview?.sources ?? ["登录风控设置", "用户安全状态", "多账户风控设置"]).map(sourceLabel).join(" · ")}
       </p>
     </>
   );

@@ -218,7 +218,7 @@ test("delete receipt closes confirmation after its profile refresh fails, withou
   button(w.h.render(), "删除备注").props.onClick(); const completion = w.confirm(); w.writes[0].resolve({}); await w.settle();
   w.snapshot(); await w.settle(); w.h.requests[4].reject(new Error("profile unavailable")); await completion; await w.settle();
   assert.equal(w.confirmation, null); assert.equal(w.receipts.size, 0); assert.equal(w.writes.length, 1);
-  assert.equal(editor(w.h, "textarea").props.value, "仍需保留的备注草稿"); assert.match(w.h.html(), /已保存，资料刷新失败/); w.h.unmount();
+  assert.equal(editor(w.h, "textarea").props.value, "仍需保留的备注草稿"); assert.match(w.h.html(), /已保存，但资料刷新失败/); w.h.unmount();
 });
 
 test("authoritative empty conversation snapshot still unmounts inaccessible customer", async () => {
@@ -231,7 +231,7 @@ test("forbidden snapshot revokes the profile instead of keeping editable stale s
   const w = annotationWorkbench(); await w.open(); setDraft(w.h, "input", "旧标签"); setDraft(w.h, "textarea", "旧备注");
   button(w.h.render(), "添加标签").props.onClick(); w.writes[0].resolve({}); await w.settle();
   w.requests[0].reject(new MContentReadError(403, 403, "SUPPORT_SCOPE_FORBIDDEN")); await w.settle();
-  assert.match(w.h.html(), /客户资料暂时无法读取/); assert.doesNotMatch(w.h.html(), /value="旧标签"|>旧备注<\/textarea>/); assert.equal(w.receipts.size, 0); w.h.unmount();
+  assert.match(w.h.html(), /客户资料加载失败/); assert.doesNotMatch(w.h.html(), /value="旧标签"|>旧备注<\/textarea>/); assert.equal(w.receipts.size, 0); w.h.unmount();
 });
 
 for (const change of ["customer", "epoch", "assignment", "revoke"]) {
@@ -334,15 +334,15 @@ test("403/404 from each profile read settles once, clears siblings and only retr
     assert.equal(first.length, 4);
     first.find(request => request.kind === kind).reject(new SupportClientError(status, status, "SUPPORT_CUSTOMER_NOT_FOUND"));
     await h.settle(); succeed(first.filter(request => request.kind !== kind), "OLD_SCOPE_PRIVATE"); await h.settle();
-    assert.match(h.html(), /role="alert"/); assert.match(h.html(), /重新读取资料/);
-    assert.doesNotMatch(h.html(), /正在读取|OLD_SCOPE_PRIVATE|重新登录|登录已过期/);
+    assert.match(h.html(), /role="alert"/); assert.match(h.html(), /重新加载资料/);
+    assert.doesNotMatch(h.html(), /正在加载|OLD_SCOPE_PRIVATE|重新登录|登录已过期/);
     assert.deepEqual(h.invalidations, [[undefined, "7"]]);
     h.update({ scopeVersion: 2 }); await h.settle();
     assert.equal(h.requests.length, 4, "scope refresh must not start an automatic denial loop");
-    button(h.render(), "重新读取资料").props.onClick(); h.render();
+    button(h.render(), "重新加载资料").props.onClick(); h.render();
     assert.equal(h.requests.length, 8, "one explicit retry reloads all read sections");
     succeed(h.requests.slice(4), "重试核实客户"); await h.settle();
-    assert.match(h.html(), /重试核实客户/); assert.doesNotMatch(h.html(), /正在读取|OLD_SCOPE_PRIVATE|客户资料暂时无法读取/);
+    assert.match(h.html(), /重试核实客户/); assert.doesNotMatch(h.html(), /正在加载|OLD_SCOPE_PRIVATE|客户资料暂时无法读取/);
     assert.match(h.html(), /尚未建立服务会话，标签与备注只读/);
     h.unmount();
   }
@@ -352,11 +352,11 @@ test("ordinary profile failure gives all six groups a final state and recovers t
   const h = harness(); h.render();
   h.requests[0].reject(new SupportClientError(503, 503, "BACKEND_UNAVAILABLE"));
   succeed(h.requests.slice(1)); await h.settle();
-  assert.equal((h.html().match(/>读取失败<\/div>/g) || []).length, 6);
-  assert.doesNotMatch(h.html(), /正在读取/); assert.equal(h.invalidations.length, 0);
-  button(h.render(), "重新读取资料").props.onClick(); h.render();
+  assert.equal((h.html().match(/>加载失败<\/div>/g) || []).length, 6);
+  assert.doesNotMatch(h.html(), /正在加载/); assert.equal(h.invalidations.length, 0);
+  button(h.render(), "重新加载资料").props.onClick(); h.render();
   succeed(h.requests.slice(4), "恢复后客户"); await h.settle();
-  assert.match(h.html(), /恢复后客户/); assert.doesNotMatch(h.html(), /读取失败|正在读取/); h.unmount();
+  assert.match(h.html(), /恢复后客户/); assert.doesNotMatch(h.html(), /加载失败|正在加载/); h.unmount();
 });
 
 test("customer, auth and scope-version changes ignore old successes and old denials", async () => {
@@ -379,9 +379,9 @@ test("external scope revocation removes loaded data and prevents a pending group
   assert.equal(oldDelete.props.disabled, false);
   const retry = elements(h.render()).find(node => typeof node.type === "function" && node.props.title === "基本信息").props.retry;
   retry(); assert.equal(h.requests.length, 5);
-  h.invalidate({ customerId: "other" }); assert.doesNotMatch(h.html(), /客户资料暂时无法读取/);
+  h.invalidate({ customerId: "other" }); assert.doesNotMatch(h.html(), /客户资料加载失败/);
   h.invalidate({ customerId: "7" });
-  assert.match(h.html(), /客户资料暂时无法读取/); assert.doesNotMatch(h.html(), /OLD_SCOPE_PRIVATE|正在读取/);
+  assert.match(h.html(), /客户资料加载失败/); assert.doesNotMatch(h.html(), /OLD_SCOPE_PRIVATE|正在加载/);
   h.requests[4].resolve(profile("REVIVED_PRIVATE")); await h.settle();
   retry(); assert.equal(h.requests.length, 5, "a stale group retry cannot bypass the revoked scope");
   oldDelete.props.onClick(); await h.settle(); assert.equal(h.writes.length, 0, "revocation blocks an already captured write control");
@@ -413,7 +413,7 @@ test("an old annotation finally cannot release a newer write after customer chan
     const h = harness({ conversation: { id: "CV-7", ownerAdminId: 12, messages: [], detailReady: true } });
     h.render(); succeed(h.requests); await h.settle(); deleteTag(h).props.onClick(); h.render();
     if (change === "customer") h.update({ customerId: "8", conversation: { id: "CV-8", ownerAdminId: 12, messages: [], detailReady: true } });
-    else { h.invalidate({ customerId: "7" }); button(h.render(), "重新读取资料").props.onClick(); h.render(); }
+    else { h.invalidate({ customerId: "7" }); button(h.render(), "重新加载资料").props.onClick(); h.render(); }
     succeed(h.requests.slice(4), "NEW_WRITE_SCOPE"); await h.settle();
     assert.equal(deleteTag(h).props.disabled, false); deleteTag(h).props.onClick(); h.render(); assert.equal(h.writes.length, 2);
     h.writes[0].resolve(true); await h.settle();

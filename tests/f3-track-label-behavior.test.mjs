@@ -55,21 +55,21 @@ function fixture(trackA, trackB, canSettle = true) {
   return { ctx, tree, side };
 }
 for (const [label, a, b, expectedA, expectedB] of [
-  ["actual A below B", 2583.8, 2617.9, "较小侧 · 结算基数", "较大侧"],
-  ["A above B", 2617.9, 2583.8, "较大侧", "较小侧 · 结算基数"],
-  ["equal displayed positive", 100, 100, "两轨显示值相同", "两轨显示值相同"],
-  ["equal displayed zero", 0, 0, "两轨显示值相同", "两轨显示值相同"],
-  ["one empty track", 0, 10, "较小侧 · 结算基数", "较大侧"],
-  ["compare raw precision", 1.0001, 1.0002, "较小侧 · 结算基数", "较大侧"],
-  ["missing formula", null, null, "暂无轨道数据", "暂无轨道数据"],
+  ["actual A below B", 2583.8, 2617.9, "较小侧 · 按这一侧计算", "较大侧"],
+  ["A above B", 2617.9, 2583.8, "较大侧", "较小侧 · 按这一侧计算"],
+  ["equal displayed positive", 100, 100, "两侧相同", "两侧相同"],
+  ["equal displayed zero", 0, 0, "两侧相同", "两侧相同"],
+  ["one empty track", 0, 10, "较小侧 · 按这一侧计算", "较大侧"],
+  ["compare raw precision", 1.0001, 1.0002, "较小侧 · 按这一侧计算", "较大侧"],
+  ["missing formula", null, null, "暂无数据", "暂无数据"],
 ]) test(`actual F3 card labels: ${label}`, () => {
   const f = fixture(a, b);
   for (const [key, expected] of [["a", expectedA], ["b", expectedB]]) {
     assert.ok(f.side(key).includes(expected), f.side(key));
     assert.doesNotMatch(f.side(key), /自动安置流入/);
-    if (expected === "较大侧") assert.doesNotMatch(f.side(key), /结算基数/);
-    if (expected === "两轨显示值相同") assert.doesNotMatch(f.side(key), /结算基数|较大侧|较小侧/);
-    if (expected === "暂无轨道数据") assert.doesNotMatch(f.side(key), /较大侧|较小侧|结算基数/);
+    if (expected === "较大侧") assert.doesNotMatch(f.side(key), /按这一侧计算/);
+    if (expected === "两侧相同") assert.doesNotMatch(f.side(key), /按这一侧计算|较大侧|较小侧/);
+    if (expected === "暂无数据") assert.doesNotMatch(f.side(key), /较大侧|较小侧|按这一侧计算/);
   }
   const html = renderToStaticMarkup(f.tree());
   assert.match(html, /A 侧团队/);
@@ -84,8 +84,8 @@ test("empty server formula and non-finite amounts do not claim a settlement base
     const f = fixture(0, 0);
     Object.assign(f.ctx.f3Formula, values);
     for (const key of ["a", "b"]) {
-      assert.match(f.side(key), /暂无轨道数据/);
-      assert.doesNotMatch(f.side(key), /较大侧|较小侧|显示值相同|结算基数/);
+      assert.match(f.side(key), /暂无数据/);
+      assert.doesNotMatch(f.side(key), /较大侧|较小侧|两侧相同|按这一侧计算/);
     }
   }
 });
@@ -96,15 +96,15 @@ test("actual settlement action preserves permission, owner, date and financial r
   f.ctx.openActionConfirm = value => { action = value; };
   f.ctx.executeF3Settlement = async (...value) => { args = value; return { status: "SETTLED", amountUsdt: 335.894, replayed: false }; };
   f.ctx.toast = value => { toast = value; };
-  find(f.tree(), node => node.type === "button" && text(node) === "执行结算")[0].props.onClick();
-  assert.match(action.businessForm.fields.find(field => field.key === "settlementDate").label, /业务日期/);
-  assert.match(action.businessForm.hint, /2026-10-19 起新周期按越南时间 UTC\+7/);
-  assert.match(action.businessForm.hint, /历史周期沿用 UTC\+8，不回溯重算/);
+  find(f.tree(), node => node.type === "button" && text(node) === "手动结算")[0].props.onClick();
+  assert.match(action.businessForm.fields.find(field => field.key === "settlementDate").label, /YYYY-MM-DD/);
+  assert.match(action.businessForm.hint, /结算日按越南时间（UTC\+7）划分/);
+  assert.match(action.businessForm.hint, /2026-10-19 之前按旧时区（UTC\+8），不重算/);
   assert.equal(action.businessForm.fields.find(field => field.key === "settlementDate").current, undefined);
   await action.run("original reason", { ownerUserId: "60723153007", settlementDate: "2026-10-17" });
   assert.deepEqual(args, [60723153007, "2026-10-17", "original reason"]);
   assert.match(toast, /335\.894.*进入冷却/);
-  assert.equal(find(fixture(2583.8, 2617.9, false).tree(), node => node.type === "button" && text(node) === "执行结算").length, 0);
+  assert.equal(find(fixture(2583.8, 2617.9, false).tree(), node => node.type === "button" && text(node) === "手动结算").length, 0);
 });
 
 test("Vietnam period copy preserves server configuration, proposal keys and read-only permissions", () => {
@@ -113,26 +113,26 @@ test("Vietnam period copy preserves server configuration, proposal keys and read
   f.ctx.can = () => true;
   f.ctx.f3Config.gvResetCron = "每月1日00:00 UTC";
   f.ctx.openActionConfirm = value => { action = value; };
-  assert.match(text(f.tree()), /越南时间 UTC\+7/);
+  assert.match(text(f.tree()), /越南时间（UTC\+7）/);
   assert.match(text(f.tree()), /每月1日00:00 UTC/);
-  find(f.tree(), node => node.type === "button" && text(node) === "归零统计规则")[0].props.onClick();
+  find(f.tree(), node => node.type === "button" && text(node) === "归零时间")[0].props.onClick();
   assert.equal(action.op, "param");
   assert.equal(action.paramKey, "F.binary.gvResetCron");
   assert.equal(action.edit.current, "每月1日00:00 UTC");
   assert.equal(action.edit.kind, "select");
   assert.deepEqual(action.edit.options, ["每月 1 日 00:00 Asia/Ho_Chi_Minh"]);
-  find(f.tree(), node => node.type === "button" && text(node) === "调整周期与策略")[0].props.onClick();
+  find(f.tree(), node => node.type === "button" && text(node) === "调整")[0].props.onClick();
   assert.match(action.businessForm.hint, /每日 00:00、每周一 00:00、每月 1 日 00:00/);
   assert.deepEqual(action.paramKeys, [
     { key: "period", paramKey: "F.binary.settlePeriod" },
     { key: "residual", paramKey: "F.binary.residualPolicy" },
   ]);
   assert.equal(action.amplify, true);
-  assert.equal(action.completionCopy, "保存后只影响下一周期结算，不回溯已计提。");
+  assert.equal(action.completionCopy, "从下一期开始生效，已算的不变。");
   f.ctx.can = () => false;
-  for (const label of ["执行结算", "归零口径", "调整周期 & 策略"]) {
+  for (const label of ["手动结算", "归零时间", "调整"]) {
     assert.equal(find(f.tree(), node => node.type === "button" && text(node) === label).length, 0);
   }
   const h3 = readFileSync(new URL("../app/components/domain-views/h-tabs/h3-quest-events.tsx", import.meta.url), "utf8");
-  assert.match(h3, /按注册手机号区号对应时区，每周一 00:00 开始新一周/);
+  assert.match(h3, /按注册手机号区号的时区，每周一 00:00 开始新一周/);
 });

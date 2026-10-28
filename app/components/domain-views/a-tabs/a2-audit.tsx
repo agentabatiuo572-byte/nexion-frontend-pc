@@ -75,8 +75,8 @@ const TYPE_CHIPS: { key: QType; label: string }[] = [
   { key: "all", label: "全部" },
   { key: "fund", label: "资金类" },
   { key: "param", label: "参数类" },
-  { key: "acct", label: "处置/账号" },
-  { key: "sos", label: "⚡ 应急轨" },
+  { key: "acct", label: "账号/处置" },
+  { key: "sos", label: "⚡ 应急" },
 ];
 
 const OPERATOR_CHIPS: { key: QOperator; label: string }[] = [
@@ -86,7 +86,7 @@ const OPERATOR_CHIPS: { key: QOperator; label: string }[] = [
   { key: "增长", label: "增长" },
   { key: "内容", label: "内容" },
   { key: "客服", label: "客服" },
-  { key: "超管", label: "超管" },
+  { key: "超管", label: "超级管理员" },
 ];
 
 const DOMAIN_NAMES: Record<A2AuditDomain, string> = {
@@ -122,24 +122,24 @@ type OperationMarker = {
 function operationMarkers(w: A2OperationRow): OperationMarker[] {
   const markers: OperationMarker[] = [];
   if (w.amplifies) {
-    markers.push({ key: "amplifies", label: "🔥 放大流出", className: "a2-amp" });
+    markers.push({ key: "amplifies", label: "🔥 多付钱", className: "a2-amp" });
   }
   if (w.sos) {
-    markers.push({ key: "sos", label: "⚡ 应急轨", className: "a2-sos" });
+    markers.push({ key: "sos", label: "⚡ 应急", className: "a2-sos" });
   }
   if (markers.length > 0) {
     return markers;
   }
   if (w.type === "acct") {
-    return [{ key: "acct", label: "账号/权限敏感", className: "a2-sensitive acct" }];
+    return [{ key: "acct", label: "账号/权限", className: "a2-sensitive acct" }];
   }
   if (w.type === "param") {
-    return [{ key: "param", label: "参数敏感", className: "a2-sensitive param" }];
+    return [{ key: "param", label: "参数", className: "a2-sensitive param" }];
   }
   if (w.type === "fund") {
-    return [{ key: "fund", label: "资金敏感", className: "a2-sensitive fund" }];
+    return [{ key: "fund", label: "资金", className: "a2-sensitive fund" }];
   }
-  return [{ key: "general", label: "敏感动作", className: "a2-sensitive" }];
+  return [{ key: "general", label: "敏感操作", className: "a2-sensitive" }];
 }
 
 function normalizeOperatorIdentity(value: string | null | undefined) {
@@ -160,22 +160,22 @@ export function A2ChangeReview({ before, after }: { before: string; after: strin
     gpu: "GPU", vram: "显存", hashRate: "算力", power: "功耗", datacenter: "数据中心", uptime: "在线率",
     warranty: "保修", phoneDailyEarn: "手机日产收益", phoneDailyEarnNex: "手机日产 UVT", price: "价格",
     dailyEarn: "日产收益", dailyEarnNex: "日产 UVT", shareYieldMin: "份额收益下限", shareYieldMax: "份额收益上限",
-    baseRate: "收益展示串", sold: "累计销量", stock: "库存", rating: "评分", reviews: "评价数",
+    baseRate: "收益展示文字", sold: "累计销量", stock: "库存", rating: "评分", reviews: "评价数",
     aiImageGenPerMin: "图像生成性能", aiLlmTokensPerSec: "大模型推理性能", aiVideoMinPerHour: "视频渲染性能",
     aiFineTuneMins: "LoRA 微调性能", aiUnlocks: "解锁算力池", features: "产品特性", generation: "产品代际",
     lifecycle: "生命周期", supersededBy: "后继商品", tradeinDiscount: "换新折扣", unlockPhase: "解锁阶段",
     purchaseGate: "购买限制", imageAssetId: "产品图标识", imageObjectKey: "产品图对象键", imagePreviewUrl: "产品图预览",
-    tag: "商品标签", status: "商城状态", inventoryMode: "库存模式", expectedUpdatedAt: "变更基准时间",
+    tag: "商品标签", status: "商城状态", inventoryMode: "库存模式", expectedUpdatedAt: "修改前的更新时间",
     updatedAt: "更新时间", trialEligible: "允许试用", productType: "商品类型", reason: "操作理由", operator: "操作人",
-    rankMin: "最低 V 等级", directsMin: "最低有效直推", teamUsdtMin: "最低团队业绩", mode: "条件组合",
-    activeDirectMin: "最低有效直推", teamVolumeMin: "最低团队业绩",
+    rankMin: "最低 V 等级", directsMin: "最低有效直接邀请", teamUsdtMin: "最低团队业绩", mode: "条件组合",
+    activeDirectMin: "最低有效直接邀请", teamVolumeMin: "最低团队业绩",
     enforce: "启用限制", quotaCap: "总配额", quotaSold: "已用配额", quotaPeriod: "配额周期",
   };
   const format = (value: unknown): string => {
     if (value === null) return "未设置";
     if (Array.isArray(value)) return value.map(format).join("\n");
     if (typeof value === "object") return Object.entries(value as Record<string, unknown>)
-      .map(([key, item]) => `${labels[key] ?? key}：${format(item)}`).join("\n") || "无原值 / 未创建";
+      .map(([key, item]) => `${labels[key] ?? key}：${format(item)}`).join("\n") || "无（新建）";
     return typeof value === "boolean" ? (value ? "是" : "否") : String(value);
   };
   const review = (value: string) => {
@@ -296,12 +296,12 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const reasonMin = parseA2ReasonMin(mechanismParams.find((p) => p.key === "ttl")?.value);
 
   const runRetention = () => {
-    if (!canWrite) { toast("当前账号没有 A2 执行留存清理权限"); return; }
+    if (!canWrite) { toast("你没有清理操作记录的权限"); return; }
     // 服务端预览拿不到时不允许执行:操作前无法说清范围的高风险动作,宁可挡住。
     if (!retentionPreview) {
       toast(retentionPreviewError
-        ? `无法取得清理范围,已阻止执行:${retentionPreviewError}`
-        : "正在读取清理范围,请稍候重试");
+        ? `清理范围加载失败，暂不能清理：${retentionPreviewError}`
+        : "正在加载清理范围，请稍后重试");
       return;
     }
     const preview = retentionPreview;
@@ -310,11 +310,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       action: <>归档并清理已到期操作记录</>,
       detail: (
         <>
-          本次范围由服务端按当前保留期({preview.retentionMonths} 个月)算出:<b>可清理 {preview.eligibleRows} 行</b>
-          {preview.earliestExpireAt ? <>,最早到期 <b>{preview.earliestExpireAt}</b></> : null}
-          ;未到期 <b>{preview.notYetExpiredRows}</b> 行与政策前历史 <b>{preview.legacyRowsWithoutExpireAt}</b>  行均不会被触及。
-          每行先写入 不可修改的长期归档并校验摘要后才从在线记录中移除,执行审计自身和未归档行都不会删除;同一命令号重试不会重复生效。
-          执行需 <b>{preview.approvalAuthority}</b> 权限,由服务端强制校验,动作不可逆并写入 A2 审计。
+          按保留期 {preview.retentionMonths} 个月计算，<b>可清理 {preview.eligibleRows} 条</b>
+          {preview.earliestExpireAt ? <>（最早到期 <b>{preview.earliestExpireAt}</b>）</> : null}。
+          未到期的 <b>{preview.notYetExpiredRows}</b> 条和旧版历史记录 <b>{preview.legacyRowsWithoutExpireAt}</b> 条不受影响。
+          到期记录会先长期归档，再从在线列表移除，<b>不可撤销</b>。需要 <b>{preview.approvalAuthority}</b> 权限。
         </>
       ),
       amplifies: false,
@@ -326,8 +325,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           const result = await runA2RetentionNow(reason, commandKey);
           setRetentionRun(result);
           toast(result.lockAcquired
-            ? `保留清理完成：归档 ${result.archivedRows}，删除热表 ${result.deletedRows}`
-            : "已有保留清理在执行，本次未删除任何数据");
+            ? `清理完成：已归档 ${result.archivedRows} 条，从在线列表移除 ${result.deletedRows} 条`
+            : "已有清理正在进行，本次没有删除任何记录");
           void refreshRetentionPreview();
         } catch (error) {
           toast(`执行失败:${displayAdminError(error)}`);
@@ -365,9 +364,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         <>
           对象 <b>{w.obj}</b> · 发起人 {w.operator}。
           <A2ChangeReview before={w.before} after={w.after} />
-          操作理由必填,确认后一次性事务写入目标域并落审计
-          {w.sos ? (<>,<b> 应急轨:确认后立即生效并通知 J 域值班</b></>) : null}。<br />
-          执行门槛:<b>{w.roleGate}</b> · 同一次提交在 24 小时内不会重复生效。
+          确认后立即执行
+          {w.sos ? (<>，<b>并通知应急值班人员</b></>) : null}。<br />
+          谁能执行：<b>{w.roleGate}</b>
           {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
           {w.phoneCalibrationError && <p role="alert">{w.phoneCalibrationError}</p>}
         </>
@@ -382,7 +381,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           const confirmed = next.operationQueue.some((item) => item.id === w.id && item.status === "approved")
             || next.operationHistory.some((item) => item.id === w.id && item.st === "approved");
           if (!confirmed) throw new Error("A2_OPERATION_WRITE_NOT_CONFIRMED");
-          toast(`${w.id} 已执行 · 已重新读取服务端状态与审计记录`);
+          toast(`${w.id} 已执行`);
         } catch (error) {
           toast(`执行失败:${displayAdminError(error)}`);
           throw error;
@@ -397,7 +396,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       action: <>取消执行 · {w.id} · {w.action}</>,
       detail: (
         <>
-          取消后该动作进入<b>已取消</b>终态，原因必填并随审计永久留痕。需要再做只能重新发起新的操作确认。
+          取消后不能恢复，如需再做请重新发起。
         </>
       ),
       amplifies: false,
@@ -410,7 +409,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           const confirmed = next.operationQueue.some((item) => item.id === w.id && item.status === "rejected")
             || next.operationHistory.some((item) => item.id === w.id && item.st === "rejected");
           if (!confirmed) throw new Error("A2_OPERATION_WRITE_NOT_CONFIRMED");
-          toast(`${w.id} 已取消 · 已重新读取服务端状态与审计记录`);
+          toast(`${w.id} 已取消`);
         } catch (error) {
           toast(`取消失败:${displayAdminError(error)}`);
           throw error;
@@ -420,11 +419,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   };
 
   const withdrawWo = (w: A2OperationRow) => {
-    if (!canWithdraw) { toast("当前账号没有撤回本人提案权限"); return; }
+    if (!canWithdraw) { toast("你没有撤回申请的权限"); return; }
     const commandKey = createA2CommandKey(`a2-withdraw-${w.id}`);
     openActionConfirm({
-      action: <>撤回本人提案 · {w.id}</>,
-      detail: <>仅申请人可撤回待确认申请。撤回前会核对申请人和当前状态；撤回后解除锁定，不执行原操作。</>,
+      action: <>撤回我的申请 · {w.id}</>,
+      detail: <>撤回后原操作不会执行。只有申请人本人能撤回。</>,
       amplifies: false,
       reasonMin,
       reasonMax: 200,
@@ -435,7 +434,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           const confirmed = next.operationQueue.some((item) => item.id === w.id && item.status === "withdrawn")
             || next.operationHistory.some((item) => item.id === w.id && item.st === "withdrawn");
           if (!confirmed) throw new Error("A2_WITHDRAW_WRITE_NOT_CONFIRMED");
-          toast(`${w.id} 已撤回 · 已重新读取服务端状态与审计记录`);
+          toast(`${w.id} 已撤回`);
         } catch (error) {
           toast(`撤回失败:${displayAdminError(error)}`);
           throw error;
@@ -449,12 +448,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (!canExport || filteredLogRows.length === 0) return;
     const commandKey = createA2CommandKey("a2-audit-export");
     openActionConfirm({
-      action: "导出审计日志",
+      action: "导出操作记录",
       detail: (
         <>
 
-          导出范围:当前筛选条件命中的记录;导出时隐藏隐私字段。导出本身也会留一条审计(谁、何时、导了什么范围)。
-          可导角色:只读审计(全量)/ 财务·风控(本域)。
+          导出当前筛选出的记录，隐私信息会被隐藏。导出操作本身也会被记录。
         </>
       ),
       amplifies: false,
@@ -464,7 +462,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         try {
           const file = await exportA2Audit(reason, appliedFilter, commandKey);
           await refreshOverview();
-          toast(`已下载 ${file.fileName} · 导出动作已留痕并重新读取服务端记录`);
+          toast(`已下载 ${file.fileName}`);
         } catch (error) {
           toast(`导出失败:${displayAdminError(error)}`);
           throw error;
@@ -481,8 +479,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       action: "操作理由最短长度",
       detail: (
         <>
-          当前 <b>{cur}</b>  · 范围 8–200 字。所有操作确认弹窗提交前校验,不满足时确认按钮保持 不可点击。
-          这个参数只约束新提交的理由,历史审计按原文保留。
+          当前 <b>{cur}</b> · 可设 8–200 字。所有确认弹窗里的理由不够这个字数就不能提交，已有记录不受影响。
         </>
       ),
       amplifies: false,
@@ -492,7 +489,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       run: async (reason, v) => {
         const validation = validateA2MechanismValue("ttl", v ?? "");
         if (!validation.ok) {
-          toast(`拒绝:${validation.message}`);
+          toast(`没有提交 · ${validation.message}`);
           throw new Error(validation.message);
         }
         try {
@@ -500,7 +497,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           const next = await refreshOverview();
           const readback = next.mechanismParams.find((item) => item.key === "ttl")?.value.match(/\d+/)?.[0];
           if (readback !== validation.value) throw new Error("A2_MECHANISM_WRITE_NOT_CONFIRMED");
-          toast(`理由最短长度已更新为 ${validation.value} 字，并完成服务端回读`);
+          toast(`理由最短长度已改为 ${validation.value} 字`);
         } catch (error) {
           toast(`调整失败:${displayAdminError(error)}`);
           throw error;
@@ -513,11 +510,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const cur = mechanismParams.find((p) => p.key === "retention")?.value ?? "13 个月";
     const commandKey = createA2CommandKey("a2-mechanism-retention");
     openActionConfirm({
-      action: "审计日志保留期",
+      action: "操作记录保留期",
       detail: (
         <>
-          当前 <b>{cur}</b> · 范围 13–36 个月(下限写死,要覆盖完整 12 月运营周期 + 1 月缓冲)。
-          改动只对新日志生效,不回溯清理旧账。
+          当前 <b>{cur}</b> · 可设 13–36 个月（至少覆盖一个完整的 12 个月运营周期）。只对之后的新记录生效。
         </>
       ),
       amplifies: false,
@@ -527,7 +523,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       run: async (reason, v) => {
         const validation = validateA2MechanismValue("retention", v ?? "");
         if (!validation.ok) {
-          toast(`拒绝:${validation.message}`);
+          toast(`没有提交 · ${validation.message}`);
           throw new Error(validation.message);
         }
         try {
@@ -535,7 +531,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           const next = await refreshOverview();
           const readback = next.mechanismParams.find((item) => item.key === "retention")?.value.match(/\d+/)?.[0];
           if (readback !== validation.value) throw new Error("A2_MECHANISM_WRITE_NOT_CONFIRMED");
-          toast(`日志保留期已更新为 ${validation.value} 个月，并完成服务端回读`);
+          toast(`保留期已改为 ${validation.value} 个月`);
         } catch (error) {
           toast(`调整失败:${displayAdminError(error)}`);
           throw error;
@@ -548,12 +544,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const cur = parseA2SchemaVersion(mechanismParams.find((p) => p.key === "schema")?.value) || "v3";
     const commandKey = createA2CommandKey("a2-mechanism-schema");
     openActionConfirm({
-      action: "审计/事件字段结构变更",
+      action: "升级记录字段版本",
       detail: (
         <>
 
-          新增事件名或属性须先在事件管理(A4)注册；当前仅支持已注册的 v3、v4，且只能逐版升级。
-          全后台共用一套字段结构,各域不许私加字段——统计规则不一致了取证就对不上。
+          只能逐版升级到已登记的版本（目前有 v3、v4）。新事件或字段请先在「用户行为事件」登记。
         </>
       ),
       amplifies: false,
@@ -563,7 +558,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       run: async (reason, v) => {
         const validation = validateA2MechanismValue("schema", v ?? "", cur);
         if (!validation.ok) {
-          toast(`拒绝:${validation.message}`);
+          toast(`没有提交 · ${validation.message}`);
           throw new Error(validation.message);
         }
         try {
@@ -571,7 +566,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           const next = await refreshOverview();
           const readback = parseA2SchemaVersion(next.mechanismParams.find((item) => item.key === "schema")?.value);
           if (readback !== validation.value) throw new Error("A2_MECHANISM_WRITE_NOT_CONFIRMED");
-          toast(`字段结构版本已更新为 ${validation.value}，并完成服务端回读`);
+          toast(`字段版本已升级为 ${validation.value}`);
         } catch (error) {
           toast(`变更失败:${displayAdminError(error)}`);
           throw error;
@@ -634,24 +629,23 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       {/* ───── 4 f-stat ───── */}
       <div className="f-stats">
         <div className="f-stat warn">
-          <div className="k">敏感动作</div>
+          <div className="k">待确认操作</div>
           <div className="v">{stats.pendingTickets} 件</div>
-          <div className="sub">资金类 {stats.fundTickets} 件置顶 · 理由必填留痕</div>
+          <div className="sub">其中资金类 {stats.fundTickets} 件</div>
         </div>
         <div className="f-stat danger">
-          <div className="k">应急快速轨</div>
+          <div className="k">应急操作</div>
           <div className="v">{stats.sosTickets} 件</div>
-          <div className="sub">J 域紧急停用与恢复 · 时限以服务端工单记录为准</div>
+          <div className="sub">紧急停用与恢复，优先处理</div>
         </div>
         <div className="f-stat">
-          <div className="k">今日审计事件</div>
+          <div className="k">今日操作记录</div>
           <div className="v">{stats.todayAuditEvents.toLocaleString()} 条</div>
-          <div className="sub">后台操作统一进入不可修改的审计记录</div>
         </div>
         <div className="f-stat cyan">
           <div className="k">本周执行 / 取消</div>
           <div className="v">{stats.weeklyApproved} / {stats.weeklyRejected}</div>
-          <div className="sub">另有 {stats.weeklyExpired} 件校验拦截 · {stats.weeklyWithdrawn} 件主动取消</div>
+          <div className="sub">另有 {stats.weeklyExpired} 件过期 · {stats.weeklyWithdrawn} 件撤回</div>
         </div>
       </div>
 
@@ -659,18 +653,18 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         <div className={`atint${loadError ? " warn" : ""}`} data-module-health-state={loadError ? "error" : undefined} style={{ margin: "12px 0" }}>
           {loadError ? (
             <>
-              审计中心读取失败，旧数据已清空，所有操作均已停用：{loadError}
+              操作记录加载失败，旧数据已清空，所有操作已暂停：{loadError}
               <button className="l-btn sm" style={{ marginLeft: 10 }} onClick={() => void refreshOverview().catch(() => undefined)}>重新读取</button>
             </>
-          ) : "正在读取审计中心服务端数据。"}
+          ) : "正在加载…"}
         </div>
       )}
 
       {/* ───── (b) 高敏操作动态 ───── */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">敏感操作动态(b)· 待处理</span>
-          <span className="sub">· 大额/资金类置顶 · 点击执行会打开独立操作确认弹窗,理由必填后立即生效</span>
+          <span className="ttl">待确认的操作</span>
+          <span className="sub">· 资金类排在最前</span>
           <div className="r" style={{ display: "flex", gap: 10 }}>
             <TabGroup label="操作类型" labelClassName="lb" value={qType} items={TYPE_CHIPS.map((c) => c.key)}
               onSelect={(key) => { setQType(key); setQPage(0); }} className="chips"
@@ -698,7 +692,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 <tr>
                   <td colSpan={8} style={{ color: "var(--ink-4)", fontSize: 12, textAlign: "center" }}>
 
-                    当前筛选条件下没有敏感操作
+                    没有符合条件的待确认操作
                   </td>
                 </tr>
               ) : qRows.map((w) => {
@@ -726,14 +720,14 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     </td>
                     <td>
                       <span className="a2-ttl">
-                        {w.ts} · 留痕
+                        {w.ts}
                       </span>
                     </td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {isFinal ? (
                         <span className={`bdg ${HIST_TONE[status] ?? "dim"}`}>{HIST_LABEL[status] ?? status}</span>
                       ) : isCurrentOperator(w, principal) ? (
-                        <button className="l-btn sm" disabled={!canWithdraw} onClick={(e) => { e.stopPropagation(); withdrawWo(w); }}>撤回本人提案</button>
+                        <button className="l-btn sm" disabled={!canWithdraw} onClick={(e) => { e.stopPropagation(); withdrawWo(w); }}>撤回我的申请</button>
                       ) : canApprove ? (
                         <>
                           <button
@@ -748,7 +742,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                         </>
                       ) : (
                         <span className="bdg dim">
-                          待门槛者执行
+                          等待有权限的人执行
                         </span>
                       )}
                     </td>
@@ -788,8 +782,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="atint warn">
-            <b>放大资金流出的动作</b>(带 🔥)执行前弹窗里直接给出当前备付金覆盖率和红线对比——
-            覆盖率不够时服务器拒绝提交;确认时仍要看当前值有没有恶化。
+            <b>带 🔥 的操作会让平台多付钱</b>，执行时弹窗会显示当前兑付覆盖率，低于红线将无法执行。
           </div>
         </div>
       </section>
@@ -799,8 +792,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         {/* (a) 审计日志 · 只追加 */}
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">审计日志(a)· 只追加</span>
-            <span className="sub">· 域、操作者、动作、对象与时间使用同一服务端筛选 · 点行看全字段</span>
+            <span className="ttl">操作记录</span>
+            <span className="sub">· 点击一行查看详情</span>
             <div className="r">
               {canExport && (
                 <button
@@ -808,14 +801,14 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   disabled={loading || !!loadError || filteredLogRows.length === 0}
                   title={filteredLogRows.length === 0 ? "当前筛选没有可导出的记录" : undefined}
                   onClick={exportAudit}
-                >导出（隐藏隐私字段）</button>
+                >导出</button>
               )}
             </div>
           </div>
           <div className="l-b" style={{ padding: "10px 20px 0" }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(150px, 1fr))", gap: 8, marginBottom: 8 }}>
               <label className="field" style={{ margin: 0 }}>
-                <span>业务域</span>
+                <span>模块</span>
                 <select
                   className="fld"
                   aria-label="审计业务域"
@@ -862,7 +855,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 {auditLogPager.pageRows.length === 0 ? (
                   <tr>
                     <td colSpan={5} style={{ color: "var(--ink-4)", fontSize: 12, textAlign: "center" }}>
-                      暂无审计日志
+                      暂无操作记录
                     </td>
                   </tr>
                 ) : auditLogPager.pageRows.map((l) => {
@@ -881,7 +874,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             </table>
           </div>
           <DataListPager
-            label="审计日志"
+            label="操作记录"
             page={auditLogPager.page}
             pageSize={auditLogPager.pageSize}
             total={auditLogPager.total}
@@ -892,10 +885,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           <div className="l-b" style={{ paddingTop: 8 }}>
             <div className="atint">
 
-              可见性按角色自动裁剪:客服仅看自己的操作记录;财务看资金域、风控看风控域;
-              只读审计可全量查询并隐藏隐私字段后导出。页面最多展示当前筛选最近 500 条;导出超过 5000 条时需缩小筛选范围。
-              日志只能看不能改、不能单独删;唯一的移出路径是按下方保留期把<b>已超期</b>行长期归档后从在线记录中移除,
-              未到期行与政策前的历史行都不会被触及。
+              各角色只能看到自己负责范围的记录（客服只看自己的）。最多显示最近 500 条，导出不超过 5000 条，超出请缩小筛选范围。
+              记录不能修改或删除，超过保留期的才会归档移出。
             </div>
           </div>
         </section>
@@ -903,21 +894,20 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         {/* (c) 执行历史 + 机制参数 */}
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">执行历史(c)与机制参数</span>
-            <span className="sub">· 任一敏感动作的完整操作链可追溯</span>
+            <span className="ttl">处理历史与记录设置</span>
           </div>
           <div style={{ overflowX: "auto" }}>
             <table className="l-tbl" style={{ minWidth: 520 }}>
               <thead>
                 <tr>
-                  <th>编号</th><th>动作</th><th>终态</th><th>操作 / 留痕</th><th>决策时间</th>
+                  <th>编号</th><th>动作</th><th>结果</th><th>处理人</th><th>处理时间</th>
                 </tr>
               </thead>
               <tbody>
                 {historyPager.pageRows.length === 0 ? (
                   <tr>
                     <td colSpan={5} style={{ color: "var(--ink-4)", fontSize: 12, textAlign: "center" }}>
-                      暂无执行历史
+                      暂无处理历史
                     </td>
                   </tr>
                 ) : historyPager.pageRows.map((h) => {
@@ -938,7 +928,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             </table>
           </div>
           <DataListPager
-            label="执行历史"
+            label="处理历史"
             page={historyPager.page}
             pageSize={historyPager.pageSize}
             total={historyPager.total}
@@ -952,7 +942,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 return (
                   <div className="a-vrow" key={p.key}>
                     <span className="nm">{p.name}<small>{p.sub}</small></span>
-                    <span className="acode lock" title="§1.8 原则二.4 铁律">🔒 强制</span>
+                    <span className="acode lock" title="系统固定，不能关闭">🔒 强制</span>
                   </div>
                 );
               }
@@ -969,10 +959,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 return (
                   <div className="a-vrow" key={p.key}>
                     <span className="nm">{p.name}<small>{p.sub} · {retentionPreview
-                      ? `本次可清理:${retentionPreview.eligibleRows} 行${retentionPreview.earliestExpireAt ? `(最早到期 ${retentionPreview.earliestExpireAt})` : ""} · 未到期不触及:${retentionPreview.notYetExpiredRows} 行 · 历史行不触及:${retentionPreview.legacyRowsWithoutExpireAt} 行`
-                      : retentionPreviewError ? `清理范围读取失败:${retentionPreviewError}(已阻止执行)` : "正在读取清理范围"} · {retentionRun
-                      ? `最近执行:${retentionRun.evaluatedAt} · 锁:${retentionRun.lockAcquired ? "已取得" : "占用"} · 归档:${retentionRun.archivedRows} · 删除:${retentionRun.deletedRows}`
-                      : retentionRunError ? `最近状态读取失败:${retentionRunError}` : "暂无人工执行记录"}</small></span>
+                      ? `可清理 ${retentionPreview.eligibleRows} 条${retentionPreview.earliestExpireAt ? `（最早到期 ${retentionPreview.earliestExpireAt}）` : ""} · 未到期 ${retentionPreview.notYetExpiredRows} 条 · 旧版历史 ${retentionPreview.legacyRowsWithoutExpireAt} 条`
+                      : retentionPreviewError ? `清理范围加载失败，暂不能清理：${retentionPreviewError}` : "正在加载清理范围"} · {retentionRun
+                      ? `上次清理 ${retentionRun.evaluatedAt}${retentionRun.lockAcquired ? "" : "（当时有其他清理在进行）"} · 归档 ${retentionRun.archivedRows} 条 · 移除 ${retentionRun.deletedRows} 条`
+                      : retentionRunError ? `上次清理情况加载失败：${retentionRunError}` : "还没有手动清理过"}</small></span>
                     <span className="v">{operatorCopyText(p.value)}</span>
                     {canWrite && <button className="l-btn sm mc" onClick={adjRet}>调整</button>}
                     {canWrite && <button className="l-btn sm mc" disabled={retentionPending || !overview || !!loadError || !retentionPreview} onClick={runRetention}>立即清理</button>}
@@ -984,7 +974,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   <div className="a-vrow" key={p.key}>
                     <span className="nm">{p.name}<small>{p.sub}</small></span>
                     <span className="v">{operatorCopyText(p.value)}</span>
-                    <button className="l-btn sm" onClick={() => setActionConfirmListOpen(true)}>看清单</button>
+                    <button className="l-btn sm" onClick={() => setActionConfirmListOpen(true)}>查看清单</button>
                   </div>
                 );
               }
@@ -993,7 +983,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 <div className="a-vrow" key={p.key}>
                   <span className="nm">{p.name}<small>{p.sub}</small></span>
                   <span className="v">{operatorCopyText(p.value)}</span>
-                  {canWrite && <button className="l-btn sm mc" onClick={adjSchema}>变更（注册）</button>}
+                  {canWrite && <button className="l-btn sm mc" onClick={adjSchema}>升级版本</button>}
                 </div>
               );
             })}
@@ -1001,13 +991,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         </section>
       </div>
 
-      {/* ───── f-foot ───── */}
       <p className="f-foot">
-        <b>分工一句话</b>:这页管「记录谁做了什么 + 操作确认的流程」;「谁能做什么」的授权矩阵在账号页(A1);
-        事件叫什么名、带什么字段归事件管理(A4)定义,这页负责保存记录与可查。
-        <b> 执行门槛</b>:资金类 = 财务/超级管理员;风控与账户类 = 风控/超级管理员;
-        内容类 = 内容/超级管理员;账号治理与系统参数 = 仅超级管理员。
-        应急轨动作（J 域紧急停用/恢复）按服务端记录的处理时限置顶，超时升级告警到超级管理员。
+        <b>谁能执行</b>：资金类由财务执行，风控和账户类由风控执行，内容类由内容运营执行，账号和系统设置只有超级管理员能执行；超级管理员可执行全部。应急操作排在最前，超时会提醒超级管理员。
       </p>
 
       {/* ───── 高敏动作详情 Drawer ───── */}
@@ -1018,7 +1003,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         const isFinal = status !== "pending";
         return (
           <Drawer
-            title={`敏感动作 · ${w.id}`}
+            title={`待确认操作 · ${w.id}`}
             sub={
               <>
                 {w.action} · 对象 {w.obj} · 发起人 {w.operator}
@@ -1044,7 +1029,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 ) : (
                   <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)", textAlign: "center" }}>
                     <span className="bdg dim">
-                      {isCurrentOperator(w, principal) ? "需其他具权人员执行" : "待门槛者执行"}
+                      {isCurrentOperator(w, principal) ? "需由其他有权限的人执行" : "等待有权限的人执行"}
                     </span>
                   </div>
                 )
@@ -1056,37 +1041,33 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
               {w.phoneCalibrationError && <p role="alert">{w.phoneCalibrationError}</p>}
               <div className="kv"><span className="k">操作理由</span><span className="v" style={{ maxWidth: 360, textAlign: "right" }}>{w.reason}</span></div>
-              <div className="kv"><span className="k">记录时间</span><span className="v">{w.ts}{w.sos ? "(应急 处理时限)" : "(理由必填留痕)"}</span></div>
-              <div className="kv"><span className="k">执行门槛</span><span className="v">{w.roleGate}</span></div>
-              <div className="kv"><span className="k">防止重复执行</span><span className="v">同一次提交在 24 小时内重复发送也只会生效一次</span></div>
-              <div className="kv"><span className="k">原子性</span><span className="v" style={{ maxWidth: 320, textAlign: "right" }}>确认执行使用一次事务写入目标域；失败则动作保持待处理，目标域不会产生部分结果</span></div>
+              <div className="kv"><span className="k">记录时间</span><span className="v">{w.ts}{w.sos ? "（应急，优先处理）" : ""}</span></div>
+              <div className="kv"><span className="k">谁能执行</span><span className="v">{w.roleGate}</span></div>
             </div>
             <div className="atint" style={{ marginTop: 14 }}>
               {w.amplifies ? (
                 <>
-                  <b>🔥 放大资金流出</b>:提交时备付金覆盖率已过线;放行弹窗会再显示当前覆盖率,
-                  恶化到红线下请驳回并注明。
+                  <b>🔥 会让平台多付钱</b>：执行时会再次显示当前兑付覆盖率，如已跌破红线请取消并注明原因。
                 </>
               ) : w.sos ? (
                 <>
-                  <b>⚡ 应急轨敏感</b>:涉及紧急停用、恢复或紧急处置,核对值班授权、影响面和恢复条件后再裁决。
+                  <b>⚡ 应急操作</b>：涉及紧急停用或恢复，请核对值班授权、影响范围和恢复条件后再处理。
                 </>
               ) : w.type === "acct" ? (
                 <>
-                  <b>账号/权限敏感</b>:A1 新增/禁用管理员、改角色、重置 两步验证、强制登出、角色权限 调整都按敏感处理,
-                  审核时核对目标账号、申请角色和操作理由。
+                  <b>账号/权限</b>：请核对目标账号、申请的角色和操作理由。
                 </>
               ) : w.type === "param" ? (
                 <>
-                  <b>参数敏感</b>:参数会影响后续业务规则,审核时核对前后值、影响范围和恢复方式。
+                  <b>参数</b>：请核对修改前后的值和影响范围。
                 </>
               ) : (
-                <>敏感动作:按动作说明核对对象、前后值、影响范围与原因。</>
+                <>请核对操作对象、修改前后的值和理由。</>
               )}
             </div>
             {isFinal && (
               <div className="atint" style={{ marginTop: 8 }}>
-                动作终态:<span className={`bdg ${HIST_TONE[status] ?? "dim"}`}>{HIST_LABEL[status] ?? status}</span> · 已留痕,无法再次裁决。
+                已处理：<span className={`bdg ${HIST_TONE[status] ?? "dim"}`}>{HIST_LABEL[status] ?? status}</span>，不能再次处理。
               </div>
             )}
           </Drawer>
@@ -1100,13 +1081,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         const needIdem = l.action.includes("withdraw") || l.action.includes("balance") || l.action.includes("operation_confirmed");
         return (
           <Drawer
-            title={`审计记录 · ${l.action}`}
+            title={`操作记录 · ${l.action}`}
             sub={<>{l.obj} · {l.delta}</>}
             onClose={() => setLogIdx(null)}
           >
-            <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginBottom: 10 }}>
-              统一字段结构;只追加,不可改不可删——取证链不可抵赖。
-            </div>
+
             <div className="l-b" style={{ padding: 0 }}>
               <div className="kv"><span className="k">操作者 / 角色</span><span className="v">{l.actor} · {l.role}</span></div>
               <div className="kv"><span className="k">时间</span><span className="v mono">{l.ts}</span></div>
@@ -1114,12 +1093,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               <div className="kv"><span className="k">前值 → 后值</span><span className="v mono">{l.delta}</span></div>
               <div className="kv"><span className="k">原因</span><span className="v">{l.reason || "—"}</span></div>
               <div className="kv"><span className="k">IP</span><span className="v mono">{l.ip}</span></div>
-              <div className="kv"><span className="k">操作 / 留痕</span><span className="v">{l.actor}  / 对应角色或超级管理员</span></div>
-              <div className="kv"><span className="k">防重复提交编号</span><span className="v mono">{l.idempotencyKey || (needIdem ? "未返回资金操作请求编号" : "—")}</span></div>
+              <div className="kv"><span className="k">请求编号</span><span className="v mono">{l.idempotencyKey || (needIdem ? "缺失" : "—")}</span></div>
             </div>
             <div className="atint" style={{ marginTop: 14 }}>
-
-              隐私字段(手机号/地址)在事件里只保存不可逆摘要或编号，导出时继续隐藏敏感内容。
+              手机号、地址等隐私信息只以加密编号保存，导出时也会隐藏。
             </div>
           </Drawer>
         );
@@ -1131,10 +1108,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         if (!h) return null;
         return (
           <Drawer
-            title={`操作链 · ${h.id}`}
+            title={`处理过程 · ${h.id}`}
             sub={
               <>
-                {h.action} · 终态 <span className={`bdg ${HIST_TONE[h.st] ?? "dim"}`} style={{ marginLeft: 4 }}>{HIST_LABEL[h.st] ?? h.st}</span>
+                {h.action} · 结果 <span className={`bdg ${HIST_TONE[h.st] ?? "dim"}`} style={{ marginLeft: 4 }}>{HIST_LABEL[h.st] ?? h.st}</span>
                 {" · "}{h.chain} · {h.t}
               </>
             }
@@ -1143,10 +1120,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             <div className="atint" style={{ marginBottom: 10 }}>
               {h.note}
             </div>
-            <div className="atint cyan">
 
-              任何敏感动作的完整操作链(提案→决策→保存记录)都能这样追溯;这是内部问责的追溯依据。
-            </div>
           </Drawer>
         );
       })()}
@@ -1154,15 +1128,15 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       {/* ───── 9 大类操作确认清单 Drawer ───── */}
       {mcListOpen && (
         <Drawer
-          title="操作确认适用动作清单(9 大类汇总)"
-          sub="下列动作一律进确认门,理由必填"
+          title="需要确认的操作（9 类）"
+          sub="以下操作都要填写理由并确认"
           onClose={() => setActionConfirmListOpen(false)}
         >
           <div style={{ overflowX: "auto" }}>
             <table className="l-tbl">
               <thead>
                 <tr>
-                  <th>类别</th><th>例子</th><th>执行门槛</th>
+                  <th>类别</th><th>例子</th><th>谁能执行</th>
                 </tr>
               </thead>
               <tbody>
@@ -1177,8 +1151,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             </table>
           </div>
           <div className="atint" style={{ marginTop: 14 }}>
-            分界线:是否放大资金流出 / 变更权限边界 / 触及用户资产或合规态。
-            强制登出、标记、只读、风控自动检测这类即时止血动作不进门(即时生效 + 留痕)。
+            判断标准：是否会让平台多付钱、改变权限、动到用户资产或合规状态。强制登出、标记、查看和风控自动检测等止损操作无需确认，立即生效并记录。
           </div>
         </Drawer>
       )}

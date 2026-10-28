@@ -139,7 +139,7 @@ function SupportContactPicker({onClose,onSelect}:{onClose:()=>void;onSelect:(id:
   const adminId=useAdminAuth(s=>s.session?.adminId),epoch=useAdminAuth(s=>s.authEpoch);
   const [keyword,setKeyword]=useState(""),[page,setPage]=useState(1),[retry,setRetry]=useState(0),[rows,setRows]=useState<Awaited<ReturnType<typeof supportClient.customers>>|null>(null),[error,setError]=useState("");
   useEffect(()=>{const controller=new AbortController();setRows(null);setError("");supportClient.customers({mode:"PERSONAL",pageNum:page,pageSize:10,filter:"ALL",keyword,signal:controller.signal}).then(p=>{if(!controller.signal.aborted)setRows(p);}).catch(e=>{if(!controller.signal.aborted)setError(displayAdminError(e));});return()=>controller.abort();},[keyword,page,retry,epoch]);
-  return <Modal title="主动联系本人客户" icon="users" onClose={onClose} footer={<button className="btn btn-sec btn-sm" onClick={onClose}>取消</button>}><label>搜索客户姓名或编码<input className="fld" value={keyword} onChange={e=>{setKeyword(e.target.value);setPage(1);}}/></label><p>只可向当前本人客户发送；不再维护客户可在原求助会话中继续普通服务回复。</p>{error?<p role="alert">{error}<button className="l-btn sm" onClick={()=>setRetry(n=>n+1)}>重试客户列表</button></p>:!rows?<p role="status">正在读取客户…</p>:<>{!rows.records.length&&<p>暂无匹配的客户。</p>}{rows.records.map(c=><button className="l-btn sm" key={c.customerId} disabled={c.agentAdminId!==adminId||!c.maintenanceEnabled} onClick={()=>onSelect(c.customerId)}>{c.displayName||c.customerNo||c.customerId} · {c.customerNo||"编码未知"}{!c.maintenanceEnabled?" · 不再维护":c.agentAdminId!==adminId?" · 当前归属其他专属客服":""}</button>)}<div className="m-admin-toolbar"><button className="l-btn sm" disabled={page<=1} onClick={()=>setPage(n=>n-1)}>上一页</button><span>第 {page} 页 · {rows.total} 位</span><button className="l-btn sm" disabled={page*10>=rows.total} onClick={()=>setPage(n=>n+1)}>下一页</button></div></>}</Modal>;
+  return <Modal title="主动联系本人客户" icon="users" onClose={onClose} footer={<button className="btn btn-sec btn-sm" onClick={onClose}>取消</button>}><label>搜索客户姓名或编码<input className="fld" value={keyword} onChange={e=>{setKeyword(e.target.value);setPage(1);}}/></label><p>只可向当前本人客户发送；不再维护客户可在原求助会话中继续普通服务回复。</p>{error?<p role="alert">{error}<button className="l-btn sm" onClick={()=>setRetry(n=>n+1)}>重试客户列表</button></p>:!rows?<p role="status">正在加载客户…</p>:<>{!rows.records.length&&<p>暂无匹配的客户。</p>}{rows.records.map(c=><button className="l-btn sm" key={c.customerId} disabled={c.agentAdminId!==adminId||!c.maintenanceEnabled} onClick={()=>onSelect(c.customerId)}>{c.displayName||c.customerNo||c.customerId} · {c.customerNo||"编码未知"}{!c.maintenanceEnabled?" · 不再维护":c.agentAdminId!==adminId?" · 当前归属其他专属客服":""}</button>)}<div className="m-admin-toolbar"><button className="l-btn sm" disabled={page<=1} onClick={()=>setPage(n=>n-1)}>上一页</button><span>第 {page} 页 · {rows.total} 位</span><button className="l-btn sm" disabled={page*10>=rows.total} onClick={()=>setPage(n=>n+1)}>下一页</button></div></>}</Modal>;
 }
 
 function CustomerHistoryMessages({ conversation, ctx, customerName, loadEnabled }: { conversation: SessionConvo; ctx: MCtx; customerName: string; loadEnabled: boolean }) {
@@ -159,7 +159,7 @@ function CustomerHistoryMessages({ conversation, ctx, customerName, loadEnabled 
     void markMConversationRead(conversation.id,unread,controller.signal).catch(cause => { if (!controller.signal.aborted) setError(displayAdminError(cause)); });
     return () => controller.abort();
   },[conversation.id,unread,retry]);
-  return <section aria-label="历史消息">{error && <p role="alert">历史消息读取失败：{error}<button type="button" onClick={()=>{setError("");setRetry(n=>n+1);}}>重试</button></p>}{!conversation.detailReady && <p role="status">正在读取历史消息…</p>}</section>;
+  return <section aria-label="历史消息">{error && <p role="alert">历史消息加载失败：{error}<button type="button" onClick={()=>{setError("");setRetry(n=>n+1);}}>重试</button></p>}{!conversation.detailReady && <p role="status">正在加载历史消息…</p>}</section>;
 }
 
 type ListTab = "pending" | "unassigned" | "open" | "all" | "archived";
@@ -492,7 +492,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
                 // Invalid metadata or blocked migration must never retain revoked private bodies.
                 sessionStorage.removeItem("nexion-admin-m3-private-pending-v1");
               }
-              setRecoveryError(durable ? "旧消息正文已清除；原策略命令已保留。原消息编号仅在本页可查，请勿刷新或关闭页面。" : "旧消息正文已清除，但恢复记录尚未持久确认；原消息与策略命令仅保留在本页，恢复存储前请勿刷新或关闭页面。");
+              setRecoveryError(durable ? "原消息内容已清除。结果确认前请不要刷新或关闭页面。" : "原消息内容已清除，但浏览器没能保存恢复记录；请不要刷新或关闭页面。");
               continue;
             }
             if (JSON.parse(sessionStorage.getItem("nexion-admin-m3-private-pending-v1") || "{}")[record.commandKey]?.payload !== JSON.stringify(locator)) throw new Error("Private recovery row not stored");
@@ -502,7 +502,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
       } catch {
         try {
           sessionStorage.removeItem("nexion-admin-m3-private-pending-v1");
-          setRecoveryError("旧消息正文已清除，但恢复记录仅保留在本页；恢复浏览器存储前请勿刷新或关闭页面。");
+          setRecoveryError("原消息内容已清除，但浏览器没能保存恢复记录；请不要刷新或关闭页面。");
         } catch {
           setRecoveryError("本地私聊缓存清理失败，旧消息正文可能仍留在本机；已关闭对应会话操作，请恢复浏览器存储后重试清理。");
         }
@@ -546,7 +546,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     setAttachmentPolicy(null); setAttachmentPolicyError("");
     supportClient.attachmentPolicy(controller.signal)
       .then((policy) => { if (!controller.signal.aborted) setAttachmentPolicy(policy); })
-      .catch(() => { if (!controller.signal.aborted) setAttachmentPolicyError("图片规则暂时无法读取，请重试。"); });
+      .catch(() => { if (!controller.signal.aborted) setAttachmentPolicyError("图片规则加载失败，请重试。"); });
     return () => controller.abort();
   }, [selected?.id, conversationsAvailable, authEpoch, attachmentPolicyRetry]);
   useEffect(() => {
@@ -593,7 +593,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   }, [targetKey, adminId, authEpoch, qualificationUnknown]);
   useEffect(() => {
     if(!adminId||!targetKey||metaTarget!==targetKey||qualificationUnknown)return;
-    try { sessionStorage.setItem(`nexion-m3-reply-targets:${adminId}:${targetKey}`,JSON.stringify({ids:[...selectedClosedIds],include:includeCurrentReply,intent})); } catch { setSendError("回复范围暂无法持久保存，请在本页核对后操作。"); }
+    try { sessionStorage.setItem(`nexion-m3-reply-targets:${adminId}:${targetKey}`,JSON.stringify({ids:[...selectedClosedIds],include:includeCurrentReply,intent})); } catch { setSendError("回复范围无法保存在浏览器里，请在本页核对后操作。"); }
   }, [targetKey,metaTarget,adminId,selectedClosedIds,includeCurrentReply,intent,qualificationUnknown]);
   useEffect(()=>{setListLimit(LIST_CHUNK);setArchiveIds(new Set());},[query,listTab,authEpoch]);
   useEffect(() => {
@@ -723,7 +723,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
       if (!record.body) return;
       const stored = rememberPending(firstPendingKey(adminId, requestedCustomerId), record.key, record);
       setFirstPending(record);
-      if (!stored) { setBusy(false); setSendError("原消息命令暂不能持久保存，尚未发送；请恢复浏览器存储后用原命令重试。"); return; }
+      if (!stored) { setBusy(false); setSendError("浏览器无法保存这次发送的记录，消息还没发出；请检查浏览器设置后重试。"); return; }
       setBusy(true); setSendError("");
       let submitted = false;
       try {
@@ -812,7 +812,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     })();
     const stored = rememberPending(pendingKey(adminId), record.key, record);
     setPending(record);
-    if (!stored) { setBusy(false); setSendError("原消息命令暂不能持久保存，尚未发送；请恢复浏览器存储后用原命令重试。"); return; }
+    if (!stored) { setBusy(false); setSendError("浏览器无法保存这次发送的记录，消息还没发出；请检查浏览器设置后重试。"); return; }
     setBusy(true); setSendError("");
     const input = { kind: record.kind, content: record.kind !== "IMAGE" ? record.body : undefined, attachmentId: record.attachmentId, skuId: record.message.skuId, linkTarget: record.message.linkTarget, intent: record.intent, clientMessageId: record.message.clientMessageId!, replyTargets: record.message.replyTargets, expectedAssignmentId: record.expectedAssignmentId, expectedStatus: record.expectedStatus ?? "OPEN", expectedVersion: record.expectedVersion };
     let ok = false, submitted = false;
@@ -874,7 +874,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
       bitmap.close();
       if (selection !== imageSelectionRef.current) return;
       if (attachmentPolicy.maxPixels !== null && pixels > attachmentPolicy.maxPixels) { setAttachmentPolicyError("图片像素超过当前上限，请重新选择。"); return; }
-    } catch { if (selection === imageSelectionRef.current) setAttachmentPolicyError("图片无法读取，请重新选择 JPG 或 PNG 图片。"); return; }
+    } catch { if (selection === imageSelectionRef.current) setAttachmentPolicyError("图片打不开，请重新选择 JPG 或 PNG 图片。"); return; }
     if (selection !== imageSelectionRef.current) return;
     clearAttachment();
     setAttachmentPolicyError("");
@@ -966,7 +966,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
       return;
     }
     const requestStamp=identityRef.current;
-    ctx.openActionConfirm({action:conversation.archived?"撤销归档":"归档会话",detail:`会话 ${conversation.id}；只改变列表归档状态，保留原会话状态、消息和归属。`,reasonMin:8,reasonMax:200,run:reason=>requestStamp===identityRef.current?ctx.setParam(CONVO_KEY,JSON.stringify(all.map(c=>c.id===conversation.id?{...c,archived:!conversation.archived}:c)),{action:"修改会话归档",reason,commandKey:`m3:archive:${conversation.id}:${conversation.version}:${!conversation.archived}`}):Promise.resolve(false)});
+    ctx.openActionConfirm({action:conversation.archived?"撤销归档":"归档会话",detail:`会话 ${conversation.id}；只是从列表里归档，会话、消息和归属都不变。`,reasonMin:8,reasonMax:200,run:reason=>requestStamp===identityRef.current?ctx.setParam(CONVO_KEY,JSON.stringify(all.map(c=>c.id===conversation.id?{...c,archived:!conversation.archived}:c)),{action:"修改会话归档",reason,commandKey:`m3:archive:${conversation.id}:${conversation.version}:${!conversation.archived}`}):Promise.resolve(false)});
   };
   const archiveBatch = async () => {
     if(!archiveIds.size||actionChecking||pending||firstPending)return;
@@ -990,17 +990,17 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     // Check persisted rows before the shared store can prune malformed records or fall back to memory.
     if (typeof window !== "undefined") for (const key of ["nexion-admin-m3-private-pending-v1", "nexion-admin-m3-timeout-pending-v1"]) {
       const table = JSON.parse(window.sessionStorage.getItem(key) ?? "{}");
-      if (!table || typeof table !== "object" || Array.isArray(table)) throw new Error("原策略记录无法读取，暂不能另发变更。");
+      if (!table || typeof table !== "object" || Array.isArray(table)) throw new Error("上次的修改记录读不到，暂时不能再改。");
       for (const [commandKey, row] of Object.entries(table)) {
         const record = row as Partial<StoredMessage> | null;
-        if (record?.fingerprint === timeoutSlot && (record.commandKey !== commandKey || typeof record.payload !== "string" || !Number.isFinite(record.createdAt) || !Number.isFinite(record.expiresAt) || Number(record.expiresAt) <= Date.now())) throw new Error("原策略记录无法读取，暂不能另发变更。");
+        if (record?.fingerprint === timeoutSlot && (record.commandKey !== commandKey || typeof record.payload !== "string" || !Number.isFinite(record.createdAt) || !Number.isFinite(record.expiresAt) || Number(record.expiresAt) <= Date.now())) throw new Error("上次的修改记录读不到，暂时不能再改。");
       }
     }
     const rows = [...pendingTimeoutPolicies.list(), ...pendingMessages.list()].filter((row) => row.fingerprint === timeoutSlot);
     const commands = rows.map((row) => {
       const saved = JSON.parse(row.payload) as TimeoutCommand;
       parseMConversationTimeoutPolicy(saved.policy);
-      if (typeof saved.key !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(saved.key) || saved.key !== row.commandKey || typeof saved.operator !== "string" || !saved.input || !Number.isInteger(saved.input.warnMinutes) || saved.input.warnMinutes < 1 || saved.input.warnMinutes > 30 || !Number.isInteger(saved.input.closeMinutes) || saved.input.closeMinutes <= saved.input.warnMinutes || saved.input.closeMinutes > 120 || typeof saved.input.reason !== "string" || saved.input.reason.trim().length < 6 || saved.input.reason.trim().length > 200) throw new Error("原策略记录无法读取，暂不能另发变更。");
+      if (typeof saved.key !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(saved.key) || saved.key !== row.commandKey || typeof saved.operator !== "string" || !saved.input || !Number.isInteger(saved.input.warnMinutes) || saved.input.warnMinutes < 1 || saved.input.warnMinutes > 30 || !Number.isInteger(saved.input.closeMinutes) || saved.input.closeMinutes <= saved.input.warnMinutes || saved.input.closeMinutes > 120 || typeof saved.input.reason !== "string" || saved.input.reason.trim().length < 6 || saved.input.reason.trim().length > 200) throw new Error("上次的修改记录读不到，暂时不能再改。");
       return saved;
     });
     if (commands.some((saved) => JSON.stringify(saved) !== JSON.stringify(commands[0]))) throw new Error("存在不同的原策略记录，暂不能另发变更。");
@@ -1008,10 +1008,10 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   };
   const forgetTimeoutCommand = (command: TimeoutCommand) => {
     const saved = readTimeoutCommand();
-    if (!saved || JSON.stringify(saved) !== JSON.stringify(command)) throw new Error("原策略记录已变化，请重新读取后查询。");
+    if (!saved || JSON.stringify(saved) !== JSON.stringify(command)) throw new Error("上次的修改记录已变化，请刷新后再查。");
     pendingTimeoutPolicies.forget(timeoutSlot, command.key);
     pendingMessages.forget(timeoutSlot, command.key);
-    if (readTimeoutCommand()) throw new Error("原策略结果已确认，但记录尚未持久清理，请恢复浏览器存储后再次查询。");
+    if (readTimeoutCommand()) throw new Error("上次修改的结果已确认，但浏览器没能清理记录，请检查浏览器设置后再查。");
   };
   const openTimeout = async () => {
     if (!canReadTimeout || timeoutSaving) return;
@@ -1044,17 +1044,17 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
   };
   const revokeTimeoutWrite = async (stamp: string) => {
     setTimeoutReadOnly(true); setTimeoutInput(undefined); setTimeoutPending(null); setTimeoutPolicy(null); setTimeoutLatest(null); setTimeoutConflict(false);
-    setTimeoutError("当前账号已无权修改，已清除变更内容；下方仅显示重新读取的策略。");
+    setTimeoutError("你已经没有修改权限，修改内容已清除；下面显示的是最新设置。");
     try { const policy = await fetchMConversationTimeoutPolicy(); if (stamp === timeoutIdentityRef.current) setTimeoutPolicy(policy); }
     catch (cause) { if (stamp === timeoutIdentityRef.current) setTimeoutError(displayAdminError(cause)); }
   };
   const saveTimeout = async (input: TimeoutInput) => {
     if (!timeoutPolicy || !canTimeout || !canReadTimeout || timeoutSaving || timeoutConflict || timeoutPending) return false;
     try { if (readTimeoutCommand()) { setTimeoutError("原操作结果待确认，请先查询原操作。"); return false; } }
-    catch { setTimeoutError("原策略记录无法读取，暂不能另发变更。"); return false; }
+    catch { setTimeoutError("上次的修改记录读不到，暂时不能再改。"); return false; }
     const command = { key: newKey(), input, policy: timeoutPolicy, operator: session?.operator || session?.username || "unknown-admin" };
     pendingTimeoutPolicies.remember(timeoutSlot, command.key, { payload: JSON.stringify(command) });
-    if (!pendingTimeoutPolicies.isDurablyStored(timeoutSlot, command.key)) { pendingTimeoutPolicies.forget(timeoutSlot, command.key); setTimeoutInput(input); setTimeoutError("原策略命令暂不能持久保存，尚未提交，请恢复浏览器存储后重试。"); return false; }
+    if (!pendingTimeoutPolicies.isDurablyStored(timeoutSlot, command.key)) { pendingTimeoutPolicies.forget(timeoutSlot, command.key); setTimeoutInput(input); setTimeoutError("浏览器无法保存这次修改的记录，还没提交，请检查浏览器设置后重试。"); return false; }
     setTimeoutInput(input); setTimeoutSaving(true); setTimeoutError("");
     const stamp = timeoutIdentityRef.current;
     let submitted = false;
@@ -1071,11 +1071,11 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
       if (submitted) {
         setTimeoutPending(command);
         if (status === 403) await revokeTimeoutWrite(stamp);
-        else setTimeoutError("变更已提交，但策略读回未成功；请查询原操作并重新读取。");
+        else setTimeoutError("修改已提交，但页面刷新失败；请查询结果并刷新。");
       } else if ([400, 401, 403, 404, 409, 422].includes(status) && !isIndeterminateSupportError(cause)) {
         pendingTimeoutPolicies.forget(timeoutSlot);
         if (status === 403) await revokeTimeoutWrite(stamp);
-        else if (status === 409) { setTimeoutConflict(true); setTimeoutError("配置已被其他管理员修改，请读取最新策略并重新确认；草稿已保留。"); await refreshTimeoutLatest(); }
+        else if (status === 409) { setTimeoutConflict(true); setTimeoutError("设置刚被别人改过，你填写的内容还在；请看最新设置后重新确认。"); await refreshTimeoutLatest(); }
         else setTimeoutError(displayAdminError(cause));
       } else { setTimeoutPending(command); setTimeoutError("原操作结果待确认，请查询原操作；不会重复提交。"); }
       return false;
@@ -1087,7 +1087,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
     setTimeoutSaving(true);
     try {
       const saved = readTimeoutCommand();
-      if (!saved || JSON.stringify(saved) !== JSON.stringify(command)) throw new Error("原策略记录已变化，请重新读取后查询。");
+      if (!saved || JSON.stringify(saved) !== JSON.stringify(command)) throw new Error("上次的修改记录已变化，请刷新后再查。");
       const result = await supportClient.command(command.key);
       if (stamp !== timeoutIdentityRef.current) return;
       if (result.status === "SUCCEEDED") {
@@ -1095,7 +1095,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
         if (stamp !== timeoutIdentityRef.current) return;
         forgetTimeoutCommand(command); setTimeoutPending(null); setTimeoutPolicy(policy); setTimeoutInput(undefined); setTimeoutError(""); setTimeoutOpen(false);
       } else if (result.status === "FAILED") {
-        forgetTimeoutCommand(command); setTimeoutPending(null); setTimeoutPolicy(command.policy); setTimeoutConflict(true); setTimeoutError("原操作已失败，草稿已保留；请读取最新策略再确认。"); await refreshTimeoutLatest();
+        forgetTimeoutCommand(command); setTimeoutPending(null); setTimeoutPolicy(command.policy); setTimeoutConflict(true); setTimeoutError("上次修改没有成功，你填写的内容还在；请看最新设置后再确认。"); await refreshTimeoutLatest();
       } else setTimeoutError("原操作仍待确认，请稍后查询；原操作记录与输入已保留。");
     } catch (cause) {
       if (stamp !== timeoutIdentityRef.current) return;
@@ -1116,7 +1116,7 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
         </div>
         <div className="m3-list-secondary-actions" role="group" aria-label="会话列表管理">
           <button type="button" className="l-btn sm" aria-pressed={alertPrefs.sound||alertPrefs.desktop} title="新消息、新分配客户的提示音和浏览器通知（仅本浏览器）" onClick={()=>{const on=!(alertPrefs.sound||alertPrefs.desktop);setSupportAlertPrefs({sound:on,desktop:on});}}><Icon name="bell" size={13}/>{alertPrefs.sound||alertPrefs.desktop?"提醒已开":"提醒已关"}</button>
-          <button type="button" className="l-btn sm" disabled={!canReadTimeout} title={canReadTimeout?"客户等待多久标记超时、严重超时":"需要会话读取权限"} onClick={()=>void openTimeout()}><Icon name="clock" size={13}/>超时策略</button>
+          <button type="button" className="l-btn sm" disabled={!canReadTimeout} title={canReadTimeout?"客户等待多久标记超时、严重超时":"需要会话查看权限"} onClick={()=>void openTimeout()}><Icon name="clock" size={13}/>超时策略</button>
           <button type="button" className="l-btn sm" disabled={!canWriteM3||qualificationUnknown} onClick={()=>setBulkOpen(true)}>圈选群发</button>
           {!archiveMode?<button type="button" className="l-btn sm" disabled={!canWriteM3} onClick={()=>setArchiveMode(true)}>批量归档</button>:<><button type="button" className="l-btn sm" disabled={!archiveIds.size||actionChecking} onClick={()=>void archiveBatch().then(()=>setArchiveMode(false))}>归档已选 {archiveIds.size}</button><button type="button" className="l-btn sm" onClick={()=>{setArchiveMode(false);setArchiveIds(new Set());}}>取消</button></>}
         </div>
@@ -1137,22 +1137,22 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
         {!requestedCustomerIdValid && <div className="itint danger" role="alert">客户链接无效，无法打开会话。请从<a href="/service/overview">我的客户</a>重新进入。</div>}
         {readError && <div className="itint warn" role="alert">已读状态更新失败：{readError} <button type="button" className="l-btn sm" onClick={() => { markedRef.current = ""; setReadRetry((value) => value + 1); }}>重试</button></div>}
         {customerHistory.map(row => <CustomerHistoryMessages key={`${authEpoch}:${row.id}`} conversation={row} ctx={ctx} customerName={title} loadEnabled={Boolean(selected?.detailReady && customerHistory.find(item => !item.detailReady)?.id === row.id)}/>)}
-        {selected && !paneMessages ? <div className="itint" role={conversationError ? "alert" : "status"}>{conversationError ? `会话详情读取失败：${conversationError}` : "正在读取会话消息…"} {conversationError && <button type="button" className="l-btn sm" onClick={() => { setConversationError(""); setConversationRetry((value) => value + 1); }}>重试读取详情</button>}</div> : selected && paneMessages?.length ? paneMessages.map((message,index)=><SupportMessage key={message.id??`${message.ts}-${index}`} message={message} previous={paneMessages[index-1]} newlyArrived={message.id!==undefined&&newMessageIds.has(message.id)} customerId={String(selected.customerId)} customerName={title} onRevoked={()=>ctx.invalidateScope(selected.id,String(selected.customerId))}/>) : <div className="itint">{requestedCustomerId?"尚无进行中会话。核对归属后即可发送首次联系。":selected?"这段会话尚无消息。":"选择会话后查看消息。"}</div>}
+        {selected && !paneMessages ? <div className="itint" role={conversationError ? "alert" : "status"}>{conversationError ? `会话详情加载失败：${conversationError}` : "正在加载会话消息…"} {conversationError && <button type="button" className="l-btn sm" onClick={() => { setConversationError(""); setConversationRetry((value) => value + 1); }}>重新加载详情</button>}</div> : selected && paneMessages?.length ? paneMessages.map((message,index)=><SupportMessage key={message.id??`${message.ts}-${index}`} message={message} previous={paneMessages[index-1]} newlyArrived={message.id!==undefined&&newMessageIds.has(message.id)} customerId={String(selected.customerId)} customerName={title} onRevoked={()=>ctx.invalidateScope(selected.id,String(selected.customerId))}/>) : <div className="itint">{requestedCustomerId?"尚无进行中会话。核对归属后即可发送首次联系。":selected?"这段会话尚无消息。":"选择会话后查看消息。"}</div>}
       </div>
       <div className="ChatComposer">
         {detailLoading && <div className="itint">正在核对当前专属客服归属…</div>}
-        {detailError && <div className="itint danger" role="alert">客户资料读取失败：{detailError} <button type="button" className="l-btn sm" onClick={() => setDetailRetry((value) => value + 1)}>重试</button> <a href="/service/overview">返回我的客户</a></div>}
+        {detailError && <div className="itint danger" role="alert">客户资料加载失败：{detailError} <button type="button" className="l-btn sm" onClick={() => setDetailRetry((value) => value + 1)}>重试</button> <a href="/service/overview">返回我的客户</a></div>}
         {requestedCustomerId && firstDetail && firstDetail.agentAdminId !== adminId && <div className="itint warn">该客户由当前专属客服服务，本账号仅可审阅。</div>}
         {requestedCustomerId && firstDetail && firstDetail.agentAdminId === adminId && !firstDetail.assignmentId && <div className="itint warn">当前归属资料未就绪，暂不能发送。请刷新客户资料。</div>}
-        {selected && !writable && composerMode === "write" && <div className="itint warn">{recoveryBlocksTarget ? <>原消息结果待确认，暂不能重复发送。<button className="l-btn sm" type="button" onClick={()=>setScreen("list")}>返回列表查询原消息</button></> : !canWriteM3 ? "当前账号只可查看会话，发送需会话操作权限。" : selected.status !== "open" ? historyReadOnlyHint : selectedUnbound ? "该客户还没有专属客服，等待主管分配后回复。" : !currentProfileDetail ? <>正在核对客户归属。{profileError && <button type="button" className="l-btn sm" onClick={() => setProfileRetry((value) => value + 1)}>读取失败，重试</button>}</> : !currentProfileDetail.assignmentId || currentProfileDetail.agentAdminId !== selected.ownerAdminId ? <>客户归属已变化，请刷新会话后重试。<button type="button" className="l-btn sm" onClick={() => void ctx.refreshConversations()}>刷新会话</button></> : "仅当前专属客服可发送消息；主管审阅不能代发。"}</div>}
+        {selected && !writable && composerMode === "write" && <div className="itint warn">{recoveryBlocksTarget ? <>原消息结果待确认，暂不能重复发送。<button className="l-btn sm" type="button" onClick={()=>setScreen("list")}>返回列表查询原消息</button></> : !canWriteM3 ? "你只能查看会话，发消息需要会话操作权限。" : selected.status !== "open" ? historyReadOnlyHint : selectedUnbound ? "该客户还没有专属客服，等待主管分配后回复。" : !currentProfileDetail ? <>正在核对客户归属。{profileError && <button type="button" className="l-btn sm" onClick={() => setProfileRetry((value) => value + 1)}>加载失败，重试</button>}</> : !currentProfileDetail.assignmentId || currentProfileDetail.agentAdminId !== selected.ownerAdminId ? <>客户归属已变化，请刷新会话后重试。<button type="button" className="l-btn sm" onClick={() => void ctx.refreshConversations()}>刷新会话</button></> : "仅当前专属客服可发送消息；主管审阅不能代发。"}</div>}
         {!selected && recoveryBlocksTarget && <div className="itint warn">原消息结果待确认，暂不能重复发送。<button className="l-btn sm" type="button" onClick={()=>setScreen("list")}>返回列表查询原消息</button></div>}
-        {requestedCustomerId && !selected && !canWriteM3 && <div className="itint warn">当前账号只可查看会话，发送需会话操作权限。</div>}{replyCustomerId && closedCandidateRows.length > 0 && <div className="itint" role={closedCandidateError?"alert":"status"}>{closedCandidateError?`历史待处理消息读取失败：${closedCandidateError}`:closedCandidateMissing.length?"正在核对历史待处理消息…":"服务回复会同步处理这位客户此前的待回复消息。"}{closedCandidateError&&<button type="button" onClick={()=>{setClosedCandidateError("");setClosedCandidateRetry(n=>n+1);}}>重试</button>}</div>}
+        {requestedCustomerId && !selected && !canWriteM3 && <div className="itint warn">你只能查看会话，发消息需要会话操作权限。</div>}{replyCustomerId && closedCandidateRows.length > 0 && <div className="itint" role={closedCandidateError?"alert":"status"}>{closedCandidateError?`历史待处理消息加载失败：${closedCandidateError}`:closedCandidateMissing.length?"正在核对历史待处理消息…":"服务回复会同步处理这位客户此前的待回复消息。"}{closedCandidateError&&<button type="button" onClick={()=>{setClosedCandidateError("");setClosedCandidateRetry(n=>n+1);}}>重试</button>}</div>}
 
         {selected && currentProfileDetail?.waitingReply === true && displayedIntent === "MAINTENANCE" && selected.messages.some((message) => message.sender === "user" && message.sourceSenderType !== "SYSTEM" && message.sourceSenderType !== "INTERNAL" && Number.isSafeInteger(message.id)) && <label className="itint"><input type="checkbox" checked={includeCurrentReply || lockedTargets.some((target) => target.conversationNo === selected.id)} disabled={!writable || busy || Boolean(pending)} onChange={(event) => setIncludeCurrentReply(event.target.checked)} /> 同时标记本会话最近一条客户消息已处理（如仍待处理）</label>}
         {composerMode === "write" && <>
         <div className="m3-composer-tools"><SupportContentTools key={`${identityRef.current}:${targetKey}:${selected?.ownerAdminId ?? adminId}:${selected?.assignmentId ?? ""}:${selected?.status ?? ""}:${canWriteM3}`} popover ctx={ctx} disabled={!writable||busy||Boolean(pending||firstPending)} onInsert={insertText} onSelect={choice=>{if(!selected){setSendError("请先发送首次联系，再推荐商品或发送页面链接。");return;}setContentChoice(choice);if(!draft.trim())insertText(choice.kind==="SKU"?"推荐商品："+choice.name:"查看："+choice.name);}}/>
           <input ref={fileInputRef} type="file" accept="image/jpeg,image/png" aria-label="选择图片" disabled={!writable || busy || Boolean(pending || firstPending) || !selected || !attachmentPolicy?.available} onChange={(event) => { chooseImage(event.target.files?.[0]); event.target.value = ""; }} hidden />
-          <button type="button" className="l-btn sm" aria-label="选择图片" title={attachmentPolicyError || (!attachmentPolicy ? "正在读取图片规则…" : !attachmentPolicy.available ? "图片功能暂不可用（存储服务未就绪）" : "发送图片")} disabled={!writable || busy || Boolean(pending || firstPending) || !selected || !attachmentPolicy?.available} onClick={() => fileInputRef.current?.click()}><Icon name="image" size={14}/>图片</button>
+          <button type="button" className="l-btn sm" aria-label="选择图片" title={attachmentPolicyError || (!attachmentPolicy ? "正在加载图片规则…" : !attachmentPolicy.available ? "图片功能暂不可用（存储服务未就绪）" : "发送图片")} disabled={!writable || busy || Boolean(pending || firstPending) || !selected || !attachmentPolicy?.available} onClick={() => fileInputRef.current?.click()}><Icon name="image" size={14}/>图片</button>
         </div>
         {selected && attachmentPolicyError && <div className="itint warn" role="status">{attachmentPolicyError} <button type="button" className="l-btn sm" onClick={() => setAttachmentPolicyRetry((value) => value + 1)}>重试</button></div>}
         {maintenanceOffered&&!pending&&!firstPending&&<label className="m3-maintenance-intent"><input type="checkbox" checked={maintenanceChosen} disabled={!writable&&!requestedCustomerId||busy} onChange={event=>setMaintenanceChosen(event.target.checked)}/>本条记为联系维护{intentSource?.due===true?"（该客户维护已到期）":""}</label>}
@@ -1163,16 +1163,16 @@ export function M3DedicatedChat({ ctx }: { ctx: MCtx }) {
         <div className="m3-composer-note">回车发送 · Shift+回车 换行{presence?.typing?" · 对方正在输入…":presence?.online?" · 客户在线":""}</div>
         </>}
         {composerMode === "unbound" && <div className="m3-composer-state">{canAssign ? <>该客户还没有专属客服，分配后由专属客服回复。<button type="button" className="l-btn sm primary" onClick={() => setAssignOpen(true)}>分配专属客服</button></> : "该客户还没有专属客服，等待主管分配后回复。"}</div>}
-        {composerMode === "review" && <div className="m3-composer-state">主管审阅视图：只读。该客户由专属客服 {selected?.owner} 回复。</div>}
+        {composerMode === "review" && <div className="m3-composer-state">你以主管身份查看，不能回复。该客户由专属客服 {selected?.owner} 负责。</div>}
         {pending && selected?.id !== pending.conversationId && <div className="itint warn">另一条消息的结果待确认。请先返回原会话处理。<button type="button" className="l-btn sm" onClick={() => { const original = visible.find((convo) => convo.id === pending.conversationId); if (original) select(original); }}>返回原会话</button></div>}
         {(sendError || pending || firstPending) && <div className="itint danger" role="alert">{sendError || "上条消息的结果待确认，请查询发送结果。"} {sendError.startsWith("消息已发送") && <button type="button" className="l-btn sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</button>}{(pending || firstPending) && <button type="button" className="l-btn sm" disabled={busy || Boolean(pending && selected?.id !== pending.conversationId)} onClick={() => { if (pending) void send(pending.kind, pending); else void send("TEXT"); }}>查询结果并重试</button>}</div>}
       </div>
     </div>
-    <aside className={`cv-profile ${screen === "profile" ? "open" : ""}`} aria-label="客户资料"><div className="cvp-scroll"><div className="m3-profile-mobile-head"><h2>客户资料</h2><button type="button" className="l-btn sm" onClick={()=>setScreen("chat")}>返回会话</button></div>{selectedUnbound ? <div className="itint">待分配专属客服，尚无绑定客户的维护状态。</div> : profileCustomerId ? <M3CustomerProfile key={`${authEpoch}:${profileCustomerId}`} ctx={ctx} customerId={profileCustomerId} conversation={selected??undefined} scopeVersion={selected?.version??firstProfileCustomer?.version} messageError={conversationError} onRetryMessages={()=>{setConversationError("");setConversationRetry(n=>n+1);}} onHistory={no=>{const convo=visible.find(c=>c.id===no);if(convo)select(convo);}}/> : <div className="itint">{requestedCustomerId?"客户归属尚未核对，资料暂不可读取。":"选择客户后查看资料。"}</div>}</div></aside>
+    <aside className={`cv-profile ${screen === "profile" ? "open" : ""}`} aria-label="客户资料"><div className="cvp-scroll"><div className="m3-profile-mobile-head"><h2>客户资料</h2><button type="button" className="l-btn sm" onClick={()=>setScreen("chat")}>返回会话</button></div>{selectedUnbound ? <div className="itint">待分配专属客服，尚无绑定客户的维护状态。</div> : profileCustomerId ? <M3CustomerProfile key={`${authEpoch}:${profileCustomerId}`} ctx={ctx} customerId={profileCustomerId} conversation={selected??undefined} scopeVersion={selected?.version??firstProfileCustomer?.version} messageError={conversationError} onRetryMessages={()=>{setConversationError("");setConversationRetry(n=>n+1);}} onHistory={no=>{const convo=visible.find(c=>c.id===no);if(convo)select(convo);}}/> : <div className="itint">{requestedCustomerId?"客户归属尚未核对，资料暂时加载不出来。":"选择客户后查看资料。"}</div>}</div></aside>
     {assignOpen&&selected?.customerId&&<AssignAdvisorDialog customerId={String(selected.customerId)} customerName={title} onClose={()=>setAssignOpen(false)} onAssigned={()=>{setAssignOpen(false);setActionError("");void ctx.refreshConversations().catch(()=>{});}}/>}
     {bulkOpen&&<SupportBulkComposer ctx={ctx} onClose={()=>setBulkOpen(false)}/>}
     {contactOpen&&<SupportContactPicker onClose={()=>setContactOpen(false)} onSelect={customerId=>{setRequestedCustomerId(customerId);setScreen("chat");setContactOpen(false);const url=new URL(window.location.href);url.searchParams.delete("conversationNo");url.searchParams.set("customerId",customerId);window.history.replaceState(null,"",url);}}/>}
     {timeoutOpen&&timeoutPolicy&&<IdlePolicyModal policy={timeoutPolicy} initialInput={timeoutInput} canSave={canTimeout} saving={timeoutSaving} error={timeoutError} pending={Boolean(timeoutPending)} conflict={timeoutConflict} latest={timeoutLatest} onDraftChange={setTimeoutInput} onCheckPending={checkTimeoutPending} onRefreshLatest={refreshTimeoutLatest} onReviewLatest={()=>{if(timeoutLatest){setTimeoutPolicy(timeoutLatest);setTimeoutLatest(null);setTimeoutConflict(false);setTimeoutError("");}}} onClose={()=>{if(!timeoutSaving)setTimeoutOpen(false);}} onSave={saveTimeout}/>}
-    {timeoutOpen&&!timeoutPolicy&&<Modal title="会话超时策略" icon="clock" onClose={()=>setTimeoutOpen(false)}><p role={timeoutError?"alert":"status"}>{timeoutError||"正在读取策略…"}</p>{timeoutError&&<button className="l-btn sm" onClick={()=>void openTimeout()}>重新读取</button>}</Modal>}
+    {timeoutOpen&&!timeoutPolicy&&<Modal title="会话超时策略" icon="clock" onClose={()=>setTimeoutOpen(false)}><p role={timeoutError?"alert":"status"}>{timeoutError||"正在加载…"}</p>{timeoutError&&<button className="l-btn sm" onClick={()=>void openTimeout()}>重新加载</button>}</Modal>}
   </section>;
 }

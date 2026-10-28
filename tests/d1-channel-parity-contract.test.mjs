@@ -51,7 +51,7 @@ test("D1 amount responses fail closed and uncertain command keys survive refresh
   assert.match(client, /pendingMutations\.forget\(/);
   assert.match(client, /listD1PendingTopupCommands/);
   assert.match(client, /retryD1PendingTopupCommand/);
-  assert.match(component, /核对后使用原请求号重试/);
+  assert.match(component, />\s*重试\s*</);
   assert.doesNotMatch(client, /mutationFingerprintHash/);
   assert.doesNotMatch(client, /window\.localStorage/);
   assert.match(component, /min: kind === "fee" \? 0 : 0\.01/);
@@ -75,9 +75,9 @@ test("VietQR receipt evidence uses its finance-only binary-safe upload boundary"
 });
 
 test("bank write acceptance is not mislabeled when only the overview readback fails", () => {
-  assert.match(component, /操作已被服务端受理，但最新列表回读失败/);
+  assert.match(component, /操作已提交，但列表没刷新出来/);
   assert.match(component, /不要重复提交/);
   assert.doesNotMatch(component, /throw readbackError/);
   assert.match(client, /"UNKNOWN"/);
-  assert.match(component, /历史账户信息缺失/);
+  assert.match(component, /缺少历史账户信息/);
 });

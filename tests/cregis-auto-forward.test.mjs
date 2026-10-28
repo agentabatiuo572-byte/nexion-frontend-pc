@@ -42,7 +42,7 @@ function harness({write=true,row,readFailure=false}={}){
   return {render,nodes,text,button,confirmations,calls,changeOwner:()=>{auth={...auth,authEpoch:2,session:{...auth.session,adminId:8}};lifecycle++;}};
 }
 test("closed runtime disables activation and PAUSE only writes the control record",async()=>{
-  const h=harness();assert.equal(h.button("提交自动流程开关提案").props.disabled,true);assert.match(h.text(h.render()),/执行总闸：关闭/);
+  const h=harness();assert.equal(h.button("提交自动流程开关提案").props.disabled,true);assert.match(h.text(h.render()),/运行总开关：关闭/);
   assert.match(h.text(h.render()),/暂无自动任务/);h.button("暂停自动归集及付款").props.onClick();await h.confirmations[0].run("测试暂停并核对所有发送开关保持关闭");
   assert.equal(h.calls.length,1);assert.equal(h.calls[0].path,"/auto-forward/policy");assert.equal(h.calls[0].body.action,"PAUSE");
 });
@@ -52,8 +52,8 @@ test("account changes invalidate a deferred financial control confirmation",asyn
 });
 test("accepted command followed by read failure cannot report completion or encourage resubmission",async()=>{
   const h=harness({readFailure:true});h.button("暂停自动归集及付款").props.onClick();
-  await assert.rejects(()=>h.confirmations[0].run("测试保存成功后回读故障的提示行为"),/变更已提交，但回读失败。请勿重复提交/);
-  assert.equal(h.calls.length,1);assert.match(h.text(h.render()),/变更已提交，但回读失败/);
+  await assert.rejects(()=>h.confirmations[0].run("测试保存成功后回读故障的提示行为"),/已提交，但页面没刷新出来。请不要重复提交/);
+  assert.equal(h.calls.length,1);assert.match(h.text(h.render()),/已提交，但页面没刷新出来/);
 });
 test("unknown task cannot retry; readonly roles cannot change policy or recover",()=>{
   const row={id:"9007199254740993",eventId:"1",state:"PAYMENT_UNKNOWN",grossAmount:"999999999999.999999",netAmount:"999999999998.999999",feeAmount:"1.000000",paymentKey:"CA-P-42-1",version:0};

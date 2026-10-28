@@ -79,8 +79,8 @@ test("K3 exposes only the exact address source enum and the server-authoritative
   assert.match(component, /label:\s*"低信誉阈值"/);
   assert.match(component, /min:\s*0/);
   assert.match(component, /max:\s*1/);
-  assert.match(component, /内部不调用外部服务/);
-  assert.match(component, /第三方或组合使用真实链上信誉服务/);
+  assert.match(component, /「内部」只用自己的黑名单/);
+  assert.match(component, /会查外部链上信誉/);
 });
 
 test("K3 dry-run returns an operator-visible batch result", () => {
@@ -104,13 +104,13 @@ test("K3 dry-run returns an operator-visible batch result", () => {
   assert.match(component, /if \(!outcomeUncertain\) commandAttempt\.forget\(DRY_RUN_SCOPE\)/);
   assert.match(component, /setDryRunError\(message\)/);
   assert.match(component, /role="alert"/);
-  assert.match(component, /结果暂不确定，请使用原操作重试/);
+  assert.match(component, /结果暂未确认，请直接重试/);
 });
 
 test("K3 has truthful empty states, localized failures and a verify gate", () => {
   assert.match(component, /暂无提现风控规则/);
-  assert.match(component, /暂无命中日志/);
-  assert.match(component, /暂无路由结果数据/);
+  assert.match(component, /暂无触发记录/);
+  assert.match(component, /暂无处理结果数据/);
   assert.match(errorMessages, /K3_RULE_CONCURRENT_UPDATE/);
   assert.match(errorMessages, /K3_RESPONSE_INVALID/);
   assert.match(errorMessages, /RULE_CONDITION_INVALID/);

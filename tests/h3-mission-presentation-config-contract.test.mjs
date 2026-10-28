@@ -32,7 +32,7 @@ test("H3 owns task category and direct completion route for day-one and weekly m
   assert.match(view, /key: "category"/);
   assert.match(view, /key: "actionRoute"/);
   assert.match(view, /类别/);
-  assert.match(view, /去完成路径/);
+  assert.match(view, /跳转页面/);
   assert.match(client, /\/quest-events\/tasks\/\$\{encodeURIComponent\(taskCode\)\}\/presentation/);
 
   assert.match(appApi, /category: QuestTaskCategory/);

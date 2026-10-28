@@ -108,7 +108,7 @@ export async function fetchOpsDashboardAlerts(): Promise<OpsDashboardAlert[]> {
       id: "J1-KILL-STATE",
       domain: "J",
       level: emergencyCount > 0 ? "high" : "mid",
-      title: `J1 已关停业务闸 ${disabled.length}`,
+      title: `已关停的业务 ${disabled.length} 个`,
       hint: disabled.map((gate) => gate.name).join("、"),
     }, alerts.length));
   }
@@ -118,10 +118,10 @@ export async function fetchOpsDashboardAlerts(): Promise<OpsDashboardAlert[]> {
       id: "J1-AUTO-CONFIRM",
       domain: "J",
       level: overdue > 0 ? "high" : "mid",
-      title: `J1 自动关停待补录 ${pending.length}`,
+      title: `自动关停待补录 ${pending.length} 项`,
       hint: overdue > 0
-        ? `已有 ${overdue} 项逾期,请立即前往 J1 补录`
-        : "请在截止时间前前往 J1 补录处置结论",
+        ? `已有 ${overdue} 项逾期，请马上去「紧急停用开关」补录`
+        : "请在截止时间前去「紧急停用开关」补录处理结论",
     }, alerts.length));
   }
   return alerts;
@@ -146,7 +146,7 @@ export async function fetchJ3TamperConfigAlerts(): Promise<OpsDashboardAlert[]> 
     throw new Error(formatAdminApiError(payload?.message, `J3_ALERTS_${response.status}`));
   }
   if (!Array.isArray(payload.data.alerts)) {
-    throw new Error("服务器返回的 J3 告警数据缺少告警列表，请稍后重试。");
+    throw new Error("篡改告警数据不完整，请稍后重试。");
   }
   return payload.data.alerts.map((value, index) => normalizeAlert(value, index));
 }
@@ -189,7 +189,7 @@ async function refreshJ1DutyAlerts() {
     if (requestSequence !== j1DutyAlertRequestSequence) return;
     publishJ1DutyAlertSnapshot({
       alerts: [],
-      error: "J1 值班告警暂时无法读取，请稍后重试",
+      error: "紧急停用告警加载失败，请稍后重试",
     });
   }
 }
@@ -243,7 +243,7 @@ export function useJ2GeoAlerts(enabled: boolean) {
         const alerts = await fetchJ2GeoAlerts();
         if (alive) setSnapshot({ alerts, error: null });
       } catch {
-        if (alive) setSnapshot({ alerts: [], error: "J2 超管告警暂时无法读取，请稍后重试" });
+        if (alive) setSnapshot({ alerts: [], error: "地区访问告警加载失败，请稍后重试" });
       }
     };
     void refresh();
@@ -271,7 +271,7 @@ export function useJ3TamperConfigAlerts(enabled: boolean) {
         const alerts = await fetchJ3TamperConfigAlerts();
         if (alive) setSnapshot({ alerts, error: null });
       } catch {
-        if (alive) setSnapshot({ alerts: [], error: "J3 超管告警暂时无法读取，请稍后重试" });
+        if (alive) setSnapshot({ alerts: [], error: "篡改告警加载失败，请稍后重试" });
       }
     };
     void refresh();
@@ -299,7 +299,7 @@ export function useC2HighRiskAlerts(enabled: boolean) {
         const alerts = await fetchC2HighRiskAlerts();
         if (alive) setSnapshot({ alerts, error: null });
       } catch {
-        if (alive) setSnapshot({ alerts: [], error: "C2 高风险账户告警暂时无法读取，请稍后重试" });
+        if (alive) setSnapshot({ alerts: [], error: "高风险账户告警加载失败，请稍后重试" });
       }
     };
     void refresh();

@@ -37,15 +37,15 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
   const nodes = [
     { cls: "start", nm: "已下单", ct: `${stateCounts.get("placed") ?? 0} 单` },
     { cls: "flow", nm: "已支付", ct: `${stateCounts.get("paid") ?? 0} 单` },
-    { cls: "flow", nm: "开通中", ct: `${stateCounts.get("provisioning") ?? 0} 单 · 数据中心分配` },
+    { cls: "flow", nm: "开通中", ct: `${stateCounts.get("provisioning") ?? 0} 单 · 分配数据中心中` },
     { cls: "end", nm: "已激活 ✓", ct: `${stateCounts.get("activated") ?? 0} 单` },
   ];
   // 终态分支:nm 中文主标;desc 补因果(去状态码裸用,与 nm 不重复)。
   const branches = [
     { cls: "err", nm: "支付失败", ct: `${stateCounts.get("payment_failed") ?? 0} 单`, desc: "下单后未成功扣款" },
     { cls: "warn", nm: "已过期", ct: `${stateCounts.get("expired") ?? 0} 单`, desc: "订单超时未支付" },
-    { cls: "err", nm: "开通失败", ct: `${stateCounts.get("provisioning_failed") ?? 0} 单`, desc: "数据中心分配超时" },
-    { cls: "warn", nm: "已退款", ct: `${stateCounts.get("refunded") ?? 0} 单`, desc: "人工退款 · D1/D4 资金闭环" },
+    { cls: "err", nm: "开通失败", ct: `${stateCounts.get("provisioning_failed") ?? 0} 单`, desc: "分配数据中心超时" },
+    { cls: "warn", nm: "已退款", ct: `${stateCounts.get("refunded") ?? 0} 单`, desc: "人工退款，钱已退回" },
     { cls: "err", nm: "拒付", ct: `${stateCounts.get("chargeback") ?? 0} 单`, desc: "支付渠道拒付 / 争议" },
     { cls: "neutral", nm: "已取消", ct: `${stateCounts.get("cancelled") ?? 0} 单`, desc: "仅未支付订单可取消" },
   ];
@@ -54,21 +54,20 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
   return (
     <>
       <EStats items={[
-        { k: "后端订单", v: ctx.e4Total, sub: ctx.e4Loading ? "同步中" : ctx.e4Error ? "同步异常" : `第 ${ctx.e4Page} 页 ${orders.length} 条`, tone: "ok" },
+        { k: "订单总数", v: ctx.e4Total, sub: ctx.e4Loading ? "加载中" : ctx.e4Error ? "加载失败" : `第 ${ctx.e4Page} 页 ${orders.length} 条`, tone: "ok" },
         { k: "已激活金额", v: money(activeAmount), sub: `当前页 ${stateCounts.get("activated") ?? 0} 笔已激活` },
-        { k: "流转中订单", v: inFlight, sub: "当前页 已下单 / 已支付 / 开通中", tone: inFlight ? "cyan" : "" },
-        { k: "失败终态", v: (stateCounts.get("payment_failed") ?? 0) + (stateCounts.get("provisioning_failed") ?? 0) + (stateCounts.get("chargeback") ?? 0), sub: "支付失败 / 开通失败 / 拒付", tone: "danger" },
+        { k: "流转中订单", v: inFlight, sub: "当前页的已下单 / 已支付 / 开通中", tone: inFlight ? "cyan" : "" },
+        { k: "失败订单", v: (stateCounts.get("payment_failed") ?? 0) + (stateCounts.get("provisioning_failed") ?? 0) + (stateCounts.get("chargeback") ?? 0), sub: "支付失败 / 开通失败 / 拒付", tone: "danger" },
       ]} />
 
       {/* 订单处理流程图 */}
       <section className="sm-card">
         <div className="sm-h">
-          <span className="ttl">订单进度 · 流转图</span>
-          <span className="sub">当前页实时状态 · 主路径 + 终态分支</span>
-          <span className="r"><CodeTag tone="electric">订单进度</CodeTag></span>
+          <span className="ttl">订单进度</span>
+          <span className="sub">当前页订单的状态分布</span>
         </div>
-        {ctx.e4Error && <div className="tint warn tiny" style={{ marginBottom: 12 }}>E4 同步失败:{ctx.e4Error}</div>}
-        {ctx.e4Loading && <div className="tint tiny" style={{ marginBottom: 12 }}>正在同步订单数据...</div>}
+        {ctx.e4Error && <div className="tint warn tiny" style={{ marginBottom: 12 }}>订单加载失败：{ctx.e4Error}</div>}
+        {ctx.e4Loading && <div className="tint tiny" style={{ marginBottom: 12 }}>正在加载…</div>}
         <div className="sm-diagram">
           <div className="sm-path-main">
             {nodes.map((n, i) => (
@@ -85,7 +84,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
             ))}
           </div>
           <div className="sm-branches">
-            <span className="lbl">异常 / 终止分支 · 6 类终态</span>
+            <span className="lbl">异常或结束的订单 · 6 种</span>
             {branches.map((b) => (
               <div className={`sm-branch ${b.cls}`} key={b.nm}>
                 <div className="nm">{b.nm}</div><div className="ct">{b.ct}</div><div className="desc">{b.desc}</div>
@@ -98,7 +97,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
       {/* 订单队列 */}
       <section className="q-card">
         <div className="q-h">
-          <span className="ttl">订单队列</span>
+          <span className="ttl">订单列表</span>
           <span className="sub">当前筛选结果</span>
         </div>
         <div className="filter-bar">
@@ -107,7 +106,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
             aria-label="搜索订单"
             value={ctx.e4Keyword}
             onChange={(event) => ctx.setE4Keyword(event.target.value)}
-            placeholder="订单号 / 用户编码 / 商品规格"
+            placeholder="订单号 / 用户编码 / 商品"
             style={{ minWidth: 240, flex: "1 1 280px" }}
           />
           <TabGroup
@@ -120,8 +119,8 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
         </div>
         <div className="q-scroll" role="region" aria-label="订单列表" tabIndex={0}>
           <div className="q-row head">
-            <div>订单 ID</div><div>用户</div><div>商品规格</div><div style={{ textAlign: "right" }}>金额</div>
-            <div>数据中心分配</div><div>状态</div><div style={{ textAlign: "right" }}>时长</div><div />
+            <div>订单号</div><div>用户</div><div>商品</div><div style={{ textAlign: "right" }}>金额</div>
+            <div>数据中心</div><div>状态</div><div style={{ textAlign: "right" }}>时长</div><div />
           </div>
           {!ctx.e4Loading && !ctx.e4Error && rows.map((o) => {
             const st = ctx.orderState(o);
@@ -143,14 +142,14 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           })}
         </div>
         {ctx.e4Loading ? (
-          <div className="q-empty">正在从后端加载第 {ctx.e4Page} 页订单...</div>
+          <div className="q-empty">正在加载…</div>
         ) : ctx.e4Error ? (
-          <div className="q-empty">E4 订单接口读取失败:{ctx.e4Error}</div>
+          <div className="q-empty">订单加载失败：{ctx.e4Error}</div>
         ) : rows.length === 0 ? (
-          <div className="q-empty">{curF === "all" ? "后端暂无订单记录" : "当前状态无匹配订单"}</div>
+          <div className="q-empty">{curF === "all" ? "暂无订单" : "这个状态下没有订单"}</div>
         ) : null}
         <DataListPager
-          label="订单队列"
+          label="订单列表"
           page={ctx.e4Page}
           pageSize={ctx.e4PageSize}
           total={ctx.e4Total}
@@ -159,7 +158,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           pageSizeOptions={[10, 20, 50, 100]}
         />
       </section>
-      <p className="f-foot">订单状态以后端订单主数据为准。退款仅允许已支付 / 开通中 / 已激活,并在提交前校验 B1 覆盖率;补建失败终态不包含退款。</p>
+      <p className="f-foot">只有已支付、开通中、已激活的订单能退款，提交时会检查兑付覆盖率。「标记失败结果」不会退款。</p>
     </>
   );
 }

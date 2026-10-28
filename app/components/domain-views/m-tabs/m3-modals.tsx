@@ -162,7 +162,7 @@ export function IdlePolicyModal({
         <label className="col" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <span style={{ fontSize: 13 }}>
             变更理由 <span style={{ color: "var(--danger)" }}>*</span>
-            <span className="sub">(6–200 字 · 记入审计)</span>
+            <span className="sub">（6–200 字，会记入操作记录）</span>
           </span>
           <textarea
             className="fld"
@@ -181,7 +181,7 @@ export function IdlePolicyModal({
           </div>
         )}
         {pending && <div role="status">原操作结果待确认，输入已锁定。原提交基于版本 {policy.version}。{latest && <p>当前策略为版本 {latest.version}：待回复提醒 {latest.warnMinutes} 分钟，严重超时 {latest.closeMinutes} 分钟；尚不能据此认定原操作成功。</p>}{canSave && onCheckPending && <button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => void onCheckPending()}>查询原操作结果</button>}</div>}
-        {conflict && <div role="alert">配置已变化，草稿已保留。{latest ? <><p>待回复提醒：原 {policy.warnMinutes} 分钟 → 最新 {latest.warnMinutes} 分钟；严重超时：原 {policy.closeMinutes} 分钟 → 最新 {latest.closeMinutes} 分钟。</p><button type="button" className="btn btn-sec btn-sm" disabled={saving || !canSave} onClick={onReviewLatest}>以最新策略重新确认</button></> : <button type="button" className="btn btn-sec btn-sm" disabled={saving || !canSave} onClick={() => void onRefreshLatest?.()}>读取最新策略</button>}</div>}
+        {conflict && <div role="alert">设置刚被别人改过，你填写的内容还在。{latest ? <><p>待回复提醒：原 {policy.warnMinutes} 分钟 → 最新 {latest.warnMinutes} 分钟；严重超时：原 {policy.closeMinutes} 分钟 → 最新 {latest.closeMinutes} 分钟。</p><button type="button" className="btn btn-sec btn-sm" disabled={saving || !canSave} onClick={onReviewLatest}>以最新策略重新确认</button></> : <button type="button" className="btn btn-sec btn-sm" disabled={saving || !canSave} onClick={() => void onRefreshLatest?.()}>读取最新策略</button>}</div>}
       </div>
     </Modal>
   );
@@ -226,7 +226,7 @@ export function CustomerProfileModal({
       footer={
         <div className="row" style={{ gap: 10, alignItems: "center", width: "100%" }}>
           <span className="sub" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Icon name="shield" size={13} />只读快照 · 真实账户处置回 C 账户 / D 资金域
+            <Icon name="shield" size={13} />只能查看 · 处理账户或资金请去对应页面
           </span>
           <span style={{ flex: 1 }} />
           <button type="button" className="btn btn-sec btn-sm" onClick={onClose}>关闭</button>
@@ -328,7 +328,7 @@ export function QuickActionModal({
       <Modal title="关联工单" icon="doc" onClose={onClose} footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose}>关闭</button></>}>
         <div className="sub" style={{ marginBottom: 8 }}>{profile.nickname} · 当前 {profile.tickets} 张未关闭</div>
         <div className="itint">
-          <div style={{ fontSize: 13 }}>请在 M2 客服工单使用用户昵称 / 用户编码 / 工单号搜索查看真实关联工单。</div>
+          <div style={{ fontSize: 13 }}>请在客服工单里用昵称、用户编码或工单号搜索相关工单。</div>
           <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>本弹窗不再展示静态工单预览。</div>
         </div>
       </Modal>
@@ -347,20 +347,20 @@ export function QuickActionModal({
           <button type="button" className={`chip${via === "sms" ? " sel" : ""}`} onClick={() => setVia("sms")}>手机 {profile.phone}</button>
           <button type="button" className={`chip${via === "email" ? " sel" : ""}`} onClick={() => setVia("email")}>注册邮箱</button>
         </div>
-        <div className="itint" style={{ marginTop: 10 }}>发送后由 C 账户域处置 · 客服侧不保存记录、不计审计。</div>
+        <div className="itint" style={{ marginTop: 10 }}>发送后由账户相关同事处理，客服这边不保存记录。</div>
       </Modal>
     );
   }
   if (kind === "account") {
     const acts: Array<[string, string, string]> = [
-      ["临时冻结账户", "限制登录与交易 24h", "C2 账户操作"],
+      ["临时冻结账户", "24 小时内不能登录和交易", "账户操作"],
       ["提现限额下调", "单日上限调至默认 50%", "D 域提现记录"],
-      ["补充信息指令", "推送工单资料补充提醒", "M2 客服工单账"],
+      ["请用户补充资料", "提醒用户补充工单资料", "客服工单"],
       ["解绑并重装设备", "重新生成设备令牌", "E 域设备明细"],
     ];
     return (
       <Modal title="账户操作" icon="wallet" onClose={onClose} footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose}>关闭</button></>}>
-        <div className="sub" style={{ marginBottom: 10 }}>{profile.nickname} · {profile.uid} · 选择一项将直达对应域处置页(真实写操作在 C/D/E 域完成)</div>
+        <div className="sub" style={{ marginBottom: 10 }}>{profile.nickname} · {profile.uid} · 选一项会跳到对应的处理页面（实际操作在那里完成）</div>
         <div className="grid g-2" style={{ gap: 10 }}>
           {acts.map(([k, d, domain]) => (
             <button key={k} type="button" className="itint" style={{ textAlign: "left", cursor: "pointer", border: "1px solid var(--border)" }} onClick={() => onAccount(k)}>
@@ -372,7 +372,7 @@ export function QuickActionModal({
             </button>
           ))}
         </div>
-        <div className="itint" style={{ marginTop: 10 }}>点击即跳转对应域处置页 · 客服侧不代为提交,真实处置在 C 账户 / D 资金 / E 设备域复核执行。</div>
+        <div className="itint" style={{ marginTop: 10 }}>点击会跳到对应页面 · 客服这里不代为提交，实际由账户、资金、设备相关页面审核处理。</div>
       </Modal>
     );
   }
@@ -384,7 +384,7 @@ export function QuickActionModal({
       onClose={onClose}
       footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose}>关闭</button><button type="button" className="btn btn-pri btn-sm" disabled={!noteText.trim()} onClick={async () => { if (await onAddNote(noteText)) setNoteText(""); }}>保存备注</button></>}
     >
-      <div className="sub" style={{ marginBottom: 6 }}>{profile.nickname} · {profile.uid} · 备注仅后台可见,随会话持久</div>
+      <div className="sub" style={{ marginBottom: 6 }}>{profile.nickname} · {profile.uid} · 备注只有后台能看到，会一直保留在这个会话里</div>
       <textarea className="fld" rows={3} value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="例:机构账户,提现需重点复核;上次沟通约定 7 日后回访。" style={{ resize: "vertical" }} />
       {notes.length > 0 && (
         <>
@@ -480,7 +480,7 @@ export function InitiateModal({
       footer={
         <div className="row" style={{ gap: 10, alignItems: "center", width: "100%" }}>
           <span className="sub" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Icon name="shield" size={13} />发起写入审计 · 身份 / 目标 / 话术留档
+            <Icon name="shield" size={13} />发起会话会记入操作记录（身份、对象、话术）
           </span>
           <span style={{ flex: 1 }} />
           <button type="button" className="btn btn-sec btn-sm" onClick={onClose}>取消</button>
@@ -498,7 +498,7 @@ export function InitiateModal({
               }
             }}
           >
-            {submitting ? "正在发起..." : `发起会话${!ok ? " · 待补全" : ""}`}
+            {submitting ? "正在发起…" : `发起会话${!ok ? " · 待补全" : ""}`}
           </button>
         </div>
       }
@@ -511,7 +511,7 @@ export function InitiateModal({
               {identities.map((i) => <option key={i.id} value={i.id}>{i.label} · {i.name}（{i.id}）</option>)}
             </select>
             <span className="hint" style={{ color: isAdvisor ? "var(--m-wait)" : "var(--ink-4)" }}>
-              {identity ? (isAdvisor ? "顾问身份 · 可带主动话术与转化跳转" : "客服身份 · 中性答复,无主动话术 / 跳转") : "请先在 M5 给客服配置可用服务类型"}
+              {identity ? (isAdvisor ? "顾问身份 · 可带主动话术与转化跳转" : "客服身份 · 中性答复,无主动话术 / 跳转") : "请先在「服务规则与话术」给客服设置可用的服务类型"}
             </span>
           </Field>
 
@@ -522,9 +522,9 @@ export function InitiateModal({
                 <Icon name="search" size={15} />
                 <input value={custQuery} onChange={(e) => setCustQuery(e.target.value)} placeholder="搜索客户 昵称 / 用户编码 / 地区" />
               </div>
-              <div className="tiny" style={{ color: "var(--ink-4)" }}>从真实用户库搜索；无历史会话也可主动发起。</div>
+              <div className="tiny" style={{ color: "var(--ink-4)" }}>从全部用户里搜索；没聊过的用户也可以主动发起。</div>
               <div style={{ maxHeight: 224, overflow: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
-                {customerLoading && <div className="itint"><div style={{ fontSize: 13 }}>正在查询真实用户…</div></div>}
+                {customerLoading && <div className="itint"><div style={{ fontSize: 13 }}>正在查询用户…</div></div>}
                 {!customerLoading && customerError && <div className="itint"><div style={{ fontSize: 13 }}>用户查询失败</div><div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>请检查网络后重试搜索；错误：{customerError}</div></div>}
                 {!customerLoading && !customerError && matchingCustomers.length === 0 && <div className="itint"><div style={{ fontSize: 13 }}>未找到匹配客户</div><div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>可按昵称、用户编码或地区重新搜索。</div></div>}
                 {!customerLoading && matchingCustomers.map((c) => (
@@ -616,7 +616,7 @@ export function TransferModal({
       footer={
         <div className="row" style={{ gap: 10, alignItems: "center", width: "100%" }}>
           <span className="sub" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Icon name="users" size={13} />例行内部交接 · 不触发审计弹窗 · 原因记入会话
+            <Icon name="users" size={13} />内部交接 · 原因会记在会话里
           </span>
           <span style={{ flex: 1 }} />
           <button type="button" className="btn btn-sec btn-sm" onClick={onClose}>取消</button>
@@ -639,7 +639,7 @@ export function TransferModal({
               {agentOptions.length === 0 && (
                 <div className="itint">
                   <div style={{ fontSize: 13 }}>暂无可转交坐席</div>
-                  <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>可转交坐席来自 M5 岗位配置中的启用且未暂停接派单坐席。</div>
+                  <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>可转交的客服来自「服务规则与话术」里已启用、没暂停接单的客服。</div>
                 </div>
               )}
               {agentOptions.map((a) => (
@@ -672,7 +672,7 @@ export function TransferModal({
           )}
         </div>
         <Field label="转交原因" required>
-          <span className="hint">8-200 字 · 接手坐席能看到,记入会话留档(不写 A2 审计)</span>
+          <span className="hint">8–200 字 · 接手的客服能看到，会记在会话里</span>
           <textarea className="fld" rows={3} maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:客户是设备掉线＋固件问题,转给硬件支持跟进更对口。" style={{ resize: "vertical" }} />
         </Field>
       </div>
@@ -696,7 +696,7 @@ export function ReturnModal({ fromAgent, onClose, onSubmit }: { fromAgent: strin
       footer={
         <div className="row" style={{ gap: 10, alignItems: "center", width: "100%" }}>
           <span className="sub" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Icon name="shield" size={13} />退回原因记入会话留档 · 不写审计
+            <Icon name="shield" size={13} />退回原因会记在会话里
           </span>
           <span style={{ flex: 1 }} />
           <button type="button" className="btn btn-sec btn-sm" onClick={onClose}>取消</button>
@@ -715,7 +715,7 @@ export function ReturnModal({ fromAgent, onClose, onSubmit }: { fromAgent: strin
           </div>
         </div>
         <Field label="退回原因" required>
-          <span className="hint">8-200 字 · 必填 · 记入会话系统消息(不写 A2 审计)</span>
+          <span className="hint">8–200 字 · 必填 · 会作为系统消息记在会话里</span>
           <textarea className="fld" rows={3} maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:此问题属硬件范畴,我这边无法处理,退回原坐席重新分派。" style={{ resize: "vertical" }} />
         </Field>
       </div>

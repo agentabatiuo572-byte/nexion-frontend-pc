@@ -132,7 +132,7 @@ export const H9_FIELDS: readonly H9FieldDef[] = [
     max: 50,
     step: 0.1,
     integer: false,
-    hint: "用于网络脉搏注册用户增长推算；由服务端按保存的起点计算。",
+    hint: "用于「网络脉搏」注册用户增长推算，从保存时开始计算。",
   },
   {
     key: "virtualUserCount",

@@ -198,14 +198,14 @@ export function validateA2MechanismValue(
   const current = parseA2SchemaVersion(currentSchemaVersion);
   const currentOrder = A2_SUPPORTED_SCHEMA_VERSION_ORDERS[current];
   if (requestedOrder && currentOrder && Number(requestedOrder) <= currentOrder) {
-    return { ok: false, message: "字段结构版本只能升级，不能降级或重复提交" };
+    return { ok: false, message: "字段版本只能往上升级，不能降级或重复提交" };
   }
   if (!(value in A2_SUPPORTED_SCHEMA_VERSION_ORDERS)) {
-    return { ok: false, message: "字段结构版本仅支持已注册的 v3、v4" };
+    return { ok: false, message: "字段版本只能选已登记的 v3、v4" };
   }
   if (current && (!(current in A2_SUPPORTED_SCHEMA_VERSION_ORDERS)
       || A2_SUPPORTED_SCHEMA_VERSION_ORDERS[value] <= currentOrder)) {
-    return { ok: false, message: "字段结构版本只能升级，不能降级或重复提交" };
+    return { ok: false, message: "字段版本只能往上升级，不能降级或重复提交" };
   }
   return { ok: true, value };
 }

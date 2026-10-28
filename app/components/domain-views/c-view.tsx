@@ -20,14 +20,6 @@ import type { CCtx, ConfirmReq, ActionConfirmReq } from "./c-tabs/types";
 
 const FOLD: Record<string, string> = { C1: "C1", C2: "C2", C3: "C3", C5: "C5", C6: "C6" };
 
-// 每页两枚签名 chip(设计稿 f-bar):f-ro = server-canonical 不变量,f-live = 节奏/留痕承诺。
-const RO_LIVE: Record<string, [ro: string, live: string]> = {
-  C1: ["只能查看 · 要处置去对应页面", "敏感查看全程留痕"],
-  C2: ["冻结记录以这页为准", "模拟登录全程只能看 + 限时"],
-  C3: ["每笔都记账本 · 不是开后门的地方", "往外加钱时盯着备付金红线"],
-  C5: ["账户解锁都在这页处置", "高风险操作 = 先确认 + 安全二次校验"],
-  C6: ["只配「什么情况下锁」 · 解锁去 C5", "验证码和锁定都由服务器执行"],
-};
 
 export function CDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
@@ -42,14 +34,7 @@ export function CDomainView({ meta }: { meta: DomainViewMeta }) {
     openConfirm: setCf,
   };
 
-  const [ro, live] = RO_LIVE[tab];
-  const right = (
-    <>
-      <span className="f-ro"><span className="d" />{ro}</span>
-      <span className="f-live"><span className="dot" />{live}</span>
-      {tab === "C1" && <C1HeaderActions ctx={ctx} query={c1ExportQuery} />}
-    </>
-  );
+  const right = tab === "C1" ? <C1HeaderActions ctx={ctx} query={c1ExportQuery} /> : null;
 
   return (
     <div className="dkpage cdom">

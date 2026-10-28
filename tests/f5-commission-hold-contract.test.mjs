@@ -107,7 +107,7 @@ test("F5 暂停提示显示奖种名称，提交仍保持真实枚举", async ()
   pause.props.onClick();
   await view.confirmations[0].run("核对工单后暂停", { kinds: "network,direct_device_earning" });
   assert.deepEqual(calls, [[9, ["network", "direct_device_earning"], true, "核对工单后暂停"]]);
-  assert.equal(toasts[0], `用户 9 的 ${F5_KIND_LABELS.network}、${F5_KIND_LABELS.direct_device_earning} 已提交 A2 待确认`);
+  assert.equal(toasts[0], `用户 9 的 ${F5_KIND_LABELS.network}、${F5_KIND_LABELS.direct_device_earning} 暂停已提交，等待审批`);
   assert.doesNotMatch(toasts[0], /network|direct_device_earning/);
 });
 
@@ -124,11 +124,11 @@ test("F5 恢复确认和提示使用相同奖种名称", async () => {
     can: (permission) => permission === "network_f5_commission_reject", f5Overview: data,
     suspendF5UserCommissions: async (...args) => calls.push(args), toast: (message) => toasts.push(message),
   });
-  button(view, "恢复奖种").props.onClick();
+  button(view, "恢复").props.onClick();
   const confirmation = view.confirmations[0];
   const history = textOf(view.nodes.find((node) => node.type === "tr" && textOf(node).includes("F5-1")));
   assert.match(history, /恢复/);
-  assert.match(history, /网络购买奖励、直属设备收益分成/);
+  assert.match(history, /七层购买奖励、直属设备收益分成/);
   assert.doesNotMatch(history, /RESUME|network|direct_device_earning/);
   assert.match(confirmation.name, /直属设备收益分成/);
   assert.doesNotMatch(confirmation.name + confirmation.detail, /direct_device_earning|suspended=/);
@@ -160,7 +160,7 @@ test("①b 历史 network 双币保留冻结、提前解锁与解冻确认", () 
         op: "dispose", paramKey: view.row.auditKey, expectedVersion: 4,
         fixedVal: { 冻结: "frozen", 提前解锁: "unlocked", 解冻: "cooling" }[label], amplify: label === "提前解锁",
       })));
-      if (status === "cooling") assert.match(view.confirmations[1].detail, /跳过剩余冷却直接进入可提余额/);
+      if (status === "cooling") assert.match(view.confirmations[1].detail, /跳过剩余冷却期，马上可以提现/);
     }
   }
 });
@@ -177,8 +177,8 @@ test("①c 直属两类双币保留整组冻结、解冻，解冻恢复 cooling"
         assert.deepEqual({ op: confirmation.op, paramKey: confirmation.paramKey, expectedVersion: confirmation.expectedVersion,
           fixedVal: confirmation.fixedVal, amplify: confirmation.amplify },
         { op: "dispose", paramKey: view.row.auditKey, expectedVersion: 4, fixedVal, amplify: false });
-        assert.match(confirmation.detail, /结算组 DR-71 · 12 USDT \+ 120 UVT（整组处理）/);
-        if (status === "frozen") assert.match(confirmation.detail, /不会绕过剩余冷却期/);
+        assert.match(confirmation.detail, /结算组 DR-71 · 12 USDT \+ 120 UVT（一起处理）/);
+        if (status === "frozen") assert.match(confirmation.detail, /剩下的冷却天数照常计算/);
       }
     }
   }
@@ -232,7 +232,7 @@ test("④b D4 下钻必须同时具备真实账本号与 D4 读取权限", () =>
     "F5 未按 D4 后端读取权限控制下钻,最小权限运营员会点击后被路由弹回");
   assert.match(component, /canReadD4 && row\.ledgerBizNo/,
     "D4 链接必须同时满足权限与服务端真实 ledgerBizNo");
-  assert.match(component, /D4 无权限/,
+  assert.match(component, /账本无权限/,
     "无 D4 权限时必须明确说明,不能保留一个会静默跳回的死链接");
 });
 

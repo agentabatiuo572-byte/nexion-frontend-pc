@@ -64,7 +64,7 @@ for(const response of [()=>Response.json({code:503,message:'UNAVAILABLE',data:nu
     const saved=c.preparePhoneCommand(71,'42','PHONE_GRANT_ISSUE','PRQ1',body);
     await assert.rejects(c.submitPhoneCommand(saved),error=>error.unknownOutcome===true);
     assert.equal(c.pendingPhoneCommands(71,'42').length,1);
-    assert.throws(()=>c.preparePhoneCommand(71,'42','PHONE_GRANT_ISSUE','PRQ1',body),/待核实/);
+    assert.throws(()=>c.preparePhoneCommand(71,'42','PHONE_GRANT_ISSUE','PRQ1',body),/还没确认/);
     const raw=JSON.parse(store.getItem('nexion-admin-phone-commands-v1'));
     raw[saved.commandKey].createdAt=Date.now()-3*86400000;raw[saved.commandKey].expiresAt=Date.now()-2*86400000;
     store.setItem('nexion-admin-phone-commands-v1',JSON.stringify(raw));

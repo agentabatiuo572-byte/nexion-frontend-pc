@@ -96,7 +96,7 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
   const saveFaq = async (form: { category: SupportFaq["category"]; surface: SupportFaq["surface"]; language: SupportFaq["language"]; sortOrder: string; question: string; answer: string; status: SupportFaq["status"]; reason: string }) => {
     const sortOrder = Number(form.sortOrder);
     if (!form.question.trim() || !form.answer.trim() || !minReason(form.reason)) {
-      toast("常见问答 需要问题 / 回答 / 8 字以上审计理由");
+      toast("请填写问题、回答，以及 8 字以上的修改理由");
       return false;
     }
     if (!Number.isInteger(sortOrder) || sortOrder < 0 || sortOrder > 999999) {
@@ -297,7 +297,7 @@ function FaqModal({
               <option value="draft">草稿</option>
             </select>
           </label>
-          <label className="field"><span className="bf-legend">审计理由(≥8 字)</span><input className="fld" data-proof="support-faq-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:帮助中心提现板块缺口补齐" /></label>
+          <label className="field"><span className="bf-legend">修改理由（至少 8 字）</span><input className="fld" data-proof="support-faq-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:帮助中心提现板块缺口补齐" /></label>
         </div>
       </div>
     </Modal>

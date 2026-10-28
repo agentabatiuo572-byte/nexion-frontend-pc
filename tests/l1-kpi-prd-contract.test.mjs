@@ -85,5 +85,5 @@ test("L1 canonical producers publish registration, referral and F2 commission ev
 test("L1 aggregate export is direct and no longer opens an unnecessary confirmation", async () => {
   const source = await readFile(new URL("app/components/domain-views/l-tabs/l1-kpi.tsx", root), "utf8");
   assert.doesNotMatch(source, /from "@\/lib\/store\/ui"/);
-  assert.match(source, /关键指标 序列已导出 · 已记审计/);
+  assert.match(source, /关键指标趋势已导出/);
 });

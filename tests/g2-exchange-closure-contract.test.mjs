@@ -34,7 +34,7 @@ test("immediate and queued swaps allocate every non-zero fee 30 percent to burn 
 });
 
 test("PC queue cancellation accurately states that queued funds are reserved and refunded", () => {
-  assert.match(pcPage, /源资产已冻结/);
-  assert.match(pcPage, /原路返还/);
+  assert.match(pcPage, /冻结的 \{order\.exchangeAmountDisplay\} 会原路退回/);
+  assert.match(pcPage, /原路退回用户钱包/);
   assert.doesNotMatch(pcPage, /排队阶段未扣余额/);
 });

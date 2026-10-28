@@ -58,7 +58,7 @@ export function L4HeaderActions({ ctx }: { ctx: LCtx }) {
       recipient: "运营管理员",
       ticket: "L4-OPERATIONS",
     };
-    const reason = `导出 L4 ${data.period.label} ${data.phaseFilter === "ALL" ? "全部阶段" : data.phaseFilter} 聚合运营报表`;
+    const reason = `导出 ${data.period.label} ${data.phaseFilter === "ALL" ? "全部阶段" : data.phaseFilter} 聚合运营报表`;
     const fingerprint = JSON.stringify([input, reason]);
     if (intentKeyRef.current.fingerprint !== fingerprint) {
       intentKeyRef.current = { fingerprint, key: `l4-ops-${now}-${Math.random().toString(36).slice(2, 10)}` };
@@ -68,7 +68,7 @@ export function L4HeaderActions({ ctx }: { ctx: LCtx }) {
     try {
       await ctx.biActions?.createReport(input, reason, intentKeyRef.current.key);
       lastSuccessAtRef.current = Date.now();
-      ctx.toast("运营报表 CSV 已生成 · 已固化当前周期与阶段并记录审计");
+      ctx.toast("运营报表已导出（按当前周期和阶段）");
     } catch (error) {
       ctx.toast(error instanceof Error ? `导出任务提交失败 · ${displayAdminError(error)}` : "导出任务提交失败 · 请稍后重试");
     } finally {
@@ -79,16 +79,16 @@ export function L4HeaderActions({ ctx }: { ctx: LCtx }) {
 
   return (
     <>
-      <span className="f-ro"><span className="d" />A4 历史事实 · 只读分析</span>
-      {!ctx.canExport && <span className="f-ro">当前角色仅可查看 · 导出需 L4 权限</span>}
+
+      {!ctx.canExport && <span className="f-ro">你只能查看，导出需要报表导出权限</span>}
       <button
         className="f-cta"
         onClick={exportCurrent}
         disabled={exporting || !canExportCurrent}
         aria-busy={exporting}
-        title={!queryMatchesData ? "请先应用有效周期，再导出对应报表" : !data?.available ? "所选周期没有可导出的运营事实" : undefined}
+        title={!queryMatchesData ? "请先应用有效周期，再导出对应报表" : !data?.available ? "这个周期没有可导出的数据" : undefined}
       >
-        {exporting ? "正在生成运营报表..." : "导出运营报表 CSV"}
+        {exporting ? "正在生成…" : "导出运营报表（CSV）"}
       </button>
     </>
   );
@@ -161,10 +161,10 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
 
   return (
     <div>
-      <section className="l-card" aria-label="L4 历史运营报表筛选">
+      <section className="l-card" aria-label="运营报表筛选">
         <div className="l-h">
           <span className="ttl">历史运营报表</span>
-          <span className="sub">· 设备、任务、网络与 运营阶段 同读 A4 服务端事件</span>
+          <span className="sub">· 设备、任务、网络和运营阶段用同一份数据</span>
           <div className="r"><span className="lcode electric">{data ? `${data.period.label} · ${data.phaseFilter === "ALL" ? "全部阶段" : data.phaseFilter}` : "等待所选周期数据"}</span></div>
         </div>
         <div className="l-b" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -204,7 +204,7 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
       {!data ? <LDataState ctx={ctx} label="L4" /> : <>
       <TabGroup<ReportTab>
         style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}
-        label="L4 四类运营报表"
+        label="四类运营报表"
         value={tab}
         items={REPORT_TABS.map(([key]) => key)}
         onSelect={setTab}
@@ -214,7 +214,7 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
 
       {!data.available && (
         <div className="ltint warn" style={{ marginBottom: 14, fontSize: 12 }}>
-          <b>所选周期暂无历史运营事件</b> · 没有生成承接率、推广率、留存率或阶段跳变；请选择其他周期/运营阶段，或确认 E/F/H1 是否已产生服务端事件。
+          <b>这个周期没有数据</b> · 请换一个周期或运营阶段再看。
         </div>
       )}
       {!data.quality.sameActorRates && data.available && (
@@ -229,7 +229,7 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
       {tab === "phase" && <PhaseReport data={data} />}
       <HistoryTable data={data} />
 
-      <p className="f-foot"><b>L4 只读、不另立账本</b>：历史效果来自 A4 符合统计格式的 事件；设备/任务参数归 E 域，团队关系归 F 域，运营阶段参数 归 H1。缺分母或窗口数据时显示“—”，不推算。</p>
+      <p className="f-foot"><b>这页只能查看</b>：设备、任务参数在「设备」相关页面改，团队关系在「团队」相关页面改，运营阶段在「运营阶段设置」改。缺数据时显示「—」，不估算。</p>
       </>}
     </div>
   );
@@ -239,10 +239,10 @@ function DeviceReport({ data }: { data: L4OperationsData }) {
   const s = data.device.summary;
   return (
     <section className="l-card">
-      <ReportHeader title="设备运营报表" subtitle="在网快照 + 期间购置、产出与衰减影响" />
+      <ReportHeader title="设备运营报表" subtitle="当前在线设备，以及这段时间的购买、产出和衰减" />
       <div className="l-b">
         <MetricTiles rows={[
-          ["当前活跃设备", data.liveFacts.activeUserDevices, "E 域设备台账当前事实"],
+          ["当前活跃设备", data.liveFacts.activeUserDevices, "当前在用设备"],
           ["期间购置设备", s.periodPurchasedDevices, "窗口内购买事件按设备去重，不等于期末在网数"],
           ["期间产出 USDT", s.dailyYieldUsdt, "收益入账汇总"],
           ["衰减影响 USDT", s.degradationLossUsdt, "基准产出 − 实际产出"],
@@ -267,16 +267,16 @@ function TaskReport({ data }: { data: L4OperationsData }) {
   const warning = acceptance !== null && acceptance < 60;
   return (
     <section className="l-card">
-      <ReportHeader title="任务承接报表" subtitle="派发、完成、六类 tier、队列饱和与签到活跃" />
+      <ReportHeader title="任务承接报表" subtitle="派出、完成、6 类任务、队列忙闲和签到活跃" />
       <div className="l-b">
         <MetricTiles rows={[
-          ["任务派发量", s.dispatched, "服务端派发事件"],
-          ["任务完成量", s.completed, "服务端完成事件"],
-          ["任务承接率", acceptance, warning ? "低于 60% 展示告警线" : "完成 ÷ 派发"],
-          ["队列饱和度", s.queueSaturation, "最近服务端队列事实"],
+          ["任务派出量", s.dispatched, "派出的任务数"],
+          ["任务完成量", s.completed, "完成的任务数"],
+          ["任务承接率", acceptance, warning ? "低于 60% 展示告警线" : "完成 ÷ 派出"],
+          ["队列饱和度", s.queueSaturation, "最近的队列情况"],
           ["签到活跃", s.checkinActive, "同用户去重"],
         ]} percentKeys={new Set(["任务承接率", "队列饱和度"])} />
-        {warning && <div className="ltint warn" style={{ marginBottom: 12 }}><b>任务承接率低于 60%</b> · 建议跳转 E 域任务定价与队列配置归因；L4 不在此修改参数。</div>}
+        {warning && <div className="ltint warn" style={{ marginBottom: 12 }}><b>任务承接率低于 60%</b> · 建议去「设备收益与任务」检查任务定价和队列设置。</div>}
         <Distribution title="六类任务类型 完成分布" rows={data.tasks.byTier} />
       </div>
     </section>
@@ -302,7 +302,7 @@ function NetworkReport({ data, ctx, query }: { data: L4OperationsData; ctx: LCtx
       action: "导出团队明细",
       detail: (
         <div>
-          将按当前 <b>{data.period.label}</b> 周期导出 F 域团队树快照；预计关系数 <b>{data.liveFacts.teamRelationships}</b>，最终行数由服务端重新核算。仅包含部分隐藏的用户编码、层级、会员等级、团队业绩与加入时间，不包含手机号、昵称、完整用户编码或解密字段。文件下载令牌 24 小时有效，操作会通知超级管理员与增长负责人并写入高风险审计。
+          将按当前 <b>{data.period.label}</b> 周期导出团队关系；预计 <b>{data.liveFacts.teamRelationships}</b> 条（以实际导出为准）。只包含部分隐藏的用户编码、层级、会员等级、团队业绩和加入时间，不含手机号、昵称等隐私。下载链接 24 小时有效，导出会通知超级管理员和增长负责人。
         </div>
       ),
       reasonMin: 8,
@@ -310,7 +310,7 @@ function NetworkReport({ data, ctx, query }: { data: L4OperationsData; ctx: LCtx
       businessForm: {
         kind: "multi-field",
         title: "导出范围",
-        hint: "层级越深，导出范围越大；服务端最多允许 10 层和 100,000 行。",
+        hint: "层级越深，导出越多；最多 10 层、100,000 行。",
         fields: [{
           key: "depth",
           label: "团队树层级",
@@ -355,7 +355,7 @@ function NetworkReport({ data, ctx, query }: { data: L4OperationsData; ctx: LCtx
         <MetricTiles rows={[
           ["直推用户", s.directRefs, "邀请绑定按被邀请用户去重"],
           ["团队成交额 USDT", s.teamGmvUsdt, "带推荐来源的完成订单"],
-          ["佣金派发 USDT", s.commissionPaidUsdt, "已发放团队分成"],
+          ["佣金发放 USDT", s.commissionPaidUsdt, "已发放的团队分成"],
           ["L4→L5 推广率", s.promotionRate, "设备持有者邀请 ÷ 设备持有者"],
           ["团队佣金触发率", s.commissionTriggerRate, "直推中产生佣金人数 ÷ 直推人数"],
         ]} percentKeys={new Set(["L4→L5 推广率", "团队佣金触发率"])} />
@@ -373,10 +373,10 @@ function NetworkReport({ data, ctx, query }: { data: L4OperationsData; ctx: LCtx
               disabled={exporting || query.period === "custom" || data.liveFacts.teamRelationships <= 0 || ctx.biLoading || Boolean(ctx.biError)}
               aria-busy={exporting}
               title={query.period === "custom"
-                ? "团队明细导出仅支持服务端定义的日、周、月周期"
+                ? "团队明细只能按日、周、月导出"
                 : data.liveFacts.teamRelationships <= 0 ? "当前没有可导出的团队关系" : undefined}
-            >{exporting ? "正在生成团队明细..." : "导出团队明细"}</button>
-            <span className="f-ro">需选择 1–10 层并填写 8–200 字原因 · 高风险审计</span>
+            >{exporting ? "正在生成…" : "导出团队明细"}</button>
+            <span className="f-ro">需选择 1–10 层并填写 8–200 字原因</span>
           </div>
         )}
       </div>
@@ -387,7 +387,7 @@ function NetworkReport({ data, ctx, query }: { data: L4OperationsData; ctx: LCtx
 function PhaseReport({ data }: { data: L4OperationsData }) {
   return (
     <section className="l-card">
-      <ReportHeader title="运营阶段节奏效果报表" subtitle="P1–P6 跨阶段历史对比；阶段参数仍由 H1 管理" />
+      <ReportHeader title="运营阶段节奏效果报表" subtitle="P1–P6 各阶段对比；阶段参数在「运营阶段设置」改" />
       <div style={{ overflowX: "auto" }}>
         <table className="l-tbl ph-tbl" style={{ minWidth: 820 }}>
           <thead><tr><th>运营阶段</th><th className="num">活跃人数</th><th className="num">留存率</th><th className="num">转化率</th><th className="num">产出 USDT</th><th className="num">切换事件</th><th className="num">阶段参数调整</th><th className="num">转化阶跃</th></tr></thead>
@@ -415,7 +415,7 @@ function HistoryTable({ data }: { data: L4OperationsData }) {
       <ReportHeader title="周期趋势" subtitle={`${data.period.from} 至 ${data.period.to} · ${data.phaseFilter === "ALL" ? "全部阶段" : data.phaseFilter}`} />
       <div style={{ overflowX: "auto" }}>
         <table className="l-tbl" style={{ minWidth: 760 }}>
-          <thead><tr><th>时间桶</th><th className="num">设备购置</th><th className="num">设备退役</th><th className="num">产出 USDT</th><th className="num">任务完成</th><th className="num">新增直推</th><th className="num">佣金 USDT</th></tr></thead>
+          <thead><tr><th>时间</th><th className="num">设备购置</th><th className="num">设备退役</th><th className="num">产出 USDT</th><th className="num">任务完成</th><th className="num">新增直接邀请</th><th className="num">佣金 USDT</th></tr></thead>
           <tbody>{data.history.map((row) => <tr key={row.bucket}><td>{row.bucket}</td><td className="num mono">{row.devicePurchases}</td><td className="num mono">{row.deviceRetirements}</td><td className="num mono">{fmt(row.yieldUsdt)}</td><td className="num mono">{row.tasksCompleted}</td><td className="num mono">{row.directRefs}</td><td className="num mono">{fmt(row.commissionPaidUsdt)}</td></tr>)}</tbody>
         </table>
         {data.history.length === 0 && <Empty text="所选周期没有历史事件，趋势保持为空。" />}
@@ -425,7 +425,7 @@ function HistoryTable({ data }: { data: L4OperationsData }) {
 }
 
 function ReportHeader({ title, subtitle }: { title: string; subtitle: string }) {
-  return <div className="l-h"><span className="ttl">{title}</span><span className="sub">· {subtitle}</span><div className="r"><span className="lcode">服务端历史聚合</span></div></div>;
+  return <div className="l-h"><span className="ttl">{title}</span><span className="sub">· {subtitle}</span><div className="r"><span className="lcode">历史汇总</span></div></div>;
 }
 
 function MetricTiles({ rows, percentKeys = new Set<string>() }: { rows: Array<[string, number | null | undefined, string]>; percentKeys?: Set<string> }) {

@@ -60,26 +60,26 @@ async function mount(initial = document(), transport = {}) {
 }
 
 test("short reason shows an error beside the enabled save button", async () => {
-  const ui = await mount(); await ui.change("体验配置保存理由", "1"); await ui.click("保存并回读");
+  const ui = await mount(); await ui.change("体验配置保存理由", "1"); await ui.click("保存");
   assert.equal(ui.writes.length, 0);
   const alert = ui.nodes().find(n => n.props?.role === "alert");
   assert.match(alert.props.children, /8–200/);
-  assert.ok(ui.nodes().indexOf(alert) > ui.nodes().indexOf(ui.button("保存并回读")));
+  assert.ok(ui.nodes().indexOf(alert) > ui.nodes().indexOf(ui.button("保存")));
 });
 test("successful save confirms the version and exact anchor", async () => {
   const ui = await mount(); await ui.change("官方安装链接", "https://uvel.ai/#download");
-  await ui.change("体验配置保存理由", "更新官网的下载区域链接"); await ui.click("保存并回读");
+  await ui.change("体验配置保存理由", "更新官网的下载区域链接"); await ui.click("保存");
   assert.equal(ui.writes[0].payload.appDownload.officialUrl, "https://uvel.ai/#download");
   assert.equal(ui.field("官方安装链接").props.value, "https://uvel.ai/#download");
   assert.equal(ui.field("体验配置保存理由").props.value, "");
-  assert.match(ui.nodes().find(n => n.props?.role === "status").props.children, /已保存并回读.*v11/);
+  assert.match(ui.nodes().find(n => n.props?.role === "status").props.children, /已保存.*v11/);
 });
 test("failed save preserves input, displays the error, and allows recovery", async () => {
   const ui = await mount(document(), { beforeSave: () => { throw new Error("当前配置已更新，请刷新后核对"); } });
-  await ui.change("官方安装链接", "https://uvel.ai/#download"); await ui.change("体验配置保存理由", "更新官网的下载区域链接"); await ui.click("保存并回读");
+  await ui.change("官方安装链接", "https://uvel.ai/#download"); await ui.change("体验配置保存理由", "更新官网的下载区域链接"); await ui.click("保存");
   assert.equal(ui.field("官方安装链接").props.value, "https://uvel.ai/#download");
   assert.equal(ui.field("体验配置保存理由").props.value, "更新官网的下载区域链接");
   assert.match(ui.nodes().find(n => n.props?.role === "alert").props.children, /当前配置已更新/);
   assert.ok(!ui.nodes().some(n => n.props?.role === "status"));
-  assert.equal(ui.button("保存并回读").props.disabled, false);
+  assert.equal(ui.button("保存").props.disabled, false);
 });

@@ -85,7 +85,7 @@ function resolveFOp(key: string): string {
   if (/^F\.unilevel\.(?:nex\.)?L[1-7]$/.test(key)) return "f_unilevel_rule";
   if (key.startsWith("F.unilevel.")
       && !["F.unilevel.depthGate", "F.unilevel.depthGateRank", "F.unilevel.mergeExitMaxPct"].includes(key)
-      && !/^F\.unilevel\.L[1-7]\.paused$/.test(key)) throw new Error("该网络购买奖励参数未接入结算，不能调整。");
+      && !/^F\.unilevel\.L[1-7]\.paused$/.test(key)) throw new Error("这个参数还没用于结算，不能调整。");
   if (F_ACTIVE_KEYS.has(key)) return "f_config";
   return "f_ui_config";
 }
@@ -301,7 +301,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       if (overview.status === "fulfilled") setF2Overview(overview.value);
       else { setF2Overview(null); setF2Error(errorMessage(overview.reason)); }
       if (audit.status === "fulfilled") setF2ActivationPending(audit.value?.operationQueue.find(row => row.status === "pending" && row.obj === "current" && ["七层结算启用", "七层结算暂停", "七层结算恢复"].includes(row.action)) ?? null);
-      else { setF2ActivationPending(null); setF2ActivationPendingError("审批进度读取失败，请重新读取后继续。"); }
+      else { setF2ActivationPending(null); setF2ActivationPendingError("审批进度加载失败，请刷新后继续。"); }
     } catch (error) {
       if (request !== f2Generation.current) return;
       setF2Overview(null);
@@ -440,7 +440,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       await proposeStable(`f-config-batch:${sourceDomain}`, JSON.stringify([normalized, reason]), {
         action: `${def.action} · ${normalized.length} 项`,
         obj: normalized.map((item) => item.key).join(","),
-        before: "以服务器记录为准",
+        before: "当前设置",
         after: normalized.map((item) => `${item.key}=${item.value}`).join(" / "),
         type: "fund",
         amplifies: normalized.some((item) => isFFundAmplifyingKey(item.key)),
@@ -519,7 +519,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       await proposeStable(`f-vrank-override:${userId}`, JSON.stringify([targetV, direction, reason]), {
         action: `${def.action} · ${direction === "promote" ? "晋升" : "降级"}至 ${targetV}`,
         obj: `用户 ${userId}`,
-        before: "以服务端当前等级为准",
+        before: "当前等级",
         after: targetV,
         type: "fund",
         amplifies: direction === "promote",
@@ -536,8 +536,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       if (!def) throw new Error("F_OP_NOT_FOUND:f_reward_payout_action");
       await proposeStable(`f-payout-action:${payoutId}`, JSON.stringify([action, reason]), {
         action: `${def.action} · ${action === "reissue" ? "重发" : "冲正"}`,
-        obj: `派发单 ${payoutId}`,
-        before: "以服务端当前状态为准",
+        obj: `发放单 ${payoutId}`,
+        before: "当前状态",
         after: action === "reissue" ? "REISSUED" : "REVERSED",
         type: "fund",
         amplifies: action === "reissue",
@@ -559,20 +559,20 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f2ActivationPendingError,
     f2ActivationAttempt,
     recoverF2SevenLayerActivation: async () => {
-      if (!can("network_f2_policy_amplify") || !can("platform_a2_proposal_create")) throw new Error("当前角色没有七层结算审批申请权限。");
+      if (!can("network_f2_policy_amplify") || !can("platform_a2_proposal_create")) throw new Error("你没有申请七层结算的权限。");
       try { await submitF2Activation(null, spec => propose(setToast, spec), () => createA2CommandKey("f-seven-layer-activation")); }
       finally { setF2ActivationAttempt(pendingF2Activation()); }
       await refreshF2();
     },
     changeF2SevenLayerActivation: async (action, expectedSevenLayerRevision, expectedPolicyVersion, reason) => {
-      if (!can("network_f2_policy_amplify") || !can("platform_a2_proposal_create")) throw new Error("当前角色没有七层结算审批申请权限。");
-      if (f2DirectPolicy?.sevenLayerActivationContractVersion !== 1) throw new Error("七层结算启用服务暂不可用，请重新读取。");
+      if (!can("network_f2_policy_amplify") || !can("platform_a2_proposal_create")) throw new Error("你没有申请七层结算的权限。");
+      if (f2DirectPolicy?.sevenLayerActivationContractVersion !== 1) throw new Error("七层结算暂时不能启用，请刷新后重试。");
       const def = findHighOp("f_seven_layer_activation");
       if (!def) throw new Error("F_OP_NOT_FOUND:f_seven_layer_activation");
       const label = { ACTIVATE: "七层结算启用", PAUSE: "七层结算暂停", RESUME: "七层结算恢复" }[action];
       try { await submitF2Activation({
         action: label, obj: "current", before: f2DirectPolicy.sevenLayerEnabled ? f2DirectPolicy.sevenLayerPaused ? "已启用，已暂停" : "已启用，正常处理" : "未启用",
-        after: action === "ACTIVATE" ? "批准后启用；生效时间由批准记录确定，保留历史奖励" : action === "PAUSE" ? "暂停新来源，保留原生效时间与历史快照" : "恢复新来源及因暂停滞留的原来源，保留原生效时间",
+        after: action === "ACTIVATE" ? "批准后启用，以前的奖励不变" : action === "PAUSE" ? "暂停计算新订单的奖励" : "恢复计算，并补算暂停期间积压的订单",
         type: action === "PAUSE" ? "param" : "fund", amplifies: action !== "PAUSE",
         gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "F2",
         command: def.buildCommand({ action, expectedSevenLayerRevision, expectedPolicyVersion }), target: def.buildTarget({}),
@@ -585,7 +585,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       if (invalid) throw new Error(invalid);
       const current = await fetchF2DirectReferralPolicy();
       setF2DirectPolicy(current);
-      if (current.policyVersion !== policy.expectedVersion || current.sevenLayerRevision !== policy.expectedSevenLayerRevision) throw new Error("直属分成或七层规则已变化，原预览已失效；草稿保留，请重新读取后再确认。");
+      if (current.policyVersion !== policy.expectedVersion || current.sevenLayerRevision !== policy.expectedSevenLayerRevision) throw new Error("直属分成或七层规则已被修改，请刷新后再确认（已填写的内容会保留）。");
       const def = findHighOp("f_direct_referral_policy");
       if (!def) throw new Error("F_OP_NOT_FOUND:f_direct_referral_policy");
       await proposeStable("f-direct-referral-policy", JSON.stringify([policy, reason]), {
@@ -652,9 +652,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       // 日键把该窗口压到当日,跨日重试铸新号(在途票期间由后端 current-week 目标锁兜底)。
       await proposeStable("f4-settle:current-week", JSON.stringify([reason, new Date().toISOString().slice(0, 10)]), {
         action: def.action,
-        obj: "F4 当前周领导奖池",
+        obj: "本周领导奖池",
         before: "待结算",
-        after: "按实时周 已支付成交额、门槛、票权及月度上限 结算",
+        after: "按本周已付款成交额、门槛、票数和月度上限结算",
         type: "fund",
         amplifies: true,
         gate: { roles: [] },
@@ -679,7 +679,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       await proposeStable(`f5-reverse:${commissionId}`, JSON.stringify([refundRef, reason]), {
         action: `${def.action} · ${commissionId}`,
         obj: commissionId,
-        before: "以服务器执行时状态为准",
+        before: "当前状态",
         after: "REVERSED",
         type: def.type,
         amplifies: def.amplifies,
@@ -697,9 +697,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       const periodKey = new Date().toISOString().slice(0, 10);
       await proposeStable(`f4-leaderboard:${period}`, JSON.stringify([period, periodKey, reason]), {
         action: def.action,
-        obj: `F4 排行榜 ${period}`,
-        before: "待派发",
-        after: "按对应周期真实佣金榜及奖池配置原子派发",
+        obj: `排行榜 ${period}`,
+        before: "待发放",
+        after: "按本期佣金榜和奖池设置发放",
         type: "fund",
         amplifies: true,
         gate: { roles: [] },
@@ -717,8 +717,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       await proposeStable("f5-reissue", JSON.stringify([sortedIds, reason]), {
         action: `${def.action} · ${sortedIds.length} 笔`,
         obj: sortedIds.join(","),
-        before: "以服务器执行时状态为准",
-        after: "重新进入冷却计提",
+        before: "当前状态",
+        after: "重新进入冷却期",
         type: def.type,
         amplifies: def.amplifies,
         gate: { roles: [] },
@@ -736,7 +736,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       await proposeStable(`f5-suspension:${userId}`, JSON.stringify([sortedKinds, suspended, reason]), {
         action: `${suspended ? "暂停" : "恢复"}用户佣金 · ${userId}`,
         obj: `${userId}:${sortedKinds.join(",")}`,
-        before: "以服务器执行时状态为准",
+        before: "当前状态",
         after: suspended ? "SUSPENDED" : "ACTIVE",
         type: def.type,
         amplifies: def.amplifies,
@@ -756,9 +756,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
 
   // 跨域 / 跨标签跳转 CTA(放进 DomainHeader 的 right 槽,不改 DomainHeader 组件)
   const CTA: Record<string, { label: string; onClick: () => void }> = {
-    F1: { label: "领导池票数权重 →", onClick: () => { setTab("F4"); router.push("/network/leadership-pool"); setToast("已跳转 F4 · 领导池票数权重"); } },
-    F3: { label: "B5 风险提醒 →", onClick: () => nav("B") },
-    F4: { label: "F5 佣金审计 →", onClick: () => { setTab("F5"); router.push("/network/commissions"); setToast("已跳转 F5 · 佣金记录核对"); } },
+    F1: { label: "领导池票数权重 →", onClick: () => { setTab("F4"); router.push("/network/leadership-pool"); } },
+    F3: { label: "风险提醒 →", onClick: () => nav("B") },
+    F4: { label: "佣金记录核对 →", onClick: () => { setTab("F5"); router.push("/network/commissions"); } },
   };
   const cta = CTA[tab];
 
@@ -774,7 +774,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
 
       {mc && <OperationConfirmModal
         action={mc.name}
-        detail={mc.detail ?? "以服务器数据为准 · 改后对下一笔结算生效,不回溯已计提"}
+        detail={mc.detail ?? "从下一笔结算开始生效，已经算好的不变。"}
         amplifies={!!mc.amplify}
         // coverage 按当前 tab 选源(A1 批1b 修复):原硬编码 f1Overview?.coverage → 切到 F2-F5 时仍显示 F1 覆盖率(跨域误用)。
         // 现按 tab 路由到对应 overview 的 coverage,与后端 rates()/binary()/leadershipPool()/commissions() 注入的 B1 快照一致。
@@ -788,7 +788,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         businessForm={mc.businessForm}
         completionCopy={mc.completionCopy ?? (
           mc.op === "param" || mc.op === "param-multi" || mc.op === "dispose"
-            ? "提交后进入 A2 待确认队列，批准执行后生效"
+            ? "提交后需在「操作记录与审批」确认才生效。"
             : undefined
         )}
         onClose={() => setActionConfirm(null)}
@@ -797,7 +797,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           if (mc.run) {
             await mc.run(reason, businessValue, newVal);
           } else if (mc.op === "param" && mc.paramKey) {
-            if (!newVal) { setToast("请填写目标新值"); return; }
+            if (!newVal) { setToast("请填写新值"); return; }
             const target = f1ThresholdTarget(mc.paramKey);
             if (target) {
               await ctx.updateVRankThreshold(target.rank, target.field, newVal, reason);
@@ -812,7 +812,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             } else {
               throw new Error(`F_BACKEND_ROUTE_MISSING:${mc.paramKey}`);
             }
-            setToast(mc.name + " 已提交 · 等待 A2 执行");
+            setToast(mc.name + " 已提交，等待确认");
           } else if (mc.op === "param-multi" && mc.paramKeys && businessValue) {
             // 多字段调参只生成一张 A2 票；后端 replay 在单事务内整批写入，任一失败整批回滚。
             if (tab === "F3") {
@@ -826,7 +826,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             } else {
               throw new Error(`F_BACKEND_ROUTE_MISSING:${mc.paramKeys.map((item) => item.paramKey).join(",")}`);
             }
-            setToast(mc.name + " 已提交 · 等待 A2 执行");
+            setToast(mc.name + " 已提交，等待确认");
           } else if (mc.op === "dispose" && mc.paramKey && mc.fixedVal) {
             if (tab === "F1") {
               await ctx.updateF1Config(mc.paramKey, mc.fixedVal, reason);
@@ -844,7 +844,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             }
             // dispose 一律走 A2 propose:此刻只是入了待执行队列,还没落库。原文案「已生效」
             // 会把冻结这种抢时间的动作误报成完成(票在队列里等执行期间冷却可能到期解锁)。
-            setToast(mc.name + " 已提交 · A2 待执行队列");
+            setToast(mc.name + " 已提交，等待确认");
           } else {
             throw new Error("F_CONFIRM_SHAPE_UNKNOWN:" + (mc.op || mc.name)); // 未知确认形状必须响亮失败,禁静默假成功
           }
@@ -853,7 +853,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             // outcome-uncertain 不算「失败」:提案可能已生效,冠以失败会诱导换渠道重做造成重复动作。
             setToast(isA2OutcomeUncertainError(error)
               ? errorMessage(error)
-              : "F 域数据提交失败 · " + errorMessage(error));
+              : "提交失败 · " + errorMessage(error));
             // Modal owns the retry/error state and must retain the original command key.
             // Swallowing here clears its submitting state without rendering the recovery path.
             throw error;

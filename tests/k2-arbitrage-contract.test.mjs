@@ -40,7 +40,7 @@ test("K2 rejects malformed successful overview payloads instead of normalizing t
   assert.match(client, /requiredK2Array\(data\.views,\s*"arbitrage\.views"\)/);
   assert.match(client, /requiredK2StringArray\(data\.sources,\s*"arbitrage\.sources"\)/);
   assert.match(errorMessages, /K2_RESPONSE_INVALID/);
-  assert.match(errorMessages, /旧数据与写操作已隐藏/);
+  assert.match(errorMessages, /已隐藏数据和操作按钮/);
   assert.match(riskService, /canonicalK2Stats\(rows\)/);
   assert.match(riskService, /response\.put\("serverCanonical", true\)/);
   assert.match(riskService, /response\.put\("domain", "K2"\)/);
@@ -70,7 +70,7 @@ test("K2 keeps confirmation open, preserves uncertain command keys, and separate
   assert.match(component, /commandAttempt/);
   assert.match(component, /K1OutcomeUncertainError/);
   assert.match(component, /A2OutcomeUncertainError/);
-  assert.match(component, /已写入，但 K2 最新数据回读失败/);
+  assert.match(component, /但页面刷新失败/);
   assert.match(client, /updateK2Param:[\s\S]*commandKey/);
   assert.match(client, /RISK_RESPONSE_BODY_MISSING[\s\S]*K1OutcomeUncertainError/);
   assert.match(a2Client, /!result[\s\S]*A2OutcomeUncertainError\("A2_RESPONSE_UNREADABLE"/);
@@ -79,8 +79,8 @@ test("K2 keeps confirmation open, preserves uncertain command keys, and separate
 
 test("K2 removes retired holding gates and declares exact OTP boundaries", () => {
   assert.doesNotMatch(component, /minHoldingMonths|最小持仓月份|没满最短持有月|残值 \$0/);
-  assert.match(component, /高频下架置换/);
-  assert.match(component, /礼金\/返佣叠加/);
+  assert.match(component, /以旧换新的抵扣比例/);
+  assert.match(component, /设备使用与以旧换新/);
   assert.match(component, /min: 30, max: 300/);
   assert.match(component, /min: 1, max: 10/);
   assert.match(component, /min: 60, max: 900, step: 60/);
@@ -88,8 +88,8 @@ test("K2 removes retired holding gates and declares exact OTP boundaries", () =>
   assert.match(component, /captchaGate\.afterSends/);
   assert.match(riskService, /auth\.risk\.captcha_always_scenes/);
   assert.match(riskService, /auth\.risk\.captcha_after_sends/);
-  assert.match(component, /只影响后续发送/);
-  assert.match(component, /已签发验证码/);
+  assert.match(component, /只影响之后发送的验证码/);
+  assert.match(component, /已发出的不变/);
   assert.match(component, /updateK2Param\(p\.key, nextValue, p\.version/);
   assert.match(component, /updateK2Param\(definition\.key, backendValue, param\.version/);
   assert.match(client, /withReason\(\{ value, expectedVersion \}, reason\)/);
@@ -104,7 +104,7 @@ test("K2 headers have one owner and unknown row actions do not default to anothe
 });
 
 test("F4 keeps the K2 hit count visible when historical F4 dispositions exist", () => {
-  assert.match(f4Ops, /data\.leaderboardFraudHitCount}\s*账户\$\{lbDq \? " · 含已处置" : ""}/);
+  assert.match(f4Ops, /data\.leaderboardFraudHitCount}\s*账户\$\{lbDq \? " · 含已处理" : ""}/);
   assert.doesNotMatch(f4Ops, /lbDq\s*\?\s*"已处置"\s*:\s*`\$\{data\.leaderboardFraudHitCount}\s*账户`/);
 });
 
@@ -113,7 +113,7 @@ test("K2 renders canonical backend disposition codes as business labels", () => 
   assert.match(component, /account_flagged:\s*"已标记套利"/);
   assert.match(component, /gift_blocked:\s*"新人礼已拦截"/);
   assert.match(component, /leaderboard_flagged:\s*"已标记刷榜"/);
-  assert.match(component, /cluster_frozen:\s*"已联动 K1 冻结"/);
+  assert.match(component, /cluster_frozen:\s*"已冻结关联账户"/);
   assert.match(component, /K2_DISPOSITION_LABELS\[disposed\]\s*\?\?\s*"已处置"/);
   assert.doesNotMatch(component, />\{disposed\}</);
 });

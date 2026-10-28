@@ -20,8 +20,8 @@ test("G3 PC sends curve/value CAS baselines and mirrors B1 direction gates", () 
   assert.match(view, /coverage: amp \? coverageSnapshot : undefined/);
   assert.match(view, /amplifiesWhen: "increase"/);
   assert.match(view, /String\(paused\)/);
-  assert.match(view, /只保存未来排程参数，不改写当前现价/);
-  assert.match(view, /B1 备付金覆盖率/);
+  assert.match(view, /这里只改计划，不改当前价格/);
+  assert.match(view, /按本周最高价 \{fmtPrice\(peak\)\} 重新计算 UVT 应付款/);
 });
 
 test("G3 backend validates enums, locks expected state and keeps curve edits isolated", () => {

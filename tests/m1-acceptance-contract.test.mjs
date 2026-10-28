@@ -28,7 +28,7 @@ test("M1 live workbench reaches the original seat form without widening its auth
     "lucide-react": new Proxy({}, { get: () => no }),
     "@/lib/store/admin-auth": { useAdminAuth },
     "@/lib/nav/console-nav": { resolveVisibleDomains: session => session, canAccessResolvedPath: session => session.menuCodes?.includes("A1") === true },
-    "@/lib/admin/error-messages": { displayAdminError: () => "读取失败" },
+    "@/lib/admin/error-messages": { displayAdminError: () => "加载失败" },
     "@/lib/admin/m-client": { fetchMAdvisorBindingUsers: unavailable, fetchMRecentAdvisorConversations: unavailable },
     "@/lib/admin/m1-pending-command": {},
     "@/lib/admin/pending-mutation-store": { createPendingMutationStore: () => ({ list: () => [], get: () => null }) },
@@ -262,7 +262,7 @@ test("M1 KPI links match their target queues and conversation detail failures fa
   assert.match(client, /page\.records\.map\(adaptConversation\)/);
   assert.match(client, /export async function fetchMConversationDetail/);
   assert.match(chat, /selected\.detailReady === true/);
-  assert.match(chat, /会话详情读取失败/);
+  assert.match(chat, /会话详情加载失败/);
   assert.match(client, /publish\(\{ conversations: \[\], conversationsAvailable: false \}, warning\)/);
   assert.match(client, /publish\(\{ conversations: page\.records\.map\(adaptConversation\), conversationsAvailable: true \}\)/);
   assert.doesNotMatch(client, /async function detailOrRow/);

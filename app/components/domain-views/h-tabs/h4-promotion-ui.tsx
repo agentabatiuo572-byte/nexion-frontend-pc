@@ -16,7 +16,7 @@ catch {
 } };
 export const TEMPLATE_LABELS = { SKU_GIFT: '单设备赠礼', FIRST_PURCHASE: '首购礼', DIRECT_REFERRAL: '直邀首购双向礼', MULTI_PRODUCT: '多型号组合', REPURCHASE: '复购召回' } as const;
 const STATES: Record<string, string> = { DRAFT: '草稿', SCHEDULED: '待开始', ACTIVE: '进行中', PAUSED: '暂停新预留', ENDED: '已结束', ARCHIVED: '已归档', PENDING_APPROVAL: '待审核', APPROVED: '已审核待发布', PUBLISHED: '已发布', PENDING: '待发放', READY: '待执行', PROCESSING: '处理中', ISSUED: '已发放', RETRYABLE_FAILED: '可重试失败', OUTCOME_UNKNOWN: '结果未知', REVERSAL_PENDING: '追回待处理', REVERSED: '已冲正', CANCELED: '已取消', CANCELLED: '已取消', MANUAL_REVIEW: '人工审阅', MATCHED: '符合条件', REJECTED: '不符合', UNKNOWN: '未知', COMPLETE: '完整', UNAVAILABLE: '不可用', DELAYED: '延迟', ELIGIBLE: '符合条件', INELIGIBLE: '不符合', AVAILABLE: '可用', SHORTAGE: '不足', BUYER: '购买者', DIRECT_INVITER: '直接邀请人', SUCCEEDED: '成功', FAILED: '失败', NOT_FOUND: '未查到原操作', REVOKED: '已撤销' };
-export const labelState = (value: string) => STATES[value] || '待核实';
+export const labelState = (value: string) => STATES[value] || '状态未知';
 export const promotionAssetText = (asset: string) => asset === 'DISCOUNT_USDT' ? '订单立减（USDT）' : nexGridBrandText(asset);
 export const rewardText = (r: DraftRewardSpec | RewardSpec | null | undefined, deviceName?: string | null) => !r ? '未配置' : r.type === 'DEVICE' ? `${nexGridBrandText(deviceName || '设备赠礼')} × ${r.quantity ?? '未配置'}` : r.type === 'DISCOUNT_USDT' ? `订单立减 ${r.amount ?? '未配置'} USDT` : `${r.amount ?? '未配置'} ${nexGridBrandText(r.type)}`;
 export function Button({ kind = '', className = '', type = 'button', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -66,7 +66,7 @@ export function DeviceRightsSummary({ rights }: {rights: RewardDisclosure['devic
     return <Summary rows={[
         ['激活方式', rights?.activationMode === 'AUTO' ? '自动激活' : rights?.activationMode === 'MANUAL' ? '手动激活' : '未确认'],
         ['生效起点', rights?.effectiveOn === 'ISSUED' ? '发放时' : rights?.effectiveOn === 'ACTIVATED' ? '激活时' : '未确认'],
-        ['有效天数', rights?.durationDays === null ? '原业务协议未限定' : typeof rights?.durationDays === 'number' && Number.isFinite(rights.durationDays) ? rights.durationDays : '未确认'],
+        ['有效天数', rights?.durationDays === null ? '不限' : typeof rights?.durationDays === 'number' && Number.isFinite(rights.durationDays) ? rights.durationDays : '未确认'],
         ['参与任务', yesNo(rights?.taskEnabled)], ['计入设备持有', yesNo(rights?.countsAsDeviceHolding)],
         ['计入等级', yesNo(rights?.countsForRank)], ['可转让', yesNo(rights?.transferable)], ['可兑换', yesNo(rights?.exchangeable)],
         ['收回方式', rights?.revocationMode === 'REVOKE_IF_UNUSED' ? '未使用可收回' : rights?.revocationMode === 'MANUAL_IF_USED' ? '使用后人工处理' : '未确认']
@@ -86,14 +86,14 @@ export function PromotionSteps({ step, onStep, disabled = false }: { step: numbe
     return <div className="steps">{PROMOTION_STEPS.map((name, i) => <button key={name} className={`step ${step === i ? 'active' : ''}`} disabled={disabled} onClick={() => onStep(i)}><i>{i + 1}</i><span>{name}<small>{['类别、时间与公开说明', '人群、设备与等级', '逐设备、逐受益人', '限额、预算与冲突'][i]}</small></span></button>)}</div>;
 }
 export function Loading() { return <div role="status" aria-live="polite" aria-busy="true"><div className="loading-label">正在加载，请稍候。</div>{Array.from({length: 6}, (_, i) => <div className="skeleton-row" key={i}>{[0, 1, 2, 3, 4].map(j => <span className="skeleton" key={j}/>)}</div>)}</div>; }
-export function ReadError({ error, retry, target, retryLabel = '重试读取' }: {
+export function ReadError({ error, retry, target, retryLabel = '重试' }: {
     error: unknown;
     retry: () => void;
     target: string;
     retryLabel?: string;
-}) { return <Notice title="读取未完成" kind="bad"><p>{target}：{displayAdminError(error)}</p><div><Button onClick={retry}>{retryLabel}</Button><small className="read-target">{target}</small></div></Notice>; }
+}) { return <Notice title="加载失败" kind="bad"><p>{target}：{displayAdminError(error)}</p><div><Button onClick={retry}>{retryLabel}</Button><small className="read-target">{target}</small></div></Notice>; }
 export function PromotionReadPanel({ title, loading, errors = [] }: { title: string; loading: boolean; errors?: Array<{target: string; error: unknown; retry: () => void}> }) {
-    return <Card title={`${loading ? '正在读取' : '暂时无法确认'}${title}`}>{loading ? <><Loading/><div className="card-body"><Button disabled>处理进行中</Button><p className="help">读取结束前不允许提交或重复操作。</p></div></> : <><Empty title="读取失败，内容已保留" action={<div className="actions">{errors.map(item => <Button key={item.target} kind="primary" onClick={item.retry}>重试读取<span> · {item.target}</span></Button>)}</div>}>当前读取未成功，不代表没有记录。依赖最新数据的动作已停用；重试不会再次创建活动或奖励。{errors.map(item => <span className="read-failure" key={item.target}>{item.target}：{displayAdminError(item.error)}</span>)}</Empty><div className="card-body"><Notice title="写入结果未知时" kind="warn">保留填写内容与原操作记录。先核查原操作结果，再决定是否重试；不要重复提交。</Notice></div></>}</Card>;
+    return <Card title={`${loading ? '正在加载' : '暂时无法加载'}${title}`}>{loading ? <><Loading/><div className="card-body"><Button disabled>处理进行中</Button><p className="help">加载完成前不能提交。</p></div></> : <><Empty title="加载失败，已填写的内容还在" action={<div className="actions">{errors.map(item => <Button key={item.target} kind="primary" onClick={item.retry}>重试读取<span> · {item.target}</span></Button>)}</div>}>当前读取未成功，不代表没有记录。依赖最新数据的动作已停用；重试不会再次创建活动或奖励。{errors.map(item => <span className="read-failure" key={item.target}>{item.target}：{displayAdminError(item.error)}</span>)}</Empty><div className="card-body"><Notice title="写入结果未知时" kind="warn">保留填写内容与原操作记录。先核查原操作结果，再决定是否重试；不要重复提交。</Notice></div></>}</Card>;
 }
 export function useRead<T>(loader: () => Promise<T>, deps: DependencyList, enabled = true) {
     const ref = useRef(loader);

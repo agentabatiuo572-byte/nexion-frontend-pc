@@ -95,8 +95,8 @@ const SKU_TIER_OPTIONS = [
   { value: "Share", label: "共享份额" },
 ] as const;
 const SKU_LIFECYCLE_OPTIONS = [
-  { value: "active", label: "在产" },
-  { value: "legacy", label: "停代" },
+  { value: "active", label: "在售" },
+  { value: "legacy", label: "已停产" },
 ] as const;
 const DC_STATUS_OPTIONS: { value: DatacenterForm["status"]; label: string }[] = [
   { value: "active", label: "启用中" },
@@ -421,8 +421,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (errors.length) {
       // 简报要求失败时可定位:附上读取时刻与逐面结果,值班人员据此能直接区分
       // 「后端没有 6 类权威定价」和「前端解析拒绝」,不必靠猜。
-      errors.push(`读取时刻 ${new Date().toLocaleString("zh-CN", { hour12: false })}`);
-      errors.push(`逐面结果 任务目录=${tasksResult.status === "fulfilled" ? "成功" : "失败"} · 手机档位=${phoneResult.status === "fulfilled" ? "成功" : "失败"} · 任务定价=${pricingResult.status === "fulfilled" ? "成功" : "失败"}`);
+      errors.push(`加载时间 ${new Date().toLocaleString("zh-CN", { hour12: false })}`);
+      errors.push(`任务目录${tasksResult.status === "fulfilled" ? "正常" : "失败"} · 手机档位${phoneResult.status === "fulfilled" ? "正常" : "失败"} · 任务定价${pricingResult.status === "fulfilled" ? "正常" : "失败"}`);
     }
     setE2Error(errors.length ? errors.join("；") : null);
     setE2Loading(false);
@@ -694,7 +694,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         };
       });
     } catch {
-      setToast("媒体预览链接刷新失败,请重新上传或稍后重试");
+      setToast("图片预览加载失败，请重新上传或稍后重试");
     }
   }, [setToast]);
 
@@ -719,14 +719,14 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const delSku = (skuId: string, rawDisplayName: string) => {
     const displayName = catalogSkuBrandText(skuId, rawDisplayName);
     openActionConfirm({
-      name: "删除 商品规格 · " + displayName,
+      name: "删除商品 · " + displayName,
       op: "sku-delete",
       target: skuId,
-      detail: `删除「${displayName}」:从商品目录移除,不影响已售设备,但会影响前台商品列表、详情页入口和后续购买。需填写操作理由 + 审计留痕。`,
+      detail: `删除「${displayName}」：从商城下架移除，用户无法再购买；已售出的设备不受影响。`,
       businessForm: {
         kind: "destructive-reason",
         target: displayName,
-        impact: "商品目录与用户端购买入口会移除;已售设备订单和账本不回溯。",
+        impact: "商城里会看不到这个商品；已售出的设备和订单不受影响。",
       },
     });
   };
@@ -750,8 +750,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     const location = dcForm.location.trim();
     const displayName = dcForm.displayName.trim();
     const sortOrder = Number(dcForm.sortOrder);
-    if (!editDcLocation && !dcLocation) { setToast("请填写 数据中心编号"); return; }
-    if (!regionLabel || !location || !displayName) { setToast("请填写区域、所在地与前端展示名"); return; }
+    if (!editDcLocation && !dcLocation) { setToast("请填写数据中心编号"); return; }
+    if (!regionLabel || !location || !displayName) { setToast("请填写区域、所在地和展示名称"); return; }
     if (!Number.isFinite(sortOrder) || sortOrder < 0) { setToast("请填写有效排序值"); return; }
     const normalized: DatacenterForm = {
       dcLocation,
@@ -768,7 +768,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       dc: editDcLocation ?? normalized.dcLocation,
       dcForm: normalized,
       isNew: !editDcLocation,
-      detail: `${editDcLocation ? "更新" : "新增"}数据中心:${normalized.dcLocation} · ${normalized.location} · ${normalized.displayName} · 状态 ${statusLabel} · ID 变更时同步迁移设备与暂停状态。`,
+      detail: `${editDcLocation ? "更新" : "新增"}数据中心:${normalized.dcLocation} · ${normalized.location} · ${normalized.displayName} · 状态 ${statusLabel}。修改编号时，设备和暂停状态会一起迁移。`,
     });
     setDcDrawer(false);
   };
@@ -777,34 +777,34 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       name: "删除数据中心 · " + dc.dcLocation,
       op: "dc-delete",
       dc: dc.dcLocation,
-      detail: `软删除 ${dc.dcLocation} 数据中心卡片配置。服务端会硬阻断仍被 E5 设备、E4 待履约订单或 E1 商品规格 引用的数据中心；三类引用计数全部为 0 后才允许删除。提交前还需核对 A2 无相关待确认申请，并填写操作理由完成审计留痕。`,
+      detail: `删除数据中心 ${dc.dcLocation}。只有没有设备、没有待开通订单、也没有商品在用时才能删除；请先确认「操作记录与审批」里没有相关的待确认操作。`,
       businessForm: {
         kind: "destructive-reason",
         target: dc.dcLocation,
-        impact: "E5 数据中心卡片列表会移除该配置。服务端确认无跨域引用后才执行软删除，并同步清理数据中心运营状态；不会删除设备库存。",
+        impact: "数据中心列表里会移除这一项，不会删除设备库存。",
       },
     });
   };
   // 任务表单校验(新增 + 编辑共用):取值完整性,非锁死业务值。
   const validateTaskForm = (): string | null => {
     const price = Number(taskForm.price) || 0;
-    if (!taskForm.n.trim() || !price) return "请填写任务名称 + 单价";
-    if (!taskForm.unit.trim() || !taskForm.req.trim() || !taskForm.killInit.trim()) return "请补全计价单位 / 设备资格要求 / 初始派发状态";
+    if (!taskForm.n.trim() || !price) return "请填写任务名称和单价";
+    if (!taskForm.unit.trim() || !taskForm.req.trim() || !taskForm.killInit.trim()) return "请填写计价单位、设备要求和初始接单状态";
     const satText = taskForm.sat.trim();
     if (satText) {
       const sat = Number(satText);
       if (!Number.isFinite(sat) || sat < 0 || sat > 100) return "饱和度需为 0-100";
     }
     // #36 核心配置字段校验:taskClass / 代表模型 / min·maxReward / minVRAM 必填,reward 区间须 min ≤ max
-    if (!taskForm.taskClass.trim() || !taskForm.model.trim() || !taskForm.minVRAM.trim()) return "请补全 任务类型 / 代表模型 / 最低显存";
+    if (!taskForm.taskClass.trim() || !taskForm.model.trim() || !taskForm.minVRAM.trim()) return "请填写任务类型、代表模型和最低显存";
     const minR = Number(taskForm.minReward), maxR = Number(taskForm.maxReward);
     const minVram = Number(taskForm.minVRAM.replace(/GB$/i, "").trim());
-    if (!Number.isFinite(minR) || !Number.isFinite(maxR) || minR < 0 || maxR < minR) return "奖励区间非法:需 0 ≤ 最低奖励 ≤ 最高奖励";
-    if (!Number.isInteger(minVram) || minVram < 0) return "最低显存 需为不小于 0 的整数 GB";
+    if (!Number.isFinite(minR) || !Number.isFinite(maxR) || minR < 0 || maxR < minR) return "奖励范围有误：须 0 ≤ 最低奖励 ≤ 最高奖励";
+    if (!Number.isInteger(minVram) || minVram < 0) return "最低显存须为不小于 0 的整数（GB）";
     return null;
   };
   const rejectE2Mutation = () => {
-    setToast("E2 当前配置不可用，已取消本次配置提交");
+    setToast("设备收益设置加载失败，本次没有提交");
     return false;
   };
   const openAddTask = () => {
@@ -827,7 +827,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!canMutateE2Tasks) return rejectE2Mutation();
     const err = validateTaskForm();
     if (err) { setToast(err); return; }
-    openActionConfirm({ name: "新增任务 · " + taskForm.n.trim(), op: "task-create", detail: `新增任务「${taskForm.n.trim()}」全字段(单价 / 设备资格要求 / 任务类型 / 代表模型 / 奖励区间 / 最低显存 / 初始派发状态)· 以服务器数据为准 · 进入 A2 待确认队列,批准后对新派单生效。` });
+    openActionConfirm({ name: "新增任务 · " + taskForm.n.trim(), op: "task-create", detail: `新增任务「${taskForm.n.trim()}」。批准后，对之后新派的任务生效。` });
     setTaskDrawer(false);
   };
   // 编辑提交:校验后走操作确认(高敏 · 改单价/门槛/taskClass server-canonical)→ onConfirm 真写 updateTask。
@@ -835,7 +835,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!canMutateE2Tasks) return rejectE2Mutation();
     const err = validateTaskForm();
     if (err) { setToast(err); return; }
-    openActionConfirm({ name: "编辑任务 · " + taskForm.n.trim(), op: "task-save", detail: `编辑任务「${taskForm.n.trim()}」全字段(单价 / 设备资格要求 / 任务类型 / 代表模型 / 奖励区间 / 最低显存 / 初始派发状态)· 以服务器数据为准,改后对新派单生效,已派工单维持原配置完成 · 须操作确认。` });
+    openActionConfirm({ name: "编辑任务 · " + taskForm.n.trim(), op: "task-save", detail: `修改任务「${taskForm.n.trim()}」。只对之后新派的任务生效，已派出的按原设置完成。` });
     setTaskDrawer(false);
   };
   const skuLabelsUsingTask = (taskId: string, taskName: string) => skus
@@ -851,7 +851,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!canMutateE2Tasks) return rejectE2Mutation();
     const refSkus = skuLabelsUsingTask(t.id, t.n);
     if (refSkus.length > 0) {
-      setToast(`任务无法下架:${t.n} 正在被 E1 商品规格 使用:${refSkus.join("、")}。请先到 E1 修改这些 商品规格 的解锁算力池。`);
+      setToast(`无法下架：${t.n} 正被这些商品使用：${refSkus.join("、")}。请先在「商品管理与上架条件」修改它们的解锁算力池。`);
       return;
     }
     openActionConfirm({
@@ -859,11 +859,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       op: "task-down",
       taskId: t.id,
       target: t.n,
-      detail: `下架「${t.n}」:停止派单并从 用户任务页移除。需填写操作理由、确认影响并写 A2 审计。`,
+      detail: `下架「${t.n}」：停止派发，用户任务页也不再显示。`,
       businessForm: {
         kind: "destructive-reason",
         target: t.n,
-        impact: "任务池不再派发该任务;已完成或已结算任务不回溯。",
+        impact: "不再派发这个任务；已完成或已结算的不受影响。",
       },
     });
   };
@@ -872,9 +872,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const onPickSkuMedia = async (file?: File) => {
     if (!file) return;
     const kind = inferSkuMediaKind(file);
-    if (!kind) { setToast("请上传图片或视频文件:JPG / PNG / WebP / GIF / MP4 / WebM / MOV"); return; }
+    if (!kind) { setToast("请上传图片或视频：JPG / PNG / WebP / GIF / MP4 / WebM / MOV"); return; }
     const maxBytes = kind === "image" ? SKU_MAX_IMAGE_BYTES : SKU_MAX_VIDEO_BYTES;
-    if (file.size > maxBytes) { setToast(`${kind === "image" ? "图片" : "视频"}超过 ${mediaSizeLabel(maxBytes)},请压缩后再传`); return; }
+    if (file.size > maxBytes) { setToast(`${kind === "image" ? "图片" : "视频"}超过 ${mediaSizeLabel(maxBytes)}，请压缩后再传`); return; }
 
     const src = URL.createObjectURL(file);
     const seq = ++mediaSeq.current;
@@ -911,7 +911,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     } catch (error) {
       if (seq === mediaSeq.current) {
         setSkuMedia(null);
-        setToast("媒体上传失败:" + displayAdminError(error));
+        setToast("上传失败：" + displayAdminError(error));
       } else {
         URL.revokeObjectURL(src);
       }
@@ -962,7 +962,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setToast("已居中裁剪为 1:1 并重新上传");
     } catch (error) {
       if (seq == null || seq === mediaSeq.current) {
-        setToast("裁剪上传失败:" + displayAdminError(error));
+        setToast("裁剪后上传失败：" + displayAdminError(error));
       }
     } finally {
       if (seq == null || seq === mediaSeq.current) {
@@ -985,33 +985,33 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const validateSkuUnlockPool = () => {
     const poolId = form.aiUnlocks.trim();
     if (!poolId || skuUnlockPoolIdSet.has(poolId)) return "";
-    if (e2Loading) return "E2 任务列表正在加载,请稍后再提交";
-    return "解锁算力池请选择 E2 6 类任务中的一项";
+    if (e2Loading) return "任务列表正在加载，请稍后再提交";
+    return "解锁算力池请选择 6 类任务中的一项";
   };
   const canUseE1Writes = canWriteE1 && !e1Loading && !e1Error
     && e1Gates !== null && e1BundleDiscount !== null;
   const openSkuSaveConfirm = () => {
     if (e1Gates?.skuReviewContractVersion !== 1) {
-      setToast("商品完整审核服务尚未就绪，请刷新后重试；当前输入已保留");
+      setToast("商品审核暂时不可用，请刷新后重试；已填写的内容会保留");
       return;
     }
-    if (skuMediaUploading) { setToast("媒体仍在上传,请稍后提交"); return; }
-    if (skuMedia && !skuMedia.assetId) { setToast("媒体未上传成功,请重新选择文件"); return; }
+    if (skuMediaUploading) { setToast("图片还在上传，请稍后提交"); return; }
+    if (skuMedia && !skuMedia.assetId) { setToast("图片没有上传成功，请重新选择文件"); return; }
     if (!form.tier.trim() || !form.lifecycle.trim()) {
-      setToast("请补全档位 / 生命周期");
+      setToast("请选择档位和生命周期");
       return;
     }
     const datacenter = form.datacenter.trim();
     if (!datacenter) {
       setToast(skuDatacenterDefault
         ? "请选择一个当前有效的数据中心"
-        : "请先在 E5 配置至少一个数据中心,再保存 商品规格");
+        : "请先在「设备运行管理」添加至少一个数据中心，再保存商品");
       return;
     }
     // 已有 SKU 可继续保留已删除 DC 的历史展示名，避免编辑其它字段时静默改写部署中心。
     // 新 SKU 则必须显式选择当前 E5 配置中的有效展示名。
     if (!skuDatacenterSet.has(datacenter) && !editSkuId) {
-      setToast("请选择 E5 当前有效的数据中心");
+      setToast("请选择一个当前有效的数据中心");
       return;
     }
     const specErr = validateSkuSpecs(form);
@@ -1020,7 +1020,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (poolErr) { setToast(poolErr); return; }
     const inventoryMode = form.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE";
     if (inventoryMode === "UNLIMITED" && form.tier !== "Share") {
-      setToast("无限库存仅适用于 云端共享份额 等非实物份额商品");
+      setToast("无限库存只适用于云端共享份额这类非实物商品");
       return;
     }
     const stock = form.stock.trim();
@@ -1032,7 +1032,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (gErr) { setToast(gErr); return; }
     const currentSku = editSkuId ? skus.find((sku) => sku.id === editSkuId) : undefined;
     if (editSkuId && !currentSku) {
-      setToast("原商品快照已刷新，请重新打开商品后再提交");
+      setToast("商品信息已更新，请重新打开商品后再提交");
       return;
     }
     const candidateSku = attachSkuMedia(formToSku(form, currentSku), skuMedia);
@@ -1040,10 +1040,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       ? summarizeSkuProposal(currentSku, candidateSku)
       : summarizeSkuCreation(candidateSku);
     if (editSkuId && !previewSummary) {
-      setToast("未检测到商品字段变化，无需发起敏感审核");
+      setToast("没有任何修改，无需提交");
       return;
     }
-    openActionConfirm({ name: (editSkuId ? "编辑 商品规格 · " : "新增 商品规格 · ") + catalogSkuBrandText(editSkuId ?? (form.id.trim() || form.name.trim()), form.name || "未命名"), op: "sku-save", isNew: !editSkuId, hasImg: !!skuMedia });
+    openActionConfirm({ name: (editSkuId ? "编辑商品 · " : "新增商品 · ") + catalogSkuBrandText(editSkuId ?? (form.id.trim() || form.name.trim()), form.name || "未命名"), op: "sku-save", isNew: !editSkuId, hasImg: !!skuMedia });
     setSkuDrawer(false);
   };
 
@@ -1087,7 +1087,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (isE6ParamKey(paramKey)) {
       const def = findHighOp("e6_compute_config")!;
       const expectedPolicyVersion = paramKey.startsWith("E.compute.phoneBinding.") ? e6Config?.phoneBinding?.policyVersion : undefined;
-      if (paramKey.startsWith("E.compute.phoneBinding.") && !expectedPolicyVersion) throw new Error("请先重新读取手机策略版本。");
+      if (paramKey.startsWith("E.compute.phoneBinding.") && !expectedPolicyVersion) throw new Error("手机设置已变化，请刷新后重试。");
       await propose(ctx.toast, {
         action, obj: paramKey, before, after: value, type: def.type, amplifies: amplify,
         gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E6",
@@ -1125,7 +1125,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   };
 
   const headerRight =
-    tab === "E1" ? (canUseE1Writes ? <button className="f-cta" onClick={() => openSku()}>+ 新增 商品规格</button> : undefined)
+    tab === "E1" ? (canUseE1Writes ? <button className="f-cta" onClick={() => openSku()}>+ 新增商品</button> : undefined)
       : tab === "E2" ? (canMutateE2Tasks ? <button className="f-cta" onClick={openAddTask}>+ 新增任务</button> : undefined)
         : tab === "E3" ? <button className="f-cta manual" onClick={() => setManualOpen(true)}><Icon name="doc" size={15} /> 操作说明手册</button>
           : undefined;
@@ -1172,78 +1172,78 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               : undefined
           : undefined;
         const progressBlock = eff === "placed"
-          ? { code: "ORDER_PAYMENT_CONFIRMATION_REQUIRED", text: "等待 付款记录或资金流水 确认真实支付，后台不能手工伪造已支付。" }
+          ? { code: "ORDER_PAYMENT_CONFIRMATION_REQUIRED", text: "要等付款记录确认用户真的付了款，后台不能手动标记已付款。" }
           : eff === "paid" && (!hasSettledFunding || !hasAllocatedDevice)
-            ? { code: "ORDER_PROVISIONING_EVIDENCE_REQUIRED", text: "须先存在已结算资金证据，并由 E5 绑定设备与数据中心。" }
+            ? { code: "ORDER_PROVISIONING_EVIDENCE_REQUIRED", text: "要先确认款项已结算，并在「设备运行管理」分配好设备和数据中心。" }
             : eff === "provisioning" && !e4Detail?.deviceActivatedAt
-              ? { code: "ORDER_DEVICE_ACTIVATION_REQUIRED", text: "须先由 E5 真正激活设备，E4 才能确认订单完成。" }
+              ? { code: "ORDER_DEVICE_ACTIVATION_REQUIRED", text: "要先在「设备运行管理」激活设备，订单才能完成。" }
               : null;
         const refundableState = ["paid", "provisioning", "activated"].includes(eff);
         const refundReady = canRefundE4 && refundableState && e4Detail?.refundAllowed === true;
         const closeOrder = () => { setSelOrder(null); setE4Detail(null); setE4DetailError(null); };
         const coverageText = e4Detail?.coverageCurrent == null
-          ? "覆盖率不可用"
+          ? "兑付覆盖率暂无"
           : `当前 ${e4Detail.coverageCurrent.toFixed(2)}% → 执行后 ${(e4Detail.coverageProjected ?? e4Detail.coverageCurrent).toFixed(2)}% · 红线 ${(e4Detail.coverageRedline ?? 0).toFixed(2)}%`;
         return (
           <Drawer title={o.id} sub={`${o.sku} · ${o.user}`} onClose={closeOrder}
             footer={<>
-                  {nextState && <Btn onClick={() => openActionConfirm({ name: `推进订单 · ${o.id} → ${stateLabel(nextState)}`, op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, detail: `手动推进 ${o.id} 处理流程:${stateLabel(eff)} → ${stateLabel(nextState)} · 须操作确认` })}>推进到下一步</Btn>}
-                  {canCancel && <Btn onClick={() => openActionConfirm({ name: "取消订单 · " + o.id, op: "order-cancel", orderId: o.id, amplify: false, detail: `取消 ${o.id}(${stateLabel(eff)})· 未扣款订单终止后续流程 · 须操作确认 + 审计留痕` })}>取消订单</Btn>}
-                  {canWriteE4 && terminalOptions.length > 0 && <Btn onClick={() => openActionConfirm({ name: "标记失败结果 · " + o.id, op: "order-terminal", orderId: o.id, amplify: false, edit: { kind: "select", options: terminalOptions }, detail: `按当前 ${stateLabel(eff)} 状态落定合法失败终态;退款不走此入口 · 须操作确认 + 审计留痕` })}>标记失败结果</Btn>}
+                  {nextState && <Btn onClick={() => openActionConfirm({ name: `推进订单 · ${o.id} → ${stateLabel(nextState)}`, op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, detail: `手动推进 ${o.id}：${stateLabel(eff)} → ${stateLabel(nextState)}` })}>推进到下一步</Btn>}
+                  {canCancel && <Btn onClick={() => openActionConfirm({ name: "取消订单 · " + o.id, op: "order-cancel", orderId: o.id, amplify: false, detail: `取消 ${o.id}（${stateLabel(eff)}）。用户还没付款，取消后订单终止。` })}>取消订单</Btn>}
+                  {canWriteE4 && terminalOptions.length > 0 && <Btn onClick={() => openActionConfirm({ name: "标记失败结果 · " + o.id, op: "order-terminal", orderId: o.id, amplify: false, edit: { kind: "select", options: terminalOptions }, detail: `当前状态：${stateLabel(eff)}，选择一个失败结果。退款请用「退款」按钮。` })}>标记失败结果</Btn>}
                   {canRefundE4 && refundableState && <Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!refundReady} onClick={() => {
                     if (!e4Detail || !refundReady) return;
                     const channels = e4Detail.refundChannels.length ? e4Detail.refundChannels : ["WALLET"];
                     openActionConfirm({
                       name: "退款 · " + o.id, op: "order-refund", orderId: o.id, amplify: true,
                       businessForm: { kind: "multi-field", title: "退款渠道", hint: coverageText, fields: [{ key: "refundChannel", label: "退款渠道", current: channels[0], inputKind: "select", options: channels, optionLabels: { WALLET: "退回 USDT 钱包", ORIGINAL_PAYMENT: "原支付渠道" }, required: true, showDiff: true }] },
-                      detail: `退款 ${o.id} · $${o.amt.toLocaleString()} · ${coverageText} · D1/D4/钱包/累计充值同事务回退 · 不可逆`,
+                      detail: `退款 ${o.id} · $${o.amt.toLocaleString()} · ${coverageText}。钱会退回用户，充值记录、账单和累计充值一起冲回，不可撤销。`,
                     });
-                  }}><AutoGloss>{e4DetailLoading ? "校验退款条件中..." : e4Detail?.refundAllowed === false ? "B1 红线阻断退款" : "退款(操作确认)"}</AutoGloss></Btn>}
+                  }}><AutoGloss>{e4DetailLoading ? "正在检查退款条件…" : e4Detail?.refundAllowed === false ? "覆盖率低于红线，暂不能退款" : "退款"}</AutoGloss></Btn>}
                   <Btn style={{ flex: 1, justifyContent: "center" }} onClick={closeOrder}>关闭</Btn>
                 </>}>
             <div className="tint" style={{ marginBottom: 14, textAlign: "center" }}><div className="muted tiny">订单金额</div><div style={{ fontSize: 30, fontWeight: 600, color: "var(--ink)" }} className="tnum">${o.amt.toLocaleString()}</div></div>
             <KV k="状态" v={<Badge tone={ostate[eff] ?? "neutral"}>{stateLabel(eff)}</Badge>} />
             {!finalized && <KV k="下一处理步骤" v={nextState ? stateLabel(nextState) : <span style={{ color: "var(--ink-4)" }}>暂无可推进步骤</span>} />}
             {progressBlock && <div className="tint warn tiny" style={{ marginBottom: 10 }} title={progressBlock.code}>{progressBlock.text}</div>}
-            <KV k="数据中心分配" v={o.dc} />
+            <KV k="数据中心" v={o.dc} />
             <KV k="用户" v={o.user} />
             <KV k="下单时间" v={o.age + " 前"} />
-            {e4DetailLoading && <div className="tint tiny">正在读取支付、设备、资金与状态历史...</div>}
+            {e4DetailLoading && <div className="tint tiny">正在加载…</div>}
             {e4DetailError && <div className="tint warn tiny" data-module-health-state="error">详情读取失败:{e4DetailError} <button className="fchip" onClick={() => void openOrder(o)}>重试</button></div>}
             {e4Detail && <>
               <KV k="数量 / 类型" v={`${e4Detail.quantity} · ${operatorOrderFact("type", e4Detail.orderType)}`} />
               <KV k="支付" v={`${operatorOrderFact("payment", e4Detail.paymentMethod)} · ${operatorOrderFact("paymentStatus", e4Detail.paymentStatus)}${e4Detail.paymentNo ? ` · ${e4Detail.paymentNo}` : ""}`} />
               <KV k="设备实例" v={e4Detail.deviceInstanceNo ?? "尚未生成"} />
-              <KV k="B1 覆盖率" v={<span style={{ color: e4Detail.refundAllowed ? "var(--ok)" : "var(--danger)" }}>{coverageText}</span>} />
+              <KV k="兑付覆盖率" v={<span style={{ color: e4Detail.refundAllowed ? "var(--ok)" : "var(--danger)" }}>{coverageText}</span>} />
             </>}
-            {isCancelled(o.id) && <KV k="取消" v={<span style={{ color: "var(--ink-3)" }}>已取消 · 未支付订单后续流程已终止</span>} />}
-            {isRefunded(o.id) && <KV k="退款" v={<span style={{ color: "var(--warning)" }}>已退款 · D1/D4/钱包/累计充值已回退</span>} />}
-            {!isCancelled(o.id) && !isRefunded(o.id) && terminalOf(o.id) && <KV k="补建终态" v={<span style={{ color: "var(--warning)" }}>{stateLabel(terminalOf(o.id)!)} · 人工补建</span>} />}
+            {isCancelled(o.id) && <KV k="取消" v={<span style={{ color: "var(--ink-3)" }}>已取消 · 用户未付款，订单已终止</span>} />}
+            {isRefunded(o.id) && <KV k="退款" v={<span style={{ color: "var(--warning)" }}>已退款 · 钱已退回，相关记录已冲回</span>} />}
+            {!isCancelled(o.id) && !isRefunded(o.id) && terminalOf(o.id) && <KV k="失败结果" v={<span style={{ color: "var(--warning)" }}>{stateLabel(terminalOf(o.id)!)} · 人工标记</span>} />}
             <div style={{ fontSize: 12.5, fontWeight: 600, margin: "14px 0 8px", color: "var(--ink)" }}>状态轨迹</div>
             <div className="edrawer-trail">
               {ORDER_FLOW.map((s) => { const done = ORDER_FLOW.indexOf(s) <= idx; return <div key={s} className={`it ${done ? "done" : "grey"}`}><span className={`d ${done ? "done" : "grey"}`} /><span className="nm">{stateLabel(s)}</span></div>; })}
               {e4Detail?.history.map((item, index) => <div className="it" key={`${item.createdAt}-${index}`}><span className="d done" /><span className="nm">{stateLabel(item.fromState)} → {stateLabel(item.toState)} · {operatorOrderHistoryActor(item.operator)} · {operatorOrderHistoryReason(item.reason, e4Detail.paymentMethod)}</span></div>)}
-              {isCancelled(o.id) && <div className="it grey"><span className="d grey" /><span className="nm">已取消 · 运营手动取消</span></div>}
-              {!isCancelled(o.id) && !isRefunded(o.id) && terminalOf(o.id) && <div className="it red"><span className="d red" /><span className="nm">{stateLabel(terminalOf(o.id)!)} · 人工补建终态</span></div>}
+              {isCancelled(o.id) && <div className="it grey"><span className="d grey" /><span className="nm">已取消 · 人工取消</span></div>}
+              {!isCancelled(o.id) && !isRefunded(o.id) && terminalOf(o.id) && <div className="it red"><span className="d red" /><span className="nm">{stateLabel(terminalOf(o.id)!)} · 人工标记</span></div>}
               {isRefunded(o.id) && <div className="it warn"><span className="d warn" /><span className="nm">已退款 · 人工退款</span></div>}
             </div>
-            {e4Detail && <><div style={{ fontSize: 12.5, fontWeight: 600, margin: "14px 0 8px", color: "var(--ink)" }}>资金证据</div>
-              {e4Detail.funding.length === 0 ? <div className="muted tiny">暂无支付 / D4 流水</div> : e4Detail.funding.map((item, index) => {
+            {e4Detail && <><div style={{ fontSize: 12.5, fontWeight: 600, margin: "14px 0 8px", color: "var(--ink)" }}>资金记录</div>
+              {e4Detail.funding.length === 0 ? <div className="muted tiny">暂无付款或账单记录</div> : e4Detail.funding.map((item, index) => {
                 const ledgerHref = e4FundingLedgerHref(item);
                 return <KV key={`${item.source}-${item.bizNo}-${index}`} k={operatorOrderFact("source", item.source)} v={<span>{`${operatorOrderFact("direction", item.direction)} ${item.amount.toLocaleString()} USDT · ${operatorOrderFact("fundingStatus", item.status)} · ${item.bizNo}`}{ledgerHref && <> · <Link href={ledgerHref}>查看 D4 流水</Link></>}</span>} />;
               })}
             </>}
             <div className="chips" style={{ marginTop: 14 }}>
-              <Link className="chip" href={`/platform/audit?domain=E&object=${encodeURIComponent(o.id)}`}>A2 审计追踪</Link>
-              <Link className="chip" href="/platform/events">A4 订单事件</Link>
-              {!e4Detail?.funding.some((item) => e4FundingLedgerHref(item)) && <Link className="chip" href={`/finance/ledger?bizNo=${encodeURIComponent(o.id)}`}>按订单号查 D4</Link>}
+              <Link className="chip" href={`/platform/audit?domain=E&object=${encodeURIComponent(o.id)}`}>操作记录</Link>
+              <Link className="chip" href="/platform/events">用户行为事件</Link>
+              {!e4Detail?.funding.some((item) => e4FundingLedgerHref(item)) && <Link className="chip" href={`/finance/ledger?bizNo=${encodeURIComponent(o.id)}`}>按订单号查账单</Link>}
             </div>
           </Drawer>
         );
       })()}
 
       {/* SKU 新增 / 编辑 抽屉 */}
-      {skuDrawer && <Drawer title={editSkuId ? "编辑 商品规格" : "新增 商品规格"} sub={<AutoGloss>{editSkuId ? "改价 / 库存 / 每日收益基准 / 上架阶段 · 改后走操作确认" : "填写商品规格 · 提交后走操作确认"}</AutoGloss>} onClose={() => { setSkuDrawer(false); setEditSkuId(null); resetSkuMedia(null); }}
+      {skuDrawer && <Drawer title={editSkuId ? "编辑商品" : "新增商品"} sub={<AutoGloss>{editSkuId ? "改价、库存、每日收益、开放阶段等，提交后需确认" : "填写商品信息，提交后需确认"}</AutoGloss>} onClose={() => { setSkuDrawer(false); setEditSkuId(null); resetSkuMedia(null); }}
         footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setSkuDrawer(false); setEditSkuId(null); resetSkuMedia(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!form.name || !form.price || !skuFormChanged || skuMediaUploading || (!!skuMedia && !skuMedia.assetId)} onClick={openSkuSaveConfirm}>{editSkuId ? "保存修改" : "提交确认"}</Btn></>}>
         <div className="col" style={{ gap: 12 }}>
           <div className="col" style={{ gap: 5 }}><span className="muted tiny">产品图 / 视频</span>
@@ -1253,7 +1253,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               <input type="file" accept={SKU_MEDIA_ACCEPT} style={{ display: "none" }} onChange={(e) => { void onPickSkuMedia(e.target.files?.[0]); e.currentTarget.value = ""; }} />
               {skuMedia
                 ? !skuMediaPreviewSrc(skuMedia)
-                  ? <div className="col" style={{ alignItems: "center", gap: 6, padding: "22px 0", color: "var(--ink-3)" }}><Icon name="image" size={26} /><span className="tiny">媒体已保留，预览链接刷新中或暂不可用</span><span className="muted tiny">可稍后重试，也可选择新文件替换</span></div>
+                  ? <div className="col" style={{ alignItems: "center", gap: 6, padding: "22px 0", color: "var(--ink-3)" }}><Icon name="image" size={26} /><span className="tiny">图片已保存，预览暂时显示不了</span><span className="muted tiny">可稍后重试，也可选择新文件替换</span></div>
                   : skuMedia.kind === "video"
                   ? <video key={skuMediaPreviewSrc(skuMedia)} src={skuMediaPreviewSrc(skuMedia)} controls muted playsInline preload="auto" onError={() => void refreshCurrentSkuMediaPreview(skuMedia.assetId)} style={{ width: "100%", height: 140, objectFit: "cover", borderRadius: 9, display: "block", background: "var(--surface-3)" }} />
                   : <img key={skuMediaPreviewSrc(skuMedia)} src={skuMediaPreviewSrc(skuMedia)} alt="" onError={() => void refreshCurrentSkuMediaPreview(skuMedia.assetId)} style={{ width: "100%", height: 140, objectFit: "cover", borderRadius: 9, display: "block" }} />
@@ -1281,28 +1281,28 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               <SkuFld label="营销角标" value={form.badge} onChange={(v) => setForm({ ...form, badge: v })} placeholder="输入活动角标" hint="可自定义" list="sku-badge-presets" />
             </div>
             <datalist id="sku-badge-presets">{SKU_BADGE_PRESETS.map((b) => <option key={b} value={b} />)}</datalist>
-            <SkuFld label="商品标语" value={form.tagline} onChange={(v) => setForm({ ...form, tagline: v })} placeholder="个人 AI 算力设备，由平台托管" hint="每款独立 标语 · 自由文案" />
+            <SkuFld label="商品标语" value={form.tagline} onChange={(v) => setForm({ ...form, tagline: v })} placeholder="个人 AI 算力设备，由平台托管" hint="每款商品单独设置" />
             <div className="grid g-2" style={{ gap: 12 }}>
               <SkuFld label="售价(USD)" type="number" value={form.price} onChange={(v) => setForm({ ...form, price: v })} placeholder="1319" />
-              <SkuFld label="商品编号" value={form.id} onChange={(v) => setForm({ ...form, id: v })} placeholder="uvelbox-pro-v2" disabled={Boolean(editSkuId)} hint={editSkuId ? "商品稳定标识，创建后不可修改" : undefined} />
+              <SkuFld label="商品编号" value={form.id} onChange={(v) => setForm({ ...form, id: v })} placeholder="uvelbox-pro-v2" disabled={Boolean(editSkuId)} hint={editSkuId ? "创建后不能修改" : undefined} />
             </div>
           </SkuFieldGroup>
 
           <SkuFieldGroup n="②" title="硬件规格">
             <div className="grid g-2" style={{ gap: 12 }}>
               <SkuFld label="GPU 型号（单卡）" value={form.gpu} onChange={(v) => setForm({ ...form, gpu: v })} placeholder="RTX 4090" />
-              <SkuFld label="GPU 数量" type="number" min={1} step={1} value={form.gpuCount} onChange={(v) => setForm({ ...form, gpuCount: v })} placeholder="4" hint="按实际配置填写；留空保留原型号，不推定为 1 张" />
+              <SkuFld label="GPU 数量" type="number" min={1} step={1} value={form.gpuCount} onChange={(v) => setForm({ ...form, gpuCount: v })} placeholder="4" hint="按实际配置填写；留空不会按 1 张计算" />
               <SkuFld label="显存" value={form.vram} onChange={(v) => setForm({ ...form, vram: v })} placeholder="96GB VRAM" />
             </div>
             {form.tier !== "Share" && <div className="grid g-2" style={{ gap: 12 }}>
               <SkuFld label="算力" value={form.hashRate} onChange={(v) => setForm({ ...form, hashRate: v })} placeholder="1,240 MH/s" />
-              <SkuFld label="功耗 / 功率说明" value={form.power} onChange={(v) => setForm({ ...form, power: v })} placeholder="1,800W（GPU 额定合计）" hint="注明单卡、显卡合计或整机实测口径；限功耗配置需有实际依据" />
+              <SkuFld label="功耗 / 功率说明" value={form.power} onChange={(v) => setForm({ ...form, power: v })} placeholder="1,800W（GPU 额定合计）" hint="注明是单卡、显卡合计还是整机实测" />
             </div>}
             <label className="col" style={{ gap: 5 }}>
-              <span className="muted tiny">数据中心<span style={{ color: "var(--ink-4)" }}> · 选 E5 数据中心(前端展示名称)· 在 E5 运维增删改</span></span>
+              <span className="muted tiny">数据中心<span style={{ color: "var(--ink-4)" }}> · 在「设备运行管理」增删改</span></span>
               <select className="fld" value={form.datacenter} onChange={(e) => setForm({ ...form, datacenter: e.target.value })}>
-                {skuDatacenterOptions.length === 0 && <option value="">E5 暂无数据中心</option>}
-                {staleSkuDatacenter && <option value={staleSkuDatacenter}>{staleSkuDatacenter} · 历史值(当前不可选)</option>}
+                {skuDatacenterOptions.length === 0 && <option value="">暂无数据中心</option>}
+                {staleSkuDatacenter && <option value={staleSkuDatacenter}>{staleSkuDatacenter} · 旧值（现在不能选）</option>}
                 {skuDatacenterOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
@@ -1312,13 +1312,13 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             </div>
           </SkuFieldGroup>
 
-          <SkuFieldGroup n="③" title={form.tier === "Share" ? "收益参数(年化 + UVT)" : "收益参数(双币)"}>
+          <SkuFieldGroup n="③" title={form.tier === "Share" ? "收益（年化 + UVT）" : "收益（USDT + UVT）"}>
             {form.tier !== "Share" ? (
               <div className="grid g-2" style={{ gap: 12 }}>
                 <SkuFld label="每日收益 USDT" type="number" value={form.dailyEarn} onChange={(v) => setForm({ ...form, dailyEarn: v })} placeholder="38.50" />
                 <SkuFld label="每日收益 UVT" type="number" value={form.dailyEarnNEX} onChange={(v) => setForm({ ...form, dailyEarnNEX: v })} placeholder="65" />
-                <SkuFld label="手机每日收益 USDT" type="number" min={0} step={0.000001} value={form.phoneDailyEarn} onChange={(v) => setForm({ ...form, phoneDailyEarn: v })} placeholder="0.06" hint="可留空，服务端缺值则 App 显示不可用" />
-                <SkuFld label="手机每日收益 UVT" type="number" min={0} step={0.000001} value={form.phoneDailyEarnNEX} onChange={(v) => setForm({ ...form, phoneDailyEarnNEX: v })} placeholder="10" hint="可留空，服务端缺值则 App 显示不可用" />
+                <SkuFld label="手机每日收益 USDT" type="number" min={0} step={0.000001} value={form.phoneDailyEarn} onChange={(v) => setForm({ ...form, phoneDailyEarn: v })} placeholder="0.06" hint="可留空，留空时 App 不显示" />
+                <SkuFld label="手机每日收益 UVT" type="number" min={0} step={0.000001} value={form.phoneDailyEarnNEX} onChange={(v) => setForm({ ...form, phoneDailyEarnNEX: v })} placeholder="10" hint="可留空，留空时 App 不显示" />
               </div>
             ) : (
               <>
@@ -1326,7 +1326,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                   <SkuFld label="共享份额年化下限 %" type="number" value={form.shareYieldMin} onChange={(v) => setForm({ ...form, shareYieldMin: v })} placeholder="8" />
                   <SkuFld label="共享份额年化上限 %" type="number" value={form.shareYieldMax} onChange={(v) => setForm({ ...form, shareYieldMax: v })} placeholder="15" />
                 </div>
-                <SkuFld label="每日收益 UVT(份额每日额外发放)" type="number" value={form.dailyEarnNEX} onChange={(v) => setForm({ ...form, dailyEarnNEX: v })} placeholder="30" />
+                <SkuFld label="每日额外发放 UVT" type="number" value={form.dailyEarnNEX} onChange={(v) => setForm({ ...form, dailyEarnNEX: v })} placeholder="30" />
               </>
             )}
           </SkuFieldGroup>
@@ -1364,17 +1364,17 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                   const inventoryMode = e.target.value === "UNLIMITED" ? "UNLIMITED" : "FINITE";
                   setForm({ ...form, inventoryMode, stock: inventoryMode === "UNLIMITED" ? "" : form.stock });
                 }}>
-                  <option value="FINITE">有限库存（实数扣减）</option>
-                  {form.tier === "Share" && <option value="UNLIMITED">无限库存（非实物份额）</option>}
+                  <option value="FINITE">有限库存（卖一件少一件）</option>
+                  {form.tier === "Share" && <option value="UNLIMITED">无限库存（非实物份额商品）</option>}
                 </select>
-                <span className="muted tiny">无限库存仅允许共享份额商品；成交只累计销量，不扣减库存。</span>
+                <span className="muted tiny">无限库存只能用于共享份额商品，成交后只增加销量，不减库存。</span>
               </label>
               <label className="col" style={{ gap: 5 }}>
                 <span className="muted tiny">累计销量</span>
-                <span className="tiny" style={{ color: "var(--ink-3)", minHeight: 34, display: "flex", alignItems: "center" }}>累计销量由成功支付订单累计；新商品从 0 开始，不能手动调整。</span>
+                <span className="tiny" style={{ color: "var(--ink-3)", minHeight: 34, display: "flex", alignItems: "center" }}>按已付款订单自动累计，新商品从 0 开始，不能手动修改。</span>
               </label>
             </div>
-            {form.inventoryMode !== "UNLIMITED" && <SkuFld label="库存" type="number" min={0} step={1} value={form.stock} onChange={(v) => setForm({ ...form, stock: v })} placeholder="47" hint="必填，0 表示售罄；不自动下架" />}
+            {form.inventoryMode !== "UNLIMITED" && <SkuFld label="库存" type="number" min={0} step={1} value={form.stock} onChange={(v) => setForm({ ...form, stock: v })} placeholder="47" hint="必填，0 表示售罄（不会自动下架）" />}
           </SkuFieldGroup>
 
           <SkuFieldGroup n="⑥" title="生命周期与上架">
@@ -1386,36 +1386,36 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                   checked={form.trialEligible === "true"}
                   onChange={(e) => setForm({ ...form, trialEligible: e.target.checked ? "true" : "false" })}
                 />
-                <span className="tiny">{form.trialEligible === "true" ? "已允许 H2 选为免费试用商品" : "未允许试用（默认）"}</span>
+                <span className="tiny">{form.trialEligible === "true" ? "可在「免费试用设置」里选为试用商品" : "不允许试用（默认）"}</span>
               </span>
-              <span className="muted tiny">该开关不代替在售与库存校验；关闭后 H2 不能新增选择此商品。</span>
+              <span className="muted tiny">关闭后，「免费试用设置」就不能再选这个商品。</span>
             </label>
             <div className="grid g-2" style={{ gap: 12 }}>
               <label className="col" style={{ gap: 5 }}><span className="muted tiny">生命周期</span><select className="fld" value={form.lifecycle} onChange={(e) => setForm({ ...form, lifecycle: e.target.value })}><option value="">请选择生命周期</option>{SKU_LIFECYCLE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
             </div>
             {form.tier !== "Share" && <>
               <div className="grid g-2" style={{ gap: 12 }}>
-                <label className="col" style={{ gap: 5 }}><span className="muted tiny"><AutoGloss>解锁阶段（上架节奏门）</AutoGloss></span><select className="fld" value={form.unlock} onChange={(e) => setForm({ ...form, unlock: e.target.value })} disabled={skuPhaseIds.length === 0}>{skuPhaseIds.length === 0 ? <option value="">请先配置阶段</option> : skuPhaseIds.map((p) => <option key={p} value={p}>{e1PhaseLabel(p)}{p === phaseCur ? " · 当前阶段 · A2 执行后 App 进入正常商品区" : ""}</option>)}</select></label>
+                <label className="col" style={{ gap: 5 }}><span className="muted tiny"><AutoGloss>开放阶段</AutoGloss></span><select className="fld" value={form.unlock} onChange={(e) => setForm({ ...form, unlock: e.target.value })} disabled={skuPhaseIds.length === 0}>{skuPhaseIds.length === 0 ? <option value="">请先配置阶段</option> : skuPhaseIds.map((p) => <option key={p} value={p}>{e1PhaseLabel(p)}{p === phaseCur ? " · 当前阶段 · A2 执行后 App 进入正常商品区" : ""}</option>)}</select></label>
               </div>
             </>}
           <label className="col" style={{ gap: 5 }}><span className="muted tiny">特性清单 · 每行一条</span><textarea className="fld" style={{ minHeight: 72, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }} value={form.features} onChange={(e) => setForm({ ...form, features: e.target.value })} placeholder={"UVEL 托管服务\n设备规格\n服务说明"} /></label>
           </SkuFieldGroup>
 
           <SkuFieldGroup n="⑦" title="购买条件与限量">
-            <div className="tint tiny">购买条件由 E1 后端保存，并由 App 商品目录、单品结算、组合结算及服务端成交入口共同复验。未设条件 = 不设用户条件；限量已售数量由服务端回读。</div>
+            <div className="tint tiny">设置用户需满足什么条件才能购买，App 下单时会自动检查。不设条件就是所有人都能买。</div>
             <label className="col" style={{ gap: 5 }}>
               <span className="muted tiny">购买条件类型</span>
               <select className="fld" value={form.gateType} onChange={(e) => setForm({ ...form, gateType: e.target.value as SkuForm["gateType"] })}>
                 <option value="none">无用户条件</option>
-                <option value="activeDirect">活跃直推条件</option>
-                <option value="rank">最低会员等级条件</option>
-                <option value="combo">组合条件（会员等级 / 直推 / 团队业绩）</option>
+                <option value="activeDirect">活跃直接邀请人数</option>
+                <option value="rank">最低会员等级</option>
+                <option value="combo">组合条件（会员等级 / 直接邀请 / 团队业绩）</option>
               </select>
             </label>
             {form.gateType !== "none" && <>
               <div className="grid g-2" style={{ gap: 12 }}>
                 {(form.gateType === "rank" || form.gateType === "combo") && <SkuFld label="最低会员等级" type="number" min={0} max={12} step={1} value={form.gateRankMin} onChange={(v) => setForm({ ...form, gateRankMin: v })} placeholder="3" hint="0–12" />}
-                {(form.gateType === "activeDirect" || form.gateType === "combo") && <SkuFld label="活跃直推人数" type="number" min={0} step={1} value={form.gateActiveDirectMin} onChange={(v) => setForm({ ...form, gateActiveDirectMin: v })} placeholder="5" hint="非负整数" />}
+                {(form.gateType === "activeDirect" || form.gateType === "combo") && <SkuFld label="活跃直接邀请人数" type="number" min={0} step={1} value={form.gateActiveDirectMin} onChange={(v) => setForm({ ...form, gateActiveDirectMin: v })} placeholder="5" hint="非负整数" />}
                 {form.gateType === "combo" && <SkuFld label="团队业绩 (USD)" type="number" min={0} step={0.01} value={form.gateTeamVolumeMin} onChange={(v) => setForm({ ...form, gateTeamVolumeMin: v })} placeholder="20000" hint="非负数" />}
               </div>
               {form.gateType === "combo" && <label className="col" style={{ gap: 5 }}>
@@ -1427,9 +1427,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               </label>}
             </>}
             <div className="grid g-2" style={{ gap: 12 }}>
-              <SkuFld label="本期可售上限" type="number" min={1} step={1} value={form.gateQuotaCap} onChange={(v) => setForm({ ...form, gateQuotaCap: v })} placeholder="留空 = 不限量" hint="本期可售上限" />
+              <SkuFld label="本期可售上限" type="number" min={1} step={1} value={form.gateQuotaCap} onChange={(v) => setForm({ ...form, gateQuotaCap: v })} placeholder="留空 = 不限量" hint="留空不限量" />
               <label className="col" style={{ gap: 5 }}>
-                <span className="muted tiny">本期已售数量 · 服务端回读</span>
+                <span className="muted tiny">本期已售数量</span>
                 <input className="fld" type="number" min={0} step={1} value={form.gateQuotaSold} readOnly aria-readonly="true" />
               </label>
             </div>
@@ -1437,15 +1437,15 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               <label className="col" style={{ gap: 5 }}>
                 <span className="muted tiny">售卖统计周期</span>
                 <select className="fld" value={form.gateQuotaPeriod} onChange={(e) => setForm({ ...form, gateQuotaPeriod: e.target.value as SkuForm["gateQuotaPeriod"] })}>
-                  <option value="lifetime">全生命周期</option>
+                  <option value="lifetime">不分周期（累计）</option>
                 </select>
-                {form.gateQuotaPeriod === "month" && <span className="muted tiny">历史按月配置已暂停,请改为全生命周期后保存</span>}
+                {form.gateQuotaPeriod === "month" && <span className="muted tiny">按月统计已停用，请改为「不分周期」后保存</span>}
               </label>
               <label className="col" style={{ gap: 5 }}>
                 <span className="muted tiny">售罄后限制购买</span>
                 <select className="fld" value={form.gateEnforce} onChange={(e) => setForm({ ...form, gateEnforce: e.target.value as SkuForm["gateEnforce"] })}>
-                  <option value="true">售罄时服务端拦截成交</option>
-                  <option value="false">售罄仅展示（资格仍由服务端校验）</option>
+                  <option value="true">卖完后不能再买</option>
+                  <option value="false">卖完只显示售罄，仍可购买</option>
                 </select>
               </label>
             </div>}
@@ -1455,17 +1455,17 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             if (form.tier === "Share") {
               const lo = skuNum(form.shareYieldMin); const hi = skuNum(form.shareYieldMax); const nex = skuNum(form.dailyEarnNEX); const pr = skuNum(form.price);
               const complete = form.shareYieldMin.trim() !== "" && form.shareYieldMax.trim() !== "" && lo > 0 && hi >= lo;
-              return <div className="tint cyan tiny">派生 · {complete ? <>参考年化 <span className="nowrap">{lo}–{hi}%</span></> : "年化区间暂不可用"} · 每日收益 <span className="nowrap">{nex.toLocaleString()} UVT/天</span>{pr > 0 ? <> · 起投 <span className="nowrap">${pr.toLocaleString()}</span></> : null}</div>;
+              return <div className="tint cyan tiny">估算 · {complete ? <>参考年化 <span className="nowrap">{lo}–{hi}%</span></> : "年化区间暂不可用"} · 每日收益 <span className="nowrap">{nex.toLocaleString()} UVT/天</span>{pr > 0 ? <> · 起投 <span className="nowrap">${pr.toLocaleString()}</span></> : null}</div>;
             }
             const p = skuNum(form.price); const d = skuNum(form.dailyEarn);
-            return p > 0 && d > 0 ? <div className="tint cyan tiny">派生 · 回本 ≈ <span className="nowrap">{Math.round(p / d)} 天</span> · 首年净 ≈ <span className="nowrap">${(d * 365 - p).toLocaleString()}</span> · 年化 ≈ <span className="nowrap">{Math.round((d * 365 / p) * 100)}%</span> · vs 手机 ≈ <span className="nowrap">{Math.round(d / 0.08).toLocaleString()}×</span></div> : null;
+            return p > 0 && d > 0 ? <div className="tint cyan tiny">估算 · 回本 ≈ <span className="nowrap">{Math.round(p / d)} 天</span> · 首年净 ≈ <span className="nowrap">${(d * 365 - p).toLocaleString()}</span> · 年化 ≈ <span className="nowrap">{Math.round((d * 365 / p) * 100)}%</span> · vs 手机 ≈ <span className="nowrap">{Math.round(d / 0.08).toLocaleString()}×</span></div> : null;
           })()}
-          <div className="tint warn tiny"><AutoGloss>定价 / 每日收益基准 / 状态为敏感字段 · 新增 商品规格 需操作确认后才上架</AutoGloss></div>
+          <div className="tint warn tiny"><AutoGloss>价格、每日收益和状态修改需确认后才生效；新商品确认后才会上架</AutoGloss></div>
         </div>
       </Drawer>}
 
       {/* 任务新增 抽屉 */}
-      {taskDrawer && <Drawer title={editTaskId ? "编辑任务" : "新增任务"} sub={<AutoGloss>{editTaskId ? "编辑全字段 · 单价/门槛/任务类型 改后走操作确认 · 对新派单 以服务器数据为准 生效" : "AI 算力任务类型 · 单价/门槛改后对新派单 以服务器数据为准 生效"}</AutoGloss>} onClose={() => { setTaskDrawer(false); setEditTaskId(null); }}
+      {taskDrawer && <Drawer title={editTaskId ? "编辑任务" : "新增任务"} sub={<AutoGloss>{editTaskId ? "修改后需确认，只对之后新派的任务生效" : "新增 AI 算力任务，确认后对新派的任务生效"}</AutoGloss>} onClose={() => { setTaskDrawer(false); setEditTaskId(null); }}
         footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setTaskDrawer(false); setEditTaskId(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!canMutateE2Tasks || !taskForm.n.trim() || !Number(taskForm.price)} onClick={editTaskId ? submitTaskEdit : submitTask}>{editTaskId ? "保存修改" : "提交新增"}</Btn></>}>
         <div className="col" style={{ gap: 12 }}>
           <label className="col" style={{ gap: 5 }}><span className="muted tiny">任务名称</span><input className="fld" value={taskForm.n} onChange={(e) => setTaskForm({ ...taskForm, n: e.target.value })} placeholder="如 大模型推理 405B" /></label>
@@ -1473,32 +1473,32 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             <label className="col" style={{ gap: 5 }}><span className="muted tiny"><AutoGloss>单价(USDT)</AutoGloss></span><input className="fld" type="number" value={taskForm.price} onChange={(e) => setTaskForm({ ...taskForm, price: e.target.value })} placeholder="1.20" /></label>
             <label className="col" style={{ gap: 5 }}><span className="muted tiny">计价单位</span><div className="row wrap" style={{ gap: 6 }}>{["/job", "/1k", "/min"].map((u) => <Chip key={u} tab sel={taskForm.unit === u} onClick={() => setTaskForm({ ...taskForm, unit: u })}>{({ "/job": "每项任务", "/1k": "每千单位", "/min": "每分钟" } as Record<string,string>)[u]}</Chip>)}</div></label>
           </div>
-          <label className="col" style={{ gap: 5 }}><span className="muted tiny">设备资格要求(设备要求)<span style={{ color: "var(--ink-4)" }}> · 手机+ = 含手机的最低门槛(手机可接)</span></span><div className="row wrap" style={{ gap: 6 }}>{["手机+", "S1+", "需 NexGridBox Pro", "需 NexGridRack"].map((r) => <Chip key={r} tab sel={taskForm.req === r} onClick={() => setTaskForm({ ...taskForm, req: r })}>{nexGridBrandText(r)}</Chip>)}</div></label>
-          <SkuFld label="初始饱和度 %(预估)" type="number" value={taskForm.sat} onChange={(v) => setTaskForm({ ...taskForm, sat: v })} placeholder="50" hint="0-100" />
+          <label className="col" style={{ gap: 5 }}><span className="muted tiny">设备要求<span style={{ color: "var(--ink-4)" }}> · 手机+ 表示手机也能接</span></span><div className="row wrap" style={{ gap: 6 }}>{["手机+", "S1+", "需 NexGridBox Pro", "需 NexGridRack"].map((r) => <Chip key={r} tab sel={taskForm.req === r} onClick={() => setTaskForm({ ...taskForm, req: r })}>{nexGridBrandText(r)}</Chip>)}</div></label>
+          <SkuFld label="初始饱和度 %（预估）" type="number" value={taskForm.sat} onChange={(v) => setTaskForm({ ...taskForm, sat: v })} placeholder="50" hint="0-100" />
           {/* #36 任务核心配置:taskClass / 代表模型 / 奖励区间 / 最低显存 / kill 初始态 */}
           <div className="grid g-2" style={{ gap: 12 }}>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">任务类型(可选类型)</span>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">任务类型</span>
               <select className="fld" value={taskForm.taskClass} onChange={(e) => setTaskForm({ ...taskForm, taskClass: e.target.value })}>
-                <option value="">请选择 任务类型</option>
+                <option value="">请选择任务类型</option>
                 {["IG", "VG", "LL", "FT", "EM", "SP"].map((c) => <option key={c} value={c}>{({IG:"图像生成",VG:"视频生成",LL:"大模型推理",FT:"模型微调",EM:"向量计算",SP:"语音处理"} as Record<string,string>)[c]}</option>)}
               </select>
             </label>
             <label className="col" style={{ gap: 5 }}><span className="muted tiny">代表模型</span><input className="fld" value={taskForm.model} onChange={(e) => setTaskForm({ ...taskForm, model: e.target.value })} placeholder="如 Llama-3.1-405B" /></label>
           </div>
           <div className="grid g-2" style={{ gap: 12 }}>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">最低奖励(USDT)</span><input className="fld" type="number" value={taskForm.minReward} onChange={(e) => setTaskForm({ ...taskForm, minReward: e.target.value })} placeholder="0.80" /></label>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">最高奖励(USDT)</span><input className="fld" type="number" value={taskForm.maxReward} onChange={(e) => setTaskForm({ ...taskForm, maxReward: e.target.value })} placeholder="2.40" /></label>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">最低奖励（USDT）</span><input className="fld" type="number" value={taskForm.minReward} onChange={(e) => setTaskForm({ ...taskForm, minReward: e.target.value })} placeholder="0.80" /></label>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">最高奖励（USDT）</span><input className="fld" type="number" value={taskForm.maxReward} onChange={(e) => setTaskForm({ ...taskForm, maxReward: e.target.value })} placeholder="2.40" /></label>
           </div>
           <div className="grid g-2" style={{ gap: 12 }}>
             <label className="col" style={{ gap: 5 }}><span className="muted tiny">最低显存（GB）</span><input className="fld" type="number" min={0} step={1} value={taskForm.minVRAM.replace(/GB$/i, "")} onChange={(e) => setTaskForm({ ...taskForm, minVRAM: e.target.value })} placeholder="80" /></label>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">初始派发状态</span><div className="row wrap" style={{ gap: 6 }}>{["派发中", "已 kill", "限流中"].map((k) => <Chip key={k} tab sel={taskForm.killInit === k} onClick={() => setTaskForm({ ...taskForm, killInit: k })}>{k === "已 kill" ? "已停止派发" : k}</Chip>)}</div></label>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">初始接单状态</span><div className="row wrap" style={{ gap: 6 }}>{["派发中", "已 kill", "限流中"].map((k) => <Chip key={k} tab sel={taskForm.killInit === k} onClick={() => setTaskForm({ ...taskForm, killInit: k })}>{k === "已 kill" ? "已停止接单" : k === "派发中" ? "正常接单" : "限量接单"}</Chip>)}</div></label>
           </div>
-          <div className="tint warn tiny"><AutoGloss>单价 / 门槛 / 任务类型 为敏感字段 · 以后端为准;任务类型 建立与后台派单引擎的对应关系,改后对新派单生效 + 前端 用户任务页同步,需操作确认留痕。</AutoGloss></div>
+          <div className="tint warn tiny"><AutoGloss>单价、设备要求和任务类型修改后需确认，只对之后新派的任务生效，用户任务页同步更新。</AutoGloss></div>
         </div>
       </Drawer>}
 
       {/* E5 数据中心新增 / 编辑抽屉 */}
-      {dcDrawer && <Drawer title={editDcLocation ? "编辑数据中心" : "新增数据中心"} sub={<AutoGloss>数据中心卡片配置 · 保存后生效</AutoGloss>} onClose={() => { setDcDrawer(false); setEditDcLocation(null); }}
+      {dcDrawer && <Drawer title={editDcLocation ? "编辑数据中心" : "新增数据中心"} sub={<AutoGloss>保存后生效</AutoGloss>} onClose={() => { setDcDrawer(false); setEditDcLocation(null); }}
         footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setDcDrawer(false); setEditDcLocation(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!dcForm.dcLocation.trim() || !dcForm.regionLabel.trim() || !dcForm.location.trim() || !dcForm.displayName.trim()} onClick={openDatacenterSaveConfirm}>{editDcLocation ? "保存修改" : "提交新增"}</Btn></>}>
         <div className="col" style={{ gap: 12 }}>
           <label className="col" style={{ gap: 5 }}>
@@ -1506,7 +1506,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             <input className="fld" value={dcForm.dcLocation} onChange={(e) => setDcForm({ ...dcForm, dcLocation: e.target.value })} placeholder="us-east-2" />
           </label>
           <label className="col" style={{ gap: 5 }}>
-            <span className="muted tiny">区域 ID</span>
+            <span className="muted tiny">区域</span>
             <input className="fld" value={dcForm.regionLabel} onChange={(e) => setDcForm({ ...dcForm, regionLabel: e.target.value })} placeholder="美国 · 弗吉尼亚" />
           </label>
           <label className="col" style={{ gap: 5 }}>
@@ -1514,7 +1514,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             <input className="fld" value={dcForm.location} onChange={(e) => setDcForm({ ...dcForm, location: e.target.value })} placeholder="美国弗吉尼亚州阿什本" />
           </label>
           <label className="col" style={{ gap: 5 }}>
-            <span className="muted tiny">前端展示名</span>
+            <span className="muted tiny">展示名称</span>
             <input className="fld" value={dcForm.displayName} onChange={(e) => setDcForm({ ...dcForm, displayName: e.target.value })} placeholder="美东算力中心" />
           </label>
           <div className="grid g-2" style={{ gap: 12 }}>
@@ -1529,29 +1529,29 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               <input className="fld" type="number" min={0} value={dcForm.sortOrder} onChange={(e) => setDcForm({ ...dcForm, sortOrder: e.target.value })} placeholder="100" />
             </label>
           </div>
-          <div className="tint warn tiny"><AutoGloss>删除数据中心只移除卡片配置,不会删除设备库存;暂停/恢复派单仍走 E5 运维处置接口。</AutoGloss></div>
+          <div className="tint warn tiny"><AutoGloss>删除数据中心不会删除设备库存；暂停或恢复派单请在「设备运行管理」操作。</AutoGloss></div>
         </div>
       </Drawer>}
 
       {/* 操作确认(唯一动作出口)*/}
       {mc && <OperationConfirmModal
         action={mc.name}
-        detail={mc.detail ?? "以后端为准 · 改后对下一笔结算 / 新派单生效,不回溯已累计收益"}
+        detail={mc.detail ?? "从下一次结算或新派任务开始生效，已累计的收益不变。"}
         amplifies={!!mc.amplify}
         edit={mc.edit}
         businessForm={mc.businessForm}
         reasonMax={200}
-        completionCopy="提交后进入 A2 待确认队列,批准执行后生效"
+        completionCopy="提交后需在「操作记录与审批」确认才生效。"
         onClose={() => setActionConfirm(null)}
         onConfirm={async (reason, newValue, businessValue) => {
           if (!mc) return;
           if (isE2TaskMutation(mc.op) && !canMutateE2Tasks) {
-            setToast("E2 当前配置不可用，已取消本次配置提交");
+            setToast("设备收益设置加载失败，本次没有提交");
             setActionConfirm(null);
             return;
           }
           if (isE2ConfigMutation(mc.op) && !canMutateE2) {
-            setToast("E2 当前配置不可用，已取消本次配置提交");
+            setToast("设备收益设置加载失败，本次没有提交");
             setActionConfirm(null);
             return;
           }
@@ -1560,7 +1560,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           try {
             if (mc.op === "bundle-discount" && businessValue) {
               const current = e1BundleDiscount;
-              if (!current) { setToast("组合优惠当前配置不可用，请刷新后重试"); return; }
+              if (!current) { setToast("组合优惠设置加载失败，请刷新后重试"); return; }
               const next = {
                 twoItemsPct: Number(businessValue.twoItemsPct),
                 threeItemsPct: Number(businessValue.threeItemsPct),
@@ -1569,7 +1569,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               if (Object.values(next).some((value) => !Number.isFinite(value) || value <= 0 || value > 50)
                   || next.threeItemsPct < next.twoItemsPct
                   || next.fourPlusItemsPct < next.threeItemsPct) {
-                setToast("折扣必须在 0–50% 之间，且件数越多折扣不得降低");
+                setToast("折扣须在 0–50% 之间，且买得越多折扣不能越少");
                 return;
               }
               const def = findHighOp("e1_bundle_discount")!;
@@ -1590,20 +1590,20 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               });
             } else if (mc.op === "sku-save") {
               if (e1Gates?.skuReviewContractVersion !== 1) {
-                throw new Error("商品完整审核服务尚未就绪，请刷新后重试；当前输入已保留");
+                throw new Error("商品审核暂时不可用，请刷新后重试；已填写的内容会保留");
               }
               const ex = editSkuId ? skus.find((x) => x.id === editSkuId) : undefined;
               const sku = attachSkuMedia(formToSku(form, ex), skuMedia);
               const skuId = editSkuId ?? (form.id.trim() || form.name.trim());
               const def = findHighOp(editSkuId ? "e1_sku_update" : "e1_sku_create")!;
               if (editSkuId && !ex) {
-                setToast("原商品快照已刷新，请重新打开商品后再提交");
+                setToast("商品信息已更新，请重新打开商品后再提交");
                 setActionConfirm(null);
                 return;
               }
               const summary = ex ? summarizeSkuProposal(ex, sku) : summarizeSkuCreation(sku);
               if (editSkuId && !summary) {
-                setToast("未检测到商品字段变化，无需发起敏感审核");
+                setToast("没有任何修改，无需提交");
                 setActionConfirm(null);
                 return;
               }
@@ -1679,7 +1679,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               const minR = Number(taskForm.minReward), maxR = Number(taskForm.maxReward);
               const sat = taskForm.sat.trim() ? Math.max(0, Math.min(100, Number(taskForm.sat))) / 100 : null;
               const currentTask = tasks.find((task) => task.id === editTaskId);
-              if (!currentTask) { setToast("任务状态已刷新，请重新打开任务后再编辑"); return; }
+              if (!currentTask) { setToast("任务已更新，请重新打开后再编辑"); return; }
               const def = findHighOp("e2_task_update")!;
               const taskCtx = {
                 taskId: editTaskId, name: taskForm.n.trim(), price, unit: taskForm.unit, requirement: taskForm.req,
@@ -1698,7 +1698,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               if (!v) { setToast("收益必须为正数，且最多 12 位整数、6 位小数"); return; }
               const def = findHighOp("e2_phone_tier")!;
               const currentTier = phoneTiers.find((row) => row.tier === mc.phoneTier);
-              if (!currentTier) { setToast("手机档位配置已刷新，请重试"); return; }
+              if (!currentTier) { setToast("手机档位设置已更新，请重试"); return; }
               const tierCtx = { tier: mc.phoneTier, expectedRevision: currentTier.revision,
                 dailyUsdt: mc.phoneField === "dailyUsdt" ? v : undefined,
                 dailyNex: mc.phoneField === "dailyNex" ? v : undefined };
@@ -1720,7 +1720,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               if (isLabel && labelValue.length > 128) { setToast("配置名称最多 128 个字符"); return; }
               const def = findHighOp("e2_phone_tier")!;
               const comparison = yieldComparisons.find((row) => row.configKey === mc.comparisonKey);
-              if (!comparison) { setToast("收益对比配置已刷新,请重试"); return; }
+              if (!comparison) { setToast("收益对比设置已更新，请重试"); return; }
               const comparisonCtx = {
                 configKey: comparison.configKey,
                 expectedRevision: comparison.revision,
@@ -1743,7 +1743,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             } else if (mc.op === "early-access" && businessValue) {
               const enabled = businessValue.enabled === "开" || businessValue.enabled === "true";
               const leadDays = Number(businessValue.leadDays);
-              if (![7, 14, 30, 60, 90].includes(leadDays)) { setToast("提前天数仅支持 7/14/30/60/90 天"); return; }
+              if (![7, 14, 30, 60, 90].includes(leadDays)) { setToast("提前天数只能选 7、14、30、60 或 90 天"); return; }
               const def = findHighOp("e1_early_access_update")!;
               await propose(ctx.toast, {
                 action: mc.name, obj: "置换侧抢先购", before: `${pE("E.release.earlyAccess.enabled")} · ${pE("E.release.earlyAccess.leadDays")} 天`, after: `${enabled ? "开" : "关"} · ${leadDays} 天`,

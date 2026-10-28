@@ -26,7 +26,7 @@ function trialText(result: PhonePreview): string {
   if (match.method === "IOS_MODEL_RANGE") {
     const tiers = possibleTiers.length === 0 ? "未知" : possibleTiers.length > 1
       ? `T${possibleTiers[0]}–T${possibleTiers[possibleTiers.length - 1]}` : `T${possibleTiers[0]}`;
-    return `试算：命中 ${match.model}，运营预设范围 ${formatRange(match)}，可能档位 ${tiers}。最终值在首次成功校准时由服务端抽取并保存；试算不产生用户校准记录。`;
+    return `试算：命中 ${match.model}，运营预设范围 ${formatRange(match)}，可能档位 ${tiers}。用户首次校准成功时，系统在范围内随机取值并保存；试算不会产生校准记录。`;
   }
   return `试算：T${match.tier}，平台算力 ${match.computeValue}`;
 }
@@ -90,21 +90,21 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false }: { ctx: EV
 
   return <section className="pane phone-calibration-panel" data-proof="phone-calibration-panel" aria-label={thresholdsOnly ? "手机算力档位分界" : "手机算力规则"}>
     <div className="pane-head"><h3>{thresholdsOnly ? "手机算力档位分界" : "手机算力规则（Android 硬件 / iPhone 机型）"}</h3>
-      <Btn disabled={busy || !!confirm} onClick={() => void refresh()}>重新读取配置</Btn></div>
-    <p className="f-foot">手机激活自动匹配规则；人工只审批共用规则变更。这里的数值是平台算力值，不代表硬件物理 TOPS。重新读取会放弃未提交修改。</p>
+      <Btn disabled={busy || !!confirm} onClick={() => void refresh()}>刷新</Btn></div>
+    <p className="f-foot">手机激活自动匹配规则；人工只审批共用规则变更。这里的数值是平台算力值，不代表硬件物理 TOPS。点「刷新」会放弃还没提交的修改。</p>
     {error && <p role="alert">{error}</p>}
-    {!snapshot ? <p role="status">{busy ? "正在读取手机规则…" : "配置暂不可用，请重试读取。"}</p> : <>
+    {!snapshot ? <p role="status">{busy ? "正在加载…" : "设置加载失败，请刷新重试。"}</p> : <>
       <p>发布版本：{snapshot.policy.revision} · 当前生效：{snapshot.policy.current ? `v${snapshot.policy.current.version}` : "尚未发布"}
         {snapshot.policy.scheduled && ` · 待生效 v${snapshot.policy.scheduled.version}，${time(snapshot.policy.scheduled.effectiveAt)}`}</p>
-      {snapshot.policy.scheduled && <p role="status">已有待生效版本，暂不能再次发布。生效后重新读取可继续修改。</p>}
-      {!ctx.canWriteE6 && <p>当前仅可查看。编辑和发布需要 E6 配置权限。</p>}
+      {snapshot.policy.scheduled && <p role="status">已有待生效版本，暂不能再次发布。生效后点「刷新」即可继续修改。</p>}
+      {!ctx.canWriteE6 && <p>你只能查看，修改和发布需要设备配置权限。</p>}
       <fieldset disabled={!editing}><legend>五档分界（左闭右开）</legend><div style={grid}>
         {thresholds.map((value,index) => <label key={index}>T{index+1} / T{index+2} 分界
           <input aria-label={`T${index+1} / T${index+2} 分界`} type="number" min="0" step="0.001" value={value}
             onChange={event => setThresholds(old => old.map((item,i) => i === index ? event.target.value : item))} /></label>)}
       </div></fieldset>
       <p className="f-foot">T1：低于首个分界；T2–T4：从本档下限至下一档下限；T5：不低于最后一个分界。小数不会落入空档。</p>
-      {thresholdsOnly ? <p>Android 硬件规则 {rules.length} 条，iPhone 机型 {iosRules.length} 个。<Link href="/devices/compute-config#phone-calibration">前往 E6 维护手机算力规则</Link></p> : <>
+      {thresholdsOnly ? <p>Android 硬件规则 {rules.length} 条，iPhone 机型 {iosRules.length} 个。<Link href="/devices/compute-config#phone-calibration">去「算力与设备配置」维护手机算力规则</Link></p> : <>
         <IosModelRulesSection rules={iosRules} published={publishedPolicy?.iosModelRules ?? []} androidRuleIds={rules.map(rule => rule.id)}
           editing={editing} onChange={next => { setIosRules(next); setPreview(null); }} />
         <fieldset disabled={!editing}><legend>Android 硬件规则（{rules.length}/500）</legend>
@@ -136,12 +136,12 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false }: { ctx: EV
       <Btn disabled={!editing || !!validation} onClick={() => void runPreview()}>试算并预览影响</Btn>
       {previewCurrent && preview && <div role="status"><p>{trialText(preview.result)}</p>
         <p>历史采样预览：匹配 {preview.result.impact.matched}，数值或档位变化 {preview.result.impact.changed}，待核验 {preview.result.impact.pending}。审批生效后用于后续校准，不修改历史结算。</p></div>}
-      <Btn disabled={!editing || !!validation || !previewCurrent} onClick={() => setConfirm({ proposal, commandKey: createA2CommandKey("phone-policy") })}>提交 A2 审批</Btn>
-      <p><Link href="/platform/audit?domain=E&object=phone-calibration">查看 A2 审批记录</Link></p>
+      <Btn disabled={!editing || !!validation || !previewCurrent} onClick={() => setConfirm({ proposal, commandKey: createA2CommandKey("phone-policy") })}>提交审批</Btn>
+      <p><Link href="/platform/audit?domain=E&object=phone-calibration">查看审批记录</Link></p>
     </>}
     {confirm && <OperationConfirmModal action="发布手机校准规则" amplifies detail="整份 Android 硬件规则、iPhone 机型规则与档位分界将一起发布，须另一位有审批权的管理员确认。这里只创建提案，不代表已经生效。" reasonMin={8} reasonMax={200}
       onClose={() => setConfirm(null)} onConfirm={async reason => {
-        if (!ctx.canWriteE6) throw new Error("缺少 E6 配置权限");
+        if (!ctx.canWriteE6) throw new Error("你没有修改设备配置的权限");
         const definition = findHighOp("e6_phone_calibration")!;
         await propose(ctx.toast,{action:definition.action,obj:"phone-calibration",before:`v${confirm.proposal.expectedRevision}`,
           after:`v${confirm.proposal.expectedRevision+1} · Android ${confirm.proposal.rules.length} 条 · iPhone ${confirm.proposal.iosModelRules.length} 个`,type:"param",amplifies:true,

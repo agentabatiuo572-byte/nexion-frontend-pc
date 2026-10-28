@@ -20,7 +20,7 @@ export function F2DirectPolicy({ ctx }: { ctx: FViewCtx }) {
   const allowed = ctx.can("network_f2_royalty_rate");
   const busy = ctx.f2DirectPolicyLoading;
   const stale = !!draft && !!policy && (draft.expectedVersion !== policy.policyVersion || draft.expectedSevenLayerRevision !== policy.sevenLayerRevision || (ctx.f2SevenLayerRevision !== null && ctx.f2SevenLayerRevision !== policy.sevenLayerRevision));
-  const invalid = draft ? validateDirectReferralUpdate(draft) || (draft.purchaseSplit.enabled && (!policy || policy.sevenLayerReference.baseRatePct === null || policy.sevenLayerReference.coolingDays === null) ? "原七层 L1 基础预算或购买冷却未配置，请先核对七层配置。" : null) : null;
+  const invalid = draft ? validateDirectReferralUpdate(draft) || (draft.purchaseSplit.enabled && (!policy || policy.sevenLayerReference.baseRatePct === null || policy.sevenLayerReference.coolingDays === null) ? "七层奖励的 L1 比例或购买冷却还没设置，请先到上方设置。" : null) : null;
   const changed = !!draft && !!policy && (JSON.stringify(draft.purchaseSplit) !== JSON.stringify(policy.purchaseSplit) || JSON.stringify(draft.deviceEarning) !== JSON.stringify(policy.deviceEarning));
   const disabled = !allowed || busy || !!ctx.f2DirectPolicyError || !policy || !draft || stale || !policy.sevenLayerEnabled;
   const reset = () => { if (policy) { setDraft(draftOf(policy)); setSubmitted(false); } };
@@ -29,8 +29,8 @@ export function F2DirectPolicy({ ctx }: { ctx: FViewCtx }) {
     const value = structuredClone(draft), ref = policy.sevenLayerReference;
     ctx.openActionConfirm({
       name: "直属分成政策整组调整", amplify: directReferralAmplifies(policy, value),
-      detail: `政策版本 ${policy.policyVersion}，七层引用版本 ${policy.sevenLayerRevision}。修改前：${directReferralSummary(policy)}。修改后：${directReferralSummary(value)}。原 L1 基础预算 ${ref.baseRatePct ?? "未配置"}%，购买冷却 ${ref.coolingDays ?? "未配置"} 天，原直属层 UVT 系数 ${ref.legacyNexPerUsd ?? "未配置"} UVT/USDT。关闭拆分将恢复 直属层全额 USDT，现金占比增加 ${policy.purchaseSplit.enabled && !value.purchaseSplit.enabled ? 100 - policy.purchaseSplit.usdtSharePct : 0} 个百分点；服务端执行时重新核验两币支出方向。设备成员原收益不减。`,
-      completionCopy: "提交后进入 A2 待审批；批准后整组同一版本生效。",
+      detail: `修改前：${directReferralSummary(policy)}。修改后：${directReferralSummary(value)}。L1 奖励比例 ${ref.baseRatePct ?? "未配置"}%，购买冷却 ${ref.coolingDays ?? "未配置"} 天，旧 UVT 系数 ${ref.legacyNexPerUsd ?? "未配置"} UVT/USDT。关闭拆分后直属奖励改回全额 USDT，USDT 占比增加 ${policy.purchaseSplit.enabled && !value.purchaseSplit.enabled ? 100 - policy.purchaseSplit.usdtSharePct : 0} 个百分点。设备成员自己的收益不减少。（设置版本 ${policy.policyVersion}）`,
+      completionCopy: "提交后需在「操作记录与审批」批准，两项设置一起生效。",
       run: async (reason) => { await ctx.updateF2DirectPolicy(value, reason); setSubmitted(true); },
     });
   };
@@ -40,29 +40,29 @@ export function F2DirectPolicy({ ctx }: { ctx: FViewCtx }) {
     <div className="f2-policy-row f2-policy-complement"><label htmlFor={`f2-${key}-nex`}>UVT 占比</label><div><span className="f2-policy-control"><input id={`f2-${key}-nex`} aria-label={label + "UVT 占比（只读）"} readOnly tabIndex={-1} value={Number.isFinite(draft[key].usdtSharePct) ? 100 - draft[key].usdtSharePct : "待填写"} /><span className="f2-policy-unit" aria-hidden="true">%</span></span><p className="f2-help">（自动计算，百分比相加必须为 100%）</p></div></div>
   </>;
   return <section className="pane f2-direct-policy" aria-label="直属分成配置">
-    <div className="pane-h"><div className="f2-policy-heading"><span className="ph-ttl">直属拆分与设备收益</span><span className="ph-sub">一个购买预算，两类政策整组审批</span></div>{policy && <div className="f2-policy-meta"><span>{policy.configured ? `当前版本 ${policy.policyVersion}` : "当前版本 未配置"}</span><span>七层引用版本 {policy.sevenLayerRevision}</span>{policy.configured && <span>生效时间：{new Date(policy.effectiveAt!).toLocaleString()}</span>}</div>}</div>
+    <div className="pane-h"><div className="f2-policy-heading"><span className="ph-ttl">直接邀请人奖励</span><span className="ph-sub">直属购买奖励的币种拆分、直属设备收益分成，两项一起提交审批</span></div>{policy && <div className="f2-policy-meta"><span>{policy.configured ? `当前版本 ${policy.policyVersion}` : "尚未设置"}</span>{policy.configured && <span>生效时间：{new Date(policy.effectiveAt!).toLocaleString()}</span>}</div>}</div>
     <div className="f2-policy-body">
       {busy && <div role="status" aria-label="直属分成配置加载中" className="f2-policy-loading"><div /><div /></div>}
-      {ctx.f2DirectPolicyError && <div className="f2-policy-notice" role="alert">{ctx.f2DirectPolicyError} 草稿已保留，可重新读取。</div>}
-      {policy && !policy.configured && <p className="f2-help f2-policy-status">未配置，尚未启用。占位数字不代表正式奖励比例。</p>}
-      {policy?.nexUsdtPrice === null && <p className="f2-policy-notice f2-policy-warning">UVT 价格暂不可用，分成等待有效价格后计算。</p>}
-      {!allowed && <p className="f2-policy-notice">当前角色仅可查看，配置需要直属分成调整权限。</p>}
-      {policy && !policy.sevenLayerEnabled && <p role="status" className="f2-policy-notice">七层新结算尚未启用，当前 v2 政策仅供核对；切换批准后重新读取才能编辑提交。</p>}
-      {stale && <div className="f2-policy-notice" role="alert">政策或七层引用版本已变化，原预览已失效，当前草稿未覆盖。请核对后放弃草稿并重载，再次编辑。</div>}
+      {ctx.f2DirectPolicyError && <div className="f2-policy-notice" role="alert">{ctx.f2DirectPolicyError} 已填写的内容已保留，可刷新重试。</div>}
+      {policy && !policy.configured && <p className="f2-help f2-policy-status">尚未设置。下面的数字只是默认值，不代表正在生效。</p>}
+      {policy?.nexUsdtPrice === null && <p className="f2-policy-notice f2-policy-warning">暂时拿不到 UVT 价格，UVT 部分会等价格恢复后再计算。</p>}
+      {!allowed && <p className="f2-policy-notice">你只能查看，修改需要「直属分成调整」权限。</p>}
+      {policy && !policy.sevenLayerEnabled && <p role="status" className="f2-policy-notice">新版七层结算还没启用，这里暂时只能查看。启用后刷新页面即可修改。</p>}
+      {stale && <div className="f2-policy-notice" role="alert">这项设置刚被别人改过，你填写的内容还在。请点「放弃修改并刷新」后重新填写。</div>}
       {draft && <div className="f2-policy-fields">
         <fieldset disabled={disabled || submitted}>
-          <legend>直属购买奖励拆分</legend>
-          <p className="f2-help f2-policy-description">设置直属购买奖励在 USDT 与 UVT 之间的拆分比例。</p>
-          {policy && !policy.purchaseSplitConfigured && <p className="f2-help f2-policy-unconfigured">购买拆分尚未配置；当前占比为停用占位，不代表生效拆分。已有设备政策仍按其有效版本执行。</p>}
+          <legend>直属购买奖励</legend>
+          <p className="f2-help f2-policy-description">直接邀请的成员购买后，奖励按多少比例发 USDT、多少比例发 UVT。</p>
+          {policy && !policy.purchaseSplitConfigured && <p className="f2-help f2-policy-unconfigured">还没设置拆分，目前直属奖励全部发 USDT。下面的比例只是默认值。</p>}
           <div className="f2-policy-rows">
-            <label className="f2-policy-row"><span>L1 预算率（只读）</span><span className="f2-policy-control"><input aria-label="直属购买奖励拆分L1 奖励预算率（只读）" readOnly tabIndex={-1} value={policy?.sevenLayerReference.baseRatePct ?? "未配置"} /><span className="f2-policy-unit" aria-hidden="true">%</span></span></label>
+            <label className="f2-policy-row"><span>L1 奖励比例（只读）</span><span className="f2-policy-control"><input aria-label="直属购买奖励 L1 奖励比例（只读）" readOnly tabIndex={-1} value={policy?.sevenLayerReference.baseRatePct ?? "未配置"} /><span className="f2-policy-unit" aria-hidden="true">%</span></span></label>
             {splitField("purchaseSplit", "直属购买奖励拆分")}
-            <label className="f2-policy-row"><span>购买冷却（只读）</span><span className="f2-policy-control"><input aria-label="直属购买奖励拆分购买冷却天数（只读）" readOnly tabIndex={-1} value={policy?.sevenLayerReference.coolingDays ?? "未配置"} /><span className="f2-policy-unit" aria-hidden="true">天</span></span></label>
+            <label className="f2-policy-row"><span>购买冷却（只读）</span><span className="f2-policy-control"><input aria-label="直属购买奖励购买冷却天数（只读）" readOnly tabIndex={-1} value={policy?.sevenLayerReference.coolingDays ?? "未配置"} /><span className="f2-policy-unit" aria-hidden="true">天</span></span></label>
           </div>
         </fieldset>
         <fieldset disabled={disabled || submitted}>
           <legend>直属设备收益分成</legend>
-          <p className="f2-help f2-policy-description">设置直属设备收益的分成比例。</p>
+          <p className="f2-help f2-policy-description">直接邀请的成员有设备收益时，平台额外给邀请人的分成。</p>
           <div className="f2-policy-rows">
             {splitField("deviceEarning", "直属设备收益分成")}
             {([["totalRatePct", "总分成比例 (%)", 100, 0.01], ["coolingDays", "冷却天数", 365, 1]] as const).map(([field, label, max, step]) => <label key={field} className="f2-policy-row"><span>{field === "totalRatePct" ? "总分成比例" : label}</span><span className="f2-policy-control"><input aria-label={"直属设备收益分成" + label} type="number" min={0} max={max} step={step} value={Number.isFinite(draft.deviceEarning[field]) ? draft.deviceEarning[field] : ""} onChange={e => setDraft({ ...draft, deviceEarning: { ...draft.deviceEarning, [field]: e.target.value === "" ? NaN : Number(e.target.value) } })} /><span className="f2-policy-unit" aria-hidden="true">{field === "totalRatePct" ? "%" : "天"}</span></span></label>)}
@@ -70,12 +70,12 @@ export function F2DirectPolicy({ ctx }: { ctx: FViewCtx }) {
         </fieldset>
       </div>}
       {draft && invalid && <div role="alert" className="f2-policy-notice f2-policy-warning">{invalid}</div>}
-      {submitted && <div role="status" className="f2-policy-notice">已提交 A2 待审批；当前生效配置尚未改变。批准后重新读取可核对新版本。{ctx.can("platform_a2_read") && <Link href="/platform/audit">查看审批进度</Link>}</div>}
-      <div className="f2-policy-explanation"><Info size={16} aria-hidden="true" /><div><strong>说明</strong><p className="f2-help">启用时拆分 UVT 替代原直属层 额外 UVT；关闭只恢复未来直属层 的原发放构成，七层购买不停用。第2至7层 保持原规则。</p><p className="f2-help">平台额外支付给直接邀请人，成员原设备收益不减少。仅实际设备收益可计，不从邀请佣金再次提成。</p><p className="f2-help">审批通过后对新来源生效，时间由服务端批准记录确定。历史奖励保留原快照；对碰、等级、培育奖、领导池与注册礼继续各自规则。</p></div></div>
+      {submitted && <div role="status" className="f2-policy-notice">已提交，等待审批。批准前仍按原设置执行，批准后刷新即可看到新设置。{ctx.can("platform_a2_read") && <Link href="/platform/audit">查看审批进度</Link>}</div>}
+      <div className="f2-policy-explanation"><Info size={16} aria-hidden="true" /><div><strong>说明</strong><p className="f2-help">开启拆分后，直属奖励按比例发 USDT 和 UVT，不再额外加发 UVT；关闭后恢复原来的发法。只影响直属这一层，第 2–7 层不变。</p><p className="f2-help">设备分成由平台额外支付，不扣成员自己的收益；只按真实设备收益计算，不从佣金里再抽。</p><p className="f2-help">批准后只对之后的奖励生效，已发的不变。左右团队奖、等级奖、培育奖、领导池和注册礼不受影响。</p></div></div>
       <div className="f2-policy-actions">
         {allowed && <button className="fbtn primary" disabled={disabled || !!invalid || !changed || submitted} onClick={submit}>提交审批</button>}
-        <button className="fbtn" disabled={busy} onClick={() => void ctx.refreshF2()}>重新读取</button>
-        {draft && policy && <button className="fbtn" disabled={busy} onClick={reset}>放弃草稿并重载</button>}
+        <button className="fbtn" disabled={busy} onClick={() => void ctx.refreshF2()}>刷新</button>
+        {draft && policy && <button className="fbtn" disabled={busy} onClick={reset}>放弃修改并刷新</button>}
       </div>
     </div>
   </section>;

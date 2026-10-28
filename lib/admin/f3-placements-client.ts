@@ -15,8 +15,8 @@ export class PlacementError extends Error {
   constructor(message: string, public outcome: "rejected" | "unknown", public status = 0) { super(message); }
 }
 const id = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) > 0;
-const invalid = () => new Error("安置资料暂无法确认，请重新查询。");
-const uncertain = () => new PlacementError("安置结果待确认，请查询原成员结果。", "unknown");
+const invalid = () => new Error("安置信息加载不完整，请重新查询。");
+const uncertain = () => new PlacementError("安置结果暂未确认，请稍后查看安置结果。", "unknown");
 
 async function request(query: string, intent?: PlacementIntent): Promise<unknown> {
   let response: Response;
@@ -42,7 +42,7 @@ async function request(query: string, intent?: PlacementIntent): Promise<unknown
   }
   if (!response.ok || result?.code !== 0) {
     const message = response.status === 409 || result?.code === 409
-      ? "该成员的安置已发生变化，请查询原成员结果；已有轨道不能更改。"
+      ? "该成员的安置已被修改，请查看安置结果；已安置的不能更改。"
       : formatAdminApiError(result?.message, "F3_ASSIGNMENT_READ_FAILED");
     throw new PlacementError(message, "rejected", response.status === 200 ? result?.code : response.status);
   }

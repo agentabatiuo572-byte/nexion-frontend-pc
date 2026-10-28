@@ -11,7 +11,7 @@ test("H1 当前节奏位置只提交真实变化字段，避免重复审计与�
   assert.match(page, /const currentMonthChanged =/);
   assert.match(page, /const progressChanged =/);
   assert.match(page, /if \(!currentMonthChanged && !progressChanged\)/);
-  assert.match(page, /当前节奏位置未变化，本次未提交/);
+  assert.match(page, /进度没有变化，本次没有提交/);
   assert.match(page, /if \(currentMonthChanged\)[\s\S]*?updateH1RhythmParam\("currentMonth"/);
   assert.match(page, /if \(progressChanged\)[\s\S]*?updateH1RhythmParam\("phaseProgressPct"/);
 });

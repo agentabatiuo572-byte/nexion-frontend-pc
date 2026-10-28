@@ -30,7 +30,7 @@ const ALERT_CONFIG_SLOT = "alert-config";
 const REPORT_EXPORT_SLOT = "report-export";
 
 function j3ErrorText(error: unknown) {
-  return error instanceof Error ? displayAdminError(error) : "操作失败，请重新读取页面状态后重试。";
+  return error instanceof Error ? displayAdminError(error) : "操作失败，请刷新页面后重试。";
 }
 
 /** J3 页头 CTA(挂 DomainHeader 右槽):导出报表(无 操作确认)+ 告警阈值配置(操作确认)。 */
@@ -48,7 +48,7 @@ export function J3HeaderActions({ ctx }: { ctx: JCtx }) {
   const retryableReport = pendingReport?.window === window ? pendingReport : null;
   const abandonPendingReport = () => {
     setPendingReport(null);
-    toast("已放弃本次浏览器下载；服务器已生成的报表和审计仍会保留。下一次点击导出将生成新报表。");
+    toast("已放弃这次下载；下次点击导出会重新生成报表。");
   };
   const downloadReport = async () => {
     if ((!hasData && !retryableReport) || exporting) return;
@@ -57,9 +57,9 @@ export function J3HeaderActions({ ctx }: { ctx: JCtx }) {
       try {
         downloadJ3ReportFile(retryableReport);
         setPendingReport(null);
-        toast(`已重新下载 ${retryableReport.window} 隐藏敏感信息的报表 · 未重复生成报表或审计`);
+        toast(`已重新下载 ${retryableReport.window} 隐藏敏感信息的报表 `);
       } catch (error) {
-        toast(`报表已生成并写审计，但浏览器下载仍失败；可继续重试本地下载，或放弃本次报表后重新生成 · ${j3ErrorText(error)}`);
+        toast(`报表已生成，但下载仍失败；可以再试一次下载，或放弃后重新生成 · ${j3ErrorText(error)}`);
       } finally {
         setExporting(false);
       }
@@ -69,11 +69,11 @@ export function J3HeaderActions({ ctx }: { ctx: JCtx }) {
     let report: TamperReport;
     try {
       report = await actions.createJ3Report(
-        window, `导出 J3 ${window} 脱敏监控报表`, exportKey,
+        window, `导出 ${window} 篡改拦截报表（已隐藏敏感信息）`, exportKey,
       );
     } catch (error) {
       if (isEmergencyOutcomeUncertain(error)) {
-        toast("导出结果暂未确认。请再次点击导出以复用同一请求编号，或刷新后到审计记录核对。");
+        toast("导出结果暂未确认。可以再点一次导出（不会重复生成），或刷新后到操作记录核对。");
       } else {
         commandAttempt.forget(REPORT_EXPORT_SLOT);
         toast(`导出失败 · ${j3ErrorText(error)}`);
@@ -87,9 +87,9 @@ export function J3HeaderActions({ ctx }: { ctx: JCtx }) {
     try {
       downloadJ3ReportFile(report);
       setPendingReport(null);
-      toast(`已导出 ${report.window} 隐藏敏感信息的报表 · ${report.eventCount} 起拦截 · 已写审计`);
+      toast(`已导出 ${report.window} 隐藏敏感信息的报表 · ${report.eventCount} 起拦截`);
     } catch (error) {
-      toast(`报表已生成并写审计，但浏览器下载失败；可重试本地下载，或放弃本次报表后重新生成 · ${j3ErrorText(error)}`);
+      toast(`报表已生成，但下载失败；可以再试一次下载，或放弃后重新生成 · ${j3ErrorText(error)}`);
     } finally {
       setExporting(false);
     }
@@ -98,12 +98,12 @@ export function J3HeaderActions({ ctx }: { ctx: JCtx }) {
     <>
       {canExport && (
         <>
-          <button className="f-cta neutral" disabled={exporting || (!hasData && !retryableReport)} onClick={() => void downloadReport()} title={retryableReport ? "仅重试下载已生成的报表，不会再次请求服务器" : !hasData ? "当前筛选结果为空，不能导出" : `导出 ${window} 隐藏敏感信息的报表`}>
+          <button className="f-cta neutral" disabled={exporting || (!hasData && !retryableReport)} onClick={() => void downloadReport()} title={retryableReport ? "只重新下载已生成的报表，不会重新生成" : !hasData ? "当前筛选结果为空，不能导出" : `导出 ${window} 隐藏敏感信息的报表`}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
             {exporting ? (retryableReport ? "下载中…" : "生成中…") : retryableReport ? `重试下载 ${window} 报表` : `导出 ${window} 报表`}
           </button>
           {retryableReport && (
-            <button className="f-cta neutral" disabled={exporting} onClick={abandonPendingReport} title="原报表与审计仍保留；放弃后可重新生成">
+            <button className="f-cta neutral" disabled={exporting} onClick={abandonPendingReport} title="放弃后可以重新生成">
               放弃本次报表
             </button>
           )}
@@ -145,7 +145,7 @@ function J3ConfigModal({ ctx, onClose }: { ctx: JCtx; onClose: () => void }) {
       );
     } catch (error) {
       if (isEmergencyOutcomeUncertain(error)) {
-        ctx.toast("配置结果暂未确认。请再次点击确认变更以复用同一请求编号，或取消后刷新核对当前值和审计记录。");
+        ctx.toast("保存结果暂未确认。可以再点一次「确认变更」（不会重复保存），或取消后刷新核对。");
       } else {
         commandAttempt.forget(ALERT_CONFIG_SLOT);
         ctx.toast(`配置失败 · ${j3ErrorText(error)}`);
@@ -156,9 +156,9 @@ function J3ConfigModal({ ctx, onClose }: { ctx: JCtx; onClose: () => void }) {
     commandAttempt.forget(ALERT_CONFIG_SLOT);
     try {
       await ctx.actions.reloadJEmergency();
-      ctx.toast("监控配置已生效 · 已记审计");
+      ctx.toast("提醒设置已生效");
     } catch {
-      ctx.toast("监控配置已生效并已记审计，但页面刷新失败；请使用页面重试或手动刷新核对服务器当前值。");
+      ctx.toast("提醒设置已生效，但页面刷新失败，请手动刷新核对。");
     } finally {
       setSubmitting(false);
       onClose();
@@ -166,21 +166,21 @@ function J3ConfigModal({ ctx, onClose }: { ctx: JCtx; onClose: () => void }) {
   };
   const inputStyle = { width: "100%", border: "1px solid var(--line)", borderRadius: 8, padding: "9px 10px", background: "var(--surface)", color: "var(--ink)" } as const;
   return (
-    <Modal title="篡改告警配置确认" icon="shield" onClose={() => { if (!submitting) onClose(); }} footer={<>
+    <Modal title="确认修改篡改告警" icon="shield" onClose={() => { if (!submitting) onClose(); }} footer={<>
       <Btn disabled={submitting} onClick={onClose}>取消</Btn>
       <Btn variant="primary" disabled={!valid || submitting} onClick={() => void submit()}>{submitting ? "提交中…" : "确认变更"}</Btn>
     </>}>
       <div className="tint tiny" style={{ marginBottom: 12 }}>
-        当前阈值 <b>{current.threshold} 次 / 24h</b> · K4 {current.feedK4 ? "开启" : "关闭"} · 近 7 天告警账户 {sevenDayAlertAccounts} 个
+        当前阈值 <b>{current.threshold} 次 / 24h</b> · 计入风险分 {current.feedK4 ? "开启" : "关闭"} · 近 7 天告警账户 {sevenDayAlertAccounts} 个
       </div>
       <div className="grid g-2" style={{ gap: 12 }}>
         <label className="field"><span>告警频次阈值</span><input type="number" min={1} max={100} step={1} value={threshold} onChange={(event) => setThreshold(Number(event.target.value))} style={inputStyle} /></label>
-        <label className="field"><span>喂 K4 风险评分</span><span className="row" style={{ gap: 8, minHeight: 38 }}><input type="checkbox" role="switch" checked={feedK4} onChange={(event) => setFeedK4(event.target.checked)} />{feedK4 ? "开启" : "关闭"}</span></label>
+        <label className="field"><span>计入风险分</span><span className="row" style={{ gap: 8, minHeight: 38 }}><input type="checkbox" role="switch" checked={feedK4} onChange={(event) => setFeedK4(event.target.checked)} />{feedK4 ? "开启" : "关闭"}</span></label>
       </div>
       <div className="tint tiny" style={{ margin: "10px 0" }}>
-        影响预览：阈值 {current.threshold} → <b>{threshold}</b>，告警将{direction}；按服务器近 7 天分布估算，告警账户 {sevenDayAlertAccounts} → <b>{previewAvailable ? `${targetSevenDayAccounts} 个` : "预览不可用"}</b>；K4 {current.feedK4 ? "开启" : "关闭"} → <b>{feedK4 ? "开启" : "关闭"}</b>。
-        {!previewAvailable && <span style={{ color: "var(--danger)" }}> 服务器未返回该阈值的完整影响预览，当前禁止提交。</span>}
-        {!feedK4 && <span style={{ color: "var(--danger)" }}> 关闭后，新产生的篡改事件不再写入 K4 分值与贡献；B5 仍会接收服务器确认篡改信号。</span>}
+        影响预览：阈值 {current.threshold} → <b>{threshold}</b>，告警将{direction}；按近 7 天数据估算，告警账户 {sevenDayAlertAccounts} → <b>{previewAvailable ? `${targetSevenDayAccounts} 个` : "预览不可用"}</b>；计入风险分 {current.feedK4 ? "开启" : "关闭"} → <b>{feedK4 ? "开启" : "关闭"}</b>。
+        {!previewAvailable && <span style={{ color: "var(--danger)" }}> 暂时算不出这个阈值的影响，不能提交。</span>}
+        {!feedK4 && <span style={{ color: "var(--danger)" }}> 关闭后，新的篡改记录不再计入风险分；「风险提醒」仍会收到。</span>}
       </div>
       <label className="field"><span>变更理由（8–200 字）</span><textarea value={reason} maxLength={200} rows={4} onChange={(event) => setReason(event.target.value)} style={inputStyle} /><span className="muted tiny">{reasonLength}/200</span></label>
     </Modal>
@@ -223,10 +223,10 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   }, [d]);
 
   if (ctx.contentLoading && !data) {
-    return <section className="trend-card"><div className="trend-h"><span className="ttl">J3 数据加载中</span><span className="sub">· 正在读取篡改防御接口</span></div></section>;
+    return <section className="trend-card"><div className="trend-h"><span className="ttl">篡改防御数据加载中</span><span className="sub">· 请稍候</span></div></section>;
   }
   if (!data || !TAMPER_TREND) {
-    return <section className="trend-card"><div className="trend-h"><span className="ttl">J3 暂无篡改防御数据</span><span className="sub">· 后端接口未返回数据</span></div></section>;
+    return <section className="trend-card"><div className="trend-h"><span className="ttl">暂无篡改防御数据</span><span className="sub">· 请稍后刷新</span></div></section>;
   }
 
   const totalPath = TAMPER_PATHS.reduce((s, p) => s + p.ct, 0);
@@ -250,14 +250,14 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
     if (targetPage === accountPager.page) return;
     setAccountLoading(true);
     ctx.actions.loadJ3TamperPage(win, targetPage, accountPager.pageSize)
-      .catch((error) => ctx.toast(`J3 高频账户分页加载失败 · ${j3ErrorText(error)}`))
+      .catch((error) => ctx.toast(`高频账户加载失败 · ${j3ErrorText(error)}`))
       .finally(() => setAccountLoading(false));
   };
   const loadWindow = (nextWindow: "24h" | "7d" | "30d") => {
     if (accountLoading || nextWindow === win) return;
     setAccountLoading(true);
     ctx.actions.loadJ3TamperPage(nextWindow, 1, accountPager.pageSize)
-      .catch((error) => ctx.toast(`J3 时间窗加载失败 · ${j3ErrorText(error)}`))
+      .catch((error) => ctx.toast(`时间范围切换失败 · ${j3ErrorText(error)}`))
       .finally(() => setAccountLoading(false));
   };
   const fedCount = TAMPER_ACCTS.filter((account) => account.fedToK4).length;
@@ -269,16 +269,16 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
     <div>
       {/* stat strip */}
       <div className="f-stats">
-        <div className="f-stat danger"><div className="k">{win} 拦截</div><div className="v">{totalPath}</div><div className="sub">{deltaPrevPct == null ? "前一窗口为 0，无法计算百分比" : `较前一窗口 ${deltaPrevPct >= 0 ? "+" : ""}${deltaPrevPct}%`}</div></div>
+        <div className="f-stat danger"><div className="k">{win} 拦截</div><div className="v">{totalPath}</div><div className="sub">{deltaPrevPct == null ? "上一时段为 0，无法计算变化" : `比上一时段 ${deltaPrevPct >= 0 ? "+" : ""}${deltaPrevPct}%`}</div></div>
         <div className="f-stat warn"><div className="k">高频篡改账户</div><div className="v">{accountTotal}</div><div className="sub">≥{alertThreshold} 起 / {win} · 基准 {data.alertConfig.threshold} 起 / 24h</div></div>
         <div className="f-stat cyan"><div className="k">近 7 天拦截</div><div className="v">{total7d.toLocaleString("en-US")}</div><div className="sub">日均 {Math.round(total7d / 7)} 起</div></div>
-        <div className="f-stat ok"><div className="k">最高频篡改路径</div><div className="v" style={{ fontSize: 18 }}>{topPath}</div><div className="sub">当前窗口按拦截数排序</div></div>
+        <div className="f-stat ok"><div className="k">最高频篡改路径</div><div className="v" style={{ fontSize: 18 }}>{topPath}</div><div className="sub">当前时段拦截最多</div></div>
       </div>
 
       {/* 只读 banner */}
       <div className="ro-banner">
         <span className="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg></span>
-        <div><b>本页只查看账户处置情况</b> · <AutoGloss>本页不会冻结账户或建立关联账户组；当前仅超级管理员可修改提醒设置。</AutoGloss><b>需要冻结账户或建立关联账户组时</b><AutoGloss>请到</AutoGloss> <b>账户处置页(C2)</b> <AutoGloss>或</AutoGloss> <b>多账户风险排查页(K1)</b>。</div>
+        <div><b>本页只查看账户处置情况</b> · <AutoGloss>本页不会冻结账户或建立关联账户组；当前仅超级管理员可修改提醒设置。</AutoGloss><b>需要冻结账户或建立关联账户组时</b><AutoGloss>请到</AutoGloss> <b>「账户操作」</b> <AutoGloss>或</AutoGloss> <b>「多账户风险排查」</b>。</div>
       </div>
 
       <div
@@ -287,29 +287,29 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
         style={{ margin: "0 0 12px", borderColor: coverageComplete ? "var(--success)" : "var(--warning)" }}
       >
         {coverageComplete ? (
-          <><b>服务器拒绝入口已全部接入：</b>{data.coverage.activeCount}/{data.coverage.registeredCount} 类已登记攻击面均有服务端拦截边界；零事件表示当前窗口没有拒绝记录，不代表防御失效。</>
+          <><b>拦截已全部接入：</b>{data.coverage.activeCount}/{data.coverage.registeredCount} 类入口都有拦截；没有记录说明这段时间没人尝试，不代表防御失效。</>
         ) : (
-          <><b>监控接入未完成：</b>当前仅 {data.coverage.activeCount}/{data.coverage.registeredCount} 类服务器拒绝入口已接入。
-          因此“暂无事件”只代表已接入入口未发现拦截，不能代表其余攻击面安全；未接入路径不会被本页统计。</>
+          <><b>拦截还没全部接入：</b>目前只有 {data.coverage.activeCount}/{data.coverage.registeredCount} 类入口接入。
+          所以「暂无记录」只代表已接入的入口没发现问题，不代表其他入口安全。</>
         )}
       </div>
 
       {/* K4 / B5 喂送 strip */}
       <div className="feed-strip">
-        <div className="it"><span className={TAMPER_ACCTS.length === 0 ? "led dim" : fedCount ? "led" : "led warn"} /><AutoGloss>K4 风险信号</AutoGloss> · <span style={{ color: "var(--ink-3)" }}>{TAMPER_ACCTS.length === 0 ? "本页暂无高频账户" : `${fedCount}/${TAMPER_ACCTS.length} 个本页账户已确认写入`}</span></div>
+        <div className="it"><span className={TAMPER_ACCTS.length === 0 ? "led dim" : fedCount ? "led" : "led warn"} /><AutoGloss>风险分</AutoGloss> · <span style={{ color: "var(--ink-3)" }}>{TAMPER_ACCTS.length === 0 ? "本页暂无高频账户" : `${fedCount}/${TAMPER_ACCTS.length} 个本页账户已确认写入`}</span></div>
         <span className="sep">·</span>
-        <div className="it"><span className={TAMPER_ACCTS.length === 0 ? "led dim" : b5Count ? "led" : "led warn"} /><AutoGloss>B5 风险提醒</AutoGloss> · <span style={{ color: "var(--ink-3)" }}>{TAMPER_ACCTS.length === 0 ? "本页暂无高频账户" : `${b5Count}/${TAMPER_ACCTS.length} 个本页账户已确认触发`}</span></div>
+        <div className="it"><span className={TAMPER_ACCTS.length === 0 ? "led dim" : b5Count ? "led" : "led warn"} /><AutoGloss>风险提醒</AutoGloss> · <span style={{ color: "var(--ink-3)" }}>{TAMPER_ACCTS.length === 0 ? "本页暂无高频账户" : `${b5Count}/${TAMPER_ACCTS.length} 个本页账户已确认触发`}</span></div>
         <span className="sep">·</span>
         <div className="it"><span className="led" /><b>隐藏敏感信息的报表</b> · <span style={{ color: "var(--ink-3)" }}>按当前 {win} 筛选导出</span></div>
         <span className="sep" style={{ marginLeft: "auto" }}>·</span>
-        <div className="it"><span style={{ color: "var(--ink-4)", fontSize: 11.5 }}>数据来源 · </span><b>服务器拦截业务记录</b></div>
+        <div className="it"><span style={{ color: "var(--ink-4)", fontSize: 11.5 }}>数据来源 · </span><b>系统实际拦截记录</b></div>
       </div>
 
       {/* 趋势 */}
       <section className="trend-card">
         <div className="trend-h">
           <span className="ttl">篡改拦截趋势</span>
-          <span className="sub">· <AutoGloss>都是被服务器成功拦下的尝试 · 越多说明防御越活跃</AutoGloss></span>
+          <span className="sub">· <AutoGloss>都是已被成功拦下的尝试</AutoGloss></span>
           <div className="r"><TabGroup<"24h" | "7d" | "30d">
             className="seg"
             label="篡改趋势时间范围"
@@ -322,8 +322,8 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
         </div>
         {!data.hasData ? (
           <div className="tint tiny" style={{ margin: 16 }}>
-            当前窗口暂无服务器拦截事件。J3 不生成示例数据；服务器拒绝入口接入 {data.coverage.activeCount}/{data.coverage.registeredCount}，
-            {coverageComplete ? "已登记攻击面均已接入，本窗口零事件不代表防御失效。" : "未接入路径不会进入本页统计。"}
+            这段时间没有拦截记录。已接入 {data.coverage.activeCount}/{data.coverage.registeredCount} 类入口，
+            {coverageComplete ? "全部入口都已接入，没有记录不代表防御失效。" : "未接入的入口不在统计里。"}
           </div>
         ) : <div className="trend-chart">
           <div className="trend-y">
@@ -354,11 +354,11 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
       {/* 路径分布 */}
       <section className="path-card">
         <div className="path-h">
-          <span className="ttl">篡改路径分布 · 按攻击面合并</span>
+          <span className="ttl">篡改方式分布</span>
           <span className="sub">· 按作弊手法分类统计</span>
           <div className="r">{win} 总计 <b style={{ color: "var(--danger)" }}>{totalPath}</b> 起</div>
         </div>
-        {TAMPER_PATHS.length === 0 ? <div className="tint tiny" style={{ margin: 16 }}>当前窗口暂无篡改路径分布。</div> : <><div className="path-stack">
+        {TAMPER_PATHS.length === 0 ? <div className="tint tiny" style={{ margin: 16 }}>这段时间没有篡改记录。</div> : <><div className="path-stack">
           {TAMPER_PATHS.map((p) => {
             const segPct = (p.ct / totalPath) * 100;
             return (
@@ -390,14 +390,14 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
               <button type="button" disabled={accountLoading || !accountPager.hasPrev} onClick={() => loadAccountPage(accountPager.page - 1)}>上一页</button>
               <button type="button" disabled={accountLoading || !accountPager.hasNext} onClick={() => loadAccountPage(accountPager.page + 1)}>下一页</button>
             </div>
-            <CodeTag tone="electric">A2 审计</CodeTag><CodeTag>服务器拦截业务记录</CodeTag>
+            <CodeTag tone="electric">系统实际拦截记录</CodeTag>
           </div>
         </div>
         <div className="accts-tblwrap"><div className="accts-tbl">
           <div className="hd">
-            <div className="c">用户编码</div><div className="c">{win} 起数</div><div className="c">K4 / B5</div><div className="c">命中路径</div>
+            <div className="c">用户编码</div><div className="c">{win} 起数</div><div className="c">风险分 / 风险提醒</div><div className="c">篡改方式</div>
             <div className="c">最近拦截</div><div className="c">关联账户组编号</div>
-            <div className="c" style={{ justifyContent: "flex-end" }}>动作(跨域)</div>
+            <div className="c" style={{ justifyContent: "flex-end" }}>去处理</div>
           </div>
           {TAMPER_ACCTS.map((a) => {
             const k4Cls = a.alertState === "escalated" ? "high" : "mid";
@@ -405,26 +405,26 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
               <div className="rw" key={a.userCode}>
                 <div className="c uid">{a.userCode}</div>
                 <div className="c cnt">{a.cnt}</div>
-                <div className="c"><span className={"badge-k4 " + k4Cls}>{a.fedToK4 ? `K4 ${a.k4}` : "K4 未同步"} · {a.b5Triggered ? "B5 已触发" : "B5 未触发"}</span></div>
+                <div className="c"><span className={"badge-k4 " + k4Cls}>{a.fedToK4 ? `风险分 ${a.k4}` : "风险分未同步"} · {a.b5Triggered ? "已提醒" : "未提醒"}</span></div>
                 <div className="c"><div className="paths">{a.paths.map((p) => <span key={p} className="p">{p}</span>)}</div></div>
                 <div className="c last">{a.last}</div>
-                <div className="c">{a.cluster ? <span className="badge-cluster" title="K1 关联账户组">{a.cluster}</span> : <span style={{ color: "var(--ink-4)", fontFamily: "var(--mono)", fontSize: 11 }}>—</span>}</div>
+                <div className="c">{a.cluster ? <span className="badge-cluster" title="关联账户组">{a.cluster}</span> : <span style={{ color: "var(--ink-4)", fontFamily: "var(--mono)", fontSize: 11 }}>—</span>}</div>
                 <div className="c acts">
                   {a.cluster && canViewK1 && (a.alertState === "flagged" || a.alertState === "escalated") ? (
-                    <Link className="k1" href={{ pathname: "/risk/multi-account", query: { focusClusterId: a.cluster, source: "J3" } }} title={`${a.cluster} · 到 K1 查看关联账户组`}>→ K1 查看账户组</Link>
+                    <Link className="k1" href={{ pathname: "/risk/multi-account", query: { focusClusterId: a.cluster, source: "J3" } }} title={`${a.cluster} · 查看关联账户组`}>→ 查看账户组</Link>
                   ) : (
-                    <a className="off" aria-disabled>→ K1 查看账户组</a>
+                    <a className="off" aria-disabled>→ 查看账户组</a>
                   )}
-                  {canFreezeC2 && (a.alertState === "flagged" || a.alertState === "escalated") ? <Link className="c2" href={{ pathname: "/users/actions", query: { userCode: a.userCode, source: "J3" } }} title={`${a.userCode} · 冻结/解冻在 C2 完成 操作确认`}>→ C2 冻结</Link> : <a className="off" aria-disabled>→ C2 冻结</a>}
+                  {canFreezeC2 && (a.alertState === "flagged" || a.alertState === "escalated") ? <Link className="c2" href={{ pathname: "/users/actions", query: { userCode: a.userCode, source: "J3" } }} title={`${a.userCode} · 去「账户操作」冻结或解冻`}>→ C2 冻结</Link> : <a className="off" aria-disabled>→ C2 冻结</a>}
                 </div>
               </div>
             );
           })}
-          {TAMPER_ACCTS.length === 0 && <div className="tint tiny" style={{ margin: 16 }}>当前窗口没有达到阈值的账户告警。</div>}
+          {TAMPER_ACCTS.length === 0 && <div className="tint tiny" style={{ margin: 16 }}>这段时间没有账户达到告警阈值。</div>}
         </div></div>
       </section>
 
-      <p className="f-foot"><b>所有计数来自服务器确认拦截事件</b>：<AutoGloss>本页只展示已经被业务接口拒绝并成功写入业务记录的尝试；K4 / B5 状态只按服务端返回结果显示，不把“配置开启”当成“已经同步”。本页</AutoGloss><b>不直接处置账户</b>，<AutoGloss>实际冻结 / 建档要到账户处置页或风控批量页去做。</AutoGloss></p>
+      <p className="f-foot"><b>所有数字都是已被拦下的尝试</b>。<AutoGloss>风险分和风险提醒按实际同步结果显示。本页</AutoGloss><b>不能直接处理账户</b>，<AutoGloss>冻结账户或建立关联账户组，请去「账户操作」或「多账户风险排查」。</AutoGloss></p>
     </div>
   );
 }

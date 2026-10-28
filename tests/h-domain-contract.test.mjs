@@ -53,10 +53,10 @@ test("H1 前端读模型由后端裁决,逐月旋钮矩阵写后端配置", () =
   assert.match(h1, /P1:[^}]*拉新/);
   assert.match(h1, /P6:[^}]*软退场/);
   // 开发环境预览只读,重新读取后端读模型而不写配置。
-  assert.match(h1, /刷新预览\(只读\)/);
-  assert.match(h1, /刷新预览会重新读取开发环境 H1 读模型,不写配置/);
+  assert.match(h1, />刷新数据</);
+  assert.match(h1, /重新加载本页数据，不会改任何设置/);
   // 阶段效果归因回链 B4 节奏看板(与 b4-rhythm 断言的 href 一致)。
-  assert.match(h1, /href="\/overview\/rhythm"[^>]*>去 B4 节奏看板/);
+  assert.match(h1, /href="\/overview\/rhythm"[^>]*>去运营阶段状态/);
 });
 
 test("H1 client 端点对齐后端 rhythm/phases 路径并强制幂等键", () => {
@@ -96,15 +96,15 @@ test("H2 试用前检查与七种状态都由服务器判断和更新", () => {
   assert.match(h2, /updateH2TrialParam/);
   assert.match(h2, /killH2AutoPush/);
   assert.match(h2, /开始试用前的四项检查/);
-  assert.match(h2, /由服务器统一判断/);
+  assert.match(h2, /全部通过才能开始试用/);
   assert.match(h2, /试用流程的七种状态/);
-  assert.match(h2, /状态由服务器更新/);
+  assert.match(h2, /状态由系统自动更新/);
   // 终态会话不再允许强制介入。
   assert.match(h2, /\["cancelled", "redeemed", "failed"\]\.includes\(session\.state\)/);
   // 试用收益抵扣规则 抵扣由服务端重算,失败概率等 server-only 不下发。
-  assert.match(h2, /试用收益抵扣规则/);
-  assert.match(h2, /抵扣规则由后端返回/);
-  assert.match(h2, /仅供服务器内部计算的数据不会以真实值下发/);
+  assert.match(h2, /试用收益怎么抵扣/);
+  assert.match(h2, /抵扣额 = 试用期累计收益和抵扣上限中较小的那个/);
+  assert.match(h2, /扣款失败概率等内部数据不在页面显示/);
   assert.match(h2, /onChanged: \(\) => Promise<void>/);
   assert.match(h2, /await updateH2TrialParam[\s\S]*await onChanged\(\)/);
   assert.match(h2, /await killH2AutoPush\(reason\)[\s\S]*await reload\(\)/);
@@ -161,25 +161,25 @@ test("H3 前端任务清单消费 canonical 契约表(task_key 串起服务端�
   assert.match(h3, /createH3Mission/);
   assert.match(h3, /createH3MonthlyMission/);
   // 任务事件契约与归因表:canonical 字段集。
-  assert.match(h3, /任务完成记录与统计规则\(只读\)/);
-  assert.match(h3, /任务编号、完成记录、关联业务、转化分析与数据报表/);
+  assert.match(h3, /任务数据口径（只读）/);
+  assert.match(h3, /每个任务的完成记录会进入哪些统计/);
   assert.match(h3, /contract\.taskKey/);
   assert.match(h3, /contract\.serverEvent/);
   assert.match(h3, /contract\.downstream/);
   assert.match(h3, /contract\.bi/);
-  assert.match(h3, /任务和统计共用同一份完成记录/);
+  assert.match(h3, /任务和统计用同一份完成记录/);
   // 全局任务加成只读跟随 H1,本页只套用不派发。
-  assert.match(h3, /全局任务加成 H1 派发/);
+  assert.match(h3, /全局任务加成在「运营阶段设置」里改/);
   // 新任务先保持待绑定停用态；绑定选择可列出暂停任务，任务编号不能由事件名伪造。
-  assert.match(h3, /初始为待绑定停用态/);
+  assert.match(h3, /新建后先是停用状态/);
   assert.match(h3, /\["active", "paused"\]\.includes\(status\)/);
   assert.doesNotMatch(h3, /taskCode \?\? task\.completionEvent/);
   // Day-One definitions are only for users who have not entered yet; existing
   // users read their immutable instance snapshot rather than this live table.
-  assert.match(h3, /既有实例按快照展示/);
-  assert.match(h3, /停用仅影响尚未进入任务的用户，既有实例按快照展示/);
-  assert.match(h3, /进入时冻结已启用任务、三相奖励与资格截止/);
-  assert.match(h3, /此后改动仅影响尚未进入任务的用户/);
+  assert.match(h3, /已开始的照旧/);
+  assert.match(h3, /停用只影响还没开始的用户，已开始的照旧/);
+  assert.match(h3, /用户开始做任务时就锁定任务和奖励/);
+  assert.match(h3, /之后的修改只影响还没开始的用户/);
   assert.doesNotMatch(h3, /24h 内 6 项完成领 500/);
 });
 
@@ -235,7 +235,7 @@ test("H4 前端活动列表与转盘奖池治理走后端 quest-events 写接口
   // 主推唯一性由后端校验。
   assert.match(h3, /同时只能有一个进行中的主推活动/);
   // 转盘概率合计必须等于 100(前端预校验,后端复核)。
-  assert.match(h3, /转盘档位概率合计必须等于 100%/);
+  assert.match(h3, /所有奖项的概率加起来要等于 100%/);
 });
 
 test("H4 client 端点对齐后端 events / wheel-tiers 路径", () => {
@@ -272,10 +272,9 @@ test("H5 前端签到规则与里程碑奖励由后端配置,幸运概率两档�
   assert.match(h5, /updateH5EarnMilestone/);
   assert.match(h5, /updateH5EarnTickInterval/);
   // 幸运概率由后端校验两档合计不超过 100%。
-  assert.match(h5, /幸运概率由后端校验两档合计不超过 100%/);
+  assert.match(h5, /两档幸运概率加起来不能超过 100%/);
   // 以服务器记录为准,空态不生成示例数据。
-  assert.match(h5, /以服务器记录为准/);
-  assert.match(h5, /不使用本地示例数据/);
+  assert.match(h5, /没有数据时显示为空/);
 });
 
 test("H5 client 端点对齐后端 check-in / earn-milestones 路径", () => {
@@ -311,7 +310,7 @@ test("H7 前端代金券 CRUD 与上下架走后端 vouchers 写接口,促销折
   assert.match(h7, /updateH7VoucherStatus/);
   assert.match(h7, /deleteH7Voucher/);
   // 代金券只抵扣订单价格，不增加代币应付款，也不受资金覆盖率门槛限制。
-  assert.match(h7, /代金券只抵扣订单价格，不增加代币应付款，也不受资金覆盖率门槛限制/);
+  assert.match(h7, /代金券只抵扣订单价格，不增加平台应付款，也不受覆盖率限制/);
   // 类型闭集 fixed/percent。
   assert.match(h7, /type: "fixed" \| "percent"/);
 });
@@ -345,7 +344,7 @@ test("H8 前端真实结算与发奖参数受 growth_h8_write / growth_h8_settle
   assert.match(h8, /canWrite = isSuperadmin \|\| !!session\?\.authorities\.includes\("growth_h8_write"\)/);
   assert.match(h8, /canSettle = isSuperadmin \|\| !!session\?\.authorities\.includes\("growth_h8_settle"\)/);
   // 运营人员只看到服务端裁决口径，不暴露 mock / 本地状态等实现术语。
-  assert.match(h8, /结算结果以服务端邀请关系、唯一结算记录、钱包与资金台账为准/);
+  assert.match(h8, /结算（每位新人只结算一次）→ 新人和邀请人钱包到账 → 记入资金账本/);
   assert.doesNotMatch(h8, /页面不含 mock、样例账户或本地发奖状态/);
 });
 

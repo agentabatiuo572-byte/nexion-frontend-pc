@@ -81,7 +81,7 @@ export default function A6Roles() {
     }
     void fetchA7MenusOverview()
       .then((o) => { setMenuTree(o.tree); setMenuCatalogReady(true); })
-      .catch((error) => setToast(`菜单目录加载失败，授权编辑已锁定：${displayAdminError(error)}`));
+      .catch((error) => setToast(`菜单列表加载失败，暂时不能编辑授权：${displayAdminError(error)}`));
     // A8 分页有上限(pageSize 被后端收口),多页拉全权限全集供 GrantsEditor 分组(避免缺域/缺权限)
     void (async () => {
       try {
@@ -105,7 +105,7 @@ export default function A6Roles() {
         setAllPerms(all);
         setPermissionCatalogReady(true);
       } catch (error) {
-        setToast(`权限目录加载失败，授权编辑已锁定：${displayAdminError(error)}`);
+        setToast(`权限列表加载失败，暂时不能编辑授权：${displayAdminError(error)}`);
       }
     })();
   }, [canGrant, refreshOverview, setToast]);
@@ -123,15 +123,15 @@ export default function A6Roles() {
     <div className="dkpage adom">
       <DomainHeader domainCode="A" domainName="平台基础" accentVar="--admin-domain-a"
         l2Id="A6" l2Name="角色管理"
-        summary="为角色分配可执行的操作与可见菜单。敏感变更提交后，须到 A2 操作记录与审批页面确认才会生效。"
+        summary="管理后台角色，设置每个角色能做的操作和能看的菜单。修改提交后，需在「操作记录与审批」确认才生效。"
         right={canWrite ? <Btn variant="primary" sm onClick={() => setFormMode({ kind: "create" })}>+ 新建角色</Btn> : <Badge tone="neutral">只读</Badge>} />
 
       <div className="two-col" style={{ alignItems: "flex-start" }}>
         <Card>
-          <CardH title="角色" sub={`${roles.length} 个（8 内置 + 自定义）`} />
+          <CardH title="角色" sub={`${roles.length} 个（含 8 个内置角色）`} />
           {loading ? <div style={{ padding: 24, color: "var(--ink-3)" }}>加载中…</div> : loadError ? (
             <div className="alertbar warn" role="alert" style={{ margin: 16 }}>
-              角色目录加载失败，当前数据不可确认。<Btn sm onClick={() => void refreshOverview()}>重试</Btn>
+              角色列表加载失败，请重试。<Btn sm onClick={() => void refreshOverview()}>重试</Btn>
             </div>
           ) : (
             <div style={{ padding: "4px 8px" }}>
@@ -152,10 +152,10 @@ export default function A6Roles() {
                     {r.builtin && <Badge tone="neutral">内置</Badge>}
                     {/* 自动验收残留的临时角色必须与真实角色目录可区分(zentao #101)。
                         它们零账号绑定,混在「启用」里会让运营误选,也让角色数量失真。 */}
-                    {isAcceptanceTempRole(r) && <Badge tone="warn">验收临时 · 建议清理</Badge>}
+                    {isAcceptanceTempRole(r) && <Badge tone="warn">测试用 · 建议删除</Badge>}
                     <Badge tone={r.status === 1 ? "ok" : "dim"}>{r.status === 1 ? "启用" : "停用"}</Badge>
                     <span style={{ flex: 1 }} />
-                    <span className="mono" style={{ fontSize: 11, color: "var(--ink-3)" }}>{r.adminCount} 账号</span>
+                    <span className="mono" style={{ fontSize: 11, color: "var(--ink-3)" }}>{r.adminCount} 个账号</span>
                   </div>
                   {(ROLE_DESC[r.roleCode]?.desc || r.remark) && (
                     <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 3, lineHeight: 1.4 }}>{ROLE_DESC[r.roleCode]?.desc || r.remark}</div>
@@ -168,17 +168,17 @@ export default function A6Roles() {
         </Card>
 
         <Card>
-          <CardH title="角色详情" sub={detail ? `权限 ${detail.permissionCodes.length} · 菜单 ${detail.menuIds.length}` : "选择左侧角色"} />
+          <CardH title="角色详情" sub={detail ? `权限 ${detail.permissionCodes.length} 项 · 菜单 ${detail.menuIds.length} 个` : "选择左侧角色"} />
           {!detail ? (
             <div style={{ padding: 24, color: "var(--ink-3)", textAlign: "center" }}>选择一个角色查看详情</div>
           ) : (
             <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
               <Row label="角色标识"><span className="mono">{detail.roleCode}</span></Row>
               <Row label="名称">{detail.roleName}</Row>
-              {ROLE_DESC[detail.roleCode] && <Row label="职责说明">{ROLE_DESC[detail.roleCode].desc}（可访问:{ROLE_DESC[detail.roleCode].scope}）</Row>}
+              {ROLE_DESC[detail.roleCode] && <Row label="职责说明">{ROLE_DESC[detail.roleCode].desc}（范围：{ROLE_DESC[detail.roleCode].scope}）</Row>}
               <Row label="备注">{detail.remark || "—"}</Row>
               <Row label="状态"><Badge tone={detail.status === 1 ? "ok" : "dim"}>{detail.status === 1 ? "启用" : "停用"}</Badge></Row>
-              <Row label="已绑权限">{detail.permissionCodes.length} 个权限码</Row>
+              <Row label="权限">{detail.permissionCodes.length} 项</Row>
               <Row label="可见菜单">{detail.menuIds.length} 个菜单</Row>
               <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
                 {canWrite && <Btn sm onClick={() => setFormMode({ kind: "update" })}>编辑基本信息</Btn>}
@@ -188,12 +188,12 @@ export default function A6Roles() {
                   const stableKey = newA6IdempotencyKey("a6-role-status");
                   setConfirmReq({
                     action: `${actionLabel}角色 · ${detail.roleName}`,
-                    completionCopy: "本次只创建 A2 待确认票；由具备对应 A6 权限的操作者确认后才执行。",
-                    detail: <>{actionLabel}角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）只提交 A2 单人确认，具备执行权限的操作者确认后才改变状态和恢复/失效对应权限。</>,
+                    completionCopy: "提交后需在「操作记录与审批」确认才生效。",
+                    detail: <>{actionLabel}角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）。确认生效后，该角色下账号的权限随之{actionLabel === "停用" ? "失效" : "恢复"}。</>,
                     run: async (reason) => {
                       try {
                         const ticket = await proposeA6RoleStatus(detail.id, nextStatus, reason, operator, stableKey);
-                        setToast(`角色${actionLabel}已提交 A2 单人确认 · ${ticket.id}`);
+                        setToast(`已提交${actionLabel}，等待确认 · ${ticket.id}`);
                         return ticket;
                       } catch (error) {
                         setToast(displayAdminError(error));
@@ -206,20 +206,20 @@ export default function A6Roles() {
                   sm
                   variant="primary"
                   disabled={!menuCatalogReady || !permissionCatalogReady}
-                  title={!menuCatalogReady || !permissionCatalogReady ? "菜单/权限目录尚未完整加载" : undefined}
+                  title={!menuCatalogReady || !permissionCatalogReady ? "菜单或权限列表还没加载完" : undefined}
                   onClick={() => setGrantsOpen(true)}
-                >编辑授权（权限/菜单）</Btn>}
+                >编辑权限和菜单</Btn>}
                 {canWrite && <Btn sm onClick={() => {
                   if (detail.builtin) { setToast("内置角色不可删除"); return; }
                   const stableKey = newA6IdempotencyKey("a6-role-delete");
                   setConfirmReq({
                     action: `删除角色 · ${detail.roleName}`,
-                    completionCopy: "本次只创建 A2 待确认票；确认执行前角色和账号权限不会变化。",
-                    detail: <>删除角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）。提交后仅创建 A2 单人确认票；具备执行权限的操作者确认后，该角色下 {roles.find((x) => x.id === detail.id)?.adminCount ?? 0} 个账号才会失去此角色，并停用对应菜单和权限绑定。</>,
+                    completionCopy: "提交后需在「操作记录与审批」确认才生效。",
+                    detail: <>删除角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）。确认生效后，该角色下 {roles.find((x) => x.id === detail.id)?.adminCount ?? 0} 个账号会失去这个角色和对应的权限。</>,
                     run: async (reason) => {
                       try {
                         const ticket = await deleteA6Role(detail.id, reason, operator, stableKey);
-                        setToast(`已提交 A2 单人确认 · ${ticket.id}`);
+                        setToast(`已提交，等待确认 · ${ticket.id}`);
                         return ticket;
                       } catch (error) {
                         setToast(displayAdminError(error));
@@ -248,14 +248,14 @@ export default function A6Roles() {
                     setDetail(created);
                     await refreshOverview();
                     setSelectedId(created.id);
-                    setToast("空角色已创建 · 后端留痕");
+                    setToast("角色已创建，还没有任何权限");
                     return created;
                   }
                   const updated = await updateA6Role(detail!.id, payload as A6RoleUpdateInput, reason, operator, stableKey);
                   setDetail(updated);
                   await refreshOverview();
                   setSelectedId(updated.id);
-                  setToast("角色名称/备注已保存 · 后端留痕");
+                  setToast("已保存");
                   return updated;
                 } catch (error) {
                   setToast(displayAdminError(error));
@@ -273,12 +273,12 @@ export default function A6Roles() {
             const stableKey = newA6IdempotencyKey("a6-role-grants");
             setConfirmReq({
                action: `改角色授权 · ${detail.roleName}`,
-               completionCopy: "本次只创建 A2 待确认票；确认执行后才同步角色白名单并失效权限缓存。",
+               completionCopy: "提交后需在「操作记录与审批」确认才生效，生效后该角色下的账号立即按新权限使用。",
                detail: <>改角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）的权限/菜单绑定。权限 {permBefore}→{payload.permissionCodes.length} · 菜单 {menuBefore}→{payload.menuIds.length}。该 敏感操作只提交 A2 待确认票，具备执行权限的操作者确认后才由服务器同步白名单并更新缓存。</>,
                run: async (reason) => {
                  try {
                    const ticket = await proposeA6RoleGrants(detail.id, payload, reason, operator, stableKey);
-                   setToast(`授权变更已提交 A2 单人确认 · ${ticket.id}`);
+                   setToast(`权限修改已提交，等待确认 · ${ticket.id}`);
                    return ticket;
                  } catch (error) {
                    setToast(displayAdminError(error));
@@ -323,11 +323,11 @@ function RoleFormDrawer({ mode, detail, onClose, onSubmit }: {
     if (isCreate) {
       onSubmit({ roleCode: roleCode.trim(), roleName: roleName.trim(), remark: remark.trim() || undefined, status: 1 },
         `新建角色 · ${roleName}`,
-        <>新建角色 <b>{roleName}</b>（<span className="mono">{roleCode}</span>）。新角色默认零权限,需在编辑授权中绑定。审计留痕。</>);
+        <>新建角色 <b>{roleName}</b>（<span className="mono">{roleCode}</span>）。新角色没有任何权限，创建后再编辑权限和菜单。</>);
     } else {
       onSubmit(buildRoleMetadataPayload(roleName, remark),
         `编辑角色 · ${roleName}`,
-        <>编辑角色 <b>{roleName}</b>（<span className="mono">{detail?.roleCode}</span>,标识不可修改）。本表单只保存名称与备注；启用/停用使用详情页独立确认动作。</>);
+        <>修改角色 <b>{roleName}</b>（<span className="mono">{detail?.roleCode}</span>）的名称和备注。</>);
     }
   };
 
@@ -335,13 +335,13 @@ function RoleFormDrawer({ mode, detail, onClose, onSubmit }: {
     <Drawer title={isCreate ? "新建角色" : `编辑 · ${detail?.roleName}`} sub={isCreate ? undefined : detail?.roleCode} onClose={onClose}
       footer={<Btn variant="primary" onClick={submit}>{isCreate ? "提交（需确认）" : "保存（需确认）"}</Btn>}>
       <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 16 }}>
-        <div><div style={labelStyle}>角色标识 {isCreate ? "" : "（不可改,内置码保留）"}</div>
+        <div><div style={labelStyle}>角色标识 {isCreate ? "" : "（不能修改）"}</div>
           <input style={fieldStyle} value={roleCode} onChange={(e) => setRoleCode(e.target.value)} disabled={!isCreate} placeholder="如 CONTENT_EDITOR" /></div>
         <div><div style={labelStyle}>名称</div>
           <input style={fieldStyle} value={roleName} onChange={(e) => setRoleName(e.target.value)} placeholder="如 内容编辑员" /></div>
         <div><div style={labelStyle}>备注</div>
           <input style={fieldStyle} value={remark} onChange={(e) => setRemark(e.target.value)} placeholder="职责说明" /></div>
-        <div className="atint" style={{ fontSize: 12 }}>提交后需在确认弹窗填写原因（≥8 字）。</div>
+
       </div>
     </Drawer>
   );
@@ -351,14 +351,14 @@ const PERM_TONE: Record<string, string> = { HIGH: "danger", WRITE: "warn", READ:
 
 /** 8 内置角色中文职责说明(角色定义,从 A1 挪来)。自定义角色用 remark 兜底。 */
 const ROLE_DESC: Record<string, { desc: string; scope: string }> = {
-  SUPER_ADMIN: { desc: "总管理员·平台拥有者,全域 A-M 全权限", scope: "全域 A-M" },
-  CONFIG_ADMIN: { desc: "配置运营·平台配置/菜单/角色/权限管理", scope: "A 域" },
-  FINANCE: { desc: "财务·资金对账/提现/账单/资金池", scope: "B/D 域" },
-  RISK: { desc: "风控·风控规则/评分/反作弊,含跨域授权", scope: "C/K + 跨域" },
-  CONTENT: { desc: "内容运营·文案/通知/信任中心/披露", scope: "I 域" },
-  GROWTH: { desc: "增长运营·活动/任务/代金券/节奏", scope: "H 域" },
-  SUPPORT: { desc: "客服·工单/会话/知识库/话术", scope: "M 域" },
-  AUDITOR: { desc: "审计·只读全域审计/操作日志", scope: "全域只读" },
+  SUPER_ADMIN: { desc: "平台负责人，拥有全部权限", scope: "全部模块" },
+  CONFIG_ADMIN: { desc: "管理平台配置、菜单、角色和权限", scope: "平台基础" },
+  FINANCE: { desc: "负责资金对账、提现、账单和资金储备", scope: "运营总览、资金与财务" },
+  RISK: { desc: "负责风控规则、风险评分和反作弊", scope: "用户与账户、风控，以及部分其他模块" },
+  CONTENT: { desc: "负责文案、通知、信任中心和风险披露", scope: "内容与合规" },
+  GROWTH: { desc: "负责活动、任务、代金券和运营节奏", scope: "增长与活动" },
+  SUPPORT: { desc: "负责工单、会话、知识库和话术", scope: "客服中心" },
+  AUDITOR: { desc: "查看全部操作记录，不能修改", scope: "全部模块（只读）" },
 };
 
 /** 权限授权编辑 Drawer:按业务域 A-M(中文+域色) → 域内页面(L2) → 权限 三级分组 + 搜索定位。 */
@@ -438,14 +438,14 @@ function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubmit }: {
 
   return (
     <Drawer wide title={`编辑授权 · ${detail.roleName}`} sub={detail.roleCode} onClose={onClose}
-      footer={<Btn variant="primary" onClick={() => onSubmit({ permissionCodes: [...permSet], menuIds: [...menuSet] }, detail.permissionCodes.length, detail.menuIds.length)}>保存授权（需确认）</Btn>}>
+      footer={<Btn variant="primary" onClick={() => onSubmit({ permissionCodes: [...permSet], menuIds: [...menuSet] }, detail.permissionCodes.length, detail.menuIds.length)}>保存（需确认）</Btn>}>
       <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 16, height: "calc(100vh - 200px)", overflow: "hidden" }}>
         {/* 菜单授权(左,可见性) ‖ 权限授权(右,操作权)— 左右并排,各栏独立滚动 */}
         <div style={{ display: "flex", gap: 12, flex: 1, minHeight: 0 }}>
           {/* 菜单授权(可见性)— 常驻左栏,默认全展开,栏内独立滚动 */}
           <div style={{ width: 340, flexShrink: 0, display: "flex", flexDirection: "column", minHeight: 0, border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
             <div style={{ padding: "9px 14px", borderBottom: "1px solid var(--border)", background: "var(--surface-2)", fontWeight: 700, fontSize: 13 }}>
-              菜单授权（可见性）<span className="mono" style={{ fontSize: 11, color: "var(--ink-4)", fontWeight: 400 }}>· {menuSet.size} 项 · 父级联动子级</span>
+              能看的菜单<span className="mono" style={{ fontSize: 11, color: "var(--ink-4)", fontWeight: 400 }}>· 已选 {menuSet.size} 项 · 勾选上级会同时勾选下级</span>
             </div>
             <div style={{ overflow: "auto", flex: 1, minHeight: 0, padding: 8 }}>
               {menuTree.map((node) => (
@@ -453,17 +453,17 @@ function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubmit }: {
                   onToggleCollapse={(id) => setMenuCollapsed((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; })}
                   onToggle={toggleMenu} />
               ))}
-              {!menuTree.length && <div style={{ color: "var(--ink-4)", padding: 12 }}>菜单全集加载中…</div>}
+              {!menuTree.length && <div style={{ color: "var(--ink-4)", padding: 12 }}>正在加载菜单…</div>}
             </div>
           </div>
 
           {/* 权限授权(操作权)— 整体卡:标题头 + 搜索 + 左域右详情 master-detail */}
           <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
           <div style={{ padding: "9px 14px", borderBottom: "1px solid var(--border)", background: "var(--surface-2)", fontWeight: 700, fontSize: 13 }}>
-            权限授权（操作权）<span className="mono" style={{ fontSize: 11, color: "var(--ink-4)", fontWeight: 400 }}>· 左侧选业务域,右侧编辑该域页面权限;内容超出滚动</span>
+            能做的操作<span className="mono" style={{ fontSize: 11, color: "var(--ink-4)", fontWeight: 400 }}>· 左侧选模块，右侧勾选权限</span>
           </div>
           <div style={{ padding: 10, borderBottom: "1px solid var(--border)" }}>
-            <input aria-label="权限搜索" placeholder="搜索权限码 / 中文名 / 页面(如质押、G1、提现) — 跨域定位,自动跳到命中域"
+            <input aria-label="权限搜索" placeholder="搜索权限名或页面，如 质押、提现"
               value={permQuery} onChange={(e) => setPermQuery(e.target.value)}
               style={{ width: "100%", padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border-strong)", borderRadius: 8, color: "var(--ink)" }} />
           </div>
@@ -487,7 +487,7 @@ function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubmit }: {
                 </button>
               );
             })}
-            {!filteredGroups.length && <div style={{ color: "var(--ink-4)", padding: 12, fontSize: 12 }}>{allPerms.length ? "无匹配域" : "权限全集加载中…"}</div>}
+            {!filteredGroups.length && <div style={{ color: "var(--ink-4)", padding: 12, fontSize: 12 }}>{allPerms.length ? "没有匹配的模块" : "正在加载权限…"}</div>}
           </div>
 
           {/* 右:选中域详情(页面 L2 + 权限,超出滚动) */}
@@ -503,7 +503,7 @@ function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubmit }: {
                     <span style={{ fontWeight: 700, color: accent, fontSize: 14 }}>{activeGroup.domain.code} · {activeGroup.domain.name}</span>
                     <span className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>{domCodes.filter((c) => permSet.has(c)).length}/{domCodes.length}</span>
                     <span style={{ flex: 1 }} />
-                    <button className="l-btn sm" onClick={() => togglePermGroup(domCodes, domAllOn)}>域内{domAllOn ? "全清" : "全选"}</button>
+                    <button className="l-btn sm" onClick={() => togglePermGroup(domCodes, domAllOn)}>{domAllOn ? "全部取消" : "全选本模块"}</button>
                   </div>
                   {activeGroup.pages.map((p) => {
                     const pageKey = `${activeGroup.domain.code}:${p.l2.id}`;
@@ -519,7 +519,7 @@ function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubmit }: {
                           <span style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{p.l2.name}</span>
                           <span className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>{pageSel}/{pageCodes.length}</span>
                           <span style={{ flex: 1 }} />
-                          <button className="l-btn sm" onClick={() => togglePermGroup(pageCodes, pageAllOn)}>{pageAllOn ? "全清" : "全选"}</button>
+                          <button className="l-btn sm" onClick={() => togglePermGroup(pageCodes, pageAllOn)}>{pageAllOn ? "全部取消" : "全选"}</button>
                         </div>
                         {pgOpen && (
                           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))", gap: 4, padding: "2px 0 6px 22px" }}>
@@ -531,7 +531,7 @@ function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubmit }: {
                                   <input type="checkbox" checked={on} onChange={() => togglePerm(pp.permissionCode)} />
                                   <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{operatorCopyText(pp.permissionName || pp.permissionCode)}</span>
                                   <Badge tone={tone}>{({ HIGH: "敏感操作", WRITE: "修改", READ: "查询" } as Record<string,string>)[pp.permType] ?? "未知权限类型"}</Badge>
-                                  {pp.amplifies === 1 && <span title="放大资金流出" style={{ color: "var(--danger)", fontSize: 12 }}>⚠</span>}
+                                  {pp.amplifies === 1 && <span title="会让平台多付钱" style={{ color: "var(--danger)", fontSize: 12 }}>⚠</span>}
                                 </label>
                               );
                             })}
@@ -542,13 +542,13 @@ function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubmit }: {
                   })}
                 </>
               );
-            })() : <div style={{ color: "var(--ink-4)", padding: 24, textAlign: "center" }}>{allPerms.length ? "无匹配权限" : "权限全集加载中…"}</div>}
+            })() : <div style={{ color: "var(--ink-4)", padding: 24, textAlign: "center" }}>{allPerms.length ? "没有匹配的权限" : "正在加载权限…"}</div>}
           </div>
           </div>
         </div>
         </div>
 
-        <div className="atint" style={{ fontSize: 12 }}>保存后需在确认弹窗填写原因（≥8 字）。服务器白名单同步（差量）,并失效该角色下账号权限缓存。</div>
+        <div className="atint" style={{ fontSize: 12 }}>确认生效后，该角色下的账号立即按新权限使用。</div>
       </div>
     </Drawer>
   );

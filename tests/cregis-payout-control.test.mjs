@@ -108,7 +108,7 @@ test("payout proposal freezes current server pay-in bits rather than unsaved pay
   const button = nodes(tree, "button").find((node) => node.props.children === "提交出款开关提案");
   assert.equal(button.props.disabled, false);
   button.props.onClick();
-  assert.match(api.confirms[0].detail, /不会直接放行或确认任何提现单/);
+  assert.match(api.confirms[0].detail, /不会直接放行任何提现/);
   await api.confirms[0].run("仅开启链上出款用于本轮验证");
   const request = api.requests.find((row) => row.options?.method === "POST");
   assert.equal(request.path, "/cregis/switch-cases");

@@ -132,7 +132,7 @@ test("real create/edit form producers select explicit defaults, keep manual mutu
   assert.equal(results[0].useDefaultAvatar, true); assert.equal(results[0].avatarGender, "FEMALE"); assert.ok(!("avatarAssetId" in results[0]));
   assert.equal(nodes(tree, n => n.type === "fieldset" && n.props.className === "account-avatar-controls").length, 1, "Only the new avatar controls receive the typography scope");
   const titles = nodes(tree, n => n.type === "h3" && n.props.className === "account-profile-section-title");
-  assert.deepEqual(titles.map(n => n.props.children[1]), ["登录资料", "初始角色(可暂不分配)", "首次登录", "操作理由（必填 · 写入审计）"]);
+  assert.deepEqual(titles.map(n => n.props.children[1]), ["登录资料", "初始角色（可暂不分配）", "首次登录", "操作理由（必填）"]);
   assert.deepEqual(titles.map(n => n.props.children[0].props.children), ["1", "2", "3", "4"]);
   assert.ok(titles.every(n => n.props.children[0].props.className === "account-profile-step-number" && n.props.children[0].props["aria-hidden"] === "true"));
   const reasonInput = nodes(tree, n => n.type === "textarea")[0];
@@ -248,7 +248,7 @@ test("readback failure keeps original self command; later snapshot detects saved
   const props = { name: "本人客服", onChanged: snapshot => changed.push(snapshot), ctx: { openActionConfirm: request => { confirmation = request; }, toast() {}, refreshContent: async () => {} } };
   const view = f.component(editor, props); view.render(); let tree = view.render(); f.queue.push(json(SNAP)); button(tree, "更换本人头像").props.onClick(); await flush(); tree = view.render(); nodes(tree, n => typeof n.type === "function" && n.type.name === "AccountAvatarPicker")[0].props.onChange(ID); tree = view.render(); button(tree, "确认保存本人头像").props.onClick();
   f.queue.push(json(SNAP), json({ ...SNAP, assetId: ID, accountVersion: "8", avatarVersion: 3 }), new Error("readback lost")); assert.equal(await confirmation.run("本人明确更换头像测试"), false);
-  assert.equal(f.load("lib/admin/account-avatar-pending.ts").selfAvatarCommands.list().length, 1); tree = view.render(); f.queue.push(json({ ...SNAP, assetId: ID, accountVersion: "8", avatarVersion: 3 })); button(tree, "查询原保存结果").props.onClick(); await flush();
+  assert.equal(f.load("lib/admin/account-avatar-pending.ts").selfAvatarCommands.list().length, 1); tree = view.render(); f.queue.push(json({ ...SNAP, assetId: ID, accountVersion: "8", avatarVersion: 3 })); button(tree, "查询保存结果").props.onClick(); await flush();
   assert.equal(f.requests.filter(r => r.init.method === "PATCH").length, 1); assert.equal(changed.at(-1).assetId, ID); assert.equal(f.load("lib/admin/account-avatar-pending.ts").selfAvatarCommands.list().length, 0); view.dispose();
 });
 
@@ -300,7 +300,7 @@ test("expired original self avatar command survives reload but is query-only", a
   assert.ok(reloaded.requests.length >= 2); assert.ok(reloaded.requests.every(request => request.init.method === undefined));
   assert.deepEqual(restored.selfAvatarCommands.list(), [record], "Original key/body/reason/version/timestamps survive query-only recovery unchanged");
   assert.equal(confirmed, 0);
-  reloaded.queue.push(json({ ...SNAP, assetId: ID, accountVersion: "8", avatarVersion: 3 })); button(tree, "查询原保存结果").props.onClick(); await flush();
+  reloaded.queue.push(json({ ...SNAP, assetId: ID, accountVersion: "8", avatarVersion: 3 })); button(tree, "查询保存结果").props.onClick(); await flush();
   assert.equal(confirmed, 1); assert.equal(restored.selfAvatarCommands.list().length, 0);
   assert.ok(reloaded.requests.every(request => request.init.method === undefined)); view.dispose();
 });

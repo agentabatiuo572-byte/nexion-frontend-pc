@@ -14,7 +14,7 @@ export const ORDER_FLOW = ["placed", "paid", "provisioning", "activated"];
 export const ostate: Record<string, string> = { placed: "neutral", paid: "info", provisioning: "cyan", activated: "ok", refunded: "warn", cancelled: "neutral", payment_failed: "err", expired: "warn", provisioning_failed: "err", chargeback: "err" };
 // 终态中文标签。
 const STATE_LABEL: Record<string, string> = { placed: "已下单", paid: "已支付", provisioning: "开通中", activated: "已激活", cancelled: "已取消", payment_failed: "支付失败", expired: "已过期", refunded: "已退款", provisioning_failed: "开通失败", chargeback: "拒付" };
-export const stateLabel = (s: string): string => STATE_LABEL[s] ?? "订单状态待核实";
+export const stateLabel = (s: string): string => STATE_LABEL[s] ?? "状态未知";
 
 // E-13 补建终态可选值(为缺失终态的订单手动落定;真后台由订单状态机校验后写入)。
 export const TERMINAL_STATES = ["payment_failed", "expired", "provisioning_failed", "chargeback"] as const;
@@ -206,12 +206,12 @@ export function e1GateReadiness(input: E1GateReadinessInput): E1GateReadiness {
   const forceMonthOpen = !!release.forceUnlock;
   const blockers: string[] = [];
 
-  if (!sku) blockers.push("商品目录缺失");
-  else if (!declaredPhase) blockers.push("商品解锁阶段未配置");
-  else if (phaseConflict) blockers.push(`阶段冲突 · 商品解锁阶段为${phaseLabelOf(phases, declaredPhase)}`);
-  if (!eligibilityReady) blockers.push("待设备资格");
+  if (!sku) blockers.push("商品不存在");
+  else if (!declaredPhase) blockers.push("商品没有设置开放阶段");
+  else if (phaseConflict) blockers.push(`阶段不一致 · 商品的开放阶段是${phaseLabelOf(phases, declaredPhase)}`);
+  if (!eligibilityReady) blockers.push("待补设备资格");
   if (!phaseReached) blockers.push(gatePhaseIdx >= 0 ? `待${phaseLabelOf(phases, release.phase)}` : "阶段未匹配");
-  if (!monthReached && !forceMonthOpen) blockers.push(`待M${effectiveMonth}`);
+  if (!monthReached && !forceMonthOpen) blockers.push(`待第 ${effectiveMonth} 个月`);
 
   return {
     effectiveMonth, eligibilityReady, forceMonthOpen, gatePhaseIdx, monthReached, phaseReached,
@@ -228,30 +228,30 @@ export function releaseMonthPresentation(releaseMonth: number, phaseOffset = 0):
   const effectiveMonth = effectiveReleaseMonth(releaseMonth, phaseOffset);
   const adjustmentLabel = phaseOffset === 0
     ? "按原计划"
-    : `基准 M${releaseMonth} · ${phaseOffset > 0 ? "延后" : "提前"} ${Math.abs(phaseOffset)}M`;
-  return { effectiveLabel: `M${effectiveMonth}`, adjustmentLabel };
+    : `原定第 ${releaseMonth} 个月 · ${phaseOffset > 0 ? "推迟" : "提前"} ${Math.abs(phaseOffset)} 个月`;
+  return { effectiveLabel: `第 ${effectiveMonth} 个月`, adjustmentLabel };
 }
 
 // 购买门表单校验(提交前调;返回错误串 = 拦截,null = 通过)。
 // 注:这是输入完整性/取值范围校验,非「锁死业务值」——阈值/开关本身全运营可调(铁律)。
 export function validateGateForm(f: SkuForm): string | null {
-  if (f.tier !== "Share" && !f.unlock.trim()) return "请先配置并选择解锁阶段";
-  if (f.gateType === "activeDirect" && skuNumU(f.gateActiveDirectMin) == null) return "购买门:请填写活跃直推门槛";
-  if (f.gateType === "rank" && skuNumU(f.gateRankMin) == null) return "购买门:请填写最低 V 级";
+  if (f.tier !== "Share" && !f.unlock.trim()) return "请先选择开放阶段";
+  if (f.gateType === "activeDirect" && skuNumU(f.gateActiveDirectMin) == null) return "购买条件：请填写活跃直接邀请人数";
+  if (f.gateType === "rank" && skuNumU(f.gateRankMin) == null) return "购买条件：请填写最低会员等级";
   if (f.gateType === "combo" && skuNumU(f.gateRankMin) == null && skuNumU(f.gateActiveDirectMin) == null && skuNumU(f.gateTeamVolumeMin) == null)
-    return "购买门:组合门槛至少填一个条件";
+    return "购买条件：组合条件至少填一项";
   const rank = skuNumU(f.gateRankMin);
-  if (rank != null && (rank < 0 || rank > 12)) return "购买门:V 级须在 0-12 之间";
+  if (rank != null && (rank < 0 || rank > 12)) return "购买条件：会员等级须在 0–12 之间";
   const direct = skuNumU(f.gateActiveDirectMin);
-  if (direct != null && (direct < 0 || direct > 1_000_000)) return "购买门:活跃直推门槛须在 0-1000000 之间";
+  if (direct != null && (direct < 0 || direct > 1_000_000)) return "购买条件：活跃直接邀请人数须在 0–1000000 之间";
   const vol = skuNumU(f.gateTeamVolumeMin);
-  if (vol != null && vol < 0) return "购买门:团队业绩门槛须为非负数";
+  if (vol != null && vol < 0) return "购买条件：团队业绩不能为负数";
   const cap = skuNumU(f.gateQuotaCap), sold = skuNumU(f.gateQuotaSold);
-  if (cap == null && sold != null) return "购买门:已售数量必须和锁额上限成对配置";
-  if (cap != null && cap <= 0) return "购买门:锁额上限须为正数(留空=不限量)";
-  if (sold != null && sold < 0) return "购买门:已售数量不能为负数";
-  if (cap != null && sold != null && sold > cap) return "购买门:已售不能超过锁额上限";
-  if (f.gateQuotaPeriod !== "lifetime") return "购买门:历史按月周期暂不可用,请改为全生命周期后再保存";
+  if (cap == null && sold != null) return "购买条件：已售数量和可售上限要一起填写";
+  if (cap != null && cap <= 0) return "购买条件：可售上限须大于 0（留空为不限量）";
+  if (sold != null && sold < 0) return "购买条件：已售数量不能为负数";
+  if (cap != null && sold != null && sold > cap) return "购买条件：已售数量不能超过可售上限";
+  if (f.gateQuotaPeriod !== "lifetime") return "购买条件：按月统计已停用，请改为「不分周期」后保存";
   return null;
 }
 

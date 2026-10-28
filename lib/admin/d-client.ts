@@ -1843,7 +1843,7 @@ export async function retryD1PendingTopupCommand(commandKey: string) {
     || !pending.path.startsWith("/topup/")
     || pending.method === "GET"
   ) {
-    throw new Error("待重试请求不存在或已过期，请重新读取服务端真值");
+    throw new Error("待重试的请求不存在或已过期，请刷新页面");
   }
   return requireD1Overview(await apiRequest<Record<string, unknown>>(
     pending.base,
@@ -1904,13 +1904,13 @@ async function submitD1BankManualCredit(path: string, body: string, commandKey?:
     const latest = await fetchD1BankOrders({ keyword: intentNo, pageNum: 1, pageSize: 20 }, authEpoch);
     assertD1BankManualAuthEpoch(authEpoch);
     const order = latest.records.find(value => value.intentNo === intentNo);
-    if (!order || order.status !== "CREDITED" || order.creditedUsdt <= 0) throw new Error("人工入账尚未回读确认");
+    if (!order || order.status !== "CREDITED" || order.creditedUsdt <= 0) throw new Error("人工入账结果暂未确认");
     pendingMutations.forget(fingerprint);
     return result;
   } catch {
     assertD1BankManualAuthEpoch(authEpoch);
     if (retainedKey) throw new DOutcomeUnknownError(retainedKey);
-    throw new Error("人工入账已受理但订单回读未确认，请先核对订单与账本，不要重新提交");
+    throw new Error("人工入账已提交，但订单状态暂未确认；请先核对订单和账本，不要重新提交");
   }
 }
 

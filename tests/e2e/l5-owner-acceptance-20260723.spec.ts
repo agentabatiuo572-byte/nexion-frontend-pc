@@ -74,7 +74,7 @@ test("L5 首次用户从可见侧栏完成四类聚合、D4 七账单与四模�
   await expect(page.getByRole("button", { name: "发起聚合快照" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "生成监管报告" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "导出七类账单明细" })).toBeEnabled();
-  await expect(page.locator("body")).not.toContainText("会增加资金流出");
+  await expect(page.locator("body")).not.toContainText("这项操作会让平台多付钱");
   await page.screenshot({ path: path.join(EVIDENCE_DIR, "01-l5-visible-entry.png"), fullPage: true });
 
   const optionsResponse = await context.request.get(`${BASE_URL}/api/admin/regulatory/options`);
@@ -140,7 +140,7 @@ test("L5 首次用户从可见侧栏完成四类聚合、D4 七账单与四模�
     const ticket = `99105-L5-REG-${index + 1}-${RUN_ID}`;
     await page.getByRole("button", { name: "生成监管报告" }).click();
     const dialog = page.getByRole("dialog", { name: "生成监管报告" });
-    await expect(dialog.getByText("会增加资金流出")).toHaveCount(0);
+    await expect(dialog.getByText("这项操作会让平台多付钱")).toHaveCount(0);
     await dialog.getByLabel("报告模板").selectOption(templateCode);
     await dialog.getByLabel("报告期间").fill("2026-07");
     await dialog.getByLabel("接收机构 / 用途").fill("L5 监管报送验收");

@@ -42,5 +42,5 @@ test("验收墙与 L 域速览共用同一个汇总函数", async () => {
   }
 
   // L 域速览必须把「暂不可计算」渲染出来,否则口径虽对、运营仍看不到这一态。
-  assert.match(page, /暂不可计算 \$\{kpiRollup\.unknown\}/, "L 域速览必须展示暂不可计算数量");
+  assert.match(page, /暂无法计算 \$\{kpiRollup\.unknown\}/, "L 域速览必须展示暂不可计算数量");
 });

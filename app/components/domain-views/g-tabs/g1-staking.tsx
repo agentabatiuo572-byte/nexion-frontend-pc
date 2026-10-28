@@ -106,10 +106,10 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
     mature_unclaimed: "到期未领",
     claimed: "已领取",
     early_withdrawn: "提前赎回",
-    slashed: "已扣罚终结",
+    slashed: "已罚没",
     refunded: "已退款",
   };
-  const positionStateLabel = (state: string): string => POSITION_STATE_LABELS[state] ?? "持仓状态待核实";
+  const positionStateLabel = (state: string): string => POSITION_STATE_LABELS[state] ?? "状态未知";
   const canonicalPools = useMemo(() => {
     const byTier = new Map((overview?.pools ?? [])
       .filter((pool) => pool.product.toUpperCase() === "USDT")
@@ -130,7 +130,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
     } catch (err) {
       const message = messageOf(err);
       setError(message);
-      toast(`G1 操作失败 · ${message}`);
+      toast(`操作失败 · ${message}`);
       throw err;
     } finally {
       setBusyKey(null);
@@ -140,8 +140,8 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
   if (loading && !overview) {
     return (
       <section className="l-card">
-        <div className="l-h"><span className="ttl">G1 质押</span><span className="sub">· 正在读取真实接口数据</span></div>
-        <div className="l-b"><div className="gtint">G1 数据加载中...</div></div>
+        <div className="l-h"><span className="ttl">质押</span><span className="sub">· 加载中</span></div>
+        <div className="l-b"><div className="gtint">质押数据加载中…</div></div>
       </section>
     );
   }
@@ -149,9 +149,9 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
   if (!overview) {
     return (
       <section className="l-card">
-        <div className="l-h"><span className="ttl">G1 质押</span><span className="sub">· 真实接口数据</span></div>
+        <div className="l-h"><span className="ttl">质押</span></div>
         <div className="l-b">
-          <div className="gtint">G1 数据加载失败 · {error || "未收到本页数据，请重试；持续失败时请联系值班人员。"}</div>
+          <div className="gtint">质押数据加载失败 · {error || "没有收到数据，请重试；一直失败请联系值班同事。"}</div>
           <button className="l-btn mc" style={{ marginTop: 12 }} onClick={() => void reload()}>重新加载</button>
         </div>
       </section>
@@ -172,15 +172,15 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
 
   const adjApy = (pool: G1Pool) => {
     openActionConfirm({
-      action: `质押 年化收益率 调整 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
+      action: `调整质押年化收益率 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
       detail: <>
-        当前 年化收益率 {pool.apyDisplay} · 影响产品 <b>{nexGridBrandText(pool.product)} · {displayTerm(pool)}</b> · 影响范围 <b>仅新单</b>(存量按开始锁仓时锁定值结算,不追溯)。
+        当前年化收益率 {pool.apyDisplay} · 产品 <b>{nexGridBrandText(pool.product)} · {displayTerm(pool)}</b> · <b>只影响新订单</b>，已有订单仍按下单时的利率。
         <div className="gtint" data-proof="g1-apy-preview" style={{ marginTop: 10 }}>
-          <div><b>调整影响预览</b></div>
-          <div>当前锁仓本金:<b>{pool.lockedDisplay}</b> · 计息中持仓:<b>{fmtCount(stats.activeCount)}</b> 单</div>
-          <div>当前累计应付利息:<b>{fmtM(stats.interestUsd)}</b> · 来自真实锁仓持仓</div>
-          <div>B1 兑付覆盖率:<b>{cov}%</b> · 红线 {redline}%</div>
-          <div>升 年化收益率 是放大流出,提交后由后端重新验覆盖率红线与跨档 年化收益率 保序。</div>
+          <div><b>影响预览</b></div>
+          <div>当前锁仓本金：<b>{pool.lockedDisplay}</b> · 计息中：<b>{fmtCount(stats.activeCount)}</b> 单</div>
+          <div>当前累计应付利息：<b>{fmtM(stats.interestUsd)}</b></div>
+          <div>兑付覆盖率：<b>{cov}%</b> · 红线 {redline}%</div>
+          <div>调高利率会多付钱。覆盖率低于红线，或长期档利率低于短期档时，无法保存。</div>
         </div>
       </>,
       coverage: { coverageRatio: coverage.coverageRatio, redlinePct: coverage.redlinePct },
@@ -189,15 +189,15 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
         if (!value) return;
         await mutate(`apy:${pool.tierKey}`, () => updateG1StakingPoolParam(
           pool.tierKey, "apy", value, reason, currentAdminOperator(),
-        ), `年化收益率 已调整 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`);
+        ), `年化收益率已调整 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`);
       },
     });
   };
 
   const adjPenalty = (pool: G1Pool) => {
     openActionConfirm({
-      action: `质押 提前赎回罚款调整 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
-      detail: <>当前罚款 {operatorCopyText(pool.penaltyDisplay)}。降罚款是放大流出,提交后端会按真实 B1 覆盖率红线校验(当前 {cov}%,红线 {redline}%)。只对新单生效。</>,
+      action: `调整提前赎回罚款 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
+      detail: <>当前罚款 {operatorCopyText(pool.penaltyDisplay)}。降低罚款会多付钱，覆盖率低于红线时无法保存（当前 {cov}%，红线 {redline}%）。只影响新订单。</>,
       coverage: { coverageRatio: coverage.coverageRatio, redlinePct: coverage.redlinePct },
       edit: { kind: "number", current: pool.penalty, unit: "%", min: 0, max: 100, step: 0.01, disallowCurrent: true, amplifiesWhen: "decrease" },
       run: async (reason, value) => {
@@ -211,15 +211,15 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
 
   const adjMin = (pool: G1Pool) => {
     openActionConfirm({
-      action: `质押 最小额调整 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
-      detail: <>当前最小额 {pool.minDisplayValue}。最小额收紧不影响锁仓中的订单,只对新单生效。</>,
+      action: `调整最低锁仓额 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
+      detail: <>当前最低锁仓额 {pool.minDisplayValue}。只影响新订单，已有订单不变。</>,
       coverage: { coverageRatio: coverage.coverageRatio, redlinePct: coverage.redlinePct },
       edit: { kind: "number", current: pool.minStake, unit: "USDT", min: 0, max: 1_000_000_000, step: 0.01, disallowCurrent: true, amplifiesWhen: "decrease" },
       run: async (reason, value) => {
         if (!value) return;
         await mutate(`min:${pool.tierKey}`, () => updateG1StakingPoolParam(
           pool.tierKey, "min", value, reason, currentAdminOperator(),
-        ), `最小锁仓额已调整 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`);
+        ), `最低锁仓额已调整 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`);
       },
     });
   };
@@ -228,7 +228,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
     const nextEnabled = !pool.enabled;
     openActionConfirm({
       action: `${pool.enabled ? "停售" : "恢复开售"}档位 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
-      detail: <>{pool.enabled ? "停售只停新锁仓,锁仓中的订单照常计息到期。" : `恢复该档新锁仓开放,后端会按真实 B1 覆盖率红线校验(当前 ${cov}%,红线 ${redline}%)。`}操作确认。</>,
+      detail: <>{pool.enabled ? "停售后不能再买这一档，已有订单照常计息到期。" : `恢复后可以继续购买这一档。覆盖率低于红线时无法恢复（当前 ${cov}%，红线 ${redline}%）。`}</>,
       amplifies: nextEnabled,
       coverage: { coverageRatio: coverage.coverageRatio, redlinePct: coverage.redlinePct },
       run: async (reason) => {
@@ -244,8 +244,8 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
     openActionConfirm({
       action: `${nextVisible ? "展示" : "隐藏"} App 质押功能`,
       detail: nextVisible
-        ? "恢复 App 质押入口与存量持仓页面。各档是否可新开仓仍由档位与 J1 开关决定。"
-        : "App 将隐藏质押入口、推荐和持仓页面，并停止接受新质押。已有持仓、账务和到期规则保留，恢复展示后可继续办理。",
+        ? "App 重新显示质押入口和持仓页面。每一档能不能买，仍看档位开关和「紧急停用开关」。"
+        : "App 会隐藏质押入口、推荐和持仓页面，也不能再新买。已有持仓照常计息到期，恢复显示后用户可继续操作。",
       amplifies: nextVisible,
       coverage: { coverageRatio: coverage.coverageRatio, redlinePct: coverage.redlinePct },
       run: async (reason) => {
@@ -259,16 +259,16 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
   const resumeTier = (pool: G1Pool) => {
     if (!pool.killed) return;
     openActionConfirm({
-      action: `解除单档紧急暂停 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
-      detail: <>解除后该档立即恢复接收新锁仓单。恢复属放大流出,提交时由后端重新校验 B1 兑付覆盖率红线(当前 {cov}%,红线 {redline}%),不达标会被拒绝。</>,
+      action: `解除紧急暂停 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
+      detail: <>解除后这一档马上可以继续购买。覆盖率低于红线时无法解除（当前 {cov}%，红线 {redline}%）。</>,
       amplifies: true,
       coverage: { coverageRatio: coverage.coverageRatio, redlinePct: coverage.redlinePct },
       businessForm: {
         kind: "multi-field",
-        title: "紧急暂停解除复核",
-        hint: "复核结论会写入审计;操作理由需独立说明本次判断。",
+        title: "解除紧急暂停",
+        hint: "写明为什么可以解除。会记入操作记录。",
         fields: [
-          { key: "dispositionPlan", label: "解除依据与复核结论", inputKind: "text", placeholder: "说明当初的紧急暂停依据已消除的证据", required: true, wide: true },
+          { key: "dispositionPlan", label: "解除依据", inputKind: "text", placeholder: "例如：引发暂停的问题已经解决的证据", required: true, wide: true },
         ],
       },
       run: async (reason, _value, businessValue) => {
@@ -287,15 +287,15 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
   const killTier = (pool: G1Pool) => {
     if (pool.killed) return;
     openActionConfirm({
-      action: `单档紧急暂停 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
-      detail: <>紧急暂停该档会立即停止新锁仓,并由后端同时完成锁仓中的订单处置、A2 审计与事件记录。解除紧急暂停在本页操作,需重新过 B1 兑付覆盖率红线。</>,
+      action: `紧急暂停 · ${nexGridBrandText(pool.product)} · ${displayTerm(pool)}`,
+      detail: <>这一档马上停止购买，并按你填写的方案处理已有订单。之后可在本页解除，解除时要求覆盖率不低于红线。</>,
       businessForm: {
         kind: "multi-field",
-        title: "紧急暂停依据与持仓处置",
-        hint: "两项都将写入审计和事件;操作理由需独立说明本次判断。",
+        title: "暂停原因与已有订单处理",
+        hint: "两项都会记入操作记录。",
         fields: [
-          { key: "triggerBasis", label: "触发依据", inputKind: "select", current: "MANUAL_RISK_REVIEW", options: ["MANUAL_RISK_REVIEW", "B1_COVERAGE_BREACH", "INCIDENT_RESPONSE", "COMPLIANCE_HOLD"], optionLabels: { MANUAL_RISK_REVIEW: "人工风险复核", B1_COVERAGE_BREACH: "B1 覆盖率破线", INCIDENT_RESPONSE: "事故响应", COMPLIANCE_HOLD: "合规冻结" }, required: true, showDiff: true },
-          { key: "dispositionPlan", label: "锁仓中的订单处置方案", inputKind: "text", placeholder: "说明本金、利息与用户通知安排", required: true, wide: true },
+          { key: "triggerBasis", label: "暂停原因", inputKind: "select", current: "MANUAL_RISK_REVIEW", options: ["MANUAL_RISK_REVIEW", "B1_COVERAGE_BREACH", "INCIDENT_RESPONSE", "COMPLIANCE_HOLD"], optionLabels: { MANUAL_RISK_REVIEW: "人工风险复核", B1_COVERAGE_BREACH: "兑付覆盖率低于红线", INCIDENT_RESPONSE: "事故响应", COMPLIANCE_HOLD: "合规冻结" }, required: true, showDiff: true },
+          { key: "dispositionPlan", label: "已有订单怎么处理", inputKind: "text", placeholder: "本金、利息怎么处理，怎么通知用户", required: true, wide: true },
         ],
       },
       run: async (reason, _value, businessValue) => {
@@ -317,7 +317,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
         <thead><tr><th>期限</th><th className="num">年化收益率</th><th className="num">提前赎回罚款</th><th className="num">{minLabel}</th><th className="num">锁仓本金</th><th>状态</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
         <tbody>
           {rows.length === 0 && (
-            <tr><td colSpan={7} style={{ color: "var(--ink-3)", textAlign: "center", padding: 22 }}>暂无锁仓池数据</td></tr>
+            <tr><td colSpan={7} style={{ color: "var(--ink-3)", textAlign: "center", padding: 22 }}>暂无质押档位</td></tr>
           )}
           {rows.map((pool) => {
             const busy = !!busyKey;
@@ -327,9 +327,9 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
             const sellable = pool.sellable && !blockedByGate;
             const statusLabel = blockedByGate ? "暂停售卖" : pool.statusLabel;
             const statusTone = blockedByGate ? "bad" : pool.statusTone;
-            const blockedReason = !overview!.appVisible ? "App 质押展示已关闭"
+            const blockedReason = !overview!.appVisible ? "App 已隐藏质押"
               : blockedByGate
-              ? "整个质押池开关已暂停(J1)：全档对客停售，恢复只能走 J1 流程"
+              ? "质押总开关已关闭：所有档位都停售，需在「紧急停用开关」里恢复"
               : pool.blockedBy === "TIER_KILLED" ? "该档已暂停"
                 : pool.blockedBy === "TIER_DISABLED" ? "该档已停售" : "";
             return (
@@ -338,19 +338,19 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
                 <td className="num mono" style={{ fontWeight: 700, color: pool.highYield ? "var(--warning)" : undefined }}>
                   <span className="row" style={{ gap: 6, justifyContent: "flex-end", alignItems: "center" }}>
                     <span>{pool.apyDisplay}{pool.highYield && <span className="bdg warn" style={{ fontSize: 9, marginLeft: 5 }}>高息</span>}</span>
-                    <button className="l-btn sm mc" disabled={busy || !canAdjustApy} title={canAdjustApy ? "调整 年化收益率" : "缺少 finprod_g1_apy_write 权限"} onClick={() => adjApy(pool)}>调整 年化收益率</button>
+                    <button className="l-btn sm mc" disabled={busy || !canAdjustApy} title={canAdjustApy ? "调整年化收益率" : "你没有调整年化收益率的权限"} onClick={() => adjApy(pool)}>调整利率</button>
                   </span>
                 </td>
                 <td className="num mono">
                   <span className="row" style={{ gap: 6, justifyContent: "flex-end", alignItems: "center" }}>
                     <span>{pool.penalty}%</span>
-                    <button className="l-btn sm mc" disabled={busy || !canAdjustPenalty} title={canAdjustPenalty ? "调整提前赎回罚款" : "缺少 finprod_g1_penalty_write 权限"} onClick={() => adjPenalty(pool)}>调整罚款</button>
+                    <button className="l-btn sm mc" disabled={busy || !canAdjustPenalty} title={canAdjustPenalty ? "调整提前赎回罚款" : "你没有调整罚款的权限"} onClick={() => adjPenalty(pool)}>调整罚款</button>
                   </span>
                 </td>
                 <td className="num mono" style={{ color: "var(--ink-3)" }}>
                   <span className="row" style={{ gap: 6, justifyContent: "flex-end", alignItems: "center" }}>
                     <span>{pool.minDisplayValue}</span>
-                    <button className="l-btn sm" disabled={busy || !canAdjustMin} title={canAdjustMin ? "调整最小锁仓额" : "缺少 finprod_g1_min_write 权限"} onClick={() => adjMin(pool)}>调整最小额</button>
+                    <button className="l-btn sm" disabled={busy || !canAdjustMin} title={canAdjustMin ? "调整最低锁仓额" : "你没有调整最低锁仓额的权限"} onClick={() => adjMin(pool)}>调整最低额</button>
                   </span>
                 </td>
                 <td className="num mono">{pool.lockedDisplay}</td>
@@ -358,7 +358,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
                   <span className={`bdg ${statusTone === "bad" ? "bad" : statusTone}`}>{operatorCopyText(statusLabel)}</span>
                   {/* 档位自身配置状态与对客可售是两件事:被整池闸挡住时也要让运营看见
                       这一档自己是不是 enabled/killed,否则无法判断解除熔断后谁会立刻开售。 */}
-                  {blockedReason && <span className="bdg dim" style={{ marginLeft: 6 }} title={blockedReason}>{pool.enabled && !pool.killed ? "档位配置:启用" : "档位配置:停用"}</span>}
+                  {blockedReason && <span className="bdg dim" style={{ marginLeft: 6 }} title={blockedReason}>{pool.enabled && !pool.killed ? "档位本身：开启" : "档位本身：关闭"}</span>}
                 </td>
                 <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                   <button
@@ -372,8 +372,8 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
                   </button>
                   {" "}
                   {pool.killed
-                    ? <button className="l-btn sm mc" disabled={busy || !canRestore} title={canRestore ? "解除该档紧急暂停,需过备付金覆盖率红线" : "缺少 emergency_j1_gate_resume 权限"} onClick={() => resumeTier(pool)}>解除紧急暂停</button>
-                    : <button className="l-btn sm mc" disabled={busy || !canKill} title={canKill ? "紧急暂停该档" : "缺少 finprod_g1_kill_toggle 权限"} onClick={() => killTier(pool)}>紧急暂停</button>}
+                    ? <button className="l-btn sm mc" disabled={busy || !canRestore} title={canRestore ? "解除紧急暂停，要求覆盖率不低于红线" : "你没有解除紧急暂停的权限"} onClick={() => resumeTier(pool)}>解除紧急暂停</button>
+                    : <button className="l-btn sm mc" disabled={busy || !canKill} title={canKill ? "紧急暂停这一档" : "你没有紧急暂停的权限"} onClick={() => killTier(pool)}>紧急暂停</button>}
                 </td>
               </tr>
             );
@@ -381,7 +381,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
         </tbody>
       </table>
       <PaginationExemption
-        label={`${prod} 锁仓池 4 档配置表`}
+        label={`${prod} 质押 4 档设置`}
         maxRows={4}
         reason="静态四档配置需一屏横向比较 年化收益率、罚款、最小额与开关; 分页会破坏跨档保序审核。"
       />
@@ -395,45 +395,45 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
       {error && (
         <section className="l-card">
           <div className="l-b">
-            <div className="gtint">G1 数据刷新失败 · {error}</div>
+            <div className="gtint">质押数据刷新失败 · {error}</div>
             <button className="l-btn mc" style={{ marginTop: 10 }} onClick={() => void reload(true)}>重试</button>
           </div>
         </section>
       )}
 
       <div className="f-stats">
-        <div className="f-stat ok"><div className="k">USDT 锁仓本金</div><div className="v">{fmtM(stats.usdtPoolUsd)}</div><div className="sub">G1 USDT 池 · UVT 质押已下线</div></div>
-        <div className="f-stat"><div className="k">锁仓中持仓数</div><div className="v">{fmtCount(stats.positionCount)}</div><div className="sub">计息中 {fmtCount(stats.activeCount)} · 到期未领 {fmtCount(stats.matureCount)}</div></div>
-        <div className="f-stat warn"><div className="k">累计应付利息</div><div className="v">{fmtM(stats.interestUsd)}</div><div className="sub">按已锁天数线性派生 · 真实持仓</div></div>
-        <div className="f-stat danger"><div className="k">单档紧急暂停</div><div className="v">{stats.killedCount}</div><div className="sub">高息长锁档重点盯 · 整个质押池开关 {gate.enabled ? "在线(J1)" : "已暂停(J1)"}</div></div>
+        <div className="f-stat ok"><div className="k">USDT 锁仓本金</div><div className="v">{fmtM(stats.usdtPoolUsd)}</div><div className="sub">UVT 质押已下线</div></div>
+        <div className="f-stat"><div className="k">持仓数</div><div className="v">{fmtCount(stats.positionCount)}</div><div className="sub">计息中 {fmtCount(stats.activeCount)} · 到期未领 {fmtCount(stats.matureCount)}</div></div>
+        <div className="f-stat warn"><div className="k">累计应付利息</div><div className="v">{fmtM(stats.interestUsd)}</div><div className="sub">按已锁天数折算</div></div>
+        <div className="f-stat danger"><div className="k">紧急暂停的档位</div><div className="v">{stats.killedCount}</div><div className="sub">质押总开关 {gate.enabled ? "开启" : "已关闭"}</div></div>
       </div>
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">App 质押展示</span>
-          <span className="sub">· 关闭后隐藏所有质押入口及持仓页面，并停止新开仓</span>
+          <span className="ttl">App 显示质押</span>
+          <span className="sub">· 关闭后 App 隐藏质押入口和持仓页面，也不能再新买</span>
           <div className="r">
-            <span className={`bdg ${overview!.appVisible ? "ok" : "dim"}`}>{overview!.appVisible ? "展示中" : "已隐藏"}</span>
+            <span className={`bdg ${overview!.appVisible ? "ok" : "dim"}`}>{overview!.appVisible ? "显示中" : "已隐藏"}</span>
             <button className="l-btn sm mc" disabled={!!busyKey || !canToggleSale}
-              onClick={toggleAppVisibility}>{overview!.appVisible ? "关闭展示" : "恢复展示"}</button>
+              onClick={toggleAppVisibility}>{overview!.appVisible ? "隐藏" : "恢复显示"}</button>
           </div>
         </div>
-        <div className="l-b">已有持仓和账务继续保留。恢复展示后，用户可继续查看持仓并按原规则办理。</div>
+        <div className="l-b">已有持仓照常计息到期。恢复显示后，用户可以继续查看和操作。</div>
       </section>
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">USDT 锁仓池 · 4 档</span>
-          <span className="sub">· 改利率/罚款/开关都操作确认 · 只对新单生效</span>
-          <div className="r"><span className="gcode electric">升息/降罚过 B1 红线 + 保序校验</span></div>
+          <span className="ttl">USDT 质押 · 4 档</span>
+          <span className="sub">· 修改只影响新订单</span>
+          <div className="r"><span className="gcode electric">加息、降罚款前先看覆盖率</span></div>
         </div>
-        {poolTable("USDT", pools, "最小额")}
+        {poolTable("USDT", pools, "最低锁仓额")}
       </section>
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">持仓处理流程与监控</span>
-          <span className="sub">· 真实持仓只读 · 状态只能服务器推进,客户端伪造无效</span>
+          <span className="ttl">持仓状态</span>
+          <span className="sub">· 只能查看，状态由系统自动推进</span>
         </div>
         <div className="l-b">
           <div className="pos-grid" style={{ marginBottom: 14 }}>
@@ -450,24 +450,24 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
             <span className="st ok">{positionStateLabel("active")}</span><span className="ar">到期 →</span>
             <span className="st warn">{positionStateLabel("mature_unclaimed")}</span><span className="ar">领取 →</span>
             <span className="st ok">{positionStateLabel("claimed")}</span>
-            <span className="ar" style={{ marginLeft: 12 }}>旁路:</span>
-            <span className="st bad">{positionStateLabel("early_withdrawn")} · 罚款并没收利息</span>
+            <span className="ar" style={{ marginLeft: 12 }}>其他情况：</span>
+            <span className="st bad">{positionStateLabel("early_withdrawn")} · 扣罚款，利息作废</span>
             <span className="st bad">{positionStateLabel("slashed")}</span>
-            <span className="st">{positionStateLabel("refunded")} · 锁失败退本</span>
+            <span className="st">{positionStateLabel("refunded")} · 锁仓失败，退回本金</span>
           </div>
-          <div className="gtint" style={{ marginTop: 12 }}><b>到期与负债联动</b> · 开始锁仓即增应付负债(本金 + 按已锁天数线性派生的应付利息),到期派发记账单;本息派发带防重号,紧急暂停锁定优先。</div>
+          <div className="gtint" style={{ marginTop: 12 }}><b>到期与应付款</b> · 一开始锁仓，平台就多一笔应付款（本金 + 已产生的利息）；到期自动发放本息，不会重复发放。</div>
         </div>
       </section>
 
-      <p className="f-foot"><b>三道硬门</b>:① 升 年化收益率 / 降罚款 = 放大资金流出,提交即由后端验备付金覆盖率红线,低于红线拒绝(422);② 同产品长期档 年化收益率 必须 ≥ 相邻短期档（长期档收益率不得低于相邻短期档）,违反拒绝并提示冲突档;③ 单档紧急暂停提案必须随附锁仓中的订单处置方案。锁仓中的订单按开始锁仓时锁定的利率结算,改参数不追溯历史。当前覆盖率 <b>{cov}%</b>,红线 <b>{redline}%</b>,数据来自 <b>后端锁仓产品与持仓统计</b>。</p>
+      <p className="f-foot"><b>三条规则</b>：① 加息、降罚款会多付钱，覆盖率低于红线时无法保存；② 长期档的利率不能低于相邻的短期档；③ 紧急暂停时必须写明已有订单怎么处理。已有订单一直按下单时的利率结算，改参数不影响它们。当前覆盖率 <b>{cov}%</b>，红线 <b>{redline}%</b>。</p>
 
       {dd && (
-        <Drawer title={`锁仓单清单 · ${positionStateLabel(dd.status)}`} sub="根据当前持仓状态展示订单；处理结果以服务器记录为准" onClose={() => setDrawer(null)}
+        <Drawer title={`锁仓单清单 · ${positionStateLabel(dd.status)}`} sub="按持仓状态列出订单" onClose={() => setDrawer(null)}
           footer={<button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => setDrawer(null)}>关闭</button>}>
           <table className="l-tbl">
-            <thead><tr><th>持仓编号</th><th>用户</th><th>产品档</th><th>本金</th><th>锁定 年化收益率 / 罚款</th><th>锁定 / 解锁</th><th>预计利息</th><th>备注</th></tr></thead>
+            <thead><tr><th>持仓编号</th><th>用户</th><th>档位</th><th>本金</th><th>下单时利率 / 罚款</th><th>开始 / 到期</th><th>预计利息</th><th>备注</th></tr></thead>
             <tbody>
-              {dd.rows.length === 0 && <tr><td colSpan={8} style={{ color: "var(--ink-3)", textAlign: "center", padding: 18 }}>暂无该状态锁仓单</td></tr>}
+              {dd.rows.length === 0 && <tr><td colSpan={8} style={{ color: "var(--ink-3)", textAlign: "center", padding: 18 }}>暂无这个状态的订单</td></tr>}
               {dd.rows.map((row) => (
                 <tr key={row.positionNo}>
                   <td className="mono" style={{ color: "var(--ink)" }}>{row.positionNo}</td>
@@ -482,7 +482,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
               ))}
             </tbody>
           </table>
-          <div className="gtint" style={{ marginTop: 12 }}><b>只读监控</b> · 持仓状态只能服务器推进,这里不手动改单。要点名某个档止损走「单档紧急暂停」;单用户资产去用户域(C3)。</div>
+          <div className="gtint" style={{ marginTop: 12 }}><b>只能查看</b> · 这里不能手动改订单。要止损某一档，用「紧急暂停」；查看某个用户的资产，去「查找用户与查看资料」。</div>
         </Drawer>
       )}
     </>

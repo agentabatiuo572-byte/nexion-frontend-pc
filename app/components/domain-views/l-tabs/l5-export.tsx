@@ -62,8 +62,8 @@ function exportTypeText(value: string) { return value.replace(/^KPI/, "关键指
 export function L5HeaderActions({ ctx }: { ctx: LCtx }) {
   const exportTypes = ctx.availableAggregateExportTypes ?? [];
   const newExport = () => ctx.openActionConfirm({
-    action: "发起聚合快照导出",
-    detail: <>当前账号可发起：{exportTypes.map(exportTypeText).join("、")}。快照不含用户明细或明文敏感字段，确认后直接生成可下载任务；创建与下载使用同一来源域权限。</>,
+    action: "导出汇总数据",
+    detail: <>你可以导出：{exportTypes.map(exportTypeText).join("、")}。导出的是汇总数据，不含用户明细和隐私信息，确认后就能下载。</>,
     reasonMin: 8,
     reasonMax: 200,
     businessForm: {
@@ -77,7 +77,7 @@ export function L5HeaderActions({ ctx }: { ctx: LCtx }) {
     run: async (reason, _v, bv) => {
       const range = isL5KpiExport(String(bv?.exportType ?? ""))
         ? l5KpiRange(bv ?? {}) : { timeRange: String(bv?.timeRange ?? "ON_DEMAND") };
-      const summary = `${bv?.exportType} · ${range.timeRange} · 聚合字段[${bv?.fields || "服务端默认汇总项"}] · 用途 ${bv?.recipient}`;
+      const summary = `${bv?.exportType} · ${range.timeRange} · 聚合字段[${bv?.fields || "默认汇总项"}] · 用途 ${bv?.recipient}`;
       await ctx.biActions?.createReport({
         exportType: String(bv?.exportType ?? "后台导出报表"),
         ...range,
@@ -88,7 +88,7 @@ export function L5HeaderActions({ ctx }: { ctx: LCtx }) {
         ticket: String(bv?.ticket ?? "L5-EXPORT"),
       }, reason);
       await ctx.reloadBi?.();
-      ctx.toast(`聚合快照已创建:${summary} · 可在任务列表下载`);
+      ctx.toast(`已生成：${summary} · 可在下方任务列表下载`);
     },
   });
   return (
@@ -101,10 +101,10 @@ export function L5HeaderActions({ ctx }: { ctx: LCtx }) {
         title={!ctx.canExport
           ? "当前角色没有聚合报表来源域的导出权限"
           : ctx.biError || !ctx.biData?.l5
-            ? "L5 权威数据不可用，已关闭创建入口"
+            ? "数据加载失败，暂时不能导出"
             : undefined}
       >
-        发起聚合快照
+        导出汇总数据
       </button>
     </>
   );
@@ -184,7 +184,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
     setAuditError(null);
     void fetchL5ExportAudits()
       .then((value) => { if (alive) setAuditRows(value); })
-      .catch((error) => { if (alive) setAuditError(error instanceof Error ? displayAdminError(error) : "统一导出审计加载失败"); })
+      .catch((error) => { if (alive) setAuditError(error instanceof Error ? displayAdminError(error) : "导出记录加载失败"); })
       .finally(() => { if (alive) setAuditLoading(false); });
     return () => { alive = false; };
   }, [data]);
@@ -215,7 +215,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
   const maskLabel = (mask: string) => ({ masked: "已脱敏", partial: "部分脱敏", decrypted: "已解密" })[mask] ?? mask;
   const statusLabel = (status: string): [string, string] => {
     const value = ST_LABEL[status];
-    if (Array.isArray(value)) return [STATUS_FALLBACK[status] ?? "导出状态待核实", str(value[1], "dim")];
+    if (Array.isArray(value)) return [STATUS_FALLBACK[status] ?? "状态未知", str(value[1], "dim")];
     return [STATUS_FALLBACK[status] ?? "未知状态", "dim"];
   };
   const effSt = (t: LExportTask): string => t.st.toUpperCase();
@@ -227,11 +227,11 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
   const retryTask = async (t: LExportTask) => {
     await ctx.biActions?.reportAction(t.id, "rerun", "重新生成当前报表任务", t.pii);
     await ctx.reloadBi?.();
-    toast(`${t.id} 已重新发起 · 后端状态已刷新${t.pii ? " · 含敏感重走操作确认" : ""}`);
+    toast(`${t.id} 已重新发起${t.pii ? "（含隐私数据，需要重新确认）" : ""}`);
   };
   const requestApproveTask = (t: LExportTask) => ctx.openActionConfirm({
     action: "审批脱敏资金明细",
-    detail: <>任务 <span className="mono">{t.id}</span> 的创建时快照将保持脱敏；审批不会解密任何字段。通过后任务进入可下载状态，后续仍须签发 24 小时令牌并写入下载审计。</>,
+    detail: <>任务 <span className="mono">{t.id}</span> 的数据会保持隐藏隐私，审批不会解密任何字段。批准后就能下载，下载链接 24 小时有效。</>,
     reasonMin: 8,
     reasonMax: 200,
     completionCopy: "通过后可签发限时下载令牌",
@@ -244,20 +244,20 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
   const downloadTask = async (t: LExportTask) => {
     const file = await ctx.biActions?.downloadReport(t.id);
     if (file) downloadBlob(file.blob, file.fileName);
-    toast(`${t.id} 下载已开始 · 后端已签发文件流并记录审计`);
+    toast(`${t.id} 开始下载`);
   };
   const downloadLedger = async (reason: string) => {
     setLedgerExporting(true);
     try {
       await downloadD4BillsCsv({}, reason);
-      toast("八类账单脱敏明细已下载 · 后端已限制 10 万行并记录强制审计");
+      toast("8 类账单明细已下载（最多 10 万行，已隐藏隐私）");
     } finally {
       setLedgerExporting(false);
     }
   };
   const requestLedgerDownload = () => ctx.openActionConfirm({
     action: "导出八类账单脱敏明细",
-    detail: <>导出 D4 八类真实账单；用户编号由服务端强制脱敏，最多 10 万行，用途理由、范围、字段和行数进入统一导出审计。</>,
+    detail: <>导出 8 类账单；用户编号会隐藏部分字符，最多 10 万行，导出原因和范围都有记录。</>,
     reasonMin: 8,
     reasonMax: 200,
     run: (reason) => downloadLedger(reason),
@@ -266,19 +266,19 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
     const templates = regulatoryOptions?.templates ?? [];
     const disclosures = regulatoryOptions?.disclosures ?? [];
     if (templates.length === 0 || disclosures.length === 0) {
-      toast(regulatoryError || "I5 当前没有可用于监管报告的七章披露版本");
+      toast(regulatoryError || "「风险披露」里还没有可用于监管报告的完整（7 章）版本");
       return;
     }
     const disclosureValues = disclosures.map((item) => `${item.jurisdictionCode}|${item.disclosureVersion}`);
     ctx.openActionConfirm({
       action: "生成监管报告",
-      detail: <>服务端将再次校验所选适用地区当前生效的披露版本与七章完整性，并按模板读取 L3、L4、D4、A2、J4 的聚合事实。报告不含逐用户行或明文敏感字段。</>,
+      detail: <>会检查所选地区当前生效的披露版本是否 7 章齐全，再汇总财务、运营、账单、操作记录和应急处理数据生成报告。报告不含用户明细和隐私信息。</>,
       reasonMin: 8,
       reasonMax: 200,
       businessForm: {
         kind: "multi-field",
         title: "监管报告 · 当前适用地区与披露版本",
-        hint: "适用地区/版本来自 I5 当前生效映射；创建时固化只读快照。",
+        hint: "地区和版本来自「风险披露」当前生效的设置。",
         fields: [
           { key: "templateCode", label: "报告模板", inputKind: "select", current: templates[0].code, options: templates.map((item) => item.code), optionLabels: Object.fromEntries(templates.map((item) => [item.code, item.label])) },
           { key: "jurisdictionVersion", label: "适用地区 / 披露版本", inputKind: "select", current: disclosureValues[0], options: disclosureValues, optionLabels: Object.fromEntries(disclosures.map((item) => [`${item.jurisdictionCode}|${item.disclosureVersion}`, `${item.jurisdictionName} (${item.jurisdictionCode}) · ${item.disclosureVersion} · ${item.chapterCount}章`])) },
@@ -298,7 +298,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
           ticket: String(business?.ticket ?? ""),
         }, reason);
         await ctx.reloadBi?.();
-        toast("监管报告已按 I5 当前披露版本生成 · 可在任务列表下载");
+        toast("监管报告已生成，可在下方任务列表下载");
       },
     });
   };
@@ -307,17 +307,17 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
     <div>
       {/* stat strip */}
       <div className="f-stats">
-        <div className="f-stat"><div className="k">累计导出任务</div><div className="v">{L5_STATS.total}</div><div className="sub">服务端任务表实时计数</div></div>
-        <div className="f-stat cyan"><div className="k">可下载快照</div><div className="v">{L5_STATS.ready}</div><div className="sub">限时令牌 · 创建时固化{L5_STATS.legacyReadyWithoutSnapshot > 0 ? ` · ${L5_STATS.legacyReadyWithoutSnapshot} 条历史任务无快照已禁下` : ""}</div></div>
-        <div className="f-stat warn"><div className="k">待确认任务</div><div className="v">{L5_STATS.pending}</div><div className="sub">敏感任务必须完成服务端门禁</div></div>
-        <div className="f-stat danger"><div className="k">含隐私任务</div><div className="v">{L5_STATS.sensitive}</div><div className="sub">只允许脱敏快照；明文始终阻断</div></div>
+        <div className="f-stat"><div className="k">累计导出任务</div><div className="v">{L5_STATS.total}</div><div className="sub">全部导出任务</div></div>
+        <div className="f-stat cyan"><div className="k">可以下载</div><div className="v">{L5_STATS.ready}</div><div className="sub">下载链接限时有效{L5_STATS.legacyReadyWithoutSnapshot > 0 ? ` · ${L5_STATS.legacyReadyWithoutSnapshot} 条旧任务没有文件，不能下载` : ""}</div></div>
+        <div className="f-stat warn"><div className="k">待确认任务</div><div className="v">{L5_STATS.pending}</div><div className="sub">含隐私的任务需要审批</div></div>
+        <div className="f-stat danger"><div className="k">含隐私任务</div><div className="v">{L5_STATS.sensitive}</div><div className="sub">只能导出隐藏后的数据，不能导出原文</div></div>
       </div>
 
       {/* 导出安全参数 */}
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">导出安全参数</span>
-          <span className="sub">· <AutoGloss>数据导出管控基线 · 明文敏感数据导出由服务端阻断</AutoGloss></span>
+          <span className="sub">· <AutoGloss>导出规则 · 隐私数据一律不能原文导出</AutoGloss></span>
           <div className="r"><span className="lcode electric" title="导出安全与隐私保护基线">数据导出管控</span></div>
         </div>
         <div className="l-b">
@@ -326,7 +326,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
               <div key={p.k} className="p">
                 <div className="k">{p.k}</div>
                 <div className="v" style={p.fixed ? { color: "var(--success)" } : undefined}>
-                  {operatorCopyText(p.v)}<span className="bdg dim">服务端固定</span>
+                  {operatorCopyText(p.v)}<span className="bdg dim">固定</span>
                 </div>
                 <div className="s"><AutoGloss>{p.s}</AutoGloss></div>
               </div>
@@ -339,7 +339,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">导出任务管理</span>
-          <span className="sub">· <AutoGloss>四类聚合与 I5 监管报告统一跟踪</AutoGloss></span>
+          <span className="sub">· <AutoGloss>四类汇总和监管报告都在这里</AutoGloss></span>
           <div className="r"><TabGroup
             className="chips"
             label="导出任务状态筛选"
@@ -352,8 +352,8 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         <div className="l-b" style={{ paddingBottom: 10 }}>
           <div className="sm-strip">
             <span className="st">确认聚合范围</span><span className="ar">→</span>
-            <span className="st ok">快照已就绪</span><span className="ar">签发 24h 令牌 →</span>
-            <span className="st">下载并留痕</span>
+            <span className="st ok">文件已生成</span><span className="ar">生成 24 小时下载链接 →</span>
+            <span className="st">下载（有记录）</span>
             <span className="ar" style={{ marginLeft: 12 }}>旧任务失败 / 过期 →</span><span className="st bad">可重新发起</span>
           </div>
         </div>
@@ -365,7 +365,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
                 const st: [string, string] = !t.supported
                   ? ["历史类型已关闭", "warn"]
                   : effSt(t) === "READY" && !t.snapshotAvailable
-                    ? ["历史无快照", "warn"]
+                    ? ["旧任务无文件", "warn"]
                     : statusLabel(effSt(t));
                 const acts = effActs(t);
                 const canAccessTask = ctx.canAccessReportType?.(t.reportType) ?? false;
@@ -382,8 +382,8 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {!t.supported && <span className="bdg warn">当前版本已关闭此历史类型</span>}
                       {t.supported && acts.length === 0 && (t.snapshotAvailable || !["READY", "EXPIRED", "FAILED"].includes(effSt(t))) && <span className="mono" style={{ color: "var(--ink-4)" }}>—</span>}
-                      {t.supported && ["READY", "EXPIRED", "FAILED"].includes(effSt(t)) && !t.snapshotAvailable && <span className="bdg warn">历史无快照不可下载</span>}
-                      {acts.includes("approve") && !ctx.canApproveExportTasks && <span className="bdg dim">无 L5 敏感任务审批权限</span>}
+                      {t.supported && ["READY", "EXPIRED", "FAILED"].includes(effSt(t)) && !t.snapshotAvailable && <span className="bdg warn">旧任务没有文件，不能下载</span>}
+                      {acts.includes("approve") && !ctx.canApproveExportTasks && <span className="bdg dim">没有审批权限</span>}
                       {acts.includes("approve") && ctx.canApproveExportTasks && <button className="l-btn sm" onClick={() => requestApproveTask(t)}>审批脱敏明细</button>}
                       {(acts.includes("download") || acts.includes("retry")) && !canAccessTask && <span className="bdg dim">无此报表导出权限</span>}
                       {acts.includes("download") && canAccessTask && <button className="l-btn sm" onClick={() => { void downloadTask(t).catch((error) => toast(error instanceof Error ? displayAdminError(error) : "下载失败")); }}>下载</button>}
@@ -395,7 +395,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
               {visibleTasks.length === 0 && (
                 <tr>
                   <td colSpan={9} style={{ textAlign: "center", color: "var(--ink-4)", padding: 24 }}>
-                    {taskLoading ? "导出任务加载中..." : taskError ? "导出任务读取失败，请重新选择筛选或刷新数据" : taskPage ? "当前筛选暂无导出任务" : "等待导出任务读取"}
+                    {taskLoading ? "导出任务加载中…" : taskError ? "导出任务加载失败，请刷新重试" : taskPage ? "没有符合条件的导出任务" : "加载中…"}
                   </td>
                 </tr>
               )}
@@ -404,9 +404,9 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           {taskError && <div className="ltint warn" style={{ fontSize: 12, marginBottom: 10 }}>导出任务加载失败 · {taskError}</div>}
-          <div className="row" data-list-pager="true" data-list-label="L5 导出任务管理" style={{ justifyContent: "flex-end", gap: 8 }}>
+          <div className="row" data-list-pager="true" data-list-label="导出任务管理" style={{ justifyContent: "flex-end", gap: 8 }}>
             <span className="mono" style={{ color: "var(--ink-4)", fontSize: 11.5 }}>
-              {taskPage ? `第 ${taskPageNum} / ${taskPages} 页 · 共 ${taskTotal} 条` : taskError ? "任务分页读取失败" : "任务分页等待读取"}
+              {taskPage ? `第 ${taskPageNum} / ${taskPages} 页 · 共 ${taskTotal} 条` : taskError ? "加载失败" : "加载中…"}
             </span>
             <button className="l-btn sm" disabled={!taskPage || taskPageNum <= 1 || taskLoading} onClick={() => setTaskPageNum((p) => Math.max(1, p - 1))}>上一页</button>
             <button className="l-btn sm" disabled={!taskPage || taskPageNum >= taskPages || taskLoading} onClick={() => setTaskPageNum((p) => Math.min(taskPages, p + 1))}>下一页</button>
@@ -418,7 +418,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">监管报告生成</span>
-          <span className="sub">· <AutoGloss>I5 当前适用地区 × 披露版本 · L3/L4/D4 聚合事实 · A2/J4 可追溯</AutoGloss></span>
+          <span className="sub">· <AutoGloss>按地区当前生效的披露版本，汇总财务、运营、账单数据</AutoGloss></span>
           <div className="r">
             <button
               className="l-btn primary"
@@ -431,17 +431,17 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         <div className="l-b">
           <div className="rev-row ui-export-row" style={{ gridTemplateColumns: "minmax(220px, 1fr) minmax(300px, 1.8fr) auto" }}>
             <span className="nm">提现发放 / 反洗钱 / 适用地区专项</span>
-            <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>服务端校验当前生效映射、披露版本与七章完整性；只固化聚合事实，缺失源字段明确标为不可用，不推测数值。</span>
-            <span className="bdg ok">I5 → L5 已闭环</span>
+            <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>会检查披露版本是否 7 章齐全；只用汇总数据，缺的数据会标为「暂无」，不估算。</span>
+            <span className="bdg ok">已接入风险披露</span>
           </div>
           {(regulatoryOptions?.disclosures ?? []).map((item) => (
             <div key={`${item.jurisdictionCode}-${item.disclosureVersion}`} className="rev-row ui-export-row" style={{ gridTemplateColumns: "minmax(180px, .8fr) minmax(140px, .5fr) minmax(260px, 1.2fr)" }}>
               <span className="nm">{item.jurisdictionName} ({item.jurisdictionCode})</span>
               <span className="mono">{item.disclosureVersion} · {item.chapterCount}章</span>
-              <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>当前映射 · {item.countryCodes.join(" / ") || "适用地区级"} · 发布 {item.publishedAt || "以 I5 记录为准"}</span>
+              <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>当前映射 · {item.countryCodes.join(" / ") || "适用地区级"} · 发布 {item.publishedAt || "见「风险披露」"}</span>
             </div>
           ))}
-          {regulatoryLoading && <div className="ltint">正在读取 I5 当前披露版本...</div>}
+          {regulatoryLoading && <div className="ltint">正在加载披露版本…</div>}
           {regulatoryError && <div className="ltint warn">监管报告已失败关闭 · {regulatoryError}</div>}
         </div>
       </section>
@@ -450,15 +450,15 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">八类账单明细导出</span>
-          <span className="sub">· <AutoGloss>D4 真实账本 · 服务端强制脱敏 · 最多 10 万行 · 导出必留审计</AutoGloss></span>
-          <div className="r"><span className="lcode electric">D4 → L5 已闭环</span></div>
+          <span className="sub">· <AutoGloss>来自账本 · 自动隐藏隐私 · 最多 10 万行 · 每次导出都有记录</AutoGloss></span>
+          <div className="r"><span className="lcode electric">已接入账本</span></div>
         </div>
         <div className="l-b">
           <div className="rev-row ui-export-row" style={{ gridTemplateColumns: "minmax(220px, 1fr) minmax(320px, 2fr) auto" }}>
             <span className="nm">兑换 / 充值 / 提现 / 收益 / 佣金 / 退款 / 奖励 / 购买</span>
-            <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>用户编号只保留首尾字符，不导出昵称、备注或其他明文隐私；CSV 公式注入由服务端消毒。</span>
+            <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>用户编号只保留首尾字符，不导出昵称、备注等隐私。</span>
             <button className="l-btn sm" disabled={ledgerExporting} onClick={requestLedgerDownload}>
-              {ledgerExporting ? "正在导出..." : "导出八类账单明细"}
+              {ledgerExporting ? "正在导出…" : "导出 8 类账单明细"}
             </button>
           </div>
         </div>
@@ -468,14 +468,14 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">明文能力边界</span>
-          <span className="sub">· <AutoGloss>监管报告已接入 I5；明文敏感字段继续由服务端永久阻断</AutoGloss></span>
+          <span className="sub">· <AutoGloss>隐私数据始终不能原文导出</AutoGloss></span>
           <div className="r"><span className="lcode electric">当前不提供假入口</span></div>
         </div>
         <div className="l-b">
           {CROSS_MODULE_BLOCKERS.map((item) => (
             <div key={item.code} className="rev-row ui-export-row" style={{ gridTemplateColumns: "minmax(160px, .7fr) auto minmax(280px, 1.4fr)" }}>
               <span className="nm">{item.label}</span>
-              <span className={"bdg " + (item.status === "BLOCKED" ? "bad" : "warn")}>{item.status === "BLOCKED" ? "服务端阻断" : "跨模块验收"}</span>
+              <span className={"bdg " + (item.status === "BLOCKED" ? "bad" : "warn")}>{item.status === "BLOCKED" ? "已禁止" : "等待其他模块接入"}</span>
               <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{item.reason}</span>
             </div>
           ))}
@@ -487,8 +487,8 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         {/* (c) 导出审计台 */}
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">统一导出审计台</span>
-            <span className="sub">· <AutoGloss>聚合、账单与监管报告的服务端强制审计</AutoGloss></span>
+            <span className="ttl">导出记录</span>
+            <span className="sub">· <AutoGloss>汇总、账单和监管报告的每一次导出</AutoGloss></span>
             <div className="r"><span className="lcode">只读 · 当前页不写核查结果</span></div>
           </div>
           <div style={{ overflowX: "auto" }}>
@@ -508,7 +508,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
                   </tr>
                 ))}
                 {AUDIT_ROWS.length === 0 && (
-                  <tr><td colSpan={8} style={{ textAlign: "center", padding: 22, color: "var(--ink-4)" }}>{auditLoading ? "统一导出审计加载中..." : "当前筛选暂无导出审计"}</td></tr>
+                  <tr><td colSpan={8} style={{ textAlign: "center", padding: 22, color: "var(--ink-4)" }}>{auditLoading ? "导出记录加载中…" : "没有符合条件的导出记录"}</td></tr>
                 )}
               </tbody>
             </table>
@@ -516,7 +516,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
           <div className="l-b" style={{ paddingTop: 10 }}>
             {auditError
               ? <div className="ltint warn" style={{ fontSize: 11.5 }}><b>失败关闭</b> · {auditError}</div>
-              : <div className="ltint" style={{ fontSize: 11.5 }}><b>A2 审计真值</b> · <AutoGloss>本表只读取服务端统一导出审计记录；不从任务列表反推导出人或时间。</AutoGloss></div>}
+              : <div className="ltint" style={{ fontSize: 11.5 }}><b>说明</b> · <AutoGloss>这里显示的是系统记下的每一次导出，和「操作记录与审批」一致。</AutoGloss></div>}
           </div>
         </section>
 
@@ -524,8 +524,8 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">字段级脱敏规则表</span>
-            <span className="sub">· 当前服务端字段保护基线</span>
-            <div className="r"><span className="lcode">服务端固定 · 明文导出已阻断</span></div>
+            <span className="sub">· 哪些字段会被隐藏</span>
+            <div className="r"><span className="lcode">固定规则 · 不能原文导出</span></div>
           </div>
           <div style={{ overflowX: "auto" }}>
             <table className="l-tbl" style={{ minWidth: 520 }}>
@@ -547,7 +547,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         </section>
       </div>
 
-      <p className="f-foot"><b>本页只产出只读快照、脱敏账单和聚合监管报告，不修改业务状态。</b><AutoGloss>当前闭环覆盖 关键指标、漏斗、财务、运营四类聚合、D4 八类账单明细与 I5 当前披露版本监管报告。快照创建时固化，下载令牌 24 小时失效；账单导出最多 10 万行，所有出口强制留痕，明文敏感字段由服务端阻断。</AutoGloss></p>
+      <p className="f-foot"><b>这页只导出数据，不会改任何业务。</b><AutoGloss>可以导出：关键指标、漏斗、财务、运营四类汇总，8 类账单明细，以及监管报告。下载链接 24 小时有效；账单最多 10 万行；每次导出都有记录，隐私数据不能原文导出。</AutoGloss></p>
     </div>
   );
 }

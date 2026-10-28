@@ -19,14 +19,14 @@ export type L2LiveStage = {
 };
 
 const L1_TOTALS = [
-  ["users", "注册完成用户", "nx_event_outbox:auth.register_completed", "A4 统一事件流", "服务器确认注册完成事件去重人数"],
-  ["orders", "支付完成人数", "nx_event_outbox:checkout.completed", "A4 统一事件流", "服务器确认支付完成事件去重人数"],
-  ["withdrawals", "提现申请人数", "nx_event_outbox:withdraw.submitted", "A4 统一事件流", "服务器确认提现提交事件去重人数"],
-  ["exchanges", "兑换完成人数", "nx_event_outbox:exchange.swapped", "A4 统一事件流", "服务器确认兑换完成事件去重人数"],
-  ["stakingPositions", "质押开仓人数", "nx_event_outbox:staking.opened", "A4 统一事件流", "服务器确认质押开仓事件去重人数"],
-  ["walletLedgerRows", "充值确认事件", "nx_event_outbox:wallet.topup_confirmed", "A4 统一事件流", "服务器确认充值确认事件数"],
-  ["supportTickets", "客服建单事件", "nx_event_outbox:support.ticket_created", "A4 统一事件流", "服务器确认客服建单事件数"],
-  ["auditLogs", "后台治理事件", "nx_event_outbox:phase_admin", "A4 统一事件流", "已注册的 phase/admin 事件类别 事件数"],
+  ["users", "注册完成用户", "nx_event_outbox:auth.register_completed", "用户行为事件", "注册完成的人数（同一人只算一次）"],
+  ["orders", "支付完成人数", "nx_event_outbox:checkout.completed", "用户行为事件", "支付完成的人数（同一人只算一次）"],
+  ["withdrawals", "提现申请人数", "nx_event_outbox:withdraw.submitted", "用户行为事件", "提现提交的人数（同一人只算一次）"],
+  ["exchanges", "兑换完成人数", "nx_event_outbox:exchange.swapped", "用户行为事件", "兑换完成的人数（同一人只算一次）"],
+  ["stakingPositions", "质押开仓人数", "nx_event_outbox:staking.opened", "用户行为事件", "质押开仓的人数（同一人只算一次）"],
+  ["walletLedgerRows", "充值确认事件", "nx_event_outbox:wallet.topup_confirmed", "用户行为事件", "充值确认的次数"],
+  ["supportTickets", "客服建单事件", "nx_event_outbox:support.ticket_created", "用户行为事件", "客服建单的次数"],
+  ["auditLogs", "后台治理事件", "nx_event_outbox:phase_admin", "用户行为事件", "后台操作次数"],
 ] as const;
 
 const L2_STAGE_META: Record<string, { label: string; description: string }> = {
@@ -130,7 +130,7 @@ export function readL2LiveStages(raw: unknown): L2LiveStage[] {
       return [];
     }
     seen.add(key);
-    const sourceLabel = source.startsWith("nx_event_outbox:") ? "A4 统一事件流" : (SOURCE_LABELS[source] ?? "业务统计");
+    const sourceLabel = source.startsWith("nx_event_outbox:") ? "用户行为事件" : (SOURCE_LABELS[source] ?? "业务统计");
     parsed.push({ key, label: meta.label, count, source, sourceLabel, description: meta.description });
   }
   return parsed;

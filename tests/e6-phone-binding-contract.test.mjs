@@ -75,5 +75,5 @@ test("phone controls are an independent atomic policy editor; retired H5 coeffic
   assert.doesNotMatch(ui, /togglePhoneReplacement|editPhoneReplacementInterval/);
   assert.match(ui, /filter\(\(c\) => c\.key !== "h5BaseFactor"\)/);
   const a5 = read("app/_console/platform/params-registry/params-registry-client.tsx");
-  assert.match(a5, /历史配置 · 已退役（只读）/);
+  assert.match(a5, /已停用（只能查看）/);
 });

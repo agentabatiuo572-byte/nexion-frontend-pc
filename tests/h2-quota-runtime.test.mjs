@@ -80,7 +80,7 @@ test("H2 shows configured 47 and canonical 46 with units; actual counter cannot 
   assert.match(render(limit), /47 张/);
   assert.match(render(remaining), /今日实际剩余免费名额/);
   assert.match(render(remaining), /46 张/);
-  assert.match(render(remaining), /业务日期 2026-10-11/);
+  assert.match(render(remaining), /日期 2026-10-11/);
   const button = walk(remaining).find(node => node.type === "button");
   assert.equal(button.props.disabled, true);
   button.props.onClick();

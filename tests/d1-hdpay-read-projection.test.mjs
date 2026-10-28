@@ -187,7 +187,7 @@ test("every real bank reconciliation dialog obtains fresh purpose-scoped image e
     assert.equal(field.accept, "image/jpeg,image/png");
     assert.equal(field.required, true);
     assert.match(field.label, /回单图片/);
-    assert.match(field.help, /本次操作.*上传.*校验完成/);
+    assert.match(field.help, /上传.*上传完成后再确认/);
     assert.equal(confirmation.businessForm.fields.some(candidate => candidate.key === "evidenceRef"), false);
     await confirmation.run("核对银行到账与付款单后处置", undefined,
       { intentNo: " VQR-1 ", evidenceAssetId: ` ${fixtureAssetId} ` });
@@ -212,13 +212,13 @@ test("real reconciliation callbacks reject missing images and the old hand-enter
       { evidenceAssetId: "admin_generic_image" }]) {
       const { confirmation, calls } = openedBankAction(changes);
       await assert.rejects(async () => confirmation.run("核对银行到账与付款单后处置", undefined,
-        { intentNo: "VQR-1", ...values }), /请先上传本次操作的回单图片/);
+        { intentNo: "VQR-1", ...values }), /请先上传回单图片/);
       assert.equal(calls.length, 0);
     }
   }
   const { confirmation, calls } = openedBankAction(actionCases[0]);
   await assert.rejects(async () => confirmation.run("核对银行到账与付款单后处置", undefined,
-    { evidenceAssetId: fixtureAssetId }), /真实付款意向单号/);
+    { evidenceAssetId: fixtureAssetId }), /请输入付款单号/);
   assert.equal(calls.length, 0);
 });
 

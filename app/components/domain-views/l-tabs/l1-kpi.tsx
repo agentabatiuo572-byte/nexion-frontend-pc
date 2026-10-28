@@ -73,11 +73,11 @@ export function L1HeaderActions({ ctx, source }: { ctx: LCtx; source?: L1ExportS
         source?.query ?? { window: "7d" },
       );
       if (!submittedMode) {
-        ctx.toast("L1 权威数据当前不可导出 · 请重新读取后再试");
+        ctx.toast("关键指标暂时不能导出，请刷新后再试");
         return;
       }
       await ctx.reloadBi?.();
-      ctx.toast(submittedMode === "series" ? "关键指标 序列已导出 · 已记审计" : "关键指标 当前汇总已导出 · 已记审计");
+      ctx.toast(submittedMode === "series" ? "关键指标趋势已导出" : "关键指标当前汇总已导出");
     } catch (error) {
       ctx.toast(error instanceof Error ? `导出任务提交失败 · ${displayAdminError(error)}` : "导出任务提交失败 · 请稍后重试");
     }
@@ -233,8 +233,8 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
       <section className="l-card">
         <div className="l-b">
           <div className="ltint warn" data-module-health-state="error" style={{ fontSize: 12 }}>
-            <b>L1 权威响应协议校验失败</b> · 已停止渲染可疑 关键指标，未把缺项或畸形值当成经营事实。
-            {ctx.reloadBi && <button className="l-btn sm" style={{ marginLeft: 10 }} onClick={() => void ctx.reloadBi?.()}>重新读取</button>}
+            <b>关键指标数据加载失败</b> · 收到的数据有误，为避免误导已停止显示。
+            {ctx.reloadBi && <button className="l-btn sm" style={{ marginLeft: 10 }} onClick={() => void ctx.reloadBi?.()}>重新加载</button>}
             <span className="lcode" style={{ marginLeft: 8 }}>{protocolError}</span>
           </div>
         </div>
@@ -304,7 +304,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
         setRefreshError("");
         setWin(nextWindow);
         setCustomOpen(false);
-        ctx.toast(`关键指标 已按${nextWindow === "custom" ? `${customFrom} 至 ${customTo}` : nextWindow === "30d" ? "滚动 30 天" : nextWindow === "1d" ? "当日" : "滚动 7 天"}重新读取`);
+        ctx.toast(`关键指标 已按${nextWindow === "custom" ? `${customFrom} 至 ${customTo}` : nextWindow === "30d" ? "滚动 30 天" : nextWindow === "1d" ? "当日" : "滚动 7 天"}重新加载`);
       },
       (error) => {
         const message = displayAdminError(error);
@@ -337,7 +337,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
     } catch (error) {
       const message = displayAdminError(error);
       setDrillError(message);
-      ctx.toast(`关键指标 查看明细读取失败 · ${message}`);
+      ctx.toast(`明细加载失败 · ${message}`);
     }
   };
 
@@ -433,7 +433,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
       <div className="f-stats">
         <div className="f-stat ok"><div className="k">已达标指标</div><div className="v">{green} / {KPIS.length}</div><div className="sub">绿灯 · 高于目标值</div></div>
         <div className="f-stat warn"><div className="k">接近目标的指标</div><div className="v">{yellow}</div><div className="sub">黄灯 · 距目标值差不超过 {ylOffset}%</div></div>
-        <div className="f-stat danger"><div className="k">未达 + 不可计算</div><div className="v">{attention} / {KPIS.length}</div><div className="sub">未达 {red} 项{redNames ? ` (${redNames})` : ""} · 不可计算 {unavailable} 项 · 缺分母不判 0%</div></div>
+        <div className="f-stat danger"><div className="k">未达标 + 暂无法计算</div><div className="v">{attention} / {KPIS.length}</div><div className="sub">未达 {red} 项{redNames ? ` (${redNames})` : ""} · 暂无法计算 {unavailable} 项（缺数据时不按 0% 算）</div></div>
         <div className="f-stat cyan"><div className="k">当前运营阶段</div><div className="v">{rs.currentPhase}{phaseKnown ? ` · 月 ${rs.currentMonth}` : ""}</div><div className="sub">{PHASE_SWITCH_IDX >= 0 ? "趋势图已标出运营阶段切换时间" : "当前时间范围内没有阶段切换记录"}</div></div>
       </div>
 
@@ -441,7 +441,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
       <div className="view-bar">
         <TabGroup<L1Window>
           className="chips"
-          label="时间窗"
+          label="时间范围"
           labelClassName="lb"
           value={win}
           items={["1d", "7d", "30d", "custom"] as const}
@@ -495,7 +495,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
           } catch {
             saved = null;
           }
-          ctx.toast(saved ? "视图已保存到本机浏览器；刷新后会按已保存参数重新读取权威数据" : "视图参数无效或本机存储不可用，未保存");
+          ctx.toast(saved ? "视图已保存在这台电脑的浏览器里，刷新后仍按这个视图显示" : "视图设置有误或浏览器不能保存，没有保存");
         }}>保存为视图</button>
         <span className="lcode lock" title="统计规则与目标值只读；仅保存本机浏览器视图参数，不保存数据、权限或业务状态">视图参数 · 本机浏览器保存 · 实时生效 · 不落确认</span>
       </div>
@@ -545,9 +545,9 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">关键指标详情 · #{k.n} {operatorCopyText(k.name)}</span>
-          <span className="sub">· 统计规则公式 / 分子分母 / 切片 / 趋势</span>
+          <span className="sub">· 计算公式、分子分母、按维度拆分、趋势</span>
           <div className="r">
-            <div className="chips"><span className="lb">真实切片</span>
+            <div className="chips"><span className="lb">按维度拆分</span>
               <input aria-label="注册周筛选" placeholder="年份与周数，如 2026-W42" value={cohortFilter} onChange={(event) => setCohortFilter(event.target.value)} />
               <select aria-label="运营阶段筛选" value={phaseFilter} onChange={(event) => setPhaseFilter(event.target.value)}>
                 <option value="">全部阶段</option>
@@ -590,7 +590,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
           <div className="chart-pane">
             {drillError && (
               <div className="ltint warn" style={{ fontSize: 12, marginBottom: 10 }}>
-                <b>查看明细/趋势权威响应不可用</b> · 已保留概览卡，不使用异常响应覆盖明细。{drillError}
+                <b>明细和趋势暂时加载不出来</b> · 上方概览不受影响。{drillError}
               </div>
             )}
             {drillChart()}
@@ -608,7 +608,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">趋势 &amp; 阈值视图</span>
-          <span className="sub">· <AutoGloss>对比多个指标按注册周统计的趋势，观察运营阶段切换后的变化；原因可到 B4 / H1 查看</AutoGloss></span>
+          <span className="sub">· <AutoGloss>对比多个指标按注册周统计的趋势，观察运营阶段切换后的变化；原因可到「运营阶段状态」或「运营阶段设置」查看</AutoGloss></span>
           <div className="r"><span className="lcode electric" title="按每条业务事件携带的阶段标记统计">按行为记录中的运营阶段统计</span></div>
         </div>
         <div className="l-b">
@@ -635,7 +635,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 900 }}>
-            <thead><tr><th>#</th><th>指标</th><th>计算方式（由服务器管理）</th><th className="num">目标</th><th>启用批次</th><th>状态</th></tr></thead>
+            <thead><tr><th>#</th><th>指标</th><th>计算方式</th><th className="num">目标</th><th>启用批次</th><th>状态</th></tr></thead>
             <tbody>
               {KPIS.map((kk, i) => {
                 const st = states[i];
@@ -658,7 +658,7 @@ export function L1Kpi({ ctx, onExportSource }: { ctx: LCtx; onExportSource?: (so
         </div>
       </section>
 
-      <p className="f-foot"><b>L1 没有任何「写数据」动作</b>:<AutoGloss>关键指标怎么算由事件统计规则统一治理,这里只配置呈现、明细查询与聚合导出。导出内容为 8 项关键指标 的聚合序列,</AutoGloss><b>不含任何用户隐私明文</b>,<AutoGloss>每次导出都会生成可追溯记录。异常关键指标的原因分析:转化类(#1–#4)跳 L2 漏斗,财务类(#8 / 提现兑付)跳 L3 报表,团队类(#5/#7)跳 L4 网络报表。</AutoGloss></p>
+      <p className="f-foot"><b>这页只能查看，不会改任何数据</b>：<AutoGloss>可以看明细、调整显示方式、导出 8 项关键指标的汇总。</AutoGloss><b>导出不含任何用户隐私</b>，<AutoGloss>每次导出都有记录。指标异常时：转化类（#1–#4）去「用户转化与留存」，财务类（#8、提现兑付）去「财务报表」，团队类（#5、#7）去「设备/任务/网络报表」。</AutoGloss></p>
       <PaginationExemptionList
         items={[
           {

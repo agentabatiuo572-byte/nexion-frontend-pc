@@ -56,9 +56,9 @@ test("A4 shows the reconciled family count and names the catch-all scope", () =>
 test("A4 parameter editors block invalid values before opening a write request", () => {
   const page = read("app/components/domain-views/a-tabs/a4-events.tsx");
 
-  assert.match(page, /A4_DAY0_VALUE_INVALID/);
-  assert.match(page, /A4_EVENT_RETENTION_INVALID/);
-  assert.match(page, /A4_PROTECTED_EVENT_SAMPLING_INVALID/);
+  assert.match(page, /请输入 30–600 秒/);
+  assert.match(page, /请输入 13–60 个月/);
+  assert.match(page, /资金、风控、转化类必须保持 100%/);
   assert.match(page, /disabled=\{!canWrite \|\| !overview \|\| !!loadError/);
 });
 
@@ -69,7 +69,7 @@ test("A4 provides an A2-governed manual retention trigger with read-back status"
   assert.match(client, /\/events\/retention-runs/);
   assert.match(page, /runA4RetentionNow\(reason, commandKey\)/);
   assert.match(page, /platform_a2_write/);
-  assert.match(page, /最近执行:.*锁/);
+  assert.match(page, /上次清理.*当时有其他清理在进行/);
 });
 
 test("A4 accepts PRD canonical single-token actions and JSON schema properties", () => {

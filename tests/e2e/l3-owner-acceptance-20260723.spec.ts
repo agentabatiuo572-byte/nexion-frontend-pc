@@ -77,14 +77,14 @@ test("L3 preserves the eight canonical D3 liability categories without collapsin
   };
 
   const canonicalLabels = [
-    "可提余额",
-    "USDT staking 本金",
-    "staking 应付利息",
-    "Genesis 排放承诺",
-    "NEX v2 未来兑付",
-    "待提现 queue",
-    "佣金冷却未解锁",
-    "锁仓本息其他",
+    "可提现余额",
+    "USDT 质押本金",
+    "质押应付利息",
+    "创世节点应付分红",
+    "UVT 锁仓到期应付",
+    "待处理提现",
+    "冷却期内未发放的佣金",
+    "其他锁仓本息",
   ];
   const visibleRows: string[] = [];
   for (const label of canonicalLabels) {

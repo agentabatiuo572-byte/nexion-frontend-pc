@@ -20,8 +20,8 @@ test("F3 PC exposes protected settlement closure without mocked money defaults",
   assert.match(client, /JSON\.stringify\(\{ ownerUserId, settlementDate, reason \}\)/);
   assert.doesNotMatch(client, /asText\(formula\.matchRate,\s*"10%"\)/);
   assert.doesNotMatch(client, /asText\(dailyCap\.currentLabel,\s*"\$5,000"\)/);
-  assert.match(page, />执行结算</);
-  assert.match(page, /前往 F5 补发 \/ 冲正/);
+  assert.match(page, />手动结算</);
+  assert.match(page, /去补发 \/ 冲正/);
   assert.match(page, /aria-label="按结算状态筛选"/);
   assert.match(page, /aria-label="按用户群筛选"/);
   assert.doesNotMatch(page, /左轨|右轨|>gvResetCron</);
@@ -31,8 +31,8 @@ test("F3 periodic controls state their next-cycle, non-retroactive effect in con
   const component = readPc("app/components/domain-views/f-tabs/f3-binary.tsx");
   const view = readPc("app/components/domain-views/f-view.tsx");
 
-  assert.match(component, /completionCopy:\s*"保存后只影响下一周期结算，不回溯已计提。"/);
-  assert.match(component, /改后对下一周期结算生效,不回溯已计提/);
+  assert.match(component, /completionCopy:\s*"从下一期开始生效，已算的不变。"/);
+  assert.match(component, /从下一期开始生效，已算的不变/);
   assert.match(view, /completionCopy=\{mc\.completionCopy \?\?/);
 });
 

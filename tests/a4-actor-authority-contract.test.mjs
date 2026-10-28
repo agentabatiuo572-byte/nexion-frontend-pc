@@ -16,5 +16,5 @@ test("A4 sampling parameter accepts and submits the backend-supported zero perce
   assert.match(component, /percent\s*<\s*0\s*\|\|\s*percent\s*>\s*100/);
   assert.doesNotMatch(component, /percent\s*<\s*1\s*\|\|\s*percent\s*>\s*100/);
   assert.match(component, /updateParam\(["']sampling["'],\s*String\(percent\)/);
-  assert.match(component, /浏览\/会话\s*0[–-]100%/);
+  assert.match(component, /浏览和会话类请输入 0–100%/);
 });

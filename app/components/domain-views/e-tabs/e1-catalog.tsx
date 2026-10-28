@@ -15,7 +15,7 @@ const PHASE_STATUS_LABELS: Record<string, string> = {
   active: "启用",
   archived: "已归档",
 };
-const phaseStatusLabel = (status?: string | null): string => PHASE_STATUS_LABELS[status || "active"] ?? "阶段状态待核实";
+const phaseStatusLabel = (status?: string | null): string => PHASE_STATUS_LABELS[status || "active"] ?? "状态未知";
 
 // 卡 badge 视觉类按 tier 着色(text 用 sku.badge);gate 开放 = unlock phase ≤ 当前 phase。
 const badgeClass = (tier?: string): string =>
@@ -40,14 +40,14 @@ const isVideoMedia = (s: OpsSku): boolean => /\.(mp4|webm|mov)(?:$|\?)/i.test(s.
  * 取不到时如实说「未记录」—— 不编造批准人,也不把「没记录」说成「后端不支持」。
  */
 function forceUnlockProvenanceTitle(g: E1GenerationRelease): string {
-  const base = "该门已开启强制提前开放,运营月数限制被绕过";
+  const base = "已强制提前开放，跳过了运营月数限制";
   const approver = (g.forceUnlockApprovedBy ?? "").trim();
   const auditId = (g.forceUnlockAuditId ?? "").trim();
   const approvedAt = (g.forceUnlockApprovedAt ?? "").trim();
-  if (!approver && !auditId) return `${base};未找到可核实的强制提前开放审计记录`;
+  if (!approver && !auditId) return `${base}；找不到对应的操作记录`;
   const parts: string[] = [];
   if (approver) parts.push(`批准人 ${approver}`);
-  if (auditId) parts.push(`审计编号 ${auditId}`);
+  if (auditId) parts.push(`操作记录编号 ${auditId}`);
   if (approvedAt) parts.push(`批准时间 ${approvedAt}`);
   return `${base};${parts.join(" · ")}`;
 }
@@ -104,7 +104,7 @@ function SkuMediaThumb({ sku }: { sku: OpsSku }) {
     return (
       <div className="col" style={{ alignItems: "center", gap: 6 }}>
         <RackIcon />
-        {sku.imageAssetId ? <button type="button" disabled={refreshing} onClick={() => void refreshPreview()}>{refreshing ? "重新加载中…" : "重新加载媒体"}</button> : null}
+        {sku.imageAssetId ? <button type="button" disabled={refreshing} onClick={() => void refreshPreview()}>{refreshing ? "加载中…" : "重新加载图片"}</button> : null}
       </div>
     );
   }
@@ -187,7 +187,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   const gateCountdownLabel = (state: E1GateReadiness): string => {
     if (state.phaseConflict) return "阶段冲突";
     if (state.unlocked) return "已发布";
-    if (!state.eligibilityReady) return "待设备资格";
+    if (!state.eligibilityReady) return "待补设备资格";
     if (!state.phaseReached) return state.gatePhaseIdx >= 0 ? "待阶段" : "阶段未匹配";
     if (!state.monthReached && !state.forceMonthOpen) {
       const remain = state.effectiveMonth - platformMonth;
@@ -227,25 +227,25 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
 
   const genShift = (g: E1GenerationRelease, offset: number, delta: number) =>
     ctx.openActionConfirm({
-      name: `上架节奏 · ${delta < 0 ? "提前" : "延迟"} ${Math.abs(delta)} 个月 · ${catalogSkuBrandText(g.id, g.name)}`,
+      name: `开放时间${delta < 0 ? "提前" : "推迟"} ${Math.abs(delta)} 个月 · ${catalogSkuBrandText(g.id, g.name)}`,
       op: "param", paramKey: `E.gen.${g.id}.phaseOffset`,
       edit: { kind: "number", current: String(offset), unit: "个月" },
-      detail: `当前计划发布月 ${g.releaseMonth}${offset ? `(偏移 ${offset}M)` : ""} · 调整发布偏移改上架条件时点 · 以后端为准,改后对上架条件生效`,
+      detail: `当前计划第 ${g.releaseMonth} 个月开放${offset ? `（已调整 ${offset} 个月）` : ""}，修改后开放时间随之改变。`,
       amplify: false,
     });
   const genForceUnlock = (g: E1GenerationRelease) => {
     const state = gateReadiness(g);
-    if (!state.declaredPhase) { ctx.toast(`拒绝 · ${nexGridBrandText(g.name)} 商品解锁阶段缺失 · 请先核对商品配置`); return; }
-    if (state.phaseConflict) { ctx.toast(`拒绝 · ${nexGridBrandText(g.name)} 商品解锁阶段为${phaseLabel(state.declaredPhase)},与上架条件引用的${phaseLabel(g.phase)}冲突 · 请先修正阶段映射`); return; }
-    if (!state.eligibilityReady) { ctx.toast(`拒绝 · ${nexGridBrandText(g.name)} 设备资格未补录 · 上架条件不能解锁`); return; }
-    if (!state.phaseReached) { ctx.toast(`拒绝 · ${nexGridBrandText(g.name)} 当前阶段未到达 ${phaseLabel(g.phase)} · 上架条件不能解锁`); return; }
+    if (!state.declaredPhase) { ctx.toast(`不能开放：${nexGridBrandText(g.name)} 没有设置开放阶段，请先检查商品设置`); return; }
+    if (state.phaseConflict) { ctx.toast(`不能开放：${nexGridBrandText(g.name)} 的开放阶段是${phaseLabel(state.declaredPhase)}，和上架条件里的${phaseLabel(g.phase)}不一致，请先改成一致`); return; }
+    if (!state.eligibilityReady) { ctx.toast(`不能开放：${nexGridBrandText(g.name)} 还没补设备资格`); return; }
+    if (!state.phaseReached) { ctx.toast(`不能开放：${nexGridBrandText(g.name)} 要到 ${phaseLabel(g.phase)} 才能开放`); return; }
     ctx.openActionConfirm({
       name: `强制提前开放 · ${catalogSkuBrandText(g.id, g.name)}`,
       op: "generation-gate-force",
       generationGateId: g.id,
       generationGate: { forceUnlock: true },
       amplify: true,
-      detail: `设置 强制提前开放,仅绕过 H1 运营月数限制。阶段 已到达 ${phaseLabel(g.phase)},E5 资格配置已补齐;写入后端上架条件配置。`,
+      detail: `强制提前开放：只跳过运营月数限制。已到达 ${phaseLabel(g.phase)} 阶段，设备资格已补齐。`,
     });
   };
   const genForceLock = (g: E1GenerationRelease) =>
@@ -255,7 +255,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
       generationGateId: g.id,
       generationGate: { forceUnlock: false },
       amplify: false,
-      detail: `撤销强制提前开放,重新纳入平台运营月数限制。若阶段 / 设备资格 / 月龄已经自然满足,商品规格 仍会保持已开放。`,
+      detail: `撤销后重新按运营月数判断是否开放。如果阶段、设备资格和月数本来就满足，商品仍保持开放。`,
     });
   const openPhaseEditor = (ph?: E1Phase) => {
     const nextSort = phases.reduce((max, item) => Math.max(max, item.sortOrder ?? 0), 0) + 10;
@@ -273,8 +273,8 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
         status: ph?.status ?? "active",
       },
       detail: ph
-        ? "修改阶段名称 / 门槛说明 / 商品规格 标签 / 排序。内部 ID 使用系统生成值,不对运营展示。"
-        : "新增阶段配置;商品规格 解锁阶段和上架条件发布阶段都从这里选择。",
+        ? "修改阶段名称、门槛说明、商品标签和排序。"
+        : "新增阶段。商品的开放阶段和上架条件都从这里选。",
       amplify: false,
     });
   };
@@ -286,9 +286,9 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
       businessForm: {
         kind: "destructive-reason",
         target: phaseLabel(ph.p),
-        impact: "后端会先校验当前阶段、商品规格 解锁阶段、上架条件发布阶段引用;仍被使用时拒绝删除。",
+        impact: "如果当前阶段、商品或上架条件还在用这个阶段，将无法删除。",
       },
-      detail: "归档这条阶段配置,不物理删除。删除前必须先把相关 商品规格 和上架条件迁移到其他阶段。",
+      detail: "删除前请先把相关商品和上架条件改到其他阶段。",
       amplify: false,
     });
   // FEAT-DEV02b 置换侧抢先购(上架参数配置项,默认关):多字段弹窗,双 select 可枚举不手输。
@@ -296,20 +296,20 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   const earlyLead = ctx.pE("E.release.earlyAccess.leadDays");
   const adjEarlyAccess = () =>
     ctx.openActionConfirm({
-      name: "置换侧抢先购 调整", op: "early-access", amplify: false,
+      name: "调整以旧换新抢先购", op: "early-access", amplify: false,
       businessForm: {
-        kind: "multi-field", title: "目标新值 · 置换侧抢先购",
-        hint: "仅升级置换路径可在正式上架前提前购买;商城正门不受影响。默认关闭。",
+        kind: "multi-field", title: "以旧换新抢先购",
+        hint: "开启后，用旧设备换新的用户可以在新机正式上架前提前购买；普通购买不受影响。默认关闭。",
         fields: [
-          { key: "enabled", label: "总开关", current: earlyEnabled, inputKind: "select", options: ["关", "开"] },
-          { key: "leadDays", label: "提前天数(天)", current: earlyLead, inputKind: "select", options: ["7", "14", "30", "60", "90"] },
+          { key: "enabled", label: "开关", current: earlyEnabled, inputKind: "select", options: ["关", "开"] },
+          { key: "leadDays", label: "提前天数", current: earlyLead, inputKind: "select", options: ["7", "14", "30", "60", "90"] },
         ],
       },
       paramKeys: [
         { key: "enabled", paramKey: "E.release.earlyAccess.enabled" },
         { key: "leadDays", paramKey: "E.release.earlyAccess.leadDays" },
       ],
-      detail: "开启后,持有可置换设备的用户可在该 商品规格 正式上架前 N 天通过升级置换购买(目标行带「抢先升级」标);关闭 = 上架条件对置换路径完全生效。前端镜像同名配置,以服务器数据为准。",
+      detail: "开启后，有旧设备可换新的用户能在新机正式上架前 N 天提前换购；关闭后，换购也要等正式上架。",
     });
 
   const openGateEditor = (g?: E1GenerationRelease) => {
@@ -318,7 +318,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
       return;
     }
     if (!g && gateSkuOptions.length === 0) {
-      ctx.toast("目录内 商品规格 均已配置上架条件");
+      ctx.toast("所有商品都已设置上架条件");
       return;
     }
     const gatePhaseOptions = g?.phase && !phaseOptions.includes(g.phase) ? [g.phase, ...phaseOptions] : phaseOptions;
@@ -342,8 +342,8 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
         forceUnlock: g?.forceUnlock ?? false,
       },
       detail: g
-        ? "修改发布月 / 阶段 / 设备资格 / 强制提前开放,保存后影响发布判断"
-        : "为 商品规格 新增分批上架规则,新增后进入发布时点表",
+        ? "修改开放月份、阶段、设备资格或强制提前开放"
+        : "为商品设置分批上架规则",
       amplify: !!g?.forceUnlock,
     });
   };
@@ -352,15 +352,15 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
       name: `移除上架条件 · ${catalogSkuBrandText(g.id, g.name)}`,
       op: "generation-gate-archive",
       generationGateId: g.id,
-      businessForm: { kind: "destructive-reason", target: catalogSkuBrandText(g.id, g.name), impact: "该 商品规格 将从发布时点表移除,用户端上架条件不会再读取这条配置。" },
-      detail: "归档这条发布规则,不物理删除,便于审计和恢复",
+      businessForm: { kind: "destructive-reason", target: catalogSkuBrandText(g.id, g.name), impact: "这个商品会从上架时间表中移除，不再受这条规则限制。" },
+      detail: "移除这条上架规则（保留记录，可恢复）",
       amplify: false,
     });
 
   const adjustBundleDiscount = () => {
     const discount = ctx.e1BundleDiscount;
     if (!discount) {
-      ctx.toast("组合优惠当前配置不可用，请刷新后重试");
+      ctx.toast("组合优惠设置加载失败，请刷新后重试");
       return;
     }
     ctx.openActionConfirm({
@@ -368,16 +368,16 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
       op: "bundle-discount",
       businessForm: {
         kind: "multi-field",
-        title: "目标新值 · 组合购折扣",
-        hint: "百分比直接影响 App 组合页预估与服务器下单金额；保存采用版本校验，冲突时需刷新重试。",
+        title: "组合购折扣",
+        hint: "会直接改变 App 组合购的价格。",
         requireAnyChange: true,
         fields: [
-          { key: "twoItemsPct", label: "2 件折扣(%)", current: String(discount.twoItemsPct), inputKind: "number", min: 0.01, max: 50, step: 0.01, required: true },
-          { key: "threeItemsPct", label: "3 件折扣(%)", current: String(discount.threeItemsPct), inputKind: "number", min: 0.01, max: 50, step: 0.01, required: true },
-          { key: "fourPlusItemsPct", label: "4 件及以上折扣(%)", current: String(discount.fourPlusItemsPct), inputKind: "number", min: 0.01, max: 50, step: 0.01, required: true },
+          { key: "twoItemsPct", label: "2 件折扣（%）", current: String(discount.twoItemsPct), inputKind: "number", min: 0.01, max: 50, step: 0.01, required: true },
+          { key: "threeItemsPct", label: "3 件折扣（%）", current: String(discount.threeItemsPct), inputKind: "number", min: 0.01, max: 50, step: 0.01, required: true },
+          { key: "fourPlusItemsPct", label: "4 件及以上折扣（%）", current: String(discount.fourPlusItemsPct), inputKind: "number", min: 0.01, max: 50, step: 0.01, required: true },
         ],
       },
-      detail: `当前版本 v${discount.version} · 数值由服务器配置读取，保存后新报价与新订单即时生效，不回溯已有订单。`,
+      detail: `保存后新订单立即按新折扣，已有订单不变。`,
       amplify: true,
     });
   };
@@ -385,24 +385,24 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   return (
     <>
       <EStats items={[
-        { k: "目录累计售出额", v: compactUsd(catalogSoldValue), sub: `商品目录计数器 · ${soldUnits.toLocaleString()} 台(非订单主数据,对账以 E4 为准)` },
-        { k: "在售 商品规格", v: onSale, sub: `${pending} 个待确认${publishBlocked > 0 ? ` · ${publishBlocked} 个未过上架条件` : ""}${ctx.e1InvalidSkus.length > 0 ? ` · ${ctx.e1InvalidSkus.length} 个字段不合规未纳入` : ""}`, tone: "ok" },
-        ...(publishGateUndeclared > 0 ? [{ k: "上架条件未声明", v: publishGateUndeclared, sub: "服务端未返回上架条件结论(旧构建)；该批 商品规格 是否进入 App 目录未确认", tone: "warn" as const }] : []),
-        { k: "节奏门管控 商品规格", v: gateManaged, sub: "Pro v2 · Rack P2 分批上架", tone: "cyan" },
-        { k: "条件限制 商品规格", v: gated, sub: "解锁需阶段推进", tone: "warn" },
+        { k: "目录累计售出额", v: compactUsd(catalogSoldValue), sub: `共 ${soldUnits.toLocaleString()} 台（对账请以「订单进度」为准）` },
+        { k: "在售商品", v: onSale, sub: `${pending} 个待确认${publishBlocked > 0 ? ` · ${publishBlocked} 个未满足上架条件` : ""}${ctx.e1InvalidSkus.length > 0 ? ` · ${ctx.e1InvalidSkus.length} 个数据有误未显示` : ""}`, tone: "ok" },
+        ...(publishGateUndeclared > 0 ? [{ k: "上架状态未知", v: publishGateUndeclared, sub: "无法确认这些商品是否在 App 上架", tone: "warn" as const }] : []),
+        { k: "分批上架的商品", v: gateManaged, sub: "Pro v2 · Rack P2", tone: "cyan" },
+        { k: "按阶段开放的商品", v: gated, sub: "到对应阶段才开放", tone: "warn" },
       ]} />
-      {ctx.e1Loading && <div className="tint tiny" style={{ marginBottom: 12 }}>E1 数据同步中...</div>}
-      {ctx.e1Error && <div className="tint warn tiny" role="alert" style={{ marginBottom: 12 }}>E1 后端数据读取失败,页面保持空态({ctx.e1Error}) <button type="button" onClick={() => void ctx.refreshE1()}>重新加载 E1 数据</button></div>}
+      {ctx.e1Loading && <div className="tint tiny" style={{ marginBottom: 12 }}>正在加载…</div>}
+      {ctx.e1Error && <div className="tint warn tiny" role="alert" style={{ marginBottom: 12 }}>商品数据加载失败（{ctx.e1Error}） <button type="button" onClick={() => void ctx.refreshE1()}>重新加载</button></div>}
 
       {/* 被逐行判定拒绝的 SKU:具名列出是哪个 SKU 的哪个字段不合规。
           此前这类行会让整份目录读取失败并清空页面,运营看到的是「0 SKU」而非真实原因 ——
           同一份 nx_product 在 App 侧照常展示,后台却整目录为空。 */}
       {ctx.e1InvalidSkus.length > 0 && (
         <div className="tint warn tiny" role="alert" style={{ marginBottom: 12 }}>
-          有 {ctx.e1InvalidSkus.length} 个 商品规格 的字段不合规，未纳入下列目录（其余商品照常展示）：
+          有 {ctx.e1InvalidSkus.length} 个商品的数据有误，暂不显示（其他商品正常）：
           <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
             {ctx.e1InvalidSkus.map((row) => (
-              <li key={row.skuId}>{row.skuId} · {nexGridBrandText(row.name)} — 无效字段：{row.invalidFields.join("、")}</li>
+              <li key={row.skuId}>{row.skuId} · {nexGridBrandText(row.name)} — 有误的字段：{row.invalidFields.join("、")}</li>
             ))}
           </ul>
         </div>
@@ -416,7 +416,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
               <span className="tiny muted">
                 2 件 {ctx.e1BundleDiscount.twoItemsPct}% · 3 件 {ctx.e1BundleDiscount.threeItemsPct}% · 4 件及以上 {ctx.e1BundleDiscount.fourPlusItemsPct}% · v{ctx.e1BundleDiscount.version}
               </span>
-            ) : <span className="tiny warn">服务器配置不可用，App 组合报价保持关闭</span>}
+            ) : <span className="tiny warn">设置加载失败，App 暂不提供组合价</span>}
           </div>
           {canWrite && ctx.e1BundleDiscount
             ? <button type="button" onClick={adjustBundleDiscount}>调整阶梯折扣</button>
@@ -428,10 +428,10 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
       {hasPhaseConfig ? (
         <div className="phase-bar">
           <div className="lbl">
-            <span className="h">上架节奏门 · 阶段联动</span>
-            <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>条件限制随阶段推进自动开放 · 按后台配置生效</span>
+            <span className="h">分阶段开放</span>
+            <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>到了对应阶段自动开放</span>
             <span className="now"><span className="d" />当前 {phaseLabel(phaseCur)} · {proV2Label}</span>
-            <span className="now">置换侧抢先购:{earlyEnabled === "开" ? `开 · 提前 ${earlyLead} 天` : "关"}{canWrite ? <button style={{ marginLeft: 8 }} onClick={adjEarlyAccess}>调整</button> : null}</span>
+            <span className="now">以旧换新抢先购：{earlyEnabled === "开" ? `开 · 提前 ${earlyLead} 天` : "关"}{canWrite ? <button style={{ marginLeft: 8 }} onClick={adjEarlyAccess}>调整</button> : null}</span>
           </div>
           <div className="phase-track" style={{ ["--phase-line" as string]: phaseLine } as CSSProperties}>
             {phases.map((ph, i) => {
@@ -449,12 +449,12 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
       ) : (
         <div className="phase-bar">
           <div className="lbl">
-            <span className="h">上架节奏门 · 阶段联动</span>
-            <span style={{ fontSize: 11.5, color: "var(--danger)" }}>E1 阶段配置缺失或当前阶段不匹配</span>
-            <span className="now"><span className="d" />等待后端配置</span>
+            <span className="h">分阶段开放</span>
+            <span style={{ fontSize: 11.5, color: "var(--danger)" }}>阶段设置缺失，或当前阶段对不上</span>
+            <span className="now"><span className="d" />待设置</span>
           </div>
           <div className="tint warn tiny" style={{ marginTop: 12 }}>
-            未读取到有效阶段顺序 / 阶段列表 / 当前阶段。请检查阶段配置和当前阶段设置。
+            没有获取到阶段设置，请检查下方「阶段设置」和「运营阶段设置」。
           </div>
         </div>
       )}
@@ -462,15 +462,15 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
       {/* 2. 阶段配置 */}
       <div className="genrel">
         <div className="genrel-h">
-          <span className="ttl">阶段配置</span>
-          <span className="sub">· 商品规格 解锁阶段 / 上架条件发布阶段的唯一来源</span>
+          <span className="ttl">阶段设置</span>
+          <span className="sub">· 商品的开放阶段和上架条件都从这里选</span>
           <span className="r"><CodeTag tone="electric">阶段规则</CodeTag><span>{enabledPhaseCount} 条启用</span></span>
           {canWrite ? <button className="f-cta" style={{ padding: "5px 11px", fontSize: 12 }} onClick={() => openPhaseEditor()}>+ 新增阶段</button> : null}
         </div>
         <div className="phasecfg-table">
           <div className="hd">
-            <div className="c">阶段名称</div><div className="c">当前阶段</div><div className="c optional">门槛说明</div><div className="c optional">商品规格 标签</div>
-            <div className="c optional">排序</div><div className="c optional">状态</div><div className="c">动作</div>
+            <div className="c">阶段名称</div><div className="c">当前阶段</div><div className="c optional">门槛说明</div><div className="c optional">商品标签</div>
+            <div className="c optional">排序</div><div className="c optional">状态</div><div className="c">操作</div>
           </div>
           {phases.length === 0 && (
             <div className="rw">
@@ -488,7 +488,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                 <div className="c optional mono">{ph.sortOrder ?? 0}</div>
                 <div className="c optional"><Badge tone={ph.status === "active" ? "ok" : "neutral"}>{phaseStatusLabel(ph.status)}</Badge></div>
                 <div className="c acts">
-                  {isCurrentPhase ? <button disabled>H1 当前</button> : <button disabled title="当前阶段由 H1 运营节奏统一推进">H1 只读</button>}
+                  {isCurrentPhase ? <button disabled>当前阶段</button> : <button disabled title="当前阶段在「运营阶段设置」里推进">—</button>}
                   {canWrite ? <button onClick={() => openPhaseEditor(ph)}>编辑</button> : null}
                   {canWrite ? <button className="danger" disabled={isCurrentPhase} title={isCurrentPhase ? "当前阶段不能删除" : undefined} onClick={() => archivePhase(ph)}>删除</button> : null}
                 </div>
@@ -497,31 +497,31 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
           })}
         </div>
         <div className="genrel-foot">
-          <span><b>阶段名称</b> 面向运营和页面展示;内部 ID 由系统维护,不需要手动填写。</span>
+          <span><b>阶段名称</b> 后台和 App 页面上显示的名字。</span>
           <span className="sep">·</span>
-          <span><b>当前阶段</b> 只读跟随 H1 运营节奏,E1 不可反向覆盖。</span>
+          <span><b>当前阶段</b> 跟随「运营阶段设置」，这里不能改。</span>
           <span className="sep">·</span>
-          <span><b>删除保护</b> 当前阶段、商品规格 或上架条件仍引用时后端拒绝删除。</span>
+          <span><b>删除限制</b> 当前阶段、商品或上架条件还在用的阶段不能删除。</span>
         </div>
       </div>
 
       {/* 3. 分批上架发布时点表 */}
       <div className="genrel">
         <div className="genrel-h">
-          <span className="ttl">分批上架发布时点</span>
-          <span className="sub">· 发布月是上架条件 · 控制 商品规格 从待发布到已开放</span>
-          <span className="r"><CodeTag tone="electric">发布计划</CodeTag><span>平台月龄 M{platformMonth || "未配置"} · {phaseCur ? phaseLabel(phaseCur) : "阶段未配置"}</span></span>
+          <span className="ttl">分批上架时间表</span>
+          <span className="sub">· 控制商品什么时候开放购买</span>
+          <span className="r"><CodeTag tone="electric">发布计划</CodeTag><span>平台第 {platformMonth || "—"} 个月 · {phaseCur ? phaseLabel(phaseCur) : "阶段未设置"}</span></span>
           {canWrite ? <button className="f-cta" style={{ padding: "5px 11px", fontSize: 12 }} onClick={() => openGateEditor()}>+ 新增上架条件</button> : null}
         </div>
         <div className="genrel-scroll">
           <div className="genrel-table">
           <div className="hd">
-            <div className="c">商品规格</div><div className="c">计划发布</div><div className="c">当前状态</div><div className="c">阶段</div>
-            <div className="c">距发布</div><div className="c">设备资格</div><div className="c">动作</div>
+            <div className="c">商品</div><div className="c">计划开放</div><div className="c">当前状态</div><div className="c">阶段</div>
+            <div className="c">距开放</div><div className="c">设备资格</div><div className="c">操作</div>
           </div>
           {releases.length === 0 && (
             <div className="rw">
-              <div className="c" style={{ gridColumn: "1 / -1", color: "var(--ink-3)" }}>暂无上架条件配置</div>
+              <div className="c" style={{ gridColumn: "1 / -1", color: "var(--ink-3)" }}>暂无上架条件</div>
             </div>
           )}
           {releases.map((g) => {
@@ -532,26 +532,26 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
             const cdTxt = gateCountdownLabel(gateState);
             const releasePresentation = releaseMonthPresentation(g.releaseMonth, offset);
             const forceHint = !gateState.declaredPhase
-              ? "商品解锁阶段缺失,不能提前开放"
+              ? "商品没有设置开放阶段，不能提前开放"
               : gateState.phaseConflict
-                ? "商品解锁阶段与上架条件阶段冲突,不能提前开放"
+                ? "商品的开放阶段和上架条件不一致，不能提前开放"
                 : !gateState.eligibilityReady
-                  ? "需先补录设备资格后才能提前开放"
+                  ? "先补设备资格才能提前开放"
                   : !gateState.phaseReached
-                    ? `需先推进到 ${phaseLabel(g.phase)} 阶段后才能提前开放`
-                    : "强制提前开放,仅绕过平台运营月数限制";
+                    ? `到 ${phaseLabel(g.phase)} 阶段后才能提前开放`
+                    : "强制提前开放，只跳过运营月数限制";
             return (
               <div className="rw" key={g.id}>
-                <div className="c sku">{nexGridBrandText(g.name)}<span className="id">{g.id}</span>{g.forceUnlock && <span className="force-audit">批准人 {g.forceUnlockApprovedBy || "未记录"} · A2 编号 {g.forceUnlockAuditId || "未记录"}</span>}</div>
+                <div className="c sku">{nexGridBrandText(g.name)}<span className="id">{g.id}</span>{g.forceUnlock && <span className="force-audit">批准人 {g.forceUnlockApprovedBy || "未记录"} · 操作记录 {g.forceUnlockAuditId || "未记录"}</span>}</div>
                 <div className="c mono release-plan">
                   <span className="release-effective">{releasePresentation.effectiveLabel}</span>
                   <span className="release-adjustment">{releasePresentation.adjustmentLabel}</span>
                 </div>
-                <div className="c"><span className={`st ${unlocked ? "active" : "coming"}`} title={unlocked ? (g.forceUnlock ? "阶段 / 设备资格已满足,月龄由强制提前开放绕过" : "阶段 / 月龄 / 设备资格均满足") : gateBlockerLabel(gateState)}>{unlocked ? "已开放" : gateState.phaseConflict ? "阶段冲突" : "待发布"}</span>{g.forceUnlock && <span className="st coming" style={{ marginLeft: 6 }} title={forceUnlockProvenanceTitle(g)}>强制提前</span>}</div>
+                <div className="c"><span className={`st ${unlocked ? "active" : "coming"}`} title={unlocked ? (g.forceUnlock ? "阶段和设备资格已满足，月数限制已强制跳过" : "阶段、月数和设备资格都已满足") : gateBlockerLabel(gateState)}>{unlocked ? "已开放" : gateState.phaseConflict ? "阶段冲突" : "待发布"}</span>{g.forceUnlock && <span className="st coming" style={{ marginLeft: 6 }} title={forceUnlockProvenanceTitle(g)}>强制提前</span>}</div>
                 <div className="c">
                   <span className="phaseChip">{phaseLabel(g.phase)}</span>
                   {gateState.phaseConflict && (
-                    <span className="st coming" style={{ marginLeft: 6 }} title={`商品解锁阶段为${phaseLabel(gateState.declaredPhase)},上架条件却引用${phaseLabel(g.phase)};阶段门被错误映射,未到阶段不得开放`}>
+                    <span className="st coming" style={{ marginLeft: 6 }} title={`商品的开放阶段是${phaseLabel(gateState.declaredPhase)}，上架条件却是${phaseLabel(g.phase)}，请改成一致`}>
                       应属 {phaseLabel(gateState.declaredPhase)}
                     </span>
                   )}
@@ -563,7 +563,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                   {canWrite && (unlocked ? (
                     <>
                       <button onClick={() => genShift(g, offset, 1)}>推迟 1 个月</button>
-                      {g.forceUnlock ? <button className="warn" onClick={() => genForceLock(g)}>撤销强制</button> : <button disabled title="该 商品规格 是按阶段 / 设备资格 / 月龄自然开放,没有强制状态可撤销">自然开放</button>}
+                      {g.forceUnlock ? <button className="warn" onClick={() => genForceLock(g)}>撤销强制</button> : <button disabled title="这个商品是正常开放的，没有强制开放可撤销">自然开放</button>}
                     </>
                   ) : (
                     <>
@@ -582,9 +582,9 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
           </div>
         </div>
         <div className="genrel-foot">
-          <span><b>发布规则</b> · 挂上架条件的 商品规格 从待发布到已开放,需同时满足当前阶段已到达 + 平台月龄已到 + 设备资格已配置</span>
+          <span><b>开放规则</b> · 设了上架条件的商品，要同时满足：到达对应阶段、平台运营满对应月数、设备资格已设置</span>
           <span className="sep">·</span>
-          <span><b>强制提前开放</b> 仅绕过运营月数限制,不绕过 阶段 / E5 · 提前 / 延迟 / 撤销均走操作确认</span>
+          <span><b>强制提前开放</b> 只跳过运营月数限制，阶段和设备资格仍要满足</span>
         </div>
       </div>
 
@@ -592,9 +592,9 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
       <div className="tint" style={{ marginBottom: 12, padding: 12 }}>
         <div className="row" style={{ alignItems: "end", flexWrap: "wrap", gap: 10 }}>
           <label className="fld" style={{ flex: "1 1 260px", margin: 0 }}>
-            <span>搜索商品规格</span>
+            <span>搜索商品</span>
             <input
-              aria-label="搜索商品规格"
+              aria-label="搜索商品"
               value={skuQuery}
               placeholder="名称 / 商品编号 / GPU / 数据中心"
               onChange={(event) => setSkuQuery(event.target.value)}
@@ -617,7 +617,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
             </select>
           </label>
           <div className="tiny" aria-live="polite" style={{ marginBottom: 8 }}>
-            显示 {filteredSkus.length} / {skus.length} 个 商品规格
+            显示 {filteredSkus.length} / {skus.length} 个商品
           </div>
           {(skuQuery || skuStatus !== "all" || skuTier !== "all") ? (
             <button type="button" style={{ marginBottom: 2 }} onClick={() => {
@@ -631,7 +631,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
       <div className="sku-grid">
         {filteredSkus.length === 0 ? (
           <div className="tint tiny" role="status" style={{ gridColumn: "1 / -1", padding: 20, textAlign: "center" }}>
-            没有符合筛选条件的 商品规格，请清除筛选或换一个关键词。
+            没有符合条件的商品，换个关键词或清除筛选试试。
           </div>
         ) : null}
         {filteredSkus.map((s) => {
@@ -643,9 +643,9 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
           const listingBlocked = st !== "on" && !open;
           const listingBlocker = releaseState
             ? gateBlockerLabel(releaseState)
-            : phaseIdx(s.unlock) >= 0 ? `待${phaseLabel(s.unlock)}` : "解锁阶段未匹配";
+            : phaseIdx(s.unlock) >= 0 ? `待${phaseLabel(s.unlock)}` : "开放阶段对不上";
           const publishBlockLabel = s.publishBlockReason === "PRODUCT_TEST_IDENTIFIER"
-            ? "测试标识" : "无有效收益";
+            ? "测试商品" : "收益未设置";
           const releaseLabel = releaseGate
             ? `${phaseLabel(releaseGate.phase)} · ${open ? "已开放" : gateBlockerLabel(releaseState!)}`
             : `${hasUnlockPhase ? phaseLabel(s.unlock) : "无需阶段"} · ${open ? "已开放" : "条件限制"}`;
@@ -683,22 +683,22 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                     const g = s.purchaseGate;
                     const parts: string[] = [];
                     if (g.rankMin != null) parts.push(`V≥${g.rankMin}`);
-                    if (g.activeDirectMin != null) parts.push(`${g.activeDirectMin}直推`);
+                    if (g.activeDirectMin != null) parts.push(`${g.activeDirectMin}直接邀请`);
                     if (g.teamVolumeMin != null) parts.push(`$${Math.round(g.teamVolumeMin / 1000)}K业绩`);
                     const cond = parts.join(g.mode === "either" ? "/" : "+");
                     const remaining = gateRemaining(g);
-                    const txt = `购买门${cond ? " " + cond : ""}${remaining != null ? ` · 余${remaining}` : ""}`;
+                    const txt = `购买条件${cond ? " " + cond : ""}${remaining != null ? ` · 剩 ${remaining}` : ""}`;
                     return <Badge tone={g.enforce ? "warn" : "neutral"}>{txt}</Badge>;
                   })()}
                   <span className="stk">库存 {unlimitedInventory ? "∞（非实物）" : (s.stock ?? 0)}</span>
                   <Badge tone={s.trialEligible ? "ok" : "neutral"}>{s.trialEligible ? "允许试用" : "不可试用"}</Badge>
-                  {s.publishBlocked === true ? <Badge tone="warn">{`未过上架条件 · ${publishBlockLabel}`}</Badge> : null}
-                  {s.publishBlocked === undefined ? <Badge tone="neutral">上架条件未声明</Badge> : null}
+                  {s.publishBlocked === true ? <Badge tone="warn">{`未满足上架条件 · ${publishBlockLabel}`}</Badge> : null}
+                  {s.publishBlocked === undefined ? <Badge tone="neutral">上架状态未知</Badge> : null}
                 </div>
                 <div className="acts">
                   {canWrite ? <button className="primary" aria-label={`改价 / 编辑 ${catalogSkuBrandText(s.id, s.name)}`} onClick={() => ctx.openSku(s.id)}>改价 / 编辑</button> : null}
                   {canWrite && st === "on" && (unlimitedInventory || Number(s.stock) > 0) && !open && !releaseGate && hasPhaseConfig ? <button className="brand" aria-label={`按当前阶段上架 ${catalogSkuBrandText(s.id, s.name)}`} onClick={() => ctx.openSku(s.id, phaseCur)}>按当前阶段上架</button> : null}
-                  {canWrite ? <button disabled={listingBlocked || s.publishBlocked === true} title={s.publishBlocked === true ? `未过上架条件 · ${publishBlockLabel} · 该行不会进入 应用用户目录` : s.publishBlocked === undefined ? "服务端未返回上架条件结论，上架是否生效未确认" : listingBlocked ? listingBlocker : undefined} aria-label={`${st === "on" ? "下架" : "上架"} ${catalogSkuBrandText(s.id, s.name)}`} onClick={() => ctx.openActionConfirm({ name: st === "on" ? `下架 商品规格 · ${catalogSkuBrandText(s.id, s.name)}` : `上架 商品规格 · ${catalogSkuBrandText(s.id, s.name)}`, op: "sku-status", target: s.id, status: st === "on" ? "off" : "on", detail: st === "on" ? "下架后从商城隐藏,不影响已售设备结算" : "上架后对用户可见", amplify: false })}>{st === "on" ? "下架" : "上架"}</button> : null}
+                  {canWrite ? <button disabled={listingBlocked || s.publishBlocked === true} title={s.publishBlocked === true ? `未满足上架条件 · ${publishBlockLabel} · App 上看不到` : s.publishBlocked === undefined ? "服务端未返回上架条件结论，上架是否生效未确认" : listingBlocked ? listingBlocker : undefined} aria-label={`${st === "on" ? "下架" : "上架"} ${catalogSkuBrandText(s.id, s.name)}`} onClick={() => ctx.openActionConfirm({ name: st === "on" ? `下架商品· ${catalogSkuBrandText(s.id, s.name)}` : `上架商品· ${catalogSkuBrandText(s.id, s.name)}`, op: "sku-status", target: s.id, status: st === "on" ? "off" : "on", detail: st === "on" ? "下架后从商城隐藏,不影响已售设备结算" : "上架后对用户可见", amplify: false })}>{st === "on" ? "下架" : "上架"}</button> : null}
                   {canWrite ? <button className="danger" aria-label={`删除 ${catalogSkuBrandText(s.id, s.name)}`} onClick={() => ctx.delSku(s.id, s.name ?? s.id)}>删除</button> : null}
                 </div>
               </div>
@@ -707,7 +707,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
         })}
       </div>
 
-      <p className="f-foot">商品规格 卡片 = 前端商品卡片完整配置；前端商城与运营后台共享同一后端正式 商品规格 配置，任何上下架 / 改价 / 库存调整<b>立即对前端商城生效</b>。</p>
+      <p className="f-foot">这里的商品卡片就是 App 商城里的商品，上下架、改价和调库存都会<b>立即在 App 生效</b>。</p>
     </>
   );
 }

@@ -56,7 +56,7 @@ test("H8 A2 proposal freezes the exact H8 and H1 reward snapshot until replay", 
 });
 
 test("H8 PC proposal and A2 guard share one canonical pending-settlement context", () => {
-  assert.match(h8, /action: targeted \? "执行指定新人邀请奖励结算" : "执行邀请奖励真实结算"[\s\S]*?obj: targeted \? `新人 \$\{invitedUserId\}` : "待结算邀请批次"[\s\S]*?sourceDomain: "H8"/);
+  assert.match(h8, /action: targeted \? "给指定新人结算邀请奖励" : "结算邀请奖励"[\s\S]*?obj: targeted \? `新人 \$\{invitedUserId\}` : "待结算邀请批次"[\s\S]*?sourceDomain: "H8"/);
   assert.match(registry, /op: "h8_referral_settlement"[\s\S]*?domain: "H"[\s\S]*?targetType: "referral_settlement_batch"[\s\S]*?id: "pending"/);
   assert.match(a2BusinessGuard, /delegatedHDescriptor\(operation, params\)/);
   assert.match(a2BusinessGuard, /"h8_referral_settlement"[\s\S]*?"执行邀请奖励真实结算"[\s\S]*?"待结算邀请批次"[\s\S]*?"H8"[\s\S]*?"fund"[\s\S]*?"referral_settlement_batch", "pending"/);
@@ -113,9 +113,9 @@ test("H8 PC fails closed on malformed overview and provides downstream verificat
   assert.match(client, /H8_RESPONSE_INVALID/);
   assert.match(client, /source !== "nx_user\.sponsor_user_id"/);
   assert.match(client, /settlementMode !== "REAL_WALLET_LEDGER"/);
-  assert.match(h8, /A2 审批与审计/);
-  assert.match(h8, /A4 事件/);
-  assert.match(h8, /D4 钱包台账/);
+  assert.match(h8, /操作记录与审批/);
+  assert.match(h8, />用户行为事件</);
+  assert.match(h8, />账本与账单核对</);
   assert.match(h8, /row\.status === "SETTLED" \? "已结算"/);
 });
 

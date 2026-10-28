@@ -125,7 +125,7 @@ test("actual recovery confirmation enforces permissions and uses normal text Bus
   assert.equal(dialog.reasonMin, 10); assert.equal(dialog.reasonMax, 300);
   assert.equal(dialog.businessForm.kind, "multi-field");
   assert.equal(dialog.businessForm.fields[0].inputKind, "text", "Numeric input loses long CID precision");
-  assert.match(dialog.detail, /不会重新发款或直接标记成功/);
+  assert.match(dialog.detail, /不会重新打款/);
 });
 
 test("actual recovery command refreshes detail/list and retains the same key across unknown retry", async () => {
