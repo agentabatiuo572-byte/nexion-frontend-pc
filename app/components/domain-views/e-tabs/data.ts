@@ -39,7 +39,7 @@ export const EMPTY_SKU_FORM = {
   name: "", id: "", tier: "", tagline: "", badge: "",
   gpuCount: "", specDocumentTitle: "", specDocumentUrl: "",
   gpu: "", vram: "", hashRate: "", power: "", datacenter: "", uptime: "", warranty: "", phoneDailyEarn: "", phoneDailyEarnNEX: "",
-  price: "",
+  price: "", computePoints: "",
   dailyEarn: "", dailyEarnNEX: "", shareYieldMin: "", shareYieldMax: "",
   inventoryMode: "FINITE", stock: "", trialEligible: "false",
   aiImageGenPerMin: "", aiLlmTokensPerSec: "", aiVideoMinPerHour: "", aiFineTuneMins: "", aiUnlocks: "",
@@ -48,17 +48,17 @@ export const EMPTY_SKU_FORM = {
   // ⑦ 购买限制(扁平表单字段 → formToSku 组装为结构化 OpsSku.purchaseGate)。
   // gateType = 条件门形态:none(无门)/ activeDirect(单活跃直推)/ rank(单 V 级)/ combo(组合)。
   // 锁额(quota)与条件门正交,任意门类型下均可设。
-  gateType: "none", gateRankMin: "", gateActiveDirectMin: "", gateTeamVolumeMin: "", gateMode: "all",
+  gateType: "none", gateRankMin: "", gateActiveDirectMin: "", gateTeamComputePointsMin: "", gateMode: "all",
   gateQuotaCap: "", gateQuotaSold: "", gateQuotaPeriod: "lifetime", gateEnforce: "true",
 };
 export type SkuForm = typeof EMPTY_SKU_FORM;
 
 // purchaseGate → 表单门类型:条件门形态由「设了哪几个条件」反推。
-// 单 activeDirect → activeDirect;单 rank → rank;其余(含 teamVolume 或多条件)→ combo;无条件 → none(可能仍有锁额)。
+// 单 activeDirect → activeDirect;单 rank → rank;其余(含团队算力点或多条件)→ combo;无条件 → none(可能仍有锁额)。
 export function gateToType(g?: PurchaseGate): SkuForm["gateType"] {
   if (!g) return "none";
-  const hasRank = g.rankMin != null, hasDirect = g.activeDirectMin != null, hasVol = g.teamVolumeMin != null;
-  const n = (hasRank ? 1 : 0) + (hasDirect ? 1 : 0) + (hasVol ? 1 : 0);
+  const hasRank = g.rankMin != null, hasDirect = g.activeDirectMin != null, hasPoints = g.teamComputePointsMin != null;
+  const n = (hasRank ? 1 : 0) + (hasDirect ? 1 : 0) + (hasPoints ? 1 : 0);
   if (n === 0) return "none";
   if (n === 1 && hasDirect) return "activeDirect";
   if (n === 1 && hasRank) return "rank";
@@ -82,6 +82,7 @@ export function joinGpu(model: string, count: string): string | undefined {
 export function validateSkuSpecs(f: SkuForm): string | null {
   if (f.gpuCount.trim() && (!/^[1-9]\d*$/.test(f.gpuCount.trim()) || Number(f.gpuCount) > 1024 || !f.gpu.trim())) return "GPU 数量须为 1–1024 的整数，并填写单卡型号";
   if (f.gpuCount.trim() && /^\d+\s*[×xX*]/u.test(f.gpu.trim())) return "GPU 型号请只填单卡型号，数量填写在 GPU 数量中";
+  if (f.computePoints.trim() && !/^(?:0|[1-9]\d{0,17})$/.test(f.computePoints.trim())) return "每件算力点须为不小于 0 的整数";
   if (f.specDocumentTitle.trim() || f.specDocumentUrl.trim()) {
     if (!f.specDocumentTitle.trim() || f.specDocumentTitle.trim().length > 200 || f.specDocumentUrl.trim().length > 2048) return "请填写资料名称和有效的 HTTPS 链接";
     try { const url = new URL(f.specDocumentUrl.trim()); if (url.protocol !== "https:" || !url.hostname || url.username || url.password) return "资料链接须为不含账号密码的 HTTPS 地址"; }
@@ -98,14 +99,14 @@ export function skuToForm(s: OpsSku): SkuForm {
     name: s.name ?? "", id: s.id ?? "", tier: s.tier ?? "", tagline: s.tagline ?? "", badge: s.badge ?? "",
     gpuCount: gpuParts.count, specDocumentTitle: s.specDocumentTitle ?? "", specDocumentUrl: s.specDocumentUrl ?? "",
     gpu: gpuParts.model, vram: s.vram ?? "", hashRate: s.hashRate ?? "", power: s.power ?? "", datacenter: s.datacenter ?? "", uptime: s.uptime ?? "", warranty: s.warranty ?? "", phoneDailyEarn: str(s.phoneDailyEarn), phoneDailyEarnNEX: str(s.phoneDailyEarnNEX),
-    price: str(s.price),
+    price: str(s.price), computePoints: str(s.computePoints),
     dailyEarn: str(s.dailyEarn), dailyEarnNEX: str(s.dailyEarnNEX), shareYieldMin: str(s.shareYieldMin), shareYieldMax: str(s.shareYieldMax),
     inventoryMode: s.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE", stock: s.inventoryMode === "UNLIMITED" ? "" : str(s.stock), trialEligible: s.trialEligible ? "true" : "false",
     aiImageGenPerMin: str(s.aiImageGenPerMin), aiLlmTokensPerSec: str(s.aiLlmTokensPerSec), aiVideoMinPerHour: str(s.aiVideoMinPerHour), aiFineTuneMins: str(s.aiFineTuneMins), aiUnlocks: s.aiUnlocks ?? "",
     features: (s.features ?? []).join("\n"),
     lifecycle: s.lifecycle ?? "", unlock: s.unlock ?? "", tag: s.tag ?? "",
     gateType: gateToType(g),
-    gateRankMin: str(g?.rankMin), gateActiveDirectMin: str(g?.activeDirectMin), gateTeamVolumeMin: str(g?.teamVolumeMin),
+    gateRankMin: str(g?.rankMin), gateActiveDirectMin: str(g?.activeDirectMin), gateTeamComputePointsMin: str(g?.teamComputePointsMin),
     gateMode: g?.mode === "either" ? "either" : "all",
     gateQuotaCap: str(g?.quotaCap), gateQuotaSold: str(g?.quotaSold),
     gateQuotaPeriod: g?.quotaPeriod === "month" ? "month" : "lifetime",
@@ -115,18 +116,18 @@ export function skuToForm(s: OpsSku): SkuForm {
 
 // 表单 → purchaseGate(无条件且无锁额 → undefined = 无门)。条件门按 gateType 取相应阈值;锁额正交。
 export function formToGate(f: SkuForm): PurchaseGate | undefined {
-  let rankMin: number | undefined, activeDirectMin: number | undefined, teamVolumeMin: number | undefined;
+  let rankMin: number | undefined, activeDirectMin: number | undefined, teamComputePointsMin: number | undefined;
   if (f.gateType === "activeDirect") activeDirectMin = skuNumU(f.gateActiveDirectMin);
   else if (f.gateType === "rank") rankMin = skuNumU(f.gateRankMin);
   else if (f.gateType === "combo") {
-    rankMin = skuNumU(f.gateRankMin); activeDirectMin = skuNumU(f.gateActiveDirectMin); teamVolumeMin = skuNumU(f.gateTeamVolumeMin);
+    rankMin = skuNumU(f.gateRankMin); activeDirectMin = skuNumU(f.gateActiveDirectMin); teamComputePointsMin = skuNumU(f.gateTeamComputePointsMin);
   }
   const cap = skuNumU(f.gateQuotaCap);
-  const hasCond = rankMin != null || activeDirectMin != null || teamVolumeMin != null;
+  const hasCond = rankMin != null || activeDirectMin != null || teamComputePointsMin != null;
   const hasQuota = cap != null;
   if (!hasCond && !hasQuota) return undefined;
   return {
-    rankMin, activeDirectMin, teamVolumeMin,
+    rankMin, activeDirectMin, teamComputePointsMin,
     mode: f.gateMode === "either" ? "either" : "all",
     quotaCap: cap,
     quotaSold: hasQuota ? Math.max(0, skuNumU(f.gateQuotaSold) ?? 0) : undefined, // 防御:已售下限 0(校验已拦负数,store 层再兜底)
@@ -238,14 +239,14 @@ export function validateGateForm(f: SkuForm): string | null {
   if (f.tier !== "Share" && !f.unlock.trim()) return "请先选择开放阶段";
   if (f.gateType === "activeDirect" && skuNumU(f.gateActiveDirectMin) == null) return "购买条件：请填写活跃直接邀请人数";
   if (f.gateType === "rank" && skuNumU(f.gateRankMin) == null) return "购买条件：请填写最低会员等级";
-  if (f.gateType === "combo" && skuNumU(f.gateRankMin) == null && skuNumU(f.gateActiveDirectMin) == null && skuNumU(f.gateTeamVolumeMin) == null)
+  if (f.gateType === "combo" && skuNumU(f.gateRankMin) == null && skuNumU(f.gateActiveDirectMin) == null && skuNumU(f.gateTeamComputePointsMin) == null)
     return "购买条件：组合条件至少填一项";
   const rank = skuNumU(f.gateRankMin);
-  if (rank != null && (rank < 0 || rank > 12)) return "购买条件：会员等级须在 0–12 之间";
+  if (rank != null && (rank < 0 || rank > 8)) return "购买条件：会员等级须在 0–8 之间";
   const direct = skuNumU(f.gateActiveDirectMin);
   if (direct != null && (direct < 0 || direct > 1_000_000)) return "购买条件：活跃直接邀请人数须在 0–1000000 之间";
-  const vol = skuNumU(f.gateTeamVolumeMin);
-  if (vol != null && vol < 0) return "购买条件：团队业绩不能为负数";
+  const vol = skuNumU(f.gateTeamComputePointsMin);
+  if (vol != null && (vol < 0 || !Number.isInteger(vol))) return "购买条件：团队算力点须为不小于 0 的整数";
   const cap = skuNumU(f.gateQuotaCap), sold = skuNumU(f.gateQuotaSold);
   if (cap == null && sold != null) return "购买条件：已售数量和可售上限要一起填写";
   if (cap != null && cap <= 0) return "购买条件：可售上限须大于 0（留空为不限量）";
@@ -282,7 +283,7 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
     tier: f.tier, tagline: f.tagline.trim() || undefined, badge: f.badge.trim() || undefined,
     specDocumentTitle: f.specDocumentTitle.trim() || undefined, specDocumentUrl: f.specDocumentUrl.trim() || undefined,
     gpu: joinGpu(f.gpu, f.gpuCount), vram: f.vram.trim() || undefined, hashRate: f.hashRate.trim() || undefined, power: f.power.trim() || undefined, datacenter: f.datacenter.trim() || undefined, uptime: f.uptime.trim() || undefined, warranty: f.warranty.trim() || undefined, phoneDailyEarn: skuNumU(f.phoneDailyEarn), phoneDailyEarnNEX: skuNumU(f.phoneDailyEarnNEX),
-    price: skuNum(f.price),
+    price: skuNum(f.price), computePoints: skuNumU(f.computePoints),
     dailyEarn, dailyEarnNEX, shareYieldMin, shareYieldMax, baseRate,
     // Sales remains display-only; write payloads omit it and Java retains the live counter.
     sold: existing?.sold ?? 0, productType, inventoryMode,

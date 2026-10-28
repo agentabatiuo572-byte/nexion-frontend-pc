@@ -40,6 +40,7 @@ interface BackendSku {
   phoneDailyEarn?: number | string | null;
   phoneDailyEarnNex?: number | string | null;
   price?: number | string | null;
+  computePoints?: number | string | null;
   dailyEarn?: number | string | null;
   dailyEarnNex?: number | string | null;
   shareYieldMin?: number | string | null;
@@ -233,6 +234,7 @@ function fromSku(sku: BackendSku): OpsSku {
     phoneDailyEarn: toOptionalNumber(sku.phoneDailyEarn),
     phoneDailyEarnNEX: toOptionalNumber(sku.phoneDailyEarnNex),
     price: toNumber(sku.price),
+    computePoints: toOptionalNumber(sku.computePoints),
     dailyEarn: toNumber(sku.dailyEarn),
     dailyEarnNEX: toNumber(sku.dailyEarnNex),
     shareYieldMin: toOptionalNumber(sku.shareYieldMin),
@@ -292,6 +294,7 @@ function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
     phoneDailyEarn: sku.phoneDailyEarn ?? null,
     phoneDailyEarnNex: sku.phoneDailyEarnNEX ?? null,
     price: sku.price,
+    computePoints: sku.computePoints ?? null,
     dailyEarn: sku.dailyEarn,
     dailyEarnNex: sku.dailyEarnNEX,
     shareYieldMin: sku.shareYieldMin ?? null,

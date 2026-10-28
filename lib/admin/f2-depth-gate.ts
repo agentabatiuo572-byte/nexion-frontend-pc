@@ -3,16 +3,16 @@
  *
  * `F.unilevel.depthGate` 是**离散层号**(后端 `UnilevelCommissionService.resolveDepthGateLayer`
  * 与 `CommissionGuideRuleService.DEPTH_GATE_LAYER` 都只接受 `L1`–`L7`),`F.unilevel.depthGateRank`
- * 是**离散阶位**(`V0`–`V12`)。历史库存在 `0.4` 这类小数遗留值:它既不是层也不是阶位,
+ * 是**离散阶位**(`V0`–`V8`)。历史库存在 `0.4` 这类小数遗留值:它既不是层也不是阶位,
  * 结算侧 `resolveDepthGateLayer` 会显式阻断(非法值不得进入生效态),但管理读面仍会把它原样
  * 暴露出来供运营修正(`OpsTeamServiceTest.ratesExposeInvalidLegacyDecimalDepthGateForOperatorCorrection`)。
- * 因此管理页必须:合法值按 `L1–L7` / `V0–V12` 展示,非法值明确告警,且编辑器只允许提交合法枚举,
+ * 因此管理页必须:合法值按 `L1–L7` / `V0–V8` 展示,非法值明确告警,且编辑器只允许提交合法枚举,
  * 让非法值无法被「保存成另一个非法值」而绕过结算侧校验。
  */
 
 export const F2_DEPTH_GATE_LAYERS = ["L1", "L2", "L3", "L4", "L5", "L6", "L7"] as const;
 export const F2_DEPTH_GATE_RANKS = [
-  "V0", "V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10", "V11", "V12",
+  "V0", "V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8",
 ] as const;
 
 export interface F2EnumGateValue {
@@ -60,7 +60,7 @@ export function f2EnumGateSpec(key: string): F2EnumGateSpec | null {
     return {
       options: [...F2_DEPTH_GATE_RANKS],
       unit: "阶位",
-      illegalCopy: "当前值不是 V0–V12 中的阶位。阶位是离散枚举,结算侧会阻断非法值;请选择合法阶位后提交。",
+      illegalCopy: "当前值不是 V0–V8 中的阶位。阶位是离散枚举,结算侧会阻断非法值;请选择合法阶位后提交。",
     };
   }
   return null;

@@ -809,7 +809,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   F_PERIOD_PRIZE_SCHEMA_INVALID: "4 周期榜单奖池格式无效,须为含 today/week/month/allTime 四个非负数字的 JSON。",
   F_PARTNER_TIERS_SCHEMA_INVALID: "Partner 4 档门槛格式无效,须为含 bronze/silver/gold/diamond 四个非负数字的 JSON。",
   F_PARTNER_TIERS_NOT_ASCENDING: "Partner 4 档门槛须非递减(bronze ≤ silver ≤ gold ≤ diamond)。",
-  F_VRANK_TITLES_SCHEMA_INVALID: "V-Rank 头衔格式无效,须为含 V0-V12 共 13 阶非空文本的 JSON。",
+  F_VRANK_TITLES_SCHEMA_INVALID: "V-Rank 头衔格式无效,须为含 V0-V8 共 9 阶非空文本的 JSON。",
   // 无域前缀的通用码,**必须挂在表尾**:includes 兜底循环按插入顺序命中,
   // 排在带前缀的同族(VIETQR_/H8_/C6_CONFIG_VERSION_CONFLICT)之后才不会把它们的专属文案抢掉。
   CONFIG_VERSION_CONFLICT: "该配置已被其他操作员更新，本次未覆盖；请刷新页面并核对最新值后重试。",

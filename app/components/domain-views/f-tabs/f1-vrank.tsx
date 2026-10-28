@@ -65,7 +65,7 @@ const isFund = (t: VRankRewardType): boolean => t === "usdt" || t === "nex";
 
 // 门槛按钮按语义分色(易辨认):算力额/金额=lemon green · 人数/分支=cyan · 等级=橙。
 function toneOf(k: string): string {
-  if (k === "selfBuy" || k === "teamGv") return "t-vol";   // 算力额 / 金额
+  if (k === "selfBuy" || k === "teamGv") return "t-vol";   // 算力点
   if (k === "directRefs" || k === "legCount") return "t-count"; // 人数 / 分支数
   if (k === "legRank") return "t-rank";                    // 等级
   return "t-vol";
@@ -121,21 +121,21 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     );
   }
 
-  // 门槛改为每子值单独单值「调整」(不再一个文本框手打「自买 $299 · 直推 3」整串);展示行由各字段合成可读串。
+  // 门槛改为每子值单独单值「调整」(不再一个文本框手打整串);展示行由各字段合成可读串。
   const rewardsOf = (v: string): OpsVRankRewardItem[] => ctx.rewards[v] ?? [];
   const hasFundReward = (v: string): boolean => rewardsOf(v).some((it) => isFund(it.type));
   const composeTh = (r: VRow): string => {
     const p: string[] = [];
-    if (r.selfBuy != null) p.push(`自买 ${r.selfBuy}`);
-    if (r.teamGv != null) p.push(`团队业绩 ${r.teamGv}`);
+    if (r.selfBuy != null) p.push(`自购算力点 ${r.selfBuy}`);
+    if (r.teamGv != null) p.push(`团队算力点 ${r.teamGv}`);
     if (r.directRefs != null) p.push(`直接邀请 ${r.directRefs}`);
     if (r.legCount != null) p.push(`${r.legCount} 条分支 · 每条 ≥${r.legRank ?? "—"}`);
     return p.length ? p.join(" · ") : "—";
   };
   const fieldsOf = (r: VRow): VField[] => {
     const f: VField[] = [];
-    if (r.selfBuy != null) f.push({ k: "selfBuy", label: "自买额", cur: r.selfBuy, kind: "text" });
-    if (r.teamGv != null) f.push({ k: "teamGv", label: "团队业绩", cur: r.teamGv, kind: "text" });
+    if (r.selfBuy != null) f.push({ k: "selfBuy", label: "自购算力点", cur: r.selfBuy, kind: "number" });
+    if (r.teamGv != null) f.push({ k: "teamGv", label: "团队算力点", cur: r.teamGv, kind: "number" });
     if (r.directRefs != null) f.push({ k: "directRefs", label: "直接邀请人数", cur: r.directRefs, kind: "number" });
     if (r.legCount != null) f.push({ k: "legCount", label: "达标分支数", cur: r.legCount, kind: "number" });
     // 分支最低等级 = V-Rank 13 阶有限枚举(运营从已存在等级里勾选,不手输「V3」串)。
@@ -206,7 +206,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   // 但**提交值不变** —— 归一只作用于上屏文案,协议与配置仍写原值。
   const prizeName = nexGridBrandText(ctx.f1ConfigValues["F.prize.name"] ?? "");
   const permanentOn = (ctx.f1ConfigValues["F.vrank.permanent"] ?? "on") === "on";
-  // V-Rank 13 阶头衔(JSON V0-V12)回填解析 · 无记录用空串,首次配置时 13 阶全填。
+  // V-Rank 9 阶头衔(JSON V0-V8)回填解析 · 无记录用空串,首次配置时 9 阶全填。
   const titlesByLevel: Record<string, string> = {};
   const titlesRaw = ctx.f1ConfigValues["F.vrank.titles"] ?? "";
   if (titlesRaw) {
@@ -226,11 +226,11 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const v3plusPct = totalMembers > 0 ? ((v3plus / totalMembers) * 100).toFixed(2) : "0.00";
   const unlockRank = ctx.leadership?.unlockRank ?? 3;
   const topN = ctx.leadership?.topN ?? 10;
-  // 人口金字塔底注的真实顶部分布(取代历史硬编码 "V8+ 仅 10 人;V12 仅 1 人")。
+  // 人口金字塔底注的真实顶部分布(取代历史硬编码的顶部人数)。
   const v8plusPop = rows.filter((r) => Number(r.v.replace("V", "")) >= 8).reduce((s, r) => s + r.pop, 0);
   const highestRank = rows.at(-1)?.v ?? "—";
   const highestPop = rows.at(-1)?.pop ?? 0;
-  // 等级票权串:从 leadership.ranks 真实 votes 派生(取代硬编码 "V3=1 票 … V12=512 票")。
+  // 等级票权串:从 leadership.ranks 真实 votes 派生(取代硬编码票权)。
   const voteRanks = ctx.leadership?.ranks ?? [];
   const voteWeightLabel = voteRanks.length > 0
     ? voteRanks

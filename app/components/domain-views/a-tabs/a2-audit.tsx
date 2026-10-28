@@ -158,7 +158,7 @@ export function A2ChangeReview({ before, after }: { before: string; after: strin
   const labels: Record<string, string> = {
     skuId: "商品编号", id: "商品编号", name: "商品名称", tier: "商品档位", tagline: "卖点", badge: "角标",
     gpu: "GPU", vram: "显存", hashRate: "算力", power: "功耗", datacenter: "数据中心", uptime: "在线率",
-    warranty: "保修", phoneDailyEarn: "手机日产收益", phoneDailyEarnNex: "手机日产 UVT", price: "价格",
+    warranty: "保修", phoneDailyEarn: "手机日产收益", phoneDailyEarnNex: "手机日产 UVT", price: "价格", computePoints: "每件算力点",
     dailyEarn: "日产收益", dailyEarnNex: "日产 UVT", shareYieldMin: "份额收益下限", shareYieldMax: "份额收益上限",
     baseRate: "收益展示文字", sold: "累计销量", stock: "库存", rating: "评分", reviews: "评价数",
     aiImageGenPerMin: "图像生成性能", aiLlmTokensPerSec: "大模型推理性能", aiVideoMinPerHour: "视频渲染性能",
@@ -168,7 +168,7 @@ export function A2ChangeReview({ before, after }: { before: string; after: strin
     tag: "商品标签", status: "商城状态", inventoryMode: "库存模式", expectedUpdatedAt: "修改前的更新时间",
     updatedAt: "更新时间", trialEligible: "允许试用", productType: "商品类型", reason: "操作理由", operator: "操作人",
     rankMin: "最低 V 等级", directsMin: "最低有效直接邀请", teamUsdtMin: "最低团队业绩", mode: "条件组合",
-    activeDirectMin: "最低有效直接邀请", teamVolumeMin: "最低团队业绩",
+    activeDirectMin: "最低有效直接邀请", teamComputePointsMin: "最低团队算力点",
     enforce: "启用限制", quotaCap: "总配额", quotaSold: "已用配额", quotaPeriod: "配额周期",
   };
   const format = (value: unknown): string => {

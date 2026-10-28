@@ -236,7 +236,7 @@ test("E1 purchase gate is a structured server-enforced editor, not a HOLD placeh
   assert.match(view, /gateType/);
   assert.match(view, /gateActiveDirectMin/);
   assert.match(view, /gateRankMin/);
-  assert.match(view, /gateTeamVolumeMin/);
+  assert.match(view, /gateTeamComputePointsMin/);
   assert.match(view, /gateQuotaCap/);
   assert.match(view, /gateQuotaPeriod/);
   assert.match(view, /gateEnforce/);

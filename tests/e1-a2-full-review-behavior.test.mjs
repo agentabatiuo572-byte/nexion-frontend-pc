@@ -103,11 +103,11 @@ test('new SKU empty canonical before snapshot is explicit',()=>{
  assert.ok(html.includes('UVELBox S1 Trade-in'));
 });
 test('actual A2 renderer retains late fields, multiline values, unknown fields and escapes markup',()=>{
- const html=renderToStaticMarkup(React.createElement(exports.A2ChangeReview,{before:'历史原文\n未创建',after:JSON.stringify({...full,customFutureField:'末尾未丢失',purchaseGate:{rankMin:0,activeDirectMin:5,teamVolumeMin:20000,enforce:false},features:['<script>danger</script>','尾项']})}));
+ const html=renderToStaticMarkup(React.createElement(exports.A2ChangeReview,{before:'历史原文\n未创建',after:JSON.stringify({...full,customFutureField:'末尾未丢失',purchaseGate:{rankMin:0,activeDirectMin:5,teamComputePointsMin:20000,enforce:false},features:['<script>danger</script>','尾项']})}));
  for(const value of ['历史原文','未创建','数据中心','US-EAST-2','GPU','4090','产品特性','尾项','末尾未丢失','最低 V 等级','启用限制：否'])assert.ok(html.includes(value),value);
  assert.ok(html.includes('&lt;script&gt;danger&lt;/script&gt;'));assert.ok(!html.includes('<script>'));
  assert.ok(html.includes('white-space:pre-wrap'));assert.ok(html.includes('overflow-wrap:anywhere'));
- assert.ok(html.includes('最低有效直接邀请：5'));assert.ok(html.includes('最低团队业绩：20000'));
- assert.ok(!html.includes('activeDirectMin'));assert.ok(!html.includes('teamVolumeMin'));
+ assert.ok(html.includes('最低有效直接邀请：5'));assert.ok(html.includes('最低团队算力点：20000'));
+ assert.ok(!html.includes('activeDirectMin'));assert.ok(!html.includes('teamComputePointsMin'));
  assert.equal((a2source.match(/<A2ChangeReview before=\{w.before\} after=\{w.after\} \/>/g)||[]).length,2);
 });

@@ -3,7 +3,7 @@ import type { PurchaseGate } from "./platform-types";
 export interface BackendPurchaseGate {
   rankMin?: number | null;
   activeDirectMin?: number | null;
-  teamVolumeMin?: number | null;
+  teamComputePointsMin?: number | null;
   mode?: "all" | "either" | null;
   quotaCap?: number | null;
   quotaSold?: number | null;
@@ -16,7 +16,7 @@ export function fromPurchaseGate(gate: BackendPurchaseGate | null | undefined): 
   const purchaseGate: PurchaseGate = {
     rankMin: gate.rankMin ?? undefined,
     activeDirectMin: gate.activeDirectMin ?? undefined,
-    teamVolumeMin: gate.teamVolumeMin ?? undefined,
+    teamComputePointsMin: gate.teamComputePointsMin ?? undefined,
     mode: gate.mode === "either" ? "either" : "all",
     quotaCap: gate.quotaCap ?? undefined,
     quotaSold: gate.quotaSold ?? undefined,
@@ -28,7 +28,7 @@ export function fromPurchaseGate(gate: BackendPurchaseGate | null | undefined): 
   const hasValue =
     purchaseGate.rankMin != null ||
     purchaseGate.activeDirectMin != null ||
-    purchaseGate.teamVolumeMin != null ||
+    purchaseGate.teamComputePointsMin != null ||
     purchaseGate.quotaCap != null;
   return hasValue ? purchaseGate : undefined;
 }
@@ -38,7 +38,7 @@ export function toPurchaseGate(gate: PurchaseGate | undefined): BackendPurchaseG
   return {
     rankMin: gate.rankMin ?? null,
     activeDirectMin: gate.activeDirectMin ?? null,
-    teamVolumeMin: gate.teamVolumeMin ?? null,
+    teamComputePointsMin: gate.teamComputePointsMin ?? null,
     mode: gate.mode,
     quotaCap: gate.quotaCap ?? null,
     quotaSold: gate.quotaSold ?? null,
