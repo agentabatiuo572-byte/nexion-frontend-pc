@@ -328,7 +328,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
               {model.streakMilestones.map((milestone) => (
                 <tr key={milestone.id}>
                   <td style={{ fontWeight: 600 }}>{milestone.day}</td>
-                  <td>{({nex:"UVT奖励",UVT:"UVT奖励",usdt:"USDT奖励",USDT:"USDT奖励",voucher:"代金券奖励"} as Record<string,string>)[text(milestone.kind)] ?? "成长奖励"}</td>
+                  <td>{({uvt:"UVT奖励",UVT:"UVT奖励",usdt:"USDT奖励",USDT:"USDT奖励",voucher:"代金券奖励"} as Record<string,string>)[text(milestone.kind)] ?? "成长奖励"}</td>
                   <td className="num mono">{operatorCopyText(milestone.reward)}</td>
                   <td style={{ textAlign: "right" }}>
                     <button className="l-btn sm mc" aria-label={`修改 ${milestone.day} 天连签奖励`} onClick={() => openStreak(milestone)} disabled={!canWrite}>改奖励</button>
