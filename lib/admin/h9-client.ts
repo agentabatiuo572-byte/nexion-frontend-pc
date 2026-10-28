@@ -40,9 +40,10 @@ export interface H9PublicStatsValues {
   registeredUsersBase: number;
   registeredUsersMonthlyGrowthPct: number;
   registeredUsersAnchorAt: number;
-  /** 跳动间隔与每次增加人数成对保存；未设置时缺省，网络脉搏按月增长率推算。 */
+  /** 跳动间隔与每次增加人数范围一起保存；未设置时缺省，网络脉搏按月增长率推算。 */
   registeredUsersTickIntervalSec?: number;
-  registeredUsersTickStep?: number;
+  registeredUsersTickStepMin?: number;
+  registeredUsersTickStepMax?: number;
   virtualUserCount: number;
   hashratePercentileTable: H9PercentileBand[];
 }
@@ -127,7 +128,7 @@ export const H9_FIELDS: readonly H9FieldDef[] = [
     max: 100_000_000,
     step: 1,
     integer: true,
-    hint: "网络脉搏注册用户的起跳值。修改基数、跳动间隔或每次增加人数时，推算起点重置为保存时刻；不参与设备预估排名，不改变真实账户。",
+    hint: "网络脉搏注册用户的起跳值。修改基数、跳动间隔或每次增加人数范围时，推算起点重置为保存时刻；不参与设备预估排名，不改变真实账户。",
   },
   {
     key: "registeredUsersMonthlyGrowthPct",
@@ -148,18 +149,29 @@ export const H9_FIELDS: readonly H9FieldDef[] = [
     step: 1,
     integer: true,
     pairedOptional: true,
-    hint: "每隔多少秒增加一次。与「每次增加人数」一起填写后，网络脉搏从基数开始按间隔增加，不再使用月增长率；两项都留空则保持按月增长率。",
+    hint: "每隔多少秒增加一次。与每次最少、最多增加人数一起填写后，网络脉搏从基数开始按间隔增加，不再使用月增长率；三项都留空则保持按月增长率。",
   },
   {
-    key: "registeredUsersTickStep",
-    label: "网络脉搏注册用户每次增加人数",
+    key: "registeredUsersTickStepMin",
+    label: "网络脉搏注册用户每次最少增加",
     unit: "人",
     min: 0,
     max: 100_000_000,
     step: 1,
     integer: true,
     pairedOptional: true,
-    hint: "每次跳动增加的人数，可填 0（数字保持不变）。",
+    hint: "每次跳动至少增加的人数，可填 0。",
+  },
+  {
+    key: "registeredUsersTickStepMax",
+    label: "网络脉搏注册用户每次最多增加",
+    unit: "人",
+    min: 0,
+    max: 100_000_000,
+    step: 1,
+    integer: true,
+    pairedOptional: true,
+    hint: "每次跳动最多增加的人数，不能小于最少值；每次在两者之间取值，所有用户看到的数字一致。",
   },
   {
     key: "virtualUserCount",
@@ -252,15 +264,17 @@ function values(value: unknown, field: string): H9PublicStatsValues {
   };
 }
 
-/** 跳动参数成对出现或都缺省;只出现一半视为坏数据,走占位态。 */
-function optionalPair(raw: Record<string, unknown>, field: string): Pick<H9PublicStatsValues, "registeredUsersTickIntervalSec" | "registeredUsersTickStep"> {
+/** 跳动间隔与增加范围三项一起出现或都缺省;只出现一部分视为坏数据,走占位态。 */
+function optionalPair(raw: Record<string, unknown>, field: string): Pick<H9PublicStatsValues, "registeredUsersTickIntervalSec" | "registeredUsersTickStepMin" | "registeredUsersTickStepMax"> {
   const interval = raw.registeredUsersTickIntervalSec;
-  const step = raw.registeredUsersTickStep;
-  if (interval == null && step == null) return {};
-  if (interval == null || step == null) invalid(`${field}.registeredUsersTickIntervalSec`);
+  const stepMin = raw.registeredUsersTickStepMin;
+  const stepMax = raw.registeredUsersTickStepMax;
+  if (interval == null && stepMin == null && stepMax == null) return {};
+  if (interval == null || stepMin == null || stepMax == null) invalid(`${field}.registeredUsersTickIntervalSec`);
   return {
     registeredUsersTickIntervalSec: nonNegative(interval, `${field}.registeredUsersTickIntervalSec`),
-    registeredUsersTickStep: nonNegative(step, `${field}.registeredUsersTickStep`),
+    registeredUsersTickStepMin: nonNegative(stepMin, `${field}.registeredUsersTickStepMin`),
+    registeredUsersTickStepMax: nonNegative(stepMax, `${field}.registeredUsersTickStepMax`),
   };
 }
 
@@ -285,7 +299,7 @@ export async function fetchH9PublicStats(): Promise<H9PublicStatsOverview> {
 
 /**
  * 整组原子写。服务端按合法域复核后落库 + 记审计 + 版本 +1;
- * 改了 registeredUsersBase、跳动间隔或每次增加人数时,由服务端把 registeredUsersAnchorAt 重置为写入时刻。
+ * 改了 registeredUsersBase、跳动间隔或每次增加人数范围时,由服务端把 registeredUsersAnchorAt 重置为写入时刻。
  *
  * 幂等键由本函数从槽位存储取,**不由调用方传** —— 调用方一传就有人在 onClick 里现铸,
  * 「原样重试同键」的承诺又会变成空的(见上方 h9Attempts 说明)。
